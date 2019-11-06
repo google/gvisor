@@ -86,28 +86,28 @@ func (f *fakeNetworkEndpoint) ID() *stack.NetworkEndpointID {
 	return &f.id
 }
 
-func (f *fakeNetworkEndpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {
+func (f *fakeNetworkEndpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
 	// Increment the received packet count in the protocol descriptor.
 	f.proto.packetCount[int(f.id.LocalAddress[0])%len(f.proto.packetCount)]++
 
 	// Consume the network header.
-	b := vv.First()
-	vv.TrimFront(fakeNetHeaderLen)
+	b := pkt.Data.First()
+	pkt.Data.TrimFront(fakeNetHeaderLen)
 
 	// Handle control packets.
 	if b[2] == uint8(fakeControlProtocol) {
-		nb := vv.First()
+		nb := pkt.Data.First()
 		if len(nb) < fakeNetHeaderLen {
 			return
 		}
 
-		vv.TrimFront(fakeNetHeaderLen)
-		f.dispatcher.DeliverTransportControlPacket(tcpip.Address(nb[1:2]), tcpip.Address(nb[0:1]), fakeNetNumber, tcpip.TransportProtocolNumber(nb[2]), stack.ControlPortUnreachable, 0, vv)
+		pkt.Data.TrimFront(fakeNetHeaderLen)
+		f.dispatcher.DeliverTransportControlPacket(tcpip.Address(nb[1:2]), tcpip.Address(nb[0:1]), fakeNetNumber, tcpip.TransportProtocolNumber(nb[2]), stack.ControlPortUnreachable, 0, pkt)
 		return
 	}
 
 	// Dispatch the packet to the transport protocol.
-	f.dispatcher.DeliverTransportPacket(r, tcpip.TransportProtocolNumber(b[2]), buffer.View([]byte{}), vv)
+	f.dispatcher.DeliverTransportPacket(r, tcpip.TransportProtocolNumber(b[2]), pkt)
 }
 
 func (f *fakeNetworkEndpoint) MaxHeaderLength() uint16 {
@@ -138,7 +138,9 @@ func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr bu
 		views[0] = hdr.View()
 		views = append(views, payload.Views()...)
 		vv := buffer.NewVectorisedView(len(views[0])+payload.Size(), views)
-		f.HandlePacket(r, vv)
+		f.HandlePacket(r, tcpip.PacketBuffer{
+			Data: vv,
+		})
 	}
 	if loop&stack.PacketOut == 0 {
 		return nil
@@ -259,7 +261,9 @@ func TestNetworkReceive(t *testing.T) {
 
 	// Make sure packet with wrong address is not delivered.
 	buf[0] = 3
-	ep.Inject(fakeNetNumber, buf.ToVectorisedView())
+	ep.InjectInbound(fakeNetNumber, tcpip.PacketBuffer{
+		Data: buf.ToVectorisedView(),
+	})
 	if fakeNet.packetCount[1] != 0 {
 		t.Errorf("packetCount[1] = %d, want %d", fakeNet.packetCount[1], 0)
 	}
@@ -269,7 +273,9 @@ func TestNetworkReceive(t *testing.T) {
 
 	// Make sure packet is delivered to first endpoint.
 	buf[0] = 1
-	ep.Inject(fakeNetNumber, buf.ToVectorisedView())
+	ep.InjectInbound(fakeNetNumber, tcpip.PacketBuffer{
+		Data: buf.ToVectorisedView(),
+	})
 	if fakeNet.packetCount[1] != 1 {
 		t.Errorf("packetCount[1] = %d, want %d", fakeNet.packetCount[1], 1)
 	}
@@ -279,7 +285,9 @@ func TestNetworkReceive(t *testing.T) {
 
 	// Make sure packet is delivered to second endpoint.
 	buf[0] = 2
-	ep.Inject(fakeNetNumber, buf.ToVectorisedView())
+	ep.InjectInbound(fakeNetNumber, tcpip.PacketBuffer{
+		Data: buf.ToVectorisedView(),
+	})
 	if fakeNet.packetCount[1] != 1 {
 		t.Errorf("packetCount[1] = %d, want %d", fakeNet.packetCount[1], 1)
 	}
@@ -288,7 +296,9 @@ func TestNetworkReceive(t *testing.T) {
 	}
 
 	// Make sure packet is not delivered if protocol number is wrong.
-	ep.Inject(fakeNetNumber-1, buf.ToVectorisedView())
+	ep.InjectInbound(fakeNetNumber-1, tcpip.PacketBuffer{
+		Data: buf.ToVectorisedView(),
+	})
 	if fakeNet.packetCount[1] != 1 {
 		t.Errorf("packetCount[1] = %d, want %d", fakeNet.packetCount[1], 1)
 	}
@@ -298,7 +308,9 @@ func TestNetworkReceive(t *testing.T) {
 
 	// Make sure packet that is too small is dropped.
 	buf.CapLength(2)
-	ep.Inject(fakeNetNumber, buf.ToVectorisedView())
+	ep.InjectInbound(fakeNetNumber, tcpip.PacketBuffer{
+		Data: buf.ToVectorisedView(),
+	})
 	if fakeNet.packetCount[1] != 1 {
 		t.Errorf("packetCount[1] = %d, want %d", fakeNet.packetCount[1], 1)
 	}
@@ -373,7 +385,9 @@ func testFailingRecv(t *testing.T, fakeNet *fakeNetworkProtocol, localAddrByte b
 
 func testRecvInternal(t *testing.T, fakeNet *fakeNetworkProtocol, localAddrByte byte, ep *channel.Endpoint, buf buffer.View, want int) {
 	t.Helper()
-	ep.Inject(fakeNetNumber, buf.ToVectorisedView())
+	ep.InjectInbound(fakeNetNumber, tcpip.PacketBuffer{
+		Data: buf.ToVectorisedView(),
+	})
 	if got := fakeNet.PacketCount(localAddrByte); got != want {
 		t.Errorf("receive packet count: got = %d, want %d", got, want)
 	}
@@ -1795,7 +1809,9 @@ func TestNICStats(t *testing.T) {
 
 	// Send a packet to address 1.
 	buf := buffer.NewView(30)
-	ep1.Inject(fakeNetNumber, buf.ToVectorisedView())
+	ep1.InjectInbound(fakeNetNumber, tcpip.PacketBuffer{
+		Data: buf.ToVectorisedView(),
+	})
 	if got, want := s.NICInfo()[1].Stats.Rx.Packets.Value(), uint64(1); got != want {
 		t.Errorf("got Rx.Packets.Value() = %d, want = %d", got, want)
 	}
@@ -1855,7 +1871,9 @@ func TestNICForwarding(t *testing.T) {
 	// Send a packet to address 3.
 	buf := buffer.NewView(30)
 	buf[0] = 3
-	ep1.Inject(fakeNetNumber, buf.ToVectorisedView())
+	ep1.InjectInbound(fakeNetNumber, tcpip.PacketBuffer{
+		Data: buf.ToVectorisedView(),
+	})
 
 	select {
 	case <-ep2.C:

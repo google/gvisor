@@ -302,7 +302,9 @@ func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code uint8, p1, p2 []byt
 	copy(icmp[header.ICMPv4PayloadOffset:], p2)
 
 	// Inject packet.
-	c.linkEP.Inject(ipv4.ProtocolNumber, buf.ToVectorisedView())
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, tcpip.PacketBuffer{
+		Data: buf.ToVectorisedView(),
+	})
 }
 
 // BuildSegment builds a TCP segment based on the given Headers and payload.
@@ -350,13 +352,17 @@ func (c *Context) BuildSegment(payload []byte, h *Headers) buffer.VectorisedView
 // SendSegment sends a TCP segment that has already been built and written to a
 // buffer.VectorisedView.
 func (c *Context) SendSegment(s buffer.VectorisedView) {
-	c.linkEP.Inject(ipv4.ProtocolNumber, s)
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, tcpip.PacketBuffer{
+		Data: s,
+	})
 }
 
 // SendPacket builds and sends a TCP segment(with the provided payload & TCP
 // headers) in an IPv4 packet via the link layer endpoint.
 func (c *Context) SendPacket(payload []byte, h *Headers) {
-	c.linkEP.Inject(ipv4.ProtocolNumber, c.BuildSegment(payload, h))
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, tcpip.PacketBuffer{
+		Data: c.BuildSegment(payload, h),
+	})
 }
 
 // SendAck sends an ACK packet.
@@ -518,7 +524,9 @@ func (c *Context) SendV6Packet(payload []byte, h *Headers) {
 	t.SetChecksum(^t.CalculateChecksum(xsum))
 
 	// Inject packet.
-	c.linkEP.Inject(ipv6.ProtocolNumber, buf.ToVectorisedView())
+	c.linkEP.InjectInbound(ipv6.ProtocolNumber, tcpip.PacketBuffer{
+		Data: buf.ToVectorisedView(),
+	})
 }
 
 // CreateConnected creates a connected TCP endpoint.

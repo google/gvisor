@@ -43,10 +43,9 @@ const (
 )
 
 type packetInfo struct {
-	raddr      tcpip.LinkAddress
-	proto      tcpip.NetworkProtocolNumber
-	contents   buffer.VectorisedView
-	linkHeader buffer.View
+	raddr    tcpip.LinkAddress
+	proto    tcpip.NetworkProtocolNumber
+	contents tcpip.PacketBuffer
 }
 
 type context struct {
@@ -93,8 +92,8 @@ func (c *context) cleanup() {
 	syscall.Close(c.fds[1])
 }
 
-func (c *context) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote tcpip.LinkAddress, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView, linkHeader buffer.View) {
-	c.ch <- packetInfo{remote, protocol, vv, linkHeader}
+func (c *context) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote tcpip.LinkAddress, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) {
+	c.ch <- packetInfo{remote, protocol, pkt}
 }
 
 func TestNoEthernetProperties(t *testing.T) {
@@ -317,19 +316,21 @@ func TestDeliverPacket(t *testing.T) {
 				select {
 				case pi := <-c.ch:
 					want := packetInfo{
-						raddr:      raddr,
-						proto:      proto,
-						contents:   buffer.View(b).ToVectorisedView(),
-						linkHeader: buffer.View(hdr),
+						raddr: raddr,
+						proto: proto,
+						contents: tcpip.PacketBuffer{
+							Data:       buffer.View(b).ToVectorisedView(),
+							LinkHeader: buffer.View(hdr),
+						},
 					}
 					if !eth {
 						want.proto = header.IPv4ProtocolNumber
 						want.raddr = ""
 					}
-					// want.contents will be a single view,
-					// so make pi do the same for the
+					// want.contents.Data will be a single
+					// view, so make pi do the same for the
 					// DeepEqual check.
-					pi.contents = pi.contents.ToView().ToVectorisedView()
+					pi.contents.Data = pi.contents.Data.ToView().ToVectorisedView()
 					if !reflect.DeepEqual(want, pi) {
 						t.Fatalf("Unexpected received packet: %+v, want %+v", pi, want)
 					}

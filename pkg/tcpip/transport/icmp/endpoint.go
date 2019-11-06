@@ -718,18 +718,18 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
-func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv buffer.VectorisedView) {
+func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt tcpip.PacketBuffer) {
 	// Only accept echo replies.
 	switch e.NetProto {
 	case header.IPv4ProtocolNumber:
-		h := header.ICMPv4(vv.First())
+		h := header.ICMPv4(pkt.Data.First())
 		if h.Type() != header.ICMPv4EchoReply {
 			e.stack.Stats().DroppedPackets.Increment()
 			e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
 			return
 		}
 	case header.IPv6ProtocolNumber:
-		h := header.ICMPv6(vv.First())
+		h := header.ICMPv6(pkt.Data.First())
 		if h.Type() != header.ICMPv6EchoReply {
 			e.stack.Stats().DroppedPackets.Increment()
 			e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
@@ -757,19 +757,19 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 	wasEmpty := e.rcvBufSize == 0
 
 	// Push new packet into receive list and increment the buffer size.
-	pkt := &icmpPacket{
+	packet := &icmpPacket{
 		senderAddress: tcpip.FullAddress{
 			NIC:  r.NICID(),
 			Addr: id.RemoteAddress,
 		},
 	}
 
-	pkt.data = vv
+	packet.data = pkt.Data
 
-	e.rcvList.PushBack(pkt)
-	e.rcvBufSize += pkt.data.Size()
+	e.rcvList.PushBack(packet)
+	e.rcvBufSize += packet.data.Size()
 
-	pkt.timestamp = e.stack.NowNanoseconds()
+	packet.timestamp = e.stack.NowNanoseconds()
 
 	e.rcvMu.Unlock()
 	e.stats.PacketsReceived.Increment()
@@ -780,7 +780,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 }
 
 // HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
-func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, vv buffer.VectorisedView) {
+func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, pkt tcpip.PacketBuffer) {
 }
 
 // State implements tcpip.Endpoint.State. The ICMP endpoint currently doesn't

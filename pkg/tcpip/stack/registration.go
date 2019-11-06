@@ -64,16 +64,15 @@ type TransportEndpoint interface {
 	UniqueID() uint64
 
 	// HandlePacket is called by the stack when new packets arrive to
-	// this transport endpoint.
+	// this transport endpoint. It sets pkt.TransportHeader.
 	//
-	// HandlePacket takes ownership of vv.
-	HandlePacket(r *Route, id TransportEndpointID, vv buffer.VectorisedView)
+	// HandlePacket takes ownership of pkt.
+	HandlePacket(r *Route, id TransportEndpointID, pkt tcpip.PacketBuffer)
 
-	// HandleControlPacket is called by the stack when new control (e.g.,
+	// HandleControlPacket is called by the stack when new control (e.g.
 	// ICMP) packets arrive to this transport endpoint.
-	//
-	// HandleControlPacket takes ownership of vv.
-	HandleControlPacket(id TransportEndpointID, typ ControlType, extra uint32, vv buffer.VectorisedView)
+	// HandleControlPacket takes ownership of pkt.
+	HandleControlPacket(id TransportEndpointID, typ ControlType, extra uint32, pkt tcpip.PacketBuffer)
 
 	// Close puts the endpoint in a closed state and frees all resources
 	// associated with it. This cleanup may happen asynchronously. Wait can
@@ -99,8 +98,8 @@ type RawTransportEndpoint interface {
 	// this transport endpoint. The packet contains all data from the link
 	// layer up.
 	//
-	// HandlePacket takes ownership of packet and netHeader.
-	HandlePacket(r *Route, netHeader buffer.View, packet buffer.VectorisedView)
+	// HandlePacket takes ownership of pkt.
+	HandlePacket(r *Route, pkt tcpip.PacketBuffer)
 }
 
 // PacketEndpoint is the interface that needs to be implemented by packet
@@ -117,8 +116,8 @@ type PacketEndpoint interface {
 	// linkHeader may have a length of 0, in which case the PacketEndpoint
 	// should construct its own ethernet header for applications.
 	//
-	// HandlePacket takes ownership of packet and linkHeader.
-	HandlePacket(nicid tcpip.NICID, addr tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, packet buffer.VectorisedView, linkHeader buffer.View)
+	// HandlePacket takes ownership of pkt.
+	HandlePacket(nicid tcpip.NICID, addr tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer)
 }
 
 // TransportProtocol is the interface that needs to be implemented by transport
@@ -148,7 +147,9 @@ type TransportProtocol interface {
 	//
 	// The return value indicates whether the packet was well-formed (for
 	// stats purposes only).
-	HandleUnknownDestinationPacket(r *Route, id TransportEndpointID, netHeader buffer.View, vv buffer.VectorisedView) bool
+	//
+	// HandleUnknownDestinationPacket takes ownership of pkt.
+	HandleUnknownDestinationPacket(r *Route, id TransportEndpointID, pkt tcpip.PacketBuffer) bool
 
 	// SetOption allows enabling/disabling protocol specific features.
 	// SetOption returns an error if the option is not supported or the
@@ -166,17 +167,21 @@ type TransportProtocol interface {
 // the network layer.
 type TransportDispatcher interface {
 	// DeliverTransportPacket delivers packets to the appropriate
-	// transport protocol endpoint. It also returns the network layer
-	// header for the enpoint to inspect or pass up the stack.
+	// transport protocol endpoint.
 	//
-	// DeliverTransportPacket takes ownership of vv and netHeader.
-	DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolNumber, netHeader buffer.View, vv buffer.VectorisedView)
+	// pkt.NetworkHeader must be set before calling DeliverTransportPacket.
+	//
+	// DeliverTransportPacket takes ownership of pkt.
+	DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolNumber, pkt tcpip.PacketBuffer)
 
 	// DeliverTransportControlPacket delivers control packets to the
 	// appropriate transport protocol endpoint.
 	//
-	// DeliverTransportControlPacket takes ownership of vv.
-	DeliverTransportControlPacket(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ ControlType, extra uint32, vv buffer.VectorisedView)
+	// pkt.NetworkHeader must be set before calling
+	// DeliverTransportControlPacket.
+	//
+	// DeliverTransportControlPacket takes ownership of pkt.
+	DeliverTransportControlPacket(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ ControlType, extra uint32, pkt tcpip.PacketBuffer)
 }
 
 // PacketLooping specifies where an outbound packet should be sent.
@@ -248,10 +253,10 @@ type NetworkEndpoint interface {
 	NICID() tcpip.NICID
 
 	// HandlePacket is called by the link layer when new packets arrive to
-	// this network endpoint.
+	// this network endpoint. It sets pkt.NetworkHeader.
 	//
-	// HandlePacket takes ownership of vv.
-	HandlePacket(r *Route, vv buffer.VectorisedView)
+	// HandlePacket takes ownership of pkt.
+	HandlePacket(r *Route, pkt tcpip.PacketBuffer)
 
 	// Close is called when the endpoint is reomved from a stack.
 	Close()
@@ -294,11 +299,14 @@ type NetworkProtocol interface {
 // the data link layer.
 type NetworkDispatcher interface {
 	// DeliverNetworkPacket finds the appropriate network protocol endpoint
-	// and hands the packet over for further processing. linkHeader may have
-	// length 0 when the caller does not have ethernet data.
+	// and hands the packet over for further processing.
 	//
-	// DeliverNetworkPacket takes ownership of vv and linkHeader.
-	DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView, linkHeader buffer.View)
+	// pkt.LinkHeader may or may not be set before calling
+	// DeliverNetworkPacket. Some packets do not have link headers (e.g.
+	// packets sent via loopback), and won't have the field set.
+	//
+	// DeliverNetworkPacket takes ownership of pkt.
+	DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer)
 }
 
 // LinkEndpointCapabilities is the type associated with the capabilities
@@ -329,7 +337,9 @@ const (
 
 // LinkEndpoint is the interface implemented by data link layer protocols (e.g.,
 // ethernet, loopback, raw) and used by network layer protocols to send packets
-// out through the implementer's data link endpoint.
+// out through the implementer's data link endpoint. When a link header exists,
+// it sets each tcpip.PacketBuffer's LinkHeader field before passing it up the
+// stack.
 type LinkEndpoint interface {
 	// MTU is the maximum transmission unit for this endpoint. This is
 	// usually dictated by the backing physical network; when such a
@@ -395,7 +405,7 @@ type InjectableLinkEndpoint interface {
 	LinkEndpoint
 
 	// InjectInbound injects an inbound packet.
-	InjectInbound(protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView)
+	InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer)
 
 	// InjectOutbound writes a fully formed outbound packet directly to the
 	// link.

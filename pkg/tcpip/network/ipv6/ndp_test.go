@@ -98,7 +98,9 @@ func TestHopLimitValidation(t *testing.T) {
 			SrcAddr:       r.LocalAddress,
 			DstAddr:       r.RemoteAddress,
 		})
-		ep.HandlePacket(r, hdr.View().ToVectorisedView())
+		ep.HandlePacket(r, tcpip.PacketBuffer{
+			Data: hdr.View().ToVectorisedView(),
+		})
 	}
 
 	types := []struct {
@@ -345,7 +347,9 @@ func TestRouterAdvertValidation(t *testing.T) {
 				t.Fatalf("got rxRA = %d, want = 0", got)
 			}
 
-			e.Inject(header.IPv6ProtocolNumber, hdr.View().ToVectorisedView())
+			e.InjectInbound(header.IPv6ProtocolNumber, tcpip.PacketBuffer{
+				Data: hdr.View().ToVectorisedView(),
+			})
 
 			if test.expectedSuccess {
 				if got := invalid.Value(); got != 0 {

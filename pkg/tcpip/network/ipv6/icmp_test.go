@@ -65,7 +65,7 @@ type stubDispatcher struct {
 	stack.TransportDispatcher
 }
 
-func (*stubDispatcher) DeliverTransportPacket(*stack.Route, tcpip.TransportProtocolNumber, buffer.View, buffer.VectorisedView) {
+func (*stubDispatcher) DeliverTransportPacket(*stack.Route, tcpip.TransportProtocolNumber, tcpip.PacketBuffer) {
 }
 
 type stubLinkAddressCache struct {
@@ -147,7 +147,9 @@ func TestICMPCounts(t *testing.T) {
 			SrcAddr:       r.LocalAddress,
 			DstAddr:       r.RemoteAddress,
 		})
-		ep.HandlePacket(&r, hdr.View().ToVectorisedView())
+		ep.HandlePacket(&r, tcpip.PacketBuffer{
+			Data: hdr.View().ToVectorisedView(),
+		})
 	}
 
 	for _, typ := range types {
@@ -280,7 +282,9 @@ func routeICMPv6Packet(t *testing.T, args routeArgs, fn func(*testing.T, header.
 		views := []buffer.View{pkt.Header, pkt.Payload}
 		size := len(pkt.Header) + len(pkt.Payload)
 		vv := buffer.NewVectorisedView(size, views)
-		args.dst.InjectLinkAddr(pkt.Proto, args.dst.LinkAddress(), vv)
+		args.dst.InjectLinkAddr(pkt.Proto, args.dst.LinkAddress(), tcpip.PacketBuffer{
+			Data: vv,
+		})
 	}
 
 	if pkt.Proto != ProtocolNumber {
@@ -498,7 +502,9 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 					SrcAddr:       lladdr1,
 					DstAddr:       lladdr0,
 				})
-				e.Inject(ProtocolNumber, hdr.View().ToVectorisedView())
+				e.InjectInbound(ProtocolNumber, tcpip.PacketBuffer{
+					Data: hdr.View().ToVectorisedView(),
+				})
 			}
 
 			stats := s.Stats().ICMP.V6PacketsReceived
@@ -673,7 +679,9 @@ func TestICMPChecksumValidationWithPayload(t *testing.T) {
 					SrcAddr:       lladdr1,
 					DstAddr:       lladdr0,
 				})
-				e.Inject(ProtocolNumber, hdr.View().ToVectorisedView())
+				e.InjectInbound(ProtocolNumber, tcpip.PacketBuffer{
+					Data: hdr.View().ToVectorisedView(),
+				})
 			}
 
 			stats := s.Stats().ICMP.V6PacketsReceived
@@ -849,9 +857,9 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 					SrcAddr:       lladdr1,
 					DstAddr:       lladdr0,
 				})
-				e.Inject(ProtocolNumber,
-					buffer.NewVectorisedView(header.IPv6MinimumSize+size+payloadSize,
-						[]buffer.View{hdr.View(), payload}))
+				e.InjectInbound(ProtocolNumber, tcpip.PacketBuffer{
+					Data: buffer.NewVectorisedView(header.IPv6MinimumSize+size+payloadSize, []buffer.View{hdr.View(), payload}),
+				})
 			}
 
 			stats := s.Stats().ICMP.V6PacketsReceived
