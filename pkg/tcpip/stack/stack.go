@@ -1557,6 +1557,22 @@ func (s *Stack) SetNDPConfigurations(id tcpip.NICID, c NDPConfigurations) *tcpip
 	return nil
 }
 
+// HandleNDPRA provides a NIC with ID id a validated NDP Router Advertisement
+// message that it needs to handle.
+func (s *Stack) HandleNDPRA(id tcpip.NICID, ip tcpip.Address, ra header.NDPRouterAdvert) *tcpip.Error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	nic, ok := s.nics[id]
+	if !ok {
+		return tcpip.ErrUnknownNICID
+	}
+
+	nic.handleNDPRA(ip, ra)
+
+	return nil
+}
+
 // PortSeed returns a 32 bit value that can be used as a seed value for port
 // picking.
 //

@@ -86,7 +86,8 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 
 	// As per RFC 4861 sections 4.1 - 4.5, 6.1.1, 6.1.2, 7.1.1, 7.1.2 and
 	// 8.1, nodes MUST silently drop NDP packets where the Hop Limit field
-	// in the IPv6 header is not set to 255.
+	// in the IPv6 header is not set to 255, or the ICMPv6 Code field is not
+	// set to 0.
 	switch h.Type() {
 	case header.ICMPv6NeighborSolicit,
 		header.ICMPv6NeighborAdvert,
@@ -94,6 +95,11 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 		header.ICMPv6RouterAdvert,
 		header.ICMPv6RedirectMsg:
 		if iph.HopLimit() != header.NDPHopLimit {
+			received.Invalid.Increment()
+			return
+		}
+
+		if h.Code() != 0 {
 			received.Invalid.Increment()
 			return
 		}
@@ -309,7 +315,50 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 		received.RouterSolicit.Increment()
 
 	case header.ICMPv6RouterAdvert:
+		routerAddr := iph.SourceAddress()
+
+		//
+		// Validate the RA as per RFC 4861 section 6.1.2.
+		//
+
+		// Is the IP Source Address a link-local address?
+		if !header.IsV6LinkLocalAddress(routerAddr) {
+			// ...No, silently drop the packet.
+			received.Invalid.Increment()
+			return
+		}
+
+		p := h.NDPPayload()
+
+		// Is the NDP payload of sufficient size to hold a Router
+		// Advertisement?
+		if len(p) < header.NDPRAMinimumSize {
+			// ...No, silently drop the packet.
+			received.Invalid.Increment()
+			return
+		}
+
+		ra := header.NDPRouterAdvert(p)
+		opts := ra.Options()
+
+		// Are options valid as per the wire format?
+		if _, err := opts.Iter(true); err != nil {
+			// ...No, silently drop the packet.
+			received.Invalid.Increment()
+			return
+		}
+
+		//
+		// At this point, we have a valid Router Advertisement, as far
+		// as RFC 4861 section 6.1.2 is concerned.
+		//
+
 		received.RouterAdvert.Increment()
+
+		// Tell the NIC to handle the RA.
+		stack := r.Stack()
+		rxNICID := r.NICID()
+		stack.HandleNDPRA(rxNICID, routerAddr, ra)
 
 	case header.ICMPv6RedirectMsg:
 		received.RedirectMsg.Increment()
