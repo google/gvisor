@@ -598,8 +598,8 @@ func (e *InjectableEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 }
 
 // InjectInbound injects an inbound packet.
-func (e *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView) {
-	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, protocol, vv, nil /* linkHeader */)
+func (e *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) {
+	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, protocol, pkt)
 }
 
 // NewInjectable creates a new fd-based InjectableEndpoint.

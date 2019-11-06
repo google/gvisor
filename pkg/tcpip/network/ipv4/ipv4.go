@@ -198,7 +198,7 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, hdr buff
 	return nil
 }
 
-func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadSize int, params stack.NetworkHeaderParams) {
+func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadSize int, params stack.NetworkHeaderParams) header.IPv4 {
 	ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
 	length := uint16(hdr.UsedLength() + payloadSize)
 	id := uint32(0)
@@ -218,19 +218,24 @@ func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadS
 		DstAddr:     r.RemoteAddress,
 	})
 	ip.SetChecksum(^ip.CalculateChecksum())
+	return ip
 }
 
 // WritePacket writes a packet to the given destination address and protocol.
 func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping) *tcpip.Error {
-	e.addIPHeader(r, &hdr, payload.Size(), params)
+	ip := e.addIPHeader(r, &hdr, payload.Size(), params)
 
 	if loop&stack.PacketLoop != 0 {
 		views := make([]buffer.View, 1, 1+len(payload.Views()))
 		views[0] = hdr.View()
 		views = append(views, payload.Views()...)
-		vv := buffer.NewVectorisedView(len(views[0])+payload.Size(), views)
 		loopedR := r.MakeLoopedRoute()
-		e.HandlePacket(&loopedR, vv)
+
+		e.HandlePacket(&loopedR, tcpip.PacketBuffer{
+			Data:          buffer.NewVectorisedView(len(views[0])+payload.Size(), views),
+			NetworkHeader: buffer.View(ip),
+		})
+
 		loopedR.Release()
 	}
 	if loop&stack.PacketOut == 0 {
@@ -301,7 +306,10 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, payload buffer.Vect
 	ip.SetChecksum(^ip.CalculateChecksum())
 
 	if loop&stack.PacketLoop != 0 {
-		e.HandlePacket(r, payload)
+		e.HandlePacket(r, tcpip.PacketBuffer{
+			Data:          payload,
+			NetworkHeader: buffer.View(ip),
+		})
 	}
 	if loop&stack.PacketOut == 0 {
 		return nil
@@ -314,22 +322,23 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, payload buffer.Vect
 
 // HandlePacket is called by the link layer when new ipv4 packets arrive for
 // this endpoint.
-func (e *endpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {
-	headerView := vv.First()
+func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
+	headerView := pkt.Data.First()
 	h := header.IPv4(headerView)
-	if !h.IsValid(vv.Size()) {
+	if !h.IsValid(pkt.Data.Size()) {
 		r.Stats().IP.MalformedPacketsReceived.Increment()
 		return
 	}
+	pkt.NetworkHeader = headerView[:h.HeaderLength()]
 
 	hlen := int(h.HeaderLength())
 	tlen := int(h.TotalLength())
-	vv.TrimFront(hlen)
-	vv.CapLength(tlen - hlen)
+	pkt.Data.TrimFront(hlen)
+	pkt.Data.CapLength(tlen - hlen)
 
 	more := (h.Flags() & header.IPv4FlagMoreFragments) != 0
 	if more || h.FragmentOffset() != 0 {
-		if vv.Size() == 0 {
+		if pkt.Data.Size() == 0 {
 			// Drop the packet as it's marked as a fragment but has
 			// no payload.
 			r.Stats().IP.MalformedPacketsReceived.Increment()
@@ -337,10 +346,10 @@ func (e *endpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {
 			return
 		}
 		// The packet is a fragment, let's try to reassemble it.
-		last := h.FragmentOffset() + uint16(vv.Size()) - 1
+		last := h.FragmentOffset() + uint16(pkt.Data.Size()) - 1
 		// Drop the packet if the fragmentOffset is incorrect. i.e the
-		// combination of fragmentOffset and vv.size() causes a wrap
-		// around resulting in last being less than the offset.
+		// combination of fragmentOffset and pkt.Data.size() causes a
+		// wrap around resulting in last being less than the offset.
 		if last < h.FragmentOffset() {
 			r.Stats().IP.MalformedPacketsReceived.Increment()
 			r.Stats().IP.MalformedFragmentsReceived.Increment()
@@ -348,7 +357,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {
 		}
 		var ready bool
 		var err error
-		vv, ready, err = e.fragmentation.Process(hash.IPv4FragmentHash(h), h.FragmentOffset(), last, more, vv)
+		pkt.Data, ready, err = e.fragmentation.Process(hash.IPv4FragmentHash(h), h.FragmentOffset(), last, more, pkt.Data)
 		if err != nil {
 			r.Stats().IP.MalformedPacketsReceived.Increment()
 			r.Stats().IP.MalformedFragmentsReceived.Increment()
@@ -361,11 +370,11 @@ func (e *endpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {
 	p := h.TransportProtocol()
 	if p == header.ICMPv4ProtocolNumber {
 		headerView.CapLength(hlen)
-		e.handleICMP(r, headerView, vv)
+		e.handleICMP(r, pkt)
 		return
 	}
 	r.Stats().IP.PacketsDelivered.Increment()
-	e.dispatcher.DeliverTransportPacket(r, p, headerView, vv)
+	e.dispatcher.DeliverTransportPacket(r, p, pkt)
 }
 
 // Close cleans up resources associated with the endpoint.

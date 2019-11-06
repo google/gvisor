@@ -116,19 +116,19 @@ func NewWithFile(lower stack.LinkEndpoint, file *os.File, snapLen uint32) (stack
 // DeliverNetworkPacket implements the stack.NetworkDispatcher interface. It is
 // called by the link-layer endpoint being wrapped when a packet arrives, and
 // logs the packet before forwarding to the actual dispatcher.
-func (e *endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView, linkHeader buffer.View) {
+func (e *endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) {
 	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
-		logPacket("recv", protocol, vv.First(), nil)
+		logPacket("recv", protocol, pkt.Data.First(), nil)
 	}
 	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
-		vs := vv.Views()
-		length := vv.Size()
+		vs := pkt.Data.Views()
+		length := pkt.Data.Size()
 		if length > int(e.maxPCAPLen) {
 			length = int(e.maxPCAPLen)
 		}
 
 		buf := bytes.NewBuffer(make([]byte, 0, pcapPacketHeaderLen+length))
-		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(vv.Size()))); err != nil {
+		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(pkt.Data.Size()))); err != nil {
 			panic(err)
 		}
 		for _, v := range vs {
@@ -147,7 +147,7 @@ func (e *endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local
 			panic(err)
 		}
 	}
-	e.dispatcher.DeliverNetworkPacket(e, remote, local, protocol, vv, linkHeader)
+	e.dispatcher.DeliverNetworkPacket(e, remote, local, protocol, pkt)
 }
 
 // Attach implements the stack.LinkEndpoint interface. It saves the dispatcher
