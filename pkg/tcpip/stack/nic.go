@@ -115,8 +115,9 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, loopback
 			},
 		},
 		ndp: ndpState{
-			configs: stack.ndpConfigs,
-			dad:     make(map[tcpip.Address]dadState),
+			configs:        stack.ndpConfigs,
+			dad:            make(map[tcpip.Address]dadState),
+			defaultRouters: make(map[tcpip.Address]defaultRouterState),
 		},
 	}
 	nic.ndp.nic = nic
@@ -958,6 +959,14 @@ func (n *NIC) setNDPConfigs(c NDPConfigurations) {
 	n.mu.Lock()
 	n.ndp.configs = c
 	n.mu.Unlock()
+}
+
+// handleNDPRA handles an NDP Router Advertisement message that arrived on n.
+func (n *NIC) handleNDPRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	n.ndp.handleRA(ip, ra)
 }
 
 type networkEndpointKind int32

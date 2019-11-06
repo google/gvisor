@@ -38,6 +38,19 @@ const (
 	// Default = 1s (from RFC 4861 section 10).
 	defaultRetransmitTimer = time.Second
 
+	// defaultHandleRAs is the default configuration for whether or not to
+	// handle incoming Router Advertisements as a host.
+	//
+	// Default = true.
+	defaultHandleRAs = true
+
+	// defaultDiscoverDefaultRouters is the default configuration for
+	// whether or not to discover default routers from incoming Router
+	// Advertisements as a host.
+	//
+	// Default = true.
+	defaultDiscoverDefaultRouters = true
+
 	// minimumRetransmitTimer is the minimum amount of time to wait between
 	// sending NDP Neighbor solicitation messages. Note, RFC 4861 does
 	// not impose a minimum Retransmit Timer, but we do here to make sure
@@ -49,6 +62,13 @@ const (
 	//
 	// Min = 1ms.
 	minimumRetransmitTimer = time.Millisecond
+
+	// MaxDiscoveredDefaultRouters is the maximum number of discovered
+	// default routers. The stack should stop discovering new routers after
+	// discovering MaxDiscoveredDefaultRouters routers.
+	//
+	// Max = 10.
+	MaxDiscoveredDefaultRouters = 10
 )
 
 // NDPDispatcher is the interface integrators of netstack must implement to
@@ -80,6 +100,15 @@ type NDPConfigurations struct {
 	//
 	// Must be greater than 0.5s.
 	RetransmitTimer time.Duration
+
+	// HandleRAs determines whether or not Router Advertisements will be
+	// processed.
+	HandleRAs bool
+
+	// DiscoverDefaultRouters determines whether or not default routers will
+	// be discovered from Router Advertisements. This configuration is
+	// ignored if HandleRAs is false.
+	DiscoverDefaultRouters bool
 }
 
 // DefaultNDPConfigurations returns an NDPConfigurations populated with
@@ -88,6 +117,8 @@ func DefaultNDPConfigurations() NDPConfigurations {
 	return NDPConfigurations{
 		DupAddrDetectTransmits: defaultDupAddrDetectTransmits,
 		RetransmitTimer:        defaultRetransmitTimer,
+		HandleRAs:              defaultHandleRAs,
+		DiscoverDefaultRouters: defaultDiscoverDefaultRouters,
 	}
 }
 
@@ -112,6 +143,9 @@ type ndpState struct {
 
 	// The DAD state to send the next NS message, or resolve the address.
 	dad map[tcpip.Address]dadState
+
+	// The default routers discovered through Router Advertisements.
+	defaultRouters map[tcpip.Address]defaultRouterState
 }
 
 // dadState holds the Duplicate Address Detection timer and channel to signal
@@ -125,6 +159,12 @@ type dadState struct {
 	// Must only be read from or written to while protected by the lock of
 	// the NIC this dadState is associated with.
 	done *bool
+}
+
+// defaultRouterState holds data associated with a default router discovered by
+// a Router Advertisement.
+type defaultRouterState struct {
+	invalidationTimer *time.Timer
 }
 
 // startDuplicateAddressDetection performs Duplicate Address Detection.
@@ -318,4 +358,19 @@ func (ndp *ndpState) stopDuplicateAddressDetection(addr tcpip.Address) {
 	if ndp.nic.stack.ndpDisp != nil {
 		go ndp.nic.stack.ndpDisp.OnDuplicateAddressDetectionStatus(ndp.nic.ID(), addr, false, nil)
 	}
+}
+
+// handleRA handles a Router Advertisement message that arrived on the NIC
+// this ndp is for.
+//
+// The NIC that ndp belongs to MUST be locked.
+func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
+	// Is the NIC configured to handle RAs at all?
+	if !ndp.configs.HandleRAs {
+		return
+	}
+
+	// TODO(b/140882146): Do Router Discovery.
+	// TODO(b/140948104): Do Prefix Discovery.
+	// TODO(b/141556115): Do Parameter Discovery.
 }
