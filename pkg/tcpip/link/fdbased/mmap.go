@@ -190,6 +190,9 @@ func (d *packetMMapDispatcher) dispatch() (bool, *tcpip.Error) {
 	}
 
 	pkt = pkt[d.e.hdrSize:]
-	d.e.dispatcher.DeliverNetworkPacket(d.e, remote, local, p, buffer.NewVectorisedView(len(pkt), []buffer.View{buffer.View(pkt)}), buffer.View(eth))
+	d.e.dispatcher.DeliverNetworkPacket(d.e, remote, local, p, tcpip.PacketBuffer{
+		Data:       buffer.View(pkt).ToVectorisedView(),
+		LinkHeader: buffer.View(eth),
+	})
 	return true, nil
 }

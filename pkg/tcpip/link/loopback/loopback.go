@@ -80,12 +80,13 @@ func (e *endpoint) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prependa
 	views := make([]buffer.View, 1, 1+len(payload.Views()))
 	views[0] = hdr.View()
 	views = append(views, payload.Views()...)
-	vv := buffer.NewVectorisedView(len(views[0])+payload.Size(), views)
 
 	// Because we're immediately turning around and writing the packet back to the
 	// rx path, we intentionally don't preserve the remote and local link
 	// addresses from the stack.Route we're passed.
-	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, protocol, vv, nil /* linkHeader */)
+	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, protocol, tcpip.PacketBuffer{
+		Data: buffer.NewVectorisedView(len(views[0])+payload.Size(), views),
+	})
 
 	return nil
 }
@@ -105,7 +106,10 @@ func (e *endpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
 	// There should be an ethernet header at the beginning of packet.
 	linkHeader := header.Ethernet(packet.First()[:header.EthernetMinimumSize])
 	packet.TrimFront(len(linkHeader))
-	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, linkHeader.Type(), packet, buffer.View(linkHeader))
+	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, linkHeader.Type(), tcpip.PacketBuffer{
+		Data:       packet,
+		LinkHeader: buffer.View(linkHeader),
+	})
 
 	return nil
 }

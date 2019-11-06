@@ -555,7 +555,7 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 }
 
 // HandlePacket implements stack.RawTransportEndpoint.HandlePacket.
-func (e *endpoint) HandlePacket(route *stack.Route, netHeader buffer.View, vv buffer.VectorisedView) {
+func (e *endpoint) HandlePacket(route *stack.Route, pkt tcpip.PacketBuffer) {
 	e.rcvMu.Lock()
 
 	// Drop the packet if our buffer is currently full.
@@ -596,20 +596,21 @@ func (e *endpoint) HandlePacket(route *stack.Route, netHeader buffer.View, vv bu
 	wasEmpty := e.rcvBufSize == 0
 
 	// Push new packet into receive list and increment the buffer size.
-	pkt := &rawPacket{
+	packet := &rawPacket{
 		senderAddr: tcpip.FullAddress{
 			NIC:  route.NICID(),
 			Addr: route.RemoteAddress,
 		},
 	}
 
-	combinedVV := netHeader.ToVectorisedView()
-	combinedVV.Append(vv)
-	pkt.data = combinedVV
-	pkt.timestampNS = e.stack.NowNanoseconds()
+	networkHeader := append(buffer.View(nil), pkt.NetworkHeader...)
+	combinedVV := networkHeader.ToVectorisedView()
+	combinedVV.Append(pkt.Data)
+	packet.data = combinedVV
+	packet.timestampNS = e.stack.NowNanoseconds()
 
-	e.rcvList.PushBack(pkt)
-	e.rcvBufSize += pkt.data.Size()
+	e.rcvList.PushBack(packet)
+	e.rcvBufSize += packet.data.Size()
 
 	e.rcvMu.Unlock()
 	e.stats.PacketsReceived.Increment()

@@ -6,6 +6,22 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *PacketBuffer) save(m state.Map) {
+	x.beforeSave()
+	m.Save("Data", &x.Data)
+	m.Save("LinkHeader", &x.LinkHeader)
+	m.Save("NetworkHeader", &x.NetworkHeader)
+	m.Save("TransportHeader", &x.TransportHeader)
+}
+
+func (x *PacketBuffer) afterLoad() {}
+func (x *PacketBuffer) load(m state.Map) {
+	m.Load("Data", &x.Data)
+	m.Load("LinkHeader", &x.LinkHeader)
+	m.Load("NetworkHeader", &x.NetworkHeader)
+	m.Load("TransportHeader", &x.TransportHeader)
+}
+
 func (x *FullAddress) beforeSave() {}
 func (x *FullAddress) save(m state.Map) {
 	x.beforeSave()
@@ -39,6 +55,7 @@ func (x *ControlMessages) load(m state.Map) {
 }
 
 func init() {
+	state.Register("tcpip.PacketBuffer", (*PacketBuffer)(nil), state.Fns{Save: (*PacketBuffer).save, Load: (*PacketBuffer).load})
 	state.Register("tcpip.FullAddress", (*FullAddress)(nil), state.Fns{Save: (*FullAddress).save, Load: (*FullAddress).load})
 	state.Register("tcpip.ControlMessages", (*ControlMessages)(nil), state.Fns{Save: (*ControlMessages).save, Load: (*ControlMessages).load})
 }
