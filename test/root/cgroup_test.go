@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/dockerutil"
@@ -53,6 +54,59 @@ func verifyPid(pid int, path string) error {
 		return scanner.Err()
 	}
 	return fmt.Errorf("got: %s, want: %d", gots, pid)
+}
+
+// TestCgroup sets cgroup options and checks that cgroup was properly configured.
+func TestMemCGroup(t *testing.T) {
+	allocMemSize := 128 << 20
+	if err := dockerutil.Pull("python"); err != nil {
+		t.Fatal("docker pull failed:", err)
+	}
+	d := dockerutil.MakeDocker("memusage-test")
+
+	// Start a new container and allocate the specified about of memory.
+	args := []string{
+		"--memory=256MB",
+		"python",
+		"python",
+		"-c",
+		fmt.Sprintf("import time; s = 'a' * %d; time.sleep(100)", allocMemSize),
+	}
+	if err := d.Run(args...); err != nil {
+		t.Fatal("docker create failed:", err)
+	}
+	defer d.CleanUp()
+
+	gid, err := d.ID()
+	if err != nil {
+		t.Fatalf("Docker.ID() failed: %v", err)
+	}
+	t.Logf("cgroup ID: %s", gid)
+
+	path := filepath.Join("/sys/fs/cgroup/memory/docker", gid, "memory.usage_in_bytes")
+	memUsage := 0
+
+	// Wait when the container will allocate memory.
+	start := time.Now()
+	for time.Now().Sub(start) < 30*time.Second {
+		outRaw, err := ioutil.ReadFile(path)
+		if err != nil {
+			t.Fatalf("failed to read %q: %v", path, err)
+		}
+		out := strings.TrimSpace(string(outRaw))
+		memUsage, err = strconv.Atoi(out)
+		if err != nil {
+			t.Fatalf("Atoi(%v): %v", out, err)
+		}
+
+		if memUsage > allocMemSize {
+			return
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	t.Fatalf("%vMB is less than %vMB: %v", memUsage>>20, allocMemSize>>20)
 }
 
 // TestCgroup sets cgroup options and checks that cgroup was properly configured.
