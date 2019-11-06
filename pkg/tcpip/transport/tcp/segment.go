@@ -99,8 +99,14 @@ func (s *segment) clone() *segment {
 	return t
 }
 
-func (s *segment) flagIsSet(flag uint8) bool {
-	return (s.flags & flag) != 0
+// flagIsSet checks if at least one flag in flags is set in s.flags.
+func (s *segment) flagIsSet(flags uint8) bool {
+	return s.flags&flags != 0
+}
+
+// flagsAreSet checks if all flags in flags are set in s.flags.
+func (s *segment) flagsAreSet(flags uint8) bool {
+	return s.flags&flags == flags
 }
 
 func (s *segment) decRef() {

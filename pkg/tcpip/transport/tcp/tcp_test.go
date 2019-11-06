@@ -598,6 +598,62 @@ func TestUserSuppliedMSSOnConnectV6(t *testing.T) {
 	}
 }
 
+func TestSendRstOnListenerRxSynAckV4(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	c.Create(-1)
+
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		t.Fatal("Bind failed:", err)
+	}
+
+	if err := c.EP.Listen(10); err != nil {
+		t.Fatal("Listen failed:", err)
+	}
+
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagSyn | header.TCPFlagAck,
+		SeqNum:  100,
+		AckNum:  200,
+	})
+
+	checker.IPv4(t, c.GetPacket(), checker.TCP(
+		checker.DstPort(context.TestPort),
+		checker.TCPFlags(header.TCPFlagRst),
+		checker.SeqNum(200)))
+}
+
+func TestSendRstOnListenerRxSynAckV6(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	c.CreateV6Endpoint(true)
+
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		t.Fatal("Bind failed:", err)
+	}
+
+	if err := c.EP.Listen(10); err != nil {
+		t.Fatal("Listen failed:", err)
+	}
+
+	c.SendV6Packet(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagSyn | header.TCPFlagAck,
+		SeqNum:  100,
+		AckNum:  200,
+	})
+
+	checker.IPv6(t, c.GetV6Packet(), checker.TCP(
+		checker.DstPort(context.TestPort),
+		checker.TCPFlags(header.TCPFlagRst),
+		checker.SeqNum(200)))
+}
+
 func TestTOSV4(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()

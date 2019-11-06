@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -400,6 +401,14 @@ func (e *endpoint) acceptQueueIsFull() bool {
 // handleListenSegment is called when a listening endpoint receives a segment
 // and needs to handle it.
 func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
+	if s.flagsAreSet(header.TCPFlagSyn | header.TCPFlagAck) {
+		// RFC 793 section 3.4 page 35 (figure 12) outlines that a RST
+		// must be sent in response to a SYN-ACK while in the listen
+		// state to prevent completing a handshake from an old SYN.
+		e.sendTCP(&s.route, s.id, buffer.VectorisedView{}, e.ttl, e.sendTOS, header.TCPFlagRst, s.ackNumber, 0, 0, nil, nil)
+		return
+	}
+
 	// TODO(b/143300739): Use the userMSS of the listening socket
 	// for accepted sockets.
 
