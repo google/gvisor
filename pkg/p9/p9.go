@@ -32,17 +32,21 @@ import (
 type OpenFlags uint32
 
 const (
-	// ReadOnly is a Topen and Tcreate flag indicating read-only mode.
+	// ReadOnly is a Tlopen and Tlcreate flag indicating read-only mode.
 	ReadOnly OpenFlags = 0
 
-	// WriteOnly is a Topen and Tcreate flag indicating write-only mode.
+	// WriteOnly is a Tlopen and Tlcreate flag indicating write-only mode.
 	WriteOnly OpenFlags = 1
 
-	// ReadWrite is a Topen flag indicates read-write mode.
+	// ReadWrite is a Tlopen flag indicates read-write mode.
 	ReadWrite OpenFlags = 2
 
 	// OpenFlagsModeMask is a mask of valid OpenFlags mode bits.
 	OpenFlagsModeMask OpenFlags = 3
+
+	// OpenTruncate is a Tlopen flag indicating that the opened file should be
+	// truncated.
+	OpenTruncate OpenFlags = 01000
 
 	// OpenFlagsIgnoreMask is a list of OpenFlags mode bits that are ignored for Tlopen.
 	// Note that syscall.O_LARGEFILE is set to zero, use value from Linux fcntl.h.
@@ -71,25 +75,32 @@ const (
 
 // OSFlags converts a p9.OpenFlags to an int compatible with open(2).
 func (o OpenFlags) OSFlags() int {
-	return int(o & OpenFlagsModeMask)
+	// "flags contains Linux open(2) flags bits" - 9P2000.L
+	return int(o)
 }
 
 // String implements fmt.Stringer.
 func (o OpenFlags) String() string {
-	switch o {
+	var buf strings.Builder
+	switch mode := o & OpenFlagsModeMask; mode {
 	case ReadOnly:
-		return "ReadOnly"
+		buf.WriteString("ReadOnly")
 	case WriteOnly:
-		return "WriteOnly"
+		buf.WriteString("WriteOnly")
 	case ReadWrite:
-		return "ReadWrite"
-	case OpenFlagsModeMask:
-		return "OpenFlagsModeMask"
-	case OpenFlagsIgnoreMask:
-		return "OpenFlagsIgnoreMask"
+		buf.WriteString("ReadWrite")
 	default:
-		return "UNDEFINED"
+		fmt.Fprintf(&buf, "%#o", mode)
 	}
+	otherFlags := o &^ OpenFlagsModeMask
+	if otherFlags&OpenTruncate != 0 {
+		buf.WriteString("|OpenTruncate")
+		otherFlags &^= OpenTruncate
+	}
+	if otherFlags != 0 {
+		fmt.Fprintf(&buf, "|%#o", otherFlags)
+	}
+	return buf.String()
 }
 
 // Tag is a message tag.
