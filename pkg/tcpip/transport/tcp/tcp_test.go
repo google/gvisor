@@ -4848,3 +4848,48 @@ func TestReceiveBufferAutoTuning(t *testing.T) {
 		payloadSize *= 2
 	}
 }
+
+func TestDelayEnabled(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+	checkDelayOption(t, c, false, 0) // Delay is disabled by default.
+
+	for _, v := range []struct {
+		delayEnabled    tcp.DelayEnabled
+		wantDelayOption int
+	}{
+		{delayEnabled: false, wantDelayOption: 0},
+		{delayEnabled: true, wantDelayOption: 1},
+	} {
+		c := context.New(t, defaultMTU)
+		defer c.Cleanup()
+		if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, v.delayEnabled); err != nil {
+			t.Fatalf("SetTransportProtocolOption(tcp, %t) failed: %v", v.delayEnabled, err)
+		}
+		checkDelayOption(t, c, v.delayEnabled, v.wantDelayOption)
+	}
+}
+
+func checkDelayOption(t *testing.T, c *context.Context, wantDelayEnabled tcp.DelayEnabled, wantDelayOption int) {
+	t.Helper()
+
+	var gotDelayEnabled tcp.DelayEnabled
+	if err := c.Stack().TransportProtocolOption(tcp.ProtocolNumber, &gotDelayEnabled); err != nil {
+		t.Fatalf("TransportProtocolOption(tcp, &gotDelayEnabled) failed: %v", err)
+	}
+	if gotDelayEnabled != wantDelayEnabled {
+		t.Errorf("TransportProtocolOption(tcp, &gotDelayEnabled) got %t, want %t", gotDelayEnabled, wantDelayEnabled)
+	}
+
+	ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, new(waiter.Queue))
+	if err != nil {
+		t.Fatalf("NewEndPoint(tcp, ipv4, new(waiter.Queue)) failed: %v", err)
+	}
+	gotDelayOption, err := ep.GetSockOptInt(tcpip.DelayOption)
+	if err != nil {
+		t.Fatalf("ep.GetSockOptInt(tcpip.DelayOption) failed: %v", err)
+	}
+	if gotDelayOption != wantDelayOption {
+		t.Errorf("ep.GetSockOptInt(tcpip.DelayOption) got: %d, want: %d", gotDelayOption, wantDelayOption)
+	}
+}

@@ -60,6 +60,9 @@ const (
 // protocol. See: https://tools.ietf.org/html/rfc2018.
 type SACKEnabled bool
 
+// DelayEnabled option can be used to enable Nagle's algorithm in the TCP protocol.
+type DelayEnabled bool
+
 // SendBufferSizeOption allows the default, min and max send buffer sizes for
 // TCP endpoints to be queried or configured.
 type SendBufferSizeOption struct {
@@ -84,6 +87,7 @@ const (
 type protocol struct {
 	mu                         sync.Mutex
 	sackEnabled                bool
+	delayEnabled               bool
 	sendBufferSize             SendBufferSizeOption
 	recvBufferSize             ReceiveBufferSizeOption
 	congestionControl          string
@@ -97,7 +101,7 @@ func (*protocol) Number() tcpip.TransportProtocolNumber {
 }
 
 // NewEndpoint creates a new tcp endpoint.
-func (*protocol) NewEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+func (p *protocol) NewEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
 	return newEndpoint(stack, netProto, waiterQueue), nil
 }
 
@@ -165,6 +169,12 @@ func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 		p.mu.Unlock()
 		return nil
 
+	case DelayEnabled:
+		p.mu.Lock()
+		p.delayEnabled = bool(v)
+		p.mu.Unlock()
+		return nil
+
 	case SendBufferSizeOption:
 		if v.Min <= 0 || v.Default < v.Min || v.Default > v.Max {
 			return tcpip.ErrInvalidOptionValue
@@ -213,6 +223,12 @@ func (p *protocol) Option(option interface{}) *tcpip.Error {
 	case *SACKEnabled:
 		p.mu.Lock()
 		*v = SACKEnabled(p.sackEnabled)
+		p.mu.Unlock()
+		return nil
+
+	case *DelayEnabled:
+		p.mu.Lock()
+		*v = DelayEnabled(p.delayEnabled)
 		p.mu.Unlock()
 		return nil
 
