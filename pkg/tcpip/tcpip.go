@@ -231,6 +231,13 @@ func (s *Subnet) Broadcast() Address {
 	return Address(addr)
 }
 
+// Equal returns true if s equals o.
+//
+// Needed to use cmp.Equal on Subnet as its fields are unexported.
+func (s Subnet) Equal(o Subnet) bool {
+	return s == o
+}
+
 // NICID is a number that uniquely identifies a NIC.
 type NICID int32
 
