@@ -58,7 +58,7 @@ const (
 // use the first three: destination address, source address, and transport
 // protocol. They're all one byte fields to simplify parsing.
 type fakeNetworkEndpoint struct {
-	nicid      tcpip.NICID
+	nicID      tcpip.NICID
 	id         stack.NetworkEndpointID
 	prefixLen  int
 	proto      *fakeNetworkProtocol
@@ -71,7 +71,7 @@ func (f *fakeNetworkEndpoint) MTU() uint32 {
 }
 
 func (f *fakeNetworkEndpoint) NICID() tcpip.NICID {
-	return f.nicid
+	return f.nicID
 }
 
 func (f *fakeNetworkEndpoint) PrefixLen() int {
@@ -199,9 +199,9 @@ func (*fakeNetworkProtocol) ParseAddresses(v buffer.View) (src, dst tcpip.Addres
 	return tcpip.Address(v[1:2]), tcpip.Address(v[0:1])
 }
 
-func (f *fakeNetworkProtocol) NewEndpoint(nicid tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, ep stack.LinkEndpoint) (stack.NetworkEndpoint, *tcpip.Error) {
+func (f *fakeNetworkProtocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, ep stack.LinkEndpoint) (stack.NetworkEndpoint, *tcpip.Error) {
 	return &fakeNetworkEndpoint{
-		nicid:      nicid,
+		nicID:      nicID,
 		id:         stack.NetworkEndpointID{LocalAddress: addrWithPrefix.Address},
 		prefixLen:  addrWithPrefix.PrefixLen,
 		proto:      f,
@@ -682,11 +682,11 @@ func TestAddressRemovalWithRouteHeld(t *testing.T) {
 	}
 }
 
-func verifyAddress(t *testing.T, s *stack.Stack, nicid tcpip.NICID, addr tcpip.Address) {
+func verifyAddress(t *testing.T, s *stack.Stack, nicID tcpip.NICID, addr tcpip.Address) {
 	t.Helper()
-	info, ok := s.NICInfo()[nicid]
+	info, ok := s.NICInfo()[nicID]
 	if !ok {
-		t.Fatalf("NICInfo() failed to find nicid=%d", nicid)
+		t.Fatalf("NICInfo() failed to find nicID=%d", nicID)
 	}
 	if len(addr) == 0 {
 		// No address given, verify that there is no address assigned to the NIC.
@@ -719,7 +719,7 @@ func TestEndpointExpiration(t *testing.T) {
 		localAddrByte byte          = 0x01
 		remoteAddr    tcpip.Address = "\x03"
 		noAddr        tcpip.Address = ""
-		nicid         tcpip.NICID   = 1
+		nicID         tcpip.NICID   = 1
 	)
 	localAddr := tcpip.Address([]byte{localAddrByte})
 
@@ -731,7 +731,7 @@ func TestEndpointExpiration(t *testing.T) {
 				})
 
 				ep := channel.New(10, defaultMTU, "")
-				if err := s.CreateNIC(nicid, ep); err != nil {
+				if err := s.CreateNIC(nicID, ep); err != nil {
 					t.Fatal("CreateNIC failed:", err)
 				}
 
@@ -748,13 +748,13 @@ func TestEndpointExpiration(t *testing.T) {
 				buf[0] = localAddrByte
 
 				if promiscuous {
-					if err := s.SetPromiscuousMode(nicid, true); err != nil {
+					if err := s.SetPromiscuousMode(nicID, true); err != nil {
 						t.Fatal("SetPromiscuousMode failed:", err)
 					}
 				}
 
 				if spoofing {
-					if err := s.SetSpoofing(nicid, true); err != nil {
+					if err := s.SetSpoofing(nicID, true); err != nil {
 						t.Fatal("SetSpoofing failed:", err)
 					}
 				}
@@ -762,7 +762,7 @@ func TestEndpointExpiration(t *testing.T) {
 				// 1. No Address yet, send should only work for spoofing, receive for
 				// promiscuous mode.
 				//-----------------------
-				verifyAddress(t, s, nicid, noAddr)
+				verifyAddress(t, s, nicID, noAddr)
 				if promiscuous {
 					testRecv(t, fakeNet, localAddrByte, ep, buf)
 				} else {
@@ -777,20 +777,20 @@ func TestEndpointExpiration(t *testing.T) {
 
 				// 2. Add Address, everything should work.
 				//-----------------------
-				if err := s.AddAddress(nicid, fakeNetNumber, localAddr); err != nil {
+				if err := s.AddAddress(nicID, fakeNetNumber, localAddr); err != nil {
 					t.Fatal("AddAddress failed:", err)
 				}
-				verifyAddress(t, s, nicid, localAddr)
+				verifyAddress(t, s, nicID, localAddr)
 				testRecv(t, fakeNet, localAddrByte, ep, buf)
 				testSendTo(t, s, remoteAddr, ep, nil)
 
 				// 3. Remove the address, send should only work for spoofing, receive
 				// for promiscuous mode.
 				//-----------------------
-				if err := s.RemoveAddress(nicid, localAddr); err != nil {
+				if err := s.RemoveAddress(nicID, localAddr); err != nil {
 					t.Fatal("RemoveAddress failed:", err)
 				}
-				verifyAddress(t, s, nicid, noAddr)
+				verifyAddress(t, s, nicID, noAddr)
 				if promiscuous {
 					testRecv(t, fakeNet, localAddrByte, ep, buf)
 				} else {
@@ -805,10 +805,10 @@ func TestEndpointExpiration(t *testing.T) {
 
 				// 4. Add Address back, everything should work again.
 				//-----------------------
-				if err := s.AddAddress(nicid, fakeNetNumber, localAddr); err != nil {
+				if err := s.AddAddress(nicID, fakeNetNumber, localAddr); err != nil {
 					t.Fatal("AddAddress failed:", err)
 				}
-				verifyAddress(t, s, nicid, localAddr)
+				verifyAddress(t, s, nicID, localAddr)
 				testRecv(t, fakeNet, localAddrByte, ep, buf)
 				testSendTo(t, s, remoteAddr, ep, nil)
 
@@ -826,10 +826,10 @@ func TestEndpointExpiration(t *testing.T) {
 				// 6. Remove the address. Send should only work for spoofing, receive
 				// for promiscuous mode.
 				//-----------------------
-				if err := s.RemoveAddress(nicid, localAddr); err != nil {
+				if err := s.RemoveAddress(nicID, localAddr); err != nil {
 					t.Fatal("RemoveAddress failed:", err)
 				}
-				verifyAddress(t, s, nicid, noAddr)
+				verifyAddress(t, s, nicID, noAddr)
 				if promiscuous {
 					testRecv(t, fakeNet, localAddrByte, ep, buf)
 				} else {
@@ -845,10 +845,10 @@ func TestEndpointExpiration(t *testing.T) {
 
 				// 7. Add Address back, everything should work again.
 				//-----------------------
-				if err := s.AddAddress(nicid, fakeNetNumber, localAddr); err != nil {
+				if err := s.AddAddress(nicID, fakeNetNumber, localAddr); err != nil {
 					t.Fatal("AddAddress failed:", err)
 				}
-				verifyAddress(t, s, nicid, localAddr)
+				verifyAddress(t, s, nicID, localAddr)
 				testRecv(t, fakeNet, localAddrByte, ep, buf)
 				testSendTo(t, s, remoteAddr, ep, nil)
 				testSend(t, r, ep, nil)
@@ -856,17 +856,17 @@ func TestEndpointExpiration(t *testing.T) {
 				// 8. Remove the route, sendTo/recv should still work.
 				//-----------------------
 				r.Release()
-				verifyAddress(t, s, nicid, localAddr)
+				verifyAddress(t, s, nicID, localAddr)
 				testRecv(t, fakeNet, localAddrByte, ep, buf)
 				testSendTo(t, s, remoteAddr, ep, nil)
 
 				// 9. Remove the address. Send should only work for spoofing, receive
 				// for promiscuous mode.
 				//-----------------------
-				if err := s.RemoveAddress(nicid, localAddr); err != nil {
+				if err := s.RemoveAddress(nicID, localAddr); err != nil {
 					t.Fatal("RemoveAddress failed:", err)
 				}
-				verifyAddress(t, s, nicid, noAddr)
+				verifyAddress(t, s, nicID, noAddr)
 				if promiscuous {
 					testRecv(t, fakeNet, localAddrByte, ep, buf)
 				} else {
@@ -1659,12 +1659,12 @@ func verifyAddresses(t *testing.T, expectedAddresses, gotAddresses []tcpip.Proto
 }
 
 func TestAddAddress(t *testing.T) {
-	const nicid = 1
+	const nicID = 1
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
 	ep := channel.New(10, defaultMTU, "")
-	if err := s.CreateNIC(nicid, ep); err != nil {
+	if err := s.CreateNIC(nicID, ep); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
 
@@ -1672,7 +1672,7 @@ func TestAddAddress(t *testing.T) {
 	expectedAddresses := make([]tcpip.ProtocolAddress, 0, 2)
 	for _, addrLen := range []int{4, 16} {
 		address := addrGen.next(addrLen)
-		if err := s.AddAddress(nicid, fakeNetNumber, address); err != nil {
+		if err := s.AddAddress(nicID, fakeNetNumber, address); err != nil {
 			t.Fatalf("AddAddress(address=%s) failed: %s", address, err)
 		}
 		expectedAddresses = append(expectedAddresses, tcpip.ProtocolAddress{
@@ -1681,17 +1681,17 @@ func TestAddAddress(t *testing.T) {
 		})
 	}
 
-	gotAddresses := s.AllAddresses()[nicid]
+	gotAddresses := s.AllAddresses()[nicID]
 	verifyAddresses(t, expectedAddresses, gotAddresses)
 }
 
 func TestAddProtocolAddress(t *testing.T) {
-	const nicid = 1
+	const nicID = 1
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
 	ep := channel.New(10, defaultMTU, "")
-	if err := s.CreateNIC(nicid, ep); err != nil {
+	if err := s.CreateNIC(nicID, ep); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
 
@@ -1708,24 +1708,24 @@ func TestAddProtocolAddress(t *testing.T) {
 					PrefixLen: prefixLen,
 				},
 			}
-			if err := s.AddProtocolAddress(nicid, protocolAddress); err != nil {
+			if err := s.AddProtocolAddress(nicID, protocolAddress); err != nil {
 				t.Errorf("AddProtocolAddress(%+v) failed: %s", protocolAddress, err)
 			}
 			expectedAddresses = append(expectedAddresses, protocolAddress)
 		}
 	}
 
-	gotAddresses := s.AllAddresses()[nicid]
+	gotAddresses := s.AllAddresses()[nicID]
 	verifyAddresses(t, expectedAddresses, gotAddresses)
 }
 
 func TestAddAddressWithOptions(t *testing.T) {
-	const nicid = 1
+	const nicID = 1
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
 	ep := channel.New(10, defaultMTU, "")
-	if err := s.CreateNIC(nicid, ep); err != nil {
+	if err := s.CreateNIC(nicID, ep); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
 
@@ -1736,7 +1736,7 @@ func TestAddAddressWithOptions(t *testing.T) {
 	for _, addrLen := range addrLenRange {
 		for _, behavior := range behaviorRange {
 			address := addrGen.next(addrLen)
-			if err := s.AddAddressWithOptions(nicid, fakeNetNumber, address, behavior); err != nil {
+			if err := s.AddAddressWithOptions(nicID, fakeNetNumber, address, behavior); err != nil {
 				t.Fatalf("AddAddressWithOptions(address=%s, behavior=%d) failed: %s", address, behavior, err)
 			}
 			expectedAddresses = append(expectedAddresses, tcpip.ProtocolAddress{
@@ -1746,17 +1746,17 @@ func TestAddAddressWithOptions(t *testing.T) {
 		}
 	}
 
-	gotAddresses := s.AllAddresses()[nicid]
+	gotAddresses := s.AllAddresses()[nicID]
 	verifyAddresses(t, expectedAddresses, gotAddresses)
 }
 
 func TestAddProtocolAddressWithOptions(t *testing.T) {
-	const nicid = 1
+	const nicID = 1
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
 	ep := channel.New(10, defaultMTU, "")
-	if err := s.CreateNIC(nicid, ep); err != nil {
+	if err := s.CreateNIC(nicID, ep); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
 
@@ -1775,7 +1775,7 @@ func TestAddProtocolAddressWithOptions(t *testing.T) {
 						PrefixLen: prefixLen,
 					},
 				}
-				if err := s.AddProtocolAddressWithOptions(nicid, protocolAddress, behavior); err != nil {
+				if err := s.AddProtocolAddressWithOptions(nicID, protocolAddress, behavior); err != nil {
 					t.Fatalf("AddProtocolAddressWithOptions(%+v, %d) failed: %s", protocolAddress, behavior, err)
 				}
 				expectedAddresses = append(expectedAddresses, protocolAddress)
@@ -1783,7 +1783,7 @@ func TestAddProtocolAddressWithOptions(t *testing.T) {
 		}
 	}
 
-	gotAddresses := s.AllAddresses()[nicid]
+	gotAddresses := s.AllAddresses()[nicID]
 	verifyAddresses(t, expectedAddresses, gotAddresses)
 }
 
@@ -2030,8 +2030,8 @@ func TestNICAutoGenAddrDoesDAD(t *testing.T) {
 		if e.err != nil {
 			t.Fatal("got DAD error: ", e.err)
 		}
-		if e.nicid != 1 {
-			t.Fatalf("got DAD event w/ nicid = %d, want = 1", e.nicid)
+		if e.nicID != 1 {
+			t.Fatalf("got DAD event w/ nicID = %d, want = 1", e.nicID)
 		}
 		if e.addr != linkLocalAddr {
 			t.Fatalf("got DAD event w/ addr = %s, want = %s", addr, linkLocalAddr)

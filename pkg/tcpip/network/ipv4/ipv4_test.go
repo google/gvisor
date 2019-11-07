@@ -451,7 +451,7 @@ func TestInvalidFragments(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			const nicid tcpip.NICID = 42
+			const nicID tcpip.NICID = 42
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocol{
 					ipv4.NewProtocol(),
@@ -461,7 +461,7 @@ func TestInvalidFragments(t *testing.T) {
 			var linkAddr = tcpip.LinkAddress([]byte{0x30, 0x30, 0x30, 0x30, 0x30, 0x30})
 			var remoteLinkAddr = tcpip.LinkAddress([]byte{0x30, 0x30, 0x30, 0x30, 0x30, 0x31})
 			ep := channel.New(10, 1500, linkAddr)
-			s.CreateNIC(nicid, sniffer.New(ep))
+			s.CreateNIC(nicID, sniffer.New(ep))
 
 			for _, pkt := range tc.packets {
 				ep.InjectLinkAddr(header.IPv4ProtocolNumber, remoteLinkAddr, tcpip.PacketBuffer{

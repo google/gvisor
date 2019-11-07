@@ -78,7 +78,7 @@ const (
 // receive and handle NDP related events.
 type NDPDispatcher interface {
 	// OnDuplicateAddressDetectionStatus will be called when the DAD process
-	// for an address (addr) on a NIC (with ID nicid) completes. resolved
+	// for an address (addr) on a NIC (with ID nicID) completes. resolved
 	// will be set to true if DAD completed successfully (no duplicate addr
 	// detected); false otherwise (addr was detected to be a duplicate on
 	// the link the NIC is a part of, or it was stopped for some other
@@ -87,7 +87,7 @@ type NDPDispatcher interface {
 	//
 	// This function is permitted to block indefinitely without interfering
 	// with the stack's operation.
-	OnDuplicateAddressDetectionStatus(nicid tcpip.NICID, addr tcpip.Address, resolved bool, err *tcpip.Error)
+	OnDuplicateAddressDetectionStatus(nicID tcpip.NICID, addr tcpip.Address, resolved bool, err *tcpip.Error)
 
 	// OnDefaultRouterDiscovered will be called when a new default router is
 	// discovered. Implementations must return true along with a new valid
@@ -97,7 +97,7 @@ type NDPDispatcher interface {
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
-	OnDefaultRouterDiscovered(nicid tcpip.NICID, addr tcpip.Address) (bool, []tcpip.Route)
+	OnDefaultRouterDiscovered(nicID tcpip.NICID, addr tcpip.Address) (bool, []tcpip.Route)
 
 	// OnDefaultRouterInvalidated will be called when a discovered default
 	// router is invalidated. Implementers must return a new valid route
@@ -105,7 +105,7 @@ type NDPDispatcher interface {
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
-	OnDefaultRouterInvalidated(nicid tcpip.NICID, addr tcpip.Address) []tcpip.Route
+	OnDefaultRouterInvalidated(nicID tcpip.NICID, addr tcpip.Address) []tcpip.Route
 }
 
 // NDPConfigurations is the NDP configurations for the netstack.

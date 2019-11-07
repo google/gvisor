@@ -1214,9 +1214,9 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 			e.bindToDevice = 0
 			return nil
 		}
-		for nicid, nic := range e.stack.NICInfo() {
+		for nicID, nic := range e.stack.NICInfo() {
 			if nic.Name == string(v) {
-				e.bindToDevice = nicid
+				e.bindToDevice = nicID
 				return nil
 			}
 		}
@@ -1634,7 +1634,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) *tc
 		return tcpip.ErrAlreadyConnected
 	}
 
-	nicid := addr.NIC
+	nicID := addr.NIC
 	switch e.state {
 	case StateBound:
 		// If we're already bound to a NIC but the caller is requesting
@@ -1643,11 +1643,11 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) *tc
 			break
 		}
 
-		if nicid != 0 && nicid != e.boundNICID {
+		if nicID != 0 && nicID != e.boundNICID {
 			return tcpip.ErrNoRoute
 		}
 
-		nicid = e.boundNICID
+		nicID = e.boundNICID
 
 	case StateInitial:
 		// Nothing to do. We'll eventually fill-in the gaps in the ID (if any)
@@ -1666,7 +1666,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) *tc
 	}
 
 	// Find a route to the desired destination.
-	r, err := e.stack.FindRoute(nicid, e.ID.LocalAddress, addr.Addr, netProto, false /* multicastLoop */)
+	r, err := e.stack.FindRoute(nicID, e.ID.LocalAddress, addr.Addr, netProto, false /* multicastLoop */)
 	if err != nil {
 		return err
 	}
@@ -1681,7 +1681,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) *tc
 
 	if e.ID.LocalPort != 0 {
 		// The endpoint is bound to a port, attempt to register it.
-		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, ProtocolNumber, e.ID, e, e.reusePort, e.bindToDevice)
+		err := e.stack.RegisterTransportEndpoint(nicID, netProtos, ProtocolNumber, e.ID, e, e.reusePort, e.bindToDevice)
 		if err != nil {
 			return err
 		}
@@ -1716,7 +1716,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) *tc
 
 			id := e.ID
 			id.LocalPort = p
-			switch e.stack.RegisterTransportEndpoint(nicid, netProtos, ProtocolNumber, id, e, e.reusePort, e.bindToDevice) {
+			switch e.stack.RegisterTransportEndpoint(nicID, netProtos, ProtocolNumber, id, e, e.reusePort, e.bindToDevice) {
 			case nil:
 				e.ID = id
 				return true, nil
@@ -1741,7 +1741,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) *tc
 	e.isRegistered = true
 	e.state = StateConnecting
 	e.route = r.Clone()
-	e.boundNICID = nicid
+	e.boundNICID = nicID
 	e.effectiveNetProtos = netProtos
 	e.connectingAddress = connectingAddr
 
