@@ -42,7 +42,7 @@ const (
 
 // endpoint implements stack.NetworkEndpoint.
 type endpoint struct {
-	nicid         tcpip.NICID
+	nicID         tcpip.NICID
 	linkEP        stack.LinkEndpoint
 	linkAddrCache stack.LinkAddressCache
 }
@@ -58,7 +58,7 @@ func (e *endpoint) MTU() uint32 {
 }
 
 func (e *endpoint) NICID() tcpip.NICID {
-	return e.nicid
+	return e.nicID
 }
 
 func (e *endpoint) Capabilities() stack.LinkEndpointCapabilities {
@@ -102,7 +102,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
 	switch h.Op() {
 	case header.ARPRequest:
 		localAddr := tcpip.Address(h.ProtocolAddressTarget())
-		if e.linkAddrCache.CheckLocalAddress(e.nicid, header.IPv4ProtocolNumber, localAddr) == 0 {
+		if e.linkAddrCache.CheckLocalAddress(e.nicID, header.IPv4ProtocolNumber, localAddr) == 0 {
 			return // we have no useful answer, ignore the request
 		}
 		hdr := buffer.NewPrependable(int(e.linkEP.MaxHeaderLength()) + header.ARPSize)
@@ -118,7 +118,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
 	case header.ARPReply:
 		addr := tcpip.Address(h.ProtocolAddressSender())
 		linkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
-		e.linkAddrCache.AddLinkAddress(e.nicid, addr, linkAddr)
+		e.linkAddrCache.AddLinkAddress(e.nicID, addr, linkAddr)
 	}
 }
 
@@ -135,12 +135,12 @@ func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 	return tcpip.Address(h.ProtocolAddressSender()), ProtocolAddress
 }
 
-func (p *protocol) NewEndpoint(nicid tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, sender stack.LinkEndpoint) (stack.NetworkEndpoint, *tcpip.Error) {
+func (p *protocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, sender stack.LinkEndpoint) (stack.NetworkEndpoint, *tcpip.Error) {
 	if addrWithPrefix.Address != ProtocolAddress {
 		return nil, tcpip.ErrBadLocalAddress
 	}
 	return &endpoint{
-		nicid:         nicid,
+		nicID:         nicID,
 		linkEP:        sender,
 		linkAddrCache: linkAddrCache,
 	}, nil

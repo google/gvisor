@@ -266,7 +266,7 @@ func (ep *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 }
 
 // HandlePacket implements stack.PacketEndpoint.HandlePacket.
-func (ep *endpoint) HandlePacket(nicid tcpip.NICID, localAddr tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) {
+func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) {
 	ep.rcvMu.Lock()
 
 	// Drop the packet if our buffer is currently full.
@@ -293,13 +293,13 @@ func (ep *endpoint) HandlePacket(nicid tcpip.NICID, localAddr tcpip.LinkAddress,
 		// Get info directly from the ethernet header.
 		hdr := header.Ethernet(pkt.LinkHeader)
 		packet.senderAddr = tcpip.FullAddress{
-			NIC:  nicid,
+			NIC:  nicID,
 			Addr: tcpip.Address(hdr.SourceAddress()),
 		}
 	} else {
 		// Guess the would-be ethernet header.
 		packet.senderAddr = tcpip.FullAddress{
-			NIC:  nicid,
+			NIC:  nicID,
 			Addr: tcpip.Address(localAddr),
 		}
 	}
