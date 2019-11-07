@@ -116,7 +116,7 @@ type File interface {
 	// N.B. The server must resolve any lazy paths when open is called.
 	// After this point, read and write may be called on files with no
 	// deletion check, so resolving in the data path is not viable.
-	Open(mode OpenFlags) (*fd.FD, QID, uint32, error)
+	Open(flags OpenFlags) (*fd.FD, QID, uint32, error)
 
 	// Read reads from this file. Open must be called first.
 	//
