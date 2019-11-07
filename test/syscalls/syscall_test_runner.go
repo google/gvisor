@@ -208,14 +208,15 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 		}
 		log.Warningf("%s: Got signal: %v", name, s)
 		done := make(chan bool)
-		go func() {
-			dArgs := append(args, "-alsologtostderr=true", "debug", "--stacks", id)
+		dArgs := append([]string{}, args...)
+		dArgs = append(dArgs, "-alsologtostderr=true", "debug", "--stacks", id)
+		go func(dArgs []string) {
 			cmd := exec.Command(*runscPath, dArgs...)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			cmd.Run()
 			done <- true
-		}()
+		}(dArgs)
 
 		timeout := time.After(3 * time.Second)
 		select {
@@ -225,7 +226,7 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 		}
 
 		log.Warningf("Send SIGTERM to the sandbox process")
-		dArgs := append(args, "debug",
+		dArgs = append(args, "debug",
 			fmt.Sprintf("--signal=%d", syscall.SIGTERM),
 			id)
 		cmd = exec.Command(*runscPath, dArgs...)
