@@ -278,13 +278,13 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	} else {
 		// Reject destination address if it goes through a different
 		// NIC than the endpoint was bound to.
-		nicid := to.NIC
+		nicID := to.NIC
 		if e.BindNICID != 0 {
-			if nicid != 0 && nicid != e.BindNICID {
+			if nicID != 0 && nicID != e.BindNICID {
 				return 0, nil, tcpip.ErrNoRoute
 			}
 
-			nicid = e.BindNICID
+			nicID = e.BindNICID
 		}
 
 		toCopy := *to
@@ -295,7 +295,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		}
 
 		// Find the enpoint.
-		r, err := e.stack.FindRoute(nicid, e.BindAddr, to.Addr, netProto, false /* multicastLoop */)
+		r, err := e.stack.FindRoute(nicID, e.BindAddr, to.Addr, netProto, false /* multicastLoop */)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -483,7 +483,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	nicid := addr.NIC
+	nicID := addr.NIC
 	localPort := uint16(0)
 	switch e.state {
 	case stateBound, stateConnected:
@@ -492,11 +492,11 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 			break
 		}
 
-		if nicid != 0 && nicid != e.BindNICID {
+		if nicID != 0 && nicID != e.BindNICID {
 			return tcpip.ErrInvalidEndpointState
 		}
 
-		nicid = e.BindNICID
+		nicID = e.BindNICID
 	default:
 		return tcpip.ErrInvalidEndpointState
 	}
@@ -507,7 +507,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	}
 
 	// Find a route to the desired destination.
-	r, err := e.stack.FindRoute(nicid, e.BindAddr, addr.Addr, netProto, false /* multicastLoop */)
+	r, err := e.stack.FindRoute(nicID, e.BindAddr, addr.Addr, netProto, false /* multicastLoop */)
 	if err != nil {
 		return err
 	}
@@ -524,14 +524,14 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	// v6only is set to false and this is an ipv6 endpoint.
 	netProtos := []tcpip.NetworkProtocolNumber{netProto}
 
-	id, err = e.registerWithStack(nicid, netProtos, id)
+	id, err = e.registerWithStack(nicID, netProtos, id)
 	if err != nil {
 		return err
 	}
 
 	e.ID = id
 	e.route = r.Clone()
-	e.RegisterNICID = nicid
+	e.RegisterNICID = nicID
 
 	e.state = stateConnected
 
@@ -582,18 +582,18 @@ func (*endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 	return nil, nil, tcpip.ErrNotSupported
 }
 
-func (e *endpoint) registerWithStack(nicid tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, id stack.TransportEndpointID) (stack.TransportEndpointID, *tcpip.Error) {
+func (e *endpoint) registerWithStack(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, id stack.TransportEndpointID) (stack.TransportEndpointID, *tcpip.Error) {
 	if id.LocalPort != 0 {
 		// The endpoint already has a local port, just attempt to
 		// register it.
-		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, e.TransProto, id, e, false /* reuse */, 0 /* bindToDevice */)
+		err := e.stack.RegisterTransportEndpoint(nicID, netProtos, e.TransProto, id, e, false /* reuse */, 0 /* bindToDevice */)
 		return id, err
 	}
 
 	// We need to find a port for the endpoint.
 	_, err := e.stack.PickEphemeralPort(func(p uint16) (bool, *tcpip.Error) {
 		id.LocalPort = p
-		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, e.TransProto, id, e, false /* reuse */, 0 /* bindtodevice */)
+		err := e.stack.RegisterTransportEndpoint(nicID, netProtos, e.TransProto, id, e, false /* reuse */, 0 /* bindtodevice */)
 		switch err {
 		case nil:
 			return true, nil

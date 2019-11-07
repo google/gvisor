@@ -117,7 +117,7 @@ type PacketEndpoint interface {
 	// should construct its own ethernet header for applications.
 	//
 	// HandlePacket takes ownership of pkt.
-	HandlePacket(nicid tcpip.NICID, addr tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer)
+	HandlePacket(nicID tcpip.NICID, addr tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer)
 }
 
 // TransportProtocol is the interface that needs to be implemented by transport
@@ -281,7 +281,7 @@ type NetworkProtocol interface {
 	ParseAddresses(v buffer.View) (src, dst tcpip.Address)
 
 	// NewEndpoint creates a new endpoint of this protocol.
-	NewEndpoint(nicid tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache LinkAddressCache, dispatcher TransportDispatcher, sender LinkEndpoint) (NetworkEndpoint, *tcpip.Error)
+	NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache LinkAddressCache, dispatcher TransportDispatcher, sender LinkEndpoint) (NetworkEndpoint, *tcpip.Error)
 
 	// SetOption allows enabling/disabling protocol specific features.
 	// SetOption returns an error if the option is not supported or the
@@ -440,10 +440,10 @@ type LinkAddressResolver interface {
 type LinkAddressCache interface {
 	// CheckLocalAddress determines if the given local address exists, and if it
 	// does not exist.
-	CheckLocalAddress(nicid tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.NICID
+	CheckLocalAddress(nicID tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.NICID
 
 	// AddLinkAddress adds a link address to the cache.
-	AddLinkAddress(nicid tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress)
+	AddLinkAddress(nicID tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress)
 
 	// GetLinkAddress looks up the cache to translate address to link address (e.g. IP -> MAC).
 	// If the LinkEndpoint requests address resolution and there is a LinkAddressResolver
@@ -454,10 +454,10 @@ type LinkAddressCache interface {
 	// If address resolution is required, ErrNoLinkAddress and a notification channel is
 	// returned for the top level caller to block. Channel is closed once address resolution
 	// is complete (success or not).
-	GetLinkAddress(nicid tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, w *sleep.Waker) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error)
+	GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, w *sleep.Waker) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error)
 
 	// RemoveWaker removes a waker that has been added in GetLinkAddress().
-	RemoveWaker(nicid tcpip.NICID, addr tcpip.Address, waker *sleep.Waker)
+	RemoveWaker(nicID tcpip.NICID, addr tcpip.Address, waker *sleep.Waker)
 }
 
 // RawFactory produces endpoints for writing various types of raw packets.

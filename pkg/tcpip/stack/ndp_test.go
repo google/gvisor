@@ -83,14 +83,14 @@ func TestDADDisabled(t *testing.T) {
 // ndpDADEvent is a set of parameters that was passed to
 // ndpDispatcher.OnDuplicateAddressDetectionStatus.
 type ndpDADEvent struct {
-	nicid    tcpip.NICID
+	nicID    tcpip.NICID
 	addr     tcpip.Address
 	resolved bool
 	err      *tcpip.Error
 }
 
 type ndpRouterEvent struct {
-	nicid tcpip.NICID
+	nicID tcpip.NICID
 	addr  tcpip.Address
 	// true if router was discovered, false if invalidated.
 	discovered bool
@@ -108,10 +108,10 @@ type ndpDispatcher struct {
 }
 
 // Implements stack.NDPDispatcher.OnDuplicateAddressDetectionStatus.
-func (n *ndpDispatcher) OnDuplicateAddressDetectionStatus(nicid tcpip.NICID, addr tcpip.Address, resolved bool, err *tcpip.Error) {
+func (n *ndpDispatcher) OnDuplicateAddressDetectionStatus(nicID tcpip.NICID, addr tcpip.Address, resolved bool, err *tcpip.Error) {
 	if n.dadC != nil {
 		n.dadC <- ndpDADEvent{
-			nicid,
+			nicID,
 			addr,
 			resolved,
 			err,
@@ -120,10 +120,10 @@ func (n *ndpDispatcher) OnDuplicateAddressDetectionStatus(nicid tcpip.NICID, add
 }
 
 // Implements stack.NDPDispatcher.OnDefaultRouterDiscovered.
-func (n *ndpDispatcher) OnDefaultRouterDiscovered(nicid tcpip.NICID, addr tcpip.Address) (bool, []tcpip.Route) {
+func (n *ndpDispatcher) OnDefaultRouterDiscovered(nicID tcpip.NICID, addr tcpip.Address) (bool, []tcpip.Route) {
 	if n.routerC != nil {
 		n.routerC <- ndpRouterEvent{
-			nicid,
+			nicID,
 			addr,
 			true,
 		}
@@ -137,17 +137,17 @@ func (n *ndpDispatcher) OnDefaultRouterDiscovered(nicid tcpip.NICID, addr tcpip.
 	rt = append(rt, tcpip.Route{
 		Destination: header.IPv6EmptySubnet,
 		Gateway:     addr,
-		NIC:         nicid,
+		NIC:         nicID,
 	})
 	n.routeTable = rt
 	return true, rt
 }
 
 // Implements stack.NDPDispatcher.OnDefaultRouterInvalidated.
-func (n *ndpDispatcher) OnDefaultRouterInvalidated(nicid tcpip.NICID, addr tcpip.Address) []tcpip.Route {
+func (n *ndpDispatcher) OnDefaultRouterInvalidated(nicID tcpip.NICID, addr tcpip.Address) []tcpip.Route {
 	if n.routerC != nil {
 		n.routerC <- ndpRouterEvent{
-			nicid,
+			nicID,
 			addr,
 			false,
 		}
@@ -157,7 +157,7 @@ func (n *ndpDispatcher) OnDefaultRouterInvalidated(nicid tcpip.NICID, addr tcpip
 	exclude := tcpip.Route{
 		Destination: header.IPv6EmptySubnet,
 		Gateway:     addr,
-		NIC:         nicid,
+		NIC:         nicID,
 	}
 
 	for _, r := range n.routeTable {
@@ -254,8 +254,8 @@ func TestDADResolve(t *testing.T) {
 				if e.err != nil {
 					t.Fatal("got DAD error: ", e.err)
 				}
-				if e.nicid != 1 {
-					t.Fatalf("got DAD event w/ nicid = %d, want = 1", e.nicid)
+				if e.nicID != 1 {
+					t.Fatalf("got DAD event w/ nicID = %d, want = 1", e.nicID)
 				}
 				if e.addr != addr1 {
 					t.Fatalf("got DAD event w/ addr = %s, want = %s", addr, addr1)
@@ -421,8 +421,8 @@ func TestDADFail(t *testing.T) {
 				if e.err != nil {
 					t.Fatal("got DAD error: ", e.err)
 				}
-				if e.nicid != 1 {
-					t.Fatalf("got DAD event w/ nicid = %d, want = 1", e.nicid)
+				if e.nicID != 1 {
+					t.Fatalf("got DAD event w/ nicID = %d, want = 1", e.nicID)
 				}
 				if e.addr != addr1 {
 					t.Fatalf("got DAD event w/ addr = %s, want = %s", addr, addr1)
@@ -492,8 +492,8 @@ func TestDADStop(t *testing.T) {
 		if e.err != nil {
 			t.Fatal("got DAD error: ", e.err)
 		}
-		if e.nicid != 1 {
-			t.Fatalf("got DAD event w/ nicid = %d, want = 1", e.nicid)
+		if e.nicID != 1 {
+			t.Fatalf("got DAD event w/ nicID = %d, want = 1", e.nicID)
 		}
 		if e.addr != addr1 {
 			t.Fatalf("got DAD event w/ addr = %s, want = %s", addr, addr1)
@@ -661,8 +661,8 @@ func TestSetNDPConfigurations(t *testing.T) {
 				if e.err != nil {
 					t.Fatal("got DAD error: ", e.err)
 				}
-				if e.nicid != 1 {
-					t.Fatalf("got DAD event w/ nicid = %d, want = 1", e.nicid)
+				if e.nicID != 1 {
+					t.Fatalf("got DAD event w/ nicID = %d, want = 1", e.nicID)
 				}
 				if e.addr != addr1 {
 					t.Fatalf("got DAD event w/ addr = %s, want = %s", addr, addr1)
@@ -786,8 +786,8 @@ func TestRouterDiscoveryDispatcherNoRemember(t *testing.T) {
 	e.InjectInbound(header.IPv6ProtocolNumber, raBuf(llAddr2, uint16(lifetime)))
 	select {
 	case r := <-ndpDisp.routerC:
-		if r.nicid != 1 {
-			t.Fatalf("got r.nicid = %d, want = 1", r.nicid)
+		if r.nicID != 1 {
+			t.Fatalf("got r.nicID = %d, want = 1", r.nicID)
 		}
 		if r.addr != llAddr2 {
 			t.Fatalf("got r.addr = %s, want = %s", r.addr, llAddr2)
@@ -839,8 +839,8 @@ func TestRouterDiscovery(t *testing.T) {
 
 		select {
 		case r := <-ndpDisp.routerC:
-			if r.nicid != 1 {
-				t.Fatalf("got r.nicid = %d, want = 1", r.nicid)
+			if r.nicID != 1 {
+				t.Fatalf("got r.nicID = %d, want = 1", r.nicID)
 			}
 			if r.addr != addr {
 				t.Fatalf("got r.addr = %s, want = %s", r.addr, addr)
@@ -983,8 +983,8 @@ func TestRouterDiscoveryMaxRouters(t *testing.T) {
 			expectedRt[i-1] = tcpip.Route{header.IPv6EmptySubnet, llAddr, 1}
 			select {
 			case r := <-ndpDisp.routerC:
-				if r.nicid != 1 {
-					t.Fatalf("got r.nicid = %d, want = 1", r.nicid)
+				if r.nicID != 1 {
+					t.Fatalf("got r.nicID = %d, want = 1", r.nicID)
 				}
 				if r.addr != llAddr {
 					t.Fatalf("got r.addr = %s, want = %s", r.addr, llAddr)

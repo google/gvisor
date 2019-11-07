@@ -180,7 +180,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt tcpip.P
 		// rxNICID so the packet is processed as defined in RFC 4861,
 		// as per RFC 4862 section 5.4.3.
 
-		if e.linkAddrCache.CheckLocalAddress(e.nicid, ProtocolNumber, targetAddr) == 0 {
+		if e.linkAddrCache.CheckLocalAddress(e.nicID, ProtocolNumber, targetAddr) == 0 {
 			// We don't have a useful answer; the best we can do is ignore the request.
 			return
 		}
@@ -218,7 +218,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt tcpip.P
 		//
 		// Furthermore, the entirety of NDP handling here seems to be
 		// contradicted by RFC 4861.
-		e.linkAddrCache.AddLinkAddress(e.nicid, r.RemoteAddress, r.RemoteLinkAddress)
+		e.linkAddrCache.AddLinkAddress(e.nicID, r.RemoteAddress, r.RemoteLinkAddress)
 
 		// RFC 4861 Neighbor Discovery for IP version 6 (IPv6)
 		//
@@ -274,9 +274,9 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt tcpip.P
 		// inform the netstack integration that a duplicate address was
 		// detected outside of DAD.
 
-		e.linkAddrCache.AddLinkAddress(e.nicid, targetAddr, r.RemoteLinkAddress)
+		e.linkAddrCache.AddLinkAddress(e.nicID, targetAddr, r.RemoteLinkAddress)
 		if targetAddr != r.RemoteAddress {
-			e.linkAddrCache.AddLinkAddress(e.nicid, r.RemoteAddress, r.RemoteLinkAddress)
+			e.linkAddrCache.AddLinkAddress(e.nicID, r.RemoteAddress, r.RemoteLinkAddress)
 		}
 
 	case header.ICMPv6EchoRequest:

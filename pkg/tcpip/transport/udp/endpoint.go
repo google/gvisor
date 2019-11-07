@@ -282,7 +282,7 @@ func (e *endpoint) prepareForWrite(to *tcpip.FullAddress) (retry bool, err *tcpi
 // connectRoute establishes a route to the specified interface or the
 // configured multicast interface if no interface is specified and the
 // specified address is a multicast address.
-func (e *endpoint) connectRoute(nicid tcpip.NICID, addr tcpip.FullAddress, netProto tcpip.NetworkProtocolNumber) (stack.Route, tcpip.NICID, *tcpip.Error) {
+func (e *endpoint) connectRoute(nicID tcpip.NICID, addr tcpip.FullAddress, netProto tcpip.NetworkProtocolNumber) (stack.Route, tcpip.NICID, *tcpip.Error) {
 	localAddr := e.ID.LocalAddress
 	if isBroadcastOrMulticast(localAddr) {
 		// A packet can only originate from a unicast address (i.e., an interface).
@@ -290,20 +290,20 @@ func (e *endpoint) connectRoute(nicid tcpip.NICID, addr tcpip.FullAddress, netPr
 	}
 
 	if header.IsV4MulticastAddress(addr.Addr) || header.IsV6MulticastAddress(addr.Addr) {
-		if nicid == 0 {
-			nicid = e.multicastNICID
+		if nicID == 0 {
+			nicID = e.multicastNICID
 		}
-		if localAddr == "" && nicid == 0 {
+		if localAddr == "" && nicID == 0 {
 			localAddr = e.multicastAddr
 		}
 	}
 
 	// Find a route to the desired destination.
-	r, err := e.stack.FindRoute(nicid, localAddr, addr.Addr, netProto, e.multicastLoop)
+	r, err := e.stack.FindRoute(nicID, localAddr, addr.Addr, netProto, e.multicastLoop)
 	if err != nil {
 		return stack.Route{}, 0, err
 	}
-	return r, nicid, nil
+	return r, nicID, nil
 }
 
 // Write writes data to the endpoint's peer. This method does not block
@@ -382,13 +382,13 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	} else {
 		// Reject destination address if it goes through a different
 		// NIC than the endpoint was bound to.
-		nicid := to.NIC
+		nicID := to.NIC
 		if e.BindNICID != 0 {
-			if nicid != 0 && nicid != e.BindNICID {
+			if nicID != 0 && nicID != e.BindNICID {
 				return 0, nil, tcpip.ErrNoRoute
 			}
 
-			nicid = e.BindNICID
+			nicID = e.BindNICID
 		}
 
 		if to.Addr == header.IPv4Broadcast && !e.broadcast {
@@ -400,7 +400,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 			return 0, nil, err
 		}
 
-		r, _, err := e.connectRoute(nicid, *to, netProto)
+		r, _, err := e.connectRoute(nicID, *to, netProto)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -622,9 +622,9 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 			e.bindToDevice = 0
 			return nil
 		}
-		for nicid, nic := range e.stack.NICInfo() {
+		for nicID, nic := range e.stack.NICInfo() {
 			if nic.Name == string(v) {
-				e.bindToDevice = nicid
+				e.bindToDevice = nicID
 				return nil
 			}
 		}
@@ -907,7 +907,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	nicid := addr.NIC
+	nicID := addr.NIC
 	var localPort uint16
 	switch e.state {
 	case StateInitial:
@@ -917,16 +917,16 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 			break
 		}
 
-		if nicid != 0 && nicid != e.BindNICID {
+		if nicID != 0 && nicID != e.BindNICID {
 			return tcpip.ErrInvalidEndpointState
 		}
 
-		nicid = e.BindNICID
+		nicID = e.BindNICID
 	default:
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	r, nicid, err := e.connectRoute(nicid, addr, netProto)
+	r, nicID, err := e.connectRoute(nicID, addr, netProto)
 	if err != nil {
 		return err
 	}
@@ -954,7 +954,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 		}
 	}
 
-	id, err = e.registerWithStack(nicid, netProtos, id)
+	id, err = e.registerWithStack(nicID, netProtos, id)
 	if err != nil {
 		return err
 	}
@@ -967,7 +967,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	e.ID = id
 	e.route = r.Clone()
 	e.dstPort = addr.Port
-	e.RegisterNICID = nicid
+	e.RegisterNICID = nicID
 	e.effectiveNetProtos = netProtos
 
 	e.state = StateConnected
@@ -1022,7 +1022,7 @@ func (*endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 	return nil, nil, tcpip.ErrNotSupported
 }
 
-func (e *endpoint) registerWithStack(nicid tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, id stack.TransportEndpointID) (stack.TransportEndpointID, *tcpip.Error) {
+func (e *endpoint) registerWithStack(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, id stack.TransportEndpointID) (stack.TransportEndpointID, *tcpip.Error) {
 	if e.ID.LocalPort == 0 {
 		port, err := e.stack.ReservePort(netProtos, ProtocolNumber, id.LocalAddress, id.LocalPort, e.reusePort, e.bindToDevice)
 		if err != nil {
@@ -1031,7 +1031,7 @@ func (e *endpoint) registerWithStack(nicid tcpip.NICID, netProtos []tcpip.Networ
 		id.LocalPort = port
 	}
 
-	err := e.stack.RegisterTransportEndpoint(nicid, netProtos, ProtocolNumber, id, e, e.reusePort, e.bindToDevice)
+	err := e.stack.RegisterTransportEndpoint(nicID, netProtos, ProtocolNumber, id, e, e.reusePort, e.bindToDevice)
 	if err != nil {
 		e.stack.ReleasePort(netProtos, ProtocolNumber, id.LocalAddress, id.LocalPort, e.bindToDevice)
 	}
@@ -1061,11 +1061,11 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) *tcpip.Error {
 		}
 	}
 
-	nicid := addr.NIC
+	nicID := addr.NIC
 	if len(addr.Addr) != 0 && !isBroadcastOrMulticast(addr.Addr) {
 		// A local unicast address was specified, verify that it's valid.
-		nicid = e.stack.CheckLocalAddress(addr.NIC, netProto, addr.Addr)
-		if nicid == 0 {
+		nicID = e.stack.CheckLocalAddress(addr.NIC, netProto, addr.Addr)
+		if nicID == 0 {
 			return tcpip.ErrBadLocalAddress
 		}
 	}
@@ -1074,13 +1074,13 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) *tcpip.Error {
 		LocalPort:    addr.Port,
 		LocalAddress: addr.Addr,
 	}
-	id, err = e.registerWithStack(nicid, netProtos, id)
+	id, err = e.registerWithStack(nicID, netProtos, id)
 	if err != nil {
 		return err
 	}
 
 	e.ID = id
-	e.RegisterNICID = nicid
+	e.RegisterNICID = nicID
 	e.effectiveNetProtos = netProtos
 
 	// Mark endpoint as bound.

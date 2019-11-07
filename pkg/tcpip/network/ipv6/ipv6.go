@@ -43,7 +43,7 @@ const (
 )
 
 type endpoint struct {
-	nicid         tcpip.NICID
+	nicID         tcpip.NICID
 	id            stack.NetworkEndpointID
 	prefixLen     int
 	linkEP        stack.LinkEndpoint
@@ -65,7 +65,7 @@ func (e *endpoint) MTU() uint32 {
 
 // NICID returns the ID of the NIC this endpoint belongs to.
 func (e *endpoint) NICID() tcpip.NICID {
-	return e.nicid
+	return e.nicID
 }
 
 // ID returns the ipv6 endpoint ID.
@@ -218,9 +218,9 @@ func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 }
 
 // NewEndpoint creates a new ipv6 endpoint.
-func (p *protocol) NewEndpoint(nicid tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint) (stack.NetworkEndpoint, *tcpip.Error) {
+func (p *protocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint) (stack.NetworkEndpoint, *tcpip.Error) {
 	return &endpoint{
-		nicid:         nicid,
+		nicID:         nicID,
 		id:            stack.NetworkEndpointID{LocalAddress: addrWithPrefix.Address},
 		prefixLen:     addrWithPrefix.PrefixLen,
 		linkEP:        linkEP,

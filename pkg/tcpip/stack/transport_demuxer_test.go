@@ -79,17 +79,17 @@ func newDualTestContextMultiNic(t *testing.T, mtu uint32, linkEpNames []string) 
 	linkEPs := make(map[string]*channel.Endpoint)
 	for i, linkEpName := range linkEpNames {
 		channelEP := channel.New(256, mtu, "")
-		nicid := tcpip.NICID(i + 1)
-		if err := s.CreateNamedNIC(nicid, linkEpName, channelEP); err != nil {
+		nicID := tcpip.NICID(i + 1)
+		if err := s.CreateNamedNIC(nicID, linkEpName, channelEP); err != nil {
 			t.Fatalf("CreateNIC failed: %v", err)
 		}
 		linkEPs[linkEpName] = channelEP
 
-		if err := s.AddAddress(nicid, ipv4.ProtocolNumber, stackAddr); err != nil {
+		if err := s.AddAddress(nicID, ipv4.ProtocolNumber, stackAddr); err != nil {
 			t.Fatalf("AddAddress IPv4 failed: %v", err)
 		}
 
-		if err := s.AddAddress(nicid, ipv6.ProtocolNumber, stackV6Addr); err != nil {
+		if err := s.AddAddress(nicID, ipv6.ProtocolNumber, stackV6Addr); err != nil {
 			t.Fatalf("AddAddress IPv6 failed: %v", err)
 		}
 	}
