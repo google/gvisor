@@ -121,6 +121,11 @@ const (
 	notifyReset
 	notifyKeepaliveChanged
 	notifyMSSChanged
+	// notifyTickleWorker is used to tickle the protocol main loop during a
+	// restore after we update the endpoint state to the correct one. This
+	// ensures the loop terminates if the final state of the endpoint is
+	// say TIME_WAIT.
+	notifyTickleWorker
 )
 
 // SACKInfo holds TCP SACK related information for a given endpoint.
@@ -320,6 +325,11 @@ type endpoint struct {
 
 	state EndpointState `state:".(EndpointState)"`
 
+	// origEndpointState is only used during a restore phase to save the
+	// endpoint state at restore time as the socket is moved to it's correct
+	// state.
+	origEndpointState EndpointState `state:"nosave"`
+
 	isPortReserved    bool `state:"manual"`
 	isRegistered      bool
 	boundNICID        tcpip.NICID `state:"manual"`
@@ -503,6 +513,16 @@ type endpoint struct {
 
 	// TODO(b/142022063): Add ability to save and restore per endpoint stats.
 	stats Stats `state:"nosave"`
+
+	// tcpLingerTimeout is the maximum amount of a time a socket
+	// a socket stays in TIME_WAIT state before being marked
+	// closed.
+	tcpLingerTimeout time.Duration
+
+	// closed indicates that the user has called closed on the
+	// endpoint and at this point the endpoint is only around
+	// to complete the TCP shutdown.
+	closed bool
 }
 
 // UniqueID implements stack.TransportEndpoint.UniqueID.
@@ -599,6 +619,11 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 		e.SetSockOptInt(tcpip.DelayOption, 1)
 	}
 
+	var tcpLT tcpip.TCPLingerTimeoutOption
+	if err := s.TransportProtocolOption(ProtocolNumber, &tcpLT); err == nil {
+		e.tcpLingerTimeout = time.Duration(tcpLT)
+	}
+
 	if p := s.GetTCPProbe(); p != nil {
 		e.probe = p
 	}
@@ -686,6 +711,13 @@ func (e *endpoint) notifyProtocolGoroutine(n uint32) {
 // with it. It must be called only once and with no other concurrent calls to
 // the endpoint.
 func (e *endpoint) Close() {
+	e.mu.Lock()
+	closed := e.closed
+	e.mu.Unlock()
+	if closed {
+		return
+	}
+
 	// Issue a shutdown so that the peer knows we won't send any more data
 	// if we're connected, or stop accepting if we're listening.
 	e.Shutdown(tcpip.ShutdownWrite | tcpip.ShutdownRead)
@@ -706,6 +738,8 @@ func (e *endpoint) Close() {
 		e.isPortReserved = false
 	}
 
+	// Mark endpoint as closed.
+	e.closed = true
 	// Either perform the local cleanup or kick the worker to make sure it
 	// knows it needs to cleanup.
 	tcpip.AddDanglingEndpoint(e)
@@ -731,9 +765,7 @@ func (e *endpoint) closePendingAcceptableConnectionsLocked() {
 	go func() {
 		defer close(done)
 		for n := range e.acceptedChan {
-			n.mu.Lock()
-			n.resetConnectionLocked(tcpip.ErrConnectionAborted)
-			n.mu.Unlock()
+			n.notifyProtocolGoroutine(notifyReset)
 			n.Close()
 		}
 	}()
@@ -1349,6 +1381,28 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.mu.Unlock()
 		return nil
 
+	case tcpip.TCPLingerTimeoutOption:
+		e.mu.Lock()
+		if v < 0 {
+			// Same as effectively disabling TCPLinger timeout.
+			v = 0
+		}
+		var stkTCPLingerTimeout tcpip.TCPLingerTimeoutOption
+		if err := e.stack.TransportProtocolOption(header.TCPProtocolNumber, &stkTCPLingerTimeout); err != nil {
+			// We were unable to retrieve a stack config, just use
+			// the DefaultTCPLingerTimeout.
+			if v > tcpip.TCPLingerTimeoutOption(DefaultTCPLingerTimeout) {
+				stkTCPLingerTimeout = tcpip.TCPLingerTimeoutOption(DefaultTCPLingerTimeout)
+			}
+		}
+		// Cap it to the stack wide TCPLinger timeout.
+		if v > stkTCPLingerTimeout {
+			v = stkTCPLingerTimeout
+		}
+		e.tcpLingerTimeout = time.Duration(v)
+		e.mu.Unlock()
+		return nil
+
 	default:
 		return nil
 	}
@@ -1562,6 +1616,12 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		e.mu.RUnlock()
 		return nil
 
+	case *tcpip.TCPLingerTimeoutOption:
+		e.mu.Lock()
+		*o = tcpip.TCPLingerTimeoutOption(e.tcpLingerTimeout)
+		e.mu.Unlock()
+		return nil
+
 	default:
 		return tcpip.ErrUnknownProtocolOption
 	}
@@ -1696,7 +1756,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) *tc
 		// src IP to ensure that for a given tuple (srcIP, destIP,
 		// destPort) the offset used as a starting point is the same to
 		// ensure that we can cycle through the port space effectively.
-		h := jenkins.Sum32(e.stack.PortSeed())
+		h := jenkins.Sum32(e.stack.Seed())
 		h.Write([]byte(e.ID.LocalAddress))
 		h.Write([]byte(e.ID.RemoteAddress))
 		portBuf := make([]byte, 2)
@@ -1782,9 +1842,8 @@ func (*endpoint) ConnectEndpoint(tcpip.Endpoint) *tcpip.Error {
 // peer.
 func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	e.shutdownFlags |= flags
-
+	finQueued := false
 	switch {
 	case e.state.connected():
 		// Close for read.
@@ -1799,6 +1858,7 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 			// the connection with a RST.
 			if (e.shutdownFlags&tcpip.ShutdownWrite) != 0 && rcvBufUsed > 0 {
 				e.notifyProtocolGoroutine(notifyReset)
+				e.mu.Unlock()
 				return nil
 			}
 		}
@@ -1817,14 +1877,11 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 			s := newSegmentFromView(&e.route, e.ID, nil)
 			e.sndQueue.PushBack(s)
 			e.sndBufInQueue++
-
+			finQueued = true
 			// Mark endpoint as closed.
 			e.sndClosed = true
 
 			e.sndBufMu.Unlock()
-
-			// Tell protocol goroutine to close.
-			e.sndCloseWaker.Assert()
 		}
 
 	case e.state == StateListen:
@@ -1832,11 +1889,20 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 		if flags&tcpip.ShutdownRead != 0 {
 			e.notifyProtocolGoroutine(notifyClose)
 		}
-
 	default:
+		e.mu.Unlock()
 		return tcpip.ErrNotConnected
 	}
-
+	e.mu.Unlock()
+	if finQueued {
+		if e.workMu.TryLock() {
+			e.handleClose()
+			e.workMu.Unlock()
+		} else {
+			// Tell protocol goroutine to close.
+			e.sndCloseWaker.Assert()
+		}
+	}
 	return nil
 }
 
@@ -1928,12 +1994,7 @@ func (e *endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 		return nil, nil, tcpip.ErrWouldBlock
 	}
 
-	// Start the protocol goroutine.
-	wq := &waiter.Queue{}
-	n.startAcceptedLoop(wq)
-	e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
-
-	return n, wq, nil
+	return n, n.waiterQueue, nil
 }
 
 // Bind binds the endpoint to a specific local port and optionally address.
@@ -2058,6 +2119,10 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 		e.stack.Stats().TCP.ResetsReceived.Increment()
 	}
 
+	e.enqueueSegment(s)
+}
+
+func (e *endpoint) enqueueSegment(s *segment) {
 	// Send packet to worker goroutine.
 	if e.segmentQueue.enqueue(s) {
 		e.newSegmentWaker.Assert()

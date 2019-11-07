@@ -78,7 +78,7 @@ func (e *endpoint) beforeSave() {
 		}
 		fallthrough
 	case StateError, StateClose:
-		for e.state == StateError && e.workerRunning {
+		for (e.state == StateError || e.state == StateClose) && e.workerRunning {
 			e.mu.Unlock()
 			time.Sleep(100 * time.Millisecond)
 			e.mu.Lock()
@@ -165,6 +165,12 @@ func (e *endpoint) loadState(state EndpointState) {
 
 // afterLoad is invoked by stateify.
 func (e *endpoint) afterLoad() {
+	// Freeze segment queue before registering to prevent any segments
+	// from being delivered while it is being restored.
+	e.origEndpointState = e.state
+	// Restore the endpoint to InitialState as it will be moved to
+	// its origEndpointState during Resume.
+	e.state = StateInitial
 	stack.StackFromEnv.RegisterRestoredEndpoint(e)
 }
 
@@ -173,8 +179,8 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	e.stack = s
 	e.segmentQueue.setLimit(MaxUnprocessedSegments)
 	e.workMu.Init()
+	state := e.origEndpointState
 
-	state := e.state
 	switch state {
 	case StateInitial, StateBound, StateListen, StateConnecting, StateEstablished:
 		var ss SendBufferSizeOption
@@ -189,7 +195,6 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	}
 
 	bind := func() {
-		e.state = StateInitial
 		if len(e.BindAddr) == 0 {
 			e.BindAddr = e.ID.LocalAddress
 		}
@@ -218,6 +223,16 @@ func (e *endpoint) Resume(s *stack.Stack) {
 		e.scoreboard.Reset()
 		if err := e.connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.ID.RemotePort}, false, e.workerRunning); err != tcpip.ErrConnectStarted {
 			panic("endpoint connecting failed: " + err.String())
+		}
+		e.mu.Lock()
+		e.state = e.origEndpointState
+		closed := e.closed
+		e.mu.Unlock()
+		e.notifyProtocolGoroutine(notifyTickleWorker)
+		if state == StateFinWait2 && closed {
+			// If the endpoint has been closed then make sure we notify so
+			// that the FIN_WAIT2 timer is started after a restore.
+			e.notifyProtocolGoroutine(notifyClose)
 		}
 		connectedLoading.Done()
 	case StateListen:
@@ -265,8 +280,11 @@ func (e *endpoint) Resume(s *stack.Stack) {
 				tcpip.AsyncLoading.Done()
 			}()
 		}
-		fallthrough
+		e.state = StateClose
+		e.stack.CompleteTransportEndpointCleanup(e)
+		tcpip.DeleteDanglingEndpoint(e)
 	case StateError:
+		e.state = StateError
 		e.stack.CompleteTransportEndpointCleanup(e)
 		tcpip.DeleteDanglingEndpoint(e)
 	}

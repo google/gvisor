@@ -144,6 +144,8 @@ func (x *endpoint) save(m state.Map) {
 	m.Save("amss", &x.amss)
 	m.Save("sendTOS", &x.sendTOS)
 	m.Save("gso", &x.gso)
+	m.Save("tcpLingerTimeout", &x.tcpLingerTimeout)
+	m.Save("closed", &x.closed)
 }
 
 func (x *endpoint) load(m state.Map) {
@@ -194,6 +196,8 @@ func (x *endpoint) load(m state.Map) {
 	m.Load("amss", &x.amss)
 	m.Load("sendTOS", &x.sendTOS)
 	m.Load("gso", &x.gso)
+	m.Load("tcpLingerTimeout", &x.tcpLingerTimeout)
+	m.Load("closed", &x.closed)
 	m.LoadValue("lastError", new(string), func(y interface{}) { x.loadLastError(y.(string)) })
 	m.LoadValue("state", new(EndpointState), func(y interface{}) { x.loadState(y.(EndpointState)) })
 	m.LoadValue("acceptedChan", new([]*endpoint), func(y interface{}) { x.loadAcceptedChan(y.([]*endpoint)) })
