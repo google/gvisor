@@ -71,7 +71,7 @@ filegroup(
 
 go_test(
     name = "tcp_test",
-    size = "small",
+    size = "medium",
     srcs = [
         "dual_stack_test.go",
         "sack_scoreboard_test.go",
