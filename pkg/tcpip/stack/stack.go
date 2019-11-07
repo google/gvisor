@@ -1055,13 +1055,13 @@ func (s *Stack) CheckNetworkProtocol(protocol tcpip.NetworkProtocolNumber) bool 
 // CheckLocalAddress determines if the given local address exists, and if it
 // does, returns the id of the NIC it's bound to. Returns 0 if the address
 // does not exist.
-func (s *Stack) CheckLocalAddress(nicid tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.NICID {
+func (s *Stack) CheckLocalAddress(nicID tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.NICID {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	// If a NIC is specified, we try to find the address there only.
-	if nicid != 0 {
-		nic := s.nics[nicid]
+	if nicID != 0 {
+		nic := s.nics[nicID]
 		if nic == nil {
 			return 0
 		}
@@ -1120,35 +1120,35 @@ func (s *Stack) SetSpoofing(nicID tcpip.NICID, enable bool) *tcpip.Error {
 }
 
 // AddLinkAddress adds a link address to the stack link cache.
-func (s *Stack) AddLinkAddress(nicid tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
-	fullAddr := tcpip.FullAddress{NIC: nicid, Addr: addr}
+func (s *Stack) AddLinkAddress(nicID tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
+	fullAddr := tcpip.FullAddress{NIC: nicID, Addr: addr}
 	s.linkAddrCache.add(fullAddr, linkAddr)
 	// TODO: provide a way for a transport endpoint to receive a signal
 	// that AddLinkAddress for a particular address has been called.
 }
 
 // GetLinkAddress implements LinkAddressCache.GetLinkAddress.
-func (s *Stack) GetLinkAddress(nicid tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, waker *sleep.Waker) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
+func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, waker *sleep.Waker) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
 	s.mu.RLock()
-	nic := s.nics[nicid]
+	nic := s.nics[nicID]
 	if nic == nil {
 		s.mu.RUnlock()
 		return "", nil, tcpip.ErrUnknownNICID
 	}
 	s.mu.RUnlock()
 
-	fullAddr := tcpip.FullAddress{NIC: nicid, Addr: addr}
+	fullAddr := tcpip.FullAddress{NIC: nicID, Addr: addr}
 	linkRes := s.linkAddrResolvers[protocol]
 	return s.linkAddrCache.get(fullAddr, linkRes, localAddr, nic.linkEP, waker)
 }
 
 // RemoveWaker implements LinkAddressCache.RemoveWaker.
-func (s *Stack) RemoveWaker(nicid tcpip.NICID, addr tcpip.Address, waker *sleep.Waker) {
+func (s *Stack) RemoveWaker(nicID tcpip.NICID, addr tcpip.Address, waker *sleep.Waker) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if nic := s.nics[nicid]; nic == nil {
-		fullAddr := tcpip.FullAddress{NIC: nicid, Addr: addr}
+	if nic := s.nics[nicID]; nic == nil {
+		fullAddr := tcpip.FullAddress{NIC: nicID, Addr: addr}
 		s.linkAddrCache.removeWaker(fullAddr, waker)
 	}
 }
@@ -1344,9 +1344,9 @@ func (s *Stack) unregisterPacketEndpointLocked(nicID tcpip.NICID, netProto tcpip
 
 // WritePacket writes data directly to the specified NIC. It adds an ethernet
 // header based on the arguments.
-func (s *Stack) WritePacket(nicid tcpip.NICID, dst tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, payload buffer.VectorisedView) *tcpip.Error {
+func (s *Stack) WritePacket(nicID tcpip.NICID, dst tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, payload buffer.VectorisedView) *tcpip.Error {
 	s.mu.Lock()
-	nic, ok := s.nics[nicid]
+	nic, ok := s.nics[nicID]
 	s.mu.Unlock()
 	if !ok {
 		return tcpip.ErrUnknownDevice
@@ -1372,9 +1372,9 @@ func (s *Stack) WritePacket(nicid tcpip.NICID, dst tcpip.LinkAddress, netProto t
 
 // WriteRawPacket writes data directly to the specified NIC without adding any
 // headers.
-func (s *Stack) WriteRawPacket(nicid tcpip.NICID, payload buffer.VectorisedView) *tcpip.Error {
+func (s *Stack) WriteRawPacket(nicID tcpip.NICID, payload buffer.VectorisedView) *tcpip.Error {
 	s.mu.Lock()
-	nic, ok := s.nics[nicid]
+	nic, ok := s.nics[nicID]
 	s.mu.Unlock()
 	if !ok {
 		return tcpip.ErrUnknownDevice
