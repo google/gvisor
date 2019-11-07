@@ -366,23 +366,24 @@ func fchown(fd int, uid p9.UID, gid p9.GID) error {
 }
 
 // Open implements p9.File.
-func (l *localFile) Open(mode p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
+func (l *localFile) Open(flags p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 	if l.isOpen() {
 		panic(fmt.Sprintf("attempting to open already opened file: %q", l.hostPath))
 	}
 
 	// Check if control file can be used or if a new open must be created.
 	var newFile *fd.FD
-	if mode == p9.ReadOnly {
-		log.Debugf("Open reusing control file, mode: %v, %q", mode, l.hostPath)
+	if flags == p9.ReadOnly {
+		log.Debugf("Open reusing control file, flags: %v, %q", flags, l.hostPath)
 		newFile = l.file
 	} else {
 		// Ideally reopen would call name_to_handle_at (with empty name) and
 		// open_by_handle_at to reopen the file without using 'hostPath'. However,
 		// name_to_handle_at and open_by_handle_at aren't supported by overlay2.
-		log.Debugf("Open reopening file, mode: %v, %q", mode, l.hostPath)
+		log.Debugf("Open reopening file, flags: %v, %q", flags, l.hostPath)
 		var err error
-		newFile, err = reopenProcFd(l.file, openFlags|mode.OSFlags())
+		// Constrain open flags to the open mode and O_TRUNC.
+		newFile, err = reopenProcFd(l.file, openFlags|(flags.OSFlags()&(syscall.O_ACCMODE|syscall.O_TRUNC)))
 		if err != nil {
 			return nil, p9.QID{}, 0, extractErrno(err)
 		}
@@ -409,7 +410,7 @@ func (l *localFile) Open(mode p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 		}
 		l.file = newFile
 	}
-	l.mode = mode
+	l.mode = flags & p9.OpenFlagsModeMask
 	return fd, l.attachPoint.makeQID(stat), 0, nil
 }
 
