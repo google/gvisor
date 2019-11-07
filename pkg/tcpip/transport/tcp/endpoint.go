@@ -594,6 +594,11 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 		e.rcvAutoParams.disabled = !bool(mrb)
 	}
 
+	var de DelayEnabled
+	if err := s.TransportProtocolOption(ProtocolNumber, &de); err == nil && de {
+		e.SetSockOptInt(tcpip.DelayOption, 1)
+	}
+
 	if p := s.GetTCPProbe(); p != nil {
 		e.probe = p
 	}
