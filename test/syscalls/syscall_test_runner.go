@@ -229,7 +229,7 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 		dArgs = append(args, "debug",
 			fmt.Sprintf("--signal=%d", syscall.SIGTERM),
 			id)
-		cmd = exec.Command(*runscPath, dArgs...)
+		cmd := exec.Command(*runscPath, dArgs...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		cmd.Run()
