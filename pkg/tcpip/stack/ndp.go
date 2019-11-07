@@ -67,6 +67,9 @@ const (
 	// default routers. The stack should stop discovering new routers after
 	// discovering MaxDiscoveredDefaultRouters routers.
 	//
+	// This value MUST be at minimum 2 as per RFC 4861 section 6.3.4, and
+	// SHOULD be more.
+	//
 	// Max = 10.
 	MaxDiscoveredDefaultRouters = 10
 )
@@ -85,6 +88,24 @@ type NDPDispatcher interface {
 	// This function is permitted to block indefinitely without interfering
 	// with the stack's operation.
 	OnDuplicateAddressDetectionStatus(nicid tcpip.NICID, addr tcpip.Address, resolved bool, err *tcpip.Error)
+
+	// OnDefaultRouterDiscovered will be called when a new default router is
+	// discovered. Implementations must return true along with a new valid
+	// route table if the newly discovered router should be remembered. If
+	// an implementation returns false, the second return value will be
+	// ignored.
+	//
+	// This function is not permitted to block indefinitely. This function
+	// is also not permitted to call into the stack.
+	OnDefaultRouterDiscovered(nicid tcpip.NICID, addr tcpip.Address) (bool, []tcpip.Route)
+
+	// OnDefaultRouterInvalidated will be called when a discovered default
+	// router is invalidated. Implementers must return a new valid route
+	// table.
+	//
+	// This function is not permitted to block indefinitely. This function
+	// is also not permitted to call into the stack.
+	OnDefaultRouterInvalidated(nicid tcpip.NICID, addr tcpip.Address) []tcpip.Route
 }
 
 // NDPConfigurations is the NDP configurations for the netstack.
@@ -165,6 +186,22 @@ type dadState struct {
 // a Router Advertisement.
 type defaultRouterState struct {
 	invalidationTimer *time.Timer
+
+	// Used to signal the timer not to invalidate the default router (R) in
+	// a race condition (T1 is a goroutine that handles an RA from R and T2
+	// is the goroutine that handles R's invalidation timer firing):
+	//   T1: Receive a new RA from R
+	//   T1: Obtain the NIC's lock before processing the RA
+	//   T2: R's invalidation timer fires, and gets blocked on obtaining the
+	//       NIC's lock
+	//   T1: Refreshes/extends R's lifetime & releases NIC's lock
+	//   T2: Obtains NIC's lock & invalidates R immediately
+	//
+	// To resolve this, T1 will check to see if the timer already fired, and
+	// signal the timer using this channel to not invalidate R, so that once
+	// T2 obtains the lock, it will see that there is an event on this
+	// channel and do nothing further.
+	doNotInvalidateC chan struct{}
 }
 
 // startDuplicateAddressDetection performs Duplicate Address Detection.
@@ -361,16 +398,137 @@ func (ndp *ndpState) stopDuplicateAddressDetection(addr tcpip.Address) {
 }
 
 // handleRA handles a Router Advertisement message that arrived on the NIC
-// this ndp is for.
+// this ndp is for. Does nothing if the NIC is configured to not handle RAs.
 //
-// The NIC that ndp belongs to MUST be locked.
+// The NIC that ndp belongs to and its associated stack MUST be locked.
 func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 	// Is the NIC configured to handle RAs at all?
-	if !ndp.configs.HandleRAs {
+	//
+	// Currently, the stack does not determine router interface status on a
+	// per-interface basis; it is a stack-wide configuration, so we check
+	// stack's forwarding flag to determine if the NIC is a routing
+	// interface.
+	if !ndp.configs.HandleRAs || ndp.nic.stack.forwarding {
 		return
 	}
 
-	// TODO(b/140882146): Do Router Discovery.
+	// Is the NIC configured to discover default routers?
+	if ndp.configs.DiscoverDefaultRouters {
+		rtr, ok := ndp.defaultRouters[ip]
+		rl := ra.RouterLifetime()
+		switch {
+		case !ok && rl != 0:
+			// This is a new default router we are discovering.
+			//
+			// Only remember it if we currently know about less than
+			// MaxDiscoveredDefaultRouters routers.
+			if len(ndp.defaultRouters) < MaxDiscoveredDefaultRouters {
+				ndp.rememberDefaultRouter(ip, rl)
+			}
+
+		case ok && rl != 0:
+			// This is an already discovered default router. Update
+			// the invalidation timer.
+			timer := rtr.invalidationTimer
+
+			// We should ALWAYS have an invalidation timer for a
+			// discovered router.
+			if timer == nil {
+				panic("ndphandlera: RA invalidation timer should not be nil")
+			}
+
+			if !timer.Stop() {
+				// If we reach this point, then we know the
+				// timer fired after we already took the NIC
+				// lock. Signal the timer so that once it
+				// obtains the lock, it doesn't actually
+				// invalidate the router as we just got a new
+				// RA that refreshes its lifetime to a non-zero
+				// value. See
+				// defaultRouterState.doNotInvalidateC for more
+				// details.
+				rtr.doNotInvalidateC <- struct{}{}
+			}
+
+			timer.Reset(rl)
+
+		case ok && rl == 0:
+			// We know about the router but it is no longer to be
+			// used as a default router so invalidate it.
+			ndp.invalidateDefaultRouter(ip)
+		}
+	}
+
 	// TODO(b/140948104): Do Prefix Discovery.
 	// TODO(b/141556115): Do Parameter Discovery.
+}
+
+// invalidateDefaultRouter invalidates a discovered default router.
+//
+// The NIC that ndp belongs to and its associated stack MUST be locked.
+func (ndp *ndpState) invalidateDefaultRouter(ip tcpip.Address) {
+	rtr, ok := ndp.defaultRouters[ip]
+
+	// Is the router still discovered?
+	if !ok {
+		// ...Nope, do nothing further.
+		return
+	}
+
+	rtr.invalidationTimer.Stop()
+	rtr.invalidationTimer = nil
+	close(rtr.doNotInvalidateC)
+	rtr.doNotInvalidateC = nil
+
+	delete(ndp.defaultRouters, ip)
+
+	// Let the integrator know a discovered default router is invalidated.
+	if ndp.nic.stack.ndpDisp != nil {
+		ndp.nic.stack.routeTable = ndp.nic.stack.ndpDisp.OnDefaultRouterInvalidated(ndp.nic.ID(), ip)
+	}
+}
+
+// rememberDefaultRouter remembers a newly discovered default router with IPv6
+// link-local address ip with lifetime rl.
+//
+// The router identified by ip MUST NOT already be known by the NIC.
+//
+// The NIC that ndp belongs to and its associated stack MUST be locked.
+func (ndp *ndpState) rememberDefaultRouter(ip tcpip.Address, rl time.Duration) {
+	if ndp.nic.stack.ndpDisp == nil {
+		return
+	}
+
+	// Inform the integrator when we discovered a default router.
+	remember, routeTable := ndp.nic.stack.ndpDisp.OnDefaultRouterDiscovered(ndp.nic.ID(), ip)
+	if !remember {
+		// Informed by the integrator to not remember the router, do
+		// nothing further.
+		return
+	}
+
+	// Used to signal the timer not to invalidate the default router (R) in
+	// a race condition. See defaultRouterState.doNotInvalidateC for more
+	// details.
+	doNotInvalidateC := make(chan struct{}, 1)
+
+	ndp.defaultRouters[ip] = defaultRouterState{
+		invalidationTimer: time.AfterFunc(rl, func() {
+			ndp.nic.stack.mu.Lock()
+			defer ndp.nic.stack.mu.Unlock()
+			ndp.nic.mu.Lock()
+			defer ndp.nic.mu.Unlock()
+
+			select {
+			case <-doNotInvalidateC:
+				return
+			default:
+			}
+
+			ndp.invalidateDefaultRouter(ip)
+		}),
+		doNotInvalidateC: doNotInvalidateC,
+	}
+
+	ndp.nic.stack.routeTable = routeTable
 }
