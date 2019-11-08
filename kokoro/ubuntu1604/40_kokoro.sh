@@ -23,7 +23,10 @@ declare -r ssh_public_keys=(
 )
 
 # Install dependencies.
-apt-get update && apt-get install -y rsync coreutils python-psutil qemu-kvm
+apt-get update && apt-get install -y rsync coreutils python-psutil qemu-kvm python-pip
+
+# junitparser is used to merge junit xml files.
+pip install junitparser
 
 # We need a kbuilder user.
 if useradd -c "kbuilder user" -m -s /bin/bash kbuilder; then
