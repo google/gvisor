@@ -221,8 +221,6 @@ type InodeOperations interface {
 	// sys_ftruncate.
 	//
 	// Implementations need not check that length >= 0.
-	//
-	// Truncate must only be called on regular files.
 	Truncate(ctx context.Context, inode *Inode, size int64) error
 
 	// Allocate allows the caller to reserve disk space for the inode.
