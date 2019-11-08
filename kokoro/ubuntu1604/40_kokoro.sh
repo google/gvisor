@@ -23,7 +23,7 @@ declare -r ssh_public_keys=(
 )
 
 # Install dependencies.
-apt-get update && apt-get install -y rsync coreutils python-psutil qemu-kvm python-pip
+apt-get update && apt-get install -y rsync coreutils python-psutil qemu-kvm python-pip zip
 
 # junitparser is used to merge junit xml files.
 pip install junitparser
