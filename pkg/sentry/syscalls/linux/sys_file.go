@@ -169,7 +169,7 @@ func openAt(t *kernel.Task, dirFD int32, addr usermem.Addr, flags uint) (fd uint
 			if dirPath {
 				return syserror.ENOTDIR
 			}
-			if flags&linux.O_TRUNC != 0 && fs.IsRegular(d.Inode.StableAttr) {
+			if flags&linux.O_TRUNC != 0 {
 				if err := d.Inode.Truncate(t, d, 0); err != nil {
 					return err
 				}
@@ -397,7 +397,7 @@ func createAt(t *kernel.Task, dirFD int32, addr usermem.Addr, flags uint, mode l
 			}
 
 			// Should we truncate the file?
-			if flags&linux.O_TRUNC != 0 && fs.IsRegular(found.Inode.StableAttr) {
+			if flags&linux.O_TRUNC != 0 {
 				if err := found.Inode.Truncate(t, found, 0); err != nil {
 					return err
 				}
@@ -1483,7 +1483,7 @@ func Truncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		if fs.IsDir(d.Inode.StableAttr) {
 			return syserror.EISDIR
 		}
-		if !fs.IsRegular(d.Inode.StableAttr) {
+		if !fs.IsFile(d.Inode.StableAttr) {
 			return syserror.EINVAL
 		}
 
@@ -1523,7 +1523,7 @@ func Ftruncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 	// Note that this is different from truncate(2) above, where a
 	// directory returns EISDIR.
-	if !fs.IsRegular(file.Dirent.Inode.StableAttr) {
+	if !fs.IsFile(file.Dirent.Inode.StableAttr) {
 		return 0, nil, syserror.EINVAL
 	}
 
