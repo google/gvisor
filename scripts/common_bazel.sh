@@ -71,6 +71,13 @@ function run_as_root() {
 function collect_logs() {
   # Zip out everything into a convenient form.
   if [[ -v KOKORO_ARTIFACTS_DIR ]] && [[ -e bazel-testlogs ]]; then
+    # Merge results files of all shards for each test suite.
+    for d in `find -L "bazel-testlogs" -name 'shard_*_of_*' | xargs dirname | sort | uniq`; do
+      junitparser merge `find $d -name test.xml` $d/test.xml
+      cat $d/shard_*_of_*/test.log > $d/test.log
+      ls -l $d/shard_*_of_*/outputs.zip && zip -r -1 $d/outputs.zip $d/shard_*_of_*/outputs.zip
+    done
+    find -L "bazel-testlogs" -name 'shard_*_of_*' | xargs rm -rf
     # Move test logs to Kokoro directory. tar is used to conveniently perform
     # renames while moving files.
     find -L "bazel-testlogs" -name "test.xml" -o -name "test.log" -o -name "outputs.zip" |
