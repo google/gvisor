@@ -299,6 +299,15 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 		return nil
 	}
 
+	// RFC 793, Section 3.9, page 69, states that in the SYN-RCVD state, a
+	// sequence number outside of the window causes an ACK with the proper seq
+	// number and "After sending the acknowledgment, drop the unacceptable
+	// segment and return."
+	if !s.sequenceNumber.InWindow(h.ackNum, h.rcvWnd) {
+		h.ep.sendRaw(buffer.VectorisedView{}, header.TCPFlagAck, h.iss+1, h.ackNum, h.rcvWnd)
+		return nil
+	}
+
 	if s.flagIsSet(header.TCPFlagSyn) && s.sequenceNumber != h.ackNum-1 {
 		// We received two SYN segments with different sequence
 		// numbers, so we reset this and restart the whole
