@@ -21,6 +21,8 @@ go_library(
         "socket_unsafe.go",
         "tty.go",
         "util.go",
+        "util_amd64_unsafe.go",
+        "util_arm64_unsafe.go",
         "util_unsafe.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/sentry/fs/host",
