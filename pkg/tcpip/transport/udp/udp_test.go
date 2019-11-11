@@ -640,6 +640,50 @@ func TestBindEphemeralPort(t *testing.T) {
 	}
 }
 
+// TestConnectAfterBindToAny checks that connecting to a remote address after
+// binding to ANY will change the bound-to address to the local interface.
+func TestConnectAfterBindToAny(t *testing.T) {
+	t.Skip("Enable when issue #1171 is fixed.")
+
+	for _, flow := range []testFlow{unicastV4, unicastV6, unicastV4in6} {
+		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
+			c := newDualTestContext(t, defaultMTU)
+			defer c.cleanup()
+
+			c.createEndpointForFlow(flow)
+
+			// Bind to ANY.
+			if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+				c.t.Fatal("Bind failed:", err)
+			}
+
+			// Verify bound-to local address is ANY.
+			addr, err := c.ep.GetLocalAddress()
+			if err != nil {
+				t.Fatal("GetLocalAddress failed:", err)
+			}
+			if len(addr.Addr) != 0 {
+				c.t.Fatalf("Unexpected bound-to address, got = %s, want = <empty>", addr.Addr)
+			}
+
+			h := flow.header4Tuple(outgoing)
+			// Connect to remote address.
+			if err := c.ep.Connect(tcpip.FullAddress{Addr: h.dstAddr.Addr, Port: testPort}); err != nil {
+				c.t.Fatal("Connect failed:")
+			}
+
+			// Verify bound-to local address is the local interface now.
+			addr, err = c.ep.GetLocalAddress()
+			if err != nil {
+				t.Fatal("GetLocalAddress failed:", err)
+			}
+			if addr.Addr != h.srcAddr.Addr {
+				c.t.Fatalf("Unexpected bound-to address, got = %s, want = %s", addr.Addr, tcpip.Address(h.srcAddr.Addr))
+			}
+		})
+	}
+}
+
 func TestBindReservedPort(t *testing.T) {
 	c := newDualTestContext(t, defaultMTU)
 	defer c.cleanup()
