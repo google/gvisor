@@ -268,7 +268,7 @@ func (i *inodeFileState) recreateReadHandles(ctx context.Context, writer *handle
 	// operations on the old will see the new data. Then, make the new handle take
 	// ownereship of the old FD and mark the old readHandle to not close the FD
 	// when done.
-	if err := syscall.Dup2(h.Host.FD(), i.readHandles.Host.FD()); err != nil {
+	if err := syscall.Dup3(h.Host.FD(), i.readHandles.Host.FD(), 0); err != nil {
 		return err
 	}
 

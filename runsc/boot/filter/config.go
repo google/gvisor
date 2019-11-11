@@ -26,10 +26,6 @@ import (
 
 // allowedSyscalls is the set of syscalls executed by the Sentry to the host OS.
 var allowedSyscalls = seccomp.SyscallRules{
-	syscall.SYS_ARCH_PRCTL: []seccomp.Rule{
-		{seccomp.AllowValue(linux.ARCH_GET_FS)},
-		{seccomp.AllowValue(linux.ARCH_SET_FS)},
-	},
 	syscall.SYS_CLOCK_GETTIME: {},
 	syscall.SYS_CLONE: []seccomp.Rule{
 		{
@@ -44,7 +40,7 @@ var allowedSyscalls = seccomp.SyscallRules{
 	},
 	syscall.SYS_CLOSE:         {},
 	syscall.SYS_DUP:           {},
-	syscall.SYS_DUP2:          {},
+	syscall.SYS_DUP3:          {},
 	syscall.SYS_EPOLL_CREATE1: {},
 	syscall.SYS_EPOLL_CTL:     {},
 	syscall.SYS_EPOLL_PWAIT: []seccomp.Rule{

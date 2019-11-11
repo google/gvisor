@@ -43,7 +43,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/sighandling"
-	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
@@ -147,9 +146,6 @@ type execProcess struct {
 func init() {
 	// Initialize the random number generator.
 	mrand.Seed(gtime.Now().UnixNano())
-
-	// Register the global syscall table.
-	kernel.RegisterSyscallTable(slinux.AMD64)
 }
 
 // Args are the arguments for New().
