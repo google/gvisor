@@ -183,6 +183,33 @@ const (
 	X86FeatureAVX512VBMI
 	X86FeatureUMIP
 	X86FeaturePKU
+	X86FeatureOSPKE
+	X86FeatureWAITPKG
+	X86FeatureAVX512_VBMI2
+	_ // ecx bit 7 is reserved
+	X86FeatureGFNI
+	X86FeatureVAES
+	X86FeatureVPCLMULQDQ
+	X86FeatureAVX512_VNNI
+	X86FeatureAVX512_BITALG
+	X86FeatureTME
+	X86FeatureAVX512_VPOPCNTDQ
+	_ // ecx bit 15 is reserved
+	X86FeatureLA57
+	// ecx bits 17-21 are reserved
+	_
+	_
+	_
+	_
+	_
+	X86FeatureRDPID
+	// ecx bits 23-24 are reserved
+	_
+	_
+	X86FeatureCLDEMOTE
+	_ // ecx bit 26 is reserved
+	X86FeatureMOVDIRI
+	X86FeatureMOVDIR64B
 )
 
 // Block 4 constants are for xsave capabilities in CPUID.(EAX=0DH,ECX=01H):EAX.
@@ -353,9 +380,24 @@ var x86FeatureStrings = map[Feature]string{
 	X86FeatureAVX512VL:   "avx512vl",
 
 	// Block 3.
-	X86FeatureAVX512VBMI: "avx512vbmi",
-	X86FeatureUMIP:       "umip",
-	X86FeaturePKU:        "pku",
+	X86FeatureAVX512VBMI:       "avx512vbmi",
+	X86FeatureUMIP:             "umip",
+	X86FeaturePKU:              "pku",
+	X86FeatureOSPKE:            "ospke",
+	X86FeatureWAITPKG:          "waitpkg",
+	X86FeatureAVX512_VBMI2:     "avx512_vbmi2",
+	X86FeatureGFNI:             "gfni",
+	X86FeatureVAES:             "vaes",
+	X86FeatureVPCLMULQDQ:       "vpclmulqdq",
+	X86FeatureAVX512_VNNI:      "avx512_vnni",
+	X86FeatureAVX512_BITALG:    "avx512_bitalg",
+	X86FeatureTME:              "tme",
+	X86FeatureAVX512_VPOPCNTDQ: "avx512_vpopcntdq",
+	X86FeatureLA57:             "la57",
+	X86FeatureRDPID:            "rdpid",
+	X86FeatureCLDEMOTE:         "cldemote",
+	X86FeatureMOVDIRI:          "movdiri",
+	X86FeatureMOVDIR64B:        "movdir64b",
 
 	// Block 4.
 	X86FeatureXSAVEOPT: "xsaveopt",
