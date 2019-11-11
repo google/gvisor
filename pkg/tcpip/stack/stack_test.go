@@ -1175,6 +1175,86 @@ func TestOutgoingBroadcastWithRouteTable(t *testing.T) {
 	}
 }
 
+func TestOutgoingSubnetBroadcast(t *testing.T) {
+	defaultAddr := tcpip.AddressWithPrefix{header.IPv4Any, 0}
+	// Local subnet on NIC1: 192.168.1.58/24, gateway 192.168.1.1.
+	nic1Addr := tcpip.AddressWithPrefix{"\xc0\xa8\x01\x3a", 24}
+	nic1SubnetBcast := tcpip.Address("\xc0\xa8\x01\xff")
+	nic1Gateway := tcpip.Address("\xc0\xa8\x01\x01")
+	// Local subnet on NIC2: 10.10.10.5/24, gateway 10.10.10.1.
+	nic2Addr := tcpip.AddressWithPrefix{"\x0a\x0a\x0a\x05", 24}
+	nic2Gateway := tcpip.Address("\x0a\x0a\x0a\x01")
+	// Remote subnet: 100.10.123.34/24.
+	remNetAddr := tcpip.AddressWithPrefix{"\x64\x0a\x7b\x18", 24}
+	remNetSubnetBcast := tcpip.Address("\x64\x0a\x7b\xff")
+	// Unknown remote subnet address.
+	remUnknownAddr := tcpip.Address("\x45\x67\xff\xff")
+
+	// Create a new stack with two NICs.
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
+	})
+	ep := channel.New(10, defaultMTU, "")
+	if err := s.CreateNIC(1, ep); err != nil {
+		t.Fatalf("CreateNIC failed: %s", err)
+	}
+	if err := s.CreateNIC(2, ep); err != nil {
+		t.Fatalf("CreateNIC failed: %s", err)
+	}
+	nic1ProtoAddr := tcpip.ProtocolAddress{fakeNetNumber, nic1Addr}
+	if err := s.AddProtocolAddress(1, nic1ProtoAddr); err != nil {
+		t.Fatalf("AddProtocolAddress(1, %s) failed: %s", nic1ProtoAddr, err)
+	}
+
+	nic2ProtoAddr := tcpip.ProtocolAddress{fakeNetNumber, nic2Addr}
+	if err := s.AddProtocolAddress(2, nic2ProtoAddr); err != nil {
+		t.Fatalf("AddAddress(2, %s) failed: %s", nic2ProtoAddr, err)
+	}
+
+	// Set the initial route table.
+	rt := []tcpip.Route{
+		// Directly attached networks.
+		{Destination: nic1Addr.Subnet(), NIC: 1},
+		{Destination: nic2Addr.Subnet(), NIC: 2},
+		// Remote subnet, reached via next-hop through NIC1.
+		{Destination: remNetAddr.Subnet(), Gateway: nic1Gateway, NIC: 1},
+		// Default routes.
+		{Destination: defaultAddr.Subnet(), Gateway: nic2Gateway, NIC: 2},
+		{Destination: defaultAddr.Subnet(), Gateway: nic1Gateway, NIC: 1},
+	}
+	s.SetRouteTable(rt)
+
+	// Broadcast to a locally attached subnet populates the broadcast MAC.
+	r, err := s.FindRoute(0, "", nic1SubnetBcast, fakeNetNumber, false /* multicastLoop */)
+	if err != nil {
+		t.Fatalf("FindRoute(0, \"\", %s, %d) failed: %s", nic1SubnetBcast, fakeNetNumber, err)
+	}
+	if err := verifyRoute(r, stack.Route{LocalAddress: nic1Addr.Address, RemoteAddress: nic1SubnetBcast, RemoteLinkAddress: header.BroadcastMAC}); err != nil {
+		t.Errorf("FindRoute(0, \"\", %s, %d) returned unexpected Route: %s)", nic1SubnetBcast, fakeNetNumber, err)
+	}
+
+	// Broadcast to a remote subnet in the route table is send to the next-hop
+	// gateway.
+	r, err = s.FindRoute(0, "", remNetSubnetBcast, fakeNetNumber, false /* multicastLoop */)
+	if err != nil {
+		t.Fatalf("FindRoute(0, \"\", %s, %d) failed: %s", remNetSubnetBcast, fakeNetNumber, err)
+	}
+	if err := verifyRoute(r, stack.Route{LocalAddress: nic1Addr.Address, RemoteAddress: remNetSubnetBcast, NextHop: nic1Gateway}); err != nil {
+		t.Errorf("FindRoute(0, \"\", %s, %d) returned unexpected Route: %s)", remNetSubnetBcast, fakeNetNumber, err)
+	}
+
+	// Broadcast to an unknown subnet follows the default route. Note that this is
+	// essentially just routing an unknown destination IP, because w/o any subnet
+	// prefix information a subnet broadcast address is just a normal IP.
+	r, err = s.FindRoute(0, "", remUnknownAddr, fakeNetNumber, false /* multicastLoop */)
+	if err != nil {
+		t.Fatalf("FindRoute(0, \"\", %s, %d) failed: %v", remUnknownAddr, fakeNetNumber, err)
+	}
+	if err := verifyRoute(r, stack.Route{LocalAddress: nic2Addr.Address, RemoteAddress: remUnknownAddr, NextHop: nic2Gateway}); err != nil {
+		t.Errorf("FindRoute(0, \"\", %s, %d) returned unexpected Route: %s)", remUnknownAddr, fakeNetNumber, err)
+	}
+}
+
 func TestMulticastOrIPv6LinkLocalNeedsNoRoute(t *testing.T) {
 	for _, tc := range []struct {
 		name        string

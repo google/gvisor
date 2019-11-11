@@ -26,6 +26,9 @@ const (
 	ethType = 12
 )
 
+// BroadcastMAC contains the MAC address for local broadcast packets.
+var BroadcastMAC = tcpip.LinkAddress([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
+
 // EthernetFields contains the fields of an ethernet frame header. It is used to
 // describe the fields of a frame that needs to be encoded.
 type EthernetFields struct {

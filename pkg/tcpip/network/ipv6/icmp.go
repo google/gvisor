@@ -385,8 +385,6 @@ const (
 	icmpV6LengthOffset = 25
 )
 
-var broadcastMAC = tcpip.LinkAddress([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
-
 var _ stack.LinkAddressResolver = (*protocol)(nil)
 
 // LinkAddressProtocol implements stack.LinkAddressResolver.
@@ -400,7 +398,7 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.
 	r := &stack.Route{
 		LocalAddress:      localAddr,
 		RemoteAddress:     snaddr,
-		RemoteLinkAddress: broadcastMAC,
+		RemoteLinkAddress: header.BroadcastMAC,
 	}
 	hdr := buffer.NewPrependable(int(linkEP.MaxHeaderLength()) + header.IPv6MinimumSize + header.ICMPv6NeighborAdvertSize)
 	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborAdvertSize))

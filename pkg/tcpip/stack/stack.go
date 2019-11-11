@@ -1006,9 +1006,9 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	isBroadcast := remoteAddr == header.IPv4Broadcast
+	isLocalBroadcast := remoteAddr == header.IPv4Broadcast
 	isMulticast := header.IsV4MulticastAddress(remoteAddr) || header.IsV6MulticastAddress(remoteAddr)
-	needRoute := !(isBroadcast || isMulticast || header.IsV6LinkLocalAddress(remoteAddr))
+	needRoute := !(isLocalBroadcast || isMulticast || header.IsV6LinkLocalAddress(remoteAddr))
 	if id != 0 && !needRoute {
 		if nic, ok := s.nics[id]; ok {
 			if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
@@ -1029,8 +1029,13 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 					}
 
 					r := makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.loopback, multicastLoop && !nic.loopback)
-					if needRoute {
-						r.NextHop = route.Gateway
+					if len(route.Gateway) > 0 {
+						if needRoute {
+							r.NextHop = route.Gateway
+						}
+					} else if !isLocalBroadcast && route.IsSubnetBroadcastAddr(remoteAddr) {
+						// Broadcast to a directly connected subnet, set the broadcast MAC.
+						r.RemoteLinkAddress = header.BroadcastMAC
 					}
 					return r, nil
 				}

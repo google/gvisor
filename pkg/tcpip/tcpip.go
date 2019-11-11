@@ -674,6 +674,22 @@ func (r Route) String() string {
 	return out.String()
 }
 
+// IsSubnetBroadcastAddr returns true if the given address is the route's subnet
+// broadcast address.
+func (r *Route) IsSubnetBroadcastAddr(addr Address) bool {
+	// Note:Using header.IPv4AddressSize would cause a import cycle.
+	if len(addr) != 4 || len(r.Destination.address) != 4 {
+		return false // not IPv4
+	}
+
+	for i := 0; i < 4; i++ {
+		if addr[i] != r.Destination.address[i]|(r.Destination.mask[i]^0xff) {
+			return false
+		}
+	}
+	return true
+}
+
 // TransportProtocolNumber is the number of a transport protocol.
 type TransportProtocolNumber uint32
 
