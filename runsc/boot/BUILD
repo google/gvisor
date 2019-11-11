@@ -15,6 +15,8 @@ go_library(
         "fs.go",
         "limits.go",
         "loader.go",
+        "loader_amd64.go",
+        "loader_arm64.go",
         "network.go",
         "pprof.go",
         "strace.go",
