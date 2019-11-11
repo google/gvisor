@@ -130,6 +130,19 @@ void TcpSocketTest::TearDown() {
   }
 }
 
+TEST_P(TcpSocketTest, ConnectOnEstablishedConnection) {
+  sockaddr_storage addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+  socklen_t addrlen = sizeof(addr);
+
+  ASSERT_THAT(
+      connect(s_, reinterpret_cast<const struct sockaddr*>(&addr), addrlen),
+      SyscallFailsWithErrno(EISCONN));
+  ASSERT_THAT(
+      connect(t_, reinterpret_cast<const struct sockaddr*>(&addr), addrlen),
+      SyscallFailsWithErrno(EISCONN));
+}
+
 TEST_P(TcpSocketTest, DataCoalesced) {
   char buf[10];
 

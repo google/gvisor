@@ -300,6 +300,7 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 	ep.mu.Lock()
 	ep.stack.Stats().TCP.CurrentEstablished.Increment()
 	ep.state = StateEstablished
+	ep.isConnectNotified = true
 	ep.mu.Unlock()
 
 	// Update the receive window scaling. We can't do it before the
@@ -539,6 +540,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		// Switch state to connected.
 		n.stack.Stats().TCP.CurrentEstablished.Increment()
 		n.state = StateEstablished
+		n.isConnectNotified = true
 
 		// Do the delivery in a separate goroutine so
 		// that we don't block the listen loop in case

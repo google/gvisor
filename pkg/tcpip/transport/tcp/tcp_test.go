@@ -4599,6 +4599,9 @@ func TestEndpointBindListenAcceptState(t *testing.T) {
 	if got, want := tcp.EndpointState(aep.State()), tcp.StateEstablished; got != want {
 		t.Errorf("Unexpected endpoint state: want %v, got %v", want, got)
 	}
+	if err := aep.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}); err != tcpip.ErrAlreadyConnected {
+		t.Errorf("Unexpected error attempting to call connect on an established endpoint, got: %v, want: %v", err, tcpip.ErrAlreadyConnected)
+	}
 	// Listening endpoint remains in listen state.
 	if got, want := tcp.EndpointState(ep.State()), tcp.StateListen; got != want {
 		t.Errorf("Unexpected endpoint state: want %v, got %v", want, got)
