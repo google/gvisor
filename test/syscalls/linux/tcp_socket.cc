@@ -425,6 +425,11 @@ TEST_P(TcpSocketTest, PollWithFullBufferBlocks) {
   }
   // The last error should have been EWOULDBLOCK.
   ASSERT_EQ(errno, EWOULDBLOCK);
+
+  // Now polling on the FD with a timeout should return 0 corresponding to no
+  // FDs ready.
+  struct pollfd poll_fd = {s_, POLLOUT, 0};
+  EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 10), SyscallSucceedsWithValue(0));
 }
 
 TEST_P(TcpSocketTest, MsgTrunc) {
