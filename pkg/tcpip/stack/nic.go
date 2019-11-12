@@ -118,6 +118,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, loopback
 			configs:        stack.ndpConfigs,
 			dad:            make(map[tcpip.Address]dadState),
 			defaultRouters: make(map[tcpip.Address]defaultRouterState),
+			onLinkPrefixes: make(map[tcpip.Subnet]onLinkPrefixState),
 		},
 	}
 	nic.ndp.nic = nic
