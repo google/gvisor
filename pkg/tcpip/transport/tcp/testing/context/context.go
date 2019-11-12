@@ -309,6 +309,12 @@ func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code uint8, p1, p2 []byt
 
 // BuildSegment builds a TCP segment based on the given Headers and payload.
 func (c *Context) BuildSegment(payload []byte, h *Headers) buffer.VectorisedView {
+	return c.BuildSegmentWithAddrs(payload, h, TestAddr, StackAddr)
+}
+
+// BuildSegmentWithAddrs builds a TCP segment based on the given Headers,
+// payload and source and destination IPv4 addresses.
+func (c *Context) BuildSegmentWithAddrs(payload []byte, h *Headers, src, dst tcpip.Address) buffer.VectorisedView {
 	// Allocate a buffer for data and headers.
 	buf := buffer.NewView(header.TCPMinimumSize + header.IPv4MinimumSize + len(h.TCPOpts) + len(payload))
 	copy(buf[len(buf)-len(payload):], payload)
@@ -321,8 +327,8 @@ func (c *Context) BuildSegment(payload []byte, h *Headers) buffer.VectorisedView
 		TotalLength: uint16(len(buf)),
 		TTL:         65,
 		Protocol:    uint8(tcp.ProtocolNumber),
-		SrcAddr:     TestAddr,
-		DstAddr:     StackAddr,
+		SrcAddr:     src,
+		DstAddr:     dst,
 	})
 	ip.SetChecksum(^ip.CalculateChecksum())
 
@@ -339,7 +345,7 @@ func (c *Context) BuildSegment(payload []byte, h *Headers) buffer.VectorisedView
 	})
 
 	// Calculate the TCP pseudo-header checksum.
-	xsum := header.PseudoHeaderChecksum(tcp.ProtocolNumber, TestAddr, StackAddr, uint16(len(t)))
+	xsum := header.PseudoHeaderChecksum(tcp.ProtocolNumber, src, dst, uint16(len(t)))
 
 	// Calculate the TCP checksum and set it.
 	xsum = header.Checksum(payload, xsum)
@@ -362,6 +368,15 @@ func (c *Context) SendSegment(s buffer.VectorisedView) {
 func (c *Context) SendPacket(payload []byte, h *Headers) {
 	c.linkEP.InjectInbound(ipv4.ProtocolNumber, tcpip.PacketBuffer{
 		Data: c.BuildSegment(payload, h),
+	})
+}
+
+// SendPacketWithAddrs builds and sends a TCP segment(with the provided payload
+// & TCPheaders) in an IPv4 packet via the link layer endpoint using the
+// provided source and destination IPv4 addresses.
+func (c *Context) SendPacketWithAddrs(payload []byte, h *Headers, src, dst tcpip.Address) {
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, tcpip.PacketBuffer{
+		Data: c.BuildSegmentWithAddrs(payload, h, src, dst),
 	})
 }
 
@@ -490,6 +505,13 @@ func (c *Context) GetV6Packet() []byte {
 // SendV6Packet builds and sends an IPv6 Packet via the link layer endpoint of
 // the context.
 func (c *Context) SendV6Packet(payload []byte, h *Headers) {
+	c.SendV6PacketWithAddrs(payload, h, TestV6Addr, StackV6Addr)
+}
+
+// SendV6PacketWithAddrs builds and sends an IPv6 Packet via the link layer
+// endpoint of the context using the provided source and destination IPv6
+// addresses.
+func (c *Context) SendV6PacketWithAddrs(payload []byte, h *Headers, src, dst tcpip.Address) {
 	// Allocate a buffer for data and headers.
 	buf := buffer.NewView(header.TCPMinimumSize + header.IPv6MinimumSize + len(payload))
 	copy(buf[len(buf)-len(payload):], payload)
@@ -500,8 +522,8 @@ func (c *Context) SendV6Packet(payload []byte, h *Headers) {
 		PayloadLength: uint16(header.TCPMinimumSize + len(payload)),
 		NextHeader:    uint8(tcp.ProtocolNumber),
 		HopLimit:      65,
-		SrcAddr:       TestV6Addr,
-		DstAddr:       StackV6Addr,
+		SrcAddr:       src,
+		DstAddr:       dst,
 	})
 
 	// Initialize the TCP header.
@@ -517,7 +539,7 @@ func (c *Context) SendV6Packet(payload []byte, h *Headers) {
 	})
 
 	// Calculate the TCP pseudo-header checksum.
-	xsum := header.PseudoHeaderChecksum(tcp.ProtocolNumber, TestV6Addr, StackV6Addr, uint16(len(t)))
+	xsum := header.PseudoHeaderChecksum(tcp.ProtocolNumber, src, dst, uint16(len(t)))
 
 	// Calculate the TCP checksum and set it.
 	xsum = header.Checksum(payload, xsum)
