@@ -1156,10 +1156,9 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V6OnlyV6AnyReservesV6) {
     sockaddr_storage addr_dual = test_addr_dual.addr;
     const FileDescriptor fd_dual = ASSERT_NO_ERRNO_AND_VALUE(
         Socket(test_addr_dual.family(), param.type, 0));
-    int one = 1;
-    EXPECT_THAT(
-        setsockopt(fd_dual.get(), IPPROTO_IPV6, IPV6_V6ONLY, &one, sizeof(one)),
-        SyscallSucceeds());
+    EXPECT_THAT(setsockopt(fd_dual.get(), IPPROTO_IPV6, IPV6_V6ONLY,
+                           &kSockOptOn, sizeof(kSockOptOn)),
+                SyscallSucceeds());
     ASSERT_THAT(bind(fd_dual.get(), reinterpret_cast<sockaddr*>(&addr_dual),
                      test_addr_dual.addr_len),
                 SyscallSucceeds());
@@ -1207,7 +1206,8 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V6OnlyV6AnyReservesV6) {
 TEST_P(SocketMultiProtocolInetLoopbackTest, V6EphemeralPortReserved) {
   auto const& param = GetParam();
 
-  // FIXME(b/114268588)
+  // FIXME(b/76031995): Support disabling SO_REUSEADDR for TCP sockets and make
+  // it disabled by default.
   SKIP_IF(IsRunningOnGvisor() && param.type == SOCK_STREAM);
 
   for (int i = 0; true; i++) {
@@ -1305,10 +1305,76 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V6EphemeralPortReserved) {
   }
 }
 
+TEST_P(SocketMultiProtocolInetLoopbackTest, V6EphemeralPortReservedReuseAddr) {
+  auto const& param = GetParam();
+
+  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
+  SKIP_IF(IsRunningOnGvisor() && param.type == SOCK_DGRAM);
+
+  // Bind the v6 loopback on a dual stack socket.
+  TestAddress const& test_addr = V6Loopback();
+  sockaddr_storage bound_addr = test_addr.addr;
+  const FileDescriptor bound_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+  ASSERT_THAT(bind(bound_fd.get(), reinterpret_cast<sockaddr*>(&bound_addr),
+                   test_addr.addr_len),
+              SyscallSucceeds());
+  ASSERT_THAT(setsockopt(bound_fd.get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  // Listen iff TCP.
+  if (param.type == SOCK_STREAM) {
+    ASSERT_THAT(listen(bound_fd.get(), SOMAXCONN), SyscallSucceeds());
+  }
+
+  // Get the port that we bound.
+  socklen_t bound_addr_len = test_addr.addr_len;
+  ASSERT_THAT(
+      getsockname(bound_fd.get(), reinterpret_cast<sockaddr*>(&bound_addr),
+                  &bound_addr_len),
+      SyscallSucceeds());
+
+  // Connect to bind an ephemeral port.
+  const FileDescriptor connected_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+  ASSERT_THAT(setsockopt(connected_fd.get(), SOL_SOCKET, SO_REUSEADDR,
+                         &kSockOptOn, sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(connect(connected_fd.get(),
+                      reinterpret_cast<sockaddr*>(&bound_addr), bound_addr_len),
+              SyscallSucceeds());
+
+  // Get the ephemeral port.
+  sockaddr_storage connected_addr = {};
+  socklen_t connected_addr_len = sizeof(connected_addr);
+  ASSERT_THAT(getsockname(connected_fd.get(),
+                          reinterpret_cast<sockaddr*>(&connected_addr),
+                          &connected_addr_len),
+              SyscallSucceeds());
+  uint16_t const ephemeral_port =
+      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(test_addr.family(), connected_addr));
+
+  // Verify that we actually got an ephemeral port.
+  ASSERT_NE(ephemeral_port, 0);
+
+  // Verify that the ephemeral port is not reserved.
+  const FileDescriptor checking_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+  ASSERT_THAT(setsockopt(checking_fd.get(), SOL_SOCKET, SO_REUSEADDR,
+                         &kSockOptOn, sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  EXPECT_THAT(
+      bind(checking_fd.get(), reinterpret_cast<sockaddr*>(&connected_addr),
+           connected_addr_len),
+      SyscallSucceeds());
+}
+
 TEST_P(SocketMultiProtocolInetLoopbackTest, V4MappedEphemeralPortReserved) {
   auto const& param = GetParam();
 
-  // FIXME(b/114268588)
+  // FIXME(b/76031995): Support disabling SO_REUSEADDR for TCP sockets and make
+  // it disabled by default.
   SKIP_IF(IsRunningOnGvisor() && param.type == SOCK_STREAM);
 
   for (int i = 0; true; i++) {
@@ -1408,9 +1474,8 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V4MappedEphemeralPortReserved) {
       // v6-only socket.
       const FileDescriptor fd_v6_only_any = ASSERT_NO_ERRNO_AND_VALUE(
           Socket(test_addr_v6_any.family(), param.type, 0));
-      int one = 1;
       EXPECT_THAT(setsockopt(fd_v6_only_any.get(), IPPROTO_IPV6, IPV6_V6ONLY,
-                             &one, sizeof(one)),
+                             &kSockOptOn, sizeof(kSockOptOn)),
                   SyscallSucceeds());
       ret =
           bind(fd_v6_only_any.get(), reinterpret_cast<sockaddr*>(&addr_v6_any),
@@ -1429,10 +1494,78 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V4MappedEphemeralPortReserved) {
   }
 }
 
+TEST_P(SocketMultiProtocolInetLoopbackTest,
+       V4MappedEphemeralPortReservedResueAddr) {
+  auto const& param = GetParam();
+
+  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
+  SKIP_IF(IsRunningOnGvisor() && param.type == SOCK_DGRAM);
+
+  // Bind the v4 loopback on a dual stack socket.
+  TestAddress const& test_addr = V4MappedLoopback();
+  sockaddr_storage bound_addr = test_addr.addr;
+  const FileDescriptor bound_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+  ASSERT_THAT(bind(bound_fd.get(), reinterpret_cast<sockaddr*>(&bound_addr),
+                   test_addr.addr_len),
+              SyscallSucceeds());
+
+  ASSERT_THAT(setsockopt(bound_fd.get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  // Listen iff TCP.
+  if (param.type == SOCK_STREAM) {
+    ASSERT_THAT(listen(bound_fd.get(), SOMAXCONN), SyscallSucceeds());
+  }
+
+  // Get the port that we bound.
+  socklen_t bound_addr_len = test_addr.addr_len;
+  ASSERT_THAT(
+      getsockname(bound_fd.get(), reinterpret_cast<sockaddr*>(&bound_addr),
+                  &bound_addr_len),
+      SyscallSucceeds());
+
+  // Connect to bind an ephemeral port.
+  const FileDescriptor connected_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+  ASSERT_THAT(setsockopt(connected_fd.get(), SOL_SOCKET, SO_REUSEADDR,
+                         &kSockOptOn, sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(connect(connected_fd.get(),
+                      reinterpret_cast<sockaddr*>(&bound_addr), bound_addr_len),
+              SyscallSucceeds());
+
+  // Get the ephemeral port.
+  sockaddr_storage connected_addr = {};
+  socklen_t connected_addr_len = sizeof(connected_addr);
+  ASSERT_THAT(getsockname(connected_fd.get(),
+                          reinterpret_cast<sockaddr*>(&connected_addr),
+                          &connected_addr_len),
+              SyscallSucceeds());
+  uint16_t const ephemeral_port =
+      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(test_addr.family(), connected_addr));
+
+  // Verify that we actually got an ephemeral port.
+  ASSERT_NE(ephemeral_port, 0);
+
+  // Verify that the ephemeral port is not reserved.
+  const FileDescriptor checking_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+  ASSERT_THAT(setsockopt(checking_fd.get(), SOL_SOCKET, SO_REUSEADDR,
+                         &kSockOptOn, sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  EXPECT_THAT(
+      bind(checking_fd.get(), reinterpret_cast<sockaddr*>(&connected_addr),
+           connected_addr_len),
+      SyscallSucceeds());
+}
+
 TEST_P(SocketMultiProtocolInetLoopbackTest, V4EphemeralPortReserved) {
   auto const& param = GetParam();
 
-  // FIXME(b/114268588)
+  // FIXME(b/76031995): Support disabling SO_REUSEADDR for TCP sockets and make
+  // it disabled by default.
   SKIP_IF(IsRunningOnGvisor() && param.type == SOCK_STREAM);
 
   for (int i = 0; true; i++) {
@@ -1533,9 +1666,8 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V4EphemeralPortReserved) {
       // v6-only socket.
       const FileDescriptor fd_v6_only_any = ASSERT_NO_ERRNO_AND_VALUE(
           Socket(test_addr_v6_any.family(), param.type, 0));
-      int one = 1;
       EXPECT_THAT(setsockopt(fd_v6_only_any.get(), IPPROTO_IPV6, IPV6_V6ONLY,
-                             &one, sizeof(one)),
+                             &kSockOptOn, sizeof(kSockOptOn)),
                   SyscallSucceeds());
       ret =
           bind(fd_v6_only_any.get(), reinterpret_cast<sockaddr*>(&addr_v6_any),
@@ -1552,6 +1684,75 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V4EphemeralPortReserved) {
     // No need to try again.
     break;
   }
+}
+
+TEST_P(SocketMultiProtocolInetLoopbackTest, V4EphemeralPortReservedReuseAddr) {
+  auto const& param = GetParam();
+
+  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
+  SKIP_IF(IsRunningOnGvisor() && param.type == SOCK_DGRAM);
+
+  // Bind the v4 loopback on a v4 socket.
+  TestAddress const& test_addr = V4Loopback();
+  sockaddr_storage bound_addr = test_addr.addr;
+  const FileDescriptor bound_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+
+  ASSERT_THAT(setsockopt(bound_fd.get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  ASSERT_THAT(bind(bound_fd.get(), reinterpret_cast<sockaddr*>(&bound_addr),
+                   test_addr.addr_len),
+              SyscallSucceeds());
+
+  // Listen iff TCP.
+  if (param.type == SOCK_STREAM) {
+    ASSERT_THAT(listen(bound_fd.get(), SOMAXCONN), SyscallSucceeds());
+  }
+
+  // Get the port that we bound.
+  socklen_t bound_addr_len = test_addr.addr_len;
+  ASSERT_THAT(
+      getsockname(bound_fd.get(), reinterpret_cast<sockaddr*>(&bound_addr),
+                  &bound_addr_len),
+      SyscallSucceeds());
+
+  // Connect to bind an ephemeral port.
+  const FileDescriptor connected_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+
+  ASSERT_THAT(setsockopt(connected_fd.get(), SOL_SOCKET, SO_REUSEADDR,
+                         &kSockOptOn, sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  ASSERT_THAT(connect(connected_fd.get(),
+                      reinterpret_cast<sockaddr*>(&bound_addr), bound_addr_len),
+              SyscallSucceeds());
+
+  // Get the ephemeral port.
+  sockaddr_storage connected_addr = {};
+  socklen_t connected_addr_len = sizeof(connected_addr);
+  ASSERT_THAT(getsockname(connected_fd.get(),
+                          reinterpret_cast<sockaddr*>(&connected_addr),
+                          &connected_addr_len),
+              SyscallSucceeds());
+  uint16_t const ephemeral_port =
+      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(test_addr.family(), connected_addr));
+
+  // Verify that we actually got an ephemeral port.
+  ASSERT_NE(ephemeral_port, 0);
+
+  // Verify that the ephemeral port is not reserved.
+  const FileDescriptor checking_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+  ASSERT_THAT(setsockopt(checking_fd.get(), SOL_SOCKET, SO_REUSEADDR,
+                         &kSockOptOn, sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  EXPECT_THAT(
+      bind(checking_fd.get(), reinterpret_cast<sockaddr*>(&connected_addr),
+           connected_addr_len),
+      SyscallSucceeds());
 }
 
 TEST_P(SocketMultiProtocolInetLoopbackTest, PortReuseTwoSockets) {
