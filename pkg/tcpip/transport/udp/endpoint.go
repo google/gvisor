@@ -732,6 +732,10 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		*o = tcpip.MulticastLoopOption(v)
 		return nil
 
+	case *tcpip.ReuseAddressOption:
+		*o = 0
+		return nil
+
 	case *tcpip.ReusePortOption:
 		e.mu.RLock()
 		v := e.reusePort
