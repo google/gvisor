@@ -4242,6 +4242,210 @@ func TestListenBacklogFull(t *testing.T) {
 	}
 }
 
+// TestListenNoAcceptMulticastBroadcastV4 makes sure that TCP segments with a
+// non unicast IPv4 address are not accepted.
+func TestListenNoAcceptNonUnicastV4(t *testing.T) {
+	multicastAddr := tcpip.Address("\xe0\x00\x01\x02")
+	otherMulticastAddr := tcpip.Address("\xe0\x00\x01\x03")
+
+	tests := []struct {
+		name    string
+		srcAddr tcpip.Address
+		dstAddr tcpip.Address
+	}{
+		{
+			"SourceUnspecified",
+			header.IPv4Any,
+			context.StackAddr,
+		},
+		{
+			"SourceBroadcast",
+			header.IPv4Broadcast,
+			context.StackAddr,
+		},
+		{
+			"SourceOurMulticast",
+			multicastAddr,
+			context.StackAddr,
+		},
+		{
+			"SourceOtherMulticast",
+			otherMulticastAddr,
+			context.StackAddr,
+		},
+		{
+			"DestUnspecified",
+			context.TestAddr,
+			header.IPv4Any,
+		},
+		{
+			"DestBroadcast",
+			context.TestAddr,
+			header.IPv4Broadcast,
+		},
+		{
+			"DestOurMulticast",
+			context.TestAddr,
+			multicastAddr,
+		},
+		{
+			"DestOtherMulticast",
+			context.TestAddr,
+			otherMulticastAddr,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := context.New(t, defaultMTU)
+			defer c.Cleanup()
+
+			c.Create(-1)
+
+			if err := c.Stack().JoinGroup(header.IPv4ProtocolNumber, 1, multicastAddr); err != nil {
+				t.Fatalf("JoinGroup failed: %s", err)
+			}
+
+			if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+				t.Fatalf("Bind failed: %s", err)
+			}
+
+			if err := c.EP.Listen(1); err != nil {
+				t.Fatalf("Listen failed: %s", err)
+			}
+
+			irs := seqnum.Value(789)
+			c.SendPacketWithAddrs(nil, &context.Headers{
+				SrcPort: context.TestPort,
+				DstPort: context.StackPort,
+				Flags:   header.TCPFlagSyn,
+				SeqNum:  irs,
+				RcvWnd:  30000,
+			}, test.srcAddr, test.dstAddr)
+			c.CheckNoPacket("Should not have received a response")
+
+			// Handle normal packet.
+			c.SendPacketWithAddrs(nil, &context.Headers{
+				SrcPort: context.TestPort,
+				DstPort: context.StackPort,
+				Flags:   header.TCPFlagSyn,
+				SeqNum:  irs,
+				RcvWnd:  30000,
+			}, context.TestAddr, context.StackAddr)
+			checker.IPv4(t, c.GetPacket(),
+				checker.TCP(
+					checker.SrcPort(context.StackPort),
+					checker.DstPort(context.TestPort),
+					checker.TCPFlags(header.TCPFlagAck|header.TCPFlagSyn),
+					checker.AckNum(uint32(irs)+1)))
+		})
+	}
+}
+
+// TestListenNoAcceptMulticastBroadcastV6 makes sure that TCP segments with a
+// non unicast IPv6 address are not accepted.
+func TestListenNoAcceptNonUnicastV6(t *testing.T) {
+	multicastAddr := tcpip.Address("\xff\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x01")
+	otherMulticastAddr := tcpip.Address("\xff\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02")
+
+	tests := []struct {
+		name    string
+		srcAddr tcpip.Address
+		dstAddr tcpip.Address
+	}{
+		{
+			"SourceUnspecified",
+			header.IPv6Any,
+			context.StackV6Addr,
+		},
+		{
+			"SourceAllNodes",
+			header.IPv6AllNodesMulticastAddress,
+			context.StackV6Addr,
+		},
+		{
+			"SourceOurMulticast",
+			multicastAddr,
+			context.StackV6Addr,
+		},
+		{
+			"SourceOtherMulticast",
+			otherMulticastAddr,
+			context.StackV6Addr,
+		},
+		{
+			"DestUnspecified",
+			context.TestV6Addr,
+			header.IPv6Any,
+		},
+		{
+			"DestAllNodes",
+			context.TestV6Addr,
+			header.IPv6AllNodesMulticastAddress,
+		},
+		{
+			"DestOurMulticast",
+			context.TestV6Addr,
+			multicastAddr,
+		},
+		{
+			"DestOtherMulticast",
+			context.TestV6Addr,
+			otherMulticastAddr,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := context.New(t, defaultMTU)
+			defer c.Cleanup()
+
+			c.CreateV6Endpoint(true)
+
+			if err := c.Stack().JoinGroup(header.IPv6ProtocolNumber, 1, multicastAddr); err != nil {
+				t.Fatalf("JoinGroup failed: %s", err)
+			}
+
+			if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+				t.Fatalf("Bind failed: %s", err)
+			}
+
+			if err := c.EP.Listen(1); err != nil {
+				t.Fatalf("Listen failed: %s", err)
+			}
+
+			irs := seqnum.Value(789)
+			c.SendV6PacketWithAddrs(nil, &context.Headers{
+				SrcPort: context.TestPort,
+				DstPort: context.StackPort,
+				Flags:   header.TCPFlagSyn,
+				SeqNum:  irs,
+				RcvWnd:  30000,
+			}, test.srcAddr, test.dstAddr)
+			c.CheckNoPacket("Should not have received a response")
+
+			// Handle normal packet.
+			c.SendV6PacketWithAddrs(nil, &context.Headers{
+				SrcPort: context.TestPort,
+				DstPort: context.StackPort,
+				Flags:   header.TCPFlagSyn,
+				SeqNum:  irs,
+				RcvWnd:  30000,
+			}, context.TestV6Addr, context.StackV6Addr)
+			checker.IPv6(t, c.GetV6Packet(),
+				checker.TCP(
+					checker.SrcPort(context.StackPort),
+					checker.DstPort(context.TestPort),
+					checker.TCPFlags(header.TCPFlagAck|header.TCPFlagSyn),
+					checker.AckNum(uint32(irs)+1)))
+		})
+	}
+}
+
 func TestListenSynRcvdQueueFull(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
