@@ -21,6 +21,10 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
+#ifndef SIOCGSTAMP
+#include <linux/sockios.h>
+#endif
+
 #include "gtest/gtest.h"
 #include "absl/base/macros.h"
 #include "absl/time/clock.h"
