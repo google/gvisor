@@ -1,8 +1,9 @@
-FROM ubuntu:bionic
+FROM fedora:31
 
-RUN apt-get update && apt-get install -y curl gnupg2 git python python3 python3-distutils python3-pip
-RUN echo "deb [arch=amd64] http://storage.googleapis.com/bazel-apt stable jdk1.8" | tee /etc/apt/sources.list.d/bazel.list && \
-    curl https://bazel.build/bazel-release.pub.gpg | apt-key add -
-RUN apt-get update && apt-get install -y bazel && apt-get clean
+RUN  dnf install -y dnf-plugins-core && dnf copr enable -y vbatts/bazel
+
+RUN dnf install -y bazel2 git gcc make golang gcc-c++ glibc-devel python3 which python3-pip python3-devel libffi-devel openssl-devel pkg-config glibc-static
+
+RUN pip install pycparser
 
 WORKDIR /gvisor

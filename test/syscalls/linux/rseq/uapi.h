@@ -15,14 +15,9 @@
 #ifndef GVISOR_TEST_SYSCALLS_LINUX_RSEQ_UAPI_H_
 #define GVISOR_TEST_SYSCALLS_LINUX_RSEQ_UAPI_H_
 
-// User-kernel ABI for restartable sequences.
+#include <stdint.h>
 
-// Standard types.
-//
-// N.B. This header will be included in targets that do have the standard
-// library, so we can't shadow the standard type names.
-using __u32 = __UINT32_TYPE__;
-using __u64 = __UINT64_TYPE__;
+// User-kernel ABI for restartable sequences.
 
 #ifdef __x86_64__
 // Syscall numbers.
@@ -32,20 +27,20 @@ constexpr int kRseqSyscall = 334;
 #endif  // __x86_64__
 
 struct rseq_cs {
-  __u32 version;
-  __u32 flags;
-  __u64 start_ip;
-  __u64 post_commit_offset;
-  __u64 abort_ip;
-} __attribute__((aligned(4 * sizeof(__u64))));
+  uint32_t version;
+  uint32_t flags;
+  uint64_t start_ip;
+  uint64_t post_commit_offset;
+  uint64_t abort_ip;
+} __attribute__((aligned(4 * sizeof(uint64_t))));
 
 // N.B. alignment is enforced by the kernel.
 struct rseq {
-  __u32 cpu_id_start;
-  __u32 cpu_id;
+  uint32_t cpu_id_start;
+  uint32_t cpu_id;
   struct rseq_cs* rseq_cs;
-  __u32 flags;
-} __attribute__((aligned(4 * sizeof(__u64))));
+  uint32_t flags;
+} __attribute__((aligned(4 * sizeof(uint64_t))));
 
 constexpr int kRseqFlagUnregister = 1 << 0;
 
