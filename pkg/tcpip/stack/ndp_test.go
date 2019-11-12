@@ -96,6 +96,13 @@ type ndpRouterEvent struct {
 	discovered bool
 }
 
+type ndpPrefixEvent struct {
+	nicID  tcpip.NICID
+	prefix tcpip.Subnet
+	// true if prefix was discovered, false if invalidated.
+	discovered bool
+}
+
 var _ stack.NDPDispatcher = (*ndpDispatcher)(nil)
 
 // ndpDispatcher implements NDPDispatcher so tests can know when various NDP
@@ -104,6 +111,8 @@ type ndpDispatcher struct {
 	dadC           chan ndpDADEvent
 	routerC        chan ndpRouterEvent
 	rememberRouter bool
+	prefixC        chan ndpPrefixEvent
+	rememberPrefix bool
 	routeTable     []tcpip.Route
 }
 
@@ -157,6 +166,54 @@ func (n *ndpDispatcher) OnDefaultRouterInvalidated(nicID tcpip.NICID, addr tcpip
 	exclude := tcpip.Route{
 		Destination: header.IPv6EmptySubnet,
 		Gateway:     addr,
+		NIC:         nicID,
+	}
+
+	for _, r := range n.routeTable {
+		if r != exclude {
+			rt = append(rt, r)
+		}
+	}
+	n.routeTable = rt
+	return rt
+}
+
+// Implements stack.NDPDispatcher.OnOnLinkPrefixDiscovered.
+func (n *ndpDispatcher) OnOnLinkPrefixDiscovered(nicID tcpip.NICID, prefix tcpip.Subnet) (bool, []tcpip.Route) {
+	if n.prefixC != nil {
+		n.prefixC <- ndpPrefixEvent{
+			nicID,
+			prefix,
+			true,
+		}
+	}
+
+	if !n.rememberPrefix {
+		return false, nil
+	}
+
+	rt := append([]tcpip.Route(nil), n.routeTable...)
+	rt = append(rt, tcpip.Route{
+		Destination: prefix,
+		NIC:         nicID,
+	})
+	n.routeTable = rt
+	return true, rt
+}
+
+// Implements stack.NDPDispatcher.OnOnLinkPrefixInvalidated.
+func (n *ndpDispatcher) OnOnLinkPrefixInvalidated(nicID tcpip.NICID, prefix tcpip.Subnet) []tcpip.Route {
+	if n.prefixC != nil {
+		n.prefixC <- ndpPrefixEvent{
+			nicID,
+			prefix,
+			false,
+		}
+	}
+
+	rt := make([]tcpip.Route, 0)
+	exclude := tcpip.Route{
+		Destination: prefix,
 		NIC:         nicID,
 	}
 
@@ -682,16 +739,19 @@ func TestSetNDPConfigurations(t *testing.T) {
 	}
 }
 
-// raBuf returns a valid NDP Router Advertisement.
+// raBufWithOpts returns a valid NDP Router Advertisement with options.
 //
-// Note, raBuf does not populate any of the RA fields other than the
+// Note, raBufWithOpts does not populate any of the RA fields other than the
 // Router Lifetime.
-func raBuf(ip tcpip.Address, rl uint16) tcpip.PacketBuffer {
-	icmpSize := header.ICMPv6HeaderSize + header.NDPRAMinimumSize
+func raBufWithOpts(ip tcpip.Address, rl uint16, optSer header.NDPOptionsSerializer) tcpip.PacketBuffer {
+	icmpSize := header.ICMPv6HeaderSize + header.NDPRAMinimumSize + int(optSer.Length())
 	hdr := buffer.NewPrependable(header.IPv6MinimumSize + icmpSize)
 	pkt := header.ICMPv6(hdr.Prepend(icmpSize))
 	pkt.SetType(header.ICMPv6RouterAdvert)
 	pkt.SetCode(0)
+	ra := header.NDPRouterAdvert(pkt.NDPPayload())
+	opts := ra.Options()
+	opts.Serialize(optSer)
 	// Populate the Router Lifetime.
 	binary.BigEndian.PutUint16(pkt.NDPPayload()[2:], rl)
 	pkt.SetChecksum(header.ICMPv6Checksum(pkt, ip, header.IPv6AllNodesMulticastAddress, buffer.VectorisedView{}))
@@ -706,6 +766,35 @@ func raBuf(ip tcpip.Address, rl uint16) tcpip.PacketBuffer {
 	})
 
 	return tcpip.PacketBuffer{Data: hdr.View().ToVectorisedView()}
+}
+
+// raBuf returns a valid NDP Router Advertisement.
+//
+// Note, raBuf does not populate any of the RA fields other than the
+// Router Lifetime.
+func raBuf(ip tcpip.Address, rl uint16) tcpip.PacketBuffer {
+	return raBufWithOpts(ip, rl, header.NDPOptionsSerializer{})
+}
+
+// raBufWithPI returns a valid NDP Router Advertisement with a single Prefix
+// Information option.
+//
+// Note, raBufWithPI does not populate any of the RA fields other than the
+// Router Lifetime.
+func raBufWithPI(ip tcpip.Address, rl uint16, prefix tcpip.AddressWithPrefix, onLink bool, vl uint32) tcpip.PacketBuffer {
+	flags := uint8(0)
+	if onLink {
+		flags |= 128
+	}
+
+	buf := [30]byte{}
+	buf[0] = uint8(prefix.PrefixLen)
+	buf[1] = flags
+	binary.BigEndian.PutUint32(buf[2:], vl)
+	copy(buf[14:], prefix.Address)
+	return raBufWithOpts(ip, rl, header.NDPOptionsSerializer{
+		header.NDPPrefixInformation(buf[:]),
+	})
 }
 
 // TestNoRouterDiscovery tests that router discovery will not be performed if
@@ -1007,6 +1096,443 @@ func TestRouterDiscoveryMaxRouters(t *testing.T) {
 
 	// Should only have default routes for the first
 	// stack.MaxDiscoveredDefaultRouters discovered routers.
+	if got := s.GetRouteTable(); !cmp.Equal(got, expectedRt[:]) {
+		t.Fatalf("got GetRouteTable = %v, want = %v", got, expectedRt)
+	}
+}
+
+// TestNoPrefixDiscovery tests that prefix discovery will not be performed if
+// configured not to.
+func TestNoPrefixDiscovery(t *testing.T) {
+	prefix := tcpip.AddressWithPrefix{
+		Address:   tcpip.Address("\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x00"),
+		PrefixLen: 64,
+	}
+
+	// Being configured to discover prefixes means handle and
+	// discover are set to true and forwarding is set to false.
+	// This tests all possible combinations of the configurations,
+	// except for the configuration where handle = true, discover =
+	// true and forwarding = false (the required configuration to do
+	// prefix discovery) - that will done in other tests.
+	for i := 0; i < 7; i++ {
+		handle := i&1 != 0
+		discover := i&2 != 0
+		forwarding := i&4 == 0
+
+		t.Run(fmt.Sprintf("HandleRAs(%t), DiscoverOnLinkPrefixes(%t), Forwarding(%t)", handle, discover, forwarding), func(t *testing.T) {
+			ndpDisp := ndpDispatcher{
+				prefixC: make(chan ndpPrefixEvent, 10),
+			}
+			e := channel.New(10, 1280, linkAddr1)
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+				NDPConfigs: stack.NDPConfigurations{
+					HandleRAs:              handle,
+					DiscoverOnLinkPrefixes: discover,
+				},
+				NDPDisp: &ndpDisp,
+			})
+			s.SetForwarding(forwarding)
+
+			if err := s.CreateNIC(1, e); err != nil {
+				t.Fatalf("CreateNIC(1) = %s", err)
+			}
+
+			// Rx an RA with prefix with non-zero lifetime.
+			e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, 10))
+
+			select {
+			case <-ndpDisp.prefixC:
+				t.Fatal("unexpectedly discovered a prefix when configured not to")
+			case <-time.After(defaultTimeout):
+			}
+		})
+	}
+}
+
+// TestPrefixDiscoveryDispatcherNoRemember tests that the stack does not
+// remember a discovered on-link prefix when the dispatcher asks it not to.
+func TestPrefixDiscoveryDispatcherNoRemember(t *testing.T) {
+	prefix := tcpip.AddressWithPrefix{
+		Address:   tcpip.Address("\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x00"),
+		PrefixLen: 64,
+	}
+	subnet := prefix.Subnet()
+
+	ndpDisp := ndpDispatcher{
+		prefixC: make(chan ndpPrefixEvent, 10),
+	}
+	e := channel.New(10, 1280, linkAddr1)
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+		NDPConfigs: stack.NDPConfigurations{
+			HandleRAs:              true,
+			DiscoverDefaultRouters: false,
+			DiscoverOnLinkPrefixes: true,
+		},
+		NDPDisp: &ndpDisp,
+	})
+
+	if err := s.CreateNIC(1, e); err != nil {
+		t.Fatalf("CreateNIC(1) = %s", err)
+	}
+
+	routeTable := []tcpip.Route{
+		{
+			header.IPv6EmptySubnet,
+			llAddr3,
+			1,
+		},
+	}
+	s.SetRouteTable(routeTable)
+
+	// Rx an RA with prefix with a short lifetime.
+	const lifetime = 1
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, lifetime))
+	select {
+	case r := <-ndpDisp.prefixC:
+		if r.nicID != 1 {
+			t.Fatalf("got r.nicID = %d, want = 1", r.nicID)
+		}
+		if r.prefix != subnet {
+			t.Fatalf("got r.prefix = %s, want = %s", r.prefix, subnet)
+		}
+		if !r.discovered {
+			t.Fatal("got r.discovered = false, want = true")
+		}
+	case <-time.After(defaultTimeout):
+		t.Fatal("timeout waiting for prefix discovery event")
+	}
+
+	// Original route table should not have been modified.
+	if got := s.GetRouteTable(); !cmp.Equal(got, routeTable) {
+		t.Fatalf("got GetRouteTable = %v, want = %v", got, routeTable)
+	}
+
+	// Wait for the normal invalidation time plus some buffer to
+	// make sure we do not actually receive any invalidation events as
+	// we should not have remembered the prefix in the first place.
+	select {
+	case <-ndpDisp.prefixC:
+		t.Fatal("should not have received any prefix events")
+	case <-time.After(lifetime*time.Second + defaultTimeout):
+	}
+
+	// Original route table should not have been modified.
+	if got := s.GetRouteTable(); !cmp.Equal(got, routeTable) {
+		t.Fatalf("got GetRouteTable = %v, want = %v", got, routeTable)
+	}
+}
+
+func TestPrefixDiscovery(t *testing.T) {
+	prefix1 := tcpip.AddressWithPrefix{
+		Address:   tcpip.Address("\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x00"),
+		PrefixLen: 64,
+	}
+	prefix2 := tcpip.AddressWithPrefix{
+		Address:   tcpip.Address("\x01\x02\x03\x04\x05\x06\x07\x09\x00\x00\x00\x00\x00\x00\x00\x00"),
+		PrefixLen: 64,
+	}
+	prefix3 := tcpip.AddressWithPrefix{
+		Address:   tcpip.Address("\x01\x02\x03\x04\x05\x06\x07\x09\x0a\x00\x00\x00\x00\x00\x00\x00"),
+		PrefixLen: 72,
+	}
+	subnet1 := prefix1.Subnet()
+	subnet2 := prefix2.Subnet()
+	subnet3 := prefix3.Subnet()
+
+	ndpDisp := ndpDispatcher{
+		prefixC:        make(chan ndpPrefixEvent, 10),
+		rememberPrefix: true,
+	}
+	e := channel.New(10, 1280, linkAddr1)
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+		NDPConfigs: stack.NDPConfigurations{
+			HandleRAs:              true,
+			DiscoverOnLinkPrefixes: true,
+		},
+		NDPDisp: &ndpDisp,
+	})
+
+	waitForEvent := func(subnet tcpip.Subnet, discovered bool, timeout time.Duration) {
+		t.Helper()
+
+		select {
+		case r := <-ndpDisp.prefixC:
+			if r.nicID != 1 {
+				t.Fatalf("got r.nicID = %d, want = 1", r.nicID)
+			}
+			if r.prefix != subnet {
+				t.Fatalf("got r.prefix = %s, want = %s", r.prefix, subnet)
+			}
+			if r.discovered != discovered {
+				t.Fatalf("got r.discovered = %t, want = %t", r.discovered, discovered)
+			}
+		case <-time.After(timeout):
+			t.Fatal("timeout waiting for prefix discovery event")
+		}
+	}
+
+	if err := s.CreateNIC(1, e); err != nil {
+		t.Fatalf("CreateNIC(1) = %s", err)
+	}
+
+	// Receive an RA with prefix1 in an NDP Prefix Information option (PI)
+	// with zero valid lifetime.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix1, true, 0))
+	select {
+	case <-ndpDisp.prefixC:
+		t.Fatal("unexpectedly discovered a prefix with 0 lifetime")
+	case <-time.After(defaultTimeout):
+	}
+
+	// Receive an RA with prefix1 in an NDP Prefix Information option (PI)
+	// with non-zero lifetime.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix1, true, 100))
+	waitForEvent(subnet1, true, defaultTimeout)
+
+	// Should have added a device route for subnet1 through the nic.
+	if got, want := s.GetRouteTable(), []tcpip.Route{{subnet1, tcpip.Address([]byte(nil)), 1}}; !cmp.Equal(got, want) {
+		t.Fatalf("got GetRouteTable = %v, want = %v", got, want)
+	}
+
+	// Receive an RA with prefix2 in a PI.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix2, true, 100))
+	waitForEvent(subnet2, true, defaultTimeout)
+
+	// Should have added a device route for subnet2 through the nic.
+	if got, want := s.GetRouteTable(), []tcpip.Route{{subnet1, tcpip.Address([]byte(nil)), 1}, {subnet2, tcpip.Address([]byte(nil)), 1}}; !cmp.Equal(got, want) {
+		t.Fatalf("got GetRouteTable = %v, want = %v", got, want)
+	}
+
+	// Receive an RA with prefix3 in a PI.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix3, true, 100))
+	waitForEvent(subnet3, true, defaultTimeout)
+
+	// Should have added a device route for subnet3 through the nic.
+	if got, want := s.GetRouteTable(), []tcpip.Route{{subnet1, tcpip.Address([]byte(nil)), 1}, {subnet2, tcpip.Address([]byte(nil)), 1}, {subnet3, tcpip.Address([]byte(nil)), 1}}; !cmp.Equal(got, want) {
+		t.Fatalf("got GetRouteTable = %v, want = %v", got, want)
+	}
+
+	// Receive an RA with prefix1 in a PI with lifetime = 0.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix1, true, 0))
+	waitForEvent(subnet1, false, defaultTimeout)
+
+	// Should have removed the device route for subnet1 through the nic.
+	if got, want := s.GetRouteTable(), []tcpip.Route{{subnet2, tcpip.Address([]byte(nil)), 1}, {subnet3, tcpip.Address([]byte(nil)), 1}}; !cmp.Equal(got, want) {
+		t.Fatalf("got GetRouteTable = %v, want = %v", got, want)
+	}
+
+	// Receive an RA with prefix2 in a PI with lesser lifetime.
+	lifetime := uint32(2)
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix2, true, lifetime))
+	select {
+	case <-ndpDisp.prefixC:
+		t.Fatal("unexpectedly received prefix event when updating lifetime")
+	case <-time.After(defaultTimeout):
+	}
+
+	// Should not have updated route table.
+	if got, want := s.GetRouteTable(), []tcpip.Route{{subnet2, tcpip.Address([]byte(nil)), 1}, {subnet3, tcpip.Address([]byte(nil)), 1}}; !cmp.Equal(got, want) {
+		t.Fatalf("got GetRouteTable = %v, want = %v", got, want)
+	}
+
+	// Wait for prefix2's most recent invalidation timer plus some buffer to
+	// expire.
+	waitForEvent(subnet2, false, time.Duration(lifetime)*time.Second+defaultTimeout)
+
+	// Should have removed the device route for subnet2 through the nic.
+	if got, want := s.GetRouteTable(), []tcpip.Route{{subnet3, tcpip.Address([]byte(nil)), 1}}; !cmp.Equal(got, want) {
+		t.Fatalf("got GetRouteTable = %v, want = %v", got, want)
+	}
+
+	// Receive RA to invalidate prefix3.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix3, true, 0))
+	waitForEvent(subnet3, false, defaultTimeout)
+
+	// Should not have any routes.
+	if got := len(s.GetRouteTable()); got != 0 {
+		t.Fatalf("got len(s.GetRouteTable()) = %d, want = 0", got)
+	}
+}
+
+func TestPrefixDiscoveryWithInfiniteLifetime(t *testing.T) {
+	// Update the infinite lifetime value to a smaller value so we can test
+	// that when we receive a PI with such a lifetime value, we do not
+	// invalidate the prefix.
+	const testInfiniteLifetimeSeconds = 2
+	const testInfiniteLifetime = testInfiniteLifetimeSeconds * time.Second
+	saved := header.NDPPrefixInformationInfiniteLifetime
+	header.NDPPrefixInformationInfiniteLifetime = testInfiniteLifetime
+	defer func() {
+		header.NDPPrefixInformationInfiniteLifetime = saved
+	}()
+
+	prefix := tcpip.AddressWithPrefix{
+		Address:   tcpip.Address("\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x00"),
+		PrefixLen: 64,
+	}
+	subnet := prefix.Subnet()
+
+	ndpDisp := ndpDispatcher{
+		prefixC:        make(chan ndpPrefixEvent, 10),
+		rememberPrefix: true,
+	}
+	e := channel.New(10, 1280, linkAddr1)
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+		NDPConfigs: stack.NDPConfigurations{
+			HandleRAs:              true,
+			DiscoverOnLinkPrefixes: true,
+		},
+		NDPDisp: &ndpDisp,
+	})
+
+	waitForEvent := func(discovered bool, timeout time.Duration) {
+		t.Helper()
+
+		select {
+		case r := <-ndpDisp.prefixC:
+			if r.nicID != 1 {
+				t.Errorf("got r.nicID = %d, want = 1", r.nicID)
+			}
+			if r.prefix != subnet {
+				t.Errorf("got r.prefix = %s, want = %s", r.prefix, subnet)
+			}
+			if r.discovered != discovered {
+				t.Errorf("got r.discovered = %t, want = %t", r.discovered, discovered)
+			}
+		case <-time.After(timeout):
+			t.Fatal("timeout waiting for prefix discovery event")
+		}
+	}
+
+	if err := s.CreateNIC(1, e); err != nil {
+		t.Fatalf("CreateNIC(1) = %s", err)
+	}
+
+	// Receive an RA with prefix in an NDP Prefix Information option (PI)
+	// with infinite valid lifetime which should not get invalidated.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, testInfiniteLifetimeSeconds))
+	waitForEvent(true, defaultTimeout)
+	select {
+	case <-ndpDisp.prefixC:
+		t.Fatal("unexpectedly invalidated a prefix with infinite lifetime")
+	case <-time.After(testInfiniteLifetime + defaultTimeout):
+	}
+
+	// Receive an RA with finite lifetime.
+	// The prefix should get invalidated after 1s.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, testInfiniteLifetimeSeconds-1))
+	waitForEvent(false, testInfiniteLifetime)
+
+	// Receive an RA with finite lifetime.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, testInfiniteLifetimeSeconds-1))
+	waitForEvent(true, defaultTimeout)
+
+	// Receive an RA with prefix with an infinite lifetime.
+	// The prefix should not be invalidated.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, testInfiniteLifetimeSeconds))
+	select {
+	case <-ndpDisp.prefixC:
+		t.Fatal("unexpectedly invalidated a prefix with infinite lifetime")
+	case <-time.After(testInfiniteLifetime + defaultTimeout):
+	}
+
+	// Receive an RA with a prefix with a lifetime value greater than the
+	// set infinite lifetime value.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, testInfiniteLifetimeSeconds+1))
+	select {
+	case <-ndpDisp.prefixC:
+		t.Fatal("unexpectedly invalidated a prefix with infinite lifetime")
+	case <-time.After((testInfiniteLifetimeSeconds+1)*time.Second + defaultTimeout):
+	}
+
+	// Receive an RA with 0 lifetime.
+	// The prefix should get invalidated.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, 0))
+	waitForEvent(false, defaultTimeout)
+}
+
+// TestPrefixDiscoveryMaxRouters tests that only
+// stack.MaxDiscoveredOnLinkPrefixes discovered on-link prefixes are remembered.
+func TestPrefixDiscoveryMaxOnLinkPrefixes(t *testing.T) {
+	ndpDisp := ndpDispatcher{
+		prefixC:        make(chan ndpPrefixEvent, stack.MaxDiscoveredOnLinkPrefixes+3),
+		rememberPrefix: true,
+	}
+	e := channel.New(10, 1280, linkAddr1)
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+		NDPConfigs: stack.NDPConfigurations{
+			HandleRAs:              true,
+			DiscoverDefaultRouters: false,
+			DiscoverOnLinkPrefixes: true,
+		},
+		NDPDisp: &ndpDisp,
+	})
+
+	if err := s.CreateNIC(1, e); err != nil {
+		t.Fatalf("CreateNIC(1) = %s", err)
+	}
+
+	optSer := make(header.NDPOptionsSerializer, stack.MaxDiscoveredOnLinkPrefixes+2)
+	expectedRt := [stack.MaxDiscoveredOnLinkPrefixes]tcpip.Route{}
+	prefixes := [stack.MaxDiscoveredOnLinkPrefixes + 2]tcpip.Subnet{}
+
+	// Receive an RA with 2 more than the max number of discovered on-link
+	// prefixes.
+	for i := 0; i < stack.MaxDiscoveredOnLinkPrefixes+2; i++ {
+		prefixAddr := [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 0}
+		prefixAddr[7] = byte(i)
+		prefix := tcpip.AddressWithPrefix{
+			Address:   tcpip.Address(prefixAddr[:]),
+			PrefixLen: 64,
+		}
+		prefixes[i] = prefix.Subnet()
+		buf := [30]byte{}
+		buf[0] = uint8(prefix.PrefixLen)
+		buf[1] = 128
+		binary.BigEndian.PutUint32(buf[2:], 10)
+		copy(buf[14:], prefix.Address)
+
+		optSer[i] = header.NDPPrefixInformation(buf[:])
+
+		if i < stack.MaxDiscoveredOnLinkPrefixes {
+			expectedRt[i] = tcpip.Route{prefixes[i], tcpip.Address([]byte(nil)), 1}
+		}
+	}
+
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithOpts(llAddr1, 0, optSer))
+	for i := 0; i < stack.MaxDiscoveredOnLinkPrefixes+2; i++ {
+		if i < stack.MaxDiscoveredOnLinkPrefixes {
+			select {
+			case r := <-ndpDisp.prefixC:
+				if r.nicID != 1 {
+					t.Fatalf("got r.nicID = %d, want = 1", r.nicID)
+				}
+				if r.prefix != prefixes[i] {
+					t.Fatalf("got r.prefix = %s, want = %s", r.prefix, prefixes[i])
+				}
+				if !r.discovered {
+					t.Fatal("got r.discovered = false, want = true")
+				}
+			case <-time.After(defaultTimeout):
+				t.Fatal("timeout waiting for prefix discovery event")
+			}
+		} else {
+			select {
+			case <-ndpDisp.prefixC:
+				t.Fatal("should not have discovered a new prefix after we already discovered the max number of prefixes")
+			case <-time.After(defaultTimeout):
+			}
+		}
+	}
+
+	// Should only have device routes for the first
+	// stack.MaxDiscoveredOnLinkPrefixes discovered on-link prefixes.
 	if got := s.GetRouteTable(); !cmp.Equal(got, expectedRt[:]) {
 		t.Fatalf("got GetRouteTable = %v, want = %v", got, expectedRt)
 	}

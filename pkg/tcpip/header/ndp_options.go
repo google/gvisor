@@ -85,15 +85,20 @@ const (
 	// within an NDPPrefixInformation.
 	ndpPrefixInformationPrefixOffset = 14
 
-	// NDPPrefixInformationInfiniteLifetime is a value that represents
-	// infinity for the Valid and Preferred Lifetime fields in a NDP Prefix
-	// Information option. Its value is (2^32 - 1)s = 4294967295s
-	NDPPrefixInformationInfiniteLifetime = time.Second * 4294967295
-
 	// lengthByteUnits is the multiplier factor for the Length field of an
 	// NDP option. That is, the length field for NDP options is in units of
 	// 8 octets, as per RFC 4861 section 4.6.
 	lengthByteUnits = 8
+)
+
+var (
+	// NDPPrefixInformationInfiniteLifetime is a value that represents
+	// infinity for the Valid and Preferred Lifetime fields in a NDP Prefix
+	// Information option. Its value is (2^32 - 1)s = 4294967295s
+	//
+	// This is a variable instead of a constant so that tests can change
+	// this value to a smaller value. It should only be modified by tests.
+	NDPPrefixInformationInfiniteLifetime = time.Second * 4294967295
 )
 
 // NDPOptionIterator is an iterator of NDPOption.
@@ -460,4 +465,14 @@ func (o NDPPrefixInformation) PreferredLifetime() time.Duration {
 // holds the link-local prefix (fe80::).
 func (o NDPPrefixInformation) Prefix() tcpip.Address {
 	return tcpip.Address(o[ndpPrefixInformationPrefixOffset:][:IPv6AddressSize])
+}
+
+// Subnet returns the Prefix field and Prefix Length field represented in a
+// tcpip.Subnet.
+func (o NDPPrefixInformation) Subnet() tcpip.Subnet {
+	addrWithPrefix := tcpip.AddressWithPrefix{
+		Address:   o.Prefix(),
+		PrefixLen: int(o.PrefixLength()),
+	}
+	return addrWithPrefix.Subnet()
 }
