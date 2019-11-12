@@ -35,7 +35,7 @@ TEST_P(UDPSocketPairTest, MulticastTTLDefault) {
 
   int get = -1;
   socklen_t get_len = sizeof(get);
-  EXPECT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_TTL,
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_TTL,
                          &get, &get_len),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
@@ -52,7 +52,7 @@ TEST_P(UDPSocketPairTest, SetUDPMulticastTTLMin) {
 
   int get = -1;
   socklen_t get_len = sizeof(get);
-  EXPECT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_TTL,
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_TTL,
                          &get, &get_len),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
@@ -69,7 +69,7 @@ TEST_P(UDPSocketPairTest, SetUDPMulticastTTLMax) {
 
   int get = -1;
   socklen_t get_len = sizeof(get);
-  EXPECT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_TTL,
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_TTL,
                          &get, &get_len),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
@@ -91,7 +91,7 @@ TEST_P(UDPSocketPairTest, SetUDPMulticastTTLNegativeOne) {
 
   int get = -1;
   socklen_t get_len = sizeof(get);
-  EXPECT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_TTL,
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_TTL,
                          &get, &get_len),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
@@ -126,7 +126,7 @@ TEST_P(UDPSocketPairTest, SetUDPMulticastTTLChar) {
 
   int get = -1;
   socklen_t get_len = sizeof(get);
-  EXPECT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_TTL,
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_TTL,
                          &get, &get_len),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
@@ -147,7 +147,7 @@ TEST_P(UDPSocketPairTest, MulticastLoopDefault) {
 
   int get = -1;
   socklen_t get_len = sizeof(get);
-  EXPECT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_LOOP,
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_LOOP,
                          &get, &get_len),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
@@ -163,7 +163,7 @@ TEST_P(UDPSocketPairTest, SetMulticastLoop) {
 
   int get = -1;
   socklen_t get_len = sizeof(get);
-  EXPECT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_LOOP,
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_LOOP,
                          &get, &get_len),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
@@ -173,7 +173,7 @@ TEST_P(UDPSocketPairTest, SetMulticastLoop) {
                          &kSockOptOn, sizeof(kSockOptOn)),
               SyscallSucceeds());
 
-  EXPECT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_LOOP,
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_LOOP,
                          &get, &get_len),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
@@ -192,7 +192,7 @@ TEST_P(UDPSocketPairTest, SetMulticastLoopChar) {
 
   int get = -1;
   socklen_t get_len = sizeof(get);
-  EXPECT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_LOOP,
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_LOOP,
                          &get, &get_len),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
@@ -202,9 +202,117 @@ TEST_P(UDPSocketPairTest, SetMulticastLoopChar) {
                          &kSockOptOnChar, sizeof(kSockOptOnChar)),
               SyscallSucceeds());
 
-  EXPECT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_LOOP,
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_LOOP,
                          &get, &get_len),
               SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kSockOptOn);
+}
+
+TEST_P(UDPSocketPairTest, ReuseAddrDefault) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_REUSEADDR, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kSockOptOff);
+}
+
+TEST_P(UDPSocketPairTest, SetReuseAddr) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
+  SKIP_IF(IsRunningOnGvisor());
+
+  ASSERT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_REUSEADDR,
+                         &kSockOptOn, sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_REUSEADDR, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kSockOptOn);
+
+  ASSERT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_REUSEADDR,
+                         &kSockOptOff, sizeof(kSockOptOff)),
+              SyscallSucceeds());
+
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_REUSEADDR, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kSockOptOff);
+}
+
+TEST_P(UDPSocketPairTest, ReusePortDefault) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_REUSEPORT, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kSockOptOff);
+}
+
+TEST_P(UDPSocketPairTest, SetReusePort) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  ASSERT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_REUSEPORT,
+                         &kSockOptOn, sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_REUSEPORT, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kSockOptOn);
+
+  ASSERT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_REUSEPORT,
+                         &kSockOptOff, sizeof(kSockOptOff)),
+              SyscallSucceeds());
+
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_REUSEPORT, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kSockOptOff);
+}
+
+TEST_P(UDPSocketPairTest, SetReuseAddrReusePort) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
+  SKIP_IF(IsRunningOnGvisor());
+
+  ASSERT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_REUSEADDR,
+                         &kSockOptOn, sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  ASSERT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_REUSEPORT,
+                         &kSockOptOn, sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_REUSEADDR, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kSockOptOn);
+
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_REUSEPORT, &get, &get_len),
+      SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
   EXPECT_EQ(get, kSockOptOn);
 }

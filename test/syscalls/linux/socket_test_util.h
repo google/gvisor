@@ -114,6 +114,9 @@ class FDSocketPair : public SocketPair {
  public:
   FDSocketPair(int first_fd, int second_fd)
       : first_(first_fd), second_(second_fd) {}
+  FDSocketPair(std::unique_ptr<FileDescriptor> first_fd,
+               std::unique_ptr<FileDescriptor> second_fd)
+      : first_(first_fd->release()), second_(second_fd->release()) {}
 
   int first_fd() const override { return first_.get(); }
   int second_fd() const override { return second_.get(); }
