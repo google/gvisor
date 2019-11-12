@@ -75,7 +75,7 @@ function collect_logs() {
     for d in `find -L "bazel-testlogs" -name 'shard_*_of_*' | xargs dirname | sort | uniq`; do
       junitparser merge `find $d -name test.xml` $d/test.xml
       cat $d/shard_*_of_*/test.log > $d/test.log
-      ls -l $d/shard_*_of_*/outputs.zip && zip -r -1 $d/outputs.zip $d/shard_*_of_*/outputs.zip
+      ls -l $d/shard_*_of_*/test.outputs/outputs.zip && zip -r -1 $d/outputs.zip $d/shard_*_of_*/test.outputs/outputs.zip
     done
     find -L "bazel-testlogs" -name 'shard_*_of_*' | xargs rm -rf
     # Move test logs to Kokoro directory. tar is used to conveniently perform
