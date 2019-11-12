@@ -46,10 +46,17 @@ const (
 
 	// defaultDiscoverDefaultRouters is the default configuration for
 	// whether or not to discover default routers from incoming Router
-	// Advertisements as a host.
+	// Advertisements, as a host.
 	//
 	// Default = true.
 	defaultDiscoverDefaultRouters = true
+
+	// defaultDiscoverOnLinkPrefixes is the default configuration for
+	// whether or not to discover on-link prefixes from incoming Router
+	// Advertisements' Prefix Information option, as a host.
+	//
+	// Default = true.
+	defaultDiscoverOnLinkPrefixes = true
 
 	// minimumRetransmitTimer is the minimum amount of time to wait between
 	// sending NDP Neighbor solicitation messages. Note, RFC 4861 does
@@ -72,6 +79,14 @@ const (
 	//
 	// Max = 10.
 	MaxDiscoveredDefaultRouters = 10
+
+	// MaxDiscoveredOnLinkPrefixes is the maximum number of discovered
+	// on-link prefixes. The stack should stop discovering new on-link
+	// prefixes after discovering MaxDiscoveredOnLinkPrefixes on-link
+	// prefixes.
+	//
+	// Max = 10.
+	MaxDiscoveredOnLinkPrefixes = 10
 )
 
 // NDPDispatcher is the interface integrators of netstack must implement to
@@ -106,6 +121,24 @@ type NDPDispatcher interface {
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
 	OnDefaultRouterInvalidated(nicID tcpip.NICID, addr tcpip.Address) []tcpip.Route
+
+	// OnOnLinkPrefixDiscovered will be called when a new on-link prefix is
+	// discovered. Implementations must return true along with a new valid
+	// route table if the newly discovered on-link prefix should be
+	// remembered. If an implementation returns false, the second return
+	// value will be ignored.
+	//
+	// This function is not permitted to block indefinitely. This function
+	// is also not permitted to call into the stack.
+	OnOnLinkPrefixDiscovered(nicID tcpip.NICID, prefix tcpip.Subnet) (bool, []tcpip.Route)
+
+	// OnOnLinkPrefixInvalidated will be called when a discovered on-link
+	// prefix is invalidated. Implementers must return a new valid route
+	// table.
+	//
+	// This function is not permitted to block indefinitely. This function
+	// is also not permitted to call into the stack.
+	OnOnLinkPrefixInvalidated(nicID tcpip.NICID, prefix tcpip.Subnet) []tcpip.Route
 }
 
 // NDPConfigurations is the NDP configurations for the netstack.
@@ -130,6 +163,11 @@ type NDPConfigurations struct {
 	// be discovered from Router Advertisements. This configuration is
 	// ignored if HandleRAs is false.
 	DiscoverDefaultRouters bool
+
+	// DiscoverOnLinkPrefixes determines whether or not on-link prefixes
+	// will be discovered from Router Advertisements' Prefix Information
+	// option. This configuration is ignored if HandleRAs is false.
+	DiscoverOnLinkPrefixes bool
 }
 
 // DefaultNDPConfigurations returns an NDPConfigurations populated with
@@ -140,6 +178,7 @@ func DefaultNDPConfigurations() NDPConfigurations {
 		RetransmitTimer:        defaultRetransmitTimer,
 		HandleRAs:              defaultHandleRAs,
 		DiscoverDefaultRouters: defaultDiscoverDefaultRouters,
+		DiscoverOnLinkPrefixes: defaultDiscoverOnLinkPrefixes,
 	}
 }
 
@@ -167,6 +206,10 @@ type ndpState struct {
 
 	// The default routers discovered through Router Advertisements.
 	defaultRouters map[tcpip.Address]defaultRouterState
+
+	// The on-link prefixes discovered through Router Advertisements' Prefix
+	// Information option.
+	onLinkPrefixes map[tcpip.Subnet]onLinkPrefixState
 }
 
 // dadState holds the Duplicate Address Detection timer and channel to signal
@@ -183,11 +226,11 @@ type dadState struct {
 }
 
 // defaultRouterState holds data associated with a default router discovered by
-// a Router Advertisement.
+// a Router Advertisement (RA).
 type defaultRouterState struct {
 	invalidationTimer *time.Timer
 
-	// Used to signal the timer not to invalidate the default router (R) in
+	// Used to inform the timer not to invalidate the default router (R) in
 	// a race condition (T1 is a goroutine that handles an RA from R and T2
 	// is the goroutine that handles R's invalidation timer firing):
 	//   T1: Receive a new RA from R
@@ -198,10 +241,33 @@ type defaultRouterState struct {
 	//   T2: Obtains NIC's lock & invalidates R immediately
 	//
 	// To resolve this, T1 will check to see if the timer already fired, and
-	// signal the timer using this channel to not invalidate R, so that once
-	// T2 obtains the lock, it will see that there is an event on this
-	// channel and do nothing further.
-	doNotInvalidateC chan struct{}
+	// inform the timer using doNotInvalidate to not invalidate R, so that
+	// once T2 obtains the lock, it will see that it is set to true and do
+	// nothing further.
+	doNotInvalidate *bool
+}
+
+// onLinkPrefixState holds data associated with an on-link prefix discovered by
+// a Router Advertisement's Prefix Information option (PI) when the NDP
+// configurations was configured to do so.
+type onLinkPrefixState struct {
+	invalidationTimer *time.Timer
+
+	// Used to signal the timer not to invalidate the on-link prefix (P) in
+	// a race condition (T1 is a goroutine that handles a PI for P and T2
+	// is the goroutine that handles P's invalidation timer firing):
+	//   T1: Receive a new PI for P
+	//   T1: Obtain the NIC's lock before processing the PI
+	//   T2: P's invalidation timer fires, and gets blocked on obtaining the
+	//       NIC's lock
+	//   T1: Refreshes/extends P's lifetime & releases NIC's lock
+	//   T2: Obtains NIC's lock & invalidates P immediately
+	//
+	// To resolve this, T1 will check to see if the timer already fired, and
+	// inform the timer using doNotInvalidate to not invalidate P, so that
+	// once T2 obtains the lock, it will see that it is set to true and do
+	// nothing further.
+	doNotInvalidate *bool
 }
 
 // startDuplicateAddressDetection performs Duplicate Address Detection.
@@ -440,14 +506,13 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 			if !timer.Stop() {
 				// If we reach this point, then we know the
 				// timer fired after we already took the NIC
-				// lock. Signal the timer so that once it
-				// obtains the lock, it doesn't actually
-				// invalidate the router as we just got a new
-				// RA that refreshes its lifetime to a non-zero
-				// value. See
-				// defaultRouterState.doNotInvalidateC for more
+				// lock. Inform the timer not to invalidate the
+				// router when it obtains the lock as we just
+				// got a new RA that refreshes its lifetime to a
+				// non-zero value. See
+				// defaultRouterState.doNotInvalidate for more
 				// details.
-				rtr.doNotInvalidateC <- struct{}{}
+				*rtr.doNotInvalidate = true
 			}
 
 			timer.Reset(rl)
@@ -459,8 +524,117 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 		}
 	}
 
-	// TODO(b/140948104): Do Prefix Discovery.
-	// TODO(b/141556115): Do Parameter Discovery.
+	// TODO(b/141556115): Do (RetransTimer, ReachableTime)) Parameter
+	//                    Discovery.
+
+	// We know the options is valid as far as wire format is concerned since
+	// we got the Router Advertisement, as documented by this fn. Given this
+	// we do not check the iterator for errors on calls to Next.
+	it, _ := ra.Options().Iter(false)
+	for opt, done, _ := it.Next(); !done; opt, done, _ = it.Next() {
+		switch opt.Type() {
+		case header.NDPPrefixInformationType:
+			if !ndp.configs.DiscoverOnLinkPrefixes {
+				continue
+			}
+
+			pi := opt.(header.NDPPrefixInformation)
+
+			prefix := pi.Subnet()
+
+			// Is the prefix a link-local?
+			if header.IsV6LinkLocalAddress(prefix.ID()) {
+				// ...Yes, skip as per RFC 4861 section 6.3.4.
+				continue
+			}
+
+			// Is the Prefix Length 0?
+			if prefix.Prefix() == 0 {
+				// ...Yes, skip as this is an invalid prefix
+				// as all IPv6 addresses cannot be on-link.
+				continue
+			}
+
+			if !pi.OnLinkFlag() {
+				// Not on-link so don't "discover" it as an
+				// on-link prefix.
+				continue
+			}
+
+			prefixState, ok := ndp.onLinkPrefixes[prefix]
+			vl := pi.ValidLifetime()
+			switch {
+			case !ok && vl == 0:
+				// Don't know about this prefix but has a zero
+				// valid lifetime, so just ignore.
+				continue
+
+			case !ok && vl != 0:
+				// This is a new on-link prefix we are
+				// discovering.
+				//
+				// Only remember it if we currently know about
+				// less than MaxDiscoveredOnLinkPrefixes on-link
+				// prefixes.
+				if len(ndp.onLinkPrefixes) < MaxDiscoveredOnLinkPrefixes {
+					ndp.rememberOnLinkPrefix(prefix, vl)
+				}
+				continue
+
+			case ok && vl == 0:
+				// We know about the on-link prefix, but it is
+				// no longer to be considered on-link, so
+				// invalidate it.
+				ndp.invalidateOnLinkPrefix(prefix)
+				continue
+			}
+
+			// This is an already discovered on-link prefix with a
+			// new non-zero valid lifetime.
+			// Update the invalidation timer.
+			timer := prefixState.invalidationTimer
+
+			if timer == nil && vl >= header.NDPPrefixInformationInfiniteLifetime {
+				// Had infinite valid lifetime before and
+				// continues to have an invalid lifetime. Do
+				// nothing further.
+				continue
+			}
+
+			if timer != nil && !timer.Stop() {
+				// If we reach this point, then we know the
+				// timer already fired after we took the NIC
+				// lock. Inform the timer to not invalidate
+				// the prefix once it obtains the lock as we
+				// just got a new PI that refeshes its lifetime
+				// to a non-zero value. See
+				// onLinkPrefixState.doNotInvalidate for more
+				// details.
+				*prefixState.doNotInvalidate = true
+			}
+
+			if vl >= header.NDPPrefixInformationInfiniteLifetime {
+				// Prefix is now valid forever so we don't need
+				// an invalidation timer.
+				prefixState.invalidationTimer = nil
+				ndp.onLinkPrefixes[prefix] = prefixState
+				continue
+			}
+
+			if timer != nil {
+				// We already have a timer so just reset it to
+				// expire after the new valid lifetime.
+				timer.Reset(vl)
+				continue
+			}
+
+			// We do not have a timer so just create a new one.
+			prefixState.invalidationTimer = ndp.prefixInvalidationCallback(prefix, vl, prefixState.doNotInvalidate)
+			ndp.onLinkPrefixes[prefix] = prefixState
+		}
+
+		// TODO(b/141556115): Do (MTU) Parameter Discovery.
+	}
 }
 
 // invalidateDefaultRouter invalidates a discovered default router.
@@ -477,8 +651,8 @@ func (ndp *ndpState) invalidateDefaultRouter(ip tcpip.Address) {
 
 	rtr.invalidationTimer.Stop()
 	rtr.invalidationTimer = nil
-	close(rtr.doNotInvalidateC)
-	rtr.doNotInvalidateC = nil
+	*rtr.doNotInvalidate = true
+	rtr.doNotInvalidate = nil
 
 	delete(ndp.defaultRouters, ip)
 
@@ -508,9 +682,9 @@ func (ndp *ndpState) rememberDefaultRouter(ip tcpip.Address, rl time.Duration) {
 	}
 
 	// Used to signal the timer not to invalidate the default router (R) in
-	// a race condition. See defaultRouterState.doNotInvalidateC for more
+	// a race condition. See defaultRouterState.doNotInvalidate for more
 	// details.
-	doNotInvalidateC := make(chan struct{}, 1)
+	var doNotInvalidate bool
 
 	ndp.defaultRouters[ip] = defaultRouterState{
 		invalidationTimer: time.AfterFunc(rl, func() {
@@ -519,16 +693,103 @@ func (ndp *ndpState) rememberDefaultRouter(ip tcpip.Address, rl time.Duration) {
 			ndp.nic.mu.Lock()
 			defer ndp.nic.mu.Unlock()
 
-			select {
-			case <-doNotInvalidateC:
+			if doNotInvalidate {
+				doNotInvalidate = false
 				return
-			default:
 			}
 
 			ndp.invalidateDefaultRouter(ip)
 		}),
-		doNotInvalidateC: doNotInvalidateC,
+		doNotInvalidate: &doNotInvalidate,
 	}
 
 	ndp.nic.stack.routeTable = routeTable
+}
+
+// rememberOnLinkPrefix remembers a newly discovered on-link prefix with IPv6
+// address with prefix prefix with lifetime l.
+//
+// The prefix identified by prefix MUST NOT already be known.
+//
+// The NIC that ndp belongs to and its associated stack MUST be locked.
+func (ndp *ndpState) rememberOnLinkPrefix(prefix tcpip.Subnet, l time.Duration) {
+	if ndp.nic.stack.ndpDisp == nil {
+		return
+	}
+
+	// Inform the integrator when we discovered an on-link prefix.
+	remember, routeTable := ndp.nic.stack.ndpDisp.OnOnLinkPrefixDiscovered(ndp.nic.ID(), prefix)
+	if !remember {
+		// Informed by the integrator to not remember the prefix, do
+		// nothing further.
+		return
+	}
+
+	// Used to signal the timer not to invalidate the on-link prefix (P) in
+	// a race condition. See onLinkPrefixState.doNotInvalidate for more
+	// details.
+	var doNotInvalidate bool
+	var timer *time.Timer
+
+	// Only create a timer if the lifetime is not infinite.
+	if l < header.NDPPrefixInformationInfiniteLifetime {
+		timer = ndp.prefixInvalidationCallback(prefix, l, &doNotInvalidate)
+	}
+
+	ndp.onLinkPrefixes[prefix] = onLinkPrefixState{
+		invalidationTimer: timer,
+		doNotInvalidate:   &doNotInvalidate,
+	}
+
+	ndp.nic.stack.routeTable = routeTable
+}
+
+// invalidateOnLinkPrefix invalidates a discovered on-link prefix.
+//
+// The NIC that ndp belongs to and its associated stack MUST be locked.
+func (ndp *ndpState) invalidateOnLinkPrefix(prefix tcpip.Subnet) {
+	s, ok := ndp.onLinkPrefixes[prefix]
+
+	// Is the on-link prefix still discovered?
+	if !ok {
+		// ...Nope, do nothing further.
+		return
+	}
+
+	if s.invalidationTimer != nil {
+		s.invalidationTimer.Stop()
+		s.invalidationTimer = nil
+		*s.doNotInvalidate = true
+	}
+
+	s.doNotInvalidate = nil
+
+	delete(ndp.onLinkPrefixes, prefix)
+
+	// Let the integrator know a discovered on-link prefix is invalidated.
+	if ndp.nic.stack.ndpDisp != nil {
+		ndp.nic.stack.routeTable = ndp.nic.stack.ndpDisp.OnOnLinkPrefixInvalidated(ndp.nic.ID(), prefix)
+	}
+}
+
+// prefixInvalidationCallback returns a new on-link prefix invalidation timer
+// for prefix that fires after vl.
+//
+// doNotInvalidate is used to signal the timer when it fires at the same time
+// that a prefix's valid lifetime gets refreshed. See
+// onLinkPrefixState.doNotInvalidate for more details.
+func (ndp *ndpState) prefixInvalidationCallback(prefix tcpip.Subnet, vl time.Duration, doNotInvalidate *bool) *time.Timer {
+	return time.AfterFunc(vl, func() {
+		ndp.nic.stack.mu.Lock()
+		defer ndp.nic.stack.mu.Unlock()
+		ndp.nic.mu.Lock()
+		defer ndp.nic.mu.Unlock()
+
+		if *doNotInvalidate {
+			*doNotInvalidate = false
+			return
+		}
+
+		ndp.invalidateOnLinkPrefix(prefix)
+	})
 }
