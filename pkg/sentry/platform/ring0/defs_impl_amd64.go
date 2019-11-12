@@ -1,25 +1,14 @@
 package ring0
 
 import (
-	"fmt"
-	"gvisor.dev/gvisor/pkg/cpuid"
-	"io"
-	"reflect"
 	"syscall"
 
+	"fmt"
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
-)
-
-var (
-	// UserspaceSize is the total size of userspace.
-	UserspaceSize = uintptr(1) << (VirtualAddressBits() - 1)
-
-	// MaximumUserAddress is the largest possible user address.
-	MaximumUserAddress = (UserspaceSize - 1) & ^uintptr(usermem.PageSize-1)
-
-	// KernelStartAddress is the starting kernel address.
-	KernelStartAddress = ^uintptr(0) - (UserspaceSize - 1)
+	"io"
+	"reflect"
 )
 
 // Kernel is a global kernel object.
@@ -110,6 +99,17 @@ type SwitchOpts struct {
 	// SwitchArchOpts are architecture-specific options.
 	SwitchArchOpts
 }
+
+var (
+	// UserspaceSize is the total size of userspace.
+	UserspaceSize = uintptr(1) << (VirtualAddressBits() - 1)
+
+	// MaximumUserAddress is the largest possible user address.
+	MaximumUserAddress = (UserspaceSize - 1) & ^uintptr(usermem.PageSize-1)
+
+	// KernelStartAddress is the starting kernel address.
+	KernelStartAddress = ^uintptr(0) - (UserspaceSize - 1)
+)
 
 // Segment indices and Selectors.
 const (
