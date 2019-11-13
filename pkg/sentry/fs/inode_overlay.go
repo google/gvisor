@@ -462,7 +462,9 @@ func overlayBind(ctx context.Context, o *overlayEntry, parent *Dirent, name stri
 		inode.DecRef()
 		return nil, err
 	}
-	return NewDirent(ctx, newOverlayInode(ctx, entry, inode.MountSource), name), nil
+	// Use the parent's MountSource, since that corresponds to the overlay,
+	// and not the upper filesystem.
+	return NewDirent(ctx, newOverlayInode(ctx, entry, parent.Inode.MountSource), name), nil
 }
 
 func overlayBoundEndpoint(o *overlayEntry, path string) transport.BoundEndpoint {
