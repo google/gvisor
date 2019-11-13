@@ -269,8 +269,8 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *header.TCPSynOptions) (*endpoint, *tcpip.Error) {
 	// Create new endpoint.
 	irs := s.sequenceNumber
-	isn := generateSecureISN(s.id, l.stack.Seed())
-	ep, err := l.createConnectingEndpoint(s, isn, irs, opts)
+	cookie := l.createCookie(s.id, irs, encodeMSS(opts.MSS))
+	ep, err := l.createConnectingEndpoint(s, cookie, irs, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +289,7 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 	// Perform the 3-way handshake.
 	h := newHandshake(ep, seqnum.Size(ep.initialReceiveWindow()))
 
-	h.resetToSynRcvd(isn, irs, opts)
+	h.resetToSynRcvd(cookie, irs, opts)
 	if err := h.execute(); err != nil {
 		ep.Close()
 		if l.listenEP != nil {
@@ -362,7 +362,6 @@ func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header
 	defer decSynRcvdCount()
 	defer e.decSynRcvdCount()
 	defer s.decRef()
-
 	n, err := ctx.createEndpointAndPerformHandshake(s, opts)
 	if err != nil {
 		e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
@@ -370,11 +369,6 @@ func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header
 		return
 	}
 	ctx.removePendingEndpoint(n)
-	// Start the protocol goroutine.
-	wq := &waiter.Queue{}
-	n.startAcceptedLoop(wq)
-	e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
-
 	e.deliverAccepted(n)
 }
 
@@ -551,11 +545,6 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		// number of goroutines as we do check before
 		// entering here that there was at least some
 		// space available in the backlog.
-
-		// Start the protocol goroutine.
-		wq := &waiter.Queue{}
-		n.startAcceptedLoop(wq)
-		e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
 		go e.deliverAccepted(n)
 	}
 }

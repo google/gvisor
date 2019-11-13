@@ -26,7 +26,6 @@
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/test_util.h"
-#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -242,31 +241,6 @@ TEST_P(TCPSocketPairTest, ShutdownRdAllowsReadOfReceivedDataBeforeEOF) {
               SyscallSucceedsWithValue(1));
   ASSERT_THAT(RetryEINTR(read)(sockets->second_fd(), buf, sizeof(buf)),
               SyscallSucceedsWithValue(0));
-}
-
-// This test verifies that a shutdown(wr) by the server after sending
-// data allows the client to still read() the queued data and a client
-// close after sending response allows server to read the incoming
-// response.
-TEST_P(TCPSocketPairTest, ShutdownWrServerClientClose) {
-  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
-  char buf[10] = {};
-  ScopedThread t([&]() {
-    ASSERT_THAT(RetryEINTR(read)(sockets->first_fd(), buf, sizeof(buf)),
-                SyscallSucceedsWithValue(sizeof(buf)));
-    ASSERT_THAT(RetryEINTR(write)(sockets->first_fd(), buf, sizeof(buf)),
-                SyscallSucceedsWithValue(sizeof(buf)));
-    ASSERT_THAT(close(sockets->release_first_fd()),
-                SyscallSucceedsWithValue(0));
-  });
-  ASSERT_THAT(RetryEINTR(write)(sockets->second_fd(), buf, sizeof(buf)),
-              SyscallSucceedsWithValue(sizeof(buf)));
-  ASSERT_THAT(RetryEINTR(shutdown)(sockets->second_fd(), SHUT_WR),
-              SyscallSucceedsWithValue(0));
-  t.Join();
-
-  ASSERT_THAT(RetryEINTR(read)(sockets->second_fd(), buf, sizeof(buf)),
-              SyscallSucceedsWithValue(sizeof(buf)));
 }
 
 TEST_P(TCPSocketPairTest, ClosedReadNonBlockingSocket) {
@@ -720,73 +694,6 @@ TEST_P(TCPSocketPairTest, SetCongestionControlFailsForUnsupported) {
                          &got_cc, &optlen),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(0, memcmp(got_cc, old_cc, sizeof(old_cc)));
-}
-
-// Linux and Netstack both default to a 60s TCP_LINGER2 timeout.
-constexpr int kDefaultTCPLingerTimeout = 60;
-
-TEST_P(TCPSocketPairTest, TCPLingerTimeoutDefault) {
-  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
-
-  int get = -1;
-  socklen_t get_len = sizeof(get);
-  EXPECT_THAT(
-      getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2, &get, &get_len),
-      SyscallSucceedsWithValue(0));
-  EXPECT_EQ(get_len, sizeof(get));
-  EXPECT_EQ(get, kDefaultTCPLingerTimeout);
-}
-
-TEST_P(TCPSocketPairTest, SetTCPLingerTimeoutZeroOrLess) {
-  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
-
-  constexpr int kZero = 0;
-  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2, &kZero,
-                         sizeof(kZero)),
-              SyscallSucceedsWithValue(0));
-
-  constexpr int kNegative = -1234;
-  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2,
-                         &kNegative, sizeof(kNegative)),
-              SyscallSucceedsWithValue(0));
-}
-
-TEST_P(TCPSocketPairTest, SetTCPLingerTimeoutAboveDefault) {
-  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
-
-  // Values above the net.ipv4.tcp_fin_timeout are capped to tcp_fin_timeout
-  // on linux (defaults to 60 seconds on linux).
-  constexpr int kAboveDefault = kDefaultTCPLingerTimeout + 1;
-  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2,
-                         &kAboveDefault, sizeof(kAboveDefault)),
-              SyscallSucceedsWithValue(0));
-
-  int get = -1;
-  socklen_t get_len = sizeof(get);
-  EXPECT_THAT(
-      getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2, &get, &get_len),
-      SyscallSucceedsWithValue(0));
-  EXPECT_EQ(get_len, sizeof(get));
-  EXPECT_EQ(get, kDefaultTCPLingerTimeout);
-}
-
-TEST_P(TCPSocketPairTest, SetTCPLingerTimeout) {
-  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
-
-  // Values above the net.ipv4.tcp_fin_timeout are capped to tcp_fin_timeout
-  // on linux (defaults to 60 seconds on linux).
-  constexpr int kTCPLingerTimeout = kDefaultTCPLingerTimeout - 1;
-  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2,
-                         &kTCPLingerTimeout, sizeof(kTCPLingerTimeout)),
-              SyscallSucceedsWithValue(0));
-
-  int get = -1;
-  socklen_t get_len = sizeof(get);
-  EXPECT_THAT(
-      getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2, &get, &get_len),
-      SyscallSucceedsWithValue(0));
-  EXPECT_EQ(get_len, sizeof(get));
-  EXPECT_EQ(get, kTCPLingerTimeout);
 }
 
 }  // namespace testing

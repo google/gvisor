@@ -402,11 +402,11 @@ type Stack struct {
 	// by the stack.
 	icmpRateLimiter *ICMPRateLimiter
 
-	// seed is a one-time random value initialized at stack startup
+	// portSeed is a one-time random value initialized at stack startup
 	// and is used to seed the TCP port picking on active connections
 	//
 	// TODO(gvisor.dev/issue/940): S/R this field.
-	seed uint32
+	portSeed uint32
 
 	// ndpConfigs is the default NDP configurations used by interfaces.
 	ndpConfigs NDPConfigurations
@@ -544,7 +544,7 @@ func New(opts Options) *Stack {
 		stats:                opts.Stats.FillIn(),
 		handleLocal:          opts.HandleLocal,
 		icmpRateLimiter:      NewICMPRateLimiter(),
-		seed:                 generateRandUint32(),
+		portSeed:             generateRandUint32(),
 		ndpConfigs:           opts.NDPConfigs,
 		autoGenIPv6LinkLocal: opts.AutoGenIPv6LinkLocal,
 		uniqueIDGenerator:    opts.UniqueID,
@@ -1186,12 +1186,6 @@ func (s *Stack) CompleteTransportEndpointCleanup(ep TransportEndpoint) {
 	s.mu.Unlock()
 }
 
-// FindTransportEndpoint finds an endpoint that most closely matches the provided
-// id. If no endpoint is found it returns nil.
-func (s *Stack) FindTransportEndpoint(netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, id TransportEndpointID, r *Route) TransportEndpoint {
-	return s.demux.findTransportEndpoint(netProto, transProto, id, r)
-}
-
 // RegisterRawTransportEndpoint registers the given endpoint with the stack
 // transport dispatcher. Received packets that match the provided transport
 // protocol will be delivered to the given endpoint.
@@ -1579,12 +1573,12 @@ func (s *Stack) HandleNDPRA(id tcpip.NICID, ip tcpip.Address, ra header.NDPRoute
 	return nil
 }
 
-// Seed returns a 32 bit value that can be used as a seed value for port
-// picking, ISN generation etc.
+// PortSeed returns a 32 bit value that can be used as a seed value for port
+// picking.
 //
 // NOTE: The seed is generated once during stack initialization only.
-func (s *Stack) Seed() uint32 {
-	return s.seed
+func (s *Stack) PortSeed() uint32 {
+	return s.portSeed
 }
 
 func generateRandUint32() uint32 {

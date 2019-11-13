@@ -1173,18 +1173,6 @@ func getSockOptTCP(t *kernel.Task, ep commonEndpoint, name, outLen int) (interfa
 		copy(b, v)
 		return b, nil
 
-	case linux.TCP_LINGER2:
-		if outLen < sizeOfInt32 {
-			return nil, syserr.ErrInvalidArgument
-		}
-
-		var v tcpip.TCPLingerTimeoutOption
-		if err := ep.GetSockOpt(&v); err != nil {
-			return nil, syserr.TranslateNetstackError(err)
-		}
-
-		return int32(time.Duration(v) / time.Second), nil
-
 	default:
 		emitUnimplementedEventTCP(t, name)
 	}
@@ -1567,14 +1555,6 @@ func setSockOptTCP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *
 			return syserr.TranslateNetstackError(err)
 		}
 		return nil
-
-	case linux.TCP_LINGER2:
-		if len(optVal) < sizeOfInt32 {
-			return syserr.ErrInvalidArgument
-		}
-
-		v := usermem.ByteOrder.Uint32(optVal)
-		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.TCPLingerTimeoutOption(time.Second * time.Duration(v))))
 
 	case linux.TCP_REPAIR_OPTIONS:
 		t.Kernel().EmitUnimplementedEvent(t)

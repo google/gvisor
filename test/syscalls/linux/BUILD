@@ -2141,7 +2141,6 @@ cc_library(
     deps = [
         ":socket_test_util",
         "//test/util:test_util",
-        "//test/util:thread_util",
         "@com_google_googletest//:gtest",
     ],
     alwayslink = 1,

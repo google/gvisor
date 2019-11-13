@@ -151,8 +151,10 @@ func TestCloseReader(t *testing.T) {
 
 		buf := make([]byte, 256)
 		n, err := c.Read(buf)
-		if n != 0 || err != io.EOF {
-			t.Errorf("c.Read() = (%d, %v), want (0, EOF)", n, err)
+		got, ok := err.(*net.OpError)
+		want := tcpip.ErrConnectionAborted
+		if n != 0 || !ok || got.Err.Error() != want.String() {
+			t.Errorf("c.Read() = (%d, %v), want (0, OpError(%v))", n, err, want)
 		}
 	}()
 	sender, err := connect(s, addr)
@@ -201,8 +203,10 @@ func TestCloseReaderWithForwarder(t *testing.T) {
 
 		buf := make([]byte, 256)
 		n, e := c.Read(buf)
-		if n != 0 || e != io.EOF {
-			t.Errorf("c.Read() = (%d, %v), want (0, EOF)", n, e)
+		got, ok := e.(*net.OpError)
+		want := tcpip.ErrConnectionAborted
+		if n != 0 || !ok || got.Err.Error() != want.String() {
+			t.Errorf("c.Read() = (%d, %v), want (0, OpError(%v))", n, e, want)
 		}
 	})
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, fwd.HandlePacket)
