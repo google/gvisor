@@ -183,7 +183,8 @@ PosixError WithSubprocess(SubprocessCallback const& running,
   siginfo_t info;
   // Wait until the child process has exited (WEXITED flag) but don't
   // reap the child (WNOWAIT flag).
-  waitid(P_PID, child_pid, &info, WNOWAIT | WEXITED);
+  EXPECT_THAT(waitid(P_PID, child_pid, &info, WNOWAIT | WEXITED),
+              SyscallSucceeds());
 
   if (zombied) {
     // Arg of "Z" refers to a Zombied Process.
