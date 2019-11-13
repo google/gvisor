@@ -1229,7 +1229,9 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 							return err
 						}
 					}
-					if e.state != StateError {
+					if e.state != StateClose && e.state != StateError {
+						// Only block the worker if the endpoint
+						// is not in closed state or error state.
 						close(e.drainDone)
 						<-e.undrain
 					}
