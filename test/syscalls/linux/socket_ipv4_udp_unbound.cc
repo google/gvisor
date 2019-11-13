@@ -1814,6 +1814,280 @@ TEST_P(IPv4UDPUnboundSocketTest, BindReusePortThenReuseAddr) {
               SyscallFailsWithErrno(EADDRINUSE));
 }
 
+TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConvertableToReusePort) {
+  auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto socket3 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Bind socket1 with REUSEADDR and REUSEPORT.
+  ASSERT_THAT(setsockopt(socket1->get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(setsockopt(socket1->get(), SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  // Bind the first socket to the loopback and take note of the selected port.
+  auto addr = V4Loopback();
+  ASSERT_THAT(bind(socket1->get(), reinterpret_cast<sockaddr*>(&addr.addr),
+                   addr.addr_len),
+              SyscallSucceeds());
+  socklen_t addr_len = addr.addr_len;
+  ASSERT_THAT(getsockname(socket1->get(),
+                          reinterpret_cast<sockaddr*>(&addr.addr), &addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(addr_len, addr.addr_len);
+
+  // Bind socket2 to the same address as socket1, only with REUSEPORT.
+  ASSERT_THAT(setsockopt(socket2->get(), SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(bind(socket2->get(), reinterpret_cast<sockaddr*>(&addr.addr),
+                   addr.addr_len),
+              SyscallSucceeds());
+
+  // Bind socket3 to the same address as socket1, only with REUSEADDR.
+  ASSERT_THAT(setsockopt(socket3->get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(bind(socket3->get(), reinterpret_cast<sockaddr*>(&addr.addr),
+                   addr.addr_len),
+              SyscallFailsWithErrno(EADDRINUSE));
+}
+
+TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConvertableToReuseAddr) {
+  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
+  SKIP_IF(IsRunningOnGvisor());
+
+  auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto socket3 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Bind socket1 with REUSEADDR and REUSEPORT.
+  ASSERT_THAT(setsockopt(socket1->get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(setsockopt(socket1->get(), SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  // Bind the first socket to the loopback and take note of the selected port.
+  auto addr = V4Loopback();
+  ASSERT_THAT(bind(socket1->get(), reinterpret_cast<sockaddr*>(&addr.addr),
+                   addr.addr_len),
+              SyscallSucceeds());
+  socklen_t addr_len = addr.addr_len;
+  ASSERT_THAT(getsockname(socket1->get(),
+                          reinterpret_cast<sockaddr*>(&addr.addr), &addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(addr_len, addr.addr_len);
+
+  // Bind socket2 to the same address as socket1, only with REUSEADDR.
+  ASSERT_THAT(setsockopt(socket2->get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(bind(socket2->get(), reinterpret_cast<sockaddr*>(&addr.addr),
+                   addr.addr_len),
+              SyscallSucceeds());
+
+  // Bind socket3 to the same address as socket1, only with REUSEPORT.
+  ASSERT_THAT(setsockopt(socket3->get(), SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(bind(socket3->get(), reinterpret_cast<sockaddr*>(&addr.addr),
+                   addr.addr_len),
+              SyscallFailsWithErrno(EADDRINUSE));
+}
+
+TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConversionReversable1) {
+  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
+  SKIP_IF(IsRunningOnGvisor());
+
+  auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto socket3 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Bind socket1 with REUSEADDR and REUSEPORT.
+  ASSERT_THAT(setsockopt(socket1->get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(setsockopt(socket1->get(), SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  // Bind the first socket to the loopback and take note of the selected port.
+  auto addr = V4Loopback();
+  ASSERT_THAT(bind(socket1->get(), reinterpret_cast<sockaddr*>(&addr.addr),
+                   addr.addr_len),
+              SyscallSucceeds());
+  socklen_t addr_len = addr.addr_len;
+  ASSERT_THAT(getsockname(socket1->get(),
+                          reinterpret_cast<sockaddr*>(&addr.addr), &addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(addr_len, addr.addr_len);
+
+  // Bind socket2 to the same address as socket1, only with REUSEPORT.
+  ASSERT_THAT(setsockopt(socket2->get(), SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(bind(socket2->get(), reinterpret_cast<sockaddr*>(&addr.addr),
+                   addr.addr_len),
+              SyscallSucceeds());
+
+  // Close socket2 to revert to just socket1 with REUSEADDR and REUSEPORT.
+  socket2->reset();
+
+  // Bind socket3 to the same address as socket1, only with REUSEADDR.
+  ASSERT_THAT(setsockopt(socket3->get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(bind(socket3->get(), reinterpret_cast<sockaddr*>(&addr.addr),
+                   addr.addr_len),
+              SyscallSucceeds());
+}
+
+TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConversionReversable2) {
+  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
+  SKIP_IF(IsRunningOnGvisor());
+
+  auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto socket3 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Bind socket1 with REUSEADDR and REUSEPORT.
+  ASSERT_THAT(setsockopt(socket1->get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(setsockopt(socket1->get(), SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  // Bind the first socket to the loopback and take note of the selected port.
+  auto addr = V4Loopback();
+  ASSERT_THAT(bind(socket1->get(), reinterpret_cast<sockaddr*>(&addr.addr),
+                   addr.addr_len),
+              SyscallSucceeds());
+  socklen_t addr_len = addr.addr_len;
+  ASSERT_THAT(getsockname(socket1->get(),
+                          reinterpret_cast<sockaddr*>(&addr.addr), &addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(addr_len, addr.addr_len);
+
+  // Bind socket2 to the same address as socket1, only with REUSEADDR.
+  ASSERT_THAT(setsockopt(socket2->get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(bind(socket2->get(), reinterpret_cast<sockaddr*>(&addr.addr),
+                   addr.addr_len),
+              SyscallSucceeds());
+
+  // Close socket2 to revert to just socket1 with REUSEADDR and REUSEPORT.
+  socket2->reset();
+
+  // Bind socket3 to the same address as socket1, only with REUSEPORT.
+  ASSERT_THAT(setsockopt(socket3->get(), SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(bind(socket3->get(), reinterpret_cast<sockaddr*>(&addr.addr),
+                   addr.addr_len),
+              SyscallSucceeds());
+}
+
+TEST_P(IPv4UDPUnboundSocketTest, BindDoubleReuseAddrReusePortThenReusePort) {
+  auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto socket3 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Bind socket1 with REUSEADDR and REUSEPORT.
+  ASSERT_THAT(setsockopt(socket1->get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(setsockopt(socket1->get(), SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  // Bind the first socket to the loopback and take note of the selected port.
+  auto addr = V4Loopback();
+  ASSERT_THAT(bind(socket1->get(), reinterpret_cast<sockaddr*>(&addr.addr),
+                   addr.addr_len),
+              SyscallSucceeds());
+  socklen_t addr_len = addr.addr_len;
+  ASSERT_THAT(getsockname(socket1->get(),
+                          reinterpret_cast<sockaddr*>(&addr.addr), &addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(addr_len, addr.addr_len);
+
+  // Bind socket2 to the same address as socket1, also with REUSEADDR and
+  // REUSEPORT.
+  ASSERT_THAT(setsockopt(socket2->get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(setsockopt(socket2->get(), SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  ASSERT_THAT(bind(socket2->get(), reinterpret_cast<sockaddr*>(&addr.addr),
+                   addr.addr_len),
+              SyscallSucceeds());
+
+  // Bind socket3 to the same address as socket1, only with REUSEPORT.
+  ASSERT_THAT(setsockopt(socket3->get(), SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(bind(socket3->get(), reinterpret_cast<sockaddr*>(&addr.addr),
+                   addr.addr_len),
+              SyscallSucceeds());
+}
+
+TEST_P(IPv4UDPUnboundSocketTest, BindDoubleReuseAddrReusePortThenReuseAddr) {
+  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
+  SKIP_IF(IsRunningOnGvisor());
+
+  auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto socket3 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Bind socket1 with REUSEADDR and REUSEPORT.
+  ASSERT_THAT(setsockopt(socket1->get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(setsockopt(socket1->get(), SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  // Bind the first socket to the loopback and take note of the selected port.
+  auto addr = V4Loopback();
+  ASSERT_THAT(bind(socket1->get(), reinterpret_cast<sockaddr*>(&addr.addr),
+                   addr.addr_len),
+              SyscallSucceeds());
+  socklen_t addr_len = addr.addr_len;
+  ASSERT_THAT(getsockname(socket1->get(),
+                          reinterpret_cast<sockaddr*>(&addr.addr), &addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(addr_len, addr.addr_len);
+
+  // Bind socket2 to the same address as socket1, also with REUSEADDR and
+  // REUSEPORT.
+  ASSERT_THAT(setsockopt(socket2->get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(setsockopt(socket2->get(), SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  ASSERT_THAT(bind(socket2->get(), reinterpret_cast<sockaddr*>(&addr.addr),
+                   addr.addr_len),
+              SyscallSucceeds());
+
+  // Bind socket3 to the same address as socket1, only with REUSEADDR.
+  ASSERT_THAT(setsockopt(socket3->get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  ASSERT_THAT(bind(socket3->get(), reinterpret_cast<sockaddr*>(&addr.addr),
+                   addr.addr_len),
+              SyscallSucceeds());
+}
+
 // Check that REUSEPORT takes precedence over REUSEADDR.
 TEST_P(IPv4UDPUnboundSocketTest, ReuseAddrReusePortDistribution) {
   auto receiver1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
