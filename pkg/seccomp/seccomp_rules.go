@@ -49,6 +49,9 @@ func (a AllowAny) String() (s string) {
 // AllowValue specifies a value that needs to be strictly matched.
 type AllowValue uintptr
 
+// GreaterThan specifies a value that needs to be strictly smaller.
+type GreaterThan uintptr
+
 func (a AllowValue) String() (s string) {
 	return fmt.Sprintf("%#x ", uintptr(a))
 }
