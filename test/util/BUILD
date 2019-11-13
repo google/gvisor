@@ -232,7 +232,13 @@ cc_library(
 cc_library(
     name = "test_util",
     testonly = 1,
-    srcs = ["test_util.cc"],
+    srcs = [
+        "test_util.cc",
+    ] + select_for_linux(
+        [
+            "test_util_impl.cc",
+        ],
+    ),
     hdrs = ["test_util.h"],
     deps = [
         ":fs_util",

@@ -116,9 +116,6 @@ PosixErrorOr<KernelVersion> GetKernelVersion() {
   return ParseKernelVersion(buf.release);
 }
 
-void SetupGvisorDeathTest() {
-}
-
 std::string CPUSetToString(const cpu_set_t& set, size_t cpus) {
   std::string str = "cpuset[";
   for (unsigned int n = 0; n < cpus; n++) {
@@ -222,16 +219,6 @@ uint64_t Megabytes(uint64_t n) {
 bool Equivalent(uint64_t current, uint64_t target, double tolerance) {
   auto abs_diff = target > current ? target - current : current - target;
   return abs_diff <= static_cast<uint64_t>(tolerance * target);
-}
-
-void TestInit(int* argc, char*** argv) {
-  ::testing::InitGoogleTest(argc, *argv);
-  ::absl::ParseCommandLine(*argc, *argv);
-
-  // Always mask SIGPIPE as it's common and tests aren't expected to handle it.
-  struct sigaction sa = {};
-  sa.sa_handler = SIG_IGN;
-  TEST_CHECK(sigaction(SIGPIPE, &sa, nullptr) == 0);
 }
 
 }  // namespace testing

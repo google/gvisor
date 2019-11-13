@@ -221,7 +221,9 @@ enum class Platform {
 bool IsRunningOnGvisor();
 Platform GvisorPlatform();
 
+#ifdef __linux__
 void SetupGvisorDeathTest();
+#endif
 
 struct KernelVersion {
   int major;
