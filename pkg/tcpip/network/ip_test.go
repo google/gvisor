@@ -43,6 +43,8 @@ const (
 	ipv6Gateway        = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03"
 )
 
+var options = []byte{68, 04, 05, 00} //For IP Option 4 (Timestamp Option)
+
 // testObject implements two interfaces: LinkEndpoint and TransportDispatcher.
 // The former is used to pretend that it's a link endpoint so that we can
 // inspect packets written by the network endpoints. The latter is used to
@@ -60,6 +62,7 @@ type testObject struct {
 	v4       bool
 	typ      stack.ControlType
 	extra    uint32
+	opt      []byte
 
 	dataCalls    int
 	controlCalls int
@@ -82,6 +85,10 @@ func (t *testObject) checkValues(protocol tcpip.TransportProtocolNumber, vv buff
 		t.t.Errorf("dstAddr = %v, want %v", dstAddr, t.dstAddr)
 	}
 
+	if len(opt) > 0 && len(opt) != int(t.opt[1]) {
+		t.t.Errorf("options = %v, want %v", opt, t.opt)
+	}
+
 	if len(v) != len(t.contents) {
 		t.t.Fatalf("len(payload) = %v, want %v", len(v), len(t.contents))
 	}
@@ -99,6 +106,7 @@ func (t *testObject) checkValues(protocol tcpip.TransportProtocolNumber, vv buff
 func (t *testObject) DeliverTransportPacket(r *stack.Route, protocol tcpip.TransportProtocolNumber, pkt tcpip.PacketBuffer) {
 	t.checkValues(protocol, pkt.Data, r.RemoteAddress, r.LocalAddress)
 	t.dataCalls++
+	options = nil
 }
 
 // DeliverTransportControlPacket is called by network endpoints after parsing
@@ -160,14 +168,16 @@ func (t *testObject) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prepen
 		prot = tcpip.TransportProtocolNumber(h.Protocol())
 		srcAddr = h.SourceAddress()
 		dstAddr = h.DestinationAddress()
+		t.checkValues(prot, payload, srcAddr, dstAddr, options)
 
 	} else {
 		h := header.IPv6(hdr.View())
 		prot = tcpip.TransportProtocolNumber(h.NextHeader())
 		srcAddr = h.SourceAddress()
 		dstAddr = h.DestinationAddress()
+		options = nil // Because we are not going to check options in IPv6 packets
+		t.checkValues(prot, payload, srcAddr, dstAddr, options)
 	}
-	t.checkValues(prot, payload, srcAddr, dstAddr)
 	return nil
 }
 
@@ -233,6 +243,7 @@ func TestIPv4Send(t *testing.T) {
 	o.protocol = 123
 	o.srcAddr = localIpv4Addr
 	o.dstAddr = remoteIpv4Addr
+	o.opt = options
 	o.contents = payload
 
 	r, err := buildIPv4Route(localIpv4Addr, remoteIpv4Addr)
@@ -263,6 +274,8 @@ func TestIPv4Receive(t *testing.T) {
 		SrcAddr:     remoteIpv4Addr,
 		DstAddr:     localIpv4Addr,
 	})
+
+	copy(view[header.IPv4MinimumSize:ihl], options)
 
 	// Make payload be non-zero.
 	for i := header.IPv4MinimumSize; i < totalLen; i++ {
@@ -471,6 +484,7 @@ func TestIPv6Send(t *testing.T) {
 	o.protocol = 123
 	o.srcAddr = localIpv6Addr
 	o.dstAddr = remoteIpv6Addr
+	o.opt = nil
 	o.contents = payload
 
 	r, err := buildIPv6Route(localIpv6Addr, remoteIpv6Addr)
@@ -510,6 +524,7 @@ func TestIPv6Receive(t *testing.T) {
 	o.protocol = 10
 	o.srcAddr = remoteIpv6Addr
 	o.dstAddr = localIpv6Addr
+	o.opt = nil
 	o.contents = view[header.IPv6MinimumSize:totalLen]
 
 	r, err := buildIPv6Route(localIpv6Addr, remoteIpv6Addr)

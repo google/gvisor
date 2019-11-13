@@ -151,3 +151,37 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt tcpip.PacketBuffer) {
 		received.Invalid.Increment()
 	}
 }
+
+func (e *endpoint) ParamProblem(r *stack.Route, netHeader buffer.View, vv buffer.VectorisedView) {
+	vv = vv.Clone(nil)
+
+	hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv4MinimumSize + header.IPv4MinimumSize + header.ICMPv4MinimumSize)
+	transportHdr := hdr.Prepend(header.ICMPv4MinimumSize)
+	copy(transportHdr, vv.First())
+	vv.TrimFront(header.ICMPv4MinimumSize)
+
+	ipHdr := hdr.Prepend(header.IPv4MinimumSize + len(options))
+	copy(ipHdr, netHeader)
+
+	pkt := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
+
+	pkt.SetType(header.ICMPv4ParamProblem)
+	pkt.SetCode(0)
+
+	pointer := make([]byte, 1)
+	if len(options) != int(options[1]) {
+		pointer = []byte{20}
+	} else if len(options) <= int(options[3]) {
+		pointer = []byte{22}
+	}
+
+	pkt.SetPointer(pointer)
+	pkt.SetChecksum(0)
+	pkt.SetChecksum(^header.Checksum(pkt, header.ChecksumVV(vv, 0)))
+
+	options = nil
+
+	if err := r.WritePacket(nil /* gso */, hdr, vv, stack.NetworkHeaderParams{Protocol: header.ICMPv4ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}); err != nil {
+		return
+	}
+}

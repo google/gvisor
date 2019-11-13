@@ -46,6 +46,8 @@ const (
 	buckets = 2048
 )
 
+var options []byte
+
 type endpoint struct {
 	nicID         tcpip.NICID
 	id            stack.NetworkEndpointID
@@ -105,6 +107,9 @@ func (e *endpoint) PrefixLen() int {
 // MaxHeaderLength returns the maximum length needed by ipv4 headers (and
 // underlying protocols).
 func (e *endpoint) MaxHeaderLength() uint16 {
+	if len(options) > 0 {
+		return e.linkEP.MaxHeaderLength() + header.IPv4MinimumSize + uint16(len(options))
+	}
 	return e.linkEP.MaxHeaderLength() + header.IPv4MinimumSize
 }
 
@@ -199,7 +204,7 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, hdr buff
 }
 
 func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadSize int, params stack.NetworkHeaderParams) header.IPv4 {
-	ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
+	ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize + len(options)))
 	length := uint16(hdr.UsedLength() + payloadSize)
 	id := uint32(0)
 	if length > header.IPv4MaximumHeaderSize+8 {
@@ -207,8 +212,9 @@ func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadS
 		// fragmented, so we only assign ids to larger packets.
 		id = atomic.AddUint32(&e.protocol.ids[hashRoute(r, params.Protocol, e.protocol.hashIV)%buckets], 1)
 	}
+	ihl := header.IPv4MinimumSize + len(options)
 	ip.Encode(&header.IPv4Fields{
-		IHL:         header.IPv4MinimumSize,
+		IHL:         uint8(ihl),
 		TotalLength: length,
 		ID:          uint16(id),
 		TTL:         params.TTL,
@@ -217,6 +223,9 @@ func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadS
 		SrcAddr:     r.LocalAddress,
 		DstAddr:     r.RemoteAddress,
 	})
+	if len(options) > 0 {
+		ip.SetOptions(options)
+	}
 	ip.SetChecksum(^ip.CalculateChecksum())
 	return ip
 }

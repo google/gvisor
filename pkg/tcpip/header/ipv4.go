@@ -33,6 +33,7 @@ const (
 	checksum           = 10
 	srcAddr            = 12
 	dstAddr            = 16
+	options            = 20
 )
 
 // IPv4Fields contains the fields of an IPv4 packet. It is used to describe the
@@ -70,6 +71,9 @@ type IPv4Fields struct {
 
 	// DstAddr is the "destination ip address" of an IPv4 packet.
 	DstAddr tcpip.Address
+
+	// Options is the "ip options" of an IPv4 packet.
+	Options []byte
 }
 
 // IPv4 represents an ipv4 header stored in a byte array.
@@ -189,6 +193,11 @@ func (b IPv4) DestinationAddress() tcpip.Address {
 	return tcpip.Address(b[dstAddr : dstAddr+IPv4AddressSize])
 }
 
+// Options returns the "IP option" field of thr ipv4 header.
+func (b IPv4) Options(optlen int) []byte {
+	return b[options : options+optlen]
+}
+
 // TransportProtocol implements Network.TransportProtocol.
 func (b IPv4) TransportProtocol() tcpip.TransportProtocolNumber {
 	return tcpip.TransportProtocolNumber(b.Protocol())
@@ -245,6 +254,11 @@ func (b IPv4) SetSourceAddress(addr tcpip.Address) {
 // header.
 func (b IPv4) SetDestinationAddress(addr tcpip.Address) {
 	copy(b[dstAddr:dstAddr+IPv4AddressSize], addr)
+}
+
+// SetOptions sets the "IP option" field of the ipv4 header.
+func (b IPv4) SetOptions(opt []byte) {
+	copy(b[options:options+len(opt)], opt)
 }
 
 // CalculateChecksum calculates the checksum of the ipv4 header.

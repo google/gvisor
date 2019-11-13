@@ -97,6 +97,11 @@ func (b ICMPv4) SetChecksum(checksum uint16) {
 	binary.BigEndian.PutUint16(b[icmpv4ChecksumOffset:], checksum)
 }
 
+// SetPointer sets the ICMP pointer field.
+func (b ICMPv4) SetPointer(pointer []byte) {
+	copy(b[4:], pointer)
+}
+
 // SourcePort implements Transport.SourcePort.
 func (ICMPv4) SourcePort() uint16 {
 	return 0
