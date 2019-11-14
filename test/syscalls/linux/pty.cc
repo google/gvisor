@@ -70,6 +70,8 @@ constexpr absl::Duration kTimeout = absl::Seconds(20);
 // The maximum line size in bytes returned per read from a pty file.
 constexpr int kMaxLineSize = 4096;
 
+constexpr char kMasterPath[] = "/dev/ptmx";
+
 // glibc defines its own, different, version of struct termios. We care about
 // what the kernel does, not glibc.
 #define KERNEL_NCCS 19
@@ -376,9 +378,25 @@ PosixErrorOr<size_t> PollAndReadFd(int fd, void* buf, size_t count,
   return PosixError(ETIMEDOUT, "Poll timed out");
 }
 
+TEST(PtyTrunc, Truncate) {
+  // Opening PTYs with O_TRUNC shouldn't cause an error, but calls to
+  // (f)truncate should.
+  FileDescriptor master =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kMasterPath, O_RDWR | O_TRUNC));
+  int n = ASSERT_NO_ERRNO_AND_VALUE(SlaveID(master));
+  std::string spath = absl::StrCat("/dev/pts/", n);
+  FileDescriptor slave =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(spath, O_RDWR | O_NONBLOCK | O_TRUNC));
+
+  EXPECT_THAT(truncate(kMasterPath, 0), SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(truncate(spath.c_str(), 0), SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(ftruncate(master.get(), 0), SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(ftruncate(slave.get(), 0), SyscallFailsWithErrno(EINVAL));
+}
+
 TEST(BasicPtyTest, StatUnopenedMaster) {
   struct stat s;
-  ASSERT_THAT(stat("/dev/ptmx", &s), SyscallSucceeds());
+  ASSERT_THAT(stat(kMasterPath, &s), SyscallSucceeds());
 
   EXPECT_EQ(s.st_rdev, makedev(TTYAUX_MAJOR, kPtmxMinor));
   EXPECT_EQ(s.st_size, 0);

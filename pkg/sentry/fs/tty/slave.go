@@ -31,6 +31,7 @@ import (
 // +stateify savable
 type slaveInodeOperations struct {
 	fsutil.SimpleFileInode
+	fsutil.InodeNoopTruncate
 
 	// d is the containing dir.
 	d *dirInodeOperations

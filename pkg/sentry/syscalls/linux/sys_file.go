@@ -169,10 +169,11 @@ func openAt(t *kernel.Task, dirFD int32, addr usermem.Addr, flags uint) (fd uint
 			if dirPath {
 				return syserror.ENOTDIR
 			}
-			if flags&linux.O_TRUNC != 0 {
-				if err := d.Inode.Truncate(t, d, 0); err != nil {
-					return err
-				}
+		}
+
+		if flags&linux.O_TRUNC != 0 {
+			if err := d.Inode.Truncate(t, d, 0); err != nil {
+				return err
 			}
 		}
 

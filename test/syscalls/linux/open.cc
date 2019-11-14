@@ -73,6 +73,28 @@ class OpenTest : public FileTest {
   const std::string test_data_ = "hello world\n";
 };
 
+TEST_F(OpenTest, OTrunc) {
+  auto dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncd");
+  ASSERT_THAT(mkdir(dirpath.c_str(), 0777), SyscallSucceeds());
+  ASSERT_THAT(open(dirpath.c_str(), O_TRUNC, 0666),
+              SyscallFailsWithErrno(EISDIR));
+}
+
+TEST_F(OpenTest, OTruncAndReadOnlyDir) {
+  auto dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncd");
+  ASSERT_THAT(mkdir(dirpath.c_str(), 0777), SyscallSucceeds());
+  ASSERT_THAT(open(dirpath.c_str(), O_TRUNC | O_RDONLY, 0666),
+              SyscallFailsWithErrno(EISDIR));
+}
+
+TEST_F(OpenTest, OTruncAndReadOnlyFile) {
+  auto dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncfile");
+  const FileDescriptor existing =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dirpath.c_str(), O_RDWR | O_CREAT, 0666));
+  const FileDescriptor otrunc = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(dirpath.c_str(), O_TRUNC | O_RDONLY, 0666));
+}
+
 TEST_F(OpenTest, ReadOnly) {
   char buf;
   const FileDescriptor ro_file =
