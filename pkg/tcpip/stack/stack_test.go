@@ -122,31 +122,30 @@ func (f *fakeNetworkEndpoint) Capabilities() stack.LinkEndpointCapabilities {
 	return f.ep.Capabilities()
 }
 
-func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping) *tcpip.Error {
+func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, loop stack.PacketLooping, pkt tcpip.PacketBuffer) *tcpip.Error {
 	// Increment the sent packet count in the protocol descriptor.
 	f.proto.sendPacketCount[int(r.RemoteAddress[0])%len(f.proto.sendPacketCount)]++
 
 	// Add the protocol's header to the packet and send it to the link
 	// endpoint.
-	b := hdr.Prepend(fakeNetHeaderLen)
+	b := pkt.Header.Prepend(fakeNetHeaderLen)
 	b[0] = r.RemoteAddress[0]
 	b[1] = f.id.LocalAddress[0]
 	b[2] = byte(params.Protocol)
 
 	if loop&stack.PacketLoop != 0 {
-		views := make([]buffer.View, 1, 1+len(payload.Views()))
-		views[0] = hdr.View()
-		views = append(views, payload.Views()...)
-		vv := buffer.NewVectorisedView(len(views[0])+payload.Size(), views)
+		views := make([]buffer.View, 1, 1+len(pkt.Data.Views()))
+		views[0] = pkt.Header.View()
+		views = append(views, pkt.Data.Views()...)
 		f.HandlePacket(r, tcpip.PacketBuffer{
-			Data: vv,
+			Data: buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views),
 		})
 	}
 	if loop&stack.PacketOut == 0 {
 		return nil
 	}
 
-	return f.ep.WritePacket(r, gso, hdr, payload, fakeNetNumber)
+	return f.ep.WritePacket(r, gso, fakeNetNumber, pkt)
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
@@ -154,7 +153,7 @@ func (f *fakeNetworkEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs 
 	panic("not implemented")
 }
 
-func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(r *stack.Route, payload buffer.VectorisedView, loop stack.PacketLooping) *tcpip.Error {
+func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(r *stack.Route, loop stack.PacketLooping, pkt tcpip.PacketBuffer) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }
 
@@ -330,7 +329,10 @@ func sendTo(s *stack.Stack, addr tcpip.Address, payload buffer.View) *tcpip.Erro
 
 func send(r stack.Route, payload buffer.View) *tcpip.Error {
 	hdr := buffer.NewPrependable(int(r.MaxHeaderLength()))
-	return r.WritePacket(nil /* gso */, hdr, payload.ToVectorisedView(), stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS})
+	return r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, tcpip.PacketBuffer{
+		Header: hdr,
+		Data:   payload.ToVectorisedView(),
+	})
 }
 
 func testSendTo(t *testing.T, s *stack.Stack, addr tcpip.Address, ep *channel.Endpoint, payload buffer.View) {

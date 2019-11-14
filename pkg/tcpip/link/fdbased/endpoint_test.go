@@ -168,7 +168,10 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32) {
 			L3HdrLen:   header.IPv4MaximumHeaderSize,
 		}
 	}
-	if err := c.ep.WritePacket(r, gso, hdr, payload.ToVectorisedView(), proto); err != nil {
+	if err := c.ep.WritePacket(r, gso, proto, tcpip.PacketBuffer{
+		Header: hdr,
+		Data:   payload.ToVectorisedView(),
+	}); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 
@@ -258,7 +261,10 @@ func TestPreserveSrcAddress(t *testing.T) {
 	// WritePacket panics given a prependable with anything less than
 	// the minimum size of the ethernet header.
 	hdr := buffer.NewPrependable(header.EthernetMinimumSize)
-	if err := c.ep.WritePacket(r, nil /* gso */, hdr, buffer.VectorisedView{}, proto); err != nil {
+	if err := c.ep.WritePacket(r, nil /* gso */, proto, tcpip.PacketBuffer{
+		Header: hdr,
+		Data:   buffer.VectorisedView{},
+	}); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 

@@ -20,6 +20,7 @@ import "gvisor.dev/gvisor/pkg/tcpip/buffer"
 func (pk *PacketBuffer) beforeSave() {
 	// Non-Data fields may be slices of the Data field. This causes
 	// problems for SR, so during save we make each header independent.
+	pk.Header = pk.Header.DeepCopy()
 	pk.LinkHeader = append(buffer.View(nil), pk.LinkHeader...)
 	pk.NetworkHeader = append(buffer.View(nil), pk.NetworkHeader...)
 	pk.TransportHeader = append(buffer.View(nil), pk.TransportHeader...)

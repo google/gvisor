@@ -83,7 +83,10 @@ func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions
 	if err != nil {
 		return 0, nil, err
 	}
-	if err := f.route.WritePacket(nil /* gso */, hdr, buffer.View(v).ToVectorisedView(), stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}); err != nil {
+	if err := f.route.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, tcpip.PacketBuffer{
+		Header: hdr,
+		Data:   buffer.View(v).ToVectorisedView(),
+	}); err != nil {
 		return 0, nil, err
 	}
 
@@ -617,10 +620,10 @@ func TestTransportForwarding(t *testing.T) {
 		t.Fatal("Response packet not forwarded")
 	}
 
-	if dst := p.Header[0]; dst != 3 {
+	if dst := p.Pkt.Header.View()[0]; dst != 3 {
 		t.Errorf("Response packet has incorrect destination addresss: got = %d, want = 3", dst)
 	}
-	if src := p.Header[1]; src != 1 {
+	if src := p.Pkt.Header.View()[1]; src != 1 {
 		t.Errorf("Response packet has incorrect source addresss: got = %d, want = 3", src)
 	}
 }

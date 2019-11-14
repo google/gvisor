@@ -185,9 +185,10 @@ func (e *endpoint) LinkAddress() tcpip.LinkAddress {
 
 // WritePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
-func (e *endpoint) WritePacket(r *stack.Route, _ *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (e *endpoint) WritePacket(r *stack.Route, _ *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) *tcpip.Error {
 	// Add the ethernet header here.
-	eth := header.Ethernet(hdr.Prepend(header.EthernetMinimumSize))
+	eth := header.Ethernet(pkt.Header.Prepend(header.EthernetMinimumSize))
+	pkt.LinkHeader = buffer.View(eth)
 	ethHdr := &header.EthernetFields{
 		DstAddr: r.RemoteLinkAddress,
 		Type:    protocol,
@@ -199,10 +200,10 @@ func (e *endpoint) WritePacket(r *stack.Route, _ *stack.GSO, hdr buffer.Prependa
 	}
 	eth.Encode(ethHdr)
 
-	v := payload.ToView()
+	v := pkt.Data.ToView()
 	// Transmit the packet.
 	e.mu.Lock()
-	ok := e.tx.transmit(hdr.View(), v)
+	ok := e.tx.transmit(pkt.Header.View(), v)
 	e.mu.Unlock()
 
 	if !ok {
@@ -218,8 +219,8 @@ func (e *endpoint) WritePackets(r *stack.Route, _ *stack.GSO, hdrs []stack.Packe
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (e *endpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
-	v := packet.ToView()
+func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
+	v := vv.ToView()
 	// Transmit the packet.
 	e.mu.Lock()
 	ok := e.tx.transmit(v, buffer.View{})
