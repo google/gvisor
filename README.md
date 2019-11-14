@@ -61,6 +61,27 @@ go run main.go
 
 Access the site at http://localhost:8080
 
+## Updating Styles
+
+If you want to update style on the website you can do this by updating
+templates or CSS for the website. Check out the [Hugo
+documentation](https://gohugo.io/documentation/) for info on hugo templating.
+Check out the [Docsy documentation](https://www.docsy.dev/docs/) for info on
+the Docsy theme.
+
+### Custom templates, partials, and shortcodes
+
+Custom templates, including partials and shortcodes, should go under the
+[layouts/](layouts) directory.
+
+## Custom CSS
+
+Custom CSS styles should go into the
+[_styles_project.scss](assets/scss/_styles_project.scss) file.
+
+If you need to override or create variables used in scss styles, update the
+[_variables_project.scss](assets/scss/_variables_project.scss) file.
+
 ## Troubleshooting
 
 #### I get errors when building the website.
