@@ -386,10 +386,11 @@ const (
 
 // WritePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) *tcpip.Error {
 	if e.hdrSize > 0 {
 		// Add ethernet header if needed.
-		eth := header.Ethernet(hdr.Prepend(header.EthernetMinimumSize))
+		eth := header.Ethernet(pkt.Header.Prepend(header.EthernetMinimumSize))
+		pkt.LinkHeader = buffer.View(eth)
 		ethHdr := &header.EthernetFields{
 			DstAddr: r.RemoteLinkAddress,
 			Type:    protocol,
@@ -408,13 +409,13 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 		vnetHdr := virtioNetHdr{}
 		vnetHdrBuf := vnetHdrToByteSlice(&vnetHdr)
 		if gso != nil {
-			vnetHdr.hdrLen = uint16(hdr.UsedLength())
+			vnetHdr.hdrLen = uint16(pkt.Header.UsedLength())
 			if gso.NeedsCsum {
 				vnetHdr.flags = _VIRTIO_NET_HDR_F_NEEDS_CSUM
 				vnetHdr.csumStart = header.EthernetMinimumSize + gso.L3HdrLen
 				vnetHdr.csumOffset = gso.CsumOffset
 			}
-			if gso.Type != stack.GSONone && uint16(payload.Size()) > gso.MSS {
+			if gso.Type != stack.GSONone && uint16(pkt.Data.Size()) > gso.MSS {
 				switch gso.Type {
 				case stack.GSOTCPv4:
 					vnetHdr.gsoType = _VIRTIO_NET_HDR_GSO_TCPV4
@@ -427,14 +428,14 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 			}
 		}
 
-		return rawfile.NonBlockingWrite3(e.fds[0], vnetHdrBuf, hdr.View(), payload.ToView())
+		return rawfile.NonBlockingWrite3(e.fds[0], vnetHdrBuf, pkt.Header.View(), pkt.Data.ToView())
 	}
 
-	if payload.Size() == 0 {
-		return rawfile.NonBlockingWrite(e.fds[0], hdr.View())
+	if pkt.Data.Size() == 0 {
+		return rawfile.NonBlockingWrite(e.fds[0], pkt.Header.View())
 	}
 
-	return rawfile.NonBlockingWrite3(e.fds[0], hdr.View(), payload.ToView(), nil)
+	return rawfile.NonBlockingWrite3(e.fds[0], pkt.Header.View(), pkt.Data.ToView(), nil)
 }
 
 // WritePackets writes outbound packets to the file descriptor. If it is not
@@ -555,8 +556,8 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.Pac
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (e *endpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
-	return rawfile.NonBlockingWrite(e.fds[0], packet.ToView())
+func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
+	return rawfile.NonBlockingWrite(e.fds[0], vv.ToView())
 }
 
 // InjectOutobund implements stack.InjectableEndpoint.InjectOutbound.

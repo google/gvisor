@@ -77,3 +77,9 @@ func (p *Prependable) Prepend(size int) []byte {
 	p.usedIdx -= size
 	return p.View()[:size:size]
 }
+
+// DeepCopy copies p and the bytes backing it.
+func (p Prependable) DeepCopy() Prependable {
+	p.buf = append(View(nil), p.buf...)
+	return p
+}

@@ -9,6 +9,7 @@ import (
 func (x *PacketBuffer) save(m state.Map) {
 	x.beforeSave()
 	m.Save("Data", &x.Data)
+	m.Save("Header", &x.Header)
 	m.Save("LinkHeader", &x.LinkHeader)
 	m.Save("NetworkHeader", &x.NetworkHeader)
 	m.Save("TransportHeader", &x.TransportHeader)
@@ -17,6 +18,7 @@ func (x *PacketBuffer) save(m state.Map) {
 func (x *PacketBuffer) afterLoad() {}
 func (x *PacketBuffer) load(m state.Map) {
 	m.Load("Data", &x.Data)
+	m.Load("Header", &x.Header)
 	m.Load("LinkHeader", &x.LinkHeader)
 	m.Load("NetworkHeader", &x.NetworkHeader)
 	m.Load("TransportHeader", &x.TransportHeader)

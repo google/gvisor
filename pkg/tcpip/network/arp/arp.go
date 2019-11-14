@@ -79,7 +79,7 @@ func (e *endpoint) MaxHeaderLength() uint16 {
 
 func (e *endpoint) Close() {}
 
-func (e *endpoint) WritePacket(*stack.Route, *stack.GSO, buffer.Prependable, buffer.VectorisedView, stack.NetworkHeaderParams, stack.PacketLooping) *tcpip.Error {
+func (e *endpoint) WritePacket(*stack.Route, *stack.GSO, stack.NetworkHeaderParams, stack.PacketLooping, tcpip.PacketBuffer) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }
 
@@ -88,7 +88,7 @@ func (e *endpoint) WritePackets(*stack.Route, *stack.GSO, []stack.PacketDescript
 	return 0, tcpip.ErrNotSupported
 }
 
-func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, payload buffer.VectorisedView, loop stack.PacketLooping) *tcpip.Error {
+func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, loop stack.PacketLooping, pkt tcpip.PacketBuffer) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }
 
@@ -106,14 +106,16 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
 			return // we have no useful answer, ignore the request
 		}
 		hdr := buffer.NewPrependable(int(e.linkEP.MaxHeaderLength()) + header.ARPSize)
-		pkt := header.ARP(hdr.Prepend(header.ARPSize))
-		pkt.SetIPv4OverEthernet()
-		pkt.SetOp(header.ARPReply)
-		copy(pkt.HardwareAddressSender(), r.LocalLinkAddress[:])
-		copy(pkt.ProtocolAddressSender(), h.ProtocolAddressTarget())
-		copy(pkt.HardwareAddressTarget(), h.HardwareAddressSender())
-		copy(pkt.ProtocolAddressTarget(), h.ProtocolAddressSender())
-		e.linkEP.WritePacket(r, nil /* gso */, hdr, buffer.VectorisedView{}, ProtocolNumber)
+		packet := header.ARP(hdr.Prepend(header.ARPSize))
+		packet.SetIPv4OverEthernet()
+		packet.SetOp(header.ARPReply)
+		copy(packet.HardwareAddressSender(), r.LocalLinkAddress[:])
+		copy(packet.ProtocolAddressSender(), h.ProtocolAddressTarget())
+		copy(packet.HardwareAddressTarget(), h.HardwareAddressSender())
+		copy(packet.ProtocolAddressTarget(), h.ProtocolAddressSender())
+		e.linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, tcpip.PacketBuffer{
+			Header: hdr,
+		})
 		fallthrough // also fill the cache from requests
 	case header.ARPReply:
 		addr := tcpip.Address(h.ProtocolAddressSender())
@@ -165,7 +167,9 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.
 	copy(h.ProtocolAddressSender(), localAddr)
 	copy(h.ProtocolAddressTarget(), addr)
 
-	return linkEP.WritePacket(r, nil /* gso */, hdr, buffer.VectorisedView{}, ProtocolNumber)
+	return linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, tcpip.PacketBuffer{
+		Header: hdr,
+	})
 }
 
 // ResolveStaticAddress implements stack.LinkAddressResolver.
