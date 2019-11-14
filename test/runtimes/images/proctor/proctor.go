@@ -39,10 +39,10 @@ type TestRunner interface {
 }
 
 var (
-	runtime = flag.String("runtime", "", "name of runtime")
-	list    = flag.Bool("list", false, "list all available tests")
-	test    = flag.String("test", "", "run a single test from the list of available tests")
-	pause   = flag.Bool("pause", false, "cause container to pause indefinitely, reaping any zombie children")
+	runtime  = flag.String("runtime", "", "name of runtime")
+	list     = flag.Bool("list", false, "list all available tests")
+	testName = flag.String("test", "", "run a single test from the list of available tests")
+	pause    = flag.Bool("pause", false, "cause container to pause indefinitely, reaping any zombie children")
 )
 
 func main() {
@@ -74,14 +74,23 @@ func main() {
 		return
 	}
 
-	// Run a single test.
-	if *test == "" {
-		log.Fatalf("test flag must be provided")
+	var tests []string
+	if *testName == "" {
+		// Run every test.
+		tests, err = tr.ListTests()
+		if err != nil {
+			log.Fatalf("failed to get all tests: %v", err)
+		}
+	} else {
+		// Run a single test.
+		tests = []string{*testName}
 	}
-	cmd := tr.TestCmd(*test)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	if err := cmd.Run(); err != nil {
-		log.Fatalf("FAIL: %v", err)
+	for _, test := range tests {
+		cmd := tr.TestCmd(test)
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		if err := cmd.Run(); err != nil {
+			log.Fatalf("FAIL: %v", err)
+		}
 	}
 }
 
