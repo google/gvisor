@@ -24,6 +24,9 @@ namespace testing {
 // Opens the slave end of the passed master as R/W and nonblocking.
 PosixErrorOr<FileDescriptor> OpenSlave(const FileDescriptor& master);
 
+// Get the number of the slave end of the master.
+PosixErrorOr<int> SlaveID(const FileDescriptor& master);
+
 }  // namespace testing
 }  // namespace gvisor
 
