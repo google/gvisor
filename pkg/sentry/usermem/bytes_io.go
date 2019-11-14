@@ -102,19 +102,34 @@ func (b *BytesIO) rangeCheck(addr Addr, length int) (int, error) {
 }
 
 func (b *BytesIO) blocksFromAddrRanges(ars AddrRangeSeq) (safemem.BlockSeq, error) {
-	blocks := make([]safemem.Block, 0, ars.NumRanges())
-	for !ars.IsEmpty() {
-		ar := ars.Head()
-		n, err := b.rangeCheck(ar.Start, int(ar.Length()))
-		if n != 0 {
-			blocks = append(blocks, safemem.BlockFromSafeSlice(b.Bytes[int(ar.Start):int(ar.Start)+n]))
+	switch ars.NumRanges() {
+	case 0:
+		return safemem.BlockSeq{}, nil
+	case 1:
+		block, err := b.blockFromAddrRange(ars.Head())
+		return safemem.BlockSeqOf(block), err
+	default:
+		blocks := make([]safemem.Block, 0, ars.NumRanges())
+		for !ars.IsEmpty() {
+			block, err := b.blockFromAddrRange(ars.Head())
+			if block.Len() != 0 {
+				blocks = append(blocks, block)
+			}
+			if err != nil {
+				return safemem.BlockSeqFromSlice(blocks), err
+			}
+			ars = ars.Tail()
 		}
-		if err != nil {
-			return safemem.BlockSeqFromSlice(blocks), err
-		}
-		ars = ars.Tail()
+		return safemem.BlockSeqFromSlice(blocks), nil
 	}
-	return safemem.BlockSeqFromSlice(blocks), nil
+}
+
+func (b *BytesIO) blockFromAddrRange(ar AddrRange) (safemem.Block, error) {
+	n, err := b.rangeCheck(ar.Start, int(ar.Length()))
+	if n == 0 {
+		return safemem.Block{}, err
+	}
+	return safemem.BlockFromSafeSlice(b.Bytes[int(ar.Start) : int(ar.Start)+n]), err
 }
 
 // BytesIOSequence returns an IOSequence representing the given byte slice.
