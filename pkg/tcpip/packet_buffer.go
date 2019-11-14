@@ -31,12 +31,19 @@ type PacketBuffer struct {
 	// or otherwise modified.
 	Data buffer.VectorisedView
 
+	// Header holds the headers of outbound packets. As a packet is passed
+	// down the stack, each layer adds to Header.
+	Header buffer.Prependable
+
+	// These fields are used by both inbound and outbound packets. They
+	// typically overlap with the Data and Header fields.
+	//
 	// The bytes backing these views are immutable. Each field may be nil
 	// if either it has not been set yet or no such header exists (e.g.
 	// packets sent via loopback may not have a link header).
 	//
-	// These fields may be Views into other Views. SR dosen't support this,
-	// so deep copies are necessary in some cases.
+	// These fields may be Views into other slices (either Data or Header).
+	// SR dosen't support this, so deep copies are necessary in some cases.
 	LinkHeader      buffer.View
 	NetworkHeader   buffer.View
 	TransportHeader buffer.View
@@ -44,11 +51,9 @@ type PacketBuffer struct {
 
 // Clone makes a copy of pk. It clones the Data field, which creates a new
 // VectorisedView but does not deep copy the underlying bytes.
+//
+// Clone also does not deep copy any of its other fields.
 func (pk PacketBuffer) Clone() PacketBuffer {
-	return PacketBuffer{
-		Data:            pk.Data.Clone(nil),
-		LinkHeader:      pk.LinkHeader,
-		NetworkHeader:   pk.NetworkHeader,
-		TransportHeader: pk.TransportHeader,
-	}
+	pk.Data = pk.Data.Clone(nil)
+	return pk
 }

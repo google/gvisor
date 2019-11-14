@@ -193,19 +193,19 @@ func (e *endpoint) GSOMaxSize() uint32 {
 	return 0
 }
 
-func (e *endpoint) dumpPacket(gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) {
+func (e *endpoint) dumpPacket(gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) {
 	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
-		logPacket("send", protocol, hdr.View(), gso)
+		logPacket("send", protocol, pkt.Header.View(), gso)
 	}
 	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
-		hdrBuf := hdr.View()
-		length := len(hdrBuf) + payload.Size()
+		hdrBuf := pkt.Header.View()
+		length := len(hdrBuf) + pkt.Data.Size()
 		if length > int(e.maxPCAPLen) {
 			length = int(e.maxPCAPLen)
 		}
 
 		buf := bytes.NewBuffer(make([]byte, 0, pcapPacketHeaderLen+length))
-		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(len(hdrBuf)+payload.Size()))); err != nil {
+		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(len(hdrBuf)+pkt.Data.Size()))); err != nil {
 			panic(err)
 		}
 		if len(hdrBuf) > length {
@@ -215,7 +215,7 @@ func (e *endpoint) dumpPacket(gso *stack.GSO, hdr buffer.Prependable, payload bu
 			panic(err)
 		}
 		length -= len(hdrBuf)
-		logVectorisedView(payload, length, buf)
+		logVectorisedView(pkt.Data, length, buf)
 		if _, err := e.file.Write(buf.Bytes()); err != nil {
 			panic(err)
 		}
@@ -225,9 +225,9 @@ func (e *endpoint) dumpPacket(gso *stack.GSO, hdr buffer.Prependable, payload bu
 // WritePacket implements the stack.LinkEndpoint interface. It is called by
 // higher-level protocols to write packets; it just logs the packet and
 // forwards the request to the lower endpoint.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
-	e.dumpPacket(gso, hdr, payload, protocol)
-	return e.lower.WritePacket(r, gso, hdr, payload, protocol)
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) *tcpip.Error {
+	e.dumpPacket(gso, protocol, pkt)
+	return e.lower.WritePacket(r, gso, protocol, pkt)
 }
 
 // WritePackets implements the stack.LinkEndpoint interface. It is called by
@@ -236,32 +236,35 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	view := payload.ToView()
 	for _, d := range hdrs {
-		e.dumpPacket(gso, d.Hdr, buffer.NewVectorisedView(d.Size, []buffer.View{view[d.Off:][:d.Size]}), protocol)
+		e.dumpPacket(gso, protocol, tcpip.PacketBuffer{
+			Header: d.Hdr,
+			Data:   view[d.Off:][:d.Size].ToVectorisedView(),
+		})
 	}
 	return e.lower.WritePackets(r, gso, hdrs, payload, protocol)
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (e *endpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
+func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
 	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
 		logPacket("send", 0, buffer.View("[raw packet, no header available]"), nil /* gso */)
 	}
 	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
-		length := packet.Size()
+		length := vv.Size()
 		if length > int(e.maxPCAPLen) {
 			length = int(e.maxPCAPLen)
 		}
 
 		buf := bytes.NewBuffer(make([]byte, 0, pcapPacketHeaderLen+length))
-		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(packet.Size()))); err != nil {
+		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(vv.Size()))); err != nil {
 			panic(err)
 		}
-		logVectorisedView(packet, length, buf)
+		logVectorisedView(vv, length, buf)
 		if _, err := e.file.Write(buf.Bytes()); err != nil {
 			panic(err)
 		}
 	}
-	return e.lower.WriteRawPacket(packet)
+	return e.lower.WriteRawPacket(vv)
 }
 
 func logVectorisedView(vv buffer.VectorisedView, length int, buf *bytes.Buffer) {

@@ -338,13 +338,18 @@ func (e *endpoint) finishWrite(payloadBytes []byte, route *stack.Route) (int64, 
 	switch e.NetProto {
 	case header.IPv4ProtocolNumber:
 		if !e.associated {
-			if err := route.WriteHeaderIncludedPacket(buffer.View(payloadBytes).ToVectorisedView()); err != nil {
+			if err := route.WriteHeaderIncludedPacket(tcpip.PacketBuffer{
+				Data: buffer.View(payloadBytes).ToVectorisedView(),
+			}); err != nil {
 				return 0, nil, err
 			}
 			break
 		}
 		hdr := buffer.NewPrependable(len(payloadBytes) + int(route.MaxHeaderLength()))
-		if err := route.WritePacket(nil /* gso */, hdr, buffer.View(payloadBytes).ToVectorisedView(), stack.NetworkHeaderParams{Protocol: e.TransProto, TTL: route.DefaultTTL(), TOS: stack.DefaultTOS}); err != nil {
+		if err := route.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: e.TransProto, TTL: route.DefaultTTL(), TOS: stack.DefaultTOS}, tcpip.PacketBuffer{
+			Header: hdr,
+			Data:   buffer.View(payloadBytes).ToVectorisedView(),
+		}); err != nil {
 			return 0, nil, err
 		}
 

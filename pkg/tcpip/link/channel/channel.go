@@ -25,10 +25,9 @@ import (
 
 // PacketInfo holds all the information about an outbound packet.
 type PacketInfo struct {
-	Header  buffer.View
-	Payload buffer.View
-	Proto   tcpip.NetworkProtocolNumber
-	GSO     *stack.GSO
+	Pkt   tcpip.PacketBuffer
+	Proto tcpip.NetworkProtocolNumber
+	GSO   *stack.GSO
 }
 
 // Endpoint is link layer endpoint that stores outbound packets in a channel
@@ -118,12 +117,11 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 }
 
 // WritePacket stores outbound packets into the channel.
-func (e *Endpoint) WritePacket(_ *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (e *Endpoint) WritePacket(_ *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) *tcpip.Error {
 	p := PacketInfo{
-		Header:  hdr.View(),
-		Proto:   protocol,
-		Payload: payload.ToView(),
-		GSO:     gso,
+		Pkt:   pkt,
+		Proto: protocol,
+		GSO:   gso,
 	}
 
 	select {
@@ -139,15 +137,16 @@ func (e *Endpoint) WritePackets(_ *stack.Route, gso *stack.GSO, hdrs []stack.Pac
 	payloadView := payload.ToView()
 	n := 0
 packetLoop:
-	for i := range hdrs {
-		hdr := &hdrs[i].Hdr
-		off := hdrs[i].Off
-		size := hdrs[i].Size
+	for _, hdr := range hdrs {
+		off := hdr.Off
+		size := hdr.Size
 		p := PacketInfo{
-			Header:  hdr.View(),
-			Proto:   protocol,
-			Payload: buffer.NewViewFromBytes(payloadView[off : off+size]),
-			GSO:     gso,
+			Pkt: tcpip.PacketBuffer{
+				Header: hdr.Hdr,
+				Data:   buffer.NewViewFromBytes(payloadView[off : off+size]).ToVectorisedView(),
+			},
+			Proto: protocol,
+			GSO:   gso,
 		}
 
 		select {
@@ -162,12 +161,11 @@ packetLoop:
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (e *Endpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
+func (e *Endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
 	p := PacketInfo{
-		Header:  packet.ToView(),
-		Proto:   0,
-		Payload: buffer.View{},
-		GSO:     nil,
+		Pkt:   tcpip.PacketBuffer{Data: vv},
+		Proto: 0,
+		GSO:   nil,
 	}
 
 	select {

@@ -1366,10 +1366,10 @@ func (s *Stack) WritePacket(nicID tcpip.NICID, dst tcpip.LinkAddress, netProto t
 	}
 	fakeHeader := make(header.Ethernet, header.EthernetMinimumSize)
 	fakeHeader.Encode(&ethFields)
-	ethHeader := buffer.View(fakeHeader).ToVectorisedView()
-	ethHeader.Append(payload)
+	vv := buffer.View(fakeHeader).ToVectorisedView()
+	vv.Append(payload)
 
-	if err := nic.linkEP.WriteRawPacket(ethHeader); err != nil {
+	if err := nic.linkEP.WriteRawPacket(vv); err != nil {
 		return err
 	}
 

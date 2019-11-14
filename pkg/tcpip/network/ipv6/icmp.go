@@ -226,7 +226,9 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt tcpip.P
 		//
 		// The IP Hop Limit field has a value of 255, i.e., the packet
 		// could not possibly have been forwarded by a router.
-		if err := r.WritePacket(nil /* gso */, hdr, buffer.VectorisedView{}, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: header.NDPHopLimit, TOS: stack.DefaultTOS}); err != nil {
+		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: header.NDPHopLimit, TOS: stack.DefaultTOS}, tcpip.PacketBuffer{
+			Header: hdr,
+		}); err != nil {
 			sent.Dropped.Increment()
 			return
 		}
@@ -291,7 +293,10 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt tcpip.P
 		copy(packet, h)
 		packet.SetType(header.ICMPv6EchoReply)
 		packet.SetChecksum(header.ICMPv6Checksum(packet, r.LocalAddress, r.RemoteAddress, pkt.Data))
-		if err := r.WritePacket(nil /* gso */, hdr, pkt.Data, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}); err != nil {
+		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}, tcpip.PacketBuffer{
+			Header: hdr,
+			Data:   pkt.Data,
+		}); err != nil {
 			sent.Dropped.Increment()
 			return
 		}
@@ -417,7 +422,9 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.
 	})
 
 	// TODO(stijlist): count this in ICMP stats.
-	return linkEP.WritePacket(r, nil /* gso */, hdr, buffer.VectorisedView{}, ProtocolNumber)
+	return linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, tcpip.PacketBuffer{
+		Header: hdr,
+	})
 }
 
 // ResolveStaticAddress implements stack.LinkAddressResolver.

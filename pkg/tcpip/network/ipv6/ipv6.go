@@ -112,17 +112,17 @@ func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadS
 }
 
 // WritePacket writes a packet to the given destination address and protocol.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping) *tcpip.Error {
-	ip := e.addIPHeader(r, &hdr, payload.Size(), params)
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, loop stack.PacketLooping, pkt tcpip.PacketBuffer) *tcpip.Error {
+	ip := e.addIPHeader(r, &pkt.Header, pkt.Data.Size(), params)
 
 	if loop&stack.PacketLoop != 0 {
-		views := make([]buffer.View, 1, 1+len(payload.Views()))
-		views[0] = hdr.View()
-		views = append(views, payload.Views()...)
+		views := make([]buffer.View, 1, 1+len(pkt.Data.Views()))
+		views[0] = pkt.Header.View()
+		views = append(views, pkt.Data.Views()...)
 		loopedR := r.MakeLoopedRoute()
 
 		e.HandlePacket(&loopedR, tcpip.PacketBuffer{
-			Data:          buffer.NewVectorisedView(len(views[0])+payload.Size(), views),
+			Data:          buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views),
 			NetworkHeader: buffer.View(ip),
 		})
 
@@ -133,7 +133,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 	}
 
 	r.Stats().IP.PacketsSent.Increment()
-	return e.linkEP.WritePacket(r, gso, hdr, payload, ProtocolNumber)
+	return e.linkEP.WritePacket(r, gso, ProtocolNumber, pkt)
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
@@ -158,7 +158,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.Pac
 
 // WriteHeaderIncludedPacker implements stack.NetworkEndpoint. It is not yet
 // supported by IPv6.
-func (*endpoint) WriteHeaderIncludedPacket(r *stack.Route, payload buffer.VectorisedView, loop stack.PacketLooping) *tcpip.Error {
+func (*endpoint) WriteHeaderIncludedPacket(r *stack.Route, loop stack.PacketLooping, pkt tcpip.PacketBuffer) *tcpip.Error {
 	// TODO(b/119580726): Support IPv6 header-included packets.
 	return tcpip.ErrNotSupported
 }
