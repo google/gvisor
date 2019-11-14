@@ -55,7 +55,7 @@ func (*stubLinkEndpoint) LinkAddress() tcpip.LinkAddress {
 	return ""
 }
 
-func (*stubLinkEndpoint) WritePacket(*stack.Route, *stack.GSO, buffer.Prependable, buffer.VectorisedView, tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (*stubLinkEndpoint) WritePacket(*stack.Route, *stack.GSO, tcpip.NetworkProtocolNumber, tcpip.PacketBuffer) *tcpip.Error {
 	return nil
 }
 
@@ -276,22 +276,22 @@ type routeArgs struct {
 func routeICMPv6Packet(t *testing.T, args routeArgs, fn func(*testing.T, header.ICMPv6)) {
 	t.Helper()
 
-	pkt := <-args.src.C
+	pi := <-args.src.C
 
 	{
-		views := []buffer.View{pkt.Header, pkt.Payload}
-		size := len(pkt.Header) + len(pkt.Payload)
+		views := []buffer.View{pi.Pkt.Header.View(), pi.Pkt.Data.ToView()}
+		size := pi.Pkt.Header.UsedLength() + pi.Pkt.Data.Size()
 		vv := buffer.NewVectorisedView(size, views)
-		args.dst.InjectLinkAddr(pkt.Proto, args.dst.LinkAddress(), tcpip.PacketBuffer{
+		args.dst.InjectLinkAddr(pi.Proto, args.dst.LinkAddress(), tcpip.PacketBuffer{
 			Data: vv,
 		})
 	}
 
-	if pkt.Proto != ProtocolNumber {
-		t.Errorf("unexpected protocol number %d", pkt.Proto)
+	if pi.Proto != ProtocolNumber {
+		t.Errorf("unexpected protocol number %d", pi.Proto)
 		return
 	}
-	ipv6 := header.IPv6(pkt.Header)
+	ipv6 := header.IPv6(pi.Pkt.Header.View())
 	transProto := tcpip.TransportProtocolNumber(ipv6.NextHeader())
 	if transProto != header.ICMPv6ProtocolNumber {
 		t.Errorf("unexpected transport protocol number %d", transProto)

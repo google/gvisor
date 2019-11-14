@@ -154,17 +154,17 @@ func (r *Route) IsResolutionRequired() bool {
 }
 
 // WritePacket writes the packet through the given route.
-func (r *Route) WritePacket(gso *GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params NetworkHeaderParams) *tcpip.Error {
+func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt tcpip.PacketBuffer) *tcpip.Error {
 	if !r.ref.isValidForOutgoing() {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	err := r.ref.ep.WritePacket(r, gso, hdr, payload, params, r.Loop)
+	err := r.ref.ep.WritePacket(r, gso, params, r.Loop, pkt)
 	if err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 	} else {
 		r.ref.nic.stats.Tx.Packets.Increment()
-		r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(hdr.UsedLength() + payload.Size()))
+		r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(pkt.Header.UsedLength() + pkt.Data.Size()))
 	}
 	return err
 }
@@ -209,17 +209,17 @@ func (r *Route) WritePackets(gso *GSO, hdrs []PacketDescriptor, payload buffer.V
 
 // WriteHeaderIncludedPacket writes a packet already containing a network
 // header through the given route.
-func (r *Route) WriteHeaderIncludedPacket(payload buffer.VectorisedView) *tcpip.Error {
+func (r *Route) WriteHeaderIncludedPacket(pkt tcpip.PacketBuffer) *tcpip.Error {
 	if !r.ref.isValidForOutgoing() {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	if err := r.ref.ep.WriteHeaderIncludedPacket(r, payload, r.Loop); err != nil {
+	if err := r.ref.ep.WriteHeaderIncludedPacket(r, r.Loop, pkt); err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 		return err
 	}
 	r.ref.nic.stats.Tx.Packets.Increment()
-	r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(payload.Size()))
+	r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(pkt.Data.Size()))
 	return nil
 }
 

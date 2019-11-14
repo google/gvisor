@@ -723,7 +723,10 @@ func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.Vectorise
 	if ttl == 0 {
 		ttl = r.DefaultTTL()
 	}
-	if err := r.WritePacket(gso, d.Hdr, data, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: ttl, TOS: tos}); err != nil {
+	if err := r.WritePacket(gso, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: ttl, TOS: tos}, tcpip.PacketBuffer{
+		Header: d.Hdr,
+		Data:   data,
+	}); err != nil {
 		r.Stats().TCP.SegmentSendErrors.Increment()
 		return err
 	}

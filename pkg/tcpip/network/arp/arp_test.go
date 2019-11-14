@@ -110,13 +110,13 @@ func TestDirectRequest(t *testing.T) {
 	for i, address := range []tcpip.Address{stackAddr1, stackAddr2} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			inject(address)
-			pkt := <-c.linkEP.C
-			if pkt.Proto != arp.ProtocolNumber {
-				t.Fatalf("expected ARP response, got network protocol number %d", pkt.Proto)
+			pi := <-c.linkEP.C
+			if pi.Proto != arp.ProtocolNumber {
+				t.Fatalf("expected ARP response, got network protocol number %d", pi.Proto)
 			}
-			rep := header.ARP(pkt.Header)
+			rep := header.ARP(pi.Pkt.Header.View())
 			if !rep.IsValid() {
-				t.Fatalf("invalid ARP response len(pkt.Header)=%d", len(pkt.Header))
+				t.Fatalf("invalid ARP response pi.Pkt.Header.UsedLength()=%d", pi.Pkt.Header.UsedLength())
 			}
 			if got, want := tcpip.LinkAddress(rep.HardwareAddressSender()), stackLinkAddr; got != want {
 				t.Errorf("got HardwareAddressSender = %s, want = %s", got, want)

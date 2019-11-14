@@ -812,15 +812,15 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 		} else {
 			// n doesn't have a destination endpoint.
 			// Send the packet out of n.
-			hdr := buffer.NewPrependableFromView(pkt.Data.First())
+			pkt.Header = buffer.NewPrependableFromView(pkt.Data.First())
 			pkt.Data.RemoveFirst()
 
 			// TODO(b/128629022): use route.WritePacket.
-			if err := n.linkEP.WritePacket(&r, nil /* gso */, hdr, pkt.Data, protocol); err != nil {
+			if err := n.linkEP.WritePacket(&r, nil /* gso */, protocol, pkt); err != nil {
 				r.Stats().IP.OutgoingPacketErrors.Increment()
 			} else {
 				n.stats.Tx.Packets.Increment()
-				n.stats.Tx.Bytes.IncrementBy(uint64(hdr.UsedLength() + pkt.Data.Size()))
+				n.stats.Tx.Bytes.IncrementBy(uint64(pkt.Header.UsedLength() + pkt.Data.Size()))
 			}
 		}
 		return

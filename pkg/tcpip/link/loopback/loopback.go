@@ -76,16 +76,16 @@ func (*endpoint) Wait() {}
 
 // WritePacket implements stack.LinkEndpoint.WritePacket. It delivers outbound
 // packets to the network-layer dispatcher.
-func (e *endpoint) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
-	views := make([]buffer.View, 1, 1+len(payload.Views()))
-	views[0] = hdr.View()
-	views = append(views, payload.Views()...)
+func (e *endpoint) WritePacket(_ *stack.Route, _ *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) *tcpip.Error {
+	views := make([]buffer.View, 1, 1+len(pkt.Data.Views()))
+	views[0] = pkt.Header.View()
+	views = append(views, pkt.Data.Views()...)
 
-	// Because we're immediately turning around and writing the packet back to the
-	// rx path, we intentionally don't preserve the remote and local link
-	// addresses from the stack.Route we're passed.
+	// Because we're immediately turning around and writing the packet back
+	// to the rx path, we intentionally don't preserve the remote and local
+	// link addresses from the stack.Route we're passed.
 	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, protocol, tcpip.PacketBuffer{
-		Data: buffer.NewVectorisedView(len(views[0])+payload.Size(), views),
+		Data: buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views),
 	})
 
 	return nil
@@ -97,17 +97,17 @@ func (e *endpoint) WritePackets(_ *stack.Route, _ *stack.GSO, hdrs []stack.Packe
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (e *endpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
+func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
 	// Reject the packet if it's shorter than an ethernet header.
-	if packet.Size() < header.EthernetMinimumSize {
+	if vv.Size() < header.EthernetMinimumSize {
 		return tcpip.ErrBadAddress
 	}
 
-	// There should be an ethernet header at the beginning of packet.
-	linkHeader := header.Ethernet(packet.First()[:header.EthernetMinimumSize])
-	packet.TrimFront(len(linkHeader))
+	// There should be an ethernet header at the beginning of vv.
+	linkHeader := header.Ethernet(vv.First()[:header.EthernetMinimumSize])
+	vv.TrimFront(len(linkHeader))
 	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, linkHeader.Type(), tcpip.PacketBuffer{
-		Data:       packet,
+		Data:       vv,
 		LinkHeader: buffer.View(linkHeader),
 	})
 

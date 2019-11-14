@@ -99,12 +99,12 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 // WritePacket implements stack.LinkEndpoint.WritePacket. It is called by
 // higher-level protocols to write packets. It only forwards packets to the
 // lower endpoint if Wait or WaitWrite haven't been called.
-func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) *tcpip.Error {
 	if !e.writeGate.Enter() {
 		return nil
 	}
 
-	err := e.lower.WritePacket(r, gso, hdr, payload, protocol)
+	err := e.lower.WritePacket(r, gso, protocol, pkt)
 	e.writeGate.Leave()
 	return err
 }
@@ -123,12 +123,12 @@ func (e *Endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.Pac
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (e *Endpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
+func (e *Endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
 	if !e.writeGate.Enter() {
 		return nil
 	}
 
-	err := e.lower.WriteRawPacket(packet)
+	err := e.lower.WriteRawPacket(vv)
 	e.writeGate.Leave()
 	return err
 }

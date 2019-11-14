@@ -356,9 +356,9 @@ func (c *testContext) getPacketAndVerify(flow testFlow, checkers ...checker.Netw
 		if p.Proto != flow.netProto() {
 			c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, flow.netProto())
 		}
-		b := make([]byte, len(p.Header)+len(p.Payload))
-		copy(b, p.Header)
-		copy(b[len(p.Header):], p.Payload)
+
+		hdr := p.Pkt.Header.View()
+		b := append(hdr[:len(hdr):len(hdr)], p.Pkt.Data.ToView()...)
 
 		h := flow.header4Tuple(outgoing)
 		checkers := append(
@@ -1453,8 +1453,8 @@ func TestV4UnknownDestination(t *testing.T) {
 			select {
 			case p := <-c.linkEP.C:
 				var pkt []byte
-				pkt = append(pkt, p.Header...)
-				pkt = append(pkt, p.Payload...)
+				pkt = append(pkt, p.Pkt.Header.View()...)
+				pkt = append(pkt, p.Pkt.Data.ToView()...)
 				if got, want := len(pkt), header.IPv4MinimumProcessableDatagramSize; got > want {
 					t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
 				}
@@ -1527,8 +1527,8 @@ func TestV6UnknownDestination(t *testing.T) {
 			select {
 			case p := <-c.linkEP.C:
 				var pkt []byte
-				pkt = append(pkt, p.Header...)
-				pkt = append(pkt, p.Payload...)
+				pkt = append(pkt, p.Pkt.Header.View()...)
+				pkt = append(pkt, p.Pkt.Data.ToView()...)
 				if got, want := len(pkt), header.IPv6MinimumMTU; got > want {
 					t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
 				}

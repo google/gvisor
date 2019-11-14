@@ -236,9 +236,9 @@ func (c *Context) GetPacket() []byte {
 		if p.Proto != ipv4.ProtocolNumber {
 			c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv4.ProtocolNumber)
 		}
-		b := make([]byte, len(p.Header)+len(p.Payload))
-		copy(b, p.Header)
-		copy(b[len(p.Header):], p.Payload)
+
+		hdr := p.Pkt.Header.View()
+		b := append(hdr[:len(hdr):len(hdr)], p.Pkt.Data.ToView()...)
 
 		if p.GSO != nil && p.GSO.L3HdrLen != header.IPv4MinimumSize {
 			c.t.Errorf("L3HdrLen %v (expected %v)", p.GSO.L3HdrLen, header.IPv4MinimumSize)
@@ -264,9 +264,9 @@ func (c *Context) GetPacketNonBlocking() []byte {
 		if p.Proto != ipv4.ProtocolNumber {
 			c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv4.ProtocolNumber)
 		}
-		b := make([]byte, len(p.Header)+len(p.Payload))
-		copy(b, p.Header)
-		copy(b[len(p.Header):], p.Payload)
+
+		hdr := p.Pkt.Header.View()
+		b := append(hdr[:len(hdr):len(hdr)], p.Pkt.Data.ToView()...)
 
 		checker.IPv4(c.t, b, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
 		return b
@@ -488,9 +488,9 @@ func (c *Context) GetV6Packet() []byte {
 		if p.Proto != ipv6.ProtocolNumber {
 			c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv6.ProtocolNumber)
 		}
-		b := make([]byte, len(p.Header)+len(p.Payload))
-		copy(b, p.Header)
-		copy(b[len(p.Header):], p.Payload)
+		b := make([]byte, p.Pkt.Header.UsedLength()+p.Pkt.Data.Size())
+		copy(b, p.Pkt.Header.View())
+		copy(b[p.Pkt.Header.UsedLength():], p.Pkt.Data.ToView())
 
 		checker.IPv6(c.t, b, checker.SrcAddr(StackV6Addr), checker.DstAddr(TestV6Addr))
 		return b

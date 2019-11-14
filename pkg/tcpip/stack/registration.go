@@ -232,8 +232,9 @@ type NetworkEndpoint interface {
 	MaxHeaderLength() uint16
 
 	// WritePacket writes a packet to the given destination address and
-	// protocol.
-	WritePacket(r *Route, gso *GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params NetworkHeaderParams, loop PacketLooping) *tcpip.Error
+	// protocol. It sets pkt.NetworkHeader. pkt.TransportHeader must have
+	// already been set.
+	WritePacket(r *Route, gso *GSO, params NetworkHeaderParams, loop PacketLooping, pkt tcpip.PacketBuffer) *tcpip.Error
 
 	// WritePackets writes packets to the given destination address and
 	// protocol.
@@ -241,7 +242,7 @@ type NetworkEndpoint interface {
 
 	// WriteHeaderIncludedPacket writes a packet that includes a network
 	// header to the given destination address.
-	WriteHeaderIncludedPacket(r *Route, payload buffer.VectorisedView, loop PacketLooping) *tcpip.Error
+	WriteHeaderIncludedPacket(r *Route, loop PacketLooping, pkt tcpip.PacketBuffer) *tcpip.Error
 
 	// ID returns the network protocol endpoint ID.
 	ID() *NetworkEndpointID
@@ -361,13 +362,15 @@ type LinkEndpoint interface {
 	// link endpoint.
 	LinkAddress() tcpip.LinkAddress
 
-	// WritePacket writes a packet with the given protocol through the given
-	// route.
+	// WritePacket writes a packet with the given protocol through the
+	// given route. It sets pkt.LinkHeader if a link layer header exists.
+	// pkt.NetworkHeader and pkt.TransportHeader must have already been
+	// set.
 	//
 	// To participate in transparent bridging, a LinkEndpoint implementation
 	// should call eth.Encode with header.EthernetFields.SrcAddr set to
 	// r.LocalLinkAddress if it is provided.
-	WritePacket(r *Route, gso *GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error
+	WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) *tcpip.Error
 
 	// WritePackets writes packets with the given protocol through the
 	// given route.
@@ -379,7 +382,7 @@ type LinkEndpoint interface {
 
 	// WriteRawPacket writes a packet directly to the link. The packet
 	// should already have an ethernet header.
-	WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error
+	WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error
 
 	// Attach attaches the data link layer endpoint to the network-layer
 	// dispatcher of the stack.
