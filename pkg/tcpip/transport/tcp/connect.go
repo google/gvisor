@@ -865,6 +865,33 @@ func (e *endpoint) completeWorkerLocked() {
 	}
 }
 
+// transitionToStateCloseLocked ensures that the endpoint is
+// cleaned up from the transport demuxer, "before" moving to
+// StateClose. This will ensure that no packet will be
+// delivered to this endpoint from the demuxer when the endpoint
+// is transitioned to StateClose.
+func (e *endpoint) transitionToStateCloseLocked() {
+	if e.state == StateClose {
+		return
+	}
+	e.cleanupLocked()
+	e.state = StateClose
+}
+
+// tryDeliverSegmentFromClosedEndpoint attempts to deliver the parsed
+// segment to any other endpoint other than the current one. This is called
+// only when the endpoint is in StateClose and we want to deliver the segment
+// to any other listening endpoint. We reply with RST if we cannot find one.
+func (e *endpoint) tryDeliverSegmentFromClosedEndpoint(s *segment) {
+	ep := e.stack.FindTransportEndpoint(e.NetProto, e.TransProto, e.ID, &s.route)
+	if ep == nil {
+		replyWithReset(s)
+		s.decRef()
+		return
+	}
+	ep.(*endpoint).enqueueSegment(s)
+}
+
 func (e *endpoint) handleReset(s *segment) (ok bool, err *tcpip.Error) {
 	if e.rcv.acceptable(s.sequenceNumber, 0) {
 		// RFC 793, page 37 states that "in all states
@@ -894,12 +921,8 @@ func (e *endpoint) handleReset(s *segment) (ok bool, err *tcpip.Error) {
 		//  general "connection reset" signal. Enter the CLOSED state,
 		//  delete the TCB, and return.
 		case StateCloseWait:
-			e.state = StateClose
+			e.transitionToStateCloseLocked()
 			e.HardError = tcpip.ErrAborted
-			// We need to set this explicitly here because otherwise
-			// the port registrations will not be released till the
-			// endpoint is actively closed by the application.
-			e.workerCleanup = true
 			e.mu.Unlock()
 			return false, nil
 		default:
@@ -915,6 +938,20 @@ func (e *endpoint) handleReset(s *segment) (ok bool, err *tcpip.Error) {
 func (e *endpoint) handleSegments() *tcpip.Error {
 	checkRequeue := true
 	for i := 0; i < maxSegmentsPerWake; i++ {
+		e.mu.RLock()
+		state := e.state
+		e.mu.RUnlock()
+		if state == StateClose {
+			// When we get into StateClose while processing from the queue,
+			// return immediately and let the protocolMainloop handle it.
+			//
+			// We can reach StateClose only while processing a previous segment
+			// or a notification from the protocolMainLoop (caller goroutine).
+			// This means that with this return, the segment dequeue below can
+			// never occur on a closed endpoint.
+			return nil
+		}
+
 		s := e.segmentQueue.dequeue()
 		if s == nil {
 			checkRequeue = false
@@ -1160,7 +1197,7 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 				// to the TCP_FIN_WAIT2 timeout was hit. Just
 				// mark the socket as closed.
 				e.mu.Lock()
-				e.state = StateClose
+				e.transitionToStateCloseLocked()
 				e.mu.Unlock()
 				return nil
 			},
@@ -1321,11 +1358,20 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 	if e.state != StateError {
 		e.stack.Stats().TCP.EstablishedResets.Increment()
 		e.stack.Stats().TCP.CurrentEstablished.Decrement()
-		e.state = StateClose
+		e.transitionToStateCloseLocked()
 	}
 
 	// Lock released below.
 	epilogue()
+
+	// epilogue removes the endpoint from the transport-demuxer and
+	// unlocks e.mu. Now that no new segments can get enqueued to this
+	// endpoint, try to re-match the segment to a different endpoint
+	// as the current endpoint is closed.
+	for !e.segmentQueue.empty() {
+		s := e.segmentQueue.dequeue()
+		e.tryDeliverSegmentFromClosedEndpoint(s)
+	}
 
 	// A new SYN was received during TIME_WAIT and we need to abort
 	// the timewait and redirect the segment to the listener queue

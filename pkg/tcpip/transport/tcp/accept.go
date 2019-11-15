@@ -419,8 +419,8 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 	// TODO(b/143300739): Use the userMSS of the listening socket
 	// for accepted sockets.
 
-	switch s.flags {
-	case header.TCPFlagSyn:
+	switch {
+	case s.flags == header.TCPFlagSyn:
 		opts := parseSynSegmentOptions(s)
 		if incSynRcvdCount() {
 			// Only handle the syn if the following conditions hold
@@ -464,7 +464,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			e.stack.Stats().TCP.ListenOverflowSynCookieSent.Increment()
 		}
 
-	case header.TCPFlagAck:
+	case (s.flags & header.TCPFlagAck) != 0:
 		if e.acceptQueueIsFull() {
 			// Silently drop the ack as the application can't accept
 			// the connection at this point. The ack will be
@@ -478,6 +478,14 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		}
 
 		if !synCookiesInUse() {
+			// When not using SYN cookies, as per RFC 793, section 3.9, page 64:
+			// Any acknowledgment is bad if it arrives on a connection still in
+			// the LISTEN state.  An acceptable reset segment should be formed
+			// for any arriving ACK-bearing segment.  The RST should be
+			// formatted as follows:
+			//
+			//  <SEQ=SEG.ACK><CTL=RST>
+			//
 			// Send a reset as this is an ACK for which there is no
 			// half open connections and we are not using cookies
 			// yet.
