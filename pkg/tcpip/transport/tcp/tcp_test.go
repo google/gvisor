@@ -454,6 +454,112 @@ func TestConnectResetAfterClose(t *testing.T) {
 	}
 }
 
+// TestClosingWithEnqueuedSegments tests handling of
+// still enqueued segments when the endpoint transitions
+// to StateClose. The in-flight segments would be re-enqueued
+// to a any listening endpoint.
+func TestClosingWithEnqueuedSegments(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
+	ep := c.EP
+	c.EP = nil
+
+	if got, want := tcp.EndpointState(ep.State()), tcp.StateEstablished; got != want {
+		t.Errorf("Unexpected endpoint state: want %v, got %v", want, got)
+	}
+
+	// Send a FIN for ESTABLISHED --> CLOSED-WAIT
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagFin | header.TCPFlagAck,
+		SeqNum:  790,
+		AckNum:  c.IRS.Add(1),
+		RcvWnd:  30000,
+	})
+
+	// Get the ACK for the FIN we sent.
+	checker.IPv4(t, c.GetPacket(),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(c.IRS)+1),
+			checker.AckNum(791),
+			checker.TCPFlags(header.TCPFlagAck),
+		),
+	)
+
+	if got, want := tcp.EndpointState(ep.State()), tcp.StateCloseWait; got != want {
+		t.Errorf("Unexpected endpoint state: want %v, got %v", want, got)
+	}
+
+	// Close the application endpoint for CLOSE_WAIT --> LAST_ACK
+	ep.Close()
+
+	// Get the FIN
+	checker.IPv4(t, c.GetPacket(),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(c.IRS)+1),
+			checker.AckNum(791),
+			checker.TCPFlags(header.TCPFlagAck|header.TCPFlagFin),
+		),
+	)
+
+	if got, want := tcp.EndpointState(ep.State()), tcp.StateLastAck; got != want {
+		t.Errorf("Unexpected endpoint state: want %v, got %v", want, got)
+	}
+
+	// Pause the endpoint`s protocolMainLoop.
+	ep.(interface{ StopWork() }).StopWork()
+
+	// Enqueue last ACK followed by an ACK matching the endpoint
+	//
+	// Send Last ACK for LAST_ACK --> CLOSED
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  791,
+		AckNum:  c.IRS.Add(2),
+		RcvWnd:  30000,
+	})
+
+	// Send a packet with ACK set, this would generate RST when
+	// not using SYN cookies as in this test.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck | header.TCPFlagFin,
+		SeqNum:  792,
+		AckNum:  c.IRS.Add(2),
+		RcvWnd:  30000,
+	})
+
+	// Unpause endpoint`s protocolMainLoop.
+	ep.(interface{ ResumeWork() }).ResumeWork()
+
+	// Wait for the protocolMainLoop to resume and update state.
+	time.Sleep(1 * time.Millisecond)
+
+	// Expect the endpoint to be closed.
+	if got, want := tcp.EndpointState(ep.State()), tcp.StateClose; got != want {
+		t.Errorf("Unexpected endpoint state: want %v, got %v", want, got)
+	}
+
+	// Check if the endpoint was moved to CLOSED and netstack a reset in
+	// response to the ACK packet that we sent after last-ACK.
+	checker.IPv4(t, c.GetPacket(),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(c.IRS)+2),
+			checker.AckNum(793),
+			checker.TCPFlags(header.TCPFlagAck|header.TCPFlagRst),
+		),
+	)
+}
+
 func TestSimpleReceive(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
@@ -684,6 +790,96 @@ func TestSendRstOnListenerRxSynAckV6(t *testing.T) {
 		checker.DstPort(context.TestPort),
 		checker.TCPFlags(header.TCPFlagRst),
 		checker.SeqNum(200)))
+}
+
+func TestSendRstOnListenerRxAckV4(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	c.Create(-1 /* epRcvBuf */)
+
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		t.Fatal("Bind failed:", err)
+	}
+
+	if err := c.EP.Listen(10 /* backlog */); err != nil {
+		t.Fatal("Listen failed:", err)
+	}
+
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagFin | header.TCPFlagAck,
+		SeqNum:  100,
+		AckNum:  200,
+	})
+
+	checker.IPv4(t, c.GetPacket(), checker.TCP(
+		checker.DstPort(context.TestPort),
+		checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck),
+		checker.SeqNum(200)))
+}
+
+func TestSendRstOnListenerRxAckV6(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	c.CreateV6Endpoint(true /* v6Only */)
+
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		t.Fatal("Bind failed:", err)
+	}
+
+	if err := c.EP.Listen(10 /* backlog */); err != nil {
+		t.Fatal("Listen failed:", err)
+	}
+
+	c.SendV6Packet(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagFin | header.TCPFlagAck,
+		SeqNum:  100,
+		AckNum:  200,
+	})
+
+	checker.IPv6(t, c.GetV6Packet(), checker.TCP(
+		checker.DstPort(context.TestPort),
+		checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck),
+		checker.SeqNum(200)))
+}
+
+// TestListenShutdown tests for the listening endpoint not processing
+// any receive when it is on read shutdown.
+func TestListenShutdown(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	c.Create(-1 /* epRcvBuf */)
+
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		t.Fatal("Bind failed:", err)
+	}
+
+	if err := c.EP.Listen(10 /* backlog */); err != nil {
+		t.Fatal("Listen failed:", err)
+	}
+
+	if err := c.EP.Shutdown(tcpip.ShutdownRead); err != nil {
+		t.Fatal("Shutdown failed:", err)
+	}
+
+	// Wait for the endpoint state to be propagated.
+	time.Sleep(10 * time.Millisecond)
+
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagSyn,
+		SeqNum:  100,
+		AckNum:  200,
+	})
+
+	c.CheckNoPacket("Packet received when listening socket was shutdown")
 }
 
 func TestTOSV4(t *testing.T) {
