@@ -17,10 +17,13 @@
 package kvm
 
 import (
+	"fmt"
+	"reflect"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
+	"gvisor.dev/gvisor/pkg/sentry/platform/safecopy"
 )
 
 var (
@@ -138,4 +141,33 @@ func bluepillArchExit(c *vCPU, context *arch.SignalContext64) {
 	// where the guest data has been serialized, the kernel will restore
 	// from this new pointer value.
 	context.Fpstate = uint64(uintptrValue((*byte)(c.floatingPointState)))
+}
+
+// die is called to set the vCPU up to panic.
+//
+// This loads vCPU state, and sets up a call for the trampoline.
+//
+//go:nosplit
+func (c *vCPU) die(context *arch.SignalContext64, msg string) {
+	// Save the death message, which will be thrown.
+	c.dieState.message = msg
+
+	// Reload all registers to have an accurate stack trace when we return
+	// to host mode. This means that the stack should be unwound correctly.
+	if errno := c.getUserRegisters(&c.dieState.guestRegs); errno != 0 {
+		throw(msg)
+	}
+
+	// Setup the trampoline.
+	dieArchSetup(c, context, &c.dieState.guestRegs)
+}
+
+func init() {
+	// Install the handler.
+	if err := safecopy.ReplaceSignalHandler(syscall.SIGSEGV, reflect.ValueOf(sighandler).Pointer(), &savedHandler); err != nil {
+		panic(fmt.Sprintf("Unable to set handler for signal %d: %v", syscall.SIGSEGV, err))
+	}
+
+	// Extract the address for the trampoline.
+	dieTrampolineAddr = reflect.ValueOf(dieTrampoline).Pointer()
 }

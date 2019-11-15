@@ -21,7 +21,6 @@ import (
 	"sync"
 	"syscall"
 
-	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
@@ -56,9 +55,7 @@ func New(deviceFile *os.File) (*KVM, error) {
 
 	// Ensure global initialization is done.
 	globalOnce.Do(func() {
-		physicalInit()
-		globalErr = updateSystemValues(int(fd))
-		ring0.Init(cpuid.HostFeatureSet())
+		globalErr = UpdateGolbalOnce(int(fd))
 	})
 	if globalErr != nil {
 		return nil, globalErr
