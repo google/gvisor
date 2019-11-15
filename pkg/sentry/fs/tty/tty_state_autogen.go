@@ -101,12 +101,14 @@ func (x *masterInodeOperations) beforeSave() {}
 func (x *masterInodeOperations) save(m state.Map) {
 	x.beforeSave()
 	m.Save("SimpleFileInode", &x.SimpleFileInode)
+	m.Save("InodeNoopTruncate", &x.InodeNoopTruncate)
 	m.Save("d", &x.d)
 }
 
 func (x *masterInodeOperations) afterLoad() {}
 func (x *masterInodeOperations) load(m state.Map) {
 	m.Load("SimpleFileInode", &x.SimpleFileInode)
+	m.Load("InodeNoopTruncate", &x.InodeNoopTruncate)
 	m.Load("d", &x.d)
 }
 
@@ -146,6 +148,7 @@ func (x *slaveInodeOperations) beforeSave() {}
 func (x *slaveInodeOperations) save(m state.Map) {
 	x.beforeSave()
 	m.Save("SimpleFileInode", &x.SimpleFileInode)
+	m.Save("InodeNoopTruncate", &x.InodeNoopTruncate)
 	m.Save("d", &x.d)
 	m.Save("t", &x.t)
 }
@@ -153,6 +156,7 @@ func (x *slaveInodeOperations) save(m state.Map) {
 func (x *slaveInodeOperations) afterLoad() {}
 func (x *slaveInodeOperations) load(m state.Map) {
 	m.Load("SimpleFileInode", &x.SimpleFileInode)
+	m.Load("InodeNoopTruncate", &x.InodeNoopTruncate)
 	m.Load("d", &x.d)
 	m.Load("t", &x.t)
 }
