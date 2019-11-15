@@ -344,6 +344,10 @@ func (i *Inode) SetTimestamps(ctx context.Context, d *Dirent, ts TimeSpec) error
 
 // Truncate calls i.InodeOperations.Truncate with i as the Inode.
 func (i *Inode) Truncate(ctx context.Context, d *Dirent, size int64) error {
+	if IsDir(i.StableAttr) {
+		return syserror.EISDIR
+	}
+
 	if i.overlay != nil {
 		return overlayTruncate(ctx, i.overlay, d, size)
 	}
