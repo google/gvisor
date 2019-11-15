@@ -218,7 +218,7 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 		case StateClosing:
 			r.ep.state = StateTimeWait
 		case StateLastAck:
-			r.ep.state = StateClose
+			r.ep.transitionToStateCloseLocked()
 		}
 		r.ep.mu.Unlock()
 	}
