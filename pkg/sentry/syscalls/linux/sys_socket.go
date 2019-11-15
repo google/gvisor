@@ -447,16 +447,13 @@ func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 		return 0, nil, syserror.ENOTSOCK
 	}
 
-	// Read the length if present. Reject negative values.
+	// Read the length. Reject negative values.
 	optLen := int32(0)
-	if optLenAddr != 0 {
-		if _, err := t.CopyIn(optLenAddr, &optLen); err != nil {
-			return 0, nil, err
-		}
-
-		if optLen < 0 {
-			return 0, nil, syserror.EINVAL
-		}
+	if _, err := t.CopyIn(optLenAddr, &optLen); err != nil {
+		return 0, nil, err
+	}
+	if optLen < 0 {
+		return 0, nil, syserror.EINVAL
 	}
 
 	// Call syscall implementation then copy both value and value len out.
@@ -465,11 +462,9 @@ func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 		return 0, nil, e.ToError()
 	}
 
-	if optLenAddr != 0 {
-		vLen := int32(binary.Size(v))
-		if _, err := t.CopyOut(optLenAddr, vLen); err != nil {
-			return 0, nil, err
-		}
+	vLen := int32(binary.Size(v))
+	if _, err := t.CopyOut(optLenAddr, vLen); err != nil {
+		return 0, nil, err
 	}
 
 	if v != nil {
