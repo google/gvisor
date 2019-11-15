@@ -354,6 +354,38 @@ TEST_P(IPUnboundSocketTest, InvalidNegativeTOS) {
   EXPECT_EQ(get, expect);
 }
 
+TEST_P(IPUnboundSocketTest, NullTOS) {
+  auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  TOSOption t = GetTOSOption(GetParam().domain);
+  int set_sz = sizeof(int);
+  if (GetParam().domain == AF_INET) {
+    EXPECT_THAT(setsockopt(socket->get(), t.level, t.option, nullptr, set_sz),
+                SyscallFailsWithErrno(EFAULT));
+  } else {  // AF_INET6
+    // The AF_INET6 behavior is not yet compatible. gVisor will try to read
+    // optval from user memory at syscall handler, it needs substantial
+    // refactoring to implement this behavior just for IPv6.
+    if (IsRunningOnGvisor()) {
+      EXPECT_THAT(setsockopt(socket->get(), t.level, t.option, nullptr, set_sz),
+                  SyscallFailsWithErrno(EFAULT));
+    } else {
+      // Linux's IPv6 stack treats nullptr optval as input of 0, so the call
+      // succeeds. (net/ipv6/ipv6_sockglue.c, do_ipv6_setsockopt())
+      //
+      // Linux's implementation would need fixing as passing a nullptr as optval
+      // and non-zero optlen may not be valid.
+      EXPECT_THAT(setsockopt(socket->get(), t.level, t.option, nullptr, set_sz),
+                  SyscallSucceedsWithValue(0));
+    }
+  }
+  socklen_t get_sz = sizeof(int);
+  EXPECT_THAT(getsockopt(socket->get(), t.level, t.option, nullptr, &get_sz),
+              SyscallFailsWithErrno(EFAULT));
+  int get = -1;
+  EXPECT_THAT(getsockopt(socket->get(), t.level, t.option, &get, nullptr),
+              SyscallFailsWithErrno(EFAULT));
+}
+
 INSTANTIATE_TEST_SUITE_P(
     IPUnboundSockets, IPUnboundSocketTest,
     ::testing::ValuesIn(VecCat<SocketKind>(VecCat<SocketKind>(
