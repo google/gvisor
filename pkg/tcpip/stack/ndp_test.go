@@ -344,7 +344,7 @@ func TestDADResolve(t *testing.T) {
 				}
 
 				// Check NDP packet.
-				checker.IPv6(t, p.Pkt.Header.View().ToVectorisedView().First(),
+				checker.IPv6(t, p.Pkt.Header.View(),
 					checker.TTL(header.NDPHopLimit),
 					checker.NDPNS(
 						checker.NDPNSTargetAddress(addr1)))
@@ -1364,10 +1364,10 @@ func TestPrefixDiscoveryWithInfiniteLifetime(t *testing.T) {
 	// invalidate the prefix.
 	const testInfiniteLifetimeSeconds = 2
 	const testInfiniteLifetime = testInfiniteLifetimeSeconds * time.Second
-	saved := header.NDPPrefixInformationInfiniteLifetime
-	header.NDPPrefixInformationInfiniteLifetime = testInfiniteLifetime
+	saved := header.NDPInfiniteLifetime
+	header.NDPInfiniteLifetime = testInfiniteLifetime
 	defer func() {
-		header.NDPPrefixInformationInfiniteLifetime = saved
+		header.NDPInfiniteLifetime = saved
 	}()
 
 	prefix := tcpip.AddressWithPrefix{

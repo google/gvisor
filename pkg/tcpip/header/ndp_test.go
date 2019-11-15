@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
@@ -369,6 +370,296 @@ func TestNDPPrefixInformationOption(t *testing.T) {
 	}
 }
 
+// TestNDPDNSSearchListOption tests the getters of NDPDNSSearchList.
+func TestNDPDNSSearchListOption(t *testing.T) {
+	tests := []struct {
+		name        string
+		buf         []byte
+		lifetime    time.Duration
+		domainNames []string
+	}{
+		{
+			"Valid1Label",
+			[]byte{
+				0, 0,
+				0, 0, 0, 1,
+				3, 'a', 'b', 'c',
+				0,
+				0, 0, 0,
+			},
+			time.Second,
+			[]string{
+				"abc",
+			},
+		},
+		{
+			"Valid2Label",
+			[]byte{
+				0, 0,
+				0, 0, 0, 5,
+				3, 'a', 'b', 'c',
+				4, 'a', 'b', 'c', 'd',
+				0,
+				0, 0, 0, 0, 0, 0,
+			},
+			5 * time.Second,
+			[]string{
+				"abc.abcd",
+			},
+		},
+		{
+			"Valid3Label",
+			[]byte{
+				0, 0,
+				1, 0, 0, 0,
+				3, 'a', 'b', 'c',
+				4, 'a', 'b', 'c', 'd',
+				1, 'e',
+				0,
+				0, 0, 0, 0,
+			},
+			16777216 * time.Second,
+			[]string{
+				"abc.abcd.e",
+			},
+		},
+		{
+			"Valid2Domains",
+			[]byte{
+				0, 0,
+				1, 2, 3, 4,
+				3, 'a', 'b', 'c',
+				0,
+				2, 'd', 'e',
+				3, 'x', 'y', 'z',
+				0,
+				0, 0, 0,
+			},
+			16909060 * time.Second,
+			[]string{
+				"abc",
+				"de.xyz",
+			},
+		},
+		{
+			"Valid3DomainsMixedCase",
+			[]byte{
+				0, 0,
+				0, 0, 0, 0,
+				3, 'a', 'B', 'c',
+				0,
+				2, 'd', 'E',
+				3, 'X', 'y', 'z',
+				0,
+				1, 'J',
+				0,
+			},
+			0,
+			[]string{
+				"abc",
+				"de.xyz",
+				"j",
+			},
+		},
+		{
+			"ValidDomainAfterNULL",
+			[]byte{
+				0, 0,
+				0, 0, 0, 0,
+				3, 'a', 'B', 'c',
+				0, 0, 0, 0,
+				2, 'd', 'E',
+				3, 'X', 'y', 'z',
+				0,
+			},
+			0,
+			[]string{
+				"abc",
+				"de.xyz",
+			},
+		},
+		{
+			"Valid0Domains",
+			[]byte{
+				0, 0,
+				0, 0, 0, 0,
+				0,
+				0, 0, 0, 0, 0, 0, 0,
+			},
+			0,
+			nil,
+		},
+		{
+			"NoTrailingNull",
+			[]byte{
+				0, 0,
+				0, 0, 0, 0,
+				7, 'a', 'b', 'c', 'd', 'e', 'f', 'g',
+			},
+			0,
+			nil,
+		},
+		{
+			"IncorrectLength",
+			[]byte{
+				0, 0,
+				0, 0, 0, 0,
+				8, 'a', 'b', 'c', 'd', 'e', 'f', 'g',
+			},
+			0,
+			nil,
+		},
+		{
+			"IncorrectLengthWithNULL",
+			[]byte{
+				0, 0,
+				0, 0, 0, 0,
+				7, 'a', 'b', 'c', 'd', 'e', 'f',
+				0,
+			},
+			0,
+			nil,
+		},
+		{
+			"LabelOfLength63",
+			[]byte{
+				0, 0,
+				0, 0, 0, 0,
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				0,
+			},
+			0,
+			[]string{
+				"abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk",
+			},
+		},
+		{
+			"LabelOfLength64",
+			[]byte{
+				0, 0,
+				0, 0, 0, 0,
+				64, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l',
+				0,
+			},
+			0,
+			nil,
+		},
+		{
+			"DomainNameOfLength255",
+			[]byte{
+				0, 0,
+				0, 0, 0, 0,
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				62, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j',
+				0,
+			},
+			0,
+			[]string{
+				"abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghij",
+			},
+		},
+		{
+			"DomainNameOfLength256",
+			[]byte{
+				0, 0,
+				0, 0, 0, 0,
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				0,
+			},
+			0,
+			nil,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			opt := NDPDNSSearchList(test.buf)
+
+			if got := opt.Lifetime(); got != test.lifetime {
+				t.Errorf("got Lifetime = %d, want = %d", got, test.lifetime)
+			}
+			if got := opt.DomainNames(); !cmp.Equal(got, test.domainNames) {
+				t.Errorf("got DomainNames = %v, want = %v", got, test.domainNames)
+			}
+		})
+	}
+}
+
 // TestNDPOptionsIterCheck tests that Iter will return false if the NDPOptions
 // the iterator was returned for is malformed.
 func TestNDPOptionsIterCheck(t *testing.T) {
@@ -470,6 +761,45 @@ func TestNDPOptionsIterCheck(t *testing.T) {
 				13, 14, 15, 16,
 				17, 18, 19, 20,
 				21, 22, 23, 24,
+			},
+			nil,
+		},
+		{
+			"DNSSearchListTooSmall",
+			[]byte{
+				31, 1, 0, 0,
+				0, 0, 0,
+			},
+			ErrNDPOptBufExhausted,
+		},
+		{
+			"DNSSearchListNonCompiantRFC1035",
+			[]byte{
+				31, 2, 0, 0,
+				0, 0, 0, 0,
+				7, 'a', 'b', 'c', 'd', 'e', 'f', 'g',
+			},
+			ErrNDPOptMalformedBody,
+		},
+		{
+			"DNSSearchListValidSmall",
+			[]byte{
+				31, 2, 0, 0,
+				0, 0, 0, 0,
+				6, 'a', 'b', 'c', 'd', 'e', 'f',
+				0,
+			},
+			nil,
+		},
+		{
+			"DNSSearchListValidLarge",
+			[]byte{
+				31, 3, 0, 0,
+				0, 0, 0, 0,
+				6, 'a', 'b', 'c', 'd', 'e', 'f',
+				0,
+				6, 'g', 'h', 'i', 'j', 'k', 'g',
+				0,
 			},
 			nil,
 		},

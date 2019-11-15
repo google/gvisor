@@ -55,5 +55,8 @@ go_test(
         "ndp_test.go",
     ],
     embed = [":header"],
-    deps = ["//pkg/tcpip"],
+    deps = [
+        "//pkg/tcpip",
+        "@com_github_google_go-cmp//cmp:go_default_library",
+    ],
 )

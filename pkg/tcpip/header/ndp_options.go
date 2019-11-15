@@ -17,6 +17,7 @@ package header
 import (
 	"encoding/binary"
 	"errors"
+	"strings"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -85,6 +86,31 @@ const (
 	// within an NDPPrefixInformation.
 	ndpPrefixInformationPrefixOffset = 14
 
+	// NDPDNSSearchListOptionType is the type of the DNS Search List option,
+	// as per RFC 8106 section 5.2.
+	NDPDNSSearchListOptionType = 31
+
+	// ndpDNSSearchListLifetimeOffset is the start of the 4-byte
+	// Lifetime field within an NDPDNSSearchList.
+	ndpDNSSearchListLifetimeOffset = 2
+
+	// ndpDNSSearchListDomainNamesOffset is the start of the DNS search list
+	// domain names within an NDPDNSSearchList.
+	ndpDNSSearchListDomainNamesOffset = 6
+
+	// minNDPDNSSearchListLength is the minimum NDP DNS Search List option's
+	// length field value when it contains at least one domain name.
+	minNDPDNSSearchListLength = 2
+
+	// maxDomainNameLabelLength is the maximum length of a domain name
+	// label, as per RFC 1035 section 3.1.
+	maxDomainNameLabelLength = 63
+
+	// maxDomainNameLength is the maximum length of a domain name, including
+	// label AND label length octet (which we substitute as a period), as
+	// per RFC 1035 section 3.1.
+	maxDomainNameLength = 255
+
 	// lengthByteUnits is the multiplier factor for the Length field of an
 	// NDP option. That is, the length field for NDP options is in units of
 	// 8 octets, as per RFC 4861 section 4.6.
@@ -92,13 +118,13 @@ const (
 )
 
 var (
-	// NDPPrefixInformationInfiniteLifetime is a value that represents
+	// NDPInfiniteLifetime is a value that represents
 	// infinity for the Valid and Preferred Lifetime fields in a NDP Prefix
 	// Information option. Its value is (2^32 - 1)s = 4294967295s
 	//
 	// This is a variable instead of a constant so that tests can change
 	// this value to a smaller value. It should only be modified by tests.
-	NDPPrefixInformationInfiniteLifetime = time.Second * 4294967295
+	NDPInfiniteLifetime = time.Second * 4294967295
 )
 
 // NDPOptionIterator is an iterator of NDPOption.
@@ -118,6 +144,7 @@ var (
 	ErrNDPOptBufExhausted  = errors.New("Buffer unexpectedly exhausted")
 	ErrNDPOptZeroLength    = errors.New("NDP option has zero-valued Length field")
 	ErrNDPOptMalformedBody = errors.New("NDP option has a malformed body")
+	ErrNDPInvalidLength    = errors.New("NDP option's Length value is invalid as per relevant RFC")
 )
 
 // Next returns the next element in the backing NDPOptions, or true if we are
@@ -182,6 +209,22 @@ func (i *NDPOptionIterator) Next() (NDPOption, bool, error) {
 			}
 
 			return NDPPrefixInformation(body), false, nil
+
+		case NDPDNSSearchListOptionType:
+			// RFC 8106 section 5.3.1 outlines that the DNSSL option
+			// must have a minimum length of 2 so it contains at
+			// least one domain name.
+			if l < minNDPDNSSearchListLength {
+				return nil, true, ErrNDPInvalidLength
+			}
+
+			opt := NDPDNSSearchList(body)
+			if len(opt.DomainNames()) == 0 {
+				return nil, true, ErrNDPOptMalformedBody
+			}
+
+			return opt, false, nil
+
 		default:
 			// We do not yet recognize the option, just skip for
 			// now. This is okay because RFC 4861 allows us to
@@ -434,7 +477,7 @@ func (o NDPPrefixInformation) AutonomousAddressConfigurationFlag() bool {
 //
 // Note, a value of 0 implies the prefix should not be considered as on-link,
 // and a value of infinity/forever is represented by
-// NDPPrefixInformationInfiniteLifetime.
+// NDPInfiniteLifetime.
 func (o NDPPrefixInformation) ValidLifetime() time.Duration {
 	// The field is the time in seconds, as per RFC 4861 section 4.6.2.
 	return time.Second * time.Duration(binary.BigEndian.Uint32(o[ndpPrefixInformationValidLifetimeOffset:]))
@@ -447,7 +490,7 @@ func (o NDPPrefixInformation) ValidLifetime() time.Duration {
 //
 // Note, a value of 0 implies that addresses generated from the prefix should
 // no longer remain preferred, and a value of infinity is represented by
-// NDPPrefixInformationInfiniteLifetime.
+// NDPInfiniteLifetime.
 //
 // Also note that the value of this field MUST NOT exceed the Valid Lifetime
 // field to avoid preferring addresses that are no longer valid, for the
@@ -475,4 +518,106 @@ func (o NDPPrefixInformation) Subnet() tcpip.Subnet {
 		PrefixLen: int(o.PrefixLength()),
 	}
 	return addrWithPrefix.Subnet()
+}
+
+// NDPDNSSearchList is the NDP DNS Search List option, as defined by
+// RFC 8106 section 5.2.
+type NDPDNSSearchList []byte
+
+// Type implements NDPOption.Type.
+func (o NDPDNSSearchList) Type() uint8 {
+	return NDPDNSSearchListOptionType
+}
+
+// Length implements NDPOption.Length.
+func (o NDPDNSSearchList) Length() int {
+	return len(o)
+}
+
+// serializeInto implements NDPOption.serializeInto.
+func (o NDPDNSSearchList) serializeInto(b []byte) int {
+	return copy(b, o)
+}
+
+// Lifetime returns the length of time that the DNS search list of domain names
+// in this option may be used for name resolution.
+//
+// Note, a value of 0 implies the domain names should no longer be used,
+// and a value of infinity/forever is represented by NDPInfiniteLifetime.
+func (o NDPDNSSearchList) Lifetime() time.Duration {
+	// The field is the time in seconds, as per RFC 8106 section 5.1.
+	return time.Second * time.Duration(binary.BigEndian.Uint32(o[ndpDNSSearchListLifetimeOffset:]))
+}
+
+// DomainNames returns a DNS search list of domain names.
+//
+// DomainNames will parse the backing buffer as outlined by RFC 1035 section
+// 3.1 and return a list of strings, with all domain names in lower case.
+func (o NDPDNSSearchList) DomainNames() []string {
+	buf := o[ndpDNSSearchListDomainNamesOffset:]
+
+	var domainNames []string
+	domainNameBuf := [maxDomainNameLength]byte{}
+
+	// Parse the domain names, as per RFC 1035 section 3.1.
+	for len(buf) > 0 {
+		dn := domainNameBuf[:]
+
+		for {
+			// If we are done, we should have ended with a NULL
+			// byte, not an empty array in the middle of a domain
+			// name.
+			if len(buf) == 0 {
+				return nil
+			}
+
+			labelLen := int(buf[0])
+			buf = buf[1:]
+
+			// A length of 0 implies the end of a domain name.
+			if labelLen == 0 {
+				// If dn's length is still maxDomainNameLength,
+				// then we know that we have not reached a new
+				// label for this domain name yet, so we don't
+				// need to add it to the list of domain names.
+				if len(dn) != maxDomainNameLength {
+					// When we copy the domain name into
+					// the list of domain names, ignore the
+					// trailing period.
+					name := strings.ToLower(string(domainNameBuf[:maxDomainNameLength-len(dn)-1]))
+					domainNames = append(domainNames, name)
+				}
+
+				break
+			}
+
+			// The buf should have enough bytes for the label.
+			if len(buf) < labelLen {
+				return nil
+			}
+
+			// Each label is limited to maxDomainNameLabelLength
+			// bytes.
+			if labelLen > maxDomainNameLabelLength {
+				return nil
+			}
+
+			// The label should not make the domain name too large.
+			// We do a less than OR equal comparision because the
+			// max total length of a domain name includes the label
+			// and label length octet.
+			if len(dn) <= labelLen {
+				return nil
+			}
+
+			// Copy the label and add a trailing period.
+			copy(dn, buf[:labelLen])
+			dn[labelLen] = '.'
+			dn = dn[labelLen+1:]
+
+			buf = buf[labelLen:]
+		}
+	}
+
+	return domainNames
 }
