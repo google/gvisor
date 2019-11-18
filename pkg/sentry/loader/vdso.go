@@ -268,6 +268,8 @@ func PrepareVDSO(ctx context.Context, mfp pgalloc.MemoryFileProvider) (*VDSO, er
 		// some applications may not be able to handle multiple [vdso]
 		// hints.
 		vdso:  mm.NewSpecialMappable("", mfp, vdso),
+		os:    info.os,
+		arch:  info.arch,
 		phdrs: info.phdrs,
 	}, nil
 }
