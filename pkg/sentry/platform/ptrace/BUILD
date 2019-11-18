@@ -28,6 +28,7 @@ go_library(
         "//pkg/procid",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
+        "//pkg/sentry/hostcpu",
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/interrupt",
         "//pkg/sentry/platform/safecopy",
