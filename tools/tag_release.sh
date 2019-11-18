@@ -64,5 +64,6 @@ fi
 
 # Tag the given commit (annotated, to record the committer).
 declare -r tag="release-${release}"
-(git tag -a "${tag}" "${commit}" && git push origin tag "${tag}") || \
+(git tag -m "Release ${release}" -a "${tag}" "${commit}" && \
+  git push origin tag "${tag}") || \
   (git tag -d "${tag}" && false)
