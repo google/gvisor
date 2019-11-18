@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2019 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,8 +16,6 @@ package boot
 
 import (
 	"testing"
-
-	rpb "gvisor.dev/gvisor/pkg/sentry/arch/registers_go_proto"
 )
 
 func TestOnceTracker(t *testing.T) {
@@ -35,31 +33,34 @@ func TestOnceTracker(t *testing.T) {
 
 func TestArgsTracker(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		idx  []int
-		rdi1 uint64
-		rdi2 uint64
-		rsi1 uint64
-		rsi2 uint64
-		want bool
+		name   string
+		idx    []int
+		arg1_1 uint64
+		arg1_2 uint64
+		arg2_1 uint64
+		arg2_2 uint64
+		want   bool
 	}{
-		{name: "same rdi", idx: []int{0}, rdi1: 123, rdi2: 123, want: false},
-		{name: "same rsi", idx: []int{1}, rsi1: 123, rsi2: 123, want: false},
-		{name: "diff rdi", idx: []int{0}, rdi1: 123, rdi2: 321, want: true},
-		{name: "diff rsi", idx: []int{1}, rsi1: 123, rsi2: 321, want: true},
-		{name: "cmd is uint32", idx: []int{0}, rsi1: 0xdead00000123, rsi2: 0xbeef00000123, want: false},
-		{name: "same 2 args", idx: []int{0, 1}, rsi1: 123, rdi1: 321, rsi2: 123, rdi2: 321, want: false},
-		{name: "diff 2 args", idx: []int{0, 1}, rsi1: 123, rdi1: 321, rsi2: 789, rdi2: 987, want: true},
+		{name: "same arg1", idx: []int{0}, arg1_1: 123, arg1_2: 123, want: false},
+		{name: "same arg2", idx: []int{1}, arg2_1: 123, arg2_2: 123, want: false},
+		{name: "diff arg1", idx: []int{0}, arg1_1: 123, arg1_2: 321, want: true},
+		{name: "diff arg2", idx: []int{1}, arg2_1: 123, arg2_2: 321, want: true},
+		{name: "cmd is uint32", idx: []int{0}, arg2_1: 0xdead00000123, arg2_2: 0xbeef00000123, want: false},
+		{name: "same 2 args", idx: []int{0, 1}, arg2_1: 123, arg1_1: 321, arg2_2: 123, arg1_2: 321, want: false},
+		{name: "diff 2 args", idx: []int{0, 1}, arg2_1: 123, arg1_1: 321, arg2_2: 789, arg1_2: 987, want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := newArgsTracker(tc.idx...)
-			regs := &rpb.AMD64Registers{Rdi: tc.rdi1, Rsi: tc.rsi1}
+			regs := newRegs()
+			setArgVal(0, tc.arg1_1, regs)
+			setArgVal(1, tc.arg2_1, regs)
 			if !c.shouldReport(regs) {
 				t.Error("first call to shouldReport, got: false, want: true")
 			}
 			c.onReported(regs)
 
-			regs.Rdi, regs.Rsi = tc.rdi2, tc.rsi2
+			setArgVal(0, tc.arg1_2, regs)
+			setArgVal(1, tc.arg2_2, regs)
 			if got := c.shouldReport(regs); tc.want != got {
 				t.Errorf("second call to shouldReport, got: %t, want: %t", got, tc.want)
 			}
@@ -70,7 +71,9 @@ func TestArgsTracker(t *testing.T) {
 func TestArgsTrackerLimit(t *testing.T) {
 	c := newArgsTracker(0, 1)
 	for i := 0; i < reportLimit; i++ {
-		regs := &rpb.AMD64Registers{Rdi: 123, Rsi: uint64(i)}
+		regs := newRegs()
+		setArgVal(0, 123, regs)
+		setArgVal(1, uint64(i), regs)
 		if !c.shouldReport(regs) {
 			t.Error("shouldReport before limit was reached, got: false, want: true")
 		}
@@ -78,7 +81,9 @@ func TestArgsTrackerLimit(t *testing.T) {
 	}
 
 	// Should hit the count limit now.
-	regs := &rpb.AMD64Registers{Rdi: 123, Rsi: 123456}
+	regs := newRegs()
+	setArgVal(0, 123, regs)
+	setArgVal(1, 123456, regs)
 	if c.shouldReport(regs) {
 		t.Error("shouldReport after limit was reached, got: true, want: false")
 	}

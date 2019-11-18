@@ -21,10 +21,8 @@ import (
 	"syscall"
 
 	"github.com/golang/protobuf/proto"
-	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
 	rpb "gvisor.dev/gvisor/pkg/sentry/arch/registers_go_proto"
 	ucspb "gvisor.dev/gvisor/pkg/sentry/kernel/uncaught_signal_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/strace"
@@ -53,9 +51,9 @@ type compatEmitter struct {
 }
 
 func newCompatEmitter(logFD int) (*compatEmitter, error) {
-	nameMap, ok := strace.Lookup(abi.Linux, arch.AMD64)
+	nameMap, ok := getSyscallNameMap()
 	if !ok {
-		return nil, fmt.Errorf("amd64 Linux syscall table not found")
+		return nil, fmt.Errorf("Linux syscall table not found")
 	}
 
 	c := &compatEmitter{
@@ -86,16 +84,16 @@ func (c *compatEmitter) Emit(msg proto.Message) (bool, error) {
 }
 
 func (c *compatEmitter) emitUnimplementedSyscall(us *spb.UnimplementedSyscall) {
-	regs := us.Registers.GetArch().(*rpb.Registers_Amd64).Amd64
+	regs := us.Registers
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	sysnr := regs.OrigRax
+	sysnr := syscallNum(regs)
 	tr := c.trackers[sysnr]
 	if tr == nil {
 		switch sysnr {
-		case syscall.SYS_PRCTL, syscall.SYS_ARCH_PRCTL:
+		case syscall.SYS_PRCTL:
 			// args: cmd, ...
 			tr = newArgsTracker(0)
 
@@ -112,10 +110,11 @@ func (c *compatEmitter) emitUnimplementedSyscall(us *spb.UnimplementedSyscall) {
 			tr = newArgsTracker(2)
 
 		default:
-			tr = &onceTracker{}
+			tr = newArchArgsTracker(sysnr)
 		}
 		c.trackers[sysnr] = tr
 	}
+
 	if tr.shouldReport(regs) {
 		c.sink.Infof("Unsupported syscall: %s, regs: %+v", c.nameMap.Name(uintptr(sysnr)), regs)
 		tr.onReported(regs)
@@ -139,10 +138,10 @@ func (c *compatEmitter) Close() error {
 // the syscall and arguments.
 type syscallTracker interface {
 	// shouldReport returns true is the syscall should be reported.
-	shouldReport(regs *rpb.AMD64Registers) bool
+	shouldReport(regs *rpb.Registers) bool
 
 	// onReported marks the syscall as reported.
-	onReported(regs *rpb.AMD64Registers)
+	onReported(regs *rpb.Registers)
 }
 
 // onceTracker reports only a single time, used for most syscalls.
@@ -150,10 +149,45 @@ type onceTracker struct {
 	reported bool
 }
 
-func (o *onceTracker) shouldReport(_ *rpb.AMD64Registers) bool {
+func (o *onceTracker) shouldReport(_ *rpb.Registers) bool {
 	return !o.reported
 }
 
-func (o *onceTracker) onReported(_ *rpb.AMD64Registers) {
+func (o *onceTracker) onReported(_ *rpb.Registers) {
 	o.reported = true
+}
+
+// argsTracker reports only once for each different combination of arguments.
+// It's used for generic syscalls like ioctl to report once per 'cmd'.
+type argsTracker struct {
+	// argsIdx is the syscall arguments to use as unique ID.
+	argsIdx  []int
+	reported map[string]struct{}
+	count    int
+}
+
+func newArgsTracker(argIdx ...int) *argsTracker {
+	return &argsTracker{argsIdx: argIdx, reported: make(map[string]struct{})}
+}
+
+// key returns the command based on the syscall argument index.
+func (a *argsTracker) key(regs *rpb.Registers) string {
+	var rv string
+	for _, idx := range a.argsIdx {
+		rv += fmt.Sprintf("%d|", argVal(idx, regs))
+	}
+	return rv
+}
+
+func (a *argsTracker) shouldReport(regs *rpb.Registers) bool {
+	if a.count >= reportLimit {
+		return false
+	}
+	_, ok := a.reported[a.key(regs)]
+	return !ok
+}
+
+func (a *argsTracker) onReported(regs *rpb.Registers) {
+	a.count++
+	a.reported[a.key(regs)] = struct{}{}
 }
