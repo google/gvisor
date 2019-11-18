@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="360" height="120">
+	<defs>
+		<g id="x">
+			<rect height="24" width="24" />
+			<path fill="#fff" fill-opacity=".7" d="m0,0 3,3 18,0 3,-3"/>
+			<path fill="#000" fill-opacity=".1" d="m0,0 3,3 0,18 -3,3 m24,-24 -3,3 0,18 3,3"/>
+			<path fill="#000" fill-opacity=".5" d="m0,24 3,-3 18,0 3,3"/>
+		</g>
+		<g id="n">
+			<use id="0" y="24" x="120" xlink:href="#x"/>
+			<use x="24" xlink:href="#0"/><use x="48" xlink:href="#0"/>
+		</g>
+	</defs>
+	<g id="i">
+		<use id="a" y="24" xlink:href="#x" fill="#00f0f0"/>
+		<use x="24" xlink:href="#a"/>
+	</g>
+	<use x="48" xlink:href="#i"/>
+	<use id="j" x="120" xlink:href="#x" fill="#0000f0"/>
+	<use xlink:href="#n" fill="#0000f0"/>
+	<use x="264" xlink:href="#x" fill="#f0a000"/>
+	<use x="96" xlink:href="#n" fill="#f0a000"/>
+	<g id="o">
+		<use id="b" x="312" xlink:href="#x" fill="#f0f000"/>
+		<use x="24" xlink:href="#b"/>
+	</g>
+
+	<use y="24" xlink:href="#o"/>
+	<g id="s">
+		<use id="c" x="48" y="96" xlink:href="#x" fill="#00f000"/>
+		<use x="24" xlink:href="#c"/>
+	</g>
+	<use x="24" y="-24" xlink:href="#s"/>
+	<use x="24" y="72" xlink:href="#n" fill="#a000f0"/>
+	<use x="168" y="72" xlink:href="#x" fill="#a000f0"/>
+	<g id="z">
+		<use id="d" x="264" y="72" xlink:href="#x" fill="#f00000"/>
+		<use x="-24" xlink:href="#d"/>
+	</g>
+	<use x="24" y="24" xlink:href="#z"/>
+</svg>

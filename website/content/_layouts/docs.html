@@ -1,0 +1,55 @@
+---
+layout: base
+categories:
+  - Project
+  - User Guide
+  - Architecture Guide
+  - Compatibility
+---
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-3">
+      <nav class="sidebar collapse" id="sidebar-nav">
+        {% for category in layout.categories %}
+          <h3>{{ category }}</h3>
+          <ul class="sidebar-nav">
+          {% assign sorted_pages = site.pages | where: 'layout', 'docs' | where: 'category', category | sort: 'weight' %}
+          {% assign subcategory = nil %}
+          {% for p in sorted_pages %}
+            {% if p.subcategory != subcategory %}
+              {% if subcategory != nil %}
+                  </ul>
+                </li>
+              {% endif %}
+              {% assign subcategory = p.subcategory %}
+              {% if subcategory != nil %}
+                {% assign id = p.subcategory | remove: " " | downcase %}
+                <li>
+                  <a class="sidebar-nav-heading" data-toggle="collapse" href="#{{ id }}" aria-expanded="false" aria-controls="{{ id }}">{{ subcategory }}<span class="caret"></span></a>
+                  <ul class="collapse sidebar-nav sidebar-submenu" id="{{ id }}">
+              {% endif %}
+            {% endif %}
+            <li><a href="{{ p.url }}">{{ p.title }}</a></li>
+          {% endfor %}
+          {% if subcategory != nil %}
+                </ul>
+              </li>
+          {% endif %}
+          </ul>
+        {% endfor %}
+      </nav>
+    </div>
+
+    <div class="col-md-9">
+      <h1>{{ page.title }}</h1>
+      {% if page.noedit != true %}
+        <p>
+        <a href="https://github.com/google/gvisor/edit/master/website/content/{{page.path}}" target="_blank"><i class="fa fa-edit fa-fw"></i> Edit this page</a>
+        <a href="https://github.com/google/gvisor/issues/new?title={{page.title | url_encode}}" target="_blank"><i class="fab fa-github fa-fw"></i> Create issue</a>
+        </p>
+      {% endif %}
+      {{ content }}
+    </div>
+  </div>
+</div>
