@@ -25,6 +25,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/hostcpu"
 )
 
 // maskPool contains reusable CPU masks for setting affinity. Unfortunately,
@@ -47,20 +48,6 @@ func unmaskAllSignals() syscall.Errno {
 	var set linux.SignalSet
 	_, _, errno := syscall.RawSyscall6(syscall.SYS_RT_SIGPROCMASK, linux.SIG_SETMASK, uintptr(unsafe.Pointer(&set)), 0, linux.SignalSetSize, 0, 0)
 	return errno
-}
-
-// getCPU gets the current CPU.
-//
-// Precondition: the current runtime thread should be locked.
-func getCPU() (uint32, error) {
-	var cpu uintptr
-	if _, _, errno := syscall.RawSyscall(
-		unix.SYS_GETCPU,
-		uintptr(unsafe.Pointer(&cpu)),
-		0, 0); errno != 0 {
-		return 0, errno
-	}
-	return uint32(cpu), nil
 }
 
 // setCPU sets the CPU affinity.
@@ -93,10 +80,8 @@ func (t *thread) setCPU(cpu uint32) error {
 //
 // Precondition: the current runtime thread should be locked.
 func (t *thread) bind() {
-	currentCPU, err := getCPU()
-	if err != nil {
-		return
-	}
+	currentCPU := hostcpu.GetCPU()
+
 	if oldCPU := atomic.SwapUint32(&t.cpu, currentCPU); oldCPU != currentCPU {
 		// Set the affinity on the thread and save the CPU for next
 		// round; we don't expect CPUs to bounce around too frequently.
