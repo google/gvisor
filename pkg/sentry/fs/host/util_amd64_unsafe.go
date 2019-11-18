@@ -12,16 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build arm64
+// +build amd64
 
-package kernel
+package host
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"syscall"
+	"unsafe"
 )
 
-// ptraceArch implements arch-specific ptrace commands.
-func (t *Task) ptraceArch(target *Task, req int64, addr, data usermem.Addr) error {
-	return syserror.EIO
+func fstatat(fd int, name string, flags int) (syscall.Stat_t, error) {
+	var stat syscall.Stat_t
+	namePtr, err := syscall.BytePtrFromString(name)
+	if err != nil {
+		return stat, err
+	}
+	_, _, errno := syscall.Syscall6(
+		syscall.SYS_NEWFSTATAT,
+		uintptr(fd),
+		uintptr(unsafe.Pointer(namePtr)),
+		uintptr(unsafe.Pointer(&stat)),
+		uintptr(flags),
+		0, 0)
+	if errno != 0 {
+		return stat, errno
+	}
+	return stat, nil
 }
