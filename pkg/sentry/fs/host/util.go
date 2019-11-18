@@ -155,7 +155,7 @@ func unstableAttr(mo *superOperations, s *syscall.Stat_t) fs.UnstableAttr {
 		AccessTime:       ktime.FromUnix(s.Atim.Sec, s.Atim.Nsec),
 		ModificationTime: ktime.FromUnix(s.Mtim.Sec, s.Mtim.Nsec),
 		StatusChangeTime: ktime.FromUnix(s.Ctim.Sec, s.Ctim.Nsec),
-		Links:            s.Nlink,
+		Links:            uint64(s.Nlink),
 	}
 }
 

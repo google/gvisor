@@ -116,22 +116,3 @@ func setTimestamps(fd int, ts fs.TimeSpec) error {
 	}
 	return nil
 }
-
-func fstatat(fd int, name string, flags int) (syscall.Stat_t, error) {
-	var stat syscall.Stat_t
-	namePtr, err := syscall.BytePtrFromString(name)
-	if err != nil {
-		return stat, err
-	}
-	_, _, errno := syscall.Syscall6(
-		syscall.SYS_NEWFSTATAT,
-		uintptr(fd),
-		uintptr(unsafe.Pointer(namePtr)),
-		uintptr(unsafe.Pointer(&stat)),
-		uintptr(flags),
-		0, 0)
-	if errno != 0 {
-		return stat, errno
-	}
-	return stat, nil
-}
