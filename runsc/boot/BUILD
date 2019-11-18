@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "compat.go",
         "compat_amd64.go",
+        "compat_arm64.go",
         "config.go",
         "controller.go",
         "debug.go",

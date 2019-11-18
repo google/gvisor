@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2019 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -30,68 +30,66 @@ const reportLimit = 100
 // newRegs create a empty Registers instance.
 func newRegs() *rpb.Registers {
 	return &rpb.Registers{
-		Arch: &rpb.Registers_Amd64{
-			Amd64: &rpb.AMD64Registers{},
+		Arch: &rpb.Registers_Arm64{
+			Arm64: &rpb.ARM64Registers{},
 		},
 	}
 }
 
 func argVal(argIdx int, regs *rpb.Registers) uint32 {
-	amd64Regs := regs.GetArch().(*rpb.Registers_Amd64).Amd64
+	arm64Regs := regs.GetArch().(*rpb.Registers_Arm64).Arm64
 
 	switch argIdx {
 	case 0:
-		return uint32(amd64Regs.Rdi)
+		return uint32(arm64Regs.R0)
 	case 1:
-		return uint32(amd64Regs.Rsi)
+		return uint32(arm64Regs.R1)
 	case 2:
-		return uint32(amd64Regs.Rdx)
+		return uint32(arm64Regs.R2)
 	case 3:
-		return uint32(amd64Regs.R10)
+		return uint32(arm64Regs.R3)
 	case 4:
-		return uint32(amd64Regs.R8)
+		return uint32(arm64Regs.R4)
 	case 5:
-		return uint32(amd64Regs.R9)
+		return uint32(arm64Regs.R5)
 	}
 	panic(fmt.Sprintf("invalid syscall argument index %d", argIdx))
 }
 
 func setArgVal(argIdx int, argVal uint64, regs *rpb.Registers) {
-	amd64Regs := regs.GetArch().(*rpb.Registers_Amd64).Amd64
+	arm64Regs := regs.GetArch().(*rpb.Registers_Arm64).Arm64
 
 	switch argIdx {
 	case 0:
-		amd64Regs.Rdi = argVal
+		arm64Regs.R0 = argVal
 	case 1:
-		amd64Regs.Rsi = argVal
+		arm64Regs.R1 = argVal
 	case 2:
-		amd64Regs.Rdx = argVal
+		arm64Regs.R2 = argVal
 	case 3:
-		amd64Regs.R10 = argVal
+		arm64Regs.R3 = argVal
 	case 4:
-		amd64Regs.R8 = argVal
+		arm64Regs.R4 = argVal
 	case 5:
-		amd64Regs.R9 = argVal
+		arm64Regs.R5 = argVal
 	default:
 		panic(fmt.Sprintf("invalid syscall argument index %d", argIdx))
 	}
 }
 
 func getSyscallNameMap() (strace.SyscallMap, bool) {
-	return strace.Lookup(abi.Linux, arch.AMD64)
+	return strace.Lookup(abi.Linux, arch.ARM64)
 }
 
 func syscallNum(regs *rpb.Registers) uint64 {
-	amd64Regs := regs.GetArch().(*rpb.Registers_Amd64).Amd64
-	return amd64Regs.OrigRax
+	arm64Regs := regs.GetArch().(*rpb.Registers_Arm64).Arm64
+	return arm64Regs.R8
 }
 
 func newArchArgsTracker(sysnr uint64) syscallTracker {
-	switch sysnr {
-	case syscall.SYS_ARCH_PRCTL:
-		// args: cmd, ...
-		return newArgsTracker(0)
 
+	switch sysnr {
+	// currently, no arch specific syscalls need to be handled here.
 	default:
 		return &onceTracker{}
 	}
