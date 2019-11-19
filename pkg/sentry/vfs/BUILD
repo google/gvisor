@@ -12,6 +12,7 @@ go_library(
         "file_description.go",
         "file_description_impl_util.go",
         "filesystem.go",
+        "filesystem_impl_util.go",
         "filesystem_type.go",
         "mount.go",
         "mount_unsafe.go",
