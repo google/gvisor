@@ -14,6 +14,7 @@ go_library(
     importpath = "gvisor.dev/gvisor/pkg/tcpip",
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/iptables",
         "//pkg/waiter",

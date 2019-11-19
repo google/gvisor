@@ -46,6 +46,7 @@ var (
 	debug      = flag.Bool("debug", false, "enable debug logs")
 	strace     = flag.Bool("strace", false, "enable strace logs")
 	platform   = flag.String("platform", "ptrace", "platform to run on")
+	network    = flag.String("network", "none", "network stack to run on (sandbox, host, none)")
 	useTmpfs   = flag.Bool("use-tmpfs", false, "mounts tmpfs for /tmp")
 	fileAccess = flag.String("file-access", "exclusive", "mounts root in exclusive or shared mode")
 	overlay    = flag.Bool("overlay", false, "wrap filesystem mounts with writable tmpfs overlay")
@@ -137,7 +138,7 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 
 	args := []string{
 		"-root", rootDir,
-		"-network=none",
+		"-network", *network,
 		"-log-format=text",
 		"-TESTONLY-unsafe-nonroot=true",
 		"-net-raw=true",
@@ -335,10 +336,11 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 		})
 	}
 
-	// Set environment variable that indicates we are
-	// running in gVisor and with the given platform.
+	// Set environment variables that indicate we are
+	// running in gVisor with the given platform and network.
 	platformVar := "TEST_ON_GVISOR"
-	env := append(os.Environ(), platformVar+"="+*platform)
+	networkVar := "GVISOR_NETWORK"
+	env := append(os.Environ(), platformVar+"="+*platform, networkVar+"="+*network)
 
 	// Remove env variables that cause the gunit binary to write output
 	// files, since they will stomp on eachother, and on the output files

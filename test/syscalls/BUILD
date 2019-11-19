@@ -669,6 +669,7 @@ syscall_test(test = "//test/syscalls/linux:udp_bind_test")
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     shard_count = 10,
     test = "//test/syscalls/linux:udp_socket_test",
 )

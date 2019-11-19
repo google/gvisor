@@ -29,10 +29,12 @@ go_library(
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/safemem",
         "//pkg/sentry/socket",
+        "//pkg/sentry/socket/control",
         "//pkg/sentry/usermem",
         "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/tcpip/stack",
         "//pkg/waiter",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

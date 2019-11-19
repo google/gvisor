@@ -422,6 +422,24 @@ type ControlMessageRights []int32
 // ControlMessageRights.
 const SizeOfControlMessageRight = 4
 
+// ControlMessageInq is a TCP_INQ control message.
+type ControlMessageInq int32
+
+// SizeOfControlMessageInq is the size of a ControlMessageInq.
+const SizeOfControlMessageInq = 4
+
+// ControlMessageTOS is an IP_TOS control message.
+type ControlMessageTOS int8
+
+// SizeOfControlMessageTOS is the size of a ControlMessageTOS.
+const SizeOfControlMessageTOS = 1
+
+// ControlMessageTClass is an IPV6_TCLASS control message.
+type ControlMessageTClass int32
+
+// SizeOfControlMessageTClass is the size of a ControlMessageTClass.
+const SizeOfControlMessageTClass = 4
+
 // SCM_MAX_FD is the maximum number of FDs accepted in a single sendmsg call.
 // From net/scm.h.
 const SCM_MAX_FD = 253

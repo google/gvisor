@@ -2111,7 +2111,7 @@ func (s *SocketOperations) fillCmsgInq(cmsg *socket.ControlMessages) {
 		return
 	}
 	cmsg.IP.HasInq = true
-	cmsg.IP.Inq = int32(len(s.readView) + rcvBufUsed)
+	cmsg.IP.Inq = linux.ControlMessageInq(len(s.readView) + rcvBufUsed)
 }
 
 // nonBlockingRead issues a non-blocking read.
