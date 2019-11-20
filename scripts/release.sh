@@ -34,5 +34,16 @@ declare -r EMAIL=${EMAIL:-${KOKORO_RELEASE_AUTHOR}@google.com}
 git config --get user.name || git config user.name "gVisor-bot"
 git config --get user.email || git config user.email "${EMAIL}"
 
+# Provide a credential if available.
+if [[ -v KOKORO_GITHUB_ACCESS_TOKEN ]]; then
+  git config --global credential.helper cache
+  git credential approve <<EOF
+protocol=https
+host=github.com
+username=$(cat "${KOKORO_KEYSTORE_DIR}/${KOKORO_GITHUB_ACCESS_TOKEN}")
+password=x-oauth-basic
+EOF
+fi
+
 # Run the release tool, which pushes to the origin repository.
 tools/tag_release.sh "${KOKORO_RELEASE_COMMIT}" "${KOKORO_RELEASE_TAG}"
