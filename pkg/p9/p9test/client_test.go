@@ -1044,11 +1044,11 @@ func TestReaddir(t *testing.T) {
 			if _, err := f.Readdir(0, 1); err != syscall.EINVAL {
 				t.Errorf("readdir got %v, wanted EINVAL", err)
 			}
-			if _, _, _, err := f.Open(p9.ReadWrite); err != syscall.EINVAL {
-				t.Errorf("readdir got %v, wanted EINVAL", err)
+			if _, _, _, err := f.Open(p9.ReadWrite); err != syscall.EISDIR {
+				t.Errorf("readdir got %v, wanted EISDIR", err)
 			}
-			if _, _, _, err := f.Open(p9.WriteOnly); err != syscall.EINVAL {
-				t.Errorf("readdir got %v, wanted EINVAL", err)
+			if _, _, _, err := f.Open(p9.WriteOnly); err != syscall.EISDIR {
+				t.Errorf("readdir got %v, wanted EISDIR", err)
 			}
 			backend.EXPECT().Open(p9.ReadOnly).Times(1)
 			if _, _, _, err := f.Open(p9.ReadOnly); err != nil {
@@ -1065,75 +1065,93 @@ func TestReaddir(t *testing.T) {
 func TestOpen(t *testing.T) {
 	type openTest struct {
 		name  string
-		mode  p9.OpenFlags
+		flags p9.OpenFlags
 		err   error
 		match func(p9.FileMode) bool
 	}
 
 	cases := []openTest{
 		{
-			name:  "invalid",
-			mode:  ^p9.OpenFlagsModeMask,
-			err:   syscall.EINVAL,
-			match: func(p9.FileMode) bool { return true },
-		},
-		{
 			name:  "not-openable-read-only",
-			mode:  p9.ReadOnly,
+			flags: p9.ReadOnly,
 			err:   syscall.EINVAL,
 			match: func(mode p9.FileMode) bool { return !p9.CanOpen(mode) },
 		},
 		{
 			name:  "not-openable-write-only",
-			mode:  p9.WriteOnly,
+			flags: p9.WriteOnly,
 			err:   syscall.EINVAL,
 			match: func(mode p9.FileMode) bool { return !p9.CanOpen(mode) },
 		},
 		{
 			name:  "not-openable-read-write",
-			mode:  p9.ReadWrite,
+			flags: p9.ReadWrite,
 			err:   syscall.EINVAL,
 			match: func(mode p9.FileMode) bool { return !p9.CanOpen(mode) },
 		},
 		{
 			name:  "directory-read-only",
-			mode:  p9.ReadOnly,
+			flags: p9.ReadOnly,
 			err:   nil,
 			match: func(mode p9.FileMode) bool { return mode.IsDir() },
 		},
 		{
 			name:  "directory-read-write",
-			mode:  p9.ReadWrite,
-			err:   syscall.EINVAL,
+			flags: p9.ReadWrite,
+			err:   syscall.EISDIR,
 			match: func(mode p9.FileMode) bool { return mode.IsDir() },
 		},
 		{
 			name:  "directory-write-only",
-			mode:  p9.WriteOnly,
-			err:   syscall.EINVAL,
+			flags: p9.WriteOnly,
+			err:   syscall.EISDIR,
 			match: func(mode p9.FileMode) bool { return mode.IsDir() },
 		},
 		{
 			name:  "read-only",
-			mode:  p9.ReadOnly,
+			flags: p9.ReadOnly,
 			err:   nil,
 			match: func(mode p9.FileMode) bool { return p9.CanOpen(mode) },
 		},
 		{
 			name:  "write-only",
-			mode:  p9.WriteOnly,
+			flags: p9.WriteOnly,
 			err:   nil,
 			match: func(mode p9.FileMode) bool { return p9.CanOpen(mode) && !mode.IsDir() },
 		},
 		{
 			name:  "read-write",
-			mode:  p9.ReadWrite,
+			flags: p9.ReadWrite,
+			err:   nil,
+			match: func(mode p9.FileMode) bool { return p9.CanOpen(mode) && !mode.IsDir() },
+		},
+		{
+			name:  "directory-read-only-truncate",
+			flags: p9.ReadOnly | p9.OpenTruncate,
+			err:   syscall.EISDIR,
+			match: func(mode p9.FileMode) bool { return mode.IsDir() },
+		},
+		{
+			name:  "read-only-truncate",
+			flags: p9.ReadOnly | p9.OpenTruncate,
+			err:   nil,
+			match: func(mode p9.FileMode) bool { return p9.CanOpen(mode) && !mode.IsDir() },
+		},
+		{
+			name:  "write-only-truncate",
+			flags: p9.WriteOnly | p9.OpenTruncate,
+			err:   nil,
+			match: func(mode p9.FileMode) bool { return p9.CanOpen(mode) && !mode.IsDir() },
+		},
+		{
+			name:  "read-write-truncate",
+			flags: p9.ReadWrite | p9.OpenTruncate,
 			err:   nil,
 			match: func(mode p9.FileMode) bool { return p9.CanOpen(mode) && !mode.IsDir() },
 		},
 	}
 
-	// Open(mode OpenFlags) (*fd.FD, QID, uint32, error)
+	// Open(flags OpenFlags) (*fd.FD, QID, uint32, error)
 	// - only works on Regular, NamedPipe, BLockDevice, CharacterDevice
 	// - returning a file works as expected
 	for name := range newTypeMap(nil) {
@@ -1171,25 +1189,25 @@ func TestOpen(t *testing.T) {
 				// Attempt the given open.
 				if tc.err != nil {
 					// We expect an error, just test and return.
-					if _, _, _, err := f.Open(tc.mode); err != tc.err {
-						t.Fatalf("open with mode %v got %v, want %v", tc.mode, err, tc.err)
+					if _, _, _, err := f.Open(tc.flags); err != tc.err {
+						t.Fatalf("open with flags %v got %v, want %v", tc.flags, err, tc.err)
 					}
 					return
 				}
 
 				// Run an FD test, since we expect success.
 				fdTest(t, func(send *fd.FD) *fd.FD {
-					backend.EXPECT().Open(tc.mode).Return(send, p9.QID{}, uint32(0), nil).Times(1)
-					recv, _, _, err := f.Open(tc.mode)
+					backend.EXPECT().Open(tc.flags).Return(send, p9.QID{}, uint32(0), nil).Times(1)
+					recv, _, _, err := f.Open(tc.flags)
 					if err != tc.err {
-						t.Fatalf("open with mode %v got %v, want %v", tc.mode, err, tc.err)
+						t.Fatalf("open with flags %v got %v, want %v", tc.flags, err, tc.err)
 					}
 					return recv
 				})
 
 				// If the open was successful, attempt another one.
-				if _, _, _, err := f.Open(tc.mode); err != syscall.EINVAL {
-					t.Errorf("second open with mode %v got %v, want EINVAL", tc.mode, err)
+				if _, _, _, err := f.Open(tc.flags); err != syscall.EINVAL {
+					t.Errorf("second open with flags %v got %v, want EINVAL", tc.flags, err)
 				}
 
 				// Ensure that all illegal operations fail.
