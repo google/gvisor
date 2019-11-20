@@ -64,6 +64,10 @@ type FileFlags struct {
 
 	// NonSeekable indicates that file.offset isn't used.
 	NonSeekable bool
+
+	// Truncate indicates that the file should be truncated before opened.
+	// This is only applicable if the file is regular.
+	Truncate bool
 }
 
 // SettableFileFlags is a subset of FileFlags above that can be changed
@@ -117,6 +121,9 @@ func (f FileFlags) ToLinux() (mask uint) {
 	}
 	if f.LargeFile {
 		mask |= linux.O_LARGEFILE
+	}
+	if f.Truncate {
+		mask |= linux.O_TRUNC
 	}
 
 	switch {
