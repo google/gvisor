@@ -64,7 +64,7 @@ func (h *handles) DecRef() {
 	})
 }
 
-func newHandles(ctx context.Context, file contextFile, flags fs.FileFlags) (*handles, error) {
+func newHandles(ctx context.Context, client *p9.Client, file contextFile, flags fs.FileFlags) (*handles, error) {
 	_, newFile, err := file.walk(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -80,6 +80,9 @@ func newHandles(ctx context.Context, file contextFile, flags fs.FileFlags) (*han
 		p9flags = p9.WriteOnly
 	default:
 		panic("impossible fs.FileFlags")
+	}
+	if flags.Truncate && p9.VersionSupportsOpenTruncateFlag(client.Version()) {
+		p9flags |= p9.OpenTruncate
 	}
 
 	hostFile, _, _, err := newFile.open(ctx, p9flags)

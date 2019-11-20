@@ -272,15 +272,15 @@ func (t *Tlopen) handle(cs *connState) message {
 		return newErr(syscall.EINVAL)
 	}
 
-	// Are flags valid?
-	flags := t.Flags &^ OpenFlagsIgnoreMask
-	if flags&^OpenFlagsModeMask != 0 {
-		return newErr(syscall.EINVAL)
-	}
-
-	// Is this an attempt to open a directory as writable? Don't accept.
-	if ref.mode.IsDir() && flags != ReadOnly {
-		return newErr(syscall.EINVAL)
+	if ref.mode.IsDir() {
+		// Directory must be opened ReadOnly.
+		if t.Flags&OpenFlagsModeMask != ReadOnly {
+			return newErr(syscall.EISDIR)
+		}
+		// Directory not truncatable.
+		if t.Flags&OpenTruncate != 0 {
+			return newErr(syscall.EISDIR)
+		}
 	}
 
 	var (

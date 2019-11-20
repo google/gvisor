@@ -180,7 +180,7 @@ func (i *inodeFileState) setSharedHandlesLocked(flags fs.FileFlags, h *handles) 
 // given flags.
 func (i *inodeFileState) getHandles(ctx context.Context, flags fs.FileFlags, cache *fsutil.CachingInodeOperations) (*handles, error) {
 	if !i.canShareHandles() {
-		return newHandles(ctx, i.file, flags)
+		return newHandles(ctx, i.s.client, i.file, flags)
 	}
 
 	i.handlesMu.Lock()
@@ -201,19 +201,25 @@ func (i *inodeFileState) getHandles(ctx context.Context, flags fs.FileFlags, cac
 // whether previously open read handle was recreated. Host mappings must be
 // invalidated if so.
 func (i *inodeFileState) getHandlesLocked(ctx context.Context, flags fs.FileFlags) (*handles, bool, error) {
-	// Do we already have usable shared handles?
-	if flags.Write {
+	// Check if we are able to use cached handles.
+	if flags.Truncate && p9.VersionSupportsOpenTruncateFlag(i.s.client.Version()) {
+		// If we are truncating (and the gofer supports it), then we
+		// always need a new handle. Don't return one from the cache.
+	} else if flags.Write {
 		if i.writeHandles != nil && (i.writeHandlesRW || !flags.Read) {
+			// File is opened for writing, and we have cached write
+			// handles that we can use.
 			i.writeHandles.IncRef()
 			return i.writeHandles, false, nil
 		}
 	} else if i.readHandles != nil {
+		// File is opened for reading and we have cached handles.
 		i.readHandles.IncRef()
 		return i.readHandles, false, nil
 	}
 
-	// No; get new handles and cache them for future sharing.
-	h, err := newHandles(ctx, i.file, flags)
+	// Get new handles and cache them for future sharing.
+	h, err := newHandles(ctx, i.s.client, i.file, flags)
 	if err != nil {
 		return nil, false, err
 	}
@@ -239,7 +245,7 @@ func (i *inodeFileState) recreateReadHandles(ctx context.Context, writer *handle
 	if !flags.Read {
 		// Writer can't be used for read, must create a new handle.
 		var err error
-		h, err = newHandles(ctx, i.file, fs.FileFlags{Read: true})
+		h, err = newHandles(ctx, i.s.client, i.file, fs.FileFlags{Read: true})
 		if err != nil {
 			return err
 		}
