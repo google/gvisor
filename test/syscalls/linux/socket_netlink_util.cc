@@ -12,15 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <sys/socket.h>
+#include "test/syscalls/linux/socket_netlink_util.h"
 
 #include <linux/if_arp.h>
 #include <linux/netlink.h>
+#include <sys/socket.h>
 
 #include <vector>
 
 #include "absl/strings/str_cat.h"
-#include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/syscalls/linux/socket_test_util.h"
 
 namespace gvisor {

@@ -25,6 +25,7 @@ go_library(
 proto_library(
     name = "eventchannel_proto",
     srcs = ["event.proto"],
+    visibility = ["//:sandbox"],
 )
 
 go_proto_library(

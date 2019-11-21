@@ -19,11 +19,11 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.dev/gvisor/third_party/gvsync"
+	"gvisor.dev/gvisor/pkg/syncutil"
 )
 
 func TestSeqAtomicLoadUncontended(t *testing.T) {
-	var seq gvsync.SeqCount
+	var seq syncutil.SeqCount
 	const want = 1
 	data := want
 	if got := SeqAtomicLoadInt(&seq, &data); got != want {
@@ -32,7 +32,7 @@ func TestSeqAtomicLoadUncontended(t *testing.T) {
 }
 
 func TestSeqAtomicLoadAfterWrite(t *testing.T) {
-	var seq gvsync.SeqCount
+	var seq syncutil.SeqCount
 	var data int
 	const want = 1
 	seq.BeginWrite()
@@ -44,7 +44,7 @@ func TestSeqAtomicLoadAfterWrite(t *testing.T) {
 }
 
 func TestSeqAtomicLoadDuringWrite(t *testing.T) {
-	var seq gvsync.SeqCount
+	var seq syncutil.SeqCount
 	var data int
 	const want = 1
 	seq.BeginWrite()
@@ -59,7 +59,7 @@ func TestSeqAtomicLoadDuringWrite(t *testing.T) {
 }
 
 func TestSeqAtomicTryLoadUncontended(t *testing.T) {
-	var seq gvsync.SeqCount
+	var seq syncutil.SeqCount
 	const want = 1
 	data := want
 	epoch := seq.BeginRead()
@@ -69,7 +69,7 @@ func TestSeqAtomicTryLoadUncontended(t *testing.T) {
 }
 
 func TestSeqAtomicTryLoadDuringWrite(t *testing.T) {
-	var seq gvsync.SeqCount
+	var seq syncutil.SeqCount
 	var data int
 	epoch := seq.BeginRead()
 	seq.BeginWrite()
@@ -80,7 +80,7 @@ func TestSeqAtomicTryLoadDuringWrite(t *testing.T) {
 }
 
 func TestSeqAtomicTryLoadAfterWrite(t *testing.T) {
-	var seq gvsync.SeqCount
+	var seq syncutil.SeqCount
 	var data int
 	epoch := seq.BeginRead()
 	seq.BeginWrite()
@@ -91,7 +91,7 @@ func TestSeqAtomicTryLoadAfterWrite(t *testing.T) {
 }
 
 func BenchmarkSeqAtomicLoadIntUncontended(b *testing.B) {
-	var seq gvsync.SeqCount
+	var seq syncutil.SeqCount
 	const want = 42
 	data := want
 	b.RunParallel(func(pb *testing.PB) {
@@ -104,7 +104,7 @@ func BenchmarkSeqAtomicLoadIntUncontended(b *testing.B) {
 }
 
 func BenchmarkSeqAtomicTryLoadIntUncontended(b *testing.B) {
-	var seq gvsync.SeqCount
+	var seq syncutil.SeqCount
 	const want = 42
 	data := want
 	b.RunParallel(func(pb *testing.PB) {

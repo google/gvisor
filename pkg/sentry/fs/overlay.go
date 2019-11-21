@@ -23,8 +23,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syncutil"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/third_party/gvsync"
 )
 
 // The virtual filesystem implements an overlay configuration. For a high-level
@@ -199,7 +199,7 @@ type overlayEntry struct {
 	upper *Inode
 
 	// dirCacheMu protects dirCache.
-	dirCacheMu gvsync.DowngradableRWMutex `state:"nosave"`
+	dirCacheMu syncutil.DowngradableRWMutex `state:"nosave"`
 
 	// dirCache is cache of DentAttrs from upper and lower Inodes.
 	dirCache *SortedDentryMap

@@ -9,7 +9,7 @@ go_template_instance(
     out = "seqatomic_parameters_unsafe.go",
     package = "time",
     suffix = "Parameters",
-    template = "//third_party/gvsync:generic_seqatomic",
+    template = "//pkg/syncutil:generic_seqatomic",
     types = {
         "Value": "Parameters",
     },
@@ -36,8 +36,8 @@ go_library(
     deps = [
         "//pkg/log",
         "//pkg/metric",
+        "//pkg/syncutil",
         "//pkg/syserror",
-        "//third_party/gvsync",
     ],
 )
 

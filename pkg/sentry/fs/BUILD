@@ -68,9 +68,9 @@ go_library(
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
         "//pkg/state",
+        "//pkg/syncutil",
         "//pkg/syserror",
         "//pkg/waiter",
-        "//third_party/gvsync",
     ],
 )
 

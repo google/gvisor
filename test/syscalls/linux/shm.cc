@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include <stdio.h>
-
 #include <sys/ipc.h>
 #include <sys/mman.h>
 #include <sys/shm.h>

@@ -9,7 +9,7 @@
 // addition of downgradingWriter and the renaming of num_iterations to
 // numIterations to shut up Golint.
 
-package gvsync
+package syncutil
 
 import (
 	"fmt"
