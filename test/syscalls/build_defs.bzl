@@ -93,6 +93,14 @@ def _syscall_test(
     # all the tests on a specific flavor. Use --test_tag_filters=ptrace,file_shared.
     tags += [full_platform, "file_" + file_access]
 
+    # Hash this target into one of 15 buckets. This will be used to randomly
+    # split targets between different workflows.
+    hash15 = hash(native.package_name() + name) % 15
+    tags += ["hash15:" + str(hash15)]
+
+    # Add tags for loopback support.
+    tags += ["requires-net:loopback", "requires-net:ipv4"]
+
     # Add tag to prevent the tests from running in a Bazel sandbox.
     # TODO(b/120560048): Make the tests run without this tag.
     tags.append("no-sandbox")

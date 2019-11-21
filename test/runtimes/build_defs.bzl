@@ -32,9 +32,8 @@ def runtime_test(
         "--image",
         "/".join([image_repo, image_name]),
     ]
-    data = [
-        ":runner",
-    ]
+    data = [":runner"]
+
     if blacklist_file:
         args += ["--blacklist_file", "test/runtimes/" + blacklist_file]
         data += [blacklist_file]
@@ -54,6 +53,9 @@ def runtime_test(
             "local",
             # Don't include test target in wildcard target patterns.
             "manual",
+            # Require loopback support.
+            "requires-net:loopback",
+            "requires-net:ipv4",
         ],
     )
 
