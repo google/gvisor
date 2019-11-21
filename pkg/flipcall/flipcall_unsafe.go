@@ -18,7 +18,7 @@ import (
 	"reflect"
 	"unsafe"
 
-	"gvisor.dev/gvisor/third_party/gvsync"
+	"gvisor.dev/gvisor/pkg/syncutil"
 )
 
 // Packets consist of a 16-byte header followed by an arbitrarily-sized
@@ -75,13 +75,13 @@ func (ep *Endpoint) Data() []byte {
 var ioSync int64
 
 func raceBecomeActive() {
-	if gvsync.RaceEnabled {
-		gvsync.RaceAcquire((unsafe.Pointer)(&ioSync))
+	if syncutil.RaceEnabled {
+		syncutil.RaceAcquire((unsafe.Pointer)(&ioSync))
 	}
 }
 
 func raceBecomeInactive() {
-	if gvsync.RaceEnabled {
-		gvsync.RaceReleaseMerge((unsafe.Pointer)(&ioSync))
+	if syncutil.RaceEnabled {
+		syncutil.RaceReleaseMerge((unsafe.Pointer)(&ioSync))
 	}
 }

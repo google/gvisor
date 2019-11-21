@@ -35,8 +35,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syncutil"
 	"gvisor.dev/gvisor/pkg/waiter"
-	"gvisor.dev/gvisor/third_party/gvsync"
 )
 
 // Task represents a thread of execution in the untrusted app.  It
@@ -83,7 +83,7 @@ type Task struct {
 	//
 	// gosched is protected by goschedSeq. gosched is owned by the task
 	// goroutine.
-	goschedSeq gvsync.SeqCount `state:"nosave"`
+	goschedSeq syncutil.SeqCount `state:"nosave"`
 	gosched    TaskGoroutineSchedInfo
 
 	// yieldCount is the number of times the task goroutine has called

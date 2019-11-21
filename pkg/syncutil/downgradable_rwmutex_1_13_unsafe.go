@@ -8,7 +8,7 @@
 
 // Check go:linkname function signatures when updating Go version.
 
-package gvsync
+package syncutil
 
 import _ "unsafe"
 
