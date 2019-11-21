@@ -1,4 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//tools/go_stateify:defs.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template")
 
 package(
@@ -28,26 +29,26 @@ go_template(
 )
 
 go_library(
-    name = "gvsync",
+    name = "syncutil",
     srcs = [
         "downgradable_rwmutex_1_12_unsafe.go",
         "downgradable_rwmutex_1_13_unsafe.go",
         "downgradable_rwmutex_unsafe.go",
-        "gvsync.go",
         "memmove_unsafe.go",
         "norace_unsafe.go",
         "race_unsafe.go",
         "seqcount.go",
+        "syncutil.go",
     ],
-    importpath = "gvisor.dev/gvisor/third_party/gvsync",
+    importpath = "gvisor.dev/gvisor/pkg/syncutil",
 )
 
 go_test(
-    name = "gvsync_test",
+    name = "syncutil_test",
     size = "small",
     srcs = [
         "downgradable_rwmutex_test.go",
         "seqcount_test.go",
     ],
-    embed = [":gvsync"],
+    embed = [":syncutil"],
 )

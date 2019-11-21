@@ -1,6 +1,6 @@
-package(licenses = ["notice"])
-
 load("//tools/go_marshal:defs.bzl", "go_library")
+
+package(licenses = ["notice"])
 
 go_library(
     name = "external",

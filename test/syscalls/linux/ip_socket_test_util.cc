@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "test/syscalls/linux/ip_socket_test_util.h"
+
 #include <net/if.h>
 #include <netinet/in.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
-#include <cstring>
 
-#include "test/syscalls/linux/ip_socket_test_util.h"
+#include <cstring>
 
 namespace gvisor {
 namespace testing {

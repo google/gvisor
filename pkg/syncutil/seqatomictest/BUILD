@@ -1,4 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//tools/go_stateify:defs.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
@@ -8,7 +9,7 @@ go_template_instance(
     out = "seqatomic_int_unsafe.go",
     package = "seqatomic",
     suffix = "Int",
-    template = "//third_party/gvsync:generic_seqatomic",
+    template = "//pkg/syncutil:generic_seqatomic",
     types = {
         "Value": "int",
     },
@@ -17,9 +18,9 @@ go_template_instance(
 go_library(
     name = "seqatomic",
     srcs = ["seqatomic_int_unsafe.go"],
-    importpath = "gvisor.dev/gvisor/third_party/gvsync/seqatomic",
+    importpath = "gvisor.dev/gvisor/pkg/syncutil/seqatomic",
     deps = [
-        "//third_party/gvsync",
+        "//pkg/syncutil",
     ],
 )
 
@@ -29,6 +30,6 @@ go_test(
     srcs = ["seqatomic_test.go"],
     embed = [":seqatomic"],
     deps = [
-        "//third_party/gvsync",
+        "//pkg/syncutil",
     ],
 )

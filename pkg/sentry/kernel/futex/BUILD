@@ -9,7 +9,7 @@ go_template_instance(
     out = "atomicptr_bucket_unsafe.go",
     package = "futex",
     suffix = "Bucket",
-    template = "//third_party/gvsync:generic_atomicptr",
+    template = "//pkg/syncutil:generic_atomicptr",
     types = {
         "Value": "bucket",
     },

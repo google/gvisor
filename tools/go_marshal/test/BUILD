@@ -1,8 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools/go_marshal:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
-
-load("//tools/go_marshal:defs.bzl", "go_library")
 
 package_group(
     name = "gomarshal_test",

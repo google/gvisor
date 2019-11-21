@@ -16,7 +16,7 @@
 // - RUnlock -> Lock (via writerSem)
 // - DowngradeLock -> RLock (via readerSem)
 
-package gvsync
+package syncutil
 
 import (
 	"sync"

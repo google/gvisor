@@ -44,7 +44,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
-	"gvisor.dev/gvisor/third_party/gvsync"
+	"gvisor.dev/gvisor/pkg/syncutil"
 )
 
 // MemoryManager implements a virtual address space.
@@ -82,7 +82,7 @@ type MemoryManager struct {
 	users int32
 
 	// mappingMu is analogous to Linux's struct mm_struct::mmap_sem.
-	mappingMu gvsync.DowngradableRWMutex `state:"nosave"`
+	mappingMu syncutil.DowngradableRWMutex `state:"nosave"`
 
 	// vmas stores virtual memory areas. Since vmas are stored by value,
 	// clients should usually use vmaIterator.ValuePtr() instead of
@@ -125,7 +125,7 @@ type MemoryManager struct {
 
 	// activeMu is loosely analogous to Linux's struct
 	// mm_struct::page_table_lock.
-	activeMu gvsync.DowngradableRWMutex `state:"nosave"`
+	activeMu syncutil.DowngradableRWMutex `state:"nosave"`
 
 	// pmas stores platform mapping areas used to implement vmas. Since pmas
 	// are stored by value, clients should usually use pmaIterator.ValuePtr()

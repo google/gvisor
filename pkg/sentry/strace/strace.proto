@@ -32,8 +32,7 @@ message Strace {
   }
 }
 
-message StraceEnter {
-}
+message StraceEnter {}
 
 message StraceExit {
   // Return value formatted as string.

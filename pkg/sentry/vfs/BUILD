@@ -33,9 +33,9 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
         "//pkg/sentry/usermem",
+        "//pkg/syncutil",
         "//pkg/syserror",
         "//pkg/waiter",
-        "//third_party/gvsync",
     ],
 )
 
