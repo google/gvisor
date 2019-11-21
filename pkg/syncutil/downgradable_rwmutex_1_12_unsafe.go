@@ -8,7 +8,7 @@
 
 // TODO(b/133868570): Delete once Go 1.12 is no longer supported.
 
-package gvsync
+package syncutil
 
 import _ "unsafe"
 
