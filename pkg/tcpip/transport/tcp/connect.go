@@ -1368,8 +1368,11 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 	// unlocks e.mu. Now that no new segments can get enqueued to this
 	// endpoint, try to re-match the segment to a different endpoint
 	// as the current endpoint is closed.
-	for !e.segmentQueue.empty() {
+	for {
 		s := e.segmentQueue.dequeue()
+		if s == nil {
+			break
+		}
 		e.tryDeliverSegmentFromClosedEndpoint(s)
 	}
 
