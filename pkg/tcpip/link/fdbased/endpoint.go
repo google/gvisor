@@ -440,7 +440,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 
 // WritePackets writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
-func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []tcpip.PacketBuffer, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	var ethHdrBuf []byte
 	// hdr + data
 	iovLen := 2
@@ -463,9 +463,9 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.Pac
 		iovLen++
 	}
 
-	n := len(hdrs)
+	n := len(pkts)
 
-	views := payload.Views()
+	views := pkts[0].Data.Views()
 	/*
 	 * Each bondary in views can add one more iovec.
 	 *
@@ -483,14 +483,20 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.Pac
 	viewOff := 0
 	off := 0
 	nextOff := 0
-	for i := range hdrs {
+	for i := range pkts {
+		// TODO(b/134618279): Different packets may have different data
+		// in the future. We should handle this.
+		if !viewsEqual(pkts[i].Data.Views(), views) {
+			panic("All packets in pkts should have the same Data.")
+		}
+
 		prevIovecIdx := iovecIdx
 		mmsgHdr := &mmsgHdrs[i]
 		mmsgHdr.Msg.Iov = &iovec[iovecIdx]
-		packetSize := hdrs[i].Size
-		hdr := &hdrs[i].Hdr
+		packetSize := pkts[i].DataSize
+		hdr := &pkts[i].Header
 
-		off = hdrs[i].Off
+		off = pkts[i].DataOffset
 		if off != nextOff {
 			// We stop in a different point last time.
 			size := packetSize
@@ -553,6 +559,11 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.Pac
 		mmsgHdrs = mmsgHdrs[sent:]
 	}
 	return packets, nil
+}
+
+// viewsEqual tests whether v1 and v2 refer to the same backing bytes.
+func viewsEqual(vs1, vs2 []buffer.View) bool {
+	return len(vs1) == len(vs2) && (len(vs1) == 0 || &vs1[0] == &vs2[0])
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.

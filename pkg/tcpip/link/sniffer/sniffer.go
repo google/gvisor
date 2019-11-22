@@ -233,15 +233,15 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 // WritePackets implements the stack.LinkEndpoint interface. It is called by
 // higher-level protocols to write packets; it just logs the packet and
 // forwards the request to the lower endpoint.
-func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
-	view := payload.ToView()
-	for _, d := range hdrs {
+func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []tcpip.PacketBuffer, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+	view := pkts[0].Data.ToView()
+	for _, pkt := range pkts {
 		e.dumpPacket(gso, protocol, tcpip.PacketBuffer{
-			Header: d.Hdr,
-			Data:   view[d.Off:][:d.Size].ToVectorisedView(),
+			Header: pkt.Header,
+			Data:   view[pkt.DataOffset:][:pkt.DataSize].ToVectorisedView(),
 		})
 	}
-	return e.lower.WritePackets(r, gso, hdrs, payload, protocol)
+	return e.lower.WritePackets(r, gso, pkts, protocol)
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.

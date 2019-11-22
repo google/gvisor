@@ -31,6 +31,14 @@ type PacketBuffer struct {
 	// or otherwise modified.
 	Data buffer.VectorisedView
 
+	// DataOffset is used for GSO output. It is the offset into the Data
+	// field where the payload of this packet starts.
+	DataOffset int
+
+	// DataSize is used for GSO output. It is the size of this packet's
+	// payload.
+	DataSize int
+
 	// Header holds the headers of outbound packets. As a packet is passed
 	// down the stack, each layer adds to Header.
 	Header buffer.Prependable
