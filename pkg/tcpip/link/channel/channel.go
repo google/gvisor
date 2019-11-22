@@ -133,16 +133,16 @@ func (e *Endpoint) WritePacket(_ *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 }
 
 // WritePackets stores outbound packets into the channel.
-func (e *Endpoint) WritePackets(_ *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
-	payloadView := payload.ToView()
+func (e *Endpoint) WritePackets(_ *stack.Route, gso *stack.GSO, pkts []tcpip.PacketBuffer, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+	payloadView := pkts[0].Data.ToView()
 	n := 0
 packetLoop:
-	for _, hdr := range hdrs {
-		off := hdr.Off
-		size := hdr.Size
+	for _, pkt := range pkts {
+		off := pkt.DataOffset
+		size := pkt.DataSize
 		p := PacketInfo{
 			Pkt: tcpip.PacketBuffer{
-				Header: hdr.Hdr,
+				Header: pkt.Header,
 				Data:   buffer.NewViewFromBytes(payloadView[off : off+size]).ToVectorisedView(),
 			},
 			Proto: protocol,
