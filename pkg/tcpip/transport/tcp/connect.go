@@ -631,11 +631,11 @@ func (e *endpoint) sendTCP(r *stack.Route, id stack.TransportEndpointID, data bu
 	return nil
 }
 
-func buildTCPHdr(r *stack.Route, id stack.TransportEndpointID, d *stack.PacketDescriptor, data buffer.VectorisedView, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts []byte, gso *stack.GSO) {
+func buildTCPHdr(r *stack.Route, id stack.TransportEndpointID, pkt *tcpip.PacketBuffer, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts []byte, gso *stack.GSO) {
 	optLen := len(opts)
-	hdr := &d.Hdr
-	packetSize := d.Size
-	off := d.Off
+	hdr := &pkt.Header
+	packetSize := pkt.DataSize
+	off := pkt.DataOffset
 	// Initialize the header.
 	tcp := header.TCP(hdr.Prepend(header.TCPMinimumSize + optLen))
 	tcp.Encode(&header.TCPFields{
@@ -659,7 +659,7 @@ func buildTCPHdr(r *stack.Route, id stack.TransportEndpointID, d *stack.PacketDe
 		// header and data and get the right sum of the TCP packet.
 		tcp.SetChecksum(xsum)
 	} else if r.Capabilities()&stack.CapabilityTXChecksumOffload == 0 {
-		xsum = header.ChecksumVVWithOffset(data, xsum, off, packetSize)
+		xsum = header.ChecksumVVWithOffset(pkt.Data, xsum, off, packetSize)
 		tcp.SetChecksum(^tcp.CalculateChecksum(xsum))
 	}
 
@@ -674,7 +674,13 @@ func sendTCPBatch(r *stack.Route, id stack.TransportEndpointID, data buffer.Vect
 	mss := int(gso.MSS)
 	n := (data.Size() + mss - 1) / mss
 
-	hdrs := stack.NewPacketDescriptors(n, header.TCPMinimumSize+int(r.MaxHeaderLength())+optLen)
+	// Allocate one big slice for all the headers.
+	hdrSize := header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen
+	buf := make([]byte, n*hdrSize)
+	pkts := make([]tcpip.PacketBuffer, n)
+	for i := range pkts {
+		pkts[i].Header = buffer.NewEmptyPrependableFromView(buf[i*hdrSize:][:hdrSize])
+	}
 
 	size := data.Size()
 	off := 0
@@ -684,16 +690,17 @@ func sendTCPBatch(r *stack.Route, id stack.TransportEndpointID, data buffer.Vect
 			packetSize = size
 		}
 		size -= packetSize
-		hdrs[i].Off = off
-		hdrs[i].Size = packetSize
-		buildTCPHdr(r, id, &hdrs[i], data, flags, seq, ack, rcvWnd, opts, gso)
+		pkts[i].DataOffset = off
+		pkts[i].DataSize = packetSize
+		pkts[i].Data = data
+		buildTCPHdr(r, id, &pkts[i], flags, seq, ack, rcvWnd, opts, gso)
 		off += packetSize
 		seq = seq.Add(seqnum.Size(packetSize))
 	}
 	if ttl == 0 {
 		ttl = r.DefaultTTL()
 	}
-	sent, err := r.WritePackets(gso, hdrs, data, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: ttl, TOS: tos})
+	sent, err := r.WritePackets(gso, pkts, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: ttl, TOS: tos})
 	if err != nil {
 		r.Stats().TCP.SegmentSendErrors.IncrementBy(uint64(n - sent))
 	}
@@ -713,20 +720,18 @@ func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.Vectorise
 		return sendTCPBatch(r, id, data, ttl, tos, flags, seq, ack, rcvWnd, opts, gso)
 	}
 
-	d := &stack.PacketDescriptor{
-		Hdr:  buffer.NewPrependable(header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen),
-		Off:  0,
-		Size: data.Size(),
+	pkt := tcpip.PacketBuffer{
+		Header:     buffer.NewPrependable(header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen),
+		DataOffset: 0,
+		DataSize:   data.Size(),
+		Data:       data,
 	}
-	buildTCPHdr(r, id, d, data, flags, seq, ack, rcvWnd, opts, gso)
+	buildTCPHdr(r, id, &pkt, flags, seq, ack, rcvWnd, opts, gso)
 
 	if ttl == 0 {
 		ttl = r.DefaultTTL()
 	}
-	if err := r.WritePacket(gso, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: ttl, TOS: tos}, tcpip.PacketBuffer{
-		Header: d.Hdr,
-		Data:   data,
-	}); err != nil {
+	if err := r.WritePacket(gso, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: ttl, TOS: tos}, pkt); err != nil {
 		r.Stats().TCP.SegmentSendErrors.Increment()
 		return err
 	}
