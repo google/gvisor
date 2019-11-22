@@ -15,6 +15,8 @@
 #ifndef GVISOR_TEST_SYSCALLS_SOCKET_NETLINK_UTIL_H_
 #define GVISOR_TEST_SYSCALLS_SOCKET_NETLINK_UTIL_H_
 
+#include <sys/socket.h>
+// socket.h has to be included before if_arp.h.
 #include <linux/if_arp.h>
 #include <linux/netlink.h>
 
