@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"flag"
 
@@ -236,6 +237,18 @@ func main() {
 	if *debug {
 		log.SetLevel(log.Debug)
 	}
+
+	// Logging will include the local date and time via the time package.
+	//
+	// On first use, time.Local initializes the local time zone, which
+	// involves opening tzdata files on the host. Since this requires
+	// opening host files, it must be done before syscall filter
+	// installation.
+	//
+	// Generally there will be a log message before filter installation
+	// that will force initialization, but force initialization here in
+	// case that does not occur.
+	_ = time.Local.String()
 
 	subcommand := flag.CommandLine.Arg(0)
 
