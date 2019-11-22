@@ -48,15 +48,6 @@ func New(a Allocator) *PageTables {
 	return p
 }
 
-// Init initializes a set of PageTables.
-//
-//go:nosplit
-func (p *PageTables) Init(allocator Allocator) {
-	p.Allocator = allocator
-	p.root = p.Allocator.NewPTEs()
-	p.rootPhysical = p.Allocator.PhysicalFor(p.root)
-}
-
 // mapVisitor is used for map.
 type mapVisitor struct {
 	target   uintptr // Input.
