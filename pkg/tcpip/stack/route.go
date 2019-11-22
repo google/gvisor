@@ -17,7 +17,6 @@ package stack
 import (
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -169,39 +168,21 @@ func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt tcpip.Pack
 	return err
 }
 
-// PacketDescriptor is a packet descriptor which contains a packet header and
-// offset and size of packet data in a payload view.
-type PacketDescriptor struct {
-	Hdr  buffer.Prependable
-	Off  int
-	Size int
-}
-
-// NewPacketDescriptors allocates a set of packet descriptors.
-func NewPacketDescriptors(n int, hdrSize int) []PacketDescriptor {
-	buf := make([]byte, n*hdrSize)
-	hdrs := make([]PacketDescriptor, n)
-	for i := range hdrs {
-		hdrs[i].Hdr = buffer.NewEmptyPrependableFromView(buf[i*hdrSize:][:hdrSize])
-	}
-	return hdrs
-}
-
 // WritePackets writes the set of packets through the given route.
-func (r *Route) WritePackets(gso *GSO, hdrs []PacketDescriptor, payload buffer.VectorisedView, params NetworkHeaderParams) (int, *tcpip.Error) {
+func (r *Route) WritePackets(gso *GSO, pkts []tcpip.PacketBuffer, params NetworkHeaderParams) (int, *tcpip.Error) {
 	if !r.ref.isValidForOutgoing() {
 		return 0, tcpip.ErrInvalidEndpointState
 	}
 
-	n, err := r.ref.ep.WritePackets(r, gso, hdrs, payload, params, r.Loop)
+	n, err := r.ref.ep.WritePackets(r, gso, pkts, params, r.Loop)
 	if err != nil {
-		r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(len(hdrs) - n))
+		r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(len(pkts) - n))
 	}
 	r.ref.nic.stats.Tx.Packets.IncrementBy(uint64(n))
 	payloadSize := 0
 	for i := 0; i < n; i++ {
-		r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(hdrs[i].Hdr.UsedLength()))
-		payloadSize += hdrs[i].Size
+		r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(pkts[i].Header.UsedLength()))
+		payloadSize += pkts[i].DataSize
 	}
 	r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(payloadSize))
 	return n, err
