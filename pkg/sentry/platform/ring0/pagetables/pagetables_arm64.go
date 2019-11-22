@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2019 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,13 +19,12 @@ package pagetables
 // The lowerTop and upperBottom currently apply to four-level pagetables;
 // additional refactoring would be necessary to support five-level pagetables.
 const (
-	lowerTop    = 0x00007fffffffffff
-	upperBottom = 0xffff800000000000
-
-	pteShift = 12
-	pmdShift = 21
-	pudShift = 30
-	pgdShift = 39
+	lowerTop    = 0x0000ffffffffffff
+	upperBottom = 0xffff000000000000
+	pteShift    = 12
+	pmdShift    = 21
+	pudShift    = 30
+	pgdShift    = 39
 
 	pteMask = 0x1ff << pteShift
 	pmdMask = 0x1ff << pmdShift
@@ -37,7 +36,9 @@ const (
 	pudSize = 1 << pudShift
 	pgdSize = 1 << pgdShift
 
-	executeDisable = 1 << 63
+	ttbrASIDOffset = 55
+	ttbrASIDMask   = 0xff
+
 	entriesPerPage = 512
 )
 
@@ -48,6 +49,8 @@ func (p *PageTables) Init(allocator Allocator) {
 	p.Allocator = allocator
 	p.root = p.Allocator.NewPTEs()
 	p.rootPhysical = p.Allocator.PhysicalFor(p.root)
+	p.archPageTables.root = p.Allocator.NewPTEs()
+	p.archPageTables.rootPhysical = p.Allocator.PhysicalFor(p.archPageTables.root)
 }
 
 // PTEs is a collection of entries.
