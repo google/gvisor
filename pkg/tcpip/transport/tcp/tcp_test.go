@@ -4673,7 +4673,7 @@ func TestListenSynRcvdQueueFull(t *testing.T) {
 		SrcPort: context.TestPort,
 		DstPort: context.StackPort,
 		Flags:   header.TCPFlagSyn,
-		SeqNum:  seqnum.Value(789),
+		SeqNum:  irs,
 		RcvWnd:  30000,
 	})
 
@@ -4822,6 +4822,125 @@ func TestListenBacklogFullSynCookieInUse(t *testing.T) {
 			t.Fatalf("unexpected endpoint delivered on Accept: %+v", c.EP)
 		case <-time.After(1 * time.Second):
 		}
+	}
+}
+
+func TestSynRcvdBadSeqNumber(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	// Create TCP endpoint.
+	var err *tcpip.Error
+	c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
+	if err != nil {
+		t.Fatalf("NewEndpoint failed: %s", err)
+	}
+
+	// Bind to wildcard.
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		t.Fatalf("Bind failed: %s", err)
+	}
+
+	// Start listening.
+	if err := c.EP.Listen(10); err != nil {
+		t.Fatalf("Listen failed: %s", err)
+	}
+
+	// Send a SYN to get a SYN-ACK. This should put the ep into SYN-RCVD state
+	irs := seqnum.Value(789)
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagSyn,
+		SeqNum:  irs,
+		RcvWnd:  30000,
+	})
+
+	// Receive the SYN-ACK reply.
+	b := c.GetPacket()
+	tcpHdr := header.TCP(header.IPv4(b).Payload())
+	iss := seqnum.Value(tcpHdr.SequenceNumber())
+	tcpCheckers := []checker.TransportChecker{
+		checker.SrcPort(context.StackPort),
+		checker.DstPort(context.TestPort),
+		checker.TCPFlags(header.TCPFlagAck | header.TCPFlagSyn),
+		checker.AckNum(uint32(irs) + 1),
+	}
+	checker.IPv4(t, b, checker.TCP(tcpCheckers...))
+
+	// Now send a packet with an out-of-window sequence number
+	largeSeqnum := irs + seqnum.Value(tcpHdr.WindowSize()) + 1
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  largeSeqnum,
+		AckNum:  iss + 1,
+		RcvWnd:  30000,
+	})
+
+	// Should receive an ACK with the expected SEQ number
+	b = c.GetPacket()
+	tcpCheckers = []checker.TransportChecker{
+		checker.SrcPort(context.StackPort),
+		checker.DstPort(context.TestPort),
+		checker.TCPFlags(header.TCPFlagAck),
+		checker.AckNum(uint32(irs) + 1),
+		checker.SeqNum(uint32(iss + 1)),
+	}
+	checker.IPv4(t, b, checker.TCP(tcpCheckers...))
+
+	// Now that the socket replied appropriately with the ACK,
+	// complete the connection to test that the large SEQ num
+	// did not change the state from SYN-RCVD.
+
+	// Send ACK to move to ESTABLISHED state.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  irs + 1,
+		AckNum:  iss + 1,
+		RcvWnd:  30000,
+	})
+
+	newEP, _, err := c.EP.Accept()
+
+	if err != nil && err != tcpip.ErrWouldBlock {
+		t.Fatalf("Accept failed: %s", err)
+	}
+
+	if err == tcpip.ErrWouldBlock {
+		// Try to accept the connections in the backlog.
+		we, ch := waiter.NewChannelEntry(nil)
+		c.WQ.EventRegister(&we, waiter.EventIn)
+		defer c.WQ.EventUnregister(&we)
+
+		// Wait for connection to be established.
+		select {
+		case <-ch:
+			newEP, _, err = c.EP.Accept()
+			if err != nil {
+				t.Fatalf("Accept failed: %s", err)
+			}
+
+		case <-time.After(1 * time.Second):
+			t.Fatalf("Timed out waiting for accept")
+		}
+	}
+
+	// Now verify that the TCP socket is usable and in a connected state.
+	data := "Don't panic"
+	_, _, err = newEP.Write(tcpip.SlicePayload(buffer.NewViewFromBytes([]byte(data))), tcpip.WriteOptions{})
+
+	if err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+
+	pkt := c.GetPacket()
+	tcpHdr = header.TCP(header.IPv4(pkt).Payload())
+	if string(tcpHdr.Payload()) != data {
+		t.Fatalf("Unexpected data: got %s, want %s", string(tcpHdr.Payload()), data)
 	}
 }
 
