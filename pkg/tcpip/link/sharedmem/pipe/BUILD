@@ -12,7 +12,7 @@ go_library(
         "tx.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/pipe",
-    visibility = ["//:sandbox"],
+    visibility = ["//visibility:public"],
 )
 
 go_test(

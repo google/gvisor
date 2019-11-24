@@ -6,7 +6,7 @@ go_library(
     name = "loopback",
     srcs = ["loopback.go"],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/link/loopback",
-    visibility = ["//:sandbox"],
+    visibility = ["//visibility:public"],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",

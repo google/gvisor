@@ -7,9 +7,7 @@ go_library(
     name = "jenkins",
     srcs = ["jenkins.go"],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/hash/jenkins",
-    visibility = [
-        "//visibility:public",
-    ],
+    visibility = ["//visibility:public"],
 )
 
 go_test(

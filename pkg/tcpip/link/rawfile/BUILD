@@ -13,9 +13,7 @@ go_library(
         "rawfile_unsafe.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/link/rawfile",
-    visibility = [
-        "//visibility:public",
-    ],
+    visibility = ["//visibility:public"],
     deps = [
         "//pkg/tcpip",
         "@org_golang_x_sys//unix:go_default_library",

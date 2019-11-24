@@ -6,7 +6,7 @@ go_library(
     name = "channel",
     srcs = ["channel.go"],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/link/channel",
-    visibility = ["//:sandbox"],
+    visibility = ["//visibility:public"],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",

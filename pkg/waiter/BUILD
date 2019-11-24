@@ -34,11 +34,3 @@ go_test(
     ],
     embed = [":waiter"],
 )
-
-filegroup(
-    name = "autogen",
-    srcs = [
-        "waiter_list.go",
-    ],
-    visibility = ["//:sandbox"],
-)

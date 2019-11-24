@@ -8,7 +8,7 @@ go_library(
     srcs = ["context.go"],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context",
     visibility = [
-        "//:sandbox",
+        "//visibility:public",
     ],
     deps = [
         "//pkg/tcpip",
