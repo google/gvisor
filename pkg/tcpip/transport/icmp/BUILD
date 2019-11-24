@@ -38,11 +38,3 @@ go_library(
         "//pkg/waiter",
     ],
 )
-
-filegroup(
-    name = "autogen",
-    srcs = [
-        "icmp_packet_list.go",
-    ],
-    visibility = ["//:sandbox"],
-)

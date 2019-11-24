@@ -7,9 +7,7 @@ go_library(
     name = "arp",
     srcs = ["arp.go"],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/network/arp",
-    visibility = [
-        "//visibility:public",
-    ],
+    visibility = ["//visibility:public"],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",

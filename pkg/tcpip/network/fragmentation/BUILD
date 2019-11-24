@@ -25,7 +25,7 @@ go_library(
         "reassembler_list.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/network/fragmentation",
-    visibility = ["//:sandbox"],
+    visibility = ["//visibility:public"],
     deps = [
         "//pkg/log",
         "//pkg/tcpip",
@@ -43,12 +43,4 @@ go_test(
     ],
     embed = [":fragmentation"],
     deps = ["//pkg/tcpip/buffer"],
-)
-
-filegroup(
-    name = "autogen",
-    srcs = [
-        "reassembler_list.go",
-    ],
-    visibility = ["//:sandbox"],
 )

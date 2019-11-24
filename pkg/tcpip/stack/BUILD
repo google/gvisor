@@ -31,9 +31,7 @@ go_library(
         "transport_demuxer.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/stack",
-    visibility = [
-        "//visibility:public",
-    ],
+    visibility = ["//visibility:public"],
     deps = [
         "//pkg/ilist",
         "//pkg/rand",
@@ -86,12 +84,4 @@ go_test(
         "//pkg/sleep",
         "//pkg/tcpip",
     ],
-)
-
-filegroup(
-    name = "autogen",
-    srcs = [
-        "linkaddrentry_list.go",
-    ],
-    visibility = ["//:sandbox"],
 )

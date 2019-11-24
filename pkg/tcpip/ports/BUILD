@@ -7,7 +7,7 @@ go_library(
     name = "ports",
     srcs = ["ports.go"],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/ports",
-    visibility = ["//:sandbox"],
+    visibility = ["//visibility:public"],
     deps = [
         "//pkg/tcpip",
     ],

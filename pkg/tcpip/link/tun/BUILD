@@ -6,7 +6,5 @@ go_library(
     name = "tun",
     srcs = ["tun_unsafe.go"],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/link/tun",
-    visibility = [
-        "//visibility:public",
-    ],
+    visibility = ["//visibility:public"],
 )

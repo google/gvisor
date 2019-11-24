@@ -9,9 +9,7 @@ go_library(
         "sniffer.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/link/sniffer",
-    visibility = [
-        "//visibility:public",
-    ],
+    visibility = ["//visibility:public"],
     deps = [
         "//pkg/log",
         "//pkg/tcpip",

@@ -14,9 +14,7 @@ go_library(
         "packet_dispatchers.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/link/fdbased",
-    visibility = [
-        "//visibility:public",
-    ],
+    visibility = ["//visibility:public"],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",

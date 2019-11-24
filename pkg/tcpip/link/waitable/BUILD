@@ -9,9 +9,7 @@ go_library(
         "waitable.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/link/waitable",
-    visibility = [
-        "//visibility:public",
-    ],
+    visibility = ["//visibility:public"],
     deps = [
         "//pkg/gate",
         "//pkg/tcpip",

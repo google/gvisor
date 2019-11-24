@@ -10,7 +10,7 @@ go_library(
         "tx.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue",
-    visibility = ["//:sandbox"],
+    visibility = ["//visibility:public"],
     deps = [
         "//pkg/log",
         "//pkg/tcpip/link/sharedmem/pipe",

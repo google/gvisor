@@ -10,9 +10,7 @@ go_library(
         "ipv6.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/network/ipv6",
-    visibility = [
-        "//visibility:public",
-    ],
+    visibility = ["//visibility:public"],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",

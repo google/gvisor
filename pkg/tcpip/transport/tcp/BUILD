@@ -61,14 +61,6 @@ go_library(
     ],
 )
 
-filegroup(
-    name = "autogen",
-    srcs = [
-        "tcp_segment_list.go",
-    ],
-    visibility = ["//:sandbox"],
-)
-
 go_test(
     name = "tcp_test",
     size = "medium",

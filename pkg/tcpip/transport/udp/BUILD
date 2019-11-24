@@ -59,11 +59,3 @@ go_test(
         "//pkg/waiter",
     ],
 )
-
-filegroup(
-    name = "autogen",
-    srcs = [
-        "udp_packet_list.go",
-    ],
-    visibility = ["//:sandbox"],
-)
