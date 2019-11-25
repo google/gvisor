@@ -465,6 +465,13 @@ func (m *mountHint) checkCompatible(mount specs.Mount) error {
 	return nil
 }
 
+func (m *mountHint) fileAccessType() FileAccessType {
+	if m.share == container {
+		return FileAccessExclusive
+	}
+	return FileAccessShared
+}
+
 func filterUnsupportedOptions(mount specs.Mount) []string {
 	rv := make([]string, 0, len(mount.Options))
 	for _, o := range mount.Options {
@@ -764,8 +771,7 @@ func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (
 	case bind:
 		fd := c.fds.remove()
 		fsName = "9p"
-		// Non-root bind mounts are always shared.
-		opts = p9MountOptions(fd, FileAccessShared)
+		opts = p9MountOptions(fd, c.getMountAccessType(m))
 		// If configured, add overlay to all writable mounts.
 		useOverlay = conf.Overlay && !mountFlags(m.Options).ReadOnly
 
@@ -776,6 +782,14 @@ func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (
 		log.Warningf("ignoring unknown filesystem type %q", m.Type)
 	}
 	return fsName, opts, useOverlay, nil
+}
+
+func (c *containerMounter) getMountAccessType(mount specs.Mount) FileAccessType {
+	if hint := c.hints.findMount(mount); hint != nil {
+		return hint.fileAccessType()
+	}
+	// Non-root bind mounts are always shared if no hints were provided.
+	return FileAccessShared
 }
 
 // mountSubmount mounts volumes inside the container's root. Because mounts may
