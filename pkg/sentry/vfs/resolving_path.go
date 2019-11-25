@@ -269,11 +269,11 @@ func (rp *ResolvingPath) ResolveParent(d *Dentry) (*Dentry, error) {
 		parent = d
 	} else if d == rp.mount.root {
 		// At mount root ...
-		mnt, mntpt := rp.vfs.getMountpointAt(rp.mount, rp.root)
-		if mnt != nil {
+		vd := rp.vfs.getMountpointAt(rp.mount, rp.root)
+		if vd.Ok() {
 			// ... of non-root mount.
-			rp.nextMount = mnt
-			rp.nextStart = mntpt
+			rp.nextMount = vd.mount
+			rp.nextStart = vd.dentry
 			return nil, resolveMountRootError{}
 		}
 		// ... of root mount.

@@ -16,6 +16,7 @@ package vfs
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -50,7 +51,7 @@ import (
 // and not inodes. Furthermore, when parties outside the scope of VFS can
 // rename inodes on such filesystems, VFS generally cannot "follow" the rename,
 // both due to synchronization issues and because it may not even be able to
-// name the destination path; this implies that it would in fact be *incorrect*
+// name the destination path; this implies that it would in fact be incorrect
 // for Dentries to be associated with inodes on such filesystems. Consequently,
 // operations that are inode operations in Linux are FilesystemImpl methods
 // and/or FileDescriptionImpl methods in gVisor's VFS. Filesystems that do
@@ -83,6 +84,9 @@ type Dentry struct {
 	// mounts is the number of Mounts for which this Dentry is Mount.point.
 	// mounts is accessed using atomic memory operations.
 	mounts uint32
+
+	// mu synchronizes disowning and mounting over this Dentry.
+	mu sync.Mutex
 
 	// children are child Dentries.
 	children map[string]*Dentry
@@ -228,42 +232,75 @@ func (vfs *VirtualFilesystem) PrepareDeleteDentry(mntns *MountNamespace, d *Dent
 			panic("d is already disowned")
 		}
 	}
-	vfs.mountMu.RLock()
-	if _, ok := mntns.mountpoints[d]; ok {
-		vfs.mountMu.RUnlock()
+	vfs.mountMu.Lock()
+	if mntns.mountpoints[d] != 0 {
+		vfs.mountMu.Unlock()
 		return syserror.EBUSY
 	}
-	// Return with vfs.mountMu locked, which will be unlocked by
-	// AbortDeleteDentry or CommitDeleteDentry.
+	d.mu.Lock()
+	vfs.mountMu.Unlock()
+	// Return with d.mu locked to block attempts to mount over it; it will be
+	// unlocked by AbortDeleteDentry or CommitDeleteDentry.
 	return nil
 }
 
 // AbortDeleteDentry must be called after PrepareDeleteDentry if the deletion
 // fails.
-func (vfs *VirtualFilesystem) AbortDeleteDentry() {
-	vfs.mountMu.RUnlock()
+func (vfs *VirtualFilesystem) AbortDeleteDentry(d *Dentry) {
+	d.mu.Unlock()
 }
 
 // CommitDeleteDentry must be called after the file represented by d is
 // deleted, and causes d to become disowned.
 //
+// CommitDeleteDentry is a mutator of d and d.Parent().
+//
 // Preconditions: PrepareDeleteDentry was previously called on d.
 func (vfs *VirtualFilesystem) CommitDeleteDentry(d *Dentry) {
-	delete(d.parent.children, d.name)
+	if d.parent != nil {
+		delete(d.parent.children, d.name)
+	}
 	d.setDisowned()
-	// TODO: lazily unmount mounts at d
-	vfs.mountMu.RUnlock()
+	d.mu.Unlock()
+	if d.isMounted() {
+		vfs.forgetDisownedMountpoint(d)
+	}
 }
 
 // DeleteDentry combines PrepareDeleteDentry and CommitDeleteDentry, as
 // appropriate for in-memory filesystems that don't need to ensure that some
 // external state change succeeds before committing the deletion.
+//
+// DeleteDentry is a mutator of d and d.Parent().
+//
+// Preconditions: d is a child Dentry.
 func (vfs *VirtualFilesystem) DeleteDentry(mntns *MountNamespace, d *Dentry) error {
 	if err := vfs.PrepareDeleteDentry(mntns, d); err != nil {
 		return err
 	}
 	vfs.CommitDeleteDentry(d)
 	return nil
+}
+
+// ForceDeleteDentry causes d to become disowned. It should only be used in
+// cases where VFS has no ability to stop the deletion (e.g. d represents the
+// local state of a file on a remote filesystem on which the file has already
+// been deleted).
+//
+// ForceDeleteDentry is a mutator of d and d.Parent().
+//
+// Preconditions: d is a child Dentry.
+func (vfs *VirtualFilesystem) ForceDeleteDentry(d *Dentry) {
+	if checkInvariants {
+		if d.parent == nil {
+			panic("d is independent")
+		}
+		if d.IsDisowned() {
+			panic("d is already disowned")
+		}
+	}
+	d.mu.Lock()
+	vfs.CommitDeleteDentry(d)
 }
 
 // PrepareRenameDentry must be called before attempting to rename the file
@@ -291,18 +328,21 @@ func (vfs *VirtualFilesystem) PrepareRenameDentry(mntns *MountNamespace, from, t
 			}
 		}
 	}
-	vfs.mountMu.RLock()
-	if _, ok := mntns.mountpoints[from]; ok {
-		vfs.mountMu.RUnlock()
+	vfs.mountMu.Lock()
+	if mntns.mountpoints[from] != 0 {
+		vfs.mountMu.Unlock()
 		return syserror.EBUSY
 	}
 	if to != nil {
-		if _, ok := mntns.mountpoints[to]; ok {
-			vfs.mountMu.RUnlock()
+		if mntns.mountpoints[to] != 0 {
+			vfs.mountMu.Unlock()
 			return syserror.EBUSY
 		}
+		to.mu.Lock()
 	}
-	// Return with vfs.mountMu locked, which will be unlocked by
+	from.mu.Lock()
+	vfs.mountMu.Unlock()
+	// Return with from.mu and to.mu locked, which will be unlocked by
 	// AbortRenameDentry, CommitRenameReplaceDentry, or
 	// CommitRenameExchangeDentry.
 	return nil
@@ -310,32 +350,44 @@ func (vfs *VirtualFilesystem) PrepareRenameDentry(mntns *MountNamespace, from, t
 
 // AbortRenameDentry must be called after PrepareRenameDentry if the rename
 // fails.
-func (vfs *VirtualFilesystem) AbortRenameDentry() {
-	vfs.mountMu.RUnlock()
+func (vfs *VirtualFilesystem) AbortRenameDentry(from, to *Dentry) {
+	from.mu.Unlock()
+	if to != nil {
+		to.mu.Unlock()
+	}
 }
 
 // CommitRenameReplaceDentry must be called after the file represented by from
 // is renamed without RENAME_EXCHANGE. If to is not nil, it represents the file
 // that was replaced by from.
 //
+// CommitRenameReplaceDentry is a mutator of from, to, from.Parent(), and
+// to.Parent().
+//
 // Preconditions: PrepareRenameDentry was previously called on from and to.
 // newParent.Child(newName) == to.
 func (vfs *VirtualFilesystem) CommitRenameReplaceDentry(from, newParent *Dentry, newName string, to *Dentry) {
-	if to != nil {
-		to.setDisowned()
-		// TODO: lazily unmount mounts at d
-	}
 	if newParent.children == nil {
 		newParent.children = make(map[string]*Dentry)
 	}
 	newParent.children[newName] = from
 	from.parent = newParent
 	from.name = newName
-	vfs.mountMu.RUnlock()
+	from.mu.Unlock()
+	if to != nil {
+		to.setDisowned()
+		to.mu.Unlock()
+		if to.isMounted() {
+			vfs.forgetDisownedMountpoint(to)
+		}
+	}
 }
 
 // CommitRenameExchangeDentry must be called after the files represented by
 // from and to are exchanged by rename(RENAME_EXCHANGE).
+//
+// CommitRenameExchangeDentry is a mutator of from, to, from.Parent(), and
+// to.Parent().
 //
 // Preconditions: PrepareRenameDentry was previously called on from and to.
 func (vfs *VirtualFilesystem) CommitRenameExchangeDentry(from, to *Dentry) {
@@ -343,5 +395,31 @@ func (vfs *VirtualFilesystem) CommitRenameExchangeDentry(from, to *Dentry) {
 	from.name, to.name = to.name, from.name
 	from.parent.children[from.name] = from
 	to.parent.children[to.name] = to
-	vfs.mountMu.RUnlock()
+	from.mu.Unlock()
+	to.mu.Unlock()
+}
+
+// forgetDisownedMountpoint is called when a mount point is deleted to umount
+// all mounts using it in all other mount namespaces.
+//
+// forgetDisownedMountpoint is analogous to Linux's
+// fs/namespace.c:__detach_mounts().
+func (vfs *VirtualFilesystem) forgetDisownedMountpoint(d *Dentry) {
+	var (
+		vdsToDecRef    []VirtualDentry
+		mountsToDecRef []*Mount
+	)
+	vfs.mountMu.Lock()
+	vfs.mounts.seq.BeginWrite()
+	for mnt := range vfs.mountpoints[d] {
+		vdsToDecRef, mountsToDecRef = vfs.umountRecursiveLocked(mnt, &umountRecursiveOptions{}, vdsToDecRef, mountsToDecRef)
+	}
+	vfs.mounts.seq.EndWrite()
+	vfs.mountMu.Unlock()
+	for _, vd := range vdsToDecRef {
+		vd.DecRef()
+	}
+	for _, mnt := range mountsToDecRef {
+		mnt.decRef()
+	}
 }
