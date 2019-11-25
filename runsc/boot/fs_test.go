@@ -191,3 +191,61 @@ func TestPodMountHintsErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestGetMountAccessType(t *testing.T) {
+	const source = "foo"
+	for _, tst := range []struct {
+		name        string
+		annotations map[string]string
+		want        FileAccessType
+	}{
+		{
+			name: "container=exclusive",
+			annotations: map[string]string{
+				path.Join(MountPrefix, "mount1", "source"): source,
+				path.Join(MountPrefix, "mount1", "type"):   "bind",
+				path.Join(MountPrefix, "mount1", "share"):  "container",
+			},
+			want: FileAccessExclusive,
+		},
+		{
+			name: "pod=shared",
+			annotations: map[string]string{
+				path.Join(MountPrefix, "mount1", "source"): source,
+				path.Join(MountPrefix, "mount1", "type"):   "bind",
+				path.Join(MountPrefix, "mount1", "share"):  "pod",
+			},
+			want: FileAccessShared,
+		},
+		{
+			name: "shared=shared",
+			annotations: map[string]string{
+				path.Join(MountPrefix, "mount1", "source"): source,
+				path.Join(MountPrefix, "mount1", "type"):   "bind",
+				path.Join(MountPrefix, "mount1", "share"):  "shared",
+			},
+			want: FileAccessShared,
+		},
+		{
+			name: "default=shared",
+			annotations: map[string]string{
+				path.Join(MountPrefix, "mount1", "source"): source + "mismatch",
+				path.Join(MountPrefix, "mount1", "type"):   "bind",
+				path.Join(MountPrefix, "mount1", "share"):  "container",
+			},
+			want: FileAccessShared,
+		},
+	} {
+		t.Run(tst.name, func(t *testing.T) {
+			spec := &specs.Spec{Annotations: tst.annotations}
+			podHints, err := newPodMountHints(spec)
+			if err != nil {
+				t.Fatalf("newPodMountHints failed: %v", err)
+			}
+			mounter := containerMounter{hints: podHints}
+			if got := mounter.getMountAccessType(specs.Mount{Source: source}); got != tst.want {
+				t.Errorf("getMountAccessType(), want: %v, got: %v", tst.want, got)
+			}
+		})
+	}
+}
