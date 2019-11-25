@@ -37,7 +37,7 @@ func TestMountTableInsertLookup(t *testing.T) {
 	mt.Init()
 
 	mount := &Mount{}
-	mount.storeKey(&Mount{}, &Dentry{})
+	mount.storeKey(VirtualDentry{&Mount{}, &Dentry{}})
 	mt.Insert(mount)
 
 	if m := mt.Lookup(mount.parent(), mount.point()); m != mount {
@@ -78,16 +78,8 @@ const enableComparativeBenchmarks = false
 
 func newBenchMount() *Mount {
 	mount := &Mount{}
-	mount.storeKey(&Mount{}, &Dentry{})
+	mount.storeKey(VirtualDentry{&Mount{}, &Dentry{}})
 	return mount
-}
-
-func vdkey(mnt *Mount) VirtualDentry {
-	parent, point := mnt.loadKey()
-	return VirtualDentry{
-		mount:  parent,
-		dentry: point,
-	}
 }
 
 func BenchmarkMountTableParallelLookup(b *testing.B) {
@@ -101,7 +93,7 @@ func BenchmarkMountTableParallelLookup(b *testing.B) {
 				for i := 0; i < numMounts; i++ {
 					mount := newBenchMount()
 					mt.Insert(mount)
-					keys = append(keys, vdkey(mount))
+					keys = append(keys, mount.loadKey())
 				}
 
 				var ready sync.WaitGroup
@@ -153,7 +145,7 @@ func BenchmarkMountMapParallelLookup(b *testing.B) {
 				keys := make([]VirtualDentry, 0, numMounts)
 				for i := 0; i < numMounts; i++ {
 					mount := newBenchMount()
-					key := vdkey(mount)
+					key := mount.loadKey()
 					ms[key] = mount
 					keys = append(keys, key)
 				}
@@ -208,7 +200,7 @@ func BenchmarkMountSyncMapParallelLookup(b *testing.B) {
 				keys := make([]VirtualDentry, 0, numMounts)
 				for i := 0; i < numMounts; i++ {
 					mount := newBenchMount()
-					key := vdkey(mount)
+					key := mount.loadKey()
 					ms.Store(key, mount)
 					keys = append(keys, key)
 				}
@@ -290,7 +282,7 @@ func BenchmarkMountMapNegativeLookup(b *testing.B) {
 			ms := make(map[VirtualDentry]*Mount)
 			for i := 0; i < numMounts; i++ {
 				mount := newBenchMount()
-				ms[vdkey(mount)] = mount
+				ms[mount.loadKey()] = mount
 			}
 			negkeys := make([]VirtualDentry, 0, numMounts)
 			for i := 0; i < numMounts; i++ {
@@ -325,7 +317,7 @@ func BenchmarkMountSyncMapNegativeLookup(b *testing.B) {
 			var ms sync.Map
 			for i := 0; i < numMounts; i++ {
 				mount := newBenchMount()
-				ms.Store(vdkey(mount), mount)
+				ms.Store(mount.loadKey(), mount)
 			}
 			negkeys := make([]VirtualDentry, 0, numMounts)
 			for i := 0; i < numMounts; i++ {
@@ -379,7 +371,7 @@ func BenchmarkMountMapInsert(b *testing.B) {
 	b.ResetTimer()
 	for i := range mounts {
 		mount := mounts[i]
-		ms[vdkey(mount)] = mount
+		ms[mount.loadKey()] = mount
 	}
 }
 
@@ -399,7 +391,7 @@ func BenchmarkMountSyncMapInsert(b *testing.B) {
 	b.ResetTimer()
 	for i := range mounts {
 		mount := mounts[i]
-		ms.Store(vdkey(mount), mount)
+		ms.Store(mount.loadKey(), mount)
 	}
 }
 
@@ -432,13 +424,13 @@ func BenchmarkMountMapRemove(b *testing.B) {
 	ms := make(map[VirtualDentry]*Mount)
 	for i := range mounts {
 		mount := mounts[i]
-		ms[vdkey(mount)] = mount
+		ms[mount.loadKey()] = mount
 	}
 
 	b.ResetTimer()
 	for i := range mounts {
 		mount := mounts[i]
-		delete(ms, vdkey(mount))
+		delete(ms, mount.loadKey())
 	}
 }
 
@@ -454,12 +446,12 @@ func BenchmarkMountSyncMapRemove(b *testing.B) {
 	var ms sync.Map
 	for i := range mounts {
 		mount := mounts[i]
-		ms.Store(vdkey(mount), mount)
+		ms.Store(mount.loadKey(), mount)
 	}
 
 	b.ResetTimer()
 	for i := range mounts {
 		mount := mounts[i]
-		ms.Delete(vdkey(mount))
+		ms.Delete(mount.loadKey())
 	}
 }
