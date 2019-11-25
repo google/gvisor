@@ -647,6 +647,7 @@ func buildTCPHdr(r *stack.Route, id stack.TransportEndpointID, pkt *tcpip.Packet
 	off := pkt.DataOffset
 	// Initialize the header.
 	tcp := header.TCP(hdr.Prepend(header.TCPMinimumSize + optLen))
+	pkt.TransportHeader = buffer.View(tcp)
 	tcp.Encode(&header.TCPFields{
 		SrcPort:    id.LocalPort,
 		DstPort:    id.RemotePort,

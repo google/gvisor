@@ -114,16 +114,18 @@ func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadS
 // WritePacket writes a packet to the given destination address and protocol.
 func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, loop stack.PacketLooping, pkt tcpip.PacketBuffer) *tcpip.Error {
 	ip := e.addIPHeader(r, &pkt.Header, pkt.Data.Size(), params)
+	pkt.NetworkHeader = buffer.View(ip)
 
 	if loop&stack.PacketLoop != 0 {
+		// The inbound path expects the network header to still be in
+		// the PacketBuffer's Data field.
 		views := make([]buffer.View, 1, 1+len(pkt.Data.Views()))
 		views[0] = pkt.Header.View()
 		views = append(views, pkt.Data.Views()...)
 		loopedR := r.MakeLoopedRoute()
 
 		e.HandlePacket(&loopedR, tcpip.PacketBuffer{
-			Data:          buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views),
-			NetworkHeader: buffer.View(ip),
+			Data: buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views),
 		})
 
 		loopedR.Release()
@@ -148,7 +150,8 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []tcpip.Pac
 	for i := range pkts {
 		hdr := &pkts[i].Header
 		size := pkts[i].DataSize
-		e.addIPHeader(r, hdr, size, params)
+		ip := e.addIPHeader(r, hdr, size, params)
+		pkts[i].NetworkHeader = buffer.View(ip)
 	}
 
 	n, err := e.linkEP.WritePackets(r, gso, pkts, ProtocolNumber)
