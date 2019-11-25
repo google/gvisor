@@ -38,16 +38,12 @@ import (
 // Mount is analogous to Linux's struct mount. (gVisor does not distinguish
 // between struct mount and struct vfsmount.)
 type Mount struct {
-	// The lower 63 bits of refs are a reference count. The MSB of refs is set
-	// if the Mount has been eagerly unmounted, as by umount(2) without the
-	// MNT_DETACH flag. refs is accessed using atomic memory operations.
-	refs int64
-
-	// The lower 63 bits of writers is the number of calls to
-	// Mount.CheckBeginWrite() that have not yet been paired with a call to
-	// Mount.EndWrite(). The MSB of writers is set if MS_RDONLY is in effect.
-	// writers is accessed using atomic memory operations.
-	writers int64
+	// vfs, fs, and root are immutable. References are held on fs and root.
+	//
+	// Invariant: root belongs to fs.
+	vfs  *VirtualFilesystem
+	fs   *Filesystem
+	root *Dentry
 
 	// key is protected by VirtualFilesystem.mountMu and
 	// VirtualFilesystem.mounts.seq, and may be nil. References are held on
@@ -57,13 +53,29 @@ type Mount struct {
 	// key.parent.fs.
 	key mountKey
 
-	// fs, root, and ns are immutable. References are held on fs and root (but
-	// not ns).
-	//
-	// Invariant: root belongs to fs.
-	fs   *Filesystem
-	root *Dentry
-	ns   *MountNamespace
+	// ns is the namespace in which this Mount was mounted. ns is protected by
+	// VirtualFilesystem.mountMu.
+	ns *MountNamespace
+
+	// The lower 63 bits of refs are a reference count. The MSB of refs is set
+	// if the Mount has been eagerly umounted, as by umount(2) without the
+	// MNT_DETACH flag. refs is accessed using atomic memory operations.
+	refs int64
+
+	// children is the set of all Mounts for which Mount.key.parent is this
+	// Mount. children is protected by VirtualFilesystem.mountMu.
+	children map[*Mount]struct{}
+
+	// umounted is true if VFS.umountRecursiveLocked() has been called on this
+	// Mount. VirtualFilesystem does not hold a reference on Mounts for which
+	// umounted is true. umounted is protected by VirtualFilesystem.mountMu.
+	umounted bool
+
+	// The lower 63 bits of writers is the number of calls to
+	// Mount.CheckBeginWrite() that have not yet been paired with a call to
+	// Mount.EndWrite(). The MSB of writers is set if MS_RDONLY is in effect.
+	// writers is accessed using atomic memory operations.
+	writers int64
 }
 
 // A MountNamespace is a collection of Mounts.
@@ -73,13 +85,16 @@ type Mount struct {
 //
 // MountNamespace is analogous to Linux's struct mnt_namespace.
 type MountNamespace struct {
-	refs int64 // accessed using atomic memory operations
-
 	// root is the MountNamespace's root mount. root is immutable.
 	root *Mount
 
-	// mountpoints contains all Dentries which are mount points in this
-	// namespace. mountpoints is protected by VirtualFilesystem.mountMu.
+	// refs is the reference count. refs is accessed using atomic memory
+	// operations.
+	refs int64
+
+	// mountpoints maps all Dentries which are mount points in this namespace
+	// to the number of Mounts for which they are mount points. mountpoints is
+	// protected by VirtualFilesystem.mountMu.
 	//
 	// mountpoints is used to determine if a Dentry can be moved or removed
 	// (which requires that the Dentry is not a mount point in the calling
@@ -89,7 +104,7 @@ type MountNamespace struct {
 	// MountNamespace; this is required to ensure that
 	// VFS.PrepareDeleteDentry() and VFS.PrepareRemoveDentry() operate
 	// correctly on unreferenced MountNamespaces.
-	mountpoints map[*Dentry]struct{}
+	mountpoints map[*Dentry]uint32
 }
 
 // NewMountNamespace returns a new mount namespace with a root filesystem
@@ -106,9 +121,10 @@ func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth
 	}
 	mntns := &MountNamespace{
 		refs:        1,
-		mountpoints: make(map[*Dentry]struct{}),
+		mountpoints: make(map[*Dentry]uint32),
 	}
 	mntns.root = &Mount{
+		vfs:  vfs,
 		fs:   fs,
 		root: root,
 		ns:   mntns,
@@ -136,8 +152,10 @@ func (vfs *VirtualFilesystem) NewMount(ctx context.Context, creds *auth.Credenti
 		return err
 	}
 	vfs.mountMu.Lock()
+	vd.dentry.mu.Lock()
 	for {
 		if vd.dentry.IsDisowned() {
+			vd.dentry.mu.Unlock()
 			vfs.mountMu.Unlock()
 			vd.DecRef()
 			root.decRef(fs)
@@ -153,36 +171,208 @@ func (vfs *VirtualFilesystem) NewMount(ctx context.Context, creds *auth.Credenti
 		if nextmnt == nil {
 			break
 		}
-		nextmnt.incRef()
+		// It's possible that nextmnt has been umounted but not disconnected,
+		// in which case vfs no longer holds a reference on it, and the last
+		// reference may be concurrently dropped even though we're holding
+		// vfs.mountMu.
+		if !nextmnt.tryIncMountedRef() {
+			break
+		}
+		// This can't fail since we're holding vfs.mountMu.
 		nextmnt.root.incRef(nextmnt.fs)
+		vd.dentry.mu.Unlock()
 		vd.DecRef()
 		vd = VirtualDentry{
 			mount:  nextmnt,
 			dentry: nextmnt.root,
 		}
+		vd.dentry.mu.Lock()
 	}
 	// TODO: Linux requires that either both the mount point and the mount root
 	// are directories, or neither are, and returns ENOTDIR if this is not the
 	// case.
 	mntns := vd.mount.ns
 	mnt := &Mount{
+		vfs:  vfs,
 		fs:   fs,
 		root: root,
 		ns:   mntns,
 		refs: 1,
 	}
-	mnt.storeKey(vd.mount, vd.dentry)
+	vfs.mounts.seq.BeginWrite()
+	vfs.connectLocked(mnt, vd, mntns)
+	vfs.mounts.seq.EndWrite()
+	vd.dentry.mu.Unlock()
+	vfs.mountMu.Unlock()
+	return nil
+}
+
+type umountRecursiveOptions struct {
+	// If eager is true, ensure that future calls to Mount.tryIncMountedRef()
+	// on umounted mounts fail.
+	//
+	// eager is analogous to Linux's UMOUNT_SYNC.
+	eager bool
+
+	// If disconnectHierarchy is true, Mounts that are umounted hierarchically
+	// should be disconnected from their parents. (Mounts whose parents are not
+	// umounted, which in most cases means the Mount passed to the initial call
+	// to umountRecursiveLocked, are unconditionally disconnected for
+	// consistency with Linux.)
+	//
+	// disconnectHierarchy is analogous to Linux's !UMOUNT_CONNECTED.
+	disconnectHierarchy bool
+}
+
+// umountRecursiveLocked marks mnt and its descendants as umounted. It does not
+// release mount or dentry references; instead, it appends VirtualDentries and
+// Mounts on which references must be dropped to vdsToDecRef and mountsToDecRef
+// respectively, and returns updated slices. (This is necessary because
+// filesystem locks possibly taken by DentryImpl.DecRef() may precede
+// vfs.mountMu in the lock order, and Mount.decRef() may lock vfs.mountMu.)
+//
+// umountRecursiveLocked is analogous to Linux's fs/namespace.c:umount_tree().
+//
+// Preconditions: vfs.mountMu must be locked. vfs.mounts.seq must be in a
+// writer critical section.
+func (vfs *VirtualFilesystem) umountRecursiveLocked(mnt *Mount, opts *umountRecursiveOptions, vdsToDecRef []VirtualDentry, mountsToDecRef []*Mount) ([]VirtualDentry, []*Mount) {
+	if !mnt.umounted {
+		mnt.umounted = true
+		mountsToDecRef = append(mountsToDecRef, mnt)
+		if parent := mnt.parent(); parent != nil && (opts.disconnectHierarchy || !parent.umounted) {
+			vdsToDecRef = append(vdsToDecRef, vfs.disconnectLocked(mnt))
+		}
+	}
+	if opts.eager {
+		for {
+			refs := atomic.LoadInt64(&mnt.refs)
+			if refs < 0 {
+				break
+			}
+			if atomic.CompareAndSwapInt64(&mnt.refs, refs, refs|math.MinInt64) {
+				break
+			}
+		}
+	}
+	for child := range mnt.children {
+		vdsToDecRef, mountsToDecRef = vfs.umountRecursiveLocked(child, opts, vdsToDecRef, mountsToDecRef)
+	}
+	return vdsToDecRef, mountsToDecRef
+}
+
+// connectLocked makes vd the mount parent/point for mnt. It consumes
+// references held by vd.
+//
+// Preconditions: vfs.mountMu must be locked. vfs.mounts.seq must be in a
+// writer critical section. d.mu must be locked. mnt.parent() == nil.
+func (vfs *VirtualFilesystem) connectLocked(mnt *Mount, vd VirtualDentry, mntns *MountNamespace) {
+	mnt.storeKey(vd)
+	if vd.mount.children == nil {
+		vd.mount.children = make(map[*Mount]struct{})
+	}
+	vd.mount.children[mnt] = struct{}{}
 	atomic.AddUint32(&vd.dentry.mounts, 1)
-	mntns.mountpoints[vd.dentry] = struct{}{}
+	mntns.mountpoints[vd.dentry]++
+	vfs.mounts.insertSeqed(mnt)
 	vfsmpmounts, ok := vfs.mountpoints[vd.dentry]
 	if !ok {
 		vfsmpmounts = make(map[*Mount]struct{})
 		vfs.mountpoints[vd.dentry] = vfsmpmounts
 	}
 	vfsmpmounts[mnt] = struct{}{}
-	vfs.mounts.Insert(mnt)
-	vfs.mountMu.Unlock()
-	return nil
+}
+
+// disconnectLocked makes vd have no mount parent/point and returns its old
+// mount parent/point with a reference held.
+//
+// Preconditions: vfs.mountMu must be locked. vfs.mounts.seq must be in a
+// writer critical section. mnt.parent() != nil.
+func (vfs *VirtualFilesystem) disconnectLocked(mnt *Mount) VirtualDentry {
+	vd := mnt.loadKey()
+	mnt.storeKey(VirtualDentry{})
+	delete(vd.mount.children, mnt)
+	atomic.AddUint32(&vd.dentry.mounts, math.MaxUint32) // -1
+	mnt.ns.mountpoints[vd.dentry]--
+	if mnt.ns.mountpoints[vd.dentry] == 0 {
+		delete(mnt.ns.mountpoints, vd.dentry)
+	}
+	vfs.mounts.removeSeqed(mnt)
+	vfsmpmounts := vfs.mountpoints[vd.dentry]
+	delete(vfsmpmounts, mnt)
+	if len(vfsmpmounts) == 0 {
+		delete(vfs.mountpoints, vd.dentry)
+	}
+	return vd
+}
+
+// tryIncMountedRef increments mnt's reference count and returns true. If mnt's
+// reference count is already zero, or has been eagerly umounted,
+// tryIncMountedRef does nothing and returns false.
+//
+// tryIncMountedRef does not require that a reference is held on mnt.
+func (mnt *Mount) tryIncMountedRef() bool {
+	for {
+		refs := atomic.LoadInt64(&mnt.refs)
+		if refs <= 0 { // refs < 0 => MSB set => eagerly unmounted
+			return false
+		}
+		if atomic.CompareAndSwapInt64(&mnt.refs, refs, refs+1) {
+			return true
+		}
+	}
+}
+
+func (mnt *Mount) incRef() {
+	// In general, negative values for mnt.refs are valid because the MSB is
+	// the eager-unmount bit.
+	atomic.AddInt64(&mnt.refs, 1)
+}
+
+func (mnt *Mount) decRef() {
+	refs := atomic.AddInt64(&mnt.refs, -1)
+	if refs&^math.MinInt64 == 0 { // mask out MSB
+		var vd VirtualDentry
+		if mnt.parent() != nil {
+			mnt.vfs.mountMu.Lock()
+			mnt.vfs.mounts.seq.BeginWrite()
+			vd = mnt.vfs.disconnectLocked(mnt)
+			mnt.vfs.mounts.seq.EndWrite()
+			mnt.vfs.mountMu.Unlock()
+		}
+		mnt.root.decRef(mnt.fs)
+		mnt.fs.decRef()
+		if vd.Ok() {
+			vd.DecRef()
+		}
+	}
+}
+
+// IncRef increments mntns' reference count.
+func (mntns *MountNamespace) IncRef() {
+	if atomic.AddInt64(&mntns.refs, 1) <= 1 {
+		panic("MountNamespace.IncRef() called without holding a reference")
+	}
+}
+
+// DecRef decrements mntns' reference count.
+func (mntns *MountNamespace) DecRef(vfs *VirtualFilesystem) {
+	if refs := atomic.AddInt64(&mntns.refs, -1); refs == 0 {
+		vfs.mountMu.Lock()
+		vfs.mounts.seq.BeginWrite()
+		vdsToDecRef, mountsToDecRef := vfs.umountRecursiveLocked(mntns.root, &umountRecursiveOptions{
+			disconnectHierarchy: true,
+		}, nil, nil)
+		vfs.mounts.seq.EndWrite()
+		vfs.mountMu.Unlock()
+		for _, vd := range vdsToDecRef {
+			vd.DecRef()
+		}
+		for _, mnt := range mountsToDecRef {
+			mnt.decRef()
+		}
+	} else if refs < 0 {
+		panic("MountNamespace.DecRef() called without holding a reference")
+	}
 }
 
 // getMountAt returns the last Mount in the stack mounted at (mnt, d). It takes
@@ -231,12 +421,12 @@ retryFirst:
 }
 
 // getMountpointAt returns the mount point for the stack of Mounts including
-// mnt. It takes a reference on the returned Mount and Dentry. If no such mount
+// mnt. It takes a reference on the returned VirtualDentry. If no such mount
 // point exists (i.e. mnt is a root mount), getMountpointAt returns (nil, nil).
 //
 // Preconditions: References are held on mnt and root. vfsroot is not (mnt,
 // mnt.root).
-func (vfs *VirtualFilesystem) getMountpointAt(mnt *Mount, vfsroot VirtualDentry) (*Mount, *Dentry) {
+func (vfs *VirtualFilesystem) getMountpointAt(mnt *Mount, vfsroot VirtualDentry) VirtualDentry {
 	// The first mount is special-cased:
 	//
 	// - The caller must have already checked mnt against vfsroot.
@@ -246,12 +436,12 @@ func (vfs *VirtualFilesystem) getMountpointAt(mnt *Mount, vfsroot VirtualDentry)
 	// - We don't drop the caller's reference on mnt.
 retryFirst:
 	epoch := vfs.mounts.seq.BeginRead()
-	parent, point := mnt.loadKey()
+	parent, point := mnt.parent(), mnt.point()
 	if !vfs.mounts.seq.ReadOk(epoch) {
 		goto retryFirst
 	}
 	if parent == nil {
-		return nil, nil
+		return VirtualDentry{}
 	}
 	if !parent.tryIncMountedRef() {
 		// Raced with umount.
@@ -260,6 +450,11 @@ retryFirst:
 	if !point.tryIncRef(parent.fs) {
 		// Since Mount holds a reference on Mount.key.point, this can only
 		// happen due to a racing change to Mount.key.
+		parent.decRef()
+		goto retryFirst
+	}
+	if !vfs.mounts.seq.ReadOk(epoch) {
+		point.decRef(parent.fs)
 		parent.decRef()
 		goto retryFirst
 	}
@@ -274,7 +469,7 @@ retryFirst:
 		}
 	retryNotFirst:
 		epoch := vfs.mounts.seq.BeginRead()
-		parent, point := mnt.loadKey()
+		parent, point := mnt.parent(), mnt.point()
 		if !vfs.mounts.seq.ReadOk(epoch) {
 			goto retryNotFirst
 		}
@@ -301,43 +496,7 @@ retryFirst:
 		mnt = parent
 		d = point
 	}
-	return mnt, d
-}
-
-// tryIncMountedRef increments mnt's reference count and returns true. If mnt's
-// reference count is already zero, or has been eagerly unmounted,
-// tryIncMountedRef does nothing and returns false.
-//
-// tryIncMountedRef does not require that a reference is held on mnt.
-func (mnt *Mount) tryIncMountedRef() bool {
-	for {
-		refs := atomic.LoadInt64(&mnt.refs)
-		if refs <= 0 { // refs < 0 => MSB set => eagerly unmounted
-			return false
-		}
-		if atomic.CompareAndSwapInt64(&mnt.refs, refs, refs+1) {
-			return true
-		}
-	}
-}
-
-func (mnt *Mount) incRef() {
-	// In general, negative values for mnt.refs are valid because the MSB is
-	// the eager-unmount bit.
-	atomic.AddInt64(&mnt.refs, 1)
-}
-
-func (mnt *Mount) decRef() {
-	refs := atomic.AddInt64(&mnt.refs, -1)
-	if refs&^math.MinInt64 == 0 { // mask out MSB
-		parent, point := mnt.loadKey()
-		if point != nil {
-			point.decRef(parent.fs)
-			parent.decRef()
-		}
-		mnt.root.decRef(mnt.fs)
-		mnt.fs.decRef()
-	}
+	return VirtualDentry{mnt, d}
 }
 
 // CheckBeginWrite increments the counter of in-progress write operations on
@@ -360,7 +519,7 @@ func (mnt *Mount) EndWrite() {
 	atomic.AddInt64(&mnt.writers, -1)
 }
 
-// Preconditions: VirtualFilesystem.mountMu must be locked for writing.
+// Preconditions: VirtualFilesystem.mountMu must be locked.
 func (mnt *Mount) setReadOnlyLocked(ro bool) error {
 	if oldRO := atomic.LoadInt64(&mnt.writers) < 0; oldRO == ro {
 		return nil
@@ -381,22 +540,6 @@ func (mnt *Mount) setReadOnlyLocked(ro bool) error {
 // the returned Filesystem.
 func (mnt *Mount) Filesystem() *Filesystem {
 	return mnt.fs
-}
-
-// IncRef increments mntns' reference count.
-func (mntns *MountNamespace) IncRef() {
-	if atomic.AddInt64(&mntns.refs, 1) <= 1 {
-		panic("MountNamespace.IncRef() called without holding a reference")
-	}
-}
-
-// DecRef decrements mntns' reference count.
-func (mntns *MountNamespace) DecRef() {
-	if refs := atomic.AddInt64(&mntns.refs, 0); refs == 0 {
-		// TODO: unmount mntns.root
-	} else if refs < 0 {
-		panic("MountNamespace.DecRef() called without holding a reference")
-	}
 }
 
 // Root returns mntns' root. A reference is taken on the returned

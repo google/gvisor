@@ -39,8 +39,8 @@ Mount references are held by:
 -   Mount: Each referenced Mount holds a reference on its parent, which is the
     mount containing its mount point.
 
--   VirtualFilesystem: A reference is held on all Mounts that are attached
-    (reachable by Mount traversal).
+-   VirtualFilesystem: A reference is held on each Mount that has not been
+    umounted.
 
 MountNamespace and FileDescription references are held by users of VFS. The
 expectation is that each `kernel.Task` holds a reference on its corresponding

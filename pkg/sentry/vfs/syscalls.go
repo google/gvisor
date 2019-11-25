@@ -230,6 +230,8 @@ func (fd *FileDescription) SetStatusFlags(ctx context.Context, flags uint32) err
 //
 // - VFS.SymlinkAt()
 //
+// - VFS.UmountAt()
+//
 // - VFS.UnlinkAt()
 //
 // - FileDescription.(almost everything)
