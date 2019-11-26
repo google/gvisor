@@ -33,15 +33,25 @@ type Filesystem struct {
 	// operations.
 	refs int64
 
+	// vfs is the VirtualFilesystem that uses this Filesystem. vfs is
+	// immutable.
+	vfs *VirtualFilesystem
+
 	// impl is the FilesystemImpl associated with this Filesystem. impl is
 	// immutable. This should be the last field in Dentry.
 	impl FilesystemImpl
 }
 
 // Init must be called before first use of fs.
-func (fs *Filesystem) Init(impl FilesystemImpl) {
+func (fs *Filesystem) Init(vfsObj *VirtualFilesystem, impl FilesystemImpl) {
 	fs.refs = 1
+	fs.vfs = vfsObj
 	fs.impl = impl
+}
+
+// VirtualFilesystem returns the containing VirtualFilesystem.
+func (fs *Filesystem) VirtualFilesystem() *VirtualFilesystem {
+	return fs.vfs
 }
 
 // Impl returns the FilesystemImpl associated with fs.
@@ -49,13 +59,15 @@ func (fs *Filesystem) Impl() FilesystemImpl {
 	return fs.impl
 }
 
-func (fs *Filesystem) incRef() {
+// IncRef increments fs' reference count.
+func (fs *Filesystem) IncRef() {
 	if atomic.AddInt64(&fs.refs, 1) <= 1 {
-		panic("Filesystem.incRef() called without holding a reference")
+		panic("Filesystem.IncRef() called without holding a reference")
 	}
 }
 
-func (fs *Filesystem) decRef() {
+// DecRef decrements fs' reference count.
+func (fs *Filesystem) DecRef() {
 	if refs := atomic.AddInt64(&fs.refs, -1); refs == 0 {
 		fs.impl.Release()
 	} else if refs < 0 {
