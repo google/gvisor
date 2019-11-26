@@ -385,6 +385,16 @@ TEXT ·El1_sync(SB),NOSPLIT,$0
 	B el1_invalid
 
 el1_da:
+	WORD $0xd538d092     //MRS   TPIDR_EL1, R18
+	WORD $0xd538601a     //MRS   FAR_EL1, R26
+
+	MOVD R26, CPU_FAULT_ADDR(RSV_REG)
+
+	MOVD $0, CPU_ERROR_TYPE(RSV_REG)
+
+	MOVD $PageFault, R3
+	MOVD R3, CPU_VECTOR_CODE(RSV_REG)
+
 	B ·Halt(SB)
 
 el1_ia:
