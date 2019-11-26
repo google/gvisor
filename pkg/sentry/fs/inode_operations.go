@@ -174,11 +174,11 @@ type InodeOperations interface {
 	// do not support extended attributes return EOPNOTSUPP. Inodes that
 	// support extended attributes but don't have a value at name return
 	// ENODATA.
-	Getxattr(inode *Inode, name string) (string, error)
+	Getxattr(inode *Inode, name string) ([]byte, error)
 
 	// Setxattr sets the value of extended attribute name. Inodes that
 	// do not support extended attributes return EOPNOTSUPP.
-	Setxattr(inode *Inode, name, value string) error
+	Setxattr(inode *Inode, name string, value []byte) error
 
 	// Listxattr returns the set of all extended attributes names that
 	// have values. Inodes that do not support extended attributes return

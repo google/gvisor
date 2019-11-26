@@ -149,12 +149,12 @@ func (d *Dir) CreateFifo(ctx context.Context, dir *fs.Inode, name string, perms 
 }
 
 // Getxattr implements fs.InodeOperations.Getxattr.
-func (d *Dir) Getxattr(i *fs.Inode, name string) (string, error) {
+func (d *Dir) Getxattr(i *fs.Inode, name string) ([]byte, error) {
 	return d.ramfsDir.Getxattr(i, name)
 }
 
 // Setxattr implements fs.InodeOperations.Setxattr.
-func (d *Dir) Setxattr(i *fs.Inode, name, value string) error {
+func (d *Dir) Setxattr(i *fs.Inode, name string, value []byte) error {
 	return d.ramfsDir.Setxattr(i, name, value)
 }
 
