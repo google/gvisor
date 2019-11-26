@@ -47,21 +47,32 @@ type FileDescription struct {
 	impl FileDescriptionImpl
 }
 
-// Init must be called before first use of fd. It takes references on mnt and
-// d.
+// Init must be called before first use of fd. It takes ownership of references
+// on mnt and d held by the caller.
 func (fd *FileDescription) Init(impl FileDescriptionImpl, mnt *Mount, d *Dentry) {
 	fd.refs = 1
 	fd.vd = VirtualDentry{
 		mount:  mnt,
 		dentry: d,
 	}
-	fd.vd.IncRef()
 	fd.impl = impl
 }
 
 // Impl returns the FileDescriptionImpl associated with fd.
 func (fd *FileDescription) Impl() FileDescriptionImpl {
 	return fd.impl
+}
+
+// Mount returns the mount on which fd was opened. It does not take a reference
+// on the returned Mount.
+func (fd *FileDescription) Mount() *Mount {
+	return fd.vd.mount
+}
+
+// Dentry returns the dentry at which fd was opened. It does not take a
+// reference on the returned Dentry.
+func (fd *FileDescription) Dentry() *Dentry {
+	return fd.vd.dentry
 }
 
 // VirtualDentry returns the location at which fd was opened. It does not take
@@ -73,6 +84,22 @@ func (fd *FileDescription) VirtualDentry() VirtualDentry {
 // IncRef increments fd's reference count.
 func (fd *FileDescription) IncRef() {
 	atomic.AddInt64(&fd.refs, 1)
+}
+
+// TryIncRef increments fd's reference count and returns true. If fd's
+// reference count is already zero, TryIncRef does nothing and returns false.
+//
+// TryIncRef does not require that a reference is held on fd.
+func (fd *FileDescription) TryIncRef() bool {
+	for {
+		refs := atomic.LoadInt64(&fd.refs)
+		if refs <= 0 {
+			return false
+		}
+		if atomic.CompareAndSwapInt64(&fd.refs, refs, refs+1) {
+			return true
+		}
+	}
 }
 
 // DecRef decrements fd's reference count.

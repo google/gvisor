@@ -40,14 +40,14 @@ var _ vfs.FilesystemType = (*FilesystemType)(nil)
 // Currently there are two ways of mounting an ext(2/3/4) fs:
 //   1. Specify a mount with our internal special MountType in the OCI spec.
 //   2. Expose the device to the container and mount it from application layer.
-func getDeviceFd(source string, opts vfs.NewFilesystemOptions) (io.ReaderAt, error) {
+func getDeviceFd(source string, opts vfs.GetFilesystemOptions) (io.ReaderAt, error) {
 	if opts.InternalData == nil {
 		// User mount call.
 		// TODO(b/134676337): Open the device specified by `source` and return that.
 		panic("unimplemented")
 	}
 
-	// NewFilesystem call originated from within the sentry.
+	// GetFilesystem call originated from within the sentry.
 	devFd, ok := opts.InternalData.(int)
 	if !ok {
 		return nil, errors.New("internal data for ext fs must be an int containing the file descriptor to device")
@@ -91,8 +91,8 @@ func isCompatible(sb disklayout.SuperBlock) bool {
 	return true
 }
 
-// NewFilesystem implements vfs.FilesystemType.NewFilesystem.
-func (FilesystemType) NewFilesystem(ctx context.Context, creds *auth.Credentials, source string, opts vfs.NewFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
+// GetFilesystem implements vfs.FilesystemType.GetFilesystem.
+func (FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	// TODO(b/134676337): Ensure that the user is mounting readonly. If not,
 	// EACCESS should be returned according to mount(2). Filesystem independent
 	// flags (like readonly) are currently not available in pkg/sentry/vfs.
@@ -103,7 +103,7 @@ func (FilesystemType) NewFilesystem(ctx context.Context, creds *auth.Credentials
 	}
 
 	fs := filesystem{dev: dev, inodeCache: make(map[uint32]*inode)}
-	fs.vfsfs.Init(&fs)
+	fs.vfsfs.Init(vfsObj, &fs)
 	fs.sb, err = readSuperBlock(dev)
 	if err != nil {
 		return nil, nil, err

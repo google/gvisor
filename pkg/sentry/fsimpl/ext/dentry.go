@@ -41,16 +41,18 @@ func newDentry(in *inode) *dentry {
 }
 
 // IncRef implements vfs.DentryImpl.IncRef.
-func (d *dentry) IncRef(vfsfs *vfs.Filesystem) {
+func (d *dentry) IncRef() {
 	d.inode.incRef()
 }
 
 // TryIncRef implements vfs.DentryImpl.TryIncRef.
-func (d *dentry) TryIncRef(vfsfs *vfs.Filesystem) bool {
+func (d *dentry) TryIncRef() bool {
 	return d.inode.tryIncRef()
 }
 
 // DecRef implements vfs.DentryImpl.DecRef.
-func (d *dentry) DecRef(vfsfs *vfs.Filesystem) {
-	d.inode.decRef(vfsfs.Impl().(*filesystem))
+func (d *dentry) DecRef() {
+	// FIXME(b/134676337): filesystem.mu may not be locked as required by
+	// inode.decRef().
+	d.inode.decRef()
 }

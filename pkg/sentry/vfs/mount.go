@@ -110,12 +110,12 @@ type MountNamespace struct {
 // NewMountNamespace returns a new mount namespace with a root filesystem
 // configured by the given arguments. A reference is taken on the returned
 // MountNamespace.
-func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth.Credentials, source, fsTypeName string, opts *NewFilesystemOptions) (*MountNamespace, error) {
+func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth.Credentials, source, fsTypeName string, opts *GetFilesystemOptions) (*MountNamespace, error) {
 	fsType := vfs.getFilesystemType(fsTypeName)
 	if fsType == nil {
 		return nil, syserror.ENODEV
 	}
-	fs, root, err := fsType.NewFilesystem(ctx, creds, source, *opts)
+	fs, root, err := fsType.GetFilesystem(ctx, vfs, creds, source, *opts)
 	if err != nil {
 		return nil, err
 	}
@@ -133,13 +133,13 @@ func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth
 	return mntns, nil
 }
 
-// NewMount creates and mounts a new Filesystem.
-func (vfs *VirtualFilesystem) NewMount(ctx context.Context, creds *auth.Credentials, source string, target *PathOperation, fsTypeName string, opts *NewFilesystemOptions) error {
+// NewMount creates and mounts a Filesystem configured by the given arguments.
+func (vfs *VirtualFilesystem) NewMount(ctx context.Context, creds *auth.Credentials, source string, target *PathOperation, fsTypeName string, opts *GetFilesystemOptions) error {
 	fsType := vfs.getFilesystemType(fsTypeName)
 	if fsType == nil {
 		return syserror.ENODEV
 	}
-	fs, root, err := fsType.NewFilesystem(ctx, creds, source, *opts)
+	fs, root, err := fsType.GetFilesystem(ctx, vfs, creds, source, *opts)
 	if err != nil {
 		return err
 	}
@@ -147,8 +147,8 @@ func (vfs *VirtualFilesystem) NewMount(ctx context.Context, creds *auth.Credenti
 	// lock ordering.
 	vd, err := vfs.GetDentryAt(ctx, creds, target, &GetDentryOptions{})
 	if err != nil {
-		root.decRef(fs)
-		fs.decRef()
+		root.DecRef()
+		fs.DecRef()
 		return err
 	}
 	vfs.mountMu.Lock()
@@ -158,8 +158,8 @@ func (vfs *VirtualFilesystem) NewMount(ctx context.Context, creds *auth.Credenti
 			vd.dentry.mu.Unlock()
 			vfs.mountMu.Unlock()
 			vd.DecRef()
-			root.decRef(fs)
-			fs.decRef()
+			root.DecRef()
+			fs.DecRef()
 			return syserror.ENOENT
 		}
 		// vd might have been mounted over between vfs.GetDentryAt() and
@@ -179,7 +179,7 @@ func (vfs *VirtualFilesystem) NewMount(ctx context.Context, creds *auth.Credenti
 			break
 		}
 		// This can't fail since we're holding vfs.mountMu.
-		nextmnt.root.incRef(nextmnt.fs)
+		nextmnt.root.IncRef()
 		vd.dentry.mu.Unlock()
 		vd.DecRef()
 		vd = VirtualDentry{
@@ -229,7 +229,7 @@ type umountRecursiveOptions struct {
 // Mounts on which references must be dropped to vdsToDecRef and mountsToDecRef
 // respectively, and returns updated slices. (This is necessary because
 // filesystem locks possibly taken by DentryImpl.DecRef() may precede
-// vfs.mountMu in the lock order, and Mount.decRef() may lock vfs.mountMu.)
+// vfs.mountMu in the lock order, and Mount.DecRef() may lock vfs.mountMu.)
 //
 // umountRecursiveLocked is analogous to Linux's fs/namespace.c:umount_tree().
 //
@@ -322,13 +322,15 @@ func (mnt *Mount) tryIncMountedRef() bool {
 	}
 }
 
-func (mnt *Mount) incRef() {
+// IncRef increments mnt's reference count.
+func (mnt *Mount) IncRef() {
 	// In general, negative values for mnt.refs are valid because the MSB is
 	// the eager-unmount bit.
 	atomic.AddInt64(&mnt.refs, 1)
 }
 
-func (mnt *Mount) decRef() {
+// DecRef decrements mnt's reference count.
+func (mnt *Mount) DecRef() {
 	refs := atomic.AddInt64(&mnt.refs, -1)
 	if refs&^math.MinInt64 == 0 { // mask out MSB
 		var vd VirtualDentry
@@ -339,8 +341,8 @@ func (mnt *Mount) decRef() {
 			mnt.vfs.mounts.seq.EndWrite()
 			mnt.vfs.mountMu.Unlock()
 		}
-		mnt.root.decRef(mnt.fs)
-		mnt.fs.decRef()
+		mnt.root.DecRef()
+		mnt.fs.DecRef()
 		if vd.Ok() {
 			vd.DecRef()
 		}
@@ -368,7 +370,7 @@ func (mntns *MountNamespace) DecRef(vfs *VirtualFilesystem) {
 			vd.DecRef()
 		}
 		for _, mnt := range mountsToDecRef {
-			mnt.decRef()
+			mnt.DecRef()
 		}
 	} else if refs < 0 {
 		panic("MountNamespace.DecRef() called without holding a reference")
@@ -413,7 +415,7 @@ retryFirst:
 			// Raced with umount.
 			continue
 		}
-		mnt.decRef()
+		mnt.DecRef()
 		mnt = next
 		d = next.root
 	}
@@ -447,15 +449,15 @@ retryFirst:
 		// Raced with umount.
 		goto retryFirst
 	}
-	if !point.tryIncRef(parent.fs) {
+	if !point.TryIncRef() {
 		// Since Mount holds a reference on Mount.key.point, this can only
 		// happen due to a racing change to Mount.key.
-		parent.decRef()
+		parent.DecRef()
 		goto retryFirst
 	}
 	if !vfs.mounts.seq.ReadOk(epoch) {
-		point.decRef(parent.fs)
-		parent.decRef()
+		point.DecRef()
+		parent.DecRef()
 		goto retryFirst
 	}
 	mnt = parent
@@ -480,19 +482,19 @@ retryFirst:
 			// Raced with umount.
 			goto retryNotFirst
 		}
-		if !point.tryIncRef(parent.fs) {
+		if !point.TryIncRef() {
 			// Since Mount holds a reference on Mount.key.point, this can
 			// only happen due to a racing change to Mount.key.
-			parent.decRef()
+			parent.DecRef()
 			goto retryNotFirst
 		}
 		if !vfs.mounts.seq.ReadOk(epoch) {
-			point.decRef(parent.fs)
-			parent.decRef()
+			point.DecRef()
+			parent.DecRef()
 			goto retryNotFirst
 		}
-		d.decRef(mnt.fs)
-		mnt.decRef()
+		d.DecRef()
+		mnt.DecRef()
 		mnt = parent
 		d = point
 	}

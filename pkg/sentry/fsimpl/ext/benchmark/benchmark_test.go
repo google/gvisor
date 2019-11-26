@@ -50,7 +50,7 @@ func setUp(b *testing.B, imagePath string) (context.Context, *vfs.VirtualFilesys
 	// Create VFS.
 	vfsObj := vfs.New()
 	vfsObj.MustRegisterFilesystemType("extfs", ext.FilesystemType{})
-	mntns, err := vfsObj.NewMountNamespace(ctx, creds, imagePath, "extfs", &vfs.NewFilesystemOptions{InternalData: int(f.Fd())})
+	mntns, err := vfsObj.NewMountNamespace(ctx, creds, imagePath, "extfs", &vfs.GetFilesystemOptions{InternalData: int(f.Fd())})
 	if err != nil {
 		f.Close()
 		return nil, nil, nil, nil, err
@@ -81,7 +81,7 @@ func mount(b *testing.B, imagePath string, vfsfs *vfs.VirtualFilesystem, pop *vf
 	ctx := contexttest.Context(b)
 	creds := auth.CredentialsFromContext(ctx)
 
-	if err := vfsfs.NewMount(ctx, creds, imagePath, pop, "extfs", &vfs.NewFilesystemOptions{InternalData: int(f.Fd())}); err != nil {
+	if err := vfsfs.NewMount(ctx, creds, imagePath, pop, "extfs", &vfs.GetFilesystemOptions{InternalData: int(f.Fd())}); err != nil {
 		b.Fatalf("failed to mount tmpfs submount: %v", err)
 	}
 	return func() {

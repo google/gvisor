@@ -116,15 +116,15 @@ func (vd VirtualDentry) Ok() bool {
 // IncRef increments the reference counts on the Mount and Dentry represented
 // by vd.
 func (vd VirtualDentry) IncRef() {
-	vd.mount.incRef()
-	vd.dentry.incRef(vd.mount.fs)
+	vd.mount.IncRef()
+	vd.dentry.IncRef()
 }
 
 // DecRef decrements the reference counts on the Mount and Dentry represented
 // by vd.
 func (vd VirtualDentry) DecRef() {
-	vd.dentry.decRef(vd.mount.fs)
-	vd.mount.decRef()
+	vd.dentry.DecRef()
+	vd.mount.DecRef()
 }
 
 // Mount returns the Mount associated with vd. It does not take a reference on

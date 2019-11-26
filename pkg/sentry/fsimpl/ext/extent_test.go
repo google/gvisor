@@ -180,13 +180,15 @@ func extentTreeSetUp(t *testing.T, root *disklayout.ExtentNode) (*extentFile, []
 	mockExtentFile := &extentFile{
 		regFile: regularFile{
 			inode: inode{
+				fs: &filesystem{
+					dev: bytes.NewReader(mockDisk),
+				},
 				diskInode: &disklayout.InodeNew{
 					InodeOld: disklayout.InodeOld{
 						SizeLo: uint32(mockExtentBlkSize) * getNumPhyBlks(root),
 					},
 				},
 				blkSize: mockExtentBlkSize,
-				dev:     bytes.NewReader(mockDisk),
 			},
 		},
 	}

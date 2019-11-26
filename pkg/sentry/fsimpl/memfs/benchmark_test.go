@@ -176,7 +176,7 @@ func BenchmarkVFS2MemfsStat(b *testing.B) {
 			// Create VFS.
 			vfsObj := vfs.New()
 			vfsObj.MustRegisterFilesystemType("memfs", memfs.FilesystemType{})
-			mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "memfs", &vfs.NewFilesystemOptions{})
+			mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "memfs", &vfs.GetFilesystemOptions{})
 			if err != nil {
 				b.Fatalf("failed to create tmpfs root mount: %v", err)
 			}
@@ -365,7 +365,7 @@ func BenchmarkVFS2MemfsMountStat(b *testing.B) {
 			// Create VFS.
 			vfsObj := vfs.New()
 			vfsObj.MustRegisterFilesystemType("memfs", memfs.FilesystemType{})
-			mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "memfs", &vfs.NewFilesystemOptions{})
+			mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "memfs", &vfs.GetFilesystemOptions{})
 			if err != nil {
 				b.Fatalf("failed to create tmpfs root mount: %v", err)
 			}
@@ -394,7 +394,7 @@ func BenchmarkVFS2MemfsMountStat(b *testing.B) {
 			}
 			defer mountPoint.DecRef()
 			// Create and mount the submount.
-			if err := vfsObj.NewMount(ctx, creds, "", &pop, "memfs", &vfs.NewFilesystemOptions{}); err != nil {
+			if err := vfsObj.NewMount(ctx, creds, "", &pop, "memfs", &vfs.GetFilesystemOptions{}); err != nil {
 				b.Fatalf("failed to mount tmpfs submount: %v", err)
 			}
 			filePathBuilder.WriteString(mountPointName)

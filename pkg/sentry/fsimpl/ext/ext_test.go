@@ -66,7 +66,7 @@ func setUp(t *testing.T, imagePath string) (context.Context, *vfs.VirtualFilesys
 	// Create VFS.
 	vfsObj := vfs.New()
 	vfsObj.MustRegisterFilesystemType("extfs", FilesystemType{})
-	mntns, err := vfsObj.NewMountNamespace(ctx, creds, localImagePath, "extfs", &vfs.NewFilesystemOptions{InternalData: int(f.Fd())})
+	mntns, err := vfsObj.NewMountNamespace(ctx, creds, localImagePath, "extfs", &vfs.GetFilesystemOptions{InternalData: int(f.Fd())})
 	if err != nil {
 		f.Close()
 		return nil, nil, nil, nil, err
@@ -509,27 +509,27 @@ func TestIterDirents(t *testing.T) {
 	}
 
 	wantDirents := []vfs.Dirent{
-		vfs.Dirent{
+		{
 			Name: ".",
 			Type: linux.DT_DIR,
 		},
-		vfs.Dirent{
+		{
 			Name: "..",
 			Type: linux.DT_DIR,
 		},
-		vfs.Dirent{
+		{
 			Name: "lost+found",
 			Type: linux.DT_DIR,
 		},
-		vfs.Dirent{
+		{
 			Name: "file.txt",
 			Type: linux.DT_REG,
 		},
-		vfs.Dirent{
+		{
 			Name: "bigfile.txt",
 			Type: linux.DT_REG,
 		},
-		vfs.Dirent{
+		{
 			Name: "symlink.txt",
 			Type: linux.DT_LNK,
 		},

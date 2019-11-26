@@ -36,11 +36,11 @@ type fileDescription struct {
 }
 
 func (fd *fileDescription) filesystem() *filesystem {
-	return fd.vfsfd.VirtualDentry().Mount().Filesystem().Impl().(*filesystem)
+	return fd.vfsfd.Mount().Filesystem().Impl().(*filesystem)
 }
 
 func (fd *fileDescription) inode() *inode {
-	return fd.vfsfd.VirtualDentry().Dentry().Impl().(*dentry).inode
+	return fd.vfsfd.Dentry().Impl().(*dentry).inode
 }
 
 // StatusFlags implements vfs.FileDescriptionImpl.StatusFlags.
