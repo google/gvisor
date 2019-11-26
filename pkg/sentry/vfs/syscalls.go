@@ -63,7 +63,7 @@ func (vfs *VirtualFilesystem) GetDentryAt(ctx context.Context, creds *auth.Crede
 				mount:  rp.mount,
 				dentry: d,
 			}
-			rp.mount.incRef()
+			rp.mount.IncRef()
 			vfs.putResolvingPath(rp)
 			return vd, nil
 		}

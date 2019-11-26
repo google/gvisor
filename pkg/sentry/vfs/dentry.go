@@ -118,7 +118,7 @@ func (d *Dentry) Impl() DentryImpl {
 type DentryImpl interface {
 	// IncRef increments the Dentry's reference count. A Dentry with a non-zero
 	// reference count must remain coherent with the state of the filesystem.
-	IncRef(fs *Filesystem)
+	IncRef()
 
 	// TryIncRef increments the Dentry's reference count and returns true. If
 	// the Dentry's reference count is zero, TryIncRef may do nothing and
@@ -126,10 +126,10 @@ type DentryImpl interface {
 	// guarantee that the Dentry is coherent with the state of the filesystem.)
 	//
 	// TryIncRef does not require that a reference is held on the Dentry.
-	TryIncRef(fs *Filesystem) bool
+	TryIncRef() bool
 
 	// DecRef decrements the Dentry's reference count.
-	DecRef(fs *Filesystem)
+	DecRef()
 }
 
 // IsDisowned returns true if d is disowned.
@@ -146,16 +146,20 @@ func (d *Dentry) isMounted() bool {
 	return atomic.LoadUint32(&d.mounts) != 0
 }
 
-func (d *Dentry) incRef(fs *Filesystem) {
-	d.impl.IncRef(fs)
+// IncRef increments d's reference count.
+func (d *Dentry) IncRef() {
+	d.impl.IncRef()
 }
 
-func (d *Dentry) tryIncRef(fs *Filesystem) bool {
-	return d.impl.TryIncRef(fs)
+// TryIncRef increments d's reference count and returns true. If d's reference
+// count is zero, TryIncRef may instead do nothing and return false.
+func (d *Dentry) TryIncRef() bool {
+	return d.impl.TryIncRef()
 }
 
-func (d *Dentry) decRef(fs *Filesystem) {
-	d.impl.DecRef(fs)
+// DecRef decrements d's reference count.
+func (d *Dentry) DecRef() {
+	d.impl.DecRef()
 }
 
 // These functions are exported so that filesystem implementations can use
@@ -420,6 +424,6 @@ func (vfs *VirtualFilesystem) forgetDisownedMountpoint(d *Dentry) {
 		vd.DecRef()
 	}
 	for _, mnt := range mountsToDecRef {
-		mnt.decRef()
+		mnt.DecRef()
 	}
 }
