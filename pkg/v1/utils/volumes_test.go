@@ -103,7 +103,7 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			expectUpdate: true,
 		},
 		{
-			desc: "volume annotations for container",
+			desc: "tmpfs: volume annotations for container",
 			spec: &specs.Spec{
 				Mounts: []specs.Mount{
 					{
@@ -145,6 +145,42 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 					annotations.ContainerType:                              annotations.ContainerTypeContainer,
 					"gvisor.dev/spec/mount/" + testVolumeName + "/share":   "pod",
 					"gvisor.dev/spec/mount/" + testVolumeName + "/type":    "tmpfs",
+					"gvisor.dev/spec/mount/" + testVolumeName + "/options": "ro",
+				},
+			},
+			expectUpdate: true,
+		},
+		{
+			desc: "bind: volume annotations for container",
+			spec: &specs.Spec{
+				Mounts: []specs.Mount{
+					{
+						Destination: "/test",
+						Type:        "bind",
+						Source:      testVolumePath,
+						Options:     []string{"ro"},
+					},
+				},
+				Annotations: map[string]string{
+					annotations.ContainerType:                              annotations.ContainerTypeContainer,
+					"gvisor.dev/spec/mount/" + testVolumeName + "/share":   "container",
+					"gvisor.dev/spec/mount/" + testVolumeName + "/type":    "bind",
+					"gvisor.dev/spec/mount/" + testVolumeName + "/options": "ro",
+				},
+			},
+			expected: &specs.Spec{
+				Mounts: []specs.Mount{
+					{
+						Destination: "/test",
+						Type:        "bind",
+						Source:      testVolumePath,
+						Options:     []string{"ro"},
+					},
+				},
+				Annotations: map[string]string{
+					annotations.ContainerType:                              annotations.ContainerTypeContainer,
+					"gvisor.dev/spec/mount/" + testVolumeName + "/share":   "container",
+					"gvisor.dev/spec/mount/" + testVolumeName + "/type":    "bind",
 					"gvisor.dev/spec/mount/" + testVolumeName + "/options": "ro",
 				},
 			},
