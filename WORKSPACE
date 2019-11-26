@@ -1,6 +1,7 @@
-# Load go bazel rules and gazelle.
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
+# Load go bazel rules and gazelle.
 http_archive(
     name = "io_bazel_rules_go",
     sha256 = "b9aa86ec08a292b97ec4591cf578e020b35f98e12173bbd4a921f84f583aebd9",
@@ -57,6 +58,25 @@ http_archive(
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
 
 protobuf_deps()
+
+# Load python dependencies.
+git_repository(
+    name = "rules_python",
+    commit = "94677401bc56ed5d756f50b441a6a5c7f735a6d4",
+    remote = "https://github.com/bazelbuild/rules_python.git",
+)
+
+load("@rules_python//python:pip.bzl", "pip_import")
+
+pip_import(
+    name = "pydeps",
+    python_interpreter = "python3",
+    requirements = "//benchmarks:requirements.txt",
+)
+
+load("@pydeps//:requirements.bzl", "pip_install")
+
+pip_install()
 
 # Load bazel_toolchain to support Remote Build Execution.
 # See releases at https://releases.bazel.build/bazel-toolchains.html
