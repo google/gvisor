@@ -441,6 +441,16 @@ TEXT ·El0_sync(SB),NOSPLIT,$0
 	B   el0_invalid
 
 el0_svc:
+	WORD $0xd538d092     //MRS   TPIDR_EL1, R18
+
+	MOVD $0, CPU_ERROR_CODE(RSV_REG) // Clear error code.
+
+	MOVD $1, R3
+	MOVD R3, CPU_ERROR_TYPE(RSV_REG) // Set error type to user.
+
+	MOVD $Syscall, R3
+	MOVD R3, CPU_VECTOR_CODE(RSV_REG)
+
 	B ·Halt(SB)
 
 el0_da:
