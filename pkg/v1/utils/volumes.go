@@ -117,10 +117,6 @@ func UpdateVolumeAnnotations(bundle string, s *specs.Spec) error {
 		if volumeFieldName(k) != "type" {
 			continue
 		}
-		if v != "tmpfs" {
-			// Only tmpfs is supported now.
-			continue
-		}
 		volume := volumeName(k)
 		if uid != "" {
 			// This is a sandbox
@@ -143,8 +139,8 @@ func UpdateVolumeAnnotations(bundle string, s *specs.Spec) error {
 				// more accurate matching.
 				if yes, _ := isVolumePath(volume, s.Mounts[i].Source); yes {
 					// gVisor requires the container mount type to match
-					// sandbox mount type for tmpfs.
-					s.Mounts[i].Type = "tmpfs"
+					// sandbox mount type.
+					s.Mounts[i].Type = v
 					updated = true
 				}
 			}
