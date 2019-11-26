@@ -52,10 +52,10 @@ type filesystem struct {
 	nextInoMinusOne uint64 // accessed using atomic memory operations
 }
 
-// NewFilesystem implements vfs.FilesystemType.NewFilesystem.
-func (fstype FilesystemType) NewFilesystem(ctx context.Context, creds *auth.Credentials, source string, opts vfs.NewFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
+// GetFilesystem implements vfs.FilesystemType.GetFilesystem.
+func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	var fs filesystem
-	fs.vfsfs.Init(&fs)
+	fs.vfsfs.Init(vfsObj, &fs)
 	root := fs.newDentry(fs.newDirectory(creds, 01777))
 	return &fs.vfsfs, &root.vfsd, nil
 }
@@ -99,17 +99,17 @@ func (fs *filesystem) newDentry(inode *inode) *dentry {
 }
 
 // IncRef implements vfs.DentryImpl.IncRef.
-func (d *dentry) IncRef(vfsfs *vfs.Filesystem) {
+func (d *dentry) IncRef() {
 	d.inode.incRef()
 }
 
 // TryIncRef implements vfs.DentryImpl.TryIncRef.
-func (d *dentry) TryIncRef(vfsfs *vfs.Filesystem) bool {
+func (d *dentry) TryIncRef() bool {
 	return d.inode.tryIncRef()
 }
 
 // DecRef implements vfs.DentryImpl.DecRef.
-func (d *dentry) DecRef(vfsfs *vfs.Filesystem) {
+func (d *dentry) DecRef() {
 	d.inode.decRef()
 }
 
@@ -266,11 +266,11 @@ type fileDescription struct {
 }
 
 func (fd *fileDescription) filesystem() *filesystem {
-	return fd.vfsfd.VirtualDentry().Mount().Filesystem().Impl().(*filesystem)
+	return fd.vfsfd.Mount().Filesystem().Impl().(*filesystem)
 }
 
 func (fd *fileDescription) inode() *inode {
-	return fd.vfsfd.VirtualDentry().Dentry().Impl().(*dentry).inode
+	return fd.vfsfd.Dentry().Impl().(*dentry).inode
 }
 
 // StatusFlags implements vfs.FileDescriptionImpl.StatusFlags.

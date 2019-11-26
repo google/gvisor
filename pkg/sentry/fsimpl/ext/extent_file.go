@@ -99,7 +99,7 @@ func (f *extentFile) buildExtTree() error {
 func (f *extentFile) buildExtTreeFromDisk(entry disklayout.ExtentEntry) (*disklayout.ExtentNode, error) {
 	var header disklayout.ExtentHeader
 	off := entry.PhysicalBlock() * f.regFile.inode.blkSize
-	err := readFromDisk(f.regFile.inode.dev, int64(off), &header)
+	err := readFromDisk(f.regFile.inode.fs.dev, int64(off), &header)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +115,7 @@ func (f *extentFile) buildExtTreeFromDisk(entry disklayout.ExtentEntry) (*diskla
 			curEntry = &disklayout.ExtentIdx{}
 		}
 
-		err := readFromDisk(f.regFile.inode.dev, int64(off), curEntry)
+		err := readFromDisk(f.regFile.inode.fs.dev, int64(off), curEntry)
 		if err != nil {
 			return nil, err
 		}
@@ -229,7 +229,7 @@ func (f *extentFile) readFromExtent(ex *disklayout.Extent, off uint64, dst []byt
 		toRead = len(dst)
 	}
 
-	n, _ := f.regFile.inode.dev.ReadAt(dst[:toRead], int64(readStart))
+	n, _ := f.regFile.inode.fs.dev.ReadAt(dst[:toRead], int64(readStart))
 	if n < toRead {
 		return n, syserror.EIO
 	}

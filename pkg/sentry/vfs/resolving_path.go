@@ -149,20 +149,20 @@ func (vfs *VirtualFilesystem) putResolvingPath(rp *ResolvingPath) {
 
 func (rp *ResolvingPath) decRefStartAndMount() {
 	if rp.flags&rpflagsHaveStartRef != 0 {
-		rp.start.decRef(rp.mount.fs)
+		rp.start.DecRef()
 	}
 	if rp.flags&rpflagsHaveMountRef != 0 {
-		rp.mount.decRef()
+		rp.mount.DecRef()
 	}
 }
 
 func (rp *ResolvingPath) releaseErrorState() {
 	if rp.nextStart != nil {
-		rp.nextStart.decRef(rp.nextMount.fs)
+		rp.nextStart.DecRef()
 		rp.nextStart = nil
 	}
 	if rp.nextMount != nil {
-		rp.nextMount.decRef()
+		rp.nextMount.DecRef()
 		rp.nextMount = nil
 	}
 }

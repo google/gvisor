@@ -25,21 +25,21 @@ import (
 //
 // FilesystemType is analogous to Linux's struct file_system_type.
 type FilesystemType interface {
-	// NewFilesystem returns a Filesystem configured by the given options,
+	// GetFilesystem returns a Filesystem configured by the given options,
 	// along with its mount root. A reference is taken on the returned
 	// Filesystem and Dentry.
-	NewFilesystem(ctx context.Context, creds *auth.Credentials, source string, opts NewFilesystemOptions) (*Filesystem, *Dentry, error)
+	GetFilesystem(ctx context.Context, vfsObj *VirtualFilesystem, creds *auth.Credentials, source string, opts GetFilesystemOptions) (*Filesystem, *Dentry, error)
 }
 
-// NewFilesystemOptions contains options to FilesystemType.NewFilesystem.
-type NewFilesystemOptions struct {
+// GetFilesystemOptions contains options to FilesystemType.GetFilesystem.
+type GetFilesystemOptions struct {
 	// Data is the string passed as the 5th argument to mount(2), which is
 	// usually a comma-separated list of filesystem-specific mount options.
 	Data string
 
 	// InternalData holds opaque FilesystemType-specific data. There is
 	// intentionally no way for applications to specify InternalData; if it is
-	// not nil, the call to NewFilesystem originates from within the sentry.
+	// not nil, the call to GetFilesystem originates from within the sentry.
 	InternalData interface{}
 }
 

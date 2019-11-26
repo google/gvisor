@@ -33,10 +33,10 @@ type FDTestFilesystem struct {
 	vfsfs Filesystem
 }
 
-// NewFilesystem implements FilesystemType.NewFilesystem.
-func (fstype FDTestFilesystemType) NewFilesystem(ctx context.Context, creds *auth.Credentials, source string, opts NewFilesystemOptions) (*Filesystem, *Dentry, error) {
+// GetFilesystem implements FilesystemType.GetFilesystem.
+func (fstype FDTestFilesystemType) GetFilesystem(ctx context.Context, vfsObj *VirtualFilesystem, creds *auth.Credentials, source string, opts GetFilesystemOptions) (*Filesystem, *Dentry, error) {
 	var fs FDTestFilesystem
-	fs.vfsfs.Init(&fs)
+	fs.vfsfs.Init(vfsObj, &fs)
 	return &fs.vfsfs, fs.NewDentry(), nil
 }
 
@@ -126,14 +126,14 @@ func (fs *FDTestFilesystem) NewDentry() *Dentry {
 }
 
 // IncRef implements DentryImpl.IncRef.
-func (d *fdTestDentry) IncRef(vfsfs *Filesystem) {
+func (d *fdTestDentry) IncRef() {
 }
 
 // TryIncRef implements DentryImpl.TryIncRef.
-func (d *fdTestDentry) TryIncRef(vfsfs *Filesystem) bool {
+func (d *fdTestDentry) TryIncRef() bool {
 	return true
 }
 
 // DecRef implements DentryImpl.DecRef.
-func (d *fdTestDentry) DecRef(vfsfs *Filesystem) {
+func (d *fdTestDentry) DecRef() {
 }

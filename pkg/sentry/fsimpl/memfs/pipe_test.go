@@ -152,7 +152,7 @@ func setup(t *testing.T) (context.Context, *auth.Credentials, *vfs.VirtualFilesy
 	// Create VFS.
 	vfsObj := vfs.New()
 	vfsObj.MustRegisterFilesystemType("memfs", FilesystemType{})
-	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "memfs", &vfs.NewFilesystemOptions{})
+	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "memfs", &vfs.GetFilesystemOptions{})
 	if err != nil {
 		t.Fatalf("failed to create tmpfs root mount: %v", err)
 	}
