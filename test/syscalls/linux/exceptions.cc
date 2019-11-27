@@ -22,6 +22,23 @@
 namespace gvisor {
 namespace testing {
 
+// Default value for the x87 FPU control word. See Intel SDM Vol 1, Ch 8.1.5
+// "x87 FPU Control Word".
+constexpr uint16_t kX87ControlWordDefault = 0x37f;
+
+// Mask for the divide-by-zero exception.
+constexpr uint16_t kX87ControlWordDiv0Mask = 1 << 2;
+
+// Default value for the SSE control register (MXCSR). See Intel SDM Vol 1, Ch
+// 11.6.4 "Initialization of SSE/SSE3 Extensions".
+constexpr uint32_t kMXCSRDefault = 0x1f80;
+
+// Mask for the divide-by-zero exception.
+constexpr uint32_t kMXCSRDiv0Mask = 1 << 9;
+
+// Flag for a pending divide-by-zero exception.
+constexpr uint32_t kMXCSRDiv0Flag = 1 << 2;
+
 void inline Halt() { asm("hlt\r\n"); }
 
 void inline SetAlignmentCheck() {
@@ -105,6 +122,170 @@ TEST(ExceptionTest, DivideByZero) {
         TEST_CHECK(quotient > 0);  // Force dependency.
       },
       ::testing::KilledBySignal(SIGFPE), "");
+}
+
+// By default, x87 exceptions are masked and simply return a default value.
+TEST(ExceptionTest, X87DivideByZeroMasked) {
+  int32_t quotient;
+  int32_t value = 1;
+  int32_t divisor = 0;
+  asm("fildl %[value]\r\n"
+      "fidivl %[divisor]\r\n"
+      "fistpl %[quotient]\r\n"
+      : [ quotient ] "=m"(quotient)
+      : [ value ] "m"(value), [ divisor ] "m"(divisor));
+
+  EXPECT_EQ(quotient, INT32_MIN);
+}
+
+// When unmasked, division by zero raises SIGFPE.
+TEST(ExceptionTest, X87DivideByZeroUnmasked) {
+  // See above.
+  struct sigaction sa = {};
+  sa.sa_handler = SIG_DFL;
+  auto const cleanup = ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGFPE, sa));
+
+  EXPECT_EXIT(
+      {
+        // Clear the divide by zero exception mask.
+        constexpr uint16_t kControlWord =
+            kX87ControlWordDefault & ~kX87ControlWordDiv0Mask;
+
+        int32_t quotient;
+        int32_t value = 1;
+        int32_t divisor = 0;
+        asm volatile(
+            "fldcw %[cw]\r\n"
+            "fildl %[value]\r\n"
+            "fidivl %[divisor]\r\n"
+            "fistpl %[quotient]\r\n"
+            : [ quotient ] "=m"(quotient)
+            : [ cw ] "m"(kControlWord), [ value ] "m"(value),
+              [ divisor ] "m"(divisor));
+      },
+      ::testing::KilledBySignal(SIGFPE), "");
+}
+
+// Pending exceptions in the x87 status register are not clobbered by syscalls.
+TEST(ExceptionTest, X87StatusClobber) {
+  // See above.
+  struct sigaction sa = {};
+  sa.sa_handler = SIG_DFL;
+  auto const cleanup = ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGFPE, sa));
+
+  EXPECT_EXIT(
+      {
+        // Clear the divide by zero exception mask.
+        constexpr uint16_t kControlWord =
+            kX87ControlWordDefault & ~kX87ControlWordDiv0Mask;
+
+        int32_t quotient;
+        int32_t value = 1;
+        int32_t divisor = 0;
+        asm volatile(
+            "fildl %[value]\r\n"
+            "fidivl %[divisor]\r\n"
+            // Exception is masked, so it does not occur here.
+            "fistpl %[quotient]\r\n"
+
+            // SYS_getpid placed in rax by constraint.
+            "syscall\r\n"
+
+            // Unmask exception. The syscall didn't clobber the pending
+            // exception, so now it can be raised.
+            //
+            // N.B. "a floating-point exception will be generated upon execution
+            // of the *next* floating-point instruction".
+            "fldcw %[cw]\r\n"
+            "fwait\r\n"
+            : [ quotient ] "=m"(quotient)
+            : [ value ] "m"(value), [ divisor ] "m"(divisor), "a"(SYS_getpid),
+              [ cw ] "m"(kControlWord)
+            : "rcx", "r11");
+      },
+      ::testing::KilledBySignal(SIGFPE), "");
+}
+
+// By default, SSE exceptions are masked and simply return a default value.
+TEST(ExceptionTest, SSEDivideByZeroMasked) {
+  uint32_t status;
+  int32_t quotient;
+  int32_t value = 1;
+  int32_t divisor = 0;
+  asm("cvtsi2ssl %[value], %%xmm0\r\n"
+      "cvtsi2ssl %[divisor], %%xmm1\r\n"
+      "divss %%xmm1, %%xmm0\r\n"
+      "cvtss2sil %%xmm0, %[quotient]\r\n"
+      : [ quotient ] "=r"(quotient), [ status ] "=r"(status)
+      : [ value ] "r"(value), [ divisor ] "r"(divisor)
+      : "xmm0", "xmm1");
+
+  EXPECT_EQ(quotient, INT32_MIN);
+}
+
+// When unmasked, division by zero raises SIGFPE.
+TEST(ExceptionTest, SSEDivideByZeroUnmasked) {
+  // See above.
+  struct sigaction sa = {};
+  sa.sa_handler = SIG_DFL;
+  auto const cleanup = ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGFPE, sa));
+
+  EXPECT_EXIT(
+      {
+        // Clear the divide by zero exception mask.
+        constexpr uint32_t kMXCSR = kMXCSRDefault & ~kMXCSRDiv0Mask;
+
+        int32_t quotient;
+        int32_t value = 1;
+        int32_t divisor = 0;
+        asm volatile(
+            "ldmxcsr %[mxcsr]\r\n"
+            "cvtsi2ssl %[value], %%xmm0\r\n"
+            "cvtsi2ssl %[divisor], %%xmm1\r\n"
+            "divss %%xmm1, %%xmm0\r\n"
+            "cvtss2sil %%xmm0, %[quotient]\r\n"
+            : [ quotient ] "=r"(quotient)
+            : [ mxcsr ] "m"(kMXCSR), [ value ] "r"(value),
+              [ divisor ] "r"(divisor)
+            : "xmm0", "xmm1");
+      },
+      ::testing::KilledBySignal(SIGFPE), "");
+}
+
+// Pending exceptions in the SSE status register are not clobbered by syscalls.
+TEST(ExceptionTest, SSEStatusClobber) {
+  uint32_t mxcsr;
+  int32_t quotient;
+  int32_t value = 1;
+  int32_t divisor = 0;
+  asm("cvtsi2ssl %[value], %%xmm0\r\n"
+      "cvtsi2ssl %[divisor], %%xmm1\r\n"
+      "divss %%xmm1, %%xmm0\r\n"
+      // Exception is masked, so it does not occur here.
+      "cvtss2sil %%xmm0, %[quotient]\r\n"
+
+      // SYS_getpid placed in rax by constraint.
+      "syscall\r\n"
+
+      // Intel SDM Vol 1, Ch 10.2.3.1 "SIMD Floating-Point Mask and Flag Bits":
+      // "If LDMXCSR or FXRSTOR clears a mask bit and sets the corresponding
+      // exception flag bit, a SIMD floating-point exception will not be
+      // generated as a result of this change. The unmasked exception will be
+      // generated only upon the execution of the next SSE/SSE2/SSE3 instruction
+      // that detects the unmasked exception condition."
+      //
+      // Though ambiguous, empirical evidence indicates that this means that
+      // exception flags set in the status register will never cause an
+      // exception to be raised; only a new exception condition will do so.
+      //
+      // Thus here we just check for the flag itself rather than trying to raise
+      // the exception.
+      "stmxcsr %[mxcsr]\r\n"
+      : [ quotient ] "=r"(quotient), [ mxcsr ] "+m"(mxcsr)
+      : [ value ] "r"(value), [ divisor ] "r"(divisor), "a"(SYS_getpid)
+      : "xmm0", "xmm1", "rcx", "r11");
+
+  EXPECT_TRUE(mxcsr & kMXCSRDiv0Flag);
 }
 
 TEST(ExceptionTest, IOAccessFault) {
