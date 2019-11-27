@@ -139,6 +139,16 @@ type NDPDispatcher interface {
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
 	OnOnLinkPrefixInvalidated(nicID tcpip.NICID, prefix tcpip.Subnet) []tcpip.Route
+
+	// OnDNSSearchListOption will be called when an NDP option with a DNS
+	// search list has been received.
+	//
+	// It is up to the caller to use the domain names in the search list
+	// for only their valid lifetime. OnDNSSearchListOption may be called
+	// with new or already known domain names. If called with known domain
+	// names, their valid lifetimes must be refreshed to lifetime (it may
+	// be increased, decreased or completely invalidated when lifetime = 0.
+	OnDNSSearchListOption(nicID tcpip.NICID, domainNames []string, lifetime time.Duration)
 }
 
 // NDPConfigurations is the NDP configurations for the netstack.
@@ -535,6 +545,14 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 	it, _ := ra.Options().Iter(false)
 	for opt, done, _ := it.Next(); !done; opt, done, _ = it.Next() {
 		switch opt.Type() {
+		case header.NDPDNSSearchListOptionType:
+			if ndp.nic.stack.ndpDisp == nil {
+				continue
+			}
+
+			dnssl := opt.(header.NDPDNSSearchList)
+			ndp.nic.stack.ndpDisp.OnDNSSearchListOption(ndp.nic.ID(), dnssl.DomainNames(), dnssl.Lifetime())
+
 		case header.NDPPrefixInformationType:
 			if !ndp.configs.DiscoverOnLinkPrefixes {
 				continue
@@ -596,7 +614,7 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 			// Update the invalidation timer.
 			timer := prefixState.invalidationTimer
 
-			if timer == nil && vl >= header.NDPPrefixInformationInfiniteLifetime {
+			if timer == nil && vl >= header.NDPInfiniteLifetime {
 				// Had infinite valid lifetime before and
 				// continues to have an invalid lifetime. Do
 				// nothing further.
@@ -615,7 +633,7 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 				*prefixState.doNotInvalidate = true
 			}
 
-			if vl >= header.NDPPrefixInformationInfiniteLifetime {
+			if vl >= header.NDPInfiniteLifetime {
 				// Prefix is now valid forever so we don't need
 				// an invalidation timer.
 				prefixState.invalidationTimer = nil
@@ -734,7 +752,7 @@ func (ndp *ndpState) rememberOnLinkPrefix(prefix tcpip.Subnet, l time.Duration) 
 	var timer *time.Timer
 
 	// Only create a timer if the lifetime is not infinite.
-	if l < header.NDPPrefixInformationInfiniteLifetime {
+	if l < header.NDPInfiniteLifetime {
 		timer = ndp.prefixInvalidationCallback(prefix, l, &doNotInvalidate)
 	}
 

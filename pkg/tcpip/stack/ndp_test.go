@@ -103,6 +103,12 @@ type ndpPrefixEvent struct {
 	discovered bool
 }
 
+type ndpDNSSLEvent struct {
+	nicID       tcpip.NICID
+	domainNames []string
+	lifetime    time.Duration
+}
+
 var _ stack.NDPDispatcher = (*ndpDispatcher)(nil)
 
 // ndpDispatcher implements NDPDispatcher so tests can know when various NDP
@@ -113,6 +119,7 @@ type ndpDispatcher struct {
 	rememberRouter bool
 	prefixC        chan ndpPrefixEvent
 	rememberPrefix bool
+	dnsslC         chan ndpDNSSLEvent
 	routeTable     []tcpip.Route
 }
 
@@ -224,6 +231,17 @@ func (n *ndpDispatcher) OnOnLinkPrefixInvalidated(nicID tcpip.NICID, prefix tcpi
 	}
 	n.routeTable = rt
 	return rt
+}
+
+// Implements stack.NDPDispatcher.OnDNSSearchListOption.
+func (n *ndpDispatcher) OnDNSSearchListOption(nicID tcpip.NICID, domainNames []string, lifetime time.Duration) {
+	if n.dnsslC != nil {
+		n.dnsslC <- ndpDNSSLEvent{
+			nicID,
+			domainNames,
+			lifetime,
+		}
+	}
 }
 
 // TestDADResolve tests that an address successfully resolves after performing
@@ -344,7 +362,7 @@ func TestDADResolve(t *testing.T) {
 				}
 
 				// Check NDP packet.
-				checker.IPv6(t, p.Pkt.Header.View().ToVectorisedView().First(),
+				checker.IPv6(t, p.Pkt.Header.View(),
 					checker.TTL(header.NDPHopLimit),
 					checker.NDPNS(
 						checker.NDPNSTargetAddress(addr1)))
@@ -1364,10 +1382,10 @@ func TestPrefixDiscoveryWithInfiniteLifetime(t *testing.T) {
 	// invalidate the prefix.
 	const testInfiniteLifetimeSeconds = 2
 	const testInfiniteLifetime = testInfiniteLifetimeSeconds * time.Second
-	saved := header.NDPPrefixInformationInfiniteLifetime
-	header.NDPPrefixInformationInfiniteLifetime = testInfiniteLifetime
+	saved := header.NDPInfiniteLifetime
+	header.NDPInfiniteLifetime = testInfiniteLifetime
 	defer func() {
-		header.NDPPrefixInformationInfiniteLifetime = saved
+		header.NDPInfiniteLifetime = saved
 	}()
 
 	prefix := tcpip.AddressWithPrefix{
@@ -1535,5 +1553,109 @@ func TestPrefixDiscoveryMaxOnLinkPrefixes(t *testing.T) {
 	// stack.MaxDiscoveredOnLinkPrefixes discovered on-link prefixes.
 	if got := s.GetRouteTable(); !cmp.Equal(got, expectedRt[:]) {
 		t.Fatalf("got GetRouteTable = %v, want = %v", got, expectedRt)
+	}
+}
+
+// TestNDPDNSSearchListDispatch tests that the integrator is informed when an
+// NDP DNS Search List option is received with at least one domain name in the
+// search list.
+func TestNDPDNSSearchListDispatch(t *testing.T) {
+	ndpDisp := ndpDispatcher{
+		dnsslC: make(chan ndpDNSSLEvent, 10),
+	}
+	e := channel.New(10, 1280, linkAddr1)
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+		NDPConfigs: stack.NDPConfigurations{
+			HandleRAs: true,
+		},
+		NDPDisp: &ndpDisp,
+	})
+	if err := s.CreateNIC(1, e); err != nil {
+		t.Fatalf("CreateNIC(1) = %s", err)
+	}
+
+	optSer := header.NDPOptionsSerializer{
+		header.NDPDNSSearchList([]byte{
+			0, 0,
+			0, 0, 0, 0,
+			2, 'h', 'i',
+			0,
+		}),
+		header.NDPDNSSearchList([]byte{
+			0, 0,
+			0, 0, 0, 1,
+			1, 'i',
+			0,
+			2, 'a', 'm',
+			2, 'm', 'e',
+			0,
+		}),
+		header.NDPDNSSearchList([]byte{
+			0, 0,
+			0, 0, 1, 0,
+			3, 'x', 'y', 'z',
+			0,
+			5, 'h', 'e', 'l', 'l', 'o',
+			5, 'w', 'o', 'r', 'l', 'd',
+			0,
+			4, 't', 'h', 'i', 's',
+			2, 'i', 's',
+			1, 'a',
+			4, 't', 'e', 's', 't',
+			0,
+		}),
+	}
+	expected := []struct {
+		domainNames []string
+		lifetime    time.Duration
+	}{
+		{
+			[]string{
+				"hi",
+			},
+			0,
+		},
+		{
+			[]string{
+				"i",
+				"am.me",
+			},
+			time.Second,
+		},
+		{
+			[]string{
+				"xyz",
+				"hello.world",
+				"this.is.a.test",
+			},
+			256 * time.Second,
+		},
+	}
+
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithOpts(llAddr1, 0, optSer))
+
+	for i := 0; i < len(expected); i++ {
+		select {
+		case dnssl := <-ndpDisp.dnsslC:
+			if dnssl.nicID != 1 {
+				t.Errorf("got %d-th dnssl nicID = %d, want = 1", i, dnssl.nicID)
+			}
+			if !cmp.Equal(dnssl.domainNames, expected[i].domainNames) {
+				t.Errorf("got %d-th dnssl domainNames = %v, want = %v", i, dnssl.domainNames, expected[i].domainNames)
+			}
+			if dnssl.lifetime != expected[i].lifetime {
+				t.Errorf("got %d-th dnssl lifetime = %s, want = %s", i, dnssl.lifetime, expected[i].lifetime)
+			}
+		case <-time.After(defaultTimeout):
+			t.Fatal("timed out waiting for DNSSL option")
+		}
+	}
+
+	// Should have no more DNSSL options.
+	select {
+	case <-ndpDisp.dnsslC:
+		t.Fatal("unexpectedly got a new DNSSL option")
+	case <-time.After(time.Second):
 	}
 }
