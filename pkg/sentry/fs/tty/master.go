@@ -32,7 +32,6 @@ import (
 // +stateify savable
 type masterInodeOperations struct {
 	fsutil.SimpleFileInode
-	fsutil.InodeNoopTruncate
 
 	// d is the containing dir.
 	d *dirInodeOperations
@@ -75,6 +74,11 @@ func newMasterInode(ctx context.Context, d *dirInodeOperations, owner fs.FileOwn
 
 // Release implements fs.InodeOperations.Release.
 func (mi *masterInodeOperations) Release(ctx context.Context) {
+}
+
+// Truncate implements fs.InodeOperations.Truncate.
+func (masterInodeOperations) Truncate(context.Context, *fs.Inode, int64) error {
+	return nil
 }
 
 // GetFile implements fs.InodeOperations.GetFile.
