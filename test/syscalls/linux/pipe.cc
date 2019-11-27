@@ -212,6 +212,20 @@ TEST(Pipe2Test, BadOptions) {
   EXPECT_THAT(pipe2(fds, 0xDEAD), SyscallFailsWithErrno(EINVAL));
 }
 
+// Tests that opening named pipes with O_TRUNC shouldn't cause an error, but
+// calls to (f)truncate should.
+TEST(NamedPipeTest, Truncate) {
+  const std::string tmp_path = NewTempAbsPath();
+  SKIP_IF(mkfifo(tmp_path.c_str(), 0644) != 0);
+
+  ASSERT_THAT(open(tmp_path.c_str(), O_NONBLOCK | O_RDONLY), SyscallSucceeds());
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(tmp_path.c_str(), O_RDWR | O_NONBLOCK | O_TRUNC));
+
+  ASSERT_THAT(truncate(tmp_path.c_str(), 0), SyscallFailsWithErrno(EINVAL));
+  ASSERT_THAT(ftruncate(fd.get(), 0), SyscallFailsWithErrno(EINVAL));
+}
+
 TEST_P(PipeTest, Seek) {
   SKIP_IF(!CreateBlocking());
 

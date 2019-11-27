@@ -31,7 +31,6 @@ import (
 // +stateify savable
 type slaveInodeOperations struct {
 	fsutil.SimpleFileInode
-	fsutil.InodeNoopTruncate
 
 	// d is the containing dir.
 	d *dirInodeOperations
@@ -71,6 +70,11 @@ func newSlaveInode(ctx context.Context, d *dirInodeOperations, t *Terminal, owne
 // Release implements fs.InodeOperations.Release.
 func (si *slaveInodeOperations) Release(ctx context.Context) {
 	si.t.DecRef()
+}
+
+// Truncate implements fs.InodeOperations.Truncate.
+func (slaveInodeOperations) Truncate(context.Context, *fs.Inode, int64) error {
+	return nil
 }
 
 // GetFile implements fs.InodeOperations.GetFile.

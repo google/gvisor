@@ -64,7 +64,7 @@ var _ fs.InodeOperations = (*tcpMemInode)(nil)
 
 func newTCPMemInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack, dir tcpMemDir) *fs.Inode {
 	tm := &tcpMemInode{
-		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0444), linux.PROC_SUPER_MAGIC),
+		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0644), linux.PROC_SUPER_MAGIC),
 		s:               s,
 		dir:             dir,
 	}
@@ -75,6 +75,11 @@ func newTCPMemInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack, dir
 		Type:      fs.SpecialFile,
 	}
 	return fs.NewInode(ctx, tm, msrc, sattr)
+}
+
+// Truncate implements fs.InodeOperations.Truncate.
+func (tcpMemInode) Truncate(context.Context, *fs.Inode, int64) error {
+	return nil
 }
 
 // GetFile implements fs.InodeOperations.GetFile.
@@ -168,14 +173,15 @@ func writeSize(dirType tcpMemDir, s inet.Stack, size inet.TCPBufferSize) error {
 
 // +stateify savable
 type tcpSack struct {
+	fsutil.SimpleFileInode
+
 	stack   inet.Stack `state:"wait"`
 	enabled *bool
-	fsutil.SimpleFileInode
 }
 
 func newTCPSackInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack) *fs.Inode {
 	ts := &tcpSack{
-		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0444), linux.PROC_SUPER_MAGIC),
+		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0644), linux.PROC_SUPER_MAGIC),
 		stack:           s,
 	}
 	sattr := fs.StableAttr{
@@ -185,6 +191,11 @@ func newTCPSackInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack) *f
 		Type:      fs.SpecialFile,
 	}
 	return fs.NewInode(ctx, ts, msrc, sattr)
+}
+
+// Truncate implements fs.InodeOperations.Truncate.
+func (tcpSack) Truncate(context.Context, *fs.Inode, int64) error {
+	return nil
 }
 
 // GetFile implements fs.InodeOperations.GetFile.
