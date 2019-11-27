@@ -171,6 +171,9 @@ func openAt(t *kernel.Task, dirFD int32, addr usermem.Addr, flags uint) (fd uint
 			}
 		}
 
+		// Truncate is called when O_TRUNC is specified for any kind of
+		// existing Dirent. Behavior is delegated to the entry's Truncate
+		// implementation.
 		if flags&linux.O_TRUNC != 0 {
 			if err := d.Inode.Truncate(t, d, 0); err != nil {
 				return err
@@ -397,7 +400,9 @@ func createAt(t *kernel.Task, dirFD int32, addr usermem.Addr, flags uint, mode l
 				return err
 			}
 
-			// Should we truncate the file?
+			// Truncate is called when O_TRUNC is specified for any kind of
+			// existing Dirent. Behavior is delegated to the entry's Truncate
+			// implementation.
 			if flags&linux.O_TRUNC != 0 {
 				if err := found.Inode.Truncate(t, found, 0); err != nil {
 					return err
@@ -1484,6 +1489,8 @@ func Truncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		if fs.IsDir(d.Inode.StableAttr) {
 			return syserror.EISDIR
 		}
+		// In contrast to open(O_TRUNC), truncate(2) is only valid for file
+		// types.
 		if !fs.IsFile(d.Inode.StableAttr) {
 			return syserror.EINVAL
 		}
@@ -1522,7 +1529,8 @@ func Ftruncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		return 0, nil, syserror.EINVAL
 	}
 
-	// Note that this is different from truncate(2) above, where a
+	// In contrast to open(O_TRUNC), truncate(2) is only valid for file
+	// types. Note that this is different from truncate(2) above, where a
 	// directory returns EISDIR.
 	if !fs.IsFile(file.Dirent.Inode.StableAttr) {
 		return 0, nil, syserror.EINVAL
