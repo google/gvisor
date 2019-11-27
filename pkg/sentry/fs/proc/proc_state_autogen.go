@@ -382,15 +382,15 @@ func (x *tcpMemFile) load(m state.Map) {
 func (x *tcpSack) beforeSave() {}
 func (x *tcpSack) save(m state.Map) {
 	x.beforeSave()
+	m.Save("SimpleFileInode", &x.SimpleFileInode)
 	m.Save("stack", &x.stack)
 	m.Save("enabled", &x.enabled)
-	m.Save("SimpleFileInode", &x.SimpleFileInode)
 }
 
 func (x *tcpSack) load(m state.Map) {
+	m.Load("SimpleFileInode", &x.SimpleFileInode)
 	m.LoadWait("stack", &x.stack)
 	m.Load("enabled", &x.enabled)
-	m.Load("SimpleFileInode", &x.SimpleFileInode)
 	m.AfterLoad(x.afterLoad)
 }
 
