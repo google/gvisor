@@ -397,6 +397,8 @@ el1_undef:
 	B ·Shutdown(SB)
 
 el1_svc:
+	MOVD $0, CPU_ERROR_CODE(RSV_REG)
+	MOVD $0, CPU_ERROR_TYPE(RSV_REG)
 	B ·Halt(SB)
 
 el1_dbg:
