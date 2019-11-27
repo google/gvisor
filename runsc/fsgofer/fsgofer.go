@@ -956,13 +956,13 @@ func (l *localFile) Readdir(offset uint64, count uint32) ([]p9.Dirent, error) {
 }
 
 func (l *localFile) readDirent(f int, offset uint64, count uint32, skip uint64) ([]p9.Dirent, error) {
+	var dirents []p9.Dirent
+
 	// Limit 'count' to cap the slice size that is returned.
 	const maxCount = 100000
 	if count > maxCount {
 		count = maxCount
 	}
-
-	dirents := make([]p9.Dirent, 0, count)
 
 	// Pre-allocate buffers that will be reused to get partial results.
 	direntsBuf := make([]byte, 8192)
