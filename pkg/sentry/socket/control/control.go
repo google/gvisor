@@ -320,8 +320,30 @@ func PackInq(t *kernel.Task, inq int32, buf []byte) []byte {
 		buf,
 		linux.SOL_TCP,
 		linux.TCP_INQ,
-		4,
+		t.Arch().Width(),
 		inq,
+	)
+}
+
+// PackTOS packs an IP_TOS socket control message.
+func PackTOS(t *kernel.Task, tos int8, buf []byte) []byte {
+	return putCmsgStruct(
+		buf,
+		linux.SOL_IP,
+		linux.IP_TOS,
+		t.Arch().Width(),
+		tos,
+	)
+}
+
+// PackTClass packs an IPV6_TCLASS socket control message.
+func PackTClass(t *kernel.Task, tClass int32, buf []byte) []byte {
+	return putCmsgStruct(
+		buf,
+		linux.SOL_IPV6,
+		linux.IPV6_TCLASS,
+		t.Arch().Width(),
+		tClass,
 	)
 }
 

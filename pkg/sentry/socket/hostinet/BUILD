@@ -34,5 +34,6 @@ go_library(
         "//pkg/syserror",
         "//pkg/tcpip/stack",
         "//pkg/waiter",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
