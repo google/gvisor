@@ -5,9 +5,9 @@
 {{ if $gh_repo }}
 <div class="td-page-meta ml-2 pb-1 pt-2 mb-0">
 {{ $editURL := printf "%s/edit/master/content/%s" $gh_repo .Path }}
-{{ if and ($gh_subdir) (.Site.Language.Lang) }}
+{{ if and ($gh_subdir) (.Site.IsMultiLingual) }}
 {{ $editURL = printf "%s/edit/master/%s/content/%s/%s" $gh_repo $gh_subdir ($.Site.Language.Lang) $.Path }}
-{{ else if .Site.Language.Lang }}
+{{ else if .Site.IsMultiLingual }}
 {{ $editURL = printf "%s/edit/master/content/%s/%s" $gh_repo ($.Site.Language.Lang) .Path }}
 {{ else if $gh_subdir }}
 {{ $editURL = printf "%s/edit/master/%s/content/%s" $gh_repo $gh_subdir $.Path }}
