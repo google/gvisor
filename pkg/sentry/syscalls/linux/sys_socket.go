@@ -802,6 +802,14 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 		controlData = control.PackInq(t, cms.IP.Inq, controlData)
 	}
 
+	if cms.IP.HasTOS {
+		controlData = control.PackTOS(t, cms.IP.TOS, controlData)
+	}
+
+	if cms.IP.HasTClass {
+		controlData = control.PackTClass(t, cms.IP.TClass, controlData)
+	}
+
 	if cms.Unix.Rights != nil {
 		controlData, mflags = control.PackRights(t, cms.Unix.Rights.(control.SCMRights), flags&linux.MSG_CMSG_CLOEXEC != 0, controlData, mflags)
 	}

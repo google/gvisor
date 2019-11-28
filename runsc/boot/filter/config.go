@@ -134,11 +134,6 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.AllowValue(syscall.SOL_SOCKET),
 			seccomp.AllowValue(syscall.SO_SNDBUF),
 		},
-		{
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.SOL_SOCKET),
-			seccomp.AllowValue(syscall.SO_REUSEADDR),
-		},
 	},
 	syscall.SYS_GETTID:       {},
 	syscall.SYS_GETTIMEOFDAY: {},
@@ -317,6 +312,16 @@ func hostInetFilters() seccomp.SyscallRules {
 		syscall.SYS_GETSOCKOPT: []seccomp.Rule{
 			{
 				seccomp.AllowAny{},
+				seccomp.AllowValue(syscall.SOL_IP),
+				seccomp.AllowValue(syscall.IP_RECVTOS),
+			},
+			{
+				seccomp.AllowAny{},
+				seccomp.AllowValue(syscall.SOL_IPV6),
+				seccomp.AllowValue(syscall.IPV6_RECVTCLASS),
+			},
+			{
+				seccomp.AllowAny{},
 				seccomp.AllowValue(syscall.SOL_IPV6),
 				seccomp.AllowValue(syscall.IPV6_V6ONLY),
 			},
@@ -415,6 +420,20 @@ func hostInetFilters() seccomp.SyscallRules {
 				seccomp.AllowAny{},
 				seccomp.AllowValue(syscall.SOL_TCP),
 				seccomp.AllowValue(syscall.TCP_NODELAY),
+				seccomp.AllowAny{},
+				seccomp.AllowValue(4),
+			},
+			{
+				seccomp.AllowAny{},
+				seccomp.AllowValue(syscall.SOL_IP),
+				seccomp.AllowValue(syscall.IP_RECVTOS),
+				seccomp.AllowAny{},
+				seccomp.AllowValue(4),
+			},
+			{
+				seccomp.AllowAny{},
+				seccomp.AllowValue(syscall.SOL_IPV6),
+				seccomp.AllowValue(syscall.IPV6_RECVTCLASS),
 				seccomp.AllowAny{},
 				seccomp.AllowValue(4),
 			},
