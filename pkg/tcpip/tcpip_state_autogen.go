@@ -50,6 +50,10 @@ func (x *ControlMessages) save(m state.Map) {
 	m.Save("Timestamp", &x.Timestamp)
 	m.Save("HasInq", &x.HasInq)
 	m.Save("Inq", &x.Inq)
+	m.Save("HasTOS", &x.HasTOS)
+	m.Save("TOS", &x.TOS)
+	m.Save("HasTClass", &x.HasTClass)
+	m.Save("TClass", &x.TClass)
 }
 
 func (x *ControlMessages) afterLoad() {}
@@ -58,6 +62,10 @@ func (x *ControlMessages) load(m state.Map) {
 	m.Load("Timestamp", &x.Timestamp)
 	m.Load("HasInq", &x.HasInq)
 	m.Load("Inq", &x.Inq)
+	m.Load("HasTOS", &x.HasTOS)
+	m.Load("TOS", &x.TOS)
+	m.Load("HasTClass", &x.HasTClass)
+	m.Load("TClass", &x.TClass)
 }
 
 func init() {

@@ -308,7 +308,7 @@ type ControlMessages struct {
 	// HasTimestamp indicates whether Timestamp is valid/set.
 	HasTimestamp bool
 
-	// Timestamp is the time (in ns) that the last packed used to create
+	// Timestamp is the time (in ns) that the last packet used to create
 	// the read data was received.
 	Timestamp int64
 
@@ -317,6 +317,18 @@ type ControlMessages struct {
 
 	// Inq is the number of bytes ready to be received.
 	Inq int32
+
+	// HasTOS indicates whether Tos is valid/set.
+	HasTOS bool
+
+	// TOS is the IPv4 type of service of the associated packet.
+	TOS int8
+
+	// HasTClass indicates whether Tclass is valid/set.
+	HasTClass bool
+
+	// Tclass is the IPv6 traffic class of the associated packet.
+	TClass int32
 }
 
 // Endpoint is the interface implemented by transport protocols (e.g., tcp, udp)
