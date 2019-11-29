@@ -1089,3 +1089,9 @@ func (c *Context) SetGSOEnabled(enable bool) {
 func (c *Context) MSSWithoutOptions() uint16 {
 	return uint16(c.linkEP.MTU() - header.IPv4MinimumSize - header.TCPMinimumSize)
 }
+
+// MSSWithoutOptionsV6 returns the value for the MSS used by the stack when no
+// options are in use for IPv6 packets.
+func (c *Context) MSSWithoutOptionsV6() uint16 {
+	return uint16(c.linkEP.MTU() - header.IPv6MinimumSize - header.TCPMinimumSize)
+}
