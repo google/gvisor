@@ -1814,7 +1814,7 @@ TEST_P(IPv4UDPUnboundSocketTest, BindReusePortThenReuseAddr) {
               SyscallFailsWithErrno(EADDRINUSE));
 }
 
-TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConvertableToReusePort) {
+TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConvertibleToReusePort) {
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket3 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
@@ -1855,7 +1855,7 @@ TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConvertableToReusePort) {
               SyscallFailsWithErrno(EADDRINUSE));
 }
 
-TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConvertableToReuseAddr) {
+TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConvertibleToReuseAddr) {
   // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
   SKIP_IF(IsRunningOnGvisor());
 
