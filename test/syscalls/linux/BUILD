@@ -3351,11 +3351,15 @@ cc_binary(
     ],
 )
 
-cc_binary(
-    name = "udp_socket_test",
+cc_library(
+    name = "udp_socket_test_cases",
     testonly = 1,
-    srcs = ["udp_socket.cc"],
-    linkstatic = 1,
+    srcs = [
+        "udp_socket_test_cases.cc",
+    ] + select_for_linux([
+        "udp_socket_errqueue_test_case.cc",
+    ]),
+    hdrs = ["udp_socket_test_cases.h"],
     deps = [
         ":socket_test_util",
         ":unix_domain_socket_test_util",
@@ -3365,6 +3369,17 @@ cc_binary(
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest",
+    ],
+    alwayslink = 1,
+)
+
+cc_binary(
+    name = "udp_socket_test",
+    testonly = 1,
+    srcs = ["udp_socket.cc"],
+    linkstatic = 1,
+    deps = [
+        ":udp_socket_test_cases",
     ],
 )
 
