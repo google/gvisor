@@ -30,6 +30,7 @@ import (
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
+	"gvisor.dev/gvisor/pkg/sentry/socket/control"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -488,6 +489,7 @@ func (s *socketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 		return 0, syserr.ErrInvalidArgument
 	}
 
+	controlBuf := control.PackControlMessages(t, controlMessages)
 	sendmsgFromBlocks := safemem.WriterFunc(func(srcs safemem.BlockSeq) (uint64, error) {
 		// Refuse to do anything if any part of src.Addrs was unusable.
 		if uint64(src.NumBytes()) != srcs.NumBytes() {
@@ -500,7 +502,7 @@ func (s *socketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 		// We always do a non-blocking send*().
 		sysflags := flags | syscall.MSG_DONTWAIT
 
-		if srcs.NumBlocks() == 1 {
+		if srcs.NumBlocks() == 1 && len(controlBuf) == 0 {
 			// Skip allocating []syscall.Iovec.
 			src := srcs.Head()
 			n, _, errno := syscall.Syscall6(syscall.SYS_SENDTO, uintptr(s.fd), src.Addr(), uintptr(src.Len()), uintptr(sysflags), uintptr(firstBytePtr(to)), uintptr(len(to)))
@@ -518,6 +520,10 @@ func (s *socketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 		if len(to) != 0 {
 			msg.Name = &to[0]
 			msg.Namelen = uint32(len(to))
+		}
+		if len(controlBuf) != 0 {
+			msg.Control = &controlBuf[0]
+			msg.Controllen = uint64(len(controlBuf))
 		}
 		return sendmsg(s.fd, &msg, sysflags)
 	})
