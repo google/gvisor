@@ -953,20 +953,6 @@ func (e *endpoint) handleReset(s *segment) (ok bool, err *tcpip.Error) {
 func (e *endpoint) handleSegments() *tcpip.Error {
 	checkRequeue := true
 	for i := 0; i < maxSegmentsPerWake; i++ {
-		e.mu.RLock()
-		state := e.state
-		e.mu.RUnlock()
-		if state == StateClose {
-			// When we get into StateClose while processing from the queue,
-			// return immediately and let the protocolMainloop handle it.
-			//
-			// We can reach StateClose only while processing a previous segment
-			// or a notification from the protocolMainLoop (caller goroutine).
-			// This means that with this return, the segment dequeue below can
-			// never occur on a closed endpoint.
-			return nil
-		}
-
 		s := e.segmentQueue.dequeue()
 		if s == nil {
 			checkRequeue = false
@@ -1023,6 +1009,24 @@ func (e *endpoint) handleSegments() *tcpip.Error {
 			if drop {
 				s.decRef()
 				continue
+			}
+
+			// Now check if the received segment has caused us to transition
+			// to a CLOSED state, if yes then terminate processing and do
+			// not invoke the sender.
+			e.mu.RLock()
+			state := e.state
+			e.mu.RUnlock()
+			if state == StateClose {
+				// When we get into StateClose while processing from the queue,
+				// return immediately and let the protocolMainloop handle it.
+				//
+				// We can reach StateClose only while processing a previous segment
+				// or a notification from the protocolMainLoop (caller goroutine).
+				// This means that with this return, the segment dequeue below can
+				// never occur on a closed endpoint.
+				s.decRef()
+				return nil
 			}
 			e.snd.handleRcvdSegment(s)
 		}
