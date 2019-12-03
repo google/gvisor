@@ -199,6 +199,18 @@ func (d *Dentry) HasChildren() bool {
 	return len(d.children) != 0
 }
 
+// Children returns a map containing all of d's children.
+func (d *Dentry) Children() map[string]*Dentry {
+	if !d.HasChildren() {
+		return nil
+	}
+	m := make(map[string]*Dentry)
+	for name, child := range d.children {
+		m[name] = child
+	}
+	return m
+}
+
 // InsertChild makes child a child of d with the given name.
 //
 // InsertChild is a mutator of d and child.

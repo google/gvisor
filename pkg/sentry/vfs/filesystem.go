@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 )
 
@@ -47,6 +48,9 @@ func (fs *Filesystem) Init(vfsObj *VirtualFilesystem, impl FilesystemImpl) {
 	fs.refs = 1
 	fs.vfs = vfsObj
 	fs.impl = impl
+	vfsObj.filesystemsMu.Lock()
+	vfsObj.filesystems[fs] = struct{}{}
+	vfsObj.filesystemsMu.Unlock()
 }
 
 // VirtualFilesystem returns the containing VirtualFilesystem.
@@ -69,6 +73,9 @@ func (fs *Filesystem) IncRef() {
 // DecRef decrements fs' reference count.
 func (fs *Filesystem) DecRef() {
 	if refs := atomic.AddInt64(&fs.refs, -1); refs == 0 {
+		fs.vfs.filesystemsMu.Lock()
+		delete(fs.vfs.filesystems, fs)
+		fs.vfs.filesystemsMu.Unlock()
 		fs.impl.Release()
 	} else if refs < 0 {
 		panic("Filesystem.decRef() called without holding a reference")
@@ -163,5 +170,70 @@ type FilesystemImpl interface {
 	// UnlinkAt removes the non-directory file at rp.
 	UnlinkAt(ctx context.Context, rp *ResolvingPath) error
 
-	// TODO: d_path(); extended attributes; inotify_add_watch(); bind()
+	// ListxattrAt returns all extended attribute names for the file at rp.
+	ListxattrAt(ctx context.Context, rp *ResolvingPath) ([]string, error)
+
+	// GetxattrAt returns the value associated with the given extended
+	// attribute for the file at rp.
+	GetxattrAt(ctx context.Context, rp *ResolvingPath, name string) (string, error)
+
+	// SetxattrAt changes the value associated with the given extended
+	// attribute for the file at rp.
+	SetxattrAt(ctx context.Context, rp *ResolvingPath, opts SetxattrOptions) error
+
+	// RemovexattrAt removes the given extended attribute from the file at rp.
+	RemovexattrAt(ctx context.Context, rp *ResolvingPath, name string) error
+
+	// PrependPath prepends a path from vd to vd.Mount().Root() to b.
+	//
+	// If vfsroot.Ok(), it is the contextual VFS root; if it is encountered
+	// before vd.Mount().Root(), PrependPath should stop prepending path
+	// components and return a PrependPathAtVFSRootError.
+	//
+	// If traversal of vd.Dentry()'s ancestors encounters an independent
+	// ("root") Dentry that is not vd.Mount().Root() (i.e. vd.Dentry() is not a
+	// descendant of vd.Mount().Root()), PrependPath should stop prepending
+	// path components and return a PrependPathAtNonMountRootError.
+	//
+	// Filesystems for which Dentries do not have meaningful paths may prepend
+	// an arbitrary descriptive string to b and then return a
+	// PrependPathSyntheticError.
+	//
+	// Most implementations can acquire the appropriate locks to ensure that
+	// Dentry.Name() and Dentry.Parent() are fixed for vd.Dentry() and all of
+	// its ancestors, then call GenericPrependPath.
+	//
+	// Preconditions: vd.Mount().Filesystem().Impl() == this FilesystemImpl.
+	PrependPath(ctx context.Context, vfsroot, vd VirtualDentry, b *fspath.Builder) error
+
+	// TODO: inotify_add_watch(); bind()
+}
+
+// PrependPathAtVFSRootError is returned by implementations of
+// FilesystemImpl.PrependPath() when they encounter the contextual VFS root.
+type PrependPathAtVFSRootError struct{}
+
+// Error implements error.Error.
+func (PrependPathAtVFSRootError) Error() string {
+	return "vfs.FilesystemImpl.PrependPath() reached VFS root"
+}
+
+// PrependPathAtNonMountRootError is returned by implementations of
+// FilesystemImpl.PrependPath() when they encounter an independent ancestor
+// Dentry that is not the Mount root.
+type PrependPathAtNonMountRootError struct{}
+
+// Error implements error.Error.
+func (PrependPathAtNonMountRootError) Error() string {
+	return "vfs.FilesystemImpl.PrependPath() reached root other than Mount root"
+}
+
+// PrependPathSyntheticError is returned by implementations of
+// FilesystemImpl.PrependPath() for which prepended names do not represent real
+// paths.
+type PrependPathSyntheticError struct{}
+
+// Error implements error.Error.
+func (PrependPathSyntheticError) Error() string {
+	return "vfs.FilesystemImpl.PrependPath() prepended synthetic name"
 }

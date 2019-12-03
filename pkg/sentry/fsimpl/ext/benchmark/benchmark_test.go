@@ -81,7 +81,11 @@ func mount(b *testing.B, imagePath string, vfsfs *vfs.VirtualFilesystem, pop *vf
 	ctx := contexttest.Context(b)
 	creds := auth.CredentialsFromContext(ctx)
 
-	if err := vfsfs.NewMount(ctx, creds, imagePath, pop, "extfs", &vfs.GetFilesystemOptions{InternalData: int(f.Fd())}); err != nil {
+	if err := vfsfs.MountAt(ctx, creds, imagePath, pop, "extfs", &vfs.MountOptions{
+		GetFilesystemOptions: vfs.GetFilesystemOptions{
+			InternalData: int(f.Fd()),
+		},
+	}); err != nil {
 		b.Fatalf("failed to mount tmpfs submount: %v", err)
 	}
 	return func() {

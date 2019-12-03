@@ -20,6 +20,7 @@
 //   VirtualFilesystem.mountMu
 //     Dentry.mu
 //       Locks acquired by FilesystemImpls between Prepare{Delete,Rename}Dentry and Commit{Delete,Rename*}Dentry
+//     VirtualFilesystem.filesystemsMu
 // VirtualFilesystem.fsTypesMu
 //
 // Locking Dentry.mu in multiple Dentries requires holding
@@ -28,6 +29,11 @@ package vfs
 
 import (
 	"sync"
+
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // A VirtualFilesystem (VFS for short) combines Filesystems in trees of Mounts.
@@ -67,6 +73,11 @@ type VirtualFilesystem struct {
 	// mountpoints is analogous to Linux's mountpoint_hashtable.
 	mountpoints map[*Dentry]map[*Mount]struct{}
 
+	// filesystems contains all Filesystems. filesystems is protected by
+	// filesystemsMu.
+	filesystemsMu sync.Mutex
+	filesystems   map[*Filesystem]struct{}
+
 	// fsTypes contains all FilesystemTypes that are usable in the
 	// VirtualFilesystem. fsTypes is protected by fsTypesMu.
 	fsTypesMu sync.RWMutex
@@ -77,10 +88,460 @@ type VirtualFilesystem struct {
 func New() *VirtualFilesystem {
 	vfs := &VirtualFilesystem{
 		mountpoints: make(map[*Dentry]map[*Mount]struct{}),
+		filesystems: make(map[*Filesystem]struct{}),
 		fsTypes:     make(map[string]FilesystemType),
 	}
 	vfs.mounts.Init()
 	return vfs
+}
+
+// PathOperation specifies the path operated on by a VFS method.
+//
+// PathOperation is passed to VFS methods by pointer to reduce memory copying:
+// it's somewhat large and should never escape. (Options structs are passed by
+// pointer to VFS and FileDescription methods for the same reason.)
+type PathOperation struct {
+	// Root is the VFS root. References on Root are borrowed from the provider
+	// of the PathOperation.
+	//
+	// Invariants: Root.Ok().
+	Root VirtualDentry
+
+	// Start is the starting point for the path traversal. References on Start
+	// are borrowed from the provider of the PathOperation (i.e. the caller of
+	// the VFS method to which the PathOperation was passed).
+	//
+	// Invariants: Start.Ok(). If Pathname.Absolute, then Start == Root.
+	Start VirtualDentry
+
+	// Path is the pathname traversed by this operation.
+	Pathname string
+
+	// If FollowFinalSymlink is true, and the Dentry traversed by the final
+	// path component represents a symbolic link, the symbolic link should be
+	// followed.
+	FollowFinalSymlink bool
+}
+
+// GetDentryAt returns a VirtualDentry representing the given path, at which a
+// file must exist. A reference is taken on the returned VirtualDentry.
+func (vfs *VirtualFilesystem) GetDentryAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *GetDentryOptions) (VirtualDentry, error) {
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return VirtualDentry{}, err
+	}
+	for {
+		d, err := rp.mount.fs.impl.GetDentryAt(ctx, rp, *opts)
+		if err == nil {
+			vd := VirtualDentry{
+				mount:  rp.mount,
+				dentry: d,
+			}
+			rp.mount.IncRef()
+			vfs.putResolvingPath(rp)
+			return vd, nil
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return VirtualDentry{}, err
+		}
+	}
+}
+
+// LinkAt creates a hard link at newpop representing the existing file at
+// oldpop.
+func (vfs *VirtualFilesystem) LinkAt(ctx context.Context, creds *auth.Credentials, oldpop, newpop *PathOperation) error {
+	oldVD, err := vfs.GetDentryAt(ctx, creds, oldpop, &GetDentryOptions{})
+	if err != nil {
+		return err
+	}
+	rp, err := vfs.getResolvingPath(creds, newpop)
+	if err != nil {
+		oldVD.DecRef()
+		return err
+	}
+	for {
+		err := rp.mount.fs.impl.LinkAt(ctx, rp, oldVD)
+		if err == nil {
+			oldVD.DecRef()
+			vfs.putResolvingPath(rp)
+			return nil
+		}
+		if !rp.handleError(err) {
+			oldVD.DecRef()
+			vfs.putResolvingPath(rp)
+			return err
+		}
+	}
+}
+
+// MkdirAt creates a directory at the given path.
+func (vfs *VirtualFilesystem) MkdirAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *MkdirOptions) error {
+	// "Under Linux, apart from the permission bits, the S_ISVTX mode bit is
+	// also honored." - mkdir(2)
+	opts.Mode &= 0777 | linux.S_ISVTX
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return err
+	}
+	for {
+		err := rp.mount.fs.impl.MkdirAt(ctx, rp, *opts)
+		if err == nil {
+			vfs.putResolvingPath(rp)
+			return nil
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return err
+		}
+	}
+}
+
+// MknodAt creates a file of the given mode at the given path. It returns an
+// error from the syserror package.
+func (vfs *VirtualFilesystem) MknodAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *MknodOptions) error {
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return nil
+	}
+	for {
+		if err = rp.mount.fs.impl.MknodAt(ctx, rp, *opts); err == nil {
+			vfs.putResolvingPath(rp)
+			return nil
+		}
+		// Handle mount traversals.
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return err
+		}
+	}
+}
+
+// OpenAt returns a FileDescription providing access to the file at the given
+// path. A reference is taken on the returned FileDescription.
+func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *OpenOptions) (*FileDescription, error) {
+	// Remove:
+	//
+	// - O_LARGEFILE, which we always report in FileDescription status flags
+	// since only 64-bit architectures are supported at this time.
+	//
+	// - O_CLOEXEC, which affects file descriptors and therefore must be
+	// handled outside of VFS.
+	//
+	// - Unknown flags.
+	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_NOCTTY | linux.O_TRUNC | linux.O_APPEND | linux.O_NONBLOCK | linux.O_DSYNC | linux.O_ASYNC | linux.O_DIRECT | linux.O_DIRECTORY | linux.O_NOFOLLOW | linux.O_NOATIME | linux.O_SYNC | linux.O_PATH | linux.O_TMPFILE
+	// Linux's __O_SYNC (which we call linux.O_SYNC) implies O_DSYNC.
+	if opts.Flags&linux.O_SYNC != 0 {
+		opts.Flags |= linux.O_DSYNC
+	}
+	// Linux's __O_TMPFILE (which we call linux.O_TMPFILE) must be specified
+	// with O_DIRECTORY and a writable access mode (to ensure that it fails on
+	// filesystem implementations that do not support it).
+	if opts.Flags&linux.O_TMPFILE != 0 {
+		if opts.Flags&linux.O_DIRECTORY == 0 {
+			return nil, syserror.EINVAL
+		}
+		if opts.Flags&linux.O_CREAT != 0 {
+			return nil, syserror.EINVAL
+		}
+		if opts.Flags&linux.O_ACCMODE == linux.O_RDONLY {
+			return nil, syserror.EINVAL
+		}
+	}
+	// O_PATH causes most other flags to be ignored.
+	if opts.Flags&linux.O_PATH != 0 {
+		opts.Flags &= linux.O_DIRECTORY | linux.O_NOFOLLOW | linux.O_PATH
+	}
+	// "On Linux, the following bits are also honored in mode: [S_ISUID,
+	// S_ISGID, S_ISVTX]" - open(2)
+	opts.Mode &= 0777 | linux.S_ISUID | linux.S_ISGID | linux.S_ISVTX
+
+	if opts.Flags&linux.O_NOFOLLOW != 0 {
+		pop.FollowFinalSymlink = false
+	}
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return nil, err
+	}
+	if opts.Flags&linux.O_DIRECTORY != 0 {
+		rp.mustBeDir = true
+		rp.mustBeDirOrig = true
+	}
+	for {
+		fd, err := rp.mount.fs.impl.OpenAt(ctx, rp, *opts)
+		if err == nil {
+			vfs.putResolvingPath(rp)
+			return fd, nil
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return nil, err
+		}
+	}
+}
+
+// ReadlinkAt returns the target of the symbolic link at the given path.
+func (vfs *VirtualFilesystem) ReadlinkAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) (string, error) {
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return "", err
+	}
+	for {
+		target, err := rp.mount.fs.impl.ReadlinkAt(ctx, rp)
+		if err == nil {
+			vfs.putResolvingPath(rp)
+			return target, nil
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return "", err
+		}
+	}
+}
+
+// RenameAt renames the file at oldpop to newpop.
+func (vfs *VirtualFilesystem) RenameAt(ctx context.Context, creds *auth.Credentials, oldpop, newpop *PathOperation, opts *RenameOptions) error {
+	oldVD, err := vfs.GetDentryAt(ctx, creds, oldpop, &GetDentryOptions{})
+	if err != nil {
+		return err
+	}
+	rp, err := vfs.getResolvingPath(creds, newpop)
+	if err != nil {
+		oldVD.DecRef()
+		return err
+	}
+	for {
+		err := rp.mount.fs.impl.RenameAt(ctx, rp, oldVD, *opts)
+		if err == nil {
+			oldVD.DecRef()
+			vfs.putResolvingPath(rp)
+			return nil
+		}
+		if !rp.handleError(err) {
+			oldVD.DecRef()
+			vfs.putResolvingPath(rp)
+			return err
+		}
+	}
+}
+
+// RmdirAt removes the directory at the given path.
+func (vfs *VirtualFilesystem) RmdirAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) error {
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return err
+	}
+	for {
+		err := rp.mount.fs.impl.RmdirAt(ctx, rp)
+		if err == nil {
+			vfs.putResolvingPath(rp)
+			return nil
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return err
+		}
+	}
+}
+
+// SetStatAt changes metadata for the file at the given path.
+func (vfs *VirtualFilesystem) SetStatAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *SetStatOptions) error {
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return err
+	}
+	for {
+		err := rp.mount.fs.impl.SetStatAt(ctx, rp, *opts)
+		if err == nil {
+			vfs.putResolvingPath(rp)
+			return nil
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return err
+		}
+	}
+}
+
+// StatAt returns metadata for the file at the given path.
+func (vfs *VirtualFilesystem) StatAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *StatOptions) (linux.Statx, error) {
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return linux.Statx{}, err
+	}
+	for {
+		stat, err := rp.mount.fs.impl.StatAt(ctx, rp, *opts)
+		if err == nil {
+			vfs.putResolvingPath(rp)
+			return stat, nil
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return linux.Statx{}, err
+		}
+	}
+}
+
+// StatFSAt returns metadata for the filesystem containing the file at the
+// given path.
+func (vfs *VirtualFilesystem) StatFSAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) (linux.Statfs, error) {
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return linux.Statfs{}, err
+	}
+	for {
+		statfs, err := rp.mount.fs.impl.StatFSAt(ctx, rp)
+		if err == nil {
+			vfs.putResolvingPath(rp)
+			return statfs, nil
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return linux.Statfs{}, err
+		}
+	}
+}
+
+// SymlinkAt creates a symbolic link at the given path with the given target.
+func (vfs *VirtualFilesystem) SymlinkAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, target string) error {
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return err
+	}
+	for {
+		err := rp.mount.fs.impl.SymlinkAt(ctx, rp, target)
+		if err == nil {
+			vfs.putResolvingPath(rp)
+			return nil
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return err
+		}
+	}
+}
+
+// UnlinkAt deletes the non-directory file at the given path.
+func (vfs *VirtualFilesystem) UnlinkAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) error {
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return err
+	}
+	for {
+		err := rp.mount.fs.impl.UnlinkAt(ctx, rp)
+		if err == nil {
+			vfs.putResolvingPath(rp)
+			return nil
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return err
+		}
+	}
+}
+
+// ListxattrAt returns all extended attribute names for the file at the given
+// path.
+func (vfs *VirtualFilesystem) ListxattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) ([]string, error) {
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return nil, err
+	}
+	for {
+		names, err := rp.mount.fs.impl.ListxattrAt(ctx, rp)
+		if err == nil {
+			vfs.putResolvingPath(rp)
+			return names, nil
+		}
+		if err == syserror.ENOTSUP {
+			// Linux doesn't actually return ENOTSUP in this case; instead,
+			// fs/xattr.c:vfs_listxattr() falls back to allowing the security
+			// subsystem to return security extended attributes, which by
+			// default don't exist.
+			vfs.putResolvingPath(rp)
+			return nil, nil
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return nil, err
+		}
+	}
+}
+
+// GetxattrAt returns the value associated with the given extended attribute
+// for the file at the given path.
+func (vfs *VirtualFilesystem) GetxattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, name string) (string, error) {
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return "", err
+	}
+	for {
+		val, err := rp.mount.fs.impl.GetxattrAt(ctx, rp, name)
+		if err == nil {
+			vfs.putResolvingPath(rp)
+			return val, nil
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return "", err
+		}
+	}
+}
+
+// SetxattrAt changes the value associated with the given extended attribute
+// for the file at the given path.
+func (vfs *VirtualFilesystem) SetxattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *SetxattrOptions) error {
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return err
+	}
+	for {
+		err := rp.mount.fs.impl.SetxattrAt(ctx, rp, *opts)
+		if err == nil {
+			vfs.putResolvingPath(rp)
+			return nil
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return err
+		}
+	}
+}
+
+// RemovexattrAt removes the given extended attribute from the file at rp.
+func (vfs *VirtualFilesystem) RemovexattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, name string) error {
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return err
+	}
+	for {
+		err := rp.mount.fs.impl.RemovexattrAt(ctx, rp, name)
+		if err == nil {
+			vfs.putResolvingPath(rp)
+			return nil
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return err
+		}
+	}
+}
+
+// SyncAllFilesystems has the semantics of Linux's sync(2).
+func (vfs *VirtualFilesystem) SyncAllFilesystems(ctx context.Context) error {
+	fss := make(map[*Filesystem]struct{})
+	vfs.filesystemsMu.Lock()
+	for fs := range vfs.filesystems {
+		fss[fs] = struct{}{}
+	}
+	vfs.filesystemsMu.Unlock()
+	var retErr error
+	for fs := range fss {
+		if err := fs.impl.Sync(ctx); err != nil && retErr == nil {
+			retErr = err
+		}
+	}
+	return retErr
 }
 
 // A VirtualDentry represents a node in a VFS tree, by combining a Dentry
