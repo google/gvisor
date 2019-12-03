@@ -208,6 +208,15 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 		i += linux.SizeOfControlMessageHeader
 		width := t.Arch().Width()
 		length := int(h.Length) - linux.SizeOfControlMessageHeader
+		if length < 0 {
+			strs = append(strs, fmt.Sprintf(
+				"{level=%s, type=%s, length=%d, content too short}",
+				level,
+				typ,
+				h.Length,
+			))
+			break
+		}
 
 		if skipData {
 			strs = append(strs, fmt.Sprintf("{level=%s, type=%s, length=%d}", level, typ, h.Length))
