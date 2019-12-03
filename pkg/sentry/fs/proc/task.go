@@ -639,7 +639,7 @@ func (i *ioData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 	io.Accumulate(i.IOUsage())
 
 	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "char: %d\n", io.CharsRead)
+	fmt.Fprintf(&buf, "rchar: %d\n", io.CharsRead)
 	fmt.Fprintf(&buf, "wchar: %d\n", io.CharsWritten)
 	fmt.Fprintf(&buf, "syscr: %d\n", io.ReadSyscalls)
 	fmt.Fprintf(&buf, "syscw: %d\n", io.WriteSyscalls)
