@@ -205,7 +205,7 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 
 	// Handle ACK (not FIN-ACK, which we handled above) during one of the
 	// shutdown states.
-	if s.flagIsSet(header.TCPFlagAck) {
+	if s.flagIsSet(header.TCPFlagAck) && s.ackNumber == r.ep.snd.sndNxt {
 		r.ep.mu.Lock()
 		switch r.ep.state {
 		case StateFinWait1:
