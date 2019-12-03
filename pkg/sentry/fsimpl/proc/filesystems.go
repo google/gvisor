@@ -19,7 +19,7 @@ package proc
 // +stateify savable
 type filesystemsData struct{}
 
-// TODO(b/138862512): Implement vfs.DynamicBytesSource.Generate for
+// TODO(gvisor.dev/issue/1195): Implement vfs.DynamicBytesSource.Generate for
 // filesystemsData. We would need to retrive filesystem names from
 // vfs.VirtualFilesystem. Also needs vfs replacement for
 // fs.Filesystem.AllowUserList() and fs.FilesystemRequiresDev.

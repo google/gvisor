@@ -16,7 +16,7 @@ package proc
 
 import "gvisor.dev/gvisor/pkg/sentry/kernel"
 
-// TODO(b/138862512): Implement mountInfoFile and mountsFile.
+// TODO(gvisor.dev/issue/1195): Implement mountInfoFile and mountsFile.
 
 // mountInfoFile implements vfs.DynamicBytesSource for /proc/[pid]/mountinfo.
 //
