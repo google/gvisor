@@ -313,7 +313,17 @@ func hostInetFilters() seccomp.SyscallRules {
 			{
 				seccomp.AllowAny{},
 				seccomp.AllowValue(syscall.SOL_IP),
+				seccomp.AllowValue(syscall.IP_TOS),
+			},
+			{
+				seccomp.AllowAny{},
+				seccomp.AllowValue(syscall.SOL_IP),
 				seccomp.AllowValue(syscall.IP_RECVTOS),
+			},
+			{
+				seccomp.AllowAny{},
+				seccomp.AllowValue(syscall.SOL_IPV6),
+				seccomp.AllowValue(syscall.IPV6_TCLASS),
 			},
 			{
 				seccomp.AllowAny{},
@@ -426,7 +436,21 @@ func hostInetFilters() seccomp.SyscallRules {
 			{
 				seccomp.AllowAny{},
 				seccomp.AllowValue(syscall.SOL_IP),
+				seccomp.AllowValue(syscall.IP_TOS),
+				seccomp.AllowAny{},
+				seccomp.AllowValue(4),
+			},
+			{
+				seccomp.AllowAny{},
+				seccomp.AllowValue(syscall.SOL_IP),
 				seccomp.AllowValue(syscall.IP_RECVTOS),
+				seccomp.AllowAny{},
+				seccomp.AllowValue(4),
+			},
+			{
+				seccomp.AllowAny{},
+				seccomp.AllowValue(syscall.SOL_IPV6),
+				seccomp.AllowValue(syscall.IPV6_TCLASS),
 				seccomp.AllowAny{},
 				seccomp.AllowValue(4),
 			},
