@@ -95,13 +95,7 @@ TEST(SigaltstackTest, ResetByExecve) {
   auto const cleanup_sigstack =
       ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaltstack(stack));
 
-  std::string full_path;
-  char* test_src = getenv("TEST_SRCDIR");
-  if (test_src) {
-    full_path = JoinPath(test_src, "../../linux/sigaltstack_check");
-  }
-
-  ASSERT_FALSE(full_path.empty());
+  std::string full_path = RunfilePath("test/syscalls/linux/sigaltstack_check");
 
   pid_t child_pid = -1;
   int execve_errno = 0;

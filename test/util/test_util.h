@@ -764,6 +764,12 @@ MATCHER_P2(EquivalentWithin, target, tolerance,
   return Equivalent(arg, target, tolerance);
 }
 
+// Returns the absolute path to the a data dependency. 'path' is the runfile
+// location relative to workspace root.
+#ifdef __linux__
+std::string RunfilePath(std::string path);
+#endif
+
 void TestInit(int* argc, char*** argv);
 
 }  // namespace testing
