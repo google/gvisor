@@ -287,7 +287,9 @@ func (w *Watchdog) runTurn() {
 				if !ok {
 					// New stuck task detected.
 					//
-					// TODO(b/65849403): Tasks blocked doing IO may be considered stuck in kernel.
+					// Note that tasks blocked doing IO may be considered stuck in kernel,
+					// unless they are surrounded b
+					// Task.UninterruptibleSleepStart/Finish.
 					tc = &offender{lastUpdateTime: lastUpdateTime}
 					stuckTasks.Increment()
 					newTaskFound = true
