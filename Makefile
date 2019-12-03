@@ -22,7 +22,7 @@ bazel-server-start: docker-build
 		--privileged \
 		gvisor-bazel \
 		sh -c "while :; do sleep 100; done" && \
-	docker exec --user 0:0 -i gvisor-bazel sh -c "groupadd --gid $(GID) --non-unique gvisor && useradd --uid $(UID) --gid $(GID) -d $(HOME) gvisor"
+	docker exec --user 0:0 -i gvisor-bazel sh -c "groupadd --gid $(GID) --non-unique gvisor && useradd --uid $(UID) --non-unique --gid $(GID) -d $(HOME) gvisor"
 
 bazel-server:
 	docker exec gvisor-bazel true || \
