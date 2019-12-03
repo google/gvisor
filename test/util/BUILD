@@ -237,6 +237,7 @@ cc_library(
     ] + select_for_linux(
         [
             "test_util_impl.cc",
+            "test_util_runfiles.cc",
         ],
     ),
     hdrs = ["test_util.h"],
@@ -245,6 +246,7 @@ cc_library(
         ":logging",
         ":posix_error",
         ":save_util",
+        "@bazel_tools//tools/cpp/runfiles",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
