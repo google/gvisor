@@ -24,6 +24,8 @@
 #include <sys/un.h>
 
 #include "gtest/gtest.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -787,6 +789,27 @@ TEST_P(TCPSocketPairTest, SetTCPLingerTimeout) {
       SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
   EXPECT_EQ(get, kTCPLingerTimeout);
+}
+
+TEST_P(TCPSocketPairTest, TestTCPCloseWithData) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  ScopedThread t([&]() {
+    // Close one end to trigger sending of a FIN.
+    ASSERT_THAT(shutdown(sockets->second_fd(), SHUT_WR), SyscallSucceeds());
+    char buf[3];
+    ASSERT_THAT(read(sockets->second_fd(), buf, 3),
+                SyscallSucceedsWithValue(3));
+    absl::SleepFor(absl::Milliseconds(50));
+    ASSERT_THAT(close(sockets->release_second_fd()), SyscallSucceeds());
+  });
+
+  absl::SleepFor(absl::Milliseconds(50));
+  // Send some data then close.
+  constexpr char kStr[] = "abc";
+  ASSERT_THAT(write(sockets->first_fd(), kStr, 3), SyscallSucceedsWithValue(3));
+  t.Join();
+  ASSERT_THAT(close(sockets->release_first_fd()), SyscallSucceeds());
 }
 
 }  // namespace testing

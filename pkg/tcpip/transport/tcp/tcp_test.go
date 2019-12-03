@@ -5632,6 +5632,7 @@ func TestTCPTimeWaitRSTIgnored(t *testing.T) {
 		DstPort: context.StackPort,
 		Flags:   header.TCPFlagSyn,
 		SeqNum:  iss,
+		RcvWnd:  30000,
 	})
 
 	// Receive the SYN-ACK reply.
@@ -5750,6 +5751,7 @@ func TestTCPTimeWaitOutOfOrder(t *testing.T) {
 		DstPort: context.StackPort,
 		Flags:   header.TCPFlagSyn,
 		SeqNum:  iss,
+		RcvWnd:  30000,
 	})
 
 	// Receive the SYN-ACK reply.
@@ -5856,6 +5858,7 @@ func TestTCPTimeWaitNewSyn(t *testing.T) {
 		DstPort: context.StackPort,
 		Flags:   header.TCPFlagSyn,
 		SeqNum:  iss,
+		RcvWnd:  30000,
 	})
 
 	// Receive the SYN-ACK reply.
@@ -5929,6 +5932,7 @@ func TestTCPTimeWaitNewSyn(t *testing.T) {
 		DstPort: context.StackPort,
 		Flags:   header.TCPFlagSyn,
 		SeqNum:  iss,
+		RcvWnd:  30000,
 	})
 
 	c.CheckNoPacketTimeout("unexpected packet received in response to SYN", 1*time.Second)
@@ -5941,6 +5945,7 @@ func TestTCPTimeWaitNewSyn(t *testing.T) {
 		DstPort: context.StackPort,
 		Flags:   header.TCPFlagSyn,
 		SeqNum:  iss,
+		RcvWnd:  30000,
 	})
 
 	// Receive the SYN-ACK reply.
@@ -6007,6 +6012,7 @@ func TestTCPTimeWaitDuplicateFINExtendsTimeWait(t *testing.T) {
 		DstPort: context.StackPort,
 		Flags:   header.TCPFlagSyn,
 		SeqNum:  iss,
+		RcvWnd:  30000,
 	})
 
 	// Receive the SYN-ACK reply.
@@ -6114,4 +6120,177 @@ func TestTCPTimeWaitDuplicateFINExtendsTimeWait(t *testing.T) {
 		checker.SeqNum(uint32(ackHeaders.AckNum)),
 		checker.AckNum(uint32(ackHeaders.SeqNum)),
 		checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck)))
+}
+
+func TestTCPCloseWithData(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	// Set TCPTimeWaitTimeout to 5 seconds so that sockets are marked closed
+	// after 5 seconds in TIME_WAIT state.
+	tcpTimeWaitTimeout := 5 * time.Second
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPTimeWaitTimeoutOption(tcpTimeWaitTimeout)); err != nil {
+		t.Fatalf("c.stack.SetTransportProtocolOption(tcp, tcpip.TCPLingerTimeoutOption(%d) failed: %s", tcpTimeWaitTimeout, err)
+	}
+
+	wq := &waiter.Queue{}
+	ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, wq)
+	if err != nil {
+		t.Fatalf("NewEndpoint failed: %s", err)
+	}
+	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		t.Fatalf("Bind failed: %s", err)
+	}
+
+	if err := ep.Listen(10); err != nil {
+		t.Fatalf("Listen failed: %s", err)
+	}
+
+	// Send a SYN request.
+	iss := seqnum.Value(789)
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagSyn,
+		SeqNum:  iss,
+		RcvWnd:  30000,
+	})
+
+	// Receive the SYN-ACK reply.
+	b := c.GetPacket()
+	tcpHdr := header.TCP(header.IPv4(b).Payload())
+	c.IRS = seqnum.Value(tcpHdr.SequenceNumber())
+
+	ackHeaders := &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  iss + 1,
+		AckNum:  c.IRS + 1,
+		RcvWnd:  30000,
+	}
+
+	// Send ACK.
+	c.SendPacket(nil, ackHeaders)
+
+	// Try to accept the connection.
+	we, ch := waiter.NewChannelEntry(nil)
+	wq.EventRegister(&we, waiter.EventIn)
+	defer wq.EventUnregister(&we)
+
+	c.EP, _, err = ep.Accept()
+	if err == tcpip.ErrWouldBlock {
+		// Wait for connection to be established.
+		select {
+		case <-ch:
+			c.EP, _, err = ep.Accept()
+			if err != nil {
+				t.Fatalf("Accept failed: %s", err)
+			}
+
+		case <-time.After(1 * time.Second):
+			t.Fatalf("Timed out waiting for accept")
+		}
+	}
+
+	// Now trigger a passive close by sending a FIN.
+	finHeaders := &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagAck | header.TCPFlagFin,
+		SeqNum:  iss + 1,
+		AckNum:  c.IRS + 2,
+		RcvWnd:  30000,
+	}
+
+	c.SendPacket(nil, finHeaders)
+
+	// Get the ACK to the FIN we just sent.
+	checker.IPv4(t, c.GetPacket(), checker.TCP(
+		checker.SrcPort(context.StackPort),
+		checker.DstPort(context.TestPort),
+		checker.SeqNum(uint32(c.IRS+1)),
+		checker.AckNum(uint32(iss)+2),
+		checker.TCPFlags(header.TCPFlagAck)))
+
+	// Now write a few bytes and then close the endpoint.
+	data := []byte{1, 2, 3}
+	view := buffer.NewView(len(data))
+	copy(view, data)
+
+	if _, _, err := c.EP.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+
+	// Check that data is received.
+	b = c.GetPacket()
+	checker.IPv4(t, b,
+		checker.PayloadLen(len(data)+header.TCPMinimumSize),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(c.IRS)+1),
+			checker.AckNum(uint32(iss)+2), // Acknum is initial sequence number + 1
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+		),
+	)
+
+	if p := b[header.IPv4MinimumSize+header.TCPMinimumSize:]; !bytes.Equal(data, p) {
+		t.Errorf("got data = %x, want = %x", p, data)
+	}
+
+	c.EP.Close()
+	// Check the FIN.
+	checker.IPv4(t, c.GetPacket(), checker.TCP(
+		checker.SrcPort(context.StackPort),
+		checker.DstPort(context.TestPort),
+		checker.SeqNum(uint32(c.IRS+1)+uint32(len(data))),
+		checker.AckNum(uint32(iss+2)),
+		checker.TCPFlags(header.TCPFlagFin|header.TCPFlagAck)))
+
+	// First send a partial ACK.
+	ackHeaders = &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  iss + 2,
+		AckNum:  c.IRS + 1 + seqnum.Value(len(data)-1),
+		RcvWnd:  30000,
+	}
+	c.SendPacket(nil, ackHeaders)
+
+	// Now send a full ACK.
+	ackHeaders = &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  iss + 2,
+		AckNum:  c.IRS + 1 + seqnum.Value(len(data)),
+		RcvWnd:  30000,
+	}
+	c.SendPacket(nil, ackHeaders)
+
+	// Now ACK the FIN.
+	ackHeaders.AckNum++
+	c.SendPacket(nil, ackHeaders)
+
+	// Now send an ACK and we should get a RST back as the endpoint should
+	// be in CLOSED state.
+	ackHeaders = &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  iss + 2,
+		AckNum:  c.IRS + 1 + seqnum.Value(len(data)),
+		RcvWnd:  30000,
+	}
+	c.SendPacket(nil, ackHeaders)
+
+	// Check the RST.
+	checker.IPv4(t, c.GetPacket(), checker.TCP(
+		checker.SrcPort(context.StackPort),
+		checker.DstPort(context.TestPort),
+		checker.SeqNum(uint32(ackHeaders.AckNum)),
+		checker.AckNum(uint32(ackHeaders.SeqNum)),
+		checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck)))
+
 }
