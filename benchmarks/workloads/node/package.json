@@ -1,0 +1,19 @@
+{
+  "name": "node",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "@google-cloud/container": "^0.3.0",
+    "@google-cloud/logging": "^4.2.0",
+    "@google-cloud/monitoring": "^0.6.0",
+    "@google-cloud/spanner": "^2.2.1",
+    "async": "^2.6.1",
+    "bluebird": "^3.5.3",
+    "express": "^4.16.4",
+    "firebase": "^5.7.2",
+    "firebase-admin": "^6.4.0",
+    "lodash": "^4.17.11",
+    "mailgun-js": "^0.22.0",
+    "request": "^2.88.0"
+  }
+}

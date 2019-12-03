@@ -1,0 +1,55 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    activesupport (5.2.3)
+      concurrent-ruby (~> 1.0, >= 1.0.2)
+      i18n (>= 0.7, < 2)
+      minitest (~> 5.1)
+      tzinfo (~> 1.1)
+    cassandra-driver (3.2.3)
+      ione (~> 1.2)
+    concurrent-ruby (1.1.5)
+    i18n (1.6.0)
+      concurrent-ruby (~> 1.0)
+    ione (1.2.4)
+    minitest (5.11.3)
+    mustermann (1.0.3)
+    pdf-core (0.7.0)
+    prawn (2.2.2)
+      pdf-core (~> 0.7.0)
+      ttfunk (~> 1.5)
+    puma (3.12.1)
+    rack (2.0.7)
+    rack-protection (2.0.5)
+      rack
+    rake (12.3.2)
+    redis (4.1.1)
+    ruby-fann (1.2.6)
+    sinatra (2.0.5)
+      mustermann (~> 1.0)
+      rack (~> 2.0)
+      rack-protection (= 2.0.5)
+      tilt (~> 2.0)
+    squid (1.4.1)
+      activesupport (>= 4.0)
+      prawn (~> 2.2)
+    thread_safe (0.3.6)
+    tilt (2.0.9)
+    ttfunk (1.5.1)
+    tzinfo (1.2.5)
+      thread_safe (~> 0.1)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  cassandra-driver
+  puma
+  rake
+  redis
+  ruby-fann
+  sinatra
+  squid (~> 1.4)
+
+BUNDLED WITH
+   1.17.1

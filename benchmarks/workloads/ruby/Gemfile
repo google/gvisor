@@ -1,0 +1,12 @@
+source "https://rubygems.org"
+# load a bunch of dependencies to take up memory
+gem "sinatra"
+gem "puma"
+gem "redis"
+gem 'rake'
+gem 'squid', '~> 1.4'
+gem 'cassandra-driver'
+gem 'ruby-fann'
+gem 'rbnacl'
+gem 'bcrypt'
+gem "activemerchant"
