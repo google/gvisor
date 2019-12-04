@@ -305,7 +305,7 @@ func (c *context64) PtracePeekUser(addr uintptr) (interface{}, error) {
 		buf := binary.Marshal(nil, usermem.ByteOrder, c.ptraceGetRegs())
 		return c.Native(uintptr(usermem.ByteOrder.Uint64(buf[addr:]))), nil
 	}
-	// TODO(b/34088053): debug registers
+	// Note: x86 debug registers are missing.
 	return c.Native(0), nil
 }
 
@@ -320,6 +320,6 @@ func (c *context64) PtracePokeUser(addr, data uintptr) error {
 		_, err := c.PtraceSetRegs(bytes.NewBuffer(buf))
 		return err
 	}
-	// TODO(b/34088053): debug registers
+	// Note: x86 debug registers are missing.
 	return nil
 }
