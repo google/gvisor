@@ -19,7 +19,6 @@
 #include <unistd.h>
 
 #include "gtest/gtest.h"
-#include "test/syscalls/linux/file_base.h"
 #include "test/syscalls/linux/readv_common.h"
 #include "test/util/test_util.h"
 
@@ -28,9 +27,30 @@ namespace testing {
 
 namespace {
 
-class ReadvSocketTest : public SocketTest {
+class ReadvSocketTest : public ::testing::Test {
+ public:
   void SetUp() override {
-    SocketTest::SetUp();
+    test_unix_stream_socket_[0] = -1;
+    test_unix_stream_socket_[1] = -1;
+    test_unix_dgram_socket_[0] = -1;
+    test_unix_dgram_socket_[1] = -1;
+    test_unix_seqpacket_socket_[0] = -1;
+    test_unix_seqpacket_socket_[1] = -1;
+
+    ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, test_unix_stream_socket_),
+                SyscallSucceeds());
+    ASSERT_THAT(fcntl(test_unix_stream_socket_[0], F_SETFL, O_NONBLOCK),
+                SyscallSucceeds());
+    ASSERT_THAT(socketpair(AF_UNIX, SOCK_DGRAM, 0, test_unix_dgram_socket_),
+                SyscallSucceeds());
+    ASSERT_THAT(fcntl(test_unix_dgram_socket_[0], F_SETFL, O_NONBLOCK),
+                SyscallSucceeds());
+    ASSERT_THAT(
+        socketpair(AF_UNIX, SOCK_SEQPACKET, 0, test_unix_seqpacket_socket_),
+        SyscallSucceeds());
+    ASSERT_THAT(fcntl(test_unix_seqpacket_socket_[0], F_SETFL, O_NONBLOCK),
+                SyscallSucceeds());
+
     ASSERT_THAT(
         write(test_unix_stream_socket_[1], kReadvTestData, kReadvTestDataSize),
         SyscallSucceedsWithValue(kReadvTestDataSize));
@@ -40,11 +60,22 @@ class ReadvSocketTest : public SocketTest {
     ASSERT_THAT(write(test_unix_seqpacket_socket_[1], kReadvTestData,
                       kReadvTestDataSize),
                 SyscallSucceedsWithValue(kReadvTestDataSize));
-    // FIXME(b/69821513): Enable when possible.
-    // ASSERT_THAT(write(test_tcp_socket_[1], kReadvTestData,
-    // kReadvTestDataSize),
-    //             SyscallSucceedsWithValue(kReadvTestDataSize));
   }
+
+  void TearDown() override {
+    close(test_unix_stream_socket_[0]);
+    close(test_unix_stream_socket_[1]);
+
+    close(test_unix_dgram_socket_[0]);
+    close(test_unix_dgram_socket_[1]);
+
+    close(test_unix_seqpacket_socket_[0]);
+    close(test_unix_seqpacket_socket_[1]);
+  }
+
+  int test_unix_stream_socket_[2];
+  int test_unix_dgram_socket_[2];
+  int test_unix_seqpacket_socket_[2];
 };
 
 TEST_F(ReadvSocketTest, ReadOneBufferPerByte_StreamSocket) {
