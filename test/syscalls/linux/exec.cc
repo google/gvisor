@@ -686,7 +686,7 @@ TEST(ExecveatTest, SymlinkNoFollowWithAbsolutePath) {
   EXPECT_EQ(execve_errno, ELOOP);
 }
 
-TEST(ExecveatTest, SymlinkNoFollowAndEmptyPath) {
+TEST(ExecveatTest, SymlinkNoFollowWithEmptyPath) {
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo("/tmp", RunfilePath(kBasicWorkload)));
   std::string path = link.path();

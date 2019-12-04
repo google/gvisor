@@ -15,6 +15,7 @@
 package linux
 
 import (
+	"fmt"
 	"path"
 	"syscall"
 
@@ -75,16 +76,16 @@ func Execve(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 // Execveat implements linux syscall execveat(2).
 func Execveat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	dirFD := args[0].Int()
+	fd := args[0].Int()
 	pathnameAddr := args[1].Pointer()
 	argvAddr := args[2].Pointer()
 	envvAddr := args[3].Pointer()
 	flags := args[4].Int()
 
-	return execveat(t, dirFD, pathnameAddr, argvAddr, envvAddr, flags)
+	return execveat(t, fd, pathnameAddr, argvAddr, envvAddr, flags)
 }
 
-func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr usermem.Addr, flags int32) (uintptr, *kernel.SyscallControl, error) {
+func execveat(t *kernel.Task, fd int32, pathnameAddr, argvAddr, envvAddr usermem.Addr, flags int32) (uintptr, *kernel.SyscallControl, error) {
 	pathname, err := t.CopyInString(pathnameAddr, linux.PATH_MAX)
 	if err != nil {
 		return 0, nil, err
@@ -119,25 +120,27 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 	defer root.DecRef()
 
 	var wd *fs.Dirent
-	var executable *fs.File
 	var closeOnExec bool
-	if dirFD == linux.AT_FDCWD || path.IsAbs(pathname) {
+	if fd == linux.AT_FDCWD || path.IsAbs(pathname) {
 		// Even if the pathname is absolute, we may still need the wd
 		// for interpreter scripts if the path of the interpreter is
 		// relative.
 		wd = t.FSContext().WorkingDirectory()
 	} else {
-		// Need to extract the given FD.
-		f, fdFlags := t.FDTable().Get(dirFD)
+		// Need to extract the given FD to check CloseOnExec flag.
+		f, fdFlags := t.FDTable().Get(fd)
 		if f == nil {
 			return 0, nil, syserror.EBADF
 		}
-		defer f.DecRef()
 		closeOnExec = fdFlags.CloseOnExec
+		f.DecRef()
 
-		if atEmptyPath && len(pathname) == 0 {
-			executable = f
+		if len(pathname) == 0 {
+			// Always resolve if the fd passed is the file to be executed.
+			resolveFinal = true
+			pathname = fmt.Sprintf("/dev/fd/%d", fd)
 		} else {
+			pathname = fmt.Sprintf("/dev/fd/%d/%s", fd, pathname)
 			wd = f.Dirent
 			wd.IncRef()
 			if !fs.IsDir(wd.Inode.StableAttr) {
@@ -158,7 +161,7 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 		RemainingTraversals: &remainingTraversals,
 		ResolveFinal:        resolveFinal,
 		Filename:            pathname,
-		File:                executable,
+		File:                nil,
 		CloseOnExec:         closeOnExec,
 		Argv:                argv,
 		Envv:                envv,
