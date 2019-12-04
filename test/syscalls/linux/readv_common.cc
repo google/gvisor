@@ -19,11 +19,52 @@
 #include <unistd.h>
 
 #include "gtest/gtest.h"
-#include "test/syscalls/linux/file_base.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
 namespace testing {
+
+// MatchesStringLength checks that a tuple argument of (struct iovec *, int)
+// corresponding to an iovec array and its length, contains data that matches
+// the string length strlen.
+MATCHER_P(MatchesStringLength, strlen, "") {
+  struct iovec* iovs = arg.first;
+  int niov = arg.second;
+  int offset = 0;
+  for (int i = 0; i < niov; i++) {
+    offset += iovs[i].iov_len;
+  }
+  if (offset != static_cast<int>(strlen)) {
+    *result_listener << offset;
+    return false;
+  }
+  return true;
+}
+
+// MatchesStringValue checks that a tuple argument of (struct iovec *, int)
+// corresponding to an iovec array and its length, contains data that matches
+// the string value str.
+MATCHER_P(MatchesStringValue, str, "") {
+  struct iovec* iovs = arg.first;
+  int len = strlen(str);
+  int niov = arg.second;
+  int offset = 0;
+  for (int i = 0; i < niov; i++) {
+    struct iovec iov = iovs[i];
+    if (len < offset) {
+      *result_listener << "strlen " << len << " < offset " << offset;
+      return false;
+    }
+    if (strncmp(static_cast<char*>(iov.iov_base), &str[offset], iov.iov_len)) {
+      absl::string_view iovec_string(static_cast<char*>(iov.iov_base),
+                                     iov.iov_len);
+      *result_listener << iovec_string << " @offset " << offset;
+      return false;
+    }
+    offset += iov.iov_len;
+  }
+  return true;
+}
 
 extern const char kReadvTestData[] =
     "127.0.0.1      localhost"

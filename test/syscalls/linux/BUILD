@@ -1795,7 +1795,6 @@ cc_binary(
     name = "readv_socket_test",
     testonly = 1,
     srcs = [
-        "file_base.h",
         "readv_common.cc",
         "readv_common.h",
         "readv_socket.cc",
