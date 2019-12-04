@@ -1134,9 +1134,14 @@ func (e *endpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
+	addr := e.ID.LocalAddress
+	if e.state == StateConnected {
+		addr = e.route.LocalAddress
+	}
+
 	return tcpip.FullAddress{
 		NIC:  e.RegisterNICID,
-		Addr: e.ID.LocalAddress,
+		Addr: addr,
 		Port: e.ID.LocalPort,
 	}, nil
 }
