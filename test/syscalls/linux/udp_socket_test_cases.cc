@@ -527,6 +527,45 @@ TEST_P(UdpSocketTest, DisconnectAfterBind) {
               SyscallFailsWithErrno(ENOTCONN));
 }
 
+TEST_P(UdpSocketTest, BindToAnyConnnectToLocalhost) {
+  struct sockaddr_storage baddr = {};
+  auto port = *Port(reinterpret_cast<struct sockaddr_storage*>(addr_[1]));
+  if (GetParam() == AddressFamily::kIpv4) {
+    auto addr_in = reinterpret_cast<struct sockaddr_in*>(&baddr);
+    addr_in->sin_family = AF_INET;
+    addr_in->sin_port = port;
+    addr_in->sin_addr.s_addr = htonl(INADDR_ANY);
+  } else {
+    auto addr_in = reinterpret_cast<struct sockaddr_in6*>(&baddr);
+    addr_in->sin6_family = AF_INET6;
+    addr_in->sin6_port = port;
+    addr_in->sin6_scope_id = 0;
+    addr_in->sin6_addr = IN6ADDR_ANY_INIT;
+  }
+  ASSERT_THAT(bind(s_, reinterpret_cast<sockaddr*>(&baddr), addrlen_),
+              SyscallSucceeds());
+  // Connect the socket.
+  ASSERT_THAT(connect(s_, addr_[0], addrlen_), SyscallSucceeds());
+
+  struct sockaddr_storage addr = {};
+  socklen_t addrlen = sizeof(addr);
+  EXPECT_THAT(getsockname(s_, reinterpret_cast<sockaddr*>(&addr), &addrlen),
+              SyscallSucceeds());
+
+  // If the socket is bound to ANY and connected to a loopback address,
+  // getsockname() has to return the loopback address.
+  if (GetParam() == AddressFamily::kIpv4) {
+    auto addr_out = reinterpret_cast<struct sockaddr_in*>(&addr);
+    EXPECT_EQ(addrlen, sizeof(*addr_out));
+    EXPECT_EQ(addr_out->sin_addr.s_addr, htonl(INADDR_LOOPBACK));
+  } else {
+    auto addr_out = reinterpret_cast<struct sockaddr_in6*>(&addr);
+    struct in6_addr loopback = IN6ADDR_LOOPBACK_INIT;
+    EXPECT_EQ(addrlen, sizeof(*addr_out));
+    EXPECT_EQ(memcmp(&addr_out->sin6_addr, &loopback, sizeof(in6_addr)), 0);
+  }
+}
+
 TEST_P(UdpSocketTest, DisconnectAfterBindToAny) {
   struct sockaddr_storage baddr = {};
   socklen_t addrlen;
