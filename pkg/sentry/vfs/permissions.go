@@ -119,3 +119,65 @@ func MayWriteFileWithOpenFlags(flags uint32) bool {
 		return false
 	}
 }
+
+// CheckSetStat checks that creds has permission to change the metadata of a
+// file with the given permissions, UID, and GID as specified by stat, subject
+// to the rules of Linux's fs/attr.c:setattr_prepare().
+func CheckSetStat(creds *auth.Credentials, stat *linux.Statx, mode uint16, kuid auth.KUID, kgid auth.KGID) error {
+	if stat.Mask&linux.STATX_MODE != 0 {
+		if !CanActAsOwner(creds, kuid) {
+			return syserror.EPERM
+		}
+		// TODO(b/30815691): "If the calling process is not privileged (Linux:
+		// does not have the CAP_FSETID capability), and the group of the file
+		// does not match the effective group ID of the process or one of its
+		// supplementary group IDs, the S_ISGID bit will be turned off, but
+		// this will not cause an error to be returned." - chmod(2)
+	}
+	if stat.Mask&linux.STATX_UID != 0 {
+		if !((creds.EffectiveKUID == kuid && auth.KUID(stat.UID) == kuid) ||
+			HasCapabilityOnFile(creds, linux.CAP_CHOWN, kuid, kgid)) {
+			return syserror.EPERM
+		}
+	}
+	if stat.Mask&linux.STATX_GID != 0 {
+		if !((creds.EffectiveKUID == kuid && creds.InGroup(auth.KGID(stat.GID))) ||
+			HasCapabilityOnFile(creds, linux.CAP_CHOWN, kuid, kgid)) {
+			return syserror.EPERM
+		}
+	}
+	if stat.Mask&(linux.STATX_ATIME|linux.STATX_MTIME|linux.STATX_CTIME) != 0 {
+		if !CanActAsOwner(creds, kuid) {
+			if (stat.Mask&linux.STATX_ATIME != 0 && stat.Atime.Nsec != linux.UTIME_NOW) ||
+				(stat.Mask&linux.STATX_MTIME != 0 && stat.Mtime.Nsec != linux.UTIME_NOW) ||
+				(stat.Mask&linux.STATX_CTIME != 0 && stat.Ctime.Nsec != linux.UTIME_NOW) {
+				return syserror.EPERM
+			}
+			// isDir is irrelevant in the following call to
+			// GenericCheckPermissions since ats == MayWrite means that
+			// CAP_DAC_READ_SEARCH does not apply, and CAP_DAC_OVERRIDE
+			// applies, regardless of isDir.
+			if err := GenericCheckPermissions(creds, MayWrite, false /* isDir */, mode, kuid, kgid); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// CanActAsOwner returns true if creds can act as the owner of a file with the
+// given owning UID, consistent with Linux's
+// fs/inode.c:inode_owner_or_capable().
+func CanActAsOwner(creds *auth.Credentials, kuid auth.KUID) bool {
+	if creds.EffectiveKUID == kuid {
+		return true
+	}
+	return creds.HasCapability(linux.CAP_FOWNER) && creds.UserNamespace.MapFromKUID(kuid).Ok()
+}
+
+// HasCapabilityOnFile returns true if creds has the given capability with
+// respect to a file with the given owning UID and GID, consistent with Linux's
+// kernel/capability.c:capable_wrt_inode_uidgid().
+func HasCapabilityOnFile(creds *auth.Credentials, cp linux.Capability, kuid auth.KUID, kgid auth.KGID) bool {
+	return creds.HasCapability(cp) && creds.UserNamespace.MapFromKUID(kuid).Ok() && creds.UserNamespace.MapFromKGID(kgid).Ok()
+}
