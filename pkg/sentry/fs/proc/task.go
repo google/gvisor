@@ -67,29 +67,28 @@ type taskDir struct {
 var _ fs.InodeOperations = (*taskDir)(nil)
 
 // newTaskDir creates a new proc task entry.
-func (p *proc) newTaskDir(t *kernel.Task, msrc *fs.MountSource, showSubtasks bool) *fs.Inode {
+func (p *proc) newTaskDir(t *kernel.Task, msrc *fs.MountSource, isThreadGroup bool) *fs.Inode {
 	contents := map[string]*fs.Inode{
-		"auxv":    newAuxvec(t, msrc),
-		"cmdline": newExecArgInode(t, msrc, cmdlineExecArg),
-		"comm":    newComm(t, msrc),
-		"environ": newExecArgInode(t, msrc, environExecArg),
-		"exe":     newExe(t, msrc),
-		"fd":      newFdDir(t, msrc),
-		"fdinfo":  newFdInfoDir(t, msrc),
-		"gid_map": newGIDMap(t, msrc),
-		// FIXME(b/123511468): create the correct io file for threads.
-		"io":        newIO(t, msrc),
+		"auxv":      newAuxvec(t, msrc),
+		"cmdline":   newExecArgInode(t, msrc, cmdlineExecArg),
+		"comm":      newComm(t, msrc),
+		"environ":   newExecArgInode(t, msrc, environExecArg),
+		"exe":       newExe(t, msrc),
+		"fd":        newFdDir(t, msrc),
+		"fdinfo":    newFdInfoDir(t, msrc),
+		"gid_map":   newGIDMap(t, msrc),
+		"io":        newIO(t, msrc, isThreadGroup),
 		"maps":      newMaps(t, msrc),
 		"mountinfo": seqfile.NewSeqFileInode(t, &mountInfoFile{t: t}, msrc),
 		"mounts":    seqfile.NewSeqFileInode(t, &mountsFile{t: t}, msrc),
 		"ns":        newNamespaceDir(t, msrc),
 		"smaps":     newSmaps(t, msrc),
-		"stat":      newTaskStat(t, msrc, showSubtasks, p.pidns),
+		"stat":      newTaskStat(t, msrc, isThreadGroup, p.pidns),
 		"statm":     newStatm(t, msrc),
 		"status":    newStatus(t, msrc, p.pidns),
 		"uid_map":   newUIDMap(t, msrc),
 	}
-	if showSubtasks {
+	if isThreadGroup {
 		contents["task"] = p.newSubtasks(t, msrc)
 	}
 	if len(p.cgroupControllers) > 0 {
@@ -619,8 +618,11 @@ type ioData struct {
 	ioUsage
 }
 
-func newIO(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
-	return newProcInode(t, seqfile.NewSeqFile(t, &ioData{t.ThreadGroup()}), msrc, fs.SpecialFile, t)
+func newIO(t *kernel.Task, msrc *fs.MountSource, isThreadGroup bool) *fs.Inode {
+	if isThreadGroup {
+		return newProcInode(t, seqfile.NewSeqFile(t, &ioData{t.ThreadGroup()}), msrc, fs.SpecialFile, t)
+	}
+	return newProcInode(t, seqfile.NewSeqFile(t, &ioData{t}), msrc, fs.SpecialFile, t)
 }
 
 // NeedsUpdate returns whether the generation is old or not.
