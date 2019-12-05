@@ -635,7 +635,9 @@ INSTANTIATE_TEST_SUITE_P(
 
 using SocketInetReusePortTest = ::testing::TestWithParam<TestParam>;
 
-TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread) {
+// TODO(gvisor.dev/issue/940): Remove _NoRandomSave when portHint/stack.Seed is
+// saved/restored.
+TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread_NoRandomSave) {
   auto const& param = GetParam();
 
   TestAddress const& listener = param.listener;
@@ -643,6 +645,7 @@ TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread) {
   sockaddr_storage listen_addr = listener.addr;
   sockaddr_storage conn_addr = connector.addr;
   constexpr int kThreadCount = 3;
+  constexpr int kConnectAttempts = 4096;
 
   // Create the listening socket.
   FileDescriptor listener_fds[kThreadCount];
@@ -657,7 +660,7 @@ TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread) {
     ASSERT_THAT(
         bind(fd, reinterpret_cast<sockaddr*>(&listen_addr), listener.addr_len),
         SyscallSucceeds());
-    ASSERT_THAT(listen(fd, 40), SyscallSucceeds());
+    ASSERT_THAT(listen(fd, kConnectAttempts / 3), SyscallSucceeds());
 
     // On the first bind we need to determine which port was bound.
     if (i != 0) {
@@ -676,7 +679,6 @@ TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread) {
     ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
   }
 
-  constexpr int kConnectAttempts = 10000;
   std::atomic<int> connects_received = ATOMIC_VAR_INIT(0);
   std::unique_ptr<ScopedThread> listen_thread[kThreadCount];
   int accept_counts[kThreadCount] = {};
