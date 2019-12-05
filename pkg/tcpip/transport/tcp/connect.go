@@ -190,7 +190,7 @@ func (h *handshake) resetToSynRcvd(iss seqnum.Value, irs seqnum.Value, opts *hea
 	h.mss = opts.MSS
 	h.sndWndScale = opts.WS
 	h.ep.mu.Lock()
-	h.ep.state = StateSynRecv
+	h.ep.setEndpointState(StateSynRecv)
 	h.ep.mu.Unlock()
 }
 
@@ -266,7 +266,7 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 	// SYN-RCVD state.
 	h.state = handshakeSynRcvd
 	h.ep.mu.Lock()
-	h.ep.state = StateSynRecv
+	h.ep.setEndpointState(StateSynRecv)
 	ttl := h.ep.ttl
 	h.ep.mu.Unlock()
 	synOpts := header.TCPSynOptions{
@@ -803,7 +803,7 @@ func (e *endpoint) makeOptions(sackBlocks []header.SACKBlock) []byte {
 // sendRaw sends a TCP segment to the endpoint's peer.
 func (e *endpoint) sendRaw(data buffer.VectorisedView, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size) *tcpip.Error {
 	var sackBlocks []header.SACKBlock
-	if e.state == StateEstablished && e.rcv.pendingBufSize > 0 && (flags&header.TCPFlagAck != 0) {
+	if e.EndpointState() == StateEstablished && e.rcv.pendingBufSize > 0 && (flags&header.TCPFlagAck != 0) {
 		sackBlocks = e.sack.Blocks[:e.sack.NumBlocks]
 	}
 	options := e.makeOptions(sackBlocks)
@@ -856,11 +856,11 @@ func (e *endpoint) handleClose() *tcpip.Error {
 func (e *endpoint) resetConnectionLocked(err *tcpip.Error) {
 	// Only send a reset if the connection is being aborted for a reason
 	// other than receiving a reset.
-	if e.state == StateEstablished || e.state == StateCloseWait {
+	if e.EndpointState() == StateEstablished || e.EndpointState() == StateCloseWait {
 		e.stack.Stats().TCP.EstablishedResets.Increment()
 		e.stack.Stats().TCP.CurrentEstablished.Decrement()
 	}
-	e.state = StateError
+	e.setEndpointState(StateError)
 	e.HardError = err
 	if err != tcpip.ErrConnectionReset {
 		// The exact sequence number to be used for the RST is the same as the
@@ -910,7 +910,7 @@ func (e *endpoint) transitionToStateEstablishedLocked(h *handshake) {
 		e.rcvListMu.Unlock()
 	}
 	h.ep.stack.Stats().TCP.CurrentEstablished.Increment()
-	e.state = StateEstablished
+	e.setEndpointState(StateEstablished)
 }
 
 // transitionToStateCloseLocked ensures that the endpoint is
@@ -919,11 +919,11 @@ func (e *endpoint) transitionToStateEstablishedLocked(h *handshake) {
 // delivered to this endpoint from the demuxer when the endpoint
 // is transitioned to StateClose.
 func (e *endpoint) transitionToStateCloseLocked() {
-	if e.state == StateClose {
+	if e.EndpointState() == StateClose {
 		return
 	}
 	e.cleanupLocked()
-	e.state = StateClose
+	e.setEndpointState(StateClose)
 	e.stack.Stats().TCP.EstablishedClosed.Increment()
 }
 
@@ -949,7 +949,7 @@ func (e *endpoint) handleReset(s *segment) (ok bool, err *tcpip.Error) {
 		// we only process it if it's acceptable.
 		s.decRef()
 		e.mu.Lock()
-		switch e.state {
+		switch e.EndpointState() {
 		// In case of a RST in CLOSE-WAIT linux moves
 		// the socket to closed state with an error set
 		// to indicate EPIPE.
@@ -1049,7 +1049,7 @@ func (e *endpoint) handleSegments() *tcpip.Error {
 			// to a CLOSED state, if yes then terminate processing and do
 			// not invoke the sender.
 			e.mu.RLock()
-			state := e.state
+			state := e.EndpointState()
 			e.mu.RUnlock()
 			if state == StateClose {
 				// When we get into StateClose while processing from the queue,
@@ -1172,7 +1172,7 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 		initialRcvWnd := e.initialReceiveWindow()
 		h := newHandshake(e, seqnum.Size(initialRcvWnd))
 		e.mu.Lock()
-		h.ep.state = StateSynSent
+		h.ep.setEndpointState(StateSynSent)
 		e.mu.Unlock()
 
 		if err := h.execute(); err != nil {
@@ -1181,7 +1181,7 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 			e.lastErrorMu.Unlock()
 
 			e.mu.Lock()
-			e.state = StateError
+			e.setEndpointState(StateError)
 			e.HardError = err
 
 			// Lock released below.
@@ -1278,7 +1278,7 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 
 				if n&notifyClose != 0 && closeTimer == nil {
 					e.mu.Lock()
-					if e.state == StateFinWait2 && e.closed {
+					if e.EndpointState() == StateFinWait2 && e.closed {
 						// The socket has been closed and we are in FIN_WAIT2
 						// so start the FIN_WAIT2 timer.
 						closeTimer = time.AfterFunc(e.tcpLingerTimeout, func() {
@@ -1302,7 +1302,7 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 							return err
 						}
 					}
-					if e.state != StateClose && e.state != StateError {
+					if e.EndpointState() != StateClose && e.EndpointState() != StateError {
 						// Only block the worker if the endpoint
 						// is not in closed state or error state.
 						close(e.drainDone)
@@ -1350,7 +1350,7 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 	// Main loop. Handle segments until both send and receive ends of the
 	// connection have completed.
 
-	for e.state != StateTimeWait && e.state != StateClose && e.state != StateError {
+	for e.EndpointState() != StateTimeWait && e.EndpointState() != StateClose && e.EndpointState() != StateError {
 		e.mu.Unlock()
 		e.workMu.Unlock()
 		v, _ := s.Fetch(true)
@@ -1370,10 +1370,9 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 		e.mu.Lock()
 	}
 
-	state := e.state
 	e.mu.Unlock()
 	var reuseTW func()
-	if state == StateTimeWait {
+	if e.EndpointState() == StateTimeWait {
 		// Disable close timer as we now entering real TIME_WAIT.
 		if closeTimer != nil {
 			closeTimer.Stop()
@@ -1388,7 +1387,8 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 
 	// Mark endpoint as closed.
 	e.mu.Lock()
-	if e.state != StateError {
+	if e.EndpointState() != StateError {
+		e.stack.Stats().TCP.EstablishedResets.Increment()
 		e.stack.Stats().TCP.CurrentEstablished.Decrement()
 		e.transitionToStateCloseLocked()
 	}
@@ -1443,7 +1443,7 @@ func (e *endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()
 			for _, netProto := range netProtos {
 				if listenEP := e.stack.FindTransportEndpoint(netProto, info.TransProto, newID, &s.route); listenEP != nil {
 					tcpEP := listenEP.(*endpoint)
-					if EndpointState(tcpEP.State()) == StateListen {
+					if tcpEP.EndpointState() == StateListen {
 						reuseTW = func() {
 							tcpEP.enqueueSegment(s)
 						}
