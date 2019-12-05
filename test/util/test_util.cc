@@ -41,6 +41,7 @@ namespace gvisor {
 namespace testing {
 
 #define TEST_ON_GVISOR "TEST_ON_GVISOR"
+#define GVISOR_NETWORK "GVISOR_NETWORK"
 
 bool IsRunningOnGvisor() { return GvisorPlatform() != Platform::kNative; }
 
@@ -58,6 +59,11 @@ Platform GvisorPlatform() {
   }
   std::cerr << "unknown platform " << env;
   abort();
+}
+
+bool IsRunningWithHostinet() {
+  char* env = getenv(GVISOR_NETWORK);
+  return env && strcmp(env, "host") == 0;
 }
 
 // Inline cpuid instruction.  Preserve %ebx/%rbx register. In PIC compilations

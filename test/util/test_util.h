@@ -220,6 +220,7 @@ enum class Platform {
 };
 bool IsRunningOnGvisor();
 Platform GvisorPlatform();
+bool IsRunningWithHostinet();
 
 #ifdef __linux__
 void SetupGvisorDeathTest();
