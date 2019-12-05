@@ -185,3 +185,48 @@ sudo crictl inspect ${CONTAINER_ID}
 sudo crictl exec ${CONTAINER_ID} dmesg | grep -i gvisor
 }
 ```
+
+### Set up the Kubernetes Runtime Class
+
+1. Install the Runtime Class for gVisor
+
+[embedmd]:# (../test/e2e/runtimeclass-install.sh shell /{ # Step 1/ /^}/)
+```shell
+{ # Step 1: Install a RuntimeClass
+cat <<EOF | kubectl apply -f -
+apiVersion: node.k8s.io/v1beta1
+kind: RuntimeClass
+metadata:
+  name: gvisor
+handler: runsc
+EOF
+}
+```
+
+2. Create a Pod with the gVisor Runtime Class
+
+[embedmd]:# (../test/e2e/runtimeclass-install.sh shell /{ # Step 2/ /^}/)
+```shell
+{ # Step 2: Create a pod
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-gvisor
+spec:
+  runtimeClassName: gvisor
+  containers:
+  - name: nginx
+    image: nginx
+EOF
+}
+```
+
+3. Verify that the Pod is running
+
+[embedmd]:# (../test/e2e/runtimeclass-install.sh shell /{ # Step 3/ /^}/)
+```shell
+{ # Step 3: Get the pod
+kubectl get pod nginx-gvisor -o wide
+}
+```
