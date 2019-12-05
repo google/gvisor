@@ -596,7 +596,7 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 			// Update the invalidation timer.
 			timer := prefixState.invalidationTimer
 
-			if timer == nil && vl >= header.NDPPrefixInformationInfiniteLifetime {
+			if timer == nil && vl >= header.NDPInfiniteLifetime {
 				// Had infinite valid lifetime before and
 				// continues to have an invalid lifetime. Do
 				// nothing further.
@@ -615,7 +615,7 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 				*prefixState.doNotInvalidate = true
 			}
 
-			if vl >= header.NDPPrefixInformationInfiniteLifetime {
+			if vl >= header.NDPInfiniteLifetime {
 				// Prefix is now valid forever so we don't need
 				// an invalidation timer.
 				prefixState.invalidationTimer = nil
@@ -734,7 +734,7 @@ func (ndp *ndpState) rememberOnLinkPrefix(prefix tcpip.Subnet, l time.Duration) 
 	var timer *time.Timer
 
 	// Only create a timer if the lifetime is not infinite.
-	if l < header.NDPPrefixInformationInfiniteLifetime {
+	if l < header.NDPInfiniteLifetime {
 		timer = ndp.prefixInvalidationCallback(prefix, l, &doNotInvalidate)
 	}
 

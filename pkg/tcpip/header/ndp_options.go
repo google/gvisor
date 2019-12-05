@@ -85,6 +85,23 @@ const (
 	// within an NDPPrefixInformation.
 	ndpPrefixInformationPrefixOffset = 14
 
+	// NDPRecursiveDNSServerOptionType is the type of the Recursive DNS
+	// Server option, as per RFC 8106 section 5.1.
+	NDPRecursiveDNSServerOptionType = 25
+
+	// ndpRecursiveDNSServerLifetimeOffset is the start of the 4-byte
+	// Lifetime field within an NDPRecursiveDNSServer.
+	ndpRecursiveDNSServerLifetimeOffset = 2
+
+	// ndpRecursiveDNSServerAddressesOffset is the start of the addresses
+	// for IPv6 Recursive DNS Servers within an NDPRecursiveDNSServer.
+	ndpRecursiveDNSServerAddressesOffset = 6
+
+	// minNDPRecursiveDNSServerLength is the minimum NDP Recursive DNS
+	// Server option's length field value when it contains at least one
+	// IPv6 address.
+	minNDPRecursiveDNSServerLength = 3
+
 	// lengthByteUnits is the multiplier factor for the Length field of an
 	// NDP option. That is, the length field for NDP options is in units of
 	// 8 octets, as per RFC 4861 section 4.6.
@@ -92,13 +109,13 @@ const (
 )
 
 var (
-	// NDPPrefixInformationInfiniteLifetime is a value that represents
+	// NDPInfiniteLifetime is a value that represents
 	// infinity for the Valid and Preferred Lifetime fields in a NDP Prefix
 	// Information option. Its value is (2^32 - 1)s = 4294967295s
 	//
 	// This is a variable instead of a constant so that tests can change
 	// this value to a smaller value. It should only be modified by tests.
-	NDPPrefixInformationInfiniteLifetime = time.Second * 4294967295
+	NDPInfiniteLifetime = time.Second * 4294967295
 )
 
 // NDPOptionIterator is an iterator of NDPOption.
@@ -118,6 +135,7 @@ var (
 	ErrNDPOptBufExhausted  = errors.New("Buffer unexpectedly exhausted")
 	ErrNDPOptZeroLength    = errors.New("NDP option has zero-valued Length field")
 	ErrNDPOptMalformedBody = errors.New("NDP option has a malformed body")
+	ErrNDPInvalidLength    = errors.New("NDP option's Length value is invalid as per relevant RFC")
 )
 
 // Next returns the next element in the backing NDPOptions, or true if we are
@@ -182,6 +200,22 @@ func (i *NDPOptionIterator) Next() (NDPOption, bool, error) {
 			}
 
 			return NDPPrefixInformation(body), false, nil
+
+		case NDPRecursiveDNSServerOptionType:
+			// RFC 8106 section 5.3.1 outlines that the RDNSS option
+			// must have a minimum length of 3 so it contains at
+			// least one IPv6 address.
+			if l < minNDPRecursiveDNSServerLength {
+				return nil, true, ErrNDPInvalidLength
+			}
+
+			opt := NDPRecursiveDNSServer(body)
+			if len(opt.Addresses()) == 0 {
+				return nil, true, ErrNDPOptMalformedBody
+			}
+
+			return opt, false, nil
+
 		default:
 			// We do not yet recognize the option, just skip for
 			// now. This is okay because RFC 4861 allows us to
@@ -434,7 +468,7 @@ func (o NDPPrefixInformation) AutonomousAddressConfigurationFlag() bool {
 //
 // Note, a value of 0 implies the prefix should not be considered as on-link,
 // and a value of infinity/forever is represented by
-// NDPPrefixInformationInfiniteLifetime.
+// NDPInfiniteLifetime.
 func (o NDPPrefixInformation) ValidLifetime() time.Duration {
 	// The field is the time in seconds, as per RFC 4861 section 4.6.2.
 	return time.Second * time.Duration(binary.BigEndian.Uint32(o[ndpPrefixInformationValidLifetimeOffset:]))
@@ -447,7 +481,7 @@ func (o NDPPrefixInformation) ValidLifetime() time.Duration {
 //
 // Note, a value of 0 implies that addresses generated from the prefix should
 // no longer remain preferred, and a value of infinity is represented by
-// NDPPrefixInformationInfiniteLifetime.
+// NDPInfiniteLifetime.
 //
 // Also note that the value of this field MUST NOT exceed the Valid Lifetime
 // field to avoid preferring addresses that are no longer valid, for the
@@ -475,4 +509,80 @@ func (o NDPPrefixInformation) Subnet() tcpip.Subnet {
 		PrefixLen: int(o.PrefixLength()),
 	}
 	return addrWithPrefix.Subnet()
+}
+
+// NDPRecursiveDNSServer is the NDP Recursive DNS Server option, as defined by
+// RFC 8106 section 5.1.
+//
+// To make sure that the option meets its minimum length and does not end in the
+// middle of a DNS server's IPv6 address, the length of a valid
+// NDPRecursiveDNSServer must meet the following constraint:
+//   (Length - ndpRecursiveDNSServerAddressesOffset) % IPv6AddressSize == 0
+type NDPRecursiveDNSServer []byte
+
+// Type returns the type of an NDP Recursive DNS Server option.
+//
+// Type implements NDPOption.Type.
+func (NDPRecursiveDNSServer) Type() uint8 {
+	return NDPRecursiveDNSServerOptionType
+}
+
+// Length implements NDPOption.Length.
+func (o NDPRecursiveDNSServer) Length() int {
+	return len(o)
+}
+
+// serializeInto implements NDPOption.serializeInto.
+func (o NDPRecursiveDNSServer) serializeInto(b []byte) int {
+	used := copy(b, o)
+
+	// Zero out the reserved bytes that are before the Lifetime field.
+	for i := 0; i < ndpRecursiveDNSServerLifetimeOffset; i++ {
+		b[i] = 0
+	}
+
+	return used
+}
+
+// Lifetime returns the length of time that the DNS server addresses
+// in this option may be used for name resolution.
+//
+// Note, a value of 0 implies the addresses should no longer be used,
+// and a value of infinity/forever is represented by NDPInfiniteLifetime.
+//
+// Lifetime may panic if o does not have enough bytes to hold the Lifetime
+// field.
+func (o NDPRecursiveDNSServer) Lifetime() time.Duration {
+	// The field is the time in seconds, as per RFC 8106 section 5.1.
+	return time.Second * time.Duration(binary.BigEndian.Uint32(o[ndpRecursiveDNSServerLifetimeOffset:]))
+}
+
+// Addresses returns the recursive DNS server IPv6 addresses that may be
+// used for name resolution.
+//
+// Note, some of the addresses returned MAY be link-local addresses.
+//
+// Addresses may panic if o does not hold valid IPv6 addresses.
+func (o NDPRecursiveDNSServer) Addresses() []tcpip.Address {
+	l := len(o)
+	if l < ndpRecursiveDNSServerAddressesOffset {
+		return nil
+	}
+
+	l -= ndpRecursiveDNSServerAddressesOffset
+	if l%IPv6AddressSize != 0 {
+		return nil
+	}
+
+	buf := o[ndpRecursiveDNSServerAddressesOffset:]
+	var addrs []tcpip.Address
+	for len(buf) > 0 {
+		addr := tcpip.Address(buf[:IPv6AddressSize])
+		if !IsV6UnicastAddress(addr) {
+			return nil
+		}
+		addrs = append(addrs, addr)
+		buf = buf[IPv6AddressSize:]
+	}
+	return addrs
 }
