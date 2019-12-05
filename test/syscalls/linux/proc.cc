@@ -37,6 +37,7 @@
 #include <map>
 #include <memory>
 #include <ostream>
+#include <regex>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -51,6 +52,7 @@
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
+#include "absl/synchronization/notification.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/capability_util.h"
@@ -1986,6 +1988,44 @@ TEST(Proc, GetdentsEnoent) {
   char buf[1024];
   ASSERT_THAT(syscall(SYS_getdents, fd.get(), buf, sizeof(buf)),
               SyscallFailsWithErrno(ENOENT));
+}
+
+void CheckSyscwFromIOFile(const std::string& path, const std::string& regex) {
+  std::string output;
+  ASSERT_NO_ERRNO(GetContents(path, &output));
+  ASSERT_THAT(output, ContainsRegex(absl::StrCat("syscw:\\s+", regex, "\n")));
+}
+
+// Checks that there is variable accounting of IO between threads/tasks.
+TEST(Proc, PidTidIOAccounting) {
+  absl::Notification notification;
+
+  // Run a thread with a bunch of writes. Check that io account records exactly
+  // the number of write calls. File open/close is there to prevent buffering.
+  ScopedThread writer([&notification] {
+    const int num_writes = 100;
+    for (int i = 0; i < num_writes; i++) {
+      auto path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+      ASSERT_NO_ERRNO(SetContents(path.path(), "a"));
+    }
+    notification.Notify();
+    const std::string& writer_dir =
+        absl::StrCat("/proc/", getpid(), "/task/", gettid(), "/io");
+
+    CheckSyscwFromIOFile(writer_dir, std::to_string(num_writes));
+  });
+
+  // Run a thread and do no writes. Check that no writes are recorded.
+  ScopedThread noop([&notification] {
+    notification.WaitForNotification();
+    const std::string& noop_dir =
+        absl::StrCat("/proc/", getpid(), "/task/", gettid(), "/io");
+
+    CheckSyscwFromIOFile(noop_dir, "0");
+  });
+
+  writer.Join();
+  noop.Join();
 }
 
 }  // namespace
