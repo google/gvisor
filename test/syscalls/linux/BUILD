@@ -6,6 +6,16 @@ package(
     licenses = ["notice"],
 )
 
+exports_files(
+    [
+        "socket.cc",
+        "socket_ipv4_udp_unbound_loopback.cc",
+        "tcp_socket.cc",
+        "udp_socket.cc",
+    ],
+    visibility = ["//:sandbox"],
+)
+
 cc_binary(
     name = "sigaltstack_check",
     testonly = 1,
