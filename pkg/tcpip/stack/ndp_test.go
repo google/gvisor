@@ -1364,10 +1364,10 @@ func TestPrefixDiscoveryWithInfiniteLifetime(t *testing.T) {
 	// invalidate the prefix.
 	const testInfiniteLifetimeSeconds = 2
 	const testInfiniteLifetime = testInfiniteLifetimeSeconds * time.Second
-	saved := header.NDPPrefixInformationInfiniteLifetime
-	header.NDPPrefixInformationInfiniteLifetime = testInfiniteLifetime
+	saved := header.NDPInfiniteLifetime
+	header.NDPInfiniteLifetime = testInfiniteLifetime
 	defer func() {
-		header.NDPPrefixInformationInfiniteLifetime = saved
+		header.NDPInfiniteLifetime = saved
 	}()
 
 	prefix := tcpip.AddressWithPrefix{
