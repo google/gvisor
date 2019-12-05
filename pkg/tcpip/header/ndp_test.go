@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
@@ -369,6 +370,175 @@ func TestNDPPrefixInformationOption(t *testing.T) {
 	}
 }
 
+func TestNDPRecursiveDNSServerOptionSerialize(t *testing.T) {
+	b := []byte{
+		9, 8,
+		1, 2, 4, 8,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+	}
+	targetBuf := []byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
+	expected := []byte{
+		25, 3, 0, 0,
+		1, 2, 4, 8,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+	}
+	opts := NDPOptions(targetBuf)
+	serializer := NDPOptionsSerializer{
+		NDPRecursiveDNSServer(b),
+	}
+	if got, want := opts.Serialize(serializer), len(expected); got != want {
+		t.Errorf("got Serialize = %d, want = %d", got, want)
+	}
+	if !bytes.Equal(targetBuf, expected) {
+		t.Fatalf("got targetBuf = %x, want = %x", targetBuf, expected)
+	}
+
+	it, err := opts.Iter(true)
+	if err != nil {
+		t.Fatalf("got Iter = (_, %s), want = (_, nil)", err)
+	}
+
+	next, done, err := it.Next()
+	if err != nil {
+		t.Fatalf("got Next = (_, _, %s), want = (_, _, nil)", err)
+	}
+	if done {
+		t.Fatal("got Next = (_, true, _), want = (_, false, _)")
+	}
+	if got := next.Type(); got != NDPRecursiveDNSServerOptionType {
+		t.Errorf("got Type = %d, want = %d", got, NDPRecursiveDNSServerOptionType)
+	}
+
+	opt, ok := next.(NDPRecursiveDNSServer)
+	if !ok {
+		t.Fatalf("next (type = %T) cannot be casted to an NDPRecursiveDNSServer", next)
+	}
+	if got := opt.Type(); got != 25 {
+		t.Errorf("got Type = %d, want = 31", got)
+	}
+	if got := opt.Length(); got != 22 {
+		t.Errorf("got Length = %d, want = 22", got)
+	}
+	if got, want := opt.Lifetime(), 16909320*time.Second; got != want {
+		t.Errorf("got Lifetime = %s, want = %s", got, want)
+	}
+	want := []tcpip.Address{
+		"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+	}
+	if got := opt.Addresses(); !cmp.Equal(got, want) {
+		t.Errorf("got Addresses = %v, want = %v", got, want)
+	}
+
+	// Iterator should not return anything else.
+	next, done, err = it.Next()
+	if err != nil {
+		t.Errorf("got Next = (_, _, %s), want = (_, _, nil)", err)
+	}
+	if !done {
+		t.Error("got Next = (_, false, _), want = (_, true, _)")
+	}
+	if next != nil {
+		t.Errorf("got Next = (%x, _, _), want = (nil, _, _)", next)
+	}
+}
+
+func TestNDPRecursiveDNSServerOption(t *testing.T) {
+	tests := []struct {
+		name     string
+		buf      []byte
+		lifetime time.Duration
+		addrs    []tcpip.Address
+	}{
+		{
+			"Valid1Addr",
+			[]byte{
+				25, 3, 0, 0,
+				0, 0, 0, 0,
+				0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+			},
+			0,
+			[]tcpip.Address{
+				"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+			},
+		},
+		{
+			"Valid2Addr",
+			[]byte{
+				25, 5, 0, 0,
+				0, 0, 0, 0,
+				0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+				17, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16,
+			},
+			0,
+			[]tcpip.Address{
+				"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+				"\x11\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x10",
+			},
+		},
+		{
+			"Valid3Addr",
+			[]byte{
+				25, 7, 0, 0,
+				0, 0, 0, 0,
+				0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+				17, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16,
+				17, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 17,
+			},
+			0,
+			[]tcpip.Address{
+				"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+				"\x11\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x10",
+				"\x11\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x11",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			opts := NDPOptions(test.buf)
+			it, err := opts.Iter(true)
+			if err != nil {
+				t.Fatalf("got Iter = (_, %s), want = (_, nil)", err)
+			}
+
+			// Iterator should get our option.
+			next, done, err := it.Next()
+			if err != nil {
+				t.Fatalf("got Next = (_, _, %s), want = (_, _, nil)", err)
+			}
+			if done {
+				t.Fatal("got Next = (_, true, _), want = (_, false, _)")
+			}
+			if got := next.Type(); got != NDPRecursiveDNSServerOptionType {
+				t.Fatalf("got Type %= %d, want = %d", got, NDPRecursiveDNSServerOptionType)
+			}
+
+			opt, ok := next.(NDPRecursiveDNSServer)
+			if !ok {
+				t.Fatalf("next (type = %T) cannot be casted to an NDPRecursiveDNSServer", next)
+			}
+			if got := opt.Lifetime(); got != test.lifetime {
+				t.Errorf("got Lifetime = %d, want = %d", got, test.lifetime)
+			}
+			if got := opt.Addresses(); !cmp.Equal(got, test.addrs) {
+				t.Errorf("got Addresses = %v, want = %v", got, test.addrs)
+			}
+
+			// Iterator should not return anything else.
+			next, done, err = it.Next()
+			if err != nil {
+				t.Errorf("got Next = (_, _, %s), want = (_, _, nil)", err)
+			}
+			if !done {
+				t.Error("got Next = (_, false, _), want = (_, true, _)")
+			}
+			if next != nil {
+				t.Errorf("got Next = (%x, _, _), want = (nil, _, _)", next)
+			}
+		})
+	}
+}
+
 // TestNDPOptionsIterCheck tests that Iter will return false if the NDPOptions
 // the iterator was returned for is malformed.
 func TestNDPOptionsIterCheck(t *testing.T) {
@@ -472,6 +642,51 @@ func TestNDPOptionsIterCheck(t *testing.T) {
 				21, 22, 23, 24,
 			},
 			nil,
+		},
+		{
+			"InvalidRecursiveDNSServerCutsOffAddress",
+			[]byte{
+				25, 4, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+				0, 1, 2, 3, 4, 5, 6, 7,
+			},
+			ErrNDPOptMalformedBody,
+		},
+		{
+			"InvalidRecursiveDNSServerInvalidLengthField",
+			[]byte{
+				25, 2, 0, 0,
+				0, 0, 0, 0,
+				0, 1, 2, 3, 4, 5, 6, 7, 8,
+			},
+			ErrNDPInvalidLength,
+		},
+		{
+			"RecursiveDNSServerTooSmall",
+			[]byte{
+				25, 1, 0, 0,
+				0, 0, 0,
+			},
+			ErrNDPOptBufExhausted,
+		},
+		{
+			"RecursiveDNSServerMulticast",
+			[]byte{
+				25, 3, 0, 0,
+				0, 0, 0, 0,
+				255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+			},
+			ErrNDPOptMalformedBody,
+		},
+		{
+			"RecursiveDNSServerUnspecified",
+			[]byte{
+				25, 3, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			},
+			ErrNDPOptMalformedBody,
 		},
 	}
 
