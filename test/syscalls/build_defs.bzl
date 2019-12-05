@@ -9,6 +9,7 @@ def syscall_test(
         use_tmpfs = False,
         add_overlay = False,
         add_uds_tree = False,
+        add_hostinet = False,
         tags = None):
     _syscall_test(
         test = test,
@@ -65,6 +66,18 @@ def syscall_test(
             file_access = "shared",
         )
 
+    if add_hostinet:
+        _syscall_test(
+            test = test,
+            shard_count = shard_count,
+            size = size,
+            platform = "ptrace",
+            use_tmpfs = use_tmpfs,
+            network = "host",
+            add_uds_tree = add_uds_tree,
+            tags = tags,
+        )
+
 def _syscall_test(
         test,
         shard_count,
@@ -72,6 +85,7 @@ def _syscall_test(
         platform,
         use_tmpfs,
         tags,
+        network = "none",
         file_access = "exclusive",
         overlay = False,
         add_uds_tree = False):
@@ -85,6 +99,8 @@ def _syscall_test(
         name += "_shared"
     if overlay:
         name += "_overlay"
+    if network != "none":
+        name += "_" + network + "net"
 
     if tags == None:
         tags = []
@@ -107,6 +123,7 @@ def _syscall_test(
         # Arguments are passed directly to syscall_test_runner binary.
         "--test-name=" + test_name,
         "--platform=" + platform,
+        "--network=" + network,
         "--use-tmpfs=" + str(use_tmpfs),
         "--file-access=" + file_access,
         "--overlay=" + str(overlay),
