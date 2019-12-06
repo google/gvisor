@@ -252,6 +252,11 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 	// and the handshake is completed.
 	if s.flagIsSet(header.TCPFlagAck) {
 		h.state = handshakeCompleted
+
+		h.ep.mu.Lock()
+		h.ep.transitionToStateEstablishedLocked(h)
+		h.ep.mu.Unlock()
+
 		h.ep.sendRaw(buffer.VectorisedView{}, header.TCPFlagAck, h.iss+1, h.ackNum, h.rcvWnd>>h.effectiveRcvWndScale())
 		return nil
 	}
@@ -352,6 +357,10 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 			h.ep.updateRecentTimestamp(s.parsedOptions.TSVal, h.ackNum, s.sequenceNumber)
 		}
 		h.state = handshakeCompleted
+		h.ep.mu.Lock()
+		h.ep.transitionToStateEstablishedLocked(h)
+		h.ep.mu.Unlock()
+
 		return nil
 	}
 
@@ -880,6 +889,30 @@ func (e *endpoint) completeWorkerLocked() {
 	}
 }
 
+// transitionToStateEstablisedLocked transitions a given endpoint
+// to an established state using the handshake parameters provided.
+// It also initializes sender/receiver if required.
+func (e *endpoint) transitionToStateEstablishedLocked(h *handshake) {
+	if e.snd == nil {
+		// Transfer handshake state to TCP connection. We disable
+		// receive window scaling if the peer doesn't support it
+		// (indicated by a negative send window scale).
+		e.snd = newSender(e, h.iss, h.ackNum-1, h.sndWnd, h.mss, h.sndWndScale)
+	}
+	if e.rcv == nil {
+		rcvBufSize := seqnum.Size(e.receiveBufferSize())
+		e.rcvListMu.Lock()
+		e.rcv = newReceiver(e, h.ackNum-1, h.rcvWnd, h.effectiveRcvWndScale(), rcvBufSize)
+		// Bootstrap the auto tuning algorithm. Starting at zero will
+		// result in a really large receive window after the first auto
+		// tuning adjustment.
+		e.rcvAutoParams.prevCopied = int(h.rcvWnd)
+		e.rcvListMu.Unlock()
+	}
+	h.ep.stack.Stats().TCP.CurrentEstablished.Increment()
+	e.state = StateEstablished
+}
+
 // transitionToStateCloseLocked ensures that the endpoint is
 // cleaned up from the transport demuxer, "before" moving to
 // StateClose. This will ensure that no packet will be
@@ -1156,25 +1189,6 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 
 			return err
 		}
-
-		// Transfer handshake state to TCP connection. We disable
-		// receive window scaling if the peer doesn't support it
-		// (indicated by a negative send window scale).
-		e.snd = newSender(e, h.iss, h.ackNum-1, h.sndWnd, h.mss, h.sndWndScale)
-
-		rcvBufSize := seqnum.Size(e.receiveBufferSize())
-		e.rcvListMu.Lock()
-		e.rcv = newReceiver(e, h.ackNum-1, h.rcvWnd, h.effectiveRcvWndScale(), rcvBufSize)
-		// boot strap the auto tuning algorithm. Starting at zero will
-		// result in a large step function on the first proper causing
-		// the window to just go to a really large value after the first
-		// RTT itself.
-		e.rcvAutoParams.prevCopied = initialRcvWnd
-		e.rcvListMu.Unlock()
-		e.stack.Stats().TCP.CurrentEstablished.Increment()
-		e.mu.Lock()
-		e.state = StateEstablished
-		e.mu.Unlock()
 	}
 
 	e.keepalive.timer.init(&e.keepalive.waker)
