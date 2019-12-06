@@ -1,0 +1,8 @@
+steps:
+- name: 'gcr.io/cloud-builders/bazel'
+  args:
+    - test
+    - --bes_backend=buildeventservice.googleapis.com
+    - --bes_results_url=https://source.cloud.google.com/results/invocations/
+    - --google_default_credentials
+    - //benchmarks/...
