@@ -58,7 +58,17 @@ node_modules: package.json package-lock.json
 	$(NPM) ci
 
 upstream/gvisor/bazel-bin/runsc/linux_amd64_pure_stripped/runsc: upstream-gvisor
-	cd upstream/gvisor && bazel build runsc
+	mkdir -p /tmp/gvisor-website/build_output
+	docker run \
+	  -v $(PWD)/upstream/gvisor:/workspace \
+	  -v /tmp/gvisor-website/build_output:/tmp/gvisor-website/build_output \
+	  -w /workspace \
+	  --entrypoint 'sh' \
+	  l.gcr.io/google/bazel \
+	  -c '\
+		groupadd --gid $(shell id -g) $(shell id -gn) && \
+		useradd --uid $(shell id -u) --gid $(shell id -g) -ms /bin/bash $(USER) && \
+		su $(USER) -c "bazel --output_user_root=/tmp/gvisor-website/build_output build //runsc"'
 
 bin/generate-syscall-docs: $(GEN_SOURCE)
 	mkdir -p bin/
