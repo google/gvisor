@@ -15,7 +15,6 @@
 package boot
 
 import (
-	"path"
 	"reflect"
 	"strings"
 	"testing"
@@ -26,19 +25,19 @@ import (
 func TestPodMountHintsHappy(t *testing.T) {
 	spec := &specs.Spec{
 		Annotations: map[string]string{
-			path.Join(MountPrefix, "mount1", "source"): "foo",
-			path.Join(MountPrefix, "mount1", "type"):   "tmpfs",
-			path.Join(MountPrefix, "mount1", "share"):  "pod",
+			MountPrefix + "mount1.source": "foo",
+			MountPrefix + "mount1.type":   "tmpfs",
+			MountPrefix + "mount1.share":  "pod",
 
-			path.Join(MountPrefix, "mount2", "source"):  "bar",
-			path.Join(MountPrefix, "mount2", "type"):    "bind",
-			path.Join(MountPrefix, "mount2", "share"):   "container",
-			path.Join(MountPrefix, "mount2", "options"): "rw,private",
+			MountPrefix + "mount2.source":  "bar",
+			MountPrefix + "mount2.type":    "bind",
+			MountPrefix + "mount2.share":   "container",
+			MountPrefix + "mount2.options": "rw,private",
 		},
 	}
 	podHints, err := newPodMountHints(spec)
 	if err != nil {
-		t.Errorf("newPodMountHints failed: %v", err)
+		t.Fatalf("newPodMountHints failed: %v", err)
 	}
 
 	// Check that fields were set correctly.
@@ -86,95 +85,95 @@ func TestPodMountHintsErrors(t *testing.T) {
 		{
 			name: "too short",
 			annotations: map[string]string{
-				path.Join(MountPrefix, "mount1"): "foo",
+				MountPrefix + "mount1": "foo",
 			},
 			error: "invalid mount annotation",
 		},
 		{
 			name: "no name",
 			annotations: map[string]string{
-				MountPrefix + "//source": "foo",
+				MountPrefix + ".source": "foo",
 			},
 			error: "invalid mount name",
 		},
 		{
 			name: "missing source",
 			annotations: map[string]string{
-				path.Join(MountPrefix, "mount1", "type"):  "tmpfs",
-				path.Join(MountPrefix, "mount1", "share"): "pod",
+				MountPrefix + "mount1.type":  "tmpfs",
+				MountPrefix + "mount1.share": "pod",
 			},
 			error: "source field",
 		},
 		{
 			name: "missing type",
 			annotations: map[string]string{
-				path.Join(MountPrefix, "mount1", "source"): "foo",
-				path.Join(MountPrefix, "mount1", "share"):  "pod",
+				MountPrefix + "mount1.source": "foo",
+				MountPrefix + "mount1.share":  "pod",
 			},
 			error: "type field",
 		},
 		{
 			name: "missing share",
 			annotations: map[string]string{
-				path.Join(MountPrefix, "mount1", "source"): "foo",
-				path.Join(MountPrefix, "mount1", "type"):   "tmpfs",
+				MountPrefix + "mount1.source": "foo",
+				MountPrefix + "mount1.type":   "tmpfs",
 			},
 			error: "share field",
 		},
 		{
 			name: "invalid field name",
 			annotations: map[string]string{
-				path.Join(MountPrefix, "mount1", "invalid"): "foo",
+				MountPrefix + "mount1.invalid": "foo",
 			},
 			error: "invalid mount annotation",
 		},
 		{
 			name: "invalid source",
 			annotations: map[string]string{
-				path.Join(MountPrefix, "mount1", "source"): "",
-				path.Join(MountPrefix, "mount1", "type"):   "tmpfs",
-				path.Join(MountPrefix, "mount1", "share"):  "pod",
+				MountPrefix + "mount1.source": "",
+				MountPrefix + "mount1.type":   "tmpfs",
+				MountPrefix + "mount1.share":  "pod",
 			},
 			error: "source cannot be empty",
 		},
 		{
 			name: "invalid type",
 			annotations: map[string]string{
-				path.Join(MountPrefix, "mount1", "source"): "foo",
-				path.Join(MountPrefix, "mount1", "type"):   "invalid-type",
-				path.Join(MountPrefix, "mount1", "share"):  "pod",
+				MountPrefix + "mount1.source": "foo",
+				MountPrefix + "mount1.type":   "invalid-type",
+				MountPrefix + "mount1.share":  "pod",
 			},
 			error: "invalid type",
 		},
 		{
 			name: "invalid share",
 			annotations: map[string]string{
-				path.Join(MountPrefix, "mount1", "source"): "foo",
-				path.Join(MountPrefix, "mount1", "type"):   "tmpfs",
-				path.Join(MountPrefix, "mount1", "share"):  "invalid-share",
+				MountPrefix + "mount1.source": "foo",
+				MountPrefix + "mount1.type":   "tmpfs",
+				MountPrefix + "mount1.share":  "invalid-share",
 			},
 			error: "invalid share",
 		},
 		{
 			name: "invalid options",
 			annotations: map[string]string{
-				path.Join(MountPrefix, "mount1", "source"):  "foo",
-				path.Join(MountPrefix, "mount1", "type"):    "tmpfs",
-				path.Join(MountPrefix, "mount1", "share"):   "pod",
-				path.Join(MountPrefix, "mount1", "options"): "invalid-option",
+				MountPrefix + "mount1.source":  "foo",
+				MountPrefix + "mount1.type":    "tmpfs",
+				MountPrefix + "mount1.share":   "pod",
+				MountPrefix + "mount1.options": "invalid-option",
 			},
 			error: "unknown mount option",
 		},
 		{
 			name: "duplicate source",
 			annotations: map[string]string{
-				path.Join(MountPrefix, "mount1", "source"): "foo",
-				path.Join(MountPrefix, "mount1", "type"):   "tmpfs",
-				path.Join(MountPrefix, "mount1", "share"):  "pod",
+				MountPrefix + "mount1.source": "foo",
+				MountPrefix + "mount1.type":   "tmpfs",
+				MountPrefix + "mount1.share":  "pod",
 
-				path.Join(MountPrefix, "mount2", "source"): "foo",
-				path.Join(MountPrefix, "mount2", "type"):   "bind",
-				path.Join(MountPrefix, "mount2", "share"):  "container",
+				MountPrefix + "mount2.source": "foo",
+				MountPrefix + "mount2.type":   "bind",
+				MountPrefix + "mount2.share":  "container",
 			},
 			error: "have the same mount source",
 		},
@@ -202,36 +201,36 @@ func TestGetMountAccessType(t *testing.T) {
 		{
 			name: "container=exclusive",
 			annotations: map[string]string{
-				path.Join(MountPrefix, "mount1", "source"): source,
-				path.Join(MountPrefix, "mount1", "type"):   "bind",
-				path.Join(MountPrefix, "mount1", "share"):  "container",
+				MountPrefix + "mount1.source": source,
+				MountPrefix + "mount1.type":   "bind",
+				MountPrefix + "mount1.share":  "container",
 			},
 			want: FileAccessExclusive,
 		},
 		{
 			name: "pod=shared",
 			annotations: map[string]string{
-				path.Join(MountPrefix, "mount1", "source"): source,
-				path.Join(MountPrefix, "mount1", "type"):   "bind",
-				path.Join(MountPrefix, "mount1", "share"):  "pod",
+				MountPrefix + "mount1.source": source,
+				MountPrefix + "mount1.type":   "bind",
+				MountPrefix + "mount1.share":  "pod",
 			},
 			want: FileAccessShared,
 		},
 		{
 			name: "shared=shared",
 			annotations: map[string]string{
-				path.Join(MountPrefix, "mount1", "source"): source,
-				path.Join(MountPrefix, "mount1", "type"):   "bind",
-				path.Join(MountPrefix, "mount1", "share"):  "shared",
+				MountPrefix + "mount1.source": source,
+				MountPrefix + "mount1.type":   "bind",
+				MountPrefix + "mount1.share":  "shared",
 			},
 			want: FileAccessShared,
 		},
 		{
 			name: "default=shared",
 			annotations: map[string]string{
-				path.Join(MountPrefix, "mount1", "source"): source + "mismatch",
-				path.Join(MountPrefix, "mount1", "type"):   "bind",
-				path.Join(MountPrefix, "mount1", "share"):  "container",
+				MountPrefix + "mount1.source": source + "mismatch",
+				MountPrefix + "mount1.type":   "bind",
+				MountPrefix + "mount1.share":  "container",
 			},
 			want: FileAccessShared,
 		},
