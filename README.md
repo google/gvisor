@@ -48,9 +48,10 @@ Make sure the following dependencies are installed:
 
 *   Linux 4.14.77+ ([older linux][old-linux])
 *   [git][git]
-*   [Bazel][bazel] 0.28.0+
+*   [Bazel][bazel] 1.2+
 *   [Python][python]
 *   [Docker version 17.09.0 or greater][docker]
+*   C++ toolchain supporting C++17 (GCC 7+, Clang 5+)
 *   Gold linker (e.g. `binutils-gold` package on Ubuntu)
 
 ### Building
