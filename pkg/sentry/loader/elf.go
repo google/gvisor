@@ -408,6 +408,8 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f *fs.File, info el
 				start = vaddr
 			}
 			if vaddr < end {
+				// NOTE(b/37474556): Linux allows out-of-order
+				// segments, in violation of the spec.
 				ctx.Infof("PT_LOAD headers out-of-order. %#x < %#x", vaddr, end)
 				return loadedELF{}, syserror.ENOEXEC
 			}
