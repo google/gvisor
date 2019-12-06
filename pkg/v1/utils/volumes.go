@@ -29,20 +29,20 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const volumeKeyPrefix = "gvisor.dev/spec/mount/"
+const volumeKeyPrefix = "dev.gvisor.spec.mount."
 
 var kubeletPodsDir = "/var/lib/kubelet/pods"
 
 // volumeName gets volume name from volume annotation key, example:
-// gvisor.dev/spec/mount/NAME/share
+// dev.gvisor.spec.mount.NAME.share
 func volumeName(k string) string {
-	return strings.SplitN(strings.TrimPrefix(k, volumeKeyPrefix), "/", 2)[0]
+	return strings.SplitN(strings.TrimPrefix(k, volumeKeyPrefix), ".", 2)[0]
 }
 
 // volumeFieldName gets volume field name from volume annotation key, example:
-// `type` is the field of gvisor.dev/spec/mount/NAME/type
+// `type` is the field of dev.gvisor.spec.mount.NAME.type
 func volumeFieldName(k string) string {
-	parts := strings.Split(strings.TrimPrefix(k, volumeKeyPrefix), "/")
+	parts := strings.Split(strings.TrimPrefix(k, volumeKeyPrefix), ".")
 	return parts[len(parts)-1]
 }
 
@@ -69,7 +69,7 @@ func isVolumeKey(k string) bool {
 
 // volumeSourceKey constructs the annotation key for volume source.
 func volumeSourceKey(volume string) string {
-	return volumeKeyPrefix + volume + "/source"
+	return volumeKeyPrefix + volume + ".source"
 }
 
 // volumePath searches the volume path in the kubelet pod directory.
