@@ -298,8 +298,6 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 		return nil, err
 	}
 	ep.mu.Lock()
-	ep.stack.Stats().TCP.CurrentEstablished.Increment()
-	ep.state = StateEstablished
 	ep.isConnectNotified = true
 	ep.mu.Unlock()
 
@@ -546,6 +544,8 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		n.tsOffset = 0
 
 		// Switch state to connected.
+		// We do not use transitionToStateEstablishedLocked here as there is
+		// no handshake state available when doing a SYN cookie based accept.
 		n.stack.Stats().TCP.CurrentEstablished.Increment()
 		n.state = StateEstablished
 		n.isConnectNotified = true

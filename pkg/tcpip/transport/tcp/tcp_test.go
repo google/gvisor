@@ -541,7 +541,7 @@ func TestClosingWithEnqueuedSegments(t *testing.T) {
 	ep.(interface{ ResumeWork() }).ResumeWork()
 
 	// Wait for the protocolMainLoop to resume and update state.
-	time.Sleep(1 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
 
 	// Expect the endpoint to be closed.
 	if got, want := tcp.EndpointState(ep.State()), tcp.StateClose; got != want {

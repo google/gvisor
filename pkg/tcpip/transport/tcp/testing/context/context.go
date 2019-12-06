@@ -231,6 +231,7 @@ func (c *Context) CheckNoPacket(errMsg string) {
 // addresses. It will fail with an error if no packet is received for
 // 2 seconds.
 func (c *Context) GetPacket() []byte {
+	c.t.Helper()
 	select {
 	case p := <-c.linkEP.C:
 		if p.Proto != ipv4.ProtocolNumber {
@@ -259,6 +260,7 @@ func (c *Context) GetPacket() []byte {
 // and destination address. If no packet is available it will return
 // nil immediately.
 func (c *Context) GetPacketNonBlocking() []byte {
+	c.t.Helper()
 	select {
 	case p := <-c.linkEP.C:
 		if p.Proto != ipv4.ProtocolNumber {
@@ -483,6 +485,7 @@ func (c *Context) CreateV6Endpoint(v6only bool) {
 // GetV6Packet reads a single packet from the link layer endpoint of the context
 // and asserts that it is an IPv6 Packet with the expected src/dest addresses.
 func (c *Context) GetV6Packet() []byte {
+	c.t.Helper()
 	select {
 	case p := <-c.linkEP.C:
 		if p.Proto != ipv6.ProtocolNumber {
