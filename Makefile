@@ -44,6 +44,7 @@ $(APP_TARGET): public $(APP_SOURCE)
 
 static-production: hugo-docker-image compatibility-docs node_modules config.toml $(shell find archetypes assets content themes -type f | sed 's/ /\\ /g')
 	docker run \
+	  --rm \
 	  -e HUGO_ENV="production" \
 	  -e USER="$(shell id -u)" \
 	  -e HOME="/tmp" \
@@ -56,6 +57,7 @@ static-production: hugo-docker-image compatibility-docs node_modules config.toml
 
 static-staging: hugo-docker-image compatibility-docs node_modules config.toml $(shell find archetypes assets content themes -type f | sed 's/ /\\ /g')                           
 	docker run \
+	  --rm \
 	  -e HUGO_ENV="production" \
 	  -e USER="$(shell id -u)" \
 	  -e HOME="/tmp" \
@@ -71,6 +73,7 @@ node_modules: package.json package-lock.json
 	# Use npm ci because npm install will update the package-lock.json.
 	# See: https://github.com/npm/npm/issues/18286
 	docker run \
+	  --rm \
 	  -e USER="$(shell id -u)" \
 	  -e HOME="/tmp" \
 	  -u="$(shell id -u):$(shell id -g)" \
@@ -82,6 +85,7 @@ node_modules: package.json package-lock.json
 upstream/gvisor/bazel-bin/runsc/linux_amd64_pure_stripped/runsc: upstream-gvisor
 	mkdir -p /tmp/gvisor-website/build_output
 	docker run \
+	  --rm \
 	  -v $(PWD)/upstream/gvisor:/workspace \
 	  -v /tmp/gvisor-website/build_output:/tmp/gvisor-website/build_output \
 	  -w /workspace \
@@ -107,6 +111,7 @@ check: htmlproofer-docker-image website
 # Run a local content development server. Redirects will not be supported.
 devserver: hugo-docker-image all-upstream compatibility-docs
 	docker run \
+	  --rm \
 	  -e USER="$(shell id -u)" \
 	  -e HOME="/tmp" \
 	  -u="$(shell id -u):$(shell id -g)" \
@@ -123,11 +128,6 @@ devserver: hugo-docker-image all-upstream compatibility-docs
 server: website
 	cd public/ && go run main.go --custom-domain localhost
 .PHONY: server
-
-# Deploy the website to App Engine.
-deploy: website
-	cd public && $(GCLOUD) app deploy
-.PHONY: deploy
 
 # Stage the website to App Engine at a version based on the git branch name.
 stage: all-upstream app static-staging
