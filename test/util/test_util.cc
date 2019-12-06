@@ -76,7 +76,6 @@ bool IsRunningWithHostinet() {
       "xchg %%rdi, %%rbx\n"                \
       : "=a"(a), "=D"(b), "=c"(c), "=d"(d) \
       : "a"(a_inp), "2"(c_inp))
-#endif  // defined(__x86_64__)
 
 CPUVendor GetCPUVendor() {
   uint32_t eax, ebx, ecx, edx;
@@ -93,6 +92,7 @@ CPUVendor GetCPUVendor() {
   }
   return CPUVendor::kUnknownVendor;
 }
+#endif  // defined(__x86_64__)
 
 bool operator==(const KernelVersion& first, const KernelVersion& second) {
   return first.major == second.major && first.minor == second.minor &&

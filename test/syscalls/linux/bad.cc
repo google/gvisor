@@ -22,12 +22,13 @@ namespace gvisor {
 namespace testing {
 
 namespace {
-
+#if defined(__x86_64__)
 TEST(BadSyscallTest, NotImplemented) {
   // get_kernel_syms is not supported in Linux > 2.6, and not implemented in
   // gVisor.
   EXPECT_THAT(syscall(SYS_get_kernel_syms), SyscallFailsWithErrno(ENOSYS));
 }
+#endif // defined(__x86_64__)
 
 TEST(BadSyscallTest, NegativeOne) {
   EXPECT_THAT(syscall(-1), SyscallFailsWithErrno(ENOSYS));

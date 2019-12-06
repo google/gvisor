@@ -1986,7 +1986,7 @@ TEST(Proc, GetdentsEnoent) {
       },
       nullptr, nullptr));
   char buf[1024];
-  ASSERT_THAT(syscall(SYS_getdents, fd.get(), buf, sizeof(buf)),
+  ASSERT_THAT(syscall(SYS_getdents64, fd.get(), buf, sizeof(buf)),
               SyscallFailsWithErrno(ENOENT));
 }
 
