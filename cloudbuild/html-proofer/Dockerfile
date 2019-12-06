@@ -13,7 +13,7 @@ RUN set -x \
             libcurl \
             libxml2-dev \
             libxslt-dev \
-            openssh
+            openssh \
         && gem install \
             html-proofer:${HTMLPROOFER_VERSION} \
             nokogiri:1.10.1 \
