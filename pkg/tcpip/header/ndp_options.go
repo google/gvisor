@@ -17,6 +17,7 @@ package header
 import (
 	"encoding/binary"
 	"errors"
+	"math"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -109,13 +110,13 @@ const (
 )
 
 var (
-	// NDPInfiniteLifetime is a value that represents
-	// infinity for the Valid and Preferred Lifetime fields in a NDP Prefix
-	// Information option. Its value is (2^32 - 1)s = 4294967295s
+	// NDPInfiniteLifetime is a value that represents infinity for the
+	// 4-byte lifetime fields found in various NDP options. Its value is
+	// (2^32 - 1)s = 4294967295s.
 	//
 	// This is a variable instead of a constant so that tests can change
 	// this value to a smaller value. It should only be modified by tests.
-	NDPInfiniteLifetime = time.Second * 4294967295
+	NDPInfiniteLifetime = time.Second * math.MaxUint32
 )
 
 // NDPOptionIterator is an iterator of NDPOption.

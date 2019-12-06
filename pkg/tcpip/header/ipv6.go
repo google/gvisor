@@ -90,6 +90,18 @@ const (
 	// IPv6Any is the non-routable IPv6 "any" meta address. It is also
 	// known as the unspecified address.
 	IPv6Any tcpip.Address = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+
+	// IIDSize is the size of an interface identifier (IID), in bytes, as
+	// defined by RFC 4291 section 2.5.1.
+	IIDSize = 8
+
+	// IIDOffsetInIPv6Address is the offset, in bytes, from the start
+	// of an IPv6 address to the beginning of the interface identifier
+	// (IID) for auto-generated addresses. That is, all bytes before
+	// the IIDOffsetInIPv6Address-th byte are the prefix bytes, and all
+	// bytes including and after the IIDOffsetInIPv6Address-th byte are
+	// for the IID.
+	IIDOffsetInIPv6Address = 8
 )
 
 // IPv6EmptySubnet is the empty IPv6 subnet. It may also be known as the
@@ -266,6 +278,28 @@ func SolicitedNodeAddr(addr tcpip.Address) tcpip.Address {
 	return solicitedNodeMulticastPrefix + addr[len(addr)-3:]
 }
 
+// EthernetAdddressToEUI64IntoBuf populates buf with a EUI-64 from a 48-bit
+// Ethernet/MAC address.
+//
+// buf MUST be at least 8 bytes.
+func EthernetAdddressToEUI64IntoBuf(linkAddr tcpip.LinkAddress, buf []byte) {
+	buf[0] = linkAddr[0] ^ 2
+	buf[1] = linkAddr[1]
+	buf[2] = linkAddr[2]
+	buf[3] = 0xFE
+	buf[4] = 0xFE
+	buf[5] = linkAddr[3]
+	buf[6] = linkAddr[4]
+	buf[7] = linkAddr[5]
+}
+
+// EthernetAddressToEUI64 computes an EUI-64 from a 48-bit Ethernet/MAC address.
+func EthernetAddressToEUI64(linkAddr tcpip.LinkAddress) [IIDSize]byte {
+	var buf [IIDSize]byte
+	EthernetAdddressToEUI64IntoBuf(linkAddr, buf[:])
+	return buf
+}
+
 // LinkLocalAddr computes the default IPv6 link-local address from a link-layer
 // (MAC) address.
 func LinkLocalAddr(linkAddr tcpip.LinkAddress) tcpip.Address {
@@ -275,18 +309,11 @@ func LinkLocalAddr(linkAddr tcpip.LinkAddress) tcpip.Address {
 	// The conversion is very nearly:
 	//	aa:bb:cc:dd:ee:ff => FE80::Aabb:ccFF:FEdd:eeff
 	// Note the capital A. The conversion aa->Aa involves a bit flip.
-	lladdrb := [16]byte{
-		0:  0xFE,
-		1:  0x80,
-		8:  linkAddr[0] ^ 2,
-		9:  linkAddr[1],
-		10: linkAddr[2],
-		11: 0xFF,
-		12: 0xFE,
-		13: linkAddr[3],
-		14: linkAddr[4],
-		15: linkAddr[5],
+	lladdrb := [IPv6AddressSize]byte{
+		0: 0xFE,
+		1: 0x80,
 	}
+	EthernetAdddressToEUI64IntoBuf(linkAddr, lladdrb[IIDOffsetInIPv6Address:])
 	return tcpip.Address(lladdrb[:])
 }
 

@@ -115,10 +115,11 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, loopback
 			},
 		},
 		ndp: ndpState{
-			configs:        stack.ndpConfigs,
-			dad:            make(map[tcpip.Address]dadState),
-			defaultRouters: make(map[tcpip.Address]defaultRouterState),
-			onLinkPrefixes: make(map[tcpip.Subnet]onLinkPrefixState),
+			configs:          stack.ndpConfigs,
+			dad:              make(map[tcpip.Address]dadState),
+			defaultRouters:   make(map[tcpip.Address]defaultRouterState),
+			onLinkPrefixes:   make(map[tcpip.Subnet]onLinkPrefixState),
+			autoGenAddresses: make(map[tcpip.Address]autoGenAddressState),
 		},
 	}
 	nic.ndp.nic = nic
@@ -244,6 +245,20 @@ func (n *NIC) primaryEndpoint(protocol tcpip.NetworkProtocolNumber) *referencedN
 	return nil
 }
 
+// hasPermanentAddrLocked returns true if n has a permanent (including currently
+// tentative) address, addr.
+func (n *NIC) hasPermanentAddrLocked(addr tcpip.Address) bool {
+	ref, ok := n.endpoints[NetworkEndpointID{addr}]
+
+	if !ok {
+		return false
+	}
+
+	kind := ref.getKind()
+
+	return kind == permanent || kind == permanentTentative
+}
+
 func (n *NIC) getRef(protocol tcpip.NetworkProtocolNumber, dst tcpip.Address) *referencedNetworkEndpoint {
 	return n.getRefOrCreateTemp(protocol, dst, CanBePrimaryEndpoint, n.promiscuous)
 }
@@ -335,7 +350,7 @@ func (n *NIC) getRefOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address t
 			Address:   address,
 			PrefixLen: netProto.DefaultPrefixLen(),
 		},
-	}, peb, temporary)
+	}, peb, temporary, static)
 
 	n.mu.Unlock()
 	return ref
@@ -384,10 +399,10 @@ func (n *NIC) addPermanentAddressLocked(protocolAddress tcpip.ProtocolAddress, p
 		}
 	}
 
-	return n.addAddressLocked(protocolAddress, peb, permanent)
+	return n.addAddressLocked(protocolAddress, peb, permanent, static)
 }
 
-func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior, kind networkEndpointKind) (*referencedNetworkEndpoint, *tcpip.Error) {
+func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior, kind networkEndpointKind, configType networkEndpointConfigType) (*referencedNetworkEndpoint, *tcpip.Error) {
 	// TODO(b/141022673): Validate IP address before adding them.
 
 	// Sanity check.
@@ -417,11 +432,12 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 	}
 
 	ref := &referencedNetworkEndpoint{
-		refs:     1,
-		ep:       ep,
-		nic:      n,
-		protocol: protocolAddress.Protocol,
-		kind:     kind,
+		refs:       1,
+		ep:         ep,
+		nic:        n,
+		protocol:   protocolAddress.Protocol,
+		kind:       kind,
+		configType: configType,
 	}
 
 	// Set up cache if link address resolution exists for this protocol.
@@ -624,9 +640,18 @@ func (n *NIC) removePermanentAddressLocked(addr tcpip.Address) *tcpip.Error {
 
 	isIPv6Unicast := r.protocol == header.IPv6ProtocolNumber && header.IsV6UnicastAddress(addr)
 
-	// If we are removing a tentative IPv6 unicast address, stop DAD.
-	if isIPv6Unicast && kind == permanentTentative {
-		n.ndp.stopDuplicateAddressDetection(addr)
+	if isIPv6Unicast {
+		// If we are removing a tentative IPv6 unicast address, stop
+		// DAD.
+		if kind == permanentTentative {
+			n.ndp.stopDuplicateAddressDetection(addr)
+		}
+
+		// If we are removing an address generated via SLAAC, cleanup
+		// its SLAAC resources and notify the integrator.
+		if r.configType == slaac {
+			n.ndp.cleanupAutoGenAddrResourcesAndNotify(addr)
+		}
 	}
 
 	r.setKind(permanentExpired)
@@ -989,7 +1014,7 @@ const (
 	// removing the permanent address from the NIC.
 	permanent
 
-	// An expired permanent endoint is a permanent endoint that had its address
+	// An expired permanent endpoint is a permanent endpoint that had its address
 	// removed from the NIC, and it is waiting to be removed once no more routes
 	// hold a reference to it. This is achieved by decreasing its reference count
 	// by 1. If its address is re-added before the endpoint is removed, its type
@@ -1035,6 +1060,19 @@ func (n *NIC) unregisterPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep 
 	}
 }
 
+type networkEndpointConfigType int32
+
+const (
+	// A statically configured endpoint is an address that was added by
+	// some user-specified action (adding an explicit address, joining a
+	// multicast group).
+	static networkEndpointConfigType = iota
+
+	// A slaac configured endpoint is an IPv6 endpoint that was
+	// added by SLAAC as per RFC 4862 section 5.5.3.
+	slaac
+)
+
 type referencedNetworkEndpoint struct {
 	ep       NetworkEndpoint
 	nic      *NIC
@@ -1050,6 +1088,10 @@ type referencedNetworkEndpoint struct {
 
 	// networkEndpointKind must only be accessed using {get,set}Kind().
 	kind networkEndpointKind
+
+	// configType is the method that was used to configure this endpoint.
+	// This must never change after the endpoint is added to a NIC.
+	configType networkEndpointConfigType
 }
 
 func (r *referencedNetworkEndpoint) getKind() networkEndpointKind {
