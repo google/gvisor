@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Build with C++17.
+build --cxxopt=-std=c++17
+
 # Display the current git revision in the info block.
 build --stamp --workspace_status_command tools/workspace_status.sh
 
