@@ -656,6 +656,9 @@ TEST_P(UdpSocketTest, SendToAddressOtherThanConnected) {
 }
 
 TEST_P(UdpSocketTest, ZerolengthWriteAllowed) {
+  // TODO(gvisor.dev/issue/1202): Hostinet does not support zero length writes.
+  SKIP_IF(IsRunningWithHostinet());
+
   // Bind s_ to loopback:TestPort, and connect to loopback:TestPort+1.
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
   ASSERT_THAT(connect(s_, addr_[1], addrlen_), SyscallSucceeds());
@@ -673,6 +676,9 @@ TEST_P(UdpSocketTest, ZerolengthWriteAllowed) {
 }
 
 TEST_P(UdpSocketTest, ZerolengthWriteAllowedNonBlockRead) {
+  // TODO(gvisor.dev/issue/1202): Hostinet does not support zero length writes.
+  SKIP_IF(IsRunningWithHostinet());
+
   // Bind s_ to loopback:TestPort, and connect to loopback:TestPort+1.
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
   ASSERT_THAT(connect(s_, addr_[1], addrlen_), SyscallSucceeds());
@@ -878,6 +884,10 @@ TEST_P(UdpSocketTest, ReadShutdownSameSocketResetsShutdownState) {
 }
 
 TEST_P(UdpSocketTest, ReadShutdown) {
+  // TODO(gvisor.dev/issue/1202): Calling recv() after shutdown without
+  // MSG_DONTWAIT blocks indefinitely.
+  SKIP_IF(IsRunningWithHostinet());
+
   char received[512];
   EXPECT_THAT(recv(s_, received, sizeof(received), MSG_DONTWAIT),
               SyscallFailsWithErrno(EWOULDBLOCK));
@@ -900,6 +910,10 @@ TEST_P(UdpSocketTest, ReadShutdown) {
 }
 
 TEST_P(UdpSocketTest, ReadShutdownDifferentThread) {
+  // TODO(gvisor.dev/issue/1202): Calling recv() after shutdown without
+  // MSG_DONTWAIT blocks indefinitely.
+  SKIP_IF(IsRunningWithHostinet());
+
   char received[512];
   EXPECT_THAT(recv(s_, received, sizeof(received), MSG_DONTWAIT),
               SyscallFailsWithErrno(EWOULDBLOCK));
@@ -1189,6 +1203,10 @@ TEST_P(UdpSocketTest, FIONREADZeroLengthWriteShutdown) {
 }
 
 TEST_P(UdpSocketTest, SoTimestampOffByDefault) {
+  // TODO(gvisor.dev/issue/1202): SO_TIMESTAMP socket option not supported by
+  // hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   int v = -1;
   socklen_t optlen = sizeof(v);
   ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_TIMESTAMP, &v, &optlen),
@@ -1198,6 +1216,10 @@ TEST_P(UdpSocketTest, SoTimestampOffByDefault) {
 }
 
 TEST_P(UdpSocketTest, SoTimestamp) {
+  // TODO(gvisor.dev/issue/1202): ioctl() and SO_TIMESTAMP socket option are not
+  // supported by hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
   ASSERT_THAT(connect(t_, addr_[0], addrlen_), SyscallSucceeds());
 
@@ -1241,6 +1263,9 @@ TEST_P(UdpSocketTest, WriteShutdownNotConnected) {
 }
 
 TEST_P(UdpSocketTest, TimestampIoctl) {
+  // TODO(gvisor.dev/issue/1202): ioctl() is not supported by hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
   ASSERT_THAT(connect(t_, addr_[0], addrlen_), SyscallSucceeds());
 
@@ -1259,7 +1284,10 @@ TEST_P(UdpSocketTest, TimestampIoctl) {
   ASSERT_TRUE(tv.tv_sec != 0 || tv.tv_usec != 0);
 }
 
-TEST_P(UdpSocketTest, TimetstampIoctlNothingRead) {
+TEST_P(UdpSocketTest, TimestampIoctlNothingRead) {
+  // TODO(gvisor.dev/issue/1202): ioctl() is not supported by hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
   ASSERT_THAT(connect(t_, addr_[0], addrlen_), SyscallSucceeds());
 
@@ -1270,6 +1298,10 @@ TEST_P(UdpSocketTest, TimetstampIoctlNothingRead) {
 // Test that the timestamp accessed via SIOCGSTAMP is still accessible after
 // SO_TIMESTAMP is enabled and used to retrieve a timestamp.
 TEST_P(UdpSocketTest, TimestampIoctlPersistence) {
+  // TODO(gvisor.dev/issue/1202): ioctl() and SO_TIMESTAMP socket option are not
+  // supported by hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
   ASSERT_THAT(connect(t_, addr_[0], addrlen_), SyscallSucceeds());
 
@@ -1304,7 +1336,6 @@ TEST_P(UdpSocketTest, TimestampIoctlPersistence) {
   msg.msg_controllen = sizeof(cmsgbuf);
   ASSERT_THAT(RetryEINTR(recvmsg)(s_, &msg, 0), SyscallSucceedsWithValue(0));
   struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
-  cmsg = CMSG_FIRSTHDR(&msg);
   ASSERT_NE(cmsg, nullptr);
 
   // The ioctl should return the exact same values as before.
