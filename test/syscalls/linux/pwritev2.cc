@@ -34,6 +34,8 @@ namespace {
 #ifndef SYS_pwritev2
 #if defined(__x86_64__)
 #define SYS_pwritev2 328
+#elif defined(__aarch64__)
+#define SYS_pwritev2 287
 #else
 #error "Unknown architecture"
 #endif

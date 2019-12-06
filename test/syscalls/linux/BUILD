@@ -19,6 +19,16 @@ exports_files(
     visibility = ["//:sandbox"],
 )
 
+config_setting(
+    name = "x86_64",
+    constraint_values = ["@bazel_tools//platforms:x86_64"],
+)
+
+config_setting(
+    name = "aarch64",
+    constraint_values = ["@bazel_tools//platforms:aarch64"],
+)
+
 cc_binary(
     name = "sigaltstack_check",
     testonly = 1,
@@ -197,7 +207,10 @@ cc_binary(
 cc_binary(
     name = "32bit_test",
     testonly = 1,
-    srcs = ["32bit.cc"],
+    srcs = select({
+	":x86_64": ["32bit.cc"],
+	":aarch64": [],
+    }),
     linkstatic = 1,
     deps = [
         "//test/util:memory_util",
@@ -584,7 +597,10 @@ cc_binary(
 cc_binary(
     name = "exceptions_test",
     testonly = 1,
-    srcs = ["exceptions.cc"],
+    srcs = select({
+        ":x86_64": ["exceptions.cc"],
+        ":aarch64": [],
+    }),
     linkstatic = 1,
     deps = [
         "//test/util:logging",
@@ -640,7 +656,10 @@ cc_binary(
 cc_binary(
     name = "exec_binary_test",
     testonly = 1,
-    srcs = ["exec_binary.cc"],
+    srcs = select({
+        ":x86_64": ["exec_binary.cc"],
+        ":aarch64": [],
+    }),
     linkstatic = 1,
     deps = [
         "//test/util:cleanup",
@@ -811,7 +830,10 @@ cc_binary(
 cc_binary(
     name = "fpsig_fork_test",
     testonly = 1,
-    srcs = ["fpsig_fork.cc"],
+    srcs = select({
+        ":x86_64": ["fpsig_fork.cc"],
+        ":aarch64": [],
+    }),
     linkstatic = 1,
     deps = [
         "//test/util:logging",
@@ -825,7 +847,10 @@ cc_binary(
 cc_binary(
     name = "fpsig_nested_test",
     testonly = 1,
-    srcs = ["fpsig_nested.cc"],
+    srcs = select({
+        ":x86_64": ["fpsig_nested.cc"],
+        ":aarch64": [],
+    }),
     linkstatic = 1,
     deps = [
         "//test/util:test_main",
@@ -1440,7 +1465,10 @@ cc_binary(
 cc_binary(
     name = "arch_prctl_test",
     testonly = 1,
-    srcs = ["arch_prctl.cc"],
+    srcs = select({
+        ":x86_64": ["arch_prctl.cc"],
+        ":aarch64": [],
+    }),
     linkstatic = 1,
     deps = [
         "//test/util:test_main",
@@ -2035,7 +2063,10 @@ cc_binary(
 cc_binary(
     name = "sigiret_test",
     testonly = 1,
-    srcs = ["sigiret.cc"],
+    srcs = select({
+        ":x86_64": ["sigiret.cc"],
+        ":aarch64": [],
+    }),
     linkstatic = 1,
     deps = [
         "//test/util:logging",
@@ -2043,7 +2074,10 @@ cc_binary(
         "//test/util:test_util",
         "//test/util:timer_util",
         "@com_google_googletest//:gtest",
-    ],
+    ] + select({
+        ":x86_64": [],
+        ":aarch64": ["//test/util:test_main"],
+	}),
 )
 
 cc_binary(
@@ -3260,7 +3294,10 @@ cc_binary(
 cc_binary(
     name = "sysret_test",
     testonly = 1,
-    srcs = ["sysret.cc"],
+    srcs = select({
+        ":x86_64": ["sysret.cc"],
+        ":aarch64": [],
+    }),
     linkstatic = 1,
     deps = [
         "//test/util:logging",

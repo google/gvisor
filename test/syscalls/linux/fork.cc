@@ -215,6 +215,8 @@ TEST_F(ForkTest, PrivateMapping) {
   EXPECT_THAT(Wait(child), SyscallSucceedsWithValue(0));
 }
 
+// CPUID is x86 specific.
+#ifdef __x86_64__
 // Test that cpuid works after a fork.
 TEST_F(ForkTest, Cpuid) {
   pid_t child = Fork();
@@ -227,6 +229,7 @@ TEST_F(ForkTest, Cpuid) {
   }
   EXPECT_THAT(Wait(child), SyscallSucceedsWithValue(0));
 }
+#endif
 
 TEST_F(ForkTest, Mmap) {
   pid_t child = Fork();
