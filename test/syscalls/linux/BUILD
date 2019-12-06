@@ -753,6 +753,7 @@ cc_binary(
         "//test/util:eventfd_util",
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
+        "//test/util:save_util",
         "//test/util:temp_path",
         "//test/util:test_util",
         "//test/util:timer_util",
