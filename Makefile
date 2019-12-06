@@ -1,7 +1,6 @@
 HUGO := hugo
 HUGO_VERSION := 0.53
 HTMLPROOFER_VERSION := 3.10.2
-NPM := npm
 GCLOUD := gcloud
 GCP_PROJECT := gvisor-website
 
@@ -55,7 +54,14 @@ static-staging: compatibility-docs node_modules config.toml $(shell find archety
 node_modules: package.json package-lock.json
 	# Use npm ci because npm install will update the package-lock.json.
 	# See: https://github.com/npm/npm/issues/18286
-	$(NPM) ci
+	docker run \
+	  -e USER="$(shell id -u)" \
+	  -e HOME="/tmp" \
+	  -u="$(shell id -u):$(shell id -g)" \
+	  -v $(PWD):/workspace \
+	  -w /workspace \
+	  --entrypoint 'npm' \
+	  node ci
 
 upstream/gvisor/bazel-bin/runsc/linux_amd64_pure_stripped/runsc: upstream-gvisor
 	mkdir -p /tmp/gvisor-website/build_output
