@@ -1100,11 +1100,13 @@ func (x *timekeeperClock) load(m state.Map) {
 func (x *TTY) beforeSave() {}
 func (x *TTY) save(m state.Map) {
 	x.beforeSave()
+	m.Save("Index", &x.Index)
 	m.Save("tg", &x.tg)
 }
 
 func (x *TTY) afterLoad() {}
 func (x *TTY) load(m state.Map) {
+	m.Load("Index", &x.Index)
 	m.Load("tg", &x.tg)
 }
 

@@ -53,8 +53,8 @@ func newTerminal(ctx context.Context, d *dirInodeOperations, n uint32) *Terminal
 		d:          d,
 		n:          n,
 		ld:         newLineDiscipline(termios),
-		masterKTTY: &kernel.TTY{},
-		slaveKTTY:  &kernel.TTY{},
+		masterKTTY: &kernel.TTY{Index: n},
+		slaveKTTY:  &kernel.TTY{Index: n},
 	}
 	t.EnableLeakCheck("tty.Terminal")
 	return &t

@@ -268,7 +268,6 @@ func (proc *Proc) Ps(args *PsArgs, out *string) error {
 }
 
 // Process contains information about a single process in a Sandbox.
-// TODO(b/117881927): Implement TTY field.
 type Process struct {
 	UID auth.KUID       `json:"uid"`
 	PID kernel.ThreadID `json:"pid"`
@@ -276,6 +275,9 @@ type Process struct {
 	PPID kernel.ThreadID `json:"ppid"`
 	// Processor utilization
 	C int32 `json:"c"`
+	// TTY name of the process. Will be of the form "pts/N" if there is a
+	// TTY, or "?" if there is not.
+	TTY string `json:"tty"`
 	// Start time
 	STime string `json:"stime"`
 	// CPU time
@@ -285,18 +287,19 @@ type Process struct {
 }
 
 // ProcessListToTable prints a table with the following format:
-// UID       PID       PPID      C         STIME     TIME       CMD
-// 0         1         0         0         14:04     505262ns   tail
+// UID       PID       PPID      C         TTY		STIME     TIME       CMD
+// 0         1         0         0         pty/4	14:04     505262ns   tail
 func ProcessListToTable(pl []*Process) string {
 	var buf bytes.Buffer
 	tw := tabwriter.NewWriter(&buf, 10, 1, 3, ' ', 0)
-	fmt.Fprint(tw, "UID\tPID\tPPID\tC\tSTIME\tTIME\tCMD")
+	fmt.Fprint(tw, "UID\tPID\tPPID\tC\tTTY\tSTIME\tTIME\tCMD")
 	for _, d := range pl {
-		fmt.Fprintf(tw, "\n%d\t%d\t%d\t%d\t%s\t%s\t%s",
+		fmt.Fprintf(tw, "\n%d\t%d\t%d\t%d\t%s\t%s\t%s\t%s",
 			d.UID,
 			d.PID,
 			d.PPID,
 			d.C,
+			d.TTY,
 			d.STime,
 			d.Time,
 			d.Cmd)
@@ -347,7 +350,7 @@ func Processes(k *kernel.Kernel, containerID string, out *[]*Process) error {
 		if p := tg.Leader().Parent(); p != nil {
 			ppid = p.PIDNamespace().IDOfThreadGroup(p.ThreadGroup())
 		}
-		*out = append(*out, &Process{
+		p := Process{
 			UID:   tg.Leader().Credentials().EffectiveKUID,
 			PID:   pid,
 			PPID:  ppid,
@@ -355,7 +358,9 @@ func Processes(k *kernel.Kernel, containerID string, out *[]*Process) error {
 			C:     percentCPU(tg.CPUStats(), tg.Leader().StartTime(), now),
 			Time:  tg.CPUStats().SysTime.String(),
 			Cmd:   tg.Leader().Name(),
-		})
+			TTY:   ttyName(tg.TTY()),
+		}
+		*out = append(*out, &p)
 	}
 	sort.Slice(*out, func(i, j int) bool { return (*out)[i].PID < (*out)[j].PID })
 	return nil
@@ -394,4 +399,11 @@ func percentCPU(stats usage.CPUStats, startTime, now ktime.Time) int32 {
 		percentCPU = 99
 	}
 	return int32(percentCPU)
+}
+
+func ttyName(tty *kernel.TTY) string {
+	if tty == nil {
+		return "?"
+	}
+	return fmt.Sprintf("pts/%d", tty.Index)
 }
