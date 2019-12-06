@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -31,6 +32,7 @@ import (
 
 	"flag"
 	"github.com/google/subcommands"
+	"github.com/kr/pty"
 	"gvisor.dev/gvisor/runsc/testutil"
 )
 
@@ -41,6 +43,7 @@ func main() {
 	subcommands.Register(new(fdReceiver), "")
 	subcommands.Register(new(fdSender), "")
 	subcommands.Register(new(forkBomb), "")
+	subcommands.Register(new(ptyRunner), "")
 	subcommands.Register(new(reaper), "")
 	subcommands.Register(new(syscall), "")
 	subcommands.Register(new(taskTree), "")
@@ -349,6 +352,43 @@ func (c *capability) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 		fmt.Printf("Extra capabilities found, dont_want: %#x: got: %#x\n", c.disabled, caps)
 		return subcommands.ExitFailure
 	}
+
+	return subcommands.ExitSuccess
+}
+
+type ptyRunner struct{}
+
+// Name implements subcommands.Command.
+func (*ptyRunner) Name() string {
+	return "pty-runner"
+}
+
+// Synopsis implements subcommands.Command.
+func (*ptyRunner) Synopsis() string {
+	return "runs the given command with an open pty terminal"
+}
+
+// Usage implements subcommands.Command.
+func (*ptyRunner) Usage() string {
+	return "pty-runner [command]"
+}
+
+// SetFlags implements subcommands.Command.SetFlags.
+func (*ptyRunner) SetFlags(f *flag.FlagSet) {}
+
+// Execute implements subcommands.Command.
+func (*ptyRunner) Execute(_ context.Context, fs *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+	c := exec.Command(fs.Args()[0], fs.Args()[1:]...)
+	f, err := pty.Start(c)
+	if err != nil {
+		fmt.Printf("pty.Start failed: %v", err)
+		return subcommands.ExitFailure
+	}
+	defer f.Close()
+
+	// Copy stdout from the command to keep this process alive until the
+	// subprocess exits.
+	io.Copy(os.Stdout, f)
 
 	return subcommands.ExitSuccess
 }

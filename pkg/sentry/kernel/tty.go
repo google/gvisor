@@ -21,8 +21,19 @@ import "sync"
 //
 // +stateify savable
 type TTY struct {
+	// Index is the terminal index. It is immutable.
+	Index uint32
+
 	mu sync.Mutex `state:"nosave"`
 
 	// tg is protected by mu.
 	tg *ThreadGroup
+}
+
+// TTY returns the thread group's controlling terminal. If nil, there is no
+// controlling terminal.
+func (tg *ThreadGroup) TTY() *TTY {
+	tg.signalHandlers.mu.Lock()
+	defer tg.signalHandlers.mu.Unlock()
+	return tg.tty
 }

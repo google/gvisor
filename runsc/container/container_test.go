@@ -98,10 +98,14 @@ func procListsEqual(got, want []*control.Process) bool {
 	for i := range got {
 		pd1 := got[i]
 		pd2 := want[i]
-		// Zero out unimplemented and timing dependant fields.
+		// Zero out timing dependant fields.
 		pd1.Time = ""
 		pd1.STime = ""
 		pd1.C = 0
+		// Ignore TTY field too, since it's not relevant in the cases
+		// where we use this method. Tests that care about the TTY
+		// field should check for it themselves.
+		pd1.TTY = ""
 		if *pd1 != *pd2 {
 			return false
 		}
@@ -2109,6 +2113,95 @@ func TestOverlayfsStaleRead(t *testing.T) {
 	got := strings.TrimSpace(string(gotBytes))
 	if want != got {
 		t.Errorf("Wrong content in out file, got: %q. want: %q", got, want)
+	}
+}
+
+// TestTTYField checks TTY field returned by container.Processes().
+func TestTTYField(t *testing.T) {
+	stop := testutil.StartReaper()
+	defer stop()
+
+	testApp, err := testutil.FindFile("runsc/container/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+
+	testCases := []struct {
+		name         string
+		useTTY       bool
+		wantTTYField string
+	}{
+		{
+			name:         "no tty",
+			useTTY:       false,
+			wantTTYField: "?",
+		},
+		{
+			name:         "tty used",
+			useTTY:       true,
+			wantTTYField: "pts/0",
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			conf := testutil.TestConfig()
+
+			// We will run /bin/sleep, possibly with an open TTY.
+			cmd := []string{"/bin/sleep", "10000"}
+			if test.useTTY {
+				// Run inside the "pty-runner".
+				cmd = append([]string{testApp, "pty-runner"}, cmd...)
+			}
+
+			spec := testutil.NewSpecWithArgs(cmd...)
+			rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer os.RemoveAll(rootDir)
+			defer os.RemoveAll(bundleDir)
+
+			// Create and start the container.
+			args := Args{
+				ID:        testutil.UniqueContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			c, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer c.Destroy()
+			if err := c.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			// Wait for sleep to be running, and check the TTY
+			// field.
+			var gotTTYField string
+			cb := func() error {
+				ps, err := c.Processes()
+				if err != nil {
+					err = fmt.Errorf("error getting process data from container: %v", err)
+					return &backoff.PermanentError{Err: err}
+				}
+				for _, p := range ps {
+					if strings.Contains(p.Cmd, "sleep") {
+						gotTTYField = p.TTY
+						return nil
+					}
+				}
+				return fmt.Errorf("sleep not running")
+			}
+			if err := testutil.Poll(cb, 30*time.Second); err != nil {
+				t.Fatalf("error waiting for sleep process: %v", err)
+			}
+
+			if gotTTYField != test.wantTTYField {
+				t.Errorf("tty field got %q, want %q", gotTTYField, test.wantTTYField)
+			}
+		})
 	}
 }
 
