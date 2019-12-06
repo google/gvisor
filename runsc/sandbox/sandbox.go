@@ -1004,14 +1004,20 @@ func (s *Sandbox) ChangeLogging(args control.LoggingArgs) error {
 // DestroyContainer destroys the given container. If it is the root container,
 // then the entire sandbox is destroyed.
 func (s *Sandbox) DestroyContainer(cid string) error {
+	if err := s.destroyContainer(cid); err != nil {
+		// If the sandbox isn't running, the container has already been destroyed,
+		// ignore the error in this case.
+		if s.IsRunning() {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Sandbox) destroyContainer(cid string) error {
 	if s.IsRootContainer(cid) {
 		log.Debugf("Destroying root container %q by destroying sandbox", cid)
 		return s.destroy()
-	}
-
-	if !s.IsRunning() {
-		// Sandbox isn't running anymore, container is already destroyed.
-		return nil
 	}
 
 	log.Debugf("Destroying container %q in sandbox %q", cid, s.ID)
