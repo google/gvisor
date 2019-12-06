@@ -16,7 +16,6 @@ package boot
 
 import (
 	"fmt"
-	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -52,7 +51,7 @@ const (
 	rootDevice = "9pfs-/"
 
 	// MountPrefix is the annotation prefix for mount hints.
-	MountPrefix = "gvisor.dev/spec/mount"
+	MountPrefix = "dev.gvisor.spec.mount."
 
 	// Filesystems that runsc supports.
 	bind     = "bind"
@@ -490,14 +489,15 @@ type podMountHints struct {
 func newPodMountHints(spec *specs.Spec) (*podMountHints, error) {
 	mnts := make(map[string]*mountHint)
 	for k, v := range spec.Annotations {
-		// Look for 'gvisor.dev/spec/mount' annotations and parse them.
+		// Look for 'dev.gvisor.spec.mount' annotations and parse them.
 		if strings.HasPrefix(k, MountPrefix) {
-			parts := strings.Split(k, "/")
-			if len(parts) != 5 {
+			// Remove the prefix and split the rest.
+			parts := strings.Split(k[len(MountPrefix):], ".")
+			if len(parts) != 2 {
 				return nil, fmt.Errorf("invalid mount annotation: %s=%s", k, v)
 			}
-			name := parts[3]
-			if len(name) == 0 || path.Clean(name) != name {
+			name := parts[0]
+			if len(name) == 0 {
 				return nil, fmt.Errorf("invalid mount name: %s", name)
 			}
 			mnt := mnts[name]
@@ -505,7 +505,7 @@ func newPodMountHints(spec *specs.Spec) (*podMountHints, error) {
 				mnt = &mountHint{name: name}
 				mnts[name] = mnt
 			}
-			if err := mnt.setField(parts[4], v); err != nil {
+			if err := mnt.setField(parts[1], v); err != nil {
 				return nil, err
 			}
 		}
@@ -575,6 +575,11 @@ func newContainerMounter(spec *specs.Spec, goferFDs []int, k *kernel.Kernel, hin
 func (c *containerMounter) processHints(conf *Config) error {
 	ctx := c.k.SupervisorContext()
 	for _, hint := range c.hints.mounts {
+		// TODO(b/142076984): Only support tmpfs for now. Bind mounts require a
+		// common gofer to mount all shared volumes.
+		if hint.mount.Type != tmpfs {
+			continue
+		}
 		log.Infof("Mounting master of shared mount %q from %q type %q", hint.name, hint.mount.Source, hint.mount.Type)
 		inode, err := c.mountSharedMaster(ctx, conf, hint)
 		if err != nil {
@@ -851,7 +856,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, conf *Config, mns 
 		return fmt.Errorf("mount %q error: %v", m.Destination, err)
 	}
 
-	log.Infof("Mounted %q to %q type %s", m.Source, m.Destination, m.Type)
+	log.Infof("Mounted %q to %q type: %s, internal-options: %q", m.Source, m.Destination, m.Type, opts)
 	return nil
 }
 
