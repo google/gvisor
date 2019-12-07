@@ -3,7 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build go1.12
+// +build go1.13
 // +build !go1.15
 
 // Check go:linkname function signatures when updating Go version.
@@ -26,6 +26,9 @@ import (
 
 //go:linkname runtimeSemacquire sync.runtime_Semacquire
 func runtimeSemacquire(s *uint32)
+
+//go:linkname runtimeSemrelease sync.runtime_Semrelease
+func runtimeSemrelease(s *uint32, handoff bool, skipframes int)
 
 // DowngradableRWMutex is identical to sync.RWMutex, but adds the DowngradeLock
 // method.
