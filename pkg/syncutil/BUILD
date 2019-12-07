@@ -31,8 +31,6 @@ go_template(
 go_library(
     name = "syncutil",
     srcs = [
-        "downgradable_rwmutex_1_12_unsafe.go",
-        "downgradable_rwmutex_1_13_unsafe.go",
         "downgradable_rwmutex_unsafe.go",
         "memmove_unsafe.go",
         "norace_unsafe.go",
