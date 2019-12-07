@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "compat.go",
         "compat_amd64.go",
+        "compat_arm64.go",
         "config.go",
         "controller.go",
         "debug.go",
@@ -110,7 +111,6 @@ go_test(
         "//pkg/control/server",
         "//pkg/log",
         "//pkg/p9",
-        "//pkg/sentry/arch:registers_go_proto",
         "//pkg/sentry/context/contexttest",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel/auth",
