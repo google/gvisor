@@ -299,6 +299,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	// nt that it must receive before its task goroutine starts running.
 	tid := nt.k.tasks.Root.IDOfTask(nt)
 	defer nt.Start(tid)
+	t.traceCloneEvent(tid)
 
 	// "If fork/clone and execve are allowed by @prog, any child processes will
 	// be constrained to the same filters and system call ABI as the parent." -

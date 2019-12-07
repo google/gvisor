@@ -15,6 +15,8 @@
 package kernel
 
 import (
+	gocontext "context"
+	"runtime/trace"
 	"sync"
 	"sync/atomic"
 
@@ -390,7 +392,14 @@ type Task struct {
 
 	// logPrefix is a string containing the task's thread ID in the root PID
 	// namespace, and is prepended to log messages emitted by Task.Infof etc.
-	logPrefix atomic.Value `state:".(string)"`
+	logPrefix atomic.Value `state:"nosave"`
+
+	// traceContext and traceTask are both used for tracing, and are
+	// updated along with the logPrefix in updateInfoLocked.
+	//
+	// These are exclusive to the task goroutine.
+	traceContext gocontext.Context `state:"nosave"`
+	traceTask    *trace.Task       `state:"nosave"`
 
 	// creds is the task's credentials.
 	//
@@ -528,14 +537,6 @@ func (t *Task) loadPtraceTracer(tracer *Task) {
 	t.ptraceTracer.Store(tracer)
 }
 
-func (t *Task) saveLogPrefix() string {
-	return t.logPrefix.Load().(string)
-}
-
-func (t *Task) loadLogPrefix(prefix string) {
-	t.logPrefix.Store(prefix)
-}
-
 func (t *Task) saveSyscallFilters() []bpf.Program {
 	if f := t.syscallFilters.Load(); f != nil {
 		return f.([]bpf.Program)
@@ -549,6 +550,7 @@ func (t *Task) loadSyscallFilters(filters []bpf.Program) {
 
 // afterLoad is invoked by stateify.
 func (t *Task) afterLoad() {
+	t.updateInfoLocked()
 	t.interruptChan = make(chan struct{}, 1)
 	t.gosched.State = TaskGoroutineNonexistent
 	if t.stop != nil {

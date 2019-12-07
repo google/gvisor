@@ -17,6 +17,7 @@ package kernel
 import (
 	"bytes"
 	"runtime"
+	"runtime/trace"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -205,9 +206,11 @@ func (*runApp) execute(t *Task) taskRunState {
 		t.tg.pidns.owner.mu.RUnlock()
 	}
 
+	region := trace.StartRegion(t.traceContext, runRegion)
 	t.accountTaskGoroutineEnter(TaskGoroutineRunningApp)
 	info, at, err := t.p.Switch(t.MemoryManager().AddressSpace(), t.Arch(), t.rseqCPU)
 	t.accountTaskGoroutineLeave(TaskGoroutineRunningApp)
+	region.End()
 
 	if clearSinglestep {
 		t.Arch().ClearSingleStep()
@@ -225,6 +228,7 @@ func (*runApp) execute(t *Task) taskRunState {
 
 	case platform.ErrContextSignalCPUID:
 		// Is this a CPUID instruction?
+		region := trace.StartRegion(t.traceContext, cpuidRegion)
 		expected := arch.CPUIDInstruction[:]
 		found := make([]byte, len(expected))
 		_, err := t.CopyIn(usermem.Addr(t.Arch().IP()), &found)
@@ -232,10 +236,12 @@ func (*runApp) execute(t *Task) taskRunState {
 			// Skip the cpuid instruction.
 			t.Arch().CPUIDEmulate(t)
 			t.Arch().SetIP(t.Arch().IP() + uintptr(len(expected)))
+			region.End()
 
 			// Resume execution.
 			return (*runApp)(nil)
 		}
+		region.End() // Not an actual CPUID, but required copy-in.
 
 		// The instruction at the given RIP was not a CPUID, and we
 		// fallthrough to the default signal deliver behavior below.
@@ -251,8 +257,10 @@ func (*runApp) execute(t *Task) taskRunState {
 		// an application-generated signal and we should continue execution
 		// normally.
 		if at.Any() {
+			region := trace.StartRegion(t.traceContext, faultRegion)
 			addr := usermem.Addr(info.Addr())
 			err := t.MemoryManager().HandleUserFault(t, addr, at, usermem.Addr(t.Arch().Stack()))
+			region.End()
 			if err == nil {
 				// The fault was handled appropriately.
 				// We can resume running the application.
@@ -260,6 +268,12 @@ func (*runApp) execute(t *Task) taskRunState {
 			}
 
 			// Is this a vsyscall that we need emulate?
+			//
+			// Note that we don't track vsyscalls as part of a
+			// specific trace region. This is because regions don't
+			// stack, and the actual system call will count as a
+			// region. We should be able to easily identify
+			// vsyscalls by having a <fault><syscall> pair.
 			if at.Execute {
 				if sysno, ok := t.tc.st.LookupEmulate(addr); ok {
 					return t.doVsyscall(addr, sysno)
