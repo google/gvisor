@@ -21,8 +21,8 @@ apt-get update && apt-get -y install make git-core build-essential linux-headers
 
 # Install a recent go toolchain.
 if ! [[ -d /usr/local/go ]]; then
-    wget https://dl.google.com/go/go1.12.linux-amd64.tar.gz
-    tar -xvf go1.12.linux-amd64.tar.gz
+    wget https://dl.google.com/go/go1.13.5.linux-amd64.tar.gz
+    tar -xvf go1.13.5.linux-amd64.tar.gz
     mv go /usr/local
 fi
 
