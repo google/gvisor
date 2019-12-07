@@ -924,6 +924,14 @@ type TCPStats struct {
 	// ESTABLISHED state or the CLOSE-WAIT state.
 	EstablishedResets *StatCounter
 
+	// EstablishedClosed is the number of times established TCP connections
+	// made a transition to CLOSED state.
+	EstablishedClosed *StatCounter
+
+	// EstablishedTimedout is the number of times an established connection
+	// was reset because of keep-alive time out.
+	EstablishedTimedout *StatCounter
+
 	// ListenOverflowSynDrop is the number of times the listen queue overflowed
 	// and a SYN was dropped.
 	ListenOverflowSynDrop *StatCounter
