@@ -22,6 +22,7 @@ import (
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/urpc"
 )
 
@@ -56,6 +57,9 @@ type Profile struct {
 
 	// traceFile is the current execution trace output file.
 	traceFile *fd.FD
+
+	// Kernel is the kernel under profile.
+	Kernel *kernel.Kernel
 }
 
 // StartCPUProfile is an RPC stub which starts recording the CPU profile in a
@@ -147,6 +151,9 @@ func (p *Profile) StartTrace(o *ProfileOpts, _ *struct{}) error {
 		return err
 	}
 
+	// Ensure all trace contexts are registered.
+	p.Kernel.RebuildTraceContexts()
+
 	p.traceFile = output
 	return nil
 }
@@ -158,8 +165,14 @@ func (p *Profile) StopTrace(_, _ *struct{}) error {
 	defer p.mu.Unlock()
 
 	if p.traceFile == nil {
-		return errors.New("Execution tracing not start")
+		return errors.New("Execution tracing not started")
 	}
+
+	// Similarly to the case above, if tasks have not ended traces, we will
+	// lose information. Thus we need to rebuild the tasks in order to have
+	// complete information. This will not lose information if multiple
+	// traces are overlapping.
+	p.Kernel.RebuildTraceContexts()
 
 	trace.Stop()
 	p.traceFile.Close()

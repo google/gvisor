@@ -54,9 +54,10 @@ declare OUTPUT="$(build //runsc)"
 if [[ ${REFRESH} -eq 0 ]]; then
   install_runsc "${RUNTIME}"   --net-raw
   install_runsc "${RUNTIME}-d" --net-raw --debug --strace --log-packets
+  install_runsc "${RUNTIME}-p" --net-raw --profile
 
   echo
-  echo "Runtimes ${RUNTIME} and ${RUNTIME}-d (debug enabled) setup."
+  echo "Runtimes ${RUNTIME}, ${RUNTIME}-d (debug enabled), and ${RUNTIME}-p installed."
   echo "Use --runtime="${RUNTIME}" with your Docker command."
   echo "  docker run --rm --runtime="${RUNTIME}" hello-world"
   echo
