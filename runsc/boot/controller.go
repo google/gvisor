@@ -152,7 +152,9 @@ func newController(fd int, l *Loader) (*controller, error) {
 	srv.Register(&debug{})
 	srv.Register(&control.Logging{})
 	if l.conf.ProfileEnable {
-		srv.Register(&control.Profile{})
+		srv.Register(&control.Profile{
+			Kernel: l.k,
+		})
 	}
 
 	return &controller{

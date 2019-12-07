@@ -154,10 +154,10 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 	// Below this point, newTask is expected not to fail (there is no rollback
 	// of assignTIDsLocked or any of the following).
 
-	// Logging on t's behalf will panic if t.logPrefix hasn't been initialized.
-	// This is the earliest point at which we can do so (since t now has thread
-	// IDs).
-	t.updateLogPrefixLocked()
+	// Logging on t's behalf will panic if t.logPrefix hasn't been
+	// initialized. This is the earliest point at which we can do so
+	// (since t now has thread IDs).
+	t.updateInfoLocked()
 
 	if cfg.InheritParent != nil {
 		t.parent = cfg.InheritParent.parent

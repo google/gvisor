@@ -841,9 +841,11 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		AbstractSocketNamespace: args.AbstractSocketNamespace,
 		ContainerID:             args.ContainerID,
 	}
-	if _, err := k.tasks.NewTask(config); err != nil {
+	t, err := k.tasks.NewTask(config)
+	if err != nil {
 		return nil, 0, err
 	}
+	t.traceExecEvent(tc) // Simulate exec for tracing.
 
 	// Success.
 	tgid := k.tasks.Root.IDOfThreadGroup(tg)
@@ -1116,6 +1118,22 @@ func (k *Kernel) SendContainerSignal(cid string, info *arch.SignalInfo) error {
 		}
 	}
 	return lastErr
+}
+
+// RebuildTraceContexts rebuilds the trace context for all tasks.
+//
+// Unfortunately, if these are built while tracing is not enabled, then we will
+// not have meaningful trace data. Rebuilding here ensures that we can do so
+// after tracing has been enabled.
+func (k *Kernel) RebuildTraceContexts() {
+	k.extMu.Lock()
+	defer k.extMu.Unlock()
+	k.tasks.mu.RLock()
+	defer k.tasks.mu.RUnlock()
+
+	for t, tid := range k.tasks.Root.tids {
+		t.rebuildTraceContext(tid)
+	}
 }
 
 // FeatureSet returns the FeatureSet.
