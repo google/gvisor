@@ -25,6 +25,8 @@ tools/go_branch.sh
 # Checkout the new branch.
 git checkout go && git clean -f
 
+go version
+
 # Build everything.
 go build ./...
 
