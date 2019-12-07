@@ -75,6 +75,20 @@ func TestGiveUpConnect(t *testing.T) {
 	if err := ep.GetSockOpt(tcpip.ErrorOption{}); err != tcpip.ErrAborted {
 		t.Fatalf("got ep.GetSockOpt(tcpip.ErrorOption{}) = %v, want = %v", err, tcpip.ErrAborted)
 	}
+
+	// Call Connect again to retreive the handshake failure status
+	// and stats updates.
+	if err := ep.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}); err != tcpip.ErrAborted {
+		t.Fatalf("got ep.Connect(...) = %v, want = %v", err, tcpip.ErrAborted)
+	}
+
+	if got := c.Stack().Stats().TCP.FailedConnectionAttempts.Value(); got != 1 {
+		t.Errorf("got stats.TCP.FailedConnectionAttempts.Value() = %v, want = 1", got)
+	}
+
+	if got := c.Stack().Stats().TCP.CurrentEstablished.Value(); got != 0 {
+		t.Errorf("got stats.TCP.CurrentEstablished.Value() = %v, want = 0", got)
+	}
 }
 
 func TestConnectIncrementActiveConnection(t *testing.T) {
@@ -546,6 +560,14 @@ func TestClosingWithEnqueuedSegments(t *testing.T) {
 	// Expect the endpoint to be closed.
 	if got, want := tcp.EndpointState(ep.State()), tcp.StateClose; got != want {
 		t.Errorf("Unexpected endpoint state: want %v, got %v", want, got)
+	}
+
+	if got := c.Stack().Stats().TCP.EstablishedClosed.Value(); got != 1 {
+		t.Errorf("got c.Stack().Stats().TCP.EstablishedClosed = %v, want = 1", got)
+	}
+
+	if got := c.Stack().Stats().TCP.CurrentEstablished.Value(); got != 0 {
+		t.Errorf("got stats.TCP.CurrentEstablished.Value() = %v, want = 0", got)
 	}
 
 	// Check if the endpoint was moved to CLOSED and netstack a reset in
@@ -2694,6 +2716,13 @@ loop:
 	if tcp.EndpointState(c.EP.State()) != tcp.StateError {
 		t.Fatalf("got EP state is not StateError")
 	}
+
+	if got := c.Stack().Stats().TCP.EstablishedResets.Value(); got != 1 {
+		t.Errorf("got stats.TCP.EstablishedResets.Value() = %v, want = 1", got)
+	}
+	if got := c.Stack().Stats().TCP.CurrentEstablished.Value(); got != 0 {
+		t.Errorf("got stats.TCP.CurrentEstablished.Value() = %v, want = 0", got)
+	}
 }
 
 func TestSendOnResetConnection(t *testing.T) {
@@ -4363,8 +4392,16 @@ func TestKeepalive(t *testing.T) {
 		),
 	)
 
+	if got := c.Stack().Stats().TCP.EstablishedTimedout.Value(); got != 1 {
+		t.Errorf("got c.Stack().Stats().TCP.EstablishedTimedout.Value() = %v, want = 1", got)
+	}
+
 	if _, _, err := c.EP.Read(nil); err != tcpip.ErrTimeout {
 		t.Fatalf("got c.EP.Read(nil) = %v, want = %v", err, tcpip.ErrTimeout)
+	}
+
+	if got := c.Stack().Stats().TCP.CurrentEstablished.Value(); got != 0 {
+		t.Errorf("got stats.TCP.CurrentEstablished.Value() = %v, want = 0", got)
 	}
 }
 
@@ -5992,6 +6029,8 @@ func TestTCPTimeWaitDuplicateFINExtendsTimeWait(t *testing.T) {
 		t.Fatalf("c.stack.SetTransportProtocolOption(tcp, tcpip.TCPLingerTimeoutOption(%d) failed: %s", tcpTimeWaitTimeout, err)
 	}
 
+	want := c.Stack().Stats().TCP.EstablishedClosed.Value() + 1
+
 	wq := &waiter.Queue{}
 	ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, wq)
 	if err != nil {
@@ -6120,6 +6159,13 @@ func TestTCPTimeWaitDuplicateFINExtendsTimeWait(t *testing.T) {
 		checker.SeqNum(uint32(ackHeaders.AckNum)),
 		checker.AckNum(uint32(ackHeaders.SeqNum)),
 		checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck)))
+
+	if got := c.Stack().Stats().TCP.EstablishedClosed.Value(); got != want {
+		t.Errorf("got c.Stack().Stats().TCP.EstablishedClosed = %v, want = %v", got, want)
+	}
+	if got := c.Stack().Stats().TCP.CurrentEstablished.Value(); got != 0 {
+		t.Errorf("got stats.TCP.CurrentEstablished.Value() = %v, want = 0", got)
+	}
 }
 
 func TestTCPCloseWithData(t *testing.T) {
