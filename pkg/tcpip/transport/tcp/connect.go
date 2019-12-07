@@ -924,6 +924,7 @@ func (e *endpoint) transitionToStateCloseLocked() {
 	}
 	e.cleanupLocked()
 	e.state = StateClose
+	e.stack.Stats().TCP.EstablishedClosed.Increment()
 }
 
 // tryDeliverSegmentFromClosedEndpoint attempts to deliver the parsed
@@ -1094,6 +1095,7 @@ func (e *endpoint) keepaliveTimerExpired() *tcpip.Error {
 
 	if e.keepalive.unacked >= e.keepalive.count {
 		e.keepalive.Unlock()
+		e.stack.Stats().TCP.EstablishedTimedout.Increment()
 		return tcpip.ErrTimeout
 	}
 
@@ -1179,8 +1181,6 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 			e.lastErrorMu.Unlock()
 
 			e.mu.Lock()
-			e.stack.Stats().TCP.EstablishedResets.Increment()
-			e.stack.Stats().TCP.CurrentEstablished.Decrement()
 			e.state = StateError
 			e.HardError = err
 
@@ -1389,7 +1389,6 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 	// Mark endpoint as closed.
 	e.mu.Lock()
 	if e.state != StateError {
-		e.stack.Stats().TCP.EstablishedResets.Increment()
 		e.stack.Stats().TCP.CurrentEstablished.Decrement()
 		e.transitionToStateCloseLocked()
 	}
