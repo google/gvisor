@@ -16,7 +16,6 @@
 package sighandling
 
 import (
-	"fmt"
 	"os"
 	"os/signal"
 	"reflect"
@@ -31,37 +30,25 @@ const numSignals = 32
 // handleSignals listens for incoming signals and calls the given handler
 // function.
 //
-// It starts when the start channel is closed, stops when the stop channel
-// is closed, and closes done once it will no longer deliver signals to k.
-func handleSignals(sigchans []chan os.Signal, handler func(linux.Signal), start, stop, done chan struct{}) {
+// It stops when the stop channel is closed. The done channel is closed once it
+// will no longer deliver signals to k.
+func handleSignals(sigchans []chan os.Signal, handler func(linux.Signal), stop, done chan struct{}) {
 	// Build a select case.
-	sc := []reflect.SelectCase{{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(start)}}
+	sc := []reflect.SelectCase{{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(stop)}}
 	for _, sigchan := range sigchans {
 		sc = append(sc, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(sigchan)})
 	}
 
-	started := false
 	for {
 		// Wait for a notification.
 		index, _, ok := reflect.Select(sc)
 
-		// Was it the start / stop channel?
+		// Was it the stop channel?
 		if index == 0 {
 			if !ok {
-				if !started {
-					// start channel; start forwarding and
-					// swap this case for the stop channel
-					// to select stop requests.
-					started = true
-					sc[0] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(stop)}
-				} else {
-					// stop channel; stop forwarding and
-					// clear this case so it is never
-					// selected again.
-					started = false
-					close(done)
-					sc[0].Chan = reflect.Value{}
-				}
+				// Stop forwarding and notify that it's done.
+				close(done)
+				return
 			}
 			continue
 		}
@@ -73,44 +60,17 @@ func handleSignals(sigchans []chan os.Signal, handler func(linux.Signal), start,
 
 		// Otherwise, it was a signal on channel N. Index 0 represents the stop
 		// channel, so index N represents the channel for signal N.
-		signal := linux.Signal(index)
-
-		if !started {
-			// Kernel cannot receive signals, either because it is
-			// not ready yet or is shutting down.
-			//
-			// Kill ourselves if this signal would have killed the
-			// process before PrepareForwarding was called. i.e., all
-			// _SigKill signals; see Go
-			// src/runtime/sigtab_linux_generic.go.
-			//
-			// Otherwise ignore the signal.
-			//
-			// TODO(b/114489875): Drop in Go 1.12, which uses tgkill
-			// in runtime.raise.
-			switch signal {
-			case linux.SIGHUP, linux.SIGINT, linux.SIGTERM:
-				dieFromSignal(signal)
-				panic(fmt.Sprintf("Failed to die from signal %d", signal))
-			default:
-				continue
-			}
-		}
-
-		// Pass the signal to the handler.
-		handler(signal)
+		handler(linux.Signal(index))
 	}
 }
 
-// PrepareHandler ensures that synchronous signals are passed to the given
-// handler function and returns a callback that starts signal delivery, which
-// itself returns a callback that stops signal handling.
+// StartSignalForwarding ensures that synchronous signals are passed to the
+// given handler function and returns a callback that stops signal delivery.
 //
 // Note that this function permanently takes over signal handling. After the
 // stop callback, signals revert to the default Go runtime behavior, which
 // cannot be overridden with external calls to signal.Notify.
-func PrepareHandler(handler func(linux.Signal)) func() func() {
-	start := make(chan struct{})
+func StartSignalForwarding(handler func(linux.Signal)) func() {
 	stop := make(chan struct{})
 	done := make(chan struct{})
 
@@ -128,13 +88,10 @@ func PrepareHandler(handler func(linux.Signal)) func() func() {
 		signal.Notify(sigchan, syscall.Signal(sig))
 	}
 	// Start up our listener.
-	go handleSignals(sigchans, handler, start, stop, done) // S/R-SAFE: synchronized by Kernel.extMu.
+	go handleSignals(sigchans, handler, stop, done) // S/R-SAFE: synchronized by Kernel.extMu.
 
-	return func() func() {
-		close(start)
-		return func() {
-			close(stop)
-			<-done
-		}
+	return func() {
+		close(stop)
+		<-done
 	}
 }
