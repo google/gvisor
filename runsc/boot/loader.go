@@ -93,10 +93,6 @@ type Loader struct {
 	// spec is the base configuration for the root container.
 	spec *specs.Spec
 
-	// startSignalForwarding enables forwarding of signals to the sandboxed
-	// container. It should be called after the init process is loaded.
-	startSignalForwarding func() func()
-
 	// stopSignalForwarding disables forwarding of signals to the sandboxed
 	// container. It should be called when a sandbox is destroyed.
 	stopSignalForwarding func()
@@ -336,29 +332,6 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("ignore child stop signals failed: %v", err)
 	}
 
-	// Handle signals by forwarding them to the root container process
-	// (except for panic signal, which should cause a panic).
-	l.startSignalForwarding = sighandling.PrepareHandler(func(sig linux.Signal) {
-		// Panic signal should cause a panic.
-		if args.Conf.PanicSignal != -1 && sig == linux.Signal(args.Conf.PanicSignal) {
-			panic("Signal-induced panic")
-		}
-
-		// Otherwise forward to root container.
-		deliveryMode := DeliverToProcess
-		if args.Console {
-			// Since we are running with a console, we should
-			// forward the signal to the foreground process group
-			// so that job control signals like ^C can be handled
-			// properly.
-			deliveryMode = DeliverToForegroundProcessGroup
-		}
-		log.Infof("Received external signal %d, mode: %v", sig, deliveryMode)
-		if err := l.signal(args.ID, 0, int32(sig), deliveryMode); err != nil {
-			log.Warningf("error sending signal %v to container %q: %v", sig, args.ID, err)
-		}
-	})
-
 	// Create the control server using the provided FD.
 	//
 	// This must be done *after* we have initialized the kernel since the
@@ -566,8 +539,27 @@ func (l *Loader) run() error {
 		ep.tty.InitForegroundProcessGroup(ep.tg.ProcessGroup())
 	}
 
-	// Start signal forwarding only after an init process is created.
-	l.stopSignalForwarding = l.startSignalForwarding()
+	// Handle signals by forwarding them to the root container process
+	// (except for panic signal, which should cause a panic).
+	l.stopSignalForwarding = sighandling.StartSignalForwarding(func(sig linux.Signal) {
+		// Panic signal should cause a panic.
+		if l.conf.PanicSignal != -1 && sig == linux.Signal(l.conf.PanicSignal) {
+			panic("Signal-induced panic")
+		}
+
+		// Otherwise forward to root container.
+		deliveryMode := DeliverToProcess
+		if l.console {
+			// Since we are running with a console, we should forward the signal to
+			// the foreground process group so that job control signals like ^C can
+			// be handled properly.
+			deliveryMode = DeliverToForegroundProcessGroup
+		}
+		log.Infof("Received external signal %d, mode: %v", sig, deliveryMode)
+		if err := l.signal(l.sandboxID, 0, int32(sig), deliveryMode); err != nil {
+			log.Warningf("error sending signal %v to container %q: %v", sig, l.sandboxID, err)
+		}
+	})
 
 	log.Infof("Process should have started...")
 	l.watchdog.Start()
