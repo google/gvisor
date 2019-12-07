@@ -236,6 +236,7 @@ func (*runExit) execute(t *Task) taskRunState {
 type runExitMain struct{}
 
 func (*runExitMain) execute(t *Task) taskRunState {
+	t.traceExitEvent()
 	lastExiter := t.exitThreadGroup()
 
 	// If the task has a cleartid, and the thread group wasn't killed by a

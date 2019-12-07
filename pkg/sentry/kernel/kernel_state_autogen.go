@@ -523,8 +523,6 @@ func (x *Task) save(m state.Map) {
 	if !state.IsZeroValue(x.signalQueue) { m.Failf("signalQueue is %v, expected zero", x.signalQueue) }
 	var ptraceTracer *Task = x.savePtraceTracer()
 	m.SaveValue("ptraceTracer", ptraceTracer)
-	var logPrefix string = x.saveLogPrefix()
-	m.SaveValue("logPrefix", logPrefix)
 	var syscallFilters []bpf.Program = x.saveSyscallFilters()
 	m.SaveValue("syscallFilters", syscallFilters)
 	m.Save("taskNode", &x.taskNode)
@@ -637,7 +635,6 @@ func (x *Task) load(m state.Map) {
 	m.Load("rseqCPU", &x.rseqCPU)
 	m.Load("startTime", &x.startTime)
 	m.LoadValue("ptraceTracer", new(*Task), func(y interface{}) { x.loadPtraceTracer(y.(*Task)) })
-	m.LoadValue("logPrefix", new(string), func(y interface{}) { x.loadLogPrefix(y.(string)) })
 	m.LoadValue("syscallFilters", new([]bpf.Program), func(y interface{}) { x.loadSyscallFilters(y.([]bpf.Program)) })
 	m.AfterLoad(x.afterLoad)
 }

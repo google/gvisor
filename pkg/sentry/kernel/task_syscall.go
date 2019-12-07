@@ -17,6 +17,7 @@ package kernel
 import (
 	"fmt"
 	"os"
+	"runtime/trace"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -160,12 +161,19 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 		ctrl = ctrlStopAndReinvokeSyscall
 	} else {
 		fn := s.Lookup(sysno)
+		var region *trace.Region // Only non-nil if tracing == true.
+		if trace.IsEnabled() {
+			region = trace.StartRegion(t.traceContext, s.LookupName(sysno))
+		}
 		if fn != nil {
 			// Call our syscall implementation.
 			rval, ctrl, err = fn(t, args)
 		} else {
 			// Use the missing function if not found.
 			rval, err = t.SyscallTable().Missing(t, sysno, args)
+		}
+		if region != nil {
+			region.End()
 		}
 	}
 
