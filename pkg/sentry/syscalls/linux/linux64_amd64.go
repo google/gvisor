@@ -260,7 +260,7 @@ var AMD64 = &kernel.SyscallTable{
 		217: syscalls.Supported("getdents64", Getdents64),
 		218: syscalls.Supported("set_tid_address", SetTidAddress),
 		219: syscalls.Supported("restart_syscall", RestartSyscall),
-		220: syscalls.ErrorWithEvent("semtimedop", syserror.ENOSYS, "", []string{"gvisor.dev/issue/137"}), // TODO(b/29354920)
+		220: syscalls.ErrorWithEvent("semtimedop", syserror.ENOSYS, "", []string{"gvisor.dev/issue/137"}),
 		221: syscalls.PartiallySupported("fadvise64", Fadvise64, "Not all options are supported.", nil),
 		222: syscalls.Supported("timer_create", TimerCreate),
 		223: syscalls.Supported("timer_settime", TimerSettime),
