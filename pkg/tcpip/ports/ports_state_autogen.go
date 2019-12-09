@@ -2,3 +2,23 @@
 
 package ports
 
+import (
+	"gvisor.dev/gvisor/pkg/state"
+)
+
+func (x *Flags) beforeSave() {}
+func (x *Flags) save(m state.Map) {
+	x.beforeSave()
+	m.Save("MostRecent", &x.MostRecent)
+	m.Save("LoadBalanced", &x.LoadBalanced)
+}
+
+func (x *Flags) afterLoad() {}
+func (x *Flags) load(m state.Map) {
+	m.Load("MostRecent", &x.MostRecent)
+	m.Load("LoadBalanced", &x.LoadBalanced)
+}
+
+func init() {
+	state.Register("ports.Flags", (*Flags)(nil), state.Fns{Save: (*Flags).save, Load: (*Flags).load})
+}

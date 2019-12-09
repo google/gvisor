@@ -41,6 +41,30 @@ type portDescriptor struct {
 	port      uint16
 }
 
+// Flags represents the type of port reservation.
+//
+// +stateify savable
+type Flags struct {
+	// MostRecent represents UDP SO_REUSEADDR.
+	MostRecent bool
+
+	// LoadBalanced indicates SO_REUSEPORT.
+	//
+	// LoadBalanced takes precidence over MostRecent.
+	LoadBalanced bool
+}
+
+func (f Flags) bits() reuseFlag {
+	var rf reuseFlag
+	if f.MostRecent {
+		rf |= mostRecentFlag
+	}
+	if f.LoadBalanced {
+		rf |= loadBalancedFlag
+	}
+	return rf
+}
+
 // PortManager manages allocating, reserving and releasing ports.
 type PortManager struct {
 	mu             sync.RWMutex
@@ -54,9 +78,59 @@ type PortManager struct {
 	hint uint32
 }
 
+type reuseFlag int
+
+const (
+	mostRecentFlag reuseFlag = 1 << iota
+	loadBalancedFlag
+	nextFlag
+
+	flagMask = nextFlag - 1
+)
+
 type portNode struct {
-	reuse bool
-	refs  int
+	// refs stores the count for each possible flag combination.
+	refs [nextFlag]int
+}
+
+func (p portNode) totalRefs() int {
+	var total int
+	for _, r := range p.refs {
+		total += r
+	}
+	return total
+}
+
+// flagRefs returns the number of references with all specified flags.
+func (p portNode) flagRefs(flags reuseFlag) int {
+	var total int
+	for i, r := range p.refs {
+		if reuseFlag(i)&flags == flags {
+			total += r
+		}
+	}
+	return total
+}
+
+// allRefsHave returns if all references have all specified flags.
+func (p portNode) allRefsHave(flags reuseFlag) bool {
+	for i, r := range p.refs {
+		if reuseFlag(i)&flags == flags && r > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// intersectionRefs returns the set of flags shared by all references.
+func (p portNode) intersectionRefs() reuseFlag {
+	intersection := flagMask
+	for i, r := range p.refs {
+		if r > 0 {
+			intersection &= reuseFlag(i)
+		}
+	}
+	return intersection
 }
 
 // deviceNode is never empty. When it has no elements, it is removed from the
@@ -66,30 +140,44 @@ type deviceNode map[tcpip.NICID]portNode
 // isAvailable checks whether binding is possible by device. If not binding to a
 // device, check against all portNodes. If binding to a specific device, check
 // against the unspecified device and the provided device.
-func (d deviceNode) isAvailable(reuse bool, bindToDevice tcpip.NICID) bool {
+//
+// If either of the port reuse flags is enabled on any of the nodes, all nodes
+// sharing a port must share at least one reuse flag. This matches Linux's
+// behavior.
+func (d deviceNode) isAvailable(flags Flags, bindToDevice tcpip.NICID) bool {
+	flagBits := flags.bits()
 	if bindToDevice == 0 {
 		// Trying to binding all devices.
-		if !reuse {
+		if flagBits == 0 {
 			// Can't bind because the (addr,port) is already bound.
 			return false
 		}
+		intersection := flagMask
 		for _, p := range d {
-			if !p.reuse {
-				// Can't bind because the (addr,port) was previously bound without reuse.
+			i := p.intersectionRefs()
+			intersection &= i
+			if intersection&flagBits == 0 {
+				// Can't bind because the (addr,port) was
+				// previously bound without reuse.
 				return false
 			}
 		}
 		return true
 	}
 
+	intersection := flagMask
+
 	if p, ok := d[0]; ok {
-		if !reuse || !p.reuse {
+		intersection = p.intersectionRefs()
+		if intersection&flagBits == 0 {
 			return false
 		}
 	}
 
 	if p, ok := d[bindToDevice]; ok {
-		if !reuse || !p.reuse {
+		i := p.intersectionRefs()
+		intersection &= i
+		if intersection&flagBits == 0 {
 			return false
 		}
 	}
@@ -103,12 +191,12 @@ type bindAddresses map[tcpip.Address]deviceNode
 // isAvailable checks whether an IP address is available to bind to. If the
 // address is the "any" address, check all other addresses. Otherwise, just
 // check against the "any" address and the provided address.
-func (b bindAddresses) isAvailable(addr tcpip.Address, reuse bool, bindToDevice tcpip.NICID) bool {
+func (b bindAddresses) isAvailable(addr tcpip.Address, flags Flags, bindToDevice tcpip.NICID) bool {
 	if addr == anyIPAddress {
 		// If binding to the "any" address then check that there are no conflicts
 		// with all addresses.
 		for _, d := range b {
-			if !d.isAvailable(reuse, bindToDevice) {
+			if !d.isAvailable(flags, bindToDevice) {
 				return false
 			}
 		}
@@ -117,14 +205,14 @@ func (b bindAddresses) isAvailable(addr tcpip.Address, reuse bool, bindToDevice 
 
 	// Check that there is no conflict with the "any" address.
 	if d, ok := b[anyIPAddress]; ok {
-		if !d.isAvailable(reuse, bindToDevice) {
+		if !d.isAvailable(flags, bindToDevice) {
 			return false
 		}
 	}
 
 	// Check that this is no conflict with the provided address.
 	if d, ok := b[addr]; ok {
-		if !d.isAvailable(reuse, bindToDevice) {
+		if !d.isAvailable(flags, bindToDevice) {
 			return false
 		}
 	}
@@ -190,17 +278,17 @@ func (s *PortManager) pickEphemeralPort(offset, count uint32, testPort func(p ui
 }
 
 // IsPortAvailable tests if the given port is available on all given protocols.
-func (s *PortManager) IsPortAvailable(networks []tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber, addr tcpip.Address, port uint16, reuse bool, bindToDevice tcpip.NICID) bool {
+func (s *PortManager) IsPortAvailable(networks []tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber, addr tcpip.Address, port uint16, flags Flags, bindToDevice tcpip.NICID) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.isPortAvailableLocked(networks, transport, addr, port, reuse, bindToDevice)
+	return s.isPortAvailableLocked(networks, transport, addr, port, flags, bindToDevice)
 }
 
-func (s *PortManager) isPortAvailableLocked(networks []tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber, addr tcpip.Address, port uint16, reuse bool, bindToDevice tcpip.NICID) bool {
+func (s *PortManager) isPortAvailableLocked(networks []tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber, addr tcpip.Address, port uint16, flags Flags, bindToDevice tcpip.NICID) bool {
 	for _, network := range networks {
 		desc := portDescriptor{network, transport, port}
 		if addrs, ok := s.allocatedPorts[desc]; ok {
-			if !addrs.isAvailable(addr, reuse, bindToDevice) {
+			if !addrs.isAvailable(addr, flags, bindToDevice) {
 				return false
 			}
 		}
@@ -212,14 +300,14 @@ func (s *PortManager) isPortAvailableLocked(networks []tcpip.NetworkProtocolNumb
 // reserved by another endpoint. If port is zero, ReservePort will search for
 // an unreserved ephemeral port and reserve it, returning its value in the
 // "port" return value.
-func (s *PortManager) ReservePort(networks []tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber, addr tcpip.Address, port uint16, reuse bool, bindToDevice tcpip.NICID) (reservedPort uint16, err *tcpip.Error) {
+func (s *PortManager) ReservePort(networks []tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber, addr tcpip.Address, port uint16, flags Flags, bindToDevice tcpip.NICID) (reservedPort uint16, err *tcpip.Error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	// If a port is specified, just try to reserve it for all network
 	// protocols.
 	if port != 0 {
-		if !s.reserveSpecificPort(networks, transport, addr, port, reuse, bindToDevice) {
+		if !s.reserveSpecificPort(networks, transport, addr, port, flags, bindToDevice) {
 			return 0, tcpip.ErrPortInUse
 		}
 		return port, nil
@@ -227,15 +315,16 @@ func (s *PortManager) ReservePort(networks []tcpip.NetworkProtocolNumber, transp
 
 	// A port wasn't specified, so try to find one.
 	return s.PickEphemeralPort(func(p uint16) (bool, *tcpip.Error) {
-		return s.reserveSpecificPort(networks, transport, addr, p, reuse, bindToDevice), nil
+		return s.reserveSpecificPort(networks, transport, addr, p, flags, bindToDevice), nil
 	})
 }
 
 // reserveSpecificPort tries to reserve the given port on all given protocols.
-func (s *PortManager) reserveSpecificPort(networks []tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber, addr tcpip.Address, port uint16, reuse bool, bindToDevice tcpip.NICID) bool {
-	if !s.isPortAvailableLocked(networks, transport, addr, port, reuse, bindToDevice) {
+func (s *PortManager) reserveSpecificPort(networks []tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber, addr tcpip.Address, port uint16, flags Flags, bindToDevice tcpip.NICID) bool {
+	if !s.isPortAvailableLocked(networks, transport, addr, port, flags, bindToDevice) {
 		return false
 	}
+	flagBits := flags.bits()
 
 	// Reserve port on all network protocols.
 	for _, network := range networks {
@@ -250,12 +339,9 @@ func (s *PortManager) reserveSpecificPort(networks []tcpip.NetworkProtocolNumber
 			d = make(deviceNode)
 			m[addr] = d
 		}
-		if n, ok := d[bindToDevice]; ok {
-			n.refs++
-			d[bindToDevice] = n
-		} else {
-			d[bindToDevice] = portNode{reuse: reuse, refs: 1}
-		}
+		n := d[bindToDevice]
+		n.refs[flagBits]++
+		d[bindToDevice] = n
 	}
 
 	return true
@@ -263,9 +349,11 @@ func (s *PortManager) reserveSpecificPort(networks []tcpip.NetworkProtocolNumber
 
 // ReleasePort releases the reservation on a port/IP combination so that it can
 // be reserved by other endpoints.
-func (s *PortManager) ReleasePort(networks []tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber, addr tcpip.Address, port uint16, bindToDevice tcpip.NICID) {
+func (s *PortManager) ReleasePort(networks []tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber, addr tcpip.Address, port uint16, flags Flags, bindToDevice tcpip.NICID) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	flagBits := flags.bits()
 
 	for _, network := range networks {
 		desc := portDescriptor{network, transport, port}
@@ -278,9 +366,9 @@ func (s *PortManager) ReleasePort(networks []tcpip.NetworkProtocolNumber, transp
 			if !ok {
 				continue
 			}
-			n.refs--
+			n.refs[flagBits]--
 			d[bindToDevice] = n
-			if n.refs == 0 {
+			if n.refs == [nextFlag]int{} {
 				delete(d, bindToDevice)
 			}
 			if len(d) == 0 {
