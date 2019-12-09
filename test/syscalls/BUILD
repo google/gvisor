@@ -376,6 +376,8 @@ syscall_test(
 
 syscall_test(test = "//test/syscalls/linux:rlimits_test")
 
+syscall_test(test = "//test/syscalls/linux:rseq_test")
+
 syscall_test(test = "//test/syscalls/linux:rtsignal_test")
 
 syscall_test(test = "//test/syscalls/linux:sched_test")
