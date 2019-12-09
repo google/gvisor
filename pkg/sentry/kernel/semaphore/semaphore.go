@@ -302,7 +302,7 @@ func (s *Set) SetVal(ctx context.Context, num int32, val int16, creds *auth.Cred
 		return syserror.ERANGE
 	}
 
-	// TODO(b/29354920): Clear undo entries in all processes
+	// TODO(gvisor.dev/issue/137): Clear undo entries in all processes.
 	sem.value = val
 	sem.pid = pid
 	s.changeTime = ktime.NowFromContext(ctx)
@@ -336,7 +336,7 @@ func (s *Set) SetValAll(ctx context.Context, vals []uint16, creds *auth.Credenti
 	for i, val := range vals {
 		sem := &s.sems[i]
 
-		// TODO(b/29354920): Clear undo entries in all processes
+		// TODO(gvisor.dev/issue/137): Clear undo entries in all processes.
 		sem.value = int16(val)
 		sem.pid = pid
 		sem.wakeWaiters()
@@ -481,7 +481,7 @@ func (s *Set) executeOps(ctx context.Context, ops []linux.Sembuf, pid int32) (ch
 	}
 
 	// All operations succeeded, apply them.
-	// TODO(b/29354920): handle undo operations.
+	// TODO(gvisor.dev/issue/137): handle undo operations.
 	for i, v := range tmpVals {
 		s.sems[i].value = v
 		s.sems[i].wakeWaiters()
