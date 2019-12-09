@@ -1,13 +1,13 @@
 package ring0
 
 import (
+	"reflect"
 	"syscall"
 
 	"fmt"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"io"
-	"reflect"
 )
 
 // Useful bits.
