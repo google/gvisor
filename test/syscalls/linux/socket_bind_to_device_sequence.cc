@@ -97,12 +97,12 @@ class BindToDeviceSequenceTest : public ::testing::TestWithParam<SocketKind> {
     sockets_to_close_.erase(socket_id);
   }
 
-  // Bind a socket with the reuse option and bind_to_device options.  Checks
+  // Bind a socket with the reuse options and bind_to_device options. Checks
   // that all steps succeed and that the bind command's error matches want.
   // Sets the socket_id to uniquely identify the socket bound if it is not
   // nullptr.
-  void BindSocket(bool reuse, int device_id = 0, int want = 0,
-                  int *socket_id = nullptr) {
+  void BindSocket(bool reuse_port, bool reuse_addr, int device_id = 0,
+                  int want = 0, int *socket_id = nullptr) {
     next_socket_id_++;
     sockets_to_close_[next_socket_id_] = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
     auto socket_fd = sockets_to_close_[next_socket_id_]->get();
@@ -110,9 +110,16 @@ class BindToDeviceSequenceTest : public ::testing::TestWithParam<SocketKind> {
       *socket_id = next_socket_id_;
     }
 
-    // If reuse is indicated, do that.
-    if (reuse) {
+    // If reuse_port is indicated, do that.
+    if (reuse_port) {
       EXPECT_THAT(setsockopt(socket_fd, SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
+                             sizeof(kSockOptOn)),
+                  SyscallSucceedsWithValue(0));
+    }
+
+    // If reuse_addr is indicated, do that.
+    if (reuse_addr) {
+      EXPECT_THAT(setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
                              sizeof(kSockOptOn)),
                   SyscallSucceedsWithValue(0));
     }
@@ -182,129 +189,289 @@ class BindToDeviceSequenceTest : public ::testing::TestWithParam<SocketKind> {
 };
 
 TEST_P(BindToDeviceSequenceTest, BindTwiceWithDeviceFails) {
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 3));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 3, EADDRINUSE));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ false, /* reuse_addr */ false, /* bind_to_device */ 3));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 3, EADDRINUSE));
 }
 
 TEST_P(BindToDeviceSequenceTest, BindToDevice) {
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 1));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 2));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ false, /* reuse_addr */ false, /* bind_to_device */ 1));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ false, /* reuse_addr */ false, /* bind_to_device */ 2));
 }
 
 TEST_P(BindToDeviceSequenceTest, BindToDeviceAndThenWithoutDevice) {
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 123));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 0, EADDRINUSE));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 123));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 0, EADDRINUSE));
 }
 
 TEST_P(BindToDeviceSequenceTest, BindWithoutDevice) {
-  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse */ false));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 123, EADDRINUSE));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ true, /* bind_to_device */ 123, EADDRINUSE));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 0, EADDRINUSE));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ true, /* bind_to_device */ 0, EADDRINUSE));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 123, EADDRINUSE));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 123, EADDRINUSE));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 0, EADDRINUSE));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 0, EADDRINUSE));
 }
 
 TEST_P(BindToDeviceSequenceTest, BindWithDevice) {
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 123, 0));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 123, EADDRINUSE));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ true, /* bind_to_device */ 123, EADDRINUSE));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 0, EADDRINUSE));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ true, /* bind_to_device */ 0, EADDRINUSE));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ true, /* bind_to_device */ 456, 0));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 789, 0));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 0, EADDRINUSE));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ true, /* bind_to_device */ 0, EADDRINUSE));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 123, 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 123, EADDRINUSE));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 123, EADDRINUSE));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 0, EADDRINUSE));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 0, EADDRINUSE));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 456, 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 789, 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 0, EADDRINUSE));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 0, EADDRINUSE));
 }
 
 TEST_P(BindToDeviceSequenceTest, BindWithReuse) {
-  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse */ true));
   ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 123, EADDRINUSE));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ true, /* bind_to_device */ 123));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 0, EADDRINUSE));
-  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse */ true, /* bind_to_device */ 0));
+      BindSocket(/* reusePort */ true, /* reuse_addr */ false));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 123, EADDRINUSE));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ true, /* reuse_addr */ false,
+      /* bind_to_device */ 123));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 0, EADDRINUSE));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ true, /* reuse_addr */ false, /* bind_to_device */ 0));
 }
 
 TEST_P(BindToDeviceSequenceTest, BindingWithReuseAndDevice) {
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ true, /* reuse_addr */ false, /* bind_to_device */ 123));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 123, EADDRINUSE));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ true, /* reuse_addr */ false, /* bind_to_device */ 123));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 0, EADDRINUSE));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ true, /* reuse_addr */ false, /* bind_to_device */ 456));
   ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ true, /* bind_to_device */ 123));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 123, EADDRINUSE));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ true, /* bind_to_device */ 123));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 0, EADDRINUSE));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ true, /* bind_to_device */ 456));
-  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse */ true));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ true, /* bind_to_device */ 789));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 999, EADDRINUSE));
+      BindSocket(/* reuse_port */ true, /* reuse_addr */ false));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ true, /* reuse_addr */ false, /* bind_to_device */ 789));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 999, EADDRINUSE));
 }
 
 TEST_P(BindToDeviceSequenceTest, MixingReuseAndNotReuseByBindingToDevice) {
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ true, /* bind_to_device */ 123, 0));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 456, 0));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ true, /* bind_to_device */ 789, 0));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 999, 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 123, 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 456, 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 789, 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 999, 0));
 }
 
 TEST_P(BindToDeviceSequenceTest, CannotBindTo0AfterMixingReuseAndNotReuse) {
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ true, /* bind_to_device */ 123));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 456));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ true, /* bind_to_device */ 0, EADDRINUSE));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ true, /* reuse_addr */ false, /* bind_to_device */ 123));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 456));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 0, EADDRINUSE));
 }
 
 TEST_P(BindToDeviceSequenceTest, BindAndRelease) {
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ true, /* bind_to_device */ 123));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ true, /* reuse_addr */ false, /* bind_to_device */ 123));
   int to_release;
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ true, /* bind_to_device */ 0, 0, &to_release));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 345, EADDRINUSE));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ true, /* bind_to_device */ 789));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 0, 0, &to_release));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 345, EADDRINUSE));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ true, /* reuse_addr */ false, /* bind_to_device */ 789));
   // Release the bind to device 0 and try again.
   ASSERT_NO_FATAL_FAILURE(ReleaseSocket(to_release));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 345));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 345));
 }
 
 TEST_P(BindToDeviceSequenceTest, BindTwiceWithReuseOnce) {
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 123));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 0, EADDRINUSE));
+}
+
+TEST_P(BindToDeviceSequenceTest, BindWithReuseAddr) {
+  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
+  SKIP_IF(IsRunningOnGvisor());
+
   ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ false, /* bind_to_device */ 123));
-  ASSERT_NO_FATAL_FAILURE(
-      BindSocket(/* reuse */ true, /* bind_to_device */ 0, EADDRINUSE));
+      BindSocket(/* reusePort */ false, /* reuse_addr */ true));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 123, EADDRINUSE));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ false, /* reuse_addr */ true, /* bind_to_device */ 123));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 0, EADDRINUSE));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ false, /* reuse_addr */ true, /* bind_to_device */ 0));
+}
+
+TEST_P(BindToDeviceSequenceTest,
+       CannotBindTo0AfterMixingReuseAddrAndNotReuseAddr) {
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ true, /* reuse_addr */ false, /* bind_to_device */ 123));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 456));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ true,
+                                     /* bind_to_device */ 0, EADDRINUSE));
+}
+
+TEST_P(BindToDeviceSequenceTest, BindReuseAddrReusePortThenReusePort) {
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ true,
+                                     /* bind_to_device */ 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ true,
+                                     /* bind_to_device */ 0, EADDRINUSE));
+}
+
+TEST_P(BindToDeviceSequenceTest, BindReuseAddrReusePortThenReuseAddr) {
+  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
+  SKIP_IF(IsRunningOnGvisor());
+
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ true,
+                                     /* bind_to_device */ 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ true,
+                                     /* bind_to_device */ 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 0, EADDRINUSE));
+}
+
+TEST_P(BindToDeviceSequenceTest, BindDoubleReuseAddrReusePortThenReusePort) {
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ true, /* reuse_addr */ true, /* bind_to_device */ 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ true,
+                                     /* bind_to_device */ 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ true,
+                                     /* bind_to_device */ 0, EADDRINUSE));
+}
+
+TEST_P(BindToDeviceSequenceTest, BindDoubleReuseAddrReusePortThenReuseAddr) {
+  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
+  SKIP_IF(IsRunningOnGvisor());
+
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ true, /* reuse_addr */ true, /* bind_to_device */ 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ true,
+                                     /* bind_to_device */ 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ true,
+                                     /* bind_to_device */ 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 0, EADDRINUSE));
+}
+
+TEST_P(BindToDeviceSequenceTest, BindReusePortThenReuseAddrReusePort) {
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ true, /* reuse_addr */ false, /* bind_to_device */ 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ true,
+                                     /* bind_to_device */ 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ true,
+                                     /* bind_to_device */ 0, EADDRINUSE));
+}
+
+TEST_P(BindToDeviceSequenceTest, BindReuseAddrThenReuseAddr) {
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ false, /* reuse_addr */ true, /* bind_to_device */ 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 0, EADDRINUSE));
+}
+
+// This behavior seems like a bug?
+TEST_P(BindToDeviceSequenceTest,
+       BindReuseAddrThenReuseAddrReusePortThenReuseAddr) {
+  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
+  SKIP_IF(IsRunningOnGvisor());
+
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ false, /* reuse_addr */ true, /* bind_to_device */ 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ true,
+                                     /* bind_to_device */ 0));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 0));
 }
 
 INSTANTIATE_TEST_SUITE_P(BindToDeviceTest, BindToDeviceSequenceTest,
