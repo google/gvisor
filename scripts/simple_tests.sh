@@ -17,4 +17,4 @@
 source $(dirname $0)/common.sh
 
 # Run all simple tests (locally).
-test //pkg/... //runsc/... //tools/... //benchmarks/...
+test //pkg/... //runsc/... //tools/... //benchmarks/... //benchmarks/runner:runner_test

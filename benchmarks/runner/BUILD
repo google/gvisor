@@ -34,7 +34,10 @@ py_test(
     name = "runner_test",
     srcs = ["runner_test.py"],
     python_version = "PY3",
-    tags = ["local"],
+    tags = [
+        "local",
+        "manual",
+    ],
     deps = [
         ":runner",
         requirement("click", True),
