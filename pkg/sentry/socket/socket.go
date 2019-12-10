@@ -43,6 +43,11 @@ type ControlMessages struct {
 	IP   tcpip.ControlMessages
 }
 
+// Release releases Unix domain socket credentials and rights.
+func (c *ControlMessages) Release() {
+	c.Unix.Release()
+}
+
 // Socket is the interface containing socket syscalls used by the syscall layer
 // to redirect them to the appropriate implementation.
 type Socket interface {
