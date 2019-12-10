@@ -97,6 +97,16 @@ class BindToDeviceSequenceTest : public ::testing::TestWithParam<SocketKind> {
     sockets_to_close_.erase(socket_id);
   }
 
+  // SetDevice changes the bind_to_device option. It does not bind or re-bind.
+  void SetDevice(int socket_id, int device_id) {
+    auto socket_fd = sockets_to_close_[socket_id]->get();
+    string device_name;
+    ASSERT_NO_FATAL_FAILURE(GetDevice(device_id, &device_name));
+    EXPECT_THAT(setsockopt(socket_fd, SOL_SOCKET, SO_BINDTODEVICE,
+                           device_name.c_str(), device_name.size() + 1),
+                SyscallSucceedsWithValue(0));
+  }
+
   // Bind a socket with the reuse options and bind_to_device options. Checks
   // that all steps succeed and that the bind command's error matches want.
   // Sets the socket_id to uniquely identify the socket bound if it is not
@@ -472,6 +482,25 @@ TEST_P(BindToDeviceSequenceTest,
   ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
                                      /* reuse_addr */ false,
                                      /* bind_to_device */ 0));
+}
+
+// Repro test for gvisor.dev/issue/1217. Not replicated in ports_test.go as this
+// test is different from the others and wouldn't fit well there.
+TEST_P(BindToDeviceSequenceTest, BindAndReleaseDifferentDevice) {
+  int to_release;
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 3, 0, &to_release));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
+                                     /* reuse_addr */ false,
+                                     /* bind_to_device */ 3, EADDRINUSE));
+  // Change the device. Since the socket was already bound, this should have no
+  // effect.
+  SetDevice(to_release, 2);
+  // Release the bind to device 3 and try again.
+  ASSERT_NO_FATAL_FAILURE(ReleaseSocket(to_release));
+  ASSERT_NO_FATAL_FAILURE(BindSocket(
+      /* reuse_port */ false, /* reuse_addr */ false, /* bind_to_device */ 3));
 }
 
 INSTANTIATE_TEST_SUITE_P(BindToDeviceTest, BindToDeviceSequenceTest,
