@@ -195,15 +195,15 @@ func putCmsg(buf []byte, flags int, msgType uint32, align uint, data []int32) ([
 	// the available space, we must align down.
 	//
 	// align must be >= 4 and each data int32 is 4 bytes. The length of the
-	// header is already aligned, so if we align to the with of the data there
+	// header is already aligned, so if we align to the width of the data there
 	// are two cases:
 	// 1. The aligned length is less than the length of the header. The
 	// unaligned length was also less than the length of the header, so we
 	// can't write anything.
 	// 2. The aligned length is greater than or equal to the length of the
-	// header. We can write the header plus zero or more datas. We can't write
-	// a partial int32, so the length of the message will be
-	// min(aligned length, header + datas).
+	// header. We can write the header plus zero or more bytes of data. We can't
+	// write a partial int32, so the length of the message will be
+	// min(aligned length, header + data).
 	if space < linux.SizeOfControlMessageHeader {
 		flags |= linux.MSG_CTRUNC
 		return buf, flags
@@ -240,12 +240,12 @@ func putCmsgStruct(buf []byte, msgLevel, msgType uint32, align uint, data interf
 
 	buf = binary.Marshal(buf, usermem.ByteOrder, data)
 
-	// Check if we went over.
+	// If the control message data brought us over capacity, omit it.
 	if cap(buf) != cap(ob) {
 		return hdrBuf
 	}
 
-	// Fix up length.
+	// Update control message length to include data.
 	putUint64(ob, uint64(len(buf)-len(ob)))
 
 	return alignSlice(buf, align)
