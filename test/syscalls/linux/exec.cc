@@ -696,6 +696,15 @@ TEST(ExecveatTest, SymlinkNoFollowAndEmptyPath) {
                 ArgEnvExitStatus(0, 0), absl::StrCat(path, "\n"));
 }
 
+TEST(ExecveatTest, SymlinkNoFollowIgnoreSymlinkAncestor) {
+  TempPath parent_link =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateSymlinkTo("/tmp", "/bin"));
+  std::string path_with_symlink = JoinPath(parent_link.path(), "echo");
+
+  CheckExecveat(AT_FDCWD, path_with_symlink, {path_with_symlink}, {},
+                AT_SYMLINK_NOFOLLOW, ArgEnvExitStatus(0, 0), "");
+}
+
 TEST(ExecveatTest, SymlinkNoFollowWithNormalFile) {
   const FileDescriptor dirfd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/bin", O_DIRECTORY));
