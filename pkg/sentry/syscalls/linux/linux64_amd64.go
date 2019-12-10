@@ -367,11 +367,31 @@ var AMD64 = &kernel.SyscallTable{
 		324: syscalls.ErrorWithEvent("membarrier", syserror.ENOSYS, "", []string{"gvisor.dev/issue/267"}),  // TODO(gvisor.dev/issue/267)
 		325: syscalls.PartiallySupported("mlock2", Mlock2, "Stub implementation. The sandbox lacks appropriate permissions.", nil),
 
-		// Syscalls after 325 are "backports" from versions of Linux after 4.4.
+		// Syscalls implemented after 325 are "backports" from versions
+		// of Linux after 4.4.
 		326: syscalls.ErrorWithEvent("copy_file_range", syserror.ENOSYS, "", nil),
 		327: syscalls.Supported("preadv2", Preadv2),
 		328: syscalls.PartiallySupported("pwritev2", Pwritev2, "Flag RWF_HIPRI is not supported.", nil),
+		329: syscalls.ErrorWithEvent("pkey_mprotect", syserror.ENOSYS, "", nil),
+		330: syscalls.ErrorWithEvent("pkey_alloc", syserror.ENOSYS, "", nil),
+		331: syscalls.ErrorWithEvent("pkey_free", syserror.ENOSYS, "", nil),
 		332: syscalls.Supported("statx", Statx),
+		333: syscalls.ErrorWithEvent("io_pgetevents", syserror.ENOSYS, "", nil),
+		334: syscalls.ErrorWithEvent("rseq", syserror.ENOSYS, "", nil),
+
+		// Linux skips ahead to syscall 424 to sync numbers between arches.
+		424: syscalls.ErrorWithEvent("pidfd_send_signal", syserror.ENOSYS, "", nil),
+		425: syscalls.ErrorWithEvent("io_uring_setup", syserror.ENOSYS, "", nil),
+		426: syscalls.ErrorWithEvent("io_uring_enter", syserror.ENOSYS, "", nil),
+		427: syscalls.ErrorWithEvent("io_uring_register", syserror.ENOSYS, "", nil),
+		428: syscalls.ErrorWithEvent("open_tree", syserror.ENOSYS, "", nil),
+		429: syscalls.ErrorWithEvent("move_mount", syserror.ENOSYS, "", nil),
+		430: syscalls.ErrorWithEvent("fsopen", syserror.ENOSYS, "", nil),
+		431: syscalls.ErrorWithEvent("fsconfig", syserror.ENOSYS, "", nil),
+		432: syscalls.ErrorWithEvent("fsmount", syserror.ENOSYS, "", nil),
+		433: syscalls.ErrorWithEvent("fspick", syserror.ENOSYS, "", nil),
+		434: syscalls.ErrorWithEvent("pidfd_open", syserror.ENOSYS, "", nil),
+		435: syscalls.ErrorWithEvent("clone3", syserror.ENOSYS, "", nil),
 	},
 
 	Emulate: map[usermem.Addr]uintptr{
