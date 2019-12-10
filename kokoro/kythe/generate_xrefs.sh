@@ -23,11 +23,7 @@ if command -v use_bazel.sh >/dev/null; then
 fi
 bazel version
 
-# We need to use python 3.6 (the Kokoro PY3 default is 3.4) to compile `//...`
-# because benchmarktools requires a version of `requests` that is not a
-# available in 3.4.
-pyenv versions
-pyenv global 3.6.1
+python3 -V
 
 readonly KYTHE_VERSION='v0.0.37'
 readonly WORKDIR="$(mktemp -d)"
