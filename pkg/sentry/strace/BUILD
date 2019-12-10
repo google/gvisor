@@ -14,6 +14,7 @@ go_library(
         "open.go",
         "poll.go",
         "ptrace.go",
+        "select.go",
         "signal.go",
         "socket.go",
         "strace.go",
