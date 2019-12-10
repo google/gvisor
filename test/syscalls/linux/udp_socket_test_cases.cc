@@ -1345,5 +1345,154 @@ TEST_P(UdpSocketTest, TimestampIoctlPersistence) {
   ASSERT_EQ(tv.tv_usec, tv2.tv_usec);
 }
 
+// Test that a socket with IP_TOS or IPV6_TCLASS set will set the TOS byte on
+// outgoing packets, and that a receiving socket with IP_RECVTOS or
+// IPV6_RECVTCLASS will create the corresponding control message.
+TEST_P(UdpSocketTest, SetAndReceiveTOS) {
+  // TODO(b/68320120): IP_RECVTOS/IPV6_RECVTCLASS not supported for netstack.
+  SKIP_IF(IsRunningOnGvisor() && !IsRunningWithHostinet());
+  ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
+  ASSERT_THAT(connect(t_, addr_[0], addrlen_), SyscallSucceeds());
+
+  // Allow socket to receive control message.
+  int recv_level = SOL_IP;
+  int recv_type = IP_RECVTOS;
+  if (GetParam() != AddressFamily::kIpv4) {
+    recv_level = SOL_IPV6;
+    recv_type = IPV6_RECVTCLASS;
+  }
+  ASSERT_THAT(
+      setsockopt(s_, recv_level, recv_type, &kSockOptOn, sizeof(kSockOptOn)),
+      SyscallSucceeds());
+
+  // Set socket TOS.
+  int sent_level = recv_level;
+  int sent_type = IP_TOS;
+  if (sent_level == SOL_IPV6) {
+    sent_type = IPV6_TCLASS;
+  }
+  int sent_tos = IPTOS_LOWDELAY;  // Choose some TOS value.
+  ASSERT_THAT(
+      setsockopt(t_, sent_level, sent_type, &sent_tos, sizeof(sent_tos)),
+      SyscallSucceeds());
+
+  // Prepare message to send.
+  constexpr size_t kDataLength = 1024;
+  struct msghdr sent_msg = {};
+  struct iovec sent_iov = {};
+  char sent_data[kDataLength];
+  sent_iov.iov_base = &sent_data[0];
+  sent_iov.iov_len = kDataLength;
+  sent_msg.msg_iov = &sent_iov;
+  sent_msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(sendmsg)(t_, &sent_msg, 0),
+              SyscallSucceedsWithValue(kDataLength));
+
+  // Receive message.
+  struct msghdr received_msg = {};
+  struct iovec received_iov = {};
+  char received_data[kDataLength];
+  received_iov.iov_base = &received_data[0];
+  received_iov.iov_len = kDataLength;
+  received_msg.msg_iov = &received_iov;
+  received_msg.msg_iovlen = 1;
+  size_t cmsg_data_len = sizeof(int8_t);
+  if (sent_type == IPV6_TCLASS) {
+    cmsg_data_len = sizeof(int);
+  }
+  std::vector<char> received_cmsgbuf(CMSG_SPACE(cmsg_data_len));
+  received_msg.msg_control = &received_cmsgbuf[0];
+  received_msg.msg_controllen = received_cmsgbuf.size();
+  ASSERT_THAT(RetryEINTR(recvmsg)(s_, &received_msg, 0),
+              SyscallSucceedsWithValue(kDataLength));
+
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&received_msg);
+  ASSERT_NE(cmsg, nullptr);
+  EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(cmsg_data_len));
+  EXPECT_EQ(cmsg->cmsg_level, sent_level);
+  EXPECT_EQ(cmsg->cmsg_type, sent_type);
+  int8_t received_tos = 0;
+  memcpy(&received_tos, CMSG_DATA(cmsg), sizeof(received_tos));
+  EXPECT_EQ(received_tos, sent_tos);
+}
+
+// Test that sendmsg with IP_TOS and IPV6_TCLASS control messages will set the
+// TOS byte on outgoing packets, and that a receiving socket with IP_RECVTOS or
+// IPV6_RECVTCLASS will create the corresponding control message.
+TEST_P(UdpSocketTest, SendAndReceiveTOS) {
+  // TODO(b/68320120): IP_RECVTOS/IPV6_RECVTCLASS not supported for netstack.
+  SKIP_IF(IsRunningOnGvisor() && !IsRunningWithHostinet());
+  ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
+  ASSERT_THAT(connect(t_, addr_[0], addrlen_), SyscallSucceeds());
+
+  // Allow socket to receive control message.
+  int recv_level = SOL_IP;
+  int recv_type = IP_RECVTOS;
+  if (GetParam() != AddressFamily::kIpv4) {
+    recv_level = SOL_IPV6;
+    recv_type = IPV6_RECVTCLASS;
+  }
+  int recv_opt = kSockOptOn;
+  ASSERT_THAT(
+      setsockopt(s_, recv_level, recv_type, &recv_opt, sizeof(recv_opt)),
+      SyscallSucceeds());
+
+  // Prepare message to send.
+  constexpr size_t kDataLength = 1024;
+  int sent_level = recv_level;
+  int sent_type = IP_TOS;
+  int sent_tos = IPTOS_LOWDELAY;  // Choose some TOS value.
+
+  struct msghdr sent_msg = {};
+  struct iovec sent_iov = {};
+  char sent_data[kDataLength];
+  sent_iov.iov_base = &sent_data[0];
+  sent_iov.iov_len = kDataLength;
+  sent_msg.msg_iov = &sent_iov;
+  sent_msg.msg_iovlen = 1;
+  size_t cmsg_data_len = sizeof(int8_t);
+  if (sent_level == SOL_IPV6) {
+    sent_type = IPV6_TCLASS;
+    cmsg_data_len = sizeof(int);
+  }
+  std::vector<char> sent_cmsgbuf(CMSG_SPACE(cmsg_data_len));
+  sent_msg.msg_control = &sent_cmsgbuf[0];
+  sent_msg.msg_controllen = CMSG_LEN(cmsg_data_len);
+
+  // Manually add control message.
+  struct cmsghdr* sent_cmsg = CMSG_FIRSTHDR(&sent_msg);
+  sent_cmsg->cmsg_len = CMSG_LEN(cmsg_data_len);
+  sent_cmsg->cmsg_level = sent_level;
+  sent_cmsg->cmsg_type = sent_type;
+  *(int8_t*)CMSG_DATA(sent_cmsg) = sent_tos;
+
+  ASSERT_THAT(RetryEINTR(sendmsg)(t_, &sent_msg, 0),
+              SyscallSucceedsWithValue(kDataLength));
+
+  // Receive message.
+  struct msghdr received_msg = {};
+  struct iovec received_iov = {};
+  char received_data[kDataLength];
+  received_iov.iov_base = &received_data[0];
+  received_iov.iov_len = kDataLength;
+  received_msg.msg_iov = &received_iov;
+  received_msg.msg_iovlen = 1;
+  std::vector<char> received_cmsgbuf(CMSG_SPACE(cmsg_data_len));
+  received_msg.msg_control = &received_cmsgbuf[0];
+  received_msg.msg_controllen = CMSG_LEN(cmsg_data_len);
+  ASSERT_THAT(RetryEINTR(recvmsg)(s_, &received_msg, 0),
+              SyscallSucceedsWithValue(kDataLength));
+
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&received_msg);
+  ASSERT_NE(cmsg, nullptr);
+  EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(cmsg_data_len));
+  EXPECT_EQ(cmsg->cmsg_level, sent_level);
+  EXPECT_EQ(cmsg->cmsg_type, sent_type);
+  int8_t received_tos = 0;
+  memcpy(&received_tos, CMSG_DATA(cmsg), sizeof(received_tos));
+  EXPECT_EQ(received_tos, sent_tos);
+}
+
 }  // namespace testing
 }  // namespace gvisor
