@@ -105,6 +105,15 @@ PosixErrorOr<struct stat> Stat(absl::string_view path) {
   return stat_buf;
 }
 
+PosixErrorOr<struct stat> Lstat(absl::string_view path) {
+  struct stat stat_buf;
+  int res = lstat(std::string(path).c_str(), &stat_buf);
+  if (res < 0) {
+    return PosixError(errno, absl::StrCat("lstat ", path));
+  }
+  return stat_buf;
+}
+
 PosixErrorOr<struct stat> Fstat(int fd) {
   struct stat stat_buf;
   int res = fstat(fd, &stat_buf);
@@ -127,7 +136,7 @@ PosixErrorOr<bool> Exists(absl::string_view path) {
 }
 
 PosixErrorOr<bool> IsDirectory(absl::string_view path) {
-  ASSIGN_OR_RETURN_ERRNO(struct stat stat_buf, Stat(path));
+  ASSIGN_OR_RETURN_ERRNO(struct stat stat_buf, Lstat(path));
   if (S_ISDIR(stat_buf.st_mode)) {
     return true;
   }
