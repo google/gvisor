@@ -144,9 +144,13 @@ const (
 	ModeCharacterDevice = S_IFCHR
 	ModeNamedPipe       = S_IFIFO
 
-	ModeSetUID = 04000
-	ModeSetGID = 02000
-	ModeSticky = 01000
+	S_ISUID = 04000
+	S_ISGID = 02000
+	S_ISVTX = 01000
+
+	ModeSetUID = S_ISUID
+	ModeSetGID = S_ISGID
+	ModeSticky = S_ISVTX
 
 	ModeUserAll     = 0700
 	ModeUserRead    = 0400

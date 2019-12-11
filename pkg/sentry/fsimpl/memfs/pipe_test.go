@@ -194,7 +194,7 @@ func setup(t *testing.T) (context.Context, *auth.Credentials, *vfs.VirtualFilesy
 func checkEmpty(ctx context.Context, t *testing.T, fd *vfs.FileDescription) {
 	readData := make([]byte, 1)
 	dst := usermem.BytesIOSequence(readData)
-	bytesRead, err := fd.Impl().Read(ctx, dst, vfs.ReadOptions{})
+	bytesRead, err := fd.Read(ctx, dst, vfs.ReadOptions{})
 	if err != syserror.ErrWouldBlock {
 		t.Fatalf("expected ErrWouldBlock reading from empty pipe %q, but got: %v", fileName, err)
 	}
@@ -207,7 +207,7 @@ func checkEmpty(ctx context.Context, t *testing.T, fd *vfs.FileDescription) {
 func checkWrite(ctx context.Context, t *testing.T, fd *vfs.FileDescription, msg string) {
 	writeData := []byte(msg)
 	src := usermem.BytesIOSequence(writeData)
-	bytesWritten, err := fd.Impl().Write(ctx, src, vfs.WriteOptions{})
+	bytesWritten, err := fd.Write(ctx, src, vfs.WriteOptions{})
 	if err != nil {
 		t.Fatalf("error writing to pipe %q: %v", fileName, err)
 	}
@@ -220,7 +220,7 @@ func checkWrite(ctx context.Context, t *testing.T, fd *vfs.FileDescription, msg 
 func checkRead(ctx context.Context, t *testing.T, fd *vfs.FileDescription, msg string) {
 	readData := make([]byte, len(msg))
 	dst := usermem.BytesIOSequence(readData)
-	bytesRead, err := fd.Impl().Read(ctx, dst, vfs.ReadOptions{})
+	bytesRead, err := fd.Read(ctx, dst, vfs.ReadOptions{})
 	if err != nil {
 		t.Fatalf("error reading from pipe %q: %v", fileName, err)
 	}

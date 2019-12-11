@@ -147,55 +147,54 @@ func TestSeek(t *testing.T) {
 				t.Fatalf("vfsfs.OpenAt failed: %v", err)
 			}
 
-			if n, err := fd.Impl().Seek(ctx, 0, linux.SEEK_SET); n != 0 || err != nil {
+			if n, err := fd.Seek(ctx, 0, linux.SEEK_SET); n != 0 || err != nil {
 				t.Errorf("expected seek position 0, got %d and error %v", n, err)
 			}
 
-			stat, err := fd.Impl().Stat(ctx, vfs.StatOptions{})
+			stat, err := fd.Stat(ctx, vfs.StatOptions{})
 			if err != nil {
 				t.Errorf("fd.stat failed for file %s in image %s: %v", test.path, test.image, err)
 			}
 
 			// We should be able to seek beyond the end of file.
 			size := int64(stat.Size)
-			if n, err := fd.Impl().Seek(ctx, size, linux.SEEK_SET); n != size || err != nil {
+			if n, err := fd.Seek(ctx, size, linux.SEEK_SET); n != size || err != nil {
 				t.Errorf("expected seek position %d, got %d and error %v", size, n, err)
 			}
 
 			// EINVAL should be returned if the resulting offset is negative.
-			if _, err := fd.Impl().Seek(ctx, -1, linux.SEEK_SET); err != syserror.EINVAL {
+			if _, err := fd.Seek(ctx, -1, linux.SEEK_SET); err != syserror.EINVAL {
 				t.Errorf("expected error EINVAL but got %v", err)
 			}
 
-			if n, err := fd.Impl().Seek(ctx, 3, linux.SEEK_CUR); n != size+3 || err != nil {
+			if n, err := fd.Seek(ctx, 3, linux.SEEK_CUR); n != size+3 || err != nil {
 				t.Errorf("expected seek position %d, got %d and error %v", size+3, n, err)
 			}
 
 			// Make sure negative offsets work with SEEK_CUR.
-			if n, err := fd.Impl().Seek(ctx, -2, linux.SEEK_CUR); n != size+1 || err != nil {
+			if n, err := fd.Seek(ctx, -2, linux.SEEK_CUR); n != size+1 || err != nil {
 				t.Errorf("expected seek position %d, got %d and error %v", size+1, n, err)
 			}
 
 			// EINVAL should be returned if the resulting offset is negative.
-			if _, err := fd.Impl().Seek(ctx, -(size + 2), linux.SEEK_CUR); err != syserror.EINVAL {
+			if _, err := fd.Seek(ctx, -(size + 2), linux.SEEK_CUR); err != syserror.EINVAL {
 				t.Errorf("expected error EINVAL but got %v", err)
 			}
 
 			// Make sure SEEK_END works with regular files.
-			switch fd.Impl().(type) {
-			case *regularFileFD:
+			if _, ok := fd.Impl().(*regularFileFD); ok {
 				// Seek back to 0.
-				if n, err := fd.Impl().Seek(ctx, -size, linux.SEEK_END); n != 0 || err != nil {
+				if n, err := fd.Seek(ctx, -size, linux.SEEK_END); n != 0 || err != nil {
 					t.Errorf("expected seek position %d, got %d and error %v", 0, n, err)
 				}
 
 				// Seek forward beyond EOF.
-				if n, err := fd.Impl().Seek(ctx, 1, linux.SEEK_END); n != size+1 || err != nil {
+				if n, err := fd.Seek(ctx, 1, linux.SEEK_END); n != size+1 || err != nil {
 					t.Errorf("expected seek position %d, got %d and error %v", size+1, n, err)
 				}
 
 				// EINVAL should be returned if the resulting offset is negative.
-				if _, err := fd.Impl().Seek(ctx, -(size + 1), linux.SEEK_END); err != syserror.EINVAL {
+				if _, err := fd.Seek(ctx, -(size + 1), linux.SEEK_END); err != syserror.EINVAL {
 					t.Errorf("expected error EINVAL but got %v", err)
 				}
 			}
@@ -456,7 +455,7 @@ func TestRead(t *testing.T) {
 			want := make([]byte, 1)
 			for {
 				n, err := f.Read(want)
-				fd.Impl().Read(ctx, usermem.BytesIOSequence(got), vfs.ReadOptions{})
+				fd.Read(ctx, usermem.BytesIOSequence(got), vfs.ReadOptions{})
 
 				if diff := cmp.Diff(got, want); diff != "" {
 					t.Errorf("file data mismatch (-want +got):\n%s", diff)
@@ -464,7 +463,7 @@ func TestRead(t *testing.T) {
 
 				// Make sure there is no more file data left after getting EOF.
 				if n == 0 || err == io.EOF {
-					if n, _ := fd.Impl().Read(ctx, usermem.BytesIOSequence(got), vfs.ReadOptions{}); n != 0 {
+					if n, _ := fd.Read(ctx, usermem.BytesIOSequence(got), vfs.ReadOptions{}); n != 0 {
 						t.Errorf("extra unexpected file data in file %s in image %s", test.absPath, test.image)
 					}
 
@@ -574,7 +573,7 @@ func TestIterDirents(t *testing.T) {
 			}
 
 			cb := &iterDirentsCb{}
-			if err = fd.Impl().IterDirents(ctx, cb); err != nil {
+			if err = fd.IterDirents(ctx, cb); err != nil {
 				t.Fatalf("dir fd.IterDirents() failed: %v", err)
 			}
 
