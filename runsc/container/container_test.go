@@ -37,6 +37,7 @@ import (
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/boot/platforms"
@@ -52,13 +53,14 @@ func waitForProcessList(cont *Container, want []*control.Process) error {
 			err = fmt.Errorf("error getting process data from container: %v", err)
 			return &backoff.PermanentError{Err: err}
 		}
-		if !procListsEqual(got, want) {
-			return fmt.Errorf("container got process list: %s, want: %s", procListToString(got), procListToString(want))
+		if r, err := procListsEqual(got, want); !r {
+			return fmt.Errorf("container got process list: %s, want: %s: error: %v",
+				procListToString(got), procListToString(want), err)
 		}
 		return nil
 	}
 	// Gives plenty of time as tests can run slow under --race.
-	return testutil.Poll(cb, 30*time.Second)
+	return testutil.Poll(cb, 10*time.Second)
 }
 
 func waitForProcessCount(cont *Container, want int) error {
@@ -91,9 +93,9 @@ func blockUntilWaitable(pid int) error {
 
 // procListsEqual is used to check whether 2 Process lists are equal for all
 // implemented fields.
-func procListsEqual(got, want []*control.Process) bool {
+func procListsEqual(got, want []*control.Process) (bool, error) {
 	if len(got) != len(want) {
-		return false
+		return false, nil
 	}
 	for i := range got {
 		pd1 := got[i]
@@ -106,11 +108,19 @@ func procListsEqual(got, want []*control.Process) bool {
 		// where we use this method. Tests that care about the TTY
 		// field should check for it themselves.
 		pd1.TTY = ""
-		if *pd1 != *pd2 {
-			return false
+		pd1Json, err := control.ProcessListToJSON([]*control.Process{pd1})
+		if err != nil {
+			return false, err
+		}
+		pd2Json, err := control.ProcessListToJSON([]*control.Process{pd2})
+		if err != nil {
+			return false, err
+		}
+		if pd1Json != pd2Json {
+			return false, nil
 		}
 	}
-	return true
+	return true, nil
 }
 
 // getAndCheckProcLists is similar to waitForProcessList, but does not wait and retry the
@@ -120,7 +130,11 @@ func getAndCheckProcLists(cont *Container, want []*control.Process) error {
 	if err != nil {
 		return fmt.Errorf("error getting process data from container: %v", err)
 	}
-	if procListsEqual(got, want) {
+	equal, err := procListsEqual(got, want)
+	if err != nil {
+		return err
+	}
+	if equal {
 		return nil
 	}
 	return fmt.Errorf("container got process list: %s, want: %s", procListToString(got), procListToString(want))
@@ -292,11 +306,12 @@ func TestLifecycle(t *testing.T) {
 		// expectedPL lists the expected process state of the container.
 		expectedPL := []*control.Process{
 			{
-				UID:  0,
-				PID:  1,
-				PPID: 0,
-				C:    0,
-				Cmd:  "sleep",
+				UID:     0,
+				PID:     1,
+				PPID:    0,
+				C:       0,
+				Cmd:     "sleep",
+				Threads: []kernel.ThreadID{1},
 			},
 		}
 		// Create the container.
@@ -594,18 +609,20 @@ func TestExec(t *testing.T) {
 		// expectedPL lists the expected process state of the container.
 		expectedPL := []*control.Process{
 			{
-				UID:  0,
-				PID:  1,
-				PPID: 0,
-				C:    0,
-				Cmd:  "sleep",
+				UID:     0,
+				PID:     1,
+				PPID:    0,
+				C:       0,
+				Cmd:     "sleep",
+				Threads: []kernel.ThreadID{1},
 			},
 			{
-				UID:  uid,
-				PID:  2,
-				PPID: 0,
-				C:    0,
-				Cmd:  "sleep",
+				UID:     uid,
+				PID:     2,
+				PPID:    0,
+				C:       0,
+				Cmd:     "sleep",
+				Threads: []kernel.ThreadID{2},
 			},
 		}
 
@@ -1066,18 +1083,20 @@ func TestPauseResume(t *testing.T) {
 		// expectedPL lists the expected process state of the container.
 		expectedPL := []*control.Process{
 			{
-				UID:  0,
-				PID:  1,
-				PPID: 0,
-				C:    0,
-				Cmd:  "sleep",
+				UID:     0,
+				PID:     1,
+				PPID:    0,
+				C:       0,
+				Cmd:     "sleep",
+				Threads: []kernel.ThreadID{1},
 			},
 			{
-				UID:  uid,
-				PID:  2,
-				PPID: 0,
-				C:    0,
-				Cmd:  "bash",
+				UID:     uid,
+				PID:     2,
+				PPID:    0,
+				C:       0,
+				Cmd:     "bash",
+				Threads: []kernel.ThreadID{2},
 			},
 		}
 
@@ -1130,11 +1149,12 @@ func TestPauseResume(t *testing.T) {
 
 		expectedPL2 := []*control.Process{
 			{
-				UID:  0,
-				PID:  1,
-				PPID: 0,
-				C:    0,
-				Cmd:  "sleep",
+				UID:     0,
+				PID:     1,
+				PPID:    0,
+				C:       0,
+				Cmd:     "sleep",
+				Threads: []kernel.ThreadID{1},
 			},
 		}
 
@@ -1245,18 +1265,20 @@ func TestCapabilities(t *testing.T) {
 		// expectedPL lists the expected process state of the container.
 		expectedPL := []*control.Process{
 			{
-				UID:  0,
-				PID:  1,
-				PPID: 0,
-				C:    0,
-				Cmd:  "sleep",
+				UID:     0,
+				PID:     1,
+				PPID:    0,
+				C:       0,
+				Cmd:     "sleep",
+				Threads: []kernel.ThreadID{1},
 			},
 			{
-				UID:  uid,
-				PID:  2,
-				PPID: 0,
-				C:    0,
-				Cmd:  "exe",
+				UID:     uid,
+				PID:     2,
+				PPID:    0,
+				C:       0,
+				Cmd:     "exe",
+				Threads: []kernel.ThreadID{2},
 			},
 		}
 		if err := waitForProcessList(cont, expectedPL[:1]); err != nil {

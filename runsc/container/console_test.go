@@ -28,6 +28,7 @@ import (
 	"github.com/kr/pty"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/testutil"
@@ -219,9 +220,9 @@ func TestJobControlSignalExec(t *testing.T) {
 	// Make sure all the processes are running.
 	expectedPL := []*control.Process{
 		// Root container process.
-		{PID: 1, Cmd: "sleep"},
+		{PID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{1}},
 		// Bash from exec process.
-		{PID: 2, Cmd: "bash"},
+		{PID: 2, Cmd: "bash", Threads: []kernel.ThreadID{2}},
 	}
 	if err := waitForProcessList(c, expectedPL); err != nil {
 		t.Error(err)
@@ -231,7 +232,7 @@ func TestJobControlSignalExec(t *testing.T) {
 	ptyMaster.Write([]byte("sleep 100\n"))
 
 	// Wait for it to start. Sleep's PPID is bash's PID.
-	expectedPL = append(expectedPL, &control.Process{PID: 3, PPID: 2, Cmd: "sleep"})
+	expectedPL = append(expectedPL, &control.Process{PID: 3, PPID: 2, Cmd: "sleep", Threads: []kernel.ThreadID{3}})
 	if err := waitForProcessList(c, expectedPL); err != nil {
 		t.Error(err)
 	}
@@ -361,7 +362,7 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 
 	// Wait for bash to start.
 	expectedPL := []*control.Process{
-		{PID: 1, Cmd: "bash"},
+		{PID: 1, Cmd: "bash", Threads: []kernel.ThreadID{1}},
 	}
 	if err := waitForProcessList(c, expectedPL); err != nil {
 		t.Fatal(err)
@@ -371,7 +372,7 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 	ptyMaster.Write([]byte("sleep 100\n"))
 
 	// Wait for sleep to start.
-	expectedPL = append(expectedPL, &control.Process{PID: 2, PPID: 1, Cmd: "sleep"})
+	expectedPL = append(expectedPL, &control.Process{PID: 2, PPID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{2}})
 	if err := waitForProcessList(c, expectedPL); err != nil {
 		t.Fatal(err)
 	}

@@ -272,7 +272,8 @@ type Process struct {
 	UID auth.KUID       `json:"uid"`
 	PID kernel.ThreadID `json:"pid"`
 	// Parent PID
-	PPID kernel.ThreadID `json:"ppid"`
+	PPID    kernel.ThreadID   `json:"ppid"`
+	Threads []kernel.ThreadID `json:"threads"`
 	// Processor utilization
 	C int32 `json:"c"`
 	// TTY name of the process. Will be of the form "pts/N" if there is a
@@ -310,7 +311,7 @@ func ProcessListToTable(pl []*Process) string {
 
 // ProcessListToJSON will return the JSON representation of ps.
 func ProcessListToJSON(pl []*Process) (string, error) {
-	b, err := json.Marshal(pl)
+	b, err := json.MarshalIndent(pl, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("couldn't marshal process list %v: %v", pl, err)
 	}
@@ -337,7 +338,9 @@ func Processes(k *kernel.Kernel, containerID string, out *[]*Process) error {
 	ts := k.TaskSet()
 	now := k.RealtimeClock().Now()
 	for _, tg := range ts.Root.ThreadGroups() {
-		pid := tg.PIDNamespace().IDOfThreadGroup(tg)
+		pidns := tg.PIDNamespace()
+		pid := pidns.IDOfThreadGroup(tg)
+
 		// If tg has already been reaped ignore it.
 		if pid == 0 {
 			continue
@@ -348,19 +351,20 @@ func Processes(k *kernel.Kernel, containerID string, out *[]*Process) error {
 
 		ppid := kernel.ThreadID(0)
 		if p := tg.Leader().Parent(); p != nil {
-			ppid = p.PIDNamespace().IDOfThreadGroup(p.ThreadGroup())
+			ppid = pidns.IDOfThreadGroup(p.ThreadGroup())
 		}
-		p := Process{
-			UID:   tg.Leader().Credentials().EffectiveKUID,
-			PID:   pid,
-			PPID:  ppid,
-			STime: formatStartTime(now, tg.Leader().StartTime()),
-			C:     percentCPU(tg.CPUStats(), tg.Leader().StartTime(), now),
-			Time:  tg.CPUStats().SysTime.String(),
-			Cmd:   tg.Leader().Name(),
-			TTY:   ttyName(tg.TTY()),
-		}
-		*out = append(*out, &p)
+		threads := tg.MemberIDs(pidns)
+		*out = append(*out, &Process{
+			UID:     tg.Leader().Credentials().EffectiveKUID,
+			PID:     pid,
+			PPID:    ppid,
+			Threads: threads,
+			STime:   formatStartTime(now, tg.Leader().StartTime()),
+			C:       percentCPU(tg.CPUStats(), tg.Leader().StartTime(), now),
+			Time:    tg.CPUStats().SysTime.String(),
+			Cmd:     tg.Leader().Name(),
+			TTY:     ttyName(tg.TTY()),
+		})
 	}
 	sort.Slice(*out, func(i, j int) bool { return (*out)[i].PID < (*out)[j].PID })
 	return nil
