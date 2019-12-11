@@ -141,6 +141,16 @@ type ndpAutoGenAddrEvent struct {
 	eventType ndpAutoGenAddrEventType
 }
 
+type ndpRDNSS struct {
+	addrs    []tcpip.Address
+	lifetime time.Duration
+}
+
+type ndpRDNSSEvent struct {
+	nicID tcpip.NICID
+	rdnss ndpRDNSS
+}
+
 var _ stack.NDPDispatcher = (*ndpDispatcher)(nil)
 
 // ndpDispatcher implements NDPDispatcher so tests can know when various NDP
@@ -152,6 +162,7 @@ type ndpDispatcher struct {
 	prefixC        chan ndpPrefixEvent
 	rememberPrefix bool
 	autoGenAddrC   chan ndpAutoGenAddrEvent
+	rdnssC         chan ndpRDNSSEvent
 	routeTable     []tcpip.Route
 }
 
@@ -282,6 +293,19 @@ func (n *ndpDispatcher) OnAutoGenAddressInvalidated(nicID tcpip.NICID, addr tcpi
 			nicID,
 			addr,
 			invalidatedAddr,
+		}
+	}
+}
+
+// Implements stack.NDPDispatcher.OnRecursiveDNSServerOption.
+func (n *ndpDispatcher) OnRecursiveDNSServerOption(nicID tcpip.NICID, addrs []tcpip.Address, lifetime time.Duration) {
+	if n.rdnssC != nil {
+		n.rdnssC <- ndpRDNSSEvent{
+			nicID,
+			ndpRDNSS{
+				addrs,
+				lifetime,
+			},
 		}
 	}
 }
@@ -2073,5 +2097,153 @@ func TestAutoGenAddrStaticConflict(t *testing.T) {
 	}
 	if !contains(s.NICInfo()[1].ProtocolAddresses, addr) {
 		t.Fatalf("Should have %s in the list of addresses", addr1)
+	}
+}
+
+// TestNDPRecursiveDNSServerDispatch tests that we properly dispatch an event
+// to the integrator when an RA is received with the NDP Recursive DNS Server
+// option with at least one valid address.
+func TestNDPRecursiveDNSServerDispatch(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		opt      header.NDPRecursiveDNSServer
+		expected *ndpRDNSS
+	}{
+		{
+			"Unspecified",
+			header.NDPRecursiveDNSServer([]byte{
+				0, 0,
+				0, 0, 0, 2,
+				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			}),
+			nil,
+		},
+		{
+			"Multicast",
+			header.NDPRecursiveDNSServer([]byte{
+				0, 0,
+				0, 0, 0, 2,
+				255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+			}),
+			nil,
+		},
+		{
+			"OptionTooSmall",
+			header.NDPRecursiveDNSServer([]byte{
+				0, 0,
+				0, 0, 0, 2,
+				1, 2, 3, 4, 5, 6, 7, 8,
+			}),
+			nil,
+		},
+		{
+			"0Addresses",
+			header.NDPRecursiveDNSServer([]byte{
+				0, 0,
+				0, 0, 0, 2,
+			}),
+			nil,
+		},
+		{
+			"Valid1Address",
+			header.NDPRecursiveDNSServer([]byte{
+				0, 0,
+				0, 0, 0, 2,
+				1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 1,
+			}),
+			&ndpRDNSS{
+				[]tcpip.Address{
+					"\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x01",
+				},
+				2 * time.Second,
+			},
+		},
+		{
+			"Valid2Addresses",
+			header.NDPRecursiveDNSServer([]byte{
+				0, 0,
+				0, 0, 0, 1,
+				1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 1,
+				1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 2,
+			}),
+			&ndpRDNSS{
+				[]tcpip.Address{
+					"\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x01",
+					"\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x02",
+				},
+				time.Second,
+			},
+		},
+		{
+			"Valid3Addresses",
+			header.NDPRecursiveDNSServer([]byte{
+				0, 0,
+				0, 0, 0, 0,
+				1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 1,
+				1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 2,
+				1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 3,
+			}),
+			&ndpRDNSS{
+				[]tcpip.Address{
+					"\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x01",
+					"\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x02",
+					"\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x03",
+				},
+				0,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			ndpDisp := ndpDispatcher{
+				// We do not expect more than a single RDNSS
+				// event at any time for this test.
+				rdnssC: make(chan ndpRDNSSEvent, 1),
+			}
+			e := channel.New(0, 1280, linkAddr1)
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+				NDPConfigs: stack.NDPConfigurations{
+					HandleRAs: true,
+				},
+				NDPDisp: &ndpDisp,
+			})
+			if err := s.CreateNIC(1, e); err != nil {
+				t.Fatalf("CreateNIC(1) = %s", err)
+			}
+
+			e.InjectInbound(header.IPv6ProtocolNumber, raBufWithOpts(llAddr1, 0, header.NDPOptionsSerializer{test.opt}))
+
+			if test.expected != nil {
+				select {
+				case e := <-ndpDisp.rdnssC:
+					if e.nicID != 1 {
+						t.Errorf("got rdnss nicID = %d, want = 1", e.nicID)
+					}
+					if diff := cmp.Diff(e.rdnss.addrs, test.expected.addrs); diff != "" {
+						t.Errorf("rdnss addrs mismatch (-want +got):\n%s", diff)
+					}
+					if e.rdnss.lifetime != test.expected.lifetime {
+						t.Errorf("got rdnss lifetime = %s, want = %s", e.rdnss.lifetime, test.expected.lifetime)
+					}
+				default:
+					t.Fatal("expected an RDNSS option event")
+				}
+			}
+
+			// Should have no more RDNSS options.
+			select {
+			case e := <-ndpDisp.rdnssC:
+				t.Fatalf("unexpectedly got a new RDNSS option event: %+v", e)
+			default:
+			}
+		})
 	}
 }
