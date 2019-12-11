@@ -199,6 +199,7 @@ func (a *attachPoint) makeQID(stat syscall.Stat_t) p9.QID {
 // The reason that the file is not opened initially as read-write is for better
 // performance with 'overlay2' storage driver. overlay2 eagerly copies the
 // entire file up when it's opened in write mode, and would perform badly when
+// multiple files are only being opened for read (esp. startup).
 type localFile struct {
 	p9.DefaultWalkGetAttr
 
