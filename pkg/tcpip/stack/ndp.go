@@ -181,6 +181,17 @@ type NDPDispatcher interface {
 	// This function is not permitted to block indefinitely. It must not
 	// call functions on the stack itself.
 	OnAutoGenAddressInvalidated(tcpip.NICID, tcpip.AddressWithPrefix)
+
+	// OnRecursiveDNSServerOption will be called when an NDP option with
+	// recursive DNS servers has been received. Note, addrs may contain
+	// link-local addresses.
+	//
+	// It is up to the caller to use the DNS Servers only for their valid
+	// lifetime. OnRecursiveDNSServerOption may be called for new or
+	// already known DNS servers. If called with known DNS servers, their
+	// valid lifetimes must be refreshed to lifetime (it may be increased,
+	// decreased, or completely invalidated when lifetime = 0).
+	OnRecursiveDNSServerOption(nicID tcpip.NICID, addrs []tcpip.Address, lifetime time.Duration)
 }
 
 // NDPConfigurations is the NDP configurations for the netstack.
@@ -617,11 +628,16 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 	// we do not check the iterator for errors on calls to Next.
 	it, _ := ra.Options().Iter(false)
 	for opt, done, _ := it.Next(); !done; opt, done, _ = it.Next() {
-		switch opt.Type() {
-		case header.NDPPrefixInformationType:
-			pi := opt.(header.NDPPrefixInformation)
+		switch opt := opt.(type) {
+		case header.NDPRecursiveDNSServer:
+			if ndp.nic.stack.ndpDisp == nil {
+				continue
+			}
 
-			prefix := pi.Subnet()
+			ndp.nic.stack.ndpDisp.OnRecursiveDNSServerOption(ndp.nic.ID(), opt.Addresses(), opt.Lifetime())
+
+		case header.NDPPrefixInformation:
+			prefix := opt.Subnet()
 
 			// Is the prefix a link-local?
 			if header.IsV6LinkLocalAddress(prefix.ID()) {
@@ -637,12 +653,12 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 				continue
 			}
 
-			if pi.OnLinkFlag() {
-				ndp.handleOnLinkPrefixInformation(pi)
+			if opt.OnLinkFlag() {
+				ndp.handleOnLinkPrefixInformation(opt)
 			}
 
-			if pi.AutonomousAddressConfigurationFlag() {
-				ndp.handleAutonomousPrefixInformation(pi)
+			if opt.AutonomousAddressConfigurationFlag() {
+				ndp.handleAutonomousPrefixInformation(opt)
 			}
 		}
 
