@@ -32,6 +32,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/amutex",
+        "//pkg/fspath",
         "//pkg/sentry/arch",
         "//pkg/sentry/context",
         "//pkg/sentry/kernel/auth",

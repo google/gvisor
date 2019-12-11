@@ -38,6 +38,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/binary",
         "//pkg/fd",
+        "//pkg/fspath",
         "//pkg/log",
         "//pkg/sentry/arch",
         "//pkg/sentry/context",
