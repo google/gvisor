@@ -17,6 +17,7 @@ go_library(
         "mount.go",
         "mount_unsafe.go",
         "options.go",
+        "pathname.go",
         "permissions.go",
         "resolving_path.go",
         "testutil.go",

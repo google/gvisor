@@ -15,7 +15,10 @@
 package vfs
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -112,6 +115,12 @@ func (fs *FDTestFilesystem) SymlinkAt(ctx context.Context, rp *ResolvingPath, ta
 // UnlinkAt implements FilesystemImpl.UnlinkAt.
 func (fs *FDTestFilesystem) UnlinkAt(ctx context.Context, rp *ResolvingPath) error {
 	return syserror.EPERM
+}
+
+// PrependPath implements FilesystemImpl.PrependPath.
+func (fs *FDTestFilesystem) PrependPath(ctx context.Context, vfsroot, vd VirtualDentry, b *fspath.Builder) error {
+	b.PrependComponent(fmt.Sprintf("vfs.fdTestDentry:%p", vd.dentry.impl.(*fdTestDentry)))
+	return PrependPathSyntheticError{}
 }
 
 type fdTestDentry struct {
