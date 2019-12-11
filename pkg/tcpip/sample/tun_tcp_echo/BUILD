@@ -5,6 +5,7 @@ package(licenses = ["notice"])
 go_binary(
     name = "tun_tcp_echo",
     srcs = ["main.go"],
+    visibility = ["//:sandbox"],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/link/fdbased",
