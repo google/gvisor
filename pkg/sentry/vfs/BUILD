@@ -19,7 +19,6 @@ go_library(
         "options.go",
         "permissions.go",
         "resolving_path.go",
-        "syscalls.go",
         "testutil.go",
         "vfs.go",
     ],

@@ -47,6 +47,9 @@ func (fs *Filesystem) Init(vfsObj *VirtualFilesystem, impl FilesystemImpl) {
 	fs.refs = 1
 	fs.vfs = vfsObj
 	fs.impl = impl
+	vfsObj.filesystemsMu.Lock()
+	vfsObj.filesystems[fs] = struct{}{}
+	vfsObj.filesystemsMu.Unlock()
 }
 
 // VirtualFilesystem returns the containing VirtualFilesystem.
@@ -66,9 +69,28 @@ func (fs *Filesystem) IncRef() {
 	}
 }
 
+// TryIncRef increments fs' reference count and returns true. If fs' reference
+// count is zero, TryIncRef does nothing and returns false.
+//
+// TryIncRef does not require that a reference is held on fs.
+func (fs *Filesystem) TryIncRef() bool {
+	for {
+		refs := atomic.LoadInt64(&fs.refs)
+		if refs <= 0 {
+			return false
+		}
+		if atomic.CompareAndSwapInt64(&fs.refs, refs, refs+1) {
+			return true
+		}
+	}
+}
+
 // DecRef decrements fs' reference count.
 func (fs *Filesystem) DecRef() {
 	if refs := atomic.AddInt64(&fs.refs, -1); refs == 0 {
+		fs.vfs.filesystemsMu.Lock()
+		delete(fs.vfs.filesystems, fs)
+		fs.vfs.filesystemsMu.Unlock()
 		fs.impl.Release()
 	} else if refs < 0 {
 		panic("Filesystem.decRef() called without holding a reference")

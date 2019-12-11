@@ -394,7 +394,7 @@ func BenchmarkVFS2MemfsMountStat(b *testing.B) {
 			}
 			defer mountPoint.DecRef()
 			// Create and mount the submount.
-			if err := vfsObj.NewMount(ctx, creds, "", &pop, "memfs", &vfs.GetFilesystemOptions{}); err != nil {
+			if err := vfsObj.MountAt(ctx, creds, "", &pop, "memfs", &vfs.MountOptions{}); err != nil {
 				b.Fatalf("failed to mount tmpfs submount: %v", err)
 			}
 			filePathBuilder.WriteString(mountPointName)

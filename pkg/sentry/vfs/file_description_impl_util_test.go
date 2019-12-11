@@ -103,7 +103,7 @@ func TestGenCountFD(t *testing.T) {
 	// The first read causes Generate to be called to fill the FD's buffer.
 	buf := make([]byte, 2)
 	ioseq := usermem.BytesIOSequence(buf)
-	n, err := fd.Impl().Read(ctx, ioseq, ReadOptions{})
+	n, err := fd.Read(ctx, ioseq, ReadOptions{})
 	if n != 1 || (err != nil && err != io.EOF) {
 		t.Fatalf("first Read: got (%d, %v), wanted (1, nil or EOF)", n, err)
 	}
@@ -112,17 +112,17 @@ func TestGenCountFD(t *testing.T) {
 	}
 
 	// A second read without seeking is still at EOF.
-	n, err = fd.Impl().Read(ctx, ioseq, ReadOptions{})
+	n, err = fd.Read(ctx, ioseq, ReadOptions{})
 	if n != 0 || err != io.EOF {
 		t.Fatalf("second Read: got (%d, %v), wanted (0, EOF)", n, err)
 	}
 
 	// Seeking to the beginning of the file causes it to be regenerated.
-	n, err = fd.Impl().Seek(ctx, 0, linux.SEEK_SET)
+	n, err = fd.Seek(ctx, 0, linux.SEEK_SET)
 	if n != 0 || err != nil {
 		t.Fatalf("Seek: got (%d, %v), wanted (0, nil)", n, err)
 	}
-	n, err = fd.Impl().Read(ctx, ioseq, ReadOptions{})
+	n, err = fd.Read(ctx, ioseq, ReadOptions{})
 	if n != 1 || (err != nil && err != io.EOF) {
 		t.Fatalf("Read after Seek: got (%d, %v), wanted (1, nil or EOF)", n, err)
 	}
@@ -131,7 +131,7 @@ func TestGenCountFD(t *testing.T) {
 	}
 
 	// PRead at the beginning of the file also causes it to be regenerated.
-	n, err = fd.Impl().PRead(ctx, ioseq, 0, ReadOptions{})
+	n, err = fd.PRead(ctx, ioseq, 0, ReadOptions{})
 	if n != 1 || (err != nil && err != io.EOF) {
 		t.Fatalf("PRead: got (%d, %v), wanted (1, nil or EOF)", n, err)
 	}

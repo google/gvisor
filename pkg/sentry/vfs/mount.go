@@ -18,6 +18,7 @@ import (
 	"math"
 	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -133,13 +134,13 @@ func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth
 	return mntns, nil
 }
 
-// NewMount creates and mounts a Filesystem configured by the given arguments.
-func (vfs *VirtualFilesystem) NewMount(ctx context.Context, creds *auth.Credentials, source string, target *PathOperation, fsTypeName string, opts *GetFilesystemOptions) error {
+// MountAt creates and mounts a Filesystem configured by the given arguments.
+func (vfs *VirtualFilesystem) MountAt(ctx context.Context, creds *auth.Credentials, source string, target *PathOperation, fsTypeName string, opts *MountOptions) error {
 	fsType := vfs.getFilesystemType(fsTypeName)
 	if fsType == nil {
 		return syserror.ENODEV
 	}
-	fs, root, err := fsType.GetFilesystem(ctx, vfs, creds, source, *opts)
+	fs, root, err := fsType.GetFilesystem(ctx, vfs, creds, source, opts.GetFilesystemOptions)
 	if err != nil {
 		return err
 	}
@@ -204,6 +205,68 @@ func (vfs *VirtualFilesystem) NewMount(ctx context.Context, creds *auth.Credenti
 	vfs.mounts.seq.EndWrite()
 	vd.dentry.mu.Unlock()
 	vfs.mountMu.Unlock()
+	return nil
+}
+
+// UmountAt removes the Mount at the given path.
+func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *UmountOptions) error {
+	if opts.Flags&^(linux.MNT_FORCE|linux.MNT_DETACH) != 0 {
+		return syserror.EINVAL
+	}
+
+	// MNT_FORCE is currently unimplemented except for the permission check.
+	if opts.Flags&linux.MNT_FORCE != 0 && creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, creds.UserNamespace.Root()) {
+		return syserror.EPERM
+	}
+
+	vd, err := vfs.GetDentryAt(ctx, creds, pop, &GetDentryOptions{})
+	if err != nil {
+		return err
+	}
+	defer vd.DecRef()
+	if vd.dentry != vd.mount.root {
+		return syserror.EINVAL
+	}
+	vfs.mountMu.Lock()
+	if mntns := MountNamespaceFromContext(ctx); mntns != nil && mntns != vd.mount.ns {
+		vfs.mountMu.Unlock()
+		return syserror.EINVAL
+	}
+
+	// TODO(jamieliu): Linux special-cases umount of the caller's root, which
+	// we don't implement yet (we'll just fail it since the caller holds a
+	// reference on it).
+
+	vfs.mounts.seq.BeginWrite()
+	if opts.Flags&linux.MNT_DETACH == 0 {
+		if len(vd.mount.children) != 0 {
+			vfs.mounts.seq.EndWrite()
+			vfs.mountMu.Unlock()
+			return syserror.EBUSY
+		}
+		// We are holding a reference on vd.mount.
+		expectedRefs := int64(1)
+		if !vd.mount.umounted {
+			expectedRefs = 2
+		}
+		if atomic.LoadInt64(&vd.mount.refs)&^math.MinInt64 != expectedRefs { // mask out MSB
+			vfs.mounts.seq.EndWrite()
+			vfs.mountMu.Unlock()
+			return syserror.EBUSY
+		}
+	}
+	vdsToDecRef, mountsToDecRef := vfs.umountRecursiveLocked(vd.mount, &umountRecursiveOptions{
+		eager:               opts.Flags&linux.MNT_DETACH == 0,
+		disconnectHierarchy: true,
+	}, nil, nil)
+	vfs.mounts.seq.EndWrite()
+	vfs.mountMu.Unlock()
+	for _, vd := range vdsToDecRef {
+		vd.DecRef()
+	}
+	for _, mnt := range mountsToDecRef {
+		mnt.DecRef()
+	}
 	return nil
 }
 

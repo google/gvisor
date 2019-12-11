@@ -46,6 +46,12 @@ type MknodOptions struct {
 	DevMinor uint32
 }
 
+// MountOptions contains options to VirtualFilesystem.MountAt().
+type MountOptions struct {
+	// GetFilesystemOptions contains options to FilesystemType.GetFilesystem().
+	GetFilesystemOptions GetFilesystemOptions
+}
+
 // OpenOptions contains options to VirtualFilesystem.OpenAt() and
 // FilesystemImpl.OpenAt().
 type OpenOptions struct {
@@ -112,6 +118,12 @@ type StatOptions struct {
 	// linux.AT_STATX_SYNC_AS_STAT (which is 0, and therefore the default),
 	// linux.AT_STATX_SYNC_FORCE_SYNC, or linux.AT_STATX_SYNC_DONT_SYNC.
 	Sync uint32
+}
+
+// UmountOptions contains options to VirtualFilesystem.UmountAt().
+type UmountOptions struct {
+	// Flags contains flags as specified for umount2(2).
+	Flags uint32
 }
 
 // WriteOptions contains options to FileDescription.PWrite(),
