@@ -42,6 +42,7 @@ type Debug struct {
 	logLevel    string
 	logPackets  string
 	duration    time.Duration
+	ps          bool
 }
 
 // Name implements subcommands.Command.
@@ -71,6 +72,7 @@ func (d *Debug) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&d.strace, "strace", "", `A comma separated list of syscalls to trace. "all" enables all traces, "off" disables all`)
 	f.StringVar(&d.logLevel, "log-level", "", "The log level to set: warning (0), info (1), or debug (2).")
 	f.StringVar(&d.logPackets, "log-packets", "", "A boolean value to enable or disable packet logging: true or false.")
+	f.BoolVar(&d.ps, "ps", false, "lists processes")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -239,6 +241,17 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			return Errorf(err.Error())
 		}
 		log.Infof("Logging options changed")
+	}
+	if d.ps {
+		pList, err := c.Processes()
+		if err != nil {
+			Fatalf("getting processes for container: %v", err)
+		}
+		o, err := control.ProcessListToJSON(pList)
+		if err != nil {
+			Fatalf("generating JSON: %v", err)
+		}
+		log.Infof(o)
 	}
 
 	if delay {
