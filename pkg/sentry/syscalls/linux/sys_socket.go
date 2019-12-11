@@ -787,27 +787,11 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 	defer cms.Release()
 
 	controlData := make([]byte, 0, msg.ControlLen)
+	controlData = control.PackControlMessages(t, cms, controlData)
 
 	if cr, ok := s.(transport.Credentialer); ok && cr.Passcred() {
 		creds, _ := cms.Unix.Credentials.(control.SCMCredentials)
 		controlData, mflags = control.PackCredentials(t, creds, controlData, mflags)
-	}
-
-	if cms.IP.HasTimestamp {
-		controlData = control.PackTimestamp(t, cms.IP.Timestamp, controlData)
-	}
-
-	if cms.IP.HasInq {
-		// In Linux, TCP_CM_INQ is added after SO_TIMESTAMP.
-		controlData = control.PackInq(t, cms.IP.Inq, controlData)
-	}
-
-	if cms.IP.HasTOS {
-		controlData = control.PackTOS(t, cms.IP.TOS, controlData)
-	}
-
-	if cms.IP.HasTClass {
-		controlData = control.PackTClass(t, cms.IP.TClass, controlData)
 	}
 
 	if cms.Unix.Rights != nil {

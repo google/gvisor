@@ -348,41 +348,60 @@ func PackTClass(t *kernel.Task, tClass int32, buf []byte) []byte {
 	)
 }
 
-func addSpaceForCmsg(cmsgDataLen int, buf []byte) []byte {
-	newBuf := make([]byte, 0, len(buf)+linux.SizeOfControlMessageHeader+cmsgDataLen)
-	return append(newBuf, buf...)
-}
-
-// PackControlMessages converts the given ControlMessages struct into a buffer.
+// PackControlMessages packs control messages into the given buffer.
+//
 // We skip control messages specific to Unix domain sockets.
-func PackControlMessages(t *kernel.Task, cmsgs socket.ControlMessages) []byte {
-	var buf []byte
-	// The use of t.Arch().Width() is analogous to Linux's use of sizeof(long) in
-	// CMSG_ALIGN.
-	width := t.Arch().Width()
-
+//
+// Note that some control messages may be truncated if they do not fit under
+// the capacity of buf.
+func PackControlMessages(t *kernel.Task, cmsgs socket.ControlMessages, buf []byte) []byte {
 	if cmsgs.IP.HasTimestamp {
-		buf = addSpaceForCmsg(int(width), buf)
 		buf = PackTimestamp(t, cmsgs.IP.Timestamp, buf)
 	}
 
 	if cmsgs.IP.HasInq {
 		// In Linux, TCP_CM_INQ is added after SO_TIMESTAMP.
-		buf = addSpaceForCmsg(AlignUp(linux.SizeOfControlMessageInq, width), buf)
 		buf = PackInq(t, cmsgs.IP.Inq, buf)
 	}
 
 	if cmsgs.IP.HasTOS {
-		buf = addSpaceForCmsg(AlignUp(linux.SizeOfControlMessageTOS, width), buf)
 		buf = PackTOS(t, cmsgs.IP.TOS, buf)
 	}
 
 	if cmsgs.IP.HasTClass {
-		buf = addSpaceForCmsg(AlignUp(linux.SizeOfControlMessageTClass, width), buf)
 		buf = PackTClass(t, cmsgs.IP.TClass, buf)
 	}
 
 	return buf
+}
+
+// cmsgSpace is equivalent to CMSG_SPACE in Linux.
+func cmsgSpace(t *kernel.Task, dataLen int) int {
+	return linux.SizeOfControlMessageHeader + AlignUp(dataLen, t.Arch().Width())
+}
+
+// CmsgsSpace returns the number of bytes needed to fit the control messages
+// represented in cmsgs.
+func CmsgsSpace(t *kernel.Task, cmsgs socket.ControlMessages) int {
+	space := 0
+
+	if cmsgs.IP.HasTimestamp {
+		space += cmsgSpace(t, linux.SizeOfTimeval)
+	}
+
+	if cmsgs.IP.HasInq {
+		space += cmsgSpace(t, linux.SizeOfControlMessageInq)
+	}
+
+	if cmsgs.IP.HasTOS {
+		space += cmsgSpace(t, linux.SizeOfControlMessageTOS)
+	}
+
+	if cmsgs.IP.HasTClass {
+		space += cmsgSpace(t, linux.SizeOfControlMessageTClass)
+	}
+
+	return space
 }
 
 // Parse parses a raw socket control message into portable objects.
