@@ -33,3 +33,8 @@ py_library(
         requirement("PyYAML", False),
     ],
 )
+
+py_library(
+    name = "gcloud_mock_recorder",
+    srcs = ["gcloud_mock_recorder.py"],
+)

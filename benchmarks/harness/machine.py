@@ -11,7 +11,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Machine abstraction. This is the primary API for benchmarks."""
+"""Machine abstraction passed to benchmarks to run docker containers.
+
+Abstraction for interacting with test machines. Machines are produced
+by Machine producers and represent a local or remote machine. Benchmark
+methods in /benchmarks/suite are passed the required number of machines in order
+to run the benchmark. Machines contain methods to run commands via bash,
+possibly over ssh. Machines also hold a connection to the docker UNIX socket
+to run contianers.
+
+  Typical usage example:
+
+  machine = Machine()
+  machine.run(cmd)
+  machine.pull(path)
+  container = machine.container()
+"""
 
 import logging
 import re
@@ -28,12 +43,16 @@ from benchmarks.harness import ssh_connection
 from benchmarks.harness import tunnel_dispatcher
 
 
-class Machine:
+class Machine(object):
   """The machine object is the primary object for benchmarks.
 
   Machine objects are passed to each metric function call and benchmarks use
   machines to access real connections to those machines.
+
+  Attributes:
+    _name: Name as a string
   """
+  _name = ""
 
   def run(self, cmd: str) -> Tuple[str, str]:
     """Convenience method for running a bash command on a machine object.
@@ -90,11 +109,15 @@ class Machine:
 
   def sleep(self, amount: float):
     """Sleeps the given amount of time."""
-    raise NotImplementedError
+    time.sleep(amount)
+
+  def __str__(self):
+    return self._name
 
 
 class MockMachine(Machine):
   """A mocked machine."""
+  _name = "mock"
 
   def run(self, cmd: str) -> Tuple[str, str]:
     return "", ""
@@ -119,14 +142,17 @@ def get_address(machine: Machine) -> str:
 
 
 class LocalMachine(Machine):
-  """The local machine."""
+  """The local machine.
+
+  Attributes:
+    _name: Name as a string
+    _docker_client: a pythonic connection to to the local dockerd unix socket.
+      See: https://github.com/docker/docker-py
+  """
 
   def __init__(self, name):
     self._name = name
     self._docker_client = docker.from_env()
-
-  def __str__(self):
-    return self._name
 
   def run(self, cmd: str) -> Tuple[str, str]:
     process = subprocess.Popen(
@@ -155,7 +181,17 @@ class LocalMachine(Machine):
 
 
 class RemoteMachine(Machine):
-  """Remote machine accessible via an SSH connection."""
+  """Remote machine accessible via an SSH connection.
+
+  Attributes:
+    _name: Name as a string
+    _ssh_connection: a paramiko backed ssh connection which can be used to run
+      commands on this machine
+    _tunnel: a python wrapper around a port forwarded ssh connection between a
+      local unix socket and the remote machine's dockerd unix socket.
+    _docker_client: a pythonic wrapper backed by the _tunnel. Allows sending
+      docker commands: see https://github.com/docker/docker-py
+  """
 
   def __init__(self, name, **kwargs):
     self._name = name
@@ -163,9 +199,6 @@ class RemoteMachine(Machine):
     self._tunnel = tunnel_dispatcher.Tunnel(name, **kwargs)
     self._tunnel.connect()
     self._docker_client = self._tunnel.get_docker_client()
-
-  def __str__(self):
-    return self._name
 
   def run(self, cmd: str) -> Tuple[str, str]:
     return self._ssh_connection.run(cmd)
