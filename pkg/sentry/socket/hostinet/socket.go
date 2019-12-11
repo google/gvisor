@@ -45,7 +45,7 @@ const (
 	sizeofSockaddr = syscall.SizeofSockaddrInet6 // sizeof(sockaddr_in6) > sizeof(sockaddr_in)
 
 	// maxControlLen is the maximum size of a control message buffer used in a
-	// recvmsg syscall.
+	// recvmsg or sendmsg syscall.
 	maxControlLen = 1024
 )
 
@@ -412,9 +412,12 @@ func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 			msg.Namelen = uint32(len(senderAddrBuf))
 		}
 		if controlLen > 0 {
-			controlBuf = make([]byte, maxControlLen)
+			if controlLen > maxControlLen {
+				controlLen = maxControlLen
+			}
+			controlBuf = make([]byte, controlLen)
 			msg.Control = &controlBuf[0]
-			msg.Controllen = maxControlLen
+			msg.Controllen = controlLen
 		}
 		n, err := recvmsg(s.fd, &msg, sysflags)
 		if err != nil {
@@ -489,7 +492,14 @@ func (s *socketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 		return 0, syserr.ErrInvalidArgument
 	}
 
-	controlBuf := control.PackControlMessages(t, controlMessages)
+	space := uint64(control.CmsgsSpace(t, controlMessages))
+	if space > maxControlLen {
+		space = maxControlLen
+	}
+	controlBuf := make([]byte, 0, space)
+	// PackControlMessages will append up to space bytes to controlBuf.
+	controlBuf = control.PackControlMessages(t, controlMessages, controlBuf)
+
 	sendmsgFromBlocks := safemem.WriterFunc(func(srcs safemem.BlockSeq) (uint64, error) {
 		// Refuse to do anything if any part of src.Addrs was unusable.
 		if uint64(src.NumBytes()) != srcs.NumBytes() {
