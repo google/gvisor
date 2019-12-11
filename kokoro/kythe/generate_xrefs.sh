@@ -46,6 +46,7 @@ bazel \
   build \
   --override_repository kythe_release="${KYTHE_DIR}" \
   --define=kythe_corpus=gvisor.dev \
+  --cxxopt=-std=c++17 \
   //...
 
 "${KYTHE_DIR}/tools/kzip" merge \
