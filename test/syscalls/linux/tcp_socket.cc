@@ -1175,6 +1175,31 @@ TEST_P(SimpleTcpSocketTest, SetMaxSegFailsForInvalidMSSValues) {
   }
 }
 
+TEST_P(SimpleTcpSocketTest, SetTCPUserTimeout) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  {
+    constexpr int kTCPUserTimeout = -1;
+    EXPECT_THAT(setsockopt(s.get(), IPPROTO_TCP, TCP_USER_TIMEOUT,
+                           &kTCPUserTimeout, sizeof(kTCPUserTimeout)),
+                SyscallFailsWithErrno(EINVAL));
+  }
+
+  // kTCPUserTimeout is in milliseconds.
+  constexpr int kTCPUserTimeout = 100;
+  ASSERT_THAT(setsockopt(s.get(), IPPROTO_TCP, TCP_USER_TIMEOUT,
+                         &kTCPUserTimeout, sizeof(kTCPUserTimeout)),
+              SyscallSucceedsWithValue(0));
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(s.get(), IPPROTO_TCP, TCP_USER_TIMEOUT, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kTCPUserTimeout);
+}
+
 INSTANTIATE_TEST_SUITE_P(AllInetTests, SimpleTcpSocketTest,
                          ::testing::Values(AF_INET, AF_INET6));
 

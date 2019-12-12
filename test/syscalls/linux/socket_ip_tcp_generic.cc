@@ -812,5 +812,68 @@ TEST_P(TCPSocketPairTest, TestTCPCloseWithData) {
   ASSERT_THAT(close(sockets->release_first_fd()), SyscallSucceeds());
 }
 
+TEST_P(TCPSocketPairTest, TCPUserTimeoutDefault) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_USER_TIMEOUT,
+                         &get, &get_len),
+              SyscallSucceeds());
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, 0);  // 0 ms (disabled).
+}
+
+TEST_P(TCPSocketPairTest, SetTCPUserTimeoutZero) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  constexpr int kZero = 0;
+  ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_USER_TIMEOUT,
+                         &kZero, sizeof(kZero)),
+              SyscallSucceeds());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_USER_TIMEOUT,
+                         &get, &get_len),
+              SyscallSucceeds());
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, 0);  // 0 ms (disabled).
+}
+
+TEST_P(TCPSocketPairTest, SetTCPUserTimeoutBelowZero) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  constexpr int kNeg = -10;
+  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_USER_TIMEOUT,
+                         &kNeg, sizeof(kNeg)),
+              SyscallFailsWithErrno(EINVAL));
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_USER_TIMEOUT,
+                         &get, &get_len),
+              SyscallSucceeds());
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, 0);  // 0 ms (disabled).
+}
+
+TEST_P(TCPSocketPairTest, SetTCPUserTimeoutAboveZero) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  constexpr int kAbove = 10;
+  ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_USER_TIMEOUT,
+                         &kAbove, sizeof(kAbove)),
+              SyscallSucceeds());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_USER_TIMEOUT,
+                         &get, &get_len),
+              SyscallSucceeds());
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kAbove);
+}
+
 }  // namespace testing
 }  // namespace gvisor

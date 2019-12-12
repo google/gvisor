@@ -1127,6 +1127,18 @@ func getSockOptTCP(t *kernel.Task, ep commonEndpoint, name, outLen int) (interfa
 
 		return int32(time.Duration(v) / time.Second), nil
 
+	case linux.TCP_USER_TIMEOUT:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		var v tcpip.TCPUserTimeoutOption
+		if err := ep.GetSockOpt(&v); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		return int32(time.Duration(v) / time.Millisecond), nil
+
 	case linux.TCP_INFO:
 		var v tcpip.TCPInfoOption
 		if err := ep.GetSockOpt(&v); err != nil {
@@ -1562,6 +1574,17 @@ func setSockOptTCP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *
 			return syserr.ErrInvalidArgument
 		}
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.KeepaliveIntervalOption(time.Second * time.Duration(v))))
+
+	case linux.TCP_USER_TIMEOUT:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+
+		v := int32(usermem.ByteOrder.Uint32(optVal))
+		if v < 0 {
+			return syserr.ErrInvalidArgument
+		}
+		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.TCPUserTimeoutOption(time.Millisecond * time.Duration(v))))
 
 	case linux.TCP_CONGESTION:
 		v := tcpip.CongestionControlOption(optVal)

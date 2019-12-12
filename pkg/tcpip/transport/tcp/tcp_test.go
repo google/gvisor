@@ -323,8 +323,8 @@ func TestTCPResetSentForACKWhenNotUsingSynCookies(t *testing.T) {
 		checker.SrcPort(context.StackPort),
 		checker.DstPort(context.TestPort),
 		checker.SeqNum(uint32(c.IRS+1)),
-		checker.AckNum(uint32(iss)+1),
-		checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck)))
+		checker.AckNum(0),
+		checker.TCPFlags(header.TCPFlagRst)))
 }
 
 func TestTCPResetsReceivedIncrement(t *testing.T) {
@@ -460,18 +460,17 @@ func TestConnectResetAfterClose(t *testing.T) {
 			checker.TCP(
 				checker.DstPort(context.TestPort),
 				checker.SeqNum(uint32(c.IRS)+2),
-				checker.AckNum(790),
-				checker.TCPFlags(header.TCPFlagAck|header.TCPFlagRst),
+				checker.AckNum(0),
+				checker.TCPFlags(header.TCPFlagRst),
 			),
 		)
 		break
 	}
 }
 
-// TestClosingWithEnqueuedSegments tests handling of
-// still enqueued segments when the endpoint transitions
-// to StateClose. The in-flight segments would be re-enqueued
-// to a any listening endpoint.
+// TestClosingWithEnqueuedSegments tests handling of still enqueued segments
+// when the endpoint transitions to StateClose. The in-flight segments would be
+// re-enqueued to a any listening endpoint.
 func TestClosingWithEnqueuedSegments(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
@@ -576,8 +575,8 @@ func TestClosingWithEnqueuedSegments(t *testing.T) {
 		checker.TCP(
 			checker.DstPort(context.TestPort),
 			checker.SeqNum(uint32(c.IRS)+2),
-			checker.AckNum(793),
-			checker.TCPFlags(header.TCPFlagAck|header.TCPFlagRst),
+			checker.AckNum(0),
+			checker.TCPFlags(header.TCPFlagRst),
 		),
 	)
 }
@@ -914,7 +913,7 @@ func TestSendRstOnListenerRxAckV4(t *testing.T) {
 
 	checker.IPv4(t, c.GetPacket(), checker.TCP(
 		checker.DstPort(context.TestPort),
-		checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck),
+		checker.TCPFlags(header.TCPFlagRst),
 		checker.SeqNum(200)))
 }
 
@@ -942,7 +941,7 @@ func TestSendRstOnListenerRxAckV6(t *testing.T) {
 
 	checker.IPv6(t, c.GetV6Packet(), checker.TCP(
 		checker.DstPort(context.TestPort),
-		checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck),
+		checker.TCPFlags(header.TCPFlagRst),
 		checker.SeqNum(200)))
 }
 
@@ -4291,8 +4290,9 @@ func TestKeepalive(t *testing.T) {
 
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
+	const keepAliveInterval = 10 * time.Millisecond
 	c.EP.SetSockOpt(tcpip.KeepaliveIdleOption(10 * time.Millisecond))
-	c.EP.SetSockOpt(tcpip.KeepaliveIntervalOption(10 * time.Millisecond))
+	c.EP.SetSockOpt(tcpip.KeepaliveIntervalOption(keepAliveInterval))
 	c.EP.SetSockOpt(tcpip.KeepaliveCountOption(5))
 	c.EP.SetSockOpt(tcpip.KeepaliveEnabledOption(1))
 
@@ -4382,13 +4382,29 @@ func TestKeepalive(t *testing.T) {
 		)
 	}
 
+	// Sleep for a litte over the KeepAlive interval to make sure
+	// the timer has time to fire after the last ACK and close the
+	// close the socket.
+	time.Sleep(keepAliveInterval + 5*time.Millisecond)
+
 	// The connection should be terminated after 5 unacked keepalives.
+	// Send an ACK to trigger a RST from the stack as the endpoint should
+	// be dead.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  790,
+		AckNum:  seqnum.Value(next),
+		RcvWnd:  30000,
+	})
+
 	checker.IPv4(t, c.GetPacket(),
 		checker.TCP(
 			checker.DstPort(context.TestPort),
 			checker.SeqNum(uint32(next)),
-			checker.AckNum(uint32(790)),
-			checker.TCPFlags(header.TCPFlagAck|header.TCPFlagRst),
+			checker.AckNum(uint32(0)),
+			checker.TCPFlags(header.TCPFlagRst),
 		),
 	)
 
@@ -6157,8 +6173,8 @@ func TestTCPTimeWaitDuplicateFINExtendsTimeWait(t *testing.T) {
 		checker.SrcPort(context.StackPort),
 		checker.DstPort(context.TestPort),
 		checker.SeqNum(uint32(ackHeaders.AckNum)),
-		checker.AckNum(uint32(ackHeaders.SeqNum)),
-		checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck)))
+		checker.AckNum(0),
+		checker.TCPFlags(header.TCPFlagRst)))
 
 	if got := c.Stack().Stats().TCP.EstablishedClosed.Value(); got != want {
 		t.Errorf("got c.Stack().Stats().TCP.EstablishedClosed = %v, want = %v", got, want)
@@ -6336,7 +6352,147 @@ func TestTCPCloseWithData(t *testing.T) {
 		checker.SrcPort(context.StackPort),
 		checker.DstPort(context.TestPort),
 		checker.SeqNum(uint32(ackHeaders.AckNum)),
-		checker.AckNum(uint32(ackHeaders.SeqNum)),
-		checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck)))
+		checker.AckNum(0),
+		checker.TCPFlags(header.TCPFlagRst)))
+}
 
+func TestTCPUserTimeout(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
+
+	origEstablishedTimedout := c.Stack().Stats().TCP.EstablishedTimedout.Value()
+
+	userTimeout := 50 * time.Millisecond
+	c.EP.SetSockOpt(tcpip.TCPUserTimeoutOption(userTimeout))
+
+	// Send some data and wait before ACKing it.
+	view := buffer.NewView(3)
+	if _, _, err := c.EP.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	next := uint32(c.IRS) + 1
+	checker.IPv4(t, c.GetPacket(),
+		checker.PayloadLen(len(view)+header.TCPMinimumSize),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(next),
+			checker.AckNum(790),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+		),
+	)
+
+	// Wait for a little over the minimum retransmit timeout of 200ms for
+	// the retransmitTimer to fire and close the connection.
+	time.Sleep(tcp.MinRTO + 10*time.Millisecond)
+
+	// No packet should be received as the connection should be silently
+	// closed due to timeout.
+	c.CheckNoPacket("unexpected packet received after userTimeout has expired")
+
+	next += uint32(len(view))
+
+	// The connection should be terminated after userTimeout has expired.
+	// Send an ACK to trigger a RST from the stack as the endpoint should
+	// be dead.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  790,
+		AckNum:  seqnum.Value(next),
+		RcvWnd:  30000,
+	})
+
+	checker.IPv4(t, c.GetPacket(),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(next)),
+			checker.AckNum(uint32(0)),
+			checker.TCPFlags(header.TCPFlagRst),
+		),
+	)
+
+	if _, _, err := c.EP.Read(nil); err != tcpip.ErrTimeout {
+		t.Fatalf("got c.EP.Read(nil) = %v, want = %v", err, tcpip.ErrTimeout)
+	}
+
+	if got, want := c.Stack().Stats().TCP.EstablishedTimedout.Value(), origEstablishedTimedout+1; got != want {
+		t.Errorf("got c.Stack().Stats().TCP.EstablishedTimedout = %v, want = %v", got, want)
+	}
+}
+
+func TestKeepaliveWithUserTimeout(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
+
+	origEstablishedTimedout := c.Stack().Stats().TCP.EstablishedTimedout.Value()
+
+	const keepAliveInterval = 10 * time.Millisecond
+	c.EP.SetSockOpt(tcpip.KeepaliveIdleOption(10 * time.Millisecond))
+	c.EP.SetSockOpt(tcpip.KeepaliveIntervalOption(keepAliveInterval))
+	c.EP.SetSockOpt(tcpip.KeepaliveCountOption(10))
+	c.EP.SetSockOpt(tcpip.KeepaliveEnabledOption(1))
+
+	// Set userTimeout to be the duration for 3 keepalive probes.
+	userTimeout := 30 * time.Millisecond
+	c.EP.SetSockOpt(tcpip.TCPUserTimeoutOption(userTimeout))
+
+	// Check that the connection is still alive.
+	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
+		t.Fatalf("got c.EP.Read(nil) = %v, want = %v", err, tcpip.ErrWouldBlock)
+	}
+
+	// Now receive 2 keepalives, but don't ACK them. The connection should
+	// be reset when the 3rd one should be sent due to userTimeout being
+	// 30ms and each keepalive probe should be sent 10ms apart as set above after
+	// the connection has been idle for 10ms.
+	for i := 0; i < 2; i++ {
+		b := c.GetPacket()
+		checker.IPv4(t, b,
+			checker.TCP(
+				checker.DstPort(context.TestPort),
+				checker.SeqNum(uint32(c.IRS)),
+				checker.AckNum(uint32(790)),
+				checker.TCPFlags(header.TCPFlagAck),
+			),
+		)
+	}
+
+	// Sleep for a litte over the KeepAlive interval to make sure
+	// the timer has time to fire after the last ACK and close the
+	// close the socket.
+	time.Sleep(keepAliveInterval + 5*time.Millisecond)
+
+	// The connection should be terminated after 30ms.
+	// Send an ACK to trigger a RST from the stack as the endpoint should
+	// be dead.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  790,
+		AckNum:  seqnum.Value(c.IRS + 1),
+		RcvWnd:  30000,
+	})
+
+	checker.IPv4(t, c.GetPacket(),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(c.IRS+1)),
+			checker.AckNum(uint32(0)),
+			checker.TCPFlags(header.TCPFlagRst),
+		),
+	)
+
+	if _, _, err := c.EP.Read(nil); err != tcpip.ErrTimeout {
+		t.Fatalf("got c.EP.Read(nil) = %v, want = %v", err, tcpip.ErrTimeout)
+	}
+	if got, want := c.Stack().Stats().TCP.EstablishedTimedout.Value(), origEstablishedTimedout+1; got != want {
+		t.Errorf("got c.Stack().Stats().TCP.EstablishedTimedout = %v, want = %v", got, want)
+	}
 }

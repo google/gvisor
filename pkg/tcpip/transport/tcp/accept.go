@@ -242,6 +242,13 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 
 	n.initGSO()
 
+	// Now inherit any socket options that should be inherited from the
+	// listening endpoint.
+	// In case of Forwarder listenEP will be nil and hence this check.
+	if l.listenEP != nil {
+		l.listenEP.propagateInheritableOptions(n)
+	}
+
 	// Register new endpoint so that packets are routed to it.
 	if err := n.stack.RegisterTransportEndpoint(n.boundNICID, n.effectiveNetProtos, ProtocolNumber, n.ID, n, n.reusePort, n.boundBindToDevice); err != nil {
 		n.Close()
@@ -348,6 +355,14 @@ func (e *endpoint) deliverAccepted(n *endpoint) {
 	} else {
 		n.Close()
 	}
+}
+
+// propagateInheritableOptions propagates any options set on the listening
+// endpoint to the newly created endpoint.
+func (e *endpoint) propagateInheritableOptions(n *endpoint) {
+	e.mu.Lock()
+	n.userTimeout = e.userTimeout
+	e.mu.Unlock()
 }
 
 // handleSynSegment is called in its own goroutine once the listening endpoint

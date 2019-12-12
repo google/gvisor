@@ -50,16 +50,20 @@ type receiver struct {
 	pendingRcvdSegments segmentHeap
 	pendingBufUsed      seqnum.Size
 	pendingBufSize      seqnum.Size
+
+	// Time when the last ack was received.
+	lastRcvdAckTime time.Time `state:".(unixTime)"`
 }
 
 func newReceiver(ep *endpoint, irs seqnum.Value, rcvWnd seqnum.Size, rcvWndScale uint8, pendingBufSize seqnum.Size) *receiver {
 	return &receiver{
-		ep:             ep,
-		rcvNxt:         irs + 1,
-		rcvAcc:         irs.Add(rcvWnd + 1),
-		rcvWnd:         rcvWnd,
-		rcvWndScale:    rcvWndScale,
-		pendingBufSize: pendingBufSize,
+		ep:              ep,
+		rcvNxt:          irs + 1,
+		rcvAcc:          irs.Add(rcvWnd + 1),
+		rcvWnd:          rcvWnd,
+		rcvWndScale:     rcvWndScale,
+		pendingBufSize:  pendingBufSize,
+		lastRcvdAckTime: time.Now(),
 	}
 }
 
@@ -359,6 +363,9 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err *tcpip.Error) {
 		r.ep.snd.sendAck()
 		return true, nil
 	}
+
+	// Store the time of the last ack.
+	r.lastRcvdAckTime = time.Now()
 
 	// Defer segment processing if it can't be consumed now.
 	if !r.consumeSegment(s, segSeq, segLen) {
