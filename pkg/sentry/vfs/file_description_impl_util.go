@@ -252,3 +252,12 @@ func (fd *DynamicBytesFileDescriptionImpl) Seek(ctx context.Context, offset int6
 	fd.off = offset
 	return offset, nil
 }
+
+// GenericConfigureMMap may be used by most implementations of
+// FileDescriptionImpl.ConfigureMMap.
+func GenericConfigureMMap(fd *FileDescription, m memmap.Mappable, opts *memmap.MMapOpts) error {
+	opts.Mappable = m
+	opts.MappingIdentity = fd
+	fd.IncRef()
+	return nil
+}

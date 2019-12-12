@@ -334,3 +334,47 @@ func (fd *FileDescription) Ioctl(ctx context.Context, uio usermem.IO, args arch.
 func (fd *FileDescription) SyncFS(ctx context.Context) error {
 	return fd.vd.mount.fs.impl.Sync(ctx)
 }
+
+// MappedName implements memmap.MappingIdentity.MappedName.
+func (fd *FileDescription) MappedName(ctx context.Context) string {
+	vfsroot := RootFromContext(ctx)
+	s, _ := fd.vd.mount.vfs.PathnameWithDeleted(ctx, vfsroot, fd.vd)
+	if vfsroot.Ok() {
+		vfsroot.DecRef()
+	}
+	return s
+}
+
+// DeviceID implements memmap.MappingIdentity.DeviceID.
+func (fd *FileDescription) DeviceID() uint64 {
+	stat, err := fd.impl.Stat(context.Background(), StatOptions{
+		// There is no STATX_DEV; we assume that Stat will return it if it's
+		// available regardless of mask.
+		Mask: 0,
+		// fs/proc/task_mmu.c:show_map_vma() just reads inode::i_sb->s_dev
+		// directly.
+		Sync: linux.AT_STATX_DONT_SYNC,
+	})
+	if err != nil {
+		return 0
+	}
+	return uint64(linux.MakeDeviceID(uint16(stat.DevMajor), stat.DevMinor))
+}
+
+// InodeID implements memmap.MappingIdentity.InodeID.
+func (fd *FileDescription) InodeID() uint64 {
+	stat, err := fd.impl.Stat(context.Background(), StatOptions{
+		Mask: linux.STATX_INO,
+		// fs/proc/task_mmu.c:show_map_vma() just reads inode::i_ino directly.
+		Sync: linux.AT_STATX_DONT_SYNC,
+	})
+	if err != nil || stat.Mask&linux.STATX_INO == 0 {
+		return 0
+	}
+	return stat.Ino
+}
+
+// Msync implements memmap.MappingIdentity.Msync.
+func (fd *FileDescription) Msync(ctx context.Context, mr memmap.MappableRange) error {
+	return fd.impl.Sync(ctx)
+}
