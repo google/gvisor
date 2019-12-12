@@ -206,7 +206,7 @@ TEST_P(SocketInetLoopbackTest, TCPListenClose) {
   }
   // TODO(b/138400178): Fix cooperative S/R failure when ds.reset() is invoked
   // before function end.
-  // ds.reset()
+  // ds.reset();
 }
 
 TEST_P(SocketInetLoopbackTest, TCPbacklog) {
@@ -601,6 +601,60 @@ TEST_P(SocketInetLoopbackTest, TCPTimeWaitTest_NoRandomSave) {
                                   reinterpret_cast<sockaddr*>(&conn_addr),
                                   conn_addrlen),
               SyscallSucceeds());
+}
+
+TEST_P(SocketInetLoopbackTest, AcceptedInheritsTCPUserTimeout) {
+  auto const& param = GetParam();
+  TestAddress const& listener = param.listener;
+  TestAddress const& connector = param.connector;
+
+  // Create the listening socket.
+  const FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
+  sockaddr_storage listen_addr = listener.addr;
+  ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
+                   listener.addr_len),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(listen_fd.get(), SOMAXCONN), SyscallSucceeds());
+
+  // Get the port bound by the listening socket.
+  socklen_t addrlen = listener.addr_len;
+  ASSERT_THAT(getsockname(listen_fd.get(),
+                          reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
+              SyscallSucceeds());
+
+  const uint16_t port =
+      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
+
+  // Set the userTimeout on the listening socket.
+  constexpr int kUserTimeout = 10;
+  ASSERT_THAT(setsockopt(listen_fd.get(), IPPROTO_TCP, TCP_USER_TIMEOUT,
+                         &kUserTimeout, sizeof(kUserTimeout)),
+              SyscallSucceeds());
+
+  // Connect to the listening socket.
+  FileDescriptor conn_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
+
+  sockaddr_storage conn_addr = connector.addr;
+  ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
+  ASSERT_THAT(RetryEINTR(connect)(conn_fd.get(),
+                                  reinterpret_cast<sockaddr*>(&conn_addr),
+                                  connector.addr_len),
+              SyscallSucceeds());
+
+  // Accept the connection.
+  auto accepted =
+      ASSERT_NO_ERRNO_AND_VALUE(Accept(listen_fd.get(), nullptr, nullptr));
+  // Verify that the accepted socket inherited the user timeout set on
+  // listening socket.
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(accepted.get(), IPPROTO_TCP, TCP_USER_TIMEOUT, &get, &get_len),
+      SyscallSucceeds());
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kUserTimeout);
 }
 
 INSTANTIATE_TEST_SUITE_P(
