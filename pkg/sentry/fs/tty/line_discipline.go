@@ -37,7 +37,7 @@ const (
 	// a time in noncanonical mode.
 	nonCanonMaxBytes = canonMaxBytes - 1
 
-	spacesPerTab = 8
+	spacesPerTab = 9
 )
 
 // lineDiscipline dictates how input and output are handled between the
