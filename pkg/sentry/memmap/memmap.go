@@ -18,7 +18,6 @@ package memmap
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
@@ -235,8 +234,11 @@ type InvalidateOpts struct {
 // coincidental; fs.File implements MappingIdentity, and some
 // fs.InodeOperations implement Mappable.)
 type MappingIdentity interface {
-	// MappingIdentity is reference-counted.
-	refs.RefCounter
+	// IncRef increments the MappingIdentity's reference count.
+	IncRef()
+
+	// DecRef decrements the MappingIdentity's reference count.
+	DecRef()
 
 	// MappedName returns the application-visible name shown in
 	// /proc/[pid]/maps.
