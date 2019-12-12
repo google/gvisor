@@ -24,6 +24,9 @@ type contextID int
 const (
 	// CtxMountNamespace is a Context.Value key for a MountNamespace.
 	CtxMountNamespace contextID = iota
+
+	// CtxRoot is a Context.Value key for a VFS root.
+	CtxRoot
 )
 
 // MountNamespaceFromContext returns the MountNamespace used by ctx. It does
@@ -34,4 +37,14 @@ func MountNamespaceFromContext(ctx context.Context) *MountNamespace {
 		return v.(*MountNamespace)
 	}
 	return nil
+}
+
+// RootFromContext returns the VFS root used by ctx. It takes a reference on
+// the returned VirtualDentry. If ctx does not have a specific VFS root,
+// RootFromContext returns a zero-value VirtualDentry.
+func RootFromContext(ctx context.Context) VirtualDentry {
+	if v := ctx.Value(CtxRoot); v != nil {
+		return v.(VirtualDentry)
+	}
+	return VirtualDentry{}
 }
