@@ -80,7 +80,8 @@ type CreateLinksAndRoutesArgs struct {
 	LoopbackLinks []LoopbackLink
 	FDBasedLinks  []FDBasedLink
 
-	DefaultGateway DefaultRoute
+	Defaultv4Gateway DefaultRoute
+	Defaultv6Gateway DefaultRoute
 }
 
 // Empty returns true if route hasn't been set.
@@ -122,10 +123,10 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		nicID++
 		nicids[link.Name] = nicID
 
-		ep := loopback.New()
+		linkEP := loopback.New()
 
 		log.Infof("Enabling loopback interface %q with id %d on addresses %+v", link.Name, nicID, link.Addresses)
-		if err := n.createNICWithAddrs(nicID, link.Name, ep, link.Addresses, true /* loopback */); err != nil {
+		if err := n.createNICWithAddrs(nicID, link.Name, linkEP, link.Addresses, true /* loopback */); err != nil {
 			return err
 		}
 
@@ -157,7 +158,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		}
 
 		mac := tcpip.LinkAddress(link.LinkAddress)
-		ep, err := fdbased.New(&fdbased.Options{
+		linkEP, err := fdbased.New(&fdbased.Options{
 			FDs:                FDs,
 			MTU:                uint32(link.MTU),
 			EthernetHeader:     true,
@@ -172,7 +173,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		}
 
 		log.Infof("Enabling interface %q with id %d on addresses %+v (%v) w/ %d channels", link.Name, nicID, link.Addresses, mac, link.NumChannels)
-		if err := n.createNICWithAddrs(nicID, link.Name, ep, link.Addresses, false /* loopback */); err != nil {
+		if err := n.createNICWithAddrs(nicID, link.Name, linkEP, link.Addresses, false /* loopback */); err != nil {
 			return err
 		}
 
@@ -186,12 +187,24 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		}
 	}
 
-	if !args.DefaultGateway.Route.Empty() {
-		nicID, ok := nicids[args.DefaultGateway.Name]
+	if !args.Defaultv4Gateway.Route.Empty() {
+		nicID, ok := nicids[args.Defaultv4Gateway.Name]
 		if !ok {
-			return fmt.Errorf("invalid interface name %q for default route", args.DefaultGateway.Name)
+			return fmt.Errorf("invalid interface name %q for default route", args.Defaultv4Gateway.Name)
 		}
-		route, err := args.DefaultGateway.Route.toTcpipRoute(nicID)
+		route, err := args.Defaultv4Gateway.Route.toTcpipRoute(nicID)
+		if err != nil {
+			return err
+		}
+		routes = append(routes, route)
+	}
+
+	if !args.Defaultv6Gateway.Route.Empty() {
+		nicID, ok := nicids[args.Defaultv6Gateway.Name]
+		if !ok {
+			return fmt.Errorf("invalid interface name %q for default route", args.Defaultv6Gateway.Name)
+		}
+		route, err := args.Defaultv6Gateway.Route.toTcpipRoute(nicID)
 		if err != nil {
 			return err
 		}
@@ -208,11 +221,11 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 func (n *Network) createNICWithAddrs(id tcpip.NICID, name string, ep stack.LinkEndpoint, addrs []net.IP, loopback bool) error {
 	if loopback {
 		if err := n.Stack.CreateNamedLoopbackNIC(id, name, sniffer.New(ep)); err != nil {
-			return fmt.Errorf("CreateNamedLoopbackNIC(%v, %v) failed: %v", id, name, err)
+			return fmt.Errorf("CreateNamedLoopbackNIC(%v, %v, %v) failed: %v", id, name, ep, err)
 		}
 	} else {
 		if err := n.Stack.CreateNamedNIC(id, name, sniffer.New(ep)); err != nil {
-			return fmt.Errorf("CreateNamedNIC(%v, %v) failed: %v", id, name, err)
+			return fmt.Errorf("CreateNamedNIC(%v, %v, %v) failed: %v", id, name, ep, err)
 		}
 	}
 

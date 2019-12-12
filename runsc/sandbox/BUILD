@@ -19,6 +19,7 @@ go_library(
         "//pkg/log",
         "//pkg/sentry/control",
         "//pkg/sentry/platform",
+        "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
         "//pkg/urpc",
         "//runsc/boot",
