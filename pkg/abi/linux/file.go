@@ -286,6 +286,29 @@ func (m FileMode) String() string {
 	return strings.Join(s, "|")
 }
 
+// DirentType maps file types to dirent types appropriate for (struct
+// dirent)::d_type.
+func (m FileMode) DirentType() uint8 {
+	switch m.FileType() {
+	case ModeSocket:
+		return DT_SOCK
+	case ModeSymlink:
+		return DT_LNK
+	case ModeRegular:
+		return DT_REG
+	case ModeBlockDevice:
+		return DT_BLK
+	case ModeDirectory:
+		return DT_DIR
+	case ModeCharacterDevice:
+		return DT_CHR
+	case ModeNamedPipe:
+		return DT_FIFO
+	default:
+		return DT_UNKNOWN
+	}
+}
+
 var modeExtraBits = abi.FlagSet{
 	{
 		Flag: ModeSetUID,

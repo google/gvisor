@@ -92,3 +92,10 @@ const (
 	SYNC_FILE_RANGE_WRITE       = 2
 	SYNC_FILE_RANGE_WAIT_AFTER  = 4
 )
+
+// Flag argument to renameat2(2), from include/uapi/linux/fs.h.
+const (
+	RENAME_NOREPLACE = (1 << 0) // Don't overwrite target.
+	RENAME_EXCHANGE  = (1 << 1) // Exchange src and dst.
+	RENAME_WHITEOUT  = (1 << 2) // Whiteout src.
+)
