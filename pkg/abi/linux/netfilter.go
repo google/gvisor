@@ -42,6 +42,13 @@ const (
 	NF_RETURN = -NF_REPEAT - 1
 )
 
+var VerdictStrings = map[int32]string{
+	-NF_DROP - 1:   "DROP",
+	-NF_ACCEPT - 1: "ACCEPT",
+	-NF_QUEUE - 1:  "QUEUE",
+	NF_RETURN:      "RETURN",
+}
+
 // Socket options. These correspond to values in
 // include/uapi/linux/netfilter_ipv4/ip_tables.h.
 const (
@@ -179,7 +186,7 @@ const SizeOfXTCounters = 16
 // the user data.
 type XTEntryMatch struct {
 	MatchSize uint16
-	Name      [XT_EXTENSION_MAXNAMELEN]byte
+	Name      ExtensionName
 	Revision  uint8
 	// Data is omitted here because it would cause XTEntryMatch to be an
 	// extra byte larger (see http://www.catb.org/esr/structure-packing/).
@@ -199,7 +206,7 @@ const SizeOfXTEntryMatch = 32
 // the user data.
 type XTEntryTarget struct {
 	TargetSize uint16
-	Name       [XT_EXTENSION_MAXNAMELEN]byte
+	Name       ExtensionName
 	Revision   uint8
 	// Data is omitted here because it would cause XTEntryTarget to be an
 	// extra byte larger (see http://www.catb.org/esr/structure-packing/).
@@ -226,9 +233,9 @@ const SizeOfXTStandardTarget = 40
 // ErrorName. It corresponds to struct xt_error_target in
 // include/uapi/linux/netfilter/x_tables.h.
 type XTErrorTarget struct {
-	Target    XTEntryTarget
-	ErrorName [XT_FUNCTION_MAXNAMELEN]byte
-	_         [2]byte
+	Target XTEntryTarget
+	Name   ErrorName
+	_      [2]byte
 }
 
 // SizeOfXTErrorTarget is the size of an XTErrorTarget.
@@ -237,7 +244,7 @@ const SizeOfXTErrorTarget = 64
 // IPTGetinfo is the argument for the IPT_SO_GET_INFO sockopt. It corresponds
 // to struct ipt_getinfo in include/uapi/linux/netfilter_ipv4/ip_tables.h.
 type IPTGetinfo struct {
-	Name       [XT_TABLE_MAXNAMELEN]byte
+	Name       TableName
 	ValidHooks uint32
 	HookEntry  [NF_INET_NUMHOOKS]uint32
 	Underflow  [NF_INET_NUMHOOKS]uint32
@@ -248,16 +255,11 @@ type IPTGetinfo struct {
 // SizeOfIPTGetinfo is the size of an IPTGetinfo.
 const SizeOfIPTGetinfo = 84
 
-// TableName returns the table name.
-func (info *IPTGetinfo) TableName() string {
-	return tableName(info.Name[:])
-}
-
 // IPTGetEntries is the argument for the IPT_SO_GET_ENTRIES sockopt. It
 // corresponds to struct ipt_get_entries in
 // include/uapi/linux/netfilter_ipv4/ip_tables.h.
 type IPTGetEntries struct {
-	Name [XT_TABLE_MAXNAMELEN]byte
+	Name TableName
 	Size uint32
 	_    [4]byte
 	// Entrytable is omitted here because it would cause IPTGetEntries to
@@ -266,34 +268,22 @@ type IPTGetEntries struct {
 	// Entrytable [0]IPTEntry
 }
 
-// TableName returns the entries' table name.
-func (entries *IPTGetEntries) TableName() string {
-	return tableName(entries.Name[:])
-}
-
 // SizeOfIPTGetEntries is the size of an IPTGetEntries.
 const SizeOfIPTGetEntries = 40
 
-// KernelIPTGetEntries is identical to IPTEntry, but includes the Elems field.
-// This struct marshaled via the binary package to write an KernelIPTGetEntries
-// to userspace.
+// KernelIPTGetEntries is identical to IPTGetEntries, but includes the
+// Entrytable field. This struct marshaled via the binary package to write an
+// KernelIPTGetEntries to userspace.
 type KernelIPTGetEntries struct {
-	Name       [XT_TABLE_MAXNAMELEN]byte
-	Size       uint32
-	_          [4]byte
+	IPTGetEntries
 	Entrytable []KernelIPTEntry
-}
-
-// TableName returns the entries' table name.
-func (entries *KernelIPTGetEntries) TableName() string {
-	return tableName(entries.Name[:])
 }
 
 // IPTReplace is the argument for the IPT_SO_SET_REPLACE sockopt. It
 // corresponds to struct ipt_replace in
 // include/uapi/linux/netfilter_ipv4/ip_tables.h.
 type IPTReplace struct {
-	Name        [XT_TABLE_MAXNAMELEN]byte
+	Name        TableName
 	ValidHooks  uint32
 	NumEntries  uint32
 	Size        uint32
@@ -306,14 +296,40 @@ type IPTReplace struct {
 	// Entries [0]IPTEntry
 }
 
+type KernelIPTReplace struct {
+	IPTReplace
+	Entries [0]IPTEntry
+}
+
 // SizeOfIPTReplace is the size of an IPTReplace.
 const SizeOfIPTReplace = 96
 
-func tableName(name []byte) string {
-	for i, c := range name {
+type ExtensionName [XT_EXTENSION_MAXNAMELEN]byte
+
+// String implements fmt.Stringer.
+func (en ExtensionName) String() string {
+	return name(en[:])
+}
+
+type TableName [XT_TABLE_MAXNAMELEN]byte
+
+// String implements fmt.Stringer.
+func (tn TableName) String() string {
+	return name(tn[:])
+}
+
+type ErrorName [XT_FUNCTION_MAXNAMELEN]byte
+
+// String implements fmt.Stringer.
+func (fn ErrorName) String() string {
+	return name(fn[:])
+}
+
+func name(cstring []byte) string {
+	for i, c := range cstring {
 		if c == 0 {
-			return string(name[:i])
+			return string(cstring[:i])
 		}
 	}
-	return string(name)
+	return string(cstring)
 }

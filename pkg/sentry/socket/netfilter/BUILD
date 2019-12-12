@@ -14,6 +14,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",
+        "//pkg/log",
         "//pkg/sentry/kernel",
         "//pkg/sentry/usermem",
         "//pkg/syserr",

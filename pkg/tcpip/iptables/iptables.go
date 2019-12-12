@@ -17,65 +17,107 @@
 package iptables
 
 const (
-	tablenameNat    = "nat"
-	tablenameMangle = "mangle"
+	TablenameNat    = "nat"
+	TablenameMangle = "mangle"
+	TablenameFilter = "filter"
 )
 
+// TODO: Make this an iota? Faster! Do it.
 // Chain names as defined by net/ipv4/netfilter/ip_tables.c.
 const (
-	chainNamePrerouting  = "PREROUTING"
-	chainNameInput       = "INPUT"
-	chainNameForward     = "FORWARD"
-	chainNameOutput      = "OUTPUT"
-	chainNamePostrouting = "POSTROUTING"
+	ChainNamePrerouting  = "PREROUTING"
+	ChainNameInput       = "INPUT"
+	ChainNameForward     = "FORWARD"
+	ChainNameOutput      = "OUTPUT"
+	ChainNamePostrouting = "POSTROUTING"
 )
+
+const HookUnset = -1
 
 // DefaultTables returns a default set of tables. Each chain is set to accept
 // all packets.
 func DefaultTables() IPTables {
 	return IPTables{
 		Tables: map[string]Table{
-			tablenameNat: Table{
-				BuiltinChains: map[Hook]Chain{
-					Prerouting:  unconditionalAcceptChain(chainNamePrerouting),
-					Input:       unconditionalAcceptChain(chainNameInput),
-					Output:      unconditionalAcceptChain(chainNameOutput),
-					Postrouting: unconditionalAcceptChain(chainNamePostrouting),
+			TablenameNat: Table{
+				Rules: []Rule{
+					Rule{Target: UnconditionalAcceptTarget{}},
+					Rule{Target: UnconditionalAcceptTarget{}},
+					Rule{Target: UnconditionalAcceptTarget{}},
+					Rule{Target: UnconditionalAcceptTarget{}},
+					Rule{Target: PanicTarget{}},
 				},
-				DefaultTargets: map[Hook]Target{
-					Prerouting:  UnconditionalAcceptTarget{},
-					Input:       UnconditionalAcceptTarget{},
-					Output:      UnconditionalAcceptTarget{},
-					Postrouting: UnconditionalAcceptTarget{},
+				BuiltinChains: map[Hook]int{
+					Prerouting:  0,
+					Input:       1,
+					Output:      2,
+					Postrouting: 3,
 				},
-				UserChains: map[string]Chain{},
+				Underflows: map[Hook]int{
+					Prerouting:  0,
+					Input:       1,
+					Output:      2,
+					Postrouting: 3,
+				},
+				UserChains: map[string]int{},
 			},
-			tablenameMangle: Table{
-				BuiltinChains: map[Hook]Chain{
-					Prerouting: unconditionalAcceptChain(chainNamePrerouting),
-					Output:     unconditionalAcceptChain(chainNameOutput),
+			TablenameMangle: Table{
+				Rules: []Rule{
+					Rule{Target: UnconditionalAcceptTarget{}},
+					Rule{Target: UnconditionalAcceptTarget{}},
+					Rule{Target: PanicTarget{}},
 				},
-				DefaultTargets: map[Hook]Target{
-					Prerouting: UnconditionalAcceptTarget{},
-					Output:     UnconditionalAcceptTarget{},
+				BuiltinChains: map[Hook]int{
+					Prerouting: 0,
+					Output:     1,
 				},
-				UserChains: map[string]Chain{},
+				Underflows: map[Hook]int{
+					Prerouting: 0,
+					Output:     1,
+				},
+				UserChains: map[string]int{},
+			},
+			TablenameFilter: Table{
+				Rules: []Rule{
+					Rule{Target: UnconditionalAcceptTarget{}},
+					Rule{Target: UnconditionalAcceptTarget{}},
+					Rule{Target: UnconditionalAcceptTarget{}},
+					Rule{Target: PanicTarget{}},
+				},
+				BuiltinChains: map[Hook]int{
+					Input:   0,
+					Forward: 1,
+					Output:  2,
+				},
+				Underflows: map[Hook]int{
+					Input:   0,
+					Forward: 1,
+					Output:  2,
+				},
+				UserChains: map[string]int{},
 			},
 		},
 		Priorities: map[Hook][]string{
-			Prerouting: []string{tablenameMangle, tablenameNat},
-			Output:     []string{tablenameMangle, tablenameNat},
+			Input:      []string{TablenameNat, TablenameFilter},
+			Prerouting: []string{TablenameMangle, TablenameNat},
+			Output:     []string{TablenameMangle, TablenameNat, TablenameFilter},
 		},
 	}
 }
 
-func unconditionalAcceptChain(name string) Chain {
-	return Chain{
-		Name: name,
-		Rules: []Rule{
-			Rule{
-				Target: UnconditionalAcceptTarget{},
-			},
+func EmptyFilterTable() Table {
+	return Table{
+		Rules: []Rule{},
+		BuiltinChains: map[Hook]int{
+			Input:   HookUnset,
+			Forward: HookUnset,
+			Output:  HookUnset,
 		},
+		Underflows: map[Hook]int{
+			Input:   HookUnset,
+			Forward: HookUnset,
+			Output:  HookUnset,
+		},
+		UserChains: map[string]int{},
 	}
 }
