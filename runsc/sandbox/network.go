@@ -28,6 +28,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
@@ -183,36 +184,39 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareG
 			continue
 		}
 
-		// Keep only IPv4 addresses.
-		var ip4addrs []*net.IPNet
+		var ipAddrs []*net.IPNet
 		for _, ifaddr := range allAddrs {
 			ipNet, ok := ifaddr.(*net.IPNet)
 			if !ok {
 				return fmt.Errorf("address is not IPNet: %+v", ifaddr)
 			}
-			if ipNet.IP.To4() == nil {
-				log.Warningf("IPv6 is not supported, skipping: %v", ipNet)
-				continue
-			}
-			ip4addrs = append(ip4addrs, ipNet)
+			ipAddrs = append(ipAddrs, ipNet)
 		}
-		if len(ip4addrs) == 0 {
-			log.Warningf("No IPv4 address found for interface %q, skipping", iface.Name)
+		if len(ipAddrs) == 0 {
+			log.Warningf("No usable IP addresses found for interface %q, skipping", iface.Name)
 			continue
 		}
 
 		// Scrape the routes before removing the address, since that
 		// will remove the routes as well.
-		routes, def, err := routesForIface(iface)
+		routes, defv4, defv6, err := routesForIface(iface)
 		if err != nil {
 			return fmt.Errorf("getting routes for interface %q: %v", iface.Name, err)
 		}
-		if def != nil {
-			if !args.DefaultGateway.Route.Empty() {
-				return fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, def, args.DefaultGateway)
+		if defv4 != nil {
+			if !args.Defaultv4Gateway.Route.Empty() {
+				return fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv4, args.Defaultv4Gateway)
 			}
-			args.DefaultGateway.Route = *def
-			args.DefaultGateway.Name = iface.Name
+			args.Defaultv4Gateway.Route = *defv4
+			args.Defaultv4Gateway.Name = iface.Name
+		}
+
+		if defv6 != nil {
+			if !args.Defaultv6Gateway.Route.Empty() {
+				return fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv6, args.Defaultv6Gateway)
+			}
+			args.Defaultv6Gateway.Route = *defv6
+			args.Defaultv6Gateway.Name = iface.Name
 		}
 
 		link := boot.FDBasedLink{
@@ -247,6 +251,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareG
 			}
 			args.FilePayload.Files = append(args.FilePayload.Files, socketEntry.deviceFile)
 		}
+
 		if link.GSOMaxSize == 0 && softwareGSO {
 			// Hardware GSO is disabled. Let's enable software GSO.
 			link.GSOMaxSize = stack.SoftwareGSOMaxSize
@@ -255,7 +260,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareG
 
 		// Collect the addresses for the interface, enable forwarding,
 		// and remove them from the host.
-		for _, addr := range ip4addrs {
+		for _, addr := range ipAddrs {
 			link.Addresses = append(link.Addresses, addr.IP)
 
 			// Steal IP address from NIC.
@@ -351,46 +356,56 @@ func loopbackLinks(iface net.Interface, addrs []net.Addr) ([]boot.LoopbackLink, 
 }
 
 // routesForIface iterates over all routes for the given interface and converts
-// them to boot.Routes.
-func routesForIface(iface net.Interface) ([]boot.Route, *boot.Route, error) {
+// them to boot.Routes. It also returns the a default v4/v6 route if found.
+func routesForIface(iface net.Interface) ([]boot.Route, *boot.Route, *boot.Route, error) {
 	link, err := netlink.LinkByIndex(iface.Index)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	rs, err := netlink.RouteList(link, netlink.FAMILY_ALL)
 	if err != nil {
-		return nil, nil, fmt.Errorf("getting routes from %q: %v", iface.Name, err)
+		return nil, nil, nil, fmt.Errorf("getting routes from %q: %v", iface.Name, err)
 	}
 
-	var def *boot.Route
+	var defv4, defv6 *boot.Route
 	var routes []boot.Route
 	for _, r := range rs {
 		// Is it a default route?
 		if r.Dst == nil {
 			if r.Gw == nil {
-				return nil, nil, fmt.Errorf("default route with no gateway %q: %+v", iface.Name, r)
-			}
-			if r.Gw.To4() == nil {
-				log.Warningf("IPv6 is not supported, skipping default route: %v", r)
-				continue
-			}
-			if def != nil {
-				return nil, nil, fmt.Errorf("more than one default route found %q, def: %+v, route: %+v", iface.Name, def, r)
+				return nil, nil, nil, fmt.Errorf("default route with no gateway %q: %+v", iface.Name, r)
 			}
 			// Create a catch all route to the gateway.
-			def = &boot.Route{
-				Destination: net.IPNet{
-					IP:   net.IPv4zero,
-					Mask: net.IPMask(net.IPv4zero),
-				},
-				Gateway: r.Gw,
+			switch len(r.Gw) {
+			case header.IPv4AddressSize:
+				if defv4 != nil {
+					return nil, nil, nil, fmt.Errorf("more than one default route found %q, def: %+v, route: %+v", iface.Name, defv4, r)
+				}
+				defv4 = &boot.Route{
+					Destination: net.IPNet{
+						IP:   net.IPv4zero,
+						Mask: net.IPMask(net.IPv4zero),
+					},
+					Gateway: r.Gw,
+				}
+			case header.IPv6AddressSize:
+				if defv6 != nil {
+					return nil, nil, nil, fmt.Errorf("more than one default route found %q, def: %+v, route: %+v", iface.Name, defv6, r)
+				}
+
+				defv6 = &boot.Route{
+					Destination: net.IPNet{
+						IP:   net.IPv6zero,
+						Mask: net.IPMask(net.IPv6zero),
+					},
+					Gateway: r.Gw,
+				}
+			default:
+				return nil, nil, nil, fmt.Errorf("unexpected address size for gateway: %+v for route: %+v", r.Gw, r)
 			}
 			continue
 		}
-		if r.Dst.IP.To4() == nil {
-			log.Warningf("IPv6 is not supported, skipping route: %v", r)
-			continue
-		}
+
 		dst := *r.Dst
 		dst.IP = dst.IP.Mask(dst.Mask)
 		routes = append(routes, boot.Route{
@@ -398,7 +413,7 @@ func routesForIface(iface net.Interface) ([]boot.Route, *boot.Route, error) {
 			Gateway:     r.Gw,
 		})
 	}
-	return routes, def, nil
+	return routes, defv4, defv6, nil
 }
 
 // removeAddress removes IP address from network device. It's equivalent to:
