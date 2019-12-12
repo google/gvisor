@@ -118,6 +118,9 @@ func (s *SocketOperations) Endpoint() transport.Endpoint {
 func extractPath(sockaddr []byte) (string, *syserr.Error) {
 	addr, _, err := netstack.AddressAndFamily(linux.AF_UNIX, sockaddr, true /* strict */)
 	if err != nil {
+		if err == syserr.ErrAddressFamilyNotSupported {
+			err = syserr.ErrInvalidArgument
+		}
 		return "", err
 	}
 

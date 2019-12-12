@@ -65,6 +65,21 @@ TEST_P(UnixSocketPairTest, BindToBadName) {
       SyscallFailsWithErrno(ENOENT));
 }
 
+TEST_P(UnixSocketPairTest, BindToBadFamily) {
+  auto pair =
+      ASSERT_NO_ERRNO_AND_VALUE(UnixDomainSocketPair(SOCK_SEQPACKET).Create());
+
+  constexpr char kBadName[] = "/some/path/that/does/not/exist";
+  sockaddr_un sockaddr;
+  sockaddr.sun_family = AF_INET;
+  memcpy(sockaddr.sun_path, kBadName, sizeof(kBadName));
+
+  EXPECT_THAT(
+      bind(pair->first_fd(), reinterpret_cast<struct sockaddr*>(&sockaddr),
+           sizeof(sockaddr)),
+      SyscallFailsWithErrno(EINVAL));
+}
+
 TEST_P(UnixSocketPairTest, RecvmmsgTimeoutAfterRecv) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   char sent_data[10];
