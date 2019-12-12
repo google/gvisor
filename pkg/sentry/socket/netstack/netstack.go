@@ -326,7 +326,7 @@ func AddressAndFamily(sfamily int, addr []byte, strict bool) (tcpip.FullAddress,
 	}
 
 	family := usermem.ByteOrder.Uint16(addr)
-	if family != uint16(sfamily) && (!strict && family != linux.AF_UNSPEC) {
+	if family != uint16(sfamily) && (strict || family != linux.AF_UNSPEC) {
 		return tcpip.FullAddress{}, family, syserr.ErrAddressFamilyNotSupported
 	}
 
