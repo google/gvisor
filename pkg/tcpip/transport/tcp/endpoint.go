@@ -341,6 +341,7 @@ type endpoint struct {
 	// TCP should never broadcast but Linux nevertheless supports enabling/
 	// disabling SO_BROADCAST, albeit as a NOOP.
 	broadcast bool
+
 	// Values used to reserve a port or register a transport endpoint
 	// (which ever happens first).
 	boundBindToDevice tcpip.NICID
@@ -473,6 +474,12 @@ type endpoint struct {
 	// keepalives every keepalive.interval. If we send keepalive.count
 	// without hearing a response, the connection is closed.
 	keepalive keepalive
+
+	// userTimeout if non-zero specifies a user specified timeout for
+	// a connection w/ pending data to send. A connection that has pending
+	// unacked data will be forcibily aborted if the timeout is reached
+	// without any data being acked.
+	userTimeout time.Duration
 
 	// pendingAccepted is a synchronization primitive used to track number
 	// of connections that are queued up to be delivered to the accepted
@@ -1333,6 +1340,12 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.notifyProtocolGoroutine(notifyKeepaliveChanged)
 		return nil
 
+	case tcpip.TCPUserTimeoutOption:
+		e.mu.Lock()
+		e.userTimeout = time.Duration(v)
+		e.mu.Unlock()
+		return nil
+
 	case tcpip.BroadcastOption:
 		e.mu.Lock()
 		e.broadcast = v != 0
@@ -1589,6 +1602,12 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		e.keepalive.Lock()
 		*o = tcpip.KeepaliveCountOption(e.keepalive.count)
 		e.keepalive.Unlock()
+		return nil
+
+	case *tcpip.TCPUserTimeoutOption:
+		e.mu.Lock()
+		*o = tcpip.TCPUserTimeoutOption(e.userTimeout)
+		e.mu.Unlock()
 		return nil
 
 	case *tcpip.OutOfBandInlineOption:
