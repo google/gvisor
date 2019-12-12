@@ -140,6 +140,7 @@ func (x *endpoint) save(m state.Map) {
 	m.Save("packetTooBigCount", &x.packetTooBigCount)
 	m.Save("sndMTU", &x.sndMTU)
 	m.Save("keepalive", &x.keepalive)
+	m.Save("userTimeout", &x.userTimeout)
 	m.Save("rcv", &x.rcv)
 	m.Save("snd", &x.snd)
 	m.Save("connectingAddress", &x.connectingAddress)
@@ -194,6 +195,7 @@ func (x *endpoint) load(m state.Map) {
 	m.Load("packetTooBigCount", &x.packetTooBigCount)
 	m.Load("sndMTU", &x.sndMTU)
 	m.Load("keepalive", &x.keepalive)
+	m.Load("userTimeout", &x.userTimeout)
 	m.LoadWait("rcv", &x.rcv)
 	m.LoadWait("snd", &x.snd)
 	m.Load("connectingAddress", &x.connectingAddress)
@@ -230,6 +232,8 @@ func (x *keepalive) load(m state.Map) {
 func (x *receiver) beforeSave() {}
 func (x *receiver) save(m state.Map) {
 	x.beforeSave()
+	var lastRcvdAckTime unixTime = x.saveLastRcvdAckTime()
+	m.SaveValue("lastRcvdAckTime", lastRcvdAckTime)
 	m.Save("ep", &x.ep)
 	m.Save("rcvNxt", &x.rcvNxt)
 	m.Save("rcvAcc", &x.rcvAcc)
@@ -252,6 +256,7 @@ func (x *receiver) load(m state.Map) {
 	m.Load("pendingRcvdSegments", &x.pendingRcvdSegments)
 	m.Load("pendingBufUsed", &x.pendingBufUsed)
 	m.Load("pendingBufSize", &x.pendingBufSize)
+	m.LoadValue("lastRcvdAckTime", new(unixTime), func(y interface{}) { x.loadLastRcvdAckTime(y.(unixTime)) })
 }
 
 func (x *renoState) beforeSave() {}
@@ -343,6 +348,8 @@ func (x *sender) save(m state.Map) {
 	m.SaveValue("lastSendTime", lastSendTime)
 	var rttMeasureTime unixTime = x.saveRttMeasureTime()
 	m.SaveValue("rttMeasureTime", rttMeasureTime)
+	var firstRetransmittedSegXmitTime unixTime = x.saveFirstRetransmittedSegXmitTime()
+	m.SaveValue("firstRetransmittedSegXmitTime", firstRetransmittedSegXmitTime)
 	m.Save("ep", &x.ep)
 	m.Save("dupAckCount", &x.dupAckCount)
 	m.Save("fr", &x.fr)
@@ -394,6 +401,7 @@ func (x *sender) load(m state.Map) {
 	m.Load("cc", &x.cc)
 	m.LoadValue("lastSendTime", new(unixTime), func(y interface{}) { x.loadLastSendTime(y.(unixTime)) })
 	m.LoadValue("rttMeasureTime", new(unixTime), func(y interface{}) { x.loadRttMeasureTime(y.(unixTime)) })
+	m.LoadValue("firstRetransmittedSegXmitTime", new(unixTime), func(y interface{}) { x.loadFirstRetransmittedSegXmitTime(y.(unixTime)) })
 	m.AfterLoad(x.afterLoad)
 }
 

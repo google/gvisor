@@ -576,6 +576,11 @@ type KeepaliveIntervalOption time.Duration
 // closed.
 type KeepaliveCountOption int
 
+// TCPUserTimeoutOption is used by SetSockOpt/GetSockOpt to specify a user
+// specified timeout for a given TCP connection.
+// See: RFC5482 for details.
+type TCPUserTimeoutOption time.Duration
+
 // CongestionControlOption is used by SetSockOpt/GetSockOpt to set/get
 // the current congestion control algorithm.
 type CongestionControlOption string

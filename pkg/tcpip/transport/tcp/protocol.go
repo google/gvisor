@@ -162,13 +162,26 @@ func (*protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.Transpo
 func replyWithReset(s *segment) {
 	// Get the seqnum from the packet if the ack flag is set.
 	seq := seqnum.Value(0)
+	ack := seqnum.Value(0)
+	flags := byte(header.TCPFlagRst)
+	// As per RFC 793 page 35 (Reset Generation)
+	//   1.  If the connection does not exist (CLOSED) then a reset is sent
+	//   in response to any incoming segment except another reset.  In
+	//   particular, SYNs addressed to a non-existent connection are rejected
+	//   by this means.
+
+	//   If the incoming segment has an ACK field, the reset takes its
+	//   sequence number from the ACK field of the segment, otherwise the
+	//   reset has sequence number zero and the ACK field is set to the sum
+	//   of the sequence number and segment length of the incoming segment.
+	//   The connection remains in the CLOSED state.
 	if s.flagIsSet(header.TCPFlagAck) {
 		seq = s.ackNumber
+	} else {
+		flags |= header.TCPFlagAck
+		ack = s.sequenceNumber.Add(s.logicalLen())
 	}
-
-	ack := s.sequenceNumber.Add(s.logicalLen())
-
-	sendTCP(&s.route, s.id, buffer.VectorisedView{}, s.route.DefaultTTL(), stack.DefaultTOS, header.TCPFlagRst|header.TCPFlagAck, seq, ack, 0 /* rcvWnd */, nil /* options */, nil /* gso */)
+	sendTCP(&s.route, s.id, buffer.VectorisedView{}, s.route.DefaultTTL(), stack.DefaultTOS, flags, seq, ack, 0 /* rcvWnd */, nil /* options */, nil /* gso */)
 }
 
 // SetOption implements TransportProtocol.SetOption.
