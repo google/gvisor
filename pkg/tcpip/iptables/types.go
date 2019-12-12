@@ -61,9 +61,12 @@ const (
 type Verdict int
 
 const (
+	// Invalid indicates an unkonwn or erroneous verdict.
+	Invalid Verdict = iota
+
 	// Accept indicates the packet should continue traversing netstack as
 	// normal.
-	Accept Verdict = iota
+	Accept
 
 	// Drop inicates the packet should be dropped, stopping traversing
 	// netstack.
@@ -109,24 +112,18 @@ type IPTables struct {
 //   * nat
 //   * mangle
 type Table struct {
-	// BuiltinChains holds the un-deletable chains built into netstack. If
-	// a hook isn't present in the map, this table doesn't utilize that
-	// hook.
-	BuiltinChains map[Hook]Chain
+	// A table is just a list of rules with some entrypoints.
+	Rules []Rule
 
-	// DefaultTargets holds a target for each hook that will be executed if
-	// chain traversal doesn't yield a verdict.
-	DefaultTargets map[Hook]Target
+	BuiltinChains map[Hook]int
+
+	Underflows map[Hook]int
+
+	// DefaultTargets map[Hook]int
 
 	// UserChains holds user-defined chains for the keyed by name. Users
 	// can give their chains arbitrary names.
-	UserChains map[string]Chain
-
-	// Chains maps names to chains for both builtin and user-defined chains.
-	// Its entries point to Chains already either in BuiltinChains or
-	// UserChains, and its purpose is to make looking up tables by name
-	// fast.
-	Chains map[string]*Chain
+	UserChains map[string]int
 
 	// Metadata holds information about the Table that is useful to users
 	// of IPTables, but not to the netstack IPTables code itself.
@@ -152,20 +149,20 @@ func (table *Table) SetMetadata(metadata interface{}) {
 	table.metadata = metadata
 }
 
-// A Chain defines a list of rules for packet processing. When a packet
-// traverses a chain, it is checked against each rule until either a rule
-// returns a verdict or the chain ends.
-//
-// By convention, builtin chains end with a rule that matches everything and
-// returns either Accept or Drop. User-defined chains end with Return. These
-// aren't strictly necessary here, but the iptables tool writes tables this way.
-type Chain struct {
-	// Name is the chain name.
-	Name string
+//// A Chain defines a list of rules for packet processing. When a packet
+//// traverses a chain, it is checked against each rule until either a rule
+//// returns a verdict or the chain ends.
+////
+//// By convention, builtin chains end with a rule that matches everything and
+//// returns either Accept or Drop. User-defined chains end with Return. These
+//// aren't strictly necessary here, but the iptables tool writes tables this way.
+//type Chain struct {
+//	// Name is the chain name.
+//	Name string
 
-	// Rules is the list of rules to traverse.
-	Rules []Rule
-}
+//	// Rules is the list of rules to traverse.
+//	Rules []Rule
+//}
 
 // A Rule is a packet processing rule. It consists of two pieces. First it
 // contains zero or more matchers, each of which is a specification of which

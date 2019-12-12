@@ -33,3 +33,11 @@ type UnconditionalDropTarget struct{}
 func (UnconditionalDropTarget) Action(packet buffer.VectorisedView) (Verdict, string) {
 	return Drop, ""
 }
+
+// PanicTarget just panics.
+type PanicTarget struct{}
+
+// Actions implements Target.Action.
+func (PanicTarget) Action(packet buffer.VectorisedView) (Verdict, string) {
+	panic("PanicTarget triggered.")
+}
