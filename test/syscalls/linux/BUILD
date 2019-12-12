@@ -3722,3 +3722,24 @@ cc_binary(
         "@com_google_googletest//:gtest",
     ],
 )
+
+cc_binary(
+    name = "xattr_test",
+    testonly = 1,
+    srcs = [
+        "file_base.h",
+        "xattr.cc",
+    ],
+    linkstatic = 1,
+    deps = [
+        "//test/util:capability_util",
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        "//test/util:posix_error",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest",
+    ],
+)
