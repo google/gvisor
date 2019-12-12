@@ -1,0 +1,16 @@
+load("@io_bazel_rules_docker//container:container.bzl", "container_image")
+load("@io_bazel_rules_docker//go:image.bzl", "go_image")
+
+package(licenses = ["notice"])
+
+container_image(
+    name = "iptables-base",
+    base = "@iptables-test//image",
+)
+
+go_image(
+    name = "runner",
+    srcs = ["main.go"],
+    base = ":iptables-base",
+    deps = ["//test/iptables"],
+)
