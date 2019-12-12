@@ -171,6 +171,11 @@ func (*InodeNotSymlink) Readlink(context.Context) (string, error) {
 	return "", syserror.EINVAL
 }
 
+// Getlink implements Inode.Getlink.
+func (*InodeNotSymlink) Getlink(context.Context) (*vfs.VirtualDentry, error) {
+	return nil, syserror.EINVAL
+}
+
 // InodeAttrs partially implements the Inode interface, specifically the
 // inodeMetadata sub interface. InodeAttrs provides functionality related to
 // inode attributes.

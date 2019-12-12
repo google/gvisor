@@ -77,16 +77,25 @@ afterSymlink:
 
 	// Resolve any symlink at current path component.
 	if rp.ShouldFollowSymlink() && d.isSymlink() {
-		// TODO: VFS2 needs something extra for /proc/[pid]/fd/ "magic symlinks".
 		target, err := next.inode.Readlink(ctx)
-		if err != nil {
+		switch err {
+		case nil:
+			if err := rp.HandleSymlink(target); err != nil {
+				return nil, err
+			}
+			goto afterSymlink
+		case ErrResolveViaGetlink:
+			targetVD, err := next.inode.Getlink(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if err := rp.HandleJump(targetVD); err != nil {
+				return nil, err
+			}
+			goto afterSymlink
+		default:
 			return nil, err
 		}
-		if err := rp.HandleSymlink(target); err != nil {
-			return nil, err
-		}
-		goto afterSymlink
-
 	}
 	rp.Advance()
 	return nextVFSD, nil
@@ -455,7 +464,12 @@ func (fs *Filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (st
 	if !d.Impl().(*Dentry).isSymlink() {
 		return "", syserror.EINVAL
 	}
-	return inode.Readlink(ctx)
+	target, err := inode.Readlink(ctx)
+	if err == ErrResolveViaGetlink {
+		// We won't be traversing to the target, so no need to handle this.
+		err = nil
+	}
+	return target, err
 }
 
 // RenameAt implements vfs.FilesystemImpl.RenameAt.

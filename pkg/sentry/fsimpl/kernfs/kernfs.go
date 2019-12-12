@@ -52,6 +52,7 @@
 package kernfs
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -398,8 +399,24 @@ type inodeDynamicLookup interface {
 	Valid(ctx context.Context) bool
 }
 
+// ErrResolveViaGetlink returned by a Readlink implementation indicates the
+// filesystem should call Getlink on the inode to resolve the link target
+// instead of performing a path traversal.
+var ErrResolveViaGetlink = errors.New("link should be resolved via Inode.Getlink")
+
 type inodeSymlink interface {
 	// Readlink resolves the target of a symbolic link. If an inode is not a
-	// symlink, the implementation should return EINVAL.
+	// symlink, the implementation should return EINVAL. For the special case
+	// where the link target can't be resolved by walking to the returned path,
+	// Readlink should return both the target path (used to implement
+	// readlink(2) for both kinds of symlinks) and ErrResolveViaGetlink.
 	Readlink(ctx context.Context) (string, error)
+
+	// Getlink resolves special symlinks whose targets cannot be reached walking
+	// to the returned path. The cannonical example of this are the procfs fd
+	// symlinks. Getlink is invoked when Readlink returns ErrResolveViaGetlink
+	// on such an inode.
+	//
+	// For regular symlinks or non-symlink inodes, Getlink should return EINVAL.
+	Getlink(ctx context.Context) (target *vfs.VirtualDentry, err error)
 }
