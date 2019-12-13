@@ -23,6 +23,7 @@ py_test(
         requirement("pluggy", False),
         requirement("py", False),
         requirement("pytest", True),
+        requirement("setuptools", False),
         requirement("six", False),
     ],
 )

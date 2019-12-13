@@ -20,16 +20,15 @@ build --stamp --workspace_status_command tools/workspace_status.sh
 
 # Enable remote execution so actions are performed on the remote systems.
 build:remote --remote_executor=grpcs://remotebuildexecution.googleapis.com
+build:remote --project_id=gvisor-rbe
+build:remote --remote_instance_name=projects/gvisor-rbe/instances/default_instance
 
 # Add a custom platform and toolchain that builds in a privileged docker
 # container, which is required by our syscall tests.
-build:remote --host_platform=//test:rbe_ubuntu1604
-build:remote --extra_toolchains=//test:cc-toolchain-clang-x86_64-default
-build:remote --extra_execution_platforms=//test:rbe_ubuntu1604
-build:remote --platforms=//test:rbe_ubuntu1604
-
-# Use default image for crosstool toolchain.
-build:remote --crosstool_top=@rbe_default//cc:toolchain
+build:remote --host_platform=@rbe_ubuntu1804//config:platform
+build:remote --extra_execution_platforms=@rbe_ubuntu1804//config:platform
+build:remote --platforms=@rbe_ubuntu1804//config:platform
+build:remote --crosstool_top=@rbe_ubuntu1804//cc:toolchain
 
 # Default parallelism and timeout for remote jobs.
 build:remote --jobs=50

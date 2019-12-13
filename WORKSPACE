@@ -83,18 +83,37 @@ pip_install()
 # See releases at https://releases.bazel.build/bazel-toolchains.html
 http_archive(
     name = "bazel_toolchains",
-    sha256 = "a019fbd579ce5aed0239de865b2d8281dbb809efd537bf42e0d366783e8dec65",
-    strip_prefix = "bazel-toolchains-0.29.2",
+    sha256 = "04b10647f76983c9fb4cc8d6eb763ec90107882818a9c6bef70bdadb0fdf8df9",
+    strip_prefix = "bazel-toolchains-1.2.4",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/bazel-toolchains/archive/0.29.2.tar.gz",
-        "https://github.com/bazelbuild/bazel-toolchains/archive/0.29.2.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-toolchains/archive/1.2.4.tar.gz",
+        "https://github.com/bazelbuild/bazel-toolchains/archive/1.2.4.tar.gz",
     ],
 )
 
-# Creates a default toolchain config for RBE.
 load("@bazel_toolchains//rules:rbe_repo.bzl", "rbe_autoconfig")
+load("@bazel_toolchains//rules:environments.bzl", "clang_env")
+load("@bazel_toolchains//rules/exec_properties:exec_properties.bzl", "create_rbe_exec_properties_dict")
 
-rbe_autoconfig(name = "rbe_default")
+rbe_autoconfig(
+    name = "rbe_ubuntu1804",
+    bazel_version = "1.2.1",
+    env = clang_env(),
+    registry = "l.gcr.io",
+    repository = "google/rbe-ubuntu18-04",
+    digest = "sha256:f3c1398ed79ac6fe6913674b27bc225510dea43ca4ea5ad82b6a45761417f1de",
+    use_legacy_platform_definition = False,
+    exec_properties = create_rbe_exec_properties_dict(
+        docker_add_capabilities = "SYS_ADMIN",
+        docker_privileged = True,
+    ),
+    exec_compatible_with = [
+        "@bazel_tools//platforms:x86_64",
+        "@bazel_tools//platforms:linux",
+        "@bazel_tools//tools/cpp:clang",
+        "@bazel_toolchains//constraints/sanitizers:support_msan",
+    ],
+)
 
 http_archive(
     name = "rules_pkg",

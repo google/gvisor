@@ -27,7 +27,7 @@ set -xeo pipefail
 declare -r ZONE=${ZONE:-us-central1-f}
 declare -r USERNAME=${USERNAME:-test}
 declare -r IMAGE_PROJECT=${IMAGE_PROJECT:-ubuntu-os-cloud}
-declare -r IMAGE_FAMILY=${IMAGE_FAMILY:-ubuntu-1604-lts}
+declare -r IMAGE_FAMILY=${IMAGE_FAMILY:-ubuntu-1804-lts}
 
 # Random names.
 declare -r DISK_NAME=$(mktemp -u disk-XXXXXX | tr A-Z a-z)
