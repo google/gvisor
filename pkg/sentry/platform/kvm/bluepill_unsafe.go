@@ -23,6 +23,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"unsafe"
+
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
 //go:linkname throw runtime.throw
@@ -47,6 +49,13 @@ func bytePtr(addr uintptr) *byte {
 //go:nosplit
 func uintptrValue(addr *byte) uintptr {
 	return (uintptr)(unsafe.Pointer(addr))
+}
+
+// bluepillArchContext returns the UContext64.
+//
+//go:nosplit
+func bluepillArchContext(context unsafe.Pointer) *arch.SignalContext64 {
+	return &((*arch.UContext64)(context).MContext)
 }
 
 // bluepillHandler is called from the signal stub.
