@@ -17,6 +17,7 @@
 package kvm
 
 import (
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 )
 
@@ -210,4 +211,12 @@ type cpuidEntries struct {
 	nr      uint32
 	_       uint32
 	entries [_KVM_NR_CPUID_ENTRIES]cpuidEntry
+}
+
+// updateGlobalOnce does global initialization. It has to be called only once.
+func updateGlobalOnce(fd int) error {
+	physicalInit()
+	err := updateSystemValues(int(fd))
+	ring0.Init(cpuid.HostFeatureSet())
+	return err
 }
