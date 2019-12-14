@@ -62,7 +62,7 @@ func prefixSubnetAddr(offset uint8, linkAddr tcpip.LinkAddress) (tcpip.AddressWi
 	var addr tcpip.AddressWithPrefix
 	if header.IsValidUnicastEthernetAddress(linkAddr) {
 		addrBytes := []byte(subnet.ID())
-		header.EthernetAdddressToEUI64IntoBuf(linkAddr, addrBytes[header.IIDOffsetInIPv6Address:])
+		header.EthernetAdddressToModifiedEUI64IntoBuf(linkAddr, addrBytes[header.IIDOffsetInIPv6Address:])
 		addr = tcpip.AddressWithPrefix{
 			Address:   tcpip.Address(addrBytes),
 			PrefixLen: 64,
