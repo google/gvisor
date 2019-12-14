@@ -278,33 +278,34 @@ func SolicitedNodeAddr(addr tcpip.Address) tcpip.Address {
 	return solicitedNodeMulticastPrefix + addr[len(addr)-3:]
 }
 
-// EthernetAdddressToEUI64IntoBuf populates buf with a EUI-64 from a 48-bit
-// Ethernet/MAC address.
+// EthernetAdddressToModifiedEUI64IntoBuf populates buf with a modified EUI-64
+// from a 48-bit Ethernet/MAC address, as per RFC 4291 section 2.5.1.
 //
 // buf MUST be at least 8 bytes.
-func EthernetAdddressToEUI64IntoBuf(linkAddr tcpip.LinkAddress, buf []byte) {
+func EthernetAdddressToModifiedEUI64IntoBuf(linkAddr tcpip.LinkAddress, buf []byte) {
 	buf[0] = linkAddr[0] ^ 2
 	buf[1] = linkAddr[1]
 	buf[2] = linkAddr[2]
-	buf[3] = 0xFE
+	buf[3] = 0xFF
 	buf[4] = 0xFE
 	buf[5] = linkAddr[3]
 	buf[6] = linkAddr[4]
 	buf[7] = linkAddr[5]
 }
 
-// EthernetAddressToEUI64 computes an EUI-64 from a 48-bit Ethernet/MAC address.
-func EthernetAddressToEUI64(linkAddr tcpip.LinkAddress) [IIDSize]byte {
+// EthernetAddressToModifiedEUI64 computes a modified EUI-64 from a 48-bit
+// Ethernet/MAC address, as per RFC 4291 section 2.5.1.
+func EthernetAddressToModifiedEUI64(linkAddr tcpip.LinkAddress) [IIDSize]byte {
 	var buf [IIDSize]byte
-	EthernetAdddressToEUI64IntoBuf(linkAddr, buf[:])
+	EthernetAdddressToModifiedEUI64IntoBuf(linkAddr, buf[:])
 	return buf
 }
 
 // LinkLocalAddr computes the default IPv6 link-local address from a link-layer
 // (MAC) address.
 func LinkLocalAddr(linkAddr tcpip.LinkAddress) tcpip.Address {
-	// Convert a 48-bit MAC to an EUI-64 and then prepend the link-local
-	// header, FE80::.
+	// Convert a 48-bit MAC to a modified EUI-64 and then prepend the
+	// link-local header, FE80::.
 	//
 	// The conversion is very nearly:
 	//	aa:bb:cc:dd:ee:ff => FE80::Aabb:ccFF:FEdd:eeff
@@ -313,7 +314,7 @@ func LinkLocalAddr(linkAddr tcpip.LinkAddress) tcpip.Address {
 		0: 0xFE,
 		1: 0x80,
 	}
-	EthernetAdddressToEUI64IntoBuf(linkAddr, lladdrb[IIDOffsetInIPv6Address:])
+	EthernetAdddressToModifiedEUI64IntoBuf(linkAddr, lladdrb[IIDOffsetInIPv6Address:])
 	return tcpip.Address(lladdrb[:])
 }
 

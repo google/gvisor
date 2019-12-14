@@ -38,12 +38,15 @@ go_test(
     size = "small",
     srcs = [
         "checksum_test.go",
+        "ipv6_test.go",
         "ipversion_test.go",
         "tcp_test.go",
     ],
     deps = [
         ":header",
+        "//pkg/tcpip",
         "//pkg/tcpip/buffer",
+        "@com_github_google_go-cmp//cmp:go_default_library",
     ],
 )
 
