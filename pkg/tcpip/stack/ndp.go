@@ -1049,11 +1049,11 @@ func (ndp *ndpState) handleAutonomousPrefixInformation(pi header.NDPPrefixInform
 		return
 	}
 
-	// Generate an address within prefix from the EUI-64 of ndp's NIC's
-	// Ethernet MAC address.
+	// Generate an address within prefix from the modified EUI-64 of ndp's
+	// NIC's Ethernet MAC address.
 	addrBytes := make([]byte, header.IPv6AddressSize)
 	copy(addrBytes[:header.IIDOffsetInIPv6Address], prefix.ID()[:header.IIDOffsetInIPv6Address])
-	header.EthernetAdddressToEUI64IntoBuf(linkAddr, addrBytes[header.IIDOffsetInIPv6Address:])
+	header.EthernetAdddressToModifiedEUI64IntoBuf(linkAddr, addrBytes[header.IIDOffsetInIPv6Address:])
 	addr := tcpip.Address(addrBytes)
 	addrWithPrefix := tcpip.AddressWithPrefix{
 		Address:   addr,
