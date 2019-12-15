@@ -18,6 +18,7 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"strconv"
@@ -630,6 +631,15 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 		cpuNum, err := s.Cgroup.NumCPU()
 		if err != nil {
 			return fmt.Errorf("getting cpu count from cgroups: %v", err)
+		}
+		if conf.CPUNumFromQuota {
+			quota, err := s.Cgroup.CPUQuota()
+			if err != nil {
+				return fmt.Errorf("getting cpu qouta from cgroups: %v", err)
+			}
+			if quota > 0 {
+				cpuNum = int(math.Ceil(quota))
+			}
 		}
 		cmd.Args = append(cmd.Args, "--cpu-num", strconv.Itoa(cpuNum))
 
