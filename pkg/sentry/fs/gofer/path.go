@@ -234,6 +234,8 @@ func (i *inodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, 
 	if err != nil {
 		return nil, err
 	}
+	// We're not going to use newFile after return.
+	defer newFile.close(ctx)
 
 	// Stabilize the endpoint map while creation is in progress.
 	unlock := i.session().endpoints.lock()
@@ -254,7 +256,6 @@ func (i *inodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, 
 	// Get the attributes of the file to create inode key.
 	qid, mask, attr, err := getattr(ctx, newFile)
 	if err != nil {
-		newFile.close(ctx)
 		return nil, err
 	}
 
@@ -270,7 +271,6 @@ func (i *inodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, 
 	// cloned and re-opened multiple times after creation.
 	_, unopened, err := i.fileState.file.walk(ctx, []string{name})
 	if err != nil {
-		newFile.close(ctx)
 		return nil, err
 	}
 
