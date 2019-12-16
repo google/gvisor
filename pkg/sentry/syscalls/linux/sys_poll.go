@@ -198,7 +198,7 @@ func doPoll(t *kernel.Task, addr usermem.Addr, nfds uint, timeout time.Duration)
 }
 
 // CopyInFDSet copies an fd set from select(2)/pselect(2).
-func CopyInFDSet(t *kernel.Task, addr usermem.Addr, nBytes int, nBitsInLastPartialByte uint) ([]byte, error) {
+func CopyInFDSet(t *kernel.Task, addr usermem.Addr, nBytes, nBitsInLastPartialByte int) ([]byte, error) {
 	set := make([]byte, nBytes)
 
 	if addr != 0 {
@@ -222,7 +222,7 @@ func doSelect(t *kernel.Task, nfds int, readFDs, writeFDs, exceptFDs usermem.Add
 
 	// Calculate the size of the fd sets (one bit per fd).
 	nBytes := (nfds + 7) / 8
-	nBitsInLastPartialByte := uint(nfds % 8)
+	nBitsInLastPartialByte := nfds % 8
 
 	// Capture all the provided input vectors.
 	r, err := CopyInFDSet(t, readFDs, nBytes, nBitsInLastPartialByte)
