@@ -436,7 +436,7 @@ func overlayRename(ctx context.Context, o *overlayEntry, oldParent *Dirent, rena
 }
 
 func overlayBind(ctx context.Context, o *overlayEntry, parent *Dirent, name string, data transport.BoundEndpoint, perm FilePermissions) (*Dirent, error) {
-	if err := copyUp(ctx, parent); err != nil {
+	if err := copyUpLockedForRename(ctx, parent); err != nil {
 		return nil, err
 	}
 
