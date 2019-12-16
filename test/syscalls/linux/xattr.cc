@@ -28,6 +28,7 @@
 #include "test/util/capability_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
+#include "test/util/test_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -37,9 +38,6 @@ namespace {
 class XattrTest : public FileTest {};
 
 TEST_F(XattrTest, XattrNullName) {
-  // TODO(b/127675828): Support setxattr and getxattr.
-  SKIP_IF(IsRunningOnGvisor());
-
   const char* path = test_file_name_.c_str();
 
   EXPECT_THAT(setxattr(path, nullptr, nullptr, 0, /*flags=*/0),
@@ -49,9 +47,6 @@ TEST_F(XattrTest, XattrNullName) {
 }
 
 TEST_F(XattrTest, XattrEmptyName) {
-  // TODO(b/127675828): Support setxattr and getxattr.
-  SKIP_IF(IsRunningOnGvisor());
-
   const char* path = test_file_name_.c_str();
 
   EXPECT_THAT(setxattr(path, "", nullptr, 0, /*flags=*/0),
@@ -60,16 +55,17 @@ TEST_F(XattrTest, XattrEmptyName) {
 }
 
 TEST_F(XattrTest, XattrLargeName) {
-  // TODO(b/127675828): Support setxattr and getxattr.
-  SKIP_IF(IsRunningOnGvisor());
-
   const char* path = test_file_name_.c_str();
   std::string name = "user.";
   name += std::string(XATTR_NAME_MAX - name.length(), 'a');
-  EXPECT_THAT(setxattr(path, name.c_str(), nullptr, 0, /*flags=*/0),
-              SyscallSucceeds());
-  EXPECT_THAT(getxattr(path, name.c_str(), nullptr, 0),
-              SyscallSucceedsWithValue(0));
+
+  // TODO(b/127675828): Support setxattr and getxattr.
+  if (!IsRunningOnGvisor()) {
+    EXPECT_THAT(setxattr(path, name.c_str(), nullptr, 0, /*flags=*/0),
+                SyscallSucceeds());
+    EXPECT_THAT(getxattr(path, name.c_str(), nullptr, 0),
+                SyscallSucceedsWithValue(0));
+  }
 
   name += "a";
   EXPECT_THAT(setxattr(path, name.c_str(), nullptr, 0, /*flags=*/0),
@@ -79,9 +75,6 @@ TEST_F(XattrTest, XattrLargeName) {
 }
 
 TEST_F(XattrTest, XattrInvalidPrefix) {
-  // TODO(b/127675828): Support setxattr and getxattr.
-  SKIP_IF(IsRunningOnGvisor());
-
   const char* path = test_file_name_.c_str();
   std::string name(XATTR_NAME_MAX, 'a');
   EXPECT_THAT(setxattr(path, name.c_str(), nullptr, 0, /*flags=*/0),
@@ -91,9 +84,6 @@ TEST_F(XattrTest, XattrInvalidPrefix) {
 }
 
 TEST_F(XattrTest, XattrReadOnly) {
-  // TODO(b/127675828): Support setxattr and getxattr.
-  SKIP_IF(IsRunningOnGvisor());
-
   // Drop capabilities that allow us to override file and directory permissions.
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
@@ -102,22 +92,28 @@ TEST_F(XattrTest, XattrReadOnly) {
   char name[] = "user.abc";
   char val = 'a';
   size_t size = sizeof(val);
-  EXPECT_THAT(setxattr(path, name, &val, size, /*flags=*/0), SyscallSucceeds());
+
+  // TODO(b/127675828): Support setxattr and getxattr.
+  if (!IsRunningOnGvisor()) {
+    EXPECT_THAT(setxattr(path, name, &val, size, /*flags=*/0),
+                SyscallSucceeds());
+  }
 
   ASSERT_NO_ERRNO(testing::Chmod(test_file_name_, S_IRUSR));
 
   EXPECT_THAT(setxattr(path, name, &val, size, /*flags=*/0),
               SyscallFailsWithErrno(EACCES));
 
-  char buf = '-';
-  EXPECT_THAT(getxattr(path, name, &buf, size), SyscallSucceedsWithValue(size));
-  EXPECT_EQ(buf, val);
+  // TODO(b/127675828): Support setxattr and getxattr.
+  if (!IsRunningOnGvisor()) {
+    char buf = '-';
+    EXPECT_THAT(getxattr(path, name, &buf, size),
+                SyscallSucceedsWithValue(size));
+    EXPECT_EQ(buf, val);
+  }
 }
 
 TEST_F(XattrTest, XattrWriteOnly) {
-  // TODO(b/127675828): Support setxattr and getxattr.
-  SKIP_IF(IsRunningOnGvisor());
-
   // Drop capabilities that allow us to override file and directory permissions.
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
@@ -128,7 +124,12 @@ TEST_F(XattrTest, XattrWriteOnly) {
   char name[] = "user.abc";
   char val = 'a';
   size_t size = sizeof(val);
-  EXPECT_THAT(setxattr(path, name, &val, size, /*flags=*/0), SyscallSucceeds());
+
+  // TODO(b/127675828): Support setxattr and getxattr.
+  if (!IsRunningOnGvisor()) {
+    EXPECT_THAT(setxattr(path, name, &val, size, /*flags=*/0),
+                SyscallSucceeds());
+  }
 
   EXPECT_THAT(getxattr(path, name, nullptr, 0), SyscallFailsWithErrno(EACCES));
 }
@@ -172,9 +173,6 @@ TEST_F(XattrTest, XattrOnSymlink) {
 }
 
 TEST_F(XattrTest, XattrOnInvalidFileTypes) {
-  // TODO(b/127675828): Support setxattr and getxattr.
-  SKIP_IF(IsRunningOnGvisor());
-
   char name[] = "user.abc";
 
   char char_device[] = "/dev/zero";
@@ -226,9 +224,6 @@ TEST_F(XattrTest, SetxattrZeroSize) {
 }
 
 TEST_F(XattrTest, SetxattrSizeTooLarge) {
-  // TODO(b/127675828): Support setxattr and getxattr.
-  SKIP_IF(IsRunningOnGvisor());
-
   const char* path = test_file_name_.c_str();
   char name[] = "user.abc";
 
@@ -240,19 +235,24 @@ TEST_F(XattrTest, SetxattrSizeTooLarge) {
   EXPECT_THAT(setxattr(path, name, val.data(), size, /*flags=*/0),
               SyscallFailsWithErrno(E2BIG));
 
-  EXPECT_THAT(getxattr(path, name, nullptr, 0), SyscallFailsWithErrno(ENODATA));
+  // TODO(b/127675828): Support setxattr and getxattr.
+  if (!IsRunningOnGvisor()) {
+    EXPECT_THAT(getxattr(path, name, nullptr, 0),
+                SyscallFailsWithErrno(ENODATA));
+  }
 }
 
 TEST_F(XattrTest, SetxattrNullValueAndNonzeroSize) {
-  // TODO(b/127675828): Support setxattr and getxattr.
-  SKIP_IF(IsRunningOnGvisor());
-
   const char* path = test_file_name_.c_str();
   char name[] = "user.abc";
   EXPECT_THAT(setxattr(path, name, nullptr, 1, /*flags=*/0),
               SyscallFailsWithErrno(EFAULT));
 
-  EXPECT_THAT(getxattr(path, name, nullptr, 0), SyscallFailsWithErrno(ENODATA));
+  // TODO(b/127675828): Support setxattr and getxattr.
+  if (!IsRunningOnGvisor()) {
+    EXPECT_THAT(getxattr(path, name, nullptr, 0),
+                SyscallFailsWithErrno(ENODATA));
+  }
 }
 
 TEST_F(XattrTest, SetxattrNullValueAndZeroSize) {
@@ -350,9 +350,6 @@ TEST_F(XattrTest, SetxattrReplaceFlag) {
 }
 
 TEST_F(XattrTest, SetxattrInvalidFlags) {
-  // TODO(b/127675828): Support setxattr and getxattr.
-  SKIP_IF(IsRunningOnGvisor());
-
   const char* path = test_file_name_.c_str();
   int invalid_flags = 0xff;
   EXPECT_THAT(setxattr(path, nullptr, nullptr, 0, invalid_flags),

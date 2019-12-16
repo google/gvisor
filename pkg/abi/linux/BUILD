@@ -57,6 +57,7 @@ go_library(
         "uio.go",
         "utsname.go",
         "wait.go",
+        "xattr.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/abi/linux",
     visibility = ["//visibility:public"],
