@@ -27,7 +27,7 @@ func fdsFromSet(t *kernel.Task, set []byte) []int {
 	// Append n if the n-th bit is 1.
 	for i, v := range set {
 		for j := 0; j < 8; j++ {
-			if (v>>uint(j))&1 == 1 {
+			if (v>>j)&1 == 1 {
 				fds = append(fds, i*8+j)
 			}
 		}
@@ -42,7 +42,7 @@ func fdSet(t *kernel.Task, nfds int, addr usermem.Addr) string {
 
 	// Calculate the size of the fd set (one bit per fd).
 	nBytes := (nfds + 7) / 8
-	nBitsInLastPartialByte := uint(nfds % 8)
+	nBitsInLastPartialByte := nfds % 8
 
 	set, err := linux.CopyInFDSet(t, addr, nBytes, nBitsInLastPartialByte)
 	if err != nil {
