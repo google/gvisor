@@ -552,6 +552,11 @@ func overlayGetxattr(o *overlayEntry, name string) (string, error) {
 	return s, err
 }
 
+// TODO(b/146028302): Support setxattr for overlayfs.
+func overlaySetxattr(o *overlayEntry, name, value string) error {
+	return syserror.EOPNOTSUPP
+}
+
 func overlayListxattr(o *overlayEntry) (map[string]struct{}, error) {
 	o.copyMu.RLock()
 	defer o.copyMu.RUnlock()

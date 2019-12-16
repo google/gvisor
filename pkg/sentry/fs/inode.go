@@ -270,6 +270,14 @@ func (i *Inode) Getxattr(name string) (string, error) {
 	return i.InodeOperations.Getxattr(i, name)
 }
 
+// Setxattr calls i.InodeOperations.Setxattr with i as the Inode.
+func (i *Inode) Setxattr(name, value string) error {
+	if i.overlay != nil {
+		return overlaySetxattr(i.overlay, name, value)
+	}
+	return i.InodeOperations.Setxattr(i, name, value)
+}
+
 // Listxattr calls i.InodeOperations.Listxattr with i as the Inode.
 func (i *Inode) Listxattr() (map[string]struct{}, error) {
 	if i.overlay != nil {
