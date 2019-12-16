@@ -111,7 +111,7 @@ func (p *processor) handleSegments() {
 				continue
 			}
 
-			if !ep.workMu.TryLock() {
+			if !ep.mu.TryLock() {
 				ep.newSegmentWaker.Assert()
 				continue
 			}
@@ -121,12 +121,10 @@ func (p *processor) handleSegments() {
 			if err := ep.handleSegments(true /* fastPath */); err != nil || ep.EndpointState() == StateClose {
 				// Send any active resets if required.
 				if err != nil {
-					ep.mu.Lock()
 					ep.resetConnectionLocked(err)
-					ep.mu.Unlock()
 				}
 				ep.notifyProtocolGoroutine(notifyTickleWorker)
-				ep.workMu.Unlock()
+				ep.mu.Unlock()
 				continue
 			}
 
@@ -134,7 +132,7 @@ func (p *processor) handleSegments() {
 				p.epQ.enqueue(ep)
 			}
 
-			ep.workMu.Unlock()
+			ep.mu.Unlock()
 		}
 	}
 }

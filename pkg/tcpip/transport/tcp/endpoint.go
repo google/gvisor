@@ -18,6 +18,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -297,12 +298,6 @@ type endpoint struct {
 	// Precondition: epQueue.mu must be held to read/write this field..
 	pendingProcessing bool `state:"nosave"`
 
-	// workMu is used to arbitrate which goroutine may perform protocol
-	// work. Only the main protocol goroutine is expected to call Lock() on
-	// it, but other goroutines (e.g., send) may call TryLock() to eagerly
-	// perform work without having to wait for the main one to wake up.
-	workMu tmutex.Mutex `state:"nosave"`
-
 	// The following fields are initialized at creation time and do not
 	// change throughout the lifetime of the endpoint.
 	stack       *stack.Stack  `state:"manual"`
@@ -336,7 +331,8 @@ type endpoint struct {
 	zeroWindow bool
 
 	// The following fields are protected by the mutex.
-	mu sync.RWMutex `state:"nosave"`
+	mu          tmutex.Mutex `state:"nosave"`
+	ownedByUser uint32
 
 	// state must be read/set using the EndpointState()/setEndpointState() methods.
 	state EndpointState `state:".(EndpointState)"`
@@ -441,7 +437,7 @@ type endpoint struct {
 
 	// synRcvdCount is the number of connections for this endpoint that are
 	// in SYN-RCVD state.
-	synRcvdCount int
+	synRcvdCount int32
 
 	// userMSS if non-zero is the MSS value explicitly set by the user
 	// for this endpoint using the TCP_MAXSEG setsockopt.
@@ -581,14 +577,56 @@ func calculateAdvertisedMSS(userMSS uint16, r stack.Route) uint16 {
 	return maxMSS
 }
 
+func (e *endpoint) Lock() {
+	for {
+		// Try first if the sock is locked then check if it's owned
+		// by another user goroutine if not then we spin, otherwise
+		// we just goto sleep on the Lock() and wait.
+		if !e.mu.TryLock() {
+			// If socket is owned by the user then just goto sleep
+			// as the lock could be held for a reasonably long time.
+			if atomic.LoadUint32(&e.ownedByUser) == 1 {
+				e.mu.Lock()
+				atomic.StoreUint32(&e.ownedByUser, 1)
+				return
+			}
+			// Spin but yield the processor since the lower half
+			// should yield the lock soon.
+			runtime.Gosched()
+			continue
+		}
+		atomic.StoreUint32(&e.ownedByUser, 1)
+		return
+	}
+}
+
+func (e *endpoint) Unlock() {
+	if e.segmentQueue.empty() {
+		atomic.CompareAndSwapUint32(&e.ownedByUser, 1, 0)
+		e.mu.Unlock()
+		return
+	}
+
+	switch e.EndpointState() {
+	case StateEstablished:
+		if err := e.handleSegments(true /* fastPath */); err != nil {
+			e.notifyProtocolGoroutine(notifyTickleWorker)
+		}
+	default:
+		e.newSegmentWaker.Assert()
+	}
+	atomic.CompareAndSwapUint32(&e.ownedByUser, 1, 0)
+	e.mu.Unlock()
+}
+
 // StopWork halts packet processing. Only to be used in tests.
 func (e *endpoint) StopWork() {
-	e.workMu.Lock()
+	e.mu.Lock()
 }
 
 // ResumeWork resumes packet processing. Only to be used in tests.
 func (e *endpoint) ResumeWork() {
-	e.workMu.Unlock()
+	e.mu.Unlock()
 }
 
 // setEndpointState updates the state of the endpoint to state atomically. This
@@ -707,8 +745,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 	}
 
 	e.segmentQueue.setLimit(MaxUnprocessedSegments)
-	e.workMu.Init()
-	e.workMu.Lock()
+	e.mu.Init()
 	e.tsOffset = timeStampOffset()
 
 	return e
@@ -718,9 +755,6 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 // waiter.EventIn is set, the endpoint is immediately readable.
 func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 	result := waiter.EventMask(0)
-
-	e.mu.RLock()
-	defer e.mu.RUnlock()
 
 	switch e.EndpointState() {
 	case StateInitial, StateBound, StateConnecting, StateSynSent, StateSynRecv:
@@ -789,25 +823,22 @@ func (e *endpoint) notifyProtocolGoroutine(n uint32) {
 // with it. It must be called only once and with no other concurrent calls to
 // the endpoint.
 func (e *endpoint) Close() {
-	e.mu.Lock()
-	closed := e.closed
-	e.mu.Unlock()
-	if closed {
+	e.Lock()
+	defer e.Unlock()
+	if e.closed {
 		return
 	}
 
 	// Issue a shutdown so that the peer knows we won't send any more data
 	// if we're connected, or stop accepting if we're listening.
-	e.Shutdown(tcpip.ShutdownWrite | tcpip.ShutdownRead)
-	e.closeNoShutdown()
+	e.shutdownLocked(tcpip.ShutdownWrite | tcpip.ShutdownRead)
+	e.closeNoShutdownLocked()
 }
 
 // closeNoShutdown closes the endpoint without doing a full shutdown. This is
 // used when a connection needs to be aborted with a RST and we want to skip
 // a full 4 way TCP shutdown.
-func (e *endpoint) closeNoShutdown() {
-	e.mu.Lock()
-
+func (e *endpoint) closeNoShutdownLocked() {
 	// For listening sockets, we always release ports inline so that they
 	// are immediately available for reuse after Close() is called. If also
 	// registered, we unregister as well otherwise the next user would fail
@@ -835,8 +866,6 @@ func (e *endpoint) closeNoShutdown() {
 		e.workerCleanup = true
 		e.notifyProtocolGoroutine(notifyClose)
 	}
-
-	e.mu.Unlock()
 }
 
 // closePendingAcceptableConnections closes all connections that have completed
@@ -871,7 +900,6 @@ func (e *endpoint) closePendingAcceptableConnectionsLocked() {
 // after Close() is called and the worker goroutine (if any) is done with its
 // work.
 func (e *endpoint) cleanupLocked() {
-
 	// Close all endpoints that might have been accepted by TCP but not by
 	// the client.
 	if e.acceptedChan != nil {
@@ -989,7 +1017,7 @@ func (e *endpoint) IPTables() (iptables.IPTables, error) {
 
 // Read reads data from the endpoint.
 func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
-	e.mu.RLock()
+	e.Lock()
 	// The endpoint can be read if it's connected, or if it's already closed
 	// but has some pending unread data. Also note that a RST being received
 	// would cause the state to become StateError so we should allow the
@@ -999,7 +1027,7 @@ func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages,
 	if s := e.EndpointState(); !s.connected() && s != StateClose && bufUsed == 0 {
 		e.rcvListMu.Unlock()
 		he := e.HardError
-		e.mu.RUnlock()
+		e.Unlock()
 		if s == StateError {
 			return buffer.View{}, tcpip.ControlMessages{}, he
 		}
@@ -1010,7 +1038,7 @@ func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages,
 	v, err := e.readLocked()
 	e.rcvListMu.Unlock()
 
-	e.mu.RUnlock()
+	e.Unlock()
 
 	if err == tcpip.ErrClosedForReceive {
 		e.stats.ReadErrors.ReadClosed.Increment()
@@ -1083,122 +1111,35 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	// (without the MSG_FASTOPEN flag). Corking is unimplemented, so opts.More
 	// and opts.EndOfRecord are also ignored.
 
-	e.mu.RLock()
+	e.Lock()
+	defer e.Unlock()
 	e.sndBufMu.Lock()
 
 	avail, err := e.isEndpointWritableLocked()
 	if err != nil {
 		e.sndBufMu.Unlock()
-		e.mu.RUnlock()
 		e.stats.WriteErrors.WriteClosed.Increment()
 		return 0, nil, err
 	}
-
-	// We can release locks while copying data.
-	//
-	// This is not possible if atomic is set, because we can't allow the
-	// available buffer space to be consumed by some other caller while we
-	// are copying data in.
-	if !opts.Atomic {
-		e.sndBufMu.Unlock()
-		e.mu.RUnlock()
-	}
+	e.sndBufMu.Unlock()
 
 	// Fetch data.
 	v, perr := p.Payload(avail)
 	if perr != nil || len(v) == 0 {
-		if opts.Atomic { // See above.
-			e.sndBufMu.Unlock()
-			e.mu.RUnlock()
-		}
 		// Note that perr may be nil if len(v) == 0.
 		return 0, nil, perr
 	}
 
-	if opts.Atomic {
-		// Add data to the send queue.
-		s := newSegmentFromView(&e.route, e.ID, v)
-		e.sndBufUsed += len(v)
-		e.sndBufInQueue += seqnum.Size(len(v))
-		e.sndQueue.PushBack(s)
-		e.sndBufMu.Unlock()
-		// Release the endpoint lock to prevent deadlocks due to lock
-		// order inversion when acquiring workMu.
-		e.mu.RUnlock()
-	}
+	e.sndBufMu.Lock()
+	// Add data to the send queue.
+	s := newSegmentFromView(&e.route, e.ID, v)
+	e.sndBufUsed += len(v)
+	e.sndBufInQueue += seqnum.Size(len(v))
+	e.sndQueue.PushBack(s)
+	e.sndBufMu.Unlock()
 
-	if e.workMu.TryLock() {
-		// Since we released locks in between it's possible that the
-		// endpoint transitioned to a CLOSED/ERROR states so make
-		// sure endpoint is still writable before trying to write.
-		if !opts.Atomic { // See above.
-			e.mu.RLock()
-			e.sndBufMu.Lock()
-
-			// Because we released the lock before copying, check state again
-			// to make sure the endpoint is still in a valid state for a write.
-			avail, err = e.isEndpointWritableLocked()
-			if err != nil {
-				e.sndBufMu.Unlock()
-				e.mu.RUnlock()
-				e.stats.WriteErrors.WriteClosed.Increment()
-				return 0, nil, err
-			}
-
-			// Discard any excess data copied in due to avail being reduced due
-			// to a simultaneous write call to the socket.
-			if avail < len(v) {
-				v = v[:avail]
-			}
-			// Add data to the send queue.
-			s := newSegmentFromView(&e.route, e.ID, v)
-			e.sndBufUsed += len(v)
-			e.sndBufInQueue += seqnum.Size(len(v))
-			e.sndQueue.PushBack(s)
-			e.sndBufMu.Unlock()
-			// Release the endpoint lock to prevent deadlocks due to lock
-			// order inversion when acquiring workMu.
-			e.mu.RUnlock()
-
-		}
-		// Do the work inline.
-		e.handleWrite()
-		e.workMu.Unlock()
-	} else {
-		if !opts.Atomic { // See above.
-			e.mu.RLock()
-			e.sndBufMu.Lock()
-
-			// Because we released the lock before copying, check state again
-			// to make sure the endpoint is still in a valid state for a write.
-			avail, err = e.isEndpointWritableLocked()
-			if err != nil {
-				e.sndBufMu.Unlock()
-				e.mu.RUnlock()
-				e.stats.WriteErrors.WriteClosed.Increment()
-				return 0, nil, err
-			}
-
-			// Discard any excess data copied in due to avail being reduced due
-			// to a simultaneous write call to the socket.
-			if avail < len(v) {
-				v = v[:avail]
-			}
-			// Add data to the send queue.
-			s := newSegmentFromView(&e.route, e.ID, v)
-			e.sndBufUsed += len(v)
-			e.sndBufInQueue += seqnum.Size(len(v))
-			e.sndQueue.PushBack(s)
-			e.sndBufMu.Unlock()
-			// Release the endpoint lock to prevent deadlocks due to lock
-			// order inversion when acquiring workMu.
-			e.mu.RUnlock()
-
-		}
-		// Let the protocol goroutine do the work.
-		e.sndWaker.Assert()
-	}
-
+	// Do the work inline.
+	e.handleWrite()
 	return int64(len(v)), nil, nil
 }
 
@@ -1206,8 +1147,8 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 //
 // This method does not block if there is no data pending.
 func (e *endpoint) Peek(vec [][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
+	e.Lock()
+	defer e.Unlock()
 
 	// The endpoint can be read if it's connected, or if it's already closed
 	// but has some pending unread data.
@@ -1317,6 +1258,12 @@ func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 	return nil
 }
 
+// It must be called with rcvListMu held.
+func (e *endpoint) zeroReceiveWindow(scale uint8) bool {
+	avail := e.receiveBufferAvailableLocked()
+	return (avail >> scale) == 0
+}
+
 // SetSockOptInt sets a socket option.
 func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	switch opt {
@@ -1422,15 +1369,15 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		return nil
 
 	case tcpip.ReuseAddressOption:
-		e.mu.Lock()
+		e.Lock()
 		e.reuseAddr = v != 0
-		e.mu.Unlock()
+		e.Unlock()
 		return nil
 
 	case tcpip.ReusePortOption:
-		e.mu.Lock()
+		e.Lock()
 		e.reusePort = v != 0
-		e.mu.Unlock()
+		e.Unlock()
 		return nil
 
 	case tcpip.BindToDeviceOption:
@@ -1438,9 +1385,9 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		if id != 0 && !e.stack.HasNIC(id) {
 			return tcpip.ErrUnknownDevice
 		}
-		e.mu.Lock()
+		e.Lock()
 		e.bindToDevice = id
-		e.mu.Unlock()
+		e.Unlock()
 		return nil
 
 	case tcpip.QuickAckOption:
@@ -1456,16 +1403,16 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		if userMSS < header.TCPMinimumMSS || userMSS > header.TCPMaximumMSS {
 			return tcpip.ErrInvalidOptionValue
 		}
-		e.mu.Lock()
+		e.Lock()
 		e.userMSS = uint16(userMSS)
-		e.mu.Unlock()
+		e.Unlock()
 		e.notifyProtocolGoroutine(notifyMSSChanged)
 		return nil
 
 	case tcpip.TTLOption:
-		e.mu.Lock()
+		e.Lock()
 		e.ttl = uint8(v)
-		e.mu.Unlock()
+		e.Unlock()
 		return nil
 
 	case tcpip.KeepaliveEnabledOption:
@@ -1497,15 +1444,15 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		return nil
 
 	case tcpip.TCPUserTimeoutOption:
-		e.mu.Lock()
+		e.Lock()
 		e.userTimeout = time.Duration(v)
-		e.mu.Unlock()
+		e.Unlock()
 		return nil
 
 	case tcpip.BroadcastOption:
-		e.mu.Lock()
+		e.Lock()
 		e.broadcast = v != 0
-		e.mu.Unlock()
+		e.Unlock()
 		return nil
 
 	case tcpip.CongestionControlOption:
@@ -1519,22 +1466,16 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		availCC := strings.Split(string(avail), " ")
 		for _, cc := range availCC {
 			if v == tcpip.CongestionControlOption(cc) {
-				// Acquire the work mutex as we may need to
-				// reinitialize the congestion control state.
-				e.mu.Lock()
+				e.Lock()
 				state := e.EndpointState()
 				e.cc = v
-				e.mu.Unlock()
 				switch state {
 				case StateEstablished:
-					e.workMu.Lock()
-					e.mu.Lock()
 					if e.EndpointState() == state {
 						e.snd.cc = e.snd.initCongestionControl(e.cc)
 					}
-					e.mu.Unlock()
-					e.workMu.Unlock()
 				}
+				e.Unlock()
 				return nil
 			}
 		}
@@ -1544,23 +1485,23 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		return tcpip.ErrNoSuchFile
 
 	case tcpip.IPv4TOSOption:
-		e.mu.Lock()
+		e.Lock()
 		// TODO(gvisor.dev/issue/995): ECN is not currently supported,
 		// ignore the bits for now.
 		e.sendTOS = uint8(v) & ^uint8(inetECNMask)
-		e.mu.Unlock()
+		e.Unlock()
 		return nil
 
 	case tcpip.IPv6TrafficClassOption:
-		e.mu.Lock()
+		e.Lock()
 		// TODO(gvisor.dev/issue/995): ECN is not currently supported,
 		// ignore the bits for now.
 		e.sendTOS = uint8(v) & ^uint8(inetECNMask)
-		e.mu.Unlock()
+		e.Unlock()
 		return nil
 
 	case tcpip.TCPLingerTimeoutOption:
-		e.mu.Lock()
+		e.Lock()
 		if v < 0 {
 			// Same as effectively disabling TCPLinger timeout.
 			v = 0
@@ -1578,7 +1519,7 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 			v = stkTCPLingerTimeout
 		}
 		e.tcpLingerTimeout = time.Duration(v)
-		e.mu.Unlock()
+		e.Unlock()
 		return nil
 
 	case tcpip.TCPDeferAcceptOption:
@@ -1597,8 +1538,8 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 
 // readyReceiveSize returns the number of bytes ready to be received.
 func (e *endpoint) readyReceiveSize() (int, *tcpip.Error) {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
+	e.Lock()
+	defer e.Unlock()
 
 	// The endpoint cannot be in listen state.
 	if e.EndpointState() == StateListen {
@@ -1686,9 +1627,9 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		return nil
 
 	case *tcpip.ReuseAddressOption:
-		e.mu.RLock()
+		e.Lock()
 		v := e.reuseAddr
-		e.mu.RUnlock()
+		e.Unlock()
 
 		*o = 0
 		if v {
@@ -1697,9 +1638,9 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		return nil
 
 	case *tcpip.ReusePortOption:
-		e.mu.RLock()
+		e.Lock()
 		v := e.reusePort
-		e.mu.RUnlock()
+		e.Unlock()
 
 		*o = 0
 		if v {
@@ -1708,9 +1649,9 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		return nil
 
 	case *tcpip.BindToDeviceOption:
-		e.mu.RLock()
+		e.Lock()
 		*o = tcpip.BindToDeviceOption(e.bindToDevice)
-		e.mu.RUnlock()
+		e.Unlock()
 		return nil
 
 	case *tcpip.QuickAckOption:
@@ -1721,16 +1662,16 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		return nil
 
 	case *tcpip.TTLOption:
-		e.mu.Lock()
+		e.Lock()
 		*o = tcpip.TTLOption(e.ttl)
-		e.mu.Unlock()
+		e.Unlock()
 		return nil
 
 	case *tcpip.TCPInfoOption:
 		*o = tcpip.TCPInfoOption{}
-		e.mu.RLock()
+		e.Lock()
 		snd := e.snd
-		e.mu.RUnlock()
+		e.Unlock()
 		if snd != nil {
 			snd.rtt.Lock()
 			o.RTT = snd.rtt.srtt
@@ -1769,9 +1710,9 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		return nil
 
 	case *tcpip.TCPUserTimeoutOption:
-		e.mu.Lock()
+		e.Lock()
 		*o = tcpip.TCPUserTimeoutOption(e.userTimeout)
-		e.mu.Unlock()
+		e.Unlock()
 		return nil
 
 	case *tcpip.OutOfBandInlineOption:
@@ -1780,9 +1721,9 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		return nil
 
 	case *tcpip.BroadcastOption:
-		e.mu.Lock()
+		e.Lock()
 		v := e.broadcast
-		e.mu.Unlock()
+		e.Unlock()
 
 		*o = 0
 		if v {
@@ -1791,27 +1732,27 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		return nil
 
 	case *tcpip.CongestionControlOption:
-		e.mu.Lock()
+		e.Lock()
 		*o = e.cc
-		e.mu.Unlock()
+		e.Unlock()
 		return nil
 
 	case *tcpip.IPv4TOSOption:
-		e.mu.RLock()
+		e.Lock()
 		*o = tcpip.IPv4TOSOption(e.sendTOS)
-		e.mu.RUnlock()
+		e.Unlock()
 		return nil
 
 	case *tcpip.IPv6TrafficClassOption:
-		e.mu.RLock()
+		e.Lock()
 		*o = tcpip.IPv6TrafficClassOption(e.sendTOS)
-		e.mu.RUnlock()
+		e.Unlock()
 		return nil
 
 	case *tcpip.TCPLingerTimeoutOption:
-		e.mu.Lock()
+		e.Lock()
 		*o = tcpip.TCPLingerTimeoutOption(e.tcpLingerTimeout)
-		e.mu.Unlock()
+		e.Unlock()
 		return nil
 
 	case *tcpip.TCPDeferAcceptOption:
@@ -1856,8 +1797,8 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 // yet accepted by the app, they are restored without running the main goroutine
 // here.
 func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) *tcpip.Error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	e.Lock()
+	defer e.Unlock()
 
 	connectingAddr := addr.Addr
 
@@ -2026,9 +1967,13 @@ func (*endpoint) ConnectEndpoint(tcpip.Endpoint) *tcpip.Error {
 // Shutdown closes the read and/or write end of the endpoint connection to its
 // peer.
 func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
-	e.mu.Lock()
+	e.Lock()
+	defer e.Unlock()
+	return e.shutdownLocked(flags)
+}
+
+func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) *tcpip.Error {
 	e.shutdownFlags |= flags
-	finQueued := false
 	switch {
 	case e.EndpointState().connected():
 		// Close for read.
@@ -2042,24 +1987,9 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 			// If we're fully closed and we have unread data we need to abort
 			// the connection with a RST.
 			if (e.shutdownFlags&tcpip.ShutdownWrite) != 0 && rcvBufUsed > 0 {
-				e.mu.Unlock()
-				// Try to send an active reset immediately if the
-				// work mutex is available.
-				if e.workMu.TryLock() {
-					e.mu.Lock()
-					// We need to double check here to make
-					// sure worker has not transitioned the
-					// endpoint out of a connected state
-					// before trying to send a reset.
-					if e.EndpointState().connected() {
-						e.resetConnectionLocked(tcpip.ErrConnectionAborted)
-						e.notifyProtocolGoroutine(notifyTickleWorker)
-					}
-					e.mu.Unlock()
-					e.workMu.Unlock()
-				} else {
-					e.notifyProtocolGoroutine(notifyReset)
-				}
+				e.resetConnectionLocked(tcpip.ErrConnectionAborted)
+				// Wake up worker to terminate loop.
+				e.notifyProtocolGoroutine(notifyTickleWorker)
 				return nil
 			}
 		}
@@ -2078,10 +2008,10 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 			s := newSegmentFromView(&e.route, e.ID, nil)
 			e.sndQueue.PushBack(s)
 			e.sndBufInQueue++
-			finQueued = true
 			// Mark endpoint as closed.
 			e.sndClosed = true
 			e.sndBufMu.Unlock()
+			e.handleClose()
 		}
 
 	case e.EndpointState() == StateListen:
@@ -2090,18 +2020,7 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 			e.notifyProtocolGoroutine(notifyClose)
 		}
 	default:
-		e.mu.Unlock()
 		return tcpip.ErrNotConnected
-	}
-	e.mu.Unlock()
-	if finQueued {
-		if e.workMu.TryLock() {
-			e.handleClose()
-			e.workMu.Unlock()
-		} else {
-			// Tell protocol goroutine to close.
-			e.sndCloseWaker.Assert()
-		}
 	}
 	return nil
 }
@@ -2118,8 +2037,8 @@ func (e *endpoint) Listen(backlog int) *tcpip.Error {
 }
 
 func (e *endpoint) listen(backlog int) *tcpip.Error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	e.Lock()
+	defer e.Unlock()
 
 	// Allow the backlog to be adjusted if the endpoint is not shutting down.
 	// When the endpoint shuts down, it sets workerCleanup to true, and from
@@ -2181,10 +2100,9 @@ func (e *endpoint) listen(backlog int) *tcpip.Error {
 // startAcceptedLoop sets up required state and starts a goroutine with the
 // main loop for accepted connections.
 func (e *endpoint) startAcceptedLoop() {
-	e.mu.Lock()
 	e.workerRunning = true
-	e.mu.Unlock()
 	wakerInitDone := make(chan struct{})
+	e.mu.Unlock()
 	go e.protocolMainLoop(false, wakerInitDone) // S/R-SAFE: drained on save.
 	<-wakerInitDone
 }
@@ -2192,8 +2110,8 @@ func (e *endpoint) startAcceptedLoop() {
 // Accept returns a new endpoint if a peer has established a connection
 // to an endpoint previously set to listen mode.
 func (e *endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
+	e.Lock()
+	defer e.Unlock()
 
 	// Endpoint must be in listen state before it can accept connections.
 	if e.EndpointState() != StateListen {
@@ -2212,8 +2130,8 @@ func (e *endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 
 // Bind binds the endpoint to a specific local port and optionally address.
 func (e *endpoint) Bind(addr tcpip.FullAddress) (err *tcpip.Error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	e.Lock()
+	defer e.Unlock()
 
 	return e.bindLocked(addr)
 }
@@ -2291,8 +2209,8 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) (err *tcpip.Error) {
 
 // GetLocalAddress returns the address to which the endpoint is bound.
 func (e *endpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
+	e.Lock()
+	defer e.Unlock()
 
 	return tcpip.FullAddress{
 		Addr: e.ID.LocalAddress,
@@ -2303,8 +2221,8 @@ func (e *endpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) {
 
 // GetRemoteAddress returns the address to which the endpoint is connected.
 func (e *endpoint) GetRemoteAddress() (tcpip.FullAddress, *tcpip.Error) {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
+	e.Lock()
+	defer e.Unlock()
 
 	if !e.EndpointState().connected() {
 		return tcpip.FullAddress{}, tcpip.ErrNotConnected
@@ -2529,9 +2447,7 @@ func (e *endpoint) completeState() stack.TCPEndpointState {
 	s.SegTime = time.Now()
 
 	// Copy EndpointID.
-	e.mu.Lock()
 	s.ID = stack.TCPEndpointID(e.ID)
-	e.mu.Unlock()
 
 	// Copy endpoint rcv state.
 	e.rcvListMu.Lock()
@@ -2661,10 +2577,10 @@ func (e *endpoint) State() uint32 {
 
 // Info returns a copy of the endpoint info.
 func (e *endpoint) Info() tcpip.EndpointInfo {
-	e.mu.RLock()
+	e.Lock()
 	// Make a copy of the endpoint info.
 	ret := e.EndpointInfo
-	e.mu.RUnlock()
+	e.Unlock()
 	return &ret
 }
 
@@ -2679,9 +2595,9 @@ func (e *endpoint) Wait() {
 	e.waiterQueue.EventRegister(&waitEntry, waiter.EventHUp)
 	defer e.waiterQueue.EventUnregister(&waitEntry)
 	for {
-		e.mu.Lock()
+		e.Lock()
 		running := e.workerRunning
-		e.mu.Unlock()
+		e.Unlock()
 		if !running {
 			break
 		}
