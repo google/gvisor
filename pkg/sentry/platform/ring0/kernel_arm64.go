@@ -16,6 +16,12 @@
 
 package ring0
 
+//go:nosplit
+func HaltAndGo()
+
+//go:nosplit
+func HaltEl1SvcAndGo()
+
 // init initializes architecture-specific state.
 func (k *Kernel) init(opts KernelOpts) {
 	// Save the root page tables.

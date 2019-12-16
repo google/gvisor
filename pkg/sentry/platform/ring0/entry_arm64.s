@@ -258,6 +258,7 @@
 	LOAD_KERNEL_ADDRESS(CPU_SELF(from), RSV_REG); \
 	MOVD $CPU_STACK_TOP(RSV_REG), RSV_REG; \
 	MOVD RSV_REG, RSP; \
+	WORD $0xd538d092; \   //MRS   TPIDR_EL1, R18
 	ISB $15; \
 	DSB $15;
 
@@ -302,17 +303,18 @@
 
 #define KERNEL_ENTRY_FROM_EL1 \
 	WORD $0xd538d092; \   //MRS   TPIDR_EL1, R18
-	REGISTERS_SAVE(RSV_REG, CPU_REGISTERS); \	// save sentry context
+	REGISTERS_SAVE(RSV_REG, CPU_REGISTERS); \	// Save sentry context.
 	MOVD RSV_REG_APP, CPU_REGISTERS+PTRACE_R9(RSV_REG); \
 	WORD $0xd5384004; \    //    MRS SPSR_EL1, R4
 	MOVD R4, CPU_REGISTERS+PTRACE_PSTATE(RSV_REG); \
 	MRS ELR_EL1, R4; \
 	MOVD R4, CPU_REGISTERS+PTRACE_PC(RSV_REG); \
 	MOVD RSP, R4; \
-	MOVD R4, CPU_REGISTERS+PTRACE_SP(RSV_REG);
+	MOVD R4, CPU_REGISTERS+PTRACE_SP(RSV_REG); \
+	LOAD_KERNEL_STACK(RSV_REG);  // Load the temporary stack.
 
 TEXT ·Halt(SB),NOSPLIT,$0
-	// clear bluepill.
+	// Clear bluepill.
 	WORD $0xd538d092   //MRS   TPIDR_EL1, R18
 	CMP RSV_REG, R9
 	BNE mmio_exit
@@ -321,7 +323,18 @@ mmio_exit:
 	// MMIO_EXIT.
 	MOVD $0, R9
 	MOVD R0, 0xffff000000001000(R9)
-	B ·kernelExitToEl1(SB)
+	RET
+
+TEXT ·HaltAndGo(SB),NOSPLIT,$0
+	BL ·Halt(SB)
+	B ·kernelExitToEl1(SB) // Resume.
+
+TEXT ·HaltEl1SvcAndGo(SB),NOSPLIT,$0
+	WORD $0xd538d092            // MRS TPIDR_EL1, R18
+	MOVD CPU_SELF(RSV_REG), R3  // Load vCPU.
+	MOVD R3, 8(RSP)             // First argument (vCPU).
+	CALL ·kernelSyscall(SB)     // Call the trampoline.
+	B ·kernelExitToEl1(SB)      // Resume.
 
 TEXT ·Shutdown(SB),NOSPLIT,$0
 	// PSCI EVENT.
@@ -385,10 +398,10 @@ TEXT ·El1_sync(SB),NOSPLIT,$0
 	B el1_invalid
 
 el1_da:
-	B ·Halt(SB)
+	B ·HaltAndGo(SB)
 
 el1_ia:
-	B ·Halt(SB)
+	B ·HaltAndGo(SB)
 
 el1_sp_pc:
 	B ·Shutdown(SB)
@@ -397,7 +410,9 @@ el1_undef:
 	B ·Shutdown(SB)
 
 el1_svc:
-	B ·Halt(SB)
+	MOVD $0, CPU_ERROR_CODE(RSV_REG)
+	MOVD $0, CPU_ERROR_TYPE(RSV_REG)
+	B ·HaltEl1SvcAndGo(SB)
 
 el1_dbg:
 	B ·Shutdown(SB)
@@ -441,10 +456,10 @@ TEXT ·El0_sync(SB),NOSPLIT,$0
 	B   el0_invalid
 
 el0_svc:
-	B ·Halt(SB)
+	B ·HaltAndGo(SB)
 
 el0_da:
-	B ·Halt(SB)
+	B ·HaltAndGo(SB)
 
 el0_ia:
 	B ·Shutdown(SB)
