@@ -168,7 +168,6 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 
 		// We just received a FIN, our next state depends on whether we sent a
 		// FIN already or not.
-		r.ep.mu.Lock()
 		switch r.ep.EndpointState() {
 		case StateEstablished:
 			r.ep.setEndpointState(StateCloseWait)
@@ -183,7 +182,6 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 		case StateFinWait2:
 			r.ep.setEndpointState(StateTimeWait)
 		}
-		r.ep.mu.Unlock()
 
 		// Flush out any pending segments, except the very first one if
 		// it happens to be the one we're handling now because the
@@ -204,7 +202,6 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 	// Handle ACK (not FIN-ACK, which we handled above) during one of the
 	// shutdown states.
 	if s.flagIsSet(header.TCPFlagAck) && s.ackNumber == r.ep.snd.sndNxt {
-		r.ep.mu.Lock()
 		switch r.ep.EndpointState() {
 		case StateFinWait1:
 			r.ep.setEndpointState(StateFinWait2)
@@ -218,7 +215,6 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 		case StateLastAck:
 			r.ep.transitionToStateCloseLocked()
 		}
-		r.ep.mu.Unlock()
 	}
 
 	return true
@@ -332,10 +328,8 @@ func (r *receiver) handleRcvdSegmentClosing(s *segment, state EndpointState, clo
 // handleRcvdSegment handles TCP segments directed at the connection managed by
 // r as they arrive. It is called by the protocol main loop.
 func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err *tcpip.Error) {
-	r.ep.mu.RLock()
 	state := r.ep.EndpointState()
 	closed := r.ep.closed
-	r.ep.mu.RUnlock()
 
 	if state != StateEstablished {
 		drop, err := r.handleRcvdSegmentClosing(s, state, closed)

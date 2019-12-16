@@ -19,6 +19,7 @@ import (
 	"encoding/binary"
 	"hash"
 	"io"
+	"sync/atomic"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/rand"
@@ -294,19 +295,19 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 	}
 
 	// Perform the 3-way handshake.
+	ep.mu.Lock()
 	h := newHandshake(ep, seqnum.Size(ep.initialReceiveWindow()))
 
 	h.resetToSynRcvd(isn, irs, opts)
 	if err := h.execute(); err != nil {
+		ep.mu.Unlock()
 		ep.Close()
 		if l.listenEP != nil {
 			l.removePendingEndpoint(ep)
 		}
 		return nil, err
 	}
-	ep.mu.Lock()
 	ep.isConnectNotified = true
-	ep.mu.Unlock()
 
 	// Update the receive window scaling. We can't do it before the
 	// handshake because it's possible that the peer doesn't support window
@@ -361,9 +362,7 @@ func (e *endpoint) deliverAccepted(n *endpoint) {
 // propagateInheritableOptions propagates any options set on the listening
 // endpoint to the newly created endpoint.
 func (e *endpoint) propagateInheritableOptions(n *endpoint) {
-	e.mu.Lock()
 	n.userTimeout = e.userTimeout
-	e.mu.Unlock()
 }
 
 // handleSynSegment is called in its own goroutine once the listening endpoint
@@ -393,29 +392,25 @@ func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header
 }
 
 func (e *endpoint) incSynRcvdCount() bool {
-	e.mu.Lock()
-	if e.synRcvdCount >= cap(e.acceptedChan) {
-		e.mu.Unlock()
-		return false
+	for {
+		x := atomic.LoadInt32(&e.synRcvdCount)
+		if int(x) >= (cap(e.acceptedChan)) {
+			return false
+		}
+		if atomic.CompareAndSwapInt32(&e.synRcvdCount, x, x+1) {
+			return true
+		}
 	}
-	e.synRcvdCount++
-	e.mu.Unlock()
-	return true
 }
 
 func (e *endpoint) decSynRcvdCount() {
-	e.mu.Lock()
-	e.synRcvdCount--
-	e.mu.Unlock()
+	atomic.AddInt32(&e.synRcvdCount, -1)
 }
 
 func (e *endpoint) acceptQueueIsFull() bool {
-	e.mu.Lock()
-	if l, c := len(e.acceptedChan)+e.synRcvdCount, cap(e.acceptedChan); l >= c {
-		e.mu.Unlock()
+	if l, c := len(e.acceptedChan)+int(atomic.LoadInt32(&e.synRcvdCount)), cap(e.acceptedChan); l >= c {
 		return true
 	}
-	e.mu.Unlock()
 	return false
 }
 
@@ -562,7 +557,6 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		// Switch state to connected.
 		// We do not use transitionToStateEstablishedLocked here as there is
 		// no handshake state available when doing a SYN cookie based accept.
-		n.stack.Stats().TCP.CurrentEstablished.Increment()
 		n.isConnectNotified = true
 		n.setEndpointState(StateEstablished)
 
@@ -589,14 +583,12 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 	e.mu.Lock()
 	v6only := e.v6only
-	e.mu.Unlock()
 	ctx := newListenContext(e.stack, e, rcvWnd, v6only, e.NetProto)
 
 	defer func() {
 		// Mark endpoint as closed. This will prevent goroutines running
 		// handleSynSegment() from attempting to queue new connections
 		// to the endpoint.
-		e.mu.Lock()
 		e.setEndpointState(StateClose)
 
 		// close any endpoints in SYN-RCVD state.
@@ -608,7 +600,7 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 		if e.drainDone != nil {
 			close(e.drainDone)
 		}
-		e.mu.Unlock()
+		e.Unlock()
 
 		// Notify waiters that the endpoint is shutdown.
 		e.waiterQueue.Notify(waiter.EventIn | waiter.EventOut)
@@ -618,7 +610,10 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 	s.AddWaker(&e.notificationWaker, wakerForNotification)
 	s.AddWaker(&e.newSegmentWaker, wakerForNewSegment)
 	for {
-		switch index, _ := s.Fetch(true); index {
+		e.mu.Unlock()
+		index, _ := s.Fetch(true)
+		e.mu.Lock()
+		switch index {
 		case wakerForNotification:
 			n := e.fetchNotifications()
 			if n&notifyClose != 0 {
@@ -631,7 +626,9 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 					s.decRef()
 				}
 				close(e.drainDone)
+				e.mu.Unlock()
 				<-e.undrain
+				e.mu.Lock()
 			}
 
 		case wakerForNewSegment:

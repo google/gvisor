@@ -334,12 +334,12 @@ func (w *Watchdog) reportStuckWatchdog() {
 func (w *Watchdog) doAction(action Action, skipStack bool, msg *bytes.Buffer) {
 	switch action {
 	case LogWarning:
-		if skipStack {
-			msg.WriteString("\n...[stack dump skipped]...")
-			log.Warningf(msg.String())
-			return
+		// if skipStack {
+		// 	msg.WriteString("\n...[stack dump skipped]...")
+		// 	log.Warningf(msg.String())
+		// 	return
 
-		}
+		// }
 		log.TracebackAll(msg.String())
 		w.lastStackDump = time.Now()
 

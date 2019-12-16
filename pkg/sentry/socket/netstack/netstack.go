@@ -29,6 +29,7 @@ import (
 	"io"
 	"math"
 	"reflect"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -266,6 +267,10 @@ type SocketOperations struct {
 	readMu sync.Mutex `state:"nosave"`
 	// readView contains the remaining payload from the last packet.
 	readView buffer.View
+	// isReadable is 1 iff readView has data to be read, 0 otherwise.
+	// Must be accessed using atomic operations.
+	isReadable uint32
+
 	// readCM holds control message information for the last packet read
 	// from Endpoint.
 	readCM tcpip.ControlMessages
@@ -412,7 +417,6 @@ func (s *SocketOperations) fetchReadView() *syserr.Error {
 	if len(s.readView) > 0 {
 		return nil
 	}
-
 	s.readView = nil
 	s.sender = tcpip.FullAddress{}
 
@@ -423,6 +427,7 @@ func (s *SocketOperations) fetchReadView() *syserr.Error {
 
 	s.readView = v
 	s.readCM = cms
+	atomic.StoreUint32(&s.isReadable, 1)
 
 	return nil
 }
@@ -474,6 +479,9 @@ func (s *SocketOperations) WriteTo(ctx context.Context, _ *fs.File, dst io.Write
 
 		// Drop that part of the view.
 		s.readView.TrimFront(n)
+		if len(s.readView) == 0 {
+			atomic.StoreUint32(&s.isReadable, 0)
+		}
 		if err != nil {
 			s.readMu.Unlock()
 			return done, err
@@ -621,11 +629,9 @@ func (s *SocketOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
 	// Check our cached value iff the caller asked for readability and the
 	// endpoint itself is currently not readable.
 	if (mask & ^r & waiter.EventIn) != 0 {
-		s.readMu.Lock()
-		if len(s.readView) > 0 {
+		if atomic.LoadUint32(&s.isReadable) == 1 {
 			r |= waiter.EventIn
 		}
-		s.readMu.Unlock()
 	}
 
 	return r
@@ -2219,6 +2225,10 @@ func (s *SocketOperations) coalescingRead(ctx context.Context, dst usermem.IOSeq
 		}
 		copied += n
 		s.readView.TrimFront(n)
+		if len(s.readView) == 0 {
+			atomic.StoreUint32(&s.isReadable, 0)
+		}
+
 		dst = dst.DropFirst(n)
 		if e != nil {
 			err = syserr.FromError(e)
@@ -2336,9 +2346,16 @@ func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSe
 	if isPacket {
 		msgLen = len(s.readView)
 		s.readView = nil
+		if len(s.readView) == 0 {
+			atomic.StoreUint32(&s.isReadable, 0)
+		}
 	} else {
 		msgLen = int(n)
 		s.readView.TrimFront(int(n))
+		if len(s.readView) == 0 {
+			atomic.StoreUint32(&s.isReadable, 0)
+		}
+
 	}
 
 	var flags int

@@ -455,9 +455,7 @@ func (s *sender) retransmitTimerExpired() bool {
 	// Give up if we've waited more than a minute since the last resend or
 	// if a user time out is set and we have exceeded the user specified
 	// timeout since the first retransmission.
-	s.ep.mu.RLock()
 	uto := s.ep.userTimeout
-	s.ep.mu.RUnlock()
 
 	if s.firstRetransmittedSegXmitTime.IsZero() {
 		// We store the original xmitTime of the segment that we are
@@ -713,7 +711,6 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 		default:
 			s.ep.setEndpointState(StateFinWait1)
 		}
-
 	} else {
 		// We're sending a non-FIN segment.
 		if seg.flags&header.TCPFlagFin != 0 {
