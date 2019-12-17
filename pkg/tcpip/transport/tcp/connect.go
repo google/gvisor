@@ -218,6 +218,14 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 	// acceptable if the ack field acknowledges the SYN.
 	if s.flagIsSet(header.TCPFlagRst) {
 		if s.flagIsSet(header.TCPFlagAck) && s.ackNumber == h.iss+1 {
+			// RFC 793, page 67, states that "If the RST bit is set [and] If the ACK
+			// was acceptable then signal the user "error: connection reset", drop
+			// the segment, enter CLOSED state, delete TCB, and return."
+			h.ep.mu.Lock()
+			h.ep.workerCleanup = true
+			h.ep.mu.Unlock()
+			// Although the RFC above calls out ECONNRESET, Linux actually returns
+			// ECONNREFUSED here so we do as well.
 			return tcpip.ErrConnectionRefused
 		}
 		return nil
