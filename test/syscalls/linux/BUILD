@@ -9,6 +9,7 @@ package(
 exports_files(
     [
         "socket.cc",
+        "socket_ip_loopback_blocking.cc",
         "socket_ipv4_udp_unbound_loopback.cc",
         "tcp_socket.cc",
         "udp_socket.cc",
