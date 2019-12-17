@@ -967,6 +967,78 @@ TEST_P(SimpleTcpSocketTest, BlockingConnectRefused) {
   EXPECT_THAT(close(s.release()), SyscallSucceeds());
 }
 
+// Test that connecting to a non-listening port and thus receiving a RST is
+// handled appropriately by the socket - the port that the socket was bound to
+// is released and the expected error is returned.
+TEST_P(SimpleTcpSocketTest, CleanupOnConnectionRefused) {
+  // Create a socket that is known to not be listening. As is it bound but not
+  // listening, when another socket connects to the port, it will refuse..
+  FileDescriptor bound_s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  sockaddr_storage bound_addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+  socklen_t bound_addrlen = sizeof(bound_addr);
+
+  ASSERT_THAT(
+      bind(bound_s.get(), reinterpret_cast<struct sockaddr*>(&bound_addr),
+           bound_addrlen),
+      SyscallSucceeds());
+
+  // Get the addresses the socket is bound to because the port is chosen by the
+  // stack.
+  ASSERT_THAT(getsockname(bound_s.get(),
+                          reinterpret_cast<struct sockaddr*>(&bound_addr),
+                          &bound_addrlen),
+              SyscallSucceeds());
+
+  // Create, initialize, and bind the socket that is used to test connecting to
+  // the non-listening port.
+  FileDescriptor client_s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  // Initialize client address to the loopback one.
+  sockaddr_storage client_addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+  socklen_t client_addrlen = sizeof(client_addr);
+
+  ASSERT_THAT(
+      bind(client_s.get(), reinterpret_cast<struct sockaddr*>(&client_addr),
+           client_addrlen),
+      SyscallSucceeds());
+
+  ASSERT_THAT(getsockname(client_s.get(),
+                          reinterpret_cast<struct sockaddr*>(&client_addr),
+                          &client_addrlen),
+              SyscallSucceeds());
+
+  // Now the test: connect to the bound but not listening socket with the
+  // client socket. The bound socket should return a RST and cause the client
+  // socket to return an error and clean itself up immediately.
+  // The error being ECONNREFUSED diverges with RFC 793, page 37, but does what
+  // Linux does.
+  ASSERT_THAT(connect(client_s.get(),
+                      reinterpret_cast<const struct sockaddr*>(&bound_addr),
+                      bound_addrlen),
+              SyscallFailsWithErrno(ECONNREFUSED));
+
+  FileDescriptor new_s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  // Test binding to the address from the client socket. This should be okay
+  // if it was dropped correctly.
+  ASSERT_THAT(
+      bind(new_s.get(), reinterpret_cast<struct sockaddr*>(&client_addr),
+           client_addrlen),
+      SyscallSucceeds());
+
+  // Attempt #2, with the new socket and reused addr our connect should fail in
+  // the same way as before, not with an EADDRINUSE.
+  ASSERT_THAT(connect(client_s.get(),
+                      reinterpret_cast<const struct sockaddr*>(&bound_addr),
+                      bound_addrlen),
+              SyscallFailsWithErrno(ECONNREFUSED));
+}
+
 // Test that we get an ECONNREFUSED with a nonblocking socket.
 TEST_P(SimpleTcpSocketTest, NonBlockingConnectRefused) {
   FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(

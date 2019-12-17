@@ -1140,6 +1140,71 @@ func TestConnectBindToDevice(t *testing.T) {
 	}
 }
 
+func TestRstOnSynSent(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	// Create an endpoint, don't handshake because we want to interfere with the
+	// handshake process.
+	c.Create(-1)
+
+	// Start connection attempt.
+	waitEntry, ch := waiter.NewChannelEntry(nil)
+	c.WQ.EventRegister(&waitEntry, waiter.EventOut)
+	defer c.WQ.EventUnregister(&waitEntry)
+
+	addr := tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}
+	if err := c.EP.Connect(addr); err != tcpip.ErrConnectStarted {
+		t.Fatalf("got Connect(%+v) = %v, want %s", addr, err, tcpip.ErrConnectStarted)
+	}
+
+	// Receive SYN packet.
+	b := c.GetPacket()
+	checker.IPv4(t, b,
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.TCPFlags(header.TCPFlagSyn),
+		),
+	)
+
+	// Ensure that we've reached SynSent state
+	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateSynSent; got != want {
+		t.Fatalf("got State() = %s, want %s", got, want)
+	}
+	tcpHdr := header.TCP(header.IPv4(b).Payload())
+	c.IRS = seqnum.Value(tcpHdr.SequenceNumber())
+
+	// Send a packet with a proper ACK and a RST flag to cause the socket
+	// to Error and close out
+	iss := seqnum.Value(789)
+	rcvWnd := seqnum.Size(30000)
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: tcpHdr.DestinationPort(),
+		DstPort: tcpHdr.SourcePort(),
+		Flags:   header.TCPFlagRst | header.TCPFlagAck,
+		SeqNum:  iss,
+		AckNum:  c.IRS.Add(1),
+		RcvWnd:  rcvWnd,
+		TCPOpts: nil,
+	})
+
+	// Wait for receive to be notified.
+	select {
+	case <-ch:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for packet to arrive")
+	}
+
+	if _, _, err := c.EP.Read(nil); err != tcpip.ErrConnectionRefused {
+		t.Fatalf("got c.EP.Read(nil) = %v, want = %s", err, tcpip.ErrConnectionRefused)
+	}
+
+	// Due to the RST the endpoint should be in an error state.
+	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateError; got != want {
+		t.Fatalf("got State() = %s, want %s", got, want)
+	}
+}
+
 func TestOutOfOrderReceive(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
