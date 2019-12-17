@@ -250,6 +250,12 @@ type Config struct {
 	// multiple tests are run in parallel, since there is no way to pass
 	// parameters to the runtime from docker.
 	TestOnlyTestNameEnv string
+
+	// CPUNumFromQuota sets CPU number count to available CPU quota, using
+	// least integer value greater than or equal to quota.
+	//
+	// E.g. 0.2 CPU quota will result in 1, and 1.9 in 2.
+	CPUNumFromQuota bool
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.
@@ -281,6 +287,9 @@ func (c *Config) ToFlags() []string {
 		"--gso=" + strconv.FormatBool(c.HardwareGSO),
 		"--software-gso=" + strconv.FormatBool(c.SoftwareGSO),
 		"--overlayfs-stale-read=" + strconv.FormatBool(c.OverlayfsStaleRead),
+	}
+	if c.CPUNumFromQuota {
+		f = append(f, "--cpu-num-from-quota")
 	}
 	// Only include these if set since it is never to be used by users.
 	if c.TestOnlyAllowRunAsCurrentUserWithoutChroot {
