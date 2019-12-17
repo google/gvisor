@@ -167,8 +167,14 @@ func patchSignalInfo(regs *syscall.PtraceRegs, signalInfo *arch.SignalInfo) {
 	}
 }
 
-// enableCpuidFault enable cpuid-faulting; this may fail on older kernels or hardware,
-// so we just disregard the result. Host CPUID will be enabled.
+// enableCpuidFault enables cpuid-faulting.
+//
+// This may fail on older kernels or hardware, so we just disregard the result.
+// Host CPUID will be enabled.
+//
+// This is safe to call in an afterFork context.
+//
+//go:nosplit
 func enableCpuidFault() {
 	syscall.RawSyscall6(syscall.SYS_ARCH_PRCTL, linux.ARCH_SET_CPUID, 0, 0, 0, 0, 0)
 }
