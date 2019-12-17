@@ -257,7 +257,6 @@ func CanOpen(mode FileMode) bool {
 
 // handle implements handler.handle.
 func (t *Tlopen) handle(cs *connState) message {
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -294,7 +293,6 @@ func (t *Tlopen) handle(cs *connState) message {
 			return syscall.EINVAL
 		}
 
-		// Do the open.
 		osFile, qid, ioUnit, err = ref.file.Open(t.Flags)
 		return err
 	}); err != nil {
@@ -311,12 +309,10 @@ func (t *Tlopen) handle(cs *connState) message {
 }
 
 func (t *Tlcreate) do(cs *connState, uid UID) (*Rlcreate, error) {
-	// Don't allow complex names.
 	if err := checkSafeName(t.Name); err != nil {
 		return nil, err
 	}
 
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
 		return nil, syscall.EBADF
@@ -390,12 +386,10 @@ func (t *Tsymlink) handle(cs *connState) message {
 }
 
 func (t *Tsymlink) do(cs *connState, uid UID) (*Rsymlink, error) {
-	// Don't allow complex names.
 	if err := checkSafeName(t.Name); err != nil {
 		return nil, err
 	}
 
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.Directory)
 	if !ok {
 		return nil, syscall.EBADF
@@ -426,19 +420,16 @@ func (t *Tsymlink) do(cs *connState, uid UID) (*Rsymlink, error) {
 
 // handle implements handler.handle.
 func (t *Tlink) handle(cs *connState) message {
-	// Don't allow complex names.
 	if err := checkSafeName(t.Name); err != nil {
 		return newErr(err)
 	}
 
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.Directory)
 	if !ok {
 		return newErr(syscall.EBADF)
 	}
 	defer ref.DecRef()
 
-	// Lookup the other FID.
 	refTarget, ok := cs.LookupFID(t.Target)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -467,7 +458,6 @@ func (t *Tlink) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *Trenameat) handle(cs *connState) message {
-	// Don't allow complex names.
 	if err := checkSafeName(t.OldName); err != nil {
 		return newErr(err)
 	}
@@ -475,14 +465,12 @@ func (t *Trenameat) handle(cs *connState) message {
 		return newErr(err)
 	}
 
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.OldDirectory)
 	if !ok {
 		return newErr(syscall.EBADF)
 	}
 	defer ref.DecRef()
 
-	// Lookup the other FID.
 	refTarget, ok := cs.LookupFID(t.NewDirectory)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -523,12 +511,10 @@ func (t *Trenameat) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *Tunlinkat) handle(cs *connState) message {
-	// Don't allow complex names.
 	if err := checkSafeName(t.Name); err != nil {
 		return newErr(err)
 	}
 
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.Directory)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -577,19 +563,16 @@ func (t *Tunlinkat) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *Trename) handle(cs *connState) message {
-	// Don't allow complex names.
 	if err := checkSafeName(t.Name); err != nil {
 		return newErr(err)
 	}
 
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
 		return newErr(syscall.EBADF)
 	}
 	defer ref.DecRef()
 
-	// Lookup the target.
 	refTarget, ok := cs.LookupFID(t.Directory)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -641,7 +624,6 @@ func (t *Trename) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *Treadlink) handle(cs *connState) message {
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -669,7 +651,6 @@ func (t *Treadlink) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *Tread) handle(cs *connState) message {
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -708,7 +689,6 @@ func (t *Tread) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *Twrite) handle(cs *connState) message {
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -747,12 +727,10 @@ func (t *Tmknod) handle(cs *connState) message {
 }
 
 func (t *Tmknod) do(cs *connState, uid UID) (*Rmknod, error) {
-	// Don't allow complex names.
 	if err := checkSafeName(t.Name); err != nil {
 		return nil, err
 	}
 
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.Directory)
 	if !ok {
 		return nil, syscall.EBADF
@@ -791,12 +769,10 @@ func (t *Tmkdir) handle(cs *connState) message {
 }
 
 func (t *Tmkdir) do(cs *connState, uid UID) (*Rmkdir, error) {
-	// Don't allow complex names.
 	if err := checkSafeName(t.Name); err != nil {
 		return nil, err
 	}
 
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.Directory)
 	if !ok {
 		return nil, syscall.EBADF
@@ -827,7 +803,6 @@ func (t *Tmkdir) do(cs *connState, uid UID) (*Rmkdir, error) {
 
 // handle implements handler.handle.
 func (t *Tgetattr) handle(cs *connState) message {
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -856,7 +831,6 @@ func (t *Tgetattr) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *Tsetattr) handle(cs *connState) message {
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -883,7 +857,6 @@ func (t *Tsetattr) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *Tallocate) handle(cs *connState) message {
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -917,7 +890,6 @@ func (t *Tallocate) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *Txattrwalk) handle(cs *connState) message {
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -930,7 +902,6 @@ func (t *Txattrwalk) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *Txattrcreate) handle(cs *connState) message {
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -943,7 +914,6 @@ func (t *Txattrcreate) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *Treaddir) handle(cs *connState) message {
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.Directory)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -977,7 +947,6 @@ func (t *Treaddir) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *Tfsync) handle(cs *connState) message {
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -1001,7 +970,6 @@ func (t *Tfsync) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *Tstatfs) handle(cs *connState) message {
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -1192,7 +1160,6 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 
 // handle implements handler.handle.
 func (t *Twalk) handle(cs *connState) message {
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -1213,7 +1180,6 @@ func (t *Twalk) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *Twalkgetattr) handle(cs *connState) message {
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -1270,7 +1236,6 @@ func (t *Tumknod) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *Tlconnect) handle(cs *connState) message {
-	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -1303,7 +1268,6 @@ func (t *Tchannel) handle(cs *connState) message {
 		return newErr(err)
 	}
 
-	// Lookup the given channel.
 	ch := cs.lookupChannel(t.ID)
 	if ch == nil {
 		return newErr(syscall.ENOSYS)
