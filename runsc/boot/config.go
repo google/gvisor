@@ -256,12 +256,6 @@ type Config struct {
 	//
 	// E.g. 0.2 CPU quota will result in 1, and 1.9 in 2.
 	CPUNumFromQuota bool
-
-	// CPUNumMin is minimum value of CPU number setting when CPUNumFromQuota
-	// strategy is active.
-	//
-	// E.g. when CPUNumMin is 2, 0.2 CPU quota will result in 2 instead of 1.
-	CPUNumMin int
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.
@@ -295,9 +289,7 @@ func (c *Config) ToFlags() []string {
 		"--overlayfs-stale-read=" + strconv.FormatBool(c.OverlayfsStaleRead),
 	}
 	if c.CPUNumFromQuota {
-		f = append(f, "--cpu-num-from-quota",
-			"--cpu-num-min="+strconv.Itoa(c.CPUNumMin),
-		)
+		f = append(f, "--cpu-num-from-quota")
 	}
 	// Only include these if set since it is never to be used by users.
 	if c.TestOnlyAllowRunAsCurrentUserWithoutChroot {
