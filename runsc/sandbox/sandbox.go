@@ -633,13 +633,18 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 			return fmt.Errorf("getting cpu count from cgroups: %v", err)
 		}
 		if conf.CPUNumFromQuota {
+			// Dropping below 2 CPUs can trigger application to disable
+			// locks that can lead do hard to debug errors, so just
+			// leaving two cores as reasonable default.
+			const minCPUs = 2
+
 			quota, err := s.Cgroup.CPUQuota()
 			if err != nil {
 				return fmt.Errorf("getting cpu qouta from cgroups: %v", err)
 			}
 			if n := int(math.Ceil(quota)); n > 0 {
-				if n < conf.CPUNumMin {
-					n = conf.CPUNumMin
+				if n < minCPUs {
+					n = minCPUs
 				}
 				if n < cpuNum {
 					// Only lower the cpu number.
