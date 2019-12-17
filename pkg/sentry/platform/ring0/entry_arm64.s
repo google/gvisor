@@ -31,6 +31,11 @@
 #define RSV_REG 	R18_PLATFORM
 #define RSV_REG_APP 	R9
 
+#define FPEN_NOTRAP 	0x3
+#define FPEN_SHIFT 	20
+
+#define FPEN_ENABLE (FPEN_NOTRAP << FPEN_SHIFT)
+
 #define REGISTERS_SAVE(reg, offset) \
   MOVD R0, offset+PTRACE_R0(reg); \
   MOVD R1, offset+PTRACE_R1(reg); \
@@ -279,6 +284,16 @@
 #define IRQ_DISABLE \
 	MSR $2, DAIFClr;
 
+#define VFP_ENABLE \
+	MOVD $FPEN_ENABLE, R0; \
+	WORD $0xd5181040; \ //MSR R0, CPACR_EL1
+	ISB $15;
+
+#define VFP_DISABLE \
+	MOVD $0x0, R0; \
+	WORD $0xd5181040; \ //MSR R0, CPACR_EL1
+	ISB $15;
+
 #define KERNEL_ENTRY_FROM_EL0 \
 	SUB $16, RSP, RSP; \		// step1, save r18, r9 into kernel temporary stack.
 	STP (RSV_REG, RSV_REG_APP), 16*0(RSP); \
@@ -318,6 +333,11 @@ TEXT ·Halt(SB),NOSPLIT,$0
 	BNE mmio_exit
 	MOVD $0, CPU_REGISTERS+PTRACE_R9(RSV_REG)
 mmio_exit:
+	// Disable fpsimd.
+	WORD $0xd5381041 // MRS CPACR_EL1, R1
+	MOVD R1, CPU_LAZY_VFP(RSV_REG)
+	VFP_DISABLE
+
 	// MMIO_EXIT.
 	MOVD $0, R9
 	MOVD R0, 0xffff000000001000(R9)
@@ -382,6 +402,8 @@ TEXT ·El1_sync(SB),NOSPLIT,$0
 	BEQ el1_svc
 	CMP $ESR_ELx_EC_BREAKPT_CUR, R24
 	BGE el1_dbg
+	CMP $ESR_ELx_EC_FP_ASIMD, R24
+	BEQ el1_fpsimd_acc
 	B el1_invalid
 
 el1_da:
@@ -401,6 +423,10 @@ el1_svc:
 
 el1_dbg:
 	B ·Shutdown(SB)
+
+el1_fpsimd_acc:
+	VFP_ENABLE
+	B ·kernelExitToEl1(SB)  // Resume.
 
 el1_invalid:
 	B ·Shutdown(SB)

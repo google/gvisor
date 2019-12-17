@@ -71,6 +71,7 @@ go_library(
         "lib_amd64.go",
         "lib_amd64.s",
         "lib_arm64.go",
+        "lib_arm64.s",
         "ring0.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/sentry/platform/ring0",
