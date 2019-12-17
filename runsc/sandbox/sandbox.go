@@ -637,8 +637,14 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 			if err != nil {
 				return fmt.Errorf("getting cpu qouta from cgroups: %v", err)
 			}
-			if quota > 0 {
-				cpuNum = int(math.Ceil(quota))
+			if n := int(math.Ceil(quota)); n > 0 {
+				if n < conf.CPUNumMin {
+					n = conf.CPUNumMin
+				}
+				if n < cpuNum {
+					// Only lower the cpu number.
+					cpuNum = n
+				}
 			}
 		}
 		cmd.Args = append(cmd.Args, "--cpu-num", strconv.Itoa(cpuNum))
