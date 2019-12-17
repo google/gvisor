@@ -101,6 +101,14 @@ func getValue(path, name string) (string, error) {
 	return string(out), nil
 }
 
+func getInt(path, name string) (int, error) {
+	s, err := getValue(path, name)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(s))
+}
+
 // fillFromAncestor sets the value of a cgroup file from the first ancestor
 // that has content. It does nothing if the file in 'path' has already been set.
 func fillFromAncestor(path string) (string, error) {
@@ -321,6 +329,22 @@ func (c *Cgroup) Join() (func(), error) {
 		}
 	}
 	return undo, nil
+}
+
+func (c *Cgroup) CPUQuota() (float64, error) {
+	path := c.makePath("cpu")
+	quota, err := getInt(path, "cpu.cfs_quota_us")
+	if err != nil {
+		return -1, err
+	}
+	period, err := getInt(path, "cpu.cfs_period_us")
+	if err != nil {
+		return -1, err
+	}
+	if quota <= 0 || period <= 0 {
+		return -1, err
+	}
+	return float64(quota) / float64(period), nil
 }
 
 // NumCPU returns the number of CPUs configured in 'cpuset/cpuset.cpus'.
