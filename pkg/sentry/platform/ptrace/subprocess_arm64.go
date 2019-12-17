@@ -151,6 +151,8 @@ func patchSignalInfo(regs *syscall.PtraceRegs, signalInfo *arch.SignalInfo) {
 }
 
 // Noop on arm64.
+//
+//go:nosplit
 func enableCpuidFault() {
 }
 
