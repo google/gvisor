@@ -604,6 +604,10 @@ func (s *statusData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) (
 	fmt.Fprintf(&buf, "CapEff:\t%016x\n", creds.EffectiveCaps)
 	fmt.Fprintf(&buf, "CapBnd:\t%016x\n", creds.BoundingCaps)
 	fmt.Fprintf(&buf, "Seccomp:\t%d\n", s.t.SeccompMode())
+	// We unconditionally report a single NUMA node. See
+	// pkg/sentry/syscalls/linux/sys_mempolicy.go.
+	fmt.Fprintf(&buf, "Mems_allowed:\t1\n")
+	fmt.Fprintf(&buf, "Mems_allowed_list:\t0\n")
 	return []seqfile.SeqData{{Buf: buf.Bytes(), Handle: (*statusData)(nil)}}, 0
 }
 
