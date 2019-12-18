@@ -84,6 +84,7 @@ func Emit(w io.Writer) {
 
 	fmt.Fprintf(w, "#define PageFault 0x%02x\n", PageFault)
 	fmt.Fprintf(w, "#define Syscall 0x%02x\n", Syscall)
+	fmt.Fprintf(w, "#define VirtualizationException 0x%02x\n", VirtualizationException)
 
 	p := &syscall.PtraceRegs{}
 	fmt.Fprintf(w, "\n// Ptrace registers.\n")

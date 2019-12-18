@@ -94,8 +94,9 @@ const (
 
 // System call vectors.
 const (
-	Syscall   Vector = El0Sync_svc
-	PageFault Vector = El0Sync_da
+	Syscall                 Vector = El0Sync_svc
+	PageFault               Vector = El0Sync_da
+	VirtualizationException Vector = El0Error
 )
 
 // VirtualAddressBits returns the number bits available for virtual addresses.

@@ -477,7 +477,19 @@ TEXT ·El0_fiq(SB),NOSPLIT,$0
 	B ·Shutdown(SB)
 
 TEXT ·El0_error(SB),NOSPLIT,$0
-	B ·Shutdown(SB)
+	KERNEL_ENTRY_FROM_EL0
+	WORD $0xd538d092     //MRS   TPIDR_EL1, R18
+	WORD $0xd538601a     //MRS   FAR_EL1, R26
+
+	MOVD R26, CPU_FAULT_ADDR(RSV_REG)
+
+	MOVD $1, R3
+	MOVD R3, CPU_ERROR_TYPE(RSV_REG) // Set error type to user.
+
+	MOVD $VirtualizationException, R3
+	MOVD R3, CPU_VECTOR_CODE(RSV_REG)
+
+	B ·Halt(SB)
 
 TEXT ·El0_sync_invalid(SB),NOSPLIT,$0
 	B ·Shutdown(SB)
