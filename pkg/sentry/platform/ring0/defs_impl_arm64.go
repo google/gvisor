@@ -1,13 +1,13 @@
 package ring0
 
 import (
-	"reflect"
 	"syscall"
 
 	"fmt"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"io"
+	"reflect"
 )
 
 // Useful bits.
@@ -244,6 +244,9 @@ type CPUArchState struct {
 
 	// application context pointer.
 	appAddr uintptr
+
+	// lazyVFP is the value of cpacr_el1.
+	lazyVFP uintptr
 }
 
 // ErrorCode returns the last error code.
@@ -319,6 +322,7 @@ func Emit(w io.Writer) {
 	fmt.Fprintf(w, "#define CPU_TTBR0_APP        0x%02x\n", reflect.ValueOf(&c.ttbr0App).Pointer()-reflect.ValueOf(c).Pointer())
 	fmt.Fprintf(w, "#define CPU_VECTOR_CODE      0x%02x\n", reflect.ValueOf(&c.vecCode).Pointer()-reflect.ValueOf(c).Pointer())
 	fmt.Fprintf(w, "#define CPU_APP_ADDR         0x%02x\n", reflect.ValueOf(&c.appAddr).Pointer()-reflect.ValueOf(c).Pointer())
+	fmt.Fprintf(w, "#define CPU_LAZY_VFP         0x%02x\n", reflect.ValueOf(&c.lazyVFP).Pointer()-reflect.ValueOf(c).Pointer())
 
 	fmt.Fprintf(w, "\n// Bits.\n")
 	fmt.Fprintf(w, "#define _KERNEL_FLAGS        0x%02x\n", KernelFlagsSet)
