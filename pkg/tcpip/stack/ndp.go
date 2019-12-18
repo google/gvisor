@@ -131,40 +131,34 @@ type NDPDispatcher interface {
 	OnDuplicateAddressDetectionStatus(nicID tcpip.NICID, addr tcpip.Address, resolved bool, err *tcpip.Error)
 
 	// OnDefaultRouterDiscovered will be called when a new default router is
-	// discovered. Implementations must return true along with a new valid
-	// route table if the newly discovered router should be remembered. If
-	// an implementation returns false, the second return value will be
-	// ignored.
+	// discovered. Implementations must return true if the newly discovered
+	// router should be remembered.
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
-	OnDefaultRouterDiscovered(nicID tcpip.NICID, addr tcpip.Address) (bool, []tcpip.Route)
+	OnDefaultRouterDiscovered(nicID tcpip.NICID, addr tcpip.Address) bool
 
 	// OnDefaultRouterInvalidated will be called when a discovered default
-	// router is invalidated. Implementers must return a new valid route
-	// table.
+	// router that was remembered is invalidated.
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
-	OnDefaultRouterInvalidated(nicID tcpip.NICID, addr tcpip.Address) []tcpip.Route
+	OnDefaultRouterInvalidated(nicID tcpip.NICID, addr tcpip.Address)
 
 	// OnOnLinkPrefixDiscovered will be called when a new on-link prefix is
-	// discovered. Implementations must return true along with a new valid
-	// route table if the newly discovered on-link prefix should be
-	// remembered. If an implementation returns false, the second return
-	// value will be ignored.
+	// discovered. Implementations must return true if the newly discovered
+	// on-link prefix should be remembered.
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
-	OnOnLinkPrefixDiscovered(nicID tcpip.NICID, prefix tcpip.Subnet) (bool, []tcpip.Route)
+	OnOnLinkPrefixDiscovered(nicID tcpip.NICID, prefix tcpip.Subnet) bool
 
 	// OnOnLinkPrefixInvalidated will be called when a discovered on-link
-	// prefix is invalidated. Implementers must return a new valid route
-	// table.
+	// prefix that was remembered is invalidated.
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
-	OnOnLinkPrefixInvalidated(nicID tcpip.NICID, prefix tcpip.Subnet) []tcpip.Route
+	OnOnLinkPrefixInvalidated(nicID tcpip.NICID, prefix tcpip.Subnet)
 
 	// OnAutoGenAddress will be called when a new prefix with its
 	// autonomous address-configuration flag set has been received and SLAAC
@@ -668,7 +662,7 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 
 // invalidateDefaultRouter invalidates a discovered default router.
 //
-// The NIC that ndp belongs to and its associated stack MUST be locked.
+// The NIC that ndp belongs to MUST be locked.
 func (ndp *ndpState) invalidateDefaultRouter(ip tcpip.Address) {
 	rtr, ok := ndp.defaultRouters[ip]
 
@@ -686,8 +680,8 @@ func (ndp *ndpState) invalidateDefaultRouter(ip tcpip.Address) {
 	delete(ndp.defaultRouters, ip)
 
 	// Let the integrator know a discovered default router is invalidated.
-	if ndp.nic.stack.ndpDisp != nil {
-		ndp.nic.stack.routeTable = ndp.nic.stack.ndpDisp.OnDefaultRouterInvalidated(ndp.nic.ID(), ip)
+	if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
+		ndpDisp.OnDefaultRouterInvalidated(ndp.nic.ID(), ip)
 	}
 }
 
@@ -696,15 +690,15 @@ func (ndp *ndpState) invalidateDefaultRouter(ip tcpip.Address) {
 //
 // The router identified by ip MUST NOT already be known by the NIC.
 //
-// The NIC that ndp belongs to and its associated stack MUST be locked.
+// The NIC that ndp belongs to MUST be locked.
 func (ndp *ndpState) rememberDefaultRouter(ip tcpip.Address, rl time.Duration) {
-	if ndp.nic.stack.ndpDisp == nil {
+	ndpDisp := ndp.nic.stack.ndpDisp
+	if ndpDisp == nil {
 		return
 	}
 
 	// Inform the integrator when we discovered a default router.
-	remember, routeTable := ndp.nic.stack.ndpDisp.OnDefaultRouterDiscovered(ndp.nic.ID(), ip)
-	if !remember {
+	if !ndpDisp.OnDefaultRouterDiscovered(ndp.nic.ID(), ip) {
 		// Informed by the integrator to not remember the router, do
 		// nothing further.
 		return
@@ -731,8 +725,6 @@ func (ndp *ndpState) rememberDefaultRouter(ip tcpip.Address, rl time.Duration) {
 		}),
 		doNotInvalidate: &doNotInvalidate,
 	}
-
-	ndp.nic.stack.routeTable = routeTable
 }
 
 // rememberOnLinkPrefix remembers a newly discovered on-link prefix with IPv6
@@ -740,15 +732,15 @@ func (ndp *ndpState) rememberDefaultRouter(ip tcpip.Address, rl time.Duration) {
 //
 // The prefix identified by prefix MUST NOT already be known.
 //
-// The NIC that ndp belongs to and its associated stack MUST be locked.
+// The NIC that ndp belongs to MUST be locked.
 func (ndp *ndpState) rememberOnLinkPrefix(prefix tcpip.Subnet, l time.Duration) {
-	if ndp.nic.stack.ndpDisp == nil {
+	ndpDisp := ndp.nic.stack.ndpDisp
+	if ndpDisp == nil {
 		return
 	}
 
 	// Inform the integrator when we discovered an on-link prefix.
-	remember, routeTable := ndp.nic.stack.ndpDisp.OnOnLinkPrefixDiscovered(ndp.nic.ID(), prefix)
-	if !remember {
+	if !ndpDisp.OnOnLinkPrefixDiscovered(ndp.nic.ID(), prefix) {
 		// Informed by the integrator to not remember the prefix, do
 		// nothing further.
 		return
@@ -769,13 +761,11 @@ func (ndp *ndpState) rememberOnLinkPrefix(prefix tcpip.Subnet, l time.Duration) 
 		invalidationTimer: timer,
 		doNotInvalidate:   &doNotInvalidate,
 	}
-
-	ndp.nic.stack.routeTable = routeTable
 }
 
 // invalidateOnLinkPrefix invalidates a discovered on-link prefix.
 //
-// The NIC that ndp belongs to and its associated stack MUST be locked.
+// The NIC that ndp belongs to MUST be locked.
 func (ndp *ndpState) invalidateOnLinkPrefix(prefix tcpip.Subnet) {
 	s, ok := ndp.onLinkPrefixes[prefix]
 
@@ -796,8 +786,8 @@ func (ndp *ndpState) invalidateOnLinkPrefix(prefix tcpip.Subnet) {
 	delete(ndp.onLinkPrefixes, prefix)
 
 	// Let the integrator know a discovered on-link prefix is invalidated.
-	if ndp.nic.stack.ndpDisp != nil {
-		ndp.nic.stack.routeTable = ndp.nic.stack.ndpDisp.OnOnLinkPrefixInvalidated(ndp.nic.ID(), prefix)
+	if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
+		ndpDisp.OnOnLinkPrefixInvalidated(ndp.nic.ID(), prefix)
 	}
 }
 
@@ -829,7 +819,7 @@ func (ndp *ndpState) prefixInvalidationCallback(prefix tcpip.Subnet, vl time.Dur
 // handleOnLinkPrefixInformation assumes that the prefix this pi is for is
 // not the link-local prefix and the on-link flag is set.
 //
-// The NIC that ndp belongs to and its associated stack MUST be locked.
+// The NIC that ndp belongs to MUST be locked.
 func (ndp *ndpState) handleOnLinkPrefixInformation(pi header.NDPPrefixInformation) {
 	prefix := pi.Subnet()
 	prefixState, ok := ndp.onLinkPrefixes[prefix]
@@ -1066,10 +1056,11 @@ func (ndp *ndpState) handleAutonomousPrefixInformation(pi header.NDPPrefixInform
 	}
 
 	// Inform the integrator that we have a new SLAAC address.
-	if ndp.nic.stack.ndpDisp == nil {
+	ndpDisp := ndp.nic.stack.ndpDisp
+	if ndpDisp == nil {
 		return
 	}
-	if !ndp.nic.stack.ndpDisp.OnAutoGenAddress(ndp.nic.ID(), addrWithPrefix) {
+	if !ndpDisp.OnAutoGenAddress(ndp.nic.ID(), addrWithPrefix) {
 		// Informed by the integrator not to add the address.
 		return
 	}
@@ -1135,8 +1126,8 @@ func (ndp *ndpState) cleanupAutoGenAddrResourcesAndNotify(addr tcpip.Address) bo
 
 	delete(ndp.autoGenAddresses, addr)
 
-	if ndp.nic.stack.ndpDisp != nil {
-		ndp.nic.stack.ndpDisp.OnAutoGenAddressInvalidated(ndp.nic.ID(), tcpip.AddressWithPrefix{
+	if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
+		ndpDisp.OnAutoGenAddressInvalidated(ndp.nic.ID(), tcpip.AddressWithPrefix{
 			Address:   addr,
 			PrefixLen: validPrefixLenForAutoGen,
 		})
