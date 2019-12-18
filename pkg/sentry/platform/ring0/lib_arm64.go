@@ -16,10 +16,24 @@
 
 package ring0
 
-// LoadFloatingPoint loads floating point state by the most efficient mechanism
-// available (set by Init).
-var LoadFloatingPoint func(*byte)
+// CPACREL1 returns the value of the CPACR_EL1 register.
+func CPACREL1() (value uintptr)
 
-// SaveFloatingPoint saves floating point state by the most efficient mechanism
-// available (set by Init).
-var SaveFloatingPoint func(*byte)
+// FPCR returns the value of FPCR register.
+func FPCR() (value uintptr)
+
+// SetFPCR writes the FPCR value.
+func SetFPCR(value uintptr)
+
+// FPSR returns the value of FPSR register.
+func FPSR() (value uintptr)
+
+// SetFPSR writes the FPSR value.
+func SetFPSR(value uintptr)
+
+// SaveVRegs saves V0-V31 registers.
+// V0-V31: 32 128-bit registers for floating point and simd.
+func SaveVRegs(*byte)
+
+// LoadVRegs loads V0-V31 registers.
+func LoadVRegs(*byte)
