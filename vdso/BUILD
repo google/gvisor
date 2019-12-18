@@ -68,13 +68,13 @@ genrule(
           "&& $(location :check_vdso) " +
           "--check-data " +
           "--vdso $(location vdso.so) ",
+    exec_tools = [
+        ":check_vdso",
+    ],
     features = ["-pie"],
     toolchains = [
         "@bazel_tools//tools/cpp:current_cc_toolchain",
         ":no_pie_cc_flags",
-    ],
-    tools = [
-        ":check_vdso",
     ],
     visibility = ["//:sandbox"],
 )
@@ -87,6 +87,6 @@ cc_flags_supplier(
 py_binary(
     name = "check_vdso",
     srcs = ["check_vdso.py"],
-    python_version = "PY2",
+    python_version = "PY3",
     visibility = ["//:sandbox"],
 )
