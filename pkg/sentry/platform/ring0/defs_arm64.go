@@ -73,6 +73,9 @@ type CPUArchState struct {
 
 	// application context pointer.
 	appAddr uintptr
+
+	// lazyVFP is the value of cpacr_el1.
+	lazyVFP uintptr
 }
 
 // ErrorCode returns the last error code.
