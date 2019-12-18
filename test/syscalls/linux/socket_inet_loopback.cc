@@ -13,12 +13,10 @@
 // limitations under the License.
 
 #include <arpa/inet.h>
-#include <linux/tcp.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <string.h>
-#include <sys/epoll.h>
-#include <sys/socket.h>
 
 #include <atomic>
 #include <iostream>
@@ -45,6 +43,8 @@ namespace gvisor {
 namespace testing {
 
 namespace {
+
+using ::testing::Gt;
 
 PosixErrorOr<uint16_t> AddrPort(int family, sockaddr_storage const& addr) {
   switch (family) {
@@ -976,41 +976,44 @@ TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThreadShort) {
                 SyscallSucceedsWithValue(sizeof(i)));
   }
 
-  int epollfd;
-  ASSERT_THAT(epollfd = epoll_create1(0), SyscallSucceeds());
-
+  struct pollfd pollfds[kThreadCount];
   for (int i = 0; i < kThreadCount; i++) {
-    int fd = listener_fds[i].get();
-    struct epoll_event ev;
-    ev.data.fd = fd;
-    ev.events = EPOLLIN;
-    ASSERT_THAT(epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &ev), SyscallSucceeds());
+    pollfds[i].fd = listener_fds[i].get();
+    pollfds[i].events = POLLIN;
   }
 
   std::map<uint16_t, int> portToFD;
 
-  for (int i = 0; i < kConnectAttempts * 2; i++) {
-    struct sockaddr_storage addr = {};
-    socklen_t addrlen = sizeof(addr);
-    struct epoll_event ev;
-    int data, fd;
+  int received = 0;
+  while (received < kConnectAttempts * 2) {
+    ASSERT_THAT(poll(pollfds, kThreadCount, -1),
+                SyscallSucceedsWithValue(Gt(0)));
 
-    ASSERT_THAT(epoll_wait(epollfd, &ev, 1, -1), SyscallSucceedsWithValue(1));
+    for (int i = 0; i < kThreadCount; i++) {
+      if ((pollfds[i].revents & POLLIN) == 0) {
+        continue;
+      }
 
-    fd = ev.data.fd;
-    EXPECT_THAT(RetryEINTR(recvfrom)(fd, &data, sizeof(data), 0,
-                                     reinterpret_cast<struct sockaddr*>(&addr),
-                                     &addrlen),
-                SyscallSucceedsWithValue(sizeof(data)));
-    uint16_t const port =
-        ASSERT_NO_ERRNO_AND_VALUE(AddrPort(connector.family(), addr));
-    auto prev_port = portToFD.find(port);
-    // Check that all packets from one client have been delivered to the same
-    // server socket.
-    if (prev_port == portToFD.end()) {
-      portToFD[port] = ev.data.fd;
-    } else {
-      EXPECT_EQ(portToFD[port], ev.data.fd);
+      received++;
+
+      const int fd = pollfds[i].fd;
+      struct sockaddr_storage addr = {};
+      socklen_t addrlen = sizeof(addr);
+      int data;
+      EXPECT_THAT(RetryEINTR(recvfrom)(
+                      fd, &data, sizeof(data), 0,
+                      reinterpret_cast<struct sockaddr*>(&addr), &addrlen),
+                  SyscallSucceedsWithValue(sizeof(data)));
+      uint16_t const port =
+          ASSERT_NO_ERRNO_AND_VALUE(AddrPort(connector.family(), addr));
+      auto prev_port = portToFD.find(port);
+      // Check that all packets from one client have been delivered to the
+      // same server socket.
+      if (prev_port == portToFD.end()) {
+        portToFD[port] = fd;
+      } else {
+        EXPECT_EQ(portToFD[port], fd);
+      }
     }
   }
 }
@@ -1897,7 +1900,7 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, NoReusePortFollowingReusePort) {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    AllFamlies, SocketMultiProtocolInetLoopbackTest,
+    AllFamilies, SocketMultiProtocolInetLoopbackTest,
     ::testing::Values(ProtocolTestParam{"TCP", SOCK_STREAM},
                       ProtocolTestParam{"UDP", SOCK_DGRAM}),
     DescribeProtocolTestParam);
