@@ -584,6 +584,54 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	return nil
 }
 
+// ListxattrAt implements vfs.FilesystemImpl.ListxattrAt.
+func (fs *filesystem) ListxattrAt(ctx context.Context, rp *vfs.ResolvingPath) ([]string, error) {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	_, _, err := walkExistingLocked(rp)
+	if err != nil {
+		return nil, err
+	}
+	// TODO(b/127675828): support extended attributes
+	return nil, syserror.ENOTSUP
+}
+
+// GetxattrAt implements vfs.FilesystemImpl.GetxattrAt.
+func (fs *filesystem) GetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) (string, error) {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	_, _, err := walkExistingLocked(rp)
+	if err != nil {
+		return "", err
+	}
+	// TODO(b/127675828): support extended attributes
+	return "", syserror.ENOTSUP
+}
+
+// SetxattrAt implements vfs.FilesystemImpl.SetxattrAt.
+func (fs *filesystem) SetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetxattrOptions) error {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	_, _, err := walkExistingLocked(rp)
+	if err != nil {
+		return err
+	}
+	// TODO(b/127675828): support extended attributes
+	return syserror.ENOTSUP
+}
+
+// RemovexattrAt implements vfs.FilesystemImpl.RemovexattrAt.
+func (fs *filesystem) RemovexattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) error {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	_, _, err := walkExistingLocked(rp)
+	if err != nil {
+		return err
+	}
+	// TODO(b/127675828): support extended attributes
+	return syserror.ENOTSUP
+}
+
 // PrependPath implements vfs.FilesystemImpl.PrependPath.
 func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDentry, b *fspath.Builder) error {
 	fs.mu.RLock()
