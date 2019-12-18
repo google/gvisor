@@ -23,6 +23,7 @@
 
 namespace gvisor {
 namespace testing {
+namespace {
 
 std::vector<SocketPairKind> GetSocketPairs() {
   return VecCat<SocketPairKind>(
@@ -43,5 +44,6 @@ INSTANTIATE_TEST_SUITE_P(
     BlockingIPSockets, BlockingSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 
+}  // namespace
 }  // namespace testing
 }  // namespace gvisor
