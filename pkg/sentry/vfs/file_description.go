@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -212,7 +213,21 @@ type FileDescriptionImpl interface {
 	// Ioctl implements the ioctl(2) syscall.
 	Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error)
 
-	// TODO: extended attributes; file locking
+	// Listxattr returns all extended attribute names for the file.
+	Listxattr(ctx context.Context) ([]string, error)
+
+	// Getxattr returns the value associated with the given extended attribute
+	// for the file.
+	Getxattr(ctx context.Context, name string) (string, error)
+
+	// Setxattr changes the value associated with the given extended attribute
+	// for the file.
+	Setxattr(ctx context.Context, opts SetxattrOptions) error
+
+	// Removexattr removes the given extended attribute from the file.
+	Removexattr(ctx context.Context, name string) error
+
+	// TODO: file locking
 }
 
 // Dirent holds the information contained in struct linux_dirent64.
@@ -327,6 +342,38 @@ func (fd *FileDescription) ConfigureMMap(ctx context.Context, opts *memmap.MMapO
 // Ioctl implements the ioctl(2) syscall.
 func (fd *FileDescription) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	return fd.impl.Ioctl(ctx, uio, args)
+}
+
+// Listxattr returns all extended attribute names for the file represented by
+// fd.
+func (fd *FileDescription) Listxattr(ctx context.Context) ([]string, error) {
+	names, err := fd.impl.Listxattr(ctx)
+	if err == syserror.ENOTSUP {
+		// Linux doesn't actually return ENOTSUP in this case; instead,
+		// fs/xattr.c:vfs_listxattr() falls back to allowing the security
+		// subsystem to return security extended attributes, which by default
+		// don't exist.
+		return nil, nil
+	}
+	return names, err
+}
+
+// Getxattr returns the value associated with the given extended attribute for
+// the file represented by fd.
+func (fd *FileDescription) Getxattr(ctx context.Context, name string) (string, error) {
+	return fd.impl.Getxattr(ctx, name)
+}
+
+// Setxattr changes the value associated with the given extended attribute for
+// the file represented by fd.
+func (fd *FileDescription) Setxattr(ctx context.Context, opts SetxattrOptions) error {
+	return fd.impl.Setxattr(ctx, opts)
+}
+
+// Removexattr removes the given extended attribute from the file represented
+// by fd.
+func (fd *FileDescription) Removexattr(ctx context.Context, name string) error {
+	return fd.impl.Removexattr(ctx, name)
 }
 
 // SyncFS instructs the filesystem containing fd to execute the semantics of

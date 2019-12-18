@@ -683,6 +683,58 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	return nil
 }
 
+// ListxattrAt implements vfs.FilesystemImpl.ListxattrAt.
+func (fs *Filesystem) ListxattrAt(ctx context.Context, rp *vfs.ResolvingPath) ([]string, error) {
+	fs.mu.RLock()
+	_, _, err := fs.walkExistingLocked(ctx, rp)
+	fs.mu.RUnlock()
+	fs.processDeferredDecRefs()
+	if err != nil {
+		return nil, err
+	}
+	// kernfs currently does not support extended attributes.
+	return nil, syserror.ENOTSUP
+}
+
+// GetxattrAt implements vfs.FilesystemImpl.GetxattrAt.
+func (fs *Filesystem) GetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) (string, error) {
+	fs.mu.RLock()
+	_, _, err := fs.walkExistingLocked(ctx, rp)
+	fs.mu.RUnlock()
+	fs.processDeferredDecRefs()
+	if err != nil {
+		return "", err
+	}
+	// kernfs currently does not support extended attributes.
+	return "", syserror.ENOTSUP
+}
+
+// SetxattrAt implements vfs.FilesystemImpl.SetxattrAt.
+func (fs *Filesystem) SetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetxattrOptions) error {
+	fs.mu.RLock()
+	_, _, err := fs.walkExistingLocked(ctx, rp)
+	fs.mu.RUnlock()
+	fs.processDeferredDecRefs()
+	if err != nil {
+		return err
+	}
+	// kernfs currently does not support extended attributes.
+	return syserror.ENOTSUP
+}
+
+// RemovexattrAt implements vfs.FilesystemImpl.RemovexattrAt.
+func (fs *Filesystem) RemovexattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) error {
+	fs.mu.RLock()
+	_, _, err := fs.walkExistingLocked(ctx, rp)
+	fs.mu.RUnlock()
+	fs.processDeferredDecRefs()
+	if err != nil {
+		return err
+	}
+	// kernfs currently does not support extended attributes.
+	return syserror.ENOTSUP
+}
+
 // PrependPath implements vfs.FilesystemImpl.PrependPath.
 func (fs *Filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDentry, b *fspath.Builder) error {
 	fs.mu.RLock()

@@ -186,6 +186,20 @@ type FilesystemImpl interface {
 	// UnlinkAt removes the non-directory file at rp.
 	UnlinkAt(ctx context.Context, rp *ResolvingPath) error
 
+	// ListxattrAt returns all extended attribute names for the file at rp.
+	ListxattrAt(ctx context.Context, rp *ResolvingPath) ([]string, error)
+
+	// GetxattrAt returns the value associated with the given extended
+	// attribute for the file at rp.
+	GetxattrAt(ctx context.Context, rp *ResolvingPath, name string) (string, error)
+
+	// SetxattrAt changes the value associated with the given extended
+	// attribute for the file at rp.
+	SetxattrAt(ctx context.Context, rp *ResolvingPath, opts SetxattrOptions) error
+
+	// RemovexattrAt removes the given extended attribute from the file at rp.
+	RemovexattrAt(ctx context.Context, rp *ResolvingPath, name string) error
+
 	// PrependPath prepends a path from vd to vd.Mount().Root() to b.
 	//
 	// If vfsroot.Ok(), it is the contextual VFS root; if it is encountered
@@ -208,7 +222,7 @@ type FilesystemImpl interface {
 	// Preconditions: vd.Mount().Filesystem().Impl() == this FilesystemImpl.
 	PrependPath(ctx context.Context, vfsroot, vd VirtualDentry, b *fspath.Builder) error
 
-	// TODO: extended attributes; inotify_add_watch(); bind()
+	// TODO: inotify_add_watch(); bind()
 }
 
 // PrependPathAtVFSRootError is returned by implementations of
