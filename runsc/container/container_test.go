@@ -60,7 +60,7 @@ func waitForProcessList(cont *Container, want []*control.Process) error {
 		return nil
 	}
 	// Gives plenty of time as tests can run slow under --race.
-	return testutil.Poll(cb, 10*time.Second)
+	return testutil.Poll(cb, 30*time.Second)
 }
 
 func waitForProcessCount(cont *Container, want int) error {
