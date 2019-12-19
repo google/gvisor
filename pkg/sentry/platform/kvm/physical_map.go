@@ -24,15 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
-const (
-	// reservedMemory is a chunk of physical memory reserved starting at
-	// physical address zero. There are some special pages in this region,
-	// so we just call the whole thing off.
-	//
-	// Other architectures may define this to be zero.
-	reservedMemory = 0x100000000
-)
-
 type region struct {
 	virtual uintptr
 	length  uintptr
@@ -59,8 +50,7 @@ func fillAddressSpace() (excludedRegions []region) {
 	// We can cut vSize in half, because the kernel will be using the top
 	// half and we ignore it while constructing mappings. It's as if we've
 	// already excluded half the possible addresses.
-	vSize := uintptr(1) << ring0.VirtualAddressBits()
-	vSize = vSize >> 1
+	vSize := ring0.UserspaceSize
 
 	// We exclude reservedMemory below from our physical memory size, so it
 	// needs to be dropped here as well. Otherwise, we could end up with
