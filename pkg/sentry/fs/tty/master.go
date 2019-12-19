@@ -77,7 +77,7 @@ func (mi *masterInodeOperations) Release(ctx context.Context) {
 }
 
 // Truncate implements fs.InodeOperations.Truncate.
-func (masterInodeOperations) Truncate(context.Context, *fs.Inode, int64) error {
+func (*masterInodeOperations) Truncate(context.Context, *fs.Inode, int64) error {
 	return nil
 }
 
