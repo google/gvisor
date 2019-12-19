@@ -102,19 +102,17 @@ TEST(BadSocketPairArgs, ValidateErrForBadCallsToSocketPair) {
               SyscallFailsWithErrno(EAFNOSUPPORT));
 }
 
-TEST_P(SocketInetLoopbackTest, TCP) {
-  auto const& param = GetParam();
-
-  TestAddress const& listener = param.listener;
-  TestAddress const& connector = param.connector;
-
+void tcpSimpleConnectTest(TestAddress const& listener,
+                          TestAddress const& connector, bool unbound) {
   // Create the listening socket.
   const FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
       Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
   sockaddr_storage listen_addr = listener.addr;
-  ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
-                   listener.addr_len),
-              SyscallSucceeds());
+  if (!unbound) {
+    ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
+                     listener.addr_len),
+                SyscallSucceeds());
+  }
   ASSERT_THAT(listen(listen_fd.get(), SOMAXCONN), SyscallSucceeds());
 
   // Get the port bound by the listening socket.
@@ -146,6 +144,23 @@ TEST_P(SocketInetLoopbackTest, TCP) {
   ASSERT_THAT(shutdown(listen_fd.get(), SHUT_RDWR), SyscallSucceeds());
 
   ASSERT_THAT(shutdown(conn_fd.get(), SHUT_RDWR), SyscallSucceeds());
+}
+
+TEST_P(SocketInetLoopbackTest, TCP) {
+  auto const& param = GetParam();
+  TestAddress const& listener = param.listener;
+  TestAddress const& connector = param.connector;
+
+  tcpSimpleConnectTest(listener, connector, true);
+}
+
+TEST_P(SocketInetLoopbackTest, TCPListenUnbound) {
+  auto const& param = GetParam();
+
+  TestAddress const& listener = param.listener;
+  TestAddress const& connector = param.connector;
+
+  tcpSimpleConnectTest(listener, connector, false);
 }
 
 TEST_P(SocketInetLoopbackTest, TCPListenClose) {
