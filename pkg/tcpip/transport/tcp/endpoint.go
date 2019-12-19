@@ -1974,6 +1974,15 @@ func (e *endpoint) listen(backlog int) *tcpip.Error {
 		return nil
 	}
 
+	if e.state == StateInitial {
+		// The listen is called on an unbound socket, the socket is
+		// automatically bound to a random free port with the local
+		// address set to INADDR_ANY.
+		if err := e.bindLocked(tcpip.FullAddress{}); err != nil {
+			return err
+		}
+	}
+
 	// Endpoint must be bound before it can transition to listen mode.
 	if e.state != StateBound {
 		e.stats.ReadErrors.InvalidEndpointState.Increment()
@@ -2033,6 +2042,10 @@ func (e *endpoint) Bind(addr tcpip.FullAddress) (err *tcpip.Error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	return e.bindLocked(addr)
+}
+
+func (e *endpoint) bindLocked(addr tcpip.FullAddress) (err *tcpip.Error) {
 	// Don't allow binding once endpoint is not in the initial state
 	// anymore. This is because once the endpoint goes into a connected or
 	// listen state, it is already bound.
