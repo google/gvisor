@@ -101,6 +101,20 @@ type SetStatOptions struct {
 	Stat linux.Statx
 }
 
+// SetxattrOptions contains options to VirtualFilesystem.SetxattrAt(),
+// FilesystemImpl.SetxattrAt(), FileDescription.Setxattr(), and
+// FileDescriptionImpl.Setxattr().
+type SetxattrOptions struct {
+	// Name is the name of the extended attribute being mutated.
+	Name string
+
+	// Value is the extended attribute's new value.
+	Value string
+
+	// Flags contains flags as specified for setxattr/lsetxattr/fsetxattr(2).
+	Flags uint32
+}
+
 // StatOptions contains options to VirtualFilesystem.StatAt(),
 // FilesystemImpl.StatAt(), FileDescription.Stat(), and
 // FileDescriptionImpl.Stat().

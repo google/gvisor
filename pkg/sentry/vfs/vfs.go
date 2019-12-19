@@ -440,6 +440,93 @@ func (vfs *VirtualFilesystem) UnlinkAt(ctx context.Context, creds *auth.Credenti
 	}
 }
 
+// ListxattrAt returns all extended attribute names for the file at the given
+// path.
+func (vfs *VirtualFilesystem) ListxattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) ([]string, error) {
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return nil, err
+	}
+	for {
+		names, err := rp.mount.fs.impl.ListxattrAt(ctx, rp)
+		if err == nil {
+			vfs.putResolvingPath(rp)
+			return names, nil
+		}
+		if err == syserror.ENOTSUP {
+			// Linux doesn't actually return ENOTSUP in this case; instead,
+			// fs/xattr.c:vfs_listxattr() falls back to allowing the security
+			// subsystem to return security extended attributes, which by
+			// default don't exist.
+			vfs.putResolvingPath(rp)
+			return nil, nil
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return nil, err
+		}
+	}
+}
+
+// GetxattrAt returns the value associated with the given extended attribute
+// for the file at the given path.
+func (vfs *VirtualFilesystem) GetxattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, name string) (string, error) {
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return "", err
+	}
+	for {
+		val, err := rp.mount.fs.impl.GetxattrAt(ctx, rp, name)
+		if err == nil {
+			vfs.putResolvingPath(rp)
+			return val, nil
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return "", err
+		}
+	}
+}
+
+// SetxattrAt changes the value associated with the given extended attribute
+// for the file at the given path.
+func (vfs *VirtualFilesystem) SetxattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *SetxattrOptions) error {
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return err
+	}
+	for {
+		err := rp.mount.fs.impl.SetxattrAt(ctx, rp, *opts)
+		if err == nil {
+			vfs.putResolvingPath(rp)
+			return nil
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return err
+		}
+	}
+}
+
+// RemovexattrAt removes the given extended attribute from the file at rp.
+func (vfs *VirtualFilesystem) RemovexattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, name string) error {
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return err
+	}
+	for {
+		err := rp.mount.fs.impl.RemovexattrAt(ctx, rp, name)
+		if err == nil {
+			vfs.putResolvingPath(rp)
+			return nil
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return err
+		}
+	}
+}
+
 // SyncAllFilesystems has the semantics of Linux's sync(2).
 func (vfs *VirtualFilesystem) SyncAllFilesystems(ctx context.Context) error {
 	fss := make(map[*Filesystem]struct{})
