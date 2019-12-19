@@ -29,7 +29,7 @@ Yes. Please see the [Docker Quick Start][docker].
 
 ### Can I run Kubernetes pods using gVisor.
 
-Yes. Please see the [Docker Quick Start][k8s].
+Yes. Please see the [Kubernetes Quick Start][k8s].
 
 ### What's the security model?
 
