@@ -24,7 +24,10 @@ go_library(
 go_test(
     name = "ipv4_test",
     size = "small",
-    srcs = ["ipv4_test.go"],
+    srcs = [
+        "ipv4_test.go",
+        "ipv4_frag_test.go",
+    ],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
@@ -32,6 +35,7 @@ go_test(
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/link/sniffer",
         "//pkg/tcpip/network/ipv4",
+        "//pkg/tcpip/network/fragmentation",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport/tcp",
         "//pkg/tcpip/transport/udp",

@@ -30,6 +30,8 @@ go_library(
         "//pkg/log",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
+        "//pkg/tcpip/stack",
+        "//pkg/tcpip/header",
     ],
 )
 

@@ -22,7 +22,10 @@ import (
 	"sync"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // DefaultReassembleTimeout is based on the linux stack: net.ipv4.ipfrag_time.
@@ -83,7 +86,7 @@ func NewFragmentation(highMemoryLimit, lowMemoryLimit int, reassemblingTimeout t
 
 // Process processes an incoming fragment belonging to an ID
 // and returns a complete packet when all the packets belonging to that ID have been received.
-func (f *Fragmentation) Process(id uint32, first, last uint16, more bool, vv buffer.VectorisedView) (buffer.VectorisedView, bool, error) {
+func (f *Fragmentation) Process(id uint32, first, last uint16, more bool, vv buffer.VectorisedView, headerView buffer.View, rstack *stack.Route) (buffer.VectorisedView, bool, error) {
 	f.mu.Lock()
 	r, ok := f.reassemblers[id]
 	if ok && r.tooOld(f.timeout) {
@@ -97,6 +100,16 @@ func (f *Fragmentation) Process(id uint32, first, last uint16, more bool, vv buf
 		f.rList.PushFront(r)
 	}
 	f.mu.Unlock()
+
+	// Invoking a time.AfterFunc to start a timer and to notify after 30 seconds
+	// for checking whether any of fragment is missing.
+	// If fragment is missing, Invoke a TimeOut handler and release r.
+	time.AfterFunc(DefaultReassembleTimeout, func() {
+		if r.deleted < len(r.holes) {
+			f.TimeOut(rstack, headerView, vv)
+			f.release(r)
+		}
+	})
 
 	res, done, consumed, err := r.process(first, last, more, vv)
 	if err != nil {
@@ -138,5 +151,31 @@ func (f *Fragmentation) release(r *reassembler) {
 	if f.size < 0 {
 		log.Printf("memory counter < 0 (%d), this is an accounting bug that requires investigation", f.size)
 		f.size = 0
+	}
+}
+
+// TimeOut function generates ICMP TTL Error message (Fragment reassembly time exceeded message).
+func (f *Fragmentation) TimeOut(r *stack.Route, netHeader buffer.View, vv buffer.VectorisedView) {
+	vv = vv.Clone(nil)
+	hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv4MinimumSize + header.IPv4MinimumSize + header.UDPMinimumSize)
+
+    hdr.Prepend(header.UDPMinimumSize)
+	ip_hdr := hdr.Prepend(header.IPv4MinimumSize)
+	copy(ip_hdr, netHeader)
+
+	pkt := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
+
+	pkt.SetType(header.ICMPv4TimeExceeded)
+	pkt.SetCode(1)
+
+	pkt.SetChecksum(0)
+	pkt.SetChecksum(^header.Checksum(pkt, header.ChecksumVV(vv, 0)))
+
+	if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv4ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}, tcpip.PacketBuffer{
+		Header:          hdr,
+		Data:            vv,
+		TransportHeader: buffer.View(pkt),
+	}); err != nil {
+		return
 	}
 }

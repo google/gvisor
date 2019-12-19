@@ -17,10 +17,12 @@ package fragmentation
 import (
 	"reflect"
 	"testing"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
+
+var r *stack.Route
 
 // vv is a helper to build VectorisedView from different strings.
 func vv(size int, pieces ...string) buffer.VectorisedView {
@@ -83,7 +85,7 @@ func TestFragmentationProcess(t *testing.T) {
 		t.Run(c.comment, func(t *testing.T) {
 			f := NewFragmentation(1024, 512, DefaultReassembleTimeout)
 			for i, in := range c.in {
-				vv, done, err := f.Process(in.id, in.first, in.last, in.more, in.vv)
+				vv, done, err := f.Process(in.id, in.first, in.last, in.more, in.vv, buffer.View{}, r)
 				if err != nil {
 					t.Fatalf("f.Process(%+v, %+d, %+d, %t, %+v) failed: %v", in.id, in.first, in.last, in.more, in.vv, err)
 				}
@@ -108,36 +110,18 @@ func TestFragmentationProcess(t *testing.T) {
 	}
 }
 
-func TestReassemblingTimeout(t *testing.T) {
-	timeout := time.Millisecond
-	f := NewFragmentation(1024, 512, timeout)
-	// Send first fragment with id = 0, first = 0, last = 0, and more = true.
-	f.Process(0, 0, 0, true, vv(1, "0"))
-	// Sleep more than the timeout.
-	time.Sleep(2 * timeout)
-	// Send another fragment that completes a packet.
-	// However, no packet should be reassembled because the fragment arrived after the timeout.
-	_, done, err := f.Process(0, 1, 1, false, vv(1, "1"))
-	if err != nil {
-		t.Fatalf("f.Process(0, 1, 1, false, vv(1, \"1\")) failed: %v", err)
-	}
-	if done {
-		t.Errorf("Fragmentation does not respect the reassembling timeout.")
-	}
-}
-
 func TestMemoryLimits(t *testing.T) {
 	f := NewFragmentation(3, 1, DefaultReassembleTimeout)
 	// Send first fragment with id = 0.
-	f.Process(0, 0, 0, true, vv(1, "0"))
+	f.Process(0, 0, 0, true, vv(1, "0"), buffer.View{}, r)
 	// Send first fragment with id = 1.
-	f.Process(1, 0, 0, true, vv(1, "1"))
+	f.Process(1, 0, 0, true, vv(1, "1"), buffer.View{}, r)
 	// Send first fragment with id = 2.
-	f.Process(2, 0, 0, true, vv(1, "2"))
+	f.Process(2, 0, 0, true, vv(1, "2"), buffer.View{}, r)
 
 	// Send first fragment with id = 3. This should caused id = 0 and id = 1 to be
 	// evicted.
-	f.Process(3, 0, 0, true, vv(1, "3"))
+	f.Process(3, 0, 0, true, vv(1, "3"), buffer.View{}, r)
 
 	if _, ok := f.reassemblers[0]; ok {
 		t.Errorf("Memory limits are not respected: id=0 has not been evicted.")
@@ -153,9 +137,9 @@ func TestMemoryLimits(t *testing.T) {
 func TestMemoryLimitsIgnoresDuplicates(t *testing.T) {
 	f := NewFragmentation(1, 0, DefaultReassembleTimeout)
 	// Send first fragment with id = 0.
-	f.Process(0, 0, 0, true, vv(1, "0"))
+	f.Process(0, 0, 0, true, vv(1, "0"), buffer.View{}, r)
 	// Send the same packet again.
-	f.Process(0, 0, 0, true, vv(1, "0"))
+	f.Process(0, 0, 0, true, vv(1, "0"), buffer.View{}, r)
 
 	got := f.size
 	want := 1

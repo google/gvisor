@@ -376,7 +376,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
 		}
 		var ready bool
 		var err error
-		pkt.Data, ready, err = e.fragmentation.Process(hash.IPv4FragmentHash(h), h.FragmentOffset(), last, more, pkt.Data)
+		pkt.Data, ready, err = e.fragmentation.Process(hash.IPv4FragmentHash(h), h.FragmentOffset(), last, more, pkt.Data, headerView, r)
 		if err != nil {
 			r.Stats().IP.MalformedPacketsReceived.Increment()
 			r.Stats().IP.MalformedFragmentsReceived.Increment()
