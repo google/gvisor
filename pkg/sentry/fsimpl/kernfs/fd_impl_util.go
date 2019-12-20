@@ -39,7 +39,6 @@ type GenericDirectoryFD struct {
 
 	vfsfd    vfs.FileDescription
 	children *OrderedChildren
-	flags    uint32
 	off      int64
 }
 
@@ -48,8 +47,7 @@ func (fd *GenericDirectoryFD) Init(m *vfs.Mount, d *vfs.Dentry, children *Ordere
 	m.IncRef() // DecRef in vfs.FileDescription.vd.DecRef on final ref.
 	d.IncRef() // DecRef in vfs.FileDescription.vd.DecRef on final ref.
 	fd.children = children
-	fd.flags = flags
-	fd.vfsfd.Init(fd, m, d)
+	fd.vfsfd.Init(fd, flags, m, d, &vfs.FileDescriptionOptions{})
 }
 
 // VFSFileDescription returns a pointer to the vfs.FileDescription representing
@@ -178,18 +176,6 @@ func (fd *GenericDirectoryFD) Seek(ctx context.Context, offset int64, whence int
 	}
 	fd.off = offset
 	return offset, nil
-}
-
-// StatusFlags implements vfs.FileDescriptionImpl.StatusFlags.
-func (fd *GenericDirectoryFD) StatusFlags(ctx context.Context) (uint32, error) {
-	return fd.flags, nil
-}
-
-// SetStatusFlags implements vfs.FileDescriptionImpl.SetStatusFlags.
-func (fd *GenericDirectoryFD) SetStatusFlags(ctx context.Context, flags uint32) error {
-	// None of the flags settable by fcntl(F_SETFL) are supported, so this is a
-	// no-op.
-	return nil
 }
 
 // Stat implements vfs.FileDescriptionImpl.Stat.

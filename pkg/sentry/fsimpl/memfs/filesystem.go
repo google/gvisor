@@ -282,9 +282,8 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	// Filter out flags that are not supported by memfs. O_DIRECTORY and
 	// O_NOFOLLOW have no effect here (they're handled by VFS by setting
-	// appropriate bits in rp), but are returned by
-	// FileDescriptionImpl.StatusFlags(). O_NONBLOCK is supported only by
-	// pipes.
+	// appropriate bits in rp), but are visible in FD status flags. O_NONBLOCK
+	// is supported only by pipes.
 	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_TRUNC | linux.O_DIRECTORY | linux.O_NOFOLLOW | linux.O_NONBLOCK
 
 	if opts.Flags&linux.O_CREAT == 0 {
@@ -384,7 +383,6 @@ func (i *inode) open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 	switch impl := i.impl.(type) {
 	case *regularFile:
 		var fd regularFileFD
-		fd.flags = flags
 		fd.readable = vfs.MayReadFileWithOpenFlags(flags)
 		fd.writable = vfs.MayWriteFileWithOpenFlags(flags)
 		if fd.writable {
@@ -395,7 +393,7 @@ func (i *inode) open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 		}
 		mnt.IncRef()
 		vfsd.IncRef()
-		fd.vfsfd.Init(&fd, mnt, vfsd)
+		fd.vfsfd.Init(&fd, flags, mnt, vfsd, &vfs.FileDescriptionOptions{})
 		if flags&linux.O_TRUNC != 0 {
 			impl.mu.Lock()
 			impl.data = impl.data[:0]
@@ -411,8 +409,7 @@ func (i *inode) open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 		var fd directoryFD
 		mnt.IncRef()
 		vfsd.IncRef()
-		fd.vfsfd.Init(&fd, mnt, vfsd)
-		fd.flags = flags
+		fd.vfsfd.Init(&fd, flags, mnt, vfsd, &vfs.FileDescriptionOptions{})
 		return &fd.vfsfd, nil
 	case *symlink:
 		// Can't open symlinks without O_PATH (which is unimplemented).

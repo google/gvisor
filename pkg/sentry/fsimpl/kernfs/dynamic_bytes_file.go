@@ -65,17 +65,15 @@ type DynamicBytesFD struct {
 
 	vfsfd vfs.FileDescription
 	inode Inode
-	flags uint32
 }
 
 // Init initializes a DynamicBytesFD.
 func (fd *DynamicBytesFD) Init(m *vfs.Mount, d *vfs.Dentry, data vfs.DynamicBytesSource, flags uint32) {
 	m.IncRef() // DecRef in vfs.FileDescription.vd.DecRef on final ref.
 	d.IncRef() // DecRef in vfs.FileDescription.vd.DecRef on final ref.
-	fd.flags = flags
 	fd.inode = d.Impl().(*Dentry).inode
 	fd.SetDataSource(data)
-	fd.vfsfd.Init(fd, m, d)
+	fd.vfsfd.Init(fd, flags, m, d, &vfs.FileDescriptionOptions{})
 }
 
 // Seek implements vfs.FileDescriptionImpl.Seek.
@@ -116,16 +114,4 @@ func (fd *DynamicBytesFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux
 func (fd *DynamicBytesFD) SetStat(context.Context, vfs.SetStatOptions) error {
 	// DynamicBytesFiles are immutable.
 	return syserror.EPERM
-}
-
-// StatusFlags implements vfs.FileDescriptionImpl.StatusFlags.
-func (fd *DynamicBytesFD) StatusFlags(ctx context.Context) (uint32, error) {
-	return fd.flags, nil
-}
-
-// SetStatusFlags implements vfs.FileDescriptionImpl.SetStatusFlags.
-func (fd *DynamicBytesFD) SetStatusFlags(ctx context.Context, flags uint32) error {
-	// None of the flags settable by fcntl(F_SETFL) are supported, so this is a
-	// no-op.
-	return nil
 }

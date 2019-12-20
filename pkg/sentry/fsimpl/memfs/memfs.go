@@ -261,8 +261,6 @@ func (i *inode) direntType() uint8 {
 type fileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
-
-	flags uint32 // status flags; immutable
 }
 
 func (fd *fileDescription) filesystem() *filesystem {
@@ -271,18 +269,6 @@ func (fd *fileDescription) filesystem() *filesystem {
 
 func (fd *fileDescription) inode() *inode {
 	return fd.vfsfd.Dentry().Impl().(*dentry).inode
-}
-
-// StatusFlags implements vfs.FileDescriptionImpl.StatusFlags.
-func (fd *fileDescription) StatusFlags(ctx context.Context) (uint32, error) {
-	return fd.flags, nil
-}
-
-// SetStatusFlags implements vfs.FileDescriptionImpl.SetStatusFlags.
-func (fd *fileDescription) SetStatusFlags(ctx context.Context, flags uint32) error {
-	// None of the flags settable by fcntl(F_SETFL) are supported, so this is a
-	// no-op.
-	return nil
 }
 
 // Stat implements vfs.FileDescriptionImpl.Stat.

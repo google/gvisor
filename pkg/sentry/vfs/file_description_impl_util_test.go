@@ -48,7 +48,7 @@ type genCountFD struct {
 
 func newGenCountFD(mnt *Mount, vfsd *Dentry) *FileDescription {
 	var fd genCountFD
-	fd.vfsfd.Init(&fd, mnt, vfsd)
+	fd.vfsfd.Init(&fd, 0 /* statusFlags */, mnt, vfsd, &FileDescriptionOptions{})
 	fd.DynamicBytesFileDescriptionImpl.SetDataSource(&fd)
 	return &fd.vfsfd
 }

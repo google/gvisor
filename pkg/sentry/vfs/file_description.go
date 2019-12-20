@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -39,47 +40,41 @@ type FileDescription struct {
 	// operations.
 	refs int64
 
+	// statusFlags contains status flags, "initialized by open(2) and possibly
+	// modified by fcntl()" - fcntl(2). statusFlags is accessed using atomic
+	// memory operations.
+	statusFlags uint32
+
 	// vd is the filesystem location at which this FileDescription was opened.
 	// A reference is held on vd. vd is immutable.
 	vd VirtualDentry
+
+	opts FileDescriptionOptions
 
 	// impl is the FileDescriptionImpl associated with this Filesystem. impl is
 	// immutable. This should be the last field in FileDescription.
 	impl FileDescriptionImpl
 }
 
+// FileDescriptionOptions contains options to FileDescription.Init().
+type FileDescriptionOptions struct {
+	// If AllowDirectIO is true, allow O_DIRECT to be set on the file. This is
+	// usually only the case if O_DIRECT would actually have an effect.
+	AllowDirectIO bool
+}
+
 // Init must be called before first use of fd. It takes ownership of references
-// on mnt and d held by the caller.
-func (fd *FileDescription) Init(impl FileDescriptionImpl, mnt *Mount, d *Dentry) {
+// on mnt and d held by the caller. statusFlags is the initial file description
+// status flags, which is usually the full set of flags passed to open(2).
+func (fd *FileDescription) Init(impl FileDescriptionImpl, statusFlags uint32, mnt *Mount, d *Dentry, opts *FileDescriptionOptions) {
 	fd.refs = 1
+	fd.statusFlags = statusFlags | linux.O_LARGEFILE
 	fd.vd = VirtualDentry{
 		mount:  mnt,
 		dentry: d,
 	}
+	fd.opts = *opts
 	fd.impl = impl
-}
-
-// Impl returns the FileDescriptionImpl associated with fd.
-func (fd *FileDescription) Impl() FileDescriptionImpl {
-	return fd.impl
-}
-
-// Mount returns the mount on which fd was opened. It does not take a reference
-// on the returned Mount.
-func (fd *FileDescription) Mount() *Mount {
-	return fd.vd.mount
-}
-
-// Dentry returns the dentry at which fd was opened. It does not take a
-// reference on the returned Dentry.
-func (fd *FileDescription) Dentry() *Dentry {
-	return fd.vd.dentry
-}
-
-// VirtualDentry returns the location at which fd was opened. It does not take
-// a reference on the returned VirtualDentry.
-func (fd *FileDescription) VirtualDentry() VirtualDentry {
-	return fd.vd
 }
 
 // IncRef increments fd's reference count.
@@ -113,6 +108,82 @@ func (fd *FileDescription) DecRef() {
 	}
 }
 
+// Mount returns the mount on which fd was opened. It does not take a reference
+// on the returned Mount.
+func (fd *FileDescription) Mount() *Mount {
+	return fd.vd.mount
+}
+
+// Dentry returns the dentry at which fd was opened. It does not take a
+// reference on the returned Dentry.
+func (fd *FileDescription) Dentry() *Dentry {
+	return fd.vd.dentry
+}
+
+// VirtualDentry returns the location at which fd was opened. It does not take
+// a reference on the returned VirtualDentry.
+func (fd *FileDescription) VirtualDentry() VirtualDentry {
+	return fd.vd
+}
+
+// StatusFlags returns file description status flags, as for fcntl(F_GETFL).
+func (fd *FileDescription) StatusFlags() uint32 {
+	return atomic.LoadUint32(&fd.statusFlags)
+}
+
+// SetStatusFlags sets file description status flags, as for fcntl(F_SETFL).
+func (fd *FileDescription) SetStatusFlags(ctx context.Context, creds *auth.Credentials, flags uint32) error {
+	// Compare Linux's fs/fcntl.c:setfl().
+	oldFlags := fd.StatusFlags()
+	// Linux documents this check as "O_APPEND cannot be cleared if the file is
+	// marked as append-only and the file is open for write", which would make
+	// sense. However, the check as actually implemented seems to be "O_APPEND
+	// cannot be changed if the file is marked as append-only".
+	if (flags^oldFlags)&linux.O_APPEND != 0 {
+		stat, err := fd.impl.Stat(ctx, StatOptions{
+			// There is no mask bit for stx_attributes.
+			Mask: 0,
+			// Linux just reads inode::i_flags directly.
+			Sync: linux.AT_STATX_DONT_SYNC,
+		})
+		if err != nil {
+			return err
+		}
+		if (stat.AttributesMask&linux.STATX_ATTR_APPEND != 0) && (stat.Attributes&linux.STATX_ATTR_APPEND != 0) {
+			return syserror.EPERM
+		}
+	}
+	if (flags&linux.O_NOATIME != 0) && (oldFlags&linux.O_NOATIME == 0) {
+		stat, err := fd.impl.Stat(ctx, StatOptions{
+			Mask: linux.STATX_UID,
+			// Linux's inode_owner_or_capable() just reads inode::i_uid
+			// directly.
+			Sync: linux.AT_STATX_DONT_SYNC,
+		})
+		if err != nil {
+			return err
+		}
+		if stat.Mask&linux.STATX_UID == 0 {
+			return syserror.EPERM
+		}
+		if !CanActAsOwner(creds, auth.KUID(stat.UID)) {
+			return syserror.EPERM
+		}
+	}
+	if flags&linux.O_DIRECT != 0 && !fd.opts.AllowDirectIO {
+		return syserror.EINVAL
+	}
+	// TODO(jamieliu): FileDescriptionImpl.SetOAsync()?
+	const settableFlags = linux.O_APPEND | linux.O_ASYNC | linux.O_DIRECT | linux.O_NOATIME | linux.O_NONBLOCK
+	atomic.StoreUint32(&fd.statusFlags, (oldFlags&^settableFlags)|(flags&settableFlags))
+	return nil
+}
+
+// Impl returns the FileDescriptionImpl associated with fd.
+func (fd *FileDescription) Impl() FileDescriptionImpl {
+	return fd.impl
+}
+
 // FileDescriptionImpl contains implementation details for an FileDescription.
 // Implementations of FileDescriptionImpl should contain their associated
 // FileDescription by value as their first field.
@@ -131,14 +202,6 @@ type FileDescriptionImpl interface {
 	// FileDescription is closed. Note that returning a non-nil error does not
 	// prevent the file descriptor from being closed.
 	OnClose(ctx context.Context) error
-
-	// StatusFlags returns file description status flags, as for
-	// fcntl(F_GETFL).
-	StatusFlags(ctx context.Context) (uint32, error)
-
-	// SetStatusFlags sets file description status flags, as for
-	// fcntl(F_SETFL).
-	SetStatusFlags(ctx context.Context, flags uint32) error
 
 	// Stat returns metadata for the file represented by the FileDescription.
 	Stat(ctx context.Context, opts StatOptions) (linux.Statx, error)
@@ -262,18 +325,6 @@ type IterDirentsCallback interface {
 // from being closed.
 func (fd *FileDescription) OnClose(ctx context.Context) error {
 	return fd.impl.OnClose(ctx)
-}
-
-// StatusFlags returns file description status flags, as for fcntl(F_GETFL).
-func (fd *FileDescription) StatusFlags(ctx context.Context) (uint32, error) {
-	flags, err := fd.impl.StatusFlags(ctx)
-	flags |= linux.O_LARGEFILE
-	return flags, err
-}
-
-// SetStatusFlags sets file description status flags, as for fcntl(F_SETFL).
-func (fd *FileDescription) SetStatusFlags(ctx context.Context, flags uint32) error {
-	return fd.impl.SetStatusFlags(ctx, flags)
 }
 
 // Stat returns metadata for the file represented by fd.
