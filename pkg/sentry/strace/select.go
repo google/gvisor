@@ -36,6 +36,9 @@ func fdsFromSet(t *kernel.Task, set []byte) []int {
 }
 
 func fdSet(t *kernel.Task, nfds int, addr usermem.Addr) string {
+	if nfds < 0 {
+		return fmt.Sprintf("%#x (negative nfds)", addr)
+	}
 	if addr == 0 {
 		return "null"
 	}
