@@ -226,6 +226,11 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		if mask == 0 {
 			return 0, nil, syserror.EINVAL
 		}
+		if val <= 0 {
+			// The Linux kernel wakes one waiter even if val is
+			// non-positive.
+			val = 1
+		}
 		n, err := t.Futex().Wake(t, addr, private, mask, val)
 		return uintptr(n), nil, err
 
@@ -242,6 +247,11 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	case linux.FUTEX_WAKE_OP:
 		op := uint32(val3)
+		if val <= 0 {
+			// The Linux kernel wakes one waiter even if val is
+			// non-positive.
+			val = 1
+		}
 		n, err := t.Futex().WakeOp(t, addr, naddr, private, val, nreq, op)
 		return uintptr(n), nil, err
 
