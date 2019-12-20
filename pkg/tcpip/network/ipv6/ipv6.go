@@ -162,7 +162,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []tcpip.Pac
 // WriteHeaderIncludedPacker implements stack.NetworkEndpoint. It is not yet
 // supported by IPv6.
 func (*endpoint) WriteHeaderIncludedPacket(r *stack.Route, loop stack.PacketLooping, pkt tcpip.PacketBuffer) *tcpip.Error {
-	// TODO(b/119580726): Support IPv6 header-included packets.
+	// TODO(b/146666412): Support IPv6 header-included packets.
 	return tcpip.ErrNotSupported
 }
 
