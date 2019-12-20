@@ -3,24 +3,24 @@ GEM
   specs:
     mustermann (1.0.3)
     puma (3.12.0)
-    rack (2.0.6)
+    rack (2.0.8)
     rack-protection (2.0.5)
       rack
+    redis (4.1.0)
     sinatra (2.0.5)
       mustermann (~> 1.0)
       rack (~> 2.0)
       rack-protection (= 2.0.5)
       tilt (~> 2.0)
     tilt (2.0.9)
-    redis (4.1.0)
 
 PLATFORMS
   ruby
 
 DEPENDENCIES
   puma
-  sinatra
   redis
+  sinatra
 
 BUNDLED WITH
    1.17.1
