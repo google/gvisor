@@ -814,23 +814,27 @@ class MMapFileTest : public MMapTest {
   }
 };
 
+class MMapFileParamTest
+    : public MMapFileTest,
+      public ::testing::WithParamInterface<std::tuple<int, int>> {
+ protected:
+  int prot() const { return std::get<0>(GetParam()); }
+
+  int flags() const { return std::get<1>(GetParam()); }
+};
+
 // MAP_POPULATE allowed.
 // There isn't a good way to verify it actually did anything.
-//
-// FIXME(b/37222275): Parameterize.
-TEST_F(MMapFileTest, MapPopulate) {
-  ASSERT_THAT(
-      Map(0, kPageSize, PROT_READ, MAP_PRIVATE | MAP_POPULATE, fd_.get(), 0),
-      SyscallSucceeds());
+TEST_P(MMapFileParamTest, MapPopulate) {
+  ASSERT_THAT(Map(0, kPageSize, prot(), flags() | MAP_POPULATE, fd_.get(), 0),
+              SyscallSucceeds());
 }
 
 // MAP_POPULATE on a short file.
-//
-// FIXME(b/37222275): Parameterize.
-TEST_F(MMapFileTest, MapPopulateShort) {
-  ASSERT_THAT(Map(0, 2 * kPageSize, PROT_READ, MAP_PRIVATE | MAP_POPULATE,
-                  fd_.get(), 0),
-              SyscallSucceeds());
+TEST_P(MMapFileParamTest, MapPopulateShort) {
+  ASSERT_THAT(
+      Map(0, 2 * kPageSize, prot(), flags() | MAP_POPULATE, fd_.get(), 0),
+      SyscallSucceeds());
 }
 
 // Read contents from mapped file.
@@ -901,16 +905,6 @@ TEST_F(MMapFileTest, WritePrivateOnReadOnlyFd) {
             reinterpret_cast<volatile char*>(addr));
 }
 
-// MAP_PRIVATE PROT_READ is not allowed on write-only FDs.
-TEST_F(MMapFileTest, ReadPrivateOnWriteOnlyFd) {
-  const FileDescriptor fd =
-      ASSERT_NO_ERRNO_AND_VALUE(Open(filename_, O_WRONLY));
-
-  uintptr_t addr;
-  EXPECT_THAT(addr = Map(0, kPageSize, PROT_READ, MAP_PRIVATE, fd.get(), 0),
-              SyscallFailsWithErrno(EACCES));
-}
-
 // MAP_SHARED PROT_WRITE not allowed on read-only FDs.
 TEST_F(MMapFileTest, WriteSharedOnReadOnlyFd) {
   const FileDescriptor fd =
@@ -922,28 +916,13 @@ TEST_F(MMapFileTest, WriteSharedOnReadOnlyFd) {
       SyscallFailsWithErrno(EACCES));
 }
 
-// MAP_SHARED PROT_READ not allowed on write-only FDs.
-//
-// FIXME(b/37222275): Parameterize.
-TEST_F(MMapFileTest, ReadSharedOnWriteOnlyFd) {
+// The FD must be readable.
+TEST_P(MMapFileParamTest, WriteOnlyFd) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(filename_, O_WRONLY));
 
   uintptr_t addr;
-  EXPECT_THAT(addr = Map(0, kPageSize, PROT_READ, MAP_SHARED, fd.get(), 0),
-              SyscallFailsWithErrno(EACCES));
-}
-
-// MAP_SHARED PROT_WRITE not allowed on write-only FDs.
-// The FD must always be readable.
-//
-// FIXME(b/37222275): Parameterize.
-TEST_F(MMapFileTest, WriteSharedOnWriteOnlyFd) {
-  const FileDescriptor fd =
-      ASSERT_NO_ERRNO_AND_VALUE(Open(filename_, O_WRONLY));
-
-  uintptr_t addr;
-  EXPECT_THAT(addr = Map(0, kPageSize, PROT_WRITE, MAP_SHARED, fd.get(), 0),
+  EXPECT_THAT(addr = Map(0, kPageSize, prot(), flags(), fd.get(), 0),
               SyscallFailsWithErrno(EACCES));
 }
 
@@ -1182,7 +1161,7 @@ TEST_F(MMapFileTest, ReadSharedTruncateDownThenUp) {
   ASSERT_THAT(addr = Map(0, kPageSize, PROT_READ, MAP_SHARED, fd_.get(), 0),
               SyscallSucceeds());
 
-  // Check that the memory contains he file data.
+  // Check that the memory contains the file data.
   EXPECT_EQ(0, memcmp(reinterpret_cast<void*>(addr), buf.c_str(), kPageSize));
 
   // Truncate down, then up.
@@ -1371,125 +1350,68 @@ TEST_F(MMapFileTest, WritePrivate) {
               EqualsMemory(std::string(len, '\0')));
 }
 
-// SIGBUS raised when writing past end of file to a private mapping.
-//
-// FIXME(b/37222275): Parameterize.
-TEST_F(MMapFileTest, SigBusDeathWritePrivate) {
+// SIGBUS raised when reading or writing past end of a mapped file.
+TEST_P(MMapFileParamTest, SigBusDeath) {
   SetupGvisorDeathTest();
 
   uintptr_t addr;
-  ASSERT_THAT(addr = Map(0, 2 * kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE,
-                         fd_.get(), 0),
+  ASSERT_THAT(addr = Map(0, 2 * kPageSize, prot(), flags(), fd_.get(), 0),
               SyscallSucceeds());
 
-  // MMapFileTest makes a file kPageSize/2 long. The entire first page will be
-  // accessible. Write just beyond that.
-  size_t len = strlen(kFileContents);
-  EXPECT_EXIT(std::copy(kFileContents, kFileContents + len,
-                        reinterpret_cast<volatile char*>(addr + kPageSize)),
-              ::testing::KilledBySignal(SIGBUS), "");
+  auto* start = reinterpret_cast<volatile char*>(addr + kPageSize);
+
+  // MMapFileTest makes a file kPageSize/2 long. The entire first page should be
+  // accessible, but anything beyond it should not.
+  if (prot() & PROT_WRITE) {
+    // Write beyond first page.
+    size_t len = strlen(kFileContents);
+    EXPECT_EXIT(std::copy(kFileContents, kFileContents + len, start),
+                ::testing::KilledBySignal(SIGBUS), "");
+  } else {
+    // Read beyond first page.
+    std::vector<char> in(kPageSize);
+    EXPECT_EXIT(std::copy(start, start + kPageSize, in.data()),
+                ::testing::KilledBySignal(SIGBUS), "");
+  }
 }
 
-// SIGBUS raised when reading past end of file on a shared mapping.
+// Tests that SIGBUS is not raised when reading or writing to a file-mapped
+// page before EOF, even if part of the mapping extends beyond EOF.
 //
-// FIXME(b/37222275): Parameterize.
-TEST_F(MMapFileTest, SigBusDeathReadShared) {
-  SetupGvisorDeathTest();
-
+// See b/27877699.
+TEST_P(MMapFileParamTest, NoSigBusOnPagesBeforeEOF) {
   uintptr_t addr;
-  ASSERT_THAT(addr = Map(0, 2 * kPageSize, PROT_READ, MAP_SHARED, fd_.get(), 0),
-              SyscallSucceeds());
-
-  // MMapFileTest makes a file kPageSize/2 long. The entire first page will be
-  // accessible. Read just beyond that.
-  std::vector<char> in(kPageSize);
-  EXPECT_EXIT(
-      std::copy(reinterpret_cast<volatile char*>(addr + kPageSize),
-                reinterpret_cast<volatile char*>(addr + kPageSize) + kPageSize,
-                in.data()),
-      ::testing::KilledBySignal(SIGBUS), "");
-}
-
-// SIGBUS raised when reading past end of file on a shared mapping.
-//
-// FIXME(b/37222275): Parameterize.
-TEST_F(MMapFileTest, SigBusDeathWriteShared) {
-  SetupGvisorDeathTest();
-
-  uintptr_t addr;
-  ASSERT_THAT(addr = Map(0, 2 * kPageSize, PROT_READ | PROT_WRITE, MAP_SHARED,
-                         fd_.get(), 0),
-              SyscallSucceeds());
-
-  // MMapFileTest makes a file kPageSize/2 long. The entire first page will be
-  // accessible. Write just beyond that.
-  size_t len = strlen(kFileContents);
-  EXPECT_EXIT(std::copy(kFileContents, kFileContents + len,
-                        reinterpret_cast<volatile char*>(addr + kPageSize)),
-              ::testing::KilledBySignal(SIGBUS), "");
-}
-
-// Tests that SIGBUS is not raised when writing to a file-mapped page before
-// EOF, even if part of the mapping extends beyond EOF.
-TEST_F(MMapFileTest, NoSigBusOnPagesBeforeEOF) {
-  uintptr_t addr;
-  ASSERT_THAT(addr = Map(0, 2 * kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE,
-                         fd_.get(), 0),
+  ASSERT_THAT(addr = Map(0, 2 * kPageSize, prot(), flags(), fd_.get(), 0),
               SyscallSucceeds());
 
   // The test passes if this survives.
+  auto* start = reinterpret_cast<volatile char*>(addr + (kPageSize / 2) + 1);
   size_t len = strlen(kFileContents);
-  std::copy(kFileContents, kFileContents + len,
-            reinterpret_cast<volatile char*>(addr));
+  if (prot() & PROT_WRITE) {
+    std::copy(kFileContents, kFileContents + len, start);
+  } else {
+    std::vector<char> in(len);
+    std::copy(start, start + len, in.data());
+  }
 }
 
-// Tests that SIGBUS is not raised when writing to a file-mapped page containing
-// EOF, *after* the EOF for a private mapping.
-TEST_F(MMapFileTest, NoSigBusOnPageContainingEOFWritePrivate) {
+// Tests that SIGBUS is not raised when reading or writing from a file-mapped
+// page containing EOF, *after* the EOF.
+TEST_P(MMapFileParamTest, NoSigBusOnPageContainingEOF) {
   uintptr_t addr;
-  ASSERT_THAT(addr = Map(0, 2 * kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE,
-                         fd_.get(), 0),
-              SyscallSucceeds());
-
-  // The test passes if this survives. (Technically addr+kPageSize/2 is already
-  // beyond EOF, but +1 to check for fencepost errors.)
-  size_t len = strlen(kFileContents);
-  std::copy(kFileContents, kFileContents + len,
-            reinterpret_cast<volatile char*>(addr + (kPageSize / 2) + 1));
-}
-
-// Tests that SIGBUS is not raised when reading from a file-mapped page
-// containing EOF, *after* the EOF for a shared mapping.
-//
-// FIXME(b/37222275): Parameterize.
-TEST_F(MMapFileTest, NoSigBusOnPageContainingEOFReadShared) {
-  uintptr_t addr;
-  ASSERT_THAT(addr = Map(0, 2 * kPageSize, PROT_READ, MAP_SHARED, fd_.get(), 0),
+  ASSERT_THAT(addr = Map(0, 2 * kPageSize, prot(), flags(), fd_.get(), 0),
               SyscallSucceeds());
 
   // The test passes if this survives. (Technically addr+kPageSize/2 is already
   // beyond EOF, but +1 to check for fencepost errors.)
   auto* start = reinterpret_cast<volatile char*>(addr + (kPageSize / 2) + 1);
   size_t len = strlen(kFileContents);
-  std::vector<char> in(len);
-  std::copy(start, start + len, in.data());
-}
-
-// Tests that SIGBUS is not raised when writing to a file-mapped page containing
-// EOF, *after* the EOF for a shared mapping.
-//
-// FIXME(b/37222275): Parameterize.
-TEST_F(MMapFileTest, NoSigBusOnPageContainingEOFWriteShared) {
-  uintptr_t addr;
-  ASSERT_THAT(addr = Map(0, 2 * kPageSize, PROT_READ | PROT_WRITE, MAP_SHARED,
-                         fd_.get(), 0),
-              SyscallSucceeds());
-
-  // The test passes if this survives. (Technically addr+kPageSize/2 is already
-  // beyond EOF, but +1 to check for fencepost errors.)
-  size_t len = strlen(kFileContents);
-  std::copy(kFileContents, kFileContents + len,
-            reinterpret_cast<volatile char*>(addr + (kPageSize / 2) + 1));
+  if (prot() & PROT_WRITE) {
+    std::copy(kFileContents, kFileContents + len, start);
+  } else {
+    std::vector<char> in(len);
+    std::copy(start, start + len, in.data());
+  }
 }
 
 // Tests that reading from writable shared file-mapped pages succeeds.
@@ -1732,6 +1654,15 @@ TEST(MMapNoFixtureTest, Map32Bit) {
 }
 
 #endif  // defined(__x86_64__)
+
+INSTANTIATE_TEST_SUITE_P(
+    ReadWriteSharedPrivate, MMapFileParamTest,
+    ::testing::Combine(::testing::ValuesIn({
+                           PROT_READ,
+                           PROT_WRITE,
+                           PROT_READ | PROT_WRITE,
+                       }),
+                       ::testing::ValuesIn({MAP_SHARED, MAP_PRIVATE})));
 
 }  // namespace
 
