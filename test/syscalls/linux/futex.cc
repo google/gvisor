@@ -239,6 +239,27 @@ TEST_P(PrivateAndSharedFutexTest, Wake1_NoRandomSave) {
   EXPECT_THAT(futex_wake(IsPrivate(), &a, 1), SyscallSucceedsWithValue(1));
 }
 
+TEST_P(PrivateAndSharedFutexTest, Wake0_NoRandomSave) {
+  constexpr int kInitialValue = 1;
+  std::atomic<int> a = ATOMIC_VAR_INIT(kInitialValue);
+
+  // Prevent save/restore from interrupting futex_wait, which will cause it to
+  // return EAGAIN instead of the expected result if futex_wait is restarted
+  // after we change the value of a below.
+  DisableSave ds;
+  ScopedThread thread([&] {
+    EXPECT_THAT(futex_wait(IsPrivate(), &a, kInitialValue),
+                SyscallSucceedsWithValue(0));
+  });
+  absl::SleepFor(kWaiterStartupDelay);
+
+  // Change a so that if futex_wake happens before futex_wait, the latter
+  // returns EAGAIN instead of hanging the test.
+  a.fetch_add(1);
+  // The Linux kernel wakes one waiter even if val is 0 or negative.
+  EXPECT_THAT(futex_wake(IsPrivate(), &a, 0), SyscallSucceedsWithValue(1));
+}
+
 TEST_P(PrivateAndSharedFutexTest, WakeAll_NoRandomSave) {
   constexpr int kInitialValue = 1;
   std::atomic<int> a = ATOMIC_VAR_INIT(kInitialValue);
