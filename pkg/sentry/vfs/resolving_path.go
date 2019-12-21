@@ -85,11 +85,11 @@ func init() {
 // so error "constants" are really mutable vars, necessitating somewhat
 // expensive interface object comparisons.
 
-type resolveMountRootError struct{}
+type resolveMountRootOrJumpError struct{}
 
 // Error implements error.Error.
-func (resolveMountRootError) Error() string {
-	return "resolving mount root"
+func (resolveMountRootOrJumpError) Error() string {
+	return "resolving mount root or jump"
 }
 
 type resolveMountPointError struct{}
@@ -274,7 +274,7 @@ func (rp *ResolvingPath) ResolveParent(d *Dentry) (*Dentry, error) {
 			// ... of non-root mount.
 			rp.nextMount = vd.mount
 			rp.nextStart = vd.dentry
-			return nil, resolveMountRootError{}
+			return nil, resolveMountRootOrJumpError{}
 		}
 		// ... of root mount.
 		parent = d
@@ -385,11 +385,32 @@ func (rp *ResolvingPath) relpathPrepend(path fspath.Path) {
 	}
 }
 
+// HandleJump is called when the current path component is a "magic" link to
+// the given VirtualDentry, like /proc/[pid]/fd/[fd]. If the calling Filesystem
+// method should continue path traversal, HandleMagicSymlink updates the path
+// component stream to reflect the magic link target and returns nil. Otherwise
+// it returns a non-nil error.
+//
+// Preconditions: !rp.Done().
+func (rp *ResolvingPath) HandleJump(target VirtualDentry) error {
+	if rp.symlinks >= linux.MaxSymlinkTraversals {
+		return syserror.ELOOP
+	}
+	rp.symlinks++
+	// Consume the path component that represented the magic link.
+	rp.Advance()
+	// Unconditionally return a resolveMountRootOrJumpError, even if the Mount
+	// isn't changing, to force restarting at the new Dentry.
+	target.IncRef()
+	rp.nextMount = target.mount
+	rp.nextStart = target.dentry
+	return resolveMountRootOrJumpError{}
+}
+
 func (rp *ResolvingPath) handleError(err error) bool {
 	switch err.(type) {
-	case resolveMountRootError:
-		// Switch to the new Mount. We hold references on the Mount and Dentry
-		// (from VFS.getMountpointAt()).
+	case resolveMountRootOrJumpError:
+		// Switch to the new Mount. We hold references on the Mount and Dentry.
 		rp.decRefStartAndMount()
 		rp.mount = rp.nextMount
 		rp.start = rp.nextStart
@@ -407,9 +428,8 @@ func (rp *ResolvingPath) handleError(err error) bool {
 		return true
 
 	case resolveMountPointError:
-		// Switch to the new Mount. We hold a reference on the Mount (from
-		// VFS.getMountAt()), but borrow the reference on the mount root from
-		// the Mount.
+		// Switch to the new Mount. We hold a reference on the Mount, but
+		// borrow the reference on the mount root from the Mount.
 		rp.decRefStartAndMount()
 		rp.mount = rp.nextMount
 		rp.start = rp.nextMount.root
