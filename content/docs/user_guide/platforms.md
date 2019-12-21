@@ -63,6 +63,11 @@ nested virtualization in several popular environments:
 * VirtualBox: [Nested Virtualization][nested-virtualbox]
 * KVM: [Nested Guests][nested-kvm]
 
+***Note: nested virtualization will have poor performance and is historically a
+cause of security issues (e.g.
+[CVE-2018-12904](https://nvd.nist.gov/vuln/detail/CVE-2018-12904)). It is not
+recommended for production.***
+
 ### Configuring Docker
 
 Per above, you will need to configure Docker to use `runsc` with the KVM
