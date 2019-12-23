@@ -203,6 +203,18 @@ func (n *NIC) enable() *tcpip.Error {
 	return err
 }
 
+// becomeIPv6Router transitions n into an IPv6 router.
+//
+// When transitioning into an IPv6 router, host-only state (NDP discovered
+// routers, discovered on-link prefixes, and auto-generated addresses) will
+// be cleaned up/invalidated.
+func (n *NIC) becomeIPv6Router() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	n.ndp.cleanupHostOnlyState()
+}
+
 // attachLinkEndpoint attaches the NIC to the endpoint, which will enable it
 // to start delivering packets.
 func (n *NIC) attachLinkEndpoint() {

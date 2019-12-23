@@ -662,11 +662,31 @@ func (s *Stack) Stats() tcpip.Stats {
 }
 
 // SetForwarding enables or disables the packet forwarding between NICs.
+//
+// When forwarding becomes enabled, any host-only state on all NICs will be
+// cleaned up.
 func (s *Stack) SetForwarding(enable bool) {
 	// TODO(igudger, bgeffon): Expose via /proc/sys/net/ipv4/ip_forward.
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// If forwarding status didn't change, do nothing further.
+	if s.forwarding == enable {
+		return
+	}
+
 	s.forwarding = enable
-	s.mu.Unlock()
+
+	// If this stack does not support IPv6, do nothing further.
+	if _, ok := s.networkProtocols[header.IPv6ProtocolNumber]; !ok {
+		return
+	}
+
+	if enable {
+		for _, nic := range s.nics {
+			nic.becomeIPv6Router()
+		}
+	}
 }
 
 // Forwarding returns if the packet forwarding between NICs is enabled.
