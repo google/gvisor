@@ -28,9 +28,11 @@
 package vfs
 
 import (
+	"fmt"
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -111,11 +113,11 @@ type PathOperation struct {
 	// are borrowed from the provider of the PathOperation (i.e. the caller of
 	// the VFS method to which the PathOperation was passed).
 	//
-	// Invariants: Start.Ok(). If Pathname.Absolute, then Start == Root.
+	// Invariants: Start.Ok(). If Path.Absolute, then Start == Root.
 	Start VirtualDentry
 
 	// Path is the pathname traversed by this operation.
-	Pathname string
+	Path fspath.Path
 
 	// If FollowFinalSymlink is true, and the Dentry traversed by the final
 	// path component represents a symbolic link, the symbolic link should be
@@ -126,10 +128,7 @@ type PathOperation struct {
 // GetDentryAt returns a VirtualDentry representing the given path, at which a
 // file must exist. A reference is taken on the returned VirtualDentry.
 func (vfs *VirtualFilesystem) GetDentryAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *GetDentryOptions) (VirtualDentry, error) {
-	rp, err := vfs.getResolvingPath(creds, pop)
-	if err != nil {
-		return VirtualDentry{}, err
-	}
+	rp := vfs.getResolvingPath(creds, pop)
 	for {
 		d, err := rp.mount.fs.impl.GetDentryAt(ctx, rp, *opts)
 		if err == nil {
@@ -148,6 +147,33 @@ func (vfs *VirtualFilesystem) GetDentryAt(ctx context.Context, creds *auth.Crede
 	}
 }
 
+// Preconditions: pop.Path.Begin.Ok().
+func (vfs *VirtualFilesystem) getParentDirAndName(ctx context.Context, creds *auth.Credentials, pop *PathOperation) (VirtualDentry, string, error) {
+	rp := vfs.getResolvingPath(creds, pop)
+	for {
+		parent, err := rp.mount.fs.impl.GetParentDentryAt(ctx, rp)
+		if err == nil {
+			parentVD := VirtualDentry{
+				mount:  rp.mount,
+				dentry: parent,
+			}
+			rp.mount.IncRef()
+			name := rp.Component()
+			vfs.putResolvingPath(rp)
+			return parentVD, name, nil
+		}
+		if checkInvariants {
+			if rp.canHandleError(err) && rp.Done() {
+				panic(fmt.Sprintf("%T.GetParentDentryAt() consumed all path components and returned %T", rp.mount.fs.impl, err))
+			}
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return VirtualDentry{}, "", err
+		}
+	}
+}
+
 // LinkAt creates a hard link at newpop representing the existing file at
 // oldpop.
 func (vfs *VirtualFilesystem) LinkAt(ctx context.Context, creds *auth.Credentials, oldpop, newpop *PathOperation) error {
@@ -155,21 +181,36 @@ func (vfs *VirtualFilesystem) LinkAt(ctx context.Context, creds *auth.Credential
 	if err != nil {
 		return err
 	}
-	rp, err := vfs.getResolvingPath(creds, newpop)
-	if err != nil {
+
+	if !newpop.Path.Begin.Ok() {
 		oldVD.DecRef()
-		return err
+		if newpop.Path.Absolute {
+			return syserror.EEXIST
+		}
+		return syserror.ENOENT
 	}
+	if newpop.FollowFinalSymlink {
+		oldVD.DecRef()
+		ctx.Warningf("VirtualFilesystem.LinkAt: file creation paths can't follow final symlink")
+		return syserror.EINVAL
+	}
+
+	rp := vfs.getResolvingPath(creds, newpop)
 	for {
 		err := rp.mount.fs.impl.LinkAt(ctx, rp, oldVD)
 		if err == nil {
-			oldVD.DecRef()
 			vfs.putResolvingPath(rp)
+			oldVD.DecRef()
 			return nil
 		}
+		if checkInvariants {
+			if rp.canHandleError(err) && rp.Done() {
+				panic(fmt.Sprintf("%T.LinkAt() consumed all path components and returned %T", rp.mount.fs.impl, err))
+			}
+		}
 		if !rp.handleError(err) {
-			oldVD.DecRef()
 			vfs.putResolvingPath(rp)
+			oldVD.DecRef()
 			return err
 		}
 	}
@@ -177,18 +218,31 @@ func (vfs *VirtualFilesystem) LinkAt(ctx context.Context, creds *auth.Credential
 
 // MkdirAt creates a directory at the given path.
 func (vfs *VirtualFilesystem) MkdirAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *MkdirOptions) error {
+	if !pop.Path.Begin.Ok() {
+		if pop.Path.Absolute {
+			return syserror.EEXIST
+		}
+		return syserror.ENOENT
+	}
+	if pop.FollowFinalSymlink {
+		ctx.Warningf("VirtualFilesystem.MkdirAt: file creation paths can't follow final symlink")
+		return syserror.EINVAL
+	}
 	// "Under Linux, apart from the permission bits, the S_ISVTX mode bit is
 	// also honored." - mkdir(2)
 	opts.Mode &= 0777 | linux.S_ISVTX
-	rp, err := vfs.getResolvingPath(creds, pop)
-	if err != nil {
-		return err
-	}
+
+	rp := vfs.getResolvingPath(creds, pop)
 	for {
 		err := rp.mount.fs.impl.MkdirAt(ctx, rp, *opts)
 		if err == nil {
 			vfs.putResolvingPath(rp)
 			return nil
+		}
+		if checkInvariants {
+			if rp.canHandleError(err) && rp.Done() {
+				panic(fmt.Sprintf("%T.MkdirAt() consumed all path components and returned %T", rp.mount.fs.impl, err))
+			}
 		}
 		if !rp.handleError(err) {
 			vfs.putResolvingPath(rp)
@@ -200,16 +254,29 @@ func (vfs *VirtualFilesystem) MkdirAt(ctx context.Context, creds *auth.Credentia
 // MknodAt creates a file of the given mode at the given path. It returns an
 // error from the syserror package.
 func (vfs *VirtualFilesystem) MknodAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *MknodOptions) error {
-	rp, err := vfs.getResolvingPath(creds, pop)
-	if err != nil {
-		return nil
+	if !pop.Path.Begin.Ok() {
+		if pop.Path.Absolute {
+			return syserror.EEXIST
+		}
+		return syserror.ENOENT
 	}
+	if pop.FollowFinalSymlink {
+		ctx.Warningf("VirtualFilesystem.MknodAt: file creation paths can't follow final symlink")
+		return syserror.EINVAL
+	}
+
+	rp := vfs.getResolvingPath(creds, pop)
 	for {
-		if err = rp.mount.fs.impl.MknodAt(ctx, rp, *opts); err == nil {
+		err := rp.mount.fs.impl.MknodAt(ctx, rp, *opts)
+		if err != nil {
 			vfs.putResolvingPath(rp)
 			return nil
 		}
-		// Handle mount traversals.
+		if checkInvariants {
+			if rp.canHandleError(err) && rp.Done() {
+				panic(fmt.Sprintf("%T.MknodAt() consumed all path components and returned %T", rp.mount.fs.impl, err))
+			}
+		}
 		if !rp.handleError(err) {
 			vfs.putResolvingPath(rp)
 			return err
@@ -259,10 +326,7 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 	if opts.Flags&linux.O_NOFOLLOW != 0 {
 		pop.FollowFinalSymlink = false
 	}
-	rp, err := vfs.getResolvingPath(creds, pop)
-	if err != nil {
-		return nil, err
-	}
+	rp := vfs.getResolvingPath(creds, pop)
 	if opts.Flags&linux.O_DIRECTORY != 0 {
 		rp.mustBeDir = true
 		rp.mustBeDirOrig = true
@@ -282,10 +346,7 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 
 // ReadlinkAt returns the target of the symbolic link at the given path.
 func (vfs *VirtualFilesystem) ReadlinkAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) (string, error) {
-	rp, err := vfs.getResolvingPath(creds, pop)
-	if err != nil {
-		return "", err
-	}
+	rp := vfs.getResolvingPath(creds, pop)
 	for {
 		target, err := rp.mount.fs.impl.ReadlinkAt(ctx, rp)
 		if err == nil {
@@ -301,25 +362,59 @@ func (vfs *VirtualFilesystem) ReadlinkAt(ctx context.Context, creds *auth.Creden
 
 // RenameAt renames the file at oldpop to newpop.
 func (vfs *VirtualFilesystem) RenameAt(ctx context.Context, creds *auth.Credentials, oldpop, newpop *PathOperation, opts *RenameOptions) error {
-	oldVD, err := vfs.GetDentryAt(ctx, creds, oldpop, &GetDentryOptions{})
+	if !oldpop.Path.Begin.Ok() {
+		if oldpop.Path.Absolute {
+			return syserror.EBUSY
+		}
+		return syserror.ENOENT
+	}
+	if oldpop.FollowFinalSymlink {
+		ctx.Warningf("VirtualFilesystem.RenameAt: source path can't follow final symlink")
+		return syserror.EINVAL
+	}
+
+	oldParentVD, oldName, err := vfs.getParentDirAndName(ctx, creds, oldpop)
 	if err != nil {
 		return err
 	}
-	rp, err := vfs.getResolvingPath(creds, newpop)
-	if err != nil {
-		oldVD.DecRef()
-		return err
+	if oldName == "." || oldName == ".." {
+		oldParentVD.DecRef()
+		return syserror.EBUSY
+	}
+
+	if !newpop.Path.Begin.Ok() {
+		oldParentVD.DecRef()
+		if newpop.Path.Absolute {
+			return syserror.EBUSY
+		}
+		return syserror.ENOENT
+	}
+	if newpop.FollowFinalSymlink {
+		oldParentVD.DecRef()
+		ctx.Warningf("VirtualFilesystem.RenameAt: destination path can't follow final symlink")
+		return syserror.EINVAL
+	}
+
+	rp := vfs.getResolvingPath(creds, newpop)
+	renameOpts := *opts
+	if oldpop.Path.Dir {
+		renameOpts.MustBeDir = true
 	}
 	for {
-		err := rp.mount.fs.impl.RenameAt(ctx, rp, oldVD, *opts)
+		err := rp.mount.fs.impl.RenameAt(ctx, rp, oldParentVD, oldName, renameOpts)
 		if err == nil {
-			oldVD.DecRef()
 			vfs.putResolvingPath(rp)
+			oldParentVD.DecRef()
 			return nil
 		}
+		if checkInvariants {
+			if rp.canHandleError(err) && rp.Done() {
+				panic(fmt.Sprintf("%T.RenameAt() consumed all path components and returned %T", rp.mount.fs.impl, err))
+			}
+		}
 		if !rp.handleError(err) {
-			oldVD.DecRef()
 			vfs.putResolvingPath(rp)
+			oldParentVD.DecRef()
 			return err
 		}
 	}
@@ -327,15 +422,28 @@ func (vfs *VirtualFilesystem) RenameAt(ctx context.Context, creds *auth.Credenti
 
 // RmdirAt removes the directory at the given path.
 func (vfs *VirtualFilesystem) RmdirAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) error {
-	rp, err := vfs.getResolvingPath(creds, pop)
-	if err != nil {
-		return err
+	if !pop.Path.Begin.Ok() {
+		if pop.Path.Absolute {
+			return syserror.EBUSY
+		}
+		return syserror.ENOENT
 	}
+	if pop.FollowFinalSymlink {
+		ctx.Warningf("VirtualFilesystem.RmdirAt: file deletion paths can't follow final symlink")
+		return syserror.EINVAL
+	}
+
+	rp := vfs.getResolvingPath(creds, pop)
 	for {
 		err := rp.mount.fs.impl.RmdirAt(ctx, rp)
 		if err == nil {
 			vfs.putResolvingPath(rp)
 			return nil
+		}
+		if checkInvariants {
+			if rp.canHandleError(err) && rp.Done() {
+				panic(fmt.Sprintf("%T.RmdirAt() consumed all path components and returned %T", rp.mount.fs.impl, err))
+			}
 		}
 		if !rp.handleError(err) {
 			vfs.putResolvingPath(rp)
@@ -346,10 +454,7 @@ func (vfs *VirtualFilesystem) RmdirAt(ctx context.Context, creds *auth.Credentia
 
 // SetStatAt changes metadata for the file at the given path.
 func (vfs *VirtualFilesystem) SetStatAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *SetStatOptions) error {
-	rp, err := vfs.getResolvingPath(creds, pop)
-	if err != nil {
-		return err
-	}
+	rp := vfs.getResolvingPath(creds, pop)
 	for {
 		err := rp.mount.fs.impl.SetStatAt(ctx, rp, *opts)
 		if err == nil {
@@ -365,10 +470,7 @@ func (vfs *VirtualFilesystem) SetStatAt(ctx context.Context, creds *auth.Credent
 
 // StatAt returns metadata for the file at the given path.
 func (vfs *VirtualFilesystem) StatAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *StatOptions) (linux.Statx, error) {
-	rp, err := vfs.getResolvingPath(creds, pop)
-	if err != nil {
-		return linux.Statx{}, err
-	}
+	rp := vfs.getResolvingPath(creds, pop)
 	for {
 		stat, err := rp.mount.fs.impl.StatAt(ctx, rp, *opts)
 		if err == nil {
@@ -385,10 +487,7 @@ func (vfs *VirtualFilesystem) StatAt(ctx context.Context, creds *auth.Credential
 // StatFSAt returns metadata for the filesystem containing the file at the
 // given path.
 func (vfs *VirtualFilesystem) StatFSAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) (linux.Statfs, error) {
-	rp, err := vfs.getResolvingPath(creds, pop)
-	if err != nil {
-		return linux.Statfs{}, err
-	}
+	rp := vfs.getResolvingPath(creds, pop)
 	for {
 		statfs, err := rp.mount.fs.impl.StatFSAt(ctx, rp)
 		if err == nil {
@@ -404,15 +503,28 @@ func (vfs *VirtualFilesystem) StatFSAt(ctx context.Context, creds *auth.Credenti
 
 // SymlinkAt creates a symbolic link at the given path with the given target.
 func (vfs *VirtualFilesystem) SymlinkAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, target string) error {
-	rp, err := vfs.getResolvingPath(creds, pop)
-	if err != nil {
-		return err
+	if !pop.Path.Begin.Ok() {
+		if pop.Path.Absolute {
+			return syserror.EEXIST
+		}
+		return syserror.ENOENT
 	}
+	if pop.FollowFinalSymlink {
+		ctx.Warningf("VirtualFilesystem.SymlinkAt: file creation paths can't follow final symlink")
+		return syserror.EINVAL
+	}
+
+	rp := vfs.getResolvingPath(creds, pop)
 	for {
 		err := rp.mount.fs.impl.SymlinkAt(ctx, rp, target)
 		if err == nil {
 			vfs.putResolvingPath(rp)
 			return nil
+		}
+		if checkInvariants {
+			if rp.canHandleError(err) && rp.Done() {
+				panic(fmt.Sprintf("%T.SymlinkAt() consumed all path components and returned %T", rp.mount.fs.impl, err))
+			}
 		}
 		if !rp.handleError(err) {
 			vfs.putResolvingPath(rp)
@@ -423,15 +535,28 @@ func (vfs *VirtualFilesystem) SymlinkAt(ctx context.Context, creds *auth.Credent
 
 // UnlinkAt deletes the non-directory file at the given path.
 func (vfs *VirtualFilesystem) UnlinkAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) error {
-	rp, err := vfs.getResolvingPath(creds, pop)
-	if err != nil {
-		return err
+	if !pop.Path.Begin.Ok() {
+		if pop.Path.Absolute {
+			return syserror.EBUSY
+		}
+		return syserror.ENOENT
 	}
+	if pop.FollowFinalSymlink {
+		ctx.Warningf("VirtualFilesystem.UnlinkAt: file deletion paths can't follow final symlink")
+		return syserror.EINVAL
+	}
+
+	rp := vfs.getResolvingPath(creds, pop)
 	for {
 		err := rp.mount.fs.impl.UnlinkAt(ctx, rp)
 		if err == nil {
 			vfs.putResolvingPath(rp)
 			return nil
+		}
+		if checkInvariants {
+			if rp.canHandleError(err) && rp.Done() {
+				panic(fmt.Sprintf("%T.UnlinkAt() consumed all path components and returned %T", rp.mount.fs.impl, err))
+			}
 		}
 		if !rp.handleError(err) {
 			vfs.putResolvingPath(rp)
@@ -443,10 +568,7 @@ func (vfs *VirtualFilesystem) UnlinkAt(ctx context.Context, creds *auth.Credenti
 // ListxattrAt returns all extended attribute names for the file at the given
 // path.
 func (vfs *VirtualFilesystem) ListxattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) ([]string, error) {
-	rp, err := vfs.getResolvingPath(creds, pop)
-	if err != nil {
-		return nil, err
-	}
+	rp := vfs.getResolvingPath(creds, pop)
 	for {
 		names, err := rp.mount.fs.impl.ListxattrAt(ctx, rp)
 		if err == nil {
@@ -471,10 +593,7 @@ func (vfs *VirtualFilesystem) ListxattrAt(ctx context.Context, creds *auth.Crede
 // GetxattrAt returns the value associated with the given extended attribute
 // for the file at the given path.
 func (vfs *VirtualFilesystem) GetxattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, name string) (string, error) {
-	rp, err := vfs.getResolvingPath(creds, pop)
-	if err != nil {
-		return "", err
-	}
+	rp := vfs.getResolvingPath(creds, pop)
 	for {
 		val, err := rp.mount.fs.impl.GetxattrAt(ctx, rp, name)
 		if err == nil {
@@ -491,10 +610,7 @@ func (vfs *VirtualFilesystem) GetxattrAt(ctx context.Context, creds *auth.Creden
 // SetxattrAt changes the value associated with the given extended attribute
 // for the file at the given path.
 func (vfs *VirtualFilesystem) SetxattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *SetxattrOptions) error {
-	rp, err := vfs.getResolvingPath(creds, pop)
-	if err != nil {
-		return err
-	}
+	rp := vfs.getResolvingPath(creds, pop)
 	for {
 		err := rp.mount.fs.impl.SetxattrAt(ctx, rp, *opts)
 		if err == nil {
@@ -510,10 +626,7 @@ func (vfs *VirtualFilesystem) SetxattrAt(ctx context.Context, creds *auth.Creden
 
 // RemovexattrAt removes the given extended attribute from the file at rp.
 func (vfs *VirtualFilesystem) RemovexattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, name string) error {
-	rp, err := vfs.getResolvingPath(creds, pop)
-	if err != nil {
-		return err
-	}
+	rp := vfs.getResolvingPath(creds, pop)
 	for {
 		err := rp.mount.fs.impl.RemovexattrAt(ctx, rp, name)
 		if err == nil {

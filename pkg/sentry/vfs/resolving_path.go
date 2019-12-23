@@ -112,30 +112,26 @@ var resolvingPathPool = sync.Pool{
 	},
 }
 
-func (vfs *VirtualFilesystem) getResolvingPath(creds *auth.Credentials, pop *PathOperation) (*ResolvingPath, error) {
-	path, err := fspath.Parse(pop.Pathname)
-	if err != nil {
-		return nil, err
-	}
+func (vfs *VirtualFilesystem) getResolvingPath(creds *auth.Credentials, pop *PathOperation) *ResolvingPath {
 	rp := resolvingPathPool.Get().(*ResolvingPath)
 	rp.vfs = vfs
 	rp.root = pop.Root
 	rp.mount = pop.Start.mount
 	rp.start = pop.Start.dentry
-	rp.pit = path.Begin
+	rp.pit = pop.Path.Begin
 	rp.flags = 0
 	if pop.FollowFinalSymlink {
 		rp.flags |= rpflagsFollowFinalSymlink
 	}
-	rp.mustBeDir = path.Dir
-	rp.mustBeDirOrig = path.Dir
+	rp.mustBeDir = pop.Path.Dir
+	rp.mustBeDirOrig = pop.Path.Dir
 	rp.symlinks = 0
 	rp.curPart = 0
 	rp.numOrigParts = 1
 	rp.creds = creds
-	rp.parts[0] = path.Begin
-	rp.origParts[0] = path.Begin
-	return rp, nil
+	rp.parts[0] = pop.Path.Begin
+	rp.origParts[0] = pop.Path.Begin
+	return rp
 }
 
 func (vfs *VirtualFilesystem) putResolvingPath(rp *ResolvingPath) {
@@ -345,29 +341,34 @@ func (rp *ResolvingPath) ShouldFollowSymlink() bool {
 // symlink target and returns nil. Otherwise it returns a non-nil error.
 //
 // Preconditions: !rp.Done().
+//
+// Postconditions: If HandleSymlink returns a nil error, then !rp.Done().
 func (rp *ResolvingPath) HandleSymlink(target string) error {
 	if rp.symlinks >= linux.MaxSymlinkTraversals {
 		return syserror.ELOOP
 	}
-	targetPath, err := fspath.Parse(target)
-	if err != nil {
-		return err
+	if len(target) == 0 {
+		return syserror.ENOENT
 	}
 	rp.symlinks++
+	targetPath := fspath.Parse(target)
 	if targetPath.Absolute {
 		rp.absSymlinkTarget = targetPath
 		return resolveAbsSymlinkError{}
 	}
-	if !targetPath.Begin.Ok() {
-		panic(fmt.Sprintf("symbolic link has non-empty target %q that is both relative and has no path components?", target))
-	}
 	// Consume the path component that represented the symlink.
 	rp.Advance()
 	// Prepend the symlink target to the relative path.
+	if checkInvariants {
+		if !targetPath.HasComponents() {
+			panic(fmt.Sprintf("non-empty pathname %q parsed to relative path with no components", target))
+		}
+	}
 	rp.relpathPrepend(targetPath)
 	return nil
 }
 
+// Preconditions: path.HasComponents().
 func (rp *ResolvingPath) relpathPrepend(path fspath.Path) {
 	if rp.pit.Ok() {
 		rp.parts[rp.curPart] = rp.pit
@@ -463,6 +464,17 @@ func (rp *ResolvingPath) handleError(err error) bool {
 
 	default:
 		// Not an error we can handle.
+		return false
+	}
+}
+
+// canHandleError returns true if err is an error returned by rp.Resolve*()
+// that rp.handleError() may attempt to handle.
+func (rp *ResolvingPath) canHandleError(err error) bool {
+	switch err.(type) {
+	case resolveMountRootOrJumpError, resolveMountPointError, resolveAbsSymlinkError:
+		return true
+	default:
 		return false
 	}
 }

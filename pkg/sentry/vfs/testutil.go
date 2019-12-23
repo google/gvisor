@@ -57,6 +57,11 @@ func (fs *FDTestFilesystem) GetDentryAt(ctx context.Context, rp *ResolvingPath, 
 	return nil, syserror.EPERM
 }
 
+// GetParentDentryAt implements FilesystemImpl.GetParentDentryAt.
+func (fs *FDTestFilesystem) GetParentDentryAt(ctx context.Context, rp *ResolvingPath) (*Dentry, error) {
+	return nil, syserror.EPERM
+}
+
 // LinkAt implements FilesystemImpl.LinkAt.
 func (fs *FDTestFilesystem) LinkAt(ctx context.Context, rp *ResolvingPath, vd VirtualDentry) error {
 	return syserror.EPERM
@@ -83,7 +88,7 @@ func (fs *FDTestFilesystem) ReadlinkAt(ctx context.Context, rp *ResolvingPath) (
 }
 
 // RenameAt implements FilesystemImpl.RenameAt.
-func (fs *FDTestFilesystem) RenameAt(ctx context.Context, rp *ResolvingPath, vd VirtualDentry, opts RenameOptions) error {
+func (fs *FDTestFilesystem) RenameAt(ctx context.Context, rp *ResolvingPath, oldParentVD VirtualDentry, oldName string, opts RenameOptions) error {
 	return syserror.EPERM
 }
 
