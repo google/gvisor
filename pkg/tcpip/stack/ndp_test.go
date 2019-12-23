@@ -47,6 +47,19 @@ var (
 	llAddr3 = header.LinkLocalAddr(linkAddr3)
 )
 
+func addrForSubnet(subnet tcpip.Subnet, linkAddr tcpip.LinkAddress) tcpip.AddressWithPrefix {
+	if !header.IsValidUnicastEthernetAddress(linkAddr) {
+		return tcpip.AddressWithPrefix{}
+	}
+
+	addrBytes := []byte(subnet.ID())
+	header.EthernetAdddressToModifiedEUI64IntoBuf(linkAddr, addrBytes[header.IIDOffsetInIPv6Address:])
+	return tcpip.AddressWithPrefix{
+		Address:   tcpip.Address(addrBytes),
+		PrefixLen: 64,
+	}
+}
+
 // prefixSubnetAddr returns a prefix (Address + Length), the prefix's equivalent
 // tcpip.Subnet, and an address where the lower half of the address is composed
 // of the EUI-64 of linkAddr if it is a valid unicast ethernet address.
@@ -59,17 +72,7 @@ func prefixSubnetAddr(offset uint8, linkAddr tcpip.LinkAddress) (tcpip.AddressWi
 
 	subnet := prefix.Subnet()
 
-	var addr tcpip.AddressWithPrefix
-	if header.IsValidUnicastEthernetAddress(linkAddr) {
-		addrBytes := []byte(subnet.ID())
-		header.EthernetAdddressToModifiedEUI64IntoBuf(linkAddr, addrBytes[header.IIDOffsetInIPv6Address:])
-		addr = tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(addrBytes),
-			PrefixLen: 64,
-		}
-	}
-
-	return prefix, subnet, addr
+	return prefix, subnet, addrForSubnet(subnet, linkAddr)
 }
 
 // TestDADDisabled tests that an address successfully resolves immediately
@@ -1772,7 +1775,7 @@ func TestAutoGenAddrValidLifetimeUpdates(t *testing.T) {
 				// test.evl.
 				select {
 				case <-ndpDisp.autoGenAddrC:
-					t.Fatalf("unexpectedly received an auto gen addr event")
+					t.Fatal("unexpectedly received an auto gen addr event")
 				case <-time.After(time.Duration(test.evl)*time.Second - delta):
 				}
 
@@ -1846,7 +1849,7 @@ func TestAutoGenAddrRemoval(t *testing.T) {
 	// got stopped/cleaned up.
 	select {
 	case <-ndpDisp.autoGenAddrC:
-		t.Fatalf("unexpectedly received an auto gen addr event")
+		t.Fatal("unexpectedly received an auto gen addr event")
 	case <-time.After(lifetimeSeconds*time.Second + defaultTimeout):
 	}
 }
@@ -2053,5 +2056,259 @@ func TestNDPRecursiveDNSServerDispatch(t *testing.T) {
 			default:
 			}
 		})
+	}
+}
+
+// TestCleanupHostOnlyStateOnBecomingRouter tests that all discovered routers
+// and prefixes, and auto-generated addresses get invalidated when a NIC
+// becomes a router.
+func TestCleanupHostOnlyStateOnBecomingRouter(t *testing.T) {
+	t.Parallel()
+
+	const (
+		lifetimeSeconds = 5
+		maxEvents       = 4
+		nicID1          = 1
+		nicID2          = 2
+	)
+
+	prefix1, subnet1, e1Addr1 := prefixSubnetAddr(0, linkAddr1)
+	prefix2, subnet2, e1Addr2 := prefixSubnetAddr(1, linkAddr1)
+	e2Addr1 := addrForSubnet(subnet1, linkAddr2)
+	e2Addr2 := addrForSubnet(subnet2, linkAddr2)
+
+	ndpDisp := ndpDispatcher{
+		routerC:        make(chan ndpRouterEvent, maxEvents),
+		rememberRouter: true,
+		prefixC:        make(chan ndpPrefixEvent, maxEvents),
+		rememberPrefix: true,
+		autoGenAddrC:   make(chan ndpAutoGenAddrEvent, maxEvents),
+	}
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+		NDPConfigs: stack.NDPConfigurations{
+			HandleRAs:              true,
+			DiscoverDefaultRouters: true,
+			DiscoverOnLinkPrefixes: true,
+			AutoGenGlobalAddresses: true,
+		},
+		NDPDisp: &ndpDisp,
+	})
+
+	e1 := channel.New(0, 1280, linkAddr1)
+	if err := s.CreateNIC(nicID1, e1); err != nil {
+		t.Fatalf("CreateNIC(%d, _) = %s", nicID1, err)
+	}
+
+	e2 := channel.New(0, 1280, linkAddr2)
+	if err := s.CreateNIC(nicID2, e2); err != nil {
+		t.Fatalf("CreateNIC(%d, _) = %s", nicID2, err)
+	}
+
+	expectRouterEvent := func() (bool, ndpRouterEvent) {
+		select {
+		case e := <-ndpDisp.routerC:
+			return true, e
+		default:
+		}
+
+		return false, ndpRouterEvent{}
+	}
+
+	expectPrefixEvent := func() (bool, ndpPrefixEvent) {
+		select {
+		case e := <-ndpDisp.prefixC:
+			return true, e
+		default:
+		}
+
+		return false, ndpPrefixEvent{}
+	}
+
+	expectAutoGenAddrEvent := func() (bool, ndpAutoGenAddrEvent) {
+		select {
+		case e := <-ndpDisp.autoGenAddrC:
+			return true, e
+		default:
+		}
+
+		return false, ndpAutoGenAddrEvent{}
+	}
+
+	// Receive RAs on NIC(1) and NIC(2) from default routers (llAddr1 and
+	// llAddr2) w/ PI (for prefix1 in RA from llAddr1 and prefix2 in RA from
+	// llAddr2) to discover multiple routers and prefixes, and auto-gen
+	// multiple addresses.
+
+	e1.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr1, lifetimeSeconds, prefix1, true, true, lifetimeSeconds, lifetimeSeconds))
+	// We have other tests that make sure we receive the *correct* events
+	// on normal discovery of routers/prefixes, and auto-generated
+	// addresses. Here we just make sure we get an event and let other tests
+	// handle the correctness check.
+	if ok, _ := expectRouterEvent(); !ok {
+		t.Errorf("expected router event for %s on NIC(%d)", llAddr1, nicID1)
+	}
+	if ok, _ := expectPrefixEvent(); !ok {
+		t.Errorf("expected prefix event for %s on NIC(%d)", prefix1, nicID1)
+	}
+	if ok, _ := expectAutoGenAddrEvent(); !ok {
+		t.Errorf("expected auto-gen addr event for %s on NIC(%d)", e1Addr1, nicID1)
+	}
+
+	e1.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, lifetimeSeconds, prefix2, true, true, lifetimeSeconds, lifetimeSeconds))
+	if ok, _ := expectRouterEvent(); !ok {
+		t.Errorf("expected router event for %s on NIC(%d)", llAddr2, nicID1)
+	}
+	if ok, _ := expectPrefixEvent(); !ok {
+		t.Errorf("expected prefix event for %s on NIC(%d)", prefix2, nicID1)
+	}
+	if ok, _ := expectAutoGenAddrEvent(); !ok {
+		t.Errorf("expected auto-gen addr event for %s on NIC(%d)", e1Addr2, nicID1)
+	}
+
+	e2.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr1, lifetimeSeconds, prefix1, true, true, lifetimeSeconds, lifetimeSeconds))
+	if ok, _ := expectRouterEvent(); !ok {
+		t.Errorf("expected router event for %s on NIC(%d)", llAddr1, nicID2)
+	}
+	if ok, _ := expectPrefixEvent(); !ok {
+		t.Errorf("expected prefix event for %s on NIC(%d)", prefix1, nicID2)
+	}
+	if ok, _ := expectAutoGenAddrEvent(); !ok {
+		t.Errorf("expected auto-gen addr event for %s on NIC(%d)", e1Addr2, nicID2)
+	}
+
+	e2.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, lifetimeSeconds, prefix2, true, true, lifetimeSeconds, lifetimeSeconds))
+	if ok, _ := expectRouterEvent(); !ok {
+		t.Errorf("expected router event for %s on NIC(%d)", llAddr2, nicID2)
+	}
+	if ok, _ := expectPrefixEvent(); !ok {
+		t.Errorf("expected prefix event for %s on NIC(%d)", prefix2, nicID2)
+	}
+	if ok, _ := expectAutoGenAddrEvent(); !ok {
+		t.Errorf("expected auto-gen addr event for %s on NIC(%d)", e2Addr2, nicID2)
+	}
+
+	// We should have the auto-generated addresses added.
+	nicinfo := s.NICInfo()
+	nic1Addrs := nicinfo[nicID1].ProtocolAddresses
+	nic2Addrs := nicinfo[nicID2].ProtocolAddresses
+	if !contains(nic1Addrs, e1Addr1) {
+		t.Errorf("missing %s from the list of addresses for NIC(%d): %+v", e1Addr1, nicID1, nic1Addrs)
+	}
+	if !contains(nic1Addrs, e1Addr2) {
+		t.Errorf("missing %s from the list of addresses for NIC(%d): %+v", e1Addr2, nicID1, nic1Addrs)
+	}
+	if !contains(nic2Addrs, e2Addr1) {
+		t.Errorf("missing %s from the list of addresses for NIC(%d): %+v", e2Addr1, nicID2, nic2Addrs)
+	}
+	if !contains(nic2Addrs, e2Addr2) {
+		t.Errorf("missing %s from the list of addresses for NIC(%d): %+v", e2Addr2, nicID2, nic2Addrs)
+	}
+
+	// We can't proceed any further if we already failed the test (missing
+	// some discovery/auto-generated address events or addresses).
+	if t.Failed() {
+		t.FailNow()
+	}
+
+	s.SetForwarding(true)
+
+	// Collect invalidation events after becoming a router
+	gotRouterEvents := make(map[ndpRouterEvent]int)
+	for i := 0; i < maxEvents; i++ {
+		ok, e := expectRouterEvent()
+		if !ok {
+			t.Errorf("expected %d router events after becoming a router; got = %d", maxEvents, i)
+			break
+		}
+		gotRouterEvents[e]++
+	}
+	gotPrefixEvents := make(map[ndpPrefixEvent]int)
+	for i := 0; i < maxEvents; i++ {
+		ok, e := expectPrefixEvent()
+		if !ok {
+			t.Errorf("expected %d prefix events after becoming a router; got = %d", maxEvents, i)
+			break
+		}
+		gotPrefixEvents[e]++
+	}
+	gotAutoGenAddrEvents := make(map[ndpAutoGenAddrEvent]int)
+	for i := 0; i < maxEvents; i++ {
+		ok, e := expectAutoGenAddrEvent()
+		if !ok {
+			t.Errorf("expected %d auto-generated address events after becoming a router; got = %d", maxEvents, i)
+			break
+		}
+		gotAutoGenAddrEvents[e]++
+	}
+
+	// No need to proceed any further if we already failed the test (missing
+	// some invalidation events).
+	if t.Failed() {
+		t.FailNow()
+	}
+
+	expectedRouterEvents := map[ndpRouterEvent]int{
+		{nicID: nicID1, addr: llAddr1, discovered: false}: 1,
+		{nicID: nicID1, addr: llAddr2, discovered: false}: 1,
+		{nicID: nicID2, addr: llAddr1, discovered: false}: 1,
+		{nicID: nicID2, addr: llAddr2, discovered: false}: 1,
+	}
+	if diff := cmp.Diff(expectedRouterEvents, gotRouterEvents); diff != "" {
+		t.Errorf("router events mismatch (-want +got):\n%s", diff)
+	}
+	expectedPrefixEvents := map[ndpPrefixEvent]int{
+		{nicID: nicID1, prefix: subnet1, discovered: false}: 1,
+		{nicID: nicID1, prefix: subnet2, discovered: false}: 1,
+		{nicID: nicID2, prefix: subnet1, discovered: false}: 1,
+		{nicID: nicID2, prefix: subnet2, discovered: false}: 1,
+	}
+	if diff := cmp.Diff(expectedPrefixEvents, gotPrefixEvents); diff != "" {
+		t.Errorf("prefix events mismatch (-want +got):\n%s", diff)
+	}
+	expectedAutoGenAddrEvents := map[ndpAutoGenAddrEvent]int{
+		{nicID: nicID1, addr: e1Addr1, eventType: invalidatedAddr}: 1,
+		{nicID: nicID1, addr: e1Addr2, eventType: invalidatedAddr}: 1,
+		{nicID: nicID2, addr: e2Addr1, eventType: invalidatedAddr}: 1,
+		{nicID: nicID2, addr: e2Addr2, eventType: invalidatedAddr}: 1,
+	}
+	if diff := cmp.Diff(expectedAutoGenAddrEvents, gotAutoGenAddrEvents); diff != "" {
+		t.Errorf("auto-generated address events mismatch (-want +got):\n%s", diff)
+	}
+
+	// Make sure the auto-generated addresses got removed.
+	nicinfo = s.NICInfo()
+	nic1Addrs = nicinfo[nicID1].ProtocolAddresses
+	nic2Addrs = nicinfo[nicID2].ProtocolAddresses
+	if contains(nic1Addrs, e1Addr1) {
+		t.Errorf("still have %s in the list of addresses for NIC(%d): %+v", e1Addr1, nicID1, nic1Addrs)
+	}
+	if contains(nic1Addrs, e1Addr2) {
+		t.Errorf("still have %s in the list of addresses for NIC(%d): %+v", e1Addr2, nicID1, nic1Addrs)
+	}
+	if contains(nic2Addrs, e2Addr1) {
+		t.Errorf("still have %s in the list of addresses for NIC(%d): %+v", e2Addr1, nicID2, nic2Addrs)
+	}
+	if contains(nic2Addrs, e2Addr2) {
+		t.Errorf("still have %s in the list of addresses for NIC(%d): %+v", e2Addr2, nicID2, nic2Addrs)
+	}
+
+	// Should not get any more events (invalidation timers should have been
+	// cancelled when we transitioned into a router).
+	time.Sleep(lifetimeSeconds*time.Second + defaultTimeout)
+	select {
+	case <-ndpDisp.routerC:
+		t.Error("unexpected router event")
+	default:
+	}
+	select {
+	case <-ndpDisp.prefixC:
+		t.Error("unexpected prefix event")
+	default:
+	}
+	select {
+	case <-ndpDisp.autoGenAddrC:
+		t.Error("unexpected auto-generated address event")
+	default:
 	}
 }
