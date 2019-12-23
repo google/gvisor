@@ -1155,3 +1155,38 @@ func (ndp *ndpState) autoGenAddrInvalidationTimer(addr tcpip.Address, vl time.Du
 		ndp.invalidateAutoGenAddress(addr)
 	})
 }
+
+// cleanupHostOnlyState cleans up any state that is only useful for hosts.
+//
+// cleanupHostOnlyState MUST be called when ndp's NIC is transitioning from a
+// host to a router. This function will invalidate all discovered on-link
+// prefixes, discovered routers, and auto-generated addresses as routers do not
+// normally process Router Advertisements to discover default routers and
+// on-link prefixes, and auto-generate addresses via SLAAC.
+//
+// The NIC that ndp belongs to MUST be locked.
+func (ndp *ndpState) cleanupHostOnlyState() {
+	for addr, _ := range ndp.autoGenAddresses {
+		ndp.invalidateAutoGenAddress(addr)
+	}
+
+	if got := len(ndp.autoGenAddresses); got != 0 {
+		log.Fatalf("ndp: still have auto-generated addresses after cleaning up, found = %d", got)
+	}
+
+	for prefix, _ := range ndp.onLinkPrefixes {
+		ndp.invalidateOnLinkPrefix(prefix)
+	}
+
+	if got := len(ndp.onLinkPrefixes); got != 0 {
+		log.Fatalf("ndp: still have discovered on-link prefixes after cleaning up, found = %d", got)
+	}
+
+	for router, _ := range ndp.defaultRouters {
+		ndp.invalidateDefaultRouter(router)
+	}
+
+	if got := len(ndp.defaultRouters); got != 0 {
+		log.Fatalf("ndp: still have discovered default routers after cleaning up, found = %d", got)
+	}
+}
