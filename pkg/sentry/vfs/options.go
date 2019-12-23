@@ -83,6 +83,9 @@ type ReadOptions struct {
 type RenameOptions struct {
 	// Flags contains flags as specified for renameat2(2).
 	Flags uint32
+
+	// If MustBeDir is true, the renamed file must be a directory.
+	MustBeDir bool
 }
 
 // SetStatOptions contains options to VirtualFilesystem.SetStatAt(),

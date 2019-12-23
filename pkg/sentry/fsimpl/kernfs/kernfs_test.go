@@ -24,6 +24,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
@@ -82,9 +83,9 @@ func newTestSystem(t *testing.T, rootFn RootDentryFn) *TestSystem {
 // Precondition: path should be relative path.
 func (s *TestSystem) PathOpAtRoot(path string) vfs.PathOperation {
 	return vfs.PathOperation{
-		Root:     s.root,
-		Start:    s.root,
-		Pathname: path,
+		Root:  s.root,
+		Start: s.root,
+		Path:  fspath.Parse(path),
 	}
 }
 

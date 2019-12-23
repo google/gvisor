@@ -50,6 +50,7 @@ go_test(
     deps = [
         ":memfs",
         "//pkg/abi/linux",
+        "//pkg/fspath",
         "//pkg/refs",
         "//pkg/sentry/context",
         "//pkg/sentry/context/contexttest",
@@ -68,6 +69,7 @@ go_test(
     embed = [":memfs"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/fspath",
         "//pkg/sentry/context",
         "//pkg/sentry/context/contexttest",
         "//pkg/sentry/kernel/auth",

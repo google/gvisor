@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
@@ -193,9 +194,9 @@ func BenchmarkVFS2MemfsStat(b *testing.B) {
 			for i := depth; i > 0; i-- {
 				name := fmt.Sprintf("%d", i)
 				pop := vfs.PathOperation{
-					Root:     root,
-					Start:    vd,
-					Pathname: name,
+					Root:  root,
+					Start: vd,
+					Path:  fspath.Parse(name),
 				}
 				if err := vfsObj.MkdirAt(ctx, creds, &pop, &vfs.MkdirOptions{
 					Mode: 0755,
@@ -216,7 +217,7 @@ func BenchmarkVFS2MemfsStat(b *testing.B) {
 			fd, err := vfsObj.OpenAt(ctx, creds, &vfs.PathOperation{
 				Root:               root,
 				Start:              vd,
-				Pathname:           filename,
+				Path:               fspath.Parse(filename),
 				FollowFinalSymlink: true,
 			}, &vfs.OpenOptions{
 				Flags: linux.O_RDWR | linux.O_CREAT | linux.O_EXCL,
@@ -237,7 +238,7 @@ func BenchmarkVFS2MemfsStat(b *testing.B) {
 				stat, err := vfsObj.StatAt(ctx, creds, &vfs.PathOperation{
 					Root:               root,
 					Start:              root,
-					Pathname:           filePath,
+					Path:               fspath.Parse(filePath),
 					FollowFinalSymlink: true,
 				}, &vfs.StatOptions{})
 				if err != nil {
@@ -378,9 +379,9 @@ func BenchmarkVFS2MemfsMountStat(b *testing.B) {
 			root := mntns.Root()
 			defer root.DecRef()
 			pop := vfs.PathOperation{
-				Root:     root,
-				Start:    root,
-				Pathname: mountPointName,
+				Root:  root,
+				Start: root,
+				Path:  fspath.Parse(mountPointName),
 			}
 			if err := vfsObj.MkdirAt(ctx, creds, &pop, &vfs.MkdirOptions{
 				Mode: 0755,
@@ -408,9 +409,9 @@ func BenchmarkVFS2MemfsMountStat(b *testing.B) {
 			for i := depth; i > 0; i-- {
 				name := fmt.Sprintf("%d", i)
 				pop := vfs.PathOperation{
-					Root:     root,
-					Start:    vd,
-					Pathname: name,
+					Root:  root,
+					Start: vd,
+					Path:  fspath.Parse(name),
 				}
 				if err := vfsObj.MkdirAt(ctx, creds, &pop, &vfs.MkdirOptions{
 					Mode: 0755,
@@ -438,7 +439,7 @@ func BenchmarkVFS2MemfsMountStat(b *testing.B) {
 			fd, err := vfsObj.OpenAt(ctx, creds, &vfs.PathOperation{
 				Root:               root,
 				Start:              vd,
-				Pathname:           filename,
+				Path:               fspath.Parse(filename),
 				FollowFinalSymlink: true,
 			}, &vfs.OpenOptions{
 				Flags: linux.O_RDWR | linux.O_CREAT | linux.O_EXCL,
@@ -458,7 +459,7 @@ func BenchmarkVFS2MemfsMountStat(b *testing.B) {
 				stat, err := vfsObj.StatAt(ctx, creds, &vfs.PathOperation{
 					Root:               root,
 					Start:              root,
-					Pathname:           filePath,
+					Path:               fspath.Parse(filePath),
 					FollowFinalSymlink: true,
 				}, &vfs.StatOptions{})
 				if err != nil {
