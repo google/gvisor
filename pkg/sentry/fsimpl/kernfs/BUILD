@@ -49,6 +49,7 @@ go_test(
     deps = [
         ":kernfs",
         "//pkg/abi/linux",
+        "//pkg/fspath",
         "//pkg/sentry/context",
         "//pkg/sentry/context/contexttest",
         "//pkg/sentry/kernel/auth",

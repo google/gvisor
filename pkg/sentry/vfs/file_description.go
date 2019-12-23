@@ -192,6 +192,8 @@ func (fd *FileDescription) Impl() FileDescriptionImpl {
 // be interpreted as IDs in the root UserNamespace (i.e. as auth.KUID and
 // auth.KGID respectively).
 //
+// All methods may return errors not specified.
+//
 // FileDescriptionImpl is analogous to Linux's struct file_operations.
 type FileDescriptionImpl interface {
 	// Release is called when the associated FileDescription reaches zero
@@ -220,6 +222,10 @@ type FileDescriptionImpl interface {
 	// PRead reads from the file into dst, starting at the given offset, and
 	// returns the number of bytes read. PRead is permitted to return partial
 	// reads with a nil error.
+	//
+	// Errors:
+	//
+	// - If opts.Flags specifies unsupported options, PRead returns EOPNOTSUPP.
 	PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts ReadOptions) (int64, error)
 
 	// Read is similar to PRead, but does not specify an offset.
@@ -229,6 +235,10 @@ type FileDescriptionImpl interface {
 	// the number of bytes read; note that POSIX 2.9.7 "Thread Interactions
 	// with Regular File Operations" requires that all operations that may
 	// mutate the FileDescription offset are serialized.
+	//
+	// Errors:
+	//
+	// - If opts.Flags specifies unsupported options, Read returns EOPNOTSUPP.
 	Read(ctx context.Context, dst usermem.IOSequence, opts ReadOptions) (int64, error)
 
 	// PWrite writes src to the file, starting at the given offset, and returns
@@ -238,6 +248,11 @@ type FileDescriptionImpl interface {
 	// As in Linux (but not POSIX), if O_APPEND is in effect for the
 	// FileDescription, PWrite should ignore the offset and append data to the
 	// end of the file.
+	//
+	// Errors:
+	//
+	// - If opts.Flags specifies unsupported options, PWrite returns
+	// EOPNOTSUPP.
 	PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts WriteOptions) (int64, error)
 
 	// Write is similar to PWrite, but does not specify an offset, which is
@@ -247,6 +262,10 @@ type FileDescriptionImpl interface {
 	// PWrite that uses a FileDescription offset, to make it possible for
 	// remote filesystems to implement O_APPEND correctly (i.e. atomically with
 	// respect to writers outside the scope of VFS).
+	//
+	// Errors:
+	//
+	// - If opts.Flags specifies unsupported options, Write returns EOPNOTSUPP.
 	Write(ctx context.Context, src usermem.IOSequence, opts WriteOptions) (int64, error)
 
 	// IterDirents invokes cb on each entry in the directory represented by the

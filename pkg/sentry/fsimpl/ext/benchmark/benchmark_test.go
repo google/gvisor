@@ -24,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext"
@@ -121,7 +122,7 @@ func BenchmarkVFS2Ext4fsStat(b *testing.B) {
 				stat, err := vfsfs.StatAt(ctx, creds, &vfs.PathOperation{
 					Root:               *root,
 					Start:              *root,
-					Pathname:           filePath,
+					Path:               fspath.Parse(filePath),
 					FollowFinalSymlink: true,
 				}, &vfs.StatOptions{})
 				if err != nil {
@@ -150,9 +151,9 @@ func BenchmarkVFS2ExtfsMountStat(b *testing.B) {
 			creds := auth.CredentialsFromContext(ctx)
 			mountPointName := "/1/"
 			pop := vfs.PathOperation{
-				Root:     *root,
-				Start:    *root,
-				Pathname: mountPointName,
+				Root:  *root,
+				Start: *root,
+				Path:  fspath.Parse(mountPointName),
 			}
 
 			// Save the mount point for later use.
@@ -181,7 +182,7 @@ func BenchmarkVFS2ExtfsMountStat(b *testing.B) {
 				stat, err := vfsfs.StatAt(ctx, creds, &vfs.PathOperation{
 					Root:               *root,
 					Start:              *root,
-					Pathname:           filePath,
+					Path:               fspath.Parse(filePath),
 					FollowFinalSymlink: true,
 				}, &vfs.StatOptions{})
 				if err != nil {

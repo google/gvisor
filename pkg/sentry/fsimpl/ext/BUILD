@@ -74,6 +74,7 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",
+        "//pkg/fspath",
         "//pkg/sentry/context",
         "//pkg/sentry/context/contexttest",
         "//pkg/sentry/fsimpl/ext/disklayout",

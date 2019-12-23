@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -38,7 +39,7 @@ func TestSeparateFDs(t *testing.T) {
 	pop := vfs.PathOperation{
 		Root:               root,
 		Start:              root,
-		Pathname:           fileName,
+		Path:               fspath.Parse(fileName),
 		FollowFinalSymlink: true,
 	}
 	rfdchan := make(chan *vfs.FileDescription)
@@ -76,7 +77,7 @@ func TestNonblockingRead(t *testing.T) {
 	pop := vfs.PathOperation{
 		Root:               root,
 		Start:              root,
-		Pathname:           fileName,
+		Path:               fspath.Parse(fileName),
 		FollowFinalSymlink: true,
 	}
 	openOpts := vfs.OpenOptions{Flags: linux.O_RDONLY | linux.O_NONBLOCK}
@@ -108,7 +109,7 @@ func TestNonblockingWriteError(t *testing.T) {
 	pop := vfs.PathOperation{
 		Root:               root,
 		Start:              root,
-		Pathname:           fileName,
+		Path:               fspath.Parse(fileName),
 		FollowFinalSymlink: true,
 	}
 	openOpts := vfs.OpenOptions{Flags: linux.O_WRONLY | linux.O_NONBLOCK}
@@ -126,7 +127,7 @@ func TestSingleFD(t *testing.T) {
 	pop := vfs.PathOperation{
 		Root:               root,
 		Start:              root,
-		Pathname:           fileName,
+		Path:               fspath.Parse(fileName),
 		FollowFinalSymlink: true,
 	}
 	openOpts := vfs.OpenOptions{Flags: linux.O_RDWR}
@@ -160,10 +161,9 @@ func setup(t *testing.T) (context.Context, *auth.Credentials, *vfs.VirtualFilesy
 	// Create the pipe.
 	root := mntns.Root()
 	pop := vfs.PathOperation{
-		Root:               root,
-		Start:              root,
-		Pathname:           fileName,
-		FollowFinalSymlink: true,
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse(fileName),
 	}
 	mknodOpts := vfs.MknodOptions{Mode: linux.ModeNamedPipe | 0644}
 	if err := vfsObj.MknodAt(ctx, creds, &pop, &mknodOpts); err != nil {
@@ -174,7 +174,7 @@ func setup(t *testing.T) (context.Context, *auth.Credentials, *vfs.VirtualFilesy
 	stat, err := vfsObj.StatAt(ctx, creds, &vfs.PathOperation{
 		Root:               root,
 		Start:              root,
-		Pathname:           fileName,
+		Path:               fspath.Parse(fileName),
 		FollowFinalSymlink: true,
 	}, &vfs.StatOptions{})
 	if err != nil {

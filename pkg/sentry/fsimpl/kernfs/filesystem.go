@@ -44,39 +44,37 @@ func (fs *Filesystem) stepExistingLocked(ctx context.Context, rp *vfs.ResolvingP
 		return nil, err
 	}
 afterSymlink:
+	name := rp.Component()
+	// Revalidation must be skipped if name is "." or ".."; d or its parent
+	// respectively can't be expected to transition from invalidated back to
+	// valid, so detecting invalidation and retrying would loop forever. This
+	// is consistent with Linux: fs/namei.c:walk_component() => lookup_fast()
+	// calls d_revalidate(), but walk_component() => handle_dots() does not.
+	if name == "." {
+		rp.Advance()
+		return vfsd, nil
+	}
+	if name == ".." {
+		nextVFSD, err := rp.ResolveParent(vfsd)
+		if err != nil {
+			return nil, err
+		}
+		rp.Advance()
+		return nextVFSD, nil
+	}
 	d.dirMu.Lock()
-	nextVFSD, err := rp.ResolveComponent(vfsd)
+	nextVFSD, err := rp.ResolveChild(vfsd, name)
+	if err != nil {
+		d.dirMu.Unlock()
+		return nil, err
+	}
+	next, err := fs.revalidateChildLocked(ctx, rp.VirtualFilesystem(), d, name, nextVFSD)
 	d.dirMu.Unlock()
 	if err != nil {
 		return nil, err
 	}
-	if nextVFSD != nil {
-		// Cached dentry exists, revalidate.
-		next := nextVFSD.Impl().(*Dentry)
-		if !next.inode.Valid(ctx) {
-			d.dirMu.Lock()
-			rp.VirtualFilesystem().ForceDeleteDentry(nextVFSD)
-			d.dirMu.Unlock()
-			fs.deferDecRef(nextVFSD) // Reference from Lookup.
-			nextVFSD = nil
-		}
-	}
-	if nextVFSD == nil {
-		// Dentry isn't cached; it either doesn't exist or failed
-		// revalidation. Attempt to resolve it via Lookup.
-		name := rp.Component()
-		var err error
-		nextVFSD, err = d.inode.Lookup(ctx, name)
-		// Reference on nextVFSD dropped by a corresponding Valid.
-		if err != nil {
-			return nil, err
-		}
-		d.InsertChild(name, nextVFSD)
-	}
-	next := nextVFSD.Impl().(*Dentry)
-
 	// Resolve any symlink at current path component.
-	if rp.ShouldFollowSymlink() && d.isSymlink() {
+	if rp.ShouldFollowSymlink() && next.isSymlink() {
 		// TODO: VFS2 needs something extra for /proc/[pid]/fd/ "magic symlinks".
 		target, err := next.inode.Readlink(ctx)
 		if err != nil {
@@ -89,7 +87,44 @@ afterSymlink:
 
 	}
 	rp.Advance()
-	return nextVFSD, nil
+	return &next.vfsd, nil
+}
+
+// revalidateChildLocked must be called after a call to parent.vfsd.Child(name)
+// or vfs.ResolvingPath.ResolveChild(name) returns childVFSD (which may be
+// nil) to verify that the returned child (or lack thereof) is correct.
+//
+// Preconditions: Filesystem.mu must be locked for at least reading.
+// parent.dirMu must be locked. parent.isDir(). name is not "." or "..".
+//
+// Postconditions: Caller must call fs.processDeferredDecRefs*.
+func (fs *Filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.VirtualFilesystem, parent *Dentry, name string, childVFSD *vfs.Dentry) (*Dentry, error) {
+	if childVFSD != nil {
+		// Cached dentry exists, revalidate.
+		child := childVFSD.Impl().(*Dentry)
+		if !child.inode.Valid(ctx) {
+			vfsObj.ForceDeleteDentry(childVFSD)
+			fs.deferDecRef(childVFSD) // Reference from Lookup.
+			childVFSD = nil
+		}
+	}
+	if childVFSD == nil {
+		// Dentry isn't cached; it either doesn't exist or failed
+		// revalidation. Attempt to resolve it via Lookup.
+		//
+		// FIXME(b/144498111): Inode.Lookup() should return *(kernfs.)Dentry,
+		// not *vfs.Dentry, since (kernfs.)Filesystem assumes that all dentries
+		// in the filesystem are (kernfs.)Dentry and performs vfs.DentryImpl
+		// casts accordingly.
+		var err error
+		childVFSD, err = parent.inode.Lookup(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		// Reference on childVFSD dropped by a corresponding Valid.
+		parent.InsertChild(name, childVFSD)
+	}
+	return childVFSD.Impl().(*Dentry), nil
 }
 
 // walkExistingLocked resolves rp to an existing file.
@@ -237,6 +272,19 @@ func (fs *Filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 		if err := inode.CheckPermissions(rp.Credentials(), vfs.MayExec); err != nil {
 			return nil, err
 		}
+	}
+	vfsd.IncRef() // Ownership transferred to caller.
+	return vfsd, nil
+}
+
+// GetParentDentryAt implements vfs.FilesystemImpl.GetParentDentryAt.
+func (fs *Filesystem) GetParentDentryAt(ctx context.Context, rp *vfs.ResolvingPath) (*vfs.Dentry, error) {
+	fs.mu.RLock()
+	defer fs.processDeferredDecRefs()
+	defer fs.mu.RUnlock()
+	vfsd, _, err := fs.walkParentDirLocked(ctx, rp)
+	if err != nil {
+		return nil, err
 	}
 	vfsd.IncRef() // Ownership transferred to caller.
 	return vfsd, nil
@@ -459,40 +507,42 @@ func (fs *Filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (st
 }
 
 // RenameAt implements vfs.FilesystemImpl.RenameAt.
-func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.VirtualDentry, opts vfs.RenameOptions) error {
+func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldParentVD vfs.VirtualDentry, oldName string, opts vfs.RenameOptions) error {
+	// Only RENAME_NOREPLACE is supported.
+	if opts.Flags&^linux.RENAME_NOREPLACE != 0 {
+		return syserror.EINVAL
+	}
 	noReplace := opts.Flags&linux.RENAME_NOREPLACE != 0
-	exchange := opts.Flags&linux.RENAME_EXCHANGE != 0
-	whiteout := opts.Flags&linux.RENAME_WHITEOUT != 0
-	if exchange && (noReplace || whiteout) {
-		// Can't specify RENAME_NOREPLACE or RENAME_WHITEOUT with RENAME_EXCHANGE.
-		return syserror.EINVAL
-	}
-	if exchange || whiteout {
-		// Exchange and Whiteout flags are not supported on kernfs.
-		return syserror.EINVAL
-	}
 
 	fs.mu.Lock()
 	defer fs.mu.Lock()
 
-	mnt := rp.Mount()
-	if mnt != vd.Mount() {
-		return syserror.EXDEV
-	}
-
-	if err := mnt.CheckBeginWrite(); err != nil {
-		return err
-	}
-	defer mnt.EndWrite()
-
+	// Resolve the destination directory first to verify that it's on this
+	// Mount.
 	dstDirVFSD, dstDirInode, err := fs.walkParentDirLocked(ctx, rp)
 	fs.processDeferredDecRefsLocked()
 	if err != nil {
 		return err
 	}
+	mnt := rp.Mount()
+	if mnt != oldParentVD.Mount() {
+		return syserror.EXDEV
+	}
+	if err := mnt.CheckBeginWrite(); err != nil {
+		return err
+	}
+	defer mnt.EndWrite()
 
-	srcVFSD := vd.Dentry()
-	srcDirVFSD := srcVFSD.Parent()
+	srcDirVFSD := oldParentVD.Dentry()
+	srcDir := srcDirVFSD.Impl().(*Dentry)
+	srcDir.dirMu.Lock()
+	src, err := fs.revalidateChildLocked(ctx, rp.VirtualFilesystem(), srcDir, oldName, srcDirVFSD.Child(oldName))
+	srcDir.dirMu.Unlock()
+	fs.processDeferredDecRefsLocked()
+	if err != nil {
+		return err
+	}
+	srcVFSD := &src.vfsd
 
 	// Can we remove the src dentry?
 	if err := checkDeleteLocked(rp, srcVFSD); err != nil {

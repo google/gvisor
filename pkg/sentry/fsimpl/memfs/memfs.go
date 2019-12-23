@@ -29,6 +29,7 @@ package memfs
 
 import (
 	"fmt"
+	"math"
 	"sync"
 	"sync/atomic"
 
@@ -62,12 +63,6 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 // Release implements vfs.FilesystemImpl.Release.
 func (fs *filesystem) Release() {
-}
-
-// Sync implements vfs.FilesystemImpl.Sync.
-func (fs *filesystem) Sync(ctx context.Context) error {
-	// All filesystem state is in-memory.
-	return nil
 }
 
 // dentry implements vfs.DentryImpl.
@@ -137,6 +132,8 @@ type inode struct {
 	impl interface{} // immutable
 }
 
+const maxLinks = math.MaxUint32
+
 func (i *inode) init(impl interface{}, fs *filesystem, creds *auth.Credentials, mode linux.FileMode) {
 	i.refs = 1
 	i.mode = uint32(mode)
@@ -147,20 +144,28 @@ func (i *inode) init(impl interface{}, fs *filesystem, creds *auth.Credentials, 
 	i.impl = impl
 }
 
-// Preconditions: filesystem.mu must be locked for writing.
+// incLinksLocked increments i's link count.
+//
+// Preconditions: filesystem.mu must be locked for writing. i.nlink != 0.
+// i.nlink < maxLinks.
 func (i *inode) incLinksLocked() {
-	if atomic.AddUint32(&i.nlink, 1) <= 1 {
+	if i.nlink == 0 {
 		panic("memfs.inode.incLinksLocked() called with no existing links")
 	}
+	if i.nlink == maxLinks {
+		panic("memfs.inode.incLinksLocked() called with maximum link count")
+	}
+	atomic.AddUint32(&i.nlink, 1)
 }
 
-// Preconditions: filesystem.mu must be locked for writing.
+// decLinksLocked decrements i's link count.
+//
+// Preconditions: filesystem.mu must be locked for writing. i.nlink != 0.
 func (i *inode) decLinksLocked() {
-	if nlink := atomic.AddUint32(&i.nlink, ^uint32(0)); nlink == 0 {
-		i.decRef()
-	} else if nlink == ^uint32(0) { // negative overflow
+	if i.nlink == 0 {
 		panic("memfs.inode.decLinksLocked() called with no existing links")
 	}
+	atomic.AddUint32(&i.nlink, ^uint32(0))
 }
 
 func (i *inode) incRef() {

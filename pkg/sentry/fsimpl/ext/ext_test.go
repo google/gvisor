@@ -25,6 +25,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
@@ -140,7 +141,7 @@ func TestSeek(t *testing.T) {
 			fd, err := vfsfs.OpenAt(
 				ctx,
 				auth.CredentialsFromContext(ctx),
-				&vfs.PathOperation{Root: *root, Start: *root, Pathname: test.path},
+				&vfs.PathOperation{Root: *root, Start: *root, Path: fspath.Parse(test.path)},
 				&vfs.OpenOptions{},
 			)
 			if err != nil {
@@ -359,7 +360,7 @@ func TestStatAt(t *testing.T) {
 
 			got, err := vfsfs.StatAt(ctx,
 				auth.CredentialsFromContext(ctx),
-				&vfs.PathOperation{Root: *root, Start: *root, Pathname: test.path},
+				&vfs.PathOperation{Root: *root, Start: *root, Path: fspath.Parse(test.path)},
 				&vfs.StatOptions{},
 			)
 			if err != nil {
@@ -429,7 +430,7 @@ func TestRead(t *testing.T) {
 			fd, err := vfsfs.OpenAt(
 				ctx,
 				auth.CredentialsFromContext(ctx),
-				&vfs.PathOperation{Root: *root, Start: *root, Pathname: test.absPath},
+				&vfs.PathOperation{Root: *root, Start: *root, Path: fspath.Parse(test.absPath)},
 				&vfs.OpenOptions{},
 			)
 			if err != nil {
@@ -565,7 +566,7 @@ func TestIterDirents(t *testing.T) {
 			fd, err := vfsfs.OpenAt(
 				ctx,
 				auth.CredentialsFromContext(ctx),
-				&vfs.PathOperation{Root: *root, Start: *root, Pathname: test.path},
+				&vfs.PathOperation{Root: *root, Start: *root, Path: fspath.Parse(test.path)},
 				&vfs.OpenOptions{},
 			)
 			if err != nil {

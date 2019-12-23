@@ -14,7 +14,6 @@ go_library(
         "fspath.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/fspath",
-    deps = ["//pkg/syserror"],
 )
 
 go_test(
@@ -25,5 +24,4 @@ go_test(
         "fspath_test.go",
     ],
     embed = [":fspath"],
-    deps = ["//pkg/syserror"],
 )
