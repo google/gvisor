@@ -18,19 +18,17 @@ package fspath
 
 import (
 	"strings"
-
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const pathSep = '/'
 
-// Parse parses a pathname as described by path_resolution(7).
-func Parse(pathname string) (Path, error) {
+// Parse parses a pathname as described by path_resolution(7), except that
+// empty pathnames will be parsed successfully to a Path for which
+// Path.Absolute == Path.Dir == Path.HasComponents() == false. (This is
+// necessary to support AT_EMPTY_PATH.)
+func Parse(pathname string) Path {
 	if len(pathname) == 0 {
-		// "... POSIX decrees that an empty pathname must not be resolved
-		// successfully. Linux returns ENOENT in this case." -
-		// path_resolution(7)
-		return Path{}, syserror.ENOENT
+		return Path{}
 	}
 	// Skip leading path separators.
 	i := 0
@@ -41,7 +39,7 @@ func Parse(pathname string) (Path, error) {
 			return Path{
 				Absolute: true,
 				Dir:      true,
-			}, nil
+			}
 		}
 	}
 	// Skip trailing path separators. This is required by Iterator.Next. This
@@ -64,7 +62,7 @@ func Parse(pathname string) (Path, error) {
 		},
 		Absolute: i != 0,
 		Dir:      j != len(pathname)-1,
-	}, nil
+	}
 }
 
 // Path contains the information contained in a pathname string.
@@ -109,6 +107,12 @@ func (p Path) String() string {
 		b.WriteByte(pathSep)
 	}
 	return b.String()
+}
+
+// HasComponents returns true if p contains a non-zero number of path
+// components.
+func (p Path) HasComponents() bool {
+	return p.Begin.Ok()
 }
 
 // An Iterator represents either a path component in a Path or a terminal
