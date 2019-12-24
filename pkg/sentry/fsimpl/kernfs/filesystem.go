@@ -122,7 +122,7 @@ func (fs *Filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.Vir
 			return nil, err
 		}
 		// Reference on childVFSD dropped by a corresponding Valid.
-		parent.InsertChild(name, childVFSD)
+		parent.insertChildLocked(name, childVFSD)
 	}
 	return childVFSD.Impl().(*Dentry), nil
 }

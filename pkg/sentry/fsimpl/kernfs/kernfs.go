@@ -239,14 +239,22 @@ func (d *Dentry) destroy() {
 //
 // Precondition: d must represent a directory inode.
 func (d *Dentry) InsertChild(name string, child *vfs.Dentry) {
+	d.dirMu.Lock()
+	d.insertChildLocked(name, child)
+	d.dirMu.Unlock()
+}
+
+// insertChildLocked is equivalent to InsertChild, with additional
+// preconditions.
+//
+// Precondition: d.dirMu must be locked.
+func (d *Dentry) insertChildLocked(name string, child *vfs.Dentry) {
 	if !d.isDir() {
 		panic(fmt.Sprintf("InsertChild called on non-directory Dentry: %+v.", d))
 	}
 	vfsDentry := d.VFSDentry()
 	vfsDentry.IncRef() // DecRef in child's Dentry.destroy.
-	d.dirMu.Lock()
 	vfsDentry.InsertChild(child, name)
-	d.dirMu.Unlock()
 }
 
 // The Inode interface maps filesystem-level operations that operate on paths to
