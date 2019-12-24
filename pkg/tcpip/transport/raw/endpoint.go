@@ -510,7 +510,7 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 }
 
 // SetSockOptInt implements tcpip.Endpoint.SetSockOptInt.
-func (ep *endpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
+func (e *endpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
 }
 
