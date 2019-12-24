@@ -575,7 +575,7 @@ func (n *NIC) RemoveAddressRange(subnet tcpip.Subnet) {
 	n.mu.Unlock()
 }
 
-// Subnets returns the Subnets associated with this NIC.
+// AddressRanges returns the Subnets associated with this NIC.
 func (n *NIC) AddressRanges() []tcpip.Subnet {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
