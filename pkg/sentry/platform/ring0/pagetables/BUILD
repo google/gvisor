@@ -11,7 +11,10 @@ config_setting(
 
 go_template(
     name = "generic_walker",
-    srcs = ["walker_amd64.go"],
+    srcs = select({
+           ":aarch64": ["walker_arm64.go",],
+           "//conditions:default": ["walker_amd64.go",],
+    }),
     opt_types = [
         "Visitor",
     ],
