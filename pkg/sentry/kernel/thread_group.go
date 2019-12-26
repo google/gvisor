@@ -256,20 +256,20 @@ type ThreadGroup struct {
 	tty *TTY
 }
 
-// newThreadGroup returns a new, empty thread group in PID namespace ns. The
+// NewThreadGroup returns a new, empty thread group in PID namespace ns. The
 // thread group leader will send its parent terminationSignal when it exits.
 // The new thread group isn't visible to the system until a task has been
 // created inside of it by a successful call to TaskSet.NewTask.
-func (k *Kernel) newThreadGroup(mounts *fs.MountNamespace, ns *PIDNamespace, sh *SignalHandlers, terminationSignal linux.Signal, limits *limits.LimitSet, monotonicClock *timekeeperClock) *ThreadGroup {
+func (k *Kernel) NewThreadGroup(mntns *fs.MountNamespace, pidns *PIDNamespace, sh *SignalHandlers, terminationSignal linux.Signal, limits *limits.LimitSet) *ThreadGroup {
 	tg := &ThreadGroup{
 		threadGroupNode: threadGroupNode{
-			pidns: ns,
+			pidns: pidns,
 		},
 		signalHandlers:    sh,
 		terminationSignal: terminationSignal,
 		ioUsage:           &usage.IO{},
 		limits:            limits,
-		mounts:            mounts,
+		mounts:            mntns,
 	}
 	tg.itimerRealTimer = ktime.NewTimer(k.monotonicClock, &itimerRealListener{tg: tg})
 	tg.timers = make(map[linux.TimerID]*IntervalTimer)
