@@ -404,6 +404,15 @@ type inodeDynamicLookup interface {
 	// Valid should return true if this inode is still valid, or needs to
 	// be resolved again by a call to Lookup.
 	Valid(ctx context.Context) bool
+
+	// IterDirents is used to iterate over dynamically created entries. It invokes
+	// cb on each entry in the directory represented by the FileDescription.
+	// 'offset' is the offset for the entire IterDirents call, which may include
+	// results from the caller. 'relOffset' is the offset inside the entries
+	// returned by this IterDirents invocation. In other words,
+	// 'offset+relOffset+1' is the value that should be set in vfs.Dirent.NextOff,
+	// while 'relOffset' is the place where iteration should start from.
+	IterDirents(ctx context.Context, callback vfs.IterDirentsCallback, offset, relOffset int64) (newOffset int64, err error)
 }
 
 type inodeSymlink interface {

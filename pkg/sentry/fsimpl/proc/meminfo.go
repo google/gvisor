@@ -19,21 +19,23 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
-	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 // meminfoData implements vfs.DynamicBytesSource for /proc/meminfo.
 //
 // +stateify savable
 type meminfoData struct {
+	kernfs.DynamicBytesFile
+
 	// k is the owning Kernel.
 	k *kernel.Kernel
 }
 
-var _ vfs.DynamicBytesSource = (*meminfoData)(nil)
+var _ dynamicInode = (*meminfoData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (d *meminfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {

@@ -762,7 +762,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		mounts.IncRef()
 	}
 
-	tg := k.newThreadGroup(mounts, args.PIDNamespace, NewSignalHandlers(), linux.SIGCHLD, args.Limits, k.monotonicClock)
+	tg := k.NewThreadGroup(mounts, args.PIDNamespace, NewSignalHandlers(), linux.SIGCHLD, args.Limits)
 	ctx := args.NewContext(k)
 
 	// Get the root directory from the MountNamespace.
@@ -1189,6 +1189,11 @@ func (k *Kernel) GlobalInit() *ThreadGroup {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
 	return k.globalInit
+}
+
+// TestOnly_SetGlobalInit sets the thread group with ID 1 in the root PID namespace.
+func (k *Kernel) TestOnly_SetGlobalInit(tg *ThreadGroup) {
+	k.globalInit = tg
 }
 
 // ApplicationCores returns the number of CPUs visible to sandboxed

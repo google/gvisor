@@ -139,6 +139,11 @@ func (*InodeNotDirectory) Lookup(ctx context.Context, name string) (*vfs.Dentry,
 	panic("Lookup called on non-directory inode")
 }
 
+// IterDirents implements Inode.IterDirents.
+func (*InodeNotDirectory) IterDirents(ctx context.Context, callback vfs.IterDirentsCallback, offset, relOffset int64) (newOffset int64, err error) {
+	panic("IterDirents called on non-directory inode")
+}
+
 // Valid implements Inode.Valid.
 func (*InodeNotDirectory) Valid(context.Context) bool {
 	return true
@@ -154,6 +159,11 @@ type InodeNoDynamicLookup struct{}
 // Lookup implements Inode.Lookup.
 func (*InodeNoDynamicLookup) Lookup(ctx context.Context, name string) (*vfs.Dentry, error) {
 	return nil, syserror.ENOENT
+}
+
+// IterDirents implements Inode.IterDirents.
+func (*InodeNoDynamicLookup) IterDirents(ctx context.Context, callback vfs.IterDirentsCallback, offset, relOffset int64) (int64, error) {
+	return offset, nil
 }
 
 // Valid implements Inode.Valid.
@@ -489,4 +499,14 @@ func (o *OrderedChildren) nthLocked(i int64) *slot {
 		i--
 	}
 	return nil
+}
+
+// InodeSymlink partially implements Inode interface for symlinks.
+type InodeSymlink struct {
+	InodeNotDirectory
+}
+
+// Open implements Inode.Open.
+func (InodeSymlink) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*vfs.FileDescription, error) {
+	return nil, syserror.ELOOP
 }

@@ -15,6 +15,8 @@
 package kernfs
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -26,7 +28,10 @@ import (
 // DynamicBytesFile implements kernfs.Inode and represents a read-only
 // file whose contents are backed by a vfs.DynamicBytesSource.
 //
-// Must be initialized with Init before first use.
+// Must be instantiated with NewDynamicBytesFile or initialized with Init
+// before first use.
+//
+// +stateify savable
 type DynamicBytesFile struct {
 	InodeAttrs
 	InodeNoopRefCount
@@ -36,9 +41,14 @@ type DynamicBytesFile struct {
 	data vfs.DynamicBytesSource
 }
 
-// Init intializes a dynamic bytes file.
-func (f *DynamicBytesFile) Init(creds *auth.Credentials, ino uint64, data vfs.DynamicBytesSource) {
-	f.InodeAttrs.Init(creds, ino, linux.ModeRegular|0444)
+var _ Inode = (*DynamicBytesFile)(nil)
+
+// Init initializes a dynamic bytes file.
+func (f *DynamicBytesFile) Init(creds *auth.Credentials, ino uint64, data vfs.DynamicBytesSource, perm linux.FileMode) {
+	if perm&^linux.PermissionsMask != 0 {
+		panic(fmt.Sprintf("Only permission mask must be set: %x", perm&linux.PermissionsMask))
+	}
+	f.InodeAttrs.Init(creds, ino, linux.ModeRegular|perm)
 	f.data = data
 }
 
@@ -59,6 +69,8 @@ func (f *DynamicBytesFile) SetStat(*vfs.Filesystem, vfs.SetStatOptions) error {
 // DynamicBytesFile.
 //
 // Must be initialized with Init before first use.
+//
+// +stateify savable
 type DynamicBytesFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DynamicBytesFileDescriptionImpl

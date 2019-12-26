@@ -20,8 +20,8 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 // cpuStats contains the breakdown of CPU time for /proc/stat.
@@ -66,11 +66,13 @@ func (c cpuStats) String() string {
 //
 // +stateify savable
 type statData struct {
+	kernfs.DynamicBytesFile
+
 	// k is the owning Kernel.
 	k *kernel.Kernel
 }
 
-var _ vfs.DynamicBytesSource = (*statData)(nil)
+var _ dynamicInode = (*statData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (s *statData) Generate(ctx context.Context, buf *bytes.Buffer) error {

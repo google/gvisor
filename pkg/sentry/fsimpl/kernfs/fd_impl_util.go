@@ -154,7 +154,10 @@ func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirent
 		fd.off++
 	}
 
-	return nil
+	var err error
+	relOffset := fd.off - int64(len(fd.children.set)) - 2
+	fd.off, err = fd.inode().IterDirents(ctx, cb, fd.off, relOffset)
+	return err
 }
 
 // Seek implements vfs.FileDecriptionImpl.Seek.

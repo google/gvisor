@@ -19,15 +19,17 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/sentry/context"
-	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 )
 
 // loadavgData backs /proc/loadavg.
 //
 // +stateify savable
-type loadavgData struct{}
+type loadavgData struct {
+	kernfs.DynamicBytesFile
+}
 
-var _ vfs.DynamicBytesSource = (*loadavgData)(nil)
+var _ dynamicInode = (*loadavgData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (d *loadavgData) Generate(ctx context.Context, buf *bytes.Buffer) error {

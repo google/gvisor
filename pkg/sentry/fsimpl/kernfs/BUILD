@@ -25,6 +25,7 @@ go_library(
         "inode_impl_util.go",
         "kernfs.go",
         "slot_list.go",
+        "symlink.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs",
     visibility = ["//pkg/sentry:internal"],

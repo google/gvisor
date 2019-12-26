@@ -199,6 +199,17 @@ type DynamicBytesSource interface {
 	Generate(ctx context.Context, buf *bytes.Buffer) error
 }
 
+// StaticData implements DynamicBytesSource over a static string.
+type StaticData struct {
+	Data string
+}
+
+// Generate implements DynamicBytesSource.
+func (s *StaticData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	buf.WriteString(s.Data)
+	return nil
+}
+
 // SetDataSource must be called exactly once on fd before first use.
 func (fd *DynamicBytesFileDescriptionImpl) SetDataSource(data DynamicBytesSource) {
 	fd.data = data
