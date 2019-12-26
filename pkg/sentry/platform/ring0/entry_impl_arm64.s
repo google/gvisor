@@ -618,6 +618,10 @@ TEXT ·Vectors(SB),NOSPLIT,$0
 	B ·El0_error_invalid(SB)
 	nop31Instructions()
 
+	// The exception-vector-table is required to be 11-bits aligned.
+	// Please see Linux source code as reference: arch/arm64/kernel/entry.s.
+	// For gvisor, I defined it as 4K in length, filled the 2nd 2K part with NOPs.
+	// So that, I can safely move the 1st 2K part into the address with 11-bits alignment.
 	WORD $0xd503201f	//nop
 	nop31Instructions()
 	WORD $0xd503201f
