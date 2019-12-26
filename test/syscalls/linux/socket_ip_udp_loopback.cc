@@ -33,6 +33,13 @@ std::vector<SocketPairKind> GetSocketPairs() {
   };
 }
 
+std::vector<SocketKind> GetSocketKinds() {
+  return {
+      IPv4UDPUnboundSocket(0),
+      IPv6UDPUnboundSocket(0),
+  };
+}
+
 INSTANTIATE_TEST_SUITE_P(
     AllUDPSockets, AllSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
@@ -44,6 +51,9 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     AllUDPSockets, UDPSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
+
+INSTANTIATE_TEST_SUITE_P(AllUDPSockets, UDPSocketTest,
+                         ::testing::ValuesIn(GetSocketKinds()));
 
 }  // namespace
 }  // namespace testing

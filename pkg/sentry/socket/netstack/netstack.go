@@ -1318,6 +1318,22 @@ func getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name, outLen int) (interf
 		}
 		return ib, nil
 
+	case linux.IPV6_RECVTCLASS:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		v, err := ep.GetSockOptBool(tcpip.ReceiveTClassOption)
+		if err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		var o int32
+		if v {
+			o = 1
+		}
+		return o, nil
+
 	default:
 		emitUnimplementedEventIPv6(t, name)
 	}
@@ -1787,6 +1803,14 @@ func setSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) 
 		}
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.IPv6TrafficClassOption(v)))
 
+	case linux.IPV6_RECVTCLASS:
+		v, err := parseIntOrChar(optVal)
+		if err != nil {
+			return err
+		}
+
+		return syserr.TranslateNetstackError(ep.SetSockOptBool(tcpip.ReceiveTClassOption, v != 0))
+
 	default:
 		emitUnimplementedEventIPv6(t, name)
 	}
@@ -2061,7 +2085,6 @@ func emitUnimplementedEventIPv6(t *kernel.Task, name int) {
 		linux.IPV6_RECVPATHMTU,
 		linux.IPV6_RECVPKTINFO,
 		linux.IPV6_RECVRTHDR,
-		linux.IPV6_RECVTCLASS,
 		linux.IPV6_RTHDR,
 		linux.IPV6_RTHDRDSTOPTS,
 		linux.IPV6_TCLASS,
@@ -2394,6 +2417,8 @@ func (s *SocketOperations) controlMessages() socket.ControlMessages {
 			Timestamp:    s.readCM.Timestamp,
 			HasTOS:       s.readCM.HasTOS,
 			TOS:          s.readCM.TOS,
+			HasTClass:    s.readCM.HasTClass,
+			TClass:       s.readCM.TClass,
 		},
 	}
 }

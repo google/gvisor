@@ -23,6 +23,9 @@ namespace testing {
 // Test fixture for tests that apply to pairs of connected UDP sockets.
 using UDPSocketPairTest = SocketPairTest;
 
+// Test fixture for tests that are for single UDP sockets.
+using UDPSocketTest = SimpleSocketTest;
+
 }  // namespace testing
 }  // namespace gvisor
 

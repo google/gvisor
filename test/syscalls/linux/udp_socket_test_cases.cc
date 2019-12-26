@@ -1349,9 +1349,6 @@ TEST_P(UdpSocketTest, TimestampIoctlPersistence) {
 // outgoing packets, and that a receiving socket with IP_RECVTOS or
 // IPV6_RECVTCLASS will create the corresponding control message.
 TEST_P(UdpSocketTest, SetAndReceiveTOS) {
-  // TODO(b/144868438): IPV6_RECVTCLASS not supported for netstack.
-  SKIP_IF((GetParam() != AddressFamily::kIpv4) && IsRunningOnGvisor() &&
-          !IsRunningWithHostinet());
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
   ASSERT_THAT(connect(t_, addr_[0], addrlen_), SyscallSucceeds());
 
@@ -1422,7 +1419,6 @@ TEST_P(UdpSocketTest, SetAndReceiveTOS) {
 // TOS byte on outgoing packets, and that a receiving socket with IP_RECVTOS or
 // IPV6_RECVTCLASS will create the corresponding control message.
 TEST_P(UdpSocketTest, SendAndReceiveTOS) {
-  // TODO(b/144868438): IPV6_RECVTCLASS not supported for netstack.
   // TODO(b/146661005): Setting TOS via cmsg not supported for netstack.
   SKIP_IF(IsRunningOnGvisor() && !IsRunningWithHostinet());
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
