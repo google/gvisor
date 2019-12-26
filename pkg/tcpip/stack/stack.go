@@ -829,7 +829,7 @@ func (s *Stack) CheckNIC(id tcpip.NICID) bool {
 	return false
 }
 
-// NICAddressRanges returns a map of NICIDs to their associated subnets.
+// NICSubnets returns a map of NICIDs to their associated subnets.
 func (s *Stack) NICAddressRanges() map[tcpip.NICID][]tcpip.Subnet {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

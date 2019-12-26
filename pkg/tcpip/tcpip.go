@@ -322,7 +322,7 @@ type ControlMessages struct {
 	HasTOS bool
 
 	// TOS is the IPv4 type of service of the associated packet.
-	TOS uint8
+	TOS int8
 
 	// HasTClass indicates whether Tclass is valid/set.
 	HasTClass bool
@@ -665,10 +665,6 @@ type IPv4TOSOption uint8
 // IPv6TrafficClassOption is used by SetSockOpt/GetSockOpt to specify TOS
 // for all subsequent outgoing IPv6 packets from the endpoint.
 type IPv6TrafficClassOption uint8
-
-// ReceiveTOSOption is used by SetSockOpt/GetSockOpt to specify if the TOS
-// ancillary message is passed with incoming packets.
-type ReceiveTOSOption bool
 
 // Route is a row in the routing table. It specifies through which NIC (and
 // gateway) sets of packets should be routed. A row is considered viable if the

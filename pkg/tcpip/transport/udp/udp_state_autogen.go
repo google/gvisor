@@ -15,7 +15,6 @@ func (x *udpPacket) save(m state.Map) {
 	m.Save("udpPacketEntry", &x.udpPacketEntry)
 	m.Save("senderAddress", &x.senderAddress)
 	m.Save("timestamp", &x.timestamp)
-	m.Save("tos", &x.tos)
 }
 
 func (x *udpPacket) afterLoad() {}
@@ -23,7 +22,6 @@ func (x *udpPacket) load(m state.Map) {
 	m.Load("udpPacketEntry", &x.udpPacketEntry)
 	m.Load("senderAddress", &x.senderAddress)
 	m.Load("timestamp", &x.timestamp)
-	m.Load("tos", &x.tos)
 	m.LoadValue("data", new(buffer.VectorisedView), func(y interface{}) { x.loadData(y.(buffer.VectorisedView)) })
 }
 
@@ -53,7 +51,6 @@ func (x *endpoint) save(m state.Map) {
 	m.Save("boundBindToDevice", &x.boundBindToDevice)
 	m.Save("boundPortFlags", &x.boundPortFlags)
 	m.Save("sendTOS", &x.sendTOS)
-	m.Save("receiveTOS", &x.receiveTOS)
 	m.Save("shutdownFlags", &x.shutdownFlags)
 	m.Save("multicastMemberships", &x.multicastMemberships)
 	m.Save("effectiveNetProtos", &x.effectiveNetProtos)
@@ -82,7 +79,6 @@ func (x *endpoint) load(m state.Map) {
 	m.Load("boundBindToDevice", &x.boundBindToDevice)
 	m.Load("boundPortFlags", &x.boundPortFlags)
 	m.Load("sendTOS", &x.sendTOS)
-	m.Load("receiveTOS", &x.receiveTOS)
 	m.Load("shutdownFlags", &x.shutdownFlags)
 	m.Load("multicastMemberships", &x.multicastMemberships)
 	m.Load("effectiveNetProtos", &x.effectiveNetProtos)
