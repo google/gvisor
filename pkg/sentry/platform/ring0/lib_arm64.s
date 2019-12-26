@@ -12,12 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "funcdata.h"
+#include "textflag.h"
+
 TEXT ·CPACREL1(SB),NOSPLIT,$0-8
 	WORD $0xd5381041 	// MRS CPACR_EL1, R1
 	MOVD R1, ret+0(FP)
 	RET
 
-TEXT ·FPCR(SB),NOSPLIT,$0-8
+TEXT ·GetFPCR(SB),NOSPLIT,$0-8
 	WORD $0xd53b4201    	// MRS NZCV, R1
 	MOVD R1, ret+0(FP)
 	RET
@@ -27,7 +30,7 @@ TEXT ·GetFPSR(SB),NOSPLIT,$0-8
 	MOVD R1, ret+0(FP)
 	RET
 
-TEXT ·FPCR(SB),NOSPLIT,$0-8
+TEXT ·SetFPCR(SB),NOSPLIT,$0-8
 	MOVD addr+0(FP), R1
 	WORD $0xd51b4201  	// MSR R1, NZCV
 	RET
