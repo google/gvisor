@@ -19,19 +19,21 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 // versionData implements vfs.DynamicBytesSource for /proc/version.
 //
 // +stateify savable
 type versionData struct {
+	kernfs.DynamicBytesFile
+
 	// k is the owning Kernel.
 	k *kernel.Kernel
 }
 
-var _ vfs.DynamicBytesSource = (*versionData)(nil)
+var _ dynamicInode = (*versionData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (v *versionData) Generate(ctx context.Context, buf *bytes.Buffer) error {

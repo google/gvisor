@@ -133,7 +133,7 @@ type file struct {
 func (fs *filesystem) newFile(creds *auth.Credentials, content string) *kernfs.Dentry {
 	f := &file{}
 	f.content = content
-	f.DynamicBytesFile.Init(creds, fs.NextIno(), f)
+	f.DynamicBytesFile.Init(creds, fs.NextIno(), f, 0777)
 
 	d := &kernfs.Dentry{}
 	d.Init(f)
