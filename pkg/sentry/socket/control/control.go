@@ -327,7 +327,7 @@ func PackInq(t *kernel.Task, inq int32, buf []byte) []byte {
 }
 
 // PackTOS packs an IP_TOS socket control message.
-func PackTOS(t *kernel.Task, tos uint8, buf []byte) []byte {
+func PackTOS(t *kernel.Task, tos int8, buf []byte) []byte {
 	return putCmsgStruct(
 		buf,
 		linux.SOL_IP,

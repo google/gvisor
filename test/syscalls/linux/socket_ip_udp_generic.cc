@@ -209,46 +209,6 @@ TEST_P(UDPSocketPairTest, SetMulticastLoopChar) {
   EXPECT_EQ(get, kSockOptOn);
 }
 
-// Ensure that Receiving TOS is off by default.
-TEST_P(UDPSocketPairTest, RecvTosDefault) {
-  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
-
-  int get = -1;
-  socklen_t get_len = sizeof(get);
-  ASSERT_THAT(
-      getsockopt(sockets->first_fd(), IPPROTO_IP, IP_RECVTOS, &get, &get_len),
-      SyscallSucceedsWithValue(0));
-  EXPECT_EQ(get_len, sizeof(get));
-  EXPECT_EQ(get, kSockOptOff);
-}
-
-// Test that setting and getting IP_RECVTOS works as expected.
-TEST_P(UDPSocketPairTest, SetRecvTos) {
-  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
-
-  ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_IP, IP_RECVTOS,
-                         &kSockOptOff, sizeof(kSockOptOff)),
-              SyscallSucceeds());
-
-  int get = -1;
-  socklen_t get_len = sizeof(get);
-  ASSERT_THAT(
-      getsockopt(sockets->first_fd(), IPPROTO_IP, IP_RECVTOS, &get, &get_len),
-      SyscallSucceedsWithValue(0));
-  EXPECT_EQ(get_len, sizeof(get));
-  EXPECT_EQ(get, kSockOptOff);
-
-  ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_IP, IP_RECVTOS,
-                         &kSockOptOn, sizeof(kSockOptOn)),
-              SyscallSucceeds());
-
-  ASSERT_THAT(
-      getsockopt(sockets->first_fd(), IPPROTO_IP, IP_RECVTOS, &get, &get_len),
-      SyscallSucceedsWithValue(0));
-  EXPECT_EQ(get_len, sizeof(get));
-  EXPECT_EQ(get, kSockOptOn);
-}
-
 TEST_P(UDPSocketPairTest, ReuseAddrDefault) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 

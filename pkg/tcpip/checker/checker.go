@@ -33,9 +33,6 @@ type NetworkChecker func(*testing.T, []header.Network)
 // TransportChecker is a function to check a property of a transport packet.
 type TransportChecker func(*testing.T, header.Transport)
 
-// ControlMessagesChecker is a function to check a property of ancillary data.
-type ControlMessagesChecker func(*testing.T, tcpip.ControlMessages)
-
 // IPv4 checks the validity and properties of the given IPv4 packet. It is
 // expected to be used in conjunction with other network checkers for specific
 // properties. For example, to check the source and destination address, one
@@ -157,19 +154,6 @@ func FragmentFlags(flags uint8) NetworkChecker {
 			if v := ip.Flags(); v != flags {
 				t.Errorf("Bad fragment offset, got %v, want %v", v, flags)
 			}
-		}
-	}
-}
-
-// ReceiveTOS creates a checker that checks the TOS field in ControlMessages.
-func ReceiveTOS(want uint8) ControlMessagesChecker {
-	return func(t *testing.T, cm tcpip.ControlMessages) {
-		t.Helper()
-		if !cm.HasTOS {
-			t.Fatalf("got cm.HasTOS = %t, want cm.TOS = %d", cm.HasTOS, want)
-		}
-		if got := cm.TOS; got != want {
-			t.Fatalf("got cm.TOS = %d, want %d", got, want)
 		}
 	}
 }
