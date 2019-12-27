@@ -89,7 +89,7 @@ func TestGenCountFD(t *testing.T) {
 	creds := auth.CredentialsFromContext(ctx)
 
 	vfsObj := New() // vfs.New()
-	vfsObj.MustRegisterFilesystemType("testfs", FDTestFilesystemType{})
+	vfsObj.MustRegisterFilesystemType("testfs", FDTestFilesystemType{}, &RegisterFilesystemTypeOptions{})
 	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "testfs", &GetFilesystemOptions{})
 	if err != nil {
 		t.Fatalf("failed to create testfs root mount: %v", err)
