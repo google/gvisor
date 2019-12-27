@@ -112,11 +112,11 @@ type MountNamespace struct {
 // configured by the given arguments. A reference is taken on the returned
 // MountNamespace.
 func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth.Credentials, source, fsTypeName string, opts *GetFilesystemOptions) (*MountNamespace, error) {
-	fsType := vfs.getFilesystemType(fsTypeName)
-	if fsType == nil {
+	rft := vfs.getFilesystemType(fsTypeName)
+	if rft == nil {
 		return nil, syserror.ENODEV
 	}
-	fs, root, err := fsType.GetFilesystem(ctx, vfs, creds, source, *opts)
+	fs, root, err := rft.fsType.GetFilesystem(ctx, vfs, creds, source, *opts)
 	if err != nil {
 		return nil, err
 	}
@@ -136,11 +136,14 @@ func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth
 
 // MountAt creates and mounts a Filesystem configured by the given arguments.
 func (vfs *VirtualFilesystem) MountAt(ctx context.Context, creds *auth.Credentials, source string, target *PathOperation, fsTypeName string, opts *MountOptions) error {
-	fsType := vfs.getFilesystemType(fsTypeName)
-	if fsType == nil {
+	rft := vfs.getFilesystemType(fsTypeName)
+	if rft == nil {
 		return syserror.ENODEV
 	}
-	fs, root, err := fsType.GetFilesystem(ctx, vfs, creds, source, opts.GetFilesystemOptions)
+	if !opts.InternalMount && !rft.opts.AllowUserMount {
+		return syserror.ENODEV
+	}
+	fs, root, err := rft.fsType.GetFilesystem(ctx, vfs, creds, source, opts.GetFilesystemOptions)
 	if err != nil {
 		return err
 	}

@@ -75,23 +75,23 @@ type VirtualFilesystem struct {
 	// mountpoints is analogous to Linux's mountpoint_hashtable.
 	mountpoints map[*Dentry]map[*Mount]struct{}
 
+	// fsTypes contains all registered FilesystemTypes. fsTypes is protected by
+	// fsTypesMu.
+	fsTypesMu sync.RWMutex
+	fsTypes   map[string]*registeredFilesystemType
+
 	// filesystems contains all Filesystems. filesystems is protected by
 	// filesystemsMu.
 	filesystemsMu sync.Mutex
 	filesystems   map[*Filesystem]struct{}
-
-	// fsTypes contains all FilesystemTypes that are usable in the
-	// VirtualFilesystem. fsTypes is protected by fsTypesMu.
-	fsTypesMu sync.RWMutex
-	fsTypes   map[string]FilesystemType
 }
 
 // New returns a new VirtualFilesystem with no mounts or FilesystemTypes.
 func New() *VirtualFilesystem {
 	vfs := &VirtualFilesystem{
 		mountpoints: make(map[*Dentry]map[*Mount]struct{}),
+		fsTypes:     make(map[string]*registeredFilesystemType),
 		filesystems: make(map[*Filesystem]struct{}),
-		fsTypes:     make(map[string]FilesystemType),
 	}
 	vfs.mounts.Init()
 	return vfs

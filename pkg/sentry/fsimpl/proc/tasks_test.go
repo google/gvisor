@@ -56,25 +56,25 @@ func checkDots(dirs []vfs.Dirent) ([]vfs.Dirent, error) {
 
 func checkTasksStaticFiles(gots []vfs.Dirent) ([]vfs.Dirent, error) {
 	wants := map[string]vfs.Dirent{
-		"loadavg":     vfs.Dirent{Type: linux.DT_REG},
-		"meminfo":     vfs.Dirent{Type: linux.DT_REG},
-		"mounts":      vfs.Dirent{Type: linux.DT_LNK},
-		"self":        vfs.Dirent{Type: linux.DT_LNK},
-		"stat":        vfs.Dirent{Type: linux.DT_REG},
-		"thread-self": vfs.Dirent{Type: linux.DT_LNK},
-		"version":     vfs.Dirent{Type: linux.DT_REG},
+		"loadavg":     {Type: linux.DT_REG},
+		"meminfo":     {Type: linux.DT_REG},
+		"mounts":      {Type: linux.DT_LNK},
+		"self":        {Type: linux.DT_LNK},
+		"stat":        {Type: linux.DT_REG},
+		"thread-self": {Type: linux.DT_LNK},
+		"version":     {Type: linux.DT_REG},
 	}
 	return checkFiles(gots, wants)
 }
 
 func checkTaskStaticFiles(gots []vfs.Dirent) ([]vfs.Dirent, error) {
 	wants := map[string]vfs.Dirent{
-		"io":     vfs.Dirent{Type: linux.DT_REG},
-		"maps":   vfs.Dirent{Type: linux.DT_REG},
-		"smaps":  vfs.Dirent{Type: linux.DT_REG},
-		"stat":   vfs.Dirent{Type: linux.DT_REG},
-		"statm":  vfs.Dirent{Type: linux.DT_REG},
-		"status": vfs.Dirent{Type: linux.DT_REG},
+		"io":     {Type: linux.DT_REG},
+		"maps":   {Type: linux.DT_REG},
+		"smaps":  {Type: linux.DT_REG},
+		"stat":   {Type: linux.DT_REG},
+		"statm":  {Type: linux.DT_REG},
+		"status": {Type: linux.DT_REG},
 	}
 	return checkFiles(gots, wants)
 }
@@ -114,7 +114,9 @@ func setup() (context.Context, *vfs.VirtualFilesystem, vfs.VirtualDentry, error)
 	creds := auth.CredentialsFromContext(ctx)
 
 	vfsObj := vfs.New()
-	vfsObj.MustRegisterFilesystemType("procfs", &procFSType{})
+	vfsObj.MustRegisterFilesystemType("procfs", &procFSType{}, &vfs.RegisterFilesystemTypeOptions{
+		AllowUserMount: true,
+	})
 	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "procfs", &vfs.GetFilesystemOptions{})
 	if err != nil {
 		return nil, nil, vfs.VirtualDentry{}, fmt.Errorf("NewMountNamespace(): %v", err)
