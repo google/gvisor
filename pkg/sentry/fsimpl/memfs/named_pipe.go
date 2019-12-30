@@ -55,8 +55,6 @@ func newNamedPipeFD(ctx context.Context, np *namedPipe, rp *vfs.ResolvingPath, v
 		return nil, err
 	}
 	mnt := rp.Mount()
-	mnt.IncRef()
-	vfsd.IncRef()
 	fd.vfsfd.Init(&fd, flags, mnt, vfsd, &vfs.FileDescriptionOptions{})
 	return &fd.vfsfd, nil
 }

@@ -348,8 +348,6 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, flags uint32, 
 			}
 			// mnt.EndWrite() is called by regularFileFD.Release().
 		}
-		mnt.IncRef()
-		d.IncRef()
 		fd.vfsfd.Init(&fd, flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{})
 		if flags&linux.O_TRUNC != 0 {
 			impl.mu.Lock()
@@ -364,8 +362,6 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, flags uint32, 
 			return nil, syserror.EISDIR
 		}
 		var fd directoryFD
-		mnt.IncRef()
-		d.IncRef()
 		fd.vfsfd.Init(&fd, flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{})
 		return &fd.vfsfd, nil
 	case *symlink:

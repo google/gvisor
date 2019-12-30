@@ -9,6 +9,7 @@ go_library(
         "context.go",
         "debug.go",
         "dentry.go",
+        "device.go",
         "file_description.go",
         "file_description_impl_util.go",
         "filesystem.go",
