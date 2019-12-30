@@ -177,6 +177,21 @@ func (DirectoryFileDescriptionDefaultImpl) Write(ctx context.Context, src userme
 	return 0, syserror.EISDIR
 }
 
+// DentryMetadataFileDescriptionImpl may be embedded by implementations of
+// FileDescriptionImpl for which FileDescriptionOptions.UseDentryMetadata is
+// true to obtain implementations of Stat and SetStat that panic.
+type DentryMetadataFileDescriptionImpl struct{}
+
+// Stat implements FileDescriptionImpl.Stat.
+func (DentryMetadataFileDescriptionImpl) Stat(ctx context.Context, opts StatOptions) (linux.Statx, error) {
+	panic("illegal call to DentryMetadataFileDescriptionImpl.Stat")
+}
+
+// SetStat implements FileDescriptionImpl.SetStat.
+func (DentryMetadataFileDescriptionImpl) SetStat(ctx context.Context, opts SetStatOptions) error {
+	panic("illegal call to DentryMetadataFileDescriptionImpl.SetStat")
+}
+
 // DynamicBytesFileDescriptionImpl may be embedded by implementations of
 // FileDescriptionImpl that represent read-only regular files whose contents
 // are backed by a bytes.Buffer that is regenerated when necessary, consistent
