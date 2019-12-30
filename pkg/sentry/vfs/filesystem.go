@@ -418,17 +418,38 @@ type FilesystemImpl interface {
 	UnlinkAt(ctx context.Context, rp *ResolvingPath) error
 
 	// ListxattrAt returns all extended attribute names for the file at rp.
+	//
+	// Errors:
+	//
+	// - If extended attributes are not supported by the filesystem,
+	// ListxattrAt returns nil. (See FileDescription.Listxattr for an
+	// explanation.)
 	ListxattrAt(ctx context.Context, rp *ResolvingPath) ([]string, error)
 
 	// GetxattrAt returns the value associated with the given extended
 	// attribute for the file at rp.
+	//
+	// Errors:
+	//
+	// - If extended attributes are not supported by the filesystem, GetxattrAt
+	// returns ENOTSUP.
 	GetxattrAt(ctx context.Context, rp *ResolvingPath, name string) (string, error)
 
 	// SetxattrAt changes the value associated with the given extended
 	// attribute for the file at rp.
+	//
+	// Errors:
+	//
+	// - If extended attributes are not supported by the filesystem, SetxattrAt
+	// returns ENOTSUP.
 	SetxattrAt(ctx context.Context, rp *ResolvingPath, opts SetxattrOptions) error
 
 	// RemovexattrAt removes the given extended attribute from the file at rp.
+	//
+	// Errors:
+	//
+	// - If extended attributes are not supported by the filesystem,
+	// RemovexattrAt returns ENOTSUP.
 	RemovexattrAt(ctx context.Context, rp *ResolvingPath, name string) error
 
 	// PrependPath prepends a path from vd to vd.Mount().Root() to b.
