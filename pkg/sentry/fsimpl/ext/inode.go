@@ -157,8 +157,6 @@ func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*v
 	switch in.impl.(type) {
 	case *regularFile:
 		var fd regularFileFD
-		mnt.IncRef()
-		vfsd.IncRef()
 		fd.vfsfd.Init(&fd, flags, mnt, vfsd, &vfs.FileDescriptionOptions{})
 		return &fd.vfsfd, nil
 	case *directory:
@@ -168,8 +166,6 @@ func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*v
 			return nil, syserror.EISDIR
 		}
 		var fd directoryFD
-		mnt.IncRef()
-		vfsd.IncRef()
 		fd.vfsfd.Init(&fd, flags, mnt, vfsd, &vfs.FileDescriptionOptions{})
 		return &fd.vfsfd, nil
 	case *symlink:
@@ -178,8 +174,6 @@ func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*v
 			return nil, syserror.ELOOP
 		}
 		var fd symlinkFD
-		mnt.IncRef()
-		vfsd.IncRef()
 		fd.vfsfd.Init(&fd, flags, mnt, vfsd, &vfs.FileDescriptionOptions{})
 		return &fd.vfsfd, nil
 	default:

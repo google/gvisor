@@ -81,8 +81,6 @@ type DynamicBytesFD struct {
 
 // Init initializes a DynamicBytesFD.
 func (fd *DynamicBytesFD) Init(m *vfs.Mount, d *vfs.Dentry, data vfs.DynamicBytesSource, flags uint32) {
-	m.IncRef() // DecRef in vfs.FileDescription.vd.DecRef on final ref.
-	d.IncRef() // DecRef in vfs.FileDescription.vd.DecRef on final ref.
 	fd.inode = d.Impl().(*Dentry).inode
 	fd.SetDataSource(data)
 	fd.vfsfd.Init(fd, flags, m, d, &vfs.FileDescriptionOptions{})

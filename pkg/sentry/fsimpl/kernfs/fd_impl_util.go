@@ -44,8 +44,6 @@ type GenericDirectoryFD struct {
 
 // Init initializes a GenericDirectoryFD.
 func (fd *GenericDirectoryFD) Init(m *vfs.Mount, d *vfs.Dentry, children *OrderedChildren, flags uint32) {
-	m.IncRef() // DecRef in vfs.FileDescription.vd.DecRef on final ref.
-	d.IncRef() // DecRef in vfs.FileDescription.vd.DecRef on final ref.
 	fd.children = children
 	fd.vfsfd.Init(fd, flags, m, d, &vfs.FileDescriptionOptions{})
 }
