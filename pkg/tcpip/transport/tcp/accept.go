@@ -222,6 +222,9 @@ func (l *listenContext) isCookieValid(id stack.TransportEndpointID, cookie seqnu
 
 // createConnectingEndpoint creates a new endpoint in a connecting state, with
 // the connection parameters given by the arguments.
+//
+// The new endpoint is returned with its mutex locked. It must be unlocked
+// before use.
 func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, irs seqnum.Value, rcvdSynOpts *header.TCPSynOptions) (*endpoint, *tcpip.Error) {
 	// Create a new endpoint.
 	netProto := l.netProto
@@ -229,6 +232,7 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 		netProto = s.route.NetProto
 	}
 	n := newEndpoint(l.stack, netProto, nil)
+	n.mu.Lock()
 	n.v6only = l.v6only
 	n.ID = s.id
 	n.boundNICID = s.route.NICID()
@@ -251,6 +255,7 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 
 	// Register new endpoint so that packets are routed to it.
 	if err := n.stack.RegisterTransportEndpoint(n.boundNICID, n.effectiveNetProtos, ProtocolNumber, n.ID, n, n.reusePort, n.boundBindToDevice); err != nil {
+		n.mu.Unlock()
 		n.Close()
 		return nil, err
 	}
@@ -304,14 +309,16 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 		}
 		return nil, err
 	}
-	ep.mu.Lock()
+
 	ep.isConnectNotified = true
-	ep.mu.Unlock()
 
 	// Update the receive window scaling. We can't do it before the
 	// handshake because it's possible that the peer doesn't support window
 	// scaling.
 	ep.rcv.rcvWndScale = h.effectiveRcvWndScale()
+
+	// We are done setting up the new endpoint's state.
+	ep.mu.Unlock()
 
 	return ep, nil
 }
@@ -564,6 +571,9 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		n.stack.Stats().TCP.CurrentEstablished.Increment()
 		n.state = StateEstablished
 		n.isConnectNotified = true
+
+		// We are done setting up the new endpoint's state.
+		n.mu.Unlock()
 
 		// Do the delivery in a separate goroutine so
 		// that we don't block the listen loop in case
