@@ -6561,3 +6561,142 @@ func TestKeepaliveWithUserTimeout(t *testing.T) {
 		t.Errorf("got c.Stack().Stats().TCP.EstablishedTimedout = %v, want = %v", got, want)
 	}
 }
+
+func TestIncreaseWindowOnReceive(t *testing.T) {
+	// This test ensures that the endpoint sends an ack,
+	// after recv() when the window grows to more than 1 MSS.
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	const rcvBuf = 65535 * 10
+	c.CreateConnected(789, 30000, rcvBuf)
+
+	// Write chunks of ~30000 bytes. It's important that two
+	// payloads make it equal or longer than MSS.
+	remain := rcvBuf
+	sent := 0
+	data := make([]byte, defaultMTU/2)
+	lastWnd := uint16(0)
+
+	for remain > len(data) {
+		c.SendPacket(data, &context.Headers{
+			SrcPort: context.TestPort,
+			DstPort: c.Port,
+			Flags:   header.TCPFlagAck,
+			SeqNum:  seqnum.Value(790 + sent),
+			AckNum:  c.IRS.Add(1),
+			RcvWnd:  30000,
+		})
+		sent += len(data)
+		remain -= len(data)
+
+		lastWnd = uint16(remain)
+		if remain > 0xffff {
+			lastWnd = 0xffff
+		}
+		checker.IPv4(t, c.GetPacket(),
+			checker.PayloadLen(header.TCPMinimumSize),
+			checker.TCP(
+				checker.DstPort(context.TestPort),
+				checker.SeqNum(uint32(c.IRS)+1),
+				checker.AckNum(uint32(790+sent)),
+				checker.Window(lastWnd),
+				checker.TCPFlags(header.TCPFlagAck),
+			),
+		)
+	}
+
+	if lastWnd == 0xffff || lastWnd == 0 {
+		t.Fatalf("expected small, non-zero window: %d", lastWnd)
+	}
+
+	// We now have < 1 MSS in the buffer space.  Read the data! An
+	// ack should be sent in response to that. The window was not
+	// zero, but it grew to larger than MSS.
+	_, _, err := c.EP.Read(nil)
+	if err != nil {
+		t.Fatalf("Read failed: %v", err)
+	}
+
+	_, _, err = c.EP.Read(nil)
+	if err != nil {
+		t.Fatalf("Read failed: %v", err)
+	}
+
+	// After reading two packets, we surely crossed MSS. See the ack:
+	checker.IPv4(t, c.GetPacket(),
+		checker.PayloadLen(header.TCPMinimumSize),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(c.IRS)+1),
+			checker.AckNum(uint32(790+sent)),
+			checker.Window(uint16(0xffff)),
+			checker.TCPFlags(header.TCPFlagAck),
+		),
+	)
+}
+
+func TestIncreaseWindowOnBufferResize(t *testing.T) {
+	// This test ensures that the endpoint sends an ack,
+	// after available recv buffer grows to more than 1 MSS.
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	const rcvBuf = 65535 * 10
+	c.CreateConnected(789, 30000, rcvBuf)
+
+	// Write chunks of ~30000 bytes. It's important that two
+	// payloads make it equal or longer than MSS.
+	remain := rcvBuf
+	sent := 0
+	data := make([]byte, defaultMTU/2)
+	lastWnd := uint16(0)
+
+	for remain > len(data) {
+		c.SendPacket(data, &context.Headers{
+			SrcPort: context.TestPort,
+			DstPort: c.Port,
+			Flags:   header.TCPFlagAck,
+			SeqNum:  seqnum.Value(790 + sent),
+			AckNum:  c.IRS.Add(1),
+			RcvWnd:  30000,
+		})
+		sent += len(data)
+		remain -= len(data)
+
+		lastWnd = uint16(remain)
+		if remain > 0xffff {
+			lastWnd = 0xffff
+		}
+		checker.IPv4(t, c.GetPacket(),
+			checker.PayloadLen(header.TCPMinimumSize),
+			checker.TCP(
+				checker.DstPort(context.TestPort),
+				checker.SeqNum(uint32(c.IRS)+1),
+				checker.AckNum(uint32(790+sent)),
+				checker.Window(lastWnd),
+				checker.TCPFlags(header.TCPFlagAck),
+			),
+		)
+	}
+
+	if lastWnd == 0xffff || lastWnd == 0 {
+		t.Fatalf("expected small, non-zero window: %d", lastWnd)
+	}
+
+	// Increasing the buffer from should generate an ACK,
+	// since window grew from small value to larger equal MSS
+	c.EP.SetSockOptInt(tcpip.ReceiveBufferSizeOption, rcvBuf*2)
+
+	// After reading two packets, we surely crossed MSS. See the ack:
+	checker.IPv4(t, c.GetPacket(),
+		checker.PayloadLen(header.TCPMinimumSize),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(c.IRS)+1),
+			checker.AckNum(uint32(790+sent)),
+			checker.Window(uint16(0xffff)),
+			checker.TCPFlags(header.TCPFlagAck),
+		),
+	)
+}

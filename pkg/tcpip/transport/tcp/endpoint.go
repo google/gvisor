@@ -955,10 +955,20 @@ func (e *endpoint) readLocked() (buffer.View, *tcpip.Error) {
 	}
 
 	e.rcvBufUsed -= len(v)
+
+	avail := e.receiveBufferAvailableLocked()
+
+	// If the window was small before, lower than MSS, send immediate
+	// ack. Without this, the sender might be stuck  waiting for the
+	// window to grow, while we think the window is non-zero so we
+	// don't need to send acks. To avoid silly window syndrome, send
+	// ack only when the window grows above one MSS.
+	crossedMSS := avail-len(v) < int(e.amss) && avail >= int(e.amss)
+
 	// If the window was zero before this read and if the read freed up
 	// enough buffer space for the scaled window to be non-zero then notify
 	// the protocol goroutine to send a window update.
-	if e.zeroWindow && !e.zeroReceiveWindow(e.rcv.rcvWndScale) {
+	if (e.zeroWindow && !e.zeroReceiveWindow(e.rcv.rcvWndScale)) || crossedMSS {
 		e.zeroWindow = false
 		e.notifyProtocolGoroutine(notifyNonZeroReceiveWindow)
 	}
@@ -1138,11 +1148,8 @@ func (e *endpoint) Peek(vec [][]byte) (int64, tcpip.ControlMessages, *tcpip.Erro
 //
 // It must be called with rcvListMu held.
 func (e *endpoint) zeroReceiveWindow(scale uint8) bool {
-	if e.rcvBufUsed >= e.rcvBufSize {
-		return true
-	}
-
-	return ((e.rcvBufSize - e.rcvBufUsed) >> scale) == 0
+	avail := e.receiveBufferAvailableLocked()
+	return (avail >> scale) == 0
 }
 
 // SetSockOptInt sets a socket option.
@@ -1181,9 +1188,16 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
 			size = math.MaxInt32 / 2
 		}
 
+		availBefore := e.receiveBufferAvailableLocked()
 		e.rcvBufSize = size
+		availAfter := e.receiveBufferAvailableLocked()
+
 		e.rcvAutoParams.disabled = true
-		if e.zeroWindow && !e.zeroReceiveWindow(scale) {
+
+		// Immediatelly send ACK in two cases: when the buffer
+		// grows so that it leaves zero-window state, when the
+		// buffer grows from small < MSS to >= MSS.
+		if (e.zeroWindow && !e.zeroReceiveWindow(scale)) || (availBefore < int(e.amss) && availAfter >= int(e.amss)) {
 			e.zeroWindow = false
 			mask |= notifyNonZeroReceiveWindow
 		}
@@ -2229,7 +2243,7 @@ func (e *endpoint) readyToRead(s *segment) {
 		// we set the zero window before we deliver the segment to ensure
 		// that a subsequent read of the segment will correctly trigger
 		// a non-zero notification.
-		if avail := e.receiveBufferAvailableLocked(); avail>>e.rcv.rcvWndScale == 0 {
+		if e.zeroReceiveWindow(e.rcv.rcvWndScale) {
 			e.stats.ReceiveErrors.ZeroRcvWindowState.Increment()
 			e.zeroWindow = true
 		}
