@@ -59,6 +59,7 @@ go_test(
     ],
     deps = [
         ":stack",
+        "//pkg/rand",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/checker",

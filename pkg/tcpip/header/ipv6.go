@@ -15,6 +15,7 @@
 package header
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
 	"strings"
 
@@ -102,6 +103,11 @@ const (
 	// bytes including and after the IIDOffsetInIPv6Address-th byte are
 	// for the IID.
 	IIDOffsetInIPv6Address = 8
+
+	// OpaqueIIDSecretKeyMinBytes is the recommended minimum number of bytes
+	// for the secret key used to generate an opaque interface identifier as
+	// outlined by RFC 7217.
+	OpaqueIIDSecretKeyMinBytes = 16
 )
 
 // IPv6EmptySubnet is the empty IPv6 subnet. It may also be known as the
@@ -325,4 +331,43 @@ func IsV6LinkLocalAddress(addr tcpip.Address) bool {
 		return false
 	}
 	return addr[0] == 0xfe && (addr[1]&0xc0) == 0x80
+}
+
+// AppendOpaqueInterfaceIdentifier appends a 64 bit opaque interface identifier
+// (IID) to buf as outlined by RFC 7217 and returns the extended buffer.
+//
+// The opaque IID is generated from the cryptographic hash of the concatenation
+// of the prefix, NIC's name, DAD counter (DAD retry counter) and the secret
+// key. The secret key SHOULD be at least OpaqueIIDSecretKeyMinBytes bytes and
+// MUST be generated to a pseudo-random number. See RFC 4086 for randomness
+// requirements for security.
+//
+// If buf has enough capacity for the IID (IIDSize bytes), a new underlying
+// array for the buffer will not be allocated.
+func AppendOpaqueInterfaceIdentifier(buf []byte, prefix tcpip.Subnet, nicName string, dadCounter uint8, secretKey []byte) []byte {
+	// As per RFC 7217 section 5, the opaque identifier can be generated as a
+	// cryptographic hash of the concatenation of each of the function parameters.
+	// Note, we omit the optional Network_ID field.
+	h := sha256.New()
+	// h.Write never returns an error.
+	h.Write([]byte(prefix.ID()[:IIDOffsetInIPv6Address]))
+	h.Write([]byte(nicName))
+	h.Write([]byte{dadCounter})
+	h.Write(secretKey)
+
+	var sumBuf [sha256.Size]byte
+	sum := h.Sum(sumBuf[:0])
+
+	return append(buf, sum[:IIDSize]...)
+}
+
+// LinkLocalAddrWithOpaqueIID computes the default IPv6 link-local address with
+// an opaque IID.
+func LinkLocalAddrWithOpaqueIID(nicName string, dadCounter uint8, secretKey []byte) tcpip.Address {
+	lladdrb := [IPv6AddressSize]byte{
+		0: 0xFE,
+		1: 0x80,
+	}
+
+	return tcpip.Address(AppendOpaqueInterfaceIdentifier(lladdrb[:IIDOffsetInIPv6Address], IPv6LinkLocalPrefix.Subnet(), nicName, dadCounter, secretKey))
 }
