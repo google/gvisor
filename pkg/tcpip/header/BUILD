@@ -44,6 +44,7 @@ go_test(
     ],
     deps = [
         ":header",
+        "//pkg/rand",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "@com_github_google_go-cmp//cmp:go_default_library",
