@@ -178,19 +178,23 @@ func (n *NIC) enable() *tcpip.Error {
 		return nil
 	}
 
-	l2addr := n.linkEP.LinkAddress()
+	var addr tcpip.Address
+	if oIID := n.stack.opaqueIIDOpts; oIID.NICNameFromID != nil {
+		addr = header.LinkLocalAddrWithOpaqueIID(oIID.NICNameFromID(n.ID()), 0, oIID.SecretKey)
+	} else {
+		l2addr := n.linkEP.LinkAddress()
 
-	// Only attempt to generate the link-local address if we have a
-	// valid MAC address.
-	//
-	// TODO(b/141011931): Validate a LinkEndpoint's link address
-	// (provided by LinkEndpoint.LinkAddress) before reaching this
-	// point.
-	if !header.IsValidUnicastEthernetAddress(l2addr) {
-		return nil
+		// Only attempt to generate the link-local address if we have a valid MAC
+		// address.
+		//
+		// TODO(b/141011931): Validate a LinkEndpoint's link address (provided by
+		// LinkEndpoint.LinkAddress) before reaching this point.
+		if !header.IsValidUnicastEthernetAddress(l2addr) {
+			return nil
+		}
+
+		addr = header.LinkLocalAddr(l2addr)
 	}
-
-	addr := header.LinkLocalAddr(l2addr)
 
 	_, err := n.addPermanentAddressLocked(tcpip.ProtocolAddress{
 		Protocol: header.IPv6ProtocolNumber,

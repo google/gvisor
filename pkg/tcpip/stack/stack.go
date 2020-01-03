@@ -352,6 +352,33 @@ func (u *uniqueIDGenerator) UniqueID() uint64 {
 	return atomic.AddUint64((*uint64)(u), 1)
 }
 
+// NICNameFromID is a function that returns a stable name for the specified NIC,
+// even if the NIC ID changes over time.
+type NICNameFromID func(tcpip.NICID) string
+
+// OpaqueInterfaceIdentifierOptions holds the options related to the generation
+// of opaque interface indentifiers (IIDs) as defined by RFC 7217.
+type OpaqueInterfaceIdentifierOptions struct {
+	// NICNameFromID is a function that returns a stable name for a specified NIC,
+	// even if the NIC ID changes over time.
+	//
+	// Must be specified to generate the opaque IID.
+	NICNameFromID NICNameFromID
+
+	// SecretKey is a pseudo-random number used as the secret key when generating
+	// opaque IIDs as defined by RFC 7217. The key SHOULD be at least
+	// header.OpaqueIIDSecretKeyMinBytes bytes and MUST follow minimum randomness
+	// requirements for security as outlined by RFC 4086. SecretKey MUST NOT
+	// change between program runs, unless explicitly changed.
+	//
+	// OpaqueInterfaceIdentifierOptions takes ownership of SecretKey. SecretKey
+	// MUST NOT be modified after Stack is created.
+	//
+	// May be nil, but a nil value is highly discouraged to maintain
+	// some level of randomness between nodes.
+	SecretKey []byte
+}
+
 // Stack is a networking stack, with all supported protocols, NICs, and route
 // table.
 type Stack struct {
@@ -422,6 +449,10 @@ type Stack struct {
 
 	// uniqueIDGenerator is a generator of unique identifiers.
 	uniqueIDGenerator UniqueID
+
+	// opaqueIIDOpts hold the options for generating opaque interface identifiers
+	// (IIDs) as outlined by RFC 7217.
+	opaqueIIDOpts OpaqueInterfaceIdentifierOptions
 }
 
 // UniqueID is an abstract generator of unique identifiers.
@@ -479,6 +510,10 @@ type Options struct {
 	// RawFactory produces raw endpoints. Raw endpoints are enabled only if
 	// this is non-nil.
 	RawFactory RawFactory
+
+	// OpaqueIIDOpts hold the options for generating opaque interface identifiers
+	// (IIDs) as outlined by RFC 7217.
+	OpaqueIIDOpts OpaqueInterfaceIdentifierOptions
 }
 
 // TransportEndpointInfo holds useful information about a transport endpoint
@@ -549,6 +584,7 @@ func New(opts Options) *Stack {
 		autoGenIPv6LinkLocal: opts.AutoGenIPv6LinkLocal,
 		uniqueIDGenerator:    opts.UniqueID,
 		ndpDisp:              opts.NDPDisp,
+		opaqueIIDOpts:        opts.OpaqueIIDOpts,
 	}
 
 	// Add specified network protocols.
