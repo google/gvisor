@@ -66,8 +66,6 @@ func (mm *MemoryManager) ReadMapsDataInto(ctx context.Context, buf *bytes.Buffer
 	var start usermem.Addr
 
 	for vseg := mm.vmas.LowerBoundSegment(start); vseg.Ok(); vseg = vseg.NextSegment() {
-		// FIXME(b/30793614): If we use a usermem.Addr for the handle, we get
-		// "panic: autosave error: type usermem.Addr is not registered".
 		mm.appendVMAMapsEntryLocked(ctx, vseg, buf)
 	}
 
@@ -81,7 +79,6 @@ func (mm *MemoryManager) ReadMapsDataInto(ctx context.Context, buf *bytes.Buffer
 	//
 	// Artifically adjust the seqfile handle so we only output vsyscall entry once.
 	if start != vsyscallEnd {
-		// FIXME(b/30793614): Can't get a pointer to constant vsyscallEnd.
 		buf.WriteString(vsyscallMapsEntry)
 	}
 }
@@ -97,8 +94,6 @@ func (mm *MemoryManager) ReadMapsSeqFileData(ctx context.Context, handle seqfile
 		start = *handle.(*usermem.Addr)
 	}
 	for vseg := mm.vmas.LowerBoundSegment(start); vseg.Ok(); vseg = vseg.NextSegment() {
-		// FIXME(b/30793614): If we use a usermem.Addr for the handle, we get
-		// "panic: autosave error: type usermem.Addr is not registered".
 		vmaAddr := vseg.End()
 		data = append(data, seqfile.SeqData{
 			Buf:    mm.vmaMapsEntryLocked(ctx, vseg),
@@ -116,7 +111,6 @@ func (mm *MemoryManager) ReadMapsSeqFileData(ctx context.Context, handle seqfile
 	//
 	// Artifically adjust the seqfile handle so we only output vsyscall entry once.
 	if start != vsyscallEnd {
-		// FIXME(b/30793614): Can't get a pointer to constant vsyscallEnd.
 		vmaAddr := vsyscallEnd
 		data = append(data, seqfile.SeqData{
 			Buf:    []byte(vsyscallMapsEntry),
@@ -187,15 +181,12 @@ func (mm *MemoryManager) ReadSmapsDataInto(ctx context.Context, buf *bytes.Buffe
 	var start usermem.Addr
 
 	for vseg := mm.vmas.LowerBoundSegment(start); vseg.Ok(); vseg = vseg.NextSegment() {
-		// FIXME(b/30793614): If we use a usermem.Addr for the handle, we get
-		// "panic: autosave error: type usermem.Addr is not registered".
 		mm.vmaSmapsEntryIntoLocked(ctx, vseg, buf)
 	}
 
 	// We always emulate vsyscall, so advertise it here. See
 	// ReadMapsSeqFileData for additional commentary.
 	if start != vsyscallEnd {
-		// FIXME(b/30793614): Can't get a pointer to constant vsyscallEnd.
 		buf.WriteString(vsyscallSmapsEntry)
 	}
 }
@@ -211,8 +202,6 @@ func (mm *MemoryManager) ReadSmapsSeqFileData(ctx context.Context, handle seqfil
 		start = *handle.(*usermem.Addr)
 	}
 	for vseg := mm.vmas.LowerBoundSegment(start); vseg.Ok(); vseg = vseg.NextSegment() {
-		// FIXME(b/30793614): If we use a usermem.Addr for the handle, we get
-		// "panic: autosave error: type usermem.Addr is not registered".
 		vmaAddr := vseg.End()
 		data = append(data, seqfile.SeqData{
 			Buf:    mm.vmaSmapsEntryLocked(ctx, vseg),
@@ -223,7 +212,6 @@ func (mm *MemoryManager) ReadSmapsSeqFileData(ctx context.Context, handle seqfil
 	// We always emulate vsyscall, so advertise it here. See
 	// ReadMapsSeqFileData for additional commentary.
 	if start != vsyscallEnd {
-		// FIXME(b/30793614): Can't get a pointer to constant vsyscallEnd.
 		vmaAddr := vsyscallEnd
 		data = append(data, seqfile.SeqData{
 			Buf:    []byte(vsyscallSmapsEntry),
