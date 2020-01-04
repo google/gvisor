@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -1908,6 +1909,109 @@ func TestAutoGenAddrStaticConflict(t *testing.T) {
 	}
 	if !contains(s.NICInfo()[1].ProtocolAddresses, addr) {
 		t.Fatalf("Should have %s in the list of addresses", addr1)
+	}
+}
+
+// TestAutoGenAddrWithOpaqueIID tests that SLAAC generated addresses will use
+// opaque interface identifiers when configured to do so.
+func TestAutoGenAddrWithOpaqueIID(t *testing.T) {
+	t.Parallel()
+
+	const nicID = 1
+	var secretKeyBuf [header.OpaqueIIDSecretKeyMinBytes]byte
+	secretKey := secretKeyBuf[:]
+	n, err := rand.Read(secretKey)
+	if err != nil {
+		t.Fatalf("rand.Read(_): %s", err)
+	}
+	if n != header.OpaqueIIDSecretKeyMinBytes {
+		t.Fatalf("got rand.Read(_) = (%d, _), want = (%d, _)", n, header.OpaqueIIDSecretKeyMinBytes)
+	}
+
+	prefix1, subnet1, _ := prefixSubnetAddr(0, linkAddr1)
+	prefix2, subnet2, _ := prefixSubnetAddr(1, linkAddr1)
+	// addr1 and addr2 are the addresses that are expected to be generated when
+	// stack.Stack is configured to generate opaque interface identifiers as
+	// defined by RFC 7217.
+	addrBytes := []byte(subnet1.ID())
+	addr1 := tcpip.AddressWithPrefix{
+		Address:   tcpip.Address(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet1, "nic1", 0, secretKey)),
+		PrefixLen: 64,
+	}
+	addrBytes = []byte(subnet2.ID())
+	addr2 := tcpip.AddressWithPrefix{
+		Address:   tcpip.Address(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet2, "nic1", 0, secretKey)),
+		PrefixLen: 64,
+	}
+
+	ndpDisp := ndpDispatcher{
+		autoGenAddrC: make(chan ndpAutoGenAddrEvent, 1),
+	}
+	e := channel.New(0, 1280, linkAddr1)
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+		NDPConfigs: stack.NDPConfigurations{
+			HandleRAs:              true,
+			AutoGenGlobalAddresses: true,
+		},
+		NDPDisp: &ndpDisp,
+		OpaqueIIDOpts: stack.OpaqueInterfaceIdentifierOptions{
+			NICNameFromID: func(nicID tcpip.NICID) string {
+				return fmt.Sprintf("nic%d", nicID)
+			},
+			SecretKey: secretKey,
+		},
+	})
+
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+	}
+
+	expectAutoGenAddrEvent := func(addr tcpip.AddressWithPrefix, eventType ndpAutoGenAddrEventType) {
+		t.Helper()
+
+		select {
+		case e := <-ndpDisp.autoGenAddrC:
+			if diff := checkAutoGenAddrEvent(e, addr, eventType); diff != "" {
+				t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
+			}
+		default:
+			t.Fatal("expected addr auto gen event")
+		}
+	}
+
+	// Receive an RA with prefix1 in a PI.
+	const validLifetimeSecondPrefix1 = 1
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix1, true, true, validLifetimeSecondPrefix1, 0))
+	expectAutoGenAddrEvent(addr1, newAddr)
+	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
+		t.Fatalf("should have %s in the list of addresses", addr1)
+	}
+
+	// Receive an RA with prefix2 in a PI with a large valid lifetime.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix2, true, true, 100, 0))
+	expectAutoGenAddrEvent(addr2, newAddr)
+	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
+		t.Fatalf("should have %s in the list of addresses", addr1)
+	}
+	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
+		t.Fatalf("should have %s in the list of addresses", addr2)
+	}
+
+	// Wait for addr of prefix1 to be invalidated.
+	select {
+	case e := <-ndpDisp.autoGenAddrC:
+		if diff := checkAutoGenAddrEvent(e, addr1, invalidatedAddr); diff != "" {
+			t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
+		}
+	case <-time.After(validLifetimeSecondPrefix1*time.Second + defaultTimeout):
+		t.Fatal("timed out waiting for addr auto gen event")
+	}
+	if contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
+		t.Fatalf("should not have %s in the list of addresses", addr1)
+	}
+	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
+		t.Fatalf("should have %s in the list of addresses", addr2)
 	}
 }
 
