@@ -1028,22 +1028,24 @@ func (ndp *ndpState) handleAutonomousPrefixInformation(pi header.NDPPrefixInform
 		return
 	}
 
-	// Only attempt to generate an interface-specific IID if we have a valid
-	// link address.
-	//
-	// TODO(b/141011931): Validate a LinkEndpoint's link address
-	// (provided by LinkEndpoint.LinkAddress) before reaching this
-	// point.
-	linkAddr := ndp.nic.linkEP.LinkAddress()
-	if !header.IsValidUnicastEthernetAddress(linkAddr) {
-		return
-	}
+	addrBytes := []byte(prefix.ID())
+	if oIID := ndp.nic.stack.opaqueIIDOpts; oIID.NICNameFromID != nil {
+		addrBytes = header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], prefix, oIID.NICNameFromID(ndp.nic.ID()), 0 /* dadCounter */, oIID.SecretKey)
+	} else {
+		// Only attempt to generate an interface-specific IID if we have a valid
+		// link address.
+		//
+		// TODO(b/141011931): Validate a LinkEndpoint's link address (provided by
+		// LinkEndpoint.LinkAddress) before reaching this point.
+		linkAddr := ndp.nic.linkEP.LinkAddress()
+		if !header.IsValidUnicastEthernetAddress(linkAddr) {
+			return
+		}
 
-	// Generate an address within prefix from the modified EUI-64 of ndp's
-	// NIC's Ethernet MAC address.
-	addrBytes := make([]byte, header.IPv6AddressSize)
-	copy(addrBytes[:header.IIDOffsetInIPv6Address], prefix.ID()[:header.IIDOffsetInIPv6Address])
-	header.EthernetAdddressToModifiedEUI64IntoBuf(linkAddr, addrBytes[header.IIDOffsetInIPv6Address:])
+		// Generate an address within prefix from the modified EUI-64 of ndp's NIC's
+		// Ethernet MAC address.
+		header.EthernetAdddressToModifiedEUI64IntoBuf(linkAddr, addrBytes[header.IIDOffsetInIPv6Address:])
+	}
 	addr := tcpip.Address(addrBytes)
 	addrWithPrefix := tcpip.AddressWithPrefix{
 		Address:   addr,
