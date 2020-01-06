@@ -41,6 +41,7 @@ go_library(
         "poll.go",
         "prctl.go",
         "ptrace.go",
+        "rseq.go",
         "rusage.go",
         "sched.go",
         "seccomp.go",

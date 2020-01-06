@@ -489,18 +489,43 @@ type Task struct {
 	// netns is protected by mu. netns is owned by the task goroutine.
 	netns bool
 
-	// If rseqPreempted is true, before the next call to p.Switch(), interrupt
-	// RSEQ critical regions as defined by tg.rseq and write the task
-	// goroutine's CPU number to rseqCPUAddr. rseqCPU is the last CPU number
-	// written to rseqCPUAddr.
+	// If rseqPreempted is true, before the next call to p.Switch(),
+	// interrupt rseq critical regions as defined by rseqAddr and
+	// tg.oldRSeqCritical and write the task goroutine's CPU number to
+	// rseqAddr/oldRSeqCPUAddr.
 	//
-	// If rseqCPUAddr is 0, rseqCPU is -1.
+	// We support two ABIs for restartable sequences:
 	//
-	// rseqCPUAddr, rseqCPU, and rseqPreempted are exclusive to the task
-	// goroutine.
+	//  1. The upstream interface added in v4.18,
+	//  2. An "old" interface never merged upstream. In the implementation,
+	//     this is referred to as "old rseq".
+	//
+	// rseqPreempted is exclusive to the task goroutine.
 	rseqPreempted bool `state:"nosave"`
-	rseqCPUAddr   usermem.Addr
-	rseqCPU       int32
+
+	// rseqCPU is the last CPU number written to rseqAddr/oldRSeqCPUAddr.
+	//
+	// If rseq is unused, rseqCPU is -1 for convenient use in
+	// platform.Context.Switch.
+	//
+	// rseqCPU is exclusive to the task goroutine.
+	rseqCPU int32
+
+	// oldRSeqCPUAddr is a pointer to the userspace old rseq CPU variable.
+	//
+	// oldRSeqCPUAddr is exclusive to the task goroutine.
+	oldRSeqCPUAddr usermem.Addr
+
+	// rseqAddr is a pointer to the userspace linux.RSeq structure.
+	//
+	// rseqAddr is exclusive to the task goroutine.
+	rseqAddr usermem.Addr
+
+	// rseqSignature is the signature that the rseq abort IP must be signed
+	// with.
+	//
+	// rseqSignature is exclusive to the task goroutine.
+	rseqSignature uint32
 
 	// copyScratchBuffer is a buffer available to CopyIn/CopyOut
 	// implementations that require an intermediate buffer to copy data

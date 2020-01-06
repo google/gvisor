@@ -30,6 +30,7 @@ go_library(
         "sys_random.go",
         "sys_read.go",
         "sys_rlimit.go",
+        "sys_rseq.go",
         "sys_rusage.go",
         "sys_sched.go",
         "sys_seccomp.go",
