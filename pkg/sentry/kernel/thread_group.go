@@ -238,8 +238,8 @@ type ThreadGroup struct {
 	// execed is protected by the TaskSet mutex.
 	execed bool
 
-	// rscr is the thread group's RSEQ critical region.
-	rscr atomic.Value `state:".(*RSEQCriticalRegion)"`
+	// oldRSeqCritical is the thread group's old rseq critical region.
+	oldRSeqCritical atomic.Value `state:".(*OldRSeqCriticalRegion)"`
 
 	// mounts is the thread group's mount namespace. This does not really
 	// correspond to a "mount namespace" in Linux, but is more like a
@@ -273,18 +273,18 @@ func (k *Kernel) NewThreadGroup(mntns *fs.MountNamespace, pidns *PIDNamespace, s
 	}
 	tg.itimerRealTimer = ktime.NewTimer(k.monotonicClock, &itimerRealListener{tg: tg})
 	tg.timers = make(map[linux.TimerID]*IntervalTimer)
-	tg.rscr.Store(&RSEQCriticalRegion{})
+	tg.oldRSeqCritical.Store(&OldRSeqCriticalRegion{})
 	return tg
 }
 
-// saveRscr is invoked by stateify.
-func (tg *ThreadGroup) saveRscr() *RSEQCriticalRegion {
-	return tg.rscr.Load().(*RSEQCriticalRegion)
+// saveOldRSeqCritical is invoked by stateify.
+func (tg *ThreadGroup) saveOldRSeqCritical() *OldRSeqCriticalRegion {
+	return tg.oldRSeqCritical.Load().(*OldRSeqCriticalRegion)
 }
 
-// loadRscr is invoked by stateify.
-func (tg *ThreadGroup) loadRscr(rscr *RSEQCriticalRegion) {
-	tg.rscr.Store(rscr)
+// loadOldRSeqCritical is invoked by stateify.
+func (tg *ThreadGroup) loadOldRSeqCritical(r *OldRSeqCriticalRegion) {
+	tg.oldRSeqCritical.Store(r)
 }
 
 // SignalHandlers returns the signal handlers used by tg.

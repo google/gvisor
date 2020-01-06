@@ -375,15 +375,15 @@ func (x *ptraceStop) load(m state.Map) {
 	m.Load("listen", &x.listen)
 }
 
-func (x *RSEQCriticalRegion) beforeSave() {}
-func (x *RSEQCriticalRegion) save(m state.Map) {
+func (x *OldRSeqCriticalRegion) beforeSave() {}
+func (x *OldRSeqCriticalRegion) save(m state.Map) {
 	x.beforeSave()
 	m.Save("CriticalSection", &x.CriticalSection)
 	m.Save("Restart", &x.Restart)
 }
 
-func (x *RSEQCriticalRegion) afterLoad() {}
-func (x *RSEQCriticalRegion) load(m state.Map) {
+func (x *OldRSeqCriticalRegion) afterLoad() {}
+func (x *OldRSeqCriticalRegion) load(m state.Map) {
 	m.Load("CriticalSection", &x.CriticalSection)
 	m.Load("Restart", &x.Restart)
 }
@@ -575,8 +575,10 @@ func (x *Task) save(m state.Map) {
 	m.Save("numaPolicy", &x.numaPolicy)
 	m.Save("numaNodeMask", &x.numaNodeMask)
 	m.Save("netns", &x.netns)
-	m.Save("rseqCPUAddr", &x.rseqCPUAddr)
 	m.Save("rseqCPU", &x.rseqCPU)
+	m.Save("oldRSeqCPUAddr", &x.oldRSeqCPUAddr)
+	m.Save("rseqAddr", &x.rseqAddr)
+	m.Save("rseqSignature", &x.rseqSignature)
 	m.Save("startTime", &x.startTime)
 }
 
@@ -631,8 +633,10 @@ func (x *Task) load(m state.Map) {
 	m.Load("numaPolicy", &x.numaPolicy)
 	m.Load("numaNodeMask", &x.numaNodeMask)
 	m.Load("netns", &x.netns)
-	m.Load("rseqCPUAddr", &x.rseqCPUAddr)
 	m.Load("rseqCPU", &x.rseqCPU)
+	m.Load("oldRSeqCPUAddr", &x.oldRSeqCPUAddr)
+	m.Load("rseqAddr", &x.rseqAddr)
+	m.Load("rseqSignature", &x.rseqSignature)
 	m.Load("startTime", &x.startTime)
 	m.LoadValue("ptraceTracer", new(*Task), func(y interface{}) { x.loadPtraceTracer(y.(*Task)) })
 	m.LoadValue("syscallFilters", new([]bpf.Program), func(y interface{}) { x.loadSyscallFilters(y.([]bpf.Program)) })
@@ -895,8 +899,8 @@ func (x *runSyscallExit) load(m state.Map) {
 func (x *ThreadGroup) beforeSave() {}
 func (x *ThreadGroup) save(m state.Map) {
 	x.beforeSave()
-	var rscr *RSEQCriticalRegion = x.saveRscr()
-	m.SaveValue("rscr", rscr)
+	var oldRSeqCritical *OldRSeqCriticalRegion = x.saveOldRSeqCritical()
+	m.SaveValue("oldRSeqCritical", oldRSeqCritical)
 	m.Save("threadGroupNode", &x.threadGroupNode)
 	m.Save("signalHandlers", &x.signalHandlers)
 	m.Save("pendingSignals", &x.pendingSignals)
@@ -963,7 +967,7 @@ func (x *ThreadGroup) load(m state.Map) {
 	m.Load("execed", &x.execed)
 	m.Load("mounts", &x.mounts)
 	m.Load("tty", &x.tty)
-	m.LoadValue("rscr", new(*RSEQCriticalRegion), func(y interface{}) { x.loadRscr(y.(*RSEQCriticalRegion)) })
+	m.LoadValue("oldRSeqCritical", new(*OldRSeqCriticalRegion), func(y interface{}) { x.loadOldRSeqCritical(y.(*OldRSeqCriticalRegion)) })
 }
 
 func (x *itimerRealListener) beforeSave() {}
@@ -1158,7 +1162,7 @@ func init() {
 	state.Register("kernel.processGroupEntry", (*processGroupEntry)(nil), state.Fns{Save: (*processGroupEntry).save, Load: (*processGroupEntry).load})
 	state.Register("kernel.ptraceOptions", (*ptraceOptions)(nil), state.Fns{Save: (*ptraceOptions).save, Load: (*ptraceOptions).load})
 	state.Register("kernel.ptraceStop", (*ptraceStop)(nil), state.Fns{Save: (*ptraceStop).save, Load: (*ptraceStop).load})
-	state.Register("kernel.RSEQCriticalRegion", (*RSEQCriticalRegion)(nil), state.Fns{Save: (*RSEQCriticalRegion).save, Load: (*RSEQCriticalRegion).load})
+	state.Register("kernel.OldRSeqCriticalRegion", (*OldRSeqCriticalRegion)(nil), state.Fns{Save: (*OldRSeqCriticalRegion).save, Load: (*OldRSeqCriticalRegion).load})
 	state.Register("kernel.sessionList", (*sessionList)(nil), state.Fns{Save: (*sessionList).save, Load: (*sessionList).load})
 	state.Register("kernel.sessionEntry", (*sessionEntry)(nil), state.Fns{Save: (*sessionEntry).save, Load: (*sessionEntry).load})
 	state.Register("kernel.Session", (*Session)(nil), state.Fns{Save: (*Session).save, Load: (*Session).load})
