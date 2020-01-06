@@ -430,13 +430,15 @@ func (t *thread) syscall(regs *syscall.PtraceRegs) (uintptr, error) {
 	}
 
 	for {
-		// Execute the syscall instruction.
-		if _, _, errno := syscall.RawSyscall6(syscall.SYS_PTRACE, syscall.PTRACE_SYSCALL, uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
+		// Execute the syscall instruction. The task has to stop on the
+		// trap instruction which is right after the syscall
+		// instruction.
+		if _, _, errno := syscall.RawSyscall6(syscall.SYS_PTRACE, syscall.PTRACE_CONT, uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
 			panic(fmt.Sprintf("ptrace syscall-enter failed: %v", errno))
 		}
 
 		sig := t.wait(stopped)
-		if sig == (syscallEvent | syscall.SIGTRAP) {
+		if sig == syscall.SIGTRAP {
 			// Reached syscall-enter-stop.
 			break
 		} else {
@@ -446,18 +448,6 @@ func (t *thread) syscall(regs *syscall.PtraceRegs) (uintptr, error) {
 			}
 			continue
 		}
-	}
-
-	// Complete the actual system call.
-	if _, _, errno := syscall.RawSyscall6(syscall.SYS_PTRACE, syscall.PTRACE_SYSCALL, uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
-		panic(fmt.Sprintf("ptrace syscall-enter failed: %v", errno))
-	}
-
-	// Wait for syscall-exit-stop. "[Signal-delivery-stop] never happens
-	// between syscall-enter-stop and syscall-exit-stop; it happens *after*
-	// syscall-exit-stop.)" - ptrace(2), "Syscall-stops"
-	if sig := t.wait(stopped); sig != (syscallEvent | syscall.SIGTRAP) {
-		t.dumpAndPanic(fmt.Sprintf("wait failed: expected SIGTRAP, got %v [%d]", sig, sig))
 	}
 
 	// Grab registers.
