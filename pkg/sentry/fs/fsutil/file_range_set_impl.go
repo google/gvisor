@@ -266,12 +266,12 @@ func (s *FileRangeSet) Insert(gap FileRangeGapIterator, r __generics_imported0.M
 		panic(fmt.Sprintf("new segment %v overlaps successor %v", r, next.Range()))
 	}
 	if prev.Ok() && prev.End() == r.Start {
-		if mval, ok := (fileRangeSetFunctions{}).Merge(prev.Range(), prev.Value(), r, val); ok {
+		if mval, ok := (FileRangeSetFunctions{}).Merge(prev.Range(), prev.Value(), r, val); ok {
 			prev.SetEndUnchecked(r.End)
 			prev.SetValue(mval)
 			if next.Ok() && next.Start() == r.End {
 				val = mval
-				if mval, ok := (fileRangeSetFunctions{}).Merge(prev.Range(), val, next.Range(), next.Value()); ok {
+				if mval, ok := (FileRangeSetFunctions{}).Merge(prev.Range(), val, next.Range(), next.Value()); ok {
 					prev.SetEndUnchecked(next.End())
 					prev.SetValue(mval)
 					return s.Remove(next).PrevSegment()
@@ -281,7 +281,7 @@ func (s *FileRangeSet) Insert(gap FileRangeGapIterator, r __generics_imported0.M
 		}
 	}
 	if next.Ok() && next.Start() == r.End {
-		if mval, ok := (fileRangeSetFunctions{}).Merge(r, val, next.Range(), next.Value()); ok {
+		if mval, ok := (FileRangeSetFunctions{}).Merge(r, val, next.Range(), next.Value()); ok {
 			next.SetStartUnchecked(r.Start)
 			next.SetValue(mval)
 			return next
@@ -336,7 +336,7 @@ func (s *FileRangeSet) Remove(seg FileRangeIterator) FileRangeGapIterator {
 	}
 	copy(seg.node.keys[seg.index:], seg.node.keys[seg.index+1:seg.node.nrSegments])
 	copy(seg.node.values[seg.index:], seg.node.values[seg.index+1:seg.node.nrSegments])
-	fileRangeSetFunctions{}.ClearValue(&seg.node.values[seg.node.nrSegments-1])
+	FileRangeSetFunctions{}.ClearValue(&seg.node.values[seg.node.nrSegments-1])
 	seg.node.nrSegments--
 	return seg.node.rebalanceAfterRemove(FileRangeGapIterator{seg.node, seg.index})
 }
@@ -383,7 +383,7 @@ func (s *FileRangeSet) Merge(first, second FileRangeIterator) FileRangeIterator 
 // second, first == second.PrevSegment().
 func (s *FileRangeSet) MergeUnchecked(first, second FileRangeIterator) FileRangeIterator {
 	if first.End() == second.Start() {
-		if mval, ok := (fileRangeSetFunctions{}).Merge(first.Range(), first.Value(), second.Range(), second.Value()); ok {
+		if mval, ok := (FileRangeSetFunctions{}).Merge(first.Range(), first.Value(), second.Range(), second.Value()); ok {
 
 			first.SetEndUnchecked(second.End())
 			first.SetValue(mval)
@@ -465,7 +465,7 @@ func (s *FileRangeSet) Split(seg FileRangeIterator, split uint64) (FileRangeIter
 //
 // Preconditions: seg.Start() < key < seg.End().
 func (s *FileRangeSet) SplitUnchecked(seg FileRangeIterator, split uint64) (FileRangeIterator, FileRangeIterator) {
-	val1, val2 := (fileRangeSetFunctions{}).Split(seg.Range(), seg.Value(), split)
+	val1, val2 := (FileRangeSetFunctions{}).Split(seg.Range(), seg.Value(), split)
 	end2 := seg.End()
 	seg.SetEndUnchecked(split)
 	seg.SetValue(val1)
@@ -717,7 +717,7 @@ func (n *FileRangenode) rebalanceAfterRemove(gap FileRangeGapIterator) FileRange
 			n.values[0] = n.parent.values[n.parentIndex-1]
 			n.parent.keys[n.parentIndex-1] = sibling.keys[sibling.nrSegments-1]
 			n.parent.values[n.parentIndex-1] = sibling.values[sibling.nrSegments-1]
-			fileRangeSetFunctions{}.ClearValue(&sibling.values[sibling.nrSegments-1])
+			FileRangeSetFunctions{}.ClearValue(&sibling.values[sibling.nrSegments-1])
 			if n.hasChildren {
 				copy(n.children[1:], n.children[:n.nrSegments+1])
 				n.children[0] = sibling.children[sibling.nrSegments]
@@ -745,7 +745,7 @@ func (n *FileRangenode) rebalanceAfterRemove(gap FileRangeGapIterator) FileRange
 			n.parent.values[n.parentIndex] = sibling.values[0]
 			copy(sibling.keys[:sibling.nrSegments-1], sibling.keys[1:])
 			copy(sibling.values[:sibling.nrSegments-1], sibling.values[1:])
-			fileRangeSetFunctions{}.ClearValue(&sibling.values[sibling.nrSegments-1])
+			FileRangeSetFunctions{}.ClearValue(&sibling.values[sibling.nrSegments-1])
 			if n.hasChildren {
 				n.children[n.nrSegments+1] = sibling.children[0]
 				copy(sibling.children[:sibling.nrSegments], sibling.children[1:])
@@ -828,7 +828,7 @@ func (n *FileRangenode) rebalanceAfterRemove(gap FileRangeGapIterator) FileRange
 		left.nrSegments += right.nrSegments + 1
 		copy(p.keys[left.parentIndex:], p.keys[left.parentIndex+1:p.nrSegments])
 		copy(p.values[left.parentIndex:], p.values[left.parentIndex+1:p.nrSegments])
-		fileRangeSetFunctions{}.ClearValue(&p.values[p.nrSegments-1])
+		FileRangeSetFunctions{}.ClearValue(&p.values[p.nrSegments-1])
 		copy(p.children[left.parentIndex+1:], p.children[left.parentIndex+2:p.nrSegments+1])
 		for i := 0; i < p.nrSegments; i++ {
 			p.children[i].parentIndex = i
@@ -1095,7 +1095,7 @@ func (gap FileRangeGapIterator) Start() uint64 {
 	if ps := gap.PrevSegment(); ps.Ok() {
 		return ps.End()
 	}
-	return fileRangeSetFunctions{}.MinKey()
+	return FileRangeSetFunctions{}.MinKey()
 }
 
 // End is equivalent to Range().End, but should be preferred if only the end of
@@ -1104,7 +1104,7 @@ func (gap FileRangeGapIterator) End() uint64 {
 	if ns := gap.NextSegment(); ns.Ok() {
 		return ns.Start()
 	}
-	return fileRangeSetFunctions{}.MaxKey()
+	return FileRangeSetFunctions{}.MaxKey()
 }
 
 // IsEmpty returns true if the iterated gap is empty (that is, the "gap" is
@@ -1174,7 +1174,7 @@ func FileRangesegmentAfterPosition(n *FileRangenode, i int) FileRangeIterator {
 func FileRangezeroValueSlice(slice []uint64) {
 
 	for i := range slice {
-		fileRangeSetFunctions{}.ClearValue(&slice[i])
+		FileRangeSetFunctions{}.ClearValue(&slice[i])
 	}
 }
 
