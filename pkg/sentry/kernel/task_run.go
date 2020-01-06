@@ -169,12 +169,22 @@ func (*runApp) execute(t *Task) taskRunState {
 	// Apply restartable sequences.
 	if t.rseqPreempted {
 		t.rseqPreempted = false
-		if t.rseqCPUAddr != 0 {
+		if t.rseqAddr != 0 || t.oldRSeqCPUAddr != 0 {
+			// Linux writes the CPU on every preemption. We only do
+			// so if it changed. Thus we may delay delivery of
+			// SIGSEGV if rseqAddr/oldRSeqCPUAddr is invalid.
 			cpu := int32(hostcpu.GetCPU())
 			if t.rseqCPU != cpu {
 				t.rseqCPU = cpu
 				if err := t.rseqCopyOutCPU(); err != nil {
-					t.Warningf("Failed to copy CPU to %#x for RSEQ: %v", t.rseqCPUAddr, err)
+					t.Debugf("Failed to copy CPU to %#x for rseq: %v", t.rseqAddr, err)
+					t.forceSignal(linux.SIGSEGV, false)
+					t.SendSignal(SignalInfoPriv(linux.SIGSEGV))
+					// Re-enter the task run loop for signal delivery.
+					return (*runApp)(nil)
+				}
+				if err := t.oldRSeqCopyOutCPU(); err != nil {
+					t.Debugf("Failed to copy CPU to %#x for old rseq: %v", t.oldRSeqCPUAddr, err)
 					t.forceSignal(linux.SIGSEGV, false)
 					t.SendSignal(SignalInfoPriv(linux.SIGSEGV))
 					// Re-enter the task run loop for signal delivery.
@@ -320,7 +330,7 @@ func (*runApp) execute(t *Task) taskRunState {
 		return (*runApp)(nil)
 
 	case platform.ErrContextCPUPreempted:
-		// Ensure that RSEQ critical sections are interrupted and per-thread
+		// Ensure that rseq critical sections are interrupted and per-thread
 		// CPU values are updated before the next platform.Context.Switch().
 		t.rseqPreempted = true
 		return (*runApp)(nil)

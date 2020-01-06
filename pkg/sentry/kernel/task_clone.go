@@ -236,7 +236,10 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	} else if opts.NewPIDNamespace {
 		pidns = pidns.NewChild(userns)
 	}
+
 	tg := t.tg
+	rseqAddr := usermem.Addr(0)
+	rseqSignature := uint32(0)
 	if opts.NewThreadGroup {
 		tg.mounts.IncRef()
 		sh := t.tg.signalHandlers
@@ -244,6 +247,8 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 			sh = sh.Fork()
 		}
 		tg = t.k.NewThreadGroup(tg.mounts, pidns, sh, opts.TerminationSignal, tg.limits.GetCopy())
+		rseqAddr = t.rseqAddr
+		rseqSignature = t.rseqSignature
 	}
 
 	cfg := &TaskConfig{
@@ -260,6 +265,8 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		UTSNamespace:            utsns,
 		IPCNamespace:            ipcns,
 		AbstractSocketNamespace: t.abstractSockets,
+		RSeqAddr:                rseqAddr,
+		RSeqSignature:           rseqSignature,
 		ContainerID:             t.ContainerID(),
 	}
 	if opts.NewThreadGroup {

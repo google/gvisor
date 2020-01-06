@@ -377,7 +377,7 @@ var AMD64 = &kernel.SyscallTable{
 		331: syscalls.ErrorWithEvent("pkey_free", syserror.ENOSYS, "", nil),
 		332: syscalls.Supported("statx", Statx),
 		333: syscalls.ErrorWithEvent("io_pgetevents", syserror.ENOSYS, "", nil),
-		334: syscalls.ErrorWithEvent("rseq", syserror.ENOSYS, "", nil),
+		334: syscalls.PartiallySupported("rseq", RSeq, "Not supported on all platforms.", nil),
 
 		// Linux skips ahead to syscall 424 to sync numbers between arches.
 		424: syscalls.ErrorWithEvent("pidfd_send_signal", syserror.ENOSYS, "", nil),

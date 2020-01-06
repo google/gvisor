@@ -190,9 +190,11 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	t.updateRSSLocked()
 	// Restartable sequence state is discarded.
 	t.rseqPreempted = false
-	t.rseqCPUAddr = 0
 	t.rseqCPU = -1
-	t.tg.rscr.Store(&RSEQCriticalRegion{})
+	t.rseqAddr = 0
+	t.rseqSignature = 0
+	t.oldRSeqCPUAddr = 0
+	t.tg.oldRSeqCritical.Store(&OldRSeqCriticalRegion{})
 	t.tg.pidns.owner.mu.Unlock()
 
 	// Remove FDs with the CloseOnExec flag set.
