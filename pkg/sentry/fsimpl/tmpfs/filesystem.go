@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package memfs
+package tmpfs
 
 import (
 	"fmt"
@@ -50,7 +50,7 @@ afterSymlink:
 		return nil, err
 	}
 	if nextVFSD == nil {
-		// Since the Dentry tree is the sole source of truth for memfs, if it's
+		// Since the Dentry tree is the sole source of truth for tmpfs, if it's
 		// not in the Dentry tree, it doesn't exist.
 		return nil, syserror.ENOENT
 	}
@@ -351,8 +351,8 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, flags uint32, 
 		fd.vfsfd.Init(&fd, flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{})
 		if flags&linux.O_TRUNC != 0 {
 			impl.mu.Lock()
-			impl.data = impl.data[:0]
-			atomic.StoreInt64(&impl.dataLen, 0)
+			impl.data.Truncate(0, impl.memFile)
+			atomic.StoreUint64(&impl.size, 0)
 			impl.mu.Unlock()
 		}
 		return &fd.vfsfd, nil

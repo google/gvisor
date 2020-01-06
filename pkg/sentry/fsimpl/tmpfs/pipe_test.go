@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package memfs
+package tmpfs
 
 import (
 	"bytes"
@@ -152,10 +152,10 @@ func setup(t *testing.T) (context.Context, *auth.Credentials, *vfs.VirtualFilesy
 
 	// Create VFS.
 	vfsObj := vfs.New()
-	vfsObj.MustRegisterFilesystemType("memfs", FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
+	vfsObj.MustRegisterFilesystemType("tmpfs", FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 	})
-	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "memfs", &vfs.GetFilesystemOptions{})
+	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.GetFilesystemOptions{})
 	if err != nil {
 		t.Fatalf("failed to create tmpfs root mount: %v", err)
 	}
