@@ -1,14 +1,13 @@
 load("//tools/go_stateify:defs.bzl", "go_library")
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
-
-load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 go_template_instance(
     name = "dentry_list",
     out = "dentry_list.go",
-    package = "memfs",
+    package = "tmpfs",
     prefix = "dentry",
     template = "//pkg/ilist:generic_list",
     types = {
@@ -18,25 +17,34 @@ go_template_instance(
 )
 
 go_library(
-    name = "memfs",
+    name = "tmpfs",
     srcs = [
         "dentry_list.go",
         "directory.go",
         "filesystem.go",
-        "memfs.go",
         "named_pipe.go",
         "regular_file.go",
         "symlink.go",
+        "tmpfs.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/memfs",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs",
     deps = [
         "//pkg/abi/linux",
         "//pkg/amutex",
         "//pkg/fspath",
+        "//pkg/log",
         "//pkg/sentry/arch",
         "//pkg/sentry/context",
+        "//pkg/sentry/fs",
+        "//pkg/sentry/fs/fsutil",
+        "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/pipe",
+        "//pkg/sentry/memmap",
+        "//pkg/sentry/pgalloc",
+        "//pkg/sentry/platform",
+        "//pkg/sentry/safemem",
+        "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
         "//pkg/syserror",
@@ -48,7 +56,7 @@ go_test(
     size = "small",
     srcs = ["benchmark_test.go"],
     deps = [
-        ":memfs",
+        ":tmpfs",
         "//pkg/abi/linux",
         "//pkg/fspath",
         "//pkg/refs",
@@ -63,16 +71,20 @@ go_test(
 )
 
 go_test(
-    name = "memfs_test",
+    name = "tmpfs_test",
     size = "small",
-    srcs = ["pipe_test.go"],
-    embed = [":memfs"],
+    srcs = [
+        "pipe_test.go",
+        "regular_file_test.go",
+    ],
+    embed = [":tmpfs"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/fspath",
         "//pkg/sentry/context",
         "//pkg/sentry/context/contexttest",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/kernel/contexttest",
         "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
         "//pkg/syserror",

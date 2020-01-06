@@ -53,7 +53,7 @@ go_template_instance(
         "Key": "uint64",
         "Range": "memmap.MappableRange",
         "Value": "uint64",
-        "Functions": "fileRangeSetFunctions",
+        "Functions": "FileRangeSetFunctions",
     },
 )
 

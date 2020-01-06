@@ -12,12 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package memfs provides a filesystem implementation that behaves like tmpfs:
+// Package tmpfs provides a filesystem implementation that behaves like tmpfs:
 // the Dentry tree is the sole source of truth for the state of the filesystem.
-//
-// memfs is intended primarily to demonstrate filesystem implementation
-// patterns. Real uses cases for an in-memory filesystem should use tmpfs
-// instead.
 //
 // Lock order:
 //
@@ -25,7 +21,7 @@
 //   regularFileFD.offMu
 //     regularFile.mu
 //   inode.mu
-package memfs
+package tmpfs
 
 import (
 	"fmt"
@@ -36,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -47,6 +44,9 @@ type FilesystemType struct{}
 type filesystem struct {
 	vfsfs vfs.Filesystem
 
+	// memFile is used to allocate pages to for regular files.
+	memFile *pgalloc.MemoryFile
+
 	// mu serializes changes to the Dentry tree.
 	mu sync.RWMutex
 
@@ -55,7 +55,13 @@ type filesystem struct {
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
-	var fs filesystem
+	memFileProvider := pgalloc.MemoryFileProviderFromContext(ctx)
+	if memFileProvider == nil {
+		panic("MemoryFileProviderFromContext returned nil")
+	}
+	fs := filesystem{
+		memFile: memFileProvider.MemoryFile(),
+	}
 	fs.vfsfs.Init(vfsObj, &fs)
 	root := fs.newDentry(fs.newDirectory(creds, 01777))
 	return &fs.vfsfs, &root.vfsd, nil
@@ -74,11 +80,11 @@ type dentry struct {
 	// immutable.
 	inode *inode
 
-	// memfs doesn't count references on dentries; because the dentry tree is
+	// tmpfs doesn't count references on dentries; because the dentry tree is
 	// the sole source of truth, it is by definition always consistent with the
 	// state of the filesystem. However, it does count references on inodes,
 	// because inode resources are released when all references are dropped.
-	// (memfs doesn't really have resources to release, but we implement
+	// (tmpfs doesn't really have resources to release, but we implement
 	// reference counting because tmpfs regular files will.)
 
 	// dentryEntry (ugh) links dentries into their parent directory.childList.
@@ -150,7 +156,7 @@ func (i *inode) init(impl interface{}, fs *filesystem, creds *auth.Credentials, 
 // i.nlink < maxLinks.
 func (i *inode) incLinksLocked() {
 	if i.nlink == 0 {
-		panic("memfs.inode.incLinksLocked() called with no existing links")
+		panic("tmpfs.inode.incLinksLocked() called with no existing links")
 	}
 	if i.nlink == maxLinks {
 		panic("memfs.inode.incLinksLocked() called with maximum link count")
@@ -163,14 +169,14 @@ func (i *inode) incLinksLocked() {
 // Preconditions: filesystem.mu must be locked for writing. i.nlink != 0.
 func (i *inode) decLinksLocked() {
 	if i.nlink == 0 {
-		panic("memfs.inode.decLinksLocked() called with no existing links")
+		panic("tmpfs.inode.decLinksLocked() called with no existing links")
 	}
 	atomic.AddUint32(&i.nlink, ^uint32(0))
 }
 
 func (i *inode) incRef() {
 	if atomic.AddInt64(&i.refs, 1) <= 1 {
-		panic("memfs.inode.incRef() called without holding a reference")
+		panic("tmpfs.inode.incRef() called without holding a reference")
 	}
 }
 
@@ -189,14 +195,14 @@ func (i *inode) tryIncRef() bool {
 func (i *inode) decRef() {
 	if refs := atomic.AddInt64(&i.refs, -1); refs == 0 {
 		// This is unnecessary; it's mostly to simulate what tmpfs would do.
-		if regfile, ok := i.impl.(*regularFile); ok {
-			regfile.mu.Lock()
-			regfile.data = nil
-			atomic.StoreInt64(&regfile.dataLen, 0)
-			regfile.mu.Unlock()
+		if regFile, ok := i.impl.(*regularFile); ok {
+			regFile.mu.Lock()
+			regFile.data.DropAll(regFile.memFile)
+			atomic.StoreUint64(&regFile.size, 0)
+			regFile.mu.Unlock()
 		}
 	} else if refs < 0 {
-		panic("memfs.inode.decRef() called without holding a reference")
+		panic("tmpfs.inode.decRef() called without holding a reference")
 	}
 }
 
@@ -220,7 +226,7 @@ func (i *inode) statTo(stat *linux.Statx) {
 	case *regularFile:
 		stat.Mode |= linux.S_IFREG
 		stat.Mask |= linux.STATX_SIZE | linux.STATX_BLOCKS
-		stat.Size = uint64(atomic.LoadInt64(&impl.dataLen))
+		stat.Size = uint64(atomic.LoadUint64(&impl.size))
 		// In tmpfs, this will be FileRangeSet.Span() / 512 (but also cached in
 		// a uint64 accessed using atomic memory operations to avoid taking
 		// locks).
@@ -261,7 +267,7 @@ func (i *inode) direntType() uint8 {
 	}
 }
 
-// fileDescription is embedded by memfs implementations of
+// fileDescription is embedded by tmpfs implementations of
 // vfs.FileDescriptionImpl.
 type fileDescription struct {
 	vfsfd vfs.FileDescription
