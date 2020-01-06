@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -79,6 +80,13 @@ type TaskConfig struct {
 	// AbstractSocketNamespace is the AbstractSocketNamespace of the new task.
 	AbstractSocketNamespace *AbstractSocketNamespace
 
+	// RSeqAddr is a pointer to the the userspace linux.RSeq structure.
+	RSeqAddr usermem.Addr
+
+	// RSeqSignature is the signature that the rseq abort IP must be signed
+	// with.
+	RSeqSignature uint32
+
 	// ContainerID is the container the new task belongs to.
 	ContainerID string
 }
@@ -126,6 +134,8 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 		ipcns:           cfg.IPCNamespace,
 		abstractSockets: cfg.AbstractSocketNamespace,
 		rseqCPU:         -1,
+		rseqAddr:        cfg.RSeqAddr,
+		rseqSignature:   cfg.RSeqSignature,
 		futexWaiter:     futex.NewWaiter(),
 		containerID:     cfg.ContainerID,
 	}
