@@ -39,10 +39,13 @@ func Shmget(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if err != nil {
 		return 0, nil, err
 	}
+	defer segment.DecRef()
 	return uintptr(segment.ID), nil, nil
 }
 
 // findSegment retrives a shm segment by the given id.
+//
+// findSegment returns a reference on Shm.
 func findSegment(t *kernel.Task, id shm.ID) (*shm.Shm, error) {
 	r := t.IPCNamespace().ShmRegistry()
 	segment := r.FindByID(id)
@@ -63,6 +66,7 @@ func Shmat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if err != nil {
 		return 0, nil, syserror.EINVAL
 	}
+	defer segment.DecRef()
 
 	opts, err := segment.ConfigureAttach(t, addr, shm.AttachOpts{
 		Execute:  flag&linux.SHM_EXEC == linux.SHM_EXEC,
@@ -72,7 +76,6 @@ func Shmat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if err != nil {
 		return 0, nil, err
 	}
-	defer segment.DecRef()
 	addr, err = t.MemoryManager().MMap(t, opts)
 	return uintptr(addr), nil, err
 }
@@ -105,6 +108,7 @@ func Shmctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		if err != nil {
 			return 0, nil, syserror.EINVAL
 		}
+		defer segment.DecRef()
 
 		stat, err := segment.IPCStat(t)
 		if err == nil {
@@ -128,6 +132,7 @@ func Shmctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if err != nil {
 		return 0, nil, syserror.EINVAL
 	}
+	defer segment.DecRef()
 
 	switch cmd {
 	case linux.IPC_SET:

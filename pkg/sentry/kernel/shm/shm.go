@@ -71,9 +71,20 @@ type Registry struct {
 	mu sync.Mutex `state:"nosave"`
 
 	// shms maps segment ids to segments.
+	//
+	// shms holds all referenced segments, which are removed on the last
+	// DecRef. Thus, it cannot itself hold a reference on the Shm.
+	//
+	// Since removal only occurs after the last (unlocked) DecRef, there
+	// exists a short window during which a Shm still exists in Shm, but is
+	// unreferenced. Users must use TryIncRef to determine if the Shm is
+	// still valid.
 	shms map[ID]*Shm
 
 	// keysToShms maps segment keys to segments.
+	//
+	// Shms in keysToShms are guaranteed to be referenced, as they are
+	// removed by disassociateKey before the last DecRef.
 	keysToShms map[Key]*Shm
 
 	// Sum of the sizes of all existing segments rounded up to page size, in
@@ -95,10 +106,18 @@ func NewRegistry(userNS *auth.UserNamespace) *Registry {
 }
 
 // FindByID looks up a segment given an ID.
+//
+// FindByID returns a reference on Shm.
 func (r *Registry) FindByID(id ID) *Shm {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.shms[id]
+	s := r.shms[id]
+	// Take a reference on s. If TryIncRef fails, s has reached the last
+	// DecRef, but hasn't quite been removed from r.shms yet.
+	if s != nil && s.TryIncRef() {
+		return s
+	}
+	return nil
 }
 
 // dissociateKey removes the association between a segment and its key,
@@ -119,6 +138,8 @@ func (r *Registry) dissociateKey(s *Shm) {
 
 // FindOrCreate looks up or creates a segment in the registry. It's functionally
 // analogous to open(2).
+//
+// FindOrCreate returns a reference on Shm.
 func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key Key, size uint64, mode linux.FileMode, private, create, exclusive bool) (*Shm, error) {
 	if (create || private) && (size < linux.SHMMIN || size > linux.SHMMAX) {
 		// "A new segment was to be created and size is less than SHMMIN or
@@ -166,6 +187,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key Key, size ui
 				return nil, syserror.EEXIST
 			}
 
+			shm.IncRef()
 			return shm, nil
 		}
 
@@ -193,7 +215,14 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key Key, size ui
 	// Need to create a new segment.
 	creator := fs.FileOwnerFromContext(ctx)
 	perms := fs.FilePermsFromMode(mode)
-	return r.newShm(ctx, pid, key, creator, perms, size)
+	s, err := r.newShm(ctx, pid, key, creator, perms, size)
+	if err != nil {
+		return nil, err
+	}
+	// The initial reference is held by s itself. Take another to return to
+	// the caller.
+	s.IncRef()
+	return s, nil
 }
 
 // newShm creates a new segment in the registry.
@@ -296,22 +325,26 @@ func (r *Registry) remove(s *Shm) {
 
 // Shm represents a single shared memory segment.
 //
-// Shm segment are backed directly by an allocation from platform
-// memory. Segments are always mapped as a whole, greatly simplifying how
-// mappings are tracked. However note that mremap and munmap calls may cause the
-// vma for a segment to become fragmented; which requires special care when
-// unmapping a segment. See mm/shm.go.
+// Shm segment are backed directly by an allocation from platform memory.
+// Segments are always mapped as a whole, greatly simplifying how mappings are
+// tracked. However note that mremap and munmap calls may cause the vma for a
+// segment to become fragmented; which requires special care when unmapping a
+// segment. See mm/shm.go.
 //
 // Segments persist until they are explicitly marked for destruction via
-// shmctl(SHM_RMID).
+// MarkDestroyed().
 //
 // Shm implements memmap.Mappable and memmap.MappingIdentity.
 //
 // +stateify savable
 type Shm struct {
-	// AtomicRefCount tracks the number of references to this segment from
-	// maps. A segment always holds a reference to itself, until it's marked for
+	// AtomicRefCount tracks the number of references to this segment.
+	//
+	// A segment holds a reference to itself until it is marked for
 	// destruction.
+	//
+	// In addition to direct users, the MemoryManager will hold references
+	// via MappingIdentity.
 	refs.AtomicRefCount
 
 	mfp pgalloc.MemoryFileProvider
@@ -484,9 +517,8 @@ type AttachOpts struct {
 // ConfigureAttach creates an mmap configuration for the segment with the
 // requested attach options.
 //
-// ConfigureAttach returns with a ref on s on success. The caller should drop
-// this once the map is installed. This reference prevents s from being
-// destroyed before the returned configuration is used.
+// Postconditions: The returned MMapOpts are valid only as long as a reference
+// continues to be held on s.
 func (s *Shm) ConfigureAttach(ctx context.Context, addr usermem.Addr, opts AttachOpts) (memmap.MMapOpts, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -504,7 +536,6 @@ func (s *Shm) ConfigureAttach(ctx context.Context, addr usermem.Addr, opts Attac
 		// in the user namespace that governs its IPC namespace." - man shmat(2)
 		return memmap.MMapOpts{}, syserror.EACCES
 	}
-	s.IncRef()
 	return memmap.MMapOpts{
 		Length: s.size,
 		Offset: 0,
@@ -549,10 +580,15 @@ func (s *Shm) IPCStat(ctx context.Context) (*linux.ShmidDS, error) {
 	}
 	creds := auth.CredentialsFromContext(ctx)
 
-	nattach := uint64(s.ReadRefs())
-	// Don't report the self-reference we keep prior to being marked for
-	// destruction. However, also don't report a count of -1 for segments marked
-	// as destroyed, with no mappings.
+	// Use the reference count as a rudimentary count of the number of
+	// attaches. We exclude:
+	//
+	// 1. The reference the caller holds.
+	// 2. The self-reference held by s prior to destruction.
+	//
+	// Note that this may still overcount by including transient references
+	// used in concurrent calls.
+	nattach := uint64(s.ReadRefs()) - 1
 	if !s.pendingDestruction {
 		nattach--
 	}
@@ -620,18 +656,17 @@ func (s *Shm) MarkDestroyed() {
 	s.registry.dissociateKey(s)
 
 	s.mu.Lock()
-	// Only drop the segment's self-reference once, when destruction is
-	// requested. Otherwise, repeated calls to shmctl(IPC_RMID) would force a
-	// segment to be destroyed prematurely, potentially with active maps to the
-	// segment's address range. Remaining references are dropped when the
-	// segment is detached or unmaped.
+	defer s.mu.Unlock()
 	if !s.pendingDestruction {
 		s.pendingDestruction = true
-		s.mu.Unlock() // Must release s.mu before calling s.DecRef.
+		// Drop the self-reference so destruction occurs when all
+		// external references are gone.
+		//
+		// N.B. This cannot be the final DecRef, as the caller also
+		// holds a reference.
 		s.DecRef()
 		return
 	}
-	s.mu.Unlock()
 }
 
 // checkOwnership verifies whether a segment may be accessed by ctx as an
