@@ -1036,9 +1036,11 @@ func (s *Stack) AllAddresses() map[tcpip.NICID][]tcpip.ProtocolAddress {
 	return nics
 }
 
-// GetMainNICAddress returns the first primary address and prefix for the given
-// NIC and protocol. Returns an error if the NIC doesn't exist and an empty
-// value if the NIC doesn't have a primary address for the given protocol.
+// GetMainNICAddress returns the first non-deprecated primary address and prefix
+// for the given NIC and protocol. If no non-deprecated primary address exists,
+// a deprecated primary address and prefix will be returned. Returns an error if
+// the NIC doesn't exist and an empty value if the NIC doesn't have a primary
+// address for the given protocol.
 func (s *Stack) GetMainNICAddress(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber) (tcpip.AddressWithPrefix, *tcpip.Error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1048,12 +1050,7 @@ func (s *Stack) GetMainNICAddress(id tcpip.NICID, protocol tcpip.NetworkProtocol
 		return tcpip.AddressWithPrefix{}, tcpip.ErrUnknownNICID
 	}
 
-	for _, a := range nic.PrimaryAddresses() {
-		if a.Protocol == protocol {
-			return a.AddressWithPrefix, nil
-		}
-	}
-	return tcpip.AddressWithPrefix{}, nil
+	return nic.primaryAddress(protocol), nil
 }
 
 func (s *Stack) getRefEP(nic *NIC, localAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) (ref *referencedNetworkEndpoint) {
