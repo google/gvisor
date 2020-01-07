@@ -180,7 +180,7 @@ func (n *NIC) enable() *tcpip.Error {
 
 	var addr tcpip.Address
 	if oIID := n.stack.opaqueIIDOpts; oIID.NICNameFromID != nil {
-		addr = header.LinkLocalAddrWithOpaqueIID(oIID.NICNameFromID(n.ID()), 0, oIID.SecretKey)
+		addr = header.LinkLocalAddrWithOpaqueIID(oIID.NICNameFromID(n.ID(), n.name), 0, oIID.SecretKey)
 	} else {
 		l2addr := n.linkEP.LinkAddress()
 
