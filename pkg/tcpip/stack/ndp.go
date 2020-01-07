@@ -1030,7 +1030,7 @@ func (ndp *ndpState) handleAutonomousPrefixInformation(pi header.NDPPrefixInform
 
 	addrBytes := []byte(prefix.ID())
 	if oIID := ndp.nic.stack.opaqueIIDOpts; oIID.NICNameFromID != nil {
-		addrBytes = header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], prefix, oIID.NICNameFromID(ndp.nic.ID()), 0 /* dadCounter */, oIID.SecretKey)
+		addrBytes = header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], prefix, oIID.NICNameFromID(ndp.nic.ID(), ndp.nic.name), 0 /* dadCounter */, oIID.SecretKey)
 	} else {
 		// Only attempt to generate an interface-specific IID if we have a valid
 		// link address.

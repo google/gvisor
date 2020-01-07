@@ -96,7 +96,7 @@ func TestAppendOpaqueInterfaceIdentifier(t *testing.T) {
 			secretKey:  secretKeyBuf[:header.OpaqueIIDSecretKeyMinBytes*2],
 		},
 		{
-			name: "Nil SecretKey",
+			name: "Nil SecretKey and empty nicName",
 			prefix: func() tcpip.Subnet {
 				addrWithPrefix := tcpip.AddressWithPrefix{
 					Address:   "\x01\x02\x03\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
@@ -104,7 +104,7 @@ func TestAppendOpaqueInterfaceIdentifier(t *testing.T) {
 				}
 				return addrWithPrefix.Subnet()
 			}(),
-			nicName:    "eth12",
+			nicName:    "",
 			dadCounter: 3,
 			secretKey:  nil,
 		},
@@ -178,8 +178,8 @@ func TestLinkLocalAddrWithOpaqueIID(t *testing.T) {
 			secretKey:  secretKeyBuf[:header.OpaqueIIDSecretKeyMinBytes*2],
 		},
 		{
-			name:       "Nil SecretKey",
-			nicName:    "eth12",
+			name:       "Nil SecretKey and empty nicName",
+			nicName:    "",
 			dadCounter: 3,
 			secretKey:  nil,
 		},

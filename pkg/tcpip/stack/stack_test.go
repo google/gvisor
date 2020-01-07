@@ -1910,7 +1910,7 @@ func TestNICAutoGenAddr(t *testing.T) {
 			false,
 			linkAddr1,
 			stack.OpaqueInterfaceIdentifierOptions{
-				NICNameFromID: func(nicID tcpip.NICID) string {
+				NICNameFromID: func(nicID tcpip.NICID, _ string) string {
 					return fmt.Sprintf("nic%d", nicID)
 				},
 			},
@@ -2005,6 +2005,8 @@ func TestNICAutoGenAddr(t *testing.T) {
 // always be generated with opaque IIDs if configured to use them, even if the
 // NIC has an invalid MAC address.
 func TestNICAutoGenAddrWithOpaque(t *testing.T) {
+	const nicID = 1
+
 	var secretKey [header.OpaqueIIDSecretKeyMinBytes]byte
 	n, err := rand.Read(secretKey[:])
 	if err != nil {
@@ -2014,54 +2016,61 @@ func TestNICAutoGenAddrWithOpaque(t *testing.T) {
 		t.Fatalf("expected rand.Read to read %d bytes, read %d bytes", header.OpaqueIIDSecretKeyMinBytes, n)
 	}
 
-	iidOpts := stack.OpaqueInterfaceIdentifierOptions{
-		NICNameFromID: func(nicID tcpip.NICID) string {
-			return fmt.Sprintf("nic%d", nicID)
-		},
-		SecretKey: secretKey[:],
-	}
-
 	tests := []struct {
-		name     string
-		autoGen  bool
-		linkAddr tcpip.LinkAddress
+		name      string
+		nicName   string
+		autoGen   bool
+		linkAddr  tcpip.LinkAddress
+		secretKey []byte
 	}{
 		{
-			"Disabled",
-			false,
-			linkAddr1,
+			name:      "Disabled",
+			nicName:   "nic1",
+			autoGen:   false,
+			linkAddr:  linkAddr1,
+			secretKey: secretKey[:],
 		},
 		{
-			"Enabled",
-			true,
-			linkAddr1,
+			name:      "Enabled",
+			nicName:   "nic1",
+			autoGen:   true,
+			linkAddr:  linkAddr1,
+			secretKey: secretKey[:],
 		},
 		// These are all cases where we would not have generated a
 		// link-local address if opaque IIDs were disabled.
 		{
-			"Nil MAC",
-			true,
-			tcpip.LinkAddress([]byte(nil)),
+			name:      "Nil MAC and empty nicName",
+			nicName:   "",
+			autoGen:   true,
+			linkAddr:  tcpip.LinkAddress([]byte(nil)),
+			secretKey: secretKey[:1],
 		},
 		{
-			"Empty MAC",
-			true,
-			tcpip.LinkAddress(""),
+			name:      "Empty MAC and empty nicName",
+			autoGen:   true,
+			linkAddr:  tcpip.LinkAddress(""),
+			secretKey: secretKey[:2],
 		},
 		{
-			"Invalid MAC",
-			true,
-			tcpip.LinkAddress("\x01\x02\x03"),
+			name:      "Invalid MAC",
+			nicName:   "test",
+			autoGen:   true,
+			linkAddr:  tcpip.LinkAddress("\x01\x02\x03"),
+			secretKey: secretKey[:3],
 		},
 		{
-			"Multicast MAC",
-			true,
-			tcpip.LinkAddress("\x01\x02\x03\x04\x05\x06"),
+			name:      "Multicast MAC",
+			nicName:   "test2",
+			autoGen:   true,
+			linkAddr:  tcpip.LinkAddress("\x01\x02\x03\x04\x05\x06"),
+			secretKey: secretKey[:4],
 		},
 		{
-			"Unspecified MAC",
-			true,
-			tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00"),
+			name:     "Unspecified MAC and nil SecretKey",
+			nicName:  "test3",
+			autoGen:  true,
+			linkAddr: tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00"),
 		},
 	}
 
@@ -2069,7 +2078,12 @@ func TestNICAutoGenAddrWithOpaque(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			opts := stack.Options{
 				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-				OpaqueIIDOpts:    iidOpts,
+				OpaqueIIDOpts: stack.OpaqueInterfaceIdentifierOptions{
+					NICNameFromID: func(_ tcpip.NICID, nicName string) string {
+						return nicName
+					},
+					SecretKey: test.secretKey,
+				},
 			}
 
 			if test.autoGen {
@@ -2082,19 +2096,19 @@ func TestNICAutoGenAddrWithOpaque(t *testing.T) {
 
 			e := channel.New(10, 1280, test.linkAddr)
 			s := stack.New(opts)
-			if err := s.CreateNIC(1, e); err != nil {
-				t.Fatalf("CreateNIC(_) = %s", err)
+			if err := s.CreateNamedNIC(nicID, test.nicName, e); err != nil {
+				t.Fatalf("CreateNamedNIC(%d, %q, _) = %s", nicID, test.nicName, err)
 			}
 
-			addr, err := s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
+			addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
 			if err != nil {
-				t.Fatalf("stack.GetMainNICAddress(_, _) err = %s", err)
+				t.Fatalf("stack.GetMainNICAddress(%d, _) err = %s", nicID, err)
 			}
 
 			if test.autoGen {
 				// Should have auto-generated an address and
 				// resolved immediately (DAD is disabled).
-				if want := (tcpip.AddressWithPrefix{Address: header.LinkLocalAddrWithOpaqueIID("nic1", 0, secretKey[:]), PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen}); addr != want {
+				if want := (tcpip.AddressWithPrefix{Address: header.LinkLocalAddrWithOpaqueIID(test.nicName, 0, test.secretKey), PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen}); addr != want {
 					t.Fatalf("got stack.GetMainNICAddress(_, _) = %s, want = %s", addr, want)
 				}
 			} else {

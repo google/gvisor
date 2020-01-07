@@ -1918,6 +1918,7 @@ func TestAutoGenAddrWithOpaqueIID(t *testing.T) {
 	t.Parallel()
 
 	const nicID = 1
+	const nicName = "nic1"
 	var secretKeyBuf [header.OpaqueIIDSecretKeyMinBytes]byte
 	secretKey := secretKeyBuf[:]
 	n, err := rand.Read(secretKey)
@@ -1935,12 +1936,12 @@ func TestAutoGenAddrWithOpaqueIID(t *testing.T) {
 	// defined by RFC 7217.
 	addrBytes := []byte(subnet1.ID())
 	addr1 := tcpip.AddressWithPrefix{
-		Address:   tcpip.Address(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet1, "nic1", 0, secretKey)),
+		Address:   tcpip.Address(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet1, nicName, 0, secretKey)),
 		PrefixLen: 64,
 	}
 	addrBytes = []byte(subnet2.ID())
 	addr2 := tcpip.AddressWithPrefix{
-		Address:   tcpip.Address(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet2, "nic1", 0, secretKey)),
+		Address:   tcpip.Address(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet2, nicName, 0, secretKey)),
 		PrefixLen: 64,
 	}
 
@@ -1956,15 +1957,15 @@ func TestAutoGenAddrWithOpaqueIID(t *testing.T) {
 		},
 		NDPDisp: &ndpDisp,
 		OpaqueIIDOpts: stack.OpaqueInterfaceIdentifierOptions{
-			NICNameFromID: func(nicID tcpip.NICID) string {
-				return fmt.Sprintf("nic%d", nicID)
+			NICNameFromID: func(_ tcpip.NICID, nicName string) string {
+				return nicName
 			},
 			SecretKey: secretKey,
 		},
 	})
 
-	if err := s.CreateNIC(nicID, e); err != nil {
-		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+	if err := s.CreateNamedNIC(nicID, nicName, e); err != nil {
+		t.Fatalf("CreateNamedNIC(%d, %q, _) = %s", nicID, nicName, err)
 	}
 
 	expectAutoGenAddrEvent := func(addr tcpip.AddressWithPrefix, eventType ndpAutoGenAddrEventType) {
