@@ -522,7 +522,7 @@ type AttachOpts struct {
 func (s *Shm) ConfigureAttach(ctx context.Context, addr usermem.Addr, opts AttachOpts) (memmap.MMapOpts, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.pendingDestruction && s.ReadRefs() == 0 {
+	if s.pendingDestruction {
 		return memmap.MMapOpts{}, syserror.EIDRM
 	}
 
