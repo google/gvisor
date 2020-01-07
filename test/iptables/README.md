@@ -1,6 +1,6 @@
 # iptables Tests
 
-iptables tests are run via `scripts/iptables\_test.sh`.
+iptables tests are run via `scripts/iptables_test.sh`.
 
 ## Test Structure
 
