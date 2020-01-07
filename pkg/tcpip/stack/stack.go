@@ -353,8 +353,13 @@ func (u *uniqueIDGenerator) UniqueID() uint64 {
 }
 
 // NICNameFromID is a function that returns a stable name for the specified NIC,
-// even if the NIC ID changes over time.
-type NICNameFromID func(tcpip.NICID) string
+// even if different NIC IDs are used to refer to the same NIC in different
+// program runs. It is used when generating opaque interface identifiers (IIDs).
+// If the NIC was created with a name, it will be passed to NICNameFromID.
+//
+// NICNameFromID SHOULD return unique NIC names so unique opaque IIDs are
+// generated for the same prefix on differnt NICs.
+type NICNameFromID func(tcpip.NICID, string) string
 
 // OpaqueInterfaceIdentifierOptions holds the options related to the generation
 // of opaque interface indentifiers (IIDs) as defined by RFC 7217.
