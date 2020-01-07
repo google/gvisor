@@ -127,6 +127,8 @@ func (t *thread) adjustInitRegsRip() {
 // Pass the expected PPID to the child via X7 when creating stub process
 func initChildProcessPPID(initregs *syscall.PtraceRegs, ppid int32) {
 	initregs.Regs[7] = uint64(ppid)
+	// R9 has to be set to 1 when creating stub process.
+	initregs.Regs[9] = 1
 }
 
 // patchSignalInfo patches the signal info to account for hitting the seccomp
