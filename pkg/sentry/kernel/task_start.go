@@ -238,6 +238,9 @@ func (ts *TaskSet) assignTIDsLocked(t *Task) error {
 		}
 		allocatedTIDs = append(allocatedTIDs, allocatedTID{ns, tid})
 	}
+	if t.tg.pidns.tgids[t.tg] == 1 {
+		t.tg.reaper = true
+	}
 	return nil
 }
 

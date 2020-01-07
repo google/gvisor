@@ -16,7 +16,6 @@ package container
 
 import (
 	"bytes"
-	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -31,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"flag"
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -373,7 +373,7 @@ func TestLifecycle(t *testing.T) {
 			if err != nil {
 				t.Fatalf("error waiting on container: %v", err)
 			}
-			if got, want := ws.Signal(), syscall.SIGTERM; got != want {
+			if got, want := ws.Signal(), syscall.SIGKILL; got != want {
 				t.Fatalf("got signal %v, want %v", got, want)
 			}
 			wg.Done()
@@ -383,8 +383,8 @@ func TestLifecycle(t *testing.T) {
 		// container before we signal.
 		<-ch
 		time.Sleep(100 * time.Millisecond)
-		// Send the container a SIGTERM which will cause it to stop.
-		if err := c.SignalContainer(syscall.SIGTERM, false); err != nil {
+		// Send the container a SIGKILL which will cause it to stop.
+		if err := c.SignalContainer(syscall.SIGKILL, false); err != nil {
 			t.Fatalf("error sending signal %v to container: %v", syscall.SIGTERM, err)
 		}
 		// Wait for it to die.

@@ -238,6 +238,10 @@ type ThreadGroup struct {
 	// execed is protected by the TaskSet mutex.
 	execed bool
 
+	// reaper indicates this is the first ThreadGroup of the PIDNamespace
+	// (with PID==1). This field is immutable.
+	reaper bool
+
 	// oldRSeqCritical is the thread group's old rseq critical region.
 	oldRSeqCritical atomic.Value `state:".(*OldRSeqCriticalRegion)"`
 
