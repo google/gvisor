@@ -30,6 +30,8 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 const (
@@ -46,6 +48,10 @@ var (
 	llAddr1 = header.LinkLocalAddr(linkAddr1)
 	llAddr2 = header.LinkLocalAddr(linkAddr2)
 	llAddr3 = header.LinkLocalAddr(linkAddr3)
+	dstAddr = tcpip.FullAddress{
+		Addr: "\x0a\x0b\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+		Port: 25,
+	}
 )
 
 func addrForSubnet(subnet tcpip.Subnet, linkAddr tcpip.LinkAddress) tcpip.AddressWithPrefix {
@@ -136,6 +142,7 @@ type ndpAutoGenAddrEventType int
 
 const (
 	newAddr ndpAutoGenAddrEventType = iota
+	deprecatedAddr
 	invalidatedAddr
 )
 
@@ -238,6 +245,16 @@ func (n *ndpDispatcher) OnAutoGenAddress(nicID tcpip.NICID, addr tcpip.AddressWi
 		}
 	}
 	return true
+}
+
+func (n *ndpDispatcher) OnAutoGenAddressDeprecated(nicID tcpip.NICID, addr tcpip.AddressWithPrefix) {
+	if c := n.autoGenAddrC; c != nil {
+		c <- ndpAutoGenAddrEvent{
+			nicID,
+			addr,
+			deprecatedAddr,
+		}
+	}
 }
 
 func (n *ndpDispatcher) OnAutoGenAddressInvalidated(nicID tcpip.NICID, addr tcpip.AddressWithPrefix) {
@@ -1638,12 +1655,532 @@ func TestAutoGenAddr(t *testing.T) {
 	}
 }
 
+// stackAndNdpDispatcherWithDefaultRoute returns an ndpDispatcher,
+// channel.Endpoint and stack.Stack.
+//
+// stack.Stack will have a default route through the router (llAddr3) installed
+// and a static link-address (linkAddr3) added to the link address cache for the
+// router.
+func stackAndNdpDispatcherWithDefaultRoute(t *testing.T, nicID tcpip.NICID) (*ndpDispatcher, *channel.Endpoint, *stack.Stack) {
+	t.Helper()
+	ndpDisp := &ndpDispatcher{
+		autoGenAddrC: make(chan ndpAutoGenAddrEvent, 1),
+	}
+	e := channel.New(0, 1280, linkAddr1)
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{ipv6.NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+		NDPConfigs: stack.NDPConfigurations{
+			HandleRAs:              true,
+			AutoGenGlobalAddresses: true,
+		},
+		NDPDisp: ndpDisp,
+	})
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+	}
+	s.SetRouteTable([]tcpip.Route{{
+		Destination: header.IPv6EmptySubnet,
+		Gateway:     llAddr3,
+		NIC:         nicID,
+	}})
+	s.AddLinkAddress(nicID, llAddr3, linkAddr3)
+	return ndpDisp, e, s
+}
+
+// addrForNewConnection returns the local address used when creating a new
+// connection.
+func addrForNewConnection(t *testing.T, s *stack.Stack) tcpip.Address {
+	wq := waiter.Queue{}
+	we, ch := waiter.NewChannelEntry(nil)
+	wq.EventRegister(&we, waiter.EventIn)
+	defer wq.EventUnregister(&we)
+	defer close(ch)
+	ep, err := s.NewEndpoint(header.UDPProtocolNumber, header.IPv6ProtocolNumber, &wq)
+	if err != nil {
+		t.Fatalf("s.NewEndpoint(%d, %d, _): %s", header.UDPProtocolNumber, header.IPv6ProtocolNumber, err)
+	}
+	defer ep.Close()
+	v := tcpip.V6OnlyOption(1)
+	if err := ep.SetSockOpt(v); err != nil {
+		t.Fatalf("SetSockOpt(%+v): %s", v, err)
+	}
+	if err := ep.Connect(dstAddr); err != nil {
+		t.Fatalf("ep.Connect(%+v): %s", dstAddr, err)
+	}
+	got, err := ep.GetLocalAddress()
+	if err != nil {
+		t.Fatalf("ep.GetLocalAddress(): %s", err)
+	}
+	return got.Addr
+}
+
+// addrForNewConnectionWithAddr returns the local address used when creating a
+// new connection with a specific local address.
+func addrForNewConnectionWithAddr(t *testing.T, s *stack.Stack, addr tcpip.FullAddress) tcpip.Address {
+	wq := waiter.Queue{}
+	we, ch := waiter.NewChannelEntry(nil)
+	wq.EventRegister(&we, waiter.EventIn)
+	defer wq.EventUnregister(&we)
+	defer close(ch)
+	ep, err := s.NewEndpoint(header.UDPProtocolNumber, header.IPv6ProtocolNumber, &wq)
+	if err != nil {
+		t.Fatalf("s.NewEndpoint(%d, %d, _): %s", header.UDPProtocolNumber, header.IPv6ProtocolNumber, err)
+	}
+	defer ep.Close()
+	v := tcpip.V6OnlyOption(1)
+	if err := ep.SetSockOpt(v); err != nil {
+		t.Fatalf("SetSockOpt(%+v): %s", v, err)
+	}
+	if err := ep.Bind(addr); err != nil {
+		t.Fatalf("ep.Bind(%+v): %s", addr, err)
+	}
+	if err := ep.Connect(dstAddr); err != nil {
+		t.Fatalf("ep.Connect(%+v): %s", dstAddr, err)
+	}
+	got, err := ep.GetLocalAddress()
+	if err != nil {
+		t.Fatalf("ep.GetLocalAddress(): %s", err)
+	}
+	return got.Addr
+}
+
+// TestAutoGenAddrDeprecateFromPI tests deprecating a SLAAC address when
+// receiving a PI with 0 preferred lifetime.
+func TestAutoGenAddrDeprecateFromPI(t *testing.T) {
+	const nicID = 1
+
+	prefix1, _, addr1 := prefixSubnetAddr(0, linkAddr1)
+	prefix2, _, addr2 := prefixSubnetAddr(1, linkAddr1)
+
+	ndpDisp, e, s := stackAndNdpDispatcherWithDefaultRoute(t, nicID)
+
+	expectAutoGenAddrEvent := func(addr tcpip.AddressWithPrefix, eventType ndpAutoGenAddrEventType) {
+		t.Helper()
+
+		select {
+		case e := <-ndpDisp.autoGenAddrC:
+			if diff := checkAutoGenAddrEvent(e, addr, eventType); diff != "" {
+				t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
+			}
+		default:
+			t.Fatal("expected addr auto gen event")
+		}
+	}
+
+	expectPrimaryAddr := func(addr tcpip.AddressWithPrefix) {
+		t.Helper()
+
+		if got, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber); err != nil {
+			t.Fatalf("s.GetMainNICAddress(%d, %d): %s", nicID, header.IPv6ProtocolNumber, err)
+		} else if got != addr {
+			t.Errorf("got s.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, header.IPv6ProtocolNumber, got, addr)
+		}
+
+		if got := addrForNewConnection(t, s); got != addr.Address {
+			t.Errorf("got addrForNewConnection = %s, want = %s", got, addr.Address)
+		}
+	}
+
+	// Receive PI for prefix1.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix1, true, true, 100, 100))
+	expectAutoGenAddrEvent(addr1, newAddr)
+	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
+		t.Fatalf("should have %s in the list of addresses", addr1)
+	}
+	expectPrimaryAddr(addr1)
+
+	// Deprecate addr for prefix1 immedaitely.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix1, true, true, 100, 0))
+	expectAutoGenAddrEvent(addr1, deprecatedAddr)
+	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
+		t.Fatalf("should have %s in the list of addresses", addr1)
+	}
+	// addr should still be the primary endpoint as there are no other addresses.
+	expectPrimaryAddr(addr1)
+
+	// Refresh lifetimes of addr generated from prefix1.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix1, true, true, 100, 100))
+	select {
+	case <-ndpDisp.autoGenAddrC:
+		t.Fatal("unexpectedly got an auto-generated event")
+	default:
+	}
+	expectPrimaryAddr(addr1)
+
+	// Receive PI for prefix2.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix2, true, true, 100, 100))
+	expectAutoGenAddrEvent(addr2, newAddr)
+	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
+		t.Fatalf("should have %s in the list of addresses", addr2)
+	}
+	expectPrimaryAddr(addr2)
+
+	// Deprecate addr for prefix2 immedaitely.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix2, true, true, 100, 0))
+	expectAutoGenAddrEvent(addr2, deprecatedAddr)
+	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
+		t.Fatalf("should have %s in the list of addresses", addr2)
+	}
+	// addr1 should be the primary endpoint now since addr2 is deprecated but
+	// addr1 is not.
+	expectPrimaryAddr(addr1)
+	// addr2 is deprecated but if explicitly requested, it should be used.
+	fullAddr2 := tcpip.FullAddress{Addr: addr2.Address, NIC: nicID}
+	if got := addrForNewConnectionWithAddr(t, s, fullAddr2); got != addr2.Address {
+		t.Errorf("got addrForNewConnectionWithAddr(_, _, %+v) = %s, want = %s", got, addr2.Address)
+	}
+
+	// Another PI w/ 0 preferred lifetime should not result in a deprecation
+	// event.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix2, true, true, 100, 0))
+	select {
+	case <-ndpDisp.autoGenAddrC:
+		t.Fatal("unexpectedly got an auto-generated event")
+	default:
+	}
+	expectPrimaryAddr(addr1)
+	if got := addrForNewConnectionWithAddr(t, s, fullAddr2); got != addr2.Address {
+		t.Errorf("got addrForNewConnectionWithAddr(_, _, %+v) = %s, want = %s", got, addr2.Address)
+	}
+
+	// Refresh lifetimes of addr generated from prefix2.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix2, true, true, 100, 100))
+	select {
+	case <-ndpDisp.autoGenAddrC:
+		t.Fatal("unexpectedly got an auto-generated event")
+	default:
+	}
+	expectPrimaryAddr(addr2)
+}
+
+// TestAutoGenAddrTimerDeprecation tests that an address is properly deprecated
+// when its preferred lifetime expires.
+func TestAutoGenAddrTimerDeprecation(t *testing.T) {
+	const nicID = 1
+	const newMinVL = 2
+	newMinVLDuration := newMinVL * time.Second
+	saved := stack.MinPrefixInformationValidLifetimeForUpdate
+	defer func() {
+		stack.MinPrefixInformationValidLifetimeForUpdate = saved
+	}()
+	stack.MinPrefixInformationValidLifetimeForUpdate = newMinVLDuration
+
+	prefix1, _, addr1 := prefixSubnetAddr(0, linkAddr1)
+	prefix2, _, addr2 := prefixSubnetAddr(1, linkAddr1)
+
+	ndpDisp, e, s := stackAndNdpDispatcherWithDefaultRoute(t, nicID)
+
+	expectAutoGenAddrEvent := func(addr tcpip.AddressWithPrefix, eventType ndpAutoGenAddrEventType) {
+		t.Helper()
+
+		select {
+		case e := <-ndpDisp.autoGenAddrC:
+			if diff := checkAutoGenAddrEvent(e, addr, eventType); diff != "" {
+				t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
+			}
+		default:
+			t.Fatal("expected addr auto gen event")
+		}
+	}
+
+	expectAutoGenAddrEventAfter := func(addr tcpip.AddressWithPrefix, eventType ndpAutoGenAddrEventType, timeout time.Duration) {
+		t.Helper()
+
+		select {
+		case e := <-ndpDisp.autoGenAddrC:
+			if diff := checkAutoGenAddrEvent(e, addr, eventType); diff != "" {
+				t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
+			}
+		case <-time.After(timeout):
+			t.Fatal("timed out waiting for addr auto gen event")
+		}
+	}
+
+	expectPrimaryAddr := func(addr tcpip.AddressWithPrefix) {
+		t.Helper()
+
+		if got, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber); err != nil {
+			t.Fatalf("s.GetMainNICAddress(%d, %d): %s", nicID, header.IPv6ProtocolNumber, err)
+		} else if got != addr {
+			t.Errorf("got s.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, header.IPv6ProtocolNumber, got, addr)
+		}
+
+		if got := addrForNewConnection(t, s); got != addr.Address {
+			t.Errorf("got addrForNewConnection = %s, want = %s", got, addr.Address)
+		}
+	}
+
+	// Receive PI for prefix2.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix2, true, true, 100, 100))
+	expectAutoGenAddrEvent(addr2, newAddr)
+	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
+		t.Fatalf("should have %s in the list of addresses", addr2)
+	}
+	expectPrimaryAddr(addr2)
+
+	// Receive a PI for prefix1.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix1, true, true, 100, 90))
+	expectAutoGenAddrEvent(addr1, newAddr)
+	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
+		t.Fatalf("should have %s in the list of addresses", addr1)
+	}
+	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
+		t.Fatalf("should have %s in the list of addresses", addr2)
+	}
+	expectPrimaryAddr(addr1)
+
+	// Refresh lifetime for addr of prefix1.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix1, true, true, newMinVL, newMinVL-1))
+	select {
+	case <-ndpDisp.autoGenAddrC:
+		t.Fatal("unexpectedly got an auto-generated event")
+	default:
+	}
+	expectPrimaryAddr(addr1)
+
+	// Wait for addr of prefix1 to be deprecated.
+	expectAutoGenAddrEventAfter(addr1, deprecatedAddr, newMinVLDuration-time.Second+defaultTimeout)
+	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
+		t.Fatalf("should not have %s in the list of addresses", addr1)
+	}
+	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
+		t.Fatalf("should have %s in the list of addresses", addr2)
+	}
+	// addr2 should be the primary endpoint now since addr1 is deprecated but
+	// addr2 is not.
+	expectPrimaryAddr(addr2)
+	// addr1 is deprecated but if explicitly requested, it should be used.
+	fullAddr1 := tcpip.FullAddress{Addr: addr1.Address, NIC: nicID}
+	if got := addrForNewConnectionWithAddr(t, s, fullAddr1); got != addr1.Address {
+		t.Errorf("got addrForNewConnectionWithAddr(_, _, %+v) = %s, want = %s", got, addr1.Address)
+	}
+
+	// Refresh valid lifetime for addr of prefix1, w/ 0 preferred lifetime to make
+	// sure we do not get a deprecation event again.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix1, true, true, newMinVL, 0))
+	select {
+	case <-ndpDisp.autoGenAddrC:
+		t.Fatal("unexpectedly got an auto-generated event")
+	default:
+	}
+	expectPrimaryAddr(addr2)
+	if got := addrForNewConnectionWithAddr(t, s, fullAddr1); got != addr1.Address {
+		t.Errorf("got addrForNewConnectionWithAddr(_, _, %+v) = %s, want = %s", got, addr1.Address)
+	}
+
+	// Refresh lifetimes for addr of prefix1.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix1, true, true, newMinVL, newMinVL-1))
+	select {
+	case <-ndpDisp.autoGenAddrC:
+		t.Fatal("unexpectedly got an auto-generated event")
+	default:
+	}
+	// addr1 is the primary endpoint again since it is non-deprecated now.
+	expectPrimaryAddr(addr1)
+
+	// Wait for addr of prefix1 to be deprecated.
+	expectAutoGenAddrEventAfter(addr1, deprecatedAddr, newMinVLDuration-time.Second+defaultTimeout)
+	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
+		t.Fatalf("should not have %s in the list of addresses", addr1)
+	}
+	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
+		t.Fatalf("should have %s in the list of addresses", addr2)
+	}
+	// addr2 should be the primary endpoint now since it is not deprecated.
+	expectPrimaryAddr(addr2)
+	if got := addrForNewConnectionWithAddr(t, s, fullAddr1); got != addr1.Address {
+		t.Errorf("got addrForNewConnectionWithAddr(_, _, %+v) = %s, want = %s", got, addr1.Address)
+	}
+
+	// Wait for addr of prefix1 to be invalidated.
+	expectAutoGenAddrEventAfter(addr1, invalidatedAddr, time.Second+defaultTimeout)
+	if contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
+		t.Fatalf("should not have %s in the list of addresses", addr1)
+	}
+	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
+		t.Fatalf("should have %s in the list of addresses", addr2)
+	}
+	expectPrimaryAddr(addr2)
+
+	// Refresh both lifetimes for addr of prefix2 to the same value.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix2, true, true, newMinVL, newMinVL))
+	select {
+	case <-ndpDisp.autoGenAddrC:
+		t.Fatal("unexpectedly got an auto-generated event")
+	default:
+	}
+
+	// Wait for a deprecation then invalidation events, or just an invalidation
+	// event. We need to cover both cases but cannot deterministically hit both
+	// cases because the deprecation and invalidation handlers could be handled in
+	// either deprecation then invalidation, or invalidation then deprecation
+	// (which should be cancelled by the invalidation handler).
+	select {
+	case e := <-ndpDisp.autoGenAddrC:
+		if diff := checkAutoGenAddrEvent(e, addr2, deprecatedAddr); diff == "" {
+			// If we get a deprecation event first, we should get an invalidation
+			// event almost immediately after.
+			select {
+			case e := <-ndpDisp.autoGenAddrC:
+				if diff := checkAutoGenAddrEvent(e, addr2, invalidatedAddr); diff != "" {
+					t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
+				}
+			case <-time.After(defaultTimeout):
+				t.Fatal("timed out waiting for addr auto gen event")
+			}
+		} else if diff := checkAutoGenAddrEvent(e, addr2, invalidatedAddr); diff == "" {
+			// If we get an invalidation  event first, we should not get a deprecation
+			// event after.
+			select {
+			case <-ndpDisp.autoGenAddrC:
+				t.Fatal("unexpectedly got an auto-generated event")
+			case <-time.After(defaultTimeout):
+			}
+		} else {
+			t.Fatalf("got unexpected auto-generated event")
+		}
+
+	case <-time.After(newMinVLDuration + defaultTimeout):
+		t.Fatal("timed out waiting for addr auto gen event")
+	}
+	if contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
+		t.Fatalf("should not have %s in the list of addresses", addr1)
+	}
+	if contains(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
+		t.Fatalf("should not have %s in the list of addresses", addr2)
+	}
+	// Should not have any primary endpoints.
+	if got, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber); err != nil {
+		t.Fatalf("s.GetMainNICAddress(%d, %d): %s", nicID, header.IPv6ProtocolNumber, err)
+	} else if want := (tcpip.AddressWithPrefix{}); got != want {
+		t.Errorf("got s.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, header.IPv6ProtocolNumber, got, want)
+	}
+	wq := waiter.Queue{}
+	we, ch := waiter.NewChannelEntry(nil)
+	wq.EventRegister(&we, waiter.EventIn)
+	defer wq.EventUnregister(&we)
+	defer close(ch)
+	ep, err := s.NewEndpoint(header.UDPProtocolNumber, header.IPv6ProtocolNumber, &wq)
+	if err != nil {
+		t.Fatalf("s.NewEndpoint(%d, %d, _): %s", header.UDPProtocolNumber, header.IPv6ProtocolNumber, err)
+	}
+	defer ep.Close()
+	v := tcpip.V6OnlyOption(1)
+	if err := ep.SetSockOpt(v); err != nil {
+		t.Fatalf("SetSockOpt(%+v): %s", v, err)
+	}
+
+	if err := ep.Connect(dstAddr); err != tcpip.ErrNoRoute {
+		t.Errorf("got ep.Connect(%+v) = %v, want = %s", dstAddr, err, tcpip.ErrNoRoute)
+	}
+}
+
+// Tests transitioning a SLAAC address's valid lifetime between finite and
+// infinite values.
+func TestAutoGenAddrFiniteToInfiniteToFiniteVL(t *testing.T) {
+	const infiniteVLSeconds = 2
+	const minVLSeconds = 1
+	savedIL := header.NDPInfiniteLifetime
+	savedMinVL := stack.MinPrefixInformationValidLifetimeForUpdate
+	defer func() {
+		stack.MinPrefixInformationValidLifetimeForUpdate = savedMinVL
+		header.NDPInfiniteLifetime = savedIL
+	}()
+	stack.MinPrefixInformationValidLifetimeForUpdate = minVLSeconds * time.Second
+	header.NDPInfiniteLifetime = infiniteVLSeconds * time.Second
+
+	prefix, _, addr := prefixSubnetAddr(0, linkAddr1)
+
+	tests := []struct {
+		name       string
+		infiniteVL uint32
+	}{
+		{
+			name:       "EqualToInfiniteVL",
+			infiniteVL: infiniteVLSeconds,
+		},
+		// Our implementation supports changing header.NDPInfiniteLifetime for tests
+		// such that a packet can be received where the lifetime field has a value
+		// greater than header.NDPInfiniteLifetime. Because of this, we test to make
+		// sure that receiving a value greater than header.NDPInfiniteLifetime is
+		// handled the same as when receiving a value equal to
+		// header.NDPInfiniteLifetime.
+		{
+			name:       "MoreThanInfiniteVL",
+			infiniteVL: infiniteVLSeconds + 1,
+		},
+	}
+
+	// This Run will not return until the parallel tests finish.
+	//
+	// We need this because we need to do some teardown work after the
+	// parallel tests complete.
+	//
+	// See https://godoc.org/testing#hdr-Subtests_and_Sub_benchmarks for
+	// more details.
+	t.Run("group", func(t *testing.T) {
+		for _, test := range tests {
+			test := test
+
+			t.Run(test.name, func(t *testing.T) {
+				t.Parallel()
+
+				ndpDisp := ndpDispatcher{
+					autoGenAddrC: make(chan ndpAutoGenAddrEvent, 1),
+				}
+				e := channel.New(0, 1280, linkAddr1)
+				s := stack.New(stack.Options{
+					NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+					NDPConfigs: stack.NDPConfigurations{
+						HandleRAs:              true,
+						AutoGenGlobalAddresses: true,
+					},
+					NDPDisp: &ndpDisp,
+				})
+
+				if err := s.CreateNIC(1, e); err != nil {
+					t.Fatalf("CreateNIC(1) = %s", err)
+				}
+
+				// Receive an RA with finite prefix.
+				e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, true, minVLSeconds, 0))
+				select {
+				case e := <-ndpDisp.autoGenAddrC:
+					if diff := checkAutoGenAddrEvent(e, addr, newAddr); diff != "" {
+						t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
+					}
+
+				default:
+					t.Fatal("expected addr auto gen event")
+				}
+
+				// Receive an new RA with prefix with infinite VL.
+				e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, true, test.infiniteVL, 0))
+
+				// Receive a new RA with prefix with finite VL.
+				e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, true, minVLSeconds, 0))
+
+				select {
+				case e := <-ndpDisp.autoGenAddrC:
+					if diff := checkAutoGenAddrEvent(e, addr, invalidatedAddr); diff != "" {
+						t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
+					}
+
+				case <-time.After(minVLSeconds*time.Second + defaultTimeout):
+					t.Fatal("timeout waiting for addr auto gen event")
+				}
+			})
+		}
+	})
+}
+
 // TestAutoGenAddrValidLifetimeUpdates tests that the valid lifetime of an
 // auto-generated address only gets updated when required to, as specified in
 // RFC 4862 section 5.5.3.e.
 func TestAutoGenAddrValidLifetimeUpdates(t *testing.T) {
 	const infiniteVL = 4294967295
-	const newMinVL = 5
+	const newMinVL = 4
 	saved := stack.MinPrefixInformationValidLifetimeForUpdate
 	defer func() {
 		stack.MinPrefixInformationValidLifetimeForUpdate = saved

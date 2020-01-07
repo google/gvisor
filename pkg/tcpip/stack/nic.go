@@ -249,17 +249,47 @@ func (n *NIC) setSpoofing(enable bool) {
 
 // primaryEndpoint returns the primary endpoint of n for the given network
 // protocol.
+//
+// primaryEndpoint will return the first non-deprecated endpoint if such an
+// endpoint exists. If no non-deprecated endpoint exists, the first deprecated
+// endpoint will be returned.
 func (n *NIC) primaryEndpoint(protocol tcpip.NetworkProtocolNumber) *referencedNetworkEndpoint {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
+	var deprecatedEndpoint *referencedNetworkEndpoint
 	for _, r := range n.primary[protocol] {
-		if r.isValidForOutgoing() && r.tryIncRef() {
-			return r
+		if !r.isValidForOutgoing() {
+			continue
+		}
+
+		if !r.deprecated {
+			if r.tryIncRef() {
+				// r is not deprecated, so return it immediately.
+				//
+				// If we kept track of a deprecated endpoint, decrement its reference
+				// count since it was incremented when we decided to keep track of it.
+				if deprecatedEndpoint != nil {
+					deprecatedEndpoint.decRefLocked()
+					deprecatedEndpoint = nil
+				}
+
+				return r
+			}
+		} else if deprecatedEndpoint == nil && r.tryIncRef() {
+			// We prefer an endpoint that is not deprecated, but we keep track of r in
+			// case n doesn't have any non-deprecated endpoints.
+			//
+			// If we end up finding a more preferred endpoint, r's reference count
+			// will be decremented when such an endpoint is found.
+			deprecatedEndpoint = r
 		}
 	}
 
-	return nil
+	// n doesn't have any valid non-deprecated endpoints, so return
+	// deprecatedEndpoint (which may be nil if n doesn't have any valid deprecated
+	// endpoints either).
+	return deprecatedEndpoint
 }
 
 // hasPermanentAddrLocked returns true if n has a permanent (including currently
@@ -367,7 +397,7 @@ func (n *NIC) getRefOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address t
 			Address:   address,
 			PrefixLen: netProto.DefaultPrefixLen(),
 		},
-	}, peb, temporary, static)
+	}, peb, temporary, static, false)
 
 	n.mu.Unlock()
 	return ref
@@ -416,10 +446,10 @@ func (n *NIC) addPermanentAddressLocked(protocolAddress tcpip.ProtocolAddress, p
 		}
 	}
 
-	return n.addAddressLocked(protocolAddress, peb, permanent, static)
+	return n.addAddressLocked(protocolAddress, peb, permanent, static, false)
 }
 
-func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior, kind networkEndpointKind, configType networkEndpointConfigType) (*referencedNetworkEndpoint, *tcpip.Error) {
+func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior, kind networkEndpointKind, configType networkEndpointConfigType, deprecated bool) (*referencedNetworkEndpoint, *tcpip.Error) {
 	// TODO(b/141022673): Validate IP address before adding them.
 
 	// Sanity check.
@@ -455,6 +485,7 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 		protocol:   protocolAddress.Protocol,
 		kind:       kind,
 		configType: configType,
+		deprecated: deprecated,
 	}
 
 	// Set up cache if link address resolution exists for this protocol.
@@ -551,6 +582,51 @@ func (n *NIC) PrimaryAddresses() []tcpip.ProtocolAddress {
 		}
 	}
 	return addrs
+}
+
+// primaryAddress returns the primary address associated with this NIC.
+//
+// primaryAddress will return the first non-deprecated address if such an
+// address exists. If no non-deprecated address exists, the first deprecated
+// address will be returned.
+func (n *NIC) primaryAddress(proto tcpip.NetworkProtocolNumber) tcpip.AddressWithPrefix {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	list, ok := n.primary[proto]
+	if !ok {
+		return tcpip.AddressWithPrefix{}
+	}
+
+	var deprecatedEndpoint *referencedNetworkEndpoint
+	for _, ref := range list {
+		// Don't include tentative, expired or tempory endpoints to avoid confusion
+		// and prevent the caller from using those.
+		switch ref.getKind() {
+		case permanentTentative, permanentExpired, temporary:
+			continue
+		}
+
+		if !ref.deprecated {
+			return tcpip.AddressWithPrefix{
+				Address:   ref.ep.ID().LocalAddress,
+				PrefixLen: ref.ep.PrefixLen(),
+			}
+		}
+
+		if deprecatedEndpoint == nil {
+			deprecatedEndpoint = ref
+		}
+	}
+
+	if deprecatedEndpoint != nil {
+		return tcpip.AddressWithPrefix{
+			Address:   deprecatedEndpoint.ep.ID().LocalAddress,
+			PrefixLen: deprecatedEndpoint.ep.PrefixLen(),
+		}
+	}
+
+	return tcpip.AddressWithPrefix{}
 }
 
 // AddAddressRange adds a range of addresses to n, so that it starts accepting
@@ -1109,6 +1185,11 @@ type referencedNetworkEndpoint struct {
 	// configType is the method that was used to configure this endpoint.
 	// This must never change after the endpoint is added to a NIC.
 	configType networkEndpointConfigType
+
+	// deprecated indicates whether or not the endpoint should be considered
+	// deprecated. That is, when deprecated is true, other endpoints that are not
+	// deprecated should be preferred.
+	deprecated bool
 }
 
 func (r *referencedNetworkEndpoint) getKind() networkEndpointKind {
