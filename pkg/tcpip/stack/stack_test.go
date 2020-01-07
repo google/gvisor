@@ -2121,6 +2121,55 @@ func TestNICAutoGenAddrWithOpaque(t *testing.T) {
 	}
 }
 
+// TestNoLinkLocalAutoGenForLoopbackNIC tests that IPv6 link-local addresses are
+// not auto-generated for loopback NICs.
+func TestNoLinkLocalAutoGenForLoopbackNIC(t *testing.T) {
+	const nicID = 1
+	const nicName = "nicName"
+
+	tests := []struct {
+		name          string
+		opaqueIIDOpts stack.OpaqueInterfaceIdentifierOptions
+	}{
+		{
+			name:          "IID From MAC",
+			opaqueIIDOpts: stack.OpaqueInterfaceIdentifierOptions{},
+		},
+		{
+			name: "Opaque IID",
+			opaqueIIDOpts: stack.OpaqueInterfaceIdentifierOptions{
+				NICNameFromID: func(_ tcpip.NICID, nicName string) string {
+					return nicName
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			opts := stack.Options{
+				NetworkProtocols:     []stack.NetworkProtocol{ipv6.NewProtocol()},
+				AutoGenIPv6LinkLocal: true,
+				OpaqueIIDOpts:        test.opaqueIIDOpts,
+			}
+
+			e := channel.New(0, 1280, linkAddr1)
+			s := stack.New(opts)
+			if err := s.CreateNamedLoopbackNIC(nicID, nicName, e); err != nil {
+				t.Fatalf("CreateNamedLoopbackNIC(%d, %q, _) = %s", nicID, nicName, err)
+			}
+
+			addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
+			if err != nil {
+				t.Fatalf("stack.GetMainNICAddress(%d, _) err = %s", nicID, err)
+			}
+			if want := (tcpip.AddressWithPrefix{}); addr != want {
+				t.Errorf("got stack.GetMainNICAddress(%d, _) = %s, want = %s", nicID, addr, want)
+			}
+		})
+	}
+}
+
 // TestNICAutoGenAddrDoesDAD tests that the successful auto-generation of IPv6
 // link-local addresses will only be assigned after the DAD process resolves.
 func TestNICAutoGenAddrDoesDAD(t *testing.T) {

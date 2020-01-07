@@ -174,7 +174,8 @@ func (n *NIC) enable() *tcpip.Error {
 		return err
 	}
 
-	if !n.stack.autoGenIPv6LinkLocal {
+	// Do not auto-generate an IPv6 link-local address for loopback devices.
+	if !n.stack.autoGenIPv6LinkLocal || n.loopback {
 		return nil
 	}
 

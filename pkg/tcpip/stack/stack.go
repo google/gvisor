@@ -444,8 +444,8 @@ type Stack struct {
 	ndpConfigs NDPConfigurations
 
 	// autoGenIPv6LinkLocal determines whether or not the stack will attempt
-	// to auto-generate an IPv6 link-local address for newly enabled NICs.
-	// See the AutoGenIPv6LinkLocal field of Options for more details.
+	// to auto-generate an IPv6 link-local address for newly enabled non-loopback
+	// NICs. See the AutoGenIPv6LinkLocal field of Options for more details.
 	autoGenIPv6LinkLocal bool
 
 	// ndpDisp is the NDP event dispatcher that is used to send the netstack
@@ -496,13 +496,15 @@ type Options struct {
 	// before assigning an address to a NIC.
 	NDPConfigs NDPConfigurations
 
-	// AutoGenIPv6LinkLocal determins whether or not the stack will attempt
-	// to auto-generate an IPv6 link-local address for newly enabled NICs.
+	// AutoGenIPv6LinkLocal determines whether or not the stack will attempt to
+	// auto-generate an IPv6 link-local address for newly enabled non-loopback
+	// NICs.
+	//
 	// Note, setting this to true does not mean that a link-local address
-	// will be assigned right away, or at all. If Duplicate Address
-	// Detection is enabled, an address will only be assigned if it
-	// successfully resolves. If it fails, no further attempt will be made
-	// to auto-generate an IPv6 link-local address.
+	// will be assigned right away, or at all. If Duplicate Address Detection
+	// is enabled, an address will only be assigned if it successfully resolves.
+	// If it fails, no further attempt will be made to auto-generate an IPv6
+	// link-local address.
 	//
 	// The generated link-local address will follow RFC 4291 Appendix A
 	// guidelines.
