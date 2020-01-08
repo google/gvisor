@@ -224,7 +224,7 @@ type commonEndpoint interface {
 
 	// SetSockOptInt implements tcpip.Endpoint.SetSockOptInt and
 	// transport.Endpoint.SetSockOptInt.
-	SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error
+	SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error
 
 	// GetSockOpt implements tcpip.Endpoint.GetSockOpt and
 	// transport.Endpoint.GetSockOpt.
@@ -232,7 +232,7 @@ type commonEndpoint interface {
 
 	// GetSockOptInt implements tcpip.Endpoint.GetSockOptInt and
 	// transport.Endpoint.GetSockOpt.
-	GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error)
+	GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error)
 }
 
 // SocketOperations encapsulates all the state needed to represent a network stack

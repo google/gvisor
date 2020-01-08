@@ -177,7 +177,7 @@ type Endpoint interface {
 
 	// SetSockOptInt sets a socket option for simple cases when a value has
 	// the int type.
-	SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error
+	SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error
 
 	// GetSockOpt gets a socket option. opt should be a pointer to one of the
 	// tcpip.*Option types.
@@ -185,7 +185,7 @@ type Endpoint interface {
 
 	// GetSockOptInt gets a socket option for simple cases when a return
 	// value has the int type.
-	GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error)
+	GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error)
 
 	// State returns the current state of the socket, as represented by Linux in
 	// procfs.
@@ -851,11 +851,11 @@ func (e *baseEndpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 	return nil
 }
 
-func (e *baseEndpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
+func (e *baseEndpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	return nil
 }
 
-func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
+func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 	switch opt {
 	case tcpip.ReceiveQueueSizeOption:
 		v := 0
