@@ -238,11 +238,11 @@ func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadS
 }
 
 // WritePacket writes a packet to the given destination address and protocol.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, loop stack.PacketLooping, pkt tcpip.PacketBuffer) *tcpip.Error {
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, pkt tcpip.PacketBuffer) *tcpip.Error {
 	ip := e.addIPHeader(r, &pkt.Header, pkt.Data.Size(), params)
 	pkt.NetworkHeader = buffer.View(ip)
 
-	if loop&stack.PacketLoop != 0 {
+	if r.Loop&stack.PacketLoop != 0 {
 		// The inbound path expects the network header to still be in
 		// the PacketBuffer's Data field.
 		views := make([]buffer.View, 1, 1+len(pkt.Data.Views()))
@@ -256,7 +256,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 
 		loopedR.Release()
 	}
-	if loop&stack.PacketOut == 0 {
+	if r.Loop&stack.PacketOut == 0 {
 		return nil
 	}
 	if pkt.Header.UsedLength()+pkt.Data.Size() > int(e.linkEP.MTU()) && (gso == nil || gso.Type == stack.GSONone) {
@@ -270,11 +270,11 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 }
 
 // WritePackets implements stack.NetworkEndpoint.WritePackets.
-func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []tcpip.PacketBuffer, params stack.NetworkHeaderParams, loop stack.PacketLooping) (int, *tcpip.Error) {
-	if loop&stack.PacketLoop != 0 {
+func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []tcpip.PacketBuffer, params stack.NetworkHeaderParams) (int, *tcpip.Error) {
+	if r.Loop&stack.PacketLoop != 0 {
 		panic("multiple packets in local loop")
 	}
-	if loop&stack.PacketOut == 0 {
+	if r.Loop&stack.PacketOut == 0 {
 		return len(pkts), nil
 	}
 
@@ -289,7 +289,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []tcpip.Pac
 
 // WriteHeaderIncludedPacket writes a packet already containing a network
 // header through the given route.
-func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, loop stack.PacketLooping, pkt tcpip.PacketBuffer) *tcpip.Error {
+func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt tcpip.PacketBuffer) *tcpip.Error {
 	// The packet already has an IP header, but there are a few required
 	// checks.
 	ip := header.IPv4(pkt.Data.First())
@@ -324,10 +324,10 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, loop stack.PacketLo
 	ip.SetChecksum(0)
 	ip.SetChecksum(^ip.CalculateChecksum())
 
-	if loop&stack.PacketLoop != 0 {
+	if r.Loop&stack.PacketLoop != 0 {
 		e.HandlePacket(r, pkt.Clone())
 	}
-	if loop&stack.PacketOut == 0 {
+	if r.Loop&stack.PacketOut == 0 {
 		return nil
 	}
 
