@@ -2097,8 +2097,9 @@ func TestNICAutoGenAddrWithOpaque(t *testing.T) {
 
 			e := channel.New(10, 1280, test.linkAddr)
 			s := stack.New(opts)
-			if err := s.CreateNamedNIC(nicID, test.nicName, e); err != nil {
-				t.Fatalf("CreateNamedNIC(%d, %q, _) = %s", nicID, test.nicName, err)
+			nicOpts := stack.NICOptions{Name: test.nicName}
+			if err := s.CreateNICWithOptions(nicID, e, nicOpts); err != nil {
+				t.Fatalf("CreateNICWithOptions(%d, _, %+v) = %s", nicID, opts, err)
 			}
 
 			addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
@@ -2156,8 +2157,9 @@ func TestNoLinkLocalAutoGenForLoopbackNIC(t *testing.T) {
 
 			e := loopback.New()
 			s := stack.New(opts)
-			if err := s.CreateNamedNIC(nicID, nicName, e); err != nil {
-				t.Fatalf("CreateNamedNIC(%d, %q, _) = %s", nicID, nicName, err)
+			nicOpts := stack.NICOptions{Name: nicName}
+			if err := s.CreateNICWithOptions(nicID, e, nicOpts); err != nil {
+				t.Fatalf("CreateNICWithOptions(%d, _, %+v) = %s", nicID, nicOpts, err)
 			}
 
 			addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)

@@ -2500,9 +2500,9 @@ func TestAutoGenAddrWithOpaqueIID(t *testing.T) {
 			SecretKey: secretKey,
 		},
 	})
-
-	if err := s.CreateNamedNIC(nicID, nicName, e); err != nil {
-		t.Fatalf("CreateNamedNIC(%d, %q, _) = %s", nicID, nicName, err)
+	opts := stack.NICOptions{Name: nicName}
+	if err := s.CreateNICWithOptions(nicID, e, opts); err != nil {
+		t.Fatalf("CreateNICWithOptions(%d, _, %+v, _) = %s", nicID, opts, err)
 	}
 
 	expectAutoGenAddrEvent := func(addr tcpip.AddressWithPrefix, eventType ndpAutoGenAddrEventType) {

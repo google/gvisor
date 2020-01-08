@@ -158,15 +158,17 @@ func New(t *testing.T, mtu uint32) *Context {
 	if testing.Verbose() {
 		wep = sniffer.New(ep)
 	}
-	if err := s.CreateNamedNIC(1, "nic1", wep); err != nil {
-		t.Fatalf("CreateNIC failed: %v", err)
+	opts := stack.NICOptions{Name: "nic1"}
+	if err := s.CreateNICWithOptions(1, wep, opts); err != nil {
+		t.Fatalf("CreateNICWithOptions(_, _, %+v) failed: %v", opts, err)
 	}
 	wep2 := stack.LinkEndpoint(channel.New(1000, mtu, ""))
 	if testing.Verbose() {
 		wep2 = sniffer.New(channel.New(1000, mtu, ""))
 	}
-	if err := s.CreateNamedNIC(2, "nic2", wep2); err != nil {
-		t.Fatalf("CreateNIC failed: %v", err)
+	opts2 := stack.NICOptions{Name: "nic2"}
+	if err := s.CreateNICWithOptions(2, wep2, opts2); err != nil {
+		t.Fatalf("CreateNICWithOptions(_, _, %+v) failed: %v", opts2, err)
 	}
 
 	if err := s.AddAddress(1, ipv4.ProtocolNumber, StackAddr); err != nil {
