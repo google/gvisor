@@ -955,11 +955,12 @@ func (e *endpoint) readLocked() (buffer.View, *tcpip.Error) {
 	}
 
 	e.rcvBufUsed -= len(v)
-	// If the window was zero before this read and if the read freed up
-	// enough buffer space for the scaled window to be non-zero then notify
-	// the protocol goroutine to send a window update.
-	if e.zeroWindow && !e.zeroReceiveWindow(e.rcv.rcvWndScale) {
-		e.zeroWindow = false
+
+	// If the window was small before this read and if the read
+	// freed up enough buffer space, to either fit an aMSS or half
+	// a receive buffer (whichever smaller), then notify the
+	// protocol goroutine to send a window update.
+	if e.windowCrossedACKThreshold(len(v)) == 1 {
 		e.notifyProtocolGoroutine(notifyNonZeroReceiveWindow)
 	}
 
@@ -1133,16 +1134,35 @@ func (e *endpoint) Peek(vec [][]byte) (int64, tcpip.ControlMessages, *tcpip.Erro
 	return num, tcpip.ControlMessages{}, nil
 }
 
-// zeroReceiveWindow checks if the receive window to be announced now would be
-// zero, based on the amount of available buffer and the receive window scaling.
+// windowCrossedACKThreshold checks if the receive window to be announced now would be
+// under aMSS or under half receive buffer, whichever smaller. This is useful as
+// a receive side silly window syndrome prevention mechanism. If window grows
+// to reasonable value, we should send ACK to the sender to inform the rx space is now
+// large. We also want ensure a series of small read()'s won't trigger a flood of
+// spurious tiny ACK's.
 //
-// It must be called with rcvListMu held.
-func (e *endpoint) zeroReceiveWindow(scale uint8) bool {
-	if e.rcvBufUsed >= e.rcvBufSize {
-		return true
+// For large receive buffers, the threshold is aMSS - once reader reads more than aMSS
+// we'll send ACK. For tiny receive buffers, the threshold is half of receive buffer size.
+// This is chosen arbitrairly.
+func (e *endpoint) windowCrossedACKThreshold(deltaBefore int) int {
+	newAvail := e.receiveBufferAvailableLocked()
+	oldAvail := newAvail - deltaBefore
+	if oldAvail < 0 {
+		oldAvail = 0
 	}
 
-	return ((e.rcvBufSize - e.rcvBufUsed) >> scale) == 0
+	threshold := int(e.amss)
+	if threshold > e.rcvBufSize/2 {
+		threshold = e.rcvBufSize / 2
+	}
+
+	switch {
+	case oldAvail < threshold && newAvail >= threshold:
+		return 1
+	case oldAvail >= threshold && newAvail < threshold:
+		return -1
+	}
+	return 0
 }
 
 // SetSockOptInt sets a socket option.
@@ -1181,10 +1201,17 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 			size = math.MaxInt32 / 2
 		}
 
+		availBefore := e.receiveBufferAvailableLocked()
 		e.rcvBufSize = size
+		availAfter := e.receiveBufferAvailableLocked()
+
 		e.rcvAutoParams.disabled = true
-		if e.zeroWindow && !e.zeroReceiveWindow(scale) {
-			e.zeroWindow = false
+
+		// Immediatelly send an ACK to uncork the sender silly
+		// window syndrome prevetion, when our available space
+		// grows above aMSS or half receive buffer, whichever
+		// smaller.
+		if e.windowCrossedACKThreshold(availAfter-availBefore) == 1 {
 			mask |= notifyNonZeroReceiveWindow
 		}
 		e.rcvListMu.Unlock()
@@ -2225,13 +2252,11 @@ func (e *endpoint) readyToRead(s *segment) {
 	if s != nil {
 		s.incRef()
 		e.rcvBufUsed += s.data.Size()
-		// Check if the receive window is now closed. If so make sure
-		// we set the zero window before we deliver the segment to ensure
-		// that a subsequent read of the segment will correctly trigger
-		// a non-zero notification.
-		if avail := e.receiveBufferAvailableLocked(); avail>>e.rcv.rcvWndScale == 0 {
+		// Increase counter if the receive window falls down
+		// below MSS or half receive buffer size, whichever
+		// smaller.
+		if e.windowCrossedACKThreshold(-s.data.Size()) == -1 {
 			e.stats.ReceiveErrors.ZeroRcvWindowState.Increment()
-			e.zeroWindow = true
 		}
 		e.rcvList.PushBack(s)
 	} else {
