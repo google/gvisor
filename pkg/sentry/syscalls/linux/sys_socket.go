@@ -41,7 +41,7 @@ const maxListenBacklog = 1024
 const maxAddrLen = 200
 
 // maxOptLen is the maximum sockopt parameter length we're willing to accept.
-const maxOptLen = 1024
+const maxOptLen = 1024 * 8
 
 // maxControlLen is the maximum length of the msghdr.msg_control buffer we're
 // willing to accept. Note that this limit is smaller than Linux, which allows

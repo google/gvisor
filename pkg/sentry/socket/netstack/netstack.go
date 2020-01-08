@@ -326,7 +326,7 @@ func AddressAndFamily(sfamily int, addr []byte, strict bool) (tcpip.FullAddress,
 	}
 
 	family := usermem.ByteOrder.Uint16(addr)
-	if family != uint16(sfamily) && (!strict && family != linux.AF_UNSPEC) {
+	if family != uint16(sfamily) && (strict || family != linux.AF_UNSPEC) {
 		return tcpip.FullAddress{}, family, syserr.ErrAddressFamilyNotSupported
 	}
 
@@ -1357,7 +1357,8 @@ func (s *SocketOperations) SetSockOpt(t *kernel.Task, level int, name int, optVa
 	}
 
 	if s.skType == linux.SOCK_RAW && level == linux.IPPROTO_IP {
-		if name == linux.IPT_SO_SET_REPLACE {
+		switch name {
+		case linux.IPT_SO_SET_REPLACE:
 			if len(optVal) < linux.SizeOfIPTReplace {
 				return syserr.ErrInvalidArgument
 			}
@@ -1371,7 +1372,8 @@ func (s *SocketOperations) SetSockOpt(t *kernel.Task, level int, name int, optVa
 				return err
 			}
 			return nil
-		} else if name == linux.IPT_SO_SET_ADD_COUNTERS {
+
+		case linux.IPT_SO_SET_ADD_COUNTERS:
 			// TODO(gvisor.dev/issue/170): Counter support.
 			return nil
 		}
