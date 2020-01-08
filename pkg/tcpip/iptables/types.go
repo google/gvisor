@@ -113,11 +113,11 @@ type Table struct {
 	// Rules holds the rules that make up the table.
 	Rules []Rule
 
-	// BuiltinChains maps builtin chains to their entrypoints.
+	// BuiltinChains maps builtin chains to their entrypoint rule in Rules.
 	BuiltinChains map[Hook]int
 
-	// Underflows maps builtin chains to their underflow point (i.e. the
-	// rule to execute if the chain returns without a verdict).
+	// Underflows maps builtin chains to their underflow rule in Rules
+	// (i.e. the rule to execute if the chain returns without a verdict).
 	Underflows map[Hook]int
 
 	// UserChains holds user-defined chains for the keyed by name. Users

@@ -376,8 +376,6 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 		Size:       replace.Size,
 	})
 	ipt.Tables[replace.Name.String()] = table
-	// TODO: Do we need to worry about locking? We could write rules while
-	// packets traverse tables.
 	stack.SetIPTables(ipt)
 
 	return nil
