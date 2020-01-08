@@ -167,6 +167,11 @@ func Splice(ctx context.Context, dst *File, src *File, opts SpliceOpts) (int64, 
 		if !srcPipe && !opts.SrcOffset {
 			atomic.StoreInt64(&src.offset, src.offset+n)
 		}
+
+		// Don't report any errors if we have some progress without data loss.
+		if w.Err == nil {
+			err = nil
+		}
 	}
 
 	// Drop locks.
