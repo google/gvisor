@@ -61,11 +61,7 @@ func (c *testContext) createV6Endpoint(v6only bool) {
 		c.t.Fatalf("NewEndpoint failed: %v", err)
 	}
 
-	var v tcpip.V6OnlyOption
-	if v6only {
-		v = 1
-	}
-	if err := c.ep.SetSockOpt(v); err != nil {
+	if err := c.ep.SetSockOptBool(tcpip.V6OnlyOption, v6only); err != nil {
 		c.t.Fatalf("SetSockOpt failed: %v", err)
 	}
 }
@@ -201,54 +197,54 @@ func TestDistribution(t *testing.T) {
 			"BindPortReuse",
 			// 5 endpoints that all have reuse set.
 			[]endpointSockopts{
-				endpointSockopts{1, ""},
-				endpointSockopts{1, ""},
-				endpointSockopts{1, ""},
-				endpointSockopts{1, ""},
-				endpointSockopts{1, ""},
+				{1, ""},
+				{1, ""},
+				{1, ""},
+				{1, ""},
+				{1, ""},
 			},
 			map[string][]float64{
 				// Injected packets on dev0 get distributed evenly.
-				"dev0": []float64{0.2, 0.2, 0.2, 0.2, 0.2},
+				"dev0": {0.2, 0.2, 0.2, 0.2, 0.2},
 			},
 		},
 		{
 			"BindToDevice",
 			// 3 endpoints with various bindings.
 			[]endpointSockopts{
-				endpointSockopts{0, "dev0"},
-				endpointSockopts{0, "dev1"},
-				endpointSockopts{0, "dev2"},
+				{0, "dev0"},
+				{0, "dev1"},
+				{0, "dev2"},
 			},
 			map[string][]float64{
 				// Injected packets on dev0 go only to the endpoint bound to dev0.
-				"dev0": []float64{1, 0, 0},
+				"dev0": {1, 0, 0},
 				// Injected packets on dev1 go only to the endpoint bound to dev1.
-				"dev1": []float64{0, 1, 0},
+				"dev1": {0, 1, 0},
 				// Injected packets on dev2 go only to the endpoint bound to dev2.
-				"dev2": []float64{0, 0, 1},
+				"dev2": {0, 0, 1},
 			},
 		},
 		{
 			"ReuseAndBindToDevice",
 			// 6 endpoints with various bindings.
 			[]endpointSockopts{
-				endpointSockopts{1, "dev0"},
-				endpointSockopts{1, "dev0"},
-				endpointSockopts{1, "dev1"},
-				endpointSockopts{1, "dev1"},
-				endpointSockopts{1, "dev1"},
-				endpointSockopts{1, ""},
+				{1, "dev0"},
+				{1, "dev0"},
+				{1, "dev1"},
+				{1, "dev1"},
+				{1, "dev1"},
+				{1, ""},
 			},
 			map[string][]float64{
 				// Injected packets on dev0 get distributed among endpoints bound to
 				// dev0.
-				"dev0": []float64{0.5, 0.5, 0, 0, 0, 0},
+				"dev0": {0.5, 0.5, 0, 0, 0, 0},
 				// Injected packets on dev1 get distributed among endpoints bound to
 				// dev1 or unbound.
-				"dev1": []float64{0, 0, 1. / 3, 1. / 3, 1. / 3, 0},
+				"dev1": {0, 0, 1. / 3, 1. / 3, 1. / 3, 0},
 				// Injected packets on dev999 go only to the unbound.
-				"dev999": []float64{0, 0, 0, 0, 0, 1},
+				"dev999": {0, 0, 0, 0, 0, 1},
 			},
 		},
 	} {

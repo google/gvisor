@@ -102,9 +102,19 @@ func (*fakeTransportEndpoint) SetSockOpt(interface{}) *tcpip.Error {
 	return tcpip.ErrInvalidEndpointState
 }
 
+// SetSockOptBool sets a socket option. Currently not supported.
+func (*fakeTransportEndpoint) SetSockOptBool(tcpip.SockOptBool, bool) *tcpip.Error {
+	return tcpip.ErrInvalidEndpointState
+}
+
 // SetSockOptInt sets a socket option. Currently not supported.
 func (*fakeTransportEndpoint) SetSockOptInt(tcpip.SockOptInt, int) *tcpip.Error {
 	return tcpip.ErrInvalidEndpointState
+}
+
+// GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.
+func (*fakeTransportEndpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
+	return false, tcpip.ErrUnknownProtocolOption
 }
 
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
