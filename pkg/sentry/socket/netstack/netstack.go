@@ -826,7 +826,11 @@ func (s *SocketOperations) GetSockOpt(t *kernel.Task, level, name int, outPtr us
 				return nil, syserr.ErrInvalidArgument
 			}
 
-			info, err := netfilter.GetInfo(t, s.Endpoint, outPtr)
+			stack := inet.StackFromContext(t)
+			if stack == nil {
+				return nil, syserr.ErrNoDevice
+			}
+			info, err := netfilter.GetInfo(t, stack.(*Stack).Stack, outPtr)
 			if err != nil {
 				return nil, err
 			}
@@ -837,7 +841,11 @@ func (s *SocketOperations) GetSockOpt(t *kernel.Task, level, name int, outPtr us
 				return nil, syserr.ErrInvalidArgument
 			}
 
-			entries, err := netfilter.GetEntries(t, s.Endpoint, outPtr, outLen)
+			stack := inet.StackFromContext(t)
+			if stack == nil {
+				return nil, syserr.ErrNoDevice
+			}
+			entries, err := netfilter.GetEntries(t, stack.(*Stack).Stack, outPtr, outLen)
 			if err != nil {
 				return nil, err
 			}

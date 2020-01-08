@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 	"gvisor.dev/gvisor/pkg/tcpip/network/fragmentation"
 	"gvisor.dev/gvisor/pkg/tcpip/network/hash"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -54,10 +55,11 @@ type endpoint struct {
 	dispatcher    stack.TransportDispatcher
 	fragmentation *fragmentation.Fragmentation
 	protocol      *protocol
+	stack         *stack.Stack
 }
 
 // NewEndpoint creates a new ipv4 endpoint.
-func (p *protocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint) (stack.NetworkEndpoint, *tcpip.Error) {
+func (p *protocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint, st *stack.Stack) (stack.NetworkEndpoint, *tcpip.Error) {
 	e := &endpoint{
 		nicID:         nicID,
 		id:            stack.NetworkEndpointID{LocalAddress: addrWithPrefix.Address},
@@ -66,6 +68,7 @@ func (p *protocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWi
 		dispatcher:    dispatcher,
 		fragmentation: fragmentation.NewFragmentation(fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, fragmentation.DefaultReassembleTimeout),
 		protocol:      p,
+		stack:         st,
 	}
 
 	return e, nil
@@ -351,7 +354,8 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
 	pkt.NetworkHeader = headerView[:h.HeaderLength()]
 
 	// iptables filtering.
-	if ok := iptables.Check(iptables.Input, pkt); !ok {
+	ipt := e.stack.IPTables()
+	if ok := ipt.Check(iptables.Input, pkt); !ok {
 		// iptables is telling us to drop the packet.
 		return
 	}
