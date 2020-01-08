@@ -108,13 +108,17 @@ PosixError SetAddrPort(int family, sockaddr_storage* addr, uint16_t port) {
 // Binds sockets to different devices and then creates many TCP connections.
 // Checks that the distribution of connections received on the sockets matches
 // the expectation.
-TEST_P(BindToDeviceDistributionTest, Tcp) {
+//
+// TODO(gvisor.dev/issue/940): Remove _NoRandomSave when portHint/stack.Seed is
+// saved/restored.
+TEST_P(BindToDeviceDistributionTest, Tcp_NoRandomSave) {
   auto const& [listener_connector, test] = GetParam();
 
   TestAddress const& listener = listener_connector.listener;
   TestAddress const& connector = listener_connector.connector;
   sockaddr_storage listen_addr = listener.addr;
   sockaddr_storage conn_addr = connector.addr;
+  constexpr int kConnectAttempts = 4096;
 
   auto interface_names = GetInterfaceNames();
 
@@ -144,7 +148,7 @@ TEST_P(BindToDeviceDistributionTest, Tcp) {
     ASSERT_THAT(
         bind(fd, reinterpret_cast<sockaddr*>(&listen_addr), listener.addr_len),
         SyscallSucceeds());
-    ASSERT_THAT(listen(fd, 40), SyscallSucceeds());
+    ASSERT_THAT(listen(fd, kConnectAttempts), SyscallSucceeds());
 
     // On the first bind we need to determine which port was bound.
     if (listener_fds.size() > 1) {
@@ -162,7 +166,6 @@ TEST_P(BindToDeviceDistributionTest, Tcp) {
     ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
   }
 
-  constexpr int kConnectAttempts = 10000;
   std::atomic<int> connects_received = ATOMIC_VAR_INIT(0);
   std::vector<int> accept_counts(listener_fds.size(), 0);
   std::vector<std::unique_ptr<ScopedThread>> listen_threads(
