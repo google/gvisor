@@ -40,7 +40,6 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
-	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -445,9 +444,6 @@ type Endpoint interface {
 	//
 	// NOTE: This method is a no-op for sockets other than TCP.
 	ModerateRecvBuf(copied int)
-
-	// IPTables returns the iptables for this endpoint's stack.
-	IPTables() (iptables.IPTables, error)
 
 	// Info returns a copy to the transport endpoint info.
 	Info() EndpointInfo

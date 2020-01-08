@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -45,7 +44,7 @@ type metadata struct {
 }
 
 // GetInfo returns information about iptables.
-func GetInfo(t *kernel.Task, ep tcpip.Endpoint, outPtr usermem.Addr) (linux.IPTGetinfo, *syserr.Error) {
+func GetInfo(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr) (linux.IPTGetinfo, *syserr.Error) {
 	// Read in the struct and table name.
 	var info linux.IPTGetinfo
 	if _, err := t.CopyIn(outPtr, &info); err != nil {
@@ -53,7 +52,7 @@ func GetInfo(t *kernel.Task, ep tcpip.Endpoint, outPtr usermem.Addr) (linux.IPTG
 	}
 
 	// Find the appropriate table.
-	table, err := findTable(ep, info.Name.String())
+	table, err := findTable(stack, info.Name.String())
 	if err != nil {
 		return linux.IPTGetinfo{}, err
 	}
@@ -76,7 +75,7 @@ func GetInfo(t *kernel.Task, ep tcpip.Endpoint, outPtr usermem.Addr) (linux.IPTG
 }
 
 // GetEntries returns netstack's iptables rules encoded for the iptables tool.
-func GetEntries(t *kernel.Task, ep tcpip.Endpoint, outPtr usermem.Addr, outLen int) (linux.KernelIPTGetEntries, *syserr.Error) {
+func GetEntries(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, outLen int) (linux.KernelIPTGetEntries, *syserr.Error) {
 	// Read in the struct and table name.
 	var userEntries linux.IPTGetEntries
 	if _, err := t.CopyIn(outPtr, &userEntries); err != nil {
@@ -84,7 +83,7 @@ func GetEntries(t *kernel.Task, ep tcpip.Endpoint, outPtr usermem.Addr, outLen i
 	}
 
 	// Find the appropriate table.
-	table, err := findTable(ep, userEntries.Name.String())
+	table, err := findTable(stack, userEntries.Name.String())
 	if err != nil {
 		return linux.KernelIPTGetEntries{}, err
 	}
@@ -103,12 +102,8 @@ func GetEntries(t *kernel.Task, ep tcpip.Endpoint, outPtr usermem.Addr, outLen i
 	return entries, nil
 }
 
-func findTable(ep tcpip.Endpoint, tableName string) (iptables.Table, *syserr.Error) {
-	ipt, err := ep.IPTables()
-	if err != nil {
-		return iptables.Table{}, syserr.FromError(err)
-	}
-	table, ok := ipt.Tables[tableName]
+func findTable(stack *stack.Stack, tableName string) (iptables.Table, *syserr.Error) {
+	table, ok := stack.IPTables().Tables[tableName]
 	if !ok {
 		return iptables.Table{}, syserr.ErrInvalidArgument
 	}

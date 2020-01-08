@@ -282,7 +282,7 @@ type NetworkProtocol interface {
 	ParseAddresses(v buffer.View) (src, dst tcpip.Address)
 
 	// NewEndpoint creates a new endpoint of this protocol.
-	NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache LinkAddressCache, dispatcher TransportDispatcher, sender LinkEndpoint) (NetworkEndpoint, *tcpip.Error)
+	NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache LinkAddressCache, dispatcher TransportDispatcher, sender LinkEndpoint, st *Stack) (NetworkEndpoint, *tcpip.Error)
 
 	// SetOption allows enabling/disabling protocol specific features.
 	// SetOption returns an error if the option is not supported or the
