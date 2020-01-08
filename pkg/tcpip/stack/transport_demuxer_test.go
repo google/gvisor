@@ -80,8 +80,9 @@ func newDualTestContextMultiNic(t *testing.T, mtu uint32, linkEpNames []string) 
 	for i, linkEpName := range linkEpNames {
 		channelEP := channel.New(256, mtu, "")
 		nicID := tcpip.NICID(i + 1)
-		if err := s.CreateNamedNIC(nicID, linkEpName, channelEP); err != nil {
-			t.Fatalf("CreateNIC failed: %v", err)
+		opts := stack.NICOptions{Name: linkEpName}
+		if err := s.CreateNICWithOptions(nicID, channelEP, opts); err != nil {
+			t.Fatalf("CreateNICWithOptions(_, _, %+v) failed: %v", opts, err)
 		}
 		linkEPs[linkEpName] = channelEP
 

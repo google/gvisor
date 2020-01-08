@@ -796,9 +796,21 @@ func (s *Stack) NewPacketEndpoint(cooked bool, netProto tcpip.NetworkProtocolNum
 	return s.rawFactory.NewPacketEndpoint(s, cooked, netProto, waiterQueue)
 }
 
-// createNIC creates a NIC with the provided id and link-layer endpoint, and
-// optionally enable it.
-func (s *Stack) createNIC(id tcpip.NICID, name string, ep LinkEndpoint, enabled bool) *tcpip.Error {
+// NICOptions specifies the configuration of a NIC as it is being created.
+// The zero value creates an enabled, unnamed NIC.
+type NICOptions struct {
+	// Name specifies the name of the NIC.
+	Name string
+
+	// Disabled specifies whether to avoid calling Attach on the passed
+	// LinkEndpoint.
+	Disabled bool
+}
+
+// CreateNICWithOptions creates a NIC with the provided id, LinkEndpoint, and
+// NICOptions. See the documentation on type NICOptions for details on how
+// NICs can be configured.
+func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *tcpip.Error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -807,38 +819,20 @@ func (s *Stack) createNIC(id tcpip.NICID, name string, ep LinkEndpoint, enabled 
 		return tcpip.ErrDuplicateNICID
 	}
 
-	n := newNIC(s, id, name, ep)
+	n := newNIC(s, id, opts.Name, ep)
 
 	s.nics[id] = n
-	if enabled {
+	if !opts.Disabled {
 		return n.enable()
 	}
 
 	return nil
 }
 
-// CreateNIC creates a NIC with the provided id and link-layer endpoint.
+// CreateNIC creates a NIC with the provided id and LinkEndpoint and calls
+// `LinkEndpoint.Attach` to start delivering packets to it.
 func (s *Stack) CreateNIC(id tcpip.NICID, ep LinkEndpoint) *tcpip.Error {
-	return s.createNIC(id, "", ep, true)
-}
-
-// CreateNamedNIC creates a NIC with the provided id and link-layer endpoint,
-// and a human-readable name.
-func (s *Stack) CreateNamedNIC(id tcpip.NICID, name string, ep LinkEndpoint) *tcpip.Error {
-	return s.createNIC(id, name, ep, true)
-}
-
-// CreateDisabledNIC creates a NIC with the provided id and link-layer endpoint,
-// but leave it disable. Stack.EnableNIC must be called before the link-layer
-// endpoint starts delivering packets to it.
-func (s *Stack) CreateDisabledNIC(id tcpip.NICID, ep LinkEndpoint) *tcpip.Error {
-	return s.createNIC(id, "", ep, false)
-}
-
-// CreateDisabledNamedNIC is a combination of CreateNamedNIC and
-// CreateDisabledNIC.
-func (s *Stack) CreateDisabledNamedNIC(id tcpip.NICID, name string, ep LinkEndpoint) *tcpip.Error {
-	return s.createNIC(id, name, ep, false)
+	return s.CreateNICWithOptions(id, ep, NICOptions{})
 }
 
 // EnableNIC enables the given NIC so that the link-layer endpoint can start

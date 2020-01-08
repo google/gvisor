@@ -3794,8 +3794,9 @@ func TestBindToDeviceOption(t *testing.T) {
 	}
 	defer ep.Close()
 
-	if err := s.CreateNamedNIC(321, "my_device", loopback.New()); err != nil {
-		t.Errorf("CreateNamedNIC failed: %v", err)
+	opts := stack.NICOptions{Name: "my_device"}
+	if err := s.CreateNICWithOptions(321, loopback.New(), opts); err != nil {
+		t.Errorf("CreateNICWithOptions(_, _, %+v) failed: %v", opts, err)
 	}
 
 	// Make an nameless NIC.
