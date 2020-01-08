@@ -16,6 +16,7 @@ package proc
 
 import (
 	"fmt"
+	"math"
 	"path"
 	"strconv"
 	"testing"
@@ -28,6 +29,18 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
+)
+
+var (
+	// Next offset 256 by convention. Adds 1 for the next offset.
+	selfLink       = vfs.Dirent{Type: linux.DT_LNK, NextOff: 256 + 0 + 1}
+	threadSelfLink = vfs.Dirent{Type: linux.DT_LNK, NextOff: 256 + 1 + 1}
+
+	// /proc/[pid] next offset starts at 256+2 (files above), then adds the
+	// PID, and adds 1 for the next offset.
+	proc1 = vfs.Dirent{Type: linux.DT_DIR, NextOff: 258 + 1 + 1}
+	proc2 = vfs.Dirent{Type: linux.DT_DIR, NextOff: 258 + 2 + 1}
+	proc3 = vfs.Dirent{Type: linux.DT_DIR, NextOff: 258 + 3 + 1}
 )
 
 type testIterDirentsCallback struct {
@@ -59,9 +72,9 @@ func checkTasksStaticFiles(gots []vfs.Dirent) ([]vfs.Dirent, error) {
 		"loadavg":     {Type: linux.DT_REG},
 		"meminfo":     {Type: linux.DT_REG},
 		"mounts":      {Type: linux.DT_LNK},
-		"self":        {Type: linux.DT_LNK},
+		"self":        selfLink,
 		"stat":        {Type: linux.DT_REG},
-		"thread-self": {Type: linux.DT_LNK},
+		"thread-self": threadSelfLink,
 		"version":     {Type: linux.DT_REG},
 	}
 	return checkFiles(gots, wants)
@@ -92,6 +105,9 @@ func checkFiles(gots []vfs.Dirent, wants map[string]vfs.Dirent) ([]vfs.Dirent, e
 		}
 		if want.Type != got.Type {
 			return gots, fmt.Errorf("wrong file type, want: %v, got: %v: %+v", want.Type, got.Type, got)
+		}
+		if want.NextOff != 0 && want.NextOff != got.NextOff {
+			return gots, fmt.Errorf("wrong dirent offset, want: %v, got: %v: %+v", want.NextOff, got.NextOff, got)
 		}
 
 		delete(wants, got.Name)
@@ -154,7 +170,7 @@ func TestTasksEmpty(t *testing.T) {
 		t.Error(err.Error())
 	}
 	if len(cb.dirents) != 0 {
-		t.Error("found more files than expected: %+v", cb.dirents)
+		t.Errorf("found more files than expected: %+v", cb.dirents)
 	}
 }
 
@@ -216,6 +232,11 @@ func TestTasks(t *testing.T) {
 		if !found {
 			t.Errorf("Additional task ID %d listed: %v", pid, tasks)
 		}
+		// Next offset starts at 256+2 ('self' and 'thread-self'), then adds the
+		// PID, and adds 1 for the next offset.
+		if want := int64(256 + 2 + pid + 1); d.NextOff != want {
+			t.Errorf("Wrong dirent offset want: %d got: %d: %+v", want, d.NextOff, d)
+		}
 	}
 
 	// Test lookup.
@@ -243,6 +264,126 @@ func TestTasks(t *testing.T) {
 		&vfs.OpenOptions{},
 	); err != syserror.ENOENT {
 		t.Fatalf("wrong error from vfsfs.OpenAt(/9999): %v", err)
+	}
+}
+
+func TestTasksOffset(t *testing.T) {
+	ctx, vfsObj, root, err := setup()
+	if err != nil {
+		t.Fatalf("Setup failed: %v", err)
+	}
+	defer root.DecRef()
+
+	k := kernel.KernelFromContext(ctx)
+	for i := 0; i < 3; i++ {
+		tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
+		if _, err := createTask(ctx, fmt.Sprintf("name-%d", i), tc); err != nil {
+			t.Fatalf("CreateTask(): %v", err)
+		}
+	}
+
+	for _, tc := range []struct {
+		name   string
+		offset int64
+		wants  map[string]vfs.Dirent
+	}{
+		{
+			name:   "small offset",
+			offset: 100,
+			wants: map[string]vfs.Dirent{
+				"self":        selfLink,
+				"thread-self": threadSelfLink,
+				"1":           proc1,
+				"2":           proc2,
+				"3":           proc3,
+			},
+		},
+		{
+			name:   "offset at start",
+			offset: 256,
+			wants: map[string]vfs.Dirent{
+				"self":        selfLink,
+				"thread-self": threadSelfLink,
+				"1":           proc1,
+				"2":           proc2,
+				"3":           proc3,
+			},
+		},
+		{
+			name:   "skip /proc/self",
+			offset: 257,
+			wants: map[string]vfs.Dirent{
+				"thread-self": threadSelfLink,
+				"1":           proc1,
+				"2":           proc2,
+				"3":           proc3,
+			},
+		},
+		{
+			name:   "skip symlinks",
+			offset: 258,
+			wants: map[string]vfs.Dirent{
+				"1": proc1,
+				"2": proc2,
+				"3": proc3,
+			},
+		},
+		{
+			name:   "skip first process",
+			offset: 260,
+			wants: map[string]vfs.Dirent{
+				"2": proc2,
+				"3": proc3,
+			},
+		},
+		{
+			name:   "last process",
+			offset: 261,
+			wants: map[string]vfs.Dirent{
+				"3": proc3,
+			},
+		},
+		{
+			name:   "after last",
+			offset: 262,
+			wants:  nil,
+		},
+		{
+			name:   "TaskLimit+1",
+			offset: kernel.TasksLimit + 1,
+			wants:  nil,
+		},
+		{
+			name:   "max",
+			offset: math.MaxInt64,
+			wants:  nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fd, err := vfsObj.OpenAt(
+				ctx,
+				auth.CredentialsFromContext(ctx),
+				&vfs.PathOperation{Root: root, Start: root, Path: fspath.Parse("/")},
+				&vfs.OpenOptions{},
+			)
+			if err != nil {
+				t.Fatalf("vfsfs.OpenAt(/) failed: %v", err)
+			}
+			if _, err := fd.Impl().Seek(ctx, tc.offset, linux.SEEK_SET); err != nil {
+				t.Fatalf("Seek(%d, SEEK_SET): %v", tc.offset, err)
+			}
+
+			cb := testIterDirentsCallback{}
+			if err := fd.Impl().IterDirents(ctx, &cb); err != nil {
+				t.Fatalf("IterDirents(): %v", err)
+			}
+			if cb.dirents, err = checkFiles(cb.dirents, tc.wants); err != nil {
+				t.Error(err.Error())
+			}
+			if len(cb.dirents) != 0 {
+				t.Errorf("found more files than expected: %+v", cb.dirents)
+			}
+		})
 	}
 }
 
