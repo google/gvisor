@@ -42,6 +42,8 @@ const (
 	NF_RETURN = -NF_REPEAT - 1
 )
 
+// VerdictStrings maps int verdicts to the strings they represent. It is used
+// for debugging.
 var VerdictStrings = map[int32]string{
 	-NF_DROP - 1:   "DROP",
 	-NF_ACCEPT - 1: "ACCEPT",
