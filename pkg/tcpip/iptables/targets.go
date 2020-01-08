@@ -34,7 +34,7 @@ func (UnconditionalDropTarget) Action(packet buffer.VectorisedView) (Verdict, st
 	return Drop, ""
 }
 
-// PanicTarget just panics.
+// PanicTarget just panics. It represents a target that should be unreachable.
 type PanicTarget struct{}
 
 // Actions implements Target.Action.

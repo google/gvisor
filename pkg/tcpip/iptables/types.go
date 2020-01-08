@@ -107,19 +107,18 @@ type IPTables struct {
 	Priorities map[Hook][]string
 }
 
-// A Table defines a set of chains and hooks into the network stack. The
-// currently supported tables are:
-//   * nat
-//   * mangle
+// A Table defines a set of chains and hooks into the network stack. It is
+// really just a list of rules with some metadata for entrypoints and such.
 type Table struct {
-	// A table is just a list of rules with some entrypoints.
+	// Rules holds the rules that make up the table.
 	Rules []Rule
 
+	// BuiltinChains maps builtin chains to their entrypoints.
 	BuiltinChains map[Hook]int
 
+	// Underflows maps builtin chains to their underflow point (i.e. the
+	// rule to execute if the chain returns without a verdict).
 	Underflows map[Hook]int
-
-	// DefaultTargets map[Hook]int
 
 	// UserChains holds user-defined chains for the keyed by name. Users
 	// can give their chains arbitrary names.
@@ -148,21 +147,6 @@ func (table *Table) Metadata() interface{} {
 func (table *Table) SetMetadata(metadata interface{}) {
 	table.metadata = metadata
 }
-
-//// A Chain defines a list of rules for packet processing. When a packet
-//// traverses a chain, it is checked against each rule until either a rule
-//// returns a verdict or the chain ends.
-////
-//// By convention, builtin chains end with a rule that matches everything and
-//// returns either Accept or Drop. User-defined chains end with Return. These
-//// aren't strictly necessary here, but the iptables tool writes tables this way.
-//type Chain struct {
-//	// Name is the chain name.
-//	Name string
-
-//	// Rules is the list of rules to traverse.
-//	Rules []Rule
-//}
 
 // A Rule is a packet processing rule. It consists of two pieces. First it
 // contains zero or more matchers, each of which is a specification of which

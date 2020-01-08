@@ -157,9 +157,7 @@ func convertNetstackToBinary(name string, table iptables.Table) (linux.KernelIPT
 				meta.HookEntry[hook] = entries.Size
 			}
 		}
-		// Is this a chain underflow point? The underflow rule is the last rule
-		// in the chain, and is an unconditional rule (i.e. it matches any
-		// packet). This is enforced when saving iptables.
+		// Is this a chain underflow point?
 		for underflow, underflowRuleIdx := range table.Underflows {
 			if underflowRuleIdx == ruleIdx {
 				meta.Underflow[underflow] = entries.Size
@@ -290,6 +288,7 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 
 	// Get the basic rules data (struct ipt_replace).
 	if len(optVal) < linux.SizeOfIPTReplace {
+		log.Infof("netfilter.SetEntries: optVal has insufficient size for replace %d", len(optVal))
 		return syserr.ErrInvalidArgument
 	}
 	var replace linux.IPTReplace
@@ -313,6 +312,7 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 	for entryIdx := uint32(0); entryIdx < replace.NumEntries; entryIdx++ {
 		// Get the struct ipt_entry.
 		if len(optVal) < linux.SizeOfIPTEntry {
+			log.Infof("netfilter: optVal has insufficient size for entry %d", len(optVal))
 			return syserr.ErrInvalidArgument
 		}
 		var entry linux.IPTEntry
@@ -328,6 +328,7 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 		// filtering. We reject any nonzero IPTIP values for now.
 		emptyIPTIP := linux.IPTIP{}
 		if entry.IP != emptyIPTIP {
+			log.Infof("netfilter: non-empty struct iptip found")
 			return syserr.ErrInvalidArgument
 		}
 
@@ -386,6 +387,7 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 // along with the number of bytes it occupies in optVal.
 func parseTarget(optVal []byte) (iptables.Target, uint32, *syserr.Error) {
 	if len(optVal) < linux.SizeOfXTEntryTarget {
+		log.Infof("netfilter: optVal has insufficient size for entry target %d", len(optVal))
 		return nil, 0, syserr.ErrInvalidArgument
 	}
 	var target linux.XTEntryTarget
@@ -395,6 +397,7 @@ func parseTarget(optVal []byte) (iptables.Target, uint32, *syserr.Error) {
 	case "":
 		// Standard target.
 		if len(optVal) < linux.SizeOfXTStandardTarget {
+			log.Infof("netfilter.SetEntries: optVal has insufficient size for standard target %d", len(optVal))
 			return nil, 0, syserr.ErrInvalidArgument
 		}
 		var target linux.XTStandardTarget
@@ -420,6 +423,7 @@ func parseTarget(optVal []byte) (iptables.Target, uint32, *syserr.Error) {
 	case errorTargetName:
 		// Error target.
 		if len(optVal) < linux.SizeOfXTErrorTarget {
+			log.Infof("netfilter.SetEntries: optVal has insufficient size for error target %d", len(optVal))
 			return nil, 0, syserr.ErrInvalidArgument
 		}
 		var target linux.XTErrorTarget
