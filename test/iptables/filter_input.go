@@ -138,7 +138,7 @@ func (FilterInputDropAll) ContainerAction(ip net.IP) error {
 		return err
 	}
 
-	// Listen for All packets on dropPort.
+	// Listen for all packets on dropPort.
 	if err := listenUDP(dropPort, sendloopDuration); err == nil {
 		return fmt.Errorf("packets should have been dropped, but got a packet")
 	} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {

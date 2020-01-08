@@ -368,6 +368,10 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 		}
 	}
 
+	// TODO(gvisor.dev/issue/170): Check the following conditions:
+	// - There are no loops.
+	// - There are no chains without an unconditional final rule.
+
 	ipt := stack.IPTables()
 	table.SetMetadata(metadata{
 		HookEntry:  replace.HookEntry,
