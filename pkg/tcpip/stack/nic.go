@@ -27,11 +27,10 @@ import (
 // NIC represents a "network interface card" to which the networking stack is
 // attached.
 type NIC struct {
-	stack    *Stack
-	id       tcpip.NICID
-	name     string
-	linkEP   LinkEndpoint
-	loopback bool
+	stack  *Stack
+	id     tcpip.NICID
+	name   string
+	linkEP LinkEndpoint
 
 	mu            sync.RWMutex
 	spoofing      bool
@@ -85,7 +84,7 @@ const (
 )
 
 // newNIC returns a new NIC using the default NDP configurations from stack.
-func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, loopback bool) *NIC {
+func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint) *NIC {
 	// TODO(b/141011931): Validate a LinkEndpoint (ep) is valid. For
 	// example, make sure that the link address it provides is a valid
 	// unicast ethernet address.
@@ -99,7 +98,6 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, loopback
 		id:         id,
 		name:       name,
 		linkEP:     ep,
-		loopback:   loopback,
 		primary:    make(map[tcpip.NetworkProtocolNumber][]*referencedNetworkEndpoint),
 		endpoints:  make(map[NetworkEndpointID]*referencedNetworkEndpoint),
 		mcastJoins: make(map[NetworkEndpointID]int32),
@@ -175,7 +173,7 @@ func (n *NIC) enable() *tcpip.Error {
 	}
 
 	// Do not auto-generate an IPv6 link-local address for loopback devices.
-	if !n.stack.autoGenIPv6LinkLocal || n.loopback {
+	if !n.stack.autoGenIPv6LinkLocal || n.isLoopback() {
 		return nil
 	}
 
@@ -238,6 +236,10 @@ func (n *NIC) isPromiscuousMode() bool {
 	rv := n.promiscuous
 	n.mu.RUnlock()
 	return rv
+}
+
+func (n *NIC) isLoopback() bool {
+	return n.linkEP.Capabilities()&CapabilityLoopback != 0
 }
 
 // setSpoofing enables or disables address spoofing.
