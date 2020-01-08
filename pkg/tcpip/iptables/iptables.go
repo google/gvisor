@@ -16,6 +16,8 @@
 // tool.
 package iptables
 
+import "github.com/google/netstack/tcpip"
+
 const (
 	TablenameNat    = "nat"
 	TablenameMangle = "mangle"
@@ -120,4 +122,61 @@ func EmptyFilterTable() Table {
 		},
 		UserChains: map[string]int{},
 	}
+}
+
+// Check runs pkt through the rules for hook. It returns true when the packet
+// should continue traversing the network stack and false when it should be
+// dropped.
+func (it *IPTables) Check(hook Hook, pkt tcpip.PacketBuffer) bool {
+	// TODO(gvisor.dev/issue/170): A lot of this is uncomplicated because
+	// we're missing features. Jumps, the call stack, etc. aren't checked
+	// for yet because we're yet to support them.
+	log.Infof("kevin: iptables.IPTables: checking hook %v", hook)
+
+	// Go through each table containing the hook.
+	for _, tablename := range it.Priorities[hook] {
+		verdict := it.checkTable(tablename)
+		switch verdict {
+		// TODO: We either got a final verdict or simply continue on.
+		}
+	}
+}
+
+func (it *IPTables) checkTable(hook Hook, pkt tcpip.PacketBuffer, tablename string) bool {
+	log.Infof("kevin: iptables.IPTables: checking table %q", tablename)
+	table := it.Tables[tablename]
+	ruleIdx := table.BuiltinChains[hook]
+
+	// Start from ruleIdx and go down until a rule gives us a verdict.
+	for ruleIdx := table.BuiltinChains[hook]; ruleIdx < len(table.Rules); ruleIdx++ {
+		verdict := checkRule(hook, pkt, table, ruleIdx)
+		switch verdict {
+		case Accept, Drop:
+			return verdict
+		case Continue:
+			continue
+		case Stolen, Queue, Repeat, None, Jump, Return:
+		}
+	}
+
+	panic("Traversed past the entire list of iptables rules.")
+}
+
+func (it *IPTables) checkRule(hook Hook, pkt tcpip.PacketBuffer, table Table, ruleIdx int) Verdict {
+	rule := table.Rules[ruleIdx]
+	// Go through each rule matcher. If they all match, run
+	// the rule target.
+	for _, matcher := range rule.Matchers {
+		matches, hotdrop := matcher.Match(hook, pkt, "")
+		if hotdrop {
+			return Drop
+		}
+		if !matches {
+			return Continue
+		}
+	}
+
+	// All the matchers matched, so run the target.
+	verdict, _ := rule.Target.Action(pkt)
+	return verdict
 }
