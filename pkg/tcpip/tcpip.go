@@ -425,7 +425,7 @@ type Endpoint interface {
 
 	// SetSockOptInt sets a socket option, for simple cases where a value
 	// has the int type.
-	SetSockOptInt(opt SockOpt, v int) *Error
+	SetSockOptInt(opt SockOptInt, v int) *Error
 
 	// GetSockOpt gets a socket option. opt should be a pointer to one of the
 	// *Option types.
@@ -433,7 +433,7 @@ type Endpoint interface {
 
 	// GetSockOptInt gets a socket option for simple cases where a return
 	// value has the int type.
-	GetSockOptInt(SockOpt) (int, *Error)
+	GetSockOptInt(SockOptInt) (int, *Error)
 
 	// State returns a socket's lifecycle state. The returned value is
 	// protocol-specific and is primarily used for diagnostics.
@@ -488,13 +488,13 @@ type WriteOptions struct {
 	Atomic bool
 }
 
-// SockOpt represents socket options which values have the int type.
-type SockOpt int
+// SockOptInt represents socket options which values have the int type.
+type SockOptInt int
 
 const (
 	// ReceiveQueueSizeOption is used in GetSockOptInt to specify that the
 	// number of unread bytes in the input buffer should be returned.
-	ReceiveQueueSizeOption SockOpt = iota
+	ReceiveQueueSizeOption SockOptInt = iota
 
 	// SendBufferSizeOption is used by SetSockOptInt/GetSockOptInt to
 	// specify the send buffer size option.
