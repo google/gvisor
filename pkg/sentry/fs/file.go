@@ -555,6 +555,10 @@ type lockedWriter struct {
 	//
 	// This applies only to Write, not WriteAt.
 	Offset int64
+
+	// Err contains the first error encountered while copying. This is
+	// useful to determine whether Writer or Reader failed during io.Copy.
+	Err error
 }
 
 // Write implements io.Writer.Write.
@@ -589,6 +593,9 @@ func (w *lockedWriter) WriteAt(buf []byte, offset int64) (int, error) {
 		if err != nil {
 			break
 		}
+	}
+	if w.Err == nil {
+		w.Err = err
 	}
 	return written, err
 }
