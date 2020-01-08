@@ -410,10 +410,7 @@ func parseTarget(optVal []byte) (iptables.Target, uint32, *syserr.Error) {
 		case iptables.Accept:
 			return iptables.UnconditionalAcceptTarget{}, linux.SizeOfXTStandardTarget, nil
 		case iptables.Drop:
-			// TODO(gvisor.dev/issue/170): Return an
-			// iptables.UnconditionalDropTarget to support DROP.
-			log.Infof("netfilter DROP is not supported yet.")
-			return nil, 0, syserr.ErrInvalidArgument
+			return iptables.UnconditionalDropTarget{}, linux.SizeOfXTStandardTarget, nil
 		default:
 			panic(fmt.Sprintf("Unknown verdict: %v", verdict))
 		}
