@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -2153,10 +2154,10 @@ func TestNoLinkLocalAutoGenForLoopbackNIC(t *testing.T) {
 				OpaqueIIDOpts:        test.opaqueIIDOpts,
 			}
 
-			e := channel.New(0, 1280, linkAddr1)
+			e := loopback.New()
 			s := stack.New(opts)
-			if err := s.CreateNamedLoopbackNIC(nicID, nicName, e); err != nil {
-				t.Fatalf("CreateNamedLoopbackNIC(%d, %q, _) = %s", nicID, nicName, err)
+			if err := s.CreateNamedNIC(nicID, nicName, e); err != nil {
+				t.Fatalf("CreateNamedNIC(%d, %q, _) = %s", nicID, nicName, err)
 			}
 
 			addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
