@@ -177,3 +177,9 @@ func TestFilterInputDropDifferentUDPPort(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestFilterInputDropAll(t *testing.T) {
+	if err := singleTest(FilterInputDropAll{}); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -31,6 +31,7 @@ func init() {
 	RegisterTestCase(FilterInputDropUDP{})
 	RegisterTestCase(FilterInputDropUDPPort{})
 	RegisterTestCase(FilterInputDropDifferentUDPPort{})
+	RegisterTestCase(FilterInputDropAll{})
 }
 
 // FilterInputDropUDP tests that we can drop UDP traffic.
@@ -121,4 +122,35 @@ func (FilterInputDropDifferentUDPPort) ContainerAction(ip net.IP) error {
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputDropDifferentUDPPort) LocalAction(ip net.IP) error {
 	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// FilterInputDropAll tests that we can drop all traffic to the INPUT chain.
+type FilterInputDropAll struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputDropAll) Name() string {
+	return "FilterInputDropAll"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputDropAll) ContainerAction(ip net.IP) error {
+	if err := filterTable("-A", "INPUT", "-j", "DROP"); err != nil {
+		return err
+	}
+
+	// Listen for All packets on dropPort.
+	if err := listenUDP(dropPort, sendloopDuration); err == nil {
+		return fmt.Errorf("packets should have been dropped, but got a packet")
+	} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+		return fmt.Errorf("error reading: %v", err)
+	}
+
+	// At this point we know that reading timed out and never received a
+	// packet.
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputDropAll) LocalAction(ip net.IP) error {
+	return sendUDPLoop(ip, dropPort, sendloopDuration)
 }
