@@ -1145,6 +1145,29 @@ func (e *endpoint) zeroReceiveWindow(scale uint8) bool {
 	return ((e.rcvBufSize - e.rcvBufUsed) >> scale) == 0
 }
 
+// SetSockOptBool sets a socket option.
+func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
+	switch opt {
+	case tcpip.V6OnlyOption:
+		// We only recognize this option on v6 endpoints.
+		if e.NetProto != header.IPv6ProtocolNumber {
+			return tcpip.ErrInvalidEndpointState
+		}
+
+		e.mu.Lock()
+		defer e.mu.Unlock()
+
+		// We only allow this to be set when we're in the initial state.
+		if e.state != StateInitial {
+			return tcpip.ErrInvalidEndpointState
+		}
+
+		e.v6only = v
+	}
+
+	return nil
+}
+
 // SetSockOptInt sets a socket option.
 func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	switch opt {
@@ -1289,23 +1312,6 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.notifyProtocolGoroutine(notifyMSSChanged)
 		return nil
 
-	case tcpip.V6OnlyOption:
-		// We only recognize this option on v6 endpoints.
-		if e.NetProto != header.IPv6ProtocolNumber {
-			return tcpip.ErrInvalidEndpointState
-		}
-
-		e.mu.Lock()
-		defer e.mu.Unlock()
-
-		// We only allow this to be set when we're in the initial state.
-		if e.state != StateInitial {
-			return tcpip.ErrInvalidEndpointState
-		}
-
-		e.v6only = v != 0
-		return nil
-
 	case tcpip.TTLOption:
 		e.mu.Lock()
 		e.ttl = uint8(v)
@@ -1446,6 +1452,25 @@ func (e *endpoint) readyReceiveSize() (int, *tcpip.Error) {
 	return e.rcvBufUsed, nil
 }
 
+// GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.
+func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
+	switch opt {
+	case tcpip.V6OnlyOption:
+		// We only recognize this option on v6 endpoints.
+		if e.NetProto != header.IPv6ProtocolNumber {
+			return false, tcpip.ErrUnknownProtocolOption
+		}
+
+		e.mu.Lock()
+		v := e.v6only
+		e.mu.Unlock()
+
+		return v, nil
+	}
+
+	return false, tcpip.ErrUnknownProtocolOption
+}
+
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
 func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 	switch opt {
@@ -1537,22 +1562,6 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		*o = 1
 		if v := atomic.LoadUint32(&e.slowAck); v != 0 {
 			*o = 0
-		}
-		return nil
-
-	case *tcpip.V6OnlyOption:
-		// We only recognize this option on v6 endpoints.
-		if e.NetProto != header.IPv6ProtocolNumber {
-			return tcpip.ErrUnknownProtocolOption
-		}
-
-		e.mu.Lock()
-		v := e.v6only
-		e.mu.Unlock()
-
-		*o = 0
-		if v {
-			*o = 1
 		}
 		return nil
 

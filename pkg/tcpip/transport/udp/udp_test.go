@@ -335,7 +335,7 @@ func (c *testContext) createEndpointForFlow(flow testFlow) {
 
 	c.createEndpoint(flow.sockProto())
 	if flow.isV6Only() {
-		if err := c.ep.SetSockOpt(tcpip.V6OnlyOption(1)); err != nil {
+		if err := c.ep.SetSockOptBool(tcpip.V6OnlyOption, true); err != nil {
 			c.t.Fatalf("SetSockOpt failed: %v", err)
 		}
 	} else if flow.isBroadcast() {

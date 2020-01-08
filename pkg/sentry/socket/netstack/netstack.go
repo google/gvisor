@@ -222,6 +222,10 @@ type commonEndpoint interface {
 	// transport.Endpoint.SetSockOpt.
 	SetSockOpt(interface{}) *tcpip.Error
 
+	// SetSockOptBool implements tcpip.Endpoint.SetSockOptBool and
+	// transport.Endpoint.SetSockOptBool.
+	SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error
+
 	// SetSockOptInt implements tcpip.Endpoint.SetSockOptInt and
 	// transport.Endpoint.SetSockOptInt.
 	SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error
@@ -229,6 +233,10 @@ type commonEndpoint interface {
 	// GetSockOpt implements tcpip.Endpoint.GetSockOpt and
 	// transport.Endpoint.GetSockOpt.
 	GetSockOpt(interface{}) *tcpip.Error
+
+	// GetSockOptBool implements tcpip.Endpoint.GetSockOptBool and
+	// transport.Endpoint.GetSockOpt.
+	GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error)
 
 	// GetSockOptInt implements tcpip.Endpoint.GetSockOptInt and
 	// transport.Endpoint.GetSockOpt.
@@ -1213,12 +1221,15 @@ func getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name, outLen int) (interf
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		var v tcpip.V6OnlyOption
-		if err := ep.GetSockOpt(&v); err != nil {
+		v, err := ep.GetSockOptBool(tcpip.V6OnlyOption)
+		if err != nil {
 			return nil, syserr.TranslateNetstackError(err)
 		}
-
-		return int32(v), nil
+		var o uint32
+		if v {
+			o = 1
+		}
+		return int32(o), nil
 
 	case linux.IPV6_PATHMTU:
 		t.Kernel().EmitUnimplementedEvent(t)
@@ -1621,7 +1632,7 @@ func setSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) 
 		}
 
 		v := usermem.ByteOrder.Uint32(optVal)
-		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.V6OnlyOption(v)))
+		return syserr.TranslateNetstackError(ep.SetSockOptBool(tcpip.V6OnlyOption, v != 0))
 
 	case linux.IPV6_ADD_MEMBERSHIP,
 		linux.IPV6_DROP_MEMBERSHIP,

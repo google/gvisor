@@ -1701,9 +1701,8 @@ func addrForNewConnection(t *testing.T, s *stack.Stack) tcpip.Address {
 		t.Fatalf("s.NewEndpoint(%d, %d, _): %s", header.UDPProtocolNumber, header.IPv6ProtocolNumber, err)
 	}
 	defer ep.Close()
-	v := tcpip.V6OnlyOption(1)
-	if err := ep.SetSockOpt(v); err != nil {
-		t.Fatalf("SetSockOpt(%+v): %s", v, err)
+	if err := ep.SetSockOptBool(tcpip.V6OnlyOption, true); err != nil {
+		t.Fatalf("SetSockOpt(tcpip.V6OnlyOption, true): %s", err)
 	}
 	if err := ep.Connect(dstAddr); err != nil {
 		t.Fatalf("ep.Connect(%+v): %s", dstAddr, err)
@@ -1728,9 +1727,8 @@ func addrForNewConnectionWithAddr(t *testing.T, s *stack.Stack, addr tcpip.FullA
 		t.Fatalf("s.NewEndpoint(%d, %d, _): %s", header.UDPProtocolNumber, header.IPv6ProtocolNumber, err)
 	}
 	defer ep.Close()
-	v := tcpip.V6OnlyOption(1)
-	if err := ep.SetSockOpt(v); err != nil {
-		t.Fatalf("SetSockOpt(%+v): %s", v, err)
+	if err := ep.SetSockOptBool(tcpip.V6OnlyOption, true); err != nil {
+		t.Fatalf("SetSockOpt(tcpip.V6OnlyOption, true): %s", err)
 	}
 	if err := ep.Bind(addr); err != nil {
 		t.Fatalf("ep.Bind(%+v): %s", addr, err)
@@ -2066,9 +2064,8 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 		t.Fatalf("s.NewEndpoint(%d, %d, _): %s", header.UDPProtocolNumber, header.IPv6ProtocolNumber, err)
 	}
 	defer ep.Close()
-	v := tcpip.V6OnlyOption(1)
-	if err := ep.SetSockOpt(v); err != nil {
-		t.Fatalf("SetSockOpt(%+v): %s", v, err)
+	if err := ep.SetSockOptBool(tcpip.V6OnlyOption, true); err != nil {
+		t.Fatalf("SetSockOpt(tcpip.V6OnlyOption, true): %s", err)
 	}
 
 	if err := ep.Connect(dstAddr); err != tcpip.ErrNoRoute {

@@ -475,11 +475,7 @@ func (c *Context) CreateV6Endpoint(v6only bool) {
 		c.t.Fatalf("NewEndpoint failed: %v", err)
 	}
 
-	var v tcpip.V6OnlyOption
-	if v6only {
-		v = 1
-	}
-	if err := c.EP.SetSockOpt(v); err != nil {
+	if err := c.EP.SetSockOptBool(tcpip.V6OnlyOption, v6only); err != nil {
 		c.t.Fatalf("SetSockOpt failed failed: %v", err)
 	}
 }
