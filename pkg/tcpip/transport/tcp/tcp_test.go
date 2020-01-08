@@ -4028,12 +4028,12 @@ func TestConnectAvoidsBoundPorts(t *testing.T) {
 												switch network {
 												case "ipv4":
 												case "ipv6":
-													if err := ep.SetSockOpt(tcpip.V6OnlyOption(1)); err != nil {
-														t.Fatalf("SetSockOpt(V6OnlyOption(1)) failed: %v", err)
+													if err := ep.SetSockOptBool(tcpip.V6OnlyOption, true); err != nil {
+														t.Fatalf("SetSockOpt(V6OnlyOption(true)) failed: %v", err)
 													}
 												case "dual":
-													if err := ep.SetSockOpt(tcpip.V6OnlyOption(0)); err != nil {
-														t.Fatalf("SetSockOpt(V6OnlyOption(0)) failed: %v", err)
+													if err := ep.SetSockOptBool(tcpip.V6OnlyOption, false); err != nil {
+														t.Fatalf("SetSockOpt(V6OnlyOption(false)) failed: %v", err)
 													}
 												default:
 													t.Fatalf("unknown network: '%s'", network)

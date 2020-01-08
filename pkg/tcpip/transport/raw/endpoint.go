@@ -509,9 +509,34 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
 }
 
+// SetSockOptBool implements tcpip.Endpoint.SetSockOptBool.
+func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
+	return tcpip.ErrUnknownProtocolOption
+}
+
 // SetSockOptInt implements tcpip.Endpoint.SetSockOptInt.
 func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
+}
+
+// GetSockOpt implements tcpip.Endpoint.GetSockOpt.
+func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
+	switch o := opt.(type) {
+	case tcpip.ErrorOption:
+		return nil
+
+	case *tcpip.KeepaliveEnabledOption:
+		*o = 0
+		return nil
+
+	default:
+		return tcpip.ErrUnknownProtocolOption
+	}
+}
+
+// GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.
+func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
+	return false, tcpip.ErrUnknownProtocolOption
 }
 
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
@@ -542,21 +567,6 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 	}
 
 	return -1, tcpip.ErrUnknownProtocolOption
-}
-
-// GetSockOpt implements tcpip.Endpoint.GetSockOpt.
-func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
-	switch o := opt.(type) {
-	case tcpip.ErrorOption:
-		return nil
-
-	case *tcpip.KeepaliveEnabledOption:
-		*o = 0
-		return nil
-
-	default:
-		return tcpip.ErrUnknownProtocolOption
-	}
 }
 
 // HandlePacket implements stack.RawTransportEndpoint.HandlePacket.

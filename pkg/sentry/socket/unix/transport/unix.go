@@ -175,6 +175,10 @@ type Endpoint interface {
 	// types.
 	SetSockOpt(opt interface{}) *tcpip.Error
 
+	// SetSockOptBool sets a socket option for simple cases when a value has
+	// the int type.
+	SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error
+
 	// SetSockOptInt sets a socket option for simple cases when a value has
 	// the int type.
 	SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error
@@ -182,6 +186,10 @@ type Endpoint interface {
 	// GetSockOpt gets a socket option. opt should be a pointer to one of the
 	// tcpip.*Option types.
 	GetSockOpt(opt interface{}) *tcpip.Error
+
+	// GetSockOptBool gets a socket option for simple cases when a return
+	// value has the int type.
+	GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error)
 
 	// GetSockOptInt gets a socket option for simple cases when a return
 	// value has the int type.
@@ -851,8 +859,16 @@ func (e *baseEndpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 	return nil
 }
 
+func (e *baseEndpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
+	return nil
+}
+
 func (e *baseEndpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	return nil
+}
+
+func (e *baseEndpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
+	return false, tcpip.ErrUnknownProtocolOption
 }
 
 func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
