@@ -239,7 +239,7 @@ func TestIPv4Send(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
-	if err := ep.WritePacket(&r, nil /* gso */, stack.NetworkHeaderParams{Protocol: 123, TTL: 123, TOS: stack.DefaultTOS}, stack.PacketOut, tcpip.PacketBuffer{
+	if err := ep.WritePacket(&r, nil /* gso */, stack.NetworkHeaderParams{Protocol: 123, TTL: 123, TOS: stack.DefaultTOS}, tcpip.PacketBuffer{
 		Header: hdr,
 		Data:   payload.ToVectorisedView(),
 	}); err != nil {
@@ -480,7 +480,7 @@ func TestIPv6Send(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
-	if err := ep.WritePacket(&r, nil /* gso */, stack.NetworkHeaderParams{Protocol: 123, TTL: 123, TOS: stack.DefaultTOS}, stack.PacketOut, tcpip.PacketBuffer{
+	if err := ep.WritePacket(&r, nil /* gso */, stack.NetworkHeaderParams{Protocol: 123, TTL: 123, TOS: stack.DefaultTOS}, tcpip.PacketBuffer{
 		Header: hdr,
 		Data:   payload.ToVectorisedView(),
 	}); err != nil {
