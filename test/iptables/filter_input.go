@@ -43,7 +43,7 @@ func (FilterInputDropUDP) Name() string {
 
 // ContainerAction implements TestCase.ContainerAction.
 func (FilterInputDropUDP) ContainerAction(ip net.IP) error {
-	if err := filterTable("-A", "INPUT", "-j", "ACCEPT"); err != nil {
+	if err := filterTable("-A", "INPUT", "-p", "udp", "-j", "DROP"); err != nil {
 		return err
 	}
 
