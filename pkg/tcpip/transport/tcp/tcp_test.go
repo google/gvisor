@@ -2091,10 +2091,14 @@ func TestZeroScaledWindowReceive(t *testing.T) {
 		)
 	}
 
-	// Read some data. An ack should be sent in response to that.
-	v, _, err := c.EP.Read(nil)
-	if err != nil {
-		t.Fatalf("Read failed: %v", err)
+	// Read at least 1MSS of data. An ack should be sent in response to that.
+	sz := 0
+	for sz < defaultMTU {
+		v, _, err := c.EP.Read(nil)
+		if err != nil {
+			t.Fatalf("Read failed: %v", err)
+		}
+		sz += len(v)
 	}
 
 	checker.IPv4(t, c.GetPacket(),
@@ -2103,7 +2107,7 @@ func TestZeroScaledWindowReceive(t *testing.T) {
 			checker.DstPort(context.TestPort),
 			checker.SeqNum(uint32(c.IRS)+1),
 			checker.AckNum(uint32(790+sent)),
-			checker.Window(uint16(len(v)>>ws)),
+			checker.Window(uint16(sz>>ws)),
 			checker.TCPFlags(header.TCPFlagAck),
 		),
 	)
