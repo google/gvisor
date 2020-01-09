@@ -19,6 +19,8 @@ import (
 	"net"
 	"os/exec"
 	"time"
+
+	"gvisor.dev/gvisor/runsc/testutil"
 )
 
 const iptablesBinary = "iptables"
@@ -76,6 +78,44 @@ func sendUDPLoop(ip net.IP, port int, duration time.Duration) error {
 		default:
 			time.Sleep(200 * time.Millisecond)
 		}
+	}
+
+	return nil
+}
+
+func listenTCP(port int, timeout time.Duration) error {
+	localAddr := net.TCPAddr{Port: acceptPort}
+	listener, err := net.ListenTCP("tcp4", &localAddr)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+	listener.SetDeadline(time.Now().Add(timeout))
+	conn, err := listener.AcceptTCP()
+	if err != nil {
+		return fmt.Errorf("failed to establish a connection %v", err)
+	}
+	defer conn.Close()
+
+	return nil
+}
+
+func connectLoopTCP(ip net.IP, port int, timeout time.Duration) error {
+	contAddr := net.TCPAddr{
+		IP:   ip,
+		Port: port,
+	}
+	// The container may not be listening when we first connect, so retry
+	// upon error.
+	cb := func() error {
+		conn, err := net.DialTCP("tcp4", nil, &contAddr)
+		if conn != nil {
+			conn.Close()
+		}
+		return err
+	}
+	if err := testutil.Poll(cb, timeout); err != nil {
+		return fmt.Errorf("timed out waiting to send IP, most recent error: %v", err)
 	}
 
 	return nil
