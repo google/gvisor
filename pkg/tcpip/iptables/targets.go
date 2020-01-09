@@ -16,7 +16,10 @@
 
 package iptables
 
-import "gvisor.dev/gvisor/pkg/tcpip"
+import (
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/tcpip"
+)
 
 // UnconditionalAcceptTarget accepts all packets.
 type UnconditionalAcceptTarget struct{}
@@ -34,10 +37,12 @@ func (UnconditionalDropTarget) Action(packet tcpip.PacketBuffer) (Verdict, strin
 	return Drop, ""
 }
 
-// PanicTarget just panics. It represents a target that should be unreachable.
-type PanicTarget struct{}
+// ErrorTarget logs an error and drops the packet. It represents a target that
+// should be unreachable.
+type ErrorTarget struct{}
 
 // Actions implements Target.Action.
-func (PanicTarget) Action(packet tcpip.PacketBuffer) (Verdict, string) {
-	panic("PanicTarget triggered.")
+func (ErrorTarget) Action(packet tcpip.PacketBuffer) (Verdict, string) {
+	log.Warningf("ErrorTarget triggered.")
+	return Drop, ""
 }

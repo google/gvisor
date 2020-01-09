@@ -52,7 +52,7 @@ func DefaultTables() IPTables {
 					Rule{Target: UnconditionalAcceptTarget{}},
 					Rule{Target: UnconditionalAcceptTarget{}},
 					Rule{Target: UnconditionalAcceptTarget{}},
-					Rule{Target: PanicTarget{}},
+					Rule{Target: ErrorTarget{}},
 				},
 				BuiltinChains: map[Hook]int{
 					Prerouting:  0,
@@ -72,7 +72,7 @@ func DefaultTables() IPTables {
 				Rules: []Rule{
 					Rule{Target: UnconditionalAcceptTarget{}},
 					Rule{Target: UnconditionalAcceptTarget{}},
-					Rule{Target: PanicTarget{}},
+					Rule{Target: ErrorTarget{}},
 				},
 				BuiltinChains: map[Hook]int{
 					Prerouting: 0,
@@ -89,7 +89,7 @@ func DefaultTables() IPTables {
 					Rule{Target: UnconditionalAcceptTarget{}},
 					Rule{Target: UnconditionalAcceptTarget{}},
 					Rule{Target: UnconditionalAcceptTarget{}},
-					Rule{Target: PanicTarget{}},
+					Rule{Target: ErrorTarget{}},
 				},
 				BuiltinChains: map[Hook]int{
 					Input:   0,
