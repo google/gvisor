@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package stack_test
+package ndp_test
 
 import (
 	"encoding/binary"
@@ -285,6 +285,8 @@ func (n *ndpDispatcher) OnRecursiveDNSServerOption(nicID tcpip.NICID, addrs []tc
 // Included in the subtests is a test to make sure that an invalid
 // RetransmitTimer (<1ms) values get fixed to the default RetransmitTimer of 1s.
 func TestDADResolve(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name                    string
 		dupAddrDetectTransmits  uint8
@@ -417,6 +419,8 @@ func TestDADResolve(t *testing.T) {
 // a node doing DAD for the same address), or if another node is detected to own
 // the address already (receive an NA message for the tentative address).
 func TestDADFail(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		makeBuf func(tgt tcpip.Address) buffer.Prependable
@@ -560,6 +564,8 @@ func TestDADFail(t *testing.T) {
 // TestDADStop tests to make sure that the DAD process stops when an address is
 // removed.
 func TestDADStop(t *testing.T) {
+	t.Parallel()
+
 	ndpDisp := ndpDispatcher{
 		dadC: make(chan ndpDADEvent),
 	}
@@ -632,6 +638,71 @@ func TestDADStop(t *testing.T) {
 	}
 }
 
+// TestNICAutoGenAddrDoesDAD tests that the successful auto-generation of IPv6
+// link-local addresses will only be assigned after the DAD process resolves.
+func TestNICAutoGenAddrDoesDAD(t *testing.T) {
+	t.Parallel()
+
+	ndpDisp := ndpDispatcher{
+		dadC: make(chan ndpDADEvent),
+	}
+	ndpConfigs := stack.DefaultNDPConfigurations()
+	opts := stack.Options{
+		NetworkProtocols:     []stack.NetworkProtocol{ipv6.NewProtocol()},
+		NDPConfigs:           ndpConfigs,
+		AutoGenIPv6LinkLocal: true,
+		NDPDisp:              &ndpDisp,
+	}
+
+	e := channel.New(0, 1280, linkAddr1)
+	s := stack.New(opts)
+	if err := s.CreateNIC(1, e); err != nil {
+		t.Fatalf("CreateNIC(_) = %s", err)
+	}
+
+	// Address should not be considered bound to the
+	// NIC yet (DAD ongoing).
+	addr, err := s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
+	if err != nil {
+		t.Fatalf("got stack.GetMainNICAddress(_, _) = (_, %v), want = (_, nil)", err)
+	}
+	if want := (tcpip.AddressWithPrefix{}); addr != want {
+		t.Fatalf("got stack.GetMainNICAddress(_, _) = (%s, nil), want = (%s, nil)", addr, want)
+	}
+
+	linkLocalAddr := header.LinkLocalAddr(linkAddr1)
+
+	// Wait for DAD to resolve.
+	select {
+	case <-time.After(time.Duration(ndpConfigs.DupAddrDetectTransmits)*ndpConfigs.RetransmitTimer + time.Second):
+		// We should get a resolution event after 1s (default time to
+		// resolve as per default NDP configurations). Waiting for that
+		// resolution time + an extra 1s without a resolution event
+		// means something is wrong.
+		t.Fatal("timed out waiting for DAD resolution")
+	case e := <-ndpDisp.dadC:
+		if e.err != nil {
+			t.Fatal("got DAD error: ", e.err)
+		}
+		if e.nicID != 1 {
+			t.Fatalf("got DAD event w/ nicID = %d, want = 1", e.nicID)
+		}
+		if e.addr != linkLocalAddr {
+			t.Fatalf("got DAD event w/ addr = %s, want = %s", addr, linkLocalAddr)
+		}
+		if !e.resolved {
+			t.Fatal("got DAD event w/ resolved = false, want = true")
+		}
+	}
+	addr, err = s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
+	if err != nil {
+		t.Fatalf("stack.GetMainNICAddress(_, _) err = %s", err)
+	}
+	if want := (tcpip.AddressWithPrefix{Address: linkLocalAddr, PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen}); addr != want {
+		t.Fatalf("got stack.GetMainNICAddress(_, _) = %s, want = %s", addr, want)
+	}
+}
+
 // TestSetNDPConfigurationFailsForBadNICID tests to make sure we get an error if
 // we attempt to update NDP configurations using an invalid NICID.
 func TestSetNDPConfigurationFailsForBadNICID(t *testing.T) {
@@ -649,6 +720,8 @@ func TestSetNDPConfigurationFailsForBadNICID(t *testing.T) {
 // configurations without affecting the default NDP configurations or other
 // interfaces' configurations.
 func TestSetNDPConfigurations(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name                    string
 		dupAddrDetectTransmits  uint8
@@ -875,6 +948,8 @@ func raBufWithPI(ip tcpip.Address, rl uint16, prefix tcpip.AddressWithPrefix, on
 // TestNoRouterDiscovery tests that router discovery will not be performed if
 // configured not to.
 func TestNoRouterDiscovery(t *testing.T) {
+	t.Parallel()
+
 	// Being configured to discover routers means handle and
 	// discover are set to true and forwarding is set to false.
 	// This tests all possible combinations of the configurations,
@@ -887,8 +962,6 @@ func TestNoRouterDiscovery(t *testing.T) {
 		forwarding := i&4 == 0
 
 		t.Run(fmt.Sprintf("HandleRAs(%t), DiscoverDefaultRouters(%t), Forwarding(%t)", handle, discover, forwarding), func(t *testing.T) {
-			t.Parallel()
-
 			ndpDisp := ndpDispatcher{
 				routerC: make(chan ndpRouterEvent, 1),
 			}
@@ -1123,6 +1196,8 @@ func TestRouterDiscoveryMaxRouters(t *testing.T) {
 // TestNoPrefixDiscovery tests that prefix discovery will not be performed if
 // configured not to.
 func TestNoPrefixDiscovery(t *testing.T) {
+	t.Parallel()
+
 	prefix := tcpip.AddressWithPrefix{
 		Address:   tcpip.Address("\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x00"),
 		PrefixLen: 64,
@@ -1140,8 +1215,6 @@ func TestNoPrefixDiscovery(t *testing.T) {
 		forwarding := i&4 == 0
 
 		t.Run(fmt.Sprintf("HandleRAs(%t), DiscoverOnLinkPrefixes(%t), Forwarding(%t)", handle, discover, forwarding), func(t *testing.T) {
-			t.Parallel()
-
 			ndpDisp := ndpDispatcher{
 				prefixC: make(chan ndpPrefixEvent, 1),
 			}
@@ -1498,6 +1571,8 @@ func contains(list []tcpip.ProtocolAddress, item tcpip.AddressWithPrefix) bool {
 
 // TestNoAutoGenAddr tests that SLAAC is not performed when configured not to.
 func TestNoAutoGenAddr(t *testing.T) {
+	t.Parallel()
+
 	prefix, _, _ := prefixSubnetAddr(0, "")
 
 	// Being configured to auto-generate addresses means handle and
@@ -1512,8 +1587,6 @@ func TestNoAutoGenAddr(t *testing.T) {
 		forwarding := i&4 == 0
 
 		t.Run(fmt.Sprintf("HandleRAs(%t), AutoGenAddr(%t), Forwarding(%t)", handle, autogen, forwarding), func(t *testing.T) {
-			t.Parallel()
-
 			ndpDisp := ndpDispatcher{
 				autoGenAddrC: make(chan ndpAutoGenAddrEvent, 1),
 			}

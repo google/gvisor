@@ -52,7 +52,6 @@ go_test(
     name = "stack_x_test",
     size = "small",
     srcs = [
-        "ndp_test.go",
         "stack_test.go",
         "transport_demuxer_test.go",
         "transport_test.go",
@@ -62,14 +61,12 @@ go_test(
         "//pkg/rand",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
-        "//pkg/tcpip/checker",
         "//pkg/tcpip/header",
         "//pkg/tcpip/iptables",
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/link/loopback",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",
-        "//pkg/tcpip/transport/icmp",
         "//pkg/tcpip/transport/udp",
         "//pkg/waiter",
         "@com_github_google_go-cmp//cmp:go_default_library",
@@ -84,5 +81,25 @@ go_test(
     deps = [
         "//pkg/sleep",
         "//pkg/tcpip",
+    ],
+)
+
+go_test(
+    name = "ndp_test",
+    size = "small",
+    srcs = ["ndp_test.go"],
+    deps = [
+        ":stack",
+        "//pkg/rand",
+        "//pkg/tcpip",
+        "//pkg/tcpip/buffer",
+        "//pkg/tcpip/checker",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/network/ipv6",
+        "//pkg/tcpip/transport/icmp",
+        "//pkg/tcpip/transport/udp",
+        "//pkg/waiter",
+        "@com_github_google_go-cmp//cmp:go_default_library",
     ],
 )

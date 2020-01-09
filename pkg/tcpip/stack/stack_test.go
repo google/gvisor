@@ -24,7 +24,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/rand"
@@ -50,6 +49,8 @@ const (
 	// where another value is explicitly used. It is chosen to match the MTU
 	// of loopback interfaces on linux systems.
 	defaultMTU = 65536
+
+	linkAddr = "\x02\x02\x03\x04\x05\x06"
 )
 
 // fakeNetworkEndpoint is a network-layer protocol endpoint. It counts sent and
@@ -1909,7 +1910,7 @@ func TestNICAutoGenAddr(t *testing.T) {
 		{
 			"Disabled",
 			false,
-			linkAddr1,
+			linkAddr,
 			stack.OpaqueInterfaceIdentifierOptions{
 				NICNameFromID: func(nicID tcpip.NICID, _ string) string {
 					return fmt.Sprintf("nic%d", nicID)
@@ -1920,7 +1921,7 @@ func TestNICAutoGenAddr(t *testing.T) {
 		{
 			"Enabled",
 			true,
-			linkAddr1,
+			linkAddr,
 			stack.OpaqueInterfaceIdentifierOptions{},
 			true,
 		},
@@ -2068,14 +2069,14 @@ func TestNICAutoGenAddrWithOpaque(t *testing.T) {
 			name:      "Disabled",
 			nicName:   "nic1",
 			autoGen:   false,
-			linkAddr:  linkAddr1,
+			linkAddr:  linkAddr,
 			secretKey: secretKey[:],
 		},
 		{
 			name:      "Enabled",
 			nicName:   "nic1",
 			autoGen:   true,
-			linkAddr:  linkAddr1,
+			linkAddr:  linkAddr,
 			secretKey: secretKey[:],
 		},
 		// These are all cases where we would not have generated a
@@ -2210,69 +2211,6 @@ func TestNoLinkLocalAutoGenForLoopbackNIC(t *testing.T) {
 				t.Errorf("got stack.GetMainNICAddress(%d, _) = %s, want = %s", nicID, addr, want)
 			}
 		})
-	}
-}
-
-// TestNICAutoGenAddrDoesDAD tests that the successful auto-generation of IPv6
-// link-local addresses will only be assigned after the DAD process resolves.
-func TestNICAutoGenAddrDoesDAD(t *testing.T) {
-	ndpDisp := ndpDispatcher{
-		dadC: make(chan ndpDADEvent),
-	}
-	ndpConfigs := stack.DefaultNDPConfigurations()
-	opts := stack.Options{
-		NetworkProtocols:     []stack.NetworkProtocol{ipv6.NewProtocol()},
-		NDPConfigs:           ndpConfigs,
-		AutoGenIPv6LinkLocal: true,
-		NDPDisp:              &ndpDisp,
-	}
-
-	e := channel.New(10, 1280, linkAddr1)
-	s := stack.New(opts)
-	if err := s.CreateNIC(1, e); err != nil {
-		t.Fatalf("CreateNIC(_) = %s", err)
-	}
-
-	// Address should not be considered bound to the
-	// NIC yet (DAD ongoing).
-	addr, err := s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
-	if err != nil {
-		t.Fatalf("got stack.GetMainNICAddress(_, _) = (_, %v), want = (_, nil)", err)
-	}
-	if want := (tcpip.AddressWithPrefix{}); addr != want {
-		t.Fatalf("got stack.GetMainNICAddress(_, _) = (%s, nil), want = (%s, nil)", addr, want)
-	}
-
-	linkLocalAddr := header.LinkLocalAddr(linkAddr1)
-
-	// Wait for DAD to resolve.
-	select {
-	case <-time.After(time.Duration(ndpConfigs.DupAddrDetectTransmits)*ndpConfigs.RetransmitTimer + time.Second):
-		// We should get a resolution event after 1s (default time to
-		// resolve as per default NDP configurations). Waiting for that
-		// resolution time + an extra 1s without a resolution event
-		// means something is wrong.
-		t.Fatal("timed out waiting for DAD resolution")
-	case e := <-ndpDisp.dadC:
-		if e.err != nil {
-			t.Fatal("got DAD error: ", e.err)
-		}
-		if e.nicID != 1 {
-			t.Fatalf("got DAD event w/ nicID = %d, want = 1", e.nicID)
-		}
-		if e.addr != linkLocalAddr {
-			t.Fatalf("got DAD event w/ addr = %s, want = %s", addr, linkLocalAddr)
-		}
-		if !e.resolved {
-			t.Fatal("got DAD event w/ resolved = false, want = true")
-		}
-	}
-	addr, err = s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
-	if err != nil {
-		t.Fatalf("stack.GetMainNICAddress(_, _) err = %s", err)
-	}
-	if want := (tcpip.AddressWithPrefix{Address: linkLocalAddr, PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen}); addr != want {
-		t.Fatalf("got stack.GetMainNICAddress(_, _) = %s, want = %s", addr, want)
 	}
 }
 
