@@ -210,8 +210,8 @@ func marshalTarget(target iptables.Target) []byte {
 		return marshalStandardTarget(iptables.Accept)
 	case iptables.UnconditionalDropTarget:
 		return marshalStandardTarget(iptables.Drop)
-	case iptables.PanicTarget:
-		return marshalPanicTarget()
+	case iptables.ErrorTarget:
+		return marshalErrorTarget()
 	default:
 		panic(fmt.Errorf("unknown target of type %T", target))
 	}
@@ -230,7 +230,7 @@ func marshalStandardTarget(verdict iptables.Verdict) []byte {
 	return binary.Marshal(ret, usermem.ByteOrder, target)
 }
 
-func marshalPanicTarget() []byte {
+func marshalErrorTarget() []byte {
 	// This is an error target named error
 	target := linux.XTErrorTarget{
 		Target: linux.XTEntryTarget{
@@ -438,7 +438,7 @@ func parseTarget(optVal []byte) (iptables.Target, uint32, *syserr.Error) {
 		//   rules have an error with the name of the chain.
 		switch errorTarget.Name.String() {
 		case errorTargetName:
-			return iptables.PanicTarget{}, linux.SizeOfXTErrorTarget, nil
+			return iptables.ErrorTarget{}, linux.SizeOfXTErrorTarget, nil
 		default:
 			log.Infof("Unknown error target %q doesn't exist or isn't supported yet.", errorTarget.Name.String())
 			return nil, 0, syserr.ErrInvalidArgument
