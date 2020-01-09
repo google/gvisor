@@ -28,6 +28,7 @@ const (
 )
 
 func init() {
+	RegisterTestCase(FilterInputDropOnlyUDP{})
 	RegisterTestCase(FilterInputDropUDP{})
 	RegisterTestCase(FilterInputDropUDPPort{})
 	RegisterTestCase(FilterInputDropDifferentUDPPort{})
@@ -63,6 +64,35 @@ func (FilterInputDropUDP) ContainerAction(ip net.IP) error {
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputDropUDP) LocalAction(ip net.IP) error {
 	return sendUDPLoop(ip, dropPort, sendloopDuration)
+}
+
+// FilterInputDropOnlyUDP tests that "-p udp -j DROP" only affects UDP traffic.
+type FilterInputDropOnlyUDP struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputDropOnlyUDP) Name() string {
+	return "FilterInputDropOnlyUDP"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputDropOnlyUDP) ContainerAction(ip net.IP) error {
+	if err := filterTable("-A", "INPUT", "-p", "udp", "-j", "DROP"); err != nil {
+		return err
+	}
+
+	// Listen for a TCP connection, which should be allowed.
+	if err := listenTCP(acceptPort, sendloopDuration); err != nil {
+		return fmt.Errorf("failed to establish a connection %v", err)
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputDropOnlyUDP) LocalAction(ip net.IP) error {
+	// Try to establish a TCP connection with the container, which should
+	// succeed.
+	return connectLoopTCP(ip, acceptPort, sendloopDuration)
 }
 
 // FilterInputDropUDPPort tests that we can drop UDP traffic by port.

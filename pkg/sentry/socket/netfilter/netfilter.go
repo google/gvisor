@@ -323,10 +323,9 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 
 		// TODO(gvisor.dev/issue/170): We should support IPTIP
 		// filtering. We reject any nonzero IPTIP values for now.
-		emptyIPTIP := linux.IPTIP{}
-		if entry.IP != emptyIPTIP {
-			log.Warningf("netfilter: non-empty struct iptip found")
-			return syserr.ErrInvalidArgument
+		filter, err := filterFromIPTIP(entry.IP)
+		if err != nil {
+			return err
 		}
 
 		// Get the target of the rule.
@@ -336,7 +335,10 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 		}
 		optVal = optVal[consumed:]
 
-		table.Rules = append(table.Rules, iptables.Rule{Target: target})
+		table.Rules = append(table.Rules, iptables.Rule{
+			Filter: filter,
+			Target: target,
+		})
 		offsets = append(offsets, offset)
 		offset += linux.SizeOfIPTEntry + consumed
 	}
@@ -445,6 +447,31 @@ func parseTarget(optVal []byte) (iptables.Target, uint32, *syserr.Error) {
 	// Unknown target.
 	log.Infof("Unknown target %q doesn't exist or isn't supported yet.", target.Name.String())
 	return nil, 0, syserr.ErrInvalidArgument
+}
+
+func filterFromIPTIP(iptip linux.IPTIP) (iptables.IPHeaderFilter, *syserr.Error) {
+	if containsUnsupportedFields(iptip) {
+		log.Warningf("netfilter: unsupported fields in struct iptip: %+v")
+		return iptables.IPHeaderFilter{}, syserr.ErrInvalidArgument
+	}
+	return iptables.IPHeaderFilter{
+		Protocol: iptip.Protocol,
+	}, nil
+}
+
+func containsUnsupportedFields(iptip linux.IPTIP) bool {
+	// Currently we check that everything except protocol is zeroed.
+	var emptyInetAddr = linux.InetAddr{}
+	var emptyInterface = [linux.IFNAMSIZ]byte{}
+	return iptip.Dst != emptyInetAddr ||
+		iptip.SrcMask != emptyInetAddr ||
+		iptip.DstMask != emptyInetAddr ||
+		iptip.InputInterface != emptyInterface ||
+		iptip.OutputInterface != emptyInterface ||
+		iptip.InputInterfaceMask != emptyInterface ||
+		iptip.OutputInterfaceMask != emptyInterface ||
+		iptip.Flags != 0 ||
+		iptip.InverseFlags != 0
 }
 
 func hookFromLinux(hook int) iptables.Hook {

@@ -4,6 +4,7 @@ package(licenses = ["notice"])
 
 go_library(
     name = "iptables",
+    testonly = 1,
     srcs = [
         "filter_input.go",
         "iptables.go",
@@ -11,6 +12,9 @@ go_library(
     ],
     importpath = "gvisor.dev/gvisor/test/iptables",
     visibility = ["//test/iptables:__subpackages__"],
+    deps = [
+        "//runsc/testutil",
+    ],
 )
 
 go_test(

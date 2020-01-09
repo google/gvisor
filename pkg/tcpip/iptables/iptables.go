@@ -185,6 +185,13 @@ func (it *IPTables) checkTable(hook Hook, pkt tcpip.PacketBuffer, tablename stri
 
 func (it *IPTables) checkRule(hook Hook, pkt tcpip.PacketBuffer, table Table, ruleIdx int) Verdict {
 	rule := table.Rules[ruleIdx]
+
+	// First check whether the packet matches the IP header filter.
+	// TODO(gvisor.dev/issue/170): Support other fields of the filter.
+	// if rule.Filter.Protocol != pkt.Protocol {
+	// 	return Continue
+	// }
+
 	// Go through each rule matcher. If they all match, run
 	// the rule target.
 	for _, matcher := range rule.Matchers {
