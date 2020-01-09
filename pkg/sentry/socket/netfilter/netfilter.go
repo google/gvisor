@@ -52,7 +52,7 @@ func GetInfo(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr) (linux.IPT
 	}
 
 	// Find the appropriate table.
-	table, err := findTable(ep, info.Name)
+	table, err := findTable(stack, info.Name)
 	if err != nil {
 		return linux.IPTGetinfo{}, err
 	}
@@ -83,7 +83,7 @@ func GetEntries(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, outLen 
 	}
 
 	// Find the appropriate table.
-	table, err := findTable(ep, userEntries.Name)
+	table, err := findTable(stack, userEntries.Name)
 	if err != nil {
 		return linux.KernelIPTGetEntries{}, err
 	}
@@ -102,11 +102,8 @@ func GetEntries(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, outLen 
 	return entries, nil
 }
 
-func findTable(ep tcpip.Endpoint, tablename linux.TableName) (iptables.Table, *syserr.Error) {
-	ipt, err := ep.IPTables()
-	if err != nil {
-		return iptables.Table{}, syserr.FromError(err)
-	}
+func findTable(stack *stack.Stack, tablename linux.TableName) (iptables.Table, *syserr.Error) {
+	ipt := stack.IPTables()
 	table, ok := ipt.Tables[tablename.String()]
 	if !ok {
 		return iptables.Table{}, syserr.ErrInvalidArgument
@@ -347,7 +344,7 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 	// Go through the list of supported hooks for this table and, for each
 	// one, set the rule it corresponds to.
 	for hook, _ := range replace.HookEntry {
-		if table.ValidHooks()&uint32(hook) != 0 {
+		if table.ValidHooks()&(1<<hook) != 0 {
 			hk := hookFromLinux(hook)
 			for ruleIdx, offset := range offsets {
 				if offset == replace.HookEntry[hook] {
