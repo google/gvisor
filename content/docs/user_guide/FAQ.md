@@ -23,11 +23,11 @@ gVisor supports Linux
 Binaries run in gVisor should be built for the
 [AMD64](https://en.wikipedia.org/wiki/X86-64) CPU architecture.
 
-### Can I run Docker images using gVisor.
+### Can I run Docker images using gVisor?
 
 Yes. Please see the [Docker Quick Start][docker].
 
-### Can I run Kubernetes pods using gVisor.
+### Can I run Kubernetes pods using gVisor?
 
 Yes. Please see the [Kubernetes Quick Start][k8s].
 
