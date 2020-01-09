@@ -1279,19 +1279,14 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		return nil
 
 	case tcpip.BindToDeviceOption:
+		id := tcpip.NICID(v)
+		if id != 0 && !e.stack.HasNIC(id) {
+			return tcpip.ErrUnknownDevice
+		}
 		e.mu.Lock()
-		defer e.mu.Unlock()
-		if v == "" {
-			e.bindToDevice = 0
-			return nil
-		}
-		for nicID, nic := range e.stack.NICInfo() {
-			if nic.Name == string(v) {
-				e.bindToDevice = nicID
-				return nil
-			}
-		}
-		return tcpip.ErrUnknownDevice
+		e.bindToDevice = id
+		e.mu.Unlock()
+		return nil
 
 	case tcpip.QuickAckOption:
 		if v == 0 {
@@ -1550,12 +1545,8 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 
 	case *tcpip.BindToDeviceOption:
 		e.mu.RLock()
-		defer e.mu.RUnlock()
-		if nic, ok := e.stack.NICInfo()[e.bindToDevice]; ok {
-			*o = tcpip.BindToDeviceOption(nic.Name)
-			return nil
-		}
-		*o = ""
+		*o = tcpip.BindToDeviceOption(e.bindToDevice)
+		e.mu.RUnlock()
 		return nil
 
 	case *tcpip.QuickAckOption:
