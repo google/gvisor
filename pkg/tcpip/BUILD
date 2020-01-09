@@ -10,6 +10,7 @@ go_library(
         "packet_buffer_state.go",
         "tcpip.go",
         "time_unsafe.go",
+        "timer.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/tcpip",
     visibility = ["//visibility:public"],
@@ -25,4 +26,11 @@ go_test(
     size = "small",
     srcs = ["tcpip_test.go"],
     embed = [":tcpip"],
+)
+
+go_test(
+    name = "timer_test",
+    size = "small",
+    srcs = ["timer_test.go"],
+    deps = [":tcpip"],
 )

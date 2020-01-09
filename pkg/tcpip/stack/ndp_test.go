@@ -1029,13 +1029,13 @@ func TestRouterDiscovery(t *testing.T) {
 	expectRouterEvent(llAddr2, true)
 
 	// Rx an RA from another router (lladdr3) with non-zero lifetime.
-	l3Lifetime := time.Duration(6)
-	e.InjectInbound(header.IPv6ProtocolNumber, raBuf(llAddr3, uint16(l3Lifetime)))
+	const l3LifetimeSeconds = 6
+	e.InjectInbound(header.IPv6ProtocolNumber, raBuf(llAddr3, l3LifetimeSeconds))
 	expectRouterEvent(llAddr3, true)
 
 	// Rx an RA from lladdr2 with lesser lifetime.
-	l2Lifetime := time.Duration(2)
-	e.InjectInbound(header.IPv6ProtocolNumber, raBuf(llAddr2, uint16(l2Lifetime)))
+	const l2LifetimeSeconds = 2
+	e.InjectInbound(header.IPv6ProtocolNumber, raBuf(llAddr2, l2LifetimeSeconds))
 	select {
 	case <-ndpDisp.routerC:
 		t.Fatal("Should not receive a router event when updating lifetimes for known routers")
@@ -1049,7 +1049,7 @@ func TestRouterDiscovery(t *testing.T) {
 	// Wait for the normal lifetime plus an extra bit for the
 	// router to get invalidated. If we don't get an invalidation
 	// event after this time, then something is wrong.
-	expectAsyncRouterInvalidationEvent(llAddr2, l2Lifetime*time.Second+defaultTimeout)
+	expectAsyncRouterInvalidationEvent(llAddr2, l2LifetimeSeconds*time.Second+defaultTimeout)
 
 	// Rx an RA from lladdr2 with huge lifetime.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBuf(llAddr2, 1000))
@@ -1066,7 +1066,7 @@ func TestRouterDiscovery(t *testing.T) {
 	// Wait for the normal lifetime plus an extra bit for the
 	// router to get invalidated. If we don't get an invalidation
 	// event after this time, then something is wrong.
-	expectAsyncRouterInvalidationEvent(llAddr3, l3Lifetime*time.Second+defaultTimeout)
+	expectAsyncRouterInvalidationEvent(llAddr3, l3LifetimeSeconds*time.Second+defaultTimeout)
 }
 
 // TestRouterDiscoveryMaxRouters tests that only
