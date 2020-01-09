@@ -299,46 +299,14 @@ type dadState struct {
 // defaultRouterState holds data associated with a default router discovered by
 // a Router Advertisement (RA).
 type defaultRouterState struct {
-	invalidationTimer *time.Timer
-
-	// Used to inform the timer not to invalidate the default router (R) in
-	// a race condition (T1 is a goroutine that handles an RA from R and T2
-	// is the goroutine that handles R's invalidation timer firing):
-	//   T1: Receive a new RA from R
-	//   T1: Obtain the NIC's lock before processing the RA
-	//   T2: R's invalidation timer fires, and gets blocked on obtaining the
-	//       NIC's lock
-	//   T1: Refreshes/extends R's lifetime & releases NIC's lock
-	//   T2: Obtains NIC's lock & invalidates R immediately
-	//
-	// To resolve this, T1 will check to see if the timer already fired, and
-	// inform the timer using doNotInvalidate to not invalidate R, so that
-	// once T2 obtains the lock, it will see that it is set to true and do
-	// nothing further.
-	doNotInvalidate *bool
+	invalidationTimer tcpip.CancellableTimer
 }
 
 // onLinkPrefixState holds data associated with an on-link prefix discovered by
 // a Router Advertisement's Prefix Information option (PI) when the NDP
 // configurations was configured to do so.
 type onLinkPrefixState struct {
-	invalidationTimer *time.Timer
-
-	// Used to signal the timer not to invalidate the on-link prefix (P) in
-	// a race condition (T1 is a goroutine that handles a PI for P and T2
-	// is the goroutine that handles P's invalidation timer firing):
-	//   T1: Receive a new PI for P
-	//   T1: Obtain the NIC's lock before processing the PI
-	//   T2: P's invalidation timer fires, and gets blocked on obtaining the
-	//       NIC's lock
-	//   T1: Refreshes/extends P's lifetime & releases NIC's lock
-	//   T2: Obtains NIC's lock & invalidates P immediately
-	//
-	// To resolve this, T1 will check to see if the timer already fired, and
-	// inform the timer using doNotInvalidate to not invalidate P, so that
-	// once T2 obtains the lock, it will see that it is set to true and do
-	// nothing further.
-	doNotInvalidate *bool
+	invalidationTimer tcpip.CancellableTimer
 }
 
 // autoGenAddressState holds data associated with an address generated via
@@ -348,33 +316,10 @@ type autoGenAddressState struct {
 	// is holding state for.
 	ref *referencedNetworkEndpoint
 
-	deprecationTimer *time.Timer
+	deprecationTimer  tcpip.CancellableTimer
+	invalidationTimer tcpip.CancellableTimer
 
-	// Used to signal the timer not to deprecate the SLAAC address in a race
-	// condition. Used for the same reason as doNotInvalidate, but for deprecating
-	// an address.
-	doNotDeprecate *bool
-
-	invalidationTimer *time.Timer
-
-	// Used to signal the timer not to invalidate the SLAAC address (A) in
-	// a race condition (T1 is a goroutine that handles a PI for A and T2
-	// is the goroutine that handles A's invalidation timer firing):
-	//   T1: Receive a new PI for A
-	//   T1: Obtain the NIC's lock before processing the PI
-	//   T2: A's invalidation timer fires, and gets blocked on obtaining the
-	//       NIC's lock
-	//   T1: Refreshes/extends A's lifetime & releases NIC's lock
-	//   T2: Obtains NIC's lock & invalidates A immediately
-	//
-	// To resolve this, T1 will check to see if the timer already fired, and
-	// inform the timer using doNotInvalidate to not invalidate A, so that
-	// once T2 obtains the lock, it will see that it is set to true and do
-	// nothing further.
-	doNotInvalidate *bool
-
-	// Nonzero only when the address is not valid forever (invalidationTimer
-	// is not nil).
+	// Nonzero only when the address is not valid forever.
 	validUntil time.Time
 }
 
@@ -576,7 +521,7 @@ func (ndp *ndpState) stopDuplicateAddressDetection(addr tcpip.Address) {
 // handleRA handles a Router Advertisement message that arrived on the NIC
 // this ndp is for. Does nothing if the NIC is configured to not handle RAs.
 //
-// The NIC that ndp belongs to and its associated stack MUST be locked.
+// The NIC that ndp belongs to MUST be locked.
 func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 	// Is the NIC configured to handle RAs at all?
 	//
@@ -605,27 +550,9 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 		case ok && rl != 0:
 			// This is an already discovered default router. Update
 			// the invalidation timer.
-			timer := rtr.invalidationTimer
-
-			// We should ALWAYS have an invalidation timer for a
-			// discovered router.
-			if timer == nil {
-				panic("ndphandlera: RA invalidation timer should not be nil")
-			}
-
-			if !timer.Stop() {
-				// If we reach this point, then we know the
-				// timer fired after we already took the NIC
-				// lock. Inform the timer not to invalidate the
-				// router when it obtains the lock as we just
-				// got a new RA that refreshes its lifetime to a
-				// non-zero value. See
-				// defaultRouterState.doNotInvalidate for more
-				// details.
-				*rtr.doNotInvalidate = true
-			}
-
-			timer.Reset(rl)
+			rtr.invalidationTimer.StopLocked()
+			rtr.invalidationTimer.Reset(rl)
+			ndp.defaultRouters[ip] = rtr
 
 		case ok && rl == 0:
 			// We know about the router but it is no longer to be
@@ -692,10 +619,7 @@ func (ndp *ndpState) invalidateDefaultRouter(ip tcpip.Address) {
 		return
 	}
 
-	rtr.invalidationTimer.Stop()
-	rtr.invalidationTimer = nil
-	*rtr.doNotInvalidate = true
-	rtr.doNotInvalidate = nil
+	rtr.invalidationTimer.StopLocked()
 
 	delete(ndp.defaultRouters, ip)
 
@@ -724,27 +648,15 @@ func (ndp *ndpState) rememberDefaultRouter(ip tcpip.Address, rl time.Duration) {
 		return
 	}
 
-	// Used to signal the timer not to invalidate the default router (R) in
-	// a race condition. See defaultRouterState.doNotInvalidate for more
-	// details.
-	var doNotInvalidate bool
-
-	ndp.defaultRouters[ip] = defaultRouterState{
-		invalidationTimer: time.AfterFunc(rl, func() {
-			ndp.nic.stack.mu.Lock()
-			defer ndp.nic.stack.mu.Unlock()
-			ndp.nic.mu.Lock()
-			defer ndp.nic.mu.Unlock()
-
-			if doNotInvalidate {
-				doNotInvalidate = false
-				return
-			}
-
+	state := defaultRouterState{
+		invalidationTimer: tcpip.MakeCancellableTimer(&ndp.nic.mu, func() {
 			ndp.invalidateDefaultRouter(ip)
 		}),
-		doNotInvalidate: &doNotInvalidate,
 	}
+
+	state.invalidationTimer.Reset(rl)
+
+	ndp.defaultRouters[ip] = state
 }
 
 // rememberOnLinkPrefix remembers a newly discovered on-link prefix with IPv6
@@ -766,21 +678,17 @@ func (ndp *ndpState) rememberOnLinkPrefix(prefix tcpip.Subnet, l time.Duration) 
 		return
 	}
 
-	// Used to signal the timer not to invalidate the on-link prefix (P) in
-	// a race condition. See onLinkPrefixState.doNotInvalidate for more
-	// details.
-	var doNotInvalidate bool
-	var timer *time.Timer
+	state := onLinkPrefixState{
+		invalidationTimer: tcpip.MakeCancellableTimer(&ndp.nic.mu, func() {
+			ndp.invalidateOnLinkPrefix(prefix)
+		}),
+	}
 
-	// Only create a timer if the lifetime is not infinite.
 	if l < header.NDPInfiniteLifetime {
-		timer = ndp.prefixInvalidationCallback(prefix, l, &doNotInvalidate)
+		state.invalidationTimer.Reset(l)
 	}
 
-	ndp.onLinkPrefixes[prefix] = onLinkPrefixState{
-		invalidationTimer: timer,
-		doNotInvalidate:   &doNotInvalidate,
-	}
+	ndp.onLinkPrefixes[prefix] = state
 }
 
 // invalidateOnLinkPrefix invalidates a discovered on-link prefix.
@@ -795,13 +703,7 @@ func (ndp *ndpState) invalidateOnLinkPrefix(prefix tcpip.Subnet) {
 		return
 	}
 
-	if s.invalidationTimer != nil {
-		s.invalidationTimer.Stop()
-		s.invalidationTimer = nil
-		*s.doNotInvalidate = true
-	}
-
-	s.doNotInvalidate = nil
+	s.invalidationTimer.StopLocked()
 
 	delete(ndp.onLinkPrefixes, prefix)
 
@@ -809,28 +711,6 @@ func (ndp *ndpState) invalidateOnLinkPrefix(prefix tcpip.Subnet) {
 	if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
 		ndpDisp.OnOnLinkPrefixInvalidated(ndp.nic.ID(), prefix)
 	}
-}
-
-// prefixInvalidationCallback returns a new on-link prefix invalidation timer
-// for prefix that fires after vl.
-//
-// doNotInvalidate is used to signal the timer when it fires at the same time
-// that a prefix's valid lifetime gets refreshed. See
-// onLinkPrefixState.doNotInvalidate for more details.
-func (ndp *ndpState) prefixInvalidationCallback(prefix tcpip.Subnet, vl time.Duration, doNotInvalidate *bool) *time.Timer {
-	return time.AfterFunc(vl, func() {
-		ndp.nic.stack.mu.Lock()
-		defer ndp.nic.stack.mu.Unlock()
-		ndp.nic.mu.Lock()
-		defer ndp.nic.mu.Unlock()
-
-		if *doNotInvalidate {
-			*doNotInvalidate = false
-			return
-		}
-
-		ndp.invalidateOnLinkPrefix(prefix)
-	})
 }
 
 // handleOnLinkPrefixInformation handles a Prefix Information option with
@@ -872,42 +752,17 @@ func (ndp *ndpState) handleOnLinkPrefixInformation(pi header.NDPPrefixInformatio
 
 	// This is an already discovered on-link prefix with a
 	// new non-zero valid lifetime.
+	//
 	// Update the invalidation timer.
-	timer := prefixState.invalidationTimer
 
-	if timer == nil && vl >= header.NDPInfiniteLifetime {
-		// Had infinite valid lifetime before and
-		// continues to have an invalid lifetime. Do
-		// nothing further.
-		return
+	prefixState.invalidationTimer.StopLocked()
+
+	if vl < header.NDPInfiniteLifetime {
+		// Prefix is valid for a finite lifetime, reset the timer to expire after
+		// the new valid lifetime.
+		prefixState.invalidationTimer.Reset(vl)
 	}
 
-	if timer != nil && !timer.Stop() {
-		// If we reach this point, then we know the timer alread fired
-		// after we took the NIC lock. Inform the timer to not
-		// invalidate the prefix once it obtains the lock as we just
-		// got a new PI that refreshes its lifetime to a non-zero value.
-		// See onLinkPrefixState.doNotInvalidate for more details.
-		*prefixState.doNotInvalidate = true
-	}
-
-	if vl >= header.NDPInfiniteLifetime {
-		// Prefix is now valid forever so we don't need
-		// an invalidation timer.
-		prefixState.invalidationTimer = nil
-		ndp.onLinkPrefixes[prefix] = prefixState
-		return
-	}
-
-	if timer != nil {
-		// We already have a timer so just reset it to
-		// expire after the new valid lifetime.
-		timer.Reset(vl)
-		return
-	}
-
-	// We do not have a timer so just create a new one.
-	prefixState.invalidationTimer = ndp.prefixInvalidationCallback(prefix, vl, prefixState.doNotInvalidate)
 	ndp.onLinkPrefixes[prefix] = prefixState
 }
 
@@ -917,7 +772,7 @@ func (ndp *ndpState) handleOnLinkPrefixInformation(pi header.NDPPrefixInformatio
 // handleAutonomousPrefixInformation assumes that the prefix this pi is for is
 // not the link-local prefix and the autonomous flag is set.
 //
-// The NIC that ndp belongs to and its associated stack MUST be locked.
+// The NIC that ndp belongs to MUST be locked.
 func (ndp *ndpState) handleAutonomousPrefixInformation(pi header.NDPPrefixInformation) {
 	vl := pi.ValidLifetime()
 	pl := pi.PreferredLifetime()
@@ -1026,28 +881,34 @@ func (ndp *ndpState) newAutoGenAddress(prefix tcpip.Subnet, pl, vl time.Duration
 		log.Fatalf("ndp: error when adding address %s: %s", protocolAddr, err)
 	}
 
-	// Setup the timers to deprecate and invalidate this newly generated address.
+	state := autoGenAddressState{
+		ref: ref,
+		deprecationTimer: tcpip.MakeCancellableTimer(&ndp.nic.mu, func() {
+			addrState, ok := ndp.autoGenAddresses[addr]
+			if !ok {
+				log.Fatalf("ndp: must have an autoGenAddressess entry for the SLAAC generated IPv6 address %s", addr)
+			}
+			addrState.ref.deprecated = true
+			ndp.notifyAutoGenAddressDeprecated(addr)
+		}),
+		invalidationTimer: tcpip.MakeCancellableTimer(&ndp.nic.mu, func() {
+			ndp.invalidateAutoGenAddress(addr)
+		}),
+	}
 
-	var doNotDeprecate bool
-	var pTimer *time.Timer
+	// Setup the initial timers to deprecate and invalidate this newly generated
+	// address.
+
 	if !deprecated && pl < header.NDPInfiniteLifetime {
-		pTimer = ndp.autoGenAddrDeprecationTimer(addr, pl, &doNotDeprecate)
+		state.deprecationTimer.Reset(pl)
 	}
 
-	var doNotInvalidate bool
-	var vTimer *time.Timer
 	if vl < header.NDPInfiniteLifetime {
-		vTimer = ndp.autoGenAddrInvalidationTimer(addr, vl, &doNotInvalidate)
+		state.invalidationTimer.Reset(vl)
+		state.validUntil = time.Now().Add(vl)
 	}
 
-	ndp.autoGenAddresses[addr] = autoGenAddressState{
-		ref:               ref,
-		deprecationTimer:  pTimer,
-		doNotDeprecate:    &doNotDeprecate,
-		invalidationTimer: vTimer,
-		doNotInvalidate:   &doNotInvalidate,
-		validUntil:        time.Now().Add(vl),
-	}
+	ndp.autoGenAddresses[addr] = state
 }
 
 // refreshAutoGenAddressLifetimes refreshes the lifetime of a SLAAC generated
@@ -1075,20 +936,10 @@ func (ndp *ndpState) refreshAutoGenAddressLifetimes(addr tcpip.Address, pl, vl t
 
 	// If addr was preferred for some finite lifetime before, stop the deprecation
 	// timer so it can be reset.
-	if t := addrState.deprecationTimer; t != nil && !t.Stop() {
-		*addrState.doNotDeprecate = true
-	}
+	addrState.deprecationTimer.StopLocked()
 
-	// Reset the deprecation timer.
-	if pl >= header.NDPInfiniteLifetime || deprecated {
-		// If addr is preferred forever or it has been deprecated already, there is
-		// no need for a deprecation timer.
-		addrState.deprecationTimer = nil
-	} else if addrState.deprecationTimer == nil {
-		// addr is now preferred for a finite lifetime.
-		addrState.deprecationTimer = ndp.autoGenAddrDeprecationTimer(addr, pl, addrState.doNotDeprecate)
-	} else {
-		// addr continues to be preferred for a finite lifetime.
+	// Reset the deprecation timer if addr has a finite preferred lifetime.
+	if !deprecated && pl < header.NDPInfiniteLifetime {
 		addrState.deprecationTimer.Reset(pl)
 	}
 
@@ -1107,15 +958,8 @@ func (ndp *ndpState) refreshAutoGenAddressLifetimes(addr tcpip.Address, pl, vl t
 	// Handle the infinite valid lifetime separately as we do not keep a timer in
 	// this case.
 	if vl >= header.NDPInfiniteLifetime {
-		if addrState.invalidationTimer != nil {
-			// Valid lifetime was finite before, but now it is valid forever.
-			if !addrState.invalidationTimer.Stop() {
-				*addrState.doNotInvalidate = true
-			}
-			addrState.invalidationTimer = nil
-			addrState.validUntil = time.Time{}
-		}
-
+		addrState.invalidationTimer.StopLocked()
+		addrState.validUntil = time.Time{}
 		return
 	}
 
@@ -1124,7 +968,7 @@ func (ndp *ndpState) refreshAutoGenAddressLifetimes(addr tcpip.Address, pl, vl t
 
 	// If the address was originally set to be valid forever, assume the remaining
 	// time to be the maximum possible value.
-	if addrState.invalidationTimer == nil {
+	if addrState.validUntil == (time.Time{}) {
 		rl = header.NDPInfiniteLifetime
 	} else {
 		rl = time.Until(addrState.validUntil)
@@ -1138,15 +982,8 @@ func (ndp *ndpState) refreshAutoGenAddressLifetimes(addr tcpip.Address, pl, vl t
 		effectiveVl = MinPrefixInformationValidLifetimeForUpdate
 	}
 
-	if addrState.invalidationTimer == nil {
-		addrState.invalidationTimer = ndp.autoGenAddrInvalidationTimer(addr, effectiveVl, addrState.doNotInvalidate)
-	} else {
-		if !addrState.invalidationTimer.Stop() {
-			*addrState.doNotInvalidate = true
-		}
-		addrState.invalidationTimer.Reset(effectiveVl)
-	}
-
+	addrState.invalidationTimer.StopLocked()
+	addrState.invalidationTimer.Reset(effectiveVl)
 	addrState.validUntil = time.Now().Add(effectiveVl)
 }
 
@@ -1181,27 +1018,12 @@ func (ndp *ndpState) invalidateAutoGenAddress(addr tcpip.Address) {
 // The NIC that ndp belongs to MUST be locked.
 func (ndp *ndpState) cleanupAutoGenAddrResourcesAndNotify(addr tcpip.Address) bool {
 	state, ok := ndp.autoGenAddresses[addr]
-
 	if !ok {
 		return false
 	}
 
-	if state.deprecationTimer != nil {
-		state.deprecationTimer.Stop()
-		state.deprecationTimer = nil
-		*state.doNotDeprecate = true
-	}
-
-	state.doNotDeprecate = nil
-
-	if state.invalidationTimer != nil {
-		state.invalidationTimer.Stop()
-		state.invalidationTimer = nil
-		*state.doNotInvalidate = true
-	}
-
-	state.doNotInvalidate = nil
-
+	state.deprecationTimer.StopLocked()
+	state.invalidationTimer.StopLocked()
 	delete(ndp.autoGenAddresses, addr)
 
 	if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
@@ -1212,53 +1034,6 @@ func (ndp *ndpState) cleanupAutoGenAddrResourcesAndNotify(addr tcpip.Address) bo
 	}
 
 	return true
-}
-
-// autoGenAddrDeprecationTimer returns a new deprecation timer for an
-// auto-generated address that fires after pl.
-//
-// doNotDeprecate is used to inform the timer when it fires at the same time
-// that an auto-generated address's preferred lifetime gets refreshed. See
-// autoGenAddrState.doNotDeprecate for more details.
-func (ndp *ndpState) autoGenAddrDeprecationTimer(addr tcpip.Address, pl time.Duration, doNotDeprecate *bool) *time.Timer {
-	return time.AfterFunc(pl, func() {
-		ndp.nic.mu.Lock()
-		defer ndp.nic.mu.Unlock()
-
-		if *doNotDeprecate {
-			*doNotDeprecate = false
-			return
-		}
-
-		addrState, ok := ndp.autoGenAddresses[addr]
-		if !ok {
-			log.Fatalf("ndp: must have an autoGenAddressess entry for the SLAAC generated IPv6 address %s", addr)
-		}
-		addrState.ref.deprecated = true
-		ndp.notifyAutoGenAddressDeprecated(addr)
-		addrState.deprecationTimer = nil
-		ndp.autoGenAddresses[addr] = addrState
-	})
-}
-
-// autoGenAddrInvalidationTimer returns a new invalidation timer for an
-// auto-generated address that fires after vl.
-//
-// doNotInvalidate is used to inform the timer when it fires at the same time
-// that an auto-generated address's valid lifetime gets refreshed. See
-// autoGenAddrState.doNotInvalidate for more details.
-func (ndp *ndpState) autoGenAddrInvalidationTimer(addr tcpip.Address, vl time.Duration, doNotInvalidate *bool) *time.Timer {
-	return time.AfterFunc(vl, func() {
-		ndp.nic.mu.Lock()
-		defer ndp.nic.mu.Unlock()
-
-		if *doNotInvalidate {
-			*doNotInvalidate = false
-			return
-		}
-
-		ndp.invalidateAutoGenAddress(addr)
-	})
 }
 
 // cleanupHostOnlyState cleans up any state that is only useful for hosts.
