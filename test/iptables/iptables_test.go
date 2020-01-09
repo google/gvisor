@@ -178,9 +178,14 @@ func TestFilterInputDropDifferentUDPPort(t *testing.T) {
 	}
 }
 
-func TestFilterInputRedirectUDPPort(t *testing.T) {
-	if err := singleTest(FilterInputRedirectUDPPort{}); err != nil {
+func TestFilterNATRedirectUDPPort(t *testing.T) {
+	if err := singleTest(FilterNATRedirectUDPPort{}); err != nil {
 		t.Fatal(err)
 	}
 }
 
+func TestFilterNATDropUDP(t *testing.T) {
+        if err := singleTest(FilterNATDropUDP{}); err != nil {
+	        t.Fatal(err)
+	}
+}
