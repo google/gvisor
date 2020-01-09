@@ -250,14 +250,7 @@ type syscallTable struct {
 	syscalls SyscallMap
 }
 
-// syscallTables contains all syscall tables.
-var syscallTables = []syscallTable{
-	{
-		os:       abi.Linux,
-		arch:     arch.AMD64,
-		syscalls: linuxAMD64,
-	},
-}
+var syscallTables []syscallTable
 
 // Lookup returns the SyscallMap for the OS/Arch combination. The returned map
 // must not be changed.
