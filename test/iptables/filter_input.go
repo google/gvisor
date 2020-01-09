@@ -23,6 +23,7 @@ import (
 const (
 	dropPort         = 2401
 	acceptPort       = 2402
+	redirectPort     = 42
 	sendloopDuration = 2 * time.Second
 	network          = "udp4"
 )
@@ -31,6 +32,7 @@ func init() {
 	RegisterTestCase(FilterInputDropUDP{})
 	RegisterTestCase(FilterInputDropUDPPort{})
 	RegisterTestCase(FilterInputDropDifferentUDPPort{})
+	RegisterTestCase(FilterInputRedirectUDPPort{})
 }
 
 // FilterInputDropUDP tests that we can drop UDP traffic.
@@ -121,4 +123,30 @@ func (FilterInputDropDifferentUDPPort) ContainerAction(ip net.IP) error {
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputDropDifferentUDPPort) LocalAction(ip net.IP) error {
 	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// FilterInputRedirectUDPPort tests that packets are redirected to different port.
+type FilterInputRedirectUDPPort struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputRedirectUDPPort) Name() string {
+        return "FilterInputRedirectUDPPort"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputRedirectUDPPort) ContainerAction(ip net.IP) error {
+        if err := filterTable("-t", "nat", "-A", "PREROUTING", "-p", "udp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", redirectPort)); err != nil {
+		return err
+	}
+
+	if err := listenUDP(redirectPort, sendloopDuration); err != nil {
+	        return fmt.Errorf("packets on port %d should be allowed, but encountered an error: %v", acceptPort, redirectPort, err)
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputRedirectUDPPort) LocalAction(ip net.IP) error {
+        return sendUDPLoop(ip, acceptPort, sendloopDuration)
 }
