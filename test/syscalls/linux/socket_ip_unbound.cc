@@ -129,6 +129,7 @@ TEST_P(IPUnboundSocketTest, InvalidNegativeTtl) {
 struct TOSOption {
   int level;
   int option;
+  int cmsg_level;
 };
 
 constexpr int INET_ECN_MASK = 3;
@@ -139,10 +140,12 @@ static TOSOption GetTOSOption(int domain) {
     case AF_INET:
       opt.level = IPPROTO_IP;
       opt.option = IP_TOS;
+      opt.cmsg_level = SOL_IP;
       break;
     case AF_INET6:
       opt.level = IPPROTO_IPV6;
       opt.option = IPV6_TCLASS;
+      opt.cmsg_level = SOL_IPV6;
       break;
   }
   return opt;
@@ -384,6 +387,36 @@ TEST_P(IPUnboundSocketTest, NullTOS) {
   int get = -1;
   EXPECT_THAT(getsockopt(socket->get(), t.level, t.option, &get, nullptr),
               SyscallFailsWithErrno(EFAULT));
+}
+
+TEST_P(IPUnboundSocketTest, InsufficientBufferTOS) {
+  SKIP_IF(GetParam().protocol == IPPROTO_TCP);
+
+  auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  TOSOption t = GetTOSOption(GetParam().domain);
+
+  in_addr addr4;
+  in6_addr addr6;
+  ASSERT_THAT(inet_pton(AF_INET, "127.0.0.1", &addr4), ::testing::Eq(1));
+  ASSERT_THAT(inet_pton(AF_INET6, "fe80::", &addr6), ::testing::Eq(1));
+
+  cmsghdr cmsg = {};
+  cmsg.cmsg_len = sizeof(cmsg);
+  cmsg.cmsg_level = t.cmsg_level;
+  cmsg.cmsg_type = t.option;
+
+  msghdr msg = {};
+  msg.msg_control = &cmsg;
+  msg.msg_controllen = sizeof(cmsg);
+  if (GetParam().domain == AF_INET) {
+    msg.msg_name = &addr4;
+    msg.msg_namelen = sizeof(addr4);
+  } else {
+    msg.msg_name = &addr6;
+    msg.msg_namelen = sizeof(addr6);
+  }
+
+  EXPECT_THAT(sendmsg(socket->get(), &msg, 0), SyscallFailsWithErrno(EINVAL));
 }
 
 INSTANTIATE_TEST_SUITE_P(
