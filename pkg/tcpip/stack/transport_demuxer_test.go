@@ -41,7 +41,7 @@ const (
 
 type testContext struct {
 	t       *testing.T
-	linkEPs map[string]*channel.Endpoint
+	linkEps map[tcpip.NICID]*channel.Endpoint
 	s       *stack.Stack
 
 	ep tcpip.Endpoint
@@ -66,27 +66,24 @@ func (c *testContext) createV6Endpoint(v6only bool) {
 	}
 }
 
-// newDualTestContextMultiNic creates the testing context and also linkEpNames
-// named NICs.
-func newDualTestContextMultiNic(t *testing.T, mtu uint32, linkEpNames []string) *testContext {
+// newDualTestContextMultiNIC creates the testing context and also linkEpIDs NICs.
+func newDualTestContextMultiNIC(t *testing.T, mtu uint32, linkEpIDs []tcpip.NICID) *testContext {
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
 		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()}})
-	linkEPs := make(map[string]*channel.Endpoint)
-	for i, linkEpName := range linkEpNames {
-		channelEP := channel.New(256, mtu, "")
-		nicID := tcpip.NICID(i + 1)
-		opts := stack.NICOptions{Name: linkEpName}
-		if err := s.CreateNICWithOptions(nicID, channelEP, opts); err != nil {
-			t.Fatalf("CreateNICWithOptions(_, _, %+v) failed: %v", opts, err)
+	linkEps := make(map[tcpip.NICID]*channel.Endpoint)
+	for _, linkEpID := range linkEpIDs {
+		channelEp := channel.New(256, mtu, "")
+		if err := s.CreateNIC(linkEpID, channelEp); err != nil {
+			t.Fatalf("CreateNIC failed: %v", err)
 		}
-		linkEPs[linkEpName] = channelEP
+		linkEps[linkEpID] = channelEp
 
-		if err := s.AddAddress(nicID, ipv4.ProtocolNumber, stackAddr); err != nil {
+		if err := s.AddAddress(linkEpID, ipv4.ProtocolNumber, stackAddr); err != nil {
 			t.Fatalf("AddAddress IPv4 failed: %v", err)
 		}
 
-		if err := s.AddAddress(nicID, ipv6.ProtocolNumber, stackV6Addr); err != nil {
+		if err := s.AddAddress(linkEpID, ipv6.ProtocolNumber, stackV6Addr); err != nil {
 			t.Fatalf("AddAddress IPv6 failed: %v", err)
 		}
 	}
@@ -105,7 +102,7 @@ func newDualTestContextMultiNic(t *testing.T, mtu uint32, linkEpNames []string) 
 	return &testContext{
 		t:       t,
 		s:       s,
-		linkEPs: linkEPs,
+		linkEps: linkEps,
 	}
 }
 
@@ -122,7 +119,7 @@ func newPayload() []byte {
 	return b
 }
 
-func (c *testContext) sendV6Packet(payload []byte, h *headers, linkEpName string) {
+func (c *testContext) sendV6Packet(payload []byte, h *headers, linkEpID tcpip.NICID) {
 	// Allocate a buffer for data and headers.
 	buf := buffer.NewView(header.UDPMinimumSize + header.IPv6MinimumSize + len(payload))
 	copy(buf[len(buf)-len(payload):], payload)
@@ -153,7 +150,7 @@ func (c *testContext) sendV6Packet(payload []byte, h *headers, linkEpName string
 	u.SetChecksum(^u.CalculateChecksum(xsum))
 
 	// Inject packet.
-	c.linkEPs[linkEpName].InjectInbound(ipv6.ProtocolNumber, tcpip.PacketBuffer{
+	c.linkEps[linkEpID].InjectInbound(ipv6.ProtocolNumber, tcpip.PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
 }
@@ -183,7 +180,7 @@ func TestTransportDemuxerRegister(t *testing.T) {
 func TestDistribution(t *testing.T) {
 	type endpointSockopts struct {
 		reuse        int
-		bindToDevice string
+		bindToDevice tcpip.NICID
 	}
 	for _, test := range []struct {
 		name string
@@ -191,71 +188,71 @@ func TestDistribution(t *testing.T) {
 		endpoints []endpointSockopts
 		// wantedDistribution is the wanted ratio of packets received on each
 		// endpoint for each NIC on which packets are injected.
-		wantedDistributions map[string][]float64
+		wantedDistributions map[tcpip.NICID][]float64
 	}{
 		{
 			"BindPortReuse",
 			// 5 endpoints that all have reuse set.
 			[]endpointSockopts{
-				{1, ""},
-				{1, ""},
-				{1, ""},
-				{1, ""},
-				{1, ""},
+				{1, 0},
+				{1, 0},
+				{1, 0},
+				{1, 0},
+				{1, 0},
 			},
-			map[string][]float64{
+			map[tcpip.NICID][]float64{
 				// Injected packets on dev0 get distributed evenly.
-				"dev0": {0.2, 0.2, 0.2, 0.2, 0.2},
+				1: {0.2, 0.2, 0.2, 0.2, 0.2},
 			},
 		},
 		{
 			"BindToDevice",
 			// 3 endpoints with various bindings.
 			[]endpointSockopts{
-				{0, "dev0"},
-				{0, "dev1"},
-				{0, "dev2"},
+				{0, 1},
+				{0, 2},
+				{0, 3},
 			},
-			map[string][]float64{
+			map[tcpip.NICID][]float64{
 				// Injected packets on dev0 go only to the endpoint bound to dev0.
-				"dev0": {1, 0, 0},
+				1: {1, 0, 0},
 				// Injected packets on dev1 go only to the endpoint bound to dev1.
-				"dev1": {0, 1, 0},
+				2: {0, 1, 0},
 				// Injected packets on dev2 go only to the endpoint bound to dev2.
-				"dev2": {0, 0, 1},
+				3: {0, 0, 1},
 			},
 		},
 		{
 			"ReuseAndBindToDevice",
 			// 6 endpoints with various bindings.
 			[]endpointSockopts{
-				{1, "dev0"},
-				{1, "dev0"},
-				{1, "dev1"},
-				{1, "dev1"},
-				{1, "dev1"},
-				{1, ""},
+				{1, 1},
+				{1, 1},
+				{1, 2},
+				{1, 2},
+				{1, 2},
+				{1, 0},
 			},
-			map[string][]float64{
+			map[tcpip.NICID][]float64{
 				// Injected packets on dev0 get distributed among endpoints bound to
 				// dev0.
-				"dev0": {0.5, 0.5, 0, 0, 0, 0},
+				1: {0.5, 0.5, 0, 0, 0, 0},
 				// Injected packets on dev1 get distributed among endpoints bound to
 				// dev1 or unbound.
-				"dev1": {0, 0, 1. / 3, 1. / 3, 1. / 3, 0},
+				2: {0, 0, 1. / 3, 1. / 3, 1. / 3, 0},
 				// Injected packets on dev999 go only to the unbound.
-				"dev999": {0, 0, 0, 0, 0, 1},
+				1000: {0, 0, 0, 0, 0, 1},
 			},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			for device, wantedDistribution := range test.wantedDistributions {
-				t.Run(device, func(t *testing.T) {
-					var devices []string
+				t.Run(string(device), func(t *testing.T) {
+					var devices []tcpip.NICID
 					for d := range test.wantedDistributions {
 						devices = append(devices, d)
 					}
-					c := newDualTestContextMultiNic(t, defaultMTU, devices)
+					c := newDualTestContextMultiNIC(t, defaultMTU, devices)
 					defer c.cleanup()
 
 					c.createV6Endpoint(false)

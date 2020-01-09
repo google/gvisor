@@ -901,6 +901,14 @@ type NICInfo struct {
 	Context NICContext
 }
 
+// HasNIC returns true if the NICID is defined in the stack.
+func (s *Stack) HasNIC(id tcpip.NICID) bool {
+	s.mu.RLock()
+	_, ok := s.nics[id]
+	s.mu.RUnlock()
+	return ok
+}
+
 // NICInfo returns a map of NICIDs to their associated information.
 func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 	s.mu.RLock()
