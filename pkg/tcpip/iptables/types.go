@@ -151,11 +151,31 @@ func (table *Table) SetMetadata(metadata interface{}) {
 // packets this rule applies to. If there are no matchers in the rule, it
 // applies to any packet.
 type Rule struct {
+	// IPHeaderFilters holds basic IP filtering fields common to every rule.
+	IPHeaderFilter IPHeaderFilter
+
 	// Matchers is the list of matchers for this rule.
 	Matchers []Matcher
 
 	// Target is the action to invoke if all the matchers match the packet.
 	Target Target
+}
+
+// TODO: This is gross.
+// TODO: Save this in SetEntries.
+// TODO: Utilize this when traversing tables.
+type IPHeaderFilter struct {
+	Source              [4]byte
+	Destination         [4]byte
+	SourceMask          [4]byte
+	DestinationMask     [4]byte
+	OutputInterface     string
+	InputInterface      string
+	OutputInterfaceMask string
+	InputInterfaceMask  string
+	Protocol            uint16
+	Flags               uint8
+	InverseFlags        uint8
 }
 
 // A Matcher is the interface for matching packets.

@@ -166,20 +166,20 @@ func TestFilterInputDropUDP(t *testing.T) {
 	}
 }
 
-func TestFilterInputDropUDPPort(t *testing.T) {
-	if err := singleTest(FilterInputDropUDPPort{}); err != nil {
-		t.Fatal(err)
-	}
-}
+// func TestFilterInputDropUDPPort(t *testing.T) {
+// 	if err := singleTest(FilterInputDropUDPPort{}); err != nil {
+// 		t.Fatal(err)
+// 	}
+// }
 
-func TestFilterInputDropDifferentUDPPort(t *testing.T) {
-	if err := singleTest(FilterInputDropDifferentUDPPort{}); err != nil {
-		t.Fatal(err)
-	}
-}
+// func TestFilterInputDropDifferentUDPPort(t *testing.T) {
+// 	if err := singleTest(FilterInputDropDifferentUDPPort{}); err != nil {
+// 		t.Fatal(err)
+// 	}
+// }
 
-func TestFilterInputDropAll(t *testing.T) {
-	if err := singleTest(FilterInputDropAll{}); err != nil {
-		t.Fatal(err)
-	}
-}
+// func TestFilterInputDropAll(t *testing.T) {
+// 	if err := singleTest(FilterInputDropAll{}); err != nil {
+// 		t.Fatal(err)
+// 	}
+// }
