@@ -544,8 +544,27 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 	if senderRequested {
 		r.From = &tcpip.FullAddress{}
 	}
+
+	doRead := func() (int64, error) {
+		return dst.CopyOutFrom(t, &r)
+	}
+
+	// If MSG_TRUNC is set with a zero byte destination then we still need
+	// to read the message and discard it, or in the case where MSG_PEEK is
+	// set, leave it be. In both cases the full message length must be
+	// returned.
+	if trunc && dst.Addrs.NumBytes() == 0 {
+		doRead = func() (int64, error) {
+			err := r.Truncate()
+			// Always return zero for bytes read since the destination size is
+			// zero.
+			return 0, err
+		}
+
+	}
+
 	var total int64
-	if n, err := dst.CopyOutFrom(t, &r); err != syserror.ErrWouldBlock || dontWait {
+	if n, err := doRead(); err != syserror.ErrWouldBlock || dontWait {
 		var from linux.SockAddr
 		var fromLen uint32
 		if r.From != nil && len([]byte(r.From.Addr)) != 0 {
@@ -580,7 +599,7 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 	defer s.EventUnregister(&e)
 
 	for {
-		if n, err := dst.CopyOutFrom(t, &r); err != syserror.ErrWouldBlock {
+		if n, err := doRead(); err != syserror.ErrWouldBlock {
 			var from linux.SockAddr
 			var fromLen uint32
 			if r.From != nil {

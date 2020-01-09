@@ -29,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
-	"gvisor.dev/gvisor/pkg/sentry/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/port"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix"
@@ -500,29 +499,29 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 	trunc := flags&linux.MSG_TRUNC != 0
 
 	r := unix.EndpointReader{
+		Ctx:      t,
 		Endpoint: s.ep,
 		Peek:     flags&linux.MSG_PEEK != 0,
+	}
+
+	doRead := func() (int64, error) {
+		return dst.CopyOutFrom(t, &r)
 	}
 
 	// If MSG_TRUNC is set with a zero byte destination then we still need
 	// to read the message and discard it, or in the case where MSG_PEEK is
 	// set, leave it be. In both cases the full message length must be
-	// returned. However, the memory manager for the destination will not read
-	// the endpoint if the destination is zero length.
-	//
-	// In order for the endpoint to be read when the destination size is zero,
-	// we must cause a read of the endpoint by using a separate fake zero
-	// length block sequence and calling the EndpointReader directly.
+	// returned.
 	if trunc && dst.Addrs.NumBytes() == 0 {
-		// Perform a read to a zero byte block sequence. We can ignore the
-		// original destination since it was zero bytes. The length returned by
-		// ReadToBlocks is ignored and we return the full message length to comply
-		// with MSG_TRUNC.
-		_, err := r.ReadToBlocks(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(make([]byte, 0))))
-		return int(r.MsgSize), linux.MSG_TRUNC, from, fromLen, socket.ControlMessages{}, syserr.FromError(err)
+		doRead = func() (int64, error) {
+			err := r.Truncate()
+			// Always return zero for bytes read since the destination size is
+			// zero.
+			return 0, err
+		}
 	}
 
-	if n, err := dst.CopyOutFrom(t, &r); err != syserror.ErrWouldBlock || flags&linux.MSG_DONTWAIT != 0 {
+	if n, err := doRead(); err != syserror.ErrWouldBlock || flags&linux.MSG_DONTWAIT != 0 {
 		var mflags int
 		if n < int64(r.MsgSize) {
 			mflags |= linux.MSG_TRUNC
@@ -540,7 +539,7 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 	defer s.EventUnregister(&e)
 
 	for {
-		if n, err := dst.CopyOutFrom(t, &r); err != syserror.ErrWouldBlock {
+		if n, err := doRead(); err != syserror.ErrWouldBlock {
 			var mflags int
 			if n < int64(r.MsgSize) {
 				mflags |= linux.MSG_TRUNC
