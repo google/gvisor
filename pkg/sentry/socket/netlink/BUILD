@@ -22,7 +22,6 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/netlink/port",
         "//pkg/sentry/socket/unix",
