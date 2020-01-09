@@ -298,7 +298,7 @@ type IPTReplace struct {
 	// Entries [0]IPTEntry
 }
 
-// KernelIPTEntry is identical to IPTReplace, but includes the Entries field.
+// KernelIPTReplace is identical to IPTReplace, but includes the Entries field.
 type KernelIPTReplace struct {
 	IPTReplace
 	Entries [0]IPTEntry
@@ -315,7 +315,7 @@ func (en ExtensionName) String() string {
 	return goString(en[:])
 }
 
-// ExtensionName holds the name of a netfilter table.
+// TableName holds the name of a netfilter table.
 type TableName [XT_TABLE_MAXNAMELEN]byte
 
 // String implements fmt.Stringer.
@@ -323,7 +323,7 @@ func (tn TableName) String() string {
 	return goString(tn[:])
 }
 
-// ExtensionName holds the name of a netfilter error. These can also hold
+// ErrorName holds the name of a netfilter error. These can also hold
 // user-defined chains.
 type ErrorName [XT_FUNCTION_MAXNAMELEN]byte
 
