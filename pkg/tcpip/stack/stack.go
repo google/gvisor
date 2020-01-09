@@ -796,6 +796,9 @@ func (s *Stack) NewPacketEndpoint(cooked bool, netProto tcpip.NetworkProtocolNum
 	return s.rawFactory.NewPacketEndpoint(s, cooked, netProto, waiterQueue)
 }
 
+// NICContext is an opaque pointer used to store client-supplied NIC metadata.
+type NICContext interface{}
+
 // NICOptions specifies the configuration of a NIC as it is being created.
 // The zero value creates an enabled, unnamed NIC.
 type NICOptions struct {
@@ -805,6 +808,12 @@ type NICOptions struct {
 	// Disabled specifies whether to avoid calling Attach on the passed
 	// LinkEndpoint.
 	Disabled bool
+
+	// Context specifies user-defined data that will be returned in stack.NICInfo
+	// for the NIC. Clients of this library can use it to add metadata that
+	// should be tracked alongside a NIC, to avoid having to keep a
+	// map[tcpip.NICID]metadata mirroring stack.Stack's nic map.
+	Context NICContext
 }
 
 // CreateNICWithOptions creates a NIC with the provided id, LinkEndpoint, and
@@ -819,7 +828,7 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 		return tcpip.ErrDuplicateNICID
 	}
 
-	n := newNIC(s, id, opts.Name, ep)
+	n := newNIC(s, id, opts.Name, ep, opts.Context)
 
 	s.nics[id] = n
 	if !opts.Disabled {
@@ -886,6 +895,10 @@ type NICInfo struct {
 	MTU uint32
 
 	Stats NICStats
+
+	// Context is user-supplied data optionally supplied in CreateNICWithOptions.
+	// See type NICOptions for more details.
+	Context NICContext
 }
 
 // NICInfo returns a map of NICIDs to their associated information.
@@ -908,6 +921,7 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 			Flags:             flags,
 			MTU:               nic.linkEP.MTU(),
 			Stats:             nic.stats,
+			Context:           nic.context,
 		}
 	}
 	return nics
