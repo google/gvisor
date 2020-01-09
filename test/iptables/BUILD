@@ -8,6 +8,7 @@ go_library(
         "filter_input.go",
         "iptables.go",
         "iptables_util.go",
+        "nat.go",
     ],
     importpath = "gvisor.dev/gvisor/test/iptables",
     visibility = ["//test/iptables:__subpackages__"],
