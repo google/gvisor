@@ -2001,6 +2001,46 @@ func TestNICAutoGenAddr(t *testing.T) {
 	}
 }
 
+// TestNICContextPreservation tests that you can read out via stack.NICInfo the
+// Context data you pass via NICContext.Context in stack.CreateNICWithOptions.
+func TestNICContextPreservation(t *testing.T) {
+	var ctx *int
+	tests := []struct {
+		name string
+		opts stack.NICOptions
+		want stack.NICContext
+	}{
+		{
+			"context_set",
+			stack.NICOptions{Context: ctx},
+			ctx,
+		},
+		{
+			"context_not_set",
+			stack.NICOptions{},
+			nil,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{})
+			id := tcpip.NICID(1)
+			ep := channel.New(0, 0, tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00"))
+			if err := s.CreateNICWithOptions(id, ep, test.opts); err != nil {
+				t.Fatalf("got stack.CreateNICWithOptions(%d, %+v, %+v) = %s, want nil", id, ep, test.opts, err)
+			}
+			nicinfos := s.NICInfo()
+			nicinfo, ok := nicinfos[id]
+			if !ok {
+				t.Fatalf("got nicinfos[%d] = _, %t, want _, true; nicinfos = %+v", id, ok, nicinfos)
+			}
+			if got, want := nicinfo.Context == test.want, true; got != want {
+				t.Fatal("got nicinfo.Context == ctx = %t, want %t; nicinfo.Context = %p, ctx = %p", got, want, nicinfo.Context, test.want)
+			}
+		})
+	}
+}
+
 // TestNICAutoGenAddrWithOpaque tests the auto-generation of IPv6 link-local
 // addresses with opaque interface identifiers. Link Local addresses should
 // always be generated with opaque IIDs if configured to use them, even if the
