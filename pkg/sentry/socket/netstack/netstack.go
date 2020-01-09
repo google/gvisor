@@ -1376,10 +1376,7 @@ func (s *SocketOperations) SetSockOpt(t *kernel.Task, level int, name int, optVa
 				return syserr.ErrNoDevice
 			}
 			// Stack must be a netstack stack.
-			if err := netfilter.SetEntries(stack.(*Stack).Stack, optVal); err != nil {
-				return err
-			}
-			return nil
+			return netfilter.SetEntries(stack.(*Stack).Stack, optVal)
 
 		case linux.IPT_SO_SET_ADD_COUNTERS:
 			// TODO(gvisor.dev/issue/170): Counter support.
