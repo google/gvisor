@@ -16,7 +16,8 @@ package fs
 
 import (
 	"fmt"
-	"sync"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // Watches is the collection of inotify watches on an inode.

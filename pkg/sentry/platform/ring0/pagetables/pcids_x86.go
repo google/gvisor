@@ -17,7 +17,7 @@
 package pagetables
 
 import (
-	"sync"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // limitPCID is the number of valid PCIDs.

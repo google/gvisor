@@ -17,7 +17,6 @@ package boot
 import (
 	"fmt"
 	"os"
-	"sync"
 	"syscall"
 
 	"github.com/golang/protobuf/proto"
@@ -27,6 +26,7 @@ import (
 	ucspb "gvisor.dev/gvisor/pkg/sentry/kernel/uncaught_signal_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/strace"
 	spb "gvisor.dev/gvisor/pkg/sentry/unimpl/unimplemented_syscall_go_proto"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 func initCompatLogs(fd int) error {

@@ -17,7 +17,8 @@ package kernel
 import (
 	"fmt"
 	"math/rand"
-	"sync"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // syslog represents a sentry-global kernel log.

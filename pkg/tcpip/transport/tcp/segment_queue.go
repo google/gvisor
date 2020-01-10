@@ -15,7 +15,7 @@
 package tcp
 
 import (
-	"sync"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // segmentQueue is a bounded, thread-safe queue of TCP segments.

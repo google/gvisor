@@ -17,7 +17,6 @@ package fdpipe
 
 import (
 	"os"
-	"sync"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/fd"
@@ -29,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )

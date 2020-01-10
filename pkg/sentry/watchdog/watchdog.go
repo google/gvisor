@@ -32,7 +32,6 @@ package watchdog
 import (
 	"bytes"
 	"fmt"
-	"sync"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -40,6 +39,7 @@ import (
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // Opts configures the watchdog.
