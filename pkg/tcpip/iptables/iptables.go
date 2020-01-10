@@ -19,7 +19,6 @@ package iptables
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
@@ -136,18 +135,15 @@ func (it *IPTables) Check(hook Hook, pkt tcpip.PacketBuffer) bool {
 	// TODO(gvisor.dev/issue/170): A lot of this is uncomplicated because
 	// we're missing features. Jumps, the call stack, etc. aren't checked
 	// for yet because we're yet to support them.
-	log.Infof("kevin: iptables.IPTables: checking hook %v", hook)
 
 	// Go through each table containing the hook.
 	for _, tablename := range it.Priorities[hook] {
-		verdict := it.checkTable(hook, pkt, tablename)
-		switch verdict {
+		switch verdict := it.checkTable(hook, pkt, tablename); verdict {
 		// If the table returns Accept, move on to the next table.
 		case Accept:
 			continue
 		// The Drop verdict is final.
 		case Drop:
-			log.Infof("kevin: Packet dropped")
 			return false
 		case Stolen, Queue, Repeat, None, Jump, Return, Continue:
 			panic(fmt.Sprintf("Unimplemented verdict %v.", verdict))
@@ -155,21 +151,16 @@ func (it *IPTables) Check(hook Hook, pkt tcpip.PacketBuffer) bool {
 	}
 
 	// Every table returned Accept.
-	log.Infof("kevin: Packet accepted")
 	return true
 }
 
 func (it *IPTables) checkTable(hook Hook, pkt tcpip.PacketBuffer, tablename string) Verdict {
-	log.Infof("kevin: iptables.IPTables: checking table %q", tablename)
+	// Start from ruleIdx and walk the list of rules until a rule gives us
+	// a verdict.
 	table := it.Tables[tablename]
-	log.Infof("kevin: iptables.IPTables: table %+v", table)
-
-	// Start from ruleIdx and go down until a rule gives us a verdict.
 	for ruleIdx := table.BuiltinChains[hook]; ruleIdx < len(table.Rules); ruleIdx++ {
-		verdict := it.checkRule(hook, pkt, table, ruleIdx)
-		switch verdict {
-		// For either of these cases, this table is done with the
-		// packet.
+		switch verdict := it.checkRule(hook, pkt, table, ruleIdx); verdict {
+		// In either of these cases, this table is done with the packet.
 		case Accept, Drop:
 			return verdict
 		// Continue traversing the rules of the table.
