@@ -442,6 +442,13 @@ func (s *sender) retransmitTimerExpired() bool {
 		return true
 	}
 
+	// TODO(b/147297758): Band-aid fix, retransmitTimer can fire in some edge cases
+	// when writeList is empty. Remove this once we have a proper fix for this
+	// issue.
+	if s.writeList.Front() == nil {
+		return true
+	}
+
 	s.ep.stack.Stats().TCP.Timeouts.Increment()
 	s.ep.stats.SendErrors.Timeouts.Increment()
 
