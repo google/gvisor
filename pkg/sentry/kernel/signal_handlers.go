@@ -15,10 +15,9 @@
 package kernel
 
 import (
-	"sync"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // SignalHandlers holds information about signal actions.

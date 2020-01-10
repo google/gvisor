@@ -5,7 +5,7 @@
 
 // +build !race
 
-package syncutil
+package sync
 
 import (
 	"unsafe"

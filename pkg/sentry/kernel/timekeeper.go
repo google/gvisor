@@ -16,7 +16,6 @@ package kernel
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/log"
@@ -24,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	sentrytime "gvisor.dev/gvisor/pkg/sentry/time"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // Timekeeper manages all of the kernel clocks.

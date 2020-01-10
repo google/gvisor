@@ -16,7 +16,6 @@ package fsutil
 
 import (
 	"math"
-	"sync"
 
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -24,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // HostMappable implements memmap.Mappable and platform.File over a

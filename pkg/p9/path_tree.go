@@ -16,7 +16,8 @@ package p9
 
 import (
 	"fmt"
-	"sync"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // pathNode is a single node in a path traversal.

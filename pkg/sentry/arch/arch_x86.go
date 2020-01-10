@@ -19,7 +19,6 @@ package arch
 import (
 	"fmt"
 	"io"
-	"sync"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/binary"
@@ -27,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	rpb "gvisor.dev/gvisor/pkg/sentry/arch/registers_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 

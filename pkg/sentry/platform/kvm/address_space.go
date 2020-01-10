@@ -15,13 +15,13 @@
 package kvm
 
 import (
-	"sync"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // dirtySet tracks vCPUs for invalidation.

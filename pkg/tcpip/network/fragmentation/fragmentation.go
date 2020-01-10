@@ -19,9 +19,9 @@ package fragmentation
 import (
 	"fmt"
 	"log"
-	"sync"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 

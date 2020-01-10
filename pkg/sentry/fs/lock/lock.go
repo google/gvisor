@@ -52,9 +52,9 @@ package lock
 import (
 	"fmt"
 	"math"
-	"sync"
 	"syscall"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
