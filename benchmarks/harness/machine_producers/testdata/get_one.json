@@ -1,0 +1,145 @@
+[
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "instances",
+            "list",
+            "--project",
+            "linux-testing-user",
+            "--format=json"
+        ],
+        "stdout": "[{\"name\":\"name\", \"networkInterfaces\":[{\"accessConfigs\":[{\"natIP\":\"0.0.0.0\"}]}]}]",
+
+        "returncode": "0"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "instances",
+            "create",
+            "machine-129dfcf9-b05b-4c16-a4cd-21353b570ddc",
+            "--preemptible",
+            "--image=ubuntu-1910-eoan-v20191204",
+            "--zone=us-west1-b",
+            "--image-project=ubuntu-os-cloud",
+            "--format=json"
+        ],
+        "stdout": "[{\"name\":\"name\", \"networkInterfaces\":[{\"accessConfigs\":[{\"natIP\":\"0.0.0.0\"}]}]}]",
+        "returncode": "0"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "instances",
+            "start",
+            "machine-129dfcf9-b05b-4c16-a4cd-21353b570ddc",
+            "--zone=us-west1-b",
+            "--project=linux-testing-user",
+            "--format=json"
+        ],
+        "stdout": "[{\"name\":\"name\", \"networkInterfaces\":[{\"accessConfigs\":[{\"natIP\":\"0.0.0.0\"}]}]}]",
+        
+        "returncode": "0"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "ssh",
+            "machine-129dfcf9-b05b-4c16-a4cd-21353b570ddc",
+            "--ssh-key-file=/usr/local/google/home/user/.ssh/benchmark-tools",
+            "--zone=us-west1-b",
+            "--command=uname",
+            "--format=json"
+        ],
+        "stdout": "",
+        "returncode": "255"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "ssh",
+            "machine-129dfcf9-b05b-4c16-a4cd-21353b570ddc",
+            "--ssh-key-file=/usr/local/google/home/user/.ssh/benchmark-tools",
+            "--zone=us-west1-b",
+            "--command=uname",
+            "--format=json"
+        ],
+        "stdout": "",
+        "returncode": "255"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "ssh",
+            "machine-129dfcf9-b05b-4c16-a4cd-21353b570ddc",
+            "--ssh-key-file=/usr/local/google/home/user/.ssh/benchmark-tools",
+            "--zone=us-west1-b",
+            "--command=uname",
+            "--format=json"
+        ],
+        "stdout": "",
+        "returncode": "255"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "ssh",
+            "machine-129dfcf9-b05b-4c16-a4cd-21353b570ddc",
+            "--ssh-key-file=/usr/local/google/home/user/.ssh/benchmark-tools",
+            "--zone=us-west1-b",
+            "--command=uname",
+            "--format=json"
+        ],
+        "stdout": "",
+        "returncode": "255"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "ssh",
+            "machine-129dfcf9-b05b-4c16-a4cd-21353b570ddc",
+            "--ssh-key-file=/usr/local/google/home/user/.ssh/benchmark-tools",
+            "--zone=us-west1-b",
+            "--command=uname",
+            "--format=json"
+        ],
+        "stdout": "",
+        "returncode": "255"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "ssh",
+            "machine-129dfcf9-b05b-4c16-a4cd-21353b570ddc",
+            "--ssh-key-file=/usr/local/google/home/user/.ssh/benchmark-tools",
+            "--zone=us-west1-b",
+            "--command=uname",
+            "--format=json"
+        ],
+        "stdout": "Linux\n[]\n",
+        "returncode": "0"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "instances",
+            "delete",
+            "--quiet",
+            "machine-129dfcf9-b05b-4c16-a4cd-21353b570ddc",
+            "--zone=us-west1-b",
+            "--format=json"
+        ],
+        "stdout": "[]\n",
+        "returncode": "0"
+    }
+]

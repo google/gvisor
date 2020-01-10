@@ -24,6 +24,7 @@ py_library(
     name = "container",
     srcs = ["container.py"],
     deps = [
+        "//benchmarks/workloads",
         requirement("asn1crypto", False),
         requirement("chardet", False),
         requirement("certifi", False),
@@ -45,6 +46,7 @@ py_library(
         "//benchmarks/harness:container",
         "//benchmarks/harness:ssh_connection",
         "//benchmarks/harness:tunnel_dispatcher",
+        "//benchmarks/harness/machine_mocks",
         requirement("asn1crypto", False),
         requirement("chardet", False),
         requirement("certifi", False),
@@ -53,6 +55,7 @@ py_library(
         requirement("idna", False),
         requirement("ptyprocess", False),
         requirement("requests", False),
+        requirement("six", False),
         requirement("urllib3", False),
         requirement("websocket-client", False),
     ],
@@ -64,7 +67,7 @@ py_library(
     deps = [
         "//benchmarks/harness",
         requirement("bcrypt", False),
-        requirement("cffi", False),
+        requirement("cffi", True),
         requirement("paramiko", True),
         requirement("cryptography", False),
     ],
