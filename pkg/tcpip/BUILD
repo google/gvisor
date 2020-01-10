@@ -30,7 +30,7 @@ go_test(
 )
 
 go_test(
-    name = "timer_test",
+    name = "tcpip_x_test",
     size = "small",
     srcs = ["timer_test.go"],
     deps = [":tcpip"],
