@@ -15,7 +15,7 @@
 package p9
 
 import (
-	"sync"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // pool is a simple allocator.

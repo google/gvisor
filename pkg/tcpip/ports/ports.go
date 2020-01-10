@@ -18,9 +18,9 @@ package ports
 import (
 	"math"
 	"math/rand"
-	"sync"
 	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 

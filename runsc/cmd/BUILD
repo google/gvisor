@@ -44,6 +44,7 @@ go_library(
         "//pkg/sentry/control",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sync",
         "//pkg/unet",
         "//pkg/urpc",
         "//runsc/boot",

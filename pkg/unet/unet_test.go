@@ -19,10 +19,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 func randomFilename() (string, error) {

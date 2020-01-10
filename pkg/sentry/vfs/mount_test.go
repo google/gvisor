@@ -17,8 +17,9 @@ package vfs
 import (
 	"fmt"
 	"runtime"
-	"sync"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 func TestMountTableLookupEmpty(t *testing.T) {

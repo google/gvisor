@@ -9,7 +9,7 @@ go_template_instance(
     out = "atomicptr_int_unsafe.go",
     package = "atomicptr",
     suffix = "Int",
-    template = "//pkg/syncutil:generic_atomicptr",
+    template = "//pkg/sync:generic_atomicptr",
     types = {
         "Value": "int",
     },
@@ -18,7 +18,7 @@ go_template_instance(
 go_library(
     name = "atomicptr",
     srcs = ["atomicptr_int_unsafe.go"],
-    importpath = "gvisor.dev/gvisor/pkg/syncutil/atomicptr",
+    importpath = "gvisor.dev/gvisor/pkg/sync/atomicptr",
 )
 
 go_test(

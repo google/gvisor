@@ -18,6 +18,7 @@ go_library(
     deps = [
         "//pkg/log",
         "//pkg/sentry/control",
+        "//pkg/sync",
         "//runsc/boot",
         "//runsc/cgroup",
         "//runsc/sandbox",
@@ -53,6 +54,7 @@ go_test(
         "//pkg/sentry/control",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sync",
         "//pkg/unet",
         "//pkg/urpc",
         "//runsc/boot",

@@ -68,7 +68,7 @@ go_library(
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
         "//pkg/state",
-        "//pkg/syncutil",
+        "//pkg/sync",
         "//pkg/syserror",
         "//pkg/waiter",
     ],
@@ -115,6 +115,7 @@ go_test(
         "//pkg/sentry/fs/tmpfs",
         "//pkg/sentry/kernel/contexttest",
         "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/syserror",
     ],
 )

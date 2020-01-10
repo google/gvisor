@@ -16,9 +16,9 @@ package vfs
 
 import (
 	"fmt"
-	"sync"
 	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 

@@ -16,9 +16,9 @@ package kernel
 
 import (
 	"fmt"
-	"sync"
 
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 

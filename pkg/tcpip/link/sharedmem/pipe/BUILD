@@ -21,4 +21,5 @@ go_test(
         "pipe_test.go",
     ],
     embed = [":pipe"],
+    deps = ["//pkg/sync"],
 )

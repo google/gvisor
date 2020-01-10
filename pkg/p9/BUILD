@@ -29,6 +29,7 @@ go_library(
         "//pkg/fdchannel",
         "//pkg/flipcall",
         "//pkg/log",
+        "//pkg/sync",
         "//pkg/unet",
         "@org_golang_x_sys//unix:go_default_library",
     ],
