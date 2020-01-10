@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,56 +15,55 @@
 package iptables
 
 import (
-        "fmt"
-        "net"
+	"fmt"
+	"net"
 )
 
 const (
-        redirectPort     = 42
+	redirectPort     = 42
 )
 
 func init() {
-        RegisterTestCase(FilterNATRedirectUDPPort{})
-	RegisterTestCase(FilterNATDropUDP{})
+	RegisterTestCase(NATRedirectUDPPort{})
+	RegisterTestCase(NATDropUDP{})
 }
 
-// FilterInputRedirectUDPPort tests that packets are redirected to different port.
-type FilterNATRedirectUDPPort struct{}
+// InputRedirectUDPPort tests that packets are redirected to different port.
+type NATRedirectUDPPort struct{}
 
 // Name implements TestCase.Name.
-func (FilterNATRedirectUDPPort) Name() string {
-        return "FilterNATRedirectUDPPort"
+func (NATRedirectUDPPort) Name() string {
+	return "NATRedirectUDPPort"
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterNATRedirectUDPPort) ContainerAction(ip net.IP) error {
-        if err := filterTable("-t", "nat", "-A", "PREROUTING", "-p", "udp", "-j", "REDIRECT", "--to-ports",
+func (NATRedirectUDPPort) ContainerAction(ip net.IP) error {
+	if err := filterTable("-t", "nat", "-A", "PREROUTING", "-p", "udp", "-j", "REDIRECT", "--to-ports",
 	fmt.Sprintf("%d", redirectPort)); err != nil {
 		return err
 	}
 
 	if err := listenUDP(redirectPort, sendloopDuration); err != nil {
-	        return fmt.Errorf("packets on port %d should be allowed, but encountered an error: %v", redirectPort, err)
+		return fmt.Errorf("packets on port %d should be allowed, but encountered an error: %v", redirectPort, err)
 	}
-
 	return nil
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterNATRedirectUDPPort) LocalAction(ip net.IP) error {
-        return sendUDPLoop(ip, acceptPort, sendloopDuration)
+func (NATRedirectUDPPort) LocalAction(ip net.IP) error {
+	return sendUDPLoop(ip, acceptPort, sendloopDuration)
 }
 
-// FilterNATDropUDP tests that packets are not received in ports other than redirect port.
-type FilterNATDropUDP struct{}
+// NATDropUDP tests that packets are not received in ports other than redirect port.
+type NATDropUDP struct{}
 
 // Name implements TestCase.Name.
-func (FilterNATDropUDP) Name() string {
-        return "FilterNATDropUDP"
+func (NATDropUDP) Name() string {
+	return "NATDropUDP"
 }
 
 // ContainerAction implements TestCase.ContainerAction.
-func (FilterNATDropUDP) ContainerAction(ip net.IP) error {
+func (NATDropUDP) ContainerAction(ip net.IP) error {
         if err := filterTable("-t", "nat", "-A", "PREROUTING", "-p", "udp", "-j", "REDIRECT", "--to-ports",
 	fmt.Sprintf("%d", redirectPort)); err != nil {
 		return err
@@ -78,6 +77,6 @@ func (FilterNATDropUDP) ContainerAction(ip net.IP) error {
 }
 
 // LocalAction implements TestCase.LocalAction.
-func (FilterNATDropUDP) LocalAction(ip net.IP) error {
-        return sendUDPLoop(ip, acceptPort, sendloopDuration)
+func (NATDropUDP) LocalAction(ip net.IP) error {
+	return sendUDPLoop(ip, acceptPort, sendloopDuration)
 }
