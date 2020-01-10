@@ -9,7 +9,7 @@ go_template_instance(
     out = "atomicptr_bucket_unsafe.go",
     package = "futex",
     suffix = "Bucket",
-    template = "//pkg/syncutil:generic_atomicptr",
+    template = "//pkg/sync:generic_atomicptr",
     types = {
         "Value": "bucket",
     },
@@ -42,6 +42,7 @@ go_library(
         "//pkg/sentry/context",
         "//pkg/sentry/memmap",
         "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/syserror",
     ],
 )
@@ -51,5 +52,8 @@ go_test(
     size = "small",
     srcs = ["futex_test.go"],
     embed = [":futex"],
-    deps = ["//pkg/sentry/usermem"],
+    deps = [
+        "//pkg/sentry/usermem",
+        "//pkg/sync",
+    ],
 )

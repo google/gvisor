@@ -44,6 +44,7 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/log",
+        "//pkg/sync",
         "//pkg/waiter",
     ],
 )

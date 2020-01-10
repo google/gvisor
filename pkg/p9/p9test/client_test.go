@@ -22,7 +22,6 @@ import (
 	"os"
 	"reflect"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -30,6 +29,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/p9"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 func TestPanic(t *testing.T) {

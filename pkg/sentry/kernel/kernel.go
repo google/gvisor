@@ -36,7 +36,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -67,6 +66,7 @@ import (
 	uspb "gvisor.dev/gvisor/pkg/sentry/unimpl/unimplemented_syscall_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/state"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 

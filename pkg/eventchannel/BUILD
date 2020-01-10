@@ -15,6 +15,7 @@ go_library(
     deps = [
         ":eventchannel_go_proto",
         "//pkg/log",
+        "//pkg/sync",
         "//pkg/unet",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
@@ -40,6 +41,7 @@ go_test(
     srcs = ["event_test.go"],
     embed = [":eventchannel"],
     deps = [
+        "//pkg/sync",
         "@com_github_golang_protobuf//proto:go_default_library",
     ],
 )

@@ -34,6 +34,7 @@ go_library(
         "//pkg/sentry/socket/netfilter",
         "//pkg/sentry/unimpl",
         "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/tcpip",

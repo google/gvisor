@@ -17,7 +17,6 @@ package tmpfs
 import (
 	"fmt"
 	"io"
-	"sync"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -31,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 

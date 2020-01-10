@@ -17,10 +17,10 @@ package fdpipe
 import (
 	"fmt"
 	"io/ioutil"
-	"sync"
 
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // beforeSave is invoked by stateify.

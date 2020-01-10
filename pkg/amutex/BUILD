@@ -15,4 +15,5 @@ go_test(
     size = "small",
     srcs = ["amutex_test.go"],
     embed = [":amutex"],
+    deps = ["//pkg/sync"],
 )

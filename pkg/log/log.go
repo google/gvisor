@@ -25,12 +25,12 @@ import (
 	stdlog "log"
 	"os"
 	"runtime"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/linewriter"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // Level is the log level.

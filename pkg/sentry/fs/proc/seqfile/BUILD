@@ -16,6 +16,7 @@ go_library(
         "//pkg/sentry/fs/proc/device",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/syserror",
         "//pkg/waiter",
     ],

@@ -17,13 +17,13 @@ package futex
 import (
 	"math"
 	"runtime"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
 	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // testData implements the Target interface, and allows us to

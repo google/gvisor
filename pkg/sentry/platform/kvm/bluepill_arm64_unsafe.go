@@ -17,8 +17,6 @@
 package kvm
 
 import (
-	"unsafe"
-
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 

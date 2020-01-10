@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"path"
 	"sort"
-	"sync"
 	"sync/atomic"
 	"syscall"
 
@@ -28,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 

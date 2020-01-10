@@ -8,6 +8,7 @@ go_library(
     srcs = ["linewriter.go"],
     importpath = "gvisor.dev/gvisor/pkg/linewriter",
     visibility = ["//visibility:public"],
+    deps = ["//pkg/sync"],
 )
 
 go_test(

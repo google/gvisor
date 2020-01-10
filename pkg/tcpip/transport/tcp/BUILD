@@ -48,6 +48,7 @@ go_library(
         "//pkg/log",
         "//pkg/rand",
         "//pkg/sleep",
+        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/hash/jenkins",

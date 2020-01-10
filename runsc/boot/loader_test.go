@@ -19,7 +19,6 @@ import (
 	"math/rand"
 	"os"
 	"reflect"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -30,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/runsc/fsgofer"
 )

@@ -18,9 +18,9 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
-	"sync"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 

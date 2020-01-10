@@ -15,6 +15,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/sentry/context",
+        "//pkg/sync",
     ],
 )
 

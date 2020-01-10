@@ -58,7 +58,7 @@
 package waiter
 
 import (
-	"sync"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // EventMask represents io events as used in the poll() syscall.

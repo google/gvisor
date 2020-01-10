@@ -52,9 +52,9 @@ import (
 	"hash"
 	"io"
 	"runtime"
-	"sync"
 
 	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 var bufPool = sync.Pool{

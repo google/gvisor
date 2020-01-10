@@ -21,6 +21,7 @@ go_test(
         "procid_test.go",
     ],
     embed = [":procid"],
+    deps = ["//pkg/sync"],
 )
 
 go_test(
@@ -31,4 +32,5 @@ go_test(
         "procid_test.go",
     ],
     embed = [":procid"],
+    deps = ["//pkg/sync"],
 )

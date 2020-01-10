@@ -19,6 +19,7 @@ go_library(
         "//pkg/fd",
         "//pkg/log",
         "//pkg/p9",
+        "//pkg/sync",
         "//pkg/syserr",
         "//runsc/specutils",
         "@org_golang_x_sys//unix:go_default_library",

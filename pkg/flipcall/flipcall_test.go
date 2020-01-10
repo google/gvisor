@@ -16,9 +16,10 @@ package flipcall
 
 import (
 	"runtime"
-	"sync"
 	"testing"
 	"time"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 var testPacketWindowSize = pageSize

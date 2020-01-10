@@ -18,7 +18,6 @@
 package ptrace
 
 import (
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"unsafe"
@@ -26,6 +25,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/hostcpu"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // maskPool contains reusable CPU masks for setting affinity. Unfortunately,

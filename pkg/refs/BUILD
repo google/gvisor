@@ -27,6 +27,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",
+        "//pkg/sync",
     ],
 )
 
@@ -35,4 +36,5 @@ go_test(
     size = "small",
     srcs = ["refcounter_test.go"],
     embed = [":refs"],
+    deps = ["//pkg/sync"],
 )

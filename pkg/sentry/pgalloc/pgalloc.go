@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -37,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 

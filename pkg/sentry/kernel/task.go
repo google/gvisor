@@ -17,7 +17,6 @@ package kernel
 import (
 	gocontext "context"
 	"runtime/trace"
-	"sync"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -37,7 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
-	"gvisor.dev/gvisor/pkg/syncutil"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -85,7 +84,7 @@ type Task struct {
 	//
 	// gosched is protected by goschedSeq. gosched is owned by the task
 	// goroutine.
-	goschedSeq syncutil.SeqCount `state:"nosave"`
+	goschedSeq sync.SeqCount `state:"nosave"`
 	gosched    TaskGoroutineSchedInfo
 
 	// yieldCount is the number of times the task goroutine has called
