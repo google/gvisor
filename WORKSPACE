@@ -203,6 +203,19 @@ go_repository(
 )
 
 go_repository(
+    name = "com_github_petermattis_goid",
+    importpath = "github.com/petermattis/goid",
+    commit = "b0b1615b78e5ee59739545bb38426383b2cda4c9",
+)
+
+go_repository(
+    name = "com_github_sasha-s_go-deadlock",
+    importpath = "github.com/sasha-s/go-deadlock",
+    sum = "h1:q2e307iGHPdTGp0hoxKjt1H5pDo6utceo3dQVK3I5XQ=",
+    version = "v0.0.0-20180202154549-b0b1615b78e5",
+)
+
+go_repository(
     name = "com_github_syndtr_gocapability",
     importpath = "github.com/syndtr/gocapability",
     sum = "h1:b6uOv7YOFK0TYG7HtkIgExQo+2RdLuwRft63jn2HWj8=",

@@ -32,6 +32,7 @@ go_library(
     name = "sync",
     srcs = [
         "aliases.go",
+        "deadlock.go",
         "downgradable_rwmutex_unsafe.go",
         "memmove_unsafe.go",
         "norace_unsafe.go",
@@ -40,6 +41,7 @@ go_library(
         "syncutil.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/sync",
+    deps = ["@com_github_sasha-s_go-deadlock//deadlock:go_default_library"],
 )
 
 go_test(
