@@ -202,7 +202,7 @@ TEST(Preadv2Test, TestInvalidOffset) {
   iov[0].iov_len = 0;
 
   EXPECT_THAT(preadv2(fd.get(), iov.get(), /*iovcnt=*/1, /*offset=*/-8,
-                      /*flags=*/RWF_HIPRI),
+                      /*flags=*/0),
               SyscallFailsWithErrno(EINVAL));
 }
 
