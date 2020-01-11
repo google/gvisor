@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 const (
@@ -183,12 +184,13 @@ func (it *IPTables) checkTable(hook Hook, pkt tcpip.PacketBuffer, tablename stri
 	panic(fmt.Sprintf("Traversed past the entire list of iptables rules in table %q.", tablename))
 }
 
+// Precondition: pk.NetworkHeader is set.
 func (it *IPTables) checkRule(hook Hook, pkt tcpip.PacketBuffer, table Table, ruleIdx int) Verdict {
 	rule := table.Rules[ruleIdx]
 
 	// First check whether the packet matches the IP header filter.
 	// TODO(gvisor.dev/issue/170): Support other fields of the filter.
-	if rule.Filter.Protocol != pkt.Protocol {
+	if rule.Filter.Protocol != header.IPv4(pkt.NetworkHeader).TransportProtocol() {
 		return Continue
 	}
 

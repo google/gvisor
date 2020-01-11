@@ -353,7 +353,8 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
 	}
 	pkt.NetworkHeader = headerView[:h.HeaderLength()]
 
-	// iptables filtering.
+	// iptables filtering. All packets that reach here are intended for
+	// this machine and will not be forwarded.
 	ipt := e.stack.IPTables()
 	if ok := ipt.Check(iptables.Input, pkt); !ok {
 		// iptables is telling us to drop the packet.
