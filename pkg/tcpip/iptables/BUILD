@@ -14,5 +14,6 @@ go_library(
     deps = [
         "//pkg/log",
         "//pkg/tcpip",
+        "//pkg/tcpip/header",
     ],
 )

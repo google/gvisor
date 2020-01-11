@@ -173,7 +173,7 @@ type IPHeaderFilter struct {
 	InputInterface      string
 	OutputInterfaceMask string
 	InputInterfaceMask  string
-	Protocol            uint16
+	Protocol            tcpip.TransportProtocolNumber
 	Flags               uint8
 	InverseFlags        uint8
 }

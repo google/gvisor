@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -455,7 +456,7 @@ func filterFromIPTIP(iptip linux.IPTIP) (iptables.IPHeaderFilter, *syserr.Error)
 		return iptables.IPHeaderFilter{}, syserr.ErrInvalidArgument
 	}
 	return iptables.IPHeaderFilter{
-		Protocol: iptip.Protocol,
+		Protocol: tcpip.TransportProtocolNumber(iptip.Protocol),
 	}, nil
 }
 

@@ -13,7 +13,9 @@
 
 package tcpip
 
-import "gvisor.dev/gvisor/pkg/tcpip/buffer"
+import (
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+)
 
 // A PacketBuffer contains all the data of a network packet.
 //
@@ -65,3 +67,24 @@ func (pk PacketBuffer) Clone() PacketBuffer {
 	pk.Data = pk.Data.Clone(nil)
 	return pk
 }
+
+//// TransportProtocol returns the transport protocol of pk.
+////
+//// Precondition: pk.NetworkHeader is set.
+//func (pk PacketBuffer) TransportProtocolIPv4() uint16 {
+//	if pk.NetworkHeader == nil {
+//		panic("This should only be called when pk.NetworkHeader is set.")
+//	}
+//	return header.IPv4(pk.NetworkHeader).TransportProtocol()
+//}
+
+// func (pk Packet) findNetHeader() header.IPv4 {
+// 	// Inbound:
+// 	// Data holds everything, but may have had some headers shaved off.
+// 	// Figure out whether it's set or still somewhere in data and return
+// 	// appropriately.
+
+// 	// Outbound:
+// 	// NetworkHeader will be set if we've added one. Otherwise there's no
+// 	// header.
+// }
