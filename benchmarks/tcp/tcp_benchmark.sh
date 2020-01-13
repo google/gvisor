@@ -41,6 +41,8 @@ duplicate=0.1           # 0.1% means duplicates are 1/10x as frequent as losses.
 duration=30             # 30s is enough time to consistent results (experimentally).
 helper_dir=$(dirname $0)
 netstack_opts=
+disable_linux_gso=
+num_client_threads=1
 
 # Check for netem support.
 lsmod_output=$(lsmod | grep sch_netem)
@@ -125,6 +127,13 @@ while [ $# -gt 0 ]; do
       shift
       netstack_opts="${netstack_opts} -memprofile=$1"
       ;;
+    --disable-linux-gso)
+      disable_linux_gso=1
+      ;;
+    --num-client-threads)
+      shift
+      num_client_threads=$1
+      ;;
     --helpers)
       shift
       [ "$#" -le 0 ] && echo "no helper dir provided" && exit 1
@@ -147,6 +156,8 @@ while [ $# -gt 0 ]; do
       echo " --loss                set the loss probability (%)"
       echo " --duplicate           set the duplicate probability (%)"
       echo " --helpers             set the helper directory"
+      echo " --num-client-threads  number of parallel client threads to run"
+      echo " --disable-linux-gso   disable segmentation offload in the Linux network stack"
       echo ""
       echo "The output will of the script will be:"
       echo "  <throughput> <client-cpu-usage> <server-cpu-usage>"
@@ -301,6 +312,14 @@ fi
 # Add client and server addresses, and bring everything up.
 ${nsjoin_binary} /tmp/client.netns ip addr add ${client_addr}/${mask} dev client.0
 ${nsjoin_binary} /tmp/server.netns ip addr add ${server_addr}/${mask} dev server.0
+if [ "${disable_linux_gso}" == "1" ]; then
+  ${nsjoin_binary} /tmp/client.netns ethtool -K client.0 tso off
+  ${nsjoin_binary} /tmp/client.netns ethtool -K client.0 gro off
+  ${nsjoin_binary} /tmp/client.netns ethtool -K client.0 gso off
+  ${nsjoin_binary} /tmp/server.netns ethtool -K server.0 tso off
+  ${nsjoin_binary} /tmp/server.netns ethtool -K server.0 gso off
+  ${nsjoin_binary} /tmp/server.netns ethtool -K server.0 gro off
+fi
 ${nsjoin_binary} /tmp/client.netns ip link set client.0 up
 ${nsjoin_binary} /tmp/client.netns ip link set lo up
 ${nsjoin_binary} /tmp/server.netns ip link set server.0 up
@@ -338,7 +357,7 @@ trap cleanup EXIT
 
 # Run the benchmark, recording the results file.
 while ${nsjoin_binary} /tmp/client.netns iperf \\
-    -p ${proxy_port} -c ${client_addr} -t ${duration} -f m 2>&1 \\
+    -p ${proxy_port} -c ${client_addr} -t ${duration} -f m -P ${num_client_threads} 2>&1 \\
     | tee \$results_file \\
     | grep "connect failed" >/dev/null; do
   sleep 0.1 # Wait for all services.
