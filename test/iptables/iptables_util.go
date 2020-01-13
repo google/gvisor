@@ -80,3 +80,58 @@ func sendUDPLoop(ip net.IP, port int, duration time.Duration) error {
 
 	return nil
 }
+
+// listenTCP listens for connections on a TCP port
+func listenTCP(port int, timeout time.Duration) error {
+	localAddr := net.TCPAddr{
+		Port: port,
+	}
+
+	// Starts listening on port
+	lConn, err := net.ListenTCP("tcp4", &localAddr)
+	if err != nil {
+		return err
+	}
+	defer lConn.Close()
+
+	// Accept connections on port
+	lConn.SetDeadline(time.Now().Add(timeout))
+	conn, err := lConn.AcceptTCP()
+	if err == nil {
+		conn.Close()
+	}
+	return err
+}
+
+// connectTCP connects the TCP server over specified local port, server IP
+// and remote/server port
+func connectTCP(ip net.IP, remotePort int, localPort int, duration time.Duration) error {
+	remote := net.TCPAddr{
+		IP: ip,
+		Port: remotePort,
+	}
+
+	local := net.TCPAddr{
+		Port: localPort,
+	}
+
+	// Container may not be up. Retry DialTCP
+	// over a given duration
+	to := time.After(duration)
+	var res error
+	for timedOut := false; !timedOut; {
+		conn, err := net.DialTCP("tcp4", &local, &remote)
+		res = err
+		if res == nil {
+			conn.Close()
+			return nil
+		}
+		select{
+		case <-to:
+			timedOut = true
+		default:
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+        return res
+}

@@ -6,6 +6,7 @@ go_library(
     name = "iptables",
     srcs = [
         "filter_input.go",
+        "filter_output.go",
         "iptables.go",
         "iptables_util.go",
         "nat.go",
