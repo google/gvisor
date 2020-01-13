@@ -22,7 +22,6 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
-	"sync"
 	"syscall"
 	"time"
 
@@ -34,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/boot/platforms"

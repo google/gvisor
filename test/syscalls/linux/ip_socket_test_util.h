@@ -105,14 +105,14 @@ class IfAddrHelper {
 };
 
 // GetAddr4Str returns the given IPv4 network address structure as a string.
-std::string GetAddr4Str(in_addr* a);
+std::string GetAddr4Str(const in_addr* a);
 
 // GetAddr6Str returns the given IPv6 network address structure as a string.
-std::string GetAddr6Str(in6_addr* a);
+std::string GetAddr6Str(const in6_addr* a);
 
 // GetAddrStr returns the given IPv4 or IPv6 network address structure as a
 // string.
-std::string GetAddrStr(sockaddr* a);
+std::string GetAddrStr(const sockaddr* a);
 
 }  // namespace testing
 }  // namespace gvisor

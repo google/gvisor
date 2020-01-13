@@ -17,7 +17,6 @@ package fsutil
 import (
 	"fmt"
 	"io"
-	"sync"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/context"
@@ -30,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // Lock order (compare the lock order model in mm/mm.go):

@@ -18,13 +18,13 @@ package kvm
 import (
 	"fmt"
 	"os"
-	"sync"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // KVM represents a lightweight VM context.

@@ -25,6 +25,7 @@
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -42,6 +43,42 @@ TEST_P(BlockingNonStreamSocketPairTest, RecvLessThanBufferWaitAll) {
   ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), received_data,
                                sizeof(received_data), MSG_WAITALL),
               SyscallSucceedsWithValue(sizeof(sent_data)));
+}
+
+// This test tests reading from a socket with MSG_TRUNC | MSG_PEEK and a zero
+// length receive buffer and MSG_DONTWAIT. The recvmsg call should block on
+// reading the data.
+TEST_P(BlockingNonStreamSocketPairTest,
+       RecvmsgTruncPeekDontwaitZeroLenBlocking) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // NOTE: We don't initially send any data on the socket.
+  const int data_size = 10;
+  char sent_data[data_size];
+  RandomizeBuffer(sent_data, data_size);
+
+  // The receive buffer is of zero length.
+  char peek_data[0] = {};
+
+  struct iovec peek_iov;
+  peek_iov.iov_base = peek_data;
+  peek_iov.iov_len = sizeof(peek_data);
+  struct msghdr peek_msg = {};
+  peek_msg.msg_flags = -1;
+  peek_msg.msg_iov = &peek_iov;
+  peek_msg.msg_iovlen = 1;
+
+  ScopedThread t([&]() {
+    // The syscall succeeds returning the full size of the message on the
+    // socket. This should block until there is data on the socket.
+    ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &peek_msg,
+                                    MSG_TRUNC | MSG_PEEK),
+                SyscallSucceedsWithValue(data_size));
+  });
+
+  absl::SleepFor(absl::Seconds(1));
+  ASSERT_THAT(RetryEINTR(send)(sockets->first_fd(), sent_data, data_size, 0),
+              SyscallSucceedsWithValue(data_size));
 }
 
 }  // namespace testing

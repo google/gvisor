@@ -16,6 +16,7 @@ go_library(
         "//pkg/metric",
         "//pkg/sentry/kernel",
         "//pkg/sentry/usage",
+        "//pkg/sync",
     ],
 )
 

@@ -9,7 +9,7 @@ go_template_instance(
     out = "seqatomic_int_unsafe.go",
     package = "seqatomic",
     suffix = "Int",
-    template = "//pkg/syncutil:generic_seqatomic",
+    template = "//pkg/sync:generic_seqatomic",
     types = {
         "Value": "int",
     },
@@ -18,9 +18,9 @@ go_template_instance(
 go_library(
     name = "seqatomic",
     srcs = ["seqatomic_int_unsafe.go"],
-    importpath = "gvisor.dev/gvisor/pkg/syncutil/seqatomic",
+    importpath = "gvisor.dev/gvisor/pkg/sync/seqatomic",
     deps = [
-        "//pkg/syncutil",
+        "//pkg/sync",
     ],
 )
 
@@ -29,7 +29,5 @@ go_test(
     size = "small",
     srcs = ["seqatomic_test.go"],
     embed = [":seqatomic"],
-    deps = [
-        "//pkg/syncutil",
-    ],
+    deps = ["//pkg/sync"],
 )

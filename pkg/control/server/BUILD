@@ -9,6 +9,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",
+        "//pkg/sync",
         "//pkg/unet",
         "//pkg/urpc",
     ],

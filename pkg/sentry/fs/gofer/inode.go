@@ -16,7 +16,6 @@ package gofer
 
 import (
 	"errors"
-	"sync"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -31,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/host"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/safemem"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 

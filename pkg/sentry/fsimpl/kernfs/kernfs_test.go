@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"io"
 	"runtime"
-	"sync"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -31,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 

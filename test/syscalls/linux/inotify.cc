@@ -977,7 +977,7 @@ TEST(Inotify, WatchOnRelativePath) {
       ASSERT_NO_ERRNO_AND_VALUE(Open(file1.path(), O_RDONLY));
 
   // Change working directory to root.
-  const char* old_working_dir = get_current_dir_name();
+  const FileDescriptor cwd = ASSERT_NO_ERRNO_AND_VALUE(Open(".", O_PATH));
   EXPECT_THAT(chdir(root.path().c_str()), SyscallSucceeds());
 
   // Add a watch on file1 with a relative path.
@@ -997,7 +997,7 @@ TEST(Inotify, WatchOnRelativePath) {
   // continue to hold a reference, random save/restore tests can fail if a save
   // is triggered after "root" is unlinked; we can't save deleted fs objects
   // with active references.
-  EXPECT_THAT(chdir(old_working_dir), SyscallSucceeds());
+  EXPECT_THAT(fchdir(cwd.get()), SyscallSucceeds());
 }
 
 TEST(Inotify, ZeroLengthReadWriteDoesNotGenerateEvent) {

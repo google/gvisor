@@ -15,11 +15,11 @@
 package gate_test
 
 import (
-	"sync"
 	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/gate"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 func TestBasicEnter(t *testing.T) {

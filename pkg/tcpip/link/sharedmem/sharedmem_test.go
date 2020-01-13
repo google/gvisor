@@ -22,11 +22,11 @@ import (
 	"math/rand"
 	"os"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"

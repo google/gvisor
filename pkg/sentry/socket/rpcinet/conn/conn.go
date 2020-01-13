@@ -17,12 +17,12 @@ package conn
 
 import (
 	"fmt"
-	"sync"
 	"sync/atomic"
 	"syscall"
 
 	"github.com/golang/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/unet"
 

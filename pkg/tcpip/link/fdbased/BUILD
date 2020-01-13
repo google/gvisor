@@ -16,6 +16,7 @@ go_library(
     importpath = "gvisor.dev/gvisor/pkg/tcpip/link/fdbased",
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",

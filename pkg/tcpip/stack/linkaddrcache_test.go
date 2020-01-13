@@ -16,12 +16,12 @@ package stack
 
 import (
 	"fmt"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/sleep"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 

@@ -10,6 +10,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",
+        "//pkg/sync",
         "//runsc/boot",
         "//runsc/specutils",
         "@com_github_cenkalti_backoff//:go_default_library",

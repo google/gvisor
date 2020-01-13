@@ -93,6 +93,7 @@ go_library(
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
         "//pkg/state",
+        "//pkg/sync",
         "//pkg/syserror",
         "//pkg/waiter",
     ],

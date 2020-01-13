@@ -15,4 +15,5 @@ go_test(
     size = "small",
     srcs = ["fdchannel_test.go"],
     embed = [":fdchannel"],
+    deps = ["//pkg/sync"],
 )

@@ -13,9 +13,11 @@
 # limitations under the License.
 """Producers of mocks."""
 
-from typing import List
+from typing import List, Any
 
 from benchmarks.harness import machine
+from benchmarks.harness.machine_producers import gcloud_mock_recorder
+from benchmarks.harness.machine_producers import gcloud_producer
 from benchmarks.harness.machine_producers import machine_producer
 
 
@@ -29,3 +31,22 @@ class MockMachineProducer(machine_producer.MachineProducer):
   def release_machines(self, machine_list: List[machine.MockMachine]):
     """No-op."""
     return
+
+
+class MockGCloudProducer(gcloud_producer.GCloudProducer):
+  """Mocks GCloudProducer for testing purposes."""
+
+  def __init__(self, mock: gcloud_mock_recorder.MockReader, **kwargs):
+    gcloud_producer.GCloudProducer.__init__(
+        self, project="mock", ssh_private_key_path="mock", **kwargs)
+    self.mock = mock
+
+  def _validate_ssh_file(self):
+    pass
+
+  def _run_command(self, cmd):
+    return self.mock.pop(cmd)
+
+  def _machines_from_instances(
+      self, instances: List[Any]) -> List[machine.MockMachine]:
+    return [machine.MockMachine() for _ in instances]

@@ -32,6 +32,7 @@ go_library(
         "//pkg/ilist",
         "//pkg/refs",
         "//pkg/sentry/context",
+        "//pkg/sync",
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",

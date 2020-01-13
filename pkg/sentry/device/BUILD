@@ -8,7 +8,10 @@ go_library(
     srcs = ["device.go"],
     importpath = "gvisor.dev/gvisor/pkg/sentry/device",
     visibility = ["//pkg/sentry:internal"],
-    deps = ["//pkg/abi/linux"],
+    deps = [
+        "//pkg/abi/linux",
+        "//pkg/sync",
+    ],
 )
 
 go_test(

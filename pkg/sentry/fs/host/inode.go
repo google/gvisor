@@ -15,7 +15,6 @@
 package host
 
 import (
-	"sync"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -28,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )

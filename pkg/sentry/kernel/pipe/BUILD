@@ -43,6 +43,7 @@ go_library(
         "//pkg/sentry/safemem",
         "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
+        "//pkg/sync",
         "//pkg/syserror",
         "//pkg/waiter",
     ],

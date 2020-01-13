@@ -460,7 +460,7 @@ func hookFromLinux(hook int) iptables.Hook {
 	case linux.NF_INET_POST_ROUTING:
 		return iptables.Postrouting
 	}
-	panic(fmt.Sprintf("Unknown hook %d does not correspond to a builtin chain"))
+	panic(fmt.Sprintf("Unknown hook %d does not correspond to a builtin chain", hook))
 }
 
 // printReplace prints information about the struct ipt_replace in optVal. It
