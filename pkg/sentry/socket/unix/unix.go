@@ -116,12 +116,15 @@ func (s *SocketOperations) Endpoint() transport.Endpoint {
 
 // extractPath extracts and validates the address.
 func extractPath(sockaddr []byte) (string, *syserr.Error) {
-	addr, _, err := netstack.AddressAndFamily(linux.AF_UNIX, sockaddr, true /* strict */)
+	addr, family, err := netstack.AddressAndFamily(sockaddr)
 	if err != nil {
 		if err == syserr.ErrAddressFamilyNotSupported {
 			err = syserr.ErrInvalidArgument
 		}
 		return "", err
+	}
+	if family != linux.AF_UNIX {
+		return "", syserr.ErrInvalidArgument
 	}
 
 	// The address is trimmed by GetAddress.
