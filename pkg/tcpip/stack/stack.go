@@ -547,6 +547,49 @@ type TransportEndpointInfo struct {
 	RegisterNICID tcpip.NICID
 }
 
+// AddrNetProto unwraps the specified address if it is a V4-mapped V6 address
+// and returns the network protocol number to be used to communicate with the
+// specified address. It returns an error if the passed address is incompatible
+// with the receiver.
+func (e *TransportEndpointInfo) AddrNetProto(addr tcpip.FullAddress, v6only bool) (tcpip.FullAddress, tcpip.NetworkProtocolNumber, *tcpip.Error) {
+	netProto := e.NetProto
+	switch len(addr.Addr) {
+	case header.IPv4AddressSize:
+		netProto = header.IPv4ProtocolNumber
+	case header.IPv6AddressSize:
+		if header.IsV4MappedAddress(addr.Addr) {
+			netProto = header.IPv4ProtocolNumber
+			addr.Addr = addr.Addr[header.IPv6AddressSize-header.IPv4AddressSize:]
+			if addr.Addr == header.IPv4Any {
+				addr.Addr = ""
+			}
+		}
+	}
+
+	switch len(e.ID.LocalAddress) {
+	case header.IPv4AddressSize:
+		if len(addr.Addr) == header.IPv6AddressSize {
+			return tcpip.FullAddress{}, 0, tcpip.ErrInvalidEndpointState
+		}
+	case header.IPv6AddressSize:
+		if len(addr.Addr) == header.IPv4AddressSize {
+			return tcpip.FullAddress{}, 0, tcpip.ErrNetworkUnreachable
+		}
+	}
+
+	switch {
+	case netProto == e.NetProto:
+	case netProto == header.IPv4ProtocolNumber && e.NetProto == header.IPv6ProtocolNumber:
+		if v6only {
+			return tcpip.FullAddress{}, 0, tcpip.ErrNoRoute
+		}
+	default:
+		return tcpip.FullAddress{}, 0, tcpip.ErrInvalidEndpointState
+	}
+
+	return addr, netProto, nil
+}
+
 // IsEndpointInfo is an empty method to implement the tcpip.EndpointInfo
 // marker interface.
 func (*TransportEndpointInfo) IsEndpointInfo() {}

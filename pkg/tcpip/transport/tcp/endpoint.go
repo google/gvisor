@@ -1691,26 +1691,11 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 }
 
 func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress) (tcpip.NetworkProtocolNumber, *tcpip.Error) {
-	netProto := e.NetProto
-	if header.IsV4MappedAddress(addr.Addr) {
-		// Fail if using a v4 mapped address on a v6only endpoint.
-		if e.v6only {
-			return 0, tcpip.ErrNoRoute
-		}
-
-		netProto = header.IPv4ProtocolNumber
-		addr.Addr = addr.Addr[header.IPv6AddressSize-header.IPv4AddressSize:]
-		if addr.Addr == header.IPv4Any {
-			addr.Addr = ""
-		}
+	unwrapped, netProto, err := e.TransportEndpointInfo.AddrNetProto(*addr, e.v6only)
+	if err != nil {
+		return 0, err
 	}
-
-	// Fail if we're bound to an address length different from the one we're
-	// checking.
-	if l := len(e.ID.LocalAddress); l != 0 && len(addr.Addr) != 0 && l != len(addr.Addr) {
-		return 0, tcpip.ErrInvalidEndpointState
-	}
-
+	*addr = unwrapped
 	return netProto, nil
 }
 
