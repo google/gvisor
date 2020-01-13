@@ -365,9 +365,22 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 		}
 	}
 
+	// TODO(gvisor.dev/issue/170): Support other chains.
+	// Since we only support modifying the INPUT chain right now, make sure
+	// all other chains point to ACCEPT rules.
+	for hook, ruleIdx := range table.BuiltinChains {
+		if hook != iptables.Input {
+			if _, ok := table.Rules[ruleIdx].Target.(iptables.UnconditionalAcceptTarget); !ok {
+				log.Warningf("Hook %d is unsupported.", hook)
+				return syserr.ErrInvalidArgument
+			}
+		}
+	}
+
 	// TODO(gvisor.dev/issue/170): Check the following conditions:
 	// - There are no loops.
 	// - There are no chains without an unconditional final rule.
+	// - There are no chains without an unconditional underflow rule.
 
 	ipt := stack.IPTables()
 	table.SetMetadata(metadata{
