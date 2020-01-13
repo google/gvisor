@@ -290,6 +290,27 @@ go_repository(
     version = "v1.3.1",
 )
 
+go_repository(
+    name = "com_github_google_go-github",
+    importpath = "github.com/google/go-github",
+    sum = "h1:N0LgJ1j65A7kfXrZnUDaYCs/Sf4rEjNlfyDHW9dolSY=",
+    version = "v17.0.0",
+)
+
+go_repository(
+    name = "org_golang_x_oauth2",
+    importpath = "golang.org/x/oauth2",
+    sum = "h1:pE8b58s1HRDMi8RDc79m0HISf9D4TzseP40cEA6IGfs=",
+    version = "v0.0.0-20191202225959-858c2ad4c8b6",
+)
+
+go_repository(
+    name = "com_github_google_go-querystring",
+    importpath = "github.com/google/go-querystring",
+    sum = "h1:Xkwi/a1rcvNg1PPYe5vI8GbeBY/jrVuDX5ASuANWTrk=",
+    version = "v1.0.0",
+)
+
 # System Call test dependencies.
 http_archive(
     name = "com_google_absl",

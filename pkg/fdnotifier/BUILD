@@ -11,6 +11,7 @@ go_library(
     importpath = "gvisor.dev/gvisor/pkg/fdnotifier",
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/sync",
         "//pkg/waiter",
         "@org_golang_x_sys//unix:go_default_library",
     ],

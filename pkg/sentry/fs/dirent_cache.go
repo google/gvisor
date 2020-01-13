@@ -16,7 +16,8 @@ package fs
 
 import (
 	"fmt"
-	"sync"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // DirentCache is an LRU cache of Dirents. The Dirent's refCount is

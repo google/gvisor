@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 
 	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // FilesystemFlags matches include/linux/fs.h:file_system_type.fs_flags.

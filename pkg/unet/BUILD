@@ -24,4 +24,5 @@ go_test(
         "unet_test.go",
     ],
     embed = [":unet"],
+    deps = ["//pkg/sync"],
 )

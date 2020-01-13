@@ -124,7 +124,7 @@ func (f *fakeNetworkEndpoint) Capabilities() stack.LinkEndpointCapabilities {
 	return f.ep.Capabilities()
 }
 
-func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, loop stack.PacketLooping, pkt tcpip.PacketBuffer) *tcpip.Error {
+func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, pkt tcpip.PacketBuffer) *tcpip.Error {
 	// Increment the sent packet count in the protocol descriptor.
 	f.proto.sendPacketCount[int(r.RemoteAddress[0])%len(f.proto.sendPacketCount)]++
 
@@ -135,7 +135,7 @@ func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, params
 	b[1] = f.id.LocalAddress[0]
 	b[2] = byte(params.Protocol)
 
-	if loop&stack.PacketLoop != 0 {
+	if r.Loop&stack.PacketLoop != 0 {
 		views := make([]buffer.View, 1, 1+len(pkt.Data.Views()))
 		views[0] = pkt.Header.View()
 		views = append(views, pkt.Data.Views()...)
@@ -143,7 +143,7 @@ func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, params
 			Data: buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views),
 		})
 	}
-	if loop&stack.PacketOut == 0 {
+	if r.Loop&stack.PacketOut == 0 {
 		return nil
 	}
 
@@ -151,11 +151,11 @@ func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, params
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-func (f *fakeNetworkEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []tcpip.PacketBuffer, params stack.NetworkHeaderParams, loop stack.PacketLooping) (int, *tcpip.Error) {
+func (f *fakeNetworkEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []tcpip.PacketBuffer, params stack.NetworkHeaderParams) (int, *tcpip.Error) {
 	panic("not implemented")
 }
 
-func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(r *stack.Route, loop stack.PacketLooping, pkt tcpip.PacketBuffer) *tcpip.Error {
+func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt tcpip.PacketBuffer) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }
 
@@ -2001,6 +2001,46 @@ func TestNICAutoGenAddr(t *testing.T) {
 	}
 }
 
+// TestNICContextPreservation tests that you can read out via stack.NICInfo the
+// Context data you pass via NICContext.Context in stack.CreateNICWithOptions.
+func TestNICContextPreservation(t *testing.T) {
+	var ctx *int
+	tests := []struct {
+		name string
+		opts stack.NICOptions
+		want stack.NICContext
+	}{
+		{
+			"context_set",
+			stack.NICOptions{Context: ctx},
+			ctx,
+		},
+		{
+			"context_not_set",
+			stack.NICOptions{},
+			nil,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{})
+			id := tcpip.NICID(1)
+			ep := channel.New(0, 0, tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00"))
+			if err := s.CreateNICWithOptions(id, ep, test.opts); err != nil {
+				t.Fatalf("got stack.CreateNICWithOptions(%d, %+v, %+v) = %s, want nil", id, ep, test.opts, err)
+			}
+			nicinfos := s.NICInfo()
+			nicinfo, ok := nicinfos[id]
+			if !ok {
+				t.Fatalf("got nicinfos[%d] = _, %t, want _, true; nicinfos = %+v", id, ok, nicinfos)
+			}
+			if got, want := nicinfo.Context == test.want, true; got != want {
+				t.Fatal("got nicinfo.Context == ctx = %t, want %t; nicinfo.Context = %p, ctx = %p", got, want, nicinfo.Context, test.want)
+			}
+		})
+	}
+}
+
 // TestNICAutoGenAddrWithOpaque tests the auto-generation of IPv6 link-local
 // addresses with opaque interface identifiers. Link Local addresses should
 // always be generated with opaque IIDs if configured to use them, even if the
@@ -2097,8 +2137,9 @@ func TestNICAutoGenAddrWithOpaque(t *testing.T) {
 
 			e := channel.New(10, 1280, test.linkAddr)
 			s := stack.New(opts)
-			if err := s.CreateNamedNIC(nicID, test.nicName, e); err != nil {
-				t.Fatalf("CreateNamedNIC(%d, %q, _) = %s", nicID, test.nicName, err)
+			nicOpts := stack.NICOptions{Name: test.nicName}
+			if err := s.CreateNICWithOptions(nicID, e, nicOpts); err != nil {
+				t.Fatalf("CreateNICWithOptions(%d, _, %+v) = %s", nicID, opts, err)
 			}
 
 			addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
@@ -2156,8 +2197,9 @@ func TestNoLinkLocalAutoGenForLoopbackNIC(t *testing.T) {
 
 			e := loopback.New()
 			s := stack.New(opts)
-			if err := s.CreateNamedNIC(nicID, nicName, e); err != nil {
-				t.Fatalf("CreateNamedNIC(%d, %q, _) = %s", nicID, nicName, err)
+			nicOpts := stack.NICOptions{Name: nicName}
+			if err := s.CreateNICWithOptions(nicID, e, nicOpts); err != nil {
+				t.Fatalf("CreateNICWithOptions(%d, _, %+v) = %s", nicID, nicOpts, err)
 			}
 
 			addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)

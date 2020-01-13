@@ -15,9 +15,8 @@
 package kernel
 
 import (
-	"sync"
-
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // UTSNamespace represents a UTS namespace, a holder of two system identifiers:

@@ -16,8 +16,9 @@ package atomicbitops
 
 import (
 	"runtime"
-	"sync"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 const iterations = 100

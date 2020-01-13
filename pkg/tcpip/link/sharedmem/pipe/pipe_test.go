@@ -18,8 +18,9 @@ import (
 	"math/rand"
 	"reflect"
 	"runtime"
-	"sync"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 func TestSimpleReadWrite(t *testing.T) {

@@ -11,6 +11,7 @@ go_library(
     deps = [
         "//pkg/fd",
         "//pkg/log",
+        "//pkg/sync",
         "//pkg/unet",
     ],
 )

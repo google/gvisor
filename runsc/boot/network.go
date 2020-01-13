@@ -219,8 +219,9 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 // createNICWithAddrs creates a NIC in the network stack and adds the given
 // addresses.
 func (n *Network) createNICWithAddrs(id tcpip.NICID, name string, ep stack.LinkEndpoint, addrs []net.IP) error {
-	if err := n.Stack.CreateNamedNIC(id, name, sniffer.New(ep)); err != nil {
-		return fmt.Errorf("CreateNamedNIC(%v, %v, %v) failed: %v", id, name, ep, err)
+	opts := stack.NICOptions{Name: name}
+	if err := n.Stack.CreateNICWithOptions(id, sniffer.New(ep), opts); err != nil {
+		return fmt.Errorf("CreateNICWithOptions(%d, _, %+v) failed: %v", id, opts, err)
 	}
 
 	// Always start with an arp address for the NIC.

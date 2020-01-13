@@ -16,9 +16,9 @@ package pipe
 
 import (
 	"io"
-	"sync"
 
 	"gvisor.dev/gvisor/pkg/sentry/safemem"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // buffer encapsulates a queueable byte buffer.

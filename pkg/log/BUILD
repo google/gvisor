@@ -16,7 +16,10 @@ go_library(
     visibility = [
         "//visibility:public",
     ],
-    deps = ["//pkg/linewriter"],
+    deps = [
+        "//pkg/linewriter",
+        "//pkg/sync",
+    ],
 )
 
 go_test(

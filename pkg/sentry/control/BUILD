@@ -30,6 +30,7 @@ go_library(
         "//pkg/sentry/strace",
         "//pkg/sentry/usage",
         "//pkg/sentry/watchdog",
+        "//pkg/sync",
         "//pkg/tcpip/link/sniffer",
         "//pkg/urpc",
     ],

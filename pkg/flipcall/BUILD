@@ -19,7 +19,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/log",
         "//pkg/memutil",
-        "//pkg/syncutil",
+        "//pkg/sync",
     ],
 )
 
@@ -31,4 +31,5 @@ go_test(
         "flipcall_test.go",
     ],
     embed = [":flipcall"],
+    deps = ["//pkg/sync"],
 )

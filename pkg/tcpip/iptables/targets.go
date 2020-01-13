@@ -41,7 +41,7 @@ func (UnconditionalDropTarget) Action(packet tcpip.PacketBuffer) (Verdict, strin
 // should be unreachable.
 type ErrorTarget struct{}
 
-// Actions implements Target.Action.
+// Action implements Target.Action.
 func (ErrorTarget) Action(packet tcpip.PacketBuffer) (Verdict, string) {
 	log.Warningf("ErrorTarget triggered.")
 	return Drop, ""

@@ -26,7 +26,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"gvisor.dev/gvisor/pkg/syncutil"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // mountKey represents the location at which a Mount is mounted. It is
@@ -75,7 +75,7 @@ type mountTable struct {
 	// intrinsics and inline assembly, limiting the performance of this
 	// approach.)
 
-	seq  syncutil.SeqCount
+	seq  sync.SeqCount
 	seed uint32 // for hashing keys
 
 	// size holds both length (number of elements) and capacity (number of

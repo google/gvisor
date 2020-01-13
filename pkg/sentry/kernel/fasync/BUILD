@@ -12,6 +12,7 @@ go_library(
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sync",
         "//pkg/waiter",
     ],
 )

@@ -16,10 +16,10 @@ package kernel
 
 import (
 	"fmt"
-	"sync"
 
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // FSContext contains filesystem context.

@@ -22,13 +22,13 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
+// Table names.
 const (
 	TablenameNat    = "nat"
 	TablenameMangle = "mangle"
 	TablenameFilter = "filter"
 )
 
-// TODO: Make this an iota? Faster! Do it.
 // Chain names as defined by net/ipv4/netfilter/ip_tables.c.
 const (
 	ChainNamePrerouting  = "PREROUTING"
@@ -38,11 +38,15 @@ const (
 	ChainNamePostrouting = "POSTROUTING"
 )
 
+// HookUnset indicates that there is no hook set for an entrypoint or
+// underflow.
 const HookUnset = -1
 
 // DefaultTables returns a default set of tables. Each chain is set to accept
 // all packets.
 func DefaultTables() IPTables {
+	// TODO(gvisor.dev/issue/170): We may be able to swap out some strings for
+	// iotas.
 	return IPTables{
 		Tables: map[string]Table{
 			TablenameNat: Table{
@@ -111,6 +115,8 @@ func DefaultTables() IPTables {
 	}
 }
 
+// EmptyFilterTable returns a Table with no rules and the filter table chains
+// mapped to HookUnset.
 func EmptyFilterTable() Table {
 	return Table{
 		Rules: []Rule{},

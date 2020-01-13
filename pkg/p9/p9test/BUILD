@@ -70,6 +70,7 @@ go_library(
         "//pkg/fd",
         "//pkg/log",
         "//pkg/p9",
+        "//pkg/sync",
         "//pkg/unet",
         "@com_github_golang_mock//gomock:go_default_library",
     ],
@@ -83,6 +84,7 @@ go_test(
     deps = [
         "//pkg/fd",
         "//pkg/p9",
+        "//pkg/sync",
         "@com_github_golang_mock//gomock:go_default_library",
     ],
 )

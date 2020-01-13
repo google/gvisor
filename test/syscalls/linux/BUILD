@@ -2888,7 +2888,6 @@ cc_library(
         ":unix_domain_socket_test_util",
         "//test/util:test_util",
         "//test/util:thread_util",
-        "//test/util:timer_util",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest",
     ],

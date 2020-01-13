@@ -391,9 +391,8 @@ func testV4Accept(t *testing.T, c *context.Context) {
 	// Make sure we get the same error when calling the original ep and the
 	// new one. This validates that v4-mapped endpoints are still able to
 	// query the V6Only flag, whereas pure v4 endpoints are not.
-	var v tcpip.V6OnlyOption
-	expected := c.EP.GetSockOpt(&v)
-	if err := nep.GetSockOpt(&v); err != expected {
+	_, expected := c.EP.GetSockOptBool(tcpip.V6OnlyOption)
+	if _, err := nep.GetSockOptBool(tcpip.V6OnlyOption); err != expected {
 		t.Fatalf("GetSockOpt returned unexpected value: got %v, want %v", err, expected)
 	}
 
@@ -531,8 +530,7 @@ func TestV6AcceptOnV6(t *testing.T) {
 
 	// Make sure we can still query the v6 only status of the new endpoint,
 	// that is, that it is in fact a v6 socket.
-	var v tcpip.V6OnlyOption
-	if err := nep.GetSockOpt(&v); err != nil {
+	if _, err := nep.GetSockOptBool(tcpip.V6OnlyOption); err != nil {
 		t.Fatalf("GetSockOpt failed failed: %v", err)
 	}
 

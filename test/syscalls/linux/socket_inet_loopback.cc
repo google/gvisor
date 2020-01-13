@@ -714,7 +714,7 @@ TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread_NoRandomSave) {
   sockaddr_storage listen_addr = listener.addr;
   sockaddr_storage conn_addr = connector.addr;
   constexpr int kThreadCount = 3;
-  constexpr int kConnectAttempts = 4096;
+  constexpr int kConnectAttempts = 10000;
 
   // Create the listening socket.
   FileDescriptor listener_fds[kThreadCount];
@@ -729,7 +729,7 @@ TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread_NoRandomSave) {
     ASSERT_THAT(
         bind(fd, reinterpret_cast<sockaddr*>(&listen_addr), listener.addr_len),
         SyscallSucceeds());
-    ASSERT_THAT(listen(fd, kConnectAttempts / 3), SyscallSucceeds());
+    ASSERT_THAT(listen(fd, 40), SyscallSucceeds());
 
     // On the first bind we need to determine which port was bound.
     if (i != 0) {
@@ -772,7 +772,14 @@ TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread_NoRandomSave) {
             }
             // Receive some data from a socket to be sure that the connect()
             // system call has been completed on another side.
-            int data;
+            // Do a short read and then close the socket to trigger a RST. This
+            // ensures that both ends of the connection are cleaned up and no
+            // goroutines hang around in TIME-WAIT. We do this so that this test
+            // does not timeout under gotsan runs where lots of goroutines can
+            // cause the test to use absurd amounts of memory.
+            //
+            // See: https://tools.ietf.org/html/rfc2525#page-50 section 2.17
+            uint16_t data;
             EXPECT_THAT(
                 RetryEINTR(recv)(fd.ValueOrDie().get(), &data, sizeof(data), 0),
                 SyscallSucceedsWithValue(sizeof(data)));
@@ -795,8 +802,22 @@ TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread_NoRandomSave) {
                               connector.addr_len),
           SyscallSucceeds());
 
+      // Do two separate sends to ensure two segments are received. This is
+      // required for netstack where read is incorrectly assuming a whole
+      // segment is read when endpoint.Read() is called which is technically
+      // incorrect as the syscall that invoked endpoint.Read() may only
+      // consume it partially. This results in a case where a close() of
+      // such a socket does not trigger a RST in netstack due to the
+      // endpoint assuming that the endpoint has no unread data.
       EXPECT_THAT(RetryEINTR(send)(fd.get(), &i, sizeof(i), 0),
                   SyscallSucceedsWithValue(sizeof(i)));
+
+      // TODO(gvisor.dev/issue/1449): Remove this block once netstack correctly
+      //   generates a RST.
+      if (IsRunningOnGvisor()) {
+        EXPECT_THAT(RetryEINTR(send)(fd.get(), &i, sizeof(i), 0),
+                    SyscallSucceedsWithValue(sizeof(i)));
+      }
     }
   });
 

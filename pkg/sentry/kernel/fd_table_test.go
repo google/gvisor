@@ -16,7 +16,6 @@ package kernel
 
 import (
 	"runtime"
-	"sync"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/sentry/context"
@@ -24,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/filetest"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 const (

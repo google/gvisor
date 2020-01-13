@@ -8,6 +8,7 @@ go_library(
     srcs = ["port.go"],
     importpath = "gvisor.dev/gvisor/pkg/sentry/socket/netlink/port",
     visibility = ["//pkg/sentry:internal"],
+    deps = ["//pkg/sync"],
 )
 
 go_test(

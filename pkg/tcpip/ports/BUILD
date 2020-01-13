@@ -9,6 +9,7 @@ go_library(
     importpath = "gvisor.dev/gvisor/pkg/tcpip/ports",
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/sync",
         "//pkg/tcpip",
     ],
 )

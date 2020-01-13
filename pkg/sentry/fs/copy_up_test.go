@@ -19,13 +19,13 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
-	"sync"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 const (
