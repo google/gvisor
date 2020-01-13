@@ -9,6 +9,7 @@ go_library(
         "ptrace.go",
         "ptrace_amd64.go",
         "ptrace_arm64.go",
+        "ptrace_arm64_unsafe.go",
         "ptrace_unsafe.go",
         "stub_amd64.s",
         "stub_arm64.s",
