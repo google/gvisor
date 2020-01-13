@@ -1377,6 +1377,26 @@ func (s *SocketOperations) SetSockOpt(t *kernel.Task, level int, name int, optVa
 		return nil
 	}
 
+	if s.skType == linux.SOCK_RAW && level == linux.IPPROTO_IP {
+		switch name {
+		case linux.IPT_SO_SET_REPLACE:
+			if len(optVal) < linux.SizeOfIPTReplace {
+				return syserr.ErrInvalidArgument
+			}
+
+			stack := inet.StackFromContext(t)
+			if stack == nil {
+				return syserr.ErrNoDevice
+			}
+			// Stack must be a netstack stack.
+			return netfilter.SetEntries(stack.(*Stack).Stack, optVal)
+
+		case linux.IPT_SO_SET_ADD_COUNTERS:
+			// TODO(gvisor.dev/issue/170): Counter support.
+			return nil
+		}
+	}
+
 	return SetSockOpt(t, s, s.Endpoint, level, name, optVal)
 }
 
