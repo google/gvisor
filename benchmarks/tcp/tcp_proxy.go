@@ -94,11 +94,11 @@ type netstackImpl struct {
 	mode string
 }
 
-func setupNetwork(ifaceName string) (fd int, err error) {
+func setupNetwork(ifaceName string, numChannels int) (fds []int, err error) {
 	// Get all interfaces in the namespace.
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return -1, fmt.Errorf("querying interfaces: %v", err)
+		return nil, fmt.Errorf("querying interfaces: %v", err)
 	}
 
 	for _, iface := range ifaces {
@@ -107,39 +107,43 @@ func setupNetwork(ifaceName string) (fd int, err error) {
 		}
 		// Create the socket.
 		const protocol = 0x0300 // htons(ETH_P_ALL)
-		fd, err := syscall.Socket(syscall.AF_PACKET, syscall.SOCK_RAW, protocol)
-		if err != nil {
-			return -1, fmt.Errorf("unable to create raw socket: %v", err)
-		}
-
-		// Bind to the appropriate device.
-		ll := syscall.SockaddrLinklayer{
-			Protocol: protocol,
-			Ifindex:  iface.Index,
-			Pkttype:  syscall.PACKET_HOST,
-		}
-		if err := syscall.Bind(fd, &ll); err != nil {
-			return -1, fmt.Errorf("unable to bind to %q: %v", iface.Name, err)
-		}
-
-		// RAW Sockets by default have a very small SO_RCVBUF of 256KB,
-		// up it to at least 1MB to reduce packet drops.
-		if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUF, rcvBufSize); err != nil {
-			return -1, fmt.Errorf("setsockopt(..., SO_RCVBUF, %v,..) = %v", rcvBufSize, err)
-		}
-
-		if !*swgso && *gso != 0 {
-			if err := syscall.SetsockoptInt(fd, syscall.SOL_PACKET, unix.PACKET_VNET_HDR, 1); err != nil {
-				return -1, fmt.Errorf("unable to enable the PACKET_VNET_HDR option: %v", err)
+		fds := make([]int, numChannels)
+		for i := range fds {
+			fd, err := syscall.Socket(syscall.AF_PACKET, syscall.SOCK_RAW, protocol)
+			if err != nil {
+				return nil, fmt.Errorf("unable to create raw socket: %v", err)
 			}
+
+			// Bind to the appropriate device.
+			ll := syscall.SockaddrLinklayer{
+				Protocol: protocol,
+				Ifindex:  iface.Index,
+				Pkttype:  syscall.PACKET_HOST,
+			}
+			if err := syscall.Bind(fd, &ll); err != nil {
+				return nil, fmt.Errorf("unable to bind to %q: %v", iface.Name, err)
+			}
+
+			// RAW Sockets by default have a very small SO_RCVBUF of 256KB,
+			// up it to at least 1MB to reduce packet drops.
+			if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUF, rcvBufSize); err != nil {
+				return nil, fmt.Errorf("setsockopt(..., SO_RCVBUF, %v,..) = %v", rcvBufSize, err)
+			}
+
+			if !*swgso && *gso != 0 {
+				if err := syscall.SetsockoptInt(fd, syscall.SOL_PACKET, unix.PACKET_VNET_HDR, 1); err != nil {
+					return nil, fmt.Errorf("unable to enable the PACKET_VNET_HDR option: %v", err)
+				}
+			}
+			fds[i] = fd
 		}
-		return fd, nil
+		return fds, nil
 	}
-	return -1, fmt.Errorf("failed to find interface: %v", ifaceName)
+	return nil, fmt.Errorf("failed to find interface: %v", ifaceName)
 }
 
 func newNetstackImpl(mode string) (impl, error) {
-	fd, err := setupNetwork(*iface)
+	fds, err := setupNetwork(*iface, runtime.GOMAXPROCS(-1))
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +181,7 @@ func newNetstackImpl(mode string) (impl, error) {
 	mac[0] &^= 0x1 // Clear multicast bit.
 	mac[0] |= 0x2  // Set local assignment bit (IEEE802).
 	ep, err := fdbased.New(&fdbased.Options{
-		FDs:            []int{fd},
+		FDs:            fds,
 		MTU:            uint32(*mtu),
 		EthernetHeader: true,
 		Address:        tcpip.LinkAddress(mac),
