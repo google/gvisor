@@ -2693,6 +2693,7 @@ cc_binary(
     srcs = ["socket_inet_loopback.cc"],
     linkstatic = 1,
     deps = [
+        ":ip_socket_test_util",
         ":socket_test_util",
         "//test/util:file_descriptor",
         "//test/util:posix_error",
