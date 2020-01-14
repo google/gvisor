@@ -1106,9 +1106,9 @@ func (s *Stack) GetMainNICAddress(id tcpip.NICID, protocol tcpip.NetworkProtocol
 	return nic.primaryAddress(protocol), nil
 }
 
-func (s *Stack) getRefEP(nic *NIC, localAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) (ref *referencedNetworkEndpoint) {
+func (s *Stack) getRefEP(nic *NIC, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) (ref *referencedNetworkEndpoint) {
 	if len(localAddr) == 0 {
-		return nic.primaryEndpoint(netProto)
+		return nic.primaryEndpoint(netProto, remoteAddr)
 	}
 	return nic.findEndpoint(netProto, localAddr, CanBePrimaryEndpoint)
 }
@@ -1124,7 +1124,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	needRoute := !(isBroadcast || isMulticast || header.IsV6LinkLocalAddress(remoteAddr))
 	if id != 0 && !needRoute {
 		if nic, ok := s.nics[id]; ok {
-			if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
+			if ref := s.getRefEP(nic, localAddr, remoteAddr, netProto); ref != nil {
 				return makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.isLoopback(), multicastLoop && !nic.isLoopback()), nil
 			}
 		}
@@ -1134,7 +1134,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 				continue
 			}
 			if nic, ok := s.nics[route.NIC]; ok {
-				if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
+				if ref := s.getRefEP(nic, localAddr, remoteAddr, netProto); ref != nil {
 					if len(remoteAddr) == 0 {
 						// If no remote address was provided, then the route
 						// provided will refer to the link local address.
