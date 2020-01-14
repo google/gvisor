@@ -102,6 +102,9 @@ func (x *TransportEndpointInfo) load(m state.Map) {
 func (x *multiPortEndpoint) beforeSave() {}
 func (x *multiPortEndpoint) save(m state.Map) {
 	x.beforeSave()
+	m.Save("demux", &x.demux)
+	m.Save("netProto", &x.netProto)
+	m.Save("transProto", &x.transProto)
 	m.Save("endpointsArr", &x.endpointsArr)
 	m.Save("endpointsMap", &x.endpointsMap)
 	m.Save("reuse", &x.reuse)
@@ -109,6 +112,9 @@ func (x *multiPortEndpoint) save(m state.Map) {
 
 func (x *multiPortEndpoint) afterLoad() {}
 func (x *multiPortEndpoint) load(m state.Map) {
+	m.Load("demux", &x.demux)
+	m.Load("netProto", &x.netProto)
+	m.Load("transProto", &x.transProto)
 	m.Load("endpointsArr", &x.endpointsArr)
 	m.Load("endpointsMap", &x.endpointsMap)
 	m.Load("reuse", &x.reuse)
