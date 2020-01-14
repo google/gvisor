@@ -1268,11 +1268,11 @@ func getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name, outLen int) (interf
 		if err != nil {
 			return nil, syserr.TranslateNetstackError(err)
 		}
-		var o uint32
+		var o int32
 		if v {
 			o = 1
 		}
-		return int32(o), nil
+		return o, nil
 
 	case linux.IPV6_PATHMTU:
 		t.Kernel().EmitUnimplementedEvent(t)
@@ -1376,6 +1376,21 @@ func getSockOptIP(t *kernel.Task, ep commonEndpoint, name, outLen int, family in
 			return uint8(v), nil
 		}
 		return int32(v), nil
+
+	case linux.IP_RECVTOS:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		v, err := ep.GetSockOptBool(tcpip.ReceiveTOSOption)
+		if err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+		var o int32
+		if v {
+			o = 1
+		}
+		return o, nil
 
 	default:
 		emitUnimplementedEventIP(t, name)
@@ -1895,6 +1910,13 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		}
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.IPv4TOSOption(v)))
 
+	case linux.IP_RECVTOS:
+		v, err := parseIntOrChar(optVal)
+		if err != nil {
+			return err
+		}
+		return syserr.TranslateNetstackError(ep.SetSockOptBool(tcpip.ReceiveTOSOption, v != 0))
+
 	case linux.IP_ADD_SOURCE_MEMBERSHIP,
 		linux.IP_BIND_ADDRESS_NO_PORT,
 		linux.IP_BLOCK_SOURCE,
@@ -1915,7 +1937,6 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		linux.IP_RECVFRAGSIZE,
 		linux.IP_RECVOPTS,
 		linux.IP_RECVORIGDSTADDR,
-		linux.IP_RECVTOS,
 		linux.IP_RECVTTL,
 		linux.IP_RETOPTS,
 		linux.IP_TRANSPARENT,
@@ -2335,7 +2356,14 @@ func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSe
 }
 
 func (s *SocketOperations) controlMessages() socket.ControlMessages {
-	return socket.ControlMessages{IP: tcpip.ControlMessages{HasTimestamp: s.readCM.HasTimestamp && s.sockOptTimestamp, Timestamp: s.readCM.Timestamp}}
+	return socket.ControlMessages{
+		IP: tcpip.ControlMessages{
+			HasTimestamp: s.readCM.HasTimestamp && s.sockOptTimestamp,
+			Timestamp:    s.readCM.Timestamp,
+			HasTOS:       s.readCM.HasTOS,
+			TOS:          s.readCM.TOS,
+		},
+	}
 }
 
 // updateTimestamp sets the timestamp for SIOCGSTAMP. It should be called after
