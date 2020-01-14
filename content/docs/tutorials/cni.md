@@ -1,6 +1,6 @@
 +++
 title = "Using CNI"
-weight = 1
+weight = 12
 +++
 
 This tutorial will show you how to set up networking for a gVisor sandbox using
