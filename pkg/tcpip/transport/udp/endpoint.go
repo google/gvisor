@@ -31,6 +31,7 @@ type udpPacket struct {
 	senderAddress tcpip.FullAddress
 	data          buffer.VectorisedView `state:".(buffer.VectorisedView)"`
 	timestamp     int64
+	tos           uint8
 }
 
 // EndpointState represents the state of a UDP endpoint.
@@ -112,6 +113,10 @@ type endpoint struct {
 	// sendTOS represents IPv4 TOS or IPv6 TrafficClass,
 	// applied while sending packets. Defaults to 0 as on Linux.
 	sendTOS uint8
+
+	// receiveTOS determines if the incoming IPv4 TOS header field is passed
+	// as ancillary data to ControlMessages on Read.
+	receiveTOS bool
 
 	// shutdownFlags represent the current shutdown state of the endpoint.
 	shutdownFlags tcpip.ShutdownFlags
@@ -243,7 +248,18 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMess
 		*addr = p.senderAddress
 	}
 
-	return p.data.ToView(), tcpip.ControlMessages{HasTimestamp: true, Timestamp: p.timestamp}, nil
+	cm := tcpip.ControlMessages{
+		HasTimestamp: true,
+		Timestamp:    p.timestamp,
+	}
+	e.mu.RLock()
+	receiveTOS := e.receiveTOS
+	e.mu.RUnlock()
+	if receiveTOS {
+		cm.HasTOS = true
+		cm.TOS = p.tos
+	}
+	return p.data.ToView(), cm, nil
 }
 
 // prepareForWrite prepares the endpoint for sending data. In particular, it
@@ -458,6 +474,12 @@ func (e *endpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
 // SetSockOptBool implements tcpip.Endpoint.SetSockOptBool.
 func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 	switch opt {
+	case tcpip.ReceiveTOSOption:
+		e.mu.Lock()
+		e.receiveTOS = v
+		e.mu.Unlock()
+		return nil
+
 	case tcpip.V6OnlyOption:
 		// We only recognize this option on v6 endpoints.
 		if e.NetProto != header.IPv6ProtocolNumber {
@@ -664,15 +686,21 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 // GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.
 func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 	switch opt {
+	case tcpip.ReceiveTOSOption:
+		e.mu.RLock()
+		v := e.receiveTOS
+		e.mu.RUnlock()
+		return v, nil
+
 	case tcpip.V6OnlyOption:
 		// We only recognize this option on v6 endpoints.
 		if e.NetProto != header.IPv6ProtocolNumber {
 			return false, tcpip.ErrUnknownProtocolOption
 		}
 
-		e.mu.Lock()
+		e.mu.RLock()
 		v := e.v6only
-		e.mu.Unlock()
+		e.mu.RUnlock()
 
 		return v, nil
 	}
@@ -1214,6 +1242,12 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 	packet.data = pkt.Data
 	e.rcvList.PushBack(packet)
 	e.rcvBufSize += pkt.Data.Size()
+
+	// Save any useful information from the network header to the packet.
+	switch r.NetProto {
+	case header.IPv4ProtocolNumber:
+		packet.tos, _ = header.IPv4(pkt.NetworkHeader).TOS()
+	}
 
 	packet.timestamp = e.stack.NowNanoseconds()
 
