@@ -1732,9 +1732,11 @@ func stackAndNdpDispatcherWithDefaultRoute(t *testing.T, nicID tcpip.NICID) (*nd
 	return ndpDisp, e, s
 }
 
-// addrForNewConnection returns the local address used when creating a new
-// connection.
-func addrForNewConnection(t *testing.T, s *stack.Stack) tcpip.Address {
+// addrForNewConnectionTo returns the local address used when creating a new
+// connection to addr.
+func addrForNewConnectionTo(t *testing.T, s *stack.Stack, addr tcpip.FullAddress) tcpip.Address {
+	t.Helper()
+
 	wq := waiter.Queue{}
 	we, ch := waiter.NewChannelEntry(nil)
 	wq.EventRegister(&we, waiter.EventIn)
@@ -1748,8 +1750,8 @@ func addrForNewConnection(t *testing.T, s *stack.Stack) tcpip.Address {
 	if err := ep.SetSockOptBool(tcpip.V6OnlyOption, true); err != nil {
 		t.Fatalf("SetSockOpt(tcpip.V6OnlyOption, true): %s", err)
 	}
-	if err := ep.Connect(dstAddr); err != nil {
-		t.Fatalf("ep.Connect(%+v): %s", dstAddr, err)
+	if err := ep.Connect(addr); err != nil {
+		t.Fatalf("ep.Connect(%+v): %s", addr, err)
 	}
 	got, err := ep.GetLocalAddress()
 	if err != nil {
@@ -1758,9 +1760,19 @@ func addrForNewConnection(t *testing.T, s *stack.Stack) tcpip.Address {
 	return got.Addr
 }
 
+// addrForNewConnection returns the local address used when creating a new
+// connection.
+func addrForNewConnection(t *testing.T, s *stack.Stack) tcpip.Address {
+	t.Helper()
+
+	return addrForNewConnectionTo(t, s, dstAddr)
+}
+
 // addrForNewConnectionWithAddr returns the local address used when creating a
 // new connection with a specific local address.
 func addrForNewConnectionWithAddr(t *testing.T, s *stack.Stack, addr tcpip.FullAddress) tcpip.Address {
+	t.Helper()
+
 	wq := waiter.Queue{}
 	we, ch := waiter.NewChannelEntry(nil)
 	wq.EventRegister(&we, waiter.EventIn)
