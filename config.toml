@@ -35,8 +35,12 @@ pygmentsStyle = "tango"
     weight = -100
     url = "/docs/"
 [[menu.main]]
-    name = "GitHub"
+    name = "Blog"
     weight = -99
+    url = "/blog/"
+[[menu.main]]
+    name = "GitHub"
+    weight = -98
     url = "https://github.com/google/gvisor"
 
 # First one is picked as the Twitter card image if not set on page.
