@@ -322,7 +322,7 @@ type ControlMessages struct {
 	HasTOS bool
 
 	// TOS is the IPv4 type of service of the associated packet.
-	TOS int8
+	TOS uint8
 
 	// HasTClass indicates whether Tclass is valid/set.
 	HasTClass bool
@@ -500,9 +500,13 @@ type WriteOptions struct {
 type SockOptBool int
 
 const (
+	// ReceiveTOSOption is used by SetSockOpt/GetSockOpt to specify if the TOS
+	// ancillary message is passed with incoming packets.
+	ReceiveTOSOption SockOptBool = iota
+
 	// V6OnlyOption is used by {G,S}etSockOptBool to specify whether an IPv6
 	// socket is to be restricted to sending and receiving IPv6 packets only.
-	V6OnlyOption SockOptBool = iota
+	V6OnlyOption
 )
 
 // SockOptInt represents socket options which values have the int type.
