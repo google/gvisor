@@ -187,7 +187,7 @@ func (it *IPTables) checkRule(hook Hook, pkt tcpip.PacketBuffer, table Table, ru
 
 	// First check whether the packet matches the IP header filter.
 	// TODO(gvisor.dev/issue/170): Support other fields of the filter.
-	if rule.Filter.Protocol != header.IPv4(pkt.NetworkHeader).TransportProtocol() {
+	if rule.Filter.Protocol != 0 && rule.Filter.Protocol != header.IPv4(pkt.NetworkHeader).TransportProtocol() {
 		return Continue
 	}
 
