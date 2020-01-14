@@ -15,6 +15,8 @@
 package stack
 
 import (
+	"log"
+	"sort"
 	"strings"
 	"sync/atomic"
 
@@ -251,13 +253,17 @@ func (n *NIC) setSpoofing(enable bool) {
 	n.mu.Unlock()
 }
 
-// primaryEndpoint returns the primary endpoint of n for the given network
-// protocol.
-//
 // primaryEndpoint will return the first non-deprecated endpoint if such an
-// endpoint exists. If no non-deprecated endpoint exists, the first deprecated
-// endpoint will be returned.
-func (n *NIC) primaryEndpoint(protocol tcpip.NetworkProtocolNumber) *referencedNetworkEndpoint {
+// endpoint exists for the given protocol and remoteAddr. If no non-deprecated
+// endpoint exists, the first deprecated endpoint will be returned.
+//
+// If an IPv6 primary endpoint is requested, Source Address Selection (as
+// defined by RFC 6724 section 5) will be performed.
+func (n *NIC) primaryEndpoint(protocol tcpip.NetworkProtocolNumber, remoteAddr tcpip.Address) *referencedNetworkEndpoint {
+	if protocol == header.IPv6ProtocolNumber && remoteAddr != "" {
+		return n.primaryIPv6Endpoint(remoteAddr)
+	}
+
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
@@ -294,6 +300,103 @@ func (n *NIC) primaryEndpoint(protocol tcpip.NetworkProtocolNumber) *referencedN
 	// deprecatedEndpoint (which may be nil if n doesn't have any valid deprecated
 	// endpoints either).
 	return deprecatedEndpoint
+}
+
+// ipv6AddrCandidate is an IPv6 candidate for Source Address Selection (RFC
+// 6724 section 5).
+type ipv6AddrCandidate struct {
+	ref   *referencedNetworkEndpoint
+	scope header.IPv6AddressScope
+}
+
+// primaryIPv6Endpoint returns an IPv6 endpoint following Source Address
+// Selection (RFC 6724 section 5).
+//
+// Note, only rules 1-3 are followed.
+//
+// remoteAddr must be a valid IPv6 address.
+func (n *NIC) primaryIPv6Endpoint(remoteAddr tcpip.Address) *referencedNetworkEndpoint {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	primaryAddrs := n.primary[header.IPv6ProtocolNumber]
+
+	if len(primaryAddrs) == 0 {
+		return nil
+	}
+
+	// Create a candidate set of available addresses we can potentially use as a
+	// source address.
+	cs := make([]ipv6AddrCandidate, 0, len(primaryAddrs))
+	for _, r := range primaryAddrs {
+		// If r is not valid for outgoing connections, it is not a valid endpoint.
+		if !r.isValidForOutgoing() {
+			continue
+		}
+
+		addr := r.ep.ID().LocalAddress
+		scope, err := header.ScopeForIPv6Address(addr)
+		if err != nil {
+			// Should never happen as we got r from the primary IPv6 endpoint list and
+			// ScopeForIPv6Address only returns an error if addr is not an IPv6
+			// address.
+			log.Fatalf("header.ScopeForIPv6Address(%s): %s", addr, err)
+		}
+
+		cs = append(cs, ipv6AddrCandidate{
+			ref:   r,
+			scope: scope,
+		})
+	}
+
+	remoteScope, err := header.ScopeForIPv6Address(remoteAddr)
+	if err != nil {
+		// primaryIPv6Endpoint should never be called with an invalid IPv6 address.
+		log.Fatalf("header.ScopeForIPv6Address(%s): %s", remoteAddr, err)
+	}
+
+	// Sort the addresses as per RFC 6724 section 5 rules 1-3.
+	//
+	// TODO(b/146021396): Implement rules 4-8 of RFC 6724 section 5.
+	sort.Slice(cs, func(i, j int) bool {
+		sa := cs[i]
+		sb := cs[j]
+
+		// Prefer same address as per RFC 6724 section 5 rule 1.
+		if sa.ref.ep.ID().LocalAddress == remoteAddr {
+			return true
+		}
+		if sb.ref.ep.ID().LocalAddress == remoteAddr {
+			return false
+		}
+
+		// Prefer appropriate scope as per RFC 6724 section 5 rule 2.
+		if sa.scope < sb.scope {
+			return sa.scope >= remoteScope
+		} else if sb.scope < sa.scope {
+			return sb.scope < remoteScope
+		}
+
+		// Avoid deprecated addresses as per RFC 6724 section 5 rule 3.
+		if saDep, sbDep := sa.ref.deprecated, sb.ref.deprecated; saDep != sbDep {
+			// If sa is not deprecated, it is preferred over sb.
+			return sbDep
+		}
+
+		// sa and sb are equal, return the endpoint that is closest to the front of
+		// the primary endpoint list.
+		return i < j
+	})
+
+	// Return the most preferred address that can have its reference count
+	// incremented.
+	for _, c := range cs {
+		if r := c.ref; r.tryIncRef() {
+			return r
+		}
+	}
+
+	return nil
 }
 
 // hasPermanentAddrLocked returns true if n has a permanent (including currently
