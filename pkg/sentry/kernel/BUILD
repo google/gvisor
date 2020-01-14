@@ -35,7 +35,7 @@ go_template_instance(
     out = "seqatomic_taskgoroutineschedinfo_unsafe.go",
     package = "kernel",
     suffix = "TaskGoroutineSchedInfo",
-    template = "//pkg/syncutil:generic_seqatomic",
+    template = "//pkg/sync:generic_seqatomic",
     types = {
         "Value": "TaskGoroutineSchedInfo",
     },
@@ -209,7 +209,7 @@ go_library(
         "//pkg/sentry/usermem",
         "//pkg/state",
         "//pkg/state/statefile",
-        "//pkg/syncutil",
+        "//pkg/sync",
         "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/tcpip",
@@ -241,6 +241,7 @@ go_test(
         "//pkg/sentry/time",
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/syserror",
     ],
 )

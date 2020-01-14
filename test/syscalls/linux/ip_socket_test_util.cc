@@ -187,24 +187,24 @@ PosixErrorOr<int> IfAddrHelper::GetIndex(std::string name) {
   return InterfaceIndex(name);
 }
 
-std::string GetAddr4Str(in_addr* a) {
+std::string GetAddr4Str(const in_addr* a) {
   char str[INET_ADDRSTRLEN];
   inet_ntop(AF_INET, a, str, sizeof(str));
   return std::string(str);
 }
 
-std::string GetAddr6Str(in6_addr* a) {
+std::string GetAddr6Str(const in6_addr* a) {
   char str[INET6_ADDRSTRLEN];
   inet_ntop(AF_INET6, a, str, sizeof(str));
   return std::string(str);
 }
 
-std::string GetAddrStr(sockaddr* a) {
+std::string GetAddrStr(const sockaddr* a) {
   if (a->sa_family == AF_INET) {
-    auto src = &(reinterpret_cast<sockaddr_in*>(a)->sin_addr);
+    auto src = &(reinterpret_cast<const sockaddr_in*>(a)->sin_addr);
     return GetAddr4Str(src);
   } else if (a->sa_family == AF_INET6) {
-    auto src = &(reinterpret_cast<sockaddr_in6*>(a)->sin6_addr);
+    auto src = &(reinterpret_cast<const sockaddr_in6*>(a)->sin6_addr);
     return GetAddr6Str(src);
   }
   return std::string("<invalid>");

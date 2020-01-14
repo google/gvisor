@@ -16,11 +16,11 @@ package tcp
 
 import (
 	"math"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/sleep"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -439,6 +439,13 @@ func (s *sender) retransmitTimerExpired() bool {
 	// Check if the timer actually expired or if it's a spurious wake due
 	// to a previously orphaned runtime timer.
 	if !s.resendTimer.checkExpiration() {
+		return true
+	}
+
+	// TODO(b/147297758): Band-aid fix, retransmitTimer can fire in some edge cases
+	// when writeList is empty. Remove this once we have a proper fix for this
+	// issue.
+	if s.writeList.Front() == nil {
 		return true
 	}
 

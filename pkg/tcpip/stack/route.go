@@ -158,7 +158,7 @@ func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt tcpip.Pack
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	err := r.ref.ep.WritePacket(r, gso, params, r.Loop, pkt)
+	err := r.ref.ep.WritePacket(r, gso, params, pkt)
 	if err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 	} else {
@@ -174,7 +174,7 @@ func (r *Route) WritePackets(gso *GSO, pkts []tcpip.PacketBuffer, params Network
 		return 0, tcpip.ErrInvalidEndpointState
 	}
 
-	n, err := r.ref.ep.WritePackets(r, gso, pkts, params, r.Loop)
+	n, err := r.ref.ep.WritePackets(r, gso, pkts, params)
 	if err != nil {
 		r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(len(pkts) - n))
 	}
@@ -195,7 +195,7 @@ func (r *Route) WriteHeaderIncludedPacket(pkt tcpip.PacketBuffer) *tcpip.Error {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	if err := r.ref.ep.WriteHeaderIncludedPacket(r, r.Loop, pkt); err != nil {
+	if err := r.ref.ep.WriteHeaderIncludedPacket(r, pkt); err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 		return err
 	}

@@ -29,8 +29,9 @@ go_template(
 )
 
 go_library(
-    name = "syncutil",
+    name = "sync",
     srcs = [
+        "aliases.go",
         "downgradable_rwmutex_unsafe.go",
         "memmove_unsafe.go",
         "norace_unsafe.go",
@@ -38,15 +39,15 @@ go_library(
         "seqcount.go",
         "syncutil.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/syncutil",
+    importpath = "gvisor.dev/gvisor/pkg/sync",
 )
 
 go_test(
-    name = "syncutil_test",
+    name = "sync_test",
     size = "small",
     srcs = [
         "downgradable_rwmutex_test.go",
         "seqcount_test.go",
     ],
-    embed = [":syncutil"],
+    embed = [":sync"],
 )

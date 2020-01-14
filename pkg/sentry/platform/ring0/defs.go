@@ -17,7 +17,7 @@ package ring0
 import (
 	"syscall"
 
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
 )
 
 // Kernel is a global kernel object.

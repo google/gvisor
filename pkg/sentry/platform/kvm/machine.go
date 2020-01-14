@@ -17,7 +17,6 @@ package kvm
 import (
 	"fmt"
 	"runtime"
-	"sync"
 	"sync/atomic"
 	"syscall"
 
@@ -27,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // machine contains state associated with the VM as a whole.

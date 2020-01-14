@@ -15,7 +15,6 @@
 package iptables
 
 import (
-	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -23,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"flag"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/dockerutil"
 	"gvisor.dev/gvisor/runsc/testutil"

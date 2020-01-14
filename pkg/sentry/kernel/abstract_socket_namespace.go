@@ -15,11 +15,11 @@
 package kernel
 
 import (
-	"sync"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // +stateify savable

@@ -55,6 +55,7 @@ go_library(
         "//pkg/sentry/platform/safecopy",
         "//pkg/sentry/time",
         "//pkg/sentry/usermem",
+        "//pkg/sync",
     ],
 )
 

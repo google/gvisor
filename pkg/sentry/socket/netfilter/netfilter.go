@@ -368,9 +368,22 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 		}
 	}
 
+	// TODO(gvisor.dev/issue/170): Support other chains.
+	// Since we only support modifying the INPUT chain right now, make sure
+	// all other chains point to ACCEPT rules.
+	for hook, ruleIdx := range table.BuiltinChains {
+		if hook != iptables.Input {
+			if _, ok := table.Rules[ruleIdx].Target.(iptables.UnconditionalAcceptTarget); !ok {
+				log.Warningf("Hook %d is unsupported.", hook)
+				return syserr.ErrInvalidArgument
+			}
+		}
+	}
+
 	// TODO(gvisor.dev/issue/170): Check the following conditions:
 	// - There are no loops.
 	// - There are no chains without an unconditional final rule.
+	// - There are no chains without an unconditional underflow rule.
 
 	ipt := stack.IPTables()
 	table.SetMetadata(metadata{
@@ -488,7 +501,7 @@ func hookFromLinux(hook int) iptables.Hook {
 	case linux.NF_INET_POST_ROUTING:
 		return iptables.Postrouting
 	}
-	panic(fmt.Sprintf("Unknown hook %d does not correspond to a builtin chain"))
+	panic(fmt.Sprintf("Unknown hook %d does not correspond to a builtin chain", hook))
 }
 
 // printReplace prints information about the struct ipt_replace in optVal. It

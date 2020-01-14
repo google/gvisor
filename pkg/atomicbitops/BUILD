@@ -20,4 +20,5 @@ go_test(
     size = "small",
     srcs = ["atomic_bitops_test.go"],
     embed = [":atomicbitops"],
+    deps = ["//pkg/sync"],
 )

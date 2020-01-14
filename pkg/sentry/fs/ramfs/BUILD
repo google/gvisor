@@ -21,6 +21,7 @@ go_library(
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/syserror",
         "//pkg/waiter",
     ],

@@ -471,6 +471,9 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte) (socket.Con
 		case linux.SOL_IP:
 			switch h.Type {
 			case linux.IP_TOS:
+				if length < linux.SizeOfControlMessageTOS {
+					return socket.ControlMessages{}, syserror.EINVAL
+				}
 				cmsgs.IP.HasTOS = true
 				binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageTOS], usermem.ByteOrder, &cmsgs.IP.TOS)
 				i += AlignUp(length, width)
@@ -481,6 +484,9 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte) (socket.Con
 		case linux.SOL_IPV6:
 			switch h.Type {
 			case linux.IPV6_TCLASS:
+				if length < linux.SizeOfControlMessageTClass {
+					return socket.ControlMessages{}, syserror.EINVAL
+				}
 				cmsgs.IP.HasTClass = true
 				binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageTClass], usermem.ByteOrder, &cmsgs.IP.TClass)
 				i += AlignUp(length, width)

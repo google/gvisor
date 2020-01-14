@@ -29,7 +29,6 @@ import (
 	"io"
 	"math"
 	"reflect"
-	"sync"
 	"syscall"
 	"time"
 
@@ -49,6 +48,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -222,17 +222,25 @@ type commonEndpoint interface {
 	// transport.Endpoint.SetSockOpt.
 	SetSockOpt(interface{}) *tcpip.Error
 
+	// SetSockOptBool implements tcpip.Endpoint.SetSockOptBool and
+	// transport.Endpoint.SetSockOptBool.
+	SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error
+
 	// SetSockOptInt implements tcpip.Endpoint.SetSockOptInt and
 	// transport.Endpoint.SetSockOptInt.
-	SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error
+	SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error
 
 	// GetSockOpt implements tcpip.Endpoint.GetSockOpt and
 	// transport.Endpoint.GetSockOpt.
 	GetSockOpt(interface{}) *tcpip.Error
 
+	// GetSockOptBool implements tcpip.Endpoint.GetSockOptBool and
+	// transport.Endpoint.GetSockOpt.
+	GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error)
+
 	// GetSockOptInt implements tcpip.Endpoint.GetSockOptInt and
 	// transport.Endpoint.GetSockOpt.
-	GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error)
+	GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error)
 }
 
 // SocketOperations encapsulates all the state needed to represent a network stack
@@ -985,13 +993,23 @@ func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family
 		if err := ep.GetSockOpt(&v); err != nil {
 			return nil, syserr.TranslateNetstackError(err)
 		}
-		if len(v) == 0 {
+		if v == 0 {
 			return []byte{}, nil
 		}
 		if outLen < linux.IFNAMSIZ {
 			return nil, syserr.ErrInvalidArgument
 		}
-		return append([]byte(v), 0), nil
+		s := t.NetworkContext()
+		if s == nil {
+			return nil, syserr.ErrNoDevice
+		}
+		nic, ok := s.Interfaces()[int32(v)]
+		if !ok {
+			// The NICID no longer indicates a valid interface, probably because that
+			// interface was removed.
+			return nil, syserr.ErrUnknownDevice
+		}
+		return append([]byte(nic.Name), 0), nil
 
 	case linux.SO_BROADCAST:
 		if outLen < sizeOfInt32 {
@@ -1221,12 +1239,15 @@ func getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name, outLen int) (interf
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		var v tcpip.V6OnlyOption
-		if err := ep.GetSockOpt(&v); err != nil {
+		v, err := ep.GetSockOptBool(tcpip.V6OnlyOption)
+		if err != nil {
 			return nil, syserr.TranslateNetstackError(err)
 		}
-
-		return int32(v), nil
+		var o uint32
+		if v {
+			o = 1
+		}
+		return int32(o), nil
 
 	case linux.IPV6_PATHMTU:
 		t.Kernel().EmitUnimplementedEvent(t)
@@ -1455,7 +1476,20 @@ func setSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		if n == -1 {
 			n = len(optVal)
 		}
-		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.BindToDeviceOption(optVal[:n])))
+		name := string(optVal[:n])
+		if name == "" {
+			return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.BindToDeviceOption(0)))
+		}
+		s := t.NetworkContext()
+		if s == nil {
+			return syserr.ErrNoDevice
+		}
+		for nicID, nic := range s.Interfaces() {
+			if nic.Name == name {
+				return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.BindToDeviceOption(nicID)))
+			}
+		}
+		return syserr.ErrUnknownDevice
 
 	case linux.SO_BROADCAST:
 		if len(optVal) < sizeOfInt32 {
@@ -1649,7 +1683,7 @@ func setSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) 
 		}
 
 		v := usermem.ByteOrder.Uint32(optVal)
-		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.V6OnlyOption(v)))
+		return syserr.TranslateNetstackError(ep.SetSockOptBool(tcpip.V6OnlyOption, v != 0))
 
 	case linux.IPV6_ADD_MEMBERSHIP,
 		linux.IPV6_DROP_MEMBERSHIP,

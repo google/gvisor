@@ -50,6 +50,7 @@ go_library(
         "//pkg/sentry/unimpl",
         "//pkg/sentry/uniqueid",
         "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/tcpip",

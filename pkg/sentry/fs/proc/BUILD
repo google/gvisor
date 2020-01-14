@@ -51,6 +51,7 @@ go_library(
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/syserror",
         "//pkg/tcpip/header",
         "//pkg/waiter",

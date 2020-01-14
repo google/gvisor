@@ -36,6 +36,7 @@ go_library(
         "//pkg/ilist",
         "//pkg/rand",
         "//pkg/sleep",
+        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/hash/jenkins",
@@ -83,6 +84,7 @@ go_test(
     embed = [":stack"],
     deps = [
         "//pkg/sleep",
+        "//pkg/sync",
         "//pkg/tcpip",
     ],
 )

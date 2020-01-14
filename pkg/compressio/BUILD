@@ -8,7 +8,10 @@ go_library(
     srcs = ["compressio.go"],
     importpath = "gvisor.dev/gvisor/pkg/compressio",
     visibility = ["//:sandbox"],
-    deps = ["//pkg/binary"],
+    deps = [
+        "//pkg/binary",
+        "//pkg/sync",
+    ],
 )
 
 go_test(

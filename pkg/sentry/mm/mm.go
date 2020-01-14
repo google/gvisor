@@ -35,8 +35,6 @@
 package mm
 
 import (
-	"sync"
-
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -44,7 +42,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
-	"gvisor.dev/gvisor/pkg/syncutil"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // MemoryManager implements a virtual address space.
@@ -82,7 +80,7 @@ type MemoryManager struct {
 	users int32
 
 	// mappingMu is analogous to Linux's struct mm_struct::mmap_sem.
-	mappingMu syncutil.DowngradableRWMutex `state:"nosave"`
+	mappingMu sync.DowngradableRWMutex `state:"nosave"`
 
 	// vmas stores virtual memory areas. Since vmas are stored by value,
 	// clients should usually use vmaIterator.ValuePtr() instead of
@@ -125,7 +123,7 @@ type MemoryManager struct {
 
 	// activeMu is loosely analogous to Linux's struct
 	// mm_struct::page_table_lock.
-	activeMu syncutil.DowngradableRWMutex `state:"nosave"`
+	activeMu sync.DowngradableRWMutex `state:"nosave"`
 
 	// pmas stores platform mapping areas used to implement vmas. Since pmas
 	// are stored by value, clients should usually use pmaIterator.ValuePtr()

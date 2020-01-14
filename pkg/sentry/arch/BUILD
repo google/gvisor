@@ -32,6 +32,7 @@ go_library(
         "//pkg/sentry/context",
         "//pkg/sentry/limits",
         "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/syserror",
     ],
 )

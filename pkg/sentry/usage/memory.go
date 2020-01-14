@@ -17,12 +17,12 @@ package usage
 import (
 	"fmt"
 	"os"
-	"sync"
 	"sync/atomic"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/memutil"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // MemoryKind represents a type of memory used by the application.
