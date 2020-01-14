@@ -19,12 +19,12 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sleep"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
@@ -885,8 +885,14 @@ func (e *endpoint) ModerateRecvBuf(copied int) {
 		// reject valid data that might already be in flight as the
 		// acceptable window will shrink.
 		if rcvWnd > e.rcvBufSize {
+			availBefore := e.receiveBufferAvailableLocked()
 			e.rcvBufSize = rcvWnd
-			e.notifyProtocolGoroutine(notifyReceiveWindowChanged)
+			availAfter := e.receiveBufferAvailableLocked()
+			mask := uint32(notifyReceiveWindowChanged)
+			if crossed, above := e.windowCrossedACKThreshold(availAfter - availBefore); crossed && above {
+				mask |= notifyNonZeroReceiveWindow
+			}
+			e.notifyProtocolGoroutine(mask)
 		}
 
 		// We only update prevCopied when we grow the buffer because in cases
@@ -955,11 +961,12 @@ func (e *endpoint) readLocked() (buffer.View, *tcpip.Error) {
 	}
 
 	e.rcvBufUsed -= len(v)
-	// If the window was zero before this read and if the read freed up
-	// enough buffer space for the scaled window to be non-zero then notify
-	// the protocol goroutine to send a window update.
-	if e.zeroWindow && !e.zeroReceiveWindow(e.rcv.rcvWndScale) {
-		e.zeroWindow = false
+
+	// If the window was small before this read and if the read freed up
+	// enough buffer space, to either fit an aMSS or half a receive buffer
+	// (whichever smaller), then notify the protocol goroutine to send a
+	// window update.
+	if crossed, above := e.windowCrossedACKThreshold(len(v)); crossed && above {
 		e.notifyProtocolGoroutine(notifyNonZeroReceiveWindow)
 	}
 
@@ -1133,20 +1140,65 @@ func (e *endpoint) Peek(vec [][]byte) (int64, tcpip.ControlMessages, *tcpip.Erro
 	return num, tcpip.ControlMessages{}, nil
 }
 
-// zeroReceiveWindow checks if the receive window to be announced now would be
-// zero, based on the amount of available buffer and the receive window scaling.
+// windowCrossedACKThreshold checks if the receive window to be announced now
+// would be under aMSS or under half receive buffer, whichever smaller. This is
+// useful as a receive side silly window syndrome prevention mechanism. If
+// window grows to reasonable value, we should send ACK to the sender to inform
+// the rx space is now large. We also want ensure a series of small read()'s
+// won't trigger a flood of spurious tiny ACK's.
 //
-// It must be called with rcvListMu held.
-func (e *endpoint) zeroReceiveWindow(scale uint8) bool {
-	if e.rcvBufUsed >= e.rcvBufSize {
-		return true
+// For large receive buffers, the threshold is aMSS - once reader reads more
+// than aMSS we'll send ACK. For tiny receive buffers, the threshold is half of
+// receive buffer size. This is chosen arbitrairly.
+// crossed will be true if the window size crossed the ACK threshold.
+// above will be true if the new window is >= ACK threshold and false
+// otherwise.
+func (e *endpoint) windowCrossedACKThreshold(deltaBefore int) (crossed bool, above bool) {
+	newAvail := e.receiveBufferAvailableLocked()
+	oldAvail := newAvail - deltaBefore
+	if oldAvail < 0 {
+		oldAvail = 0
 	}
 
-	return ((e.rcvBufSize - e.rcvBufUsed) >> scale) == 0
+	threshold := int(e.amss)
+	if threshold > e.rcvBufSize/2 {
+		threshold = e.rcvBufSize / 2
+	}
+
+	switch {
+	case oldAvail < threshold && newAvail >= threshold:
+		return true, true
+	case oldAvail >= threshold && newAvail < threshold:
+		return true, false
+	}
+	return false, false
+}
+
+// SetSockOptBool sets a socket option.
+func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
+	switch opt {
+	case tcpip.V6OnlyOption:
+		// We only recognize this option on v6 endpoints.
+		if e.NetProto != header.IPv6ProtocolNumber {
+			return tcpip.ErrInvalidEndpointState
+		}
+
+		e.mu.Lock()
+		defer e.mu.Unlock()
+
+		// We only allow this to be set when we're in the initial state.
+		if e.state != StateInitial {
+			return tcpip.ErrInvalidEndpointState
+		}
+
+		e.v6only = v
+	}
+
+	return nil
 }
 
 // SetSockOptInt sets a socket option.
-func (e *endpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
+func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	switch opt {
 	case tcpip.ReceiveBufferSizeOption:
 		// Make sure the receive buffer size is within the min and max
@@ -1181,10 +1233,16 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
 			size = math.MaxInt32 / 2
 		}
 
+		availBefore := e.receiveBufferAvailableLocked()
 		e.rcvBufSize = size
+		availAfter := e.receiveBufferAvailableLocked()
+
 		e.rcvAutoParams.disabled = true
-		if e.zeroWindow && !e.zeroReceiveWindow(scale) {
-			e.zeroWindow = false
+
+		// Immediately send an ACK to uncork the sender silly window
+		// syndrome prevetion, when our available space grows above aMSS
+		// or half receive buffer, whichever smaller.
+		if crossed, above := e.windowCrossedACKThreshold(availAfter - availBefore); crossed && above {
 			mask |= notifyNonZeroReceiveWindow
 		}
 		e.rcvListMu.Unlock()
@@ -1256,19 +1314,14 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		return nil
 
 	case tcpip.BindToDeviceOption:
+		id := tcpip.NICID(v)
+		if id != 0 && !e.stack.HasNIC(id) {
+			return tcpip.ErrUnknownDevice
+		}
 		e.mu.Lock()
-		defer e.mu.Unlock()
-		if v == "" {
-			e.bindToDevice = 0
-			return nil
-		}
-		for nicID, nic := range e.stack.NICInfo() {
-			if nic.Name == string(v) {
-				e.bindToDevice = nicID
-				return nil
-			}
-		}
-		return tcpip.ErrUnknownDevice
+		e.bindToDevice = id
+		e.mu.Unlock()
+		return nil
 
 	case tcpip.QuickAckOption:
 		if v == 0 {
@@ -1287,23 +1340,6 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.userMSS = uint16(userMSS)
 		e.mu.Unlock()
 		e.notifyProtocolGoroutine(notifyMSSChanged)
-		return nil
-
-	case tcpip.V6OnlyOption:
-		// We only recognize this option on v6 endpoints.
-		if e.NetProto != header.IPv6ProtocolNumber {
-			return tcpip.ErrInvalidEndpointState
-		}
-
-		e.mu.Lock()
-		defer e.mu.Unlock()
-
-		// We only allow this to be set when we're in the initial state.
-		if e.state != StateInitial {
-			return tcpip.ErrInvalidEndpointState
-		}
-
-		e.v6only = v != 0
 		return nil
 
 	case tcpip.TTLOption:
@@ -1446,8 +1482,27 @@ func (e *endpoint) readyReceiveSize() (int, *tcpip.Error) {
 	return e.rcvBufUsed, nil
 }
 
+// GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.
+func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
+	switch opt {
+	case tcpip.V6OnlyOption:
+		// We only recognize this option on v6 endpoints.
+		if e.NetProto != header.IPv6ProtocolNumber {
+			return false, tcpip.ErrUnknownProtocolOption
+		}
+
+		e.mu.Lock()
+		v := e.v6only
+		e.mu.Unlock()
+
+		return v, nil
+	}
+
+	return false, tcpip.ErrUnknownProtocolOption
+}
+
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
-func (e *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
+func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 	switch opt {
 	case tcpip.ReceiveQueueSizeOption:
 		return e.readyReceiveSize()
@@ -1525,34 +1580,14 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 
 	case *tcpip.BindToDeviceOption:
 		e.mu.RLock()
-		defer e.mu.RUnlock()
-		if nic, ok := e.stack.NICInfo()[e.bindToDevice]; ok {
-			*o = tcpip.BindToDeviceOption(nic.Name)
-			return nil
-		}
-		*o = ""
+		*o = tcpip.BindToDeviceOption(e.bindToDevice)
+		e.mu.RUnlock()
 		return nil
 
 	case *tcpip.QuickAckOption:
 		*o = 1
 		if v := atomic.LoadUint32(&e.slowAck); v != 0 {
 			*o = 0
-		}
-		return nil
-
-	case *tcpip.V6OnlyOption:
-		// We only recognize this option on v6 endpoints.
-		if e.NetProto != header.IPv6ProtocolNumber {
-			return tcpip.ErrUnknownProtocolOption
-		}
-
-		e.mu.Lock()
-		v := e.v6only
-		e.mu.Unlock()
-
-		*o = 0
-		if v {
-			*o = 1
 		}
 		return nil
 
@@ -2225,13 +2260,10 @@ func (e *endpoint) readyToRead(s *segment) {
 	if s != nil {
 		s.incRef()
 		e.rcvBufUsed += s.data.Size()
-		// Check if the receive window is now closed. If so make sure
-		// we set the zero window before we deliver the segment to ensure
-		// that a subsequent read of the segment will correctly trigger
-		// a non-zero notification.
-		if avail := e.receiveBufferAvailableLocked(); avail>>e.rcv.rcvWndScale == 0 {
+		// Increase counter if the receive window falls down below MSS
+		// or half receive buffer size, whichever smaller.
+		if crossed, above := e.windowCrossedACKThreshold(-s.data.Size()); crossed && !above {
 			e.stats.ReceiveErrors.ZeroRcvWindowState.Increment()
-			e.zeroWindow = true
 		}
 		e.rcvList.PushBack(s)
 	} else {

@@ -21,13 +21,13 @@ package stack
 
 import (
 	"encoding/binary"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sleep"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -796,9 +796,30 @@ func (s *Stack) NewPacketEndpoint(cooked bool, netProto tcpip.NetworkProtocolNum
 	return s.rawFactory.NewPacketEndpoint(s, cooked, netProto, waiterQueue)
 }
 
-// createNIC creates a NIC with the provided id and link-layer endpoint, and
-// optionally enable it.
-func (s *Stack) createNIC(id tcpip.NICID, name string, ep LinkEndpoint, enabled bool) *tcpip.Error {
+// NICContext is an opaque pointer used to store client-supplied NIC metadata.
+type NICContext interface{}
+
+// NICOptions specifies the configuration of a NIC as it is being created.
+// The zero value creates an enabled, unnamed NIC.
+type NICOptions struct {
+	// Name specifies the name of the NIC.
+	Name string
+
+	// Disabled specifies whether to avoid calling Attach on the passed
+	// LinkEndpoint.
+	Disabled bool
+
+	// Context specifies user-defined data that will be returned in stack.NICInfo
+	// for the NIC. Clients of this library can use it to add metadata that
+	// should be tracked alongside a NIC, to avoid having to keep a
+	// map[tcpip.NICID]metadata mirroring stack.Stack's nic map.
+	Context NICContext
+}
+
+// CreateNICWithOptions creates a NIC with the provided id, LinkEndpoint, and
+// NICOptions. See the documentation on type NICOptions for details on how
+// NICs can be configured.
+func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *tcpip.Error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -807,38 +828,20 @@ func (s *Stack) createNIC(id tcpip.NICID, name string, ep LinkEndpoint, enabled 
 		return tcpip.ErrDuplicateNICID
 	}
 
-	n := newNIC(s, id, name, ep)
+	n := newNIC(s, id, opts.Name, ep, opts.Context)
 
 	s.nics[id] = n
-	if enabled {
+	if !opts.Disabled {
 		return n.enable()
 	}
 
 	return nil
 }
 
-// CreateNIC creates a NIC with the provided id and link-layer endpoint.
+// CreateNIC creates a NIC with the provided id and LinkEndpoint and calls
+// `LinkEndpoint.Attach` to start delivering packets to it.
 func (s *Stack) CreateNIC(id tcpip.NICID, ep LinkEndpoint) *tcpip.Error {
-	return s.createNIC(id, "", ep, true)
-}
-
-// CreateNamedNIC creates a NIC with the provided id and link-layer endpoint,
-// and a human-readable name.
-func (s *Stack) CreateNamedNIC(id tcpip.NICID, name string, ep LinkEndpoint) *tcpip.Error {
-	return s.createNIC(id, name, ep, true)
-}
-
-// CreateDisabledNIC creates a NIC with the provided id and link-layer endpoint,
-// but leave it disable. Stack.EnableNIC must be called before the link-layer
-// endpoint starts delivering packets to it.
-func (s *Stack) CreateDisabledNIC(id tcpip.NICID, ep LinkEndpoint) *tcpip.Error {
-	return s.createNIC(id, "", ep, false)
-}
-
-// CreateDisabledNamedNIC is a combination of CreateNamedNIC and
-// CreateDisabledNIC.
-func (s *Stack) CreateDisabledNamedNIC(id tcpip.NICID, name string, ep LinkEndpoint) *tcpip.Error {
-	return s.createNIC(id, name, ep, false)
+	return s.CreateNICWithOptions(id, ep, NICOptions{})
 }
 
 // EnableNIC enables the given NIC so that the link-layer endpoint can start
@@ -892,6 +895,18 @@ type NICInfo struct {
 	MTU uint32
 
 	Stats NICStats
+
+	// Context is user-supplied data optionally supplied in CreateNICWithOptions.
+	// See type NICOptions for more details.
+	Context NICContext
+}
+
+// HasNIC returns true if the NICID is defined in the stack.
+func (s *Stack) HasNIC(id tcpip.NICID) bool {
+	s.mu.RLock()
+	_, ok := s.nics[id]
+	s.mu.RUnlock()
+	return ok
 }
 
 // NICInfo returns a map of NICIDs to their associated information.
@@ -914,6 +929,7 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 			Flags:             flags,
 			MTU:               nic.linkEP.MTU(),
 			Stats:             nic.stats,
+			Context:           nic.context,
 		}
 	}
 	return nics

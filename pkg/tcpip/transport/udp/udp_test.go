@@ -335,7 +335,7 @@ func (c *testContext) createEndpointForFlow(flow testFlow) {
 
 	c.createEndpoint(flow.sockProto())
 	if flow.isV6Only() {
-		if err := c.ep.SetSockOpt(tcpip.V6OnlyOption(1)); err != nil {
+		if err := c.ep.SetSockOptBool(tcpip.V6OnlyOption, true); err != nil {
 			c.t.Fatalf("SetSockOpt failed: %v", err)
 		}
 	} else if flow.isBroadcast() {
@@ -508,46 +508,42 @@ func TestBindToDeviceOption(t *testing.T) {
 	}
 	defer ep.Close()
 
-	if err := s.CreateNamedNIC(321, "my_device", loopback.New()); err != nil {
-		t.Errorf("CreateNamedNIC failed: %v", err)
+	opts := stack.NICOptions{Name: "my_device"}
+	if err := s.CreateNICWithOptions(321, loopback.New(), opts); err != nil {
+		t.Errorf("CreateNICWithOptions(_, _, %+v) failed: %v", opts, err)
 	}
 
-	// Make an nameless NIC.
-	if err := s.CreateNIC(54321, loopback.New()); err != nil {
-		t.Errorf("CreateNIC failed: %v", err)
-	}
-
-	// strPtr is used instead of taking the address of string literals, which is
+	// nicIDPtr is used instead of taking the address of NICID literals, which is
 	// a compiler error.
-	strPtr := func(s string) *string {
+	nicIDPtr := func(s tcpip.NICID) *tcpip.NICID {
 		return &s
 	}
 
 	testActions := []struct {
 		name                 string
-		setBindToDevice      *string
+		setBindToDevice      *tcpip.NICID
 		setBindToDeviceError *tcpip.Error
 		getBindToDevice      tcpip.BindToDeviceOption
 	}{
-		{"GetDefaultValue", nil, nil, ""},
-		{"BindToNonExistent", strPtr("non_existent_device"), tcpip.ErrUnknownDevice, ""},
-		{"BindToExistent", strPtr("my_device"), nil, "my_device"},
-		{"UnbindToDevice", strPtr(""), nil, ""},
+		{"GetDefaultValue", nil, nil, 0},
+		{"BindToNonExistent", nicIDPtr(999), tcpip.ErrUnknownDevice, 0},
+		{"BindToExistent", nicIDPtr(321), nil, 321},
+		{"UnbindToDevice", nicIDPtr(0), nil, 0},
 	}
 	for _, testAction := range testActions {
 		t.Run(testAction.name, func(t *testing.T) {
 			if testAction.setBindToDevice != nil {
 				bindToDevice := tcpip.BindToDeviceOption(*testAction.setBindToDevice)
-				if got, want := ep.SetSockOpt(bindToDevice), testAction.setBindToDeviceError; got != want {
-					t.Errorf("SetSockOpt(%v) got %v, want %v", bindToDevice, got, want)
+				if gotErr, wantErr := ep.SetSockOpt(bindToDevice), testAction.setBindToDeviceError; gotErr != wantErr {
+					t.Errorf("SetSockOpt(%v) got %v, want %v", bindToDevice, gotErr, wantErr)
 				}
 			}
-			bindToDevice := tcpip.BindToDeviceOption("to be modified by GetSockOpt")
-			if ep.GetSockOpt(&bindToDevice) != nil {
-				t.Errorf("GetSockOpt got %v, want %v", ep.GetSockOpt(&bindToDevice), nil)
+			bindToDevice := tcpip.BindToDeviceOption(88888)
+			if err := ep.GetSockOpt(&bindToDevice); err != nil {
+				t.Errorf("GetSockOpt got %v, want %v", err, nil)
 			}
 			if got, want := bindToDevice, testAction.getBindToDevice; got != want {
-				t.Errorf("bindToDevice got %q, want %q", got, want)
+				t.Errorf("bindToDevice got %d, want %d", got, want)
 			}
 		})
 	}
@@ -1232,7 +1228,10 @@ func TestTTL(t *testing.T) {
 				} else {
 					p = ipv6.NewProtocol()
 				}
-				ep, err := p.NewEndpoint(0, tcpip.AddressWithPrefix{}, nil, nil, nil)
+				ep, err := p.NewEndpoint(0, tcpip.AddressWithPrefix{}, nil, nil, nil, stack.New(stack.Options{
+					NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
+					TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+				}))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -1265,7 +1264,10 @@ func TestSetTTL(t *testing.T) {
 					} else {
 						p = ipv6.NewProtocol()
 					}
-					ep, err := p.NewEndpoint(0, tcpip.AddressWithPrefix{}, nil, nil, nil)
+					ep, err := p.NewEndpoint(0, tcpip.AddressWithPrefix{}, nil, nil, nil, stack.New(stack.Options{
+						NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
+						TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+					}))
 					if err != nil {
 						t.Fatal(err)
 					}

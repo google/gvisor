@@ -33,6 +33,7 @@ go_library(
         "//pkg/sentry/platform/interrupt",
         "//pkg/sentry/platform/safecopy",
         "//pkg/sentry/usermem",
+        "//pkg/sync",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

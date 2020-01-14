@@ -18,5 +18,6 @@ go_library(
     deps = [
         "//pkg/bits",
         "//pkg/memutil",
+        "//pkg/sync",
     ],
 )

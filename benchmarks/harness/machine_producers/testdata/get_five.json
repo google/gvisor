@@ -1,0 +1,211 @@
+[
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "instances",
+            "list",
+            "--project",
+            "project",
+            "--format=json"
+        ],
+        "stdout": "[{\"name\":\"name\", \"networkInterfaces\":[{\"accessConfigs\":[{\"natIP\":\"0.0.0.0\"}]}]},{\"name\":\"name\", \"networkInterfaces\":[{\"accessConfigs\":[{\"natIP\":\"0.0.0.0\"}]}]},{\"name\":\"name\", \"networkInterfaces\":[{\"accessConfigs\":[{\"natIP\":\"0.0.0.0\"}]}]},{\"name\":\"name\", \"networkInterfaces\":[{\"accessConfigs\":[{\"natIP\":\"0.0.0.0\"}]}]},{\"name\":\"name\", \"networkInterfaces\":[{\"accessConfigs\":{\"natIP\":\"0.0.0.0\"}]}]}]",
+        "returncode": "0"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "instances",
+            "create",
+            "machine-42c9bf6e-8d45-4c37-b1c0-7e4fdcf530fc",
+            "machine-5f28f145-cc2d-427d-9cbf-428d164cdb92",
+            "machine-da5859b5-bae6-435d-8005-0202d6f6e065",
+            "machine-880a8a2f-918c-4f9e-a43c-ed3c8e02ea05",
+            "machine-1149147d-71e2-43ea-8fe1-49256e5c441c",
+            "--preemptible",
+            "--image=ubuntu-1910-eoan-v20191204",
+            "--zone=us-west1-b",
+            "--image-project=ubuntu-os-cloud",
+            "--format=json"
+        ],
+        "stdout": "[{\"name\":\"name\", \"networkInterfaces\":[{\"accessConfigs\":[{\"natIP\":\"0.0.0.0\"}]}]},{\"name\":\"name\", \"networkInterfaces\":[{\"accessConfigs\":[{\"natIP\":\"0.0.0.0\"}]}]},{\"name\":\"name\", \"networkInterfaces\":[{\"accessConfigs\":[{\"natIP\":\"0.0.0.0\"}]}]},{\"name\":\"name\", \"networkInterfaces\":[{\"accessConfigs\":[{\"natIP\":\"0.0.0.0\"}]}]},{\"name\":\"name\", \"networkInterfaces\":[{\"accessConfigs\":[{\"natIP\":\"0.0.0.0\"}]}]}]",
+        "returncode": "0"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "instances",
+            "start",
+            "machine-42c9bf6e-8d45-4c37-b1c0-7e4fdcf530fc",
+            "machine-5f28f145-cc2d-427d-9cbf-428d164cdb92",
+            "machine-da5859b5-bae6-435d-8005-0202d6f6e065",
+            "machine-880a8a2f-918c-4f9e-a43c-ed3c8e02ea05",
+            "machine-1149147d-71e2-43ea-8fe1-49256e5c441c",
+            "--zone=us-west1-b",
+            "--project=project",
+            "--format=json"
+        ],
+        "stdout": "[{\"name\":\"name\", \"networkInterfaces\":[{\"accessConfigs\":[{\"natIP\":\"0.0.0.0\"}]}]},{\"name\":\"name\", \"networkInterfaces\":[{\"accessConfigs\":[{\"natIP\":\"0.0.0.0\"}]}]},{\"name\":\"name\", \"networkInterfaces\":[{\"accessConfigs\":[{\"natIP\":\"0.0.0.0\"}]}]},{\"name\":\"name\", \"networkInterfaces\":[{\"accessConfigs\":[{\"natIP\":\"0.0.0.0\"}]}]},{\"name\":\"name\", \"networkInterfaces\":[{\"accessConfigs\":[{\"natIP\":\"0.0.0.0\"}]}]}]",
+        "returncode": "0"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "ssh",
+            "machine-42c9bf6e-8d45-4c37-b1c0-7e4fdcf530fc",
+            "--ssh-key-file=/usr/local/google/home/user/.ssh/benchmark-tools",
+            "--zone=us-west1-b",
+            "--command=uname",
+            "--format=json"
+        ],
+        "stdout": "",
+        "returncode": "255"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "ssh",
+            "machine-42c9bf6e-8d45-4c37-b1c0-7e4fdcf530fc",
+            "--ssh-key-file=/usr/local/google/home/user/.ssh/benchmark-tools",
+            "--zone=us-west1-b",
+            "--command=uname",
+            "--format=json"
+        ],
+        "stdout": "",
+        "returncode": "255"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "ssh",
+            "machine-42c9bf6e-8d45-4c37-b1c0-7e4fdcf530fc",
+            "--ssh-key-file=/usr/local/google/home/user/.ssh/benchmark-tools",
+            "--zone=us-west1-b",
+            "--command=uname",
+            "--format=json"
+        ],
+        "stdout": "",
+        "returncode": "255"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "ssh",
+            "machine-42c9bf6e-8d45-4c37-b1c0-7e4fdcf530fc",
+            "--ssh-key-file=/usr/local/google/home/user/.ssh/benchmark-tools",
+            "--zone=us-west1-b",
+            "--command=uname",
+            "--format=json"
+        ],
+        "stdout": "",
+        "returncode": "255"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "ssh",
+            "machine-42c9bf6e-8d45-4c37-b1c0-7e4fdcf530fc",
+            "--ssh-key-file=/usr/local/google/home/user/.ssh/benchmark-tools",
+            "--zone=us-west1-b",
+            "--command=uname",
+            "--format=json"
+        ],
+        "stdout": "",
+        "returncode": "255"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "ssh",
+            "machine-42c9bf6e-8d45-4c37-b1c0-7e4fdcf530fc",
+            "--ssh-key-file=/usr/local/google/home/user/.ssh/benchmark-tools",
+            "--zone=us-west1-b",
+            "--command=uname",
+            "--format=json"
+        ],
+        "stdout": "Linux\n[]\n",
+        "returncode": "0"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "ssh",
+            "machine-5f28f145-cc2d-427d-9cbf-428d164cdb92",
+            "--ssh-key-file=/usr/local/google/home/user/.ssh/benchmark-tools",
+            "--zone=us-west1-b",
+            "--command=uname",
+            "--format=json"
+        ],
+        "stdout": "Linux\n[]\n",
+        "returncode": "0"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "ssh",
+            "machine-da5859b5-bae6-435d-8005-0202d6f6e065",
+            "--ssh-key-file=/usr/local/google/home/user/.ssh/benchmark-tools",
+            "--zone=us-west1-b",
+            "--command=uname",
+            "--format=json"
+        ],
+        "stdout": "Linux\n[]\n",
+        "returncode": "0"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "ssh",
+            "machine-880a8a2f-918c-4f9e-a43c-ed3c8e02ea05",
+            "--ssh-key-file=/usr/local/google/home/user/.ssh/benchmark-tools",
+            "--zone=us-west1-b",
+            "--command=uname",
+            "--format=json"
+        ],
+        "stdout": "Linux\n[]\n",
+        "returncode": "0"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "ssh",
+            "machine-1149147d-71e2-43ea-8fe1-49256e5c441c",
+            "--ssh-key-file=/usr/local/google/home/user/.ssh/benchmark-tools",
+            "--zone=us-west1-b",
+            "--command=uname",
+            "--format=json"
+        ],
+        "stdout": "Linux\n[]\n",
+        "returncode": "0"
+    },
+    {
+        "args": [
+            "gcloud",
+            "compute",
+            "instances",
+            "delete",
+            "--quiet",
+            "machine-42c9bf6e-8d45-4c37-b1c0-7e4fdcf530fc",
+            "machine-5f28f145-cc2d-427d-9cbf-428d164cdb92",
+            "machine-da5859b5-bae6-435d-8005-0202d6f6e065",
+            "machine-880a8a2f-918c-4f9e-a43c-ed3c8e02ea05",
+            "machine-1149147d-71e2-43ea-8fe1-49256e5c441c",
+            "--zone=us-west1-b",
+            "--format=json"
+        ],
+        "stdout": "[]\n",
+        "returncode": "0"
+    }
+]

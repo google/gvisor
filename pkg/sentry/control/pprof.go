@@ -19,10 +19,10 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
-	"sync"
 
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/urpc"
 )
 

@@ -275,7 +275,8 @@ TEST_F(PollTest, Nfds) {
   // Each entry in the 'fds' array refers to the eventfd and polls for
   // "writable" events (events=POLLOUT). This essentially guarantees that the
   // poll() is a no-op and allows negative testing of the 'nfds' parameter.
-  std::vector<struct pollfd> fds(max_fds, {.fd = efd.get(), .events = POLLOUT});
+  std::vector<struct pollfd> fds(max_fds + 1,
+                                 {.fd = efd.get(), .events = POLLOUT});
 
   // Verify that 'nfds' up to RLIMIT_NOFILE are allowed.
   EXPECT_THAT(RetryEINTR(poll)(fds.data(), 1, 1), SyscallSucceedsWithValue(1));

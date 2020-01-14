@@ -14,6 +14,7 @@ go_library(
         ":metric_go_proto",
         "//pkg/eventchannel",
         "//pkg/log",
+        "//pkg/sync",
     ],
 )
 

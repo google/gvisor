@@ -19,5 +19,6 @@ go_test(
     ],
     deps = [
         ":gate",
+        "//pkg/sync",
     ],
 )

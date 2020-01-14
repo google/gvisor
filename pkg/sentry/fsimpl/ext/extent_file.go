@@ -57,7 +57,7 @@ func newExtentFile(regFile regularFile) (*extentFile, error) {
 func (f *extentFile) buildExtTree() error {
 	rootNodeData := f.regFile.inode.diskInode.Data()
 
-	binary.Unmarshal(rootNodeData[:disklayout.ExtentStructsSize], binary.LittleEndian, &f.root.Header)
+	binary.Unmarshal(rootNodeData[:disklayout.ExtentHeaderSize], binary.LittleEndian, &f.root.Header)
 
 	// Root node can not have more than 4 entries: 60 bytes = 1 header + 4 entries.
 	if f.root.Header.NumEntries > 4 {
@@ -67,7 +67,7 @@ func (f *extentFile) buildExtTree() error {
 	}
 
 	f.root.Entries = make([]disklayout.ExtentEntryPair, f.root.Header.NumEntries)
-	for i, off := uint16(0), disklayout.ExtentStructsSize; i < f.root.Header.NumEntries; i, off = i+1, off+disklayout.ExtentStructsSize {
+	for i, off := uint16(0), disklayout.ExtentEntrySize; i < f.root.Header.NumEntries; i, off = i+1, off+disklayout.ExtentEntrySize {
 		var curEntry disklayout.ExtentEntry
 		if f.root.Header.Height == 0 {
 			// Leaf node.
@@ -76,7 +76,7 @@ func (f *extentFile) buildExtTree() error {
 			// Internal node.
 			curEntry = &disklayout.ExtentIdx{}
 		}
-		binary.Unmarshal(rootNodeData[off:off+disklayout.ExtentStructsSize], binary.LittleEndian, curEntry)
+		binary.Unmarshal(rootNodeData[off:off+disklayout.ExtentEntrySize], binary.LittleEndian, curEntry)
 		f.root.Entries[i].Entry = curEntry
 	}
 
@@ -105,7 +105,7 @@ func (f *extentFile) buildExtTreeFromDisk(entry disklayout.ExtentEntry) (*diskla
 	}
 
 	entries := make([]disklayout.ExtentEntryPair, header.NumEntries)
-	for i, off := uint16(0), off+disklayout.ExtentStructsSize; i < header.NumEntries; i, off = i+1, off+disklayout.ExtentStructsSize {
+	for i, off := uint16(0), off+disklayout.ExtentEntrySize; i < header.NumEntries; i, off = i+1, off+disklayout.ExtentEntrySize {
 		var curEntry disklayout.ExtentEntry
 		if header.Height == 0 {
 			// Leaf node.

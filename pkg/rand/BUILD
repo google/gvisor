@@ -10,5 +10,8 @@ go_library(
     ],
     importpath = "gvisor.dev/gvisor/pkg/rand",
     visibility = ["//:sandbox"],
-    deps = ["@org_golang_x_sys//unix:go_default_library"],
+    deps = [
+        "//pkg/sync",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )

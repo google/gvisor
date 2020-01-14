@@ -91,6 +91,7 @@ go_library(
         "//pkg/sentry/syscalls",
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/waiter",

@@ -162,18 +162,24 @@ type ndpRDNSSEvent struct {
 	rdnss ndpRDNSS
 }
 
+type ndpDHCPv6Event struct {
+	nicID         tcpip.NICID
+	configuration stack.DHCPv6ConfigurationFromNDPRA
+}
+
 var _ stack.NDPDispatcher = (*ndpDispatcher)(nil)
 
 // ndpDispatcher implements NDPDispatcher so tests can know when various NDP
 // related events happen for test purposes.
 type ndpDispatcher struct {
-	dadC           chan ndpDADEvent
-	routerC        chan ndpRouterEvent
-	rememberRouter bool
-	prefixC        chan ndpPrefixEvent
-	rememberPrefix bool
-	autoGenAddrC   chan ndpAutoGenAddrEvent
-	rdnssC         chan ndpRDNSSEvent
+	dadC                 chan ndpDADEvent
+	routerC              chan ndpRouterEvent
+	rememberRouter       bool
+	prefixC              chan ndpPrefixEvent
+	rememberPrefix       bool
+	autoGenAddrC         chan ndpAutoGenAddrEvent
+	rdnssC               chan ndpRDNSSEvent
+	dhcpv6ConfigurationC chan ndpDHCPv6Event
 }
 
 // Implements stack.NDPDispatcher.OnDuplicateAddressDetectionStatus.
@@ -276,6 +282,16 @@ func (n *ndpDispatcher) OnRecursiveDNSServerOption(nicID tcpip.NICID, addrs []tc
 				addrs,
 				lifetime,
 			},
+		}
+	}
+}
+
+// Implements stack.NDPDispatcher.OnDHCPv6Configuration.
+func (n *ndpDispatcher) OnDHCPv6Configuration(nicID tcpip.NICID, configuration stack.DHCPv6ConfigurationFromNDPRA) {
+	if c := n.dhcpv6ConfigurationC; c != nil {
+		c <- ndpDHCPv6Event{
+			nicID,
+			configuration,
 		}
 	}
 }
@@ -797,21 +813,32 @@ func TestSetNDPConfigurations(t *testing.T) {
 	}
 }
 
-// raBufWithOpts returns a valid NDP Router Advertisement with options.
-//
-// Note, raBufWithOpts does not populate any of the RA fields other than the
-// Router Lifetime.
-func raBufWithOpts(ip tcpip.Address, rl uint16, optSer header.NDPOptionsSerializer) tcpip.PacketBuffer {
+// raBufWithOptsAndDHCPv6 returns a valid NDP Router Advertisement with options
+// and DHCPv6 configurations specified.
+func raBufWithOptsAndDHCPv6(ip tcpip.Address, rl uint16, managedAddress, otherConfigurations bool, optSer header.NDPOptionsSerializer) tcpip.PacketBuffer {
 	icmpSize := header.ICMPv6HeaderSize + header.NDPRAMinimumSize + int(optSer.Length())
 	hdr := buffer.NewPrependable(header.IPv6MinimumSize + icmpSize)
 	pkt := header.ICMPv6(hdr.Prepend(icmpSize))
 	pkt.SetType(header.ICMPv6RouterAdvert)
 	pkt.SetCode(0)
-	ra := header.NDPRouterAdvert(pkt.NDPPayload())
+	raPayload := pkt.NDPPayload()
+	ra := header.NDPRouterAdvert(raPayload)
+	// Populate the Router Lifetime.
+	binary.BigEndian.PutUint16(raPayload[2:], rl)
+	// Populate the Managed Address flag field.
+	if managedAddress {
+		// The Managed Addresses flag field is the 7th bit of byte #1 (0-indexing)
+		// of the RA payload.
+		raPayload[1] |= (1 << 7)
+	}
+	// Populate the Other Configurations flag field.
+	if otherConfigurations {
+		// The Other Configurations flag field is the 6th bit of byte #1
+		// (0-indexing) of the RA payload.
+		raPayload[1] |= (1 << 6)
+	}
 	opts := ra.Options()
 	opts.Serialize(optSer)
-	// Populate the Router Lifetime.
-	binary.BigEndian.PutUint16(pkt.NDPPayload()[2:], rl)
 	pkt.SetChecksum(header.ICMPv6Checksum(pkt, ip, header.IPv6AllNodesMulticastAddress, buffer.VectorisedView{}))
 	payloadLength := hdr.UsedLength()
 	iph := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
@@ -824,6 +851,23 @@ func raBufWithOpts(ip tcpip.Address, rl uint16, optSer header.NDPOptionsSerializ
 	})
 
 	return tcpip.PacketBuffer{Data: hdr.View().ToVectorisedView()}
+}
+
+// raBufWithOpts returns a valid NDP Router Advertisement with options.
+//
+// Note, raBufWithOpts does not populate any of the RA fields other than the
+// Router Lifetime.
+func raBufWithOpts(ip tcpip.Address, rl uint16, optSer header.NDPOptionsSerializer) tcpip.PacketBuffer {
+	return raBufWithOptsAndDHCPv6(ip, rl, false, false, optSer)
+}
+
+// raBufWithDHCPv6 returns a valid NDP Router Advertisement with DHCPv6 related
+// fields set.
+//
+// Note, raBufWithDHCPv6 does not populate any of the RA fields other than the
+// DHCPv6 related ones.
+func raBufWithDHCPv6(ip tcpip.Address, managedAddresses, otherConfiguratiosns bool) tcpip.PacketBuffer {
+	return raBufWithOptsAndDHCPv6(ip, 0, managedAddresses, otherConfiguratiosns, header.NDPOptionsSerializer{})
 }
 
 // raBuf returns a valid NDP Router Advertisement.
@@ -1029,13 +1073,13 @@ func TestRouterDiscovery(t *testing.T) {
 	expectRouterEvent(llAddr2, true)
 
 	// Rx an RA from another router (lladdr3) with non-zero lifetime.
-	l3Lifetime := time.Duration(6)
-	e.InjectInbound(header.IPv6ProtocolNumber, raBuf(llAddr3, uint16(l3Lifetime)))
+	const l3LifetimeSeconds = 6
+	e.InjectInbound(header.IPv6ProtocolNumber, raBuf(llAddr3, l3LifetimeSeconds))
 	expectRouterEvent(llAddr3, true)
 
 	// Rx an RA from lladdr2 with lesser lifetime.
-	l2Lifetime := time.Duration(2)
-	e.InjectInbound(header.IPv6ProtocolNumber, raBuf(llAddr2, uint16(l2Lifetime)))
+	const l2LifetimeSeconds = 2
+	e.InjectInbound(header.IPv6ProtocolNumber, raBuf(llAddr2, l2LifetimeSeconds))
 	select {
 	case <-ndpDisp.routerC:
 		t.Fatal("Should not receive a router event when updating lifetimes for known routers")
@@ -1049,7 +1093,7 @@ func TestRouterDiscovery(t *testing.T) {
 	// Wait for the normal lifetime plus an extra bit for the
 	// router to get invalidated. If we don't get an invalidation
 	// event after this time, then something is wrong.
-	expectAsyncRouterInvalidationEvent(llAddr2, l2Lifetime*time.Second+defaultTimeout)
+	expectAsyncRouterInvalidationEvent(llAddr2, l2LifetimeSeconds*time.Second+defaultTimeout)
 
 	// Rx an RA from lladdr2 with huge lifetime.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBuf(llAddr2, 1000))
@@ -1066,7 +1110,7 @@ func TestRouterDiscovery(t *testing.T) {
 	// Wait for the normal lifetime plus an extra bit for the
 	// router to get invalidated. If we don't get an invalidation
 	// event after this time, then something is wrong.
-	expectAsyncRouterInvalidationEvent(llAddr3, l3Lifetime*time.Second+defaultTimeout)
+	expectAsyncRouterInvalidationEvent(llAddr3, l3LifetimeSeconds*time.Second+defaultTimeout)
 }
 
 // TestRouterDiscoveryMaxRouters tests that only
@@ -1701,9 +1745,8 @@ func addrForNewConnection(t *testing.T, s *stack.Stack) tcpip.Address {
 		t.Fatalf("s.NewEndpoint(%d, %d, _): %s", header.UDPProtocolNumber, header.IPv6ProtocolNumber, err)
 	}
 	defer ep.Close()
-	v := tcpip.V6OnlyOption(1)
-	if err := ep.SetSockOpt(v); err != nil {
-		t.Fatalf("SetSockOpt(%+v): %s", v, err)
+	if err := ep.SetSockOptBool(tcpip.V6OnlyOption, true); err != nil {
+		t.Fatalf("SetSockOpt(tcpip.V6OnlyOption, true): %s", err)
 	}
 	if err := ep.Connect(dstAddr); err != nil {
 		t.Fatalf("ep.Connect(%+v): %s", dstAddr, err)
@@ -1728,9 +1771,8 @@ func addrForNewConnectionWithAddr(t *testing.T, s *stack.Stack, addr tcpip.FullA
 		t.Fatalf("s.NewEndpoint(%d, %d, _): %s", header.UDPProtocolNumber, header.IPv6ProtocolNumber, err)
 	}
 	defer ep.Close()
-	v := tcpip.V6OnlyOption(1)
-	if err := ep.SetSockOpt(v); err != nil {
-		t.Fatalf("SetSockOpt(%+v): %s", v, err)
+	if err := ep.SetSockOptBool(tcpip.V6OnlyOption, true); err != nil {
+		t.Fatalf("SetSockOpt(tcpip.V6OnlyOption, true): %s", err)
 	}
 	if err := ep.Bind(addr); err != nil {
 		t.Fatalf("ep.Bind(%+v): %s", addr, err)
@@ -2066,9 +2108,8 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 		t.Fatalf("s.NewEndpoint(%d, %d, _): %s", header.UDPProtocolNumber, header.IPv6ProtocolNumber, err)
 	}
 	defer ep.Close()
-	v := tcpip.V6OnlyOption(1)
-	if err := ep.SetSockOpt(v); err != nil {
-		t.Fatalf("SetSockOpt(%+v): %s", v, err)
+	if err := ep.SetSockOptBool(tcpip.V6OnlyOption, true); err != nil {
+		t.Fatalf("SetSockOpt(tcpip.V6OnlyOption, true): %s", err)
 	}
 
 	if err := ep.Connect(dstAddr); err != tcpip.ErrNoRoute {
@@ -2500,9 +2541,9 @@ func TestAutoGenAddrWithOpaqueIID(t *testing.T) {
 			SecretKey: secretKey,
 		},
 	})
-
-	if err := s.CreateNamedNIC(nicID, nicName, e); err != nil {
-		t.Fatalf("CreateNamedNIC(%d, %q, _) = %s", nicID, nicName, err)
+	opts := stack.NICOptions{Name: nicName}
+	if err := s.CreateNICWithOptions(nicID, e, opts); err != nil {
+		t.Fatalf("CreateNICWithOptions(%d, _, %+v, _) = %s", nicID, opts, err)
 	}
 
 	expectAutoGenAddrEvent := func(addr tcpip.AddressWithPrefix, eventType ndpAutoGenAddrEventType) {
@@ -2953,4 +2994,95 @@ func TestCleanupHostOnlyStateOnBecomingRouter(t *testing.T) {
 		t.Error("unexpected auto-generated address event")
 	default:
 	}
+}
+
+// TestDHCPv6ConfigurationFromNDPDA tests that the NDPDispatcher is properly
+// informed when new information about what configurations are available via
+// DHCPv6 is learned.
+func TestDHCPv6ConfigurationFromNDPDA(t *testing.T) {
+	const nicID = 1
+
+	ndpDisp := ndpDispatcher{
+		dhcpv6ConfigurationC: make(chan ndpDHCPv6Event, 1),
+		rememberRouter:       true,
+	}
+	e := channel.New(0, 1280, linkAddr1)
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+		NDPConfigs: stack.NDPConfigurations{
+			HandleRAs: true,
+		},
+		NDPDisp: &ndpDisp,
+	})
+
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+	}
+
+	expectDHCPv6Event := func(configuration stack.DHCPv6ConfigurationFromNDPRA) {
+		t.Helper()
+		select {
+		case e := <-ndpDisp.dhcpv6ConfigurationC:
+			if diff := cmp.Diff(ndpDHCPv6Event{nicID: nicID, configuration: configuration}, e, cmp.AllowUnexported(e)); diff != "" {
+				t.Errorf("dhcpv6 event mismatch (-want +got):\n%s", diff)
+			}
+		default:
+			t.Fatal("expected DHCPv6 configuration event")
+		}
+	}
+
+	expectNoDHCPv6Event := func() {
+		t.Helper()
+		select {
+		case <-ndpDisp.dhcpv6ConfigurationC:
+			t.Fatal("unexpected DHCPv6 configuration event")
+		default:
+		}
+	}
+
+	// The initial DHCPv6 configuration should be stack.DHCPv6NoConfiguration.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, false))
+	expectNoDHCPv6Event()
+
+	// Receive an RA that updates the DHCPv6 configuration to Other
+	// Configurations.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, true))
+	expectDHCPv6Event(stack.DHCPv6OtherConfigurations)
+	// Receiving the same update again should not result in an event to the
+	// NDPDispatcher.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, true))
+	expectNoDHCPv6Event()
+
+	// Receive an RA that updates the DHCPv6 configuration to Managed Address.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, true, false))
+	expectDHCPv6Event(stack.DHCPv6ManagedAddress)
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, true, false))
+	expectNoDHCPv6Event()
+
+	// Receive an RA that updates the DHCPv6 configuration to none.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, false))
+	expectDHCPv6Event(stack.DHCPv6NoConfiguration)
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, false))
+	expectNoDHCPv6Event()
+
+	// Receive an RA that updates the DHCPv6 configuration to Managed Address.
+	//
+	// Note, when the M flag is set, the O flag is redundant.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, true, true))
+	expectDHCPv6Event(stack.DHCPv6ManagedAddress)
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, true, true))
+	expectNoDHCPv6Event()
+	// Even though the DHCPv6 flags are different, the effective configuration is
+	// the same so we should not receive a new event.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, true, false))
+	expectNoDHCPv6Event()
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, true, true))
+	expectNoDHCPv6Event()
+
+	// Receive an RA that updates the DHCPv6 configuration to Other
+	// Configurations.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, true))
+	expectDHCPv6Event(stack.DHCPv6OtherConfigurations)
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, true))
+	expectNoDHCPv6Event()
 }

@@ -10,6 +10,7 @@ go_library(
     ],
     importpath = "gvisor.dev/gvisor/pkg/sentry/platform/interrupt",
     visibility = ["//pkg/sentry:internal"],
+    deps = ["//pkg/sync"],
 )
 
 go_test(

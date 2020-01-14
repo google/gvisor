@@ -15,4 +15,5 @@ go_test(
     size = "medium",
     srcs = ["tmutex_test.go"],
     embed = [":tmutex"],
+    deps = ["//pkg/sync"],
 )

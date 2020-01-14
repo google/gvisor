@@ -154,7 +154,7 @@ void ReadBuffersOverlapping(int fd) {
   char* expected_ptr = expected.data();
   memcpy(expected_ptr, &kReadvTestData[overlap_bytes], overlap_bytes);
   memcpy(&expected_ptr[overlap_bytes], &kReadvTestData[overlap_bytes],
-         kReadvTestDataSize);
+         kReadvTestDataSize - overlap_bytes);
 
   struct iovec iovs[2];
   iovs[0].iov_base = buffer.data();

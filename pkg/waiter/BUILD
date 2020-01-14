@@ -24,6 +24,7 @@ go_library(
     ],
     importpath = "gvisor.dev/gvisor/pkg/waiter",
     visibility = ["//visibility:public"],
+    deps = ["//pkg/sync"],
 )
 
 go_test(

@@ -16,8 +16,9 @@ package refs
 
 import (
 	"reflect"
-	"sync"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 type testCounter struct {

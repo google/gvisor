@@ -32,6 +32,7 @@ go_library(
         "//pkg/sentry/fs/anon",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/waiter",
     ],
 )

@@ -30,6 +30,7 @@ go_library(
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/unimpl",
         "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/syserror",
         "//pkg/waiter",
     ],

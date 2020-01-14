@@ -16,11 +16,11 @@
 package transport
 
 import (
-	"sync"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -175,17 +175,25 @@ type Endpoint interface {
 	// types.
 	SetSockOpt(opt interface{}) *tcpip.Error
 
+	// SetSockOptBool sets a socket option for simple cases when a value has
+	// the int type.
+	SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error
+
 	// SetSockOptInt sets a socket option for simple cases when a value has
 	// the int type.
-	SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error
+	SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error
 
 	// GetSockOpt gets a socket option. opt should be a pointer to one of the
 	// tcpip.*Option types.
 	GetSockOpt(opt interface{}) *tcpip.Error
 
+	// GetSockOptBool gets a socket option for simple cases when a return
+	// value has the int type.
+	GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error)
+
 	// GetSockOptInt gets a socket option for simple cases when a return
 	// value has the int type.
-	GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error)
+	GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error)
 
 	// State returns the current state of the socket, as represented by Linux in
 	// procfs.
@@ -851,11 +859,19 @@ func (e *baseEndpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 	return nil
 }
 
-func (e *baseEndpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
+func (e *baseEndpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 	return nil
 }
 
-func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
+func (e *baseEndpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
+	return nil
+}
+
+func (e *baseEndpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
+	return false, tcpip.ErrUnknownProtocolOption
+}
+
+func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 	switch opt {
 	case tcpip.ReceiveQueueSizeOption:
 		v := 0

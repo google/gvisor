@@ -16,11 +16,11 @@ package eventchannel
 
 import (
 	"fmt"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/golang/protobuf/proto"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // testEmitter is an emitter that can be used in tests. It records all events

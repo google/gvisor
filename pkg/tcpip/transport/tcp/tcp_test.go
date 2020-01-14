@@ -1083,12 +1083,12 @@ func TestTrafficClassV6(t *testing.T) {
 func TestConnectBindToDevice(t *testing.T) {
 	for _, test := range []struct {
 		name   string
-		device string
+		device tcpip.NICID
 		want   tcp.EndpointState
 	}{
-		{"RightDevice", "nic1", tcp.StateEstablished},
-		{"WrongDevice", "nic2", tcp.StateSynSent},
-		{"AnyDevice", "", tcp.StateEstablished},
+		{"RightDevice", 1, tcp.StateEstablished},
+		{"WrongDevice", 2, tcp.StateSynSent},
+		{"AnyDevice", 0, tcp.StateEstablished},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := context.New(t, defaultMTU)
@@ -2091,10 +2091,14 @@ func TestZeroScaledWindowReceive(t *testing.T) {
 		)
 	}
 
-	// Read some data. An ack should be sent in response to that.
-	v, _, err := c.EP.Read(nil)
-	if err != nil {
-		t.Fatalf("Read failed: %v", err)
+	// Read at least 1MSS of data. An ack should be sent in response to that.
+	sz := 0
+	for sz < defaultMTU {
+		v, _, err := c.EP.Read(nil)
+		if err != nil {
+			t.Fatalf("Read failed: %v", err)
+		}
+		sz += len(v)
 	}
 
 	checker.IPv4(t, c.GetPacket(),
@@ -2103,7 +2107,7 @@ func TestZeroScaledWindowReceive(t *testing.T) {
 			checker.DstPort(context.TestPort),
 			checker.SeqNum(uint32(c.IRS)+1),
 			checker.AckNum(uint32(790+sent)),
-			checker.Window(uint16(len(v)>>ws)),
+			checker.Window(uint16(sz>>ws)),
 			checker.TCPFlags(header.TCPFlagAck),
 		),
 	)
@@ -3794,46 +3798,41 @@ func TestBindToDeviceOption(t *testing.T) {
 	}
 	defer ep.Close()
 
-	if err := s.CreateNamedNIC(321, "my_device", loopback.New()); err != nil {
-		t.Errorf("CreateNamedNIC failed: %v", err)
-	}
-
-	// Make an nameless NIC.
-	if err := s.CreateNIC(54321, loopback.New()); err != nil {
+	if err := s.CreateNIC(321, loopback.New()); err != nil {
 		t.Errorf("CreateNIC failed: %v", err)
 	}
 
-	// strPtr is used instead of taking the address of string literals, which is
+	// nicIDPtr is used instead of taking the address of NICID literals, which is
 	// a compiler error.
-	strPtr := func(s string) *string {
+	nicIDPtr := func(s tcpip.NICID) *tcpip.NICID {
 		return &s
 	}
 
 	testActions := []struct {
 		name                 string
-		setBindToDevice      *string
+		setBindToDevice      *tcpip.NICID
 		setBindToDeviceError *tcpip.Error
 		getBindToDevice      tcpip.BindToDeviceOption
 	}{
-		{"GetDefaultValue", nil, nil, ""},
-		{"BindToNonExistent", strPtr("non_existent_device"), tcpip.ErrUnknownDevice, ""},
-		{"BindToExistent", strPtr("my_device"), nil, "my_device"},
-		{"UnbindToDevice", strPtr(""), nil, ""},
+		{"GetDefaultValue", nil, nil, 0},
+		{"BindToNonExistent", nicIDPtr(999), tcpip.ErrUnknownDevice, 0},
+		{"BindToExistent", nicIDPtr(321), nil, 321},
+		{"UnbindToDevice", nicIDPtr(0), nil, 0},
 	}
 	for _, testAction := range testActions {
 		t.Run(testAction.name, func(t *testing.T) {
 			if testAction.setBindToDevice != nil {
 				bindToDevice := tcpip.BindToDeviceOption(*testAction.setBindToDevice)
-				if got, want := ep.SetSockOpt(bindToDevice), testAction.setBindToDeviceError; got != want {
-					t.Errorf("SetSockOpt(%v) got %v, want %v", bindToDevice, got, want)
+				if gotErr, wantErr := ep.SetSockOpt(bindToDevice), testAction.setBindToDeviceError; gotErr != wantErr {
+					t.Errorf("SetSockOpt(%v) got %v, want %v", bindToDevice, gotErr, wantErr)
 				}
 			}
-			bindToDevice := tcpip.BindToDeviceOption("to be modified by GetSockOpt")
-			if ep.GetSockOpt(&bindToDevice) != nil {
-				t.Errorf("GetSockOpt got %v, want %v", ep.GetSockOpt(&bindToDevice), nil)
+			bindToDevice := tcpip.BindToDeviceOption(88888)
+			if err := ep.GetSockOpt(&bindToDevice); err != nil {
+				t.Errorf("GetSockOpt got %v, want %v", err, nil)
 			}
 			if got, want := bindToDevice, testAction.getBindToDevice; got != want {
-				t.Errorf("bindToDevice got %q, want %q", got, want)
+				t.Errorf("bindToDevice got %d, want %d", got, want)
 			}
 		})
 	}
@@ -4027,12 +4026,12 @@ func TestConnectAvoidsBoundPorts(t *testing.T) {
 												switch network {
 												case "ipv4":
 												case "ipv6":
-													if err := ep.SetSockOpt(tcpip.V6OnlyOption(1)); err != nil {
-														t.Fatalf("SetSockOpt(V6OnlyOption(1)) failed: %v", err)
+													if err := ep.SetSockOptBool(tcpip.V6OnlyOption, true); err != nil {
+														t.Fatalf("SetSockOpt(V6OnlyOption(true)) failed: %v", err)
 													}
 												case "dual":
-													if err := ep.SetSockOpt(tcpip.V6OnlyOption(0)); err != nil {
-														t.Fatalf("SetSockOpt(V6OnlyOption(0)) failed: %v", err)
+													if err := ep.SetSockOptBool(tcpip.V6OnlyOption, false); err != nil {
+														t.Fatalf("SetSockOpt(V6OnlyOption(false)) failed: %v", err)
 													}
 												default:
 													t.Fatalf("unknown network: '%s'", network)
@@ -6560,4 +6559,141 @@ func TestKeepaliveWithUserTimeout(t *testing.T) {
 	if got, want := c.Stack().Stats().TCP.EstablishedTimedout.Value(), origEstablishedTimedout+1; got != want {
 		t.Errorf("got c.Stack().Stats().TCP.EstablishedTimedout = %v, want = %v", got, want)
 	}
+}
+
+func TestIncreaseWindowOnReceive(t *testing.T) {
+	// This test ensures that the endpoint sends an ack,
+	// after recv() when the window grows to more than 1 MSS.
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	const rcvBuf = 65535 * 10
+	c.CreateConnected(789, 30000, rcvBuf)
+
+	// Write chunks of ~30000 bytes. It's important that two
+	// payloads make it equal or longer than MSS.
+	remain := rcvBuf
+	sent := 0
+	data := make([]byte, defaultMTU/2)
+	lastWnd := uint16(0)
+
+	for remain > len(data) {
+		c.SendPacket(data, &context.Headers{
+			SrcPort: context.TestPort,
+			DstPort: c.Port,
+			Flags:   header.TCPFlagAck,
+			SeqNum:  seqnum.Value(790 + sent),
+			AckNum:  c.IRS.Add(1),
+			RcvWnd:  30000,
+		})
+		sent += len(data)
+		remain -= len(data)
+
+		lastWnd = uint16(remain)
+		if remain > 0xffff {
+			lastWnd = 0xffff
+		}
+		checker.IPv4(t, c.GetPacket(),
+			checker.PayloadLen(header.TCPMinimumSize),
+			checker.TCP(
+				checker.DstPort(context.TestPort),
+				checker.SeqNum(uint32(c.IRS)+1),
+				checker.AckNum(uint32(790+sent)),
+				checker.Window(lastWnd),
+				checker.TCPFlags(header.TCPFlagAck),
+			),
+		)
+	}
+
+	if lastWnd == 0xffff || lastWnd == 0 {
+		t.Fatalf("expected small, non-zero window: %d", lastWnd)
+	}
+
+	// We now have < 1 MSS in the buffer space. Read the data! An
+	// ack should be sent in response to that. The window was not
+	// zero, but it grew to larger than MSS.
+	if _, _, err := c.EP.Read(nil); err != nil {
+		t.Fatalf("Read failed: %v", err)
+	}
+
+	if _, _, err := c.EP.Read(nil); err != nil {
+		t.Fatalf("Read failed: %v", err)
+	}
+
+	// After reading two packets, we surely crossed MSS. See the ack:
+	checker.IPv4(t, c.GetPacket(),
+		checker.PayloadLen(header.TCPMinimumSize),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(c.IRS)+1),
+			checker.AckNum(uint32(790+sent)),
+			checker.Window(uint16(0xffff)),
+			checker.TCPFlags(header.TCPFlagAck),
+		),
+	)
+}
+
+func TestIncreaseWindowOnBufferResize(t *testing.T) {
+	// This test ensures that the endpoint sends an ack,
+	// after available recv buffer grows to more than 1 MSS.
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	const rcvBuf = 65535 * 10
+	c.CreateConnected(789, 30000, rcvBuf)
+
+	// Write chunks of ~30000 bytes. It's important that two
+	// payloads make it equal or longer than MSS.
+	remain := rcvBuf
+	sent := 0
+	data := make([]byte, defaultMTU/2)
+	lastWnd := uint16(0)
+
+	for remain > len(data) {
+		c.SendPacket(data, &context.Headers{
+			SrcPort: context.TestPort,
+			DstPort: c.Port,
+			Flags:   header.TCPFlagAck,
+			SeqNum:  seqnum.Value(790 + sent),
+			AckNum:  c.IRS.Add(1),
+			RcvWnd:  30000,
+		})
+		sent += len(data)
+		remain -= len(data)
+
+		lastWnd = uint16(remain)
+		if remain > 0xffff {
+			lastWnd = 0xffff
+		}
+		checker.IPv4(t, c.GetPacket(),
+			checker.PayloadLen(header.TCPMinimumSize),
+			checker.TCP(
+				checker.DstPort(context.TestPort),
+				checker.SeqNum(uint32(c.IRS)+1),
+				checker.AckNum(uint32(790+sent)),
+				checker.Window(lastWnd),
+				checker.TCPFlags(header.TCPFlagAck),
+			),
+		)
+	}
+
+	if lastWnd == 0xffff || lastWnd == 0 {
+		t.Fatalf("expected small, non-zero window: %d", lastWnd)
+	}
+
+	// Increasing the buffer from should generate an ACK,
+	// since window grew from small value to larger equal MSS
+	c.EP.SetSockOptInt(tcpip.ReceiveBufferSizeOption, rcvBuf*2)
+
+	// After reading two packets, we surely crossed MSS. See the ack:
+	checker.IPv4(t, c.GetPacket(),
+		checker.PayloadLen(header.TCPMinimumSize),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(c.IRS)+1),
+			checker.AckNum(uint32(790+sent)),
+			checker.Window(uint16(0xffff)),
+			checker.TCPFlags(header.TCPFlagAck),
+		),
+	)
 }

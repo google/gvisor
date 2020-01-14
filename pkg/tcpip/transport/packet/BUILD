@@ -28,6 +28,7 @@ go_library(
     deps = [
         "//pkg/log",
         "//pkg/sleep",
+        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
