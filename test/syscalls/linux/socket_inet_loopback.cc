@@ -533,7 +533,7 @@ TEST_P(SocketInetLoopbackTest, TCPFinWait2Test_NoRandomSave) {
 
   // Sleep for a little over the linger timeout to reduce flakiness in
   // save/restore tests.
-  absl::SleepFor(absl::Seconds(kTCPLingerTimeout + 1));
+  absl::SleepFor(absl::Seconds(kTCPLingerTimeout + 2));
 
   ds.reset();
 

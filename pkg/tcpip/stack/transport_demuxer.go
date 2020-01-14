@@ -104,7 +104,14 @@ func (epsByNic *endpointsByNic) handlePacket(r *Route, id TransportEndpointID, p
 		return
 	}
 	// multiPortEndpoints are guaranteed to have at least one element.
-	selectEndpoint(id, mpep, epsByNic.seed).HandlePacket(r, id, pkt)
+	transEP := selectEndpoint(id, mpep, epsByNic.seed)
+	if queuedProtocol, mustQueue := mpep.demux.queuedProtocols[protocolIDs{mpep.netProto, mpep.transProto}]; mustQueue {
+		queuedProtocol.QueuePacket(r, transEP, id, pkt)
+		epsByNic.mu.RUnlock()
+		return
+	}
+
+	transEP.HandlePacket(r, id, pkt)
 	epsByNic.mu.RUnlock() // Don't use defer for performance reasons.
 }
 
@@ -130,7 +137,7 @@ func (epsByNic *endpointsByNic) handleControlPacket(n *NIC, id TransportEndpoint
 
 // registerEndpoint returns true if it succeeds. It fails and returns
 // false if ep already has an element with the same key.
-func (epsByNic *endpointsByNic) registerEndpoint(t TransportEndpoint, reusePort bool, bindToDevice tcpip.NICID) *tcpip.Error {
+func (epsByNic *endpointsByNic) registerEndpoint(d *transportDemuxer, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, t TransportEndpoint, reusePort bool, bindToDevice tcpip.NICID) *tcpip.Error {
 	epsByNic.mu.Lock()
 	defer epsByNic.mu.Unlock()
 
@@ -140,7 +147,7 @@ func (epsByNic *endpointsByNic) registerEndpoint(t TransportEndpoint, reusePort 
 	}
 
 	// This is a new binding.
-	multiPortEp := &multiPortEndpoint{}
+	multiPortEp := &multiPortEndpoint{demux: d, netProto: netProto, transProto: transProto}
 	multiPortEp.endpointsMap = make(map[TransportEndpoint]int)
 	multiPortEp.reuse = reusePort
 	epsByNic.endpoints[bindToDevice] = multiPortEp
@@ -168,17 +175,33 @@ func (epsByNic *endpointsByNic) unregisterEndpoint(bindToDevice tcpip.NICID, t T
 // newTransportDemuxer.
 type transportDemuxer struct {
 	// protocol is immutable.
-	protocol map[protocolIDs]*transportEndpoints
+	protocol        map[protocolIDs]*transportEndpoints
+	queuedProtocols map[protocolIDs]queuedTransportProtocol
+}
+
+// queuedTransportProtocol if supported by a protocol implementation will cause
+// the dispatcher to delivery packets to the QueuePacket method instead of
+// calling HandlePacket directly on the endpoint.
+type queuedTransportProtocol interface {
+	QueuePacket(r *Route, ep TransportEndpoint, id TransportEndpointID, pkt tcpip.PacketBuffer)
 }
 
 func newTransportDemuxer(stack *Stack) *transportDemuxer {
-	d := &transportDemuxer{protocol: make(map[protocolIDs]*transportEndpoints)}
+	d := &transportDemuxer{
+		protocol:        make(map[protocolIDs]*transportEndpoints),
+		queuedProtocols: make(map[protocolIDs]queuedTransportProtocol),
+	}
 
 	// Add each network and transport pair to the demuxer.
 	for netProto := range stack.networkProtocols {
 		for proto := range stack.transportProtocols {
-			d.protocol[protocolIDs{netProto, proto}] = &transportEndpoints{
+			protoIDs := protocolIDs{netProto, proto}
+			d.protocol[protoIDs] = &transportEndpoints{
 				endpoints: make(map[TransportEndpointID]*endpointsByNic),
+			}
+			qTransProto, isQueued := (stack.transportProtocols[proto].proto).(queuedTransportProtocol)
+			if isQueued {
+				d.queuedProtocols[protoIDs] = qTransProto
 			}
 		}
 	}
@@ -209,7 +232,11 @@ func (d *transportDemuxer) registerEndpoint(netProtos []tcpip.NetworkProtocolNum
 //
 // +stateify savable
 type multiPortEndpoint struct {
-	mu           sync.RWMutex `state:"nosave"`
+	mu         sync.RWMutex `state:"nosave"`
+	demux      *transportDemuxer
+	netProto   tcpip.NetworkProtocolNumber
+	transProto tcpip.TransportProtocolNumber
+
 	endpointsArr []TransportEndpoint
 	endpointsMap map[TransportEndpoint]int
 	// reuse indicates if more than one endpoint is allowed.
@@ -258,12 +285,21 @@ func selectEndpoint(id TransportEndpointID, mpep *multiPortEndpoint, seed uint32
 
 func (ep *multiPortEndpoint) handlePacketAll(r *Route, id TransportEndpointID, pkt tcpip.PacketBuffer) {
 	ep.mu.RLock()
+	queuedProtocol, mustQueue := ep.demux.queuedProtocols[protocolIDs{ep.netProto, ep.transProto}]
 	for i, endpoint := range ep.endpointsArr {
 		// HandlePacket takes ownership of pkt, so each endpoint needs
 		// its own copy except for the final one.
 		if i == len(ep.endpointsArr)-1 {
+			if mustQueue {
+				queuedProtocol.QueuePacket(r, endpoint, id, pkt)
+				break
+			}
 			endpoint.HandlePacket(r, id, pkt)
 			break
+		}
+		if mustQueue {
+			queuedProtocol.QueuePacket(r, endpoint, id, pkt.Clone())
+			continue
 		}
 		endpoint.HandlePacket(r, id, pkt.Clone())
 	}
@@ -357,7 +393,7 @@ func (d *transportDemuxer) singleRegisterEndpoint(netProto tcpip.NetworkProtocol
 
 	if epsByNic, ok := eps.endpoints[id]; ok {
 		// There was already a binding.
-		return epsByNic.registerEndpoint(ep, reusePort, bindToDevice)
+		return epsByNic.registerEndpoint(d, netProto, protocol, ep, reusePort, bindToDevice)
 	}
 
 	// This is a new binding.
@@ -367,7 +403,7 @@ func (d *transportDemuxer) singleRegisterEndpoint(netProto tcpip.NetworkProtocol
 	}
 	eps.endpoints[id] = epsByNic
 
-	return epsByNic.registerEndpoint(ep, reusePort, bindToDevice)
+	return epsByNic.registerEndpoint(d, netProto, protocol, ep, reusePort, bindToDevice)
 }
 
 // unregisterEndpoint unregisters the endpoint with the given id such that it

@@ -85,7 +85,7 @@ func (netImpl) printStats() {
 
 const (
 	nicID      = 1       // Fixed.
-	rcvBufSize = 1 << 20 // 1MB.
+	rcvBufSize = 4 << 20 // 1MB.
 )
 
 type netstackImpl struct {
@@ -127,6 +127,10 @@ func setupNetwork(ifaceName string, numChannels int) (fds []int, err error) {
 			// RAW Sockets by default have a very small SO_RCVBUF of 256KB,
 			// up it to at least 1MB to reduce packet drops.
 			if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUF, rcvBufSize); err != nil {
+				return nil, fmt.Errorf("setsockopt(..., SO_RCVBUF, %v,..) = %v", rcvBufSize, err)
+			}
+
+			if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_SNDBUF, rcvBufSize); err != nil {
 				return nil, fmt.Errorf("setsockopt(..., SO_RCVBUF, %v,..) = %v", rcvBufSize, err)
 			}
 
