@@ -77,11 +77,3 @@ Custom CSS styles should go into the
 
 If you need to override or create variables used in scss styles, update the
 [_variables_project.scss](assets/scss/_variables_project.scss) file.
-
-## Troubleshooting
-
-#### I get errors when building the website.
-
-If you get the following errors you should check that you have the "extended"
-version of Hugo. This is the version of hugo named "hugo\_extended" on the
-[releases page](https://github.com/gohugoio/hugo/releases).
