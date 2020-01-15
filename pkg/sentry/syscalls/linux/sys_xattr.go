@@ -142,7 +142,7 @@ func setXattr(t *kernel.Task, d *fs.Dirent, dirPath bool, nameAddr, valueAddr us
 		return syserror.EOPNOTSUPP
 	}
 
-	return d.Inode.SetXattr(t, name, value, flags)
+	return d.Inode.SetXattr(t, d, name, value, flags)
 }
 
 func copyInXattrName(t *kernel.Task, nameAddr usermem.Addr) (string, error) {
