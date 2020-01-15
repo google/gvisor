@@ -321,16 +321,21 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 		}
 	}
 
-	// Use SO_RCVBUFFORCE because on linux the receive buffer for an
-	// AF_PACKET socket is capped by "net.core.rmem_max". rmem_max
-	// defaults to a unusually low value of 208KB. This is too low
-	// for gVisor to be able to receive packets at high throughputs
-	// without incurring packet drops.
-	const rcvBufSize = 4 << 20 // 4MB.
+	// Use SO_RCVBUFFORCE/SO_SNDBUFFORCE because on linux the receive/send buffer
+	// for an AF_PACKET socket is capped by "net.core.rmem_max/wmem_max".
+	// wmem_max/rmem_max default to a unusually low value of 208KB. This is too low
+	// for gVisor to be able to receive packets at high throughputs without
+	// incurring packet drops.
+	const bufSize = 4 << 20 // 4MB.
 
-	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUFFORCE, rcvBufSize); err != nil {
-		return nil, fmt.Errorf("failed to increase socket rcv buffer to %d: %v", rcvBufSize, err)
+	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUFFORCE, bufSize); err != nil {
+		return nil, fmt.Errorf("failed to increase socket rcv buffer to %d: %v", bufSize, err)
 	}
+
+	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_SNDBUFFORCE, bufSize); err != nil {
+		return nil, fmt.Errorf("failed to increase socket snd buffer to %d: %v", bufSize, err)
+	}
+
 	return &socketEntry{deviceFile, gsoMaxSize}, nil
 }
 
