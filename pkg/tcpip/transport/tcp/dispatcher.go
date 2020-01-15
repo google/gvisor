@@ -119,6 +119,12 @@ func (p *processor) handleSegments() {
 			// direct delivery to ensure low latency and avoid
 			// scheduler interactions.
 			if err := ep.handleSegments(true /* fastPath */); err != nil || ep.EndpointState() == StateClose {
+				// Send any active resets if required.
+				if err != nil {
+					ep.mu.Lock()
+					ep.resetConnectionLocked(err)
+					ep.mu.Unlock()
+				}
 				ep.notifyProtocolGoroutine(notifyTickleWorker)
 				ep.workMu.Unlock()
 				continue

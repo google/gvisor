@@ -1019,10 +1019,6 @@ func (e *endpoint) handleSegments(fastPath bool) *tcpip.Error {
 		cont, err := e.handleSegment(s)
 		if err != nil {
 			s.decRef()
-			e.mu.Lock()
-			e.setEndpointState(StateError)
-			e.HardError = err
-			e.mu.Unlock()
 			return err
 		}
 		if !cont {
@@ -1414,30 +1410,50 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 
 	// Main loop. Handle segments until both send and receive ends of the
 	// connection have completed.
+	cleanupOnError := func(err *tcpip.Error) {
+		e.mu.Lock()
+		e.workerCleanup = true
+		if err != nil {
+			e.resetConnectionLocked(err)
+		}
+		// Lock released below.
+		epilogue()
+	}
 
+loop:
 	for e.EndpointState() != StateTimeWait && e.EndpointState() != StateClose && e.EndpointState() != StateError {
 		e.mu.Unlock()
 		e.workMu.Unlock()
 		v, _ := s.Fetch(true)
 		e.workMu.Lock()
-		// We need to double check here because the notification
-		// maybe stale by the time we got around to processing it.
+
+		// We need to double check here because the notification maybe
+		// stale by the time we got around to processing it.
+		//
 		// NOTE: since we now hold the workMu the processors cannot
-		// change the state of the endpoint so it' safe to proceed
+		// change the state of the endpoint so it's safe to proceed
 		// after this check.
-		if e.EndpointState() == StateTimeWait || e.EndpointState() == StateClose || e.EndpointState() == StateError {
-			e.mu.Lock()
-			break
-		}
-		if err := funcs[v].f(); err != nil {
-			e.mu.Lock()
-			e.workerCleanup = true
-			e.resetConnectionLocked(err)
-			// Lock released below.
-			epilogue()
+		switch e.EndpointState() {
+		case StateError:
+			// If the endpoint has already transitioned to an ERROR
+			// state just pass nil here as any reset that may need
+			// to be sent etc should already have been done and we
+			// just want to terminate the loop and cleanup the
+			// endpoint.
+			cleanupOnError(nil)
 			return nil
+		case StateTimeWait:
+			fallthrough
+		case StateClose:
+			e.mu.Lock()
+			break loop
+		default:
+			if err := funcs[v].f(); err != nil {
+				cleanupOnError(err)
+				return nil
+			}
+			e.mu.Lock()
 		}
-		e.mu.Lock()
 	}
 
 	state := e.EndpointState()
