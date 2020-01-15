@@ -2019,18 +2019,13 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 			// If we're fully closed and we have unread data we need to abort
 			// the connection with a RST.
 			if (e.shutdownFlags&tcpip.ShutdownWrite) != 0 && rcvBufUsed > 0 {
-				// Move the socket to error state immediately.
-				// This is done redundantly because in case of
-				// save/restore on a Shutdown/Close() the socket
-				// state needs to indicate the error otherwise
-				// save file will show the socket in established
-				// state even though snd/rcv are closed.
 				e.mu.Unlock()
 				// Try to send an active reset immediately if the
 				// work mutex is available.
 				if e.workMu.TryLock() {
 					e.mu.Lock()
 					e.resetConnectionLocked(tcpip.ErrConnectionAborted)
+					e.notifyProtocolGoroutine(notifyTickleWorker)
 					e.mu.Unlock()
 					e.workMu.Unlock()
 				} else {
