@@ -49,7 +49,7 @@ def test_list():
 
 def test_run():
   cli_runner = testing.CliRunner()
-  result = cli_runner.invoke(runner.runner, ["run", "--mock", "."])
+  result = cli_runner.invoke(runner.runner, ["run-mock", "."])
   print(result.output)
   assert result.exit_code == 0
 

@@ -13,6 +13,7 @@
 # limitations under the License.
 """Abstract types."""
 
+import threading
 from typing import List
 
 from benchmarks.harness import machine
@@ -28,3 +29,23 @@ class MachineProducer:
   def release_machines(self, machine_list: List[machine.Machine]):
     """Releases the given set of machines."""
     raise NotImplementedError
+
+
+class LocalMachineProducer(MachineProducer):
+  """Produces Local Machines."""
+
+  def __init__(self, limit: int):
+    self.limit_sem = threading.Semaphore(value=limit)
+
+  def get_machines(self, num_machines: int) -> List[machine.Machine]:
+    """Returns the request number of MockMachines."""
+
+    self.limit_sem.acquire()
+    return [machine.LocalMachine("local") for _ in range(num_machines)]
+
+  def release_machines(self, machine_list: List[machine.MockMachine]):
+    """No-op."""
+    if not machine_list:
+      raise ValueError("Cannot release an empty list!")
+    self.limit_sem.release()
+    machine_list.clear()

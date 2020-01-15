@@ -18,7 +18,7 @@ import os
 # LOCAL_WORKLOADS_PATH defines the path to use for local workloads. This is a
 # format string that accepts a single string parameter.
 LOCAL_WORKLOADS_PATH = os.path.join(
-    os.path.dirname(__file__), "../workloads/{}")
+    os.path.dirname(__file__), "../workloads/{}/tar.tar")
 
 # REMOTE_WORKLOADS_PATH defines the path to use for storing the workloads on the
 # remote host. This is a format string that accepts a single string parameter.
