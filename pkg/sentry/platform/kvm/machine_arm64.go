@@ -97,7 +97,9 @@ func (m *machine) dropPageTables(pt *pagetables.PageTables) {
 
 	// Clear from all PCIDs.
 	for _, c := range m.vCPUs {
-		c.PCIDs.Drop(pt)
+		if c.PCIDs != nil {
+			c.PCIDs.Drop(pt)
+		}
 	}
 }
 
