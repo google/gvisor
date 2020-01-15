@@ -1,10 +1,12 @@
+load("@rules_pkg//:pkg.bzl", "pkg_tar")
+
 package(
     default_visibility = ["//benchmarks:__subpackages__"],
     licenses = ["notice"],
 )
 
-filegroup(
-    name = "files",
+pkg_tar(
+    name = "tar",
     srcs = [
         "Dockerfile",
     ],
