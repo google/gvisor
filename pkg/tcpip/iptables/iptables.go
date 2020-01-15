@@ -153,6 +153,8 @@ func (it *IPTables) Check(hook Hook, pkt tcpip.PacketBuffer) bool {
 			return false
 		case Stolen, Queue, Repeat, None, Jump, Return, Continue:
 			panic(fmt.Sprintf("Unimplemented verdict %v.", verdict))
+		default:
+			panic(fmt.Sprintf("Unknown verdict %v.", verdict))
 		}
 	}
 
@@ -174,6 +176,8 @@ func (it *IPTables) checkTable(hook Hook, pkt tcpip.PacketBuffer, tablename stri
 			continue
 		case Stolen, Queue, Repeat, None, Jump, Return:
 			panic(fmt.Sprintf("Unimplemented verdict %v.", verdict))
+		default:
+			panic(fmt.Sprintf("Unknown verdict %v.", verdict))
 		}
 	}
 
