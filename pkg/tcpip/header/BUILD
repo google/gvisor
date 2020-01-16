@@ -20,6 +20,7 @@ go_library(
         "ndp_neighbor_solicit.go",
         "ndp_options.go",
         "ndp_router_advert.go",
+        "ndp_router_solicit.go",
         "tcp.go",
         "udp.go",
     ],

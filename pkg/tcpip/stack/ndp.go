@@ -17,6 +17,7 @@ package stack
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -38,24 +39,36 @@ const (
 	// Default = 1s (from RFC 4861 section 10).
 	defaultRetransmitTimer = time.Second
 
+	// defaultMaxRtrSolicitations is the default number of Router
+	// Solicitation messages to send when a NIC becomes enabled.
+	//
+	// Default = 3 (from RFC 4861 section 10).
+	defaultMaxRtrSolicitations = 3
+
+	// defaultRtrSolicitationInterval is the default amount of time between
+	// sending Router Solicitation messages.
+	//
+	// Default = 4s (from 4861 section 10).
+	defaultRtrSolicitationInterval = 4 * time.Second
+
+	// defaultMaxRtrSolicitationDelay is the default maximum amount of time
+	// to wait before sending the first Router Solicitation message.
+	//
+	// Default = 1s (from 4861 section 10).
+	defaultMaxRtrSolicitationDelay = time.Second
+
 	// defaultHandleRAs is the default configuration for whether or not to
 	// handle incoming Router Advertisements as a host.
-	//
-	// Default = true.
 	defaultHandleRAs = true
 
 	// defaultDiscoverDefaultRouters is the default configuration for
 	// whether or not to discover default routers from incoming Router
 	// Advertisements, as a host.
-	//
-	// Default = true.
 	defaultDiscoverDefaultRouters = true
 
 	// defaultDiscoverOnLinkPrefixes is the default configuration for
 	// whether or not to discover on-link prefixes from incoming Router
 	// Advertisements' Prefix Information option, as a host.
-	//
-	// Default = true.
 	defaultDiscoverOnLinkPrefixes = true
 
 	// defaultAutoGenGlobalAddresses is the default configuration for
@@ -74,9 +87,18 @@ const (
 	// value of 0 means unspecified, so the smallest valid value is 1.
 	// Note, the unit of the RetransmitTimer field in the Router
 	// Advertisement is milliseconds.
-	//
-	// Min = 1ms.
 	minimumRetransmitTimer = time.Millisecond
+
+	// minimumRtrSolicitationInterval is the minimum amount of time to wait
+	// between sending Router Solicitation messages. This limit is imposed
+	// to make sure that Router Solicitation messages are not sent all at
+	// once, defeating the purpose of sending the initial few messages.
+	minimumRtrSolicitationInterval = 500 * time.Millisecond
+
+	// minimumMaxRtrSolicitationDelay is the minimum amount of time to wait
+	// before sending the first Router Solicitation message. It is 0 because
+	// we cannot have a negative delay.
+	minimumMaxRtrSolicitationDelay = 0
 
 	// MaxDiscoveredDefaultRouters is the maximum number of discovered
 	// default routers. The stack should stop discovering new routers after
@@ -84,16 +106,12 @@ const (
 	//
 	// This value MUST be at minimum 2 as per RFC 4861 section 6.3.4, and
 	// SHOULD be more.
-	//
-	// Max = 10.
 	MaxDiscoveredDefaultRouters = 10
 
 	// MaxDiscoveredOnLinkPrefixes is the maximum number of discovered
 	// on-link prefixes. The stack should stop discovering new on-link
 	// prefixes after discovering MaxDiscoveredOnLinkPrefixes on-link
 	// prefixes.
-	//
-	// Max = 10.
 	MaxDiscoveredOnLinkPrefixes = 10
 
 	// validPrefixLenForAutoGen is the expected prefix length that an
@@ -245,8 +263,23 @@ type NDPConfigurations struct {
 	// The amount of time to wait between sending Neighbor solicitation
 	// messages.
 	//
-	// Must be greater than 0.5s.
+	// Must be greater than or equal to 1ms.
 	RetransmitTimer time.Duration
+
+	// The number of Router Solicitation messages to send when the NIC
+	// becomes enabled.
+	MaxRtrSolicitations uint8
+
+	// The amount of time between transmitting Router Solicitation messages.
+	//
+	// Must be greater than or equal to 0.5s.
+	RtrSolicitationInterval time.Duration
+
+	// The maximum amount of time before transmitting the first Router
+	// Solicitation message.
+	//
+	// Must be greater than or equal to 0s.
+	MaxRtrSolicitationDelay time.Duration
 
 	// HandleRAs determines whether or not Router Advertisements will be
 	// processed.
@@ -278,12 +311,15 @@ type NDPConfigurations struct {
 // default values.
 func DefaultNDPConfigurations() NDPConfigurations {
 	return NDPConfigurations{
-		DupAddrDetectTransmits: defaultDupAddrDetectTransmits,
-		RetransmitTimer:        defaultRetransmitTimer,
-		HandleRAs:              defaultHandleRAs,
-		DiscoverDefaultRouters: defaultDiscoverDefaultRouters,
-		DiscoverOnLinkPrefixes: defaultDiscoverOnLinkPrefixes,
-		AutoGenGlobalAddresses: defaultAutoGenGlobalAddresses,
+		DupAddrDetectTransmits:  defaultDupAddrDetectTransmits,
+		RetransmitTimer:         defaultRetransmitTimer,
+		MaxRtrSolicitations:     defaultMaxRtrSolicitations,
+		RtrSolicitationInterval: defaultRtrSolicitationInterval,
+		MaxRtrSolicitationDelay: defaultMaxRtrSolicitationDelay,
+		HandleRAs:               defaultHandleRAs,
+		DiscoverDefaultRouters:  defaultDiscoverDefaultRouters,
+		DiscoverOnLinkPrefixes:  defaultDiscoverOnLinkPrefixes,
+		AutoGenGlobalAddresses:  defaultAutoGenGlobalAddresses,
 	}
 }
 
@@ -292,9 +328,23 @@ func DefaultNDPConfigurations() NDPConfigurations {
 //
 // If RetransmitTimer is less than minimumRetransmitTimer, then a value of
 // defaultRetransmitTimer will be used.
+//
+// If RtrSolicitationInterval is less than minimumRtrSolicitationInterval, then
+// a value of defaultRtrSolicitationInterval will be used.
+//
+// If MaxRtrSolicitationDelay is less than minimumMaxRtrSolicitationDelay, then
+// a value of defaultMaxRtrSolicitationDelay will be used.
 func (c *NDPConfigurations) validate() {
 	if c.RetransmitTimer < minimumRetransmitTimer {
 		c.RetransmitTimer = defaultRetransmitTimer
+	}
+
+	if c.RtrSolicitationInterval < minimumRtrSolicitationInterval {
+		c.RtrSolicitationInterval = defaultRtrSolicitationInterval
+	}
+
+	if c.MaxRtrSolicitationDelay < minimumMaxRtrSolicitationDelay {
+		c.MaxRtrSolicitationDelay = defaultMaxRtrSolicitationDelay
 	}
 }
 
@@ -315,6 +365,10 @@ type ndpState struct {
 	// The on-link prefixes discovered through Router Advertisements' Prefix
 	// Information option.
 	onLinkPrefixes map[tcpip.Subnet]onLinkPrefixState
+
+	// The timer used to send the next router solicitation message.
+	// If routers are being solicited, rtrSolicitTimer MUST NOT be nil.
+	rtrSolicitTimer *time.Timer
 
 	// The addresses generated by SLAAC.
 	autoGenAddresses map[tcpip.Address]autoGenAddressState
@@ -501,10 +555,12 @@ func (ndp *ndpState) doDuplicateAddressDetection(addr tcpip.Address, remaining u
 		// address.
 		panic(fmt.Sprintf("ndpdad: NIC(%d) is not in the solicited-node multicast group (%s) but it has addr %s", ndp.nic.ID(), snmc, addr))
 	}
+	snmcRef.incRef()
 
 	// Use the unspecified address as the source address when performing
 	// DAD.
 	r := makeRoute(header.IPv6ProtocolNumber, header.IPv6Any, snmc, ndp.nic.linkEP.LinkAddress(), snmcRef, false, false)
+	defer r.Release()
 
 	hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv6NeighborSolicitMinimumSize)
 	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborSolicitMinimumSize))
@@ -1131,4 +1187,85 @@ func (ndp *ndpState) cleanupHostOnlyState() {
 	if got := len(ndp.defaultRouters); got != 0 {
 		log.Fatalf("ndp: still have discovered default routers after cleaning up, found = %d", got)
 	}
+}
+
+// startSolicitingRouters starts soliciting routers, as per RFC 4861 section
+// 6.3.7. If routers are already being solicited, this function does nothing.
+//
+// The NIC ndp belongs to MUST be locked.
+func (ndp *ndpState) startSolicitingRouters() {
+	if ndp.rtrSolicitTimer != nil {
+		// We are already soliciting routers.
+		return
+	}
+
+	remaining := ndp.configs.MaxRtrSolicitations
+	if remaining == 0 {
+		return
+	}
+
+	// Calculate the random delay before sending our first RS, as per RFC
+	// 4861 section 6.3.7.
+	var delay time.Duration
+	if ndp.configs.MaxRtrSolicitationDelay > 0 {
+		delay = time.Duration(rand.Int63n(int64(ndp.configs.MaxRtrSolicitationDelay)))
+	}
+
+	ndp.rtrSolicitTimer = time.AfterFunc(delay, func() {
+		// Send an RS message with the unspecified source address.
+		ref := ndp.nic.getRefOrCreateTemp(header.IPv6ProtocolNumber, header.IPv6Any, NeverPrimaryEndpoint, true)
+		r := makeRoute(header.IPv6ProtocolNumber, header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.nic.linkEP.LinkAddress(), ref, false, false)
+		defer r.Release()
+
+		payloadSize := header.ICMPv6HeaderSize + header.NDPRSMinimumSize
+		hdr := buffer.NewPrependable(header.IPv6MinimumSize + payloadSize)
+		pkt := header.ICMPv6(hdr.Prepend(payloadSize))
+		pkt.SetType(header.ICMPv6RouterSolicit)
+		pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
+
+		sent := r.Stats().ICMP.V6PacketsSent
+		if err := r.WritePacket(nil,
+			NetworkHeaderParams{
+				Protocol: header.ICMPv6ProtocolNumber,
+				TTL:      header.NDPHopLimit,
+				TOS:      DefaultTOS,
+			}, tcpip.PacketBuffer{Header: hdr},
+		); err != nil {
+			sent.Dropped.Increment()
+			log.Printf("startSolicitingRouters: error writing NDP router solicit message on NIC(%d); err = %s", ndp.nic.ID(), err)
+			// Don't send any more messages if we had an error.
+			remaining = 0
+		} else {
+			sent.RouterSolicit.Increment()
+			remaining--
+		}
+
+		ndp.nic.mu.Lock()
+		defer ndp.nic.mu.Unlock()
+		if remaining == 0 {
+			ndp.rtrSolicitTimer = nil
+		} else if ndp.rtrSolicitTimer != nil {
+			// Note, we need to explicitly check to make sure that
+			// the timer field is not nil because if it was nil but
+			// we still reached this point, then we know the NIC
+			// was requested to stop soliciting routers so we don't
+			// need to send the next Router Solicitation message.
+			ndp.rtrSolicitTimer.Reset(ndp.configs.RtrSolicitationInterval)
+		}
+	})
+
+}
+
+// stopSolicitingRouters stops soliciting routers. If routers are not currently
+// being solicited, this function does nothing.
+//
+// The NIC ndp belongs to MUST be locked.
+func (ndp *ndpState) stopSolicitingRouters() {
+	if ndp.rtrSolicitTimer == nil {
+		// Nothing to do.
+		return
+	}
+
+	ndp.rtrSolicitTimer.Stop()
+	ndp.rtrSolicitTimer = nil
 }
