@@ -22,6 +22,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 )
 
+// LINT.IfChange
+
 // versionData backs /proc/version.
 //
 // +stateify savable
@@ -76,3 +78,5 @@ func (v *versionData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) 
 		},
 	}, 0
 }
+
+// LINT.ThenChange(../../fsimpl/proc/task_files.go)

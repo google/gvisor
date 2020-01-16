@@ -37,6 +37,8 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// LINT.IfChange
+
 // getTaskMM returns t's MemoryManager. If getTaskMM succeeds, the MemoryManager's
 // users count is incremented, and must be decremented by the caller when it is
 // no longer in use.
@@ -800,3 +802,5 @@ func (f *auxvecFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequenc
 	n, err := dst.CopyOut(ctx, buf[offset:])
 	return int64(n), err
 }
+
+// LINT.ThenChange(../../fsimpl/proc/task.go|../../fsimpl/proc/task_files.go)
