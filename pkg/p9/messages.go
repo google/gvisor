@@ -1611,6 +1611,131 @@ func (r *Rxattrcreate) String() string {
 	return fmt.Sprintf("Rxattrcreate{}")
 }
 
+// Tgetxattr is a getxattr request.
+type Tgetxattr struct {
+	// FID refers to the file for which to get xattrs.
+	FID FID
+
+	// Name is the xattr to get.
+	Name string
+
+	// Size is the buffer size for the xattr to get.
+	Size uint64
+}
+
+// Decode implements encoder.Decode.
+func (t *Tgetxattr) Decode(b *buffer) {
+	t.FID = b.ReadFID()
+	t.Name = b.ReadString()
+	t.Size = b.Read64()
+}
+
+// Encode implements encoder.Encode.
+func (t *Tgetxattr) Encode(b *buffer) {
+	b.WriteFID(t.FID)
+	b.WriteString(t.Name)
+	b.Write64(t.Size)
+}
+
+// Type implements message.Type.
+func (*Tgetxattr) Type() MsgType {
+	return MsgTgetxattr
+}
+
+// String implements fmt.Stringer.
+func (t *Tgetxattr) String() string {
+	return fmt.Sprintf("Tgetxattr{FID: %d, Name: %s, Size: %d}", t.FID, t.Name, t.Size)
+}
+
+// Rgetxattr is a getxattr response.
+type Rgetxattr struct {
+	// Value is the extended attribute value.
+	Value string
+}
+
+// Decode implements encoder.Decode.
+func (r *Rgetxattr) Decode(b *buffer) {
+	r.Value = b.ReadString()
+}
+
+// Encode implements encoder.Encode.
+func (r *Rgetxattr) Encode(b *buffer) {
+	b.WriteString(r.Value)
+}
+
+// Type implements message.Type.
+func (*Rgetxattr) Type() MsgType {
+	return MsgRgetxattr
+}
+
+// String implements fmt.Stringer.
+func (r *Rgetxattr) String() string {
+	return fmt.Sprintf("Rgetxattr{Value: %s}", r.Value)
+}
+
+// Tsetxattr sets extended attributes.
+type Tsetxattr struct {
+	// FID refers to the file on which to set xattrs.
+	FID FID
+
+	// Name is the attribute name.
+	Name string
+
+	// Value is the attribute value.
+	Value string
+
+	// Linux setxattr(2) flags.
+	Flags uint32
+}
+
+// Decode implements encoder.Decode.
+func (t *Tsetxattr) Decode(b *buffer) {
+	t.FID = b.ReadFID()
+	t.Name = b.ReadString()
+	t.Value = b.ReadString()
+	t.Flags = b.Read32()
+}
+
+// Encode implements encoder.Encode.
+func (t *Tsetxattr) Encode(b *buffer) {
+	b.WriteFID(t.FID)
+	b.WriteString(t.Name)
+	b.WriteString(t.Value)
+	b.Write32(t.Flags)
+}
+
+// Type implements message.Type.
+func (*Tsetxattr) Type() MsgType {
+	return MsgTsetxattr
+}
+
+// String implements fmt.Stringer.
+func (t *Tsetxattr) String() string {
+	return fmt.Sprintf("Tsetxattr{FID: %d, Name: %s, Value: %s, Flags: %d}", t.FID, t.Name, t.Value, t.Flags)
+}
+
+// Rsetxattr is a setxattr response.
+type Rsetxattr struct {
+}
+
+// Decode implements encoder.Decode.
+func (r *Rsetxattr) Decode(b *buffer) {
+}
+
+// Encode implements encoder.Encode.
+func (r *Rsetxattr) Encode(b *buffer) {
+}
+
+// Type implements message.Type.
+func (*Rsetxattr) Type() MsgType {
+	return MsgRsetxattr
+}
+
+// String implements fmt.Stringer.
+func (r *Rsetxattr) String() string {
+	return fmt.Sprintf("Rsetxattr{}")
+}
+
 // Treaddir is a readdir request.
 type Treaddir struct {
 	// Directory is the directory FID to read.
@@ -2363,6 +2488,10 @@ func init() {
 	msgRegistry.register(MsgRxattrwalk, func() message { return &Rxattrwalk{} })
 	msgRegistry.register(MsgTxattrcreate, func() message { return &Txattrcreate{} })
 	msgRegistry.register(MsgRxattrcreate, func() message { return &Rxattrcreate{} })
+	msgRegistry.register(MsgTgetxattr, func() message { return &Tgetxattr{} })
+	msgRegistry.register(MsgRgetxattr, func() message { return &Rgetxattr{} })
+	msgRegistry.register(MsgTsetxattr, func() message { return &Tsetxattr{} })
+	msgRegistry.register(MsgRsetxattr, func() message { return &Rsetxattr{} })
 	msgRegistry.register(MsgTreaddir, func() message { return &Treaddir{} })
 	msgRegistry.register(MsgRreaddir, func() message { return &Rreaddir{} })
 	msgRegistry.register(MsgTfsync, func() message { return &Tfsync{} })

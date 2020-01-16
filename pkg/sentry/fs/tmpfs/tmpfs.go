@@ -148,19 +148,19 @@ func (d *Dir) CreateFifo(ctx context.Context, dir *fs.Inode, name string, perms 
 	return d.ramfsDir.CreateFifo(ctx, dir, name, perms)
 }
 
-// Getxattr implements fs.InodeOperations.Getxattr.
-func (d *Dir) Getxattr(i *fs.Inode, name string) (string, error) {
-	return d.ramfsDir.Getxattr(i, name)
+// GetXattr implements fs.InodeOperations.GetXattr.
+func (d *Dir) GetXattr(ctx context.Context, i *fs.Inode, name string, size uint64) (string, error) {
+	return d.ramfsDir.GetXattr(ctx, i, name, size)
 }
 
-// Setxattr implements fs.InodeOperations.Setxattr.
-func (d *Dir) Setxattr(i *fs.Inode, name, value string) error {
-	return d.ramfsDir.Setxattr(i, name, value)
+// SetXattr implements fs.InodeOperations.SetXattr.
+func (d *Dir) SetXattr(ctx context.Context, i *fs.Inode, name, value string, flags uint32) error {
+	return d.ramfsDir.SetXattr(ctx, i, name, value, flags)
 }
 
-// Listxattr implements fs.InodeOperations.Listxattr.
-func (d *Dir) Listxattr(i *fs.Inode) (map[string]struct{}, error) {
-	return d.ramfsDir.Listxattr(i)
+// ListXattr implements fs.InodeOperations.ListXattr.
+func (d *Dir) ListXattr(ctx context.Context, i *fs.Inode) (map[string]struct{}, error) {
+	return d.ramfsDir.ListXattr(ctx, i)
 }
 
 // Lookup implements fs.InodeOperations.Lookup.
