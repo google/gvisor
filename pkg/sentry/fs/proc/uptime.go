@@ -28,6 +28,8 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// LINT.IfChange
+
 // uptime is a file containing the system uptime.
 //
 // +stateify savable
@@ -85,3 +87,5 @@ func (f *uptimeFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequenc
 	n, err := dst.CopyOut(ctx, s[offset:])
 	return int64(n), err
 }
+
+// LINT.ThenChange(../../fsimpl/proc/tasks_files.go)

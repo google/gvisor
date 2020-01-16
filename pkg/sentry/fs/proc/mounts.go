@@ -25,6 +25,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 )
 
+// LINT.IfChange
+
 // forEachMountSource runs f for the process root mount and  each mount that is a
 // descendant of the root.
 func forEachMount(t *kernel.Task, fn func(string, *fs.Mount)) {
@@ -195,3 +197,5 @@ func (mf *mountsFile) ReadSeqFileData(ctx context.Context, handle seqfile.SeqHan
 
 	return []seqfile.SeqData{{Buf: buf.Bytes(), Handle: (*mountsFile)(nil)}}, 0
 }
+
+// LINT.ThenChange(../../fsimpl/proc/tasks_files.go)

@@ -29,6 +29,8 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// LINT.IfChange
+
 // execArgType enumerates the types of exec arguments that are exposed through
 // proc.
 type execArgType int
@@ -201,3 +203,5 @@ func (f *execArgFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequen
 	}
 	return int64(n), err
 }
+
+// LINT.ThenChange(../../fsimpl/proc/task.go)

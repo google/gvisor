@@ -31,6 +31,8 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// LINT.IfChange
+
 // mmapMinAddrData backs /proc/sys/vm/mmap_min_addr.
 //
 // +stateify savable
@@ -160,3 +162,5 @@ func (hf *hostnameFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequ
 }
 
 var _ fs.FileOperations = (*hostnameFile)(nil)
+
+// LINT.ThenChange(../../fsimpl/proc/tasks_sys.go)

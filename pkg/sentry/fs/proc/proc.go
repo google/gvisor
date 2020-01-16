@@ -31,6 +31,8 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
+// LINT.IfChange
+
 // proc is a root proc node.
 //
 // +stateify savable
@@ -249,3 +251,5 @@ func (rpf *rootProcFile) Readdir(ctx context.Context, file *fs.File, ser fs.Dent
 	}
 	return offset, nil
 }
+
+// LINT.ThenChange(../../fsimpl/proc/tasks.go)
