@@ -475,7 +475,7 @@ func readdirEntries(ctx context.Context, o *overlayEntry) (*SortedDentryMap, err
 			// Skip this name if it is a negative entry in the
 			// upper or there exists a whiteout for it.
 			if o.upper != nil {
-				if overlayHasWhiteout(o.upper, name) {
+				if overlayHasWhiteout(ctx, o.upper, name) {
 					continue
 				}
 			}

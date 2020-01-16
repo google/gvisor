@@ -382,8 +382,8 @@ type dir struct {
 	ReaddirCalled bool
 }
 
-// Getxattr implements InodeOperations.Getxattr.
-func (d *dir) Getxattr(inode *fs.Inode, name string) (string, error) {
+// GetXattr implements InodeOperations.GetXattr.
+func (d *dir) GetXattr(_ context.Context, _ *fs.Inode, name string, _ uint64) (string, error) {
 	for _, n := range d.negative {
 		if name == fs.XattrOverlayWhiteout(n) {
 			return "y", nil
