@@ -35,12 +35,12 @@ import (
 )
 
 const (
-	addr1          = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
-	addr2          = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
-	addr3          = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03"
-	linkAddr1      = "\x02\x02\x03\x04\x05\x06"
-	linkAddr2      = "\x02\x02\x03\x04\x05\x07"
-	linkAddr3      = "\x02\x02\x03\x04\x05\x08"
+	addr1          = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+	addr2          = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+	addr3          = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03")
+	linkAddr1      = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
+	linkAddr2      = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x07")
+	linkAddr3      = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x08")
 	defaultTimeout = 100 * time.Millisecond
 )
 
@@ -2443,6 +2443,119 @@ func TestAutoGenAddrRemoval(t *testing.T) {
 		t.Fatal("unexpectedly received an auto gen addr event")
 	case <-time.After(lifetimeSeconds*time.Second + defaultTimeout):
 	}
+}
+
+// TestAutoGenAddrAfterRemoval tests adding a SLAAC address that was previously
+// assigned to the NIC but is in the permanentExpired state.
+func TestAutoGenAddrAfterRemoval(t *testing.T) {
+	t.Parallel()
+
+	const nicID = 1
+
+	prefix1, _, addr1 := prefixSubnetAddr(0, linkAddr1)
+	prefix2, _, addr2 := prefixSubnetAddr(1, linkAddr1)
+	ndpDisp, e, s := stackAndNdpDispatcherWithDefaultRoute(t, nicID)
+
+	expectAutoGenAddrEvent := func(addr tcpip.AddressWithPrefix, eventType ndpAutoGenAddrEventType) {
+		t.Helper()
+
+		select {
+		case e := <-ndpDisp.autoGenAddrC:
+			if diff := checkAutoGenAddrEvent(e, addr, eventType); diff != "" {
+				t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
+			}
+		default:
+			t.Fatal("expected addr auto gen event")
+		}
+	}
+
+	expectPrimaryAddr := func(addr tcpip.AddressWithPrefix) {
+		t.Helper()
+
+		if got, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber); err != nil {
+			t.Fatalf("s.GetMainNICAddress(%d, %d): %s", nicID, header.IPv6ProtocolNumber, err)
+		} else if got != addr {
+			t.Errorf("got s.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, header.IPv6ProtocolNumber, got, addr)
+		}
+
+		if got := addrForNewConnection(t, s); got != addr.Address {
+			t.Errorf("got addrForNewConnection = %s, want = %s", got, addr.Address)
+		}
+	}
+
+	// Receive a PI to auto-generate addr1 with a large valid and preferred
+	// lifetime.
+	const largeLifetimeSeconds = 999
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr3, 0, prefix1, true, true, largeLifetimeSeconds, largeLifetimeSeconds))
+	expectAutoGenAddrEvent(addr1, newAddr)
+	expectPrimaryAddr(addr1)
+
+	// Add addr2 as a static address.
+	protoAddr2 := tcpip.ProtocolAddress{
+		Protocol:          header.IPv6ProtocolNumber,
+		AddressWithPrefix: addr2,
+	}
+	if err := s.AddProtocolAddressWithOptions(nicID, protoAddr2, stack.FirstPrimaryEndpoint); err != nil {
+		t.Fatalf("AddProtocolAddressWithOptions(%d, %+v, %d, %s) = %s", nicID, protoAddr2, stack.FirstPrimaryEndpoint, err)
+	}
+	// addr2 should be more preferred now since it is at the front of the primary
+	// list.
+	expectPrimaryAddr(addr2)
+
+	// Get a route using addr2 to increment its reference count then remove it
+	// to leave it in the permanentExpired state.
+	r, err := s.FindRoute(nicID, addr2.Address, addr3, header.IPv6ProtocolNumber, false)
+	if err != nil {
+		t.Fatalf("FindRoute(%d, %s, %s, %d, false): %s", nicID, addr2.Address, addr3, header.IPv6ProtocolNumber, err)
+	}
+	defer r.Release()
+	if err := s.RemoveAddress(nicID, addr2.Address); err != nil {
+		t.Fatalf("s.RemoveAddress(%d, %s): %s", nicID, addr2.Address, err)
+	}
+	// addr1 should be preferred again since addr2 is in the expired state.
+	expectPrimaryAddr(addr1)
+
+	// Receive a PI to auto-generate addr2 as valid and preferred.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr3, 0, prefix2, true, true, largeLifetimeSeconds, largeLifetimeSeconds))
+	expectAutoGenAddrEvent(addr2, newAddr)
+	// addr2 should be more preferred now that it is closer to the front of the
+	// primary list and not deprecated.
+	expectPrimaryAddr(addr2)
+
+	// Removing the address should result in an invalidation event immediately.
+	// It should still be in the permanentExpired state because r is still held.
+	//
+	// We remove addr2 here to make sure addr2 was marked as a SLAAC address
+	// (it was previously marked as a static address).
+	if err := s.RemoveAddress(1, addr2.Address); err != nil {
+		t.Fatalf("RemoveAddress(_, %s) = %s", addr2.Address, err)
+	}
+	expectAutoGenAddrEvent(addr2, invalidatedAddr)
+	// addr1 should be more preferred since addr2 is in the expired state.
+	expectPrimaryAddr(addr1)
+
+	// Receive a PI to auto-generate addr2 as valid and deprecated.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr3, 0, prefix2, true, true, largeLifetimeSeconds, 0))
+	expectAutoGenAddrEvent(addr2, newAddr)
+	// addr1 should still be more preferred since addr2 is deprecated, even though
+	// it is closer to the front of the primary list.
+	expectPrimaryAddr(addr1)
+
+	// Receive a PI to refresh addr2's preferred lifetime.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr3, 0, prefix2, true, true, largeLifetimeSeconds, largeLifetimeSeconds))
+	select {
+	case <-ndpDisp.autoGenAddrC:
+		t.Fatal("unexpectedly got an auto gen addr event")
+	default:
+	}
+	// addr2 should be more preferred now that it is not deprecated.
+	expectPrimaryAddr(addr2)
+
+	if err := s.RemoveAddress(1, addr2.Address); err != nil {
+		t.Fatalf("RemoveAddress(_, %s) = %s", addr2.Address, err)
+	}
+	expectAutoGenAddrEvent(addr2, invalidatedAddr)
+	expectPrimaryAddr(addr1)
 }
 
 // TestAutoGenAddrStaticConflict tests that if SLAAC generates an address that

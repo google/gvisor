@@ -994,7 +994,7 @@ func (ndp *ndpState) newAutoGenAddress(prefix tcpip.Subnet, pl, vl time.Duration
 	// If the preferred lifetime is zero, then the address should be considered
 	// deprecated.
 	deprecated := pl == 0
-	ref, err := ndp.nic.addAddressLocked(protocolAddr, FirstPrimaryEndpoint, permanent, slaac, deprecated)
+	ref, err := ndp.nic.addPermanentAddressLocked(protocolAddr, FirstPrimaryEndpoint, slaac, deprecated)
 	if err != nil {
 		log.Fatalf("ndp: error when adding address %s: %s", protocolAddr, err)
 	}
