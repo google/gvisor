@@ -35,6 +35,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // FilesystemType implements vfs.FilesystemType.
@@ -121,6 +122,9 @@ func (d *dentry) DecRef() {
 
 // inode represents a filesystem object.
 type inode struct {
+	// clock is a realtime clock used to set timestamps in file operations.
+	clock time.Clock
+
 	// refs is a reference count. refs is accessed using atomic memory
 	// operations.
 	//
@@ -151,13 +155,14 @@ type inode struct {
 const maxLinks = math.MaxUint32
 
 func (i *inode) init(impl interface{}, fs *filesystem, creds *auth.Credentials, mode linux.FileMode) {
-	now := fs.clock.Now().Nanoseconds()
+	i.clock = fs.clock
 	i.refs = 1
 	i.mode = uint32(mode)
 	i.uid = uint32(creds.EffectiveKUID)
 	i.gid = uint32(creds.EffectiveKGID)
 	i.ino = atomic.AddUint64(&fs.nextInoMinusOne, 1)
 	// Tmpfs creation sets atime, ctime, and mtime to current time.
+	now := i.clock.Now().Nanoseconds()
 	i.atime = now
 	i.ctime = now
 	i.mtime = now
@@ -270,30 +275,69 @@ func (i *inode) statTo(stat *linux.Statx) {
 }
 
 func (i *inode) setStat(stat linux.Statx) error {
-	// TODO(gvisor.dev/issues/1197): Handle stat.Size by growing/shrinking
-	// the file.
 	if stat.Mask == 0 {
 		return nil
 	}
 	i.mu.Lock()
+	var (
+		needsMtimeBump bool
+		needsCtimeBump bool
+	)
 	mask := stat.Mask
 	if mask&linux.STATX_MODE != 0 {
 		atomic.StoreUint32(&i.mode, uint32(stat.Mode))
+		needsCtimeBump = true
 	}
 	if mask&linux.STATX_UID != 0 {
 		atomic.StoreUint32(&i.uid, stat.UID)
+		needsCtimeBump = true
 	}
 	if mask&linux.STATX_GID != 0 {
 		atomic.StoreUint32(&i.gid, stat.GID)
+		needsCtimeBump = true
+	}
+	if mask&linux.STATX_SIZE != 0 {
+		switch impl := i.impl.(type) {
+		case *regularFile:
+			updated, err := impl.truncate(stat.Size)
+			if err != nil {
+				return err
+			}
+			if updated {
+				needsMtimeBump = true
+				needsCtimeBump = true
+			}
+		case *directory:
+			return syserror.EISDIR
+		case *symlink:
+			return syserror.EINVAL
+		case *namedPipe:
+			// Nothing.
+		default:
+			panic(fmt.Sprintf("unknown inode type: %T", i.impl))
+		}
 	}
 	if mask&linux.STATX_ATIME != 0 {
 		atomic.StoreInt64(&i.atime, stat.Atime.ToNsecCapped())
-	}
-	if mask&linux.STATX_CTIME != 0 {
-		atomic.StoreInt64(&i.ctime, stat.Ctime.ToNsecCapped())
+		needsCtimeBump = true
 	}
 	if mask&linux.STATX_MTIME != 0 {
 		atomic.StoreInt64(&i.mtime, stat.Mtime.ToNsecCapped())
+		needsCtimeBump = true
+		// Ignore the mtime bump, since we just set it ourselves.
+		needsMtimeBump = false
+	}
+	if mask&linux.STATX_CTIME != 0 {
+		atomic.StoreInt64(&i.ctime, stat.Ctime.ToNsecCapped())
+		// Ignore the ctime bump, since we just set it ourselves.
+		needsCtimeBump = false
+	}
+	now := i.clock.Now().Nanoseconds()
+	if needsMtimeBump {
+		atomic.StoreInt64(&i.mtime, now)
+	}
+	if needsCtimeBump {
+		atomic.StoreInt64(&i.ctime, now)
 	}
 	i.mu.Unlock()
 	return nil

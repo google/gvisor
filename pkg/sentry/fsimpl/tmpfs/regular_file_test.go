@@ -313,3 +313,124 @@ func TestPRead(t *testing.T) {
 		}
 	}
 }
+
+func TestTruncate(t *testing.T) {
+	ctx := contexttest.Context(t)
+	fd, cleanup, err := newFileFD(ctx, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+
+	// Fill the file with some data.
+	data := bytes.Repeat([]byte("gVisor is awsome"), 100)
+	written, err := fd.Write(ctx, usermem.BytesIOSequence(data), vfs.WriteOptions{})
+	if err != nil {
+		t.Fatalf("fd.Write failed: %v", err)
+	}
+
+	// Size should be same as written.
+	sizeStatOpts := vfs.StatOptions{Mask: linux.STATX_SIZE}
+	stat, err := fd.Stat(ctx, sizeStatOpts)
+	if err != nil {
+		t.Fatalf("fd.Stat failed: %v", err)
+	}
+	if got, want := int64(stat.Size), written; got != want {
+		t.Errorf("fd.Stat got size %d, want %d", got, want)
+	}
+
+	// Truncate down.
+	newSize := uint64(10)
+	if err := fd.SetStat(ctx, vfs.SetStatOptions{
+		Stat: linux.Statx{
+			Mask: linux.STATX_SIZE,
+			Size: newSize,
+		},
+	}); err != nil {
+		t.Errorf("fd.Truncate failed: %v", err)
+	}
+	// Size should be updated.
+	statAfterTruncateDown, err := fd.Stat(ctx, sizeStatOpts)
+	if err != nil {
+		t.Fatalf("fd.Stat failed: %v", err)
+	}
+	if got, want := statAfterTruncateDown.Size, newSize; got != want {
+		t.Errorf("fd.Stat got size %d, want %d", got, want)
+	}
+	// We should only read newSize worth of data.
+	buf := make([]byte, 1000)
+	if n, err := fd.PRead(ctx, usermem.BytesIOSequence(buf), 0, vfs.ReadOptions{}); err != nil && err != io.EOF {
+		t.Fatalf("fd.PRead failed: %v", err)
+	} else if uint64(n) != newSize {
+		t.Errorf("fd.PRead got size %d, want %d", n, newSize)
+	}
+	// Mtime and Ctime should be bumped.
+	if got := statAfterTruncateDown.Mtime.ToNsec(); got <= stat.Mtime.ToNsec() {
+		t.Errorf("fd.Stat got Mtime %v, want > %v", got, stat.Mtime)
+	}
+	if got := statAfterTruncateDown.Ctime.ToNsec(); got <= stat.Ctime.ToNsec() {
+		t.Errorf("fd.Stat got Ctime %v, want > %v", got, stat.Ctime)
+	}
+
+	// Truncate up.
+	newSize = 100
+	if err := fd.SetStat(ctx, vfs.SetStatOptions{
+		Stat: linux.Statx{
+			Mask: linux.STATX_SIZE,
+			Size: newSize,
+		},
+	}); err != nil {
+		t.Errorf("fd.Truncate failed: %v", err)
+	}
+	// Size should be updated.
+	statAfterTruncateUp, err := fd.Stat(ctx, sizeStatOpts)
+	if err != nil {
+		t.Fatalf("fd.Stat failed: %v", err)
+	}
+	if got, want := statAfterTruncateUp.Size, newSize; got != want {
+		t.Errorf("fd.Stat got size %d, want %d", got, want)
+	}
+	// We should read newSize worth of data.
+	buf = make([]byte, 1000)
+	if n, err := fd.PRead(ctx, usermem.BytesIOSequence(buf), 0, vfs.ReadOptions{}); err != nil && err != io.EOF {
+		t.Fatalf("fd.PRead failed: %v", err)
+	} else if uint64(n) != newSize {
+		t.Errorf("fd.PRead got size %d, want %d", n, newSize)
+	}
+	// Bytes should be null after 10, since we previously truncated to 10.
+	for i := uint64(10); i < newSize; i++ {
+		if buf[i] != 0 {
+			t.Errorf("fd.PRead got byte %d=%x, want 0", i, buf[i])
+			break
+		}
+	}
+	// Mtime and Ctime should be bumped.
+	if got := statAfterTruncateUp.Mtime.ToNsec(); got <= statAfterTruncateDown.Mtime.ToNsec() {
+		t.Errorf("fd.Stat got Mtime %v, want > %v", got, statAfterTruncateDown.Mtime)
+	}
+	if got := statAfterTruncateUp.Ctime.ToNsec(); got <= statAfterTruncateDown.Ctime.ToNsec() {
+		t.Errorf("fd.Stat got Ctime %v, want > %v", got, stat.Ctime)
+	}
+
+	// Truncate to the current size.
+	newSize = statAfterTruncateUp.Size
+	if err := fd.SetStat(ctx, vfs.SetStatOptions{
+		Stat: linux.Statx{
+			Mask: linux.STATX_SIZE,
+			Size: newSize,
+		},
+	}); err != nil {
+		t.Errorf("fd.Truncate failed: %v", err)
+	}
+	statAfterTruncateNoop, err := fd.Stat(ctx, sizeStatOpts)
+	if err != nil {
+		t.Fatalf("fd.Stat failed: %v", err)
+	}
+	// Mtime and Ctime should not be bumped, since operation is a noop.
+	if got := statAfterTruncateNoop.Mtime.ToNsec(); got != statAfterTruncateUp.Mtime.ToNsec() {
+		t.Errorf("fd.Stat got Mtime %v, want %v", got, statAfterTruncateUp.Mtime)
+	}
+	if got := statAfterTruncateNoop.Ctime.ToNsec(); got != statAfterTruncateUp.Ctime.ToNsec() {
+		t.Errorf("fd.Stat got Ctime %v, want %v", got, statAfterTruncateUp.Ctime)
+	}
+}
