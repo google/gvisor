@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -395,12 +396,12 @@ func copyContentsLocked(ctx context.Context, upper *Inode, lower *Inode, size in
 // Size and permissions are set on upper when the file content is copied
 // and when the file is created respectively.
 func copyAttributesLocked(ctx context.Context, upper *Inode, lower *Inode) error {
-	// Extract attributes fro the lower filesystem.
+	// Extract attributes from the lower filesystem.
 	lowerAttr, err := lower.UnstableAttr(ctx)
 	if err != nil {
 		return err
 	}
-	lowerXattr, err := lower.Listxattr()
+	lowerXattr, err := lower.ListXattr(ctx)
 	if err != nil && err != syserror.EOPNOTSUPP {
 		return err
 	}
@@ -421,11 +422,11 @@ func copyAttributesLocked(ctx context.Context, upper *Inode, lower *Inode) error
 		if isXattrOverlay(name) {
 			continue
 		}
-		value, err := lower.Getxattr(name)
+		value, err := lower.GetXattr(ctx, name, linux.XATTR_SIZE_MAX)
 		if err != nil {
 			return err
 		}
-		if err := upper.InodeOperations.Setxattr(upper, name, value); err != nil {
+		if err := upper.InodeOperations.SetXattr(ctx, upper, name, value, 0 /* flags */); err != nil {
 			return err
 		}
 	}
