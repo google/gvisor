@@ -770,3 +770,9 @@ func NDPNSTargetAddress(want tcpip.Address) TransportChecker {
 		}
 	}
 }
+
+// NDPRS creates a checker that checks that the packet contains a valid NDP
+// Router Solicitation message (as per the raw wire format).
+func NDPRS() NetworkChecker {
+	return NDP(header.ICMPv6RouterSolicit, header.NDPRSMinimumSize)
+}

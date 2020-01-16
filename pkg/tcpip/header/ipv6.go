@@ -84,6 +84,13 @@ const (
 	// The address is ff02::1.
 	IPv6AllNodesMulticastAddress tcpip.Address = "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
 
+	// IPv6AllRoutersMulticastAddress is a link-local multicast group that
+	// all IPv6 routers MUST join, as per RFC 4291, section 2.8. Packets
+	// destined to this address will reach all routers on a link.
+	//
+	// The address is ff02::2.
+	IPv6AllRoutersMulticastAddress tcpip.Address = "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
+
 	// IPv6MinimumMTU is the minimum MTU required by IPv6, per RFC 2460,
 	// section 5.
 	IPv6MinimumMTU = 1280
