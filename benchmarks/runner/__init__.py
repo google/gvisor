@@ -15,10 +15,13 @@
 
 import copy
 import csv
+import json
 import logging
+import os
 import pkgutil
 import pydoc
 import re
+import subprocess
 import sys
 import types
 from typing import List
@@ -26,8 +29,10 @@ from typing import Tuple
 
 import click
 
+from benchmarks import harness
 from benchmarks import suites
 from benchmarks.harness import benchmark_driver
+from benchmarks.harness.machine_producers import gcloud_producer
 from benchmarks.harness.machine_producers import machine_producer
 from benchmarks.harness.machine_producers import mock_producer
 from benchmarks.harness.machine_producers import yaml_producer
@@ -114,6 +119,61 @@ def run_local(ctx, limit: float, **kwargs):
 def run_mock(ctx, **kwargs):
   """Runs benchmarks on Mock machines. Used for testing."""
   run(ctx, mock_producer.MockMachineProducer(), **kwargs)
+
+
+@runner.command("run-gcp", commands.GCPCommand)
+@click.pass_context
+def run_gcp(ctx, project: str, ssh_key_file: str, image: str,
+            image_project: str, machine_type: str, zone: str, ssh_user: str,
+            ssh_password: str, **kwargs):
+  """Runs all benchmarks on GCP instances."""
+
+  if not ssh_user:
+    ssh_user = harness.DEFAULT_USER
+
+  # Get the default project if one was not provided.
+  if not project:
+    sub = subprocess.run(
+        "gcloud config get-value project".split(" "), stdout=subprocess.PIPE)
+    if sub.returncode:
+      raise ValueError(
+          "Cannot get default project from gcloud. Is it configured>")
+    project = sub.stdout.decode("utf-8").strip("\n")
+
+  if not image_project:
+    image_project = project
+
+  # Check that the ssh-key exists and is readable.
+  if not os.access(ssh_key_file, os.R_OK):
+    raise ValueError(
+        "ssh key given `{ssh_key}` is does not exist or is not readable."
+        .format(ssh_key=ssh_key_file))
+
+  # Check that the image exists.
+  sub = subprocess.run(
+      "gcloud compute images describe {image} --project {image_project} --format=json"
+      .format(image=image, image_project=image_project).split(" "),
+      stdout=subprocess.PIPE)
+  if sub.returncode or "READY" not in json.loads(sub.stdout)["status"]:
+    raise ValueError(
+        "given image was not found or is not ready: {image} {image_project}."
+        .format(image=image, image_project=image_project))
+
+  # Check and set zone to default.
+  if not zone:
+    sub = subprocess.run(
+        "gcloud config get-value compute/zone".split(" "),
+        stdout=subprocess.PIPE)
+    if sub.returncode:
+      raise ValueError(
+          "Default zone is not set in gcloud. Set one or pass a zone with the --zone flag."
+      )
+    zone = sub.stdout.decode("utf-8").strip("\n")
+
+  producer = gcloud_producer.GCloudProducer(project, ssh_key_file, image,
+                                            image_project, machine_type, zone,
+                                            ssh_user, ssh_password)
+  run(ctx, producer, **kwargs)
 
 
 def run(ctx, producer: machine_producer.MachineProducer, method: str, runs: int,

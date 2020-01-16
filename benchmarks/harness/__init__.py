@@ -13,6 +13,7 @@
 # limitations under the License.
 """Core benchmark utilities."""
 
+import getpass
 import os
 
 # LOCAL_WORKLOADS_PATH defines the path to use for local workloads. This is a
@@ -23,3 +24,9 @@ LOCAL_WORKLOADS_PATH = os.path.join(
 # REMOTE_WORKLOADS_PATH defines the path to use for storing the workloads on the
 # remote host. This is a format string that accepts a single string parameter.
 REMOTE_WORKLOADS_PATH = "workloads/{}"
+
+# DEFAULT_USER is the default user running this script.
+DEFAULT_USER = getpass.getuser()
+
+# DEFAULT_USER_HOME is the home directory of the user running the script.
+DEFAULT_USER_HOME = os.environ["HOME"] if "HOME" in os.environ else ""

@@ -214,6 +214,9 @@ class RemoteMachine(Machine):
     # Push to the remote machine and build.
     logging.info("Building %s@%s remotely...", workload, self._name)
     remote_path = self._ssh_connection.send_workload(workload)
+    # Workloads are all tarballs.
+    self.run("tar -xvf {remote_path}/tar.tar -C {remote_path}".format(
+        remote_path=remote_path))
     self.run("docker build --tag={} {}".format(workload, remote_path))
     return workload  # Workload is the tag.
 
