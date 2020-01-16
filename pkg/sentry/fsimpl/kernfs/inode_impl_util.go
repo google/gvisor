@@ -262,7 +262,7 @@ func (a *InodeAttrs) SetStat(_ *vfs.Filesystem, opts vfs.SetStatOptions) error {
 }
 
 // CheckPermissions implements Inode.CheckPermissions.
-func (a *InodeAttrs) CheckPermissions(creds *auth.Credentials, ats vfs.AccessTypes) error {
+func (a *InodeAttrs) CheckPermissions(_ context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
 	mode := a.Mode()
 	return vfs.GenericCheckPermissions(
 		creds,
@@ -527,12 +527,8 @@ var _ Inode = (*StaticDirectory)(nil)
 
 // NewStaticDir creates a new static directory and returns its dentry.
 func NewStaticDir(creds *auth.Credentials, ino uint64, perm linux.FileMode, children map[string]*Dentry) *Dentry {
-	if perm&^linux.PermissionsMask != 0 {
-		panic(fmt.Sprintf("Only permission mask must be set: %x", perm&linux.PermissionsMask))
-	}
-
 	inode := &StaticDirectory{}
-	inode.InodeAttrs.Init(creds, ino, linux.ModeDirectory|perm)
+	inode.Init(creds, ino, perm)
 
 	dentry := &Dentry{}
 	dentry.Init(inode)
@@ -542,6 +538,14 @@ func NewStaticDir(creds *auth.Credentials, ino uint64, perm linux.FileMode, chil
 	inode.IncLinks(links)
 
 	return dentry
+}
+
+// Init initializes StaticDirectory.
+func (s *StaticDirectory) Init(creds *auth.Credentials, ino uint64, perm linux.FileMode) {
+	if perm&^linux.PermissionsMask != 0 {
+		panic(fmt.Sprintf("Only permission mask must be set: %x", perm&linux.PermissionsMask))
+	}
+	s.InodeAttrs.Init(creds, ino, linux.ModeDirectory|perm)
 }
 
 // Open implements kernfs.Inode.

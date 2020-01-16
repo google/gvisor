@@ -7,7 +7,7 @@ go_library(
     name = "proc",
     srcs = [
         "filesystem.go",
-        "mounts.go",
+        "subtasks.go",
         "task.go",
         "task_files.go",
         "tasks.go",
@@ -29,6 +29,7 @@ go_library(
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/limits",
         "//pkg/sentry/mm",
+        "//pkg/sentry/safemem",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/unix",
         "//pkg/sentry/socket/unix/transport",

@@ -20,7 +20,9 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
-type staticSymlink struct {
+// StaticSymlink provides an Inode implementation for symlinks that point to
+// a immutable target.
+type StaticSymlink struct {
 	InodeAttrs
 	InodeNoopRefCount
 	InodeSymlink
@@ -28,18 +30,25 @@ type staticSymlink struct {
 	target string
 }
 
-var _ Inode = (*staticSymlink)(nil)
+var _ Inode = (*StaticSymlink)(nil)
 
 // NewStaticSymlink creates a new symlink file pointing to 'target'.
-func NewStaticSymlink(creds *auth.Credentials, ino uint64, perm linux.FileMode, target string) *Dentry {
-	inode := &staticSymlink{target: target}
-	inode.Init(creds, ino, linux.ModeSymlink|perm)
+func NewStaticSymlink(creds *auth.Credentials, ino uint64, target string) *Dentry {
+	inode := &StaticSymlink{}
+	inode.Init(creds, ino, target)
 
 	d := &Dentry{}
 	d.Init(inode)
 	return d
 }
 
-func (s *staticSymlink) Readlink(_ context.Context) (string, error) {
+// Init initializes the instance.
+func (s *StaticSymlink) Init(creds *auth.Credentials, ino uint64, target string) {
+	s.target = target
+	s.InodeAttrs.Init(creds, ino, linux.ModeSymlink|0777)
+}
+
+// Readlink implements Inode.
+func (s *StaticSymlink) Readlink(_ context.Context) (string, error) {
 	return s.target, nil
 }
