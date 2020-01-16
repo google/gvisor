@@ -67,3 +67,14 @@ func newDentry(creds *auth.Credentials, ino uint64, perm linux.FileMode, inode d
 	d.Init(inode)
 	return d
 }
+
+type staticFile struct {
+	kernfs.DynamicBytesFile
+	vfs.StaticData
+}
+
+var _ dynamicInode = (*staticFile)(nil)
+
+func newStaticFile(data string) *staticFile {
+	return &staticFile{StaticData: vfs.StaticData{Data: data}}
+}
