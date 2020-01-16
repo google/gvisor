@@ -510,3 +510,43 @@ type InodeSymlink struct {
 func (InodeSymlink) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*vfs.FileDescription, error) {
 	return nil, syserror.ELOOP
 }
+
+// StaticDirectory is a standard implementation of a directory with static
+// contents.
+//
+// +stateify savable
+type StaticDirectory struct {
+	InodeNotSymlink
+	InodeDirectoryNoNewChildren
+	InodeAttrs
+	InodeNoDynamicLookup
+	OrderedChildren
+}
+
+var _ Inode = (*StaticDirectory)(nil)
+
+// NewStaticDir creates a new static directory and returns its dentry.
+func NewStaticDir(creds *auth.Credentials, ino uint64, perm linux.FileMode, children map[string]*Dentry) *Dentry {
+	if perm&^linux.PermissionsMask != 0 {
+		panic(fmt.Sprintf("Only permission mask must be set: %x", perm&linux.PermissionsMask))
+	}
+
+	inode := &StaticDirectory{}
+	inode.InodeAttrs.Init(creds, ino, linux.ModeDirectory|perm)
+
+	dentry := &Dentry{}
+	dentry.Init(inode)
+
+	inode.OrderedChildren.Init(OrderedChildrenOptions{})
+	links := inode.OrderedChildren.Populate(dentry, children)
+	inode.IncLinks(links)
+
+	return dentry
+}
+
+// Open implements kernfs.Inode.
+func (s *StaticDirectory) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*vfs.FileDescription, error) {
+	fd := &GenericDirectoryFD{}
+	fd.Init(rp.Mount(), vfsd, &s.OrderedChildren, flags)
+	return fd.VFSFileDescription(), nil
+}

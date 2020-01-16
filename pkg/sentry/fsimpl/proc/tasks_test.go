@@ -69,12 +69,15 @@ func checkDots(dirs []vfs.Dirent) ([]vfs.Dirent, error) {
 
 func checkTasksStaticFiles(gots []vfs.Dirent) ([]vfs.Dirent, error) {
 	wants := map[string]vfs.Dirent{
+		"cpuinfo":     {Type: linux.DT_REG},
 		"loadavg":     {Type: linux.DT_REG},
 		"meminfo":     {Type: linux.DT_REG},
 		"mounts":      {Type: linux.DT_LNK},
 		"self":        selfLink,
 		"stat":        {Type: linux.DT_REG},
+		"sys":         {Type: linux.DT_DIR},
 		"thread-self": threadSelfLink,
+		"uptime":      {Type: linux.DT_REG},
 		"version":     {Type: linux.DT_REG},
 	}
 	return checkFiles(gots, wants)

@@ -15,6 +15,7 @@
 package proc
 
 import (
+	"bytes"
 	"sort"
 	"strconv"
 
@@ -28,9 +29,8 @@ import (
 )
 
 const (
-	defaultPermission = 0444
-	selfName          = "self"
-	threadSelfName    = "thread-self"
+	selfName       = "self"
+	threadSelfName = "thread-self"
 )
 
 // InoGenerator generates unique inode numbers for a given filesystem.
@@ -61,15 +61,15 @@ var _ kernfs.Inode = (*tasksInode)(nil)
 func newTasksInode(inoGen InoGenerator, k *kernel.Kernel, pidns *kernel.PIDNamespace) (*tasksInode, *kernfs.Dentry) {
 	root := auth.NewRootCredentials(pidns.UserNamespace())
 	contents := map[string]*kernfs.Dentry{
-		//"cpuinfo":     newCPUInfo(ctx, msrc),
-		//"filesystems": seqfile.NewSeqFileInode(ctx, &filesystemsData{}, msrc),
-		"loadavg": newDentry(root, inoGen.NextIno(), defaultPermission, &loadavgData{}),
-		"meminfo": newDentry(root, inoGen.NextIno(), defaultPermission, &meminfoData{k: k}),
-		"mounts":  kernfs.NewStaticSymlink(root, inoGen.NextIno(), defaultPermission, "self/mounts"),
-		"stat":    newDentry(root, inoGen.NextIno(), defaultPermission, &statData{k: k}),
-		//"uptime":      newUptime(ctx, msrc),
-		//"version": newVersionData(root, inoGen.NextIno(), k),
-		"version": newDentry(root, inoGen.NextIno(), defaultPermission, &versionData{k: k}),
+		"cpuinfo": newDentry(root, inoGen.NextIno(), 0444, newStaticFile(cpuInfoData(k))),
+		//"filesystems": newDentry(root, inoGen.NextIno(), 0444, &filesystemsData{}),
+		"loadavg": newDentry(root, inoGen.NextIno(), 0444, &loadavgData{}),
+		"sys":     newSysDir(root, inoGen),
+		"meminfo": newDentry(root, inoGen.NextIno(), 0444, &meminfoData{}),
+		"mounts":  kernfs.NewStaticSymlink(root, inoGen.NextIno(), 0777, "self/mounts"),
+		"stat":    newDentry(root, inoGen.NextIno(), 0444, &statData{}),
+		"uptime":  newDentry(root, inoGen.NextIno(), 0444, &uptimeData{}),
+		"version": newDentry(root, inoGen.NextIno(), 0444, &versionData{}),
 	}
 
 	inode := &tasksInode{
@@ -215,4 +215,21 @@ func (i *tasksInode) Stat(vsfs *vfs.Filesystem) linux.Statx {
 	}
 
 	return stat
+}
+
+func cpuInfoData(k *kernel.Kernel) string {
+	features := k.FeatureSet()
+	if features == nil {
+		// Kernel is always initialized with a FeatureSet.
+		panic("cpuinfo read with nil FeatureSet")
+	}
+	var buf bytes.Buffer
+	for i, max := uint(0), k.ApplicationCores(); i < max; i++ {
+		features.WriteCPUInfoTo(i, &buf)
+	}
+	return buf.String()
+}
+
+func shmData(v uint64) dynamicInode {
+	return newStaticFile(strconv.FormatUint(v, 10))
 }

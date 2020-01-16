@@ -46,8 +46,7 @@ func (n *ifinet6) contents() []string {
 	for id, naddrs := range n.s.InterfaceAddrs() {
 		nic, ok := nics[id]
 		if !ok {
-			// NIC was added after NICNames was called. We'll just
-			// ignore it.
+			// NIC was added after NICNames was called. We'll just ignore it.
 			continue
 		}
 
