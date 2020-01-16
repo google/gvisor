@@ -750,7 +750,9 @@ func (s *Stack) Stats() tcpip.Stats {
 // SetForwarding enables or disables the packet forwarding between NICs.
 //
 // When forwarding becomes enabled, any host-only state on all NICs will be
-// cleaned up.
+// cleaned up and if IPv6 is enabled, NDP Router Solicitations will be started.
+// When forwarding becomes disabled and if IPv6 is enabled, NDP Router
+// Solicitations will be stopped.
 func (s *Stack) SetForwarding(enable bool) {
 	// TODO(igudger, bgeffon): Expose via /proc/sys/net/ipv4/ip_forward.
 	s.mu.Lock()
@@ -771,6 +773,10 @@ func (s *Stack) SetForwarding(enable bool) {
 	if enable {
 		for _, nic := range s.nics {
 			nic.becomeIPv6Router()
+		}
+	} else {
+		for _, nic := range s.nics {
+			nic.becomeIPv6Host()
 		}
 	}
 }
