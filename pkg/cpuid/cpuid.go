@@ -657,30 +657,28 @@ func (fs *FeatureSet) FlagsString(cpuinfoOnly bool) string {
 	return strings.Join(s, " ")
 }
 
-// CPUInfo is to generate a section of one cpu in /proc/cpuinfo. This is a
-// minimal /proc/cpuinfo, it is missing some fields like "microcode" that are
+// WriteCPUInfoTo is to generate a section of one cpu in /proc/cpuinfo. This is
+// a minimal /proc/cpuinfo, it is missing some fields like "microcode" that are
 // not always printed in Linux. The bogomips field is simply made up.
-func (fs FeatureSet) CPUInfo(cpu uint) string {
-	var b bytes.Buffer
-	fmt.Fprintf(&b, "processor\t: %d\n", cpu)
-	fmt.Fprintf(&b, "vendor_id\t: %s\n", fs.VendorID)
-	fmt.Fprintf(&b, "cpu family\t: %d\n", ((fs.ExtendedFamily<<4)&0xff)|fs.Family)
-	fmt.Fprintf(&b, "model\t\t: %d\n", ((fs.ExtendedModel<<4)&0xff)|fs.Model)
-	fmt.Fprintf(&b, "model name\t: %s\n", "unknown") // Unknown for now.
-	fmt.Fprintf(&b, "stepping\t: %s\n", "unknown")   // Unknown for now.
-	fmt.Fprintf(&b, "cpu MHz\t\t: %.3f\n", cpuFreqMHz)
-	fmt.Fprintln(&b, "fpu\t\t: yes")
-	fmt.Fprintln(&b, "fpu_exception\t: yes")
-	fmt.Fprintf(&b, "cpuid level\t: %d\n", uint32(xSaveInfo)) // Same as ax in vendorID.
-	fmt.Fprintln(&b, "wp\t\t: yes")
-	fmt.Fprintf(&b, "flags\t\t: %s\n", fs.FlagsString(true))
-	fmt.Fprintf(&b, "bogomips\t: %.02f\n", cpuFreqMHz) // It's bogus anyway.
-	fmt.Fprintf(&b, "clflush size\t: %d\n", fs.CacheLine)
-	fmt.Fprintf(&b, "cache_alignment\t: %d\n", fs.CacheLine)
-	fmt.Fprintf(&b, "address sizes\t: %d bits physical, %d bits virtual\n", 46, 48)
-	fmt.Fprintln(&b, "power management:") // This is always here, but can be blank.
-	fmt.Fprintln(&b, "")                  // The /proc/cpuinfo file ends with an extra newline.
-	return b.String()
+func (fs FeatureSet) WriteCPUInfoTo(cpu uint, b *bytes.Buffer) {
+	fmt.Fprintf(b, "processor\t: %d\n", cpu)
+	fmt.Fprintf(b, "vendor_id\t: %s\n", fs.VendorID)
+	fmt.Fprintf(b, "cpu family\t: %d\n", ((fs.ExtendedFamily<<4)&0xff)|fs.Family)
+	fmt.Fprintf(b, "model\t\t: %d\n", ((fs.ExtendedModel<<4)&0xff)|fs.Model)
+	fmt.Fprintf(b, "model name\t: %s\n", "unknown") // Unknown for now.
+	fmt.Fprintf(b, "stepping\t: %s\n", "unknown")   // Unknown for now.
+	fmt.Fprintf(b, "cpu MHz\t\t: %.3f\n", cpuFreqMHz)
+	fmt.Fprintln(b, "fpu\t\t: yes")
+	fmt.Fprintln(b, "fpu_exception\t: yes")
+	fmt.Fprintf(b, "cpuid level\t: %d\n", uint32(xSaveInfo)) // Same as ax in vendorID.
+	fmt.Fprintln(b, "wp\t\t: yes")
+	fmt.Fprintf(b, "flags\t\t: %s\n", fs.FlagsString(true))
+	fmt.Fprintf(b, "bogomips\t: %.02f\n", cpuFreqMHz) // It's bogus anyway.
+	fmt.Fprintf(b, "clflush size\t: %d\n", fs.CacheLine)
+	fmt.Fprintf(b, "cache_alignment\t: %d\n", fs.CacheLine)
+	fmt.Fprintf(b, "address sizes\t: %d bits physical, %d bits virtual\n", 46, 48)
+	fmt.Fprintln(b, "power management:") // This is always here, but can be blank.
+	fmt.Fprintln(b, "")                  // The /proc/cpuinfo file ends with an extra newline.
 }
 
 const (
