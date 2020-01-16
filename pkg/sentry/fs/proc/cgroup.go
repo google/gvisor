@@ -21,6 +21,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
 
+// LINT.IfChange
+
 func newCGroupInode(ctx context.Context, msrc *fs.MountSource, cgroupControllers map[string]string) *fs.Inode {
 	// From man 7 cgroups: "For each cgroup hierarchy of which the process
 	// is a member, there is one entry containing three colon-separated
@@ -39,3 +41,5 @@ func newCGroupInode(ctx context.Context, msrc *fs.MountSource, cgroupControllers
 
 	return newStaticProcInode(ctx, msrc, []byte(data))
 }
+
+// LINT.ThenChange(../../fsimpl/proc/tasks_files.go)

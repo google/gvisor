@@ -25,6 +25,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
+// LINT.IfChange
+
 // meminfoData backs /proc/meminfo.
 //
 // +stateify savable
@@ -83,3 +85,5 @@ func (d *meminfoData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) 
 	fmt.Fprintf(&buf, "Shmem:          %8d kB\n", snapshot.Tmpfs/1024)
 	return []seqfile.SeqData{{Buf: buf.Bytes(), Handle: (*meminfoData)(nil)}}, 0
 }
+
+// LINT.ThenChange(../../fsimpl/proc/tasks_files.go)

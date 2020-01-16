@@ -26,6 +26,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
+// LINT.IfChange
+
 // taskOwnedInodeOps wraps an fs.InodeOperations and overrides the UnstableAttr
 // method to return either the task or root as the owner, depending on the
 // task's dumpability.
@@ -131,3 +133,5 @@ func newProcInode(ctx context.Context, iops fs.InodeOperations, msrc *fs.MountSo
 	}
 	return fs.NewInode(ctx, iops, msrc, sattr)
 }
+
+// LINT.ThenChange(../../fsimpl/proc/tasks.go)
