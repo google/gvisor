@@ -30,6 +30,8 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// LINT.IfChange
+
 // idMapInodeOperations implements fs.InodeOperations for
 // /proc/[pid]/{uid,gid}_map.
 //
@@ -177,3 +179,5 @@ func (imfo *idMapFileOperations) Write(ctx context.Context, file *fs.File, src u
 	// count, even if fewer bytes were used.
 	return int64(srclen), nil
 }
+
+// LINT.ThenChange(../../fsimpl/proc/task_files.go)

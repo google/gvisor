@@ -22,6 +22,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 )
 
+// LINT.IfChange
+
 func newCPUInfo(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	k := kernel.KernelFromContext(ctx)
 	features := k.FeatureSet()
@@ -35,3 +37,5 @@ func newCPUInfo(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	}
 	return newStaticProcInode(ctx, msrc, buf.Bytes())
 }
+
+// LINT.ThenChange(../../fsimpl/proc/tasks_files.go)
