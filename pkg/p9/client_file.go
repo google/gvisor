@@ -170,6 +170,9 @@ func (c *clientFile) GetXattr(name string, size uint64) (string, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return "", syscall.EBADF
 	}
+	if !versionSupportsGetSetXattr(c.client.version) {
+		return "", syscall.EOPNOTSUPP
+	}
 
 	rgetxattr := Rgetxattr{}
 	if err := c.client.sendRecv(&Tgetxattr{FID: c.fid, Name: name, Size: size}, &rgetxattr); err != nil {
@@ -183,6 +186,9 @@ func (c *clientFile) GetXattr(name string, size uint64) (string, error) {
 func (c *clientFile) SetXattr(name, value string, flags uint32) error {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return syscall.EBADF
+	}
+	if !versionSupportsGetSetXattr(c.client.version) {
+		return syscall.EOPNOTSUPP
 	}
 
 	return c.client.sendRecv(&Tsetxattr{FID: c.fid, Name: name, Value: value, Flags: flags}, &Rsetxattr{})
