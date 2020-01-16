@@ -13,6 +13,8 @@ go_library(
         "sigset.go",
         "sys_aio.go",
         "sys_capability.go",
+        "sys_clone_amd64.go",
+        "sys_clone_arm64.go",
         "sys_epoll.go",
         "sys_eventfd.go",
         "sys_file.go",
