@@ -38,8 +38,7 @@ import (
 //
 // +stateify savable
 type inodeOperations struct {
-	fsutil.InodeNotVirtual           `state:"nosave"`
-	fsutil.InodeNoExtendedAttributes `state:"nosave"`
+	fsutil.InodeNotVirtual `state:"nosave"`
 
 	// fileState implements fs.CachedFileObject. It exists
 	// to break a circular load dependency between inodeOperations
@@ -602,6 +601,21 @@ func (i *inodeOperations) Truncate(ctx context.Context, inode *fs.Inode, length 
 	}
 
 	return i.fileState.file.setAttr(ctx, p9.SetAttrMask{Size: true}, p9.SetAttr{Size: uint64(length)})
+}
+
+// GetXattr implements fs.InodeOperations.GetXattr.
+func (i *inodeOperations) GetXattr(ctx context.Context, inode *fs.Inode, name string, size uint64) (string, error) {
+	return i.fileState.file.getXattr(ctx, name, size)
+}
+
+// SetXattr implements fs.InodeOperations.SetXattr.
+func (i *inodeOperations) SetXattr(ctx context.Context, inode *fs.Inode, name string, value string, flags uint32) error {
+	return i.fileState.file.setXattr(ctx, name, value, flags)
+}
+
+// ListXattr implements fs.InodeOperations.ListXattr.
+func (i *inodeOperations) ListXattr(context.Context, *fs.Inode) (map[string]struct{}, error) {
+	return nil, syscall.EOPNOTSUPP
 }
 
 // Allocate implements fs.InodeOperations.Allocate.

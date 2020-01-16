@@ -59,6 +59,20 @@ func (c *contextFile) setAttr(ctx context.Context, valid p9.SetAttrMask, attr p9
 	return err
 }
 
+func (c *contextFile) getXattr(ctx context.Context, name string, size uint64) (string, error) {
+	ctx.UninterruptibleSleepStart(false)
+	val, err := c.file.GetXattr(name, size)
+	ctx.UninterruptibleSleepFinish(false)
+	return val, err
+}
+
+func (c *contextFile) setXattr(ctx context.Context, name, value string, flags uint32) error {
+	ctx.UninterruptibleSleepStart(false)
+	err := c.file.SetXattr(name, value, flags)
+	ctx.UninterruptibleSleepFinish(false)
+	return err
+}
+
 func (c *contextFile) allocate(ctx context.Context, mode p9.AllocateMode, offset, length uint64) error {
 	ctx.UninterruptibleSleepStart(false)
 	err := c.file.Allocate(mode, offset, length)
