@@ -234,6 +234,19 @@ type StatxTimestamp struct {
 	_    int32
 }
 
+// ToNsec returns the nanosecond representation.
+func (sxts StatxTimestamp) ToNsec() int64 {
+	return int64(sxts.Sec)*1e9 + int64(sxts.Nsec)
+}
+
+// ToNsecCapped returns the safe nanosecond representation.
+func (sxts StatxTimestamp) ToNsecCapped() int64 {
+	if sxts.Sec > maxSecInDuration {
+		return math.MaxInt64
+	}
+	return sxts.ToNsec()
+}
+
 // NsecToStatxTimestamp translates nanoseconds to StatxTimestamp.
 func NsecToStatxTimestamp(nsec int64) (ts StatxTimestamp) {
 	return StatxTimestamp{

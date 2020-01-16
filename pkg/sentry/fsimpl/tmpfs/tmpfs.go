@@ -31,10 +31,10 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // FilesystemType implements vfs.FilesystemType.
@@ -46,6 +46,9 @@ type filesystem struct {
 
 	// memFile is used to allocate pages to for regular files.
 	memFile *pgalloc.MemoryFile
+
+	// clock is a realtime clock used to set timestamps in file operations.
+	clock time.Clock
 
 	// mu serializes changes to the Dentry tree.
 	mu sync.RWMutex
@@ -59,8 +62,10 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	if memFileProvider == nil {
 		panic("MemoryFileProviderFromContext returned nil")
 	}
+	clock := time.RealtimeClockFromContext(ctx)
 	fs := filesystem{
 		memFile: memFileProvider.MemoryFile(),
+		clock:   clock,
 	}
 	fs.vfsfs.Init(vfsObj, &fs)
 	root := fs.newDentry(fs.newDirectory(creds, 01777))
@@ -126,14 +131,19 @@ type inode struct {
 	// filesystem.RmdirAt() drops the reference.
 	refs int64
 
-	// Inode metadata; protected by mu and accessed using atomic memory
-	// operations unless otherwise specified.
-	mu    sync.RWMutex
+	// Inode metadata. Writing multiple fields atomically requires holding
+	// mu, othewise atomic operations can be used.
+	mu    sync.Mutex
 	mode  uint32 // excluding file type bits, which are based on impl
 	nlink uint32 // protected by filesystem.mu instead of inode.mu
 	uid   uint32 // auth.KUID, but stored as raw uint32 for sync/atomic
 	gid   uint32 // auth.KGID, but ...
 	ino   uint64 // immutable
+
+	// Linux's tmpfs has no concept of btime.
+	atime int64 // nanoseconds
+	ctime int64 // nanoseconds
+	mtime int64 // nanoseconds
 
 	impl interface{} // immutable
 }
@@ -141,11 +151,16 @@ type inode struct {
 const maxLinks = math.MaxUint32
 
 func (i *inode) init(impl interface{}, fs *filesystem, creds *auth.Credentials, mode linux.FileMode) {
+	now := fs.clock.Now().Nanoseconds()
 	i.refs = 1
 	i.mode = uint32(mode)
 	i.uid = uint32(creds.EffectiveKUID)
 	i.gid = uint32(creds.EffectiveKGID)
 	i.ino = atomic.AddUint64(&fs.nextInoMinusOne, 1)
+	// Tmpfs creation sets atime, ctime, and mtime to current time.
+	i.atime = now
+	i.ctime = now
+	i.mtime = now
 	// i.nlink initialized by caller
 	i.impl = impl
 }
@@ -213,15 +228,24 @@ func (i *inode) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes, i
 // Go won't inline this function, and returning linux.Statx (which is quite
 // big) means spending a lot of time in runtime.duffcopy(), so instead it's an
 // output parameter.
+//
+// Note that Linux does not guarantee to return consistent data (in the case of
+// a concurrent modification), so we do not require holding inode.mu.
 func (i *inode) statTo(stat *linux.Statx) {
-	stat.Mask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_NLINK | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO
+	stat.Mask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_NLINK |
+		linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_ATIME |
+		linux.STATX_BTIME | linux.STATX_CTIME | linux.STATX_MTIME
 	stat.Blksize = 1 // usermem.PageSize in tmpfs
 	stat.Nlink = atomic.LoadUint32(&i.nlink)
 	stat.UID = atomic.LoadUint32(&i.uid)
 	stat.GID = atomic.LoadUint32(&i.gid)
 	stat.Mode = uint16(atomic.LoadUint32(&i.mode))
 	stat.Ino = i.ino
-	// TODO: device number
+	// Linux's tmpfs has no concept of btime, so zero-value is returned.
+	stat.Atime = linux.NsecToStatxTimestamp(i.atime)
+	stat.Ctime = linux.NsecToStatxTimestamp(i.ctime)
+	stat.Mtime = linux.NsecToStatxTimestamp(i.mtime)
+	// TODO(gvisor.dev/issues/1197): Device number.
 	switch impl := i.impl.(type) {
 	case *regularFile:
 		stat.Mode |= linux.S_IFREG
@@ -243,6 +267,36 @@ func (i *inode) statTo(stat *linux.Statx) {
 	default:
 		panic(fmt.Sprintf("unknown inode type: %T", i.impl))
 	}
+}
+
+func (i *inode) setStat(stat linux.Statx) error {
+	// TODO(gvisor.dev/issues/1197): Handle stat.Size by growing/shrinking
+	// the file.
+	if stat.Mask == 0 {
+		return nil
+	}
+	i.mu.Lock()
+	mask := stat.Mask
+	if mask&linux.STATX_MODE != 0 {
+		atomic.StoreUint32(&i.mode, uint32(stat.Mode))
+	}
+	if mask&linux.STATX_UID != 0 {
+		atomic.StoreUint32(&i.uid, stat.UID)
+	}
+	if mask&linux.STATX_GID != 0 {
+		atomic.StoreUint32(&i.gid, stat.GID)
+	}
+	if mask&linux.STATX_ATIME != 0 {
+		atomic.StoreInt64(&i.atime, stat.Atime.ToNsecCapped())
+	}
+	if mask&linux.STATX_CTIME != 0 {
+		atomic.StoreInt64(&i.ctime, stat.Ctime.ToNsecCapped())
+	}
+	if mask&linux.STATX_MTIME != 0 {
+		atomic.StoreInt64(&i.mtime, stat.Mtime.ToNsecCapped())
+	}
+	i.mu.Unlock()
+	return nil
 }
 
 // allocatedBlocksForSize returns the number of 512B blocks needed to
@@ -291,9 +345,5 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
 func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
-	if opts.Stat.Mask == 0 {
-		return nil
-	}
-	// TODO: implement inode.setStat
-	return syserror.EPERM
+	return fd.inode().setStat(opts.Stat)
 }
