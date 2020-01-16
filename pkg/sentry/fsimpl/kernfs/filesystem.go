@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/context"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -40,7 +39,7 @@ func (fs *Filesystem) stepExistingLocked(ctx context.Context, rp *vfs.ResolvingP
 		return nil, syserror.ENOTDIR
 	}
 	// Directory searchable?
-	if err := d.inode.CheckPermissions(rp.Credentials(), vfs.MayExec); err != nil {
+	if err := d.inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayExec); err != nil {
 		return nil, err
 	}
 afterSymlink:
@@ -182,8 +181,8 @@ func (fs *Filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.Resolving
 //
 // Preconditions: Filesystem.mu must be locked for at least reading. parentInode
 // == parentVFSD.Impl().(*Dentry).Inode. isDir(parentInode) == true.
-func checkCreateLocked(rp *vfs.ResolvingPath, parentVFSD *vfs.Dentry, parentInode Inode) (string, error) {
-	if err := parentInode.CheckPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
+func checkCreateLocked(ctx context.Context, rp *vfs.ResolvingPath, parentVFSD *vfs.Dentry, parentInode Inode) (string, error) {
+	if err := parentInode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
 		return "", err
 	}
 	pc := rp.Component()
@@ -206,7 +205,7 @@ func checkCreateLocked(rp *vfs.ResolvingPath, parentVFSD *vfs.Dentry, parentInod
 // checkDeleteLocked checks that the file represented by vfsd may be deleted.
 //
 // Preconditions: Filesystem.mu must be locked for at least reading.
-func checkDeleteLocked(rp *vfs.ResolvingPath, vfsd *vfs.Dentry) error {
+func checkDeleteLocked(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry) error {
 	parentVFSD := vfsd.Parent()
 	if parentVFSD == nil {
 		return syserror.EBUSY
@@ -214,33 +213,9 @@ func checkDeleteLocked(rp *vfs.ResolvingPath, vfsd *vfs.Dentry) error {
 	if parentVFSD.IsDisowned() {
 		return syserror.ENOENT
 	}
-	if err := parentVFSD.Impl().(*Dentry).inode.CheckPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
+	if err := parentVFSD.Impl().(*Dentry).inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
 		return err
 	}
-	return nil
-}
-
-// checkRenameLocked checks that a rename operation may be performed on the
-// target dentry across the given set of parent directories. The target dentry
-// may be nil.
-//
-// Precondition: isDir(dstInode) == true.
-func checkRenameLocked(creds *auth.Credentials, src, dstDir *vfs.Dentry, dstInode Inode) error {
-	srcDir := src.Parent()
-	if srcDir == nil {
-		return syserror.EBUSY
-	}
-	if srcDir.IsDisowned() {
-		return syserror.ENOENT
-	}
-	if dstDir.IsDisowned() {
-		return syserror.ENOENT
-	}
-	// Check for creation permissions on dst dir.
-	if err := dstInode.CheckPermissions(creds, vfs.MayWrite|vfs.MayExec); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -269,7 +244,7 @@ func (fs *Filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 		if !d.isDir() {
 			return nil, syserror.ENOTDIR
 		}
-		if err := inode.CheckPermissions(rp.Credentials(), vfs.MayExec); err != nil {
+		if err := inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayExec); err != nil {
 			return nil, err
 		}
 	}
@@ -302,7 +277,7 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 	if err != nil {
 		return err
 	}
-	pc, err := checkCreateLocked(rp, parentVFSD, parentInode)
+	pc, err := checkCreateLocked(ctx, rp, parentVFSD, parentInode)
 	if err != nil {
 		return err
 	}
@@ -339,7 +314,7 @@ func (fs *Filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	if err != nil {
 		return err
 	}
-	pc, err := checkCreateLocked(rp, parentVFSD, parentInode)
+	pc, err := checkCreateLocked(ctx, rp, parentVFSD, parentInode)
 	if err != nil {
 		return err
 	}
@@ -367,7 +342,7 @@ func (fs *Filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	if err != nil {
 		return err
 	}
-	pc, err := checkCreateLocked(rp, parentVFSD, parentInode)
+	pc, err := checkCreateLocked(ctx, rp, parentVFSD, parentInode)
 	if err != nil {
 		return err
 	}
@@ -401,7 +376,7 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if err != nil {
 			return nil, err
 		}
-		if err := inode.CheckPermissions(rp.Credentials(), ats); err != nil {
+		if err := inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 			return nil, err
 		}
 		return inode.Open(rp, vfsd, opts.Flags)
@@ -420,7 +395,7 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if mustCreate {
 			return nil, syserror.EEXIST
 		}
-		if err := inode.CheckPermissions(rp.Credentials(), ats); err != nil {
+		if err := inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 			return nil, err
 		}
 		return inode.Open(rp, vfsd, opts.Flags)
@@ -432,7 +407,7 @@ afterTrailingSymlink:
 		return nil, err
 	}
 	// Check for search permission in the parent directory.
-	if err := parentInode.CheckPermissions(rp.Credentials(), vfs.MayExec); err != nil {
+	if err := parentInode.CheckPermissions(ctx, rp.Credentials(), vfs.MayExec); err != nil {
 		return nil, err
 	}
 	// Reject attempts to open directories with O_CREAT.
@@ -450,7 +425,7 @@ afterTrailingSymlink:
 	}
 	if childVFSD == nil {
 		// Already checked for searchability above; now check for writability.
-		if err := parentInode.CheckPermissions(rp.Credentials(), vfs.MayWrite); err != nil {
+		if err := parentInode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite); err != nil {
 			return nil, err
 		}
 		if err := rp.Mount().CheckBeginWrite(); err != nil {
@@ -485,7 +460,7 @@ afterTrailingSymlink:
 			goto afterTrailingSymlink
 		}
 	}
-	if err := childInode.CheckPermissions(rp.Credentials(), ats); err != nil {
+	if err := childInode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 		return nil, err
 	}
 	return childInode.Open(rp, childVFSD, opts.Flags)
@@ -545,13 +520,13 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	srcVFSD := &src.vfsd
 
 	// Can we remove the src dentry?
-	if err := checkDeleteLocked(rp, srcVFSD); err != nil {
+	if err := checkDeleteLocked(ctx, rp, srcVFSD); err != nil {
 		return err
 	}
 
 	// Can we create the dst dentry?
 	var dstVFSD *vfs.Dentry
-	pc, err := checkCreateLocked(rp, dstDirVFSD, dstDirInode)
+	pc, err := checkCreateLocked(ctx, rp, dstDirVFSD, dstDirInode)
 	switch err {
 	case nil:
 		// Ok, continue with rename as replacement.
@@ -607,7 +582,7 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		return err
 	}
 	defer rp.Mount().EndWrite()
-	if err := checkDeleteLocked(rp, vfsd); err != nil {
+	if err := checkDeleteLocked(ctx, rp, vfsd); err != nil {
 		return err
 	}
 	if !vfsd.Impl().(*Dentry).isDir() {
@@ -683,7 +658,7 @@ func (fs *Filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 	if err != nil {
 		return err
 	}
-	pc, err := checkCreateLocked(rp, parentVFSD, parentInode)
+	pc, err := checkCreateLocked(ctx, rp, parentVFSD, parentInode)
 	if err != nil {
 		return err
 	}
@@ -712,7 +687,7 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 		return err
 	}
 	defer rp.Mount().EndWrite()
-	if err := checkDeleteLocked(rp, vfsd); err != nil {
+	if err := checkDeleteLocked(ctx, rp, vfsd); err != nil {
 		return err
 	}
 	if vfsd.Impl().(*Dentry).isDir() {

@@ -30,6 +30,26 @@ const (
 	MayExec              = 1
 )
 
+// OnlyRead returns true if access _only_ allows read.
+func (a AccessTypes) OnlyRead() bool {
+	return a == MayRead
+}
+
+// MayRead returns true if access allows read.
+func (a AccessTypes) MayRead() bool {
+	return a&MayRead != 0
+}
+
+// MayWrite returns true if access allows write.
+func (a AccessTypes) MayWrite() bool {
+	return a&MayWrite != 0
+}
+
+// MayExec returns true if access allows exec.
+func (a AccessTypes) MayExec() bool {
+	return a&MayExec != 0
+}
+
 // GenericCheckPermissions checks that creds has the given access rights on a
 // file with the given permissions, UID, and GID, subject to the rules of
 // fs/namei.c:generic_permission(). isDir is true if the file is a directory.
@@ -53,7 +73,7 @@ func GenericCheckPermissions(creds *auth.Credentials, ats AccessTypes, isDir boo
 	}
 	// CAP_DAC_READ_SEARCH allows the caller to read and search arbitrary
 	// directories, and read arbitrary non-directory files.
-	if (isDir && (ats&MayWrite == 0)) || ats == MayRead {
+	if (isDir && !ats.MayWrite()) || ats.OnlyRead() {
 		if creds.HasCapability(linux.CAP_DAC_READ_SEARCH) {
 			return nil
 		}
@@ -61,7 +81,7 @@ func GenericCheckPermissions(creds *auth.Credentials, ats AccessTypes, isDir boo
 	// CAP_DAC_OVERRIDE allows arbitrary access to directories, read/write
 	// access to non-directory files, and execute access to non-directory files
 	// for which at least one execute bit is set.
-	if isDir || (ats&MayExec == 0) || (mode&0111 != 0) {
+	if isDir || !ats.MayExec() || (mode&0111 != 0) {
 		if creds.HasCapability(linux.CAP_DAC_OVERRIDE) {
 			return nil
 		}

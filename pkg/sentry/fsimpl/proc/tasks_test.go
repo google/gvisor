@@ -85,12 +85,20 @@ func checkTasksStaticFiles(gots []vfs.Dirent) ([]vfs.Dirent, error) {
 
 func checkTaskStaticFiles(gots []vfs.Dirent) ([]vfs.Dirent, error) {
 	wants := map[string]vfs.Dirent{
-		"io":     {Type: linux.DT_REG},
-		"maps":   {Type: linux.DT_REG},
-		"smaps":  {Type: linux.DT_REG},
-		"stat":   {Type: linux.DT_REG},
-		"statm":  {Type: linux.DT_REG},
-		"status": {Type: linux.DT_REG},
+		"auxv":    {Type: linux.DT_REG},
+		"cmdline": {Type: linux.DT_REG},
+		"comm":    {Type: linux.DT_REG},
+		"environ": {Type: linux.DT_REG},
+		"gid_map": {Type: linux.DT_REG},
+		"io":      {Type: linux.DT_REG},
+		"maps":    {Type: linux.DT_REG},
+		"ns":      {Type: linux.DT_DIR},
+		"smaps":   {Type: linux.DT_REG},
+		"stat":    {Type: linux.DT_REG},
+		"statm":   {Type: linux.DT_REG},
+		"status":  {Type: linux.DT_REG},
+		"task":    {Type: linux.DT_DIR},
+		"uid_map": {Type: linux.DT_REG},
 	}
 	return checkFiles(gots, wants)
 }
