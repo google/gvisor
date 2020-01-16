@@ -63,6 +63,41 @@ func (fs *filesystem) newRegularFile(creds *auth.Credentials, mode linux.FileMod
 	return &file.inode
 }
 
+// truncate grows or shrinks the file to the given size. It returns true if the
+// file size was updated.
+func (rf *regularFile) truncate(size uint64) (bool, error) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if size == rf.size {
+		// Nothing to do.
+		return false, nil
+	}
+
+	if size > rf.size {
+		// Growing the file.
+		if rf.seals&linux.F_SEAL_GROW != 0 {
+			// Seal does not allow growth.
+			return false, syserror.EPERM
+		}
+		rf.size = size
+		return true, nil
+	}
+
+	// Shrinking the file
+	if rf.seals&linux.F_SEAL_SHRINK != 0 {
+		// Seal does not allow shrink.
+		return false, syserror.EPERM
+	}
+
+	// TODO(gvisor.dev/issues/1197): Invalidate mappings once we have
+	// mappings.
+
+	rf.data.Truncate(size, rf.memFile)
+	rf.size = size
+	return true, nil
+}
+
 type regularFileFD struct {
 	fileDescription
 
