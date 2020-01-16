@@ -202,7 +202,7 @@ func (n *NIC) enable() *tcpip.Error {
 				Address:   addr,
 				PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen,
 			},
-		}, CanBePrimaryEndpoint); err != nil {
+		}, CanBePrimaryEndpoint, static, false /* deprecated */); err != nil {
 			return err
 		}
 	}
@@ -533,7 +533,12 @@ func (n *NIC) getRefOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address t
 	return ref
 }
 
-func (n *NIC) addPermanentAddressLocked(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior) (*referencedNetworkEndpoint, *tcpip.Error) {
+// addPermanentAddressLocked adds a permanent address to n.
+//
+// If n already has the address in a non-permanent state,
+// addPermanentAddressLocked will promote it to permanent and update the
+// endpoint with the properties provided.
+func (n *NIC) addPermanentAddressLocked(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior, configType networkEndpointConfigType, deprecated bool) (*referencedNetworkEndpoint, *tcpip.Error) {
 	id := NetworkEndpointID{protocolAddress.AddressWithPrefix.Address}
 	if ref, ok := n.endpoints[id]; ok {
 		switch ref.getKind() {
@@ -541,10 +546,14 @@ func (n *NIC) addPermanentAddressLocked(protocolAddress tcpip.ProtocolAddress, p
 			// The NIC already have a permanent endpoint with that address.
 			return nil, tcpip.ErrDuplicateAddress
 		case permanentExpired, temporary:
-			// Promote the endpoint to become permanent and respect
-			// the new peb.
+			// Promote the endpoint to become permanent and respect the new peb,
+			// configType and deprecated status.
 			if ref.tryIncRef() {
+				// TODO(b/147748385): Perform Duplicate Address Detection when promoting
+				// an IPv6 endpoint to permanent.
 				ref.setKind(permanent)
+				ref.deprecated = deprecated
+				ref.configType = configType
 
 				refs := n.primary[ref.protocol]
 				for i, r := range refs {
@@ -576,9 +585,13 @@ func (n *NIC) addPermanentAddressLocked(protocolAddress tcpip.ProtocolAddress, p
 		}
 	}
 
-	return n.addAddressLocked(protocolAddress, peb, permanent, static, false)
+	return n.addAddressLocked(protocolAddress, peb, permanent, configType, deprecated)
 }
 
+// addAddressLocked adds a new protocolAddress to n.
+//
+// If the address is already known by n (irrespective of the state it is in),
+// addAddressLocked does nothing and returns tcpip.ErrDuplicateAddress.
 func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior, kind networkEndpointKind, configType networkEndpointConfigType, deprecated bool) (*referencedNetworkEndpoint, *tcpip.Error) {
 	// TODO(b/141022673): Validate IP address before adding them.
 
@@ -653,7 +666,7 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 func (n *NIC) AddAddress(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior) *tcpip.Error {
 	// Add the endpoint.
 	n.mu.Lock()
-	_, err := n.addPermanentAddressLocked(protocolAddress, peb)
+	_, err := n.addPermanentAddressLocked(protocolAddress, peb, static, false /* deprecated */)
 	n.mu.Unlock()
 
 	return err
@@ -935,7 +948,7 @@ func (n *NIC) joinGroupLocked(protocol tcpip.NetworkProtocolNumber, addr tcpip.A
 				Address:   addr,
 				PrefixLen: netProto.DefaultPrefixLen(),
 			},
-		}, NeverPrimaryEndpoint); err != nil {
+		}, NeverPrimaryEndpoint, static, false /* deprecated */); err != nil {
 			return err
 		}
 	}
@@ -1313,7 +1326,8 @@ type referencedNetworkEndpoint struct {
 	kind networkEndpointKind
 
 	// configType is the method that was used to configure this endpoint.
-	// This must never change after the endpoint is added to a NIC.
+	// This must never change except during endpoint creation and promotion to
+	// permanent.
 	configType networkEndpointConfigType
 
 	// deprecated indicates whether or not the endpoint should be considered
