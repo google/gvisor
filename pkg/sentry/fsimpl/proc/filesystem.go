@@ -47,7 +47,12 @@ func (ft *procFSType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFile
 	procfs := &kernfs.Filesystem{}
 	procfs.VFSFilesystem().Init(vfsObj, procfs)
 
-	_, dentry := newTasksInode(procfs, k, pidns)
+	var data *InternalData
+	if opts.InternalData != nil {
+		data = opts.InternalData.(*InternalData)
+	}
+
+	_, dentry := newTasksInode(procfs, k, pidns, data.Cgroups)
 	return procfs.VFSFilesystem(), dentry.VFSDentry(), nil
 }
 
@@ -77,4 +82,10 @@ var _ dynamicInode = (*staticFile)(nil)
 
 func newStaticFile(data string) *staticFile {
 	return &staticFile{StaticData: vfs.StaticData{Data: data}}
+}
+
+// InternalData contains internal data passed in to the procfs mount via
+// vfs.GetFilesystemOptions.InternalData.
+type InternalData struct {
+	Cgroups map[string]string
 }

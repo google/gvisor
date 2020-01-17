@@ -35,18 +35,20 @@ type subtasksInode struct {
 	kernfs.InodeAttrs
 	kernfs.OrderedChildren
 
-	task   *kernel.Task
-	pidns  *kernel.PIDNamespace
-	inoGen InoGenerator
+	task              *kernel.Task
+	pidns             *kernel.PIDNamespace
+	inoGen            InoGenerator
+	cgroupControllers map[string]string
 }
 
 var _ kernfs.Inode = (*subtasksInode)(nil)
 
-func newSubtasks(task *kernel.Task, pidns *kernel.PIDNamespace, inoGen InoGenerator) *kernfs.Dentry {
+func newSubtasks(task *kernel.Task, pidns *kernel.PIDNamespace, inoGen InoGenerator, cgroupControllers map[string]string) *kernfs.Dentry {
 	subInode := &subtasksInode{
-		task:   task,
-		pidns:  pidns,
-		inoGen: inoGen,
+		task:              task,
+		pidns:             pidns,
+		inoGen:            inoGen,
+		cgroupControllers: cgroupControllers,
 	}
 	// Note: credentials are overridden by taskOwnedInode.
 	subInode.InodeAttrs.Init(task.Credentials(), inoGen.NextIno(), linux.ModeDirectory|0555)
@@ -79,7 +81,7 @@ func (i *subtasksInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, e
 		return nil, syserror.ENOENT
 	}
 
-	subTaskDentry := newTaskInode(i.inoGen, subTask, i.pidns, false)
+	subTaskDentry := newTaskInode(i.inoGen, subTask, i.pidns, false, i.cgroupControllers)
 	return subTaskDentry.VFSDentry(), nil
 }
 

@@ -87,6 +87,7 @@ func checkTasksStaticFiles(gots []vfs.Dirent) ([]vfs.Dirent, error) {
 func checkTaskStaticFiles(gots []vfs.Dirent) ([]vfs.Dirent, error) {
 	wants := map[string]vfs.Dirent{
 		"auxv":    {Type: linux.DT_REG},
+		"cgroup":  {Type: linux.DT_REG},
 		"cmdline": {Type: linux.DT_REG},
 		"comm":    {Type: linux.DT_REG},
 		"environ": {Type: linux.DT_REG},
@@ -145,7 +146,15 @@ func setup() (context.Context, *vfs.VirtualFilesystem, vfs.VirtualDentry, error)
 	vfsObj.MustRegisterFilesystemType("procfs", &procFSType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 	})
-	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "procfs", &vfs.GetFilesystemOptions{})
+	fsOpts := vfs.GetFilesystemOptions{
+		InternalData: &InternalData{
+			Cgroups: map[string]string{
+				"cpuset": "/foo/cpuset",
+				"memory": "/foo/memory",
+			},
+		},
+	}
+	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "procfs", &fsOpts)
 	if err != nil {
 		return nil, nil, vfs.VirtualDentry{}, fmt.Errorf("NewMountNamespace(): %v", err)
 	}

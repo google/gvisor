@@ -54,11 +54,16 @@ type tasksInode struct {
 	// Linux. So handle them outside of OrderedChildren.
 	selfSymlink       *vfs.Dentry
 	threadSelfSymlink *vfs.Dentry
+
+	// cgroupControllers is a map of controller name to directory in the
+	// cgroup hierarchy. These controllers are immutable and will be listed
+	// in /proc/pid/cgroup if not nil.
+	cgroupControllers map[string]string
 }
 
 var _ kernfs.Inode = (*tasksInode)(nil)
 
-func newTasksInode(inoGen InoGenerator, k *kernel.Kernel, pidns *kernel.PIDNamespace) (*tasksInode, *kernfs.Dentry) {
+func newTasksInode(inoGen InoGenerator, k *kernel.Kernel, pidns *kernel.PIDNamespace, cgroupControllers map[string]string) (*tasksInode, *kernfs.Dentry) {
 	root := auth.NewRootCredentials(pidns.UserNamespace())
 	contents := map[string]*kernfs.Dentry{
 		"cpuinfo": newDentry(root, inoGen.NextIno(), 0444, newStaticFile(cpuInfoData(k))),
@@ -78,6 +83,7 @@ func newTasksInode(inoGen InoGenerator, k *kernel.Kernel, pidns *kernel.PIDNames
 		inoGen:            inoGen,
 		selfSymlink:       newSelfSymlink(root, inoGen.NextIno(), 0444, pidns).VFSDentry(),
 		threadSelfSymlink: newThreadSelfSymlink(root, inoGen.NextIno(), 0444, pidns).VFSDentry(),
+		cgroupControllers: cgroupControllers,
 	}
 	inode.InodeAttrs.Init(root, inoGen.NextIno(), linux.ModeDirectory|0555)
 
@@ -111,7 +117,7 @@ func (i *tasksInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, erro
 		return nil, syserror.ENOENT
 	}
 
-	taskDentry := newTaskInode(i.inoGen, task, i.pidns, true)
+	taskDentry := newTaskInode(i.inoGen, task, i.pidns, true, i.cgroupControllers)
 	return taskDentry.VFSDentry(), nil
 }
 
