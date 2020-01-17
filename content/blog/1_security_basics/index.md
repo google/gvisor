@@ -21,7 +21,7 @@ Future posts will address _resource efficiency_ (how gVisor preserves container 
 Delivering on each of these goals requires careful security considerations and a robust design.
 
 
-## What does “sandbox” mean? 
+## What does “sandbox" mean? 
 
 gVisor allows the execution of untrusted containers, preventing them from adversely affecting the host. This means that the untrusted container is prevented from attacking or spying on either the host kernel or any other peer userspace processes on the host.
 
@@ -62,7 +62,7 @@ In order to discuss design principles, the following components are important to
 
 It is important to emphasize what is being protected from the untrusted application in this diagram: the host OS and other userspace applications.
 
-In this post, we are only discussing security-related features of gVisor, and you might ask, “What about performance, compatibility and stability?” We will cover these considerations in future posts.
+In this post, we are only discussing security-related features of gVisor, and you might ask, “What about performance, compatibility and stability?" We will cover these considerations in future posts.
 
 
 ## Defense-in-Depth
@@ -73,19 +73,7 @@ It may seem strange that we would want our own software components to distrust e
 
 And this leads us to how Defense-in-Depth is applied to gVisor: no single vulnerability should compromise the host.
 
-In the “Attacker’s Advantage / Defender’s Dilemma,” the defender must succeed all the time while the attacker only needs to succeed once. Defense in Depth inverts this principle: once the attacker successfully compromises any given software component, they are immediately faced with needing to compromise a subsequent, distinct layer in order to move laterally or acquire more privilege. 
-
-For example, the untrusted container is isolated from the Sentry. The Sentry is isolated from host I/O operations by serving those requests in separate processes called Gofers. And both the untrusted container and its associated Gofers are isolated from the host process that is running the sandbox. 
-
-An additional benefit is that this generally leads to more robust and stable software, forcing interfaces to be strictly defined and tested to ensure all inputs are properly parsed and bounds checked.
-
-
-## Least-Privilege
-
-The principle of Least-Privilege implies that each software component has only the permissions it needs to function, and no more. 
-
-Least-Privilege is applied throughout gVisor. Each component and more importantly, each interface between the components, is designed so that only the minimum level of permission is required for it to perform its function. Specifically, the closer you are to the untrusted application, the less privilege you have. 
-
+In the “Attacker’s Advantage / Defender’s Dilemm
 ____
 
 ![Figure 2](./figure2.png)
@@ -116,7 +104,7 @@ Furthermore, any exploited vulnerabilities in the implemented syscalls (or Sentr
 
 ### Sentry/Host OS Interface:
 
-The Sentry’s interactions with the Host OS are restricted in many ways. For instance, no syscall is “passed-through” from the untrusted application to the host OS. All syscalls are intercepted and interpreted. In the case where the Sentry needs to call the Host OS, we severely limit the syscalls that the Sentry itself is allowed to make to the host kernel[^6]. 
+The Sentry’s interactions with the Host OS are restricted in many ways. For instance, no syscall is "passed-through" from the untrusted application to the host OS. All syscalls are intercepted and interpreted. In the case where the Sentry needs to call the Host OS, we severely limit the syscalls that the Sentry itself is allowed to make to the host kernel[^6].
 
 For example, there are many file-system based attacks, where manipulation of files or their paths, can lead to compromise of the host[^7]. As a result, the Sentry does not allow any syscall that creates or opens a file descriptor. All file descriptors must be donated to the sandbox.  By disallowing open or creation of file descriptors, we eliminate entire categories of these file-based attacks.
 
@@ -161,11 +149,11 @@ At a higher level, boundaries in software might be describing a great many thing
 
 Security boundaries are interfaces that are designed and built so that entire classes of bugs/vulnerabilities are eliminated.
 
-For example, the Sentry and Gofers are implemented using Go. Go was chosen for a number of the features it provided. Go is a fast, statically-typed, compiled language that has efficient multi-threading support, garbage collection and a constrained set of “unsafe” operations.
+For example, the Sentry and Gofers are implemented using Go. Go was chosen for a number of the features it provided. Go is a fast, statically-typed, compiled language that has efficient multi-threading support, garbage collection and a constrained set of “unsafe" operations.
 
 Using these features enabled safe array and pointer handling. This means entire classes of vulnerabilities were eliminated, such as buffer overflows and use-after-free. 
 
-Another example is our use of very strict syscall switching to ensure that the Sentry is always the first software component that parses and interprets the calls being made by the untrusted container. Here is an instance where different platforms use different solutions, but all of them share this common trait, whether it is through the use of ptrace “a la PTRACE_ATTACH”[^11] or kvm’s ring0[^12].
+Another example is our use of very strict syscall switching to ensure that the Sentry is always the first software component that parses and interprets the calls being made by the untrusted container. Here is an instance where different platforms use different solutions, but all of them share this common trait, whether it is through the use of ptrace “a la PTRACE_ATTACH"[^11] or kvm’s ring0[^12].
 
 Finally, one of the most restrictive choices was to use seccomp, to restrict the Sentry from being able to open or create a file descriptor on the host. All file I/O is required to go through Gofers. Preventing the opening or creation of file descriptions eliminates whole categories of bugs around file permissions [like this one](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2016-4557)[^13]. 
 
@@ -187,7 +175,7 @@ We will also use it to introduce Google’s Vulnerability Reward Program[^14], a
      [https://gvisor.dev/docs/architecture_guide](https://gvisor.dev/docs/architecture_guide/)
 
 [^3]:
-    [ https://github.com/google/gvisor/blob/master/pkg/sentry/syscalls/linux/linux64_amd64.go](https://github.com/google/gvisor/blob/master/pkg/sentry/syscalls/syscalls.go)
+     [https://github.com/google/gvisor/blob/master/pkg/sentry/syscalls/linux/linux64_amd64.go](https://github.com/google/gvisor/blob/master/pkg/sentry/syscalls/syscalls.go)
 
 [^4]:
      Internally that is, it doesn't call to the Host OS to implement them, in fact that is explicitly disallowed, more on that in the future.
@@ -202,13 +190,13 @@ We will also use it to introduce Google’s Vulnerability Reward Program[^14], a
      [https://en.wikipedia.org/wiki/Dirty_COW](https://en.wikipedia.org/wiki/Dirty_COW)
 
 [^8]:
-    [ https://github.com/google/gvisor/blob/master/runsc/boot/config.go](https://github.com/google/gvisor/blob/master/runsc/boot/config.go)
+     [https://github.com/google/gvisor/blob/master/runsc/boot/config.go](https://github.com/google/gvisor/blob/master/runsc/boot/config.go)
 
 [^9]:
      [https://en.wikipedia.org/wiki/9P_(protocol)](https://en.wikipedia.org/wiki/9P_(protocol))
 
 [^10]:
-    [ https://gvisor.dev/docs/user_guide/networking/#network-passthrough](https://gvisor.dev/docs/user_guide/networking/#network-passthrough)
+     [https://gvisor.dev/docs/user_guide/networking/#network-passthrough](https://gvisor.dev/docs/user_guide/networking/#network-passthrough)
 
 [^11]:
      [https://github.com/google/gvisor/blob/c7e901f47a09eaac56bd4813227edff016fa6bff/pkg/sentry/platform/ptrace/subprocess.go#L390](https://github.com/google/gvisor/blob/c7e901f47a09eaac56bd4813227edff016fa6bff/pkg/sentry/platform/ptrace/subprocess.go#L390)
@@ -220,5 +208,5 @@ We will also use it to introduce Google’s Vulnerability Reward Program[^14], a
     [https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2016-4557](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2016-4557)
 
 [^14]:
-    [ https://www.google.com/about/appsecurity/reward-program/index.html](https://www.google.com/about/appsecurity/reward-program/index.html)
+    [https://www.google.com/about/appsecurity/reward-program/index.html](https://www.google.com/about/appsecurity/reward-program/index.html)
 
