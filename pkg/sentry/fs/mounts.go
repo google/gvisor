@@ -609,8 +609,11 @@ func (mns *MountNamespace) resolve(ctx context.Context, root, node *Dirent, rema
 		}
 
 		// Find the node; we resolve relative to the current symlink's parent.
+		renameMu.RLock()
+		parent := node.parent
+		renameMu.RUnlock()
 		*remainingTraversals--
-		d, err := mns.FindInode(ctx, root, node.parent, targetPath, remainingTraversals)
+		d, err := mns.FindInode(ctx, root, parent, targetPath, remainingTraversals)
 		if err != nil {
 			return nil, err
 		}
