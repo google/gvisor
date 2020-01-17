@@ -11,8 +11,12 @@
         "lint-md": "remark ./content -f"
     },
     "remarkConfig": {
+        "settings": {
+            "footnotes": true
+        },
         "plugins": [
-            "remark-preset-lint-recommended"
+            "remark-preset-lint-recommended",
+            ["remark-lint-list-item-indent", false]
         ]
     }
 }
