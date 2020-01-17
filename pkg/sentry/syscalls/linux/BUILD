@@ -42,6 +42,8 @@ go_library(
         "sys_socket.go",
         "sys_splice.go",
         "sys_stat.go",
+        "sys_stat_amd64.go",
+        "sys_stat_arm64.go",
         "sys_sync.go",
         "sys_sysinfo.go",
         "sys_syslog.go",
