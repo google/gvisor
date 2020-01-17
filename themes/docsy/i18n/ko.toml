@@ -1,0 +1,43 @@
+
+
+# UI strings. Buttons and similar.
+
+[ui_pager_prev]
+other = "이전"
+
+[ui_pager_next]
+other = "다음"
+
+[ui_read_more]
+other = "더 읽기"
+
+[ui_search]
+other = "사이트에서 검색…"
+
+# Used in sentences such as "Posted in News"
+[ui_in]
+other = "in"
+
+# Footer text
+[footer_all_rights_reserved]
+other = "All Rights Reserved"
+
+[footer_privacy_policy]
+other = "개인정보 보호 정책"
+
+
+# Post (blog, articles etc.)
+[post_byline_by]
+other = "By"
+[post_created]
+other = "작성"
+[post_last_mod]
+other = "최종 수정"
+[post_edit_this]
+other = "페이지 편집"
+[post_create_issue]
+other = "문서에 이슈 생성"
+[post_create_project_issue]
+other = "프로젝트에 이슈 생성"
+[post_posts_in]
+other = "Posts in"

@@ -71,6 +71,20 @@ var (
 	goGetHTML5  = `<!doctype html><html><head><meta charset=utf-8>` + goGetHeader + `<title>Go-get</title></head><body></html>`
 )
 
+// cronHandler wraps an http.Handler to check that the request is from the App
+// Engine Cron service.
+// See: https://cloud.google.com/appengine/docs/standard/go112/scheduling-jobs-with-cron-yaml#validating_cron_requests
+func cronHandler(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Appengine-Cron") != "true" {
+			http.NotFound(w, r)
+			return
+		}
+		// Fallthrough.
+		h.ServeHTTP(w, r)
+	})
+}
+
 // wrappedHandler wraps an http.Handler.
 //
 // If the query parameters include go-get=1, then we redirect to a single
@@ -174,7 +188,7 @@ func registerRebuild(mux *http.ServeMux) {
 		mux = http.DefaultServeMux
 	}
 
-	mux.Handle("/rebuild", wrappedHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/rebuild", cronHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.Background()
 		credentials, err := google.FindDefaultCredentials(ctx, cloudbuild.CloudPlatformScope)
 		if err != nil {

@@ -20,11 +20,12 @@
     }
 
     // Inline code
-    p code, li > code {
+    p code, li > code, table code {
         color: inherit;
         padding: 0.2em 0.4em;
         margin: 0;
         font-size: 85%;
+        word-break: normal;
         background-color: rgba($black, 0.05);
         border-radius: $border-radius;
 
