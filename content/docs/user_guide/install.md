@@ -102,9 +102,9 @@ Based on the release type, you will need to substitute `${DIST}` below, using
 one of:
 
 * `master`: For HEAD.
-* `nightly: For nightly releases.
-* `release: For the latest release.
-* `${yyyymmdd}: For a specific releases (see above).
+* `nightly`: For nightly releases.
+* `release`: For the latest release.
+* `${yyyymmdd}`: For a specific releases (see above).
 
 The repository for the release you wish to install should be added:
 
