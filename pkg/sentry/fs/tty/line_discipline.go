@@ -140,8 +140,10 @@ func (l *lineDiscipline) setTermios(ctx context.Context, io usermem.IO, args arc
 	// buffer to its read buffer. Anything already in the read buffer is
 	// now readable.
 	if oldCanonEnabled && !l.termios.LEnabled(linux.ICANON) {
-		l.inQueue.pushWaitBuf(l)
+		l.inQueue.mu.Lock()
+		l.inQueue.pushWaitBufLocked(l)
 		l.inQueue.readable = true
+		l.inQueue.mu.Unlock()
 		l.slaveWaiter.Notify(waiter.EventIn)
 	}
 
