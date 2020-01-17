@@ -432,13 +432,12 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 	// Should not attempt to perform DAD on an address that is currently in
 	// the DAD process.
 	if _, ok := ndp.dad[addr]; ok {
-		// Should never happen because we should only ever call this
-		// function for newly created addresses. If we attemped to
-		// "add" an address that already existed, we would returned an
-		// error since we attempted to add a duplicate address, or its
-		// reference count would have been increased without doing the
-		// work that would have been done for an address that was brand
-		// new. See NIC.addPermanentAddressLocked.
+		// Should never happen because we should only ever call this function for
+		// newly created addresses. If we attemped to "add" an address that already
+		// existed, we would get an error since we attempted to add a duplicate
+		// address, or its reference count would have been increased without doing
+		// the work that would have been done for an address that was brand new.
+		// See NIC.addAddressLocked.
 		panic(fmt.Sprintf("ndpdad: already performing DAD for addr %s on NIC(%d)", addr, ndp.nic.ID()))
 	}
 
@@ -994,7 +993,7 @@ func (ndp *ndpState) newAutoGenAddress(prefix tcpip.Subnet, pl, vl time.Duration
 	// If the preferred lifetime is zero, then the address should be considered
 	// deprecated.
 	deprecated := pl == 0
-	ref, err := ndp.nic.addPermanentAddressLocked(protocolAddr, FirstPrimaryEndpoint, slaac, deprecated)
+	ref, err := ndp.nic.addAddressLocked(protocolAddr, FirstPrimaryEndpoint, permanent, slaac, deprecated)
 	if err != nil {
 		log.Fatalf("ndp: error when adding address %s: %s", protocolAddr, err)
 	}
@@ -1164,7 +1163,7 @@ func (ndp *ndpState) cleanupAutoGenAddrResourcesAndNotify(addr tcpip.Address) bo
 //
 // The NIC that ndp belongs to MUST be locked.
 func (ndp *ndpState) cleanupHostOnlyState() {
-	for addr, _ := range ndp.autoGenAddresses {
+	for addr := range ndp.autoGenAddresses {
 		ndp.invalidateAutoGenAddress(addr)
 	}
 
@@ -1172,7 +1171,7 @@ func (ndp *ndpState) cleanupHostOnlyState() {
 		log.Fatalf("ndp: still have auto-generated addresses after cleaning up, found = %d", got)
 	}
 
-	for prefix, _ := range ndp.onLinkPrefixes {
+	for prefix := range ndp.onLinkPrefixes {
 		ndp.invalidateOnLinkPrefix(prefix)
 	}
 
@@ -1180,7 +1179,7 @@ func (ndp *ndpState) cleanupHostOnlyState() {
 		log.Fatalf("ndp: still have discovered on-link prefixes after cleaning up, found = %d", got)
 	}
 
-	for router, _ := range ndp.defaultRouters {
+	for router := range ndp.defaultRouters {
 		ndp.invalidateDefaultRouter(router)
 	}
 

@@ -196,13 +196,13 @@ func (n *NIC) enable() *tcpip.Error {
 			addr = header.LinkLocalAddr(l2addr)
 		}
 
-		if _, err := n.addPermanentAddressLocked(tcpip.ProtocolAddress{
+		if _, err := n.addAddressLocked(tcpip.ProtocolAddress{
 			Protocol: header.IPv6ProtocolNumber,
 			AddressWithPrefix: tcpip.AddressWithPrefix{
 				Address:   addr,
 				PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen,
 			},
-		}, CanBePrimaryEndpoint, static, false /* deprecated */); err != nil {
+		}, CanBePrimaryEndpoint, permanent, static, false /* deprecated */); err != nil {
 			return err
 		}
 	}
@@ -533,14 +533,21 @@ func (n *NIC) getRefOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address t
 	return ref
 }
 
-// addPermanentAddressLocked adds a permanent address to n.
+// addAddressLocked adds a new protocolAddress to n.
 //
-// If n already has the address in a non-permanent state,
-// addPermanentAddressLocked will promote it to permanent and update the
-// endpoint with the properties provided.
-func (n *NIC) addPermanentAddressLocked(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior, configType networkEndpointConfigType, deprecated bool) (*referencedNetworkEndpoint, *tcpip.Error) {
-	id := NetworkEndpointID{protocolAddress.AddressWithPrefix.Address}
+// If n already has the address in a non-permanent state, and the kind given is
+// permanent, that address will be promoted in place and its properties set to
+// the properties provided. Otherwise, it returns tcpip.ErrDuplicateAddress.
+func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior, kind networkEndpointKind, configType networkEndpointConfigType, deprecated bool) (*referencedNetworkEndpoint, *tcpip.Error) {
+	// TODO(b/141022673): Validate IP addresses before adding them.
+
+	// Sanity check.
+	id := NetworkEndpointID{LocalAddress: protocolAddress.AddressWithPrefix.Address}
 	if ref, ok := n.endpoints[id]; ok {
+		// Endpoint already exists.
+		if kind != permanent {
+			return nil, tcpip.ErrDuplicateAddress
+		}
 		switch ref.getKind() {
 		case permanentTentative, permanent:
 			// The NIC already have a permanent endpoint with that address.
@@ -583,23 +590,6 @@ func (n *NIC) addPermanentAddressLocked(protocolAddress tcpip.ProtocolAddress, p
 			// case.
 			n.removeEndpointLocked(ref)
 		}
-	}
-
-	return n.addAddressLocked(protocolAddress, peb, permanent, configType, deprecated)
-}
-
-// addAddressLocked adds a new protocolAddress to n.
-//
-// If the address is already known by n (irrespective of the state it is in),
-// addAddressLocked does nothing and returns tcpip.ErrDuplicateAddress.
-func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior, kind networkEndpointKind, configType networkEndpointConfigType, deprecated bool) (*referencedNetworkEndpoint, *tcpip.Error) {
-	// TODO(b/141022673): Validate IP address before adding them.
-
-	// Sanity check.
-	id := NetworkEndpointID{protocolAddress.AddressWithPrefix.Address}
-	if _, ok := n.endpoints[id]; ok {
-		// Endpoint already exists.
-		return nil, tcpip.ErrDuplicateAddress
 	}
 
 	netProto, ok := n.stack.networkProtocols[protocolAddress.Protocol]
@@ -666,7 +656,7 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 func (n *NIC) AddAddress(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior) *tcpip.Error {
 	// Add the endpoint.
 	n.mu.Lock()
-	_, err := n.addPermanentAddressLocked(protocolAddress, peb, static, false /* deprecated */)
+	_, err := n.addAddressLocked(protocolAddress, peb, permanent, static, false /* deprecated */)
 	n.mu.Unlock()
 
 	return err
@@ -942,13 +932,13 @@ func (n *NIC) joinGroupLocked(protocol tcpip.NetworkProtocolNumber, addr tcpip.A
 		if !ok {
 			return tcpip.ErrUnknownProtocol
 		}
-		if _, err := n.addPermanentAddressLocked(tcpip.ProtocolAddress{
+		if _, err := n.addAddressLocked(tcpip.ProtocolAddress{
 			Protocol: protocol,
 			AddressWithPrefix: tcpip.AddressWithPrefix{
 				Address:   addr,
 				PrefixLen: netProto.DefaultPrefixLen(),
 			},
-		}, NeverPrimaryEndpoint, static, false /* deprecated */); err != nil {
+		}, NeverPrimaryEndpoint, permanent, static, false /* deprecated */); err != nil {
 			return err
 		}
 	}
