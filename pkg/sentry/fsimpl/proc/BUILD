@@ -18,7 +18,6 @@ go_library(
     importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/proc",
     deps = [
         "//pkg/abi/linux",
-        "//pkg/binary",
         "//pkg/log",
         "//pkg/sentry/context",
         "//pkg/sentry/fs",
@@ -37,6 +36,7 @@ go_library(
         "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
         "//pkg/syserror",
+        "//pkg/tcpip/header",
     ],
 )
 

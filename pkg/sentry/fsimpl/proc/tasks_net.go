@@ -17,33 +17,88 @@ package proc
 import (
 	"bytes"
 	"fmt"
+	"io"
+	"reflect"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
+
+func newNetDir(root *auth.Credentials, inoGen InoGenerator, k *kernel.Kernel) *kernfs.Dentry {
+	var contents map[string]*kernfs.Dentry
+	if stack := k.NetworkStack(); stack != nil {
+		const (
+			arp       = "IP address       HW type     Flags       HW address            Mask     Device"
+			netlink   = "sk       Eth Pid    Groups   Rmem     Wmem     Dump     Locks     Drops     Inode"
+			packet    = "sk       RefCnt Type Proto  Iface R Rmem   User   Inode"
+			protocols = "protocol  size sockets  memory press maxhdr  slab module     cl co di ac io in de sh ss gs se re sp bi br ha uh gp em"
+			ptype     = "Type Device      Function"
+			upd6      = "  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode"
+		)
+		psched := fmt.Sprintf("%08x %08x %08x %08x\n", uint64(time.Microsecond/time.Nanosecond), 64, 1000000, uint64(time.Second/time.Nanosecond))
+
+		contents = map[string]*kernfs.Dentry{
+			"dev":  newDentry(root, inoGen.NextIno(), 0444, &netDevData{stack: stack}),
+			"snmp": newDentry(root, inoGen.NextIno(), 0444, &netSnmpData{stack: stack}),
+
+			// The following files are simple stubs until they are implemented in
+			// netstack, if the file contains a header the stub is just the header
+			// otherwise it is an empty file.
+			"arp":       newDentry(root, inoGen.NextIno(), 0444, newStaticFile(arp)),
+			"netlink":   newDentry(root, inoGen.NextIno(), 0444, newStaticFile(netlink)),
+			"netstat":   newDentry(root, inoGen.NextIno(), 0444, &netStatData{}),
+			"packet":    newDentry(root, inoGen.NextIno(), 0444, newStaticFile(packet)),
+			"protocols": newDentry(root, inoGen.NextIno(), 0444, newStaticFile(protocols)),
+
+			// Linux sets psched values to: nsec per usec, psched tick in ns, 1000000,
+			// high res timer ticks per sec (ClockGetres returns 1ns resolution).
+			"psched": newDentry(root, inoGen.NextIno(), 0444, newStaticFile(psched)),
+			"ptype":  newDentry(root, inoGen.NextIno(), 0444, newStaticFile(ptype)),
+			"route":  newDentry(root, inoGen.NextIno(), 0444, &netRouteData{stack: stack}),
+			"tcp":    newDentry(root, inoGen.NextIno(), 0444, &netTCPData{kernel: k}),
+			"udp":    newDentry(root, inoGen.NextIno(), 0444, &netUDPData{kernel: k}),
+			"unix":   newDentry(root, inoGen.NextIno(), 0444, &netUnixData{kernel: k}),
+		}
+
+		if stack.SupportsIPv6() {
+			contents["if_inet6"] = newDentry(root, inoGen.NextIno(), 0444, &ifinet6{stack: stack})
+			contents["ipv6_route"] = newDentry(root, inoGen.NextIno(), 0444, newStaticFile(""))
+			contents["tcp6"] = newDentry(root, inoGen.NextIno(), 0444, &netTCP6Data{kernel: k})
+			contents["udp6"] = newDentry(root, inoGen.NextIno(), 0444, newStaticFile(upd6))
+		}
+	}
+
+	return kernfs.NewStaticDir(root, inoGen.NextIno(), 0555, contents)
+}
 
 // ifinet6 implements vfs.DynamicBytesSource for /proc/net/if_inet6.
 //
 // +stateify savable
 type ifinet6 struct {
-	s inet.Stack
+	kernfs.DynamicBytesFile
+
+	stack inet.Stack
 }
 
-var _ vfs.DynamicBytesSource = (*ifinet6)(nil)
+var _ dynamicInode = (*ifinet6)(nil)
 
 func (n *ifinet6) contents() []string {
 	var lines []string
-	nics := n.s.Interfaces()
-	for id, naddrs := range n.s.InterfaceAddrs() {
+	nics := n.stack.Interfaces()
+	for id, naddrs := range n.stack.InterfaceAddrs() {
 		nic, ok := nics[id]
 		if !ok {
 			// NIC was added after NICNames was called. We'll just ignore it.
@@ -77,18 +132,20 @@ func (n *ifinet6) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	return nil
 }
 
-// netDev implements vfs.DynamicBytesSource for /proc/net/dev.
+// netDevData implements vfs.DynamicBytesSource for /proc/net/dev.
 //
 // +stateify savable
-type netDev struct {
-	s inet.Stack
+type netDevData struct {
+	kernfs.DynamicBytesFile
+
+	stack inet.Stack
 }
 
-var _ vfs.DynamicBytesSource = (*netDev)(nil)
+var _ dynamicInode = (*netDevData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
-func (n *netDev) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	interfaces := n.s.Interfaces()
+func (n *netDevData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	interfaces := n.stack.Interfaces()
 	buf.WriteString("Inter-|   Receive                                                |  Transmit\n")
 	buf.WriteString(" face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed\n")
 
@@ -96,7 +153,7 @@ func (n *netDev) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		// Implements the same format as
 		// net/core/net-procfs.c:dev_seq_printf_stats.
 		var stats inet.StatDev
-		if err := n.s.Statistics(&stats, i.Name); err != nil {
+		if err := n.stack.Statistics(&stats, i.Name); err != nil {
 			log.Warningf("Failed to retrieve interface statistics for %v: %v", i.Name, err)
 			continue
 		}
@@ -128,19 +185,21 @@ func (n *netDev) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	return nil
 }
 
-// netUnix implements vfs.DynamicBytesSource for /proc/net/unix.
+// netUnixData implements vfs.DynamicBytesSource for /proc/net/unix.
 //
 // +stateify savable
-type netUnix struct {
-	k *kernel.Kernel
+type netUnixData struct {
+	kernfs.DynamicBytesFile
+
+	kernel *kernel.Kernel
 }
 
-var _ vfs.DynamicBytesSource = (*netUnix)(nil)
+var _ dynamicInode = (*netUnixData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
-func (n *netUnix) Generate(ctx context.Context, buf *bytes.Buffer) error {
+func (n *netUnixData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	buf.WriteString("Num       RefCount Protocol Flags    Type St Inode Path\n")
-	for _, se := range n.k.ListSockets() {
+	for _, se := range n.kernel.ListSockets() {
 		s := se.Sock.Get()
 		if s == nil {
 			log.Debugf("Couldn't resolve weakref %v in socket table, racing with destruction?", se.Sock)
@@ -213,22 +272,72 @@ func (n *netUnix) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	return nil
 }
 
-// netTCP implements vfs.DynamicBytesSource for /proc/net/tcp.
-//
-// +stateify savable
-type netTCP struct {
-	k *kernel.Kernel
+func networkToHost16(n uint16) uint16 {
+	// n is in network byte order, so is big-endian. The most-significant byte
+	// should be stored in the lower address.
+	//
+	// We manually inline binary.BigEndian.Uint16() because Go does not support
+	// non-primitive consts, so binary.BigEndian is a (mutable) var, so calls to
+	// binary.BigEndian.Uint16() require a read of binary.BigEndian and an
+	// interface method call, defeating inlining.
+	buf := [2]byte{byte(n >> 8 & 0xff), byte(n & 0xff)}
+	return usermem.ByteOrder.Uint16(buf[:])
 }
 
-var _ vfs.DynamicBytesSource = (*netTCP)(nil)
+func writeInetAddr(w io.Writer, family int, i linux.SockAddr) {
+	switch family {
+	case linux.AF_INET:
+		var a linux.SockAddrInet
+		if i != nil {
+			a = *i.(*linux.SockAddrInet)
+		}
 
-func (n *netTCP) Generate(ctx context.Context, buf *bytes.Buffer) error {
+		// linux.SockAddrInet.Port is stored in the network byte order and is
+		// printed like a number in host byte order. Note that all numbers in host
+		// byte order are printed with the most-significant byte first when
+		// formatted with %X. See get_tcp4_sock() and udp4_format_sock() in Linux.
+		port := networkToHost16(a.Port)
+
+		// linux.SockAddrInet.Addr is stored as a byte slice in big-endian order
+		// (i.e. most-significant byte in index 0). Linux represents this as a
+		// __be32 which is a typedef for an unsigned int, and is printed with
+		// %X. This means that for a little-endian machine, Linux prints the
+		// least-significant byte of the address first. To emulate this, we first
+		// invert the byte order for the address using usermem.ByteOrder.Uint32,
+		// which makes it have the equivalent encoding to a __be32 on a little
+		// endian machine. Note that this operation is a no-op on a big endian
+		// machine. Then similar to Linux, we format it with %X, which will print
+		// the most-significant byte of the __be32 address first, which is now
+		// actually the least-significant byte of the original address in
+		// linux.SockAddrInet.Addr on little endian machines, due to the conversion.
+		addr := usermem.ByteOrder.Uint32(a.Addr[:])
+
+		fmt.Fprintf(w, "%08X:%04X ", addr, port)
+	case linux.AF_INET6:
+		var a linux.SockAddrInet6
+		if i != nil {
+			a = *i.(*linux.SockAddrInet6)
+		}
+
+		port := networkToHost16(a.Port)
+		addr0 := usermem.ByteOrder.Uint32(a.Addr[0:4])
+		addr1 := usermem.ByteOrder.Uint32(a.Addr[4:8])
+		addr2 := usermem.ByteOrder.Uint32(a.Addr[8:12])
+		addr3 := usermem.ByteOrder.Uint32(a.Addr[12:16])
+		fmt.Fprintf(w, "%08X%08X%08X%08X:%04X ", addr0, addr1, addr2, addr3, port)
+	}
+}
+
+func commonGenerateTCP(ctx context.Context, buf *bytes.Buffer, k *kernel.Kernel, family int) error {
+	// t may be nil here if our caller is not part of a task goroutine. This can
+	// happen for example if we're here for "sentryctl cat". When t is nil,
+	// degrade gracefully and retrieve what we can.
 	t := kernel.TaskFromContext(ctx)
-	buf.WriteString("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode                                                     \n")
-	for _, se := range n.k.ListSockets() {
+
+	for _, se := range k.ListSockets() {
 		s := se.Sock.Get()
 		if s == nil {
-			log.Debugf("Couldn't resolve weakref %+v in socket table, racing with destruction?", se.Sock)
+			log.Debugf("Couldn't resolve weakref with ID %v in socket table, racing with destruction?", se.ID)
 			continue
 		}
 		sfile := s.(*fs.File)
@@ -236,7 +345,7 @@ func (n *netTCP) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		if !ok {
 			panic(fmt.Sprintf("Found non-socket file in socket table: %+v", sfile))
 		}
-		if family, stype, _ := sops.Type(); !(family == linux.AF_INET && stype == linux.SOCK_STREAM) {
+		if fa, stype, _ := sops.Type(); !(family == fa && stype == linux.SOCK_STREAM) {
 			s.DecRef()
 			// Not tcp4 sockets.
 			continue
@@ -250,27 +359,23 @@ func (n *netTCP) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		// Field: sl; entry number.
 		fmt.Fprintf(buf, "%4d: ", se.ID)
 
-		portBuf := make([]byte, 2)
-
 		// Field: local_adddress.
-		var localAddr linux.SockAddrInet
-		if local, _, err := sops.GetSockName(t); err == nil {
-			localAddr = *local.(*linux.SockAddrInet)
+		var localAddr linux.SockAddr
+		if t != nil {
+			if local, _, err := sops.GetSockName(t); err == nil {
+				localAddr = local
+			}
 		}
-		binary.LittleEndian.PutUint16(portBuf, localAddr.Port)
-		fmt.Fprintf(buf, "%08X:%04X ",
-			binary.LittleEndian.Uint32(localAddr.Addr[:]),
-			portBuf)
+		writeInetAddr(buf, family, localAddr)
 
 		// Field: rem_address.
-		var remoteAddr linux.SockAddrInet
-		if remote, _, err := sops.GetPeerName(t); err == nil {
-			remoteAddr = *remote.(*linux.SockAddrInet)
+		var remoteAddr linux.SockAddr
+		if t != nil {
+			if remote, _, err := sops.GetPeerName(t); err == nil {
+				remoteAddr = remote
+			}
 		}
-		binary.LittleEndian.PutUint16(portBuf, remoteAddr.Port)
-		fmt.Fprintf(buf, "%08X:%04X ",
-			binary.LittleEndian.Uint32(remoteAddr.Addr[:]),
-			portBuf)
+		writeInetAddr(buf, family, remoteAddr)
 
 		// Field: state; socket state.
 		fmt.Fprintf(buf, "%02X ", sops.State())
@@ -293,7 +398,8 @@ func (n *netTCP) Generate(ctx context.Context, buf *bytes.Buffer) error {
 			log.Warningf("Failed to retrieve unstable attr for socket file: %v", err)
 			fmt.Fprintf(buf, "%5d ", 0)
 		} else {
-			fmt.Fprintf(buf, "%5d ", uint32(uattr.Owner.UID.In(t.UserNamespace()).OrOverflow()))
+			creds := auth.CredentialsFromContext(ctx)
+			fmt.Fprintf(buf, "%5d ", uint32(uattr.Owner.UID.In(creds.UserNamespace).OrOverflow()))
 		}
 
 		// Field: timeout; number of unanswered 0-window probes.
@@ -333,5 +439,346 @@ func (n *netTCP) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		s.DecRef()
 	}
 
+	return nil
+}
+
+// netTCPData implements vfs.DynamicBytesSource for /proc/net/tcp.
+//
+// +stateify savable
+type netTCPData struct {
+	kernfs.DynamicBytesFile
+
+	kernel *kernel.Kernel
+}
+
+var _ dynamicInode = (*netTCPData)(nil)
+
+func (d *netTCPData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	buf.WriteString("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode                                                     \n")
+	return commonGenerateTCP(ctx, buf, d.kernel, linux.AF_INET)
+}
+
+// netTCP6Data implements vfs.DynamicBytesSource for /proc/net/tcp6.
+//
+// +stateify savable
+type netTCP6Data struct {
+	kernfs.DynamicBytesFile
+
+	kernel *kernel.Kernel
+}
+
+var _ dynamicInode = (*netTCP6Data)(nil)
+
+func (d *netTCP6Data) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	buf.WriteString("  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n")
+	return commonGenerateTCP(ctx, buf, d.kernel, linux.AF_INET6)
+}
+
+// netUDPData implements vfs.DynamicBytesSource for /proc/net/udp.
+//
+// +stateify savable
+type netUDPData struct {
+	kernfs.DynamicBytesFile
+
+	kernel *kernel.Kernel
+}
+
+var _ dynamicInode = (*netUDPData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (d *netUDPData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	// t may be nil here if our caller is not part of a task goroutine. This can
+	// happen for example if we're here for "sentryctl cat". When t is nil,
+	// degrade gracefully and retrieve what we can.
+	t := kernel.TaskFromContext(ctx)
+
+	for _, se := range d.kernel.ListSockets() {
+		s := se.Sock.Get()
+		if s == nil {
+			log.Debugf("Couldn't resolve weakref with ID %v in socket table, racing with destruction?", se.ID)
+			continue
+		}
+		sfile := s.(*fs.File)
+		sops, ok := sfile.FileOperations.(socket.Socket)
+		if !ok {
+			panic(fmt.Sprintf("Found non-socket file in socket table: %+v", sfile))
+		}
+		if family, stype, _ := sops.Type(); family != linux.AF_INET || stype != linux.SOCK_DGRAM {
+			s.DecRef()
+			// Not udp4 socket.
+			continue
+		}
+
+		// For Linux's implementation, see net/ipv4/udp.c:udp4_format_sock().
+
+		// Field: sl; entry number.
+		fmt.Fprintf(buf, "%5d: ", se.ID)
+
+		// Field: local_adddress.
+		var localAddr linux.SockAddrInet
+		if t != nil {
+			if local, _, err := sops.GetSockName(t); err == nil {
+				localAddr = *local.(*linux.SockAddrInet)
+			}
+		}
+		writeInetAddr(buf, linux.AF_INET, &localAddr)
+
+		// Field: rem_address.
+		var remoteAddr linux.SockAddrInet
+		if t != nil {
+			if remote, _, err := sops.GetPeerName(t); err == nil {
+				remoteAddr = *remote.(*linux.SockAddrInet)
+			}
+		}
+		writeInetAddr(buf, linux.AF_INET, &remoteAddr)
+
+		// Field: state; socket state.
+		fmt.Fprintf(buf, "%02X ", sops.State())
+
+		// Field: tx_queue, rx_queue; number of packets in the transmit and
+		// receive queue. Unimplemented.
+		fmt.Fprintf(buf, "%08X:%08X ", 0, 0)
+
+		// Field: tr, tm->when. Always 0 for UDP.
+		fmt.Fprintf(buf, "%02X:%08X ", 0, 0)
+
+		// Field: retrnsmt. Always 0 for UDP.
+		fmt.Fprintf(buf, "%08X ", 0)
+
+		// Field: uid.
+		uattr, err := sfile.Dirent.Inode.UnstableAttr(ctx)
+		if err != nil {
+			log.Warningf("Failed to retrieve unstable attr for socket file: %v", err)
+			fmt.Fprintf(buf, "%5d ", 0)
+		} else {
+			creds := auth.CredentialsFromContext(ctx)
+			fmt.Fprintf(buf, "%5d ", uint32(uattr.Owner.UID.In(creds.UserNamespace).OrOverflow()))
+		}
+
+		// Field: timeout. Always 0 for UDP.
+		fmt.Fprintf(buf, "%8d ", 0)
+
+		// Field: inode.
+		fmt.Fprintf(buf, "%8d ", sfile.InodeID())
+
+		// Field: ref; reference count on the socket inode. Don't count the ref
+		// we obtain while deferencing the weakref to this socket.
+		fmt.Fprintf(buf, "%d ", sfile.ReadRefs()-1)
+
+		// Field: Socket struct address. Redacted due to the same reason as
+		// the 'Num' field in /proc/net/unix, see netUnix.ReadSeqFileData.
+		fmt.Fprintf(buf, "%#016p ", (*socket.Socket)(nil))
+
+		// Field: drops; number of dropped packets. Unimplemented.
+		fmt.Fprintf(buf, "%d", 0)
+
+		fmt.Fprintf(buf, "\n")
+
+		s.DecRef()
+	}
+	return nil
+}
+
+// netSnmpData implements vfs.DynamicBytesSource for /proc/net/snmp.
+//
+// +stateify savable
+type netSnmpData struct {
+	kernfs.DynamicBytesFile
+
+	stack inet.Stack
+}
+
+var _ dynamicInode = (*netSnmpData)(nil)
+
+type snmpLine struct {
+	prefix string
+	header string
+}
+
+var snmp = []snmpLine{
+	{
+		prefix: "Ip",
+		header: "Forwarding DefaultTTL InReceives InHdrErrors InAddrErrors ForwDatagrams InUnknownProtos InDiscards InDelivers OutRequests OutDiscards OutNoRoutes ReasmTimeout ReasmReqds ReasmOKs ReasmFails FragOKs FragFails FragCreates",
+	},
+	{
+		prefix: "Icmp",
+		header: "InMsgs InErrors InCsumErrors InDestUnreachs InTimeExcds InParmProbs InSrcQuenchs InRedirects InEchos InEchoReps InTimestamps InTimestampReps InAddrMasks InAddrMaskReps OutMsgs OutErrors OutDestUnreachs OutTimeExcds OutParmProbs OutSrcQuenchs OutRedirects OutEchos OutEchoReps OutTimestamps OutTimestampReps OutAddrMasks OutAddrMaskReps",
+	},
+	{
+		prefix: "IcmpMsg",
+	},
+	{
+		prefix: "Tcp",
+		header: "RtoAlgorithm RtoMin RtoMax MaxConn ActiveOpens PassiveOpens AttemptFails EstabResets CurrEstab InSegs OutSegs RetransSegs InErrs OutRsts InCsumErrors",
+	},
+	{
+		prefix: "Udp",
+		header: "InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti",
+	},
+	{
+		prefix: "UdpLite",
+		header: "InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti",
+	},
+}
+
+func toSlice(a interface{}) []uint64 {
+	v := reflect.Indirect(reflect.ValueOf(a))
+	return v.Slice(0, v.Len()).Interface().([]uint64)
+}
+
+func sprintSlice(s []uint64) string {
+	if len(s) == 0 {
+		return ""
+	}
+	r := fmt.Sprint(s)
+	return r[1 : len(r)-1] // Remove "[]" introduced by fmt of slice.
+}
+
+// Generate implements vfs.DynamicBytesSource.
+func (d *netSnmpData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	types := []interface{}{
+		&inet.StatSNMPIP{},
+		&inet.StatSNMPICMP{},
+		nil, // TODO(gvisor.dev/issue/628): Support IcmpMsg stats.
+		&inet.StatSNMPTCP{},
+		&inet.StatSNMPUDP{},
+		&inet.StatSNMPUDPLite{},
+	}
+	for i, stat := range types {
+		line := snmp[i]
+		if stat == nil {
+			fmt.Fprintf(buf, "%s:\n", line.prefix)
+			fmt.Fprintf(buf, "%s:\n", line.prefix)
+			continue
+		}
+		if err := d.stack.Statistics(stat, line.prefix); err != nil {
+			if err == syserror.EOPNOTSUPP {
+				log.Infof("Failed to retrieve %s of /proc/net/snmp: %v", line.prefix, err)
+			} else {
+				log.Warningf("Failed to retrieve %s of /proc/net/snmp: %v", line.prefix, err)
+			}
+		}
+
+		fmt.Fprintf(buf, "%s: %s\n", line.prefix, line.header)
+
+		if line.prefix == "Tcp" {
+			tcp := stat.(*inet.StatSNMPTCP)
+			// "Tcp" needs special processing because MaxConn is signed. RFC 2012.
+			fmt.Sprintf("%s: %s %d %s\n", line.prefix, sprintSlice(tcp[:3]), int64(tcp[3]), sprintSlice(tcp[4:]))
+		} else {
+			fmt.Sprintf("%s: %s\n", line.prefix, sprintSlice(toSlice(stat)))
+		}
+	}
+	return nil
+}
+
+// netRouteData implements vfs.DynamicBytesSource for /proc/net/route.
+//
+// +stateify savable
+type netRouteData struct {
+	kernfs.DynamicBytesFile
+
+	stack inet.Stack
+}
+
+var _ dynamicInode = (*netRouteData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.
+// See Linux's net/ipv4/fib_trie.c:fib_route_seq_show.
+func (d *netRouteData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	fmt.Fprintf(buf, "%-127s\n", "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT")
+
+	interfaces := d.stack.Interfaces()
+	for _, rt := range d.stack.RouteTable() {
+		// /proc/net/route only includes ipv4 routes.
+		if rt.Family != linux.AF_INET {
+			continue
+		}
+
+		// /proc/net/route does not include broadcast or multicast routes.
+		if rt.Type == linux.RTN_BROADCAST || rt.Type == linux.RTN_MULTICAST {
+			continue
+		}
+
+		iface, ok := interfaces[rt.OutputInterface]
+		if !ok || iface.Name == "lo" {
+			continue
+		}
+
+		var (
+			gw     uint32
+			prefix uint32
+			flags  = linux.RTF_UP
+		)
+		if len(rt.GatewayAddr) == header.IPv4AddressSize {
+			flags |= linux.RTF_GATEWAY
+			gw = usermem.ByteOrder.Uint32(rt.GatewayAddr)
+		}
+		if len(rt.DstAddr) == header.IPv4AddressSize {
+			prefix = usermem.ByteOrder.Uint32(rt.DstAddr)
+		}
+		l := fmt.Sprintf(
+			"%s\t%08X\t%08X\t%04X\t%d\t%d\t%d\t%08X\t%d\t%d\t%d",
+			iface.Name,
+			prefix,
+			gw,
+			flags,
+			0, // RefCnt.
+			0, // Use.
+			0, // Metric.
+			(uint32(1)<<rt.DstLen)-1,
+			0, // MTU.
+			0, // Window.
+			0, // RTT.
+		)
+		fmt.Fprintf(buf, "%-127s\n", l)
+	}
+	return nil
+}
+
+// netStatData implements vfs.DynamicBytesSource for /proc/net/netstat.
+//
+// +stateify savable
+type netStatData struct {
+	kernfs.DynamicBytesFile
+
+	stack inet.Stack
+}
+
+var _ dynamicInode = (*netStatData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.
+// See Linux's net/ipv4/fib_trie.c:fib_route_seq_show.
+func (d *netStatData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	buf.WriteString("TcpExt: SyncookiesSent SyncookiesRecv SyncookiesFailed " +
+		"EmbryonicRsts PruneCalled RcvPruned OfoPruned OutOfWindowIcmps " +
+		"LockDroppedIcmps ArpFilter TW TWRecycled TWKilled PAWSPassive " +
+		"PAWSActive PAWSEstab DelayedACKs DelayedACKLocked DelayedACKLost " +
+		"ListenOverflows ListenDrops TCPPrequeued TCPDirectCopyFromBacklog " +
+		"TCPDirectCopyFromPrequeue TCPPrequeueDropped TCPHPHits TCPHPHitsToUser " +
+		"TCPPureAcks TCPHPAcks TCPRenoRecovery TCPSackRecovery TCPSACKReneging " +
+		"TCPFACKReorder TCPSACKReorder TCPRenoReorder TCPTSReorder TCPFullUndo " +
+		"TCPPartialUndo TCPDSACKUndo TCPLossUndo TCPLostRetransmit " +
+		"TCPRenoFailures TCPSackFailures TCPLossFailures TCPFastRetrans " +
+		"TCPForwardRetrans TCPSlowStartRetrans TCPTimeouts TCPLossProbes " +
+		"TCPLossProbeRecovery TCPRenoRecoveryFail TCPSackRecoveryFail " +
+		"TCPSchedulerFailed TCPRcvCollapsed TCPDSACKOldSent TCPDSACKOfoSent " +
+		"TCPDSACKRecv TCPDSACKOfoRecv TCPAbortOnData TCPAbortOnClose " +
+		"TCPAbortOnMemory TCPAbortOnTimeout TCPAbortOnLinger TCPAbortFailed " +
+		"TCPMemoryPressures TCPSACKDiscard TCPDSACKIgnoredOld " +
+		"TCPDSACKIgnoredNoUndo TCPSpuriousRTOs TCPMD5NotFound TCPMD5Unexpected " +
+		"TCPMD5Failure TCPSackShifted TCPSackMerged TCPSackShiftFallback " +
+		"TCPBacklogDrop TCPMinTTLDrop TCPDeferAcceptDrop IPReversePathFilter " +
+		"TCPTimeWaitOverflow TCPReqQFullDoCookies TCPReqQFullDrop TCPRetransFail " +
+		"TCPRcvCoalesce TCPOFOQueue TCPOFODrop TCPOFOMerge TCPChallengeACK " +
+		"TCPSYNChallenge TCPFastOpenActive TCPFastOpenActiveFail " +
+		"TCPFastOpenPassive TCPFastOpenPassiveFail TCPFastOpenListenOverflow " +
+		"TCPFastOpenCookieReqd TCPSpuriousRtxHostQueues BusyPollRxPackets " +
+		"TCPAutoCorking TCPFromZeroWindowAdv TCPToZeroWindowAdv " +
+		"TCPWantZeroWindowAdv TCPSynRetrans TCPOrigDataSent TCPHystartTrainDetect " +
+		"TCPHystartTrainCwnd TCPHystartDelayDetect TCPHystartDelayCwnd " +
+		"TCPACKSkippedSynRecv TCPACKSkippedPAWS TCPACKSkippedSeq " +
+		"TCPACKSkippedFinWait2 TCPACKSkippedTimeWait TCPACKSkippedChallenge " +
+		"TCPWinProbe TCPKeepAlive TCPMTUPFail TCPMTUPSuccess")
 	return nil
 }

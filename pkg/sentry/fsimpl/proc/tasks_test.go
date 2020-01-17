@@ -73,6 +73,7 @@ func checkTasksStaticFiles(gots []vfs.Dirent) ([]vfs.Dirent, error) {
 		"loadavg":     {Type: linux.DT_REG},
 		"meminfo":     {Type: linux.DT_REG},
 		"mounts":      {Type: linux.DT_LNK},
+		"net":         {Type: linux.DT_DIR},
 		"self":        selfLink,
 		"stat":        {Type: linux.DT_REG},
 		"sys":         {Type: linux.DT_DIR},
