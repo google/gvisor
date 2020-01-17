@@ -552,9 +552,16 @@ func overlayGetXattr(ctx context.Context, o *overlayEntry, name string, size uin
 	return s, err
 }
 
-// TODO(b/146028302): Support setxattr for overlayfs.
-func overlaySetxattr(ctx context.Context, o *overlayEntry, name, value string, flags uint32) error {
-	return syserror.EOPNOTSUPP
+func overlaySetxattr(ctx context.Context, o *overlayEntry, d *Dirent, name, value string, flags uint32) error {
+	// Don't allow changes to overlay xattrs through a setxattr syscall.
+	if strings.HasPrefix(XattrOverlayPrefix, name) {
+		return syserror.EPERM
+	}
+
+	if err := copyUp(ctx, d); err != nil {
+		return err
+	}
+	return o.upper.SetXattr(ctx, d, name, value, flags)
 }
 
 func overlayListXattr(ctx context.Context, o *overlayEntry) (map[string]struct{}, error) {

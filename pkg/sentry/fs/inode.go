@@ -270,9 +270,9 @@ func (i *Inode) GetXattr(ctx context.Context, name string, size uint64) (string,
 }
 
 // SetXattr calls i.InodeOperations.SetXattr with i as the Inode.
-func (i *Inode) SetXattr(ctx context.Context, name, value string, flags uint32) error {
+func (i *Inode) SetXattr(ctx context.Context, d *Dirent, name, value string, flags uint32) error {
 	if i.overlay != nil {
-		return overlaySetxattr(ctx, i.overlay, name, value, flags)
+		return overlaySetxattr(ctx, i.overlay, d, name, value, flags)
 	}
 	return i.InodeOperations.SetXattr(ctx, i, name, value, flags)
 }
