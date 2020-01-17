@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/socket/rpcinet"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -87,14 +86,8 @@ func New(ctx context.Context, msrc *fs.MountSource, cgroupControllers map[string
 	}
 
 	// Add more contents that need proc to be initialized.
+	p.AddChild(ctx, "net", p.newNetDir(ctx, k, msrc))
 	p.AddChild(ctx, "sys", p.newSysDir(ctx, msrc))
-
-	// If we're using rpcinet we will let it manage /proc/net.
-	if _, ok := p.k.NetworkStack().(*rpcinet.Stack); ok {
-		p.AddChild(ctx, "net", newRPCInetProcNet(ctx, msrc))
-	} else {
-		p.AddChild(ctx, "net", p.newNetDir(ctx, k, msrc))
-	}
 
 	return newProcInode(ctx, p, msrc, fs.SpecialDirectory, nil), nil
 }
