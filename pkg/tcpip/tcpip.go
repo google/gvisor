@@ -938,8 +938,12 @@ type TCPStats struct {
 	PassiveConnectionOpenings *StatCounter
 
 	// CurrentEstablished is the number of TCP connections for which the
-	// current state is either ESTABLISHED or CLOSE-WAIT.
+	// current state is ESTABLISHED.
 	CurrentEstablished *StatCounter
+
+	// CurrentConnected is the number of TCP connections that
+	// are in connected state.
+	CurrentConnected *StatCounter
 
 	// EstablishedResets is the number of times TCP connections have made
 	// a direct transition to the CLOSED state from either the

@@ -164,7 +164,7 @@ func main() {
 	// Create TCP endpoint.
 	var wq waiter.Queue
 	ep, e := s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
-	if err != nil {
+	if e != nil {
 		log.Fatal(e)
 	}
 
