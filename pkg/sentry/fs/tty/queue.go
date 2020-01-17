@@ -197,16 +197,9 @@ func (q *queue) writeBytes(b []byte, l *lineDiscipline) {
 	q.pushWaitBufLocked(l)
 }
 
-// pushWaitBuf fills the queue's read buffer with data from the wait buffer.
+// pushWaitBufLocked fills the queue's read buffer with data from the wait
+// buffer.
 //
-// Preconditions:
-// * l.termiosMu must be held for reading.
-func (q *queue) pushWaitBuf(l *lineDiscipline) int {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	return q.pushWaitBufLocked(l)
-}
-
 // Preconditions:
 // * l.termiosMu must be held for reading.
 // * q.mu must be locked.
