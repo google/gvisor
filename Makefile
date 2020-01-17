@@ -106,9 +106,6 @@ compatibility-docs: bin/generate-syscall-docs upstream/gvisor/bazel-bin/runsc/li
 .PHONY: compatibility-docs
 
 check: check-markdown check-html
-	docker run \
-	  -v $(shell pwd)/public:/public gcr.io/gvisor-website/html-proofer:$(HTMLPROOFER_VERSION) \
-	  htmlproofer --disable-external --check-html public/static
 .PHONY: check
 
 check-markdown: node_modules $(CONTENT_SOURCE) compatibility-docs
@@ -125,7 +122,9 @@ check-markdown: node_modules $(CONTENT_SOURCE) compatibility-docs
 .PHONY: check-markdown
 
 check-html: website
-	docker run -v $(shell pwd)/public:/public gcr.io/gvisor-website/html-proofer:3.10.2 htmlproofer --disable-external --check-html public/static
+	docker run \
+	  -v $(shell pwd)/public:/public gcr.io/gvisor-website/html-proofer:$(HTMLPROOFER_VERSION) \
+	  htmlproofer --disable-external --check-html public/static
 .PHONY: check-html
 
 # Run a local content development server. Redirects will not be supported.
