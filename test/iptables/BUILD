@@ -6,8 +6,10 @@ go_library(
     name = "iptables",
     srcs = [
         "filter_input.go",
+        "filter_output.go",
         "iptables.go",
         "iptables_util.go",
+        "nat.go",
     ],
     importpath = "gvisor.dev/gvisor/test/iptables",
     visibility = ["//test/iptables:__subpackages__"],
