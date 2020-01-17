@@ -31,7 +31,7 @@ func newIPv6TestStack() *inet.TestStack {
 }
 
 func TestIfinet6NoAddresses(t *testing.T) {
-	n := &ifinet6{s: newIPv6TestStack()}
+	n := &ifinet6{stack: newIPv6TestStack()}
 	var buf bytes.Buffer
 	n.Generate(contexttest.Context(t), &buf)
 	if buf.Len() > 0 {
@@ -62,7 +62,7 @@ func TestIfinet6(t *testing.T) {
 		"101112131415161718191a1b1c1d1e1f 02 80 00 00     eth1\n": {},
 	}
 
-	n := &ifinet6{s: s}
+	n := &ifinet6{stack: s}
 	contents := n.contents()
 	if len(contents) != len(want) {
 		t.Errorf("Got len(n.contents()) = %d, want = %d", len(contents), len(want))
