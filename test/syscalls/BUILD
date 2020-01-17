@@ -380,6 +380,8 @@ syscall_test(test = "//test/syscalls/linux:rseq_test")
 
 syscall_test(test = "//test/syscalls/linux:rtsignal_test")
 
+syscall_test(test = "//test/syscalls/linux:signalfd_test")
+
 syscall_test(test = "//test/syscalls/linux:sched_test")
 
 syscall_test(test = "//test/syscalls/linux:sched_yield_test")
