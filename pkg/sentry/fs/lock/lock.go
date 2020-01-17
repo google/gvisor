@@ -78,6 +78,9 @@ const (
 )
 
 // LockEOF is the maximal possible end of a regional file lock.
+//
+// A BSD-style full file lock can be represented as a regional file lock from
+// offset 0 to LockEOF.
 const LockEOF = math.MaxUint64
 
 // Lock is a regional file lock.  It consists of either a single writer
