@@ -77,6 +77,34 @@
 
 @include td-box-height-modifiers(".td-box");
 
+// Styling for section boxes
+.td-box {
+  .row.section {
+       padding-left: 5rem;
+       padding-right: 5rem;
+       flex-direction: column;
+
+       > table {
+        @extend .table-striped;
+
+        @extend .table-responsive;
+
+        @extend .table;
+       }
+   }
+
+  .row {
+       padding-left: 5rem;
+       padding-right: 5rem;
+       flex-direction: row;
+  }
+}
+// Styling for community page link boxes
+
+.td-box.linkbox {
+   padding: 5rem;
+}
+
 // This allows "painting by numbers"
 @for $i from 1 through length($td-box-colors) {
     $c: nth($td-box-colors, $i);

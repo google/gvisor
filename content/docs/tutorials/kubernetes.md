@@ -1,5 +1,6 @@
 +++
 title = "WordPress with Kubernetes"
+weight = 11
 +++
 
 ## Deploy a WordPress site using GKE Sandbox

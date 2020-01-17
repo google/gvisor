@@ -43,7 +43,7 @@ Finally run the container.
 sudo runsc run hello
 ```
 
-Next try [running gVisor using Docker](../docker/).
+Next try [using CNI to set up networking](../../../tutorials/cni/) or [running gVisor using Docker](../docker/).
 
 [oci]: https://opencontainers.org/
 
