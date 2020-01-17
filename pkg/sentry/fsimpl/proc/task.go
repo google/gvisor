@@ -15,6 +15,7 @@
 package proc
 
 import (
+	"bytes"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -42,7 +43,7 @@ type taskInode struct {
 
 var _ kernfs.Inode = (*taskInode)(nil)
 
-func newTaskInode(inoGen InoGenerator, task *kernel.Task, pidns *kernel.PIDNamespace, isThreadGroup bool) *kernfs.Dentry {
+func newTaskInode(inoGen InoGenerator, task *kernel.Task, pidns *kernel.PIDNamespace, isThreadGroup bool, cgroupControllers map[string]string) *kernfs.Dentry {
 	contents := map[string]*kernfs.Dentry{
 		"auxv":    newTaskOwnedFile(task, inoGen.NextIno(), 0444, &auxvData{task: task}),
 		"cmdline": newTaskOwnedFile(task, inoGen.NextIno(), 0444, &cmdlineData{task: task, arg: cmdlineDataArg}),
@@ -68,11 +69,11 @@ func newTaskInode(inoGen InoGenerator, task *kernel.Task, pidns *kernel.PIDNames
 		"uid_map": newTaskOwnedFile(task, inoGen.NextIno(), 0644, &idMapData{task: task, gids: false}),
 	}
 	if isThreadGroup {
-		contents["task"] = newSubtasks(task, pidns, inoGen)
+		contents["task"] = newSubtasks(task, pidns, inoGen, cgroupControllers)
 	}
-	//if len(p.cgroupControllers) > 0 {
-	//	contents["cgroup"] = newCGroupInode(t, msrc, p.cgroupControllers)
-	//}
+	if len(cgroupControllers) > 0 {
+		contents["cgroup"] = newTaskOwnedFile(task, inoGen.NextIno(), 0444, newCgroupData(cgroupControllers))
+	}
 
 	taskInode := &taskInode{task: task}
 	// Note: credentials are overridden by taskOwnedInode.
@@ -226,4 +227,23 @@ func newNamespaceSymlink(task *kernel.Task, ino uint64, ns string) *kernfs.Dentr
 	d := &kernfs.Dentry{}
 	d.Init(taskInode)
 	return d
+}
+
+// newCgroupData creates inode that shows cgroup information.
+// From man 7 cgroups: "For each cgroup hierarchy of which the process is a
+// member, there is one entry containing three colon-separated fields:
+//   hierarchy-ID:controller-list:cgroup-path"
+func newCgroupData(controllers map[string]string) dynamicInode {
+	buf := bytes.Buffer{}
+
+	// The hierarchy ids must be positive integers (for cgroup v1), but the
+	// exact number does not matter, so long as they are unique. We can
+	// just use a counter, but since linux sorts this file in descending
+	// order, we must count down to preserve this behavior.
+	i := len(controllers)
+	for name, dir := range controllers {
+		fmt.Fprintf(&buf, "%d:%s:%s\n", i, name, dir)
+		i--
+	}
+	return newStaticFile(buf.String())
 }
