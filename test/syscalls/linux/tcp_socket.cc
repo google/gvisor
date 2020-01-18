@@ -143,6 +143,12 @@ TEST_P(TcpSocketTest, ConnectOnEstablishedConnection) {
       SyscallFailsWithErrno(EISCONN));
 }
 
+TEST_P(TcpSocketTest, ShutdownWriteInTimeWait) {
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallSucceeds());
+  EXPECT_THAT(shutdown(s_, SHUT_RDWR), SyscallSucceeds());
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallFailsWithErrno(ENOTCONN));
+}
+
 TEST_P(TcpSocketTest, DataCoalesced) {
   char buf[10];
 

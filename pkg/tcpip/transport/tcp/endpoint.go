@@ -2038,11 +2038,11 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 		// Close for write.
 		if (e.shutdownFlags & tcpip.ShutdownWrite) != 0 {
 			e.sndBufMu.Lock()
-
 			if e.sndClosed {
 				// Already closed.
 				e.sndBufMu.Unlock()
-				break
+				e.mu.Unlock()
+				return tcpip.ErrNotConnected
 			}
 
 			// Queue fin segment.
