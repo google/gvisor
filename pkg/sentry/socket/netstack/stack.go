@@ -148,25 +148,25 @@ func (s *Stack) Statistics(stat interface{}, arg string) error {
 	case *inet.StatSNMPIP:
 		ip := Metrics.IP
 		*stats = inet.StatSNMPIP{
-			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/Forwarding.
-			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/DefaultTTL.
-			ip.PacketsReceived.Value(),          // InReceives.
-			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/InHdrErrors.
-			ip.InvalidAddressesReceived.Value(), // InAddrErrors.
-			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/ForwDatagrams.
-			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/InUnknownProtos.
-			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/InDiscards.
-			ip.PacketsDelivered.Value(),         // InDelivers.
-			ip.PacketsSent.Value(),              // OutRequests.
-			ip.OutgoingPacketErrors.Value(),     // OutDiscards.
-			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/OutNoRoutes.
-			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/ReasmTimeout.
-			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/ReasmReqds.
-			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/ReasmOKs.
-			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/ReasmFails.
-			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/FragOKs.
-			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/FragFails.
-			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/FragCreates.
+			0,                          // TODO(gvisor.dev/issue/969): Support Ip/Forwarding.
+			0,                          // TODO(gvisor.dev/issue/969): Support Ip/DefaultTTL.
+			ip.PacketsReceived.Value(), // InReceives.
+			0,                          // TODO(gvisor.dev/issue/969): Support Ip/InHdrErrors.
+			ip.InvalidDestinationAddressesReceived.Value(), // InAddrErrors.
+			0,                               // TODO(gvisor.dev/issue/969): Support Ip/ForwDatagrams.
+			0,                               // TODO(gvisor.dev/issue/969): Support Ip/InUnknownProtos.
+			0,                               // TODO(gvisor.dev/issue/969): Support Ip/InDiscards.
+			ip.PacketsDelivered.Value(),     // InDelivers.
+			ip.PacketsSent.Value(),          // OutRequests.
+			ip.OutgoingPacketErrors.Value(), // OutDiscards.
+			0,                               // TODO(gvisor.dev/issue/969): Support Ip/OutNoRoutes.
+			0,                               // TODO(gvisor.dev/issue/969): Support Ip/ReasmTimeout.
+			0,                               // TODO(gvisor.dev/issue/969): Support Ip/ReasmReqds.
+			0,                               // TODO(gvisor.dev/issue/969): Support Ip/ReasmOKs.
+			0,                               // TODO(gvisor.dev/issue/969): Support Ip/ReasmFails.
+			0,                               // TODO(gvisor.dev/issue/969): Support Ip/FragOKs.
+			0,                               // TODO(gvisor.dev/issue/969): Support Ip/FragFails.
+			0,                               // TODO(gvisor.dev/issue/969): Support Ip/FragCreates.
 		}
 	case *inet.StatSNMPICMP:
 		in := Metrics.ICMP.V4PacketsReceived.ICMPv4PacketStats
