@@ -903,9 +903,13 @@ type IPStats struct {
 	// link layer in nic.DeliverNetworkPacket.
 	PacketsReceived *StatCounter
 
-	// InvalidAddressesReceived is the total number of IP packets received
-	// with an unknown or invalid destination address.
-	InvalidAddressesReceived *StatCounter
+	// InvalidDestinationAddressesReceived is the total number of IP packets
+	// received with an unknown or invalid destination address.
+	InvalidDestinationAddressesReceived *StatCounter
+
+	// InvalidSourceAddressesReceived is the total number of IP packets received
+	// with a source address that should never have been received on the wire.
+	InvalidSourceAddressesReceived *StatCounter
 
 	// PacketsDelivered is the total number of incoming IP packets that
 	// are successfully delivered to the transport layer via HandlePacket.

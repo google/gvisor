@@ -274,11 +274,16 @@ type testContext struct {
 
 func newDualTestContext(t *testing.T, mtu uint32) *testContext {
 	t.Helper()
-
-	s := stack.New(stack.Options{
+	return newDualTestContextWithOptions(t, mtu, stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
 		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
 	})
+}
+
+func newDualTestContextWithOptions(t *testing.T, mtu uint32, options stack.Options) *testContext {
+	t.Helper()
+
+	s := stack.New(options)
 	ep := channel.New(256, mtu, "")
 	wep := stack.LinkEndpoint(ep)
 
@@ -761,6 +766,49 @@ func TestV6ReadOnV6(t *testing.T) {
 
 	// Test acceptance.
 	testRead(c, unicastV6)
+}
+
+// TestV4ReadSelfSource checks that packets coming from a local IP address are
+// correctly dropped when handleLocal is true and not otherwise.
+func TestV4ReadSelfSource(t *testing.T) {
+	for _, tt := range []struct {
+		name              string
+		handleLocal       bool
+		wantErr           *tcpip.Error
+		wantInvalidSource uint64
+	}{
+		{"HandleLocal", false, nil, 0},
+		{"NoHandleLocal", true, tcpip.ErrWouldBlock, 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newDualTestContextWithOptions(t, defaultMTU, stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
+				TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+				HandleLocal:        tt.handleLocal,
+			})
+			defer c.cleanup()
+
+			c.createEndpointForFlow(unicastV4)
+
+			if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+				t.Fatalf("Bind failed: %s", err)
+			}
+
+			payload := newPayload()
+			h := unicastV4.header4Tuple(incoming)
+			h.srcAddr = h.dstAddr
+
+			c.injectV4Packet(payload, &h, true /* valid */)
+
+			if got := c.s.Stats().IP.InvalidSourceAddressesReceived.Value(); got != tt.wantInvalidSource {
+				t.Errorf("c.s.Stats().IP.InvalidSourceAddressesReceived got %d, want %d", got, tt.wantInvalidSource)
+			}
+
+			if _, _, err := c.ep.Read(nil); err != tt.wantErr {
+				t.Errorf("c.ep.Read() got error %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
 }
 
 func TestV4ReadOnV4(t *testing.T) {

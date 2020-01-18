@@ -984,7 +984,7 @@ func handlePacket(protocol tcpip.NetworkProtocolNumber, dst, src tcpip.Address, 
 
 // DeliverNetworkPacket finds the appropriate network protocol endpoint and
 // hands the packet over for further processing. This function is called when
-// the NIC receives a packet from the physical interface.
+// the NIC receives a packet from the link endpoint.
 // Note that the ownership of the slice backing vv is retained by the caller.
 // This rule applies only to the slice itself, not to the items of the slice;
 // the ownership of the items is not retained by the caller.
@@ -1029,6 +1029,14 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 
 	src, dst := netProto.ParseAddresses(pkt.Data.First())
 
+	if n.stack.handleLocal && !n.isLoopback() && n.getRef(protocol, src) != nil {
+		// The source address is one of our own, so we never should have gotten a
+		// packet like this unless handleLocal is false. Loopback also calls this
+		// function even though the packets didn't come from the physical interface
+		// so don't drop those.
+		n.stack.stats.IP.InvalidSourceAddressesReceived.Increment()
+		return
+	}
 	if ref := n.getRef(protocol, dst); ref != nil {
 		handlePacket(protocol, dst, src, linkEP.LinkAddress(), remote, ref, pkt)
 		return
@@ -1041,7 +1049,7 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 	if n.stack.Forwarding() {
 		r, err := n.stack.FindRoute(0, "", dst, protocol, false /* multicastLoop */)
 		if err != nil {
-			n.stack.stats.IP.InvalidAddressesReceived.Increment()
+			n.stack.stats.IP.InvalidDestinationAddressesReceived.Increment()
 			return
 		}
 		defer r.Release()
@@ -1079,7 +1087,7 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 
 	// If a packet socket handled the packet, don't treat it as invalid.
 	if len(packetEPs) == 0 {
-		n.stack.stats.IP.InvalidAddressesReceived.Increment()
+		n.stack.stats.IP.InvalidDestinationAddressesReceived.Increment()
 	}
 }
 
