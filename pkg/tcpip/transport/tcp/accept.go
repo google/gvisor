@@ -378,7 +378,9 @@ func (e *endpoint) deliverAccepted(n *endpoint) {
 	for {
 		if e.acceptedChan == nil {
 			e.acceptMu.Unlock()
-			n.Close()
+			// Reset all connections that have completed but have not been accepted by
+			// the application.
+			n.notifyProtocolGoroutine(notifyReset)
 			return
 		}
 		select {
