@@ -1,0 +1,20 @@
+// Tests that closing a socket without accepting it causes the other end to get
+// a RST.
+
+0  socket(..., SOCK_STREAM, IPPROTO_TCP) = 3
++0 bind(3, ..., ...) = 0
+
++0 listen(3, 1) = 0
+
+// Establish a connection.
++0 < S 0:0(0) win 32792 <mss 1460,sackOK,nop,nop,nop,wscale 7>
++0 > S. 0:0(0) ack 1 <...>
++0.1 < . 1:1(0) ack 1 win 32792
+
+// Server intentionally doesn't accept so the line below is skipped.
+//+0 accept(3, ..., ...) = 4
+
++0 close(3) = 0
+
+// A close ought to cause a RST to be sent.
++0 > R. 1:1(0) ack 1

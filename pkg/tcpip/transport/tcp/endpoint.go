@@ -851,10 +851,9 @@ func (e *endpoint) closePendingAcceptableConnectionsLocked() {
 	go func() {
 		defer close(done)
 		for n := range e.acceptedChan {
+			// Reset all connections that have completed but have not been accepted by
+			// the application.
 			n.notifyProtocolGoroutine(notifyReset)
-			// close all connections that have completed but
-			// not accepted by the application.
-			n.Close()
 		}
 	}()
 	// pendingAccepted(see endpoint.deliverAccepted) tracks the number of
