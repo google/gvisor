@@ -122,6 +122,17 @@ cc_library(
 )
 
 cc_library(
+    name = "socket_netlink_route_util",
+    testonly = 1,
+    srcs = ["socket_netlink_route_util.cc"],
+    hdrs = ["socket_netlink_route_util.h"],
+    deps = [
+        ":socket_netlink_util",
+        "@com_google_absl//absl/types:optional",
+    ],
+)
+
+cc_library(
     name = "socket_test_util",
     testonly = 1,
     srcs = [
@@ -3417,6 +3428,25 @@ cc_binary(
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
+    ],
+)
+
+cc_binary(
+    name = "tuntap_test",
+    testonly = 1,
+    srcs = ["tuntap.cc"],
+    linkstatic = 1,
+    deps = [
+        ":socket_test_util",
+        gtest,
+        "//test/syscalls/linux:socket_netlink_route_util",
+        "//test/util:capability_util",
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        "//test/util:posix_error",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/strings",
     ],
 )
 

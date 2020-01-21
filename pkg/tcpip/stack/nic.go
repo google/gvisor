@@ -225,6 +225,33 @@ func (n *NIC) enable() *tcpip.Error {
 	return nil
 }
 
+// remove detaches NIC from the link endpoint, and marks existing referenced
+// network endpoints expired. This guarantees no packets between this NIC and
+// the network stack.
+func (n *NIC) remove() *tcpip.Error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	// Detach from link endpoint, so no packet comes in.
+	n.linkEP.Attach(nil)
+
+	// Remove permanent and permanentTentative addresses, so no packet goes out.
+	var errs []*tcpip.Error
+	for nid, ref := range n.mu.endpoints {
+		switch ref.getKind() {
+		case permanentTentative, permanent:
+			if err := n.removePermanentAddressLocked(nid.LocalAddress); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+	if len(errs) > 0 {
+		return errs[0]
+	}
+
+	return nil
+}
+
 // becomeIPv6Router transitions n into an IPv6 router.
 //
 // When transitioning into an IPv6 router, host-only state (NDP discovered
@@ -1215,9 +1242,19 @@ func (n *NIC) ID() tcpip.NICID {
 	return n.id
 }
 
+// Name returns the name of n.
+func (n *NIC) Name() string {
+	return n.name
+}
+
 // Stack returns the instance of the Stack that owns this NIC.
 func (n *NIC) Stack() *Stack {
 	return n.stack
+}
+
+// LinkEndpoint returns the link endpoint of n.
+func (n *NIC) LinkEndpoint() LinkEndpoint {
+	return n.linkEP
 }
 
 // isAddrTentative returns true if addr is tentative on n.
