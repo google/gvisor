@@ -190,7 +190,7 @@ const (
 	ARPHRD_LOOPBACK = 772
 )
 
-// RouteMessage struct rtmsg, from uapi/linux/rtnetlink.h.
+// RouteMessage is struct rtmsg, from uapi/linux/rtnetlink.h.
 type RouteMessage struct {
 	Family uint8
 	DstLen uint8
