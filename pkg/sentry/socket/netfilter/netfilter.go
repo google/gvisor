@@ -131,7 +131,6 @@ func FillDefaultIPTables(stack *stack.Stack) {
 	stack.SetIPTables(ipt)
 }
 
-// TODO: Return proto.
 // convertNetstackToBinary converts the iptables as stored in netstack to the
 // format expected by the iptables tool. Linux stores each table as a binary
 // blob that can only be traversed by parsing a bit, reading some offsets,
@@ -456,31 +455,6 @@ func parseMatchers(filter iptables.IPHeaderFilter, optVal []byte) ([]iptables.Ma
 		var matcher iptables.Matcher
 		var err error
 		switch match.Name.String() {
-		case "tcp":
-			if len(buf) < linux.SizeOfXTTCP {
-				log.Warningf("netfilter: optVal has insufficient size for TCP match: %d", len(optVal))
-				return nil, syserr.ErrInvalidArgument
-			}
-			var matchData linux.XTTCP
-			// For alignment reasons, the match's total size may exceed what's
-			// strictly necessary to hold matchData.
-			binary.Unmarshal(buf[:linux.SizeOfXTUDP], usermem.ByteOrder, &matchData)
-			log.Infof("parseMatchers: parsed XTTCP: %+v", matchData)
-			matcher, err = iptables.NewTCPMatcher(filter, iptables.TCPMatcherData{
-				SourcePortStart:      matchData.SourcePortStart,
-				SourcePortEnd:        matchData.SourcePortEnd,
-				DestinationPortStart: matchData.DestinationPortStart,
-				DestinationPortEnd:   matchData.DestinationPortEnd,
-				Option:               matchData.Option,
-				FlagMask:             matchData.FlagMask,
-				FlagCompare:          matchData.FlagCompare,
-				InverseFlags:         matchData.InverseFlags,
-			})
-			if err != nil {
-				log.Warningf("netfilter: failed to create TCP matcher: %v", err)
-				return nil, syserr.ErrInvalidArgument
-			}
-
 		case "udp":
 			if len(buf) < linux.SizeOfXTUDP {
 				log.Warningf("netfilter: optVal has insufficient size for UDP match: %d", len(optVal))
