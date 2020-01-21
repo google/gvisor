@@ -165,6 +165,35 @@ func (c *clientFile) SetAttr(valid SetAttrMask, attr SetAttr) error {
 	return c.client.sendRecv(&Tsetattr{FID: c.fid, Valid: valid, SetAttr: attr}, &Rsetattr{})
 }
 
+// GetXattr implements File.GetXattr.
+func (c *clientFile) GetXattr(name string, size uint64) (string, error) {
+	if atomic.LoadUint32(&c.closed) != 0 {
+		return "", syscall.EBADF
+	}
+	if !versionSupportsGetSetXattr(c.client.version) {
+		return "", syscall.EOPNOTSUPP
+	}
+
+	rgetxattr := Rgetxattr{}
+	if err := c.client.sendRecv(&Tgetxattr{FID: c.fid, Name: name, Size: size}, &rgetxattr); err != nil {
+		return "", err
+	}
+
+	return rgetxattr.Value, nil
+}
+
+// SetXattr implements File.SetXattr.
+func (c *clientFile) SetXattr(name, value string, flags uint32) error {
+	if atomic.LoadUint32(&c.closed) != 0 {
+		return syscall.EBADF
+	}
+	if !versionSupportsGetSetXattr(c.client.version) {
+		return syscall.EOPNOTSUPP
+	}
+
+	return c.client.sendRecv(&Tsetxattr{FID: c.fid, Name: name, Value: value, Flags: flags}, &Rsetxattr{})
+}
+
 // Allocate implements File.Allocate.
 func (c *clientFile) Allocate(mode AllocateMode, offset, length uint64) error {
 	if atomic.LoadUint32(&c.closed) != 0 {

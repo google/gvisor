@@ -73,7 +73,7 @@ function install_runsc() {
   sudo "${RUNSC_BIN}" install --experimental=true --runtime="${runtime}" -- --debug-log "${RUNSC_LOGS}" "$@"
 
   # Clear old logs files that may exist.
-  sudo rm -f "${RUNSC_LOGS_DIR}"/*
+  sudo rm -f "${RUNSC_LOGS_DIR}"/'*'
 
   # Restart docker to pick up the new runtime configuration.
   sudo systemctl restart docker

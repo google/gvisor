@@ -69,12 +69,16 @@ func checkDots(dirs []vfs.Dirent) ([]vfs.Dirent, error) {
 
 func checkTasksStaticFiles(gots []vfs.Dirent) ([]vfs.Dirent, error) {
 	wants := map[string]vfs.Dirent{
+		"cpuinfo":     {Type: linux.DT_REG},
 		"loadavg":     {Type: linux.DT_REG},
 		"meminfo":     {Type: linux.DT_REG},
 		"mounts":      {Type: linux.DT_LNK},
+		"net":         {Type: linux.DT_DIR},
 		"self":        selfLink,
 		"stat":        {Type: linux.DT_REG},
+		"sys":         {Type: linux.DT_DIR},
 		"thread-self": threadSelfLink,
+		"uptime":      {Type: linux.DT_REG},
 		"version":     {Type: linux.DT_REG},
 	}
 	return checkFiles(gots, wants)
@@ -82,12 +86,21 @@ func checkTasksStaticFiles(gots []vfs.Dirent) ([]vfs.Dirent, error) {
 
 func checkTaskStaticFiles(gots []vfs.Dirent) ([]vfs.Dirent, error) {
 	wants := map[string]vfs.Dirent{
-		"io":     {Type: linux.DT_REG},
-		"maps":   {Type: linux.DT_REG},
-		"smaps":  {Type: linux.DT_REG},
-		"stat":   {Type: linux.DT_REG},
-		"statm":  {Type: linux.DT_REG},
-		"status": {Type: linux.DT_REG},
+		"auxv":    {Type: linux.DT_REG},
+		"cgroup":  {Type: linux.DT_REG},
+		"cmdline": {Type: linux.DT_REG},
+		"comm":    {Type: linux.DT_REG},
+		"environ": {Type: linux.DT_REG},
+		"gid_map": {Type: linux.DT_REG},
+		"io":      {Type: linux.DT_REG},
+		"maps":    {Type: linux.DT_REG},
+		"ns":      {Type: linux.DT_DIR},
+		"smaps":   {Type: linux.DT_REG},
+		"stat":    {Type: linux.DT_REG},
+		"statm":   {Type: linux.DT_REG},
+		"status":  {Type: linux.DT_REG},
+		"task":    {Type: linux.DT_DIR},
+		"uid_map": {Type: linux.DT_REG},
 	}
 	return checkFiles(gots, wants)
 }
@@ -133,7 +146,15 @@ func setup() (context.Context, *vfs.VirtualFilesystem, vfs.VirtualDentry, error)
 	vfsObj.MustRegisterFilesystemType("procfs", &procFSType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 	})
-	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "procfs", &vfs.GetFilesystemOptions{})
+	fsOpts := vfs.GetFilesystemOptions{
+		InternalData: &InternalData{
+			Cgroups: map[string]string{
+				"cpuset": "/foo/cpuset",
+				"memory": "/foo/memory",
+			},
+		},
+	}
+	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "procfs", &fsOpts)
 	if err != nil {
 		return nil, nil, vfs.VirtualDentry{}, fmt.Errorf("NewMountNamespace(): %v", err)
 	}

@@ -767,6 +767,16 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	return err
 }
 
+// TODO(b/127675828): support getxattr.
+func (l *localFile) GetXattr(name string, size uint64) (string, error) {
+	return "", syscall.EOPNOTSUPP
+}
+
+// TODO(b/127675828): support setxattr.
+func (l *localFile) SetXattr(name, value string, flags uint32) error {
+	return syscall.EOPNOTSUPP
+}
+
 // Allocate implements p9.File.
 func (l *localFile) Allocate(mode p9.AllocateMode, offset, length uint64) error {
 	if !l.isOpen() {

@@ -25,7 +25,13 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-const linkAddr = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
+const (
+	linkAddr         = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
+	linkLocalAddr    = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+	uniqueLocalAddr1 = tcpip.Address("\xfc\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+	uniqueLocalAddr2 = tcpip.Address("\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+	globalAddr       = tcpip.Address("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+)
 
 func TestEthernetAdddressToModifiedEUI64(t *testing.T) {
 	expectedIID := [header.IIDSize]byte{0, 2, 3, 255, 254, 4, 5, 6}
@@ -202,6 +208,94 @@ func TestLinkLocalAddrWithOpaqueIID(t *testing.T) {
 
 			if got := header.LinkLocalAddrWithOpaqueIID(test.nicName, test.dadCounter, test.secretKey); got != want {
 				t.Errorf("got LinkLocalAddrWithOpaqueIID(%s, %d, %x) = %s, want = %s", test.nicName, test.dadCounter, test.secretKey, got, want)
+			}
+		})
+	}
+}
+
+func TestIsV6UniqueLocalAddress(t *testing.T) {
+	tests := []struct {
+		name     string
+		addr     tcpip.Address
+		expected bool
+	}{
+		{
+			name:     "Valid Unique 1",
+			addr:     uniqueLocalAddr1,
+			expected: true,
+		},
+		{
+			name:     "Valid Unique 2",
+			addr:     uniqueLocalAddr1,
+			expected: true,
+		},
+		{
+			name:     "Link Local",
+			addr:     linkLocalAddr,
+			expected: false,
+		},
+		{
+			name:     "Global",
+			addr:     globalAddr,
+			expected: false,
+		},
+		{
+			name:     "IPv4",
+			addr:     "\x01\x02\x03\x04",
+			expected: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := header.IsV6UniqueLocalAddress(test.addr); got != test.expected {
+				t.Errorf("got header.IsV6UniqueLocalAddress(%s) = %t, want = %t", test.addr, got, test.expected)
+			}
+		})
+	}
+}
+
+func TestScopeForIPv6Address(t *testing.T) {
+	tests := []struct {
+		name  string
+		addr  tcpip.Address
+		scope header.IPv6AddressScope
+		err   *tcpip.Error
+	}{
+		{
+			name:  "Unique Local",
+			addr:  uniqueLocalAddr1,
+			scope: header.UniqueLocalScope,
+			err:   nil,
+		},
+		{
+			name:  "Link Local",
+			addr:  linkLocalAddr,
+			scope: header.LinkLocalScope,
+			err:   nil,
+		},
+		{
+			name:  "Global",
+			addr:  globalAddr,
+			scope: header.GlobalScope,
+			err:   nil,
+		},
+		{
+			name:  "IPv4",
+			addr:  "\x01\x02\x03\x04",
+			scope: header.GlobalScope,
+			err:   tcpip.ErrBadAddress,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := header.ScopeForIPv6Address(test.addr)
+			if err != test.err {
+				t.Errorf("got header.IsV6UniqueLocalAddress(%s) = (_, %v), want = (_, %v)", test.addr, err, test.err)
+			}
+			if got != test.scope {
+				t.Errorf("got header.IsV6UniqueLocalAddress(%s) = (%d, _), want = (%d, _)", test.addr, got, test.scope)
 			}
 		})
 	}

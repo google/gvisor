@@ -1,4 +1,5 @@
 load("//benchmarks:defs.bzl", "py_library", "py_test", "requirement")
+load("@rules_pkg//:pkg.bzl", "pkg_tar")
 
 package(
     default_visibility = ["//benchmarks:__subpackages__"],
@@ -27,8 +28,8 @@ py_test(
     ],
 )
 
-filegroup(
-    name = "files",
+pkg_tar(
+    name = "tar",
     srcs = [
         "Dockerfile",
         "syscall.c",

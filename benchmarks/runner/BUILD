@@ -10,7 +10,9 @@ py_library(
     ],
     visibility = ["//benchmarks:__pkg__"],
     deps = [
+        ":commands",
         "//benchmarks/harness:benchmark_driver",
+        "//benchmarks/harness/machine_producers:machine_producer",
         "//benchmarks/harness/machine_producers:mock_producer",
         "//benchmarks/harness/machine_producers:yaml_producer",
         "//benchmarks/suites",
@@ -26,6 +28,14 @@ py_library(
         "//benchmarks/suites:startup",
         "//benchmarks/suites:sysbench",
         "//benchmarks/suites:syscall",
+        requirement("click", True),
+    ],
+)
+
+py_library(
+    name = "commands",
+    srcs = ["commands.py"],
+    deps = [
         requirement("click", True),
     ],
 )

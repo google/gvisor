@@ -28,7 +28,7 @@ import (
 	"gvisor.dev/gvisor/runsc/testutil"
 )
 
-const timeout time.Duration = 10 * time.Second
+const timeout = 18 * time.Second
 
 var image = flag.String("image", "bazel/test/iptables/runner:runner", "image to run tests in")
 
@@ -186,6 +186,42 @@ func logContainer(output string, err error) {
 
 func TestFilterInputDropOnlyUDP(t *testing.T) {
 	if err := singleTest(FilterInputDropOnlyUDP{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNATRedirectUDPPort(t *testing.T) {
+	if err := singleTest(NATRedirectUDPPort{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNATDropUDP(t *testing.T) {
+	if err := singleTest(NATDropUDP{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFilterInputDropTCPDestPort(t *testing.T) {
+	if err := singleTest(FilterInputDropTCPDestPort{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFilterInputDropTCPSrcPort(t *testing.T) {
+	if err := singleTest(FilterInputDropTCPSrcPort{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFilterOutputDropTCPDestPort(t *testing.T) {
+	if err := singleTest(FilterOutputDropTCPDestPort{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFilterOutputDropTCPSrcPort(t *testing.T) {
+	if err := singleTest(FilterOutputDropTCPSrcPort{}); err != nil {
 		t.Fatal(err)
 	}
 }

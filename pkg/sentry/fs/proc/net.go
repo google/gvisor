@@ -38,6 +38,8 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
+// LINT.IfChange
+
 // newNet creates a new proc net entry.
 func (p *proc) newNetDir(ctx context.Context, k *kernel.Kernel, msrc *fs.MountSource) *fs.Inode {
 	var contents map[string]*fs.Inode
@@ -831,3 +833,5 @@ func (n *netUDP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 	}
 	return data, 0
 }
+
+// LINT.ThenChange(../../fsimpl/proc/tasks_net.go)

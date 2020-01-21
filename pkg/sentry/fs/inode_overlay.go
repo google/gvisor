@@ -25,13 +25,13 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
-func overlayHasWhiteout(parent *Inode, name string) bool {
-	s, err := parent.Getxattr(XattrOverlayWhiteout(name))
+func overlayHasWhiteout(ctx context.Context, parent *Inode, name string) bool {
+	s, err := parent.GetXattr(ctx, XattrOverlayWhiteout(name), 1)
 	return err == nil && s == "y"
 }
 
-func overlayCreateWhiteout(parent *Inode, name string) error {
-	return parent.InodeOperations.Setxattr(parent, XattrOverlayWhiteout(name), "y")
+func overlayCreateWhiteout(ctx context.Context, parent *Inode, name string) error {
+	return parent.InodeOperations.SetXattr(ctx, parent, XattrOverlayWhiteout(name), "y", 0 /* flags */)
 }
 
 func overlayWriteOut(ctx context.Context, o *overlayEntry) error {
@@ -89,7 +89,7 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 		}
 
 		// Are we done?
-		if overlayHasWhiteout(parent.upper, name) {
+		if overlayHasWhiteout(ctx, parent.upper, name) {
 			if upperInode == nil {
 				parent.copyMu.RUnlock()
 				if negativeUpperChild {
@@ -345,7 +345,7 @@ func overlayRemove(ctx context.Context, o *overlayEntry, parent *Dirent, child *
 		}
 	}
 	if child.Inode.overlay.lowerExists {
-		if err := overlayCreateWhiteout(o.upper, child.name); err != nil {
+		if err := overlayCreateWhiteout(ctx, o.upper, child.name); err != nil {
 			return err
 		}
 	}
@@ -426,7 +426,7 @@ func overlayRename(ctx context.Context, o *overlayEntry, oldParent *Dirent, rena
 		return err
 	}
 	if renamed.Inode.overlay.lowerExists {
-		if err := overlayCreateWhiteout(oldParent.Inode.overlay.upper, oldName); err != nil {
+		if err := overlayCreateWhiteout(ctx, oldParent.Inode.overlay.upper, oldName); err != nil {
 			return err
 		}
 	}
@@ -528,7 +528,7 @@ func overlayUnstableAttr(ctx context.Context, o *overlayEntry) (UnstableAttr, er
 	return attr, err
 }
 
-func overlayGetxattr(o *overlayEntry, name string) (string, error) {
+func overlayGetXattr(ctx context.Context, o *overlayEntry, name string, size uint64) (string, error) {
 	// Hot path. This is how the overlay checks for whiteout files.
 	// Avoid defers.
 	var (
@@ -544,31 +544,38 @@ func overlayGetxattr(o *overlayEntry, name string) (string, error) {
 
 	o.copyMu.RLock()
 	if o.upper != nil {
-		s, err = o.upper.Getxattr(name)
+		s, err = o.upper.GetXattr(ctx, name, size)
 	} else {
-		s, err = o.lower.Getxattr(name)
+		s, err = o.lower.GetXattr(ctx, name, size)
 	}
 	o.copyMu.RUnlock()
 	return s, err
 }
 
-// TODO(b/146028302): Support setxattr for overlayfs.
-func overlaySetxattr(o *overlayEntry, name, value string) error {
-	return syserror.EOPNOTSUPP
+func overlaySetxattr(ctx context.Context, o *overlayEntry, d *Dirent, name, value string, flags uint32) error {
+	// Don't allow changes to overlay xattrs through a setxattr syscall.
+	if strings.HasPrefix(XattrOverlayPrefix, name) {
+		return syserror.EPERM
+	}
+
+	if err := copyUp(ctx, d); err != nil {
+		return err
+	}
+	return o.upper.SetXattr(ctx, d, name, value, flags)
 }
 
-func overlayListxattr(o *overlayEntry) (map[string]struct{}, error) {
+func overlayListXattr(ctx context.Context, o *overlayEntry) (map[string]struct{}, error) {
 	o.copyMu.RLock()
 	defer o.copyMu.RUnlock()
 	var names map[string]struct{}
 	var err error
 	if o.upper != nil {
-		names, err = o.upper.Listxattr()
+		names, err = o.upper.ListXattr(ctx)
 	} else {
-		names, err = o.lower.Listxattr()
+		names, err = o.lower.ListXattr(ctx)
 	}
 	for name := range names {
-		// Same as overlayGetxattr, we shouldn't forward along
+		// Same as overlayGetXattr, we shouldn't forward along
 		// overlay attributes.
 		if strings.HasPrefix(XattrOverlayPrefix, name) {
 			delete(names, name)

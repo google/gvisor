@@ -94,7 +94,7 @@ class SSHConnection:
     return stdout, stderr
 
   def send_workload(self, name: str) -> str:
-    """Sends a workload to the remote machine.
+    """Sends a workload tarball to the remote machine.
 
     Args:
       name: The workload name.
@@ -103,9 +103,6 @@ class SSHConnection:
       The remote path.
     """
     with self._client() as client:
-      for dirpath, _, filenames in os.walk(
-          harness.LOCAL_WORKLOADS_PATH.format(name)):
-        for filename in filenames:
-          send_one_file(client, os.path.join(dirpath, filename),
-                        harness.REMOTE_WORKLOADS_PATH.format(name))
+      send_one_file(client, harness.LOCAL_WORKLOADS_PATH.format(name),
+                    harness.REMOTE_WORKLOADS_PATH.format(name))
     return harness.REMOTE_WORKLOADS_PATH.format(name)

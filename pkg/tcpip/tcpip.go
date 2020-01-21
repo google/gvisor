@@ -321,7 +321,7 @@ type ControlMessages struct {
 	HasTOS bool
 
 	// TOS is the IPv4 type of service of the associated packet.
-	TOS int8
+	TOS uint8
 
 	// HasTClass indicates whether Tclass is valid/set.
 	HasTClass bool
@@ -496,9 +496,13 @@ type WriteOptions struct {
 type SockOptBool int
 
 const (
+	// ReceiveTOSOption is used by SetSockOpt/GetSockOpt to specify if the TOS
+	// ancillary message is passed with incoming packets.
+	ReceiveTOSOption SockOptBool = iota
+
 	// V6OnlyOption is used by {G,S}etSockOptBool to specify whether an IPv6
 	// socket is to be restricted to sending and receiving IPv6 packets only.
-	V6OnlyOption SockOptBool = iota
+	V6OnlyOption
 )
 
 // SockOptInt represents socket options which values have the int type.
@@ -895,9 +899,13 @@ type IPStats struct {
 	// link layer in nic.DeliverNetworkPacket.
 	PacketsReceived *StatCounter
 
-	// InvalidAddressesReceived is the total number of IP packets received
-	// with an unknown or invalid destination address.
-	InvalidAddressesReceived *StatCounter
+	// InvalidDestinationAddressesReceived is the total number of IP packets
+	// received with an unknown or invalid destination address.
+	InvalidDestinationAddressesReceived *StatCounter
+
+	// InvalidSourceAddressesReceived is the total number of IP packets received
+	// with a source address that should never have been received on the wire.
+	InvalidSourceAddressesReceived *StatCounter
 
 	// PacketsDelivered is the total number of incoming IP packets that
 	// are successfully delivered to the transport layer via HandlePacket.

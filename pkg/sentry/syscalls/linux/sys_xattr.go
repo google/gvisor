@@ -25,12 +25,46 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
-// Getxattr implements linux syscall getxattr(2).
-func Getxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// GetXattr implements linux syscall getxattr(2).
+func GetXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	return getXattrFromPath(t, args, true)
+}
+
+// LGetXattr implements linux syscall lgetxattr(2).
+func LGetXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	return getXattrFromPath(t, args, false)
+}
+
+// FGetXattr implements linux syscall fgetxattr(2).
+func FGetXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
+	nameAddr := args[1].Pointer()
+	valueAddr := args[2].Pointer()
+	size := uint64(args[3].SizeT())
+
+	// TODO(b/113957122): Return EBADF if the fd was opened with O_PATH.
+	f := t.GetFile(fd)
+	if f == nil {
+		return 0, nil, syserror.EBADF
+	}
+	defer f.DecRef()
+
+	n, value, err := getXattr(t, f.Dirent, nameAddr, size)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	if _, err := t.CopyOutBytes(valueAddr, []byte(value)); err != nil {
+		return 0, nil, err
+	}
+	return uintptr(n), nil, nil
+}
+
+func getXattrFromPath(t *kernel.Task, args arch.SyscallArguments, resolveSymlink bool) (uintptr, *kernel.SyscallControl, error) {
 	pathAddr := args[0].Pointer()
 	nameAddr := args[1].Pointer()
 	valueAddr := args[2].Pointer()
-	size := args[3].SizeT()
+	size := uint64(args[3].SizeT())
 
 	path, dirPath, err := copyInPath(t, pathAddr, false /* allowEmpty */)
 	if err != nil {
@@ -38,21 +72,15 @@ func Getxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	}
 
 	valueLen := 0
-	err = fileOpOn(t, linux.AT_FDCWD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
-		value, err := getxattr(t, d, dirPath, nameAddr)
-		if err != nil {
-			return err
+	err = fileOpOn(t, linux.AT_FDCWD, path, resolveSymlink, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
+		if dirPath && !fs.IsDir(d.Inode.StableAttr) {
+			return syserror.ENOTDIR
 		}
 
-		valueLen = len(value)
-		if size == 0 {
-			return nil
-		}
-		if size > linux.XATTR_SIZE_MAX {
-			size = linux.XATTR_SIZE_MAX
-		}
-		if valueLen > int(size) {
-			return syserror.ERANGE
+		n, value, err := getXattr(t, d, nameAddr, size)
+		valueLen = n
+		if err != nil {
+			return err
 		}
 
 		_, err = t.CopyOutBytes(valueAddr, []byte(value))
@@ -64,34 +92,78 @@ func Getxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	return uintptr(valueLen), nil, nil
 }
 
-// getxattr implements getxattr from the given *fs.Dirent.
-func getxattr(t *kernel.Task, d *fs.Dirent, dirPath bool, nameAddr usermem.Addr) (string, error) {
-	if dirPath && !fs.IsDir(d.Inode.StableAttr) {
-		return "", syserror.ENOTDIR
-	}
-
+// getXattr implements getxattr(2) from the given *fs.Dirent.
+func getXattr(t *kernel.Task, d *fs.Dirent, nameAddr usermem.Addr, size uint64) (int, string, error) {
 	if err := checkXattrPermissions(t, d.Inode, fs.PermMask{Read: true}); err != nil {
-		return "", err
+		return 0, "", err
 	}
 
 	name, err := copyInXattrName(t, nameAddr)
 	if err != nil {
-		return "", err
+		return 0, "", err
 	}
 
 	if !strings.HasPrefix(name, linux.XATTR_USER_PREFIX) {
-		return "", syserror.EOPNOTSUPP
+		return 0, "", syserror.EOPNOTSUPP
 	}
 
-	return d.Inode.Getxattr(name)
+	// If getxattr(2) is called with size 0, the size of the value will be
+	// returned successfully even if it is nonzero. In that case, we need to
+	// retrieve the entire attribute value so we can return the correct size.
+	requestedSize := size
+	if size == 0 || size > linux.XATTR_SIZE_MAX {
+		requestedSize = linux.XATTR_SIZE_MAX
+	}
+
+	value, err := d.Inode.GetXattr(t, name, requestedSize)
+	if err != nil {
+		return 0, "", err
+	}
+	n := len(value)
+	if uint64(n) > requestedSize {
+		return 0, "", syserror.ERANGE
+	}
+
+	// Don't copy out the attribute value if size is 0.
+	if size == 0 {
+		return n, "", nil
+	}
+	return n, value, nil
 }
 
-// Setxattr implements linux syscall setxattr(2).
-func Setxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// SetXattr implements linux syscall setxattr(2).
+func SetXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	return setXattrFromPath(t, args, true)
+}
+
+// LSetXattr implements linux syscall lsetxattr(2).
+func LSetXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	return setXattrFromPath(t, args, false)
+}
+
+// FSetXattr implements linux syscall fsetxattr(2).
+func FSetXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
+	nameAddr := args[1].Pointer()
+	valueAddr := args[2].Pointer()
+	size := uint64(args[3].SizeT())
+	flags := args[4].Uint()
+
+	// TODO(b/113957122): Return EBADF if the fd was opened with O_PATH.
+	f := t.GetFile(fd)
+	if f == nil {
+		return 0, nil, syserror.EBADF
+	}
+	defer f.DecRef()
+
+	return 0, nil, setXattr(t, f.Dirent, nameAddr, valueAddr, uint64(size), flags)
+}
+
+func setXattrFromPath(t *kernel.Task, args arch.SyscallArguments, resolveSymlink bool) (uintptr, *kernel.SyscallControl, error) {
 	pathAddr := args[0].Pointer()
 	nameAddr := args[1].Pointer()
 	valueAddr := args[2].Pointer()
-	size := args[3].SizeT()
+	size := uint64(args[3].SizeT())
 	flags := args[4].Uint()
 
 	path, dirPath, err := copyInPath(t, pathAddr, false /* allowEmpty */)
@@ -99,19 +171,19 @@ func Setxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		return 0, nil, err
 	}
 
-	if flags&^(linux.XATTR_CREATE|linux.XATTR_REPLACE) != 0 {
-		return 0, nil, syserror.EINVAL
-	}
+	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, resolveSymlink, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
+		if dirPath && !fs.IsDir(d.Inode.StableAttr) {
+			return syserror.ENOTDIR
+		}
 
-	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
-		return setxattr(t, d, dirPath, nameAddr, valueAddr, size, flags)
+		return setXattr(t, d, nameAddr, valueAddr, uint64(size), flags)
 	})
 }
 
-// setxattr implements setxattr from the given *fs.Dirent.
-func setxattr(t *kernel.Task, d *fs.Dirent, dirPath bool, nameAddr, valueAddr usermem.Addr, size uint, flags uint32) error {
-	if dirPath && !fs.IsDir(d.Inode.StableAttr) {
-		return syserror.ENOTDIR
+// setXattr implements setxattr(2) from the given *fs.Dirent.
+func setXattr(t *kernel.Task, d *fs.Dirent, nameAddr, valueAddr usermem.Addr, size uint64, flags uint32) error {
+	if flags&^(linux.XATTR_CREATE|linux.XATTR_REPLACE) != 0 {
+		return syserror.EINVAL
 	}
 
 	if err := checkXattrPermissions(t, d.Inode, fs.PermMask{Write: true}); err != nil {
@@ -127,7 +199,7 @@ func setxattr(t *kernel.Task, d *fs.Dirent, dirPath bool, nameAddr, valueAddr us
 		return syserror.E2BIG
 	}
 	buf := make([]byte, size)
-	if _, err = t.CopyInBytes(valueAddr, buf); err != nil {
+	if _, err := t.CopyInBytes(valueAddr, buf); err != nil {
 		return err
 	}
 	value := string(buf)
@@ -136,7 +208,7 @@ func setxattr(t *kernel.Task, d *fs.Dirent, dirPath bool, nameAddr, valueAddr us
 		return syserror.EOPNOTSUPP
 	}
 
-	return d.Inode.Setxattr(name, value)
+	return d.Inode.SetXattr(t, d, name, value, flags)
 }
 
 func copyInXattrName(t *kernel.Task, nameAddr usermem.Addr) (string, error) {

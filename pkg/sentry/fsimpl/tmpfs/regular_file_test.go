@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"sync/atomic"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -29,10 +30,12 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
-// newFileFD creates a new file in a new tmpfs mount, and returns the FD. If
-// the returned err is not nil, then cleanup should be called when the FD is no
-// longer needed.
-func newFileFD(ctx context.Context, filename string) (*vfs.FileDescription, func(), error) {
+// nextFileID is used to generate unique file names.
+var nextFileID int64
+
+// newTmpfsRoot creates a new tmpfs mount, and returns the root. If the error
+// is not nil, then cleanup should be called when the root is no longer needed.
+func newTmpfsRoot(ctx context.Context) (*vfs.VirtualFilesystem, vfs.VirtualDentry, func(), error) {
 	creds := auth.CredentialsFromContext(ctx)
 
 	vfsObj := vfs.New()
@@ -41,36 +44,124 @@ func newFileFD(ctx context.Context, filename string) (*vfs.FileDescription, func
 	})
 	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.GetFilesystemOptions{})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create tmpfs root mount: %v", err)
+		return nil, vfs.VirtualDentry{}, nil, fmt.Errorf("failed to create tmpfs root mount: %v", err)
 	}
 	root := mntns.Root()
-
-	// Create the file that will be write/read.
-	fd, err := vfsObj.OpenAt(ctx, creds, &vfs.PathOperation{
-		Root:               root,
-		Start:              root,
-		Path:               fspath.Parse(filename),
-		FollowFinalSymlink: true,
-	}, &vfs.OpenOptions{
-		Flags: linux.O_RDWR | linux.O_CREAT | linux.O_EXCL,
-		Mode:  0644,
-	})
-	if err != nil {
-		root.DecRef()
-		mntns.DecRef(vfsObj)
-		return nil, nil, fmt.Errorf("failed to create file %q: %v", filename, err)
-	}
-
-	return fd, func() {
+	return vfsObj, root, func() {
 		root.DecRef()
 		mntns.DecRef(vfsObj)
 	}, nil
 }
 
+// newFileFD creates a new file in a new tmpfs mount, and returns the FD. If
+// the returned err is not nil, then cleanup should be called when the FD is no
+// longer needed.
+func newFileFD(ctx context.Context, mode linux.FileMode) (*vfs.FileDescription, func(), error) {
+	creds := auth.CredentialsFromContext(ctx)
+	vfsObj, root, cleanup, err := newTmpfsRoot(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	filename := fmt.Sprintf("tmpfs-test-file-%d", atomic.AddInt64(&nextFileID, 1))
+
+	// Create the file that will be write/read.
+	fd, err := vfsObj.OpenAt(ctx, creds, &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse(filename),
+	}, &vfs.OpenOptions{
+		Flags: linux.O_RDWR | linux.O_CREAT | linux.O_EXCL,
+		Mode:  linux.ModeRegular | mode,
+	})
+	if err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("failed to create file %q: %v", filename, err)
+	}
+
+	return fd, cleanup, nil
+}
+
+// newDirFD is like newFileFD, but for directories.
+func newDirFD(ctx context.Context, mode linux.FileMode) (*vfs.FileDescription, func(), error) {
+	creds := auth.CredentialsFromContext(ctx)
+	vfsObj, root, cleanup, err := newTmpfsRoot(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	dirname := fmt.Sprintf("tmpfs-test-dir-%d", atomic.AddInt64(&nextFileID, 1))
+
+	// Create the dir.
+	if err := vfsObj.MkdirAt(ctx, creds, &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse(dirname),
+	}, &vfs.MkdirOptions{
+		Mode: linux.ModeDirectory | mode,
+	}); err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("failed to create directory %q: %v", dirname, err)
+	}
+
+	// Open the dir and return it.
+	fd, err := vfsObj.OpenAt(ctx, creds, &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse(dirname),
+	}, &vfs.OpenOptions{
+		Flags: linux.O_RDONLY | linux.O_DIRECTORY,
+	})
+	if err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("failed to open directory %q: %v", dirname, err)
+	}
+
+	return fd, cleanup, nil
+}
+
+// newPipeFD is like newFileFD, but for pipes.
+func newPipeFD(ctx context.Context, mode linux.FileMode) (*vfs.FileDescription, func(), error) {
+	creds := auth.CredentialsFromContext(ctx)
+	vfsObj, root, cleanup, err := newTmpfsRoot(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	pipename := fmt.Sprintf("tmpfs-test-pipe-%d", atomic.AddInt64(&nextFileID, 1))
+
+	// Create the pipe.
+	if err := vfsObj.MknodAt(ctx, creds, &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse(pipename),
+	}, &vfs.MknodOptions{
+		Mode: linux.ModeNamedPipe | mode,
+	}); err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("failed to create pipe %q: %v", pipename, err)
+	}
+
+	// Open the pipe and return it.
+	fd, err := vfsObj.OpenAt(ctx, creds, &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse(pipename),
+	}, &vfs.OpenOptions{
+		Flags: linux.O_RDWR,
+	})
+	if err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("failed to open pipe %q: %v", pipename, err)
+	}
+
+	return fd, cleanup, nil
+}
+
 // Test that we can write some data to a file and read it back.`
 func TestSimpleWriteRead(t *testing.T) {
 	ctx := contexttest.Context(t)
-	fd, cleanup, err := newFileFD(ctx, "simpleReadWrite")
+	fd, cleanup, err := newFileFD(ctx, 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +207,7 @@ func TestSimpleWriteRead(t *testing.T) {
 
 func TestPWrite(t *testing.T) {
 	ctx := contexttest.Context(t)
-	fd, cleanup, err := newFileFD(ctx, "PRead")
+	fd, cleanup, err := newFileFD(ctx, 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +262,7 @@ func TestPWrite(t *testing.T) {
 
 func TestPRead(t *testing.T) {
 	ctx := contexttest.Context(t)
-	fd, cleanup, err := newFileFD(ctx, "PRead")
+	fd, cleanup, err := newFileFD(ctx, 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,5 +311,126 @@ func TestPRead(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestTruncate(t *testing.T) {
+	ctx := contexttest.Context(t)
+	fd, cleanup, err := newFileFD(ctx, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+
+	// Fill the file with some data.
+	data := bytes.Repeat([]byte("gVisor is awsome"), 100)
+	written, err := fd.Write(ctx, usermem.BytesIOSequence(data), vfs.WriteOptions{})
+	if err != nil {
+		t.Fatalf("fd.Write failed: %v", err)
+	}
+
+	// Size should be same as written.
+	sizeStatOpts := vfs.StatOptions{Mask: linux.STATX_SIZE}
+	stat, err := fd.Stat(ctx, sizeStatOpts)
+	if err != nil {
+		t.Fatalf("fd.Stat failed: %v", err)
+	}
+	if got, want := int64(stat.Size), written; got != want {
+		t.Errorf("fd.Stat got size %d, want %d", got, want)
+	}
+
+	// Truncate down.
+	newSize := uint64(10)
+	if err := fd.SetStat(ctx, vfs.SetStatOptions{
+		Stat: linux.Statx{
+			Mask: linux.STATX_SIZE,
+			Size: newSize,
+		},
+	}); err != nil {
+		t.Errorf("fd.Truncate failed: %v", err)
+	}
+	// Size should be updated.
+	statAfterTruncateDown, err := fd.Stat(ctx, sizeStatOpts)
+	if err != nil {
+		t.Fatalf("fd.Stat failed: %v", err)
+	}
+	if got, want := statAfterTruncateDown.Size, newSize; got != want {
+		t.Errorf("fd.Stat got size %d, want %d", got, want)
+	}
+	// We should only read newSize worth of data.
+	buf := make([]byte, 1000)
+	if n, err := fd.PRead(ctx, usermem.BytesIOSequence(buf), 0, vfs.ReadOptions{}); err != nil && err != io.EOF {
+		t.Fatalf("fd.PRead failed: %v", err)
+	} else if uint64(n) != newSize {
+		t.Errorf("fd.PRead got size %d, want %d", n, newSize)
+	}
+	// Mtime and Ctime should be bumped.
+	if got := statAfterTruncateDown.Mtime.ToNsec(); got <= stat.Mtime.ToNsec() {
+		t.Errorf("fd.Stat got Mtime %v, want > %v", got, stat.Mtime)
+	}
+	if got := statAfterTruncateDown.Ctime.ToNsec(); got <= stat.Ctime.ToNsec() {
+		t.Errorf("fd.Stat got Ctime %v, want > %v", got, stat.Ctime)
+	}
+
+	// Truncate up.
+	newSize = 100
+	if err := fd.SetStat(ctx, vfs.SetStatOptions{
+		Stat: linux.Statx{
+			Mask: linux.STATX_SIZE,
+			Size: newSize,
+		},
+	}); err != nil {
+		t.Errorf("fd.Truncate failed: %v", err)
+	}
+	// Size should be updated.
+	statAfterTruncateUp, err := fd.Stat(ctx, sizeStatOpts)
+	if err != nil {
+		t.Fatalf("fd.Stat failed: %v", err)
+	}
+	if got, want := statAfterTruncateUp.Size, newSize; got != want {
+		t.Errorf("fd.Stat got size %d, want %d", got, want)
+	}
+	// We should read newSize worth of data.
+	buf = make([]byte, 1000)
+	if n, err := fd.PRead(ctx, usermem.BytesIOSequence(buf), 0, vfs.ReadOptions{}); err != nil && err != io.EOF {
+		t.Fatalf("fd.PRead failed: %v", err)
+	} else if uint64(n) != newSize {
+		t.Errorf("fd.PRead got size %d, want %d", n, newSize)
+	}
+	// Bytes should be null after 10, since we previously truncated to 10.
+	for i := uint64(10); i < newSize; i++ {
+		if buf[i] != 0 {
+			t.Errorf("fd.PRead got byte %d=%x, want 0", i, buf[i])
+			break
+		}
+	}
+	// Mtime and Ctime should be bumped.
+	if got := statAfterTruncateUp.Mtime.ToNsec(); got <= statAfterTruncateDown.Mtime.ToNsec() {
+		t.Errorf("fd.Stat got Mtime %v, want > %v", got, statAfterTruncateDown.Mtime)
+	}
+	if got := statAfterTruncateUp.Ctime.ToNsec(); got <= statAfterTruncateDown.Ctime.ToNsec() {
+		t.Errorf("fd.Stat got Ctime %v, want > %v", got, stat.Ctime)
+	}
+
+	// Truncate to the current size.
+	newSize = statAfterTruncateUp.Size
+	if err := fd.SetStat(ctx, vfs.SetStatOptions{
+		Stat: linux.Statx{
+			Mask: linux.STATX_SIZE,
+			Size: newSize,
+		},
+	}); err != nil {
+		t.Errorf("fd.Truncate failed: %v", err)
+	}
+	statAfterTruncateNoop, err := fd.Stat(ctx, sizeStatOpts)
+	if err != nil {
+		t.Fatalf("fd.Stat failed: %v", err)
+	}
+	// Mtime and Ctime should not be bumped, since operation is a noop.
+	if got := statAfterTruncateNoop.Mtime.ToNsec(); got != statAfterTruncateUp.Mtime.ToNsec() {
+		t.Errorf("fd.Stat got Mtime %v, want %v", got, statAfterTruncateUp.Mtime)
+	}
+	if got := statAfterTruncateNoop.Ctime.ToNsec(); got != statAfterTruncateUp.Ctime.ToNsec() {
+		t.Errorf("fd.Stat got Ctime %v, want %v", got, statAfterTruncateUp.Ctime)
 	}
 }

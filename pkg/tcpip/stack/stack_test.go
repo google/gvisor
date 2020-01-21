@@ -35,6 +35,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
 const (
@@ -2409,5 +2410,156 @@ func TestNewPEBOnPromotionToPermanent(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
+	const (
+		linkLocalAddr1   = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+		linkLocalAddr2   = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+		uniqueLocalAddr1 = tcpip.Address("\xfc\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+		uniqueLocalAddr2 = tcpip.Address("\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+		globalAddr1      = tcpip.Address("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+		globalAddr2      = tcpip.Address("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+		nicID            = 1
+	)
+
+	// Rule 3 is not tested here, and is instead tested by NDP's AutoGenAddr test.
+	tests := []struct {
+		name              string
+		nicAddrs          []tcpip.Address
+		connectAddr       tcpip.Address
+		expectedLocalAddr tcpip.Address
+	}{
+		// Test Rule 1 of RFC 6724 section 5.
+		{
+			name:              "Same Global most preferred (last address)",
+			nicAddrs:          []tcpip.Address{linkLocalAddr1, uniqueLocalAddr1, globalAddr1},
+			connectAddr:       globalAddr1,
+			expectedLocalAddr: globalAddr1,
+		},
+		{
+			name:              "Same Global most preferred (first address)",
+			nicAddrs:          []tcpip.Address{globalAddr1, linkLocalAddr1, uniqueLocalAddr1},
+			connectAddr:       globalAddr1,
+			expectedLocalAddr: globalAddr1,
+		},
+		{
+			name:              "Same Link Local most preferred (last address)",
+			nicAddrs:          []tcpip.Address{globalAddr1, uniqueLocalAddr1, linkLocalAddr1},
+			connectAddr:       linkLocalAddr1,
+			expectedLocalAddr: linkLocalAddr1,
+		},
+		{
+			name:              "Same Link Local most preferred (first address)",
+			nicAddrs:          []tcpip.Address{linkLocalAddr1, uniqueLocalAddr1, globalAddr1},
+			connectAddr:       linkLocalAddr1,
+			expectedLocalAddr: linkLocalAddr1,
+		},
+		{
+			name:              "Same Unique Local most preferred (last address)",
+			nicAddrs:          []tcpip.Address{uniqueLocalAddr1, globalAddr1, linkLocalAddr1},
+			connectAddr:       uniqueLocalAddr1,
+			expectedLocalAddr: uniqueLocalAddr1,
+		},
+		{
+			name:              "Same Unique Local most preferred (first address)",
+			nicAddrs:          []tcpip.Address{globalAddr1, linkLocalAddr1, uniqueLocalAddr1},
+			connectAddr:       uniqueLocalAddr1,
+			expectedLocalAddr: uniqueLocalAddr1,
+		},
+
+		// Test Rule 2 of RFC 6724 section 5.
+		{
+			name:              "Global most preferred (last address)",
+			nicAddrs:          []tcpip.Address{linkLocalAddr1, uniqueLocalAddr1, globalAddr1},
+			connectAddr:       globalAddr2,
+			expectedLocalAddr: globalAddr1,
+		},
+		{
+			name:              "Global most preferred (first address)",
+			nicAddrs:          []tcpip.Address{globalAddr1, linkLocalAddr1, uniqueLocalAddr1},
+			connectAddr:       globalAddr2,
+			expectedLocalAddr: globalAddr1,
+		},
+		{
+			name:              "Link Local most preferred (last address)",
+			nicAddrs:          []tcpip.Address{globalAddr1, uniqueLocalAddr1, linkLocalAddr1},
+			connectAddr:       linkLocalAddr2,
+			expectedLocalAddr: linkLocalAddr1,
+		},
+		{
+			name:              "Link Local most preferred (first address)",
+			nicAddrs:          []tcpip.Address{linkLocalAddr1, uniqueLocalAddr1, globalAddr1},
+			connectAddr:       linkLocalAddr2,
+			expectedLocalAddr: linkLocalAddr1,
+		},
+		{
+			name:              "Unique Local most preferred (last address)",
+			nicAddrs:          []tcpip.Address{uniqueLocalAddr1, globalAddr1, linkLocalAddr1},
+			connectAddr:       uniqueLocalAddr2,
+			expectedLocalAddr: uniqueLocalAddr1,
+		},
+		{
+			name:              "Unique Local most preferred (first address)",
+			nicAddrs:          []tcpip.Address{globalAddr1, linkLocalAddr1, uniqueLocalAddr1},
+			connectAddr:       uniqueLocalAddr2,
+			expectedLocalAddr: uniqueLocalAddr1,
+		},
+
+		// Test returning the endpoint that is closest to the front when
+		// candidate addresses are "equal" from the perspective of RFC 6724
+		// section 5.
+		{
+			name:              "Unique Local for Global",
+			nicAddrs:          []tcpip.Address{linkLocalAddr1, uniqueLocalAddr1, uniqueLocalAddr2},
+			connectAddr:       globalAddr2,
+			expectedLocalAddr: uniqueLocalAddr1,
+		},
+		{
+			name:              "Link Local for Global",
+			nicAddrs:          []tcpip.Address{linkLocalAddr1, linkLocalAddr2},
+			connectAddr:       globalAddr2,
+			expectedLocalAddr: linkLocalAddr1,
+		},
+		{
+			name:              "Link Local for Unique Local",
+			nicAddrs:          []tcpip.Address{linkLocalAddr1, linkLocalAddr2},
+			connectAddr:       uniqueLocalAddr2,
+			expectedLocalAddr: linkLocalAddr1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			e := channel.New(0, 1280, linkAddr1)
+			s := stack.New(stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocol{ipv6.NewProtocol()},
+				TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+			})
+			if err := s.CreateNIC(nicID, e); err != nil {
+				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+			}
+			s.SetRouteTable([]tcpip.Route{{
+				Destination: header.IPv6EmptySubnet,
+				Gateway:     llAddr3,
+				NIC:         nicID,
+			}})
+			s.AddLinkAddress(nicID, llAddr3, linkAddr3)
+
+			for _, a := range test.nicAddrs {
+				if err := s.AddAddress(nicID, ipv6.ProtocolNumber, a); err != nil {
+					t.Errorf("s.AddAddress(%d, %d, %s): %s", nicID, ipv6.ProtocolNumber, a, err)
+				}
+			}
+
+			if t.Failed() {
+				t.FailNow()
+			}
+
+			if got := addrForNewConnectionTo(t, s, tcpip.FullAddress{Addr: test.connectAddr, NIC: nicID, Port: 1234}); got != test.expectedLocalAddr {
+				t.Errorf("got local address = %s, want = %s", got, test.expectedLocalAddr)
+			}
+		})
 	}
 }

@@ -15,6 +15,9 @@
 package proc
 
 import (
+	"bytes"
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
@@ -40,33 +43,37 @@ type taskInode struct {
 
 var _ kernfs.Inode = (*taskInode)(nil)
 
-func newTaskInode(inoGen InoGenerator, task *kernel.Task, pidns *kernel.PIDNamespace, isThreadGroup bool) *kernfs.Dentry {
+func newTaskInode(inoGen InoGenerator, task *kernel.Task, pidns *kernel.PIDNamespace, isThreadGroup bool, cgroupControllers map[string]string) *kernfs.Dentry {
 	contents := map[string]*kernfs.Dentry{
-		//"auxv":      newAuxvec(t, msrc),
-		//"cmdline":   newExecArgInode(t, msrc, cmdlineExecArg),
-		//"comm":      newComm(t, msrc),
-		//"environ":   newExecArgInode(t, msrc, environExecArg),
+		"auxv":    newTaskOwnedFile(task, inoGen.NextIno(), 0444, &auxvData{task: task}),
+		"cmdline": newTaskOwnedFile(task, inoGen.NextIno(), 0444, &cmdlineData{task: task, arg: cmdlineDataArg}),
+		"comm":    newComm(task, inoGen.NextIno(), 0444),
+		"environ": newTaskOwnedFile(task, inoGen.NextIno(), 0444, &cmdlineData{task: task, arg: environDataArg}),
 		//"exe":       newExe(t, msrc),
 		//"fd":        newFdDir(t, msrc),
 		//"fdinfo":    newFdInfoDir(t, msrc),
-		//"gid_map":   newGIDMap(t, msrc),
-		"io":   newTaskOwnedFile(task, inoGen.NextIno(), defaultPermission, newIO(task, isThreadGroup)),
-		"maps": newTaskOwnedFile(task, inoGen.NextIno(), defaultPermission, &mapsData{task: task}),
+		"gid_map": newTaskOwnedFile(task, inoGen.NextIno(), 0644, &idMapData{task: task, gids: true}),
+		"io":      newTaskOwnedFile(task, inoGen.NextIno(), 0400, newIO(task, isThreadGroup)),
+		"maps":    newTaskOwnedFile(task, inoGen.NextIno(), 0444, &mapsData{task: task}),
 		//"mountinfo": seqfile.NewSeqFileInode(t, &mountInfoFile{t: t}, msrc),
 		//"mounts":    seqfile.NewSeqFileInode(t, &mountsFile{t: t}, msrc),
-		//"ns":        newNamespaceDir(t, msrc),
-		"smaps":  newTaskOwnedFile(task, inoGen.NextIno(), defaultPermission, &smapsData{task: task}),
-		"stat":   newTaskOwnedFile(task, inoGen.NextIno(), defaultPermission, &taskStatData{t: task, pidns: pidns, tgstats: isThreadGroup}),
-		"statm":  newTaskOwnedFile(task, inoGen.NextIno(), defaultPermission, &statmData{t: task}),
-		"status": newTaskOwnedFile(task, inoGen.NextIno(), defaultPermission, &statusData{t: task, pidns: pidns}),
-		//"uid_map":   newUIDMap(t, msrc),
+		"ns": newTaskOwnedDir(task, inoGen.NextIno(), 0511, map[string]*kernfs.Dentry{
+			"net":  newNamespaceSymlink(task, inoGen.NextIno(), "net"),
+			"pid":  newNamespaceSymlink(task, inoGen.NextIno(), "pid"),
+			"user": newNamespaceSymlink(task, inoGen.NextIno(), "user"),
+		}),
+		"smaps":   newTaskOwnedFile(task, inoGen.NextIno(), 0444, &smapsData{task: task}),
+		"stat":    newTaskOwnedFile(task, inoGen.NextIno(), 0444, &taskStatData{task: task, pidns: pidns, tgstats: isThreadGroup}),
+		"statm":   newTaskOwnedFile(task, inoGen.NextIno(), 0444, &statmData{task: task}),
+		"status":  newTaskOwnedFile(task, inoGen.NextIno(), 0444, &statusData{task: task, pidns: pidns}),
+		"uid_map": newTaskOwnedFile(task, inoGen.NextIno(), 0644, &idMapData{task: task, gids: false}),
 	}
 	if isThreadGroup {
-		//contents["task"] = p.newSubtasks(t, msrc)
+		contents["task"] = newSubtasks(task, pidns, inoGen, cgroupControllers)
 	}
-	//if len(p.cgroupControllers) > 0 {
-	//	contents["cgroup"] = newCGroupInode(t, msrc, p.cgroupControllers)
-	//}
+	if len(cgroupControllers) > 0 {
+		contents["cgroup"] = newTaskOwnedFile(task, inoGen.NextIno(), 0444, newCgroupData(cgroupControllers))
+	}
 
 	taskInode := &taskInode{task: task}
 	// Note: credentials are overridden by taskOwnedInode.
@@ -127,6 +134,23 @@ func newTaskOwnedFile(task *kernel.Task, ino uint64, perm linux.FileMode, inode 
 	return d
 }
 
+func newTaskOwnedDir(task *kernel.Task, ino uint64, perm linux.FileMode, children map[string]*kernfs.Dentry) *kernfs.Dentry {
+	dir := &kernfs.StaticDirectory{}
+
+	// Note: credentials are overridden by taskOwnedInode.
+	dir.Init(task.Credentials(), ino, perm)
+
+	inode := &taskOwnedInode{Inode: dir, owner: task}
+	d := &kernfs.Dentry{}
+	d.Init(inode)
+
+	dir.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
+	links := dir.OrderedChildren.Populate(d, children)
+	dir.IncLinks(links)
+
+	return d
+}
+
 // Stat implements kernfs.Inode.
 func (i *taskOwnedInode) Stat(fs *vfs.Filesystem) linux.Statx {
 	stat := i.Inode.Stat(fs)
@@ -137,7 +161,7 @@ func (i *taskOwnedInode) Stat(fs *vfs.Filesystem) linux.Statx {
 }
 
 // CheckPermissions implements kernfs.Inode.
-func (i *taskOwnedInode) CheckPermissions(creds *auth.Credentials, ats vfs.AccessTypes) error {
+func (i *taskOwnedInode) CheckPermissions(_ context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
 	mode := i.Mode()
 	uid, gid := i.getOwner(mode)
 	return vfs.GenericCheckPermissions(
@@ -187,4 +211,39 @@ func newIO(t *kernel.Task, isThreadGroup bool) *ioData {
 		return &ioData{ioUsage: t.ThreadGroup()}
 	}
 	return &ioData{ioUsage: t}
+}
+
+func newNamespaceSymlink(task *kernel.Task, ino uint64, ns string) *kernfs.Dentry {
+	// Namespace symlinks should contain the namespace name and the inode number
+	// for the namespace instance, so for example user:[123456]. We currently fake
+	// the inode number by sticking the symlink inode in its place.
+	target := fmt.Sprintf("%s:[%d]", ns, ino)
+
+	inode := &kernfs.StaticSymlink{}
+	// Note: credentials are overridden by taskOwnedInode.
+	inode.Init(task.Credentials(), ino, target)
+
+	taskInode := &taskOwnedInode{Inode: inode, owner: task}
+	d := &kernfs.Dentry{}
+	d.Init(taskInode)
+	return d
+}
+
+// newCgroupData creates inode that shows cgroup information.
+// From man 7 cgroups: "For each cgroup hierarchy of which the process is a
+// member, there is one entry containing three colon-separated fields:
+//   hierarchy-ID:controller-list:cgroup-path"
+func newCgroupData(controllers map[string]string) dynamicInode {
+	buf := bytes.Buffer{}
+
+	// The hierarchy ids must be positive integers (for cgroup v1), but the
+	// exact number does not matter, so long as they are unique. We can
+	// just use a counter, but since linux sorts this file in descending
+	// order, we must count down to preserve this behavior.
+	i := len(controllers)
+	for name, dir := range controllers {
+		fmt.Fprintf(&buf, "%d:%s:%s\n", i, name, dir)
+		i--
+	}
+	return newStaticFile(buf.String())
 }

@@ -32,6 +32,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
@@ -101,6 +102,161 @@ TEST(BadSocketPairArgs, ValidateErrForBadCallsToSocketPair) {
   ASSERT_THAT(socketpair(8675309, 0, 0, fd),
               SyscallFailsWithErrno(EAFNOSUPPORT));
 }
+
+enum class Operation {
+  Bind,
+  Connect,
+  SendTo,
+};
+
+std::string OperationToString(Operation operation) {
+  switch (operation) {
+    case Operation::Bind:
+      return "Bind";
+    case Operation::Connect:
+      return "Connect";
+    case Operation::SendTo:
+      return "SendTo";
+  }
+}
+
+using OperationSequence = std::vector<Operation>;
+
+using DualStackSocketTest =
+    ::testing::TestWithParam<std::tuple<TestAddress, OperationSequence>>;
+
+TEST_P(DualStackSocketTest, AddressOperations) {
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_DGRAM, 0));
+
+  const TestAddress& addr = std::get<0>(GetParam());
+  const OperationSequence& operations = std::get<1>(GetParam());
+
+  auto addr_in = reinterpret_cast<const sockaddr*>(&addr.addr);
+
+  // sockets may only be bound once. Both `connect` and `sendto` cause a socket
+  // to be bound.
+  bool bound = false;
+  for (const Operation& operation : operations) {
+    bool sockname = false;
+    bool peername = false;
+    switch (operation) {
+      case Operation::Bind: {
+        ASSERT_NO_ERRNO(SetAddrPort(
+            addr.family(), const_cast<sockaddr_storage*>(&addr.addr), 0));
+
+        int bind_ret = bind(fd.get(), addr_in, addr.addr_len);
+
+        // Dual stack sockets may only be bound to AF_INET6.
+        if (!bound && addr.family() == AF_INET6) {
+          EXPECT_THAT(bind_ret, SyscallSucceeds());
+          bound = true;
+
+          sockname = true;
+        } else {
+          EXPECT_THAT(bind_ret, SyscallFailsWithErrno(EINVAL));
+        }
+        break;
+      }
+      case Operation::Connect: {
+        ASSERT_NO_ERRNO(SetAddrPort(
+            addr.family(), const_cast<sockaddr_storage*>(&addr.addr), 1337));
+
+        EXPECT_THAT(connect(fd.get(), addr_in, addr.addr_len),
+                    SyscallSucceeds())
+            << GetAddrStr(addr_in);
+        bound = true;
+
+        sockname = true;
+        peername = true;
+
+        break;
+      }
+      case Operation::SendTo: {
+        const char payload[] = "hello";
+        ASSERT_NO_ERRNO(SetAddrPort(
+            addr.family(), const_cast<sockaddr_storage*>(&addr.addr), 1337));
+
+        ssize_t sendto_ret = sendto(fd.get(), &payload, sizeof(payload), 0,
+                                    addr_in, addr.addr_len);
+
+        EXPECT_THAT(sendto_ret, SyscallSucceedsWithValue(sizeof(payload)));
+        sockname = !bound;
+        bound = true;
+        break;
+      }
+    }
+
+    if (sockname) {
+      sockaddr_storage sock_addr;
+      socklen_t addrlen = sizeof(sock_addr);
+      ASSERT_THAT(getsockname(fd.get(), reinterpret_cast<sockaddr*>(&sock_addr),
+                              &addrlen),
+                  SyscallSucceeds());
+      ASSERT_EQ(addrlen, sizeof(struct sockaddr_in6));
+
+      auto sock_addr_in6 = reinterpret_cast<const sockaddr_in6*>(&sock_addr);
+
+      if (operation == Operation::SendTo) {
+        EXPECT_EQ(sock_addr_in6->sin6_family, AF_INET6);
+        EXPECT_TRUE(IN6_IS_ADDR_UNSPECIFIED(sock_addr_in6->sin6_addr.s6_addr32))
+            << OperationToString(operation) << " getsocknam="
+            << GetAddrStr(reinterpret_cast<sockaddr*>(&sock_addr));
+
+        EXPECT_NE(sock_addr_in6->sin6_port, 0);
+      } else if (IN6_IS_ADDR_V4MAPPED(
+                     reinterpret_cast<const sockaddr_in6*>(addr_in)
+                         ->sin6_addr.s6_addr32)) {
+        EXPECT_TRUE(IN6_IS_ADDR_V4MAPPED(sock_addr_in6->sin6_addr.s6_addr32))
+            << OperationToString(operation) << " getsocknam="
+            << GetAddrStr(reinterpret_cast<sockaddr*>(&sock_addr));
+      }
+    }
+
+    if (peername) {
+      sockaddr_storage peer_addr;
+      socklen_t addrlen = sizeof(peer_addr);
+      ASSERT_THAT(getpeername(fd.get(), reinterpret_cast<sockaddr*>(&peer_addr),
+                              &addrlen),
+                  SyscallSucceeds());
+      ASSERT_EQ(addrlen, sizeof(struct sockaddr_in6));
+
+      if (addr.family() == AF_INET ||
+          IN6_IS_ADDR_V4MAPPED(reinterpret_cast<const sockaddr_in6*>(addr_in)
+                                   ->sin6_addr.s6_addr32)) {
+        EXPECT_TRUE(IN6_IS_ADDR_V4MAPPED(
+            reinterpret_cast<const sockaddr_in6*>(&peer_addr)
+                ->sin6_addr.s6_addr32))
+            << OperationToString(operation) << " getpeername="
+            << GetAddrStr(reinterpret_cast<sockaddr*>(&peer_addr));
+      }
+    }
+  }
+}
+
+// TODO(gvisor.dev/issues/1556): uncomment V4MappedAny.
+INSTANTIATE_TEST_SUITE_P(
+    All, DualStackSocketTest,
+    ::testing::Combine(
+        ::testing::Values(V4Any(), V4Loopback(), /*V4MappedAny(),*/
+                          V4MappedLoopback(), V6Any(), V6Loopback()),
+        ::testing::ValuesIn<OperationSequence>(
+            {{Operation::Bind, Operation::Connect, Operation::SendTo},
+             {Operation::Bind, Operation::SendTo, Operation::Connect},
+             {Operation::Connect, Operation::Bind, Operation::SendTo},
+             {Operation::Connect, Operation::SendTo, Operation::Bind},
+             {Operation::SendTo, Operation::Bind, Operation::Connect},
+             {Operation::SendTo, Operation::Connect, Operation::Bind}})),
+    [](::testing::TestParamInfo<
+        std::tuple<TestAddress, OperationSequence>> const& info) {
+      const TestAddress& addr = std::get<0>(info.param);
+      const OperationSequence& operations = std::get<1>(info.param);
+      std::string s = addr.description;
+      for (const Operation& operation : operations) {
+        absl::StrAppend(&s, OperationToString(operation));
+      }
+      return s;
+    });
 
 void tcpSimpleConnectTest(TestAddress const& listener,
                           TestAddress const& connector, bool unbound) {
@@ -377,7 +533,7 @@ TEST_P(SocketInetLoopbackTest, TCPFinWait2Test_NoRandomSave) {
 
   // Sleep for a little over the linger timeout to reduce flakiness in
   // save/restore tests.
-  absl::SleepFor(absl::Seconds(kTCPLingerTimeout + 1));
+  absl::SleepFor(absl::Seconds(kTCPLingerTimeout + 2));
 
   ds.reset();
 

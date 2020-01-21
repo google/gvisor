@@ -15,10 +15,13 @@
 
 import copy
 import csv
+import json
 import logging
+import os
 import pkgutil
 import pydoc
 import re
+import subprocess
 import sys
 import types
 from typing import List
@@ -26,10 +29,14 @@ from typing import Tuple
 
 import click
 
+from benchmarks import harness
 from benchmarks import suites
 from benchmarks.harness import benchmark_driver
+from benchmarks.harness.machine_producers import gcloud_producer
+from benchmarks.harness.machine_producers import machine_producer
 from benchmarks.harness.machine_producers import mock_producer
 from benchmarks.harness.machine_producers import yaml_producer
+from benchmarks.runner import commands
 
 
 @click.group()
@@ -100,30 +107,77 @@ def list_all(method):
     print("\n")
 
 
-# pylint: disable=too-many-arguments
-# pylint: disable=too-many-branches
-# pylint: disable=too-many-locals
-@runner.command(
-    context_settings=dict(ignore_unknown_options=True, allow_extra_args=True))
+@runner.command("run-local", commands.LocalCommand)
 @click.pass_context
-@click.argument("method")
-@click.option("--mock/--no-mock", default=False, help="Mock the machines.")
-@click.option("--env", default=None, help="Specify a yaml file with machines.")
-@click.option(
-    "--runtime", default=["runc"], help="The runtime to use.", multiple=True)
-@click.option("--metric", help="The metric to extract.", multiple=True)
-@click.option(
-    "--runs", default=1, help="The number of times to run each benchmark.")
-@click.option(
-    "--stat",
-    default="median",
-    help="How to aggregate the data from all runs."
-    "\nmedian - returns the median of all runs (default)"
-    "\nall - returns all results comma separated"
-    "\nmeanstd - returns result as mean,std")
-# pylint: disable=too-many-statements
-def run(ctx, method: str, runs: int, env: str, mock: bool, runtime: List[str],
-        metric: List[str], stat: str, **kwargs):
+def run_local(ctx, limit: float, **kwargs):
+  """Runs benchmarks locally."""
+  run(ctx, machine_producer.LocalMachineProducer(limit=limit), **kwargs)
+
+
+@runner.command("run-mock", commands.RunCommand)
+@click.pass_context
+def run_mock(ctx, **kwargs):
+  """Runs benchmarks on Mock machines. Used for testing."""
+  run(ctx, mock_producer.MockMachineProducer(), **kwargs)
+
+
+@runner.command("run-gcp", commands.GCPCommand)
+@click.pass_context
+def run_gcp(ctx, project: str, ssh_key_file: str, image: str,
+            image_project: str, machine_type: str, zone: str, ssh_user: str,
+            ssh_password: str, **kwargs):
+  """Runs all benchmarks on GCP instances."""
+
+  if not ssh_user:
+    ssh_user = harness.DEFAULT_USER
+
+  # Get the default project if one was not provided.
+  if not project:
+    sub = subprocess.run(
+        "gcloud config get-value project".split(" "), stdout=subprocess.PIPE)
+    if sub.returncode:
+      raise ValueError(
+          "Cannot get default project from gcloud. Is it configured>")
+    project = sub.stdout.decode("utf-8").strip("\n")
+
+  if not image_project:
+    image_project = project
+
+  # Check that the ssh-key exists and is readable.
+  if not os.access(ssh_key_file, os.R_OK):
+    raise ValueError(
+        "ssh key given `{ssh_key}` is does not exist or is not readable."
+        .format(ssh_key=ssh_key_file))
+
+  # Check that the image exists.
+  sub = subprocess.run(
+      "gcloud compute images describe {image} --project {image_project} --format=json"
+      .format(image=image, image_project=image_project).split(" "),
+      stdout=subprocess.PIPE)
+  if sub.returncode or "READY" not in json.loads(sub.stdout)["status"]:
+    raise ValueError(
+        "given image was not found or is not ready: {image} {image_project}."
+        .format(image=image, image_project=image_project))
+
+  # Check and set zone to default.
+  if not zone:
+    sub = subprocess.run(
+        "gcloud config get-value compute/zone".split(" "),
+        stdout=subprocess.PIPE)
+    if sub.returncode:
+      raise ValueError(
+          "Default zone is not set in gcloud. Set one or pass a zone with the --zone flag."
+      )
+    zone = sub.stdout.decode("utf-8").strip("\n")
+
+  producer = gcloud_producer.GCloudProducer(project, ssh_key_file, image,
+                                            image_project, machine_type, zone,
+                                            ssh_user, ssh_password)
+  run(ctx, producer, **kwargs)
+
+
+def run(ctx, producer: machine_producer.MachineProducer, method: str, runs: int,
+        runtime: List[str], metric: List[str], stat: str, **kwargs):
   """Runs arbitrary benchmarks.
 
   All unknown command line flags are passed through to the underlying benchmark
@@ -139,16 +193,13 @@ def run(ctx, method: str, runs: int, env: str, mock: bool, runtime: List[str],
   All benchmarks are run in parallel where possible, but have exclusive
   ownership over the individual machines.
 
-  Exactly one of the --mock and --env flag must be specified.
-
   Every benchmark method will be run the times indicated by --runs.
 
   Args:
     ctx: Click context.
+    producer: A Machine Producer from which to get Machines.
     method: A regular expression for methods to be run.
     runs: Number of runs.
-    env: Environment to use.
-    mock: If true, use mocked environment (supercedes env).
     runtime: A list of runtimes to test.
     metric: A list of metrics to extract.
     stat: The class of statistics to extract.
@@ -217,20 +268,6 @@ def run(ctx, method: str, runs: int, env: str, mock: bool, runtime: List[str],
     logging.error("no matching benchmarks for %s: try list.", method)
     sys.exit(1)
   fold("method", list(methods.keys()), allow_flatten=True)
-
-  # Construct the environment.
-  if mock and env:
-    # You can't provide both.
-    logging.error("both --mock and --env are set: which one is it?")
-    sys.exit(1)
-  elif mock:
-    producer = mock_producer.MockMachineProducer()
-  elif env:
-    producer = yaml_producer.YamlMachineProducer(env)
-  else:
-    # You must provide one of mock or env.
-    logging.error("no enviroment provided: use --mock or --env.")
-    sys.exit(1)
 
   # Spin up the drivers.
   #

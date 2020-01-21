@@ -56,6 +56,7 @@ const (
 	multicastAddr   = "\xe8\x2b\xd3\xea"
 	multicastV6Addr = "\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
 	broadcastAddr   = header.IPv4Broadcast
+	testTOS         = 0x80
 
 	// defaultMTU is the MTU, in bytes, used throughout the tests, except
 	// where another value is explicitly used. It is chosen to match the MTU
@@ -273,11 +274,16 @@ type testContext struct {
 
 func newDualTestContext(t *testing.T, mtu uint32) *testContext {
 	t.Helper()
-
-	s := stack.New(stack.Options{
+	return newDualTestContextWithOptions(t, mtu, stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
 		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
 	})
+}
+
+func newDualTestContextWithOptions(t *testing.T, mtu uint32, options stack.Options) *testContext {
+	t.Helper()
+
+	s := stack.New(options)
 	ep := channel.New(256, mtu, "")
 	wep := stack.LinkEndpoint(ep)
 
@@ -453,6 +459,7 @@ func (c *testContext) injectV4Packet(payload []byte, h *header4Tuple, valid bool
 	ip := header.IPv4(buf)
 	ip.Encode(&header.IPv4Fields{
 		IHL:         header.IPv4MinimumSize,
+		TOS:         testTOS,
 		TotalLength: uint16(len(buf)),
 		TTL:         65,
 		Protocol:    uint8(udp.ProtocolNumber),
@@ -552,8 +559,8 @@ func TestBindToDeviceOption(t *testing.T) {
 // testReadInternal sends a packet of the given test flow into the stack by
 // injecting it into the link endpoint. It then attempts to read it from the
 // UDP endpoint and depending on if this was expected to succeed verifies its
-// correctness.
-func testReadInternal(c *testContext, flow testFlow, packetShouldBeDropped, expectReadError bool) {
+// correctness including any additional checker functions provided.
+func testReadInternal(c *testContext, flow testFlow, packetShouldBeDropped, expectReadError bool, checkers ...checker.ControlMessagesChecker) {
 	c.t.Helper()
 
 	payload := newPayload()
@@ -568,12 +575,12 @@ func testReadInternal(c *testContext, flow testFlow, packetShouldBeDropped, expe
 	epstats := c.ep.Stats().(*tcpip.TransportEndpointStats).Clone()
 
 	var addr tcpip.FullAddress
-	v, _, err := c.ep.Read(&addr)
+	v, cm, err := c.ep.Read(&addr)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for data to become available.
 		select {
 		case <-ch:
-			v, _, err = c.ep.Read(&addr)
+			v, cm, err = c.ep.Read(&addr)
 
 		case <-time.After(300 * time.Millisecond):
 			if packetShouldBeDropped {
@@ -606,15 +613,21 @@ func testReadInternal(c *testContext, flow testFlow, packetShouldBeDropped, expe
 	if !bytes.Equal(payload, v) {
 		c.t.Fatalf("bad payload: got %x, want %x", v, payload)
 	}
+
+	// Run any checkers against the ControlMessages.
+	for _, f := range checkers {
+		f(c.t, cm)
+	}
+
 	c.checkEndpointReadStats(1, epstats, err)
 }
 
 // testRead sends a packet of the given test flow into the stack by injecting it
 // into the link endpoint. It then reads it from the UDP endpoint and verifies
-// its correctness.
-func testRead(c *testContext, flow testFlow) {
+// its correctness including any additional checker functions provided.
+func testRead(c *testContext, flow testFlow, checkers ...checker.ControlMessagesChecker) {
 	c.t.Helper()
-	testReadInternal(c, flow, false /* packetShouldBeDropped */, false /* expectReadError */)
+	testReadInternal(c, flow, false /* packetShouldBeDropped */, false /* expectReadError */, checkers...)
 }
 
 // testFailingRead sends a packet of the given test flow into the stack by
@@ -753,6 +766,49 @@ func TestV6ReadOnV6(t *testing.T) {
 
 	// Test acceptance.
 	testRead(c, unicastV6)
+}
+
+// TestV4ReadSelfSource checks that packets coming from a local IP address are
+// correctly dropped when handleLocal is true and not otherwise.
+func TestV4ReadSelfSource(t *testing.T) {
+	for _, tt := range []struct {
+		name              string
+		handleLocal       bool
+		wantErr           *tcpip.Error
+		wantInvalidSource uint64
+	}{
+		{"HandleLocal", false, nil, 0},
+		{"NoHandleLocal", true, tcpip.ErrWouldBlock, 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newDualTestContextWithOptions(t, defaultMTU, stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
+				TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+				HandleLocal:        tt.handleLocal,
+			})
+			defer c.cleanup()
+
+			c.createEndpointForFlow(unicastV4)
+
+			if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+				t.Fatalf("Bind failed: %s", err)
+			}
+
+			payload := newPayload()
+			h := unicastV4.header4Tuple(incoming)
+			h.srcAddr = h.dstAddr
+
+			c.injectV4Packet(payload, &h, true /* valid */)
+
+			if got := c.s.Stats().IP.InvalidSourceAddressesReceived.Value(); got != tt.wantInvalidSource {
+				t.Errorf("c.s.Stats().IP.InvalidSourceAddressesReceived got %d, want %d", got, tt.wantInvalidSource)
+			}
+
+			if _, _, err := c.ep.Read(nil); err != tt.wantErr {
+				t.Errorf("c.ep.Read() got error %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
 }
 
 func TestV4ReadOnV4(t *testing.T) {
@@ -1288,7 +1344,7 @@ func TestTOSV4(t *testing.T) {
 
 			c.createEndpointForFlow(flow)
 
-			const tos = 0xC0
+			const tos = testTOS
 			var v tcpip.IPv4TOSOption
 			if err := c.ep.GetSockOpt(&v); err != nil {
 				c.t.Errorf("GetSockopt failed: %s", err)
@@ -1323,7 +1379,7 @@ func TestTOSV6(t *testing.T) {
 
 			c.createEndpointForFlow(flow)
 
-			const tos = 0xC0
+			const tos = testTOS
 			var v tcpip.IPv6TrafficClassOption
 			if err := c.ep.GetSockOpt(&v); err != nil {
 				c.t.Errorf("GetSockopt failed: %s", err)
@@ -1346,6 +1402,47 @@ func TestTOSV6(t *testing.T) {
 			}
 
 			testWrite(c, flow, checker.TOS(tos, 0))
+		})
+	}
+}
+
+func TestReceiveTOSV4(t *testing.T) {
+	for _, flow := range []testFlow{unicastV4, broadcast} {
+		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
+			c := newDualTestContext(t, defaultMTU)
+			defer c.cleanup()
+
+			c.createEndpointForFlow(flow)
+
+			// Verify that setting and reading the option works.
+			v, err := c.ep.GetSockOptBool(tcpip.ReceiveTOSOption)
+			if err != nil {
+				c.t.Fatal("GetSockOptBool(tcpip.ReceiveTOSOption) failed:", err)
+			}
+			// Test for expected default value.
+			if v != false {
+				c.t.Errorf("got GetSockOptBool(tcpip.ReceiveTOSOption) = %t, want = %t", v, false)
+			}
+
+			want := true
+			if err := c.ep.SetSockOptBool(tcpip.ReceiveTOSOption, want); err != nil {
+				c.t.Fatalf("SetSockOptBool(tcpip.ReceiveTOSOption, %t) failed: %s", want, err)
+			}
+
+			got, err := c.ep.GetSockOptBool(tcpip.ReceiveTOSOption)
+			if err != nil {
+				c.t.Fatal("GetSockOptBool(tcpip.ReceiveTOSOption) failed:", err)
+			}
+			if got != want {
+				c.t.Fatalf("got GetSockOptBool(tcpip.ReceiveTOSOption) = %t, want = %t", got, want)
+			}
+
+			// Verify that the correct received TOS is handed through as
+			// ancillary data to the ControlMessages struct.
+			if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+				c.t.Fatal("Bind failed:", err)
+			}
+			testRead(c, flow, checker.ReceiveTOS(testTOS))
 		})
 	}
 }

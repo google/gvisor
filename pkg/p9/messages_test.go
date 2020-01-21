@@ -194,6 +194,21 @@ func TestEncodeDecode(t *testing.T) {
 			Flags:    3,
 		},
 		&Rxattrcreate{},
+		&Tgetxattr{
+			FID:  1,
+			Name: "abc",
+			Size: 2,
+		},
+		&Rgetxattr{
+			Value: "xyz",
+		},
+		&Tsetxattr{
+			FID:   1,
+			Name:  "abc",
+			Value: "xyz",
+			Flags: 2,
+		},
+		&Rsetxattr{},
 		&Treaddir{
 			Directory: 1,
 			Offset:    2,

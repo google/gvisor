@@ -6,66 +6,55 @@ These scripts are tools for collecting performance data for Docker-based tests.
 
 The scripts assume the following:
 
-*   You have a local machine with bazel installed.
-*   You have some machine(s) with docker installed. These machines will be
-    refered to as the "Environment".
-*   Environment machines have the runtime(s) under test installed, such that you
-    can run docker with a command like: `docker run --runtime=$RUNTIME
-    your/image`.
-*   You are able to login to machines in the environment with the local machine
-    via ssh and the user for ssh can run docker commands without using `sudo`.
+*   There are two sets of machines: one where the scripts will be run
+    (controller) and one or more machines on which docker containers will be run
+    (environment).
+*   The controller machine must have bazel installed along with this source
+    code. You should be able to run a command like `bazel run :benchmarks --
+    --list`
+*   Environment machines must have docker and the required runtimes installed.
+    More specifically, you should be able to run a command like: `docker run
+    --runtime=$RUNTIME your/image`.
+*   The controller has ssh private key which can be used to login to environment
+    machines and run docker commands without using `sudo`. This is not required
+    if running locally via the `run-local` command.
 *   The docker daemon on each of your environment machines is listening on
     `unix:///var/run/docker.sock` (docker's default).
 
 For configuring the environment manually, consult the
 [dockerd documentation][dockerd].
 
-## Environment
+## Running benchmarks
 
-All benchmarks require a user defined yaml file describe the environment. These
-files are of the form:
+Run the following from the benchmarks directory:
 
-```yaml
-machine1: local
-machine2:
-  hostname: 100.100.100.100
-  username: username
-  key_path: ~/private_keyfile
-  key_password: passphrase
-machine3:
-  hostname: 100.100.100.101
-  username: username
-  key_path: ~/private_keyfile
-  key_password: passphrase
+```bash
+bazel run :benchmarks -- run-local startup
+
+...
+method,metric,result
+startup.empty,startup_time_ms,652.5772
+startup.node,startup_time_ms,1654.4042000000002
+startup.ruby,startup_time_ms,1429.835
 ```
 
-The yaml file defines an environment with three machines named `machine1`,
-`machine2` and `machine3`. `machine1` is the local machine, `machine2` and
-`machine3` are remote machines. Both `machine2` and `machine3` should be
-reachable by `ssh`. For example, the command `ssh -i ~/private_keyfile
-username@100.100.100.100` (using the passphrase `passphrase`) should connect to
-`machine2`.
+The above command ran the startup benchmark locally, which consists of three
+benchmarks (empty, node, and ruby). Benchmark tools ran it on the default
+runtime, runc. Running on another installed runtime, like say runsc, is as
+simple as:
 
-The above is an example only. Machines should be uniform, since they are treated
-as such by the tests. Machines must also be accessible to each other via their
-default routes. Furthermore, some benchmarks will meaningless if running on the
-local machine, such as density.
+```bash
+bazel run :benchmakrs -- run-local startup --runtime=runsc
+```
 
-For remote machines, `hostname`, `key_path`, and `username` are required and
-others are optional. In addition key files must be generated
-[using the instrcutions below](#generating-ssh-keys).
-
-The above yaml file can be checked for correctness with the `validate` command
-in the top level perf.py script:
-
-`bazel run :benchmarks -- validate $PWD/examples/localhost.yaml`
-
-## Running benchmarks
+There is help: ``bash bash bazel run :benchmarks -- --help bazel
+run :benchmarks -- run-local --help` ``
 
 To list available benchmarks, use the `list` commmand:
 
 ```bash
 bazel run :benchmarks -- list
+ls
 
 ...
 Benchmark: sysbench.cpu
@@ -75,24 +64,44 @@ Metrics: events_per_second
     :param max_prime: The maximum prime number to search.
 ```
 
-To run benchmarks, use the `run` command. For example, to run the sysbench
-benchmark above:
+You can choose benchmarks by name or regex like:
 
 ```bash
-bazel run :benchmarks -- run --env $PWD/examples/localhost.yaml sysbench.cpu
+bazel run :benchmarks -- run-local startup.node
+...
+metric,result
+startup_time_ms,1671.7178000000001
+
+```
+
+or
+
+```bash
+bazel run :benchmarks -- run-local s
+...
+method,metric,result
+startup.empty,startup_time_ms,1792.8292
+startup.node,startup_time_ms,3113.5274
+startup.ruby,startup_time_ms,3025.2424
+sysbench.cpu,cpu_events_per_second,12661.47
+sysbench.memory,memory_ops_per_second,7228268.44
+sysbench.mutex,mutex_time,17.4835
+sysbench.mutex,mutex_latency,3496.7
+sysbench.mutex,mutex_deviation,0.04
+syscall.syscall,syscall_time_ns,2065.0
 ```
 
 You can run parameterized benchmarks, for example to run with different
 runtimes:
 
 ```bash
-bazel run :benchmarks -- run --env $PWD/examples/localhost.yaml --runtime=runc --runtime=runsc sysbench.cpu
+bazel run :benchmarks -- run-local --runtime=runc --runtime=runsc sysbench.cpu
 ```
 
 Or with different parameters:
 
 ```bash
-bazel run :benchmarks -- run --env $PWD/examples/localhost.yaml --max_prime=10 --max_prime=100 sysbench.cpu
+bazel run :benchmarks -- run-local --max_prime=10 --max_prime=100 sysbench.cpu
 ```
 
 ## Writing benchmarks
@@ -121,7 +130,7 @@ The harness requires workloads to run. These are all available in the
 
 In general, a workload consists of a Dockerfile to build it (while these are not
 hermetic, in general they should be as fixed and isolated as possible), some
-parses for output if required, parser tests and sample data. Provided the test
+parsers for output if required, parser tests and sample data. Provided the test
 is named after the workload package and contains a function named `sample`, this
 variable will be used to automatically mock workload output when the `--mock`
 flag is provided to the main tool.
@@ -149,24 +158,5 @@ To write a new benchmark, open a module in the `suites` directory and use the
 above signature. You should add a descriptive doc string to describe what your
 benchmark is and any test centric arguments.
 
-## Generating SSH Keys
-
-The scripts only support RSA Keys, and ssh library used in paramiko. Paramiko
-only supports RSA keys that look like the following (PEM format):
-
-```bash
-$ cat /path/to/ssh/key
-
------BEGIN RSA PRIVATE KEY-----
-...private key text...
------END RSA PRIVATE KEY-----
-
-```
-
-To generate ssh keys in PEM format, use the [`-t rsa -m PEM -b 4096`][RSA-keys].
-option.
-
 [dockerd]: https://docs.docker.com/engine/reference/commandline/dockerd/
 [docker-py]: https://docker-py.readthedocs.io/en/stable/
-[paramiko]: http://docs.paramiko.org/en/2.4/api/client.html
-[RSA-keys]: https://serverfault.com/questions/939909/ssh-keygen-does-not-create-rsa-private-key

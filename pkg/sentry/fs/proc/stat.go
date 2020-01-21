@@ -24,6 +24,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 )
 
+// LINT.IfChange
+
 // statData backs /proc/stat.
 //
 // +stateify savable
@@ -140,3 +142,5 @@ func (s *statData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]
 		},
 	}, 0
 }
+
+// LINT.ThenChange(../../fsimpl/proc/task_files.go)

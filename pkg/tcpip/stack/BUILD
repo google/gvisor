@@ -51,7 +51,7 @@ go_library(
 
 go_test(
     name = "stack_x_test",
-    size = "small",
+    size = "medium",
     srcs = [
         "ndp_test.go",
         "stack_test.go",

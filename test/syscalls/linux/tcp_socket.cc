@@ -814,6 +814,20 @@ TEST_P(TcpSocketTest, FullBuffer) {
   t_ = -1;
 }
 
+TEST_P(TcpSocketTest, PollAfterShutdown) {
+  ScopedThread client_thread([this]() {
+    EXPECT_THAT(shutdown(s_, SHUT_WR), SyscallSucceedsWithValue(0));
+    struct pollfd poll_fd = {s_, POLLIN | POLLERR | POLLHUP, 0};
+    EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 10000),
+                SyscallSucceedsWithValue(1));
+  });
+
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallSucceedsWithValue(0));
+  struct pollfd poll_fd = {t_, POLLIN | POLLERR | POLLHUP, 0};
+  EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 10000),
+              SyscallSucceedsWithValue(1));
+}
+
 TEST_P(SimpleTcpSocketTest, NonBlockingConnectNoListener) {
   // Initialize address to the loopback one.
   sockaddr_storage addr =
