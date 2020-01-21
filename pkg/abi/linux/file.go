@@ -180,6 +180,19 @@ const (
 	DT_WHT     = 14
 )
 
+// DirentType are the friendly strings for linux_dirent64.d_type.
+var DirentType = abi.ValueSet{
+	DT_UNKNOWN: "DT_UNKNOWN",
+	DT_FIFO:    "DT_FIFO",
+	DT_CHR:     "DT_CHR",
+	DT_DIR:     "DT_DIR",
+	DT_BLK:     "DT_BLK",
+	DT_REG:     "DT_REG",
+	DT_LNK:     "DT_LNK",
+	DT_SOCK:    "DT_SOCK",
+	DT_WHT:     "DT_WHT",
+}
+
 // Values for preadv2/pwritev2.
 const (
 	// Note: gVisor does not implement the RWF_HIPRI feature, but the flag is
