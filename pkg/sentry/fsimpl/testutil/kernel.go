@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package proc
+package testutil
 
 import (
 	"flag"
@@ -43,8 +43,8 @@ var (
 	platformFlag = flag.String("platform", "ptrace", "specify which platform to use")
 )
 
-// boot initializes a new bare bones kernel for test.
-func boot() (*kernel.Kernel, error) {
+// Boot initializes a new bare bones kernel for test.
+func Boot() (*kernel.Kernel, error) {
 	platformCtr, err := platform.Lookup(*platformFlag)
 	if err != nil {
 		return nil, fmt.Errorf("platform not found: %v", err)
@@ -117,8 +117,8 @@ func boot() (*kernel.Kernel, error) {
 	return k, nil
 }
 
-// createTask creates a new bare bones task for tests.
-func createTask(ctx context.Context, name string, tc *kernel.ThreadGroup) (*kernel.Task, error) {
+// CreateTask creates a new bare bones task for tests.
+func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup) (*kernel.Task, error) {
 	k := kernel.KernelFromContext(ctx)
 	config := &kernel.TaskConfig{
 		Kernel:                  k,

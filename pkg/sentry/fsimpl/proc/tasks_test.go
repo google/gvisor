@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
@@ -134,7 +135,7 @@ func checkFiles(gots []vfs.Dirent, wants map[string]vfs.Dirent) ([]vfs.Dirent, e
 }
 
 func setup() (context.Context, *vfs.VirtualFilesystem, vfs.VirtualDentry, error) {
-	k, err := boot()
+	k, err := testutil.Boot()
 	if err != nil {
 		return nil, nil, vfs.VirtualDentry{}, fmt.Errorf("creating kernel: %v", err)
 	}
@@ -206,7 +207,7 @@ func TestTasks(t *testing.T) {
 	var tasks []*kernel.Task
 	for i := 0; i < 5; i++ {
 		tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
-		task, err := createTask(ctx, fmt.Sprintf("name-%d", i), tc)
+		task, err := testutil.CreateTask(ctx, fmt.Sprintf("name-%d", i), tc)
 		if err != nil {
 			t.Fatalf("CreateTask(): %v", err)
 		}
@@ -298,7 +299,7 @@ func TestTasksOffset(t *testing.T) {
 	k := kernel.KernelFromContext(ctx)
 	for i := 0; i < 3; i++ {
 		tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
-		if _, err := createTask(ctx, fmt.Sprintf("name-%d", i), tc); err != nil {
+		if _, err := testutil.CreateTask(ctx, fmt.Sprintf("name-%d", i), tc); err != nil {
 			t.Fatalf("CreateTask(): %v", err)
 		}
 	}
@@ -417,7 +418,7 @@ func TestTask(t *testing.T) {
 
 	k := kernel.KernelFromContext(ctx)
 	tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
-	_, err = createTask(ctx, "name", tc)
+	_, err = testutil.CreateTask(ctx, "name", tc)
 	if err != nil {
 		t.Fatalf("CreateTask(): %v", err)
 	}
@@ -458,7 +459,7 @@ func TestProcSelf(t *testing.T) {
 
 	k := kernel.KernelFromContext(ctx)
 	tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
-	task, err := createTask(ctx, "name", tc)
+	task, err := testutil.CreateTask(ctx, "name", tc)
 	if err != nil {
 		t.Fatalf("CreateTask(): %v", err)
 	}
@@ -555,7 +556,7 @@ func TestTree(t *testing.T) {
 	var tasks []*kernel.Task
 	for i := 0; i < 5; i++ {
 		tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
-		task, err := createTask(uberCtx, fmt.Sprintf("name-%d", i), tc)
+		task, err := testutil.CreateTask(uberCtx, fmt.Sprintf("name-%d", i), tc)
 		if err != nil {
 			t.Fatalf("CreateTask(): %v", err)
 		}
