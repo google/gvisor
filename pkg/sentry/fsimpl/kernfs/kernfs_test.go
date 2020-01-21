@@ -17,20 +17,17 @@ package kernfs_test
 import (
 	"bytes"
 	"fmt"
-	"io"
-	"runtime"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -41,21 +38,11 @@ const staticFileContent = "This is sample content for a static test file."
 // filesystem. See newTestSystem.
 type RootDentryFn func(*auth.Credentials, *filesystem) *kernfs.Dentry
 
-// TestSystem represents the context for a single test.
-type TestSystem struct {
-	t     *testing.T
-	ctx   context.Context
-	creds *auth.Credentials
-	vfs   *vfs.VirtualFilesystem
-	mns   *vfs.MountNamespace
-	root  vfs.VirtualDentry
-}
-
 // newTestSystem sets up a minimal environment for running a test, including an
 // instance of a test filesystem. Tests can control the contents of the
 // filesystem by providing an appropriate rootFn, which should return a
 // pre-populated root dentry.
-func newTestSystem(t *testing.T, rootFn RootDentryFn) *TestSystem {
+func newTestSystem(t *testing.T, rootFn RootDentryFn) *testutil.System {
 	ctx := contexttest.Context(t)
 	creds := auth.CredentialsFromContext(ctx)
 	v := vfs.New()
@@ -66,57 +53,7 @@ func newTestSystem(t *testing.T, rootFn RootDentryFn) *TestSystem {
 	if err != nil {
 		t.Fatalf("Failed to create testfs root mount: %v", err)
 	}
-
-	s := &TestSystem{
-		t:     t,
-		ctx:   ctx,
-		creds: creds,
-		vfs:   v,
-		mns:   mns,
-		root:  mns.Root(),
-	}
-	runtime.SetFinalizer(s, func(s *TestSystem) { s.root.DecRef() })
-	return s
-}
-
-// PathOpAtRoot constructs a vfs.PathOperation for a path from the
-// root of the test filesystem.
-//
-// Precondition: path should be relative path.
-func (s *TestSystem) PathOpAtRoot(path string) vfs.PathOperation {
-	return vfs.PathOperation{
-		Root:  s.root,
-		Start: s.root,
-		Path:  fspath.Parse(path),
-	}
-}
-
-// GetDentryOrDie attempts to resolve a dentry referred to by the
-// provided path operation. If unsuccessful, the test fails.
-func (s *TestSystem) GetDentryOrDie(pop vfs.PathOperation) vfs.VirtualDentry {
-	vd, err := s.vfs.GetDentryAt(s.ctx, s.creds, &pop, &vfs.GetDentryOptions{})
-	if err != nil {
-		s.t.Fatalf("GetDentryAt(pop:%+v) failed: %v", pop, err)
-	}
-	return vd
-}
-
-func (s *TestSystem) ReadToEnd(fd *vfs.FileDescription) (string, error) {
-	buf := make([]byte, usermem.PageSize)
-	bufIOSeq := usermem.BytesIOSequence(buf)
-	opts := vfs.ReadOptions{}
-
-	var content bytes.Buffer
-	for {
-		n, err := fd.Impl().Read(s.ctx, bufIOSeq, opts)
-		if n == 0 || err != nil {
-			if err == io.EOF {
-				err = nil
-			}
-			return content.String(), err
-		}
-		content.Write(buf[:n])
-	}
+	return testutil.NewSystem(ctx, t, v, mns)
 }
 
 type fsType struct {
@@ -260,6 +197,7 @@ func TestBasic(t *testing.T) {
 			"file1": fs.newFile(creds, staticFileContent),
 		})
 	})
+	defer sys.Destroy()
 	sys.GetDentryOrDie(sys.PathOpAtRoot("file1")).DecRef()
 }
 
@@ -269,9 +207,10 @@ func TestMkdirGetDentry(t *testing.T) {
 			"dir1": fs.newDir(creds, 0755, nil),
 		})
 	})
+	defer sys.Destroy()
 
 	pop := sys.PathOpAtRoot("dir1/a new directory")
-	if err := sys.vfs.MkdirAt(sys.ctx, sys.creds, &pop, &vfs.MkdirOptions{Mode: 0755}); err != nil {
+	if err := sys.VFS.MkdirAt(sys.Ctx, sys.Creds, &pop, &vfs.MkdirOptions{Mode: 0755}); err != nil {
 		t.Fatalf("MkdirAt for PathOperation %+v failed: %v", pop, err)
 	}
 	sys.GetDentryOrDie(pop).DecRef()
@@ -283,20 +222,21 @@ func TestReadStaticFile(t *testing.T) {
 			"file1": fs.newFile(creds, staticFileContent),
 		})
 	})
+	defer sys.Destroy()
 
 	pop := sys.PathOpAtRoot("file1")
-	fd, err := sys.vfs.OpenAt(sys.ctx, sys.creds, &pop, &vfs.OpenOptions{})
+	fd, err := sys.VFS.OpenAt(sys.Ctx, sys.Creds, &pop, &vfs.OpenOptions{})
 	if err != nil {
-		sys.t.Fatalf("OpenAt for PathOperation %+v failed: %v", pop, err)
+		t.Fatalf("OpenAt for PathOperation %+v failed: %v", pop, err)
 	}
 	defer fd.DecRef()
 
 	content, err := sys.ReadToEnd(fd)
 	if err != nil {
-		sys.t.Fatalf("Read failed: %v", err)
+		t.Fatalf("Read failed: %v", err)
 	}
 	if diff := cmp.Diff(staticFileContent, content); diff != "" {
-		sys.t.Fatalf("Read returned unexpected data:\n--- want\n+++ got\n%v", diff)
+		t.Fatalf("Read returned unexpected data:\n--- want\n+++ got\n%v", diff)
 	}
 }
 
@@ -306,83 +246,44 @@ func TestCreateNewFileInStaticDir(t *testing.T) {
 			"dir1": fs.newDir(creds, 0755, nil),
 		})
 	})
+	defer sys.Destroy()
 
 	pop := sys.PathOpAtRoot("dir1/newfile")
 	opts := &vfs.OpenOptions{Flags: linux.O_CREAT | linux.O_EXCL, Mode: defaultMode}
-	fd, err := sys.vfs.OpenAt(sys.ctx, sys.creds, &pop, opts)
+	fd, err := sys.VFS.OpenAt(sys.Ctx, sys.Creds, &pop, opts)
 	if err != nil {
-		sys.t.Fatalf("OpenAt(pop:%+v, opts:%+v) failed: %v", pop, opts, err)
+		t.Fatalf("OpenAt(pop:%+v, opts:%+v) failed: %v", pop, opts, err)
 	}
 
 	// Close the file. The file should persist.
 	fd.DecRef()
 
-	fd, err = sys.vfs.OpenAt(sys.ctx, sys.creds, &pop, &vfs.OpenOptions{})
+	fd, err = sys.VFS.OpenAt(sys.Ctx, sys.Creds, &pop, &vfs.OpenOptions{})
 	if err != nil {
-		sys.t.Fatalf("OpenAt(pop:%+v) = %+v failed: %v", pop, fd, err)
+		t.Fatalf("OpenAt(pop:%+v) = %+v failed: %v", pop, fd, err)
 	}
 	fd.DecRef()
-}
-
-// direntCollector provides an implementation for vfs.IterDirentsCallback for
-// testing. It simply iterates to the end of a given directory FD and collects
-// all dirents emitted by the callback.
-type direntCollector struct {
-	mu      sync.Mutex
-	dirents map[string]vfs.Dirent
-}
-
-// Handle implements vfs.IterDirentsCallback.Handle.
-func (d *direntCollector) Handle(dirent vfs.Dirent) bool {
-	d.mu.Lock()
-	if d.dirents == nil {
-		d.dirents = make(map[string]vfs.Dirent)
-	}
-	d.dirents[dirent.Name] = dirent
-	d.mu.Unlock()
-	return true
-}
-
-// count returns the number of dirents currently in the collector.
-func (d *direntCollector) count() int {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return len(d.dirents)
-}
-
-// contains checks whether the collector has a dirent with the given name and
-// type.
-func (d *direntCollector) contains(name string, typ uint8) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	dirent, ok := d.dirents[name]
-	if !ok {
-		return fmt.Errorf("No dirent named %q found", name)
-	}
-	if dirent.Type != typ {
-		return fmt.Errorf("Dirent named %q found, but was expecting type %d, got: %+v", name, typ, dirent)
-	}
-	return nil
 }
 
 func TestDirFDReadWrite(t *testing.T) {
 	sys := newTestSystem(t, func(creds *auth.Credentials, fs *filesystem) *kernfs.Dentry {
 		return fs.newReadonlyDir(creds, 0755, nil)
 	})
+	defer sys.Destroy()
 
 	pop := sys.PathOpAtRoot("/")
-	fd, err := sys.vfs.OpenAt(sys.ctx, sys.creds, &pop, &vfs.OpenOptions{})
+	fd, err := sys.VFS.OpenAt(sys.Ctx, sys.Creds, &pop, &vfs.OpenOptions{})
 	if err != nil {
-		sys.t.Fatalf("OpenAt for PathOperation %+v failed: %v", pop, err)
+		t.Fatalf("OpenAt for PathOperation %+v failed: %v", pop, err)
 	}
 	defer fd.DecRef()
 
 	// Read/Write should fail for directory FDs.
-	if _, err := fd.Read(sys.ctx, usermem.BytesIOSequence([]byte{}), vfs.ReadOptions{}); err != syserror.EISDIR {
-		sys.t.Fatalf("Read for directory FD failed with unexpected error: %v", err)
+	if _, err := fd.Read(sys.Ctx, usermem.BytesIOSequence([]byte{}), vfs.ReadOptions{}); err != syserror.EISDIR {
+		t.Fatalf("Read for directory FD failed with unexpected error: %v", err)
 	}
-	if _, err := fd.Write(sys.ctx, usermem.BytesIOSequence([]byte{}), vfs.WriteOptions{}); err != syserror.EISDIR {
-		sys.t.Fatalf("Wrire for directory FD failed with unexpected error: %v", err)
+	if _, err := fd.Write(sys.Ctx, usermem.BytesIOSequence([]byte{}), vfs.WriteOptions{}); err != syserror.EISDIR {
+		t.Fatalf("Write for directory FD failed with unexpected error: %v", err)
 	}
 }
 
@@ -397,30 +298,12 @@ func TestDirFDIterDirents(t *testing.T) {
 			"file1": fs.newFile(creds, staticFileContent),
 		})
 	})
+	defer sys.Destroy()
 
 	pop := sys.PathOpAtRoot("/")
-	fd, err := sys.vfs.OpenAt(sys.ctx, sys.creds, &pop, &vfs.OpenOptions{})
-	if err != nil {
-		sys.t.Fatalf("OpenAt for PathOperation %+v failed: %v", pop, err)
-	}
-	defer fd.DecRef()
-
-	collector := &direntCollector{}
-	if err := fd.IterDirents(sys.ctx, collector); err != nil {
-		sys.t.Fatalf("IterDirent failed: %v", err)
-	}
-
-	// Root directory should contain ".", ".." and 3 children:
-	if collector.count() != 5 {
-		sys.t.Fatalf("IterDirent returned too many dirents")
-	}
-	for _, dirName := range []string{".", "..", "dir1", "dir2"} {
-		if err := collector.contains(dirName, linux.DT_DIR); err != nil {
-			sys.t.Fatalf("IterDirent had unexpected results: %v", err)
-		}
-	}
-	if err := collector.contains("file1", linux.DT_REG); err != nil {
-		sys.t.Fatalf("IterDirent had unexpected results: %v", err)
-	}
-
+	sys.AssertDirectoryContains(&pop, map[string]testutil.DirentType{
+		"dir1":  linux.DT_DIR,
+		"dir2":  linux.DT_DIR,
+		"file1": linux.DT_REG,
+	})
 }
