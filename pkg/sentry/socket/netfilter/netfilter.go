@@ -325,8 +325,8 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 			return syserr.ErrInvalidArgument
 		}
 
-		// TODO(gvisor.dev/issue/170): We should support IPTIP
-		// filtering. We reject any nonzero IPTIP values for now.
+		// TODO(gvisor.dev/issue/170): We should support more IPTIP
+		// filtering fields.
 		filter, err := filterFromIPTIP(entry.IP)
 		if err != nil {
 			return err
