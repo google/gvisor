@@ -26,6 +26,7 @@
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/file_base.h"
 #include "test/util/capability_util.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -412,6 +413,46 @@ TEST_F(XattrTest, GetxattrNonexistentName) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   EXPECT_THAT(getxattr(path, name, nullptr, 0), SyscallFailsWithErrno(ENODATA));
+}
+
+TEST_F(XattrTest, LGetSetxattrOnSymlink) {
+  TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateSymlinkTo(dir.path(), test_file_name_));
+
+  EXPECT_THAT(lsetxattr(link.path().c_str(), nullptr, nullptr, 0, 0),
+              SyscallFailsWithErrno(EPERM));
+  EXPECT_THAT(lgetxattr(link.path().c_str(), nullptr, nullptr, 0),
+              SyscallFailsWithErrno(ENODATA));
+}
+
+TEST_F(XattrTest, LGetSetxattrOnNonsymlink) {
+  const char* path = test_file_name_.c_str();
+  const char name[] = "user.test";
+  int val = 1234;
+  size_t size = sizeof(val);
+  EXPECT_THAT(lsetxattr(path, name, &val, size, /*flags=*/0),
+              SyscallSucceeds());
+
+  int buf = 0;
+  EXPECT_THAT(lgetxattr(path, name, &buf, size),
+              SyscallSucceedsWithValue(size));
+  EXPECT_EQ(buf, val);
+}
+
+TEST_F(XattrTest, FGetSetxattr) {
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_.c_str(), 0));
+  const char name[] = "user.test";
+  int val = 1234;
+  size_t size = sizeof(val);
+  EXPECT_THAT(fsetxattr(fd.get(), name, &val, size, /*flags=*/0),
+              SyscallSucceeds());
+
+  int buf = 0;
+  EXPECT_THAT(fgetxattr(fd.get(), name, &buf, size),
+              SyscallSucceedsWithValue(size));
+  EXPECT_EQ(buf, val);
 }
 
 }  // namespace
