@@ -15,14 +15,13 @@
 package iptables
 
 import (
+	"flag"
 	"fmt"
 	"net"
 	"os"
 	"path"
 	"testing"
 	"time"
-
-	"flag"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/dockerutil"
