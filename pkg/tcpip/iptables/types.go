@@ -14,9 +14,7 @@
 
 package iptables
 
-import (
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
-)
+import "gvisor.dev/gvisor/pkg/tcpip"
 
 // A Hook specifies one of the hooks built into the network stack.
 //
@@ -165,7 +163,7 @@ type Matcher interface {
 	// Match returns whether the packet matches and whether the packet
 	// should be "hotdropped", i.e. dropped immediately. This is usually
 	// used for suspicious packets.
-	Match(hook Hook, packet buffer.VectorisedView, interfaceName string) (matches bool, hotdrop bool)
+	Match(hook Hook, packet tcpip.PacketBuffer, interfaceName string) (matches bool, hotdrop bool)
 }
 
 // A Target is the interface for taking an action for a packet.
@@ -173,5 +171,5 @@ type Target interface {
 	// Action takes an action on the packet and returns a verdict on how
 	// traversal should (or should not) continue. If the return value is
 	// Jump, it also returns the name of the chain to jump to.
-	Action(packet buffer.VectorisedView) (Verdict, string)
+	Action(packet tcpip.PacketBuffer) (Verdict, string)
 }
