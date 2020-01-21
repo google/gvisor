@@ -14,7 +14,9 @@
 
 package iptables
 
-import "gvisor.dev/gvisor/pkg/tcpip"
+import (
+	"gvisor.dev/gvisor/pkg/tcpip"
+)
 
 // A Hook specifies one of the hooks built into the network stack.
 //
@@ -161,21 +163,10 @@ type Rule struct {
 	Target Target
 }
 
-// TODO: This is gross.
-// TODO: Save this in SetEntries.
-// TODO: Utilize this when traversing tables.
+// IPHeaderFilter holds basic IP filtering data common to every rule.
 type IPHeaderFilter struct {
-	Source              [4]byte
-	Destination         [4]byte
-	SourceMask          [4]byte
-	DestinationMask     [4]byte
-	OutputInterface     string
-	InputInterface      string
-	OutputInterfaceMask string
-	InputInterfaceMask  string
-	Protocol            tcpip.TransportProtocolNumber
-	Flags               uint8
-	InverseFlags        uint8
+	// Protocol matches the transport protocol.
+	Protocol tcpip.TransportProtocolNumber
 }
 
 // A Matcher is the interface for matching packets.
