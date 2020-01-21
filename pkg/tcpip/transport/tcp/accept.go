@@ -294,7 +294,7 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 	}
 
 	// Perform the 3-way handshake.
-	h := newHandshake(ep, seqnum.Size(ep.initialReceiveWindow()))
+	h := newHandshake(ep, ep.rcv.rcvWnd)
 
 	h.resetToSynRcvd(isn, irs, opts)
 	if err := h.execute(); err != nil {
