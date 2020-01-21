@@ -164,6 +164,9 @@ func convertNetstackToBinary(tablename string, table iptables.Table) (linux.Kern
 		// Each rule corresponds to an entry.
 		entry := linux.KernelIPTEntry{
 			IPTEntry: linux.IPTEntry{
+				IP: linux.IPTIP{
+					Protocol: uint16(rule.Filter.Protocol),
+				},
 				NextOffset:   linux.SizeOfIPTEntry,
 				TargetOffset: linux.SizeOfIPTEntry,
 			},

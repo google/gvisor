@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"flag"
+
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/dockerutil"
 	"gvisor.dev/gvisor/runsc/testutil"
@@ -160,29 +161,29 @@ func logContainer(output string, err error) {
 	log.Infof(msg)
 }
 
-// func TestFilterInputDropUDP(t *testing.T) {
-// 	if err := singleTest(FilterInputDropUDP{}); err != nil {
-// 		t.Fatal(err)
-// 	}
-// }
+func TestFilterInputDropUDP(t *testing.T) {
+	if err := singleTest(FilterInputDropUDP{}); err != nil {
+		t.Fatal(err)
+	}
+}
 
-// func TestFilterInputDropUDPPort(t *testing.T) {
-// 	if err := singleTest(FilterInputDropUDPPort{}); err != nil {
-// 		t.Fatal(err)
-// 	}
-// }
+func TestFilterInputDropUDPPort(t *testing.T) {
+	if err := singleTest(FilterInputDropUDPPort{}); err != nil {
+		t.Fatal(err)
+	}
+}
 
-// func TestFilterInputDropDifferentUDPPort(t *testing.T) {
-// 	if err := singleTest(FilterInputDropDifferentUDPPort{}); err != nil {
-// 		t.Fatal(err)
-// 	}
-// }
+func TestFilterInputDropDifferentUDPPort(t *testing.T) {
+	if err := singleTest(FilterInputDropDifferentUDPPort{}); err != nil {
+		t.Fatal(err)
+	}
+}
 
-// func TestFilterInputDropAll(t *testing.T) {
-// 	if err := singleTest(FilterInputDropAll{}); err != nil {
-// 		t.Fatal(err)
-// 	}
-// }
+func TestFilterInputDropAll(t *testing.T) {
+	if err := singleTest(FilterInputDropAll{}); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestFilterInputDropOnlyUDP(t *testing.T) {
 	if err := singleTest(FilterInputDropOnlyUDP{}); err != nil {
