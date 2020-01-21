@@ -7,7 +7,6 @@ go_library(
     srcs = [
         "iptables.go",
         "targets.go",
-        "tcp_matcher.go",
         "types.go",
         "udp_matcher.go",
     ],
