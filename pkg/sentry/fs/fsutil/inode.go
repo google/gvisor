@@ -15,6 +15,7 @@
 package fsutil
 
 import (
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -202,7 +203,7 @@ func (i *InodeSimpleAttributes) NotifyModificationAndStatusChange(ctx context.Co
 }
 
 // InodeSimpleExtendedAttributes implements
-// fs.InodeOperations.{Get,Set,List}xattr.
+// fs.InodeOperations.{Get,Set,List}Xattr.
 //
 // +stateify savable
 type InodeSimpleExtendedAttributes struct {
@@ -211,8 +212,8 @@ type InodeSimpleExtendedAttributes struct {
 	xattrs map[string]string
 }
 
-// Getxattr implements fs.InodeOperations.Getxattr.
-func (i *InodeSimpleExtendedAttributes) Getxattr(_ *fs.Inode, name string) (string, error) {
+// GetXattr implements fs.InodeOperations.GetXattr.
+func (i *InodeSimpleExtendedAttributes) GetXattr(_ context.Context, _ *fs.Inode, name string, _ uint64) (string, error) {
 	i.mu.RLock()
 	value, ok := i.xattrs[name]
 	i.mu.RUnlock()
@@ -222,19 +223,31 @@ func (i *InodeSimpleExtendedAttributes) Getxattr(_ *fs.Inode, name string) (stri
 	return value, nil
 }
 
-// Setxattr implements fs.InodeOperations.Setxattr.
-func (i *InodeSimpleExtendedAttributes) Setxattr(_ *fs.Inode, name, value string) error {
+// SetXattr implements fs.InodeOperations.SetXattr.
+func (i *InodeSimpleExtendedAttributes) SetXattr(_ context.Context, _ *fs.Inode, name, value string, flags uint32) error {
 	i.mu.Lock()
+	defer i.mu.Unlock()
 	if i.xattrs == nil {
+		if flags&linux.XATTR_REPLACE != 0 {
+			return syserror.ENODATA
+		}
 		i.xattrs = make(map[string]string)
 	}
+
+	_, ok := i.xattrs[name]
+	if ok && flags&linux.XATTR_CREATE != 0 {
+		return syserror.EEXIST
+	}
+	if !ok && flags&linux.XATTR_REPLACE != 0 {
+		return syserror.ENODATA
+	}
+
 	i.xattrs[name] = value
-	i.mu.Unlock()
 	return nil
 }
 
-// Listxattr implements fs.InodeOperations.Listxattr.
-func (i *InodeSimpleExtendedAttributes) Listxattr(_ *fs.Inode) (map[string]struct{}, error) {
+// ListXattr implements fs.InodeOperations.ListXattr.
+func (i *InodeSimpleExtendedAttributes) ListXattr(context.Context, *fs.Inode) (map[string]struct{}, error) {
 	i.mu.RLock()
 	names := make(map[string]struct{}, len(i.xattrs))
 	for name := range i.xattrs {
@@ -436,18 +449,18 @@ func (InodeNotSymlink) Getlink(context.Context, *fs.Inode) (*fs.Dirent, error) {
 // extended attributes.
 type InodeNoExtendedAttributes struct{}
 
-// Getxattr implements fs.InodeOperations.Getxattr.
-func (InodeNoExtendedAttributes) Getxattr(*fs.Inode, string) (string, error) {
+// GetXattr implements fs.InodeOperations.GetXattr.
+func (InodeNoExtendedAttributes) GetXattr(context.Context, *fs.Inode, string, uint64) (string, error) {
 	return "", syserror.EOPNOTSUPP
 }
 
-// Setxattr implements fs.InodeOperations.Setxattr.
-func (InodeNoExtendedAttributes) Setxattr(*fs.Inode, string, string) error {
+// SetXattr implements fs.InodeOperations.SetXattr.
+func (InodeNoExtendedAttributes) SetXattr(context.Context, *fs.Inode, string, string, uint32) error {
 	return syserror.EOPNOTSUPP
 }
 
-// Listxattr implements fs.InodeOperations.Listxattr.
-func (InodeNoExtendedAttributes) Listxattr(*fs.Inode) (map[string]struct{}, error) {
+// ListXattr implements fs.InodeOperations.ListXattr.
+func (InodeNoExtendedAttributes) ListXattr(context.Context, *fs.Inode) (map[string]struct{}, error) {
 	return nil, syserror.EOPNOTSUPP
 }
 

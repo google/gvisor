@@ -28,6 +28,8 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
+// LINT.IfChange
+
 // walkDescriptors finds the descriptor (file-flag pair) for the fd identified
 // by p, and calls the toInodeOperations callback with that descriptor.  This is a helper
 // method for implementing fs.InodeOperations.Lookup.
@@ -277,3 +279,5 @@ func (fdid *fdInfoDir) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.
 	}
 	return fs.NewFile(ctx, dirent, flags, fops), nil
 }
+
+// LINT.ThenChange(../../fsimpl/proc/task_files.go)

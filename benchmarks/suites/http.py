@@ -92,7 +92,7 @@ def http_app(server: machine.Machine,
   redis = server.pull("redis")
   image = server.pull(workload)
   redis_port = 6379
-  redis_name = "redis_server"
+  redis_name = "{workload}_redis_server".format(workload=workload)
 
   with server.container(redis, name=redis_name).detach():
     server.container(server_netcat, links={redis_name: redis_name})\

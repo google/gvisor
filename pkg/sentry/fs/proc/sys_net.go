@@ -30,6 +30,8 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// LINT.IfChange
+
 type tcpMemDir int
 
 const (
@@ -364,3 +366,5 @@ func (p *proc) newSysNetDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode
 	d := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
 	return newProcInode(ctx, d, msrc, fs.SpecialDirectory, nil)
 }
+
+// LINT.ThenChange(../../fsimpl/proc/tasks_sys.go)

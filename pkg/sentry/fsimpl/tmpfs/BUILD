@@ -40,6 +40,7 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/pipe",
+        "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
@@ -77,6 +78,7 @@ go_test(
     srcs = [
         "pipe_test.go",
         "regular_file_test.go",
+        "stat_test.go",
     ],
     embed = [":tmpfs"],
     deps = [

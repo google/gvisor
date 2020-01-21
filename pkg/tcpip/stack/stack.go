@@ -423,7 +423,11 @@ type Stack struct {
 	// handleLocal allows non-loopback interfaces to loop packets.
 	handleLocal bool
 
-	// tables are the iptables packet filtering and manipulation rules.
+	// tablesMu protects iptables.
+	tablesMu sync.RWMutex
+
+	// tables are the iptables packet filtering and manipulation rules. The are
+	// protected by tablesMu.`
 	tables iptables.IPTables
 
 	// resumableEndpoints is a list of endpoints that need to be resumed if the
@@ -545,6 +549,49 @@ type TransportEndpointInfo struct {
 	// RegisterNICID is the default NICID registered as a side-effect of
 	// connect or datagram write.
 	RegisterNICID tcpip.NICID
+}
+
+// AddrNetProto unwraps the specified address if it is a V4-mapped V6 address
+// and returns the network protocol number to be used to communicate with the
+// specified address. It returns an error if the passed address is incompatible
+// with the receiver.
+func (e *TransportEndpointInfo) AddrNetProto(addr tcpip.FullAddress, v6only bool) (tcpip.FullAddress, tcpip.NetworkProtocolNumber, *tcpip.Error) {
+	netProto := e.NetProto
+	switch len(addr.Addr) {
+	case header.IPv4AddressSize:
+		netProto = header.IPv4ProtocolNumber
+	case header.IPv6AddressSize:
+		if header.IsV4MappedAddress(addr.Addr) {
+			netProto = header.IPv4ProtocolNumber
+			addr.Addr = addr.Addr[header.IPv6AddressSize-header.IPv4AddressSize:]
+			if addr.Addr == header.IPv4Any {
+				addr.Addr = ""
+			}
+		}
+	}
+
+	switch len(e.ID.LocalAddress) {
+	case header.IPv4AddressSize:
+		if len(addr.Addr) == header.IPv6AddressSize {
+			return tcpip.FullAddress{}, 0, tcpip.ErrInvalidEndpointState
+		}
+	case header.IPv6AddressSize:
+		if len(addr.Addr) == header.IPv4AddressSize {
+			return tcpip.FullAddress{}, 0, tcpip.ErrNetworkUnreachable
+		}
+	}
+
+	switch {
+	case netProto == e.NetProto:
+	case netProto == header.IPv4ProtocolNumber && e.NetProto == header.IPv6ProtocolNumber:
+		if v6only {
+			return tcpip.FullAddress{}, 0, tcpip.ErrNoRoute
+		}
+	default:
+		return tcpip.FullAddress{}, 0, tcpip.ErrInvalidEndpointState
+	}
+
+	return addr, netProto, nil
 }
 
 // IsEndpointInfo is an empty method to implement the tcpip.EndpointInfo
@@ -707,7 +754,9 @@ func (s *Stack) Stats() tcpip.Stats {
 // SetForwarding enables or disables the packet forwarding between NICs.
 //
 // When forwarding becomes enabled, any host-only state on all NICs will be
-// cleaned up.
+// cleaned up and if IPv6 is enabled, NDP Router Solicitations will be started.
+// When forwarding becomes disabled and if IPv6 is enabled, NDP Router
+// Solicitations will be stopped.
 func (s *Stack) SetForwarding(enable bool) {
 	// TODO(igudger, bgeffon): Expose via /proc/sys/net/ipv4/ip_forward.
 	s.mu.Lock()
@@ -728,6 +777,10 @@ func (s *Stack) SetForwarding(enable bool) {
 	if enable {
 		for _, nic := range s.nics {
 			nic.becomeIPv6Router()
+		}
+	} else {
+		for _, nic := range s.nics {
+			nic.becomeIPv6Host()
 		}
 	}
 }
@@ -869,7 +922,7 @@ func (s *Stack) CheckNIC(id tcpip.NICID) bool {
 	return false
 }
 
-// NICSubnets returns a map of NICIDs to their associated subnets.
+// NICAddressRanges returns a map of NICIDs to their associated subnets.
 func (s *Stack) NICAddressRanges() map[tcpip.NICID][]tcpip.Subnet {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1063,9 +1116,9 @@ func (s *Stack) GetMainNICAddress(id tcpip.NICID, protocol tcpip.NetworkProtocol
 	return nic.primaryAddress(protocol), nil
 }
 
-func (s *Stack) getRefEP(nic *NIC, localAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) (ref *referencedNetworkEndpoint) {
+func (s *Stack) getRefEP(nic *NIC, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) (ref *referencedNetworkEndpoint) {
 	if len(localAddr) == 0 {
-		return nic.primaryEndpoint(netProto)
+		return nic.primaryEndpoint(netProto, remoteAddr)
 	}
 	return nic.findEndpoint(netProto, localAddr, CanBePrimaryEndpoint)
 }
@@ -1081,7 +1134,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	needRoute := !(isBroadcast || isMulticast || header.IsV6LinkLocalAddress(remoteAddr))
 	if id != 0 && !needRoute {
 		if nic, ok := s.nics[id]; ok {
-			if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
+			if ref := s.getRefEP(nic, localAddr, remoteAddr, netProto); ref != nil {
 				return makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.isLoopback(), multicastLoop && !nic.isLoopback()), nil
 			}
 		}
@@ -1091,7 +1144,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 				continue
 			}
 			if nic, ok := s.nics[route.NIC]; ok {
-				if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
+				if ref := s.getRefEP(nic, localAddr, remoteAddr, netProto); ref != nil {
 					if len(remoteAddr) == 0 {
 						// If no remote address was provided, then the route
 						// provided will refer to the link local address.
@@ -1545,12 +1598,17 @@ func (s *Stack) LeaveGroup(protocol tcpip.NetworkProtocolNumber, nicID tcpip.NIC
 
 // IPTables returns the stack's iptables.
 func (s *Stack) IPTables() iptables.IPTables {
-	return s.tables
+	s.tablesMu.RLock()
+	t := s.tables
+	s.tablesMu.RUnlock()
+	return t
 }
 
 // SetIPTables sets the stack's iptables.
 func (s *Stack) SetIPTables(ipt iptables.IPTables) {
+	s.tablesMu.Lock()
 	s.tables = ipt
+	s.tablesMu.Unlock()
 }
 
 // ICMPLimit returns the maximum number of ICMP messages that can be sent

@@ -83,32 +83,42 @@ func sendUDPLoop(ip net.IP, port int, duration time.Duration) error {
 	return nil
 }
 
+// listenTCP listens for connections on a TCP port.
 func listenTCP(port int, timeout time.Duration) error {
-	localAddr := net.TCPAddr{Port: acceptPort}
-	listener, err := net.ListenTCP("tcp4", &localAddr)
+	localAddr := net.TCPAddr{
+		Port: port,
+	}
+
+	// Starts listening on port.
+	lConn, err := net.ListenTCP("tcp4", &localAddr)
 	if err != nil {
 		return err
 	}
-	defer listener.Close()
-	listener.SetDeadline(time.Now().Add(timeout))
-	conn, err := listener.AcceptTCP()
-	if err != nil {
-		return fmt.Errorf("failed to establish a connection %v", err)
-	}
-	defer conn.Close()
+	defer lConn.Close()
 
+	// Accept connections on port.
+	lConn.SetDeadline(time.Now().Add(timeout))
+	conn, err := lConn.AcceptTCP()
+	if err != nil {
+		return err
+	}
+	conn.Close()
 	return nil
 }
 
-func connectLoopTCP(ip net.IP, port int, timeout time.Duration) error {
+// connectTCP connects the TCP server over specified local port, server IP and remote/server port.
+func connectTCP(ip net.IP, remotePort, localPort int, timeout time.Duration) error {
 	contAddr := net.TCPAddr{
 		IP:   ip,
-		Port: port,
+		Port: remotePort,
 	}
 	// The container may not be listening when we first connect, so retry
 	// upon error.
 	cb := func() error {
-		conn, err := net.DialTCP("tcp4", nil, &contAddr)
+		localAddr := net.TCPAddr{
+			Port: localPort,
+		}
+		conn, err := net.DialTCP("tcp4", &localAddr, &contAddr)
 		if conn != nil {
 			conn.Close()
 		}

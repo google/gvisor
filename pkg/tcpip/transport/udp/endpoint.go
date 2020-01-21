@@ -31,6 +31,7 @@ type udpPacket struct {
 	senderAddress tcpip.FullAddress
 	data          buffer.VectorisedView `state:".(buffer.VectorisedView)"`
 	timestamp     int64
+	tos           uint8
 }
 
 // EndpointState represents the state of a UDP endpoint.
@@ -112,6 +113,10 @@ type endpoint struct {
 	// sendTOS represents IPv4 TOS or IPv6 TrafficClass,
 	// applied while sending packets. Defaults to 0 as on Linux.
 	sendTOS uint8
+
+	// receiveTOS determines if the incoming IPv4 TOS header field is passed
+	// as ancillary data to ControlMessages on Read.
+	receiveTOS bool
 
 	// shutdownFlags represent the current shutdown state of the endpoint.
 	shutdownFlags tcpip.ShutdownFlags
@@ -243,7 +248,18 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMess
 		*addr = p.senderAddress
 	}
 
-	return p.data.ToView(), tcpip.ControlMessages{HasTimestamp: true, Timestamp: p.timestamp}, nil
+	cm := tcpip.ControlMessages{
+		HasTimestamp: true,
+		Timestamp:    p.timestamp,
+	}
+	e.mu.RLock()
+	receiveTOS := e.receiveTOS
+	e.mu.RUnlock()
+	if receiveTOS {
+		cm.HasTOS = true
+		cm.TOS = p.tos
+	}
+	return p.data.ToView(), cm, nil
 }
 
 // prepareForWrite prepares the endpoint for sending data. In particular, it
@@ -402,7 +418,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 			return 0, nil, tcpip.ErrBroadcastDisabled
 		}
 
-		netProto, err := e.checkV4Mapped(to, false)
+		netProto, err := e.checkV4Mapped(to)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -458,6 +474,12 @@ func (e *endpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
 // SetSockOptBool implements tcpip.Endpoint.SetSockOptBool.
 func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 	switch opt {
+	case tcpip.ReceiveTOSOption:
+		e.mu.Lock()
+		e.receiveTOS = v
+		e.mu.Unlock()
+		return nil
+
 	case tcpip.V6OnlyOption:
 		// We only recognize this option on v6 endpoints.
 		if e.NetProto != header.IPv6ProtocolNumber {
@@ -501,7 +523,7 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		defer e.mu.Unlock()
 
 		fa := tcpip.FullAddress{Addr: v.InterfaceAddr}
-		netProto, err := e.checkV4Mapped(&fa, false)
+		netProto, err := e.checkV4Mapped(&fa)
 		if err != nil {
 			return err
 		}
@@ -664,15 +686,21 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 // GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.
 func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 	switch opt {
+	case tcpip.ReceiveTOSOption:
+		e.mu.RLock()
+		v := e.receiveTOS
+		e.mu.RUnlock()
+		return v, nil
+
 	case tcpip.V6OnlyOption:
 		// We only recognize this option on v6 endpoints.
 		if e.NetProto != header.IPv6ProtocolNumber {
 			return false, tcpip.ErrUnknownProtocolOption
 		}
 
-		e.mu.Lock()
+		e.mu.RLock()
 		v := e.v6only
-		e.mu.Unlock()
+		e.mu.RUnlock()
 
 		return v, nil
 	}
@@ -839,35 +867,12 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 	return nil
 }
 
-func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (tcpip.NetworkProtocolNumber, *tcpip.Error) {
-	netProto := e.NetProto
-	if len(addr.Addr) == 0 {
-		return netProto, nil
+func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress) (tcpip.NetworkProtocolNumber, *tcpip.Error) {
+	unwrapped, netProto, err := e.TransportEndpointInfo.AddrNetProto(*addr, e.v6only)
+	if err != nil {
+		return 0, err
 	}
-	if header.IsV4MappedAddress(addr.Addr) {
-		// Fail if using a v4 mapped address on a v6only endpoint.
-		if e.v6only {
-			return 0, tcpip.ErrNoRoute
-		}
-
-		netProto = header.IPv4ProtocolNumber
-		addr.Addr = addr.Addr[header.IPv6AddressSize-header.IPv4AddressSize:]
-		if addr.Addr == header.IPv4Any {
-			addr.Addr = ""
-		}
-
-		// Fail if we are bound to an IPv6 address.
-		if !allowMismatch && len(e.ID.LocalAddress) == 16 {
-			return 0, tcpip.ErrNetworkUnreachable
-		}
-	}
-
-	// Fail if we're bound to an address length different from the one we're
-	// checking.
-	if l := len(e.ID.LocalAddress); l != 0 && l != len(addr.Addr) {
-		return 0, tcpip.ErrInvalidEndpointState
-	}
-
+	*addr = unwrapped
 	return netProto, nil
 }
 
@@ -916,7 +921,7 @@ func (e *endpoint) Disconnect() *tcpip.Error {
 
 // Connect connects the endpoint to its peer. Specifying a NIC is optional.
 func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
-	netProto, err := e.checkV4Mapped(&addr, false)
+	netProto, err := e.checkV4Mapped(&addr)
 	if err != nil {
 		return err
 	}
@@ -1074,7 +1079,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) *tcpip.Error {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	netProto, err := e.checkV4Mapped(&addr, true)
+	netProto, err := e.checkV4Mapped(&addr)
 	if err != nil {
 		return err
 	}
@@ -1237,6 +1242,12 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 	packet.data = pkt.Data
 	e.rcvList.PushBack(packet)
 	e.rcvBufSize += pkt.Data.Size()
+
+	// Save any useful information from the network header to the packet.
+	switch r.NetProto {
+	case header.IPv4ProtocolNumber:
+		packet.tos, _ = header.IPv4(pkt.NetworkHeader).TOS()
+	}
 
 	packet.timestamp = e.stack.NowNanoseconds()
 

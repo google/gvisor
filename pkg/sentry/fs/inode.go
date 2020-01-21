@@ -261,28 +261,28 @@ func (i *Inode) UnstableAttr(ctx context.Context) (UnstableAttr, error) {
 	return i.InodeOperations.UnstableAttr(ctx, i)
 }
 
-// Getxattr calls i.InodeOperations.Getxattr with i as the Inode.
-func (i *Inode) Getxattr(name string) (string, error) {
+// GetXattr calls i.InodeOperations.GetXattr with i as the Inode.
+func (i *Inode) GetXattr(ctx context.Context, name string, size uint64) (string, error) {
 	if i.overlay != nil {
-		return overlayGetxattr(i.overlay, name)
+		return overlayGetXattr(ctx, i.overlay, name, size)
 	}
-	return i.InodeOperations.Getxattr(i, name)
+	return i.InodeOperations.GetXattr(ctx, i, name, size)
 }
 
-// Setxattr calls i.InodeOperations.Setxattr with i as the Inode.
-func (i *Inode) Setxattr(name, value string) error {
+// SetXattr calls i.InodeOperations.SetXattr with i as the Inode.
+func (i *Inode) SetXattr(ctx context.Context, d *Dirent, name, value string, flags uint32) error {
 	if i.overlay != nil {
-		return overlaySetxattr(i.overlay, name, value)
+		return overlaySetxattr(ctx, i.overlay, d, name, value, flags)
 	}
-	return i.InodeOperations.Setxattr(i, name, value)
+	return i.InodeOperations.SetXattr(ctx, i, name, value, flags)
 }
 
-// Listxattr calls i.InodeOperations.Listxattr with i as the Inode.
-func (i *Inode) Listxattr() (map[string]struct{}, error) {
+// ListXattr calls i.InodeOperations.ListXattr with i as the Inode.
+func (i *Inode) ListXattr(ctx context.Context) (map[string]struct{}, error) {
 	if i.overlay != nil {
-		return overlayListxattr(i.overlay)
+		return overlayListXattr(ctx, i.overlay)
 	}
-	return i.InodeOperations.Listxattr(i)
+	return i.InodeOperations.ListXattr(ctx, i)
 }
 
 // CheckPermission will check if the caller may access this file in the

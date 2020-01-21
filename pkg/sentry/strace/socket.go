@@ -341,7 +341,7 @@ func sockAddr(t *kernel.Task, addr usermem.Addr, length uint32) string {
 
 	switch family {
 	case linux.AF_INET, linux.AF_INET6, linux.AF_UNIX:
-		fa, _, err := netstack.AddressAndFamily(int(family), b, true /* strict */)
+		fa, _, err := netstack.AddressAndFamily(b)
 		if err != nil {
 			return fmt.Sprintf("%#x {Family: %s, error extracting address: %v}", addr, familyStr, err)
 		}

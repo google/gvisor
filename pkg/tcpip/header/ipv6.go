@@ -84,6 +84,13 @@ const (
 	// The address is ff02::1.
 	IPv6AllNodesMulticastAddress tcpip.Address = "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
 
+	// IPv6AllRoutersMulticastAddress is a link-local multicast group that
+	// all IPv6 routers MUST join, as per RFC 4291, section 2.8. Packets
+	// destined to this address will reach all routers on a link.
+	//
+	// The address is ff02::2.
+	IPv6AllRoutersMulticastAddress tcpip.Address = "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
+
 	// IPv6MinimumMTU is the minimum MTU required by IPv6, per RFC 2460,
 	// section 5.
 	IPv6MinimumMTU = 1280
@@ -333,6 +340,17 @@ func IsV6LinkLocalAddress(addr tcpip.Address) bool {
 	return addr[0] == 0xfe && (addr[1]&0xc0) == 0x80
 }
 
+// IsV6UniqueLocalAddress determines if the provided address is an IPv6
+// unique-local address (within the prefix FC00::/7).
+func IsV6UniqueLocalAddress(addr tcpip.Address) bool {
+	if len(addr) != IPv6AddressSize {
+		return false
+	}
+	// According to RFC 4193 section 3.1, a unique local address has the prefix
+	// FC00::/7.
+	return (addr[0] & 0xfe) == 0xfc
+}
+
 // AppendOpaqueInterfaceIdentifier appends a 64 bit opaque interface identifier
 // (IID) to buf as outlined by RFC 7217 and returns the extended buffer.
 //
@@ -370,4 +388,36 @@ func LinkLocalAddrWithOpaqueIID(nicName string, dadCounter uint8, secretKey []by
 	}
 
 	return tcpip.Address(AppendOpaqueInterfaceIdentifier(lladdrb[:IIDOffsetInIPv6Address], IPv6LinkLocalPrefix.Subnet(), nicName, dadCounter, secretKey))
+}
+
+// IPv6AddressScope is the scope of an IPv6 address.
+type IPv6AddressScope int
+
+const (
+	// LinkLocalScope indicates a link-local address.
+	LinkLocalScope IPv6AddressScope = iota
+
+	// UniqueLocalScope indicates a unique-local address.
+	UniqueLocalScope
+
+	// GlobalScope indicates a global address.
+	GlobalScope
+)
+
+// ScopeForIPv6Address returns the scope for an IPv6 address.
+func ScopeForIPv6Address(addr tcpip.Address) (IPv6AddressScope, *tcpip.Error) {
+	if len(addr) != IPv6AddressSize {
+		return GlobalScope, tcpip.ErrBadAddress
+	}
+
+	switch {
+	case IsV6LinkLocalAddress(addr):
+		return LinkLocalScope, nil
+
+	case IsV6UniqueLocalAddress(addr):
+		return UniqueLocalScope, nil
+
+	default:
+		return GlobalScope, nil
+	}
 }

@@ -1,3 +1,5 @@
+load("@rules_pkg//:pkg.bzl", "pkg_tar")
+
 package(
     default_visibility = ["//benchmarks:__subpackages__"],
     licenses = ["notice"],
@@ -8,8 +10,8 @@ py_library(
     srcs = ["__init__.py"],
 )
 
-filegroup(
-    name = "files",
+pkg_tar(
+    name = "tar",
     srcs = [
         "Dockerfile",
     ],

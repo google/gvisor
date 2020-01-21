@@ -28,11 +28,13 @@ const (
 )
 
 func init() {
-	RegisterTestCase(FilterInputDropOnlyUDP{})
-	RegisterTestCase(FilterInputDropUDP{})
-	RegisterTestCase(FilterInputDropUDPPort{})
-	RegisterTestCase(FilterInputDropDifferentUDPPort{})
 	RegisterTestCase(FilterInputDropAll{})
+	RegisterTestCase(FilterInputDropDifferentUDPPort{})
+	RegisterTestCase(FilterInputDropOnlyUDP{})
+	RegisterTestCase(FilterInputDropTCPDestPort{})
+	RegisterTestCase(FilterInputDropTCPSrcPort{})
+	RegisterTestCase(FilterInputDropUDPPort{})
+	RegisterTestCase(FilterInputDropUDP{})
 }
 
 // FilterInputDropUDP tests that we can drop UDP traffic.
@@ -92,7 +94,7 @@ func (FilterInputDropOnlyUDP) ContainerAction(ip net.IP) error {
 func (FilterInputDropOnlyUDP) LocalAction(ip net.IP) error {
 	// Try to establish a TCP connection with the container, which should
 	// succeed.
-	return connectLoopTCP(ip, acceptPort, sendloopDuration)
+	return connectTCP(ip, acceptPort, dropPort, sendloopDuration)
 }
 
 // FilterInputDropUDPPort tests that we can drop UDP traffic by port.
@@ -152,6 +154,68 @@ func (FilterInputDropDifferentUDPPort) ContainerAction(ip net.IP) error {
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputDropDifferentUDPPort) LocalAction(ip net.IP) error {
 	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// FilterInputDropTCPDestPort tests that connections are not accepted on specified source ports.
+type FilterInputDropTCPDestPort struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputDropTCPDestPort) Name() string {
+	return "FilterInputDropTCPDestPort"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputDropTCPDestPort) ContainerAction(ip net.IP) error {
+	if err := filterTable("-A", "INPUT", "-p", "tcp", "-m", "tcp", "--dport", fmt.Sprintf("%d", dropPort), "-j", "DROP"); err != nil {
+		return err
+	}
+
+	// Listen for TCP packets on drop port.
+	if err := listenTCP(dropPort, sendloopDuration); err == nil {
+		return fmt.Errorf("connection on port %d should not be accepted, but got accepted", dropPort)
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputDropTCPDestPort) LocalAction(ip net.IP) error {
+	if err := connectTCP(ip, dropPort, acceptPort, sendloopDuration); err == nil {
+		return fmt.Errorf("connection destined to port %d should not be accepted, but got accepted", dropPort)
+	}
+
+	return nil
+}
+
+// FilterInputDropTCPSrcPort tests that connections are not accepted on specified source ports.
+type FilterInputDropTCPSrcPort struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputDropTCPSrcPort) Name() string {
+	return "FilterInputDropTCPSrcPort"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputDropTCPSrcPort) ContainerAction(ip net.IP) error {
+	if err := filterTable("-A", "INPUT", "-p", "tcp", "-m", "tcp", "--sport", fmt.Sprintf("%d", dropPort), "-j", "DROP"); err != nil {
+		return err
+	}
+
+	// Listen for TCP packets on accept port.
+	if err := listenTCP(acceptPort, sendloopDuration); err == nil {
+		return fmt.Errorf("connection destined to port %d should not be accepted, but got accepted", dropPort)
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputDropTCPSrcPort) LocalAction(ip net.IP) error {
+	if err := connectTCP(ip, acceptPort, dropPort, sendloopDuration); err == nil {
+		return fmt.Errorf("connection on port %d should not be acceptedi, but got accepted", dropPort)
+	}
+
+	return nil
 }
 
 // FilterInputDropAll tests that we can drop all traffic to the INPUT chain.

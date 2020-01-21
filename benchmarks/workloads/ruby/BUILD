@@ -1,3 +1,5 @@
+load("@rules_pkg//:pkg.bzl", "pkg_tar")
+
 package(
     default_visibility = ["//benchmarks:__subpackages__"],
     licenses = ["notice"],
@@ -5,6 +7,17 @@ package(
 
 filegroup(
     name = "files",
+    srcs = [
+        "Dockerfile",
+        "Gemfile",
+        "Gemfile.lock",
+        "config.ru",
+        "index.rb",
+    ],
+)
+
+pkg_tar(
+    name = "tar",
     srcs = [
         "Dockerfile",
         "Gemfile",

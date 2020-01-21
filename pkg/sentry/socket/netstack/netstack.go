@@ -138,13 +138,14 @@ var Metrics = tcpip.Stats{
 		},
 	},
 	IP: tcpip.IPStats{
-		PacketsReceived:            mustCreateMetric("/netstack/ip/packets_received", "Total number of IP packets received from the link layer in nic.DeliverNetworkPacket."),
-		InvalidAddressesReceived:   mustCreateMetric("/netstack/ip/invalid_addresses_received", "Total number of IP packets received with an unknown or invalid destination address."),
-		PacketsDelivered:           mustCreateMetric("/netstack/ip/packets_delivered", "Total number of incoming IP packets that are successfully delivered to the transport layer via HandlePacket."),
-		PacketsSent:                mustCreateMetric("/netstack/ip/packets_sent", "Total number of IP packets sent via WritePacket."),
-		OutgoingPacketErrors:       mustCreateMetric("/netstack/ip/outgoing_packet_errors", "Total number of IP packets which failed to write to a link-layer endpoint."),
-		MalformedPacketsReceived:   mustCreateMetric("/netstack/ip/malformed_packets_received", "Total number of IP packets which failed IP header validation checks."),
-		MalformedFragmentsReceived: mustCreateMetric("/netstack/ip/malformed_fragments_received", "Total number of IP fragments which failed IP fragment validation checks."),
+		PacketsReceived:                     mustCreateMetric("/netstack/ip/packets_received", "Total number of IP packets received from the link layer in nic.DeliverNetworkPacket."),
+		InvalidDestinationAddressesReceived: mustCreateMetric("/netstack/ip/invalid_addresses_received", "Total number of IP packets received with an unknown or invalid destination address."),
+		InvalidSourceAddressesReceived:      mustCreateMetric("/netstack/ip/invalid_source_addresses_received", "Total number of IP packets received with an unknown or invalid source address."),
+		PacketsDelivered:                    mustCreateMetric("/netstack/ip/packets_delivered", "Total number of incoming IP packets that are successfully delivered to the transport layer via HandlePacket."),
+		PacketsSent:                         mustCreateMetric("/netstack/ip/packets_sent", "Total number of IP packets sent via WritePacket."),
+		OutgoingPacketErrors:                mustCreateMetric("/netstack/ip/outgoing_packet_errors", "Total number of IP packets which failed to write to a link-layer endpoint."),
+		MalformedPacketsReceived:            mustCreateMetric("/netstack/ip/malformed_packets_received", "Total number of IP packets which failed IP header validation checks."),
+		MalformedFragmentsReceived:          mustCreateMetric("/netstack/ip/malformed_fragments_received", "Total number of IP fragments which failed IP fragment validation checks."),
 	},
 	TCP: tcpip.TCPStats{
 		ActiveConnectionOpenings:           mustCreateMetric("/netstack/tcp/active_connection_openings", "Number of connections opened successfully via Connect."),
@@ -324,22 +325,15 @@ func bytesToIPAddress(addr []byte) tcpip.Address {
 // converts it to the FullAddress format. It supports AF_UNIX, AF_INET,
 // AF_INET6, and AF_PACKET addresses.
 //
-// strict indicates whether addresses with the AF_UNSPEC family are accepted of not.
-//
 // AddressAndFamily returns an address and its family.
-func AddressAndFamily(sfamily int, addr []byte, strict bool) (tcpip.FullAddress, uint16, *syserr.Error) {
+func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 	// Make sure we have at least 2 bytes for the address family.
 	if len(addr) < 2 {
 		return tcpip.FullAddress{}, 0, syserr.ErrInvalidArgument
 	}
 
-	family := usermem.ByteOrder.Uint16(addr)
-	if family != uint16(sfamily) && (strict || family != linux.AF_UNSPEC) {
-		return tcpip.FullAddress{}, family, syserr.ErrAddressFamilyNotSupported
-	}
-
 	// Get the rest of the fields based on the address family.
-	switch family {
+	switch family := usermem.ByteOrder.Uint16(addr); family {
 	case linux.AF_UNIX:
 		path := addr[2:]
 		if len(path) > linux.UnixPathMax {
@@ -638,10 +632,40 @@ func (s *SocketOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return r
 }
 
+func (s *SocketOperations) checkFamily(family uint16, exact bool) *syserr.Error {
+	if family == uint16(s.family) {
+		return nil
+	}
+	if !exact && family == linux.AF_INET && s.family == linux.AF_INET6 {
+		v, err := s.Endpoint.GetSockOptBool(tcpip.V6OnlyOption)
+		if err != nil {
+			return syserr.TranslateNetstackError(err)
+		}
+		if !v {
+			return nil
+		}
+	}
+	return syserr.ErrInvalidArgument
+}
+
+// mapFamily maps the AF_INET ANY address to the IPv4-mapped IPv6 ANY if the
+// receiver's family is AF_INET6.
+//
+// This is a hack to work around the fact that both IPv4 and IPv6 ANY are
+// represented by the empty string.
+//
+// TODO(gvisor.dev/issues/1556): remove this function.
+func (s *SocketOperations) mapFamily(addr tcpip.FullAddress, family uint16) tcpip.FullAddress {
+	if len(addr.Addr) == 0 && s.family == linux.AF_INET6 && family == linux.AF_INET {
+		addr.Addr = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\x00\x00\x00\x00"
+	}
+	return addr
+}
+
 // Connect implements the linux syscall connect(2) for sockets backed by
 // tpcip.Endpoint.
 func (s *SocketOperations) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.Error {
-	addr, family, err := AddressAndFamily(s.family, sockaddr, false /* strict */)
+	addr, family, err := AddressAndFamily(sockaddr)
 	if err != nil {
 		return err
 	}
@@ -653,6 +677,12 @@ func (s *SocketOperations) Connect(t *kernel.Task, sockaddr []byte, blocking boo
 		}
 		return syserr.TranslateNetstackError(err)
 	}
+
+	if err := s.checkFamily(family, false /* exact */); err != nil {
+		return err
+	}
+	addr = s.mapFamily(addr, family)
+
 	// Always return right away in the non-blocking case.
 	if !blocking {
 		return syserr.TranslateNetstackError(s.Endpoint.Connect(addr))
@@ -681,10 +711,14 @@ func (s *SocketOperations) Connect(t *kernel.Task, sockaddr []byte, blocking boo
 // Bind implements the linux syscall bind(2) for sockets backed by
 // tcpip.Endpoint.
 func (s *SocketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
-	addr, _, err := AddressAndFamily(s.family, sockaddr, true /* strict */)
+	addr, family, err := AddressAndFamily(sockaddr)
 	if err != nil {
 		return err
 	}
+	if err := s.checkFamily(family, true /* exact */); err != nil {
+		return err
+	}
+	addr = s.mapFamily(addr, family)
 
 	// Issue the bind request to the endpoint.
 	return syserr.TranslateNetstackError(s.Endpoint.Bind(addr))
@@ -1243,11 +1277,11 @@ func getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name, outLen int) (interf
 		if err != nil {
 			return nil, syserr.TranslateNetstackError(err)
 		}
-		var o uint32
+		var o int32
 		if v {
 			o = 1
 		}
-		return int32(o), nil
+		return o, nil
 
 	case linux.IPV6_PATHMTU:
 		t.Kernel().EmitUnimplementedEvent(t)
@@ -1351,6 +1385,21 @@ func getSockOptIP(t *kernel.Task, ep commonEndpoint, name, outLen int, family in
 			return uint8(v), nil
 		}
 		return int32(v), nil
+
+	case linux.IP_RECVTOS:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		v, err := ep.GetSockOptBool(tcpip.ReceiveTOSOption)
+		if err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+		var o int32
+		if v {
+			o = 1
+		}
+		return o, nil
 
 	default:
 		emitUnimplementedEventIP(t, name)
@@ -1870,6 +1919,13 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		}
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.IPv4TOSOption(v)))
 
+	case linux.IP_RECVTOS:
+		v, err := parseIntOrChar(optVal)
+		if err != nil {
+			return err
+		}
+		return syserr.TranslateNetstackError(ep.SetSockOptBool(tcpip.ReceiveTOSOption, v != 0))
+
 	case linux.IP_ADD_SOURCE_MEMBERSHIP,
 		linux.IP_BIND_ADDRESS_NO_PORT,
 		linux.IP_BLOCK_SOURCE,
@@ -1890,7 +1946,6 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		linux.IP_RECVFRAGSIZE,
 		linux.IP_RECVOPTS,
 		linux.IP_RECVORIGDSTADDR,
-		linux.IP_RECVTOS,
 		linux.IP_RECVTTL,
 		linux.IP_RETOPTS,
 		linux.IP_TRANSPARENT,
@@ -2088,8 +2143,8 @@ func ConvertAddress(family int, addr tcpip.FullAddress) (linux.SockAddr, uint32)
 
 	case linux.AF_INET6:
 		var out linux.SockAddrInet6
-		if len(addr.Addr) == 4 {
-			// Copy address is v4-mapped format.
+		if len(addr.Addr) == header.IPv4AddressSize {
+			// Copy address in v4-mapped format.
 			copy(out.Addr[12:], addr.Addr)
 			out.Addr[10] = 0xff
 			out.Addr[11] = 0xff
@@ -2310,7 +2365,14 @@ func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSe
 }
 
 func (s *SocketOperations) controlMessages() socket.ControlMessages {
-	return socket.ControlMessages{IP: tcpip.ControlMessages{HasTimestamp: s.readCM.HasTimestamp && s.sockOptTimestamp, Timestamp: s.readCM.Timestamp}}
+	return socket.ControlMessages{
+		IP: tcpip.ControlMessages{
+			HasTimestamp: s.readCM.HasTimestamp && s.sockOptTimestamp,
+			Timestamp:    s.readCM.Timestamp,
+			HasTOS:       s.readCM.HasTOS,
+			TOS:          s.readCM.TOS,
+		},
+	}
 }
 
 // updateTimestamp sets the timestamp for SIOCGSTAMP. It should be called after
@@ -2403,10 +2465,14 @@ func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 
 	var addr *tcpip.FullAddress
 	if len(to) > 0 {
-		addrBuf, _, err := AddressAndFamily(s.family, to, true /* strict */)
+		addrBuf, family, err := AddressAndFamily(to)
 		if err != nil {
 			return 0, err
 		}
+		if err := s.checkFamily(family, false /* exact */); err != nil {
+			return 0, err
+		}
+		addrBuf = s.mapFamily(addrBuf, family)
 
 		addr = &addrBuf
 	}

@@ -22,6 +22,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile"
 )
 
+// LINT.IfChange
+
 // loadavgData backs /proc/loadavg.
 //
 // +stateify savable
@@ -53,3 +55,5 @@ func (d *loadavgData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) 
 		},
 	}, 0
 }
+
+// LINT.ThenChange(../../fsimpl/proc/tasks_files.go)

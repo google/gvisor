@@ -35,12 +35,12 @@ import (
 )
 
 const (
-	addr1          = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
-	addr2          = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
-	addr3          = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03"
-	linkAddr1      = "\x02\x02\x03\x04\x05\x06"
-	linkAddr2      = "\x02\x02\x03\x04\x05\x07"
-	linkAddr3      = "\x02\x02\x03\x04\x05\x08"
+	addr1          = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+	addr2          = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+	addr3          = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03")
+	linkAddr1      = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
+	linkAddr2      = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x07")
+	linkAddr3      = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x08")
 	defaultTimeout = 100 * time.Millisecond
 )
 
@@ -1732,9 +1732,11 @@ func stackAndNdpDispatcherWithDefaultRoute(t *testing.T, nicID tcpip.NICID) (*nd
 	return ndpDisp, e, s
 }
 
-// addrForNewConnection returns the local address used when creating a new
-// connection.
-func addrForNewConnection(t *testing.T, s *stack.Stack) tcpip.Address {
+// addrForNewConnectionTo returns the local address used when creating a new
+// connection to addr.
+func addrForNewConnectionTo(t *testing.T, s *stack.Stack, addr tcpip.FullAddress) tcpip.Address {
+	t.Helper()
+
 	wq := waiter.Queue{}
 	we, ch := waiter.NewChannelEntry(nil)
 	wq.EventRegister(&we, waiter.EventIn)
@@ -1748,8 +1750,8 @@ func addrForNewConnection(t *testing.T, s *stack.Stack) tcpip.Address {
 	if err := ep.SetSockOptBool(tcpip.V6OnlyOption, true); err != nil {
 		t.Fatalf("SetSockOpt(tcpip.V6OnlyOption, true): %s", err)
 	}
-	if err := ep.Connect(dstAddr); err != nil {
-		t.Fatalf("ep.Connect(%+v): %s", dstAddr, err)
+	if err := ep.Connect(addr); err != nil {
+		t.Fatalf("ep.Connect(%+v): %s", addr, err)
 	}
 	got, err := ep.GetLocalAddress()
 	if err != nil {
@@ -1758,9 +1760,19 @@ func addrForNewConnection(t *testing.T, s *stack.Stack) tcpip.Address {
 	return got.Addr
 }
 
+// addrForNewConnection returns the local address used when creating a new
+// connection.
+func addrForNewConnection(t *testing.T, s *stack.Stack) tcpip.Address {
+	t.Helper()
+
+	return addrForNewConnectionTo(t, s, dstAddr)
+}
+
 // addrForNewConnectionWithAddr returns the local address used when creating a
 // new connection with a specific local address.
 func addrForNewConnectionWithAddr(t *testing.T, s *stack.Stack, addr tcpip.FullAddress) tcpip.Address {
+	t.Helper()
+
 	wq := waiter.Queue{}
 	we, ch := waiter.NewChannelEntry(nil)
 	wq.EventRegister(&we, waiter.EventIn)
@@ -2433,6 +2445,119 @@ func TestAutoGenAddrRemoval(t *testing.T) {
 	}
 }
 
+// TestAutoGenAddrAfterRemoval tests adding a SLAAC address that was previously
+// assigned to the NIC but is in the permanentExpired state.
+func TestAutoGenAddrAfterRemoval(t *testing.T) {
+	t.Parallel()
+
+	const nicID = 1
+
+	prefix1, _, addr1 := prefixSubnetAddr(0, linkAddr1)
+	prefix2, _, addr2 := prefixSubnetAddr(1, linkAddr1)
+	ndpDisp, e, s := stackAndNdpDispatcherWithDefaultRoute(t, nicID)
+
+	expectAutoGenAddrEvent := func(addr tcpip.AddressWithPrefix, eventType ndpAutoGenAddrEventType) {
+		t.Helper()
+
+		select {
+		case e := <-ndpDisp.autoGenAddrC:
+			if diff := checkAutoGenAddrEvent(e, addr, eventType); diff != "" {
+				t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
+			}
+		default:
+			t.Fatal("expected addr auto gen event")
+		}
+	}
+
+	expectPrimaryAddr := func(addr tcpip.AddressWithPrefix) {
+		t.Helper()
+
+		if got, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber); err != nil {
+			t.Fatalf("s.GetMainNICAddress(%d, %d): %s", nicID, header.IPv6ProtocolNumber, err)
+		} else if got != addr {
+			t.Errorf("got s.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, header.IPv6ProtocolNumber, got, addr)
+		}
+
+		if got := addrForNewConnection(t, s); got != addr.Address {
+			t.Errorf("got addrForNewConnection = %s, want = %s", got, addr.Address)
+		}
+	}
+
+	// Receive a PI to auto-generate addr1 with a large valid and preferred
+	// lifetime.
+	const largeLifetimeSeconds = 999
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr3, 0, prefix1, true, true, largeLifetimeSeconds, largeLifetimeSeconds))
+	expectAutoGenAddrEvent(addr1, newAddr)
+	expectPrimaryAddr(addr1)
+
+	// Add addr2 as a static address.
+	protoAddr2 := tcpip.ProtocolAddress{
+		Protocol:          header.IPv6ProtocolNumber,
+		AddressWithPrefix: addr2,
+	}
+	if err := s.AddProtocolAddressWithOptions(nicID, protoAddr2, stack.FirstPrimaryEndpoint); err != nil {
+		t.Fatalf("AddProtocolAddressWithOptions(%d, %+v, %d, %s) = %s", nicID, protoAddr2, stack.FirstPrimaryEndpoint, err)
+	}
+	// addr2 should be more preferred now since it is at the front of the primary
+	// list.
+	expectPrimaryAddr(addr2)
+
+	// Get a route using addr2 to increment its reference count then remove it
+	// to leave it in the permanentExpired state.
+	r, err := s.FindRoute(nicID, addr2.Address, addr3, header.IPv6ProtocolNumber, false)
+	if err != nil {
+		t.Fatalf("FindRoute(%d, %s, %s, %d, false): %s", nicID, addr2.Address, addr3, header.IPv6ProtocolNumber, err)
+	}
+	defer r.Release()
+	if err := s.RemoveAddress(nicID, addr2.Address); err != nil {
+		t.Fatalf("s.RemoveAddress(%d, %s): %s", nicID, addr2.Address, err)
+	}
+	// addr1 should be preferred again since addr2 is in the expired state.
+	expectPrimaryAddr(addr1)
+
+	// Receive a PI to auto-generate addr2 as valid and preferred.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr3, 0, prefix2, true, true, largeLifetimeSeconds, largeLifetimeSeconds))
+	expectAutoGenAddrEvent(addr2, newAddr)
+	// addr2 should be more preferred now that it is closer to the front of the
+	// primary list and not deprecated.
+	expectPrimaryAddr(addr2)
+
+	// Removing the address should result in an invalidation event immediately.
+	// It should still be in the permanentExpired state because r is still held.
+	//
+	// We remove addr2 here to make sure addr2 was marked as a SLAAC address
+	// (it was previously marked as a static address).
+	if err := s.RemoveAddress(1, addr2.Address); err != nil {
+		t.Fatalf("RemoveAddress(_, %s) = %s", addr2.Address, err)
+	}
+	expectAutoGenAddrEvent(addr2, invalidatedAddr)
+	// addr1 should be more preferred since addr2 is in the expired state.
+	expectPrimaryAddr(addr1)
+
+	// Receive a PI to auto-generate addr2 as valid and deprecated.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr3, 0, prefix2, true, true, largeLifetimeSeconds, 0))
+	expectAutoGenAddrEvent(addr2, newAddr)
+	// addr1 should still be more preferred since addr2 is deprecated, even though
+	// it is closer to the front of the primary list.
+	expectPrimaryAddr(addr1)
+
+	// Receive a PI to refresh addr2's preferred lifetime.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr3, 0, prefix2, true, true, largeLifetimeSeconds, largeLifetimeSeconds))
+	select {
+	case <-ndpDisp.autoGenAddrC:
+		t.Fatal("unexpectedly got an auto gen addr event")
+	default:
+	}
+	// addr2 should be more preferred now that it is not deprecated.
+	expectPrimaryAddr(addr2)
+
+	if err := s.RemoveAddress(1, addr2.Address); err != nil {
+		t.Fatalf("RemoveAddress(_, %s) = %s", addr2.Address, err)
+	}
+	expectAutoGenAddrEvent(addr2, invalidatedAddr)
+	expectPrimaryAddr(addr1)
+}
+
 // TestAutoGenAddrStaticConflict tests that if SLAAC generates an address that
 // is already assigned to the NIC, the static address remains.
 func TestAutoGenAddrStaticConflict(t *testing.T) {
@@ -3085,4 +3210,228 @@ func TestDHCPv6ConfigurationFromNDPDA(t *testing.T) {
 	expectDHCPv6Event(stack.DHCPv6OtherConfigurations)
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, true))
 	expectNoDHCPv6Event()
+}
+
+// TestRouterSolicitation tests the initial Router Solicitations that are sent
+// when a NIC newly becomes enabled.
+func TestRouterSolicitation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                        string
+		maxRtrSolicit               uint8
+		rtrSolicitInt               time.Duration
+		effectiveRtrSolicitInt      time.Duration
+		maxRtrSolicitDelay          time.Duration
+		effectiveMaxRtrSolicitDelay time.Duration
+	}{
+		{
+			name:                        "Single RS with delay",
+			maxRtrSolicit:               1,
+			rtrSolicitInt:               time.Second,
+			effectiveRtrSolicitInt:      time.Second,
+			maxRtrSolicitDelay:          time.Second,
+			effectiveMaxRtrSolicitDelay: time.Second,
+		},
+		{
+			name:                        "Two RS with delay",
+			maxRtrSolicit:               2,
+			rtrSolicitInt:               time.Second,
+			effectiveRtrSolicitInt:      time.Second,
+			maxRtrSolicitDelay:          500 * time.Millisecond,
+			effectiveMaxRtrSolicitDelay: 500 * time.Millisecond,
+		},
+		{
+			name:                        "Single RS without delay",
+			maxRtrSolicit:               1,
+			rtrSolicitInt:               time.Second,
+			effectiveRtrSolicitInt:      time.Second,
+			maxRtrSolicitDelay:          0,
+			effectiveMaxRtrSolicitDelay: 0,
+		},
+		{
+			name:                        "Two RS without delay and invalid zero interval",
+			maxRtrSolicit:               2,
+			rtrSolicitInt:               0,
+			effectiveRtrSolicitInt:      4 * time.Second,
+			maxRtrSolicitDelay:          0,
+			effectiveMaxRtrSolicitDelay: 0,
+		},
+		{
+			name:                        "Three RS without delay",
+			maxRtrSolicit:               3,
+			rtrSolicitInt:               500 * time.Millisecond,
+			effectiveRtrSolicitInt:      500 * time.Millisecond,
+			maxRtrSolicitDelay:          0,
+			effectiveMaxRtrSolicitDelay: 0,
+		},
+		{
+			name:                        "Two RS with invalid negative delay",
+			maxRtrSolicit:               2,
+			rtrSolicitInt:               time.Second,
+			effectiveRtrSolicitInt:      time.Second,
+			maxRtrSolicitDelay:          -3 * time.Second,
+			effectiveMaxRtrSolicitDelay: time.Second,
+		},
+	}
+
+	// This Run will not return until the parallel tests finish.
+	//
+	// We need this because we need to do some teardown work after the
+	// parallel tests complete.
+	//
+	// See https://godoc.org/testing#hdr-Subtests_and_Sub_benchmarks for
+	// more details.
+	t.Run("group", func(t *testing.T) {
+		for _, test := range tests {
+			test := test
+
+			t.Run(test.name, func(t *testing.T) {
+				t.Parallel()
+				e := channel.New(int(test.maxRtrSolicit), 1280, linkAddr1)
+				waitForPkt := func(timeout time.Duration) {
+					t.Helper()
+					select {
+					case p := <-e.C:
+						if p.Proto != header.IPv6ProtocolNumber {
+							t.Fatalf("got Proto = %d, want = %d", p.Proto, header.IPv6ProtocolNumber)
+						}
+						checker.IPv6(t,
+							p.Pkt.Header.View(),
+							checker.SrcAddr(header.IPv6Any),
+							checker.DstAddr(header.IPv6AllRoutersMulticastAddress),
+							checker.TTL(header.NDPHopLimit),
+							checker.NDPRS(),
+						)
+
+					case <-time.After(timeout):
+						t.Fatal("timed out waiting for packet")
+					}
+				}
+				waitForNothing := func(timeout time.Duration) {
+					t.Helper()
+					select {
+					case <-e.C:
+						t.Fatal("unexpectedly got a packet")
+					case <-time.After(timeout):
+					}
+				}
+				s := stack.New(stack.Options{
+					NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+					NDPConfigs: stack.NDPConfigurations{
+						MaxRtrSolicitations:     test.maxRtrSolicit,
+						RtrSolicitationInterval: test.rtrSolicitInt,
+						MaxRtrSolicitationDelay: test.maxRtrSolicitDelay,
+					},
+				})
+				if err := s.CreateNIC(1, e); err != nil {
+					t.Fatalf("CreateNIC(1) = %s", err)
+				}
+
+				// Make sure each RS got sent at the right
+				// times.
+				remaining := test.maxRtrSolicit
+				if remaining > 0 {
+					waitForPkt(test.effectiveMaxRtrSolicitDelay + defaultTimeout)
+					remaining--
+				}
+				for ; remaining > 0; remaining-- {
+					waitForNothing(test.effectiveRtrSolicitInt - defaultTimeout)
+					waitForPkt(2 * defaultTimeout)
+				}
+
+				// Make sure no more RS.
+				if test.effectiveRtrSolicitInt > test.effectiveMaxRtrSolicitDelay {
+					waitForNothing(test.effectiveRtrSolicitInt + defaultTimeout)
+				} else {
+					waitForNothing(test.effectiveMaxRtrSolicitDelay + defaultTimeout)
+				}
+
+				// Make sure the counter got properly
+				// incremented.
+				if got, want := s.Stats().ICMP.V6PacketsSent.RouterSolicit.Value(), uint64(test.maxRtrSolicit); got != want {
+					t.Fatalf("got sent RouterSolicit = %d, want = %d", got, want)
+				}
+			})
+		}
+	})
+}
+
+// TestStopStartSolicitingRouters tests that when forwarding is enabled or
+// disabled, router solicitations are stopped or started, respecitively.
+func TestStopStartSolicitingRouters(t *testing.T) {
+	t.Parallel()
+
+	const interval = 500 * time.Millisecond
+	const delay = time.Second
+	const maxRtrSolicitations = 3
+	e := channel.New(maxRtrSolicitations, 1280, linkAddr1)
+	waitForPkt := func(timeout time.Duration) {
+		t.Helper()
+		select {
+		case p := <-e.C:
+			if p.Proto != header.IPv6ProtocolNumber {
+				t.Fatalf("got Proto = %d, want = %d", p.Proto, header.IPv6ProtocolNumber)
+			}
+			checker.IPv6(t, p.Pkt.Header.View(),
+				checker.SrcAddr(header.IPv6Any),
+				checker.DstAddr(header.IPv6AllRoutersMulticastAddress),
+				checker.TTL(header.NDPHopLimit),
+				checker.NDPRS())
+
+		case <-time.After(timeout):
+			t.Fatal("timed out waiting for packet")
+		}
+	}
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+		NDPConfigs: stack.NDPConfigurations{
+			MaxRtrSolicitations:     maxRtrSolicitations,
+			RtrSolicitationInterval: interval,
+			MaxRtrSolicitationDelay: delay,
+		},
+	})
+	if err := s.CreateNIC(1, e); err != nil {
+		t.Fatalf("CreateNIC(1) = %s", err)
+	}
+
+	// Enable forwarding which should stop router solicitations.
+	s.SetForwarding(true)
+	select {
+	case <-e.C:
+		// A single RS may have been sent before forwarding was enabled.
+		select {
+		case <-e.C:
+			t.Fatal("Should not have sent more than one RS message")
+		case <-time.After(interval + defaultTimeout):
+		}
+	case <-time.After(delay + defaultTimeout):
+	}
+
+	// Enabling forwarding again should do nothing.
+	s.SetForwarding(true)
+	select {
+	case <-e.C:
+		t.Fatal("unexpectedly got a packet after becoming a router")
+	case <-time.After(delay + defaultTimeout):
+	}
+
+	// Disable forwarding which should start router solicitations.
+	s.SetForwarding(false)
+	waitForPkt(delay + defaultTimeout)
+	waitForPkt(interval + defaultTimeout)
+	waitForPkt(interval + defaultTimeout)
+	select {
+	case <-e.C:
+		t.Fatal("unexpectedly got an extra packet after sending out the expected RSs")
+	case <-time.After(interval + defaultTimeout):
+	}
+
+	// Disabling forwarding again should do nothing.
+	s.SetForwarding(false)
+	select {
+	case <-e.C:
+		t.Fatal("unexpectedly got a packet after becoming a router")
+	case <-time.After(delay + defaultTimeout):
+	}
 }

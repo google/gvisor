@@ -220,19 +220,6 @@ func clone(t *kernel.Task, flags int, stack usermem.Addr, parentTID usermem.Addr
 	return uintptr(ntid), ctrl, err
 }
 
-// Clone implements linux syscall clone(2).
-// sys_clone has so many flavors. We implement the default one in linux 3.11
-// x86_64:
-//    sys_clone(clone_flags, newsp, parent_tidptr, child_tidptr, tls_val)
-func Clone(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	flags := int(args[0].Int())
-	stack := args[1].Pointer()
-	parentTID := args[2].Pointer()
-	childTID := args[3].Pointer()
-	tls := args[4].Pointer()
-	return clone(t, flags, stack, parentTID, childTID, tls)
-}
-
 // Fork implements Linux syscall fork(2).
 func Fork(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	// "A call to fork() is equivalent to a call to clone(2) specifying flags
