@@ -20,7 +20,7 @@ file will be called `checkpoint.img` and necessary directories will be created
 if they do not yet exist.
 
 > Note: Two checkpoints cannot be saved to the same directory; every image-path
-provided must be unique.
+> provided must be unique.
 
 ```bash
 runsc checkpoint --image-path=<path> <container id>
@@ -31,11 +31,11 @@ continue to run after the checkpoint has been made. (By default, containers stop
 their processes after committing a checkpoint.)
 
 > Note: All top-level runsc flags needed when calling run must be provided to
-checkpoint if --leave-running is used.
+> checkpoint if --leave-running is used.
 
 > Note: --leave-running functions by causing an immediate restore so the
-container, although will maintain its given container id, may have a different
-process id.
+> container, although will maintain its given container id, may have a different
+> process id.
 
 ```bash
 runsc checkpoint --image-path=<path> --leave-running <container id>
