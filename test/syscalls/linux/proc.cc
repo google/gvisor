@@ -102,7 +102,49 @@ namespace {
 
 // O_LARGEFILE as defined by Linux. glibc tries to be clever by setting it to 0
 // because "it isn't needed", even though Linux can return it via F_GETFL.
+#if defined(__x86_64__) || defined(__i386__)
 constexpr int kOLargeFile = 00100000;
+#elif __aarch64__
+// The value originate from the Linux
+// kernel's arch/arm64/include/uapi/asm/fcntl.h.
+constexpr int kOLargeFile = 00400000;
+#else
+#error "Unknown architecture"
+#endif
+
+#if defined(__x86_64__) || defined(__i386__)
+// This list of "required" fields is taken from reading the file
+// arch/x86/kernel/cpu/proc.c and seeing which fields will be unconditionally
+// printed by the kernel.
+static const char* required_fields[] = {
+    "processor",
+    "vendor_id",
+    "cpu family",
+    "model\t\t:",
+    "model name",
+    "stepping",
+    "cpu MHz",
+    "fpu\t\t:",
+    "fpu_exception",
+    "cpuid level",
+    "wp",
+    "bogomips",
+    "clflush size",
+    "cache_alignment",
+    "address sizes",
+    "power management",
+};
+#elif __aarch64__
+// This list of "required" fields is taken from reading the file
+// arch/arm64/kernel/cpuinfo.c and seeing which fields will be unconditionally
+// printed by the kernel.
+static const char* required_fields[] = {
+    "processor",        "BogoMIPS",    "Features", "CPU implementer",
+    "CPU architecture", "CPU variant", "CPU part", "CPU revision",
+};
+#else
+#error "Unknown architecture"
+#endif
 
 // Takes the subprocess command line and pid.
 // If it returns !OK, WithSubprocess returns immediately.
@@ -716,28 +758,6 @@ TEST(ProcCpuinfo, RequiredFieldsArePresent) {
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/cpuinfo"));
   ASSERT_FALSE(proc_cpuinfo.empty());
   std::vector<std::string> cpuinfo_fields = absl::StrSplit(proc_cpuinfo, '\n');
-
-  // This list of "required" fields is taken from reading the file
-  // arch/x86/kernel/cpu/proc.c and seeing which fields will be unconditionally
-  // printed by the kernel.
-  static const char* required_fields[] = {
-      "processor",
-      "vendor_id",
-      "cpu family",
-      "model\t\t:",
-      "model name",
-      "stepping",
-      "cpu MHz",
-      "fpu\t\t:",
-      "fpu_exception",
-      "cpuid level",
-      "wp",
-      "bogomips",
-      "clflush size",
-      "cache_alignment",
-      "address sizes",
-      "power management",
-  };
 
   // Check that the usual fields are there. We don't really care about the
   // contents.
