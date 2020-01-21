@@ -562,7 +562,6 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		// Switch state to connected.
 		// We do not use transitionToStateEstablishedLocked here as there is
 		// no handshake state available when doing a SYN cookie based accept.
-		n.stack.Stats().TCP.CurrentEstablished.Increment()
 		n.isConnectNotified = true
 		n.setEndpointState(StateEstablished)
 
