@@ -150,7 +150,8 @@ var Metrics = tcpip.Stats{
 	TCP: tcpip.TCPStats{
 		ActiveConnectionOpenings:           mustCreateMetric("/netstack/tcp/active_connection_openings", "Number of connections opened successfully via Connect."),
 		PassiveConnectionOpenings:          mustCreateMetric("/netstack/tcp/passive_connection_openings", "Number of connections opened successfully via Listen."),
-		CurrentEstablished:                 mustCreateMetric("/netstack/tcp/current_established", "Number of connections in either ESTABLISHED or CLOSE-WAIT state now."),
+		CurrentEstablished:                 mustCreateMetric("/netstack/tcp/current_established", "Number of connections in ESTABLISHED state now."),
+		CurrentConnected:                   mustCreateMetric("/netstack/tcp/current_open", "Number of connections that are in connected state."),
 		EstablishedResets:                  mustCreateMetric("/netstack/tcp/established_resets", "Number of times TCP connections have made a direct transition to the CLOSED state from either the ESTABLISHED state or the CLOSE-WAIT state"),
 		EstablishedClosed:                  mustCreateMetric("/netstack/tcp/established_closed", "number of times established TCP connections made a transition to CLOSED state."),
 		EstablishedTimedout:                mustCreateMetric("/netstack/tcp/established_timedout", "Number of times  an established connection was reset because of keep-alive time out."),

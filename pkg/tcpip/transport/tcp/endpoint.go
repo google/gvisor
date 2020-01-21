@@ -594,6 +594,7 @@ func (e *endpoint) setEndpointState(state EndpointState) {
 	switch state {
 	case StateEstablished:
 		e.stack.Stats().TCP.CurrentEstablished.Increment()
+		e.stack.Stats().TCP.CurrentConnected.Increment()
 	case StateError:
 		fallthrough
 	case StateClose:
