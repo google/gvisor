@@ -8,6 +8,7 @@ GEN_SOURCE = $(wildcard cmd/generate-syscall-docs/*)
 APP_SOURCE = $(wildcard cmd/gvisor-website/*)
 # Target Go files, example: public/main.go, public/foo/bar.go.
 APP_TARGET = $(patsubst cmd/gvisor-website/%,public/%,$(APP_SOURCE))
+CONTENT_SOURCE = $(wildcard content/*)
 
 default: website
 .PHONY: default
@@ -55,7 +56,7 @@ static-production: hugo-docker-image compatibility-docs node_modules config.toml
 	  hugo
 .PHONY: static-production
 
-static-staging: hugo-docker-image compatibility-docs node_modules config.toml $(shell find archetypes assets content themes -type f | sed 's/ /\\ /g')                           
+static-staging: hugo-docker-image compatibility-docs node_modules config.toml $(shell find archetypes assets content themes -type f | sed 's/ /\\ /g')
 	docker run \
 	  --rm \
 	  -e HUGO_ENV="production" \
@@ -104,9 +105,27 @@ compatibility-docs: bin/generate-syscall-docs upstream/gvisor/bazel-bin/runsc/li
 	./upstream/gvisor/bazel-bin/runsc/linux_amd64_pure_stripped/runsc help syscalls -o json | ./bin/generate-syscall-docs -out ./content/docs/user_guide/compatibility/
 .PHONY: compatibility-docs
 
-check: htmlproofer-docker-image website
-	docker run -v $(shell pwd)/public:/public gcr.io/gvisor-website/html-proofer:$(HTMLPROOFER_VERSION) htmlproofer --disable-external --check-html public/static
+check: check-markdown check-html
 .PHONY: check
+
+check-markdown: node_modules $(CONTENT_SOURCE) compatibility-docs
+	docker run \
+	  --rm \
+	  -e USER="$(shell id -u)" \
+	  -e HOME="/tmp" \
+	  -u="$(shell id -u):$(shell id -g)" \
+	  -v $(PWD):/workspace \
+	  -v /tmp:/tmp \
+	  -w /workspace \
+	  --entrypoint 'npm' \
+	  node run lint-md
+.PHONY: check-markdown
+
+check-html: website
+	docker run \
+	  -v $(shell pwd)/public:/public gcr.io/gvisor-website/html-proofer:$(HTMLPROOFER_VERSION) \
+	  htmlproofer --disable-external --check-html public/static
+.PHONY: check-html
 
 # Run a local content development server. Redirects will not be supported.
 devserver: hugo-docker-image all-upstream compatibility-docs

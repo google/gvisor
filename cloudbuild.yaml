@@ -49,7 +49,7 @@ steps:
       - >
         ./upstream/gvisor/bazel-bin/runsc/linux_amd64_pure_stripped/runsc help syscalls -o json |
         ./bin/generate-syscall-docs -out ./content/docs/user_guide/compatibility/
-  # Pull npm dependencies for scss
+  # Pull npm dependencies for scss and lint-md
   - name: 'gcr.io/cloud-builders/npm'
     args: ['ci']
   # Copy App Engine app files.
@@ -59,6 +59,9 @@ steps:
   - name: 'gcr.io/gvisor-website/hugo:0.53'
     env: ['HUGO_ENV=production']
     args: ["hugo"]
+  # Test Markdown for issues.
+  - name: 'gcr.io/cloud-builders/npm'
+    args: ['run', 'lint-md']
   # Test the HTML for issues.
   - name: 'gcr.io/gvisor-website/html-proofer:3.10.2'
     args:
