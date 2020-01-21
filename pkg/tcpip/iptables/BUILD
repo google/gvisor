@@ -7,7 +7,9 @@ go_library(
     srcs = [
         "iptables.go",
         "targets.go",
+        "tcp_matcher.go",
         "types.go",
+        "udp_matcher.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/iptables",
     visibility = ["//visibility:public"],
