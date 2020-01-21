@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -45,7 +44,7 @@ type metadata struct {
 }
 
 // GetInfo returns information about iptables.
-func GetInfo(t *kernel.Task, ep tcpip.Endpoint, outPtr usermem.Addr) (linux.IPTGetinfo, *syserr.Error) {
+func GetInfo(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr) (linux.IPTGetinfo, *syserr.Error) {
 	// Read in the struct and table name.
 	var info linux.IPTGetinfo
 	if _, err := t.CopyIn(outPtr, &info); err != nil {
@@ -53,7 +52,7 @@ func GetInfo(t *kernel.Task, ep tcpip.Endpoint, outPtr usermem.Addr) (linux.IPTG
 	}
 
 	// Find the appropriate table.
-	table, err := findTable(ep, info.Name)
+	table, err := findTable(stack, info.Name)
 	if err != nil {
 		return linux.IPTGetinfo{}, err
 	}
@@ -76,7 +75,7 @@ func GetInfo(t *kernel.Task, ep tcpip.Endpoint, outPtr usermem.Addr) (linux.IPTG
 }
 
 // GetEntries returns netstack's iptables rules encoded for the iptables tool.
-func GetEntries(t *kernel.Task, ep tcpip.Endpoint, outPtr usermem.Addr, outLen int) (linux.KernelIPTGetEntries, *syserr.Error) {
+func GetEntries(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, outLen int) (linux.KernelIPTGetEntries, *syserr.Error) {
 	// Read in the struct and table name.
 	var userEntries linux.IPTGetEntries
 	if _, err := t.CopyIn(outPtr, &userEntries); err != nil {
@@ -84,7 +83,7 @@ func GetEntries(t *kernel.Task, ep tcpip.Endpoint, outPtr usermem.Addr, outLen i
 	}
 
 	// Find the appropriate table.
-	table, err := findTable(ep, userEntries.Name)
+	table, err := findTable(stack, userEntries.Name)
 	if err != nil {
 		return linux.KernelIPTGetEntries{}, err
 	}
@@ -103,11 +102,8 @@ func GetEntries(t *kernel.Task, ep tcpip.Endpoint, outPtr usermem.Addr, outLen i
 	return entries, nil
 }
 
-func findTable(ep tcpip.Endpoint, tablename linux.TableName) (iptables.Table, *syserr.Error) {
-	ipt, err := ep.IPTables()
-	if err != nil {
-		return iptables.Table{}, syserr.FromError(err)
-	}
+func findTable(stack *stack.Stack, tablename linux.TableName) (iptables.Table, *syserr.Error) {
+	ipt := stack.IPTables()
 	table, ok := ipt.Tables[tablename.String()]
 	if !ok {
 		return iptables.Table{}, syserr.ErrInvalidArgument
@@ -348,7 +344,7 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 	// Go through the list of supported hooks for this table and, for each
 	// one, set the rule it corresponds to.
 	for hook, _ := range replace.HookEntry {
-		if table.ValidHooks()&uint32(hook) != 0 {
+		if table.ValidHooks()&(1<<hook) != 0 {
 			hk := hookFromLinux(hook)
 			for ruleIdx, offset := range offsets {
 				if offset == replace.HookEntry[hook] {
@@ -368,6 +364,23 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 			}
 		}
 	}
+
+	// TODO(gvisor.dev/issue/170): Support other chains.
+	// Since we only support modifying the INPUT chain right now, make sure
+	// all other chains point to ACCEPT rules.
+	for hook, ruleIdx := range table.BuiltinChains {
+		if hook != iptables.Input {
+			if _, ok := table.Rules[ruleIdx].Target.(iptables.UnconditionalAcceptTarget); !ok {
+				log.Warningf("Hook %d is unsupported.", hook)
+				return syserr.ErrInvalidArgument
+			}
+		}
+	}
+
+	// TODO(gvisor.dev/issue/170): Check the following conditions:
+	// - There are no loops.
+	// - There are no chains without an unconditional final rule.
+	// - There are no chains without an unconditional underflow rule.
 
 	ipt := stack.IPTables()
 	table.SetMetadata(metadata{
@@ -411,10 +424,7 @@ func parseTarget(optVal []byte) (iptables.Target, uint32, *syserr.Error) {
 		case iptables.Accept:
 			return iptables.UnconditionalAcceptTarget{}, linux.SizeOfXTStandardTarget, nil
 		case iptables.Drop:
-			// TODO(gvisor.dev/issue/170): Return an
-			// iptables.UnconditionalDropTarget to support DROP.
-			log.Infof("netfilter DROP is not supported yet.")
-			return nil, 0, syserr.ErrInvalidArgument
+			return iptables.UnconditionalDropTarget{}, linux.SizeOfXTStandardTarget, nil
 		default:
 			panic(fmt.Sprintf("Unknown verdict: %v", verdict))
 		}

@@ -17,7 +17,6 @@ go_library(
     deps = [
         "//pkg/sync",
         "//pkg/tcpip/buffer",
-        "//pkg/tcpip/iptables",
         "//pkg/waiter",
     ],
 )
