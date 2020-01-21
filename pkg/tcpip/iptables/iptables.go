@@ -16,6 +16,12 @@
 // tool.
 package iptables
 
+import (
+	"fmt"
+
+	"gvisor.dev/gvisor/pkg/tcpip"
+)
+
 // Table names.
 const (
 	TablenameNat    = "nat"
@@ -126,4 +132,73 @@ func EmptyFilterTable() Table {
 		},
 		UserChains: map[string]int{},
 	}
+}
+
+// Check runs pkt through the rules for hook. It returns true when the packet
+// should continue traversing the network stack and false when it should be
+// dropped.
+func (it *IPTables) Check(hook Hook, pkt tcpip.PacketBuffer) bool {
+	// TODO(gvisor.dev/issue/170): A lot of this is uncomplicated because
+	// we're missing features. Jumps, the call stack, etc. aren't checked
+	// for yet because we're yet to support them.
+
+	// Go through each table containing the hook.
+	for _, tablename := range it.Priorities[hook] {
+		switch verdict := it.checkTable(hook, pkt, tablename); verdict {
+		// If the table returns Accept, move on to the next table.
+		case Accept:
+			continue
+		// The Drop verdict is final.
+		case Drop:
+			return false
+		case Stolen, Queue, Repeat, None, Jump, Return, Continue:
+			panic(fmt.Sprintf("Unimplemented verdict %v.", verdict))
+		default:
+			panic(fmt.Sprintf("Unknown verdict %v.", verdict))
+		}
+	}
+
+	// Every table returned Accept.
+	return true
+}
+
+func (it *IPTables) checkTable(hook Hook, pkt tcpip.PacketBuffer, tablename string) Verdict {
+	// Start from ruleIdx and walk the list of rules until a rule gives us
+	// a verdict.
+	table := it.Tables[tablename]
+	for ruleIdx := table.BuiltinChains[hook]; ruleIdx < len(table.Rules); ruleIdx++ {
+		switch verdict := it.checkRule(hook, pkt, table, ruleIdx); verdict {
+		// In either of these cases, this table is done with the packet.
+		case Accept, Drop:
+			return verdict
+		// Continue traversing the rules of the table.
+		case Continue:
+			continue
+		case Stolen, Queue, Repeat, None, Jump, Return:
+			panic(fmt.Sprintf("Unimplemented verdict %v.", verdict))
+		default:
+			panic(fmt.Sprintf("Unknown verdict %v.", verdict))
+		}
+	}
+
+	panic(fmt.Sprintf("Traversed past the entire list of iptables rules in table %q.", tablename))
+}
+
+func (it *IPTables) checkRule(hook Hook, pkt tcpip.PacketBuffer, table Table, ruleIdx int) Verdict {
+	rule := table.Rules[ruleIdx]
+	// Go through each rule matcher. If they all match, run
+	// the rule target.
+	for _, matcher := range rule.Matchers {
+		matches, hotdrop := matcher.Match(hook, pkt, "")
+		if hotdrop {
+			return Drop
+		}
+		if !matches {
+			return Continue
+		}
+	}
+
+	// All the matchers matched, so run the target.
+	verdict, _ := rule.Target.Action(pkt)
+	return verdict
 }

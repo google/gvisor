@@ -1284,7 +1284,10 @@ func TestTTL(t *testing.T) {
 				} else {
 					p = ipv6.NewProtocol()
 				}
-				ep, err := p.NewEndpoint(0, tcpip.AddressWithPrefix{}, nil, nil, nil)
+				ep, err := p.NewEndpoint(0, tcpip.AddressWithPrefix{}, nil, nil, nil, stack.New(stack.Options{
+					NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
+					TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+				}))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -1317,7 +1320,10 @@ func TestSetTTL(t *testing.T) {
 					} else {
 						p = ipv6.NewProtocol()
 					}
-					ep, err := p.NewEndpoint(0, tcpip.AddressWithPrefix{}, nil, nil, nil)
+					ep, err := p.NewEndpoint(0, tcpip.AddressWithPrefix{}, nil, nil, nil, stack.New(stack.Options{
+						NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
+						TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+					}))
 					if err != nil {
 						t.Fatal(err)
 					}
