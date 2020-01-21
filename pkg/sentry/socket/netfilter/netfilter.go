@@ -131,6 +131,7 @@ func FillDefaultIPTables(stack *stack.Stack) {
 	stack.SetIPTables(ipt)
 }
 
+// TODO: Return proto.
 // convertNetstackToBinary converts the iptables as stored in netstack to the
 // format expected by the iptables tool. Linux stores each table as a binary
 // blob that can only be traversed by parsing a bit, reading some offsets,
@@ -318,10 +319,12 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 		}
 		var entry linux.IPTEntry
 		buf := optVal[:linux.SizeOfIPTEntry]
-		optVal = optVal[linux.SizeOfIPTEntry:]
 		binary.Unmarshal(buf, usermem.ByteOrder, &entry)
-		if entry.TargetOffset != linux.SizeOfIPTEntry {
-			// TODO(gvisor.dev/issue/170): Support matchers.
+		initialOptValLen := len(optVal)
+		optVal = optVal[linux.SizeOfIPTEntry:]
+
+		if entry.TargetOffset < linux.SizeOfIPTEntry {
+			log.Warningf("netfilter: entry has too-small target offset %d", entry.TargetOffset)
 			return syserr.ErrInvalidArgument
 		}
 
@@ -332,19 +335,41 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 			return err
 		}
 
+		// TODO: Matchers (and maybe targets) can specify that they only work for certiain protocols, hooks, tables.
+		// Get matchers.
+		matchersSize := entry.TargetOffset - linux.SizeOfIPTEntry
+		if len(optVal) < int(matchersSize) {
+			log.Warningf("netfilter: entry doesn't have enough room for its matchers (only %d bytes remain)", len(optVal))
+		}
+		matchers, err := parseMatchers(filter, optVal[:matchersSize])
+		if err != nil {
+			log.Warningf("netfilter: failed to parse matchers: %v", err)
+			return err
+		}
+		optVal = optVal[matchersSize:]
+
 		// Get the target of the rule.
-		target, consumed, err := parseTarget(optVal)
+		targetSize := entry.NextOffset - entry.TargetOffset
+		if len(optVal) < int(targetSize) {
+			log.Warningf("netfilter: entry doesn't have enough room for its target (only %d bytes remain)", len(optVal))
+		}
+		target, err := parseTarget(optVal[:targetSize])
 		if err != nil {
 			return err
 		}
-		optVal = optVal[consumed:]
+		optVal = optVal[targetSize:]
 
 		table.Rules = append(table.Rules, iptables.Rule{
-			Filter: filter,
-			Target: target,
+			Filter:   filter,
+			Target:   target,
+			Matchers: matchers,
 		})
 		offsets = append(offsets, offset)
-		offset += linux.SizeOfIPTEntry + consumed
+		offset += uint32(entry.NextOffset)
+
+		if initialOptValLen-len(optVal) != int(entry.NextOffset) {
+			log.Warningf("netfilter: entry NextOffset is %d, but entry took up %d bytes", entry.NextOffset, initialOptValLen-len(optVal))
+		}
 	}
 
 	// Go through the list of supported hooks for this table and, for each
@@ -401,12 +426,105 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 	return nil
 }
 
-// parseTarget parses a target from the start of optVal and returns the target
-// along with the number of bytes it occupies in optVal.
-func parseTarget(optVal []byte) (iptables.Target, uint32, *syserr.Error) {
+// parseMatchers parses 0 or more matchers from optVal. optVal should contain
+// only the matchers.
+func parseMatchers(filter iptables.IPHeaderFilter, optVal []byte) ([]iptables.Matcher, *syserr.Error) {
+	var matchers []iptables.Matcher
+	for len(optVal) > 0 {
+		log.Infof("parseMatchers: optVal has len %d", len(optVal))
+		// Get the XTEntryMatch.
+		if len(optVal) < linux.SizeOfXTEntryMatch {
+			log.Warningf("netfilter: optVal has insufficient size for entry match: %d", len(optVal))
+			return nil, syserr.ErrInvalidArgument
+		}
+		var match linux.XTEntryMatch
+		buf := optVal[:linux.SizeOfXTEntryMatch]
+		binary.Unmarshal(buf, usermem.ByteOrder, &match)
+		log.Infof("parseMatchers: parsed entry match %q: %+v", match.Name.String(), match)
+
+		// Check some invariants.
+		if match.MatchSize < linux.SizeOfXTEntryMatch {
+			log.Warningf("netfilter: match size is too small, must be at least %d", linux.SizeOfXTEntryMatch)
+			return nil, syserr.ErrInvalidArgument
+		}
+		if len(optVal) < int(match.MatchSize) {
+			log.Warningf("netfilter: optVal has insufficient size for match: %d", len(optVal))
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		buf = optVal[linux.SizeOfXTEntryMatch:match.MatchSize]
+		var matcher iptables.Matcher
+		var err error
+		switch match.Name.String() {
+		case "tcp":
+			if len(buf) < linux.SizeOfXTTCP {
+				log.Warningf("netfilter: optVal has insufficient size for TCP match: %d", len(optVal))
+				return nil, syserr.ErrInvalidArgument
+			}
+			var matchData linux.XTTCP
+			// For alignment reasons, the match's total size may exceed what's
+			// strictly necessary to hold matchData.
+			binary.Unmarshal(buf[:linux.SizeOfXTUDP], usermem.ByteOrder, &matchData)
+			log.Infof("parseMatchers: parsed XTTCP: %+v", matchData)
+			matcher, err = iptables.NewTCPMatcher(filter, iptables.TCPMatcherData{
+				SourcePortStart:      matchData.SourcePortStart,
+				SourcePortEnd:        matchData.SourcePortEnd,
+				DestinationPortStart: matchData.DestinationPortStart,
+				DestinationPortEnd:   matchData.DestinationPortEnd,
+				Option:               matchData.Option,
+				FlagMask:             matchData.FlagMask,
+				FlagCompare:          matchData.FlagCompare,
+				InverseFlags:         matchData.InverseFlags,
+			})
+			if err != nil {
+				log.Warningf("netfilter: failed to create TCP matcher: %v", err)
+				return nil, syserr.ErrInvalidArgument
+			}
+
+		case "udp":
+			if len(buf) < linux.SizeOfXTUDP {
+				log.Warningf("netfilter: optVal has insufficient size for UDP match: %d", len(optVal))
+				return nil, syserr.ErrInvalidArgument
+			}
+			var matchData linux.XTUDP
+			// For alignment reasons, the match's total size may exceed what's
+			// strictly necessary to hold matchData.
+			binary.Unmarshal(buf[:linux.SizeOfXTUDP], usermem.ByteOrder, &matchData)
+			log.Infof("parseMatchers: parsed XTUDP: %+v", matchData)
+			matcher, err = iptables.NewUDPMatcher(filter, iptables.UDPMatcherData{
+				SourcePortStart:      matchData.SourcePortStart,
+				SourcePortEnd:        matchData.SourcePortEnd,
+				DestinationPortStart: matchData.DestinationPortStart,
+				DestinationPortEnd:   matchData.DestinationPortEnd,
+				InverseFlags:         matchData.InverseFlags,
+			})
+			if err != nil {
+				log.Warningf("netfilter: failed to create UDP matcher: %v", err)
+				return nil, syserr.ErrInvalidArgument
+			}
+
+		default:
+			log.Warningf("netfilter: unsupported matcher with name %q", match.Name.String())
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		matchers = append(matchers, matcher)
+
+		// TODO: Support revision.
+		// TODO: Support proto -- matchers usually specify which proto(s) they work with.
+		optVal = optVal[match.MatchSize:]
+	}
+
+	// TODO: Check that optVal is exhausted.
+	return matchers, nil
+}
+
+// parseTarget parses a target from optVal. optVal should contain only the
+// target.
+func parseTarget(optVal []byte) (iptables.Target, *syserr.Error) {
 	if len(optVal) < linux.SizeOfXTEntryTarget {
 		log.Warningf("netfilter: optVal has insufficient size for entry target %d", len(optVal))
-		return nil, 0, syserr.ErrInvalidArgument
+		return nil, syserr.ErrInvalidArgument
 	}
 	var target linux.XTEntryTarget
 	buf := optVal[:linux.SizeOfXTEntryTarget]
@@ -414,9 +532,9 @@ func parseTarget(optVal []byte) (iptables.Target, uint32, *syserr.Error) {
 	switch target.Name.String() {
 	case "":
 		// Standard target.
-		if len(optVal) < linux.SizeOfXTStandardTarget {
-			log.Warningf("netfilter.SetEntries: optVal has insufficient size for standard target %d", len(optVal))
-			return nil, 0, syserr.ErrInvalidArgument
+		if len(optVal) != linux.SizeOfXTStandardTarget {
+			log.Warningf("netfilter.SetEntries: optVal has wrong size for standard target %d", len(optVal))
+			return nil, syserr.ErrInvalidArgument
 		}
 		var standardTarget linux.XTStandardTarget
 		buf = optVal[:linux.SizeOfXTStandardTarget]
@@ -424,22 +542,22 @@ func parseTarget(optVal []byte) (iptables.Target, uint32, *syserr.Error) {
 
 		verdict, err := translateToStandardVerdict(standardTarget.Verdict)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 		switch verdict {
 		case iptables.Accept:
-			return iptables.UnconditionalAcceptTarget{}, linux.SizeOfXTStandardTarget, nil
+			return iptables.UnconditionalAcceptTarget{}, nil
 		case iptables.Drop:
-			return iptables.UnconditionalDropTarget{}, linux.SizeOfXTStandardTarget, nil
+			return iptables.UnconditionalDropTarget{}, nil
 		default:
 			panic(fmt.Sprintf("Unknown verdict: %v", verdict))
 		}
 
 	case errorTargetName:
 		// Error target.
-		if len(optVal) < linux.SizeOfXTErrorTarget {
+		if len(optVal) != linux.SizeOfXTErrorTarget {
 			log.Infof("netfilter.SetEntries: optVal has insufficient size for error target %d", len(optVal))
-			return nil, 0, syserr.ErrInvalidArgument
+			return nil, syserr.ErrInvalidArgument
 		}
 		var errorTarget linux.XTErrorTarget
 		buf = optVal[:linux.SizeOfXTErrorTarget]
@@ -454,16 +572,16 @@ func parseTarget(optVal []byte) (iptables.Target, uint32, *syserr.Error) {
 		//   rules have an error with the name of the chain.
 		switch errorTarget.Name.String() {
 		case errorTargetName:
-			return iptables.ErrorTarget{}, linux.SizeOfXTErrorTarget, nil
+			return iptables.ErrorTarget{}, nil
 		default:
 			log.Infof("Unknown error target %q doesn't exist or isn't supported yet.", errorTarget.Name.String())
-			return nil, 0, syserr.ErrInvalidArgument
+			return nil, syserr.ErrInvalidArgument
 		}
 	}
 
 	// Unknown target.
 	log.Infof("Unknown target %q doesn't exist or isn't supported yet.", target.Name.String())
-	return nil, 0, syserr.ErrInvalidArgument
+	return nil, syserr.ErrInvalidArgument
 }
 
 func filterFromIPTIP(iptip linux.IPTIP) (iptables.IPHeaderFilter, *syserr.Error) {

@@ -138,6 +138,8 @@ func EmptyFilterTable() Table {
 // Check runs pkt through the rules for hook. It returns true when the packet
 // should continue traversing the network stack and false when it should be
 // dropped.
+//
+// Precondition: pkt.NetworkHeader is set.
 func (it *IPTables) Check(hook Hook, pkt tcpip.PacketBuffer) bool {
 	// TODO(gvisor.dev/issue/170): A lot of this is uncomplicated because
 	// we're missing features. Jumps, the call stack, etc. aren't checked
@@ -163,6 +165,7 @@ func (it *IPTables) Check(hook Hook, pkt tcpip.PacketBuffer) bool {
 	return true
 }
 
+// Precondition: pkt.NetworkHeader is set.
 func (it *IPTables) checkTable(hook Hook, pkt tcpip.PacketBuffer, tablename string) Verdict {
 	// Start from ruleIdx and walk the list of rules until a rule gives us
 	// a verdict.

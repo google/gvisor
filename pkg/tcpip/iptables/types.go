@@ -169,12 +169,29 @@ type IPHeaderFilter struct {
 	Protocol tcpip.TransportProtocolNumber
 }
 
+// TODO: Should these be able to marshal/unmarshal themselves?
+// TODO: Something has to map the name to the matcher.
 // A Matcher is the interface for matching packets.
 type Matcher interface {
 	// Match returns whether the packet matches and whether the packet
 	// should be "hotdropped", i.e. dropped immediately. This is usually
 	// used for suspicious packets.
+	//
+	// Precondition: packet.NetworkHeader is set.
 	Match(hook Hook, packet tcpip.PacketBuffer, interfaceName string) (matches bool, hotdrop bool)
+
+	// TODO: Make this typesafe by having each Matcher have their own, typed CheckEntry?
+	// CheckEntry(params MatchCheckEntryParams) bool
+}
+
+// TODO: Unused?
+type MatchCheckEntryParams struct {
+	Table  string // TODO: Tables should be an enum...
+	Filter IPHeaderFilter
+	Info   interface{} // TODO: Type unsafe.
+	// HookMask       uint8
+	// Family         uint8
+	// NFTCompat      bool
 }
 
 // A Target is the interface for taking an action for a packet.
