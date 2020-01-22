@@ -93,7 +93,7 @@ sudo ip netns add ${CNI_CONTAINERID}
 
 Next, run the bridge and loopback plugins to apply the configuration that was
 created earlier to the namespace. Each plugin outputs some JSON indicating the
-results of executing hte plugin. For example, The bridge plugin's response
+results of executing the plugin. For example, The bridge plugin's response
 includes the IP address assigned to the ethernet device created in the network
 namespace. Take note of the IP address for use later.
 
