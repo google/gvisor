@@ -38,6 +38,7 @@ go_library(
         "race_unsafe.go",
         "seqcount.go",
         "syncutil.go",
+        "tmutex_unsafe.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/sync",
 )
@@ -48,6 +49,7 @@ go_test(
     srcs = [
         "downgradable_rwmutex_test.go",
         "seqcount_test.go",
+        "tmutex_test.go",
     ],
     embed = [":sync"],
 )
