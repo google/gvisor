@@ -29,10 +29,10 @@ func runtimeSemacquire(s *uint32)
 //go:linkname runtimeSemrelease sync.runtime_Semrelease
 func runtimeSemrelease(s *uint32, handoff bool, skipframes int)
 
-// DowngradableRWMutex is identical to sync.RWMutex, but adds the DowngradeLock,
+// RWMutex is identical to sync.RWMutex, but adds the DowngradeLock,
 // TryLock and TryRLock methods.
-type DowngradableRWMutex struct {
-	w           TMutex // held if there are pending writers
+type RWMutex struct {
+	w           Mutex  // held if there are pending writers
 	writerSem   uint32 // semaphore for writers to wait for completing readers
 	readerSem   uint32 // semaphore for readers to wait for completing writers
 	readerCount int32  // number of pending readers
@@ -43,7 +43,7 @@ const rwmutexMaxReaders = 1 << 30
 
 // TryRLock locks rw for reading. It returns true if it succeeds and false
 // otherwise. It does not block.
-func (rw *DowngradableRWMutex) TryRLock() bool {
+func (rw *RWMutex) TryRLock() bool {
 	if RaceEnabled {
 		RaceDisable()
 	}
@@ -67,7 +67,7 @@ func (rw *DowngradableRWMutex) TryRLock() bool {
 }
 
 // RLock locks rw for reading.
-func (rw *DowngradableRWMutex) RLock() {
+func (rw *RWMutex) RLock() {
 	if RaceEnabled {
 		RaceDisable()
 	}
@@ -82,14 +82,14 @@ func (rw *DowngradableRWMutex) RLock() {
 }
 
 // RUnlock undoes a single RLock call.
-func (rw *DowngradableRWMutex) RUnlock() {
+func (rw *RWMutex) RUnlock() {
 	if RaceEnabled {
 		RaceReleaseMerge(unsafe.Pointer(&rw.writerSem))
 		RaceDisable()
 	}
 	if r := atomic.AddInt32(&rw.readerCount, -1); r < 0 {
 		if r+1 == 0 || r+1 == -rwmutexMaxReaders {
-			panic("RUnlock of unlocked DowngradableRWMutex")
+			panic("RUnlock of unlocked RWMutex")
 		}
 		// A writer is pending.
 		if atomic.AddInt32(&rw.readerWait, -1) == 0 {
@@ -104,7 +104,7 @@ func (rw *DowngradableRWMutex) RUnlock() {
 
 // TryLock locks rw for writing. It returns true if it succeeds and false
 // otherwise. It does not block.
-func (rw *DowngradableRWMutex) TryLock() bool {
+func (rw *RWMutex) TryLock() bool {
 	if RaceEnabled {
 		RaceDisable()
 	}
@@ -131,7 +131,7 @@ func (rw *DowngradableRWMutex) TryLock() bool {
 }
 
 // Lock locks rw for writing.
-func (rw *DowngradableRWMutex) Lock() {
+func (rw *RWMutex) Lock() {
 	if RaceEnabled {
 		RaceDisable()
 	}
@@ -150,7 +150,7 @@ func (rw *DowngradableRWMutex) Lock() {
 }
 
 // Unlock unlocks rw for writing.
-func (rw *DowngradableRWMutex) Unlock() {
+func (rw *RWMutex) Unlock() {
 	if RaceEnabled {
 		RaceRelease(unsafe.Pointer(&rw.writerSem))
 		RaceRelease(unsafe.Pointer(&rw.readerSem))
@@ -159,7 +159,7 @@ func (rw *DowngradableRWMutex) Unlock() {
 	// Announce to readers there is no active writer.
 	r := atomic.AddInt32(&rw.readerCount, rwmutexMaxReaders)
 	if r >= rwmutexMaxReaders {
-		panic("Unlock of unlocked DowngradableRWMutex")
+		panic("Unlock of unlocked RWMutex")
 	}
 	// Unblock blocked readers, if any.
 	for i := 0; i < int(r); i++ {
@@ -173,7 +173,7 @@ func (rw *DowngradableRWMutex) Unlock() {
 }
 
 // DowngradeLock atomically unlocks rw for writing and locks it for reading.
-func (rw *DowngradableRWMutex) DowngradeLock() {
+func (rw *RWMutex) DowngradeLock() {
 	if RaceEnabled {
 		RaceRelease(unsafe.Pointer(&rw.readerSem))
 		RaceDisable()
@@ -181,7 +181,7 @@ func (rw *DowngradableRWMutex) DowngradeLock() {
 	// Announce to readers there is no active writer and one additional reader.
 	r := atomic.AddInt32(&rw.readerCount, rwmutexMaxReaders+1)
 	if r >= rwmutexMaxReaders+1 {
-		panic("DowngradeLock of unlocked DowngradableRWMutex")
+		panic("DowngradeLock of unlocked RWMutex")
 	}
 	// Unblock blocked readers, if any. Note that this loop starts as 1 since r
 	// includes this goroutine.
