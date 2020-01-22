@@ -207,26 +207,34 @@ func marshalMatcher(matcher iptables.Matcher) []byte {
 }
 
 func marshalUDPMatcher(matcher *iptables.UDPMatcher) []byte {
-	type udpMatch struct {
-		linux.XTEntryMatch
-		linux.XTUDP
-	}
-	linuxMatcher := udpMatch{
+	linuxMatcher := linux.KernelXTEntryMatch{
 		XTEntryMatch: linux.XTEntryMatch{
 			MatchSize: linux.SizeOfXTEntryMatch + linux.SizeOfXTUDP,
 			// Name:      "udp",
 		},
-		XTUDP: linux.XTUDP{
-			SourcePortStart:      matcher.Data.SourcePortStart,
-			SourcePortEnd:        matcher.Data.SourcePortEnd,
-			DestinationPortStart: matcher.Data.DestinationPortStart,
-			DestinationPortEnd:   matcher.Data.DestinationPortEnd,
-			InverseFlags:         matcher.Data.InverseFlags,
-		},
+		Data: make([]byte, linux.SizeOfXTUDP+22),
 	}
+	// copy(linuxMatcher.Name[:], "udp")
 	copy(linuxMatcher.Name[:], "udp")
 
-	var buf [linux.SizeOfXTEntryMatch + linux.SizeOfXTUDP]byte
+	// TODO: Must be aligned.
+	xtudp := linux.XTUDP{
+		SourcePortStart:      matcher.Data.SourcePortStart,
+		SourcePortEnd:        matcher.Data.SourcePortEnd,
+		DestinationPortStart: matcher.Data.DestinationPortStart,
+		DestinationPortEnd:   matcher.Data.DestinationPortEnd,
+		InverseFlags:         matcher.Data.InverseFlags,
+	}
+	binary.Marshal(linuxMatcher.Data[:linux.SizeOfXTUDP], usermem.ByteOrder, xtudp)
+
+	if binary.Size(linuxMatcher)%64 != 0 {
+		panic(fmt.Sprintf("size is actually: %d", binary.Size(linuxMatcher)))
+	}
+
+	var buf [linux.SizeOfXTEntryMatch + linux.SizeOfXTUDP + 22]byte
+	if len(buf)%64 != 0 {
+		panic(fmt.Sprintf("len is actually: %d", len(buf)))
+	}
 	binary.Marshal(buf[:], usermem.ByteOrder, linuxMatcher)
 	return buf[:]
 }
@@ -245,6 +253,7 @@ func marshalTarget(target iptables.Target) []byte {
 }
 
 func marshalStandardTarget(verdict iptables.Verdict) []byte {
+	// TODO: Must be aligned.
 	// The target's name will be the empty string.
 	target := linux.XTStandardTarget{
 		Target: linux.XTEntryTarget{

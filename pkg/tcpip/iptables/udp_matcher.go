@@ -59,7 +59,7 @@ func NewUDPMatcher(filter IPHeaderFilter, data UDPMatcherData) (Matcher, error) 
 	}
 
 	if filter.Protocol != header.UDPProtocolNumber {
-		log.Warningf("UDP matching is only valid for protocol %d.", header.UDPProtocolNumber)
+		return nil, fmt.Errorf("UDP matching is only valid for protocol %d.", header.UDPProtocolNumber)
 	}
 
 	return &UDPMatcher{Data: data}, nil

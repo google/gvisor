@@ -198,6 +198,11 @@ type XTEntryMatch struct {
 // SizeOfXTEntryMatch is the size of an XTEntryMatch.
 const SizeOfXTEntryMatch = 32
 
+type KernelXTEntryMatch struct {
+	XTEntryMatch
+	Data []byte
+}
+
 // XTEntryTarget holds a target for a rule. For example, it can specify that
 // packets matching the rule should DROP, ACCEPT, or use an extension target.
 // iptables-extension(8) has a list of possible targets.
