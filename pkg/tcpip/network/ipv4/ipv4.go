@@ -396,6 +396,16 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
 			return
 		}
 	}
+
+	min := int(header.IPv4MinimumSize)
+
+	if hlen > min {
+		ret := h.ProcessIPOptions(h.OptionsHeader(), hlen-min)
+		if ret < 0 {
+			return
+		}
+	}
+
 	p := h.TransportProtocol()
 	if p == header.ICMPv4ProtocolNumber {
 		headerView.CapLength(hlen)

@@ -33,6 +33,7 @@ const (
 	checksum           = 10
 	srcAddr            = 12
 	dstAddr            = 16
+	options            = 20
 )
 
 // IPv4Fields contains the fields of an IPv4 packet. It is used to describe the
@@ -112,6 +113,87 @@ const (
 	IPv4MinimumProcessableDatagramSize = 576
 )
 
+/*
+	IP Timestamp option - RFC 791
+        +--------+--------+--------+--------+
+        |01000100| length | pointer|oflw|flg|
+        +--------+--------+--------+--------+
+        |         internet address          |
+        +--------+--------+--------+--------+
+        |             timestamp             |
+        +--------+--------+--------+--------+
+        |                 .                 |
+*/
+const (
+	//IPv4TimeStampOption is the option type for Timestamp option
+	IPv4TimeStampOption = 68
+
+	//IPv4EndofOptionList is the option type for End of Option list option
+	IPv4EndofOptionList = 0
+
+	//IPv4TimeStampOnlyMinSize is the minimum length of Timestamp option containing only timestamps
+	IPv4TimeStampOnlyMinSize = 8
+
+	//IPv4TimeStampWithIPMinSize is the minimum length of Timestamp option containing both ip address and timestamp.
+	IPv4TimeStampWithIPMinSize = 12
+
+	//IPv4TimeStampOptionMaxSize is the maximum length of a Timestamp option
+	IPv4TimeStampOptionMaxSize = 40
+
+	//IPv4TimeStampOptionMinPointer is the smallest possible value of the pointer field in Timestamp option
+	IPv4TimeStampOptionMinPointer = 5
+
+	//IPv4MinOptionsLength is the minimum length of an IP option.
+	IPv4MinOptionsLength = 4
+)
+
+const (
+	//IP Timestamp option fields
+	optionsStart   = 0
+	optionsLength  = 1
+	optionsPointer = 2
+	optionsFlags   = 3
+	optionsIP      = 4
+	optionsTs      = 8
+)
+
+//IPv4OptionHeader represents a ipv4 options header stored in a byte array
+type IPv4OptionHeader []byte
+
+//HeaderType returns the IP option type
+func (b IPv4OptionHeader) HeaderType() uint8 {
+	return (b[optionsStart] & 0xff)
+}
+
+//HeaderLength returns the length field in the IP option header
+func (b IPv4OptionHeader) HeaderLength() uint8 {
+	return (b[optionsLength] & 0xff)
+}
+
+// Pointer returns the pointer field in the IP Timestamp option
+func (b IPv4OptionHeader) Pointer() uint8 {
+	return (b[optionsPointer] & 0xff)
+}
+
+// Flags returns the flags field in the IP Timestamp option
+func (b IPv4OptionHeader) Flags() uint8 {
+	return (b[optionsFlags] & 0xff)
+}
+
+// IPAddress returns the ip address field in the IP Timestamp option
+func (b IPv4OptionHeader) IPAddress() tcpip.Address {
+	return tcpip.Address(b[optionsIP : optionsIP+IPv4AddressSize])
+}
+
+// Timestamp returns the timestamp field in the IP Timestamp option
+func (b IPv4OptionHeader) Timestamp() uint32 {
+	if (b.Flags() & 0x0f) == 1 {
+		return binary.BigEndian.Uint32(b[optionsTs : optionsTs+4])
+	}
+
+	return binary.BigEndian.Uint32(b[optionsIP : optionsIP+4])
+}
+
 // Flags that may be set in an IPv4 packet.
 const (
 	IPv4FlagMoreFragments = 1 << iota
@@ -187,6 +269,11 @@ func (b IPv4) SourceAddress() tcpip.Address {
 // header.
 func (b IPv4) DestinationAddress() tcpip.Address {
 	return tcpip.Address(b[dstAddr : dstAddr+IPv4AddressSize])
+}
+
+// OptionsHeader returns a byte array pointing to IP Options header
+func (b IPv4) OptionsHeader() []byte {
+	return b[options:]
 }
 
 // TransportProtocol implements Network.TransportProtocol.
@@ -303,4 +390,59 @@ func IsV4MulticastAddress(addr tcpip.Address) bool {
 		return false
 	}
 	return (addr[0] & 0xf0) == 0xe0
+}
+
+// ProcessTimestampOption will process the IP Timestamp option
+func ProcessTimestampOption(inHdr IPv4OptionHeader, inLen *int) int {
+	len := inHdr.HeaderLength()
+	flags := inHdr.Flags()
+
+	if (len % 4) != 0 {
+		return -1
+	}
+
+	if (flags & 0x0f) == 1 {
+		if len < IPv4TimeStampWithIPMinSize || len > IPv4TimeStampOptionMaxSize {
+			return -2
+		}
+	} else if len < IPv4TimeStampOnlyMinSize || len > IPv4TimeStampOptionMaxSize {
+		return -2
+	}
+
+	pointer := inHdr.Pointer()
+	if pointer < IPv4TimeStampOptionMinPointer {
+		return -3
+	}
+
+	overflow := (flags & 0xf0) >> 4
+	if pointer > len {
+		return int(overflow)
+	}
+
+	*inLen -= int(len)
+
+	return 0
+}
+
+// ProcessIPOptions will parse all the available IP options in an IPv4 packet
+func (b IPv4) ProcessIPOptions(buffer []byte, inLen int) int {
+	h := IPv4OptionHeader(buffer)
+	ret := 0
+
+	for inLen >= IPv4MinOptionsLength {
+		switch h.HeaderType() {
+		case IPv4TimeStampOption:
+			ret = ProcessTimestampOption(h, &inLen)
+			if ret < 0 {
+				return ret
+			}
+			h = h[inLen+1:]
+		case IPv4EndofOptionList:
+			return 0
+		default:
+			return -2
+		}
+	}
+
+	return ret
 }
