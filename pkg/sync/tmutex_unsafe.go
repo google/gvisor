@@ -17,8 +17,8 @@ import (
 	"unsafe"
 )
 
-// TMutex is a try lock.
-type TMutex struct {
+// Mutex is a try lock.
+type Mutex struct {
 	sync.Mutex
 }
 
@@ -27,7 +27,7 @@ type syncMutex struct {
 	sema  uint32
 }
 
-func (m *TMutex) state() *int32 {
+func (m *Mutex) state() *int32 {
 	return &(*syncMutex)(unsafe.Pointer(&m.Mutex)).state
 }
 
@@ -38,7 +38,7 @@ const (
 
 // TryLock tries to aquire the mutex. It returns true if it succeeds and false
 // otherwise. TryLock does not block.
-func (m *TMutex) TryLock() bool {
+func (m *Mutex) TryLock() bool {
 	if atomic.CompareAndSwapInt32(m.state(), mutexUnlocked, mutexLocked) {
 		if RaceEnabled {
 			RaceAcquire(unsafe.Pointer(&m.Mutex))

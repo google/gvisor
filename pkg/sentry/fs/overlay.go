@@ -198,7 +198,7 @@ type overlayEntry struct {
 	upper *Inode
 
 	// dirCacheMu protects dirCache.
-	dirCacheMu sync.DowngradableRWMutex `state:"nosave"`
+	dirCacheMu sync.RWMutex `state:"nosave"`
 
 	// dirCache is cache of DentAttrs from upper and lower Inodes.
 	dirCache *SortedDentryMap

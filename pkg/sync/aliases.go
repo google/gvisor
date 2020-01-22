@@ -11,12 +11,6 @@ import (
 
 // Aliases of standard library types.
 type (
-	// Mutex is an alias of sync.Mutex.
-	Mutex = sync.Mutex
-
-	// RWMutex is an alias of sync.RWMutex.
-	RWMutex = sync.RWMutex
-
 	// Cond is an alias of sync.Cond.
 	Cond = sync.Cond
 
