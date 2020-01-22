@@ -33,7 +33,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
-	"gvisor.dev/gvisor/pkg/tmutex"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -301,7 +300,7 @@ type endpoint struct {
 	// work. Only the main protocol goroutine is expected to call Lock() on
 	// it, but other goroutines (e.g., send) may call TryLock() to eagerly
 	// perform work without having to wait for the main one to wake up.
-	workMu tmutex.Mutex `state:"nosave"`
+	workMu sync.Mutex `state:"nosave"`
 
 	// The following fields are initialized at creation time and do not
 	// change throughout the lifetime of the endpoint.
@@ -700,7 +699,6 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 	}
 
 	e.segmentQueue.setLimit(MaxUnprocessedSegments)
-	e.workMu.Init()
 	e.workMu.Lock()
 	e.tsOffset = timeStampOffset()
 

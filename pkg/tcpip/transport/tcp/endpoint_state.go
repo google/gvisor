@@ -180,7 +180,6 @@ func (e *endpoint) afterLoad() {
 func (e *endpoint) Resume(s *stack.Stack) {
 	e.stack = s
 	e.segmentQueue.setLimit(MaxUnprocessedSegments)
-	e.workMu.Init()
 	state := e.origEndpointState
 	switch state {
 	case StateInitial, StateBound, StateListen, StateConnecting, StateEstablished:
