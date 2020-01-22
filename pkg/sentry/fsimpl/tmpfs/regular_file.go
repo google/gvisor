@@ -101,10 +101,6 @@ func (rf *regularFile) truncate(size uint64) (bool, error) {
 type regularFileFD struct {
 	fileDescription
 
-	// These are immutable.
-	readable bool
-	writable bool
-
 	// off is the file offset. off is accessed using atomic memory operations.
 	// offMu serializes operations that may mutate off.
 	off   int64
@@ -113,16 +109,11 @@ type regularFileFD struct {
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *regularFileFD) Release() {
-	if fd.writable {
-		fd.vfsfd.VirtualDentry().Mount().EndWrite()
-	}
+	// noop
 }
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
-	if !fd.readable {
-		return 0, syserror.EINVAL
-	}
 	if offset < 0 {
 		return 0, syserror.EINVAL
 	}
@@ -147,9 +138,6 @@ func (fd *regularFileFD) Read(ctx context.Context, dst usermem.IOSequence, opts 
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (fd *regularFileFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
-	if !fd.writable {
-		return 0, syserror.EINVAL
-	}
 	if offset < 0 {
 		return 0, syserror.EINVAL
 	}

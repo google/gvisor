@@ -66,7 +66,7 @@ func NewVFSPipe(sizeBytes, atomicIOBytes int64) *VFSPipe {
 // for read and write will succeed both in blocking and nonblocking mode. POSIX
 // leaves this behavior undefined. This can be used to open a FIFO for writing
 // while there are no readers available." - fifo(7)
-func (vp *VFSPipe) NewVFSPipeFD(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, vfsfd *vfs.FileDescription, flags uint32) (*VFSPipeFD, error) {
+func (vp *VFSPipe) NewVFSPipeFD(ctx context.Context, vfsd *vfs.Dentry, vfsfd *vfs.FileDescription, flags uint32) (*VFSPipeFD, error) {
 	vp.mu.Lock()
 	defer vp.mu.Unlock()
 
@@ -76,7 +76,7 @@ func (vp *VFSPipe) NewVFSPipeFD(ctx context.Context, rp *vfs.ResolvingPath, vfsd
 		return nil, syserror.EINVAL
 	}
 
-	vfd, err := vp.open(rp, vfsd, vfsfd, flags)
+	vfd, err := vp.open(vfsd, vfsfd, flags)
 	if err != nil {
 		return nil, err
 	}
@@ -118,19 +118,13 @@ func (vp *VFSPipe) NewVFSPipeFD(ctx context.Context, rp *vfs.ResolvingPath, vfsd
 }
 
 // Preconditions: vp.mu must be held.
-func (vp *VFSPipe) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, vfsfd *vfs.FileDescription, flags uint32) (*VFSPipeFD, error) {
+func (vp *VFSPipe) open(vfsd *vfs.Dentry, vfsfd *vfs.FileDescription, flags uint32) (*VFSPipeFD, error) {
 	var fd VFSPipeFD
 	fd.flags = flags
 	fd.readable = vfs.MayReadFileWithOpenFlags(flags)
 	fd.writable = vfs.MayWriteFileWithOpenFlags(flags)
 	fd.vfsfd = vfsfd
 	fd.pipe = &vp.pipe
-	if fd.writable {
-		// The corresponding Mount.EndWrite() is in VFSPipe.Release().
-		if err := rp.Mount().CheckBeginWrite(); err != nil {
-			return nil, err
-		}
-	}
 
 	switch {
 	case fd.readable && fd.writable:
