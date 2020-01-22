@@ -700,7 +700,7 @@ TEST(ElfTest, PIE) {
 
   // The first segment really needs to start at 0 for a normal PIE binary, and
   // thus includes the headers.
-  const uint64 offset = elf.phdrs[1].p_offset;
+  const uint64_t offset = elf.phdrs[1].p_offset;
   elf.phdrs[1].p_offset = 0x0;
   elf.phdrs[1].p_vaddr = 0x0;
   elf.phdrs[1].p_filesz += offset;
@@ -720,7 +720,7 @@ TEST(ElfTest, PIE) {
   struct user_regs_struct regs;
   ASSERT_THAT(ptrace(PTRACE_GETREGS, child, 0, &regs), SyscallSucceeds());
 
-  const uint64 load_addr = regs.rip & ~(kPageSize - 1);
+  const uint64_t load_addr = regs.rip & ~(kPageSize - 1);
 
   EXPECT_THAT(child, ContainsMappings(std::vector<ProcMapsEntry>({
                          // text page.
@@ -789,7 +789,7 @@ TEST(ElfTest, PIENonZeroStart) {
   struct user_regs_struct regs;
   ASSERT_THAT(ptrace(PTRACE_GETREGS, child, 0, &regs), SyscallSucceeds());
 
-  const uint64 load_addr = regs.rip & ~(kPageSize - 1);
+  const uint64_t load_addr = regs.rip & ~(kPageSize - 1);
 
   // The ELF is loaded at an arbitrary address, not the first PT_LOAD vaddr.
   //
@@ -859,7 +859,7 @@ TEST(ElfTest, ELFInterpreter) {
 
   // The first segment really needs to start at 0 for a normal PIE binary, and
   // thus includes the headers.
-  uint64 const offset = interpreter.phdrs[1].p_offset;
+  uint64_t const offset = interpreter.phdrs[1].p_offset;
   // N.B. Since Linux 4.10 (0036d1f7eb95b "binfmt_elf: fix calculations for bss
   // padding"), Linux unconditionally zeroes the remainder of the highest mapped
   // page in an interpreter, failing if the protections don't allow write. Thus
@@ -912,7 +912,7 @@ TEST(ElfTest, ELFInterpreter) {
   struct user_regs_struct regs;
   ASSERT_THAT(ptrace(PTRACE_GETREGS, child, 0, &regs), SyscallSucceeds());
 
-  const uint64 interp_load_addr = regs.rip & ~(kPageSize - 1);
+  const uint64_t interp_load_addr = regs.rip & ~(kPageSize - 1);
 
   EXPECT_THAT(
       child, ContainsMappings(std::vector<ProcMapsEntry>({
@@ -1047,7 +1047,7 @@ TEST(ElfTest, ELFInterpreterRelative) {
 
   // The first segment really needs to start at 0 for a normal PIE binary, and
   // thus includes the headers.
-  uint64 const offset = interpreter.phdrs[1].p_offset;
+  uint64_t const offset = interpreter.phdrs[1].p_offset;
   // See comment in ElfTest.ELFInterpreter.
   interpreter.phdrs[1].p_flags = PF_R | PF_W | PF_X;
   interpreter.phdrs[1].p_offset = 0x0;
@@ -1086,7 +1086,7 @@ TEST(ElfTest, ELFInterpreterRelative) {
   struct user_regs_struct regs;
   ASSERT_THAT(ptrace(PTRACE_GETREGS, child, 0, &regs), SyscallSucceeds());
 
-  const uint64 interp_load_addr = regs.rip & ~(kPageSize - 1);
+  const uint64_t interp_load_addr = regs.rip & ~(kPageSize - 1);
 
   EXPECT_THAT(
       child, ContainsMappings(std::vector<ProcMapsEntry>({
@@ -1109,7 +1109,7 @@ TEST(ElfTest, ELFInterpreterWrongArch) {
 
   // The first segment really needs to start at 0 for a normal PIE binary, and
   // thus includes the headers.
-  uint64 const offset = interpreter.phdrs[1].p_offset;
+  uint64_t const offset = interpreter.phdrs[1].p_offset;
   // See comment in ElfTest.ELFInterpreter.
   interpreter.phdrs[1].p_flags = PF_R | PF_W | PF_X;
   interpreter.phdrs[1].p_offset = 0x0;
@@ -1190,7 +1190,7 @@ TEST(ElfTest, ElfInterpreterNoExecute) {
 
   // The first segment really needs to start at 0 for a normal PIE binary, and
   // thus includes the headers.
-  uint64 const offset = interpreter.phdrs[1].p_offset;
+  uint64_t const offset = interpreter.phdrs[1].p_offset;
   // See comment in ElfTest.ELFInterpreter.
   interpreter.phdrs[1].p_flags = PF_R | PF_W | PF_X;
   interpreter.phdrs[1].p_offset = 0x0;

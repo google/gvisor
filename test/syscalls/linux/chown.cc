@@ -31,9 +31,9 @@
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
-ABSL_FLAG(int32, scratch_uid1, 65534, "first scratch UID");
-ABSL_FLAG(int32, scratch_uid2, 65533, "second scratch UID");
-ABSL_FLAG(int32, scratch_gid, 65534, "first scratch GID");
+ABSL_FLAG(int32_t, scratch_uid1, 65534, "first scratch UID");
+ABSL_FLAG(int32_t, scratch_uid2, 65533, "second scratch UID");
+ABSL_FLAG(int32_t, scratch_gid, 65534, "first scratch GID");
 
 namespace gvisor {
 namespace testing {

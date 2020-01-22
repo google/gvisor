@@ -69,9 +69,9 @@ TEST_P(TimerfdTest, SingleShot) {
 
   // The timer should fire exactly once since the interval is zero.
   absl::SleepFor(kDelay + TimerSlack());
-  uint64 val = 0;
-  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64)),
-              SyscallSucceedsWithValue(sizeof(uint64)));
+  uint64_t val = 0;
+  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64_t)),
+              SyscallSucceedsWithValue(sizeof(uint64_t)));
   EXPECT_EQ(1, val);
 }
 
@@ -89,9 +89,9 @@ TEST_P(TimerfdTest, Periodic) {
   // Expect to see at least kPeriods expirations. More may occur due to the
   // timer slack, or due to delays from scheduling or save/restore.
   absl::SleepFor(kPeriods * kDelay + TimerSlack());
-  uint64 val = 0;
-  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64)),
-              SyscallSucceedsWithValue(sizeof(uint64)));
+  uint64_t val = 0;
+  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64_t)),
+              SyscallSucceedsWithValue(sizeof(uint64_t)));
   EXPECT_GE(val, kPeriods);
 }
 
@@ -106,9 +106,9 @@ TEST_P(TimerfdTest, BlockingRead) {
               SyscallSucceeds());
 
   // read should block until the timer fires.
-  uint64 val = 0;
-  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64)),
-              SyscallSucceedsWithValue(sizeof(uint64)));
+  uint64_t val = 0;
+  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64_t)),
+              SyscallSucceedsWithValue(sizeof(uint64_t)));
   auto const end_time = absl::Now();
   EXPECT_EQ(1, val);
   EXPECT_GE((end_time - start_time) + TimerSlack(), kDelay);
@@ -122,8 +122,8 @@ TEST_P(TimerfdTest, NonblockingRead_NoRandomSave) {
 
   // Since the timer is initially disabled and has never fired, read should
   // return EAGAIN.
-  uint64 val = 0;
-  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64)),
+  uint64_t val = 0;
+  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64_t)),
               SyscallFailsWithErrno(EAGAIN));
 
   DisableSave ds;  // Timing-sensitive.
@@ -135,19 +135,19 @@ TEST_P(TimerfdTest, NonblockingRead_NoRandomSave) {
               SyscallSucceeds());
 
   // Since the timer has not yet fired, read should return EAGAIN.
-  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64)),
+  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64_t)),
               SyscallFailsWithErrno(EAGAIN));
 
   ds.reset();  // No longer timing-sensitive.
 
   // After the timer fires, read should indicate 1 expiration.
   absl::SleepFor(kDelay + TimerSlack());
-  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64)),
-              SyscallSucceedsWithValue(sizeof(uint64)));
+  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64_t)),
+              SyscallSucceedsWithValue(sizeof(uint64_t)));
   EXPECT_EQ(1, val);
 
   // The successful read should have reset the number of expirations.
-  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64)),
+  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64_t)),
               SyscallFailsWithErrno(EAGAIN));
 }
 
@@ -179,8 +179,8 @@ TEST_P(TimerfdTest, BlockingPoll_SetTimeResetsExpirations) {
   its.it_value.tv_sec = 0;
   ASSERT_THAT(timerfd_settime(tfd.get(), /* flags = */ 0, &its, nullptr),
               SyscallSucceeds());
-  uint64 val = 0;
-  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64)),
+  uint64_t val = 0;
+  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64_t)),
               SyscallFailsWithErrno(EAGAIN));
 }
 
@@ -198,16 +198,16 @@ TEST_P(TimerfdTest, SetAbsoluteTime) {
               SyscallSucceeds());
 
   absl::SleepFor(kDelay + TimerSlack());
-  uint64 val = 0;
-  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64)),
-              SyscallSucceedsWithValue(sizeof(uint64)));
+  uint64_t val = 0;
+  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64_t)),
+              SyscallSucceedsWithValue(sizeof(uint64_t)));
   EXPECT_EQ(1, val);
 }
 
 TEST_P(TimerfdTest, IllegalReadWrite) {
   auto const tfd =
       ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), TFD_NONBLOCK));
-  uint64 val = 0;
+  uint64_t val = 0;
   EXPECT_THAT(PreadFd(tfd.get(), &val, sizeof(val), 0),
               SyscallFailsWithErrno(ESPIPE));
   EXPECT_THAT(WriteFd(tfd.get(), &val, sizeof(val)),
@@ -244,9 +244,9 @@ TEST(TimerfdClockRealtimeTest, ClockRealtime) {
   ASSERT_THAT(timerfd_settime(tfd.get(), /* flags = */ 0, &its, nullptr),
               SyscallSucceeds());
 
-  uint64 val = 0;
-  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64)),
-              SyscallSucceedsWithValue(sizeof(uint64)));
+  uint64_t val = 0;
+  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64_t)),
+              SyscallSucceedsWithValue(sizeof(uint64_t)));
   EXPECT_EQ(1, val);
 }
 

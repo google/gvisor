@@ -32,8 +32,8 @@
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
-ABSL_FLAG(int32, scratch_uid, 65534, "scratch UID");
-ABSL_FLAG(int32, scratch_gid, 65534, "scratch GID");
+ABSL_FLAG(int32_t, scratch_uid, 65534, "scratch UID");
+ABSL_FLAG(int32_t, scratch_gid, 65534, "scratch GID");
 
 using ::testing::Ge;
 

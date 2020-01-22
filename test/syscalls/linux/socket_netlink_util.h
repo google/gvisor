@@ -30,7 +30,7 @@ namespace testing {
 PosixErrorOr<FileDescriptor> NetlinkBoundSocket(int protocol);
 
 // Returns the port ID of the passed socket.
-PosixErrorOr<uint32> NetlinkPortID(int fd);
+PosixErrorOr<uint32_t> NetlinkPortID(int fd);
 
 // Send the passed request and call fn will all response netlink messages.
 PosixError NetlinkRequestResponse(

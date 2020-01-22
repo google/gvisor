@@ -40,15 +40,15 @@ constexpr char kProcNetUDPHeader[] =
 
 // UDPEntry represents a single entry from /proc/net/udp.
 struct UDPEntry {
-  uint32 local_addr;
-  uint16 local_port;
+  uint32_t local_addr;
+  uint16_t local_port;
 
-  uint32 remote_addr;
-  uint16 remote_port;
+  uint32_t remote_addr;
+  uint16_t remote_port;
 
-  uint64 state;
-  uint64 uid;
-  uint64 inode;
+  uint64_t state;
+  uint64_t uid;
+  uint64_t inode;
 };
 
 std::string DescribeFirstInetSocket(const SocketPair& sockets) {
@@ -81,8 +81,8 @@ bool FindBy(const std::vector<UDPEntry>& entries, UDPEntry* match,
 
 bool FindByLocalAddr(const std::vector<UDPEntry>& entries, UDPEntry* match,
                      const struct sockaddr* addr) {
-  uint32 host = IPFromInetSockaddr(addr);
-  uint16 port = PortFromInetSockaddr(addr);
+  uint32_t host = IPFromInetSockaddr(addr);
+  uint16_t port = PortFromInetSockaddr(addr);
   return FindBy(entries, match, [host, port](const UDPEntry& e) {
     return (e.local_addr == host && e.local_port == port);
   });
@@ -90,14 +90,14 @@ bool FindByLocalAddr(const std::vector<UDPEntry>& entries, UDPEntry* match,
 
 bool FindByRemoteAddr(const std::vector<UDPEntry>& entries, UDPEntry* match,
                       const struct sockaddr* addr) {
-  uint32 host = IPFromInetSockaddr(addr);
-  uint16 port = PortFromInetSockaddr(addr);
+  uint32_t host = IPFromInetSockaddr(addr);
+  uint16_t port = PortFromInetSockaddr(addr);
   return FindBy(entries, match, [host, port](const UDPEntry& e) {
     return (e.remote_addr == host && e.remote_port == port);
   });
 }
 
-PosixErrorOr<uint64> InodeFromSocketFD(int fd) {
+PosixErrorOr<uint64_t> InodeFromSocketFD(int fd) {
   ASSIGN_OR_RETURN_ERRNO(struct stat s, Fstat(fd));
   if (!S_ISSOCK(s.st_mode)) {
     return PosixError(EINVAL, StrFormat("FD %d is not a socket", fd));
@@ -107,7 +107,7 @@ PosixErrorOr<uint64> InodeFromSocketFD(int fd) {
 
 PosixErrorOr<bool> FindByFD(const std::vector<UDPEntry>& entries,
                             UDPEntry* match, int fd) {
-  ASSIGN_OR_RETURN_ERRNO(uint64 inode, InodeFromSocketFD(fd));
+  ASSIGN_OR_RETURN_ERRNO(uint64_t inode, InodeFromSocketFD(fd));
   return FindBy(entries, match,
                 [inode](const UDPEntry& e) { return (e.inode == inode); });
 }
@@ -158,8 +158,8 @@ PosixErrorOr<std::vector<UDPEntry>> ProcNetUDPEntries() {
     ASSIGN_OR_RETURN_ERRNO(entry.remote_port, AtoiBase(fields[4], 16));
 
     ASSIGN_OR_RETURN_ERRNO(entry.state, AtoiBase(fields[5], 16));
-    ASSIGN_OR_RETURN_ERRNO(entry.uid, Atoi<uint64>(fields[11]));
-    ASSIGN_OR_RETURN_ERRNO(entry.inode, Atoi<uint64>(fields[13]));
+    ASSIGN_OR_RETURN_ERRNO(entry.uid, Atoi<uint64_t>(fields[11]));
+    ASSIGN_OR_RETURN_ERRNO(entry.inode, Atoi<uint64_t>(fields[13]));
 
     // Linux shares internal data structures between TCP and UDP sockets. The
     // proc entries for UDP sockets share some fields with TCP sockets, but
@@ -267,7 +267,7 @@ TEST(ProcNetUDP, BoundEntry) {
   struct sockaddr addr;
   socklen_t len = sizeof(addr);
   ASSERT_THAT(getsockname(socket->get(), &addr, &len), SyscallSucceeds());
-  uint16 port = PortFromInetSockaddr(&addr);
+  uint16_t port = PortFromInetSockaddr(&addr);
 
   std::vector<UDPEntry> entries =
       ASSERT_NO_ERRNO_AND_VALUE(ProcNetUDPEntries());

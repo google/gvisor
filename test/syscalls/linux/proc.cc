@@ -463,12 +463,12 @@ std::string AnonymousMapsEntryForMapping(const Mapping& m, int prot) {
   return AnonymousMapsEntry(m.addr(), m.len(), prot);
 }
 
-PosixErrorOr<std::map<uint64, uint64>> ReadProcSelfAuxv() {
+PosixErrorOr<std::map<uint64_t, uint64_t>> ReadProcSelfAuxv() {
   std::string auxv_file;
   RETURN_IF_ERRNO(GetContents("/proc/self/auxv", &auxv_file));
   const Elf64_auxv_t* auxv_data =
       reinterpret_cast<const Elf64_auxv_t*>(auxv_file.data());
-  std::map<uint64, uint64> auxv_entries;
+  std::map<uint64_t, uint64_t> auxv_entries;
   for (int i = 0; auxv_data[i].a_type != AT_NULL; i++) {
     auto a_type = auxv_data[i].a_type;
     EXPECT_EQ(0, auxv_entries.count(a_type)) << "a_type: " << a_type;
@@ -877,7 +877,7 @@ TEST(ProcStat, Fields) {
 
     // All fields besides itime are valid base 10 numbers.
     for (size_t i = 1; i < fields.size(); i++) {
-      uint64 val;
+      uint64_t val;
       EXPECT_TRUE(absl::SimpleAtoi(fields[i], &val)) << proc_stat;
     }
   }
@@ -904,7 +904,7 @@ TEST(ProcLoadavg, Fields) {
   EXPECT_EQ(fields.size(), 6) << proc_loadvg;
 
   double val;
-  uint64 val2;
+  uint64_t val2;
   // First three fields are floating point numbers.
   EXPECT_TRUE(absl::SimpleAtod(fields[0], &val)) << proc_loadvg;
   EXPECT_TRUE(absl::SimpleAtod(fields[1], &val)) << proc_loadvg;
@@ -936,19 +936,19 @@ TEST_P(ProcPidStatTest, HasBasicFields) {
   // boot time will be very close, and the proc starttime field (which is the
   // delta of the two times) will be 0.  For that unfortunate reason, we can
   // only check that starttime >= 0, and not that it is strictly > 0.
-  uint64 starttime;
+  uint64_t starttime;
   ASSERT_TRUE(absl::SimpleAtoi(fields[21], &starttime));
   EXPECT_GE(starttime, 0);
 
-  uint64 vss;
+  uint64_t vss;
   ASSERT_TRUE(absl::SimpleAtoi(fields[22], &vss));
   EXPECT_GT(vss, 0);
 
-  uint64 rss;
+  uint64_t rss;
   ASSERT_TRUE(absl::SimpleAtoi(fields[23], &rss));
   EXPECT_GT(rss, 0);
 
-  uint64 rsslim;
+  uint64_t rsslim;
   ASSERT_TRUE(absl::SimpleAtoi(fields[24], &rsslim));
   EXPECT_GT(rsslim, 0);
 }
@@ -965,11 +965,11 @@ TEST_P(ProcPidStatmTest, HasBasicFields) {
   std::vector<std::string> fields = absl::StrSplit(proc_pid_statm, ' ');
   ASSERT_GE(fields.size(), 7);
 
-  uint64 vss;
+  uint64_t vss;
   ASSERT_TRUE(absl::SimpleAtoi(fields[0], &vss));
   EXPECT_GT(vss, 0);
 
-  uint64 rss;
+  uint64_t rss;
   ASSERT_TRUE(absl::SimpleAtoi(fields[1], &rss));
   EXPECT_GT(rss, 0);
 }
@@ -977,7 +977,7 @@ TEST_P(ProcPidStatmTest, HasBasicFields) {
 INSTANTIATE_TEST_SUITE_P(SelfAndNumericPid, ProcPidStatmTest,
                          ::testing::Values("self", absl::StrCat(getpid())));
 
-PosixErrorOr<uint64> CurrentRSS() {
+PosixErrorOr<uint64_t> CurrentRSS() {
   ASSIGN_OR_RETURN_ERRNO(auto proc_self_stat, GetContents("/proc/self/stat"));
   if (proc_self_stat.empty()) {
     return PosixError(EINVAL, "empty /proc/self/stat");
@@ -990,7 +990,7 @@ PosixErrorOr<uint64> CurrentRSS() {
         absl::StrCat("/proc/self/stat has too few fields: ", proc_self_stat));
   }
 
-  uint64 rss;
+  uint64_t rss;
   if (!absl::SimpleAtoi(fields[23], &rss)) {
     return PosixError(
         EINVAL, absl::StrCat("/proc/self/stat RSS field is not a number: ",
@@ -1002,14 +1002,14 @@ PosixErrorOr<uint64> CurrentRSS() {
 }
 
 // The size of mapping created by MapPopulateRSS.
-constexpr uint64 kMappingSize = 100 << 20;
+constexpr uint64_t kMappingSize = 100 << 20;
 
 // Tolerance on RSS comparisons to account for background thread mappings,
 // reclaimed pages, newly faulted pages, etc.
-constexpr uint64 kRSSTolerance = 5 << 20;
+constexpr uint64_t kRSSTolerance = 5 << 20;
 
 // Capture RSS before and after an anonymous mapping with passed prot.
-void MapPopulateRSS(int prot, uint64* before, uint64* after) {
+void MapPopulateRSS(int prot, uint64_t* before, uint64_t* after) {
   *before = ASSERT_NO_ERRNO_AND_VALUE(CurrentRSS());
 
   // N.B. The kernel asynchronously accumulates per-task RSS counters into the
@@ -1040,7 +1040,7 @@ void MapPopulateRSS(int prot, uint64* before, uint64* after) {
 
 // PROT_WRITE + MAP_POPULATE anonymous mappings are always committed.
 TEST(ProcSelfStat, PopulateWriteRSS) {
-  uint64 before, after;
+  uint64_t before, after;
   MapPopulateRSS(PROT_READ | PROT_WRITE, &before, &after);
 
   // Mapping is committed.
@@ -1049,7 +1049,7 @@ TEST(ProcSelfStat, PopulateWriteRSS) {
 
 // PROT_NONE + MAP_POPULATE anonymous mappings are never committed.
 TEST(ProcSelfStat, PopulateNoneRSS) {
-  uint64 before, after;
+  uint64_t before, after;
   MapPopulateRSS(PROT_NONE, &before, &after);
 
   // Mapping not committed.
@@ -1766,7 +1766,7 @@ TEST(ProcTask, VerifyTaskDirNlinks) {
 
   // Once we reach the test body, we can count on the thread count being stable
   // unless we spawn a new one.
-  uint64 initial_links = ASSERT_NO_ERRNO_AND_VALUE(Links("/proc/self/task"));
+  uint64_t initial_links = ASSERT_NO_ERRNO_AND_VALUE(Links("/proc/self/task"));
   ASSERT_GE(initial_links, 3);
 
   // For each new subtask, we should gain a new link.
@@ -1864,9 +1864,9 @@ TEST(ProcFilesystems, Bug65172365) {
 }
 
 TEST(ProcFilesystems, PresenceOfShmMaxMniAll) {
-  uint64 shmmax = 0;
-  uint64 shmall = 0;
-  uint64 shmmni = 0;
+  uint64_t shmmax = 0;
+  uint64_t shmall = 0;
+  uint64_t shmmni = 0;
   std::string proc_file;
   proc_file = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/shmmax"));
   ASSERT_FALSE(proc_file.empty());

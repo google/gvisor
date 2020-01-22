@@ -27,10 +27,10 @@ namespace gvisor {
 namespace testing {
 
 // Extracts the IP address from an inet sockaddr in network byte order.
-uint32 IPFromInetSockaddr(const struct sockaddr* addr);
+uint32_t IPFromInetSockaddr(const struct sockaddr* addr);
 
 // Extracts the port from an inet sockaddr in host byte order.
-uint16 PortFromInetSockaddr(const struct sockaddr* addr);
+uint16_t PortFromInetSockaddr(const struct sockaddr* addr);
 
 // InterfaceIndex returns the index of the named interface.
 PosixErrorOr<int> InterfaceIndex(std::string name);

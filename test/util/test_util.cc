@@ -79,7 +79,7 @@ bool IsRunningWithHostinet() {
 #endif  // defined(__x86_64__)
 
 CPUVendor GetCPUVendor() {
-  uint32 eax, ebx, ecx, edx;
+  uint32_t eax, ebx, ecx, edx;
   std::string vendor_str;
   // Get vendor string (issue CPUID with eax = 0)
   GETCPUID(eax, ebx, ecx, edx, 0, 0);
@@ -179,36 +179,36 @@ PosixErrorOr<std::vector<OpenFd>> GetOpenFDs() {
   return ret_fds;
 }
 
-PosixErrorOr<uint64> Links(const std::string& path) {
+PosixErrorOr<uint64_t> Links(const std::string& path) {
   struct stat st;
   if (stat(path.c_str(), &st)) {
     return PosixError(errno, absl::StrCat("Failed to stat ", path));
   }
-  return static_cast<uint64>(st.st_nlink);
+  return static_cast<uint64_t>(st.st_nlink);
 }
 
 void RandomizeBuffer(void* buffer, size_t len) {
   struct timespec ts = {};
   clock_gettime(CLOCK_MONOTONIC, &ts);
-  uint32 seed = static_cast<uint32>(ts.tv_nsec);
+  uint32_t seed = static_cast<uint32_t>(ts.tv_nsec);
   char* const buf = static_cast<char*>(buffer);
   for (size_t i = 0; i < len; i++) {
     buf[i] = rand_r(&seed) % 255;
   }
 }
 
-std::vector<std::vector<struct iovec>> GenerateIovecs(uint64 total_size,
+std::vector<std::vector<struct iovec>> GenerateIovecs(uint64_t total_size,
                                                       void* buf,
                                                       size_t buflen) {
   std::vector<std::vector<struct iovec>> result;
-  for (uint64 offset = 0; offset < total_size;) {
+  for (uint64_t offset = 0; offset < total_size;) {
     auto& iovec_array = *result.emplace(result.end());
 
     for (; offset < total_size && iovec_array.size() < IOV_MAX;
          offset += buflen) {
       struct iovec iov = {};
       iov.iov_base = buf;
-      iov.iov_len = std::min<uint64>(total_size - offset, buflen);
+      iov.iov_len = std::min<uint64_t>(total_size - offset, buflen);
       iovec_array.push_back(iov);
     }
   }
@@ -216,15 +216,15 @@ std::vector<std::vector<struct iovec>> GenerateIovecs(uint64 total_size,
   return result;
 }
 
-uint64 Megabytes(uint64 n) {
+uint64_t Megabytes(uint64_t n) {
   // Overflow check, upper 20 bits in n shouldn't be set.
   TEST_CHECK(!(0xfffff00000000000 & n));
   return n << 20;
 }
 
-bool Equivalent(uint64 current, uint64 target, double tolerance) {
+bool Equivalent(uint64_t current, uint64_t target, double tolerance) {
   auto abs_diff = target > current ? target - current : current - target;
-  return abs_diff <= static_cast<uint64>(tolerance * target);
+  return abs_diff <= static_cast<uint64_t>(tolerance * target);
 }
 
 }  // namespace testing

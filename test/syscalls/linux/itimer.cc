@@ -177,8 +177,8 @@ SignalTestResult ItimerSignalTest(int id, clock_t main_clock,
   SignalTestResult result;
 
   // Wait for the workers to be done and collect their sample counts.
-  result.worker_samples.push_back(reinterpret_cast<int64>(th1.Join()));
-  result.worker_samples.push_back(reinterpret_cast<int64>(th2.Join()));
+  result.worker_samples.push_back(reinterpret_cast<int64_t>(th1.Join()));
+  result.worker_samples.push_back(reinterpret_cast<int64_t>(th2.Join()));
   cleanup_itimer.Release()();
   result.expected_total = (Now(main_clock) - start) / kPeriod;
   result.main_thread_samples = signal_test_num_samples.load();

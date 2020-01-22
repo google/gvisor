@@ -32,7 +32,7 @@
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
-ABSL_FLAG(int32, scratch_uid, 65534, "scratch UID");
+ABSL_FLAG(int32_t, scratch_uid, 65534, "scratch UID");
 
 namespace gvisor {
 namespace testing {
@@ -55,7 +55,8 @@ TEST(LinkTest, CanCreateLinkFile) {
   const std::string newname = NewTempAbsPath();
 
   // Get the initial link count.
-  uint64 initial_link_count = ASSERT_NO_ERRNO_AND_VALUE(Links(oldfile.path()));
+  uint64_t initial_link_count =
+      ASSERT_NO_ERRNO_AND_VALUE(Links(oldfile.path()));
 
   EXPECT_THAT(link(oldfile.path().c_str(), newname.c_str()), SyscallSucceeds());
 

@@ -46,12 +46,12 @@ enum {
 // UnixEntry represents a single entry from /proc/net/unix.
 struct UnixEntry {
   uintptr_t addr;
-  uint64 refs;
-  uint64 protocol;
-  uint64 flags;
-  uint64 type;
-  uint64 state;
-  uint64 inode;
+  uint64_t refs;
+  uint64_t protocol;
+  uint64_t flags;
+  uint64_t type;
+  uint64_t state;
+  uint64_t inode;
   std::string path;
 };
 

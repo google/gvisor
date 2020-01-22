@@ -49,12 +49,12 @@ namespace testing {
 namespace {
 
 // A syscall not implemented by Linux that we don't expect to be called.
-constexpr uint32 kFilteredSyscall = SYS_vserver;
+constexpr uint32_t kFilteredSyscall = SYS_vserver;
 
 // Applies a seccomp-bpf filter that returns `filtered_result` for
 // `sysno` and allows all other syscalls. Async-signal-safe.
-void ApplySeccompFilter(uint32 sysno, uint32 filtered_result,
-                        uint32 flags = 0) {
+void ApplySeccompFilter(uint32_t sysno, uint32_t filtered_result,
+                        uint32_t flags = 0) {
   // "Prior to [PR_SET_SECCOMP], the task must call prctl(PR_SET_NO_NEW_PRIVS,
   // 1) or run with CAP_SYS_ADMIN privileges in its namespace." -
   // Documentation/prctl/seccomp_filter.txt
@@ -162,7 +162,7 @@ TEST(SeccompTest, RetKillOnlyKillsOneThread) {
 TEST(SeccompTest, RetTrapCausesSIGSYS) {
   pid_t const pid = fork();
   if (pid == 0) {
-    constexpr uint16 kTrapValue = 0xdead;
+    constexpr uint16_t kTrapValue = 0xdead;
     RegisterSignalHandler(
         SIGSYS, +[](int signo, siginfo_t* info, void* ucv) {
           ucontext_t* uc = static_cast<ucontext_t*>(ucv);
@@ -191,7 +191,7 @@ TEST(SeccompTest, RetTrapCausesSIGSYS) {
 
 #ifdef __x86_64__
 
-constexpr uint64 kVsyscallTimeEntry = 0xffffffffff600400;
+constexpr uint64_t kVsyscallTimeEntry = 0xffffffffff600400;
 
 time_t vsyscall_time(time_t* t) {
   return reinterpret_cast<time_t (*)(time_t*)>(kVsyscallTimeEntry)(t);
@@ -202,7 +202,7 @@ TEST(SeccompTest, SeccompAppliesToVsyscall) {
 
   pid_t const pid = fork();
   if (pid == 0) {
-    constexpr uint16 kTrapValue = 0xdead;
+    constexpr uint16_t kTrapValue = 0xdead;
     RegisterSignalHandler(
         SIGSYS, +[](int signo, siginfo_t* info, void* ucv) {
           ucontext_t* uc = static_cast<ucontext_t*>(ucv);
@@ -335,7 +335,7 @@ TEST(SeccompTest, TsyncAppliesToAllThreads) {
 
 // This test will validate that seccomp(2) rejects unsupported flags.
 TEST(SeccompTest, SeccompRejectsUnknownFlags) {
-  constexpr uint32 kInvalidFlag = 123;
+  constexpr uint32_t kInvalidFlag = 123;
   ASSERT_THAT(
       syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, kInvalidFlag, nullptr),
       SyscallFailsWithErrno(EINVAL));

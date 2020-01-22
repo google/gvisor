@@ -18,14 +18,14 @@
 using size_t = __SIZE_TYPE__;
 using uintptr_t = __UINTPTR_TYPE__;
 
-using uint8 = __UINT8_TYPE__;
-using uint16 = __UINT16_TYPE__;
-using uint32 = __UINT32_TYPE__;
-using uint64 = __UINT64_TYPE__;
+using uint8_t = __UINT8_TYPE__;
+using uint16_t = __UINT16_TYPE__;
+using uint32_t = __UINT32_TYPE__;
+using uint64_t = __UINT64_TYPE__;
 
-using int8 = __INT8_TYPE__;
-using int16 = __INT16_TYPE__;
-using int32 = __INT32_TYPE__;
-using int64 = __INT64_TYPE__;
+using int8_t = __INT8_TYPE__;
+using int16_t = __INT16_TYPE__;
+using int32_t = __INT32_TYPE__;
+using int64_t = __INT64_TYPE__;
 
 #endif  // GVISOR_TEST_SYSCALLS_LINUX_RSEQ_TYPES_H_

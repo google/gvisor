@@ -574,7 +574,7 @@ TEST_P(PtraceExecveTest, Execve_GetRegs_PeekUser_SIGKILL_TraceClone_TraceExit) {
 #ifdef __x86_64__
   {
     // CS should be 0x33, indicating an 64-bit binary.
-    constexpr uint64 kAMD64UserCS = 0x33;
+    constexpr uint64_t kAMD64UserCS = 0x33;
     EXPECT_THAT(ptrace(PTRACE_PEEKUSER, leader_tid,
                        offsetof(struct user_regs_struct, cs), 0),
                 SyscallSucceedsWithValue(kAMD64UserCS));
@@ -862,7 +862,7 @@ TEST(PtraceTest, Int3) {
 
 TEST(PtraceTest, Sysemu_PokeUser) {
   constexpr int kSysemuHelperFirstExitCode = 126;
-  constexpr uint64 kSysemuInjectedExitGroupReturn = 42;
+  constexpr uint64_t kSysemuInjectedExitGroupReturn = 42;
 
   pid_t const child_pid = fork();
   if (child_pid == 0) {

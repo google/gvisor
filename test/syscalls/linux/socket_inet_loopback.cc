@@ -47,13 +47,13 @@ namespace {
 
 using ::testing::Gt;
 
-PosixErrorOr<uint16> AddrPort(int family, sockaddr_storage const& addr) {
+PosixErrorOr<uint16_t> AddrPort(int family, sockaddr_storage const& addr) {
   switch (family) {
     case AF_INET:
-      return static_cast<uint16>(
+      return static_cast<uint16_t>(
           reinterpret_cast<sockaddr_in const*>(&addr)->sin_port);
     case AF_INET6:
-      return static_cast<uint16>(
+      return static_cast<uint16_t>(
           reinterpret_cast<sockaddr_in6 const*>(&addr)->sin6_port);
     default:
       return PosixError(EINVAL,
@@ -61,7 +61,7 @@ PosixErrorOr<uint16> AddrPort(int family, sockaddr_storage const& addr) {
   }
 }
 
-PosixError SetAddrPort(int family, sockaddr_storage* addr, uint16 port) {
+PosixError SetAddrPort(int family, sockaddr_storage* addr, uint16_t port) {
   switch (family) {
     case AF_INET:
       reinterpret_cast<sockaddr_in*>(addr)->sin_port = port;
@@ -276,7 +276,7 @@ void tcpSimpleConnectTest(TestAddress const& listener,
   ASSERT_THAT(getsockname(listen_fd.get(),
                           reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
               SyscallSucceeds());
-  uint16 const port =
+  uint16_t const port =
       ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
 
   // Connect to the listening socket.
@@ -339,7 +339,7 @@ TEST_P(SocketInetLoopbackTest, TCPListenClose) {
   ASSERT_THAT(getsockname(listen_fd.get(),
                           reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
               SyscallSucceeds());
-  uint16 const port =
+  uint16_t const port =
       ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
 
   DisableSave ds;  // Too many system calls.
@@ -400,7 +400,7 @@ TEST_P(SocketInetLoopbackTest, TCPbacklog) {
   ASSERT_THAT(getsockname(listen_fd.get(),
                           reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
               SyscallSucceeds());
-  uint16 const port =
+  uint16_t const port =
       ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
   int i = 0;
   while (1) {
@@ -468,7 +468,7 @@ TEST_P(SocketInetLoopbackTest, TCPFinWait2Test_NoRandomSave) {
                           reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
               SyscallSucceeds());
 
-  uint16 const port =
+  uint16_t const port =
       ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
 
   // Connect to the listening socket.
@@ -576,7 +576,7 @@ TEST_P(SocketInetLoopbackTest, TCPLinger2TimeoutAfterClose_NoRandomSave) {
                           reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
               SyscallSucceeds());
 
-  uint16 const port =
+  uint16_t const port =
       ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
 
   // Connect to the listening socket.
@@ -650,7 +650,7 @@ TEST_P(SocketInetLoopbackTest, TCPResetAfterClose) {
                           reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
               SyscallSucceeds());
 
-  uint16 const port =
+  uint16_t const port =
       ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
 
   // Connect to the listening socket.
@@ -717,7 +717,7 @@ TEST_P(SocketInetLoopbackTest, TCPTimeWaitTest_NoRandomSave) {
                           reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
               SyscallSucceeds());
 
-  uint16 const port =
+  uint16_t const port =
       ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
 
   // Connect to the listening socket.
@@ -794,7 +794,7 @@ TEST_P(SocketInetLoopbackTest, AcceptedInheritsTCPUserTimeout) {
                           reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
               SyscallSucceeds());
 
-  const uint16 port =
+  const uint16_t port =
       ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
 
   // Set the userTimeout on the listening socket.
@@ -898,7 +898,7 @@ TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread_NoRandomSave) {
         getsockname(listener_fds[0].get(),
                     reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
         SyscallSucceeds());
-    uint16 const port =
+    uint16_t const port =
         ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
     ASSERT_NO_ERRNO(SetAddrPort(listener.family(), &listen_addr, port));
     ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
@@ -935,7 +935,7 @@ TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread_NoRandomSave) {
             // cause the test to use absurd amounts of memory.
             //
             // See: https://tools.ietf.org/html/rfc2525#page-50 section 2.17
-            uint16 data;
+            uint16_t data;
             EXPECT_THAT(
                 RetryEINTR(recv)(fd.ValueOrDie().get(), &data, sizeof(data), 0),
                 SyscallSucceedsWithValue(sizeof(data)));
@@ -1022,7 +1022,7 @@ TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThread) {
         getsockname(listener_fds[0].get(),
                     reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
         SyscallSucceeds());
-    uint16 const port =
+    uint16_t const port =
         ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
     ASSERT_NO_ERRNO(SetAddrPort(listener.family(), &listen_addr, port));
     ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
@@ -1138,7 +1138,7 @@ TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThreadShort) {
         getsockname(listener_fds[0].get(),
                     reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
         SyscallSucceeds());
-    uint16 const port =
+    uint16_t const port =
         ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
     ASSERT_NO_ERRNO(SetAddrPort(listener.family(), &listen_addr, port));
     ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
@@ -1174,7 +1174,7 @@ TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThreadShort) {
     pollfds[i].events = POLLIN;
   }
 
-  std::map<uint16, int> portToFD;
+  std::map<uint16_t, int> portToFD;
 
   int received = 0;
   while (received < kConnectAttempts * 2) {
@@ -1196,7 +1196,7 @@ TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThreadShort) {
                       fd, &data, sizeof(data), 0,
                       reinterpret_cast<struct sockaddr*>(&addr), &addrlen),
                   SyscallSucceedsWithValue(sizeof(data)));
-      uint16 const port =
+      uint16_t const port =
           ASSERT_NO_ERRNO_AND_VALUE(AddrPort(connector.family(), addr));
       auto prev_port = portToFD.find(port);
       // Check that all packets from one client have been delivered to the
@@ -1257,7 +1257,7 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V4MappedLoopbackOnlyReservesV4) {
     ASSERT_THAT(getsockname(fd_dual.get(),
                             reinterpret_cast<sockaddr*>(&addr_dual), &addrlen),
                 SyscallSucceeds());
-    uint16 const port =
+    uint16_t const port =
         ASSERT_NO_ERRNO_AND_VALUE(AddrPort(test_addr_dual.family(), addr_dual));
 
     // Verify that we can still bind the v6 loopback on the same port.
@@ -1309,7 +1309,7 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V4MappedAnyOnlyReservesV4) {
     ASSERT_THAT(getsockname(fd_dual.get(),
                             reinterpret_cast<sockaddr*>(&addr_dual), &addrlen),
                 SyscallSucceeds());
-    uint16 const port =
+    uint16_t const port =
         ASSERT_NO_ERRNO_AND_VALUE(AddrPort(test_addr_dual.family(), addr_dual));
 
     // Verify that we can still bind the v6 loopback on the same port.
@@ -1360,7 +1360,7 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, DualStackV6AnyReservesEverything) {
   ASSERT_THAT(getsockname(fd_dual.get(),
                           reinterpret_cast<sockaddr*>(&addr_dual), &addrlen),
               SyscallSucceeds());
-  uint16 const port =
+  uint16_t const port =
       ASSERT_NO_ERRNO_AND_VALUE(AddrPort(test_addr_dual.family(), addr_dual));
 
   // Verify that binding the v6 loopback with the same port fails.
@@ -1419,7 +1419,7 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V6OnlyV6AnyReservesV6) {
     ASSERT_THAT(getsockname(fd_dual.get(),
                             reinterpret_cast<sockaddr*>(&addr_dual), &addrlen),
                 SyscallSucceeds());
-    uint16 const port =
+    uint16_t const port =
         ASSERT_NO_ERRNO_AND_VALUE(AddrPort(test_addr_dual.family(), addr_dual));
 
     // Verify that binding the v6 loopback with the same port fails.
@@ -1498,7 +1498,7 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V6EphemeralPortReserved) {
                             reinterpret_cast<sockaddr*>(&connected_addr),
                             &connected_addr_len),
                 SyscallSucceeds());
-    uint16 const ephemeral_port =
+    uint16_t const ephemeral_port =
         ASSERT_NO_ERRNO_AND_VALUE(AddrPort(test_addr.family(), connected_addr));
 
     // Verify that we actually got an ephemeral port.
@@ -1603,7 +1603,7 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V6EphemeralPortReservedReuseAddr) {
                           reinterpret_cast<sockaddr*>(&connected_addr),
                           &connected_addr_len),
               SyscallSucceeds());
-  uint16 const ephemeral_port =
+  uint16_t const ephemeral_port =
       ASSERT_NO_ERRNO_AND_VALUE(AddrPort(test_addr.family(), connected_addr));
 
   // Verify that we actually got an ephemeral port.
@@ -1665,7 +1665,7 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V4MappedEphemeralPortReserved) {
                             reinterpret_cast<sockaddr*>(&connected_addr),
                             &connected_addr_len),
                 SyscallSucceeds());
-    uint16 const ephemeral_port =
+    uint16_t const ephemeral_port =
         ASSERT_NO_ERRNO_AND_VALUE(AddrPort(test_addr.family(), connected_addr));
 
     // Verify that we actually got an ephemeral port.
@@ -1794,7 +1794,7 @@ TEST_P(SocketMultiProtocolInetLoopbackTest,
                           reinterpret_cast<sockaddr*>(&connected_addr),
                           &connected_addr_len),
               SyscallSucceeds());
-  uint16 const ephemeral_port =
+  uint16_t const ephemeral_port =
       ASSERT_NO_ERRNO_AND_VALUE(AddrPort(test_addr.family(), connected_addr));
 
   // Verify that we actually got an ephemeral port.
@@ -1856,7 +1856,7 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V4EphemeralPortReserved) {
                             reinterpret_cast<sockaddr*>(&connected_addr),
                             &connected_addr_len),
                 SyscallSucceeds());
-    uint16 const ephemeral_port =
+    uint16_t const ephemeral_port =
         ASSERT_NO_ERRNO_AND_VALUE(AddrPort(test_addr.family(), connected_addr));
 
     // Verify that we actually got an ephemeral port.
@@ -1988,7 +1988,7 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V4EphemeralPortReservedReuseAddr) {
                           reinterpret_cast<sockaddr*>(&connected_addr),
                           &connected_addr_len),
               SyscallSucceeds());
-  uint16 const ephemeral_port =
+  uint16_t const ephemeral_port =
       ASSERT_NO_ERRNO_AND_VALUE(AddrPort(test_addr.family(), connected_addr));
 
   // Verify that we actually got an ephemeral port.

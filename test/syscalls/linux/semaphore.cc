@@ -274,7 +274,7 @@ TEST(SemaphoreTest, SemOpRandom) {
 
   // Protects the seed below.
   absl::Mutex mutex;
-  uint32 seed = time(nullptr);
+  uint32_t seed = time(nullptr);
 
   int count = 0;      // Tracks semaphore value.
   bool done = false;  // Tells waiters to stop after signal threads are done.
@@ -284,7 +284,7 @@ TEST(SemaphoreTest, SemOpRandom) {
   for (auto& dec : decs) {
     dec = absl::make_unique<ScopedThread>([&sem, &mutex, &count, &seed, &done] {
       for (size_t i = 0; i < 500; ++i) {
-        int16 val;
+        int16_t val;
         {
           absl::MutexLock l(&mutex);
           if (done) {
@@ -325,7 +325,7 @@ TEST(SemaphoreTest, SemOpRandom) {
   for (auto& inc : incs) {
     inc = absl::make_unique<ScopedThread>([&sem, &mutex, &count, &seed] {
       for (size_t i = 0; i < 500; ++i) {
-        int16 val;
+        int16_t val;
         {
           absl::MutexLock l(&mutex);
           val = (rand_r(&seed) % 10 + 1);  // Rand between 1 and 10.
@@ -415,14 +415,14 @@ TEST(SemaphoreTest, SemCtlValAll) {
   ASSERT_THAT(sem.get(), SyscallSucceeds());
 
   // Semaphores must start with 0.
-  uint16 get[3] = {10, 10, 10};
+  uint16_t get[3] = {10, 10, 10};
   EXPECT_THAT(semctl(sem.get(), 1, GETALL, get), SyscallSucceedsWithValue(0));
   for (auto v : get) {
     EXPECT_EQ(v, 0);
   }
 
   // SetAll and check that they were set.
-  uint16 vals[3] = {0, 10, 20};
+  uint16_t vals[3] = {0, 10, 20};
   EXPECT_THAT(semctl(sem.get(), 1, SETALL, vals), SyscallSucceedsWithValue(0));
   EXPECT_THAT(semctl(sem.get(), 1, GETALL, get), SyscallSucceedsWithValue(0));
   for (size_t i = 0; i < ABSL_ARRAYSIZE(vals); ++i) {

@@ -18,7 +18,7 @@
 #include "test/syscalls/linux/rseq/types.h"
 #include "test/syscalls/linux/rseq/uapi.h"
 
-constexpr uint32 kRseqSignature = 0x90909090;
+constexpr uint32_t kRseqSignature = 0x90909090;
 
 extern "C" {
 

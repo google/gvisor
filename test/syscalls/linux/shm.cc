@@ -30,7 +30,7 @@ namespace {
 
 using ::testing::_;
 
-const uint64 kAllocSize = kPageSize * 128ULL;
+const uint64_t kAllocSize = kPageSize * 128ULL;
 
 PosixErrorOr<char*> Shmat(int shmid, const void* shmaddr, int shmflg) {
   const intptr_t addr =
@@ -320,11 +320,11 @@ TEST(ShmTest, RemovedSegmentsAreDestroyed) {
       Shmget(IPC_PRIVATE, kAllocSize, IPC_CREAT | 0777));
   const char* addr = ASSERT_NO_ERRNO_AND_VALUE(Shmat(shm.id(), nullptr, 0));
 
-  const uint64 alloc_pages = kAllocSize / kPageSize;
+  const uint64_t alloc_pages = kAllocSize / kPageSize;
 
   struct shm_info info;
   ASSERT_NO_ERRNO(Shmctl(0 /*ignored*/, SHM_INFO, &info));
-  const uint64 before = info.shm_tot;
+  const uint64_t before = info.shm_tot;
 
   ASSERT_NO_ERRNO(shm.Rmid());
   ASSERT_NO_ERRNO(Shmdt(addr));
@@ -400,7 +400,7 @@ TEST(ShmDeathTest, SegmentNotAccessibleAfterDetach) {
 TEST(ShmTest, RequestingSegmentSmallerThanSHMMINFails) {
   struct shminfo info;
   ASSERT_NO_ERRNO(Shmctl(0, IPC_INFO, &info));
-  const uint64 size = info.shmmin - 1;
+  const uint64_t size = info.shmmin - 1;
   EXPECT_THAT(Shmget(IPC_PRIVATE, size, IPC_CREAT | 0777),
               PosixErrorIs(EINVAL, _));
 }
@@ -408,7 +408,7 @@ TEST(ShmTest, RequestingSegmentSmallerThanSHMMINFails) {
 TEST(ShmTest, RequestingSegmentLargerThanSHMMAXFails) {
   struct shminfo info;
   ASSERT_NO_ERRNO(Shmctl(0, IPC_INFO, &info));
-  const uint64 size = info.shmmax + kPageSize;
+  const uint64_t size = info.shmmax + kPageSize;
   EXPECT_THAT(Shmget(IPC_PRIVATE, size, IPC_CREAT | 0777),
               PosixErrorIs(EINVAL, _));
 }
