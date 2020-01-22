@@ -115,7 +115,9 @@ func (fs *filesystem) newReadonlyDir(creds *auth.Credentials, mode linux.FileMod
 
 func (d *readonlyDir) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*vfs.FileDescription, error) {
 	fd := &kernfs.GenericDirectoryFD{}
-	fd.Init(rp.Mount(), vfsd, &d.OrderedChildren, flags)
+	if err := fd.Init(rp.Mount(), vfsd, &d.OrderedChildren, flags); err != nil {
+		return nil, err
+	}
 	return fd.VFSFileDescription(), nil
 }
 
@@ -225,7 +227,9 @@ func TestReadStaticFile(t *testing.T) {
 	defer sys.Destroy()
 
 	pop := sys.PathOpAtRoot("file1")
-	fd, err := sys.VFS.OpenAt(sys.Ctx, sys.Creds, &pop, &vfs.OpenOptions{})
+	fd, err := sys.VFS.OpenAt(sys.Ctx, sys.Creds, &pop, &vfs.OpenOptions{
+		Flags: linux.O_RDONLY,
+	})
 	if err != nil {
 		t.Fatalf("OpenAt for PathOperation %+v failed: %v", pop, err)
 	}
@@ -258,7 +262,9 @@ func TestCreateNewFileInStaticDir(t *testing.T) {
 	// Close the file. The file should persist.
 	fd.DecRef()
 
-	fd, err = sys.VFS.OpenAt(sys.Ctx, sys.Creds, &pop, &vfs.OpenOptions{})
+	fd, err = sys.VFS.OpenAt(sys.Ctx, sys.Creds, &pop, &vfs.OpenOptions{
+		Flags: linux.O_RDONLY,
+	})
 	if err != nil {
 		t.Fatalf("OpenAt(pop:%+v) = %+v failed: %v", pop, fd, err)
 	}
@@ -272,7 +278,9 @@ func TestDirFDReadWrite(t *testing.T) {
 	defer sys.Destroy()
 
 	pop := sys.PathOpAtRoot("/")
-	fd, err := sys.VFS.OpenAt(sys.Ctx, sys.Creds, &pop, &vfs.OpenOptions{})
+	fd, err := sys.VFS.OpenAt(sys.Ctx, sys.Creds, &pop, &vfs.OpenOptions{
+		Flags: linux.O_RDONLY,
+	})
 	if err != nil {
 		t.Fatalf("OpenAt for PathOperation %+v failed: %v", pop, err)
 	}
@@ -282,7 +290,7 @@ func TestDirFDReadWrite(t *testing.T) {
 	if _, err := fd.Read(sys.Ctx, usermem.BytesIOSequence([]byte{}), vfs.ReadOptions{}); err != syserror.EISDIR {
 		t.Fatalf("Read for directory FD failed with unexpected error: %v", err)
 	}
-	if _, err := fd.Write(sys.Ctx, usermem.BytesIOSequence([]byte{}), vfs.WriteOptions{}); err != syserror.EISDIR {
+	if _, err := fd.Write(sys.Ctx, usermem.BytesIOSequence([]byte{}), vfs.WriteOptions{}); err != syserror.EBADF {
 		t.Fatalf("Write for directory FD failed with unexpected error: %v", err)
 	}
 }

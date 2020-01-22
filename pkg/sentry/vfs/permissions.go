@@ -94,14 +94,13 @@ func GenericCheckPermissions(creds *auth.Credentials, ats AccessTypes, isDir boo
 // the set of accesses permitted for the opened file:
 //
 // - O_TRUNC causes MayWrite to be set in the returned AccessTypes (since it
-// mutates the file), but does not permit the opened to write to the file
+// mutates the file), but does not permit writing to the open file description
 // thereafter.
 //
 // - "Linux reserves the special, nonstandard access mode 3 (binary 11) in
 // flags to mean: check for read and write permission on the file and return a
 // file descriptor that can't be used for reading or writing." - open(2). Thus
-// AccessTypesForOpenFlags returns MayRead|MayWrite in this case, but
-// filesystems are responsible for ensuring that access is denied.
+// AccessTypesForOpenFlags returns MayRead|MayWrite in this case.
 //
 // Use May{Read,Write}FileWithOpenFlags() for these checks instead.
 func AccessTypesForOpenFlags(flags uint32) AccessTypes {
