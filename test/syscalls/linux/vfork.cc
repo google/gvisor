@@ -51,7 +51,7 @@ constexpr absl::Duration kChildDelay = absl::Seconds(10);
 // errno, so kChildExitCode is chosen to be an unlikely errno:
 constexpr int kChildExitCode = 118;  // ENOTNAM: Not a XENIX named type file
 
-int64 MonotonicNow() {
+int64_t MonotonicNow() {
   struct timespec now;
   TEST_PCHECK(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
   return now.tv_sec * 1000000000ll + now.tv_nsec;
@@ -62,7 +62,7 @@ TEST(VforkTest, ParentStopsUntilChildExits) {
     // N.B. Run the test in a single-threaded subprocess because
     // vfork is not safe in a multi-threaded process.
 
-    const int64 start = MonotonicNow();
+    const int64_t start = MonotonicNow();
 
     pid_t pid = vfork();
     if (pid == 0) {
@@ -72,7 +72,7 @@ TEST(VforkTest, ParentStopsUntilChildExits) {
     TEST_PCHECK_MSG(pid > 0, "vfork failed");
     MaybeSave();
 
-    const int64 end = MonotonicNow();
+    const int64_t end = MonotonicNow();
 
     absl::Duration dur = absl::Nanoseconds(end - start);
 
@@ -92,7 +92,7 @@ TEST(VforkTest, ParentStopsUntilChildExecves_NoRandomSave) {
   char* const* const child_argv = owned_child_argv.get();
 
   const auto test = [&] {
-    const int64 start = MonotonicNow();
+    const int64_t start = MonotonicNow();
 
     pid_t pid = vfork();
     if (pid == 0) {
@@ -104,7 +104,7 @@ TEST(VforkTest, ParentStopsUntilChildExecves_NoRandomSave) {
     // since the test expects an upper bound on the time spent
     // stopped.
     int saved_errno = errno;
-    const int64 end = MonotonicNow();
+    const int64_t end = MonotonicNow();
     errno = saved_errno;
     TEST_PCHECK_MSG(pid > 0, "vfork failed");
     MaybeSave();
@@ -143,7 +143,7 @@ TEST(VforkTest, ExecedChildExitDoesntUnstopParent_NoRandomSave) {
     // pid1 exec'd and is now sleeping.
     SleepSafe(kChildDelay / 2);
 
-    const int64 start = MonotonicNow();
+    const int64_t start = MonotonicNow();
 
     pid_t pid2 = vfork();
     if (pid2 == 0) {
@@ -153,7 +153,7 @@ TEST(VforkTest, ExecedChildExitDoesntUnstopParent_NoRandomSave) {
     TEST_PCHECK_MSG(pid2 > 0, "vfork failed");
     MaybeSave();
 
-    const int64 end = MonotonicNow();
+    const int64_t end = MonotonicNow();
 
     absl::Duration dur = absl::Nanoseconds(end - start);
 

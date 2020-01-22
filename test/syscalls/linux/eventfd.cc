@@ -37,7 +37,7 @@ TEST(EventfdTest, Nonblock) {
   FileDescriptor efd =
       ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_NONBLOCK | EFD_SEMAPHORE));
 
-  uint64 l;
+  uint64_t l;
   ASSERT_THAT(read(efd.get(), &l, sizeof(l)), SyscallFailsWithErrno(EAGAIN));
 
   l = 1;
@@ -52,7 +52,7 @@ TEST(EventfdTest, Nonblock) {
 
 void* read_three_times(void* arg) {
   int efd = *reinterpret_cast<int*>(arg);
-  uint64 l;
+  uint64_t l;
   EXPECT_THAT(read(efd, &l, sizeof(l)), SyscallSucceedsWithValue(sizeof(l)));
   EXPECT_THAT(read(efd, &l, sizeof(l)), SyscallSucceedsWithValue(sizeof(l)));
   EXPECT_THAT(read(efd, &l, sizeof(l)), SyscallSucceedsWithValue(sizeof(l)));
@@ -68,7 +68,7 @@ TEST(EventfdTest, BlockingWrite) {
                              reinterpret_cast<void*>(&efd)),
               SyscallSucceeds());
 
-  uint64 l = 1;
+  uint64_t l = 1;
   ASSERT_THAT(write(efd, &l, sizeof(l)), SyscallSucceeds());
   EXPECT_EQ(l, 1);
 
@@ -85,7 +85,7 @@ TEST(EventfdTest, SmallWrite) {
   FileDescriptor efd =
       ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_NONBLOCK | EFD_SEMAPHORE));
 
-  uint64 l = 16;
+  uint64_t l = 16;
   ASSERT_THAT(write(efd.get(), &l, 4), SyscallFailsWithErrno(EINVAL));
 }
 
@@ -93,7 +93,7 @@ TEST(EventfdTest, SmallRead) {
   FileDescriptor efd =
       ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_NONBLOCK | EFD_SEMAPHORE));
 
-  uint64 l = 1;
+  uint64_t l = 1;
   ASSERT_THAT(write(efd.get(), &l, sizeof(l)), SyscallSucceeds());
 
   l = 0;
@@ -104,7 +104,7 @@ TEST(EventfdTest, BigWrite) {
   FileDescriptor efd =
       ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_NONBLOCK | EFD_SEMAPHORE));
 
-  uint64 big[16];
+  uint64_t big[16];
   big[0] = 16;
   ASSERT_THAT(write(efd.get(), big, sizeof(big)), SyscallSucceeds());
 }
@@ -113,10 +113,10 @@ TEST(EventfdTest, BigRead) {
   FileDescriptor efd =
       ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_NONBLOCK | EFD_SEMAPHORE));
 
-  uint64 l = 1;
+  uint64_t l = 1;
   ASSERT_THAT(write(efd.get(), &l, sizeof(l)), SyscallSucceeds());
 
-  uint64 big[16];
+  uint64_t big[16];
   ASSERT_THAT(read(efd.get(), big, sizeof(big)), SyscallSucceeds());
   EXPECT_EQ(big[0], 1);
 }
@@ -125,7 +125,7 @@ TEST(EventfdTest, BigWriteBigRead) {
   FileDescriptor efd =
       ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_NONBLOCK | EFD_SEMAPHORE));
 
-  uint64 l[16];
+  uint64_t l[16];
   l[0] = 16;
   ASSERT_THAT(write(efd.get(), l, sizeof(l)), SyscallSucceeds());
   ASSERT_THAT(read(efd.get(), l, sizeof(l)), SyscallSucceeds());
@@ -150,7 +150,7 @@ TEST(EventfdTest, NotifyNonZero_NoRandomSave) {
   int wait_out = epoll_wait(epollfd.get(), &out_ev, 1, kEpollTimeoutMs);
   EXPECT_EQ(wait_out, 1);
   EXPECT_EQ(efd.get(), out_ev.data.fd);
-  uint64 val = 0;
+  uint64_t val = 0;
   ASSERT_THAT(read(efd.get(), &val, sizeof(val)), SyscallSucceeds());
   EXPECT_EQ(val, 1);
 
@@ -159,7 +159,7 @@ TEST(EventfdTest, NotifyNonZero_NoRandomSave) {
   // epoll_wait times out.
   ScopedThread t([&efd] {
     sleep(5);
-    uint64 val = 1;
+    uint64_t val = 1;
     EXPECT_THAT(write(efd.get(), &val, sizeof(val)),
                 SyscallSucceedsWithValue(sizeof(val)));
   });

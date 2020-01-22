@@ -26,7 +26,7 @@
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
-ABSL_FLAG(int32, scratch_uid, 65534, "scratch UID");
+ABSL_FLAG(int32_t, scratch_uid, 65534, "scratch UID");
 // This flag is used to verify that after an exec PR_GET_KEEPCAPS
 // returns 0, the return code will be offset by kPrGetKeepCapsExitBase.
 ABSL_FLAG(bool, prctl_pr_get_keepcaps, false,

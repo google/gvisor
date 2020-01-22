@@ -640,7 +640,7 @@ TEST_P(TcpSocketTest, Tiocinq) {
   size_t size = sizeof(buf);
   ASSERT_THAT(RetryEINTR(write)(s_, buf, size), SyscallSucceedsWithValue(size));
 
-  uint32 seed = time(nullptr);
+  uint32_t seed = time(nullptr);
   const size_t max_chunk = size / 10;
   while (size > 0) {
     size_t chunk = (rand_r(&seed) % max_chunk) + 1;

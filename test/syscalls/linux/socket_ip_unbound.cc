@@ -223,7 +223,7 @@ TEST_P(IPUnboundSocketTest, CheckSkipECN) {
   TOSOption t = GetTOSOption(GetParam().domain);
   EXPECT_THAT(setsockopt(socket->get(), t.level, t.option, &set, set_sz),
               SyscallSucceedsWithValue(0));
-  int expect = static_cast<uint8>(set);
+  int expect = static_cast<uint8_t>(set);
   if (GetParam().protocol == IPPROTO_TCP) {
     expect &= ~INET_ECN_MASK;
   }
@@ -267,7 +267,7 @@ TEST_P(IPUnboundSocketTest, SmallTOSOptionSize) {
       EXPECT_THAT(setsockopt(socket->get(), t.level, t.option, &set, i),
                   SyscallSucceedsWithValue(0));
       expect_tos = set;
-      expect_sz = sizeof(uint8);
+      expect_sz = sizeof(uint8_t);
     } else {
       EXPECT_THAT(setsockopt(socket->get(), t.level, t.option, &set, i),
                   SyscallFailsWithErrno(EINVAL));
@@ -314,7 +314,7 @@ TEST_P(IPUnboundSocketTest, NegativeTOS) {
               SyscallSucceedsWithValue(0));
   int expect;
   if (GetParam().domain == AF_INET) {
-    expect = static_cast<uint8>(set);
+    expect = static_cast<uint8_t>(set);
     if (GetParam().protocol == IPPROTO_TCP) {
       expect &= ~INET_ECN_MASK;
     }
@@ -340,7 +340,7 @@ TEST_P(IPUnboundSocketTest, InvalidNegativeTOS) {
   if (GetParam().domain == AF_INET) {
     EXPECT_THAT(setsockopt(socket->get(), t.level, t.option, &set, set_sz),
                 SyscallSucceedsWithValue(0));
-    expect = static_cast<uint8>(set);
+    expect = static_cast<uint8_t>(set);
     if (GetParam().protocol == IPPROTO_TCP) {
       expect &= ~INET_ECN_MASK;
     }

@@ -117,13 +117,13 @@ void DenyPidSetgroups(pid_t pid) {
 }
 
 // Returns a valid UID/GID that isn't id.
-uint32 another_id(uint32 id) { return (id + 1) % 65535; }
+uint32_t another_id(uint32_t id) { return (id + 1) % 65535; }
 
 struct TestParam {
   std::string desc;
   int cap;
   std::function<std::string(absl::string_view)> get_map_filename;
-  std::function<uint32()> get_current_id;
+  std::function<uint32_t()> get_current_id;
 };
 
 std::string DescribeTestParam(const ::testing::TestParamInfo<TestParam>& info) {
@@ -135,17 +135,17 @@ std::vector<TestParam> UidGidMapTestParams() {
                     [](absl::string_view pid) {
                       return absl::StrCat("/proc/", pid, "/uid_map");
                     },
-                    []() -> uint32 { return getuid(); }},
+                    []() -> uint32_t { return getuid(); }},
           TestParam{"GID", CAP_SETGID,
                     [](absl::string_view pid) {
                       return absl::StrCat("/proc/", pid, "/gid_map");
                     },
-                    []() -> uint32 { return getgid(); }}};
+                    []() -> uint32_t { return getgid(); }}};
 }
 
 class ProcUidGidMapTest : public ::testing::TestWithParam<TestParam> {
  protected:
-  uint32 CurrentID() { return GetParam().get_current_id(); }
+  uint32_t CurrentID() { return GetParam().get_current_id(); }
 };
 
 class ProcSelfUidGidMapTest : public ProcUidGidMapTest {
@@ -198,7 +198,7 @@ TEST_P(ProcSelfUidGidMapTest, IsInitiallyEmpty) {
 
 TEST_P(ProcSelfUidGidMapTest, IdentityMapOwnID) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
-  uint32 id = CurrentID();
+  uint32_t id = CurrentID();
   std::string line = absl::StrCat(id, " ", id, " 1");
   EXPECT_THAT(
       InNewUserNamespaceWithMapFD([&](int fd) {
@@ -213,7 +213,7 @@ TEST_P(ProcSelfUidGidMapTest, TrailingNewlineAndNULIgnored) {
   // and an invalid (incomplete) map entry are appended to the valid entry. The
   // newline should be accepted, and everything after the NUL should be ignored.
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
-  uint32 id = CurrentID();
+  uint32_t id = CurrentID();
   std::string line = absl::StrCat(id, " ", id, " 1\n\0 4 3");
   EXPECT_THAT(
       InNewUserNamespaceWithMapFD([&](int fd) {
@@ -227,8 +227,8 @@ TEST_P(ProcSelfUidGidMapTest, TrailingNewlineAndNULIgnored) {
 
 TEST_P(ProcSelfUidGidMapTest, NonIdentityMapOwnID) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
-  uint32 id = CurrentID();
-  uint32 id2 = another_id(id);
+  uint32_t id = CurrentID();
+  uint32_t id2 = another_id(id);
   std::string line = absl::StrCat(id2, " ", id, " 1");
   EXPECT_THAT(
       InNewUserNamespaceWithMapFD([&](int fd) {
@@ -243,8 +243,8 @@ TEST_P(ProcSelfUidGidMapTest, MapOtherID) {
   // Whether or not we have CAP_SET*ID is irrelevant: the process running in the
   // new (child) user namespace won't have any capabilities in the current
   // (parent) user namespace, which is needed.
-  uint32 id = CurrentID();
-  uint32 id2 = another_id(id);
+  uint32_t id = CurrentID();
+  uint32_t id2 = another_id(id);
   std::string line = absl::StrCat(id, " ", id2, " 1");
   EXPECT_THAT(InNewUserNamespaceWithMapFD([&](int fd) {
                 DenySelfSetgroups();
@@ -270,8 +270,8 @@ TEST_P(ProcPidUidGidMapTest, MapOtherIDPrivileged) {
   std::tie(child_pid, cleanup_child) =
       ASSERT_NO_ERRNO_AND_VALUE(CreateProcessInNewUserNamespace());
 
-  uint32 id = CurrentID();
-  uint32 id2 = another_id(id);
+  uint32_t id = CurrentID();
+  uint32_t id2 = another_id(id);
   std::string line = absl::StrCat(id, " ", id2, " 1");
   DenyPidSetgroups(child_pid);
   auto fd = ASSERT_NO_ERRNO_AND_VALUE(OpenMapFile(child_pid));

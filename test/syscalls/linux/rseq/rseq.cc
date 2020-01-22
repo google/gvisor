@@ -49,7 +49,7 @@ int strcmp(const char* s1, const char* s2) {
   return static_cast<int>(*p1) - static_cast<int>(*p2);
 }
 
-int sys_rseq(struct rseq* rseq, uint32 rseq_len, int flags, uint32 sig) {
+int sys_rseq(struct rseq* rseq, uint32_t rseq_len, int flags, uint32_t sig) {
   return raw_syscall(kRseqSyscall, rseq, rseq_len, flags, sig);
 }
 
@@ -176,10 +176,10 @@ int TestAbort() {
   struct rseq_cs cs = {};
   cs.version = 0;
   cs.flags = 0;
-  cs.start_ip = reinterpret_cast<uint64>(&rseq_loop_start);
-  cs.post_commit_offset = reinterpret_cast<uint64>(&rseq_loop_post_commit) -
-                          reinterpret_cast<uint64>(&rseq_loop_start);
-  cs.abort_ip = reinterpret_cast<uint64>(&rseq_loop_abort);
+  cs.start_ip = reinterpret_cast<uint64_t>(&rseq_loop_start);
+  cs.post_commit_offset = reinterpret_cast<uint64_t>(&rseq_loop_post_commit) -
+                          reinterpret_cast<uint64_t>(&rseq_loop_start);
+  cs.abort_ip = reinterpret_cast<uint64_t>(&rseq_loop_abort);
 
   // Loops until abort. If this returns then abort occurred.
   rseq_loop(&r, &cs);
@@ -198,10 +198,10 @@ int TestAbortBefore() {
   struct rseq_cs cs = {};
   cs.version = 0;
   cs.flags = 0;
-  cs.start_ip = reinterpret_cast<uint64>(&rseq_loop_start);
-  cs.post_commit_offset = reinterpret_cast<uint64>(&rseq_loop_post_commit) -
-                          reinterpret_cast<uint64>(&rseq_loop_start);
-  cs.abort_ip = reinterpret_cast<uint64>(&rseq_loop_early_abort);
+  cs.start_ip = reinterpret_cast<uint64_t>(&rseq_loop_start);
+  cs.post_commit_offset = reinterpret_cast<uint64_t>(&rseq_loop_post_commit) -
+                          reinterpret_cast<uint64_t>(&rseq_loop_start);
+  cs.abort_ip = reinterpret_cast<uint64_t>(&rseq_loop_early_abort);
 
   // Loops until abort. If this returns then abort occurred.
   rseq_loop(&r, &cs);
@@ -220,10 +220,10 @@ int TestAbortSignature() {
   struct rseq_cs cs = {};
   cs.version = 0;
   cs.flags = 0;
-  cs.start_ip = reinterpret_cast<uint64>(&rseq_loop_start);
-  cs.post_commit_offset = reinterpret_cast<uint64>(&rseq_loop_post_commit) -
-                          reinterpret_cast<uint64>(&rseq_loop_start);
-  cs.abort_ip = reinterpret_cast<uint64>(&rseq_loop_abort);
+  cs.start_ip = reinterpret_cast<uint64_t>(&rseq_loop_start);
+  cs.post_commit_offset = reinterpret_cast<uint64_t>(&rseq_loop_post_commit) -
+                          reinterpret_cast<uint64_t>(&rseq_loop_start);
+  cs.abort_ip = reinterpret_cast<uint64_t>(&rseq_loop_abort);
 
   // Loops until abort. This should SIGSEGV on abort.
   rseq_loop(&r, &cs);
@@ -242,10 +242,10 @@ int TestAbortPreCommit() {
   struct rseq_cs cs = {};
   cs.version = 0;
   cs.flags = 0;
-  cs.start_ip = reinterpret_cast<uint64>(&rseq_loop_start);
-  cs.post_commit_offset = reinterpret_cast<uint64>(&rseq_loop_post_commit) -
-                          reinterpret_cast<uint64>(&rseq_loop_start);
-  cs.abort_ip = reinterpret_cast<uint64>(&rseq_loop_pre_commit);
+  cs.start_ip = reinterpret_cast<uint64_t>(&rseq_loop_start);
+  cs.post_commit_offset = reinterpret_cast<uint64_t>(&rseq_loop_post_commit) -
+                          reinterpret_cast<uint64_t>(&rseq_loop_start);
+  cs.abort_ip = reinterpret_cast<uint64_t>(&rseq_loop_pre_commit);
 
   // Loops until abort. This should SIGSEGV on abort.
   rseq_loop(&r, &cs);
@@ -264,10 +264,10 @@ int TestAbortClearsCS() {
   struct rseq_cs cs = {};
   cs.version = 0;
   cs.flags = 0;
-  cs.start_ip = reinterpret_cast<uint64>(&rseq_loop_start);
-  cs.post_commit_offset = reinterpret_cast<uint64>(&rseq_loop_post_commit) -
-                          reinterpret_cast<uint64>(&rseq_loop_start);
-  cs.abort_ip = reinterpret_cast<uint64>(&rseq_loop_abort);
+  cs.start_ip = reinterpret_cast<uint64_t>(&rseq_loop_start);
+  cs.post_commit_offset = reinterpret_cast<uint64_t>(&rseq_loop_post_commit) -
+                          reinterpret_cast<uint64_t>(&rseq_loop_start);
+  cs.abort_ip = reinterpret_cast<uint64_t>(&rseq_loop_abort);
 
   // Loops until abort. If this returns then abort occurred.
   rseq_loop(&r, &cs);
@@ -290,10 +290,10 @@ int TestInvalidAbortClearsCS() {
   struct rseq_cs cs = {};
   cs.version = 0;
   cs.flags = 0;
-  cs.start_ip = reinterpret_cast<uint64>(&rseq_loop_start);
-  cs.post_commit_offset = reinterpret_cast<uint64>(&rseq_loop_post_commit) -
-                          reinterpret_cast<uint64>(&rseq_loop_start);
-  cs.abort_ip = reinterpret_cast<uint64>(&rseq_loop_abort);
+  cs.start_ip = reinterpret_cast<uint64_t>(&rseq_loop_start);
+  cs.post_commit_offset = reinterpret_cast<uint64_t>(&rseq_loop_post_commit) -
+                          reinterpret_cast<uint64_t>(&rseq_loop_start);
+  cs.abort_ip = reinterpret_cast<uint64_t>(&rseq_loop_abort);
 
   __atomic_store_n(&r.rseq_cs, &cs, __ATOMIC_RELAXED);
 

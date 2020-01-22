@@ -507,7 +507,7 @@ TEST_P(AllSocketPairTest, SoRcvTimeoIsSetLargerArg) {
 
   struct timeval_with_extra {
     struct timeval tv;
-    int64 extra_data;
+    int64_t extra_data;
   } ABSL_ATTRIBUTE_PACKED;
 
   timeval_with_extra tv_extra;

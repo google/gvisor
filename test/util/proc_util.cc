@@ -72,7 +72,7 @@ PosixErrorOr<ProcMapsEntry> ParseProcMapsLine(absl::string_view line) {
   ASSIGN_OR_RETURN_ERRNO(map_entry.major, AtoiBase(device[0], 16));
   ASSIGN_OR_RETURN_ERRNO(map_entry.minor, AtoiBase(device[1], 16));
 
-  ASSIGN_OR_RETURN_ERRNO(map_entry.inode, Atoi<int64>(parts[4]));
+  ASSIGN_OR_RETURN_ERRNO(map_entry.inode, Atoi<int64_t>(parts[4]));
   if (parts.size() == 6) {
     // A filename is present. However, absl::StrSplit retained the whitespace
     // between the inode number and the filename.

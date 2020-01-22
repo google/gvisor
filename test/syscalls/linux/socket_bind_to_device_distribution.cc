@@ -77,13 +77,13 @@ class BindToDeviceDistributionTest
   }
 };
 
-PosixErrorOr<uint16> AddrPort(int family, sockaddr_storage const& addr) {
+PosixErrorOr<uint16_t> AddrPort(int family, sockaddr_storage const& addr) {
   switch (family) {
     case AF_INET:
-      return static_cast<uint16>(
+      return static_cast<uint16_t>(
           reinterpret_cast<sockaddr_in const*>(&addr)->sin_port);
     case AF_INET6:
-      return static_cast<uint16>(
+      return static_cast<uint16_t>(
           reinterpret_cast<sockaddr_in6 const*>(&addr)->sin6_port);
     default:
       return PosixError(EINVAL,
@@ -91,7 +91,7 @@ PosixErrorOr<uint16> AddrPort(int family, sockaddr_storage const& addr) {
   }
 }
 
-PosixError SetAddrPort(int family, sockaddr_storage* addr, uint16 port) {
+PosixError SetAddrPort(int family, sockaddr_storage* addr, uint16_t port) {
   switch (family) {
     case AF_INET:
       reinterpret_cast<sockaddr_in*>(addr)->sin_port = port;
@@ -157,7 +157,7 @@ TEST_P(BindToDeviceDistributionTest, Tcp) {
         getsockname(listener_fds[0].get(),
                     reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
         SyscallSucceeds());
-    uint16 const port =
+    uint16_t const port =
         ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
     ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
   }
@@ -190,7 +190,7 @@ TEST_P(BindToDeviceDistributionTest, Tcp) {
             // cause the test to use absurd amounts of memory.
             //
             // See: https://tools.ietf.org/html/rfc2525#page-50 section 2.17
-            uint16 data;
+            uint16_t data;
             EXPECT_THAT(
                 RetryEINTR(recv)(fd.ValueOrDie().get(), &data, sizeof(data), 0),
                 SyscallSucceedsWithValue(sizeof(data)));
@@ -296,7 +296,7 @@ TEST_P(BindToDeviceDistributionTest, Udp) {
         getsockname(listener_fds[0].get(),
                     reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
         SyscallSucceeds());
-    uint16 const port =
+    uint16_t const port =
         ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
     ASSERT_NO_ERRNO(SetAddrPort(listener.family(), &listen_addr, port));
     ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));

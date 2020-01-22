@@ -33,7 +33,7 @@ using ::absl::StrFormat;
 
 // AnonUsageFromMeminfo scrapes the current anonymous memory usage from
 // /proc/meminfo and returns it in bytes.
-PosixErrorOr<uint64> AnonUsageFromMeminfo() {
+PosixErrorOr<uint64_t> AnonUsageFromMeminfo() {
   ASSIGN_OR_RETURN_ERRNO(auto meminfo, GetContents("/proc/meminfo"));
   std::vector<std::string> lines(absl::StrSplit(meminfo, '\n'));
 
@@ -47,7 +47,7 @@ PosixErrorOr<uint64> AnonUsageFromMeminfo() {
         absl::StrSplit(line, ' ', absl::SkipEmpty()));
     if (parts.size() == 3) {
       // The size is the second field, let's try to parse it as a number.
-      ASSIGN_OR_RETURN_ERRNO(auto anon_kb, Atoi<uint64>(parts[1]));
+      ASSIGN_OR_RETURN_ERRNO(auto anon_kb, Atoi<uint64_t>(parts[1]));
       return anon_kb * 1024;
     }
 
@@ -65,10 +65,10 @@ TEST(MemoryAccounting, AnonAccountingPreservedOnSaveRestore) {
   // the test.
   SKIP_IF(!IsRunningOnGvisor());
 
-  uint64 anon_initial = ASSERT_NO_ERRNO_AND_VALUE(AnonUsageFromMeminfo());
+  uint64_t anon_initial = ASSERT_NO_ERRNO_AND_VALUE(AnonUsageFromMeminfo());
 
   // Cause some anonymous memory usage.
-  uint64 map_bytes = Megabytes(512);
+  uint64_t map_bytes = Megabytes(512);
   char* mem =
       static_cast<char*>(mmap(nullptr, map_bytes, PROT_READ | PROT_WRITE,
                               MAP_POPULATE | MAP_ANON | MAP_PRIVATE, -1, 0));
@@ -77,11 +77,11 @@ TEST(MemoryAccounting, AnonAccountingPreservedOnSaveRestore) {
 
   // Write something to each page to prevent them from being decommited on
   // S/R. Zero pages are dropped on save.
-  for (uint64 i = 0; i < map_bytes; i += kPageSize) {
+  for (uint64_t i = 0; i < map_bytes; i += kPageSize) {
     mem[i] = 'a';
   }
 
-  uint64 anon_after_alloc = ASSERT_NO_ERRNO_AND_VALUE(AnonUsageFromMeminfo());
+  uint64_t anon_after_alloc = ASSERT_NO_ERRNO_AND_VALUE(AnonUsageFromMeminfo());
   EXPECT_THAT(anon_after_alloc,
               EquivalentWithin(anon_initial + map_bytes, 0.03));
 
@@ -90,7 +90,7 @@ TEST(MemoryAccounting, AnonAccountingPreservedOnSaveRestore) {
   MaybeSave();
 
   // Usage should remain the same across S/R.
-  uint64 anon_after_sr = ASSERT_NO_ERRNO_AND_VALUE(AnonUsageFromMeminfo());
+  uint64_t anon_after_sr = ASSERT_NO_ERRNO_AND_VALUE(AnonUsageFromMeminfo());
   EXPECT_THAT(anon_after_sr, EquivalentWithin(anon_after_alloc, 0.03));
 }
 

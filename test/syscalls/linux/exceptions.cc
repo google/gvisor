@@ -24,20 +24,20 @@ namespace testing {
 
 // Default value for the x87 FPU control word. See Intel SDM Vol 1, Ch 8.1.5
 // "x87 FPU Control Word".
-constexpr uint16 kX87ControlWordDefault = 0x37f;
+constexpr uint16_t kX87ControlWordDefault = 0x37f;
 
 // Mask for the divide-by-zero exception.
-constexpr uint16 kX87ControlWordDiv0Mask = 1 << 2;
+constexpr uint16_t kX87ControlWordDiv0Mask = 1 << 2;
 
 // Default value for the SSE control register (MXCSR). See Intel SDM Vol 1, Ch
 // 11.6.4 "Initialization of SSE/SSE3 Extensions".
-constexpr uint32 kMXCSRDefault = 0x1f80;
+constexpr uint32_t kMXCSRDefault = 0x1f80;
 
 // Mask for the divide-by-zero exception.
-constexpr uint32 kMXCSRDiv0Mask = 1 << 9;
+constexpr uint32_t kMXCSRDiv0Mask = 1 << 9;
 
 // Flag for a pending divide-by-zero exception.
-constexpr uint32 kMXCSRDiv0Flag = 1 << 2;
+constexpr uint32_t kMXCSRDiv0Flag = 1 << 2;
 
 void inline Halt() { asm("hlt\r\n"); }
 
@@ -112,10 +112,10 @@ TEST(ExceptionTest, DivideByZero) {
 
   EXPECT_EXIT(
       {
-        uint32 remainder;
-        uint32 quotient;
-        uint32 divisor = 0;
-        uint64 value = 1;
+        uint32_t remainder;
+        uint32_t quotient;
+        uint32_t divisor = 0;
+        uint64_t value = 1;
         asm("divl 0(%2)\r\n"
             : "=d"(remainder), "=a"(quotient)
             : "r"(&divisor), "d"(value >> 32), "a"(value));
@@ -126,9 +126,9 @@ TEST(ExceptionTest, DivideByZero) {
 
 // By default, x87 exceptions are masked and simply return a default value.
 TEST(ExceptionTest, X87DivideByZeroMasked) {
-  int32 quotient;
-  int32 value = 1;
-  int32 divisor = 0;
+  int32_t quotient;
+  int32_t value = 1;
+  int32_t divisor = 0;
   asm("fildl %[value]\r\n"
       "fidivl %[divisor]\r\n"
       "fistpl %[quotient]\r\n"
@@ -148,12 +148,12 @@ TEST(ExceptionTest, X87DivideByZeroUnmasked) {
   EXPECT_EXIT(
       {
         // Clear the divide by zero exception mask.
-        constexpr uint16 kControlWord =
+        constexpr uint16_t kControlWord =
             kX87ControlWordDefault & ~kX87ControlWordDiv0Mask;
 
-        int32 quotient;
-        int32 value = 1;
-        int32 divisor = 0;
+        int32_t quotient;
+        int32_t value = 1;
+        int32_t divisor = 0;
         asm volatile(
             "fldcw %[cw]\r\n"
             "fildl %[value]\r\n"
@@ -176,12 +176,12 @@ TEST(ExceptionTest, X87StatusClobber) {
   EXPECT_EXIT(
       {
         // Clear the divide by zero exception mask.
-        constexpr uint16 kControlWord =
+        constexpr uint16_t kControlWord =
             kX87ControlWordDefault & ~kX87ControlWordDiv0Mask;
 
-        int32 quotient;
-        int32 value = 1;
-        int32 divisor = 0;
+        int32_t quotient;
+        int32_t value = 1;
+        int32_t divisor = 0;
         asm volatile(
             "fildl %[value]\r\n"
             "fidivl %[divisor]\r\n"
@@ -208,10 +208,10 @@ TEST(ExceptionTest, X87StatusClobber) {
 
 // By default, SSE exceptions are masked and simply return a default value.
 TEST(ExceptionTest, SSEDivideByZeroMasked) {
-  uint32 status;
-  int32 quotient;
-  int32 value = 1;
-  int32 divisor = 0;
+  uint32_t status;
+  int32_t quotient;
+  int32_t value = 1;
+  int32_t divisor = 0;
   asm("cvtsi2ssl %[value], %%xmm0\r\n"
       "cvtsi2ssl %[divisor], %%xmm1\r\n"
       "divss %%xmm1, %%xmm0\r\n"
@@ -233,11 +233,11 @@ TEST(ExceptionTest, SSEDivideByZeroUnmasked) {
   EXPECT_EXIT(
       {
         // Clear the divide by zero exception mask.
-        constexpr uint32 kMXCSR = kMXCSRDefault & ~kMXCSRDiv0Mask;
+        constexpr uint32_t kMXCSR = kMXCSRDefault & ~kMXCSRDiv0Mask;
 
-        int32 quotient;
-        int32 value = 1;
-        int32 divisor = 0;
+        int32_t quotient;
+        int32_t value = 1;
+        int32_t divisor = 0;
         asm volatile(
             "ldmxcsr %[mxcsr]\r\n"
             "cvtsi2ssl %[value], %%xmm0\r\n"
@@ -254,10 +254,10 @@ TEST(ExceptionTest, SSEDivideByZeroUnmasked) {
 
 // Pending exceptions in the SSE status register are not clobbered by syscalls.
 TEST(ExceptionTest, SSEStatusClobber) {
-  uint32 mxcsr;
-  int32 quotient;
-  int32 value = 1;
-  int32 divisor = 0;
+  uint32_t mxcsr;
+  int32_t quotient;
+  int32_t value = 1;
+  int32_t divisor = 0;
   asm("cvtsi2ssl %[value], %%xmm0\r\n"
       "cvtsi2ssl %[divisor], %%xmm1\r\n"
       "divss %%xmm1, %%xmm0\r\n"
@@ -336,7 +336,7 @@ TEST(ExceptionTest, AlignmentCheck) {
         SetAlignmentCheck();
         for (int i = 0; i < 8; i++) {
           // At least 7/8 offsets will be unaligned here.
-          uint64* ptr = reinterpret_cast<uint64*>(&array[i]);
+          uint64_t* ptr = reinterpret_cast<uint64_t*>(&array[i]);
           asm("mov %0, 0(%0)\r\n" : : "r"(ptr) : "ax");
         }
       },
