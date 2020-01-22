@@ -110,6 +110,10 @@ func (ts *TaskSet) NewTask(cfg *TaskConfig) (*Task, error) {
 func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 	tg := cfg.ThreadGroup
 	tc := cfg.TaskContext
+	var oomScoreAdj int32
+	if cfg.Parent != nil {
+		oomScoreAdj = cfg.Parent.GetOOMScoreAdj()
+	}
 	t := &Task{
 		taskNode: taskNode{
 			tg:       tg,
@@ -138,6 +142,7 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 		rseqSignature:   cfg.RSeqSignature,
 		futexWaiter:     futex.NewWaiter(),
 		containerID:     cfg.ContainerID,
+		oomScoreAdj:     oomScoreAdj,
 	}
 	t.creds.Store(cfg.Credentials)
 	t.endStopCond.L = &t.tg.signalHandlers.mu

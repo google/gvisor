@@ -1608,6 +1608,19 @@ cc_binary(
 )
 
 cc_binary(
+    name = "proc_pid_oomscore_test",
+    testonly = 1,
+    srcs = ["proc_pid_oomscore.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:fs_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_binary(
     name = "proc_pid_smaps_test",
     testonly = 1,
     srcs = ["proc_pid_smaps.cc"],

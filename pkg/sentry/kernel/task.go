@@ -37,6 +37,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -552,6 +553,12 @@ type Task struct {
 	//
 	// startTime is protected by mu.
 	startTime ktime.Time
+
+	// oomScoreAdj is the task's OOM score adjustment. This is currently not
+	// used but is maintained for consistency.
+	//
+	// oomScoreAdj is protected by mu, and is owned by the task goroutine.
+	oomScoreAdj int32
 }
 
 func (t *Task) savePtraceTracer() *Task {
@@ -804,4 +811,23 @@ func (t *Task) AbstractSockets() *AbstractSocketNamespace {
 // ContainerID returns t's container ID.
 func (t *Task) ContainerID() string {
 	return t.containerID
+}
+
+// GetOOMScoreAdj sets the task's OOM score adjustment.
+func (t *Task) GetOOMScoreAdj() int32 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.oomScoreAdj
+}
+
+// SetOOMScoreAdj sets the task's OOM score adjustment. The value should be
+// between -1000 and 1000 inclusive.
+func (t *Task) SetOOMScoreAdj(adj int32) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if adj > 1000 || adj < -1000 {
+		return syserror.EINVAL
+	}
+	t.oomScoreAdj = adj
+	return nil
 }
