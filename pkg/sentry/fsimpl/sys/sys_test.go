@@ -56,7 +56,7 @@ func TestReadCPUFile(t *testing.T) {
 
 	for _, fname := range []string{"online", "possible", "present"} {
 		pop := s.PathOpAtRoot(fmt.Sprintf("devices/system/cpu/%s", fname))
-		fd, err := s.VFS.OpenAt(s.Ctx, s.Creds, &pop, &vfs.OpenOptions{})
+		fd, err := s.VFS.OpenAt(s.Ctx, s.Creds, pop, &vfs.OpenOptions{})
 		if err != nil {
 			t.Fatalf("OpenAt(pop:%+v) = %+v failed: %v", pop, fd, err)
 		}
@@ -75,7 +75,7 @@ func TestSysRootContainsExpectedEntries(t *testing.T) {
 	s := newTestSystem(t)
 	defer s.Destroy()
 	pop := s.PathOpAtRoot("/")
-	s.AssertDirectoryContains(&pop, map[string]testutil.DirentType{
+	s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
 		"block":    linux.DT_DIR,
 		"bus":      linux.DT_DIR,
 		"class":    linux.DT_DIR,

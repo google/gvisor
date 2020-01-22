@@ -40,8 +40,8 @@ type System struct {
 	Ctx   context.Context
 	Creds *auth.Credentials
 	VFS   *vfs.VirtualFilesystem
+	Root  vfs.VirtualDentry
 	mns   *vfs.MountNamespace
-	root  vfs.VirtualDentry
 }
 
 // NewSystem constructs a System.
@@ -55,14 +55,49 @@ func NewSystem(ctx context.Context, t *testing.T, v *vfs.VirtualFilesystem, mns 
 		Creds: auth.CredentialsFromContext(ctx),
 		VFS:   v,
 		mns:   mns,
-		root:  mns.Root(),
+		Root:  mns.Root(),
 	}
 	return s
 }
 
+// WithSubtest creates a temporary test system with a new test harness,
+// referencing all other resources from the original system. This is useful when
+// a system is reused for multiple subtests, and the T needs to change for each
+// case. Note that this is safe when test cases run in parallel, as all
+// resources referenced by the system are immutable, or handle interior
+// mutations in a thread-safe manner.
+//
+// The returned system must not outlive the original and should not be destroyed
+// via System.Destroy.
+func (s *System) WithSubtest(t *testing.T) *System {
+	return &System{
+		t:     t,
+		Ctx:   s.Ctx,
+		Creds: s.Creds,
+		VFS:   s.VFS,
+		mns:   s.mns,
+		Root:  s.Root,
+	}
+}
+
+// WithTemporaryContext constructs a temporary test system with a new context
+// ctx. The temporary system borrows all resources and references from the
+// original system. The returned temporary system must not outlive the original
+// system, and should not be destroyed via System.Destroy.
+func (s *System) WithTemporaryContext(ctx context.Context) *System {
+	return &System{
+		t:     s.t,
+		Ctx:   ctx,
+		Creds: s.Creds,
+		VFS:   s.VFS,
+		mns:   s.mns,
+		Root:  s.Root,
+	}
+}
+
 // Destroy release resources associated with a test system.
 func (s *System) Destroy() {
-	s.root.DecRef()
+	s.Root.DecRef()
 	s.mns.DecRef(s.VFS) // Reference on mns passed to NewSystem.
 }
 
@@ -87,18 +122,18 @@ func (s *System) ReadToEnd(fd *vfs.FileDescription) (string, error) {
 
 // PathOpAtRoot constructs a PathOperation with the given path from
 // the root of the filesystem.
-func (s *System) PathOpAtRoot(path string) vfs.PathOperation {
-	return vfs.PathOperation{
-		Root:  s.root,
-		Start: s.root,
+func (s *System) PathOpAtRoot(path string) *vfs.PathOperation {
+	return &vfs.PathOperation{
+		Root:  s.Root,
+		Start: s.Root,
 		Path:  fspath.Parse(path),
 	}
 }
 
 // GetDentryOrDie attempts to resolve a dentry referred to by the
 // provided path operation. If unsuccessful, the test fails.
-func (s *System) GetDentryOrDie(pop vfs.PathOperation) vfs.VirtualDentry {
-	vd, err := s.VFS.GetDentryAt(s.Ctx, s.Creds, &pop, &vfs.GetDentryOptions{})
+func (s *System) GetDentryOrDie(pop *vfs.PathOperation) vfs.VirtualDentry {
+	vd, err := s.VFS.GetDentryAt(s.Ctx, s.Creds, pop, &vfs.GetDentryOptions{})
 	if err != nil {
 		s.t.Fatalf("GetDentryAt(pop:%+v) failed: %v", pop, err)
 	}
@@ -108,14 +143,8 @@ func (s *System) GetDentryOrDie(pop vfs.PathOperation) vfs.VirtualDentry {
 // DirentType is an alias for values for linux_dirent64.d_type.
 type DirentType = uint8
 
-// AssertDirectoryContains verifies that a directory at pop contains the entries
-// specified. AssertDirectoryContains implicitly checks for "." and "..", these
-// need not be included in entries.
-func (s *System) AssertDirectoryContains(pop *vfs.PathOperation, entries map[string]DirentType) {
-	// Also implicitly check for "." and "..".
-	entries["."] = linux.DT_DIR
-	entries[".."] = linux.DT_DIR
-
+// ListDirents lists the Dirents for a directory at pop.
+func (s *System) ListDirents(pop *vfs.PathOperation) *DirentCollector {
 	fd, err := s.VFS.OpenAt(s.Ctx, s.Creds, pop, &vfs.OpenOptions{Flags: linux.O_RDONLY})
 	if err != nil {
 		s.t.Fatalf("OpenAt for PathOperation %+v failed: %v", pop, err)
@@ -126,12 +155,52 @@ func (s *System) AssertDirectoryContains(pop *vfs.PathOperation, entries map[str
 	if err := fd.IterDirents(s.Ctx, collector); err != nil {
 		s.t.Fatalf("IterDirent failed: %v", err)
 	}
+	return collector
+}
 
-	collectedEntries := make(map[string]DirentType)
-	for _, dirent := range collector.dirents {
-		collectedEntries[dirent.Name] = dirent.Type
+// AssertAllDirentTypes verifies that the set of dirents in collector contains
+// exactly the specified set of expected entries. AssertAllDirentTypes respects
+// collector.skipDots, and implicitly checks for "." and ".." accordingly.
+func (s *System) AssertAllDirentTypes(collector *DirentCollector, expected map[string]DirentType) {
+	// Also implicitly check for "." and "..", if enabled.
+	if !collector.skipDots {
+		expected["."] = linux.DT_DIR
+		expected[".."] = linux.DT_DIR
 	}
-	if diff := cmp.Diff(entries, collectedEntries); diff != "" {
+
+	dentryTypes := make(map[string]DirentType)
+	collector.mu.Lock()
+	for _, dirent := range collector.dirents {
+		dentryTypes[dirent.Name] = dirent.Type
+	}
+	collector.mu.Unlock()
+	if diff := cmp.Diff(expected, dentryTypes); diff != "" {
+		s.t.Fatalf("IterDirent had unexpected results:\n--- want\n+++ got\n%v", diff)
+	}
+}
+
+// AssertDirentOffsets verifies that collector contains at least the entries
+// specified in expected, with the given NextOff field. Entries specified in
+// expected but missing from collector result in failure. Extra entries in
+// collector are ignored. AssertDirentOffsets respects collector.skipDots, and
+// implicitly checks for "." and ".." accordingly.
+func (s *System) AssertDirentOffsets(collector *DirentCollector, expected map[string]int64) {
+	// Also implicitly check for "." and "..", if enabled.
+	if !collector.skipDots {
+		expected["."] = 1
+		expected[".."] = 2
+	}
+
+	dentryNextOffs := make(map[string]int64)
+	collector.mu.Lock()
+	for _, dirent := range collector.dirents {
+		// Ignore extra entries in dentries that are not in expected.
+		if _, ok := expected[dirent.Name]; ok {
+			dentryNextOffs[dirent.Name] = dirent.NextOff
+		}
+	}
+	collector.mu.Unlock()
+	if diff := cmp.Diff(expected, dentryNextOffs); diff != "" {
 		s.t.Fatalf("IterDirent had unexpected results:\n--- want\n+++ got\n%v", diff)
 	}
 }
@@ -141,16 +210,29 @@ func (s *System) AssertDirectoryContains(pop *vfs.PathOperation, entries map[str
 // all dirents emitted by the callback.
 type DirentCollector struct {
 	mu      sync.Mutex
-	dirents map[string]vfs.Dirent
+	order   []*vfs.Dirent
+	dirents map[string]*vfs.Dirent
+	// When the collector is used in various Assert* functions, should "." and
+	// ".." be implicitly checked?
+	skipDots bool
+}
+
+// SkipDotsChecks enables or disables the implicit checks on "." and ".." when
+// the collector is used in various Assert* functions. Note that "." and ".."
+// are still collected if passed to d.Handle, so the caller should only disable
+// the checks when they aren't expected.
+func (d *DirentCollector) SkipDotsChecks(value bool) {
+	d.skipDots = value
 }
 
 // Handle implements vfs.IterDirentsCallback.Handle.
 func (d *DirentCollector) Handle(dirent vfs.Dirent) bool {
 	d.mu.Lock()
 	if d.dirents == nil {
-		d.dirents = make(map[string]vfs.Dirent)
+		d.dirents = make(map[string]*vfs.Dirent)
 	}
-	d.dirents[dirent.Name] = dirent
+	d.order = append(d.order, &dirent)
+	d.dirents[dirent.Name] = &dirent
 	d.mu.Unlock()
 	return true
 }
@@ -175,4 +257,25 @@ func (d *DirentCollector) Contains(name string, typ uint8) error {
 		return fmt.Errorf("Dirent named %q found, but was expecting type %s, got: %+v", name, linux.DirentType.Parse(uint64(typ)), dirent)
 	}
 	return nil
+}
+
+// Dirents returns all dirents discovered by this collector.
+func (d *DirentCollector) Dirents() map[string]*vfs.Dirent {
+	d.mu.Lock()
+	dirents := make(map[string]*vfs.Dirent)
+	for n, d := range d.dirents {
+		dirents[n] = d
+	}
+	d.mu.Unlock()
+	return dirents
+}
+
+// OrderedDirents returns an ordered list of dirents as discovered by this
+// collector.
+func (d *DirentCollector) OrderedDirents() []*vfs.Dirent {
+	d.mu.Lock()
+	dirents := make([]*vfs.Dirent, len(d.order))
+	copy(dirents, d.order)
+	d.mu.Unlock()
+	return dirents
 }

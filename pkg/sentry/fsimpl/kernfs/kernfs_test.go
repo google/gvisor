@@ -212,7 +212,7 @@ func TestMkdirGetDentry(t *testing.T) {
 	defer sys.Destroy()
 
 	pop := sys.PathOpAtRoot("dir1/a new directory")
-	if err := sys.VFS.MkdirAt(sys.Ctx, sys.Creds, &pop, &vfs.MkdirOptions{Mode: 0755}); err != nil {
+	if err := sys.VFS.MkdirAt(sys.Ctx, sys.Creds, pop, &vfs.MkdirOptions{Mode: 0755}); err != nil {
 		t.Fatalf("MkdirAt for PathOperation %+v failed: %v", pop, err)
 	}
 	sys.GetDentryOrDie(pop).DecRef()
@@ -227,7 +227,7 @@ func TestReadStaticFile(t *testing.T) {
 	defer sys.Destroy()
 
 	pop := sys.PathOpAtRoot("file1")
-	fd, err := sys.VFS.OpenAt(sys.Ctx, sys.Creds, &pop, &vfs.OpenOptions{
+	fd, err := sys.VFS.OpenAt(sys.Ctx, sys.Creds, pop, &vfs.OpenOptions{
 		Flags: linux.O_RDONLY,
 	})
 	if err != nil {
@@ -254,7 +254,7 @@ func TestCreateNewFileInStaticDir(t *testing.T) {
 
 	pop := sys.PathOpAtRoot("dir1/newfile")
 	opts := &vfs.OpenOptions{Flags: linux.O_CREAT | linux.O_EXCL, Mode: defaultMode}
-	fd, err := sys.VFS.OpenAt(sys.Ctx, sys.Creds, &pop, opts)
+	fd, err := sys.VFS.OpenAt(sys.Ctx, sys.Creds, pop, opts)
 	if err != nil {
 		t.Fatalf("OpenAt(pop:%+v, opts:%+v) failed: %v", pop, opts, err)
 	}
@@ -262,7 +262,7 @@ func TestCreateNewFileInStaticDir(t *testing.T) {
 	// Close the file. The file should persist.
 	fd.DecRef()
 
-	fd, err = sys.VFS.OpenAt(sys.Ctx, sys.Creds, &pop, &vfs.OpenOptions{
+	fd, err = sys.VFS.OpenAt(sys.Ctx, sys.Creds, pop, &vfs.OpenOptions{
 		Flags: linux.O_RDONLY,
 	})
 	if err != nil {
@@ -278,7 +278,7 @@ func TestDirFDReadWrite(t *testing.T) {
 	defer sys.Destroy()
 
 	pop := sys.PathOpAtRoot("/")
-	fd, err := sys.VFS.OpenAt(sys.Ctx, sys.Creds, &pop, &vfs.OpenOptions{
+	fd, err := sys.VFS.OpenAt(sys.Ctx, sys.Creds, pop, &vfs.OpenOptions{
 		Flags: linux.O_RDONLY,
 	})
 	if err != nil {
@@ -309,7 +309,7 @@ func TestDirFDIterDirents(t *testing.T) {
 	defer sys.Destroy()
 
 	pop := sys.PathOpAtRoot("/")
-	sys.AssertDirectoryContains(&pop, map[string]testutil.DirentType{
+	sys.AssertAllDirentTypes(sys.ListDirents(pop), map[string]testutil.DirentType{
 		"dir1":  linux.DT_DIR,
 		"dir2":  linux.DT_DIR,
 		"file1": linux.DT_REG,
