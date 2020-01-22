@@ -30,7 +30,7 @@ func TestStructSize(t *testing.T) {
 //
 // The correctness of this package relies on these remaining in sync.
 func TestFieldValues(t *testing.T) {
-	var m TMutex
+	var m Mutex
 	m.Lock()
 	if got := *m.state(); got != mutexLocked {
 		t.Errorf("got locked sync.Mutex.state = %d, want = %d", got, mutexLocked)
@@ -42,7 +42,7 @@ func TestFieldValues(t *testing.T) {
 }
 
 func TestDoubleTryLock(t *testing.T) {
-	var m TMutex
+	var m Mutex
 	if !m.TryLock() {
 		t.Fatal("failed to aquire lock")
 	}
@@ -52,7 +52,7 @@ func TestDoubleTryLock(t *testing.T) {
 }
 
 func TestTryLockAfterLock(t *testing.T) {
-	var m TMutex
+	var m Mutex
 	m.Lock()
 	if m.TryLock() {
 		t.Fatal("unexpectedly succeeded in aquiring locked mutex")
@@ -60,7 +60,7 @@ func TestTryLockAfterLock(t *testing.T) {
 }
 
 func TestTryLockUnlock(t *testing.T) {
-	var m TMutex
+	var m Mutex
 	if !m.TryLock() {
 		t.Fatal("failed to aquire lock")
 	}
