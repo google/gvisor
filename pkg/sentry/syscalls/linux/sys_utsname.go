@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build amd64
+// +build amd64 arm64
 
 package linux
 
@@ -35,7 +35,15 @@ func Uname(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	copy(u.Nodename[:], uts.HostName())
 	copy(u.Release[:], version.Release)
 	copy(u.Version[:], version.Version)
-	copy(u.Machine[:], "x86_64") // build tag above.
+	// build tag above.
+	switch t.SyscallTable().Arch {
+	case arch.AMD64:
+		copy(u.Machine[:], "x86_64")
+	case arch.ARM64:
+		copy(u.Machine[:], "aarch64")
+	default:
+		copy(u.Machine[:], "unknown")
+	}
 	copy(u.Domainname[:], uts.DomainName())
 
 	// Copy out the result.
