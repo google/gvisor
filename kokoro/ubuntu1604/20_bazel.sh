@@ -16,7 +16,7 @@
 
 set -xeo pipefail
 
-declare -r BAZEL_VERSION=0.29.1
+declare -r BAZEL_VERSION=2.0.0
 
 # Install bazel dependencies.
 apt-get update && apt-get install -y openjdk-8-jdk-headless unzip
