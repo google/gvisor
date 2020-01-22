@@ -96,6 +96,11 @@ func (e *endpoint) UniqueID() uint64 {
 	return e.uniqueID
 }
 
+// Abort implements stack.TransportEndpoint.Abort.
+func (e *endpoint) Abort() {
+	e.Close()
+}
+
 // Close puts the endpoint in a closed state and frees all resources
 // associated with it.
 func (e *endpoint) Close() {

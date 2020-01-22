@@ -458,6 +458,9 @@ type Endpoint interface {
 
 	// Stats returns a reference to the endpoint stats.
 	Stats() EndpointStats
+
+	// Abort initiates an expedited endpoint teardown.
+	Abort()
 }
 
 // EndpointInfo is the interface implemented by each endpoint info struct.

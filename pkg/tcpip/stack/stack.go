@@ -1373,7 +1373,13 @@ func (s *Stack) RestoreCleanupEndpoints(es []TransportEndpoint) {
 // Endpoints created or modified during this call may not get closed.
 func (s *Stack) Close() {
 	for _, e := range s.RegisteredEndpoints() {
-		e.Close()
+		e.Abort()
+	}
+	for _, p := range s.transportProtocols {
+		p.proto.Close()
+	}
+	for _, p := range s.networkProtocols {
+		p.Close()
 	}
 }
 
@@ -1390,6 +1396,12 @@ func (s *Stack) Wait() {
 	}
 	for _, e := range s.CleanupEndpoints() {
 		e.Wait()
+	}
+	for _, p := range s.transportProtocols {
+		p.proto.Wait()
+	}
+	for _, p := range s.networkProtocols {
+		p.Wait()
 	}
 
 	s.mu.RLock()

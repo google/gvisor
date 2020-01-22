@@ -473,6 +473,12 @@ func (p *protocol) DefaultTTL() uint8 {
 	return uint8(atomic.LoadUint32(&p.defaultTTL))
 }
 
+// Close implements stack.TransportProtocol.Close.
+func (*protocol) Close() {}
+
+// Wait implements stack.TransportProtocol.Wait.
+func (*protocol) Wait() {}
+
 // calculateMTU calculates the network-layer payload MTU based on the link-layer
 // payload mtu.
 func calculateMTU(mtu uint32) uint32 {

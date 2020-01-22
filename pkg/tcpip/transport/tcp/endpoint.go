@@ -121,6 +121,8 @@ const (
 	notifyDrain
 	notifyReset
 	notifyResetByPeer
+	// notifyAbort is a request for an expedited teardown.
+	notifyAbort
 	notifyKeepaliveChanged
 	notifyMSSChanged
 	// notifyTickleWorker is used to tickle the protocol main loop during a
@@ -785,6 +787,15 @@ func (e *endpoint) notifyProtocolGoroutine(n uint32) {
 	}
 }
 
+// Abort implements stack.TransportEndpoint.Abort.
+func (e *endpoint) Abort() {
+	if e.EndpointState().connected() {
+		e.notifyProtocolGoroutine(notifyAbort)
+		return
+	}
+	e.Close()
+}
+
 // Close puts the endpoint in a closed state and frees all resources associated
 // with it. It must be called only once and with no other concurrent calls to
 // the endpoint.
@@ -829,9 +840,13 @@ func (e *endpoint) closeNoShutdown() {
 	// Either perform the local cleanup or kick the worker to make sure it
 	// knows it needs to cleanup.
 	tcpip.AddDanglingEndpoint(e)
-	if !e.workerRunning {
+	switch e.EndpointState() {
+	case StateInitial, StateBound:
 		e.cleanupLocked()
-	} else {
+		e.setEndpointState(StateClose)
+	case StateError, StateClose:
+		// do nothing.
+	default:
 		e.workerCleanup = true
 		e.notifyProtocolGoroutine(notifyClose)
 	}

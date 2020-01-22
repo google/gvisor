@@ -98,6 +98,11 @@ func NewEndpoint(s *stack.Stack, cooked bool, netProto tcpip.NetworkProtocolNumb
 	return ep, nil
 }
 
+// Abort implements stack.TransportEndpoint.Abort.
+func (e *endpoint) Abort() {
+	e.Close()
+}
+
 // Close implements tcpip.Endpoint.Close.
 func (ep *endpoint) Close() {
 	ep.mu.Lock()

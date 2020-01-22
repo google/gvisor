@@ -299,6 +299,13 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 	h := newPassiveHandshake(ep, seqnum.Size(ep.initialReceiveWindow()), isn, irs, opts, deferAccept)
 	if err := h.execute(); err != nil {
 		ep.Close()
+		// Wake up any waiters. This is strictly not required normally
+		// as a socket that was never accepted can't really have any
+		// registered waiters except when stack.Wait() is called which
+		// waits for all registered endpoints to stop and expects an
+		// EventHUp.
+		ep.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
+
 		if l.listenEP != nil {
 			l.removePendingEndpoint(ep)
 		}
@@ -607,7 +614,7 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 		e.mu.Unlock()
 
 		// Notify waiters that the endpoint is shutdown.
-		e.waiterQueue.Notify(waiter.EventIn | waiter.EventOut)
+		e.waiterQueue.Notify(waiter.EventIn | waiter.EventOut | waiter.EventHUp | waiter.EventErr)
 	}()
 
 	s := sleep.Sleeper{}
