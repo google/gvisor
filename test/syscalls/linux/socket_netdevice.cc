@@ -70,14 +70,14 @@ TEST(NetdeviceTest, Netmask) {
   // netmask obtained via ioctl.
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
-  uint32_t port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
+  uint32 port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
 
   struct request {
     struct nlmsghdr hdr;
     struct rtgenmsg rgm;
   };
 
-  constexpr uint32_t kSeq = 12345;
+  constexpr uint32 kSeq = 12345;
 
   struct request req;
   req.hdr.nlmsg_len = sizeof(req);
@@ -109,7 +109,7 @@ TEST(NetdeviceTest, Netmask) {
 
         struct ifaddrmsg *ifaddrmsg =
             reinterpret_cast<struct ifaddrmsg *>(NLMSG_DATA(hdr));
-        if (ifaddrmsg->ifa_index == static_cast<uint32_t>(ifr.ifr_ifindex) &&
+        if (ifaddrmsg->ifa_index == static_cast<uint32>(ifr.ifr_ifindex) &&
             ifaddrmsg->ifa_family == AF_INET) {
           prefixlen = ifaddrmsg->ifa_prefixlen;
         }
@@ -120,7 +120,7 @@ TEST(NetdeviceTest, Netmask) {
 
   // Netmask is stored big endian in struct sockaddr_in, so we do the same for
   // comparison.
-  uint32_t mask = 0xffffffff << (32 - prefixlen);
+  uint32 mask = 0xffffffff << (32 - prefixlen);
   mask = absl::gbswap_32(mask);
 
   // Check that the loopback interface has the correct subnet mask.

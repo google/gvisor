@@ -193,7 +193,7 @@ TEST_F(OpenTest, Fault) {
 
 TEST_F(OpenTest, AppendOnly) {
   // First write some data to the fresh file.
-  const int64_t kBufSize = 1024;
+  const int64 kBufSize = 1024;
   std::vector<char> buf(kBufSize, 'a');
 
   FileDescriptor fd0 = ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_RDWR));

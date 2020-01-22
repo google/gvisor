@@ -253,7 +253,7 @@ TEST(ChrootTest, ProcMemSelfMapsNoEscapeProcOpen) {
   // Mmap the newly created file.
   void* foo_map = mmap(nullptr, kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE,
                        foo.get(), 0);
-  ASSERT_THAT(reinterpret_cast<int64_t>(foo_map), SyscallSucceeds());
+  ASSERT_THAT(reinterpret_cast<int64>(foo_map), SyscallSucceeds());
 
   // Always unmap.
   auto cleanup_map = Cleanup(

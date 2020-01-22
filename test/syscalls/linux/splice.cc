@@ -139,7 +139,7 @@ TEST(SpliceTest, PipeOffsets) {
 // Event FDs may be used with splice without an offset.
 TEST(SpliceTest, FromEventFD) {
   // Open the input eventfd with an initial value so that it is readable.
-  constexpr uint64_t kEventFDValue = 1;
+  constexpr uint64 kEventFDValue = 1;
   int efd;
   ASSERT_THAT(efd = eventfd(kEventFDValue, 0), SyscallSucceeds());
   const FileDescriptor in_fd(efd);

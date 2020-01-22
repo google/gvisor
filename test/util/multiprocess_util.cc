@@ -135,7 +135,7 @@ PosixErrorOr<Cleanup> ForkAndExec(const std::string& filename,
   return ForkAndExecHelper(exec_fn, fn, child, execve_errno);
 }
 
-PosixErrorOr<Cleanup> ForkAndExecveat(const int32_t dirfd,
+PosixErrorOr<Cleanup> ForkAndExecveat(const int32 dirfd,
                                       const std::string& pathname,
                                       const ExecveArray& argv,
                                       const ExecveArray& envv, const int flags,

@@ -52,7 +52,7 @@ class Pwrite64 : public ::testing::Test {
 TEST_F(Pwrite64, AppendOnly) {
   int fd;
   ASSERT_THAT(fd = open(name_.c_str(), O_APPEND | O_RDWR), SyscallSucceeds());
-  constexpr int64_t kBufSize = 1024;
+  constexpr int64 kBufSize = 1024;
   std::vector<char> buf(kBufSize);
   std::fill(buf.begin(), buf.end(), 'a');
   EXPECT_THAT(PwriteFd(fd, buf.data(), buf.size(), 0),
@@ -64,7 +64,7 @@ TEST_F(Pwrite64, AppendOnly) {
 TEST_F(Pwrite64, InvalidArgs) {
   int fd;
   ASSERT_THAT(fd = open(name_.c_str(), O_APPEND | O_RDWR), SyscallSucceeds());
-  constexpr int64_t kBufSize = 1024;
+  constexpr int64 kBufSize = 1024;
   std::vector<char> buf(kBufSize);
   std::fill(buf.begin(), buf.end(), 'a');
   EXPECT_THAT(PwriteFd(fd, buf.data(), buf.size(), -1),

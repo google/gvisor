@@ -64,7 +64,7 @@ static const size_t kStackSize = 2 * kPageSize;
 // The child thread created in CloneAndExit runs this function.
 // This child does not have the TLS setup, so it must not use glibc functions.
 int CloneChild(void* priv) {
-  int64_t sleep = reinterpret_cast<int64_t>(priv);
+  int64 sleep = reinterpret_cast<int64>(priv);
   SleepSafe(absl::Seconds(sleep));
 
   // glibc's _exit(2) function wrapper will helpfully call exit_group(2),
@@ -75,7 +75,7 @@ int CloneChild(void* priv) {
 
 // ForkAndExit forks a child process which exits with exit_code, after
 // sleeping for the specified duration (seconds).
-pid_t ForkAndExit(int exit_code, int64_t sleep) {
+pid_t ForkAndExit(int exit_code, int64 sleep) {
   pid_t child = fork();
   if (child == 0) {
     SleepSafe(absl::Seconds(sleep));
@@ -84,16 +84,16 @@ pid_t ForkAndExit(int exit_code, int64_t sleep) {
   return child;
 }
 
-int64_t clock_gettime_nsecs(clockid_t id) {
+int64 clock_gettime_nsecs(clockid_t id) {
   struct timespec ts;
   TEST_PCHECK(clock_gettime(id, &ts) == 0);
   return (ts.tv_sec * 1000000000 + ts.tv_nsec);
 }
 
-void spin(int64_t sec) {
-  int64_t ns = sec * 1000000000;
-  int64_t start = clock_gettime_nsecs(CLOCK_THREAD_CPUTIME_ID);
-  int64_t end = start + ns;
+void spin(int64 sec) {
+  int64 ns = sec * 1000000000;
+  int64 start = clock_gettime_nsecs(CLOCK_THREAD_CPUTIME_ID);
+  int64 end = start + ns;
 
   do {
     constexpr int kLoopCount = 1000000;  // large and arbitrary
@@ -105,7 +105,7 @@ void spin(int64_t sec) {
 
 // ForkSpinAndExit forks a child process which exits with exit_code, after
 // spinning for the specified duration (seconds).
-pid_t ForkSpinAndExit(int exit_code, int64_t spintime) {
+pid_t ForkSpinAndExit(int exit_code, int64 spintime) {
   pid_t child = fork();
   if (child == 0) {
     spin(spintime);
@@ -141,7 +141,7 @@ int FreeStack(uintptr_t addr) {
 // CloneAndExit clones a child thread, which exits with 0 after sleeping for
 // the specified duration (must be in seconds). extra_flags are ORed against
 // the standard clone(2) flags.
-int CloneAndExit(int64_t sleep, uintptr_t stack, int extra_flags) {
+int CloneAndExit(int64 sleep, uintptr_t stack, int extra_flags) {
   return clone(CloneChild, reinterpret_cast<void*>(stack),
                CLONE_FILES | CLONE_FS | CLONE_SIGHAND | CLONE_VM | extra_flags,
                reinterpret_cast<void*>(sleep));

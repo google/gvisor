@@ -183,7 +183,7 @@ TEST_F(AIOTest, BadWrite) {
 
   // Verify that it fails with the right error code.
   EXPECT_EQ(events[0].data, 0x123);
-  EXPECT_EQ(events[0].obj, reinterpret_cast<uint64_t>(&cb));
+  EXPECT_EQ(events[0].obj, reinterpret_cast<uint64>(&cb));
   EXPECT_LT(events[0].res, 0);
 }
 

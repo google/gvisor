@@ -109,13 +109,13 @@ constexpr bool IsControlCharacter(char c) { return c <= 31; }
 
 struct Field {
   const char* name;
-  uint64_t mask;
-  uint64_t value;
+  uint64 mask;
+  uint64 value;
 };
 
 // ParseFields returns a string representation of value, using the names in
 // fields.
-std::string ParseFields(const Field* fields, size_t len, uint64_t value) {
+std::string ParseFields(const Field* fields, size_t len, uint64 value) {
   bool first = true;
   std::string s;
   for (size_t i = 0; i < len; i++) {
@@ -1213,8 +1213,8 @@ TEST_F(PtyTest, GetWindowSize) {
 }
 
 TEST_F(PtyTest, SetSlaveWindowSize) {
-  constexpr uint16_t kRows = 343;
-  constexpr uint16_t kCols = 2401;
+  constexpr uint16 kRows = 343;
+  constexpr uint16 kCols = 2401;
   struct winsize ws = {.ws_row = kRows, .ws_col = kCols};
   ASSERT_THAT(ioctl(slave_.get(), TIOCSWINSZ, &ws), SyscallSucceeds());
 
@@ -1226,8 +1226,8 @@ TEST_F(PtyTest, SetSlaveWindowSize) {
 }
 
 TEST_F(PtyTest, SetMasterWindowSize) {
-  constexpr uint16_t kRows = 343;
-  constexpr uint16_t kCols = 2401;
+  constexpr uint16 kRows = 343;
+  constexpr uint16 kCols = 2401;
   struct winsize ws = {.ws_row = kRows, .ws_col = kCols};
   ASSERT_THAT(ioctl(master_.get(), TIOCSWINSZ, &ws), SyscallSucceeds());
 

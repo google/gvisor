@@ -507,7 +507,7 @@ void TransferTest(int fd1, int fd2) {
 
 // Initializes the given buffer with random data.
 void RandomizeBuffer(char* ptr, size_t len) {
-  uint32_t seed = time(nullptr);
+  uint32 seed = time(nullptr);
   for (size_t i = 0; i < len; ++i) {
     ptr[i] = static_cast<char>(rand_r(&seed));
   }

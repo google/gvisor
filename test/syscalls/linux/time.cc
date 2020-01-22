@@ -28,7 +28,7 @@ constexpr long kFudgeSeconds = 5;
 
 // Mimics the time(2) wrapper from glibc prior to 2.15.
 time_t vsyscall_time(time_t* t) {
-  constexpr uint64_t kVsyscallTimeEntry = 0xffffffffff600400;
+  constexpr uint64 kVsyscallTimeEntry = 0xffffffffff600400;
   return reinterpret_cast<time_t (*)(time_t*)>(kVsyscallTimeEntry)(t);
 }
 
@@ -63,7 +63,7 @@ TEST(TimeTest, VsyscallTime_InvalidAddressSIGSEGV) {
 }
 
 int vsyscall_gettimeofday(struct timeval* tv, struct timezone* tz) {
-  constexpr uint64_t kVsyscallGettimeofdayEntry = 0xffffffffff600000;
+  constexpr uint64 kVsyscallGettimeofdayEntry = 0xffffffffff600000;
   return reinterpret_cast<int (*)(struct timeval*, struct timezone*)>(
       kVsyscallGettimeofdayEntry)(tv, tz);
 }

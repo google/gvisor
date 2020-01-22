@@ -50,13 +50,13 @@ namespace testing {
 
 namespace {
 
-PosixErrorOr<int64_t> VirtualMemorySize() {
+PosixErrorOr<int64> VirtualMemorySize() {
   ASSIGN_OR_RETURN_ERRNO(auto contents, GetContents("/proc/self/statm"));
   std::vector<std::string> parts = absl::StrSplit(contents, ' ');
   if (parts.empty()) {
     return PosixError(EINVAL, "Unable to parse /proc/self/statm");
   }
-  ASSIGN_OR_RETURN_ERRNO(auto pages, Atoi<int64_t>(parts[0]));
+  ASSIGN_OR_RETURN_ERRNO(auto pages, Atoi<int64>(parts[0]));
   return pages * getpagesize();
 }
 
@@ -245,7 +245,7 @@ TEST_F(MMapTest, MapDevZeroSharedFdNoPersistence) {
   // Create a second mapping via the same fd.
   void* psec_map = mmap(nullptr, kPageSize, PROT_READ | PROT_WRITE, MAP_SHARED,
                         dev_zero.get(), 0);
-  ASSERT_THAT(reinterpret_cast<int64_t>(psec_map), SyscallSucceeds());
+  ASSERT_THAT(reinterpret_cast<int64>(psec_map), SyscallSucceeds());
 
   // Always unmap.
   auto cleanup_psec_map = Cleanup(
@@ -690,10 +690,10 @@ TEST_F(MMapTest, ExceedLimitDataPrlimitPID) {
 }
 
 TEST_F(MMapTest, NoExceedLimitAS) {
-  constexpr uint64_t kAllocBytes = 200 << 20;
+  constexpr uint64 kAllocBytes = 200 << 20;
   // Add some headroom to the AS limit in case of e.g. unexpected stack
   // expansion.
-  constexpr uint64_t kExtraASBytes = kAllocBytes + (20 << 20);
+  constexpr uint64 kExtraASBytes = kAllocBytes + (20 << 20);
   static_assert(kAllocBytes < kExtraASBytes,
                 "test depends on allocation not exceeding AS limit");
 
@@ -708,10 +708,10 @@ TEST_F(MMapTest, NoExceedLimitAS) {
 }
 
 TEST_F(MMapTest, ExceedLimitAS) {
-  constexpr uint64_t kAllocBytes = 200 << 20;
+  constexpr uint64 kAllocBytes = 200 << 20;
   // Add some headroom to the AS limit in case of e.g. unexpected stack
   // expansion.
-  constexpr uint64_t kExtraASBytes = 20 << 20;
+  constexpr uint64 kExtraASBytes = 20 << 20;
   static_assert(kAllocBytes > kExtraASBytes,
                 "test depends on allocation exceeding AS limit");
 
@@ -1469,7 +1469,7 @@ TEST_F(MMapFileTest, InternalSigBusZeroing) {
               SyscallFailsWithErrno(EFAULT));
 }
 
-// Checks that mmaps with a length of uint64_t(-PAGE_SIZE + 1) or greater do not
+// Checks that mmaps with a length of uint64(-PAGE_SIZE + 1) or greater do not
 // induce a sentry panic (due to "rounding up" to 0).
 TEST_F(MMapTest, HugeLength) {
   EXPECT_THAT(Map(0, static_cast<uint64_t>(-kPageSize + 1), PROT_NONE,

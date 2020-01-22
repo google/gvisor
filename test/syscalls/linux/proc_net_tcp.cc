@@ -40,15 +40,15 @@ constexpr char kProcNetTCPHeader[] =
 
 // TCPEntry represents a single entry from /proc/net/tcp.
 struct TCPEntry {
-  uint32_t local_addr;
-  uint16_t local_port;
+  uint32 local_addr;
+  uint16 local_port;
 
-  uint32_t remote_addr;
-  uint16_t remote_port;
+  uint32 remote_addr;
+  uint16 remote_port;
 
-  uint64_t state;
-  uint64_t uid;
-  uint64_t inode;
+  uint64 state;
+  uint64 uid;
+  uint64 inode;
 };
 
 // Finds the first entry in 'entries' for which 'predicate' returns true.
@@ -69,8 +69,8 @@ bool FindBy(const std::vector<TCPEntry>& entries, TCPEntry* match,
 
 bool FindByLocalAddr(const std::vector<TCPEntry>& entries, TCPEntry* match,
                      const struct sockaddr* addr) {
-  uint32_t host = IPFromInetSockaddr(addr);
-  uint16_t port = PortFromInetSockaddr(addr);
+  uint32 host = IPFromInetSockaddr(addr);
+  uint16 port = PortFromInetSockaddr(addr);
   return FindBy(entries, match, [host, port](const TCPEntry& e) {
     return (e.local_addr == host && e.local_port == port);
   });
@@ -78,8 +78,8 @@ bool FindByLocalAddr(const std::vector<TCPEntry>& entries, TCPEntry* match,
 
 bool FindByRemoteAddr(const std::vector<TCPEntry>& entries, TCPEntry* match,
                       const struct sockaddr* addr) {
-  uint32_t host = IPFromInetSockaddr(addr);
-  uint16_t port = PortFromInetSockaddr(addr);
+  uint32 host = IPFromInetSockaddr(addr);
+  uint16 port = PortFromInetSockaddr(addr);
   return FindBy(entries, match, [host, port](const TCPEntry& e) {
     return (e.remote_addr == host && e.remote_port == port);
   });
@@ -131,8 +131,8 @@ PosixErrorOr<std::vector<TCPEntry>> ProcNetTCPEntries() {
     ASSIGN_OR_RETURN_ERRNO(entry.remote_port, AtoiBase(fields[4], 16));
 
     ASSIGN_OR_RETURN_ERRNO(entry.state, AtoiBase(fields[5], 16));
-    ASSIGN_OR_RETURN_ERRNO(entry.uid, Atoi<uint64_t>(fields[11]));
-    ASSIGN_OR_RETURN_ERRNO(entry.inode, Atoi<uint64_t>(fields[13]));
+    ASSIGN_OR_RETURN_ERRNO(entry.uid, Atoi<uint64>(fields[11]));
+    ASSIGN_OR_RETURN_ERRNO(entry.inode, Atoi<uint64>(fields[13]));
 
     entries.push_back(entry);
   }
@@ -234,8 +234,8 @@ TEST(ProcNetTCP, State) {
   FileDescriptor accepted =
       ASSERT_NO_ERRNO_AND_VALUE(Accept(server->get(), nullptr, nullptr));
 
-  const uint32_t accepted_local_host = IPFromInetSockaddr(&addr);
-  const uint16_t accepted_local_port = PortFromInetSockaddr(&addr);
+  const uint32 accepted_local_host = IPFromInetSockaddr(&addr);
+  const uint16 accepted_local_port = PortFromInetSockaddr(&addr);
 
   entries = ASSERT_NO_ERRNO_AND_VALUE(ProcNetTCPEntries());
   TCPEntry accepted_entry;
@@ -258,14 +258,14 @@ constexpr char kProcNetTCP6Header[] =
 // TCP6Entry represents a single entry from /proc/net/tcp6.
 struct TCP6Entry {
   struct in6_addr local_addr;
-  uint16_t local_port;
+  uint16 local_port;
 
   struct in6_addr remote_addr;
-  uint16_t remote_port;
+  uint16 remote_port;
 
-  uint64_t state;
-  uint64_t uid;
-  uint64_t inode;
+  uint64 state;
+  uint64 uid;
+  uint64 inode;
 };
 
 bool IPv6AddrEqual(const struct in6_addr* a1, const struct in6_addr* a2) {
@@ -296,7 +296,7 @@ const struct in6_addr* IP6FromInetSockaddr(const struct sockaddr* addr) {
 bool FindByLocalAddr6(const std::vector<TCP6Entry>& entries, TCP6Entry* match,
                       const struct sockaddr* addr) {
   const struct in6_addr* local = IP6FromInetSockaddr(addr);
-  uint16_t port = PortFromInetSockaddr(addr);
+  uint16 port = PortFromInetSockaddr(addr);
   return FindBy6(entries, match, [local, port](const TCP6Entry& e) {
     return (IPv6AddrEqual(&e.local_addr, local) && e.local_port == port);
   });
@@ -305,22 +305,22 @@ bool FindByLocalAddr6(const std::vector<TCP6Entry>& entries, TCP6Entry* match,
 bool FindByRemoteAddr6(const std::vector<TCP6Entry>& entries, TCP6Entry* match,
                        const struct sockaddr* addr) {
   const struct in6_addr* remote = IP6FromInetSockaddr(addr);
-  uint16_t port = PortFromInetSockaddr(addr);
+  uint16 port = PortFromInetSockaddr(addr);
   return FindBy6(entries, match, [remote, port](const TCP6Entry& e) {
     return (IPv6AddrEqual(&e.remote_addr, remote) && e.remote_port == port);
   });
 }
 
 void ReadIPv6Address(std::string s, struct in6_addr* addr) {
-  uint32_t a0, a1, a2, a3;
+  uint32 a0, a1, a2, a3;
   const char* fmt = "%08X%08X%08X%08X";
   EXPECT_EQ(sscanf(s.c_str(), fmt, &a0, &a1, &a2, &a3), 4);
 
-  uint8_t* b = addr->s6_addr;
-  *((uint32_t*)&b[0]) = a0;
-  *((uint32_t*)&b[4]) = a1;
-  *((uint32_t*)&b[8]) = a2;
-  *((uint32_t*)&b[12]) = a3;
+  uint8* b = addr->s6_addr;
+  *((uint32*)&b[0]) = a0;
+  *((uint32*)&b[4]) = a1;
+  *((uint32*)&b[8]) = a2;
+  *((uint32*)&b[12]) = a3;
 }
 
 // Returns a parsed representation of /proc/net/tcp6 entries.
@@ -367,8 +367,8 @@ PosixErrorOr<std::vector<TCP6Entry>> ProcNetTCP6Entries() {
     ReadIPv6Address(fields[3], &entry.remote_addr);
     ASSIGN_OR_RETURN_ERRNO(entry.remote_port, AtoiBase(fields[4], 16));
     ASSIGN_OR_RETURN_ERRNO(entry.state, AtoiBase(fields[5], 16));
-    ASSIGN_OR_RETURN_ERRNO(entry.uid, Atoi<uint64_t>(fields[11]));
-    ASSIGN_OR_RETURN_ERRNO(entry.inode, Atoi<uint64_t>(fields[13]));
+    ASSIGN_OR_RETURN_ERRNO(entry.uid, Atoi<uint64>(fields[11]));
+    ASSIGN_OR_RETURN_ERRNO(entry.inode, Atoi<uint64>(fields[13]));
 
     entries.push_back(entry);
   }
@@ -476,7 +476,7 @@ TEST(ProcNetTCP6, State) {
       ASSERT_NO_ERRNO_AND_VALUE(Accept(server->get(), nullptr, nullptr));
 
   const struct in6_addr* local = IP6FromInetSockaddr(addr);
-  const uint16_t accepted_local_port = PortFromInetSockaddr(addr);
+  const uint16 accepted_local_port = PortFromInetSockaddr(addr);
 
   entries = ASSERT_NO_ERRNO_AND_VALUE(ProcNetTCP6Entries());
   TCP6Entry accepted_entry;

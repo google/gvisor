@@ -48,26 +48,26 @@ constexpr int kBufSize = 1024;
 
 // C++-friendly version of struct inotify_event.
 struct Event {
-  int32_t wd;
-  uint32_t mask;
-  uint32_t cookie;
-  uint32_t len;
+  int32 wd;
+  uint32 mask;
+  uint32 cookie;
+  uint32 len;
   std::string name;
 
-  Event(uint32_t mask, int32_t wd, absl::string_view name, uint32_t cookie)
+  Event(uint32 mask, int32 wd, absl::string_view name, uint32 cookie)
       : wd(wd),
         mask(mask),
         cookie(cookie),
         len(name.size()),
         name(std::string(name)) {}
-  Event(uint32_t mask, int32_t wd, absl::string_view name)
+  Event(uint32 mask, int32 wd, absl::string_view name)
       : Event(mask, wd, name, 0) {}
-  Event(uint32_t mask, int32_t wd) : Event(mask, wd, "", 0) {}
+  Event(uint32 mask, int32 wd) : Event(mask, wd, "", 0) {}
   Event() : Event(0, 0, "", 0) {}
 };
 
 // Prints the symbolic name for a struct inotify_event's 'mask' field.
-std::string FlagString(uint32_t flags) {
+std::string FlagString(uint32 flags) {
   std::vector<std::string> names;
 
 #define EMIT(target)          \
@@ -320,7 +320,7 @@ PosixErrorOr<FileDescriptor> InotifyInit1(int flags) {
 }
 
 PosixErrorOr<int> InotifyAddWatch(int fd, const std::string& path,
-                                  uint32_t mask) {
+                                  uint32 mask) {
   int wd;
   EXPECT_THAT(wd = inotify_add_watch(fd, path.c_str(), mask),
               SyscallSucceeds());
@@ -647,7 +647,7 @@ TEST(Inotify, MoveGeneratesEvents) {
            Event(IN_MOVED_TO, root_wd, Basename(newpath), events[1].cookie)}));
   EXPECT_NE(events[0].cookie, 0);
   EXPECT_EQ(events[0].cookie, events[1].cookie);
-  uint32_t last_cookie = events[0].cookie;
+  uint32 last_cookie = events[0].cookie;
 
   // Test move from root -> root/dir1.
   newpath = NewTempAbsPathInDir(dir1.path());
@@ -841,7 +841,7 @@ TEST(Inotify, ConcurrentThreadsGeneratingEvents) {
   }
 
   auto test_thread = [&files]() {
-    uint32_t seed = time(nullptr);
+    uint32 seed = time(nullptr);
     for (int i = 0; i < 20; i++) {
       const TempPath& file = files[rand_r(&seed) % files.size()];
       const FileDescriptor file_fd =
@@ -960,7 +960,7 @@ TEST(Inotify, BlockingReadOnInotifyFd) {
   t.Join();
 
   // Make sure the event we got back is sane.
-  uint32_t event_mask;
+  uint32 event_mask;
   memcpy(&event_mask, buf.data() + offsetof(struct inotify_event, mask),
          sizeof(event_mask));
   EXPECT_EQ(event_mask, IN_ACCESS);

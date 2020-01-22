@@ -264,7 +264,7 @@ std::ostream& operator<<(std::ostream& out, OpenFd const& ofd);
 PosixErrorOr<std::vector<OpenFd>> GetOpenFDs();
 
 // Returns the number of hard links to a path.
-PosixErrorOr<uint64_t> Links(const std::string& path);
+PosixErrorOr<uint64> Links(const std::string& path);
 
 namespace internal {
 
@@ -706,7 +706,7 @@ inline PosixErrorOr<T> Atoi(absl::string_view str) {
   return ret;
 }
 
-inline PosixErrorOr<uint64_t> AtoiBase(absl::string_view str, int base) {
+inline PosixErrorOr<uint64> AtoiBase(absl::string_view str, int base) {
   if (base > 255 || base < 2) {
     return PosixError(EINVAL, "Invalid Base");
   }
@@ -737,16 +737,16 @@ inline PosixErrorOr<float> Atof(absl::string_view str) {
 
 // Return the smallest number of iovec arrays that can be used to write
 // "total_bytes" number of bytes, each iovec writing one "buf".
-std::vector<std::vector<struct iovec>> GenerateIovecs(uint64_t total_size,
+std::vector<std::vector<struct iovec>> GenerateIovecs(uint64 total_size,
                                                       void* buf, size_t buflen);
 
 // Returns bytes in 'n' megabytes. Used for readability.
-uint64_t Megabytes(uint64_t n);
+uint64 Megabytes(uint64 n);
 
 // Predicate for checking that a value is within some tolerance of another
 // value. Returns true iff current is in the range [target * (1 - tolerance),
 // target * (1 + tolerance)].
-bool Equivalent(uint64_t current, uint64_t target, double tolerance);
+bool Equivalent(uint64 current, uint64 target, double tolerance);
 
 // Matcher wrapping the Equivalent predicate.
 MATCHER_P2(EquivalentWithin, target, tolerance,
@@ -756,7 +756,7 @@ MATCHER_P2(EquivalentWithin, target, tolerance,
   if (target == 0) {
     *result_listener << ::absl::StreamFormat("difference of infinity%%");
   } else {
-    int64_t delta = static_cast<int64_t>(arg) - static_cast<int64_t>(target);
+    int64 delta = static_cast<int64>(arg) - static_cast<int64>(target);
     double delta_percent =
         static_cast<double>(delta) / static_cast<double>(target) * 100;
     *result_listener << ::absl::StreamFormat("difference of %.2f%%",

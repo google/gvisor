@@ -53,7 +53,7 @@ class RawHDRINCL : public ::testing::Test {
   // Fills in buf with an IP header, UDP header, and payload. Returns false if
   // buf_size isn't large enough to hold everything.
   bool FillPacket(char* buf, size_t buf_size, int port, const char* payload,
-                  uint16_t payload_size);
+                  uint16 payload_size);
 
   // The socket used for both reading and writing.
   int socket_;
@@ -104,7 +104,7 @@ struct iphdr RawHDRINCL::LoopbackHeader() {
 }
 
 bool RawHDRINCL::FillPacket(char* buf, size_t buf_size, int port,
-                            const char* payload, uint16_t payload_size) {
+                            const char* payload, uint16 payload_size) {
   if (buf_size < sizeof(struct iphdr) + sizeof(struct udphdr) + payload_size) {
     return false;
   }

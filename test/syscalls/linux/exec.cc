@@ -62,7 +62,7 @@ constexpr char kExecFromThread[] = "--exec_exec_from_thread";
 
 // Runs file specified by dirfd and pathname with argv and checks that the exit
 // status is expect_status and that stderr contains expect_stderr.
-void CheckExecHelper(const absl::optional<int32_t> dirfd,
+void CheckExecHelper(const absl::optional<int32> dirfd,
                      const std::string& pathname, const ExecveArray& argv,
                      const ExecveArray& envv, const int flags,
                      int expect_status, const std::string& expect_stderr) {
@@ -143,15 +143,15 @@ void CheckExecHelper(const absl::optional<int32_t> dirfd,
 void CheckExec(const std::string& filename, const ExecveArray& argv,
                const ExecveArray& envv, int expect_status,
                const std::string& expect_stderr) {
-  CheckExecHelper(/*dirfd=*/absl::optional<int32_t>(), filename, argv, envv,
+  CheckExecHelper(/*dirfd=*/absl::optional<int32>(), filename, argv, envv,
                   /*flags=*/0, expect_status, expect_stderr);
 }
 
-void CheckExecveat(const int32_t dirfd, const std::string& pathname,
+void CheckExecveat(const int32 dirfd, const std::string& pathname,
                    const ExecveArray& argv, const ExecveArray& envv,
                    const int flags, int expect_status,
                    const std::string& expect_stderr) {
-  CheckExecHelper(absl::optional<int32_t>(dirfd), pathname, argv, envv, flags,
+  CheckExecHelper(absl::optional<int32>(dirfd), pathname, argv, envv, flags,
                   expect_status, expect_stderr);
 }
 
@@ -603,7 +603,7 @@ TEST(ExecveatTest, AbsolutePathWithFDCWD) {
 TEST(ExecveatTest, AbsolutePath) {
   std::string path = RunfilePath(kBasicWorkload);
   // File descriptor should be ignored when an absolute path is given.
-  const int32_t badFD = -1;
+  const int32 badFD = -1;
   CheckExecveat(badFD, path, {path}, {}, ArgEnvExitStatus(0, 0), 0,
                 absl::StrCat(path, "\n"));
 }

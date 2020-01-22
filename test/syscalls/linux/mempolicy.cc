@@ -43,12 +43,12 @@ namespace {
 #define MPOL_MF_MOVE (1 << 1)
 #define MPOL_MF_MOVE_ALL (1 << 2)
 
-int get_mempolicy(int *policy, uint64_t *nmask, uint64_t maxnode, void *addr,
+int get_mempolicy(int *policy, uint64 *nmask, uint64 maxnode, void *addr,
                   int flags) {
   return syscall(SYS_get_mempolicy, policy, nmask, maxnode, addr, flags);
 }
 
-int set_mempolicy(int mode, uint64_t *nmask, uint64_t maxnode) {
+int set_mempolicy(int mode, uint64 *nmask, uint64 maxnode) {
   return syscall(SYS_set_mempolicy, mode, nmask, maxnode);
 }
 
@@ -68,8 +68,8 @@ Cleanup ScopedMempolicy() {
 
 // Temporarily change the memory policy for the calling thread within the
 // caller's scope.
-PosixErrorOr<Cleanup> ScopedSetMempolicy(int mode, uint64_t *nmask,
-                                         uint64_t maxnode) {
+PosixErrorOr<Cleanup> ScopedSetMempolicy(int mode, uint64 *nmask,
+                                         uint64 maxnode) {
   if (set_mempolicy(mode, nmask, maxnode)) {
     return PosixError(errno, "set_mempolicy");
   }
@@ -78,7 +78,7 @@ PosixErrorOr<Cleanup> ScopedSetMempolicy(int mode, uint64_t *nmask,
 
 TEST(MempolicyTest, CheckDefaultPolicy) {
   int mode = 0;
-  uint64_t nodemask = 0;
+  uint64 nodemask = 0;
   ASSERT_THAT(get_mempolicy(&mode, &nodemask, sizeof(nodemask) * BITS_PER_BYTE,
                             nullptr, 0),
               SyscallSucceeds());
@@ -88,12 +88,12 @@ TEST(MempolicyTest, CheckDefaultPolicy) {
 }
 
 TEST(MempolicyTest, PolicyPreservedAfterSetMempolicy) {
-  uint64_t nodemask = 0x1;
+  uint64 nodemask = 0x1;
   auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(ScopedSetMempolicy(
       MPOL_BIND, &nodemask, sizeof(nodemask) * BITS_PER_BYTE));
 
   int mode = 0;
-  uint64_t nodemask_after = 0x0;
+  uint64 nodemask_after = 0x0;
   ASSERT_THAT(get_mempolicy(&mode, &nodemask_after,
                             sizeof(nodemask_after) * BITS_PER_BYTE, nullptr, 0),
               SyscallSucceeds());
@@ -118,7 +118,7 @@ TEST(MempolicyTest, PolicyPreservedAfterSetMempolicy) {
 
 TEST(MempolicyTest, SetMempolicyRejectsInvalidInputs) {
   auto cleanup = ScopedMempolicy();
-  uint64_t nodemask;
+  uint64 nodemask;
 
   if (IsRunningOnGvisor()) {
     // Invalid nodemask, we only support a single node on gvisor.
@@ -165,7 +165,7 @@ TEST(MempolicyTest, EmptyNodemaskOnSet) {
               SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(set_mempolicy(MPOL_PREFERRED, nullptr, 1), SyscallSucceeds());
 
-  uint64_t nodemask = 0x1;
+  uint64 nodemask = 0x1;
   EXPECT_THAT(set_mempolicy(MPOL_DEFAULT, &nodemask, 0),
               SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(set_mempolicy(MPOL_BIND, &nodemask, 0),
@@ -175,7 +175,7 @@ TEST(MempolicyTest, EmptyNodemaskOnSet) {
 }
 
 TEST(MempolicyTest, QueryAvailableNodes) {
-  uint64_t nodemask = 0;
+  uint64 nodemask = 0;
   ASSERT_THAT(
       get_mempolicy(nullptr, &nodemask, sizeof(nodemask) * BITS_PER_BYTE,
                     nullptr, MPOL_F_MEMS_ALLOWED),
@@ -197,8 +197,8 @@ TEST(MempolicyTest, QueryAvailableNodes) {
 }
 
 TEST(MempolicyTest, GetMempolicyQueryNodeForAddress) {
-  uint64_t dummy_stack_address;
-  auto dummy_heap_address = absl::make_unique<uint64_t>();
+  uint64 dummy_stack_address;
+  auto dummy_heap_address = absl::make_unique<uint64>();
   int mode;
 
   for (auto ptr : {&dummy_stack_address, dummy_heap_address.get()}) {
@@ -228,7 +228,7 @@ TEST(MempolicyTest, GetMempolicyQueryNodeForAddress) {
 
 TEST(MempolicyTest, GetMempolicyCanOmitPointers) {
   int mode;
-  uint64_t nodemask;
+  uint64 nodemask;
 
   // Omit nodemask pointer.
   ASSERT_THAT(get_mempolicy(&mode, nullptr, 0, nullptr, 0), SyscallSucceeds());
@@ -249,7 +249,7 @@ TEST(MempolicyTest, GetMempolicyNextInterleaveNode) {
               SyscallFailsWithErrno(EINVAL));
 
   // Set default policy for thread to MPOL_INTERLEAVE.
-  uint64_t nodemask = 0x1;
+  uint64 nodemask = 0x1;
   auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(ScopedSetMempolicy(
       MPOL_INTERLEAVE, &nodemask, sizeof(nodemask) * BITS_PER_BYTE));
 

@@ -25,7 +25,7 @@ namespace testing {
 namespace {
 
 time_t vsyscall_time(time_t* t) {
-  constexpr uint64_t kVsyscallTimeEntry = 0xffffffffff600400;
+  constexpr uint64 kVsyscallTimeEntry = 0xffffffffff600400;
   return reinterpret_cast<time_t (*)(time_t*)>(kVsyscallTimeEntry)(t);
 }
 

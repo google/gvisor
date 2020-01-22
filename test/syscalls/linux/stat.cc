@@ -568,35 +568,35 @@ TEST(SimpleStatTest, AnonDeviceAllocatesUniqueInodesAcrossSaveRestore) {
 
 // struct kernel_statx_timestamp is a Linux statx_timestamp struct.
 struct kernel_statx_timestamp {
-  int64_t tv_sec;
-  uint32_t tv_nsec;
-  int32_t __reserved;
+  int64 tv_sec;
+  uint32 tv_nsec;
+  int32 __reserved;
 };
 
 // struct kernel_statx is a Linux statx struct. Old versions of glibc do not
 // expose it. See include/uapi/linux/stat.h
 struct kernel_statx {
-  uint32_t stx_mask;
-  uint32_t stx_blksize;
-  uint64_t stx_attributes;
-  uint32_t stx_nlink;
-  uint32_t stx_uid;
-  uint32_t stx_gid;
-  uint16_t stx_mode;
-  uint16_t __spare0[1];
-  uint64_t stx_ino;
-  uint64_t stx_size;
-  uint64_t stx_blocks;
-  uint64_t stx_attributes_mask;
+  uint32 stx_mask;
+  uint32 stx_blksize;
+  uint64 stx_attributes;
+  uint32 stx_nlink;
+  uint32 stx_uid;
+  uint32 stx_gid;
+  uint16 stx_mode;
+  uint16 __spare0[1];
+  uint64 stx_ino;
+  uint64 stx_size;
+  uint64 stx_blocks;
+  uint64 stx_attributes_mask;
   struct kernel_statx_timestamp stx_atime;
   struct kernel_statx_timestamp stx_btime;
   struct kernel_statx_timestamp stx_ctime;
   struct kernel_statx_timestamp stx_mtime;
-  uint32_t stx_rdev_major;
-  uint32_t stx_rdev_minor;
-  uint32_t stx_dev_major;
-  uint32_t stx_dev_minor;
-  uint64_t __spare2[14];
+  uint32 stx_rdev_major;
+  uint32 stx_rdev_minor;
+  uint32 stx_dev_major;
+  uint32 stx_dev_minor;
+  uint64 __spare2[14];
 };
 
 int statx(int dirfd, const char *pathname, int flags, unsigned int mask,

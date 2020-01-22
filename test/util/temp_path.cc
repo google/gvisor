@@ -32,7 +32,7 @@ namespace testing {
 
 namespace {
 
-std::atomic<uint64_t> global_temp_file_number = ATOMIC_VAR_INIT(1);
+std::atomic<uint64> global_temp_file_number = ATOMIC_VAR_INIT(1);
 
 // Return a new temp filename, intended to be unique system-wide.
 //

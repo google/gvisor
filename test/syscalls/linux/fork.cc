@@ -270,7 +270,7 @@ TEST_F(ForkTest, Alarm) {
 
 // Child cannot affect parent private memory.
 TEST_F(ForkTest, PrivateMemory) {
-  std::atomic<uint32_t> local(0);
+  std::atomic<uint32> local(0);
 
   pid_t child1 = Fork();
   if (child1 == 0) {

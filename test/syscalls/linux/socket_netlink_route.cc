@@ -116,14 +116,14 @@ void CheckGetLinkResponse(const struct nlmsghdr* hdr, int seq, int port) {
 TEST(NetlinkRouteTest, GetLinkDump) {
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
-  uint32_t port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
+  uint32 port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
 
   struct request {
     struct nlmsghdr hdr;
     struct ifinfomsg ifm;
   };
 
-  constexpr uint32_t kSeq = 12345;
+  constexpr uint32 kSeq = 12345;
 
   struct request req = {};
   req.hdr.nlmsg_len = sizeof(req);
@@ -164,7 +164,7 @@ TEST(NetlinkRouteTest, MsgHdrMsgUnsuppType) {
     struct ifinfomsg ifm;
   };
 
-  constexpr uint32_t kSeq = 12345;
+  constexpr uint32 kSeq = 12345;
 
   struct request req = {};
   req.hdr.nlmsg_len = sizeof(req);
@@ -198,7 +198,7 @@ TEST(NetlinkRouteTest, MsgHdrMsgTrunc) {
     struct ifinfomsg ifm;
   };
 
-  constexpr uint32_t kSeq = 12345;
+  constexpr uint32 kSeq = 12345;
 
   struct request req = {};
   req.hdr.nlmsg_len = sizeof(req);
@@ -238,7 +238,7 @@ TEST(NetlinkRouteTest, MsgTruncMsgHdrMsgTrunc) {
     struct ifinfomsg ifm;
   };
 
-  constexpr uint32_t kSeq = 12345;
+  constexpr uint32 kSeq = 12345;
 
   struct request req = {};
   req.hdr.nlmsg_len = sizeof(req);
@@ -274,7 +274,7 @@ TEST(NetlinkRouteTest, MsgTruncMsgHdrMsgTrunc) {
 TEST(NetlinkRouteTest, ControlMessageIgnored) {
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
-  uint32_t port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
+  uint32 port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
 
   struct request {
     struct nlmsghdr control_hdr;
@@ -282,7 +282,7 @@ TEST(NetlinkRouteTest, ControlMessageIgnored) {
     struct ifinfomsg ifm;
   };
 
-  constexpr uint32_t kSeq = 12345;
+  constexpr uint32 kSeq = 12345;
 
   struct request req = {};
 
@@ -310,14 +310,14 @@ TEST(NetlinkRouteTest, ControlMessageIgnored) {
 TEST(NetlinkRouteTest, GetAddrDump) {
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
-  uint32_t port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
+  uint32 port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
 
   struct request {
     struct nlmsghdr hdr;
     struct rtgenmsg rgm;
   };
 
-  constexpr uint32_t kSeq = 12345;
+  constexpr uint32 kSeq = 12345;
 
   struct request req;
   req.hdr.nlmsg_len = sizeof(req);
@@ -371,14 +371,14 @@ TEST(NetlinkRouteTest, LookupAll) {
 TEST(NetlinkRouteTest, GetRouteDump) {
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
-  uint32_t port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
+  uint32 port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
 
   struct request {
     struct nlmsghdr hdr;
     struct rtmsg rtm;
   };
 
-  constexpr uint32_t kSeq = 12345;
+  constexpr uint32 kSeq = 12345;
 
   struct request req = {};
   req.hdr.nlmsg_len = sizeof(req);
@@ -454,7 +454,7 @@ TEST(NetlinkRouteTest, RecvmsgTrunc) {
     struct rtgenmsg rgm;
   };
 
-  constexpr uint32_t kSeq = 12345;
+  constexpr uint32 kSeq = 12345;
 
   struct request req;
   req.hdr.nlmsg_len = sizeof(req);
@@ -531,7 +531,7 @@ TEST(NetlinkRouteTest, RecvmsgTruncPeek) {
     struct rtgenmsg rgm;
   };
 
-  constexpr uint32_t kSeq = 12345;
+  constexpr uint32 kSeq = 12345;
 
   struct request req;
   req.hdr.nlmsg_len = sizeof(req);
@@ -611,7 +611,7 @@ TEST(NetlinkRouteTest, NoPasscredNoCreds) {
     struct rtgenmsg rgm;
   };
 
-  constexpr uint32_t kSeq = 12345;
+  constexpr uint32 kSeq = 12345;
 
   struct request req;
   req.hdr.nlmsg_len = sizeof(req);
@@ -659,7 +659,7 @@ TEST(NetlinkRouteTest, PasscredCreds) {
     struct rtgenmsg rgm;
   };
 
-  constexpr uint32_t kSeq = 12345;
+  constexpr uint32 kSeq = 12345;
 
   struct request req;
   req.hdr.nlmsg_len = sizeof(req);
