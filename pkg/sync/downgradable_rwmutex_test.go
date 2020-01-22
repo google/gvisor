@@ -148,3 +148,58 @@ func TestDowngradableRWMutex(t *testing.T) {
 	HammerDowngradableRWMutex(10, 10, n)
 	HammerDowngradableRWMutex(10, 5, n)
 }
+
+func TestRWDoubleTryLock(t *testing.T) {
+	var m DowngradableRWMutex
+	if !m.TryLock() {
+		t.Fatal("failed to aquire lock")
+	}
+	if m.TryLock() {
+		t.Fatal("unexpectedly succeeded in aquiring locked mutex")
+	}
+}
+
+func TestRWTryLockAfterLock(t *testing.T) {
+	var m DowngradableRWMutex
+	m.Lock()
+	if m.TryLock() {
+		t.Fatal("unexpectedly succeeded in aquiring locked mutex")
+	}
+}
+
+func TestRWTryLockUnlock(t *testing.T) {
+	var m DowngradableRWMutex
+	if !m.TryLock() {
+		t.Fatal("failed to aquire lock")
+	}
+	m.Unlock()
+	if !m.TryLock() {
+		t.Fatal("failed to aquire lock after unlock")
+	}
+}
+
+func TestTryRLockAfterLock(t *testing.T) {
+	var m DowngradableRWMutex
+	m.Lock()
+	if m.TryRLock() {
+		t.Fatal("unexpectedly succeeded in aquiring locked mutex")
+	}
+}
+
+func TestTryLockAfterRLock(t *testing.T) {
+	var m DowngradableRWMutex
+	m.RLock()
+	if m.TryLock() {
+		t.Fatal("unexpectedly succeeded in aquiring locked mutex")
+	}
+}
+
+func TestDoubleTryRLock(t *testing.T) {
+	var m DowngradableRWMutex
+	if !m.TryRLock() {
+		t.Fatal("failed to aquire lock")
+	}
+	if !m.TryRLock() {
+		t.Fatal("failed to read aquire read locked lock")
+	}
+}

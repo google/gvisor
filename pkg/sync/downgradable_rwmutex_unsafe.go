@@ -19,7 +19,6 @@
 package sync
 
 import (
-	"sync"
 	"sync/atomic"
 	"unsafe"
 )
@@ -30,17 +29,42 @@ func runtimeSemacquire(s *uint32)
 //go:linkname runtimeSemrelease sync.runtime_Semrelease
 func runtimeSemrelease(s *uint32, handoff bool, skipframes int)
 
-// DowngradableRWMutex is identical to sync.RWMutex, but adds the DowngradeLock
-// method.
+// DowngradableRWMutex is identical to sync.RWMutex, but adds the DowngradeLock,
+// TryLock and TryRLock methods.
 type DowngradableRWMutex struct {
-	w           sync.Mutex // held if there are pending writers
-	writerSem   uint32     // semaphore for writers to wait for completing readers
-	readerSem   uint32     // semaphore for readers to wait for completing writers
-	readerCount int32      // number of pending readers
-	readerWait  int32      // number of departing readers
+	w           TMutex // held if there are pending writers
+	writerSem   uint32 // semaphore for writers to wait for completing readers
+	readerSem   uint32 // semaphore for readers to wait for completing writers
+	readerCount int32  // number of pending readers
+	readerWait  int32  // number of departing readers
 }
 
 const rwmutexMaxReaders = 1 << 30
+
+// TryRLock locks rw for reading. It returns true if it succeeds and false
+// otherwise. It does not block.
+func (rw *DowngradableRWMutex) TryRLock() bool {
+	if RaceEnabled {
+		RaceDisable()
+	}
+	for {
+		rc := atomic.LoadInt32(&rw.readerCount)
+		if rc < 0 {
+			if RaceEnabled {
+				RaceEnable()
+			}
+			return false
+		}
+		if !atomic.CompareAndSwapInt32(&rw.readerCount, rc, rc+1) {
+			continue
+		}
+		if RaceEnabled {
+			RaceEnable()
+			RaceAcquire(unsafe.Pointer(&rw.readerSem))
+		}
+		return true
+	}
+}
 
 // RLock locks rw for reading.
 func (rw *DowngradableRWMutex) RLock() {
@@ -76,6 +100,34 @@ func (rw *DowngradableRWMutex) RUnlock() {
 	if RaceEnabled {
 		RaceEnable()
 	}
+}
+
+// TryLock locks rw for writing. It returns true if it succeeds and false
+// otherwise. It does not block.
+func (rw *DowngradableRWMutex) TryLock() bool {
+	if RaceEnabled {
+		RaceDisable()
+	}
+	// First, resolve competition with other writers.
+	if !rw.w.TryLock() {
+		if RaceEnabled {
+			RaceEnable()
+		}
+		return false
+	}
+	// Only proceed if there are no readers.
+	if !atomic.CompareAndSwapInt32(&rw.readerCount, 0, -rwmutexMaxReaders) {
+		rw.w.Unlock()
+		if RaceEnabled {
+			RaceEnable()
+		}
+		return false
+	}
+	if RaceEnabled {
+		RaceEnable()
+		RaceAcquire(unsafe.Pointer(&rw.writerSem))
+	}
+	return true
 }
 
 // Lock locks rw for writing.
