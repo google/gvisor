@@ -24,7 +24,7 @@ import (
 )
 
 type UDPMatcher struct {
-	data UDPMatcherData
+	Data UDPMatcherData
 
 	// tablename string
 	// unsigned int matchsize;
@@ -62,11 +62,11 @@ func NewUDPMatcher(filter IPHeaderFilter, data UDPMatcherData) (Matcher, error) 
 		log.Warningf("UDP matching is only valid for protocol %d.", header.UDPProtocolNumber)
 	}
 
-	return &UDPMatcher{data: data}, nil
+	return &UDPMatcher{Data: data}, nil
 }
 
 // TODO: Check xt_tcpudp.c. Need to check for same things (e.g. fragments).
-func (tm *UDPMatcher) Match(hook Hook, pkt tcpip.PacketBuffer, interfaceName string) (bool, bool) {
+func (um *UDPMatcher) Match(hook Hook, pkt tcpip.PacketBuffer, interfaceName string) (bool, bool) {
 	log.Infof("UDPMatcher called from: %s", string(debug.Stack()))
 	netHeader := header.IPv4(pkt.NetworkHeader)
 
@@ -114,12 +114,12 @@ func (tm *UDPMatcher) Match(hook Hook, pkt tcpip.PacketBuffer, interfaceName str
 	destinationPort := udpHeader.DestinationPort()
 	log.Infof("UDPMatcher: sport and dport are %d and %d. sports and dport start and end are (%d, %d) and (%d, %d)",
 		udpHeader.SourcePort(), udpHeader.DestinationPort(),
-		tm.data.SourcePortStart, tm.data.SourcePortEnd,
-		tm.data.DestinationPortStart, tm.data.DestinationPortEnd)
-	if sourcePort < tm.data.SourcePortStart || tm.data.SourcePortEnd < sourcePort {
+		um.Data.SourcePortStart, um.Data.SourcePortEnd,
+		um.Data.DestinationPortStart, um.Data.DestinationPortEnd)
+	if sourcePort < um.Data.SourcePortStart || um.Data.SourcePortEnd < sourcePort {
 		return false, false
 	}
-	if destinationPort < tm.data.DestinationPortStart || tm.data.DestinationPortEnd < destinationPort {
+	if destinationPort < um.Data.DestinationPortStart || um.Data.DestinationPortEnd < destinationPort {
 		return false, false
 	}
 

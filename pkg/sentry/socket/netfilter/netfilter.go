@@ -196,12 +196,39 @@ func convertNetstackToBinary(tablename string, table iptables.Table) (linux.Kern
 }
 
 func marshalMatcher(matcher iptables.Matcher) []byte {
-	switch matcher.(type) {
+	switch m := matcher.(type) {
+	case *iptables.UDPMatcher:
+		return marshalUDPMatcher(m)
 	default:
 		// TODO(gvisor.dev/issue/170): We don't support any matchers
 		// yet, so any call to marshalMatcher will panic.
 		panic(fmt.Errorf("unknown matcher of type %T", matcher))
 	}
+}
+
+func marshalUDPMatcher(matcher *iptables.UDPMatcher) []byte {
+	type udpMatch struct {
+		linux.XTEntryMatch
+		linux.XTUDP
+	}
+	linuxMatcher := udpMatch{
+		XTEntryMatch: linux.XTEntryMatch{
+			MatchSize: linux.SizeOfXTEntryMatch + linux.SizeOfXTUDP,
+			// Name:      "udp",
+		},
+		XTUDP: linux.XTUDP{
+			SourcePortStart:      matcher.Data.SourcePortStart,
+			SourcePortEnd:        matcher.Data.SourcePortEnd,
+			DestinationPortStart: matcher.Data.DestinationPortStart,
+			DestinationPortEnd:   matcher.Data.DestinationPortEnd,
+			InverseFlags:         matcher.Data.InverseFlags,
+		},
+	}
+	copy(linuxMatcher.Name[:], "udp")
+
+	var buf [linux.SizeOfXTEntryMatch + linux.SizeOfXTUDP]byte
+	binary.Marshal(buf[:], usermem.ByteOrder, linuxMatcher)
+	return buf[:]
 }
 
 func marshalTarget(target iptables.Target) []byte {
