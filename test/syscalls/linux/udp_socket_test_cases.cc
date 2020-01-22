@@ -34,7 +34,7 @@ namespace gvisor {
 namespace testing {
 
 // Gets a pointer to the port component of the given address.
-uint16_t* Port(struct sockaddr_storage* addr) {
+uint16* Port(struct sockaddr_storage* addr) {
   switch (addr->ss_family) {
     case AF_INET: {
       auto sin = reinterpret_cast<struct sockaddr_in*>(addr);
@@ -331,7 +331,7 @@ TEST_P(UdpSocketTest, Connect) {
   EXPECT_EQ(memcmp(&peer, addr_[2], addrlen_), 0);
 }
 
-void ConnectAny(AddressFamily family, int sockfd, uint16_t port) {
+void ConnectAny(AddressFamily family, int sockfd, uint16 port) {
   struct sockaddr_storage addr = {};
 
   // Precondition check.
@@ -1398,7 +1398,7 @@ TEST_P(UdpSocketTest, SetAndReceiveTOS) {
   received_iov.iov_len = kDataLength;
   received_msg.msg_iov = &received_iov;
   received_msg.msg_iovlen = 1;
-  size_t cmsg_data_len = sizeof(int8_t);
+  size_t cmsg_data_len = sizeof(int8);
   if (sent_type == IPV6_TCLASS) {
     cmsg_data_len = sizeof(int);
   }
@@ -1413,7 +1413,7 @@ TEST_P(UdpSocketTest, SetAndReceiveTOS) {
   EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(cmsg_data_len));
   EXPECT_EQ(cmsg->cmsg_level, sent_level);
   EXPECT_EQ(cmsg->cmsg_type, sent_type);
-  int8_t received_tos = 0;
+  int8 received_tos = 0;
   memcpy(&received_tos, CMSG_DATA(cmsg), sizeof(received_tos));
   EXPECT_EQ(received_tos, sent_tos);
 }
@@ -1453,7 +1453,7 @@ TEST_P(UdpSocketTest, SendAndReceiveTOS) {
   sent_iov.iov_len = kDataLength;
   sent_msg.msg_iov = &sent_iov;
   sent_msg.msg_iovlen = 1;
-  size_t cmsg_data_len = sizeof(int8_t);
+  size_t cmsg_data_len = sizeof(int8);
   if (sent_level == SOL_IPV6) {
     sent_type = IPV6_TCLASS;
     cmsg_data_len = sizeof(int);
@@ -1467,7 +1467,7 @@ TEST_P(UdpSocketTest, SendAndReceiveTOS) {
   sent_cmsg->cmsg_len = CMSG_LEN(cmsg_data_len);
   sent_cmsg->cmsg_level = sent_level;
   sent_cmsg->cmsg_type = sent_type;
-  *(int8_t*)CMSG_DATA(sent_cmsg) = sent_tos;
+  *(int8*)CMSG_DATA(sent_cmsg) = sent_tos;
 
   ASSERT_THAT(RetryEINTR(sendmsg)(t_, &sent_msg, 0),
               SyscallSucceedsWithValue(kDataLength));
@@ -1491,7 +1491,7 @@ TEST_P(UdpSocketTest, SendAndReceiveTOS) {
   EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(cmsg_data_len));
   EXPECT_EQ(cmsg->cmsg_level, sent_level);
   EXPECT_EQ(cmsg->cmsg_type, sent_type);
-  int8_t received_tos = 0;
+  int8 received_tos = 0;
   memcpy(&received_tos, CMSG_DATA(cmsg), sizeof(received_tos));
   EXPECT_EQ(received_tos, sent_tos);
 }

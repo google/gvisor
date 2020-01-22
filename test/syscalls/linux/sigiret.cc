@@ -28,8 +28,8 @@ namespace testing {
 
 namespace {
 
-constexpr uint64_t kOrigRcx = 0xdeadbeeffacefeed;
-constexpr uint64_t kOrigR11 = 0xfacefeedbaad1dea;
+constexpr uint64 kOrigRcx = 0xdeadbeeffacefeed;
+constexpr uint64 kOrigR11 = 0xfacefeedbaad1dea;
 
 volatile int gotvtalrm, ready;
 
@@ -40,8 +40,8 @@ void sigvtalrm(int sig, siginfo_t* siginfo, void* _uc) {
   // - test is in the busy-wait loop waiting for signal.
   // - %rcx and %r11 values in mcontext_t match kOrigRcx and kOrigR11.
   if (ready &&
-      static_cast<uint64_t>(uc->uc_mcontext.gregs[REG_RCX]) == kOrigRcx &&
-      static_cast<uint64_t>(uc->uc_mcontext.gregs[REG_R11]) == kOrigR11) {
+      static_cast<uint64>(uc->uc_mcontext.gregs[REG_RCX]) == kOrigRcx &&
+      static_cast<uint64>(uc->uc_mcontext.gregs[REG_R11]) == kOrigR11) {
     // Modify the values %rcx and %r11 in the ucontext. These are the
     // values seen by the application after the signal handler returns.
     uc->uc_mcontext.gregs[REG_RCX] = ~kOrigRcx;
@@ -69,8 +69,8 @@ TEST(SigIretTest, CheckRcxR11) {
       ASSERT_NO_ERRNO_AND_VALUE(ScopedItimer(ITIMER_VIRTUAL, itimer));
 
   // Initialize %rcx and %r11 and spin until the signal handler returns.
-  uint64_t rcx = kOrigRcx;
-  uint64_t r11 = kOrigR11;
+  uint64 rcx = kOrigRcx;
+  uint64 r11 = kOrigR11;
   asm volatile(
       "movq %[rcx], %%rcx;"                      // %rcx = rcx
       "movq %[r11], %%r11;"                      // %r11 = r11
@@ -91,7 +91,7 @@ TEST(SigIretTest, CheckRcxR11) {
   EXPECT_EQ(r11, ~kOrigR11);
 }
 
-constexpr uint64_t kNonCanonicalRip = 0xCCCC000000000000;
+constexpr uint64 kNonCanonicalRip = 0xCCCC000000000000;
 
 // Test that a non-canonical signal handler faults as expected.
 TEST(SigIretTest, BadHandler) {

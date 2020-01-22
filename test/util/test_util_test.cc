@@ -171,7 +171,7 @@ MATCHER_P(IovecsListEq, expected, "") {
     return false;
   }
 
-  for (uint64_t i = 0; i < expected.size(); ++i) {
+  for (uint64 i = 0; i < expected.size(); ++i) {
     const std::vector<struct iovec>& actual_iovecs = arg[i];
     const std::vector<struct iovec>& expected_iovecs = expected[i];
     if (actual_iovecs.size() != expected_iovecs.size()) {
@@ -181,7 +181,7 @@ MATCHER_P(IovecsListEq, expected, "") {
       return false;
     }
 
-    for (uint64_t j = 0; j < expected_iovecs.size(); ++j) {
+    for (uint64 j = 0; j < expected_iovecs.size(); ++j) {
       const struct iovec& actual_iov = actual_iovecs[j];
       const struct iovec& expected_iov = expected_iovecs[j];
       if (actual_iov.iov_base != expected_iov.iov_base) {

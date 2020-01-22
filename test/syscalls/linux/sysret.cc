@@ -26,8 +26,8 @@ namespace testing {
 
 namespace {
 
-constexpr uint64_t kNonCanonicalRip = 0xCCCC000000000000;
-constexpr uint64_t kNonCanonicalRsp = 0xFFFF000000000000;
+constexpr uint64 kNonCanonicalRip = 0xCCCC000000000000;
+constexpr uint64 kNonCanonicalRsp = 0xFFFF000000000000;
 
 class SysretTest : public ::testing::Test {
  protected:
@@ -60,12 +60,12 @@ class SysretTest : public ::testing::Test {
     ASSERT_THAT(ptrace(PTRACE_DETACH, child_, 0, 0), SyscallSucceeds());
   }
 
-  void SetRip(uint64_t newrip) {
+  void SetRip(uint64 newrip) {
     regs_.rip = newrip;
     ASSERT_THAT(ptrace(PTRACE_SETREGS, child_, 0, &regs_), SyscallSucceeds());
   }
 
-  void SetRsp(uint64_t newrsp) {
+  void SetRsp(uint64 newrsp) {
     regs_.rsp = newrsp;
     ASSERT_THAT(ptrace(PTRACE_SETREGS, child_, 0, &regs_), SyscallSucceeds());
   }

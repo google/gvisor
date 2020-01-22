@@ -34,7 +34,7 @@ namespace testing {
 
 namespace {
 
-int64_t clock_gettime_nsecs(clockid_t id) {
+int64 clock_gettime_nsecs(clockid_t id) {
   struct timespec ts;
   TEST_PCHECK(clock_gettime(id, &ts) == 0);
   return (ts.tv_sec * 1000000000 + ts.tv_nsec);
@@ -42,9 +42,9 @@ int64_t clock_gettime_nsecs(clockid_t id) {
 
 // Spin on the CPU for at least ns nanoseconds, based on
 // CLOCK_THREAD_CPUTIME_ID.
-void spin_ns(int64_t ns) {
-  int64_t start = clock_gettime_nsecs(CLOCK_THREAD_CPUTIME_ID);
-  int64_t end = start + ns;
+void spin_ns(int64 ns) {
+  int64 start = clock_gettime_nsecs(CLOCK_THREAD_CPUTIME_ID);
+  int64 end = start + ns;
 
   do {
     constexpr int kLoopCount = 1000000;  // large and arbitrary
@@ -64,7 +64,7 @@ TEST(ClockGettime, CputimeId) {
   // the workers. Note that we test CLOCK_PROCESS_CPUTIME_ID by having the
   // workers execute in parallel and verifying that CLOCK_PROCESS_CPUTIME_ID
   // accumulates the runtime of all threads.
-  int64_t start = clock_gettime_nsecs(CLOCK_PROCESS_CPUTIME_ID);
+  int64 start = clock_gettime_nsecs(CLOCK_PROCESS_CPUTIME_ID);
 
   // Create a kNumThreads threads.
   std::list<ScopedThread> threads;
@@ -76,7 +76,7 @@ TEST(ClockGettime, CputimeId) {
     t.Join();
   }
 
-  int64_t end = clock_gettime_nsecs(CLOCK_PROCESS_CPUTIME_ID);
+  int64 end = clock_gettime_nsecs(CLOCK_PROCESS_CPUTIME_ID);
 
   // The aggregate time spent in the worker threads must be at least
   // 'kNumThreads' times the time each thread spun.

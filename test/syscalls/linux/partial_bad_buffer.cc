@@ -363,7 +363,7 @@ TEST_F(PartialBadBufferTest, SendMsgTCP) {
   // byte past the valid page and check that it triggers an EFAULT
   // correctly. Otherwise in gVisor the sendmsg call will just return with no
   // error with kPageSize bytes written successfully.
-  const uint32_t buf_size = kPageSize + 1;
+  const uint32 buf_size = kPageSize + 1;
   ASSERT_THAT(setsockopt(send_socket.get(), SOL_SOCKET, SO_SNDBUF, &buf_size,
                          sizeof(buf_size)),
               SyscallSucceedsWithValue(0));

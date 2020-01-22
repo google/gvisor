@@ -43,7 +43,7 @@ namespace {
 // only be cleared by execve (or knowing the old rseq address), and glibc (based
 // on the current unmerged patches) register rseq before calling main()).
 
-int RSeq(struct rseq* rseq, uint32_t rseq_len, int flags, uint32_t sig) {
+int RSeq(struct rseq* rseq, uint32 rseq_len, int flags, uint32 sig) {
   return syscall(kRseqSyscall, rseq, rseq_len, flags, sig);
 }
 

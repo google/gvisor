@@ -112,7 +112,7 @@ int futex_wake_bitset(bool priv, std::atomic<int>* uaddr, int count,
 }
 
 int futex_wake_op(bool priv, std::atomic<int>* uaddr1, std::atomic<int>* uaddr2,
-                  int nwake1, int nwake2, uint32_t sub_op) {
+                  int nwake1, int nwake2, uint32 sub_op) {
   int op = FUTEX_WAKE_OP;
   if (priv) {
     op |= FUTEX_PRIVATE_FLAG;

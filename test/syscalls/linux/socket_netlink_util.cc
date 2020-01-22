@@ -40,7 +40,7 @@ PosixErrorOr<FileDescriptor> NetlinkBoundSocket(int protocol) {
   return std::move(fd);
 }
 
-PosixErrorOr<uint32_t> NetlinkPortID(int fd) {
+PosixErrorOr<uint32> NetlinkPortID(int fd) {
   struct sockaddr_nl addr;
   socklen_t addrlen = sizeof(addr);
 
@@ -48,7 +48,7 @@ PosixErrorOr<uint32_t> NetlinkPortID(int fd) {
       getsockname(fd, reinterpret_cast<struct sockaddr*>(&addr), &addrlen));
   MaybeSave();
 
-  return static_cast<uint32_t>(addr.nl_pid);
+  return static_cast<uint32>(addr.nl_pid);
 }
 
 PosixError NetlinkRequestResponse(

@@ -27,10 +27,10 @@
 #include "test/util/thread_util.h"
 #include "test/util/uid_util.h"
 
-ABSL_FLAG(int32_t, scratch_uid1, 65534, "first scratch UID");
-ABSL_FLAG(int32_t, scratch_uid2, 65533, "second scratch UID");
-ABSL_FLAG(int32_t, scratch_gid1, 65534, "first scratch GID");
-ABSL_FLAG(int32_t, scratch_gid2, 65533, "second scratch GID");
+ABSL_FLAG(int32, scratch_uid1, 65534, "first scratch UID");
+ABSL_FLAG(int32, scratch_uid2, 65533, "second scratch UID");
+ABSL_FLAG(int32, scratch_gid1, 65534, "first scratch GID");
+ABSL_FLAG(int32, scratch_gid2, 65533, "second scratch GID");
 
 using ::testing::UnorderedElementsAreArray;
 

@@ -46,9 +46,9 @@ ABSL_FLAG(bool, blocking, false,
           "Whether to set a blocking lock (otherwise non-blocking).");
 ABSL_FLAG(bool, retry_eintr, false,
           "Whether to retry in the subprocess on EINTR.");
-ABSL_FLAG(uint64_t, child_setlock_start, 0, "The value of struct flock start");
-ABSL_FLAG(uint64_t, child_setlock_len, 0, "The value of struct flock len");
-ABSL_FLAG(int32_t, socket_fd, -1,
+ABSL_FLAG(uint64, child_setlock_start, 0, "The value of struct flock start");
+ABSL_FLAG(uint64, child_setlock_len, 0, "The value of struct flock len");
+ABSL_FLAG(int32, socket_fd, -1,
           "A socket to use for communicating more state back "
           "to the parent.");
 
@@ -71,8 +71,8 @@ class FcntlLockTest : public ::testing::Test {
     EXPECT_THAT(close(fds_[1]), SyscallSucceeds());
   }
 
-  int64_t GetSubprocessFcntlTimeInUsec() {
-    int64_t ret = 0;
+  int64 GetSubprocessFcntlTimeInUsec() {
+    int64 ret = 0;
     EXPECT_THAT(ReadFd(fds_[0], reinterpret_cast<void*>(&ret), sizeof(ret)),
                 SyscallSucceedsWithValue(sizeof(ret)));
     return ret;
@@ -676,7 +676,7 @@ TEST_F(FcntlLockTest, SetWriteLockThenBlockingWriteLock) {
   // We will wait kHoldLockForSec before we release our lock allowing the
   // subprocess to obtain it.
   constexpr absl::Duration kHoldLockFor = absl::Seconds(5);
-  const int64_t kMinBlockTimeUsec = absl::ToInt64Microseconds(absl::Seconds(1));
+  const int64 kMinBlockTimeUsec = absl::ToInt64Microseconds(absl::Seconds(1));
 
   absl::SleepFor(kHoldLockFor);
 
@@ -685,7 +685,7 @@ TEST_F(FcntlLockTest, SetWriteLockThenBlockingWriteLock) {
   ASSERT_THAT(fcntl(fd.get(), F_SETLKW, &fl), SyscallSucceeds());
 
   // Read the blocked time from the subprocess socket.
-  int64_t subprocess_blocked_time_usec = GetSubprocessFcntlTimeInUsec();
+  int64 subprocess_blocked_time_usec = GetSubprocessFcntlTimeInUsec();
 
   // We must have been waiting at least kMinBlockTime.
   EXPECT_GT(subprocess_blocked_time_usec, kMinBlockTimeUsec);
@@ -729,7 +729,7 @@ TEST_F(FcntlLockTest, SetReadLockThenBlockingWriteLock) {
   // subprocess to obtain it.
   constexpr absl::Duration kHoldLockFor = absl::Seconds(5);
 
-  const int64_t kMinBlockTimeUsec = absl::ToInt64Microseconds(absl::Seconds(1));
+  const int64 kMinBlockTimeUsec = absl::ToInt64Microseconds(absl::Seconds(1));
 
   absl::SleepFor(kHoldLockFor);
 
@@ -738,7 +738,7 @@ TEST_F(FcntlLockTest, SetReadLockThenBlockingWriteLock) {
   ASSERT_THAT(fcntl(fd.get(), F_SETLKW, &fl), SyscallSucceeds());
 
   // Read the blocked time from the subprocess socket.
-  int64_t subprocess_blocked_time_usec = GetSubprocessFcntlTimeInUsec();
+  int64 subprocess_blocked_time_usec = GetSubprocessFcntlTimeInUsec();
 
   // We must have been waiting at least kMinBlockTime.
   EXPECT_GT(subprocess_blocked_time_usec, kMinBlockTimeUsec);
@@ -782,7 +782,7 @@ TEST_F(FcntlLockTest, SetWriteLockThenBlockingReadLock) {
   // subprocess to obtain it.
   constexpr absl::Duration kHoldLockFor = absl::Seconds(5);
 
-  const int64_t kMinBlockTimeUsec = absl::ToInt64Microseconds(absl::Seconds(1));
+  const int64 kMinBlockTimeUsec = absl::ToInt64Microseconds(absl::Seconds(1));
 
   absl::SleepFor(kHoldLockFor);
 
@@ -791,7 +791,7 @@ TEST_F(FcntlLockTest, SetWriteLockThenBlockingReadLock) {
   ASSERT_THAT(fcntl(fd.get(), F_SETLKW, &fl), SyscallSucceeds());
 
   // Read the blocked time from the subprocess socket.
-  int64_t subprocess_blocked_time_usec = GetSubprocessFcntlTimeInUsec();
+  int64 subprocess_blocked_time_usec = GetSubprocessFcntlTimeInUsec();
 
   // We must have been waiting at least kMinBlockTime.
   EXPECT_GT(subprocess_blocked_time_usec, kMinBlockTimeUsec);
