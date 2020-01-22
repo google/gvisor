@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -xeo pipefail
-
-# Run the image_build.sh script with appropriate parameters.
-IMAGE_PROJECT=ubuntu-os-cloud IMAGE_FAMILY=ubuntu-1604-lts $(dirname $0)/../../tools/image_build.sh $(dirname $0)/??_*.sh
+# Install runsc from the master branch.
+curl -fsSL https://gvisor.dev/archive.key | sudo apt-key add -
+add-apt-repository "deb https://storage.googleapis.com/gvisor/releases release main"
+apt-get update && apt-get install -y runsc
