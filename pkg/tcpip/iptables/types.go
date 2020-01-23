@@ -14,7 +14,9 @@
 
 package iptables
 
-import "gvisor.dev/gvisor/pkg/tcpip"
+import (
+	"gvisor.dev/gvisor/pkg/tcpip"
+)
 
 // A Hook specifies one of the hooks built into the network stack.
 //
@@ -151,11 +153,20 @@ func (table *Table) SetMetadata(metadata interface{}) {
 // packets this rule applies to. If there are no matchers in the rule, it
 // applies to any packet.
 type Rule struct {
+	// Filter holds basic IP filtering fields common to every rule.
+	Filter IPHeaderFilter
+
 	// Matchers is the list of matchers for this rule.
 	Matchers []Matcher
 
 	// Target is the action to invoke if all the matchers match the packet.
 	Target Target
+}
+
+// IPHeaderFilter holds basic IP filtering data common to every rule.
+type IPHeaderFilter struct {
+	// Protocol matches the transport protocol.
+	Protocol tcpip.TransportProtocolNumber
 }
 
 // A Matcher is the interface for matching packets.

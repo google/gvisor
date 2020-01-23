@@ -10,6 +10,7 @@ container_image(
 
 go_image(
     name = "runner",
+    testonly = 1,
     srcs = ["main.go"],
     base = ":iptables-base",
     deps = ["//test/iptables"],

@@ -18,6 +18,7 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/usermem",
         "//pkg/syserr",
+        "//pkg/tcpip",
         "//pkg/tcpip/iptables",
         "//pkg/tcpip/stack",
     ],
