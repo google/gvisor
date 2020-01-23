@@ -462,6 +462,10 @@ type Stack struct {
 	// opaqueIIDOpts hold the options for generating opaque interface identifiers
 	// (IIDs) as outlined by RFC 7217.
 	opaqueIIDOpts OpaqueInterfaceIdentifierOptions
+
+	// forwarder holds the packets that wait for their link-address resolutions
+	// to complete, and forwards them when each resolution is done.
+	forwarder *forwardQueue
 }
 
 // UniqueID is an abstract generator of unique identifiers.
@@ -639,6 +643,7 @@ func New(opts Options) *Stack {
 		uniqueIDGenerator:    opts.UniqueID,
 		ndpDisp:              opts.NDPDisp,
 		opaqueIIDOpts:        opts.OpaqueIIDOpts,
+		forwarder:            newForwardQueue(),
 	}
 
 	// Add specified network protocols.
