@@ -19,6 +19,8 @@ import (
 	"net"
 	"os/exec"
 	"time"
+
+	"gvisor.dev/gvisor/runsc/testutil"
 )
 
 const iptablesBinary = "iptables"
@@ -105,31 +107,26 @@ func listenTCP(port int, timeout time.Duration) error {
 }
 
 // connectTCP connects the TCP server over specified local port, server IP and remote/server port.
-func connectTCP(ip net.IP, remotePort, localPort int, duration time.Duration) error {
-	remote := net.TCPAddr{
+func connectTCP(ip net.IP, remotePort, localPort int, timeout time.Duration) error {
+	contAddr := net.TCPAddr{
 		IP:   ip,
 		Port: remotePort,
 	}
-
-	local := net.TCPAddr{
-		Port: localPort,
-	}
-
-	// Container may not be up. Retry DialTCP over a duration.
-	to := time.After(duration)
-	for {
-		conn, err := net.DialTCP("tcp4", &local, &remote)
-		if err == nil {
+	// The container may not be listening when we first connect, so retry
+	// upon error.
+	callback := func() error {
+		localAddr := net.TCPAddr{
+			Port: localPort,
+		}
+		conn, err := net.DialTCP("tcp4", &localAddr, &contAddr)
+		if conn != nil {
 			conn.Close()
-			return nil
 		}
-		select {
-		// Timed out waiting for connection to be accepted.
-		case <-to:
-			return err
-		default:
-			time.Sleep(200 * time.Millisecond)
-		}
+		return err
 	}
-	return fmt.Errorf("Failed to establish connection on port %d", localPort)
+	if err := testutil.Poll(callback, timeout); err != nil {
+		return fmt.Errorf("timed out waiting to send IP, most recent error: %v", err)
+	}
+
+	return nil
 }

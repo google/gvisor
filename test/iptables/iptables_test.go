@@ -15,6 +15,7 @@
 package iptables
 
 import (
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -22,7 +23,6 @@ import (
 	"testing"
 	"time"
 
-	"flag"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/dockerutil"
 	"gvisor.dev/gvisor/runsc/testutil"
@@ -180,6 +180,12 @@ func TestFilterInputDropDifferentUDPPort(t *testing.T) {
 
 func TestFilterInputDropAll(t *testing.T) {
 	if err := singleTest(FilterInputDropAll{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFilterInputDropOnlyUDP(t *testing.T) {
+	if err := singleTest(FilterInputDropOnlyUDP{}); err != nil {
 		t.Fatal(err)
 	}
 }
