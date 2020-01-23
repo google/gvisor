@@ -62,9 +62,19 @@ func New(deviceFile *os.File) (*KVM, error) {
 	}
 
 	// Create a new VM fd.
-	vm, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, fd, _KVM_CREATE_VM, 0)
-	if errno != 0 {
-		return nil, fmt.Errorf("creating VM: %v", errno)
+	var (
+		vm    uintptr
+		errno syscall.Errno
+	)
+	for {
+		vm, _, errno = syscall.Syscall(syscall.SYS_IOCTL, fd, _KVM_CREATE_VM, 0)
+		if errno == syscall.EINTR {
+			continue
+		}
+		if errno != 0 {
+			return nil, fmt.Errorf("creating VM: %v", errno)
+		}
+		break
 	}
 	// We are done with the device file.
 	deviceFile.Close()
