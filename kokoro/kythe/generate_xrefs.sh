@@ -48,6 +48,7 @@ bazel \
   --define=kythe_corpus=gvisor.dev \
   --cxxopt=-std=c++17 \
   --config=remote \
+  --auth_credentials="${KOKORO_BAZEL_AUTH_CREDENTIAL}" \
   //...
 
 "${KYTHE_DIR}/tools/kzip" merge \
