@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -163,6 +164,9 @@ func convertNetstackToBinary(tablename string, table iptables.Table) (linux.Kern
 		// Each rule corresponds to an entry.
 		entry := linux.KernelIPTEntry{
 			IPTEntry: linux.IPTEntry{
+				IP: linux.IPTIP{
+					Protocol: uint16(rule.Filter.Protocol),
+				},
 				NextOffset:   linux.SizeOfIPTEntry,
 				TargetOffset: linux.SizeOfIPTEntry,
 			},
@@ -321,12 +325,11 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 			return syserr.ErrInvalidArgument
 		}
 
-		// TODO(gvisor.dev/issue/170): We should support IPTIP
-		// filtering. We reject any nonzero IPTIP values for now.
-		emptyIPTIP := linux.IPTIP{}
-		if entry.IP != emptyIPTIP {
-			log.Warningf("netfilter: non-empty struct iptip found")
-			return syserr.ErrInvalidArgument
+		// TODO(gvisor.dev/issue/170): We should support more IPTIP
+		// filtering fields.
+		filter, err := filterFromIPTIP(entry.IP)
+		if err != nil {
+			return err
 		}
 
 		// Get the target of the rule.
@@ -336,7 +339,10 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 		}
 		optVal = optVal[consumed:]
 
-		table.Rules = append(table.Rules, iptables.Rule{Target: target})
+		table.Rules = append(table.Rules, iptables.Rule{
+			Filter: filter,
+			Target: target,
+		})
 		offsets = append(offsets, offset)
 		offset += linux.SizeOfIPTEntry + consumed
 	}
@@ -458,6 +464,32 @@ func parseTarget(optVal []byte) (iptables.Target, uint32, *syserr.Error) {
 	// Unknown target.
 	log.Infof("Unknown target %q doesn't exist or isn't supported yet.", target.Name.String())
 	return nil, 0, syserr.ErrInvalidArgument
+}
+
+func filterFromIPTIP(iptip linux.IPTIP) (iptables.IPHeaderFilter, *syserr.Error) {
+	if containsUnsupportedFields(iptip) {
+		log.Warningf("netfilter: unsupported fields in struct iptip: %+v", iptip)
+		return iptables.IPHeaderFilter{}, syserr.ErrInvalidArgument
+	}
+	return iptables.IPHeaderFilter{
+		Protocol: tcpip.TransportProtocolNumber(iptip.Protocol),
+	}, nil
+}
+
+func containsUnsupportedFields(iptip linux.IPTIP) bool {
+	// Currently we check that everything except protocol is zeroed.
+	var emptyInetAddr = linux.InetAddr{}
+	var emptyInterface = [linux.IFNAMSIZ]byte{}
+	return iptip.Dst != emptyInetAddr ||
+		iptip.Src != emptyInetAddr ||
+		iptip.SrcMask != emptyInetAddr ||
+		iptip.DstMask != emptyInetAddr ||
+		iptip.InputInterface != emptyInterface ||
+		iptip.OutputInterface != emptyInterface ||
+		iptip.InputInterfaceMask != emptyInterface ||
+		iptip.OutputInterfaceMask != emptyInterface ||
+		iptip.Flags != 0 ||
+		iptip.InverseFlags != 0
 }
 
 func hookFromLinux(hook int) iptables.Hook {
