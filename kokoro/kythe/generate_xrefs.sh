@@ -25,7 +25,7 @@ bazel version
 
 python3 -V
 
-readonly KYTHE_VERSION='v0.0.37'
+readonly KYTHE_VERSION='v0.0.39'
 readonly WORKDIR="$(mktemp -d)"
 readonly KYTHE_DIR="${WORKDIR}/kythe-${KYTHE_VERSION}"
 if [[ -n "$KOKORO_GIT_COMMIT" ]]; then
@@ -47,6 +47,7 @@ bazel \
   --override_repository kythe_release="${KYTHE_DIR}" \
   --define=kythe_corpus=gvisor.dev \
   --cxxopt=-std=c++17 \
+  --config=remote \
   //...
 
 "${KYTHE_DIR}/tools/kzip" merge \
