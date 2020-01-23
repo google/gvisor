@@ -32,18 +32,11 @@ declare -r BAZEL_FLAGS=(
   "--keep_going"
   "--verbose_failures=true"
 )
-if [[ -v KOKORO_BAZEL_AUTH_CREDENTIAL ]] || [[ -v RBE_PROJECT_ID ]]; then
-  declare -r RBE_PROJECT_ID="${RBE_PROJECT_ID:-gvisor-rbe}"
-  declare -r BAZEL_RBE_FLAGS=(
-    "--config=remote"
-    "--project_id=${RBE_PROJECT_ID}"
-    "--remote_instance_name=projects/${RBE_PROJECT_ID}/instances/default_instance"
-  )
-fi
 if [[ -v KOKORO_BAZEL_AUTH_CREDENTIAL ]]; then
   declare -r BAZEL_RBE_AUTH_FLAGS=(
     "--auth_credentials=${KOKORO_BAZEL_AUTH_CREDENTIAL}"
   )
+  declare -r BAZEL_RBE_FLAGS=("--config=remote")
 fi
 
 # Wrap bazel.
