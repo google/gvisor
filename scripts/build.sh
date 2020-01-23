@@ -67,11 +67,7 @@ if [[ "${KOKORO_BUILD_NIGHTLY:-false}" == "true" ]]; then
   install_raw  "${KOKORO_ARTIFACTS_DIR}/nightly/${stamp}"
   install_repo "${KOKORO_ARTIFACTS_DIR}/dists/nightly"
 else
-  # We keep only the latest master raw release.
-  install_raw  "${KOKORO_ARTIFACTS_DIR}/master/latest"
-  install_repo "${KOKORO_ARTIFACTS_DIR}/dists/master"
-
-  # Is it a tagged release? Build that too.
+  # Is it a tagged release? Build that.
   tags="$(git tag --points-at HEAD)"
   if ! [[ -z "${tags}" ]]; then
     # Note that a given commit can match any number of tags. We have to iterate
@@ -80,8 +76,13 @@ else
       name=$(echo "${tag}" | cut -d'-' -f2)
       base=$(echo "${name}" | cut -d'.' -f1)
       install_raw  "${KOKORO_ARTIFACTS_DIR}/release/${name}"
+      install_raw  "${KOKORO_ARTIFACTS_DIR}/release/latest"
       install_repo "${KOKORO_ARTIFACTS_DIR}/dists/release"
       install_repo "${KOKORO_ARTIFACTS_DIR}/dists/${base}"
     done
+  else
+    # Otherwise, assume it is a raw master commit.
+    install_raw  "${KOKORO_ARTIFACTS_DIR}/master/latest"
+    install_repo "${KOKORO_ARTIFACTS_DIR}/dists/master"
   fi
 fi
