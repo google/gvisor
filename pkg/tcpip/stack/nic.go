@@ -1208,6 +1208,9 @@ func (n *NIC) Stack() *Stack {
 // false. It will only return true if the address is associated with the NIC
 // AND it is tentative.
 func (n *NIC) isAddrTentative(addr tcpip.Address) bool {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
 	ref, ok := n.mu.endpoints[NetworkEndpointID{addr}]
 	if !ok {
 		return false
