@@ -80,6 +80,14 @@ type VirtualFilesystem struct {
 	devicesMu sync.RWMutex
 	devices   map[devTuple]*registeredDevice
 
+	// anonBlockDevMinor contains all allocated anonymous block device minor
+	// numbers. anonBlockDevMinorNext is a lower bound for the smallest
+	// unallocated anonymous block device number. anonBlockDevMinorNext and
+	// anonBlockDevMinor are protected by anonBlockDevMinorMu.
+	anonBlockDevMinorMu   sync.Mutex
+	anonBlockDevMinorNext uint32
+	anonBlockDevMinor     map[uint32]struct{}
+
 	// fsTypes contains all registered FilesystemTypes. fsTypes is protected by
 	// fsTypesMu.
 	fsTypesMu sync.RWMutex
@@ -94,10 +102,12 @@ type VirtualFilesystem struct {
 // New returns a new VirtualFilesystem with no mounts or FilesystemTypes.
 func New() *VirtualFilesystem {
 	vfs := &VirtualFilesystem{
-		mountpoints: make(map[*Dentry]map[*Mount]struct{}),
-		devices:     make(map[devTuple]*registeredDevice),
-		fsTypes:     make(map[string]*registeredFilesystemType),
-		filesystems: make(map[*Filesystem]struct{}),
+		mountpoints:           make(map[*Dentry]map[*Mount]struct{}),
+		devices:               make(map[devTuple]*registeredDevice),
+		anonBlockDevMinorNext: 1,
+		anonBlockDevMinor:     make(map[uint32]struct{}),
+		fsTypes:               make(map[string]*registeredFilesystemType),
+		filesystems:           make(map[*Filesystem]struct{}),
 	}
 	vfs.mounts.Init()
 	return vfs
