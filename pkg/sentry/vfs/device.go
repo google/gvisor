@@ -98,3 +98,32 @@ func (vfs *VirtualFilesystem) OpenDeviceSpecialFile(ctx context.Context, mnt *Mo
 	}
 	return rd.dev.Open(ctx, mnt, d, *opts)
 }
+
+// GetAnonBlockDevMinor allocates and returns an unused minor device number for
+// an "anonymous" block device with major number 0.
+func (vfs *VirtualFilesystem) GetAnonBlockDevMinor() (uint32, error) {
+	vfs.anonBlockDevMinorMu.Lock()
+	defer vfs.anonBlockDevMinorMu.Unlock()
+	minor := vfs.anonBlockDevMinorNext
+	const maxDevMinor = (1 << 20) - 1
+	for minor < maxDevMinor {
+		if _, ok := vfs.anonBlockDevMinor[minor]; !ok {
+			vfs.anonBlockDevMinor[minor] = struct{}{}
+			vfs.anonBlockDevMinorNext = minor + 1
+			return minor, nil
+		}
+		minor++
+	}
+	return 0, syserror.EMFILE
+}
+
+// PutAnonBlockDevMinor deallocates a minor device number returned by a
+// previous call to GetAnonBlockDevMinor.
+func (vfs *VirtualFilesystem) PutAnonBlockDevMinor(minor uint32) {
+	vfs.anonBlockDevMinorMu.Lock()
+	defer vfs.anonBlockDevMinorMu.Unlock()
+	delete(vfs.anonBlockDevMinor, minor)
+	if minor < vfs.anonBlockDevMinorNext {
+		vfs.anonBlockDevMinorNext = minor
+	}
+}
