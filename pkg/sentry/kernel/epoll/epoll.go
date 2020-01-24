@@ -174,6 +174,7 @@ func (e *EventPoll) Release() {
 		entry.id.File.EventUnregister(&entry.waiter)
 		entry.file.Drop()
 	}
+	e.files = nil
 }
 
 // Read implements fs.FileOperations.Read.
