@@ -16,8 +16,6 @@
 
 set -ex
 
-# Install the latest version of Bazel. The default on Kokoro images is out of
-# date.
 if command -v use_bazel.sh >/dev/null; then
   use_bazel.sh latest
 fi
@@ -45,7 +43,7 @@ bazel \
   --bazelrc="${KYTHE_DIR}/extractors.bazelrc" \
   build \
   --override_repository kythe_release="${KYTHE_DIR}" \
-  --define=kythe_corpus=gvisor.dev \
+  --define=kythe_corpus=github.com/google/gvisor \
   --cxxopt=-std=c++17 \
   --config=remote \
   --auth_credentials="${KOKORO_BAZEL_AUTH_CREDENTIAL}" \
