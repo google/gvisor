@@ -114,7 +114,7 @@ func connectTCP(ip net.IP, remotePort, localPort int, timeout time.Duration) err
 	}
 	// The container may not be listening when we first connect, so retry
 	// upon error.
-	cb := func() error {
+	callback := func() error {
 		localAddr := net.TCPAddr{
 			Port: localPort,
 		}
@@ -124,7 +124,7 @@ func connectTCP(ip net.IP, remotePort, localPort int, timeout time.Duration) err
 		}
 		return err
 	}
-	if err := testutil.Poll(cb, timeout); err != nil {
+	if err := testutil.Poll(callback, timeout); err != nil {
 		return fmt.Errorf("timed out waiting to send IP, most recent error: %v", err)
 	}
 

@@ -103,7 +103,8 @@ inline PosixErrorOr<Cleanup> ForkAndExec(const std::string& filename,
 }
 
 // Equivalent to ForkAndExec, except using dirfd and flags with execveat.
-PosixErrorOr<Cleanup> ForkAndExecveat(int32_t dirfd, const std::string& pathname,
+PosixErrorOr<Cleanup> ForkAndExecveat(int32_t dirfd,
+                                      const std::string& pathname,
                                       const ExecveArray& argv,
                                       const ExecveArray& envv, int flags,
                                       const std::function<void()>& fn,

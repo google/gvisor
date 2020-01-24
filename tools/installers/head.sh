@@ -14,7 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -xeo pipefail
+# Install our runtime.
+third_party/gvisor/runsc/runsc install
 
-# Run the image_build.sh script with appropriate parameters.
-IMAGE_PROJECT=ubuntu-os-cloud IMAGE_FAMILY=ubuntu-1804-lts $(dirname $0)/../../tools/image_build.sh $(dirname $0)/??_*.sh
+# Restart docker.
+service docker restart || true

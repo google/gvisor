@@ -596,7 +596,7 @@ func parseTarget(optVal []byte) (iptables.Target, *syserr.Error) {
 
 func filterFromIPTIP(iptip linux.IPTIP) (iptables.IPHeaderFilter, *syserr.Error) {
 	if containsUnsupportedFields(iptip) {
-		log.Warningf("netfilter: unsupported fields in struct iptip: %+v")
+		log.Warningf("netfilter: unsupported fields in struct iptip: %+v", iptip)
 		return iptables.IPHeaderFilter{}, syserr.ErrInvalidArgument
 	}
 	return iptables.IPHeaderFilter{
@@ -609,6 +609,7 @@ func containsUnsupportedFields(iptip linux.IPTIP) bool {
 	var emptyInetAddr = linux.InetAddr{}
 	var emptyInterface = [linux.IFNAMSIZ]byte{}
 	return iptip.Dst != emptyInetAddr ||
+		iptip.Src != emptyInetAddr ||
 		iptip.SrcMask != emptyInetAddr ||
 		iptip.DstMask != emptyInetAddr ||
 		iptip.InputInterface != emptyInterface ||

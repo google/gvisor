@@ -622,7 +622,7 @@ func (c *PacketConn) RemoteAddr() net.Addr {
 	if err != nil {
 		return nil
 	}
-	return fullToTCPAddr(a)
+	return fullToUDPAddr(a)
 }
 
 // Read implements net.Conn.Read

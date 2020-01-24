@@ -18,7 +18,7 @@ import (
 	"testing"
 )
 
-func parallelReader(m *DowngradableRWMutex, clocked, cunlock, cdone chan bool) {
+func parallelReader(m *RWMutex, clocked, cunlock, cdone chan bool) {
 	m.RLock()
 	clocked <- true
 	<-cunlock
@@ -28,7 +28,7 @@ func parallelReader(m *DowngradableRWMutex, clocked, cunlock, cdone chan bool) {
 
 func doTestParallelReaders(numReaders, gomaxprocs int) {
 	runtime.GOMAXPROCS(gomaxprocs)
-	var m DowngradableRWMutex
+	var m RWMutex
 	clocked := make(chan bool)
 	cunlock := make(chan bool)
 	cdone := make(chan bool)
@@ -55,7 +55,7 @@ func TestParallelReaders(t *testing.T) {
 	doTestParallelReaders(4, 2)
 }
 
-func reader(rwm *DowngradableRWMutex, numIterations int, activity *int32, cdone chan bool) {
+func reader(rwm *RWMutex, numIterations int, activity *int32, cdone chan bool) {
 	for i := 0; i < numIterations; i++ {
 		rwm.RLock()
 		n := atomic.AddInt32(activity, 1)
@@ -70,7 +70,7 @@ func reader(rwm *DowngradableRWMutex, numIterations int, activity *int32, cdone 
 	cdone <- true
 }
 
-func writer(rwm *DowngradableRWMutex, numIterations int, activity *int32, cdone chan bool) {
+func writer(rwm *RWMutex, numIterations int, activity *int32, cdone chan bool) {
 	for i := 0; i < numIterations; i++ {
 		rwm.Lock()
 		n := atomic.AddInt32(activity, 10000)
@@ -85,7 +85,7 @@ func writer(rwm *DowngradableRWMutex, numIterations int, activity *int32, cdone 
 	cdone <- true
 }
 
-func downgradingWriter(rwm *DowngradableRWMutex, numIterations int, activity *int32, cdone chan bool) {
+func downgradingWriter(rwm *RWMutex, numIterations int, activity *int32, cdone chan bool) {
 	for i := 0; i < numIterations; i++ {
 		rwm.Lock()
 		n := atomic.AddInt32(activity, 10000)
@@ -112,7 +112,7 @@ func HammerDowngradableRWMutex(gomaxprocs, numReaders, numIterations int) {
 	runtime.GOMAXPROCS(gomaxprocs)
 	// Number of active readers + 10000 * number of active writers.
 	var activity int32
-	var rwm DowngradableRWMutex
+	var rwm RWMutex
 	cdone := make(chan bool)
 	go writer(&rwm, numIterations, &activity, cdone)
 	go downgradingWriter(&rwm, numIterations, &activity, cdone)
@@ -147,4 +147,59 @@ func TestDowngradableRWMutex(t *testing.T) {
 	HammerDowngradableRWMutex(10, 3, n)
 	HammerDowngradableRWMutex(10, 10, n)
 	HammerDowngradableRWMutex(10, 5, n)
+}
+
+func TestRWDoubleTryLock(t *testing.T) {
+	var rwm RWMutex
+	if !rwm.TryLock() {
+		t.Fatal("failed to aquire lock")
+	}
+	if rwm.TryLock() {
+		t.Fatal("unexpectedly succeeded in aquiring locked mutex")
+	}
+}
+
+func TestRWTryLockAfterLock(t *testing.T) {
+	var rwm RWMutex
+	rwm.Lock()
+	if rwm.TryLock() {
+		t.Fatal("unexpectedly succeeded in aquiring locked mutex")
+	}
+}
+
+func TestRWTryLockUnlock(t *testing.T) {
+	var rwm RWMutex
+	if !rwm.TryLock() {
+		t.Fatal("failed to aquire lock")
+	}
+	rwm.Unlock()
+	if !rwm.TryLock() {
+		t.Fatal("failed to aquire lock after unlock")
+	}
+}
+
+func TestTryRLockAfterLock(t *testing.T) {
+	var rwm RWMutex
+	rwm.Lock()
+	if rwm.TryRLock() {
+		t.Fatal("unexpectedly succeeded in aquiring locked mutex")
+	}
+}
+
+func TestTryLockAfterRLock(t *testing.T) {
+	var rwm RWMutex
+	rwm.RLock()
+	if rwm.TryLock() {
+		t.Fatal("unexpectedly succeeded in aquiring locked mutex")
+	}
+}
+
+func TestDoubleTryRLock(t *testing.T) {
+	var rwm RWMutex
+	if !rwm.TryRLock() {
+		t.Fatal("failed to aquire lock")
+	}
+	if !rwm.TryRLock() {
+		t.Fatal("failed to read aquire read locked lock")
+	}
 }

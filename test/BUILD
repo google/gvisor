@@ -20,7 +20,7 @@ platform(
     remote_execution_properties = """
         properties: {
           name: "container-image"
-          value:"docker://gcr.io/cloud-marketplace/google/rbe-ubuntu16-04@sha256:69c9f1652941d64a46f6f7358a44c1718f25caa5cb1ced4a58ccc5281cd183b5"
+          value:"docker://gcr.io/cloud-marketplace/google/rbe-ubuntu16-04@sha256:93f7e127196b9b653d39830c50f8b05d49ef6fd8739a9b5b8ab16e1df5399e50"
         }
         properties: {
           name: "dockerAddCapabilities"
@@ -39,6 +39,6 @@ toolchain(
     ],
     target_compatible_with = [
     ],
-    toolchain = "@bazel_toolchains//configs/ubuntu16_04_clang/9.0.0/bazel_0.28.0/cc:cc-compiler-k8",
+    toolchain = "@bazel_toolchains//configs/ubuntu16_04_clang/10.0.0/bazel_2.0.0/cc:cc-compiler-k8",
     toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
 )

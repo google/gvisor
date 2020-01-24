@@ -24,27 +24,23 @@ import (
 
 // Constants for open(2).
 const (
-	O_ACCMODE   = 000000003
-	O_RDONLY    = 000000000
-	O_WRONLY    = 000000001
-	O_RDWR      = 000000002
-	O_CREAT     = 000000100
-	O_EXCL      = 000000200
-	O_NOCTTY    = 000000400
-	O_TRUNC     = 000001000
-	O_APPEND    = 000002000
-	O_NONBLOCK  = 000004000
-	O_DSYNC     = 000010000
-	O_ASYNC     = 000020000
-	O_DIRECT    = 000040000
-	O_LARGEFILE = 000100000
-	O_DIRECTORY = 000200000
-	O_NOFOLLOW  = 000400000
-	O_NOATIME   = 001000000
-	O_CLOEXEC   = 002000000
-	O_SYNC      = 004000000 // __O_SYNC in Linux
-	O_PATH      = 010000000
-	O_TMPFILE   = 020000000 // __O_TMPFILE in Linux
+	O_ACCMODE  = 000000003
+	O_RDONLY   = 000000000
+	O_WRONLY   = 000000001
+	O_RDWR     = 000000002
+	O_CREAT    = 000000100
+	O_EXCL     = 000000200
+	O_NOCTTY   = 000000400
+	O_TRUNC    = 000001000
+	O_APPEND   = 000002000
+	O_NONBLOCK = 000004000
+	O_DSYNC    = 000010000
+	O_ASYNC    = 000020000
+	O_NOATIME  = 001000000
+	O_CLOEXEC  = 002000000
+	O_SYNC     = 004000000 // __O_SYNC in Linux
+	O_PATH     = 010000000
+	O_TMPFILE  = 020000000 // __O_TMPFILE in Linux
 )
 
 // Constants for fstatat(2).
@@ -179,6 +175,19 @@ const (
 	DT_SOCK    = 12
 	DT_WHT     = 14
 )
+
+// DirentType are the friendly strings for linux_dirent64.d_type.
+var DirentType = abi.ValueSet{
+	DT_UNKNOWN: "DT_UNKNOWN",
+	DT_FIFO:    "DT_FIFO",
+	DT_CHR:     "DT_CHR",
+	DT_DIR:     "DT_DIR",
+	DT_BLK:     "DT_BLK",
+	DT_REG:     "DT_REG",
+	DT_LNK:     "DT_LNK",
+	DT_SOCK:    "DT_SOCK",
+	DT_WHT:     "DT_WHT",
+}
 
 // Values for preadv2/pwritev2.
 const (

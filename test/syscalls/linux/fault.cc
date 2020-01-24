@@ -37,6 +37,9 @@ int GetPcFromUcontext(ucontext_t* uc, uintptr_t* pc) {
 #elif defined(__i386__)
   *pc = uc->uc_mcontext.gregs[REG_EIP];
   return 1;
+#elif defined(__aarch64__)
+  *pc = uc->uc_mcontext.pc;
+  return 1;
 #else
   return 0;
 #endif

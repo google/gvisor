@@ -33,8 +33,8 @@ namespace testing {
 // destroyed.
 inline PosixErrorOr<Cleanup> Mount(const std::string &source,
                                    const std::string &target,
-                                   const std::string &fstype, uint64_t mountflags,
-                                   const std::string &data,
+                                   const std::string &fstype,
+                                   uint64_t mountflags, const std::string &data,
                                    uint64_t umountflags) {
   if (mount(source.c_str(), target.c_str(), fstype.c_str(), mountflags,
             data.c_str()) == -1) {

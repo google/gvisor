@@ -470,6 +470,89 @@ func TestConnectResetAfterClose(t *testing.T) {
 	}
 }
 
+// TestCurrentConnectedIncrement tests increment of the current
+// established and connected counters.
+func TestCurrentConnectedIncrement(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	// Set TCPTimeWaitTimeout to 1 seconds so that sockets are marked closed
+	// after 1 second in TIME_WAIT state.
+	tcpTimeWaitTimeout := 1 * time.Second
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPTimeWaitTimeoutOption(tcpTimeWaitTimeout)); err != nil {
+		t.Fatalf("c.stack.SetTransportProtocolOption(tcp, tcpip.TCPTimeWaitTimeout(%d) failed: %s", tcpTimeWaitTimeout, err)
+	}
+
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
+	ep := c.EP
+	c.EP = nil
+
+	if got := c.Stack().Stats().TCP.CurrentEstablished.Value(); got != 1 {
+		t.Errorf("got stats.TCP.CurrentEstablished.Value() = %v, want = 1", got)
+	}
+	gotConnected := c.Stack().Stats().TCP.CurrentConnected.Value()
+	if gotConnected != 1 {
+		t.Errorf("got stats.TCP.CurrentConnected.Value() = %v, want = 1", gotConnected)
+	}
+
+	ep.Close()
+
+	checker.IPv4(t, c.GetPacket(),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(c.IRS)+1),
+			checker.AckNum(790),
+			checker.TCPFlags(header.TCPFlagAck|header.TCPFlagFin),
+		),
+	)
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  790,
+		AckNum:  c.IRS.Add(2),
+		RcvWnd:  30000,
+	})
+
+	if got := c.Stack().Stats().TCP.CurrentEstablished.Value(); got != 0 {
+		t.Errorf("got stats.TCP.CurrentEstablished.Value() = %v, want = 0", got)
+	}
+	if got := c.Stack().Stats().TCP.CurrentConnected.Value(); got != gotConnected {
+		t.Errorf("got stats.TCP.CurrentConnected.Value() = %v, want = %v", got, gotConnected)
+	}
+
+	// Ack and send FIN as well.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck | header.TCPFlagFin,
+		SeqNum:  790,
+		AckNum:  c.IRS.Add(2),
+		RcvWnd:  30000,
+	})
+
+	// Check that the stack acks the FIN.
+	checker.IPv4(t, c.GetPacket(),
+		checker.PayloadLen(header.TCPMinimumSize),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(c.IRS)+2),
+			checker.AckNum(791),
+			checker.TCPFlags(header.TCPFlagAck),
+		),
+	)
+
+	// Wait for the TIME-WAIT state to transition to CLOSED.
+	time.Sleep(1 * time.Second)
+
+	if got := c.Stack().Stats().TCP.CurrentEstablished.Value(); got != 0 {
+		t.Errorf("got stats.TCP.CurrentEstablished.Value() = %v, want = 0", got)
+	}
+	if got := c.Stack().Stats().TCP.CurrentConnected.Value(); got != 0 {
+		t.Errorf("got stats.TCP.CurrentConnected.Value() = %v, want = 0", got)
+	}
+}
+
 // TestClosingWithEnqueuedSegments tests handling of still enqueued segments
 // when the endpoint transitions to StateClose. The in-flight segments would be
 // re-enqueued to a any listening endpoint.

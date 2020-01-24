@@ -934,6 +934,7 @@ func (e *endpoint) transitionToStateCloseLocked() {
 	// Mark the endpoint as fully closed for reads/writes.
 	e.cleanupLocked()
 	e.setEndpointState(StateClose)
+	e.stack.Stats().TCP.CurrentConnected.Decrement()
 	e.stack.Stats().TCP.EstablishedClosed.Increment()
 }
 

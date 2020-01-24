@@ -16,5 +16,13 @@
 
 set -xeo pipefail
 
-# Run the image_build.sh script with appropriate parameters.
-IMAGE_PROJECT=ubuntu-os-cloud IMAGE_FAMILY=ubuntu-1604-lts $(dirname $0)/../../tools/image_build.sh $(dirname $0)/??_*.sh
+declare -r BAZEL_VERSION=2.0.0
+
+# Install bazel dependencies.
+apt-get update && apt-get install -y openjdk-8-jdk-headless unzip
+
+# Use the release installer.
+curl -L -o bazel-${BAZEL_VERSION}-installer-linux-x86_64.sh https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel-${BAZEL_VERSION}-installer-linux-x86_64.sh
+chmod a+x bazel-${BAZEL_VERSION}-installer-linux-x86_64.sh
+./bazel-${BAZEL_VERSION}-installer-linux-x86_64.sh
+rm -f bazel-${BAZEL_VERSION}-installer-linux-x86_64.sh

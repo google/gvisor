@@ -337,19 +337,12 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, flags uint32, 
 			return nil, err
 		}
 	}
-	mnt := rp.Mount()
 	switch impl := d.inode.impl.(type) {
 	case *regularFile:
 		var fd regularFileFD
-		fd.readable = vfs.MayReadFileWithOpenFlags(flags)
-		fd.writable = vfs.MayWriteFileWithOpenFlags(flags)
-		if fd.writable {
-			if err := mnt.CheckBeginWrite(); err != nil {
-				return nil, err
-			}
-			// mnt.EndWrite() is called by regularFileFD.Release().
+		if err := fd.vfsfd.Init(&fd, flags, rp.Mount(), &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+			return nil, err
 		}
-		fd.vfsfd.Init(&fd, flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{})
 		if flags&linux.O_TRUNC != 0 {
 			impl.mu.Lock()
 			impl.data.Truncate(0, impl.memFile)
@@ -363,7 +356,9 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, flags uint32, 
 			return nil, syserror.EISDIR
 		}
 		var fd directoryFD
-		fd.vfsfd.Init(&fd, flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{})
+		if err := fd.vfsfd.Init(&fd, flags, rp.Mount(), &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+			return nil, err
+		}
 		return &fd.vfsfd, nil
 	case *symlink:
 		// Can't open symlinks without O_PATH (which is unimplemented).

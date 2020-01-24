@@ -163,12 +163,12 @@ TEST(FutimesatTest, OnRelPath) {
 TEST(FutimesatTest, InvalidNsec) {
   auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   struct timeval times[4][2] = {{
-                                    {0, 1},                       // Valid
+                                    {0, 1},                         // Valid
                                     {1, static_cast<int64_t>(1e7)}  // Invalid
                                 },
                                 {
                                     {1, static_cast<int64_t>(1e7)},  // Invalid
-                                    {0, 1}                         // Valid
+                                    {0, 1}                           // Valid
                                 },
                                 {
                                     {0, 1},  // Valid
@@ -288,14 +288,15 @@ TEST(UtimeTest, ZeroAtimeandMtime) {
 
 TEST(UtimensatTest, InvalidNsec) {
   auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
-  struct timespec times[2][2] = {{
-                                     {0, UTIME_OMIT},               // Valid
-                                     {2, static_cast<int64_t>(1e10)}  // Invalid
-                                 },
-                                 {
-                                     {2, static_cast<int64_t>(1e10)},  // Invalid
-                                     {0, UTIME_OMIT}                 // Valid
-                                 }};
+  struct timespec times[2][2] = {
+      {
+          {0, UTIME_OMIT},                 // Valid
+          {2, static_cast<int64_t>(1e10)}  // Invalid
+      },
+      {
+          {2, static_cast<int64_t>(1e10)},  // Invalid
+          {0, UTIME_OMIT}                   // Valid
+      }};
 
   for (unsigned int i = 0; i < sizeof(times) / sizeof(times[0]); i++) {
     std::cout << "test:" << i << "\n";
