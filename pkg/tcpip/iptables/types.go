@@ -153,7 +153,7 @@ func (table *Table) SetMetadata(metadata interface{}) {
 // packets this rule applies to. If there are no matchers in the rule, it
 // applies to any packet.
 type Rule struct {
-	// IPHeaderFilter holds basic IP filtering fields common to every rule.
+	// Filter holds basic IP filtering fields common to every rule.
 	Filter IPHeaderFilter
 
 	// Matchers is the list of matchers for this rule.

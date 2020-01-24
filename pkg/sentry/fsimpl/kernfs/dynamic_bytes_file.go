@@ -55,7 +55,9 @@ func (f *DynamicBytesFile) Init(creds *auth.Credentials, ino uint64, data vfs.Dy
 // Open implements Inode.Open.
 func (f *DynamicBytesFile) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*vfs.FileDescription, error) {
 	fd := &DynamicBytesFD{}
-	fd.Init(rp.Mount(), vfsd, f.data, flags)
+	if err := fd.Init(rp.Mount(), vfsd, f.data, flags); err != nil {
+		return nil, err
+	}
 	return &fd.vfsfd, nil
 }
 
@@ -80,10 +82,13 @@ type DynamicBytesFD struct {
 }
 
 // Init initializes a DynamicBytesFD.
-func (fd *DynamicBytesFD) Init(m *vfs.Mount, d *vfs.Dentry, data vfs.DynamicBytesSource, flags uint32) {
+func (fd *DynamicBytesFD) Init(m *vfs.Mount, d *vfs.Dentry, data vfs.DynamicBytesSource, flags uint32) error {
+	if err := fd.vfsfd.Init(fd, flags, m, d, &vfs.FileDescriptionOptions{}); err != nil {
+		return err
+	}
 	fd.inode = d.Impl().(*Dentry).inode
 	fd.SetDataSource(data)
-	fd.vfsfd.Init(fd, flags, m, d, &vfs.FileDescriptionOptions{})
+	return nil
 }
 
 // Seek implements vfs.FileDescriptionImpl.Seek.

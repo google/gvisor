@@ -301,6 +301,8 @@ func (n *ndpDispatcher) OnDHCPv6Configuration(nicID tcpip.NICID, configuration s
 // Included in the subtests is a test to make sure that an invalid
 // RetransmitTimer (<1ms) values get fixed to the default RetransmitTimer of 1s.
 func TestDADResolve(t *testing.T) {
+	const nicID = 1
+
 	tests := []struct {
 		name                    string
 		dupAddrDetectTransmits  uint8
@@ -331,44 +333,36 @@ func TestDADResolve(t *testing.T) {
 			opts.NDPConfigs.RetransmitTimer = test.retransTimer
 			opts.NDPConfigs.DupAddrDetectTransmits = test.dupAddrDetectTransmits
 
-			e := channel.New(10, 1280, linkAddr1)
+			e := channel.New(int(test.dupAddrDetectTransmits), 1280, linkAddr1)
 			s := stack.New(opts)
-			if err := s.CreateNIC(1, e); err != nil {
-				t.Fatalf("CreateNIC(_) = %s", err)
+			if err := s.CreateNIC(nicID, e); err != nil {
+				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
 
-			if err := s.AddAddress(1, header.IPv6ProtocolNumber, addr1); err != nil {
-				t.Fatalf("AddAddress(_, %d, %s) = %s", header.IPv6ProtocolNumber, addr1, err)
-			}
-
-			stat := s.Stats().ICMP.V6PacketsSent.NeighborSolicit
-
-			// Should have sent an NDP NS immediately.
-			if got := stat.Value(); got != 1 {
-				t.Fatalf("got NeighborSolicit = %d, want = 1", got)
-
+			if err := s.AddAddress(nicID, header.IPv6ProtocolNumber, addr1); err != nil {
+				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv6ProtocolNumber, addr1, err)
 			}
 
 			// Address should not be considered bound to the NIC yet
 			// (DAD ongoing).
-			addr, err := s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
+			addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
 			if err != nil {
-				t.Fatalf("got stack.GetMainNICAddress(_, _) = (_, %v), want = (_, nil)", err)
+				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
 			}
 			if want := (tcpip.AddressWithPrefix{}); addr != want {
-				t.Fatalf("got stack.GetMainNICAddress(_, _) = (%s, nil), want = (%s, nil)", addr, want)
+				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, addr, want)
 			}
 
 			// Wait for the remaining time - some delta (500ms), to
 			// make sure the address is still not resolved.
 			const delta = 500 * time.Millisecond
 			time.Sleep(test.expectedRetransmitTimer*time.Duration(test.dupAddrDetectTransmits) - delta)
-			addr, err = s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
+			addr, err = s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
 			if err != nil {
-				t.Fatalf("got stack.GetMainNICAddress(_, _) = (_, %v), want = (_, nil)", err)
+				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
 			}
 			if want := (tcpip.AddressWithPrefix{}); addr != want {
-				t.Fatalf("got stack.GetMainNICAddress(_, _) = (%s, nil), want = (%s, nil)", addr, want)
+				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, addr, want)
 			}
 
 			// Wait for DAD to resolve.
@@ -385,8 +379,8 @@ func TestDADResolve(t *testing.T) {
 				if e.err != nil {
 					t.Fatal("got DAD error: ", e.err)
 				}
-				if e.nicID != 1 {
-					t.Fatalf("got DAD event w/ nicID = %d, want = 1", e.nicID)
+				if e.nicID != nicID {
+					t.Fatalf("got DAD event w/ nicID = %d, want = %d", e.nicID, nicID)
 				}
 				if e.addr != addr1 {
 					t.Fatalf("got DAD event w/ addr = %s, want = %s", addr, addr1)
@@ -395,16 +389,16 @@ func TestDADResolve(t *testing.T) {
 					t.Fatal("got DAD event w/ resolved = false, want = true")
 				}
 			}
-			addr, err = s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
+			addr, err = s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
 			if err != nil {
-				t.Fatalf("stack.GetMainNICAddress(_, _) err = %s", err)
+				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
 			}
 			if addr.Address != addr1 {
-				t.Fatalf("got stack.GetMainNICAddress(_, _) = %s, want = %s", addr, addr1)
+				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, header.IPv6ProtocolNumber, addr, addr1)
 			}
 
 			// Should not have sent any more NS messages.
-			if got := stat.Value(); got != uint64(test.dupAddrDetectTransmits) {
+			if got := s.Stats().ICMP.V6PacketsSent.NeighborSolicit.Value(); got != uint64(test.dupAddrDetectTransmits) {
 				t.Fatalf("got NeighborSolicit = %d, want = %d", got, test.dupAddrDetectTransmits)
 			}
 
@@ -425,7 +419,6 @@ func TestDADResolve(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 // TestDADFail tests to make sure that the DAD process fails if another node is

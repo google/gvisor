@@ -114,7 +114,7 @@ TEST(SigaltstackTest, ResetByExecve) {
 
 volatile bool badhandler_on_sigaltstack = true;      // Set by the handler.
 char* volatile badhandler_low_water_mark = nullptr;  // Set by the handler.
-volatile uint8_t badhandler_recursive_faults = 0;      // Consumed by the handler.
+volatile uint8_t badhandler_recursive_faults = 0;    // Consumed by the handler.
 
 void badhandler(int sig, siginfo_t* siginfo, void* arg) {
   char stack_var = 0;

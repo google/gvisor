@@ -157,7 +157,9 @@ func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*v
 	switch in.impl.(type) {
 	case *regularFile:
 		var fd regularFileFD
-		fd.vfsfd.Init(&fd, flags, mnt, vfsd, &vfs.FileDescriptionOptions{})
+		if err := fd.vfsfd.Init(&fd, flags, mnt, vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+			return nil, err
+		}
 		return &fd.vfsfd, nil
 	case *directory:
 		// Can't open directories writably. This check is not necessary for a read
@@ -166,7 +168,9 @@ func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*v
 			return nil, syserror.EISDIR
 		}
 		var fd directoryFD
-		fd.vfsfd.Init(&fd, flags, mnt, vfsd, &vfs.FileDescriptionOptions{})
+		if err := fd.vfsfd.Init(&fd, flags, mnt, vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+			return nil, err
+		}
 		return &fd.vfsfd, nil
 	case *symlink:
 		if flags&linux.O_PATH == 0 {

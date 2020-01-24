@@ -14,15 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -xeo pipefail
-
-declare -r BAZEL_VERSION=0.29.1
-
-# Install bazel dependencies.
-apt-get update && apt-get install -y openjdk-8-jdk-headless unzip
-
-# Use the release installer.
-curl -L -o bazel-${BAZEL_VERSION}-installer-linux-x86_64.sh https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel-${BAZEL_VERSION}-installer-linux-x86_64.sh
-chmod a+x bazel-${BAZEL_VERSION}-installer-linux-x86_64.sh
-./bazel-${BAZEL_VERSION}-installer-linux-x86_64.sh
-rm -f bazel-${BAZEL_VERSION}-installer-linux-x86_64.sh
+# Install runsc from the master branch.
+curl -fsSL https://gvisor.dev/archive.key | sudo apt-key add -
+add-apt-repository "deb https://storage.googleapis.com/gvisor/releases release main"
+apt-get update && apt-get install -y runsc

@@ -41,12 +41,12 @@ func newNetDir(root *auth.Credentials, inoGen InoGenerator, k *kernel.Kernel) *k
 	var contents map[string]*kernfs.Dentry
 	if stack := k.NetworkStack(); stack != nil {
 		const (
-			arp       = "IP address       HW type     Flags       HW address            Mask     Device"
-			netlink   = "sk       Eth Pid    Groups   Rmem     Wmem     Dump     Locks     Drops     Inode"
-			packet    = "sk       RefCnt Type Proto  Iface R Rmem   User   Inode"
-			protocols = "protocol  size sockets  memory press maxhdr  slab module     cl co di ac io in de sh ss gs se re sp bi br ha uh gp em"
-			ptype     = "Type Device      Function"
-			upd6      = "  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode"
+			arp       = "IP address       HW type     Flags       HW address            Mask     Device\n"
+			netlink   = "sk       Eth Pid    Groups   Rmem     Wmem     Dump     Locks     Drops     Inode\n"
+			packet    = "sk       RefCnt Type Proto  Iface R Rmem   User   Inode\n"
+			protocols = "protocol  size sockets  memory press maxhdr  slab module     cl co di ac io in de sh ss gs se re sp bi br ha uh gp em\n"
+			ptype     = "Type Device      Function\n"
+			upd6      = "  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"
 		)
 		psched := fmt.Sprintf("%08x %08x %08x %08x\n", uint64(time.Microsecond/time.Nanosecond), 64, 1000000, uint64(time.Second/time.Nanosecond))
 
@@ -779,6 +779,6 @@ func (d *netStatData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		"TCPHystartTrainCwnd TCPHystartDelayDetect TCPHystartDelayCwnd " +
 		"TCPACKSkippedSynRecv TCPACKSkippedPAWS TCPACKSkippedSeq " +
 		"TCPACKSkippedFinWait2 TCPACKSkippedTimeWait TCPACKSkippedChallenge " +
-		"TCPWinProbe TCPKeepAlive TCPMTUPFail TCPMTUPSuccess")
+		"TCPWinProbe TCPKeepAlive TCPMTUPFail TCPMTUPSuccess\n")
 	return nil
 }
