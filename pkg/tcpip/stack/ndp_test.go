@@ -35,13 +35,14 @@ import (
 )
 
 const (
-	addr1          = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-	addr2          = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-	addr3          = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03")
-	linkAddr1      = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
-	linkAddr2      = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x07")
-	linkAddr3      = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x08")
-	defaultTimeout = 100 * time.Millisecond
+	addr1                    = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+	addr2                    = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+	addr3                    = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03")
+	linkAddr1                = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
+	linkAddr2                = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x07")
+	linkAddr3                = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x08")
+	defaultTimeout           = 100 * time.Millisecond
+	defaultAsyncEventTimeout = time.Second
 )
 
 var (
@@ -1086,7 +1087,7 @@ func TestRouterDiscovery(t *testing.T) {
 	// Wait for the normal lifetime plus an extra bit for the
 	// router to get invalidated. If we don't get an invalidation
 	// event after this time, then something is wrong.
-	expectAsyncRouterInvalidationEvent(llAddr2, l2LifetimeSeconds*time.Second+defaultTimeout)
+	expectAsyncRouterInvalidationEvent(llAddr2, l2LifetimeSeconds*time.Second+defaultAsyncEventTimeout)
 
 	// Rx an RA from lladdr2 with huge lifetime.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBuf(llAddr2, 1000))
@@ -1103,7 +1104,7 @@ func TestRouterDiscovery(t *testing.T) {
 	// Wait for the normal lifetime plus an extra bit for the
 	// router to get invalidated. If we don't get an invalidation
 	// event after this time, then something is wrong.
-	expectAsyncRouterInvalidationEvent(llAddr3, l3LifetimeSeconds*time.Second+defaultTimeout)
+	expectAsyncRouterInvalidationEvent(llAddr3, l3LifetimeSeconds*time.Second+defaultAsyncEventTimeout)
 }
 
 // TestRouterDiscoveryMaxRouters tests that only
@@ -1342,7 +1343,7 @@ func TestPrefixDiscovery(t *testing.T) {
 		if diff := checkPrefixEvent(e, subnet2, false); diff != "" {
 			t.Errorf("prefix event mismatch (-want +got):\n%s", diff)
 		}
-	case <-time.After(time.Duration(lifetime)*time.Second + defaultTimeout):
+	case <-time.After(time.Duration(lifetime)*time.Second + defaultAsyncEventTimeout):
 		t.Fatal("timed out waiting for prefix discovery event")
 	}
 
@@ -1681,7 +1682,7 @@ func TestAutoGenAddr(t *testing.T) {
 		if diff := checkAutoGenAddrEvent(e, addr1, invalidatedAddr); diff != "" {
 			t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 		}
-	case <-time.After(newMinVLDuration + defaultTimeout):
+	case <-time.After(newMinVLDuration + defaultAsyncEventTimeout):
 		t.Fatal("timed out waiting for addr auto gen event")
 	}
 	if contains(s.NICInfo()[1].ProtocolAddresses, addr1) {
@@ -1987,7 +1988,7 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 	expectPrimaryAddr(addr1)
 
 	// Wait for addr of prefix1 to be deprecated.
-	expectAutoGenAddrEventAfter(addr1, deprecatedAddr, newMinVLDuration-time.Second+defaultTimeout)
+	expectAutoGenAddrEventAfter(addr1, deprecatedAddr, newMinVLDuration-time.Second+defaultAsyncEventTimeout)
 	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
 		t.Fatalf("should not have %s in the list of addresses", addr1)
 	}
@@ -2027,7 +2028,7 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 	expectPrimaryAddr(addr1)
 
 	// Wait for addr of prefix1 to be deprecated.
-	expectAutoGenAddrEventAfter(addr1, deprecatedAddr, newMinVLDuration-time.Second+defaultTimeout)
+	expectAutoGenAddrEventAfter(addr1, deprecatedAddr, newMinVLDuration-time.Second+defaultAsyncEventTimeout)
 	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
 		t.Fatalf("should not have %s in the list of addresses", addr1)
 	}
@@ -2041,7 +2042,7 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 	}
 
 	// Wait for addr of prefix1 to be invalidated.
-	expectAutoGenAddrEventAfter(addr1, invalidatedAddr, time.Second+defaultTimeout)
+	expectAutoGenAddrEventAfter(addr1, invalidatedAddr, time.Second+defaultAsyncEventTimeout)
 	if contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
 		t.Fatalf("should not have %s in the list of addresses", addr1)
 	}
@@ -2073,7 +2074,7 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 				if diff := checkAutoGenAddrEvent(e, addr2, invalidatedAddr); diff != "" {
 					t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 				}
-			case <-time.After(defaultTimeout):
+			case <-time.After(defaultAsyncEventTimeout):
 				t.Fatal("timed out waiting for addr auto gen event")
 			}
 		} else if diff := checkAutoGenAddrEvent(e, addr2, invalidatedAddr); diff == "" {
@@ -2088,7 +2089,7 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 			t.Fatalf("got unexpected auto-generated event")
 		}
 
-	case <-time.After(newMinVLDuration + defaultTimeout):
+	case <-time.After(newMinVLDuration + defaultAsyncEventTimeout):
 		t.Fatal("timed out waiting for addr auto gen event")
 	}
 	if contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
@@ -2213,7 +2214,7 @@ func TestAutoGenAddrFiniteToInfiniteToFiniteVL(t *testing.T) {
 						t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 					}
 
-				case <-time.After(minVLSeconds*time.Second + defaultTimeout):
+				case <-time.After(minVLSeconds*time.Second + defaultAsyncEventTimeout):
 					t.Fatal("timeout waiting for addr auto gen event")
 				}
 			})
@@ -2701,7 +2702,7 @@ func TestAutoGenAddrWithOpaqueIID(t *testing.T) {
 		if diff := checkAutoGenAddrEvent(e, addr1, invalidatedAddr); diff != "" {
 			t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 		}
-	case <-time.After(validLifetimeSecondPrefix1*time.Second + defaultTimeout):
+	case <-time.After(validLifetimeSecondPrefix1*time.Second + defaultAsyncEventTimeout):
 		t.Fatal("timed out waiting for addr auto gen event")
 	}
 	if contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
@@ -3325,12 +3326,12 @@ func TestRouterSolicitation(t *testing.T) {
 				// times.
 				remaining := test.maxRtrSolicit
 				if remaining > 0 {
-					waitForPkt(test.effectiveMaxRtrSolicitDelay + defaultTimeout)
+					waitForPkt(test.effectiveMaxRtrSolicitDelay + defaultAsyncEventTimeout)
 					remaining--
 				}
 				for ; remaining > 0; remaining-- {
 					waitForNothing(test.effectiveRtrSolicitInt - defaultTimeout)
-					waitForPkt(2 * defaultTimeout)
+					waitForPkt(defaultAsyncEventTimeout)
 				}
 
 				// Make sure no more RS.
@@ -3411,9 +3412,9 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 
 	// Disable forwarding which should start router solicitations.
 	s.SetForwarding(false)
-	waitForPkt(delay + defaultTimeout)
-	waitForPkt(interval + defaultTimeout)
-	waitForPkt(interval + defaultTimeout)
+	waitForPkt(delay + defaultAsyncEventTimeout)
+	waitForPkt(interval + defaultAsyncEventTimeout)
+	waitForPkt(interval + defaultAsyncEventTimeout)
 	select {
 	case <-e.C:
 		t.Fatal("unexpectedly got an extra packet after sending out the expected RSs")
