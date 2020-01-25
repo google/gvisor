@@ -149,6 +149,10 @@ type inode struct {
 	ctime int64 // nanoseconds
 	mtime int64 // nanoseconds
 
+	// Only meaningful for device special files.
+	rdevMajor uint32
+	rdevMinor uint32
+
 	impl interface{} // immutable
 }
 
@@ -269,6 +273,15 @@ func (i *inode) statTo(stat *linux.Statx) {
 		stat.Blocks = allocatedBlocksForSize(stat.Size)
 	case *namedPipe:
 		stat.Mode |= linux.S_IFIFO
+	case *deviceFile:
+		switch impl.kind {
+		case vfs.BlockDevice:
+			stat.Mode |= linux.S_IFBLK
+		case vfs.CharDevice:
+			stat.Mode |= linux.S_IFCHR
+		}
+		stat.RdevMajor = impl.major
+		stat.RdevMinor = impl.minor
 	default:
 		panic(fmt.Sprintf("unknown inode type: %T", i.impl))
 	}
@@ -309,12 +322,8 @@ func (i *inode) setStat(stat linux.Statx) error {
 			}
 		case *directory:
 			return syserror.EISDIR
-		case *symlink:
-			return syserror.EINVAL
-		case *namedPipe:
-			// Nothing.
 		default:
-			panic(fmt.Sprintf("unknown inode type: %T", i.impl))
+			return syserror.EINVAL
 		}
 	}
 	if mask&linux.STATX_ATIME != 0 {
@@ -353,13 +362,22 @@ func allocatedBlocksForSize(size uint64) uint64 {
 }
 
 func (i *inode) direntType() uint8 {
-	switch i.impl.(type) {
+	switch impl := i.impl.(type) {
 	case *regularFile:
 		return linux.DT_REG
 	case *directory:
 		return linux.DT_DIR
 	case *symlink:
 		return linux.DT_LNK
+	case *deviceFile:
+		switch impl.kind {
+		case vfs.BlockDevice:
+			return linux.DT_BLK
+		case vfs.CharDevice:
+			return linux.DT_CHR
+		default:
+			panic(fmt.Sprintf("unknown vfs.DeviceKind: %v", impl.kind))
+		}
 	default:
 		panic(fmt.Sprintf("unknown inode type: %T", i.impl))
 	}
