@@ -19,7 +19,7 @@ package pagetables
 import (
 	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // archPageTables is architecture-specific data.

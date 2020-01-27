@@ -5,7 +5,7 @@ import (
 
 	"fmt"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"io"
 	"reflect"
 )

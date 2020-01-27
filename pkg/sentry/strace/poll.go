@@ -22,7 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // PollEventSet is the set of poll(2) event flags.

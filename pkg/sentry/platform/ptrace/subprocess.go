@@ -25,8 +25,8 @@ import (
 	"gvisor.dev/gvisor/pkg/procid"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Linux kernel errnos which "should never be seen by user programs", but will
