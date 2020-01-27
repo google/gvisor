@@ -16,33 +16,28 @@ package iptables
 
 import (
 	"fmt"
-	"runtime/debug"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-type UDPMatcher struct {
-	Data UDPMatcherData
+// TODO(gvisor.dev/issue/170): The following per-matcher params should be
+// supported:
+// - Table name
+// - Match size
+// - User size
+// - Hooks
+// - Proto
+// - Family
 
-	// tablename string
-	// unsigned int matchsize;
-	// unsigned int usersize;
-	// #ifdef CONFIG_COMPAT
-	// unsigned int compatsize;
-	// #endif
-	// unsigned int hooks;
-	// unsigned short proto;
-	// unsigned short family;
+// UDPMatcher matches UDP packets and their headers. It implements Matcher.
+type UDPMatcher struct {
+	Data UDPMatcherParams
 }
 
-// TODO: Delete?
-// MatchCheckEntryParams
-
-type UDPMatcherData struct {
-	// Filter IPHeaderFilter
-
+// UDPMatcherParams are the parameters used to create a UDPMatcher.
+type UDPMatcherParams struct {
 	SourcePortStart      uint16
 	SourcePortEnd        uint16
 	DestinationPortStart uint16
@@ -50,12 +45,12 @@ type UDPMatcherData struct {
 	InverseFlags         uint8
 }
 
-func NewUDPMatcher(filter IPHeaderFilter, data UDPMatcherData) (Matcher, error) {
-	// TODO: We currently only support source port and destination port.
-	log.Infof("Adding rule with UDPMatcherData: %+v", data)
+// NewUDPMatcher returns a new instance of UDPMatcher.
+func NewUDPMatcher(filter IPHeaderFilter, data UDPMatcherParams) (Matcher, error) {
+	log.Infof("Adding rule with UDPMatcherParams: %+v", data)
 
 	if data.InverseFlags != 0 {
-		return nil, fmt.Errorf("unsupported UDP matcher flags set")
+		return nil, fmt.Errorf("unsupported UDP matcher inverse flags set")
 	}
 
 	if filter.Protocol != header.UDPProtocolNumber {
@@ -65,21 +60,18 @@ func NewUDPMatcher(filter IPHeaderFilter, data UDPMatcherData) (Matcher, error) 
 	return &UDPMatcher{Data: data}, nil
 }
 
-// TODO: Check xt_tcpudp.c. Need to check for same things (e.g. fragments).
+// Match implements Matcher.Match.
 func (um *UDPMatcher) Match(hook Hook, pkt tcpip.PacketBuffer, interfaceName string) (bool, bool) {
-	log.Infof("UDPMatcher called from: %s", string(debug.Stack()))
 	netHeader := header.IPv4(pkt.NetworkHeader)
 
-	// TODO: Do we check proto here or elsewhere? I think elsewhere (check
-	// codesearch).
+	// TODO(gvisor.dev/issue/170): Proto checks should ultimately be moved
+	// into the iptables.Check codepath as matchers are added.
 	if netHeader.TransportProtocol() != header.UDPProtocolNumber {
-		log.Infof("UDPMatcher: wrong protocol number")
 		return false, false
 	}
 
 	// We dont't match fragments.
 	if frag := netHeader.FragmentOffset(); frag != 0 {
-		log.Infof("UDPMatcher: it's a fragment")
 		if frag == 1 {
 			return false, true
 		}
@@ -89,20 +81,18 @@ func (um *UDPMatcher) Match(hook Hook, pkt tcpip.PacketBuffer, interfaceName str
 
 	// Now we need the transport header. However, this may not have been set
 	// yet.
-	// TODO
+	// TODO(gvisor.dev/issue/170): Parsing the transport header should
+	// ultimately be moved into the iptables.Check codepath as matchers are
+	// added.
 	var udpHeader header.UDP
 	if pkt.TransportHeader != nil {
-		log.Infof("UDPMatcher: transport header is not nil")
 		udpHeader = header.UDP(pkt.TransportHeader)
 	} else {
-		log.Infof("UDPMatcher: transport header is nil")
-		log.Infof("UDPMatcher: is network header nil: %t", pkt.NetworkHeader == nil)
 		// The UDP header hasn't been parsed yet. We have to do it here.
 		if len(pkt.Data.First()) < header.UDPMinimumSize {
 			// There's no valid UDP header here, so we hotdrop the
 			// packet.
-			// TODO: Stats.
-			log.Warningf("Dropping UDP packet: size to small.")
+			log.Warningf("Dropping UDP packet: size too small.")
 			return false, true
 		}
 		udpHeader = header.UDP(pkt.Data.First())
@@ -112,10 +102,6 @@ func (um *UDPMatcher) Match(hook Hook, pkt tcpip.PacketBuffer, interfaceName str
 	// matching range.
 	sourcePort := udpHeader.SourcePort()
 	destinationPort := udpHeader.DestinationPort()
-	log.Infof("UDPMatcher: sport and dport are %d and %d. sports and dport start and end are (%d, %d) and (%d, %d)",
-		udpHeader.SourcePort(), udpHeader.DestinationPort(),
-		um.Data.SourcePortStart, um.Data.SourcePortEnd,
-		um.Data.DestinationPortStart, um.Data.DestinationPortEnd)
 	if sourcePort < um.Data.SourcePortStart || um.Data.SourcePortEnd < sourcePort {
 		return false, false
 	}

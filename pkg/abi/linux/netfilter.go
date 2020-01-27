@@ -198,6 +198,8 @@ type XTEntryMatch struct {
 // SizeOfXTEntryMatch is the size of an XTEntryMatch.
 const SizeOfXTEntryMatch = 32
 
+// KernelXTEntryMatch is identical to XTEntryMatch, but contains
+// variable-length Data field.
 type KernelXTEntryMatch struct {
 	XTEntryMatch
 	Data []byte
@@ -349,19 +351,19 @@ func goString(cstring []byte) string {
 // XTUDP holds data for matching UDP packets. It corresponds to struct xt_udp
 // in include/uapi/linux/netfilter/xt_tcpudp.h.
 type XTUDP struct {
-	// SourcePortStart specifies the inclusive start of the range of source
-	// ports to which the matcher applies.
+	// SourcePortStart is the inclusive start of the range of source ports
+	// to which the matcher applies.
 	SourcePortStart uint16
 
-	// SourcePortEnd specifies the inclusive end of the range of source ports
-	// to which the matcher applies.
+	// SourcePortEnd is the inclusive end of the range of source ports to
+	// which the matcher applies.
 	SourcePortEnd uint16
 
-	// DestinationPortStart specifies the start of the destination port
+	// DestinationPortStart is the inclusive start of the destination port
 	// range to which the matcher applies.
 	DestinationPortStart uint16
 
-	// DestinationPortEnd specifies the start of the destination port
+	// DestinationPortEnd is the inclusive end of the destination port
 	// range to which the matcher applies.
 	DestinationPortEnd uint16
 
