@@ -15,6 +15,7 @@
 package ipv6
 
 import (
+	"context"
 	"reflect"
 	"strings"
 	"testing"
@@ -264,8 +265,8 @@ func newTestContext(t *testing.T) *testContext {
 }
 
 func (c *testContext) cleanup() {
-	close(c.linkEP0.C)
-	close(c.linkEP1.C)
+	c.linkEP0.Close()
+	c.linkEP1.Close()
 }
 
 type routeArgs struct {
@@ -276,7 +277,7 @@ type routeArgs struct {
 func routeICMPv6Packet(t *testing.T, args routeArgs, fn func(*testing.T, header.ICMPv6)) {
 	t.Helper()
 
-	pi := <-args.src.C
+	pi, _ := args.src.ReadContext(context.Background())
 
 	{
 		views := []buffer.View{pi.Pkt.Header.View(), pi.Pkt.Data.ToView()}
