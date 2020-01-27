@@ -213,7 +213,7 @@ func ChecksumVVWithOffset(vv buffer.VectorisedView, initial uint16, off int, siz
 		}
 		v = v[:l]
 
-		sum, odd = calculateChecksum(v, odd, uint32(sum))
+		sum, odd = unrolledCalculateChecksum(v, odd, uint32(sum))
 
 		size -= len(v)
 		if size == 0 {
