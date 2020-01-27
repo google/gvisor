@@ -15,6 +15,7 @@
 package arp_test
 
 import (
+	"context"
 	"strconv"
 	"testing"
 	"time"
@@ -83,7 +84,7 @@ func newTestContext(t *testing.T) *testContext {
 }
 
 func (c *testContext) cleanup() {
-	close(c.linkEP.C)
+	c.linkEP.Close()
 }
 
 func TestDirectRequest(t *testing.T) {
@@ -110,7 +111,7 @@ func TestDirectRequest(t *testing.T) {
 	for i, address := range []tcpip.Address{stackAddr1, stackAddr2} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			inject(address)
-			pi := <-c.linkEP.C
+			pi, _ := c.linkEP.ReadContext(context.Background())
 			if pi.Proto != arp.ProtocolNumber {
 				t.Fatalf("expected ARP response, got network protocol number %d", pi.Proto)
 			}
@@ -134,12 +135,11 @@ func TestDirectRequest(t *testing.T) {
 	}
 
 	inject(stackAddrBad)
-	select {
-	case pkt := <-c.linkEP.C:
+	// Sleep tests are gross, but this will only potentially flake
+	// if there's a bug. If there is no bug this will reliably
+	// succeed.
+	ctx, _ := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	if pkt, ok := c.linkEP.ReadContext(ctx); ok {
 		t.Errorf("stackAddrBad: unexpected packet sent, Proto=%v", pkt.Proto)
-	case <-time.After(100 * time.Millisecond):
-		// Sleep tests are gross, but this will only potentially flake
-		// if there's a bug. If there is no bug this will reliably
-		// succeed.
 	}
 }
