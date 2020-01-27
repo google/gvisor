@@ -18,6 +18,8 @@
 package channel
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -38,16 +40,43 @@ type Endpoint struct {
 	linkAddr   tcpip.LinkAddress
 	GSO        bool
 
-	// C is where outbound packets are queued.
-	C chan PacketInfo
+	// c is where outbound packets are queued.
+	c chan PacketInfo
 }
 
 // New creates a new channel endpoint.
 func New(size int, mtu uint32, linkAddr tcpip.LinkAddress) *Endpoint {
 	return &Endpoint{
-		C:        make(chan PacketInfo, size),
+		c:        make(chan PacketInfo, size),
 		mtu:      mtu,
 		linkAddr: linkAddr,
+	}
+}
+
+// Close closes e. Further packet injections will panic. Reads continue to
+// succeed until all packets are read.
+func (e *Endpoint) Close() {
+	close(e.c)
+}
+
+// Read does non-blocking read for one packet from the outbound packet queue.
+func (e *Endpoint) Read() (PacketInfo, bool) {
+	select {
+	case pkt := <-e.c:
+		return pkt, true
+	default:
+		return PacketInfo{}, false
+	}
+}
+
+// ReadContext does blocking read for one packet from the outbound packet queue.
+// It can be cancelled by ctx, and in this case, it returns false.
+func (e *Endpoint) ReadContext(ctx context.Context) (PacketInfo, bool) {
+	select {
+	case pkt := <-e.c:
+		return pkt, true
+	case <-ctx.Done():
+		return PacketInfo{}, false
 	}
 }
 
@@ -56,7 +85,7 @@ func (e *Endpoint) Drain() int {
 	c := 0
 	for {
 		select {
-		case <-e.C:
+		case <-e.c:
 			c++
 		default:
 			return c
@@ -125,7 +154,7 @@ func (e *Endpoint) WritePacket(_ *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 	}
 
 	select {
-	case e.C <- p:
+	case e.c <- p:
 	default:
 	}
 
@@ -150,7 +179,7 @@ packetLoop:
 		}
 
 		select {
-		case e.C <- p:
+		case e.c <- p:
 			n++
 		default:
 			break packetLoop
@@ -169,7 +198,7 @@ func (e *Endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
 	}
 
 	select {
-	case e.C <- p:
+	case e.c <- p:
 	default:
 	}
 
