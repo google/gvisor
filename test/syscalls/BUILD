@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("//tools:defs.bzl", "go_binary")
 load("//test/syscalls:build_defs.bzl", "syscall_test")
 
 package(licenses = ["notice"])

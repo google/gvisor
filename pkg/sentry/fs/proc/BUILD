@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -27,7 +26,6 @@ go_library(
         "uptime.go",
         "version.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/proc",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
@@ -63,7 +61,7 @@ go_test(
         "net_test.go",
         "sys_net_test.go",
     ],
-    embed = [":proc"],
+    library = ":proc",
     deps = [
         "//pkg/abi/linux",
         "//pkg/sentry/context",

@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -34,7 +34,6 @@ go_library(
         "syscalls.go",
         "wait.go",
     ],
-    importpath = "gvisor.dev/gvisor/runsc/cmd",
     visibility = [
         "//runsc:__subpackages__",
     ],
@@ -73,7 +72,7 @@ go_test(
     data = [
         "//runsc",
     ],
-    embed = [":cmd"],
+    library = ":cmd",
     deps = [
         "//pkg/abi/linux",
         "//pkg/log",

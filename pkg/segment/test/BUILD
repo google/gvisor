@@ -1,5 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(
@@ -38,7 +37,6 @@ go_library(
         "int_set.go",
         "set_functions.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/segment/segment",
     deps = [
         "//pkg/state",
     ],
@@ -48,5 +46,5 @@ go_test(
     name = "segment_test",
     size = "small",
     srcs = ["segment_test.go"],
-    embed = [":segment"],
+    library = ":segment",
 )

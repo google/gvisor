@@ -1,7 +1,6 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/go_marshal:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+licenses(["notice"])
 
 package_group(
     name = "gomarshal_test",
@@ -25,6 +24,6 @@ go_library(
     name = "test",
     testonly = 1,
     srcs = ["test.go"],
-    importpath = "gvisor.dev/gvisor/tools/go_marshal/test",
+    marshal = True,
     deps = ["//tools/go_marshal/test/external"],
 )

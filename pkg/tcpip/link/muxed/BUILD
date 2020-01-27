@@ -1,12 +1,10 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
 go_library(
     name = "muxed",
     srcs = ["injectable.go"],
-    importpath = "gvisor.dev/gvisor/pkg/tcpip/link/muxed",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/tcpip",
@@ -19,7 +17,7 @@ go_test(
     name = "muxed_test",
     size = "small",
     srcs = ["injectable_test.go"],
-    embed = [":muxed"],
+    library = ":muxed",
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",

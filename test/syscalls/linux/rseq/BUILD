@@ -1,8 +1,7 @@
 # This package contains a standalone rseq test binary. This binary must not
 # depend on libc, which might use rseq itself.
 
-load("@bazel_tools//tools/cpp:cc_flags_supplier.bzl", "cc_flags_supplier")
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools:defs.bzl", "cc_flags_supplier", "cc_library", "cc_toolchain")
 
 package(licenses = ["notice"])
 
@@ -37,8 +36,8 @@ genrule(
         "$(location start.S)",
     ]),
     toolchains = [
+        cc_toolchain,
         ":no_pie_cc_flags",
-        "@bazel_tools//tools/cpp:current_cc_toolchain",
     ],
     visibility = ["//:sandbox"],
 )

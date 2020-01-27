@@ -1,4 +1,4 @@
-load("//benchmarks:defs.bzl", "py_library", "requirement")
+load("//tools:defs.bzl", "py_library", "py_requirement")
 
 package(
     default_visibility = ["//benchmarks:__subpackages__"],
@@ -31,7 +31,7 @@ py_library(
     deps = [
         "//benchmarks/harness:machine",
         "//benchmarks/harness/machine_producers:machine_producer",
-        requirement("PyYAML", False),
+        py_requirement("PyYAML", False),
     ],
 )
 

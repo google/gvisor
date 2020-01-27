@@ -62,15 +62,12 @@ type Generator struct {
 	outputTest *os.File
 	// Package name for the generated file.
 	pkg string
-	// Go import path for package we're processing. This package should directly
-	// declare the type we're generating code for.
-	declaration string
 	// Set of extra packages to import in the generated file.
 	imports *importTable
 }
 
 // NewGenerator creates a new code Generator.
-func NewGenerator(srcs []string, out, outTest, pkg, declaration string, imports []string) (*Generator, error) {
+func NewGenerator(srcs []string, out, outTest, pkg string, imports []string) (*Generator, error) {
 	f, err := os.OpenFile(out, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("Couldn't open output file %q: %v", out, err)
@@ -80,12 +77,11 @@ func NewGenerator(srcs []string, out, outTest, pkg, declaration string, imports 
 		return nil, fmt.Errorf("Couldn't open test output file %q: %v", out, err)
 	}
 	g := Generator{
-		inputs:      srcs,
-		output:      f,
-		outputTest:  fTest,
-		pkg:         pkg,
-		declaration: declaration,
-		imports:     newImportTable(),
+		inputs:     srcs,
+		output:     f,
+		outputTest: fTest,
+		pkg:        pkg,
+		imports:    newImportTable(),
 	}
 	for _, i := range imports {
 		// All imports on the extra imports list are unconditionally marked as
@@ -264,7 +260,7 @@ func (g *Generator) generateOne(t *ast.TypeSpec, fset *token.FileSet) *interface
 // generateOneTestSuite generates a test suite for the automatically generated
 // implementations type t.
 func (g *Generator) generateOneTestSuite(t *ast.TypeSpec) *testGenerator {
-	i := newTestGenerator(t, g.declaration)
+	i := newTestGenerator(t)
 	i.emitTests()
 	return i
 }
@@ -359,7 +355,7 @@ func (g *Generator) Run() error {
 // source file.
 func (g *Generator) writeTests(ts []*testGenerator) error {
 	var b sourceBuffer
-	b.emit("package %s_test\n\n", g.pkg)
+	b.emit("package %s\n\n", g.pkg)
 	if err := b.write(g.outputTest); err != nil {
 		return err
 	}

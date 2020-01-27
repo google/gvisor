@@ -1,5 +1,4 @@
-load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("//test/syscalls:build_defs.bzl", "select_for_linux")
+load("//tools:defs.bzl", "cc_library", "cc_test", "select_system")
 
 package(
     default_visibility = ["//:sandbox"],
@@ -142,12 +141,13 @@ cc_library(
 cc_library(
     name = "save_util",
     testonly = 1,
-    srcs = ["save_util.cc"] +
-           select_for_linux(
-               ["save_util_linux.cc"],
-               ["save_util_other.cc"],
-           ),
+    srcs = [
+        "save_util.cc",
+        "save_util_linux.cc",
+        "save_util_other.cc",
+    ],
     hdrs = ["save_util.h"],
+    defines = select_system(),
 )
 
 cc_library(
@@ -234,13 +234,16 @@ cc_library(
     testonly = 1,
     srcs = [
         "test_util.cc",
-    ] + select_for_linux(
-        [
-            "test_util_impl.cc",
-            "test_util_runfiles.cc",
+        "test_util_impl.cc",
+        "test_util_runfiles.cc",
+    ],
+    hdrs = ["test_util.h"],
+    defines = select_system(
+        fuchsia = [
+            "__opensource__",
+            "__fuchsia__",
         ],
     ),
-    hdrs = ["test_util.h"],
     deps = [
         ":fs_util",
         ":logging",

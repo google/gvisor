@@ -1,12 +1,10 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
 go_library(
     name = "seqfile",
     srcs = ["seqfile.go"],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
@@ -26,7 +24,7 @@ go_test(
     name = "seqfile_test",
     size = "small",
     srcs = ["seqfile_test.go"],
-    embed = [":seqfile"],
+    library = ":seqfile",
     deps = [
         "//pkg/sentry/context",
         "//pkg/sentry/context/contexttest",

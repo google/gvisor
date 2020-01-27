@@ -1,5 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -9,7 +8,6 @@ go_library(
         "full_reader.go",
         "secio.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/secio",
     visibility = ["//pkg/sentry:internal"],
 )
 
@@ -17,5 +15,5 @@ go_test(
     name = "secio_test",
     size = "small",
     srcs = ["secio_test.go"],
-    embed = [":secio"],
+    library = ":secio",
 )

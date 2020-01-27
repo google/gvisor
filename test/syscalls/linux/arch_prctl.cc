@@ -14,8 +14,10 @@
 
 #include <asm/prctl.h>
 #include <sys/prctl.h>
+#include <sys/syscall.h>
 
 #include "gtest/gtest.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/test_util.h"
 
 // glibc does not provide a prototype for arch_prctl() so declare it here.

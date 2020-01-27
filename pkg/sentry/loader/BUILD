@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_embed_data")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_embed_data", "go_library")
 
 package(licenses = ["notice"])
 
@@ -20,7 +19,6 @@ go_library(
         "vdso_state.go",
         ":vdso_bin",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/loader",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi",

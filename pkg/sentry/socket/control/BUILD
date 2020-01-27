@@ -1,11 +1,10 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
 go_library(
     name = "control",
     srcs = ["control.go"],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/control",
     imports = [
         "gvisor.dev/gvisor/pkg/sentry/fs",
     ],

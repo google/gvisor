@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -20,7 +20,6 @@ go_library(
         "subprocess_linux_unsafe.go",
         "subprocess_unsafe.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/platform/ptrace",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",

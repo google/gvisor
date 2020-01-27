@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -8,7 +8,6 @@ go_library(
         "context.go",
         "time.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/time",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

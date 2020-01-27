@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -24,7 +23,6 @@ go_library(
         "tcp.go",
         "udp.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/tcpip/header",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/tcpip",
@@ -59,7 +57,7 @@ go_test(
         "eth_test.go",
         "ndp_test.go",
     ],
-    embed = [":header"],
+    library = ":header",
     deps = [
         "//pkg/tcpip",
         "@com_github_google_go-cmp//cmp:go_default_library",

@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -10,7 +10,6 @@ go_library(
         "state_file.go",
         "status.go",
     ],
-    importpath = "gvisor.dev/gvisor/runsc/container",
     visibility = [
         "//runsc:__subpackages__",
         "//test:__subpackages__",
@@ -42,7 +41,7 @@ go_test(
         "//runsc",
         "//runsc/container/test_app",
     ],
-    embed = [":container"],
+    library = ":container",
     shard_count = 5,
     tags = [
         "requires-kvm",

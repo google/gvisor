@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 load("//tools/go_generics:defs.bzl", "go_template", "go_template_instance")
 
 package(licenses = ["notice"])
@@ -74,7 +74,6 @@ go_library(
         "lib_arm64.s",
         "ring0.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/platform/ring0",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/cpuid",

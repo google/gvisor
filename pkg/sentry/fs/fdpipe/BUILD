@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -10,7 +9,6 @@ go_library(
         "pipe_opener.go",
         "pipe_state.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/fdpipe",
     imports = ["gvisor.dev/gvisor/pkg/sentry/fs"],
     visibility = ["//pkg/sentry:internal"],
     deps = [
@@ -36,7 +34,7 @@ go_test(
         "pipe_opener_test.go",
         "pipe_test.go",
     ],
-    embed = [":fdpipe"],
+    library = ":fdpipe",
     deps = [
         "//pkg/fd",
         "//pkg/fdnotifier",

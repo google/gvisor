@@ -1,7 +1,6 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+licenses(["notice"])
 
 go_library(
     name = "proc",
@@ -15,7 +14,6 @@ go_library(
         "tasks_net.go",
         "tasks_sys.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/proc",
     deps = [
         "//pkg/abi/linux",
         "//pkg/log",
@@ -47,7 +45,7 @@ go_test(
         "tasks_sys_test.go",
         "tasks_test.go",
     ],
-    embed = [":proc"],
+    library = ":proc",
     deps = [
         "//pkg/abi/linux",
         "//pkg/fspath",

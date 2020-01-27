@@ -1,6 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -23,7 +22,6 @@ go_library(
         "epoll_list.go",
         "epoll_state.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/epoll",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/refs",
@@ -43,7 +41,7 @@ go_test(
     srcs = [
         "epoll_test.go",
     ],
-    embed = [":epoll"],
+    library = ":epoll",
     deps = [
         "//pkg/sentry/context/contexttest",
         "//pkg/sentry/fs/filetest",

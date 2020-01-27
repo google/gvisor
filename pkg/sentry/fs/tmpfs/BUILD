@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -12,7 +11,6 @@ go_library(
         "inode_file.go",
         "tmpfs.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/tmpfs",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
@@ -41,7 +39,7 @@ go_test(
     name = "tmpfs_test",
     size = "small",
     srcs = ["file_test.go"],
-    embed = [":tmpfs"],
+    library = ":tmpfs",
     deps = [
         "//pkg/sentry/context",
         "//pkg/sentry/fs",

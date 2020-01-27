@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#ifndef __fuchsia__
+
 #include <iostream>
 #include <string>
 
@@ -44,3 +46,5 @@ std::string RunfilePath(std::string path) {
 
 }  // namespace testing
 }  // namespace gvisor
+
+#endif  // __fuchsia__

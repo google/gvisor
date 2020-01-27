@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -14,7 +14,7 @@ go_test(
         "ruby.rb",
         "ruby.sh",
     ],
-    embed = [":image"],
+    library = ":image",
     tags = [
         # Requires docker and runsc to be configured before the test runs.
         "manual",
@@ -30,5 +30,4 @@ go_test(
 go_library(
     name = "image",
     srcs = ["image.go"],
-    importpath = "gvisor.dev/gvisor/test/image",
 )

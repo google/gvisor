@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -13,7 +13,6 @@ go_library(
         "random.go",
         "tty.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/dev",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

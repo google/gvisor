@@ -1,5 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -12,7 +11,6 @@ go_library(
         "json_k8s.go",
         "log.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/log",
     visibility = [
         "//visibility:public",
     ],
@@ -29,5 +27,5 @@ go_test(
         "json_test.go",
         "log_test.go",
     ],
-    embed = [":log"],
+    library = ":log",
 )

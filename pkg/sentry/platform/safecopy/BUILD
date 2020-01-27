@@ -1,5 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -17,7 +16,6 @@ go_library(
         "sighandler_amd64.s",
         "sighandler_arm64.s",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/platform/safecopy",
     visibility = ["//pkg/sentry:internal"],
     deps = ["//pkg/syserror"],
 )
@@ -27,5 +25,5 @@ go_test(
     srcs = [
         "safecopy_test.go",
     ],
-    embed = [":safecopy"],
+    library = ":safecopy",
 )

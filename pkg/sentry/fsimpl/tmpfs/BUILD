@@ -1,8 +1,7 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
-package(licenses = ["notice"])
+licenses(["notice"])
 
 go_template_instance(
     name = "dentry_list",
@@ -28,7 +27,6 @@ go_library(
         "symlink.go",
         "tmpfs.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs",
     deps = [
         "//pkg/abi/linux",
         "//pkg/amutex",
@@ -81,7 +79,7 @@ go_test(
         "regular_file_test.go",
         "stat_test.go",
     ],
-    embed = [":tmpfs"],
+    library = ":tmpfs",
     deps = [
         "//pkg/abi/linux",
         "//pkg/fspath",
