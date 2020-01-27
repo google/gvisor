@@ -128,8 +128,8 @@ func TestChecksum(t *testing.T) {
 	}
 
 	for i := range testCases {
-		testCases[i].csumOrig = header.Checksum(testCases[i].buf, testCases[i].initial)
-		testCases[i].csumNew = header.UnrolledChecksum(testCases[i].buf, testCases[i].initial)
+		testCases[i].csumOrig = header.ChecksumOld(testCases[i].buf, testCases[i].initial)
+		testCases[i].csumNew = header.Checksum(testCases[i].buf, testCases[i].initial)
 		if got, want := testCases[i].csumNew, testCases[i].csumOrig; got != want {
 			t.Fatalf("new checksum for (buf = %x, initial = %d) does not match old got: %d, want: %d", testCases[i].buf, testCases[i].initial, got, want)
 		}
@@ -143,8 +143,8 @@ func BenchmarkChecksum(b *testing.B) {
 		fn   func([]byte, uint16) uint16
 		name string
 	}{
+		{header.ChecksumOld, fmt.Sprintf("checksum_old")},
 		{header.Checksum, fmt.Sprintf("checksum")},
-		{header.UnrolledChecksum, fmt.Sprintf("unrolled_checksum")},
 	}
 
 	for _, csumImpl := range checkSumImpls {

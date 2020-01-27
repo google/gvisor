@@ -160,20 +160,23 @@ func unrolledCalculateChecksum(buf []byte, odd bool, initial uint32) (uint16, bo
 	return ChecksumCombine(uint16(v), uint16(v>>16)), odd
 }
 
-// Checksum calculates the checksum (as defined in RFC 1071) of the bytes in the
-// given byte array.
+// ChecksumOld calculates the checksum (as defined in RFC 1071) of the bytes in
+// the given byte array. This function uses a non-optimized implementation. Its
+// only retained for reference and to use as a benchmark/test. Most code should
+// use the header.Checksum function.
 //
 // The initial checksum must have been computed on an even number of bytes.
-func Checksum(buf []byte, initial uint16) uint16 {
+func ChecksumOld(buf []byte, initial uint16) uint16 {
 	s, _ := calculateChecksum(buf, false, uint32(initial))
 	return s
 }
 
-// UnrolledChecksum calculates the checksum (as defined in RFC 1071) of the
-// bytes in the given byte array.
+// Checksum calculates the checksum (as defined in RFC 1071) of the bytes in the
+// given byte array. This function uses an optimized unrolled version of the
+// checksum algorithm.
 //
 // The initial checksum must have been computed on an even number of bytes.
-func UnrolledChecksum(buf []byte, initial uint16) uint16 {
+func Checksum(buf []byte, initial uint16) uint16 {
 	s, _ := unrolledCalculateChecksum(buf, false, uint32(initial))
 	return s
 }
