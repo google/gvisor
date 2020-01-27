@@ -1,7 +1,6 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+licenses(["notice"])
 
 go_library(
     name = "vfs",
@@ -24,7 +23,6 @@ go_library(
         "testutil.go",
         "vfs.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/vfs",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
@@ -47,7 +45,7 @@ go_test(
         "file_description_impl_util_test.go",
         "mount_test.go",
     ],
-    embed = [":vfs"],
+    library = ":vfs",
     deps = [
         "//pkg/abi/linux",
         "//pkg/sentry/context",

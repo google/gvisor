@@ -1,17 +1,14 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test", "select_arch")
 load("//tools/go_generics:defs.bzl", "go_template", "go_template_instance")
 
 package(licenses = ["notice"])
 
-config_setting(
-    name = "aarch64",
-    constraint_values = ["@bazel_tools//platforms:aarch64"],
-)
-
 go_template(
     name = "generic_walker",
-    srcs = ["walker_amd64.go"],
+    srcs = select_arch(
+        amd64 = ["walker_amd64.go"],
+        arm64 = ["walker_amd64.go"],
+    ),
     opt_types = [
         "Visitor",
     ],
@@ -91,7 +88,6 @@ go_library(
         "walker_map.go",
         "walker_unmap.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables",
     visibility = [
         "//pkg/sentry/platform/kvm:__subpackages__",
         "//pkg/sentry/platform/ring0:__subpackages__",
@@ -111,6 +107,6 @@ go_test(
         "pagetables_test.go",
         "walker_check.go",
     ],
-    embed = [":pagetables"],
+    library = ":pagetables",
     deps = ["//pkg/sentry/usermem"],
 )

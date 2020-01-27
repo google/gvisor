@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#ifdef __linux__
+
 #include <errno.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -43,3 +45,5 @@ void MaybeSave() {
 
 }  // namespace testing
 }  // namespace gvisor
+
+#endif

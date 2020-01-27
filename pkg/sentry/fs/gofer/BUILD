@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -22,7 +21,6 @@ go_library(
         "socket.go",
         "util.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/gofer",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
@@ -56,7 +54,7 @@ go_test(
     name = "gofer_test",
     size = "small",
     srcs = ["gofer_test.go"],
-    embed = [":gofer"],
+    library = ":gofer",
     deps = [
         "//pkg/p9",
         "//pkg/p9/p9test",

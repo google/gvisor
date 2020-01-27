@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 # Package linux contains the constants and types needed to interface with a
 # Linux kernel. It should be used instead of syscall or golang.org/x/sys/unix
@@ -60,7 +59,6 @@ go_library(
         "wait.go",
         "xattr.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/abi/linux",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/abi",
@@ -73,7 +71,7 @@ go_test(
     name = "linux_test",
     size = "small",
     srcs = ["netfilter_test.go"],
-    embed = [":linux"],
+    library = ":linux",
     deps = [
         "//pkg/binary",
     ],

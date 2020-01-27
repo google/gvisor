@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -6,7 +6,6 @@ go_library(
     name = "contexttest",
     testonly = 1,
     srcs = ["contexttest.go"],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/contexttest",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/sentry/context",

@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
@@ -32,7 +31,6 @@ go_library(
         "symlink.go",
         "utils.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/ext",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
@@ -71,7 +69,7 @@ go_test(
         "//pkg/sentry/fsimpl/ext:assets/tiny.ext3",
         "//pkg/sentry/fsimpl/ext:assets/tiny.ext4",
     ],
-    embed = [":ext"],
+    library = ":ext",
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",

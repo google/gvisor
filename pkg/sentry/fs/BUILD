@@ -1,6 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -44,7 +43,6 @@ go_library(
         "splice.go",
         "sync.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fs",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
@@ -129,7 +127,7 @@ go_test(
         "mount_test.go",
         "path_test.go",
     ],
-    embed = [":fs"],
+    library = ":fs",
     deps = [
         "//pkg/sentry/context",
         "//pkg/sentry/context/contexttest",

@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -9,7 +9,6 @@ go_library(
         "provider.go",
         "socket.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/netlink",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

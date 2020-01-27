@@ -1,5 +1,5 @@
+load("//tools:defs.bzl", "go_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -57,7 +57,6 @@ go_library(
         "id_map_set.go",
         "user_namespace.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/auth",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

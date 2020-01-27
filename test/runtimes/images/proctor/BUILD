@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_test")
+load("//tools:defs.bzl", "go_binary", "go_test")
 
 package(licenses = ["notice"])
 
@@ -19,7 +19,7 @@ go_test(
     name = "proctor_test",
     size = "small",
     srcs = ["proctor_test.go"],
-    embed = [":proctor"],
+    library = ":proctor",
     deps = [
         "//runsc/testutil",
     ],

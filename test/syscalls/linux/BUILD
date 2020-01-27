@@ -1,5 +1,4 @@
-load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
-load("//test/syscalls:build_defs.bzl", "select_for_linux")
+load("//tools:defs.bzl", "cc_binary", "cc_library", "default_net_util", "select_system")
 
 package(
     default_visibility = ["//:sandbox"],
@@ -126,13 +125,11 @@ cc_library(
     testonly = 1,
     srcs = [
         "socket_test_util.cc",
-    ] + select_for_linux(
-        [
-            "socket_test_util_impl.cc",
-        ],
-    ),
+        "socket_test_util_impl.cc",
+    ],
     hdrs = ["socket_test_util.h"],
-    deps = [
+    defines = select_system(),
+    deps = default_net_util() + [
         "@com_google_googletest//:gtest",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
@@ -143,8 +140,7 @@ cc_library(
         "//test/util:temp_path",
         "//test/util:test_util",
         "//test/util:thread_util",
-    ] + select_for_linux([
-    ]),
+    ],
 )
 
 cc_library(
@@ -1443,6 +1439,7 @@ cc_binary(
     srcs = ["arch_prctl.cc"],
     linkstatic = 1,
     deps = [
+        "//test/util:file_descriptor",
         "//test/util:test_main",
         "//test/util:test_util",
         "@com_google_googletest//:gtest",
@@ -3383,11 +3380,11 @@ cc_library(
     name = "udp_socket_test_cases",
     testonly = 1,
     srcs = [
-        "udp_socket_test_cases.cc",
-    ] + select_for_linux([
         "udp_socket_errqueue_test_case.cc",
-    ]),
+        "udp_socket_test_cases.cc",
+    ],
     hdrs = ["udp_socket_test_cases.h"],
+    defines = select_system(),
     deps = [
         ":socket_test_util",
         ":unix_domain_socket_test_util",

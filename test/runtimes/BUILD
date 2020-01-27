@@ -1,6 +1,6 @@
 # These packages are used to run language runtime tests inside gVisor sandboxes.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_test")
+load("//tools:defs.bzl", "go_binary", "go_test")
 load("//test/runtimes:build_defs.bzl", "runtime_test")
 
 package(licenses = ["notice"])
@@ -49,5 +49,5 @@ go_test(
     name = "blacklist_test",
     size = "small",
     srcs = ["blacklist_test.go"],
-    embed = [":runner"],
+    library = ":runner",
 )

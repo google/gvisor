@@ -1,6 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -37,7 +36,6 @@ go_library(
         "mapping_set_impl.go",
         "memmap.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/memmap",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/log",
@@ -52,6 +50,6 @@ go_test(
     name = "memmap_test",
     size = "small",
     srcs = ["mapping_set_test.go"],
-    embed = [":memmap"],
+    library = ":memmap",
     deps = ["//pkg/sentry/usermem"],
 )

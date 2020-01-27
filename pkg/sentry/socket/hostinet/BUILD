@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -12,7 +12,6 @@ go_library(
         "socket_unsafe.go",
         "stack.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/hostinet",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

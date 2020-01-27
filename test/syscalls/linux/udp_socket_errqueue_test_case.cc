@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#ifndef __fuchsia__
+
 #include "test/syscalls/linux/udp_socket_test_cases.h"
 
 #include <arpa/inet.h>
@@ -52,3 +54,5 @@ TEST_P(UdpSocketTest, ErrorQueue) {
 
 }  // namespace testing
 }  // namespace gvisor
+
+#endif  // __fuchsia__

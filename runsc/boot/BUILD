@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -23,7 +23,6 @@ go_library(
         "strace.go",
         "user.go",
     ],
-    importpath = "gvisor.dev/gvisor/runsc/boot",
     visibility = [
         "//runsc:__subpackages__",
         "//test:__subpackages__",
@@ -107,7 +106,7 @@ go_test(
         "loader_test.go",
         "user_test.go",
     ],
-    embed = [":boot"],
+    library = ":boot",
     deps = [
         "//pkg/control/server",
         "//pkg/log",

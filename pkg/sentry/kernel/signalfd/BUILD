@@ -1,11 +1,10 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
-package(licenses = ["notice"])
+licenses(["notice"])
 
 go_library(
     name = "signalfd",
     srcs = ["signalfd.go"],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/signalfd",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

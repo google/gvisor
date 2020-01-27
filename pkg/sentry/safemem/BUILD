@@ -1,5 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -11,7 +10,6 @@ go_library(
         "safemem.go",
         "seq_unsafe.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/safemem",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/sentry/platform/safecopy",
@@ -25,5 +23,5 @@ go_test(
         "io_test.go",
         "seq_test.go",
     ],
-    embed = [":safemem"],
+    library = ":safemem",
 )

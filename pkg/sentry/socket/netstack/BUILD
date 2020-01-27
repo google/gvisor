@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -11,7 +11,6 @@ go_library(
         "save_restore.go",
         "stack.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/netstack",
     visibility = [
         "//pkg/sentry:internal",
     ],

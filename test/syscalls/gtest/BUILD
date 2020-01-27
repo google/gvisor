@@ -1,12 +1,9 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
 go_library(
     name = "gtest",
     srcs = ["gtest.go"],
-    importpath = "gvisor.dev/gvisor/test/syscalls/gtest",
-    visibility = [
-        "//test:__subpackages__",
-    ],
+    visibility = ["//:sandbox"],
 )

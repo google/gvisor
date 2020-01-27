@@ -1,11 +1,10 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
 go_library(
     name = "root",
     srcs = ["root.go"],
-    importpath = "gvisor.dev/gvisor/test/root",
 )
 
 go_test(
@@ -21,7 +20,7 @@ go_test(
     data = [
         "//runsc",
     ],
-    embed = [":root"],
+    library = ":root",
     tags = [
         # Requires docker and runsc to be configured before the test runs.
         # Also test only runs as root.

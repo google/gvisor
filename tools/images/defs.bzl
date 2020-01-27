@@ -28,6 +28,8 @@ The vm_test rule can be used to execute a command remotely. For example,
   )
 """
 
+load("//tools:defs.bzl", "default_installer")
+
 def _vm_image_impl(ctx):
     script_paths = []
     for script in ctx.files.scripts:
@@ -165,8 +167,8 @@ def vm_test(
     targets = kwargs.pop("targets", [])
     if installer:
         targets = [installer] + targets
-    targets = [
-    ] + targets
+    if default_installer():
+        targets = [default_installer()] + targets
     _vm_test(
         tags = [
             "local",

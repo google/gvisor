@@ -1,6 +1,6 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
-package(licenses = ["notice"])
+licenses(["notice"])
 
 go_library(
     name = "testutil",
@@ -9,7 +9,6 @@ go_library(
         "kernel.go",
         "testutil.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
