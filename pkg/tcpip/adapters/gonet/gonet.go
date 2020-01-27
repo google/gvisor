@@ -556,6 +556,17 @@ type PacketConn struct {
 	wq    *waiter.Queue
 }
 
+// NewPacketConn creates a new PacketConn.
+func NewPacketConn(s *stack.Stack, wq *waiter.Queue, ep tcpip.Endpoint) *PacketConn {
+	c := &PacketConn{
+		stack: s,
+		ep:    ep,
+		wq:    wq,
+	}
+	c.deadlineTimer.init()
+	return c
+}
+
 // DialUDP creates a new PacketConn.
 //
 // If laddr is nil, a local address is automatically chosen.
@@ -580,12 +591,7 @@ func DialUDP(s *stack.Stack, laddr, raddr *tcpip.FullAddress, network tcpip.Netw
 		}
 	}
 
-	c := PacketConn{
-		stack: s,
-		ep:    ep,
-		wq:    &wq,
-	}
-	c.deadlineTimer.init()
+	c := NewPacketConn(s, &wq, ep)
 
 	if raddr != nil {
 		if err := c.ep.Connect(*raddr); err != nil {
@@ -599,7 +605,7 @@ func DialUDP(s *stack.Stack, laddr, raddr *tcpip.FullAddress, network tcpip.Netw
 		}
 	}
 
-	return &c, nil
+	return c, nil
 }
 
 func (c *PacketConn) newOpError(op string, err error) *net.OpError {
