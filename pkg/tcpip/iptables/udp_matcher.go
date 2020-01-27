@@ -73,9 +73,9 @@ func (um *UDPMatcher) Match(hook Hook, pkt tcpip.PacketBuffer, interfaceName str
 	// We dont't match fragments.
 	if frag := netHeader.FragmentOffset(); frag != 0 {
 		if frag == 1 {
+			log.Warningf("Dropping UDP packet: malicious fragmented packet.")
 			return false, true
 		}
-		log.Warningf("Dropping UDP packet: malicious fragmented packet.")
 		return false, false
 	}
 
