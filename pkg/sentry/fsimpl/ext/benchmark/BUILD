@@ -7,9 +7,9 @@ go_test(
     size = "small",
     srcs = ["benchmark_test.go"],
     deps = [
+        "//pkg/context",
         "//pkg/fspath",
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/fsimpl/ext",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",

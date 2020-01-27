@@ -8,14 +8,14 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/fdnotifier",
-        "//pkg/sentry/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/anon",
         "//pkg/sentry/fs/fsutil",
-        "//pkg/sentry/usermem",
         "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )
@@ -26,8 +26,8 @@ go_test(
     srcs = ["eventfd_test.go"],
     library = ":eventfd",
     deps = [
-        "//pkg/sentry/context/contexttest",
-        "//pkg/sentry/usermem",
+        "//pkg/sentry/contexttest",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )

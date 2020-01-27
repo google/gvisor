@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"math"
 
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // MappingSet maps offsets into a Mappable to mappings of those offsets. It is

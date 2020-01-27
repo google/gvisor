@@ -7,7 +7,7 @@ go_library(
     srcs = ["context.go"],
     visibility = ["//pkg/sentry:internal"],
     deps = [
-        "//pkg/sentry/context",
+        "//pkg/context",
         "//pkg/sentry/socket/unix/transport",
     ],
 )

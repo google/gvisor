@@ -13,8 +13,8 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",
+        "//pkg/context",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
@@ -25,11 +25,11 @@ go_library(
         "//pkg/sentry/socket/netlink/port",
         "//pkg/sentry/socket/unix",
         "//pkg/sentry/socket/unix/transport",
-        "//pkg/sentry/usermem",
         "//pkg/sync",
         "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/tcpip",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )

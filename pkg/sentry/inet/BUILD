@@ -13,7 +13,7 @@ go_library(
         "test_stack.go",
     ],
     deps = [
-        "//pkg/sentry/context",
+        "//pkg/context",
         "//pkg/tcpip/stack",
     ],
 )

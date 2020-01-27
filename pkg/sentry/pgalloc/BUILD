@@ -61,18 +61,18 @@ go_library(
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
+        "//pkg/context",
         "//pkg/log",
         "//pkg/memutil",
+        "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
         "//pkg/sentry/hostmm",
         "//pkg/sentry/platform",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
         "//pkg/state",
         "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )
 
@@ -81,5 +81,5 @@ go_test(
     size = "small",
     srcs = ["pgalloc_test.go"],
     library = ":pgalloc",
-    deps = ["//pkg/sentry/usermem"],
+    deps = ["//pkg/usermem"],
 )

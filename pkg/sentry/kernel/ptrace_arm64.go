@@ -17,8 +17,8 @@
 package kernel
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // ptraceArch implements arch-specific ptrace commands.

@@ -12,6 +12,6 @@ go_library(
     deps = [
         "//pkg/fd",
         "//pkg/log",
-        "//pkg/sentry/usermem",
+        "//pkg/usermem",
     ],
 )

@@ -29,16 +29,16 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/fspath",
         "//pkg/log",
         "//pkg/refs",
-        "//pkg/sentry/context",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
-        "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )
 
@@ -49,13 +49,13 @@ go_test(
     deps = [
         ":kernfs",
         "//pkg/abi/linux",
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/context",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/fsimpl/testutil",
         "//pkg/sentry/kernel/auth",
-        "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
         "//pkg/syserror",
+        "//pkg/usermem",
         "@com_github_google_go-cmp//cmp:go_default_library",
     ],
 )

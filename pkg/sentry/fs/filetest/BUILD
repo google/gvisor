@@ -8,12 +8,12 @@ go_library(
     srcs = ["filetest.go"],
     visibility = ["//pkg/sentry:internal"],
     deps = [
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/context",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/anon",
         "//pkg/sentry/fs/fsutil",
-        "//pkg/sentry/usermem",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )

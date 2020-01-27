@@ -14,8 +14,9 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/metric",
-        "//pkg/sentry/context",
+        "//pkg/safemem",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
@@ -25,12 +26,11 @@ go_library(
         "//pkg/sentry/kernel/pipe",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
         "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )
@@ -41,10 +41,10 @@ go_test(
     srcs = ["file_test.go"],
     library = ":tmpfs",
     deps = [
-        "//pkg/sentry/context",
+        "//pkg/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel/contexttest",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
+        "//pkg/usermem",
     ],
 )

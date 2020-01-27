@@ -14,7 +14,7 @@ go_library(
     srcs = ["events.go"],
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/context",
         "//pkg/log",
-        "//pkg/sentry/context",
     ],
 )

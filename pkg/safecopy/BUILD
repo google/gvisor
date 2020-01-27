@@ -16,7 +16,7 @@ go_library(
         "sighandler_amd64.s",
         "sighandler_arm64.s",
     ],
-    visibility = ["//pkg/sentry:internal"],
+    visibility = ["//:sandbox"],
     deps = ["//pkg/syserror"],
 )
 

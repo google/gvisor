@@ -27,7 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform/kvm/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 var dummyFPState = (*byte)(arch.NewFloatingPointData())

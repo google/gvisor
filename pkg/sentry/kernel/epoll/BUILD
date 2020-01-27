@@ -24,13 +24,13 @@ go_library(
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
+        "//pkg/context",
         "//pkg/refs",
-        "//pkg/sentry/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/anon",
         "//pkg/sentry/fs/fsutil",
-        "//pkg/sentry/usermem",
         "//pkg/sync",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )
@@ -43,7 +43,7 @@ go_test(
     ],
     library = ":epoll",
     deps = [
-        "//pkg/sentry/context/contexttest",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/fs/filetest",
         "//pkg/waiter",
     ],

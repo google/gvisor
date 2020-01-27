@@ -24,8 +24,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/contexttest"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 const (

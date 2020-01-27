@@ -11,9 +11,9 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/log",
         "//pkg/refs",
-        "//pkg/sentry/context",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel/auth",
@@ -22,8 +22,8 @@ go_library(
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
         "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )

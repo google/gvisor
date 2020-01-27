@@ -38,11 +38,11 @@ go_library(
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
+        "//pkg/context",
         "//pkg/log",
-        "//pkg/sentry/context",
         "//pkg/sentry/platform",
-        "//pkg/sentry/usermem",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )
 
@@ -51,5 +51,5 @@ go_test(
     size = "small",
     srcs = ["mapping_set_test.go"],
     library = ":memmap",
-    deps = ["//pkg/sentry/usermem"],
+    deps = ["//pkg/usermem"],
 )

@@ -15,10 +15,10 @@ go_library(
         "//pkg/binary",
         "//pkg/log",
         "//pkg/sentry/kernel",
-        "//pkg/sentry/usermem",
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/tcpip/iptables",
         "//pkg/tcpip/stack",
+        "//pkg/usermem",
     ],
 )

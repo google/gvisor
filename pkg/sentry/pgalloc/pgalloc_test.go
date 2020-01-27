@@ -17,7 +17,7 @@ package pgalloc
 import (
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 const (

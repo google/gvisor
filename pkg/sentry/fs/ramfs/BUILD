@@ -13,14 +13,14 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/sentry/context",
+        "//pkg/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/anon",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/socket/unix/transport",
-        "//pkg/sentry/usermem",
         "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )
@@ -31,7 +31,7 @@ go_test(
     srcs = ["tree_test.go"],
     library = ":ramfs",
     deps = [
-        "//pkg/sentry/context/contexttest",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/fs",
     ],
 )

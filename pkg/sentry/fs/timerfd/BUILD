@@ -7,13 +7,13 @@ go_library(
     srcs = ["timerfd.go"],
     visibility = ["//pkg/sentry:internal"],
     deps = [
-        "//pkg/sentry/context",
+        "//pkg/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/anon",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/kernel/time",
-        "//pkg/sentry/usermem",
         "//pkg/syserror",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )

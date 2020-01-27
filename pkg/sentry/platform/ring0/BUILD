@@ -78,6 +78,6 @@ go_library(
     deps = [
         "//pkg/cpuid",
         "//pkg/sentry/platform/ring0/pagetables",
-        "//pkg/sentry/usermem",
+        "//pkg/usermem",
     ],
 )
