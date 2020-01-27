@@ -228,23 +228,26 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 // MknodAt implements vfs.FilesystemImpl.MknodAt.
 func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MknodOptions) error {
 	return fs.doCreateAt(rp, false /* dir */, func(parent *dentry, name string) error {
+		var childInode *inode
 		switch opts.Mode.FileType() {
 		case 0, linux.S_IFREG:
-			child := fs.newDentry(fs.newRegularFile(rp.Credentials(), opts.Mode))
-			parent.vfsd.InsertChild(&child.vfsd, name)
-			parent.inode.impl.(*directory).childList.PushBack(child)
-			return nil
+			childInode = fs.newRegularFile(rp.Credentials(), opts.Mode)
 		case linux.S_IFIFO:
-			child := fs.newDentry(fs.newNamedPipe(rp.Credentials(), opts.Mode))
-			parent.vfsd.InsertChild(&child.vfsd, name)
-			parent.inode.impl.(*directory).childList.PushBack(child)
-			return nil
-		case linux.S_IFBLK, linux.S_IFCHR, linux.S_IFSOCK:
+			childInode = fs.newNamedPipe(rp.Credentials(), opts.Mode)
+		case linux.S_IFBLK:
+			childInode = fs.newDeviceFile(rp.Credentials(), opts.Mode, vfs.BlockDevice, opts.DevMajor, opts.DevMinor)
+		case linux.S_IFCHR:
+			childInode = fs.newDeviceFile(rp.Credentials(), opts.Mode, vfs.CharDevice, opts.DevMajor, opts.DevMinor)
+		case linux.S_IFSOCK:
 			// Not yet supported.
 			return syserror.EPERM
 		default:
 			return syserror.EINVAL
 		}
+		child := fs.newDentry(childInode)
+		parent.vfsd.InsertChild(&child.vfsd, name)
+		parent.inode.impl.(*directory).childList.PushBack(child)
+		return nil
 	})
 }
 
@@ -264,7 +267,7 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if err != nil {
 			return nil, err
 		}
-		return d.open(ctx, rp, opts.Flags, false /* afterCreate */)
+		return d.open(ctx, rp, &opts, false /* afterCreate */)
 	}
 
 	mustCreate := opts.Flags&linux.O_EXCL != 0
@@ -279,7 +282,7 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if mustCreate {
 			return nil, syserror.EEXIST
 		}
-		return start.open(ctx, rp, opts.Flags, false /* afterCreate */)
+		return start.open(ctx, rp, &opts, false /* afterCreate */)
 	}
 afterTrailingSymlink:
 	parent, err := walkParentDirLocked(rp, start)
@@ -313,7 +316,7 @@ afterTrailingSymlink:
 		child := fs.newDentry(fs.newRegularFile(rp.Credentials(), opts.Mode))
 		parent.vfsd.InsertChild(&child.vfsd, name)
 		parent.inode.impl.(*directory).childList.PushBack(child)
-		return child.open(ctx, rp, opts.Flags, true)
+		return child.open(ctx, rp, &opts, true)
 	}
 	if err != nil {
 		return nil, err
@@ -327,11 +330,11 @@ afterTrailingSymlink:
 	if mustCreate {
 		return nil, syserror.EEXIST
 	}
-	return child.open(ctx, rp, opts.Flags, false)
+	return child.open(ctx, rp, &opts, false)
 }
 
-func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, flags uint32, afterCreate bool) (*vfs.FileDescription, error) {
-	ats := vfs.AccessTypesForOpenFlags(flags)
+func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions, afterCreate bool) (*vfs.FileDescription, error) {
+	ats := vfs.AccessTypesForOpenFlags(opts.Flags)
 	if !afterCreate {
 		if err := d.inode.checkPermissions(rp.Credentials(), ats, d.inode.isDir()); err != nil {
 			return nil, err
@@ -340,10 +343,10 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, flags uint32, 
 	switch impl := d.inode.impl.(type) {
 	case *regularFile:
 		var fd regularFileFD
-		if err := fd.vfsfd.Init(&fd, flags, rp.Mount(), &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+		if err := fd.vfsfd.Init(&fd, opts.Flags, rp.Mount(), &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
 			return nil, err
 		}
-		if flags&linux.O_TRUNC != 0 {
+		if opts.Flags&linux.O_TRUNC != 0 {
 			impl.mu.Lock()
 			impl.data.Truncate(0, impl.memFile)
 			atomic.StoreUint64(&impl.size, 0)
@@ -356,7 +359,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, flags uint32, 
 			return nil, syserror.EISDIR
 		}
 		var fd directoryFD
-		if err := fd.vfsfd.Init(&fd, flags, rp.Mount(), &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+		if err := fd.vfsfd.Init(&fd, opts.Flags, rp.Mount(), &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
 			return nil, err
 		}
 		return &fd.vfsfd, nil
@@ -364,7 +367,9 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, flags uint32, 
 		// Can't open symlinks without O_PATH (which is unimplemented).
 		return nil, syserror.ELOOP
 	case *namedPipe:
-		return newNamedPipeFD(ctx, impl, rp, &d.vfsd, flags)
+		return newNamedPipeFD(ctx, impl, rp, &d.vfsd, opts.Flags)
+	case *deviceFile:
+		return rp.VirtualFilesystem().OpenDeviceSpecialFile(ctx, rp.Mount(), &d.vfsd, impl.kind, impl.major, impl.minor, opts)
 	default:
 		panic(fmt.Sprintf("unknown inode type: %T", d.inode.impl))
 	}
