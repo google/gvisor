@@ -34,9 +34,16 @@ import (
 // shouldn't be reached - an error has occurred if we fall through to one.
 const errorTargetName = "ERROR"
 
-// metadata is opaque to netstack. It holds data that we need to translate
-// between Linux's and netstack's iptables representations.
-// TODO(gvisor.dev/issue/170): Use metadata to check correctness.
+const (
+	matcherNameUDP = "udp"
+)
+
+// Metadata is used to verify that we are correctly serializing and
+// deserializing iptables into structs consumable by the iptables tool. We save
+// a metadata struct when the tables are written, and when they are read out we
+// verify that certain fields are the same.
+//
+// metadata is opaque to netstack.
 type metadata struct {
 	HookEntry  [linux.NF_INET_NUMHOOKS]uint32
 	Underflow  [linux.NF_INET_NUMHOOKS]uint32
@@ -44,10 +51,12 @@ type metadata struct {
 	Size       uint32
 }
 
-const enableDebugLog = true
+const enableDebug = false
 
+// nflog logs messages related to the writing and reading of iptables, but only
+// when enableDebug is true.
 func nflog(format string, args ...interface{}) {
-	if enableDebugLog {
+	if enableDebug {
 		log.Infof("netfilter: "+format, args...)
 	}
 }
@@ -80,7 +89,7 @@ func GetInfo(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr) (linux.IPT
 	info.NumEntries = metadata.NumEntries
 	info.Size = metadata.Size
 
-	nflog("GetInfo returning info: %+v", info)
+	nflog("returning info: %+v", info)
 
 	return info, nil
 }
@@ -163,19 +172,19 @@ func convertNetstackToBinary(tablename string, table iptables.Table) (linux.Kern
 	copy(entries.Name[:], tablename)
 
 	for ruleIdx, rule := range table.Rules {
-		nflog("Current offset: %d", entries.Size)
+		nflog("convert to binary: current offset: %d", entries.Size)
 
 		// Is this a chain entry point?
 		for hook, hookRuleIdx := range table.BuiltinChains {
 			if hookRuleIdx == ruleIdx {
-				nflog("Found hook %d at offset %d", hook, entries.Size)
+				nflog("convert to binary: found hook %d at offset %d", hook, entries.Size)
 				meta.HookEntry[hook] = entries.Size
 			}
 		}
 		// Is this a chain underflow point?
 		for underflow, underflowRuleIdx := range table.Underflows {
 			if underflowRuleIdx == ruleIdx {
-				nflog("Found underflow %d at offset %d", underflow, entries.Size)
+				nflog("convert to binary: found underflow %d at offset %d", underflow, entries.Size)
 				meta.Underflow[underflow] = entries.Size
 			}
 		}
@@ -195,7 +204,7 @@ func convertNetstackToBinary(tablename string, table iptables.Table) (linux.Kern
 			// Serialize the matcher and add it to the
 			// entry.
 			serialized := marshalMatcher(matcher)
-			nflog("matcher serialized as: %v", serialized)
+			nflog("convert to binary: matcher serialized as: %v", serialized)
 			if len(serialized)%8 != 0 {
 				panic(fmt.Sprintf("matcher %T is not 64-bit aligned", matcher))
 			}
@@ -212,14 +221,14 @@ func convertNetstackToBinary(tablename string, table iptables.Table) (linux.Kern
 		entry.Elems = append(entry.Elems, serialized...)
 		entry.NextOffset += uint16(len(serialized))
 
-		nflog("Adding entry: %+v", entry)
+		nflog("convert to binary: adding entry: %+v", entry)
 
 		entries.Size += uint32(entry.NextOffset)
 		entries.Entrytable = append(entries.Entrytable, entry)
 		meta.NumEntries++
 	}
 
-	nflog("Finished with an marshalled size of %d", meta.Size)
+	nflog("convert to binary: finished with an marshalled size of %d", meta.Size)
 	meta.Size = entries.Size
 	return entries, meta, nil
 }
@@ -237,16 +246,18 @@ func marshalMatcher(matcher iptables.Matcher) []byte {
 }
 
 func marshalUDPMatcher(matcher *iptables.UDPMatcher) []byte {
-	nflog("Marshalling UDP matcher: %+v", matcher)
+	nflog("convert to binary: marshalling UDP matcher: %+v", matcher)
+
+	// We have to pad this struct size to a multiple of 8 bytes.
+	const size = linux.SizeOfXTEntryMatch + linux.SizeOfXTUDP + 6
 
 	linuxMatcher := linux.KernelXTEntryMatch{
 		XTEntryMatch: linux.XTEntryMatch{
-			MatchSize: linux.SizeOfXTEntryMatch + linux.SizeOfXTUDP + 6,
-			// Name:      "udp",
+			MatchSize: size,
 		},
 		Data: make([]byte, 0, linux.SizeOfXTUDP),
 	}
-	copy(linuxMatcher.Name[:], "udp")
+	copy(linuxMatcher.Name[:], matcherNameUDP)
 
 	xtudp := linux.XTUDP{
 		SourcePortStart:      matcher.Data.SourcePortStart,
@@ -255,17 +266,12 @@ func marshalUDPMatcher(matcher *iptables.UDPMatcher) []byte {
 		DestinationPortEnd:   matcher.Data.DestinationPortEnd,
 		InverseFlags:         matcher.Data.InverseFlags,
 	}
-	nflog("marshalUDPMatcher: xtudp: %+v", xtudp)
 	linuxMatcher.Data = binary.Marshal(linuxMatcher.Data, usermem.ByteOrder, xtudp)
-	nflog("marshalUDPMatcher: linuxMatcher: %+v", linuxMatcher)
 
-	// We have to pad this struct size to a multiple of 8 bytes, so we make
-	// this a little longer than it needs to be.
-	buf := make([]byte, 0, linux.SizeOfXTEntryMatch+linux.SizeOfXTUDP+6)
+	buf := make([]byte, 0, size)
 	buf = binary.Marshal(buf, usermem.ByteOrder, linuxMatcher)
 	buf = append(buf, []byte{0, 0, 0, 0, 0, 0}...)
-	nflog("Marshalled into matcher of size %d", len(buf))
-	nflog("marshalUDPMatcher: buf is: %v", buf)
+	nflog("convert to binary: marshalled UDP matcher into %v", buf)
 	return buf[:]
 }
 
@@ -283,9 +289,8 @@ func marshalTarget(target iptables.Target) []byte {
 }
 
 func marshalStandardTarget(verdict iptables.Verdict) []byte {
-	nflog("Marshalling standard target with size %d", linux.SizeOfXTStandardTarget)
+	nflog("convert to binary: marshalling standard target with size %d", linux.SizeOfXTStandardTarget)
 
-	// TODO: Must be aligned.
 	// The target's name will be the empty string.
 	target := linux.XTStandardTarget{
 		Target: linux.XTEntryTarget{
@@ -353,8 +358,6 @@ func translateToStandardVerdict(val int32) (iptables.Verdict, *syserr.Error) {
 // SetEntries sets iptables rules for a single table. See
 // net/ipv4/netfilter/ip_tables.c:translate_table for reference.
 func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
-	// printReplace(optVal)
-
 	// Get the basic rules data (struct ipt_replace).
 	if len(optVal) < linux.SizeOfIPTReplace {
 		log.Warningf("netfilter.SetEntries: optVal has insufficient size for replace %d", len(optVal))
@@ -375,13 +378,13 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 		return syserr.ErrInvalidArgument
 	}
 
-	nflog("Setting entries in table %q", replace.Name.String())
+	nflog("set entries: setting entries in table %q", replace.Name.String())
 
 	// Convert input into a list of rules and their offsets.
 	var offset uint32
 	var offsets []uint32
 	for entryIdx := uint32(0); entryIdx < replace.NumEntries; entryIdx++ {
-		nflog("Processing entry at offset %d", offset)
+		nflog("set entries: processing entry at offset %d", offset)
 
 		// Get the struct ipt_entry.
 		if len(optVal) < linux.SizeOfIPTEntry {
@@ -406,11 +409,13 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 			return err
 		}
 
-		// TODO: Matchers (and maybe targets) can specify that they only work for certiain protocols, hooks, tables.
+		// TODO(gvisor.dev/issue/170): Matchers and targets can specify
+		// that they only work for certiain protocols, hooks, tables.
 		// Get matchers.
 		matchersSize := entry.TargetOffset - linux.SizeOfIPTEntry
 		if len(optVal) < int(matchersSize) {
 			log.Warningf("netfilter: entry doesn't have enough room for its matchers (only %d bytes remain)", len(optVal))
+			return syserr.ErrInvalidArgument
 		}
 		matchers, err := parseMatchers(filter, optVal[:matchersSize])
 		if err != nil {
@@ -423,6 +428,7 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 		targetSize := entry.NextOffset - entry.TargetOffset
 		if len(optVal) < int(targetSize) {
 			log.Warningf("netfilter: entry doesn't have enough room for its target (only %d bytes remain)", len(optVal))
+			return syserr.ErrInvalidArgument
 		}
 		target, err := parseTarget(optVal[:targetSize])
 		if err != nil {
@@ -500,10 +506,11 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 // parseMatchers parses 0 or more matchers from optVal. optVal should contain
 // only the matchers.
 func parseMatchers(filter iptables.IPHeaderFilter, optVal []byte) ([]iptables.Matcher, *syserr.Error) {
-	nflog("Parsing matchers of size %d", len(optVal))
+	nflog("set entries: parsing matchers of size %d", len(optVal))
 	var matchers []iptables.Matcher
 	for len(optVal) > 0 {
-		nflog("parseMatchers: optVal has len %d", len(optVal))
+		nflog("set entries: optVal has len %d", len(optVal))
+
 		// Get the XTEntryMatch.
 		if len(optVal) < linux.SizeOfXTEntryMatch {
 			log.Warningf("netfilter: optVal has insufficient size for entry match: %d", len(optVal))
@@ -512,7 +519,7 @@ func parseMatchers(filter iptables.IPHeaderFilter, optVal []byte) ([]iptables.Ma
 		var match linux.XTEntryMatch
 		buf := optVal[:linux.SizeOfXTEntryMatch]
 		binary.Unmarshal(buf, usermem.ByteOrder, &match)
-		nflog("parseMatchers: parsed entry match %q: %+v", match.Name.String(), match)
+		nflog("set entries: parsed entry match %q: %+v", match.Name.String(), match)
 
 		// Check some invariants.
 		if match.MatchSize < linux.SizeOfXTEntryMatch {
@@ -528,17 +535,17 @@ func parseMatchers(filter iptables.IPHeaderFilter, optVal []byte) ([]iptables.Ma
 		var matcher iptables.Matcher
 		var err error
 		switch match.Name.String() {
-		case "udp":
+		case matcherNameUDP:
 			if len(buf) < linux.SizeOfXTUDP {
 				log.Warningf("netfilter: optVal has insufficient size for UDP match: %d", len(optVal))
 				return nil, syserr.ErrInvalidArgument
 			}
+			// For alignment reasons, the match's total size may
+			// exceed what's strictly necessary to hold matchData.
 			var matchData linux.XTUDP
-			// For alignment reasons, the match's total size may exceed what's
-			// strictly necessary to hold matchData.
 			binary.Unmarshal(buf[:linux.SizeOfXTUDP], usermem.ByteOrder, &matchData)
 			log.Infof("parseMatchers: parsed XTUDP: %+v", matchData)
-			matcher, err = iptables.NewUDPMatcher(filter, iptables.UDPMatcherData{
+			matcher, err = iptables.NewUDPMatcher(filter, iptables.UDPMatcherParams{
 				SourcePortStart:      matchData.SourcePortStart,
 				SourcePortEnd:        matchData.SourcePortEnd,
 				DestinationPortStart: matchData.DestinationPortStart,
@@ -557,19 +564,22 @@ func parseMatchers(filter iptables.IPHeaderFilter, optVal []byte) ([]iptables.Ma
 
 		matchers = append(matchers, matcher)
 
-		// TODO: Support revision.
-		// TODO: Support proto -- matchers usually specify which proto(s) they work with.
+		// TODO(gvisor.dev/issue/170): Check the revision field.
 		optVal = optVal[match.MatchSize:]
 	}
 
-	// TODO: Check that optVal is exhausted.
+	if len(optVal) != 0 {
+		log.Warningf("netfilter: optVal should be exhausted after parsing matchers")
+		return nil, syserr.ErrInvalidArgument
+	}
+
 	return matchers, nil
 }
 
 // parseTarget parses a target from optVal. optVal should contain only the
 // target.
 func parseTarget(optVal []byte) (iptables.Target, *syserr.Error) {
-	nflog("Parsing target of size %d", len(optVal))
+	nflog("set entries: parsing target of size %d", len(optVal))
 	if len(optVal) < linux.SizeOfXTEntryTarget {
 		log.Warningf("netfilter: optVal has insufficient size for entry target %d", len(optVal))
 		return nil, syserr.ErrInvalidArgument
@@ -598,7 +608,8 @@ func parseTarget(optVal []byte) (iptables.Target, *syserr.Error) {
 		case iptables.Drop:
 			return iptables.UnconditionalDropTarget{}, nil
 		default:
-			panic(fmt.Sprintf("Unknown verdict: %v", verdict))
+			log.Warningf("Unknown verdict: %v", verdict)
+			return nil, syserr.ErrInvalidArgument
 		}
 
 	case errorTargetName:
@@ -672,53 +683,4 @@ func hookFromLinux(hook int) iptables.Hook {
 		return iptables.Postrouting
 	}
 	panic(fmt.Sprintf("Unknown hook %d does not correspond to a builtin chain", hook))
-}
-
-// printReplace prints information about the struct ipt_replace in optVal. It
-// is only for debugging.
-func printReplace(optVal []byte) {
-	// Basic replace info.
-	var replace linux.IPTReplace
-	replaceBuf := optVal[:linux.SizeOfIPTReplace]
-	optVal = optVal[linux.SizeOfIPTReplace:]
-	binary.Unmarshal(replaceBuf, usermem.ByteOrder, &replace)
-	log.Infof("Replacing table %q: %+v", replace.Name.String(), replace)
-
-	// Read in the list of entries at the end of replace.
-	var totalOffset uint16
-	for entryIdx := uint32(0); entryIdx < replace.NumEntries; entryIdx++ {
-		var entry linux.IPTEntry
-		entryBuf := optVal[:linux.SizeOfIPTEntry]
-		binary.Unmarshal(entryBuf, usermem.ByteOrder, &entry)
-		log.Infof("Entry %d (total offset %d): %+v", entryIdx, totalOffset, entry)
-
-		totalOffset += entry.NextOffset
-		if entry.TargetOffset == linux.SizeOfIPTEntry {
-			log.Infof("Entry has no matches.")
-		} else {
-			log.Infof("Entry has matches.")
-		}
-
-		var target linux.XTEntryTarget
-		targetBuf := optVal[entry.TargetOffset : entry.TargetOffset+linux.SizeOfXTEntryTarget]
-		binary.Unmarshal(targetBuf, usermem.ByteOrder, &target)
-		log.Infof("Target named %q: %+v", target.Name.String(), target)
-
-		switch target.Name.String() {
-		case "":
-			var standardTarget linux.XTStandardTarget
-			stBuf := optVal[entry.TargetOffset : entry.TargetOffset+linux.SizeOfXTStandardTarget]
-			binary.Unmarshal(stBuf, usermem.ByteOrder, &standardTarget)
-			log.Infof("Standard target with verdict %q (%d).", linux.VerdictStrings[standardTarget.Verdict], standardTarget.Verdict)
-		case errorTargetName:
-			var errorTarget linux.XTErrorTarget
-			etBuf := optVal[entry.TargetOffset : entry.TargetOffset+linux.SizeOfXTErrorTarget]
-			binary.Unmarshal(etBuf, usermem.ByteOrder, &errorTarget)
-			log.Infof("Error target with name %q.", errorTarget.Name.String())
-		default:
-			log.Infof("Unknown target type.")
-		}
-
-		optVal = optVal[entry.NextOffset:]
-	}
 }
