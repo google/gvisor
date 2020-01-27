@@ -21,7 +21,7 @@
 package pagetables
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // PageTables is a set of page tables.

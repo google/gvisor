@@ -13,12 +13,12 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/sentry/context",
+        "//pkg/context",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fs/ramfs",
         "//pkg/sentry/kernel",
-        "//pkg/sentry/usermem",
+        "//pkg/usermem",
     ],
 )

@@ -47,13 +47,13 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/amutex",
+        "//pkg/context",
         "//pkg/log",
         "//pkg/metric",
         "//pkg/p9",
         "//pkg/refs",
         "//pkg/secio",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
         "//pkg/sentry/device",
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/kernel/auth",
@@ -64,10 +64,10 @@ go_library(
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/uniqueid",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
         "//pkg/state",
         "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )
@@ -107,14 +107,14 @@ go_test(
     ],
     deps = [
         ":fs",
-        "//pkg/sentry/context",
+        "//pkg/context",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fs/ramfs",
         "//pkg/sentry/fs/tmpfs",
         "//pkg/sentry/kernel/contexttest",
-        "//pkg/sentry/usermem",
         "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )
 
@@ -129,7 +129,7 @@ go_test(
     ],
     library = ":fs",
     deps = [
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/context",
+        "//pkg/sentry/contexttest",
     ],
 )

@@ -19,7 +19,7 @@ import (
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // SignalContext64 is equivalent to struct sigcontext, the type passed as the

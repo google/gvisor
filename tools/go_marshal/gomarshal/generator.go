@@ -27,8 +27,8 @@ import (
 
 const (
 	marshalImport  = "gvisor.dev/gvisor/tools/go_marshal/marshal"
-	usermemImport  = "gvisor.dev/gvisor/pkg/sentry/usermem"
-	safecopyImport = "gvisor.dev/gvisor/pkg/sentry/platform/safecopy"
+	safecopyImport = "gvisor.dev/gvisor/pkg/safecopy"
+	usermemImport  = "gvisor.dev/gvisor/pkg/usermem"
 )
 
 // List of identifiers we use in generated code, that may conflict a

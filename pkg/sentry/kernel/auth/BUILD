@@ -61,8 +61,8 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/bits",
+        "//pkg/context",
         "//pkg/log",
-        "//pkg/sentry/context",
         "//pkg/sync",
         "//pkg/syserror",
     ],

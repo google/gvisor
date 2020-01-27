@@ -44,16 +44,16 @@ go_library(
         "//pkg/cpuid",
         "//pkg/log",
         "//pkg/procid",
+        "//pkg/safecopy",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/interrupt",
         "//pkg/sentry/platform/ring0",
         "//pkg/sentry/platform/ring0/pagetables",
-        "//pkg/sentry/platform/safecopy",
         "//pkg/sentry/time",
-        "//pkg/sentry/usermem",
         "//pkg/sync",
+        "//pkg/usermem",
     ],
 )
 
@@ -75,6 +75,6 @@ go_test(
         "//pkg/sentry/platform/kvm/testutil",
         "//pkg/sentry/platform/ring0",
         "//pkg/sentry/platform/ring0/pagetables",
-        "//pkg/sentry/usermem",
+        "//pkg/usermem",
     ],
 )

@@ -34,7 +34,7 @@ go_library(
         "//pkg/sentry/socket/netlink",
         "//pkg/sentry/socket/netstack",
         "//pkg/sentry/syscalls/linux",
-        "//pkg/sentry/usermem",
+        "//pkg/usermem",
     ],
 )
 

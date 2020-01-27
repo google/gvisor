@@ -8,7 +8,7 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/sentry/context",
+        "//pkg/context",
         "//pkg/sentry/kernel",
         "//pkg/sentry/socket/netlink",
         "//pkg/syserr",

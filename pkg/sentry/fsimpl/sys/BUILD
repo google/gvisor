@@ -9,7 +9,7 @@ go_library(
     ],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/sentry/context",
+        "//pkg/context",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",

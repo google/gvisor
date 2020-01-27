@@ -36,12 +36,12 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/log",
-        "//pkg/sentry/context",
         "//pkg/sentry/memmap",
-        "//pkg/sentry/usermem",
         "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )
 
@@ -51,7 +51,7 @@ go_test(
     srcs = ["futex_test.go"],
     library = ":futex",
     deps = [
-        "//pkg/sentry/usermem",
         "//pkg/sync",
+        "//pkg/usermem",
     ],
 )

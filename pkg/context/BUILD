@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "context",
     srcs = ["context.go"],
-    visibility = ["//pkg/sentry:internal"],
+    visibility = ["//:sandbox"],
     deps = [
         "//pkg/amutex",
         "//pkg/log",

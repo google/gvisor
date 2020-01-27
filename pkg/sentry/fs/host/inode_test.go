@@ -21,7 +21,7 @@ import (
 	"syscall"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
 

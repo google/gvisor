@@ -8,8 +8,8 @@ go_library(
     srcs = ["contexttest.go"],
     visibility = ["//pkg/sentry:internal"],
     deps = [
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/context",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/kernel",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",

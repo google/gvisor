@@ -30,13 +30,13 @@ go_library(
         ":registers_go_proto",
         "//pkg/abi/linux",
         "//pkg/binary",
+        "//pkg/context",
         "//pkg/cpuid",
         "//pkg/log",
-        "//pkg/sentry/context",
         "//pkg/sentry/limits",
-        "//pkg/sentry/usermem",
         "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )
 

@@ -10,9 +10,9 @@ go_library(
         "safemem.go",
         "seq_unsafe.go",
     ],
-    visibility = ["//pkg/sentry:internal"],
+    visibility = ["//:sandbox"],
     deps = [
-        "//pkg/sentry/platform/safecopy",
+        "//pkg/safecopy",
     ],
 )
 

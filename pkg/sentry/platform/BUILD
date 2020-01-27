@@ -26,14 +26,14 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
+        "//pkg/context",
         "//pkg/log",
+        "//pkg/safecopy",
+        "//pkg/safemem",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
-        "//pkg/sentry/platform/safecopy",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )

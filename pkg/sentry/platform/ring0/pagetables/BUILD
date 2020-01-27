@@ -93,8 +93,8 @@ go_library(
         "//pkg/sentry/platform/ring0:__subpackages__",
     ],
     deps = [
-        "//pkg/sentry/usermem",
         "//pkg/sync",
+        "//pkg/usermem",
     ],
 )
 
@@ -108,5 +108,5 @@ go_test(
         "walker_check.go",
     ],
     library = ":pagetables",
-    deps = ["//pkg/sentry/usermem"],
+    deps = ["//pkg/usermem"],
 )

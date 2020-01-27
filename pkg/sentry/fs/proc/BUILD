@@ -29,8 +29,8 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/log",
-        "//pkg/sentry/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fs/proc/device",
@@ -46,10 +46,10 @@ go_library(
         "//pkg/sentry/socket/unix",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
         "//pkg/sync",
         "//pkg/syserror",
         "//pkg/tcpip/header",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )
@@ -64,8 +64,8 @@ go_test(
     library = ":proc",
     deps = [
         "//pkg/abi/linux",
-        "//pkg/sentry/context",
+        "//pkg/context",
         "//pkg/sentry/inet",
-        "//pkg/sentry/usermem",
+        "//pkg/usermem",
     ],
 )

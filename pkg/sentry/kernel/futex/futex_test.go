@@ -22,8 +22,8 @@ import (
 	"testing"
 	"unsafe"
 
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // testData implements the Target interface, and allows us to

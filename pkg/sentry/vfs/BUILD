@@ -26,14 +26,14 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/fspath",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
-        "//pkg/sentry/usermem",
         "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )
@@ -48,11 +48,11 @@ go_test(
     library = ":vfs",
     deps = [
         "//pkg/abi/linux",
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/context",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/kernel/auth",
-        "//pkg/sentry/usermem",
         "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )

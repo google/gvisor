@@ -24,8 +24,8 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/log",
-        "//pkg/sentry/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
@@ -41,8 +41,8 @@ go_test(
     library = ":semaphore",
     deps = [
         "//pkg/abi/linux",
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/context",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/kernel/auth",
         "//pkg/syserror",
     ],

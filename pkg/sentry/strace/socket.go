@@ -26,7 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // SocketFamily are the possible socket(2) families.

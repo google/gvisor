@@ -18,8 +18,8 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // MAX_RW_COUNT is the maximum size in bytes of a single read or write.

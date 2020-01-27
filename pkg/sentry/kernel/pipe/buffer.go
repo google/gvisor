@@ -17,7 +17,7 @@ package pipe
 import (
 	"io"
 
-	"gvisor.dev/gvisor/pkg/sentry/safemem"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 

@@ -16,20 +16,20 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/refs",
+        "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/unimpl",
-        "//pkg/sentry/usermem",
         "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )
@@ -41,7 +41,7 @@ go_test(
     library = ":tty",
     deps = [
         "//pkg/abi/linux",
-        "//pkg/sentry/context/contexttest",
-        "//pkg/sentry/usermem",
+        "//pkg/sentry/contexttest",
+        "//pkg/usermem",
     ],
 )

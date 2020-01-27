@@ -28,13 +28,13 @@ go_library(
         "usermem_unsafe.go",
         "usermem_x86.go",
     ],
-    visibility = ["//pkg/sentry:internal"],
+    visibility = ["//:sandbox"],
     deps = [
         "//pkg/atomicbitops",
         "//pkg/binary",
+        "//pkg/context",
         "//pkg/log",
-        "//pkg/sentry/context",
-        "//pkg/sentry/safemem",
+        "//pkg/safemem",
         "//pkg/syserror",
     ],
 )
@@ -48,8 +48,8 @@ go_test(
     ],
     library = ":usermem",
     deps = [
-        "//pkg/sentry/context",
-        "//pkg/sentry/safemem",
+        "//pkg/context",
+        "//pkg/safemem",
         "//pkg/syserror",
     ],
 )

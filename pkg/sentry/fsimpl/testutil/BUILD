@@ -12,10 +12,10 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/cpuid",
         "//pkg/fspath",
         "//pkg/memutil",
-        "//pkg/sentry/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
@@ -27,9 +27,9 @@ go_library(
         "//pkg/sentry/platform/kvm",
         "//pkg/sentry/platform/ptrace",
         "//pkg/sentry/time",
-        "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
         "//pkg/sync",
+        "//pkg/usermem",
         "@com_github_google_go-cmp//cmp:go_default_library",
     ],
 )
