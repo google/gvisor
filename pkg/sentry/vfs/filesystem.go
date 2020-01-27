@@ -18,8 +18,8 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 )
 
 // A Filesystem is a tree of nodes represented by Dentries, which forms part of
