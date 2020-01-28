@@ -24,13 +24,17 @@ import (
 )
 
 const (
-	// NDPTargetLinkLayerAddressOptionType is the type of the Target
-	// Link-Layer Address option, as per RFC 4861 section 4.6.1.
+	// NDPSourceLinkLayerAddressOptionType is the type of the Source Link Layer
+	// Address option, as per RFC 4861 section 4.6.1.
+	NDPSourceLinkLayerAddressOptionType = 1
+
+	// NDPTargetLinkLayerAddressOptionType is the type of the Target Link Layer
+	// Address option, as per RFC 4861 section 4.6.1.
 	NDPTargetLinkLayerAddressOptionType = 2
 
-	// ndpTargetEthernetLinkLayerAddressSize is the size of a Target
-	// Link Layer Option for an Ethernet address.
-	ndpTargetEthernetLinkLayerAddressSize = 8
+	// ndpLinkLayerAddressSize is the size of a Source or Target Link Layer
+	// Address option.
+	ndpLinkLayerAddressSize = 8
 
 	// NDPPrefixInformationType is the type of the Prefix Information
 	// option, as per RFC 4861 section 4.6.2.
@@ -189,6 +193,9 @@ func (i *NDPOptionIterator) Next() (NDPOption, bool, error) {
 		i.opts = i.opts[numBytes:]
 
 		switch t {
+		case NDPSourceLinkLayerAddressOptionType:
+			return NDPSourceLinkLayerAddressOption(body), false, nil
+
 		case NDPTargetLinkLayerAddressOptionType:
 			return NDPTargetLinkLayerAddressOption(body), false, nil
 
@@ -366,6 +373,41 @@ func (b NDPOptionsSerializer) Length() int {
 	}
 
 	return l
+}
+
+// NDPSourceLinkLayerAddressOption is the NDP Source Link Layer Option
+// as defined by RFC 4861 section 4.6.1.
+//
+// It is the first X bytes following the NDP option's Type and Length field
+// where X is the value in Length multiplied by lengthByteUnits - 2 bytes.
+type NDPSourceLinkLayerAddressOption tcpip.LinkAddress
+
+// Type implements NDPOption.Type.
+func (o NDPSourceLinkLayerAddressOption) Type() uint8 {
+	return NDPSourceLinkLayerAddressOptionType
+}
+
+// Length implements NDPOption.Length.
+func (o NDPSourceLinkLayerAddressOption) Length() int {
+	return len(o)
+}
+
+// serializeInto implements NDPOption.serializeInto.
+func (o NDPSourceLinkLayerAddressOption) serializeInto(b []byte) int {
+	return copy(b, o)
+}
+
+// EthernetAddress will return an ethernet (MAC) address if the
+// NDPSourceLinkLayerAddressOption's body has at minimum EthernetAddressSize
+// bytes. If the body has more than EthernetAddressSize bytes, only the first
+// EthernetAddressSize bytes are returned as that is all that is needed for an
+// Ethernet address.
+func (o NDPSourceLinkLayerAddressOption) EthernetAddress() tcpip.LinkAddress {
+	if len(o) >= EthernetAddressSize {
+		return tcpip.LinkAddress(o[:EthernetAddressSize])
+	}
+
+	return tcpip.LinkAddress([]byte(nil))
 }
 
 // NDPTargetLinkLayerAddressOption is the NDP Target Link Layer Option

@@ -52,7 +52,7 @@ const (
 	// ICMPv6NeighborAdvertSize is size of a neighbor advertisement
 	// including the NDP Target Link Layer option for an Ethernet
 	// address.
-	ICMPv6NeighborAdvertSize = ICMPv6HeaderSize + NDPNAMinimumSize + ndpTargetEthernetLinkLayerAddressSize
+	ICMPv6NeighborAdvertSize = ICMPv6HeaderSize + NDPNAMinimumSize + ndpLinkLayerAddressSize
 
 	// ICMPv6EchoMinimumSize is the minimum size of a valid ICMP echo packet.
 	ICMPv6EchoMinimumSize = 8
