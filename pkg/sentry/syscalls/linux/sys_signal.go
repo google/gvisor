@@ -245,6 +245,11 @@ func RtSigaction(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	sig := linux.Signal(args[0].Int())
 	newactarg := args[1].Pointer()
 	oldactarg := args[2].Pointer()
+	sigsetsize := args[3].SizeT()
+
+	if sigsetsize != linux.SignalSetSize {
+		return 0, nil, syserror.EINVAL
+	}
 
 	var newactptr *arch.SignalAct
 	if newactarg != 0 {
