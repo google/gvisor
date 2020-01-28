@@ -206,6 +206,11 @@ func IsPipe(s StableAttr) bool {
 	return s.Type == Pipe
 }
 
+// IsAnonymous returns true if StableAttr.Type matches any type of anonymous.
+func IsAnonymous(s StableAttr) bool {
+	return s.Type == Anonymous
+}
+
 // IsSocket returns true if StableAttr.Type matches any type of socket.
 func IsSocket(s StableAttr) bool {
 	return s.Type == Socket
