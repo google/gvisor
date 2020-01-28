@@ -27,6 +27,7 @@ go_library(
         "symlink.go",
         "tmpfs.go",
     ],
+    visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/amutex",
