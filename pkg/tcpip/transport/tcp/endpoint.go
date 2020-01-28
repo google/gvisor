@@ -2138,6 +2138,9 @@ func (e *endpoint) listen(backlog int) *tcpip.Error {
 	e.isRegistered = true
 	e.setEndpointState(StateListen)
 
+	// The channel may be non-nil when we're restoring the endpoint, and it
+	// may be pre-populated with some previously accepted (but not Accepted)
+	// endpoints.
 	if e.acceptedChan == nil {
 		e.acceptedChan = make(chan *endpoint, backlog)
 	}
