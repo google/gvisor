@@ -19,12 +19,14 @@ import (
 	"bytes"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // commandKind describes the operational class of a message type.
@@ -66,8 +68,14 @@ func (p *Protocol) CanSend() bool {
 	return true
 }
 
-// dumpLinks handles RTM_GETLINK + NLM_F_DUMP requests.
+// dumpLinks handles RTM_GETLINK dump requests.
 func (p *Protocol) dumpLinks(ctx context.Context, hdr linux.NetlinkMessageHeader, data []byte, ms *netlink.MessageSet) *syserr.Error {
+	// TODO(b/68878065): Only the dump variant of the types below are
+	// supported.
+	if hdr.Flags&linux.NLM_F_DUMP != linux.NLM_F_DUMP {
+		return syserr.ErrNotSupported
+	}
+
 	// NLM_F_DUMP + RTM_GETLINK messages are supposed to include an
 	// ifinfomsg. However, Linux <3.9 only checked for rtgenmsg, and some
 	// userspace applications (including glibc) still include rtgenmsg.
@@ -121,8 +129,14 @@ func (p *Protocol) dumpLinks(ctx context.Context, hdr linux.NetlinkMessageHeader
 	return nil
 }
 
-// dumpAddrs handles RTM_GETADDR + NLM_F_DUMP requests.
+// dumpAddrs handles RTM_GETADDR dump requests.
 func (p *Protocol) dumpAddrs(ctx context.Context, hdr linux.NetlinkMessageHeader, data []byte, ms *netlink.MessageSet) *syserr.Error {
+	// TODO(b/68878065): Only the dump variant of the types below are
+	// supported.
+	if hdr.Flags&linux.NLM_F_DUMP != linux.NLM_F_DUMP {
+		return syserr.ErrNotSupported
+	}
+
 	// RTM_GETADDR dump requests need not contain anything more than the
 	// netlink header and 1 byte protocol family common to all
 	// NETLINK_ROUTE requests.
@@ -163,14 +177,117 @@ func (p *Protocol) dumpAddrs(ctx context.Context, hdr linux.NetlinkMessageHeader
 	return nil
 }
 
-// dumpRoutes handles RTM_GETROUTE + NLM_F_DUMP requests.
+// commonPrefixLen reports the length of the longest IP address prefix.
+// This is a simplied version from Golang's src/net/addrselect.go.
+func commonPrefixLen(a, b []byte) (cpl int) {
+	for len(a) > 0 {
+		if a[0] == b[0] {
+			cpl += 8
+			a = a[1:]
+			b = b[1:]
+			continue
+		}
+		bits := 8
+		ab, bb := a[0], b[0]
+		for {
+			ab >>= 1
+			bb >>= 1
+			bits--
+			if ab == bb {
+				cpl += bits
+				return
+			}
+		}
+	}
+	return
+}
+
+// fillRoute returns the Route using LPM algorithm. Refer to Linux's
+// net/ipv4/route.c:rt_fill_info().
+func fillRoute(routes []inet.Route, addr []byte) (inet.Route, *syserr.Error) {
+	family := uint8(linux.AF_INET)
+	if len(addr) != 4 {
+		family = linux.AF_INET6
+	}
+
+	idx := -1    // Index of the Route rule to be returned.
+	idxDef := -1 // Index of the default route rule.
+	prefix := 0  // Current longest prefix.
+	for i, route := range routes {
+		if route.Family != family {
+			continue
+		}
+
+		if len(route.GatewayAddr) > 0 && route.DstLen == 0 {
+			idxDef = i
+			continue
+		}
+
+		cpl := commonPrefixLen(addr, route.DstAddr)
+		if cpl < int(route.DstLen) {
+			continue
+		}
+		cpl = int(route.DstLen)
+		if cpl > prefix {
+			idx = i
+			prefix = cpl
+		}
+	}
+	if idx == -1 {
+		idx = idxDef
+	}
+	if idx == -1 {
+		return inet.Route{}, syserr.ErrNoRoute
+	}
+
+	route := routes[idx]
+	if family == linux.AF_INET {
+		route.DstLen = 32
+	} else {
+		route.DstLen = 128
+	}
+	route.DstAddr = addr
+	route.Flags |= linux.RTM_F_CLONED // This route is cloned.
+	return route, nil
+}
+
+// parseForDestination parses a message as format of RouteMessage-RtAttr-dst.
+func parseForDestination(data []byte) ([]byte, *syserr.Error) {
+	var rtMsg linux.RouteMessage
+	if len(data) < linux.SizeOfRouteMessage {
+		return nil, syserr.ErrInvalidArgument
+	}
+	binary.Unmarshal(data[:linux.SizeOfRouteMessage], usermem.ByteOrder, &rtMsg)
+	// iproute2 added the RTM_F_LOOKUP_TABLE flag in version v4.4.0. See
+	// commit bc234301af12. Note we don't check this flag for backward
+	// compatibility.
+	if rtMsg.Flags != 0 && rtMsg.Flags != linux.RTM_F_LOOKUP_TABLE {
+		return nil, syserr.ErrNotSupported
+	}
+
+	data = data[linux.SizeOfRouteMessage:]
+
+	// TODO(gvisor.dev/issue/1611): Add generic attribute parsing.
+	var rtAttr linux.RtAttr
+	if len(data) < linux.SizeOfRtAttr {
+		return nil, syserr.ErrInvalidArgument
+	}
+	binary.Unmarshal(data[:linux.SizeOfRtAttr], usermem.ByteOrder, &rtAttr)
+	if rtAttr.Type != linux.RTA_DST {
+		return nil, syserr.ErrInvalidArgument
+	}
+
+	if len(data) < int(rtAttr.Len) {
+		return nil, syserr.ErrInvalidArgument
+	}
+	return data[linux.SizeOfRtAttr:rtAttr.Len], nil
+}
+
+// dumpRoutes handles RTM_GETROUTE requests.
 func (p *Protocol) dumpRoutes(ctx context.Context, hdr linux.NetlinkMessageHeader, data []byte, ms *netlink.MessageSet) *syserr.Error {
 	// RTM_GETROUTE dump requests need not contain anything more than the
 	// netlink header and 1 byte protocol family common to all
 	// NETLINK_ROUTE requests.
-
-	// We always send back an NLMSG_DONE.
-	ms.Multi = true
 
 	stack := inet.StackFromContext(ctx)
 	if stack == nil {
@@ -178,7 +295,28 @@ func (p *Protocol) dumpRoutes(ctx context.Context, hdr linux.NetlinkMessageHeade
 		return nil
 	}
 
-	for _, rt := range stack.RouteTable() {
+	routeTables := stack.RouteTable()
+
+	if hdr.Flags == linux.NLM_F_REQUEST {
+		dst, err := parseForDestination(data)
+		if err != nil {
+			return err
+		}
+		route, err := fillRoute(routeTables, dst)
+		if err != nil {
+			// TODO(gvisor.dev/issue/1237): return NLMSG_ERROR with ENETUNREACH.
+			return syserr.ErrNotSupported
+		}
+		routeTables = append([]inet.Route{}, route)
+	} else if hdr.Flags&linux.NLM_F_DUMP == linux.NLM_F_DUMP {
+		// We always send back an NLMSG_DONE.
+		ms.Multi = true
+	} else {
+		// TODO(b/68878065): Only above cases are supported.
+		return syserr.ErrNotSupported
+	}
+
+	for _, rt := range routeTables {
 		m := ms.AddMessage(linux.NetlinkMessageHeader{
 			Type: linux.RTM_NEWROUTE,
 		})
@@ -234,12 +372,6 @@ func (p *Protocol) ProcessMessage(ctx context.Context, hdr linux.NetlinkMessageH
 		if !creds.HasCapability(linux.CAP_NET_ADMIN) {
 			return syserr.ErrPermissionDenied
 		}
-	}
-
-	// TODO(b/68878065): Only the dump variant of the types below are
-	// supported.
-	if hdr.Flags&linux.NLM_F_DUMP != linux.NLM_F_DUMP {
-		return syserr.ErrNotSupported
 	}
 
 	switch hdr.Type {

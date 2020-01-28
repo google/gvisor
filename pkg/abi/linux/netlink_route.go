@@ -205,6 +205,9 @@ type RouteMessage struct {
 	Flags uint32
 }
 
+// SizeOfRouteMessage is the size of RouteMessage.
+const SizeOfRouteMessage = 12
+
 // Route types, from uapi/linux/rtnetlink.h.
 const (
 	// RTN_UNSPEC represents an unspecified route type.
@@ -331,3 +334,13 @@ const (
 	RTF_GATEWAY = 0x2
 	RTF_UP      = 0x1
 )
+
+// RtAttr is the header of optional addition route information, as a netlink
+// attribute. From include/uapi/linux/rtnetlink.h.
+type RtAttr struct {
+	Len  uint16
+	Type uint16
+}
+
+// SizeOfRtAttr is the size of RtAttr.
+const SizeOfRtAttr = 4
