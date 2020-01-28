@@ -46,7 +46,7 @@ var pid = os.Getpid()
 //   line             The line number
 //   msg              The user-supplied message
 //
-func (g *GoogleEmitter) Emit(level Level, timestamp time.Time, format string, args ...interface{}) {
+func (g *GoogleEmitter) Emit(depth int, level Level, timestamp time.Time, format string, args ...interface{}) {
 	// Log level.
 	prefix := byte('?')
 	switch level {
@@ -64,9 +64,7 @@ func (g *GoogleEmitter) Emit(level Level, timestamp time.Time, format string, ar
 	microsecond := int(timestamp.Nanosecond() / 1000)
 
 	// 0 = this frame.
-	// 1 = Debugf, etc.
-	// 2 = Caller.
-	_, file, line, ok := runtime.Caller(2)
+	_, file, line, ok := runtime.Caller(depth + 1)
 	if ok {
 		// Trim any directory path from the file.
 		slash := strings.LastIndexByte(file, byte('/'))

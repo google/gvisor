@@ -32,21 +32,21 @@ const (
 // Infof logs an formatted info message by calling log.Infof.
 func (t *Task) Infof(fmt string, v ...interface{}) {
 	if log.IsLogging(log.Info) {
-		log.Infof(t.logPrefix.Load().(string)+fmt, v...)
+		log.InfofAtDepth(1, t.logPrefix.Load().(string)+fmt, v...)
 	}
 }
 
 // Warningf logs a warning string by calling log.Warningf.
 func (t *Task) Warningf(fmt string, v ...interface{}) {
 	if log.IsLogging(log.Warning) {
-		log.Warningf(t.logPrefix.Load().(string)+fmt, v...)
+		log.WarningfAtDepth(1, t.logPrefix.Load().(string)+fmt, v...)
 	}
 }
 
 // Debugf creates a debug string that includes the task ID.
 func (t *Task) Debugf(fmt string, v ...interface{}) {
 	if log.IsLogging(log.Debug) {
-		log.Debugf(t.logPrefix.Load().(string)+fmt, v...)
+		log.DebugfAtDepth(1, t.logPrefix.Load().(string)+fmt, v...)
 	}
 }
 
