@@ -16,15 +16,19 @@
 //
 // Lock order:
 //
-// FilesystemImpl/FileDescriptionImpl locks
-//   VirtualFilesystem.mountMu
-//     Dentry.mu
-//       Locks acquired by FilesystemImpls between Prepare{Delete,Rename}Dentry and Commit{Delete,Rename*}Dentry
-//     VirtualFilesystem.filesystemsMu
+// EpollInstance.interestMu
+//   FileDescription.epollMu
+//     FilesystemImpl/FileDescriptionImpl locks
+//       VirtualFilesystem.mountMu
+//         Dentry.mu
+//           Locks acquired by FilesystemImpls between Prepare{Delete,Rename}Dentry and Commit{Delete,Rename*}Dentry
+//         VirtualFilesystem.filesystemsMu
+//       EpollInstance.mu
 // VirtualFilesystem.fsTypesMu
 //
 // Locking Dentry.mu in multiple Dentries requires holding
-// VirtualFilesystem.mountMu.
+// VirtualFilesystem.mountMu. Locking EpollInstance.interestMu in multiple
+// EpollInstances requires holding epollCycleMu.
 package vfs
 
 import (

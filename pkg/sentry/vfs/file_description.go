@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -44,6 +45,11 @@ type FileDescription struct {
 	// modified by fcntl()" - fcntl(2). statusFlags is accessed using atomic
 	// memory operations.
 	statusFlags uint32
+
+	// epolls is the set of epollInterests registered for this FileDescription.
+	// epolls is protected by epollMu.
+	epollMu sync.Mutex
+	epolls  map[*epollInterest]struct{}
 
 	// vd is the filesystem location at which this FileDescription was opened.
 	// A reference is held on vd. vd is immutable.
@@ -141,6 +147,23 @@ func (fd *FileDescription) TryIncRef() bool {
 // DecRef decrements fd's reference count.
 func (fd *FileDescription) DecRef() {
 	if refs := atomic.AddInt64(&fd.refs, -1); refs == 0 {
+		// Unregister fd from all epoll instances.
+		fd.epollMu.Lock()
+		epolls := fd.epolls
+		fd.epolls = nil
+		fd.epollMu.Unlock()
+		for epi := range epolls {
+			ep := epi.epoll
+			ep.interestMu.Lock()
+			// Check that epi has not been concurrently unregistered by
+			// EpollInstance.DeleteInterest() or EpollInstance.Release().
+			if _, ok := ep.interest[epi.key]; ok {
+				fd.EventUnregister(&epi.waiter)
+				ep.removeLocked(epi)
+			}
+			ep.interestMu.Unlock()
+		}
+		// Release implementation resources.
 		fd.impl.Release()
 		if fd.writable {
 			fd.vd.mount.EndWrite()
@@ -451,6 +474,21 @@ func (fd *FileDescription) StatFS(ctx context.Context) (linux.Statfs, error) {
 		return statfs, err
 	}
 	return fd.impl.StatFS(ctx)
+}
+
+// Readiness returns fd's I/O readiness.
+func (fd *FileDescription) Readiness(mask waiter.EventMask) waiter.EventMask {
+	return fd.impl.Readiness(mask)
+}
+
+// EventRegister registers e for I/O readiness events in mask.
+func (fd *FileDescription) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
+	fd.impl.EventRegister(e, mask)
+}
+
+// EventUnregister unregisters e for I/O readiness events.
+func (fd *FileDescription) EventUnregister(e *waiter.Entry) {
+	fd.impl.EventUnregister(e)
 }
 
 // PRead reads from the file represented by fd into dst, starting at the given
