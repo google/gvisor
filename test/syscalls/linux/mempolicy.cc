@@ -43,17 +43,17 @@ namespace {
 #define MPOL_MF_MOVE (1 << 1)
 #define MPOL_MF_MOVE_ALL (1 << 2)
 
-int get_mempolicy(int *policy, uint64_t *nmask, uint64_t maxnode, void *addr,
+int get_mempolicy(int* policy, uint64_t* nmask, uint64_t maxnode, void* addr,
                   int flags) {
   return syscall(SYS_get_mempolicy, policy, nmask, maxnode, addr, flags);
 }
 
-int set_mempolicy(int mode, uint64_t *nmask, uint64_t maxnode) {
+int set_mempolicy(int mode, uint64_t* nmask, uint64_t maxnode) {
   return syscall(SYS_set_mempolicy, mode, nmask, maxnode);
 }
 
-int mbind(void *addr, unsigned long len, int mode,
-          const unsigned long *nodemask, unsigned long maxnode,
+int mbind(void* addr, unsigned long len, int mode,
+          const unsigned long* nodemask, unsigned long maxnode,
           unsigned flags) {
   return syscall(SYS_mbind, addr, len, mode, nodemask, maxnode, flags);
 }
@@ -68,7 +68,7 @@ Cleanup ScopedMempolicy() {
 
 // Temporarily change the memory policy for the calling thread within the
 // caller's scope.
-PosixErrorOr<Cleanup> ScopedSetMempolicy(int mode, uint64_t *nmask,
+PosixErrorOr<Cleanup> ScopedSetMempolicy(int mode, uint64_t* nmask,
                                          uint64_t maxnode) {
   if (set_mempolicy(mode, nmask, maxnode)) {
     return PosixError(errno, "set_mempolicy");
@@ -213,7 +213,7 @@ TEST(MempolicyTest, GetMempolicyQueryNodeForAddress) {
     }
   }
 
-  void *invalid_address = reinterpret_cast<void *>(-1);
+  void* invalid_address = reinterpret_cast<void*>(-1);
 
   // Invalid address.
   ASSERT_THAT(get_mempolicy(&mode, nullptr, 0, invalid_address,
@@ -221,8 +221,8 @@ TEST(MempolicyTest, GetMempolicyQueryNodeForAddress) {
               SyscallFailsWithErrno(EFAULT));
 
   // Invalid mode pointer.
-  ASSERT_THAT(get_mempolicy(reinterpret_cast<int *>(invalid_address), nullptr,
-                            0, &dummy_stack_address, MPOL_F_ADDR | MPOL_F_NODE),
+  ASSERT_THAT(get_mempolicy(reinterpret_cast<int*>(invalid_address), nullptr, 0,
+                            &dummy_stack_address, MPOL_F_ADDR | MPOL_F_NODE),
               SyscallFailsWithErrno(EFAULT));
 }
 

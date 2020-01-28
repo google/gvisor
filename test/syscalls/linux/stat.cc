@@ -377,7 +377,7 @@ TEST_F(StatTest, ZeroLinksOpenFdRegularFileChild_NoRandomSave) {
   //
   // We need to support this because when a file is unlinked and we forward
   // the stat to the gofer it would return ENOENT.
-  const char *uncached_gofer = getenv("GVISOR_GOFER_UNCACHED");
+  const char* uncached_gofer = getenv("GVISOR_GOFER_UNCACHED");
   SKIP_IF(uncached_gofer != nullptr);
 
   // We don't support saving unlinked files.
@@ -599,8 +599,8 @@ struct kernel_statx {
   uint64_t __spare2[14];
 };
 
-int statx(int dirfd, const char *pathname, int flags, unsigned int mask,
-          struct kernel_statx *statxbuf) {
+int statx(int dirfd, const char* pathname, int flags, unsigned int mask,
+          struct kernel_statx* statxbuf) {
   return syscall(SYS_statx, dirfd, pathname, flags, mask, statxbuf);
 }
 

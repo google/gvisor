@@ -66,7 +66,7 @@ class BindToDeviceSequenceTest : public ::testing::TestWithParam<SocketKind> {
   // Gets a device by device_id.  If the device_id has been seen before, returns
   // the previously returned device.  If not, finds or creates a new device.
   // Returns an empty string on failure.
-  void GetDevice(int device_id, string *device_name) {
+  void GetDevice(int device_id, string* device_name) {
     auto device = devices_.find(device_id);
     if (device != devices_.end()) {
       *device_name = device->second;
@@ -112,7 +112,7 @@ class BindToDeviceSequenceTest : public ::testing::TestWithParam<SocketKind> {
   // Sets the socket_id to uniquely identify the socket bound if it is not
   // nullptr.
   void BindSocket(bool reuse_port, bool reuse_addr, int device_id = 0,
-                  int want = 0, int *socket_id = nullptr) {
+                  int want = 0, int* socket_id = nullptr) {
     next_socket_id_++;
     sockets_to_close_[next_socket_id_] = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
     auto socket_fd = sockets_to_close_[next_socket_id_]->get();
@@ -154,12 +154,12 @@ class BindToDeviceSequenceTest : public ::testing::TestWithParam<SocketKind> {
     addr.sin_port = port_;
     if (want == 0) {
       ASSERT_THAT(
-          bind(socket_fd, reinterpret_cast<const struct sockaddr *>(&addr),
+          bind(socket_fd, reinterpret_cast<const struct sockaddr*>(&addr),
                sizeof(addr)),
           SyscallSucceeds());
     } else {
       ASSERT_THAT(
-          bind(socket_fd, reinterpret_cast<const struct sockaddr *>(&addr),
+          bind(socket_fd, reinterpret_cast<const struct sockaddr*>(&addr),
                sizeof(addr)),
           SyscallFailsWithErrno(want));
     }
@@ -169,7 +169,7 @@ class BindToDeviceSequenceTest : public ::testing::TestWithParam<SocketKind> {
       // remember it for future commands.
       socklen_t addr_size = sizeof(addr);
       ASSERT_THAT(
-          getsockname(socket_fd, reinterpret_cast<struct sockaddr *>(&addr),
+          getsockname(socket_fd, reinterpret_cast<struct sockaddr*>(&addr),
                       &addr_size),
           SyscallSucceeds());
       port_ = addr.sin_port;
