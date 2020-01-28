@@ -52,12 +52,14 @@ func (x *descriptor) beforeSave() {}
 func (x *descriptor) save(m state.Map) {
 	x.beforeSave()
 	m.Save("file", &x.file)
+	m.Save("fileVFS2", &x.fileVFS2)
 	m.Save("flags", &x.flags)
 }
 
 func (x *descriptor) afterLoad() {}
 func (x *descriptor) load(m state.Map) {
 	m.Load("file", &x.file)
+	m.Load("fileVFS2", &x.fileVFS2)
 	m.Load("flags", &x.flags)
 }
 
