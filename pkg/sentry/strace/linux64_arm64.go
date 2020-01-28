@@ -158,7 +158,7 @@ var linuxARM64 = SyscallMap{
 	131: makeSyscallInfo("tgkill", Hex, Hex, Signal),
 	132: makeSyscallInfo("sigaltstack", Hex, Hex),
 	133: makeSyscallInfo("rt_sigsuspend", Hex),
-	134: makeSyscallInfo("rt_sigaction", Signal, SigAction, PostSigAction),
+	134: makeSyscallInfo("rt_sigaction", Signal, SigAction, PostSigAction, Hex),
 	135: makeSyscallInfo("rt_sigprocmask", SignalMaskAction, SigSet, PostSigSet, Hex),
 	136: makeSyscallInfo("rt_sigpending", Hex),
 	137: makeSyscallInfo("rt_sigtimedwait", SigSet, Hex, Timespec, Hex),
