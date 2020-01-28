@@ -188,6 +188,7 @@ go_library(
         "//pkg/sentry/unimpl:unimplemented_syscall_go_proto",
         "//pkg/sentry/uniqueid",
         "//pkg/sentry/usage",
+        "//pkg/sentry/vfs",
         "//pkg/state",
         "//pkg/state/statefile",
         "//pkg/sync",

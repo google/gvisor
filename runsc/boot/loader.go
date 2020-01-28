@@ -26,6 +26,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/log"
@@ -42,6 +43,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/sighandling"
+	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux/vfs2"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
@@ -182,6 +184,13 @@ func New(args Args) (*Loader, error) {
 
 	if err := usage.Init(); err != nil {
 		return nil, fmt.Errorf("setting up memory usage: %v", err)
+	}
+
+	if args.Conf.VFS2 {
+		st, ok := kernel.LookupSyscallTable(abi.Linux, arch.Host)
+		if ok {
+			vfs2.Override(st.Table)
+		}
 	}
 
 	// Create kernel and platform.

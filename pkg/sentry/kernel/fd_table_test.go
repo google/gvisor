@@ -150,13 +150,13 @@ func TestFDTable(t *testing.T) {
 			t.Fatalf("fdTable.Get(2): got a %v, wanted nil", ref)
 		}
 
-		ref := fdTable.Remove(1)
+		ref, _ := fdTable.Remove(1)
 		if ref == nil {
 			t.Fatalf("fdTable.Remove(1) for an existing FD: failed, want success")
 		}
 		ref.DecRef()
 
-		if ref := fdTable.Remove(1); ref != nil {
+		if ref, _ := fdTable.Remove(1); ref != nil {
 			t.Fatalf("r.Remove(1) for a removed FD: got success, want failure")
 		}
 	})

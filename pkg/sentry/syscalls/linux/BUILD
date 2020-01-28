@@ -93,6 +93,7 @@ go_library(
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/syscalls",
         "//pkg/sentry/usage",
+        "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/syserr",
         "//pkg/syserror",
