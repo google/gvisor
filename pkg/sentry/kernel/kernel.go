@@ -65,6 +65,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
 	uspb "gvisor.dev/gvisor/pkg/sentry/unimpl/unimplemented_syscall_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -435,17 +436,17 @@ func (k *Kernel) flushMountSourceRefs() error {
 
 	// There may be some open FDs whose filesystems have been unmounted. We
 	// must flush those as well.
-	return k.tasks.forEachFDPaused(func(file *fs.File) error {
+	return k.tasks.forEachFDPaused(func(file *fs.File, _ *vfs.FileDescription) error {
 		file.Dirent.Inode.MountSource.FlushDirentRefs()
 		return nil
 	})
 }
 
-// forEachFDPaused applies the given function to each open file descriptor in each
-// task.
+// forEachFDPaused applies the given function to each open file descriptor in
+// each task.
 //
 // Precondition: Must be called with the kernel paused.
-func (ts *TaskSet) forEachFDPaused(f func(*fs.File) error) (err error) {
+func (ts *TaskSet) forEachFDPaused(f func(*fs.File, *vfs.FileDescription) error) (err error) {
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 	for t := range ts.Root.tids {
@@ -453,8 +454,8 @@ func (ts *TaskSet) forEachFDPaused(f func(*fs.File) error) (err error) {
 		if t.fdTable == nil {
 			continue
 		}
-		t.fdTable.forEach(func(_ int32, file *fs.File, _ FDFlags) {
-			if lastErr := f(file); lastErr != nil && err == nil {
+		t.fdTable.forEach(func(_ int32, file *fs.File, fileVFS2 *vfs.FileDescription, _ FDFlags) {
+			if lastErr := f(file, fileVFS2); lastErr != nil && err == nil {
 				err = lastErr
 			}
 		})
@@ -463,7 +464,8 @@ func (ts *TaskSet) forEachFDPaused(f func(*fs.File) error) (err error) {
 }
 
 func (ts *TaskSet) flushWritesToFiles(ctx context.Context) error {
-	return ts.forEachFDPaused(func(file *fs.File) error {
+	// TODO(gvisor.dev/issues/1663): Add save support for VFS2.
+	return ts.forEachFDPaused(func(file *fs.File, _ *vfs.FileDescription) error {
 		if flags := file.Flags(); !flags.Write {
 			return nil
 		}
@@ -474,12 +476,9 @@ func (ts *TaskSet) flushWritesToFiles(ctx context.Context) error {
 		syncErr := file.Fsync(ctx, 0, fs.FileMaxOffset, fs.SyncAll)
 		if err := fs.SaveFileFsyncError(syncErr); err != nil {
 			name, _ := file.Dirent.FullName(nil /* root */)
-			// Wrap this error in ErrSaveRejection
-			// so that it will trigger a save
-			// error, rather than a panic. This
-			// also allows us to distinguish Fsync
-			// errors from state file errors in
-			// state.Save.
+			// Wrap this error in ErrSaveRejection so that it will trigger a save
+			// error, rather than a panic. This also allows us to distinguish Fsync
+			// errors from state file errors in state.Save.
 			return fs.ErrSaveRejection{
 				Err: fmt.Errorf("%q was not sufficiently synced: %v", name, err),
 			}
@@ -519,7 +518,7 @@ func (ts *TaskSet) unregisterEpollWaiters() {
 	for t := range ts.Root.tids {
 		// We can skip locking Task.mu here since the kernel is paused.
 		if t.fdTable != nil {
-			t.fdTable.forEach(func(_ int32, file *fs.File, _ FDFlags) {
+			t.fdTable.forEach(func(_ int32, file *fs.File, _ *vfs.FileDescription, _ FDFlags) {
 				if e, ok := file.FileOperations.(*epoll.EventPoll); ok {
 					e.UnregisterEpollWaiters()
 				}
@@ -921,7 +920,7 @@ func (k *Kernel) pauseTimeLocked() {
 		// This means we'll iterate FDTables shared by multiple tasks repeatedly,
 		// but ktime.Timer.Pause is idempotent so this is harmless.
 		if t.fdTable != nil {
-			t.fdTable.forEach(func(_ int32, file *fs.File, _ FDFlags) {
+			t.fdTable.forEach(func(_ int32, file *fs.File, _ *vfs.FileDescription, _ FDFlags) {
 				if tfd, ok := file.FileOperations.(*timerfd.TimerOperations); ok {
 					tfd.PauseTimer()
 				}
@@ -951,7 +950,7 @@ func (k *Kernel) resumeTimeLocked() {
 			}
 		}
 		if t.fdTable != nil {
-			t.fdTable.forEach(func(_ int32, file *fs.File, _ FDFlags) {
+			t.fdTable.forEach(func(_ int32, file *fs.File, _ *vfs.FileDescription, _ FDFlags) {
 				if tfd, ok := file.FileOperations.(*timerfd.TimerOperations); ok {
 					tfd.ResumeTimer()
 				}

@@ -68,6 +68,7 @@ go_library(
         "//pkg/sentry/state",
         "//pkg/sentry/strace",
         "//pkg/sentry/syscalls/linux",
+        "//pkg/sentry/syscalls/linux/vfs2",
         "//pkg/sentry/time",
         "//pkg/sentry/unimpl:unimplemented_syscall_go_proto",
         "//pkg/sentry/usage",

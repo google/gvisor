@@ -256,6 +256,9 @@ type Config struct {
 	//
 	// E.g. 0.2 CPU quota will result in 1, and 1.9 in 2.
 	CPUNumFromQuota bool
+
+	// Enables VFS2 (not plumbled through yet).
+	VFS2 bool
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.

@@ -767,7 +767,7 @@ func Close(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// Note that Remove provides a reference on the file that we may use to
 	// flush. It is still active until we drop the final reference below
 	// (and other reference-holding operations complete).
-	file := t.FDTable().Remove(fd)
+	file, _ := t.FDTable().Remove(fd)
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
