@@ -45,20 +45,13 @@ namespace testing {
 
 bool IsRunningOnGvisor() { return GvisorPlatform() != Platform::kNative; }
 
-Platform GvisorPlatform() {
+const std::string GvisorPlatform() {
   // Set by runner.go.
   char* env = getenv(TEST_ON_GVISOR);
   if (!env) {
     return Platform::kNative;
   }
-  if (strcmp(env, "ptrace") == 0) {
-    return Platform::kPtrace;
-  }
-  if (strcmp(env, "kvm") == 0) {
-    return Platform::kKVM;
-  }
-  std::cerr << "unknown platform " << env;
-  abort();
+  return std::string(env);
 }
 
 bool IsRunningWithHostinet() {

@@ -197,9 +197,11 @@ cc_binary(
     linkstatic = 1,
     deps = [
         "//test/util:memory_util",
+        "//test/util:platform_util",
         "//test/util:posix_error",
         "//test/util:test_main",
         "//test/util:test_util",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -479,6 +481,7 @@ cc_binary(
     srcs = ["concurrency.cc"],
     linkstatic = 1,
     deps = [
+        "//test/util:platform_util",
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",
@@ -584,6 +587,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         "//test/util:logging",
+        "//test/util:platform_util",
         "//test/util:signal_util",
         "//test/util:test_main",
         "//test/util:test_util",
@@ -1658,6 +1662,7 @@ cc_binary(
     deps = [
         "//test/util:logging",
         "//test/util:multiprocess_util",
+        "//test/util:platform_util",
         "//test/util:signal_util",
         "//test/util:test_util",
         "//test/util:thread_util",
