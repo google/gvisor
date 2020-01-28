@@ -17,6 +17,18 @@
 // This is separate from the standard logging package because logging may be a
 // high-impact activity, and therefore we wanted to provide as much flexibility
 // as possible in the underlying implementation.
+//
+// Note that logging should still be considered high-impact, and should not be
+// done in the hot path. If necessary, logging statements should be protected
+// with guards regarding the logging level. For example,
+//
+//	if log.IsLogging(log.Debug) {
+//		log.Debugf(...)
+//	}
+//
+// This is because the log.Debugf(...) statement alone will generate a
+// significant amount of garbage and churn in many cases, even if no log
+// message is ultimately emitted.
 package log
 
 import (
@@ -138,8 +150,8 @@ func (l *Writer) Emit(level Level, timestamp time.Time, format string, args ...i
 type MultiEmitter []Emitter
 
 // Emit emits to all emitters.
-func (m MultiEmitter) Emit(level Level, timestamp time.Time, format string, v ...interface{}) {
-	for _, e := range m {
+func (m *MultiEmitter) Emit(level Level, timestamp time.Time, format string, v ...interface{}) {
+	for _, e := range *m {
 		e.Emit(level, timestamp, format, v...)
 	}
 }
@@ -155,7 +167,7 @@ type TestEmitter struct {
 }
 
 // Emit emits to the TestLogger.
-func (t TestEmitter) Emit(level Level, timestamp time.Time, format string, v ...interface{}) {
+func (t *TestEmitter) Emit(level Level, timestamp time.Time, format string, v ...interface{}) {
 	t.Logf(format, v...)
 }
 
@@ -332,5 +344,5 @@ func CopyStandardLogTo(l Level) error {
 
 func init() {
 	// Store the initial value for the log.
-	log.Store(&BasicLogger{Level: Info, Emitter: GoogleEmitter{&Writer{Next: os.Stderr}}})
+	log.Store(&BasicLogger{Level: Info, Emitter: &GoogleEmitter{Writer{Next: os.Stderr}}})
 }

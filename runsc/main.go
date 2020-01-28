@@ -288,7 +288,7 @@ func main() {
 	}
 
 	if *alsoLogToStderr {
-		e = log.MultiEmitter{e, newEmitter(*debugLogFormat, os.Stderr)}
+		e = &log.MultiEmitter{e, newEmitter(*debugLogFormat, os.Stderr)}
 	}
 
 	log.SetTarget(e)
@@ -333,7 +333,7 @@ func main() {
 func newEmitter(format string, logFile io.Writer) log.Emitter {
 	switch format {
 	case "text":
-		return &log.GoogleEmitter{&log.Writer{Next: logFile}}
+		return &log.GoogleEmitter{log.Writer{Next: logFile}}
 	case "json":
 		return &log.JSONEmitter{log.Writer{Next: logFile}}
 	case "json-k8s":
