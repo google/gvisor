@@ -442,6 +442,90 @@ TEST(NetlinkRouteTest, GetRouteDump) {
   EXPECT_TRUE(dstFound);
 }
 
+// GetRouteRequest tests a RTM_GETROUTE request with RTM_F_LOOKUP_TABLE flag.
+TEST(NetlinkRouteTest, GetRouteRequest) {
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  uint32_t port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
+
+  struct __attribute__((__packed__)) request {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr nla;
+    struct in_addr sin_addr;
+  };
+
+  constexpr uint32_t kSeq = 12345;
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_GETROUTE;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST;
+  req.hdr.nlmsg_seq = kSeq;
+
+  req.rtm.rtm_family = AF_INET;
+  req.rtm.rtm_dst_len = 32;
+  req.rtm.rtm_src_len = 0;
+  req.rtm.rtm_tos = 0;
+  req.rtm.rtm_table = RT_TABLE_UNSPEC;
+  req.rtm.rtm_protocol = RTPROT_UNSPEC;
+  req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  req.rtm.rtm_type = RTN_UNSPEC;
+  req.rtm.rtm_flags = RTM_F_LOOKUP_TABLE;
+
+  req.nla.nla_len = 8;
+  req.nla.nla_type = RTA_DST;
+  inet_aton("127.0.0.2", &req.sin_addr);
+
+  bool rtDstFound = false;
+  ASSERT_NO_ERRNO(NetlinkRequestResponseSingle(
+      fd, &req, sizeof(req), [&](const struct nlmsghdr* hdr) {
+        // Validate the reponse to RTM_GETROUTE request with RTM_F_LOOKUP_TABLE
+        // flag.
+        EXPECT_THAT(hdr->nlmsg_type, RTM_NEWROUTE);
+
+        EXPECT_TRUE(hdr->nlmsg_flags == 0) << std::hex << hdr->nlmsg_flags;
+
+        EXPECT_EQ(hdr->nlmsg_seq, kSeq);
+        EXPECT_EQ(hdr->nlmsg_pid, port);
+
+        // RTM_NEWROUTE contains at least the header and rtmsg.
+        ASSERT_GE(hdr->nlmsg_len, NLMSG_SPACE(sizeof(struct rtmsg)));
+        const struct rtmsg* msg =
+            reinterpret_cast<const struct rtmsg*>(NLMSG_DATA(hdr));
+
+        // NOTE: rtmsg fields are char fields.
+        std::cout << "Found route table=" << static_cast<int>(msg->rtm_table)
+                  << ", protocol=" << static_cast<int>(msg->rtm_protocol)
+                  << ", scope=" << static_cast<int>(msg->rtm_scope)
+                  << ", type=" << static_cast<int>(msg->rtm_type);
+
+        EXPECT_EQ(msg->rtm_family, AF_INET);
+        EXPECT_EQ(msg->rtm_dst_len, 32);
+        EXPECT_TRUE((msg->rtm_flags & RTM_F_CLONED) == RTM_F_CLONED)
+            << std::hex << msg->rtm_flags;
+
+        int len = RTM_PAYLOAD(hdr);
+        std::cout << ", len=" << len;
+        for (struct rtattr* attr = RTM_RTA(msg); RTA_OK(attr, len);
+             attr = RTA_NEXT(attr, len)) {
+          if (attr->rta_type == RTA_DST) {
+            char address[INET_ADDRSTRLEN] = {};
+            inet_ntop(AF_INET, RTA_DATA(attr), address, sizeof(address));
+            std::cout << ", dst=" << address;
+            rtDstFound = true;
+          } else if (attr->rta_type == RTA_OIF) {
+            const char* oif = reinterpret_cast<const char*>(RTA_DATA(attr));
+            std::cout << ", oif=" << oif;
+          }
+        }
+
+        std::cout << std::endl;
+      }));
+  // Found RTA_DST for RTM_F_LOOKUP_TABLE.
+  EXPECT_TRUE(rtDstFound);
+}
+
 // RecvmsgTrunc tests the recvmsg MSG_TRUNC flag with zero length output
 // buffer. MSG_TRUNC with a zero length buffer should consume subsequent
 // messages off the socket.

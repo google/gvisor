@@ -4,15 +4,19 @@ package(licenses = ["notice"])
 
 go_library(
     name = "route",
-    srcs = ["protocol.go"],
+    srcs = [
+        "protocol.go",
+    ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/binary",
         "//pkg/context",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/socket/netlink",
         "//pkg/syserr",
+        "//pkg/usermem",
     ],
 )
