@@ -377,7 +377,7 @@ TEST_F(StatTest, ZeroLinksOpenFdRegularFileChild_NoRandomSave) {
   //
   // We need to support this because when a file is unlinked and we forward
   // the stat to the gofer it would return ENOENT.
-  const char* uncached_gofer = getenv("GVISOR_GOFER_UNCACHED");
+  const char *uncached_gofer = getenv("GVISOR_GOFER_UNCACHED");
   SKIP_IF(uncached_gofer != nullptr);
 
   // We don't support saving unlinked files.
