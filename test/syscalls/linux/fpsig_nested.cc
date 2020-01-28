@@ -61,8 +61,8 @@ void sigusr1(int s, siginfo_t* siginfo, void* _uc) {
       "movl %[sig], %%edx;"
       "syscall;"
       :
-      : [killnr] "i"(__NR_tgkill), [pid] "rm"(pid), [tid] "rm"(tid),
-        [sig] "i"(SIGUSR2)
+      : [ killnr ] "i"(__NR_tgkill), [ pid ] "rm"(pid), [ tid ] "rm"(tid),
+        [ sig ] "i"(SIGUSR2)
       : "rax", "rdi", "rsi", "rdx",
         // Clobbered by syscall.
         "rcx", "r11");
@@ -107,8 +107,8 @@ TEST(FPSigTest, NestedSignals) {
       "movl %[sig], %%edx;"
       "syscall;"
       :
-      : [killnr] "i"(__NR_tgkill), [pid] "rm"(pid), [tid] "rm"(tid),
-        [sig] "i"(SIGUSR1)
+      : [ killnr ] "i"(__NR_tgkill), [ pid ] "rm"(pid), [ tid ] "rm"(tid),
+        [ sig ] "i"(SIGUSR1)
       : "rax", "rdi", "rsi", "rdx",
         // Clobbered by syscall.
         "rcx", "r11");

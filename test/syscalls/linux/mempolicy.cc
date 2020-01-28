@@ -213,7 +213,7 @@ TEST(MempolicyTest, GetMempolicyQueryNodeForAddress) {
     }
   }
 
-  void* invalid_address = reinterpret_cast<void*>(-1);
+  void *invalid_address = reinterpret_cast<void *>(-1);
 
   // Invalid address.
   ASSERT_THAT(get_mempolicy(&mode, nullptr, 0, invalid_address,
@@ -221,8 +221,8 @@ TEST(MempolicyTest, GetMempolicyQueryNodeForAddress) {
               SyscallFailsWithErrno(EFAULT));
 
   // Invalid mode pointer.
-  ASSERT_THAT(get_mempolicy(reinterpret_cast<int*>(invalid_address), nullptr, 0,
-                            &dummy_stack_address, MPOL_F_ADDR | MPOL_F_NODE),
+  ASSERT_THAT(get_mempolicy(reinterpret_cast<int *>(invalid_address), nullptr,
+                            0, &dummy_stack_address, MPOL_F_ADDR | MPOL_F_NODE),
               SyscallFailsWithErrno(EFAULT));
 }
 

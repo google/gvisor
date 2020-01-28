@@ -14,8 +14,6 @@
 
 #ifndef __fuchsia__
 
-#include "test/syscalls/linux/udp_socket_test_cases.h"
-
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <linux/errqueue.h>
@@ -29,6 +27,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/socket_test_util.h"
+#include "test/syscalls/linux/udp_socket_test_cases.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"

@@ -99,7 +99,8 @@ inline PosixErrorOr<Cleanup> ForkAndExec(const std::string& filename,
                                          const ExecveArray& argv,
                                          const ExecveArray& envv, pid_t* child,
                                          int* execve_errno) {
-  return ForkAndExec(filename, argv, envv, [] {}, child, execve_errno);
+  return ForkAndExec(
+      filename, argv, envv, [] {}, child, execve_errno);
 }
 
 // Equivalent to ForkAndExec, except using dirfd and flags with execveat.

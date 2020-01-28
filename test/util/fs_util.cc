@@ -452,7 +452,7 @@ PosixErrorOr<std::string> MakeAbsolute(absl::string_view filename,
 
 std::string CleanPath(const absl::string_view unclean_path) {
   std::string path = std::string(unclean_path);
-  const char *src = path.c_str();
+  const char* src = path.c_str();
   std::string::iterator dst = path.begin();
 
   // Check for absolute path and determine initial backtrack limit.

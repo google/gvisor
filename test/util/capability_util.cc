@@ -36,10 +36,10 @@ PosixErrorOr<bool> CanCreateUserNamespace() {
   ASSIGN_OR_RETURN_ERRNO(
       auto child_stack,
       MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
-  int const child_pid =
-      clone(+[](void*) { return 0; },
-            reinterpret_cast<void*>(child_stack.addr() + kPageSize),
-            CLONE_NEWUSER | SIGCHLD, /* arg = */ nullptr);
+  int const child_pid = clone(
+      +[](void*) { return 0; },
+      reinterpret_cast<void*>(child_stack.addr() + kPageSize),
+      CLONE_NEWUSER | SIGCHLD, /* arg = */ nullptr);
   if (child_pid > 0) {
     int status;
     int const ret = waitpid(child_pid, &status, /* options = */ 0);

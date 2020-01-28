@@ -178,7 +178,8 @@ TEST(PtraceTest, GetSigMask) {
 
     // Install a signal handler for kBlockSignal to avoid termination and block
     // it.
-    TEST_PCHECK(signal(kBlockSignal, +[](int signo) {}) != SIG_ERR);
+    TEST_PCHECK(signal(
+                    kBlockSignal, +[](int signo) {}) != SIG_ERR);
     MaybeSave();
     TEST_PCHECK(sigprocmask(SIG_SETMASK, &blocked, nullptr) == 0);
     MaybeSave();

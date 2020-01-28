@@ -38,7 +38,7 @@ namespace testing {
 
 namespace {
 
-void ExpectAllMappingBytes(Mapping const& m, char c) {
+void ExpectAllMappingBytes(Mapping const &m, char c) {
   auto const v = m.view();
   for (size_t i = 0; i < kPageSize; i++) {
     ASSERT_EQ(v[i], c) << "at offset " << i;
@@ -47,7 +47,7 @@ void ExpectAllMappingBytes(Mapping const& m, char c) {
 
 // Equivalent to ExpectAllMappingBytes but async-signal-safe and with less
 // helpful failure messages.
-void CheckAllMappingBytes(Mapping const& m, char c) {
+void CheckAllMappingBytes(Mapping const &m, char c) {
   auto const v = m.view();
   for (size_t i = 0; i < kPageSize; i++) {
     TEST_CHECK_MSG(v[i] == c, "mapping contains wrong value");
