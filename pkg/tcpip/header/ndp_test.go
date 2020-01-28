@@ -153,6 +153,125 @@ func TestNDPRouterAdvert(t *testing.T) {
 	}
 }
 
+// TestNDPSourceLinkLayerAddressOptionEthernetAddress tests getting the
+// Ethernet address from an NDPSourceLinkLayerAddressOption.
+func TestNDPSourceLinkLayerAddressOptionEthernetAddress(t *testing.T) {
+	tests := []struct {
+		name     string
+		buf      []byte
+		expected tcpip.LinkAddress
+	}{
+		{
+			"ValidMAC",
+			[]byte{1, 2, 3, 4, 5, 6},
+			tcpip.LinkAddress("\x01\x02\x03\x04\x05\x06"),
+		},
+		{
+			"SLLBodyTooShort",
+			[]byte{1, 2, 3, 4, 5},
+			tcpip.LinkAddress([]byte(nil)),
+		},
+		{
+			"SLLBodyLargerThanNeeded",
+			[]byte{1, 2, 3, 4, 5, 6, 7, 8},
+			tcpip.LinkAddress("\x01\x02\x03\x04\x05\x06"),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			sll := NDPSourceLinkLayerAddressOption(test.buf)
+			if got := sll.EthernetAddress(); got != test.expected {
+				t.Errorf("got sll.EthernetAddress = %s, want = %s", got, test.expected)
+			}
+		})
+	}
+}
+
+// TestNDPSourceLinkLayerAddressOptionSerialize tests serializing a
+// NDPSourceLinkLayerAddressOption.
+func TestNDPSourceLinkLayerAddressOptionSerialize(t *testing.T) {
+	tests := []struct {
+		name        string
+		buf         []byte
+		expectedBuf []byte
+		addr        tcpip.LinkAddress
+	}{
+		{
+			"Ethernet",
+			make([]byte, 8),
+			[]byte{1, 1, 1, 2, 3, 4, 5, 6},
+			"\x01\x02\x03\x04\x05\x06",
+		},
+		{
+			"Padding",
+			[]byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+			[]byte{1, 2, 1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0},
+			"\x01\x02\x03\x04\x05\x06\x07\x08",
+		},
+		{
+			"Empty",
+			nil,
+			nil,
+			"",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			opts := NDPOptions(test.buf)
+			serializer := NDPOptionsSerializer{
+				NDPSourceLinkLayerAddressOption(test.addr),
+			}
+			if got, want := int(serializer.Length()), len(test.expectedBuf); got != want {
+				t.Fatalf("got Length = %d, want = %d", got, want)
+			}
+			opts.Serialize(serializer)
+			if !bytes.Equal(test.buf, test.expectedBuf) {
+				t.Fatalf("got b = %d, want = %d", test.buf, test.expectedBuf)
+			}
+
+			it, err := opts.Iter(true)
+			if err != nil {
+				t.Fatalf("got Iter = (_, %s), want = (_, nil)", err)
+			}
+
+			if len(test.expectedBuf) > 0 {
+				next, done, err := it.Next()
+				if err != nil {
+					t.Fatalf("got Next = (_, _, %s), want = (_, _, nil)", err)
+				}
+				if done {
+					t.Fatal("got Next = (_, true, _), want = (_, false, _)")
+				}
+				if got := next.Type(); got != NDPSourceLinkLayerAddressOptionType {
+					t.Fatalf("got Type = %d, want = %d", got, NDPSourceLinkLayerAddressOptionType)
+				}
+				sll := next.(NDPSourceLinkLayerAddressOption)
+				if got, want := []byte(sll), test.expectedBuf[2:]; !bytes.Equal(got, want) {
+					t.Fatalf("got Next = (%x, _, _), want = (%x, _, _)", got, want)
+				}
+
+				if got, want := sll.EthernetAddress(), tcpip.LinkAddress(test.expectedBuf[2:][:EthernetAddressSize]); got != want {
+					t.Errorf("got sll.EthernetAddress = %s, want = %s", got, want)
+				}
+			}
+
+			// Iterator should not return anything else.
+			next, done, err := it.Next()
+			if err != nil {
+				t.Errorf("got Next = (_, _, %s), want = (_, _, nil)", err)
+			}
+			if !done {
+				t.Error("got Next = (_, false, _), want = (_, true, _)")
+			}
+			if next != nil {
+				t.Errorf("got Next = (%x, _, _), want = (nil, _, _)", next)
+			}
+		})
+	}
+}
+
 // TestNDPTargetLinkLayerAddressOptionEthernetAddress tests getting the
 // Ethernet address from an NDPTargetLinkLayerAddressOption.
 func TestNDPTargetLinkLayerAddressOptionEthernetAddress(t *testing.T) {
@@ -186,7 +305,6 @@ func TestNDPTargetLinkLayerAddressOptionEthernetAddress(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 // TestNDPTargetLinkLayerAddressOptionSerialize tests serializing a
@@ -212,8 +330,8 @@ func TestNDPTargetLinkLayerAddressOptionSerialize(t *testing.T) {
 		},
 		{
 			"Empty",
-			[]byte{},
-			[]byte{},
+			nil,
+			nil,
 			"",
 		},
 	}
@@ -246,7 +364,7 @@ func TestNDPTargetLinkLayerAddressOptionSerialize(t *testing.T) {
 					t.Fatal("got Next = (_, true, _), want = (_, false, _)")
 				}
 				if got := next.Type(); got != NDPTargetLinkLayerAddressOptionType {
-					t.Fatalf("got Type %= %d, want = %d", got, NDPTargetLinkLayerAddressOptionType)
+					t.Fatalf("got Type = %d, want = %d", got, NDPTargetLinkLayerAddressOptionType)
 				}
 				tll := next.(NDPTargetLinkLayerAddressOption)
 				if got, want := []byte(tll), test.expectedBuf[2:]; !bytes.Equal(got, want) {
@@ -254,7 +372,7 @@ func TestNDPTargetLinkLayerAddressOptionSerialize(t *testing.T) {
 				}
 
 				if got, want := tll.EthernetAddress(), tcpip.LinkAddress(test.expectedBuf[2:][:EthernetAddressSize]); got != want {
-					t.Errorf("got tll.MACAddress = %s, want = %s", got, want)
+					t.Errorf("got tll.EthernetAddress = %s, want = %s", got, want)
 				}
 			}
 
@@ -510,7 +628,7 @@ func TestNDPRecursiveDNSServerOption(t *testing.T) {
 				t.Fatal("got Next = (_, true, _), want = (_, false, _)")
 			}
 			if got := next.Type(); got != NDPRecursiveDNSServerOptionType {
-				t.Fatalf("got Type %= %d, want = %d", got, NDPRecursiveDNSServerOptionType)
+				t.Fatalf("got Type = %d, want = %d", got, NDPRecursiveDNSServerOptionType)
 			}
 
 			opt, ok := next.(NDPRecursiveDNSServer)
@@ -551,6 +669,16 @@ func TestNDPOptionsIterCheck(t *testing.T) {
 			"ZeroLengthField",
 			[]byte{0, 0, 0, 0, 0, 0, 0, 0},
 			ErrNDPOptZeroLength,
+		},
+		{
+			"ValidSourceLinkLayerAddressOption",
+			[]byte{1, 1, 1, 2, 3, 4, 5, 6},
+			nil,
+		},
+		{
+			"TooSmallSourceLinkLayerAddressOption",
+			[]byte{1, 1, 1, 2, 3, 4, 5},
+			ErrNDPOptBufExhausted,
 		},
 		{
 			"ValidTargetLinkLayerAddressOption",
@@ -603,10 +731,13 @@ func TestNDPOptionsIterCheck(t *testing.T) {
 			ErrNDPOptMalformedBody,
 		},
 		{
-			"ValidTargetLinkLayerAddressWithPrefixInformation",
+			"ValidSourceAndTargetLinkLayerAddressWithPrefixInformation",
 			[]byte{
+				// Source Link-Layer Address.
+				1, 1, 1, 2, 3, 4, 5, 6,
+
 				// Target Link-Layer Address.
-				2, 1, 1, 2, 3, 4, 5, 6,
+				2, 1, 7, 8, 9, 10, 11, 12,
 
 				// Prefix information.
 				3, 4, 43, 64,
@@ -621,10 +752,13 @@ func TestNDPOptionsIterCheck(t *testing.T) {
 			nil,
 		},
 		{
-			"ValidTargetLinkLayerAddressWithPrefixInformationWithUnrecognized",
+			"ValidSourceAndTargetLinkLayerAddressWithPrefixInformationWithUnrecognized",
 			[]byte{
+				// Source Link-Layer Address.
+				1, 1, 1, 2, 3, 4, 5, 6,
+
 				// Target Link-Layer Address.
-				2, 1, 1, 2, 3, 4, 5, 6,
+				2, 1, 7, 8, 9, 10, 11, 12,
 
 				// 255 is an unrecognized type. If 255 ends up
 				// being the type for some recognized type,
@@ -714,8 +848,11 @@ func TestNDPOptionsIterCheck(t *testing.T) {
 // here.
 func TestNDPOptionsIter(t *testing.T) {
 	buf := []byte{
+		// Source Link-Layer Address.
+		1, 1, 1, 2, 3, 4, 5, 6,
+
 		// Target Link-Layer Address.
-		2, 1, 1, 2, 3, 4, 5, 6,
+		2, 1, 7, 8, 9, 10, 11, 12,
 
 		// 255 is an unrecognized type. If 255 ends up being the type
 		// for some recognized type, update 255 to some other
@@ -740,7 +877,7 @@ func TestNDPOptionsIter(t *testing.T) {
 		t.Fatalf("got Iter = (_, %s), want = (_, nil)", err)
 	}
 
-	// Test the first (Taret Link-Layer) option.
+	// Test the first (Source Link-Layer) option.
 	next, done, err := it.Next()
 	if err != nil {
 		t.Fatalf("got Next = (_, _, %s), want = (_, _, nil)", err)
@@ -748,7 +885,22 @@ func TestNDPOptionsIter(t *testing.T) {
 	if done {
 		t.Fatal("got Next = (_, true, _), want = (_, false, _)")
 	}
-	if got, want := []byte(next.(NDPTargetLinkLayerAddressOption)), buf[2:][:6]; !bytes.Equal(got, want) {
+	if got, want := []byte(next.(NDPSourceLinkLayerAddressOption)), buf[2:][:6]; !bytes.Equal(got, want) {
+		t.Errorf("got Next = (%x, _, _), want = (%x, _, _)", got, want)
+	}
+	if got := next.Type(); got != NDPSourceLinkLayerAddressOptionType {
+		t.Errorf("got Type = %d, want = %d", got, NDPSourceLinkLayerAddressOptionType)
+	}
+
+	// Test the next (Target Link-Layer) option.
+	next, done, err = it.Next()
+	if err != nil {
+		t.Fatalf("got Next = (_, _, %s), want = (_, _, nil)", err)
+	}
+	if done {
+		t.Fatal("got Next = (_, true, _), want = (_, false, _)")
+	}
+	if got, want := []byte(next.(NDPTargetLinkLayerAddressOption)), buf[10:][:6]; !bytes.Equal(got, want) {
 		t.Errorf("got Next = (%x, _, _), want = (%x, _, _)", got, want)
 	}
 	if got := next.Type(); got != NDPTargetLinkLayerAddressOptionType {
@@ -764,7 +916,7 @@ func TestNDPOptionsIter(t *testing.T) {
 	if done {
 		t.Fatal("got Next = (_, true, _), want = (_, false, _)")
 	}
-	if got, want := next.(NDPPrefixInformation), buf[26:][:30]; !bytes.Equal(got, want) {
+	if got, want := next.(NDPPrefixInformation), buf[34:][:30]; !bytes.Equal(got, want) {
 		t.Errorf("got Next = (%x, _, _), want = (%x, _, _)", got, want)
 	}
 	if got := next.Type(); got != NDPPrefixInformationType {
