@@ -5,6 +5,7 @@ licenses(["notice"])
 go_library(
     name = "vfs",
     srcs = [
+        "anonfs.go",
         "context.go",
         "debug.go",
         "dentry.go",
@@ -20,7 +21,6 @@ go_library(
         "pathname.go",
         "permissions.go",
         "resolving_path.go",
-        "testutil.go",
         "vfs.go",
     ],
     visibility = ["//pkg/sentry:internal"],
@@ -50,7 +50,6 @@ go_test(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/sentry/contexttest",
-        "//pkg/sentry/kernel/auth",
         "//pkg/sync",
         "//pkg/syserror",
         "//pkg/usermem",

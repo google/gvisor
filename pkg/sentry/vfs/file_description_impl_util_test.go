@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -46,9 +45,11 @@ type genCountFD struct {
 	count uint64 // accessed using atomic memory ops
 }
 
-func newGenCountFD(mnt *Mount, vfsd *Dentry) *FileDescription {
+func newGenCountFD(vfsObj *VirtualFilesystem) *FileDescription {
+	vd := vfsObj.NewAnonVirtualDentry("genCountFD")
+	defer vd.DecRef()
 	var fd genCountFD
-	fd.vfsfd.Init(&fd, 0 /* statusFlags */, mnt, vfsd, &FileDescriptionOptions{})
+	fd.vfsfd.Init(&fd, 0 /* statusFlags */, vd.Mount(), vd.Dentry(), &FileDescriptionOptions{})
 	fd.DynamicBytesFileDescriptionImpl.SetDataSource(&fd)
 	return &fd.vfsfd
 }
@@ -86,18 +87,9 @@ func (fd *genCountFD) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 func TestGenCountFD(t *testing.T) {
 	ctx := contexttest.Context(t)
-	creds := auth.CredentialsFromContext(ctx)
 
 	vfsObj := New() // vfs.New()
-	vfsObj.MustRegisterFilesystemType("testfs", FDTestFilesystemType{}, &RegisterFilesystemTypeOptions{})
-	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "testfs", &GetFilesystemOptions{})
-	if err != nil {
-		t.Fatalf("failed to create testfs root mount: %v", err)
-	}
-	vd := mntns.Root()
-	defer vd.DecRef()
-
-	fd := newGenCountFD(vd.Mount(), vd.Dentry())
+	fd := newGenCountFD(vfsObj)
 	defer fd.DecRef()
 
 	// The first read causes Generate to be called to fill the FD's buffer.

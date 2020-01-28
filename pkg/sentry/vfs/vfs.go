@@ -75,6 +75,14 @@ type VirtualFilesystem struct {
 	// mountpoints is analogous to Linux's mountpoint_hashtable.
 	mountpoints map[*Dentry]map[*Mount]struct{}
 
+	// anonMount is a Mount, not included in mounts or mountpoints,
+	// representing an anonFilesystem. anonMount is used to back
+	// VirtualDentries returned by VirtualFilesystem.NewAnonVirtualDentry().
+	// anonMount is immutable.
+	//
+	// anonMount is analogous to Linux's anon_inode_mnt.
+	anonMount *Mount
+
 	// devices contains all registered Devices. devices is protected by
 	// devicesMu.
 	devicesMu sync.RWMutex
@@ -110,6 +118,22 @@ func New() *VirtualFilesystem {
 		filesystems:           make(map[*Filesystem]struct{}),
 	}
 	vfs.mounts.Init()
+
+	// Construct vfs.anonMount.
+	anonfsDevMinor, err := vfs.GetAnonBlockDevMinor()
+	if err != nil {
+		panic(fmt.Sprintf("VirtualFilesystem.GetAnonBlockDevMinor() failed during VirtualFilesystem construction: %v", err))
+	}
+	anonfs := anonFilesystem{
+		devMinor: anonfsDevMinor,
+	}
+	anonfs.vfsfs.Init(vfs, &anonfs)
+	vfs.anonMount = &Mount{
+		vfs:  vfs,
+		fs:   &anonfs.vfsfs,
+		refs: 1,
+	}
+
 	return vfs
 }
 
