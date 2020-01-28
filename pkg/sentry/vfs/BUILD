@@ -1,6 +1,19 @@
 load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 licenses(["notice"])
+
+go_template_instance(
+    name = "epoll_interest_list",
+    out = "epoll_interest_list.go",
+    package = "vfs",
+    prefix = "epollInterest",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*epollInterest",
+        "Linker": "*epollInterest",
+    },
+)
 
 go_library(
     name = "vfs",
@@ -10,6 +23,8 @@ go_library(
         "debug.go",
         "dentry.go",
         "device.go",
+        "epoll.go",
+        "epoll_interest_list.go",
         "file_description.go",
         "file_description_impl_util.go",
         "filesystem.go",
