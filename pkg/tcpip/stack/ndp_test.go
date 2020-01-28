@@ -417,7 +417,11 @@ func TestDADResolve(t *testing.T) {
 				checker.IPv6(t, p.Pkt.Header.View().ToVectorisedView().First(),
 					checker.TTL(header.NDPHopLimit),
 					checker.NDPNS(
-						checker.NDPNSTargetAddress(addr1)))
+						checker.NDPNSTargetAddress(addr1),
+						checker.NDPNSOptions([]header.NDPOption{
+							header.NDPSourceLinkLayerAddressOption(linkAddr1),
+						}),
+					))
 			}
 		})
 	}

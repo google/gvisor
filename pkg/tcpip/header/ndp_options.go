@@ -17,6 +17,7 @@ package header
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"math"
 	"time"
 
@@ -32,9 +33,9 @@ const (
 	// Address option, as per RFC 4861 section 4.6.1.
 	NDPTargetLinkLayerAddressOptionType = 2
 
-	// ndpLinkLayerAddressSize is the size of a Source or Target Link Layer
-	// Address option.
-	ndpLinkLayerAddressSize = 8
+	// NDPLinkLayerAddressSize is the size of a Source or Target Link Layer
+	// Address option for an Ethernet address.
+	NDPLinkLayerAddressSize = 8
 
 	// NDPPrefixInformationType is the type of the Prefix Information
 	// option, as per RFC 4861 section 4.6.2.
@@ -300,6 +301,8 @@ func (b NDPOptions) Serialize(s NDPOptionsSerializer) int {
 
 // NDPOption is the set of functions to be implemented by all NDP option types.
 type NDPOption interface {
+	fmt.Stringer
+
 	// Type returns the type of the receiver.
 	Type() uint8
 
@@ -397,6 +400,11 @@ func (o NDPSourceLinkLayerAddressOption) serializeInto(b []byte) int {
 	return copy(b, o)
 }
 
+// String implements fmt.Stringer.String.
+func (o NDPSourceLinkLayerAddressOption) String() string {
+	return fmt.Sprintf("%T(%s)", o, tcpip.LinkAddress(o))
+}
+
 // EthernetAddress will return an ethernet (MAC) address if the
 // NDPSourceLinkLayerAddressOption's body has at minimum EthernetAddressSize
 // bytes. If the body has more than EthernetAddressSize bytes, only the first
@@ -430,6 +438,11 @@ func (o NDPTargetLinkLayerAddressOption) Length() int {
 // serializeInto implements NDPOption.serializeInto.
 func (o NDPTargetLinkLayerAddressOption) serializeInto(b []byte) int {
 	return copy(b, o)
+}
+
+// String implements fmt.Stringer.String.
+func (o NDPTargetLinkLayerAddressOption) String() string {
+	return fmt.Sprintf("%T(%s)", o, tcpip.LinkAddress(o))
 }
 
 // EthernetAddress will return an ethernet (MAC) address if the
@@ -476,6 +489,17 @@ func (o NDPPrefixInformation) serializeInto(b []byte) int {
 	}
 
 	return used
+}
+
+// String implements fmt.Stringer.String.
+func (o NDPPrefixInformation) String() string {
+	return fmt.Sprintf("%T(O=%t, A=%t, PL=%s, VL=%s, Prefix=%s)",
+		o,
+		o.OnLinkFlag(),
+		o.AutonomousAddressConfigurationFlag(),
+		o.PreferredLifetime(),
+		o.ValidLifetime(),
+		o.Subnet())
 }
 
 // PrefixLength returns the value in the number of leading bits in the Prefix
@@ -585,6 +609,11 @@ func (o NDPRecursiveDNSServer) serializeInto(b []byte) int {
 	}
 
 	return used
+}
+
+// String implements fmt.Stringer.String.
+func (o NDPRecursiveDNSServer) String() string {
+	return fmt.Sprintf("%T(%s valid for %s)", o, o.Addresses(), o.Lifetime())
 }
 
 // Lifetime returns the length of time that the DNS server addresses
