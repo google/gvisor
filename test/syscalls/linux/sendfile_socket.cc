@@ -41,15 +41,15 @@ class SendFileTest : public ::testing::TestWithParam<int> {
     struct sockaddr server_addr = {};
     switch (family) {
       case AF_INET: {
-        struct sockaddr_in *server_addr_in =
-            reinterpret_cast<struct sockaddr_in *>(&server_addr);
+        struct sockaddr_in* server_addr_in =
+            reinterpret_cast<struct sockaddr_in*>(&server_addr);
         server_addr_in->sin_family = family;
         server_addr_in->sin_addr.s_addr = INADDR_ANY;
         break;
       }
       case AF_UNIX: {
-        struct sockaddr_un *server_addr_un =
-            reinterpret_cast<struct sockaddr_un *>(&server_addr);
+        struct sockaddr_un* server_addr_un =
+            reinterpret_cast<struct sockaddr_un*>(&server_addr);
         server_addr_un->sun_family = family;
         server_addr_un->sun_path[0] = '\0';
         break;
