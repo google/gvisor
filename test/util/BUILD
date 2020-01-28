@@ -166,6 +166,14 @@ cc_library(
 )
 
 cc_library(
+    name = "platform_util",
+    testonly = 1,
+    srcs = ["platform_util.cc"],
+    hdrs = ["platform_util.h"],
+    deps = [":test_util"],
+)
+
+cc_library(
     name = "posix_error",
     testonly = 1,
     srcs = ["posix_error.cc"],
@@ -238,12 +246,7 @@ cc_library(
         "test_util_runfiles.cc",
     ],
     hdrs = ["test_util.h"],
-    defines = select_system(
-        fuchsia = [
-            "__opensource__",
-            "__fuchsia__",
-        ],
-    ),
+    defines = select_system(),
     deps = [
         ":fs_util",
         ":logging",
