@@ -137,21 +137,24 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt tcpip.P
 		}
 
 		ns := header.NDPNeighborSolicit(h.NDPPayload())
+		it, err := ns.Options().Iter(true)
+		if err != nil {
+			// If we have a malformed NDP NS option, drop the packet.
+			received.Invalid.Increment()
+			return
+		}
+
 		targetAddr := ns.TargetAddress()
 		s := r.Stack()
 		rxNICID := r.NICID()
-
-		isTentative, err := s.IsAddrTentative(rxNICID, targetAddr)
-		if err != nil {
+		if isTentative, err := s.IsAddrTentative(rxNICID, targetAddr); err != nil {
 			// We will only get an error if rxNICID is unrecognized,
 			// which should not happen. For now short-circuit this
 			// packet.
 			//
 			// TODO(b/141002840): Handle this better?
 			return
-		}
-
-		if isTentative {
+		} else if isTentative {
 			// If the target address is tentative and the source
 			// of the packet is a unicast (specified) address, then
 			// the source of the packet is attempting to perform
@@ -185,6 +188,23 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt tcpip.P
 			return
 		}
 
+		// If the NS message has the source link layer option, update the link
+		// address cache with the link address for the sender of the message.
+		//
+		// TODO(b/148429853): Properly process the NS message and do Neighbor
+		// Unreachability Detection.
+		for {
+			opt, done, _ := it.Next()
+			if done {
+				break
+			}
+
+			switch opt := opt.(type) {
+			case header.NDPSourceLinkLayerAddressOption:
+				e.linkAddrCache.AddLinkAddress(e.nicID, r.RemoteAddress, opt.EthernetAddress())
+			}
+		}
+
 		optsSerializer := header.NDPOptionsSerializer{
 			header.NDPTargetLinkLayerAddressOption(r.LocalLinkAddress[:]),
 		}
@@ -210,15 +230,6 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt tcpip.P
 		defer r.Release()
 		r.LocalAddress = targetAddr
 		packet.SetChecksum(header.ICMPv6Checksum(packet, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
-
-		// TODO(tamird/ghanan): there exists an explicit NDP option that is
-		// used to update the neighbor table with link addresses for a
-		// neighbor from an NS (see the Source Link Layer option RFC
-		// 4861 section 4.6.1 and section 7.2.3).
-		//
-		// Furthermore, the entirety of NDP handling here seems to be
-		// contradicted by RFC 4861.
-		e.linkAddrCache.AddLinkAddress(e.nicID, r.RemoteAddress, r.RemoteLinkAddress)
 
 		// RFC 4861 Neighbor Discovery for IP version 6 (IPv6)
 		//
