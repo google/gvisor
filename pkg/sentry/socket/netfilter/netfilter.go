@@ -43,7 +43,7 @@ const (
 // a metadata struct when the tables are written, and when they are read out we
 // verify that certain fields are the same.
 //
-// metadata is opaque to netstack.
+// metadata is used by this serialization/deserializing code, not netstack.
 type metadata struct {
 	HookEntry  [linux.NF_INET_NUMHOOKS]uint32
 	Underflow  [linux.NF_INET_NUMHOOKS]uint32
@@ -51,14 +51,10 @@ type metadata struct {
 	Size       uint32
 }
 
-const enableDebug = false
-
 // nflog logs messages related to the writing and reading of iptables, but only
 // when enableDebug is true.
 func nflog(format string, args ...interface{}) {
-	if enableDebug {
-		log.Infof("netfilter: "+format, args...)
-	}
+	log.Infof("netfilter: "+format, args...)
 }
 
 // GetInfo returns information about iptables.
@@ -233,14 +229,12 @@ func convertNetstackToBinary(tablename string, table iptables.Table) (linux.Kern
 	return entries, meta, nil
 }
 
-// TODO: SOMEHOW THIS IS NOT GETTING APPENDED!
 func marshalMatcher(matcher iptables.Matcher) []byte {
 	switch m := matcher.(type) {
 	case *iptables.UDPMatcher:
 		return marshalUDPMatcher(m)
 	default:
-		// TODO(gvisor.dev/issue/170): We don't support any matchers
-		// yet, so any call to marshalMatcher will panic.
+		// TODO(gvisor.dev/issue/170): Support other matchers.
 		panic(fmt.Errorf("unknown matcher of type %T", matcher))
 	}
 }
@@ -249,11 +243,11 @@ func marshalUDPMatcher(matcher *iptables.UDPMatcher) []byte {
 	nflog("convert to binary: marshalling UDP matcher: %+v", matcher)
 
 	// We have to pad this struct size to a multiple of 8 bytes.
-	const size = linux.SizeOfXTEntryMatch + linux.SizeOfXTUDP + 6
+	size := alignUp(linux.SizeOfXTEntryMatch+linux.SizeOfXTUDP, 8)
 
 	linuxMatcher := linux.KernelXTEntryMatch{
 		XTEntryMatch: linux.XTEntryMatch{
-			MatchSize: size,
+			MatchSize: uint16(size),
 		},
 		Data: make([]byte, 0, linux.SizeOfXTUDP),
 	}
@@ -270,7 +264,7 @@ func marshalUDPMatcher(matcher *iptables.UDPMatcher) []byte {
 
 	buf := make([]byte, 0, size)
 	buf = binary.Marshal(buf, usermem.ByteOrder, linuxMatcher)
-	buf = append(buf, []byte{0, 0, 0, 0, 0, 0}...)
+	buf = append(buf, make([]byte, size-len(buf))...)
 	nflog("convert to binary: marshalled UDP matcher into %v", buf)
 	return buf[:]
 }
@@ -410,7 +404,7 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 		}
 
 		// TODO(gvisor.dev/issue/170): Matchers and targets can specify
-		// that they only work for certiain protocols, hooks, tables.
+		// that they only work for certain protocols, hooks, tables.
 		// Get matchers.
 		matchersSize := entry.TargetOffset - linux.SizeOfIPTEntry
 		if len(optVal) < int(matchersSize) {
@@ -683,4 +677,9 @@ func hookFromLinux(hook int) iptables.Hook {
 		return iptables.Postrouting
 	}
 	panic(fmt.Sprintf("Unknown hook %d does not correspond to a builtin chain", hook))
+}
+
+// alignUp rounds a length up to an alignment. align must be a power of 2.
+func alignUp(length int, align uint) int {
+	return (length + int(align) - 1) & ^(int(align) - 1)
 }
