@@ -124,6 +124,12 @@ func (c *CPU) SetAppAddr(value uintptr) {
 	c.appAddr = value
 }
 
+// GetLazyVFP returns the value of cpacr_el1.
+//go:nosplit
+func (c *CPU) GetLazyVFP() (value uintptr) {
+	return c.lazyVFP
+}
+
 // SwitchArchOpts are embedded in SwitchOpts.
 type SwitchArchOpts struct {
 	// UserASID indicates that the application ASID to be used on switch,

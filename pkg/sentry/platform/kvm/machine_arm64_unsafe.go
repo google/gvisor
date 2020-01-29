@@ -29,30 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// setMemoryRegion initializes a region.
-//
-// This may be called from bluepillHandler, and therefore returns an errno
-// directly (instead of wrapping in an error) to avoid allocations.
-//
-//go:nosplit
-func (m *machine) setMemoryRegion(slot int, physical, length, virtual uintptr) syscall.Errno {
-	userRegion := userMemoryRegion{
-		slot:          uint32(slot),
-		flags:         0,
-		guestPhysAddr: uint64(physical),
-		memorySize:    uint64(length),
-		userspaceAddr: uint64(virtual),
-	}
-
-	// Set the region.
-	_, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
-		uintptr(m.fd),
-		_KVM_SET_USER_MEMORY_REGION,
-		uintptr(unsafe.Pointer(&userRegion)))
-	return errno
-}
-
 type kvmVcpuInit struct {
 	target   uint32
 	features [7]uint32
@@ -147,6 +123,7 @@ func (c *vCPU) initArchState() error {
 	reg.addr = uint64(reflect.ValueOf(&data).Pointer())
 	regGet.addr = uint64(reflect.ValueOf(&dataGet).Pointer())
 
+	vcpuInit.target = _KVM_ARM_TARGET_GENERIC_V8
 	vcpuInit.features[0] |= (1 << _KVM_ARM_VCPU_PSCI_0_2)
 	if _, _, errno := syscall.RawSyscall(
 		syscall.SYS_IOCTL,
@@ -158,7 +135,8 @@ func (c *vCPU) initArchState() error {
 
 	// cpacr_el1
 	reg.id = _KVM_ARM64_REGS_CPACR_EL1
-	data = (_FPEN_NOTRAP << _FPEN_SHIFT)
+	// It is off by default, and it is turned on only when in use.
+	data = 0 // Disable fpsimd.
 	if err := c.setOneRegister(&reg); err != nil {
 		return err
 	}
@@ -250,6 +228,7 @@ func (c *vCPU) initArchState() error {
 		return err
 	}
 
+	c.floatingPointState = arch.NewFloatingPointData()
 	return nil
 }
 
