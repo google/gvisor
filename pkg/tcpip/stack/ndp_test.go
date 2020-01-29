@@ -298,6 +298,12 @@ func (n *ndpDispatcher) OnDHCPv6Configuration(nicID tcpip.NICID, configuration s
 	}
 }
 
+// Check e to make sure that the event is for addr on nic with ID 1, and the
+// resolved flag set to resolved with the specified err.
+func checkDADEvent(e ndpDADEvent, addr tcpip.Address, resolved bool, err *tcpip.Error) string {
+	return cmp.Diff(ndpDADEvent{nicID: 1, addr: addr, resolved: resolved, err: err}, e, cmp.AllowUnexported(e))
+}
+
 // TestDADResolve tests that an address successfully resolves after performing
 // DAD for various values of DupAddrDetectTransmits and RetransmitTimer.
 // Included in the subtests is a test to make sure that an invalid
@@ -378,17 +384,8 @@ func TestDADResolve(t *testing.T) {
 				// means something is wrong.
 				t.Fatal("timed out waiting for DAD resolution")
 			case e := <-ndpDisp.dadC:
-				if e.err != nil {
-					t.Fatal("got DAD error: ", e.err)
-				}
-				if e.nicID != nicID {
-					t.Fatalf("got DAD event w/ nicID = %d, want = %d", e.nicID, nicID)
-				}
-				if e.addr != addr1 {
-					t.Fatalf("got DAD event w/ addr = %s, want = %s", addr, addr1)
-				}
-				if !e.resolved {
-					t.Fatal("got DAD event w/ resolved = false, want = true")
+				if diff := checkDADEvent(e, addr1, true, nil); diff != "" {
+					t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 				}
 			}
 			addr, err = s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
@@ -497,7 +494,7 @@ func TestDADFail(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			ndpDisp := ndpDispatcher{
-				dadC: make(chan ndpDADEvent),
+				dadC: make(chan ndpDADEvent, 1),
 			}
 			ndpConfigs := stack.DefaultNDPConfigurations()
 			opts := stack.Options{
@@ -548,17 +545,8 @@ func TestDADFail(t *testing.T) {
 				// something is wrong.
 				t.Fatal("timed out waiting for DAD failure")
 			case e := <-ndpDisp.dadC:
-				if e.err != nil {
-					t.Fatal("got DAD error: ", e.err)
-				}
-				if e.nicID != 1 {
-					t.Fatalf("got DAD event w/ nicID = %d, want = 1", e.nicID)
-				}
-				if e.addr != addr1 {
-					t.Fatalf("got DAD event w/ addr = %s, want = %s", addr, addr1)
-				}
-				if e.resolved {
-					t.Fatal("got DAD event w/ resolved = true, want = false")
+				if diff := checkDADEvent(e, addr1, false, nil); diff != "" {
+					t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 				}
 			}
 			addr, err = s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
@@ -576,7 +564,7 @@ func TestDADFail(t *testing.T) {
 // removed.
 func TestDADStop(t *testing.T) {
 	ndpDisp := ndpDispatcher{
-		dadC: make(chan ndpDADEvent),
+		dadC: make(chan ndpDADEvent, 1),
 	}
 	ndpConfigs := stack.NDPConfigurations{
 		RetransmitTimer:        time.Second,
@@ -619,19 +607,9 @@ func TestDADStop(t *testing.T) {
 		// time + extra 1s buffer, something is wrong.
 		t.Fatal("timed out waiting for DAD failure")
 	case e := <-ndpDisp.dadC:
-		if e.err != nil {
-			t.Fatal("got DAD error: ", e.err)
+		if diff := checkDADEvent(e, addr1, false, nil); diff != "" {
+			t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 		}
-		if e.nicID != 1 {
-			t.Fatalf("got DAD event w/ nicID = %d, want = 1", e.nicID)
-		}
-		if e.addr != addr1 {
-			t.Fatalf("got DAD event w/ addr = %s, want = %s", addr, addr1)
-		}
-		if e.resolved {
-			t.Fatal("got DAD event w/ resolved = true, want = false")
-		}
-
 	}
 	addr, err = s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
 	if err != nil {
@@ -788,17 +766,8 @@ func TestSetNDPConfigurations(t *testing.T) {
 				// means something is wrong.
 				t.Fatal("timed out waiting for DAD resolution")
 			case e := <-ndpDisp.dadC:
-				if e.err != nil {
-					t.Fatal("got DAD error: ", e.err)
-				}
-				if e.nicID != 1 {
-					t.Fatalf("got DAD event w/ nicID = %d, want = 1", e.nicID)
-				}
-				if e.addr != addr1 {
-					t.Fatalf("got DAD event w/ addr = %s, want = %s", addr, addr1)
-				}
-				if !e.resolved {
-					t.Fatal("got DAD event w/ resolved = false, want = true")
+				if diff := checkDADEvent(e, addr1, true, nil); diff != "" {
+					t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 				}
 			}
 			addr, err = s.GetMainNICAddress(1, header.IPv6ProtocolNumber)

@@ -167,8 +167,8 @@ type NDPDispatcher interface {
 	// reason, such as the address being removed). If an error occured
 	// during DAD, err will be set and resolved must be ignored.
 	//
-	// This function is permitted to block indefinitely without interfering
-	// with the stack's operation.
+	// This function is not permitted to block indefinitely. This function
+	// is also not permitted to call into the stack.
 	OnDuplicateAddressDetectionStatus(nicID tcpip.NICID, addr tcpip.Address, resolved bool, err *tcpip.Error)
 
 	// OnDefaultRouterDiscovered will be called when a new default router is
@@ -304,6 +304,15 @@ type NDPConfigurations struct {
 	// lifetime(s) of the generated address changes; this option only
 	// affects the generation of new addresses as part of SLAAC.
 	AutoGenGlobalAddresses bool
+
+	// AutoGenAddressConflictRetries determines how many times to attempt to retry
+	// generation of a permanent auto-generated address in response to DAD
+	// conflicts.
+	//
+	// If the method used to generate the address does not support creating
+	// alternative addresses (e.g. IIDs based on the modified EUI64 of a NIC's
+	// MAC address), then no attempt will be made to resolve the conflict.
+	AutoGenAddressConflictRetries uint8
 }
 
 // DefaultNDPConfigurations returns an NDPConfigurations populated with
@@ -387,6 +396,10 @@ type dadState struct {
 	// Must only be read from or written to while protected by the lock of
 	// the NIC this dadState is associated with.
 	done *bool
+
+	// Used to retry generation of an auto-generated address in response to an
+	// address conflict detected during DAD.
+	retryFunc func()
 }
 
 // defaultRouterState holds data associated with a default router discovered by
@@ -418,11 +431,14 @@ type autoGenAddressState struct {
 
 // startDuplicateAddressDetection performs Duplicate Address Detection.
 //
+// retryFunc is an optional function that attempts to generate a new address
+// in response to a DAD conflict for addr.
+//
 // This function must only be called by IPv6 addresses that are currently
 // tentative.
 //
 // The NIC that ndp belongs to MUST be locked.
-func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *referencedNetworkEndpoint) *tcpip.Error {
+func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *referencedNetworkEndpoint, retryFunc func()) *tcpip.Error {
 	// addr must be a valid unicast IPv6 address.
 	if !header.IsV6UnicastAddress(addr) {
 		return tcpip.ErrAddressFamilyNotSupported
@@ -519,8 +535,9 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 	})
 
 	ndp.dad[addr] = dadState{
-		timer: timer,
-		done:  &done,
+		timer:     timer,
+		done:      &done,
+		retryFunc: retryFunc,
 	}
 
 	return nil
@@ -588,8 +605,10 @@ func (ndp *ndpState) sendDADPacket(addr tcpip.Address) *tcpip.Error {
 // from n right after this function returns or the address successfully
 // resolved.
 //
+// If attemptRetry is true, the DAD retry function will be called.
+//
 // The NIC that ndp belongs to MUST be locked.
-func (ndp *ndpState) stopDuplicateAddressDetection(addr tcpip.Address) {
+func (ndp *ndpState) stopDuplicateAddressDetection(addr tcpip.Address, attemptRetry bool) {
 	dad, ok := ndp.dad[addr]
 	if !ok {
 		// Not currently performing DAD on addr, just return.
@@ -604,11 +623,17 @@ func (ndp *ndpState) stopDuplicateAddressDetection(addr tcpip.Address) {
 		dad.done = nil
 	}
 
+	retryFunc := dad.retryFunc
+
 	delete(ndp.dad, addr)
 
 	// Let the integrator know DAD did not resolve.
 	if ndp.nic.stack.ndpDisp != nil {
-		go ndp.nic.stack.ndpDisp.OnDuplicateAddressDetectionStatus(ndp.nic.ID(), addr, false, nil)
+		ndp.nic.stack.ndpDisp.OnDuplicateAddressDetectionStatus(ndp.nic.ID(), addr, false, nil)
+	}
+
+	if attemptRetry && retryFunc != nil {
+		retryFunc()
 	}
 }
 
@@ -992,7 +1017,7 @@ func (ndp *ndpState) newAutoGenAddress(prefix tcpip.Subnet, pl, vl time.Duration
 	// If the preferred lifetime is zero, then the address should be considered
 	// deprecated.
 	deprecated := pl == 0
-	ref, err := ndp.nic.addAddressLocked(protocolAddr, FirstPrimaryEndpoint, permanent, slaac, deprecated)
+	ref, err := ndp.nic.addAddressLocked(protocolAddr, FirstPrimaryEndpoint, permanent, slaac, deprecated, nil)
 	if err != nil {
 		log.Fatalf("ndp: error when adding address %s: %s", protocolAddr, err)
 	}
@@ -1266,4 +1291,22 @@ func (ndp *ndpState) stopSolicitingRouters() {
 
 	ndp.rtrSolicitTimer.Stop()
 	ndp.rtrSolicitTimer = nil
+}
+
+// makeDadRetryFunc returns a DAD retry function that calls f with the retry
+// count if the retry count has not reached maxRetries.
+//
+// Note, f will be called while the NIC's lock is held.
+func makeDadRetryFunc(maxRetries uint8, f func(uint8)) func() {
+	retryCount := uint8(0)
+
+	return func() {
+		if retryCount == maxRetries {
+			return
+		}
+
+		retryCount++
+
+		f(retryCount)
+	}
 }

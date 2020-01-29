@@ -2162,6 +2162,109 @@ func TestNICAutoGenAddrWithOpaque(t *testing.T) {
 	}
 }
 
+// TestNICAutoGenAddrRetriesWithOpaque tests the regeneration of an
+// auto-generated IPv6 link-local address in response to a DAD conflict.
+func TestNICAutoGenAddrRetriesWithOpaque(t *testing.T) {
+	t.Parallel()
+
+	const nicID = 1
+	const nicName = "nic"
+	const dadTransmits = 1
+	const retransmitTimer = time.Second
+	const maxMaxRetires = 3
+
+	var secretKeyBuf [header.OpaqueIIDSecretKeyMinBytes]byte
+	secretKey := secretKeyBuf[:]
+	n, err := rand.Read(secretKey)
+	if err != nil {
+		t.Fatalf("rand.Read(_): %s", err)
+	}
+	if n != header.OpaqueIIDSecretKeyMinBytes {
+		t.Fatalf("expected rand.Read to read %d bytes, read %d bytes", header.OpaqueIIDSecretKeyMinBytes, n)
+	}
+
+	for maxRetries := uint8(0); maxRetries <= maxMaxRetires; maxRetries++ {
+		for numFailures := uint8(0); numFailures <= maxRetries+1; numFailures++ {
+			maxRetries := maxRetries
+			numFailures := numFailures
+
+			t.Run(fmt.Sprintf("%d Failures with %d Max Retries", numFailures, maxRetries), func(t *testing.T) {
+				t.Parallel()
+
+				ndpDisp := ndpDispatcher{
+					dadC: make(chan ndpDADEvent, 1),
+				}
+				opts := stack.Options{
+					NetworkProtocols:     []stack.NetworkProtocol{ipv6.NewProtocol()},
+					AutoGenIPv6LinkLocal: true,
+					NDPConfigs: stack.NDPConfigurations{
+						DupAddrDetectTransmits:        dadTransmits,
+						RetransmitTimer:               retransmitTimer,
+						AutoGenAddressConflictRetries: maxRetries,
+					},
+					NDPDisp: &ndpDisp,
+					OpaqueIIDOpts: stack.OpaqueInterfaceIdentifierOptions{
+						NICNameFromID: func(_ tcpip.NICID, nicName string) string {
+							return nicName
+						},
+						SecretKey: secretKey,
+					},
+				}
+
+				e := channel.New(10, 1280, linkAddr1)
+				s := stack.New(opts)
+				nicOpts := stack.NICOptions{Name: nicName}
+				if err := s.CreateNICWithOptions(nicID, e, nicOpts); err != nil {
+					t.Fatalf("CreateNICWithOptions(%d, _, %+v) = %s", nicID, opts, err)
+				}
+
+				addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
+				if err != nil {
+					t.Fatalf("stack.GetMainNICAddress(%d, _) err = %s", nicID, err)
+				}
+
+				for i := uint8(0); i < numFailures; i++ {
+					if want := (tcpip.AddressWithPrefix{}); addr != want {
+						t.Fatalf("got stack.GetMainNICAddress(_, _) = (%s, nil), want = (%s, nil)", addr, want)
+					}
+
+					addr := header.LinkLocalAddrWithOpaqueIID(nicName, i, secretKey)
+
+					if err := s.DupTentativeAddrDetected(nicID, addr); err != nil {
+						t.Fatalf("s.DupTentativeAddrDetected(%d, %s): %s", nicID, addr, err)
+					}
+
+					select {
+					case e := <-ndpDisp.dadC:
+						if diff := checkDADEvent(e, addr, false, nil); diff != "" {
+							t.Errorf("dad event mismatch (-want +got):\n%s", diff)
+						}
+					default:
+						t.Fatal("expected DAD event")
+					}
+				}
+
+				if want := (tcpip.AddressWithPrefix{}); addr != want {
+					t.Fatalf("got stack.GetMainNICAddress(_, _) = (%s, nil), want = (%s, nil)", addr, want)
+				}
+
+				if maxRetries+1 > numFailures {
+					addr := header.LinkLocalAddrWithOpaqueIID(nicName, numFailures, secretKey)
+
+					select {
+					case e := <-ndpDisp.dadC:
+						if diff := checkDADEvent(e, addr, true, nil); diff != "" {
+							t.Errorf("dad event mismatch (-want +got):\n%s", diff)
+						}
+					case <-time.After(dadTransmits*retransmitTimer + time.Second):
+						t.Fatal("timed out waiting for DAD event")
+					}
+				}
+			})
+		}
+	}
+}
+
 // TestNoLinkLocalAutoGenForLoopbackNIC tests that IPv6 link-local addresses are
 // not auto-generated for loopback NICs.
 func TestNoLinkLocalAutoGenForLoopbackNIC(t *testing.T) {
@@ -2253,17 +2356,8 @@ func TestNICAutoGenAddrDoesDAD(t *testing.T) {
 		// means something is wrong.
 		t.Fatal("timed out waiting for DAD resolution")
 	case e := <-ndpDisp.dadC:
-		if e.err != nil {
-			t.Fatal("got DAD error: ", e.err)
-		}
-		if e.nicID != 1 {
-			t.Fatalf("got DAD event w/ nicID = %d, want = 1", e.nicID)
-		}
-		if e.addr != linkLocalAddr {
-			t.Fatalf("got DAD event w/ addr = %s, want = %s", addr, linkLocalAddr)
-		}
-		if !e.resolved {
-			t.Fatal("got DAD event w/ resolved = false, want = true")
+		if diff := checkDADEvent(e, linkLocalAddr, true, nil); diff != "" {
+			t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 		}
 	}
 	addr, err = s.GetMainNICAddress(1, header.IPv6ProtocolNumber)

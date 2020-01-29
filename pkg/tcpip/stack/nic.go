@@ -134,6 +134,31 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 	return nic
 }
 
+// linkLocalDADFailure returns a DAD retry function that attempts to generate
+// a new IPv6 link-local address in response to a DAD failure.
+//
+// Must only be called when n is configured to generate addresses with opaque
+// IIDs.
+func linkLocalDADFailure(n *NIC) func() {
+	var dadRetryFunc func()
+	dadRetryFunc = makeDadRetryFunc(n.mu.ndp.configs.AutoGenAddressConflictRetries, func(retryCounter uint8) {
+		if _, err := n.addAddressLocked(tcpip.ProtocolAddress{
+			Protocol: header.IPv6ProtocolNumber,
+			AddressWithPrefix: tcpip.AddressWithPrefix{
+				Address: header.LinkLocalAddrWithOpaqueIID(
+					n.stack.opaqueIIDOpts.NICNameFromID(n.ID(), n.name),
+					retryCounter,
+					n.stack.opaqueIIDOpts.SecretKey,
+				),
+				PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen,
+			},
+		}, CanBePrimaryEndpoint, permanent, static, false /* deprecated */, dadRetryFunc); err != nil {
+			return
+		}
+	})
+	return dadRetryFunc
+}
+
 // enable enables the NIC. enable will attach the link to its LinkEndpoint and
 // join the IPv6 All-Nodes Multicast address (ff02::1).
 func (n *NIC) enable() *tcpip.Error {
@@ -175,9 +200,11 @@ func (n *NIC) enable() *tcpip.Error {
 
 	// Do not auto-generate an IPv6 link-local address for loopback devices.
 	if n.stack.autoGenIPv6LinkLocal && !n.isLoopback() {
+		var dadRetryFunc func()
 		var addr tcpip.Address
 		if oIID := n.stack.opaqueIIDOpts; oIID.NICNameFromID != nil {
 			addr = header.LinkLocalAddrWithOpaqueIID(oIID.NICNameFromID(n.ID(), n.name), 0, oIID.SecretKey)
+			dadRetryFunc = linkLocalDADFailure(n)
 		} else {
 			l2addr := n.linkEP.LinkAddress()
 
@@ -199,7 +226,7 @@ func (n *NIC) enable() *tcpip.Error {
 				Address:   addr,
 				PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen,
 			},
-		}, CanBePrimaryEndpoint, permanent, static, false /* deprecated */); err != nil {
+		}, CanBePrimaryEndpoint, permanent, static, false /* deprecated */, dadRetryFunc); err != nil {
 			return err
 		}
 	}
@@ -554,7 +581,7 @@ func (n *NIC) getRefOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address t
 			Address:   address,
 			PrefixLen: netProto.DefaultPrefixLen(),
 		},
-	}, peb, temporary, static, false)
+	}, peb, temporary, static, false, nil)
 
 	n.mu.Unlock()
 	return ref
@@ -565,7 +592,10 @@ func (n *NIC) getRefOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address t
 // If n already has the address in a non-permanent state, and the kind given is
 // permanent, that address will be promoted in place and its properties set to
 // the properties provided. Otherwise, it returns tcpip.ErrDuplicateAddress.
-func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior, kind networkEndpointKind, configType networkEndpointConfigType, deprecated bool) (*referencedNetworkEndpoint, *tcpip.Error) {
+//
+// dadRetryFunc is an optional function that attempts to retry generation of
+// an auto-generated IPv6 address in response to a DAD conflict.
+func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior, kind networkEndpointKind, configType networkEndpointConfigType, deprecated bool, dadRetryFunc func()) (*referencedNetworkEndpoint, *tcpip.Error) {
 	// TODO(b/141022673): Validate IP addresses before adding them.
 
 	// Sanity check.
@@ -670,7 +700,7 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 
 	// If we are adding a tentative IPv6 address, start DAD.
 	if isIPv6Unicast && kind == permanentTentative {
-		if err := n.mu.ndp.startDuplicateAddressDetection(protocolAddress.AddressWithPrefix.Address, ref); err != nil {
+		if err := n.mu.ndp.startDuplicateAddressDetection(protocolAddress.AddressWithPrefix.Address, ref, dadRetryFunc); err != nil {
 			return nil, err
 		}
 	}
@@ -683,7 +713,7 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 func (n *NIC) AddAddress(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior) *tcpip.Error {
 	// Add the endpoint.
 	n.mu.Lock()
-	_, err := n.addAddressLocked(protocolAddress, peb, permanent, static, false /* deprecated */)
+	_, err := n.addAddressLocked(protocolAddress, peb, permanent, static, false /* deprecated */, nil)
 	n.mu.Unlock()
 
 	return err
@@ -897,7 +927,7 @@ func (n *NIC) removePermanentAddressLocked(addr tcpip.Address) *tcpip.Error {
 		// If we are removing a tentative IPv6 unicast address, stop
 		// DAD.
 		if kind == permanentTentative {
-			n.mu.ndp.stopDuplicateAddressDetection(addr)
+			n.mu.ndp.stopDuplicateAddressDetection(addr, false)
 		}
 
 		// If we are removing an address generated via SLAAC, cleanup
@@ -965,7 +995,7 @@ func (n *NIC) joinGroupLocked(protocol tcpip.NetworkProtocolNumber, addr tcpip.A
 				Address:   addr,
 				PrefixLen: netProto.DefaultPrefixLen(),
 			},
-		}, NeverPrimaryEndpoint, permanent, static, false /* deprecated */); err != nil {
+		}, NeverPrimaryEndpoint, permanent, static, false /* deprecated */, nil); err != nil {
 			return err
 		}
 	}
@@ -1235,6 +1265,8 @@ func (n *NIC) dupTentativeAddrDetected(addr tcpip.Address) *tcpip.Error {
 	if ref.getKind() != permanentTentative {
 		return tcpip.ErrInvalidEndpointState
 	}
+
+	n.mu.ndp.stopDuplicateAddressDetection(addr, true)
 
 	return n.removePermanentAddressLocked(addr)
 }
