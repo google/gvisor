@@ -58,6 +58,7 @@
 package waiter
 
 import (
+	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -165,6 +166,19 @@ func NewChannelEntry(c chan struct{}) (Entry, chan struct{}) {
 	}
 
 	return Entry{Context: c, Callback: &channelCallback{}}, c
+}
+
+type wakerCallback struct{}
+
+// Callback implements EntryCallback.Callback.
+func (*wakerCallback) Callback(e *Entry) {
+	e.Context.(*sleep.Waker).Assert()
+}
+
+// NewWakerEntry initializes a new Entry that calls sleep.(*Waker).Assert when
+// the callback is called. It returns the new Entry instance.
+func NewWakerEntry(w *sleep.Waker) Entry {
+	return Entry{Context: w, Callback: &wakerCallback{}}
 }
 
 // Queue represents the wait queue where waiters can be added and
