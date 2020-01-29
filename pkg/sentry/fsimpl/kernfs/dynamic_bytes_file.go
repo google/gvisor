@@ -108,12 +108,12 @@ func (fd *DynamicBytesFD) PRead(ctx context.Context, dst usermem.IOSequence, off
 
 // Write implements vfs.FileDescriptionImpl.Write.
 func (fd *DynamicBytesFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
-	return fd.FileDescriptionDefaultImpl.Write(ctx, src, opts)
+	return fd.DynamicBytesFileDescriptionImpl.Write(ctx, src, opts)
 }
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (fd *DynamicBytesFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
-	return fd.FileDescriptionDefaultImpl.PWrite(ctx, src, offset, opts)
+	return fd.DynamicBytesFileDescriptionImpl.PWrite(ctx, src, offset, opts)
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
