@@ -19,7 +19,7 @@ import (
 	"reflect"
 	"unsafe"
 
-	"gvisor.dev/gvisor/pkg/sentry/platform/safecopy"
+	"gvisor.dev/gvisor/pkg/safecopy"
 )
 
 // A Block is a range of contiguous bytes, similar to []byte but with the

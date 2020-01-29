@@ -1,5 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_embed_data", "go_test")
+load("//tools:defs.bzl", "go_binary", "go_embed_data", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -27,7 +26,6 @@ go_library(
         "seccomp_rules.go",
         "seccomp_unsafe.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/seccomp",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/abi/linux",
@@ -43,7 +41,7 @@ go_test(
         "seccomp_test.go",
         ":victim_data",
     ],
-    embed = [":seccomp"],
+    library = ":seccomp",
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",

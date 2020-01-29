@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("//tools:defs.bzl", "go_binary")
 
 package(licenses = ["notice"])
 
@@ -9,7 +9,7 @@ go_binary(
         "fds.go",
         "test_app.go",
     ],
-    pure = "on",
+    pure = True,
     visibility = ["//runsc/container:__pkg__"],
     deps = [
         "//pkg/unet",

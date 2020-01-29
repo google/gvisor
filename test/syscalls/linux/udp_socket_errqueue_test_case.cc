@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "test/syscalls/linux/udp_socket_test_cases.h"
+#ifndef __fuchsia__
 
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -27,6 +27,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/socket_test_util.h"
+#include "test/syscalls/linux/udp_socket_test_cases.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -52,3 +53,5 @@ TEST_P(UdpSocketTest, ErrorQueue) {
 
 }  // namespace testing
 }  // namespace gvisor
+
+#endif  // __fuchsia__

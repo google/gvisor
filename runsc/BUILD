@@ -1,7 +1,6 @@
-package(licenses = ["notice"])  # Apache 2.0
+load("//tools:defs.bzl", "go_binary", "pkg_deb", "pkg_tar")
 
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
-load("@rules_pkg//:pkg.bzl", "pkg_deb", "pkg_tar")
+package(licenses = ["notice"])
 
 go_binary(
     name = "runsc",
@@ -9,7 +8,7 @@ go_binary(
         "main.go",
         "version.go",
     ],
-    pure = "on",
+    pure = True,
     visibility = [
         "//visibility:public",
     ],
@@ -26,10 +25,12 @@ go_binary(
 )
 
 # The runsc-race target is a race-compatible BUILD target. This must be built
-# via "bazel build --features=race //runsc:runsc-race", since the race feature
-# must apply to all dependencies due a bug in gazelle file selection.  The pure
-# attribute must be off because the race detector requires linking with non-Go
-# components, although we still require a static binary.
+# via: bazel build --features=race //runsc:runsc-race
+#
+# This is neccessary because the race feature must apply to all dependencies
+# due a bug in gazelle file selection.  The pure attribute must be off because
+# the race detector requires linking with non-Go components, although we still
+# require a static binary.
 #
 # Note that in the future this might be convertible to a compatible target by
 # using the pure and static attributes within a select function, but select is
@@ -42,7 +43,7 @@ go_binary(
         "main.go",
         "version.go",
     ],
-    static = "on",
+    static = True,
     visibility = [
         "//visibility:public",
     ],
@@ -82,7 +83,12 @@ genrule(
     # because they are assumes to be hermetic).
     srcs = [":runsc"],
     outs = ["version.txt"],
-    cmd = "$(location :runsc) -version | grep 'runsc version' | sed 's/^[^0-9]*//' > $@",
+    # Note that the little dance here is necessary because files in the $(SRCS)
+    # attribute are not executable by default, and we can't touch in place.
+    cmd = "cp $(location :runsc) $(@D)/runsc && \
+        chmod a+x $(@D)/runsc && \
+        $(@D)/runsc -version | grep version | sed 's/^[^0-9]*//' > $@ && \
+        rm -f $(@D)/runsc",
     stamp = 1,
 )
 
@@ -109,5 +115,6 @@ sh_test(
     name = "version_test",
     size = "small",
     srcs = ["version_test.sh"],
+    args = ["$(location :runsc)"],
     data = [":runsc"],
 )

@@ -33,7 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	pb "gvisor.dev/gvisor/pkg/sentry/strace/strace_go_proto"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // DefaultLogMaximumSize is the default LogMaximumSize.

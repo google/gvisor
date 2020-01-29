@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -7,7 +7,6 @@ go_library(
     srcs = [
         "netfilter.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/netfilter",
     # This target depends on netstack and should only be used by epsocket,
     # which is allowed to depend on netstack.
     visibility = ["//pkg/sentry:internal"],
@@ -16,10 +15,10 @@ go_library(
         "//pkg/binary",
         "//pkg/log",
         "//pkg/sentry/kernel",
-        "//pkg/sentry/usermem",
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/tcpip/iptables",
         "//pkg/tcpip/stack",
+        "//pkg/usermem",
     ],
 )

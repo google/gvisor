@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -23,7 +23,6 @@ go_library(
         "strace.go",
         "user.go",
     ],
-    importpath = "gvisor.dev/gvisor/runsc/boot",
     visibility = [
         "//runsc:__subpackages__",
         "//test:__subpackages__",
@@ -31,6 +30,7 @@ go_library(
     deps = [
         "//pkg/abi",
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/control/server",
         "//pkg/cpuid",
         "//pkg/eventchannel",
@@ -40,7 +40,6 @@ go_library(
         "//pkg/refs",
         "//pkg/sentry/arch",
         "//pkg/sentry/arch:registers_go_proto",
-        "//pkg/sentry/context",
         "//pkg/sentry/control",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/dev",
@@ -69,10 +68,10 @@ go_library(
         "//pkg/sentry/state",
         "//pkg/sentry/strace",
         "//pkg/sentry/syscalls/linux",
+        "//pkg/sentry/syscalls/linux/vfs2",
         "//pkg/sentry/time",
         "//pkg/sentry/unimpl:unimplemented_syscall_go_proto",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
         "//pkg/sentry/watchdog",
         "//pkg/sync",
         "//pkg/syserror",
@@ -89,6 +88,7 @@ go_library(
         "//pkg/tcpip/transport/tcp",
         "//pkg/tcpip/transport/udp",
         "//pkg/urpc",
+        "//pkg/usermem",
         "//runsc/boot/filter",
         "//runsc/boot/platforms",
         "//runsc/specutils",
@@ -107,12 +107,12 @@ go_test(
         "loader_test.go",
         "user_test.go",
     ],
-    embed = [":boot"],
+    library = ":boot",
     deps = [
         "//pkg/control/server",
         "//pkg/log",
         "//pkg/p9",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sync",

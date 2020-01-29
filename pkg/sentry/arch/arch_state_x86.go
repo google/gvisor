@@ -21,7 +21,7 @@ import (
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/cpuid"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // ErrFloatingPoint indicates a failed restore due to unusable floating point

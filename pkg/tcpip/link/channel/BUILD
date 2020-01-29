@@ -1,11 +1,10 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
 go_library(
     name = "channel",
     srcs = ["channel.go"],
-    importpath = "gvisor.dev/gvisor/pkg/tcpip/link/channel",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/tcpip",

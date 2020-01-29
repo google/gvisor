@@ -21,8 +21,8 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -35,8 +35,9 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -740,6 +741,14 @@ func (t *Task) FDTable() *FDTable {
 // Precondition: same as FDTable.Get.
 func (t *Task) GetFile(fd int32) *fs.File {
 	f, _ := t.fdTable.Get(fd)
+	return f
+}
+
+// GetFileVFS2 is a convenience wrapper for t.FDTable().GetVFS2.
+//
+// Precondition: same as FDTable.Get.
+func (t *Task) GetFileVFS2(fd int32) *vfs.FileDescription {
+	f, _ := t.fdTable.GetVFS2(fd)
 	return f
 }
 

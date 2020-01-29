@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -12,7 +12,6 @@ go_library(
         "iptables_util.go",
         "nat.go",
     ],
-    importpath = "gvisor.dev/gvisor/test/iptables",
     visibility = ["//test/iptables:__subpackages__"],
     deps = [
         "//runsc/testutil",
@@ -24,7 +23,7 @@ go_test(
     srcs = [
         "iptables_test.go",
     ],
-    embed = [":iptables"],
+    library = ":iptables",
     tags = [
         "local",
         "manual",

@@ -65,8 +65,8 @@ static inline int sys_rt_sigreturn(void) {
   return num;
 }
 
-static inline int sys_clock_gettime(clockid_t _clkid, struct timespec *_ts) {
-  register struct timespec *ts asm("x1") = _ts;
+static inline int sys_clock_gettime(clockid_t _clkid, struct timespec* _ts) {
+  register struct timespec* ts asm("x1") = _ts;
   register clockid_t clkid asm("x0") = _clkid;
   register long ret asm("x0");
   register long nr asm("x8") = __NR_clock_gettime;
@@ -78,8 +78,8 @@ static inline int sys_clock_gettime(clockid_t _clkid, struct timespec *_ts) {
   return ret;
 }
 
-static inline int sys_clock_getres(clockid_t _clkid, struct timespec *_ts) {
-  register struct timespec *ts asm("x1") = _ts;
+static inline int sys_clock_getres(clockid_t _clkid, struct timespec* _ts) {
+  register struct timespec* ts asm("x1") = _ts;
   register clockid_t clkid asm("x0") = _clkid;
   register long ret asm("x0");
   register long nr asm("x8") = __NR_clock_getres;

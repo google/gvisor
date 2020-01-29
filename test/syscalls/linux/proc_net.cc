@@ -68,8 +68,8 @@ TEST(ProcSysNetIpv4Sack, CanReadAndWrite) {
 }
 
 PosixErrorOr<uint64_t> GetSNMPMetricFromProc(const std::string snmp,
-                                             const std::string &type,
-                                             const std::string &item) {
+                                             const std::string& type,
+                                             const std::string& item) {
   std::vector<std::string> snmp_vec = absl::StrSplit(snmp, '\n');
 
   // /proc/net/snmp prints a line of headers followed by a line of metrics.
@@ -127,7 +127,7 @@ TEST(ProcNetSnmp, TcpReset_NoRandomSave) {
   };
 
   ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &(sin.sin_addr)), 1);
-  ASSERT_THAT(connect(s.get(), (struct sockaddr *)&sin, sizeof(sin)),
+  ASSERT_THAT(connect(s.get(), (struct sockaddr*)&sin, sizeof(sin)),
               SyscallFailsWithErrno(ECONNREFUSED));
 
   uint64_t newAttemptFails;
@@ -172,19 +172,19 @@ TEST(ProcNetSnmp, TcpEstab_NoRandomSave) {
   };
 
   ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &(sin.sin_addr)), 1);
-  ASSERT_THAT(bind(s_listen.get(), (struct sockaddr *)&sin, sizeof(sin)),
+  ASSERT_THAT(bind(s_listen.get(), (struct sockaddr*)&sin, sizeof(sin)),
               SyscallSucceeds());
   ASSERT_THAT(listen(s_listen.get(), 1), SyscallSucceeds());
 
   // Get the port bound by the listening socket.
   socklen_t addrlen = sizeof(sin);
   ASSERT_THAT(
-      getsockname(s_listen.get(), reinterpret_cast<sockaddr *>(&sin), &addrlen),
+      getsockname(s_listen.get(), reinterpret_cast<sockaddr*>(&sin), &addrlen),
       SyscallSucceeds());
 
   FileDescriptor s_connect =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
-  ASSERT_THAT(connect(s_connect.get(), (struct sockaddr *)&sin, sizeof(sin)),
+  ASSERT_THAT(connect(s_connect.get(), (struct sockaddr*)&sin, sizeof(sin)),
               SyscallSucceeds());
 
   auto s_accept =
@@ -260,7 +260,7 @@ TEST(ProcNetSnmp, UdpNoPorts_NoRandomSave) {
       .sin_port = htons(4444),
   };
   ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &(sin.sin_addr)), 1);
-  ASSERT_THAT(sendto(s.get(), "a", 1, 0, (struct sockaddr *)&sin, sizeof(sin)),
+  ASSERT_THAT(sendto(s.get(), "a", 1, 0, (struct sockaddr*)&sin, sizeof(sin)),
               SyscallSucceedsWithValue(1));
 
   uint64_t newOutDatagrams;
@@ -295,18 +295,18 @@ TEST(ProcNetSnmp, UdpIn) {
       .sin_port = htons(0),
   };
   ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &(sin.sin_addr)), 1);
-  ASSERT_THAT(bind(server.get(), (struct sockaddr *)&sin, sizeof(sin)),
+  ASSERT_THAT(bind(server.get(), (struct sockaddr*)&sin, sizeof(sin)),
               SyscallSucceeds());
   // Get the port bound by the server socket.
   socklen_t addrlen = sizeof(sin);
   ASSERT_THAT(
-      getsockname(server.get(), reinterpret_cast<sockaddr *>(&sin), &addrlen),
+      getsockname(server.get(), reinterpret_cast<sockaddr*>(&sin), &addrlen),
       SyscallSucceeds());
 
   FileDescriptor client =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
   ASSERT_THAT(
-      sendto(client.get(), "a", 1, 0, (struct sockaddr *)&sin, sizeof(sin)),
+      sendto(client.get(), "a", 1, 0, (struct sockaddr*)&sin, sizeof(sin)),
       SyscallSucceedsWithValue(1));
 
   char buf[128];

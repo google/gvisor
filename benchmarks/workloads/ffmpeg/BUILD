@@ -1,4 +1,4 @@
-load("@rules_pkg//:pkg.bzl", "pkg_tar")
+load("//tools:defs.bzl", "pkg_tar")
 
 package(
     default_visibility = ["//benchmarks:__subpackages__"],

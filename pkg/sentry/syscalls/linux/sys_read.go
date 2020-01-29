@@ -23,13 +23,13 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 const (
-	// EventMaskRead contains events that can be triggerd on reads.
+	// EventMaskRead contains events that can be triggered on reads.
 	EventMaskRead = waiter.EventIn | waiter.EventHUp | waiter.EventErr
 )
 

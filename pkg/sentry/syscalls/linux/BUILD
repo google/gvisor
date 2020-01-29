@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -57,18 +57,18 @@ go_library(
         "sys_xattr.go",
         "timespec.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/syscalls/linux",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi",
         "//pkg/abi/linux",
         "//pkg/binary",
         "//pkg/bpf",
+        "//pkg/context",
         "//pkg/log",
         "//pkg/metric",
         "//pkg/rand",
+        "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/anon",
         "//pkg/sentry/fs/lock",
@@ -88,16 +88,16 @@ go_library(
         "//pkg/sentry/loader",
         "//pkg/sentry/memmap",
         "//pkg/sentry/mm",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/control",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/syscalls",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
+        "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/syserr",
         "//pkg/syserror",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )

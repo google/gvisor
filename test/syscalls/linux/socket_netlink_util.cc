@@ -108,5 +108,43 @@ PosixError NetlinkRequestResponse(
   return NoError();
 }
 
+PosixError NetlinkRequestResponseSingle(
+    const FileDescriptor& fd, void* request, size_t len,
+    const std::function<void(const struct nlmsghdr* hdr)>& fn) {
+  struct iovec iov = {};
+  iov.iov_base = request;
+  iov.iov_len = len;
+
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  // No destination required; it defaults to pid 0, the kernel.
+
+  RETURN_ERROR_IF_SYSCALL_FAIL(RetryEINTR(sendmsg)(fd.get(), &msg, 0));
+
+  constexpr size_t kBufferSize = 4096;
+  std::vector<char> buf(kBufferSize);
+  iov.iov_base = buf.data();
+  iov.iov_len = buf.size();
+
+  int ret;
+  RETURN_ERROR_IF_SYSCALL_FAIL(ret = RetryEINTR(recvmsg)(fd.get(), &msg, 0));
+
+  // We don't bother with the complexity of dealing with truncated messages.
+  // We must allocate a large enough buffer up front.
+  if ((msg.msg_flags & MSG_TRUNC) == MSG_TRUNC) {
+    return PosixError(
+        EIO,
+        absl::StrCat("Received truncated message with flags: ", msg.msg_flags));
+  }
+
+  for (struct nlmsghdr* hdr = reinterpret_cast<struct nlmsghdr*>(buf.data());
+       NLMSG_OK(hdr, ret); hdr = NLMSG_NEXT(hdr, ret)) {
+    fn(hdr);
+  }
+
+  return NoError();
+}
+
 }  // namespace testing
 }  // namespace gvisor

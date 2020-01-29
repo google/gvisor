@@ -1,11 +1,10 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
 go_library(
     name = "github",
     srcs = ["github.go"],
-    importpath = "gvisor.dev/gvisor/tools/issue_reviver/github",
     visibility = [
         "//tools/issue_reviver:__subpackages__",
     ],

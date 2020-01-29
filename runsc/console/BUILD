@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -7,7 +7,6 @@ go_library(
     srcs = [
         "console.go",
     ],
-    importpath = "gvisor.dev/gvisor/runsc/console",
     visibility = [
         "//runsc:__subpackages__",
     ],

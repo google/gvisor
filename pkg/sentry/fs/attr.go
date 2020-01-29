@@ -20,8 +20,8 @@ import (
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/p9"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 )
@@ -204,6 +204,11 @@ func IsSymlink(s StableAttr) bool {
 // IsPipe returns true if StableAttr.Type matches any type of pipe.
 func IsPipe(s StableAttr) bool {
 	return s.Type == Pipe
+}
+
+// IsAnonymous returns true if StableAttr.Type matches any type of anonymous.
+func IsAnonymous(s StableAttr) bool {
+	return s.Type == Anonymous
 }
 
 // IsSocket returns true if StableAttr.Type matches any type of socket.

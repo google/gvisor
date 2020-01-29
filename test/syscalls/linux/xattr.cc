@@ -131,7 +131,7 @@ TEST_F(XattrTest, XattrWriteOnly_NoRandomSave) {
 }
 
 TEST_F(XattrTest, XattrTrustedWithNonadmin) {
-  // TODO(b/127675828): Support setxattr and getxattr with "trusted" prefix.
+  // TODO(b/148380782): Support setxattr and getxattr with "trusted" prefix.
   SKIP_IF(IsRunningOnGvisor());
   SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 

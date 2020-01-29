@@ -1,12 +1,10 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
 go_library(
     name = "statefile",
     srcs = ["statefile.go"],
-    importpath = "gvisor.dev/gvisor/pkg/state/statefile",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/binary",
@@ -18,6 +16,6 @@ go_test(
     name = "statefile_test",
     size = "small",
     srcs = ["statefile_test.go"],
-    embed = [":statefile"],
+    library = ":statefile",
     deps = ["//pkg/compressio"],
 )

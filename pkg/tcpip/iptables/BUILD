@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -10,7 +10,6 @@ go_library(
         "types.go",
         "udp_matcher.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/tcpip/iptables",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/log",

@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -6,7 +6,6 @@ go_library(
     name = "testutil",
     testonly = 1,
     srcs = ["testutil.go"],
-    importpath = "gvisor.dev/gvisor/runsc/testutil",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",

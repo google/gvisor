@@ -20,16 +20,16 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/amutex"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/refs"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -555,10 +555,6 @@ type lockedWriter struct {
 	//
 	// This applies only to Write, not WriteAt.
 	Offset int64
-
-	// Err contains the first error encountered while copying. This is
-	// useful to determine whether Writer or Reader failed during io.Copy.
-	Err error
 }
 
 // Write implements io.Writer.Write.
@@ -593,9 +589,6 @@ func (w *lockedWriter) WriteAt(buf []byte, offset int64) (int, error) {
 		if err != nil {
 			break
 		}
-	}
-	if w.Err == nil {
-		w.Err = err
 	}
 	return written, err
 }

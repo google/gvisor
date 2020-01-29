@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -13,7 +13,6 @@ go_library(
         "extra_filters_race.go",
         "filter.go",
     ],
-    importpath = "gvisor.dev/gvisor/runsc/boot/filter",
     visibility = [
         "//runsc/boot:__subpackages__",
     ],

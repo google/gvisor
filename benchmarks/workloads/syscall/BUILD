@@ -1,5 +1,4 @@
-load("//benchmarks:defs.bzl", "py_library", "py_test", "requirement")
-load("@rules_pkg//:pkg.bzl", "pkg_tar")
+load("//tools:defs.bzl", "pkg_tar", "py_library", "py_requirement", "py_test")
 
 package(
     default_visibility = ["//benchmarks:__subpackages__"],
@@ -17,14 +16,14 @@ py_test(
     python_version = "PY3",
     deps = [
         ":syscall",
-        requirement("attrs", False),
-        requirement("atomicwrites", False),
-        requirement("more-itertools", False),
-        requirement("pathlib2", False),
-        requirement("pluggy", False),
-        requirement("py", False),
-        requirement("pytest", True),
-        requirement("six", False),
+        py_requirement("attrs", False),
+        py_requirement("atomicwrites", False),
+        py_requirement("more-itertools", False),
+        py_requirement("pathlib2", False),
+        py_requirement("pluggy", False),
+        py_requirement("py", False),
+        py_requirement("pytest", True),
+        py_requirement("six", False),
     ],
 )
 

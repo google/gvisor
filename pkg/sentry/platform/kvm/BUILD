@@ -1,5 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -38,7 +37,6 @@ go_library(
         "physical_map_arm64.go",
         "virtual_map.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/platform/kvm",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
@@ -46,16 +44,16 @@ go_library(
         "//pkg/cpuid",
         "//pkg/log",
         "//pkg/procid",
+        "//pkg/safecopy",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/interrupt",
         "//pkg/sentry/platform/ring0",
         "//pkg/sentry/platform/ring0/pagetables",
-        "//pkg/sentry/platform/safecopy",
         "//pkg/sentry/time",
-        "//pkg/sentry/usermem",
         "//pkg/sync",
+        "//pkg/usermem",
     ],
 )
 
@@ -65,7 +63,7 @@ go_test(
         "kvm_test.go",
         "virtual_map_test.go",
     ],
-    embed = [":kvm"],
+    library = ":kvm",
     tags = [
         "manual",
         "nogotsan",
@@ -77,6 +75,6 @@ go_test(
         "//pkg/sentry/platform/kvm/testutil",
         "//pkg/sentry/platform/ring0",
         "//pkg/sentry/platform/ring0/pagetables",
-        "//pkg/sentry/usermem",
+        "//pkg/usermem",
     ],
 )

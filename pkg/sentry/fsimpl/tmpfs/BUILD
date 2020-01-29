@@ -1,8 +1,7 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
-package(licenses = ["notice"])
+licenses(["notice"])
 
 go_template_instance(
     name = "dentry_list",
@@ -28,14 +27,15 @@ go_library(
         "symlink.go",
         "tmpfs.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs",
+    visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/amutex",
+        "//pkg/context",
         "//pkg/fspath",
         "//pkg/log",
+        "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/kernel",
@@ -45,12 +45,11 @@ go_library(
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )
 
@@ -61,10 +60,10 @@ go_test(
     deps = [
         ":tmpfs",
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/fspath",
         "//pkg/refs",
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/tmpfs",
         "//pkg/sentry/kernel/auth",
@@ -81,16 +80,16 @@ go_test(
         "regular_file_test.go",
         "stat_test.go",
     ],
-    embed = [":tmpfs"],
+    library = ":tmpfs",
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/fspath",
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/contexttest",
-        "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )

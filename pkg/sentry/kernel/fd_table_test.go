@@ -1,4 +1,4 @@
-// Copyright 2018 Google LLC
+// Copyright 2018 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@ import (
 	"runtime"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
-	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/filetest"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
@@ -150,13 +150,13 @@ func TestFDTable(t *testing.T) {
 			t.Fatalf("fdTable.Get(2): got a %v, wanted nil", ref)
 		}
 
-		ref := fdTable.Remove(1)
+		ref, _ := fdTable.Remove(1)
 		if ref == nil {
 			t.Fatalf("fdTable.Remove(1) for an existing FD: failed, want success")
 		}
 		ref.DecRef()
 
-		if ref := fdTable.Remove(1); ref != nil {
+		if ref, _ := fdTable.Remove(1); ref != nil {
 			t.Fatalf("r.Remove(1) for a removed FD: got success, want failure")
 		}
 	})

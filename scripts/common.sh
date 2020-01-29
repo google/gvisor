@@ -16,11 +16,7 @@
 
 set -xeou pipefail
 
-if [[ -f $(dirname $0)/common_google.sh ]]; then
-  source $(dirname $0)/common_google.sh
-else
-  source $(dirname $0)/common_bazel.sh
-fi
+source $(dirname $0)/common_build.sh
 
 # Ensure it attempts to collect logs in all cases.
 trap collect_logs EXIT

@@ -599,8 +599,8 @@ struct kernel_statx {
   uint64_t __spare2[14];
 };
 
-int statx(int dirfd, const char *pathname, int flags, unsigned int mask,
-          struct kernel_statx *statxbuf) {
+int statx(int dirfd, const char* pathname, int flags, unsigned int mask,
+          struct kernel_statx* statxbuf) {
   return syscall(SYS_statx, dirfd, pathname, flags, mask, statxbuf);
 }
 

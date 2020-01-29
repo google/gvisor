@@ -21,8 +21,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // GetXattr implements linux syscall getxattr(2).
@@ -103,6 +103,7 @@ func getXattr(t *kernel.Task, d *fs.Dirent, nameAddr usermem.Addr, size uint64) 
 		return 0, "", err
 	}
 
+	// TODO(b/148380782): Support xattrs in namespaces other than "user".
 	if !strings.HasPrefix(name, linux.XATTR_USER_PREFIX) {
 		return 0, "", syserror.EOPNOTSUPP
 	}

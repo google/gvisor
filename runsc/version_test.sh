@@ -16,7 +16,7 @@
 
 set -euf -x -o pipefail
 
-readonly runsc="${TEST_SRCDIR}/__main__/runsc/linux_amd64_pure_stripped/runsc"
+readonly runsc="$1"
 readonly version=$($runsc --version)
 
 # Version should should not match VERSION, which is the default and which will

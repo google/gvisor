@@ -1,5 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -8,7 +7,6 @@ go_library(
     srcs = [
         "waitable.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/tcpip/link/waitable",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/gate",
@@ -23,7 +21,7 @@ go_test(
     srcs = [
         "waitable_test.go",
     ],
-    embed = [":waitable"],
+    library = ":waitable",
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",

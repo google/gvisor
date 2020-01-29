@@ -1,5 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template")
 
 package(
@@ -40,7 +39,6 @@ go_library(
         "syncutil.go",
         "tmutex_unsafe.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sync",
 )
 
 go_test(
@@ -51,5 +49,5 @@ go_test(
         "seqcount_test.go",
         "tmutex_test.go",
     ],
-    embed = [":sync"],
+    library = ":sync",
 )

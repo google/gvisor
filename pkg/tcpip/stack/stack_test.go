@@ -1880,9 +1880,7 @@ func TestNICForwarding(t *testing.T) {
 		Data: buf.ToVectorisedView(),
 	})
 
-	select {
-	case <-ep2.C:
-	default:
+	if _, ok := ep2.Read(); !ok {
 		t.Fatal("Packet not forwarded")
 	}
 

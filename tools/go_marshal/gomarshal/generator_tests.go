@@ -46,7 +46,7 @@ type testGenerator struct {
 	decl *importStmt
 }
 
-func newTestGenerator(t *ast.TypeSpec, declaration string) *testGenerator {
+func newTestGenerator(t *ast.TypeSpec) *testGenerator {
 	if _, ok := t.Type.(*ast.StructType); !ok {
 		panic(fmt.Sprintf("Attempting to generate code for a not struct type %v", t))
 	}
@@ -59,14 +59,12 @@ func newTestGenerator(t *ast.TypeSpec, declaration string) *testGenerator {
 	for _, i := range standardImports {
 		g.imports.add(i).markUsed()
 	}
-	g.decl = g.imports.add(declaration)
-	g.decl.markUsed()
 
 	return g
 }
 
 func (g *testGenerator) typeName() string {
-	return fmt.Sprintf("%s.%s", g.decl.name, g.t.Name.Name)
+	return g.t.Name.Name
 }
 
 func (g *testGenerator) forEachField(fn func(f *ast.Field)) {

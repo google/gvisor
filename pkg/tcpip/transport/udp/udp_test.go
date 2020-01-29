@@ -16,6 +16,7 @@ package udp_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"math/rand"
 	"testing"
@@ -357,30 +358,29 @@ func (c *testContext) createEndpointForFlow(flow testFlow) {
 func (c *testContext) getPacketAndVerify(flow testFlow, checkers ...checker.NetworkChecker) []byte {
 	c.t.Helper()
 
-	select {
-	case p := <-c.linkEP.C:
-		if p.Proto != flow.netProto() {
-			c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, flow.netProto())
-		}
-
-		hdr := p.Pkt.Header.View()
-		b := append(hdr[:len(hdr):len(hdr)], p.Pkt.Data.ToView()...)
-
-		h := flow.header4Tuple(outgoing)
-		checkers := append(
-			checkers,
-			checker.SrcAddr(h.srcAddr.Addr),
-			checker.DstAddr(h.dstAddr.Addr),
-			checker.UDP(checker.DstPort(h.dstAddr.Port)),
-		)
-		flow.checkerFn()(c.t, b, checkers...)
-		return b
-
-	case <-time.After(2 * time.Second):
+	ctx, _ := context.WithTimeout(context.Background(), 2*time.Second)
+	p, ok := c.linkEP.ReadContext(ctx)
+	if !ok {
 		c.t.Fatalf("Packet wasn't written out")
+		return nil
 	}
 
-	return nil
+	if p.Proto != flow.netProto() {
+		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, flow.netProto())
+	}
+
+	hdr := p.Pkt.Header.View()
+	b := append(hdr[:len(hdr):len(hdr)], p.Pkt.Data.ToView()...)
+
+	h := flow.header4Tuple(outgoing)
+	checkers = append(
+		checkers,
+		checker.SrcAddr(h.srcAddr.Addr),
+		checker.DstAddr(h.dstAddr.Addr),
+		checker.UDP(checker.DstPort(h.dstAddr.Port)),
+	)
+	flow.checkerFn()(c.t, b, checkers...)
+	return b
 }
 
 // injectPacket creates a packet of the given flow and with the given payload,
@@ -1541,48 +1541,50 @@ func TestV4UnknownDestination(t *testing.T) {
 			}
 			c.injectPacket(tc.flow, payload)
 			if !tc.icmpRequired {
-				select {
-				case p := <-c.linkEP.C:
+				ctx, _ := context.WithTimeout(context.Background(), time.Second)
+				if p, ok := c.linkEP.ReadContext(ctx); ok {
 					t.Fatalf("unexpected packet received: %+v", p)
-				case <-time.After(1 * time.Second):
-					return
 				}
+				return
 			}
 
-			select {
-			case p := <-c.linkEP.C:
-				var pkt []byte
-				pkt = append(pkt, p.Pkt.Header.View()...)
-				pkt = append(pkt, p.Pkt.Data.ToView()...)
-				if got, want := len(pkt), header.IPv4MinimumProcessableDatagramSize; got > want {
-					t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
-				}
-
-				hdr := header.IPv4(pkt)
-				checker.IPv4(t, hdr, checker.ICMPv4(
-					checker.ICMPv4Type(header.ICMPv4DstUnreachable),
-					checker.ICMPv4Code(header.ICMPv4PortUnreachable)))
-
-				icmpPkt := header.ICMPv4(hdr.Payload())
-				payloadIPHeader := header.IPv4(icmpPkt.Payload())
-				wantLen := len(payload)
-				if tc.largePayload {
-					wantLen = header.IPv4MinimumProcessableDatagramSize - header.IPv4MinimumSize*2 - header.ICMPv4MinimumSize - header.UDPMinimumSize
-				}
-
-				// In case of large payloads the IP packet may be truncated. Update
-				// the length field before retrieving the udp datagram payload.
-				payloadIPHeader.SetTotalLength(uint16(wantLen + header.UDPMinimumSize + header.IPv4MinimumSize))
-
-				origDgram := header.UDP(payloadIPHeader.Payload())
-				if got, want := len(origDgram.Payload()), wantLen; got != want {
-					t.Fatalf("unexpected payload length got: %d, want: %d", got, want)
-				}
-				if got, want := origDgram.Payload(), payload[:wantLen]; !bytes.Equal(got, want) {
-					t.Fatalf("unexpected payload got: %d, want: %d", got, want)
-				}
-			case <-time.After(1 * time.Second):
+			// ICMP required.
+			ctx, _ := context.WithTimeout(context.Background(), time.Second)
+			p, ok := c.linkEP.ReadContext(ctx)
+			if !ok {
 				t.Fatalf("packet wasn't written out")
+				return
+			}
+
+			var pkt []byte
+			pkt = append(pkt, p.Pkt.Header.View()...)
+			pkt = append(pkt, p.Pkt.Data.ToView()...)
+			if got, want := len(pkt), header.IPv4MinimumProcessableDatagramSize; got > want {
+				t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
+			}
+
+			hdr := header.IPv4(pkt)
+			checker.IPv4(t, hdr, checker.ICMPv4(
+				checker.ICMPv4Type(header.ICMPv4DstUnreachable),
+				checker.ICMPv4Code(header.ICMPv4PortUnreachable)))
+
+			icmpPkt := header.ICMPv4(hdr.Payload())
+			payloadIPHeader := header.IPv4(icmpPkt.Payload())
+			wantLen := len(payload)
+			if tc.largePayload {
+				wantLen = header.IPv4MinimumProcessableDatagramSize - header.IPv4MinimumSize*2 - header.ICMPv4MinimumSize - header.UDPMinimumSize
+			}
+
+			// In case of large payloads the IP packet may be truncated. Update
+			// the length field before retrieving the udp datagram payload.
+			payloadIPHeader.SetTotalLength(uint16(wantLen + header.UDPMinimumSize + header.IPv4MinimumSize))
+
+			origDgram := header.UDP(payloadIPHeader.Payload())
+			if got, want := len(origDgram.Payload()), wantLen; got != want {
+				t.Fatalf("unexpected payload length got: %d, want: %d", got, want)
+			}
+			if got, want := origDgram.Payload(), payload[:wantLen]; !bytes.Equal(got, want) {
+				t.Fatalf("unexpected payload got: %d, want: %d", got, want)
 			}
 		})
 	}
@@ -1615,47 +1617,49 @@ func TestV6UnknownDestination(t *testing.T) {
 			}
 			c.injectPacket(tc.flow, payload)
 			if !tc.icmpRequired {
-				select {
-				case p := <-c.linkEP.C:
+				ctx, _ := context.WithTimeout(context.Background(), time.Second)
+				if p, ok := c.linkEP.ReadContext(ctx); ok {
 					t.Fatalf("unexpected packet received: %+v", p)
-				case <-time.After(1 * time.Second):
-					return
 				}
+				return
 			}
 
-			select {
-			case p := <-c.linkEP.C:
-				var pkt []byte
-				pkt = append(pkt, p.Pkt.Header.View()...)
-				pkt = append(pkt, p.Pkt.Data.ToView()...)
-				if got, want := len(pkt), header.IPv6MinimumMTU; got > want {
-					t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
-				}
-
-				hdr := header.IPv6(pkt)
-				checker.IPv6(t, hdr, checker.ICMPv6(
-					checker.ICMPv6Type(header.ICMPv6DstUnreachable),
-					checker.ICMPv6Code(header.ICMPv6PortUnreachable)))
-
-				icmpPkt := header.ICMPv6(hdr.Payload())
-				payloadIPHeader := header.IPv6(icmpPkt.Payload())
-				wantLen := len(payload)
-				if tc.largePayload {
-					wantLen = header.IPv6MinimumMTU - header.IPv6MinimumSize*2 - header.ICMPv6MinimumSize - header.UDPMinimumSize
-				}
-				// In case of large payloads the IP packet may be truncated. Update
-				// the length field before retrieving the udp datagram payload.
-				payloadIPHeader.SetPayloadLength(uint16(wantLen + header.UDPMinimumSize))
-
-				origDgram := header.UDP(payloadIPHeader.Payload())
-				if got, want := len(origDgram.Payload()), wantLen; got != want {
-					t.Fatalf("unexpected payload length got: %d, want: %d", got, want)
-				}
-				if got, want := origDgram.Payload(), payload[:wantLen]; !bytes.Equal(got, want) {
-					t.Fatalf("unexpected payload got: %v, want: %v", got, want)
-				}
-			case <-time.After(1 * time.Second):
+			// ICMP required.
+			ctx, _ := context.WithTimeout(context.Background(), time.Second)
+			p, ok := c.linkEP.ReadContext(ctx)
+			if !ok {
 				t.Fatalf("packet wasn't written out")
+				return
+			}
+
+			var pkt []byte
+			pkt = append(pkt, p.Pkt.Header.View()...)
+			pkt = append(pkt, p.Pkt.Data.ToView()...)
+			if got, want := len(pkt), header.IPv6MinimumMTU; got > want {
+				t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
+			}
+
+			hdr := header.IPv6(pkt)
+			checker.IPv6(t, hdr, checker.ICMPv6(
+				checker.ICMPv6Type(header.ICMPv6DstUnreachable),
+				checker.ICMPv6Code(header.ICMPv6PortUnreachable)))
+
+			icmpPkt := header.ICMPv6(hdr.Payload())
+			payloadIPHeader := header.IPv6(icmpPkt.Payload())
+			wantLen := len(payload)
+			if tc.largePayload {
+				wantLen = header.IPv6MinimumMTU - header.IPv6MinimumSize*2 - header.ICMPv6MinimumSize - header.UDPMinimumSize
+			}
+			// In case of large payloads the IP packet may be truncated. Update
+			// the length field before retrieving the udp datagram payload.
+			payloadIPHeader.SetPayloadLength(uint16(wantLen + header.UDPMinimumSize))
+
+			origDgram := header.UDP(payloadIPHeader.Payload())
+			if got, want := len(origDgram.Payload()), wantLen; got != want {
+				t.Fatalf("unexpected payload length got: %d, want: %d", got, want)
+			}
+			if got, want := origDgram.Payload(), payload[:wantLen]; !bytes.Equal(got, want) {
+				t.Fatalf("unexpected payload got: %v, want: %v", got, want)
 			}
 		})
 	}

@@ -1,4 +1,4 @@
-load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("//tools:defs.bzl", "cc_binary")
 load("//tools/images:defs.bzl", "vm_image", "vm_test")
 
 package(
