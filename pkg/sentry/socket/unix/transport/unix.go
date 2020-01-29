@@ -581,7 +581,7 @@ type ConnectedEndpoint interface {
 	//
 	// syserr.ErrWouldBlock can be returned along with a partial write if
 	// the caller should block to send the rest of the data.
-	Send(data [][]byte, controlMessages ControlMessages, from tcpip.FullAddress) (n int64, notify bool, err *syserr.Error)
+	Send(data [][]byte, c ControlMessages, from tcpip.FullAddress) (n int64, notify bool, err *syserr.Error)
 
 	// SendNotify notifies the ConnectedEndpoint of a successful Send. This
 	// must not be called while holding any endpoint locks.
@@ -653,35 +653,22 @@ func (e *connectedEndpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) 
 }
 
 // Send implements ConnectedEndpoint.Send.
-func (e *connectedEndpoint) Send(data [][]byte, controlMessages ControlMessages, from tcpip.FullAddress) (int64, bool, *syserr.Error) {
-	var l int64
-	for _, d := range data {
-		l += int64(len(d))
-	}
-
+func (e *connectedEndpoint) Send(data [][]byte, c ControlMessages, from tcpip.FullAddress) (int64, bool, *syserr.Error) {
+	discardEmpty := false
 	truncate := false
 	if e.endpoint.Type() == linux.SOCK_STREAM {
-		// Since stream sockets don't preserve message boundaries, we
-		// can write only as much of the message as fits in the queue.
-		truncate = true
-
 		// Discard empty stream packets. Since stream sockets don't
 		// preserve message boundaries, sending zero bytes is a no-op.
 		// In Linux, the receiver actually uses a zero-length receive
 		// as an indication that the stream was closed.
-		if l == 0 {
-			controlMessages.Release()
-			return 0, false, nil
-		}
+		discardEmpty = true
+
+		// Since stream sockets don't preserve message boundaries, we
+		// can write only as much of the message as fits in the queue.
+		truncate = true
 	}
 
-	v := make([]byte, 0, l)
-	for _, d := range data {
-		v = append(v, d...)
-	}
-
-	l, notify, err := e.writeQueue.Enqueue(&message{Data: buffer.View(v), Control: controlMessages, Address: from}, truncate)
-	return int64(l), notify, err
+	return e.writeQueue.Enqueue(data, c, from, discardEmpty, truncate)
 }
 
 // SendNotify implements ConnectedEndpoint.SendNotify.
