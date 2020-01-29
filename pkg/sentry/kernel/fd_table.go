@@ -15,9 +15,9 @@
 package kernel
 
 import (
-	"bytes"
 	"fmt"
 	"math"
+	"strings"
 	"sync/atomic"
 	"syscall"
 
@@ -221,24 +221,24 @@ func (f *FDTable) forEach(fn func(fd int32, file *fs.File, fileVFS2 *vfs.FileDes
 
 // String is a stringer for FDTable.
 func (f *FDTable) String() string {
-	var b bytes.Buffer
+	var buf strings.Builder
 	f.forEach(func(fd int32, file *fs.File, fileVFS2 *vfs.FileDescription, flags FDFlags) {
 		switch {
 		case file != nil:
 			n, _ := file.Dirent.FullName(nil /* root */)
-			b.WriteString(fmt.Sprintf("\tfd:%d => name %s\n", fd, n))
+			fmt.Fprintf(&buf, "\tfd:%d => name %s\n", fd, n)
 
 		case fileVFS2 != nil:
-			fs := fileVFS2.VirtualDentry().Mount().Filesystem().VirtualFilesystem()
-			// TODO(gvisor.dev/issue/1623): We have no context nor root. Will this work?
-			name, err := fs.PathnameWithDeleted(context.Background(), vfs.VirtualDentry{}, fileVFS2.VirtualDentry())
+			vfsObj := fileVFS2.Mount().Filesystem().VirtualFilesystem()
+			name, err := vfsObj.PathnameWithDeleted(context.Background(), vfs.VirtualDentry{}, fileVFS2.VirtualDentry())
 			if err != nil {
-				b.WriteString(fmt.Sprintf("<err: %v>\n", err))
+				fmt.Fprintf(&buf, "<err: %v>\n", err)
+				return
 			}
-			b.WriteString(fmt.Sprintf("\tfd:%d => name %s\n", fd, name))
+			fmt.Fprintf(&buf, "\tfd:%d => name %s\n", fd, name)
 		}
 	})
-	return b.String()
+	return buf.String()
 }
 
 // NewFDs allocates new FDs guaranteed to be the lowest number available
