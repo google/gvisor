@@ -1,6 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -30,21 +29,20 @@ go_library(
         "vfs.go",
         "writer.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/pipe",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/amutex",
+        "//pkg/context",
+        "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
-        "//pkg/sentry/safemem",
-        "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )
@@ -57,13 +55,13 @@ go_test(
         "node_test.go",
         "pipe_test.go",
     ],
-    embed = [":pipe"],
+    library = ":pipe",
     deps = [
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/context",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/fs",
-        "//pkg/sentry/usermem",
         "//pkg/syserror",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )

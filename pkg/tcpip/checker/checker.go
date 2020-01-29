@@ -771,6 +771,56 @@ func NDPNSTargetAddress(want tcpip.Address) TransportChecker {
 	}
 }
 
+// NDPNSOptions creates a checker that checks that the packet contains the
+// provided NDP options within an NDP Neighbor Solicitation message.
+//
+// The returned TransportChecker assumes that a valid ICMPv6 is passed to it
+// containing a valid NDPNS message as far as the size is concerned.
+func NDPNSOptions(opts []header.NDPOption) TransportChecker {
+	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+
+		icmp := h.(header.ICMPv6)
+		ns := header.NDPNeighborSolicit(icmp.NDPPayload())
+		it, err := ns.Options().Iter(true)
+		if err != nil {
+			t.Errorf("opts.Iter(true): %s", err)
+			return
+		}
+
+		i := 0
+		for {
+			opt, done, _ := it.Next()
+			if done {
+				break
+			}
+
+			if i >= len(opts) {
+				t.Errorf("got unexpected option: %s", opt)
+				continue
+			}
+
+			switch wantOpt := opts[i].(type) {
+			case header.NDPSourceLinkLayerAddressOption:
+				gotOpt, ok := opt.(header.NDPSourceLinkLayerAddressOption)
+				if !ok {
+					t.Errorf("got type = %T at index = %d; want = %T", opt, i, wantOpt)
+				} else if got, want := gotOpt.EthernetAddress(), wantOpt.EthernetAddress(); got != want {
+					t.Errorf("got EthernetAddress() = %s at index %d, want = %s", got, i, want)
+				}
+			default:
+				panic("not implemented")
+			}
+
+			i++
+		}
+
+		if missing := opts[i:]; len(missing) > 0 {
+			t.Errorf("missing options: %s", missing)
+		}
+	}
+}
+
 // NDPRS creates a checker that checks that the packet contains a valid NDP
 // Router Solicitation message (as per the raw wire format).
 func NDPRS() NetworkChecker {

@@ -69,6 +69,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -198,7 +199,7 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	t.tg.pidns.owner.mu.Unlock()
 
 	// Remove FDs with the CloseOnExec flag set.
-	t.fdTable.RemoveIf(func(file *fs.File, flags FDFlags) bool {
+	t.fdTable.RemoveIf(func(_ *fs.File, _ *vfs.FileDescription, flags FDFlags) bool {
 		return flags.CloseOnExec
 	})
 

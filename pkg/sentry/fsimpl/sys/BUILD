@@ -1,17 +1,15 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+licenses(["notice"])
 
 go_library(
     name = "sys",
     srcs = [
         "sys.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/sys",
     deps = [
         "//pkg/abi/linux",
-        "//pkg/sentry/context",
+        "//pkg/context",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",

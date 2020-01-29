@@ -3,19 +3,9 @@
 #   normal system VDSO (time, gettimeofday, clock_gettimeofday) but which uses
 #   timekeeping parameters managed by the sandbox kernel.
 
-load("@bazel_tools//tools/cpp:cc_flags_supplier.bzl", "cc_flags_supplier")
+load("//tools:defs.bzl", "cc_flags_supplier", "cc_toolchain", "select_arch")
 
 package(licenses = ["notice"])
-
-config_setting(
-    name = "x86_64",
-    constraint_values = ["@bazel_tools//platforms:x86_64"],
-)
-
-config_setting(
-    name = "aarch64",
-    constraint_values = ["@bazel_tools//platforms:aarch64"],
-)
 
 genrule(
     name = "vdso",
@@ -39,14 +29,15 @@ genrule(
           "-O2 " +
           "-std=c++11 " +
           "-fPIC " +
+          "-fno-sanitize=all " +
           # Some toolchains enable stack protector by default. Disable it, the
           # VDSO has no hooks to handle failures.
           "-fno-stack-protector " +
           "-fuse-ld=gold " +
-          select({
-              ":x86_64": "-m64 ",
-              "//conditions:default": "",
-          }) +
+          select_arch(
+              amd64 = "-m64 ",
+              arm64 = "",
+          ) +
           "-shared " +
           "-nostdlib " +
           "-Wl,-soname=linux-vdso.so.1 " +
@@ -55,12 +46,10 @@ genrule(
           "-Wl,-Bsymbolic " +
           "-Wl,-z,max-page-size=4096 " +
           "-Wl,-z,common-page-size=4096 " +
-          select(
-              {
-                  ":x86_64": "-Wl,-T$(location vdso_amd64.lds) ",
-                  ":aarch64": "-Wl,-T$(location vdso_arm64.lds) ",
-              },
-              no_match_error = "Unsupported architecture",
+          select_arch(
+              amd64 = "-Wl,-T$(location vdso_amd64.lds) ",
+              arm64 = "-Wl,-T$(location vdso_arm64.lds) ",
+              no_match_error = "unsupported architecture",
           ) +
           "-o $(location vdso.so) " +
           "$(location vdso.cc) " +
@@ -73,7 +62,7 @@ genrule(
     ],
     features = ["-pie"],
     toolchains = [
-        "@bazel_tools//tools/cpp:current_cc_toolchain",
+        cc_toolchain,
         ":no_pie_cc_flags",
     ],
     visibility = ["//:sandbox"],

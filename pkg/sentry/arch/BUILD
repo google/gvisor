@@ -1,6 +1,4 @@
-load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("@rules_cc//cc:defs.bzl", "cc_proto_library")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "proto_library")
 
 package(licenses = ["notice"])
 
@@ -27,37 +25,23 @@ go_library(
         "syscalls_amd64.go",
         "syscalls_arm64.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/arch",
     visibility = ["//:sandbox"],
     deps = [
         ":registers_go_proto",
         "//pkg/abi/linux",
         "//pkg/binary",
+        "//pkg/context",
         "//pkg/cpuid",
         "//pkg/log",
-        "//pkg/sentry/context",
         "//pkg/sentry/limits",
-        "//pkg/sentry/usermem",
         "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )
 
 proto_library(
-    name = "registers_proto",
+    name = "registers",
     srcs = ["registers.proto"],
-    visibility = ["//visibility:public"],
-)
-
-cc_proto_library(
-    name = "registers_cc_proto",
-    visibility = ["//visibility:public"],
-    deps = [":registers_proto"],
-)
-
-go_proto_library(
-    name = "registers_go_proto",
-    importpath = "gvisor.dev/gvisor/pkg/sentry/arch/registers_go_proto",
-    proto = ":registers_proto",
     visibility = ["//visibility:public"],
 )

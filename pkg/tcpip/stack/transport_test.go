@@ -623,10 +623,8 @@ func TestTransportForwarding(t *testing.T) {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	var p channel.PacketInfo
-	select {
-	case p = <-ep2.C:
-	default:
+	p, ok := ep2.Read()
+	if !ok {
 		t.Fatal("Response packet not forwarded")
 	}
 

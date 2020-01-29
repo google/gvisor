@@ -22,7 +22,7 @@ import (
 	"regexp"
 	"strconv"
 
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 type virtualRegion struct {

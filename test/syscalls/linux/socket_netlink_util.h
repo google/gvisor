@@ -32,11 +32,20 @@ PosixErrorOr<FileDescriptor> NetlinkBoundSocket(int protocol);
 // Returns the port ID of the passed socket.
 PosixErrorOr<uint32_t> NetlinkPortID(int fd);
 
-// Send the passed request and call fn will all response netlink messages.
+// Send the passed request and call fn on all response netlink messages.
+//
+// To be used on requests with NLM_F_MULTI reponses.
 PosixError NetlinkRequestResponse(
     const FileDescriptor& fd, void* request, size_t len,
     const std::function<void(const struct nlmsghdr* hdr)>& fn,
     bool expect_nlmsgerr);
+
+// Send the passed request and call fn on all response netlink messages.
+//
+// To be used on requests without NLM_F_MULTI reponses.
+PosixError NetlinkRequestResponseSingle(
+    const FileDescriptor& fd, void* request, size_t len,
+    const std::function<void(const struct nlmsghdr* hdr)>& fn);
 
 }  // namespace testing
 }  // namespace gvisor

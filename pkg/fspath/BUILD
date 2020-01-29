@@ -1,10 +1,8 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
-package(
-    default_visibility = ["//visibility:public"],
-    licenses = ["notice"],
-)
+package(default_visibility = ["//visibility:public"])
+
+licenses(["notice"])
 
 go_library(
     name = "fspath",
@@ -13,7 +11,6 @@ go_library(
         "builder_unsafe.go",
         "fspath.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/fspath",
 )
 
 go_test(
@@ -23,5 +20,5 @@ go_test(
         "builder_test.go",
         "fspath_test.go",
     ],
-    embed = [":fspath"],
+    library = ":fspath",
 )

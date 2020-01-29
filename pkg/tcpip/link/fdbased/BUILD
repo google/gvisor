@@ -1,5 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -13,7 +12,6 @@ go_library(
         "mmap_unsafe.go",
         "packet_dispatchers.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/tcpip/link/fdbased",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/sync",
@@ -30,7 +28,7 @@ go_test(
     name = "fdbased_test",
     size = "small",
     srcs = ["endpoint_test.go"],
-    embed = [":fdbased"],
+    library = ":fdbased",
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",

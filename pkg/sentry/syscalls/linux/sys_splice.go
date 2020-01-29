@@ -211,8 +211,10 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	opts := fs.SpliceOpts{
 		Length: count,
 	}
+	inFileAttr := inFile.Dirent.Inode.StableAttr
+	outFileAttr := outFile.Dirent.Inode.StableAttr
 	switch {
-	case fs.IsPipe(inFile.Dirent.Inode.StableAttr) && !fs.IsPipe(outFile.Dirent.Inode.StableAttr):
+	case fs.IsPipe(inFileAttr) && !fs.IsPipe(outFileAttr):
 		if inOffset != 0 {
 			return 0, nil, syserror.ESPIPE
 		}
@@ -229,7 +231,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			opts.DstOffset = true
 			opts.DstStart = offset
 		}
-	case !fs.IsPipe(inFile.Dirent.Inode.StableAttr) && fs.IsPipe(outFile.Dirent.Inode.StableAttr):
+	case !fs.IsPipe(inFileAttr) && fs.IsPipe(outFileAttr):
 		if outOffset != 0 {
 			return 0, nil, syserror.ESPIPE
 		}
@@ -246,13 +248,13 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			opts.SrcOffset = true
 			opts.SrcStart = offset
 		}
-	case fs.IsPipe(inFile.Dirent.Inode.StableAttr) && fs.IsPipe(outFile.Dirent.Inode.StableAttr):
+	case fs.IsPipe(inFileAttr) && fs.IsPipe(outFileAttr):
 		if inOffset != 0 || outOffset != 0 {
 			return 0, nil, syserror.ESPIPE
 		}
 
 		// We may not refer to the same pipe; otherwise it's a continuous loop.
-		if inFile.Dirent.Inode.StableAttr.InodeID == outFile.Dirent.Inode.StableAttr.InodeID {
+		if inFileAttr.InodeID == outFileAttr.InodeID {
 			return 0, nil, syserror.EINVAL
 		}
 	default:
@@ -261,6 +263,15 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	// Splice data.
 	n, err := doSplice(t, outFile, inFile, opts, nonBlock)
+
+	// Special files can have additional requirements for granularity.  For
+	// example, read from eventfd returns EINVAL if a size is less 8 bytes.
+	// Inotify is another example. read will return EINVAL is a buffer is
+	// too small to return the next event, but a size of an event isn't
+	// fixed, it is sizeof(struct inotify_event) + {NAME_LEN} + 1.
+	if n != 0 && err != nil && (fs.IsAnonymous(inFileAttr) || fs.IsAnonymous(outFileAttr)) {
+		err = nil
+	}
 
 	// See above; inFile is chosen arbitrarily here.
 	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "splice", inFile)

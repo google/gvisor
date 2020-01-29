@@ -1,6 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -30,7 +29,6 @@ go_library(
         "stack_global_state.go",
         "transport_demuxer.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/tcpip/stack",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/ilist",
@@ -81,7 +79,7 @@ go_test(
     name = "stack_test",
     size = "small",
     srcs = ["linkaddrcache_test.go"],
-    embed = [":stack"],
+    library = ":stack",
     deps = [
         "//pkg/sleep",
         "//pkg/sync",

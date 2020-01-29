@@ -1,7 +1,6 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+licenses(["notice"])
 
 go_library(
     name = "proc",
@@ -15,11 +14,11 @@ go_library(
         "tasks_net.go",
         "tasks_sys.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/proc",
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/log",
-        "//pkg/sentry/context",
+        "//pkg/safemem",
         "//pkg/sentry/fs",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/inet",
@@ -28,15 +27,14 @@ go_library(
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/limits",
         "//pkg/sentry/mm",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/unix",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
         "//pkg/syserror",
         "//pkg/tcpip/header",
+        "//pkg/usermem",
     ],
 )
 
@@ -47,18 +45,18 @@ go_test(
         "tasks_sys_test.go",
         "tasks_test.go",
     ],
-    embed = [":proc"],
+    library = ":proc",
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/fspath",
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/fsimpl/testutil",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
-        "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )

@@ -1,8 +1,7 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
-package(licenses = ["notice"])
+licenses(["notice"])
 
 go_template_instance(
     name = "slot_list",
@@ -27,20 +26,19 @@ go_library(
         "slot_list.go",
         "symlink.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/fspath",
         "//pkg/log",
         "//pkg/refs",
-        "//pkg/sentry/context",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
-        "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )
 
@@ -51,13 +49,13 @@ go_test(
     deps = [
         ":kernfs",
         "//pkg/abi/linux",
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/context",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/fsimpl/testutil",
         "//pkg/sentry/kernel/auth",
-        "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
         "//pkg/syserror",
+        "//pkg/usermem",
         "@com_github_google_go-cmp//cmp:go_default_library",
     ],
 )

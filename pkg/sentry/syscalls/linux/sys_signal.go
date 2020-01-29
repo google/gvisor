@@ -23,8 +23,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/signalfd"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // "For a process to have permission to send a signal it must
@@ -245,6 +245,11 @@ func RtSigaction(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	sig := linux.Signal(args[0].Int())
 	newactarg := args[1].Pointer()
 	oldactarg := args[2].Pointer()
+	sigsetsize := args[3].SizeT()
+
+	if sigsetsize != linux.SignalSetSize {
+		return 0, nil, syserror.EINVAL
+	}
 
 	var newactptr *arch.SignalAct
 	if newactarg != 0 {

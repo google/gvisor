@@ -113,7 +113,8 @@ TEST(SeccompTest, RetKillCausesDeathBySIGSYS) {
   pid_t const pid = fork();
   if (pid == 0) {
     // Register a signal handler for SIGSYS that we don't expect to be invoked.
-    RegisterSignalHandler(SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
+    RegisterSignalHandler(
+        SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
     ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_KILL);
     syscall(kFilteredSyscall);
     TEST_CHECK_MSG(false, "Survived invocation of test syscall");
@@ -132,7 +133,8 @@ TEST(SeccompTest, RetKillOnlyKillsOneThread) {
   pid_t const pid = fork();
   if (pid == 0) {
     // Register a signal handler for SIGSYS that we don't expect to be invoked.
-    RegisterSignalHandler(SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
+    RegisterSignalHandler(
+        SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
     ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_KILL);
     // Pass CLONE_VFORK to block the original thread in the child process until
     // the clone thread exits with SIGSYS.
@@ -346,7 +348,8 @@ TEST(SeccompTest, LeastPermissiveFilterReturnValueApplies) {
   // one that causes the kill that should be ignored.
   pid_t const pid = fork();
   if (pid == 0) {
-    RegisterSignalHandler(SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
+    RegisterSignalHandler(
+        SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
     ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_TRACE);
     ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_KILL);
     ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_ERRNO | ENOTNAM);

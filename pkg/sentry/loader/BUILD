@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_embed_data")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_embed_data", "go_library")
 
 package(licenses = ["notice"])
 
@@ -20,17 +19,17 @@ go_library(
         "vdso_state.go",
         ":vdso_bin",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/loader",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi",
         "//pkg/abi/linux",
         "//pkg/binary",
+        "//pkg/context",
         "//pkg/cpuid",
         "//pkg/log",
         "//pkg/rand",
+        "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/anon",
         "//pkg/sentry/fs/fsutil",
@@ -39,12 +38,11 @@ go_library(
         "//pkg/sentry/memmap",
         "//pkg/sentry/mm",
         "//pkg/sentry/pgalloc",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/uniqueid",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
         "//pkg/syserr",
         "//pkg/syserror",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )

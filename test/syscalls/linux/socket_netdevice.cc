@@ -91,7 +91,7 @@ TEST(NetdeviceTest, Netmask) {
   int prefixlen = -1;
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
       fd, &req, sizeof(req),
-      [&](const struct nlmsghdr *hdr) {
+      [&](const struct nlmsghdr* hdr) {
         EXPECT_THAT(hdr->nlmsg_type, AnyOf(Eq(RTM_NEWADDR), Eq(NLMSG_DONE)));
 
         EXPECT_TRUE((hdr->nlmsg_flags & NLM_F_MULTI) == NLM_F_MULTI)
@@ -107,8 +107,8 @@ TEST(NetdeviceTest, Netmask) {
         // RTM_NEWADDR contains at least the header and ifaddrmsg.
         EXPECT_GE(hdr->nlmsg_len, sizeof(*hdr) + sizeof(struct ifaddrmsg));
 
-        struct ifaddrmsg *ifaddrmsg =
-            reinterpret_cast<struct ifaddrmsg *>(NLMSG_DATA(hdr));
+        struct ifaddrmsg* ifaddrmsg =
+            reinterpret_cast<struct ifaddrmsg*>(NLMSG_DATA(hdr));
         if (ifaddrmsg->ifa_index == static_cast<uint32_t>(ifr.ifr_ifindex) &&
             ifaddrmsg->ifa_family == AF_INET) {
           prefixlen = ifaddrmsg->ifa_prefixlen;
@@ -127,8 +127,8 @@ TEST(NetdeviceTest, Netmask) {
   snprintf(ifr.ifr_name, IFNAMSIZ, "lo");
   ASSERT_THAT(ioctl(sock.get(), SIOCGIFNETMASK, &ifr), SyscallSucceeds());
   EXPECT_EQ(ifr.ifr_netmask.sa_family, AF_INET);
-  struct sockaddr_in *sin =
-      reinterpret_cast<struct sockaddr_in *>(&ifr.ifr_netmask);
+  struct sockaddr_in* sin =
+      reinterpret_cast<struct sockaddr_in*>(&ifr.ifr_netmask);
   EXPECT_EQ(sin->sin_addr.s_addr, mask);
 }
 

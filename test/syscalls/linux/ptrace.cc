@@ -32,6 +32,7 @@
 #include "absl/time/time.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
+#include "test/util/platform_util.h"
 #include "test/util/signal_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -178,7 +179,8 @@ TEST(PtraceTest, GetSigMask) {
 
     // Install a signal handler for kBlockSignal to avoid termination and block
     // it.
-    TEST_PCHECK(signal(kBlockSignal, +[](int signo) {}) != SIG_ERR);
+    TEST_PCHECK(signal(
+                    kBlockSignal, +[](int signo) {}) != SIG_ERR);
     MaybeSave();
     TEST_PCHECK(sigprocmask(SIG_SETMASK, &blocked, nullptr) == 0);
     MaybeSave();
@@ -823,13 +825,8 @@ TEST(PtraceTest,
 // These tests requires knowledge of architecture-specific syscall convention.
 #ifdef __x86_64__
 TEST(PtraceTest, Int3) {
-  switch (GvisorPlatform()) {
-    case Platform::kKVM:
-      // TODO(b/124248694): int3 isn't handled properly.
-      return;
-    default:
-      break;
-  }
+  SKIP_IF(PlatformSupportInt3() == PlatformSupport::NotSupported);
+
   pid_t const child_pid = fork();
   if (child_pid == 0) {
     // In child process.

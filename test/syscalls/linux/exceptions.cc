@@ -16,6 +16,7 @@
 
 #include "gtest/gtest.h"
 #include "test/util/logging.h"
+#include "test/util/platform_util.h"
 #include "test/util/signal_util.h"
 #include "test/util/test_util.h"
 
@@ -324,6 +325,7 @@ TEST(ExceptionTest, AlignmentHalt) {
 }
 
 TEST(ExceptionTest, AlignmentCheck) {
+  SKIP_IF(PlatformSupportAlignmentCheck() != PlatformSupport::Allowed);
 
   // See above.
   struct sigaction sa = {};

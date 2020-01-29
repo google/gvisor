@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,21 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package log
-
-import (
-	"reflect"
-	"unsafe"
-)
-
-// unsafeString returns a string that points to the given byte array.
-// The byte array must be preserved until the string is disposed.
-func unsafeString(data []byte) (s string) {
-	if len(data) == 0 {
-		return
-	}
-
-	(*reflect.StringHeader)(unsafe.Pointer(&s)).Data = uintptr(unsafe.Pointer(&data[0]))
-	(*reflect.StringHeader)(unsafe.Pointer(&s)).Len = len(data)
-	return
-}
+// Package vfs2 provides syscall implementations that use VFS2.
+package vfs2

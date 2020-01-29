@@ -19,14 +19,18 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
+	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // newSysDir returns the dentry corresponding to /proc/sys directory.
-func newSysDir(root *auth.Credentials, inoGen InoGenerator) *kernfs.Dentry {
+func newSysDir(root *auth.Credentials, inoGen InoGenerator, k *kernel.Kernel) *kernfs.Dentry {
 	return kernfs.NewStaticDir(root, inoGen.NextIno(), 0555, map[string]*kernfs.Dentry{
 		"kernel": kernfs.NewStaticDir(root, inoGen.NextIno(), 0555, map[string]*kernfs.Dentry{
 			"hostname": newDentry(root, inoGen.NextIno(), 0444, &hostnameData{}),
@@ -38,18 +42,18 @@ func newSysDir(root *auth.Credentials, inoGen InoGenerator) *kernfs.Dentry {
 			"mmap_min_addr":     newDentry(root, inoGen.NextIno(), 0444, &mmapMinAddrData{}),
 			"overcommit_memory": newDentry(root, inoGen.NextIno(), 0444, newStaticFile("0\n")),
 		}),
-		"net": newSysNetDir(root, inoGen),
+		"net": newSysNetDir(root, inoGen, k),
 	})
 }
 
 // newSysNetDir returns the dentry corresponding to /proc/sys/net directory.
-func newSysNetDir(root *auth.Credentials, inoGen InoGenerator) *kernfs.Dentry {
-	return kernfs.NewStaticDir(root, inoGen.NextIno(), 0555, map[string]*kernfs.Dentry{
-		"net": kernfs.NewStaticDir(root, inoGen.NextIno(), 0555, map[string]*kernfs.Dentry{
+func newSysNetDir(root *auth.Credentials, inoGen InoGenerator, k *kernel.Kernel) *kernfs.Dentry {
+	var contents map[string]*kernfs.Dentry
+
+	if stack := k.NetworkStack(); stack != nil {
+		contents = map[string]*kernfs.Dentry{
 			"ipv4": kernfs.NewStaticDir(root, inoGen.NextIno(), 0555, map[string]*kernfs.Dentry{
-				// Add tcp_sack.
-				// TODO(gvisor.dev/issue/1195): tcp_sack allows write(2)
-				// "tcp_sack": newTCPSackInode(ctx, msrc, s),
+				"tcp_sack": newDentry(root, inoGen.NextIno(), 0644, &tcpSackData{stack: stack}),
 
 				// The following files are simple stubs until they are implemented in
 				// netstack, most of these files are configuration related. We use the
@@ -103,7 +107,11 @@ func newSysNetDir(root *auth.Credentials, inoGen InoGenerator) *kernfs.Dentry {
 				"wmem_default":  newDentry(root, inoGen.NextIno(), 0444, newStaticFile("212992")),
 				"wmem_max":      newDentry(root, inoGen.NextIno(), 0444, newStaticFile("212992")),
 			}),
-		}),
+		}
+	}
+
+	return kernfs.NewStaticDir(root, inoGen.NextIno(), 0555, map[string]*kernfs.Dentry{
+		"net": kernfs.NewStaticDir(root, inoGen.NextIno(), 0555, contents),
 	})
 }
 
@@ -140,4 +148,62 @@ func (*hostnameData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	buf.WriteString(utsns.HostName())
 	buf.WriteString("\n")
 	return nil
+}
+
+// tcpSackData implements vfs.WritableDynamicBytesSource for
+// /proc/sys/net/tcp_sack.
+//
+// +stateify savable
+type tcpSackData struct {
+	kernfs.DynamicBytesFile
+
+	stack   inet.Stack `state:"wait"`
+	enabled *bool
+}
+
+var _ vfs.WritableDynamicBytesSource = (*tcpSackData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.
+func (d *tcpSackData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	if d.enabled == nil {
+		sack, err := d.stack.TCPSACKEnabled()
+		if err != nil {
+			return err
+		}
+		d.enabled = &sack
+	}
+
+	val := "0\n"
+	if *d.enabled {
+		// Technically, this is not quite compatible with Linux. Linux stores these
+		// as an integer, so if you write "2" into tcp_sack, you should get 2 back.
+		// Tough luck.
+		val = "1\n"
+	}
+	buf.WriteString(val)
+	return nil
+}
+
+func (d *tcpSackData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+	if offset != 0 {
+		// No need to handle partial writes thus far.
+		return 0, syserror.EINVAL
+	}
+	if src.NumBytes() == 0 {
+		return 0, nil
+	}
+
+	// Limit the amount of memory allocated.
+	src = src.TakeFirst(usermem.PageSize - 1)
+
+	var v int32
+	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
+	if err != nil {
+		return n, err
+	}
+	if d.enabled == nil {
+		d.enabled = new(bool)
+	}
+	*d.enabled = v != 0
+	return n, d.stack.SetTCPSACKEnabled(*d.enabled)
 }

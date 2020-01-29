@@ -20,7 +20,7 @@ import (
 	"strconv"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -69,7 +69,7 @@ func newTasksInode(inoGen InoGenerator, k *kernel.Kernel, pidns *kernel.PIDNames
 		"cpuinfo": newDentry(root, inoGen.NextIno(), 0444, newStaticFile(cpuInfoData(k))),
 		//"filesystems": newDentry(root, inoGen.NextIno(), 0444, &filesystemsData{}),
 		"loadavg": newDentry(root, inoGen.NextIno(), 0444, &loadavgData{}),
-		"sys":     newSysDir(root, inoGen),
+		"sys":     newSysDir(root, inoGen, k),
 		"meminfo": newDentry(root, inoGen.NextIno(), 0444, &meminfoData{}),
 		"mounts":  kernfs.NewStaticSymlink(root, inoGen.NextIno(), "self/mounts"),
 		"net":     newNetDir(root, inoGen, k),

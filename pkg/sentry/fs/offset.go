@@ -17,7 +17,7 @@ package fs
 import (
 	"math"
 
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // OffsetPageEnd returns the file offset rounded up to the nearest

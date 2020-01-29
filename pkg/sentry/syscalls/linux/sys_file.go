@@ -18,8 +18,8 @@ import (
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/fs/tmpfs"
@@ -28,8 +28,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/fasync"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // fileOpAt performs an operation on the second last component in the path.
@@ -767,7 +767,7 @@ func Close(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// Note that Remove provides a reference on the file that we may use to
 	// flush. It is still active until we drop the final reference below
 	// (and other reference-holding operations complete).
-	file := t.FDTable().Remove(fd)
+	file, _ := t.FDTable().Remove(fd)
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}

@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -25,17 +24,17 @@ go_library(
         "util_arm64_unsafe.go",
         "util_unsafe.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/host",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/fd",
         "//pkg/fdnotifier",
         "//pkg/log",
         "//pkg/refs",
+        "//pkg/safemem",
         "//pkg/secio",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
@@ -43,18 +42,17 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/socket/control",
         "//pkg/sentry/socket/unix",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/unimpl",
         "//pkg/sentry/uniqueid",
-        "//pkg/sentry/usermem",
         "//pkg/sync",
         "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/tcpip",
         "//pkg/unet",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )
@@ -69,19 +67,19 @@ go_test(
         "socket_test.go",
         "wait_test.go",
     ],
-    embed = [":host"],
+    library = ":host",
     deps = [
+        "//pkg/context",
         "//pkg/fd",
         "//pkg/fdnotifier",
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/unix/transport",
-        "//pkg/sentry/usermem",
         "//pkg/syserr",
         "//pkg/tcpip",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )

@@ -36,7 +36,8 @@ directory tree.
 
 All Go code should conform to the [Go style guidelines][gostyle]. C++ code
 should conform to the [Google C++ Style Guide][cppstyle] and the guidelines
-described for [tests][teststyle].
+described for [tests][teststyle]. Note that code may be automatically formatted
+per the guidelines when merged.
 
 As a secure runtime, we need to maintain the safety of all of code included in
 gVisor. The following rules help mitigate issues.

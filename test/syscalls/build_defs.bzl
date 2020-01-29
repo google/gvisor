@@ -1,5 +1,7 @@
 """Defines a rule for syscall test targets."""
 
+load("//tools:defs.bzl", "loopback")
+
 # syscall_test is a macro that will create targets to run the given test target
 # on the host (native) and runsc.
 def syscall_test(
@@ -135,6 +137,7 @@ def _syscall_test(
         name = name,
         data = [
             ":syscall_test_runner",
+            loopback,
             test,
         ],
         args = args,
@@ -148,6 +151,3 @@ def sh_test(**kwargs):
     native.sh_test(
         **kwargs
     )
-
-def select_for_linux(for_linux, for_others = []):
-    return for_linux

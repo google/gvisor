@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/binary"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/tools/go_marshal/analysis"
 	test "gvisor.dev/gvisor/tools/go_marshal/test"
 )

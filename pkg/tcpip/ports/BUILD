@@ -1,12 +1,10 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
 go_library(
     name = "ports",
     srcs = ["ports.go"],
-    importpath = "gvisor.dev/gvisor/pkg/tcpip/ports",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/sync",
@@ -17,7 +15,7 @@ go_library(
 go_test(
     name = "ports_test",
     srcs = ["ports_test.go"],
-    embed = [":ports"],
+    library = ":ports",
     deps = [
         "//pkg/tcpip",
     ],

@@ -18,6 +18,7 @@ package context
 
 import (
 	"bytes"
+	"context"
 	"testing"
 	"time"
 
@@ -215,11 +216,9 @@ func (c *Context) Stack() *stack.Stack {
 func (c *Context) CheckNoPacketTimeout(errMsg string, wait time.Duration) {
 	c.t.Helper()
 
-	select {
-	case <-c.linkEP.C:
+	ctx, _ := context.WithTimeout(context.Background(), wait)
+	if _, ok := c.linkEP.ReadContext(ctx); ok {
 		c.t.Fatal(errMsg)
-
-	case <-time.After(wait):
 	}
 }
 
@@ -234,27 +233,27 @@ func (c *Context) CheckNoPacket(errMsg string) {
 // 2 seconds.
 func (c *Context) GetPacket() []byte {
 	c.t.Helper()
-	select {
-	case p := <-c.linkEP.C:
-		if p.Proto != ipv4.ProtocolNumber {
-			c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv4.ProtocolNumber)
-		}
 
-		hdr := p.Pkt.Header.View()
-		b := append(hdr[:len(hdr):len(hdr)], p.Pkt.Data.ToView()...)
-
-		if p.GSO != nil && p.GSO.L3HdrLen != header.IPv4MinimumSize {
-			c.t.Errorf("L3HdrLen %v (expected %v)", p.GSO.L3HdrLen, header.IPv4MinimumSize)
-		}
-
-		checker.IPv4(c.t, b, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
-		return b
-
-	case <-time.After(2 * time.Second):
+	ctx, _ := context.WithTimeout(context.Background(), 2*time.Second)
+	p, ok := c.linkEP.ReadContext(ctx)
+	if !ok {
 		c.t.Fatalf("Packet wasn't written out")
+		return nil
 	}
 
-	return nil
+	if p.Proto != ipv4.ProtocolNumber {
+		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv4.ProtocolNumber)
+	}
+
+	hdr := p.Pkt.Header.View()
+	b := append(hdr[:len(hdr):len(hdr)], p.Pkt.Data.ToView()...)
+
+	if p.GSO != nil && p.GSO.L3HdrLen != header.IPv4MinimumSize {
+		c.t.Errorf("L3HdrLen %v (expected %v)", p.GSO.L3HdrLen, header.IPv4MinimumSize)
+	}
+
+	checker.IPv4(c.t, b, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
+	return b
 }
 
 // GetPacketNonBlocking reads a packet from the link layer endpoint
@@ -263,20 +262,21 @@ func (c *Context) GetPacket() []byte {
 // nil immediately.
 func (c *Context) GetPacketNonBlocking() []byte {
 	c.t.Helper()
-	select {
-	case p := <-c.linkEP.C:
-		if p.Proto != ipv4.ProtocolNumber {
-			c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv4.ProtocolNumber)
-		}
 
-		hdr := p.Pkt.Header.View()
-		b := append(hdr[:len(hdr):len(hdr)], p.Pkt.Data.ToView()...)
-
-		checker.IPv4(c.t, b, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
-		return b
-	default:
+	p, ok := c.linkEP.Read()
+	if !ok {
 		return nil
 	}
+
+	if p.Proto != ipv4.ProtocolNumber {
+		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv4.ProtocolNumber)
+	}
+
+	hdr := p.Pkt.Header.View()
+	b := append(hdr[:len(hdr):len(hdr)], p.Pkt.Data.ToView()...)
+
+	checker.IPv4(c.t, b, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
+	return b
 }
 
 // SendICMPPacket builds and sends an ICMPv4 packet via the link layer endpoint.
@@ -484,23 +484,23 @@ func (c *Context) CreateV6Endpoint(v6only bool) {
 // and asserts that it is an IPv6 Packet with the expected src/dest addresses.
 func (c *Context) GetV6Packet() []byte {
 	c.t.Helper()
-	select {
-	case p := <-c.linkEP.C:
-		if p.Proto != ipv6.ProtocolNumber {
-			c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv6.ProtocolNumber)
-		}
-		b := make([]byte, p.Pkt.Header.UsedLength()+p.Pkt.Data.Size())
-		copy(b, p.Pkt.Header.View())
-		copy(b[p.Pkt.Header.UsedLength():], p.Pkt.Data.ToView())
 
-		checker.IPv6(c.t, b, checker.SrcAddr(StackV6Addr), checker.DstAddr(TestV6Addr))
-		return b
-
-	case <-time.After(2 * time.Second):
+	ctx, _ := context.WithTimeout(context.Background(), 2*time.Second)
+	p, ok := c.linkEP.ReadContext(ctx)
+	if !ok {
 		c.t.Fatalf("Packet wasn't written out")
+		return nil
 	}
 
-	return nil
+	if p.Proto != ipv6.ProtocolNumber {
+		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv6.ProtocolNumber)
+	}
+	b := make([]byte, p.Pkt.Header.UsedLength()+p.Pkt.Data.Size())
+	copy(b, p.Pkt.Header.View())
+	copy(b[p.Pkt.Header.UsedLength():], p.Pkt.Data.ToView())
+
+	checker.IPv6(c.t, b, checker.SrcAddr(StackV6Addr), checker.DstAddr(TestV6Addr))
+	return b
 }
 
 // SendV6Packet builds and sends an IPv6 Packet via the link layer endpoint of

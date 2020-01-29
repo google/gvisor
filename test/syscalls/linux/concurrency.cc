@@ -20,6 +20,7 @@
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/util/platform_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -99,6 +100,7 @@ TEST(ConcurrencyTest, MultiProcessMultithreaded) {
 // Test that multiple processes can execute concurrently, even if one process
 // never yields.
 TEST(ConcurrencyTest, MultiProcessConcurrency) {
+  SKIP_IF(PlatformSupportMultiProcess() == PlatformSupport::NotSupported);
 
   pid_t child_pid = fork();
   if (child_pid == 0) {

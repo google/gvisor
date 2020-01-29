@@ -18,11 +18,11 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // DynamicBytesFile implements kernfs.Inode and represents a read-only
@@ -108,12 +108,12 @@ func (fd *DynamicBytesFD) PRead(ctx context.Context, dst usermem.IOSequence, off
 
 // Write implements vfs.FileDescriptionImpl.Write.
 func (fd *DynamicBytesFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
-	return fd.FileDescriptionDefaultImpl.Write(ctx, src, opts)
+	return fd.DynamicBytesFileDescriptionImpl.Write(ctx, src, opts)
 }
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (fd *DynamicBytesFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
-	return fd.FileDescriptionDefaultImpl.PWrite(ctx, src, offset, opts)
+	return fd.DynamicBytesFileDescriptionImpl.PWrite(ctx, src, offset, opts)
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.

@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -9,7 +8,6 @@ go_library(
         "cpu_amd64.s",
         "cpuid.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/cpuid",
     visibility = ["//:sandbox"],
     deps = ["//pkg/log"],
 )
@@ -18,7 +16,7 @@ go_test(
     name = "cpuid_test",
     size = "small",
     srcs = ["cpuid_test.go"],
-    embed = [":cpuid"],
+    library = ":cpuid",
 )
 
 go_test(
@@ -27,6 +25,6 @@ go_test(
     srcs = [
         "cpuid_parse_test.go",
     ],
-    embed = [":cpuid"],
+    library = ":cpuid",
     tags = ["manual"],
 )

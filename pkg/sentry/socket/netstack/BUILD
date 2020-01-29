@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -11,17 +11,17 @@ go_library(
         "save_restore.go",
         "stack.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/netstack",
     visibility = [
         "//pkg/sentry:internal",
     ],
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",
+        "//pkg/context",
         "//pkg/log",
         "//pkg/metric",
+        "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
@@ -29,11 +29,9 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/netfilter",
         "//pkg/sentry/unimpl",
-        "//pkg/sentry/usermem",
         "//pkg/sync",
         "//pkg/syserr",
         "//pkg/syserror",
@@ -46,6 +44,7 @@ go_library(
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport/tcp",
         "//pkg/tcpip/transport/udp",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )

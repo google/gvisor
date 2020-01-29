@@ -1,6 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -60,21 +59,20 @@ go_library(
         "save_restore.go",
         "usage_set.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/pgalloc",
     visibility = ["//pkg/sentry:internal"],
     deps = [
+        "//pkg/context",
         "//pkg/log",
         "//pkg/memutil",
+        "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
         "//pkg/sentry/hostmm",
         "//pkg/sentry/platform",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
         "//pkg/state",
         "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )
 
@@ -82,6 +80,6 @@ go_test(
     name = "pgalloc_test",
     size = "small",
     srcs = ["pgalloc_test.go"],
-    embed = [":pgalloc"],
-    deps = ["//pkg/sentry/usermem"],
+    library = ":pgalloc",
+    deps = ["//pkg/usermem"],
 )

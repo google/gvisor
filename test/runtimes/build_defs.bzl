@@ -1,6 +1,6 @@
 """Defines a rule for runtime test targets."""
 
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_test", "loopback")
 
 def runtime_test(
         name,
@@ -34,6 +34,7 @@ def runtime_test(
     ]
     data = [
         ":runner",
+        loopback,
     ]
     if blacklist_file:
         args += ["--blacklist_file", "test/runtimes/" + blacklist_file]
@@ -61,7 +62,7 @@ def blacklist_test(name, blacklist_file):
     """Test that a blacklist parses correctly."""
     go_test(
         name = name + "_blacklist_test",
-        embed = [":runner"],
+        library = ":runner",
         srcs = ["blacklist_test.go"],
         args = ["--blacklist_file", "test/runtimes/" + blacklist_file],
         data = [blacklist_file],

@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
@@ -32,26 +31,25 @@ go_library(
         "symlink.go",
         "utils.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/ext",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",
+        "//pkg/context",
         "//pkg/fd",
         "//pkg/fspath",
         "//pkg/log",
+        "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/fsimpl/ext/disklayout",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/syscalls/linux",
-        "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )
@@ -71,18 +69,18 @@ go_test(
         "//pkg/sentry/fsimpl/ext:assets/tiny.ext3",
         "//pkg/sentry/fsimpl/ext:assets/tiny.ext4",
     ],
-    embed = [":ext"],
+    library = ":ext",
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",
+        "//pkg/context",
         "//pkg/fspath",
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/fsimpl/ext/disklayout",
         "//pkg/sentry/kernel/auth",
-        "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
         "//pkg/syserror",
+        "//pkg/usermem",
         "//runsc/testutil",
         "@com_github_google_go-cmp//cmp:go_default_library",
         "@com_github_google_go-cmp//cmp/cmpopts:go_default_library",

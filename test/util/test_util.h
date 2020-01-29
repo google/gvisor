@@ -26,15 +26,12 @@
 // IsRunningOnGvisor returns true if the test is known to be running on gVisor.
 // GvisorPlatform can be used to get more detail:
 //
-//   switch (GvisorPlatform()) {
-//     case Platform::kNative:
-//     case Platform::kGvisor:
-//       EXPECT_THAT(mmap(...), SyscallSucceeds());
-//       break;
-//     case Platform::kPtrace:
-//       EXPECT_THAT(mmap(...), SyscallFailsWithErrno(ENOSYS));
-//       break;
+//   if (GvisorPlatform() == Platform::kPtrace) {
+//       ...
 //   }
+//
+// SetupGvisorDeathTest ensures that signal handling does not interfere with
+/// tests that rely on fatal signals.
 //
 // Matchers
 // ========
@@ -213,13 +210,15 @@ void TestInit(int* argc, char*** argv);
     if (expr) GTEST_SKIP() << #expr; \
   } while (0)
 
-enum class Platform {
-  kNative,
-  kKVM,
-  kPtrace,
-};
+// Platform contains platform names.
+namespace Platform {
+constexpr char kNative[] = "native";
+constexpr char kPtrace[] = "ptrace";
+constexpr char kKVM[] = "kvm";
+}  // namespace Platform
+
 bool IsRunningOnGvisor();
-Platform GvisorPlatform();
+const std::string GvisorPlatform();
 bool IsRunningWithHostinet();
 
 #ifdef __linux__

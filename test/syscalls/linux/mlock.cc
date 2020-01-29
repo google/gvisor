@@ -60,7 +60,6 @@ bool IsPageMlocked(uintptr_t addr) {
   return true;
 }
 
-
 TEST(MlockTest, Basic) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanMlock()));
   auto const mapping = ASSERT_NO_ERRNO_AND_VALUE(

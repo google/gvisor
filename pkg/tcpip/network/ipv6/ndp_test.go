@@ -70,6 +70,141 @@ func setupStackAndEndpoint(t *testing.T, llladdr, rlladdr tcpip.Address) (*stack
 	return s, ep
 }
 
+// TestNeighorSolicitationWithSourceLinkLayerOption tests that receiving an
+// NDP NS message with the Source Link Layer Address option results in a
+// new entry in the link address cache for the sender of the message.
+func TestNeighorSolicitationWithSourceLinkLayerOption(t *testing.T) {
+	const nicID = 1
+
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
+	})
+	e := channel.New(0, 1280, linkAddr0)
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+	}
+	if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
+		t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, lladdr0, err)
+	}
+
+	ndpNSSize := header.ICMPv6NeighborSolicitMinimumSize + header.NDPLinkLayerAddressSize
+	hdr := buffer.NewPrependable(header.IPv6MinimumSize + ndpNSSize)
+	pkt := header.ICMPv6(hdr.Prepend(ndpNSSize))
+	pkt.SetType(header.ICMPv6NeighborSolicit)
+	ns := header.NDPNeighborSolicit(pkt.NDPPayload())
+	ns.SetTargetAddress(lladdr0)
+	ns.Options().Serialize(header.NDPOptionsSerializer{
+		header.NDPSourceLinkLayerAddressOption(linkAddr1),
+	})
+	pkt.SetChecksum(header.ICMPv6Checksum(pkt, lladdr1, lladdr0, buffer.VectorisedView{}))
+	payloadLength := hdr.UsedLength()
+	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+	ip.Encode(&header.IPv6Fields{
+		PayloadLength: uint16(payloadLength),
+		NextHeader:    uint8(header.ICMPv6ProtocolNumber),
+		HopLimit:      255,
+		SrcAddr:       lladdr1,
+		DstAddr:       lladdr0,
+	})
+	e.InjectInbound(ProtocolNumber, tcpip.PacketBuffer{
+		Data: hdr.View().ToVectorisedView(),
+	})
+
+	linkAddr, c, err := s.GetLinkAddress(nicID, lladdr1, lladdr0, ProtocolNumber, nil)
+	if err != nil {
+		t.Errorf("s.GetLinkAddress(%d, %s, %s, %d, nil): %s", nicID, lladdr1, lladdr0, ProtocolNumber, err)
+	}
+	if c != nil {
+		t.Errorf("got unexpected channel")
+	}
+	if linkAddr != linkAddr1 {
+		t.Errorf("got link address = %s, want = %s", linkAddr, linkAddr1)
+	}
+}
+
+// TestNeighorSolicitationWithInvalidSourceLinkLayerOption tests that receiving
+// an NDP NS message with an invalid Source Link Layer Address option does not
+// result in a new entry in the link address cache for the sender of the
+// message.
+func TestNeighorSolicitationWithInvalidSourceLinkLayerOption(t *testing.T) {
+	const nicID = 1
+
+	tests := []struct {
+		name    string
+		optsBuf []byte
+	}{
+		{
+			name:    "Too Small",
+			optsBuf: []byte{1, 1, 1, 2, 3, 4, 5},
+		},
+		{
+			name:    "Invalid Length",
+			optsBuf: []byte{1, 2, 1, 2, 3, 4, 5, 6},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
+			})
+			e := channel.New(0, 1280, linkAddr0)
+			if err := s.CreateNIC(nicID, e); err != nil {
+				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+			}
+			if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
+				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, lladdr0, err)
+			}
+
+			ndpNSSize := header.ICMPv6NeighborSolicitMinimumSize + len(test.optsBuf)
+			hdr := buffer.NewPrependable(header.IPv6MinimumSize + ndpNSSize)
+			pkt := header.ICMPv6(hdr.Prepend(ndpNSSize))
+			pkt.SetType(header.ICMPv6NeighborSolicit)
+			ns := header.NDPNeighborSolicit(pkt.NDPPayload())
+			ns.SetTargetAddress(lladdr0)
+			opts := ns.Options()
+			copy(opts, test.optsBuf)
+			pkt.SetChecksum(header.ICMPv6Checksum(pkt, lladdr1, lladdr0, buffer.VectorisedView{}))
+			payloadLength := hdr.UsedLength()
+			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+			ip.Encode(&header.IPv6Fields{
+				PayloadLength: uint16(payloadLength),
+				NextHeader:    uint8(header.ICMPv6ProtocolNumber),
+				HopLimit:      255,
+				SrcAddr:       lladdr1,
+				DstAddr:       lladdr0,
+			})
+
+			invalid := s.Stats().ICMP.V6PacketsReceived.Invalid
+
+			// Invalid count should initially be 0.
+			if got := invalid.Value(); got != 0 {
+				t.Fatalf("got invalid = %d, want = 0", got)
+			}
+
+			e.InjectInbound(ProtocolNumber, tcpip.PacketBuffer{
+				Data: hdr.View().ToVectorisedView(),
+			})
+
+			// Invalid count should have increased.
+			if got := invalid.Value(); got != 1 {
+				t.Fatalf("got invalid = %d, want = 1", got)
+			}
+
+			linkAddr, c, err := s.GetLinkAddress(nicID, lladdr1, lladdr0, ProtocolNumber, nil)
+			if err != tcpip.ErrWouldBlock {
+				t.Errorf("got s.GetLinkAddress(%d, %s, %s, %d, nil) = (_, _, %v), want = (_, _, %s)", nicID, lladdr1, lladdr0, ProtocolNumber, err, tcpip.ErrWouldBlock)
+			}
+			if c == nil {
+				t.Errorf("expected channel from call to s.GetLinkAddress(%d, %s, %s, %d, nil)", nicID, lladdr1, lladdr0, ProtocolNumber)
+			}
+			if linkAddr != "" {
+				t.Errorf("got s.GetLinkAddress(%d, %s, %s, %d, nil) = (%s, _, ), want = ('', _, _)", nicID, lladdr1, lladdr0, ProtocolNumber, linkAddr)
+			}
+		})
+	}
+}
+
 // TestHopLimitValidation is a test that makes sure that NDP packets are only
 // received if their IP header's hop limit is set to 255.
 func TestHopLimitValidation(t *testing.T) {
