@@ -69,7 +69,7 @@ Note that `kubectl cp` works because it does the copy by exec'ing inside the
 sandbox, and thus gVisor's internal cache is made aware of the new files and
 directories.
 
-### I'm getting an error like: `panic: unable to attach: operation not permitted`
+### I'm getting an error like: `panic: unable to attach: operation not permitted` or `fork/exec /proc/self/exe: invalid argument: unknown`
 
 Make sure that permissions and the owner is correct on the `runsc` binary.
 
