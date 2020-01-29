@@ -124,12 +124,12 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 	nic.mu.mcastJoins = make(map[NetworkEndpointID]int32)
 	nic.mu.packetEPs = make(map[tcpip.NetworkProtocolNumber][]PacketEndpoint)
 	nic.mu.ndp = ndpState{
-		nic:              nic,
-		configs:          stack.ndpConfigs,
-		dad:              make(map[tcpip.Address]dadState),
-		defaultRouters:   make(map[tcpip.Address]defaultRouterState),
-		onLinkPrefixes:   make(map[tcpip.Subnet]onLinkPrefixState),
-		autoGenAddresses: make(map[tcpip.Address]autoGenAddressState),
+		nic:             nic,
+		configs:         stack.ndpConfigs,
+		dad:             make(map[tcpip.Address]dadState),
+		defaultRouters:  make(map[tcpip.Address]defaultRouterState),
+		onLinkPrefixes:  make(map[tcpip.Subnet]onLinkPrefixState),
+		autoGenPrefixes: make(map[tcpip.Subnet]autoGenPrefixState),
 	}
 
 	// Register supported packet endpoint protocols.
@@ -996,8 +996,7 @@ func (n *NIC) removePermanentAddressLocked(addr tcpip.Address) *tcpip.Error {
 	isIPv6Unicast := r.protocol == header.IPv6ProtocolNumber && header.IsV6UnicastAddress(addr)
 
 	if isIPv6Unicast {
-		// If we are removing a tentative IPv6 unicast address, stop
-		// DAD.
+		// If we are removing a tentative IPv6 unicast address, stop DAD.
 		if kind == permanentTentative {
 			n.mu.ndp.stopDuplicateAddressDetection(addr)
 		}
@@ -1005,7 +1004,10 @@ func (n *NIC) removePermanentAddressLocked(addr tcpip.Address) *tcpip.Error {
 		// If we are removing an address generated via SLAAC, cleanup
 		// its SLAAC resources and notify the integrator.
 		if r.configType == slaac {
-			n.mu.ndp.cleanupAutoGenAddrResourcesAndNotify(addr)
+			n.mu.ndp.cleanupAutoGenAddrResourcesAndNotify(tcpip.AddressWithPrefix{
+				Address:   addr,
+				PrefixLen: r.ep.PrefixLen(),
+			})
 		}
 	}
 
