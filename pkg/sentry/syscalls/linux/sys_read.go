@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	// EventMaskRead contains events that can be triggerd on reads.
+	// EventMaskRead contains events that can be triggered on reads.
 	EventMaskRead = waiter.EventIn | waiter.EventHUp | waiter.EventErr
 )
 

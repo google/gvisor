@@ -24,6 +24,11 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+const (
+	// EventMaskRead contains events that can be triggered on reads.
+	EventMaskRead = waiter.EventIn | waiter.EventHUp | waiter.EventErr
+)
+
 // Read implements linux syscall read(2).  Note that we try to get a buffer that
 // is exactly the size requested because some applications like qemu expect
 // they can do large reads all at once.  Bug for bug.  Same for other read
@@ -38,11 +43,6 @@ func Read(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		return 0, nil, syserror.EBADF
 	}
 	defer file.DecRef()
-
-	// Check that the file is readable.
-	if !file.IsReadable() {
-		return 0, nil, syserror.EBADF
-	}
 
 	// Check that the size is legitimate.
 	si := int(size)
@@ -70,8 +70,8 @@ func read(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, opt
 	}
 
 	// Register for notifications.
-	_, ch := waiter.NewChannelEntry(nil)
-	// file.EventRegister(&w, EventMaskRead)
+	w, ch := waiter.NewChannelEntry(nil)
+	file.EventRegister(&w, EventMaskRead)
 
 	total := n
 	for {
@@ -89,7 +89,7 @@ func read(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, opt
 			break
 		}
 	}
-	//file.EventUnregister(&w)
+	file.EventUnregister(&w)
 
 	return total, err
 }
