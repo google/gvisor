@@ -44,6 +44,7 @@ go_library(
         "//pkg/context",
         "//pkg/fspath",
         "//pkg/sentry/arch",
+        "//pkg/sentry/fs/lock",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
         "//pkg/sync",
