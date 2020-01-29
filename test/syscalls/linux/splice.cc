@@ -587,6 +587,29 @@ TEST(SpliceTest, FromPipeMaxFileSize) {
   EXPECT_EQ(memcmp(rbuf.data(), buf.data(), buf.size()), 0);
 }
 
+int memfd_create(const std::string& name, unsigned int flags) {
+  return syscall(__NR_memfd_create, name.c_str(), flags);
+}
+
+TEST(SpliceTest, MemfdNegativeOffsetFails) {
+  // Create a new pipe.
+  int fds[2], fd;
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor pipe_rfd(fds[0]);
+  const FileDescriptor pipe_wfd(fds[1]);
+
+  ASSERT_THAT(fd = memfd_create("some-memfd", 0), SyscallSucceeds());
+  const FileDescriptor memfd(fd);
+
+  loff_t off = -1;
+  EXPECT_THAT(splice(pipe_rfd.get(), /*__offin=*/nullptr, memfd.get(), &off,
+                     kPageSize, SPLICE_F_NONBLOCK),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(splice(memfd.get(), &off, pipe_wfd.get(), /*__offout=*/nullptr,
+                     kPageSize, SPLICE_F_NONBLOCK),
+              SyscallFailsWithErrno(EINVAL));
+}
+
 }  // namespace
 
 }  // namespace testing

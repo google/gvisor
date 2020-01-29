@@ -32,6 +32,9 @@ func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonB
 		inCh  chan struct{}
 		outCh chan struct{}
 	)
+	if opts.Length < 0 || opts.SrcStart < 0 || opts.DstStart < 0 {
+		return 0, syserror.EINVAL
+	}
 	for opts.Length > 0 {
 		n, err = fs.Splice(t, outFile, inFile, opts)
 		opts.Length -= n
