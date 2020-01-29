@@ -30,14 +30,27 @@ type SignalContext64 struct {
 	Sp        uint64
 	Pc        uint64
 	Pstate    uint64
-	_pad      [8]byte // __attribute__((__aligned__(16)))
-	Reserved  [4096]uint8
+	_pad      [8]byte       // __attribute__((__aligned__(16)))
+	Fpsimd64  FpsimdContext // size = 528
+	Reserved  [3568]uint8
+}
+
+type aarch64Ctx struct {
+	Magic uint32
+	Size  uint32
+}
+
+type FpsimdContext struct {
+	Head  aarch64Ctx
+	Fpsr  uint32
+	Fpcr  uint32
+	Vregs [64]uint64 // actually [32]uint128
 }
 
 // UContext64 is equivalent to ucontext on arm64(arch/arm64/include/uapi/asm/ucontext.h).
 type UContext64 struct {
 	Flags  uint64
-	Link   *UContext64
+	Link   uint64
 	Stack  SignalStack
 	Sigset linux.SignalSet
 	// glibc uses a 1024-bit sigset_t
