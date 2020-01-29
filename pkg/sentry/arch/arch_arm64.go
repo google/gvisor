@@ -137,8 +137,8 @@ func (c *context64) SetTLS(value uintptr) bool {
 	return false
 }
 
-// SetRSEQInterruptedIP implements Context.SetRSEQInterruptedIP.
-func (c *context64) SetRSEQInterruptedIP(value uintptr) {
+// SetOldRSeqInterruptedIP implements Context.SetOldRSeqInterruptedIP.
+func (c *context64) SetOldRSeqInterruptedIP(value uintptr) {
 	c.Regs.Regs[3] = uint64(value)
 }
 
