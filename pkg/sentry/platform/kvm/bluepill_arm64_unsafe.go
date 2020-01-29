@@ -17,10 +17,26 @@
 package kvm
 
 import (
+	"unsafe"
+
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
+
+// fpsimdPtr returns a fpsimd64 for the given address.
+//
+//go:nosplit
+func fpsimdPtr(addr *byte) *arch.FpsimdContext {
+	return (*arch.FpsimdContext)(unsafe.Pointer(addr))
+}
 
 //go:nosplit
 func dieArchSetup(c *vCPU, context *arch.SignalContext64, guestRegs *userRegs) {
 	// TODO(gvisor.dev/issue/1249): dieTrampoline supporting for Arm64.
+}
+
+// bluepillArchFpContext returns the arch-specific fpsimd context.
+//
+//go:nosplit
+func bluepillArchFpContext(context unsafe.Pointer) *arch.FpsimdContext {
+	return &((*arch.SignalContext64)(context).Fpsimd64)
 }

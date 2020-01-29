@@ -28,6 +28,10 @@ type vCPUArchState struct {
 	//
 	// This starts above fixedKernelPCID.
 	PCIDs *pagetables.PCIDs
+
+	// floatingPointState is the floating point state buffer used in guest
+	// to host transitions. See usage in bluepill_arm64.go.
+	floatingPointState *arch.FloatingPointData
 }
 
 const (
