@@ -626,6 +626,12 @@ type TCPLingerTimeoutOption time.Duration
 // before being marked closed.
 type TCPTimeWaitTimeoutOption time.Duration
 
+// TCPDeferAcceptOption is used by SetSockOpt/GetSockOpt to allow a
+// accept to return a completed connection only when there is data to be
+// read. This usually means the listening socket will drop the final ACK
+// for a handshake till the specified timeout until a segment with data arrives.
+type TCPDeferAcceptOption time.Duration
+
 // MulticastTTLOption is used by SetSockOpt/GetSockOpt to control the default
 // TTL value for multicast messages. The default is 1.
 type MulticastTTLOption uint8
