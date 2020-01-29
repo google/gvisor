@@ -82,53 +82,31 @@ func ConfigureExePath() error {
 // FindFile searchs for a file inside the test run environment. It returns the
 // full path to the file. It fails if none or more than one file is found.
 func FindFile(path string) (string, error) {
-	wd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-
-	// The test root is demarcated by a path element called "__main__". Search for
-	// it backwards from the working directory.
-	root := wd
-	for {
-		dir, name := filepath.Split(root)
-		if name == "__main__" {
-			break
-		}
-		if len(dir) == 0 {
-			return "", fmt.Errorf("directory __main__ not found in %q", wd)
-		}
-		// Remove ending slash to loop around.
-		root = dir[:len(dir)-1]
-	}
-
-	// Annoyingly, bazel adds the build type to the directory path for go
-	// binaries, but not for c++ binaries. We use two different patterns to
-	// to find our file.
-	patterns := []string{
-		// Try the obvious path first.
-		filepath.Join(root, path),
-		// If it was a go binary, use a wildcard to match the build
-		// type. The pattern is: /test-path/__main__/directories/*/file.
-		filepath.Join(root, filepath.Dir(path), "*", filepath.Base(path)),
-	}
-
-	for _, p := range patterns {
-		matches, err := filepath.Glob(p)
+	var absPath string
+	err := filepath.Walk(os.Getenv("TEST_SRCDIR"), func(p string, fi os.FileInfo, err error) error {
 		if err != nil {
-			// "The only possible returned error is ErrBadPattern,
-			// when pattern is malformed." -godoc
-			return "", fmt.Errorf("error globbing %q: %v", p, err)
+			return err
 		}
-		switch len(matches) {
-		case 0:
-			// Try the next pattern.
-		case 1:
-			// We found it.
-			return matches[0], nil
-		default:
-			return "", fmt.Errorf("more than one match found for %q: %s", path, matches)
+		if fi.IsDir() {
+			return nil
 		}
+		// Annoyingly, bazel adds the build type to the directory path for go
+		// binaries, but not for c++ binaries.
+		// e.g., "runsc/runsc" may be located at "test.runfiles/__main__/runsc/linux_amd64_pure_stripped/runsc".
+		bazelPath := filepath.Join(filepath.Dir(filepath.Dir(p)), filepath.Base(p))
+		if strings.HasSuffix(p, path) || strings.HasSuffix(bazelPath, path) {
+			if absPath != "" {
+				return fmt.Errorf("more than one match found for %q: %s and %s", path, absPath, p)
+			}
+			absPath = p
+		}
+		return nil
+	})
+	if absPath != "" {
+		return absPath, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to walk runfiles dir: %v", err)
 	}
 	return "", fmt.Errorf("file %q not found", path)
 }
