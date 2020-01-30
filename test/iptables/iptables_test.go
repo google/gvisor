@@ -30,7 +30,7 @@ import (
 
 const timeout = 18 * time.Second
 
-var image = flag.String("image", "bazel/test/iptables/runner:runner", "image to run tests in")
+var image = flag.String("image", "bazel/test/iptables/runner:runner-image", "image to run tests in")
 
 type result struct {
 	output string
