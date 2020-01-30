@@ -497,7 +497,7 @@ func TestDADFail(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			ndpDisp := ndpDispatcher{
-				dadC: make(chan ndpDADEvent),
+				dadC: make(chan ndpDADEvent, 1),
 			}
 			ndpConfigs := stack.DefaultNDPConfigurations()
 			opts := stack.Options{
@@ -576,7 +576,7 @@ func TestDADFail(t *testing.T) {
 // removed.
 func TestDADStop(t *testing.T) {
 	ndpDisp := ndpDispatcher{
-		dadC: make(chan ndpDADEvent),
+		dadC: make(chan ndpDADEvent, 1),
 	}
 	ndpConfigs := stack.NDPConfigurations{
 		RetransmitTimer:        time.Second,
