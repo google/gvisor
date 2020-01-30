@@ -2047,8 +2047,14 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 				// work mutex is available.
 				if e.workMu.TryLock() {
 					e.mu.Lock()
-					e.resetConnectionLocked(tcpip.ErrConnectionAborted)
-					e.notifyProtocolGoroutine(notifyTickleWorker)
+					// We need to double check here to make
+					// sure worker has not transitioned the
+					// endpoint out of a connected state
+					// before trying to send a reset.
+					if e.EndpointState().connected() {
+						e.resetConnectionLocked(tcpip.ErrConnectionAborted)
+						e.notifyProtocolGoroutine(notifyTickleWorker)
+					}
 					e.mu.Unlock()
 					e.workMu.Unlock()
 				} else {
