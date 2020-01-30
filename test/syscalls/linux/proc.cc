@@ -100,18 +100,6 @@ namespace {
 #define SUID_DUMP_ROOT 2
 #endif /* SUID_DUMP_ROOT */
 
-// O_LARGEFILE as defined by Linux. glibc tries to be clever by setting it to 0
-// because "it isn't needed", even though Linux can return it via F_GETFL.
-#if defined(__x86_64__) || defined(__i386__)
-constexpr int kOLargeFile = 00100000;
-#elif __aarch64__
-// The value originate from the Linux
-// kernel's arch/arm64/include/uapi/asm/fcntl.h.
-constexpr int kOLargeFile = 00400000;
-#else
-#error "Unknown architecture"
-#endif
-
 #if defined(__x86_64__) || defined(__i386__)
 // This list of "required" fields is taken from reading the file
 // arch/x86/kernel/cpu/proc.c and seeing which fields will be unconditionally
