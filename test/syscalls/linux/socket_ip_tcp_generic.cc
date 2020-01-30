@@ -24,6 +24,7 @@
 #include <sys/un.h>
 
 #include "gtest/gtest.h"
+#include "absl/memory/memory.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/socket_test_util.h"
@@ -873,6 +874,38 @@ TEST_P(TCPSocketPairTest, SetTCPUserTimeoutAboveZero) {
               SyscallSucceeds());
   EXPECT_EQ(get_len, sizeof(get));
   EXPECT_EQ(get, kAbove);
+}
+
+TEST_P(TCPSocketPairTest, TCPResetDuringClose_NoRandomSave) {
+  DisableSave ds;  // Too many syscalls.
+  constexpr int kThreadCount = 1000;
+  std::unique_ptr<ScopedThread> instances[kThreadCount];
+  for (int i = 0; i < kThreadCount; i++) {
+    instances[i] = absl::make_unique<ScopedThread>([&]() {
+      auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+      ScopedThread t([&]() {
+        // Close one end to trigger sending of a FIN.
+        struct pollfd poll_fd = {sockets->second_fd(), POLLIN | POLLHUP, 0};
+        // Wait up to 20 seconds for the data.
+        constexpr int kPollTimeoutMs = 20000;
+        ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+                    SyscallSucceedsWithValue(1));
+        ASSERT_THAT(close(sockets->release_second_fd()), SyscallSucceeds());
+      });
+
+      // Send some data then close.
+      constexpr char kStr[] = "abc";
+      ASSERT_THAT(write(sockets->first_fd(), kStr, 3),
+                  SyscallSucceedsWithValue(3));
+      absl::SleepFor(absl::Milliseconds(10));
+      ASSERT_THAT(close(sockets->release_first_fd()), SyscallSucceeds());
+      t.Join();
+    });
+  }
+  for (int i = 0; i < kThreadCount; i++) {
+    instances[i]->Join();
+  }
 }
 
 }  // namespace testing

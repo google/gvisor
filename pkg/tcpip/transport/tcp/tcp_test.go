@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -6912,4 +6913,58 @@ func TestTCPDeferAcceptTimeout(t *testing.T) {
 		checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck),
 		checker.SeqNum(uint32(iss+1)),
 		checker.AckNum(uint32(irs+5))))
+}
+
+func TestResetDuringClose(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	iss := seqnum.Value(789)
+	c.CreateConnected(iss, 30000, -1 /* epRecvBuf */)
+	// Send some data to make sure there is some unread
+	// data to trigger a reset on c.Close.
+	irs := c.IRS
+	c.SendPacket([]byte{1, 2, 3, 4}, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  iss.Add(1),
+		AckNum:  irs.Add(1),
+		RcvWnd:  30000,
+	})
+
+	// Receive ACK for the data we sent.
+	checker.IPv4(t, c.GetPacket(), checker.TCP(
+		checker.DstPort(context.TestPort),
+		checker.TCPFlags(header.TCPFlagAck),
+		checker.SeqNum(uint32(irs.Add(1))),
+		checker.AckNum(uint32(iss.Add(5)))))
+
+	// Close in a separate goroutine so that we can trigger
+	// a race with the RST we send below. This should not
+	// panic due to the route being released depeding on
+	// whether Close() sends an active RST or the RST sent
+	// below is processed by the worker first.
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		c.SendPacket(nil, &context.Headers{
+			SrcPort: context.TestPort,
+			DstPort: c.Port,
+			SeqNum:  iss.Add(5),
+			AckNum:  c.IRS.Add(5),
+			RcvWnd:  30000,
+			Flags:   header.TCPFlagRst,
+		})
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		c.EP.Close()
+	}()
+
+	wg.Wait()
 }
