@@ -50,6 +50,7 @@ py_library(
         py_requirement("asn1crypto", False),
         py_requirement("chardet", False),
         py_requirement("certifi", False),
+        py_requirement("cffi", False),
         py_requirement("docker", True),
         py_requirement("docker-pycreds", False),
         py_requirement("idna", False),

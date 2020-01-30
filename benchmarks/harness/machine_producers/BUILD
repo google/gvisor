@@ -74,7 +74,4 @@ py_test(
         ":test_data",
     ],
     python_version = "PY3",
-    tags = [
-        "local",
-    ],
 )
