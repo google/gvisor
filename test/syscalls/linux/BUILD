@@ -754,6 +754,7 @@ cc_binary(
         ":socket_test_util",
         "//test/util:cleanup",
         "//test/util:eventfd_util",
+        "//test/util:fs_util",
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
         "//test/util:save_util",
@@ -1391,6 +1392,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         "//test/util:file_descriptor",
+        "//test/util:fs_util",
         "//test/util:posix_error",
         "//test/util:temp_path",
         "//test/util:test_main",
