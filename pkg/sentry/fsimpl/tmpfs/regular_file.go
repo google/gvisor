@@ -15,6 +15,7 @@
 package tmpfs
 
 import (
+	"fmt"
 	"io"
 	"math"
 	"sync/atomic"
@@ -22,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/safemem"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -33,11 +35,34 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// regularFile is a regular (=S_IFREG) tmpfs file.
+//
+// Lock order:
+//   mu
+//     mapsMu
 type regularFile struct {
 	inode inode
 
 	// memFile is a platform.File used to allocate pages to this regularFile.
 	memFile *pgalloc.MemoryFile
+
+	mapsMu sync.Mutex `state:"nosave"`
+
+	// mappings tracks mappings of the file into memmap.MappingSpaces.
+	//
+	// Protected by mapsMu.
+	mappings memmap.MappingSet
+
+	// writableMappingPages tracks how many pages of virtual memory are mapped
+	// as potentially writable from this file. If a page has multiple mappings,
+	// each mapping is counted separately.
+	//
+	// This counter is susceptible to overflow as we can potentially count
+	// mappings from many VMAs. We count pages rather than bytes to slightly
+	// mitigate this.
+	//
+	// Protected by mapsMu.
+	writableMappingPages uint64
 
 	// mu protects the fields below.
 	mu sync.RWMutex
@@ -47,7 +72,7 @@ type regularFile struct {
 	data fsutil.FileRangeSet
 
 	// size is the size of data, but accessed using atomic memory
-	// operations to avoid locking in inode.stat().
+	// operations to avoid holding mu in inode.stat().
 	size uint64
 
 	// seals represents file seals on this inode.
@@ -65,37 +90,154 @@ func (fs *filesystem) newRegularFile(creds *auth.Credentials, mode linux.FileMod
 
 // truncate grows or shrinks the file to the given size. It returns true if the
 // file size was updated.
-func (rf *regularFile) truncate(size uint64) (bool, error) {
+func (rf *regularFile) truncate(newSize uint64) (bool, error) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-
-	if size == rf.size {
+	oldSize := rf.size
+	switch {
+	case newSize == oldSize:
 		// Nothing to do.
 		return false, nil
-	}
-
-	if size > rf.size {
-		// Growing the file.
+	case newSize > oldSize:
+		// Can we grow the file?
 		if rf.seals&linux.F_SEAL_GROW != 0 {
-			// Seal does not allow growth.
 			return false, syserror.EPERM
 		}
-		rf.size = size
+		// We only need to update the file size.
+		rf.size = newSize
 		return true, nil
 	}
 
-	// Shrinking the file
+	// We are shrinking the file.  First check if this is allowed.
 	if rf.seals&linux.F_SEAL_SHRINK != 0 {
-		// Seal does not allow shrink.
 		return false, syserror.EPERM
 	}
 
-	// TODO(gvisor.dev/issues/1197): Invalidate mappings once we have
-	// mappings.
+	// Update the file size.
+	rf.size = newSize
 
-	rf.data.Truncate(size, rf.memFile)
-	rf.size = size
+	// Invalidate past translations of truncated pages.
+	oldpgend := fs.OffsetPageEnd(int64(rf.size))
+	newpgend := fs.OffsetPageEnd(int64(newSize))
+	if newpgend < oldpgend {
+		rf.mapsMu.Lock()
+		rf.mappings.Invalidate(memmap.MappableRange{newpgend, oldpgend}, memmap.InvalidateOpts{
+			// Compare Linux's mm/shmem.c:shmem_setattr() =>
+			// mm/memory.c:unmap_mapping_range(evencows=1).
+			InvalidatePrivate: true,
+		})
+		rf.mapsMu.Unlock()
+	}
+
+	// We are now guaranteed that there are no translations of truncated pages,
+	// and can remove them.
+	rf.data.Truncate(newSize, rf.memFile)
 	return true, nil
+}
+
+// AddMapping implements memmap.Mappable.AddMapping.
+func (rf *regularFile) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) error {
+	rf.mu.RLock()
+	defer rf.mu.RUnlock()
+	rf.mapsMu.Lock()
+	defer rf.mapsMu.Unlock()
+
+	// Reject writable mapping if F_SEAL_WRITE is set.
+	if rf.seals&linux.F_SEAL_WRITE != 0 && writable {
+		return syserror.EPERM
+	}
+
+	rf.mappings.AddMapping(ms, ar, offset, writable)
+	if writable {
+		pagesBefore := rf.writableMappingPages
+
+		// ar is guaranteed to be page aligned per memmap.Mappable.
+		rf.writableMappingPages += uint64(ar.Length() / usermem.PageSize)
+
+		if rf.writableMappingPages < pagesBefore {
+			panic(fmt.Sprintf("Overflow while mapping potentially writable pages pointing to a tmpfs file. Before %v, after %v", pagesBefore, rf.writableMappingPages))
+		}
+	}
+
+	return nil
+}
+
+// RemoveMapping implements memmap.Mappable.RemoveMapping.
+func (rf *regularFile) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) {
+	rf.mapsMu.Lock()
+	defer rf.mapsMu.Unlock()
+
+	rf.mappings.RemoveMapping(ms, ar, offset, writable)
+
+	if writable {
+		pagesBefore := rf.writableMappingPages
+
+		// ar is guaranteed to be page aligned per memmap.Mappable.
+		rf.writableMappingPages -= uint64(ar.Length() / usermem.PageSize)
+
+		if rf.writableMappingPages > pagesBefore {
+			panic(fmt.Sprintf("Underflow while unmapping potentially writable pages pointing to a tmpfs file. Before %v, after %v", pagesBefore, rf.writableMappingPages))
+		}
+	}
+}
+
+// CopyMapping implements memmap.Mappable.CopyMapping.
+func (rf *regularFile) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, writable bool) error {
+	return rf.AddMapping(ctx, ms, dstAR, offset, writable)
+}
+
+// Translate implements memmap.Mappable.Translate.
+func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	// Constrain translations to f.attr.Size (rounded up) to prevent
+	// translation to pages that may be concurrently truncated.
+	pgend := fs.OffsetPageEnd(int64(rf.size))
+	var beyondEOF bool
+	if required.End > pgend {
+		if required.Start >= pgend {
+			return nil, &memmap.BusError{io.EOF}
+		}
+		beyondEOF = true
+		required.End = pgend
+	}
+	if optional.End > pgend {
+		optional.End = pgend
+	}
+
+	cerr := rf.data.Fill(ctx, required, optional, rf.memFile, usage.Tmpfs, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
+		// Newly-allocated pages are zeroed, so we don't need to do anything.
+		return dsts.NumBytes(), nil
+	})
+
+	var ts []memmap.Translation
+	var translatedEnd uint64
+	for seg := rf.data.FindSegment(required.Start); seg.Ok() && seg.Start() < required.End; seg, _ = seg.NextNonEmpty() {
+		segMR := seg.Range().Intersect(optional)
+		ts = append(ts, memmap.Translation{
+			Source: segMR,
+			File:   rf.memFile,
+			Offset: seg.FileRangeOf(segMR).Start,
+			Perms:  usermem.AnyAccess,
+		})
+		translatedEnd = segMR.End
+	}
+
+	// Don't return the error returned by f.data.Fill if it occurred outside of
+	// required.
+	if translatedEnd < required.End && cerr != nil {
+		return ts, &memmap.BusError{cerr}
+	}
+	if beyondEOF {
+		return ts, &memmap.BusError{io.EOF}
+	}
+	return ts, nil
+}
+
+// InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
+func (*regularFile) InvalidateUnsavable(context.Context) error {
+	return nil
 }
 
 type regularFileFD struct {
