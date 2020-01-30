@@ -31,6 +31,7 @@
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/eventfd_util.h"
+#include "test/util/fs_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
@@ -54,10 +55,6 @@ ABSL_FLAG(int32_t, socket_fd, -1,
 
 namespace gvisor {
 namespace testing {
-
-// O_LARGEFILE as defined by Linux. glibc tries to be clever by setting it to 0
-// because "it isn't needed", even though Linux can return it via F_GETFL.
-constexpr int kOLargeFile = 00100000;
 
 class FcntlLockTest : public ::testing::Test {
  public:

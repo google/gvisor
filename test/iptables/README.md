@@ -28,7 +28,7 @@ Your test is now runnable with bazel!
 Build the testing Docker container:
 
 ```bash
-$ bazel run //test/iptables/runner -- --norun
+$ bazel run //test/iptables/runner-image -- --norun
 ```
 
 Run an individual test via:

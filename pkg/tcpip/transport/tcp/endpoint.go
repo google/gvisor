@@ -498,6 +498,13 @@ type endpoint struct {
 	// without any data being acked.
 	userTimeout time.Duration
 
+	// deferAccept if non-zero specifies a user specified time during
+	// which the final ACK of a handshake will be dropped provided the
+	// ACK is a bare ACK and carries no data. If the timeout is crossed then
+	// the bare ACK is accepted and the connection is delivered to the
+	// listener.
+	deferAccept time.Duration
+
 	// pendingAccepted is a synchronization primitive used to track number
 	// of connections that are queued up to be delivered to the accepted
 	// channel. We use this to ensure that all goroutines blocked on writing
@@ -1574,6 +1581,15 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.mu.Unlock()
 		return nil
 
+	case tcpip.TCPDeferAcceptOption:
+		e.mu.Lock()
+		if time.Duration(v) > MaxRTO {
+			v = tcpip.TCPDeferAcceptOption(MaxRTO)
+		}
+		e.deferAccept = time.Duration(v)
+		e.mu.Unlock()
+		return nil
+
 	default:
 		return nil
 	}
@@ -1795,6 +1811,12 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 	case *tcpip.TCPLingerTimeoutOption:
 		e.mu.Lock()
 		*o = tcpip.TCPLingerTimeoutOption(e.tcpLingerTimeout)
+		e.mu.Unlock()
+		return nil
+
+	case *tcpip.TCPDeferAcceptOption:
+		e.mu.Lock()
+		*o = tcpip.TCPDeferAcceptOption(e.deferAccept)
 		e.mu.Unlock()
 		return nil
 
@@ -2025,8 +2047,14 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 				// work mutex is available.
 				if e.workMu.TryLock() {
 					e.mu.Lock()
-					e.resetConnectionLocked(tcpip.ErrConnectionAborted)
-					e.notifyProtocolGoroutine(notifyTickleWorker)
+					// We need to double check here to make
+					// sure worker has not transitioned the
+					// endpoint out of a connected state
+					// before trying to send a reset.
+					if e.EndpointState().connected() {
+						e.resetConnectionLocked(tcpip.ErrConnectionAborted)
+						e.notifyProtocolGoroutine(notifyTickleWorker)
+					}
 					e.mu.Unlock()
 					e.workMu.Unlock()
 				} else {
@@ -2149,9 +2177,8 @@ func (e *endpoint) listen(backlog int) *tcpip.Error {
 
 // startAcceptedLoop sets up required state and starts a goroutine with the
 // main loop for accepted connections.
-func (e *endpoint) startAcceptedLoop(waiterQueue *waiter.Queue) {
+func (e *endpoint) startAcceptedLoop() {
 	e.mu.Lock()
-	e.waiterQueue = waiterQueue
 	e.workerRunning = true
 	e.mu.Unlock()
 	wakerInitDone := make(chan struct{})
@@ -2177,7 +2204,6 @@ func (e *endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 	default:
 		return nil, nil, tcpip.ErrWouldBlock
 	}
-
 	return n, n.waiterQueue, nil
 }
 
