@@ -25,6 +25,10 @@ import (
 
 // doSplice implements a blocking splice operation.
 func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonBlocking bool) (int64, error) {
+	if opts.Length < 0 || opts.SrcStart < 0 || opts.DstStart < 0 {
+		return 0, syserror.EINVAL
+	}
+
 	var (
 		total int64
 		n     int64
@@ -82,11 +86,6 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	offsetAddr := args[2].Pointer()
 	count := int64(args[3].SizeT())
 
-	// Don't send a negative number of bytes.
-	if count < 0 {
-		return 0, nil, syserror.EINVAL
-	}
-
 	// Get files.
 	inFile := t.GetFile(inFD)
 	if inFile == nil {
@@ -134,11 +133,6 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		var offset int64
 		if _, err := t.CopyIn(offsetAddr, &offset); err != nil {
 			return 0, nil, err
-		}
-
-		// The offset must be valid.
-		if offset < 0 {
-			return 0, nil, syserror.EINVAL
 		}
 
 		// Do the splice.
@@ -227,6 +221,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			if _, err := t.CopyIn(outOffset, &offset); err != nil {
 				return 0, nil, err
 			}
+
 			// Use the destination offset.
 			opts.DstOffset = true
 			opts.DstStart = offset
@@ -244,6 +239,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			if _, err := t.CopyIn(inOffset, &offset); err != nil {
 				return 0, nil, err
 			}
+
 			// Use the source offset.
 			opts.SrcOffset = true
 			opts.SrcStart = offset
