@@ -57,6 +57,7 @@ go_library(
     imports = ["gvisor.dev/gvisor/pkg/tcpip/buffer"],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/log",
         "//pkg/rand",
         "//pkg/sleep",
         "//pkg/sync",
@@ -90,6 +91,7 @@ go_test(
     tags = ["flaky"],
     deps = [
         ":tcp",
+        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/checker",

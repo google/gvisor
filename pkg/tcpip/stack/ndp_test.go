@@ -413,14 +413,18 @@ func TestDADResolve(t *testing.T) {
 					t.Fatalf("got Proto = %d, want = %d", p.Proto, header.IPv6ProtocolNumber)
 				}
 
-				// Check NDP packet.
+				// Check NDP NS packet.
+				//
+				// As per RFC 4861 section 4.3, a possible option is the Source Link
+				// Layer option, but this option MUST NOT be included when the source
+				// address of the packet is the unspecified address.
 				checker.IPv6(t, p.Pkt.Header.View().ToVectorisedView().First(),
+					checker.SrcAddr(header.IPv6Any),
+					checker.DstAddr(header.SolicitedNodeAddr(addr1)),
 					checker.TTL(header.NDPHopLimit),
 					checker.NDPNS(
 						checker.NDPNSTargetAddress(addr1),
-						checker.NDPNSOptions([]header.NDPOption{
-							header.NDPSourceLinkLayerAddressOption(linkAddr1),
-						}),
+						checker.NDPNSOptions(nil),
 					))
 			}
 		})
@@ -497,7 +501,7 @@ func TestDADFail(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			ndpDisp := ndpDispatcher{
-				dadC: make(chan ndpDADEvent),
+				dadC: make(chan ndpDADEvent, 1),
 			}
 			ndpConfigs := stack.DefaultNDPConfigurations()
 			opts := stack.Options{
@@ -576,7 +580,7 @@ func TestDADFail(t *testing.T) {
 // removed.
 func TestDADStop(t *testing.T) {
 	ndpDisp := ndpDispatcher{
-		dadC: make(chan ndpDADEvent),
+		dadC: make(chan ndpDADEvent, 1),
 	}
 	ndpConfigs := stack.NDPConfigurations{
 		RetransmitTimer:        time.Second,

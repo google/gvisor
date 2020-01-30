@@ -19,9 +19,9 @@ source $(dirname $0)/common.sh
 install_runsc_for_test iptables
 
 # Build the docker image for the test.
-run //test/iptables/runner --norun
+run //test/iptables/runner-image --norun
 
 # TODO(gvisor.dev/issue/170): Also test this on runsc once iptables are better
 # supported
 test //test/iptables:iptables_test "--test_arg=--runtime=runc" \
-  "--test_arg=--image=bazel/test/iptables/runner:runner"
+  "--test_arg=--image=bazel/test/iptables/runner:runner-image"
