@@ -82,14 +82,14 @@ const (
 	El0Sync_undef
 	El0Sync_dbg
 	El0Sync_inv
-	VirtualizationException
 	_NR_INTERRUPTS
 )
 
 // System call vectors.
 const (
-	Syscall   Vector = El0Sync_svc
-	PageFault Vector = El0Sync_da
+	Syscall                 Vector = El0Sync_svc
+	PageFault               Vector = El0Sync_da
+	VirtualizationException Vector = El0Error
 )
 
 // VirtualAddressBits returns the number bits available for virtual addresses.
@@ -368,6 +368,7 @@ func Emit(w io.Writer) {
 
 	fmt.Fprintf(w, "#define PageFault 0x%02x\n", PageFault)
 	fmt.Fprintf(w, "#define Syscall 0x%02x\n", Syscall)
+	fmt.Fprintf(w, "#define VirtualizationException 0x%02x\n", VirtualizationException)
 
 	p := &syscall.PtraceRegs{}
 	fmt.Fprintf(w, "\n// Ptrace registers.\n")
