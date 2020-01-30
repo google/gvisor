@@ -167,8 +167,8 @@ type NDPDispatcher interface {
 	// reason, such as the address being removed). If an error occured
 	// during DAD, err will be set and resolved must be ignored.
 	//
-	// This function is permitted to block indefinitely without interfering
-	// with the stack's operation.
+	// This function is not permitted to block indefinitely. This function
+	// is also not permitted to call into the stack.
 	OnDuplicateAddressDetectionStatus(nicID tcpip.NICID, addr tcpip.Address, resolved bool, err *tcpip.Error)
 
 	// OnDefaultRouterDiscovered will be called when a new default router is
@@ -607,8 +607,8 @@ func (ndp *ndpState) stopDuplicateAddressDetection(addr tcpip.Address) {
 	delete(ndp.dad, addr)
 
 	// Let the integrator know DAD did not resolve.
-	if ndp.nic.stack.ndpDisp != nil {
-		go ndp.nic.stack.ndpDisp.OnDuplicateAddressDetectionStatus(ndp.nic.ID(), addr, false, nil)
+	if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
+		ndpDisp.OnDuplicateAddressDetectionStatus(ndp.nic.ID(), addr, false, nil)
 	}
 }
 
