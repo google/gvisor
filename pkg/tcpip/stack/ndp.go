@@ -538,29 +538,11 @@ func (ndp *ndpState) sendDADPacket(addr tcpip.Address) *tcpip.Error {
 	r := makeRoute(header.IPv6ProtocolNumber, header.IPv6Any, snmc, ndp.nic.linkEP.LinkAddress(), ref, false, false)
 	defer r.Release()
 
-	linkAddr := ndp.nic.linkEP.LinkAddress()
-	isValidLinkAddr := header.IsValidUnicastEthernetAddress(linkAddr)
-	ndpNSSize := header.ICMPv6NeighborSolicitMinimumSize
-	if isValidLinkAddr {
-		// Only include a Source Link Layer Address option if the NIC has a valid
-		// link layer address.
-		//
-		// TODO(b/141011931): Validate a LinkEndpoint's link address (provided by
-		// LinkEndpoint.LinkAddress) before reaching this point.
-		ndpNSSize += header.NDPLinkLayerAddressSize
-	}
-
-	hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + ndpNSSize)
-	pkt := header.ICMPv6(hdr.Prepend(ndpNSSize))
+	hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv6NeighborSolicitMinimumSize)
+	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborSolicitMinimumSize))
 	pkt.SetType(header.ICMPv6NeighborSolicit)
 	ns := header.NDPNeighborSolicit(pkt.NDPPayload())
 	ns.SetTargetAddress(addr)
-
-	if isValidLinkAddr {
-		ns.Options().Serialize(header.NDPOptionsSerializer{
-			header.NDPSourceLinkLayerAddressOption(linkAddr),
-		})
-	}
 	pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 
 	sent := r.Stats().ICMP.V6PacketsSent
