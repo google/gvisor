@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "cc_binary", "cc_library", "default_net_util", "select_system")
+load("//tools:defs.bzl", "cc_binary", "cc_library", "default_net_util", "select_arch", "select_system")
 
 package(
     default_visibility = ["//:sandbox"],
@@ -193,7 +193,10 @@ cc_binary(
 cc_binary(
     name = "32bit_test",
     testonly = 1,
-    srcs = ["32bit.cc"],
+    srcs = select_arch(
+        amd64 = ["32bit.cc"],
+        arm64 = [],
+    ),
     linkstatic = 1,
     deps = [
         "//test/util:memory_util",
@@ -640,7 +643,10 @@ cc_binary(
 cc_binary(
     name = "exec_binary_test",
     testonly = 1,
-    srcs = ["exec_binary.cc"],
+    srcs = select_arch(
+        amd64 = ["exec_binary.cc"],
+        arm64 = [],
+    ),
     linkstatic = 1,
     deps = [
         "//test/util:cleanup",
@@ -812,7 +818,10 @@ cc_binary(
 cc_binary(
     name = "fpsig_fork_test",
     testonly = 1,
-    srcs = ["fpsig_fork.cc"],
+    srcs = select_arch(
+        amd64 = ["fpsig_fork.cc"],
+        arm64 = [],
+    ),
     linkstatic = 1,
     deps = [
         "//test/util:logging",
@@ -826,7 +835,10 @@ cc_binary(
 cc_binary(
     name = "fpsig_nested_test",
     testonly = 1,
-    srcs = ["fpsig_nested.cc"],
+    srcs = select_arch(
+        amd64 = ["fpsig_nested.cc"],
+        arm64 = [],
+    ),
     linkstatic = 1,
     deps = [
         "//test/util:test_main",
@@ -2039,15 +2051,21 @@ cc_binary(
 cc_binary(
     name = "sigiret_test",
     testonly = 1,
-    srcs = ["sigiret.cc"],
+    srcs = select_arch(
+        amd64 = ["sigiret.cc"],
+        arm64 = [],
+    ),
     linkstatic = 1,
     deps = [
+        "@com_google_googletest//:gtest",
         "//test/util:logging",
         "//test/util:signal_util",
         "//test/util:test_util",
         "//test/util:timer_util",
-        "@com_google_googletest//:gtest",
-    ],
+    ] + select_arch(
+        amd64 = [],
+        arm64 = ["//test/util:test_main"],
+    ),
 )
 
 cc_binary(
