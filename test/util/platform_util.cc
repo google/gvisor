@@ -20,10 +20,9 @@ namespace gvisor {
 namespace testing {
 
 PlatformSupport PlatformSupport32Bit() {
-  if (GvisorPlatform() == Platform::kPtrace) {
+  if (GvisorPlatform() == Platform::kPtrace ||
+      GvisorPlatform() == Platform::kKVM) {
     return PlatformSupport::NotSupported;
-  } else if (GvisorPlatform() == Platform::kKVM) {
-    return PlatformSupport::Segfault;
   } else {
     return PlatformSupport::Allowed;
   }
