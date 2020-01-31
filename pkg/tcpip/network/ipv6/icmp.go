@@ -441,23 +441,7 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.
 // ResolveStaticAddress implements stack.LinkAddressResolver.
 func (*protocol) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bool) {
 	if header.IsV6MulticastAddress(addr) {
-		// RFC 2464 Transmission of IPv6 Packets over Ethernet Networks
-		//
-		// 7. Address Mapping -- Multicast
-		//
-		// An IPv6 packet with a multicast destination address DST,
-		// consisting of the sixteen octets DST[1] through DST[16], is
-		// transmitted to the Ethernet multicast address whose first
-		// two octets are the value 3333 hexadecimal and whose last
-		// four octets are the last four octets of DST.
-		return tcpip.LinkAddress([]byte{
-			0x33,
-			0x33,
-			addr[header.IPv6AddressSize-4],
-			addr[header.IPv6AddressSize-3],
-			addr[header.IPv6AddressSize-2],
-			addr[header.IPv6AddressSize-1],
-		}), true
+		return header.EthernetAddressFromMulticastIPv6Address(addr), true
 	}
-	return "", false
+	return tcpip.LinkAddress([]byte(nil)), false
 }
