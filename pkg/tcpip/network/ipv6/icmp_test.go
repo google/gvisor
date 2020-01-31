@@ -270,8 +270,9 @@ func (c *testContext) cleanup() {
 }
 
 type routeArgs struct {
-	src, dst *channel.Endpoint
-	typ      header.ICMPv6Type
+	src, dst       *channel.Endpoint
+	typ            header.ICMPv6Type
+	remoteLinkAddr tcpip.LinkAddress
 }
 
 func routeICMPv6Packet(t *testing.T, args routeArgs, fn func(*testing.T, header.ICMPv6)) {
@@ -292,6 +293,11 @@ func routeICMPv6Packet(t *testing.T, args routeArgs, fn func(*testing.T, header.
 		t.Errorf("unexpected protocol number %d", pi.Proto)
 		return
 	}
+
+	if len(args.remoteLinkAddr) != 0 && args.remoteLinkAddr != pi.Route.RemoteLinkAddress {
+		t.Errorf("got remote link address = %s, want = %s", pi.Route.RemoteLinkAddress, args.remoteLinkAddr)
+	}
+
 	ipv6 := header.IPv6(pi.Pkt.Header.View())
 	transProto := tcpip.TransportProtocolNumber(ipv6.NextHeader())
 	if transProto != header.ICMPv6ProtocolNumber {
@@ -339,7 +345,7 @@ func TestLinkResolution(t *testing.T) {
 				t.Fatalf("ep.Write(_) = _, <non-nil>, %s, want = _, <non-nil>, tcpip.ErrNoLinkAddress", err)
 			}
 			for _, args := range []routeArgs{
-				{src: c.linkEP0, dst: c.linkEP1, typ: header.ICMPv6NeighborSolicit},
+				{src: c.linkEP0, dst: c.linkEP1, typ: header.ICMPv6NeighborSolicit, remoteLinkAddr: header.EthernetAddressFromMulticastIPv6Address(header.SolicitedNodeAddr(lladdr1))},
 				{src: c.linkEP1, dst: c.linkEP0, typ: header.ICMPv6NeighborAdvert},
 			} {
 				routeICMPv6Packet(t, args, func(t *testing.T, icmpv6 header.ICMPv6) {

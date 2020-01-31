@@ -408,10 +408,14 @@ func (*protocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 // LinkAddressRequest implements stack.LinkAddressResolver.
 func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.LinkEndpoint) *tcpip.Error {
 	snaddr := header.SolicitedNodeAddr(addr)
+
+	// TODO(b/148672031): Use stack.FindRoute instead of manually creating the
+	// route here. Note, we would need the nicID to do this properly so the right
+	// NIC (associated to linkEP) is used to send the NDP NS message.
 	r := &stack.Route{
 		LocalAddress:      localAddr,
 		RemoteAddress:     snaddr,
-		RemoteLinkAddress: broadcastMAC,
+		RemoteLinkAddress: header.EthernetAddressFromMulticastIPv6Address(snaddr),
 	}
 	hdr := buffer.NewPrependable(int(linkEP.MaxHeaderLength()) + header.IPv6MinimumSize + header.ICMPv6NeighborAdvertSize)
 	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborAdvertSize))
