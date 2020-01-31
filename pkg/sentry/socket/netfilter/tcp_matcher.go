@@ -28,18 +28,18 @@ import (
 const matcherNameTCP = "tcp"
 
 func init() {
-	registerMatchMarshaler(tcpMarshaler{})
+	registerMatchMaker(tcpMarshaler{})
 }
 
-// tcpMarshaler implements matchMarshaler for TCP matching.
+// tcpMarshaler implements matchMaker for TCP matching.
 type tcpMarshaler struct{}
 
-// name implements matchMarshaler.name.
+// name implements matchMaker.name.
 func (tcpMarshaler) name() string {
 	return matcherNameTCP
 }
 
-// marshal implements matchMarshaler.marshal.
+// marshal implements matchMaker.marshal.
 func (tcpMarshaler) marshal(mr iptables.Matcher) []byte {
 	matcher := mr.(*TCPMatcher)
 	xttcp := linux.XTTCP{
@@ -52,7 +52,7 @@ func (tcpMarshaler) marshal(mr iptables.Matcher) []byte {
 	return marshalEntryMatch(matcherNameTCP, binary.Marshal(buf, usermem.ByteOrder, xttcp))
 }
 
-// unmarshal implements matchMarshaler.unmarshal.
+// unmarshal implements matchMaker.unmarshal.
 func (tcpMarshaler) unmarshal(buf []byte, filter iptables.IPHeaderFilter) (iptables.Matcher, error) {
 	if len(buf) < linux.SizeOfXTTCP {
 		return nil, fmt.Errorf("buf has insufficient size for TCP match: %d", len(buf))

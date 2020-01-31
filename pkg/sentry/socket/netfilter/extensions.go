@@ -32,8 +32,8 @@ import (
 // - Proto
 // - Family
 
-// matchMarshaler knows how to (un)marshal the matcher named name().
-type matchMarshaler interface {
+// matchMaker knows how to (un)marshal the matcher named name().
+type matchMaker interface {
 	// name is the matcher name as stored in the xt_entry_match struct.
 	name() string
 
@@ -45,19 +45,19 @@ type matchMarshaler interface {
 	unmarshal(buf []byte, filter iptables.IPHeaderFilter) (iptables.Matcher, error)
 }
 
-var matchMarshalers = map[string]matchMarshaler{}
+var matchMakers = map[string]matchMaker{}
 
-// registerMatchMarshaler should be called by match extensions to register them
+// registermatchMaker should be called by match extensions to register them
 // with the netfilter package.
-func registerMatchMarshaler(mm matchMarshaler) {
-	if _, ok := matchMarshalers[mm.name()]; ok {
+func registerMatchMaker(mm matchMaker) {
+	if _, ok := matchMakers[mm.name()]; ok {
 		panic(fmt.Sprintf("Multiple matches registered with name %q.", mm.name()))
 	}
-	matchMarshalers[mm.name()] = mm
+	matchMakers[mm.name()] = mm
 }
 
 func marshalMatcher(matcher iptables.Matcher) []byte {
-	matchMaker, ok := matchMarshalers[matcher.Name()]
+	matchMaker, ok := matchMakers[matcher.Name()]
 	if !ok {
 		panic(fmt.Errorf("Unknown matcher of type %T.", matcher))
 	}
@@ -85,7 +85,7 @@ func marshalEntryMatch(name string, data []byte) []byte {
 }
 
 func unmarshalMatcher(match linux.XTEntryMatch, filter iptables.IPHeaderFilter, buf []byte) (iptables.Matcher, error) {
-	matchMaker, ok := matchMarshalers[match.Name.String()]
+	matchMaker, ok := matchMakers[match.Name.String()]
 	if !ok {
 		return nil, fmt.Errorf("unsupported matcher with name %q", match.Name.String())
 	}

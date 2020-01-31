@@ -28,18 +28,18 @@ import (
 const matcherNameUDP = "udp"
 
 func init() {
-	registerMatchMarshaler(udpMarshaler{})
+	registerMatchMaker(udpMarshaler{})
 }
 
-// udpMarshaler implements matchMarshaler for UDP matching.
+// udpMarshaler implements matchMaker for UDP matching.
 type udpMarshaler struct{}
 
-// name implements matchMarshaler.name.
+// name implements matchMaker.name.
 func (udpMarshaler) name() string {
 	return matcherNameUDP
 }
 
-// marshal implements matchMarshaler.marshal.
+// marshal implements matchMaker.marshal.
 func (udpMarshaler) marshal(mr iptables.Matcher) []byte {
 	matcher := mr.(*UDPMatcher)
 	xtudp := linux.XTUDP{
@@ -52,7 +52,7 @@ func (udpMarshaler) marshal(mr iptables.Matcher) []byte {
 	return marshalEntryMatch(matcherNameUDP, binary.Marshal(buf, usermem.ByteOrder, xtudp))
 }
 
-// unmarshal implements matchMarshaler.unmarshal.
+// unmarshal implements matchMaker.unmarshal.
 func (udpMarshaler) unmarshal(buf []byte, filter iptables.IPHeaderFilter) (iptables.Matcher, error) {
 	if len(buf) < linux.SizeOfXTUDP {
 		return nil, fmt.Errorf("buf has insufficient size for UDP match: %d", len(buf))
