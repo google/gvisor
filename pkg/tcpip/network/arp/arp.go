@@ -178,24 +178,9 @@ func (*protocol) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bo
 		return broadcastMAC, true
 	}
 	if header.IsV4MulticastAddress(addr) {
-		// RFC 1112 Host Extensions for IP Multicasting
-		//
-		// 6.4. Extensions to an Ethernet Local Network Module:
-		//
-		// An IP host group address is mapped to an Ethernet multicast
-		// address by placing the low-order 23-bits of the IP address
-		// into the low-order 23 bits of the Ethernet multicast address
-		// 01-00-5E-00-00-00 (hex).
-		return tcpip.LinkAddress([]byte{
-			0x01,
-			0x00,
-			0x5e,
-			addr[header.IPv4AddressSize-3] & 0x7f,
-			addr[header.IPv4AddressSize-2],
-			addr[header.IPv4AddressSize-1],
-		}), true
+		return header.EthernetAddressFromMulticastIPv4Address(addr), true
 	}
-	return "", false
+	return tcpip.LinkAddress([]byte(nil)), false
 }
 
 // SetOption implements NetworkProtocol.
