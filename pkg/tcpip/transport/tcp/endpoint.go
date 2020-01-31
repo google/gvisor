@@ -829,9 +829,13 @@ func (e *endpoint) closeNoShutdown() {
 	// Either perform the local cleanup or kick the worker to make sure it
 	// knows it needs to cleanup.
 	tcpip.AddDanglingEndpoint(e)
-	if !e.workerRunning {
+	switch e.EndpointState() {
+	case StateInitial, StateBound:
 		e.cleanupLocked()
-	} else {
+		e.setEndpointState(StateClose)
+	case StateError, StateClose:
+		// do nothing.
+	default:
 		e.workerCleanup = true
 		e.notifyProtocolGoroutine(notifyClose)
 	}
