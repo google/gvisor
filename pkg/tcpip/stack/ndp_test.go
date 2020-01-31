@@ -336,6 +336,7 @@ func TestDADResolve(t *testing.T) {
 			opts.NDPConfigs.DupAddrDetectTransmits = test.dupAddrDetectTransmits
 
 			e := channel.New(int(test.dupAddrDetectTransmits), 1280, linkAddr1)
+			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			s := stack.New(opts)
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -413,6 +414,12 @@ func TestDADResolve(t *testing.T) {
 					t.Fatalf("got Proto = %d, want = %d", p.Proto, header.IPv6ProtocolNumber)
 				}
 
+				// Make sure the right remote link address is used.
+				snmc := header.SolicitedNodeAddr(addr1)
+				if want := header.EthernetAddressFromMulticastIPv6Address(snmc); p.Route.RemoteLinkAddress != want {
+					t.Errorf("got remote link address = %s, want = %s", p.Route.RemoteLinkAddress, want)
+				}
+
 				// Check NDP NS packet.
 				//
 				// As per RFC 4861 section 4.3, a possible option is the Source Link
@@ -420,7 +427,7 @@ func TestDADResolve(t *testing.T) {
 				// address of the packet is the unspecified address.
 				checker.IPv6(t, p.Pkt.Header.View().ToVectorisedView().First(),
 					checker.SrcAddr(header.IPv6Any),
-					checker.DstAddr(header.SolicitedNodeAddr(addr1)),
+					checker.DstAddr(snmc),
 					checker.TTL(header.NDPHopLimit),
 					checker.NDPNS(
 						checker.NDPNSTargetAddress(addr1),
@@ -3292,6 +3299,7 @@ func TestRouterSolicitation(t *testing.T) {
 			t.Run(test.name, func(t *testing.T) {
 				t.Parallel()
 				e := channel.New(int(test.maxRtrSolicit), 1280, linkAddr1)
+				e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 				waitForPkt := func(timeout time.Duration) {
 					t.Helper()
 					ctx, _ := context.WithTimeout(context.Background(), timeout)
@@ -3304,6 +3312,12 @@ func TestRouterSolicitation(t *testing.T) {
 					if p.Proto != header.IPv6ProtocolNumber {
 						t.Fatalf("got Proto = %d, want = %d", p.Proto, header.IPv6ProtocolNumber)
 					}
+
+					// Make sure the right remote link address is used.
+					if want := header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllRoutersMulticastAddress); p.Route.RemoteLinkAddress != want {
+						t.Errorf("got remote link address = %s, want = %s", p.Route.RemoteLinkAddress, want)
+					}
+
 					checker.IPv6(t,
 						p.Pkt.Header.View(),
 						checker.SrcAddr(header.IPv6Any),
