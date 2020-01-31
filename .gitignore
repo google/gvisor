@@ -1,4 +1,5 @@
 bin/
+bazel_user_root/
 public/
 resources/
 node_modules/
