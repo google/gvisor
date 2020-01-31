@@ -18,6 +18,7 @@ cc_test = _cc_test
 cc_toolchain = "@bazel_tools//tools/cpp:current_cc_toolchain"
 go_image = _go_image
 go_embed_data = _go_embed_data
+gtest = "@com_google_googletest//:gtest"
 loopback = "//tools/build:loopback"
 proto_library = native.proto_library
 pkg_deb = _pkg_deb

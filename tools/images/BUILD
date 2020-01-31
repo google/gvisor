@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "cc_binary")
+load("//tools:defs.bzl", "cc_binary", "gtest")
 load("//tools/images:defs.bzl", "vm_image", "vm_test")
 
 package(
@@ -32,8 +32,8 @@ cc_binary(
     srcs = ["test.cc"],
     linkstatic = 1,
     deps = [
+        gtest,
         "//test/util:test_main",
-        "@com_google_googletest//:gtest",
     ],
 )
 
