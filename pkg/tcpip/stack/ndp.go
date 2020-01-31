@@ -538,6 +538,14 @@ func (ndp *ndpState) sendDADPacket(addr tcpip.Address) *tcpip.Error {
 	r := makeRoute(header.IPv6ProtocolNumber, header.IPv6Any, snmc, ndp.nic.linkEP.LinkAddress(), ref, false, false)
 	defer r.Release()
 
+	// Route should resolve immediately since snmc is a multicast address so a
+	// remote link address can be calculated without a resolution process.
+	if c, err := r.Resolve(nil); err != nil {
+		log.Fatalf("ndp: error when resolving route to send NDP NS for DAD (%s -> %s on NIC(%d)): %s", header.IPv6Any, snmc, ndp.nic.ID(), err)
+	} else if c != nil {
+		log.Fatalf("ndp: route resolution not immediate for route to send NDP NS for DAD (%s -> %s on NIC(%d))", header.IPv6Any, snmc, ndp.nic.ID())
+	}
+
 	hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv6NeighborSolicitMinimumSize)
 	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborSolicitMinimumSize))
 	pkt.SetType(header.ICMPv6NeighborSolicit)
@@ -1196,6 +1204,15 @@ func (ndp *ndpState) startSolicitingRouters() {
 		ref := ndp.nic.getRefOrCreateTemp(header.IPv6ProtocolNumber, header.IPv6Any, NeverPrimaryEndpoint, forceSpoofing)
 		r := makeRoute(header.IPv6ProtocolNumber, header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.nic.linkEP.LinkAddress(), ref, false, false)
 		defer r.Release()
+
+		// Route should resolve immediately since
+		// header.IPv6AllRoutersMulticastAddress is a multicast address so a
+		// remote link address can be calculated without a resolution process.
+		if c, err := r.Resolve(nil); err != nil {
+			log.Fatalf("ndp: error when resolving route to send NDP RS (%s -> %s on NIC(%d)): %s", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.nic.ID(), err)
+		} else if c != nil {
+			log.Fatalf("ndp: route resolution not immediate for route to send NDP RS (%s -> %s on NIC(%d))", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.nic.ID())
+		}
 
 		payloadSize := header.ICMPv6HeaderSize + header.NDPRSMinimumSize
 		hdr := buffer.NewPrependable(header.IPv6MinimumSize + payloadSize)

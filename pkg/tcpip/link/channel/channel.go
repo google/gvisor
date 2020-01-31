@@ -30,15 +30,16 @@ type PacketInfo struct {
 	Pkt   tcpip.PacketBuffer
 	Proto tcpip.NetworkProtocolNumber
 	GSO   *stack.GSO
+	Route stack.Route
 }
 
 // Endpoint is link layer endpoint that stores outbound packets in a channel
 // and allows injection of inbound packets.
 type Endpoint struct {
-	dispatcher stack.NetworkDispatcher
-	mtu        uint32
-	linkAddr   tcpip.LinkAddress
-	GSO        bool
+	dispatcher         stack.NetworkDispatcher
+	mtu                uint32
+	linkAddr           tcpip.LinkAddress
+	LinkEPCapabilities stack.LinkEndpointCapabilities
 
 	// c is where outbound packets are queued.
 	c chan PacketInfo
@@ -122,11 +123,7 @@ func (e *Endpoint) MTU() uint32 {
 
 // Capabilities implements stack.LinkEndpoint.Capabilities.
 func (e *Endpoint) Capabilities() stack.LinkEndpointCapabilities {
-	caps := stack.LinkEndpointCapabilities(0)
-	if e.GSO {
-		caps |= stack.CapabilityHardwareGSO
-	}
-	return caps
+	return e.LinkEPCapabilities
 }
 
 // GSOMaxSize returns the maximum GSO packet size.
@@ -146,11 +143,16 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 }
 
 // WritePacket stores outbound packets into the channel.
-func (e *Endpoint) WritePacket(_ *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) *tcpip.Error {
+func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) *tcpip.Error {
+	// Clone r then release its resource so we only get the relevant fields from
+	// stack.Route without holding a reference to a NIC's endpoint.
+	route := r.Clone()
+	route.Release()
 	p := PacketInfo{
 		Pkt:   pkt,
 		Proto: protocol,
 		GSO:   gso,
+		Route: route,
 	}
 
 	select {
@@ -162,7 +164,11 @@ func (e *Endpoint) WritePacket(_ *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 }
 
 // WritePackets stores outbound packets into the channel.
-func (e *Endpoint) WritePackets(_ *stack.Route, gso *stack.GSO, pkts []tcpip.PacketBuffer, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (e *Endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []tcpip.PacketBuffer, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+	// Clone r then release its resource so we only get the relevant fields from
+	// stack.Route without holding a reference to a NIC's endpoint.
+	route := r.Clone()
+	route.Release()
 	payloadView := pkts[0].Data.ToView()
 	n := 0
 packetLoop:
@@ -176,6 +182,7 @@ packetLoop:
 			},
 			Proto: protocol,
 			GSO:   gso,
+			Route: route,
 		}
 
 		select {
