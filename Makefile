@@ -83,26 +83,24 @@ node_modules: package.json package-lock.json
 	  --entrypoint 'npm' \
 	  node ci
 
-upstream/gvisor/bazel-bin/runsc/linux_amd64_pure_stripped/runsc: upstream-gvisor
-	mkdir -p /tmp/gvisor-website/build_output
+bin/generate-syscall-docs: $(GEN_SOURCE)
+	mkdir -p bin/
+	go build -o bin/generate-syscall-docs gvisor.dev/website/cmd/generate-syscall-docs
+
+compatibility-docs: bin/generate-syscall-docs
+	# bazel_user_root is used for caching bazel packages.
+	mkdir -p bazel_user_root/
 	docker run \
 	  --rm \
 	  -v $(PWD)/upstream/gvisor:/workspace \
-	  -v /tmp/gvisor-website/build_output:/tmp/gvisor-website/build_output \
+	  -v $(PWD)/bazel_user_root:/bazel_user_root \
 	  -w /workspace \
 	  --entrypoint 'sh' \
 	  l.gcr.io/google/bazel \
 	  -c '\
 		groupadd --gid $(shell id -g) $(shell id -gn) && \
 		useradd --uid $(shell id -u) --gid $(shell id -g) -ms /bin/bash $(USER) && \
-		su $(USER) -c "bazel --output_user_root=/tmp/gvisor-website/build_output build //runsc"'
-
-bin/generate-syscall-docs: $(GEN_SOURCE)
-	mkdir -p bin/
-	go build -o bin/generate-syscall-docs gvisor.dev/website/cmd/generate-syscall-docs
-
-compatibility-docs: bin/generate-syscall-docs upstream/gvisor/bazel-bin/runsc/linux_amd64_pure_stripped/runsc
-	./upstream/gvisor/bazel-bin/runsc/linux_amd64_pure_stripped/runsc help syscalls -o json | ./bin/generate-syscall-docs -out ./content/docs/user_guide/compatibility/
+		su $(USER) -c "bazel --output_user_root=/bazel_user_root run //runsc -- help syscalls -o json"' | ./bin/generate-syscall-docs -out ./content/docs/user_guide/compatibility/
 .PHONY: compatibility-docs
 
 check: check-markdown check-html
@@ -173,5 +171,8 @@ htmlproofer-docker-image:
 .PHONY: htmlproofer-docker-image
 
 clean:
-	rm -rf public/ resources/ node_modules/ upstream/ content/docs/user_guide/compatibility/linux/
+ifneq ("$(wildcard bazel_user_root/)","")
+	chmod -R +w bazel_user_root/
+endif
+	rm -rf bazel_user_root/ public/ resources/ node_modules/ upstream/ content/docs/user_guide/compatibility/linux/
 .PHONY: clean
