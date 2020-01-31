@@ -30,10 +30,12 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -152,6 +154,9 @@ type inode struct {
 	// Only meaningful for device special files.
 	rdevMajor uint32
 	rdevMinor uint32
+
+	// Advisory file locks, which lock at the inode level.
+	locks lock.FileLocks
 
 	impl interface{} // immutable
 }
@@ -350,6 +355,44 @@ func (i *inode) setStat(stat linux.Statx) error {
 	}
 	i.mu.Unlock()
 	return nil
+}
+
+// TODO(gvisor.dev/issue/1480): support file locking for file types other than regular.
+func (i *inode) lockBSD(uid fslock.UniqueID, t fslock.LockType, block fslock.Blocker) error {
+	switch i.impl.(type) {
+	case *regularFile:
+		return i.locks.LockBSD(uid, t, block)
+	}
+	return syserror.EBADF
+}
+
+// TODO(gvisor.dev/issue/1480): support file locking for file types other than regular.
+func (i *inode) unlockBSD(uid fslock.UniqueID) error {
+	switch i.impl.(type) {
+	case *regularFile:
+		i.locks.UnlockBSD(uid)
+		return nil
+	}
+	return syserror.EBADF
+}
+
+// TODO(gvisor.dev/issue/1480): support file locking for file types other than regular.
+func (i *inode) lockPOSIX(uid fslock.UniqueID, t fslock.LockType, rng fslock.LockRange, block fslock.Blocker) error {
+	switch i.impl.(type) {
+	case *regularFile:
+		return i.locks.LockPOSIX(uid, t, rng, block)
+	}
+	return syserror.EBADF
+}
+
+// TODO(gvisor.dev/issue/1480): support file locking for file types other than regular.
+func (i *inode) unlockPOSIX(uid fslock.UniqueID, rng fslock.LockRange) error {
+	switch i.impl.(type) {
+	case *regularFile:
+		i.locks.UnlockPOSIX(uid, rng)
+		return nil
+	}
+	return syserror.EBADF
 }
 
 // allocatedBlocksForSize returns the number of 512B blocks needed to
