@@ -80,7 +80,7 @@ type VirtualFilesystem struct {
 	mountpoints map[*Dentry]map[*Mount]struct{}
 
 	// anonMount is a Mount, not included in mounts or mountpoints,
-	// representing an anonFilesystem. anonMount is used to back
+	// representing an AnonFilesystem. anonMount is used to back
 	// VirtualDentries returned by VirtualFilesystem.NewAnonVirtualDentry().
 	// anonMount is immutable.
 	//
@@ -128,7 +128,7 @@ func New() *VirtualFilesystem {
 	if err != nil {
 		panic(fmt.Sprintf("VirtualFilesystem.GetAnonBlockDevMinor() failed during VirtualFilesystem construction: %v", err))
 	}
-	anonfs := anonFilesystem{
+	anonfs := AnonFilesystem{
 		devMinor: anonfsDevMinor,
 	}
 	anonfs.vfsfs.Init(vfs, &anonfs)

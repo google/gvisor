@@ -165,6 +165,8 @@ type dirInfo struct {
 	bufp int    // location of next record in buf.
 }
 
+// LINT.IfChange
+
 // isBlockError unwraps os errors and checks if they are caused by EAGAIN or
 // EWOULDBLOCK. This is so they can be transformed into syserror.ErrWouldBlock.
 func isBlockError(err error) bool {
@@ -176,6 +178,8 @@ func isBlockError(err error) bool {
 	}
 	return false
 }
+
+// LINT.ThenChange(../../fsimpl/host/util.go)
 
 func hostEffectiveKIDs() (uint32, []uint32, error) {
 	gids, err := os.Getgroups()

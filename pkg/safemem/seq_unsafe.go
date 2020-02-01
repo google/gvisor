@@ -308,9 +308,8 @@ func IovecsFromBlockSeq(bs BlockSeq) []syscall.Iovec {
 			Base: &b.ToSlice()[0],
 			Len:  uint64(b.Len()),
 		})
-		// We don't need to care about b.NeedSafecopy(), because the host
-		// kernel will handle such address ranges just fine (by returning
-		// EFAULT).
+		// We don't need to care about b.NeedSafecopy(), because the host kernel
+		// will handle such address ranges just fine (by returning EFAULT).
 	}
 	return iovs
 }

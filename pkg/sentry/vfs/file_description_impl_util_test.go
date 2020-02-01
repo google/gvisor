@@ -80,7 +80,7 @@ type testFD struct {
 }
 
 func newTestFD(vfsObj *VirtualFilesystem, statusFlags uint32, data DynamicBytesSource) *FileDescription {
-	vd := vfsObj.NewAnonVirtualDentry("genCountFD")
+	vd := vfsObj.NewDefaultAnonVirtualDentry("genCountFD")
 	defer vd.DecRef()
 	var fd testFD
 	fd.vfsfd.Init(&fd, statusFlags, vd.Mount(), vd.Dentry(), &FileDescriptionOptions{})

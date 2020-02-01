@@ -93,7 +93,7 @@ type epollInterest struct {
 // NewEpollInstanceFD returns a FileDescription representing a new epoll
 // instance. A reference is taken on the returned FileDescription.
 func (vfs *VirtualFilesystem) NewEpollInstanceFD() (*FileDescription, error) {
-	vd := vfs.NewAnonVirtualDentry("[eventpoll]")
+	vd := vfs.NewDefaultAnonVirtualDentry("[eventpoll]")
 	defer vd.DecRef()
 	ep := &EpollInstance{
 		interest: make(map[epollInterestKey]*epollInterest),
