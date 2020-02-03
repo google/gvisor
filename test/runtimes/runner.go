@@ -20,7 +20,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"sort"
 	"strings"
@@ -101,17 +100,15 @@ func getTests(d dockerutil.Docker, blacklist map[string]struct{}) ([]testing.Int
 	// shard.
 	tests := strings.Fields(list)
 	sort.Strings(tests)
-	begin, end, err := testutil.TestBoundsForShard(len(tests))
+	indices, err := testutil.TestIndicesForShard(len(tests))
 	if err != nil {
 		return nil, fmt.Errorf("TestsForShard() failed: %v", err)
 	}
-	log.Printf("Got bounds [%d:%d) for shard out of %d total tests", begin, end, len(tests))
-	tests = tests[begin:end]
 
 	var itests []testing.InternalTest
-	for _, tc := range tests {
+	for _, tci := range indices {
 		// Capture tc in this scope.
-		tc := tc
+		tc := tests[tci]
 		itests = append(itests, testing.InternalTest{
 			Name: tc,
 			F: func(t *testing.T) {

@@ -434,43 +434,40 @@ func IsStatic(filename string) (bool, error) {
 	return true, nil
 }
 
-// TestBoundsForShard calculates the beginning and end indices for the test
-// based on the TEST_SHARD_INDEX and TEST_TOTAL_SHARDS environment vars. The
-// returned ints are the beginning (inclusive) and end (exclusive) of the
-// subslice corresponding to the shard. If either of the env vars are not
-// present, then the function will return bounds that include all tests. If
-// there are more shards than there are tests, then the returned list may be
-// empty.
-func TestBoundsForShard(numTests int) (int, int, error) {
+// TestIndicesForShard returns indices for this test shard based on the
+// TEST_SHARD_INDEX and TEST_TOTAL_SHARDS environment vars.
+//
+// If either of the env vars are not present, then the function will return all
+// tests. If there are more shards than there are tests, then the returned list
+// may be empty.
+func TestIndicesForShard(numTests int) ([]int, error) {
 	var (
-		begin = 0
-		end   = numTests
+		shardIndex = 0
+		shardTotal = 1
 	)
-	indexStr, totalStr := os.Getenv("TEST_SHARD_INDEX"), os.Getenv("TEST_TOTAL_SHARDS")
-	if indexStr == "" || totalStr == "" {
-		return begin, end, nil
-	}
 
-	// Parse index and total to ints.
-	shardIndex, err := strconv.Atoi(indexStr)
-	if err != nil {
-		return 0, 0, fmt.Errorf("invalid TEST_SHARD_INDEX %q: %v", indexStr, err)
-	}
-	shardTotal, err := strconv.Atoi(totalStr)
-	if err != nil {
-		return 0, 0, fmt.Errorf("invalid TEST_TOTAL_SHARDS %q: %v", totalStr, err)
+	indexStr, totalStr := os.Getenv("TEST_SHARD_INDEX"), os.Getenv("TEST_TOTAL_SHARDS")
+	if indexStr != "" && totalStr != "" {
+		// Parse index and total to ints.
+		var err error
+		shardIndex, err = strconv.Atoi(indexStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid TEST_SHARD_INDEX %q: %v", indexStr, err)
+		}
+		shardTotal, err = strconv.Atoi(totalStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid TEST_TOTAL_SHARDS %q: %v", totalStr, err)
+		}
 	}
 
 	// Calculate!
-	shardSize := int(math.Ceil(float64(numTests) / float64(shardTotal)))
-	begin = shardIndex * shardSize
-	end = ((shardIndex + 1) * shardSize)
-	if begin > numTests {
-		// Nothing to run.
-		return 0, 0, nil
+	var indices []int
+	numBlocks := int(math.Ceil(float64(numTests) / float64(shardTotal)))
+	for i := 0; i < numBlocks; i++ {
+		pick := i*shardTotal + shardIndex
+		if pick < numTests {
+			indices = append(indices, pick)
+		}
 	}
-	if end > numTests {
-		end = numTests
-	}
-	return begin, end, nil
+	return indices, nil
 }
