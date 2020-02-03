@@ -325,6 +325,12 @@ TEST_P(SocketInetLoopbackTest, TCPListenClose) {
   TestAddress const& listener = param.listener;
   TestAddress const& connector = param.connector;
 
+  constexpr int kAcceptCount = 32;
+  constexpr int kBacklog = kAcceptCount * 2;
+  constexpr int kFDs = 128;
+  constexpr int kThreadCount = 4;
+  constexpr int kFDsPerThread = kFDs / kThreadCount;
+
   // Create the listening socket.
   FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
       Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
@@ -332,7 +338,7 @@ TEST_P(SocketInetLoopbackTest, TCPListenClose) {
   ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
                    listener.addr_len),
               SyscallSucceeds());
-  ASSERT_THAT(listen(listen_fd.get(), 1001), SyscallSucceeds());
+  ASSERT_THAT(listen(listen_fd.get(), kBacklog), SyscallSucceeds());
 
   // Get the port bound by the listening socket.
   socklen_t addrlen = listener.addr_len;
@@ -345,9 +351,6 @@ TEST_P(SocketInetLoopbackTest, TCPListenClose) {
   DisableSave ds;  // Too many system calls.
   sockaddr_storage conn_addr = connector.addr;
   ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
-  constexpr int kFDs = 2048;
-  constexpr int kThreadCount = 4;
-  constexpr int kFDsPerThread = kFDs / kThreadCount;
   FileDescriptor clients[kFDs];
   std::unique_ptr<ScopedThread> threads[kThreadCount];
   for (int i = 0; i < kFDs; i++) {
@@ -371,7 +374,7 @@ TEST_P(SocketInetLoopbackTest, TCPListenClose) {
   for (int i = 0; i < kThreadCount; i++) {
     threads[i]->Join();
   }
-  for (int i = 0; i < 32; i++) {
+  for (int i = 0; i < kAcceptCount; i++) {
     auto accepted =
         ASSERT_NO_ERRNO_AND_VALUE(Accept(listen_fd.get(), nullptr, nullptr));
   }
