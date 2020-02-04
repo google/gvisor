@@ -388,6 +388,33 @@ func TestBasic(t *testing.T) {
 				},
 			},
 		},
+		{
+			ruleSets: []RuleSet{
+				{
+					Rules: SyscallRules{
+						1: []Rule{
+							{
+								RuleIP: AllowValue(0x7aabbccdd),
+							},
+						},
+					},
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+			defaultAction: linux.SECCOMP_RET_TRAP,
+			specs: []spec{
+				{
+					desc: "IP: Syscall instruction pointer allowed",
+					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{}, instructionPointer: 0x7aabbccdd},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "IP: Syscall instruction pointer disallowed",
+					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{}, instructionPointer: 0x711223344},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+			},
+		},
 	} {
 		instrs, err := BuildProgram(test.ruleSets, test.defaultAction)
 		if err != nil {
