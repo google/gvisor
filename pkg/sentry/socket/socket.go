@@ -569,13 +569,20 @@ func InterfaceIoctl(ctx context.Context, io usermem.IO, arg int, ifr linux.IFReq
 
 	case syscall.SIOCGIFHWADDR:
 		// Copy the hardware address out.
-		ifr.Data[0] = 6 // IEEE802.2 arp type.
-		ifr.Data[1] = 0
+		//
+		// Refer: https://linux.die.net/man/7/netdevice
+		// SIOCGIFHWADDR, SIOCSIFHWADDR
+		//
+		// Get or set the hardware address of a device using
+		// ifr_hwaddr. The hardware address is specified in a struct
+		// sockaddr. sa_family contains the ARPHRD_* device type,
+		// sa_data the L2 hardware address starting from byte 0. Setting
+		// the hardware address is a privileged operation.
+		usermem.ByteOrder.PutUint16(ifr.Data[:], iface.DeviceType)
 		n := copy(ifr.Data[2:], iface.Addr)
 		for i := 2 + n; i < len(ifr.Data); i++ {
 			ifr.Data[i] = 0 // Clear padding.
 		}
-		usermem.ByteOrder.PutUint16(ifr.Data[:2], uint16(n))
 
 	case syscall.SIOCGIFFLAGS:
 		// Drop the flags that don't fit in the size that we need to
@@ -634,6 +641,13 @@ func InterfaceIoctl(ctx context.Context, io usermem.IO, arg int, ifr linux.IFReq
 			binary.BigEndian.PutUint32(ifr.Data[4:8], mask)
 			break
 		}
+	case linux.SIOCETHTOOL:
+		// Stubbed out for now, Ideally we should implement the required
+		// sub-commands for ETHTOOL
+		//
+		// See:
+		// https://github.com/torvalds/linux/blob/aa0c9086b40c17a7ad94425b3b70dd1fdd7497bf/net/core/dev_ioctl.c
+		return linux.IFReq{}, inet.Interface{}, syserr.ErrEndpointOperation
 
 	default:
 		// Not a valid call.

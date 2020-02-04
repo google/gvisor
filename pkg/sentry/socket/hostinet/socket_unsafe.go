@@ -67,6 +67,39 @@ func ioctl(ctx context.Context, fd int, io usermem.IO, args arch.SyscallArgument
 		})
 		return 0, err
 
+	case syscall.SIOCGIFFLAGS,
+		syscall.SIOCGIFADDR,
+		syscall.SIOCGIFBRDADDR,
+		syscall.SIOCGIFDSTADDR,
+		syscall.SIOCGIFHWADDR,
+		syscall.SIOCGIFINDEX,
+		syscall.SIOCGIFMAP,
+		syscall.SIOCGIFMETRIC,
+		syscall.SIOCGIFMTU,
+		syscall.SIOCGIFNAME,
+		syscall.SIOCGIFNETMASK,
+		syscall.SIOCGIFTXQLEN:
+		var ifr linux.IFReq
+		if _, err := usermem.CopyObjectIn(ctx, io, args[2].Pointer(), &ifr, usermem.IOOpts{
+			AddressSpaceActive: true,
+		}); err != nil {
+			return 0, err
+		}
+
+		var e *syserr.Error
+		if ifr, _, e = socket.InterfaceIoctl(ctx, io, int(cmd), ifr); e != nil {
+			return 0, e.ToError()
+		}
+
+		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), &ifr, usermem.IOOpts{
+			AddressSpaceActive: true,
+		})
+
+		return 0, err
+
+	case syscall.SIOCGIFCONF:
+		return 0, socket.IfconfIoctl(ctx, io, args[2].Pointer())
+
 	default:
 		return 0, syserror.ENOTTY
 	}
