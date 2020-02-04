@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"reflect"
+	"syscall"
 	"unsafe"
 )
 
@@ -296,4 +297,20 @@ func ZeroSeq(dsts BlockSeq) (uint64, error) {
 		dsts = dsts.DropFirst(n)
 	}
 	return done, nil
+}
+
+// IovecsFromBlockSeq returns a []syscall.Iovec representing seq.
+func IovecsFromBlockSeq(bs BlockSeq) []syscall.Iovec {
+	iovs := make([]syscall.Iovec, 0, bs.NumBlocks())
+	for ; !bs.IsEmpty(); bs = bs.Tail() {
+		b := bs.Head()
+		iovs = append(iovs, syscall.Iovec{
+			Base: &b.ToSlice()[0],
+			Len:  uint64(b.Len()),
+		})
+		// We don't need to care about b.NeedSafecopy(), because the host
+		// kernel will handle such address ranges just fine (by returning
+		// EFAULT).
+	}
+	return iovs
 }

@@ -111,7 +111,7 @@ type CachingInodeOperations struct {
 	// refs tracks active references to data in the cache.
 	//
 	// refs is protected by dataMu.
-	refs frameRefSet
+	refs FrameRefSet
 }
 
 // CachingInodeOperationsOptions configures a CachingInodeOperations.
