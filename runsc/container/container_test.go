@@ -30,7 +30,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
@@ -51,7 +50,7 @@ func waitForProcessList(cont *Container, want []*control.Process) error {
 		got, err := cont.Processes()
 		if err != nil {
 			err = fmt.Errorf("error getting process data from container: %v", err)
-			return &backoff.PermanentError{Err: err}
+			return err
 		}
 		if r, err := procListsEqual(got, want); !r {
 			return fmt.Errorf("container got process list: %s, want: %s: error: %v",
@@ -68,7 +67,7 @@ func waitForProcessCount(cont *Container, want int) error {
 		pss, err := cont.Processes()
 		if err != nil {
 			err = fmt.Errorf("error getting process data from container: %v", err)
-			return &backoff.PermanentError{Err: err}
+			return err
 		}
 		if got := len(pss); got != want {
 			return fmt.Errorf("wrong process count, got: %d, want: %d", got, want)
@@ -2206,7 +2205,7 @@ func TestTTYField(t *testing.T) {
 				ps, err := c.Processes()
 				if err != nil {
 					err = fmt.Errorf("error getting process data from container: %v", err)
-					return &backoff.PermanentError{Err: err}
+					return err
 				}
 				for _, p := range ps {
 					if strings.Contains(p.Cmd, "sleep") {
