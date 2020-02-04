@@ -622,7 +622,7 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	if child.inode.isDir() {
 		return syserror.EISDIR
 	}
-	if !rp.MustBeDir() {
+	if rp.MustBeDir() {
 		return syserror.ENOTDIR
 	}
 	mnt := rp.Mount()
