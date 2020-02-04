@@ -11,6 +11,7 @@ exports_files(
         "socket_inet_loopback.cc",
         "socket_ip_loopback_blocking.cc",
         "socket_ip_tcp_loopback.cc",
+        "socket_ip_udp_loopback.cc",
         "socket_ipv4_udp_unbound_loopback.cc",
         "tcp_socket.cc",
         "udp_socket.cc",
