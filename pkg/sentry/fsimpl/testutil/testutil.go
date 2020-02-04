@@ -98,7 +98,7 @@ func (s *System) WithTemporaryContext(ctx context.Context) *System {
 // Destroy release resources associated with a test system.
 func (s *System) Destroy() {
 	s.Root.DecRef()
-	s.mns.DecRef(s.VFS) // Reference on mns passed to NewSystem.
+	s.mns.DecRef() // Reference on mns passed to NewSystem.
 }
 
 // ReadToEnd reads the contents of fd until EOF to a string.
