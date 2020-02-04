@@ -225,7 +225,6 @@ syscall_test(
 syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:mknod_test",
-    use_tmpfs = True,  # mknod is not supported over gofer.
 )
 
 syscall_test(
