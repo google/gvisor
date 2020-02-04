@@ -50,6 +50,21 @@ SocketPairKind IPv4TCPAcceptBindSocketPair(int type);
 // given type bound to the IPv4 loopback.
 SocketPairKind DualStackTCPAcceptBindSocketPair(int type);
 
+// IPv6TCPAcceptBindPersistentListenerSocketPair is like
+// IPv6TCPAcceptBindSocketPair except it uses a persistent listening socket to
+// create all socket pairs.
+SocketPairKind IPv6TCPAcceptBindPersistentListenerSocketPair(int type);
+
+// IPv4TCPAcceptBindPersistentListenerSocketPair is like
+// IPv4TCPAcceptBindSocketPair except it uses a persistent listening socket to
+// create all socket pairs.
+SocketPairKind IPv4TCPAcceptBindPersistentListenerSocketPair(int type);
+
+// DualStackTCPAcceptBindPersistentListenerSocketPair is like
+// DualStackTCPAcceptBindSocketPair except it uses a persistent listening socket
+// to create all socket pairs.
+SocketPairKind DualStackTCPAcceptBindPersistentListenerSocketPair(int type);
+
 // IPv6UDPBidirectionalBindSocketPair returns a SocketPairKind that represents
 // SocketPairs created with bind() and connect() syscalls with AF_INET6 and the
 // given type bound to the IPv6 loopback.

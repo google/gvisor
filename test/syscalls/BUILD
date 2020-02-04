@@ -46,6 +46,15 @@ syscall_test(test = "//test/syscalls/linux:brk_test")
 syscall_test(test = "//test/syscalls/linux:socket_test")
 
 syscall_test(
+    size = "large",
+    shard_count = 50,
+    # Takes too long for TSAN. Since this is kind of a stress test that doesn't
+    # involve much concurrency, TSAN's usefulness here is limited anyway.
+    tags = ["nogotsan"],
+    test = "//test/syscalls/linux:socket_stress_test",
+)
+
+syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:chdir_test",
 )

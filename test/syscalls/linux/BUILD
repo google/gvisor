@@ -136,6 +136,7 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/time",
+        "@com_google_absl//absl/types:optional",
         "//test/util:file_descriptor",
         "//test/util:posix_error",
         "//test/util:temp_path",
@@ -2149,6 +2150,22 @@ cc_library(
         "//test/util:test_util",
     ],
     alwayslink = 1,
+)
+
+cc_binary(
+    name = "socket_stress_test",
+    testonly = 1,
+    srcs = [
+        "socket_generic_stress.cc",
+    ],
+    linkstatic = 1,
+    deps = [
+        ":ip_socket_test_util",
+        ":socket_test_util",
+        gtest,
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
 )
 
 cc_library(
