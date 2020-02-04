@@ -32,15 +32,15 @@ func (i *inodeOperations) BoundEndpoint(inode *fs.Inode, path string) transport.
 		return nil
 	}
 
-	if i.session().endpoints != nil {
-		unlock := i.session().endpoints.lock()
+	if i.session().overrides != nil {
+		unlock := i.session().overrides.lock()
 		defer unlock()
-		ep := i.session().endpoints.get(i.fileState.key)
+		ep := i.session().overrides.getBoundEndpoint(i.fileState.key)
 		if ep != nil {
 			return ep
 		}
 
-		// Not found in endpoints map, it may be a gofer backed unix socket...
+		// Not found in overrides map, it may be a gofer backed unix socket...
 	}
 
 	inode.IncRef()
