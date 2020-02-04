@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
+	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
@@ -249,7 +250,7 @@ func newExe(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 	return newProcInode(t, exeSymlink, msrc, fs.Symlink, t)
 }
 
-func (e *exe) executable() (d *fs.Dirent, err error) {
+func (e *exe) executable() (file fsbridge.File, err error) {
 	e.t.WithMuLocked(func(t *kernel.Task) {
 		mm := t.MemoryManager()
 		if mm == nil {
@@ -262,8 +263,8 @@ func (e *exe) executable() (d *fs.Dirent, err error) {
 		// The MemoryManager may be destroyed, in which case
 		// MemoryManager.destroy will simply set the executable to nil
 		// (with locks held).
-		d = mm.Executable()
-		if d == nil {
+		file = mm.Executable()
+		if file == nil {
 			err = syserror.ENOENT
 		}
 	})
@@ -283,15 +284,7 @@ func (e *exe) Readlink(ctx context.Context, inode *fs.Inode) (string, error) {
 	}
 	defer exec.DecRef()
 
-	root := fs.RootFromContext(ctx)
-	if root == nil {
-		// This doesn't correspond to anything in Linux because the vfs is
-		// global there.
-		return "", syserror.EINVAL
-	}
-	defer root.DecRef()
-	n, _ := exec.FullName(root)
-	return n, nil
+	return exec.PathnameWithDeleted(ctx), nil
 }
 
 // namespaceSymlink represents a symlink in the namespacefs, such as the files

@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/anon"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -69,6 +70,8 @@ type byteReader struct {
 var _ fs.FileOperations = (*byteReader)(nil)
 
 // newByteReaderFile creates a fake file to read data from.
+//
+// TODO(gvisor.dev/issue/1623): Convert to VFS2.
 func newByteReaderFile(ctx context.Context, data []byte) *fs.File {
 	// Create a fake inode.
 	inode := fs.NewInode(
@@ -123,7 +126,7 @@ func (b *byteReader) Write(ctx context.Context, file *fs.File, src usermem.IOSeq
 // * PT_LOAD segments don't extend beyond the end of the file.
 //
 // ctx may be nil if f does not need it.
-func validateVDSO(ctx context.Context, f *fs.File, size uint64) (elfInfo, error) {
+func validateVDSO(ctx context.Context, f fsbridge.File, size uint64) (elfInfo, error) {
 	info, err := parseHeader(ctx, f)
 	if err != nil {
 		log.Infof("Unable to parse VDSO header: %v", err)
@@ -221,7 +224,7 @@ type VDSO struct {
 // PrepareVDSO validates the system VDSO and returns a VDSO, containing the
 // param page for updating by the kernel.
 func PrepareVDSO(ctx context.Context, mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
-	vdsoFile := newByteReaderFile(ctx, vdsoBin)
+	vdsoFile := fsbridge.NewFSFile(newByteReaderFile(ctx, vdsoBin))
 
 	// First make sure the VDSO is valid. vdsoFile does not use ctx, so a
 	// nil context can be passed.

@@ -638,6 +638,8 @@ func (t *Task) Value(key interface{}) interface{} {
 		return int32(t.ThreadGroup().ID())
 	case fs.CtxRoot:
 		return t.fsContext.RootDirectory()
+	case vfs.CtxRoot:
+		return t.fsContext.RootDirectoryVFS2()
 	case fs.CtxDirentCacheLimiter:
 		return t.k.DirentCacheLimiter
 	case inet.CtxStack:
@@ -701,6 +703,14 @@ func (t *Task) SyscallRestartBlock() SyscallRestartBlock {
 // Preconditions: The caller must be running on the task goroutine, or t.mu
 // must be locked.
 func (t *Task) IsChrooted() bool {
+	if VFS2Enabled {
+		realRoot := t.tg.mntnsVFS2.Root()
+		defer realRoot.DecRef()
+		root := t.fsContext.RootDirectoryVFS2()
+		defer root.DecRef()
+		return root != realRoot
+	}
+
 	realRoot := t.tg.mounts.Root()
 	defer realRoot.DecRef()
 	root := t.fsContext.RootDirectory()
@@ -794,6 +804,12 @@ func (t *Task) WithMuLocked(f func(*Task)) {
 // additional reference on the returned MountNamespace.
 func (t *Task) MountNamespace() *fs.MountNamespace {
 	return t.tg.mounts
+}
+
+// MountNamespaceVFS2 returns t's MountNamespace. MountNamespace does not take
+// an additional reference on the returned MountNamespace.
+func (t *Task) MountNamespaceVFS2() *vfs.MountNamespace {
+	return t.tg.mntnsVFS2
 }
 
 // AbstractSockets returns t's AbstractSocketNamespace.

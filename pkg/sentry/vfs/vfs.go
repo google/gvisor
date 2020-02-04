@@ -33,10 +33,13 @@ package vfs
 
 import (
 	"fmt"
+	"path"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -705,6 +708,72 @@ func (vfs *VirtualFilesystem) SyncAllFilesystems(ctx context.Context) error {
 	return retErr
 }
 
+// ResolveExecutablePath resolves the given executable name given a set of
+// paths that might contain it.
+func (vfs *VirtualFilesystem) ResolveExecutablePath(ctx context.Context, wd, name string, paths []string) (string, error) {
+	// Absolute paths can be used directly.
+	if path.IsAbs(name) {
+		return name, nil
+	}
+
+	// Paths with '/' in them should be joined to the working directory, or
+	// to the root if working directory is not set.
+	if strings.IndexByte(name, '/') > 0 {
+		if len(wd) == 0 {
+			wd = "/"
+		}
+		if !path.IsAbs(wd) {
+			return "", fmt.Errorf("working directory %q must be absolute", wd)
+		}
+		return path.Join(wd, name), nil
+	}
+
+	// Otherwise, We must lookup the name in the paths, starting from the
+	// calling context's root directory.
+	root := RootFromContext(ctx)
+	defer root.DecRef()
+	creds := auth.CredentialsFromContext(ctx)
+
+	for _, p := range paths {
+		if !path.IsAbs(p) {
+			// Relative paths aren't safe, no one should be using them.
+			log.Warningf("Skipping relative path %q in $PATH", p)
+			continue
+		}
+
+		binPath := path.Join(p, name)
+		pop := PathOperation{
+			Root:               root,
+			Start:              root, // wd?
+			Path:               fspath.Parse(binPath),
+			FollowFinalSymlink: false,
+		}
+		stat, err := vfs.StatAt(ctx, creds, &pop, &StatOptions{})
+		if err == syserror.ENOENT || err == syserror.EACCES {
+			// Didn't find it here.
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+
+		// Check that it is a regular file.
+		mode := linux.FileMode(stat.Mode)
+		if mode.FileType() != linux.DT_REG {
+			continue
+		}
+
+		// Check whether we can read and execute the found file.
+		if err := GenericCheckPermissions(creds, MayExec|MayRead, false /* isDir */, uint16(mode.Permissions()), auth.KUID(stat.UID), auth.KGID(stat.GID)); err != nil {
+			log.Infof("Found executable at %q, but user cannot execute it: %v", binPath, err)
+			continue
+		}
+
+		return binPath, nil
+	}
+	return "", syserror.ENOENT
+}
+
 // A VirtualDentry represents a node in a VFS tree, by combining a Dentry
 // (which represents a node in a Filesystem's tree) and a Mount (which
 // represents the Filesystem's position in a VFS mount tree).
@@ -724,6 +793,8 @@ func (vfs *VirtualFilesystem) SyncAllFilesystems(ctx context.Context) error {
 // VirtualDentry methods require that a reference is held on the VirtualDentry.
 //
 // VirtualDentry is analogous to Linux's struct path.
+//
+// +stateify savable
 type VirtualDentry struct {
 	mount  *Mount
 	dentry *Dentry

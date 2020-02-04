@@ -31,6 +31,7 @@ import (
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/urpc"
 )
 
@@ -59,6 +60,12 @@ type ExecArgs struct {
 	// ExecArgs. If MountNamespace is nil, it will default to the init
 	// process's MountNamespace.
 	MountNamespace *fs.MountNamespace
+
+	// MountNamespace is the mount namespace to execute the new process in.
+	// A reference on MountNamespace must be held for the lifetime of the
+	// ExecArgs. If MountNamespace is nil, it will default to the init
+	// process's MountNamespace.
+	MountNamespaceVFS2 *vfs.MountNamespace
 
 	// WorkingDirectory defines the working directory for the new process.
 	WorkingDirectory string `json:"wd"`
@@ -150,6 +157,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		Envv:                    args.Envv,
 		WorkingDirectory:        args.WorkingDirectory,
 		MountNamespace:          args.MountNamespace,
+		MountNamespaceVFS2:      args.MountNamespaceVFS2,
 		Credentials:             creds,
 		FDTable:                 fdTable,
 		Umask:                   0022,
@@ -166,24 +174,45 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		// be donated to the new process in CreateProcess.
 		initArgs.MountNamespace.IncRef()
 	}
+	if initArgs.MountNamespaceVFS2 != nil {
+		// initArgs must hold a reference on MountNamespace, which will
+		// be donated to the new process in CreateProcess.
+		initArgs.MountNamespaceVFS2.IncRef()
+	}
 	ctx := initArgs.NewContext(proc.Kernel)
 
 	if initArgs.Filename == "" {
-		// Get the full path to the filename from the PATH env variable.
-		paths := fs.GetPath(initArgs.Envv)
-		mns := initArgs.MountNamespace
-		if mns == nil {
-			mns = proc.Kernel.GlobalInit().Leader().MountNamespace()
+		if kernel.VFS2Enabled {
+			// Get the full path to the filename from the PATH env variable.
+			paths := fs.GetPath(initArgs.Envv)
+			mns := initArgs.MountNamespaceVFS2
+			if mns == nil {
+				mns = proc.Kernel.GlobalInit().Leader().MountNamespaceVFS2()
+			}
+			vfsObj := mns.Root().Mount().Filesystem().VirtualFilesystem()
+			f, err := vfsObj.ResolveExecutablePath(ctx, initArgs.WorkingDirectory, initArgs.Argv[0], paths)
+			if err != nil {
+				return nil, 0, nil, fmt.Errorf("error finding executable %q in PATH %v: %v", initArgs.Argv[0], paths, err)
+			}
+			initArgs.Filename = f
+		} else {
+			// Get the full path to the filename from the PATH env variable.
+			paths := fs.GetPath(initArgs.Envv)
+			mns := initArgs.MountNamespace
+			if mns == nil {
+				mns = proc.Kernel.GlobalInit().Leader().MountNamespace()
+			}
+			f, err := mns.ResolveExecutablePath(ctx, initArgs.WorkingDirectory, initArgs.Argv[0], paths)
+			if err != nil {
+				return nil, 0, nil, fmt.Errorf("error finding executable %q in PATH %v: %v", initArgs.Argv[0], paths, err)
+			}
+			initArgs.Filename = f
 		}
-		f, err := mns.ResolveExecutablePath(ctx, initArgs.WorkingDirectory, initArgs.Argv[0], paths)
-		if err != nil {
-			return nil, 0, nil, fmt.Errorf("error finding executable %q in PATH %v: %v", initArgs.Argv[0], paths, err)
-		}
-		initArgs.Filename = f
 	}
 
 	mounter := fs.FileOwnerFromContext(ctx)
 
+	// TODO(gvisor.dev/issues/1623): Use host FD when supported in VFS2.
 	var ttyFile *fs.File
 	for appFD, hostFile := range args.FilePayload.Files {
 		var appFile *fs.File

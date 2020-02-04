@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -114,6 +115,7 @@ type MountNamespace struct {
 func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth.Credentials, source, fsTypeName string, opts *GetFilesystemOptions) (*MountNamespace, error) {
 	rft := vfs.getFilesystemType(fsTypeName)
 	if rft == nil {
+		log.Warningf("Unknown filesystem: %s", fsTypeName)
 		return nil, syserror.ENODEV
 	}
 	fs, root, err := rft.fsType.GetFilesystem(ctx, vfs, creds, source, *opts)
@@ -423,7 +425,8 @@ func (mntns *MountNamespace) IncRef() {
 }
 
 // DecRef decrements mntns' reference count.
-func (mntns *MountNamespace) DecRef(vfs *VirtualFilesystem) {
+func (mntns *MountNamespace) DecRef() {
+	vfs := mntns.root.fs.VirtualFilesystem()
 	if refs := atomic.AddInt64(&mntns.refs, -1); refs == 0 {
 		vfs.mountMu.Lock()
 		vfs.mounts.seq.BeginWrite()

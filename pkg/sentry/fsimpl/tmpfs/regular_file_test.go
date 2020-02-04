@@ -51,7 +51,7 @@ func newTmpfsRoot(ctx context.Context) (*vfs.VirtualFilesystem, vfs.VirtualDentr
 	root := mntns.Root()
 	return vfsObj, root, func() {
 		root.DecRef()
-		mntns.DecRef(vfsObj)
+		mntns.DecRef()
 	}, nil
 }
 

@@ -36,6 +36,7 @@ go_library(
         "//pkg/sentry/fs/proc/device",
         "//pkg/sentry/fs/proc/seqfile",
         "//pkg/sentry/fs/ramfs",
+        "//pkg/sentry/fsbridge",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",

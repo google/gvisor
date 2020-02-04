@@ -28,6 +28,9 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
+// Name is the default filesystem name.
+const Name = "sysfs"
+
 // FilesystemType implements vfs.FilesystemType.
 type FilesystemType struct{}
 

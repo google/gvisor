@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/time"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 
 	// Platforms are plugable.
 	_ "gvisor.dev/gvisor/pkg/sentry/platform/kvm"
@@ -111,14 +112,15 @@ func Boot() (*kernel.Kernel, error) {
 	if err != nil {
 		return nil, err
 	}
-	tg := k.NewThreadGroup(mntns, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, ls)
+	// TODO(gvisor.dev/issue/1623): Stop using fs package.
+	tg := k.NewThreadGroup(mntns, nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, ls)
 	k.TestOnly_SetGlobalInit(tg)
 
 	return k, nil
 }
 
 // CreateTask creates a new bare bones task for tests.
-func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup) (*kernel.Task, error) {
+func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, root, cwd vfs.VirtualDentry) (*kernel.Task, error) {
 	k := kernel.KernelFromContext(ctx)
 	config := &kernel.TaskConfig{
 		Kernel:                  k,
@@ -129,6 +131,7 @@ func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup) (*kern
 		UTSNamespace:            kernel.UTSNamespaceFromContext(ctx),
 		IPCNamespace:            kernel.IPCNamespaceFromContext(ctx),
 		AbstractSocketNamespace: kernel.NewAbstractSocketNamespace(),
+		FSContext:               kernel.NewFSContextVFS2(root, cwd, 0022),
 	}
 	return k.TaskSet().NewTask(config)
 }

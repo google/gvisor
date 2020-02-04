@@ -24,6 +24,7 @@ import (
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -249,6 +250,11 @@ type ThreadGroup struct {
 	// mounts is immutable.
 	mounts *fs.MountNamespace
 
+	// mntnsVFS2 is the thread group's mount namespace.
+	//
+	// It is immutable.
+	mntnsVFS2 *vfs.MountNamespace
+
 	// tty is the thread group's controlling terminal. If nil, there is no
 	// controlling terminal.
 	//
@@ -260,7 +266,7 @@ type ThreadGroup struct {
 // thread group leader will send its parent terminationSignal when it exits.
 // The new thread group isn't visible to the system until a task has been
 // created inside of it by a successful call to TaskSet.NewTask.
-func (k *Kernel) NewThreadGroup(mntns *fs.MountNamespace, pidns *PIDNamespace, sh *SignalHandlers, terminationSignal linux.Signal, limits *limits.LimitSet) *ThreadGroup {
+func (k *Kernel) NewThreadGroup(mntns *fs.MountNamespace, mntnsVFS2 *vfs.MountNamespace, pidns *PIDNamespace, sh *SignalHandlers, terminationSignal linux.Signal, limits *limits.LimitSet) *ThreadGroup {
 	tg := &ThreadGroup{
 		threadGroupNode: threadGroupNode{
 			pidns: pidns,
@@ -270,6 +276,7 @@ func (k *Kernel) NewThreadGroup(mntns *fs.MountNamespace, pidns *PIDNamespace, s
 		ioUsage:           &usage.IO{},
 		limits:            limits,
 		mounts:            mntns,
+		mntnsVFS2:         mntnsVFS2,
 	}
 	tg.itimerRealTimer = ktime.NewTimer(k.monotonicClock, &itimerRealListener{tg: tg})
 	tg.timers = make(map[linux.TimerID]*IntervalTimer)
@@ -317,7 +324,12 @@ func (tg *ThreadGroup) release() {
 	for _, it := range its {
 		it.DestroyTimer()
 	}
-	tg.mounts.DecRef()
+	if tg.mounts != nil {
+		tg.mounts.DecRef()
+	}
+	if tg.mntnsVFS2 != nil {
+		tg.mntnsVFS2.DecRef()
+	}
 }
 
 // forEachChildThreadGroupLocked indicates over all child ThreadGroups.

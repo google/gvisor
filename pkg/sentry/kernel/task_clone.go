@@ -241,12 +241,17 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	rseqAddr := usermem.Addr(0)
 	rseqSignature := uint32(0)
 	if opts.NewThreadGroup {
-		tg.mounts.IncRef()
+		if tg.mounts != nil {
+			tg.mounts.IncRef()
+		}
+		if tg.mntnsVFS2 != nil {
+			tg.mntnsVFS2.IncRef()
+		}
 		sh := t.tg.signalHandlers
 		if opts.NewSignalHandlers {
 			sh = sh.Fork()
 		}
-		tg = t.k.NewThreadGroup(tg.mounts, pidns, sh, opts.TerminationSignal, tg.limits.GetCopy())
+		tg = t.k.NewThreadGroup(tg.mounts, tg.mntnsVFS2, pidns, sh, opts.TerminationSignal, tg.limits.GetCopy())
 		rseqAddr = t.rseqAddr
 		rseqSignature = t.rseqSignature
 	}

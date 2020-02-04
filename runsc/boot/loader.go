@@ -795,14 +795,17 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 		return 0, fmt.Errorf("container %q not started", args.ContainerID)
 	}
 
+	// TODO(gvisor.dev/issues/1623): Add VFS2 support
+
 	// Get the container MountNamespace from the Task.
 	tg.Leader().WithMuLocked(func(t *kernel.Task) {
-		// task.MountNamespace() does not take a ref, so we must do so
-		// ourselves.
+		// task.MountNamespace() does not take a ref, so we must do so ourselves.
 		args.MountNamespace = t.MountNamespace()
 		args.MountNamespace.IncRef()
 	})
-	defer args.MountNamespace.DecRef()
+	if args.MountNamespace != nil {
+		defer args.MountNamespace.DecRef()
+	}
 
 	// Add the HOME enviroment varible if it is not already set.
 	root := args.MountNamespace.Root()

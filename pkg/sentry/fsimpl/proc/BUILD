@@ -14,6 +14,7 @@ go_library(
         "tasks_net.go",
         "tasks_sys.go",
     ],
+    visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",

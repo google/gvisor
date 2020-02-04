@@ -27,6 +27,7 @@ go_library(
         "//pkg/sentry/state",
         "//pkg/sentry/strace",
         "//pkg/sentry/usage",
+        "//pkg/sentry/vfs",
         "//pkg/sentry/watchdog",
         "//pkg/sync",
         "//pkg/tcpip/link/sniffer",
