@@ -423,7 +423,8 @@ func (mntns *MountNamespace) IncRef() {
 }
 
 // DecRef decrements mntns' reference count.
-func (mntns *MountNamespace) DecRef(vfs *VirtualFilesystem) {
+func (mntns *MountNamespace) DecRef() {
+	vfs := mntns.root.fs.VirtualFilesystem()
 	if refs := atomic.AddInt64(&mntns.refs, -1); refs == 0 {
 		vfs.mountMu.Lock()
 		vfs.mounts.seq.BeginWrite()
