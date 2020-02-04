@@ -30,7 +30,7 @@ go_library(
 
 go_test(
     name = "container_test",
-    size = "medium",
+    size = "large",
     srcs = [
         "console_test.go",
         "container_test.go",
