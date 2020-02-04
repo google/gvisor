@@ -2911,20 +2911,8 @@ func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, args arch.Sysc
 		_, err := ifr.CopyOut(t, args[2].Pointer())
 		return 0, err
 
-	case linux.SIOCGIFCONF:
-		// Return a list of interface addresses or the buffer size
-		// necessary to hold the list.
-		var ifc linux.IFConf
-		if _, err := ifc.CopyIn(t, args[2].Pointer()); err != nil {
-			return 0, err
-		}
-
-		if err := ifconfIoctl(ctx, t, io, &ifc); err != nil {
-			return 0, err
-		}
-
-		_, err := ifc.CopyOut(t, args[2].Pointer())
-		return 0, err
+	case syscall.SIOCGIFCONF:
+		return 0, socket.IfconfIoctl(ctx, io, args[2].Pointer())
 
 	case linux.TIOCINQ:
 		v, terr := ep.GetSockOptInt(tcpip.ReceiveQueueSizeOption)
@@ -3097,52 +3085,6 @@ func interfaceIoctl(ctx context.Context, io usermem.IO, arg int, ifr *linux.IFRe
 		return syserr.ErrInvalidArgument
 	}
 
-	return nil
-}
-
-// ifconfIoctl populates a struct ifconf for the SIOCGIFCONF ioctl.
-func ifconfIoctl(ctx context.Context, t *kernel.Task, io usermem.IO, ifc *linux.IFConf) error {
-	// If Ptr is NULL, return the necessary buffer size via Len.
-	// Otherwise, write up to Len bytes starting at Ptr containing ifreq
-	// structs.
-	stack := inet.StackFromContext(ctx)
-	if stack == nil {
-		return syserr.ErrNoDevice.ToError()
-	}
-
-	if ifc.Ptr == 0 {
-		ifc.Len = int32(len(stack.Interfaces())) * int32(linux.SizeOfIFReq)
-		return nil
-	}
-
-	max := ifc.Len
-	ifc.Len = 0
-	for key, ifaceAddrs := range stack.InterfaceAddrs() {
-		iface := stack.Interfaces()[key]
-		for _, ifaceAddr := range ifaceAddrs {
-			// Don't write past the end of the buffer.
-			if ifc.Len+int32(linux.SizeOfIFReq) > max {
-				break
-			}
-			if ifaceAddr.Family != linux.AF_INET {
-				continue
-			}
-
-			// Populate ifr.ifr_addr.
-			ifr := linux.IFReq{}
-			ifr.SetName(iface.Name)
-			usermem.ByteOrder.PutUint16(ifr.Data[0:2], uint16(ifaceAddr.Family))
-			usermem.ByteOrder.PutUint16(ifr.Data[2:4], 0)
-			copy(ifr.Data[4:8], ifaceAddr.Addr[:4])
-
-			// Copy the ifr to userspace.
-			dst := uintptr(ifc.Ptr) + uintptr(ifc.Len)
-			ifc.Len += int32(linux.SizeOfIFReq)
-			if _, err := ifr.CopyOut(t, usermem.Addr(dst)); err != nil {
-				return err
-			}
-		}
-	}
 	return nil
 }
 

@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
@@ -459,4 +460,65 @@ func UnmarshalSockAddr(family int, data []byte) linux.SockAddr {
 	default:
 		panic(fmt.Sprintf("Unsupported socket family %v", family))
 	}
+}
+
+// IfconfIoctl populates a userspace struct ifconf for the SIOCGIFCONF ioctl.
+func IfconfIoctl(ctx context.Context, io usermem.IO, addr usermem.Addr) error {
+	var ifc linux.IFConf
+
+	if _, err := usermem.CopyObjectIn(ctx, io, addr, &ifc, usermem.IOOpts{
+		AddressSpaceActive: true,
+	}); err != nil {
+		return err
+	}
+
+	stack := inet.StackFromContext(ctx)
+	if stack == nil {
+		return syserr.ErrNoDevice.ToError()
+	}
+
+	// If Ptr is NULL, return the necessary buffer size via Len.
+	// Otherwise, write up to Len bytes starting at Ptr containing ifreq
+	// structs.
+	if ifc.Ptr == 0 {
+		ifc.Len = int32(len(stack.Interfaces())) * int32(linux.SizeOfIFReq)
+		return nil
+	}
+
+	max := ifc.Len
+	ifc.Len = 0
+	for key, ifaceAddrs := range stack.InterfaceAddrs() {
+		iface := stack.Interfaces()[key]
+		for _, ifaceAddr := range ifaceAddrs {
+			// Don't write past the end of the buffer.
+			if ifc.Len+int32(linux.SizeOfIFReq) > max {
+				break
+			}
+			if ifaceAddr.Family != linux.AF_INET {
+				continue
+			}
+
+			// Populate ifr.ifr_addr.
+			ifr := linux.IFReq{}
+			ifr.SetName(iface.Name)
+			usermem.ByteOrder.PutUint16(ifr.Data[0:2], uint16(ifaceAddr.Family))
+			usermem.ByteOrder.PutUint16(ifr.Data[2:4], 0)
+			copy(ifr.Data[4:8], ifaceAddr.Addr[:4])
+
+			// Copy the ifr to userspace.
+			dst := uintptr(ifc.Ptr) + uintptr(ifc.Len)
+			ifc.Len += int32(linux.SizeOfIFReq)
+			if _, err := usermem.CopyObjectOut(ctx, io, usermem.Addr(dst), ifr, usermem.IOOpts{
+				AddressSpaceActive: true,
+			}); err != nil {
+				return err
+			}
+		}
+	}
+
+	_, err := usermem.CopyObjectOut(ctx, io, addr, ifc, usermem.IOOpts{
+		AddressSpaceActive: true,
+	})
+
+	return err
 }
