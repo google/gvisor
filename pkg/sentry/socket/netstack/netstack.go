@@ -2905,8 +2905,25 @@ func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, args arch.Sysc
 		if _, err := ifr.CopyIn(t, args[2].Pointer()); err != nil {
 			return 0, err
 		}
-		if err := interfaceIoctl(ctx, io, arg, &ifr); err != nil {
-			return 0, err.ToError()
+
+		var (
+			e     *syserr.Error
+			iface inet.Interface
+		)
+		ifr, iface, e = socket.InterfaceIoctl(ctx, io, arg, ifr);
+		if e != nil {
+			return 0, e.ToError()
+		}
+
+		if arg == syscall.SIOCGIFFLAGS {
+			stack := inet.StackFromContext(ctx)
+			f, e := interfaceStatusFlags(stack, iface.Name)
+			if e != nil {
+				return 0, e.ToError()
+			}
+			// Drop the flags that don't fit in the size that we need to return. This
+			// matches Linux behavior.
+			usermem.ByteOrder.PutUint16(ifr.Data[:2], uint16(f))
 		}
 		_, err := ifr.CopyOut(t, args[2].Pointer())
 		return 0, err
@@ -2948,144 +2965,6 @@ func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, args arch.Sysc
 	}
 
 	return 0, syserror.ENOTTY
-}
-
-// interfaceIoctl implements interface requests.
-func interfaceIoctl(ctx context.Context, io usermem.IO, arg int, ifr *linux.IFReq) *syserr.Error {
-	var (
-		iface inet.Interface
-		index int32
-		found bool
-	)
-
-	// Find the relevant device.
-	stack := inet.StackFromContext(ctx)
-	if stack == nil {
-		return syserr.ErrNoDevice
-	}
-
-	// SIOCGIFNAME uses ifr.ifr_ifindex rather than ifr.ifr_name to
-	// identify a device.
-	if arg == linux.SIOCGIFNAME {
-		// Gets the name of the interface given the interface index
-		// stored in ifr_ifindex.
-		index = int32(usermem.ByteOrder.Uint32(ifr.Data[:4]))
-		if iface, ok := stack.Interfaces()[index]; ok {
-			ifr.SetName(iface.Name)
-			return nil
-		}
-		return syserr.ErrNoDevice
-	}
-
-	// Find the relevant device.
-	for index, iface = range stack.Interfaces() {
-		if iface.Name == ifr.Name() {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return syserr.ErrNoDevice
-	}
-
-	switch arg {
-	case linux.SIOCGIFINDEX:
-		// Copy out the index to the data.
-		usermem.ByteOrder.PutUint32(ifr.Data[:], uint32(index))
-
-	case linux.SIOCGIFHWADDR:
-		// Copy the hardware address out.
-		//
-		// Refer: https://linux.die.net/man/7/netdevice
-		// SIOCGIFHWADDR, SIOCSIFHWADDR
-		//
-		// Get or set the hardware address of a device using
-		// ifr_hwaddr. The hardware address is specified in a struct
-		// sockaddr. sa_family contains the ARPHRD_* device type,
-		// sa_data the L2 hardware address starting from byte 0. Setting
-		// the hardware address is a privileged operation.
-		usermem.ByteOrder.PutUint16(ifr.Data[:], iface.DeviceType)
-		n := copy(ifr.Data[2:], iface.Addr)
-		for i := 2 + n; i < len(ifr.Data); i++ {
-			ifr.Data[i] = 0 // Clear padding.
-		}
-
-	case linux.SIOCGIFFLAGS:
-		f, err := interfaceStatusFlags(stack, iface.Name)
-		if err != nil {
-			return err
-		}
-		// Drop the flags that don't fit in the size that we need to return. This
-		// matches Linux behavior.
-		usermem.ByteOrder.PutUint16(ifr.Data[:2], uint16(f))
-
-	case linux.SIOCGIFADDR:
-		// Copy the IPv4 address out.
-		for _, addr := range stack.InterfaceAddrs()[index] {
-			// This ioctl is only compatible with AF_INET addresses.
-			if addr.Family != linux.AF_INET {
-				continue
-			}
-			copy(ifr.Data[4:8], addr.Addr)
-			break
-		}
-
-	case linux.SIOCGIFMETRIC:
-		// Gets the metric of the device. As per netdevice(7), this
-		// always just sets ifr_metric to 0.
-		usermem.ByteOrder.PutUint32(ifr.Data[:4], 0)
-
-	case linux.SIOCGIFMTU:
-		// Gets the MTU of the device.
-		usermem.ByteOrder.PutUint32(ifr.Data[:4], iface.MTU)
-
-	case linux.SIOCGIFMAP:
-		// Gets the hardware parameters of the device.
-		// TODO(gvisor.dev/issue/505): Implement.
-
-	case linux.SIOCGIFTXQLEN:
-		// Gets the transmit queue length of the device.
-		// TODO(gvisor.dev/issue/505): Implement.
-
-	case linux.SIOCGIFDSTADDR:
-		// Gets the destination address of a point-to-point device.
-		// TODO(gvisor.dev/issue/505): Implement.
-
-	case linux.SIOCGIFBRDADDR:
-		// Gets the broadcast address of a device.
-		// TODO(gvisor.dev/issue/505): Implement.
-
-	case linux.SIOCGIFNETMASK:
-		// Gets the network mask of a device.
-		for _, addr := range stack.InterfaceAddrs()[index] {
-			// This ioctl is only compatible with AF_INET addresses.
-			if addr.Family != linux.AF_INET {
-				continue
-			}
-			// Populate ifr.ifr_netmask (type sockaddr).
-			usermem.ByteOrder.PutUint16(ifr.Data[0:2], uint16(linux.AF_INET))
-			usermem.ByteOrder.PutUint16(ifr.Data[2:4], 0)
-			var mask uint32 = 0xffffffff << (32 - addr.PrefixLen)
-			// Netmask is expected to be returned as a big endian
-			// value.
-			binary.BigEndian.PutUint32(ifr.Data[4:8], mask)
-			break
-		}
-
-	case linux.SIOCETHTOOL:
-		// Stubbed out for now, Ideally we should implement the required
-		// sub-commands for ETHTOOL
-		//
-		// See:
-		// https://github.com/torvalds/linux/blob/aa0c9086b40c17a7ad94425b3b70dd1fdd7497bf/net/core/dev_ioctl.c
-		return syserr.ErrEndpointOperation
-
-	default:
-		// Not a valid call.
-		return syserr.ErrInvalidArgument
-	}
-
-	return nil
 }
 
 // interfaceStatusFlags returns status flags for an interface in the stack.

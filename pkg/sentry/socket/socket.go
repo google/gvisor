@@ -522,3 +522,123 @@ func IfconfIoctl(ctx context.Context, io usermem.IO, addr usermem.Addr) error {
 
 	return err
 }
+
+// InterfaceIoctl implements interface requests; and it returns corresponding interface
+// for customzation.
+func InterfaceIoctl(ctx context.Context, io usermem.IO, arg int, ifr linux.IFReq) (linux.IFReq, inet.Interface, *syserr.Error) {
+	var (
+		iface inet.Interface
+		index int32
+		found bool
+	)
+
+	// Find the relevant device.
+	stack := inet.StackFromContext(ctx)
+	if stack == nil {
+		return linux.IFReq{}, inet.Interface{}, syserr.ErrNoDevice
+	}
+
+	// SIOCGIFNAME uses ifr.ifr_ifindex rather than ifr.ifr_name to
+	// identify a device.
+	if arg == syscall.SIOCGIFNAME {
+		// Gets the name of the interface given the interface index
+		// stored in ifr_ifindex.
+		index = int32(usermem.ByteOrder.Uint32(ifr.Data[:4]))
+		if iface, ok := stack.Interfaces()[index]; ok {
+			ifr.SetName(iface.Name)
+			return ifr, iface, nil
+		}
+		return linux.IFReq{}, inet.Interface{}, syserr.ErrNoDevice
+	}
+
+	// Find the relevant device.
+	for index, iface = range stack.Interfaces() {
+		if iface.Name == ifr.Name() {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return linux.IFReq{}, inet.Interface{}, syserr.ErrNoDevice
+	}
+
+	switch arg {
+	case syscall.SIOCGIFINDEX:
+		// Copy out the index to the data.
+		usermem.ByteOrder.PutUint32(ifr.Data[:], uint32(index))
+
+	case syscall.SIOCGIFHWADDR:
+		// Copy the hardware address out.
+		ifr.Data[0] = 6 // IEEE802.2 arp type.
+		ifr.Data[1] = 0
+		n := copy(ifr.Data[2:], iface.Addr)
+		for i := 2 + n; i < len(ifr.Data); i++ {
+			ifr.Data[i] = 0 // Clear padding.
+		}
+		usermem.ByteOrder.PutUint16(ifr.Data[:2], uint16(n))
+
+	case syscall.SIOCGIFFLAGS:
+		// Drop the flags that don't fit in the size that we need to
+		// return. This matches Linux behavior.
+		usermem.ByteOrder.PutUint16(ifr.Data[:2], uint16(iface.Flags))
+
+	case syscall.SIOCGIFADDR:
+		// Copy the IPv4 address out.
+		for _, addr := range stack.InterfaceAddrs()[index] {
+			// This ioctl is only compatible with AF_INET addresses.
+			if addr.Family != linux.AF_INET {
+				continue
+			}
+			copy(ifr.Data[4:8], addr.Addr)
+			break
+		}
+
+	case syscall.SIOCGIFMETRIC:
+		// Gets the metric of the device. As per netdevice(7), this
+		// always just sets ifr_metric to 0.
+		usermem.ByteOrder.PutUint32(ifr.Data[:4], 0)
+
+	case syscall.SIOCGIFMTU:
+		// Gets the MTU of the device.
+		usermem.ByteOrder.PutUint32(ifr.Data[:4], iface.MTU)
+
+	case syscall.SIOCGIFMAP:
+		// Gets the hardware parameters of the device.
+		// TODO(gvisor.dev/issue/505): Implement.
+
+	case syscall.SIOCGIFTXQLEN:
+		// Gets the transmit queue length of the device.
+		// TODO(gvisor.dev/issue/505): Implement.
+
+	case syscall.SIOCGIFDSTADDR:
+		// Gets the destination address of a point-to-point device.
+		// TODO(gvisor.dev/issue/505): Implement.
+
+	case syscall.SIOCGIFBRDADDR:
+		// Gets the broadcast address of a device.
+		// TODO(gvisor.dev/issue/505): Implement.
+
+	case syscall.SIOCGIFNETMASK:
+		// Gets the network mask of a device.
+		for _, addr := range stack.InterfaceAddrs()[index] {
+			// This ioctl is only compatible with AF_INET addresses.
+			if addr.Family != linux.AF_INET {
+				continue
+			}
+			// Populate ifr.ifr_netmask (type sockaddr).
+			usermem.ByteOrder.PutUint16(ifr.Data[0:2], uint16(linux.AF_INET))
+			usermem.ByteOrder.PutUint16(ifr.Data[2:4], 0)
+			var mask uint32 = 0xffffffff << (32 - addr.PrefixLen)
+			// Netmask is expected to be returned as a big endian
+			// value.
+			binary.BigEndian.PutUint32(ifr.Data[4:8], mask)
+			break
+		}
+
+	default:
+		// Not a valid call.
+		return linux.IFReq{}, inet.Interface{}, syserr.ErrInvalidArgument
+	}
+
+	return ifr, iface, nil
+}
