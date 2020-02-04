@@ -14,4 +14,5 @@ go_library(
     visibility = [
         "//:sandbox",
     ],
+    deps = ["//tools/tags"],
 )

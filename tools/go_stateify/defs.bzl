@@ -7,7 +7,6 @@ def _go_stateify_impl(ctx):
     # Run the stateify command.
     args = ["-output=%s" % output.path]
     args.append("-pkg=%s" % ctx.attr.package)
-    args.append("-arch=%s" % ctx.attr.arch)
     if ctx.attr._statepkg:
         args.append("-statepkg=%s" % ctx.attr._statepkg)
     if ctx.attr.imports:
@@ -47,15 +46,8 @@ for statified types.
             doc = "The package name for the input sources.",
             mandatory = True,
         ),
-        "arch": attr.string(
-            doc = "Target platform.",
-            mandatory = True,
-        ),
         "out": attr.output(
-            doc = """
-The name of the generated file output. This must not conflict with any other
-files and must be added to the srcs of the relevant go_library.
-""",
+            doc = "Name of the generator output file.",
             mandatory = True,
         ),
         "_tool": attr.label(
