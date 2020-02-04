@@ -7,7 +7,7 @@ change for Google-internal and bazel-compatible rules.
 
 load("//tools/go_stateify:defs.bzl", "go_stateify")
 load("//tools/go_marshal:defs.bzl", "go_marshal", "marshal_deps", "marshal_test_deps")
-load("//tools/build:defs.bzl", _cc_binary = "cc_binary", _cc_flags_supplier = "cc_flags_supplier", _cc_library = "cc_library", _cc_proto_library = "cc_proto_library", _cc_test = "cc_test", _cc_toolchain = "cc_toolchain", _container_image = "container_image", _default_installer = "default_installer", _default_net_util = "default_net_util", _go_binary = "go_binary", _go_embed_data = "go_embed_data", _go_image = "go_image", _go_library = "go_library", _go_proto_library = "go_proto_library", _go_test = "go_test", _go_tool_library = "go_tool_library", _gtest = "gtest", _loopback = "loopback", _pkg_deb = "pkg_deb", _pkg_tar = "pkg_tar", _proto_library = "proto_library", _py_binary = "py_binary", _py_library = "py_library", _py_requirement = "py_requirement", _py_test = "py_test", _select_arch = "select_arch", _select_system = "select_system")
+load("//tools/build:defs.bzl", "go_suffixes", _cc_binary = "cc_binary", _cc_flags_supplier = "cc_flags_supplier", _cc_library = "cc_library", _cc_proto_library = "cc_proto_library", _cc_test = "cc_test", _cc_toolchain = "cc_toolchain", _container_image = "container_image", _default_installer = "default_installer", _default_net_util = "default_net_util", _go_binary = "go_binary", _go_embed_data = "go_embed_data", _go_image = "go_image", _go_library = "go_library", _go_proto_library = "go_proto_library", _go_test = "go_test", _go_tool_library = "go_tool_library", _gtest = "gtest", _loopback = "loopback", _pkg_deb = "pkg_deb", _pkg_tar = "pkg_tar", _proto_library = "proto_library", _py_binary = "py_binary", _py_library = "py_library", _py_requirement = "py_requirement", _py_test = "py_test", _select_arch = "select_arch", _select_system = "select_system")
 
 # Delegate directly.
 cc_binary = _cc_binary
@@ -45,6 +45,34 @@ def go_binary(name, **kwargs):
         **kwargs
     )
 
+def calculate_sets(srcs):
+    """Calculates special Go sets for templates.
+
+    Args:
+      srcs: the full set of Go sources.
+
+    Returns:
+      A dictionary of the form:
+
+      "": [src1.go, src2.go]
+      "suffix": [src3suffix.go, src4suffix.go]
+
+      Note that suffix will typically start with '_'.
+    """
+    result = dict()
+    for file in srcs:
+        if not file.endswith(".go"):
+            continue
+        target = ""
+        for suffix in go_suffixes:
+            if file.endswith(suffix + ".go"):
+                target = suffix
+        if not target in result:
+            result[target] = [file]
+        else:
+            result[target].append(file)
+    return result
+
 def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = False, **kwargs):
     """Wraps the standard go_library and does stateification and marshalling.
 
@@ -70,39 +98,49 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
       marshal: whether marshal is enabled (default: false).
       **kwargs: standard go_library arguments.
     """
+    all_srcs = srcs
+    all_deps = deps
     if stateify:
         # Only do stateification for non-state packages without manual autogen.
-        go_stateify(
-            name = name + "_state_autogen",
-            srcs = [src for src in srcs if src.endswith(".go")],
-            imports = imports,
-            package = name,
-            arch = select_arch(),
-            out = name + "_state_autogen.go",
-        )
-        all_srcs = srcs + [name + "_state_autogen.go"]
-        if "//pkg/state" not in deps:
-            all_deps = deps + ["//pkg/state"]
-        else:
-            all_deps = deps
-    else:
-        all_deps = deps
-        all_srcs = srcs
+        # First, we need to segregate the input files via the special suffixes,
+        # and calculate the final output set.
+        state_sets = calculate_sets(srcs)
+        for (suffix, srcs) in state_sets.items():
+            go_stateify(
+                name = name + suffix + "_state_autogen",
+                srcs = srcs,
+                imports = imports,
+                package = name,
+                out = name + suffix + "_state_autogen.go",
+            )
+        all_srcs = all_srcs + [
+            name + suffix + "_state_autogen.go"
+            for suffix in state_sets.keys()
+        ]
+        if "//pkg/state" not in all_deps:
+            all_deps = all_deps + ["//pkg/state"]
+
     if marshal:
-        go_marshal(
-            name = name + "_abi_autogen",
-            srcs = [src for src in srcs if src.endswith(".go")],
-            debug = False,
-            imports = imports,
-            package = name,
-        )
+        # See above.
+        marshal_sets = calculate_sets(srcs)
+        for (suffix, srcs) in marshal_sets.items():
+            go_marshal(
+                name = name + suffix + "_abi_autogen",
+                srcs = srcs,
+                debug = False,
+                imports = imports,
+                package = name,
+            )
         extra_deps = [
             dep
             for dep in marshal_deps
             if not dep in all_deps
         ]
         all_deps = all_deps + extra_deps
-        all_srcs = srcs + [name + "_abi_autogen_unsafe.go"]
+        all_srcs = all_srcs + [
+            name + suffix + "_abi_autogen_unsafe.go"
+            for suffix in marshal_sets.keys()
+        ]
 
     _go_library(
         name = name,
@@ -115,13 +153,16 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
         # Ignore importpath for go_test.
         kwargs.pop("importpath", None)
 
-        _go_test(
-            name = name + "_abi_autogen_test",
-            srcs = [name + "_abi_autogen_test.go"],
-            library = ":" + name,
-            deps = marshal_test_deps,
-            **kwargs
-        )
+        # See above.
+        marshal_sets = calculate_sets(srcs)
+        for (suffix, srcs) in marshal_sets.items():
+            _go_test(
+                name = name + suffix + "_abi_autogen_test",
+                srcs = [name + suffix + "_abi_autogen_test.go"],
+                library = ":" + name + suffix,
+                deps = marshal_test_deps,
+                **kwargs
+            )
 
 def proto_library(name, srcs, **kwargs):
     """Wraps the standard proto_library.
