@@ -21,9 +21,9 @@ const (
 	//
 	// Our implementation requires minDegree >= 3. Higher values of minDegree
 	// usually improve performance, but increase memory usage for small sets.
-	frameRefminDegree = 3
+	FrameRefminDegree = 3
 
-	frameRefmaxDegree = 2 * frameRefminDegree
+	FrameRefmaxDegree = 2 * FrameRefminDegree
 )
 
 // A Set is a mapping of segments with non-overlapping Range keys. The zero
@@ -31,19 +31,19 @@ const (
 // copyable. Set is thread-compatible.
 //
 // +stateify savable
-type frameRefSet struct {
-	root frameRefnode `state:".(*frameRefSegmentDataSlices)"`
+type FrameRefSet struct {
+	root FrameRefnode `state:".(*FrameRefSegmentDataSlices)"`
 }
 
 // IsEmpty returns true if the set contains no segments.
-func (s *frameRefSet) IsEmpty() bool {
+func (s *FrameRefSet) IsEmpty() bool {
 	return s.root.nrSegments == 0
 }
 
 // IsEmptyRange returns true iff no segments in the set overlap the given
 // range. This is semantically equivalent to s.SpanRange(r) == 0, but may be
 // more efficient.
-func (s *frameRefSet) IsEmptyRange(r __generics_imported0.FileRange) bool {
+func (s *FrameRefSet) IsEmptyRange(r __generics_imported0.FileRange) bool {
 	switch {
 	case r.Length() < 0:
 		panic(fmt.Sprintf("invalid range %v", r))
@@ -58,7 +58,7 @@ func (s *frameRefSet) IsEmptyRange(r __generics_imported0.FileRange) bool {
 }
 
 // Span returns the total size of all segments in the set.
-func (s *frameRefSet) Span() uint64 {
+func (s *FrameRefSet) Span() uint64 {
 	var sz uint64
 	for seg := s.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
 		sz += seg.Range().Length()
@@ -68,7 +68,7 @@ func (s *frameRefSet) Span() uint64 {
 
 // SpanRange returns the total size of the intersection of segments in the set
 // with the given range.
-func (s *frameRefSet) SpanRange(r __generics_imported0.FileRange) uint64 {
+func (s *FrameRefSet) SpanRange(r __generics_imported0.FileRange) uint64 {
 	switch {
 	case r.Length() < 0:
 		panic(fmt.Sprintf("invalid range %v", r))
@@ -84,45 +84,45 @@ func (s *frameRefSet) SpanRange(r __generics_imported0.FileRange) uint64 {
 
 // FirstSegment returns the first segment in the set. If the set is empty,
 // FirstSegment returns a terminal iterator.
-func (s *frameRefSet) FirstSegment() frameRefIterator {
+func (s *FrameRefSet) FirstSegment() FrameRefIterator {
 	if s.root.nrSegments == 0 {
-		return frameRefIterator{}
+		return FrameRefIterator{}
 	}
 	return s.root.firstSegment()
 }
 
 // LastSegment returns the last segment in the set. If the set is empty,
 // LastSegment returns a terminal iterator.
-func (s *frameRefSet) LastSegment() frameRefIterator {
+func (s *FrameRefSet) LastSegment() FrameRefIterator {
 	if s.root.nrSegments == 0 {
-		return frameRefIterator{}
+		return FrameRefIterator{}
 	}
 	return s.root.lastSegment()
 }
 
 // FirstGap returns the first gap in the set.
-func (s *frameRefSet) FirstGap() frameRefGapIterator {
+func (s *FrameRefSet) FirstGap() FrameRefGapIterator {
 	n := &s.root
 	for n.hasChildren {
 		n = n.children[0]
 	}
-	return frameRefGapIterator{n, 0}
+	return FrameRefGapIterator{n, 0}
 }
 
 // LastGap returns the last gap in the set.
-func (s *frameRefSet) LastGap() frameRefGapIterator {
+func (s *FrameRefSet) LastGap() FrameRefGapIterator {
 	n := &s.root
 	for n.hasChildren {
 		n = n.children[n.nrSegments]
 	}
-	return frameRefGapIterator{n, n.nrSegments}
+	return FrameRefGapIterator{n, n.nrSegments}
 }
 
 // Find returns the segment or gap whose range contains the given key. If a
 // segment is found, the returned Iterator is non-terminal and the
 // returned GapIterator is terminal. Otherwise, the returned Iterator is
 // terminal and the returned GapIterator is non-terminal.
-func (s *frameRefSet) Find(key uint64) (frameRefIterator, frameRefGapIterator) {
+func (s *FrameRefSet) Find(key uint64) (FrameRefIterator, FrameRefGapIterator) {
 	n := &s.root
 	for {
 
@@ -132,7 +132,7 @@ func (s *frameRefSet) Find(key uint64) (frameRefIterator, frameRefGapIterator) {
 			i := lower + (upper-lower)/2
 			if r := n.keys[i]; key < r.End {
 				if key >= r.Start {
-					return frameRefIterator{n, i}, frameRefGapIterator{}
+					return FrameRefIterator{n, i}, FrameRefGapIterator{}
 				}
 				upper = i
 			} else {
@@ -141,7 +141,7 @@ func (s *frameRefSet) Find(key uint64) (frameRefIterator, frameRefGapIterator) {
 		}
 		i := lower
 		if !n.hasChildren {
-			return frameRefIterator{}, frameRefGapIterator{n, i}
+			return FrameRefIterator{}, FrameRefGapIterator{n, i}
 		}
 		n = n.children[i]
 	}
@@ -149,7 +149,7 @@ func (s *frameRefSet) Find(key uint64) (frameRefIterator, frameRefGapIterator) {
 
 // FindSegment returns the segment whose range contains the given key. If no
 // such segment exists, FindSegment returns a terminal iterator.
-func (s *frameRefSet) FindSegment(key uint64) frameRefIterator {
+func (s *FrameRefSet) FindSegment(key uint64) FrameRefIterator {
 	seg, _ := s.Find(key)
 	return seg
 }
@@ -157,7 +157,7 @@ func (s *frameRefSet) FindSegment(key uint64) frameRefIterator {
 // LowerBoundSegment returns the segment with the lowest range that contains a
 // key greater than or equal to min. If no such segment exists,
 // LowerBoundSegment returns a terminal iterator.
-func (s *frameRefSet) LowerBoundSegment(min uint64) frameRefIterator {
+func (s *FrameRefSet) LowerBoundSegment(min uint64) FrameRefIterator {
 	seg, gap := s.Find(min)
 	if seg.Ok() {
 		return seg
@@ -168,7 +168,7 @@ func (s *frameRefSet) LowerBoundSegment(min uint64) frameRefIterator {
 // UpperBoundSegment returns the segment with the highest range that contains a
 // key less than or equal to max. If no such segment exists, UpperBoundSegment
 // returns a terminal iterator.
-func (s *frameRefSet) UpperBoundSegment(max uint64) frameRefIterator {
+func (s *FrameRefSet) UpperBoundSegment(max uint64) FrameRefIterator {
 	seg, gap := s.Find(max)
 	if seg.Ok() {
 		return seg
@@ -179,14 +179,14 @@ func (s *frameRefSet) UpperBoundSegment(max uint64) frameRefIterator {
 // FindGap returns the gap containing the given key. If no such gap exists
 // (i.e. the set contains a segment containing that key), FindGap returns a
 // terminal iterator.
-func (s *frameRefSet) FindGap(key uint64) frameRefGapIterator {
+func (s *FrameRefSet) FindGap(key uint64) FrameRefGapIterator {
 	_, gap := s.Find(key)
 	return gap
 }
 
 // LowerBoundGap returns the gap with the lowest range that is greater than or
 // equal to min.
-func (s *frameRefSet) LowerBoundGap(min uint64) frameRefGapIterator {
+func (s *FrameRefSet) LowerBoundGap(min uint64) FrameRefGapIterator {
 	seg, gap := s.Find(min)
 	if gap.Ok() {
 		return gap
@@ -196,7 +196,7 @@ func (s *frameRefSet) LowerBoundGap(min uint64) frameRefGapIterator {
 
 // UpperBoundGap returns the gap with the highest range that is less than or
 // equal to max.
-func (s *frameRefSet) UpperBoundGap(max uint64) frameRefGapIterator {
+func (s *FrameRefSet) UpperBoundGap(max uint64) FrameRefGapIterator {
 	seg, gap := s.Find(max)
 	if gap.Ok() {
 		return gap
@@ -208,7 +208,7 @@ func (s *frameRefSet) UpperBoundGap(max uint64) frameRefGapIterator {
 // segment can be merged with adjacent segments, Add will do so. If the new
 // segment would overlap an existing segment, Add returns false. If Add
 // succeeds, all existing iterators are invalidated.
-func (s *frameRefSet) Add(r __generics_imported0.FileRange, val uint64) bool {
+func (s *FrameRefSet) Add(r __generics_imported0.FileRange, val uint64) bool {
 	if r.Length() <= 0 {
 		panic(fmt.Sprintf("invalid segment range %v", r))
 	}
@@ -227,7 +227,7 @@ func (s *frameRefSet) Add(r __generics_imported0.FileRange, val uint64) bool {
 // If it would overlap an existing segment, AddWithoutMerging does nothing and
 // returns false. If AddWithoutMerging succeeds, all existing iterators are
 // invalidated.
-func (s *frameRefSet) AddWithoutMerging(r __generics_imported0.FileRange, val uint64) bool {
+func (s *FrameRefSet) AddWithoutMerging(r __generics_imported0.FileRange, val uint64) bool {
 	if r.Length() <= 0 {
 		panic(fmt.Sprintf("invalid segment range %v", r))
 	}
@@ -254,7 +254,7 @@ func (s *frameRefSet) AddWithoutMerging(r __generics_imported0.FileRange, val ui
 // Merge, but may be more efficient. Note that there is no unchecked variant of
 // Insert since Insert must retrieve and inspect gap's predecessor and
 // successor segments regardless.
-func (s *frameRefSet) Insert(gap frameRefGapIterator, r __generics_imported0.FileRange, val uint64) frameRefIterator {
+func (s *FrameRefSet) Insert(gap FrameRefGapIterator, r __generics_imported0.FileRange, val uint64) FrameRefIterator {
 	if r.Length() <= 0 {
 		panic(fmt.Sprintf("invalid segment range %v", r))
 	}
@@ -266,12 +266,12 @@ func (s *frameRefSet) Insert(gap frameRefGapIterator, r __generics_imported0.Fil
 		panic(fmt.Sprintf("new segment %v overlaps successor %v", r, next.Range()))
 	}
 	if prev.Ok() && prev.End() == r.Start {
-		if mval, ok := (frameRefSetFunctions{}).Merge(prev.Range(), prev.Value(), r, val); ok {
+		if mval, ok := (FrameRefSetFunctions{}).Merge(prev.Range(), prev.Value(), r, val); ok {
 			prev.SetEndUnchecked(r.End)
 			prev.SetValue(mval)
 			if next.Ok() && next.Start() == r.End {
 				val = mval
-				if mval, ok := (frameRefSetFunctions{}).Merge(prev.Range(), val, next.Range(), next.Value()); ok {
+				if mval, ok := (FrameRefSetFunctions{}).Merge(prev.Range(), val, next.Range(), next.Value()); ok {
 					prev.SetEndUnchecked(next.End())
 					prev.SetValue(mval)
 					return s.Remove(next).PrevSegment()
@@ -281,7 +281,7 @@ func (s *frameRefSet) Insert(gap frameRefGapIterator, r __generics_imported0.Fil
 		}
 	}
 	if next.Ok() && next.Start() == r.End {
-		if mval, ok := (frameRefSetFunctions{}).Merge(r, val, next.Range(), next.Value()); ok {
+		if mval, ok := (FrameRefSetFunctions{}).Merge(r, val, next.Range(), next.Value()); ok {
 			next.SetStartUnchecked(r.Start)
 			next.SetValue(mval)
 			return next
@@ -296,7 +296,7 @@ func (s *frameRefSet) Insert(gap frameRefGapIterator, r __generics_imported0.Fil
 //
 // If the gap cannot accommodate the segment, or if r is invalid,
 // InsertWithoutMerging panics.
-func (s *frameRefSet) InsertWithoutMerging(gap frameRefGapIterator, r __generics_imported0.FileRange, val uint64) frameRefIterator {
+func (s *FrameRefSet) InsertWithoutMerging(gap FrameRefGapIterator, r __generics_imported0.FileRange, val uint64) FrameRefIterator {
 	if r.Length() <= 0 {
 		panic(fmt.Sprintf("invalid segment range %v", r))
 	}
@@ -311,20 +311,20 @@ func (s *frameRefSet) InsertWithoutMerging(gap frameRefGapIterator, r __generics
 // (including gap, but not including the returned iterator) are invalidated.
 //
 // Preconditions: r.Start >= gap.Start(); r.End <= gap.End().
-func (s *frameRefSet) InsertWithoutMergingUnchecked(gap frameRefGapIterator, r __generics_imported0.FileRange, val uint64) frameRefIterator {
+func (s *FrameRefSet) InsertWithoutMergingUnchecked(gap FrameRefGapIterator, r __generics_imported0.FileRange, val uint64) FrameRefIterator {
 	gap = gap.node.rebalanceBeforeInsert(gap)
 	copy(gap.node.keys[gap.index+1:], gap.node.keys[gap.index:gap.node.nrSegments])
 	copy(gap.node.values[gap.index+1:], gap.node.values[gap.index:gap.node.nrSegments])
 	gap.node.keys[gap.index] = r
 	gap.node.values[gap.index] = val
 	gap.node.nrSegments++
-	return frameRefIterator{gap.node, gap.index}
+	return FrameRefIterator{gap.node, gap.index}
 }
 
 // Remove removes the given segment and returns an iterator to the vacated gap.
 // All existing iterators (including seg, but not including the returned
 // iterator) are invalidated.
-func (s *frameRefSet) Remove(seg frameRefIterator) frameRefGapIterator {
+func (s *FrameRefSet) Remove(seg FrameRefIterator) FrameRefGapIterator {
 
 	if seg.node.hasChildren {
 
@@ -336,20 +336,20 @@ func (s *frameRefSet) Remove(seg frameRefIterator) frameRefGapIterator {
 	}
 	copy(seg.node.keys[seg.index:], seg.node.keys[seg.index+1:seg.node.nrSegments])
 	copy(seg.node.values[seg.index:], seg.node.values[seg.index+1:seg.node.nrSegments])
-	frameRefSetFunctions{}.ClearValue(&seg.node.values[seg.node.nrSegments-1])
+	FrameRefSetFunctions{}.ClearValue(&seg.node.values[seg.node.nrSegments-1])
 	seg.node.nrSegments--
-	return seg.node.rebalanceAfterRemove(frameRefGapIterator{seg.node, seg.index})
+	return seg.node.rebalanceAfterRemove(FrameRefGapIterator{seg.node, seg.index})
 }
 
 // RemoveAll removes all segments from the set. All existing iterators are
 // invalidated.
-func (s *frameRefSet) RemoveAll() {
-	s.root = frameRefnode{}
+func (s *FrameRefSet) RemoveAll() {
+	s.root = FrameRefnode{}
 }
 
 // RemoveRange removes all segments in the given range. An iterator to the
 // newly formed gap is returned, and all existing iterators are invalidated.
-func (s *frameRefSet) RemoveRange(r __generics_imported0.FileRange) frameRefGapIterator {
+func (s *FrameRefSet) RemoveRange(r __generics_imported0.FileRange) FrameRefGapIterator {
 	seg, gap := s.Find(r.Start)
 	if seg.Ok() {
 		seg = s.Isolate(seg, r)
@@ -367,7 +367,7 @@ func (s *frameRefSet) RemoveRange(r __generics_imported0.FileRange) frameRefGapI
 // invalidated. Otherwise, Merge returns a terminal iterator.
 //
 // If first is not the predecessor of second, Merge panics.
-func (s *frameRefSet) Merge(first, second frameRefIterator) frameRefIterator {
+func (s *FrameRefSet) Merge(first, second FrameRefIterator) FrameRefIterator {
 	if first.NextSegment() != second {
 		panic(fmt.Sprintf("attempt to merge non-neighboring segments %v, %v", first.Range(), second.Range()))
 	}
@@ -381,21 +381,21 @@ func (s *frameRefSet) Merge(first, second frameRefIterator) frameRefIterator {
 //
 // Precondition: first is the predecessor of second: first.NextSegment() ==
 // second, first == second.PrevSegment().
-func (s *frameRefSet) MergeUnchecked(first, second frameRefIterator) frameRefIterator {
+func (s *FrameRefSet) MergeUnchecked(first, second FrameRefIterator) FrameRefIterator {
 	if first.End() == second.Start() {
-		if mval, ok := (frameRefSetFunctions{}).Merge(first.Range(), first.Value(), second.Range(), second.Value()); ok {
+		if mval, ok := (FrameRefSetFunctions{}).Merge(first.Range(), first.Value(), second.Range(), second.Value()); ok {
 
 			first.SetEndUnchecked(second.End())
 			first.SetValue(mval)
 			return s.Remove(second).PrevSegment()
 		}
 	}
-	return frameRefIterator{}
+	return FrameRefIterator{}
 }
 
 // MergeAll attempts to merge all adjacent segments in the set. All existing
 // iterators are invalidated.
-func (s *frameRefSet) MergeAll() {
+func (s *FrameRefSet) MergeAll() {
 	seg := s.FirstSegment()
 	if !seg.Ok() {
 		return
@@ -412,7 +412,7 @@ func (s *frameRefSet) MergeAll() {
 
 // MergeRange attempts to merge all adjacent segments that contain a key in the
 // specific range. All existing iterators are invalidated.
-func (s *frameRefSet) MergeRange(r __generics_imported0.FileRange) {
+func (s *FrameRefSet) MergeRange(r __generics_imported0.FileRange) {
 	seg := s.LowerBoundSegment(r.Start)
 	if !seg.Ok() {
 		return
@@ -429,7 +429,7 @@ func (s *frameRefSet) MergeRange(r __generics_imported0.FileRange) {
 
 // MergeAdjacent attempts to merge the segment containing r.Start with its
 // predecessor, and the segment containing r.End-1 with its successor.
-func (s *frameRefSet) MergeAdjacent(r __generics_imported0.FileRange) {
+func (s *FrameRefSet) MergeAdjacent(r __generics_imported0.FileRange) {
 	first := s.FindSegment(r.Start)
 	if first.Ok() {
 		if prev := first.PrevSegment(); prev.Ok() {
@@ -452,7 +452,7 @@ func (s *frameRefSet) MergeAdjacent(r __generics_imported0.FileRange) {
 // end of the segment's range, so splitting would produce a segment with zero
 // length, or because split falls outside the segment's range altogether),
 // Split panics.
-func (s *frameRefSet) Split(seg frameRefIterator, split uint64) (frameRefIterator, frameRefIterator) {
+func (s *FrameRefSet) Split(seg FrameRefIterator, split uint64) (FrameRefIterator, FrameRefIterator) {
 	if !seg.Range().CanSplitAt(split) {
 		panic(fmt.Sprintf("can't split %v at %v", seg.Range(), split))
 	}
@@ -464,8 +464,8 @@ func (s *frameRefSet) Split(seg frameRefIterator, split uint64) (frameRefIterato
 // seg, but not including the returned iterators) are invalidated.
 //
 // Preconditions: seg.Start() < key < seg.End().
-func (s *frameRefSet) SplitUnchecked(seg frameRefIterator, split uint64) (frameRefIterator, frameRefIterator) {
-	val1, val2 := (frameRefSetFunctions{}).Split(seg.Range(), seg.Value(), split)
+func (s *FrameRefSet) SplitUnchecked(seg FrameRefIterator, split uint64) (FrameRefIterator, FrameRefIterator) {
+	val1, val2 := (FrameRefSetFunctions{}).Split(seg.Range(), seg.Value(), split)
 	end2 := seg.End()
 	seg.SetEndUnchecked(split)
 	seg.SetValue(val1)
@@ -477,7 +477,7 @@ func (s *frameRefSet) SplitUnchecked(seg frameRefIterator, split uint64) (frameR
 // SplitAt splits the segment straddling split, if one exists. SplitAt returns
 // true if a segment was split and false otherwise. If SplitAt splits a
 // segment, all existing iterators are invalidated.
-func (s *frameRefSet) SplitAt(split uint64) bool {
+func (s *FrameRefSet) SplitAt(split uint64) bool {
 	if seg := s.FindSegment(split); seg.Ok() && seg.Range().CanSplitAt(split) {
 		s.SplitUnchecked(seg, split)
 		return true
@@ -489,7 +489,7 @@ func (s *frameRefSet) SplitAt(split uint64) bool {
 // splitting at r.Start and r.End if necessary, and returns an updated iterator
 // to the bounded segment. All existing iterators (including seg, but not
 // including the returned iterators) are invalidated.
-func (s *frameRefSet) Isolate(seg frameRefIterator, r __generics_imported0.FileRange) frameRefIterator {
+func (s *FrameRefSet) Isolate(seg FrameRefIterator, r __generics_imported0.FileRange) FrameRefIterator {
 	if seg.Range().CanSplitAt(r.Start) {
 		_, seg = s.SplitUnchecked(seg, r.Start)
 	}
@@ -506,7 +506,7 @@ func (s *frameRefSet) Isolate(seg frameRefIterator, r __generics_imported0.FileR
 // are invalidated.
 //
 // N.B. The Iterator must not be invalidated by the function.
-func (s *frameRefSet) ApplyContiguous(r __generics_imported0.FileRange, fn func(seg frameRefIterator)) frameRefGapIterator {
+func (s *FrameRefSet) ApplyContiguous(r __generics_imported0.FileRange, fn func(seg FrameRefIterator)) FrameRefGapIterator {
 	seg, gap := s.Find(r.Start)
 	if !seg.Ok() {
 		return gap
@@ -515,7 +515,7 @@ func (s *frameRefSet) ApplyContiguous(r __generics_imported0.FileRange, fn func(
 		seg = s.Isolate(seg, r)
 		fn(seg)
 		if seg.End() >= r.End {
-			return frameRefGapIterator{}
+			return FrameRefGapIterator{}
 		}
 		gap = seg.NextGap()
 		if !gap.IsEmpty() {
@@ -524,13 +524,13 @@ func (s *frameRefSet) ApplyContiguous(r __generics_imported0.FileRange, fn func(
 		seg = gap.NextSegment()
 		if !seg.Ok() {
 
-			return frameRefGapIterator{}
+			return FrameRefGapIterator{}
 		}
 	}
 }
 
 // +stateify savable
-type frameRefnode struct {
+type FrameRefnode struct {
 	// An internal binary tree node looks like:
 	//
 	//   K
@@ -552,7 +552,7 @@ type frameRefnode struct {
 
 	// parent is a pointer to this node's parent. If this node is root, parent
 	// is nil.
-	parent *frameRefnode
+	parent *FrameRefnode
 
 	// parentIndex is the index of this node in parent.children.
 	parentIndex int
@@ -564,39 +564,39 @@ type frameRefnode struct {
 
 	// Nodes store keys and values in separate arrays to maximize locality in
 	// the common case (scanning keys for lookup).
-	keys     [frameRefmaxDegree - 1]__generics_imported0.FileRange
-	values   [frameRefmaxDegree - 1]uint64
-	children [frameRefmaxDegree]*frameRefnode
+	keys     [FrameRefmaxDegree - 1]__generics_imported0.FileRange
+	values   [FrameRefmaxDegree - 1]uint64
+	children [FrameRefmaxDegree]*FrameRefnode
 }
 
 // firstSegment returns the first segment in the subtree rooted by n.
 //
 // Preconditions: n.nrSegments != 0.
-func (n *frameRefnode) firstSegment() frameRefIterator {
+func (n *FrameRefnode) firstSegment() FrameRefIterator {
 	for n.hasChildren {
 		n = n.children[0]
 	}
-	return frameRefIterator{n, 0}
+	return FrameRefIterator{n, 0}
 }
 
 // lastSegment returns the last segment in the subtree rooted by n.
 //
 // Preconditions: n.nrSegments != 0.
-func (n *frameRefnode) lastSegment() frameRefIterator {
+func (n *FrameRefnode) lastSegment() FrameRefIterator {
 	for n.hasChildren {
 		n = n.children[n.nrSegments]
 	}
-	return frameRefIterator{n, n.nrSegments - 1}
+	return FrameRefIterator{n, n.nrSegments - 1}
 }
 
-func (n *frameRefnode) prevSibling() *frameRefnode {
+func (n *FrameRefnode) prevSibling() *FrameRefnode {
 	if n.parent == nil || n.parentIndex == 0 {
 		return nil
 	}
 	return n.parent.children[n.parentIndex-1]
 }
 
-func (n *frameRefnode) nextSibling() *frameRefnode {
+func (n *FrameRefnode) nextSibling() *FrameRefnode {
 	if n.parent == nil || n.parentIndex == n.parent.nrSegments {
 		return nil
 	}
@@ -606,38 +606,38 @@ func (n *frameRefnode) nextSibling() *frameRefnode {
 // rebalanceBeforeInsert splits n and its ancestors if they are full, as
 // required for insertion, and returns an updated iterator to the position
 // represented by gap.
-func (n *frameRefnode) rebalanceBeforeInsert(gap frameRefGapIterator) frameRefGapIterator {
+func (n *FrameRefnode) rebalanceBeforeInsert(gap FrameRefGapIterator) FrameRefGapIterator {
 	if n.parent != nil {
 		gap = n.parent.rebalanceBeforeInsert(gap)
 	}
-	if n.nrSegments < frameRefmaxDegree-1 {
+	if n.nrSegments < FrameRefmaxDegree-1 {
 		return gap
 	}
 	if n.parent == nil {
 
-		left := &frameRefnode{
-			nrSegments:  frameRefminDegree - 1,
+		left := &FrameRefnode{
+			nrSegments:  FrameRefminDegree - 1,
 			parent:      n,
 			parentIndex: 0,
 			hasChildren: n.hasChildren,
 		}
-		right := &frameRefnode{
-			nrSegments:  frameRefminDegree - 1,
+		right := &FrameRefnode{
+			nrSegments:  FrameRefminDegree - 1,
 			parent:      n,
 			parentIndex: 1,
 			hasChildren: n.hasChildren,
 		}
-		copy(left.keys[:frameRefminDegree-1], n.keys[:frameRefminDegree-1])
-		copy(left.values[:frameRefminDegree-1], n.values[:frameRefminDegree-1])
-		copy(right.keys[:frameRefminDegree-1], n.keys[frameRefminDegree:])
-		copy(right.values[:frameRefminDegree-1], n.values[frameRefminDegree:])
-		n.keys[0], n.values[0] = n.keys[frameRefminDegree-1], n.values[frameRefminDegree-1]
-		frameRefzeroValueSlice(n.values[1:])
+		copy(left.keys[:FrameRefminDegree-1], n.keys[:FrameRefminDegree-1])
+		copy(left.values[:FrameRefminDegree-1], n.values[:FrameRefminDegree-1])
+		copy(right.keys[:FrameRefminDegree-1], n.keys[FrameRefminDegree:])
+		copy(right.values[:FrameRefminDegree-1], n.values[FrameRefminDegree:])
+		n.keys[0], n.values[0] = n.keys[FrameRefminDegree-1], n.values[FrameRefminDegree-1]
+		FrameRefzeroValueSlice(n.values[1:])
 		if n.hasChildren {
-			copy(left.children[:frameRefminDegree], n.children[:frameRefminDegree])
-			copy(right.children[:frameRefminDegree], n.children[frameRefminDegree:])
-			frameRefzeroNodeSlice(n.children[2:])
-			for i := 0; i < frameRefminDegree; i++ {
+			copy(left.children[:FrameRefminDegree], n.children[:FrameRefminDegree])
+			copy(right.children[:FrameRefminDegree], n.children[FrameRefminDegree:])
+			FrameRefzeroNodeSlice(n.children[2:])
+			for i := 0; i < FrameRefminDegree; i++ {
 				left.children[i].parent = left
 				left.children[i].parentIndex = i
 				right.children[i].parent = right
@@ -651,47 +651,47 @@ func (n *frameRefnode) rebalanceBeforeInsert(gap frameRefGapIterator) frameRefGa
 		if gap.node != n {
 			return gap
 		}
-		if gap.index < frameRefminDegree {
-			return frameRefGapIterator{left, gap.index}
+		if gap.index < FrameRefminDegree {
+			return FrameRefGapIterator{left, gap.index}
 		}
-		return frameRefGapIterator{right, gap.index - frameRefminDegree}
+		return FrameRefGapIterator{right, gap.index - FrameRefminDegree}
 	}
 
 	copy(n.parent.keys[n.parentIndex+1:], n.parent.keys[n.parentIndex:n.parent.nrSegments])
 	copy(n.parent.values[n.parentIndex+1:], n.parent.values[n.parentIndex:n.parent.nrSegments])
-	n.parent.keys[n.parentIndex], n.parent.values[n.parentIndex] = n.keys[frameRefminDegree-1], n.values[frameRefminDegree-1]
+	n.parent.keys[n.parentIndex], n.parent.values[n.parentIndex] = n.keys[FrameRefminDegree-1], n.values[FrameRefminDegree-1]
 	copy(n.parent.children[n.parentIndex+2:], n.parent.children[n.parentIndex+1:n.parent.nrSegments+1])
 	for i := n.parentIndex + 2; i < n.parent.nrSegments+2; i++ {
 		n.parent.children[i].parentIndex = i
 	}
-	sibling := &frameRefnode{
-		nrSegments:  frameRefminDegree - 1,
+	sibling := &FrameRefnode{
+		nrSegments:  FrameRefminDegree - 1,
 		parent:      n.parent,
 		parentIndex: n.parentIndex + 1,
 		hasChildren: n.hasChildren,
 	}
 	n.parent.children[n.parentIndex+1] = sibling
 	n.parent.nrSegments++
-	copy(sibling.keys[:frameRefminDegree-1], n.keys[frameRefminDegree:])
-	copy(sibling.values[:frameRefminDegree-1], n.values[frameRefminDegree:])
-	frameRefzeroValueSlice(n.values[frameRefminDegree-1:])
+	copy(sibling.keys[:FrameRefminDegree-1], n.keys[FrameRefminDegree:])
+	copy(sibling.values[:FrameRefminDegree-1], n.values[FrameRefminDegree:])
+	FrameRefzeroValueSlice(n.values[FrameRefminDegree-1:])
 	if n.hasChildren {
-		copy(sibling.children[:frameRefminDegree], n.children[frameRefminDegree:])
-		frameRefzeroNodeSlice(n.children[frameRefminDegree:])
-		for i := 0; i < frameRefminDegree; i++ {
+		copy(sibling.children[:FrameRefminDegree], n.children[FrameRefminDegree:])
+		FrameRefzeroNodeSlice(n.children[FrameRefminDegree:])
+		for i := 0; i < FrameRefminDegree; i++ {
 			sibling.children[i].parent = sibling
 			sibling.children[i].parentIndex = i
 		}
 	}
-	n.nrSegments = frameRefminDegree - 1
+	n.nrSegments = FrameRefminDegree - 1
 
 	if gap.node != n {
 		return gap
 	}
-	if gap.index < frameRefminDegree {
+	if gap.index < FrameRefminDegree {
 		return gap
 	}
-	return frameRefGapIterator{sibling, gap.index - frameRefminDegree}
+	return FrameRefGapIterator{sibling, gap.index - FrameRefminDegree}
 }
 
 // rebalanceAfterRemove "unsplits" n and its ancestors if they are deficient
@@ -700,9 +700,9 @@ func (n *frameRefnode) rebalanceBeforeInsert(gap frameRefGapIterator) frameRefGa
 //
 // Precondition: n is the only node in the tree that may currently violate a
 // B-tree invariant.
-func (n *frameRefnode) rebalanceAfterRemove(gap frameRefGapIterator) frameRefGapIterator {
+func (n *FrameRefnode) rebalanceAfterRemove(gap FrameRefGapIterator) FrameRefGapIterator {
 	for {
-		if n.nrSegments >= frameRefminDegree-1 {
+		if n.nrSegments >= FrameRefminDegree-1 {
 			return gap
 		}
 		if n.parent == nil {
@@ -710,14 +710,14 @@ func (n *frameRefnode) rebalanceAfterRemove(gap frameRefGapIterator) frameRefGap
 			return gap
 		}
 
-		if sibling := n.prevSibling(); sibling != nil && sibling.nrSegments >= frameRefminDegree {
+		if sibling := n.prevSibling(); sibling != nil && sibling.nrSegments >= FrameRefminDegree {
 			copy(n.keys[1:], n.keys[:n.nrSegments])
 			copy(n.values[1:], n.values[:n.nrSegments])
 			n.keys[0] = n.parent.keys[n.parentIndex-1]
 			n.values[0] = n.parent.values[n.parentIndex-1]
 			n.parent.keys[n.parentIndex-1] = sibling.keys[sibling.nrSegments-1]
 			n.parent.values[n.parentIndex-1] = sibling.values[sibling.nrSegments-1]
-			frameRefSetFunctions{}.ClearValue(&sibling.values[sibling.nrSegments-1])
+			FrameRefSetFunctions{}.ClearValue(&sibling.values[sibling.nrSegments-1])
 			if n.hasChildren {
 				copy(n.children[1:], n.children[:n.nrSegments+1])
 				n.children[0] = sibling.children[sibling.nrSegments]
@@ -731,21 +731,21 @@ func (n *frameRefnode) rebalanceAfterRemove(gap frameRefGapIterator) frameRefGap
 			n.nrSegments++
 			sibling.nrSegments--
 			if gap.node == sibling && gap.index == sibling.nrSegments {
-				return frameRefGapIterator{n, 0}
+				return FrameRefGapIterator{n, 0}
 			}
 			if gap.node == n {
-				return frameRefGapIterator{n, gap.index + 1}
+				return FrameRefGapIterator{n, gap.index + 1}
 			}
 			return gap
 		}
-		if sibling := n.nextSibling(); sibling != nil && sibling.nrSegments >= frameRefminDegree {
+		if sibling := n.nextSibling(); sibling != nil && sibling.nrSegments >= FrameRefminDegree {
 			n.keys[n.nrSegments] = n.parent.keys[n.parentIndex]
 			n.values[n.nrSegments] = n.parent.values[n.parentIndex]
 			n.parent.keys[n.parentIndex] = sibling.keys[0]
 			n.parent.values[n.parentIndex] = sibling.values[0]
 			copy(sibling.keys[:sibling.nrSegments-1], sibling.keys[1:])
 			copy(sibling.values[:sibling.nrSegments-1], sibling.values[1:])
-			frameRefSetFunctions{}.ClearValue(&sibling.values[sibling.nrSegments-1])
+			FrameRefSetFunctions{}.ClearValue(&sibling.values[sibling.nrSegments-1])
 			if n.hasChildren {
 				n.children[n.nrSegments+1] = sibling.children[0]
 				copy(sibling.children[:sibling.nrSegments], sibling.children[1:])
@@ -760,9 +760,9 @@ func (n *frameRefnode) rebalanceAfterRemove(gap frameRefGapIterator) frameRefGap
 			sibling.nrSegments--
 			if gap.node == sibling {
 				if gap.index == 0 {
-					return frameRefGapIterator{n, n.nrSegments}
+					return FrameRefGapIterator{n, n.nrSegments}
 				}
-				return frameRefGapIterator{sibling, gap.index - 1}
+				return FrameRefGapIterator{sibling, gap.index - 1}
 			}
 			return gap
 		}
@@ -791,10 +791,10 @@ func (n *frameRefnode) rebalanceAfterRemove(gap frameRefGapIterator) frameRefGap
 				p.children[1] = nil
 			}
 			if gap.node == left {
-				return frameRefGapIterator{p, gap.index}
+				return FrameRefGapIterator{p, gap.index}
 			}
 			if gap.node == right {
-				return frameRefGapIterator{p, gap.index + left.nrSegments + 1}
+				return FrameRefGapIterator{p, gap.index + left.nrSegments + 1}
 			}
 			return gap
 		}
@@ -802,7 +802,7 @@ func (n *frameRefnode) rebalanceAfterRemove(gap frameRefGapIterator) frameRefGap
 		// two, into whichever of the two nodes comes first. This is the
 		// reverse of the non-root splitting case in
 		// node.rebalanceBeforeInsert.
-		var left, right *frameRefnode
+		var left, right *FrameRefnode
 		if n.parentIndex > 0 {
 			left = n.prevSibling()
 			right = n
@@ -812,7 +812,7 @@ func (n *frameRefnode) rebalanceAfterRemove(gap frameRefGapIterator) frameRefGap
 		}
 
 		if gap.node == right {
-			gap = frameRefGapIterator{left, gap.index + left.nrSegments + 1}
+			gap = FrameRefGapIterator{left, gap.index + left.nrSegments + 1}
 		}
 		left.keys[left.nrSegments] = p.keys[left.parentIndex]
 		left.values[left.nrSegments] = p.values[left.parentIndex]
@@ -828,7 +828,7 @@ func (n *frameRefnode) rebalanceAfterRemove(gap frameRefGapIterator) frameRefGap
 		left.nrSegments += right.nrSegments + 1
 		copy(p.keys[left.parentIndex:], p.keys[left.parentIndex+1:p.nrSegments])
 		copy(p.values[left.parentIndex:], p.values[left.parentIndex+1:p.nrSegments])
-		frameRefSetFunctions{}.ClearValue(&p.values[p.nrSegments-1])
+		FrameRefSetFunctions{}.ClearValue(&p.values[p.nrSegments-1])
 		copy(p.children[left.parentIndex+1:], p.children[left.parentIndex+2:p.nrSegments+1])
 		for i := 0; i < p.nrSegments; i++ {
 			p.children[i].parentIndex = i
@@ -852,10 +852,10 @@ func (n *frameRefnode) rebalanceAfterRemove(gap frameRefGapIterator) frameRefGap
 //
 // Unless otherwise specified, any mutation of a set invalidates all existing
 // iterators into the set.
-type frameRefIterator struct {
+type FrameRefIterator struct {
 	// node is the node containing the iterated segment. If the iterator is
 	// terminal, node is nil.
-	node *frameRefnode
+	node *FrameRefnode
 
 	// index is the index of the segment in node.keys/values.
 	index int
@@ -863,24 +863,24 @@ type frameRefIterator struct {
 
 // Ok returns true if the iterator is not terminal. All other methods are only
 // valid for non-terminal iterators.
-func (seg frameRefIterator) Ok() bool {
+func (seg FrameRefIterator) Ok() bool {
 	return seg.node != nil
 }
 
 // Range returns the iterated segment's range key.
-func (seg frameRefIterator) Range() __generics_imported0.FileRange {
+func (seg FrameRefIterator) Range() __generics_imported0.FileRange {
 	return seg.node.keys[seg.index]
 }
 
 // Start is equivalent to Range().Start, but should be preferred if only the
 // start of the range is needed.
-func (seg frameRefIterator) Start() uint64 {
+func (seg FrameRefIterator) Start() uint64 {
 	return seg.node.keys[seg.index].Start
 }
 
 // End is equivalent to Range().End, but should be preferred if only the end of
 // the range is needed.
-func (seg frameRefIterator) End() uint64 {
+func (seg FrameRefIterator) End() uint64 {
 	return seg.node.keys[seg.index].End
 }
 
@@ -894,7 +894,7 @@ func (seg frameRefIterator) End() uint64 {
 // - The new range must not overlap an existing one: If seg.NextSegment().Ok(),
 // then r.end <= seg.NextSegment().Start(); if seg.PrevSegment().Ok(), then
 // r.start >= seg.PrevSegment().End().
-func (seg frameRefIterator) SetRangeUnchecked(r __generics_imported0.FileRange) {
+func (seg FrameRefIterator) SetRangeUnchecked(r __generics_imported0.FileRange) {
 	seg.node.keys[seg.index] = r
 }
 
@@ -902,7 +902,7 @@ func (seg frameRefIterator) SetRangeUnchecked(r __generics_imported0.FileRange) 
 // cause the iterated segment to overlap another segment, or if the new range
 // is invalid, SetRange panics. This operation does not invalidate any
 // iterators.
-func (seg frameRefIterator) SetRange(r __generics_imported0.FileRange) {
+func (seg FrameRefIterator) SetRange(r __generics_imported0.FileRange) {
 	if r.Length() <= 0 {
 		panic(fmt.Sprintf("invalid segment range %v", r))
 	}
@@ -920,7 +920,7 @@ func (seg frameRefIterator) SetRange(r __generics_imported0.FileRange) {
 //
 // Preconditions: The new start must be valid: start < seg.End(); if
 // seg.PrevSegment().Ok(), then start >= seg.PrevSegment().End().
-func (seg frameRefIterator) SetStartUnchecked(start uint64) {
+func (seg FrameRefIterator) SetStartUnchecked(start uint64) {
 	seg.node.keys[seg.index].Start = start
 }
 
@@ -928,7 +928,7 @@ func (seg frameRefIterator) SetStartUnchecked(start uint64) {
 // cause the iterated segment to overlap another segment, or would result in an
 // invalid range, SetStart panics. This operation does not invalidate any
 // iterators.
-func (seg frameRefIterator) SetStart(start uint64) {
+func (seg FrameRefIterator) SetStart(start uint64) {
 	if start >= seg.End() {
 		panic(fmt.Sprintf("new start %v would invalidate segment range %v", start, seg.Range()))
 	}
@@ -943,7 +943,7 @@ func (seg frameRefIterator) SetStart(start uint64) {
 //
 // Preconditions: The new end must be valid: end > seg.Start(); if
 // seg.NextSegment().Ok(), then end <= seg.NextSegment().Start().
-func (seg frameRefIterator) SetEndUnchecked(end uint64) {
+func (seg FrameRefIterator) SetEndUnchecked(end uint64) {
 	seg.node.keys[seg.index].End = end
 }
 
@@ -951,7 +951,7 @@ func (seg frameRefIterator) SetEndUnchecked(end uint64) {
 // the iterated segment to overlap another segment, or would result in an
 // invalid range, SetEnd panics. This operation does not invalidate any
 // iterators.
-func (seg frameRefIterator) SetEnd(end uint64) {
+func (seg FrameRefIterator) SetEnd(end uint64) {
 	if end <= seg.Start() {
 		panic(fmt.Sprintf("new end %v would invalidate segment range %v", end, seg.Range()))
 	}
@@ -962,68 +962,68 @@ func (seg frameRefIterator) SetEnd(end uint64) {
 }
 
 // Value returns a copy of the iterated segment's value.
-func (seg frameRefIterator) Value() uint64 {
+func (seg FrameRefIterator) Value() uint64 {
 	return seg.node.values[seg.index]
 }
 
 // ValuePtr returns a pointer to the iterated segment's value. The pointer is
 // invalidated if the iterator is invalidated. This operation does not
 // invalidate any iterators.
-func (seg frameRefIterator) ValuePtr() *uint64 {
+func (seg FrameRefIterator) ValuePtr() *uint64 {
 	return &seg.node.values[seg.index]
 }
 
 // SetValue mutates the iterated segment's value. This operation does not
 // invalidate any iterators.
-func (seg frameRefIterator) SetValue(val uint64) {
+func (seg FrameRefIterator) SetValue(val uint64) {
 	seg.node.values[seg.index] = val
 }
 
 // PrevSegment returns the iterated segment's predecessor. If there is no
 // preceding segment, PrevSegment returns a terminal iterator.
-func (seg frameRefIterator) PrevSegment() frameRefIterator {
+func (seg FrameRefIterator) PrevSegment() FrameRefIterator {
 	if seg.node.hasChildren {
 		return seg.node.children[seg.index].lastSegment()
 	}
 	if seg.index > 0 {
-		return frameRefIterator{seg.node, seg.index - 1}
+		return FrameRefIterator{seg.node, seg.index - 1}
 	}
 	if seg.node.parent == nil {
-		return frameRefIterator{}
+		return FrameRefIterator{}
 	}
-	return frameRefsegmentBeforePosition(seg.node.parent, seg.node.parentIndex)
+	return FrameRefsegmentBeforePosition(seg.node.parent, seg.node.parentIndex)
 }
 
 // NextSegment returns the iterated segment's successor. If there is no
 // succeeding segment, NextSegment returns a terminal iterator.
-func (seg frameRefIterator) NextSegment() frameRefIterator {
+func (seg FrameRefIterator) NextSegment() FrameRefIterator {
 	if seg.node.hasChildren {
 		return seg.node.children[seg.index+1].firstSegment()
 	}
 	if seg.index < seg.node.nrSegments-1 {
-		return frameRefIterator{seg.node, seg.index + 1}
+		return FrameRefIterator{seg.node, seg.index + 1}
 	}
 	if seg.node.parent == nil {
-		return frameRefIterator{}
+		return FrameRefIterator{}
 	}
-	return frameRefsegmentAfterPosition(seg.node.parent, seg.node.parentIndex)
+	return FrameRefsegmentAfterPosition(seg.node.parent, seg.node.parentIndex)
 }
 
 // PrevGap returns the gap immediately before the iterated segment.
-func (seg frameRefIterator) PrevGap() frameRefGapIterator {
+func (seg FrameRefIterator) PrevGap() FrameRefGapIterator {
 	if seg.node.hasChildren {
 
 		return seg.node.children[seg.index].lastSegment().NextGap()
 	}
-	return frameRefGapIterator{seg.node, seg.index}
+	return FrameRefGapIterator{seg.node, seg.index}
 }
 
 // NextGap returns the gap immediately after the iterated segment.
-func (seg frameRefIterator) NextGap() frameRefGapIterator {
+func (seg FrameRefIterator) NextGap() FrameRefGapIterator {
 	if seg.node.hasChildren {
 		return seg.node.children[seg.index+1].firstSegment().PrevGap()
 	}
-	return frameRefGapIterator{seg.node, seg.index + 1}
+	return FrameRefGapIterator{seg.node, seg.index + 1}
 }
 
 // PrevNonEmpty returns the iterated segment's predecessor if it is adjacent,
@@ -1031,12 +1031,12 @@ func (seg frameRefIterator) NextGap() frameRefGapIterator {
 // Functions.MinKey(), PrevNonEmpty will return two terminal iterators.
 // Otherwise, exactly one of the iterators returned by PrevNonEmpty will be
 // non-terminal.
-func (seg frameRefIterator) PrevNonEmpty() (frameRefIterator, frameRefGapIterator) {
+func (seg FrameRefIterator) PrevNonEmpty() (FrameRefIterator, FrameRefGapIterator) {
 	gap := seg.PrevGap()
 	if gap.Range().Length() != 0 {
-		return frameRefIterator{}, gap
+		return FrameRefIterator{}, gap
 	}
-	return gap.PrevSegment(), frameRefGapIterator{}
+	return gap.PrevSegment(), FrameRefGapIterator{}
 }
 
 // NextNonEmpty returns the iterated segment's successor if it is adjacent, or
@@ -1044,12 +1044,12 @@ func (seg frameRefIterator) PrevNonEmpty() (frameRefIterator, frameRefGapIterato
 // Functions.MaxKey(), NextNonEmpty will return two terminal iterators.
 // Otherwise, exactly one of the iterators returned by NextNonEmpty will be
 // non-terminal.
-func (seg frameRefIterator) NextNonEmpty() (frameRefIterator, frameRefGapIterator) {
+func (seg FrameRefIterator) NextNonEmpty() (FrameRefIterator, FrameRefGapIterator) {
 	gap := seg.NextGap()
 	if gap.Range().Length() != 0 {
-		return frameRefIterator{}, gap
+		return FrameRefIterator{}, gap
 	}
-	return gap.NextSegment(), frameRefGapIterator{}
+	return gap.NextSegment(), FrameRefGapIterator{}
 }
 
 // A GapIterator is conceptually one of:
@@ -1070,77 +1070,77 @@ func (seg frameRefIterator) NextNonEmpty() (frameRefIterator, frameRefGapIterato
 //
 // Unless otherwise specified, any mutation of a set invalidates all existing
 // iterators into the set.
-type frameRefGapIterator struct {
+type FrameRefGapIterator struct {
 	// The representation of a GapIterator is identical to that of an Iterator,
 	// except that index corresponds to positions between segments in the same
 	// way as for node.children (see comment for node.nrSegments).
-	node  *frameRefnode
+	node  *FrameRefnode
 	index int
 }
 
 // Ok returns true if the iterator is not terminal. All other methods are only
 // valid for non-terminal iterators.
-func (gap frameRefGapIterator) Ok() bool {
+func (gap FrameRefGapIterator) Ok() bool {
 	return gap.node != nil
 }
 
 // Range returns the range spanned by the iterated gap.
-func (gap frameRefGapIterator) Range() __generics_imported0.FileRange {
+func (gap FrameRefGapIterator) Range() __generics_imported0.FileRange {
 	return __generics_imported0.FileRange{gap.Start(), gap.End()}
 }
 
 // Start is equivalent to Range().Start, but should be preferred if only the
 // start of the range is needed.
-func (gap frameRefGapIterator) Start() uint64 {
+func (gap FrameRefGapIterator) Start() uint64 {
 	if ps := gap.PrevSegment(); ps.Ok() {
 		return ps.End()
 	}
-	return frameRefSetFunctions{}.MinKey()
+	return FrameRefSetFunctions{}.MinKey()
 }
 
 // End is equivalent to Range().End, but should be preferred if only the end of
 // the range is needed.
-func (gap frameRefGapIterator) End() uint64 {
+func (gap FrameRefGapIterator) End() uint64 {
 	if ns := gap.NextSegment(); ns.Ok() {
 		return ns.Start()
 	}
-	return frameRefSetFunctions{}.MaxKey()
+	return FrameRefSetFunctions{}.MaxKey()
 }
 
 // IsEmpty returns true if the iterated gap is empty (that is, the "gap" is
 // between two adjacent segments.)
-func (gap frameRefGapIterator) IsEmpty() bool {
+func (gap FrameRefGapIterator) IsEmpty() bool {
 	return gap.Range().Length() == 0
 }
 
 // PrevSegment returns the segment immediately before the iterated gap. If no
 // such segment exists, PrevSegment returns a terminal iterator.
-func (gap frameRefGapIterator) PrevSegment() frameRefIterator {
-	return frameRefsegmentBeforePosition(gap.node, gap.index)
+func (gap FrameRefGapIterator) PrevSegment() FrameRefIterator {
+	return FrameRefsegmentBeforePosition(gap.node, gap.index)
 }
 
 // NextSegment returns the segment immediately after the iterated gap. If no
 // such segment exists, NextSegment returns a terminal iterator.
-func (gap frameRefGapIterator) NextSegment() frameRefIterator {
-	return frameRefsegmentAfterPosition(gap.node, gap.index)
+func (gap FrameRefGapIterator) NextSegment() FrameRefIterator {
+	return FrameRefsegmentAfterPosition(gap.node, gap.index)
 }
 
 // PrevGap returns the iterated gap's predecessor. If no such gap exists,
 // PrevGap returns a terminal iterator.
-func (gap frameRefGapIterator) PrevGap() frameRefGapIterator {
+func (gap FrameRefGapIterator) PrevGap() FrameRefGapIterator {
 	seg := gap.PrevSegment()
 	if !seg.Ok() {
-		return frameRefGapIterator{}
+		return FrameRefGapIterator{}
 	}
 	return seg.PrevGap()
 }
 
 // NextGap returns the iterated gap's successor. If no such gap exists, NextGap
 // returns a terminal iterator.
-func (gap frameRefGapIterator) NextGap() frameRefGapIterator {
+func (gap FrameRefGapIterator) NextGap() FrameRefGapIterator {
 	seg := gap.NextSegment()
 	if !seg.Ok() {
-		return frameRefGapIterator{}
+		return FrameRefGapIterator{}
 	}
 	return seg.NextGap()
 }
@@ -1148,55 +1148,55 @@ func (gap frameRefGapIterator) NextGap() frameRefGapIterator {
 // segmentBeforePosition returns the predecessor segment of the position given
 // by n.children[i], which may or may not contain a child. If no such segment
 // exists, segmentBeforePosition returns a terminal iterator.
-func frameRefsegmentBeforePosition(n *frameRefnode, i int) frameRefIterator {
+func FrameRefsegmentBeforePosition(n *FrameRefnode, i int) FrameRefIterator {
 	for i == 0 {
 		if n.parent == nil {
-			return frameRefIterator{}
+			return FrameRefIterator{}
 		}
 		n, i = n.parent, n.parentIndex
 	}
-	return frameRefIterator{n, i - 1}
+	return FrameRefIterator{n, i - 1}
 }
 
 // segmentAfterPosition returns the successor segment of the position given by
 // n.children[i], which may or may not contain a child. If no such segment
 // exists, segmentAfterPosition returns a terminal iterator.
-func frameRefsegmentAfterPosition(n *frameRefnode, i int) frameRefIterator {
+func FrameRefsegmentAfterPosition(n *FrameRefnode, i int) FrameRefIterator {
 	for i == n.nrSegments {
 		if n.parent == nil {
-			return frameRefIterator{}
+			return FrameRefIterator{}
 		}
 		n, i = n.parent, n.parentIndex
 	}
-	return frameRefIterator{n, i}
+	return FrameRefIterator{n, i}
 }
 
-func frameRefzeroValueSlice(slice []uint64) {
+func FrameRefzeroValueSlice(slice []uint64) {
 
 	for i := range slice {
-		frameRefSetFunctions{}.ClearValue(&slice[i])
+		FrameRefSetFunctions{}.ClearValue(&slice[i])
 	}
 }
 
-func frameRefzeroNodeSlice(slice []*frameRefnode) {
+func FrameRefzeroNodeSlice(slice []*FrameRefnode) {
 	for i := range slice {
 		slice[i] = nil
 	}
 }
 
 // String stringifies a Set for debugging.
-func (s *frameRefSet) String() string {
+func (s *FrameRefSet) String() string {
 	return s.root.String()
 }
 
 // String stringifies a node (and all of its children) for debugging.
-func (n *frameRefnode) String() string {
+func (n *FrameRefnode) String() string {
 	var buf bytes.Buffer
 	n.writeDebugString(&buf, "")
 	return buf.String()
 }
 
-func (n *frameRefnode) writeDebugString(buf *bytes.Buffer, prefix string) {
+func (n *FrameRefnode) writeDebugString(buf *bytes.Buffer, prefix string) {
 	if n.hasChildren != (n.nrSegments > 0 && n.children[0] != nil) {
 		buf.WriteString(prefix)
 		buf.WriteString(fmt.Sprintf("WARNING: inconsistent value of hasChildren: got %v, want %v\n", n.hasChildren, !n.hasChildren))
@@ -1223,7 +1223,7 @@ func (n *frameRefnode) writeDebugString(buf *bytes.Buffer, prefix string) {
 // for save/restore and the layout here is optimized for that.
 //
 // +stateify savable
-type frameRefSegmentDataSlices struct {
+type FrameRefSegmentDataSlices struct {
 	Start  []uint64
 	End    []uint64
 	Values []uint64
@@ -1231,8 +1231,8 @@ type frameRefSegmentDataSlices struct {
 
 // ExportSortedSlice returns a copy of all segments in the given set, in ascending
 // key order.
-func (s *frameRefSet) ExportSortedSlices() *frameRefSegmentDataSlices {
-	var sds frameRefSegmentDataSlices
+func (s *FrameRefSet) ExportSortedSlices() *FrameRefSegmentDataSlices {
+	var sds FrameRefSegmentDataSlices
 	for seg := s.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
 		sds.Start = append(sds.Start, seg.Start())
 		sds.End = append(sds.End, seg.End())
@@ -1249,7 +1249,7 @@ func (s *frameRefSet) ExportSortedSlices() *frameRefSegmentDataSlices {
 // Preconditions: s must be empty. sds must represent a valid set (the segments
 // in sds must have valid lengths that do not overlap). The segments in sds
 // must be sorted in ascending key order.
-func (s *frameRefSet) ImportSortedSlices(sds *frameRefSegmentDataSlices) error {
+func (s *FrameRefSet) ImportSortedSlices(sds *FrameRefSegmentDataSlices) error {
 	if !s.IsEmpty() {
 		return fmt.Errorf("cannot import into non-empty set %v", s)
 	}
@@ -1263,11 +1263,11 @@ func (s *frameRefSet) ImportSortedSlices(sds *frameRefSegmentDataSlices) error {
 	}
 	return nil
 }
-func (s *frameRefSet) saveRoot() *frameRefSegmentDataSlices {
+func (s *FrameRefSet) saveRoot() *FrameRefSegmentDataSlices {
 	return s.ExportSortedSlices()
 }
 
-func (s *frameRefSet) loadRoot(sds *frameRefSegmentDataSlices) {
+func (s *FrameRefSet) loadRoot(sds *FrameRefSegmentDataSlices) {
 	if err := s.ImportSortedSlices(sds); err != nil {
 		panic(err)
 	}

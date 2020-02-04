@@ -150,20 +150,20 @@ func (x *FileRangeSegmentDataSlices) load(m state.Map) {
 	m.Load("Values", &x.Values)
 }
 
-func (x *frameRefSet) beforeSave() {}
-func (x *frameRefSet) save(m state.Map) {
+func (x *FrameRefSet) beforeSave() {}
+func (x *FrameRefSet) save(m state.Map) {
 	x.beforeSave()
-	var root *frameRefSegmentDataSlices = x.saveRoot()
+	var root *FrameRefSegmentDataSlices = x.saveRoot()
 	m.SaveValue("root", root)
 }
 
-func (x *frameRefSet) afterLoad() {}
-func (x *frameRefSet) load(m state.Map) {
-	m.LoadValue("root", new(*frameRefSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*frameRefSegmentDataSlices)) })
+func (x *FrameRefSet) afterLoad() {}
+func (x *FrameRefSet) load(m state.Map) {
+	m.LoadValue("root", new(*FrameRefSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*FrameRefSegmentDataSlices)) })
 }
 
-func (x *frameRefnode) beforeSave() {}
-func (x *frameRefnode) save(m state.Map) {
+func (x *FrameRefnode) beforeSave() {}
+func (x *FrameRefnode) save(m state.Map) {
 	x.beforeSave()
 	m.Save("nrSegments", &x.nrSegments)
 	m.Save("parent", &x.parent)
@@ -174,8 +174,8 @@ func (x *frameRefnode) save(m state.Map) {
 	m.Save("children", &x.children)
 }
 
-func (x *frameRefnode) afterLoad() {}
-func (x *frameRefnode) load(m state.Map) {
+func (x *FrameRefnode) afterLoad() {}
+func (x *FrameRefnode) load(m state.Map) {
 	m.Load("nrSegments", &x.nrSegments)
 	m.Load("parent", &x.parent)
 	m.Load("parentIndex", &x.parentIndex)
@@ -185,16 +185,16 @@ func (x *frameRefnode) load(m state.Map) {
 	m.Load("children", &x.children)
 }
 
-func (x *frameRefSegmentDataSlices) beforeSave() {}
-func (x *frameRefSegmentDataSlices) save(m state.Map) {
+func (x *FrameRefSegmentDataSlices) beforeSave() {}
+func (x *FrameRefSegmentDataSlices) save(m state.Map) {
 	x.beforeSave()
 	m.Save("Start", &x.Start)
 	m.Save("End", &x.End)
 	m.Save("Values", &x.Values)
 }
 
-func (x *frameRefSegmentDataSlices) afterLoad() {}
-func (x *frameRefSegmentDataSlices) load(m state.Map) {
+func (x *FrameRefSegmentDataSlices) afterLoad() {}
+func (x *FrameRefSegmentDataSlices) load(m state.Map) {
 	m.Load("Start", &x.Start)
 	m.Load("End", &x.End)
 	m.Load("Values", &x.Values)
@@ -347,9 +347,9 @@ func init() {
 	state.Register("fsutil.FileRangeSet", (*FileRangeSet)(nil), state.Fns{Save: (*FileRangeSet).save, Load: (*FileRangeSet).load})
 	state.Register("fsutil.FileRangenode", (*FileRangenode)(nil), state.Fns{Save: (*FileRangenode).save, Load: (*FileRangenode).load})
 	state.Register("fsutil.FileRangeSegmentDataSlices", (*FileRangeSegmentDataSlices)(nil), state.Fns{Save: (*FileRangeSegmentDataSlices).save, Load: (*FileRangeSegmentDataSlices).load})
-	state.Register("fsutil.frameRefSet", (*frameRefSet)(nil), state.Fns{Save: (*frameRefSet).save, Load: (*frameRefSet).load})
-	state.Register("fsutil.frameRefnode", (*frameRefnode)(nil), state.Fns{Save: (*frameRefnode).save, Load: (*frameRefnode).load})
-	state.Register("fsutil.frameRefSegmentDataSlices", (*frameRefSegmentDataSlices)(nil), state.Fns{Save: (*frameRefSegmentDataSlices).save, Load: (*frameRefSegmentDataSlices).load})
+	state.Register("fsutil.FrameRefSet", (*FrameRefSet)(nil), state.Fns{Save: (*FrameRefSet).save, Load: (*FrameRefSet).load})
+	state.Register("fsutil.FrameRefnode", (*FrameRefnode)(nil), state.Fns{Save: (*FrameRefnode).save, Load: (*FrameRefnode).load})
+	state.Register("fsutil.FrameRefSegmentDataSlices", (*FrameRefSegmentDataSlices)(nil), state.Fns{Save: (*FrameRefSegmentDataSlices).save, Load: (*FrameRefSegmentDataSlices).load})
 	state.Register("fsutil.HostFileMapper", (*HostFileMapper)(nil), state.Fns{Save: (*HostFileMapper).save, Load: (*HostFileMapper).load})
 	state.Register("fsutil.HostMappable", (*HostMappable)(nil), state.Fns{Save: (*HostMappable).save, Load: (*HostMappable).load})
 	state.Register("fsutil.SimpleFileInode", (*SimpleFileInode)(nil), state.Fns{Save: (*SimpleFileInode).save, Load: (*SimpleFileInode).load})
