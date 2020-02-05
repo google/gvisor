@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -31,5 +31,17 @@ go_library(
         "//pkg/tcpip",
         "//pkg/usermem",
         "//pkg/waiter",
+    ],
+)
+
+go_test(
+    name = "netlink_test",
+    size = "small",
+    srcs = [
+        "message_test.go",
+    ],
+    deps = [
+        ":netlink",
+        "//pkg/abi/linux",
     ],
 )

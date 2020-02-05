@@ -2769,9 +2769,11 @@ cc_binary(
     deps = [
         ":socket_netlink_util",
         ":socket_test_util",
+        "//test/util:capability_util",
         "//test/util:cleanup",
         "//test/util:file_descriptor",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:optional",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
