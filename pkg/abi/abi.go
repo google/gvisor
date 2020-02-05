@@ -19,6 +19,9 @@ import (
 	"fmt"
 )
 
+// Foo is bar.
+var Foo = "bar"
+
 // OS describes the target operating system for an ABI.
 //
 // Note that OS is architecture-independent. The details of the OS ABI will
