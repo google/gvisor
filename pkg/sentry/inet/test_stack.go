@@ -47,6 +47,12 @@ func (s *TestStack) InterfaceAddrs() map[int32][]InterfaceAddr {
 	return s.InterfaceAddrsMap
 }
 
+// AddInterfaceAddr implements Stack.AddInterfaceAddr.
+func (s *TestStack) AddInterfaceAddr(idx int32, addr InterfaceAddr) error {
+	s.InterfaceAddrsMap[idx] = append(s.InterfaceAddrsMap[idx], addr)
+	return nil
+}
+
 // SupportsIPv6 implements Stack.SupportsIPv6.
 func (s *TestStack) SupportsIPv6() bool {
 	return s.SupportsIPv6Flag

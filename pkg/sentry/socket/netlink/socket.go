@@ -644,47 +644,38 @@ func (s *Socket) sendResponse(ctx context.Context, ms *MessageSet) *syserr.Error
 	return nil
 }
 
-func (s *Socket) dumpErrorMesage(ctx context.Context, hdr linux.NetlinkMessageHeader, ms *MessageSet, err *syserr.Error) *syserr.Error {
+func dumpErrorMesage(hdr linux.NetlinkMessageHeader, ms *MessageSet, err *syserr.Error) {
 	m := ms.AddMessage(linux.NetlinkMessageHeader{
 		Type: linux.NLMSG_ERROR,
 	})
-
 	m.Put(linux.NetlinkErrorMessage{
 		Error:  int32(-err.ToLinux().Number()),
 		Header: hdr,
 	})
-	return nil
+}
 
+func dumpAckMesage(hdr linux.NetlinkMessageHeader, ms *MessageSet) {
+	m := ms.AddMessage(linux.NetlinkMessageHeader{
+		Type: linux.NLMSG_ERROR,
+	})
+	m.Put(linux.NetlinkErrorMessage{
+		Error:  0,
+		Header: hdr,
+	})
 }
 
 // processMessages handles each message in buf, passing it to the protocol
 // handler for final handling.
 func (s *Socket) processMessages(ctx context.Context, buf []byte) *syserr.Error {
 	for len(buf) > 0 {
-		if len(buf) < linux.NetlinkMessageHeaderSize {
+		msg, rest, ok := ParseMessage(buf)
+		if !ok {
 			// Linux ignores messages that are too short. See
 			// net/netlink/af_netlink.c:netlink_rcv_skb.
 			break
 		}
-
-		var hdr linux.NetlinkMessageHeader
-		binary.Unmarshal(buf[:linux.NetlinkMessageHeaderSize], usermem.ByteOrder, &hdr)
-
-		if hdr.Length < linux.NetlinkMessageHeaderSize || uint64(hdr.Length) > uint64(len(buf)) {
-			// Linux ignores malformed messages. See
-			// net/netlink/af_netlink.c:netlink_rcv_skb.
-			break
-		}
-
-		// Data from this message.
-		data := buf[linux.NetlinkMessageHeaderSize:hdr.Length]
-
-		// Advance to the next message.
-		next := alignUp(int(hdr.Length), linux.NLMSG_ALIGNTO)
-		if next >= len(buf)-1 {
-			next = len(buf) - 1
-		}
-		buf = buf[next:]
+		buf = rest
+		hdr := msg.Header()
 
 		// Ignore control messages.
 		if hdr.Type < linux.NLMSG_MIN_TYPE {
@@ -692,19 +683,10 @@ func (s *Socket) processMessages(ctx context.Context, buf []byte) *syserr.Error 
 		}
 
 		ms := NewMessageSet(s.portID, hdr.Seq)
-		var err *syserr.Error
-		// TODO(b/68877377): ACKs not supported yet.
-		if hdr.Flags&linux.NLM_F_ACK == linux.NLM_F_ACK {
-			err = syserr.ErrNotSupported
-		} else {
-
-			err = s.protocol.ProcessMessage(ctx, hdr, data, ms)
-		}
-		if err != nil {
-			ms = NewMessageSet(s.portID, hdr.Seq)
-			if err := s.dumpErrorMesage(ctx, hdr, ms, err); err != nil {
-				return err
-			}
+		if err := s.protocol.ProcessMessage(ctx, msg, ms); err != nil {
+			dumpErrorMesage(hdr, ms, err)
+		} else if hdr.Flags&linux.NLM_F_ACK == linux.NLM_F_ACK {
+			dumpAckMesage(hdr, ms)
 		}
 
 		if err := s.sendResponse(ctx, ms); err != nil {
