@@ -136,8 +136,13 @@ func FindFile(path string) (string, error) {
 // TestConfig returns the default configuration to use in tests. Note that
 // 'RootDir' must be set by caller if required.
 func TestConfig() *boot.Config {
+	logDir := ""
+	if dir, ok := os.LookupEnv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
+		logDir = dir + "/"
+	}
 	return &boot.Config{
 		Debug:           true,
+		DebugLog:        logDir,
 		LogFormat:       "text",
 		DebugLogFormat:  "text",
 		AlsoLogToStderr: true,
