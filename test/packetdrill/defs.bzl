@@ -15,7 +15,7 @@ def _packetdrill_test_impl(ctx):
         # Make sure that everything is readable here.
         "find . -type f -exec chmod a+rx {} \\;",
         "find . -type d -exec chmod a+rx {} \\;",
-        "%s %s --init_script %s -- %s\n" % (
+        "%s %s --init_script %s $@ -- %s\n" % (
             test_runner.short_path,
             " ".join(ctx.attr.flags),
             ctx.files._init_script[0].short_path,
@@ -76,7 +76,9 @@ def packetdrill_netstack_test(name, **kwargs):
         kwargs["tags"] = _PACKETDRILL_TAGS
     _packetdrill_test(
         name = name + "_netstack_test",
-        flags = ["--dut_platform", "netstack"],
+        # This is the default runtime unless
+        # "--test_arg=--runtime=OTHER_RUNTIME" is used to override the value.
+        flags = ["--dut_platform", "netstack", "--runtime", "runsc-d"],
         **kwargs
     )
 

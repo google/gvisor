@@ -29,7 +29,7 @@ function failure() {
 }
 trap 'failure ${LINENO} "$BASH_COMMAND"' ERR
 
-declare -r LONGOPTS="dut_platform:,init_script:"
+declare -r LONGOPTS="dut_platform:,init_script:,runtime:"
 
 # Don't use declare below so that the error from getopt will end the script.
 PARSED=$(getopt --options "" --longoptions=$LONGOPTS --name "$0" -- "$@")
@@ -39,11 +39,19 @@ eval set -- "$PARSED"
 while true; do
   case "$1" in
     --dut_platform)
+      # Either "linux" or "netstack".
       declare -r DUT_PLATFORM="$2"
       shift 2
       ;;
     --init_script)
       declare -r INIT_SCRIPT="$2"
+      shift 2
+      ;;
+    --runtime)
+      # Not readonly because there might be multiple --runtime arguments and we
+      # want to use just the last one.  Only used if --dut_platform is
+      # "netstack".
+      declare RUNTIME="$2"
       shift 2
       ;;
     --)
@@ -61,9 +69,13 @@ declare -r scripts="$@"
 
 # Check that the required flags are defined in a way that is safe for "set -u".
 if [[ "${DUT_PLATFORM-}" == "netstack" ]]; then
-  declare -r RUNTIME="--runtime runsc-d"
+  if [[ -z "${RUNTIME-}" ]]; then
+    echo "FAIL: Missing --runtime argument: ${RUNTIME-}"
+    exit 2
+  fi
+  declare -r RUNTIME_ARG="--runtime ${RUNTIME}"
 elif [[ "${DUT_PLATFORM-}" == "linux" ]]; then
-  declare -r RUNTIME=""
+  declare -r RUNTIME_ARG=""
 else
   echo "FAIL: Bad or missing --dut_platform argument: ${DUT_PLATFORM-}"
   exit 2
@@ -143,7 +155,7 @@ done
 docker pull "${IMAGE_TAG}"
 
 # Create the DUT container and connect to network.
-DUT=$(docker create ${RUNTIME} --privileged --rm \
+DUT=$(docker create ${RUNTIME_ARG} --privileged --rm \
   --stop-timeout ${TIMEOUT} -it ${IMAGE_TAG})
 docker network connect "${CTRL_NET}" \
   --ip "${CTRL_NET_PREFIX}${DUT_NET_SUFFIX}" "${DUT}" \
