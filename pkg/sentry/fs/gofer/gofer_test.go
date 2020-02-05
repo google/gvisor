@@ -61,7 +61,7 @@ func rootTest(t *testing.T, name string, cp cachePolicy, fn func(context.Context
 		ctx := contexttest.Context(t)
 		sattr, rootInodeOperations := newInodeOperations(ctx, s, contextFile{
 			file: rootFile,
-		}, root.QID, p9.AttrMaskAll(), root.Attr, false /* socket */)
+		}, root.QID, p9.AttrMaskAll(), root.Attr)
 		m := fs.NewMountSource(ctx, s, &filesystem{}, fs.MountSourceFlags{})
 		rootInode := fs.NewInode(ctx, rootInodeOperations, m, sattr)
 

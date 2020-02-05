@@ -17,6 +17,7 @@ package header_test
 import (
 	"bytes"
 	"crypto/sha256"
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -296,6 +297,34 @@ func TestScopeForIPv6Address(t *testing.T) {
 			}
 			if got != test.scope {
 				t.Errorf("got header.IsV6UniqueLocalAddress(%s) = (%d, _), want = (%d, _)", test.addr, got, test.scope)
+			}
+		})
+	}
+}
+
+func TestSolicitedNodeAddr(t *testing.T) {
+	tests := []struct {
+		addr tcpip.Address
+		want tcpip.Address
+	}{
+		{
+			addr: "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\xa0",
+			want: "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\xff\x0e\x0f\xa0",
+		},
+		{
+			addr: "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\xdd\x0e\x0f\xa0",
+			want: "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\xff\x0e\x0f\xa0",
+		},
+		{
+			addr: "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\xdd\x01\x02\x03",
+			want: "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\xff\x01\x02\x03",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("%s", test.addr), func(t *testing.T) {
+			if got := header.SolicitedNodeAddr(test.addr); got != test.want {
+				t.Fatalf("got header.SolicitedNodeAddr(%s) = %s, want = %s", test.addr, got, test.want)
 			}
 		})
 	}

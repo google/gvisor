@@ -256,10 +256,12 @@ func (FilterInputDropAll) LocalAction(ip net.IP) error {
 // misunderstand and save the wrong tables.
 type FilterInputMultiUDPRules struct{}
 
+// Name implements TestCase.Name.
 func (FilterInputMultiUDPRules) Name() string {
 	return "FilterInputMultiUDPRules"
 }
 
+// ContainerAction implements TestCase.ContainerAction.
 func (FilterInputMultiUDPRules) ContainerAction(ip net.IP) error {
 	if err := filterTable("-A", "INPUT", "-p", "udp", "-m", "udp", "--destination-port", fmt.Sprintf("%d", dropPort), "-j", "DROP"); err != nil {
 		return err
@@ -270,6 +272,7 @@ func (FilterInputMultiUDPRules) ContainerAction(ip net.IP) error {
 	return filterTable("-L")
 }
 
+// LocalAction implements TestCase.LocalAction.
 func (FilterInputMultiUDPRules) LocalAction(ip net.IP) error {
 	// No-op.
 	return nil
@@ -279,10 +282,12 @@ func (FilterInputMultiUDPRules) LocalAction(ip net.IP) error {
 // specified.
 type FilterInputRequireProtocolUDP struct{}
 
+// Name implements TestCase.Name.
 func (FilterInputRequireProtocolUDP) Name() string {
 	return "FilterInputRequireProtocolUDP"
 }
 
+// ContainerAction implements TestCase.ContainerAction.
 func (FilterInputRequireProtocolUDP) ContainerAction(ip net.IP) error {
 	if err := filterTable("-A", "INPUT", "-m", "udp", "--destination-port", fmt.Sprintf("%d", dropPort), "-j", "DROP"); err == nil {
 		return errors.New("expected iptables to fail with out \"-p udp\", but succeeded")
@@ -290,6 +295,7 @@ func (FilterInputRequireProtocolUDP) ContainerAction(ip net.IP) error {
 	return nil
 }
 
+// LocalAction implements TestCase.LocalAction.
 func (FilterInputRequireProtocolUDP) LocalAction(ip net.IP) error {
 	// No-op.
 	return nil

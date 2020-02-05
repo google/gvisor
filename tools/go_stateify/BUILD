@@ -6,4 +6,5 @@ go_binary(
     name = "stateify",
     srcs = ["main.go"],
     visibility = ["//visibility:public"],
+    deps = ["//tools/tags"],
 )

@@ -23,6 +23,9 @@ import (
 	"go/token"
 	"os"
 	"sort"
+	"strings"
+
+	"gvisor.dev/gvisor/tools/tags"
 )
 
 const (
@@ -104,6 +107,14 @@ func NewGenerator(srcs []string, out, outTest, pkg string, imports []string) (*G
 func (g *Generator) writeHeader() error {
 	var b sourceBuffer
 	b.emit("// Automatically generated marshal implementation. See tools/go_marshal.\n\n")
+
+	// Emit build tags.
+	if t := tags.Aggregate(g.inputs); len(t) > 0 {
+		b.emit(strings.Join(t.Lines(), "\n"))
+		b.emit("\n")
+	}
+
+	// Package header.
 	b.emit("package %s\n\n", g.pkg)
 	if err := b.write(g.output); err != nil {
 		return err

@@ -450,17 +450,16 @@ func main() {
 	}
 
 	// Get subset of tests corresponding to shard.
-	begin, end, err := testutil.TestBoundsForShard(len(testCases))
+	indices, err := testutil.TestIndicesForShard(len(testCases))
 	if err != nil {
 		fatalf("TestsForShard() failed: %v", err)
 	}
-	testCases = testCases[begin:end]
 
 	// Run the tests.
 	var tests []testing.InternalTest
-	for _, tc := range testCases {
+	for _, tci := range indices {
 		// Capture tc.
-		tc := tc
+		tc := testCases[tci]
 		testName := fmt.Sprintf("%s_%s", tc.Suite, tc.Name)
 		tests = append(tests, testing.InternalTest{
 			Name: testName,

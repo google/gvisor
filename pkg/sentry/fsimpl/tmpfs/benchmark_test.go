@@ -183,7 +183,7 @@ func BenchmarkVFS2MemfsStat(b *testing.B) {
 			if err != nil {
 				b.Fatalf("failed to create tmpfs root mount: %v", err)
 			}
-			defer mntns.DecRef(vfsObj)
+			defer mntns.DecRef()
 
 			var filePathBuilder strings.Builder
 			filePathBuilder.WriteByte('/')
@@ -374,7 +374,7 @@ func BenchmarkVFS2MemfsMountStat(b *testing.B) {
 			if err != nil {
 				b.Fatalf("failed to create tmpfs root mount: %v", err)
 			}
-			defer mntns.DecRef(vfsObj)
+			defer mntns.DecRef()
 
 			var filePathBuilder strings.Builder
 			filePathBuilder.WriteByte('/')

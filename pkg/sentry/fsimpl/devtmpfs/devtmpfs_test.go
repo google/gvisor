@@ -45,7 +45,7 @@ func TestDevtmpfs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create tmpfs root mount: %v", err)
 	}
-	defer mntns.DecRef(vfsObj)
+	defer mntns.DecRef()
 	root := mntns.Root()
 	defer root.DecRef()
 	devpop := vfs.PathOperation{

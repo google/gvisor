@@ -24,9 +24,11 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -49,7 +51,7 @@ func newTmpfsRoot(ctx context.Context) (*vfs.VirtualFilesystem, vfs.VirtualDentr
 	root := mntns.Root()
 	return vfsObj, root, func() {
 		root.DecRef()
-		mntns.DecRef(vfsObj)
+		mntns.DecRef()
 	}, nil
 }
 
@@ -257,6 +259,60 @@ func TestPWrite(t *testing.T) {
 			}
 
 		})
+	}
+}
+
+func TestLocks(t *testing.T) {
+	ctx := contexttest.Context(t)
+	fd, cleanup, err := newFileFD(ctx, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+
+	var (
+		uid1 lock.UniqueID
+		uid2 lock.UniqueID
+		// Non-blocking.
+		block lock.Blocker
+	)
+
+	uid1 = 123
+	uid2 = 456
+
+	if err := fd.Impl().LockBSD(ctx, uid1, lock.ReadLock, block); err != nil {
+		t.Fatalf("fd.Impl().LockBSD failed: err = %v", err)
+	}
+	if err := fd.Impl().LockBSD(ctx, uid2, lock.ReadLock, block); err != nil {
+		t.Fatalf("fd.Impl().LockBSD failed: err = %v", err)
+	}
+	if got, want := fd.Impl().LockBSD(ctx, uid2, lock.WriteLock, block), syserror.ErrWouldBlock; got != want {
+		t.Fatalf("fd.Impl().LockBSD failed: got = %v, want = %v", got, want)
+	}
+	if err := fd.Impl().UnlockBSD(ctx, uid1); err != nil {
+		t.Fatalf("fd.Impl().UnlockBSD failed: err = %v", err)
+	}
+	if err := fd.Impl().LockBSD(ctx, uid2, lock.WriteLock, block); err != nil {
+		t.Fatalf("fd.Impl().LockBSD failed: err = %v", err)
+	}
+
+	rng1 := lock.LockRange{0, 1}
+	rng2 := lock.LockRange{1, 2}
+
+	if err := fd.Impl().LockPOSIX(ctx, uid1, lock.ReadLock, rng1, block); err != nil {
+		t.Fatalf("fd.Impl().LockPOSIX failed: err = %v", err)
+	}
+	if err := fd.Impl().LockPOSIX(ctx, uid2, lock.ReadLock, rng2, block); err != nil {
+		t.Fatalf("fd.Impl().LockPOSIX failed: err = %v", err)
+	}
+	if err := fd.Impl().LockPOSIX(ctx, uid1, lock.WriteLock, rng1, block); err != nil {
+		t.Fatalf("fd.Impl().LockPOSIX failed: err = %v", err)
+	}
+	if got, want := fd.Impl().LockPOSIX(ctx, uid2, lock.ReadLock, rng1, block), syserror.ErrWouldBlock; got != want {
+		t.Fatalf("fd.Impl().LockPOSIX failed: got = %v, want = %v", got, want)
+	}
+	if err := fd.Impl().UnlockPOSIX(ctx, uid1, rng1); err != nil {
+		t.Fatalf("fd.Impl().UnlockPOSIX failed: err = %v", err)
 	}
 }
 

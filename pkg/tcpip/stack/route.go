@@ -225,7 +225,9 @@ func (r *Route) Release() {
 // Clone Clone a route such that the original one can be released and the new
 // one will remain valid.
 func (r *Route) Clone() Route {
-	r.ref.incRef()
+	if r.ref != nil {
+		r.ref.incRef()
+	}
 	return *r
 }
 
