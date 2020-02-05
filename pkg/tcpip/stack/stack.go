@@ -795,6 +795,8 @@ func (s *Stack) Forwarding() bool {
 
 // SetRouteTable assigns the route table to be used by this stack. It
 // specifies which NIC to use for given destination address ranges.
+//
+// This method takes ownership of the table.
 func (s *Stack) SetRouteTable(table []tcpip.Route) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -807,6 +809,13 @@ func (s *Stack) GetRouteTable() []tcpip.Route {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]tcpip.Route(nil), s.routeTable...)
+}
+
+// AddRoute appends a route to the route table.
+func (s *Stack) AddRoute(route tcpip.Route) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.routeTable = append(s.routeTable, route)
 }
 
 // NewEndpoint creates a new transport layer endpoint of the given protocol.
