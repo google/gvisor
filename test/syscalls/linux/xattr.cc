@@ -39,6 +39,10 @@ namespace {
 class XattrTest : public FileTest {};
 
 TEST_F(XattrTest, XattrNullName) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
 
   EXPECT_THAT(setxattr(path, nullptr, nullptr, 0, /*flags=*/0),
@@ -48,6 +52,10 @@ TEST_F(XattrTest, XattrNullName) {
 }
 
 TEST_F(XattrTest, XattrEmptyName) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
 
   EXPECT_THAT(setxattr(path, "", nullptr, 0, /*flags=*/0),
@@ -56,6 +64,10 @@ TEST_F(XattrTest, XattrEmptyName) {
 }
 
 TEST_F(XattrTest, XattrLargeName) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   std::string name = "user.";
   name += std::string(XATTR_NAME_MAX - name.length(), 'a');
@@ -77,6 +89,10 @@ TEST_F(XattrTest, XattrLargeName) {
 }
 
 TEST_F(XattrTest, XattrInvalidPrefix) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   std::string name(XATTR_NAME_MAX, 'a');
   EXPECT_THAT(setxattr(path, name.c_str(), nullptr, 0, /*flags=*/0),
@@ -88,6 +104,10 @@ TEST_F(XattrTest, XattrInvalidPrefix) {
 // Do not allow save/restore cycles after making the test file read-only, as
 // the restore will fail to open it with r/w permissions.
 TEST_F(XattrTest, XattrReadOnly_NoRandomSave) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   // Drop capabilities that allow us to override file and directory permissions.
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
@@ -113,6 +133,10 @@ TEST_F(XattrTest, XattrReadOnly_NoRandomSave) {
 // Do not allow save/restore cycles after making the test file write-only, as
 // the restore will fail to open it with r/w permissions.
 TEST_F(XattrTest, XattrWriteOnly_NoRandomSave) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   // Drop capabilities that allow us to override file and directory permissions.
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
@@ -143,6 +167,10 @@ TEST_F(XattrTest, XattrTrustedWithNonadmin) {
 }
 
 TEST_F(XattrTest, XattrOnDirectory) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const char name[] = "user.test";
   EXPECT_THAT(setxattr(dir.path().c_str(), name, NULL, 0, /*flags=*/0),
@@ -152,6 +180,10 @@ TEST_F(XattrTest, XattrOnDirectory) {
 }
 
 TEST_F(XattrTest, XattrOnSymlink) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo(dir.path(), test_file_name_));
@@ -163,6 +195,10 @@ TEST_F(XattrTest, XattrOnSymlink) {
 }
 
 TEST_F(XattrTest, XattrOnInvalidFileTypes) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char name[] = "user.test";
 
   char char_device[] = "/dev/zero";
@@ -181,6 +217,10 @@ TEST_F(XattrTest, XattrOnInvalidFileTypes) {
 }
 
 TEST_F(XattrTest, SetxattrSizeSmallerThanValue) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   std::vector<char> val = {'a', 'a'};
@@ -196,6 +236,10 @@ TEST_F(XattrTest, SetxattrSizeSmallerThanValue) {
 }
 
 TEST_F(XattrTest, SetxattrZeroSize) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   char val = 'a';
@@ -208,6 +252,10 @@ TEST_F(XattrTest, SetxattrZeroSize) {
 }
 
 TEST_F(XattrTest, SetxattrSizeTooLarge) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
 
@@ -223,6 +271,10 @@ TEST_F(XattrTest, SetxattrSizeTooLarge) {
 }
 
 TEST_F(XattrTest, SetxattrNullValueAndNonzeroSize) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   EXPECT_THAT(setxattr(path, name, nullptr, 1, /*flags=*/0),
@@ -232,6 +284,10 @@ TEST_F(XattrTest, SetxattrNullValueAndNonzeroSize) {
 }
 
 TEST_F(XattrTest, SetxattrNullValueAndZeroSize) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   EXPECT_THAT(setxattr(path, name, nullptr, 0, /*flags=*/0), SyscallSucceeds());
@@ -240,6 +296,10 @@ TEST_F(XattrTest, SetxattrNullValueAndZeroSize) {
 }
 
 TEST_F(XattrTest, SetxattrValueTooLargeButOKSize) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   std::vector<char> val(XATTR_SIZE_MAX + 1);
@@ -256,6 +316,10 @@ TEST_F(XattrTest, SetxattrValueTooLargeButOKSize) {
 }
 
 TEST_F(XattrTest, SetxattrReplaceWithSmaller) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   std::vector<char> val = {'a', 'a'};
@@ -271,6 +335,10 @@ TEST_F(XattrTest, SetxattrReplaceWithSmaller) {
 }
 
 TEST_F(XattrTest, SetxattrReplaceWithLarger) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   std::vector<char> val = {'a', 'a'};
@@ -285,6 +353,10 @@ TEST_F(XattrTest, SetxattrReplaceWithLarger) {
 }
 
 TEST_F(XattrTest, SetxattrCreateFlag) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   EXPECT_THAT(setxattr(path, name, nullptr, 0, XATTR_CREATE),
@@ -296,6 +368,10 @@ TEST_F(XattrTest, SetxattrCreateFlag) {
 }
 
 TEST_F(XattrTest, SetxattrReplaceFlag) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   EXPECT_THAT(setxattr(path, name, nullptr, 0, XATTR_REPLACE),
@@ -308,6 +384,10 @@ TEST_F(XattrTest, SetxattrReplaceFlag) {
 }
 
 TEST_F(XattrTest, SetxattrInvalidFlags) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   int invalid_flags = 0xff;
   EXPECT_THAT(setxattr(path, nullptr, nullptr, 0, invalid_flags),
@@ -315,6 +395,10 @@ TEST_F(XattrTest, SetxattrInvalidFlags) {
 }
 
 TEST_F(XattrTest, Getxattr) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   int val = 1234;
@@ -327,6 +411,10 @@ TEST_F(XattrTest, Getxattr) {
 }
 
 TEST_F(XattrTest, GetxattrSizeSmallerThanValue) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   std::vector<char> val = {'a', 'a'};
@@ -339,6 +427,10 @@ TEST_F(XattrTest, GetxattrSizeSmallerThanValue) {
 }
 
 TEST_F(XattrTest, GetxattrSizeLargerThanValue) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   char val = 'a';
@@ -354,6 +446,10 @@ TEST_F(XattrTest, GetxattrSizeLargerThanValue) {
 }
 
 TEST_F(XattrTest, GetxattrZeroSize) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   char val = 'a';
@@ -367,6 +463,10 @@ TEST_F(XattrTest, GetxattrZeroSize) {
 }
 
 TEST_F(XattrTest, GetxattrSizeTooLarge) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   char val = 'a';
@@ -383,6 +483,10 @@ TEST_F(XattrTest, GetxattrSizeTooLarge) {
 }
 
 TEST_F(XattrTest, GetxattrNullValue) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   char val = 'a';
@@ -394,6 +498,10 @@ TEST_F(XattrTest, GetxattrNullValue) {
 }
 
 TEST_F(XattrTest, GetxattrNullValueAndZeroSize) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   char val = 'a';
@@ -410,12 +518,20 @@ TEST_F(XattrTest, GetxattrNullValueAndZeroSize) {
 }
 
 TEST_F(XattrTest, GetxattrNonexistentName) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   EXPECT_THAT(getxattr(path, name, nullptr, 0), SyscallFailsWithErrno(ENODATA));
 }
 
 TEST_F(XattrTest, LGetSetxattrOnSymlink) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo(dir.path(), test_file_name_));
@@ -427,6 +543,10 @@ TEST_F(XattrTest, LGetSetxattrOnSymlink) {
 }
 
 TEST_F(XattrTest, LGetSetxattrOnNonsymlink) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   int val = 1234;
@@ -441,6 +561,10 @@ TEST_F(XattrTest, LGetSetxattrOnNonsymlink) {
 }
 
 TEST_F(XattrTest, FGetSetxattr) {
+  // TODO(gvisor.dev/issue/1636): Re-enable once list/remove xattr are
+  // supported, and get/set have been added pack to the syscall table.
+  SKIP_IF(IsRunningOnGvisor());
+
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_.c_str(), 0));
   const char name[] = "user.test";
