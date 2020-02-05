@@ -353,6 +353,11 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
 	}
 	pkt.NetworkHeader = headerView[:h.HeaderLength()]
 
+	hlen := int(h.HeaderLength())
+	tlen := int(h.TotalLength())
+	pkt.Data.TrimFront(hlen)
+	pkt.Data.CapLength(tlen - hlen)
+
 	// iptables filtering. All packets that reach here are intended for
 	// this machine and will not be forwarded.
 	ipt := e.stack.IPTables()
@@ -360,11 +365,6 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
 		// iptables is telling us to drop the packet.
 		return
 	}
-
-	hlen := int(h.HeaderLength())
-	tlen := int(h.TotalLength())
-	pkt.Data.TrimFront(hlen)
-	pkt.Data.CapLength(tlen - hlen)
 
 	more := (h.Flags() & header.IPv4FlagMoreFragments) != 0
 	if more || h.FragmentOffset() != 0 {

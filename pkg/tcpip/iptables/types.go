@@ -132,7 +132,7 @@ type Table struct {
 // ValidHooks returns a bitmap of the builtin hooks for the given table.
 func (table *Table) ValidHooks() uint32 {
 	hooks := uint32(0)
-	for hook, _ := range table.BuiltinChains {
+	for hook := range table.BuiltinChains {
 		hooks |= 1 << hook
 	}
 	return hooks
@@ -174,6 +174,8 @@ type Matcher interface {
 	// Match returns whether the packet matches and whether the packet
 	// should be "hotdropped", i.e. dropped immediately. This is usually
 	// used for suspicious packets.
+	//
+	// Precondition: packet.NetworkHeader is set.
 	Match(hook Hook, packet tcpip.PacketBuffer, interfaceName string) (matches bool, hotdrop bool)
 }
 
