@@ -48,8 +48,7 @@ type metadata struct {
 	Size       uint32
 }
 
-// nflog logs messages related to the writing and reading of iptables, but only
-// when enableDebug is true.
+// nflog logs messages related to the writing and reading of iptables.
 func nflog(format string, args ...interface{}) {
 	log.Infof("netfilter: "+format, args...)
 }

@@ -16,6 +16,7 @@
 
 #include <linux/if_arp.h>
 #include <linux/netlink.h>
+#include <linux/rtnetlink.h>
 #include <sys/socket.h>
 
 #include <vector>
@@ -71,9 +72,10 @@ PosixError NetlinkRequestResponse(
   iov.iov_base = buf.data();
   iov.iov_len = buf.size();
 
-  // Response is a series of NLM_F_MULTI messages, ending with a NLMSG_DONE
-  // message.
+  // If NLM_F_MULTI is set, response is a series of messages that ends with a
+  // NLMSG_DONE message.
   int type = -1;
+  int flags = 0;
   do {
     int len;
     RETURN_ERROR_IF_SYSCALL_FAIL(len = RetryEINTR(recvmsg)(fd.get(), &msg, 0));
@@ -89,6 +91,7 @@ PosixError NetlinkRequestResponse(
     for (struct nlmsghdr* hdr = reinterpret_cast<struct nlmsghdr*>(buf.data());
          NLMSG_OK(hdr, len); hdr = NLMSG_NEXT(hdr, len)) {
       fn(hdr);
+      flags = hdr->nlmsg_flags;
       type = hdr->nlmsg_type;
       // Done should include an integer payload for dump_done_errno.
       // See net/netlink/af_netlink.c:netlink_dump
@@ -98,11 +101,11 @@ PosixError NetlinkRequestResponse(
         EXPECT_GE(hdr->nlmsg_len, NLMSG_LENGTH(sizeof(int)));
       }
     }
-  } while (type != NLMSG_DONE && type != NLMSG_ERROR);
+  } while ((flags & NLM_F_MULTI) && type != NLMSG_DONE && type != NLMSG_ERROR);
 
   if (expect_nlmsgerr) {
     EXPECT_EQ(type, NLMSG_ERROR);
-  } else {
+  } else if (flags & NLM_F_MULTI) {
     EXPECT_EQ(type, NLMSG_DONE);
   }
   return NoError();
@@ -144,6 +147,40 @@ PosixError NetlinkRequestResponseSingle(
   }
 
   return NoError();
+}
+
+PosixError NetlinkRequestAckOrError(const FileDescriptor& fd, uint32_t seq,
+                                    void* request, size_t len) {
+  // Dummy negative number for no error message received.
+  // We won't get a negative error number so there will be no confusion.
+  int err = -42;
+  RETURN_IF_ERRNO(NetlinkRequestResponse(
+      fd, request, len,
+      [&](const struct nlmsghdr* hdr) {
+        EXPECT_EQ(NLMSG_ERROR, hdr->nlmsg_type);
+        EXPECT_EQ(hdr->nlmsg_seq, seq);
+        EXPECT_GE(hdr->nlmsg_len, sizeof(*hdr) + sizeof(struct nlmsgerr));
+
+        const struct nlmsgerr* msg =
+            reinterpret_cast<const struct nlmsgerr*>(NLMSG_DATA(hdr));
+        err = -msg->error;
+      },
+      true));
+  return PosixError(err);
+}
+
+const struct rtattr* FindRtAttr(const struct nlmsghdr* hdr,
+                                const struct ifinfomsg* msg, int16_t attr) {
+  const int ifi_space = NLMSG_SPACE(sizeof(*msg));
+  int attrlen = hdr->nlmsg_len - ifi_space;
+  const struct rtattr* rta = reinterpret_cast<const struct rtattr*>(
+      reinterpret_cast<const uint8_t*>(hdr) + NLMSG_ALIGN(ifi_space));
+  for (; RTA_OK(rta, attrlen); rta = RTA_NEXT(rta, attrlen)) {
+    if (rta->rta_type == attr) {
+      return rta;
+    }
+  }
+  return nullptr;
 }
 
 }  // namespace testing

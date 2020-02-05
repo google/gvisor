@@ -16,6 +16,7 @@ package safecopy
 
 import (
 	"fmt"
+	"runtime"
 	"syscall"
 	"unsafe"
 )
@@ -35,7 +36,7 @@ const maxRegisterSize = 16
 // successfully copied.
 //
 //go:noescape
-func memcpy(dst, src unsafe.Pointer, n uintptr) (fault unsafe.Pointer, sig int32)
+func memcpy(dst, src uintptr, n uintptr) (fault uintptr, sig int32)
 
 // memclr sets the n bytes following ptr to zeroes. If a SIGSEGV or SIGBUS
 // signal is received during the write, it returns the address that caused the
@@ -47,7 +48,7 @@ func memcpy(dst, src unsafe.Pointer, n uintptr) (fault unsafe.Pointer, sig int32
 // successfully written.
 //
 //go:noescape
-func memclr(ptr unsafe.Pointer, n uintptr) (fault unsafe.Pointer, sig int32)
+func memclr(ptr uintptr, n uintptr) (fault uintptr, sig int32)
 
 // swapUint32 atomically stores new into *ptr and returns (the previous *ptr
 // value, 0). If a SIGSEGV or SIGBUS signal is received during the swap, the
@@ -90,29 +91,35 @@ func loadUint32(ptr unsafe.Pointer) (val uint32, sig int32)
 // CopyIn copies len(dst) bytes from src to dst. It returns the number of bytes
 // copied and an error if SIGSEGV or SIGBUS is received while reading from src.
 func CopyIn(dst []byte, src unsafe.Pointer) (int, error) {
+	n, err := copyIn(dst, uintptr(src))
+	runtime.KeepAlive(src)
+	return n, err
+}
+
+// copyIn is the underlying definition for CopyIn.
+func copyIn(dst []byte, src uintptr) (int, error) {
 	toCopy := uintptr(len(dst))
 	if len(dst) == 0 {
 		return 0, nil
 	}
 
-	fault, sig := memcpy(unsafe.Pointer(&dst[0]), src, toCopy)
+	fault, sig := memcpy(uintptr(unsafe.Pointer(&dst[0])), src, toCopy)
 	if sig == 0 {
 		return len(dst), nil
 	}
 
-	faultN, srcN := uintptr(fault), uintptr(src)
-	if faultN < srcN || faultN >= srcN+toCopy {
-		panic(fmt.Sprintf("CopyIn raised signal %d at %#x, which is outside source [%#x, %#x)", sig, faultN, srcN, srcN+toCopy))
+	if fault < src || fault >= src+toCopy {
+		panic(fmt.Sprintf("CopyIn raised signal %d at %#x, which is outside source [%#x, %#x)", sig, fault, src, src+toCopy))
 	}
 
 	// memcpy might have ended the copy up to maxRegisterSize bytes before
 	// fault, if an instruction caused a memory access that straddled two
 	// pages, and the second one faulted. Try to copy up to the fault.
 	var done int
-	if faultN-srcN > maxRegisterSize {
-		done = int(faultN - srcN - maxRegisterSize)
+	if fault-src > maxRegisterSize {
+		done = int(fault - src - maxRegisterSize)
 	}
-	n, err := CopyIn(dst[done:int(faultN-srcN)], unsafe.Pointer(srcN+uintptr(done)))
+	n, err := copyIn(dst[done:int(fault-src)], src+uintptr(done))
 	done += n
 	if err != nil {
 		return done, err
@@ -124,29 +131,35 @@ func CopyIn(dst []byte, src unsafe.Pointer) (int, error) {
 // bytes done and an error if SIGSEGV or SIGBUS is received while writing to
 // dst.
 func CopyOut(dst unsafe.Pointer, src []byte) (int, error) {
+	n, err := copyOut(uintptr(dst), src)
+	runtime.KeepAlive(dst)
+	return n, err
+}
+
+// copyOut is the underlying definition for CopyOut.
+func copyOut(dst uintptr, src []byte) (int, error) {
 	toCopy := uintptr(len(src))
 	if toCopy == 0 {
 		return 0, nil
 	}
 
-	fault, sig := memcpy(dst, unsafe.Pointer(&src[0]), toCopy)
+	fault, sig := memcpy(dst, uintptr(unsafe.Pointer(&src[0])), toCopy)
 	if sig == 0 {
 		return len(src), nil
 	}
 
-	faultN, dstN := uintptr(fault), uintptr(dst)
-	if faultN < dstN || faultN >= dstN+toCopy {
-		panic(fmt.Sprintf("CopyOut raised signal %d at %#x, which is outside destination [%#x, %#x)", sig, faultN, dstN, dstN+toCopy))
+	if fault < dst || fault >= dst+toCopy {
+		panic(fmt.Sprintf("CopyOut raised signal %d at %#x, which is outside destination [%#x, %#x)", sig, fault, dst, dst+toCopy))
 	}
 
 	// memcpy might have ended the copy up to maxRegisterSize bytes before
 	// fault, if an instruction caused a memory access that straddled two
 	// pages, and the second one faulted. Try to copy up to the fault.
 	var done int
-	if faultN-dstN > maxRegisterSize {
-		done = int(faultN - dstN - maxRegisterSize)
+	if fault-dst > maxRegisterSize {
+		done = int(fault - dst - maxRegisterSize)
 	}
-	n, err := CopyOut(unsafe.Pointer(dstN+uintptr(done)), src[done:int(faultN-dstN)])
+	n, err := copyOut(dst+uintptr(done), src[done:int(fault-dst)])
 	done += n
 	if err != nil {
 		return done, err
@@ -161,6 +174,14 @@ func CopyOut(dst unsafe.Pointer, src []byte) (int, error) {
 // Data is copied in order; if [src, src+toCopy) and [dst, dst+toCopy) overlap,
 // the resulting contents of dst are unspecified.
 func Copy(dst, src unsafe.Pointer, toCopy uintptr) (uintptr, error) {
+	n, err := copyN(uintptr(dst), uintptr(src), toCopy)
+	runtime.KeepAlive(dst)
+	runtime.KeepAlive(src)
+	return n, err
+}
+
+// copyN is the underlying definition for Copy.
+func copyN(dst, src uintptr, toCopy uintptr) (uintptr, error) {
 	if toCopy == 0 {
 		return 0, nil
 	}
@@ -171,17 +192,16 @@ func Copy(dst, src unsafe.Pointer, toCopy uintptr) (uintptr, error) {
 	}
 
 	// Did the fault occur while reading from src or writing to dst?
-	faultN, srcN, dstN := uintptr(fault), uintptr(src), uintptr(dst)
 	faultAfterSrc := ^uintptr(0)
-	if faultN >= srcN {
-		faultAfterSrc = faultN - srcN
+	if fault >= src {
+		faultAfterSrc = fault - src
 	}
 	faultAfterDst := ^uintptr(0)
-	if faultN >= dstN {
-		faultAfterDst = faultN - dstN
+	if fault >= dst {
+		faultAfterDst = fault - dst
 	}
 	if faultAfterSrc >= toCopy && faultAfterDst >= toCopy {
-		panic(fmt.Sprintf("Copy raised signal %d at %#x, which is outside source [%#x, %#x) and destination [%#x, %#x)", sig, faultN, srcN, srcN+toCopy, dstN, dstN+toCopy))
+		panic(fmt.Sprintf("Copy raised signal %d at %#x, which is outside source [%#x, %#x) and destination [%#x, %#x)", sig, fault, src, src+toCopy, dst, dst+toCopy))
 	}
 	faultedAfter := faultAfterSrc
 	if faultedAfter > faultAfterDst {
@@ -195,7 +215,7 @@ func Copy(dst, src unsafe.Pointer, toCopy uintptr) (uintptr, error) {
 	if faultedAfter > maxRegisterSize {
 		done = faultedAfter - maxRegisterSize
 	}
-	n, err := Copy(unsafe.Pointer(dstN+done), unsafe.Pointer(srcN+done), faultedAfter-done)
+	n, err := copyN(dst+done, src+done, faultedAfter-done)
 	done += n
 	if err != nil {
 		return done, err
@@ -206,6 +226,13 @@ func Copy(dst, src unsafe.Pointer, toCopy uintptr) (uintptr, error) {
 // ZeroOut writes toZero zero bytes to dst. It returns the number of bytes
 // written and an error if SIGSEGV or SIGBUS is received while writing to dst.
 func ZeroOut(dst unsafe.Pointer, toZero uintptr) (uintptr, error) {
+	n, err := zeroOut(uintptr(dst), toZero)
+	runtime.KeepAlive(dst)
+	return n, err
+}
+
+// zeroOut is the underlying definition for ZeroOut.
+func zeroOut(dst uintptr, toZero uintptr) (uintptr, error) {
 	if toZero == 0 {
 		return 0, nil
 	}
@@ -215,19 +242,18 @@ func ZeroOut(dst unsafe.Pointer, toZero uintptr) (uintptr, error) {
 		return toZero, nil
 	}
 
-	faultN, dstN := uintptr(fault), uintptr(dst)
-	if faultN < dstN || faultN >= dstN+toZero {
-		panic(fmt.Sprintf("ZeroOut raised signal %d at %#x, which is outside destination [%#x, %#x)", sig, faultN, dstN, dstN+toZero))
+	if fault < dst || fault >= dst+toZero {
+		panic(fmt.Sprintf("ZeroOut raised signal %d at %#x, which is outside destination [%#x, %#x)", sig, fault, dst, dst+toZero))
 	}
 
 	// memclr might have ended the write up to maxRegisterSize bytes before
 	// fault, if an instruction caused a memory access that straddled two
 	// pages, and the second one faulted. Try to write up to the fault.
 	var done uintptr
-	if faultN-dstN > maxRegisterSize {
-		done = faultN - dstN - maxRegisterSize
+	if fault-dst > maxRegisterSize {
+		done = fault - dst - maxRegisterSize
 	}
-	n, err := ZeroOut(unsafe.Pointer(dstN+done), faultN-dstN-done)
+	n, err := zeroOut(dst+done, fault-dst-done)
 	done += n
 	if err != nil {
 		return done, err
@@ -243,7 +269,7 @@ func SwapUint32(ptr unsafe.Pointer, new uint32) (uint32, error) {
 		return 0, AlignmentError{addr, 4}
 	}
 	old, sig := swapUint32(ptr, new)
-	return old, errorFromFaultSignal(ptr, sig)
+	return old, errorFromFaultSignal(uintptr(ptr), sig)
 }
 
 // SwapUint64 is equivalent to sync/atomic.SwapUint64, except that it returns
@@ -254,7 +280,7 @@ func SwapUint64(ptr unsafe.Pointer, new uint64) (uint64, error) {
 		return 0, AlignmentError{addr, 8}
 	}
 	old, sig := swapUint64(ptr, new)
-	return old, errorFromFaultSignal(ptr, sig)
+	return old, errorFromFaultSignal(uintptr(ptr), sig)
 }
 
 // CompareAndSwapUint32 is equivalent to atomicbitops.CompareAndSwapUint32,
@@ -265,7 +291,7 @@ func CompareAndSwapUint32(ptr unsafe.Pointer, old, new uint32) (uint32, error) {
 		return 0, AlignmentError{addr, 4}
 	}
 	prev, sig := compareAndSwapUint32(ptr, old, new)
-	return prev, errorFromFaultSignal(ptr, sig)
+	return prev, errorFromFaultSignal(uintptr(ptr), sig)
 }
 
 // LoadUint32 is like sync/atomic.LoadUint32, but operates with user memory. It
@@ -277,17 +303,17 @@ func LoadUint32(ptr unsafe.Pointer) (uint32, error) {
 		return 0, AlignmentError{addr, 4}
 	}
 	val, sig := loadUint32(ptr)
-	return val, errorFromFaultSignal(ptr, sig)
+	return val, errorFromFaultSignal(uintptr(ptr), sig)
 }
 
-func errorFromFaultSignal(addr unsafe.Pointer, sig int32) error {
+func errorFromFaultSignal(addr uintptr, sig int32) error {
 	switch sig {
 	case 0:
 		return nil
 	case int32(syscall.SIGSEGV):
-		return SegvError{uintptr(addr)}
+		return SegvError{addr}
 	case int32(syscall.SIGBUS):
-		return BusError{uintptr(addr)}
+		return BusError{addr}
 	default:
 		panic(fmt.Sprintf("safecopy got unexpected signal %d at address %#x", sig, addr))
 	}

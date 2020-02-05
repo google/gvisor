@@ -273,6 +273,12 @@ Creator<SocketPair> TCPAcceptBindSocketPairCreator(int domain, int type,
                                                    int protocol,
                                                    bool dual_stack);
 
+// TCPAcceptBindPersistentListenerSocketPairCreator is like
+// TCPAcceptBindSocketPairCreator, except it uses the same listening socket to
+// create all SocketPairs.
+Creator<SocketPair> TCPAcceptBindPersistentListenerSocketPairCreator(
+    int domain, int type, int protocol, bool dual_stack);
+
 // UDPBidirectionalBindSocketPairCreator returns a Creator<SocketPair> that
 // obtains file descriptors by invoking the bind() and connect() syscalls on UDP
 // sockets.

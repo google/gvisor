@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "cc_library", "cc_test", "select_system")
+load("//tools:defs.bzl", "cc_library", "cc_test", "gtest", "select_system")
 
 package(
     default_visibility = ["//:sandbox"],
@@ -41,7 +41,7 @@ cc_library(
         ":save_util",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -55,7 +55,7 @@ cc_library(
         ":posix_error",
         ":test_util",
         "@com_google_absl//absl/strings",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -67,7 +67,7 @@ cc_test(
         ":proc_util",
         ":test_main",
         ":test_util",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -87,7 +87,7 @@ cc_library(
         ":file_descriptor",
         ":posix_error",
         "@com_google_absl//absl/strings",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -101,7 +101,7 @@ cc_test(
         ":temp_path",
         ":test_main",
         ":test_util",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -134,7 +134,7 @@ cc_library(
         ":cleanup",
         ":posix_error",
         ":test_util",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -183,7 +183,7 @@ cc_library(
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:variant",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -194,7 +194,7 @@ cc_test(
     deps = [
         ":posix_error",
         ":test_main",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -218,7 +218,7 @@ cc_library(
         ":cleanup",
         ":posix_error",
         ":test_util",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -233,7 +233,7 @@ cc_library(
         ":test_util",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -259,7 +259,7 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/time",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -291,7 +291,7 @@ cc_library(
         ":posix_error",
         ":test_util",
         "@com_google_absl//absl/time",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -302,7 +302,7 @@ cc_test(
     deps = [
         ":test_main",
         ":test_util",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -322,7 +322,7 @@ cc_library(
         ":file_descriptor",
         ":posix_error",
         ":save_util",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 

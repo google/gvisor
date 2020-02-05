@@ -102,7 +102,8 @@ TEST(Syscall32Bit, Int80) {
 }
 
 TEST(Syscall32Bit, Sysenter) {
-  if (PlatformSupport32Bit() == PlatformSupport::Allowed &&
+  if ((PlatformSupport32Bit() == PlatformSupport::Allowed ||
+       PlatformSupport32Bit() == PlatformSupport::Ignored) &&
       GetCPUVendor() == CPUVendor::kAMD) {
     // SYSENTER is an illegal instruction in compatibility mode on AMD.
     EXPECT_EXIT(ExitGroup32(kSysenter, kExitCode),
@@ -133,7 +134,8 @@ TEST(Syscall32Bit, Sysenter) {
 }
 
 TEST(Syscall32Bit, Syscall) {
-  if (PlatformSupport32Bit() == PlatformSupport::Allowed &&
+  if ((PlatformSupport32Bit() == PlatformSupport::Allowed ||
+       PlatformSupport32Bit() == PlatformSupport::Ignored) &&
       GetCPUVendor() == CPUVendor::kIntel) {
     // SYSCALL is an illegal instruction in compatibility mode on Intel.
     EXPECT_EXIT(ExitGroup32(kSyscall, kExitCode),
