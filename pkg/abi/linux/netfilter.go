@@ -198,6 +198,13 @@ type XTEntryMatch struct {
 // SizeOfXTEntryMatch is the size of an XTEntryMatch.
 const SizeOfXTEntryMatch = 32
 
+// KernelXTEntryMatch is identical to XTEntryMatch, but contains
+// variable-length Data field.
+type KernelXTEntryMatch struct {
+	XTEntryMatch
+	Data []byte
+}
+
 // XTEntryTarget holds a target for a rule. For example, it can specify that
 // packets matching the rule should DROP, ACCEPT, or use an extension target.
 // iptables-extension(8) has a list of possible targets.
@@ -340,3 +347,43 @@ func goString(cstring []byte) string {
 	}
 	return string(cstring)
 }
+
+// XTUDP holds data for matching UDP packets. It corresponds to struct xt_udp
+// in include/uapi/linux/netfilter/xt_tcpudp.h.
+type XTUDP struct {
+	// SourcePortStart is the inclusive start of the range of source ports
+	// to which the matcher applies.
+	SourcePortStart uint16
+
+	// SourcePortEnd is the inclusive end of the range of source ports to
+	// which the matcher applies.
+	SourcePortEnd uint16
+
+	// DestinationPortStart is the inclusive start of the destination port
+	// range to which the matcher applies.
+	DestinationPortStart uint16
+
+	// DestinationPortEnd is the inclusive end of the destination port
+	// range to which the matcher applies.
+	DestinationPortEnd uint16
+
+	// InverseFlags flips the meaning of certain fields. See the
+	// TX_UDP_INV_* flags.
+	InverseFlags uint8
+
+	_ uint8
+}
+
+// SizeOfXTUDP is the size of an XTUDP.
+const SizeOfXTUDP = 10
+
+// Flags in XTUDP.InverseFlags. Corresponding constants are in
+// include/uapi/linux/netfilter/xt_tcpudp.h.
+const (
+	// Invert the meaning of SourcePortStart/End.
+	XT_UDP_INV_SRCPT = 0x01
+	// Invert the meaning of DestinationPortStart/End.
+	XT_UDP_INV_DSTPT = 0x02
+	// Enable all flags.
+	XT_UDP_INV_MASK = 0x03
+)

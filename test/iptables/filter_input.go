@@ -15,6 +15,7 @@
 package iptables
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -247,4 +248,55 @@ func (FilterInputDropAll) ContainerAction(ip net.IP) error {
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputDropAll) LocalAction(ip net.IP) error {
 	return sendUDPLoop(ip, dropPort, sendloopDuration)
+}
+
+// FilterInputMultiUDPRules verifies that multiple UDP rules are applied
+// correctly. This has the added benefit of testing whether we're serializing
+// rules correctly -- if we do it incorrectly, the iptables tool will
+// misunderstand and save the wrong tables.
+type FilterInputMultiUDPRules struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputMultiUDPRules) Name() string {
+	return "FilterInputMultiUDPRules"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputMultiUDPRules) ContainerAction(ip net.IP) error {
+	if err := filterTable("-A", "INPUT", "-p", "udp", "-m", "udp", "--destination-port", fmt.Sprintf("%d", dropPort), "-j", "DROP"); err != nil {
+		return err
+	}
+	if err := filterTable("-A", "INPUT", "-p", "udp", "-m", "udp", "--destination-port", fmt.Sprintf("%d", acceptPort), "-j", "ACCEPT"); err != nil {
+		return err
+	}
+	return filterTable("-L")
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputMultiUDPRules) LocalAction(ip net.IP) error {
+	// No-op.
+	return nil
+}
+
+// FilterInputRequireProtocolUDP checks that "-m udp" requires "-p udp" to be
+// specified.
+type FilterInputRequireProtocolUDP struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputRequireProtocolUDP) Name() string {
+	return "FilterInputRequireProtocolUDP"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputRequireProtocolUDP) ContainerAction(ip net.IP) error {
+	if err := filterTable("-A", "INPUT", "-m", "udp", "--destination-port", fmt.Sprintf("%d", dropPort), "-j", "DROP"); err == nil {
+		return errors.New("expected iptables to fail with out \"-p udp\", but succeeded")
+	}
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputRequireProtocolUDP) LocalAction(ip net.IP) error {
+	// No-op.
+	return nil
 }
