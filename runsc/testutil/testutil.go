@@ -119,6 +119,13 @@ func NewSpecWithArgs(args ...string) *specs.Spec {
 			Capabilities: specutils.AllCapabilities(),
 		},
 		Mounts: []specs.Mount{
+			// Hide the host /etc to avoid any side-effects.
+			// For example, bash reads /etc/passwd and if it is
+			// very big, tests can fail by timeout.
+			{
+				Type:        "tmpfs",
+				Destination: "/etc",
+			},
 			// Root is readonly, but many tests want to write to tmpdir.
 			// This creates a writable mount inside the root. Also, when tmpdir points
 			// to "/tmp", it makes the the actual /tmp to be mounted and not a tmpfs
