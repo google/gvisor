@@ -3,4 +3,3 @@
 // +build arm64
 
 package seccomp
-

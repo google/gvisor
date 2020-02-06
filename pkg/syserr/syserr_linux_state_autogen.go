@@ -3,4 +3,3 @@
 // +build linux
 
 package syserr
-

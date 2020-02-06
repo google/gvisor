@@ -285,7 +285,7 @@ func (s *socketOperations) GetSockOpt(t *kernel.Task, level int, name int, outPt
 	}
 
 	// Whitelist options and constrain option length.
-	var optlen int
+	optlen := getSockOptLen(t, level, name)
 	switch level {
 	case linux.SOL_IP:
 		switch name {
@@ -330,7 +330,7 @@ func (s *socketOperations) GetSockOpt(t *kernel.Task, level int, name int, outPt
 // SetSockOpt implements socket.Socket.SetSockOpt.
 func (s *socketOperations) SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *syserr.Error {
 	// Whitelist options and constrain option length.
-	var optlen int
+	optlen := setSockOptLen(t, level, name)
 	switch level {
 	case linux.SOL_IP:
 		switch name {
@@ -353,6 +353,7 @@ func (s *socketOperations) SetSockOpt(t *kernel.Task, level int, name int, opt [
 			optlen = sizeofInt32
 		}
 	}
+
 	if optlen == 0 {
 		// Pretend to accept socket options we don't understand. This seems
 		// dangerous, but it's what netstack does...

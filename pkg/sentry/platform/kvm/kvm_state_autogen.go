@@ -6,4 +6,3 @@
 // +build !go1.15
 
 package kvm
-

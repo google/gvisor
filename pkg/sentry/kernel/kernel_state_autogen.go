@@ -3,9 +3,9 @@
 package kernel
 
 import (
-	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/sentry/device"
+	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
@@ -151,6 +151,7 @@ func (x *Kernel) save(m state.Map) {
 	m.Save("sockets", &x.sockets)
 	m.Save("nextSocketEntry", &x.nextSocketEntry)
 	m.Save("DirentCacheLimiter", &x.DirentCacheLimiter)
+	m.Save("SpecialOpts", &x.SpecialOpts)
 }
 
 func (x *Kernel) afterLoad() {}
@@ -182,6 +183,7 @@ func (x *Kernel) load(m state.Map) {
 	m.Load("sockets", &x.sockets)
 	m.Load("nextSocketEntry", &x.nextSocketEntry)
 	m.Load("DirentCacheLimiter", &x.DirentCacheLimiter)
+	m.Load("SpecialOpts", &x.SpecialOpts)
 	m.LoadValue("danglingEndpoints", new([]tcpip.Endpoint), func(y interface{}) { x.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
 	m.LoadValue("deviceRegistry", new(*device.Registry), func(y interface{}) { x.loadDeviceRegistry(y.(*device.Registry)) })
 }
@@ -522,7 +524,9 @@ func (x *syslog) load(m state.Map) {
 func (x *Task) beforeSave() {}
 func (x *Task) save(m state.Map) {
 	x.beforeSave()
-	if !state.IsZeroValue(x.signalQueue) { m.Failf("signalQueue is %v, expected zero", x.signalQueue) }
+	if !state.IsZeroValue(x.signalQueue) {
+		m.Failf("signalQueue is %v, expected zero", x.signalQueue)
+	}
 	var ptraceTracer *Task = x.savePtraceTracer()
 	m.SaveValue("ptraceTracer", ptraceTracer)
 	var syscallFilters []bpf.Program = x.saveSyscallFilters()

@@ -4,4 +4,3 @@
 // +build linux
 
 package fdnotifier
-

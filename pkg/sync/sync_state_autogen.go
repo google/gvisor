@@ -10,4 +10,3 @@
 // +build !go1.15
 
 package sync
-

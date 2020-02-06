@@ -9,7 +9,9 @@ import (
 func (x *EventOperations) beforeSave() {}
 func (x *EventOperations) save(m state.Map) {
 	x.beforeSave()
-	if !state.IsZeroValue(x.wq) { m.Failf("wq is %v, expected zero", x.wq) }
+	if !state.IsZeroValue(x.wq) {
+		m.Failf("wq is %v, expected zero", x.wq)
+	}
 	m.Save("val", &x.val)
 	m.Save("semMode", &x.semMode)
 	m.Save("hostfd", &x.hostfd)
