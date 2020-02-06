@@ -46,7 +46,8 @@ TEST(ConcurrencyTest, SingleProcessMultithreaded) {
 }
 
 // Test that multiple threads in this process continue to execute in parallel,
-// even if an unrelated second process is spawned.
+// even if an unrelated second process is spawned. Regression test for
+// b/32119508.
 TEST(ConcurrencyTest, MultiProcessMultithreaded) {
   // In PID 1, start TIDs 1 and 2, and put both to sleep.
   //

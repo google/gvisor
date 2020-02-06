@@ -196,7 +196,10 @@ func TestJobControlSignalExec(t *testing.T) {
 	defer ptyMaster.Close()
 	defer ptySlave.Close()
 
-	// Exec bash and attach a terminal.
+	// Exec bash and attach a terminal. Note that occasionally /bin/sh
+	// may be a different shell or have a different configuration (such
+	// as disabling interactive mode and job control). Since we want to
+	// explicitly test interactive mode, use /bin/bash. See b/116981926.
 	execArgs := &control.ExecArgs{
 		Filename: "/bin/bash",
 		// Don't let bash execute from profile or rc files, otherwise

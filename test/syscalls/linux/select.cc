@@ -146,7 +146,7 @@ TEST_F(SelectTest, IgnoreBitsAboveNfds) {
 
 // This test illustrates Linux's behavior of 'select' calls passing after
 // setrlimit RLIMIT_NOFILE is called. In particular, versions of sshd rely on
-// this behavior.
+// this behavior. See b/122318458.
 TEST_F(SelectTest, SetrlimitCallNOFILE) {
   fd_set read_set;
   FD_ZERO(&read_set);
