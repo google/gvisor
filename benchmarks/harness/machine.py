@@ -1,5 +1,5 @@
 # python3
-# Copyright 2019 Google LLC
+# Copyright 2019 The gVisor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,10 +29,11 @@ to run contianers.
 """
 
 import logging
+import os
 import re
 import subprocess
 import time
-from typing import Tuple
+from typing import List, Tuple
 
 import docker
 
@@ -201,6 +202,7 @@ class RemoteMachine(Machine):
     self._tunnel = tunnel_dispatcher.Tunnel(name, **kwargs)
     self._tunnel.connect()
     self._docker_client = self._tunnel.get_docker_client()
+    self._has_installers = False
 
   def run(self, cmd: str) -> Tuple[str, str]:
     return self._ssh_connection.run(cmd)
@@ -210,14 +212,45 @@ class RemoteMachine(Machine):
     stdout, stderr = self._ssh_connection.run("cat '{}'".format(path))
     return stdout + stderr
 
+  def install(self,
+              installer: str,
+              results: List[bool] = None,
+              index: int = -1):
+    """Method unique to RemoteMachine to handle installation of installers.
+
+    Handles installers, which install things that may change between runs (e.g.
+    runsc). Usually called from gcloud_producer, which expects this method to
+    to store results.
+
+    Args:
+      installer: the installer target to run.
+      results: Passed by the caller of where to store success.
+      index: Index for this method to store the result in the passed results
+        list.
+    """
+    # This generates a tarball of the full installer root (which will generate
+    # be the full bazel root directory) and sends it over.
+    if not self._has_installers:
+      archive = self._ssh_connection.send_installers()
+      self.run("tar -xvf {archive} -C {dir}".format(
+          archive=archive, dir=harness.REMOTE_INSTALLERS_PATH))
+      self._has_installers = True
+
+      # Execute the remote installer.
+      self.run("sudo {dir}/{file}".format(
+          dir=harness.REMOTE_INSTALLERS_PATH, file=installer))
+    if results:
+      results[index] = True
+
   def pull(self, workload: str) -> str:
     # Push to the remote machine and build.
     logging.info("Building %s@%s remotely...", workload, self._name)
     remote_path = self._ssh_connection.send_workload(workload)
+    remote_dir = os.path.dirname(remote_path)
     # Workloads are all tarballs.
-    self.run("tar -xvf {remote_path}/tar.tar -C {remote_path}".format(
-        remote_path=remote_path))
-    self.run("docker build --tag={} {}".format(workload, remote_path))
+    self.run("tar -xvf {remote_path} -C {remote_dir}".format(
+        remote_path=remote_path, remote_dir=remote_dir))
+    self.run("docker build --tag={} {}".format(workload, remote_dir))
     return workload  # Workload is the tag.
 
   def container(self, image: str, **kwargs) -> container.Container:

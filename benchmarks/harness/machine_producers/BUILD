@@ -76,5 +76,6 @@ py_test(
     python_version = "PY3",
     tags = [
         "local",
+        "manual",
     ],
 )

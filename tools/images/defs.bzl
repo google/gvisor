@@ -57,7 +57,10 @@ def _vm_image_impl(ctx):
         command = argv,
         input_manifests = runfiles_manifests,
     )
-    return [DefaultInfo(files = depset([ctx.outputs.out]))]
+    return [DefaultInfo(
+        files = depset([ctx.outputs.out]),
+        runfiles = ctx.runfiles(files = [ctx.outputs.out]),
+    )]
 
 _vm_image = rule(
     attrs = {

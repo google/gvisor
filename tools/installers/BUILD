@@ -5,10 +5,15 @@ package(
     licenses = ["notice"],
 )
 
+filegroup(
+    name = "runsc",
+    srcs = ["//runsc"],
+)
+
 sh_binary(
     name = "head",
     srcs = ["head.sh"],
-    data = ["//runsc"],
+    data = [":runsc"],
 )
 
 sh_binary(

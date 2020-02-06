@@ -26,6 +26,8 @@ For configuring the environment manually, consult the
 
 ## Running benchmarks
 
+### Locally
+
 Run the following from the benchmarks directory:
 
 ```bash
@@ -44,7 +46,7 @@ runtime, runc. Running on another installed runtime, like say runsc, is as
 simple as:
 
 ```bash
-bazel run :benchmakrs -- run-local startup --runtime=runsc
+bazel run :benchmarks -- run-local startup --runtime=runsc
 ```
 
 There is help: ``bash bash bazel run :benchmarks -- --help bazel
@@ -103,6 +105,23 @@ Or with different parameters:
 ```bash
 bazel run :benchmarks -- run-local --max_prime=10 --max_prime=100 sysbench.cpu
 ```
+
+### On Google Compute Engine (GCE)
+
+Benchmarks may be run on GCE in an automated way. The default project configured
+for `gcloud` will be used.
+
+An additional parameter `installers` may be provided to ensure that the latest
+runtime is installed from the workspace. See the files in `tools/installers` for
+supported install targets.
+
+```bash
+bazel run :benchmarks -- run-gcp --installers=head --runtime=runsc sysbench.cpu
+```
+
+When running on GCE, the scripts generate a per run SSH key, which is added to
+your project. The key is set to expire in GCE after 60 minutes and is stored in
+a temporary directory on the local machine running the scripts.
 
 ## Writing benchmarks
 
