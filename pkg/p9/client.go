@@ -22,6 +22,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/flipcall"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/pool"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
 )
@@ -74,10 +75,10 @@ type Client struct {
 	socket *unet.Socket
 
 	// tagPool is the collection of available tags.
-	tagPool pool
+	tagPool pool.Pool
 
 	// fidPool is the collection of available fids.
-	fidPool pool
+	fidPool pool.Pool
 
 	// messageSize is the maximum total size of a message.
 	messageSize uint32
@@ -155,8 +156,8 @@ func NewClient(socket *unet.Socket, messageSize uint32, version string) (*Client
 	}
 	c := &Client{
 		socket:      socket,
-		tagPool:     pool{start: 1, limit: uint64(NoTag)},
-		fidPool:     pool{start: 1, limit: uint64(NoFID)},
+		tagPool:     pool.Pool{Start: 1, Limit: uint64(NoTag)},
+		fidPool:     pool.Pool{Start: 1, Limit: uint64(NoFID)},
 		pending:     make(map[Tag]*response),
 		recvr:       make(chan bool, 1),
 		messageSize: messageSize,
