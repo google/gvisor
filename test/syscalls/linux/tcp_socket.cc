@@ -1339,6 +1339,15 @@ TEST_P(SimpleTcpSocketTest, SetTCPDeferAcceptGreaterThanZero) {
   EXPECT_EQ(get, kTCPDeferAccept);
 }
 
+TEST_P(SimpleTcpSocketTest, RecvOnClosedSocket) {
+  auto s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  char buf[1];
+  EXPECT_THAT(recv(s.get(), buf, 0, 0), SyscallFailsWithErrno(ENOTCONN));
+  EXPECT_THAT(recv(s.get(), buf, sizeof(buf), 0),
+              SyscallFailsWithErrno(ENOTCONN));
+}
+
 INSTANTIATE_TEST_SUITE_P(AllInetTests, SimpleTcpSocketTest,
                          ::testing::Values(AF_INET, AF_INET6));
 
