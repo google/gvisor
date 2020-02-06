@@ -15,6 +15,8 @@
 package ipv6
 
 import (
+	"log"
+
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -194,7 +196,11 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt tcpip.P
 		// TODO(b/148429853): Properly process the NS message and do Neighbor
 		// Unreachability Detection.
 		for {
-			opt, done, _ := it.Next()
+			opt, done, err := it.Next()
+			if err != nil {
+				// This should never happen as Iter(true) above did not return an error.
+				log.Fatalf("unexpected error when iterating over NDP options: %s", err)
+			}
 			if done {
 				break
 			}
@@ -253,21 +259,25 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt tcpip.P
 		}
 
 		na := header.NDPNeighborAdvert(h.NDPPayload())
+		it, err := na.Options().Iter(true)
+		if err != nil {
+			// If we have a malformed NDP NA option, drop the packet.
+			received.Invalid.Increment()
+			return
+		}
+
 		targetAddr := na.TargetAddress()
 		stack := r.Stack()
 		rxNICID := r.NICID()
 
-		isTentative, err := stack.IsAddrTentative(rxNICID, targetAddr)
-		if err != nil {
+		if isTentative, err := stack.IsAddrTentative(rxNICID, targetAddr); err != nil {
 			// We will only get an error if rxNICID is unrecognized,
 			// which should not happen. For now short-circuit this
 			// packet.
 			//
 			// TODO(b/141002840): Handle this better?
 			return
-		}
-
-		if isTentative {
+		} else if isTentative {
 			// We just got an NA from a node that owns an address we
 			// are performing DAD on, implying the address is not
 			// unique. In this case we let the stack know so it can
@@ -283,13 +293,29 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt tcpip.P
 		// scenario is beyond the scope of RFC 4862. As such, we simply
 		// ignore such a scenario for now and proceed as normal.
 		//
+		// If the NA message has the target link layer option, update the link
+		// address cache with the link address for the target of the message.
+		//
 		// TODO(b/143147598): Handle the scenario described above. Also
 		// inform the netstack integration that a duplicate address was
 		// detected outside of DAD.
+		//
+		// TODO(b/148429853): Properly process the NA message and do Neighbor
+		// Unreachability Detection.
+		for {
+			opt, done, err := it.Next()
+			if err != nil {
+				// This should never happen as Iter(true) above did not return an error.
+				log.Fatalf("unexpected error when iterating over NDP options: %s", err)
+			}
+			if done {
+				break
+			}
 
-		e.linkAddrCache.AddLinkAddress(e.nicID, targetAddr, r.RemoteLinkAddress)
-		if targetAddr != r.RemoteAddress {
-			e.linkAddrCache.AddLinkAddress(e.nicID, r.RemoteAddress, r.RemoteLinkAddress)
+			switch opt := opt.(type) {
+			case header.NDPTargetLinkLayerAddressOption:
+				e.linkAddrCache.AddLinkAddress(e.nicID, targetAddr, opt.EthernetAddress())
+			}
 		}
 
 	case header.ICMPv6EchoRequest:

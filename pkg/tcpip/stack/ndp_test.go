@@ -478,13 +478,17 @@ func TestDADFail(t *testing.T) {
 		{
 			"RxAdvert",
 			func(tgt tcpip.Address) buffer.Prependable {
-				hdr := buffer.NewPrependable(header.IPv6MinimumSize + header.ICMPv6NeighborAdvertSize)
-				pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborAdvertSize))
+				naSize := header.ICMPv6NeighborAdvertMinimumSize + header.NDPLinkLayerAddressSize
+				hdr := buffer.NewPrependable(header.IPv6MinimumSize + naSize)
+				pkt := header.ICMPv6(hdr.Prepend(naSize))
 				pkt.SetType(header.ICMPv6NeighborAdvert)
 				na := header.NDPNeighborAdvert(pkt.NDPPayload())
 				na.SetSolicitedFlag(true)
 				na.SetOverrideFlag(true)
 				na.SetTargetAddress(tgt)
+				na.Options().Serialize(header.NDPOptionsSerializer{
+					header.NDPTargetLinkLayerAddressOption(linkAddr1),
+				})
 				pkt.SetChecksum(header.ICMPv6Checksum(pkt, tgt, header.IPv6AllNodesMulticastAddress, buffer.VectorisedView{}))
 				payloadLength := hdr.UsedLength()
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
