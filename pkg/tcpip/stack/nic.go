@@ -16,6 +16,7 @@ package stack
 
 import (
 	"log"
+	"reflect"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -39,6 +40,7 @@ type NIC struct {
 
 	mu struct {
 		sync.RWMutex
+		enabled       bool
 		spoofing      bool
 		promiscuous   bool
 		primary       map[tcpip.NetworkProtocolNumber][]*referencedNetworkEndpoint
@@ -56,6 +58,14 @@ type NIC struct {
 type NICStats struct {
 	Tx DirectionStats
 	Rx DirectionStats
+
+	DisabledRx DirectionStats
+}
+
+func makeNICStats() NICStats {
+	var s NICStats
+	tcpip.InitStatCounters(reflect.ValueOf(&s).Elem())
+	return s
 }
 
 // DirectionStats includes packet and byte counts.
@@ -99,16 +109,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 		name:    name,
 		linkEP:  ep,
 		context: ctx,
-		stats: NICStats{
-			Tx: DirectionStats{
-				Packets: &tcpip.StatCounter{},
-				Bytes:   &tcpip.StatCounter{},
-			},
-			Rx: DirectionStats{
-				Packets: &tcpip.StatCounter{},
-				Bytes:   &tcpip.StatCounter{},
-			},
-		},
+		stats:   makeNICStats(),
 	}
 	nic.mu.primary = make(map[tcpip.NetworkProtocolNumber][]*referencedNetworkEndpoint)
 	nic.mu.endpoints = make(map[NetworkEndpointID]*referencedNetworkEndpoint)
@@ -137,14 +138,30 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 // enable enables the NIC. enable will attach the link to its LinkEndpoint and
 // join the IPv6 All-Nodes Multicast address (ff02::1).
 func (n *NIC) enable() *tcpip.Error {
+	n.mu.RLock()
+	enabled := n.mu.enabled
+	n.mu.RUnlock()
+	if enabled {
+		return nil
+	}
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if n.mu.enabled {
+		return nil
+	}
+
+	n.mu.enabled = true
+
 	n.attachLinkEndpoint()
 
 	// Create an endpoint to receive broadcast packets on this interface.
 	if _, ok := n.stack.networkProtocols[header.IPv4ProtocolNumber]; ok {
-		if err := n.AddAddress(tcpip.ProtocolAddress{
+		if _, err := n.addAddressLocked(tcpip.ProtocolAddress{
 			Protocol:          header.IPv4ProtocolNumber,
 			AddressWithPrefix: tcpip.AddressWithPrefix{header.IPv4Broadcast, 8 * header.IPv4AddressSize},
-		}, NeverPrimaryEndpoint); err != nil {
+		}, NeverPrimaryEndpoint, permanent, static, false /* deprecated */); err != nil {
 			return err
 		}
 	}
@@ -166,8 +183,22 @@ func (n *NIC) enable() *tcpip.Error {
 		return nil
 	}
 
-	n.mu.Lock()
-	defer n.mu.Unlock()
+	// Perform DAD on the all the unicast IPv6 endpoints that are in the permanent
+	// state.
+	//
+	// Addresses may have aleady completed DAD but in the time since the NIC was
+	// last enabled, other devices may have acquired the same addresses.
+	for _, r := range n.mu.endpoints {
+		addr := r.ep.ID().LocalAddress
+		if k := r.getKind(); (k != permanent && k != permanentTentative) || !header.IsV6UnicastAddress(addr) {
+			continue
+		}
+
+		r.setKind(permanentTentative)
+		if err := n.mu.ndp.startDuplicateAddressDetection(addr, r); err != nil {
+			return err
+		}
+	}
 
 	if err := n.joinGroupLocked(header.IPv6ProtocolNumber, header.IPv6AllNodesMulticastAddress); err != nil {
 		return err
@@ -633,7 +664,9 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 	isIPv6Unicast := protocolAddress.Protocol == header.IPv6ProtocolNumber && header.IsV6UnicastAddress(protocolAddress.AddressWithPrefix.Address)
 
 	// If the address is an IPv6 address and it is a permanent address,
-	// mark it as tentative so it goes through the DAD process.
+	// mark it as tentative so it goes through the DAD process if the NIC is
+	// enabled. If the NIC is not enabled, DAD will be started when the NIC is
+	// enabled.
 	if isIPv6Unicast && kind == permanent {
 		kind = permanentTentative
 	}
@@ -668,8 +701,8 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 
 	n.insertPrimaryEndpointLocked(ref, peb)
 
-	// If we are adding a tentative IPv6 address, start DAD.
-	if isIPv6Unicast && kind == permanentTentative {
+	// If we are adding a tentative IPv6 address, start DAD if the NIC is enabled.
+	if isIPv6Unicast && kind == permanentTentative && n.mu.enabled {
 		if err := n.mu.ndp.startDuplicateAddressDetection(protocolAddress.AddressWithPrefix.Address, ref); err != nil {
 			return nil, err
 		}
@@ -700,9 +733,7 @@ func (n *NIC) AllAddresses() []tcpip.ProtocolAddress {
 		// Don't include tentative, expired or temporary endpoints to
 		// avoid confusion and prevent the caller from using those.
 		switch ref.getKind() {
-		case permanentTentative, permanentExpired, temporary:
-			// TODO(b/140898488): Should tentative addresses be
-			//                    returned?
+		case permanentExpired, temporary:
 			continue
 		}
 		addrs = append(addrs, tcpip.ProtocolAddress{
@@ -1016,11 +1047,23 @@ func handlePacket(protocol tcpip.NetworkProtocolNumber, dst, src tcpip.Address, 
 // This rule applies only to the slice itself, not to the items of the slice;
 // the ownership of the items is not retained by the caller.
 func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) {
+	n.mu.RLock()
+	enabled := n.mu.enabled
+	// If the NIC is not yet enabled, don't receive any packets.
+	if !enabled {
+		n.mu.RUnlock()
+
+		n.stats.DisabledRx.Packets.Increment()
+		n.stats.DisabledRx.Bytes.IncrementBy(uint64(pkt.Data.Size()))
+		return
+	}
+
 	n.stats.Rx.Packets.Increment()
 	n.stats.Rx.Bytes.IncrementBy(uint64(pkt.Data.Size()))
 
 	netProto, ok := n.stack.networkProtocols[protocol]
 	if !ok {
+		n.mu.RUnlock()
 		n.stack.stats.UnknownProtocolRcvdPackets.Increment()
 		return
 	}
@@ -1032,7 +1075,6 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 	}
 
 	// Are any packet sockets listening for this network protocol?
-	n.mu.RLock()
 	packetEPs := n.mu.packetEPs[protocol]
 	// Check whether there are packet sockets listening for every protocol.
 	// If we received a packet with protocol EthernetProtocolAll, then the

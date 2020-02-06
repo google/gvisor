@@ -2561,3 +2561,118 @@ func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
 		})
 	}
 }
+
+// TestDoDADWhenNICEnabled tests that IPv6 endpoints that were added while a NIC
+// was disabled have DAD performed on them when the NIC is enabled.
+func TestDoDADWhenNICEnabled(t *testing.T) {
+	t.Parallel()
+
+	const dadTransmits = 1
+	const retransmitTimer = time.Second
+	const nicID = 1
+
+	ndpDisp := ndpDispatcher{
+		dadC: make(chan ndpDADEvent),
+	}
+	opts := stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+		NDPConfigs: stack.NDPConfigurations{
+			DupAddrDetectTransmits: dadTransmits,
+			RetransmitTimer:        retransmitTimer,
+		},
+		NDPDisp: &ndpDisp,
+	}
+
+	e := channel.New(dadTransmits, 1280, linkAddr1)
+	s := stack.New(opts)
+	nicOpts := stack.NICOptions{Disabled: true}
+	if err := s.CreateNICWithOptions(nicID, e, nicOpts); err != nil {
+		t.Fatalf("CreateNIC(%d, _, %+v) = %s", nicID, nicOpts, err)
+	}
+
+	addr := tcpip.ProtocolAddress{
+		Protocol: header.IPv6ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   llAddr1,
+			PrefixLen: 128,
+		},
+	}
+	if err := s.AddProtocolAddress(nicID, addr); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v): %s", nicID, addr, err)
+	}
+
+	// Address should be in the list of all addresses.
+	if addrs := s.AllAddresses()[nicID]; !containsV6Addr(addrs, addr.AddressWithPrefix) {
+		t.Fatalf("got s.AllAddresses()[%d] = %+v, want = %+v", nicID, addrs, addr)
+	}
+
+	// Address should be tentative so it should not be a main address.
+	got, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
+	if err != nil {
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
+	}
+	if want := (tcpip.AddressWithPrefix{}); got != want {
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, got, want)
+	}
+
+	// Enabling the NIC should start DAD for the address.
+	if err := s.EnableNIC(nicID); err != nil {
+		t.Fatalf("s.EnableNIC(%d): %s", nicID, err)
+	}
+	if addrs := s.AllAddresses()[nicID]; !containsV6Addr(addrs, addr.AddressWithPrefix) {
+		t.Fatalf("got s.AllAddresses()[%d] = %+v, want = %+v", nicID, addrs, addr)
+	}
+
+	// Address should not be considered bound to the NIC yet (DAD ongoing).
+	got, err = s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
+	if err != nil {
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
+	}
+	if want := (tcpip.AddressWithPrefix{}); got != want {
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, got, want)
+	}
+
+	// Wait for DAD to resolve.
+	select {
+	case <-time.After(dadTransmits*retransmitTimer + defaultAsyncEventTimeout):
+		t.Fatal("timed out waiting for DAD resolution")
+	case e := <-ndpDisp.dadC:
+		if e.err != nil {
+			t.Fatal("got DAD error: ", e.err)
+		}
+		if e.nicID != nicID {
+			t.Fatalf("got DAD event w/ nicID = %d, want = %d", e.nicID, nicID)
+		}
+		if e.addr != addr.AddressWithPrefix.Address {
+			t.Fatalf("got DAD event w/ addr = %s, want = %s", e.addr, addr.AddressWithPrefix.Address)
+		}
+		if !e.resolved {
+			t.Fatal("got DAD event w/ resolved = false, want = true")
+		}
+	}
+	if addrs := s.AllAddresses()[nicID]; !containsV6Addr(addrs, addr.AddressWithPrefix) {
+		t.Fatalf("got s.AllAddresses()[%d] = %+v, want = %+v", nicID, addrs, addr)
+	}
+	got, err = s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
+	if err != nil {
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
+	}
+	if got != addr.AddressWithPrefix {
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, header.IPv6ProtocolNumber, got, addr.AddressWithPrefix)
+	}
+
+	// Enabling the NIC again should be a no-op.
+	if err := s.EnableNIC(nicID); err != nil {
+		t.Fatalf("s.EnableNIC(%d): %s", nicID, err)
+	}
+	if addrs := s.AllAddresses()[nicID]; !containsV6Addr(addrs, addr.AddressWithPrefix) {
+		t.Fatalf("got s.AllAddresses()[%d] = %+v, want = %+v", nicID, addrs, addr)
+	}
+	got, err = s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
+	if err != nil {
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
+	}
+	if got != addr.AddressWithPrefix {
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, got, addr.AddressWithPrefix)
+	}
+}
