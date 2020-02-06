@@ -274,7 +274,7 @@ func (n netstackImpl) listen(port int) (net.Listener, error) {
 		NIC:  nicID,
 		Port: uint16(port),
 	}
-	listener, err := gonet.NewListener(n.s, addr, ipv4.ProtocolNumber)
+	listener, err := gonet.ListenTCP(n.s, addr, ipv4.ProtocolNumber)
 	if err != nil {
 		return nil, err
 	}
