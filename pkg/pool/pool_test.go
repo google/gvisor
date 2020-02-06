@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package p9
+package pool
 
 import (
 	"testing"
 )
 
 func TestPoolUnique(t *testing.T) {
-	p := pool{start: 1, limit: 3}
+	p := Pool{Start: 1, Limit: 3}
 	got := make(map[uint64]bool)
 
 	for {
@@ -39,7 +39,7 @@ func TestPoolUnique(t *testing.T) {
 }
 
 func TestExausted(t *testing.T) {
-	p := pool{start: 1, limit: 500}
+	p := Pool{Start: 1, Limit: 500}
 	for i := 0; i < 499; i++ {
 		_, ok := p.Get()
 		if !ok {
@@ -54,7 +54,7 @@ func TestExausted(t *testing.T) {
 }
 
 func TestPoolRecycle(t *testing.T) {
-	p := pool{start: 1, limit: 500}
+	p := Pool{Start: 1, Limit: 500}
 	n1, _ := p.Get()
 	p.Put(n1)
 	n2, _ := p.Get()
