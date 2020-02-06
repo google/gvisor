@@ -114,6 +114,10 @@ func newX86FPStateSlice() []byte {
 	size, align := cpuid.HostFeatureSet().ExtendedStateSize()
 	capacity := size
 	// Always use at least 4096 bytes.
+	//
+	// For the KVM platform, this state is a fixed 4096 bytes, so make sure
+	// that the underlying array is at _least_ that size otherwise we will
+	// corrupt random memory. This is not a pleasant thing to debug.
 	if capacity < 4096 {
 		capacity = 4096
 	}

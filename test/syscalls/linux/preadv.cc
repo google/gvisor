@@ -37,6 +37,7 @@ namespace testing {
 
 namespace {
 
+// Stress copy-on-write. Attempts to reproduce b/38430174.
 TEST(PreadvTest, MMConcurrencyStress) {
   // Fill a one-page file with zeroes (the contents don't really matter).
   const auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(

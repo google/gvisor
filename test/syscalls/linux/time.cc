@@ -62,6 +62,7 @@ TEST(TimeTest, VsyscallTime_InvalidAddressSIGSEGV) {
               ::testing::KilledBySignal(SIGSEGV), "");
 }
 
+// Mimics the gettimeofday(2) wrapper from the Go runtime <= 1.2.
 int vsyscall_gettimeofday(struct timeval* tv, struct timezone* tz) {
   constexpr uint64_t kVsyscallGettimeofdayEntry = 0xffffffffff600000;
   return reinterpret_cast<int (*)(struct timeval*, struct timezone*)>(

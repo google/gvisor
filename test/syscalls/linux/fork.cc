@@ -271,7 +271,7 @@ TEST_F(ForkTest, Alarm) {
   EXPECT_EQ(0, alarmed);
 }
 
-// Child cannot affect parent private memory.
+// Child cannot affect parent private memory. Regression test for b/24137240.
 TEST_F(ForkTest, PrivateMemory) {
   std::atomic<uint32_t> local(0);
 
@@ -298,6 +298,9 @@ TEST_F(ForkTest, PrivateMemory) {
 }
 
 // Kernel-accessed buffers should remain coherent across COW.
+//
+// The buffer must be >= usermem.ZeroCopyMinBytes, as UnsafeAccess operates
+// differently. Regression test for b/33811887.
 TEST_F(ForkTest, COWSegment) {
   constexpr int kBufSize = 1024;
   char* read_buf = private_;

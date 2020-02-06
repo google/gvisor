@@ -10,6 +10,7 @@ go_library(
         "save_restore.go",
         "socket.go",
         "socket_unsafe.go",
+        "sockopt_impl.go",
         "stack.go",
     ],
     visibility = ["//pkg/sentry:internal"],

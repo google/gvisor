@@ -21,6 +21,12 @@
 #include "test/util/posix_error.h"
 
 int main(int argc, char** argv, char** envp) {
+  // This is annoying. Because remote build systems may put these binaries
+  // in a content-addressable-store, you may wind up with /proc/self/exe
+  // pointing to some random path (but with a sensible argv[0]).
+  //
+  // Therefore, this test simply checks that the /proc/self/exe
+  // is absolute and *doesn't* match argv[1].
   std::string exe =
       gvisor::testing::ProcessExePath(getpid()).ValueOrDie();
   if (exe[0] != '/') {

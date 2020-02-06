@@ -5,7 +5,10 @@ package(licenses = ["notice"])
 go_library(
     name = "testutil",
     testonly = 1,
-    srcs = ["testutil.go"],
+    srcs = [
+        "testutil.go",
+        "testutil_runfiles.go",
+    ],
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",
