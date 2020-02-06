@@ -78,7 +78,9 @@ func (x *inodeOperations) load(m state.Map) {
 
 func (x *inodeFileState) save(m state.Map) {
 	x.beforeSave()
-	if !state.IsZeroValue(x.queue) { m.Failf("queue is %v, expected zero", x.queue) }
+	if !state.IsZeroValue(x.queue) {
+		m.Failf("queue is %v, expected zero", x.queue)
+	}
 	m.Save("mops", &x.mops)
 	m.Save("descriptor", &x.descriptor)
 	m.Save("sattr", &x.sattr)

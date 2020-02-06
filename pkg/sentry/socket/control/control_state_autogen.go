@@ -3,8 +3,8 @@
 package control
 
 import (
-	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/state"
 )
 
 func (x *RightsFiles) save(m state.Map) {

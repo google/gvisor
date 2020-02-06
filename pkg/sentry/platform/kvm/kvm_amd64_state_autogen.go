@@ -5,4 +5,3 @@
 // +build amd64
 
 package kvm
-

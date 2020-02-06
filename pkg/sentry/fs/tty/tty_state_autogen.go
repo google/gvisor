@@ -61,8 +61,12 @@ func (x *superOperations) load(m state.Map) {
 func (x *lineDiscipline) beforeSave() {}
 func (x *lineDiscipline) save(m state.Map) {
 	x.beforeSave()
-	if !state.IsZeroValue(x.masterWaiter) { m.Failf("masterWaiter is %v, expected zero", x.masterWaiter) }
-	if !state.IsZeroValue(x.slaveWaiter) { m.Failf("slaveWaiter is %v, expected zero", x.slaveWaiter) }
+	if !state.IsZeroValue(x.masterWaiter) {
+		m.Failf("masterWaiter is %v, expected zero", x.masterWaiter)
+	}
+	if !state.IsZeroValue(x.slaveWaiter) {
+		m.Failf("slaveWaiter is %v, expected zero", x.slaveWaiter)
+	}
 	m.Save("size", &x.size)
 	m.Save("inQueue", &x.inQueue)
 	m.Save("outQueue", &x.outQueue)

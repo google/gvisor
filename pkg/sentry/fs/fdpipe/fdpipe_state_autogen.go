@@ -3,8 +3,8 @@
 package fdpipe
 
 import (
-	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/state"
 )
 
 func (x *pipeOperations) save(m state.Map) {

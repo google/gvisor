@@ -17,56 +17,6 @@ func (x *DirtyInfo) load(m state.Map) {
 	m.Load("Keep", &x.Keep)
 }
 
-func (x *DirtySet) beforeSave() {}
-func (x *DirtySet) save(m state.Map) {
-	x.beforeSave()
-	var root *DirtySegmentDataSlices = x.saveRoot()
-	m.SaveValue("root", root)
-}
-
-func (x *DirtySet) afterLoad() {}
-func (x *DirtySet) load(m state.Map) {
-	m.LoadValue("root", new(*DirtySegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*DirtySegmentDataSlices)) })
-}
-
-func (x *Dirtynode) beforeSave() {}
-func (x *Dirtynode) save(m state.Map) {
-	x.beforeSave()
-	m.Save("nrSegments", &x.nrSegments)
-	m.Save("parent", &x.parent)
-	m.Save("parentIndex", &x.parentIndex)
-	m.Save("hasChildren", &x.hasChildren)
-	m.Save("keys", &x.keys)
-	m.Save("values", &x.values)
-	m.Save("children", &x.children)
-}
-
-func (x *Dirtynode) afterLoad() {}
-func (x *Dirtynode) load(m state.Map) {
-	m.Load("nrSegments", &x.nrSegments)
-	m.Load("parent", &x.parent)
-	m.Load("parentIndex", &x.parentIndex)
-	m.Load("hasChildren", &x.hasChildren)
-	m.Load("keys", &x.keys)
-	m.Load("values", &x.values)
-	m.Load("children", &x.children)
-}
-
-func (x *DirtySegmentDataSlices) beforeSave() {}
-func (x *DirtySegmentDataSlices) save(m state.Map) {
-	x.beforeSave()
-	m.Save("Start", &x.Start)
-	m.Save("End", &x.End)
-	m.Save("Values", &x.Values)
-}
-
-func (x *DirtySegmentDataSlices) afterLoad() {}
-func (x *DirtySegmentDataSlices) load(m state.Map) {
-	m.Load("Start", &x.Start)
-	m.Load("End", &x.End)
-	m.Load("Values", &x.Values)
-}
-
 func (x *StaticDirFileOperations) beforeSave() {}
 func (x *StaticDirFileOperations) save(m state.Map) {
 	x.beforeSave()
@@ -98,106 +48,6 @@ func (x *FileStaticContentReader) save(m state.Map) {
 func (x *FileStaticContentReader) afterLoad() {}
 func (x *FileStaticContentReader) load(m state.Map) {
 	m.Load("content", &x.content)
-}
-
-func (x *FileRangeSet) beforeSave() {}
-func (x *FileRangeSet) save(m state.Map) {
-	x.beforeSave()
-	var root *FileRangeSegmentDataSlices = x.saveRoot()
-	m.SaveValue("root", root)
-}
-
-func (x *FileRangeSet) afterLoad() {}
-func (x *FileRangeSet) load(m state.Map) {
-	m.LoadValue("root", new(*FileRangeSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*FileRangeSegmentDataSlices)) })
-}
-
-func (x *FileRangenode) beforeSave() {}
-func (x *FileRangenode) save(m state.Map) {
-	x.beforeSave()
-	m.Save("nrSegments", &x.nrSegments)
-	m.Save("parent", &x.parent)
-	m.Save("parentIndex", &x.parentIndex)
-	m.Save("hasChildren", &x.hasChildren)
-	m.Save("keys", &x.keys)
-	m.Save("values", &x.values)
-	m.Save("children", &x.children)
-}
-
-func (x *FileRangenode) afterLoad() {}
-func (x *FileRangenode) load(m state.Map) {
-	m.Load("nrSegments", &x.nrSegments)
-	m.Load("parent", &x.parent)
-	m.Load("parentIndex", &x.parentIndex)
-	m.Load("hasChildren", &x.hasChildren)
-	m.Load("keys", &x.keys)
-	m.Load("values", &x.values)
-	m.Load("children", &x.children)
-}
-
-func (x *FileRangeSegmentDataSlices) beforeSave() {}
-func (x *FileRangeSegmentDataSlices) save(m state.Map) {
-	x.beforeSave()
-	m.Save("Start", &x.Start)
-	m.Save("End", &x.End)
-	m.Save("Values", &x.Values)
-}
-
-func (x *FileRangeSegmentDataSlices) afterLoad() {}
-func (x *FileRangeSegmentDataSlices) load(m state.Map) {
-	m.Load("Start", &x.Start)
-	m.Load("End", &x.End)
-	m.Load("Values", &x.Values)
-}
-
-func (x *FrameRefSet) beforeSave() {}
-func (x *FrameRefSet) save(m state.Map) {
-	x.beforeSave()
-	var root *FrameRefSegmentDataSlices = x.saveRoot()
-	m.SaveValue("root", root)
-}
-
-func (x *FrameRefSet) afterLoad() {}
-func (x *FrameRefSet) load(m state.Map) {
-	m.LoadValue("root", new(*FrameRefSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*FrameRefSegmentDataSlices)) })
-}
-
-func (x *FrameRefnode) beforeSave() {}
-func (x *FrameRefnode) save(m state.Map) {
-	x.beforeSave()
-	m.Save("nrSegments", &x.nrSegments)
-	m.Save("parent", &x.parent)
-	m.Save("parentIndex", &x.parentIndex)
-	m.Save("hasChildren", &x.hasChildren)
-	m.Save("keys", &x.keys)
-	m.Save("values", &x.values)
-	m.Save("children", &x.children)
-}
-
-func (x *FrameRefnode) afterLoad() {}
-func (x *FrameRefnode) load(m state.Map) {
-	m.Load("nrSegments", &x.nrSegments)
-	m.Load("parent", &x.parent)
-	m.Load("parentIndex", &x.parentIndex)
-	m.Load("hasChildren", &x.hasChildren)
-	m.Load("keys", &x.keys)
-	m.Load("values", &x.values)
-	m.Load("children", &x.children)
-}
-
-func (x *FrameRefSegmentDataSlices) beforeSave() {}
-func (x *FrameRefSegmentDataSlices) save(m state.Map) {
-	x.beforeSave()
-	m.Save("Start", &x.Start)
-	m.Save("End", &x.End)
-	m.Save("Values", &x.Values)
-}
-
-func (x *FrameRefSegmentDataSlices) afterLoad() {}
-func (x *FrameRefSegmentDataSlices) load(m state.Map) {
-	m.Load("Start", &x.Start)
-	m.Load("End", &x.End)
-	m.Load("Values", &x.Values)
 }
 
 func (x *HostFileMapper) beforeSave() {}
@@ -338,18 +188,9 @@ func (x *CachingInodeOperationsOptions) load(m state.Map) {
 
 func init() {
 	state.Register("fsutil.DirtyInfo", (*DirtyInfo)(nil), state.Fns{Save: (*DirtyInfo).save, Load: (*DirtyInfo).load})
-	state.Register("fsutil.DirtySet", (*DirtySet)(nil), state.Fns{Save: (*DirtySet).save, Load: (*DirtySet).load})
-	state.Register("fsutil.Dirtynode", (*Dirtynode)(nil), state.Fns{Save: (*Dirtynode).save, Load: (*Dirtynode).load})
-	state.Register("fsutil.DirtySegmentDataSlices", (*DirtySegmentDataSlices)(nil), state.Fns{Save: (*DirtySegmentDataSlices).save, Load: (*DirtySegmentDataSlices).load})
 	state.Register("fsutil.StaticDirFileOperations", (*StaticDirFileOperations)(nil), state.Fns{Save: (*StaticDirFileOperations).save, Load: (*StaticDirFileOperations).load})
 	state.Register("fsutil.NoReadWriteFile", (*NoReadWriteFile)(nil), state.Fns{Save: (*NoReadWriteFile).save, Load: (*NoReadWriteFile).load})
 	state.Register("fsutil.FileStaticContentReader", (*FileStaticContentReader)(nil), state.Fns{Save: (*FileStaticContentReader).save, Load: (*FileStaticContentReader).load})
-	state.Register("fsutil.FileRangeSet", (*FileRangeSet)(nil), state.Fns{Save: (*FileRangeSet).save, Load: (*FileRangeSet).load})
-	state.Register("fsutil.FileRangenode", (*FileRangenode)(nil), state.Fns{Save: (*FileRangenode).save, Load: (*FileRangenode).load})
-	state.Register("fsutil.FileRangeSegmentDataSlices", (*FileRangeSegmentDataSlices)(nil), state.Fns{Save: (*FileRangeSegmentDataSlices).save, Load: (*FileRangeSegmentDataSlices).load})
-	state.Register("fsutil.FrameRefSet", (*FrameRefSet)(nil), state.Fns{Save: (*FrameRefSet).save, Load: (*FrameRefSet).load})
-	state.Register("fsutil.FrameRefnode", (*FrameRefnode)(nil), state.Fns{Save: (*FrameRefnode).save, Load: (*FrameRefnode).load})
-	state.Register("fsutil.FrameRefSegmentDataSlices", (*FrameRefSegmentDataSlices)(nil), state.Fns{Save: (*FrameRefSegmentDataSlices).save, Load: (*FrameRefSegmentDataSlices).load})
 	state.Register("fsutil.HostFileMapper", (*HostFileMapper)(nil), state.Fns{Save: (*HostFileMapper).save, Load: (*HostFileMapper).load})
 	state.Register("fsutil.HostMappable", (*HostMappable)(nil), state.Fns{Save: (*HostMappable).save, Load: (*HostMappable).load})
 	state.Register("fsutil.SimpleFileInode", (*SimpleFileInode)(nil), state.Fns{Save: (*SimpleFileInode).save, Load: (*SimpleFileInode).load})

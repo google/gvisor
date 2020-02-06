@@ -5,4 +5,3 @@
 // +build race
 
 package filter
-

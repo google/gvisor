@@ -7,4 +7,3 @@
 // +build !go1.15
 
 package sleep
-

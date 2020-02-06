@@ -235,6 +235,9 @@ type Kernel struct {
 	// events. This is initialized lazily on the first unimplemented
 	// syscall.
 	unimplementedSyscallEmitter eventchannel.Emitter `state:"nosave"`
+
+	// SpecialOpts contains special kernel options.
+	SpecialOpts
 }
 
 // InitKernelArgs holds arguments to Init.

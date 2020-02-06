@@ -33,7 +33,9 @@ func (x *ioResult) load(m state.Map) {
 func (x *AIOContext) beforeSave() {}
 func (x *AIOContext) save(m state.Map) {
 	x.beforeSave()
-	if !state.IsZeroValue(x.dead) { m.Failf("dead is %v, expected zero", x.dead) }
+	if !state.IsZeroValue(x.dead) {
+		m.Failf("dead is %v, expected zero", x.dead)
+	}
 	m.Save("results", &x.results)
 	m.Save("maxOutstanding", &x.maxOutstanding)
 	m.Save("outstanding", &x.outstanding)
@@ -139,8 +141,12 @@ func (x *ioEntry) load(m state.Map) {
 
 func (x *MemoryManager) save(m state.Map) {
 	x.beforeSave()
-	if !state.IsZeroValue(x.active) { m.Failf("active is %v, expected zero", x.active) }
-	if !state.IsZeroValue(x.captureInvalidations) { m.Failf("captureInvalidations is %v, expected zero", x.captureInvalidations) }
+	if !state.IsZeroValue(x.active) {
+		m.Failf("active is %v, expected zero", x.active)
+	}
+	if !state.IsZeroValue(x.captureInvalidations) {
+		m.Failf("captureInvalidations is %v, expected zero", x.captureInvalidations)
+	}
 	m.Save("p", &x.p)
 	m.Save("mfp", &x.mfp)
 	m.Save("layout", &x.layout)

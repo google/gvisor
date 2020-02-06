@@ -4,4 +4,3 @@
 // +build amd64
 
 package linux
-

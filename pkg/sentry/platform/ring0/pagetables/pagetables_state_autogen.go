@@ -4,4 +4,3 @@
 // +build i386 amd64
 
 package pagetables
-

@@ -53,7 +53,9 @@ func (x *Set) load(m state.Map) {
 func (x *sem) beforeSave() {}
 func (x *sem) save(m state.Map) {
 	x.beforeSave()
-	if !state.IsZeroValue(x.waiters) { m.Failf("waiters is %v, expected zero", x.waiters) }
+	if !state.IsZeroValue(x.waiters) {
+		m.Failf("waiters is %v, expected zero", x.waiters)
+	}
 	m.Save("value", &x.value)
 	m.Save("pid", &x.pid)
 }

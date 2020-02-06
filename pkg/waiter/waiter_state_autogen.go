@@ -26,7 +26,9 @@ func (x *Entry) load(m state.Map) {
 func (x *Queue) beforeSave() {}
 func (x *Queue) save(m state.Map) {
 	x.beforeSave()
-	if !state.IsZeroValue(x.list) { m.Failf("list is %v, expected zero", x.list) }
+	if !state.IsZeroValue(x.list) {
+		m.Failf("list is %v, expected zero", x.list)
+	}
 }
 
 func (x *Queue) afterLoad() {}

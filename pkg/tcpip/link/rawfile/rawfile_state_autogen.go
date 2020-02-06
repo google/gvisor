@@ -8,4 +8,3 @@
 // +build linux
 
 package rawfile
-

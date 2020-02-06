@@ -55,7 +55,7 @@ type SignalContext64 struct {
 	Trapno  uint64
 	Oldmask linux.SignalSet
 	Cr2     uint64
-	// Pointer to a struct _fpstate.
+	// Pointer to a struct _fpstate. See b/33003106#comment8.
 	Fpstate  uint64
 	Reserved [8]uint64
 }
