@@ -12,33 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package p9
+package pool
 
 import (
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
-// pool is a simple allocator.
-//
-// It is used for both tags and FIDs.
-type pool struct {
+// Pool is a simple allocator.
+type Pool struct {
 	mu sync.Mutex
 
 	// cache is the set of returned values.
 	cache []uint64
 
-	// start is the starting value (if needed).
-	start uint64
+	// Start is the starting value (if needed).
+	Start uint64
 
 	// max is the current maximum issued.
 	max uint64
 
-	// limit is the upper limit.
-	limit uint64
+	// Limit is the upper limit.
+	Limit uint64
 }
 
 // Get gets a value from the pool.
-func (p *pool) Get() (uint64, bool) {
+func (p *Pool) Get() (uint64, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -50,18 +48,18 @@ func (p *pool) Get() (uint64, bool) {
 	}
 
 	// Over the limit?
-	if p.start == p.limit {
+	if p.Start == p.Limit {
 		return 0, false
 	}
 
 	// Generate a new value.
-	v := p.start
-	p.start++
+	v := p.Start
+	p.Start++
 	return v, true
 }
 
 // Put returns a value to the pool.
-func (p *pool) Put(v uint64) {
+func (p *Pool) Put(v uint64) {
 	p.mu.Lock()
 	p.cache = append(p.cache, v)
 	p.mu.Unlock()
