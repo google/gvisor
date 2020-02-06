@@ -1539,7 +1539,7 @@ func TestPrefixDiscoveryMaxOnLinkPrefixes(t *testing.T) {
 }
 
 // Checks to see if list contains an IPv6 address, item.
-func contains(list []tcpip.ProtocolAddress, item tcpip.AddressWithPrefix) bool {
+func containsV6Addr(list []tcpip.ProtocolAddress, item tcpip.AddressWithPrefix) bool {
 	protocolAddress := tcpip.ProtocolAddress{
 		Protocol:          header.IPv6ProtocolNumber,
 		AddressWithPrefix: item,
@@ -1665,7 +1665,7 @@ func TestAutoGenAddr(t *testing.T) {
 	// with non-zero lifetime.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix1, true, true, 100, 0))
 	expectAutoGenAddrEvent(addr1, newAddr)
-	if !contains(s.NICInfo()[1].ProtocolAddresses, addr1) {
+	if !containsV6Addr(s.NICInfo()[1].ProtocolAddresses, addr1) {
 		t.Fatalf("Should have %s in the list of addresses", addr1)
 	}
 
@@ -1681,10 +1681,10 @@ func TestAutoGenAddr(t *testing.T) {
 	// Receive an RA with prefix2 in a PI.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix2, true, true, 100, 0))
 	expectAutoGenAddrEvent(addr2, newAddr)
-	if !contains(s.NICInfo()[1].ProtocolAddresses, addr1) {
+	if !containsV6Addr(s.NICInfo()[1].ProtocolAddresses, addr1) {
 		t.Fatalf("Should have %s in the list of addresses", addr1)
 	}
-	if !contains(s.NICInfo()[1].ProtocolAddresses, addr2) {
+	if !containsV6Addr(s.NICInfo()[1].ProtocolAddresses, addr2) {
 		t.Fatalf("Should have %s in the list of addresses", addr2)
 	}
 
@@ -1705,10 +1705,10 @@ func TestAutoGenAddr(t *testing.T) {
 	case <-time.After(newMinVLDuration + defaultAsyncEventTimeout):
 		t.Fatal("timed out waiting for addr auto gen event")
 	}
-	if contains(s.NICInfo()[1].ProtocolAddresses, addr1) {
+	if containsV6Addr(s.NICInfo()[1].ProtocolAddresses, addr1) {
 		t.Fatalf("Should not have %s in the list of addresses", addr1)
 	}
-	if !contains(s.NICInfo()[1].ProtocolAddresses, addr2) {
+	if !containsV6Addr(s.NICInfo()[1].ProtocolAddresses, addr2) {
 		t.Fatalf("Should have %s in the list of addresses", addr2)
 	}
 }
@@ -1853,7 +1853,7 @@ func TestAutoGenAddrDeprecateFromPI(t *testing.T) {
 	// Receive PI for prefix1.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix1, true, true, 100, 100))
 	expectAutoGenAddrEvent(addr1, newAddr)
-	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
+	if !containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
 		t.Fatalf("should have %s in the list of addresses", addr1)
 	}
 	expectPrimaryAddr(addr1)
@@ -1861,7 +1861,7 @@ func TestAutoGenAddrDeprecateFromPI(t *testing.T) {
 	// Deprecate addr for prefix1 immedaitely.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix1, true, true, 100, 0))
 	expectAutoGenAddrEvent(addr1, deprecatedAddr)
-	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
+	if !containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
 		t.Fatalf("should have %s in the list of addresses", addr1)
 	}
 	// addr should still be the primary endpoint as there are no other addresses.
@@ -1879,7 +1879,7 @@ func TestAutoGenAddrDeprecateFromPI(t *testing.T) {
 	// Receive PI for prefix2.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix2, true, true, 100, 100))
 	expectAutoGenAddrEvent(addr2, newAddr)
-	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
+	if !containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
 		t.Fatalf("should have %s in the list of addresses", addr2)
 	}
 	expectPrimaryAddr(addr2)
@@ -1887,7 +1887,7 @@ func TestAutoGenAddrDeprecateFromPI(t *testing.T) {
 	// Deprecate addr for prefix2 immedaitely.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix2, true, true, 100, 0))
 	expectAutoGenAddrEvent(addr2, deprecatedAddr)
-	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
+	if !containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
 		t.Fatalf("should have %s in the list of addresses", addr2)
 	}
 	// addr1 should be the primary endpoint now since addr2 is deprecated but
@@ -1982,7 +1982,7 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 	// Receive PI for prefix2.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix2, true, true, 100, 100))
 	expectAutoGenAddrEvent(addr2, newAddr)
-	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
+	if !containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
 		t.Fatalf("should have %s in the list of addresses", addr2)
 	}
 	expectPrimaryAddr(addr2)
@@ -1990,10 +1990,10 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 	// Receive a PI for prefix1.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix1, true, true, 100, 90))
 	expectAutoGenAddrEvent(addr1, newAddr)
-	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
+	if !containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
 		t.Fatalf("should have %s in the list of addresses", addr1)
 	}
-	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
+	if !containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
 		t.Fatalf("should have %s in the list of addresses", addr2)
 	}
 	expectPrimaryAddr(addr1)
@@ -2009,10 +2009,10 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 
 	// Wait for addr of prefix1 to be deprecated.
 	expectAutoGenAddrEventAfter(addr1, deprecatedAddr, newMinVLDuration-time.Second+defaultAsyncEventTimeout)
-	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
+	if !containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
 		t.Fatalf("should not have %s in the list of addresses", addr1)
 	}
-	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
+	if !containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
 		t.Fatalf("should have %s in the list of addresses", addr2)
 	}
 	// addr2 should be the primary endpoint now since addr1 is deprecated but
@@ -2049,10 +2049,10 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 
 	// Wait for addr of prefix1 to be deprecated.
 	expectAutoGenAddrEventAfter(addr1, deprecatedAddr, newMinVLDuration-time.Second+defaultAsyncEventTimeout)
-	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
+	if !containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
 		t.Fatalf("should not have %s in the list of addresses", addr1)
 	}
-	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
+	if !containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
 		t.Fatalf("should have %s in the list of addresses", addr2)
 	}
 	// addr2 should be the primary endpoint now since it is not deprecated.
@@ -2063,10 +2063,10 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 
 	// Wait for addr of prefix1 to be invalidated.
 	expectAutoGenAddrEventAfter(addr1, invalidatedAddr, time.Second+defaultAsyncEventTimeout)
-	if contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
+	if containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
 		t.Fatalf("should not have %s in the list of addresses", addr1)
 	}
-	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
+	if !containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
 		t.Fatalf("should have %s in the list of addresses", addr2)
 	}
 	expectPrimaryAddr(addr2)
@@ -2112,10 +2112,10 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 	case <-time.After(newMinVLDuration + defaultAsyncEventTimeout):
 		t.Fatal("timed out waiting for addr auto gen event")
 	}
-	if contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
+	if containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
 		t.Fatalf("should not have %s in the list of addresses", addr1)
 	}
-	if contains(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
+	if containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
 		t.Fatalf("should not have %s in the list of addresses", addr2)
 	}
 	// Should not have any primary endpoints.
@@ -2600,7 +2600,7 @@ func TestAutoGenAddrStaticConflict(t *testing.T) {
 	if err := s.AddProtocolAddress(1, tcpip.ProtocolAddress{Protocol: header.IPv6ProtocolNumber, AddressWithPrefix: addr}); err != nil {
 		t.Fatalf("AddAddress(_, %d, %s) = %s", header.IPv6ProtocolNumber, addr.Address, err)
 	}
-	if !contains(s.NICInfo()[1].ProtocolAddresses, addr) {
+	if !containsV6Addr(s.NICInfo()[1].ProtocolAddresses, addr) {
 		t.Fatalf("Should have %s in the list of addresses", addr1)
 	}
 
@@ -2613,7 +2613,7 @@ func TestAutoGenAddrStaticConflict(t *testing.T) {
 		t.Fatal("unexpectedly received an auto gen addr event for an address we already have statically")
 	default:
 	}
-	if !contains(s.NICInfo()[1].ProtocolAddresses, addr) {
+	if !containsV6Addr(s.NICInfo()[1].ProtocolAddresses, addr) {
 		t.Fatalf("Should have %s in the list of addresses", addr1)
 	}
 
@@ -2624,7 +2624,7 @@ func TestAutoGenAddrStaticConflict(t *testing.T) {
 		t.Fatal("unexpectedly received an auto gen addr event")
 	case <-time.After(lifetimeSeconds*time.Second + defaultTimeout):
 	}
-	if !contains(s.NICInfo()[1].ProtocolAddresses, addr) {
+	if !containsV6Addr(s.NICInfo()[1].ProtocolAddresses, addr) {
 		t.Fatalf("Should have %s in the list of addresses", addr1)
 	}
 }
@@ -2702,17 +2702,17 @@ func TestAutoGenAddrWithOpaqueIID(t *testing.T) {
 	const validLifetimeSecondPrefix1 = 1
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix1, true, true, validLifetimeSecondPrefix1, 0))
 	expectAutoGenAddrEvent(addr1, newAddr)
-	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
+	if !containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
 		t.Fatalf("should have %s in the list of addresses", addr1)
 	}
 
 	// Receive an RA with prefix2 in a PI with a large valid lifetime.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix2, true, true, 100, 0))
 	expectAutoGenAddrEvent(addr2, newAddr)
-	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
+	if !containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
 		t.Fatalf("should have %s in the list of addresses", addr1)
 	}
-	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
+	if !containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
 		t.Fatalf("should have %s in the list of addresses", addr2)
 	}
 
@@ -2725,10 +2725,10 @@ func TestAutoGenAddrWithOpaqueIID(t *testing.T) {
 	case <-time.After(validLifetimeSecondPrefix1*time.Second + defaultAsyncEventTimeout):
 		t.Fatal("timed out waiting for addr auto gen event")
 	}
-	if contains(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
+	if containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
 		t.Fatalf("should not have %s in the list of addresses", addr1)
 	}
-	if !contains(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
+	if !containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr2) {
 		t.Fatalf("should have %s in the list of addresses", addr2)
 	}
 }
@@ -3014,16 +3014,16 @@ func TestCleanupHostOnlyStateOnBecomingRouter(t *testing.T) {
 	nicinfo := s.NICInfo()
 	nic1Addrs := nicinfo[nicID1].ProtocolAddresses
 	nic2Addrs := nicinfo[nicID2].ProtocolAddresses
-	if !contains(nic1Addrs, e1Addr1) {
+	if !containsV6Addr(nic1Addrs, e1Addr1) {
 		t.Errorf("missing %s from the list of addresses for NIC(%d): %+v", e1Addr1, nicID1, nic1Addrs)
 	}
-	if !contains(nic1Addrs, e1Addr2) {
+	if !containsV6Addr(nic1Addrs, e1Addr2) {
 		t.Errorf("missing %s from the list of addresses for NIC(%d): %+v", e1Addr2, nicID1, nic1Addrs)
 	}
-	if !contains(nic2Addrs, e2Addr1) {
+	if !containsV6Addr(nic2Addrs, e2Addr1) {
 		t.Errorf("missing %s from the list of addresses for NIC(%d): %+v", e2Addr1, nicID2, nic2Addrs)
 	}
-	if !contains(nic2Addrs, e2Addr2) {
+	if !containsV6Addr(nic2Addrs, e2Addr2) {
 		t.Errorf("missing %s from the list of addresses for NIC(%d): %+v", e2Addr2, nicID2, nic2Addrs)
 	}
 
@@ -3102,16 +3102,16 @@ func TestCleanupHostOnlyStateOnBecomingRouter(t *testing.T) {
 	nicinfo = s.NICInfo()
 	nic1Addrs = nicinfo[nicID1].ProtocolAddresses
 	nic2Addrs = nicinfo[nicID2].ProtocolAddresses
-	if contains(nic1Addrs, e1Addr1) {
+	if containsV6Addr(nic1Addrs, e1Addr1) {
 		t.Errorf("still have %s in the list of addresses for NIC(%d): %+v", e1Addr1, nicID1, nic1Addrs)
 	}
-	if contains(nic1Addrs, e1Addr2) {
+	if containsV6Addr(nic1Addrs, e1Addr2) {
 		t.Errorf("still have %s in the list of addresses for NIC(%d): %+v", e1Addr2, nicID1, nic1Addrs)
 	}
-	if contains(nic2Addrs, e2Addr1) {
+	if containsV6Addr(nic2Addrs, e2Addr1) {
 		t.Errorf("still have %s in the list of addresses for NIC(%d): %+v", e2Addr1, nicID2, nic2Addrs)
 	}
-	if contains(nic2Addrs, e2Addr2) {
+	if containsV6Addr(nic2Addrs, e2Addr2) {
 		t.Errorf("still have %s in the list of addresses for NIC(%d): %+v", e2Addr2, nicID2, nic2Addrs)
 	}
 
