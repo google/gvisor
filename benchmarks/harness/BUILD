@@ -1,3 +1,4 @@
+load("//tools:defs.bzl", "pkg_tar")
 load("//tools:defs.bzl", "py_library", "py_requirement")
 
 package(
@@ -5,9 +6,29 @@ package(
     licenses = ["notice"],
 )
 
+pkg_tar(
+    name = "installers",
+    srcs = [
+        "//tools/installers:head",
+        "//tools/installers:master",
+        "//tools/installers:runsc",
+    ],
+    mode = "0755",
+)
+
+filegroup(
+    name = "files",
+    srcs = [
+        ":installers",
+    ],
+)
+
 py_library(
     name = "harness",
     srcs = ["__init__.py"],
+    data = [
+        ":files",
+    ],
 )
 
 py_library(
