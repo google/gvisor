@@ -1124,6 +1124,10 @@ type ReadErrors struct {
 	// InvalidEndpointState is the number of times we found the endpoint state
 	// to be unexpected.
 	InvalidEndpointState StatCounter
+
+	// NotConnected is the number of times we tried to read but found that the
+	// endpoint was not connected.
+	NotConnected StatCounter
 }
 
 // WriteErrors collects packet write errors from an endpoint write call.
