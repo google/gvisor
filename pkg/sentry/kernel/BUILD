@@ -91,6 +91,7 @@ go_library(
         "fs_context.go",
         "ipc_namespace.go",
         "kernel.go",
+        "kernel_opts.go",
         "kernel_state.go",
         "pending_signals.go",
         "pending_signals_list.go",

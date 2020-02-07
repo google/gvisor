@@ -46,7 +46,6 @@ var (
 //
 // TODO(b/67298402): Support non-cumulative metrics.
 // TODO(b/67298427): Support metric fields.
-//
 type Uint64Metric struct {
 	// value is the actual value of the metric. It must be accessed
 	// atomically.

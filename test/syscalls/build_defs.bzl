@@ -2,8 +2,6 @@
 
 load("//tools:defs.bzl", "loopback")
 
-# syscall_test is a macro that will create targets to run the given test target
-# on the host (native) and runsc.
 def syscall_test(
         test,
         shard_count = 5,
@@ -13,6 +11,19 @@ def syscall_test(
         add_uds_tree = False,
         add_hostinet = False,
         tags = None):
+    """syscall_test is a macro that will create targets for all platforms.
+
+    Args:
+      test: the test target.
+      shard_count: shards for defined tests.
+      size: the defined test size.
+      use_tmpfs: use tmpfs in the defined tests.
+      add_overlay: add an overlay test.
+      add_uds_tree: add a UDS test.
+      add_hostinet: add a hostinet test.
+      tags: starting test tags.
+    """
+
     _syscall_test(
         test = test,
         shard_count = shard_count,
@@ -111,6 +122,19 @@ def _syscall_test(
     # all the tests on a specific flavor. Use --test_tag_filters=ptrace,file_shared.
     tags += [full_platform, "file_" + file_access]
 
+    # Hash this target into one of 15 buckets. This can be used to
+    # randomly split targets between different workflows.
+    hash15 = hash(native.package_name() + name) % 15
+    tags.append("hash15:" + str(hash15))
+
+    # TODO(b/139838000): Tests using hostinet must be disabled on Guitar until
+    # we figure out how to request ipv4 sockets on Guitar machines.
+    if network == "host":
+        tags.append("noguitar")
+
+    # Disable off-host networking.
+    tags.append("requires-net:loopback")
+
     # Add tag to prevent the tests from running in a Bazel sandbox.
     # TODO(b/120560048): Make the tests run without this tag.
     tags.append("no-sandbox")
@@ -118,8 +142,11 @@ def _syscall_test(
     # TODO(b/112165693): KVM tests are tagged "manual" to until the platform is
     # more stable.
     if platform == "kvm":
-        tags += ["manual"]
-        tags += ["requires-kvm"]
+        tags.append("manual")
+        tags.append("requires-kvm")
+
+        # TODO(b/112165693): Remove when tests pass reliably.
+        tags.append("notap")
 
     args = [
         # Arguments are passed directly to syscall_test_runner binary.

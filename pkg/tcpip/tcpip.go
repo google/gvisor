@@ -1124,6 +1124,10 @@ type ReadErrors struct {
 	// InvalidEndpointState is the number of times we found the endpoint state
 	// to be unexpected.
 	InvalidEndpointState StatCounter
+
+	// NotConnected is the number of times we tried to read but found that the
+	// endpoint was not connected.
+	NotConnected StatCounter
 }
 
 // WriteErrors collects packet write errors from an endpoint write call.
@@ -1166,7 +1170,9 @@ type TransportEndpointStats struct {
 // marker interface.
 func (*TransportEndpointStats) IsEndpointStats() {}
 
-func fillIn(v reflect.Value) {
+// InitStatCounters initializes v's fields with nil StatCounter fields to new
+// StatCounters.
+func InitStatCounters(v reflect.Value) {
 	for i := 0; i < v.NumField(); i++ {
 		v := v.Field(i)
 		if s, ok := v.Addr().Interface().(**StatCounter); ok {
@@ -1174,14 +1180,14 @@ func fillIn(v reflect.Value) {
 				*s = new(StatCounter)
 			}
 		} else {
-			fillIn(v)
+			InitStatCounters(v)
 		}
 	}
 }
 
 // FillIn returns a copy of s with nil fields initialized to new StatCounters.
 func (s Stats) FillIn() Stats {
-	fillIn(reflect.ValueOf(&s).Elem())
+	InitStatCounters(reflect.ValueOf(&s).Elem())
 	return s
 }
 

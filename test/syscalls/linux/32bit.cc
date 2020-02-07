@@ -155,7 +155,7 @@ TEST(Syscall32Bit, Syscall) {
     case PlatformSupport::Ignored:
       // See above.
       EXPECT_EXIT(ExitGroup32(kSyscall, kExitCode),
-                  ::testing::KilledBySignal(SIGILL), "");
+                  ::testing::KilledBySignal(SIGSEGV), "");
       break;
 
     case PlatformSupport::Allowed:

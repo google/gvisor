@@ -132,6 +132,7 @@ TEST(CreateTest, CreateFailsOnDirWithoutWritePerms) {
 }
 
 // A file originally created RW, but opened RO can later be opened RW.
+// Regression test for b/65385065.
 TEST(CreateTest, OpenCreateROThenRW) {
   TempPath file(NewTempAbsPath());
 

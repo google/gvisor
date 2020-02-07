@@ -73,6 +73,16 @@ def calculate_sets(srcs):
             result[target].append(file)
     return result
 
+def go_imports(name, src, out):
+    """Simplify a single Go source file by eliminating unused imports."""
+    native.genrule(
+        name = name,
+        srcs = [src],
+        outs = [out],
+        tools = ["@org_golang_x_tools//cmd/goimports:goimports"],
+        cmd = ("$(location @org_golang_x_tools//cmd/goimports:goimports) $(SRCS) > $@"),
+    )
+
 def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = False, **kwargs):
     """Wraps the standard go_library and does stateification and marshalling.
 
@@ -107,10 +117,15 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
         state_sets = calculate_sets(srcs)
         for (suffix, srcs) in state_sets.items():
             go_stateify(
-                name = name + suffix + "_state_autogen",
+                name = name + suffix + "_state_autogen_with_imports",
                 srcs = srcs,
                 imports = imports,
                 package = name,
+                out = name + suffix + "_state_autogen_with_imports.go",
+            )
+            go_imports(
+                name = name + suffix + "_state_autogen",
+                src = name + suffix + "_state_autogen_with_imports.go",
                 out = name + suffix + "_state_autogen.go",
             )
         all_srcs = all_srcs + [

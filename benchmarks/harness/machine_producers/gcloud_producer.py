@@ -1,5 +1,5 @@
 # python3
-# Copyright 2019 Google LLC
+# Copyright 2019 The gVisor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -46,12 +46,11 @@ class GCloudProducer(machine_producer.MachineProducer):
   Produces Machine objects backed by GCP instances.
 
   Attributes:
-    project: The GCP project name under which to create the machines.
-    ssh_key_file: path to a valid ssh private key. See README on vaild ssh keys.
     image: image name as a string.
-    image_project: image project as a string.
-    machine_type: type of GCP to create. e.g. n1-standard-4
     zone: string to a valid GCP zone.
+    machine_type: type of GCP to create (e.g. n1-standard-4).
+    installers: list of installers post-boot.
+    ssh_key_file: path to a valid ssh private key. See README on vaild ssh keys.
     ssh_user: string of user name for ssh_key
     ssh_password: string of password for ssh key
     mock: a mock printer which will print mock data if required. Mock data is
@@ -60,21 +59,19 @@ class GCloudProducer(machine_producer.MachineProducer):
   """
 
   def __init__(self,
-               project: str,
-               ssh_key_file: str,
                image: str,
-               image_project: str,
-               machine_type: str,
                zone: str,
+               machine_type: str,
+               installers: List[str],
+               ssh_key_file: str,
                ssh_user: str,
                ssh_password: str,
                mock: gcloud_mock_recorder.MockPrinter = None):
-    self.project = project
-    self.ssh_key_file = ssh_key_file
     self.image = image
-    self.image_project = image_project
-    self.machine_type = machine_type
     self.zone = zone
+    self.machine_type = machine_type
+    self.installers = installers
+    self.ssh_key_file = ssh_key_file
     self.ssh_user = ssh_user
     self.ssh_password = ssh_password
     self.mock = mock
@@ -87,10 +84,34 @@ class GCloudProducer(machine_producer.MachineProducer):
           "Cannot ask for {num} machines!".format(num=num_machines))
     with self.condition:
       names = self._get_unique_names(num_machines)
-      self._build_instances(names)
-    instances = self._start_command(names)
+      instances = self._build_instances(names)
     self._add_ssh_key_to_instances(names)
-    return self._machines_from_instances(instances)
+    machines = self._machines_from_instances(instances)
+
+    # Install all bits in lock-step.
+    #
+    # This will perform paralell installations for however many machines we
+    # have, but it's easy to track errors because if installing (a, b, c), we
+    # won't install "c" until "b" is installed on all machines.
+    for installer in self.installers:
+      threads = [None] * len(machines)
+      results = [False] * len(machines)
+      for i in range(len(machines)):
+        threads[i] = threading.Thread(
+            target=machines[i].install, args=(installer, results, i))
+        threads[i].start()
+      for thread in threads:
+        thread.join()
+      for result in results:
+        if not result:
+          raise NotImplementedError(
+              "Installers failed on at least one machine!")
+
+    # Add this user to each machine's docker group.
+    for m in machines:
+      m.run("sudo setfacl -m user:$USER:rw /var/run/docker.sock")
+
+    return machines
 
   def release_machines(self, machine_list: List[machine.Machine]):
     """Releases the requested number of machines, deleting the instances."""
@@ -123,15 +144,7 @@ class GCloudProducer(machine_producer.MachineProducer):
 
   def _get_unique_names(self, num_names) -> List[str]:
     """Returns num_names unique names based on data from the GCP project."""
-    curr_machines = self._list_machines()
-    curr_names = set([machine["name"] for machine in curr_machines])
-    ret = []
-    while len(ret) < num_names:
-      new_name = "machine-" + str(uuid.uuid4())
-      if new_name not in curr_names:
-        ret.append(new_name)
-        curr_names.update(new_name)
-    return ret
+    return ["machine-" + str(uuid.uuid4()) for _ in range(0, num_names)]
 
   def _build_instances(self, names: List[str]) -> List[Dict[str, Any]]:
     """Creates instances using gcloud command.
@@ -151,34 +164,9 @@ class GCloudProducer(machine_producer.MachineProducer):
           "_build_instances cannot create instances without names.")
     cmd = "gcloud compute instances create".split(" ")
     cmd.extend(names)
-    cmd.extend(
-        "--preemptible --image={image} --zone={zone} --machine-type={machine_type}"
-        .format(
-            image=self.image, zone=self.zone,
-            machine_type=self.machine_type).split(" "))
-    if self.image_project:
-      cmd.append("--image-project={project}".format(project=self.image_project))
-    res = self._run_command(cmd)
-    return json.loads(res.stdout)
-
-  def _start_command(self, names):
-    """Starts instances using gcloud command.
-
-    Runs the command `gcloud compute instances start` on list of instances by
-    name and returns json data on started instances on success.
-
-    Args:
-      names: list of names of instances to start.
-
-    Returns:
-      List of json data describing started machines.
-    """
-    if not names:
-      raise ValueError("_start_command cannot start empty instance list.")
-    cmd = "gcloud compute instances start".split(" ")
-    cmd.extend(names)
-    cmd.append("--zone={zone}".format(zone=self.zone))
-    cmd.append("--project={project}".format(project=self.project))
+    cmd.append("--image=" + self.image)
+    cmd.append("--zone=" + self.zone)
+    cmd.append("--machine-type=" + self.machine_type)
     res = self._run_command(cmd)
     return json.loads(res.stdout)
 
@@ -186,7 +174,7 @@ class GCloudProducer(machine_producer.MachineProducer):
     """Adds ssh key to instances by calling gcloud ssh command.
 
     Runs the command `gcloud compute ssh instance_name` on list of images by
-    name. Tries to ssh into given instance
+    name. Tries to ssh into given instance.
 
     Args:
       names: list of machine names to which to add the ssh-key
@@ -202,30 +190,18 @@ class GCloudProducer(machine_producer.MachineProducer):
       cmd.append("--ssh-key-file={key}".format(key=self.ssh_key_file))
       cmd.append("--zone={zone}".format(zone=self.zone))
       cmd.append("--command=uname")
+      cmd.append("--ssh-key-expire-after=60m")
       timeout = datetime.timedelta(seconds=5 * 60)
       start = datetime.datetime.now()
       while datetime.datetime.now() <= timeout + start:
         try:
           self._run_command(cmd)
           break
-        except subprocess.CalledProcessError as e:
+        except subprocess.CalledProcessError:
           if datetime.datetime.now() > timeout + start:
             raise TimeoutError(
                 "Could not SSH into instance after 5 min: {name}".format(
                     name=name))
-          # 255 is the returncode for ssh connection refused.
-          elif e.returncode == 255:
-
-            continue
-          else:
-            raise e
-
-  def _list_machines(self) -> List[Dict[str, Any]]:
-    """Runs `list` gcloud command and returns list of Machine data."""
-    cmd = "gcloud compute instances list --project {project}".format(
-        project=self.project).split(" ")
-    res = self._run_command(cmd)
-    return json.loads(res.stdout)
 
   def _run_command(self,
                    cmd: List[str],
@@ -261,7 +237,7 @@ class GCloudProducer(machine_producer.MachineProducer):
       self.mock.record(res)
     if res.returncode != 0:
       raise subprocess.CalledProcessError(
-          cmd=res.args,
+          cmd=" ".join(res.args),
           output=res.stdout,
           stderr=res.stderr,
           returncode=res.returncode)

@@ -167,7 +167,7 @@ TEST(ChrootTest, DotDotFromOpenFD) {
 }
 
 // Test that link resolution in a chroot can escape the root by following an
-// open proc fd.
+// open proc fd. Regression test for b/32316719.
 TEST(ChrootTest, ProcFdLinkResolutionInChroot) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
 

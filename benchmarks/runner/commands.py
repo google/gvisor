@@ -1,5 +1,5 @@
 # python3
-# Copyright 2019 Google LLC
+# Copyright 2019 The gVisor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,9 +22,9 @@ def run_mock(**kwargs):
   # mock implementation
 
 """
-import click
+import os
 
-from benchmarks import harness
+import click
 
 
 class RunCommand(click.core.Command):
@@ -90,46 +90,40 @@ class GCPCommand(RunCommand):
   """GCPCommand inherits all flags from RunCommand and adds flags for run_gcp method.
 
   Attributes:
-    project: GCP project
-    ssh_key_path: path to the ssh-key to use for the run
-    image: name of the image to build machines from
-    image_project: GCP project under which to find image
-    zone: a GCP zone (e.g. us-west1-b)
-    ssh_user: username to use for the ssh-key
-    ssh_password: password to use for the ssh-key
+    image_file: name of the image to build machines from
+    zone_file: a GCP zone (e.g. us-west1-b)
+    installers: named installers for post-create
+    machine_type: type of machine to create (e.g. n1-standard-4)
   """
 
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
 
-    project = click.core.Option(
-        ("--project",),
-        help="Project to run on if not default value given by 'gcloud config get-value project'."
+    image_file = click.core.Option(
+        ("--image_file",),
+        help="The file containing the image for VMs.",
+        default=os.path.join(
+            os.path.dirname(__file__), "../../tools/images/ubuntu1604.txt"),
     )
-    ssh_key_path = click.core.Option(
-        ("--ssh-key-file",),
-        help="Path to a valid ssh private key to use. See README on generating a valid ssh key. Set to ~/.ssh/benchmark-tools by default.",
-        default=harness.DEFAULT_USER_HOME + "/.ssh/benchmark-tools")
-    image = click.core.Option(("--image",),
-                              help="The image on which to build VMs.",
-                              default="bm-tools-testing")
-    image_project = click.core.Option(
-        ("--image_project",),
-        help="The project under which the image to be used is listed.",
-        default="")
-    machine_type = click.core.Option(("--machine_type",),
-                                     help="Type to make all machines.",
-                                     default="n1-standard-4")
-    zone = click.core.Option(("--zone",),
-                             help="The GCP zone to run on.",
-                             default="")
-    ssh_user = click.core.Option(("--ssh-user",),
-                                 help="User for the ssh key.",
-                                 default=harness.DEFAULT_USER)
-    ssh_password = click.core.Option(("--ssh-password",),
-                                     help="Password for the ssh key.",
-                                     default="")
+    zone_file = click.core.Option(
+        ("--zone_file",),
+        help="The file containing the GCP zone.",
+        default=os.path.join(
+            os.path.dirname(__file__), "../../tools/images/zone.txt"),
+    )
+    installers = click.core.Option(
+        ("--installers",),
+        help="The set of installers to use.",
+        multiple=True,
+    )
+    machine_type = click.core.Option(
+        ("--machine_type",),
+        help="Type to make all machines.",
+        default="n1-standard-4",
+    )
     self.params.extend([
-        project, ssh_key_path, image, image_project, machine_type, zone,
-        ssh_user, ssh_password
+        image_file,
+        zone_file,
+        machine_type,
+        installers,
     ])

@@ -121,21 +121,60 @@ func TestICMPCounts(t *testing.T) {
 	}
 	defer r.Release()
 
+	var tllData [header.NDPLinkLayerAddressSize]byte
+	header.NDPOptions(tllData[:]).Serialize(header.NDPOptionsSerializer{
+		header.NDPTargetLinkLayerAddressOption(linkAddr1),
+	})
+
 	types := []struct {
-		typ  header.ICMPv6Type
-		size int
+		typ       header.ICMPv6Type
+		size      int
+		extraData []byte
 	}{
-		{header.ICMPv6DstUnreachable, header.ICMPv6DstUnreachableMinimumSize},
-		{header.ICMPv6PacketTooBig, header.ICMPv6PacketTooBigMinimumSize},
-		{header.ICMPv6TimeExceeded, header.ICMPv6MinimumSize},
-		{header.ICMPv6ParamProblem, header.ICMPv6MinimumSize},
-		{header.ICMPv6EchoRequest, header.ICMPv6EchoMinimumSize},
-		{header.ICMPv6EchoReply, header.ICMPv6EchoMinimumSize},
-		{header.ICMPv6RouterSolicit, header.ICMPv6MinimumSize},
-		{header.ICMPv6RouterAdvert, header.ICMPv6HeaderSize + header.NDPRAMinimumSize},
-		{header.ICMPv6NeighborSolicit, header.ICMPv6NeighborSolicitMinimumSize},
-		{header.ICMPv6NeighborAdvert, header.ICMPv6NeighborAdvertSize},
-		{header.ICMPv6RedirectMsg, header.ICMPv6MinimumSize},
+		{
+			typ:  header.ICMPv6DstUnreachable,
+			size: header.ICMPv6DstUnreachableMinimumSize,
+		},
+		{
+			typ:  header.ICMPv6PacketTooBig,
+			size: header.ICMPv6PacketTooBigMinimumSize,
+		},
+		{
+			typ:  header.ICMPv6TimeExceeded,
+			size: header.ICMPv6MinimumSize,
+		},
+		{
+			typ:  header.ICMPv6ParamProblem,
+			size: header.ICMPv6MinimumSize,
+		},
+		{
+			typ:  header.ICMPv6EchoRequest,
+			size: header.ICMPv6EchoMinimumSize,
+		},
+		{
+			typ:  header.ICMPv6EchoReply,
+			size: header.ICMPv6EchoMinimumSize,
+		},
+		{
+			typ:  header.ICMPv6RouterSolicit,
+			size: header.ICMPv6MinimumSize,
+		},
+		{
+			typ:  header.ICMPv6RouterAdvert,
+			size: header.ICMPv6HeaderSize + header.NDPRAMinimumSize,
+		},
+		{
+			typ:  header.ICMPv6NeighborSolicit,
+			size: header.ICMPv6NeighborSolicitMinimumSize},
+		{
+			typ:       header.ICMPv6NeighborAdvert,
+			size:      header.ICMPv6NeighborAdvertMinimumSize,
+			extraData: tllData[:],
+		},
+		{
+			typ:  header.ICMPv6RedirectMsg,
+			size: header.ICMPv6MinimumSize,
+		},
 	}
 
 	handleIPv6Payload := func(hdr buffer.Prependable) {
@@ -154,10 +193,13 @@ func TestICMPCounts(t *testing.T) {
 	}
 
 	for _, typ := range types {
-		hdr := buffer.NewPrependable(header.IPv6MinimumSize + typ.size)
+		extraDataLen := len(typ.extraData)
+		hdr := buffer.NewPrependable(header.IPv6MinimumSize + typ.size + extraDataLen)
+		extraData := buffer.View(hdr.Prepend(extraDataLen))
+		copy(extraData, typ.extraData)
 		pkt := header.ICMPv6(hdr.Prepend(typ.size))
 		pkt.SetType(typ.typ)
-		pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
+		pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, extraData.ToVectorisedView()))
 
 		handleIPv6Payload(hdr)
 	}
@@ -372,97 +414,104 @@ func TestLinkResolution(t *testing.T) {
 }
 
 func TestICMPChecksumValidationSimple(t *testing.T) {
+	var tllData [header.NDPLinkLayerAddressSize]byte
+	header.NDPOptions(tllData[:]).Serialize(header.NDPOptionsSerializer{
+		header.NDPTargetLinkLayerAddressOption(linkAddr1),
+	})
+
 	types := []struct {
 		name        string
 		typ         header.ICMPv6Type
 		size        int
+		extraData   []byte
 		statCounter func(tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter
 	}{
 		{
-			"DstUnreachable",
-			header.ICMPv6DstUnreachable,
-			header.ICMPv6DstUnreachableMinimumSize,
-			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+			name: "DstUnreachable",
+			typ:  header.ICMPv6DstUnreachable,
+			size: header.ICMPv6DstUnreachableMinimumSize,
+			statCounter: func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
 				return stats.DstUnreachable
 			},
 		},
 		{
-			"PacketTooBig",
-			header.ICMPv6PacketTooBig,
-			header.ICMPv6PacketTooBigMinimumSize,
-			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+			name: "PacketTooBig",
+			typ:  header.ICMPv6PacketTooBig,
+			size: header.ICMPv6PacketTooBigMinimumSize,
+			statCounter: func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
 				return stats.PacketTooBig
 			},
 		},
 		{
-			"TimeExceeded",
-			header.ICMPv6TimeExceeded,
-			header.ICMPv6MinimumSize,
-			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+			name: "TimeExceeded",
+			typ:  header.ICMPv6TimeExceeded,
+			size: header.ICMPv6MinimumSize,
+			statCounter: func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
 				return stats.TimeExceeded
 			},
 		},
 		{
-			"ParamProblem",
-			header.ICMPv6ParamProblem,
-			header.ICMPv6MinimumSize,
-			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+			name: "ParamProblem",
+			typ:  header.ICMPv6ParamProblem,
+			size: header.ICMPv6MinimumSize,
+			statCounter: func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
 				return stats.ParamProblem
 			},
 		},
 		{
-			"EchoRequest",
-			header.ICMPv6EchoRequest,
-			header.ICMPv6EchoMinimumSize,
-			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+			name: "EchoRequest",
+			typ:  header.ICMPv6EchoRequest,
+			size: header.ICMPv6EchoMinimumSize,
+			statCounter: func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
 				return stats.EchoRequest
 			},
 		},
 		{
-			"EchoReply",
-			header.ICMPv6EchoReply,
-			header.ICMPv6EchoMinimumSize,
-			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+			name: "EchoReply",
+			typ:  header.ICMPv6EchoReply,
+			size: header.ICMPv6EchoMinimumSize,
+			statCounter: func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
 				return stats.EchoReply
 			},
 		},
 		{
-			"RouterSolicit",
-			header.ICMPv6RouterSolicit,
-			header.ICMPv6MinimumSize,
-			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+			name: "RouterSolicit",
+			typ:  header.ICMPv6RouterSolicit,
+			size: header.ICMPv6MinimumSize,
+			statCounter: func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
 				return stats.RouterSolicit
 			},
 		},
 		{
-			"RouterAdvert",
-			header.ICMPv6RouterAdvert,
-			header.ICMPv6HeaderSize + header.NDPRAMinimumSize,
-			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+			name: "RouterAdvert",
+			typ:  header.ICMPv6RouterAdvert,
+			size: header.ICMPv6HeaderSize + header.NDPRAMinimumSize,
+			statCounter: func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
 				return stats.RouterAdvert
 			},
 		},
 		{
-			"NeighborSolicit",
-			header.ICMPv6NeighborSolicit,
-			header.ICMPv6NeighborSolicitMinimumSize,
-			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+			name: "NeighborSolicit",
+			typ:  header.ICMPv6NeighborSolicit,
+			size: header.ICMPv6NeighborSolicitMinimumSize,
+			statCounter: func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
 				return stats.NeighborSolicit
 			},
 		},
 		{
-			"NeighborAdvert",
-			header.ICMPv6NeighborAdvert,
-			header.ICMPv6NeighborAdvertSize,
-			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+			name:      "NeighborAdvert",
+			typ:       header.ICMPv6NeighborAdvert,
+			size:      header.ICMPv6NeighborAdvertMinimumSize,
+			extraData: tllData[:],
+			statCounter: func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
 				return stats.NeighborAdvert
 			},
 		},
 		{
-			"RedirectMsg",
-			header.ICMPv6RedirectMsg,
-			header.ICMPv6MinimumSize,
-			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+			name: "RedirectMsg",
+			typ:  header.ICMPv6RedirectMsg,
+			size: header.ICMPv6MinimumSize,
+			statCounter: func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
 				return stats.RedirectMsg
 			},
 		},
@@ -494,16 +543,19 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 				)
 			}
 
-			handleIPv6Payload := func(typ header.ICMPv6Type, size int, checksum bool) {
-				hdr := buffer.NewPrependable(header.IPv6MinimumSize + size)
-				pkt := header.ICMPv6(hdr.Prepend(size))
-				pkt.SetType(typ)
+			handleIPv6Payload := func(checksum bool) {
+				extraDataLen := len(typ.extraData)
+				hdr := buffer.NewPrependable(header.IPv6MinimumSize + typ.size + extraDataLen)
+				extraData := buffer.View(hdr.Prepend(extraDataLen))
+				copy(extraData, typ.extraData)
+				pkt := header.ICMPv6(hdr.Prepend(typ.size))
+				pkt.SetType(typ.typ)
 				if checksum {
-					pkt.SetChecksum(header.ICMPv6Checksum(pkt, lladdr1, lladdr0, buffer.VectorisedView{}))
+					pkt.SetChecksum(header.ICMPv6Checksum(pkt, lladdr1, lladdr0, extraData.ToVectorisedView()))
 				}
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 				ip.Encode(&header.IPv6Fields{
-					PayloadLength: uint16(size),
+					PayloadLength: uint16(typ.size + extraDataLen),
 					NextHeader:    uint8(header.ICMPv6ProtocolNumber),
 					HopLimit:      header.NDPHopLimit,
 					SrcAddr:       lladdr1,
@@ -528,7 +580,7 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 
 			// Without setting checksum, the incoming packet should
 			// be invalid.
-			handleIPv6Payload(typ.typ, typ.size, false)
+			handleIPv6Payload(false)
 			if got := invalid.Value(); got != 1 {
 				t.Fatalf("got invalid = %d, want = 1", got)
 			}
@@ -538,7 +590,7 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 			}
 
 			// When checksum is set, it should be received.
-			handleIPv6Payload(typ.typ, typ.size, true)
+			handleIPv6Payload(true)
 			if got := typStat.Value(); got != 1 {
 				t.Fatalf("got %s = %d, want = 1", typ.name, got)
 			}
