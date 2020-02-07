@@ -42,6 +42,7 @@ const (
 	linkAddr1                = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
 	linkAddr2                = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x07")
 	linkAddr3                = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x08")
+	linkAddr4                = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x09")
 	defaultTimeout           = 100 * time.Millisecond
 	defaultAsyncEventTimeout = time.Second
 )
@@ -50,6 +51,7 @@ var (
 	llAddr1 = header.LinkLocalAddr(linkAddr1)
 	llAddr2 = header.LinkLocalAddr(linkAddr2)
 	llAddr3 = header.LinkLocalAddr(linkAddr3)
+	llAddr4 = header.LinkLocalAddr(linkAddr4)
 	dstAddr = tcpip.FullAddress{
 		Addr: "\x0a\x0b\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
 		Port: 25,
@@ -2882,8 +2884,8 @@ func TestNDPRecursiveDNSServerDispatch(t *testing.T) {
 }
 
 // TestCleanupHostOnlyStateOnBecomingRouter tests that all discovered routers
-// and prefixes, and auto-generated addresses get invalidated when a NIC
-// becomes a router.
+// and prefixes, and non-linklocal auto-generated addresses are invalidated when
+// a NIC becomes a router.
 func TestCleanupHostOnlyStateOnBecomingRouter(t *testing.T) {
 	t.Parallel()
 
@@ -2898,6 +2900,14 @@ func TestCleanupHostOnlyStateOnBecomingRouter(t *testing.T) {
 	prefix2, subnet2, e1Addr2 := prefixSubnetAddr(1, linkAddr1)
 	e2Addr1 := addrForSubnet(subnet1, linkAddr2)
 	e2Addr2 := addrForSubnet(subnet2, linkAddr2)
+	llAddrWithPrefix1 := tcpip.AddressWithPrefix{
+		Address:   llAddr1,
+		PrefixLen: 64,
+	}
+	llAddrWithPrefix2 := tcpip.AddressWithPrefix{
+		Address:   llAddr2,
+		PrefixLen: 64,
+	}
 
 	ndpDisp := ndpDispatcher{
 		routerC:        make(chan ndpRouterEvent, maxEvents),
@@ -2907,7 +2917,8 @@ func TestCleanupHostOnlyStateOnBecomingRouter(t *testing.T) {
 		autoGenAddrC:   make(chan ndpAutoGenAddrEvent, maxEvents),
 	}
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+		NetworkProtocols:     []stack.NetworkProtocol{ipv6.NewProtocol()},
+		AutoGenIPv6LinkLocal: true,
 		NDPConfigs: stack.NDPConfigurations{
 			HandleRAs:              true,
 			DiscoverDefaultRouters: true,
@@ -2916,16 +2927,6 @@ func TestCleanupHostOnlyStateOnBecomingRouter(t *testing.T) {
 		},
 		NDPDisp: &ndpDisp,
 	})
-
-	e1 := channel.New(0, 1280, linkAddr1)
-	if err := s.CreateNIC(nicID1, e1); err != nil {
-		t.Fatalf("CreateNIC(%d, _) = %s", nicID1, err)
-	}
-
-	e2 := channel.New(0, 1280, linkAddr2)
-	if err := s.CreateNIC(nicID2, e2); err != nil {
-		t.Fatalf("CreateNIC(%d, _) = %s", nicID2, err)
-	}
 
 	expectRouterEvent := func() (bool, ndpRouterEvent) {
 		select {
@@ -2957,18 +2958,30 @@ func TestCleanupHostOnlyStateOnBecomingRouter(t *testing.T) {
 		return false, ndpAutoGenAddrEvent{}
 	}
 
-	// Receive RAs on NIC(1) and NIC(2) from default routers (llAddr1 and
-	// llAddr2) w/ PI (for prefix1 in RA from llAddr1 and prefix2 in RA from
-	// llAddr2) to discover multiple routers and prefixes, and auto-gen
-	// multiple addresses.
-
-	e1.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr1, lifetimeSeconds, prefix1, true, true, lifetimeSeconds, lifetimeSeconds))
+	e1 := channel.New(0, 1280, linkAddr1)
+	if err := s.CreateNIC(nicID1, e1); err != nil {
+		t.Fatalf("CreateNIC(%d, _) = %s", nicID1, err)
+	}
 	// We have other tests that make sure we receive the *correct* events
 	// on normal discovery of routers/prefixes, and auto-generated
 	// addresses. Here we just make sure we get an event and let other tests
 	// handle the correctness check.
+	expectAutoGenAddrEvent()
+
+	e2 := channel.New(0, 1280, linkAddr2)
+	if err := s.CreateNIC(nicID2, e2); err != nil {
+		t.Fatalf("CreateNIC(%d, _) = %s", nicID2, err)
+	}
+	expectAutoGenAddrEvent()
+
+	// Receive RAs on NIC(1) and NIC(2) from default routers (llAddr3 and
+	// llAddr4) w/ PI (for prefix1 in RA from llAddr3 and prefix2 in RA from
+	// llAddr4) to discover multiple routers and prefixes, and auto-gen
+	// multiple addresses.
+
+	e1.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr3, lifetimeSeconds, prefix1, true, true, lifetimeSeconds, lifetimeSeconds))
 	if ok, _ := expectRouterEvent(); !ok {
-		t.Errorf("expected router event for %s on NIC(%d)", llAddr1, nicID1)
+		t.Errorf("expected router event for %s on NIC(%d)", llAddr3, nicID1)
 	}
 	if ok, _ := expectPrefixEvent(); !ok {
 		t.Errorf("expected prefix event for %s on NIC(%d)", prefix1, nicID1)
@@ -2977,9 +2990,9 @@ func TestCleanupHostOnlyStateOnBecomingRouter(t *testing.T) {
 		t.Errorf("expected auto-gen addr event for %s on NIC(%d)", e1Addr1, nicID1)
 	}
 
-	e1.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, lifetimeSeconds, prefix2, true, true, lifetimeSeconds, lifetimeSeconds))
+	e1.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr4, lifetimeSeconds, prefix2, true, true, lifetimeSeconds, lifetimeSeconds))
 	if ok, _ := expectRouterEvent(); !ok {
-		t.Errorf("expected router event for %s on NIC(%d)", llAddr2, nicID1)
+		t.Errorf("expected router event for %s on NIC(%d)", llAddr4, nicID1)
 	}
 	if ok, _ := expectPrefixEvent(); !ok {
 		t.Errorf("expected prefix event for %s on NIC(%d)", prefix2, nicID1)
@@ -2988,9 +3001,9 @@ func TestCleanupHostOnlyStateOnBecomingRouter(t *testing.T) {
 		t.Errorf("expected auto-gen addr event for %s on NIC(%d)", e1Addr2, nicID1)
 	}
 
-	e2.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr1, lifetimeSeconds, prefix1, true, true, lifetimeSeconds, lifetimeSeconds))
+	e2.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr3, lifetimeSeconds, prefix1, true, true, lifetimeSeconds, lifetimeSeconds))
 	if ok, _ := expectRouterEvent(); !ok {
-		t.Errorf("expected router event for %s on NIC(%d)", llAddr1, nicID2)
+		t.Errorf("expected router event for %s on NIC(%d)", llAddr3, nicID2)
 	}
 	if ok, _ := expectPrefixEvent(); !ok {
 		t.Errorf("expected prefix event for %s on NIC(%d)", prefix1, nicID2)
@@ -2999,9 +3012,9 @@ func TestCleanupHostOnlyStateOnBecomingRouter(t *testing.T) {
 		t.Errorf("expected auto-gen addr event for %s on NIC(%d)", e1Addr2, nicID2)
 	}
 
-	e2.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, lifetimeSeconds, prefix2, true, true, lifetimeSeconds, lifetimeSeconds))
+	e2.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr4, lifetimeSeconds, prefix2, true, true, lifetimeSeconds, lifetimeSeconds))
 	if ok, _ := expectRouterEvent(); !ok {
-		t.Errorf("expected router event for %s on NIC(%d)", llAddr2, nicID2)
+		t.Errorf("expected router event for %s on NIC(%d)", llAddr4, nicID2)
 	}
 	if ok, _ := expectPrefixEvent(); !ok {
 		t.Errorf("expected prefix event for %s on NIC(%d)", prefix2, nicID2)
@@ -3014,11 +3027,17 @@ func TestCleanupHostOnlyStateOnBecomingRouter(t *testing.T) {
 	nicinfo := s.NICInfo()
 	nic1Addrs := nicinfo[nicID1].ProtocolAddresses
 	nic2Addrs := nicinfo[nicID2].ProtocolAddresses
+	if !containsV6Addr(nic1Addrs, llAddrWithPrefix1) {
+		t.Errorf("missing %s from the list of addresses for NIC(%d): %+v", llAddrWithPrefix1, nicID1, nic1Addrs)
+	}
 	if !containsV6Addr(nic1Addrs, e1Addr1) {
 		t.Errorf("missing %s from the list of addresses for NIC(%d): %+v", e1Addr1, nicID1, nic1Addrs)
 	}
 	if !containsV6Addr(nic1Addrs, e1Addr2) {
 		t.Errorf("missing %s from the list of addresses for NIC(%d): %+v", e1Addr2, nicID1, nic1Addrs)
+	}
+	if !containsV6Addr(nic2Addrs, llAddrWithPrefix2) {
+		t.Errorf("missing %s from the list of addresses for NIC(%d): %+v", llAddrWithPrefix2, nicID2, nic2Addrs)
 	}
 	if !containsV6Addr(nic2Addrs, e2Addr1) {
 		t.Errorf("missing %s from the list of addresses for NIC(%d): %+v", e2Addr1, nicID2, nic2Addrs)
@@ -3071,10 +3090,10 @@ func TestCleanupHostOnlyStateOnBecomingRouter(t *testing.T) {
 	}
 
 	expectedRouterEvents := map[ndpRouterEvent]int{
-		{nicID: nicID1, addr: llAddr1, discovered: false}: 1,
-		{nicID: nicID1, addr: llAddr2, discovered: false}: 1,
-		{nicID: nicID2, addr: llAddr1, discovered: false}: 1,
-		{nicID: nicID2, addr: llAddr2, discovered: false}: 1,
+		{nicID: nicID1, addr: llAddr3, discovered: false}: 1,
+		{nicID: nicID1, addr: llAddr4, discovered: false}: 1,
+		{nicID: nicID2, addr: llAddr3, discovered: false}: 1,
+		{nicID: nicID2, addr: llAddr4, discovered: false}: 1,
 	}
 	if diff := cmp.Diff(expectedRouterEvents, gotRouterEvents); diff != "" {
 		t.Errorf("router events mismatch (-want +got):\n%s", diff)
@@ -3102,11 +3121,17 @@ func TestCleanupHostOnlyStateOnBecomingRouter(t *testing.T) {
 	nicinfo = s.NICInfo()
 	nic1Addrs = nicinfo[nicID1].ProtocolAddresses
 	nic2Addrs = nicinfo[nicID2].ProtocolAddresses
+	if !containsV6Addr(nic1Addrs, llAddrWithPrefix1) {
+		t.Errorf("missing %s from the list of addresses for NIC(%d): %+v", llAddrWithPrefix1, nicID1, nic1Addrs)
+	}
 	if containsV6Addr(nic1Addrs, e1Addr1) {
 		t.Errorf("still have %s in the list of addresses for NIC(%d): %+v", e1Addr1, nicID1, nic1Addrs)
 	}
 	if containsV6Addr(nic1Addrs, e1Addr2) {
 		t.Errorf("still have %s in the list of addresses for NIC(%d): %+v", e1Addr2, nicID1, nic1Addrs)
+	}
+	if !containsV6Addr(nic2Addrs, llAddrWithPrefix2) {
+		t.Errorf("missing %s from the list of addresses for NIC(%d): %+v", llAddrWithPrefix2, nicID2, nic2Addrs)
 	}
 	if containsV6Addr(nic2Addrs, e2Addr1) {
 		t.Errorf("still have %s in the list of addresses for NIC(%d): %+v", e2Addr1, nicID2, nic2Addrs)
