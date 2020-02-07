@@ -206,33 +206,9 @@ func (n *NIC) enable() *tcpip.Error {
 
 	// Do not auto-generate an IPv6 link-local address for loopback devices.
 	if n.stack.autoGenIPv6LinkLocal && !n.isLoopback() {
-		var addr tcpip.Address
-		if oIID := n.stack.opaqueIIDOpts; oIID.NICNameFromID != nil {
-			addr = header.LinkLocalAddrWithOpaqueIID(oIID.NICNameFromID(n.ID(), n.name), 0, oIID.SecretKey)
-		} else {
-			l2addr := n.linkEP.LinkAddress()
-
-			// Only attempt to generate the link-local address if we have a valid MAC
-			// address.
-			//
-			// TODO(b/141011931): Validate a LinkEndpoint's link address (provided by
-			// LinkEndpoint.LinkAddress) before reaching this point.
-			if !header.IsValidUnicastEthernetAddress(l2addr) {
-				return nil
-			}
-
-			addr = header.LinkLocalAddr(l2addr)
-		}
-
-		if _, err := n.addAddressLocked(tcpip.ProtocolAddress{
-			Protocol: header.IPv6ProtocolNumber,
-			AddressWithPrefix: tcpip.AddressWithPrefix{
-				Address:   addr,
-				PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen,
-			},
-		}, CanBePrimaryEndpoint, permanent, static, false /* deprecated */); err != nil {
-			return err
-		}
+		// The valid and preferred lifetime is infinite for the auto-generated
+		// link-local address.
+		n.mu.ndp.doSLAAC(header.IPv6LinkLocalPrefix.Subnet(), header.NDPInfiniteLifetime, header.NDPInfiniteLifetime)
 	}
 
 	// If we are operating as a router, then do not solicit routers since we
