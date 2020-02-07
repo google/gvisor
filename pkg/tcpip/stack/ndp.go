@@ -448,6 +448,13 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 	remaining := ndp.configs.DupAddrDetectTransmits
 	if remaining == 0 {
 		ref.setKind(permanent)
+
+		// Consider DAD to have resolved even if no DAD messages were actually
+		// transmitted.
+		if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
+			ndpDisp.OnDuplicateAddressDetectionStatus(ndp.nic.ID(), addr, true, nil)
+		}
+
 		return nil
 	}
 
