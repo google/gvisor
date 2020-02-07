@@ -50,7 +50,9 @@ type metadata struct {
 
 // nflog logs messages related to the writing and reading of iptables.
 func nflog(format string, args ...interface{}) {
-	log.Infof("netfilter: "+format, args...)
+	if log.IsLogging(log.Debug) {
+		log.Debugf("netfilter: "+format, args...)
+	}
 }
 
 // GetInfo returns information about iptables.
@@ -227,19 +229,23 @@ func convertNetstackToBinary(tablename string, table iptables.Table) (linux.Kern
 }
 
 func marshalTarget(target iptables.Target) []byte {
-	switch target.(type) {
-	case iptables.UnconditionalAcceptTarget:
-		return marshalStandardTarget(iptables.Accept)
-	case iptables.UnconditionalDropTarget:
-		return marshalStandardTarget(iptables.Drop)
+	switch tg := target.(type) {
+	case iptables.AcceptTarget:
+		return marshalStandardTarget(iptables.RuleAccept)
+	case iptables.DropTarget:
+		return marshalStandardTarget(iptables.RuleDrop)
 	case iptables.ErrorTarget:
-		return marshalErrorTarget()
+		return marshalErrorTarget(errorTargetName)
+	case iptables.UserChainTarget:
+		return marshalErrorTarget(tg.Name)
+	case iptables.ReturnTarget:
+		return marshalStandardTarget(iptables.RuleReturn)
 	default:
 		panic(fmt.Errorf("unknown target of type %T", target))
 	}
 }
 
-func marshalStandardTarget(verdict iptables.Verdict) []byte {
+func marshalStandardTarget(verdict iptables.RuleVerdict) []byte {
 	nflog("convert to binary: marshalling standard target with size %d", linux.SizeOfXTStandardTarget)
 
 	// The target's name will be the empty string.
@@ -254,14 +260,14 @@ func marshalStandardTarget(verdict iptables.Verdict) []byte {
 	return binary.Marshal(ret, usermem.ByteOrder, target)
 }
 
-func marshalErrorTarget() []byte {
+func marshalErrorTarget(errorName string) []byte {
 	// This is an error target named error
 	target := linux.XTErrorTarget{
 		Target: linux.XTEntryTarget{
 			TargetSize: linux.SizeOfXTErrorTarget,
 		},
 	}
-	copy(target.Name[:], errorTargetName)
+	copy(target.Name[:], errorName)
 	copy(target.Target.Name[:], errorTargetName)
 
 	ret := make([]byte, 0, linux.SizeOfXTErrorTarget)
@@ -270,38 +276,35 @@ func marshalErrorTarget() []byte {
 
 // translateFromStandardVerdict translates verdicts the same way as the iptables
 // tool.
-func translateFromStandardVerdict(verdict iptables.Verdict) int32 {
+func translateFromStandardVerdict(verdict iptables.RuleVerdict) int32 {
 	switch verdict {
-	case iptables.Accept:
+	case iptables.RuleAccept:
 		return -linux.NF_ACCEPT - 1
-	case iptables.Drop:
+	case iptables.RuleDrop:
 		return -linux.NF_DROP - 1
-	case iptables.Queue:
-		return -linux.NF_QUEUE - 1
-	case iptables.Return:
+	case iptables.RuleReturn:
 		return linux.NF_RETURN
-	case iptables.Jump:
+	default:
 		// TODO(gvisor.dev/issue/170): Support Jump.
-		panic("Jump isn't supported yet")
+		panic(fmt.Sprintf("unknown standard verdict: %d", verdict))
 	}
-	panic(fmt.Sprintf("unknown standard verdict: %d", verdict))
 }
 
-// translateToStandardVerdict translates from the value in a
+// translateToStandardTarget translates from the value in a
 // linux.XTStandardTarget to an iptables.Verdict.
-func translateToStandardVerdict(val int32) (iptables.Verdict, error) {
+func translateToStandardTarget(val int32) (iptables.Target, error) {
 	// TODO(gvisor.dev/issue/170): Support other verdicts.
 	switch val {
 	case -linux.NF_ACCEPT - 1:
-		return iptables.Accept, nil
+		return iptables.AcceptTarget{}, nil
 	case -linux.NF_DROP - 1:
-		return iptables.Drop, nil
+		return iptables.DropTarget{}, nil
 	case -linux.NF_QUEUE - 1:
-		return iptables.Invalid, errors.New("unsupported iptables verdict QUEUE")
+		return nil, errors.New("unsupported iptables verdict QUEUE")
 	case linux.NF_RETURN:
-		return iptables.Invalid, errors.New("unsupported iptables verdict RETURN")
+		return iptables.ReturnTarget{}, nil
 	default:
-		return iptables.Invalid, fmt.Errorf("unknown iptables verdict %d", val)
+		return nil, fmt.Errorf("unknown iptables verdict %d", val)
 	}
 }
 
@@ -411,6 +414,10 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 					table.BuiltinChains[hk] = ruleIdx
 				}
 				if offset == replace.Underflow[hook] {
+					if !validUnderflow(table.Rules[ruleIdx]) {
+						nflog("underflow for hook %d isn't an unconditional ACCEPT or DROP.")
+						return syserr.ErrInvalidArgument
+					}
 					table.Underflows[hk] = ruleIdx
 				}
 			}
@@ -425,12 +432,34 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 		}
 	}
 
+	// Add the user chains.
+	for ruleIdx, rule := range table.Rules {
+		target, ok := rule.Target.(iptables.UserChainTarget)
+		if !ok {
+			continue
+		}
+
+		// We found a user chain. Before inserting it into the table,
+		// check that:
+		// - There's some other rule after it.
+		// - There are no matchers.
+		if ruleIdx == len(table.Rules)-1 {
+			nflog("user chain must have a rule or default policy.")
+			return syserr.ErrInvalidArgument
+		}
+		if len(table.Rules[ruleIdx].Matchers) != 0 {
+			nflog("user chain's first node must have no matcheres.")
+			return syserr.ErrInvalidArgument
+		}
+		table.UserChains[target.Name] = ruleIdx + 1
+	}
+
 	// TODO(gvisor.dev/issue/170): Support other chains.
 	// Since we only support modifying the INPUT chain right now, make sure
 	// all other chains point to ACCEPT rules.
 	for hook, ruleIdx := range table.BuiltinChains {
 		if hook != iptables.Input {
-			if _, ok := table.Rules[ruleIdx].Target.(iptables.UnconditionalAcceptTarget); !ok {
+			if _, ok := table.Rules[ruleIdx].Target.(iptables.AcceptTarget); !ok {
 				nflog("hook %d is unsupported.", hook)
 				return syserr.ErrInvalidArgument
 			}
@@ -519,18 +548,7 @@ func parseTarget(optVal []byte) (iptables.Target, error) {
 		buf = optVal[:linux.SizeOfXTStandardTarget]
 		binary.Unmarshal(buf, usermem.ByteOrder, &standardTarget)
 
-		verdict, err := translateToStandardVerdict(standardTarget.Verdict)
-		if err != nil {
-			return nil, err
-		}
-		switch verdict {
-		case iptables.Accept:
-			return iptables.UnconditionalAcceptTarget{}, nil
-		case iptables.Drop:
-			return iptables.UnconditionalDropTarget{}, nil
-		default:
-			return nil, fmt.Errorf("Unknown verdict: %v", verdict)
-		}
+		return translateToStandardTarget(standardTarget.Verdict)
 
 	case errorTargetName:
 		// Error target.
@@ -548,11 +566,14 @@ func parseTarget(optVal []byte) (iptables.Target, error) {
 		//   somehow fall through every rule.
 		// * To mark the start of a user defined chain. These
 		//   rules have an error with the name of the chain.
-		switch errorTarget.Name.String() {
+		switch name := errorTarget.Name.String(); name {
 		case errorTargetName:
+			nflog("set entries: error target")
 			return iptables.ErrorTarget{}, nil
 		default:
-			return nil, fmt.Errorf("unknown error target %q doesn't exist or isn't supported yet.", errorTarget.Name.String())
+			// User defined chain.
+			nflog("set entries: user-defined target %q", name)
+			return iptables.UserChainTarget{Name: name}, nil
 		}
 	}
 
@@ -583,6 +604,18 @@ func containsUnsupportedFields(iptip linux.IPTIP) bool {
 		iptip.OutputInterfaceMask != emptyInterface ||
 		iptip.Flags != 0 ||
 		iptip.InverseFlags != 0
+}
+
+func validUnderflow(rule iptables.Rule) bool {
+	if len(rule.Matchers) != 0 {
+		return false
+	}
+	switch rule.Target.(type) {
+	case iptables.AcceptTarget, iptables.DropTarget:
+		return true
+	default:
+		return false
+	}
 }
 
 func hookFromLinux(hook int) iptables.Hook {
