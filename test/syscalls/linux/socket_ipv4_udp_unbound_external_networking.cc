@@ -41,26 +41,6 @@ TestAddress V4EmptyAddress() {
   return t;
 }
 
-constexpr char kMulticastAddress[] = "224.0.2.1";
-
-TestAddress V4Multicast() {
-  TestAddress t("V4Multicast");
-  t.addr.ss_family = AF_INET;
-  t.addr_len = sizeof(sockaddr_in);
-  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr =
-      inet_addr(kMulticastAddress);
-  return t;
-}
-
-TestAddress V4Broadcast() {
-  TestAddress t("V4Broadcast");
-  t.addr.ss_family = AF_INET;
-  t.addr_len = sizeof(sockaddr_in);
-  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr =
-      htonl(INADDR_BROADCAST);
-  return t;
-}
-
 void IPv4UDPUnboundExternalNetworkingSocketTest::SetUp() {
   got_if_infos_ = false;
 

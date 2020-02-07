@@ -805,6 +805,24 @@ TestAddress V4MappedLoopback() {
   return t;
 }
 
+TestAddress V4Multicast() {
+  TestAddress t("V4Multicast");
+  t.addr.ss_family = AF_INET;
+  t.addr_len = sizeof(sockaddr_in);
+  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr =
+      inet_addr(kMulticastAddress);
+  return t;
+}
+
+TestAddress V4Broadcast() {
+  TestAddress t("V4Broadcast");
+  t.addr.ss_family = AF_INET;
+  t.addr_len = sizeof(sockaddr_in);
+  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr =
+      htonl(INADDR_BROADCAST);
+  return t;
+}
+
 TestAddress V6Any() {
   TestAddress t("V6Any");
   t.addr.ss_family = AF_INET6;

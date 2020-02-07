@@ -484,10 +484,15 @@ struct TestAddress {
       : description(std::move(description)), addr(), addr_len() {}
 };
 
+constexpr char kMulticastAddress[] = "224.0.2.1";
+constexpr char kBroadcastAddress[] = "255.255.255.255";
+
 TestAddress V4Any();
+TestAddress V4Broadcast();
 TestAddress V4Loopback();
 TestAddress V4MappedAny();
 TestAddress V4MappedLoopback();
+TestAddress V4Multicast();
 TestAddress V6Any();
 TestAddress V6Loopback();
 
