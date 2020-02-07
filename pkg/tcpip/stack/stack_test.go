@@ -2184,6 +2184,8 @@ func TestNoLinkLocalAutoGenForLoopbackNIC(t *testing.T) {
 // TestNICAutoGenAddrDoesDAD tests that the successful auto-generation of IPv6
 // link-local addresses will only be assigned after the DAD process resolves.
 func TestNICAutoGenAddrDoesDAD(t *testing.T) {
+	const nicID = 1
+
 	ndpDisp := ndpDispatcher{
 		dadC: make(chan ndpDADEvent),
 	}
@@ -2197,18 +2199,18 @@ func TestNICAutoGenAddrDoesDAD(t *testing.T) {
 
 	e := channel.New(int(ndpConfigs.DupAddrDetectTransmits), 1280, linkAddr1)
 	s := stack.New(opts)
-	if err := s.CreateNIC(1, e); err != nil {
-		t.Fatalf("CreateNIC(_) = %s", err)
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 	}
 
 	// Address should not be considered bound to the
 	// NIC yet (DAD ongoing).
-	addr, err := s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
+	addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
 	if err != nil {
-		t.Fatalf("got stack.GetMainNICAddress(_, _) = (_, %v), want = (_, nil)", err)
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
 	}
 	if want := (tcpip.AddressWithPrefix{}); addr != want {
-		t.Fatalf("got stack.GetMainNICAddress(_, _) = (%s, nil), want = (%s, nil)", addr, want)
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, addr, want)
 	}
 
 	linkLocalAddr := header.LinkLocalAddr(linkAddr1)
@@ -2222,25 +2224,16 @@ func TestNICAutoGenAddrDoesDAD(t *testing.T) {
 		// means something is wrong.
 		t.Fatal("timed out waiting for DAD resolution")
 	case e := <-ndpDisp.dadC:
-		if e.err != nil {
-			t.Fatal("got DAD error: ", e.err)
-		}
-		if e.nicID != 1 {
-			t.Fatalf("got DAD event w/ nicID = %d, want = 1", e.nicID)
-		}
-		if e.addr != linkLocalAddr {
-			t.Fatalf("got DAD event w/ addr = %s, want = %s", addr, linkLocalAddr)
-		}
-		if !e.resolved {
-			t.Fatal("got DAD event w/ resolved = false, want = true")
+		if diff := checkDADEvent(e, nicID, linkLocalAddr, true, nil); diff != "" {
+			t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 		}
 	}
-	addr, err = s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
+	addr, err = s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
 	if err != nil {
-		t.Fatalf("stack.GetMainNICAddress(_, _) err = %s", err)
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
 	}
 	if want := (tcpip.AddressWithPrefix{Address: linkLocalAddr, PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen}); addr != want {
-		t.Fatalf("got stack.GetMainNICAddress(_, _) = %s, want = %s", addr, want)
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, addr, want)
 	}
 }
 
@@ -2606,17 +2599,8 @@ func TestDoDADWhenNICEnabled(t *testing.T) {
 	case <-time.After(dadTransmits*retransmitTimer + defaultAsyncEventTimeout):
 		t.Fatal("timed out waiting for DAD resolution")
 	case e := <-ndpDisp.dadC:
-		if e.err != nil {
-			t.Fatal("got DAD error: ", e.err)
-		}
-		if e.nicID != nicID {
-			t.Fatalf("got DAD event w/ nicID = %d, want = %d", e.nicID, nicID)
-		}
-		if e.addr != addr.AddressWithPrefix.Address {
-			t.Fatalf("got DAD event w/ addr = %s, want = %s", e.addr, addr.AddressWithPrefix.Address)
-		}
-		if !e.resolved {
-			t.Fatal("got DAD event w/ resolved = false, want = true")
+		if diff := checkDADEvent(e, nicID, addr.AddressWithPrefix.Address, true, nil); diff != "" {
+			t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 		}
 	}
 	if addrs := s.AllAddresses()[nicID]; !containsV6Addr(addrs, addr.AddressWithPrefix) {
