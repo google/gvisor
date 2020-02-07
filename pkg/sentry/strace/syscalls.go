@@ -207,9 +207,27 @@ const (
 	// array is in the next argument.
 	PollFDs
 
-	// SelectFDSet is an fd_set argument in select(2)/pselect(2). The number of
-	// fds represented must be the first argument.
+	// SelectFDSet is an fd_set argument in select(2)/pselect(2). The
+	// number of FDs represented must be the first argument.
 	SelectFDSet
+
+	// GetSockOptVal is the optval argument in getsockopt(2).
+	//
+	// Formatted after syscall execution.
+	GetSockOptVal
+
+	// SetSockOptVal is the optval argument in setsockopt(2).
+	//
+	// Contents omitted after syscall execution.
+	SetSockOptVal
+
+	// SockOptLevel is the level argument in getsockopt(2) and
+	// setsockopt(2).
+	SockOptLevel
+
+	// SockOptLevel is the optname argument in getsockopt(2) and
+	// setsockopt(2).
+	SockOptName
 )
 
 // defaultFormat is the syscall argument format to use if the actual format is
