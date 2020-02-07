@@ -363,7 +363,7 @@ type XTTCP struct {
 	// range to which the matcher applies.
 	DestinationPortStart uint16
 
-	// DestinationPortEnd specifies the start of the destination port
+	// DestinationPortEnd specifies the end of the destination port
 	// range to which the matcher applies.
 	DestinationPortEnd uint16
 
