@@ -604,18 +604,23 @@ func (i *inodeOperations) Truncate(ctx context.Context, inode *fs.Inode, length 
 }
 
 // GetXattr implements fs.InodeOperations.GetXattr.
-func (i *inodeOperations) GetXattr(ctx context.Context, inode *fs.Inode, name string, size uint64) (string, error) {
+func (i *inodeOperations) GetXattr(ctx context.Context, _ *fs.Inode, name string, size uint64) (string, error) {
 	return i.fileState.file.getXattr(ctx, name, size)
 }
 
 // SetXattr implements fs.InodeOperations.SetXattr.
-func (i *inodeOperations) SetXattr(ctx context.Context, inode *fs.Inode, name string, value string, flags uint32) error {
+func (i *inodeOperations) SetXattr(ctx context.Context, _ *fs.Inode, name string, value string, flags uint32) error {
 	return i.fileState.file.setXattr(ctx, name, value, flags)
 }
 
 // ListXattr implements fs.InodeOperations.ListXattr.
-func (i *inodeOperations) ListXattr(context.Context, *fs.Inode) (map[string]struct{}, error) {
-	return nil, syscall.EOPNOTSUPP
+func (i *inodeOperations) ListXattr(ctx context.Context, _ *fs.Inode, size uint64) (map[string]struct{}, error) {
+	return i.fileState.file.listXattr(ctx, size)
+}
+
+// RemoveXattr implements fs.InodeOperations.RemoveXattr.
+func (i *inodeOperations) RemoveXattr(ctx context.Context, _ *fs.Inode, name string) error {
+	return i.fileState.file.removeXattr(ctx, name)
 }
 
 // Allocate implements fs.InodeOperations.Allocate.

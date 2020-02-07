@@ -247,7 +247,7 @@ func (i *InodeSimpleExtendedAttributes) SetXattr(_ context.Context, _ *fs.Inode,
 }
 
 // ListXattr implements fs.InodeOperations.ListXattr.
-func (i *InodeSimpleExtendedAttributes) ListXattr(context.Context, *fs.Inode) (map[string]struct{}, error) {
+func (i *InodeSimpleExtendedAttributes) ListXattr(context.Context, *fs.Inode, uint64) (map[string]struct{}, error) {
 	i.mu.RLock()
 	names := make(map[string]struct{}, len(i.xattrs))
 	for name := range i.xattrs {
@@ -255,6 +255,17 @@ func (i *InodeSimpleExtendedAttributes) ListXattr(context.Context, *fs.Inode) (m
 	}
 	i.mu.RUnlock()
 	return names, nil
+}
+
+// RemoveXattr implements fs.InodeOperations.RemoveXattr.
+func (i *InodeSimpleExtendedAttributes) RemoveXattr(_ context.Context, _ *fs.Inode, name string) error {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+	if _, ok := i.xattrs[name]; ok {
+		delete(i.xattrs, name)
+		return nil
+	}
+	return syserror.ENOATTR
 }
 
 // staticFile is a file with static contents. It is returned by
@@ -460,8 +471,13 @@ func (InodeNoExtendedAttributes) SetXattr(context.Context, *fs.Inode, string, st
 }
 
 // ListXattr implements fs.InodeOperations.ListXattr.
-func (InodeNoExtendedAttributes) ListXattr(context.Context, *fs.Inode) (map[string]struct{}, error) {
+func (InodeNoExtendedAttributes) ListXattr(context.Context, *fs.Inode, uint64) (map[string]struct{}, error) {
 	return nil, syserror.EOPNOTSUPP
+}
+
+// RemoveXattr implements fs.InodeOperations.RemoveXattr.
+func (InodeNoExtendedAttributes) RemoveXattr(context.Context, *fs.Inode, string) error {
+	return syserror.EOPNOTSUPP
 }
 
 // InodeNoopRelease implements fs.InodeOperations.Release as a noop.

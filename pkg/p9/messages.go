@@ -174,11 +174,11 @@ type Rflush struct {
 }
 
 // Decode implements encoder.Decode.
-func (*Rflush) Decode(b *buffer) {
+func (*Rflush) Decode(*buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Rflush) Encode(b *buffer) {
+func (*Rflush) Encode(*buffer) {
 }
 
 // Type implements message.Type.
@@ -188,7 +188,7 @@ func (*Rflush) Type() MsgType {
 
 // String implements fmt.Stringer.
 func (r *Rflush) String() string {
-	return fmt.Sprintf("RFlush{}")
+	return "RFlush{}"
 }
 
 // Twalk is a walk request.
@@ -300,11 +300,11 @@ type Rclunk struct {
 }
 
 // Decode implements encoder.Decode.
-func (*Rclunk) Decode(b *buffer) {
+func (*Rclunk) Decode(*buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Rclunk) Encode(b *buffer) {
+func (*Rclunk) Encode(*buffer) {
 }
 
 // Type implements message.Type.
@@ -314,7 +314,7 @@ func (*Rclunk) Type() MsgType {
 
 // String implements fmt.Stringer.
 func (r *Rclunk) String() string {
-	return fmt.Sprintf("Rclunk{}")
+	return "Rclunk{}"
 }
 
 // Tremove is a remove request.
@@ -350,11 +350,11 @@ type Rremove struct {
 }
 
 // Decode implements encoder.Decode.
-func (*Rremove) Decode(b *buffer) {
+func (*Rremove) Decode(*buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Rremove) Encode(b *buffer) {
+func (*Rremove) Encode(*buffer) {
 }
 
 // Type implements message.Type.
@@ -364,7 +364,7 @@ func (*Rremove) Type() MsgType {
 
 // String implements fmt.Stringer.
 func (r *Rremove) String() string {
-	return fmt.Sprintf("Rremove{}")
+	return "Rremove{}"
 }
 
 // Rlerror is an error response.
@@ -745,16 +745,16 @@ func (*Rlink) Type() MsgType {
 }
 
 // Decode implements encoder.Decode.
-func (*Rlink) Decode(b *buffer) {
+func (*Rlink) Decode(*buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Rlink) Encode(b *buffer) {
+func (*Rlink) Encode(*buffer) {
 }
 
 // String implements fmt.Stringer.
 func (r *Rlink) String() string {
-	return fmt.Sprintf("Rlink{}")
+	return "Rlink{}"
 }
 
 // Trenameat is a rename request.
@@ -803,11 +803,11 @@ type Rrenameat struct {
 }
 
 // Decode implements encoder.Decode.
-func (*Rrenameat) Decode(b *buffer) {
+func (*Rrenameat) Decode(*buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Rrenameat) Encode(b *buffer) {
+func (*Rrenameat) Encode(*buffer) {
 }
 
 // Type implements message.Type.
@@ -817,7 +817,7 @@ func (*Rrenameat) Type() MsgType {
 
 // String implements fmt.Stringer.
 func (r *Rrenameat) String() string {
-	return fmt.Sprintf("Rrenameat{}")
+	return "Rrenameat{}"
 }
 
 // Tunlinkat is an unlink request.
@@ -861,11 +861,11 @@ type Runlinkat struct {
 }
 
 // Decode implements encoder.Decode.
-func (*Runlinkat) Decode(b *buffer) {
+func (*Runlinkat) Decode(*buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Runlinkat) Encode(b *buffer) {
+func (*Runlinkat) Encode(*buffer) {
 }
 
 // Type implements message.Type.
@@ -875,7 +875,7 @@ func (*Runlinkat) Type() MsgType {
 
 // String implements fmt.Stringer.
 func (r *Runlinkat) String() string {
-	return fmt.Sprintf("Runlinkat{}")
+	return "Runlinkat{}"
 }
 
 // Trename is a rename request.
@@ -922,11 +922,11 @@ type Rrename struct {
 }
 
 // Decode implements encoder.Decode.
-func (*Rrename) Decode(b *buffer) {
+func (*Rrename) Decode(*buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Rrename) Encode(b *buffer) {
+func (*Rrename) Encode(*buffer) {
 }
 
 // Type implements message.Type.
@@ -936,7 +936,7 @@ func (*Rrename) Type() MsgType {
 
 // String implements fmt.Stringer.
 func (r *Rrename) String() string {
-	return fmt.Sprintf("Rrename{}")
+	return "Rrename{}"
 }
 
 // Treadlink is a readlink request.
@@ -1409,11 +1409,11 @@ type Rsetattr struct {
 }
 
 // Decode implements encoder.Decode.
-func (*Rsetattr) Decode(b *buffer) {
+func (*Rsetattr) Decode(*buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Rsetattr) Encode(b *buffer) {
+func (*Rsetattr) Encode(*buffer) {
 }
 
 // Type implements message.Type.
@@ -1423,7 +1423,7 @@ func (*Rsetattr) Type() MsgType {
 
 // String implements fmt.Stringer.
 func (r *Rsetattr) String() string {
-	return fmt.Sprintf("Rsetattr{}")
+	return "Rsetattr{}"
 }
 
 // Tallocate is an allocate request. This is an extension to 9P protocol, not
@@ -1466,11 +1466,11 @@ type Rallocate struct {
 }
 
 // Decode implements encoder.Decode.
-func (*Rallocate) Decode(b *buffer) {
+func (*Rallocate) Decode(*buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Rallocate) Encode(b *buffer) {
+func (*Rallocate) Encode(*buffer) {
 }
 
 // Type implements message.Type.
@@ -1480,7 +1480,71 @@ func (*Rallocate) Type() MsgType {
 
 // String implements fmt.Stringer.
 func (r *Rallocate) String() string {
-	return fmt.Sprintf("Rallocate{}")
+	return "Rallocate{}"
+}
+
+// Tlistxattr is a listxattr request.
+type Tlistxattr struct {
+	// FID refers to the file on which to list xattrs.
+	FID FID
+
+	// Size is the buffer size for the xattr list.
+	Size uint64
+}
+
+// Decode implements encoder.Decode.
+func (t *Tlistxattr) Decode(b *buffer) {
+	t.FID = b.ReadFID()
+	t.Size = b.Read64()
+}
+
+// Encode implements encoder.Encode.
+func (t *Tlistxattr) Encode(b *buffer) {
+	b.WriteFID(t.FID)
+	b.Write64(t.Size)
+}
+
+// Type implements message.Type.
+func (*Tlistxattr) Type() MsgType {
+	return MsgTlistxattr
+}
+
+// String implements fmt.Stringer.
+func (t *Tlistxattr) String() string {
+	return fmt.Sprintf("Tlistxattr{FID: %d, Size: %d}", t.FID, t.Size)
+}
+
+// Rlistxattr is a listxattr response.
+type Rlistxattr struct {
+	// Xattrs is a list of extended attribute names.
+	Xattrs []string
+}
+
+// Decode implements encoder.Decode.
+func (r *Rlistxattr) Decode(b *buffer) {
+	n := b.Read16()
+	r.Xattrs = r.Xattrs[:0]
+	for i := 0; i < int(n); i++ {
+		r.Xattrs = append(r.Xattrs, b.ReadString())
+	}
+}
+
+// Encode implements encoder.Encode.
+func (r *Rlistxattr) Encode(b *buffer) {
+	b.Write16(uint16(len(r.Xattrs)))
+	for _, x := range r.Xattrs {
+		b.WriteString(x)
+	}
+}
+
+// Type implements message.Type.
+func (*Rlistxattr) Type() MsgType {
+	return MsgRlistxattr
+}
+
+// String implements fmt.Stringer.
+func (r *Rlistxattr) String() string {
+	return fmt.Sprintf("Rlistxattr{Xattrs: %v}", r.Xattrs)
 }
 
 // Txattrwalk walks extended attributes.
@@ -1594,11 +1658,11 @@ type Rxattrcreate struct {
 }
 
 // Decode implements encoder.Decode.
-func (r *Rxattrcreate) Decode(b *buffer) {
+func (r *Rxattrcreate) Decode(*buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (r *Rxattrcreate) Encode(b *buffer) {
+func (r *Rxattrcreate) Encode(*buffer) {
 }
 
 // Type implements message.Type.
@@ -1608,7 +1672,7 @@ func (*Rxattrcreate) Type() MsgType {
 
 // String implements fmt.Stringer.
 func (r *Rxattrcreate) String() string {
-	return fmt.Sprintf("Rxattrcreate{}")
+	return "Rxattrcreate{}"
 }
 
 // Tgetxattr is a getxattr request.
@@ -1719,11 +1783,11 @@ type Rsetxattr struct {
 }
 
 // Decode implements encoder.Decode.
-func (r *Rsetxattr) Decode(b *buffer) {
+func (r *Rsetxattr) Decode(*buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (r *Rsetxattr) Encode(b *buffer) {
+func (r *Rsetxattr) Encode(*buffer) {
 }
 
 // Type implements message.Type.
@@ -1733,7 +1797,60 @@ func (*Rsetxattr) Type() MsgType {
 
 // String implements fmt.Stringer.
 func (r *Rsetxattr) String() string {
-	return fmt.Sprintf("Rsetxattr{}")
+	return "Rsetxattr{}"
+}
+
+// Tremovexattr is a removexattr request.
+type Tremovexattr struct {
+	// FID refers to the file on which to set xattrs.
+	FID FID
+
+	// Name is the attribute name.
+	Name string
+}
+
+// Decode implements encoder.Decode.
+func (t *Tremovexattr) Decode(b *buffer) {
+	t.FID = b.ReadFID()
+	t.Name = b.ReadString()
+}
+
+// Encode implements encoder.Encode.
+func (t *Tremovexattr) Encode(b *buffer) {
+	b.WriteFID(t.FID)
+	b.WriteString(t.Name)
+}
+
+// Type implements message.Type.
+func (*Tremovexattr) Type() MsgType {
+	return MsgTremovexattr
+}
+
+// String implements fmt.Stringer.
+func (t *Tremovexattr) String() string {
+	return fmt.Sprintf("Tremovexattr{FID: %d, Name: %s}", t.FID, t.Name)
+}
+
+// Rremovexattr is a removexattr response.
+type Rremovexattr struct {
+}
+
+// Decode implements encoder.Decode.
+func (r *Rremovexattr) Decode(*buffer) {
+}
+
+// Encode implements encoder.Encode.
+func (r *Rremovexattr) Encode(*buffer) {
+}
+
+// Type implements message.Type.
+func (*Rremovexattr) Type() MsgType {
+	return MsgRremovexattr
+}
+
+// String implements fmt.Stringer.
+func (r *Rremovexattr) String() string {
+	return "Rremovexattr{}"
 }
 
 // Treaddir is a readdir request.
@@ -1880,11 +1997,11 @@ type Rfsync struct {
 }
 
 // Decode implements encoder.Decode.
-func (*Rfsync) Decode(b *buffer) {
+func (*Rfsync) Decode(*buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Rfsync) Encode(b *buffer) {
+func (*Rfsync) Encode(*buffer) {
 }
 
 // Type implements message.Type.
@@ -1894,7 +2011,7 @@ func (*Rfsync) Type() MsgType {
 
 // String implements fmt.Stringer.
 func (r *Rfsync) String() string {
-	return fmt.Sprintf("Rfsync{}")
+	return "Rfsync{}"
 }
 
 // Tstatfs is a stat request.
@@ -1980,11 +2097,11 @@ type Rflushf struct {
 }
 
 // Decode implements encoder.Decode.
-func (*Rflushf) Decode(b *buffer) {
+func (*Rflushf) Decode(*buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Rflushf) Encode(b *buffer) {
+func (*Rflushf) Encode(*buffer) {
 }
 
 // Type implements message.Type.
@@ -1994,7 +2111,7 @@ func (*Rflushf) Type() MsgType {
 
 // String implements fmt.Stringer.
 func (*Rflushf) String() string {
-	return fmt.Sprintf("Rflushf{}")
+	return "Rflushf{}"
 }
 
 // Twalkgetattr is a walk request.
@@ -2484,6 +2601,8 @@ func init() {
 	msgRegistry.register(MsgRgetattr, func() message { return &Rgetattr{} })
 	msgRegistry.register(MsgTsetattr, func() message { return &Tsetattr{} })
 	msgRegistry.register(MsgRsetattr, func() message { return &Rsetattr{} })
+	msgRegistry.register(MsgTlistxattr, func() message { return &Tlistxattr{} })
+	msgRegistry.register(MsgRlistxattr, func() message { return &Rlistxattr{} })
 	msgRegistry.register(MsgTxattrwalk, func() message { return &Txattrwalk{} })
 	msgRegistry.register(MsgRxattrwalk, func() message { return &Rxattrwalk{} })
 	msgRegistry.register(MsgTxattrcreate, func() message { return &Txattrcreate{} })
@@ -2492,6 +2611,8 @@ func init() {
 	msgRegistry.register(MsgRgetxattr, func() message { return &Rgetxattr{} })
 	msgRegistry.register(MsgTsetxattr, func() message { return &Tsetxattr{} })
 	msgRegistry.register(MsgRsetxattr, func() message { return &Rsetxattr{} })
+	msgRegistry.register(MsgTremovexattr, func() message { return &Tremovexattr{} })
+	msgRegistry.register(MsgRremovexattr, func() message { return &Rremovexattr{} })
 	msgRegistry.register(MsgTreaddir, func() message { return &Treaddir{} })
 	msgRegistry.register(MsgRreaddir, func() message { return &Rreaddir{} })
 	msgRegistry.register(MsgTfsync, func() message { return &Tfsync{} })
