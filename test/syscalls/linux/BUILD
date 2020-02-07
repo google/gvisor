@@ -3782,6 +3782,7 @@ cc_binary(
         "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
+        "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
         gtest,
         "//test/util:posix_error",
