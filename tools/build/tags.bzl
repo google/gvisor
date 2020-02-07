@@ -33,4 +33,8 @@ go_suffixes = [
     "_wasm_unsafe",
     "_linux",
     "_linux_unsafe",
+    "_opts",
+    "_opts_unsafe",
+    "_impl",
+    "_impl_unsafe",
 ]

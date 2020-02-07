@@ -15,7 +15,7 @@
 # limitations under the License.
 
 # Install our runtime.
-third_party/gvisor/runsc/runsc install
+$(dirname $0)/runsc install
 
 # Restart docker.
 service docker restart || true

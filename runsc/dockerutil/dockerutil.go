@@ -143,17 +143,16 @@ func PrepareFiles(names ...string) (string, error) {
 		return "", fmt.Errorf("os.Chmod(%q, 0777) failed: %v", dir, err)
 	}
 	for _, name := range names {
-		src := getLocalPath(name)
-		dst := path.Join(dir, name)
+		src, err := testutil.FindFile(name)
+		if err != nil {
+			return "", fmt.Errorf("testutil.Preparefiles(%q) failed: %v", name, err)
+		}
+		dst := path.Join(dir, path.Base(name))
 		if err := testutil.Copy(src, dst); err != nil {
 			return "", fmt.Errorf("testutil.Copy(%q, %q) failed: %v", src, dst, err)
 		}
 	}
 	return dir, nil
-}
-
-func getLocalPath(file string) string {
-	return path.Join(".", file)
 }
 
 // do executes docker command.

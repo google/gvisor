@@ -5405,12 +5405,11 @@ func TestEndpointBindListenAcceptState(t *testing.T) {
 		t.Errorf("Unexpected endpoint state: want %v, got %v", want, got)
 	}
 
-	// Expect InvalidEndpointState errors on a read at this point.
-	if _, _, err := ep.Read(nil); err != tcpip.ErrInvalidEndpointState {
-		t.Fatalf("got c.EP.Read(nil) = %v, want = %v", err, tcpip.ErrInvalidEndpointState)
+	if _, _, err := ep.Read(nil); err != tcpip.ErrNotConnected {
+		t.Errorf("got c.EP.Read(nil) = %v, want = %v", err, tcpip.ErrNotConnected)
 	}
-	if got := ep.Stats().(*tcp.Stats).ReadErrors.InvalidEndpointState.Value(); got != 1 {
-		t.Fatalf("got EP stats Stats.ReadErrors.InvalidEndpointState got %v want %v", got, 1)
+	if got := ep.Stats().(*tcp.Stats).ReadErrors.NotConnected.Value(); got != 1 {
+		t.Errorf("got EP stats Stats.ReadErrors.NotConnected got %v want %v", got, 1)
 	}
 
 	if err := ep.Listen(10); err != nil {
