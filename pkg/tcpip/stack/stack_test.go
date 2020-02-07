@@ -1894,112 +1894,6 @@ func TestNICForwarding(t *testing.T) {
 	}
 }
 
-// TestNICAutoGenAddr tests the auto-generation of IPv6 link-local addresses
-// using the modified EUI-64 of the NIC's MAC address (or lack there-of if
-// disabled (default)). Note, DAD will be disabled in these tests.
-func TestNICAutoGenAddr(t *testing.T) {
-	tests := []struct {
-		name      string
-		autoGen   bool
-		linkAddr  tcpip.LinkAddress
-		iidOpts   stack.OpaqueInterfaceIdentifierOptions
-		shouldGen bool
-	}{
-		{
-			"Disabled",
-			false,
-			linkAddr1,
-			stack.OpaqueInterfaceIdentifierOptions{
-				NICNameFromID: func(nicID tcpip.NICID, _ string) string {
-					return fmt.Sprintf("nic%d", nicID)
-				},
-			},
-			false,
-		},
-		{
-			"Enabled",
-			true,
-			linkAddr1,
-			stack.OpaqueInterfaceIdentifierOptions{},
-			true,
-		},
-		{
-			"Nil MAC",
-			true,
-			tcpip.LinkAddress([]byte(nil)),
-			stack.OpaqueInterfaceIdentifierOptions{},
-			false,
-		},
-		{
-			"Empty MAC",
-			true,
-			tcpip.LinkAddress(""),
-			stack.OpaqueInterfaceIdentifierOptions{},
-			false,
-		},
-		{
-			"Invalid MAC",
-			true,
-			tcpip.LinkAddress("\x01\x02\x03"),
-			stack.OpaqueInterfaceIdentifierOptions{},
-			false,
-		},
-		{
-			"Multicast MAC",
-			true,
-			tcpip.LinkAddress("\x01\x02\x03\x04\x05\x06"),
-			stack.OpaqueInterfaceIdentifierOptions{},
-			false,
-		},
-		{
-			"Unspecified MAC",
-			true,
-			tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00"),
-			stack.OpaqueInterfaceIdentifierOptions{},
-			false,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			opts := stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-				OpaqueIIDOpts:    test.iidOpts,
-			}
-
-			if test.autoGen {
-				// Only set opts.AutoGenIPv6LinkLocal when test.autoGen is true because
-				// opts.AutoGenIPv6LinkLocal should be false by default.
-				opts.AutoGenIPv6LinkLocal = true
-			}
-
-			e := channel.New(10, 1280, test.linkAddr)
-			s := stack.New(opts)
-			if err := s.CreateNIC(1, e); err != nil {
-				t.Fatalf("CreateNIC(_) = %s", err)
-			}
-
-			addr, err := s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
-			if err != nil {
-				t.Fatalf("stack.GetMainNICAddress(_, _) err = %s", err)
-			}
-
-			if test.shouldGen {
-				// Should have auto-generated an address and resolved immediately (DAD
-				// is disabled).
-				if want := (tcpip.AddressWithPrefix{Address: header.LinkLocalAddr(test.linkAddr), PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen}); addr != want {
-					t.Fatalf("got stack.GetMainNICAddress(_, _) = %s, want = %s", addr, want)
-				}
-			} else {
-				// Should not have auto-generated an address.
-				if want := (tcpip.AddressWithPrefix{}); addr != want {
-					t.Fatalf("got stack.GetMainNICAddress(_, _) = (%s, nil), want = (%s, nil)", addr, want)
-				}
-			}
-		})
-	}
-}
-
 // TestNICContextPreservation tests that you can read out via stack.NICInfo the
 // Context data you pass via NICContext.Context in stack.CreateNICWithOptions.
 func TestNICContextPreservation(t *testing.T) {
@@ -2040,11 +1934,9 @@ func TestNICContextPreservation(t *testing.T) {
 	}
 }
 
-// TestNICAutoGenAddrWithOpaque tests the auto-generation of IPv6 link-local
-// addresses with opaque interface identifiers. Link Local addresses should
-// always be generated with opaque IIDs if configured to use them, even if the
-// NIC has an invalid MAC address.
-func TestNICAutoGenAddrWithOpaque(t *testing.T) {
+// TestNICAutoGenLinkLocalAddr tests the auto-generation of IPv6 link-local
+// addresses.
+func TestNICAutoGenLinkLocalAddr(t *testing.T) {
 	const nicID = 1
 
 	var secretKey [header.OpaqueIIDSecretKeyMinBytes]byte
@@ -2056,107 +1948,184 @@ func TestNICAutoGenAddrWithOpaque(t *testing.T) {
 		t.Fatalf("expected rand.Read to read %d bytes, read %d bytes", header.OpaqueIIDSecretKeyMinBytes, n)
 	}
 
+	nicNameFunc := func(_ tcpip.NICID, name string) string {
+		return name
+	}
+
 	tests := []struct {
-		name      string
-		nicName   string
-		autoGen   bool
-		linkAddr  tcpip.LinkAddress
-		secretKey []byte
+		name         string
+		nicName      string
+		autoGen      bool
+		linkAddr     tcpip.LinkAddress
+		iidOpts      stack.OpaqueInterfaceIdentifierOptions
+		shouldGen    bool
+		expectedAddr tcpip.Address
 	}{
 		{
 			name:      "Disabled",
 			nicName:   "nic1",
 			autoGen:   false,
 			linkAddr:  linkAddr1,
-			secretKey: secretKey[:],
+			shouldGen: false,
 		},
 		{
-			name:      "Enabled",
-			nicName:   "nic1",
+			name:     "Disabled without OIID options",
+			nicName:  "nic1",
+			autoGen:  false,
+			linkAddr: linkAddr1,
+			iidOpts: stack.OpaqueInterfaceIdentifierOptions{
+				NICNameFromID: nicNameFunc,
+				SecretKey:     secretKey[:],
+			},
+			shouldGen: false,
+		},
+
+		// Tests for EUI64 based addresses.
+		{
+			name:         "EUI64 Enabled",
+			autoGen:      true,
+			linkAddr:     linkAddr1,
+			shouldGen:    true,
+			expectedAddr: header.LinkLocalAddr(linkAddr1),
+		},
+		{
+			name:      "EUI64 Empty MAC",
 			autoGen:   true,
-			linkAddr:  linkAddr1,
-			secretKey: secretKey[:],
+			shouldGen: false,
+		},
+		{
+			name:      "EUI64 Invalid MAC",
+			autoGen:   true,
+			linkAddr:  "\x01\x02\x03",
+			shouldGen: false,
+		},
+		{
+			name:      "EUI64 Multicast MAC",
+			autoGen:   true,
+			linkAddr:  "\x01\x02\x03\x04\x05\x06",
+			shouldGen: false,
+		},
+		{
+			name:      "EUI64 Unspecified MAC",
+			autoGen:   true,
+			linkAddr:  "\x00\x00\x00\x00\x00\x00",
+			shouldGen: false,
+		},
+
+		// Tests for Opaque IID based addresses.
+		{
+			name:     "OIID Enabled",
+			nicName:  "nic1",
+			autoGen:  true,
+			linkAddr: linkAddr1,
+			iidOpts: stack.OpaqueInterfaceIdentifierOptions{
+				NICNameFromID: nicNameFunc,
+				SecretKey:     secretKey[:],
+			},
+			shouldGen:    true,
+			expectedAddr: header.LinkLocalAddrWithOpaqueIID("nic1", 0, secretKey[:]),
 		},
 		// These are all cases where we would not have generated a
 		// link-local address if opaque IIDs were disabled.
 		{
-			name:      "Nil MAC and empty nicName",
-			nicName:   "",
-			autoGen:   true,
-			linkAddr:  tcpip.LinkAddress([]byte(nil)),
-			secretKey: secretKey[:1],
+			name:    "OIID Empty MAC and empty nicName",
+			autoGen: true,
+			iidOpts: stack.OpaqueInterfaceIdentifierOptions{
+				NICNameFromID: nicNameFunc,
+				SecretKey:     secretKey[:1],
+			},
+			shouldGen:    true,
+			expectedAddr: header.LinkLocalAddrWithOpaqueIID("", 0, secretKey[:1]),
 		},
 		{
-			name:      "Empty MAC and empty nicName",
-			autoGen:   true,
-			linkAddr:  tcpip.LinkAddress(""),
-			secretKey: secretKey[:2],
+			name:     "OIID Invalid MAC",
+			nicName:  "test",
+			autoGen:  true,
+			linkAddr: "\x01\x02\x03",
+			iidOpts: stack.OpaqueInterfaceIdentifierOptions{
+				NICNameFromID: nicNameFunc,
+				SecretKey:     secretKey[:2],
+			},
+			shouldGen:    true,
+			expectedAddr: header.LinkLocalAddrWithOpaqueIID("test", 0, secretKey[:2]),
 		},
 		{
-			name:      "Invalid MAC",
-			nicName:   "test",
-			autoGen:   true,
-			linkAddr:  tcpip.LinkAddress("\x01\x02\x03"),
-			secretKey: secretKey[:3],
+			name:     "OIID Multicast MAC",
+			nicName:  "test2",
+			autoGen:  true,
+			linkAddr: "\x01\x02\x03\x04\x05\x06",
+			iidOpts: stack.OpaqueInterfaceIdentifierOptions{
+				NICNameFromID: nicNameFunc,
+				SecretKey:     secretKey[:3],
+			},
+			shouldGen:    true,
+			expectedAddr: header.LinkLocalAddrWithOpaqueIID("test2", 0, secretKey[:3]),
 		},
 		{
-			name:      "Multicast MAC",
-			nicName:   "test2",
-			autoGen:   true,
-			linkAddr:  tcpip.LinkAddress("\x01\x02\x03\x04\x05\x06"),
-			secretKey: secretKey[:4],
-		},
-		{
-			name:     "Unspecified MAC and nil SecretKey",
+			name:     "OIID Unspecified MAC and nil SecretKey",
 			nicName:  "test3",
 			autoGen:  true,
-			linkAddr: tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00"),
+			linkAddr: "\x00\x00\x00\x00\x00\x00",
+			iidOpts: stack.OpaqueInterfaceIdentifierOptions{
+				NICNameFromID: nicNameFunc,
+			},
+			shouldGen:    true,
+			expectedAddr: header.LinkLocalAddrWithOpaqueIID("test3", 0, nil),
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			ndpDisp := ndpDispatcher{
+				autoGenAddrC: make(chan ndpAutoGenAddrEvent, 1),
+			}
 			opts := stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-				OpaqueIIDOpts: stack.OpaqueInterfaceIdentifierOptions{
-					NICNameFromID: func(_ tcpip.NICID, nicName string) string {
-						return nicName
-					},
-					SecretKey: test.secretKey,
-				},
+				NetworkProtocols:     []stack.NetworkProtocol{ipv6.NewProtocol()},
+				AutoGenIPv6LinkLocal: test.autoGen,
+				NDPDisp:              &ndpDisp,
+				OpaqueIIDOpts:        test.iidOpts,
 			}
 
-			if test.autoGen {
-				// Only set opts.AutoGenIPv6LinkLocal when
-				// test.autoGen is true because
-				// opts.AutoGenIPv6LinkLocal should be false by
-				// default.
-				opts.AutoGenIPv6LinkLocal = true
-			}
-
-			e := channel.New(10, 1280, test.linkAddr)
+			e := channel.New(0, 1280, test.linkAddr)
 			s := stack.New(opts)
 			nicOpts := stack.NICOptions{Name: test.nicName}
 			if err := s.CreateNICWithOptions(nicID, e, nicOpts); err != nil {
 				t.Fatalf("CreateNICWithOptions(%d, _, %+v) = %s", nicID, opts, err)
 			}
 
-			addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
-			if err != nil {
-				t.Fatalf("stack.GetMainNICAddress(%d, _) err = %s", nicID, err)
-			}
+			var expectedMainAddr tcpip.AddressWithPrefix
 
-			if test.autoGen {
-				// Should have auto-generated an address and
-				// resolved immediately (DAD is disabled).
-				if want := (tcpip.AddressWithPrefix{Address: header.LinkLocalAddrWithOpaqueIID(test.nicName, 0, test.secretKey), PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen}); addr != want {
-					t.Fatalf("got stack.GetMainNICAddress(_, _) = %s, want = %s", addr, want)
+			if test.shouldGen {
+				expectedMainAddr = tcpip.AddressWithPrefix{
+					Address:   test.expectedAddr,
+					PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen,
+				}
+
+				// Should have auto-generated an address and resolved immediately (DAD
+				// is disabled).
+				select {
+				case e := <-ndpDisp.autoGenAddrC:
+					if diff := checkAutoGenAddrEvent(e, expectedMainAddr, newAddr); diff != "" {
+						t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
+					}
+				default:
+					t.Fatal("expected addr auto gen event")
 				}
 			} else {
 				// Should not have auto-generated an address.
-				if want := (tcpip.AddressWithPrefix{}); addr != want {
-					t.Fatalf("got stack.GetMainNICAddress(_, _) = (%s, nil), want = (%s, nil)", addr, want)
+				select {
+				case <-ndpDisp.autoGenAddrC:
+					t.Fatal("unexpectedly auto-generated an address")
+				default:
 				}
+			}
+
+			gotMainAddr, err := s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
+			if err != nil {
+				t.Fatalf("stack.GetMainNICAddress(_, _) err = %s", err)
+			}
+			if gotMainAddr != expectedMainAddr {
+				t.Fatalf("got stack.GetMainNICAddress(_, _) = %s, want = %s", gotMainAddr, expectedMainAddr)
 			}
 		})
 	}
@@ -2226,7 +2195,7 @@ func TestNICAutoGenAddrDoesDAD(t *testing.T) {
 		NDPDisp:              &ndpDisp,
 	}
 
-	e := channel.New(10, 1280, linkAddr1)
+	e := channel.New(int(ndpConfigs.DupAddrDetectTransmits), 1280, linkAddr1)
 	s := stack.New(opts)
 	if err := s.CreateNIC(1, e); err != nil {
 		t.Fatalf("CreateNIC(_) = %s", err)

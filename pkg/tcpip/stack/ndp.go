@@ -906,22 +906,21 @@ func (ndp *ndpState) handleAutonomousPrefixInformation(pi header.NDPPrefixInform
 		return
 	}
 
-	// We do not already have an address within the prefix, prefix. Do the
+	// We do not already have an address with the prefix prefix. Do the
 	// work as outlined by RFC 4862 section 5.5.3.d if n is configured
-	// to auto-generated global addresses by SLAAC.
-	ndp.newAutoGenAddress(prefix, pl, vl)
-}
-
-// newAutoGenAddress generates a new SLAAC address with the provided lifetimes
-// for prefix.
-//
-// pl is the new preferred lifetime. vl is the new valid lifetime.
-func (ndp *ndpState) newAutoGenAddress(prefix tcpip.Subnet, pl, vl time.Duration) {
-	// Are we configured to auto-generate new global addresses?
+	// to auto-generate global addresses by SLAAC.
 	if !ndp.configs.AutoGenGlobalAddresses {
 		return
 	}
 
+	ndp.doSLAAC(prefix, pl, vl)
+}
+
+// doSLAAC generates a new SLAAC address with the provided lifetimes
+// for prefix.
+//
+// pl is the new preferred lifetime. vl is the new valid lifetime.
+func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 	// If we do not already have an address for this prefix and the valid
 	// lifetime is 0, no need to do anything further, as per RFC 4862
 	// section 5.5.3.d.
@@ -1152,12 +1151,21 @@ func (ndp *ndpState) cleanupAutoGenAddrResourcesAndNotify(addr tcpip.Address) bo
 //
 // The NIC that ndp belongs to MUST be locked.
 func (ndp *ndpState) cleanupHostOnlyState() {
+	linkLocalSubnet := header.IPv6LinkLocalPrefix.Subnet()
+	linkLocalAddrs := 0
 	for addr := range ndp.autoGenAddresses {
+		// RFC 4862 section 5 states that routers are also expected to generate a
+		// link-local address so we do not invalidate them.
+		if linkLocalSubnet.Contains(addr) {
+			linkLocalAddrs++
+			continue
+		}
+
 		ndp.invalidateAutoGenAddress(addr)
 	}
 
-	if got := len(ndp.autoGenAddresses); got != 0 {
-		log.Fatalf("ndp: still have auto-generated addresses after cleaning up, found = %d", got)
+	if got := len(ndp.autoGenAddresses); got != linkLocalAddrs {
+		log.Fatalf("ndp: still have non-linklocal auto-generated addresses after cleaning up; found = %d prefixes, of which %d are link-local", got, linkLocalAddrs)
 	}
 
 	for prefix := range ndp.onLinkPrefixes {
@@ -1165,7 +1173,7 @@ func (ndp *ndpState) cleanupHostOnlyState() {
 	}
 
 	if got := len(ndp.onLinkPrefixes); got != 0 {
-		log.Fatalf("ndp: still have discovered on-link prefixes after cleaning up, found = %d", got)
+		log.Fatalf("ndp: still have discovered on-link prefixes after cleaning up; found = %d", got)
 	}
 
 	for router := range ndp.defaultRouters {
@@ -1173,7 +1181,7 @@ func (ndp *ndpState) cleanupHostOnlyState() {
 	}
 
 	if got := len(ndp.defaultRouters); got != 0 {
-		log.Fatalf("ndp: still have discovered default routers after cleaning up, found = %d", got)
+		log.Fatalf("ndp: still have discovered default routers after cleaning up; found = %d", got)
 	}
 }
 
