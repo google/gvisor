@@ -159,8 +159,13 @@ func (d *Dir) SetXattr(ctx context.Context, i *fs.Inode, name, value string, fla
 }
 
 // ListXattr implements fs.InodeOperations.ListXattr.
-func (d *Dir) ListXattr(ctx context.Context, i *fs.Inode) (map[string]struct{}, error) {
-	return d.ramfsDir.ListXattr(ctx, i)
+func (d *Dir) ListXattr(ctx context.Context, i *fs.Inode, size uint64) (map[string]struct{}, error) {
+	return d.ramfsDir.ListXattr(ctx, i, size)
+}
+
+// RemoveXattr implements fs.InodeOperations.RemoveXattr.
+func (d *Dir) RemoveXattr(ctx context.Context, i *fs.Inode, name string) error {
+	return d.ramfsDir.RemoveXattr(ctx, i, name)
 }
 
 // Lookup implements fs.InodeOperations.Lookup.

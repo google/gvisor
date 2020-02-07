@@ -768,12 +768,22 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 }
 
 // TODO(b/127675828): support getxattr.
-func (l *localFile) GetXattr(name string, size uint64) (string, error) {
+func (*localFile) GetXattr(string, uint64) (string, error) {
 	return "", syscall.EOPNOTSUPP
 }
 
 // TODO(b/127675828): support setxattr.
-func (l *localFile) SetXattr(name, value string, flags uint32) error {
+func (*localFile) SetXattr(string, string, uint32) error {
+	return syscall.EOPNOTSUPP
+}
+
+// TODO(b/148303075): support listxattr.
+func (*localFile) ListXattr(uint64) (map[string]struct{}, error) {
+	return nil, syscall.EOPNOTSUPP
+}
+
+// TODO(b/148303075): support removexattr.
+func (*localFile) RemoveXattr(string) error {
 	return syscall.EOPNOTSUPP
 }
 
@@ -790,7 +800,7 @@ func (l *localFile) Allocate(mode p9.AllocateMode, offset, length uint64) error 
 }
 
 // Rename implements p9.File; this should never be called.
-func (l *localFile) Rename(p9.File, string) error {
+func (*localFile) Rename(p9.File, string) error {
 	panic("rename called directly")
 }
 
