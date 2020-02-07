@@ -36,6 +36,10 @@ func init() {
 	RegisterTestCase(FilterInputDropTCPSrcPort{})
 	RegisterTestCase(FilterInputDropUDPPort{})
 	RegisterTestCase(FilterInputDropUDP{})
+	RegisterTestCase(FilterInputCreateUserChain{})
+	RegisterTestCase(FilterInputDefaultPolicyAccept{})
+	RegisterTestCase(FilterInputDefaultPolicyDrop{})
+	RegisterTestCase(FilterInputReturnUnderflow{})
 }
 
 // FilterInputDropUDP tests that we can drop UDP traffic.
@@ -295,8 +299,119 @@ func (FilterInputRequireProtocolUDP) ContainerAction(ip net.IP) error {
 	return nil
 }
 
-// LocalAction implements TestCase.LocalAction.
 func (FilterInputRequireProtocolUDP) LocalAction(ip net.IP) error {
 	// No-op.
 	return nil
+}
+
+// FilterInputCreateUserChain tests chain creation.
+type FilterInputCreateUserChain struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputCreateUserChain) Name() string {
+	return "FilterInputCreateUserChain"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputCreateUserChain) ContainerAction(ip net.IP) error {
+	// Create a chain.
+	const chainName = "foochain"
+	if err := filterTable("-N", chainName); err != nil {
+		return err
+	}
+
+	// Add a simple rule to the chain.
+	return filterTable("-A", chainName, "-j", "DROP")
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputCreateUserChain) LocalAction(ip net.IP) error {
+	// No-op.
+	return nil
+}
+
+// FilterInputDefaultPolicyAccept tests the default ACCEPT policy.
+type FilterInputDefaultPolicyAccept struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputDefaultPolicyAccept) Name() string {
+	return "FilterInputDefaultPolicyAccept"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputDefaultPolicyAccept) ContainerAction(ip net.IP) error {
+	// Set the default policy to accept, then receive a packet.
+	if err := filterTable("-P", "INPUT", "ACCEPT"); err != nil {
+		return err
+	}
+	return listenUDP(acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputDefaultPolicyAccept) LocalAction(ip net.IP) error {
+	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// FilterInputDefaultPolicyDrop tests the default DROP policy.
+type FilterInputDefaultPolicyDrop struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputDefaultPolicyDrop) Name() string {
+	return "FilterInputDefaultPolicyDrop"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputDefaultPolicyDrop) ContainerAction(ip net.IP) error {
+	if err := filterTable("-P", "INPUT", "DROP"); err != nil {
+		return err
+	}
+
+	// Listen for UDP packets on dropPort.
+	if err := listenUDP(dropPort, sendloopDuration); err == nil {
+		return fmt.Errorf("packets on port %d should have been dropped, but got a packet", dropPort)
+	} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+		return fmt.Errorf("error reading: %v", err)
+	}
+
+	// At this point we know that reading timed out and never received a
+	// packet.
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputDefaultPolicyDrop) LocalAction(ip net.IP) error {
+	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// FilterInputReturnUnderflow tests that -j RETURN in a built-in chain causes
+// the underflow rule (i.e. default policy) to be executed.
+type FilterInputReturnUnderflow struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputReturnUnderflow) Name() string {
+	return "FilterInputReturnUnderflow"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputReturnUnderflow) ContainerAction(ip net.IP) error {
+	// Add a RETURN rule followed by an unconditional accept, and set the
+	// default policy to DROP.
+	if err := filterTable("-A", "INPUT", "-j", "RETURN"); err != nil {
+		return err
+	}
+	if err := filterTable("-A", "INPUT", "-j", "DROP"); err != nil {
+		return err
+	}
+	if err := filterTable("-P", "INPUT", "ACCEPT"); err != nil {
+		return err
+	}
+
+	// We should receive packets, as the RETURN rule will trigger the default
+	// ACCEPT policy.
+	return listenUDP(acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputReturnUnderflow) LocalAction(ip net.IP) error {
+	return sendUDPLoop(ip, acceptPort, sendloopDuration)
 }
