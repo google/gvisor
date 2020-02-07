@@ -73,6 +73,20 @@ func (c *contextFile) setXattr(ctx context.Context, name, value string, flags ui
 	return err
 }
 
+func (c *contextFile) listXattr(ctx context.Context, size uint64) (map[string]struct{}, error) {
+	ctx.UninterruptibleSleepStart(false)
+	xattrs, err := c.file.ListXattr(size)
+	ctx.UninterruptibleSleepFinish(false)
+	return xattrs, err
+}
+
+func (c *contextFile) removeXattr(ctx context.Context, name string) error {
+	ctx.UninterruptibleSleepStart(false)
+	err := c.file.RemoveXattr(name)
+	ctx.UninterruptibleSleepFinish(false)
+	return err
+}
+
 func (c *contextFile) allocate(ctx context.Context, mode p9.AllocateMode, offset, length uint64) error {
 	ctx.UninterruptibleSleepStart(false)
 	err := c.file.Allocate(mode, offset, length)

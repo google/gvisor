@@ -564,15 +564,15 @@ func overlaySetxattr(ctx context.Context, o *overlayEntry, d *Dirent, name, valu
 	return o.upper.SetXattr(ctx, d, name, value, flags)
 }
 
-func overlayListXattr(ctx context.Context, o *overlayEntry) (map[string]struct{}, error) {
+func overlayListXattr(ctx context.Context, o *overlayEntry, size uint64) (map[string]struct{}, error) {
 	o.copyMu.RLock()
 	defer o.copyMu.RUnlock()
 	var names map[string]struct{}
 	var err error
 	if o.upper != nil {
-		names, err = o.upper.ListXattr(ctx)
+		names, err = o.upper.ListXattr(ctx, size)
 	} else {
-		names, err = o.lower.ListXattr(ctx)
+		names, err = o.lower.ListXattr(ctx, size)
 	}
 	for name := range names {
 		// Same as overlayGetXattr, we shouldn't forward along
@@ -582,6 +582,18 @@ func overlayListXattr(ctx context.Context, o *overlayEntry) (map[string]struct{}
 		}
 	}
 	return names, err
+}
+
+func overlayRemoveXattr(ctx context.Context, o *overlayEntry, d *Dirent, name string) error {
+	// Don't allow changes to overlay xattrs through a removexattr syscall.
+	if strings.HasPrefix(XattrOverlayPrefix, name) {
+		return syserror.EPERM
+	}
+
+	if err := copyUp(ctx, d); err != nil {
+		return err
+	}
+	return o.upper.RemoveXattr(ctx, d, name)
 }
 
 func overlayCheck(ctx context.Context, o *overlayEntry, p PermMask) error {
