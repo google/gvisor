@@ -30,27 +30,6 @@
 namespace gvisor {
 namespace testing {
 
-constexpr char kMulticastAddress[] = "224.0.2.1";
-constexpr char kBroadcastAddress[] = "255.255.255.255";
-
-TestAddress V4Multicast() {
-  TestAddress t("V4Multicast");
-  t.addr.ss_family = AF_INET;
-  t.addr_len = sizeof(sockaddr_in);
-  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr =
-      inet_addr(kMulticastAddress);
-  return t;
-}
-
-TestAddress V4Broadcast() {
-  TestAddress t("V4Broadcast");
-  t.addr.ss_family = AF_INET;
-  t.addr_len = sizeof(sockaddr_in);
-  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr =
-      inet_addr(kBroadcastAddress);
-  return t;
-}
-
 // Check that packets are not received without a group membership. Default send
 // interface configured by bind.
 TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackNoGroup) {
