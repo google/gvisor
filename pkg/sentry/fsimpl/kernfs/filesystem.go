@@ -111,10 +111,10 @@ func (fs *Filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.Vir
 		// Dentry isn't cached; it either doesn't exist or failed
 		// revalidation. Attempt to resolve it via Lookup.
 		//
-		// FIXME(b/144498111): Inode.Lookup() should return *(kernfs.)Dentry,
-		// not *vfs.Dentry, since (kernfs.)Filesystem assumes that all dentries
-		// in the filesystem are (kernfs.)Dentry and performs vfs.DentryImpl
-		// casts accordingly.
+		// FIXME(gvisor.dev/issue/1193): Inode.Lookup() should return
+		// *(kernfs.)Dentry, not *vfs.Dentry, since (kernfs.)Filesystem assumes
+		// that all dentries in the filesystem are (kernfs.)Dentry and performs
+		// vfs.DentryImpl casts accordingly.
 		var err error
 		childVFSD, err = parent.inode.Lookup(ctx, name)
 		if err != nil {
