@@ -155,21 +155,6 @@ func NewFloatingPointData() *FloatingPointData {
 	return (*FloatingPointData)(&(newX86FPState()[0]))
 }
 
-// State contains the common architecture bits for X86 (the build tag of this
-// file ensures it's only built on x86).
-//
-// +stateify savable
-type State struct {
-	// The system registers.
-	Regs syscall.PtraceRegs `state:".(syscallPtraceRegs)"`
-
-	// Our floating point state.
-	x86FPState `state:"wait"`
-
-	// FeatureSet is a pointer to the currently active feature set.
-	FeatureSet *cpuid.FeatureSet
-}
-
 // Proto returns a protobuf representation of the system registers in State.
 func (s State) Proto() *rpb.Registers {
 	regs := &rpb.AMD64Registers{
