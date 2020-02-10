@@ -14,6 +14,7 @@ go_library(
         "arch_state_aarch64.go",
         "arch_state_x86.go",
         "arch_x86.go",
+        "arch_x86_impl.go",
         "auxv.go",
         "signal.go",
         "signal_act.go",
