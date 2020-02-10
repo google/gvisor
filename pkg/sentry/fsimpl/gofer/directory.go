@@ -87,6 +87,10 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 	// to assume that directory fids have the correct semantics, and translates
 	// struct file_operations::readdir calls directly to readdir RPCs), but is
 	// consistent with VFS1.
+	//
+	// NOTE(b/135560623): In particular, some gofer implementations may not
+	// retain state between calls to Readdir, so may not provide a coherent
+	// directory stream across in the presence of mutation.
 
 	d.fs.renameMu.RLock()
 	defer d.fs.renameMu.RUnlock()
