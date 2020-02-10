@@ -26,7 +26,7 @@ go_binary(
 )
 
 # The runsc-race target is a race-compatible BUILD target. This must be built
-# via: bazel build --features=race //runsc:runsc-race
+# via: bazel build --features=race :runsc-race
 #
 # This is neccessary because the race feature must apply to all dependencies
 # due a bug in gazelle file selection.  The pure attribute must be off because
