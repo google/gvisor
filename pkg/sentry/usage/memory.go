@@ -253,6 +253,10 @@ func (m *MemoryLocked) Copy() (MemoryStats, uint64) {
 }
 
 // MinimumTotalMemoryBytes is the minimum reported total system memory.
+//
+// This can be configured through options provided to the Sentry at start.
+// This number is purely synthetic. This is only set before the application
+// starts executing, and must not be modified.
 var MinimumTotalMemoryBytes uint64 = 2 << 30 // 2 GB
 
 // TotalMemory returns the "total usable memory" available.
