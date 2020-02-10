@@ -17,10 +17,10 @@ package cmd
 import (
 	"context"
 
-	"flag"
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/container"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
 // Pause implements subcommands.Command for the "pause" command.
