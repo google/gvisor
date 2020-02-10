@@ -6,5 +6,5 @@ genrule(
     name = "loopback",
     outs = ["loopback.txt"],
     cmd = "touch $@",
-    visibility = ["//visibility:public"],
+    visibility = ["//:sandbox"],
 )
