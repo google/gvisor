@@ -28,14 +28,13 @@ import (
 	"syscall"
 	"time"
 
-	"flag"
-
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd"
+	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 

@@ -21,9 +21,9 @@ import (
 	"os"
 	"time"
 
-	"flag"
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/unet"
+	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/testutil"
 )
 

@@ -25,9 +25,9 @@ import (
 	"strconv"
 	"text/tabwriter"
 
-	"flag"
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
 // Syscalls implements subcommands.Command for the "syscalls" command.

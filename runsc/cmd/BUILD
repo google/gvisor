@@ -50,6 +50,7 @@ go_library(
         "//runsc/boot/platforms",
         "//runsc/console",
         "//runsc/container",
+        "//runsc/flag",
         "//runsc/fsgofer",
         "//runsc/fsgofer/filter",
         "//runsc/specutils",
