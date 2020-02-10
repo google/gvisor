@@ -8,7 +8,7 @@ load("@rules_pkg//:pkg.bzl", _pkg_deb = "pkg_deb", _pkg_tar = "pkg_tar")
 load("@io_bazel_rules_docker//go:image.bzl", _go_image = "go_image")
 load("@io_bazel_rules_docker//container:container.bzl", _container_image = "container_image")
 load("@pydeps//:requirements.bzl", _py_requirement = "requirement")
-load("//tools/build:tags.bzl", _go_suffixes = "go_suffixes")
+load("//tools/bazeldefs:tags.bzl", _go_suffixes = "go_suffixes")
 
 container_image = _container_image
 cc_binary = _cc_binary
@@ -21,7 +21,7 @@ go_image = _go_image
 go_embed_data = _go_embed_data
 go_suffixes = _go_suffixes
 gtest = "@com_google_googletest//:gtest"
-loopback = "//tools/build:loopback"
+loopback = "//tools/bazeldefs:loopback"
 proto_library = native.proto_library
 pkg_deb = _pkg_deb
 pkg_tar = _pkg_tar
