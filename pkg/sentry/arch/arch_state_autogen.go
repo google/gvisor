@@ -94,22 +94,6 @@ func (x *syscallPtraceRegs) load(m state.Map) {
 	m.Load("Gs", &x.Gs)
 }
 
-func (x *State) beforeSave() {}
-func (x *State) save(m state.Map) {
-	x.beforeSave()
-	var Regs syscallPtraceRegs = x.saveRegs()
-	m.SaveValue("Regs", Regs)
-	m.Save("x86FPState", &x.x86FPState)
-	m.Save("FeatureSet", &x.FeatureSet)
-}
-
-func (x *State) load(m state.Map) {
-	m.LoadWait("x86FPState", &x.x86FPState)
-	m.Load("FeatureSet", &x.FeatureSet)
-	m.LoadValue("Regs", new(syscallPtraceRegs), func(y interface{}) { x.loadRegs(y.(syscallPtraceRegs)) })
-	m.AfterLoad(x.afterLoad)
-}
-
 func (x *AuxEntry) beforeSave() {}
 func (x *AuxEntry) save(m state.Map) {
 	x.beforeSave()
@@ -175,7 +159,6 @@ func (x *SignalInfo) load(m state.Map) {
 func init() {
 	state.Register("arch.MmapLayout", (*MmapLayout)(nil), state.Fns{Save: (*MmapLayout).save, Load: (*MmapLayout).load})
 	state.Register("arch.syscallPtraceRegs", (*syscallPtraceRegs)(nil), state.Fns{Save: (*syscallPtraceRegs).save, Load: (*syscallPtraceRegs).load})
-	state.Register("arch.State", (*State)(nil), state.Fns{Save: (*State).save, Load: (*State).load})
 	state.Register("arch.AuxEntry", (*AuxEntry)(nil), state.Fns{Save: (*AuxEntry).save, Load: (*AuxEntry).load})
 	state.Register("arch.SignalAct", (*SignalAct)(nil), state.Fns{Save: (*SignalAct).save, Load: (*SignalAct).load})
 	state.Register("arch.SignalStack", (*SignalStack)(nil), state.Fns{Save: (*SignalStack).save, Load: (*SignalStack).load})
