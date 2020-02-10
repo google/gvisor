@@ -1055,9 +1055,9 @@ TEST(Inotify, ChmodGeneratesAttribEvent_NoRandomSave) {
   const TempPath file1 =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(root.path()));
 
-  FileDescriptor root_fd =
+  const FileDescriptor root_fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(root.path(), O_RDONLY));
-  FileDescriptor file1_fd =
+  const FileDescriptor file1_fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file1.path(), O_RDWR));
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
 
@@ -1091,11 +1091,6 @@ TEST(Inotify, ChmodGeneratesAttribEvent_NoRandomSave) {
   ASSERT_THAT(fchmodat(root_fd.get(), file1_basename.c_str(), S_IWGRP, 0),
               SyscallSucceeds());
   verify_chmod_events();
-
-  // Make sure the chmod'ed file descriptors are destroyed before DisableSave
-  // is destructed.
-  root_fd.reset();
-  file1_fd.reset();
 }
 
 TEST(Inotify, TruncateGeneratesModifyEvent) {
