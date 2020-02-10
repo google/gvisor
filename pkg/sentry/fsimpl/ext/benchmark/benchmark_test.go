@@ -15,6 +15,9 @@
 // These benchmarks emulate memfs benchmarks. Ext4 images must be created
 // before this benchmark is run using the `make_deep_ext4.sh` script at
 // /tmp/image-{depth}.ext4 for all the depths tested below.
+//
+// The benchmark itself cannot run the script because the script requires
+// sudo privileges to create the file system images.
 package benchmark_test
 
 import (
