@@ -22,12 +22,12 @@ import (
 	"syscall"
 	"time"
 
-	"flag"
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/container"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
 // Debug implements subcommands.Command for the "debug" command.

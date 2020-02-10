@@ -20,8 +20,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"flag"
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
 var specTemplate = []byte(`{
