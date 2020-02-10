@@ -15,5 +15,4 @@ pkg_tar(
         "index.erb",
         "main.rb",
     ],
-    strip_prefix = "third_party/gvisor/benchmarks/workloads/ruby_template",
 )
