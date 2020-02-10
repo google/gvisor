@@ -49,14 +49,11 @@ func FGetXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	}
 	defer f.DecRef()
 
-	n, value, err := getXattr(t, f.Dirent, nameAddr, size)
+	n, err := getXattr(t, f.Dirent, nameAddr, valueAddr, size)
 	if err != nil {
 		return 0, nil, err
 	}
 
-	if _, err := t.CopyOutBytes(valueAddr, []byte(value)); err != nil {
-		return 0, nil, err
-	}
 	return uintptr(n), nil, nil
 }
 
@@ -71,41 +68,36 @@ func getXattrFromPath(t *kernel.Task, args arch.SyscallArguments, resolveSymlink
 		return 0, nil, err
 	}
 
-	valueLen := 0
+	n := 0
 	err = fileOpOn(t, linux.AT_FDCWD, path, resolveSymlink, func(_ *fs.Dirent, d *fs.Dirent, _ uint) error {
 		if dirPath && !fs.IsDir(d.Inode.StableAttr) {
 			return syserror.ENOTDIR
 		}
 
-		n, value, err := getXattr(t, d, nameAddr, size)
-		valueLen = n
-		if err != nil {
-			return err
-		}
-
-		_, err = t.CopyOutBytes(valueAddr, []byte(value))
+		n, err = getXattr(t, d, nameAddr, valueAddr, size)
 		return err
 	})
 	if err != nil {
 		return 0, nil, err
 	}
-	return uintptr(valueLen), nil, nil
+
+	return uintptr(n), nil, nil
 }
 
 // getXattr implements getxattr(2) from the given *fs.Dirent.
-func getXattr(t *kernel.Task, d *fs.Dirent, nameAddr usermem.Addr, size uint64) (int, string, error) {
-	if err := checkXattrPermissions(t, d.Inode, fs.PermMask{Read: true}); err != nil {
-		return 0, "", err
-	}
-
+func getXattr(t *kernel.Task, d *fs.Dirent, nameAddr, valueAddr usermem.Addr, size uint64) (int, error) {
 	name, err := copyInXattrName(t, nameAddr)
 	if err != nil {
-		return 0, "", err
+		return 0, err
+	}
+
+	if err := checkXattrPermissions(t, d.Inode, fs.PermMask{Read: true}); err != nil {
+		return 0, err
 	}
 
 	// TODO(b/148380782): Support xattrs in namespaces other than "user".
 	if !strings.HasPrefix(name, linux.XATTR_USER_PREFIX) {
-		return 0, "", syserror.EOPNOTSUPP
+		return 0, syserror.EOPNOTSUPP
 	}
 
 	// If getxattr(2) is called with size 0, the size of the value will be
@@ -118,18 +110,22 @@ func getXattr(t *kernel.Task, d *fs.Dirent, nameAddr usermem.Addr, size uint64) 
 
 	value, err := d.Inode.GetXattr(t, name, requestedSize)
 	if err != nil {
-		return 0, "", err
+		return 0, err
 	}
 	n := len(value)
 	if uint64(n) > requestedSize {
-		return 0, "", syserror.ERANGE
+		return 0, syserror.ERANGE
 	}
 
 	// Don't copy out the attribute value if size is 0.
 	if size == 0 {
-		return n, "", nil
+		return n, nil
 	}
-	return n, value, nil
+
+	if _, err = t.CopyOutBytes(valueAddr, []byte(value)); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 // SetXattr implements linux syscall setxattr(2).
