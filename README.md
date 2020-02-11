@@ -3,7 +3,7 @@
 [![Status](https://storage.googleapis.com/gvisor-build-badges/build.svg)](https://storage.googleapis.com/gvisor-build-badges/build.html)
 [![gVisor chat](https://badges.gitter.im/gvisor/community.png)](https://gitter.im/gvisor/community)
 
-## What is gVisor?
+## What is gvisor?
 
 **gVisor** is a user-space kernel, written in Go, that implements a substantial
 portion of the Linux system surface. It includes an
