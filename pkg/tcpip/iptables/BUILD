@@ -8,7 +8,6 @@ go_library(
         "iptables.go",
         "targets.go",
         "types.go",
-        "udp_matcher.go",
     ],
     visibility = ["//visibility:public"],
     deps = [
