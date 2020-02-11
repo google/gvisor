@@ -6,7 +6,7 @@ def _go_stateify_impl(ctx):
 
     # Run the stateify command.
     args = ["-output=%s" % output.path]
-    args.append("-pkg=%s" % ctx.attr.package)
+    args.append("-fullpkg=%s" % ctx.attr.package)
     if ctx.attr._statepkg:
         args.append("-statepkg=%s" % ctx.attr._statepkg)
     if ctx.attr.imports:
@@ -43,7 +43,7 @@ for statified types.
             mandatory = False,
         ),
         "package": attr.string(
-            doc = "The package name for the input sources.",
+            doc = "The fully qualified package name for the input sources.",
             mandatory = True,
         ),
         "out": attr.output(
