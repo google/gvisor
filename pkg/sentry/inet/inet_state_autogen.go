@@ -22,5 +22,5 @@ func (x *TCPBufferSize) load(m state.Map) {
 }
 
 func init() {
-	state.Register("inet.TCPBufferSize", (*TCPBufferSize)(nil), state.Fns{Save: (*TCPBufferSize).save, Load: (*TCPBufferSize).load})
+	state.Register("pkg/sentry/inet.TCPBufferSize", (*TCPBufferSize)(nil), state.Fns{Save: (*TCPBufferSize).save, Load: (*TCPBufferSize).load})
 }

@@ -20,5 +20,5 @@ func (x *FileRange) load(m state.Map) {
 }
 
 func init() {
-	state.Register("platform.FileRange", (*FileRange)(nil), state.Fns{Save: (*FileRange).save, Load: (*FileRange).load})
+	state.Register("pkg/sentry/platform.FileRange", (*FileRange)(nil), state.Fns{Save: (*FileRange).save, Load: (*FileRange).load})
 }

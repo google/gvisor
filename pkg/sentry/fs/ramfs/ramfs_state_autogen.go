@@ -85,10 +85,10 @@ func (x *symlinkFileOperations) load(m state.Map) {
 }
 
 func init() {
-	state.Register("ramfs.Dir", (*Dir)(nil), state.Fns{Save: (*Dir).save, Load: (*Dir).load})
-	state.Register("ramfs.dirFileOperations", (*dirFileOperations)(nil), state.Fns{Save: (*dirFileOperations).save, Load: (*dirFileOperations).load})
-	state.Register("ramfs.Socket", (*Socket)(nil), state.Fns{Save: (*Socket).save, Load: (*Socket).load})
-	state.Register("ramfs.socketFileOperations", (*socketFileOperations)(nil), state.Fns{Save: (*socketFileOperations).save, Load: (*socketFileOperations).load})
-	state.Register("ramfs.Symlink", (*Symlink)(nil), state.Fns{Save: (*Symlink).save, Load: (*Symlink).load})
-	state.Register("ramfs.symlinkFileOperations", (*symlinkFileOperations)(nil), state.Fns{Save: (*symlinkFileOperations).save, Load: (*symlinkFileOperations).load})
+	state.Register("pkg/sentry/fs/ramfs.Dir", (*Dir)(nil), state.Fns{Save: (*Dir).save, Load: (*Dir).load})
+	state.Register("pkg/sentry/fs/ramfs.dirFileOperations", (*dirFileOperations)(nil), state.Fns{Save: (*dirFileOperations).save, Load: (*dirFileOperations).load})
+	state.Register("pkg/sentry/fs/ramfs.Socket", (*Socket)(nil), state.Fns{Save: (*Socket).save, Load: (*Socket).load})
+	state.Register("pkg/sentry/fs/ramfs.socketFileOperations", (*socketFileOperations)(nil), state.Fns{Save: (*socketFileOperations).save, Load: (*socketFileOperations).load})
+	state.Register("pkg/sentry/fs/ramfs.Symlink", (*Symlink)(nil), state.Fns{Save: (*Symlink).save, Load: (*Symlink).load})
+	state.Register("pkg/sentry/fs/ramfs.symlinkFileOperations", (*symlinkFileOperations)(nil), state.Fns{Save: (*symlinkFileOperations).save, Load: (*symlinkFileOperations).load})
 }

@@ -45,6 +45,6 @@ func (x *IO) load(m state.Map) {
 }
 
 func init() {
-	state.Register("usage.CPUStats", (*CPUStats)(nil), state.Fns{Save: (*CPUStats).save, Load: (*CPUStats).load})
-	state.Register("usage.IO", (*IO)(nil), state.Fns{Save: (*IO).save, Load: (*IO).load})
+	state.Register("pkg/sentry/usage.CPUStats", (*CPUStats)(nil), state.Fns{Save: (*CPUStats).save, Load: (*CPUStats).load})
+	state.Register("pkg/sentry/usage.IO", (*IO)(nil), state.Fns{Save: (*IO).save, Load: (*IO).load})
 }

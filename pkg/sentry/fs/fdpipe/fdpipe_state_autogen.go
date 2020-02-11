@@ -23,5 +23,5 @@ func (x *pipeOperations) load(m state.Map) {
 }
 
 func init() {
-	state.Register("fdpipe.pipeOperations", (*pipeOperations)(nil), state.Fns{Save: (*pipeOperations).save, Load: (*pipeOperations).load})
+	state.Register("pkg/sentry/fs/fdpipe.pipeOperations", (*pipeOperations)(nil), state.Fns{Save: (*pipeOperations).save, Load: (*pipeOperations).load})
 }

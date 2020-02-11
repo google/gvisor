@@ -62,7 +62,7 @@ func (x *WindowSize) load(m state.Map) {
 }
 
 func init() {
-	state.Register("linux.BPFInstruction", (*BPFInstruction)(nil), state.Fns{Save: (*BPFInstruction).save, Load: (*BPFInstruction).load})
-	state.Register("linux.KernelTermios", (*KernelTermios)(nil), state.Fns{Save: (*KernelTermios).save, Load: (*KernelTermios).load})
-	state.Register("linux.WindowSize", (*WindowSize)(nil), state.Fns{Save: (*WindowSize).save, Load: (*WindowSize).load})
+	state.Register("pkg/abi/linux.BPFInstruction", (*BPFInstruction)(nil), state.Fns{Save: (*BPFInstruction).save, Load: (*BPFInstruction).load})
+	state.Register("pkg/abi/linux.KernelTermios", (*KernelTermios)(nil), state.Fns{Save: (*KernelTermios).save, Load: (*KernelTermios).load})
+	state.Register("pkg/abi/linux.WindowSize", (*WindowSize)(nil), state.Fns{Save: (*WindowSize).save, Load: (*WindowSize).load})
 }

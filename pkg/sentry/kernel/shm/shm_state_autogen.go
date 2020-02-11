@@ -69,6 +69,6 @@ func (x *Shm) load(m state.Map) {
 }
 
 func init() {
-	state.Register("shm.Registry", (*Registry)(nil), state.Fns{Save: (*Registry).save, Load: (*Registry).load})
-	state.Register("shm.Shm", (*Shm)(nil), state.Fns{Save: (*Shm).save, Load: (*Shm).load})
+	state.Register("pkg/sentry/kernel/shm.Registry", (*Registry)(nil), state.Fns{Save: (*Registry).save, Load: (*Registry).load})
+	state.Register("pkg/sentry/kernel/shm.Shm", (*Shm)(nil), state.Fns{Save: (*Shm).save, Load: (*Shm).load})
 }

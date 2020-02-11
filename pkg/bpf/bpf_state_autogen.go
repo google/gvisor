@@ -18,5 +18,5 @@ func (x *Program) load(m state.Map) {
 }
 
 func init() {
-	state.Register("bpf.Program", (*Program)(nil), state.Fns{Save: (*Program).save, Load: (*Program).load})
+	state.Register("pkg/bpf.Program", (*Program)(nil), state.Fns{Save: (*Program).save, Load: (*Program).load})
 }

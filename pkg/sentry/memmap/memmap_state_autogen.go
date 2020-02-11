@@ -35,6 +35,6 @@ func (x *MappingOfRange) load(m state.Map) {
 }
 
 func init() {
-	state.Register("memmap.MappableRange", (*MappableRange)(nil), state.Fns{Save: (*MappableRange).save, Load: (*MappableRange).load})
-	state.Register("memmap.MappingOfRange", (*MappingOfRange)(nil), state.Fns{Save: (*MappingOfRange).save, Load: (*MappingOfRange).load})
+	state.Register("pkg/sentry/memmap.MappableRange", (*MappableRange)(nil), state.Fns{Save: (*MappableRange).save, Load: (*MappableRange).load})
+	state.Register("pkg/sentry/memmap.MappingOfRange", (*MappingOfRange)(nil), state.Fns{Save: (*MappingOfRange).save, Load: (*MappingOfRange).load})
 }

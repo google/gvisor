@@ -50,7 +50,7 @@ func (x *Timer) load(m state.Map) {
 }
 
 func init() {
-	state.Register("time.Time", (*Time)(nil), state.Fns{Save: (*Time).save, Load: (*Time).load})
-	state.Register("time.Setting", (*Setting)(nil), state.Fns{Save: (*Setting).save, Load: (*Setting).load})
-	state.Register("time.Timer", (*Timer)(nil), state.Fns{Save: (*Timer).save, Load: (*Timer).load})
+	state.Register("pkg/sentry/kernel/time.Time", (*Time)(nil), state.Fns{Save: (*Time).save, Load: (*Time).load})
+	state.Register("pkg/sentry/kernel/time.Setting", (*Setting)(nil), state.Fns{Save: (*Setting).save, Load: (*Setting).load})
+	state.Register("pkg/sentry/kernel/time.Timer", (*Timer)(nil), state.Fns{Save: (*Timer).save, Load: (*Timer).load})
 }

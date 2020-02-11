@@ -28,5 +28,5 @@ func (x *FileAsync) load(m state.Map) {
 }
 
 func init() {
-	state.Register("fasync.FileAsync", (*FileAsync)(nil), state.Fns{Save: (*FileAsync).save, Load: (*FileAsync).load})
+	state.Register("pkg/sentry/kernel/fasync.FileAsync", (*FileAsync)(nil), state.Fns{Save: (*FileAsync).save, Load: (*FileAsync).load})
 }

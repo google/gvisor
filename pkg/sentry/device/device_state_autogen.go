@@ -46,7 +46,7 @@ func (x *Device) load(m state.Map) {
 }
 
 func init() {
-	state.Register("device.Registry", (*Registry)(nil), state.Fns{Save: (*Registry).save, Load: (*Registry).load})
-	state.Register("device.ID", (*ID)(nil), state.Fns{Save: (*ID).save, Load: (*ID).load})
-	state.Register("device.Device", (*Device)(nil), state.Fns{Save: (*Device).save, Load: (*Device).load})
+	state.Register("pkg/sentry/device.Registry", (*Registry)(nil), state.Fns{Save: (*Registry).save, Load: (*Registry).load})
+	state.Register("pkg/sentry/device.ID", (*ID)(nil), state.Fns{Save: (*ID).save, Load: (*ID).load})
+	state.Register("pkg/sentry/device.Device", (*Device)(nil), state.Fns{Save: (*Device).save, Load: (*Device).load})
 }

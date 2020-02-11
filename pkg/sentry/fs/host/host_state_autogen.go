@@ -131,12 +131,12 @@ func (x *TTYFileOperations) load(m state.Map) {
 }
 
 func init() {
-	state.Register("host.descriptor", (*descriptor)(nil), state.Fns{Save: (*descriptor).save, Load: (*descriptor).load})
-	state.Register("host.fileOperations", (*fileOperations)(nil), state.Fns{Save: (*fileOperations).save, Load: (*fileOperations).load})
-	state.Register("host.Filesystem", (*Filesystem)(nil), state.Fns{Save: (*Filesystem).save, Load: (*Filesystem).load})
-	state.Register("host.superOperations", (*superOperations)(nil), state.Fns{Save: (*superOperations).save, Load: (*superOperations).load})
-	state.Register("host.inodeOperations", (*inodeOperations)(nil), state.Fns{Save: (*inodeOperations).save, Load: (*inodeOperations).load})
-	state.Register("host.inodeFileState", (*inodeFileState)(nil), state.Fns{Save: (*inodeFileState).save, Load: (*inodeFileState).load})
-	state.Register("host.ConnectedEndpoint", (*ConnectedEndpoint)(nil), state.Fns{Save: (*ConnectedEndpoint).save, Load: (*ConnectedEndpoint).load})
-	state.Register("host.TTYFileOperations", (*TTYFileOperations)(nil), state.Fns{Save: (*TTYFileOperations).save, Load: (*TTYFileOperations).load})
+	state.Register("pkg/sentry/fs/host.descriptor", (*descriptor)(nil), state.Fns{Save: (*descriptor).save, Load: (*descriptor).load})
+	state.Register("pkg/sentry/fs/host.fileOperations", (*fileOperations)(nil), state.Fns{Save: (*fileOperations).save, Load: (*fileOperations).load})
+	state.Register("pkg/sentry/fs/host.Filesystem", (*Filesystem)(nil), state.Fns{Save: (*Filesystem).save, Load: (*Filesystem).load})
+	state.Register("pkg/sentry/fs/host.superOperations", (*superOperations)(nil), state.Fns{Save: (*superOperations).save, Load: (*superOperations).load})
+	state.Register("pkg/sentry/fs/host.inodeOperations", (*inodeOperations)(nil), state.Fns{Save: (*inodeOperations).save, Load: (*inodeOperations).load})
+	state.Register("pkg/sentry/fs/host.inodeFileState", (*inodeFileState)(nil), state.Fns{Save: (*inodeFileState).save, Load: (*inodeFileState).load})
+	state.Register("pkg/sentry/fs/host.ConnectedEndpoint", (*ConnectedEndpoint)(nil), state.Fns{Save: (*ConnectedEndpoint).save, Load: (*ConnectedEndpoint).load})
+	state.Register("pkg/sentry/fs/host.TTYFileOperations", (*TTYFileOperations)(nil), state.Fns{Save: (*TTYFileOperations).save, Load: (*TTYFileOperations).load})
 }

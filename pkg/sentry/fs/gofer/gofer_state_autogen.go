@@ -134,12 +134,12 @@ func (x *session) load(m state.Map) {
 }
 
 func init() {
-	state.Register("gofer.fifo", (*fifo)(nil), state.Fns{Save: (*fifo).save, Load: (*fifo).load})
-	state.Register("gofer.fileOperations", (*fileOperations)(nil), state.Fns{Save: (*fileOperations).save, Load: (*fileOperations).load})
-	state.Register("gofer.filesystem", (*filesystem)(nil), state.Fns{Save: (*filesystem).save, Load: (*filesystem).load})
-	state.Register("gofer.inodeOperations", (*inodeOperations)(nil), state.Fns{Save: (*inodeOperations).save, Load: (*inodeOperations).load})
-	state.Register("gofer.inodeFileState", (*inodeFileState)(nil), state.Fns{Save: (*inodeFileState).save, Load: (*inodeFileState).load})
-	state.Register("gofer.overrideInfo", (*overrideInfo)(nil), state.Fns{Save: (*overrideInfo).save, Load: (*overrideInfo).load})
-	state.Register("gofer.overrideMaps", (*overrideMaps)(nil), state.Fns{Save: (*overrideMaps).save, Load: (*overrideMaps).load})
-	state.Register("gofer.session", (*session)(nil), state.Fns{Save: (*session).save, Load: (*session).load})
+	state.Register("pkg/sentry/fs/gofer.fifo", (*fifo)(nil), state.Fns{Save: (*fifo).save, Load: (*fifo).load})
+	state.Register("pkg/sentry/fs/gofer.fileOperations", (*fileOperations)(nil), state.Fns{Save: (*fileOperations).save, Load: (*fileOperations).load})
+	state.Register("pkg/sentry/fs/gofer.filesystem", (*filesystem)(nil), state.Fns{Save: (*filesystem).save, Load: (*filesystem).load})
+	state.Register("pkg/sentry/fs/gofer.inodeOperations", (*inodeOperations)(nil), state.Fns{Save: (*inodeOperations).save, Load: (*inodeOperations).load})
+	state.Register("pkg/sentry/fs/gofer.inodeFileState", (*inodeFileState)(nil), state.Fns{Save: (*inodeFileState).save, Load: (*inodeFileState).load})
+	state.Register("pkg/sentry/fs/gofer.overrideInfo", (*overrideInfo)(nil), state.Fns{Save: (*overrideInfo).save, Load: (*overrideInfo).load})
+	state.Register("pkg/sentry/fs/gofer.overrideMaps", (*overrideMaps)(nil), state.Fns{Save: (*overrideMaps).save, Load: (*overrideMaps).load})
+	state.Register("pkg/sentry/fs/gofer.session", (*session)(nil), state.Fns{Save: (*session).save, Load: (*session).load})
 }

@@ -98,11 +98,11 @@ func (x *Fifo) load(m state.Map) {
 }
 
 func init() {
-	state.Register("tmpfs.regularFileOperations", (*regularFileOperations)(nil), state.Fns{Save: (*regularFileOperations).save, Load: (*regularFileOperations).load})
-	state.Register("tmpfs.Filesystem", (*Filesystem)(nil), state.Fns{Save: (*Filesystem).save, Load: (*Filesystem).load})
-	state.Register("tmpfs.fileInodeOperations", (*fileInodeOperations)(nil), state.Fns{Save: (*fileInodeOperations).save, Load: (*fileInodeOperations).load})
-	state.Register("tmpfs.Dir", (*Dir)(nil), state.Fns{Save: (*Dir).save, Load: (*Dir).load})
-	state.Register("tmpfs.Symlink", (*Symlink)(nil), state.Fns{Save: (*Symlink).save, Load: (*Symlink).load})
-	state.Register("tmpfs.Socket", (*Socket)(nil), state.Fns{Save: (*Socket).save, Load: (*Socket).load})
-	state.Register("tmpfs.Fifo", (*Fifo)(nil), state.Fns{Save: (*Fifo).save, Load: (*Fifo).load})
+	state.Register("pkg/sentry/fs/tmpfs.regularFileOperations", (*regularFileOperations)(nil), state.Fns{Save: (*regularFileOperations).save, Load: (*regularFileOperations).load})
+	state.Register("pkg/sentry/fs/tmpfs.Filesystem", (*Filesystem)(nil), state.Fns{Save: (*Filesystem).save, Load: (*Filesystem).load})
+	state.Register("pkg/sentry/fs/tmpfs.fileInodeOperations", (*fileInodeOperations)(nil), state.Fns{Save: (*fileInodeOperations).save, Load: (*fileInodeOperations).load})
+	state.Register("pkg/sentry/fs/tmpfs.Dir", (*Dir)(nil), state.Fns{Save: (*Dir).save, Load: (*Dir).load})
+	state.Register("pkg/sentry/fs/tmpfs.Symlink", (*Symlink)(nil), state.Fns{Save: (*Symlink).save, Load: (*Symlink).load})
+	state.Register("pkg/sentry/fs/tmpfs.Socket", (*Socket)(nil), state.Fns{Save: (*Socket).save, Load: (*Socket).load})
+	state.Register("pkg/sentry/fs/tmpfs.Fifo", (*Fifo)(nil), state.Fns{Save: (*Fifo).save, Load: (*Fifo).load})
 }

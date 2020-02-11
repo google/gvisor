@@ -20,5 +20,5 @@ func (x *SendReceiveTimeout) load(m state.Map) {
 }
 
 func init() {
-	state.Register("socket.SendReceiveTimeout", (*SendReceiveTimeout)(nil), state.Fns{Save: (*SendReceiveTimeout).save, Load: (*SendReceiveTimeout).load})
+	state.Register("pkg/sentry/socket.SendReceiveTimeout", (*SendReceiveTimeout)(nil), state.Fns{Save: (*SendReceiveTimeout).save, Load: (*SendReceiveTimeout).load})
 }

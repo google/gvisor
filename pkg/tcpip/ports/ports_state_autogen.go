@@ -20,5 +20,5 @@ func (x *Flags) load(m state.Map) {
 }
 
 func init() {
-	state.Register("ports.Flags", (*Flags)(nil), state.Fns{Save: (*Flags).save, Load: (*Flags).load})
+	state.Register("pkg/tcpip/ports.Flags", (*Flags)(nil), state.Fns{Save: (*Flags).save, Load: (*Flags).load})
 }

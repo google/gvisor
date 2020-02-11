@@ -51,6 +51,6 @@ func (x *Stack) load(m state.Map) {
 }
 
 func init() {
-	state.Register("netstack.SocketOperations", (*SocketOperations)(nil), state.Fns{Save: (*SocketOperations).save, Load: (*SocketOperations).load})
-	state.Register("netstack.Stack", (*Stack)(nil), state.Fns{Save: (*Stack).save, Load: (*Stack).load})
+	state.Register("pkg/sentry/socket/netstack.SocketOperations", (*SocketOperations)(nil), state.Fns{Save: (*SocketOperations).save, Load: (*SocketOperations).load})
+	state.Register("pkg/sentry/socket/netstack.Stack", (*Stack)(nil), state.Fns{Save: (*Stack).save, Load: (*Stack).load})
 }

@@ -52,6 +52,6 @@ func (x *elfProgHeader) load(m state.Map) {
 }
 
 func init() {
-	state.Register("loader.VDSO", (*VDSO)(nil), state.Fns{Save: (*VDSO).save, Load: (*VDSO).load})
-	state.Register("loader.elfProgHeader", (*elfProgHeader)(nil), state.Fns{Save: (*elfProgHeader).save, Load: (*elfProgHeader).load})
+	state.Register("pkg/sentry/loader.VDSO", (*VDSO)(nil), state.Fns{Save: (*VDSO).save, Load: (*VDSO).load})
+	state.Register("pkg/sentry/loader.elfProgHeader", (*elfProgHeader)(nil), state.Fns{Save: (*elfProgHeader).save, Load: (*elfProgHeader).load})
 }

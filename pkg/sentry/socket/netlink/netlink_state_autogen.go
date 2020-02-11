@@ -47,6 +47,6 @@ func (x *kernelSCM) load(m state.Map) {
 }
 
 func init() {
-	state.Register("netlink.Socket", (*Socket)(nil), state.Fns{Save: (*Socket).save, Load: (*Socket).load})
-	state.Register("netlink.kernelSCM", (*kernelSCM)(nil), state.Fns{Save: (*kernelSCM).save, Load: (*kernelSCM).load})
+	state.Register("pkg/sentry/socket/netlink.Socket", (*Socket)(nil), state.Fns{Save: (*Socket).save, Load: (*Socket).load})
+	state.Register("pkg/sentry/socket/netlink.kernelSCM", (*kernelSCM)(nil), state.Fns{Save: (*kernelSCM).save, Load: (*kernelSCM).load})
 }

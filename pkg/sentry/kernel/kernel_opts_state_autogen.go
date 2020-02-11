@@ -16,5 +16,5 @@ func (x *SpecialOpts) load(m state.Map) {
 }
 
 func init() {
-	state.Register("kernel.SpecialOpts", (*SpecialOpts)(nil), state.Fns{Save: (*SpecialOpts).save, Load: (*SpecialOpts).load})
+	state.Register("pkg/sentry/kernel.SpecialOpts", (*SpecialOpts)(nil), state.Fns{Save: (*SpecialOpts).save, Load: (*SpecialOpts).load})
 }

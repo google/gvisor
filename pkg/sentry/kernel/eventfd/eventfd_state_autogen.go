@@ -25,5 +25,5 @@ func (x *EventOperations) load(m state.Map) {
 }
 
 func init() {
-	state.Register("eventfd.EventOperations", (*EventOperations)(nil), state.Fns{Save: (*EventOperations).save, Load: (*EventOperations).load})
+	state.Register("pkg/sentry/kernel/eventfd.EventOperations", (*EventOperations)(nil), state.Fns{Save: (*EventOperations).save, Load: (*EventOperations).load})
 }
