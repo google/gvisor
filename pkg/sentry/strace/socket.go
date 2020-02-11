@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/socket/control"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
@@ -220,13 +219,13 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 
 		if skipData {
 			strs = append(strs, fmt.Sprintf("{level=%s, type=%s, length=%d}", level, typ, h.Length))
-			i += control.AlignUp(length, width)
+			i += binary.AlignUp(length, width)
 			continue
 		}
 
 		switch h.Type {
 		case linux.SCM_RIGHTS:
-			rightsSize := control.AlignDown(length, linux.SizeOfControlMessageRight)
+			rightsSize := binary.AlignDown(length, linux.SizeOfControlMessageRight)
 
 			numRights := rightsSize / linux.SizeOfControlMessageRight
 			fds := make(linux.ControlMessageRights, numRights)
@@ -295,7 +294,7 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 		default:
 			panic("unreachable")
 		}
-		i += control.AlignUp(length, width)
+		i += binary.AlignUp(length, width)
 	}
 
 	return fmt.Sprintf("%#x %s", addr, strings.Join(strs, ", "))

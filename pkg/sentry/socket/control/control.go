@@ -189,7 +189,7 @@ func putUint32(buf []byte, n uint32) []byte {
 // putCmsg writes a control message header and as much data as will fit into
 // the unused capacity of a buffer.
 func putCmsg(buf []byte, flags int, msgType uint32, align uint, data []int32) ([]byte, int) {
-	space := AlignDown(cap(buf)-len(buf), 4)
+	space := binary.AlignDown(cap(buf)-len(buf), 4)
 
 	// We can't write to space that doesn't exist, so if we are going to align
 	// the available space, we must align down.
@@ -282,19 +282,9 @@ func PackCredentials(t *kernel.Task, creds SCMCredentials, buf []byte, flags int
 	return putCmsg(buf, flags, linux.SCM_CREDENTIALS, align, c)
 }
 
-// AlignUp rounds a length up to an alignment. align must be a power of 2.
-func AlignUp(length int, align uint) int {
-	return (length + int(align) - 1) & ^(int(align) - 1)
-}
-
-// AlignDown rounds a down to an alignment. align must be a power of 2.
-func AlignDown(length int, align uint) int {
-	return length & ^(int(align) - 1)
-}
-
 // alignSlice extends a slice's length (up to the capacity) to align it.
 func alignSlice(buf []byte, align uint) []byte {
-	aligned := AlignUp(len(buf), align)
+	aligned := binary.AlignUp(len(buf), align)
 	if aligned > cap(buf) {
 		// Linux allows unaligned data if there isn't room for alignment.
 		// Since there isn't room for alignment, there isn't room for any
@@ -377,7 +367,7 @@ func PackControlMessages(t *kernel.Task, cmsgs socket.ControlMessages, buf []byt
 
 // cmsgSpace is equivalent to CMSG_SPACE in Linux.
 func cmsgSpace(t *kernel.Task, dataLen int) int {
-	return linux.SizeOfControlMessageHeader + AlignUp(dataLen, t.Arch().Width())
+	return linux.SizeOfControlMessageHeader + binary.AlignUp(dataLen, t.Arch().Width())
 }
 
 // CmsgsSpace returns the number of bytes needed to fit the control messages
@@ -437,7 +427,7 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte) (socket.Con
 		case linux.SOL_SOCKET:
 			switch h.Type {
 			case linux.SCM_RIGHTS:
-				rightsSize := AlignDown(length, linux.SizeOfControlMessageRight)
+				rightsSize := binary.AlignDown(length, linux.SizeOfControlMessageRight)
 				numRights := rightsSize / linux.SizeOfControlMessageRight
 
 				if len(fds)+numRights > linux.SCM_MAX_FD {
@@ -448,7 +438,7 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte) (socket.Con
 					fds = append(fds, int32(usermem.ByteOrder.Uint32(buf[j:j+linux.SizeOfControlMessageRight])))
 				}
 
-				i += AlignUp(length, width)
+				i += binary.AlignUp(length, width)
 
 			case linux.SCM_CREDENTIALS:
 				if length < linux.SizeOfControlMessageCredentials {
@@ -462,7 +452,7 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte) (socket.Con
 					return socket.ControlMessages{}, err
 				}
 				cmsgs.Unix.Credentials = scmCreds
-				i += AlignUp(length, width)
+				i += binary.AlignUp(length, width)
 
 			default:
 				// Unknown message type.
@@ -476,7 +466,7 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte) (socket.Con
 				}
 				cmsgs.IP.HasTOS = true
 				binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageTOS], usermem.ByteOrder, &cmsgs.IP.TOS)
-				i += AlignUp(length, width)
+				i += binary.AlignUp(length, width)
 
 			default:
 				return socket.ControlMessages{}, syserror.EINVAL
@@ -489,7 +479,7 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte) (socket.Con
 				}
 				cmsgs.IP.HasTClass = true
 				binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageTClass], usermem.ByteOrder, &cmsgs.IP.TClass)
-				i += AlignUp(length, width)
+				i += binary.AlignUp(length, width)
 
 			default:
 				return socket.ControlMessages{}, syserror.EINVAL
