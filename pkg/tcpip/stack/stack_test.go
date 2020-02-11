@@ -1792,6 +1792,91 @@ func TestAddProtocolAddressWithOptions(t *testing.T) {
 	verifyAddresses(t, expectedAddresses, gotAddresses)
 }
 
+func TestCreateNICWithOptions(t *testing.T) {
+	type callArgsAndExpect struct {
+		nicID tcpip.NICID
+		opts  stack.NICOptions
+		err   *tcpip.Error
+	}
+
+	tests := []struct {
+		desc  string
+		calls []callArgsAndExpect
+	}{
+		{
+			desc: "DuplicateNICID",
+			calls: []callArgsAndExpect{
+				{
+					nicID: tcpip.NICID(1),
+					opts:  stack.NICOptions{Name: "eth1"},
+					err:   nil,
+				},
+				{
+					nicID: tcpip.NICID(1),
+					opts:  stack.NICOptions{Name: "eth2"},
+					err:   tcpip.ErrDuplicateNICID,
+				},
+			},
+		},
+		{
+			desc: "DuplicateName",
+			calls: []callArgsAndExpect{
+				{
+					nicID: tcpip.NICID(1),
+					opts:  stack.NICOptions{Name: "lo"},
+					err:   nil,
+				},
+				{
+					nicID: tcpip.NICID(2),
+					opts:  stack.NICOptions{Name: "lo"},
+					err:   tcpip.ErrDuplicateNICID,
+				},
+			},
+		},
+		{
+			desc: "Unnamed",
+			calls: []callArgsAndExpect{
+				{
+					nicID: tcpip.NICID(1),
+					opts:  stack.NICOptions{},
+					err:   nil,
+				},
+				{
+					nicID: tcpip.NICID(2),
+					opts:  stack.NICOptions{},
+					err:   nil,
+				},
+			},
+		},
+		{
+			desc: "UnnamedDuplicateNICID",
+			calls: []callArgsAndExpect{
+				{
+					nicID: tcpip.NICID(1),
+					opts:  stack.NICOptions{},
+					err:   nil,
+				},
+				{
+					nicID: tcpip.NICID(1),
+					opts:  stack.NICOptions{},
+					err:   tcpip.ErrDuplicateNICID,
+				},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.desc, func(t *testing.T) {
+			s := stack.New(stack.Options{})
+			ep := channel.New(0, 0, tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00"))
+			for _, call := range test.calls {
+				if got, want := s.CreateNICWithOptions(call.nicID, ep, call.opts), call.err; got != want {
+					t.Fatalf("CreateNICWithOptions(%v, _, %+v) = %v, want %v", call.nicID, call.opts, got, want)
+				}
+			}
+		})
+	}
+}
+
 func TestNICStats(t *testing.T) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},

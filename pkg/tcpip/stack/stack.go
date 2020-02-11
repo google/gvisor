@@ -890,6 +890,15 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 		return tcpip.ErrDuplicateNICID
 	}
 
+	// Make sure name is unique, unless unnamed.
+	if opts.Name != "" {
+		for _, n := range s.nics {
+			if n.Name() == opts.Name {
+				return tcpip.ErrDuplicateNICID
+			}
+		}
+	}
+
 	n := newNIC(s, id, opts.Name, ep, opts.Context)
 
 	s.nics[id] = n
