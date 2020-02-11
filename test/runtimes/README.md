@@ -12,24 +12,39 @@ The following runtimes are currently supported:
 -   PHP 7.3
 -   Python 3.7
 
-#### Prerequisites:
+### Building and pushing the images:
 
-1) [Install and configure Docker](https://docs.docker.com/install/)
-
-2) Build each Docker container from the runtimes/images directory:
+The canonical source of images is the
+[gvisor-presubmit container registry](https://gcr.io/gvisor-presubmit/). You can
+build new images with the following command:
 
 ```bash
 $ cd images
 $ docker build -f Dockerfile_$LANG [-t $NAME] .
 ```
 
-### Testing:
-
-If the prerequisites have been fulfilled, you can run the tests with the
-following command:
+To push them to our container registry, set the tag in the command above to
+`gcr.io/gvisor-presubmit/$LANG`, then push them. (Note that you will need
+appropriate permissions to the `gvisor-presubmit` GCP project.)
 
 ```bash
-$ docker run --rm -it $NAME [FLAG]
+gcloud docker -- push gcr.io/gvisor-presubmit/$LANG
+```
+
+#### Running in Docker locally:
+
+1) [Install and configure Docker](https://docs.docker.com/install/)
+
+2) Pull the image you want to run:
+
+```bash
+$ docker pull gcr.io/gvisor-presubmit/$LANG
+```
+
+3) Run docker with the image.
+
+```bash
+$ docker run [--runtime=runsc] --rm -it $NAME [FLAG]
 ```
 
 Running the command with no flags will cause all the available tests to execute.
