@@ -1215,6 +1215,11 @@ func (n *NIC) ID() tcpip.NICID {
 	return n.id
 }
 
+// Name returns the name of n.
+func (n *NIC) Name() string {
+	return n.name
+}
+
 // Stack returns the instance of the Stack that owns this NIC.
 func (n *NIC) Stack() *Stack {
 	return n.stack
