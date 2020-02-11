@@ -110,6 +110,8 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
     """
     all_srcs = srcs
     all_deps = deps
+    dirname, _, _ = native.package_name().rpartition("/")
+    full_pkg = dirname + "/" + name
     if stateify:
         # Only do stateification for non-state packages without manual autogen.
         # First, we need to segregate the input files via the special suffixes,
@@ -120,7 +122,7 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
                 name = name + suffix + "_state_autogen_with_imports",
                 srcs = srcs,
                 imports = imports,
-                package = name,
+                package = full_pkg,
                 out = name + suffix + "_state_autogen_with_imports.go",
             )
             go_imports(

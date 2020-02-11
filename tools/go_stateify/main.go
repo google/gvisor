@@ -23,6 +23,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -31,7 +32,7 @@ import (
 )
 
 var (
-	pkg      = flag.String("pkg", "", "output package")
+	fullPkg  = flag.String("fullpkg", "", "fully qualified output package")
 	imports  = flag.String("imports", "", "extra imports for the output file")
 	output   = flag.String("output", "", "output file")
 	statePkg = flag.String("statepkg", "", "state import package; defaults to empty")
@@ -170,7 +171,7 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
-	if *pkg == "" {
+	if *fullPkg == "" {
 		fmt.Fprintf(os.Stderr, "Error: package required.")
 		os.Exit(1)
 	}
@@ -202,7 +203,7 @@ func main() {
 
 	// Declare our emission closures.
 	emitRegister := func(name string) {
-		initCalls = append(initCalls, fmt.Sprintf("%sRegister(\"%s.%s\", (*%s)(nil), state.Fns{Save: (*%s).save, Load: (*%s).load})", statePrefix, *pkg, name, name, name, name))
+		initCalls = append(initCalls, fmt.Sprintf("%sRegister(\"%s.%s\", (*%s)(nil), state.Fns{Save: (*%s).save, Load: (*%s).load})", statePrefix, *fullPkg, name, name, name, name))
 	}
 	emitZeroCheck := func(name string) {
 		fmt.Fprintf(outputFile, "	if !%sIsZeroValue(x.%s) { m.Failf(\"%s is %%v, expected zero\", x.%s) }\n", statePrefix, name, name, name)
@@ -233,7 +234,8 @@ func main() {
 	}
 
 	// Emit the package name.
-	fmt.Fprintf(outputFile, "package %s\n\n", *pkg)
+	_, pkg := filepath.Split(*fullPkg)
+	fmt.Fprintf(outputFile, "package %s\n\n", pkg)
 
 	// Emit the imports lazily.
 	var once sync.Once
