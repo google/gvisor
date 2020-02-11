@@ -311,6 +311,13 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 	m.SetAuxv(auxv)
 	m.SetExecutable(file)
 
+	symbolValue, err := getSymbolValueFromVDSO("rt_sigreturn")
+	// Found rt_sigretrun.
+	if err == nil {
+		addr := uint64(vdsoAddr) + symbolValue - vdsoPrelink
+		m.SetVDSOSigReturn(addr)
+	}
+
 	ac.SetIP(uintptr(loaded.entry))
 	ac.SetStack(uintptr(stack.Bottom))
 
