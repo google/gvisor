@@ -31,6 +31,6 @@ func (x *LimitSet) load(m state.Map) {
 }
 
 func init() {
-	state.Register("limits.Limit", (*Limit)(nil), state.Fns{Save: (*Limit).save, Load: (*Limit).load})
-	state.Register("limits.LimitSet", (*LimitSet)(nil), state.Fns{Save: (*LimitSet).save, Load: (*LimitSet).load})
+	state.Register("pkg/sentry/limits.Limit", (*Limit)(nil), state.Fns{Save: (*Limit).save, Load: (*Limit).load})
+	state.Register("pkg/sentry/limits.LimitSet", (*LimitSet)(nil), state.Fns{Save: (*LimitSet).save, Load: (*LimitSet).load})
 }

@@ -83,8 +83,8 @@ func (x *rawPacketEntry) load(m state.Map) {
 }
 
 func init() {
-	state.Register("raw.rawPacket", (*rawPacket)(nil), state.Fns{Save: (*rawPacket).save, Load: (*rawPacket).load})
-	state.Register("raw.endpoint", (*endpoint)(nil), state.Fns{Save: (*endpoint).save, Load: (*endpoint).load})
-	state.Register("raw.rawPacketList", (*rawPacketList)(nil), state.Fns{Save: (*rawPacketList).save, Load: (*rawPacketList).load})
-	state.Register("raw.rawPacketEntry", (*rawPacketEntry)(nil), state.Fns{Save: (*rawPacketEntry).save, Load: (*rawPacketEntry).load})
+	state.Register("pkg/tcpip/transport/raw.rawPacket", (*rawPacket)(nil), state.Fns{Save: (*rawPacket).save, Load: (*rawPacket).load})
+	state.Register("pkg/tcpip/transport/raw.endpoint", (*endpoint)(nil), state.Fns{Save: (*endpoint).save, Load: (*endpoint).load})
+	state.Register("pkg/tcpip/transport/raw.rawPacketList", (*rawPacketList)(nil), state.Fns{Save: (*rawPacketList).save, Load: (*rawPacketList).load})
+	state.Register("pkg/tcpip/transport/raw.rawPacketEntry", (*rawPacketEntry)(nil), state.Fns{Save: (*rawPacketEntry).save, Load: (*rawPacketEntry).load})
 }

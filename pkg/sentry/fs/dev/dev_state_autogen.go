@@ -116,15 +116,15 @@ func (x *ttyFileOperations) load(m state.Map) {
 }
 
 func init() {
-	state.Register("dev.filesystem", (*filesystem)(nil), state.Fns{Save: (*filesystem).save, Load: (*filesystem).load})
-	state.Register("dev.fullDevice", (*fullDevice)(nil), state.Fns{Save: (*fullDevice).save, Load: (*fullDevice).load})
-	state.Register("dev.fullFileOperations", (*fullFileOperations)(nil), state.Fns{Save: (*fullFileOperations).save, Load: (*fullFileOperations).load})
-	state.Register("dev.nullDevice", (*nullDevice)(nil), state.Fns{Save: (*nullDevice).save, Load: (*nullDevice).load})
-	state.Register("dev.nullFileOperations", (*nullFileOperations)(nil), state.Fns{Save: (*nullFileOperations).save, Load: (*nullFileOperations).load})
-	state.Register("dev.zeroDevice", (*zeroDevice)(nil), state.Fns{Save: (*zeroDevice).save, Load: (*zeroDevice).load})
-	state.Register("dev.zeroFileOperations", (*zeroFileOperations)(nil), state.Fns{Save: (*zeroFileOperations).save, Load: (*zeroFileOperations).load})
-	state.Register("dev.randomDevice", (*randomDevice)(nil), state.Fns{Save: (*randomDevice).save, Load: (*randomDevice).load})
-	state.Register("dev.randomFileOperations", (*randomFileOperations)(nil), state.Fns{Save: (*randomFileOperations).save, Load: (*randomFileOperations).load})
-	state.Register("dev.ttyInodeOperations", (*ttyInodeOperations)(nil), state.Fns{Save: (*ttyInodeOperations).save, Load: (*ttyInodeOperations).load})
-	state.Register("dev.ttyFileOperations", (*ttyFileOperations)(nil), state.Fns{Save: (*ttyFileOperations).save, Load: (*ttyFileOperations).load})
+	state.Register("pkg/sentry/fs/dev.filesystem", (*filesystem)(nil), state.Fns{Save: (*filesystem).save, Load: (*filesystem).load})
+	state.Register("pkg/sentry/fs/dev.fullDevice", (*fullDevice)(nil), state.Fns{Save: (*fullDevice).save, Load: (*fullDevice).load})
+	state.Register("pkg/sentry/fs/dev.fullFileOperations", (*fullFileOperations)(nil), state.Fns{Save: (*fullFileOperations).save, Load: (*fullFileOperations).load})
+	state.Register("pkg/sentry/fs/dev.nullDevice", (*nullDevice)(nil), state.Fns{Save: (*nullDevice).save, Load: (*nullDevice).load})
+	state.Register("pkg/sentry/fs/dev.nullFileOperations", (*nullFileOperations)(nil), state.Fns{Save: (*nullFileOperations).save, Load: (*nullFileOperations).load})
+	state.Register("pkg/sentry/fs/dev.zeroDevice", (*zeroDevice)(nil), state.Fns{Save: (*zeroDevice).save, Load: (*zeroDevice).load})
+	state.Register("pkg/sentry/fs/dev.zeroFileOperations", (*zeroFileOperations)(nil), state.Fns{Save: (*zeroFileOperations).save, Load: (*zeroFileOperations).load})
+	state.Register("pkg/sentry/fs/dev.randomDevice", (*randomDevice)(nil), state.Fns{Save: (*randomDevice).save, Load: (*randomDevice).load})
+	state.Register("pkg/sentry/fs/dev.randomFileOperations", (*randomFileOperations)(nil), state.Fns{Save: (*randomFileOperations).save, Load: (*randomFileOperations).load})
+	state.Register("pkg/sentry/fs/dev.ttyInodeOperations", (*ttyInodeOperations)(nil), state.Fns{Save: (*ttyInodeOperations).save, Load: (*ttyInodeOperations).load})
+	state.Register("pkg/sentry/fs/dev.ttyFileOperations", (*ttyFileOperations)(nil), state.Fns{Save: (*ttyFileOperations).save, Load: (*ttyFileOperations).load})
 }

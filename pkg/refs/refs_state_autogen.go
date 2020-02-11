@@ -73,9 +73,9 @@ func (x *weakRefEntry) load(m state.Map) {
 }
 
 func init() {
-	state.Register("refs.WeakRef", (*WeakRef)(nil), state.Fns{Save: (*WeakRef).save, Load: (*WeakRef).load})
-	state.Register("refs.AtomicRefCount", (*AtomicRefCount)(nil), state.Fns{Save: (*AtomicRefCount).save, Load: (*AtomicRefCount).load})
-	state.Register("refs.savedReference", (*savedReference)(nil), state.Fns{Save: (*savedReference).save, Load: (*savedReference).load})
-	state.Register("refs.weakRefList", (*weakRefList)(nil), state.Fns{Save: (*weakRefList).save, Load: (*weakRefList).load})
-	state.Register("refs.weakRefEntry", (*weakRefEntry)(nil), state.Fns{Save: (*weakRefEntry).save, Load: (*weakRefEntry).load})
+	state.Register("pkg/refs.WeakRef", (*WeakRef)(nil), state.Fns{Save: (*WeakRef).save, Load: (*WeakRef).load})
+	state.Register("pkg/refs.AtomicRefCount", (*AtomicRefCount)(nil), state.Fns{Save: (*AtomicRefCount).save, Load: (*AtomicRefCount).load})
+	state.Register("pkg/refs.savedReference", (*savedReference)(nil), state.Fns{Save: (*savedReference).save, Load: (*savedReference).load})
+	state.Register("pkg/refs.weakRefList", (*weakRefList)(nil), state.Fns{Save: (*weakRefList).save, Load: (*weakRefList).load})
+	state.Register("pkg/refs.weakRefEntry", (*weakRefEntry)(nil), state.Fns{Save: (*weakRefEntry).save, Load: (*weakRefEntry).load})
 }

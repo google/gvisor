@@ -71,9 +71,9 @@ func (x *waiterEntry) load(m state.Map) {
 }
 
 func init() {
-	state.Register("futex.AtomicPtrBucket", (*AtomicPtrBucket)(nil), state.Fns{Save: (*AtomicPtrBucket).save, Load: (*AtomicPtrBucket).load})
-	state.Register("futex.bucket", (*bucket)(nil), state.Fns{Save: (*bucket).save, Load: (*bucket).load})
-	state.Register("futex.Manager", (*Manager)(nil), state.Fns{Save: (*Manager).save, Load: (*Manager).load})
-	state.Register("futex.waiterList", (*waiterList)(nil), state.Fns{Save: (*waiterList).save, Load: (*waiterList).load})
-	state.Register("futex.waiterEntry", (*waiterEntry)(nil), state.Fns{Save: (*waiterEntry).save, Load: (*waiterEntry).load})
+	state.Register("pkg/sentry/kernel/futex.AtomicPtrBucket", (*AtomicPtrBucket)(nil), state.Fns{Save: (*AtomicPtrBucket).save, Load: (*AtomicPtrBucket).load})
+	state.Register("pkg/sentry/kernel/futex.bucket", (*bucket)(nil), state.Fns{Save: (*bucket).save, Load: (*bucket).load})
+	state.Register("pkg/sentry/kernel/futex.Manager", (*Manager)(nil), state.Fns{Save: (*Manager).save, Load: (*Manager).load})
+	state.Register("pkg/sentry/kernel/futex.waiterList", (*waiterList)(nil), state.Fns{Save: (*waiterList).save, Load: (*waiterList).load})
+	state.Register("pkg/sentry/kernel/futex.waiterEntry", (*waiterEntry)(nil), state.Fns{Save: (*waiterEntry).save, Load: (*waiterEntry).load})
 }

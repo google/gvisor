@@ -37,6 +37,6 @@ func (x *TCPOptions) load(m state.Map) {
 }
 
 func init() {
-	state.Register("header.SACKBlock", (*SACKBlock)(nil), state.Fns{Save: (*SACKBlock).save, Load: (*SACKBlock).load})
-	state.Register("header.TCPOptions", (*TCPOptions)(nil), state.Fns{Save: (*TCPOptions).save, Load: (*TCPOptions).load})
+	state.Register("pkg/tcpip/header.SACKBlock", (*SACKBlock)(nil), state.Fns{Save: (*SACKBlock).save, Load: (*SACKBlock).load})
+	state.Register("pkg/tcpip/header.TCPOptions", (*TCPOptions)(nil), state.Fns{Save: (*TCPOptions).save, Load: (*TCPOptions).load})
 }

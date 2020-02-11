@@ -20,5 +20,5 @@ func (x *VectorisedView) load(m state.Map) {
 }
 
 func init() {
-	state.Register("buffer.VectorisedView", (*VectorisedView)(nil), state.Fns{Save: (*VectorisedView).save, Load: (*VectorisedView).load})
+	state.Register("pkg/tcpip/buffer.VectorisedView", (*VectorisedView)(nil), state.Fns{Save: (*VectorisedView).save, Load: (*VectorisedView).load})
 }

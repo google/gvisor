@@ -33,6 +33,6 @@ func (x *Entry) load(m state.Map) {
 }
 
 func init() {
-	state.Register("ilist.List", (*List)(nil), state.Fns{Save: (*List).save, Load: (*List).load})
-	state.Register("ilist.Entry", (*Entry)(nil), state.Fns{Save: (*Entry).save, Load: (*Entry).load})
+	state.Register("pkg/ilist.List", (*List)(nil), state.Fns{Save: (*List).save, Load: (*List).load})
+	state.Register("pkg/ilist.Entry", (*Entry)(nil), state.Fns{Save: (*Entry).save, Load: (*Entry).load})
 }

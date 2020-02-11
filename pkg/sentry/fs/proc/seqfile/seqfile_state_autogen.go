@@ -52,7 +52,7 @@ func (x *seqFileOperations) load(m state.Map) {
 }
 
 func init() {
-	state.Register("seqfile.SeqData", (*SeqData)(nil), state.Fns{Save: (*SeqData).save, Load: (*SeqData).load})
-	state.Register("seqfile.SeqFile", (*SeqFile)(nil), state.Fns{Save: (*SeqFile).save, Load: (*SeqFile).load})
-	state.Register("seqfile.seqFileOperations", (*seqFileOperations)(nil), state.Fns{Save: (*seqFileOperations).save, Load: (*seqFileOperations).load})
+	state.Register("pkg/sentry/fs/proc/seqfile.SeqData", (*SeqData)(nil), state.Fns{Save: (*SeqData).save, Load: (*SeqData).load})
+	state.Register("pkg/sentry/fs/proc/seqfile.SeqFile", (*SeqFile)(nil), state.Fns{Save: (*SeqFile).save, Load: (*SeqFile).load})
+	state.Register("pkg/sentry/fs/proc/seqfile.seqFileOperations", (*seqFileOperations)(nil), state.Fns{Save: (*seqFileOperations).save, Load: (*seqFileOperations).load})
 }

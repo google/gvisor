@@ -25,5 +25,5 @@ func (x *State) load(m state.Map) {
 }
 
 func init() {
-	state.Register("arch.State", (*State)(nil), state.Fns{Save: (*State).save, Load: (*State).load})
+	state.Register("pkg/sentry/arch.State", (*State)(nil), state.Fns{Save: (*State).save, Load: (*State).load})
 }

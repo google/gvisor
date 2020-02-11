@@ -23,5 +23,5 @@ func (x *TimerOperations) load(m state.Map) {
 }
 
 func init() {
-	state.Register("timerfd.TimerOperations", (*TimerOperations)(nil), state.Fns{Save: (*TimerOperations).save, Load: (*TimerOperations).load})
+	state.Register("pkg/sentry/fs/timerfd.TimerOperations", (*TimerOperations)(nil), state.Fns{Save: (*TimerOperations).save, Load: (*TimerOperations).load})
 }

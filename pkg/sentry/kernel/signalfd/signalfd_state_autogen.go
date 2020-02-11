@@ -20,5 +20,5 @@ func (x *SignalOperations) load(m state.Map) {
 }
 
 func init() {
-	state.Register("signalfd.SignalOperations", (*SignalOperations)(nil), state.Fns{Save: (*SignalOperations).save, Load: (*SignalOperations).load})
+	state.Register("pkg/sentry/kernel/signalfd.SignalOperations", (*SignalOperations)(nil), state.Fns{Save: (*SignalOperations).save, Load: (*SignalOperations).load})
 }

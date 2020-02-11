@@ -31,6 +31,6 @@ func (x *scmCredentials) load(m state.Map) {
 }
 
 func init() {
-	state.Register("control.RightsFiles", (*RightsFiles)(nil), state.Fns{Save: (*RightsFiles).save, Load: (*RightsFiles).load})
-	state.Register("control.scmCredentials", (*scmCredentials)(nil), state.Fns{Save: (*scmCredentials).save, Load: (*scmCredentials).load})
+	state.Register("pkg/sentry/socket/control.RightsFiles", (*RightsFiles)(nil), state.Fns{Save: (*RightsFiles).save, Load: (*RightsFiles).load})
+	state.Register("pkg/sentry/socket/control.scmCredentials", (*scmCredentials)(nil), state.Fns{Save: (*scmCredentials).save, Load: (*scmCredentials).load})
 }

@@ -65,6 +65,6 @@ func (x *FeatureSet) load(m state.Map) {
 }
 
 func init() {
-	state.Register("cpuid.Cache", (*Cache)(nil), state.Fns{Save: (*Cache).save, Load: (*Cache).load})
-	state.Register("cpuid.FeatureSet", (*FeatureSet)(nil), state.Fns{Save: (*FeatureSet).save, Load: (*FeatureSet).load})
+	state.Register("pkg/cpuid.Cache", (*Cache)(nil), state.Fns{Save: (*Cache).save, Load: (*Cache).load})
+	state.Register("pkg/cpuid.FeatureSet", (*FeatureSet)(nil), state.Fns{Save: (*FeatureSet).save, Load: (*FeatureSet).load})
 }

@@ -157,10 +157,10 @@ func (x *SignalInfo) load(m state.Map) {
 }
 
 func init() {
-	state.Register("arch.MmapLayout", (*MmapLayout)(nil), state.Fns{Save: (*MmapLayout).save, Load: (*MmapLayout).load})
-	state.Register("arch.syscallPtraceRegs", (*syscallPtraceRegs)(nil), state.Fns{Save: (*syscallPtraceRegs).save, Load: (*syscallPtraceRegs).load})
-	state.Register("arch.AuxEntry", (*AuxEntry)(nil), state.Fns{Save: (*AuxEntry).save, Load: (*AuxEntry).load})
-	state.Register("arch.SignalAct", (*SignalAct)(nil), state.Fns{Save: (*SignalAct).save, Load: (*SignalAct).load})
-	state.Register("arch.SignalStack", (*SignalStack)(nil), state.Fns{Save: (*SignalStack).save, Load: (*SignalStack).load})
-	state.Register("arch.SignalInfo", (*SignalInfo)(nil), state.Fns{Save: (*SignalInfo).save, Load: (*SignalInfo).load})
+	state.Register("pkg/sentry/arch.MmapLayout", (*MmapLayout)(nil), state.Fns{Save: (*MmapLayout).save, Load: (*MmapLayout).load})
+	state.Register("pkg/sentry/arch.syscallPtraceRegs", (*syscallPtraceRegs)(nil), state.Fns{Save: (*syscallPtraceRegs).save, Load: (*syscallPtraceRegs).load})
+	state.Register("pkg/sentry/arch.AuxEntry", (*AuxEntry)(nil), state.Fns{Save: (*AuxEntry).save, Load: (*AuxEntry).load})
+	state.Register("pkg/sentry/arch.SignalAct", (*SignalAct)(nil), state.Fns{Save: (*SignalAct).save, Load: (*SignalAct).load})
+	state.Register("pkg/sentry/arch.SignalStack", (*SignalStack)(nil), state.Fns{Save: (*SignalStack).save, Load: (*SignalStack).load})
+	state.Register("pkg/sentry/arch.SignalInfo", (*SignalInfo)(nil), state.Fns{Save: (*SignalInfo).save, Load: (*SignalInfo).load})
 }

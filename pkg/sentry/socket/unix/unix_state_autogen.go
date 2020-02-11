@@ -24,5 +24,5 @@ func (x *SocketOperations) load(m state.Map) {
 }
 
 func init() {
-	state.Register("unix.SocketOperations", (*SocketOperations)(nil), state.Fns{Save: (*SocketOperations).save, Load: (*SocketOperations).load})
+	state.Register("pkg/sentry/socket/unix.SocketOperations", (*SocketOperations)(nil), state.Fns{Save: (*SocketOperations).save, Load: (*SocketOperations).load})
 }

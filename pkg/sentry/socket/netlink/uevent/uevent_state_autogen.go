@@ -16,5 +16,5 @@ func (x *Protocol) load(m state.Map) {
 }
 
 func init() {
-	state.Register("uevent.Protocol", (*Protocol)(nil), state.Fns{Save: (*Protocol).save, Load: (*Protocol).load})
+	state.Register("pkg/sentry/socket/netlink/uevent.Protocol", (*Protocol)(nil), state.Fns{Save: (*Protocol).save, Load: (*Protocol).load})
 }

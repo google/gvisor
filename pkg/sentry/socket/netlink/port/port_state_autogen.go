@@ -18,5 +18,5 @@ func (x *Manager) load(m state.Map) {
 }
 
 func init() {
-	state.Register("port.Manager", (*Manager)(nil), state.Fns{Save: (*Manager).save, Load: (*Manager).load})
+	state.Register("pkg/sentry/socket/netlink/port.Manager", (*Manager)(nil), state.Fns{Save: (*Manager).save, Load: (*Manager).load})
 }

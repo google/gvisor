@@ -108,10 +108,10 @@ func (x *waiterEntry) load(m state.Map) {
 }
 
 func init() {
-	state.Register("semaphore.Registry", (*Registry)(nil), state.Fns{Save: (*Registry).save, Load: (*Registry).load})
-	state.Register("semaphore.Set", (*Set)(nil), state.Fns{Save: (*Set).save, Load: (*Set).load})
-	state.Register("semaphore.sem", (*sem)(nil), state.Fns{Save: (*sem).save, Load: (*sem).load})
-	state.Register("semaphore.waiter", (*waiter)(nil), state.Fns{Save: (*waiter).save, Load: (*waiter).load})
-	state.Register("semaphore.waiterList", (*waiterList)(nil), state.Fns{Save: (*waiterList).save, Load: (*waiterList).load})
-	state.Register("semaphore.waiterEntry", (*waiterEntry)(nil), state.Fns{Save: (*waiterEntry).save, Load: (*waiterEntry).load})
+	state.Register("pkg/sentry/kernel/semaphore.Registry", (*Registry)(nil), state.Fns{Save: (*Registry).save, Load: (*Registry).load})
+	state.Register("pkg/sentry/kernel/semaphore.Set", (*Set)(nil), state.Fns{Save: (*Set).save, Load: (*Set).load})
+	state.Register("pkg/sentry/kernel/semaphore.sem", (*sem)(nil), state.Fns{Save: (*sem).save, Load: (*sem).load})
+	state.Register("pkg/sentry/kernel/semaphore.waiter", (*waiter)(nil), state.Fns{Save: (*waiter).save, Load: (*waiter).load})
+	state.Register("pkg/sentry/kernel/semaphore.waiterList", (*waiterList)(nil), state.Fns{Save: (*waiterList).save, Load: (*waiterList).load})
+	state.Register("pkg/sentry/kernel/semaphore.waiterEntry", (*waiterEntry)(nil), state.Fns{Save: (*waiterEntry).save, Load: (*waiterEntry).load})
 }

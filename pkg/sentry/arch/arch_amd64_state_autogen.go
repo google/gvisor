@@ -24,5 +24,5 @@ func (x *context64) load(m state.Map) {
 }
 
 func init() {
-	state.Register("arch.context64", (*context64)(nil), state.Fns{Save: (*context64).save, Load: (*context64).load})
+	state.Register("pkg/sentry/arch.context64", (*context64)(nil), state.Fns{Save: (*context64).save, Load: (*context64).load})
 }
