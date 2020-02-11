@@ -23,18 +23,11 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// alignUp rounds a length up to an alignment.
-//
-// Preconditions: align is a power of two.
-func alignUp(length int, align uint) int {
-	return (length + int(align) - 1) &^ (int(align) - 1)
-}
-
 // alignPad returns the length of padding required for alignment.
 //
 // Preconditions: align is a power of two.
 func alignPad(length int, align uint) int {
-	return alignUp(length, align) - length
+	return binary.AlignUp(length, align) - length
 }
 
 // Message contains a complete serialized netlink message.
@@ -138,7 +131,7 @@ func (m *Message) Finalize() []byte {
 	// Align the message. Note that the message length in the header (set
 	// above) is the useful length of the message, not the total aligned
 	// length. See net/netlink/af_netlink.c:__nlmsg_put.
-	aligned := alignUp(len(m.buf), linux.NLMSG_ALIGNTO)
+	aligned := binary.AlignUp(len(m.buf), linux.NLMSG_ALIGNTO)
 	m.putZeros(aligned - len(m.buf))
 	return m.buf
 }
@@ -173,7 +166,7 @@ func (m *Message) PutAttr(atype uint16, v interface{}) {
 	m.Put(v)
 
 	// Align the attribute.
-	aligned := alignUp(l, linux.NLA_ALIGNTO)
+	aligned := binary.AlignUp(l, linux.NLA_ALIGNTO)
 	m.putZeros(aligned - l)
 }
 
@@ -190,7 +183,7 @@ func (m *Message) PutAttrString(atype uint16, s string) {
 	m.putZeros(1)
 
 	// Align the attribute.
-	aligned := alignUp(l, linux.NLA_ALIGNTO)
+	aligned := binary.AlignUp(l, linux.NLA_ALIGNTO)
 	m.putZeros(aligned - l)
 }
 
