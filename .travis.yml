@@ -1,0 +1,25 @@
+dist: bionic
+sudo: required
+arch: arm64
+
+language: go
+
+os:
+- linux
+
+go:
+  - "1.13.7"
+
+script:
+  - uname -a
+  - sudo apt-get install build-essential openjdk-8-jdk python zip unzip -y
+  - pwd
+  - mkdir bazel
+  - cd bazel
+  - wget https://github.com/bazelbuild/bazel/releases/download/2.1.0/bazel-2.1.0-dist.zip
+  - unzip bazel-2.1.0-dist.zip
+  - bash ./compile.sh
+  - sudo cp output/bazel /usr/local/bin/
+  - bazel version
+  - cd ../
+  - bazel build runsc

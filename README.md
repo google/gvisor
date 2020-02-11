@@ -2,6 +2,7 @@
 
 [![Status](https://storage.googleapis.com/gvisor-build-badges/build.svg)](https://storage.googleapis.com/gvisor-build-badges/build.html)
 [![gVisor chat](https://badges.gitter.im/gvisor/community.png)](https://gitter.im/gvisor/community)
+Arm64:[![Arm64 Build Status](https://travis-ci.org/google/gvisor.svg?branch=master)](https://travis-ci.org/google/gvisor)
 
 ## What is gVisor?
 
