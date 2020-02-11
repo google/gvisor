@@ -72,7 +72,7 @@ func marshalEntryMatch(name string, data []byte) []byte {
 	nflog("marshaling matcher %q", name)
 
 	// We have to pad this struct size to a multiple of 8 bytes.
-	size := alignUp(linux.SizeOfXTEntryMatch+len(data), 8)
+	size := binary.AlignUp(linux.SizeOfXTEntryMatch+len(data), 8)
 	matcher := linux.KernelXTEntryMatch{
 		XTEntryMatch: linux.XTEntryMatch{
 			MatchSize: uint16(size),
@@ -92,9 +92,4 @@ func unmarshalMatcher(match linux.XTEntryMatch, filter iptables.IPHeaderFilter, 
 		return nil, fmt.Errorf("unsupported matcher with name %q", match.Name.String())
 	}
 	return matchMaker.unmarshal(buf, filter)
-}
-
-// alignUp rounds a length up to an alignment. align must be a power of 2.
-func alignUp(length int, align uint) int {
-	return (length + int(align) - 1) & ^(int(align) - 1)
 }
