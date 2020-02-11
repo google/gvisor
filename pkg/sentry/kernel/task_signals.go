@@ -263,6 +263,19 @@ func (t *Task) deliverSignalToHandler(info *arch.SignalInfo, act arch.SignalAct)
 	if t.haveSavedSignalMask {
 		mask = t.savedSignalMask
 	}
+
+	// Set up the restorer.
+	// x86-64 should always uses SA_RESTORER, but this flag is optional on other platforms.
+	// Please see the linux code as reference:
+	// linux/arch/x86/kernel/signal.c:__setup_rt_frame()
+	// If SA_RESTORER is not configured, we can use the sigreturn trampolines
+	// the vdso provides instead.
+	// Please see the linux code as reference:
+	// linux/arch/arm64/kernel/signal.c:setup_return()
+	if act.Flags&linux.SA_RESTORER == 0 {
+		act.Restorer = t.MemoryManager().VDSOSigReturn()
+	}
+
 	if err := t.Arch().SignalSetup(st, &act, info, &alt, mask); err != nil {
 		return err
 	}
