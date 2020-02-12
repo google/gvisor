@@ -20,7 +20,7 @@ http_archive(
     ],
 )
 
-load("@io_bazel_rules_go//go:deps.bzl", "go_rules_dependencies", "go_register_toolchains")
+load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
 
 go_rules_dependencies()
 
@@ -43,8 +43,8 @@ gazelle_dependencies()
 go_repository(
     name = "org_golang_x_sys",
     importpath = "golang.org/x/sys",
-    sum = "h1:72l8qCJ1nGxMGH26QVBVIxKd/D34cfGt0OvrPtpemyY=",
-    version = "v0.0.0-20191220220014-0732a990476f",
+    sum = "h1:1BGLXjeY4akVXGgbC9HugT3Jv3hCI0z56oJR5vAMgBU=",
+    version = "v0.0.0-20190215142949-d0b11bdaac8a",
 )
 
 # Load C++ rules.
@@ -68,8 +68,11 @@ http_archive(
         "https://github.com/bazelbuild/rules_proto/archive/97d8af4dc474595af3900dd85cb3a29ad28cc313.tar.gz",
     ],
 )
+
 load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies", "rules_proto_toolchains")
+
 rules_proto_dependencies()
+
 rules_proto_toolchains()
 
 # Load python dependencies.
@@ -146,9 +149,9 @@ load(
 # This container is built from the Dockerfile in test/iptables/runner.
 container_pull(
     name = "iptables-test",
+    digest = "sha256:a137d692a2eb9fc7bf95c5f4a568da090e2c31098e93634421ed88f3a3f1db65",
     registry = "gcr.io",
     repository = "gvisor-presubmit/iptables-test",
-    digest = "sha256:a137d692a2eb9fc7bf95c5f4a568da090e2c31098e93634421ed88f3a3f1db65",
 )
 
 load(
@@ -202,10 +205,24 @@ go_repository(
 )
 
 go_repository(
+    name = "com_github_kr_pretty",
+    importpath = "github.com/kr/pretty",
+    sum = "h1:s5hAObm+yFO5uHYt5dYjxi2rXrsnmRpJx4OYvIWUaQs=",
+    version = "v0.2.0",
+)
+
+go_repository(
     name = "com_github_kr_pty",
     importpath = "github.com/kr/pty",
     sum = "h1:VkoXIwSboBpnk99O/KFauAEILuNHv5DVFKZMBN/gUgw=",
     version = "v1.1.1",
+)
+
+go_repository(
+    name = "com_github_kr_text",
+    importpath = "github.com/kr/text",
+    sum = "h1:45sCR5RtlFHMR4UwH9sdQ5TC8v0qDQCHnXt+kaKSTVE=",
+    version = "v0.1.0",
 )
 
 go_repository(
@@ -237,6 +254,13 @@ go_repository(
 )
 
 go_repository(
+    name = "in_gopkg_check_v1",
+    importpath = "gopkg.in/check.v1",
+    sum = "h1:YR8cESwS4TdDjEe65xsg0ogRM/Nc3DYOhEAlW+xobZo=",
+    version = "v1.0.0-20190902080502-41f04d3bba15",
+)
+
+go_repository(
     name = "org_golang_x_crypto",
     importpath = "golang.org/x/crypto",
     sum = "h1:VklqNMn3ovrHsnt90PveolxSbWFaJdECFbxSq0Mqo2M=",
@@ -258,12 +282,6 @@ go_repository(
 )
 
 go_repository(
-    name = "org_golang_x_tools",
-    commit = "36563e24a262",
-    importpath = "golang.org/x/tools",
-)
-
-go_repository(
     name = "org_golang_x_sync",
     importpath = "golang.org/x/sync",
     sum = "h1:8gQV6CLnAEikrhgkHFbMAEhagSSnXWGV915qUMm9mrU=",
@@ -272,8 +290,9 @@ go_repository(
 
 go_repository(
     name = "org_golang_x_time",
-    commit = "c4c64cad1fd0a1a8dab2523e04e61d35308e131e",
     importpath = "golang.org/x/time",
+    sum = "h1:/5xXl8Y5W96D+TtHSlonuFqGHIWVuyCkGJLwGh9JJFs=",
+    version = "v0.0.0-20191024005414-555d28b269f0",
 )
 
 go_repository(
