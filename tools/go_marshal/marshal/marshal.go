@@ -20,6 +20,8 @@
 // tools/go_marshal. See the go_marshal README for details.
 package marshal
 
+import "encoding/binary"
+
 // Marshallable represents a type that can be marshalled to and from memory.
 type Marshallable interface {
 	// SizeBytes is the size of the memory representation of a type in
@@ -28,11 +30,11 @@ type Marshallable interface {
 
 	// MarshalBytes serializes a copy of a type to dst. dst must be at least
 	// SizeBytes() long.
-	MarshalBytes(dst []byte)
+	MarshalBytes(order binary.ByteOrder, dst []byte)
 
 	// UnmarshalBytes deserializes a type from src. src must be at least
 	// SizeBytes() long.
-	UnmarshalBytes(src []byte)
+	UnmarshalBytes(order binary.ByteOrder, src []byte)
 
 	// Packed returns true if the marshalled size of the type is the same as the
 	// size it occupies in memory. This happens when the type has no fields
@@ -46,7 +48,7 @@ type Marshallable interface {
 	// has no implicit padding, see Marshallable.Packed. When Packed would
 	// return false, MarshalUnsafe should fall back to the safer but slower
 	// MarshalBytes.
-	MarshalUnsafe(dst []byte)
+	MarshalUnsafe(order binary.ByteOrder, dst []byte)
 
 	// UnmarshalUnsafe deserializes a type directly to the underlying memory
 	// allocated for the object by the runtime.
@@ -56,5 +58,5 @@ type Marshallable interface {
 	// UnmarshalUnsafe should fall back to the safer but slower unmarshal
 	// mechanism implemented in UnmarshalBytes (usually by calling
 	// UnmarshalBytes directly).
-	UnmarshalUnsafe(src []byte)
+	UnmarshalUnsafe(order binary.ByteOrder, src []byte)
 }

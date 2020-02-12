@@ -22,9 +22,11 @@ import (
 )
 
 var standardImports = []string{
+	"encoding/binary",
 	"fmt",
 	"reflect",
 	"testing",
+
 	"gvisor.dev/gvisor/tools/go_marshal/analysis",
 }
 
@@ -44,9 +46,12 @@ type testGenerator struct {
 	// for. We need this to construct test instances for the type, since the
 	// tests aren't written in the same package.
 	decl *importStmt
+
+	// ByteOrder constant to use for marshalling in tests.
+	order string
 }
 
-func newTestGenerator(t *ast.TypeSpec) *testGenerator {
+func newTestGenerator(t *ast.TypeSpec, byteOrder string) *testGenerator {
 	if _, ok := t.Type.(*ast.StructType); !ok {
 		panic(fmt.Sprintf("Attempting to generate code for a not struct type %v", t))
 	}
@@ -54,6 +59,7 @@ func newTestGenerator(t *ast.TypeSpec) *testGenerator {
 		t:       t,
 		r:       receiverName(t),
 		imports: newImportTable(),
+		order:   byteOrder,
 	}
 
 	for _, i := range standardImports {
@@ -109,30 +115,30 @@ func (g *testGenerator) emitTestMarshalUnmarshalPreservesData() {
 		g.emit("analysis.RandomizeValue(&x)\n\n")
 
 		g.emit("buf := make([]byte, x.SizeBytes())\n")
-		g.emit("x.MarshalBytes(buf)\n")
+		g.emit("x.MarshalBytes(%s, buf)\n", g.order)
 		g.emit("bufUnsafe := make([]byte, x.SizeBytes())\n")
-		g.emit("x.MarshalUnsafe(bufUnsafe)\n\n")
+		g.emit("x.MarshalUnsafe(%s, bufUnsafe)\n\n", g.order)
 
-		g.emit("y.UnmarshalBytes(buf)\n")
+		g.emit("y.UnmarshalBytes(%s, buf)\n", g.order)
 		g.emit("if !reflect.DeepEqual(x, y) {\n")
 		g.inIndent(func() {
 			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across Marshal/Unmarshal cycle:\\nBefore: %%+v\\nAfter: %%+v\\n\", x, y))\n")
 		})
 		g.emit("}\n")
-		g.emit("yUnsafe.UnmarshalBytes(bufUnsafe)\n")
+		g.emit("yUnsafe.UnmarshalBytes(%s, bufUnsafe)\n", g.order)
 		g.emit("if !reflect.DeepEqual(x, yUnsafe) {\n")
 		g.inIndent(func() {
 			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across MarshalUnsafe/Unmarshal cycle:\\nBefore: %%+v\\nAfter: %%+v\\n\", x, yUnsafe))\n")
 		})
 		g.emit("}\n\n")
 
-		g.emit("z.UnmarshalUnsafe(buf)\n")
+		g.emit("z.UnmarshalUnsafe(%s, buf)\n", g.order)
 		g.emit("if !reflect.DeepEqual(x, z) {\n")
 		g.inIndent(func() {
 			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across Marshal/UnmarshalUnsafe cycle:\\nBefore: %%+v\\nAfter: %%+v\\n\", x, z))\n")
 		})
 		g.emit("}\n")
-		g.emit("zUnsafe.UnmarshalUnsafe(bufUnsafe)\n")
+		g.emit("zUnsafe.UnmarshalUnsafe(%s, bufUnsafe)\n", g.order)
 		g.emit("if !reflect.DeepEqual(x, zUnsafe) {\n")
 		g.inIndent(func() {
 			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across MarshalUnsafe/UnmarshalUnsafe cycle:\\nBefore: %%+v\\nAfter: %%+v\\n\", x, zUnsafe))\n")

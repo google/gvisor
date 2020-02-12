@@ -196,19 +196,16 @@ func (g *interfaceGenerator) marshalScalar(accessor, typ string, bufVar string) 
 		g.emit("%s[0] = byte(%s)\n", bufVar, accessor)
 		g.shift(bufVar, 1)
 	case "int16", "uint16":
-		g.recordUsedImport("usermem")
-		g.emit("usermem.ByteOrder.PutUint16(%s[:2], uint16(%s))\n", bufVar, accessor)
+		g.emit("order.PutUint16(%s[:2], uint16(%s))\n", bufVar, accessor)
 		g.shift(bufVar, 2)
 	case "int32", "uint32":
-		g.recordUsedImport("usermem")
-		g.emit("usermem.ByteOrder.PutUint32(%s[:4], uint32(%s))\n", bufVar, accessor)
+		g.emit("order.PutUint32(%s[:4], uint32(%s))\n", bufVar, accessor)
 		g.shift(bufVar, 4)
 	case "int64", "uint64":
-		g.recordUsedImport("usermem")
-		g.emit("usermem.ByteOrder.PutUint64(%s[:8], uint64(%s))\n", bufVar, accessor)
+		g.emit("order.PutUint64(%s[:8], uint64(%s))\n", bufVar, accessor)
 		g.shift(bufVar, 8)
 	default:
-		g.emit("%s.MarshalBytes(%s[:%s.SizeBytes()])\n", accessor, bufVar, accessor)
+		g.emit("%s.MarshalBytes(order, %s[:%s.SizeBytes()])\n", accessor, bufVar, accessor)
 		g.shiftDynamic(bufVar, accessor)
 	}
 }
@@ -226,33 +223,27 @@ func (g *interfaceGenerator) unmarshalScalar(accessor, typ string, bufVar string
 		g.shift(bufVar, 1)
 
 	case "int16":
-		g.recordUsedImport("usermem")
-		g.emit("%s = int16(usermem.ByteOrder.Uint16(%s[:2]))\n", accessor, bufVar)
+		g.emit("%s = int16(order.Uint16(%s[:2]))\n", accessor, bufVar)
 		g.shift(bufVar, 2)
 	case "uint16":
-		g.recordUsedImport("usermem")
-		g.emit("%s = usermem.ByteOrder.Uint16(%s[:2])\n", accessor, bufVar)
+		g.emit("%s = order.Uint16(%s[:2])\n", accessor, bufVar)
 		g.shift(bufVar, 2)
 
 	case "int32":
-		g.recordUsedImport("usermem")
-		g.emit("%s = int32(usermem.ByteOrder.Uint32(%s[:4]))\n", accessor, bufVar)
+		g.emit("%s = int32(order.Uint32(%s[:4]))\n", accessor, bufVar)
 		g.shift(bufVar, 4)
 	case "uint32":
-		g.recordUsedImport("usermem")
-		g.emit("%s = usermem.ByteOrder.Uint32(%s[:4])\n", accessor, bufVar)
+		g.emit("%s = order.Uint32(%s[:4])\n", accessor, bufVar)
 		g.shift(bufVar, 4)
 
 	case "int64":
-		g.recordUsedImport("usermem")
-		g.emit("%s = int64(usermem.ByteOrder.Uint64(%s[:8]))\n", accessor, bufVar)
+		g.emit("%s = int64(order.Uint64(%s[:8]))\n", accessor, bufVar)
 		g.shift(bufVar, 8)
 	case "uint64":
-		g.recordUsedImport("usermem")
-		g.emit("%s = usermem.ByteOrder.Uint64(%s[:8])\n", accessor, bufVar)
+		g.emit("%s = order.Uint64(%s[:8])\n", accessor, bufVar)
 		g.shift(bufVar, 8)
 	default:
-		g.emit("%s.UnmarshalBytes(%s[:%s.SizeBytes()])\n", accessor, bufVar, accessor)
+		g.emit("%s.UnmarshalBytes(order, %s[:%s.SizeBytes()])\n", accessor, bufVar, accessor)
 		g.shiftDynamic(bufVar, accessor)
 		g.recordPotentiallyNonPackedField(accessor)
 	}
@@ -340,7 +331,7 @@ func (g *interfaceGenerator) emitMarshallable() {
 	g.emit("\n}\n\n")
 
 	g.emit("// MarshalBytes implements marshal.Marshallable.MarshalBytes.\n")
-	g.emit("func (%s *%s) MarshalBytes(dst []byte) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) MarshalBytes(order binary.ByteOrder, dst []byte) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.forEachField(fieldDispatcher{
 			primitive: func(n, t *ast.Ident) {
@@ -388,7 +379,7 @@ func (g *interfaceGenerator) emitMarshallable() {
 	g.emit("}\n\n")
 
 	g.emit("// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.\n")
-	g.emit("func (%s *%s) UnmarshalBytes(src []byte) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) UnmarshalBytes(order binary.ByteOrder, src []byte) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.forEachField(fieldDispatcher{
 			primitive: func(n, t *ast.Ident) {
@@ -453,7 +444,7 @@ func (g *interfaceGenerator) emitMarshallable() {
 	g.emit("}\n\n")
 
 	g.emit("// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.\n")
-	g.emit("func (%s *%s) MarshalUnsafe(dst []byte) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) MarshalUnsafe(order binary.ByteOrder, dst []byte) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		if thisPacked {
 			g.recordUsedImport("safecopy")
@@ -465,7 +456,7 @@ func (g *interfaceGenerator) emitMarshallable() {
 				})
 				g.emit("} else {\n")
 				g.inIndent(func() {
-					g.emit("%s.MarshalBytes(dst)\n", g.r)
+					g.emit("%s.MarshalBytes(order, dst)\n", g.r)
 				})
 				g.emit("}\n")
 			} else {
@@ -473,13 +464,13 @@ func (g *interfaceGenerator) emitMarshallable() {
 			}
 		} else {
 			g.emit("// Type %s doesn't have a packed layout in memory, fallback to MarshalBytes.\n", g.typeName())
-			g.emit("%s.MarshalBytes(dst)\n", g.r)
+			g.emit("%s.MarshalBytes(order, dst)\n", g.r)
 		}
 	})
 	g.emit("}\n\n")
 
 	g.emit("// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.\n")
-	g.emit("func (%s *%s) UnmarshalUnsafe(src []byte) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) UnmarshalUnsafe(order binary.ByteOrder, src []byte) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		if thisPacked {
 			g.recordUsedImport("safecopy")
@@ -491,7 +482,7 @@ func (g *interfaceGenerator) emitMarshallable() {
 				})
 				g.emit("} else {\n")
 				g.inIndent(func() {
-					g.emit("%s.UnmarshalBytes(src)\n", g.r)
+					g.emit("%s.UnmarshalBytes(order, src)\n", g.r)
 				})
 				g.emit("}\n")
 			} else {
@@ -499,7 +490,7 @@ func (g *interfaceGenerator) emitMarshallable() {
 			}
 		} else {
 			g.emit("// Type %s doesn't have a packed layout in memory, fall back to UnmarshalBytes.\n", g.typeName())
-			g.emit("%s.UnmarshalBytes(src)\n", g.r)
+			g.emit("%s.UnmarshalBytes(order, src)\n", g.r)
 		}
 	})
 	g.emit("}\n\n")

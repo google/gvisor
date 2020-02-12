@@ -31,7 +31,9 @@ import (
 const (
 	marshalImport  = "gvisor.dev/gvisor/tools/go_marshal/marshal"
 	safecopyImport = "gvisor.dev/gvisor/pkg/safecopy"
-	usermemImport  = "gvisor.dev/gvisor/pkg/usermem"
+
+	// Name of the variable containing the byte order to use in generated tests.
+	testByteOrderVar = "byteOrder"
 )
 
 // List of identifiers we use in generated code, that may conflict a
@@ -91,11 +93,11 @@ func NewGenerator(srcs []string, out, outTest, pkg string, imports []string) (*G
 		// used, so they're always added to the generated code.
 		g.imports.add(i).markUsed()
 	}
+	g.imports.add("encoding/binary").markUsed()
 	g.imports.add(marshalImport).markUsed()
 	// The follow imports may or may not be used by the generated
 	// code, depending what's required for the target types. Don't
 	// mark these imports as used by default.
-	g.imports.add(usermemImport)
 	g.imports.add(safecopyImport)
 	g.imports.add("unsafe")
 
@@ -271,7 +273,7 @@ func (g *Generator) generateOne(t *ast.TypeSpec, fset *token.FileSet) *interface
 // generateOneTestSuite generates a test suite for the automatically generated
 // implementations type t.
 func (g *Generator) generateOneTestSuite(t *ast.TypeSpec) *testGenerator {
-	i := newTestGenerator(t)
+	i := newTestGenerator(t, testByteOrderVar)
 	i.emitTests()
 	return i
 }
@@ -371,6 +373,7 @@ func (g *Generator) writeTests(ts []*testGenerator) error {
 		return err
 	}
 
+	// Collect and write test import statements.
 	imports := newImportTable()
 	for _, t := range ts {
 		imports.merge(t.imports)
@@ -380,6 +383,14 @@ func (g *Generator) writeTests(ts []*testGenerator) error {
 		return err
 	}
 
+	// Write test byte order constant.
+	b.reset()
+	b.emit("var %s = binary.LittleEndian\n\n", testByteOrderVar)
+	if err := b.write(g.outputTest); err != nil {
+		return err
+	}
+
+	// Write test functions.
 	for _, t := range ts {
 		if err := t.write(g.outputTest); err != nil {
 			return err

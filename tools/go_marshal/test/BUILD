@@ -15,7 +15,6 @@ go_test(
     deps = [
         ":test",
         "//pkg/binary",
-        "//pkg/usermem",
         "//tools/go_marshal/analysis",
     ],
 )
