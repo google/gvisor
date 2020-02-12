@@ -65,13 +65,18 @@ type mapping struct {
 	writable bool
 }
 
-// NewHostFileMapper returns a HostFileMapper with no references or cached
-// mappings.
+// Init must be called on zero-value HostFileMappers before first use.
+func (f *HostFileMapper) Init() {
+	f.refs = make(map[uint64]int32)
+	f.mappings = make(map[uint64]mapping)
+}
+
+// NewHostFileMapper returns an initialized HostFileMapper allocated on the
+// heap with no references or cached mappings.
 func NewHostFileMapper() *HostFileMapper {
-	return &HostFileMapper{
-		refs:     make(map[uint64]int32),
-		mappings: make(map[uint64]mapping),
-	}
+	f := &HostFileMapper{}
+	f.Init()
+	return f
 }
 
 // IncRefOn increments the reference count on all offsets in mr.
