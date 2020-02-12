@@ -571,6 +571,8 @@ func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpt
 	default:
 		panic(fmt.Sprintf("unknown InteropMode %v", d.fs.opts.interop))
 	}
+	// After this point, d may be used as a memmap.Mappable.
+	d.pf.hostFileMapperInitOnce.Do(d.pf.hostFileMapper.Init)
 	return vfs.GenericConfigureMMap(&fd.vfsfd, d, opts)
 }
 
@@ -799,6 +801,9 @@ type dentryPlatformFile struct {
 	// If this dentry represents a regular file, and handle.fd >= 0,
 	// hostFileMapper caches mappings of handle.fd.
 	hostFileMapper fsutil.HostFileMapper
+
+	// hostFileMapperInitOnce is used to lazily initialize hostFileMapper.
+	hostFileMapperInitOnce sync.Once
 }
 
 // IncRef implements platform.File.IncRef.
