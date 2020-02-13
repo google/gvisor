@@ -35,6 +35,16 @@ func filterTable(args ...string) error {
 	return nil
 }
 
+// filterTableRules is like filterTable, but runs multiple iptables commands.
+func filterTableRules(argsList [][]string) error {
+	for _, args := range argsList {
+		if err := filterTable(args...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // listenUDP listens on a UDP port and returns the value of net.Conn.Read() for
 // the first read on that port.
 func listenUDP(port int, timeout time.Duration) error {
