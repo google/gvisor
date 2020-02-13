@@ -16,7 +16,17 @@
 
 set -xeou pipefail
 
-source $(dirname $0)/common_build.sh
+# Get the path to the directory this script lives in.
+# If this script is being called with `source`, $0 will be the path of the
+# *sourcing* script, so we can't use `dirname $0` to find scripts in this
+# directory.
+if [[ -v BASH_SOURCE && "$0" != "$BASH_SOURCE" ]]; then
+  declare -r script_dir="$(dirname "$BASH_SOURCE")"
+else
+  declare -r script_dir="$(dirname "$0")"
+fi
+
+source "${script_dir}/common_build.sh"
 
 # Ensure it attempts to collect logs in all cases.
 trap collect_logs EXIT
