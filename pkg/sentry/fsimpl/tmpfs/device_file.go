@@ -33,6 +33,12 @@ func (fs *filesystem) newDeviceFile(creds *auth.Credentials, mode linux.FileMode
 		major: major,
 		minor: minor,
 	}
+	switch kind {
+	case vfs.BlockDevice:
+		mode |= linux.S_IFBLK
+	case vfs.CharDevice:
+		mode |= linux.S_IFCHR
+	}
 	file.inode.init(file, fs, creds, mode)
 	file.inode.nlink = 1 // from parent directory
 	return &file.inode

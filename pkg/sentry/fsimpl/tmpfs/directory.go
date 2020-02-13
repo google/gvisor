@@ -34,14 +34,13 @@ type directory struct {
 
 func (fs *filesystem) newDirectory(creds *auth.Credentials, mode linux.FileMode) *inode {
 	dir := &directory{}
-	dir.inode.init(dir, fs, creds, mode)
+	dir.inode.init(dir, fs, creds, linux.S_IFDIR|mode)
 	dir.inode.nlink = 2 // from "." and parent directory or ".." for root
 	return &dir.inode
 }
 
 func (i *inode) isDir() bool {
-	_, ok := i.impl.(*directory)
-	return ok
+	return linux.FileMode(i.mode).FileType() == linux.S_IFDIR
 }
 
 type directoryFD struct {

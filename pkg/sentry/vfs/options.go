@@ -46,8 +46,32 @@ type MknodOptions struct {
 	DevMinor uint32
 }
 
+// MountFlags contains flags as specified for mount(2), e.g. MS_NOEXEC,
+// MS_RDONLY.
+type MountFlags uint32
+
+// NoExec returns true if MS_NOEXEC is set.
+func (f MountFlags) NoExec() bool {
+	return f&linux.MS_NOEXEC != 0
+}
+
+// ReadOnly returns true if MS_RDONLY is set.
+func (f MountFlags) ReadOnly() bool {
+	return f&linux.MS_RDONLY != 0
+}
+
+// NoAccessTime returns true if MS_NOATIME is set.
+//
+// TODO(gvisor.dev/issue/1193): Implement MS_NOATIME.
+func (f MountFlags) NoAccessTime() bool {
+	return f&linux.MS_NOATIME != 0
+}
+
 // MountOptions contains options to VirtualFilesystem.MountAt().
 type MountOptions struct {
+	// Flags contains flags as specified for mount(2), e.g. MS_NOEXEC, MS_RDONLY.
+	Flags MountFlags
+
 	// GetFilesystemOptions contains options to FilesystemType.GetFilesystem().
 	GetFilesystemOptions GetFilesystemOptions
 
@@ -61,7 +85,7 @@ type MountOptions struct {
 type OpenOptions struct {
 	// Flags contains access mode and flags as specified for open(2).
 	//
-	// FilesystemImpls is reponsible for implementing the following flags:
+	// FilesystemImpls are responsible for implementing the following flags:
 	// O_RDONLY, O_WRONLY, O_RDWR, O_APPEND, O_CREAT, O_DIRECT, O_DSYNC,
 	// O_EXCL, O_NOATIME, O_NOCTTY, O_NONBLOCK, O_PATH, O_SYNC, O_TMPFILE, and
 	// O_TRUNC. VFS is responsible for handling O_DIRECTORY, O_LARGEFILE, and
@@ -72,6 +96,12 @@ type OpenOptions struct {
 	// If FilesystemImpl.OpenAt() creates a file, Mode is the file mode for the
 	// created file.
 	Mode linux.FileMode
+
+	// FileExec is set when the file is being opened to be executed.
+	// FileSystem.OpenAt() checks that the caller has execute permissions on the
+	// file, that the file is a regular file, and that the mount doesn't have
+	// MS_NOEXEC set.
+	FileExec bool
 }
 
 // ReadOptions contains options to FileDescription.PRead(),

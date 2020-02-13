@@ -20,14 +20,19 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
-// AccessTypes is a bitmask of Unix file permissions.
+// AccessTypes is a bitmask of Unix file permissions with additional bits for
+// options not present in Unix.
 type AccessTypes uint16
 
 // Bits in AccessTypes.
 const (
-	MayRead  AccessTypes = 4
-	MayWrite             = 2
-	MayExec              = 1
+	MayExec  AccessTypes = 001
+	MayWrite             = 002
+	MayRead              = 004
+	PermMask             = 007
+
+	// MayFileExec is set to indicate that a file is being executed.
+	MayFileExec = 010 | MayExec
 )
 
 // OnlyRead returns true if access _only_ allows read.
@@ -50,18 +55,39 @@ func (a AccessTypes) MayExec() bool {
 	return a&MayExec != 0
 }
 
+// Permissions returns a bitmask equivalent to Unix file permissions.
+func (a AccessTypes) Permissions() uint16 {
+	return uint16(a & PermMask)
+}
+
+// MayFileExec returns true if access allows executing a file.
+func (a AccessTypes) MayFileExec() bool {
+	return a&MayFileExec == MayFileExec
+}
+
 // GenericCheckPermissions checks that creds has the given access rights on a
 // file with the given permissions, UID, and GID, subject to the rules of
-// fs/namei.c:generic_permission(). isDir is true if the file is a directory.
-func GenericCheckPermissions(creds *auth.Credentials, ats AccessTypes, isDir bool, mode uint16, kuid auth.KUID, kgid auth.KGID) error {
+// fs/namei.c:generic_permission() with additional checks for when a file is
+// being executed.
+func GenericCheckPermissions(creds *auth.Credentials, mount *Mount, ats AccessTypes, mode linux.FileMode, kuid auth.KUID, kgid auth.KGID) error {
+	if ats.MayFileExec() {
+		if mount.Flags.NoExec() {
+			return syserror.EACCES
+		}
+		if mode.FileType() != linux.S_IFREG {
+			return syserror.EACCES
+		}
+	}
+
 	// Check permission bits.
-	perms := mode
+	perms := uint16(mode.Permissions())
 	if creds.EffectiveKUID == kuid {
 		perms >>= 6
 	} else if creds.InGroup(kgid) {
 		perms >>= 3
 	}
-	if uint16(ats)&perms == uint16(ats) {
+	if atsPerm := ats.Permissions(); atsPerm&perms == atsPerm {
+		// All permission bits match, access granted.
 		return nil
 	}
 
@@ -73,7 +99,7 @@ func GenericCheckPermissions(creds *auth.Credentials, ats AccessTypes, isDir boo
 	}
 	// CAP_DAC_READ_SEARCH allows the caller to read and search arbitrary
 	// directories, and read arbitrary non-directory files.
-	if (isDir && !ats.MayWrite()) || ats.OnlyRead() {
+	if (mode.FileType() == linux.S_IFDIR && !ats.MayWrite()) || ats.OnlyRead() {
 		if creds.HasCapability(linux.CAP_DAC_READ_SEARCH) {
 			return nil
 		}
@@ -81,7 +107,7 @@ func GenericCheckPermissions(creds *auth.Credentials, ats AccessTypes, isDir boo
 	// CAP_DAC_OVERRIDE allows arbitrary access to directories, read/write
 	// access to non-directory files, and execute access to non-directory files
 	// for which at least one execute bit is set.
-	if isDir || !ats.MayExec() || (mode&0111 != 0) {
+	if mode.FileType() == linux.S_IFDIR || !ats.MayExec() || (mode.Permissions()&0111 != 0) {
 		if creds.HasCapability(linux.CAP_DAC_OVERRIDE) {
 			return nil
 		}
@@ -103,17 +129,22 @@ func GenericCheckPermissions(creds *auth.Credentials, ats AccessTypes, isDir boo
 // AccessTypesForOpenFlags returns MayRead|MayWrite in this case.
 //
 // Use May{Read,Write}FileWithOpenFlags() for these checks instead.
-func AccessTypesForOpenFlags(flags uint32) AccessTypes {
-	switch flags & linux.O_ACCMODE {
+func AccessTypesForOpenFlags(opts *OpenOptions) AccessTypes {
+	ats := AccessTypes(0)
+	if opts.FileExec {
+		ats |= MayFileExec
+	}
+
+	switch opts.Flags & linux.O_ACCMODE {
 	case linux.O_RDONLY:
-		if flags&linux.O_TRUNC != 0 {
-			return MayRead | MayWrite
+		if opts.Flags&linux.O_TRUNC != 0 {
+			return ats | MayRead | MayWrite
 		}
-		return MayRead
+		return ats | MayRead
 	case linux.O_WRONLY:
-		return MayWrite
+		return ats | MayWrite
 	default:
-		return MayRead | MayWrite
+		return ats | MayRead | MayWrite
 	}
 }
 
@@ -142,7 +173,7 @@ func MayWriteFileWithOpenFlags(flags uint32) bool {
 // CheckSetStat checks that creds has permission to change the metadata of a
 // file with the given permissions, UID, and GID as specified by stat, subject
 // to the rules of Linux's fs/attr.c:setattr_prepare().
-func CheckSetStat(creds *auth.Credentials, stat *linux.Statx, mode uint16, kuid auth.KUID, kgid auth.KGID) error {
+func CheckSetStat(creds *auth.Credentials, mnt *Mount, stat *linux.Statx, mode linux.FileMode, kuid auth.KUID, kgid auth.KGID) error {
 	if stat.Mask&linux.STATX_MODE != 0 {
 		if !CanActAsOwner(creds, kuid) {
 			return syserror.EPERM
@@ -172,11 +203,7 @@ func CheckSetStat(creds *auth.Credentials, stat *linux.Statx, mode uint16, kuid 
 				(stat.Mask&linux.STATX_CTIME != 0 && stat.Ctime.Nsec != linux.UTIME_NOW) {
 				return syserror.EPERM
 			}
-			// isDir is irrelevant in the following call to
-			// GenericCheckPermissions since ats == MayWrite means that
-			// CAP_DAC_READ_SEARCH does not apply, and CAP_DAC_OVERRIDE
-			// applies, regardless of isDir.
-			if err := GenericCheckPermissions(creds, MayWrite, false /* isDir */, mode, kuid, kgid); err != nil {
+			if err := GenericCheckPermissions(creds, mnt, MayWrite, mode, kuid, kgid); err != nil {
 				return err
 			}
 		}

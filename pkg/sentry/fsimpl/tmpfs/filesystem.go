@@ -41,7 +41,7 @@ func stepLocked(rp *vfs.ResolvingPath, d *dentry) (*dentry, error) {
 	if !d.inode.isDir() {
 		return nil, syserror.ENOTDIR
 	}
-	if err := d.inode.checkPermissions(rp.Credentials(), vfs.MayExec, true); err != nil {
+	if err := d.inode.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayExec); err != nil {
 		return nil, err
 	}
 afterSymlink:
@@ -125,7 +125,7 @@ func (fs *filesystem) doCreateAt(rp *vfs.ResolvingPath, dir bool, create func(pa
 	if err != nil {
 		return err
 	}
-	if err := parent.inode.checkPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec, true /* isDir */); err != nil {
+	if err := parent.inode.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayWrite|vfs.MayExec); err != nil {
 		return err
 	}
 	name := rp.Component()
@@ -167,7 +167,7 @@ func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 		if !d.inode.isDir() {
 			return nil, syserror.ENOTDIR
 		}
-		if err := d.inode.checkPermissions(rp.Credentials(), vfs.MayExec, true /* isDir */); err != nil {
+		if err := d.inode.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayExec); err != nil {
 			return nil, err
 		}
 	}
@@ -290,7 +290,7 @@ afterTrailingSymlink:
 		return nil, err
 	}
 	// Check for search permission in the parent directory.
-	if err := parent.inode.checkPermissions(rp.Credentials(), vfs.MayExec, true); err != nil {
+	if err := parent.inode.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayExec); err != nil {
 		return nil, err
 	}
 	// Reject attempts to open directories with O_CREAT.
@@ -305,7 +305,7 @@ afterTrailingSymlink:
 	child, err := stepLocked(rp, parent)
 	if err == syserror.ENOENT {
 		// Already checked for searchability above; now check for writability.
-		if err := parent.inode.checkPermissions(rp.Credentials(), vfs.MayWrite, true); err != nil {
+		if err := parent.inode.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayWrite); err != nil {
 			return nil, err
 		}
 		if err := rp.Mount().CheckBeginWrite(); err != nil {
@@ -334,9 +334,9 @@ afterTrailingSymlink:
 }
 
 func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions, afterCreate bool) (*vfs.FileDescription, error) {
-	ats := vfs.AccessTypesForOpenFlags(opts.Flags)
+	ats := vfs.AccessTypesForOpenFlags(opts)
 	if !afterCreate {
-		if err := d.inode.checkPermissions(rp.Credentials(), ats, d.inode.isDir()); err != nil {
+		if err := d.inode.checkPermissions(rp.Credentials(), rp.Mount(), ats); err != nil {
 			return nil, err
 		}
 	}
@@ -418,7 +418,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	defer mnt.EndWrite()
 
 	oldParent := oldParentVD.Dentry().Impl().(*dentry)
-	if err := oldParent.inode.checkPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec, true /* isDir */); err != nil {
+	if err := oldParent.inode.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayWrite|vfs.MayExec); err != nil {
 		return err
 	}
 	// Call vfs.Dentry.Child() instead of stepLocked() or rp.ResolveChild(),
@@ -435,7 +435,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		}
 		if oldParent != newParent {
 			// Writability is needed to change renamed's "..".
-			if err := renamed.inode.checkPermissions(rp.Credentials(), vfs.MayWrite, true /* isDir */); err != nil {
+			if err := renamed.inode.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayWrite); err != nil {
 				return err
 			}
 		}
@@ -445,7 +445,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		}
 	}
 
-	if err := newParent.inode.checkPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec, true /* isDir */); err != nil {
+	if err := newParent.inode.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayWrite|vfs.MayExec); err != nil {
 		return err
 	}
 	replacedVFSD := newParent.vfsd.Child(newName)
@@ -486,7 +486,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	vfsObj := rp.VirtualFilesystem()
 	oldParentDir := oldParent.inode.impl.(*directory)
 	newParentDir := newParent.inode.impl.(*directory)
-	if err := vfsObj.PrepareRenameDentry(vfs.MountNamespaceFromContext(ctx), renamedVFSD, replacedVFSD); err != nil {
+	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
+	if err := vfsObj.PrepareRenameDentry(mntns, renamedVFSD, replacedVFSD); err != nil {
 		return err
 	}
 	if replaced != nil {
@@ -516,7 +518,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	if err != nil {
 		return err
 	}
-	if err := parent.inode.checkPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec, true /* isDir */); err != nil {
+	if err := parent.inode.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayWrite|vfs.MayExec); err != nil {
 		return err
 	}
 	name := rp.Component()
@@ -543,7 +545,9 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	}
 	defer mnt.EndWrite()
 	vfsObj := rp.VirtualFilesystem()
-	if err := vfsObj.PrepareDeleteDentry(vfs.MountNamespaceFromContext(ctx), childVFSD); err != nil {
+	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
+	if err := vfsObj.PrepareDeleteDentry(mntns, childVFSD); err != nil {
 		return err
 	}
 	parent.inode.impl.(*directory).childList.Remove(child)
@@ -607,7 +611,7 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	if err != nil {
 		return err
 	}
-	if err := parent.inode.checkPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec, true /* isDir */); err != nil {
+	if err := parent.inode.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayWrite|vfs.MayExec); err != nil {
 		return err
 	}
 	name := rp.Component()
@@ -631,7 +635,9 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	}
 	defer mnt.EndWrite()
 	vfsObj := rp.VirtualFilesystem()
-	if err := vfsObj.PrepareDeleteDentry(vfs.MountNamespaceFromContext(ctx), childVFSD); err != nil {
+	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
+	if err := vfsObj.PrepareDeleteDentry(mntns, childVFSD); err != nil {
 		return err
 	}
 	parent.inode.impl.(*directory).childList.Remove(child)

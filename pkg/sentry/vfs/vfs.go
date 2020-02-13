@@ -724,6 +724,8 @@ func (vfs *VirtualFilesystem) SyncAllFilesystems(ctx context.Context) error {
 // VirtualDentry methods require that a reference is held on the VirtualDentry.
 //
 // VirtualDentry is analogous to Linux's struct path.
+//
+// +stateify savable
 type VirtualDentry struct {
 	mount  *Mount
 	dentry *Dentry

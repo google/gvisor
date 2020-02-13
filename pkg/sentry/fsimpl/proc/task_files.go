@@ -238,7 +238,7 @@ func newComm(task *kernel.Task, ino uint64, perm linux.FileMode) *kernfs.Dentry 
 	return d
 }
 
-func (i *commInode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
+func (i *commInode) CheckPermissions(ctx context.Context, creds *auth.Credentials, mnt *vfs.Mount, ats vfs.AccessTypes) error {
 	// This file can always be read or written by members of the same thread
 	// group. See fs/proc/base.c:proc_tid_comm_permission.
 	//
@@ -249,7 +249,7 @@ func (i *commInode) CheckPermissions(ctx context.Context, creds *auth.Credential
 		return nil
 	}
 
-	return i.DynamicBytesFile.CheckPermissions(ctx, creds, ats)
+	return i.DynamicBytesFile.CheckPermissions(ctx, creds, mnt, ats)
 }
 
 // commData implements vfs.DynamicBytesSource for /proc/[pid]/comm.

@@ -46,6 +46,9 @@ type Mount struct {
 	fs   *Filesystem
 	root *Dentry
 
+	// Flags contains flags as specified for mount(2), e.g. MS_NOEXEC, MS_RDONLY.
+	Flags MountFlags
+
 	// key is protected by VirtualFilesystem.mountMu and
 	// VirtualFilesystem.mounts.seq, and may be nil. References are held on
 	// key.parent and key.point if they are not nil.
@@ -114,6 +117,7 @@ type MountNamespace struct {
 func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth.Credentials, source, fsTypeName string, opts *GetFilesystemOptions) (*MountNamespace, error) {
 	rft := vfs.getFilesystemType(fsTypeName)
 	if rft == nil {
+		ctx.Warningf("Unknown filesystem: %s", fsTypeName)
 		return nil, syserror.ENODEV
 	}
 	fs, root, err := rft.fsType.GetFilesystem(ctx, vfs, creds, source, *opts)
@@ -197,11 +201,15 @@ func (vfs *VirtualFilesystem) MountAt(ctx context.Context, creds *auth.Credentia
 	// case.
 	mntns := vd.mount.ns
 	mnt := &Mount{
-		vfs:  vfs,
-		fs:   fs,
-		root: root,
-		ns:   mntns,
-		refs: 1,
+		vfs:   vfs,
+		fs:    fs,
+		root:  root,
+		Flags: opts.Flags,
+		ns:    mntns,
+		refs:  1,
+	}
+	if opts.Flags.ReadOnly() {
+		mnt.setReadOnlyLocked(true)
 	}
 	vfs.mounts.seq.BeginWrite()
 	vfs.connectLocked(mnt, vd, mntns)
@@ -231,7 +239,9 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 		return syserror.EINVAL
 	}
 	vfs.mountMu.Lock()
-	if mntns := MountNamespaceFromContext(ctx); mntns != nil && mntns != vd.mount.ns {
+	mntns := MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
+	if mntns != nil && mntns != vd.mount.ns {
 		vfs.mountMu.Unlock()
 		return syserror.EINVAL
 	}

@@ -98,9 +98,9 @@ func (i *taskInode) Valid(ctx context.Context) bool {
 }
 
 // Open implements kernfs.Inode.
-func (i *taskInode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*vfs.FileDescription, error) {
+func (i *taskInode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fd := &kernfs.GenericDirectoryFD{}
-	fd.Init(rp.Mount(), vfsd, &i.OrderedChildren, flags)
+	fd.Init(rp.Mount(), vfsd, &i.OrderedChildren, &opts)
 	return fd.VFSFileDescription(), nil
 }
 
@@ -161,17 +161,10 @@ func (i *taskOwnedInode) Stat(fs *vfs.Filesystem) linux.Statx {
 }
 
 // CheckPermissions implements kernfs.Inode.
-func (i *taskOwnedInode) CheckPermissions(_ context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
+func (i *taskOwnedInode) CheckPermissions(_ context.Context, creds *auth.Credentials, mnt *vfs.Mount, ats vfs.AccessTypes) error {
 	mode := i.Mode()
 	uid, gid := i.getOwner(mode)
-	return vfs.GenericCheckPermissions(
-		creds,
-		ats,
-		mode.FileType() == linux.ModeDirectory,
-		uint16(mode),
-		uid,
-		gid,
-	)
+	return vfs.GenericCheckPermissions(creds, mnt, ats, mode, uid, gid)
 }
 
 func (i *taskOwnedInode) getOwner(mode linux.FileMode) (auth.KUID, auth.KGID) {

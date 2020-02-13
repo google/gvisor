@@ -82,7 +82,7 @@ func stepLocked(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, inode *inode, write boo
 	if !inode.isDir() {
 		return nil, nil, syserror.ENOTDIR
 	}
-	if err := inode.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
+	if err := inode.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayExec); err != nil {
 		return nil, nil, err
 	}
 
@@ -266,7 +266,7 @@ func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 		if !inode.isDir() {
 			return nil, syserror.ENOTDIR
 		}
-		if err := inode.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
+		if err := inode.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayExec); err != nil {
 			return nil, err
 		}
 	}
@@ -296,7 +296,7 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	if vfs.MayWriteFileWithOpenFlags(opts.Flags) || opts.Flags&(linux.O_CREAT|linux.O_EXCL|linux.O_TMPFILE) != 0 {
 		return nil, syserror.EROFS
 	}
-	return inode.open(rp, vfsd, opts.Flags)
+	return inode.open(rp, vfsd, &opts)
 }
 
 // ReadlinkAt implements vfs.FilesystemImpl.ReadlinkAt.

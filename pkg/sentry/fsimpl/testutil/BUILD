@@ -16,7 +16,7 @@ go_library(
         "//pkg/cpuid",
         "//pkg/fspath",
         "//pkg/memutil",
-        "//pkg/sentry/fs",
+        "//pkg/sentry/fsimpl/tmpfs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/sched",

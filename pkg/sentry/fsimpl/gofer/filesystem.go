@@ -118,7 +118,7 @@ func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *
 	if !d.isDir() {
 		return nil, syserror.ENOTDIR
 	}
-	if err := d.checkPermissions(rp.Credentials(), vfs.MayExec, true); err != nil {
+	if err := d.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayExec); err != nil {
 		return nil, err
 	}
 afterSymlink:
@@ -313,7 +313,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	if err != nil {
 		return err
 	}
-	if err := parent.checkPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec, true); err != nil {
+	if err := parent.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayWrite|vfs.MayExec); err != nil {
 		return err
 	}
 	if parent.isDeleted() {
@@ -377,7 +377,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 	if err != nil {
 		return err
 	}
-	if err := parent.checkPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec, true); err != nil {
+	if err := parent.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayWrite|vfs.MayExec); err != nil {
 		return err
 	}
 	if err := rp.Mount().CheckBeginWrite(); err != nil {
@@ -400,6 +400,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 	}
 	vfsObj := rp.VirtualFilesystem()
 	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
 	parent.dirMu.Lock()
 	defer parent.dirMu.Unlock()
 	childVFSD := parent.vfsd.Child(name)
@@ -511,7 +512,7 @@ func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 		if !d.isDir() {
 			return nil, syserror.ENOTDIR
 		}
-		if err := d.checkPermissions(rp.Credentials(), vfs.MayExec, true); err != nil {
+		if err := d.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayExec); err != nil {
 			return nil, err
 		}
 	}
@@ -593,7 +594,7 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		}
 	}
 	if rp.Done() {
-		return start.openLocked(ctx, rp, opts.Flags)
+		return start.openLocked(ctx, rp, &opts)
 	}
 
 afterTrailingSymlink:
@@ -602,7 +603,7 @@ afterTrailingSymlink:
 		return nil, err
 	}
 	// Check for search permission in the parent directory.
-	if err := parent.checkPermissions(rp.Credentials(), vfs.MayExec, true); err != nil {
+	if err := parent.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayExec); err != nil {
 		return nil, err
 	}
 	// Determine whether or not we need to create a file.
@@ -633,24 +634,24 @@ afterTrailingSymlink:
 		start = parent
 		goto afterTrailingSymlink
 	}
-	return child.openLocked(ctx, rp, opts.Flags)
+	return child.openLocked(ctx, rp, &opts)
 }
 
 // Preconditions: fs.renameMu must be locked.
-func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, flags uint32) (*vfs.FileDescription, error) {
-	ats := vfs.AccessTypesForOpenFlags(flags)
-	if err := d.checkPermissions(rp.Credentials(), ats, d.isDir()); err != nil {
+func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+	ats := vfs.AccessTypesForOpenFlags(opts)
+	if err := d.checkPermissions(rp.Credentials(), rp.Mount(), ats); err != nil {
 		return nil, err
 	}
 	mnt := rp.Mount()
 	filetype := d.fileType()
 	switch {
 	case filetype == linux.S_IFREG && !d.fs.opts.regularFilesUseSpecialFileFD:
-		if err := d.ensureSharedHandle(ctx, ats&vfs.MayRead != 0, ats&vfs.MayWrite != 0, flags&linux.O_TRUNC != 0); err != nil {
+		if err := d.ensureSharedHandle(ctx, ats&vfs.MayRead != 0, ats&vfs.MayWrite != 0, opts.Flags&linux.O_TRUNC != 0); err != nil {
 			return nil, err
 		}
 		fd := &regularFileFD{}
-		if err := fd.vfsfd.Init(fd, flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{
+		if err := fd.vfsfd.Init(fd, opts.Flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{
 			AllowDirectIO: true,
 		}); err != nil {
 			return nil, err
@@ -658,21 +659,21 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, flags ui
 		return &fd.vfsfd, nil
 	case filetype == linux.S_IFDIR:
 		// Can't open directories with O_CREAT.
-		if flags&linux.O_CREAT != 0 {
+		if opts.Flags&linux.O_CREAT != 0 {
 			return nil, syserror.EISDIR
 		}
 		// Can't open directories writably.
 		if ats&vfs.MayWrite != 0 {
 			return nil, syserror.EISDIR
 		}
-		if flags&linux.O_DIRECT != 0 {
+		if opts.Flags&linux.O_DIRECT != 0 {
 			return nil, syserror.EINVAL
 		}
 		if err := d.ensureSharedHandle(ctx, ats&vfs.MayRead != 0, false /* write */, false /* trunc */); err != nil {
 			return nil, err
 		}
 		fd := &directoryFD{}
-		if err := fd.vfsfd.Init(fd, flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+		if err := fd.vfsfd.Init(fd, opts.Flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
 			return nil, err
 		}
 		return &fd.vfsfd, nil
@@ -680,17 +681,17 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, flags ui
 		// Can't open symlinks without O_PATH (which is unimplemented).
 		return nil, syserror.ELOOP
 	default:
-		if flags&linux.O_DIRECT != 0 {
+		if opts.Flags&linux.O_DIRECT != 0 {
 			return nil, syserror.EINVAL
 		}
-		h, err := openHandle(ctx, d.file, ats&vfs.MayRead != 0, ats&vfs.MayWrite != 0, flags&linux.O_TRUNC != 0)
+		h, err := openHandle(ctx, d.file, ats&vfs.MayRead != 0, ats&vfs.MayWrite != 0, opts.Flags&linux.O_TRUNC != 0)
 		if err != nil {
 			return nil, err
 		}
 		fd := &specialFileFD{
 			handle: h,
 		}
-		if err := fd.vfsfd.Init(fd, flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+		if err := fd.vfsfd.Init(fd, opts.Flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
 			h.close(ctx)
 			return nil, err
 		}
@@ -700,7 +701,7 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, flags ui
 
 // Preconditions: d.fs.renameMu must be locked. d.dirMu must be locked.
 func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
-	if err := d.checkPermissions(rp.Credentials(), vfs.MayWrite, true); err != nil {
+	if err := d.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayWrite); err != nil {
 		return nil, err
 	}
 	if d.isDeleted() {
@@ -862,7 +863,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			return err
 		}
 	}
-	if err := oldParent.checkPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec, true); err != nil {
+	if err := oldParent.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayWrite|vfs.MayExec); err != nil {
 		return err
 	}
 	vfsObj := rp.VirtualFilesystem()
@@ -882,7 +883,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			return syserror.EINVAL
 		}
 		if oldParent != newParent {
-			if err := renamed.checkPermissions(rp.Credentials(), vfs.MayWrite, true); err != nil {
+			if err := renamed.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayWrite); err != nil {
 				return err
 			}
 		}
@@ -893,7 +894,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 
 	if oldParent != newParent {
-		if err := newParent.checkPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec, true); err != nil {
+		if err := newParent.checkPermissions(rp.Credentials(), rp.Mount(), vfs.MayWrite|vfs.MayExec); err != nil {
 			return err
 		}
 		newParent.dirMu.Lock()
@@ -934,7 +935,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	if oldParent == newParent && oldName == newName {
 		return nil
 	}
-	if err := vfsObj.PrepareRenameDentry(vfs.MountNamespaceFromContext(ctx), &renamed.vfsd, replacedVFSD); err != nil {
+	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
+	if err := vfsObj.PrepareRenameDentry(mntns, &renamed.vfsd, replacedVFSD); err != nil {
 		return err
 	}
 	if err := renamed.file.rename(ctx, newParent.file, newName); err != nil {

@@ -39,7 +39,7 @@ func (fs *Filesystem) stepExistingLocked(ctx context.Context, rp *vfs.ResolvingP
 		return nil, syserror.ENOTDIR
 	}
 	// Directory searchable?
-	if err := d.inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayExec); err != nil {
+	if err := d.inode.CheckPermissions(ctx, rp.Credentials(), rp.Mount(), vfs.MayExec); err != nil {
 		return nil, err
 	}
 afterSymlink:
@@ -182,7 +182,7 @@ func (fs *Filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.Resolving
 // Preconditions: Filesystem.mu must be locked for at least reading. parentInode
 // == parentVFSD.Impl().(*Dentry).Inode. isDir(parentInode) == true.
 func checkCreateLocked(ctx context.Context, rp *vfs.ResolvingPath, parentVFSD *vfs.Dentry, parentInode Inode) (string, error) {
-	if err := parentInode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
+	if err := parentInode.CheckPermissions(ctx, rp.Credentials(), rp.Mount(), vfs.MayWrite|vfs.MayExec); err != nil {
 		return "", err
 	}
 	pc := rp.Component()
@@ -213,7 +213,7 @@ func checkDeleteLocked(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Den
 	if parentVFSD.IsDisowned() {
 		return syserror.ENOENT
 	}
-	if err := parentVFSD.Impl().(*Dentry).inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
+	if err := parentVFSD.Impl().(*Dentry).inode.CheckPermissions(ctx, rp.Credentials(), rp.Mount(), vfs.MayWrite|vfs.MayExec); err != nil {
 		return err
 	}
 	return nil
@@ -244,7 +244,7 @@ func (fs *Filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 		if !d.isDir() {
 			return nil, syserror.ENOTDIR
 		}
-		if err := inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayExec); err != nil {
+		if err := inode.CheckPermissions(ctx, rp.Credentials(), rp.Mount(), vfs.MayExec); err != nil {
 			return nil, err
 		}
 	}
@@ -365,7 +365,7 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	// appropriate bits in rp), but are returned by
 	// FileDescriptionImpl.StatusFlags().
 	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_TRUNC | linux.O_DIRECTORY | linux.O_NOFOLLOW
-	ats := vfs.AccessTypesForOpenFlags(opts.Flags)
+	ats := vfs.AccessTypesForOpenFlags(&opts)
 
 	// Do not create new file.
 	if opts.Flags&linux.O_CREAT == 0 {
@@ -376,10 +376,10 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if err != nil {
 			return nil, err
 		}
-		if err := inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
+		if err := inode.CheckPermissions(ctx, rp.Credentials(), rp.Mount(), ats); err != nil {
 			return nil, err
 		}
-		return inode.Open(rp, vfsd, opts.Flags)
+		return inode.Open(rp, vfsd, opts)
 	}
 
 	// May create new file.
@@ -395,10 +395,10 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if mustCreate {
 			return nil, syserror.EEXIST
 		}
-		if err := inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
+		if err := inode.CheckPermissions(ctx, rp.Credentials(), rp.Mount(), ats); err != nil {
 			return nil, err
 		}
-		return inode.Open(rp, vfsd, opts.Flags)
+		return inode.Open(rp, vfsd, opts)
 	}
 afterTrailingSymlink:
 	parentVFSD, parentInode, err := fs.walkParentDirLocked(ctx, rp)
@@ -407,7 +407,7 @@ afterTrailingSymlink:
 		return nil, err
 	}
 	// Check for search permission in the parent directory.
-	if err := parentInode.CheckPermissions(ctx, rp.Credentials(), vfs.MayExec); err != nil {
+	if err := parentInode.CheckPermissions(ctx, rp.Credentials(), rp.Mount(), vfs.MayExec); err != nil {
 		return nil, err
 	}
 	// Reject attempts to open directories with O_CREAT.
@@ -425,7 +425,7 @@ afterTrailingSymlink:
 	}
 	if childVFSD == nil {
 		// Already checked for searchability above; now check for writability.
-		if err := parentInode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite); err != nil {
+		if err := parentInode.CheckPermissions(ctx, rp.Credentials(), rp.Mount(), vfs.MayWrite); err != nil {
 			return nil, err
 		}
 		if err := rp.Mount().CheckBeginWrite(); err != nil {
@@ -438,7 +438,7 @@ afterTrailingSymlink:
 			return nil, err
 		}
 		parentVFSD.Impl().(*Dentry).InsertChild(pc, child)
-		return child.Impl().(*Dentry).inode.Open(rp, child, opts.Flags)
+		return child.Impl().(*Dentry).inode.Open(rp, child, opts)
 	}
 	// Open existing file or follow symlink.
 	if mustCreate {
@@ -460,10 +460,10 @@ afterTrailingSymlink:
 			goto afterTrailingSymlink
 		}
 	}
-	if err := childInode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
+	if err := childInode.CheckPermissions(ctx, rp.Credentials(), rp.Mount(), ats); err != nil {
 		return nil, err
 	}
-	return childInode.Open(rp, childVFSD, opts.Flags)
+	return childInode.Open(rp, childVFSD, opts)
 }
 
 // ReadlinkAt implements vfs.FilesystemImpl.ReadlinkAt.
@@ -544,6 +544,7 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 
 	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
 	virtfs := rp.VirtualFilesystem()
 
 	srcDirDentry := srcDirVFSD.Impl().(*Dentry)
@@ -595,7 +596,10 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	parentDentry := vfsd.Parent().Impl().(*Dentry)
 	parentDentry.dirMu.Lock()
 	defer parentDentry.dirMu.Unlock()
-	if err := virtfs.PrepareDeleteDentry(vfs.MountNamespaceFromContext(ctx), vfsd); err != nil {
+
+	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
+	if err := virtfs.PrepareDeleteDentry(mntns, vfsd); err != nil {
 		return err
 	}
 	if err := parentDentry.inode.RmDir(ctx, rp.Component(), vfsd); err != nil {
@@ -697,7 +701,9 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	parentDentry := vfsd.Parent().Impl().(*Dentry)
 	parentDentry.dirMu.Lock()
 	defer parentDentry.dirMu.Unlock()
-	if err := virtfs.PrepareDeleteDentry(vfs.MountNamespaceFromContext(ctx), vfsd); err != nil {
+	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
+	if err := virtfs.PrepareDeleteDentry(mntns, vfsd); err != nil {
 		return err
 	}
 	if err := parentDentry.inode.Unlink(ctx, rp.Component(), vfsd); err != nil {

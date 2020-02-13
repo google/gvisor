@@ -90,8 +90,7 @@ func setup(t *testing.T) *testutil.System {
 	ctx := k.SupervisorContext()
 	creds := auth.CredentialsFromContext(ctx)
 
-	vfsObj := vfs.New()
-	vfsObj.MustRegisterFilesystemType("procfs", &procFSType{}, &vfs.RegisterFilesystemTypeOptions{
+	k.VFS.MustRegisterFilesystemType(Name, &FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 	})
 	fsOpts := vfs.GetFilesystemOptions{
@@ -102,11 +101,11 @@ func setup(t *testing.T) *testutil.System {
 			},
 		},
 	}
-	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "procfs", &fsOpts)
+	mntns, err := k.VFS.NewMountNamespace(ctx, creds, "", Name, &fsOpts)
 	if err != nil {
 		t.Fatalf("NewMountNamespace(): %v", err)
 	}
-	return testutil.NewSystem(ctx, t, vfsObj, mntns)
+	return testutil.NewSystem(ctx, t, k.VFS, mntns)
 }
 
 func TestTasksEmpty(t *testing.T) {
@@ -131,7 +130,7 @@ func TestTasks(t *testing.T) {
 	var tasks []*kernel.Task
 	for i := 0; i < 5; i++ {
 		tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
-		task, err := testutil.CreateTask(s.Ctx, fmt.Sprintf("name-%d", i), tc)
+		task, err := testutil.CreateTask(s.Ctx, fmt.Sprintf("name-%d", i), tc, s.MntNs, s.Root, s.Root)
 		if err != nil {
 			t.Fatalf("CreateTask(): %v", err)
 		}
@@ -213,7 +212,7 @@ func TestTasksOffset(t *testing.T) {
 	k := kernel.KernelFromContext(s.Ctx)
 	for i := 0; i < 3; i++ {
 		tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
-		if _, err := testutil.CreateTask(s.Ctx, fmt.Sprintf("name-%d", i), tc); err != nil {
+		if _, err := testutil.CreateTask(s.Ctx, fmt.Sprintf("name-%d", i), tc, s.MntNs, s.Root, s.Root); err != nil {
 			t.Fatalf("CreateTask(): %v", err)
 		}
 	}
@@ -337,7 +336,7 @@ func TestTask(t *testing.T) {
 
 	k := kernel.KernelFromContext(s.Ctx)
 	tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
-	_, err := testutil.CreateTask(s.Ctx, "name", tc)
+	_, err := testutil.CreateTask(s.Ctx, "name", tc, s.MntNs, s.Root, s.Root)
 	if err != nil {
 		t.Fatalf("CreateTask(): %v", err)
 	}
@@ -352,7 +351,7 @@ func TestProcSelf(t *testing.T) {
 
 	k := kernel.KernelFromContext(s.Ctx)
 	tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
-	task, err := testutil.CreateTask(s.Ctx, "name", tc)
+	task, err := testutil.CreateTask(s.Ctx, "name", tc, s.MntNs, s.Root, s.Root)
 	if err != nil {
 		t.Fatalf("CreateTask(): %v", err)
 	}
@@ -433,7 +432,7 @@ func TestTree(t *testing.T) {
 	var tasks []*kernel.Task
 	for i := 0; i < 5; i++ {
 		tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
-		task, err := testutil.CreateTask(s.Ctx, fmt.Sprintf("name-%d", i), tc)
+		task, err := testutil.CreateTask(s.Ctx, fmt.Sprintf("name-%d", i), tc, s.MntNs, s.Root, s.Root)
 		if err != nil {
 			t.Fatalf("CreateTask(): %v", err)
 		}

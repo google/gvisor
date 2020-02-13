@@ -27,7 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
@@ -97,11 +97,11 @@ type elfInfo struct {
 // accepts from the ELF, and it doesn't parse unnecessary parts of the file.
 //
 // ctx may be nil if f does not need it.
-func parseHeader(ctx context.Context, f *fs.File) (elfInfo, error) {
+func parseHeader(ctx context.Context, f fsbridge.File) (elfInfo, error) {
 	// Check ident first; it will tell us the endianness of the rest of the
 	// structs.
 	var ident [elf.EI_NIDENT]byte
-	_, err := readFull(ctx, f, usermem.BytesIOSequence(ident[:]), 0)
+	_, err := f.ReadFull(ctx, usermem.BytesIOSequence(ident[:]), 0)
 	if err != nil {
 		log.Infof("Error reading ELF ident: %v", err)
 		// The entire ident array always exists.
@@ -137,7 +137,7 @@ func parseHeader(ctx context.Context, f *fs.File) (elfInfo, error) {
 
 	var hdr elf.Header64
 	hdrBuf := make([]byte, header64Size)
-	_, err = readFull(ctx, f, usermem.BytesIOSequence(hdrBuf), 0)
+	_, err = f.ReadFull(ctx, usermem.BytesIOSequence(hdrBuf), 0)
 	if err != nil {
 		log.Infof("Error reading ELF header: %v", err)
 		// The entire header always exists.
@@ -187,7 +187,7 @@ func parseHeader(ctx context.Context, f *fs.File) (elfInfo, error) {
 	}
 
 	phdrBuf := make([]byte, totalPhdrSize)
-	_, err = readFull(ctx, f, usermem.BytesIOSequence(phdrBuf), int64(hdr.Phoff))
+	_, err = f.ReadFull(ctx, usermem.BytesIOSequence(phdrBuf), int64(hdr.Phoff))
 	if err != nil {
 		log.Infof("Error reading ELF phdrs: %v", err)
 		// If phdrs were specified, they should all exist.
@@ -227,7 +227,7 @@ func parseHeader(ctx context.Context, f *fs.File) (elfInfo, error) {
 
 // mapSegment maps a phdr into the Task. offset is the offset to apply to
 // phdr.Vaddr.
-func mapSegment(ctx context.Context, m *mm.MemoryManager, f *fs.File, phdr *elf.ProgHeader, offset usermem.Addr) error {
+func mapSegment(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, phdr *elf.ProgHeader, offset usermem.Addr) error {
 	// We must make a page-aligned mapping.
 	adjust := usermem.Addr(phdr.Vaddr).PageOffset()
 
@@ -395,7 +395,7 @@ type loadedELF struct {
 //
 // Preconditions:
 //  * f is an ELF file
-func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f *fs.File, info elfInfo, sharedLoadOffset usermem.Addr) (loadedELF, error) {
+func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, info elfInfo, sharedLoadOffset usermem.Addr) (loadedELF, error) {
 	first := true
 	var start, end usermem.Addr
 	var interpreter string
@@ -431,7 +431,7 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f *fs.File, info el
 			}
 
 			path := make([]byte, phdr.Filesz)
-			_, err := readFull(ctx, f, usermem.BytesIOSequence(path), int64(phdr.Off))
+			_, err := f.ReadFull(ctx, usermem.BytesIOSequence(path), int64(phdr.Off))
 			if err != nil {
 				// If an interpreter was specified, it should exist.
 				ctx.Infof("Error reading PT_INTERP path: %v", err)
@@ -564,7 +564,7 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f *fs.File, info el
 // Preconditions:
 //  * f is an ELF file
 //  * f is the first ELF loaded into m
-func loadInitialELF(ctx context.Context, m *mm.MemoryManager, fs *cpuid.FeatureSet, f *fs.File) (loadedELF, arch.Context, error) {
+func loadInitialELF(ctx context.Context, m *mm.MemoryManager, fs *cpuid.FeatureSet, f fsbridge.File) (loadedELF, arch.Context, error) {
 	info, err := parseHeader(ctx, f)
 	if err != nil {
 		ctx.Infof("Failed to parse initial ELF: %v", err)
@@ -602,7 +602,7 @@ func loadInitialELF(ctx context.Context, m *mm.MemoryManager, fs *cpuid.FeatureS
 //
 // Preconditions:
 //  * f is an ELF file
-func loadInterpreterELF(ctx context.Context, m *mm.MemoryManager, f *fs.File, initial loadedELF) (loadedELF, error) {
+func loadInterpreterELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, initial loadedELF) (loadedELF, error) {
 	info, err := parseHeader(ctx, f)
 	if err != nil {
 		if err == syserror.ENOEXEC {
@@ -649,16 +649,14 @@ func loadELF(ctx context.Context, args LoadArgs) (loadedELF, arch.Context, error
 		// Refresh the traversal limit.
 		*args.RemainingTraversals = linux.MaxSymlinkTraversals
 		args.Filename = bin.interpreter
-		d, i, err := openPath(ctx, args)
+		intFile, err := openPath(ctx, args)
 		if err != nil {
 			ctx.Infof("Error opening interpreter %s: %v", bin.interpreter, err)
 			return loadedELF{}, nil, err
 		}
-		defer i.DecRef()
-		// We don't need the Dirent.
-		d.DecRef()
+		defer intFile.DecRef()
 
-		interp, err = loadInterpreterELF(ctx, args.MemoryManager, i, bin)
+		interp, err = loadInterpreterELF(ctx, args.MemoryManager, intFile, bin)
 		if err != nil {
 			ctx.Infof("Error loading interpreter: %v", err)
 			return loadedELF{}, nil, err
