@@ -289,7 +289,7 @@ func (s *socketOperations) GetSockOpt(t *kernel.Task, level int, name int, outPt
 	switch level {
 	case linux.SOL_IP:
 		switch name {
-		case linux.IP_TOS, linux.IP_RECVTOS:
+		case linux.IP_TOS, linux.IP_RECVTOS, linux.IP_PKTINFO:
 			optlen = sizeofInt32
 		}
 	case linux.SOL_IPV6:
@@ -336,6 +336,8 @@ func (s *socketOperations) SetSockOpt(t *kernel.Task, level int, name int, opt [
 		switch name {
 		case linux.IP_TOS, linux.IP_RECVTOS:
 			optlen = sizeofInt32
+		case linux.IP_PKTINFO:
+			optlen = linux.SizeOfControlMessageIPPacketInfo
 		}
 	case linux.SOL_IPV6:
 		switch name {
@@ -473,7 +475,14 @@ func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 			case syscall.IP_TOS:
 				controlMessages.IP.HasTOS = true
 				binary.Unmarshal(unixCmsg.Data[:linux.SizeOfControlMessageTOS], usermem.ByteOrder, &controlMessages.IP.TOS)
+
+			case syscall.IP_PKTINFO:
+				controlMessages.IP.HasIPPacketInfo = true
+				var packetInfo linux.ControlMessageIPPacketInfo
+				binary.Unmarshal(unixCmsg.Data[:linux.SizeOfControlMessageIPPacketInfo], usermem.ByteOrder, &packetInfo)
+				controlMessages.IP.PacketInfo = control.NewIPPacketInfo(packetInfo)
 			}
+
 		case syscall.SOL_IPV6:
 			switch unixCmsg.Header.Type {
 			case syscall.IPV6_TCLASS:

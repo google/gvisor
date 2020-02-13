@@ -1495,6 +1495,5 @@ TEST_P(UdpSocketTest, SendAndReceiveTOS) {
   memcpy(&received_tos, CMSG_DATA(cmsg), sizeof(received_tos));
   EXPECT_EQ(received_tos, sent_tos);
 }
-
 }  // namespace testing
 }  // namespace gvisor

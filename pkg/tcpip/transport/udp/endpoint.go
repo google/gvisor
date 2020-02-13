@@ -29,6 +29,7 @@ import (
 type udpPacket struct {
 	udpPacketEntry
 	senderAddress tcpip.FullAddress
+	packetInfo    tcpip.IPPacketInfo
 	data          buffer.VectorisedView `state:".(buffer.VectorisedView)"`
 	timestamp     int64
 	tos           uint8
@@ -117,6 +118,9 @@ type endpoint struct {
 	// receiveTOS determines if the incoming IPv4 TOS header field is passed
 	// as ancillary data to ControlMessages on Read.
 	receiveTOS bool
+
+	// receiveIPPacketInfo determines if the packet info is returned by Read.
+	receiveIPPacketInfo bool
 
 	// shutdownFlags represent the current shutdown state of the endpoint.
 	shutdownFlags tcpip.ShutdownFlags
@@ -254,10 +258,16 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMess
 	}
 	e.mu.RLock()
 	receiveTOS := e.receiveTOS
+	receiveIPPacketInfo := e.receiveIPPacketInfo
 	e.mu.RUnlock()
 	if receiveTOS {
 		cm.HasTOS = true
 		cm.TOS = p.tos
+	}
+
+	if receiveIPPacketInfo {
+		cm.HasIPPacketInfo = true
+		cm.PacketInfo = p.packetInfo
 	}
 	return p.data.ToView(), cm, nil
 }
@@ -495,6 +505,13 @@ func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 		}
 
 		e.v6only = v
+		return nil
+
+	case tcpip.ReceiveIPPacketInfoOption:
+		e.mu.Lock()
+		e.receiveIPPacketInfo = v
+		e.mu.Unlock()
+		return nil
 	}
 
 	return nil
@@ -702,6 +719,12 @@ func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 		v := e.v6only
 		e.mu.RUnlock()
 
+		return v, nil
+
+	case tcpip.ReceiveIPPacketInfoOption:
+		e.mu.RLock()
+		v := e.receiveIPPacketInfo
+		e.mu.RUnlock()
 		return v, nil
 	}
 
@@ -1247,6 +1270,9 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 	switch r.NetProto {
 	case header.IPv4ProtocolNumber:
 		packet.tos, _ = header.IPv4(pkt.NetworkHeader).TOS()
+		packet.packetInfo.LocalAddr = r.LocalAddress
+		packet.packetInfo.DestinationAddr = r.RemoteAddress
+		packet.packetInfo.NIC = r.NICID()
 	}
 
 	packet.timestamp = e.stack.NowNanoseconds()
