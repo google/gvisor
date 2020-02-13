@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -80,6 +81,9 @@ type TaskConfig struct {
 	// AbstractSocketNamespace is the AbstractSocketNamespace of the new task.
 	AbstractSocketNamespace *AbstractSocketNamespace
 
+	// MountNamespaceVFS2 is the MountNamespace of the new task.
+	MountNamespaceVFS2 *vfs.MountNamespace
+
 	// RSeqAddr is a pointer to the the userspace linux.RSeq structure.
 	RSeqAddr usermem.Addr
 
@@ -116,28 +120,29 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 			parent:   cfg.Parent,
 			children: make(map[*Task]struct{}),
 		},
-		runState:        (*runApp)(nil),
-		interruptChan:   make(chan struct{}, 1),
-		signalMask:      cfg.SignalMask,
-		signalStack:     arch.SignalStack{Flags: arch.SignalStackFlagDisable},
-		tc:              *tc,
-		fsContext:       cfg.FSContext,
-		fdTable:         cfg.FDTable,
-		p:               cfg.Kernel.Platform.NewContext(),
-		k:               cfg.Kernel,
-		ptraceTracees:   make(map[*Task]struct{}),
-		allowedCPUMask:  cfg.AllowedCPUMask.Copy(),
-		ioUsage:         &usage.IO{},
-		niceness:        cfg.Niceness,
-		netns:           cfg.NetworkNamespaced,
-		utsns:           cfg.UTSNamespace,
-		ipcns:           cfg.IPCNamespace,
-		abstractSockets: cfg.AbstractSocketNamespace,
-		rseqCPU:         -1,
-		rseqAddr:        cfg.RSeqAddr,
-		rseqSignature:   cfg.RSeqSignature,
-		futexWaiter:     futex.NewWaiter(),
-		containerID:     cfg.ContainerID,
+		runState:           (*runApp)(nil),
+		interruptChan:      make(chan struct{}, 1),
+		signalMask:         cfg.SignalMask,
+		signalStack:        arch.SignalStack{Flags: arch.SignalStackFlagDisable},
+		tc:                 *tc,
+		fsContext:          cfg.FSContext,
+		fdTable:            cfg.FDTable,
+		p:                  cfg.Kernel.Platform.NewContext(),
+		k:                  cfg.Kernel,
+		ptraceTracees:      make(map[*Task]struct{}),
+		allowedCPUMask:     cfg.AllowedCPUMask.Copy(),
+		ioUsage:            &usage.IO{},
+		niceness:           cfg.Niceness,
+		netns:              cfg.NetworkNamespaced,
+		utsns:              cfg.UTSNamespace,
+		ipcns:              cfg.IPCNamespace,
+		abstractSockets:    cfg.AbstractSocketNamespace,
+		mountNamespaceVFS2: cfg.MountNamespaceVFS2,
+		rseqCPU:            -1,
+		rseqAddr:           cfg.RSeqAddr,
+		rseqSignature:      cfg.RSeqSignature,
+		futexWaiter:        futex.NewWaiter(),
+		containerID:        cfg.ContainerID,
 	}
 	t.creds.Store(cfg.Credentials)
 	t.endStopCond.L = &t.tg.signalHandlers.mu

@@ -43,11 +43,13 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/eventchannel"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/timerfd"
+	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/hostcpu"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -70,6 +72,10 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
+
+// VFS2Enabled is set to true when VFS2 is enabled. Added as a global for allow
+// easy access everywhere. To be removed once VFS2 becomes the default.
+var VFS2Enabled = false
 
 // Kernel represents an emulated Linux kernel. It must be initialized by calling
 // Init() or LoadFrom().
@@ -238,6 +244,9 @@ type Kernel struct {
 
 	// SpecialOpts contains special kernel options.
 	SpecialOpts
+
+	// VFS keeps the filesystem state used across the kernel.
+	VFS *vfs.VirtualFilesystem
 }
 
 // InitKernelArgs holds arguments to Init.
@@ -624,7 +633,7 @@ type CreateProcessArgs struct {
 	// File is a passed host FD pointing to a file to load as the init binary.
 	//
 	// This is checked if and only if Filename is "".
-	File *fs.File
+	File fsbridge.File
 
 	// Argvv is a list of arguments.
 	Argv []string
@@ -673,6 +682,13 @@ type CreateProcessArgs struct {
 	// increment it).
 	MountNamespace *fs.MountNamespace
 
+	// MountNamespaceVFS2 optionally contains the mount namespace for this
+	// process. If nil, the init process's mount namespace is used.
+	//
+	// Anyone setting MountNamespaceVFS2 must donate a reference (i.e.
+	// increment it).
+	MountNamespaceVFS2 *vfs.MountNamespace
+
 	// ContainerID is the container that the process belongs to.
 	ContainerID string
 }
@@ -711,11 +727,22 @@ func (ctx *createProcessContext) Value(key interface{}) interface{} {
 		return ctx.args.Credentials
 	case fs.CtxRoot:
 		if ctx.args.MountNamespace != nil {
-			// MountNamespace.Root() will take a reference on the root
-			// dirent for us.
+			// MountNamespace.Root() will take a reference on the root dirent for us.
 			return ctx.args.MountNamespace.Root()
 		}
 		return nil
+	case vfs.CtxRoot:
+		if ctx.args.MountNamespaceVFS2 == nil {
+			return nil
+		}
+		// MountNamespaceVFS2.Root() takes a reference on the root dirent for us.
+		return ctx.args.MountNamespaceVFS2.Root()
+	case vfs.CtxMountNamespace:
+		if ctx.k.globalInit == nil {
+			return nil
+		}
+		// MountNamespaceVFS2 takes a reference for us.
+		return ctx.k.GlobalInit().Leader().MountNamespaceVFS2()
 	case fs.CtxDirentCacheLimiter:
 		return ctx.k.DirentCacheLimiter
 	case ktime.CtxRealtimeClock:
@@ -757,33 +784,76 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	defer k.extMu.Unlock()
 	log.Infof("EXEC: %v", args.Argv)
 
-	// Grab the mount namespace.
-	mounts := args.MountNamespace
-	if mounts == nil {
-		mounts = k.GlobalInit().Leader().MountNamespace()
-		mounts.IncRef()
-	}
-
-	tg := k.NewThreadGroup(mounts, args.PIDNamespace, NewSignalHandlers(), linux.SIGCHLD, args.Limits)
 	ctx := args.NewContext(k)
 
-	// Get the root directory from the MountNamespace.
-	root := mounts.Root()
-	// The call to newFSContext below will take a reference on root, so we
-	// don't need to hold this one.
-	defer root.DecRef()
+	var (
+		opener    fsbridge.Lookup
+		fsContext *FSContext
+		mntns     *fs.MountNamespace
+		mntnsVFS2 *vfs.MountNamespace
+	)
 
-	// Grab the working directory.
-	remainingTraversals := uint(args.MaxSymlinkTraversals)
-	wd := root // Default.
-	if args.WorkingDirectory != "" {
-		var err error
-		wd, err = mounts.FindInode(ctx, root, nil, args.WorkingDirectory, &remainingTraversals)
-		if err != nil {
-			return nil, 0, fmt.Errorf("failed to find initial working directory %q: %v", args.WorkingDirectory, err)
+	if VFS2Enabled {
+		if args.MountNamespaceVFS2 == nil {
+			// MountNamespaceVFS2 adds a reference to the namespace, which is
+			// transferred to the new process.
+			args.MountNamespaceVFS2 = k.GlobalInit().Leader().MountNamespaceVFS2()
 		}
-		defer wd.DecRef()
+		// Get the root directory from the MountNamespace.
+		root := args.MountNamespaceVFS2.Root()
+		// The call to newFSContext below will take a reference on root, so we
+		// don't need to hold this one.
+		defer root.DecRef()
+
+		// Grab the working directory.
+		wd := root // Default.
+		if args.WorkingDirectory != "" {
+			pop := vfs.PathOperation{
+				Root:               root,
+				Start:              wd,
+				Path:               fspath.Parse(args.WorkingDirectory),
+				FollowFinalSymlink: true,
+			}
+			var err error
+			wd, err = k.VFS.GetDentryAt(ctx, args.Credentials, &pop, &vfs.GetDentryOptions{
+				CheckSearchable: true,
+			})
+			if err != nil {
+				return nil, 0, fmt.Errorf("failed to find initial working directory %q: %v", args.WorkingDirectory, err)
+			}
+			defer wd.DecRef()
+		}
+		opener = fsbridge.NewVFSLookup(mntnsVFS2, root, wd)
+		fsContext = NewFSContextVFS2(root, wd, args.Umask)
+
+	} else {
+		mntns = args.MountNamespace
+		if mntns == nil {
+			mntns = k.GlobalInit().Leader().MountNamespace()
+			mntns.IncRef()
+		}
+		// Get the root directory from the MountNamespace.
+		root := mntns.Root()
+		// The call to newFSContext below will take a reference on root, so we
+		// don't need to hold this one.
+		defer root.DecRef()
+
+		// Grab the working directory.
+		remainingTraversals := args.MaxSymlinkTraversals
+		wd := root // Default.
+		if args.WorkingDirectory != "" {
+			var err error
+			wd, err = mntns.FindInode(ctx, root, nil, args.WorkingDirectory, &remainingTraversals)
+			if err != nil {
+				return nil, 0, fmt.Errorf("failed to find initial working directory %q: %v", args.WorkingDirectory, err)
+			}
+			defer wd.DecRef()
+		}
+		opener = fsbridge.NewFSLookup(mntns, root, wd)
+		fsContext = newFSContext(root, wd, args.Umask)
 	}
+
+	tg := k.NewThreadGroup(mntns, args.PIDNamespace, NewSignalHandlers(), linux.SIGCHLD, args.Limits)
 
 	// Check which file to start from.
 	switch {
@@ -805,11 +875,9 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	}
 
 	// Create a fresh task context.
-	remainingTraversals = uint(args.MaxSymlinkTraversals)
+	remainingTraversals := args.MaxSymlinkTraversals
 	loadArgs := loader.LoadArgs{
-		Mounts:              mounts,
-		Root:                root,
-		WorkingDirectory:    wd,
+		Opener:              opener,
 		RemainingTraversals: &remainingTraversals,
 		ResolveFinal:        true,
 		Filename:            args.Filename,
@@ -834,13 +902,14 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		Kernel:                  k,
 		ThreadGroup:             tg,
 		TaskContext:             tc,
-		FSContext:               newFSContext(root, wd, args.Umask),
+		FSContext:               fsContext,
 		FDTable:                 args.FDTable,
 		Credentials:             args.Credentials,
 		AllowedCPUMask:          sched.NewFullCPUSet(k.applicationCores),
 		UTSNamespace:            args.UTSNamespace,
 		IPCNamespace:            args.IPCNamespace,
 		AbstractSocketNamespace: args.AbstractSocketNamespace,
+		MountNamespaceVFS2:      args.MountNamespaceVFS2,
 		ContainerID:             args.ContainerID,
 	}
 	t, err := k.tasks.NewTask(config)
@@ -1378,6 +1447,20 @@ func (ctx supervisorContext) Value(key interface{}) interface{} {
 			return ctx.k.globalInit.mounts.Root()
 		}
 		return nil
+	case vfs.CtxRoot:
+		if ctx.k.globalInit == nil {
+			return vfs.VirtualDentry{}
+		}
+		mntns := ctx.k.GlobalInit().Leader().MountNamespaceVFS2()
+		defer mntns.DecRef()
+		// Root() takes a reference on the root dirent for us.
+		return mntns.Root()
+	case vfs.CtxMountNamespace:
+		if ctx.k.globalInit == nil {
+			return nil
+		}
+		// MountNamespaceVFS2() takes a reference for us.
+		return ctx.k.GlobalInit().Leader().MountNamespaceVFS2()
 	case fs.CtxDirentCacheLimiter:
 		return ctx.k.DirentCacheLimiter
 	case ktime.CtxRealtimeClock:

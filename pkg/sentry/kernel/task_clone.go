@@ -199,6 +199,12 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		ipcns = NewIPCNamespace(userns)
 	}
 
+	// TODO(b/63601033): Implement CLONE_NEWNS.
+	mntnsVFS2 := t.mountNamespaceVFS2
+	if mntnsVFS2 != nil {
+		mntnsVFS2.IncRef()
+	}
+
 	tc, err := t.tc.Fork(t, t.k, !opts.NewAddressSpace)
 	if err != nil {
 		return 0, nil, err
@@ -241,7 +247,9 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	rseqAddr := usermem.Addr(0)
 	rseqSignature := uint32(0)
 	if opts.NewThreadGroup {
-		tg.mounts.IncRef()
+		if tg.mounts != nil {
+			tg.mounts.IncRef()
+		}
 		sh := t.tg.signalHandlers
 		if opts.NewSignalHandlers {
 			sh = sh.Fork()
@@ -265,6 +273,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		UTSNamespace:            utsns,
 		IPCNamespace:            ipcns,
 		AbstractSocketNamespace: t.abstractSockets,
+		MountNamespaceVFS2:      mntnsVFS2,
 		RSeqAddr:                rseqAddr,
 		RSeqSignature:           rseqSignature,
 		ContainerID:             t.ContainerID(),

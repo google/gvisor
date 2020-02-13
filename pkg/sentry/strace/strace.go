@@ -141,6 +141,10 @@ func path(t *kernel.Task, addr usermem.Addr) string {
 }
 
 func fd(t *kernel.Task, fd int32) string {
+	if kernel.VFS2Enabled {
+		return fdVFS2(t, fd)
+	}
+
 	root := t.FSContext().RootDirectory()
 	if root != nil {
 		defer root.DecRef()
@@ -166,6 +170,30 @@ func fd(t *kernel.Task, fd int32) string {
 	defer file.DecRef()
 
 	name, _ := file.Dirent.FullName(root)
+	return fmt.Sprintf("%#x %s", fd, name)
+}
+
+func fdVFS2(t *kernel.Task, fd int32) string {
+	root := t.FSContext().RootDirectoryVFS2()
+	defer root.DecRef()
+
+	vfsObj := root.Mount().Filesystem().VirtualFilesystem()
+	if fd == linux.AT_FDCWD {
+		wd := t.FSContext().WorkingDirectoryVFS2()
+		defer wd.DecRef()
+
+		name, _ := vfsObj.PathnameWithDeleted(t, root, wd)
+		return fmt.Sprintf("AT_FDCWD %s", name)
+	}
+
+	file := t.GetFileVFS2(fd)
+	if file == nil {
+		// Cast FD to uint64 to avoid printing negative hex.
+		return fmt.Sprintf("%#x (bad FD)", uint64(fd))
+	}
+	defer file.DecRef()
+
+	name, _ := vfsObj.PathnameWithDeleted(t, root, file.VirtualDentry())
 	return fmt.Sprintf("%#x %s", fd, name)
 }
 

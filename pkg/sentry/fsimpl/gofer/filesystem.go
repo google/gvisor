@@ -400,6 +400,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 	}
 	vfsObj := rp.VirtualFilesystem()
 	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
 	parent.dirMu.Lock()
 	defer parent.dirMu.Unlock()
 	childVFSD := parent.vfsd.Child(name)
@@ -593,7 +594,7 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		}
 	}
 	if rp.Done() {
-		return start.openLocked(ctx, rp, opts.Flags)
+		return start.openLocked(ctx, rp, &opts)
 	}
 
 afterTrailingSymlink:
@@ -633,12 +634,12 @@ afterTrailingSymlink:
 		start = parent
 		goto afterTrailingSymlink
 	}
-	return child.openLocked(ctx, rp, opts.Flags)
+	return child.openLocked(ctx, rp, &opts)
 }
 
 // Preconditions: fs.renameMu must be locked.
-func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, flags uint32) (*vfs.FileDescription, error) {
-	ats := vfs.AccessTypesForOpenFlags(flags)
+func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+	ats := vfs.AccessTypesForOpenFlags(opts)
 	if err := d.checkPermissions(rp.Credentials(), ats, d.isDir()); err != nil {
 		return nil, err
 	}
@@ -646,11 +647,11 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, flags ui
 	filetype := d.fileType()
 	switch {
 	case filetype == linux.S_IFREG && !d.fs.opts.regularFilesUseSpecialFileFD:
-		if err := d.ensureSharedHandle(ctx, ats&vfs.MayRead != 0, ats&vfs.MayWrite != 0, flags&linux.O_TRUNC != 0); err != nil {
+		if err := d.ensureSharedHandle(ctx, ats&vfs.MayRead != 0, ats&vfs.MayWrite != 0, opts.Flags&linux.O_TRUNC != 0); err != nil {
 			return nil, err
 		}
 		fd := &regularFileFD{}
-		if err := fd.vfsfd.Init(fd, flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{
+		if err := fd.vfsfd.Init(fd, opts.Flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{
 			AllowDirectIO: true,
 		}); err != nil {
 			return nil, err
@@ -658,21 +659,21 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, flags ui
 		return &fd.vfsfd, nil
 	case filetype == linux.S_IFDIR:
 		// Can't open directories with O_CREAT.
-		if flags&linux.O_CREAT != 0 {
+		if opts.Flags&linux.O_CREAT != 0 {
 			return nil, syserror.EISDIR
 		}
 		// Can't open directories writably.
 		if ats&vfs.MayWrite != 0 {
 			return nil, syserror.EISDIR
 		}
-		if flags&linux.O_DIRECT != 0 {
+		if opts.Flags&linux.O_DIRECT != 0 {
 			return nil, syserror.EINVAL
 		}
 		if err := d.ensureSharedHandle(ctx, ats&vfs.MayRead != 0, false /* write */, false /* trunc */); err != nil {
 			return nil, err
 		}
 		fd := &directoryFD{}
-		if err := fd.vfsfd.Init(fd, flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+		if err := fd.vfsfd.Init(fd, opts.Flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
 			return nil, err
 		}
 		return &fd.vfsfd, nil
@@ -680,17 +681,17 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, flags ui
 		// Can't open symlinks without O_PATH (which is unimplemented).
 		return nil, syserror.ELOOP
 	default:
-		if flags&linux.O_DIRECT != 0 {
+		if opts.Flags&linux.O_DIRECT != 0 {
 			return nil, syserror.EINVAL
 		}
-		h, err := openHandle(ctx, d.file, ats&vfs.MayRead != 0, ats&vfs.MayWrite != 0, flags&linux.O_TRUNC != 0)
+		h, err := openHandle(ctx, d.file, ats&vfs.MayRead != 0, ats&vfs.MayWrite != 0, opts.Flags&linux.O_TRUNC != 0)
 		if err != nil {
 			return nil, err
 		}
 		fd := &specialFileFD{
 			handle: h,
 		}
-		if err := fd.vfsfd.Init(fd, flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+		if err := fd.vfsfd.Init(fd, opts.Flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
 			h.close(ctx)
 			return nil, err
 		}
@@ -934,7 +935,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	if oldParent == newParent && oldName == newName {
 		return nil
 	}
-	if err := vfsObj.PrepareRenameDentry(vfs.MountNamespaceFromContext(ctx), &renamed.vfsd, replacedVFSD); err != nil {
+	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
+	if err := vfsObj.PrepareRenameDentry(mntns, &renamed.vfsd, replacedVFSD); err != nil {
 		return err
 	}
 	if err := renamed.file.rename(ctx, newParent.file, newName); err != nil {

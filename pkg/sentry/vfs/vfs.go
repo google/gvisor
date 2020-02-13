@@ -379,6 +379,23 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 		fd, err := rp.mount.fs.impl.OpenAt(ctx, rp, *opts)
 		if err == nil {
 			vfs.putResolvingPath(rp)
+
+			if opts.FileExec {
+				if fd.Mount().Flags.NoExec() {
+					return nil, syserror.EACCES
+				}
+
+				// Only a regular file can be executed.
+				stat, err := fd.Stat(ctx, StatOptions{Mask: linux.STATX_TYPE})
+				if err != nil {
+					return nil, err
+				}
+				if t := linux.FileMode(stat.Mode).FileType(); t != linux.ModeRegular {
+					ctx.Infof("%q is not a regular file: %v", pop.Path, t)
+					return nil, syserror.EACCES
+				}
+			}
+
 			return fd, nil
 		}
 		if !rp.handleError(err) {
@@ -724,6 +741,8 @@ func (vfs *VirtualFilesystem) SyncAllFilesystems(ctx context.Context) error {
 // VirtualDentry methods require that a reference is held on the VirtualDentry.
 //
 // VirtualDentry is analogous to Linux's struct path.
+//
+// +stateify savable
 type VirtualDentry struct {
 	mount  *Mount
 	dentry *Dentry

@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
 	"gvisor.dev/gvisor/pkg/sentry/loader"
@@ -119,7 +120,7 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 	defer root.DecRef()
 
 	var wd *fs.Dirent
-	var executable *fs.File
+	var executable fsbridge.File
 	var closeOnExec bool
 	if dirFD == linux.AT_FDCWD || path.IsAbs(pathname) {
 		// Even if the pathname is absolute, we may still need the wd
@@ -136,7 +137,15 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 		closeOnExec = fdFlags.CloseOnExec
 
 		if atEmptyPath && len(pathname) == 0 {
-			executable = f
+			// TODO(gvisor.dev/issue/160): Linux requires only execute permission,
+			// not read. However, our backing filesystems may prevent us from reading
+			// the file without read permission. Additionally, a task with a
+			// non-readable executable has additional constraints on access via
+			// ptrace and procfs.
+			if err := f.Dirent.Inode.CheckPermission(t, fs.PermMask{Read: true, Execute: true}); err != nil {
+				return 0, nil, err
+			}
+			executable = fsbridge.NewFSFile(f)
 		} else {
 			wd = f.Dirent
 			wd.IncRef()
@@ -152,9 +161,7 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 	// Load the new TaskContext.
 	remainingTraversals := uint(linux.MaxSymlinkTraversals)
 	loadArgs := loader.LoadArgs{
-		Mounts:              t.MountNamespace(),
-		Root:                root,
-		WorkingDirectory:    wd,
+		Opener:              fsbridge.NewFSLookup(t.MountNamespace(), root, wd),
 		RemainingTraversals: &remainingTraversals,
 		ResolveFinal:        resolveFinal,
 		Filename:            pathname,
