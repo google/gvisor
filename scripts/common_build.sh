@@ -14,8 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Install the latest version of Bazel and log the version.
-(which use_bazel.sh && use_bazel.sh latest) || which bazel
+which bazel
 bazel version
 
 # Switch into the workspace; only necessary if run with kokoro.
@@ -26,27 +25,30 @@ elif [[ -v KOKORO_GIT_COMMIT ]] && [[ -d github/repo ]]; then
 fi
 
 # Set the standard bazel flags.
-declare -r BAZEL_FLAGS=(
+declare -a BAZEL_FLAGS=(
   "--show_timestamps"
   "--test_output=errors"
   "--keep_going"
   "--verbose_failures=true"
 )
-BAZEL_RBE_AUTH_FLAGS=""
-BAZEL_RBE_FLAGS=""
 if [[ -v KOKORO_BAZEL_AUTH_CREDENTIAL ]]; then
-  declare -r BAZEL_RBE_AUTH_FLAGS="--auth_credentials=${KOKORO_BAZEL_AUTH_CREDENTIAL}"
-  declare -r BAZEL_RBE_FLAGS="--config=remote"
+  BAZEL_FLAGS+=(
+    "--auth_credentials=${KOKORO_BAZEL_AUTH_CREDENTIAL}"
+    "--config=remote"
+  )
 fi
+declare -r BAZEL_FLAGS
 
 # Wrap bazel.
 function build() {
-  bazel build "${BAZEL_RBE_FLAGS}" "${BAZEL_RBE_AUTH_FLAGS}" "${BAZEL_FLAGS[@]}" "$@" 2>&1 |
-    tee /dev/fd/2 | grep -E '^  bazel-bin/' | awk '{ print $1; }'
+  bazel build "${BAZEL_FLAGS[@]}" "$@" 2>&1 \
+    | tee /dev/fd/2 \
+    | grep -E '^  bazel-bin/' \
+    | awk '{ print $1; }'
 }
 
 function test() {
-  bazel test "${BAZEL_RBE_FLAGS}" "${BAZEL_RBE_AUTH_FLAGS}" "${BAZEL_FLAGS[@]}" "$@"
+  bazel test "${BAZEL_FLAGS[@]}" "$@"
 }
 
 function run() {
@@ -95,5 +97,8 @@ function collect_logs() {
 }
 
 function find_branch_name() {
-  git branch --show-current || git rev-parse HEAD || bazel info workspace | xargs basename
+  git branch --show-current \
+    || git rev-parse HEAD \
+    || bazel info workspace \
+    | xargs basename
 }

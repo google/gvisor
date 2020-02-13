@@ -14,7 +14,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-source $(dirname $0)/common.sh
+# Run in the root of the repo.
+cd "$(dirname "$0")"
+cd "$(git rev-parse --show-toplevel)"
+
+source scripts/common.sh
 
 if [ ! -v RUNTIME_TEST_NAME ]; then
   echo 'Must set $RUNTIME_TEST_NAME' >&2
