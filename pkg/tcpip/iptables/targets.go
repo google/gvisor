@@ -21,20 +21,20 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
-// UnconditionalAcceptTarget accepts all packets.
-type UnconditionalAcceptTarget struct{}
+// AcceptTarget accepts packets.
+type AcceptTarget struct{}
 
 // Action implements Target.Action.
-func (UnconditionalAcceptTarget) Action(packet tcpip.PacketBuffer) (Verdict, string) {
-	return Accept, ""
+func (AcceptTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, string) {
+	return RuleAccept, ""
 }
 
-// UnconditionalDropTarget denies all packets.
-type UnconditionalDropTarget struct{}
+// DropTarget drops packets.
+type DropTarget struct{}
 
 // Action implements Target.Action.
-func (UnconditionalDropTarget) Action(packet tcpip.PacketBuffer) (Verdict, string) {
-	return Drop, ""
+func (DropTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, string) {
+	return RuleDrop, ""
 }
 
 // ErrorTarget logs an error and drops the packet. It represents a target that
@@ -42,7 +42,26 @@ func (UnconditionalDropTarget) Action(packet tcpip.PacketBuffer) (Verdict, strin
 type ErrorTarget struct{}
 
 // Action implements Target.Action.
-func (ErrorTarget) Action(packet tcpip.PacketBuffer) (Verdict, string) {
-	log.Warningf("ErrorTarget triggered.")
-	return Drop, ""
+func (ErrorTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, string) {
+	log.Debugf("ErrorTarget triggered.")
+	return RuleDrop, ""
+}
+
+// UserChainTarget marks a rule as the beginning of a user chain.
+type UserChainTarget struct {
+	Name string
+}
+
+// Action implements Target.Action.
+func (UserChainTarget) Action(tcpip.PacketBuffer) (RuleVerdict, string) {
+	panic("UserChainTarget should never be called.")
+}
+
+// ReturnTarget returns from the current chain. If the chain is a built-in, the
+// hook's underflow should be called.
+type ReturnTarget struct{}
+
+// Action implements Target.Action.
+func (ReturnTarget) Action(tcpip.PacketBuffer) (RuleVerdict, string) {
+	return RuleReturn, ""
 }
