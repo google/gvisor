@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -338,6 +339,22 @@ func PackTClass(t *kernel.Task, tClass int32, buf []byte) []byte {
 	)
 }
 
+// PackIPPacketInfo packs an IP_PKTINFO socket control message.
+func PackIPPacketInfo(t *kernel.Task, packetInfo tcpip.IPPacketInfo, buf []byte) []byte {
+	var p linux.ControlMessageIPPacketInfo
+	p.NIC = int32(packetInfo.NIC)
+	copy(p.LocalAddr[:], []byte(packetInfo.LocalAddr))
+	copy(p.DestinationAddr[:], []byte(packetInfo.DestinationAddr))
+
+	return putCmsgStruct(
+		buf,
+		linux.SOL_IP,
+		linux.IP_PKTINFO,
+		t.Arch().Width(),
+		p,
+	)
+}
+
 // PackControlMessages packs control messages into the given buffer.
 //
 // We skip control messages specific to Unix domain sockets.
@@ -360,6 +377,10 @@ func PackControlMessages(t *kernel.Task, cmsgs socket.ControlMessages, buf []byt
 
 	if cmsgs.IP.HasTClass {
 		buf = PackTClass(t, cmsgs.IP.TClass, buf)
+	}
+
+	if cmsgs.IP.HasIPPacketInfo {
+		buf = PackIPPacketInfo(t, cmsgs.IP.PacketInfo, buf)
 	}
 
 	return buf
@@ -392,6 +413,16 @@ func CmsgsSpace(t *kernel.Task, cmsgs socket.ControlMessages) int {
 	}
 
 	return space
+}
+
+// NewIPPacketInfo returns the IPPacketInfo struct.
+func NewIPPacketInfo(packetInfo linux.ControlMessageIPPacketInfo) tcpip.IPPacketInfo {
+	var p tcpip.IPPacketInfo
+	p.NIC = tcpip.NICID(packetInfo.NIC)
+	copy([]byte(p.LocalAddr), packetInfo.LocalAddr[:])
+	copy([]byte(p.DestinationAddr), packetInfo.DestinationAddr[:])
+
+	return p
 }
 
 // Parse parses a raw socket control message into portable objects.
@@ -466,6 +497,18 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte) (socket.Con
 				}
 				cmsgs.IP.HasTOS = true
 				binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageTOS], usermem.ByteOrder, &cmsgs.IP.TOS)
+				i += binary.AlignUp(length, width)
+
+			case linux.IP_PKTINFO:
+				if length < linux.SizeOfControlMessageIPPacketInfo {
+					return socket.ControlMessages{}, syserror.EINVAL
+				}
+
+				cmsgs.IP.HasIPPacketInfo = true
+				var packetInfo linux.ControlMessageIPPacketInfo
+				binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageIPPacketInfo], usermem.ByteOrder, &packetInfo)
+
+				cmsgs.IP.PacketInfo = NewIPPacketInfo(packetInfo)
 				i += binary.AlignUp(length, width)
 
 			default:

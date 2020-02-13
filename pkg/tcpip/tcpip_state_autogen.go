@@ -57,6 +57,8 @@ func (x *ControlMessages) save(m state.Map) {
 	m.Save("TOS", &x.TOS)
 	m.Save("HasTClass", &x.HasTClass)
 	m.Save("TClass", &x.TClass)
+	m.Save("HasIPPacketInfo", &x.HasIPPacketInfo)
+	m.Save("PacketInfo", &x.PacketInfo)
 }
 
 func (x *ControlMessages) afterLoad() {}
@@ -69,10 +71,28 @@ func (x *ControlMessages) load(m state.Map) {
 	m.Load("TOS", &x.TOS)
 	m.Load("HasTClass", &x.HasTClass)
 	m.Load("TClass", &x.TClass)
+	m.Load("HasIPPacketInfo", &x.HasIPPacketInfo)
+	m.Load("PacketInfo", &x.PacketInfo)
+}
+
+func (x *IPPacketInfo) beforeSave() {}
+func (x *IPPacketInfo) save(m state.Map) {
+	x.beforeSave()
+	m.Save("NIC", &x.NIC)
+	m.Save("LocalAddr", &x.LocalAddr)
+	m.Save("DestinationAddr", &x.DestinationAddr)
+}
+
+func (x *IPPacketInfo) afterLoad() {}
+func (x *IPPacketInfo) load(m state.Map) {
+	m.Load("NIC", &x.NIC)
+	m.Load("LocalAddr", &x.LocalAddr)
+	m.Load("DestinationAddr", &x.DestinationAddr)
 }
 
 func init() {
 	state.Register("pkg/tcpip.PacketBuffer", (*PacketBuffer)(nil), state.Fns{Save: (*PacketBuffer).save, Load: (*PacketBuffer).load})
 	state.Register("pkg/tcpip.FullAddress", (*FullAddress)(nil), state.Fns{Save: (*FullAddress).save, Load: (*FullAddress).load})
 	state.Register("pkg/tcpip.ControlMessages", (*ControlMessages)(nil), state.Fns{Save: (*ControlMessages).save, Load: (*ControlMessages).load})
+	state.Register("pkg/tcpip.IPPacketInfo", (*IPPacketInfo)(nil), state.Fns{Save: (*IPPacketInfo).save, Load: (*IPPacketInfo).load})
 }
