@@ -19,6 +19,7 @@ go_library(
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/syserror",
+        "//pkg/tcpip",
         "//pkg/usermem",
     ],
 )

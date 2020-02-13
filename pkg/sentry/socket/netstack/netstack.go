@@ -1414,6 +1414,21 @@ func getSockOptIP(t *kernel.Task, ep commonEndpoint, name, outLen int, family in
 		}
 		return o, nil
 
+	case linux.IP_PKTINFO:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		v, err := ep.GetSockOptBool(tcpip.ReceiveIPPacketInfoOption)
+		if err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+		var o int32
+		if v {
+			o = 1
+		}
+		return o, nil
+
 	default:
 		emitUnimplementedEventIP(t, name)
 	}
@@ -1762,6 +1777,7 @@ func setSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) 
 		linux.IPV6_IPSEC_POLICY,
 		linux.IPV6_JOIN_ANYCAST,
 		linux.IPV6_LEAVE_ANYCAST,
+		// TODO(b/148887420): Add support for IPV6_PKTINFO.
 		linux.IPV6_PKTINFO,
 		linux.IPV6_ROUTER_ALERT,
 		linux.IPV6_XFRM_POLICY,
@@ -1949,6 +1965,16 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		}
 		return syserr.TranslateNetstackError(ep.SetSockOptBool(tcpip.ReceiveTOSOption, v != 0))
 
+	case linux.IP_PKTINFO:
+		if len(optVal) == 0 {
+			return nil
+		}
+		v, err := parseIntOrChar(optVal)
+		if err != nil {
+			return err
+		}
+		return syserr.TranslateNetstackError(ep.SetSockOptBool(tcpip.ReceiveIPPacketInfoOption, v != 0))
+
 	case linux.IP_ADD_SOURCE_MEMBERSHIP,
 		linux.IP_BIND_ADDRESS_NO_PORT,
 		linux.IP_BLOCK_SOURCE,
@@ -1964,7 +1990,6 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		linux.IP_NODEFRAG,
 		linux.IP_OPTIONS,
 		linux.IP_PASSSEC,
-		linux.IP_PKTINFO,
 		linux.IP_RECVERR,
 		linux.IP_RECVFRAGSIZE,
 		linux.IP_RECVOPTS,
@@ -2395,10 +2420,12 @@ func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSe
 func (s *SocketOperations) controlMessages() socket.ControlMessages {
 	return socket.ControlMessages{
 		IP: tcpip.ControlMessages{
-			HasTimestamp: s.readCM.HasTimestamp && s.sockOptTimestamp,
-			Timestamp:    s.readCM.Timestamp,
-			HasTOS:       s.readCM.HasTOS,
-			TOS:          s.readCM.TOS,
+			HasTimestamp:    s.readCM.HasTimestamp && s.sockOptTimestamp,
+			Timestamp:       s.readCM.Timestamp,
+			HasTOS:          s.readCM.HasTOS,
+			TOS:             s.readCM.TOS,
+			HasIPPacketInfo: s.readCM.HasIPPacketInfo,
+			PacketInfo:      s.readCM.PacketInfo,
 		},
 	}
 }

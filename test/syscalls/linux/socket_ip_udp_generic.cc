@@ -357,5 +357,49 @@ TEST_P(UDPSocketPairTest, SetReuseAddrReusePort) {
   EXPECT_EQ(get, kSockOptOn);
 }
 
+// Test getsockopt for a socket which is not set with IP_PKTINFO option.
+TEST_P(UDPSocketPairTest, IPPKTINFODefault) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_IP, IP_PKTINFO, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kSockOptOff);
+}
+
+// Test setsockopt and getsockopt for a socket with IP_PKTINFO option.
+TEST_P(UDPSocketPairTest, SetAndGetIPPKTINFO) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int level = SOL_IP;
+  int type = IP_PKTINFO;
+
+  // Check getsockopt before IP_PKTINFO is set.
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+
+  ASSERT_THAT(setsockopt(sockets->first_fd(), level, type, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceedsWithValue(0));
+
+  ASSERT_THAT(getsockopt(sockets->first_fd(), level, type, &get, &get_len),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get, kSockOptOn);
+  EXPECT_EQ(get_len, sizeof(get));
+
+  ASSERT_THAT(setsockopt(sockets->first_fd(), level, type, &kSockOptOff,
+                         sizeof(kSockOptOff)),
+              SyscallSucceedsWithValue(0));
+
+  ASSERT_THAT(getsockopt(sockets->first_fd(), level, type, &get, &get_len),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get, kSockOptOff);
+  EXPECT_EQ(get_len, sizeof(get));
+}
+
 }  // namespace testing
 }  // namespace gvisor

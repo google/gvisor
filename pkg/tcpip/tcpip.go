@@ -328,6 +328,12 @@ type ControlMessages struct {
 
 	// Tclass is the IPv6 traffic class of the associated packet.
 	TClass int32
+
+	// HasIPPacketInfo indicates whether PacketInfo is set.
+	HasIPPacketInfo bool
+
+	// PacketInfo holds interface and address data on an incoming packet.
+	PacketInfo IPPacketInfo
 }
 
 // Endpoint is the interface implemented by transport protocols (e.g., tcp, udp)
@@ -503,6 +509,11 @@ const (
 	// V6OnlyOption is used by {G,S}etSockOptBool to specify whether an IPv6
 	// socket is to be restricted to sending and receiving IPv6 packets only.
 	V6OnlyOption
+
+	// ReceiveIPPacketInfoOption is used by {G,S}etSockOptBool to specify
+	// if more inforamtion is provided with incoming packets such
+	// as interface index and address.
+	ReceiveIPPacketInfoOption
 )
 
 // SockOptInt represents socket options which values have the int type.
@@ -684,6 +695,20 @@ type IPv4TOSOption uint8
 // IPv6TrafficClassOption is used by SetSockOpt/GetSockOpt to specify TOS
 // for all subsequent outgoing IPv6 packets from the endpoint.
 type IPv6TrafficClassOption uint8
+
+// IPPacketInfo is the message struture for IP_PKTINFO.
+//
+// +stateify savable
+type IPPacketInfo struct {
+	// NIC is the ID of the NIC to be used.
+	NIC NICID
+
+	// LocalAddr is the local address.
+	LocalAddr Address
+
+	// DestinationAddr is the destination address.
+	DestinationAddr Address
+}
 
 // Route is a row in the routing table. It specifies through which NIC (and
 // gateway) sets of packets should be routed. A row is considered viable if the
