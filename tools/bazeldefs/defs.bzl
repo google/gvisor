@@ -72,7 +72,7 @@ def go_test(name, **kwargs):
         **kwargs
     )
 
-def py_requirement(name, direct = False):
+def py_requirement(name, direct = True):
     return _py_requirement(name)
 
 def select_arch(amd64 = "amd64", arm64 = "arm64", default = None, **kwargs):

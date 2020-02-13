@@ -1,4 +1,5 @@
-load("//tools:defs.bzl", "pkg_tar", "py_library", "py_requirement", "py_test")
+load("//tools:defs.bzl", "pkg_tar", "py_library", "py_test")
+load("//benchmarks:defs.bzl", "test_deps")
 
 package(
     default_visibility = ["//benchmarks:__subpackages__"],
@@ -14,16 +15,8 @@ py_test(
     name = "redisbenchmark_test",
     srcs = ["redisbenchmark_test.py"],
     python_version = "PY3",
-    deps = [
+    deps = test_deps + [
         ":redisbenchmark",
-        py_requirement("attrs", False),
-        py_requirement("atomicwrites", False),
-        py_requirement("more-itertools", False),
-        py_requirement("pathlib2", False),
-        py_requirement("pluggy", False),
-        py_requirement("py", False),
-        py_requirement("pytest", True),
-        py_requirement("six", False),
     ],
 )
 

@@ -1,5 +1,4 @@
-load("//tools:defs.bzl", "pkg_tar")
-load("//tools:defs.bzl", "py_library", "py_requirement")
+load("//tools:defs.bzl", "pkg_tar", "py_library", "py_requirement")
 
 package(
     default_visibility = ["//benchmarks:__subpackages__"],
@@ -46,16 +45,43 @@ py_library(
     srcs = ["container.py"],
     deps = [
         "//benchmarks/workloads",
-        py_requirement("asn1crypto", False),
-        py_requirement("chardet", False),
-        py_requirement("certifi", False),
-        py_requirement("docker", True),
-        py_requirement("docker-pycreds", False),
-        py_requirement("idna", False),
-        py_requirement("ptyprocess", False),
-        py_requirement("requests", False),
-        py_requirement("urllib3", False),
-        py_requirement("websocket-client", False),
+        py_requirement(
+            "asn1crypto",
+            direct = False,
+        ),
+        py_requirement(
+            "chardet",
+            direct = False,
+        ),
+        py_requirement(
+            "certifi",
+            direct = False,
+        ),
+        py_requirement("docker"),
+        py_requirement(
+            "docker-pycreds",
+            direct = False,
+        ),
+        py_requirement(
+            "idna",
+            direct = False,
+        ),
+        py_requirement(
+            "ptyprocess",
+            direct = False,
+        ),
+        py_requirement(
+            "requests",
+            direct = False,
+        ),
+        py_requirement(
+            "urllib3",
+            direct = False,
+        ),
+        py_requirement(
+            "websocket-client",
+            direct = False,
+        ),
     ],
 )
 
@@ -68,17 +94,47 @@ py_library(
         "//benchmarks/harness:ssh_connection",
         "//benchmarks/harness:tunnel_dispatcher",
         "//benchmarks/harness/machine_mocks",
-        py_requirement("asn1crypto", False),
-        py_requirement("chardet", False),
-        py_requirement("certifi", False),
-        py_requirement("docker", True),
-        py_requirement("docker-pycreds", False),
-        py_requirement("idna", False),
-        py_requirement("ptyprocess", False),
-        py_requirement("requests", False),
-        py_requirement("six", False),
-        py_requirement("urllib3", False),
-        py_requirement("websocket-client", False),
+        py_requirement(
+            "asn1crypto",
+            direct = False,
+        ),
+        py_requirement(
+            "chardet",
+            direct = False,
+        ),
+        py_requirement(
+            "certifi",
+            direct = False,
+        ),
+        py_requirement("docker"),
+        py_requirement(
+            "docker-pycreds",
+            direct = False,
+        ),
+        py_requirement(
+            "idna",
+            direct = False,
+        ),
+        py_requirement(
+            "ptyprocess",
+            direct = False,
+        ),
+        py_requirement(
+            "requests",
+            direct = False,
+        ),
+        py_requirement(
+            "six",
+            direct = False,
+        ),
+        py_requirement(
+            "urllib3",
+            direct = False,
+        ),
+        py_requirement(
+            "websocket-client",
+            direct = False,
+        ),
     ],
 )
 
@@ -87,10 +143,16 @@ py_library(
     srcs = ["ssh_connection.py"],
     deps = [
         "//benchmarks/harness",
-        py_requirement("bcrypt", False),
-        py_requirement("cffi", True),
-        py_requirement("paramiko", True),
-        py_requirement("cryptography", False),
+        py_requirement(
+            "bcrypt",
+            direct = False,
+        ),
+        py_requirement("cffi"),
+        py_requirement("paramiko"),
+        py_requirement(
+            "cryptography",
+            direct = False,
+        ),
     ],
 )
 
@@ -98,16 +160,43 @@ py_library(
     name = "tunnel_dispatcher",
     srcs = ["tunnel_dispatcher.py"],
     deps = [
-        py_requirement("asn1crypto", False),
-        py_requirement("chardet", False),
-        py_requirement("certifi", False),
-        py_requirement("docker", True),
-        py_requirement("docker-pycreds", False),
-        py_requirement("idna", False),
-        py_requirement("pexpect", True),
-        py_requirement("ptyprocess", False),
-        py_requirement("requests", False),
-        py_requirement("urllib3", False),
-        py_requirement("websocket-client", False),
+        py_requirement(
+            "asn1crypto",
+            direct = False,
+        ),
+        py_requirement(
+            "chardet",
+            direct = False,
+        ),
+        py_requirement(
+            "certifi",
+            direct = False,
+        ),
+        py_requirement("docker"),
+        py_requirement(
+            "docker-pycreds",
+            direct = False,
+        ),
+        py_requirement(
+            "idna",
+            direct = False,
+        ),
+        py_requirement("pexpect"),
+        py_requirement(
+            "ptyprocess",
+            direct = False,
+        ),
+        py_requirement(
+            "requests",
+            direct = False,
+        ),
+        py_requirement(
+            "urllib3",
+            direct = False,
+        ),
+        py_requirement(
+            "websocket-client",
+            direct = False,
+        ),
     ],
 )
