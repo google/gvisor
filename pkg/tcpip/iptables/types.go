@@ -56,44 +56,32 @@ const (
 	NumHooks
 )
 
-// A Verdict is returned by a rule's target to indicate how traversal of rules
-// should (or should not) continue.
-type Verdict int
+// A TableVerdict is what a table decides should be done with a packet.
+type TableVerdict int
 
 const (
-	// Invalid indicates an unkonwn or erroneous verdict.
-	Invalid Verdict = iota
+	// TableAccept indicates the packet should continue through netstack.
+	TableAccept TableVerdict = iota
 
-	// Accept indicates the packet should continue traversing netstack as
-	// normal.
-	Accept
+	// TableAccept indicates the packet should be dropped.
+	TableDrop
+)
 
-	// Drop inicates the packet should be dropped, stopping traversing
-	// netstack.
-	Drop
+// A RuleVerdict is what a rule decides should be done with a packet.
+type RuleVerdict int
 
-	// Stolen indicates the packet was co-opted by the target and should
-	// stop traversing netstack.
-	Stolen
+const (
+	// RuleAccept indicates the packet should continue through netstack.
+	RuleAccept RuleVerdict = iota
 
-	// Queue indicates the packet should be queued for userspace processing.
-	Queue
+	// RuleContinue indicates the packet should continue to the next rule.
+	RuleContinue
 
-	// Repeat indicates the packet should re-traverse the chains for the
-	// current hook.
-	Repeat
+	// RuleDrop indicates the packet should be dropped.
+	RuleDrop
 
-	// None indicates no verdict was reached.
-	None
-
-	// Jump indicates a jump to another chain.
-	Jump
-
-	// Continue indicates that traversal should continue at the next rule.
-	Continue
-
-	// Return indicates that traversal should return to the calling chain.
-	Return
+	// RuleReturn indicates the packet should return to the previous chain.
+	RuleReturn
 )
 
 // IPTables holds all the tables for a netstack.
@@ -187,5 +175,5 @@ type Target interface {
 	// Action takes an action on the packet and returns a verdict on how
 	// traversal should (or should not) continue. If the return value is
 	// Jump, it also returns the name of the chain to jump to.
-	Action(packet tcpip.PacketBuffer) (Verdict, string)
+	Action(packet tcpip.PacketBuffer) (RuleVerdict, string)
 }
