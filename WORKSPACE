@@ -330,3 +330,15 @@ http_archive(
         "https://github.com/google/googletest/archive/565f1b848215b77c3732bca345fe76a0431d8b34.tar.gz",
     ],
 )
+
+http_archive(
+    name = "coral_crosstool",
+    sha256 = "75e177abc39a2a283b61077a0c2f9934394c95393fda9d8629a0e5a83b7bb929",
+    strip_prefix = "crosstool-edf312a5a0a31bbdfb0e204d3ed77394ea723812",
+    urls = [
+        "https://github.com/google-coral/crosstool/archive/edf312a5a0a31bbdfb0e204d3ed77394ea723812.tar.gz",
+    ],
+)
+
+load("@coral_crosstool//:configure.bzl", "cc_crosstool")
+cc_crosstool(name = "crosstool")

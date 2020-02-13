@@ -58,3 +58,7 @@ build:results-local --spawn_strategy=local
 build:results-local --remote_cache=remotebuildexecution.googleapis.com
 build:results-local --remote_timeout=3600
 build:results-local --bes_results_url="https://source.cloud.google.com/results/invocations/"
+
+# Set flags for aarch64.
+build:aarch64 --crosstool_top=@crosstool//:toolchains
+build:aarch64 --cpu=aarch64
