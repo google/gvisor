@@ -52,10 +52,10 @@ func DefaultTables() IPTables {
 		Tables: map[string]Table{
 			TablenameNat: Table{
 				Rules: []Rule{
-					Rule{Target: UnconditionalAcceptTarget{}},
-					Rule{Target: UnconditionalAcceptTarget{}},
-					Rule{Target: UnconditionalAcceptTarget{}},
-					Rule{Target: UnconditionalAcceptTarget{}},
+					Rule{Target: AcceptTarget{}},
+					Rule{Target: AcceptTarget{}},
+					Rule{Target: AcceptTarget{}},
+					Rule{Target: AcceptTarget{}},
 					Rule{Target: ErrorTarget{}},
 				},
 				BuiltinChains: map[Hook]int{
@@ -74,8 +74,8 @@ func DefaultTables() IPTables {
 			},
 			TablenameMangle: Table{
 				Rules: []Rule{
-					Rule{Target: UnconditionalAcceptTarget{}},
-					Rule{Target: UnconditionalAcceptTarget{}},
+					Rule{Target: AcceptTarget{}},
+					Rule{Target: AcceptTarget{}},
 					Rule{Target: ErrorTarget{}},
 				},
 				BuiltinChains: map[Hook]int{
@@ -90,9 +90,9 @@ func DefaultTables() IPTables {
 			},
 			TablenameFilter: Table{
 				Rules: []Rule{
-					Rule{Target: UnconditionalAcceptTarget{}},
-					Rule{Target: UnconditionalAcceptTarget{}},
-					Rule{Target: UnconditionalAcceptTarget{}},
+					Rule{Target: AcceptTarget{}},
+					Rule{Target: AcceptTarget{}},
+					Rule{Target: AcceptTarget{}},
 					Rule{Target: ErrorTarget{}},
 				},
 				BuiltinChains: map[Hook]int{
@@ -149,13 +149,11 @@ func (it *IPTables) Check(hook Hook, pkt tcpip.PacketBuffer) bool {
 	for _, tablename := range it.Priorities[hook] {
 		switch verdict := it.checkTable(hook, pkt, tablename); verdict {
 		// If the table returns Accept, move on to the next table.
-		case Accept:
+		case TableAccept:
 			continue
 		// The Drop verdict is final.
-		case Drop:
+		case TableDrop:
 			return false
-		case Stolen, Queue, Repeat, None, Jump, Return, Continue:
-			panic(fmt.Sprintf("Unimplemented verdict %v.", verdict))
 		default:
 			panic(fmt.Sprintf("Unknown verdict %v.", verdict))
 		}
@@ -166,36 +164,58 @@ func (it *IPTables) Check(hook Hook, pkt tcpip.PacketBuffer) bool {
 }
 
 // Precondition: pkt.NetworkHeader is set.
-func (it *IPTables) checkTable(hook Hook, pkt tcpip.PacketBuffer, tablename string) Verdict {
+func (it *IPTables) checkTable(hook Hook, pkt tcpip.PacketBuffer, tablename string) TableVerdict {
 	// Start from ruleIdx and walk the list of rules until a rule gives us
 	// a verdict.
 	table := it.Tables[tablename]
 	for ruleIdx := table.BuiltinChains[hook]; ruleIdx < len(table.Rules); ruleIdx++ {
 		switch verdict := it.checkRule(hook, pkt, table, ruleIdx); verdict {
-		// In either of these cases, this table is done with the packet.
-		case Accept, Drop:
-			return verdict
-		// Continue traversing the rules of the table.
-		case Continue:
+		case RuleAccept:
+			return TableAccept
+
+		case RuleDrop:
+			return TableDrop
+
+		case RuleContinue:
 			continue
-		case Stolen, Queue, Repeat, None, Jump, Return:
-			panic(fmt.Sprintf("Unimplemented verdict %v.", verdict))
+
+		case RuleReturn:
+			// TODO(gvisor.dev/issue/170): We don't implement jump
+			// yet, so any Return is from a built-in chain. That
+			// means we have to to call the underflow.
+			underflow := table.Rules[table.Underflows[hook]]
+			// Underflow is guaranteed to be an unconditional
+			// ACCEPT or DROP.
+			switch v, _ := underflow.Target.Action(pkt); v {
+			case RuleAccept:
+				return TableAccept
+			case RuleDrop:
+				return TableDrop
+			case RuleContinue, RuleReturn:
+				panic("Underflows should only return RuleAccept or RuleDrop.")
+			default:
+				panic(fmt.Sprintf("Unknown verdict: %d", v))
+			}
+
 		default:
-			panic(fmt.Sprintf("Unknown verdict %v.", verdict))
+			panic(fmt.Sprintf("Unknown verdict: %d", verdict))
 		}
+
 	}
 
-	panic(fmt.Sprintf("Traversed past the entire list of iptables rules in table %q.", tablename))
+	// We got through the entire table without a decision. Default to DROP
+	// for safety.
+	return TableDrop
 }
 
 // Precondition: pk.NetworkHeader is set.
-func (it *IPTables) checkRule(hook Hook, pkt tcpip.PacketBuffer, table Table, ruleIdx int) Verdict {
+func (it *IPTables) checkRule(hook Hook, pkt tcpip.PacketBuffer, table Table, ruleIdx int) RuleVerdict {
 	rule := table.Rules[ruleIdx]
 
 	// First check whether the packet matches the IP header filter.
 	// TODO(gvisor.dev/issue/170): Support other fields of the filter.
 	if rule.Filter.Protocol != 0 && rule.Filter.Protocol != header.IPv4(pkt.NetworkHeader).TransportProtocol() {
-		return Continue
+		return RuleContinue
 	}
 
 	// Go through each rule matcher. If they all match, run
@@ -203,10 +223,10 @@ func (it *IPTables) checkRule(hook Hook, pkt tcpip.PacketBuffer, table Table, ru
 	for _, matcher := range rule.Matchers {
 		matches, hotdrop := matcher.Match(hook, pkt, "")
 		if hotdrop {
-			return Drop
+			return RuleDrop
 		}
 		if !matches {
-			return Continue
+			return RuleContinue
 		}
 	}
 
