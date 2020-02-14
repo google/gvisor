@@ -52,6 +52,9 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// Name is the default filesystem name.
+const Name = "9p"
+
 // FilesystemType implements vfs.FilesystemType.
 type FilesystemType struct{}
 

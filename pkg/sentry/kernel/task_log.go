@@ -198,18 +198,11 @@ func (t *Task) traceExecEvent(tc *TaskContext) {
 	if !trace.IsEnabled() {
 		return
 	}
-	d := tc.MemoryManager.Executable()
-	if d == nil {
+	file := tc.MemoryManager.Executable()
+	if file == nil {
 		trace.Logf(t.traceContext, traceCategory, "exec: << unknown >>")
 		return
 	}
-	defer d.DecRef()
-	root := t.fsContext.RootDirectory()
-	if root == nil {
-		trace.Logf(t.traceContext, traceCategory, "exec: << no root directory >>")
-		return
-	}
-	defer root.DecRef()
-	n, _ := d.FullName(root)
-	trace.Logf(t.traceContext, traceCategory, "exec: %s", n)
+	defer file.DecRef()
+	trace.Logf(t.traceContext, traceCategory, "exec: %s", file.PathnameWithDeleted(t))
 }

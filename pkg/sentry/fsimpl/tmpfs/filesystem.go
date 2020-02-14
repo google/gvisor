@@ -486,7 +486,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	vfsObj := rp.VirtualFilesystem()
 	oldParentDir := oldParent.inode.impl.(*directory)
 	newParentDir := newParent.inode.impl.(*directory)
-	if err := vfsObj.PrepareRenameDentry(vfs.MountNamespaceFromContext(ctx), renamedVFSD, replacedVFSD); err != nil {
+	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
+	if err := vfsObj.PrepareRenameDentry(mntns, renamedVFSD, replacedVFSD); err != nil {
 		return err
 	}
 	if replaced != nil {
@@ -543,7 +545,9 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	}
 	defer mnt.EndWrite()
 	vfsObj := rp.VirtualFilesystem()
-	if err := vfsObj.PrepareDeleteDentry(vfs.MountNamespaceFromContext(ctx), childVFSD); err != nil {
+	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
+	if err := vfsObj.PrepareDeleteDentry(mntns, childVFSD); err != nil {
 		return err
 	}
 	parent.inode.impl.(*directory).childList.Remove(child)
@@ -631,7 +635,9 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	}
 	defer mnt.EndWrite()
 	vfsObj := rp.VirtualFilesystem()
-	if err := vfsObj.PrepareDeleteDentry(vfs.MountNamespaceFromContext(ctx), childVFSD); err != nil {
+	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
+	if err := vfsObj.PrepareDeleteDentry(mntns, childVFSD); err != nil {
 		return err
 	}
 	parent.inode.impl.(*directory).childList.Remove(child)

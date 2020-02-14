@@ -544,6 +544,7 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 
 	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
 	virtfs := rp.VirtualFilesystem()
 
 	srcDirDentry := srcDirVFSD.Impl().(*Dentry)
@@ -595,7 +596,10 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	parentDentry := vfsd.Parent().Impl().(*Dentry)
 	parentDentry.dirMu.Lock()
 	defer parentDentry.dirMu.Unlock()
-	if err := virtfs.PrepareDeleteDentry(vfs.MountNamespaceFromContext(ctx), vfsd); err != nil {
+
+	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
+	if err := virtfs.PrepareDeleteDentry(mntns, vfsd); err != nil {
 		return err
 	}
 	if err := parentDentry.inode.RmDir(ctx, rp.Component(), vfsd); err != nil {
@@ -697,7 +701,9 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	parentDentry := vfsd.Parent().Impl().(*Dentry)
 	parentDentry.dirMu.Lock()
 	defer parentDentry.dirMu.Unlock()
-	if err := virtfs.PrepareDeleteDentry(vfs.MountNamespaceFromContext(ctx), vfsd); err != nil {
+	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
+	if err := virtfs.PrepareDeleteDentry(mntns, vfsd); err != nil {
 		return err
 	}
 	if err := parentDentry.inode.Unlink(ctx, rp.Component(), vfsd); err != nil {

@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "sys.go",
     ],
+    visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
