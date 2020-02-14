@@ -80,7 +80,7 @@ go_library(
         "pagetables_amd64.go",
         "pagetables_arm64.go",
         "pagetables_x86.go",
-        "pcids_x86.go",
+        "pcids.go",
         "walker_amd64.go",
         "walker_arm64.go",
         "walker_empty.go",
