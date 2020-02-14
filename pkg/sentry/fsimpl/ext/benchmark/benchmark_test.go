@@ -52,7 +52,10 @@ func setUp(b *testing.B, imagePath string) (context.Context, *vfs.VirtualFilesys
 	creds := auth.CredentialsFromContext(ctx)
 
 	// Create VFS.
-	vfsObj := vfs.New()
+	vfsObj := &vfs.VirtualFilesystem{}
+	if err := vfsObj.Init(); err != nil {
+		return nil, nil, nil, nil, err
+	}
 	vfsObj.MustRegisterFilesystemType("extfs", ext.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 	})

@@ -90,7 +90,7 @@ func setup(t *testing.T) *testutil.System {
 	ctx := k.SupervisorContext()
 	creds := auth.CredentialsFromContext(ctx)
 
-	k.VFS.MustRegisterFilesystemType(Name, &FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
+	k.VFS().MustRegisterFilesystemType(Name, &FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 	})
 	fsOpts := vfs.GetFilesystemOptions{
@@ -101,11 +101,11 @@ func setup(t *testing.T) *testutil.System {
 			},
 		},
 	}
-	mntns, err := k.VFS.NewMountNamespace(ctx, creds, "", Name, &fsOpts)
+	mntns, err := k.VFS().NewMountNamespace(ctx, creds, "", Name, &fsOpts)
 	if err != nil {
 		t.Fatalf("NewMountNamespace(): %v", err)
 	}
-	return testutil.NewSystem(ctx, t, k.VFS, mntns)
+	return testutil.NewSystem(ctx, t, k.VFS(), mntns)
 }
 
 func TestTasksEmpty(t *testing.T) {
