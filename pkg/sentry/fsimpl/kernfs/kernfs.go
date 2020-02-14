@@ -303,7 +303,7 @@ type Inode interface {
 	// inode for its lifetime.
 	//
 	// Precondition: !rp.Done(). vfsd.Impl() must be a kernfs Dentry.
-	Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*vfs.FileDescription, error)
+	Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error)
 }
 
 type inodeRefs interface {

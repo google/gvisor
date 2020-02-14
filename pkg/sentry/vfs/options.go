@@ -72,6 +72,11 @@ type OpenOptions struct {
 	// If FilesystemImpl.OpenAt() creates a file, Mode is the file mode for the
 	// created file.
 	Mode linux.FileMode
+
+	// FileExec is set when the file is being opened to be executed.
+	// VirtualFilesystem.OpenAt() checks that the caller has execute permissions
+	// on the file, and that the file is a regular file.
+	FileExec bool
 }
 
 // ReadOptions contains options to FileDescription.PRead(),
