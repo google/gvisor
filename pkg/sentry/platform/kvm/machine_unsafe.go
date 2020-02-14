@@ -35,30 +35,6 @@ func entersyscall()
 //go:linkname exitsyscall runtime.exitsyscall
 func exitsyscall()
 
-// setMemoryRegion initializes a region.
-//
-// This may be called from bluepillHandler, and therefore returns an errno
-// directly (instead of wrapping in an error) to avoid allocations.
-//
-//go:nosplit
-func (m *machine) setMemoryRegion(slot int, physical, length, virtual uintptr, flags uint32) syscall.Errno {
-	userRegion := userMemoryRegion{
-		slot:          uint32(slot),
-		flags:         uint32(flags),
-		guestPhysAddr: uint64(physical),
-		memorySize:    uint64(length),
-		userspaceAddr: uint64(virtual),
-	}
-
-	// Set the region.
-	_, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
-		uintptr(m.fd),
-		_KVM_SET_USER_MEMORY_REGION,
-		uintptr(unsafe.Pointer(&userRegion)))
-	return errno
-}
-
 // mapRunData maps the vCPU run data.
 func mapRunData(fd int) (*runData, error) {
 	r, _, errno := syscall.RawSyscall6(
@@ -142,4 +118,56 @@ func (c *vCPU) waitUntilNot(state uint32) {
 	if errno != 0 && errno != syscall.EINTR && errno != syscall.EAGAIN {
 		panic("futex wait error")
 	}
+}
+
+// setUserRegisters sets user registers in the vCPU.
+func (c *vCPU) setUserRegisters(uregs *userRegs) error {
+	if _, _, errno := syscall.RawSyscall(
+		syscall.SYS_IOCTL,
+		uintptr(c.fd),
+		_KVM_SET_REGS,
+		uintptr(unsafe.Pointer(uregs))); errno != 0 {
+		return fmt.Errorf("error setting user registers: %v", errno)
+	}
+	return nil
+}
+
+// getUserRegisters reloads user registers in the vCPU.
+//
+// This is safe to call from a nosplit context.
+//
+//go:nosplit
+func (c *vCPU) getUserRegisters(uregs *userRegs) syscall.Errno {
+	if _, _, errno := syscall.RawSyscall(
+		syscall.SYS_IOCTL,
+		uintptr(c.fd),
+		_KVM_GET_REGS,
+		uintptr(unsafe.Pointer(uregs))); errno != 0 {
+		return errno
+	}
+	return 0
+}
+
+// setMemoryRegion initializes a region.
+//
+// This may be called from bluepillHandler, and therefore returns an errno
+// directly (instead of wrapping in an error) to avoid allocations.
+//
+//go:nosplit
+func (m *machine) setMemoryRegion(slot int, physical, length, virtual uintptr, flags uint32) syscall.Errno {
+	userRegion := userMemoryRegion{
+		slot:          uint32(slot),
+		flags:         uint32(flags),
+		guestPhysAddr: uint64(physical),
+		memorySize:    uint64(length),
+		userspaceAddr: uint64(virtual),
+	}
+
+	// Set the region.
+	_, _, errno := syscall.RawSyscall(
+		syscall.SYS_IOCTL,
+		uintptr(m.fd),
+		_KVM_SET_USER_MEMORY_REGION,
+		uintptr(unsafe.Pointer(&userRegion)))
+	return errno
 }
