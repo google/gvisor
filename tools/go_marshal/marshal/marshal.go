@@ -20,6 +20,26 @@
 // tools/go_marshal. See the go_marshal README for details.
 package marshal
 
+import (
+	"gvisor.dev/gvisor/pkg/usermem"
+)
+
+// Task provides a subset of kernel.Task, used in marshalling. We don't import
+// the kernel package directly to avoid circular dependency.
+type Task interface {
+	// CopyScratchBuffer provides a task goroutine-local scratch buffer. See
+	// kernel.CopyScratchBuffer.
+	CopyScratchBuffer(size int) []byte
+
+	// CopyOutBytes writes the contents of b to the task's memory. See
+	// kernel.CopyOutBytes.
+	CopyOutBytes(addr usermem.Addr, b []byte) (int, error)
+
+	// CopyInBytes reads the contents of the task's memory to b. See
+	// kernel.CopyInBytes.
+	CopyInBytes(addr usermem.Addr, b []byte) (int, error)
+}
+
 // Marshallable represents a type that can be marshalled to and from memory.
 type Marshallable interface {
 	// SizeBytes is the size of the memory representation of a type in
@@ -48,13 +68,27 @@ type Marshallable interface {
 	// MarshalBytes.
 	MarshalUnsafe(dst []byte)
 
-	// UnmarshalUnsafe deserializes a type directly to the underlying memory
-	// allocated for the object by the runtime.
+	// UnmarshalUnsafe deserializes a type by directly copying to the underlying
+	// memory allocated for the object by the runtime.
 	//
 	// This allows much faster unmarshalling of types which have no implicit
 	// padding, see Marshallable.Packed. When Packed would return false,
 	// UnmarshalUnsafe should fall back to the safer but slower unmarshal
-	// mechanism implemented in UnmarshalBytes (usually by calling
-	// UnmarshalBytes directly).
+	// mechanism implemented in UnmarshalBytes.
 	UnmarshalUnsafe(src []byte)
+
+	// CopyIn deserializes a Marshallable type from a task's memory. This may
+	// only be called from a task goroutine. This is more efficient than calling
+	// UnmarshalUnsafe on Marshallable.Packed types, as the type being
+	// marshalled does not escape. The implementation should avoid creating
+	// extra copies in memory by directly deserializing to the object's
+	// underlying memory.
+	CopyIn(task Task, addr usermem.Addr) (int, error)
+
+	// CopyOut serializes a Marshallable type to a task's memory. This may only
+	// be called from a task goroutine. This is more efficient than calling
+	// MarshalUnsafe on Marshallable.Packed types, as the type being serialized
+	// does not escape. The implementation should avoid creating extra copies in
+	// memory by directly serializing from the object's underlying memory.
+	CopyOut(task Task, addr usermem.Addr) (int, error)
 }
