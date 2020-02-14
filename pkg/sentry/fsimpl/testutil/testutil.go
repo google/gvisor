@@ -226,7 +226,7 @@ func (d *DirentCollector) SkipDotsChecks(value bool) {
 }
 
 // Handle implements vfs.IterDirentsCallback.Handle.
-func (d *DirentCollector) Handle(dirent vfs.Dirent) bool {
+func (d *DirentCollector) Handle(dirent vfs.Dirent) error {
 	d.mu.Lock()
 	if d.dirents == nil {
 		d.dirents = make(map[string]*vfs.Dirent)
@@ -234,7 +234,7 @@ func (d *DirentCollector) Handle(dirent vfs.Dirent) bool {
 	d.order = append(d.order, &dirent)
 	d.dirents[dirent.Name] = &dirent
 	d.mu.Unlock()
-	return true
+	return nil
 }
 
 // Count returns the number of dirents currently in the collector.

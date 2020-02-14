@@ -65,8 +65,8 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 	}
 
 	for fd.off < int64(len(fd.dirents)) {
-		if !cb.Handle(fd.dirents[fd.off]) {
-			return nil
+		if err := cb.Handle(fd.dirents[fd.off]); err != nil {
+			return err
 		}
 		fd.off++
 	}
