@@ -63,6 +63,8 @@ const (
 )
 
 // FOwnerEx is the owner structure for F_SETOWN_EX and F_GETOWN_EX.
+//
+// +marshal
 type FOwnerEx struct {
 	Type int32
 	PID  int32

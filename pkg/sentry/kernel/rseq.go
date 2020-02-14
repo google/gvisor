@@ -304,7 +304,7 @@ func (t *Task) rseqAddrInterrupt() {
 	}
 
 	var cs linux.RSeqCriticalSection
-	if _, err := cs.CopyIn(t, critAddr); err != nil {
+	if err := cs.CopyIn(t, critAddr); err != nil {
 		t.Debugf("Failed to copy critical section from %#x for rseq: %v", critAddr, err)
 		t.forceSignal(linux.SIGSEGV, false /* unconditional */)
 		t.SendSignal(SignalInfoPriv(linux.SIGSEGV))

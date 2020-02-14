@@ -161,6 +161,10 @@ func AlignmentCheck(t *testing.T, typ reflect.Type) (ok bool, delta uint64) {
 		if typ.NumField() > 0 && nextXOff != int(typ.Size()) {
 			implicitPad := int(typ.Size()) - nextXOff
 			f := typ.Field(typ.NumField() - 1) // Final field
+			if tag, ok := f.Tag.Lookup("marshal"); ok && tag == "unaligned" {
+				// Final field explicitly marked unaligned.
+				break
+			}
 			t.Fatalf("Suspect offset for field %s.%s at the end of %s, detected an implicit %d byte padding from offset %d to %d at the end of the struct; either add %d bytes of explict padding at end of the struct or tag the final field %s as `marshal:\"unaligned\"`.",
 				typ.Name(), f.Name, typ.Name(), implicitPad, nextXOff, typ.Size(), implicitPad, f.Name)
 		}

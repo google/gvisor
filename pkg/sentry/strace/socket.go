@@ -302,7 +302,7 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 
 func msghdr(t *kernel.Task, addr usermem.Addr, printContent bool, maxBytes uint64) string {
 	var msg slinux.MessageHeader64
-	if err := slinux.CopyInMessageHeader64(t, addr, &msg); err != nil {
+	if _, err := msg.CopyIn(t, addr); err != nil {
 		return fmt.Sprintf("%#x (error decoding msghdr: %v)", addr, err)
 	}
 	s := fmt.Sprintf(

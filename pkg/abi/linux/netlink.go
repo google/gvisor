@@ -40,6 +40,8 @@ const (
 )
 
 // SockAddrNetlink is struct sockaddr_nl, from uapi/linux/netlink.h.
+//
+// +marshal
 type SockAddrNetlink struct {
 	Family uint16
 	_      uint16

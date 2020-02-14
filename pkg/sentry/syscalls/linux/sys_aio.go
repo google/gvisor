@@ -15,8 +15,6 @@
 package linux
 
 import (
-	"encoding/binary"
-
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -69,6 +67,7 @@ type ioCallback struct {
 
 // ioEvent describes an I/O result.
 //
+// +marshal
 // +stateify savable
 type ioEvent struct {
 	Data    uint64
@@ -78,7 +77,7 @@ type ioEvent struct {
 }
 
 // ioEventSize is the size of an ioEvent encoded.
-var ioEventSize = binary.Size(ioEvent{})
+var ioEventSize = (*ioEvent)(nil).SizeBytes()
 
 // IoSetup implements linux syscall io_setup(2).
 func IoSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {

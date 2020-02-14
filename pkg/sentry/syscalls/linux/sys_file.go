@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/tools/go_marshal/primitive"
 )
 
 // fileOpAt performs an operation on the second last component in the path.
@@ -636,8 +637,8 @@ func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, nil
 
 	case linux.FIOGETOWN, linux.SIOCGPGRP:
-		who := fGetOwn(t, file)
-		_, err := t.CopyOut(args[2].Pointer(), &who)
+		who := primitive.Int32(fGetOwn(t, file))
+		err := who.CopyOut(t, args[2].Pointer())
 		return 0, nil, err
 
 	default:
@@ -678,7 +679,7 @@ func Getcwd(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	}
 
 	// Top it off with a terminator.
-	_, err = t.CopyOut(addr+usermem.Addr(bytes), []byte("\x00"))
+	_, err = t.CopyOutBytes(addr+usermem.Addr(bytes), []byte("\x00"))
 	return uintptr(bytes + 1), nil, err
 }
 
@@ -1030,7 +1031,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.F_GETOWN_EX:
 		addr := args[2].Pointer()
 		owner := fGetOwnEx(t, file)
-		_, err := t.CopyOut(addr, &owner)
+		err := owner.CopyOut(t, addr)
 		return 0, nil, err
 	case linux.F_SETOWN_EX:
 		addr := args[2].Pointer()

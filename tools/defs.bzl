@@ -83,7 +83,7 @@ def go_imports(name, src, out):
         cmd = ("$(location @org_golang_x_tools//cmd/goimports:goimports) $(SRCS) > $@"),
     )
 
-def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = False, **kwargs):
+def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = False, marshal_debug = False, **kwargs):
     """Wraps the standard go_library and does stateification and marshalling.
 
     The recommended way is to use this rule with mostly identical configuration as the native
@@ -106,6 +106,7 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
       imports: imports required for stateify.
       stateify: whether statify is enabled (default: true).
       marshal: whether marshal is enabled (default: false).
+      marshal_debug: whether the gomarshal tools emits debugging output (default: false).
       **kwargs: standard go_library arguments.
     """
     all_srcs = srcs
@@ -144,7 +145,10 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
             go_marshal(
                 name = name + suffix + "_abi_autogen",
                 srcs = src_subset,
-                debug = False,
+                debug = select({
+                    "//tools/go_marshal:marshal_config_verbose": True,
+                    "//conditions:default": marshal_debug,
+                }),
                 imports = imports,
                 package = name,
             )

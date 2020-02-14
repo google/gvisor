@@ -75,6 +75,25 @@ type Type5 struct {
 	m int64
 }
 
+// Type6 is a test data type ends mid-word.
+//
+// +marshal
+type Type6 struct {
+	a int64
+	b int64
+	// If c isn't marked unaligned, analysis fails (as it should, since
+	// the unsafe API corrupts Type7).
+	c byte `marshal:"unaligned"`
+}
+
+// Type7 is a test data type that contains a child struct that ends
+// mid-word.
+// +marshal
+type Type7 struct {
+	x Type6
+	y int64
+}
+
 // Timespec represents struct timespec in <time.h>.
 //
 // +marshal
@@ -85,7 +104,7 @@ type Timespec struct {
 
 // Stat represents struct stat.
 //
-// +marshal
+// +marshal vector:StatSlice
 type Stat struct {
 	Dev     uint64
 	Ino     uint64
@@ -103,3 +122,18 @@ type Stat struct {
 	CTime   Timespec
 	_       [3]int64
 }
+
+// InetAddr is an example marshallable newtype on an array.
+//
+// +marshal
+type InetAddr [4]byte
+
+// SignalSet is an example marshallable newtype on a primitive.
+//
+// +marshal vector:SignalSetSlice:inner
+type SignalSet uint64
+
+// SignalSetAlias is an example newtype on another marshallable type.
+//
+// +marshal
+type SignalSetAlias SignalSet

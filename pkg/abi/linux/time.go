@@ -93,6 +93,8 @@ const (
 const maxSecInDuration = math.MaxInt64 / int64(time.Second)
 
 // TimeT represents time_t in <time.h>. It represents time in seconds.
+//
+// +marshal
 type TimeT int64
 
 // NsecToTimeT translates nanoseconds to TimeT (seconds).
