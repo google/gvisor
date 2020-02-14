@@ -80,7 +80,7 @@ func send(s *unet.Socket, tag Tag, m message) error {
 	}
 
 	// Encode the message. The buffer will grow automatically.
-	m.Encode(&dataBuf)
+	m.encode(&dataBuf)
 
 	// Get our vectors to send.
 	var hdr [headerLength]byte
@@ -316,7 +316,7 @@ func recv(s *unet.Socket, msize uint32, lookup lookupTagAndType) (Tag, message, 
 	}
 
 	// Decode the message data.
-	m.Decode(&dataBuf)
+	m.decode(&dataBuf)
 	if dataBuf.isOverrun() {
 		// No need to drain the socket.
 		return NoTag, nil, ErrNoValidMessage
