@@ -246,7 +246,7 @@ type Kernel struct {
 	SpecialOpts
 
 	// VFS keeps the filesystem state used across the kernel.
-	VFS *vfs.VirtualFilesystem
+	vfs vfs.VirtualFilesystem
 }
 
 // InitKernelArgs holds arguments to Init.
@@ -815,7 +815,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 				FollowFinalSymlink: true,
 			}
 			var err error
-			wd, err = k.VFS.GetDentryAt(ctx, args.Credentials, &pop, &vfs.GetDentryOptions{
+			wd, err = k.VFS().GetDentryAt(ctx, args.Credentials, &pop, &vfs.GetDentryOptions{
 				CheckSearchable: true,
 			})
 			if err != nil {
@@ -1505,4 +1505,9 @@ func (k *Kernel) EmitUnimplementedEvent(ctx context.Context) {
 		Tid:       int32(t.ThreadID()),
 		Registers: t.Arch().StateData().Proto(),
 	})
+}
+
+// VFS returns the virtual filesystem for the kernel.
+func (k *Kernel) VFS() *vfs.VirtualFilesystem {
+	return &k.vfs
 }

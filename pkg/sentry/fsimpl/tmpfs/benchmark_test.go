@@ -175,7 +175,10 @@ func BenchmarkVFS2MemfsStat(b *testing.B) {
 			creds := auth.CredentialsFromContext(ctx)
 
 			// Create VFS.
-			vfsObj := vfs.New()
+			vfsObj := vfs.VirtualFilesystem{}
+			if err := vfsObj.Init(); err != nil {
+				b.Fatalf("VFS init: %v", err)
+			}
 			vfsObj.MustRegisterFilesystemType("tmpfs", tmpfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 				AllowUserMount: true,
 			})
@@ -366,7 +369,10 @@ func BenchmarkVFS2MemfsMountStat(b *testing.B) {
 			creds := auth.CredentialsFromContext(ctx)
 
 			// Create VFS.
-			vfsObj := vfs.New()
+			vfsObj := vfs.VirtualFilesystem{}
+			if err := vfsObj.Init(); err != nil {
+				b.Fatalf("VFS init: %v", err)
+			}
 			vfsObj.MustRegisterFilesystemType("tmpfs", tmpfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 				AllowUserMount: true,
 			})

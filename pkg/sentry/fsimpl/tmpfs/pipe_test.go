@@ -151,7 +151,10 @@ func setup(t *testing.T) (context.Context, *auth.Credentials, *vfs.VirtualFilesy
 	creds := auth.CredentialsFromContext(ctx)
 
 	// Create VFS.
-	vfsObj := vfs.New()
+	vfsObj := &vfs.VirtualFilesystem{}
+	if err := vfsObj.Init(); err != nil {
+		t.Fatalf("VFS init: %v", err)
+	}
 	vfsObj.MustRegisterFilesystemType("tmpfs", FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 	})

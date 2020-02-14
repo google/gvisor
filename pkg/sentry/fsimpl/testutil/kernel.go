@@ -102,12 +102,13 @@ func Boot() (*kernel.Kernel, error) {
 
 	kernel.VFS2Enabled = true
 
-	vfsObj := vfs.New()
-	vfsObj.MustRegisterFilesystemType(tmpfs.Name, &tmpfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
+	if err := k.VFS().Init(); err != nil {
+		return nil, fmt.Errorf("VFS init: %v", err)
+	}
+	k.VFS().MustRegisterFilesystemType(tmpfs.Name, &tmpfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 		AllowUserList:  true,
 	})
-	k.VFS = vfsObj
 
 	ls, err := limits.NewLinuxLimitSet()
 	if err != nil {

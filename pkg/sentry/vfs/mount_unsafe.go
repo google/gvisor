@@ -64,6 +64,8 @@ func (mnt *Mount) storeKey(vd VirtualDentry) {
 // (provided mutation is sufficiently uncommon).
 //
 // mountTable.Init() must be called on new mountTables before use.
+//
+// +stateify savable
 type mountTable struct {
 	// mountTable is implemented as a seqcount-protected hash table that
 	// resolves collisions with linear probing, featuring Robin Hood insertion
@@ -75,8 +77,8 @@ type mountTable struct {
 	// intrinsics and inline assembly, limiting the performance of this
 	// approach.)
 
-	seq  sync.SeqCount
-	seed uint32 // for hashing keys
+	seq  sync.SeqCount `state:"nosave"`
+	seed uint32        // for hashing keys
 
 	// size holds both length (number of elements) and capacity (number of
 	// slots): capacity is stored as its base-2 log (referred to as order) in
@@ -89,7 +91,7 @@ type mountTable struct {
 	// length and cap in separate uint32s) for ~free.
 	size uint64
 
-	slots unsafe.Pointer // []mountSlot; never nil after Init
+	slots unsafe.Pointer `state:"nosave"` // []mountSlot; never nil after Init
 }
 
 type mountSlot struct {

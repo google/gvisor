@@ -34,15 +34,15 @@ func newTestSystem(t *testing.T) *testutil.System {
 	}
 	ctx := k.SupervisorContext()
 	creds := auth.CredentialsFromContext(ctx)
-	k.VFS.MustRegisterFilesystemType(sys.Name, sys.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
+	k.VFS().MustRegisterFilesystemType(sys.Name, sys.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 	})
 
-	mns, err := k.VFS.NewMountNamespace(ctx, creds, "", sys.Name, &vfs.GetFilesystemOptions{})
+	mns, err := k.VFS().NewMountNamespace(ctx, creds, "", sys.Name, &vfs.GetFilesystemOptions{})
 	if err != nil {
 		t.Fatalf("Failed to create new mount namespace: %v", err)
 	}
-	return testutil.NewSystem(ctx, t, k.VFS, mns)
+	return testutil.NewSystem(ctx, t, k.VFS(), mns)
 }
 
 func TestReadCPUFile(t *testing.T) {

@@ -40,7 +40,11 @@ var nextFileID int64
 func newTmpfsRoot(ctx context.Context) (*vfs.VirtualFilesystem, vfs.VirtualDentry, func(), error) {
 	creds := auth.CredentialsFromContext(ctx)
 
-	vfsObj := vfs.New()
+	vfsObj := &vfs.VirtualFilesystem{}
+	if err := vfsObj.Init(); err != nil {
+		return nil, vfs.VirtualDentry{}, nil, fmt.Errorf("VFS init: %v", err)
+	}
+
 	vfsObj.MustRegisterFilesystemType("tmpfs", FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 	})

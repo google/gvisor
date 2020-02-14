@@ -29,6 +29,8 @@ import (
 // Filesystem methods require that a reference is held.
 //
 // Filesystem is analogous to Linux's struct super_block.
+//
+// +stateify savable
 type Filesystem struct {
 	// refs is the reference count. refs is accessed using atomic memory
 	// operations.

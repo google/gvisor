@@ -45,7 +45,10 @@ type RootDentryFn func(*auth.Credentials, *filesystem) *kernfs.Dentry
 func newTestSystem(t *testing.T, rootFn RootDentryFn) *testutil.System {
 	ctx := contexttest.Context(t)
 	creds := auth.CredentialsFromContext(ctx)
-	v := vfs.New()
+	v := &vfs.VirtualFilesystem{}
+	if err := v.Init(); err != nil {
+		t.Fatalf("VFS init: %v", err)
+	}
 	v.MustRegisterFilesystemType("testfs", &fsType{rootFn: rootFn}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 	})

@@ -107,7 +107,10 @@ func (fd *testFD) SetStat(ctx context.Context, opts SetStatOptions) error {
 func TestGenCountFD(t *testing.T) {
 	ctx := contexttest.Context(t)
 
-	vfsObj := New() // vfs.New()
+	vfsObj := &VirtualFilesystem{}
+	if err := vfsObj.Init(); err != nil {
+		t.Fatalf("VFS init: %v", err)
+	}
 	fd := newTestFD(vfsObj, linux.O_RDWR, &genCount{})
 	defer fd.DecRef()
 
@@ -162,7 +165,10 @@ func TestGenCountFD(t *testing.T) {
 func TestWritable(t *testing.T) {
 	ctx := contexttest.Context(t)
 
-	vfsObj := New() // vfs.New()
+	vfsObj := &VirtualFilesystem{}
+	if err := vfsObj.Init(); err != nil {
+		t.Fatalf("VFS init: %v", err)
+	}
 	fd := newTestFD(vfsObj, linux.O_RDWR, &storeData{data: "init"})
 	defer fd.DecRef()
 
