@@ -90,7 +90,9 @@ func (x *FSContext) save(m state.Map) {
 	x.beforeSave()
 	m.Save("AtomicRefCount", &x.AtomicRefCount)
 	m.Save("root", &x.root)
+	m.Save("rootVFS2", &x.rootVFS2)
 	m.Save("cwd", &x.cwd)
+	m.Save("cwdVFS2", &x.cwdVFS2)
 	m.Save("umask", &x.umask)
 }
 
@@ -98,7 +100,9 @@ func (x *FSContext) afterLoad() {}
 func (x *FSContext) load(m state.Map) {
 	m.Load("AtomicRefCount", &x.AtomicRefCount)
 	m.Load("root", &x.root)
+	m.Load("rootVFS2", &x.rootVFS2)
 	m.Load("cwd", &x.cwd)
+	m.Load("cwdVFS2", &x.cwdVFS2)
 	m.Load("umask", &x.umask)
 }
 
@@ -152,6 +156,7 @@ func (x *Kernel) save(m state.Map) {
 	m.Save("nextSocketEntry", &x.nextSocketEntry)
 	m.Save("DirentCacheLimiter", &x.DirentCacheLimiter)
 	m.Save("SpecialOpts", &x.SpecialOpts)
+	m.Save("VFS", &x.VFS)
 }
 
 func (x *Kernel) afterLoad() {}
@@ -184,6 +189,7 @@ func (x *Kernel) load(m state.Map) {
 	m.Load("nextSocketEntry", &x.nextSocketEntry)
 	m.Load("DirentCacheLimiter", &x.DirentCacheLimiter)
 	m.Load("SpecialOpts", &x.SpecialOpts)
+	m.Load("VFS", &x.VFS)
 	m.LoadValue("danglingEndpoints", new([]tcpip.Endpoint), func(y interface{}) { x.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
 	m.LoadValue("deviceRegistry", new(*device.Registry), func(y interface{}) { x.loadDeviceRegistry(y.(*device.Registry)) })
 }
@@ -573,6 +579,7 @@ func (x *Task) save(m state.Map) {
 	m.Save("utsns", &x.utsns)
 	m.Save("ipcns", &x.ipcns)
 	m.Save("abstractSockets", &x.abstractSockets)
+	m.Save("mountNamespaceVFS2", &x.mountNamespaceVFS2)
 	m.Save("parentDeathSignal", &x.parentDeathSignal)
 	m.Save("cleartid", &x.cleartid)
 	m.Save("allowedCPUMask", &x.allowedCPUMask)
@@ -631,6 +638,7 @@ func (x *Task) load(m state.Map) {
 	m.Load("utsns", &x.utsns)
 	m.Load("ipcns", &x.ipcns)
 	m.Load("abstractSockets", &x.abstractSockets)
+	m.Load("mountNamespaceVFS2", &x.mountNamespaceVFS2)
 	m.Load("parentDeathSignal", &x.parentDeathSignal)
 	m.Load("cleartid", &x.cleartid)
 	m.Load("allowedCPUMask", &x.allowedCPUMask)

@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
@@ -135,7 +136,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			}
 
 			// Set the underlying executable.
-			t.MemoryManager().SetExecutable(file.Dirent)
+			t.MemoryManager().SetExecutable(fsbridge.NewFSFile(file))
 
 		case linux.PR_SET_MM_AUXV,
 			linux.PR_SET_MM_START_CODE,
