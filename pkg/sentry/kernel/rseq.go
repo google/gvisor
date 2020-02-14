@@ -303,24 +303,12 @@ func (t *Task) rseqAddrInterrupt() {
 		return
 	}
 
-	buf = t.CopyScratchBuffer(linux.SizeOfRSeqCriticalSection)
-	if _, err := t.CopyInBytes(critAddr, buf); err != nil {
+	var cs linux.RSeqCriticalSection
+	if _, err := cs.CopyIn(t, critAddr); err != nil {
 		t.Debugf("Failed to copy critical section from %#x for rseq: %v", critAddr, err)
 		t.forceSignal(linux.SIGSEGV, false /* unconditional */)
 		t.SendSignal(SignalInfoPriv(linux.SIGSEGV))
 		return
-	}
-
-	// Manually marshal RSeqCriticalSection as this is in the hot path when
-	// rseq is enabled. It must be as fast as possible.
-	//
-	// TODO(b/130243041): Replace with go_marshal.
-	cs := linux.RSeqCriticalSection{
-		Version:          usermem.ByteOrder.Uint32(buf[0:4]),
-		Flags:            usermem.ByteOrder.Uint32(buf[4:8]),
-		Start:            usermem.ByteOrder.Uint64(buf[8:16]),
-		PostCommitOffset: usermem.ByteOrder.Uint64(buf[16:24]),
-		Abort:            usermem.ByteOrder.Uint64(buf[24:32]),
 	}
 
 	if cs.Version != 0 {
