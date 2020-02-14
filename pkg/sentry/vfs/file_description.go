@@ -435,11 +435,11 @@ type Dirent struct {
 
 // IterDirentsCallback receives Dirents from FileDescriptionImpl.IterDirents.
 type IterDirentsCallback interface {
-	// Handle handles the given iterated Dirent. It returns true if iteration
-	// should continue, and false if FileDescriptionImpl.IterDirents should
-	// terminate now and restart with the same Dirent the next time it is
-	// called.
-	Handle(dirent Dirent) bool
+	// Handle handles the given iterated Dirent. If Handle returns a non-nil
+	// error, FileDescriptionImpl.IterDirents must stop iteration and return
+	// the error; the next call to FileDescriptionImpl.IterDirents should
+	// restart with the same Dirent.
+	Handle(dirent Dirent) error
 }
 
 // OnClose is called when a file descriptor representing the FileDescription is
