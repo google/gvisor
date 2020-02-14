@@ -236,6 +236,21 @@ func (s *Sleeper) Fetch(block bool) (id int, ok bool) {
 	}
 }
 
+// FetchMulti is a batch version for Fetch
+func (s *Sleeper) FetchMulti(ids []int, block bool) (n int) {
+	for i := 0; i < len(ids); i++ {
+		// if block is true, the first call will be Fetch(true), followed by Fetch(false)
+		// if block is false, only Fetch(false) will be called
+		id, ok := s.Fetch(block && i == 0)
+		if !ok {
+			return
+		}
+		ids[i] = id
+		n++
+	}
+	return
+}
+
 // Done is used to indicate that the caller won't use this Sleeper anymore. It
 // removes the association with all wakers so that they can be safely reused
 // by another sleeper after Done() returns.
