@@ -117,10 +117,10 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
         # First, we need to segregate the input files via the special suffixes,
         # and calculate the final output set.
         state_sets = calculate_sets(srcs)
-        for (suffix, srcs) in state_sets.items():
+        for (suffix, src_subset) in state_sets.items():
             go_stateify(
                 name = name + suffix + "_state_autogen_with_imports",
-                srcs = srcs,
+                srcs = src_subset,
                 imports = imports,
                 package = full_pkg,
                 out = name + suffix + "_state_autogen_with_imports.go",
@@ -140,10 +140,10 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
     if marshal:
         # See above.
         marshal_sets = calculate_sets(srcs)
-        for (suffix, srcs) in marshal_sets.items():
+        for (suffix, src_subset) in marshal_sets.items():
             go_marshal(
                 name = name + suffix + "_abi_autogen",
-                srcs = srcs,
+                srcs = src_subset,
                 debug = False,
                 imports = imports,
                 package = name,
@@ -172,11 +172,11 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
 
         # See above.
         marshal_sets = calculate_sets(srcs)
-        for (suffix, srcs) in marshal_sets.items():
+        for (suffix, _) in marshal_sets.items():
             _go_test(
                 name = name + suffix + "_abi_autogen_test",
                 srcs = [name + suffix + "_abi_autogen_test.go"],
-                library = ":" + name + suffix,
+                library = ":" + name,
                 deps = marshal_test_deps,
                 **kwargs
             )
