@@ -140,7 +140,7 @@ func (k *Kernel) LoadTaskImage(ctx context.Context, args loader.LoadArgs) (*Task
 	}
 
 	// Prepare a new user address space to load into.
-	m := mm.NewMemoryManager(k, k)
+	m := mm.NewMemoryManager(k, k, k.SleepForAddressSpaceActivation)
 	defer m.DecUsers(ctx)
 	args.MemoryManager = m
 

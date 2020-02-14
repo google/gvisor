@@ -226,6 +226,10 @@ type MemoryManager struct {
 	// aioManager keeps track of AIOContexts used for async IOs. AIOManager
 	// must be cloned when CLONE_VM is used.
 	aioManager aioManager
+
+	// If set to true, report address space activation waits as if the task is in
+	// external wait so that the watchdog doesn't report the task stuck.
+	sleepForActivation bool
 }
 
 // vma represents a virtual memory area.

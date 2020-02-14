@@ -238,6 +238,10 @@ type Kernel struct {
 
 	// SpecialOpts contains special kernel options.
 	SpecialOpts
+
+	// If set to true, report address space activation waits as if the task is in
+	// external wait so that the watchdog doesn't report the task stuck.
+	SleepForAddressSpaceActivation bool
 }
 
 // InitKernelArgs holds arguments to Init.

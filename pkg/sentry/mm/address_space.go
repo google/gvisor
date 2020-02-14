@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -39,7 +40,7 @@ func (mm *MemoryManager) AddressSpace() platform.AddressSpace {
 //
 // When this MemoryManager is no longer needed by a task, it should call
 // Deactivate to release the reference.
-func (mm *MemoryManager) Activate() error {
+func (mm *MemoryManager) Activate(ctx context.Context) error {
 	// Fast path: the MemoryManager already has an active
 	// platform.AddressSpace, and we just need to indicate that we need it too.
 	if atomicbitops.IncUnlessZeroInt32(&mm.active) {
@@ -85,16 +86,20 @@ func (mm *MemoryManager) Activate() error {
 		if as == nil {
 			// AddressSpace is unavailable, we must wait.
 			//
-			// activeMu must not be held while waiting, as the user
-			// of the address space we are waiting on may attempt
-			// to take activeMu.
-			//
-			// Don't call UninterruptibleSleepStart to register the
-			// wait to allow the watchdog stuck task to trigger in
-			// case a process is starved waiting for the address
-			// space.
+			// activeMu must not be held while waiting, as the user of the address
+			// space we are waiting on may attempt to take activeMu.
 			mm.activeMu.Unlock()
+
+			sleep := mm.p.CooperativelySchedulesAddressSpace() && mm.sleepForActivation
+			if sleep {
+				// Register the wait to make the watchdog detect such cases and not
+				// report the tasks stuck waiting for address space to become available.
+				ctx.UninterruptibleSleepStart(false)
+			}
 			<-c
+			if sleep {
+				ctx.UninterruptibleSleepFinish(false)
+			}
 			continue
 		}
 

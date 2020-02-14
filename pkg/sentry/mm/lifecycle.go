@@ -29,16 +29,17 @@ import (
 )
 
 // NewMemoryManager returns a new MemoryManager with no mappings and 1 user.
-func NewMemoryManager(p platform.Platform, mfp pgalloc.MemoryFileProvider) *MemoryManager {
+func NewMemoryManager(p platform.Platform, mfp pgalloc.MemoryFileProvider, sleepForActivation bool) *MemoryManager {
 	return &MemoryManager{
-		p:           p,
-		mfp:         mfp,
-		haveASIO:    p.SupportsAddressSpaceIO(),
-		privateRefs: &privateRefs{},
-		users:       1,
-		auxv:        arch.Auxv{},
-		dumpability: UserDumpable,
-		aioManager:  aioManager{contexts: make(map[uint64]*AIOContext)},
+		p:                  p,
+		mfp:                mfp,
+		haveASIO:           p.SupportsAddressSpaceIO(),
+		privateRefs:        &privateRefs{},
+		users:              1,
+		auxv:               arch.Auxv{},
+		dumpability:        UserDumpable,
+		aioManager:         aioManager{contexts: make(map[uint64]*AIOContext)},
+		sleepForActivation: sleepForActivation,
 	}
 }
 
@@ -80,9 +81,10 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 		envv:                 mm.envv,
 		auxv:                 append(arch.Auxv(nil), mm.auxv...),
 		// IncRef'd below, once we know that there isn't an error.
-		executable:  mm.executable,
-		dumpability: mm.dumpability,
-		aioManager:  aioManager{contexts: make(map[uint64]*AIOContext)},
+		executable:         mm.executable,
+		dumpability:        mm.dumpability,
+		aioManager:         aioManager{contexts: make(map[uint64]*AIOContext)},
+		sleepForActivation: mm.sleepForActivation,
 	}
 
 	// Copy vmas.
