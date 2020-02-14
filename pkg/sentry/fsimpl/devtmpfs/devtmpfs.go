@@ -28,6 +28,9 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
+// Name is the default filesystem name.
+const Name = "devtmpfs"
+
 // FilesystemType implements vfs.FilesystemType.
 type FilesystemType struct {
 	initOnce sync.Once
@@ -107,6 +110,7 @@ func (a *Accessor) wrapContext(ctx context.Context) *accessorContext {
 func (ac *accessorContext) Value(key interface{}) interface{} {
 	switch key {
 	case vfs.CtxMountNamespace:
+		ac.a.mntns.IncRef()
 		return ac.a.mntns
 	case vfs.CtxRoot:
 		ac.a.root.IncRef()

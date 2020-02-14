@@ -400,6 +400,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 	}
 	vfsObj := rp.VirtualFilesystem()
 	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
 	parent.dirMu.Lock()
 	defer parent.dirMu.Unlock()
 	childVFSD := parent.vfsd.Child(name)
@@ -934,7 +935,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	if oldParent == newParent && oldName == newName {
 		return nil
 	}
-	if err := vfsObj.PrepareRenameDentry(vfs.MountNamespaceFromContext(ctx), &renamed.vfsd, replacedVFSD); err != nil {
+	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
+	if err := vfsObj.PrepareRenameDentry(mntns, &renamed.vfsd, replacedVFSD); err != nil {
 		return err
 	}
 	if err := renamed.file.rename(ctx, newParent.file, newName); err != nil {

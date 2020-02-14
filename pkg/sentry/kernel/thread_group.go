@@ -256,7 +256,7 @@ type ThreadGroup struct {
 	tty *TTY
 }
 
-// NewThreadGroup returns a new, empty thread group in PID namespace ns. The
+// NewThreadGroup returns a new, empty thread group in PID namespace pidns. The
 // thread group leader will send its parent terminationSignal when it exits.
 // The new thread group isn't visible to the system until a task has been
 // created inside of it by a successful call to TaskSet.NewTask.
@@ -317,7 +317,9 @@ func (tg *ThreadGroup) release() {
 	for _, it := range its {
 		it.DestroyTimer()
 	}
-	tg.mounts.DecRef()
+	if tg.mounts != nil {
+		tg.mounts.DecRef()
+	}
 }
 
 // forEachChildThreadGroupLocked indicates over all child ThreadGroups.

@@ -40,6 +40,9 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
+// Name is the default filesystem name.
+const Name = "tmpfs"
+
 // FilesystemType implements vfs.FilesystemType.
 type FilesystemType struct{}
 
