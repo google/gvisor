@@ -24,7 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/tools/go_marshal/analysis"
-	test "gvisor.dev/gvisor/tools/go_marshal/test"
+	"gvisor.dev/gvisor/tools/go_marshal/test"
 )
 
 // Marshalling using the standard encoding/binary package.
