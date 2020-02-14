@@ -379,6 +379,25 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 		fd, err := rp.mount.fs.impl.OpenAt(ctx, rp, *opts)
 		if err == nil {
 			vfs.putResolvingPath(rp)
+
+			// TODO(gvisor.dev/issue/1193): Move inside fsimpl to avoid another call
+			// to FileDescription.Stat().
+			if opts.FileExec {
+				// Only a regular file can be executed.
+				stat, err := fd.Stat(ctx, StatOptions{Mask: linux.STATX_TYPE})
+				if err != nil {
+					return nil, err
+				}
+				if stat.Mask&linux.STATX_TYPE != 0 {
+					// This shouldn't happen, but if type can't be retrieved, file can't
+					// be executed.
+					return nil, syserror.EACCES
+				}
+				if linux.FileMode(stat.Mode).FileType() != linux.ModeRegular {
+					return nil, syserror.EACCES
+				}
+			}
+
 			return fd, nil
 		}
 		if !rp.handleError(err) {
