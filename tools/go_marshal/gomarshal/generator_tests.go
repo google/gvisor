@@ -25,6 +25,7 @@ var standardImports = []string{
 	"fmt",
 	"reflect",
 	"testing",
+
 	"gvisor.dev/gvisor/tools/go_marshal/analysis",
 }
 

@@ -504,4 +504,102 @@ func (g *interfaceGenerator) emitMarshallable() {
 	})
 	g.emit("}\n\n")
 
+	g.emit("// CopyOut implements marshal.Marshallable.CopyOut.\n")
+	g.recordUsedImport("marshal")
+	g.recordUsedImport("usermem")
+	g.emit("func (%s *%s) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
+	g.inIndent(func() {
+		fallback := func() {
+			g.emit("// Type %s doesn't have a packed layout in memory, fall back to MarshalBytes.\n", g.typeName())
+			g.emit("buf := task.CopyScratchBuffer(%s.SizeBytes())\n", g.r)
+			g.emit("%s.MarshalBytes(buf)\n", g.r)
+			g.emit("return task.CopyOutBytes(addr, buf)\n")
+		}
+		if thisPacked {
+			g.recordUsedImport("reflect")
+			g.recordUsedImport("runtime")
+			g.recordUsedImport("unsafe")
+			if cond, ok := g.areFieldsPackedExpression(); ok {
+				g.emit("if !%s {\n", cond)
+				g.inIndent(fallback)
+				g.emit("}\n\n")
+			}
+			// Fast serialization.
+			g.emit("// Bypass escape analysis on %s. The no-op arithmetic operation on the\n", g.r)
+			g.emit("// pointer makes the compiler think val doesn't depend on %s.\n", g.r)
+			g.emit("// See src/runtime/stubs.go:noescape() in the golang toolchain.\n")
+			g.emit("ptr := unsafe.Pointer(%s)\n", g.r)
+			g.emit("val := uintptr(ptr)\n")
+			g.emit("val = val^0\n\n")
+
+			g.emit("// Construct a slice backed by %s's underlying memory.\n", g.r)
+			g.emit("var buf []byte\n")
+			g.emit("hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))\n")
+			g.emit("hdr.Data = val\n")
+			g.emit("hdr.Len = %s.SizeBytes()\n", g.r)
+			g.emit("hdr.Cap = %s.SizeBytes()\n\n", g.r)
+
+			g.emit("len, err := task.CopyOutBytes(addr, buf)\n")
+			g.emit("// Since we bypassed the compiler's escape analysis, indicate that %s\n", g.r)
+			g.emit("// must live until after the CopyOutBytes.\n")
+			g.emit("runtime.KeepAlive(%s)\n", g.r)
+			g.emit("return len, err\n")
+		} else {
+			fallback()
+		}
+	})
+	g.emit("}\n\n")
+
+	g.emit("// CopyIn implements marshal.Marshallable.CopyIn.\n")
+	g.recordUsedImport("marshal")
+	g.recordUsedImport("usermem")
+	g.emit("func (%s *%s) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
+	g.inIndent(func() {
+		fallback := func() {
+			g.emit("// Type %s doesn't have a packed layout in memory, fall back to UnmarshalBytes.\n", g.typeName())
+			g.emit("buf := task.CopyScratchBuffer(%s.SizeBytes())\n", g.r)
+			g.emit("n, err := task.CopyInBytes(addr, buf)\n")
+			g.emit("if err != nil {\n")
+			g.inIndent(func() {
+				g.emit("return n, err\n")
+			})
+			g.emit("}\n")
+
+			g.emit("%s.UnmarshalBytes(buf)\n", g.r)
+			g.emit("return n, nil\n")
+		}
+		if thisPacked {
+			g.recordUsedImport("reflect")
+			g.recordUsedImport("runtime")
+			g.recordUsedImport("unsafe")
+			if cond, ok := g.areFieldsPackedExpression(); ok {
+				g.emit("if !%s {\n", cond)
+				g.inIndent(fallback)
+				g.emit("}\n\n")
+			}
+			// Fast deserialization.
+			g.emit("// Bypass escape analysis on %s. The no-op arithmetic operation on the\n", g.r)
+			g.emit("// pointer makes the compiler think val doesn't depend on %s.\n", g.r)
+			g.emit("// See src/runtime/stubs.go:noescape() in the golang toolchain.\n")
+			g.emit("ptr := unsafe.Pointer(%s)\n", g.r)
+			g.emit("val := uintptr(ptr)\n")
+			g.emit("val = val^0\n\n")
+
+			g.emit("// Construct a slice backed by %s's underlying memory.\n", g.r)
+			g.emit("var buf []byte\n")
+			g.emit("hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))\n")
+			g.emit("hdr.Data = val\n")
+			g.emit("hdr.Len = %s.SizeBytes()\n", g.r)
+			g.emit("hdr.Cap = %s.SizeBytes()\n\n", g.r)
+
+			g.emit("len, err := task.CopyInBytes(addr, buf)\n")
+			g.emit("// Since we bypassed the compiler's escape analysis, indicate that %s\n", g.r)
+			g.emit("// must live until after the CopyInBytes.\n")
+			g.emit("runtime.KeepAlive(%s)\n", g.r)
+			g.emit("return len, err\n")
+		} else {
+			fallback()
+		}
+	})
+	g.emit("}\n\n")
 }
