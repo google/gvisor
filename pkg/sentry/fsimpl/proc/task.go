@@ -98,9 +98,9 @@ func (i *taskInode) Valid(ctx context.Context) bool {
 }
 
 // Open implements kernfs.Inode.
-func (i *taskInode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*vfs.FileDescription, error) {
+func (i *taskInode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fd := &kernfs.GenericDirectoryFD{}
-	fd.Init(rp.Mount(), vfsd, &i.OrderedChildren, flags)
+	fd.Init(rp.Mount(), vfsd, &i.OrderedChildren, &opts)
 	return fd.VFSFileDescription(), nil
 }
 

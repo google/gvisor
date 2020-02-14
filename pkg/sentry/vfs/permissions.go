@@ -103,17 +103,22 @@ func GenericCheckPermissions(creds *auth.Credentials, ats AccessTypes, isDir boo
 // AccessTypesForOpenFlags returns MayRead|MayWrite in this case.
 //
 // Use May{Read,Write}FileWithOpenFlags() for these checks instead.
-func AccessTypesForOpenFlags(flags uint32) AccessTypes {
-	switch flags & linux.O_ACCMODE {
+func AccessTypesForOpenFlags(opts *OpenOptions) AccessTypes {
+	ats := AccessTypes(0)
+	if opts.FileExec {
+		ats |= MayExec
+	}
+
+	switch opts.Flags & linux.O_ACCMODE {
 	case linux.O_RDONLY:
-		if flags&linux.O_TRUNC != 0 {
-			return MayRead | MayWrite
+		if opts.Flags&linux.O_TRUNC != 0 {
+			return ats | MayRead | MayWrite
 		}
-		return MayRead
+		return ats | MayRead
 	case linux.O_WRONLY:
-		return MayWrite
+		return ats | MayWrite
 	default:
-		return MayRead | MayWrite
+		return ats | MayRead | MayWrite
 	}
 }
 

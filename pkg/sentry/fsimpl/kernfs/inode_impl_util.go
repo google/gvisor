@@ -507,7 +507,7 @@ type InodeSymlink struct {
 }
 
 // Open implements Inode.Open.
-func (InodeSymlink) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*vfs.FileDescription, error) {
+func (InodeSymlink) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	return nil, syserror.ELOOP
 }
 
@@ -549,8 +549,8 @@ func (s *StaticDirectory) Init(creds *auth.Credentials, ino uint64, perm linux.F
 }
 
 // Open implements kernfs.Inode.
-func (s *StaticDirectory) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*vfs.FileDescription, error) {
+func (s *StaticDirectory) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fd := &GenericDirectoryFD{}
-	fd.Init(rp.Mount(), vfsd, &s.OrderedChildren, flags)
+	fd.Init(rp.Mount(), vfsd, &s.OrderedChildren, &opts)
 	return fd.VFSFileDescription(), nil
 }

@@ -365,7 +365,7 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	// appropriate bits in rp), but are returned by
 	// FileDescriptionImpl.StatusFlags().
 	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_TRUNC | linux.O_DIRECTORY | linux.O_NOFOLLOW
-	ats := vfs.AccessTypesForOpenFlags(opts.Flags)
+	ats := vfs.AccessTypesForOpenFlags(&opts)
 
 	// Do not create new file.
 	if opts.Flags&linux.O_CREAT == 0 {
@@ -379,7 +379,7 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if err := inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 			return nil, err
 		}
-		return inode.Open(rp, vfsd, opts.Flags)
+		return inode.Open(rp, vfsd, opts)
 	}
 
 	// May create new file.
@@ -398,7 +398,7 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if err := inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 			return nil, err
 		}
-		return inode.Open(rp, vfsd, opts.Flags)
+		return inode.Open(rp, vfsd, opts)
 	}
 afterTrailingSymlink:
 	parentVFSD, parentInode, err := fs.walkParentDirLocked(ctx, rp)
@@ -438,7 +438,7 @@ afterTrailingSymlink:
 			return nil, err
 		}
 		parentVFSD.Impl().(*Dentry).InsertChild(pc, child)
-		return child.Impl().(*Dentry).inode.Open(rp, child, opts.Flags)
+		return child.Impl().(*Dentry).inode.Open(rp, child, opts)
 	}
 	// Open existing file or follow symlink.
 	if mustCreate {
@@ -463,7 +463,7 @@ afterTrailingSymlink:
 	if err := childInode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 		return nil, err
 	}
-	return childInode.Open(rp, childVFSD, opts.Flags)
+	return childInode.Open(rp, childVFSD, opts)
 }
 
 // ReadlinkAt implements vfs.FilesystemImpl.ReadlinkAt.
