@@ -156,7 +156,7 @@ func (x *Kernel) save(m state.Map) {
 	m.Save("nextSocketEntry", &x.nextSocketEntry)
 	m.Save("DirentCacheLimiter", &x.DirentCacheLimiter)
 	m.Save("SpecialOpts", &x.SpecialOpts)
-	m.Save("VFS", &x.VFS)
+	m.Save("vfs", &x.vfs)
 }
 
 func (x *Kernel) afterLoad() {}
@@ -189,7 +189,7 @@ func (x *Kernel) load(m state.Map) {
 	m.Load("nextSocketEntry", &x.nextSocketEntry)
 	m.Load("DirentCacheLimiter", &x.DirentCacheLimiter)
 	m.Load("SpecialOpts", &x.SpecialOpts)
-	m.Load("VFS", &x.VFS)
+	m.Load("vfs", &x.vfs)
 	m.LoadValue("danglingEndpoints", new([]tcpip.Endpoint), func(y interface{}) { x.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
 	m.LoadValue("deviceRegistry", new(*device.Registry), func(y interface{}) { x.loadDeviceRegistry(y.(*device.Registry)) })
 }

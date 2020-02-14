@@ -38,6 +38,8 @@ import (
 //
 // Mount is analogous to Linux's struct mount. (gVisor does not distinguish
 // between struct mount and struct vfsmount.)
+//
+// +stateify savable
 type Mount struct {
 	// vfs, fs, and root are immutable. References are held on fs and root.
 	//
@@ -85,6 +87,8 @@ type Mount struct {
 // MountNamespace methods require that a reference is held.
 //
 // MountNamespace is analogous to Linux's struct mnt_namespace.
+//
+// +stateify savable
 type MountNamespace struct {
 	// root is the MountNamespace's root mount. root is immutable.
 	root *Mount

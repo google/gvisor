@@ -71,6 +71,8 @@ import (
 // lifetime. Dentry reference counts only indicate the extent to which VFS
 // requires Dentries to exist; Filesystems may elect to cache or discard
 // Dentries with zero references.
+//
+// +stateify savable
 type Dentry struct {
 	// parent is this Dentry's parent in this Filesystem. If this Dentry is
 	// independent, parent is nil.
@@ -89,7 +91,7 @@ type Dentry struct {
 	children map[string]*Dentry
 
 	// mu synchronizes disowning and mounting over this Dentry.
-	mu sync.Mutex
+	mu sync.Mutex `state:"nosave"`
 
 	// impl is the DentryImpl associated with this Dentry. impl is immutable.
 	// This should be the last field in Dentry.
