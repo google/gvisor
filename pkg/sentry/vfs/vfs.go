@@ -46,11 +46,13 @@ import (
 //
 // There is no analogue to the VirtualFilesystem type in Linux, as the
 // equivalent state in Linux is global.
+//
+// +stateify savable
 type VirtualFilesystem struct {
 	// mountMu serializes mount mutations.
 	//
 	// mountMu is analogous to Linux's namespace_sem.
-	mountMu sync.Mutex
+	mountMu sync.Mutex `state:"nosave"`
 
 	// mounts maps (mount parent, mount point) pairs to mounts. (Since mounts
 	// are uniquely namespaced, including mount parent in the key correctly
@@ -89,44 +91,42 @@ type VirtualFilesystem struct {
 
 	// devices contains all registered Devices. devices is protected by
 	// devicesMu.
-	devicesMu sync.RWMutex
+	devicesMu sync.RWMutex `state:"nosave"`
 	devices   map[devTuple]*registeredDevice
 
 	// anonBlockDevMinor contains all allocated anonymous block device minor
 	// numbers. anonBlockDevMinorNext is a lower bound for the smallest
 	// unallocated anonymous block device number. anonBlockDevMinorNext and
 	// anonBlockDevMinor are protected by anonBlockDevMinorMu.
-	anonBlockDevMinorMu   sync.Mutex
+	anonBlockDevMinorMu   sync.Mutex `state:"nosave"`
 	anonBlockDevMinorNext uint32
 	anonBlockDevMinor     map[uint32]struct{}
 
 	// fsTypes contains all registered FilesystemTypes. fsTypes is protected by
 	// fsTypesMu.
-	fsTypesMu sync.RWMutex
+	fsTypesMu sync.RWMutex `state:"nosave"`
 	fsTypes   map[string]*registeredFilesystemType
 
 	// filesystems contains all Filesystems. filesystems is protected by
 	// filesystemsMu.
-	filesystemsMu sync.Mutex
+	filesystemsMu sync.Mutex `state:"nosave"`
 	filesystems   map[*Filesystem]struct{}
 }
 
-// New returns a new VirtualFilesystem with no mounts or FilesystemTypes.
-func New() *VirtualFilesystem {
-	vfs := &VirtualFilesystem{
-		mountpoints:           make(map[*Dentry]map[*Mount]struct{}),
-		devices:               make(map[devTuple]*registeredDevice),
-		anonBlockDevMinorNext: 1,
-		anonBlockDevMinor:     make(map[uint32]struct{}),
-		fsTypes:               make(map[string]*registeredFilesystemType),
-		filesystems:           make(map[*Filesystem]struct{}),
-	}
+// Init initializes a new VirtualFilesystem with no mounts or FilesystemTypes.
+func (vfs *VirtualFilesystem) Init() error {
+	vfs.mountpoints = make(map[*Dentry]map[*Mount]struct{})
+	vfs.devices = make(map[devTuple]*registeredDevice)
+	vfs.anonBlockDevMinorNext = 1
+	vfs.anonBlockDevMinor = make(map[uint32]struct{})
+	vfs.fsTypes = make(map[string]*registeredFilesystemType)
+	vfs.filesystems = make(map[*Filesystem]struct{})
 	vfs.mounts.Init()
 
 	// Construct vfs.anonMount.
 	anonfsDevMinor, err := vfs.GetAnonBlockDevMinor()
 	if err != nil {
-		panic(fmt.Sprintf("VirtualFilesystem.GetAnonBlockDevMinor() failed during VirtualFilesystem construction: %v", err))
+		return err
 	}
 	anonfs := anonFilesystem{
 		devMinor: anonfsDevMinor,
@@ -137,8 +137,7 @@ func New() *VirtualFilesystem {
 		fs:   &anonfs.vfsfs,
 		refs: 1,
 	}
-
-	return vfs
+	return nil
 }
 
 // PathOperation specifies the path operated on by a VFS method.

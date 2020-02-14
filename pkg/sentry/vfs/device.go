@@ -56,6 +56,7 @@ type Device interface {
 	Open(ctx context.Context, mnt *Mount, d *Dentry, opts OpenOptions) (*FileDescription, error)
 }
 
+// +stateify savable
 type registeredDevice struct {
 	dev  Device
 	opts RegisterDeviceOptions
@@ -63,6 +64,8 @@ type registeredDevice struct {
 
 // RegisterDeviceOptions contains options to
 // VirtualFilesystem.RegisterDevice().
+//
+// +stateify savable
 type RegisterDeviceOptions struct {
 	// GroupName is the name shown for this device registration in
 	// /proc/devices. If GroupName is empty, this registration will not be

@@ -199,7 +199,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 			}
 
 			paths := fs.GetPath(initArgs.Envv)
-			vfsObj := proc.Kernel.VFS
+			vfsObj := proc.Kernel.VFS()
 			file, err := ResolveExecutablePath(ctx, vfsObj, initArgs.WorkingDirectory, initArgs.Argv[0], paths)
 			if err != nil {
 				return nil, 0, nil, fmt.Errorf("error finding executable %q in PATH %v: %v", initArgs.Argv[0], paths, err)
