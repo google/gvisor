@@ -35,7 +35,21 @@ func (x *epollInterestEntry) load(m state.Map) {
 	m.Load("prev", &x.prev)
 }
 
+func (x *VirtualDentry) beforeSave() {}
+func (x *VirtualDentry) save(m state.Map) {
+	x.beforeSave()
+	m.Save("mount", &x.mount)
+	m.Save("dentry", &x.dentry)
+}
+
+func (x *VirtualDentry) afterLoad() {}
+func (x *VirtualDentry) load(m state.Map) {
+	m.Load("mount", &x.mount)
+	m.Load("dentry", &x.dentry)
+}
+
 func init() {
 	state.Register("pkg/sentry/vfs.epollInterestList", (*epollInterestList)(nil), state.Fns{Save: (*epollInterestList).save, Load: (*epollInterestList).load})
 	state.Register("pkg/sentry/vfs.epollInterestEntry", (*epollInterestEntry)(nil), state.Fns{Save: (*epollInterestEntry).save, Load: (*epollInterestEntry).load})
+	state.Register("pkg/sentry/vfs.VirtualDentry", (*VirtualDentry)(nil), state.Fns{Save: (*VirtualDentry).save, Load: (*VirtualDentry).load})
 }
