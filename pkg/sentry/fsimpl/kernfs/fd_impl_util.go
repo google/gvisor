@@ -116,8 +116,8 @@ func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirent
 			Ino:     stat.Ino,
 			NextOff: 1,
 		}
-		if !cb.Handle(dirent) {
-			return nil
+		if err := cb.Handle(dirent); err != nil {
+			return err
 		}
 		fd.off++
 	}
@@ -132,8 +132,8 @@ func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirent
 			Ino:     stat.Ino,
 			NextOff: 2,
 		}
-		if !cb.Handle(dirent) {
-			return nil
+		if err := cb.Handle(dirent); err != nil {
+			return err
 		}
 		fd.off++
 	}
@@ -153,8 +153,8 @@ func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirent
 			Ino:     stat.Ino,
 			NextOff: fd.off + 1,
 		}
-		if !cb.Handle(dirent) {
-			return nil
+		if err := cb.Handle(dirent); err != nil {
+			return err
 		}
 		fd.off++
 	}

@@ -188,14 +188,14 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 				childType = fs.ToInodeType(childInode.diskInode.Mode().FileType())
 			}
 
-			if !cb.Handle(vfs.Dirent{
+			if err := cb.Handle(vfs.Dirent{
 				Name:    child.diskDirent.FileName(),
 				Type:    fs.ToDirentType(childType),
 				Ino:     uint64(child.diskDirent.Inode()),
 				NextOff: fd.off + 1,
-			}) {
+			}); err != nil {
 				dir.childList.InsertBefore(child, fd.iter)
-				return nil
+				return err
 			}
 			fd.off++
 		}

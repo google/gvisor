@@ -105,8 +105,8 @@ func (i *subtasksInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallb
 			Ino:     i.inoGen.NextIno(),
 			NextOff: offset + 1,
 		}
-		if !cb.Handle(dirent) {
-			return offset, nil
+		if err := cb.Handle(dirent); err != nil {
+			return offset, err
 		}
 		offset++
 	}

@@ -499,9 +499,9 @@ func newIterDirentCb() *iterDirentsCb {
 }
 
 // Handle implements vfs.IterDirentsCallback.Handle.
-func (cb *iterDirentsCb) Handle(dirent vfs.Dirent) bool {
+func (cb *iterDirentsCb) Handle(dirent vfs.Dirent) error {
 	cb.dirents = append(cb.dirents, dirent)
-	return true
+	return nil
 }
 
 // TestIterDirents tests the FileDescriptionImpl.IterDirents functionality.

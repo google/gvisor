@@ -151,8 +151,8 @@ func (i *tasksInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback
 			Ino:     i.inoGen.NextIno(),
 			NextOff: offset + 1,
 		}
-		if !cb.Handle(dirent) {
-			return offset, nil
+		if err := cb.Handle(dirent); err != nil {
+			return offset, err
 		}
 		offset++
 	}
@@ -163,8 +163,8 @@ func (i *tasksInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback
 			Ino:     i.inoGen.NextIno(),
 			NextOff: offset + 1,
 		}
-		if !cb.Handle(dirent) {
-			return offset, nil
+		if err := cb.Handle(dirent); err != nil {
+			return offset, err
 		}
 		offset++
 	}
@@ -196,8 +196,8 @@ func (i *tasksInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback
 			Ino:     i.inoGen.NextIno(),
 			NextOff: FIRST_PROCESS_ENTRY + 2 + int64(tid) + 1,
 		}
-		if !cb.Handle(dirent) {
-			return offset, nil
+		if err := cb.Handle(dirent); err != nil {
+			return offset, err
 		}
 		offset++
 	}
