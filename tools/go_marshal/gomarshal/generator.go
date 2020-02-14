@@ -123,7 +123,7 @@ func (g *Generator) writeHeader() error {
 	// Emit build tags.
 	if t := tags.Aggregate(g.inputs); len(t) > 0 {
 		b.emit(strings.Join(t.Lines(), "\n"))
-		b.emit("\n")
+		b.emit("\n\n")
 	}
 
 	// Package header.

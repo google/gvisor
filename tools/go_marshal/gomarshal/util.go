@@ -310,7 +310,7 @@ func (i *importStmt) markUsed() {
 }
 
 func (i *importStmt) equivalent(other *importStmt) bool {
-	return i == other
+	return i.name == other.name && i.path == other.path && i.aliased == other.aliased
 }
 
 // importTable represents a collection of importStmts.
@@ -329,7 +329,7 @@ func newImportTable() *importTable {
 // result in a panic.
 func (i *importTable) merge(other *importTable) {
 	for name, im := range other.is {
-		if dup, ok := i.is[name]; ok && dup.equivalent(im) {
+		if dup, ok := i.is[name]; ok && !dup.equivalent(im) {
 			panic(fmt.Sprintf("Found colliding import statements: ours: %+v, other's: %+v", dup, im))
 		}
 
@@ -337,16 +337,27 @@ func (i *importTable) merge(other *importTable) {
 	}
 }
 
+func (i *importTable) addStmt(s *importStmt) *importStmt {
+	if old, ok := i.is[s.name]; ok && !old.equivalent(s) {
+		// A collision should always be between an import inserted by the
+		// go-marshal tool and an import from the original source file (assuming
+		// the original source file was valid). We could theoretically handle
+		// the collision by assigning a local name to our import. However, this
+		// would need to be plumbed throughout the generator. Given that
+		// collisions should be rare, simply panic on collision.
+		panic(fmt.Sprintf("Import collision: old: %s as %v; new: %v as %v", old.path, old.name, s.path, s.name))
+	}
+	i.is[s.name] = s
+	return s
+}
+
 func (i *importTable) add(s string) *importStmt {
 	n := newImport(s)
-	i.is[n.name] = n
-	return n
+	return i.addStmt(n)
 }
 
 func (i *importTable) addFromSpec(spec *ast.ImportSpec, f *token.FileSet) *importStmt {
-	n := newImportFromSpec(spec, f)
-	i.is[n.name] = n
-	return n
+	return i.addStmt(newImportFromSpec(spec, f))
 }
 
 // Marks the import named n as used. If no such import is in the table, returns
