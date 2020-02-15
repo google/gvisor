@@ -85,8 +85,8 @@ type epollInterest struct {
 	ready bool
 	epollInterestEntry
 
-	// userData is the epoll_data_t associated with this epollInterest.
-	// userData is protected by epoll.mu.
+	// userData is the struct epoll_event::data associated with this
+	// epollInterest. userData is protected by epoll.mu.
 	userData [2]int32
 }
 
@@ -157,7 +157,7 @@ func (ep *EpollInstance) Seek(ctx context.Context, offset int64, whence int32) (
 // AddInterest implements the semantics of EPOLL_CTL_ADD.
 //
 // Preconditions: A reference must be held on file.
-func (ep *EpollInstance) AddInterest(file *FileDescription, num int32, mask uint32, userData [2]int32) error {
+func (ep *EpollInstance) AddInterest(file *FileDescription, num int32, event linux.EpollEvent) error {
 	// Check for cyclic polling if necessary.
 	subep, _ := file.impl.(*EpollInstance)
 	if subep != nil {
@@ -183,12 +183,12 @@ func (ep *EpollInstance) AddInterest(file *FileDescription, num int32, mask uint
 	}
 
 	// Register interest in file.
-	mask |= linux.EPOLLERR | linux.EPOLLRDHUP
+	mask := event.Events | linux.EPOLLERR | linux.EPOLLRDHUP
 	epi := &epollInterest{
 		epoll:    ep,
 		key:      key,
 		mask:     mask,
-		userData: userData,
+		userData: event.Data,
 	}
 	ep.interest[key] = epi
 	wmask := waiter.EventMaskFromLinux(mask)
@@ -236,7 +236,7 @@ func (ep *EpollInstance) mightPollRecursive(ep2 *EpollInstance, remainingRecursi
 // ModifyInterest implements the semantics of EPOLL_CTL_MOD.
 //
 // Preconditions: A reference must be held on file.
-func (ep *EpollInstance) ModifyInterest(file *FileDescription, num int32, mask uint32, userData [2]int32) error {
+func (ep *EpollInstance) ModifyInterest(file *FileDescription, num int32, event linux.EpollEvent) error {
 	ep.interestMu.Lock()
 	defer ep.interestMu.Unlock()
 
@@ -250,13 +250,13 @@ func (ep *EpollInstance) ModifyInterest(file *FileDescription, num int32, mask u
 	}
 
 	// Update epi for the next call to ep.ReadEvents().
+	mask := event.Events | linux.EPOLLERR | linux.EPOLLRDHUP
 	ep.mu.Lock()
 	epi.mask = mask
-	epi.userData = userData
+	epi.userData = event.Data
 	ep.mu.Unlock()
 
 	// Re-register with the new mask.
-	mask |= linux.EPOLLERR | linux.EPOLLRDHUP
 	file.EventUnregister(&epi.waiter)
 	wmask := waiter.EventMaskFromLinux(mask)
 	file.EventRegister(&epi.waiter, wmask)
@@ -363,8 +363,7 @@ func (ep *EpollInstance) ReadEvents(events []linux.EpollEvent) int {
 		// Report ievents.
 		events[i] = linux.EpollEvent{
 			Events: ievents.ToLinux(),
-			Fd:     epi.userData[0],
-			Data:   epi.userData[1],
+			Data:   epi.userData,
 		}
 		i++
 		if i == len(events) {
