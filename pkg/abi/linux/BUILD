@@ -17,6 +17,8 @@ go_library(
         "dev.go",
         "elf.go",
         "epoll.go",
+        "epoll_amd64.go",
+        "epoll_arm64.go",
         "errors.go",
         "eventfd.go",
         "exec.go",
