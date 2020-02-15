@@ -447,6 +447,9 @@ type Stack struct {
 	// ndpConfigs is the default NDP configurations used by interfaces.
 	ndpConfigs NDPConfigurations
 
+	// nudConfigs is the default NUD configurations used by interfaces.
+	nudConfigs NUDConfigurations
+
 	// autoGenIPv6LinkLocal determines whether or not the stack will attempt
 	// to auto-generate an IPv6 link-local address for newly enabled non-loopback
 	// NICs. See the AutoGenIPv6LinkLocal field of Options for more details.
@@ -499,6 +502,9 @@ type Options struct {
 	// DupAddrDetectTransmits field, implying that DAD will not be performed
 	// before assigning an address to a NIC.
 	NDPConfigs NDPConfigurations
+
+	// NUDConfigs is the default NUD configurations used by interfaces.
+	NUDConfigs NUDConfigurations
 
 	// AutoGenIPv6LinkLocal determines whether or not the stack will attempt to
 	// auto-generate an IPv6 link-local address for newly enabled non-loopback
@@ -618,8 +624,9 @@ func New(opts Options) *Stack {
 		opts.UniqueID = new(uniqueIDGenerator)
 	}
 
-	// Make sure opts.NDPConfigs contains valid values only.
+	// Make sure opts.NDPConfigs and opts.NUDConfigs contain valid values only.
 	opts.NDPConfigs.validate()
+	opts.NUDConfigs.validate()
 
 	s := &Stack{
 		transportProtocols:   make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
@@ -635,6 +642,7 @@ func New(opts Options) *Stack {
 		icmpRateLimiter:      NewICMPRateLimiter(),
 		seed:                 generateRandUint32(),
 		ndpConfigs:           opts.NDPConfigs,
+		nudConfigs:           opts.NUDConfigs,
 		autoGenIPv6LinkLocal: opts.AutoGenIPv6LinkLocal,
 		uniqueIDGenerator:    opts.UniqueID,
 		ndpDisp:              opts.NDPDisp,
@@ -1705,6 +1713,37 @@ func (s *Stack) SetNDPConfigurations(id tcpip.NICID, c NDPConfigurations) *tcpip
 	}
 
 	nic.setNDPConfigs(c)
+
+	return nil
+}
+
+// NUDConfigurations gets the per-interface NUD configurations on the NIC
+// with ID id to c.
+func (s *Stack) NUDConfigurations(id tcpip.NICID) (NUDConfigurations, *tcpip.Error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	nic, ok := s.nics[id]
+	if !ok {
+		return NUDConfigurations{}, tcpip.ErrUnknownNICID
+	}
+	return nic.NUDConfigs(), nil
+}
+
+// SetNUDConfigurations sets the per-interface NUD configurations on the NIC
+// with ID id to c.
+//
+// Note, if c contains invalid NUD configuration values, it will be fixed to
+// use default values for the erroneous values.
+func (s *Stack) SetNUDConfigurations(id tcpip.NICID, c NUDConfigurations) *tcpip.Error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	nic, ok := s.nics[id]
+	if !ok {
+		return tcpip.ErrUnknownNICID
+	}
+
+	nic.setNUDConfigs(c)
 
 	return nil
 }

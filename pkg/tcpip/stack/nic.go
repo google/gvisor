@@ -37,6 +37,7 @@ type NIC struct {
 	context NICContext
 
 	stats NICStats
+	neigh *neighborCache
 
 	mu struct {
 		sync.RWMutex
@@ -110,6 +111,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 		linkEP:  ep,
 		context: ctx,
 		stats:   makeNICStats(),
+		neigh:   newNeighborCache(stack.nudConfigs),
 	}
 	nic.mu.primary = make(map[tcpip.NetworkProtocolNumber][]*referencedNetworkEndpoint)
 	nic.mu.endpoints = make(map[NetworkEndpointID]*referencedNetworkEndpoint)
@@ -1272,6 +1274,19 @@ func (n *NIC) setNDPConfigs(c NDPConfigurations) {
 	n.mu.Lock()
 	n.mu.ndp.configs = c
 	n.mu.Unlock()
+}
+
+// NUDConfigs gets the NUD configurations for n.
+func (n *NIC) NUDConfigs() NUDConfigurations {
+	return n.neigh.Config()
+}
+
+// setNUDConfigs sets the NUD configurations for n.
+//
+// Note, if c contains invalid NUD configuration values, it will be fixed to
+// use default values for the erroneous values.
+func (n *NIC) setNUDConfigs(c NUDConfigurations) {
+	n.neigh.UpdateConfig(c)
 }
 
 // handleNDPRA handles an NDP Router Advertisement message that arrived on n.

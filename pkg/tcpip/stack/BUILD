@@ -22,7 +22,10 @@ go_library(
         "linkaddrcache.go",
         "linkaddrentry_list.go",
         "ndp.go",
+        "neighbor_cache.go",
+        "neighbor_entry.go",
         "nic.go",
+        "nud.go",
         "registration.go",
         "route.go",
         "stack.go",
@@ -52,6 +55,7 @@ go_test(
     size = "medium",
     srcs = [
         "ndp_test.go",
+        "nud_test.go",
         "stack_test.go",
         "transport_demuxer_test.go",
         "transport_test.go",
