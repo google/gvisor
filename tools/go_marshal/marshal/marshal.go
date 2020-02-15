@@ -48,6 +48,10 @@ type Marshallable interface {
 
 	// SizeBytes is the size of the memory representation of a type in
 	// marshalled form.
+	//
+	// SizeBytes must handle a nil receiver. Practically, this means SizeBytes
+	// cannot deference any fields on the object implementing it (but will
+	// likely make use of the type of these fields).
 	SizeBytes() int
 
 	// MarshalBytes serializes a copy of a type to dst. dst must be at least
