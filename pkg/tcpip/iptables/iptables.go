@@ -240,9 +240,8 @@ func (it *IPTables) checkChain(hook Hook, pkt tcpip.PacketBuffer, table Table, r
 func (it *IPTables) checkRule(hook Hook, pkt tcpip.PacketBuffer, table Table, ruleIdx int) (RuleVerdict, int) {
 	rule := table.Rules[ruleIdx]
 
-	// First check whether the packet matches the IP header filter.
-	// TODO(gvisor.dev/issue/170): Support other fields of the filter.
-	if rule.Filter.Protocol != 0 && rule.Filter.Protocol != header.IPv4(pkt.NetworkHeader).TransportProtocol() {
+	// Check whether the packet matches the IP header filter.
+	if !filterMatch(rule.Filter, header.IPv4(pkt.NetworkHeader)) {
 		// Continue on to the next rule.
 		return RuleJump, ruleIdx + 1
 	}
@@ -262,4 +261,27 @@ func (it *IPTables) checkRule(hook Hook, pkt tcpip.PacketBuffer, table Table, ru
 
 	// All the matchers matched, so run the target.
 	return rule.Target.Action(pkt)
+}
+
+func filterMatch(filter IPHeaderFilter, hdr header.IPv4) bool {
+	// TODO(gvisor.dev/issue/170): Support other fields of the filter.
+	// Check the transport protocol.
+	if filter.Protocol != 0 && filter.Protocol != hdr.TransportProtocol() {
+		return false
+	}
+
+	// Check the destination IP.
+	dest := hdr.DestinationAddress()
+	matches := true
+	for i := range filter.Dst {
+		if dest[i]&filter.DstMask[i] != filter.Dst[i] {
+			matches = false
+			break
+		}
+	}
+	if matches == filter.DstInvert {
+		return false
+	}
+
+	return true
 }
