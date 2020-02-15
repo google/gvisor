@@ -21,9 +21,9 @@ var _ marshal.Marshallable = (*Timespec)(nil)
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (s *Stat) SizeBytes() int {
     return 96 +
-        s.ATime.SizeBytes() +
-        s.MTime.SizeBytes() +
-        s.CTime.SizeBytes()
+        (*Timespec)(nil).SizeBytes() +
+        (*Timespec)(nil).SizeBytes() +
+        (*Timespec)(nil).SizeBytes()
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
@@ -96,12 +96,12 @@ func (s *Stat) UnmarshalBytes(src []byte) {
 
 // Packed implements marshal.Marshallable.Packed.
 func (s *Stat) Packed() bool {
-    return s.MTime.Packed() && s.CTime.Packed() && s.ATime.Packed()
+    return s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *Stat) MarshalUnsafe(dst []byte) {
-    if s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
+    if s.CTime.Packed() && s.ATime.Packed() && s.MTime.Packed() {
         safecopy.CopyIn(dst, unsafe.Pointer(s))
     } else {
         s.MarshalBytes(dst)
@@ -119,7 +119,7 @@ func (s *Stat) UnmarshalUnsafe(src []byte) {
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 func (s *Stat) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
-    if !s.CTime.Packed() && s.ATime.Packed() && s.MTime.Packed() {
+    if !s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
         // Type Stat doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := task.CopyScratchBuffer(s.SizeBytes())
         s.MarshalBytes(buf)
