@@ -14,13 +14,6 @@
 
 package linux
 
-// EpollEvent is equivalent to struct epoll_event from epoll(2).
-type EpollEvent struct {
-	Events uint32
-	Fd     int32
-	Data   int32
-}
-
 // Event masks.
 const (
 	EPOLLIN     = 0x1

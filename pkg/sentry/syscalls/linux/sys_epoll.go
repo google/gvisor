@@ -83,8 +83,7 @@ func EpollCtl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		}
 
 		mask = waiter.EventMaskFromLinux(e.Events)
-		data[0] = e.Fd
-		data[1] = e.Data
+		data = e.Data
 	}
 
 	// Perform the requested operations.
