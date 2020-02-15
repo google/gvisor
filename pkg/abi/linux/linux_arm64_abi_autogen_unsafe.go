@@ -21,9 +21,9 @@ var _ marshal.Marshallable = (*Timespec)(nil)
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (s *Stat) SizeBytes() int {
     return 80 +
-        s.ATime.SizeBytes() +
-        s.MTime.SizeBytes() +
-        s.CTime.SizeBytes()
+        (*Timespec)(nil).SizeBytes() +
+        (*Timespec)(nil).SizeBytes() +
+        (*Timespec)(nil).SizeBytes()
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
@@ -100,7 +100,7 @@ func (s *Stat) UnmarshalBytes(src []byte) {
 
 // Packed implements marshal.Marshallable.Packed.
 func (s *Stat) Packed() bool {
-    return s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed()
+    return s.CTime.Packed() && s.ATime.Packed() && s.MTime.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
@@ -114,7 +114,7 @@ func (s *Stat) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *Stat) UnmarshalUnsafe(src []byte) {
-    if s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
+    if s.CTime.Packed() && s.ATime.Packed() && s.MTime.Packed() {
         safecopy.CopyOut(unsafe.Pointer(s), src)
     } else {
         s.UnmarshalBytes(src)
