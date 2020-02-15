@@ -21,6 +21,8 @@
 package marshal
 
 import (
+	"io"
+
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -42,6 +44,8 @@ type Task interface {
 
 // Marshallable represents a type that can be marshalled to and from memory.
 type Marshallable interface {
+	io.WriterTo
+
 	// SizeBytes is the size of the memory representation of a type in
 	// marshalled form.
 	SizeBytes() int
