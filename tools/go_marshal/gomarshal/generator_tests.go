@@ -167,11 +167,26 @@ func (g *testGenerator) emitTestWriteToUnmarshalPreservesData() {
 	})
 }
 
+func (g *testGenerator) emitTestSizeBytesOnTypedNilPtr() {
+	g.inTestFunction("TestSizeBytesOnTypedNilPtr", func() {
+		g.emit("var x %s\n", g.typeName())
+		g.emit("sizeFromConcrete := x.SizeBytes()\n")
+		g.emit("sizeFromTypedNilPtr := (*%s)(nil).SizeBytes()\n\n", g.typeName())
+
+		g.emit("if sizeFromTypedNilPtr != sizeFromConcrete {\n")
+		g.inIndent(func() {
+			g.emit("t.Fatalf(\"SizeBytes() on typed nil pointer (%v) doesn't match size returned by a concrete object (%v).\\n\", sizeFromTypedNilPtr, sizeFromConcrete)")
+		})
+		g.emit("}\n")
+	})
+}
+
 func (g *testGenerator) emitTests() {
 	g.emitTestNonZeroSize()
 	g.emitTestSuspectAlignment()
 	g.emitTestMarshalUnmarshalPreservesData()
 	g.emitTestWriteToUnmarshalPreservesData()
+	g.emitTestSizeBytesOnTypedNilPtr()
 }
 
 func (g *testGenerator) write(out io.Writer) error {

@@ -301,7 +301,7 @@ func (g *interfaceGenerator) emitMarshallable() {
 					primitiveSize += size
 				} else {
 					g.recordUsedMarshallable(t.Name)
-					dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("%s.SizeBytes()", g.fieldAccessor(n)))
+					dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("(*%s)(nil).SizeBytes()", t.Name))
 				}
 			},
 			selector: func(n, tX, tSel *ast.Ident) {
