@@ -8,6 +8,7 @@ import (
     "gvisor.dev/gvisor/pkg/safecopy"
     "gvisor.dev/gvisor/pkg/usermem"
     "gvisor.dev/gvisor/tools/go_marshal/marshal"
+    "io"
     "reflect"
     "runtime"
     "unsafe"
@@ -95,7 +96,7 @@ func (s *Stat) UnmarshalBytes(src []byte) {
 
 // Packed implements marshal.Marshallable.Packed.
 func (s *Stat) Packed() bool {
-    return s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed()
+    return s.MTime.Packed() && s.CTime.Packed() && s.ATime.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
@@ -118,7 +119,7 @@ func (s *Stat) UnmarshalUnsafe(src []byte) {
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 func (s *Stat) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
-    if !s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
+    if !s.CTime.Packed() && s.ATime.Packed() && s.MTime.Packed() {
         // Type Stat doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := task.CopyScratchBuffer(s.SizeBytes())
         s.MarshalBytes(buf)
@@ -178,5 +179,36 @@ func (s *Stat) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     // must live until after the CopyInBytes.
     runtime.KeepAlive(s)
     return len, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (s *Stat) WriteTo(w io.Writer) (int64, error) {
+    if !s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
+        // Type Stat doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := make([]byte, s.SizeBytes())
+        s.MarshalBytes(buf)
+        n, err := w.Write(buf)
+        return int64(n), err
+    }
+
+    // Bypass escape analysis on s. The no-op arithmetic operation on the
+    // pointer makes the compiler think val doesn't depend on s.
+    // See src/runtime/stubs.go:noescape() in the golang toolchain.
+    ptr := unsafe.Pointer(s)
+    val := uintptr(ptr)
+    val = val^0
+
+    // Construct a slice backed by s's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = val
+    hdr.Len = s.SizeBytes()
+    hdr.Cap = s.SizeBytes()
+
+    len, err := w.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that s
+    // must live until after the Write.
+    runtime.KeepAlive(s)
+    return int64(len), err
 }
 

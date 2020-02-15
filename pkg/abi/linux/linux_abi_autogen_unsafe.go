@@ -6,6 +6,7 @@ import (
     "gvisor.dev/gvisor/pkg/safecopy"
     "gvisor.dev/gvisor/pkg/usermem"
     "gvisor.dev/gvisor/tools/go_marshal/marshal"
+    "io"
     "reflect"
     "runtime"
     "unsafe"
@@ -109,6 +110,29 @@ func (r *RSeqCriticalSection) CopyIn(task marshal.Task, addr usermem.Addr) (int,
     return len, err
 }
 
+// WriteTo implements io.WriterTo.WriteTo.
+func (r *RSeqCriticalSection) WriteTo(w io.Writer) (int64, error) {
+    // Bypass escape analysis on r. The no-op arithmetic operation on the
+    // pointer makes the compiler think val doesn't depend on r.
+    // See src/runtime/stubs.go:noescape() in the golang toolchain.
+    ptr := unsafe.Pointer(r)
+    val := uintptr(ptr)
+    val = val^0
+
+    // Construct a slice backed by r's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = val
+    hdr.Len = r.SizeBytes()
+    hdr.Cap = r.SizeBytes()
+
+    len, err := w.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that r
+    // must live until after the Write.
+    runtime.KeepAlive(r)
+    return int64(len), err
+}
+
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (t *Timespec) SizeBytes() int {
     return 16
@@ -189,5 +213,28 @@ func (t *Timespec) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     // must live until after the CopyInBytes.
     runtime.KeepAlive(t)
     return len, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (t *Timespec) WriteTo(w io.Writer) (int64, error) {
+    // Bypass escape analysis on t. The no-op arithmetic operation on the
+    // pointer makes the compiler think val doesn't depend on t.
+    // See src/runtime/stubs.go:noescape() in the golang toolchain.
+    ptr := unsafe.Pointer(t)
+    val := uintptr(ptr)
+    val = val^0
+
+    // Construct a slice backed by t's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = val
+    hdr.Len = t.SizeBytes()
+    hdr.Cap = t.SizeBytes()
+
+    len, err := w.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that t
+    // must live until after the Write.
+    runtime.KeepAlive(t)
+    return int64(len), err
 }
 
