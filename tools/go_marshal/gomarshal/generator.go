@@ -101,14 +101,16 @@ func NewGenerator(srcs []string, out, outTest, pkg string, imports []string) (*G
 		// used, so that they're always added to the generated code.
 		g.imports.add(i).markUsed()
 	}
-	g.imports.add(marshalImport).markUsed()
+
 	// The following imports may or may not be used by the generated code,
 	// depending on what's required for the target types. Don't mark these as
 	// used by default.
+	g.imports.add("io")
 	g.imports.add("reflect")
 	g.imports.add("runtime")
-	g.imports.add(safecopyImport)
 	g.imports.add("unsafe")
+	g.imports.add(marshalImport)
+	g.imports.add(safecopyImport)
 	g.imports.add(usermemImport)
 
 	return &g, nil

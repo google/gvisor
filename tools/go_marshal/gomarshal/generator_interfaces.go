@@ -602,4 +602,50 @@ func (g *interfaceGenerator) emitMarshallable() {
 		}
 	})
 	g.emit("}\n\n")
+
+	g.emit("// WriteTo implements io.WriterTo.WriteTo.\n")
+	g.recordUsedImport("io")
+	g.emit("func (%s *%s) WriteTo(w io.Writer) (int64, error) {\n", g.r, g.typeName())
+	g.inIndent(func() {
+		fallback := func() {
+			g.emit("// Type %s doesn't have a packed layout in memory, fall back to MarshalBytes.\n", g.typeName())
+			g.emit("buf := make([]byte, %s.SizeBytes())\n", g.r)
+			g.emit("%s.MarshalBytes(buf)\n", g.r)
+			g.emit("n, err := w.Write(buf)\n")
+			g.emit("return int64(n), err\n")
+		}
+		if thisPacked {
+			g.recordUsedImport("reflect")
+			g.recordUsedImport("runtime")
+			g.recordUsedImport("unsafe")
+			if cond, ok := g.areFieldsPackedExpression(); ok {
+				g.emit("if !%s {\n", cond)
+				g.inIndent(fallback)
+				g.emit("}\n\n")
+			}
+			// Fast serialization.
+			g.emit("// Bypass escape analysis on %s. The no-op arithmetic operation on the\n", g.r)
+			g.emit("// pointer makes the compiler think val doesn't depend on %s.\n", g.r)
+			g.emit("// See src/runtime/stubs.go:noescape() in the golang toolchain.\n")
+			g.emit("ptr := unsafe.Pointer(%s)\n", g.r)
+			g.emit("val := uintptr(ptr)\n")
+			g.emit("val = val^0\n\n")
+
+			g.emit("// Construct a slice backed by %s's underlying memory.\n", g.r)
+			g.emit("var buf []byte\n")
+			g.emit("hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))\n")
+			g.emit("hdr.Data = val\n")
+			g.emit("hdr.Len = %s.SizeBytes()\n", g.r)
+			g.emit("hdr.Cap = %s.SizeBytes()\n\n", g.r)
+
+			g.emit("len, err := w.Write(buf)\n")
+			g.emit("// Since we bypassed the compiler's escape analysis, indicate that %s\n", g.r)
+			g.emit("// must live until after the Write.\n")
+			g.emit("runtime.KeepAlive(%s)\n", g.r)
+			g.emit("return int64(len), err\n")
+		} else {
+			fallback()
+		}
+	})
+	g.emit("}\n\n")
 }

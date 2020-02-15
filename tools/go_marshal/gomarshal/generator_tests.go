@@ -22,6 +22,7 @@ import (
 )
 
 var standardImports = []string{
+	"bytes",
 	"fmt",
 	"reflect",
 	"testing",
@@ -117,26 +118,50 @@ func (g *testGenerator) emitTestMarshalUnmarshalPreservesData() {
 		g.emit("y.UnmarshalBytes(buf)\n")
 		g.emit("if !reflect.DeepEqual(x, y) {\n")
 		g.inIndent(func() {
-			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across Marshal/Unmarshal cycle:\\nBefore: %%+v\\nAfter: %%+v\\n\", x, y))\n")
+			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across MarshalBytes/UnmarshalBytes cycle:\\nBefore: %+v\\nAfter: %+v\\n\", x, y))\n")
 		})
 		g.emit("}\n")
 		g.emit("yUnsafe.UnmarshalBytes(bufUnsafe)\n")
 		g.emit("if !reflect.DeepEqual(x, yUnsafe) {\n")
 		g.inIndent(func() {
-			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across MarshalUnsafe/Unmarshal cycle:\\nBefore: %%+v\\nAfter: %%+v\\n\", x, yUnsafe))\n")
+			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across MarshalUnsafe/UnmarshalBytes cycle:\\nBefore: %+v\\nAfter: %+v\\n\", x, yUnsafe))\n")
 		})
 		g.emit("}\n\n")
 
 		g.emit("z.UnmarshalUnsafe(buf)\n")
 		g.emit("if !reflect.DeepEqual(x, z) {\n")
 		g.inIndent(func() {
-			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across Marshal/UnmarshalUnsafe cycle:\\nBefore: %%+v\\nAfter: %%+v\\n\", x, z))\n")
+			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across MarshalBytes/UnmarshalUnsafe cycle:\\nBefore: %+v\\nAfter: %+v\\n\", x, z))\n")
 		})
 		g.emit("}\n")
 		g.emit("zUnsafe.UnmarshalUnsafe(bufUnsafe)\n")
 		g.emit("if !reflect.DeepEqual(x, zUnsafe) {\n")
 		g.inIndent(func() {
-			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across MarshalUnsafe/UnmarshalUnsafe cycle:\\nBefore: %%+v\\nAfter: %%+v\\n\", x, zUnsafe))\n")
+			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across MarshalUnsafe/UnmarshalUnsafe cycle:\\nBefore: %+v\\nAfter: %+v\\n\", x, zUnsafe))\n")
+		})
+		g.emit("}\n")
+	})
+}
+
+func (g *testGenerator) emitTestWriteToUnmarshalPreservesData() {
+	g.inTestFunction("TestWriteToUnmarshalPreservesData", func() {
+		g.emit("var x, y, yUnsafe %s\n", g.typeName())
+		g.emit("analysis.RandomizeValue(&x)\n\n")
+
+		g.emit("var buf bytes.Buffer\n\n")
+
+		g.emit("x.WriteTo(&buf)\n")
+		g.emit("y.UnmarshalBytes(buf.Bytes())\n\n")
+		g.emit("yUnsafe.UnmarshalUnsafe(buf.Bytes())\n\n")
+
+		g.emit("if !reflect.DeepEqual(x, y) {\n")
+		g.inIndent(func() {
+			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across WriteTo/UnmarshalBytes cycle:\\nBefore: %+v\\nAfter: %+v\\n\", x, y))\n")
+		})
+		g.emit("}\n")
+		g.emit("if !reflect.DeepEqual(x, yUnsafe) {\n")
+		g.inIndent(func() {
+			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across WriteTo/UnmarshalUnsafe cycle:\\nBefore: %+v\\nAfter: %+v\\n\", x, yUnsafe))\n")
 		})
 		g.emit("}\n")
 	})
@@ -146,6 +171,7 @@ func (g *testGenerator) emitTests() {
 	g.emitTestNonZeroSize()
 	g.emitTestSuspectAlignment()
 	g.emitTestMarshalUnmarshalPreservesData()
+	g.emitTestWriteToUnmarshalPreservesData()
 }
 
 func (g *testGenerator) write(out io.Writer) error {
