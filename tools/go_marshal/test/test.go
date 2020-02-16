@@ -104,6 +104,11 @@ type Stat struct {
 	_       [3]int64
 }
 
+// InetAddr is an example marshallable newtype on an array.
+//
+// +marshal
+type InetAddr [4]byte
+
 // SignalSet is an example marshallable newtype on a primitive.
 //
 // +marshal
