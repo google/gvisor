@@ -44,7 +44,8 @@ const (
 // All recievers are single letters, so we don't allow import aliases to be a
 // single letter.
 var badIdents = []string{
-	"addr", "blk", "buf", "dst", "dsts", "err", "hdr", "len", "ptr", "src", "srcs", "task", "val",
+	"addr", "blk", "buf", "dst", "dsts", "count", "err", "hdr", "idx", "inner",
+	"ptr", "size", "src", "srcs", "task", "val",
 	// All single-letter identifiers.
 }
 
@@ -193,10 +194,27 @@ func (g *Generator) parse() ([]*ast.File, []*token.FileSet, error) {
 	return files, fsets, nil
 }
 
-// collectMarshallabeTypes walks the parsed AST and collects a list of type
+type marshallableType struct {
+	spec   *ast.TypeSpec
+	vector bool
+}
+
+func newMarshallableType(marshalTag string, spec *ast.TypeSpec) marshallableType {
+	tags := make(map[string]bool)
+	for _, tag := range strings.Fields(strings.TrimPrefix(marshalTag, "// +marshal")) {
+		tags[tag] = true
+	}
+
+	return marshallableType{
+		spec:   spec,
+		vector: tags["vector"],
+	}
+}
+
+// collectMarshallableTypes walks the parsed AST and collects a list of type
 // declarations for which we need to generate the Marshallable interface.
-func (g *Generator) collectMarshallabeTypes(a *ast.File, f *token.FileSet) []*ast.TypeSpec {
-	var types []*ast.TypeSpec
+func (g *Generator) collectMarshallableTypes(a *ast.File, f *token.FileSet) []marshallableType {
+	var types []marshallableType
 	for _, decl := range a.Decls {
 		gdecl, ok := decl.(*ast.GenDecl)
 		// Type declaration?
@@ -211,9 +229,11 @@ func (g *Generator) collectMarshallabeTypes(a *ast.File, f *token.FileSet) []*as
 		}
 		// Does the comment contain a "+marshal" line?
 		marked := false
+		var tagLine string
 		for _, c := range gdecl.Doc.List {
-			if c.Text == "// +marshal" {
+			if strings.HasPrefix(c.Text, "// +marshal") {
 				marked = true
+				tagLine = c.Text
 				break
 			}
 		}
@@ -222,14 +242,23 @@ func (g *Generator) collectMarshallabeTypes(a *ast.File, f *token.FileSet) []*as
 			continue
 		}
 		for _, spec := range gdecl.Specs {
-			// We already confirmed we're in a type declaration earlier.
+			// We already confirmed we're in a type declaration earlier, so this
+			// cast will succeed.
 			t := spec.(*ast.TypeSpec)
-			if _, ok := t.Type.(*ast.StructType); ok {
-				debugfAt(f.Position(t.Pos()), "Collected marshallable type %s.\n", t.Name.Name)
-				types = append(types, t)
-				continue
+			switch t.Type.(type) {
+			case *ast.StructType:
+				debugfAt(f.Position(t.Pos()), "Collected marshallable struct %s.\n", t.Name.Name)
+			case *ast.Ident: // Newtype on primitive.
+				debugfAt(f.Position(t.Pos()), "Collected marshallable newtype on primitive %s.\n", t.Name.Name)
+			case *ast.ArrayType: // Newtype on array.
+				debugfAt(f.Position(t.Pos()), "Collected marshallable newtype on array %s.\n", t.Name.Name)
+			default:
+				// A user specifically requested marshalling on this type, but we
+				// don't support it.
+				abortAt(f.Position(t.Pos()), fmt.Sprintf("Marshalling codegen was requested on type '%s', but go-marshal doesn't support this kind of declaration.\n", t.Name))
 			}
-			debugf("Skipping declaration %v since it's not a struct declaration.\n", gdecl)
+			types = append(types, newMarshallableType(tagLine, t))
+
 		}
 	}
 	return types
@@ -268,19 +297,41 @@ func (g *Generator) collectImports(a *ast.File, f *token.FileSet) map[string]imp
 
 }
 
-func (g *Generator) generateOne(t *ast.TypeSpec, fset *token.FileSet) *interfaceGenerator {
+func (g *Generator) generateOne(t marshallableType, fset *token.FileSet) *interfaceGenerator {
 	// We're guaranteed to have only struct type specs by now. See
 	// Generator.collectMarshallabeTypes.
-	i := newInterfaceGenerator(t, fset)
-	i.validate()
-	i.emitMarshallable()
+	i := newInterfaceGenerator(t.spec, fset)
+	switch ty := t.spec.Type.(type) {
+	case *ast.StructType:
+		i.validateStruct(t.spec, ty)
+		i.emitMarshallableForStruct(ty)
+		if t.vector {
+			i.emitMarshallableVectorForStruct(ty)
+		}
+	case *ast.Ident:
+		i.validatePrimitiveNewtype(ty)
+		i.emitMarshallableForPrimitiveNewtype(ty)
+		if t.vector {
+			i.emitMarshallableVectorForPrimitiveNewtype(ty)
+		}
+	case *ast.ArrayType:
+		i.validateArrayNewtype(t.spec.Name, ty)
+		// After validate, we can safely call arrayLen.
+		i.emitMarshallableForArrayNewtype(t.spec.Name, ty.Elt.(*ast.Ident), arrayLen(ty))
+		if t.vector {
+			abortAt(fset.Position(t.spec.Pos()), fmt.Sprintf("Array type marked as '+marshal vector', but this is not supported. Perhaps fold one of the dimensions?"))
+		}
+	default:
+		// This should've been filtered out by collectMarshallabeTypes.
+		panic(fmt.Sprintf("Unexpected type %+v", ty))
+	}
 	return i
 }
 
 // generateOneTestSuite generates a test suite for the automatically generated
 // implementations type t.
-func (g *Generator) generateOneTestSuite(t *ast.TypeSpec) *testGenerator {
-	i := newTestGenerator(t)
+func (g *Generator) generateOneTestSuite(t marshallableType) *testGenerator {
+	i := newTestGenerator(t.spec)
 	i.emitTests()
 	return i
 }
@@ -320,7 +371,7 @@ func (g *Generator) Run() error {
 	for i, a := range asts {
 		// Collect type declarations marked for code generation and generate
 		// Marshallable interfaces.
-		for _, t := range g.collectMarshallabeTypes(a, fsets[i]) {
+		for _, t := range g.collectMarshallableTypes(a, fsets[i]) {
 			impl := g.generateOne(t, fsets[i])
 			// Collect Marshallable types referenced by the generated code.
 			for ref, _ := range impl.ms {
@@ -336,17 +387,6 @@ func (g *Generator) Run() error {
 			}
 			ts = append(ts, g.generateOneTestSuite(t))
 		}
-	}
-
-	// Tool was invoked with input files with no data structures marked for code
-	// generation. This is probably not what the user intended.
-	if len(impls) == 0 {
-		var buf bytes.Buffer
-		fmt.Fprintf(&buf, "go_marshal invoked on these files, but they don't contain any types requiring code generation. Perhaps mark some with \"// +marshal\"?:\n")
-		for _, i := range g.inputs {
-			fmt.Fprintf(&buf, "  %s\n", i)
-		}
-		abort(buf.String())
 	}
 
 	// Write output file header. These include things like package name and
@@ -391,6 +431,30 @@ func (g *Generator) writeTests(ts []*testGenerator) error {
 	}
 
 	// Write test functions.
+
+	// If we didn't generate any Marshallable implementations, we can't just
+	// emit an empty test file, since that causes the build to fail with "no
+	// tests/benchmarks/examples found". Unfortunately we can't signal bazel to
+	// omit the entire package since the outputs are already defined before
+	// go-marshal is called. If we'd otherwise emit an empty test suite, emit an
+	// empty example instead.
+	if len(ts) == 0 {
+		b.reset()
+		b.emit("func ExampleEmptyTestSuite() {\n")
+		b.inIndent(func() {
+			b.emit("// This example is intentionally empty to ensure this file contains at least\n")
+			b.emit("// one testable entity. go-marshal is forced to emit a test file if a package\n")
+			b.emit("// is marked marshallable, but emitting a test file with no entities results\n")
+			b.emit("// a build failure.\n")
+		})
+		b.emit("}\n")
+
+		if err := b.write(g.outputTest); err != nil {
+			return err
+		}
+		return nil
+	}
+
 	for _, t := range ts {
 		if err := t.write(g.outputTest); err != nil {
 			return err

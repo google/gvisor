@@ -42,7 +42,11 @@ type Task interface {
 	CopyInBytes(addr usermem.Addr, b []byte) (int, error)
 }
 
-// Marshallable represents a type that can be marshalled to and from memory.
+// Marshallable represents operations on a type that can be marshalled to and
+// from memory.
+//
+// go-marshal automatically generates implementations for this interface for
+// types marked as '+marshal'.
 type Marshallable interface {
 	io.WriterTo
 
@@ -67,6 +71,10 @@ type Marshallable interface {
 	// starting at unaligned addresses (should always be true by default for ABI
 	// structs, verified by automatically generated tests when using
 	// go_marshal), and has no fields marked `marshal:"unaligned"`.
+	//
+	// Packed cannot rely on the value of any particular instance. That is,
+	// Packed must return the same result for all possible values of the type
+	// implementing it.
 	Packed() bool
 
 	// MarshalUnsafe serializes a type by bulk copying its in-memory
@@ -99,4 +107,35 @@ type Marshallable interface {
 	// does not escape. The implementation should avoid creating extra copies in
 	// memory by directly serializing from the object's underlying memory.
 	CopyOut(task Task, addr usermem.Addr) (int, error)
+}
+
+// MarshallableVector represents marshalling operations for a slice of a
+// Marshallable type.
+//
+// go-marshal additionally generates implementations for this interface for
+// types marked '+marshal vector'.
+//
+// For a type declaration like this:
+//
+//   type Foo OtherType
+//
+// go-marshal will declare a slice type like this:
+//
+//   type FooSlice []Foo
+//
+// If the type declaration is a newtype over a golang primitive type like this:
+//
+//   type Bar int32
+//
+// go-marshal will instead declare a slice type on the inne primitive type:
+//
+//   type BarSlice []int32
+//
+// This makes casting more convenient.
+type MarshallableVector interface {
+	// CopyInVec is similar to Marshallable.CopyIn, but operates on a slice.
+	CopyInVec(task Task, addr usermem.Addr) (bytes int, err error)
+
+	// CopyOutVec is similar to Marshallable.CopyOut, but operates on a slice.
+	CopyOutVec(task Task, addr usermem.Addr) (bytes int, err error)
 }
