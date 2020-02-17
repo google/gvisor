@@ -28,10 +28,12 @@ For configuring the environment manually, consult the
 
 ### Locally
 
-Run the following from the benchmarks directory:
+The tool is built to, by default, use Google Cloud Platform to run benchmarks,
+but it does support GCP workflows. To run locally, run the following from the
+benchmarks directory:
 
 ```bash
-bazel run :benchmarks -- run-local startup
+bazel run --define gcloud=off :benchmarks -- run-local startup
 
 ...
 method,metric,result
@@ -46,17 +48,16 @@ runtime, runc. Running on another installed runtime, like say runsc, is as
 simple as:
 
 ```bash
-bazel run :benchmarks -- run-local startup --runtime=runsc
+bazel run  --define gcloud=off :benchmarks -- run-local startup --runtime=runsc
 ```
 
-There is help: ``bash bash bazel run :benchmarks -- --help bazel
-run :benchmarks -- run-local --help` ``
+There is help: `bash bazel run --define gcloud=off :benchmarks -- --help bazel
+run --define gcloud=off :benchmarks -- run-local --help`
 
 To list available benchmarks, use the `list` commmand:
 
 ```bash
-bazel run :benchmarks -- list
-ls
+bazel --define gcloud=off  run :benchmarks -- list
 
 ...
 Benchmark: sysbench.cpu
@@ -69,7 +70,7 @@ Metrics: events_per_second
 You can choose benchmarks by name or regex like:
 
 ```bash
-bazel run :benchmarks -- run-local startup.node
+bazel run --define gcloud=off :benchmarks -- run-local startup.node
 ...
 metric,result
 startup_time_ms,1671.7178000000001
@@ -79,7 +80,7 @@ startup_time_ms,1671.7178000000001
 or
 
 ```bash
-bazel run :benchmarks -- run-local s
+bazel run --define gcloud=off :benchmarks -- run-local s
 ...
 method,metric,result
 startup.empty,startup_time_ms,1792.8292
@@ -97,13 +98,13 @@ You can run parameterized benchmarks, for example to run with different
 runtimes:
 
 ```bash
-bazel run :benchmarks -- run-local --runtime=runc --runtime=runsc sysbench.cpu
+bazel run --define gcloud=off :benchmarks -- run-local --runtime=runc --runtime=runsc sysbench.cpu
 ```
 
 Or with different parameters:
 
 ```bash
-bazel run :benchmarks -- run-local --max_prime=10 --max_prime=100 sysbench.cpu
+bazel run --define gcloud=off :benchmarks -- run-local --max_prime=10 --max_prime=100 sysbench.cpu
 ```
 
 ### On Google Compute Engine (GCE)
