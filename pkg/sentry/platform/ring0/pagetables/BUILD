@@ -7,7 +7,7 @@ go_template(
     name = "generic_walker",
     srcs = select_arch(
         amd64 = ["walker_amd64.go"],
-        arm64 = ["walker_amd64.go"],
+        arm64 = ["walker_arm64.go"],
     ),
     opt_types = [
         "Visitor",
