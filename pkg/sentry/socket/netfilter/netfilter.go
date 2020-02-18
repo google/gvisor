@@ -240,13 +240,15 @@ func marshalTarget(target iptables.Target) []byte {
 		return marshalErrorTarget(tg.Name)
 	case iptables.ReturnTarget:
 		return marshalStandardTarget(iptables.RuleReturn)
+	case JumpTarget:
+		return marshalJumpTarget(tg)
 	default:
 		panic(fmt.Errorf("unknown target of type %T", target))
 	}
 }
 
 func marshalStandardTarget(verdict iptables.RuleVerdict) []byte {
-	nflog("convert to binary: marshalling standard target with size %d", linux.SizeOfXTStandardTarget)
+	nflog("convert to binary: marshalling standard target")
 
 	// The target's name will be the empty string.
 	target := linux.XTStandardTarget{
@@ -271,6 +273,23 @@ func marshalErrorTarget(errorName string) []byte {
 	copy(target.Target.Name[:], errorTargetName)
 
 	ret := make([]byte, 0, linux.SizeOfXTErrorTarget)
+	return binary.Marshal(ret, usermem.ByteOrder, target)
+}
+
+func marshalJumpTarget(jt JumpTarget) []byte {
+	nflog("convert to binary: marshalling jump target")
+
+	// The target's name will be the empty string.
+	target := linux.XTStandardTarget{
+		Target: linux.XTEntryTarget{
+			TargetSize: linux.SizeOfXTStandardTarget,
+		},
+		// Verdict is overloaded by the ABI. When positive, it holds
+		// the jump offset from the start of the table.
+		Verdict: int32(jt.Offset),
+	}
+
+	ret := make([]byte, 0, linux.SizeOfXTStandardTarget)
 	return binary.Marshal(ret, usermem.ByteOrder, target)
 }
 
@@ -335,7 +354,8 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 
 	// Convert input into a list of rules and their offsets.
 	var offset uint32
-	var offsets []uint32
+	// offsets maps rule byte offsets to their position in table.Rules.
+	offsets := map[uint32]int{}
 	for entryIdx := uint32(0); entryIdx < replace.NumEntries; entryIdx++ {
 		nflog("set entries: processing entry at offset %d", offset)
 
@@ -396,11 +416,12 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 			Target:   target,
 			Matchers: matchers,
 		})
-		offsets = append(offsets, offset)
+		offsets[offset] = int(entryIdx)
 		offset += uint32(entry.NextOffset)
 
 		if initialOptValLen-len(optVal) != int(entry.NextOffset) {
 			nflog("entry NextOffset is %d, but entry took up %d bytes", entry.NextOffset, initialOptValLen-len(optVal))
+			return syserr.ErrInvalidArgument
 		}
 	}
 
@@ -409,13 +430,13 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 	for hook, _ := range replace.HookEntry {
 		if table.ValidHooks()&(1<<hook) != 0 {
 			hk := hookFromLinux(hook)
-			for ruleIdx, offset := range offsets {
+			for offset, ruleIdx := range offsets {
 				if offset == replace.HookEntry[hook] {
 					table.BuiltinChains[hk] = ruleIdx
 				}
 				if offset == replace.Underflow[hook] {
 					if !validUnderflow(table.Rules[ruleIdx]) {
-						nflog("underflow for hook %d isn't an unconditional ACCEPT or DROP.")
+						nflog("underflow for hook %d isn't an unconditional ACCEPT or DROP")
 						return syserr.ErrInvalidArgument
 					}
 					table.Underflows[hk] = ruleIdx
@@ -444,14 +465,33 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 		// - There's some other rule after it.
 		// - There are no matchers.
 		if ruleIdx == len(table.Rules)-1 {
-			nflog("user chain must have a rule or default policy.")
+			nflog("user chain must have a rule or default policy")
 			return syserr.ErrInvalidArgument
 		}
 		if len(table.Rules[ruleIdx].Matchers) != 0 {
-			nflog("user chain's first node must have no matcheres.")
+			nflog("user chain's first node must have no matchers")
 			return syserr.ErrInvalidArgument
 		}
 		table.UserChains[target.Name] = ruleIdx + 1
+	}
+
+	// Set each jump to point to the appropriate rule. Right now they hold byte
+	// offsets.
+	for ruleIdx, rule := range table.Rules {
+		jump, ok := rule.Target.(JumpTarget)
+		if !ok {
+			continue
+		}
+
+		// Find the rule corresponding to the jump rule offset.
+		jumpTo, ok := offsets[jump.Offset]
+		if !ok {
+			nflog("failed to find a rule to jump to")
+			return syserr.ErrInvalidArgument
+		}
+		jump.RuleNum = jumpTo
+		rule.Target = jump
+		table.Rules[ruleIdx] = rule
 	}
 
 	// TODO(gvisor.dev/issue/170): Support other chains.
@@ -548,7 +588,12 @@ func parseTarget(optVal []byte) (iptables.Target, error) {
 		buf = optVal[:linux.SizeOfXTStandardTarget]
 		binary.Unmarshal(buf, usermem.ByteOrder, &standardTarget)
 
-		return translateToStandardTarget(standardTarget.Verdict)
+		if standardTarget.Verdict < 0 {
+			// A Verdict < 0 indicates a non-jump verdict.
+			return translateToStandardTarget(standardTarget.Verdict)
+		}
+		// A verdict >= 0 indicates a jump.
+		return JumpTarget{Offset: uint32(standardTarget.Verdict)}, nil
 
 	case errorTargetName:
 		// Error target.
