@@ -249,3 +249,39 @@ func TestFilterOutputDropTCPSrcPort(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestJumpSerialize(t *testing.T) {
+	if err := singleTest(FilterInputSerializeJump{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestJumpBasic(t *testing.T) {
+	if err := singleTest(FilterInputJumpBasic{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestJumpReturn(t *testing.T) {
+	if err := singleTest(FilterInputJumpReturn{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestJumpReturnDrop(t *testing.T) {
+	if err := singleTest(FilterInputJumpReturnDrop{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestJumpBuiltin(t *testing.T) {
+	if err := singleTest(FilterInputJumpBuiltin{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestJumpTwice(t *testing.T) {
+	if err := singleTest(FilterInputJumpTwice{}); err != nil {
+		t.Fatal(err)
+	}
+}
