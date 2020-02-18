@@ -50,7 +50,6 @@ TEXT ·CompareAndSwapUint32(SB),$0-20
   MOVD addr+0(FP), R0
   MOVW old+8(FP), R1
   MOVW new+12(FP), R2
-
 again:
   LDAXRW (R0), R3
   CMPW R1, R3
@@ -95,7 +94,6 @@ TEXT ·CompareAndSwapUint64(SB),$0-32
   MOVD addr+0(FP), R0
   MOVD old+8(FP), R1
   MOVD new+16(FP), R2
-
 again:
   LDAXR (R0), R3
   CMP R1, R3
@@ -104,36 +102,4 @@ again:
   CBNZ R4, again
 done:
   MOVD R3, prev+24(FP)
-  RET
-
-TEXT ·IncUnlessZeroInt32(SB),NOSPLIT,$0-9
-  MOVD addr+0(FP), R0
-
-again:
-  LDAXRW (R0), R1
-  CBZ R1, fail
-  ADDW $1, R1
-  STLXRW R1, (R0), R2
-  CBNZ R2, again
-  MOVW $1, R2
-  MOVB R2, ret+8(FP)
-  RET
-fail:
-  MOVB ZR, ret+8(FP)
-  RET
-
-TEXT ·DecUnlessOneInt32(SB),NOSPLIT,$0-9
-  MOVD addr+0(FP), R0
-
-again:
-  LDAXRW (R0), R1
-  SUBSW $1, R1, R1
-  BEQ fail
-  STLXRW R1, (R0), R2
-  CBNZ R2, again
-  MOVW $1, R2
-  MOVB R2, ret+8(FP)
-  RET
-fail:
-  MOVB ZR, ret+8(FP)
   RET

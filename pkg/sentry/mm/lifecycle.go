@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
@@ -229,7 +228,15 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 // IncUsers increments mm's user count and returns true. If the user count is
 // already 0, IncUsers does nothing and returns false.
 func (mm *MemoryManager) IncUsers() bool {
-	return atomicbitops.IncUnlessZeroInt32(&mm.users)
+	for {
+		users := atomic.LoadInt32(&mm.users)
+		if users == 0 {
+			return false
+		}
+		if atomic.CompareAndSwapInt32(&mm.users, users, users+1) {
+			return true
+		}
+	}
 }
 
 // DecUsers decrements mm's user count. If the user count reaches 0, all
