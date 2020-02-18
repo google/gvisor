@@ -225,11 +225,14 @@ type XTEntryTarget struct {
 // SizeOfXTEntryTarget is the size of an XTEntryTarget.
 const SizeOfXTEntryTarget = 32
 
-// XTStandardTarget is a builtin target, one of ACCEPT, DROP, JUMP, QUEUE, or
-// RETURN. It corresponds to struct xt_standard_target in
+// XTStandardTarget is a built-in target, one of ACCEPT, DROP, JUMP, QUEUE,
+// RETURN, or jump. It corresponds to struct xt_standard_target in
 // include/uapi/linux/netfilter/x_tables.h.
 type XTStandardTarget struct {
-	Target  XTEntryTarget
+	Target XTEntryTarget
+	// A positive verdict indicates a jump, and is the offset from the
+	// start of the table to jump to. A negative value means one of the
+	// other built-in targets.
 	Verdict int32
 	_       [4]byte
 }

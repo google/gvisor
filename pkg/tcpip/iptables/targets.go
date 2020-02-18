@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This file contains various Targets.
-
 package iptables
 
 import (
@@ -25,16 +23,16 @@ import (
 type AcceptTarget struct{}
 
 // Action implements Target.Action.
-func (AcceptTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, string) {
-	return RuleAccept, ""
+func (AcceptTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, int) {
+	return RuleAccept, 0
 }
 
 // DropTarget drops packets.
 type DropTarget struct{}
 
 // Action implements Target.Action.
-func (DropTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, string) {
-	return RuleDrop, ""
+func (DropTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, int) {
+	return RuleDrop, 0
 }
 
 // ErrorTarget logs an error and drops the packet. It represents a target that
@@ -42,9 +40,9 @@ func (DropTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, string) {
 type ErrorTarget struct{}
 
 // Action implements Target.Action.
-func (ErrorTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, string) {
+func (ErrorTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, int) {
 	log.Debugf("ErrorTarget triggered.")
-	return RuleDrop, ""
+	return RuleDrop, 0
 }
 
 // UserChainTarget marks a rule as the beginning of a user chain.
@@ -53,7 +51,7 @@ type UserChainTarget struct {
 }
 
 // Action implements Target.Action.
-func (UserChainTarget) Action(tcpip.PacketBuffer) (RuleVerdict, string) {
+func (UserChainTarget) Action(tcpip.PacketBuffer) (RuleVerdict, int) {
 	panic("UserChainTarget should never be called.")
 }
 
@@ -62,6 +60,6 @@ func (UserChainTarget) Action(tcpip.PacketBuffer) (RuleVerdict, string) {
 type ReturnTarget struct{}
 
 // Action implements Target.Action.
-func (ReturnTarget) Action(tcpip.PacketBuffer) (RuleVerdict, string) {
-	return RuleReturn, ""
+func (ReturnTarget) Action(tcpip.PacketBuffer) (RuleVerdict, int) {
+	return RuleReturn, 0
 }
