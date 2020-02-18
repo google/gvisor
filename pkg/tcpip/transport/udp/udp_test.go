@@ -409,6 +409,7 @@ func (c *testContext) injectV6Packet(payload []byte, h *header4Tuple, valid bool
 	// Initialize the IP header.
 	ip := header.IPv6(buf)
 	ip.Encode(&header.IPv6Fields{
+		TrafficClass:  testTOS,
 		PayloadLength: uint16(header.UDPMinimumSize + len(payload)),
 		NextHeader:    uint8(udp.ProtocolNumber),
 		HopLimit:      65,
@@ -1336,7 +1337,7 @@ func TestSetTTL(t *testing.T) {
 	}
 }
 
-func TestTOSV4(t *testing.T) {
+func TestSetTOS(t *testing.T) {
 	for _, flow := range []testFlow{unicastV4, multicastV4, broadcast} {
 		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
 			c := newDualTestContext(t, defaultMTU)
@@ -1347,23 +1348,23 @@ func TestTOSV4(t *testing.T) {
 			const tos = testTOS
 			var v tcpip.IPv4TOSOption
 			if err := c.ep.GetSockOpt(&v); err != nil {
-				c.t.Errorf("GetSockopt failed: %s", err)
+				c.t.Errorf("GetSockopt(%T) failed: %s", v, err)
 			}
 			// Test for expected default value.
 			if v != 0 {
-				c.t.Errorf("got GetSockOpt(...) = %#v, want = %#v", v, 0)
+				c.t.Errorf("got GetSockOpt(%T) = 0x%x, want = 0x%x", v, v, 0)
 			}
 
 			if err := c.ep.SetSockOpt(tcpip.IPv4TOSOption(tos)); err != nil {
-				c.t.Errorf("SetSockOpt(%#v) failed: %s", tcpip.IPv4TOSOption(tos), err)
+				c.t.Errorf("SetSockOpt(%T, 0x%x) failed: %s", v, tcpip.IPv4TOSOption(tos), err)
 			}
 
 			if err := c.ep.GetSockOpt(&v); err != nil {
-				c.t.Errorf("GetSockopt failed: %s", err)
+				c.t.Errorf("GetSockopt(%T) failed: %s", v, err)
 			}
 
 			if want := tcpip.IPv4TOSOption(tos); v != want {
-				c.t.Errorf("got GetSockOpt(...) = %#v, want = %#v", v, want)
+				c.t.Errorf("got GetSockOpt(%T) = 0x%x, want = 0x%x", v, v, want)
 			}
 
 			testWrite(c, flow, checker.TOS(tos, 0))
@@ -1371,7 +1372,7 @@ func TestTOSV4(t *testing.T) {
 	}
 }
 
-func TestTOSV6(t *testing.T) {
+func TestSetTClass(t *testing.T) {
 	for _, flow := range []testFlow{unicastV4in6, unicastV6, unicastV6Only, multicastV4in6, multicastV6, broadcastIn6} {
 		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
 			c := newDualTestContext(t, defaultMTU)
@@ -1379,71 +1380,92 @@ func TestTOSV6(t *testing.T) {
 
 			c.createEndpointForFlow(flow)
 
-			const tos = testTOS
+			const tClass = testTOS
 			var v tcpip.IPv6TrafficClassOption
 			if err := c.ep.GetSockOpt(&v); err != nil {
-				c.t.Errorf("GetSockopt failed: %s", err)
+				c.t.Errorf("GetSockopt(%T) failed: %s", v, err)
 			}
 			// Test for expected default value.
 			if v != 0 {
-				c.t.Errorf("got GetSockOpt(...) = %#v, want = %#v", v, 0)
+				c.t.Errorf("got GetSockOpt(%T) = 0x%x, want = 0x%x", v, v, 0)
 			}
 
-			if err := c.ep.SetSockOpt(tcpip.IPv6TrafficClassOption(tos)); err != nil {
-				c.t.Errorf("SetSockOpt failed: %s", err)
+			if err := c.ep.SetSockOpt(tcpip.IPv6TrafficClassOption(tClass)); err != nil {
+				c.t.Errorf("SetSockOpt(%T, 0x%x) failed: %s", v, tcpip.IPv6TrafficClassOption(tClass), err)
 			}
 
 			if err := c.ep.GetSockOpt(&v); err != nil {
-				c.t.Errorf("GetSockopt failed: %s", err)
+				c.t.Errorf("GetSockopt(%T) failed: %s", v, err)
 			}
 
-			if want := tcpip.IPv6TrafficClassOption(tos); v != want {
-				c.t.Errorf("got GetSockOpt(...) = %#v, want = %#v", v, want)
+			if want := tcpip.IPv6TrafficClassOption(tClass); v != want {
+				c.t.Errorf("got GetSockOpt(%T) = 0x%x, want = 0x%x", v, v, want)
 			}
 
-			testWrite(c, flow, checker.TOS(tos, 0))
+			// The header getter for TClass is called TOS, so use that checker.
+			testWrite(c, flow, checker.TOS(tClass, 0))
 		})
 	}
 }
 
-func TestReceiveTOSV4(t *testing.T) {
-	for _, flow := range []testFlow{unicastV4, broadcast} {
-		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
-			c := newDualTestContext(t, defaultMTU)
-			defer c.cleanup()
+func TestReceiveTosTClass(t *testing.T) {
+	testCases := []struct {
+		name             string
+		getReceiveOption tcpip.SockOptBool
+		tests            []testFlow
+	}{
+		{"ReceiveTosOption", tcpip.ReceiveTOSOption, []testFlow{unicastV4, broadcast}},
+		{"ReceiveTClassOption", tcpip.ReceiveTClassOption, []testFlow{unicastV4in6, unicastV6, unicastV6Only, broadcastIn6}},
+	}
+	for _, testCase := range testCases {
+		for _, flow := range testCase.tests {
+			t.Run(fmt.Sprintf("%s:flow:%s", testCase.name, flow), func(t *testing.T) {
+				c := newDualTestContext(t, defaultMTU)
+				defer c.cleanup()
 
-			c.createEndpointForFlow(flow)
+				c.createEndpointForFlow(flow)
+				option := testCase.getReceiveOption
+				name := testCase.name
 
-			// Verify that setting and reading the option works.
-			v, err := c.ep.GetSockOptBool(tcpip.ReceiveTOSOption)
-			if err != nil {
-				c.t.Fatal("GetSockOptBool(tcpip.ReceiveTOSOption) failed:", err)
-			}
-			// Test for expected default value.
-			if v != false {
-				c.t.Errorf("got GetSockOptBool(tcpip.ReceiveTOSOption) = %t, want = %t", v, false)
-			}
+				// Verify that setting and reading the option works.
+				v, err := c.ep.GetSockOptBool(option)
+				if err != nil {
+					c.t.Errorf("GetSockoptBool(%s) failed: %s", name, err)
+				}
+				// Test for expected default value.
+				if v != false {
+					c.t.Errorf("got GetSockOptBool(%s) = %t, want = %t", name, v, false)
+				}
 
-			want := true
-			if err := c.ep.SetSockOptBool(tcpip.ReceiveTOSOption, want); err != nil {
-				c.t.Fatalf("SetSockOptBool(tcpip.ReceiveTOSOption, %t) failed: %s", want, err)
-			}
+				want := true
+				if err := c.ep.SetSockOptBool(option, want); err != nil {
+					c.t.Fatalf("SetSockOptBool(%s, %t) failed: %s", name, want, err)
+				}
 
-			got, err := c.ep.GetSockOptBool(tcpip.ReceiveTOSOption)
-			if err != nil {
-				c.t.Fatal("GetSockOptBool(tcpip.ReceiveTOSOption) failed:", err)
-			}
-			if got != want {
-				c.t.Fatalf("got GetSockOptBool(tcpip.ReceiveTOSOption) = %t, want = %t", got, want)
-			}
+				got, err := c.ep.GetSockOptBool(option)
+				if err != nil {
+					c.t.Errorf("GetSockoptBool(%s) failed: %s", name, err)
+				}
 
-			// Verify that the correct received TOS is handed through as
-			// ancillary data to the ControlMessages struct.
-			if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
-				c.t.Fatal("Bind failed:", err)
-			}
-			testRead(c, flow, checker.ReceiveTOS(testTOS))
-		})
+				if got != want {
+					c.t.Errorf("got GetSockOptBool(%s) = %t, want = %t", name, got, want)
+				}
+
+				// Verify that the correct received TOS or TClass is handed through as
+				// ancillary data to the ControlMessages struct.
+				if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+					c.t.Fatalf("Bind failed: %s", err)
+				}
+				switch option {
+				case tcpip.ReceiveTClassOption:
+					testRead(c, flow, checker.ReceiveTClass(testTOS))
+				case tcpip.ReceiveTOSOption:
+					testRead(c, flow, checker.ReceiveTOS(testTOS))
+				default:
+					t.Fatalf("unknown test variant: %s", name)
+				}
+			})
+		}
 	}
 }
 
