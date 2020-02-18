@@ -135,6 +135,27 @@ func EmptyFilterTable() Table {
 	}
 }
 
+// EmptyNatTable returns a Table with no rules and the filter table chains
+// mapped to HookUnset.
+func EmptyNatTable() Table {
+	return Table{
+		Rules: []Rule{},
+		BuiltinChains: map[Hook]int{
+			Prerouting:  HookUnset,
+			Input:       HookUnset,
+			Output:      HookUnset,
+			Postrouting: HookUnset,
+		},
+		Underflows: map[Hook]int{
+			Prerouting:  HookUnset,
+			Input:       HookUnset,
+			Output:      HookUnset,
+			Postrouting: HookUnset,
+		},
+		UserChains: map[string]int{},
+	}
+}
+
 // Check runs pkt through the rules for hook. It returns true when the packet
 // should continue traversing the network stack and false when it should be
 // dropped.

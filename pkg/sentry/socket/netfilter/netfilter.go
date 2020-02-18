@@ -35,6 +35,11 @@ import (
 // shouldn't be reached - an error has occurred if we fall through to one.
 const errorTargetName = "ERROR"
 
+// redirectTargetName is used to mark targets as redirect targets. Redirect
+// targets should be reached for only NAT and Mangle tables. These targets will
+// change the destination port/destination IP for packets.
+const redirectTargetName = "REDIRECT"
+
 // Metadata is used to verify that we are correctly serializing and
 // deserializing iptables into structs consumable by the iptables tool. We save
 // a metadata struct when the tables are written, and when they are read out we
@@ -240,6 +245,8 @@ func marshalTarget(target iptables.Target) []byte {
 		return marshalErrorTarget(tg.Name)
 	case iptables.ReturnTarget:
 		return marshalStandardTarget(iptables.RuleReturn)
+	case iptables.RedirectTarget:
+		return marshalRedirectTarget()
 	default:
 		panic(fmt.Errorf("unknown target of type %T", target))
 	}
@@ -271,6 +278,18 @@ func marshalErrorTarget(errorName string) []byte {
 	copy(target.Target.Name[:], errorTargetName)
 
 	ret := make([]byte, 0, linux.SizeOfXTErrorTarget)
+	return binary.Marshal(ret, usermem.ByteOrder, target)
+}
+
+func marshalRedirectTarget() []byte {
+	// This is a redirect target named redirect
+	target := linux.XTRedirectTarget{
+		Target: linux.XTEntryTarget{
+			TargetSize: linux.SizeOfXTRedirectTarget,
+		},
+	}
+
+	ret := make([]byte, 0, linux.SizeOfXTRedirectTarget)
 	return binary.Marshal(ret, usermem.ByteOrder, target)
 }
 
@@ -326,6 +345,8 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 	switch replace.Name.String() {
 	case iptables.TablenameFilter:
 		table = iptables.EmptyFilterTable()
+	case iptables.TablenameNat:
+		table = iptables.EmptyNatTable()
 	default:
 		nflog("we don't yet support writing to the %q table (gvisor.dev/issue/170)", replace.Name.String())
 		return syserr.ErrInvalidArgument
@@ -455,10 +476,11 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 	}
 
 	// TODO(gvisor.dev/issue/170): Support other chains.
-	// Since we only support modifying the INPUT chain right now, make sure
-	// all other chains point to ACCEPT rules.
+	// Since we only support modifying the INPUT chain and redirect for
+	// PREROUTING chain right now, make sure all other chains point to
+	// ACCEPT rules.
 	for hook, ruleIdx := range table.BuiltinChains {
-		if hook != iptables.Input {
+		if hook != iptables.Input && hook != iptables.Prerouting {
 			if _, ok := table.Rules[ruleIdx].Target.(iptables.AcceptTarget); !ok {
 				nflog("hook %d is unsupported.", hook)
 				return syserr.ErrInvalidArgument
@@ -575,6 +597,36 @@ func parseTarget(optVal []byte) (iptables.Target, error) {
 			nflog("set entries: user-defined target %q", name)
 			return iptables.UserChainTarget{Name: name}, nil
 		}
+
+	case redirectTargetName:
+		// Redirect target.
+		if len(optVal) < linux.SizeOfXTRedirectTarget {
+			return nil, fmt.Errorf("netfilter.SetEntries: optVal has insufficient size for redirect target %d", len(optVal))
+		}
+
+		var redirectTarget linux.XTRedirectTarget
+		buf = optVal[:linux.SizeOfXTRedirectTarget]
+		binary.Unmarshal(buf, usermem.ByteOrder, &redirectTarget)
+
+		// Copy linux.XTRedirectTarget to iptables.RedirectTarget.
+		var target iptables.RedirectTarget
+		nfRange := redirectTarget.NfRange
+
+		target.RangeSize = nfRange.Rangesize
+		target.Flags = nfRange.RangeIPV4[0].Flags
+
+		target.MinIP = tcpip.Address(nfRange.RangeIPV4[0].MinIP[:])
+		target.MaxIP = tcpip.Address(nfRange.RangeIPV4[0].MaxIP[:])
+
+		// Convert port from big endian to little endian.
+		port := make([]byte, 2)
+		binary.BigEndian.PutUint16(port, nfRange.RangeIPV4[0].MinPort)
+		target.MinPort = binary.LittleEndian.Uint16(port)
+
+		binary.BigEndian.PutUint16(port, nfRange.RangeIPV4[0].MaxPort)
+		target.MaxPort = binary.LittleEndian.Uint16(port)
+		return target, nil
+
 	}
 
 	// Unknown target.
