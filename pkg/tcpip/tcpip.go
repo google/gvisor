@@ -323,11 +323,11 @@ type ControlMessages struct {
 	// TOS is the IPv4 type of service of the associated packet.
 	TOS uint8
 
-	// HasTClass indicates whether Tclass is valid/set.
+	// HasTClass indicates whether TClass is valid/set.
 	HasTClass bool
 
-	// Tclass is the IPv6 traffic class of the associated packet.
-	TClass int32
+	// TClass is the IPv6 traffic class of the associated packet.
+	TClass uint32
 
 	// HasIPPacketInfo indicates whether PacketInfo is set.
 	HasIPPacketInfo bool
@@ -502,9 +502,13 @@ type WriteOptions struct {
 type SockOptBool int
 
 const (
+	// ReceiveTClassOption is used by SetSockOpt/GetSockOpt to specify if the
+	// IPV6_TCLASS ancillary message is passed with incoming packets.
+	ReceiveTClassOption SockOptBool = iota
+
 	// ReceiveTOSOption is used by SetSockOpt/GetSockOpt to specify if the TOS
 	// ancillary message is passed with incoming packets.
-	ReceiveTOSOption SockOptBool = iota
+	ReceiveTOSOption
 
 	// V6OnlyOption is used by {G,S}etSockOptBool to specify whether an IPv6
 	// socket is to be restricted to sending and receiving IPv6 packets only.
@@ -514,6 +518,9 @@ const (
 	// if more inforamtion is provided with incoming packets such
 	// as interface index and address.
 	ReceiveIPPacketInfoOption
+
+	// TODO(b/146901447): convert existing bool socket options to be handled via
+	// Get/SetSockOptBool
 )
 
 // SockOptInt represents socket options which values have the int type.
