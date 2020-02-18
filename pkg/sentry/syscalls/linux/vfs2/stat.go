@@ -15,6 +15,8 @@
 package vfs2
 
 import (
+	"syscall"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/gohacks"
@@ -249,16 +251,64 @@ func Readlink(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	return readlinkat(t, linux.AT_FDCWD, pathAddr, bufAddr, size)
 }
 
-// Access implements Linux syscall access(2).
-func Access(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	// FIXME(jamieliu): actually implement
-	return 0, nil, nil
+func accessAt(t *kernel.Task, dirfd int32, pathAddr usermem.Addr, shouldFollowFinalSymlink shouldFollowFinalSymlink, useRealID bool, mode uint) error {
+	const rOK = 4
+	const wOK = 2
+	const xOK = 1
+
+	// Sanity check the mode.
+	if mode&^(rOK|wOK|xOK) != 0 {
+		return syserror.EINVAL
+	}
+
+	// If AT_EACCESS is not set, access(2) and faccessat(2) check permissions
+	// using real UID/GID, not effective UID/GID.
+	//
+	// "access() needs to use the real uid/gid, not the effective
+	// uid/gid. We do this by temporarily clearing all FS-related
+	// capabilities and switching the fsuid/fsgid around to the
+	// real ones." -fs/open.c:faccessat
+	creds := t.Credentials()
+	if useRealID {
+		creds = creds.Fork()
+		creds.EffectiveKUID = creds.RealKUID
+		creds.EffectiveKGID = creds.RealKGID
+		if creds.EffectiveKUID.In(creds.UserNamespace) == auth.RootUID {
+			creds.EffectiveCaps = creds.PermittedCaps
+		} else {
+			creds.EffectiveCaps = 0
+		}
+	}
+
+	path, err := copyInPath(t, pathAddr)
+	if err != nil {
+		return err
+	}
+	tpop, err := getTaskPathOperation(t, dirfd, path, disallowEmptyPath, shouldFollowFinalSymlink)
+
+	return t.Kernel().VFS().AccessAt(t, t.Credentials(), creds, vfs.AccessTypes(mode), &tpop.pop)
 }
 
-// Faccessat implements Linux syscall access(2).
+// Access implements linux syscall access(2).
+func Access(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	addr := args[0].Pointer()
+	mode := args[1].ModeT()
+
+	return 0, nil, accessAt(t, linux.AT_FDCWD, addr, followFinalSymlink, true /* useRealID */, mode)
+}
+
+// Faccessat implements linux syscall faccessat(2).
 func Faccessat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	// FIXME(jamieliu): actually implement
-	return 0, nil, nil
+	dirfd := args[0].Int()
+	addr := args[1].Pointer()
+	mode := args[2].ModeT()
+	flags := args[3].Int()
+
+	if flags&^(linux.AT_SYMLINK_NOFOLLOW|linux.AT_EACCESS) != 0 {
+		return 0, nil, syscall.EINVAL
+	}
+
+	return 0, nil, accessAt(t, dirfd, addr, flags&linux.AT_SYMLINK_NOFOLLOW == 0, flags&linux.AT_EACCESS == 0, mode)
 }
 
 // Readlinkat implements Linux syscall mknodat(2).

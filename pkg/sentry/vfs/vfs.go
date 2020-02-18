@@ -403,6 +403,21 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 	}
 }
 
+// AccessAt checks whether a user with accessCreds has access to the file at
+// the given path.
+//
+// Note that the credentials used to resolve the path may differ from
+// accessCreds, if we are checking against real UID/GID rather than effective
+// UID/GID.
+func (vfs *VirtualFilesystem) AccessAt(ctx context.Context, contextCreds *auth.Credentials, accessCreds *auth.Credentials, mode AccessTypes, pop *PathOperation) error {
+	rp := vfs.getResolvingPath(contextCreds, pop)
+	for {
+		if err := rp.mount.fs.impl.AccessAt(ctx, rp, accessCreds, mode); !rp.handleError(err) {
+			return err
+		}
+	}
+}
+
 // ReadlinkAt returns the target of the symbolic link at the given path.
 func (vfs *VirtualFilesystem) ReadlinkAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) (string, error) {
 	rp := vfs.getResolvingPath(creds, pop)

@@ -69,6 +69,13 @@ func (fs *anonFilesystem) Sync(ctx context.Context) error {
 	return nil
 }
 
+// AccessAt implements vfs.Filesystem.Impl.AccessAt.
+//
+// TODO(gvisor.dev/issue/1965): Implement access permissions.
+func (fs *anonFilesystem) AccessAt(ctx context.Context, rp *ResolvingPath, creds *auth.Credentials, mode AccessTypes) error {
+	return nil
+}
+
 // GetDentryAt implements FilesystemImpl.GetDentryAt.
 func (fs *anonFilesystem) GetDentryAt(ctx context.Context, rp *ResolvingPath, opts GetDentryOptions) (*Dentry, error) {
 	if !rp.Done() {
