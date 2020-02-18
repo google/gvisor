@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -42,8 +41,15 @@ func (mm *MemoryManager) AddressSpace() platform.AddressSpace {
 func (mm *MemoryManager) Activate() error {
 	// Fast path: the MemoryManager already has an active
 	// platform.AddressSpace, and we just need to indicate that we need it too.
-	if atomicbitops.IncUnlessZeroInt32(&mm.active) {
-		return nil
+	for {
+		active := atomic.LoadInt32(&mm.active)
+		if active == 0 {
+			// Fall back to the slow path.
+			break
+		}
+		if atomic.CompareAndSwapInt32(&mm.active, active, active+1) {
+			return nil
+		}
 	}
 
 	for {
@@ -118,8 +124,15 @@ func (mm *MemoryManager) Activate() error {
 func (mm *MemoryManager) Deactivate() {
 	// Fast path: this is not the last goroutine to deactivate the
 	// MemoryManager.
-	if atomicbitops.DecUnlessOneInt32(&mm.active) {
-		return
+	for {
+		active := atomic.LoadInt32(&mm.active)
+		if active == 1 {
+			// Fall back to the slow path.
+			break
+		}
+		if atomic.CompareAndSwapInt32(&mm.active, active, active-1) {
+			return
+		}
 	}
 
 	mm.activeMu.Lock()
