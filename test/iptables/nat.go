@@ -38,7 +38,7 @@ func (NATRedirectUDPPort) Name() string {
 
 // ContainerAction implements TestCase.ContainerAction.
 func (NATRedirectUDPPort) ContainerAction(ip net.IP) error {
-	if err := filterTable("-t", "nat", "-A", "PREROUTING", "-p", "udp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", redirectPort)); err != nil {
+	if err := natTable("-A", "PREROUTING", "-p", "udp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", redirectPort)); err != nil {
 		return err
 	}
 
@@ -63,7 +63,7 @@ func (NATDropUDP) Name() string {
 
 // ContainerAction implements TestCase.ContainerAction.
 func (NATDropUDP) ContainerAction(ip net.IP) error {
-	if err := filterTable("-t", "nat", "-A", "PREROUTING", "-p", "udp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", redirectPort)); err != nil {
+	if err := natTable("-A", "PREROUTING", "-p", "udp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", redirectPort)); err != nil {
 		return err
 	}
 
