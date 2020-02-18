@@ -161,6 +161,20 @@ func FragmentFlags(flags uint8) NetworkChecker {
 	}
 }
 
+// ReceiveTClass creates a checker that checks the TCLASS field in
+// ControlMessages.
+func ReceiveTClass(want uint32) ControlMessagesChecker {
+	return func(t *testing.T, cm tcpip.ControlMessages) {
+		t.Helper()
+		if !cm.HasTClass {
+			t.Fatalf("got cm.HasTClass = %t, want cm.TClass = %d", cm.HasTClass, want)
+		}
+		if got := cm.TClass; got != want {
+			t.Fatalf("got cm.TClass = %d, want %d", got, want)
+		}
+	}
+}
+
 // ReceiveTOS creates a checker that checks the TOS field in ControlMessages.
 func ReceiveTOS(want uint8) ControlMessagesChecker {
 	return func(t *testing.T, cm tcpip.ControlMessages) {

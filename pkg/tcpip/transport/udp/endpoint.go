@@ -32,7 +32,8 @@ type udpPacket struct {
 	packetInfo    tcpip.IPPacketInfo
 	data          buffer.VectorisedView `state:".(buffer.VectorisedView)"`
 	timestamp     int64
-	tos           uint8
+	// tos stores either the receiveTOS or receiveTClass value.
+	tos uint8
 }
 
 // EndpointState represents the state of a UDP endpoint.
@@ -118,6 +119,10 @@ type endpoint struct {
 	// receiveTOS determines if the incoming IPv4 TOS header field is passed
 	// as ancillary data to ControlMessages on Read.
 	receiveTOS bool
+
+	// receiveTClass determines if the incoming IPv6 TClass header field is
+	// passed as ancillary data to ControlMessages on Read.
+	receiveTClass bool
 
 	// receiveIPPacketInfo determines if the packet info is returned by Read.
 	receiveIPPacketInfo bool
@@ -258,13 +263,18 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMess
 	}
 	e.mu.RLock()
 	receiveTOS := e.receiveTOS
+	receiveTClass := e.receiveTClass
 	receiveIPPacketInfo := e.receiveIPPacketInfo
 	e.mu.RUnlock()
 	if receiveTOS {
 		cm.HasTOS = true
 		cm.TOS = p.tos
 	}
-
+	if receiveTClass {
+		cm.HasTClass = true
+		// Although TClass is an 8-bit value it's read in the CMsg as a uint32.
+		cm.TClass = uint32(p.tos)
+	}
 	if receiveIPPacketInfo {
 		cm.HasIPPacketInfo = true
 		cm.PacketInfo = p.packetInfo
@@ -490,6 +500,17 @@ func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 		e.mu.Unlock()
 		return nil
 
+	case tcpip.ReceiveTClassOption:
+		// We only support this option on v6 endpoints.
+		if e.NetProto != header.IPv6ProtocolNumber {
+			return tcpip.ErrNotSupported
+		}
+
+		e.mu.Lock()
+		e.receiveTClass = v
+		e.mu.Unlock()
+		return nil
+
 	case tcpip.V6OnlyOption:
 		// We only recognize this option on v6 endpoints.
 		if e.NetProto != header.IPv6ProtocolNumber {
@@ -706,6 +727,17 @@ func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 	case tcpip.ReceiveTOSOption:
 		e.mu.RLock()
 		v := e.receiveTOS
+		e.mu.RUnlock()
+		return v, nil
+
+	case tcpip.ReceiveTClassOption:
+		// We only support this option on v6 endpoints.
+		if e.NetProto != header.IPv6ProtocolNumber {
+			return false, tcpip.ErrNotSupported
+		}
+
+		e.mu.RLock()
+		v := e.receiveTClass
 		e.mu.RUnlock()
 		return v, nil
 
@@ -1273,6 +1305,8 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 		packet.packetInfo.LocalAddr = r.LocalAddress
 		packet.packetInfo.DestinationAddr = r.RemoteAddress
 		packet.packetInfo.NIC = r.NICID()
+	case header.IPv6ProtocolNumber:
+		packet.tos, _ = header.IPv6(pkt.NetworkHeader).TOS()
 	}
 
 	packet.timestamp = e.stack.NowNanoseconds()
