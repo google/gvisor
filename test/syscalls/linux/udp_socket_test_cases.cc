@@ -33,6 +33,11 @@
 namespace gvisor {
 namespace testing {
 
+// In case build on some environment with old header file.
+#ifndef SIOCGSTAMP
+#define SIOCGSTAMP 0x8906
+#endif
+
 // Gets a pointer to the port component of the given address.
 uint16_t* Port(struct sockaddr_storage* addr) {
   switch (addr->ss_family) {
