@@ -725,6 +725,18 @@ func vendorIDFromRegs(bx, cx, dx uint32) string {
 	return string(bytes)
 }
 
+var maxXsaveSize = func() uint32 {
+	// Leaf 0 of xsaveinfo function returns the size for currently
+	// enabled xsave features in ebx, the maximum size if all valid
+	// features are saved with xsave in ecx, and valid XCR0 bits in
+	// edx:eax.
+	//
+	// If xSaveInfo isn't supported, cpuid will not fault but will
+	// return bogus values.
+	_, _, maxXsaveSize, _ := HostID(uint32(xSaveInfo), 0)
+	return maxXsaveSize
+}()
+
 // ExtendedStateSize returns the number of bytes needed to save the "extended
 // state" for this processor and the boundary it must be aligned to. Extended
 // state includes floating point registers, and other cpu state that's not
@@ -736,12 +748,7 @@ func vendorIDFromRegs(bx, cx, dx uint32) string {
 // about 2.5K worst case, with avx512).
 func (fs *FeatureSet) ExtendedStateSize() (size, align uint) {
 	if fs.UseXsave() {
-		// Leaf 0 of xsaveinfo function returns the size for currently
-		// enabled xsave features in ebx, the maximum size if all valid
-		// features are saved with xsave in ecx, and valid XCR0 bits in
-		// edx:eax.
-		_, _, maxSize, _ := HostID(uint32(xSaveInfo), 0)
-		return uint(maxSize), 64
+		return uint(maxXsaveSize), 64
 	}
 
 	// If we don't support xsave, we fall back to fxsave, which requires
