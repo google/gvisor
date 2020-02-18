@@ -338,17 +338,6 @@ func (g *Generator) Run() error {
 		}
 	}
 
-	// Tool was invoked with input files with no data structures marked for code
-	// generation. This is probably not what the user intended.
-	if len(impls) == 0 {
-		var buf bytes.Buffer
-		fmt.Fprintf(&buf, "go_marshal invoked on these files, but they don't contain any types requiring code generation. Perhaps mark some with \"// +marshal\"?:\n")
-		for _, i := range g.inputs {
-			fmt.Fprintf(&buf, "  %s\n", i)
-		}
-		abort(buf.String())
-	}
-
 	// Write output file header. These include things like package name and
 	// import statements.
 	if err := g.writeHeader(); err != nil {
