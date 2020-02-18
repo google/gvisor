@@ -35,6 +35,16 @@ func filterTable(args ...string) error {
 	return nil
 }
 
+// natTable calls `iptables -t nat` with the given args.
+func natTable(args ...string) error {
+	args = append([]string{"-t", "nat"}, args...)
+	cmd := exec.Command(iptablesBinary, args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("error running iptables with args %v\nerror: %v\noutput: %s", args, err, string(out))
+	}
+	return nil
+}
+
 // listenUDP listens on a UDP port and returns the value of net.Conn.Read() for
 // the first read on that port.
 func listenUDP(port int, timeout time.Duration) error {

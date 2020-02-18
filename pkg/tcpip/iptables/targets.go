@@ -19,6 +19,7 @@ package iptables
 import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 // AcceptTarget accepts packets.
@@ -64,4 +65,27 @@ type ReturnTarget struct{}
 // Action implements Target.Action.
 func (ReturnTarget) Action(tcpip.PacketBuffer) (RuleVerdict, string) {
 	return RuleReturn, ""
+}
+
+// RedirectTarget redirects the packet by modifying the destination port/IP.
+type RedirectTarget struct {
+	RangeSize uint32
+	Flags     uint32
+	MinIP     tcpip.Address
+	MaxIP     tcpip.Address
+	MinPort   uint16
+	MaxPort   uint16
+}
+
+// Action implements Target.Action.
+func (rt RedirectTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, string) {
+	log.Infof("RedirectTarget triggered.")
+
+	// TODO(gvisor.dev/issue/170): Checking only for UDP protocol.
+	// We're yet to support for TCP protocol.
+	headerView := packet.Data.First()
+	h := header.UDP(headerView)
+	h.SetDestinationPort(rt.MinPort)
+
+	return RuleAccept, ""
 }

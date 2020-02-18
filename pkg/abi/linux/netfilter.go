@@ -250,6 +250,33 @@ type XTErrorTarget struct {
 // SizeOfXTErrorTarget is the size of an XTErrorTarget.
 const SizeOfXTErrorTarget = 64
 
+// NfNATIPV4Range. It corresponds to struct nf_nat_ipv4_range
+// in include/uapi/linux/netfilter/nf_nat.h.
+type NfNATIPV4Range struct {
+	Flags   uint32
+	MinIP   [4]byte
+	MaxIP   [4]byte
+	MinPort uint16
+	MaxPort uint16
+}
+
+// NfNATIPV4MultiRangeCompat. It corresponds to struct
+// nf_nat_ipv4_multi_range_compat in include/uapi/linux/netfilter/nf_nat.h.
+type NfNATIPV4MultiRangeCompat struct {
+	Rangesize uint32
+	RangeIPV4 [1]NfNATIPV4Range
+}
+
+// XTRedirectTarget triggers a redirect when reached.
+type XTRedirectTarget struct {
+	Target  XTEntryTarget
+	NfRange NfNATIPV4MultiRangeCompat
+	_       [4]byte
+}
+
+// SizeOfXTRedirectTarget is the size of an XTRedirectTarget.
+const SizeOfXTRedirectTarget = 56
+
 // IPTGetinfo is the argument for the IPT_SO_GET_INFO sockopt. It corresponds
 // to struct ipt_getinfo in include/uapi/linux/netfilter_ipv4/ip_tables.h.
 type IPTGetinfo struct {

@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 )
 
 // NIC represents a "network interface card" to which the networking stack is
@@ -1012,6 +1013,7 @@ func (n *NIC) leaveGroupLocked(addr tcpip.Address) *tcpip.Error {
 func handlePacket(protocol tcpip.NetworkProtocolNumber, dst, src tcpip.Address, localLinkAddr, remotelinkAddr tcpip.LinkAddress, ref *referencedNetworkEndpoint, pkt tcpip.PacketBuffer) {
 	r := makeRoute(protocol, dst, src, localLinkAddr, ref, false /* handleLocal */, false /* multicastLoop */)
 	r.RemoteLinkAddress = remotelinkAddr
+
 	ref.ep.HandlePacket(&r, pkt)
 	ref.decRef()
 }
@@ -1082,6 +1084,27 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 		n.stack.stats.IP.InvalidSourceAddressesReceived.Increment()
 		return
 	}
+
+	// TODO(gvisor.dev/issue/170): Not supporting iptables for IPv6 yet.
+	if protocol == header.IPv4ProtocolNumber {
+		newPkt := pkt.Clone()
+
+		headerView := newPkt.Data.First()
+		h := header.IPv4(headerView)
+		newPkt.NetworkHeader = headerView[:h.HeaderLength()]
+
+		hlen := int(h.HeaderLength())
+		tlen := int(h.TotalLength())
+		newPkt.Data.TrimFront(hlen)
+		newPkt.Data.CapLength(tlen - hlen)
+
+		ipt := n.stack.IPTables()
+		if ok := ipt.Check(iptables.Prerouting, newPkt); !ok {
+			// iptables is telling us to drop the packet.
+			return
+		}
+	}
+
 	if ref := n.getRef(protocol, dst); ref != nil {
 		handlePacket(protocol, dst, src, linkEP.LinkAddress(), remote, ref, pkt)
 		return
