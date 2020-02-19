@@ -380,6 +380,26 @@ func (g *Generator) writeTests(ts []*testGenerator) error {
 	}
 
 	// Write test functions.
+
+	// If we didn't generate any Marshallable implementations, we can't just
+	// emit an empty test file, since that causes the build to fail with "no
+	// tests/benchmarks/examples found". Unfortunately we can't signal bazel to
+	// omit the entire package since the outputs are already defined before
+	// go-marshal is called. If we'd otherwise emit an empty test suite, emit an
+	// empty example instead.
+	if len(ts) == 0 {
+		b.reset()
+		b.emit("func ExampleEmptyTestSuite() {\n")
+		b.inIndent(func() {
+			b.emit("// This example is intentionally empty to ensure this file contains at least\n")
+			b.emit("// one testable entity. go-marshal is forced to emit a test file if a package\n")
+			b.emit("// is marked marshallable, but emitting a test file with no entities results\n")
+			b.emit("// in a build failure.\n")
+		})
+		b.emit("}\n")
+		return b.write(g.outputTest)
+	}
+
 	for _, t := range ts {
 		if err := t.write(g.outputTest); err != nil {
 			return err
