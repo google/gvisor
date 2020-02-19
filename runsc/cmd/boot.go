@@ -82,8 +82,11 @@ type Boot struct {
 	// sandbox (e.g. gofer) and sent through this FD.
 	mountsFD int
 
-	// pidns is set if the sanadbox is in its own pid namespace.
+	// pidns is set if the sandbox is in its own pid namespace.
 	pidns bool
+
+	// extraArgs is the set of miscellaneous args specified by the ExtraArgs struct.
+	extraArgs *boot.ExtraArgs
 }
 
 // Name implements subcommands.Command.Name.
@@ -118,6 +121,8 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
 	f.IntVar(&b.startSyncFD, "start-sync-fd", -1, "required FD to used to synchronize sandbox startup")
 	f.IntVar(&b.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to read list of mounts after they have been resolved (direct paths, no symlinks).")
+	b.extraArgs = new(boot.ExtraArgs)
+	b.extraArgs.SetFromFlags(f)
 }
 
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
@@ -222,6 +227,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		NumCPU:       b.cpuNum,
 		TotalMem:     b.totalMem,
 		UserLogFD:    b.userLogFD,
+		ExtraArgs:    b.extraArgs,
 	}
 	l, err := boot.New(bootArgs)
 	if err != nil {

@@ -487,6 +487,12 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 		}
 	}
 
+	// Add any other necessary files not specified here.
+	err = addExtraFiles(args, cmd, &nextFD)
+	if err != nil {
+		return fmt.Errorf("adding extra files: %v", err)
+	}
+
 	// Detach from this session, otherwise cmd will get SIGHUP and SIGCONT
 	// when re-parented.
 	cmd.SysProcAttr.Setsid = true

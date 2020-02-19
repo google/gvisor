@@ -173,6 +173,8 @@ type Args struct {
 	TotalMem uint64
 	// UserLogFD is the file descriptor to write user logs to.
 	UserLogFD int
+	// ExtraArgs is the set of miscellaneous args specified by the ExtraArgs struct.
+	ExtraArgs *ExtraArgs
 }
 
 // New initializes a new kernel loader configured by spec.
@@ -312,6 +314,12 @@ func New(args Args) (*Loader, error) {
 
 	if err := initCompatLogs(args.UserLogFD); err != nil {
 		return nil, fmt.Errorf("initializing compat logs: %v", err)
+	}
+
+	if args.ExtraArgs != nil {
+		if err := args.ExtraArgs.evaluate(); err != nil {
+			return nil, fmt.Errorf("evaluating extra args: %v", err)
+		}
 	}
 
 	mountHints, err := newPodMountHints(args.Spec)
