@@ -143,6 +143,7 @@ func (s *segment) logicalLen() seqnum.Size {
 // TCP checksum and stores the checksum and result of checksum verification in
 // the csum and csumValid fields of the segment.
 func (s *segment) parse() bool {
+	// h := header.TCP(s.data.First())
 	h := header.TCP(s.data.First())
 
 	// h is the header followed by the payload. We check that the offset to

@@ -177,9 +177,10 @@ func TestICMPCounts(t *testing.T) {
 		},
 	}
 
-	handleIPv6Payload := func(hdr buffer.Prependable) {
-		payloadLength := hdr.UsedLength()
-		ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+	handleIPv6Payload := func(pkt tcpip.PacketBuffer) {
+		payloadLength := pkt.Data.Size() + len(pkt.TransportHeader)
+		ipBuf := buffer.NewView(header.IPv6MinimumSize)
+		ip := header.IPv6(ipBuf)
 		ip.Encode(&header.IPv6Fields{
 			PayloadLength: uint16(payloadLength),
 			NextHeader:    uint8(header.ICMPv6ProtocolNumber),
@@ -187,26 +188,40 @@ func TestICMPCounts(t *testing.T) {
 			SrcAddr:       r.LocalAddress,
 			DstAddr:       r.RemoteAddress,
 		})
-		ep.HandlePacket(&r, tcpip.PacketBuffer{
-			Data: hdr.View().ToVectorisedView(),
-		})
+		pkt.NetworkProtocol = header.IPv6ProtocolNumber
+		pkt.NetworkHeader = ipBuf
+		ep.HandlePacket(&r, pkt)
+		// ep.HandlePacket(&r, tcpip.PacketBuffer{
+		// 	NetworkHeader:   hdr.View()[:header.IPv6MinimumSize],
+		// 	TransportHeader: hdr.View()[header.IPv6MinimumSize : header.IPv6MinimumSize+payloadLength],
+		// 	// Data: hdr.View().ToVectorisedView(),
+		// })
 	}
 
 	for _, typ := range types {
+		pkt := tcpip.PacketBuffer{}
 		extraDataLen := len(typ.extraData)
-		hdr := buffer.NewPrependable(header.IPv6MinimumSize + typ.size + extraDataLen)
-		extraData := buffer.View(hdr.Prepend(extraDataLen))
+		// hdr := buffer.NewPrependable(header.IPv6MinimumSize + typ.size + extraDataLen)
+		// extraData := buffer.View(hdr.Prepend(extraDataLen))
+		extraData := buffer.NewView(extraDataLen)
 		copy(extraData, typ.extraData)
-		pkt := header.ICMPv6(hdr.Prepend(typ.size))
-		pkt.SetType(typ.typ)
-		pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, extraData.ToVectorisedView()))
+		tBuf := buffer.NewView(typ.size)
+		tHdr := header.ICMPv6(tBuf)
+		tHdr.SetType(typ.typ)
+		tHdr.SetChecksum(header.ICMPv6Checksum(tHdr, r.LocalAddress, r.RemoteAddress, extraData.ToVectorisedView()))
 
-		handleIPv6Payload(hdr)
+		pkt.Data = extraData.ToVectorisedView()
+		pkt.TransportHeader = tBuf
+		pkt.TransportProtocol = header.ICMPv6ProtocolNumber
+
+		handleIPv6Payload(pkt)
 	}
 
 	// Construct an empty ICMP packet so that
 	// Stats().ICMP.ICMPv6ReceivedPacketStats.Invalid is incremented.
-	handleIPv6Payload(buffer.NewPrependable(header.IPv6MinimumSize))
+	handleIPv6Payload(tcpip.PacketBuffer{
+		// NetworkHeader: buffer.NewPrependable(header.IPv6MinimumSize),
+	})
 
 	icmpv6Stats := s.Stats().ICMP.V6PacketsReceived
 	visitStats(reflect.ValueOf(&icmpv6Stats).Elem(), func(name string, s *tcpip.StatCounter) {

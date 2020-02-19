@@ -132,14 +132,19 @@ type TransportProtocol interface {
 	// NewRawEndpoint creates a new raw endpoint of the transport protocol.
 	NewRawEndpoint(stack *Stack, netProto tcpip.NetworkProtocolNumber, waitQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error)
 
+	// TODO: Delete
 	// MinimumPacketSize returns the minimum valid packet size of this
 	// transport protocol. The stack automatically drops any packets smaller
 	// than this targeted at this protocol.
 	MinimumPacketSize() int
 
+	// TODO: Delete
 	// ParsePorts returns the source and destination ports stored in a
 	// packet of this protocol.
 	ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error)
+
+	// TODO: Preconditions here and on the other ParseHeader
+	ParseHeader(stats tcpip.Stats, pkt *tcpip.PacketBuffer) bool
 
 	// HandleUnknownDestinationPacket handles packets targeted at this
 	// protocol but that don't match any existing endpoint. For example,
@@ -269,6 +274,7 @@ type NetworkProtocol interface {
 	// Number returns the network protocol number.
 	Number() tcpip.NetworkProtocolNumber
 
+	// TODO: Remove
 	// MinimumPacketSize returns the minimum valid packet size of this
 	// network protocol. The stack automatically drops any packets smaller
 	// than this targeted at this protocol.
@@ -277,8 +283,12 @@ type NetworkProtocol interface {
 	// DefaultPrefixLen returns the protocol's default prefix length.
 	DefaultPrefixLen() int
 
-	// ParseAddresses returns the source and destination addresses stored in a
-	// packet of this protocol.
+	// ParseHeader sets pkt.NetworkHeader. TODO and other stuff
+	ParseHeader(stats tcpip.Stats, pkt *tcpip.PacketBuffer) (isFragment, ok bool)
+
+	// TODO: Remove
+	// ParseAddresses returns the source and destination addresses stored
+	// in a packet of this protocol.
 	ParseAddresses(v buffer.View) (src, dst tcpip.Address)
 
 	// NewEndpoint creates a new endpoint of this protocol.

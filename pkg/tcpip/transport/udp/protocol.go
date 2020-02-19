@@ -64,6 +64,32 @@ func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error) {
 	return h.SourcePort(), h.DestinationPort(), nil
 }
 
+// TODO: We're changing the way some stats are counted. For example, bad UDP
+// headers are thrown out immediately, before they get to a UDP endpoint. Thus,
+// we don't increment some stuff.
+func (p *protocol) ParseHeader(stats tcpip.Stats, pkt *tcpip.PacketBuffer) bool {
+	// if len(pkt.Data.First()) < header.UDPMinimumSize {
+	// 	return false
+	// }
+	hdr := header.UDP(pkt.Data.First())
+	if int(hdr.Length()) > pkt.Data.Size() {
+		// Malformed packet.
+		stats.UDP.MalformedPacketsReceived.Increment()
+		// e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
+		return false
+	}
+	pkt.Data.TrimFront(header.UDPMinimumSize)
+	pkt.TransportHeader = buffer.View(hdr)
+	// TODO: These fields are method calls.
+	// pkt.SrcPort = hdr.SourcePort()
+	// pkt.DstPort = hdr.DestinationPort()
+	pkt.Ports = func(pkt tcpip.PacketBuffer) (uint16, uint16) {
+		hdr := header.UDP(pkt.TransportHeader)
+		return hdr.SourcePort(), hdr.DestinationPort()
+	}
+	return true
+}
+
 // HandleUnknownDestinationPacket handles packets targeted at this protocol but
 // that don't match any existing endpoint.
 func (p *protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.TransportEndpointID, pkt tcpip.PacketBuffer) bool {

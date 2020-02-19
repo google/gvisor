@@ -166,27 +166,31 @@ func (*endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt tcpip.PacketBuffe
 	return tcpip.ErrNotSupported
 }
 
+// TODO: Update comment for HandlePacket. It can assume that NetworkHeader (and
+// transport header?) is set.
 // HandlePacket is called by the link layer when new ipv6 packets arrive for
 // this endpoint.
 func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
-	headerView := pkt.Data.First()
-	h := header.IPv6(headerView)
-	if !h.IsValid(pkt.Data.Size()) {
+	// headerView := pkt.Data.First()
+	// h := header.IPv6(headerView)
+	// if !h.IsValid(pkt.Data.Size()) {
+	// 	return
+	// }
+
+	// pkt.NetworkHeader = headerView[:header.IPv6MinimumSize]
+	// pkt.Data.TrimFront(header.IPv6MinimumSize)
+	// pkt.Data.CapLength(int(h.PayloadLength()))
+
+	// p := h.TransportProtocol()
+	if pkt.TransportProtocol == header.ICMPv6ProtocolNumber {
+		// panic("kevin:3")
+		e.handleICMP(r, pkt.NetworkHeader, pkt)
 		return
 	}
-
-	pkt.NetworkHeader = headerView[:header.IPv6MinimumSize]
-	pkt.Data.TrimFront(header.IPv6MinimumSize)
-	pkt.Data.CapLength(int(h.PayloadLength()))
-
-	p := h.TransportProtocol()
-	if p == header.ICMPv6ProtocolNumber {
-		e.handleICMP(r, headerView, pkt)
-		return
-	}
+	// panic("kevin:1")
 
 	r.Stats().IP.PacketsDelivered.Increment()
-	e.dispatcher.DeliverTransportPacket(r, p, pkt)
+	e.dispatcher.DeliverTransportPacket(r, pkt.TransportProtocol, pkt)
 }
 
 // Close cleans up resources associated with the endpoint.
@@ -212,6 +216,27 @@ func (p *protocol) MinimumPacketSize() int {
 // DefaultPrefixLen returns the IPv6 default prefix length.
 func (p *protocol) DefaultPrefixLen() int {
 	return header.IPv6AddressSize * 8
+}
+
+func (p *protocol) ParseHeader(_ tcpip.Stats, pkt *tcpip.PacketBuffer) (bool, bool) {
+	headerView := pkt.Data.First()
+	h := header.IPv6(headerView)
+	if !h.IsValid(pkt.Data.Size()) {
+		return false, false
+	}
+
+	pkt.NetworkHeader = headerView[:header.IPv6MinimumSize]
+	pkt.Data.TrimFront(header.IPv6MinimumSize)
+	pkt.Data.CapLength(int(h.PayloadLength()))
+
+	pkt.NetworkProtocol = header.IPv6ProtocolNumber
+	pkt.TransportProtocol = h.TransportProtocol()
+	pkt.Addresses = func(pkt tcpip.PacketBuffer) (tcpip.Address, tcpip.Address) {
+		hdr := header.IPv6(pkt.NetworkHeader)
+		return hdr.SourceAddress(), hdr.DestinationAddress()
+	}
+
+	return true, false
 }
 
 // ParseAddresses implements NetworkProtocol.ParseAddresses.

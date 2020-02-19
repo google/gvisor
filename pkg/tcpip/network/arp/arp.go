@@ -93,12 +93,13 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt tcpip.PacketBuf
 }
 
 func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
-	v := pkt.Data.First()
-	h := header.ARP(v)
-	if !h.IsValid() {
-		return
-	}
+	// v := pkt.Data.First()
+	// h := header.ARP(v)
+	// if !h.IsValid() {
+	// 	return
+	// }
 
+	h := header.ARP(pkt.NetworkHeader)
 	switch h.Op() {
 	case header.ARPRequest:
 		localAddr := tcpip.Address(h.ProtocolAddressTarget())
@@ -135,6 +136,22 @@ func (p *protocol) DefaultPrefixLen() int               { return 0 }
 func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 	h := header.ARP(v)
 	return tcpip.Address(h.ProtocolAddressSender()), ProtocolAddress
+}
+
+func (*protocol) ParseHeader(_ tcpip.Stats, pkt *tcpip.PacketBuffer) (bool, bool) {
+	v := pkt.Data.First()
+	h := header.ARP(v)
+	if !h.IsValid() {
+		return false, false
+	}
+	pkt.NetworkHeader = v
+	pkt.Data.TrimFront(header.ARPSize)
+	pkt.NetworkProtocol = header.ARPProtocolNumber
+	pkt.Addresses = func(pkt tcpip.PacketBuffer) (tcpip.Address, tcpip.Address) {
+		hdr := header.ARP(pkt.NetworkHeader)
+		return tcpip.Address(hdr.ProtocolAddressSender()), ProtocolAddress
+	}
+	return true, false
 }
 
 func (p *protocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, sender stack.LinkEndpoint, st *stack.Stack) (stack.NetworkEndpoint, *tcpip.Error) {

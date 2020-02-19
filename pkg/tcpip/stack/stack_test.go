@@ -94,11 +94,11 @@ func (f *fakeNetworkEndpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffe
 	f.proto.packetCount[int(f.id.LocalAddress[0])%len(f.proto.packetCount)]++
 
 	// Consume the network header.
-	b := pkt.Data.First()
-	pkt.Data.TrimFront(fakeNetHeaderLen)
+	// b := pkt.Data.First()
+	// pkt.Data.TrimFront(fakeNetHeaderLen)
 
 	// Handle control packets.
-	if b[2] == uint8(fakeControlProtocol) {
+	if pkt.NetworkHeader[2] == uint8(fakeControlProtocol) {
 		nb := pkt.Data.First()
 		if len(nb) < fakeNetHeaderLen {
 			return
@@ -110,7 +110,7 @@ func (f *fakeNetworkEndpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffe
 	}
 
 	// Dispatch the packet to the transport protocol.
-	f.dispatcher.DeliverTransportPacket(r, tcpip.TransportProtocolNumber(b[2]), pkt)
+	f.dispatcher.DeliverTransportPacket(r, tcpip.TransportProtocolNumber(pkt.NetworkHeader[2]), pkt)
 }
 
 func (f *fakeNetworkEndpoint) MaxHeaderLength() uint16 {
@@ -199,6 +199,15 @@ func (f *fakeNetworkProtocol) PacketCount(intfAddr byte) int {
 
 func (*fakeNetworkProtocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 	return tcpip.Address(v[1:2]), tcpip.Address(v[0:1])
+}
+
+func (f *fakeNetworkProtocol) ParseHeader(stats tcpip.Stats, pkt *tcpip.PacketBuffer) (bool, bool) {
+	pkt.NetworkHeader = pkt.Data.First()[:fakeNetHeaderLen]
+	pkt.Data.TrimFront(fakeNetHeaderLen)
+	pkt.Addresses = func(pkt tcpip.PacketBuffer) (tcpip.Address, tcpip.Address) {
+		return tcpip.Address(pkt.NetworkHeader[1:2]), tcpip.Address(pkt.NetworkHeader[0:1])
+	}
+	return true, false
 }
 
 func (f *fakeNetworkProtocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, ep stack.LinkEndpoint, _ *stack.Stack) (stack.NetworkEndpoint, *tcpip.Error) {

@@ -1255,15 +1255,15 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 // endpoint.
 func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt tcpip.PacketBuffer) {
 	// Get the header then trim it from the view.
-	hdr := header.UDP(pkt.Data.First())
-	if int(hdr.Length()) > pkt.Data.Size() {
-		// Malformed packet.
-		e.stack.Stats().UDP.MalformedPacketsReceived.Increment()
-		e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
-		return
-	}
+	// hdr := header.UDP(pkt.Data.First())
+	// if int(hdr.Length()) > pkt.Data.Size() {
+	// 	// Malformed packet.
+	// 	e.stack.Stats().UDP.MalformedPacketsReceived.Increment()
+	// 	e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
+	// 	return
+	// }
 
-	pkt.Data.TrimFront(header.UDPMinimumSize)
+	// pkt.Data.TrimFront(header.UDPMinimumSize)
 
 	e.rcvMu.Lock()
 	e.stack.Stats().UDP.PacketsReceived.Increment()
@@ -1287,11 +1287,12 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 	wasEmpty := e.rcvBufSize == 0
 
 	// Push new packet into receive list and increment the buffer size.
+	srcPort, _ := pkt.Ports(pkt)
 	packet := &udpPacket{
 		senderAddress: tcpip.FullAddress{
 			NIC:  r.NICID(),
 			Addr: id.RemoteAddress,
-			Port: hdr.SourcePort(),
+			Port: srcPort,
 		},
 	}
 	packet.data = pkt.Data

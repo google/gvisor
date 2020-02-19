@@ -154,8 +154,26 @@ const (
 // should continue traversing the network stack and false when it should be
 // dropped.
 //
-// Precondition: pkt.NetworkHeader is set.
+// Precondition: the following fields of pkt are set:
+// - NetworkHeader
+// - TransportHeader
 func (it *IPTables) Check(hook Hook, pkt tcpip.PacketBuffer) bool {
+	// TODO: Set pkt.TransportHeader too.
+	// switch hook {
+	// case Prerouting:
+	// 	// Neither TransportHeader nor NetworkHeader are set. This may
+	// 	// be an IP fragment.
+
+	// case Input:
+	// 	// TransportHeader is not set. The packet is not fragmented.
+
+	// case Forward, Output, Postrouting:
+	// 	panic(fmt.Sprintf("Unsupported hook: %v", hook))
+
+	// default:
+	// 	panic(fmt.Sprintf("Unknown hook: %v", hook))
+	// }
+
 	// Go through each table containing the hook.
 	for _, tablename := range it.Priorities[hook] {
 		table := it.Tables[tablename]

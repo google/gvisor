@@ -1067,12 +1067,18 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 		n.stack.stats.IP.PacketsReceived.Increment()
 	}
 
-	if len(pkt.Data.First()) < netProto.MinimumPacketSize() {
-		n.stack.stats.MalformedRcvdPackets.Increment()
+	// TODO: DONT do in ParseHeader.
+	// if len(pkt.Data.First()) < netProto.MinimumPacketSize() {
+	// 	n.stack.stats.MalformedRcvdPackets.Increment()
+	// 	return
+	// }
+
+	// // TODO: Do in ParseHeader.
+	// TODO: Parse transport header.
+	if !n.parseHeaders(&pkt, netProto) {
 		return
 	}
-
-	src, dst := netProto.ParseAddresses(pkt.Data.First())
+	src, dst := pkt.Addresses(pkt)
 
 	if n.stack.handleLocal && !n.isLoopback() && n.getRef(protocol, src) != nil {
 		// The source address is one of our own, so we never should have gotten a
@@ -1152,17 +1158,20 @@ func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolN
 	// validly formed.
 	n.stack.demux.deliverRawPacket(r, protocol, pkt)
 
-	if len(pkt.Data.First()) < transProto.MinimumPacketSize() {
-		n.stack.stats.MalformedRcvdPackets.Increment()
-		return
-	}
+	// TODO: DONT do In ParseHeaders
+	// if len(pkt.Data.First()) < transProto.MinimumPacketSize() {
+	// 	n.stack.stats.MalformedRcvdPackets.Increment()
+	// 	return
+	// }
 
-	srcPort, dstPort, err := transProto.ParsePorts(pkt.Data.First())
-	if err != nil {
-		n.stack.stats.MalformedRcvdPackets.Increment()
-		return
-	}
+	// TODO: In ParseHeaders
+	// srcPort, dstPort, err := transProto.ParsePorts(pkt.Data.First())
+	// if err != nil {
+	// 	n.stack.stats.MalformedRcvdPackets.Increment()
+	// 	return
+	// }
 
+	srcPort, dstPort := pkt.Ports(pkt)
 	id := TransportEndpointID{dstPort, r.LocalAddress, srcPort, r.RemoteAddress}
 	if n.stack.demux.deliverPacket(r, protocol, pkt, id) {
 		return
@@ -1280,6 +1289,45 @@ func (n *NIC) handleNDPRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 	defer n.mu.Unlock()
 
 	n.mu.ndp.handleRA(ip, ra)
+}
+
+// TODO: Maybe put back into DeliverNetworkPacket.
+// parseHeaders sets pkt.NetworkHeader and pkt.TransportHeader, consuming
+// pkt.Data in the process. If pkt is a fragment, pkt.TransportHeader is not
+// set.
+func (n *NIC) parseHeaders(pkt *tcpip.PacketBuffer, netProto NetworkProtocol) bool {
+	// TODO: This has to set pkt.NetworkProtocol = netProto
+	// Parse the packet's network layer information
+	// TODO: Can I remove this?
+	if len(pkt.Data.First()) < netProto.MinimumPacketSize() {
+		n.stack.stats.MalformedRcvdPackets.Increment()
+		return false
+	}
+	isFragment, ok := netProto.ParseHeader(n.stack.stats, pkt)
+	if !ok {
+		return false
+	}
+	if isFragment {
+		// No point in trying to inspect the transport header yet.
+		return true
+	}
+
+	// TODO: Parse the packet's transport layer information.
+	state, ok := n.stack.transportProtocols[pkt.TransportProtocol]
+	if !ok {
+		n.stack.stats.UnknownProtocolRcvdPackets.Increment()
+		return false
+	}
+	// TODO: Can I remove this?
+	if len(pkt.Data.First()) < state.proto.MinimumPacketSize() {
+		n.stack.stats.MalformedRcvdPackets.Increment()
+		return false
+	}
+	// TODO: This has to set pkt.TransportProtocol = state.Proto
+	if !state.proto.ParseHeader(n.stack.stats, pkt) {
+		n.stack.stats.MalformedRcvdPackets.Increment()
+	}
+	return true
 }
 
 type networkEndpointKind int32

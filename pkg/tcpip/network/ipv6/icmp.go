@@ -66,8 +66,9 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt tcpip.P
 	stats := r.Stats().ICMP
 	sent := stats.V6PacketsSent
 	received := stats.V6PacketsReceived
-	v := pkt.Data.First()
+	v := pkt.TransportHeader
 	if len(v) < header.ICMPv6MinimumSize {
+		// panic("kevin:2")
 		received.Invalid.Increment()
 		return
 	}
@@ -80,8 +81,9 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt tcpip.P
 	// rest of vv, a shallow copy is made and the first view is removed.
 	// This copy is used as extra payload during the checksum calculation.
 	payload := pkt.Data
-	payload.RemoveFirst()
+	// payload.RemoveFirst()
 	if got, want := h.Checksum(), header.ICMPv6Checksum(h, iph.SourceAddress(), iph.DestinationAddress(), payload); got != want {
+		// panic("kevin:4")
 		received.Invalid.Increment()
 		return
 	}

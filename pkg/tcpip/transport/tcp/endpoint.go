@@ -2322,6 +2322,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 	// land at the Dispatcher which then can either delivery using the
 	// worker go routine or directly do the invoke the tcp processing inline
 	// based on the state of the endpoint.
+	panic("TCP HandlePacket should never be invoked.")
 }
 
 func (e *endpoint) enqueueSegment(s *segment) bool {

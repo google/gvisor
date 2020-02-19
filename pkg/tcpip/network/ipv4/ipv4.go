@@ -345,18 +345,63 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt tcpip.PacketBuf
 // HandlePacket is called by the link layer when new ipv4 packets arrive for
 // this endpoint.
 func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
-	headerView := pkt.Data.First()
-	h := header.IPv4(headerView)
-	if !h.IsValid(pkt.Data.Size()) {
-		r.Stats().IP.MalformedPacketsReceived.Increment()
-		return
-	}
-	pkt.NetworkHeader = headerView[:h.HeaderLength()]
+	// TODO: Ensure NetworkHeader is already set.
+	// headerView := pkt.Data.First()
+	// h := header.IPv4(headerView)
+	// if !h.IsValid(pkt.Data.Size()) {
+	// 	r.Stats().IP.MalformedPacketsReceived.Increment()
+	// 	return
+	// }
+	// pkt.NetworkHeader = headerView[:h.HeaderLength()]
 
-	hlen := int(h.HeaderLength())
-	tlen := int(h.TotalLength())
-	pkt.Data.TrimFront(hlen)
-	pkt.Data.CapLength(tlen - hlen)
+	// hlen := int(h.HeaderLength())
+	// tlen := int(h.TotalLength())
+	// pkt.Data.TrimFront(hlen)
+	// pkt.Data.CapLength(tlen - hlen)
+
+	hdr := header.IPv4(pkt.NetworkHeader)
+	more := (hdr.Flags() & header.IPv4FlagMoreFragments) != 0
+	if more || hdr.FragmentOffset() != 0 {
+		if pkt.Data.Size() == 0 {
+			// Drop the packet as it's marked as a fragment but has
+			// no payload.
+			r.Stats().IP.MalformedPacketsReceived.Increment()
+			r.Stats().IP.MalformedFragmentsReceived.Increment()
+			return
+		}
+		// The packet is a fragment, let's try to reassemble it.
+		last := hdr.FragmentOffset() + uint16(pkt.Data.Size()) - 1
+		// Drop the packet if the fragmentOffset is incorrect. i.e the
+		// combination of fragmentOffset and pkt.Data.size() causes a
+		// wrap around resulting in last being less than the offset.
+		if last < hdr.FragmentOffset() {
+			r.Stats().IP.MalformedPacketsReceived.Increment()
+			r.Stats().IP.MalformedFragmentsReceived.Increment()
+			return
+		}
+		var ready bool
+		var err error
+		pkt.Data, ready, err = e.fragmentation.Process(hash.IPv4FragmentHash(hdr), hdr.FragmentOffset(), last, more, pkt.Data)
+		if err != nil {
+			r.Stats().IP.MalformedPacketsReceived.Increment()
+			r.Stats().IP.MalformedFragmentsReceived.Increment()
+			return
+		}
+		if !ready {
+			return
+		}
+		// TODO: At this point, pkt.NetworkHeader is set to the network header
+		// of the final fragment, which is fine. But pkt.Transportheader is
+		// unset, and must be set before the call to ipt.Check().
+		transProto := e.stack.TransportProtocolInstance(pkt.TransportProtocol)
+		if transProto == nil {
+			// Unsupported transport protocol.
+			return
+		}
+		if ok := transProto.ParseHeader(e.stack.Stats(), &pkt); !ok {
+			return
+		}
+	}
 
 	// iptables filtering. All packets that reach here are intended for
 	// this machine and will not be forwarded.
@@ -366,40 +411,9 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
 		return
 	}
 
-	more := (h.Flags() & header.IPv4FlagMoreFragments) != 0
-	if more || h.FragmentOffset() != 0 {
-		if pkt.Data.Size() == 0 {
-			// Drop the packet as it's marked as a fragment but has
-			// no payload.
-			r.Stats().IP.MalformedPacketsReceived.Increment()
-			r.Stats().IP.MalformedFragmentsReceived.Increment()
-			return
-		}
-		// The packet is a fragment, let's try to reassemble it.
-		last := h.FragmentOffset() + uint16(pkt.Data.Size()) - 1
-		// Drop the packet if the fragmentOffset is incorrect. i.e the
-		// combination of fragmentOffset and pkt.Data.size() causes a
-		// wrap around resulting in last being less than the offset.
-		if last < h.FragmentOffset() {
-			r.Stats().IP.MalformedPacketsReceived.Increment()
-			r.Stats().IP.MalformedFragmentsReceived.Increment()
-			return
-		}
-		var ready bool
-		var err error
-		pkt.Data, ready, err = e.fragmentation.Process(hash.IPv4FragmentHash(h), h.FragmentOffset(), last, more, pkt.Data)
-		if err != nil {
-			r.Stats().IP.MalformedPacketsReceived.Increment()
-			r.Stats().IP.MalformedFragmentsReceived.Increment()
-			return
-		}
-		if !ready {
-			return
-		}
-	}
-	p := h.TransportProtocol()
+	p := hdr.TransportProtocol()
 	if p == header.ICMPv4ProtocolNumber {
-		headerView.CapLength(hlen)
+		pkt.NetworkHeader.CapLength(int(hdr.HeaderLength()))
 		e.handleICMP(r, pkt)
 		return
 	}
@@ -433,6 +447,46 @@ func (p *protocol) MinimumPacketSize() int {
 // DefaultPrefixLen returns the IPv4 default prefix length.
 func (p *protocol) DefaultPrefixLen() int {
 	return header.IPv4AddressSize * 8
+}
+
+// TODO: fragments also have to set these fields
+// ParseHeader implements NetworkProtocol.ParseHeader.
+func (p *protocol) ParseHeader(stats tcpip.Stats, pkt *tcpip.PacketBuffer) (bool, bool) {
+	if len(pkt.Data.First()) < p.MinimumPacketSize() {
+		stats.MalformedRcvdPackets.Increment()
+		return false, false
+	}
+	// src, dst := p.ParseAddresses(pkt.Data.First())
+
+	// Do actual parsing.
+	headerView := pkt.Data.First()
+	h := header.IPv4(headerView)
+	if !h.IsValid(pkt.Data.Size()) {
+		stats.MalformedRcvdPackets.Increment()
+		return false, false
+	}
+	pkt.NetworkHeader = headerView[:h.HeaderLength()]
+
+	hlen := int(h.HeaderLength())
+	tlen := int(h.TotalLength())
+	pkt.Data.TrimFront(hlen)
+	pkt.Data.CapLength(tlen - hlen)
+
+	// TODO: Document all the things this method does to pkt.
+	// TODO: These fields are method calls.
+	// pkt.Src = src
+	// pkt.Dst = dst
+	// pkt.IsFragment = isFragment
+	pkt.NetworkProtocol = header.IPv4ProtocolNumber
+	pkt.TransportProtocol = h.TransportProtocol()
+	pkt.Addresses = func(pkt tcpip.PacketBuffer) (tcpip.Address, tcpip.Address) {
+		hdr := header.IPv4(pkt.NetworkHeader)
+		return hdr.SourceAddress(), hdr.DestinationAddress()
+	}
+
+	// Return that the packet was parsed successfully, and whether it is
+	// part of a fragmented packet.
+	return true, (h.Flags()&header.IPv4FlagMoreFragments) != 0 || h.FragmentOffset() != 0
 }
 
 // ParseAddresses implements NetworkProtocol.ParseAddresses.

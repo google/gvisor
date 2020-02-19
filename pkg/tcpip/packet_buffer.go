@@ -39,6 +39,9 @@ type PacketBuffer struct {
 	// payload.
 	DataSize int
 
+	// IsFragment indicates whether this packet is a fragment.
+	IsFragment bool
+
 	// Header holds the headers of outbound packets. As a packet is passed
 	// down the stack, each layer adds to Header.
 	Header buffer.Prependable
@@ -55,6 +58,16 @@ type PacketBuffer struct {
 	LinkHeader      buffer.View
 	NetworkHeader   buffer.View
 	TransportHeader buffer.View
+
+	// TODO: Set these. Shoudl they be functions?
+	NetworkProtocol   NetworkProtocolNumber
+	TransportProtocol TransportProtocolNumber
+	Addresses         func(PacketBuffer) (src, dst Address)
+	Ports             func(PacketBuffer) (src, dst uint16)
+	// Src     Address
+	// Dst     Address
+	// SrcPort uint16
+	// DstPort uint16
 }
 
 // Clone makes a copy of pk. It clones the Data field, which creates a new

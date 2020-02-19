@@ -136,6 +136,17 @@ func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error) {
 	return h.SourcePort(), h.DestinationPort(), nil
 }
 
+func (p *protocol) ParseHeader(stats tcpip.Stats, pkt *tcpip.PacketBuffer) bool {
+	// TODO: pkt.Data appears to want to be untouched for TCP since it
+	// moved off the HandlePacket path.
+	pkt.TransportHeader = pkt.Data.First()
+	pkt.Ports = func(pkt tcpip.PacketBuffer) (uint16, uint16) {
+		hdr := header.TCP(pkt.TransportHeader)
+		return hdr.SourcePort(), hdr.DestinationPort()
+	}
+	return true
+}
+
 // QueuePacket queues packets targeted at an endpoint after hashing the packet
 // to a specific processing queue. Each queue is serviced by its own processor
 // goroutine which is responsible for dequeuing and doing full TCP dispatch of

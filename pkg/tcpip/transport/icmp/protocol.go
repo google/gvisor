@@ -102,6 +102,22 @@ func (p *protocol) ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error)
 	panic(fmt.Sprint("unknown protocol number: ", p.number))
 }
 
+func (p *protocol) ParseHeader(stats tcpip.Stats, pkt *tcpip.PacketBuffer) bool {
+	pkt.TransportHeader = pkt.Data.First()[:header.UDPMinimumSize]
+	pkt.Data.TrimFront(header.UDPMinimumSize)
+	pkt.Ports = func(pkt tcpip.PacketBuffer) (uint16, uint16) {
+		switch pkt.TransportProtocol {
+		case ProtocolNumber4:
+			return 0, header.ICMPv4(pkt.TransportHeader).Ident()
+		case ProtocolNumber6:
+			return 0, header.ICMPv6(pkt.TransportHeader).Ident()
+		default:
+			panic(fmt.Sprint("unknown protocol number: ", p.number))
+		}
+	}
+	return true
+}
+
 // HandleUnknownDestinationPacket handles packets targeted at this protocol but
 // that don't match any existing endpoint.
 func (p *protocol) HandleUnknownDestinationPacket(*stack.Route, stack.TransportEndpointID, tcpip.PacketBuffer) bool {

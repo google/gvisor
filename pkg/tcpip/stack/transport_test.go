@@ -284,6 +284,15 @@ func (*fakeTransportProtocol) ParsePorts(buffer.View) (src, dst uint16, err *tcp
 	return 0, 0, nil
 }
 
+func (*fakeTransportProtocol) ParseHeader(stats tcpip.Stats, pkt *tcpip.PacketBuffer) bool {
+	pkt.TransportHeader = pkt.Data.First()[:fakeTransHeaderLen]
+	pkt.Data.TrimFront(fakeTransHeaderLen)
+	pkt.Ports = func(pkt tcpip.PacketBuffer) (uint16, uint16) {
+		return 0, 0
+	}
+	return true
+}
+
 func (*fakeTransportProtocol) HandleUnknownDestinationPacket(*stack.Route, stack.TransportEndpointID, tcpip.PacketBuffer) bool {
 	return true
 }

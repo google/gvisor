@@ -735,14 +735,14 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 	case header.IPv4ProtocolNumber:
 		h := header.ICMPv4(pkt.Data.First())
 		if h.Type() != header.ICMPv4EchoReply {
-			e.stack.Stats().DroppedPackets.Increment()
+			// e.stack.Stats().DroppedPackets.Increment()
 			e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
 			return
 		}
 	case header.IPv6ProtocolNumber:
 		h := header.ICMPv6(pkt.Data.First())
 		if h.Type() != header.ICMPv6EchoReply {
-			e.stack.Stats().DroppedPackets.Increment()
+			// e.stack.Stats().DroppedPackets.Increment()
 			e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
 			return
 		}
