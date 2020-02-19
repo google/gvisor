@@ -712,14 +712,40 @@ func (s *SocketOperations) Connect(t *kernel.Task, sockaddr []byte, blocking boo
 // Bind implements the linux syscall bind(2) for sockets backed by
 // tcpip.Endpoint.
 func (s *SocketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
-	addr, family, err := AddressAndFamily(sockaddr)
-	if err != nil {
-		return err
+	family := usermem.ByteOrder.Uint16(sockaddr)
+	var addr tcpip.FullAddress
+
+	// Bind for AF_PACKET requires only family, protocol and ifindex.
+	// In function AddressAndFamily, we check the address length which is
+	// not needed for AF_PACKET bind.
+	if family == linux.AF_PACKET {
+		var a linux.SockAddrLink
+		if len(sockaddr) < sockAddrLinkSize {
+			return syserr.ErrInvalidArgument
+		}
+		binary.Unmarshal(sockaddr[:sockAddrLinkSize], usermem.ByteOrder, &a)
+
+		if a.Protocol != uint16(s.protocol) {
+			return syserr.ErrInvalidArgument
+		}
+
+		addr = tcpip.FullAddress{
+			NIC:  tcpip.NICID(a.InterfaceIndex),
+			Addr: tcpip.Address(a.HardwareAddr[:header.EthernetAddressSize]),
+		}
+	} else {
+		var err *syserr.Error
+		addr, family, err = AddressAndFamily(sockaddr)
+		if err != nil {
+			return err
+		}
+
+		if err = s.checkFamily(family, true /* exact */); err != nil {
+			return err
+		}
+
+		addr = s.mapFamily(addr, family)
 	}
-	if err := s.checkFamily(family, true /* exact */); err != nil {
-		return err
-	}
-	addr = s.mapFamily(addr, family)
 
 	// Issue the bind request to the endpoint.
 	return syserr.TranslateNetstackError(s.Endpoint.Bind(addr))
