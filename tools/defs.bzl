@@ -209,6 +209,7 @@ def proto_library(name, srcs, **kwargs):
         deps = deps,
         **kwargs
     )
+    kwargs.pop("has_services", None)
     _go_proto_library(
         name = name + "_go_proto",
         proto = ":" + name + "_proto",
