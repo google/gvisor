@@ -238,6 +238,11 @@ func (b TCP) Checksum() uint16 {
 	return binary.BigEndian.Uint16(b[TCPChecksumOffset:])
 }
 
+// UrgentPointer returns the "urgent pointer" field of the tcp header.
+func (b TCP) UrgentPointer() uint16 {
+	return binary.BigEndian.Uint16(b[TCPUrgentPtrOffset:])
+}
+
 // SetSourcePort sets the "source port" field of the tcp header.
 func (b TCP) SetSourcePort(port uint16) {
 	binary.BigEndian.PutUint16(b[TCPSrcPortOffset:], port)
@@ -251,6 +256,36 @@ func (b TCP) SetDestinationPort(port uint16) {
 // SetChecksum sets the checksum field of the tcp header.
 func (b TCP) SetChecksum(checksum uint16) {
 	binary.BigEndian.PutUint16(b[TCPChecksumOffset:], checksum)
+}
+
+// SetDataOffset sets the data offset field of the tcp header.
+func (b TCP) SetDataOffset(dataOffset uint8) {
+	b[TCPDataOffset] = (dataOffset / 4) << 4
+}
+
+// SetSequenceNumber sets the sequence number field of the tcp header.
+func (b TCP) SetSequenceNumber(seqNum uint32) {
+	binary.BigEndian.PutUint32(b[TCPSeqNumOffset:], seqNum)
+}
+
+// SetAckNumber sets the ack number field of the tcp header.
+func (b TCP) SetAckNumber(ackNum uint32) {
+	binary.BigEndian.PutUint32(b[TCPAckNumOffset:], ackNum)
+}
+
+// SetFlags sets the flags field of the tcp header.
+func (b TCP) SetFlags(flags uint8) {
+	b[TCPFlagsOffset] = flags
+}
+
+// SetWindowSize sets the window size field of the tcp header.
+func (b TCP) SetWindowSize(rcvwnd uint16) {
+	binary.BigEndian.PutUint16(b[TCPWinSizeOffset:], rcvwnd)
+}
+
+// SetUrgentPoiner sets the window size field of the tcp header.
+func (b TCP) SetUrgentPoiner(urgentPointer uint16) {
+	binary.BigEndian.PutUint16(b[TCPUrgentPtrOffset:], urgentPointer)
 }
 
 // CalculateChecksum calculates the checksum of the tcp segment.
