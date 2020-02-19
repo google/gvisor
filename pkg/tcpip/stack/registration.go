@@ -277,7 +277,7 @@ type NetworkProtocol interface {
 	// DefaultPrefixLen returns the protocol's default prefix length.
 	DefaultPrefixLen() int
 
-	// ParsePorts returns the source and destination addresses stored in a
+	// ParseAddresses returns the source and destination addresses stored in a
 	// packet of this protocol.
 	ParseAddresses(v buffer.View) (src, dst tcpip.Address)
 
