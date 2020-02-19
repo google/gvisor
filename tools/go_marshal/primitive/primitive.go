@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,18 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build amd64
+// Package primitive defines marshal.Marshallable implementations for primitive
+// types.
+package primitive
 
-package linux
-
-// EpollEvent is equivalent to struct epoll_event from epoll(2).
+// Int32 is a marshal.Marshallable implementation for int32.
 //
-// +marshal vector:EpollEventSlice
-type EpollEvent struct {
-	Events uint32
-	// Linux makes struct epoll_event::data a __u64. We represent it as
-	// [2]int32 because, on amd64, Linux also makes struct epoll_event
-	// __attribute__((packed)), such that there is no padding between Events
-	// and Data.
-	Data [2]int32
-}
+// +marshal vector:Int32Slice:inner
+type Int32 int32
+
+// Uint32 is a marshal.Marshallable implementation for uint32.
+//
+// +marshal
+type Uint32 uint32
+
+// Int64 is a marshal.Marshallable implementation for int64.
+//
+// +marshal
+type Int64 int64
+
+// Uint64 is a marshal.Marshallable implementation for uint64.
+//
+// +marshal
+type Uint64 uint64

@@ -42,7 +42,11 @@ type Task interface {
 	CopyInBytes(addr usermem.Addr, b []byte) (int, error)
 }
 
-// Marshallable represents a type that can be marshalled to and from memory.
+// Marshallable represents operations on a type that can be marshalled to and
+// from memory.
+//
+// go-marshal automatically generates implementations for this interface for
+// types marked as '+marshal'.
 type Marshallable interface {
 	io.WriterTo
 
@@ -67,6 +71,10 @@ type Marshallable interface {
 	// starting at unaligned addresses (should always be true by default for ABI
 	// structs, verified by automatically generated tests when using
 	// go_marshal), and has no fields marked `marshal:"unaligned"`.
+	//
+	// Packed cannot rely on the value of any particular instance. That is,
+	// Packed must return the same result for all possible values of the type
+	// implementing it.
 	Packed() bool
 
 	// MarshalUnsafe serializes a type by bulk copying its in-memory
@@ -91,12 +99,50 @@ type Marshallable interface {
 	// marshalled does not escape. The implementation should avoid creating
 	// extra copies in memory by directly deserializing to the object's
 	// underlying memory.
-	CopyIn(task Task, addr usermem.Addr) (int, error)
+	CopyIn(task Task, addr usermem.Addr) error
 
 	// CopyOut serializes a Marshallable type to a task's memory. This may only
 	// be called from a task goroutine. This is more efficient than calling
 	// MarshalUnsafe on Marshallable.Packed types, as the type being serialized
 	// does not escape. The implementation should avoid creating extra copies in
 	// memory by directly serializing from the object's underlying memory.
-	CopyOut(task Task, addr usermem.Addr) (int, error)
+	CopyOut(task Task, addr usermem.Addr) error
 }
+
+// go-marshal generates additional functions for a type based on additional
+// clauses to the +marshal directive. They are documented below.
+//
+// Vector API
+// ==========
+//
+// Adding a "vector" clause to the +marshal directive like this:
+//
+// // +marshal vector:FooSlice
+// type Foo struct { ... }
+//
+// Generates two additional functions for marshalling slices of Foos like this:
+//
+// func CopyFooSliceIn(task marshal.Task, addr usermem.Addr, dst []Foo) (error) { ... }
+// func CopyFooSliceOut(task marshal.Task, addr usermem.Addr, src []Foo) (error) { ... }
+//
+// The name of the functions are of the format "Copy%sIn" and "Copy%sOut", where
+// %s is the first argument to the vector clause.
+//
+// The vector clause also takes an optional second argument, which must be the
+// value "inner":
+//
+// // +marshal vector:Int32Slice:inner
+// type Int32 int32
+//
+// This is only valid on newtypes on primitives, and causes the generated
+// functions to accept slices of the inner type instead:
+//
+// func CopyInt32SliceIn(task marshal.Task, addr usermem.Addr, dst []int32) error { ... }
+// func CopyInt32liceOut(task marshal.Task, addr usermem.Addr, src []int32) error { ... }
+//
+// Without "inner", they would instead be:
+//
+// func CopyInt32SliceIn(task marshal.Task, addr usermem.Addr, dst []Int32) error { ... }
+// func CopyInt32liceOut(task marshal.Task, addr usermem.Addr, src []Int32) error { ... }
+//
+// This may help avoid a cast depending on how the generated functions are used.
