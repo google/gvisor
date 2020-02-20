@@ -90,9 +90,19 @@ func (x *IPPacketInfo) load(m state.Map) {
 	m.Load("DestinationAddr", &x.DestinationAddr)
 }
 
+func (x *StdClock) beforeSave() {}
+func (x *StdClock) save(m state.Map) {
+	x.beforeSave()
+}
+
+func (x *StdClock) afterLoad() {}
+func (x *StdClock) load(m state.Map) {
+}
+
 func init() {
 	state.Register("pkg/tcpip.PacketBuffer", (*PacketBuffer)(nil), state.Fns{Save: (*PacketBuffer).save, Load: (*PacketBuffer).load})
 	state.Register("pkg/tcpip.FullAddress", (*FullAddress)(nil), state.Fns{Save: (*FullAddress).save, Load: (*FullAddress).load})
 	state.Register("pkg/tcpip.ControlMessages", (*ControlMessages)(nil), state.Fns{Save: (*ControlMessages).save, Load: (*ControlMessages).load})
 	state.Register("pkg/tcpip.IPPacketInfo", (*IPPacketInfo)(nil), state.Fns{Save: (*IPPacketInfo).save, Load: (*IPPacketInfo).load})
+	state.Register("pkg/tcpip.StdClock", (*StdClock)(nil), state.Fns{Save: (*StdClock).save, Load: (*StdClock).load})
 }
