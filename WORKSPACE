@@ -330,3 +330,13 @@ http_archive(
         "https://github.com/google/googletest/archive/565f1b848215b77c3732bca345fe76a0431d8b34.tar.gz",
     ],
 )
+
+http_archive(
+    name = "com_google_benchmark",
+    sha256 = "3c6a165b6ecc948967a1ead710d4a181d7b0fbcaa183ef7ea84604994966221a",
+    strip_prefix = "benchmark-1.5.0",
+    urls = [
+        "https://mirror.bazel.build/github.com/google/benchmark/archive/v1.5.0.tar.gz",
+        "https://github.com/google/benchmark/archive/v1.5.0.tar.gz",
+    ],
+)

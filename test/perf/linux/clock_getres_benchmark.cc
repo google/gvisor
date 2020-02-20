@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,9 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "test/util/test_util.h"
+#include <time.h>
 
-int main(int argc, char** argv) {
-  gvisor::testing::TestInit(&argc, &argv);
-  return gvisor::testing::RunAllTests();
+#include "gtest/gtest.h"
+#include "benchmark/benchmark.h"
+
+namespace gvisor {
+namespace testing {
+
+namespace {
+
+// clock_getres(1) is very nearly a no-op syscall, but it does require copying
+// out to a userspace struct. It thus provides a nice small copy-out benchmark.
+void BM_ClockGetRes(benchmark::State& state) {
+  struct timespec ts;
+  for (auto _ : state) {
+    clock_getres(CLOCK_MONOTONIC, &ts);
+  }
 }
+
+BENCHMARK(BM_ClockGetRes);
+
+}  // namespace
+
+}  // namespace testing
+}  // namespace gvisor

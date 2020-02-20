@@ -1,5 +1,4 @@
-load("//tools:defs.bzl", "go_binary")
-load("//test/syscalls:build_defs.bzl", "syscall_test")
+load("//test/runner:defs.bzl", "syscall_test")
 
 package(licenses = ["notice"])
 
@@ -726,21 +725,3 @@ syscall_test(test = "//test/syscalls/linux:proc_net_unix_test")
 syscall_test(test = "//test/syscalls/linux:proc_net_tcp_test")
 
 syscall_test(test = "//test/syscalls/linux:proc_net_udp_test")
-
-go_binary(
-    name = "syscall_test_runner",
-    testonly = 1,
-    srcs = ["syscall_test_runner.go"],
-    data = [
-        "//runsc",
-    ],
-    deps = [
-        "//pkg/log",
-        "//runsc/specutils",
-        "//runsc/testutil",
-        "//test/syscalls/gtest",
-        "//test/uds",
-        "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
-        "@org_golang_x_sys//unix:go_default_library",
-    ],
-)

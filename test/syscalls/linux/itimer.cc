@@ -349,6 +349,5 @@ int main(int argc, char** argv) {
   }
 
   gvisor::testing::TestInit(&argc, &argv);
-
-  return RUN_ALL_TESTS();
+  return gvisor::testing::RunAllTests();
 }

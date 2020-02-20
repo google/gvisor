@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,38 +15,22 @@
 #include <signal.h>
 
 #include "gtest/gtest.h"
-#include "absl/flags/flag.h"
-#include "absl/flags/parse.h"
 #include "benchmark/benchmark.h"
 #include "test/util/logging.h"
-
-extern bool FLAGS_benchmark_list_tests;
-extern std::string FLAGS_benchmark_filter;
 
 namespace gvisor {
 namespace testing {
 
-void SetupGvisorDeathTest() {}
+namespace {
 
-void TestInit(int* argc, char*** argv) {
-  ::testing::InitGoogleTest(argc, *argv);
-  benchmark::Initialize(argc, *argv);
-  ::absl::ParseCommandLine(*argc, *argv);
-
-  // Always mask SIGPIPE as it's common and tests aren't expected to handle it.
-  struct sigaction sa = {};
-  sa.sa_handler = SIG_IGN;
-  TEST_CHECK(sigaction(SIGPIPE, &sa, nullptr) == 0);
+// DeathTest is not so much a microbenchmark as a macrobenchmark. It is testing
+// the ability of gVisor (on whatever platform) to execute all the related
+// stack-dumping routines associated with EXPECT_EXIT / EXPECT_DEATH.
+TEST(DeathTest, ZeroEqualsOne) {
+  EXPECT_EXIT({ TEST_CHECK(0 == 1); }, ::testing::KilledBySignal(SIGABRT), "");
 }
 
-int RunAllTests() {
-  if (FLAGS_benchmark_list_tests || FLAGS_benchmark_filter != ".") {
-    benchmark::RunSpecifiedBenchmarks();
-    return 0;
-  } else {
-    return RUN_ALL_TESTS();
-  }
-}
+}  // namespace
 
 }  // namespace testing
 }  // namespace gvisor
