@@ -507,13 +507,14 @@ func (g *interfaceGenerator) emitMarshallable() {
 	g.emit("// CopyOut implements marshal.Marshallable.CopyOut.\n")
 	g.recordUsedImport("marshal")
 	g.recordUsedImport("usermem")
-	g.emit("func (%s *%s) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) CopyOut(task marshal.Task, addr usermem.Addr) error {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		fallback := func() {
 			g.emit("// Type %s doesn't have a packed layout in memory, fall back to MarshalBytes.\n", g.typeName())
 			g.emit("buf := task.CopyScratchBuffer(%s.SizeBytes())\n", g.r)
 			g.emit("%s.MarshalBytes(buf)\n", g.r)
-			g.emit("return task.CopyOutBytes(addr, buf)\n")
+			g.emit("_, err := task.CopyOutBytes(addr, buf)\n")
+			g.emit("return err\n")
 		}
 		if thisPacked {
 			g.recordUsedImport("reflect")
@@ -539,11 +540,11 @@ func (g *interfaceGenerator) emitMarshallable() {
 			g.emit("hdr.Len = %s.SizeBytes()\n", g.r)
 			g.emit("hdr.Cap = %s.SizeBytes()\n\n", g.r)
 
-			g.emit("len, err := task.CopyOutBytes(addr, buf)\n")
+			g.emit("_, err := task.CopyOutBytes(addr, buf)\n")
 			g.emit("// Since we bypassed the compiler's escape analysis, indicate that %s\n", g.r)
 			g.emit("// must live until after the CopyOutBytes.\n")
 			g.emit("runtime.KeepAlive(%s)\n", g.r)
-			g.emit("return len, err\n")
+			g.emit("return err\n")
 		} else {
 			fallback()
 		}
@@ -553,20 +554,20 @@ func (g *interfaceGenerator) emitMarshallable() {
 	g.emit("// CopyIn implements marshal.Marshallable.CopyIn.\n")
 	g.recordUsedImport("marshal")
 	g.recordUsedImport("usermem")
-	g.emit("func (%s *%s) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) CopyIn(task marshal.Task, addr usermem.Addr) error {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		fallback := func() {
 			g.emit("// Type %s doesn't have a packed layout in memory, fall back to UnmarshalBytes.\n", g.typeName())
 			g.emit("buf := task.CopyScratchBuffer(%s.SizeBytes())\n", g.r)
-			g.emit("n, err := task.CopyInBytes(addr, buf)\n")
+			g.emit("_, err := task.CopyInBytes(addr, buf)\n")
 			g.emit("if err != nil {\n")
 			g.inIndent(func() {
-				g.emit("return n, err\n")
+				g.emit("return err\n")
 			})
 			g.emit("}\n")
 
 			g.emit("%s.UnmarshalBytes(buf)\n", g.r)
-			g.emit("return n, nil\n")
+			g.emit("return nil\n")
 		}
 		if thisPacked {
 			g.recordUsedImport("reflect")
@@ -592,11 +593,11 @@ func (g *interfaceGenerator) emitMarshallable() {
 			g.emit("hdr.Len = %s.SizeBytes()\n", g.r)
 			g.emit("hdr.Cap = %s.SizeBytes()\n\n", g.r)
 
-			g.emit("len, err := task.CopyInBytes(addr, buf)\n")
+			g.emit("_, err := task.CopyInBytes(addr, buf)\n")
 			g.emit("// Since we bypassed the compiler's escape analysis, indicate that %s\n", g.r)
 			g.emit("// must live until after the CopyInBytes.\n")
 			g.emit("runtime.KeepAlive(%s)\n", g.r)
-			g.emit("return len, err\n")
+			g.emit("return err\n")
 		} else {
 			fallback()
 		}
