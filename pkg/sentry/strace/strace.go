@@ -481,6 +481,12 @@ func (i *SyscallInfo) pre(t *kernel.Task, args arch.SyscallArguments, maximumBlo
 			output = append(output, capData(t, args[arg-1].Pointer(), args[arg].Pointer()))
 		case PollFDs:
 			output = append(output, pollFDs(t, args[arg].Pointer(), uint(args[arg+1].Uint()), false))
+		case EpollCtlOp:
+			output = append(output, epollCtlOps.Parse(uint64(args[arg].Int())))
+		case EpollEvent:
+			output = append(output, epollEvent(t, args[arg].Pointer()))
+		case EpollEvents:
+			output = append(output, epollEvents(t, args[arg].Pointer(), 0 /* numEvents */, uint64(maximumBlobSize)))
 		case SelectFDSet:
 			output = append(output, fdSet(t, int(args[0].Int()), args[arg].Pointer()))
 		case Oct:
@@ -549,6 +555,8 @@ func (i *SyscallInfo) post(t *kernel.Task, args arch.SyscallArguments, rval uint
 			output[arg] = capData(t, args[arg-1].Pointer(), args[arg].Pointer())
 		case PollFDs:
 			output[arg] = pollFDs(t, args[arg].Pointer(), uint(args[arg+1].Uint()), true)
+		case EpollEvents:
+			output[arg] = epollEvents(t, args[arg].Pointer(), uint64(rval), uint64(maximumBlobSize))
 		case GetSockOptVal:
 			output[arg] = getSockOptVal(t, args[arg-2].Uint64() /* level */, args[arg-1].Uint64() /* optName */, args[arg].Pointer() /* optVal */, args[arg+1].Pointer() /* optLen */, maximumBlobSize, rval)
 		case SetSockOptVal:
