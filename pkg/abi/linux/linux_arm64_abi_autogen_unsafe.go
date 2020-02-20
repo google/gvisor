@@ -122,12 +122,13 @@ func (s *Stat) UnmarshalUnsafe(src []byte) {
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (s *Stat) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
-    if !s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
+func (s *Stat) CopyOut(task marshal.Task, addr usermem.Addr) error {
+    if !s.CTime.Packed() && s.ATime.Packed() && s.MTime.Packed() {
         // Type Stat doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := task.CopyScratchBuffer(s.SizeBytes())
         s.MarshalBytes(buf)
-        return task.CopyOutBytes(addr, buf)
+        _, err := task.CopyOutBytes(addr, buf)
+        return err
     }
 
     // Bypass escape analysis on s. The no-op arithmetic operation on the
@@ -144,24 +145,24 @@ func (s *Stat) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
     hdr.Len = s.SizeBytes()
     hdr.Cap = s.SizeBytes()
 
-    len, err := task.CopyOutBytes(addr, buf)
+    _, err := task.CopyOutBytes(addr, buf)
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until after the CopyOutBytes.
     runtime.KeepAlive(s)
-    return len, err
+    return err
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (s *Stat) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
-    if !s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
+func (s *Stat) CopyIn(task marshal.Task, addr usermem.Addr) error {
+    if !s.MTime.Packed() && s.CTime.Packed() && s.ATime.Packed() {
         // Type Stat doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := task.CopyScratchBuffer(s.SizeBytes())
-        n, err := task.CopyInBytes(addr, buf)
+        _, err := task.CopyInBytes(addr, buf)
         if err != nil {
-            return n, err
+            return err
         }
         s.UnmarshalBytes(buf)
-        return n, nil
+        return nil
     }
 
     // Bypass escape analysis on s. The no-op arithmetic operation on the
@@ -178,11 +179,11 @@ func (s *Stat) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     hdr.Len = s.SizeBytes()
     hdr.Cap = s.SizeBytes()
 
-    len, err := task.CopyInBytes(addr, buf)
+    _, err := task.CopyInBytes(addr, buf)
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until after the CopyInBytes.
     runtime.KeepAlive(s)
-    return len, err
+    return err
 }
 
 // WriteTo implements io.WriterTo.WriteTo.

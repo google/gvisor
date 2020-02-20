@@ -131,8 +131,7 @@ func stat(t *kernel.Task, d *fs.Dirent, dirPath bool, statAddr usermem.Addr) err
 		return err
 	}
 	s := statFromAttrs(t, d.Inode.StableAttr, uattr)
-	_, err = s.CopyOut(t, statAddr)
-	return err
+	return s.CopyOut(t, statAddr)
 }
 
 // fstat implements fstat for the given *fs.File.
@@ -142,8 +141,7 @@ func fstat(t *kernel.Task, f *fs.File, statAddr usermem.Addr) error {
 		return err
 	}
 	s := statFromAttrs(t, f.Dirent.Inode.StableAttr, uattr)
-	_, err = s.CopyOut(t, statAddr)
-	return err
+	return s.CopyOut(t, statAddr)
 }
 
 // Statx implements linux syscall statx(2).

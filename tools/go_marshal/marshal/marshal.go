@@ -91,12 +91,12 @@ type Marshallable interface {
 	// marshalled does not escape. The implementation should avoid creating
 	// extra copies in memory by directly deserializing to the object's
 	// underlying memory.
-	CopyIn(task Task, addr usermem.Addr) (int, error)
+	CopyIn(task Task, addr usermem.Addr) error
 
 	// CopyOut serializes a Marshallable type to a task's memory. This may only
 	// be called from a task goroutine. This is more efficient than calling
 	// MarshalUnsafe on Marshallable.Packed types, as the type being serialized
 	// does not escape. The implementation should avoid creating extra copies in
 	// memory by directly serializing from the object's underlying memory.
-	CopyOut(task Task, addr usermem.Addr) (int, error)
+	CopyOut(task Task, addr usermem.Addr) error
 }

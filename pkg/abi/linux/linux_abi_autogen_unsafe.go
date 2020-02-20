@@ -65,7 +65,7 @@ func (r *RSeqCriticalSection) UnmarshalUnsafe(src []byte) {
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (r *RSeqCriticalSection) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
+func (r *RSeqCriticalSection) CopyOut(task marshal.Task, addr usermem.Addr) error {
     // Bypass escape analysis on r. The no-op arithmetic operation on the
     // pointer makes the compiler think val doesn't depend on r.
     // See src/runtime/stubs.go:noescape() in the golang toolchain.
@@ -80,15 +80,15 @@ func (r *RSeqCriticalSection) CopyOut(task marshal.Task, addr usermem.Addr) (int
     hdr.Len = r.SizeBytes()
     hdr.Cap = r.SizeBytes()
 
-    len, err := task.CopyOutBytes(addr, buf)
+    _, err := task.CopyOutBytes(addr, buf)
     // Since we bypassed the compiler's escape analysis, indicate that r
     // must live until after the CopyOutBytes.
     runtime.KeepAlive(r)
-    return len, err
+    return err
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (r *RSeqCriticalSection) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
+func (r *RSeqCriticalSection) CopyIn(task marshal.Task, addr usermem.Addr) error {
     // Bypass escape analysis on r. The no-op arithmetic operation on the
     // pointer makes the compiler think val doesn't depend on r.
     // See src/runtime/stubs.go:noescape() in the golang toolchain.
@@ -103,11 +103,11 @@ func (r *RSeqCriticalSection) CopyIn(task marshal.Task, addr usermem.Addr) (int,
     hdr.Len = r.SizeBytes()
     hdr.Cap = r.SizeBytes()
 
-    len, err := task.CopyInBytes(addr, buf)
+    _, err := task.CopyInBytes(addr, buf)
     // Since we bypassed the compiler's escape analysis, indicate that r
     // must live until after the CopyInBytes.
     runtime.KeepAlive(r)
-    return len, err
+    return err
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
@@ -170,7 +170,7 @@ func (t *Timespec) UnmarshalUnsafe(src []byte) {
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (t *Timespec) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
+func (t *Timespec) CopyOut(task marshal.Task, addr usermem.Addr) error {
     // Bypass escape analysis on t. The no-op arithmetic operation on the
     // pointer makes the compiler think val doesn't depend on t.
     // See src/runtime/stubs.go:noescape() in the golang toolchain.
@@ -185,15 +185,15 @@ func (t *Timespec) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
     hdr.Len = t.SizeBytes()
     hdr.Cap = t.SizeBytes()
 
-    len, err := task.CopyOutBytes(addr, buf)
+    _, err := task.CopyOutBytes(addr, buf)
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until after the CopyOutBytes.
     runtime.KeepAlive(t)
-    return len, err
+    return err
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (t *Timespec) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
+func (t *Timespec) CopyIn(task marshal.Task, addr usermem.Addr) error {
     // Bypass escape analysis on t. The no-op arithmetic operation on the
     // pointer makes the compiler think val doesn't depend on t.
     // See src/runtime/stubs.go:noescape() in the golang toolchain.
@@ -208,11 +208,11 @@ func (t *Timespec) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     hdr.Len = t.SizeBytes()
     hdr.Cap = t.SizeBytes()
 
-    len, err := task.CopyInBytes(addr, buf)
+    _, err := task.CopyInBytes(addr, buf)
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until after the CopyInBytes.
     runtime.KeepAlive(t)
-    return len, err
+    return err
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
