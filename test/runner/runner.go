@@ -34,15 +34,11 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/runsc/testutil"
-	"gvisor.dev/gvisor/test/syscalls/gtest"
+	"gvisor.dev/gvisor/test/runner/gtest"
 	"gvisor.dev/gvisor/test/uds"
 )
 
-// Location of syscall tests, relative to the repo root.
-const testDir = "test/syscalls/linux"
-
 var (
-	testName   = flag.String("test-name", "", "name of test binary to run")
 	debug      = flag.Bool("debug", false, "enable debug logs")
 	strace     = flag.Bool("strace", false, "enable strace logs")
 	platform   = flag.String("platform", "ptrace", "platform to run on")
@@ -103,7 +99,7 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 		env = append(env, "TEST_UDS_ATTACH_TREE="+socketDir)
 	}
 
-	cmd := exec.Command(testBin, gtest.FilterTestFlag+"="+tc.FullName())
+	cmd := exec.Command(testBin, tc.Args()...)
 	cmd.Env = env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -296,7 +292,7 @@ func setupUDSTree(spec *specs.Spec) (cleanup func(), err error) {
 func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 	// Run a new container with the test executable and filter for the
 	// given test suite and name.
-	spec := testutil.NewSpecWithArgs(testBin, gtest.FilterTestFlag+"="+tc.FullName())
+	spec := testutil.NewSpecWithArgs(append([]string{testBin}, tc.Args()...)...)
 
 	// Mark the root as writeable, as some tests attempt to
 	// write to the rootfs, and expect EACCES, not EROFS.
@@ -404,9 +400,10 @@ func matchString(a, b string) (bool, error) {
 
 func main() {
 	flag.Parse()
-	if *testName == "" {
-		fatalf("test-name flag must be provided")
+	if flag.NArg() != 1 {
+		fatalf("test must be provided")
 	}
+	testBin := flag.Args()[0] // Only argument.
 
 	log.SetLevel(log.Info)
 	if *debug {
@@ -436,15 +433,8 @@ func main() {
 		}
 	}
 
-	// Get path to test binary.
-	fullTestName := filepath.Join(testDir, *testName)
-	testBin, err := testutil.FindFile(fullTestName)
-	if err != nil {
-		fatalf("FindFile(%q) failed: %v", fullTestName, err)
-	}
-
 	// Get all test cases in each binary.
-	testCases, err := gtest.ParseTestCases(testBin)
+	testCases, err := gtest.ParseTestCases(testBin, true)
 	if err != nil {
 		fatalf("ParseTestCases(%q) failed: %v", testBin, err)
 	}
@@ -455,14 +445,19 @@ func main() {
 		fatalf("TestsForShard() failed: %v", err)
 	}
 
+	// Resolve the absolute path for the binary.
+	testBin, err = filepath.Abs(testBin)
+	if err != nil {
+		fatalf("Abs() failed: %v", err)
+	}
+
 	// Run the tests.
 	var tests []testing.InternalTest
 	for _, tci := range indices {
 		// Capture tc.
 		tc := testCases[tci]
-		testName := fmt.Sprintf("%s_%s", tc.Suite, tc.Name)
 		tests = append(tests, testing.InternalTest{
-			Name: testName,
+			Name: fmt.Sprintf("%s_%s", tc.Suite, tc.Name),
 			F: func(t *testing.T) {
 				if *parallel {
 					t.Parallel()

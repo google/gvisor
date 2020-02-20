@@ -21,6 +21,7 @@ go_image = _go_image
 go_embed_data = _go_embed_data
 go_suffixes = _go_suffixes
 gtest = "@com_google_googletest//:gtest"
+gbenchmark = "@com_google_benchmark//:benchmark"
 loopback = "//tools/bazeldefs:loopback"
 proto_library = native.proto_library
 pkg_deb = _pkg_deb

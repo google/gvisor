@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,9 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <sched.h>
+
+#include "gtest/gtest.h"
+#include "benchmark/benchmark.h"
 #include "test/util/test_util.h"
 
-int main(int argc, char** argv) {
-  gvisor::testing::TestInit(&argc, &argv);
-  return gvisor::testing::RunAllTests();
+namespace gvisor {
+namespace testing {
+
+namespace {
+
+void BM_Sched_yield(benchmark::State& state) {
+  for (auto ignored : state) {
+    TEST_CHECK(sched_yield() == 0);
+  }
 }
+
+BENCHMARK(BM_Sched_yield)->ThreadRange(1, 2000)->UseRealTime();
+
+}  // namespace
+
+}  // namespace testing
+}  // namespace gvisor

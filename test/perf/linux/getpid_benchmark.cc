@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,9 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "test/util/test_util.h"
+#include <sys/syscall.h>
+#include <unistd.h>
 
-int main(int argc, char** argv) {
-  gvisor::testing::TestInit(&argc, &argv);
-  return gvisor::testing::RunAllTests();
+#include "gtest/gtest.h"
+#include "benchmark/benchmark.h"
+
+namespace gvisor {
+namespace testing {
+
+namespace {
+
+void BM_Getpid(benchmark::State& state) {
+  for (auto _ : state) {
+    syscall(SYS_getpid);
+  }
 }
+
+BENCHMARK(BM_Getpid);
+
+}  // namespace
+
+}  // namespace testing
+}  // namespace gvisor
