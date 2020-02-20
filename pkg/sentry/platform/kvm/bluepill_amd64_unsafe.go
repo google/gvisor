@@ -31,6 +31,12 @@ import (
 //
 //go:nosplit
 func dieArchSetup(c *vCPU, context *arch.SignalContext64, guestRegs *userRegs) {
+	// Reload all registers to have an accurate stack trace when we return
+	// to host mode. This means that the stack should be unwound correctly.
+	if errno := c.getUserRegisters(&c.dieState.guestRegs); errno != 0 {
+		throw(c.dieState.message)
+	}
+
 	// If the vCPU is in user mode, we set the stack to the stored stack
 	// value in the vCPU itself. We don't want to unwind the user stack.
 	if guestRegs.RFLAGS&ring0.UserFlagsSet == ring0.UserFlagsSet {
