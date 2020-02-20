@@ -29,30 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// setMemoryRegion initializes a region.
-//
-// This may be called from bluepillHandler, and therefore returns an errno
-// directly (instead of wrapping in an error) to avoid allocations.
-//
-//go:nosplit
-func (m *machine) setMemoryRegion(slot int, physical, length, virtual uintptr) syscall.Errno {
-	userRegion := userMemoryRegion{
-		slot:          uint32(slot),
-		flags:         0,
-		guestPhysAddr: uint64(physical),
-		memorySize:    uint64(length),
-		userspaceAddr: uint64(virtual),
-	}
-
-	// Set the region.
-	_, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
-		uintptr(m.fd),
-		_KVM_SET_USER_MEMORY_REGION,
-		uintptr(unsafe.Pointer(&userRegion)))
-	return errno
-}
-
 type kvmVcpuInit struct {
 	target   uint32
 	features [7]uint32
