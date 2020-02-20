@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/urpc"
+	"gvisor.dev/gvisor/runsc/boot/pprof"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -142,7 +143,7 @@ func newController(fd int, l *Loader) (*controller, error) {
 	}
 	srv.Register(manager)
 
-	if eps, ok := l.k.NetworkStack().(*netstack.Stack); ok {
+	if eps, ok := l.k.RootNetworkNamespace().Stack().(*netstack.Stack); ok {
 		net := &Network{
 			Stack: eps.Stack,
 		}
@@ -341,7 +342,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return fmt.Errorf("creating memory file: %v", err)
 	}
 	k.SetMemoryFile(mf)
-	networkStack := cm.l.k.NetworkStack()
+	networkStack := cm.l.k.RootNetworkNamespace().Stack()
 	cm.l.k = k
 
 	// Set up the restore environment.
@@ -365,9 +366,9 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	}
 
 	if cm.l.conf.ProfileEnable {
-		// initializePProf opens /proc/self/maps, so has to be
-		// called before installing seccomp filters.
-		initializePProf()
+		// pprof.Initialize opens /proc/self/maps, so has to be called before
+		// installing seccomp filters.
+		pprof.Initialize()
 	}
 
 	// Seccomp filters have to be applied before parsing the state file.

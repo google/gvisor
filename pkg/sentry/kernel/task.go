@@ -486,13 +486,10 @@ type Task struct {
 	numaPolicy   int32
 	numaNodeMask uint64
 
-	// If netns is true, the task is in a non-root network namespace. Network
-	// namespaces aren't currently implemented in full; being in a network
-	// namespace simply prevents the task from observing any network devices
-	// (including loopback) or using abstract socket addresses (see unix(7)).
+	// netns is the task's network namespace. netns is never nil.
 	//
-	// netns is protected by mu. netns is owned by the task goroutine.
-	netns bool
+	// netns is protected by mu.
+	netns *inet.Namespace
 
 	// If rseqPreempted is true, before the next call to p.Switch(),
 	// interrupt rseq critical regions as defined by rseqAddr and

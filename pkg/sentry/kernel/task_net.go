@@ -22,14 +22,23 @@ import (
 func (t *Task) IsNetworkNamespaced() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.netns
+	return !t.netns.IsRoot()
 }
 
 // NetworkContext returns the network stack used by the task. NetworkContext
 // may return nil if no network stack is available.
+//
+// TODO(gvisor.dev/issue/1833): Migrate callers of this method to
+// NetworkNamespace().
 func (t *Task) NetworkContext() inet.Stack {
-	if t.IsNetworkNamespaced() {
-		return nil
-	}
-	return t.k.networkStack
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.netns.Stack()
+}
+
+// NetworkNamespace returns the network namespace observed by the task.
+func (t *Task) NetworkNamespace() *inet.Namespace {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.netns
 }
