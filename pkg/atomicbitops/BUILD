@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "atomicbitops.go",
         "atomicbitops_amd64.s",
+        "atomicbitops_arm64.s",
         "atomicbitops_noasm.go",
     ],
     visibility = ["//:sandbox"],
