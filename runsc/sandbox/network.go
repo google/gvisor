@@ -21,7 +21,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
 	"syscall"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -75,30 +74,8 @@ func setupNetwork(conn *urpc.Client, pid int, spec *specs.Spec, conf *boot.Confi
 }
 
 func createDefaultLoopbackInterface(conn *urpc.Client) error {
-	link := boot.LoopbackLink{
-		Name: "lo",
-		Addresses: []net.IP{
-			net.IP("\x7f\x00\x00\x01"),
-			net.IPv6loopback,
-		},
-		Routes: []boot.Route{
-			{
-				Destination: net.IPNet{
-
-					IP:   net.IPv4(0x7f, 0, 0, 0),
-					Mask: net.IPv4Mask(0xff, 0, 0, 0),
-				},
-			},
-			{
-				Destination: net.IPNet{
-					IP:   net.IPv6loopback,
-					Mask: net.IPMask(strings.Repeat("\xff", net.IPv6len)),
-				},
-			},
-		},
-	}
 	if err := conn.Call(boot.NetworkCreateLinksAndRoutes, &boot.CreateLinksAndRoutesArgs{
-		LoopbackLinks: []boot.LoopbackLink{link},
+		LoopbackLinks: []boot.LoopbackLink{boot.DefaultLoopbackLink},
 	}, nil); err != nil {
 		return fmt.Errorf("creating loopback link and routes: %v", err)
 	}

@@ -21,6 +21,20 @@ func (x *TCPBufferSize) load(m state.Map) {
 	m.Load("Max", &x.Max)
 }
 
+func (x *Namespace) beforeSave() {}
+func (x *Namespace) save(m state.Map) {
+	x.beforeSave()
+	m.Save("creator", &x.creator)
+	m.Save("isRoot", &x.isRoot)
+}
+
+func (x *Namespace) load(m state.Map) {
+	m.Load("creator", &x.creator)
+	m.Load("isRoot", &x.isRoot)
+	m.AfterLoad(x.afterLoad)
+}
+
 func init() {
 	state.Register("pkg/sentry/inet.TCPBufferSize", (*TCPBufferSize)(nil), state.Fns{Save: (*TCPBufferSize).save, Load: (*TCPBufferSize).load})
+	state.Register("pkg/sentry/inet.Namespace", (*Namespace)(nil), state.Fns{Save: (*Namespace).save, Load: (*Namespace).load})
 }
