@@ -258,6 +258,8 @@ syscall_test(
 
 syscall_test(test = "//test/syscalls/linux:munmap_test")
 
+syscall_test(test = "//test/syscalls/linux:network_namespace_test")
+
 syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:open_create_test",

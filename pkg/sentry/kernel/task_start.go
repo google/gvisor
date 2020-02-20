@@ -17,6 +17,7 @@ package kernel
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
@@ -65,9 +66,8 @@ type TaskConfig struct {
 	// Niceness is the niceness of the new task.
 	Niceness int
 
-	// If NetworkNamespaced is true, the new task should observe a non-root
-	// network namespace.
-	NetworkNamespaced bool
+	// NetworkNamespace is the network namespace to be used for the new task.
+	NetworkNamespace *inet.Namespace
 
 	// AllowedCPUMask contains the cpus that this task can run on.
 	AllowedCPUMask sched.CPUSet
@@ -133,7 +133,7 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 		allowedCPUMask:     cfg.AllowedCPUMask.Copy(),
 		ioUsage:            &usage.IO{},
 		niceness:           cfg.Niceness,
-		netns:              cfg.NetworkNamespaced,
+		netns:              cfg.NetworkNamespace,
 		utsns:              cfg.UTSNamespace,
 		ipcns:              cfg.IPCNamespace,
 		abstractSockets:    cfg.AbstractSocketNamespace,

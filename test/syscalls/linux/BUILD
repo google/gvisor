@@ -3640,6 +3640,23 @@ cc_binary(
 )
 
 cc_binary(
+    name = "network_namespace_test",
+    testonly = 1,
+    srcs = ["network_namespace.cc"],
+    linkstatic = 1,
+    deps = [
+        ":socket_test_util",
+        gtest,
+        "//test/util:capability_util",
+        "//test/util:memory_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "//test/util:thread_util",
+        "@com_google_absl//absl/synchronization",
+    ],
+)
+
+cc_binary(
     name = "semaphore_test",
     testonly = 1,
     srcs = ["semaphore.cc"],
