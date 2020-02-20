@@ -18,9 +18,10 @@
 // Lock order:
 //
 // filesystem.mu
-//   regularFileFD.offMu
-//     regularFile.mu
 //   inode.mu
+//     regularFileFD.offMu
+//       regularFile.mapsMu
+//         regularFile.dataMu
 package tmpfs
 
 import (
@@ -226,12 +227,15 @@ func (i *inode) tryIncRef() bool {
 
 func (i *inode) decRef() {
 	if refs := atomic.AddInt64(&i.refs, -1); refs == 0 {
-		// This is unnecessary; it's mostly to simulate what tmpfs would do.
 		if regFile, ok := i.impl.(*regularFile); ok {
-			regFile.mu.Lock()
+			// Hold inode.mu and regFile.dataMu while mutating
+			// size.
+			i.mu.Lock()
+			regFile.dataMu.Lock()
 			regFile.data.DropAll(regFile.memFile)
 			atomic.StoreUint64(&regFile.size, 0)
-			regFile.mu.Unlock()
+			regFile.dataMu.Unlock()
+			i.mu.Unlock()
 		}
 	} else if refs < 0 {
 		panic("tmpfs.inode.decRef() called without holding a reference")
@@ -320,7 +324,7 @@ func (i *inode) setStat(stat linux.Statx) error {
 	if mask&linux.STATX_SIZE != 0 {
 		switch impl := i.impl.(type) {
 		case *regularFile:
-			updated, err := impl.truncate(stat.Size)
+			updated, err := impl.truncateLocked(stat.Size)
 			if err != nil {
 				return err
 			}

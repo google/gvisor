@@ -16,7 +16,6 @@ package tmpfs
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -347,10 +346,9 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 			return nil, err
 		}
 		if opts.Flags&linux.O_TRUNC != 0 {
-			impl.mu.Lock()
-			impl.data.Truncate(0, impl.memFile)
-			atomic.StoreUint64(&impl.size, 0)
-			impl.mu.Unlock()
+			if _, err := impl.truncate(0); err != nil {
+				return nil, err
+			}
 		}
 		return &fd.vfsfd, nil
 	case *directory:
