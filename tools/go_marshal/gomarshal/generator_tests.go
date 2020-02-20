@@ -92,7 +92,7 @@ func (g *testGenerator) emitTestNonZeroSize() {
 		g.emit("x := &%s{}\n", g.typeName())
 		g.emit("if x.SizeBytes() == 0 {\n")
 		g.inIndent(func() {
-			g.emit("t.Fatal(\"Marshallable.Size() should not return zero\")\n")
+			g.emit("t.Fatal(\"Marshallable.SizeBytes() should not return zero\")\n")
 		})
 		g.emit("}\n")
 	})
