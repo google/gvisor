@@ -116,8 +116,8 @@ func main() {
 	subcommands.Register(new(cmd.Resume), "")
 	subcommands.Register(new(cmd.Run), "")
 	subcommands.Register(new(cmd.Spec), "")
-	subcommands.Register(new(cmd.Start), "")
 	subcommands.Register(new(cmd.State), "")
+	subcommands.Register(new(cmd.Start), "")
 	subcommands.Register(new(cmd.Wait), "")
 
 	// Register internal commands with the internal group name. This causes
@@ -127,6 +127,7 @@ func main() {
 	subcommands.Register(new(cmd.Boot), internalGroup)
 	subcommands.Register(new(cmd.Debug), internalGroup)
 	subcommands.Register(new(cmd.Gofer), internalGroup)
+	subcommands.Register(new(cmd.Statefile), internalGroup)
 
 	// All subcommands must be registered before flag parsing.
 	flag.Parse()
