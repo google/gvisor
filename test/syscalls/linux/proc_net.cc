@@ -33,6 +33,31 @@ namespace gvisor {
 namespace testing {
 namespace {
 
+constexpr const char kProcNet[] = "/proc/net";
+
+TEST(ProcNetSymlinkTarget, FileMode) {
+  struct stat s;
+  ASSERT_THAT(stat(kProcNet, &s), SyscallSucceeds());
+  EXPECT_EQ(s.st_mode & S_IFMT, S_IFDIR);
+  EXPECT_EQ(s.st_mode & 0777, 0555);
+}
+
+TEST(ProcNetSymlink, FileMode) {
+  struct stat s;
+  ASSERT_THAT(lstat(kProcNet, &s), SyscallSucceeds());
+  EXPECT_EQ(s.st_mode & S_IFMT, S_IFLNK);
+  EXPECT_EQ(s.st_mode & 0777, 0777);
+}
+
+TEST(ProcNetSymlink, Contents) {
+  char buf[40] = {};
+  int n = readlink(kProcNet, buf, sizeof(buf));
+  ASSERT_THAT(n, SyscallSucceeds());
+
+  buf[n] = 0;
+  EXPECT_EQ(std::string(buf), "self/net");
+}
+
 TEST(ProcNetIfInet6, Format) {
   auto ifinet6 = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/if_inet6"));
   EXPECT_THAT(ifinet6,

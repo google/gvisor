@@ -84,6 +84,7 @@ func (p *proc) newTaskDir(t *kernel.Task, msrc *fs.MountSource, isThreadGroup bo
 		"maps":      newMaps(t, msrc),
 		"mountinfo": seqfile.NewSeqFileInode(t, &mountInfoFile{t: t}, msrc),
 		"mounts":    seqfile.NewSeqFileInode(t, &mountsFile{t: t}, msrc),
+		"net":       newNetDir(t, msrc),
 		"ns":        newNamespaceDir(t, msrc),
 		"smaps":     newSmaps(t, msrc),
 		"stat":      newTaskStat(t, msrc, isThreadGroup, p.pidns),
