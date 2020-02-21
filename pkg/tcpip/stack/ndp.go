@@ -1235,7 +1235,7 @@ func (ndp *ndpState) startSolicitingRouters() {
 		}
 
 		payloadSize := header.ICMPv6HeaderSize + header.NDPRSMinimumSize
-		hdr := buffer.NewPrependable(header.IPv6MinimumSize + payloadSize)
+		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + payloadSize)
 		pkt := header.ICMPv6(hdr.Prepend(payloadSize))
 		pkt.SetType(header.ICMPv6RouterSolicit)
 		pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
