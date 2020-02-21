@@ -267,6 +267,17 @@ func (n *ndpDispatcher) OnDHCPv6Configuration(nicID tcpip.NICID, configuration s
 	}
 }
 
+// channelLinkWithHeaderLength is a channel.Endpoint with a configurable
+// header length.
+type channelLinkWithHeaderLength struct {
+	*channel.Endpoint
+	headerLength uint16
+}
+
+func (l *channelLinkWithHeaderLength) MaxHeaderLength() uint16 {
+	return l.headerLength
+}
+
 // Check e to make sure that the event is for addr on nic with ID 1, and the
 // resolved flag set to resolved with the specified err.
 func checkDADEvent(e ndpDADEvent, nicID tcpip.NICID, addr tcpip.Address, resolved bool, err *tcpip.Error) string {
@@ -323,21 +334,46 @@ func TestDADDisabled(t *testing.T) {
 // DAD for various values of DupAddrDetectTransmits and RetransmitTimer.
 // Included in the subtests is a test to make sure that an invalid
 // RetransmitTimer (<1ms) values get fixed to the default RetransmitTimer of 1s.
+// This tests also validates the NDP NS packet that is transmitted.
 func TestDADResolve(t *testing.T) {
 	const nicID = 1
 
 	tests := []struct {
 		name                    string
+		linkHeaderLen           uint16
 		dupAddrDetectTransmits  uint8
 		retransTimer            time.Duration
 		expectedRetransmitTimer time.Duration
 	}{
-		{"1:1s:1s", 1, time.Second, time.Second},
-		{"2:1s:1s", 2, time.Second, time.Second},
-		{"1:2s:2s", 1, 2 * time.Second, 2 * time.Second},
+		{
+			name:                    "1:1s:1s",
+			dupAddrDetectTransmits:  1,
+			retransTimer:            time.Second,
+			expectedRetransmitTimer: time.Second,
+		},
+		{
+			name:                    "2:1s:1s",
+			linkHeaderLen:           1,
+			dupAddrDetectTransmits:  2,
+			retransTimer:            time.Second,
+			expectedRetransmitTimer: time.Second,
+		},
+		{
+			name:                    "1:2s:2s",
+			linkHeaderLen:           2,
+			dupAddrDetectTransmits:  1,
+			retransTimer:            2 * time.Second,
+			expectedRetransmitTimer: 2 * time.Second,
+		},
 		// 0s is an invalid RetransmitTimer timer and will be fixed to
 		// the default RetransmitTimer value of 1s.
-		{"1:0s:1s", 1, 0, time.Second},
+		{
+			name:                    "1:0s:1s",
+			linkHeaderLen:           3,
+			dupAddrDetectTransmits:  1,
+			retransTimer:            0,
+			expectedRetransmitTimer: time.Second,
+		},
 	}
 
 	for _, test := range tests {
@@ -356,10 +392,13 @@ func TestDADResolve(t *testing.T) {
 			opts.NDPConfigs.RetransmitTimer = test.retransTimer
 			opts.NDPConfigs.DupAddrDetectTransmits = test.dupAddrDetectTransmits
 
-			e := channel.New(int(test.dupAddrDetectTransmits), 1280, linkAddr1)
-			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
+			e := channelLinkWithHeaderLength{
+				Endpoint:     channel.New(int(test.dupAddrDetectTransmits), 1280, linkAddr1),
+				headerLength: test.linkHeaderLen,
+			}
+			e.Endpoint.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			s := stack.New(opts)
-			if err := s.CreateNIC(nicID, e); err != nil {
+			if err := s.CreateNIC(nicID, &e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
 
@@ -445,6 +484,10 @@ func TestDADResolve(t *testing.T) {
 						checker.NDPNSTargetAddress(addr1),
 						checker.NDPNSOptions(nil),
 					))
+
+				if l, want := p.Pkt.Header.AvailableLength(), int(test.linkHeaderLen); l != want {
+					t.Errorf("got p.Pkt.Header.AvailableLength() = %d; want = %d", l, want)
+				}
 			}
 		})
 	}
@@ -3336,8 +3379,11 @@ func TestDHCPv6ConfigurationFromNDPDA(t *testing.T) {
 func TestRouterSolicitation(t *testing.T) {
 	t.Parallel()
 
+	const nicID = 1
+
 	tests := []struct {
 		name                        string
+		linkHeaderLen               uint16
 		maxRtrSolicit               uint8
 		rtrSolicitInt               time.Duration
 		effectiveRtrSolicitInt      time.Duration
@@ -3354,6 +3400,7 @@ func TestRouterSolicitation(t *testing.T) {
 		},
 		{
 			name:                        "Two RS with delay",
+			linkHeaderLen:               1,
 			maxRtrSolicit:               2,
 			rtrSolicitInt:               time.Second,
 			effectiveRtrSolicitInt:      time.Second,
@@ -3362,6 +3409,7 @@ func TestRouterSolicitation(t *testing.T) {
 		},
 		{
 			name:                        "Single RS without delay",
+			linkHeaderLen:               2,
 			maxRtrSolicit:               1,
 			rtrSolicitInt:               time.Second,
 			effectiveRtrSolicitInt:      time.Second,
@@ -3370,6 +3418,7 @@ func TestRouterSolicitation(t *testing.T) {
 		},
 		{
 			name:                        "Two RS without delay and invalid zero interval",
+			linkHeaderLen:               3,
 			maxRtrSolicit:               2,
 			rtrSolicitInt:               0,
 			effectiveRtrSolicitInt:      4 * time.Second,
@@ -3407,8 +3456,11 @@ func TestRouterSolicitation(t *testing.T) {
 
 			t.Run(test.name, func(t *testing.T) {
 				t.Parallel()
-				e := channel.New(int(test.maxRtrSolicit), 1280, linkAddr1)
-				e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
+				e := channelLinkWithHeaderLength{
+					Endpoint:     channel.New(int(test.maxRtrSolicit), 1280, linkAddr1),
+					headerLength: test.linkHeaderLen,
+				}
+				e.Endpoint.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 				waitForPkt := func(timeout time.Duration) {
 					t.Helper()
 					ctx, _ := context.WithTimeout(context.Background(), timeout)
@@ -3434,6 +3486,10 @@ func TestRouterSolicitation(t *testing.T) {
 						checker.TTL(header.NDPHopLimit),
 						checker.NDPRS(),
 					)
+
+					if l, want := p.Pkt.Header.AvailableLength(), int(test.linkHeaderLen); l != want {
+						t.Errorf("got p.Pkt.Header.AvailableLength() = %d; want = %d", l, want)
+					}
 				}
 				waitForNothing := func(timeout time.Duration) {
 					t.Helper()
@@ -3450,8 +3506,8 @@ func TestRouterSolicitation(t *testing.T) {
 						MaxRtrSolicitationDelay: test.maxRtrSolicitDelay,
 					},
 				})
-				if err := s.CreateNIC(1, e); err != nil {
-					t.Fatalf("CreateNIC(1) = %s", err)
+				if err := s.CreateNIC(nicID, &e); err != nil {
+					t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 				}
 
 				// Make sure each RS got sent at the right
