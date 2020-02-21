@@ -43,6 +43,8 @@ from benchmarks.harness import machine_mocks
 from benchmarks.harness import ssh_connection
 from benchmarks.harness import tunnel_dispatcher
 
+log = logging.getLogger(__name__)
+
 
 class Machine(object):
   """The machine object is the primary object for benchmarks.
@@ -236,9 +238,10 @@ class RemoteMachine(Machine):
           archive=archive, dir=harness.REMOTE_INSTALLERS_PATH))
       self._has_installers = True
 
-      # Execute the remote installer.
-      self.run("sudo {dir}/{file}".format(
-          dir=harness.REMOTE_INSTALLERS_PATH, file=installer))
+    # Execute the remote installer.
+    self.run("sudo {dir}/{file}".format(
+        dir=harness.REMOTE_INSTALLERS_PATH, file=installer))
+
     if results:
       results[index] = True
 
