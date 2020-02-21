@@ -916,6 +916,18 @@ func (s *Stack) CreateNIC(id tcpip.NICID, ep LinkEndpoint) *tcpip.Error {
 	return s.CreateNICWithOptions(id, ep, NICOptions{})
 }
 
+// GetNICByName gets the NIC specified by name.
+func (s *Stack) GetNICByName(name string) (*NIC, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, nic := range s.nics {
+		if nic.Name() == name {
+			return nic, true
+		}
+	}
+	return nil, false
+}
+
 // EnableNIC enables the given NIC so that the link-layer endpoint can start
 // delivering packets to it.
 func (s *Stack) EnableNIC(id tcpip.NICID) *tcpip.Error {
@@ -954,6 +966,33 @@ func (s *Stack) CheckNIC(id tcpip.NICID) bool {
 	}
 
 	return nic.enabled()
+}
+
+// RemoveNIC removes NIC and all related routes from the network stack.
+func (s *Stack) RemoveNIC(id tcpip.NICID) *tcpip.Error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	nic, ok := s.nics[id]
+	if !ok {
+		return tcpip.ErrUnknownNICID
+	}
+	delete(s.nics, id)
+
+	// Remove routes in-place. n tracks the number of routes written.
+	n := 0
+	for i, r := range s.routeTable {
+		if r.NIC != id {
+			// Keep this route.
+			if i > n {
+				s.routeTable[n] = r
+			}
+			n++
+		}
+	}
+	s.routeTable = s.routeTable[:n]
+
+	return nic.remove()
 }
 
 // NICAddressRanges returns a map of NICIDs to their associated subnets.
