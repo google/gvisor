@@ -145,6 +145,7 @@ type MemoryFile struct {
 	// reclaimable is true if usage may contain reclaimable pages. reclaimable
 	// is protected by mu.
 	reclaimable bool
+	reclaimableSize uint64
 
 	// minReclaimablePage is the minimum page that may be reclaimable.
 	// i.e., all reclaimable pages are >= minReclaimablePage.
@@ -609,6 +610,7 @@ func (f *MemoryFile) DecRef(fr platform.FileRange) {
 				usage.MemoryAccounting.Move(seg.Range().Length(), usage.System, val.kind)
 			}
 			val.kind = usage.System
+			f.reclaimableSize += seg.Range().Length()
 		}
 	}
 	f.usage.MergeAdjacent(fr)
@@ -1095,6 +1097,16 @@ func (f *MemoryFile) findReclaimable() (platform.FileRange, bool) {
 		for seg := f.usage.LowerBoundSegment(f.minReclaimablePage); seg.Ok(); seg = seg.NextSegment() {
 			if seg.ValuePtr().refs == 0 {
 				f.minReclaimablePage = seg.End()
+				if f.reclaimableSize > seg.Range().Length() {
+					f.reclaimableSize -= seg.Range().Length()
+				} else {
+					f.reclaimableSize = 0
+				}
+				// Stop current reclaim, wait for next reclaim.
+				if f.reclaimableSize == 0 {
+					f.reclaimable = false
+					f.minReclaimablePage = maxPage
+				}
 				return seg.Range(), true
 			}
 		}
