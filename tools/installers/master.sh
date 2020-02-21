@@ -15,6 +15,21 @@
 # limitations under the License.
 
 # Install runsc from the master branch.
+set -e
+
 curl -fsSL https://gvisor.dev/archive.key | sudo apt-key add -
 add-apt-repository "deb https://storage.googleapis.com/gvisor/releases release main"
-apt-get update && apt-get install -y runsc
+while true; do
+  if apt-get update; then
+    apt-get install -y runsc
+    break
+  fi
+  result=$?
+  # Check if apt update failed to aquire the file lock.
+  if [[ $result -ne 100 ]]; then
+    exit $result
+  fi
+done
+runsc install
+service docker restart
+

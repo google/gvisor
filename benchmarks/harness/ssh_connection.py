@@ -13,7 +13,7 @@
 # limitations under the License.
 """SSHConnection handles the details of SSH connections."""
 
-
+import logging
 import os
 import warnings
 
@@ -23,6 +23,8 @@ from benchmarks import harness
 
 # Get rid of paramiko Cryptography Warnings.
 warnings.filterwarnings(action="ignore", module=".*paramiko.*")
+
+log = logging.getLogger(__name__)
 
 
 def send_one_file(client: paramiko.SSHClient, path: str,
@@ -94,10 +96,13 @@ class SSHConnection:
       The contents of stdout and stderr.
     """
     with self._client() as client:
+      log.info("running command: %s", cmd)
       _, stdout, stderr = client.exec_command(command=cmd)
-      stdout.channel.recv_exit_status()
+      log.info("returned status: %d", stdout.channel.recv_exit_status())
       stdout = stdout.read().decode("utf-8")
       stderr = stderr.read().decode("utf-8")
+      log.info("stdout: %s", stdout)
+      log.info("stderr: %s", stderr)
     return stdout, stderr
 
   def send_workload(self, name: str) -> str:
