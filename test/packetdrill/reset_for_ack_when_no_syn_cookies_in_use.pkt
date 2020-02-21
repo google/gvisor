@@ -1,0 +1,9 @@
+// Test that a listening socket generates a RST when it receives an
+// ACK and syn cookies are not in use.
+
+0  socket(..., SOCK_STREAM, IPPROTO_TCP) = 3
++0 bind(3, ..., ...) = 0
+
++0 listen(3, 1) = 0
++0.1 < . 1:1(0) ack 1 win 32792
++0 > R 1:1(0) ack 0 win 0
