@@ -37,15 +37,15 @@ func (r *RSeqCriticalSection) MarshalBytes(dst []byte) {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (r *RSeqCriticalSection) UnmarshalBytes(src []byte) {
-    r.Version = usermem.ByteOrder.Uint32(src[:4])
+    r.Version = uint32(usermem.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    r.Flags = usermem.ByteOrder.Uint32(src[:4])
+    r.Flags = uint32(usermem.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    r.Start = usermem.ByteOrder.Uint64(src[:8])
+    r.Start = uint64(usermem.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    r.PostCommitOffset = usermem.ByteOrder.Uint64(src[:8])
+    r.PostCommitOffset = uint64(usermem.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    r.Abort = usermem.ByteOrder.Uint64(src[:8])
+    r.Abort = uint64(usermem.ByteOrder.Uint64(src[:8]))
     src = src[8:]
 }
 

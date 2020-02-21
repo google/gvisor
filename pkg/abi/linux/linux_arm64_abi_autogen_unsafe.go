@@ -64,19 +64,19 @@ func (s *Stat) MarshalBytes(dst []byte) {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (s *Stat) UnmarshalBytes(src []byte) {
-    s.Dev = usermem.ByteOrder.Uint64(src[:8])
+    s.Dev = uint64(usermem.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    s.Ino = usermem.ByteOrder.Uint64(src[:8])
+    s.Ino = uint64(usermem.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    s.Mode = usermem.ByteOrder.Uint32(src[:4])
+    s.Mode = uint32(usermem.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    s.Nlink = usermem.ByteOrder.Uint32(src[:4])
+    s.Nlink = uint32(usermem.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    s.UID = usermem.ByteOrder.Uint32(src[:4])
+    s.UID = uint32(usermem.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    s.GID = usermem.ByteOrder.Uint32(src[:4])
+    s.GID = uint32(usermem.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    s.Rdev = usermem.ByteOrder.Uint64(src[:8])
+    s.Rdev = uint64(usermem.ByteOrder.Uint64(src[:8]))
     src = src[8:]
     // Padding: var _ uint64 ~= src[:sizeof(uint64)]
     src = src[8:]
@@ -105,7 +105,7 @@ func (s *Stat) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *Stat) MarshalUnsafe(dst []byte) {
-    if s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
+    if s.MTime.Packed() && s.CTime.Packed() && s.ATime.Packed() {
         safecopy.CopyIn(dst, unsafe.Pointer(s))
     } else {
         s.MarshalBytes(dst)
@@ -123,7 +123,7 @@ func (s *Stat) UnmarshalUnsafe(src []byte) {
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 func (s *Stat) CopyOut(task marshal.Task, addr usermem.Addr) error {
-    if !s.CTime.Packed() && s.ATime.Packed() && s.MTime.Packed() {
+    if !s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
         // Type Stat doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := task.CopyScratchBuffer(s.SizeBytes())
         s.MarshalBytes(buf)
