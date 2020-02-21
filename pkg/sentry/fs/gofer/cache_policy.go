@@ -125,6 +125,12 @@ func (cp cachePolicy) revalidate(ctx context.Context, name string, parent, child
 		return true
 	}
 
+	// If we are not caching unstable attrs, then there is nothing to
+	// update on this inode.
+	if !cp.cacheUAttrs(child) {
+		return false
+	}
+
 	childIops, ok := child.InodeOperations.(*inodeOperations)
 	if !ok {
 		if _, ok := child.InodeOperations.(*fifo); ok {
@@ -153,12 +159,6 @@ func (cp cachePolicy) revalidate(ctx context.Context, name string, parent, child
 	// We must reload.
 	if qids[0].Path != childIops.fileState.key.Inode {
 		return true
-	}
-
-	// If we are not caching unstable attrs, then there is nothing to
-	// update on this inode.
-	if !cp.cacheUAttrs(child) {
-		return false
 	}
 
 	// Update the inode's cached unstable attrs.
