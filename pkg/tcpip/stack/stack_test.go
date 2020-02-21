@@ -239,6 +239,23 @@ func fakeNetFactory() stack.NetworkProtocol {
 	return &fakeNetworkProtocol{}
 }
 
+// linkEPWithMockedAttach is a stack.LinkEndpoint that tests can use to verify
+// that LinkEndpoint.Attach was called.
+type linkEPWithMockedAttach struct {
+	stack.LinkEndpoint
+	attached bool
+}
+
+// Attach implements stack.LinkEndpoint.Attach.
+func (l *linkEPWithMockedAttach) Attach(d stack.NetworkDispatcher) {
+	l.LinkEndpoint.Attach(d)
+	l.attached = true
+}
+
+func (l *linkEPWithMockedAttach) isAttached() bool {
+	return l.attached
+}
+
 func TestNetworkReceive(t *testing.T) {
 	// Create a stack with the fake network protocol, one nic, and two
 	// addresses attached to it: 1 & 2.
@@ -507,6 +524,45 @@ func testNoRoute(t *testing.T, s *stack.Stack, nic tcpip.NICID, srcAddr, dstAddr
 	_, err := s.FindRoute(nic, srcAddr, dstAddr, fakeNetNumber, false /* multicastLoop */)
 	if err != tcpip.ErrNoRoute {
 		t.Fatalf("FindRoute returned unexpected error, got = %v, want = %s", err, tcpip.ErrNoRoute)
+	}
+}
+
+// TestAttachToLinkEndpointImmediately tests that a LinkEndpoint is attached to
+// a NetworkDispatcher when the NIC is created.
+func TestAttachToLinkEndpointImmediately(t *testing.T) {
+	const nicID = 1
+
+	tests := []struct {
+		name    string
+		nicOpts stack.NICOptions
+	}{
+		{
+			name:    "Create enabled NIC",
+			nicOpts: stack.NICOptions{Disabled: false},
+		},
+		{
+			name:    "Create disabled NIC",
+			nicOpts: stack.NICOptions{Disabled: true},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
+			})
+
+			e := linkEPWithMockedAttach{
+				LinkEndpoint: loopback.New(),
+			}
+
+			if err := s.CreateNICWithOptions(nicID, &e, test.nicOpts); err != nil {
+				t.Fatalf("CreateNICWithOptions(%d, _, %+v) = %s", nicID, test.nicOpts, err)
+			}
+			if !e.isAttached() {
+				t.Fatalf("link endpoint not attached to a network disatcher")
+			}
+		})
 	}
 }
 
