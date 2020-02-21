@@ -35,6 +35,28 @@ func (x *fullFileOperations) afterLoad() {}
 func (x *fullFileOperations) load(m state.Map) {
 }
 
+func (x *netTunInodeOperations) beforeSave() {}
+func (x *netTunInodeOperations) save(m state.Map) {
+	x.beforeSave()
+	m.Save("InodeSimpleAttributes", &x.InodeSimpleAttributes)
+}
+
+func (x *netTunInodeOperations) afterLoad() {}
+func (x *netTunInodeOperations) load(m state.Map) {
+	m.Load("InodeSimpleAttributes", &x.InodeSimpleAttributes)
+}
+
+func (x *netTunFileOperations) beforeSave() {}
+func (x *netTunFileOperations) save(m state.Map) {
+	x.beforeSave()
+	m.Save("device", &x.device)
+}
+
+func (x *netTunFileOperations) afterLoad() {}
+func (x *netTunFileOperations) load(m state.Map) {
+	m.Load("device", &x.device)
+}
+
 func (x *nullDevice) beforeSave() {}
 func (x *nullDevice) save(m state.Map) {
 	x.beforeSave()
@@ -119,6 +141,8 @@ func init() {
 	state.Register("pkg/sentry/fs/dev.filesystem", (*filesystem)(nil), state.Fns{Save: (*filesystem).save, Load: (*filesystem).load})
 	state.Register("pkg/sentry/fs/dev.fullDevice", (*fullDevice)(nil), state.Fns{Save: (*fullDevice).save, Load: (*fullDevice).load})
 	state.Register("pkg/sentry/fs/dev.fullFileOperations", (*fullFileOperations)(nil), state.Fns{Save: (*fullFileOperations).save, Load: (*fullFileOperations).load})
+	state.Register("pkg/sentry/fs/dev.netTunInodeOperations", (*netTunInodeOperations)(nil), state.Fns{Save: (*netTunInodeOperations).save, Load: (*netTunInodeOperations).load})
+	state.Register("pkg/sentry/fs/dev.netTunFileOperations", (*netTunFileOperations)(nil), state.Fns{Save: (*netTunFileOperations).save, Load: (*netTunFileOperations).load})
 	state.Register("pkg/sentry/fs/dev.nullDevice", (*nullDevice)(nil), state.Fns{Save: (*nullDevice).save, Load: (*nullDevice).load})
 	state.Register("pkg/sentry/fs/dev.nullFileOperations", (*nullFileOperations)(nil), state.Fns{Save: (*nullFileOperations).save, Load: (*nullFileOperations).load})
 	state.Register("pkg/sentry/fs/dev.zeroDevice", (*zeroDevice)(nil), state.Fns{Save: (*zeroDevice).save, Load: (*zeroDevice).load})

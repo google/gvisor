@@ -3,3 +3,27 @@
 // +build linux
 
 package tun
+
+import (
+	"gvisor.dev/gvisor/pkg/state"
+)
+
+func (x *Device) save(m state.Map) {
+	x.beforeSave()
+	m.Save("Queue", &x.Queue)
+	m.Save("endpoint", &x.endpoint)
+	m.Save("notifyHandle", &x.notifyHandle)
+	m.Save("flags", &x.flags)
+}
+
+func (x *Device) afterLoad() {}
+func (x *Device) load(m state.Map) {
+	m.Load("Queue", &x.Queue)
+	m.Load("endpoint", &x.endpoint)
+	m.Load("notifyHandle", &x.notifyHandle)
+	m.Load("flags", &x.flags)
+}
+
+func init() {
+	state.Register("pkg/tcpip/link/tun.Device", (*Device)(nil), state.Fns{Save: (*Device).save, Load: (*Device).load})
+}
