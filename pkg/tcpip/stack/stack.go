@@ -881,6 +881,8 @@ type NICOptions struct {
 // CreateNICWithOptions creates a NIC with the provided id, LinkEndpoint, and
 // NICOptions. See the documentation on type NICOptions for details on how
 // NICs can be configured.
+//
+// LinkEndpoint.Attach will be called to bind ep with a NetworkDispatcher.
 func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *tcpip.Error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -900,7 +902,6 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 	}
 
 	n := newNIC(s, id, opts.Name, ep, opts.Context)
-
 	s.nics[id] = n
 	if !opts.Disabled {
 		return n.enable()
@@ -910,7 +911,7 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 }
 
 // CreateNIC creates a NIC with the provided id and LinkEndpoint and calls
-// `LinkEndpoint.Attach` to start delivering packets to it.
+// LinkEndpoint.Attach to bind ep with a NetworkDispatcher.
 func (s *Stack) CreateNIC(id tcpip.NICID, ep LinkEndpoint) *tcpip.Error {
 	return s.CreateNICWithOptions(id, ep, NICOptions{})
 }
