@@ -1,6 +1,6 @@
 """Defines a rule for syscall test targets."""
 
-load("//tools:defs.bzl", "loopback")
+load("//tools:defs.bzl", "default_platform", "loopback", "platforms")
 
 def _runner_test_impl(ctx):
     # Generate a runner binary.
@@ -94,19 +94,6 @@ def _syscall_test(
     # Disable off-host networking.
     tags.append("requires-net:loopback")
 
-    # Add tag to prevent the tests from running in a Bazel sandbox.
-    # TODO(b/120560048): Make the tests run without this tag.
-    tags.append("no-sandbox")
-
-    # TODO(b/112165693): KVM tests are tagged "manual" to until the platform is
-    # more stable.
-    if platform == "kvm":
-        tags.append("manual")
-        tags.append("requires-kvm")
-
-        # TODO(b/112165693): Remove when tests pass reliably.
-        tags.append("notap")
-
     runner_args = [
         # Arguments are passed directly to runner binary.
         "--platform=" + platform,
@@ -149,6 +136,8 @@ def syscall_test(
       add_hostinet: add a hostinet test.
       tags: starting test tags.
     """
+    if not tags:
+        tags = []
 
     _syscall_test(
         test = test,
@@ -160,35 +149,26 @@ def syscall_test(
         tags = tags,
     )
 
-    _syscall_test(
-        test = test,
-        shard_count = shard_count,
-        size = size,
-        platform = "kvm",
-        use_tmpfs = use_tmpfs,
-        add_uds_tree = add_uds_tree,
-        tags = tags,
-    )
-
-    _syscall_test(
-        test = test,
-        shard_count = shard_count,
-        size = size,
-        platform = "ptrace",
-        use_tmpfs = use_tmpfs,
-        add_uds_tree = add_uds_tree,
-        tags = tags,
-    )
+    for (platform, platform_tags) in platforms.items():
+        _syscall_test(
+            test = test,
+            shard_count = shard_count,
+            size = size,
+            platform = platform,
+            use_tmpfs = use_tmpfs,
+            add_uds_tree = add_uds_tree,
+            tags = platform_tags + tags,
+        )
 
     if add_overlay:
         _syscall_test(
             test = test,
             shard_count = shard_count,
             size = size,
-            platform = "ptrace",
+            platform = default_platform,
             use_tmpfs = False,  # overlay is adding a writable tmpfs on top of root.
             add_uds_tree = add_uds_tree,
-            tags = tags,
+            tags = platforms[default_platform] + tags,
             overlay = True,
         )
 
@@ -198,10 +178,10 @@ def syscall_test(
             test = test,
             shard_count = shard_count,
             size = size,
-            platform = "ptrace",
+            platform = default_platform,
             use_tmpfs = use_tmpfs,
             add_uds_tree = add_uds_tree,
-            tags = tags,
+            tags = platforms[default_platform] + tags,
             file_access = "shared",
         )
 
@@ -210,9 +190,9 @@ def syscall_test(
             test = test,
             shard_count = shard_count,
             size = size,
-            platform = "ptrace",
+            platform = default_platform,
             use_tmpfs = use_tmpfs,
             network = "host",
             add_uds_tree = add_uds_tree,
-            tags = tags,
+            tags = platforms[default_platform] + tags,
         )
