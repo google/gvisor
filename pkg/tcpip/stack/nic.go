@@ -44,8 +44,7 @@ type NIC struct {
 	linkEP  LinkEndpoint
 	context NICContext
 
-	stats  NICStats
-	attach sync.Once
+	stats NICStats
 
 	mu struct {
 		sync.RWMutex
@@ -141,6 +140,8 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 		nic.mu.packetEPs[netProto.Number()] = []PacketEndpoint{}
 	}
 
+	nic.linkEP.Attach(nic)
+
 	return nic
 }
 
@@ -200,14 +201,16 @@ func (n *NIC) disable() *tcpip.Error {
 		}
 	}
 
-	// TODO(b/147015577): Should n detach from its LinkEndpoint?
-
 	n.mu.enabled = false
 	return nil
 }
 
-// enable enables n. enable will attach the nic to its LinkEndpoint and
-// join the IPv6 All-Nodes Multicast address (ff02::1).
+// enable enables n.
+//
+// If the stack has IPv6 enabled, enable will join the IPv6 All-Nodes Multicast
+// address (ff02::1), start DAD for permanent addresses, and start soliciting
+// routers if the stack is not operating as a router. If the stack is also
+// configured to auto-generate a link-local address, one will be generated.
 func (n *NIC) enable() *tcpip.Error {
 	n.mu.RLock()
 	enabled := n.mu.enabled
@@ -224,8 +227,6 @@ func (n *NIC) enable() *tcpip.Error {
 	}
 
 	n.mu.enabled = true
-
-	n.attachLinkEndpoint()
 
 	// Create an endpoint to receive broadcast packets on this interface.
 	if _, ok := n.stack.networkProtocols[header.IPv4ProtocolNumber]; ok {
@@ -319,14 +320,6 @@ func (n *NIC) becomeIPv6Host() {
 	defer n.mu.Unlock()
 
 	n.mu.ndp.startSolicitingRouters()
-}
-
-// attachLinkEndpoint attaches the NIC to the endpoint, which will enable it
-// to start delivering packets.
-func (n *NIC) attachLinkEndpoint() {
-	n.attach.Do(func() {
-		n.linkEP.Attach(n)
-	})
 }
 
 // setPromiscuousMode enables or disables promiscuous mode.
