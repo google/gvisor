@@ -41,7 +41,7 @@ const (
 // resetSysemuRegs sets up emulation registers.
 //
 // This should be called prior to calling sysemu.
-func (t *thread) resetSysemuRegs(regs *syscall.PtraceRegs) {
+func (t *thread) resetSysemuRegs(regs *linux.PtraceRegs) {
 }
 
 // createSyscallRegs sets up syscall registers.

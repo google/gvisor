@@ -15,8 +15,6 @@
 package ptrace
 
 import (
-	"syscall"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
@@ -28,6 +26,6 @@ func fpRegSet(useXsave bool) uintptr {
 	return linux.NT_PRFPREG
 }
 
-func stackPointer(r *syscall.PtraceRegs) uintptr {
+func stackPointer(r *linux.PtraceRegs) uintptr {
 	return uintptr(r.Rsp)
 }

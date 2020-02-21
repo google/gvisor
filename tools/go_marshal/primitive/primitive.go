@@ -12,31 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build amd64 i386
+// Package primitive defines marshal.Marshallable implementations for primitive
+// types.
+package primitive
 
-package arch
-
-import (
-	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/cpuid"
-)
-
-// State contains the common architecture bits for X86 (the build tag of this
-// file ensures it's only built on x86).
+// Int32 is a marshal.Marshallable implementation for int32.
 //
-// +stateify savable
-type State struct {
-	// The system registers.
-	Regs linux.PtraceRegs
+// +marshal slice:Int32Slice:inner
+type Int32 int32
 
-	// Our floating point state.
-	x86FPState `state:"wait"`
+// Uint32 is a marshal.Marshallable implementation for uint32.
+//
+// +marshal
+type Uint32 uint32
 
-	// FeatureSet is a pointer to the currently active feature set.
-	FeatureSet *cpuid.FeatureSet
-}
+// Int64 is a marshal.Marshallable implementation for int64.
+//
+// +marshal
+type Int64 int64
 
-// afterLoad is invoked by stateify.
-func (s *State) afterLoad() {
-	s.afterLoadFPState()
-}
+// Uint64 is a marshal.Marshallable implementation for uint64.
+//
+// +marshal
+type Uint64 uint64

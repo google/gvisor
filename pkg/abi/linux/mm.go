@@ -90,14 +90,19 @@ const (
 	MS_SYNC       = 1 << 2
 )
 
+// NumaPolicy is the NUMA memory policy for a memory range. See numa(7).
+//
+// +marshal
+type NumaPolicy int32
+
 // Policies for get_mempolicy(2)/set_mempolicy(2).
 const (
-	MPOL_DEFAULT    = 0
-	MPOL_PREFERRED  = 1
-	MPOL_BIND       = 2
-	MPOL_INTERLEAVE = 3
-	MPOL_LOCAL      = 4
-	MPOL_MAX        = 5
+	MPOL_DEFAULT    NumaPolicy = 0
+	MPOL_PREFERRED  NumaPolicy = 1
+	MPOL_BIND       NumaPolicy = 2
+	MPOL_INTERLEAVE NumaPolicy = 3
+	MPOL_LOCAL      NumaPolicy = 4
+	MPOL_MAX        NumaPolicy = 5
 )
 
 // Flags for get_mempolicy(2).

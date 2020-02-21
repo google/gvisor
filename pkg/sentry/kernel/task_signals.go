@@ -726,8 +726,7 @@ func (t *Task) CopyInSignalAct(addr usermem.Addr) (arch.SignalAct, error) {
 func (t *Task) CopyOutSignalStack(addr usermem.Addr, s *arch.SignalStack) error {
 	n := t.Arch().NewSignalStack()
 	n.SerializeFrom(s)
-	_, err := t.CopyOut(addr, n)
-	return err
+	return n.CopyOut(t, addr)
 }
 
 // CopyInSignalStack copies an architecture-specific stack_t from task memory
@@ -735,7 +734,7 @@ func (t *Task) CopyOutSignalStack(addr usermem.Addr, s *arch.SignalStack) error 
 func (t *Task) CopyInSignalStack(addr usermem.Addr) (arch.SignalStack, error) {
 	n := t.Arch().NewSignalStack()
 	var s arch.SignalStack
-	if _, err := t.CopyIn(addr, n); err != nil {
+	if err := n.CopyIn(t, addr); err != nil {
 		return s, err
 	}
 	n.DeserializeTo(&s)

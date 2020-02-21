@@ -1,4 +1,4 @@
-// Copyright 2020 The gVisor Authors.
+// Copyright 2019 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,25 +14,16 @@
 
 // +build arm64
 
-package arch
+package linux
 
-import (
-	"syscall"
-)
-
-type syscallPtraceRegs struct {
+// PtraceRegs is the set of CPU registers exposed by ptrace. Source:
+// syscall.PtraceRegs.
+//
+// +marshal
+// +stateify savable
+type PtraceRegs struct {
 	Regs   [31]uint64
 	Sp     uint64
 	Pc     uint64
 	Pstate uint64
-}
-
-// saveRegs is invoked by stateify.
-func (s *State) saveRegs() syscallPtraceRegs {
-	return syscallPtraceRegs(s.Regs)
-}
-
-// loadRegs is invoked by stateify.
-func (s *State) loadRegs(r syscallPtraceRegs) {
-	s.Regs = syscall.PtraceRegs(r)
 }

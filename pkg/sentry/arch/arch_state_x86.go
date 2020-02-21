@@ -18,7 +18,6 @@ package arch
 
 import (
 	"fmt"
-	"syscall"
 
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -89,45 +88,4 @@ func (s *State) afterLoadFPState() {
 
 	// Copy to the new, aligned location.
 	copy(s.x86FPState, old)
-}
-
-// +stateify savable
-type syscallPtraceRegs struct {
-	R15      uint64
-	R14      uint64
-	R13      uint64
-	R12      uint64
-	Rbp      uint64
-	Rbx      uint64
-	R11      uint64
-	R10      uint64
-	R9       uint64
-	R8       uint64
-	Rax      uint64
-	Rcx      uint64
-	Rdx      uint64
-	Rsi      uint64
-	Rdi      uint64
-	Orig_rax uint64
-	Rip      uint64
-	Cs       uint64
-	Eflags   uint64
-	Rsp      uint64
-	Ss       uint64
-	Fs_base  uint64
-	Gs_base  uint64
-	Ds       uint64
-	Es       uint64
-	Fs       uint64
-	Gs       uint64
-}
-
-// saveRegs is invoked by stateify.
-func (s *State) saveRegs() syscallPtraceRegs {
-	return syscallPtraceRegs(s.Regs)
-}
-
-// loadRegs is invoked by stateify.
-func (s *State) loadRegs(r syscallPtraceRegs) {
-	s.Regs = syscall.PtraceRegs(r)
 }

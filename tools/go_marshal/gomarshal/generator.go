@@ -44,8 +44,8 @@ const (
 // All recievers are single letters, so we don't allow import aliases to be a
 // single letter.
 var badIdents = []string{
-	"addr", "blk", "buf", "dst", "dsts", "err", "hdr", "idx", "inner", "len",
-	"ptr", "src", "srcs", "task", "val",
+	"addr", "blk", "buf", "dst", "dsts", "count", "err", "hdr", "idx", "inner",
+	"ptr", "size", "src", "srcs", "task", "val",
 	// All single-letter identifiers.
 }
 
@@ -194,10 +194,73 @@ func (g *Generator) parse() ([]*ast.File, []*token.FileSet, error) {
 	return files, fsets, nil
 }
 
+// sliceAPI carries information about the '+marshal slice' directive.
+type sliceAPI struct {
+	// Comment node in the AST containing the +marshal tag.
+	comment *ast.Comment
+	// Identifier fragment to use when naming generated functions for the slice
+	// API.
+	ident string
+	// Whether the generated functions should reference the newtype name, or the
+	// inner type name. Only meaningful on newtype declarations on primitives.
+	inner bool
+}
+
+// marshallable carries information about a type marked with the '+marshal'
+// directive.
+type marshallableType struct {
+	spec  *ast.TypeSpec
+	slice *sliceAPI
+}
+
+func newMarshallableType(fset *token.FileSet, tagLine *ast.Comment, spec *ast.TypeSpec) marshallableType {
+	mt := marshallableType{
+		spec:  spec,
+		slice: nil,
+	}
+
+	var unhandledTags []string
+
+	for _, tag := range strings.Fields(strings.TrimPrefix(tagLine.Text, "// +marshal")) {
+		if strings.HasPrefix(tag, "slice:") {
+			tokens := strings.Split(tag, ":")
+			if len(tokens) < 2 || len(tokens) > 3 {
+				abortAt(fset.Position(tagLine.Slash), fmt.Sprintf("+marshal directive has invalid 'slice' clause. Expecting format 'slice:<IDENTIFIER>[:inner]', got '%v'", tag))
+			}
+			if len(tokens[1]) == 0 {
+				abortAt(fset.Position(tagLine.Slash), "+marshal slice directive has empty identifier argument. Expecting '+marshal slice:identifier'")
+			}
+
+			sa := &sliceAPI{
+				comment: tagLine,
+				ident:   tokens[1],
+			}
+			mt.slice = sa
+
+			if len(tokens) == 3 {
+				if tokens[2] != "inner" {
+					abortAt(fset.Position(tagLine.Slash), "+marshal slice directive has an invalid second arugment is invalid. Expecting '+marshal slice:<IDENTIFIER>[:inner]'")
+				}
+				sa.inner = true
+			}
+
+			continue
+		}
+
+		unhandledTags = append(unhandledTags, tag)
+	}
+
+	if len(unhandledTags) > 0 {
+		abortAt(fset.Position(tagLine.Slash), fmt.Sprintf("+marshal directive contained the following unknown clauses: %v", strings.Join(unhandledTags, " ")))
+	}
+
+	return mt
+}
+
 // collectMarshallableTypes walks the parsed AST and collects a list of type
 // declarations for which we need to generate the Marshallable interface.
-func (g *Generator) collectMarshallableTypes(a *ast.File, f *token.FileSet) []*ast.TypeSpec {
-	var types []*ast.TypeSpec
+func (g *Generator) collectMarshallableTypes(a *ast.File, f *token.FileSet) []marshallableType {
+	var types []marshallableType
 	for _, decl := range a.Decls {
 		gdecl, ok := decl.(*ast.GenDecl)
 		// Type declaration?
@@ -212,9 +275,11 @@ func (g *Generator) collectMarshallableTypes(a *ast.File, f *token.FileSet) []*a
 		}
 		// Does the comment contain a "+marshal" line?
 		marked := false
+		var tagLine *ast.Comment
 		for _, c := range gdecl.Doc.List {
-			if c.Text == "// +marshal" {
+			if strings.HasPrefix(c.Text, "// +marshal") {
 				marked = true
+				tagLine = c
 				break
 			}
 		}
@@ -229,16 +294,17 @@ func (g *Generator) collectMarshallableTypes(a *ast.File, f *token.FileSet) []*a
 			switch t.Type.(type) {
 			case *ast.StructType:
 				debugfAt(f.Position(t.Pos()), "Collected marshallable struct %s.\n", t.Name.Name)
-				types = append(types, t)
-				continue
 			case *ast.Ident: // Newtype on primitive.
 				debugfAt(f.Position(t.Pos()), "Collected marshallable newtype on primitive %s.\n", t.Name.Name)
-				types = append(types, t)
-				continue
+			case *ast.ArrayType: // Newtype on array.
+				debugfAt(f.Position(t.Pos()), "Collected marshallable newtype on array %s.\n", t.Name.Name)
+			default:
+				// A user specifically requested marshalling on this type, but we
+				// don't support it.
+				abortAt(f.Position(t.Pos()), fmt.Sprintf("Marshalling codegen was requested on type '%s', but go-marshal doesn't support this kind of declaration.\n", t.Name))
 			}
-			// A user specifically requested marshalling on this type, but we
-			// don't support it.
-			abortAt(f.Position(t.Pos()), fmt.Sprintf("Marshalling codegen was requested on type '%s', but go-marshal doesn't support this kind of declaration.\n", t.Name))
+			types = append(types, newMarshallableType(f, tagLine, t))
+
 		}
 	}
 	return types
@@ -277,27 +343,39 @@ func (g *Generator) collectImports(a *ast.File, f *token.FileSet) map[string]imp
 
 }
 
-func (g *Generator) generateOne(t *ast.TypeSpec, fset *token.FileSet) *interfaceGenerator {
-	i := newInterfaceGenerator(t, fset)
-	switch ty := t.Type.(type) {
+func (g *Generator) generateOne(t marshallableType, fset *token.FileSet) *interfaceGenerator {
+	i := newInterfaceGenerator(t.spec, fset)
+	switch ty := t.spec.Type.(type) {
 	case *ast.StructType:
-		i.validateStruct()
-		i.emitMarshallableForStruct()
-		return i
+		i.validateStruct(t.spec, ty)
+		i.emitMarshallableForStruct(ty)
+		if t.slice != nil {
+			i.emitMarshallableSliceForStruct(ty, t.slice)
+		}
 	case *ast.Ident:
 		i.validatePrimitiveNewtype(ty)
-		i.emitMarshallableForPrimitiveNewtype()
-		return i
+		i.emitMarshallableForPrimitiveNewtype(ty)
+		if t.slice != nil {
+			i.emitMarshallableSliceForPrimitiveNewtype(ty, t.slice)
+		}
+	case *ast.ArrayType:
+		i.validateArrayNewtype(t.spec.Name, ty)
+		// After validate, we can safely call arrayLen.
+		i.emitMarshallableForArrayNewtype(t.spec.Name, ty.Elt.(*ast.Ident), arrayLen(ty))
+		if t.slice != nil {
+			abortAt(fset.Position(t.slice.comment.Slash), fmt.Sprintf("Array type marked as '+marshal slice:...', but this is not supported. Perhaps fold one of the dimensions?"))
+		}
 	default:
 		// This should've been filtered out by collectMarshallabeTypes.
 		panic(fmt.Sprintf("Unexpected type %+v", ty))
 	}
+	return i
 }
 
 // generateOneTestSuite generates a test suite for the automatically generated
 // implementations type t.
-func (g *Generator) generateOneTestSuite(t *ast.TypeSpec) *testGenerator {
-	i := newTestGenerator(t)
+func (g *Generator) generateOneTestSuite(t marshallableType) *testGenerator {
+	i := newTestGenerator(t.spec)
 	i.emitTests()
 	return i
 }

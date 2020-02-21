@@ -85,7 +85,7 @@ type Timespec struct {
 
 // Stat represents struct stat.
 //
-// +marshal
+// +marshal slice:StatSlice
 type Stat struct {
 	Dev     uint64
 	Ino     uint64
@@ -104,9 +104,14 @@ type Stat struct {
 	_       [3]int64
 }
 
-// SignalSet is an example marshallable newtype on a primitive.
+// InetAddr is an example marshallable newtype on an array.
 //
 // +marshal
+type InetAddr [4]byte
+
+// SignalSet is an example marshallable newtype on a primitive.
+//
+// +marshal slice:SignalSetSlice:inner
 type SignalSet uint64
 
 // SignalSetAlias is an example newtype on another marshallable type.

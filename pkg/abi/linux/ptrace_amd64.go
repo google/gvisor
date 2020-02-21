@@ -12,31 +12,41 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build amd64 i386
+// +build amd64
 
-package arch
+package linux
 
-import (
-	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/cpuid"
-)
-
-// State contains the common architecture bits for X86 (the build tag of this
-// file ensures it's only built on x86).
+// PtraceRegs is the set of CPU registers exposed by ptrace. Source:
+// syscall.PtraceRegs.
 //
+// +marshal
 // +stateify savable
-type State struct {
-	// The system registers.
-	Regs linux.PtraceRegs
-
-	// Our floating point state.
-	x86FPState `state:"wait"`
-
-	// FeatureSet is a pointer to the currently active feature set.
-	FeatureSet *cpuid.FeatureSet
-}
-
-// afterLoad is invoked by stateify.
-func (s *State) afterLoad() {
-	s.afterLoadFPState()
+type PtraceRegs struct {
+	R15      uint64
+	R14      uint64
+	R13      uint64
+	R12      uint64
+	Rbp      uint64
+	Rbx      uint64
+	R11      uint64
+	R10      uint64
+	R9       uint64
+	R8       uint64
+	Rax      uint64
+	Rcx      uint64
+	Rdx      uint64
+	Rsi      uint64
+	Rdi      uint64
+	Orig_rax uint64
+	Rip      uint64
+	Cs       uint64
+	Eflags   uint64
+	Rsp      uint64
+	Ss       uint64
+	Fs_base  uint64
+	Gs_base  uint64
+	Ds       uint64
+	Es       uint64
+	Fs       uint64
+	Gs       uint64
 }
