@@ -44,7 +44,8 @@ const (
 // All recievers are single letters, so we don't allow import aliases to be a
 // single letter.
 var badIdents = []string{
-	"addr", "blk", "buf", "dst", "dsts", "err", "hdr", "len", "ptr", "src", "srcs", "task", "val",
+	"addr", "blk", "buf", "dst", "dsts", "err", "hdr", "idx", "inner", "len",
+	"ptr", "src", "srcs", "task", "val",
 	// All single-letter identifiers.
 }
 
@@ -193,9 +194,9 @@ func (g *Generator) parse() ([]*ast.File, []*token.FileSet, error) {
 	return files, fsets, nil
 }
 
-// collectMarshallabeTypes walks the parsed AST and collects a list of type
+// collectMarshallableTypes walks the parsed AST and collects a list of type
 // declarations for which we need to generate the Marshallable interface.
-func (g *Generator) collectMarshallabeTypes(a *ast.File, f *token.FileSet) []*ast.TypeSpec {
+func (g *Generator) collectMarshallableTypes(a *ast.File, f *token.FileSet) []*ast.TypeSpec {
 	var types []*ast.TypeSpec
 	for _, decl := range a.Decls {
 		gdecl, ok := decl.(*ast.GenDecl)
@@ -222,14 +223,22 @@ func (g *Generator) collectMarshallabeTypes(a *ast.File, f *token.FileSet) []*as
 			continue
 		}
 		for _, spec := range gdecl.Specs {
-			// We already confirmed we're in a type declaration earlier.
+			// We already confirmed we're in a type declaration earlier, so this
+			// cast will succeed.
 			t := spec.(*ast.TypeSpec)
-			if _, ok := t.Type.(*ast.StructType); ok {
-				debugfAt(f.Position(t.Pos()), "Collected marshallable type %s.\n", t.Name.Name)
+			switch t.Type.(type) {
+			case *ast.StructType:
+				debugfAt(f.Position(t.Pos()), "Collected marshallable struct %s.\n", t.Name.Name)
+				types = append(types, t)
+				continue
+			case *ast.Ident: // Newtype on primitive.
+				debugfAt(f.Position(t.Pos()), "Collected marshallable newtype on primitive %s.\n", t.Name.Name)
 				types = append(types, t)
 				continue
 			}
-			debugf("Skipping declaration %v since it's not a struct declaration.\n", gdecl)
+			// A user specifically requested marshalling on this type, but we
+			// don't support it.
+			abortAt(f.Position(t.Pos()), fmt.Sprintf("Marshalling codegen was requested on type '%s', but go-marshal doesn't support this kind of declaration.\n", t.Name))
 		}
 	}
 	return types
@@ -269,12 +278,20 @@ func (g *Generator) collectImports(a *ast.File, f *token.FileSet) map[string]imp
 }
 
 func (g *Generator) generateOne(t *ast.TypeSpec, fset *token.FileSet) *interfaceGenerator {
-	// We're guaranteed to have only struct type specs by now. See
-	// Generator.collectMarshallabeTypes.
 	i := newInterfaceGenerator(t, fset)
-	i.validate()
-	i.emitMarshallable()
-	return i
+	switch ty := t.Type.(type) {
+	case *ast.StructType:
+		i.validateStruct()
+		i.emitMarshallableForStruct()
+		return i
+	case *ast.Ident:
+		i.validatePrimitiveNewtype(ty)
+		i.emitMarshallableForPrimitiveNewtype()
+		return i
+	default:
+		// This should've been filtered out by collectMarshallabeTypes.
+		panic(fmt.Sprintf("Unexpected type %+v", ty))
+	}
 }
 
 // generateOneTestSuite generates a test suite for the automatically generated
@@ -320,7 +337,7 @@ func (g *Generator) Run() error {
 	for i, a := range asts {
 		// Collect type declarations marked for code generation and generate
 		// Marshallable interfaces.
-		for _, t := range g.collectMarshallabeTypes(a, fsets[i]) {
+		for _, t := range g.collectMarshallableTypes(a, fsets[i]) {
 			impl := g.generateOne(t, fsets[i])
 			// Collect Marshallable types referenced by the generated code.
 			for ref, _ := range impl.ms {
