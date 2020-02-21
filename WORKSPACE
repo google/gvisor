@@ -33,6 +33,20 @@ load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
 
 gazelle_dependencies()
 
+# TODO(gvisor.dev/issue/1876): Move the statement to "External repositories"
+# block below once 1876 is fixed.
+#
+# The com_google_protobuf repository below would trigger downloading a older
+# version of org_golang_x_sys. If putting this repository statment in a place
+# after that of the com_google_protobuf, this statement will not work as
+# expectd to download a new version of org_golang_x_sys.
+go_repository(
+    name = "org_golang_x_sys",
+    importpath = "golang.org/x/sys",
+    sum = "h1:72l8qCJ1nGxMGH26QVBVIxKd/D34cfGt0OvrPtpemyY=",
+    version = "v0.0.0-20191220220014-0732a990476f",
+)
+
 # Load C++ rules.
 http_archive(
     name = "rules_cc",
@@ -254,13 +268,6 @@ go_repository(
     importpath = "golang.org/x/sync",
     sum = "h1:8gQV6CLnAEikrhgkHFbMAEhagSSnXWGV915qUMm9mrU=",
     version = "v0.0.0-20190423024810-112230192c58",
-)
-
-go_repository(
-    name = "org_golang_x_sys",
-    importpath = "golang.org/x/sys",
-    sum = "h1:1BGLXjeY4akVXGgbC9HugT3Jv3hCI0z56oJR5vAMgBU=",
-    version = "v0.0.0-20190215142949-d0b11bdaac8a",
 )
 
 go_repository(
