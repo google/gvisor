@@ -82,6 +82,8 @@ fallback:
 
 // dieTrampoline: see bluepill.go, bluepill_arm64_unsafe.go for documentation.
 TEXT ·dieTrampoline(SB),NOSPLIT,$0
-	// TODO(gvisor.dev/issue/1249): dieTrampoline supporting for Arm64.
-	MOVD	R9, 8(RSP)
-	BL	·dieHandler(SB)
+	// R0: Fake the old PC as caller
+	// R1: First argument (vCPU)
+	MOVD.P R1, 8(RSP) // R1: First argument (vCPU)
+	MOVD.P R0, 8(RSP) // R0: Fake the old PC as caller
+	B ·dieHandler(SB)
