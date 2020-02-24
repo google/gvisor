@@ -70,7 +70,9 @@ function collect_logs() {
     for d in `find -L "bazel-testlogs" -name 'shard_*_of_*' | xargs dirname | sort | uniq`; do
       junitparser merge `find $d -name test.xml` $d/test.xml
       cat $d/shard_*_of_*/test.log > $d/test.log
-      ls -l $d/shard_*_of_*/test.outputs/outputs.zip && zip -r -1 $d/outputs.zip $d/shard_*_of_*/test.outputs/outputs.zip
+      if ls -l $d/shard_*_of_*/test.outputs/outputs.zip 2>/dev/null; then
+        zip -r -1 "$d/outputs.zip" $d/shard_*_of_*/test.outputs/outputs.zip
+      fi
     done
     find -L "bazel-testlogs" -name 'shard_*_of_*' | xargs rm -rf
     # Move test logs to Kokoro directory. tar is used to conveniently perform
@@ -90,7 +92,13 @@ function collect_logs() {
           echo "    gsutil cp gs://gvisor/logs/${KOKORO_BUILD_ARTIFACTS_SUBDIR}/${archive} /tmp"
           echo "    https://storage.cloud.google.com/gvisor/logs/${KOKORO_BUILD_ARTIFACTS_SUBDIR}/${archive}"
         fi
-        tar --create --gzip --file="${KOKORO_ARTIFACTS_DIR}/${archive}" -C "${RUNSC_LOGS_DIR}" .
+        time tar \
+          --verbose \
+          --create \
+          --gzip \
+          --file="${KOKORO_ARTIFACTS_DIR}/${archive}" \
+          --directory "${RUNSC_LOGS_DIR}" \
+          .
       fi
     fi
   fi
