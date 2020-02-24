@@ -293,21 +293,26 @@ func (e *exe) Readlink(ctx context.Context, inode *fs.Inode) (string, error) {
 // +stateify savable
 type namespaceSymlink struct {
 	ramfs.Symlink
+	inodeID uint64
 
 	t *kernel.Task
 }
 
-func newNamespaceSymlink(t *kernel.Task, msrc *fs.MountSource, name string) *fs.Inode {
+func newNamespaceSymlink(t *kernel.Task, msrc *fs.MountSource, name string, inodeID uint64) *fs.Inode {
 	// TODO(rahat): Namespace symlinks should contain the namespace name and the
 	// inode number for the namespace instance, so for example user:[123456]. We
 	// currently fake the inode number by sticking the symlink inode in its
 	// place.
-	target := fmt.Sprintf("%s:[%d]", name, device.ProcDevice.NextIno())
+	if inodeID == 0 {
+		inodeID = device.ProcDevice.NextIno()
+	}
+	target := fmt.Sprintf("%s:[%d]", name, inodeID)
 	n := &namespaceSymlink{
 		Symlink: *ramfs.NewSymlink(t, fs.RootOwner, target),
+		inodeID: inodeID,
 		t:       t,
 	}
-	return newProcInode(t, n, msrc, fs.Symlink, t)
+	return newProcNsInode(t, n, msrc, fs.Symlink, t, inodeID)
 }
 
 // Getlink implements fs.InodeOperations.Getlink.
@@ -318,14 +323,14 @@ func (n *namespaceSymlink) Getlink(ctx context.Context, inode *fs.Inode) (*fs.Di
 
 	// Create a new regular file to fake the namespace file.
 	iops := fsutil.NewNoReadWriteFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0777), linux.PROC_SUPER_MAGIC)
-	return fs.NewDirent(ctx, newProcInode(ctx, iops, inode.MountSource, fs.RegularFile, nil), n.Symlink.Target), nil
+	return fs.NewDirent(ctx, newProcNsInode(ctx, iops, inode.MountSource, fs.RegularFile, nil, n.inodeID), n.Symlink.Target), nil
 }
 
 func newNamespaceDir(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 	contents := map[string]*fs.Inode{
-		"net":  newNamespaceSymlink(t, msrc, "net"),
-		"pid":  newNamespaceSymlink(t, msrc, "pid"),
-		"user": newNamespaceSymlink(t, msrc, "user"),
+		"net":  newNamespaceSymlink(t, msrc, "net", 0),
+		"pid":  newNamespaceSymlink(t, msrc, "pid", t.Pidns()),
+		"user": newNamespaceSymlink(t, msrc, "user", 0),
 	}
 	d := ramfs.NewDir(t, contents, fs.RootOwner, fs.FilePermsFromMode(0511))
 	return newProcInode(t, d, msrc, fs.SpecialDirectory, t)

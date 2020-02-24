@@ -169,6 +169,10 @@ type PIDNamespace struct {
 	// exiting indicates that the namespace's init process is exiting or has
 	// exited.
 	exiting bool
+
+	// inum is the 'inode number' of the pid namespace, inum is set as reaper
+	// process id in root pid namespace. The inum is immutable.
+	inum uint64
 }
 
 func newPIDNamespace(ts *TaskSet, parent *PIDNamespace, userns *auth.UserNamespace) *PIDNamespace {
@@ -468,4 +472,9 @@ func (t *Task) Parent() *Task {
 // dead, ThreadID returns 0.
 func (t *Task) ThreadID() ThreadID {
 	return t.tg.pidns.IDOfTask(t)
+}
+
+// Pidns returns task pid namespace inum.
+func (t *Task) Pidns() uint64 {
+	return t.tg.pidns.inum
 }

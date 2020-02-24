@@ -134,4 +134,18 @@ func newProcInode(ctx context.Context, iops fs.InodeOperations, msrc *fs.MountSo
 	return fs.NewInode(ctx, iops, msrc, sattr)
 }
 
+// newProcNsInode creates a new inode from the given inode operations.
+func newProcNsInode(ctx context.Context, iops fs.InodeOperations, msrc *fs.MountSource, typ fs.InodeType, t *kernel.Task, inodeID uint64) *fs.Inode {
+	sattr := fs.StableAttr{
+		DeviceID:  device.ProcDevice.DeviceID(),
+		InodeID:   inodeID,
+		BlockSize: usermem.PageSize,
+		Type:      typ,
+	}
+	if t != nil {
+		iops = &taskOwnedInodeOps{iops, t}
+	}
+	return fs.NewInode(ctx, iops, msrc, sattr)
+}
+
 // LINT.ThenChange(../../fsimpl/proc/tasks.go)

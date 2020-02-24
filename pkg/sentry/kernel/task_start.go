@@ -243,6 +243,11 @@ func (ts *TaskSet) assignTIDsLocked(t *Task) error {
 		}
 		allocatedTIDs = append(allocatedTIDs, allocatedTID{ns, tid})
 	}
+	if t.tg.pidns.tgids[t.tg] == 1 {
+		if rootns := t.k.RootPIDNamespace(); rootns != nil {
+			t.tg.pidns.inum = uint64(rootns.tids[t]) + 0xF0000000
+		}
+	}
 	return nil
 }
 
