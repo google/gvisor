@@ -74,7 +74,7 @@ void ExitGroup32(const char instruction[2], int code) {
       "int $3\n"
       :
       : [ code ] "m"(code), [ ip ] "d"(m.ptr())
-      : "rax", "rbx", "rsp");
+      : "rax", "rbx");
 }
 
 constexpr int kExitCode = 42;
