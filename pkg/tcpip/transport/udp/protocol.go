@@ -180,15 +180,21 @@ func (p *protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.Trans
 	return true
 }
 
-// SetOption implements TransportProtocol.SetOption.
-func (p *protocol) SetOption(option interface{}) *tcpip.Error {
+// SetOption implements stack.TransportProtocol.SetOption.
+func (*protocol) SetOption(option interface{}) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
 }
 
-// Option implements TransportProtocol.Option.
-func (p *protocol) Option(option interface{}) *tcpip.Error {
+// Option implements stack.TransportProtocol.Option.
+func (*protocol) Option(option interface{}) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
 }
+
+// Close implements stack.TransportProtocol.Close.
+func (*protocol) Close() {}
+
+// Wait implements stack.TransportProtocol.Wait.
+func (*protocol) Wait() {}
 
 // NewProtocol returns a UDP transport protocol.
 func NewProtocol() stack.TransportProtocol {
