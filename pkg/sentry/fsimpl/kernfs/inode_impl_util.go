@@ -219,7 +219,8 @@ func (a *InodeAttrs) Mode() linux.FileMode {
 // Stat partially implements Inode.Stat. Note that this function doesn't provide
 // all the stat fields, and the embedder should consider extending the result
 // with filesystem-specific fields.
-func (a *InodeAttrs) Stat(*vfs.Filesystem) linux.Statx {
+func (a *InodeAttrs) Stat(*vfs.Filesystem, vfs.StatOptions) (linux.Statx, error) {
+	// TODO: use opts?
 	var stat linux.Statx
 	stat.Mask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_NLINK
 	stat.Ino = atomic.LoadUint64(&a.ino)
@@ -230,7 +231,7 @@ func (a *InodeAttrs) Stat(*vfs.Filesystem) linux.Statx {
 
 	// TODO: Implement other stat fields like timestamps.
 
-	return stat
+	return stat, nil
 }
 
 // SetStat implements Inode.SetStat.

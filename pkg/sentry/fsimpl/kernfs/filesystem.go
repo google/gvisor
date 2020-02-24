@@ -634,7 +634,7 @@ func (fs *Filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	if err != nil {
 		return linux.Statx{}, err
 	}
-	return inode.Stat(fs.VFSFilesystem()), nil
+	return inode.Stat(fs.VFSFilesystem(), opts)
 }
 
 // StatFSAt implements vfs.FilesystemImpl.StatFSAt.

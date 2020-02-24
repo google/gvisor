@@ -33,8 +33,8 @@ import (
 // implementations to adapt:
 //   - Have a local fileDescription struct (containing FileDescription) which
 //     embeds FileDescriptionDefaultImpl and overrides the default methods
-//     which are common to all fd implementations for that for that filesystem
-//     like StatusFlags, SetStatusFlags, Stat, SetStat, StatFS, etc.
+//     which are common to all fd implementations for that filesystem like
+//     StatusFlags, SetStatusFlags, Stat, SetStat, StatFS, etc.
 //   - This should be embedded in all file description implementations as the
 //     first field by value.
 //   - Directory FDs would also embed DirectoryFileDescriptionDefaultImpl.
@@ -336,7 +336,7 @@ func (fd *DynamicBytesFileDescriptionImpl) Seek(ctx context.Context, offset int6
 
 // Preconditions: fd.mu must be locked.
 func (fd *DynamicBytesFileDescriptionImpl) pwriteLocked(ctx context.Context, src usermem.IOSequence, offset int64, opts WriteOptions) (int64, error) {
-	if opts.Flags&^(linux.RWF_HIPRI|linux.RWF_DSYNC|linux.RWF_SYNC) != 0 {
+	if opts.Flags&^(linux.RWF_VALID) != 0 {
 		return 0, syserror.EOPNOTSUPP
 	}
 

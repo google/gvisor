@@ -152,12 +152,16 @@ func newTaskOwnedDir(task *kernel.Task, ino uint64, perm linux.FileMode, childre
 }
 
 // Stat implements kernfs.Inode.
-func (i *taskOwnedInode) Stat(fs *vfs.Filesystem) linux.Statx {
-	stat := i.Inode.Stat(fs)
+func (i *taskOwnedInode) Stat(fs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
+	stat, err := i.Inode.Stat(fs, opts)
+	if err != nil {
+		return linux.Statx{}, err
+	}
+	// TODO: use opts?
 	uid, gid := i.getOwner(linux.FileMode(stat.Mode))
 	stat.UID = uint32(uid)
 	stat.GID = uint32(gid)
-	return stat
+	return stat, nil
 }
 
 // CheckPermissions implements kernfs.Inode.

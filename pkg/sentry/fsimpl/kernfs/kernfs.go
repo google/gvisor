@@ -176,8 +176,6 @@ type Dentry struct {
 	vfsd  vfs.Dentry
 	inode Inode
 
-	refs uint64
-
 	// flags caches useful information about the dentry from the inode. See the
 	// dflags* consts above. Must be accessed by atomic ops.
 	flags uint32
@@ -328,7 +326,7 @@ type inodeMetadata interface {
 
 	// Stat returns the metadata for this inode. This corresponds to
 	// vfs.FilesystemImpl.StatAt.
-	Stat(fs *vfs.Filesystem) linux.Statx
+	Stat(fs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error)
 
 	// SetStat updates the metadata for this inode. This corresponds to
 	// vfs.FilesystemImpl.SetStatAt.

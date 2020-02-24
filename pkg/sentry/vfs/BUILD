@@ -42,9 +42,12 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/fd",
         "//pkg/fspath",
         "//pkg/log",
+        "//pkg/safemem",
         "//pkg/sentry/arch",
+        "//pkg/sentry/fs",
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
@@ -52,6 +55,7 @@ go_library(
         "//pkg/syserror",
         "//pkg/usermem",
         "//pkg/waiter",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 

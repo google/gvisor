@@ -211,17 +211,22 @@ func (i *tasksInode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.Open
 	return fd.VFSFileDescription(), nil
 }
 
-func (i *tasksInode) Stat(vsfs *vfs.Filesystem) linux.Statx {
-	stat := i.InodeAttrs.Stat(vsfs)
+func (i *tasksInode) Stat(vsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
+	stat, err := i.InodeAttrs.Stat(vsfs, opts)
+	if err != nil {
+		return linux.Statx{}, err
+	}
 
-	// Add dynamic children to link count.
-	for _, tg := range i.pidns.ThreadGroups() {
-		if leader := tg.Leader(); leader != nil {
-			stat.Nlink++
+	if opts.Mask&linux.STATX_NLINK != 0 {
+		// Add dynamic children to link count.
+		for _, tg := range i.pidns.ThreadGroups() {
+			if leader := tg.Leader(); leader != nil {
+				stat.Nlink++
+			}
 		}
 	}
 
-	return stat
+	return stat, nil
 }
 
 func cpuInfoData(k *kernel.Kernel) string {
