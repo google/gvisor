@@ -194,7 +194,7 @@ func replyWithReset(s *segment) {
 	sendTCP(&s.route, s.id, buffer.VectorisedView{}, s.route.DefaultTTL(), stack.DefaultTOS, flags, seq, ack, 0 /* rcvWnd */, nil /* options */, nil /* gso */)
 }
 
-// SetOption implements TransportProtocol.SetOption.
+// SetOption implements stack.TransportProtocol.SetOption.
 func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 	switch v := option.(type) {
 	case SACKEnabled:
@@ -269,7 +269,7 @@ func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 	}
 }
 
-// Option implements TransportProtocol.Option.
+// Option implements stack.TransportProtocol.Option.
 func (p *protocol) Option(option interface{}) *tcpip.Error {
 	switch v := option.(type) {
 	case *SACKEnabled:
@@ -329,6 +329,16 @@ func (p *protocol) Option(option interface{}) *tcpip.Error {
 	default:
 		return tcpip.ErrUnknownProtocolOption
 	}
+}
+
+// Close implements stack.TransportProtocol.Close.
+func (p *protocol) Close() {
+	p.dispatcher.close()
+}
+
+// Wait implements stack.TransportProtocol.Wait.
+func (p *protocol) Wait() {
+	p.dispatcher.wait()
 }
 
 // NewProtocol returns a TCP transport protocol.
