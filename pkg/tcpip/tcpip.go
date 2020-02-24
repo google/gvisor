@@ -341,8 +341,14 @@ type ControlMessages struct {
 // networking stack.
 type Endpoint interface {
 	// Close puts the endpoint in a closed state and frees all resources
-	// associated with it.
+	// associated with it. Close initiates the teardown process, the
+	// Endpoint may not be fully closed when Close returns.
 	Close()
+
+	// Abort initiates an expedited endpoint teardown. As compared to
+	// Close, Abort prioritizes closing the Endpoint quickly over cleanly.
+	// Abort is best effort; implementing Abort with Close is acceptable.
+	Abort()
 
 	// Read reads data from the endpoint and optionally returns the sender.
 	//

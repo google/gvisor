@@ -74,10 +74,11 @@ type TransportEndpoint interface {
 	// HandleControlPacket takes ownership of pkt.
 	HandleControlPacket(id TransportEndpointID, typ ControlType, extra uint32, pkt tcpip.PacketBuffer)
 
-	// Close puts the endpoint in a closed state and frees all resources
-	// associated with it. This cleanup may happen asynchronously. Wait can
-	// be used to block on this asynchronous cleanup.
-	Close()
+	// Abort initiates an expedited endpoint teardown. It puts the endpoint
+	// in a closed state and frees all resources associated with it. This
+	// cleanup may happen asynchronously. Wait can be used to block on this
+	// asynchronous cleanup.
+	Abort()
 
 	// Wait waits for any worker goroutines owned by the endpoint to stop.
 	//
@@ -160,6 +161,13 @@ type TransportProtocol interface {
 	// Option returns an error if the option is not supported or the
 	// provided option value is invalid.
 	Option(option interface{}) *tcpip.Error
+
+	// Close requests that any worker goroutines owned by the protocol
+	// stop.
+	Close()
+
+	// Wait waits for any worker goroutines owned by the protocol to stop.
+	Wait()
 }
 
 // TransportDispatcher contains the methods used by the network stack to deliver
@@ -293,6 +301,13 @@ type NetworkProtocol interface {
 	// Option returns an error if the option is not supported or the
 	// provided option value is invalid.
 	Option(option interface{}) *tcpip.Error
+
+	// Close requests that any worker goroutines owned by the protocol
+	// stop.
+	Close()
+
+	// Wait waits for any worker goroutines owned by the protocol to stop.
+	Wait()
 }
 
 // NetworkDispatcher contains the methods used by the network stack to deliver
