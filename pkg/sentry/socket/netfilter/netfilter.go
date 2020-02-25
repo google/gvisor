@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -288,6 +289,7 @@ func marshalRedirectTarget() []byte {
 			TargetSize: linux.SizeOfXTRedirectTarget,
 		},
 	}
+	copy(target.Target.Name[:], redirectTargetName)
 
 	ret := make([]byte, 0, linux.SizeOfXTRedirectTarget)
 	return binary.Marshal(ret, usermem.ByteOrder, target)
@@ -405,7 +407,7 @@ func SetEntries(stack *stack.Stack, optVal []byte) *syserr.Error {
 			nflog("entry doesn't have enough room for its target (only %d bytes remain)", len(optVal))
 			return syserr.ErrInvalidArgument
 		}
-		target, err := parseTarget(optVal[:targetSize])
+		target, err := parseTarget(filter, optVal[:targetSize])
 		if err != nil {
 			nflog("failed to parse target: %v", err)
 			return syserr.ErrInvalidArgument
@@ -552,7 +554,7 @@ func parseMatchers(filter iptables.IPHeaderFilter, optVal []byte) ([]iptables.Ma
 
 // parseTarget parses a target from optVal. optVal should contain only the
 // target.
-func parseTarget(optVal []byte) (iptables.Target, error) {
+func parseTarget(filter iptables.IPHeaderFilter, optVal []byte) (iptables.Target, error) {
 	nflog("set entries: parsing target of size %d", len(optVal))
 	if len(optVal) < linux.SizeOfXTEntryTarget {
 		return nil, fmt.Errorf("optVal has insufficient size for entry target %d", len(optVal))
@@ -604,6 +606,10 @@ func parseTarget(optVal []byte) (iptables.Target, error) {
 			return nil, fmt.Errorf("netfilter.SetEntries: optVal has insufficient size for redirect target %d", len(optVal))
 		}
 
+		if filter.Protocol != header.TCPProtocolNumber && filter.Protocol != header.UDPProtocolNumber {
+			return nil, fmt.Errorf("netfilter.SetEntries: invalid argument")
+		}
+
 		var redirectTarget linux.XTRedirectTarget
 		buf = optVal[:linux.SizeOfXTRedirectTarget]
 		binary.Unmarshal(buf, usermem.ByteOrder, &redirectTarget)
@@ -612,21 +618,30 @@ func parseTarget(optVal []byte) (iptables.Target, error) {
 		var target iptables.RedirectTarget
 		nfRange := redirectTarget.NfRange
 
-		target.RangeSize = nfRange.Rangesize
-		target.Flags = nfRange.RangeIPV4[0].Flags
+		// RangeSize should be 1.
+		if nfRange.RangeSize != 1 {
+			return nil, fmt.Errorf("netfilter.SetEntries: invalid argument")
+		}
 
-		target.MinIP = tcpip.Address(nfRange.RangeIPV4[0].MinIP[:])
-		target.MaxIP = tcpip.Address(nfRange.RangeIPV4[0].MaxIP[:])
+		// TODO(gvisor.dev/issue/170): Check if the flags are valid.
+		// Also check if we need to map ports or IP.
+		// For now, redirect target only supports dest port change.
+		if nfRange.RangeIPV4.Flags&linux.NF_NAT_RANGE_PROTO_SPECIFIED == 0 {
+			return nil, fmt.Errorf("netfilter.SetEntries: invalid argument.")
+		}
+		target.Flags = nfRange.RangeIPV4.Flags
+
+		target.MinIP = tcpip.Address(nfRange.RangeIPV4.MinIP[:])
+		target.MaxIP = tcpip.Address(nfRange.RangeIPV4.MaxIP[:])
 
 		// Convert port from big endian to little endian.
 		port := make([]byte, 2)
-		binary.BigEndian.PutUint16(port, nfRange.RangeIPV4[0].MinPort)
+		binary.BigEndian.PutUint16(port, nfRange.RangeIPV4.MinPort)
 		target.MinPort = binary.LittleEndian.Uint16(port)
 
-		binary.BigEndian.PutUint16(port, nfRange.RangeIPV4[0].MaxPort)
+		binary.BigEndian.PutUint16(port, nfRange.RangeIPV4.MaxPort)
 		target.MaxPort = binary.LittleEndian.Uint16(port)
 		return target, nil
-
 	}
 
 	// Unknown target.
