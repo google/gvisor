@@ -167,6 +167,7 @@ func (x *MemoryManager) save(m state.Map) {
 	m.Save("executable", &x.executable)
 	m.Save("dumpability", &x.dumpability)
 	m.Save("aioManager", &x.aioManager)
+	m.Save("sleepForActivation", &x.sleepForActivation)
 }
 
 func (x *MemoryManager) load(m state.Map) {
@@ -190,6 +191,7 @@ func (x *MemoryManager) load(m state.Map) {
 	m.Load("executable", &x.executable)
 	m.Load("dumpability", &x.dumpability)
 	m.Load("aioManager", &x.aioManager)
+	m.Load("sleepForActivation", &x.sleepForActivation)
 	m.AfterLoad(x.afterLoad)
 }
 

@@ -158,6 +158,7 @@ func (x *Kernel) save(m state.Map) {
 	m.Save("DirentCacheLimiter", &x.DirentCacheLimiter)
 	m.Save("SpecialOpts", &x.SpecialOpts)
 	m.Save("vfs", &x.vfs)
+	m.Save("SleepForAddressSpaceActivation", &x.SleepForAddressSpaceActivation)
 }
 
 func (x *Kernel) afterLoad() {}
@@ -192,6 +193,7 @@ func (x *Kernel) load(m state.Map) {
 	m.Load("DirentCacheLimiter", &x.DirentCacheLimiter)
 	m.Load("SpecialOpts", &x.SpecialOpts)
 	m.Load("vfs", &x.vfs)
+	m.Load("SleepForAddressSpaceActivation", &x.SleepForAddressSpaceActivation)
 	m.LoadValue("danglingEndpoints", new([]tcpip.Endpoint), func(y interface{}) { x.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
 	m.LoadValue("deviceRegistry", new(*device.Registry), func(y interface{}) { x.loadDeviceRegistry(y.(*device.Registry)) })
 }
