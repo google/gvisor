@@ -71,6 +71,7 @@ func waitForProcessCount(cont *Container, want int) error {
 			return &backoff.PermanentError{Err: err}
 		}
 		if got := len(pss); got != want {
+			log.Infof("Waiting for process count to reach %d. Current: %d", want, got)
 			return fmt.Errorf("wrong process count, got: %d, want: %d", got, want)
 		}
 		return nil
