@@ -2790,13 +2790,14 @@ func TestNewPEBOnPromotionToPermanent(t *testing.T) {
 
 func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
 	const (
-		linkLocalAddr1   = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-		linkLocalAddr2   = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-		uniqueLocalAddr1 = tcpip.Address("\xfc\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-		uniqueLocalAddr2 = tcpip.Address("\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-		globalAddr1      = tcpip.Address("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-		globalAddr2      = tcpip.Address("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-		nicID            = 1
+		linkLocalAddr1         = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+		linkLocalAddr2         = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+		linkLocalMulticastAddr = tcpip.Address("\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+		uniqueLocalAddr1       = tcpip.Address("\xfc\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+		uniqueLocalAddr2       = tcpip.Address("\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+		globalAddr1            = tcpip.Address("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+		globalAddr2            = tcpip.Address("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+		nicID                  = 1
 	)
 
 	// Rule 3 is not tested here, and is instead tested by NDP's AutoGenAddr test.
@@ -2867,6 +2868,18 @@ func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
 			name:              "Link Local most preferred (first address)",
 			nicAddrs:          []tcpip.Address{linkLocalAddr1, uniqueLocalAddr1, globalAddr1},
 			connectAddr:       linkLocalAddr2,
+			expectedLocalAddr: linkLocalAddr1,
+		},
+		{
+			name:              "Link Local most preferred for link local multicast (last address)",
+			nicAddrs:          []tcpip.Address{globalAddr1, uniqueLocalAddr1, linkLocalAddr1},
+			connectAddr:       linkLocalMulticastAddr,
+			expectedLocalAddr: linkLocalAddr1,
+		},
+		{
+			name:              "Link Local most preferred for link local multicast (first address)",
+			nicAddrs:          []tcpip.Address{linkLocalAddr1, uniqueLocalAddr1, globalAddr1},
+			connectAddr:       linkLocalMulticastAddr,
 			expectedLocalAddr: linkLocalAddr1,
 		},
 		{
