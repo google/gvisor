@@ -100,10 +100,14 @@ func newUndoMount(d *Dirent) *Mount {
 	}
 }
 
-// Root returns the root dirent of this mount. Callers must call DecRef on the
-// returned dirent.
+// Root returns the root dirent of this mount.
+//
+// This may return nil if the mount has already been free. Callers must handle this
+// case appropriately. If non-nil, callers must call DecRef on the returned *Dirent.
 func (m *Mount) Root() *Dirent {
-	m.root.IncRef()
+	if !m.root.TryIncRef() {
+		return nil
+	}
 	return m.root
 }
 
