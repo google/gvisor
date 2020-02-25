@@ -27,11 +27,12 @@ import (
 )
 
 const (
-	linkAddr         = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
-	linkLocalAddr    = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-	uniqueLocalAddr1 = tcpip.Address("\xfc\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-	uniqueLocalAddr2 = tcpip.Address("\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-	globalAddr       = tcpip.Address("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+	linkAddr               = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
+	linkLocalAddr          = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+	linkLocalMulticastAddr = tcpip.Address("\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+	uniqueLocalAddr1       = tcpip.Address("\xfc\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+	uniqueLocalAddr2       = tcpip.Address("\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+	globalAddr             = tcpip.Address("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
 )
 
 func TestEthernetAdddressToModifiedEUI64(t *testing.T) {
@@ -256,6 +257,85 @@ func TestIsV6UniqueLocalAddress(t *testing.T) {
 	}
 }
 
+func TestIsV6LinkLocalMulticastAddress(t *testing.T) {
+	tests := []struct {
+		name     string
+		addr     tcpip.Address
+		expected bool
+	}{
+		{
+			name:     "Valid Link Local Multicast",
+			addr:     linkLocalMulticastAddr,
+			expected: true,
+		},
+		{
+			name:     "Valid Link Local Multicast with flags",
+			addr:     "\xff\xf2\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+			expected: true,
+		},
+		{
+			name:     "Link Local Unicast",
+			addr:     linkLocalAddr,
+			expected: false,
+		},
+		{
+			name:     "IPv4 Multicast",
+			addr:     "\xe0\x00\x00\x01",
+			expected: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := header.IsV6LinkLocalMulticastAddress(test.addr); got != test.expected {
+				t.Errorf("got header.IsV6LinkLocalMulticastAddress(%s) = %t, want = %t", test.addr, got, test.expected)
+			}
+		})
+	}
+}
+
+func TestIsV6LinkLocalAddress(t *testing.T) {
+	tests := []struct {
+		name     string
+		addr     tcpip.Address
+		expected bool
+	}{
+		{
+			name:     "Valid Link Local Unicast",
+			addr:     linkLocalAddr,
+			expected: true,
+		},
+		{
+			name:     "Link Local Multicast",
+			addr:     linkLocalMulticastAddr,
+			expected: false,
+		},
+		{
+			name:     "Unique Local",
+			addr:     uniqueLocalAddr1,
+			expected: false,
+		},
+		{
+			name:     "Global",
+			addr:     globalAddr,
+			expected: false,
+		},
+		{
+			name:     "IPv4 Link Local",
+			addr:     "\xa9\xfe\x00\x01",
+			expected: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := header.IsV6LinkLocalAddress(test.addr); got != test.expected {
+				t.Errorf("got header.IsV6LinkLocalAddress(%s) = %t, want = %t", test.addr, got, test.expected)
+			}
+		})
+	}
+}
+
 func TestScopeForIPv6Address(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -270,8 +350,14 @@ func TestScopeForIPv6Address(t *testing.T) {
 			err:   nil,
 		},
 		{
-			name:  "Link Local",
+			name:  "Link Local Unicast",
 			addr:  linkLocalAddr,
+			scope: header.LinkLocalScope,
+			err:   nil,
+		},
+		{
+			name:  "Link Local Multicast",
+			addr:  linkLocalMulticastAddr,
 			scope: header.LinkLocalScope,
 			err:   nil,
 		},

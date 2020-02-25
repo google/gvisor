@@ -115,6 +115,19 @@ const (
 	// for the secret key used to generate an opaque interface identifier as
 	// outlined by RFC 7217.
 	OpaqueIIDSecretKeyMinBytes = 16
+
+	// ipv6MulticastAddressScopeByteIdx is the byte where the scope (scop) field
+	// is located within a multicast IPv6 address, as per RFC 4291 section 2.7.
+	ipv6MulticastAddressScopeByteIdx = 1
+
+	// ipv6MulticastAddressScopeMask is the mask for the scope (scop) field,
+	// within the byte holding the field, as per RFC 4291 section 2.7.
+	ipv6MulticastAddressScopeMask = 0xF
+
+	// ipv6LinkLocalMulticastScope is the value of the scope (scop) field within
+	// a multicast IPv6 address that indicates the address has link-local scope,
+	// as per RFC 4291 section 2.7.
+	ipv6LinkLocalMulticastScope = 2
 )
 
 // IPv6EmptySubnet is the empty IPv6 subnet. It may also be known as the
@@ -340,6 +353,12 @@ func IsV6LinkLocalAddress(addr tcpip.Address) bool {
 	return addr[0] == 0xfe && (addr[1]&0xc0) == 0x80
 }
 
+// IsV6LinkLocalMulticastAddress determines if the provided address is an IPv6
+// link-local multicast address.
+func IsV6LinkLocalMulticastAddress(addr tcpip.Address) bool {
+	return IsV6MulticastAddress(addr) && addr[ipv6MulticastAddressScopeByteIdx]&ipv6MulticastAddressScopeMask == ipv6LinkLocalMulticastScope
+}
+
 // IsV6UniqueLocalAddress determines if the provided address is an IPv6
 // unique-local address (within the prefix FC00::/7).
 func IsV6UniqueLocalAddress(addr tcpip.Address) bool {
@@ -411,6 +430,9 @@ func ScopeForIPv6Address(addr tcpip.Address) (IPv6AddressScope, *tcpip.Error) {
 	}
 
 	switch {
+	case IsV6LinkLocalMulticastAddress(addr):
+		return LinkLocalScope, nil
+
 	case IsV6LinkLocalAddress(addr):
 		return LinkLocalScope, nil
 
