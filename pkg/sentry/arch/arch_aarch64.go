@@ -34,6 +34,9 @@ const (
 	SyscallWidth = 4
 )
 
+// ARMTrapFlag is the mask for the trap flag.
+const ARMTrapFlag = uint64(1) << 21
+
 // aarch64FPState is aarch64 floating point state.
 type aarch64FPState []byte
 
