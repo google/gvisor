@@ -107,7 +107,7 @@ execute `runsc debug` to collect profile information and save to a file. Here ar
 the options available:
 
 * **--profile-heap:** Generates heap profile to the speficied file.
-* **--profile-cpu:** Enables CPU profiler, waits for `--profile-delay` seconds 
+* **--profile-cpu:** Enables CPU profiler, waits for `--duration` seconds
   and generates CPU profile to the speficied file.
 
 For example:
@@ -117,11 +117,11 @@ docker run --runtime=runsc-prof --rm -d alpine sh -c "while true; do echo runnin
 63254c6ab3a6989623fa1fb53616951eed31ac605a2637bb9ddba5d8d404b35b
 
 sudo runsc --root /var/run/docker/runtime-runsc-prof/moby debug --profile-heap=/tmp/heap.prof 63254c6ab3a6989623fa1fb53616951eed31ac605a2637bb9ddba5d8d404b35b
-sudo runsc --root /var/run/docker/runtime-runsc-prof/moby debug --profile-cpu=/tmp/cpu.prof --profile-delay=30 63254c6ab3a6989623fa1fb53616951eed31ac605a2637bb9ddba5d8d404b35b
+sudo runsc --root /var/run/docker/runtime-runsc-prof/moby debug --profile-cpu=/tmp/cpu.prof --duration=30s 63254c6ab3a6989623fa1fb53616951eed31ac605a2637bb9ddba5d8d404b35b
 ```
 
-The resulting files can be opened using `go tool pprof` or [pprof][]. The examples 
-below create image file (`.svg`) with the heap profile and writes the top 
+The resulting files can be opened using `go tool pprof` or [pprof][]. The examples
+below create image file (`.svg`) with the heap profile and writes the top
 functions using CPU to the console:
 
 ```bash
