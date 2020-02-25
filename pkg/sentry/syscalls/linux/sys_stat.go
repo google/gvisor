@@ -23,6 +23,8 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// LINT.IfChange
+
 func statFromAttrs(t *kernel.Task, sattr fs.StableAttr, uattr fs.UnstableAttr) linux.Stat {
 	return linux.Stat{
 		Dev:     sattr.DeviceID,
@@ -297,3 +299,5 @@ func statfsImpl(t *kernel.Task, d *fs.Dirent, addr usermem.Addr) error {
 	_, err = t.CopyOut(addr, &statfs)
 	return err
 }
+
+// LINT.ThenChange(vfs2/stat.go)

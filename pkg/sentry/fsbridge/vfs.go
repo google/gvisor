@@ -117,14 +117,18 @@ func NewVFSLookup(mntns *vfs.MountNamespace, root, workingDir vfs.VirtualDentry)
 // default anyways.
 //
 // TODO(gvisor.dev/issue/1623): Check mount has read and exec permission.
-func (l *vfsLookup) OpenPath(ctx context.Context, path string, opts vfs.OpenOptions, _ *uint, resolveFinal bool) (File, error) {
+func (l *vfsLookup) OpenPath(ctx context.Context, pathname string, opts vfs.OpenOptions, _ *uint, resolveFinal bool) (File, error) {
 	vfsObj := l.mntns.Root().Mount().Filesystem().VirtualFilesystem()
 	creds := auth.CredentialsFromContext(ctx)
+	path := fspath.Parse(pathname)
 	pop := &vfs.PathOperation{
 		Root:               l.root,
-		Start:              l.root,
-		Path:               fspath.Parse(path),
+		Start:              l.workingDir,
+		Path:               path,
 		FollowFinalSymlink: resolveFinal,
+	}
+	if path.Absolute {
+		pop.Start = l.root
 	}
 	fd, err := vfsObj.OpenAt(ctx, creds, pop, &opts)
 	if err != nil {

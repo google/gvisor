@@ -228,7 +228,7 @@ func (rp *ResolvingPath) Advance() {
 		rp.pit = next
 	} else { // at end of path segment, continue with next one
 		rp.curPart--
-		rp.pit = rp.parts[rp.curPart-1]
+		rp.pit = rp.parts[rp.curPart]
 	}
 }
 

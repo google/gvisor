@@ -26,6 +26,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
+	"gvisor.dev/gvisor/pkg/gohacks"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -160,7 +161,7 @@ func newMountTableSlots(cap uintptr) unsafe.Pointer {
 // Lookup may be called even if there are concurrent mutators of mt.
 func (mt *mountTable) Lookup(parent *Mount, point *Dentry) *Mount {
 	key := mountKey{parent: unsafe.Pointer(parent), point: unsafe.Pointer(point)}
-	hash := memhash(noescape(unsafe.Pointer(&key)), uintptr(mt.seed), mountKeyBytes)
+	hash := memhash(gohacks.Noescape(unsafe.Pointer(&key)), uintptr(mt.seed), mountKeyBytes)
 
 loop:
 	for {
@@ -361,12 +362,3 @@ func memhash(p unsafe.Pointer, seed, s uintptr) uintptr
 
 //go:linkname rand32 runtime.fastrand
 func rand32() uint32
-
-// This is copy/pasted from runtime.noescape(), and is needed because arguments
-// apparently escape from all functions defined by linkname.
-//
-//go:nosplit
-func noescape(p unsafe.Pointer) unsafe.Pointer {
-	x := uintptr(p)
-	return unsafe.Pointer(x ^ 0)
-}

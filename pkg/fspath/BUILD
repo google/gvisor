@@ -8,8 +8,10 @@ go_library(
     name = "fspath",
     srcs = [
         "builder.go",
-        "builder_unsafe.go",
         "fspath.go",
+    ],
+    deps = [
+        "//pkg/gohacks",
     ],
 )
 

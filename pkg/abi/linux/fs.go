@@ -38,6 +38,8 @@ const (
 )
 
 // Statfs is struct statfs, from uapi/asm-generic/statfs.h.
+//
+// +marshal
 type Statfs struct {
 	// Type is one of the filesystem magic values, defined above.
 	Type uint64
