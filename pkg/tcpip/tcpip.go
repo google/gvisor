@@ -323,11 +323,11 @@ type ControlMessages struct {
 	// TOS is the IPv4 type of service of the associated packet.
 	TOS uint8
 
-	// HasTClass indicates whether Tclass is valid/set.
+	// HasTClass indicates whether TClass is valid/set.
 	HasTClass bool
 
-	// Tclass is the IPv6 traffic class of the associated packet.
-	TClass int32
+	// TClass is the IPv6 traffic class of the associated packet.
+	TClass uint32
 
 	// HasIPPacketInfo indicates whether PacketInfo is set.
 	HasIPPacketInfo bool
@@ -341,8 +341,14 @@ type ControlMessages struct {
 // networking stack.
 type Endpoint interface {
 	// Close puts the endpoint in a closed state and frees all resources
-	// associated with it.
+	// associated with it. Close initiates the teardown process, the
+	// Endpoint may not be fully closed when Close returns.
 	Close()
+
+	// Abort initiates an expedited endpoint teardown. As compared to
+	// Close, Abort prioritizes closing the Endpoint quickly over cleanly.
+	// Abort is best effort; implementing Abort with Close is acceptable.
+	Abort()
 
 	// Read reads data from the endpoint and optionally returns the sender.
 	//
@@ -502,9 +508,13 @@ type WriteOptions struct {
 type SockOptBool int
 
 const (
+	// ReceiveTClassOption is used by SetSockOpt/GetSockOpt to specify if the
+	// IPV6_TCLASS ancillary message is passed with incoming packets.
+	ReceiveTClassOption SockOptBool = iota
+
 	// ReceiveTOSOption is used by SetSockOpt/GetSockOpt to specify if the TOS
 	// ancillary message is passed with incoming packets.
-	ReceiveTOSOption SockOptBool = iota
+	ReceiveTOSOption
 
 	// V6OnlyOption is used by {G,S}etSockOptBool to specify whether an IPv6
 	// socket is to be restricted to sending and receiving IPv6 packets only.
@@ -514,6 +524,9 @@ const (
 	// if more inforamtion is provided with incoming packets such
 	// as interface index and address.
 	ReceiveIPPacketInfoOption
+
+	// TODO(b/146901447): convert existing bool socket options to be handled via
+	// Get/SetSockOptBool
 )
 
 // SockOptInt represents socket options which values have the int type.

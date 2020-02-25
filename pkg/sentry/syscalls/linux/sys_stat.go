@@ -23,6 +23,8 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// LINT.IfChange
+
 func statFromAttrs(t *kernel.Task, sattr fs.StableAttr, uattr fs.UnstableAttr) linux.Stat {
 	return linux.Stat{
 		Dev:     sattr.DeviceID,
@@ -131,8 +133,7 @@ func stat(t *kernel.Task, d *fs.Dirent, dirPath bool, statAddr usermem.Addr) err
 		return err
 	}
 	s := statFromAttrs(t, d.Inode.StableAttr, uattr)
-	_, err = s.CopyOut(t, statAddr)
-	return err
+	return s.CopyOut(t, statAddr)
 }
 
 // fstat implements fstat for the given *fs.File.
@@ -142,8 +143,7 @@ func fstat(t *kernel.Task, f *fs.File, statAddr usermem.Addr) error {
 		return err
 	}
 	s := statFromAttrs(t, f.Dirent.Inode.StableAttr, uattr)
-	_, err = s.CopyOut(t, statAddr)
-	return err
+	return s.CopyOut(t, statAddr)
 }
 
 // Statx implements linux syscall statx(2).
@@ -299,3 +299,5 @@ func statfsImpl(t *kernel.Task, d *fs.Dirent, addr usermem.Addr) error {
 	_, err = t.CopyOut(addr, &statfs)
 	return err
 }
+
+// LINT.ThenChange(vfs2/stat.go)

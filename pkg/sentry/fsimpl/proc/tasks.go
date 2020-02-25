@@ -73,9 +73,9 @@ func newTasksInode(inoGen InoGenerator, k *kernel.Kernel, pidns *kernel.PIDNames
 		"meminfo": newDentry(root, inoGen.NextIno(), 0444, &meminfoData{}),
 		"mounts":  kernfs.NewStaticSymlink(root, inoGen.NextIno(), "self/mounts"),
 		"net":     newNetDir(root, inoGen, k),
-		"stat":    newDentry(root, inoGen.NextIno(), 0444, &statData{}),
+		"stat":    newDentry(root, inoGen.NextIno(), 0444, &statData{k: k}),
 		"uptime":  newDentry(root, inoGen.NextIno(), 0444, &uptimeData{}),
-		"version": newDentry(root, inoGen.NextIno(), 0444, &versionData{}),
+		"version": newDentry(root, inoGen.NextIno(), 0444, &versionData{k: k}),
 	}
 
 	inode := &tasksInode{

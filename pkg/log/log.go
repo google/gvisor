@@ -79,7 +79,7 @@ func (l Level) String() string {
 type Emitter interface {
 	// Emit emits the given log statement. This allows for control over the
 	// timestamp used for logging.
-	Emit(level Level, timestamp time.Time, format string, v ...interface{})
+	Emit(depth int, level Level, timestamp time.Time, format string, v ...interface{})
 }
 
 // Writer writes the output to the given writer.
@@ -142,7 +142,7 @@ func (l *Writer) Write(data []byte) (int, error) {
 }
 
 // Emit emits the message.
-func (l *Writer) Emit(level Level, timestamp time.Time, format string, args ...interface{}) {
+func (l *Writer) Emit(_ int, _ Level, _ time.Time, format string, args ...interface{}) {
 	fmt.Fprintf(l, format, args...)
 }
 
@@ -150,9 +150,9 @@ func (l *Writer) Emit(level Level, timestamp time.Time, format string, args ...i
 type MultiEmitter []Emitter
 
 // Emit emits to all emitters.
-func (m *MultiEmitter) Emit(level Level, timestamp time.Time, format string, v ...interface{}) {
+func (m *MultiEmitter) Emit(depth int, level Level, timestamp time.Time, format string, v ...interface{}) {
 	for _, e := range *m {
-		e.Emit(level, timestamp, format, v...)
+		e.Emit(1+depth, level, timestamp, format, v...)
 	}
 }
 
@@ -167,7 +167,7 @@ type TestEmitter struct {
 }
 
 // Emit emits to the TestLogger.
-func (t *TestEmitter) Emit(level Level, timestamp time.Time, format string, v ...interface{}) {
+func (t *TestEmitter) Emit(_ int, level Level, timestamp time.Time, format string, v ...interface{}) {
 	t.Logf(format, v...)
 }
 
@@ -198,22 +198,37 @@ type BasicLogger struct {
 
 // Debugf implements logger.Debugf.
 func (l *BasicLogger) Debugf(format string, v ...interface{}) {
-	if l.IsLogging(Debug) {
-		l.Emit(Debug, time.Now(), format, v...)
-	}
+	l.DebugfAtDepth(1, format, v...)
 }
 
 // Infof implements logger.Infof.
 func (l *BasicLogger) Infof(format string, v ...interface{}) {
-	if l.IsLogging(Info) {
-		l.Emit(Info, time.Now(), format, v...)
-	}
+	l.InfofAtDepth(1, format, v...)
 }
 
 // Warningf implements logger.Warningf.
 func (l *BasicLogger) Warningf(format string, v ...interface{}) {
+	l.WarningfAtDepth(1, format, v...)
+}
+
+// DebugfAtDepth logs at a specific depth.
+func (l *BasicLogger) DebugfAtDepth(depth int, format string, v ...interface{}) {
+	if l.IsLogging(Debug) {
+		l.Emit(1+depth, Debug, time.Now(), format, v...)
+	}
+}
+
+// InfofAtDepth logs at a specific depth.
+func (l *BasicLogger) InfofAtDepth(depth int, format string, v ...interface{}) {
+	if l.IsLogging(Info) {
+		l.Emit(1+depth, Info, time.Now(), format, v...)
+	}
+}
+
+// WarningfAtDepth logs at a specific depth.
+func (l *BasicLogger) WarningfAtDepth(depth int, format string, v ...interface{}) {
 	if l.IsLogging(Warning) {
-		l.Emit(Warning, time.Now(), format, v...)
+		l.Emit(1+depth, Warning, time.Now(), format, v...)
 	}
 }
 
@@ -257,17 +272,32 @@ func SetLevel(newLevel Level) {
 
 // Debugf logs to the global logger.
 func Debugf(format string, v ...interface{}) {
-	Log().Debugf(format, v...)
+	Log().DebugfAtDepth(1, format, v...)
 }
 
 // Infof logs to the global logger.
 func Infof(format string, v ...interface{}) {
-	Log().Infof(format, v...)
+	Log().InfofAtDepth(1, format, v...)
 }
 
 // Warningf logs to the global logger.
 func Warningf(format string, v ...interface{}) {
-	Log().Warningf(format, v...)
+	Log().WarningfAtDepth(1, format, v...)
+}
+
+// DebugfAtDepth logs to the global logger.
+func DebugfAtDepth(depth int, format string, v ...interface{}) {
+	Log().DebugfAtDepth(1+depth, format, v...)
+}
+
+// InfofAtDepth logs to the global logger.
+func InfofAtDepth(depth int, format string, v ...interface{}) {
+	Log().InfofAtDepth(1+depth, format, v...)
+}
+
+// WarningfAtDepth logs to the global logger.
+func WarningfAtDepth(depth int, format string, v ...interface{}) {
+	Log().WarningfAtDepth(1+depth, format, v...)
 }
 
 // defaultStackSize is the default buffer size to allocate for stack traces.

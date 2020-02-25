@@ -43,6 +43,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/fspath",
+        "//pkg/gohacks",
         "//pkg/log",
         "//pkg/sentry/arch",
         "//pkg/sentry/fs/lock",

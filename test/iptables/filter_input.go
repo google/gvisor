@@ -26,6 +26,7 @@ const (
 	acceptPort       = 2402
 	sendloopDuration = 2 * time.Second
 	network          = "udp4"
+	chainName        = "foochain"
 )
 
 func init() {
@@ -40,6 +41,12 @@ func init() {
 	RegisterTestCase(FilterInputDefaultPolicyAccept{})
 	RegisterTestCase(FilterInputDefaultPolicyDrop{})
 	RegisterTestCase(FilterInputReturnUnderflow{})
+	RegisterTestCase(FilterInputSerializeJump{})
+	RegisterTestCase(FilterInputJumpBasic{})
+	RegisterTestCase(FilterInputJumpReturn{})
+	RegisterTestCase(FilterInputJumpReturnDrop{})
+	RegisterTestCase(FilterInputJumpBuiltin{})
+	RegisterTestCase(FilterInputJumpTwice{})
 }
 
 // FilterInputDropUDP tests that we can drop UDP traffic.
@@ -267,13 +274,12 @@ func (FilterInputMultiUDPRules) Name() string {
 
 // ContainerAction implements TestCase.ContainerAction.
 func (FilterInputMultiUDPRules) ContainerAction(ip net.IP) error {
-	if err := filterTable("-A", "INPUT", "-p", "udp", "-m", "udp", "--destination-port", fmt.Sprintf("%d", dropPort), "-j", "DROP"); err != nil {
-		return err
+	rules := [][]string{
+		{"-A", "INPUT", "-p", "udp", "-m", "udp", "--destination-port", fmt.Sprintf("%d", dropPort), "-j", "DROP"},
+		{"-A", "INPUT", "-p", "udp", "-m", "udp", "--destination-port", fmt.Sprintf("%d", acceptPort), "-j", "ACCEPT"},
+		{"-L"},
 	}
-	if err := filterTable("-A", "INPUT", "-p", "udp", "-m", "udp", "--destination-port", fmt.Sprintf("%d", acceptPort), "-j", "ACCEPT"); err != nil {
-		return err
-	}
-	return filterTable("-L")
+	return filterTableRules(rules)
 }
 
 // LocalAction implements TestCase.LocalAction.
@@ -314,14 +320,13 @@ func (FilterInputCreateUserChain) Name() string {
 
 // ContainerAction implements TestCase.ContainerAction.
 func (FilterInputCreateUserChain) ContainerAction(ip net.IP) error {
-	// Create a chain.
-	const chainName = "foochain"
-	if err := filterTable("-N", chainName); err != nil {
-		return err
+	rules := [][]string{
+		// Create a chain.
+		{"-N", chainName},
+		// Add a simple rule to the chain.
+		{"-A", chainName, "-j", "DROP"},
 	}
-
-	// Add a simple rule to the chain.
-	return filterTable("-A", chainName, "-j", "DROP")
+	return filterTableRules(rules)
 }
 
 // LocalAction implements TestCase.LocalAction.
@@ -396,13 +401,12 @@ func (FilterInputReturnUnderflow) Name() string {
 func (FilterInputReturnUnderflow) ContainerAction(ip net.IP) error {
 	// Add a RETURN rule followed by an unconditional accept, and set the
 	// default policy to DROP.
-	if err := filterTable("-A", "INPUT", "-j", "RETURN"); err != nil {
-		return err
+	rules := [][]string{
+		{"-A", "INPUT", "-j", "RETURN"},
+		{"-A", "INPUT", "-j", "DROP"},
+		{"-P", "INPUT", "ACCEPT"},
 	}
-	if err := filterTable("-A", "INPUT", "-j", "DROP"); err != nil {
-		return err
-	}
-	if err := filterTable("-P", "INPUT", "ACCEPT"); err != nil {
+	if err := filterTableRules(rules); err != nil {
 		return err
 	}
 
@@ -413,5 +417,181 @@ func (FilterInputReturnUnderflow) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputReturnUnderflow) LocalAction(ip net.IP) error {
+	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// FilterInputSerializeJump verifies that we can serialize jumps.
+type FilterInputSerializeJump struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputSerializeJump) Name() string {
+	return "FilterInputSerializeJump"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputSerializeJump) ContainerAction(ip net.IP) error {
+	// Write a JUMP rule, the serialize it with `-L`.
+	rules := [][]string{
+		{"-N", chainName},
+		{"-A", "INPUT", "-j", chainName},
+		{"-L"},
+	}
+	return filterTableRules(rules)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputSerializeJump) LocalAction(ip net.IP) error {
+	// No-op.
+	return nil
+}
+
+// FilterInputJumpBasic jumps to a chain and executes a rule there.
+type FilterInputJumpBasic struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputJumpBasic) Name() string {
+	return "FilterInputJumpBasic"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputJumpBasic) ContainerAction(ip net.IP) error {
+	rules := [][]string{
+		{"-P", "INPUT", "DROP"},
+		{"-N", chainName},
+		{"-A", "INPUT", "-j", chainName},
+		{"-A", chainName, "-j", "ACCEPT"},
+	}
+	if err := filterTableRules(rules); err != nil {
+		return err
+	}
+
+	// Listen for UDP packets on acceptPort.
+	return listenUDP(acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputJumpBasic) LocalAction(ip net.IP) error {
+	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// FilterInputJumpReturn jumps, returns, and executes a rule.
+type FilterInputJumpReturn struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputJumpReturn) Name() string {
+	return "FilterInputJumpReturn"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputJumpReturn) ContainerAction(ip net.IP) error {
+	rules := [][]string{
+		{"-N", chainName},
+		{"-P", "INPUT", "ACCEPT"},
+		{"-A", "INPUT", "-j", chainName},
+		{"-A", chainName, "-j", "RETURN"},
+		{"-A", chainName, "-j", "DROP"},
+	}
+	if err := filterTableRules(rules); err != nil {
+		return err
+	}
+
+	// Listen for UDP packets on acceptPort.
+	return listenUDP(acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputJumpReturn) LocalAction(ip net.IP) error {
+	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// FilterInputJumpReturnDrop jumps to a chain, returns, and DROPs packets.
+type FilterInputJumpReturnDrop struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputJumpReturnDrop) Name() string {
+	return "FilterInputJumpReturnDrop"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputJumpReturnDrop) ContainerAction(ip net.IP) error {
+	rules := [][]string{
+		{"-N", chainName},
+		{"-A", "INPUT", "-j", chainName},
+		{"-A", "INPUT", "-j", "DROP"},
+		{"-A", chainName, "-j", "RETURN"},
+	}
+	if err := filterTableRules(rules); err != nil {
+		return err
+	}
+
+	// Listen for UDP packets on dropPort.
+	if err := listenUDP(dropPort, sendloopDuration); err == nil {
+		return fmt.Errorf("packets on port %d should have been dropped, but got a packet", dropPort)
+	} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+		return fmt.Errorf("error reading: %v", err)
+	}
+
+	// At this point we know that reading timed out and never received a
+	// packet.
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputJumpReturnDrop) LocalAction(ip net.IP) error {
+	return sendUDPLoop(ip, dropPort, sendloopDuration)
+}
+
+// FilterInputJumpBuiltin verifies that jumping to a top-levl chain is illegal.
+type FilterInputJumpBuiltin struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputJumpBuiltin) Name() string {
+	return "FilterInputJumpBuiltin"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputJumpBuiltin) ContainerAction(ip net.IP) error {
+	if err := filterTable("-A", "INPUT", "-j", "OUTPUT"); err == nil {
+		return fmt.Errorf("iptables should be unable to jump to a built-in chain")
+	}
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputJumpBuiltin) LocalAction(ip net.IP) error {
+	// No-op.
+	return nil
+}
+
+// FilterInputJumpTwice jumps twice, then returns twice and executes a rule.
+type FilterInputJumpTwice struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputJumpTwice) Name() string {
+	return "FilterInputJumpTwice"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputJumpTwice) ContainerAction(ip net.IP) error {
+	const chainName2 = chainName + "2"
+	rules := [][]string{
+		{"-P", "INPUT", "DROP"},
+		{"-N", chainName},
+		{"-N", chainName2},
+		{"-A", "INPUT", "-j", chainName},
+		{"-A", chainName, "-j", chainName2},
+		{"-A", "INPUT", "-j", "ACCEPT"},
+	}
+	if err := filterTableRules(rules); err != nil {
+		return err
+	}
+
+	// UDP packets should jump and return twice, eventually hitting the
+	// ACCEPT rule.
+	return listenUDP(acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputJumpTwice) LocalAction(ip net.IP) error {
 	return sendUDPLoop(ip, acceptPort, sendloopDuration)
 }

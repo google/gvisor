@@ -127,6 +127,10 @@ func TestCloseReader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newLoopbackStack() = %v", err)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	addr := tcpip.FullAddress{NICID, tcpip.Address(net.IPv4(169, 254, 10, 1).To4()), 11211}
 
@@ -175,6 +179,10 @@ func TestCloseReaderWithForwarder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newLoopbackStack() = %v", err)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	addr := tcpip.FullAddress{NICID, tcpip.Address(net.IPv4(169, 254, 10, 1).To4()), 11211}
 	s.AddAddress(NICID, ipv4.ProtocolNumber, addr.Addr)
@@ -225,30 +233,21 @@ func TestCloseRead(t *testing.T) {
 	if terr != nil {
 		t.Fatalf("newLoopbackStack() = %v", terr)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	addr := tcpip.FullAddress{NICID, tcpip.Address(net.IPv4(169, 254, 10, 1).To4()), 11211}
 	s.AddAddress(NICID, ipv4.ProtocolNumber, addr.Addr)
 
 	fwd := tcp.NewForwarder(s, 30000, 10, func(r *tcp.ForwarderRequest) {
 		var wq waiter.Queue
-		ep, err := r.CreateEndpoint(&wq)
+		_, err := r.CreateEndpoint(&wq)
 		if err != nil {
 			t.Fatalf("r.CreateEndpoint() = %v", err)
 		}
-		defer ep.Close()
-		r.Complete(false)
-
-		c := NewTCPConn(&wq, ep)
-
-		buf := make([]byte, 256)
-		n, e := c.Read(buf)
-		if e != nil || string(buf[:n]) != "abc123" {
-			t.Fatalf("c.Read() = (%d, %v), want (6, nil)", n, e)
-		}
-
-		if n, e = c.Write([]byte("abc123")); e != nil {
-			t.Errorf("c.Write() = (%d, %v), want (6, nil)", n, e)
-		}
+		// Endpoint will be closed in deferred s.Close (above).
 	})
 
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, fwd.HandlePacket)
@@ -278,6 +277,10 @@ func TestCloseWrite(t *testing.T) {
 	if terr != nil {
 		t.Fatalf("newLoopbackStack() = %v", terr)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	addr := tcpip.FullAddress{NICID, tcpip.Address(net.IPv4(169, 254, 10, 1).To4()), 11211}
 	s.AddAddress(NICID, ipv4.ProtocolNumber, addr.Addr)
@@ -334,6 +337,10 @@ func TestUDPForwarder(t *testing.T) {
 	if terr != nil {
 		t.Fatalf("newLoopbackStack() = %v", terr)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	ip1 := tcpip.Address(net.IPv4(169, 254, 10, 1).To4())
 	addr1 := tcpip.FullAddress{NICID, ip1, 11211}
@@ -391,6 +398,10 @@ func TestDeadlineChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newLoopbackStack() = %v", err)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	addr := tcpip.FullAddress{NICID, tcpip.Address(net.IPv4(169, 254, 10, 1).To4()), 11211}
 
@@ -440,6 +451,10 @@ func TestPacketConnTransfer(t *testing.T) {
 	if e != nil {
 		t.Fatalf("newLoopbackStack() = %v", e)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	ip1 := tcpip.Address(net.IPv4(169, 254, 10, 1).To4())
 	addr1 := tcpip.FullAddress{NICID, ip1, 11211}
@@ -492,6 +507,10 @@ func TestConnectedPacketConnTransfer(t *testing.T) {
 	if e != nil {
 		t.Fatalf("newLoopbackStack() = %v", e)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	ip := tcpip.Address(net.IPv4(169, 254, 10, 1).To4())
 	addr := tcpip.FullAddress{NICID, ip, 11211}
@@ -562,6 +581,8 @@ func makePipe() (c1, c2 net.Conn, stop func(), err error) {
 	stop = func() {
 		c1.Close()
 		c2.Close()
+		s.Close()
+		s.Wait()
 	}
 
 	if err := l.Close(); err != nil {
@@ -624,6 +645,10 @@ func TestTCPDialError(t *testing.T) {
 	if e != nil {
 		t.Fatalf("newLoopbackStack() = %v", e)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	ip := tcpip.Address(net.IPv4(169, 254, 10, 1).To4())
 	addr := tcpip.FullAddress{NICID, ip, 11211}
@@ -641,6 +666,10 @@ func TestDialContextTCPCanceled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newLoopbackStack() = %v", err)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	addr := tcpip.FullAddress{NICID, tcpip.Address(net.IPv4(169, 254, 10, 1).To4()), 11211}
 	s.AddAddress(NICID, ipv4.ProtocolNumber, addr.Addr)
@@ -659,6 +688,10 @@ func TestDialContextTCPTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newLoopbackStack() = %v", err)
 	}
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
 
 	addr := tcpip.FullAddress{NICID, tcpip.Address(net.IPv4(169, 254, 10, 1).To4()), 11211}
 	s.AddAddress(NICID, ipv4.ProtocolNumber, addr.Addr)

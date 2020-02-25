@@ -61,6 +61,10 @@ func newFakeTransportEndpoint(s *stack.Stack, proto *fakeTransportProtocol, netP
 	return &fakeTransportEndpoint{stack: s, TransportEndpointInfo: stack.TransportEndpointInfo{NetProto: netProto}, proto: proto, uniqueID: uniqueID}
 }
 
+func (f *fakeTransportEndpoint) Abort() {
+	f.Close()
+}
+
 func (f *fakeTransportEndpoint) Close() {
 	f.route.Release()
 }
@@ -272,7 +276,7 @@ func (f *fakeTransportProtocol) NewEndpoint(stack *stack.Stack, netProto tcpip.N
 	return newFakeTransportEndpoint(stack, f, netProto, stack.UniqueID()), nil
 }
 
-func (f *fakeTransportProtocol) NewRawEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, _ *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+func (*fakeTransportProtocol) NewRawEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, _ *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
 	return nil, tcpip.ErrUnknownProtocol
 }
 
@@ -309,6 +313,15 @@ func (f *fakeTransportProtocol) Option(option interface{}) *tcpip.Error {
 		return tcpip.ErrUnknownProtocolOption
 	}
 }
+
+// Abort implements TransportProtocol.Abort.
+func (*fakeTransportProtocol) Abort() {}
+
+// Close implements tcpip.Endpoint.Close.
+func (*fakeTransportProtocol) Close() {}
+
+// Wait implements TransportProtocol.Wait.
+func (*fakeTransportProtocol) Wait() {}
 
 func fakeTransFactory() stack.TransportProtocol {
 	return &fakeTransportProtocol{}

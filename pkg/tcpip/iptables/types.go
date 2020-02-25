@@ -56,17 +56,6 @@ const (
 	NumHooks
 )
 
-// A TableVerdict is what a table decides should be done with a packet.
-type TableVerdict int
-
-const (
-	// TableAccept indicates the packet should continue through netstack.
-	TableAccept TableVerdict = iota
-
-	// TableDrop indicates the packet should be dropped.
-	TableDrop
-)
-
 // A RuleVerdict is what a rule decides should be done with a packet.
 type RuleVerdict int
 
@@ -74,11 +63,11 @@ const (
 	// RuleAccept indicates the packet should continue through netstack.
 	RuleAccept RuleVerdict = iota
 
-	// RuleContinue indicates the packet should continue to the next rule.
-	RuleContinue
-
 	// RuleDrop indicates the packet should be dropped.
 	RuleDrop
+
+	// RuleJump indicates the packet should jump to another chain.
+	RuleJump
 
 	// RuleReturn indicates the packet should return to the previous chain.
 	RuleReturn
@@ -175,5 +164,5 @@ type Target interface {
 	// Action takes an action on the packet and returns a verdict on how
 	// traversal should (or should not) continue. If the return value is
 	// Jump, it also returns the name of the chain to jump to.
-	Action(packet tcpip.PacketBuffer, filter IPHeaderFilter) (RuleVerdict, string)
+	Action(packet tcpip.PacketBuffer, filter IPHeaderFilter) (RuleVerdict, int)
 }

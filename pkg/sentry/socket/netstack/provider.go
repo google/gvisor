@@ -75,6 +75,8 @@ func getTransportProtocol(ctx context.Context, stype linux.SockType, protocol in
 		switch protocol {
 		case syscall.IPPROTO_ICMP:
 			return header.ICMPv4ProtocolNumber, true, nil
+		case syscall.IPPROTO_ICMPV6:
+			return header.ICMPv6ProtocolNumber, true, nil
 		case syscall.IPPROTO_UDP:
 			return header.UDPProtocolNumber, true, nil
 		case syscall.IPPROTO_TCP:

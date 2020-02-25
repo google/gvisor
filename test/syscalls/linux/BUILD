@@ -12,8 +12,12 @@ exports_files(
         "socket_ip_loopback_blocking.cc",
         "socket_ip_tcp_generic_loopback.cc",
         "socket_ip_tcp_loopback.cc",
+        "socket_ip_tcp_loopback_blocking.cc",
+        "socket_ip_tcp_loopback_nonblock.cc",
         "socket_ip_tcp_udp_generic.cc",
         "socket_ip_udp_loopback.cc",
+        "socket_ip_udp_loopback_blocking.cc",
+        "socket_ip_udp_loopback_nonblock.cc",
         "socket_ip_unbound.cc",
         "socket_ipv4_tcp_unbound_external_networking_test.cc",
         "socket_ipv4_udp_unbound_external_networking_test.cc",
@@ -124,6 +128,17 @@ cc_library(
         "//test/util:file_descriptor",
         "//test/util:posix_error",
         "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_library(
+    name = "socket_netlink_route_util",
+    testonly = 1,
+    srcs = ["socket_netlink_route_util.cc"],
+    hdrs = ["socket_netlink_route_util.h"],
+    deps = [
+        ":socket_netlink_util",
+        "@com_google_absl//absl/types:optional",
     ],
 )
 
@@ -3426,6 +3441,25 @@ cc_binary(
     ],
 )
 
+cc_binary(
+    name = "tuntap_test",
+    testonly = 1,
+    srcs = ["tuntap.cc"],
+    linkstatic = 1,
+    deps = [
+        ":socket_test_util",
+        gtest,
+        "//test/syscalls/linux:socket_netlink_route_util",
+        "//test/util:capability_util",
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        "//test/util:posix_error",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
 cc_library(
     name = "udp_socket_test_cases",
     testonly = 1,
@@ -3632,6 +3666,23 @@ cc_binary(
         "//test/util:posix_error",
         "//test/util:test_main",
         "//test/util:test_util",
+    ],
+)
+
+cc_binary(
+    name = "network_namespace_test",
+    testonly = 1,
+    srcs = ["network_namespace.cc"],
+    linkstatic = 1,
+    deps = [
+        ":socket_test_util",
+        gtest,
+        "//test/util:capability_util",
+        "//test/util:memory_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "//test/util:thread_util",
+        "@com_google_absl//absl/synchronization",
     ],
 )
 

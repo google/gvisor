@@ -543,8 +543,9 @@ func TestCurrentConnectedIncrement(t *testing.T) {
 		),
 	)
 
-	// Wait for the TIME-WAIT state to transition to CLOSED.
-	time.Sleep(1 * time.Second)
+	// Wait for a little more than the TIME-WAIT duration for the socket to
+	// transition to CLOSED state.
+	time.Sleep(1200 * time.Millisecond)
 
 	if got := c.Stack().Stats().TCP.CurrentEstablished.Value(); got != 0 {
 		t.Errorf("got stats.TCP.CurrentEstablished.Value() = %v, want = 0", got)

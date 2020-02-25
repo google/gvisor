@@ -1372,7 +1372,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 					e.snd.updateMaxPayloadSize(mtu, count)
 				}
 
-				if n&notifyReset != 0 {
+				if n&notifyReset != 0 || n&notifyAbort != 0 {
 					return tcpip.ErrConnectionAborted
 				}
 
@@ -1655,7 +1655,7 @@ func (e *endpoint) doTimeWait() (twReuse func()) {
 			}
 		case notification:
 			n := e.fetchNotifications()
-			if n&notifyClose != 0 {
+			if n&notifyClose != 0 || n&notifyAbort != 0 {
 				return nil
 			}
 			if n&notifyDrain != 0 {

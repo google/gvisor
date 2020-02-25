@@ -49,9 +49,6 @@ type testGenerator struct {
 }
 
 func newTestGenerator(t *ast.TypeSpec) *testGenerator {
-	if _, ok := t.Type.(*ast.StructType); !ok {
-		panic(fmt.Sprintf("Attempting to generate code for a not struct type %v", t))
-	}
 	g := &testGenerator{
 		t:       t,
 		r:       receiverName(t),
@@ -69,14 +66,6 @@ func (g *testGenerator) typeName() string {
 	return g.t.Name.Name
 }
 
-func (g *testGenerator) forEachField(fn func(f *ast.Field)) {
-	// This is guaranteed to succeed because g.t is always a struct.
-	st := g.t.Type.(*ast.StructType)
-	for _, field := range st.Fields.List {
-		fn(field)
-	}
-}
-
 func (g *testGenerator) testFuncName(base string) string {
 	return fmt.Sprintf("%s%s", base, strings.Title(g.t.Name.Name))
 }
@@ -89,10 +78,10 @@ func (g *testGenerator) inTestFunction(name string, body func()) {
 
 func (g *testGenerator) emitTestNonZeroSize() {
 	g.inTestFunction("TestSizeNonZero", func() {
-		g.emit("x := &%s{}\n", g.typeName())
+		g.emit("var x %v\n", g.typeName())
 		g.emit("if x.SizeBytes() == 0 {\n")
 		g.inIndent(func() {
-			g.emit("t.Fatal(\"Marshallable.Size() should not return zero\")\n")
+			g.emit("t.Fatal(\"Marshallable.SizeBytes() should not return zero\")\n")
 		})
 		g.emit("}\n")
 	})
@@ -100,7 +89,7 @@ func (g *testGenerator) emitTestNonZeroSize() {
 
 func (g *testGenerator) emitTestSuspectAlignment() {
 	g.inTestFunction("TestSuspectAlignment", func() {
-		g.emit("x := %s{}\n", g.typeName())
+		g.emit("var x %v\n", g.typeName())
 		g.emit("analysis.AlignmentCheck(t, reflect.TypeOf(x))\n")
 	})
 }
