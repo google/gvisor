@@ -26,7 +26,7 @@ import (
 type AcceptTarget struct{}
 
 // Action implements Target.Action.
-func (AcceptTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, string) {
+func (AcceptTarget) Action(packet tcpip.PacketBuffer, filter IPHeaderFilter) (RuleVerdict, string) {
 	return RuleAccept, ""
 }
 
@@ -34,7 +34,7 @@ func (AcceptTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, string) {
 type DropTarget struct{}
 
 // Action implements Target.Action.
-func (DropTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, string) {
+func (DropTarget) Action(packet tcpip.PacketBuffer, filter IPHeaderFilter) (RuleVerdict, string) {
 	return RuleDrop, ""
 }
 
@@ -43,7 +43,7 @@ func (DropTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, string) {
 type ErrorTarget struct{}
 
 // Action implements Target.Action.
-func (ErrorTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, string) {
+func (ErrorTarget) Action(packet tcpip.PacketBuffer, filter IPHeaderFilter) (RuleVerdict, string) {
 	log.Debugf("ErrorTarget triggered.")
 	return RuleDrop, ""
 }
@@ -54,7 +54,7 @@ type UserChainTarget struct {
 }
 
 // Action implements Target.Action.
-func (UserChainTarget) Action(tcpip.PacketBuffer) (RuleVerdict, string) {
+func (UserChainTarget) Action(tcpip.PacketBuffer, IPHeaderFilter) (RuleVerdict, string) {
 	panic("UserChainTarget should never be called.")
 }
 
@@ -63,29 +63,55 @@ func (UserChainTarget) Action(tcpip.PacketBuffer) (RuleVerdict, string) {
 type ReturnTarget struct{}
 
 // Action implements Target.Action.
-func (ReturnTarget) Action(tcpip.PacketBuffer) (RuleVerdict, string) {
+func (ReturnTarget) Action(tcpip.PacketBuffer, IPHeaderFilter) (RuleVerdict, string) {
 	return RuleReturn, ""
 }
 
 // RedirectTarget redirects the packet by modifying the destination port/IP.
+// Min and Max values for IP and Ports in the struct indicate the range of
+// values which can be used to redirect.
 type RedirectTarget struct {
-	RangeSize uint32
-	Flags     uint32
-	MinIP     tcpip.Address
-	MaxIP     tcpip.Address
-	MinPort   uint16
-	MaxPort   uint16
+	// Flags to check if the redirect is for address or ports.
+	Flags uint32
+
+	// Min address used to redirect.
+	MinIP tcpip.Address
+
+	// Max address used to redirect.
+	MaxIP tcpip.Address
+
+	// Min port used to redirect.
+	MinPort uint16
+
+	// Max port used to redirect.
+	MaxPort uint16
 }
 
 // Action implements Target.Action.
-func (rt RedirectTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, string) {
-	log.Infof("RedirectTarget triggered.")
+func (rt RedirectTarget) Action(pkt tcpip.PacketBuffer, filter IPHeaderFilter) (RuleVerdict, string) {
+	headerView := pkt.Data.First()
 
-	// TODO(gvisor.dev/issue/170): Checking only for UDP protocol.
-	// We're yet to support for TCP protocol.
-	headerView := packet.Data.First()
-	h := header.UDP(headerView)
-	h.SetDestinationPort(rt.MinPort)
+	// Network header should be set.
+	netHeader := header.IPv4(headerView)
+	if netHeader == nil {
+		return RuleDrop, ""
+	}
 
+	// TODO(gvisor.dev/issue/170): Check Flags in RedirectTarget if
+	// we need to change dest address (for OUTPUT chain) or ports.
+	hlen := int(netHeader.HeaderLength())
+
+	switch protocol := filter.Protocol; protocol {
+	case header.UDPProtocolNumber:
+		udp := header.UDP(headerView[hlen:])
+		udp.SetDestinationPort(rt.MinPort)
+	case header.TCPProtocolNumber:
+		// TODO(gvisor.dev/issue/170): Need to recompute checksum
+		// and implement nat connection tracking to support TCP.
+		tcp := header.TCP(headerView[hlen:])
+		tcp.SetDestinationPort(rt.MinPort)
+	default:
+		return RuleDrop, ""
+	}
 	return RuleAccept, ""
 }

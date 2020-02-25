@@ -1087,19 +1087,8 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 
 	// TODO(gvisor.dev/issue/170): Not supporting iptables for IPv6 yet.
 	if protocol == header.IPv4ProtocolNumber {
-		newPkt := pkt.Clone()
-
-		headerView := newPkt.Data.First()
-		h := header.IPv4(headerView)
-		newPkt.NetworkHeader = headerView[:h.HeaderLength()]
-
-		hlen := int(h.HeaderLength())
-		tlen := int(h.TotalLength())
-		newPkt.Data.TrimFront(hlen)
-		newPkt.Data.CapLength(tlen - hlen)
-
 		ipt := n.stack.IPTables()
-		if ok := ipt.Check(iptables.Prerouting, newPkt); !ok {
+		if ok := ipt.Check(iptables.Prerouting, pkt); !ok {
 			// iptables is telling us to drop the packet.
 			return
 		}

@@ -71,20 +71,12 @@ func (NATRedirectTCPPort) ContainerAction(ip net.IP) error {
 	}
 
 	// Listen for TCP packets on redirect port.
-	if err := listenTCP(redirectPort, sendloopDuration); err != nil {
-		return fmt.Errorf("connection on port %d should be accepted, but got error %v", redirectPort, err)
-	}
-
-	return nil
+	return listenTCP(redirectPort, sendloopDuration)
 }
 
 // LocalAction implements TestCase.LocalAction.
 func (NATRedirectTCPPort) LocalAction(ip net.IP) error {
-	if err := connectTCP(ip, dropPort, acceptPort, sendloopDuration); err != nil {
-		return fmt.Errorf("connection destined to port %d should be accepted, but got error %v", dropPort, err)
-	}
-
-	return nil
+	return connectTCP(ip, dropPort, acceptPort, sendloopDuration)
 }
 
 // NATDropUDP tests that packets are not received in ports other than redirect port.

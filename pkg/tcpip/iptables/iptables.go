@@ -207,7 +207,7 @@ func (it *IPTables) checkTable(hook Hook, pkt tcpip.PacketBuffer, tablename stri
 			underflow := table.Rules[table.Underflows[hook]]
 			// Underflow is guaranteed to be an unconditional
 			// ACCEPT or DROP.
-			switch v, _ := underflow.Target.Action(pkt); v {
+			switch v, _ := underflow.Target.Action(pkt, underflow.Filter); v {
 			case RuleAccept:
 				return TableAccept
 			case RuleDrop:
@@ -233,6 +233,12 @@ func (it *IPTables) checkTable(hook Hook, pkt tcpip.PacketBuffer, tablename stri
 func (it *IPTables) checkRule(hook Hook, pkt tcpip.PacketBuffer, table Table, ruleIdx int) RuleVerdict {
 	rule := table.Rules[ruleIdx]
 
+	// If pkt.NetworkHeader hasn't been set yet, it will be contained in
+	// pkt.Data.First().
+	if pkt.NetworkHeader == nil {
+		pkt.NetworkHeader = pkt.Data.First()
+	}
+
 	// First check whether the packet matches the IP header filter.
 	// TODO(gvisor.dev/issue/170): Support other fields of the filter.
 	if rule.Filter.Protocol != 0 && rule.Filter.Protocol != header.IPv4(pkt.NetworkHeader).TransportProtocol() {
@@ -252,6 +258,6 @@ func (it *IPTables) checkRule(hook Hook, pkt tcpip.PacketBuffer, table Table, ru
 	}
 
 	// All the matchers matched, so run the target.
-	verdict, _ := rule.Target.Action(pkt)
+	verdict, _ := rule.Target.Action(pkt, rule.Filter)
 	return verdict
 }
