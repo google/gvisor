@@ -39,6 +39,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Name is the default filesystem name.
@@ -81,6 +82,23 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 // Release implements vfs.FilesystemImpl.Release.
 func (fs *filesystem) Release() {
+}
+
+// immutable
+var globalStatfs = linux.Statfs{
+	Type:      linux.TMPFS_MAGIC,
+	BlockSize: usermem.PageSize,
+
+	// tmpfs currently does not support configurable size limits. In Linux,
+	// such a tmpfs mount will return f_blocks == f_bfree == f_bavail == 0 from
+	// statfs(2). However, many applications treat this as having a size limit
+	// of 0. To work around this, claim to have a very large but non-zero size,
+	// chosen to ensure that BlockSize * Blocks does not overflow int64 (which
+	// applications may also handle incorrectly).
+	// TODO(b/29637826): allow configuring a tmpfs size and enforce it.
+	Blocks:          math.MaxInt64 / usermem.PageSize,
+	BlocksFree:      math.MaxInt64 / usermem.PageSize,
+	BlocksAvailable: math.MaxInt64 / usermem.PageSize,
 }
 
 // dentry implements vfs.DentryImpl.
@@ -458,4 +476,9 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
 func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 	return fd.inode().setStat(opts.Stat)
+}
+
+// StatFS implements vfs.FileDescriptionImpl.StatFS.
+func (fd *fileDescription) StatFS(ctx context.Context) (linux.Statfs, error) {
+	return globalStatfs, nil
 }

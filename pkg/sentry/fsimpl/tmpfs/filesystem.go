@@ -583,12 +583,13 @@ func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linux.Statfs, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
+	// Do path resolution first to confirm that rp actually lies on this
+	// filesystem.
 	_, err := resolveLocked(rp)
 	if err != nil {
 		return linux.Statfs{}, err
 	}
-	// TODO(gvisor.dev/issues/1197): Actually implement statfs.
-	return linux.Statfs{}, syserror.ENOSYS
+	return globalStatfs, nil
 }
 
 // SymlinkAt implements vfs.FilesystemImpl.SymlinkAt.
