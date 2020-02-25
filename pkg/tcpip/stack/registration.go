@@ -435,12 +435,13 @@ type InjectableLinkEndpoint interface {
 // A LinkAddressResolver is an extension to a NetworkProtocol that
 // can resolve link addresses.
 type LinkAddressResolver interface {
-	// LinkAddressRequest sends a request for the LinkAddress of addr.
-	// The request is sent on linkEP with localAddr as the source.
+	// LinkAddressRequest sends a request for the LinkAddress of addr. If
+	// linkAddr is an empty string, the request will be broadcasted to the local
+	// network. The request is sent on linkEP with localAddr as the source.
 	//
 	// A valid response will cause the discovery protocol's network
 	// endpoint to call AddLinkAddress.
-	LinkAddressRequest(addr, localAddr tcpip.Address, linkEP LinkEndpoint) *tcpip.Error
+	LinkAddressRequest(addr, localAddr tcpip.Address, linkAddr tcpip.LinkAddress, linkEP LinkEndpoint) *tcpip.Error
 
 	// ResolveStaticAddress attempts to resolve address without sending
 	// requests. It either resolves the name immediately or returns the

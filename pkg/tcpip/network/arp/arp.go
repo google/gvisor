@@ -153,10 +153,13 @@ func (*protocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 	return header.IPv4ProtocolNumber
 }
 
-// LinkAddressRequest implements stack.LinkAddressResolver.LinkAddressRequest.
-func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.LinkEndpoint) *tcpip.Error {
+// LinkAddressRequest implements stack.LinkAddressResolver.
+func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkAddr tcpip.LinkAddress, linkEP stack.LinkEndpoint) *tcpip.Error {
 	r := &stack.Route{
 		RemoteLinkAddress: broadcastMAC,
+	}
+	if linkAddr != "" {
+		r.RemoteLinkAddress = linkAddr
 	}
 
 	hdr := buffer.NewPrependable(int(linkEP.MaxHeaderLength()) + header.ARPSize)

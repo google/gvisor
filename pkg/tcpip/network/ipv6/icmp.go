@@ -432,7 +432,7 @@ func (*protocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 }
 
 // LinkAddressRequest implements stack.LinkAddressResolver.
-func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.LinkEndpoint) *tcpip.Error {
+func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkAddr tcpip.LinkAddress, linkEP stack.LinkEndpoint) *tcpip.Error {
 	snaddr := header.SolicitedNodeAddr(addr)
 
 	// TODO(b/148672031): Use stack.FindRoute instead of manually creating the
@@ -443,6 +443,10 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.
 		RemoteAddress:     snaddr,
 		RemoteLinkAddress: header.EthernetAddressFromMulticastIPv6Address(snaddr),
 	}
+	if linkAddr != "" {
+		r.RemoteLinkAddress = linkAddr
+	}
+
 	hdr := buffer.NewPrependable(int(linkEP.MaxHeaderLength()) + header.IPv6MinimumSize + header.ICMPv6NeighborAdvertSize)
 	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborAdvertSize))
 	pkt.SetType(header.ICMPv6NeighborSolicit)
