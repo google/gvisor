@@ -28,6 +28,8 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// LINT.IfChange
+
 const (
 	// EventMaskRead contains events that can be triggered on reads.
 	EventMaskRead = waiter.EventIn | waiter.EventHUp | waiter.EventErr
@@ -388,3 +390,5 @@ func preadv(t *kernel.Task, f *fs.File, dst usermem.IOSequence, offset int64) (i
 
 	return total, err
 }
+
+// LINT.ThenChange(vfs2/read_write.go)

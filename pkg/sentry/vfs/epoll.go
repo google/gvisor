@@ -202,6 +202,9 @@ func (ep *EpollInstance) AddInterest(file *FileDescription, num int32, event lin
 	// Add epi to file.epolls so that it is removed when the last
 	// FileDescription reference is dropped.
 	file.epollMu.Lock()
+	if file.epolls == nil {
+		file.epolls = make(map[*epollInterest]struct{})
+	}
 	file.epolls[epi] = struct{}{}
 	file.epollMu.Unlock()
 

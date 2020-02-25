@@ -244,6 +244,28 @@ func (f *FSContext) SetRootDirectory(d *fs.Dirent) {
 	old.DecRef()
 }
 
+// SetRootDirectoryVFS2 sets the root directory. It takes a reference on vd.
+//
+// This is not a valid call after free.
+func (f *FSContext) SetRootDirectoryVFS2(vd vfs.VirtualDentry) {
+	if !vd.Ok() {
+		panic("FSContext.SetRootDirectoryVFS2 called with zero-value VirtualDentry")
+	}
+
+	f.mu.Lock()
+
+	if !f.rootVFS2.Ok() {
+		f.mu.Unlock()
+		panic(fmt.Sprintf("FSContext.SetRootDirectoryVFS2(%v)) called after destroy", vd))
+	}
+
+	old := f.rootVFS2
+	vd.IncRef()
+	f.rootVFS2 = vd
+	f.mu.Unlock()
+	old.DecRef()
+}
+
 // Umask returns the current umask.
 func (f *FSContext) Umask() uint {
 	f.mu.Lock()
