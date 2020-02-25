@@ -14,7 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-which bazel
+printenv
+
+command -v bazel
 bazel version
 
 # Switch into the workspace; only necessary if run with kokoro.
@@ -68,18 +70,19 @@ function collect_logs() {
   if [[ -v KOKORO_ARTIFACTS_DIR ]] && [[ -e bazel-testlogs ]]; then
     # Merge results files of all shards for each test suite.
     for d in `find -L "bazel-testlogs" -name 'shard_*_of_*' | xargs dirname | sort | uniq`; do
-      junitparser merge `find $d -name test.xml` $d/test.xml
+      junitparser merge $(find "$d" -name test.xml) "${d}/test.xml"
       cat $d/shard_*_of_*/test.log > $d/test.log
       if ls -l $d/shard_*_of_*/test.outputs/outputs.zip 2>/dev/null; then
         zip -r -1 "$d/outputs.zip" $d/shard_*_of_*/test.outputs/outputs.zip
       fi
     done
     find -L "bazel-testlogs" -name 'shard_*_of_*' | xargs rm -rf
+
     # Move test logs to Kokoro directory. tar is used to conveniently perform
     # renames while moving files.
     find -L "bazel-testlogs" -name "test.xml" -o -name "test.log" -o -name "outputs.zip" |
       tar --create --files-from - --transform 's/test\./sponge_log./' |
-      tar --extract --directory ${KOKORO_ARTIFACTS_DIR}
+      tar --extract --directory "${KOKORO_ARTIFACTS_DIR}"
 
     # Collect sentry logs, if any.
     if [[ -v RUNSC_LOGS_DIR ]] && [[ -d "${RUNSC_LOGS_DIR}" ]]; then
@@ -102,6 +105,7 @@ function collect_logs() {
       fi
     fi
   fi
+  ls -R "$KOKORO_ARTIFACTS_DIR"
 }
 
 function find_branch_name() {
