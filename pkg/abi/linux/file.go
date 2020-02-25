@@ -241,6 +241,8 @@ const (
 )
 
 // Statx represents struct statx.
+//
+// +marshal
 type Statx struct {
 	Mask           uint32
 	Blksize        uint32

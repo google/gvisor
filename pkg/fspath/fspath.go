@@ -67,7 +67,8 @@ func Parse(pathname string) Path {
 
 // Path contains the information contained in a pathname string.
 //
-// Path is copyable by value.
+// Path is copyable by value. The zero value for Path is equivalent to
+// fspath.Parse(""), i.e. the empty path.
 type Path struct {
 	// Begin is an iterator to the first path component in the relative part of
 	// the path.

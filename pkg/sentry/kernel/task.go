@@ -789,6 +789,15 @@ func (t *Task) NewFDFrom(fd int32, file *fs.File, flags FDFlags) (int32, error) 
 	return fds[0], nil
 }
 
+// NewFDFromVFS2 is a convenience wrapper for t.FDTable().NewFDVFS2.
+//
+// This automatically passes the task as the context.
+//
+// Precondition: same as FDTable.Get.
+func (t *Task) NewFDFromVFS2(fd int32, file *vfs.FileDescription, flags FDFlags) (int32, error) {
+	return t.fdTable.NewFDVFS2(t, fd, file, flags)
+}
+
 // NewFDAt is a convenience wrapper for t.FDTable().NewFDAt.
 //
 // This automatically passes the task as the context.
@@ -796,6 +805,15 @@ func (t *Task) NewFDFrom(fd int32, file *fs.File, flags FDFlags) (int32, error) 
 // Precondition: same as FDTable.
 func (t *Task) NewFDAt(fd int32, file *fs.File, flags FDFlags) error {
 	return t.fdTable.NewFDAt(t, fd, file, flags)
+}
+
+// NewFDAtVFS2 is a convenience wrapper for t.FDTable().NewFDAtVFS2.
+//
+// This automatically passes the task as the context.
+//
+// Precondition: same as FDTable.
+func (t *Task) NewFDAtVFS2(fd int32, file *vfs.FileDescription, flags FDFlags) error {
+	return t.fdTable.NewFDAtVFS2(t, fd, file, flags)
 }
 
 // WithMuLocked executes f with t.mu locked.

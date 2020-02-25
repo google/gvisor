@@ -15,8 +15,122 @@ import (
 )
 
 // Marshallable types used by this file.
+var _ marshal.Marshallable = (*EpollEvent)(nil)
 var _ marshal.Marshallable = (*Stat)(nil)
 var _ marshal.Marshallable = (*Timespec)(nil)
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (e *EpollEvent) SizeBytes() int {
+    return 16
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (e *EpollEvent) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(e.Events))
+    dst = dst[4:]
+    // Padding: dst[:sizeof(int32)] ~= int32(0)
+    dst = dst[4:]
+    for idx := 0; idx < 2; idx++ {
+        usermem.ByteOrder.PutUint32(dst[:4], uint32(e.Data[idx]))
+        dst = dst[4:]
+    }
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (e *EpollEvent) UnmarshalBytes(src []byte) {
+    e.Events = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    // Padding: var _ int32 ~= src[:sizeof(int32)]
+    src = src[4:]
+    for idx := 0; idx < 2; idx++ {
+        e.Data[idx] = int32(usermem.ByteOrder.Uint32(src[:4]))
+        src = src[4:]
+    }
+}
+
+// Packed implements marshal.Marshallable.Packed.
+func (e *EpollEvent) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (e *EpollEvent) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(e))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (e *EpollEvent) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(e), src)
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (e *EpollEvent) CopyOut(task marshal.Task, addr usermem.Addr) error {
+    // Bypass escape analysis on e. The no-op arithmetic operation on the
+    // pointer makes the compiler think val doesn't depend on e.
+    // See src/runtime/stubs.go:noescape() in the golang toolchain.
+    ptr := unsafe.Pointer(e)
+    val := uintptr(ptr)
+    val = val^0
+
+    // Construct a slice backed by e's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = val
+    hdr.Len = e.SizeBytes()
+    hdr.Cap = e.SizeBytes()
+
+    _, err := task.CopyOutBytes(addr, buf)
+    // Since we bypassed the compiler's escape analysis, indicate that e
+    // must live until after the CopyOutBytes.
+    runtime.KeepAlive(e)
+    return err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (e *EpollEvent) CopyIn(task marshal.Task, addr usermem.Addr) error {
+    // Bypass escape analysis on e. The no-op arithmetic operation on the
+    // pointer makes the compiler think val doesn't depend on e.
+    // See src/runtime/stubs.go:noescape() in the golang toolchain.
+    ptr := unsafe.Pointer(e)
+    val := uintptr(ptr)
+    val = val^0
+
+    // Construct a slice backed by e's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = val
+    hdr.Len = e.SizeBytes()
+    hdr.Cap = e.SizeBytes()
+
+    _, err := task.CopyInBytes(addr, buf)
+    // Since we bypassed the compiler's escape analysis, indicate that e
+    // must live until after the CopyInBytes.
+    runtime.KeepAlive(e)
+    return err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (e *EpollEvent) WriteTo(w io.Writer) (int64, error) {
+    // Bypass escape analysis on e. The no-op arithmetic operation on the
+    // pointer makes the compiler think val doesn't depend on e.
+    // See src/runtime/stubs.go:noescape() in the golang toolchain.
+    ptr := unsafe.Pointer(e)
+    val := uintptr(ptr)
+    val = val^0
+
+    // Construct a slice backed by e's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = val
+    hdr.Len = e.SizeBytes()
+    hdr.Cap = e.SizeBytes()
+
+    len, err := w.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that e
+    // must live until after the Write.
+    runtime.KeepAlive(e)
+    return int64(len), err
+}
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (s *Stat) SizeBytes() int {
@@ -105,7 +219,7 @@ func (s *Stat) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *Stat) MarshalUnsafe(dst []byte) {
-    if s.MTime.Packed() && s.CTime.Packed() && s.ATime.Packed() {
+    if s.CTime.Packed() && s.ATime.Packed() && s.MTime.Packed() {
         safecopy.CopyIn(dst, unsafe.Pointer(s))
     } else {
         s.MarshalBytes(dst)
@@ -114,7 +228,7 @@ func (s *Stat) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *Stat) UnmarshalUnsafe(src []byte) {
-    if s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
+    if s.CTime.Packed() && s.ATime.Packed() && s.MTime.Packed() {
         safecopy.CopyOut(unsafe.Pointer(s), src)
     } else {
         s.UnmarshalBytes(src)
@@ -154,7 +268,7 @@ func (s *Stat) CopyOut(task marshal.Task, addr usermem.Addr) error {
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 func (s *Stat) CopyIn(task marshal.Task, addr usermem.Addr) error {
-    if !s.MTime.Packed() && s.CTime.Packed() && s.ATime.Packed() {
+    if !s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
         // Type Stat doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := task.CopyScratchBuffer(s.SizeBytes())
         _, err := task.CopyInBytes(addr, buf)
