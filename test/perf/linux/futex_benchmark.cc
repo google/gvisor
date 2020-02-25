@@ -33,28 +33,38 @@ namespace testing {
 namespace {
 
 inline int FutexWait(std::atomic<int32_t>* v, int32_t val) {
-  return syscall(SYS_futex, v, FUTEX_BITSET_MATCH_ANY, nullptr);
+  int rc =
+      syscall(SYS_futex, v, FUTEX_WAIT_BITSET_PRIVATE | FUTEX_CLOCK_REALTIME,
+              val, nullptr, nullptr, FUTEX_BITSET_MATCH_ANY);
+  return rc >= 0 ? rc : -errno;
 }
 
 inline int FutexWaitRelativeTimeout(std::atomic<int32_t>* v, int32_t val,
                                     const struct timespec* reltime) {
-  return syscall(SYS_futex, v, FUTEX_WAIT_PRIVATE, reltime);
+  int rc = syscall(SYS_futex, v, FUTEX_WAIT_PRIVATE, val, reltime);
+  return rc >= 0 ? rc : -errno;
 }
 
 inline int FutexWaitAbsoluteTimeout(std::atomic<int32_t>* v, int32_t val,
                                     const struct timespec* abstime) {
-  return syscall(SYS_futex, v, FUTEX_BITSET_MATCH_ANY, abstime);
+  int rc =
+      syscall(SYS_futex, v, FUTEX_WAIT_BITSET_PRIVATE | FUTEX_CLOCK_REALTIME,
+              val, abstime, nullptr, FUTEX_BITSET_MATCH_ANY);
+  return rc >= 0 ? rc : -errno;
 }
 
 inline int FutexWaitBitsetAbsoluteTimeout(std::atomic<int32_t>* v, int32_t val,
                                           int32_t bits,
                                           const struct timespec* abstime) {
-  return syscall(SYS_futex, v, FUTEX_WAIT_BITSET_PRIVATE | FUTEX_CLOCK_REALTIME,
-                 val, abstime, nullptr, bits);
+  int rc =
+      syscall(SYS_futex, v, FUTEX_WAIT_BITSET_PRIVATE | FUTEX_CLOCK_REALTIME,
+              val, abstime, nullptr, bits);
+  return rc >= 0 ? rc : -errno;
 }
 
 inline int FutexWake(std::atomic<int32_t>* v, int32_t count) {
-  return syscall(SYS_futex, v, FUTEX_WAKE_PRIVATE, count);
+  int rc = syscall(SYS_futex, v, FUTEX_WAKE_PRIVATE, count);
+  return rc >= 0 ? rc : -errno;
 }
 
 // This just uses FUTEX_WAKE on an address with nothing waiting, very simple.

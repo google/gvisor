@@ -48,65 +48,94 @@ var (
 	overlay    = flag.Bool("overlay", false, "wrap filesystem mounts with writable tmpfs overlay")
 	parallel   = flag.Bool("parallel", false, "run tests in parallel")
 	runscPath  = flag.String("runsc", "", "path to runsc binary")
-
 	addUDSTree = flag.Bool("add-uds-tree", false, "expose a tree of UDS utilities for use in tests")
 )
 
-// runTestCaseNative runs the test case directly on the host machine.
-func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
-	// These tests might be running in parallel, so make sure they have a
-	// unique test temp dir.
-	tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "")
+// filterEnv returns an environment with the blacklisted variables removed.
+func filterEnv(env []string, blacklist ...string) []string {
+	var out []string
+	for _, kv := range env {
+		ok := true
+		for _, k := range blacklist {
+			if strings.HasPrefix(kv, k+"=") {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			out = append(out, kv)
+		}
+	}
+	return out
+}
+
+// setupEnv sets up the test environment.
+func setupEnv(tc gtest.TestCase) ([]string, string, error) {
+	tmpDir := os.Getenv("TEST_TMPDIR")
+	if tmpDir == "" {
+		tmpDir = os.TempDir()
+	}
+
+	// Setup a temporary directory for just this specific test.
+	tmpDir = filepath.Join(tmpDir, tc.FileName())
+	if err := os.MkdirAll(tmpDir, 0777); err != nil {
+		return nil, "", fmt.Errorf("could not create temporary dir: %v", err)
+	}
+
+	// Construct a specific XML output file for this test.
+	xmlOutput := os.Getenv("XML_OUTPUT_FILE")
+	if xmlOutput != "" {
+		// Define a test-specific xml output that can be merged later.
+		xmlOutput = fmt.Sprintf("%s.%s", xmlOutput, tc.FileName())
+	}
+
+	// Start with our own test environment.
+	env := os.Environ()
+
+	// Remove env variables that will cause the gunit binary to write
+	// output files, since they will stomp on eachother, and on the output
+	// files from this go test. Note that we will readd this below.
+	env = filterEnv(env, "GUNIT_OUTPUT", "GTEST_OUTPUT", "TEST_TMPDIR", "TEST_PREMATURE_EXIT_FILE", "XML_OUTPUT_FILE")
+
+	// Remove shard env variables so that the gunit binary does not try to
+	// intepret them. We construct shards manually.
+	env = filterEnv(env, "TEST_SHARD_INDEX", "TEST_TOTAL_SHARDS", "GTEST_SHARD_INDEX", "GTEST_TOTAL_SHARDS")
+
+	// Re-add the above test-specific bits that were stripped.
+	env = append(env, fmt.Sprintf("TEST_TMPDIR=%s", tmpDir))
+	env = append(env, fmt.Sprintf("XML_OUTPUT_FILE=%s", xmlOutput))
+	env = append(env, fmt.Sprintf("GUNIT_OUTPUT=xml:%s", xmlOutput))
+	env = append(env, fmt.Sprintf("GTEST_OUTPUT=xml:%s", xmlOutput))
+	return env, tmpDir, nil
+}
+
+// runNative runs the test case directly on the host machine.
+func runNative(testBin string, tc gtest.TestCase) error {
+	// Setup the test environment.
+	env, tmpDir, err := setupEnv(tc)
 	if err != nil {
-		t.Fatalf("could not create temp dir: %v", err)
+		return fmt.Errorf("could not setup test environment: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Replace TEST_TMPDIR in the current environment with something
-	// unique.
-	env := os.Environ()
-	newEnvVar := "TEST_TMPDIR=" + tmpDir
-	var found bool
-	for i, kv := range env {
-		if strings.HasPrefix(kv, "TEST_TMPDIR=") {
-			env[i] = newEnvVar
-			found = true
-			break
-		}
-	}
-	if !found {
-		env = append(env, newEnvVar)
-	}
-	// Remove env variables that cause the gunit binary to write output
-	// files, since they will stomp on eachother, and on the output files
-	// from this go test.
-	env = filterEnv(env, []string{"GUNIT_OUTPUT", "TEST_PREMATURE_EXIT_FILE", "XML_OUTPUT_FILE"})
-
-	// Remove shard env variables so that the gunit binary does not try to
-	// intepret them.
-	env = filterEnv(env, []string{"TEST_SHARD_INDEX", "TEST_TOTAL_SHARDS", "GTEST_SHARD_INDEX", "GTEST_TOTAL_SHARDS"})
-
 	if *addUDSTree {
-		socketDir, cleanup, err := uds.CreateSocketTree("/tmp")
+		socketDir, cleanup, err := uds.CreateSocketTree(tmpDir)
 		if err != nil {
-			t.Fatalf("failed to create socket tree: %v", err)
+			return fmt.Errorf("failed to create socket tree: %v", err)
 		}
 		defer cleanup()
 
-		env = append(env, "TEST_UDS_TREE="+socketDir)
 		// On Linux, the concept of "attach" location doesn't exist.
 		// Just pass the same path to make these test identical.
 		env = append(env, "TEST_UDS_ATTACH_TREE="+socketDir)
+		env = append(env, "TEST_UDS_TREE="+socketDir)
 	}
 
 	cmd := exec.Command(testBin, tc.Args()...)
 	cmd.Env = env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		ws := err.(*exec.ExitError).Sys().(syscall.WaitStatus)
-		t.Errorf("test %q exited with status %d, want 0", tc.FullName(), ws.ExitStatus())
-	}
+	return cmd.Run()
 }
 
 // runRunsc runs spec in runsc in a standard test configuration.
@@ -114,7 +143,42 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 // runsc logs will be saved to a path in TEST_UNDECLARED_OUTPUTS_DIR.
 //
 // Returns an error if the sandboxed application exits non-zero.
-func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
+func runRunsc(testBin string, tc gtest.TestCase) error {
+	// Setup the test environment.
+	env, tmpDir, err := setupEnv(tc)
+	if err != nil {
+		return fmt.Errorf("could not setup test environment: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Run a new container with the test executable and filter for the
+	// given test suite and name.
+	spec := testutil.NewSpecWithArgs(append([]string{testBin}, tc.Args()...)...)
+
+	// Set environment variables that indicate we are running in gVisor
+	// with the given platform and network.
+	spec.Process.Env = append(env,
+		"TEST_ON_GVISOR="+*platform,
+		"GVISOR_NETWORK="+*network,
+	)
+
+	// Mark the root as writeable, as some tests attempt to write to the
+	// rootfs, and expect EACCES, not EROFS.
+	spec.Root.Readonly = false
+
+	// Test spec comes with pre-defined mounts that we don't want.
+	spec.Mounts = nil
+	if *useTmpfs {
+		// Forces '/tmp' to be mounted as tmpfs, otherwise test that
+		// rely on features only available in gVisor's internal tmpfs
+		// may fail.
+		spec.Mounts = append(spec.Mounts, specs.Mount{
+			Destination: tmpDir,
+			Type:        "tmpfs",
+		})
+	}
+
+	// Create the container spec.
 	bundleDir, err := testutil.SetupBundleDir(spec)
 	if err != nil {
 		return fmt.Errorf("SetupBundleDir failed: %v", err)
@@ -127,11 +191,7 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	}
 	defer os.RemoveAll(rootDir)
 
-	name := tc.FullName()
-	id := testutil.UniqueContainerID()
-	log.Infof("Running test %q in container %q", name, id)
-	specutils.LogSpec(spec)
-
+	// Construct appropriate arguments.
 	args := []string{
 		"-root", rootDir,
 		"-network", *network,
@@ -153,11 +213,17 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 		args = append(args, "-strace")
 	}
 	if *addUDSTree {
+		cleanup, err := setupUDSTree(spec)
+		if err != nil {
+			return fmt.Errorf("error creating UDS tree: %v", err)
+		}
+		defer cleanup()
 		args = append(args, "-fsgofer-host-uds")
 	}
 
+	// Setup debug logging.
 	if outDir, ok := syscall.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
-		tdir := filepath.Join(outDir, strings.Replace(name, "/", "_", -1))
+		tdir := filepath.Join(outDir, tc.FileName())
 		if err := os.MkdirAll(tdir, 0755); err != nil {
 			return fmt.Errorf("could not create test dir: %v", err)
 		}
@@ -169,14 +235,19 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 		log.Infof("runsc logs: %s", debugLogDir)
 		args = append(args, "-debug-log", debugLogDir)
 
-		// Default -log sends messages to stderr which makes reading the test log
-		// difficult. Instead, drop them when debug log is enabled given it's a
-		// better place for these messages.
+		// Default -log sends messages to stderr which makes reading
+		// the test log difficult. Instead, drop them when debug log is
+		// enabled given it's a better place for these messages.
 		args = append(args, "-log=/dev/null")
 	}
 
-	// Current process doesn't have CAP_SYS_ADMIN, create user namespace and run
-	// as root inside that namespace to get it.
+	// Prepare to run the test.
+	id := testutil.UniqueContainerID()
+	log.Infof("Running test %q in container %q", tc.FullName(), id)
+	specutils.LogSpec(spec)
+
+	// Current process doesn't have CAP_SYS_ADMIN, create user namespace
+	// and run as root inside that namespace to get it.
 	rArgs := append(args, "run", "--bundle", bundleDir, id)
 	cmd := exec.Command(*runscPath, rArgs...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -197,13 +268,21 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	sig := make(chan os.Signal, 1)
+	defer close(sig)
 	signal.Notify(sig, syscall.SIGTERM)
+	defer signal.Stop(sig)
 	go func() {
+		// Wait for a signal.
 		s, ok := <-sig
 		if !ok {
+			// The channel closed, so the command must have
+			// completed successfully. That is, we reached the
+			// close(sig) statement via the defer.
 			return
 		}
-		log.Warningf("%s: Got signal: %v", name, s)
+
+		// Dump stacks if possible.
+		log.Warningf("Got signal: %v", s)
 		done := make(chan bool)
 		dArgs := append([]string{}, args...)
 		dArgs = append(dArgs, "-alsologtostderr=true", "debug", "--stacks", id)
@@ -215,32 +294,30 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 			done <- true
 		}(dArgs)
 
+		// Wait for up to three seconds.
 		timeout := time.After(3 * time.Second)
 		select {
 		case <-timeout:
-			log.Infof("runsc debug --stacks is timeouted")
+			log.Infof("runsc debug --stacks timed out")
 		case <-done:
+			return
 		}
 
+		// Kill via SIGTERM.
 		log.Warningf("Send SIGTERM to the sandbox process")
-		dArgs = append(args, "debug",
-			fmt.Sprintf("--signal=%d", syscall.SIGTERM),
-			id)
+		dArgs = append(args, "debug", fmt.Sprintf("--signal=%d", syscall.SIGTERM), id)
 		cmd := exec.Command(*runscPath, dArgs...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		cmd.Run()
 	}()
 
-	err = cmd.Run()
-
-	signal.Stop(sig)
-	close(sig)
-
-	return err
+	return cmd.Run()
 }
 
 // setupUDSTree updates the spec to expose a UDS tree for gofer socket testing.
+//
+// N.B. This modifies spec.Process.Env.
 func setupUDSTree(spec *specs.Spec) (cleanup func(), err error) {
 	socketDir, cleanup, err := uds.CreateSocketTree("/tmp")
 	if err != nil {
@@ -286,107 +363,6 @@ func setupUDSTree(spec *specs.Spec) (cleanup func(), err error) {
 	spec.Process.Env = append(spec.Process.Env, "TEST_UDS_ATTACH_TREE=/tmp/sockets-attach")
 
 	return cleanup, nil
-}
-
-// runsTestCaseRunsc runs the test case in runsc.
-func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
-	// Run a new container with the test executable and filter for the
-	// given test suite and name.
-	spec := testutil.NewSpecWithArgs(append([]string{testBin}, tc.Args()...)...)
-
-	// Mark the root as writeable, as some tests attempt to
-	// write to the rootfs, and expect EACCES, not EROFS.
-	spec.Root.Readonly = false
-
-	// Test spec comes with pre-defined mounts that we don't want. Reset it.
-	spec.Mounts = nil
-	if *useTmpfs {
-		// Forces '/tmp' to be mounted as tmpfs, otherwise test that rely on
-		// features only available in gVisor's internal tmpfs may fail.
-		spec.Mounts = append(spec.Mounts, specs.Mount{
-			Destination: "/tmp",
-			Type:        "tmpfs",
-		})
-	} else {
-		// Use a gofer-backed directory as '/tmp'.
-		//
-		// Tests might be running in parallel, so make sure each has a
-		// unique test temp dir.
-		//
-		// Some tests (e.g., sticky) access this mount from other
-		// users, so make sure it is world-accessible.
-		tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "")
-		if err != nil {
-			t.Fatalf("could not create temp dir: %v", err)
-		}
-		defer os.RemoveAll(tmpDir)
-
-		if err := os.Chmod(tmpDir, 0777); err != nil {
-			t.Fatalf("could not chmod temp dir: %v", err)
-		}
-
-		spec.Mounts = append(spec.Mounts, specs.Mount{
-			Type:        "bind",
-			Destination: "/tmp",
-			Source:      tmpDir,
-		})
-	}
-
-	// Set environment variables that indicate we are
-	// running in gVisor with the given platform and network.
-	platformVar := "TEST_ON_GVISOR"
-	networkVar := "GVISOR_NETWORK"
-	env := append(os.Environ(), platformVar+"="+*platform, networkVar+"="+*network)
-
-	// Remove env variables that cause the gunit binary to write output
-	// files, since they will stomp on eachother, and on the output files
-	// from this go test.
-	env = filterEnv(env, []string{"GUNIT_OUTPUT", "TEST_PREMATURE_EXIT_FILE", "XML_OUTPUT_FILE"})
-
-	// Remove shard env variables so that the gunit binary does not try to
-	// intepret them.
-	env = filterEnv(env, []string{"TEST_SHARD_INDEX", "TEST_TOTAL_SHARDS", "GTEST_SHARD_INDEX", "GTEST_TOTAL_SHARDS"})
-
-	// Set TEST_TMPDIR to /tmp, as some of the syscall tests require it to
-	// be backed by tmpfs.
-	for i, kv := range env {
-		if strings.HasPrefix(kv, "TEST_TMPDIR=") {
-			env[i] = "TEST_TMPDIR=/tmp"
-			break
-		}
-	}
-
-	spec.Process.Env = env
-
-	if *addUDSTree {
-		cleanup, err := setupUDSTree(spec)
-		if err != nil {
-			t.Fatalf("error creating UDS tree: %v", err)
-		}
-		defer cleanup()
-	}
-
-	if err := runRunsc(tc, spec); err != nil {
-		t.Errorf("test %q failed with error %v, want nil", tc.FullName(), err)
-	}
-}
-
-// filterEnv returns an environment with the blacklisted variables removed.
-func filterEnv(env, blacklist []string) []string {
-	var out []string
-	for _, kv := range env {
-		ok := true
-		for _, k := range blacklist {
-			if strings.HasPrefix(kv, k+"=") {
-				ok = false
-				break
-			}
-		}
-		if ok {
-			out = append(out, kv)
-		}
-	}
-	return out
 }
 
 func fatalf(s string, args ...interface{}) {
@@ -462,12 +438,16 @@ func main() {
 				if *parallel {
 					t.Parallel()
 				}
+				var err error
 				if *platform == "native" {
 					// Run the test case on host.
-					runTestCaseNative(testBin, tc, t)
+					err = runNative(testBin, tc)
 				} else {
 					// Run the test case in runsc.
-					runTestCaseRunsc(testBin, tc, t)
+					err = runRunsc(testBin, tc)
+				}
+				if err != nil {
+					t.Errorf("test %q failed with error %v, want nil", tc.FullName(), err)
 				}
 			},
 		})

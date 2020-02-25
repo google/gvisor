@@ -8,10 +8,6 @@ def _runner_test_impl(ctx):
     runner_content = "\n".join([
         "#!/bin/bash",
         "set -euf -x -o pipefail",
-        "if [[ -n \"${TEST_UNDECLARED_OUTPUTS_DIR}\" ]]; then",
-        "  mkdir -p \"${TEST_UNDECLARED_OUTPUTS_DIR}\"",
-        "  chmod a+rwx \"${TEST_UNDECLARED_OUTPUTS_DIR}\"",
-        "fi",
         "exec %s %s %s\n" % (
             ctx.files.runner[0].short_path,
             " ".join(ctx.attr.runner_args),

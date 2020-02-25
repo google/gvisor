@@ -59,6 +59,11 @@ func (tc TestCase) FullName() string {
 	return fmt.Sprintf("%s.%s", tc.Suite, tc.Name)
 }
 
+// FileName returns a variant of FullName that is suitable as a single path.
+func (tc TestCase) FileName() string {
+	return strings.Replace(tc.FullName(), "/", "_", -1)
+}
+
 // Args returns arguments to be passed when invoking the test.
 func (tc TestCase) Args() []string {
 	if tc.all {
@@ -66,13 +71,19 @@ func (tc TestCase) Args() []string {
 	}
 	if tc.benchmark {
 		return []string{
-			fmt.Sprintf("%s=^$", filterTestFlag),
+			// The test filter flag is actually a set of globs
+			// separated by : characters, so match the empty test
+			// explicitly (avoids the default behavior). Whereas
+			// the benchmarks flag is a regular expression.
+			fmt.Sprintf("%s=::", filterTestFlag),
 			fmt.Sprintf("%s=^%s$", filterBenchmarkFlag, tc.Name),
 		}
 	}
 	return []string{
-		fmt.Sprintf("%s=^%s$", filterTestFlag, tc.FullName()),
-		fmt.Sprintf("%s=^$", filterBenchmarkFlag),
+		// N.B. The non-presence of the benchmark flag means that no
+		// benchmarks will be run, unlike the test flag which defaults
+		// to all tests being run.
+		fmt.Sprintf("%s=:%s:", filterTestFlag, tc.FullName()),
 	}
 }
 
@@ -154,6 +165,9 @@ func ParseTestCases(testBin string, benchmarks bool, extraArgs ...string) ([]Tes
 
 		// Single benchmark.
 		name := strings.TrimSpace(line)
+		if !strings.HasPrefix(name, "BM_") {
+			continue
+		}
 
 		// Add the single benchmark.
 		t = append(t, TestCase{
