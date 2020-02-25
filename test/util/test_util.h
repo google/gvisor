@@ -771,6 +771,7 @@ std::string RunfilePath(std::string path);
 #endif
 
 void TestInit(int* argc, char*** argv);
+int RunAllTests(void);
 
 }  // namespace testing
 }  // namespace gvisor

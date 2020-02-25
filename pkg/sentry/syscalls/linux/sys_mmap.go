@@ -35,6 +35,8 @@ func Brk(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	return uintptr(addr), nil, nil
 }
 
+// LINT.IfChange
+
 // Mmap implements linux syscall mmap(2).
 func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	prot := args[2].Int()
@@ -103,6 +105,8 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	rv, err := t.MemoryManager().MMap(t, opts)
 	return uintptr(rv), nil, err
 }
+
+// LINT.ThenChange(vfs2/mmap.go)
 
 // Munmap implements linux syscall munmap(2).
 func Munmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {

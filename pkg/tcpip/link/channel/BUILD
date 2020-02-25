@@ -7,6 +7,7 @@ go_library(
     srcs = ["channel.go"],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/stack",

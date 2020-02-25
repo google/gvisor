@@ -153,6 +153,13 @@ TEST(DevTest, TTYExists) {
   EXPECT_EQ(statbuf.st_mode, S_IFCHR | 0666);
 }
 
+TEST(DevTest, NetTunExists) {
+  struct stat statbuf = {};
+  ASSERT_THAT(stat("/dev/net/tun", &statbuf), SyscallSucceeds());
+  // Check that it's a character device with rw-rw-rw- permissions.
+  EXPECT_EQ(statbuf.st_mode, S_IFCHR | 0666);
+}
+
 }  // namespace
 }  // namespace testing
 

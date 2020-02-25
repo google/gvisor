@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This file contains various Targets.
-
 package iptables
 
 import (
@@ -26,16 +24,16 @@ import (
 type AcceptTarget struct{}
 
 // Action implements Target.Action.
-func (AcceptTarget) Action(packet tcpip.PacketBuffer, filter IPHeaderFilter) (RuleVerdict, string) {
-	return RuleAccept, ""
+func (AcceptTarget) Action(packet tcpip.PacketBuffer, filter IPHeaderFilter) (RuleVerdict, int) {
+	return RuleAccept, 0
 }
 
 // DropTarget drops packets.
 type DropTarget struct{}
 
 // Action implements Target.Action.
-func (DropTarget) Action(packet tcpip.PacketBuffer, filter IPHeaderFilter) (RuleVerdict, string) {
-	return RuleDrop, ""
+func (DropTarget) Action(packet tcpip.PacketBuffer, filter IPHeaderFilter) (RuleVerdict, int) {
+	return RuleDrop, 0
 }
 
 // ErrorTarget logs an error and drops the packet. It represents a target that
@@ -43,9 +41,9 @@ func (DropTarget) Action(packet tcpip.PacketBuffer, filter IPHeaderFilter) (Rule
 type ErrorTarget struct{}
 
 // Action implements Target.Action.
-func (ErrorTarget) Action(packet tcpip.PacketBuffer, filter IPHeaderFilter) (RuleVerdict, string) {
+func (ErrorTarget) Action(packet tcpip.PacketBuffer, filter IPHeaderFilter) (RuleVerdict, int) {
 	log.Debugf("ErrorTarget triggered.")
-	return RuleDrop, ""
+	return RuleDrop, 0
 }
 
 // UserChainTarget marks a rule as the beginning of a user chain.
@@ -54,7 +52,7 @@ type UserChainTarget struct {
 }
 
 // Action implements Target.Action.
-func (UserChainTarget) Action(tcpip.PacketBuffer, IPHeaderFilter) (RuleVerdict, string) {
+func (UserChainTarget) Action(tcpip.PacketBuffer, IPHeaderFilter) (RuleVerdict, int) {
 	panic("UserChainTarget should never be called.")
 }
 
@@ -63,8 +61,8 @@ func (UserChainTarget) Action(tcpip.PacketBuffer, IPHeaderFilter) (RuleVerdict, 
 type ReturnTarget struct{}
 
 // Action implements Target.Action.
-func (ReturnTarget) Action(tcpip.PacketBuffer, IPHeaderFilter) (RuleVerdict, string) {
-	return RuleReturn, ""
+func (ReturnTarget) Action(tcpip.PacketBuffer, IPHeaderFilter) (RuleVerdict, int) {
+	return RuleReturn, 0
 }
 
 // RedirectTarget redirects the packet by modifying the destination port/IP.
@@ -88,13 +86,13 @@ type RedirectTarget struct {
 }
 
 // Action implements Target.Action.
-func (rt RedirectTarget) Action(pkt tcpip.PacketBuffer, filter IPHeaderFilter) (RuleVerdict, string) {
+func (rt RedirectTarget) Action(pkt tcpip.PacketBuffer, filter IPHeaderFilter) (RuleVerdict, int) {
 	headerView := pkt.Data.First()
 
 	// Network header should be set.
 	netHeader := header.IPv4(headerView)
 	if netHeader == nil {
-		return RuleDrop, ""
+		return RuleDrop, 0
 	}
 
 	// TODO(gvisor.dev/issue/170): Check Flags in RedirectTarget if
@@ -111,7 +109,7 @@ func (rt RedirectTarget) Action(pkt tcpip.PacketBuffer, filter IPHeaderFilter) (
 		tcp := header.TCP(headerView[hlen:])
 		tcp.SetDestinationPort(rt.MinPort)
 	default:
-		return RuleDrop, ""
+		return RuleDrop, 0
 	}
-	return RuleAccept, ""
+	return RuleAccept, 0
 }

@@ -29,6 +29,7 @@ var (
 	EACCES       = error(syscall.EACCES)
 	EAGAIN       = error(syscall.EAGAIN)
 	EBADF        = error(syscall.EBADF)
+	EBADFD       = error(syscall.EBADFD)
 	EBUSY        = error(syscall.EBUSY)
 	ECHILD       = error(syscall.ECHILD)
 	ECONNREFUSED = error(syscall.ECONNREFUSED)

@@ -1148,22 +1148,27 @@ func (ndp *ndpState) cleanupAutoGenAddrResourcesAndNotify(addr tcpip.Address) bo
 	return true
 }
 
-// cleanupHostOnlyState cleans up any state that is only useful for hosts.
+// cleanupState cleans up ndp's state.
 //
-// cleanupHostOnlyState MUST be called when ndp's NIC is transitioning from a
-// host to a router. This function will invalidate all discovered on-link
-// prefixes, discovered routers, and auto-generated addresses as routers do not
-// normally process Router Advertisements to discover default routers and
-// on-link prefixes, and auto-generate addresses via SLAAC.
+// If hostOnly is true, then only host-specific state will be cleaned up.
+//
+// cleanupState MUST be called with hostOnly set to true when ndp's NIC is
+// transitioning from a host to a router. This function will invalidate all
+// discovered on-link prefixes, discovered routers, and auto-generated
+// addresses.
+//
+// If hostOnly is true, then the link-local auto-generated address will not be
+// invalidated as routers are also expected to generate a link-local address.
 //
 // The NIC that ndp belongs to MUST be locked.
-func (ndp *ndpState) cleanupHostOnlyState() {
+func (ndp *ndpState) cleanupState(hostOnly bool) {
 	linkLocalSubnet := header.IPv6LinkLocalPrefix.Subnet()
 	linkLocalAddrs := 0
 	for addr := range ndp.autoGenAddresses {
 		// RFC 4862 section 5 states that routers are also expected to generate a
-		// link-local address so we do not invalidate them.
-		if linkLocalSubnet.Contains(addr) {
+		// link-local address so we do not invalidate them if we are cleaning up
+		// host-only state.
+		if hostOnly && linkLocalSubnet.Contains(addr) {
 			linkLocalAddrs++
 			continue
 		}
@@ -1230,7 +1235,7 @@ func (ndp *ndpState) startSolicitingRouters() {
 		}
 
 		payloadSize := header.ICMPv6HeaderSize + header.NDPRSMinimumSize
-		hdr := buffer.NewPrependable(header.IPv6MinimumSize + payloadSize)
+		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + payloadSize)
 		pkt := header.ICMPv6(hdr.Prepend(payloadSize))
 		pkt.SetType(header.ICMPv6RouterSolicit)
 		pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))

@@ -43,7 +43,10 @@ import (
 // newNet creates a new proc net entry.
 func (p *proc) newNetDir(ctx context.Context, k *kernel.Kernel, msrc *fs.MountSource) *fs.Inode {
 	var contents map[string]*fs.Inode
-	if s := p.k.NetworkStack(); s != nil {
+	// TODO(gvisor.dev/issue/1833): Support for using the network stack in the
+	// network namespace of the calling process. We should make this per-process,
+	// a.k.a. /proc/PID/net, and make /proc/net a symlink to /proc/self/net.
+	if s := p.k.RootNetworkNamespace().Stack(); s != nil {
 		contents = map[string]*fs.Inode{
 			"dev":  seqfile.NewSeqFileInode(ctx, &netDev{s: s}, msrc),
 			"snmp": seqfile.NewSeqFileInode(ctx, &netSnmp{s: s}, msrc),
