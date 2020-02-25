@@ -29,7 +29,7 @@ syscall_test(
 )
 
 syscall_test(
-    size = "large",
+    size = "enormous",
     test = "//test/perf/linux:getdents_benchmark",
 )
 
@@ -39,7 +39,7 @@ syscall_test(
 )
 
 syscall_test(
-    size = "large",
+    size = "enormous",
     test = "//test/perf/linux:gettid_benchmark",
 )
 
@@ -87,7 +87,7 @@ syscall_test(
 )
 
 syscall_test(
-    size = "large",
+    size = "enormous",
     test = "//test/perf/linux:signal_benchmark",
 )
 
@@ -102,7 +102,7 @@ syscall_test(
 )
 
 syscall_test(
-    size = "large",
+    size = "enormous",
     add_overlay = True,
     test = "//test/perf/linux:unlink_benchmark",
 )

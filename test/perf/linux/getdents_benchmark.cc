@@ -141,7 +141,7 @@ void BM_GetdentsNewFD(benchmark::State& state) {
   state.SetItemsProcessed(state.iterations());
 }
 
-BENCHMARK(BM_GetdentsNewFD)->Range(1, 1 << 16)->UseRealTime();
+BENCHMARK(BM_GetdentsNewFD)->Range(1, 1 << 12)->UseRealTime();
 
 }  // namespace
 
