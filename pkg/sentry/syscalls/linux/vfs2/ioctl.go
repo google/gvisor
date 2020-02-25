@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,16 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package fspath
+package vfs2
 
 import (
-	"unsafe"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
-// String returns the accumulated string. No other methods should be called
-// after String.
-func (b *Builder) String() string {
-	bs := b.buf[b.start:]
-	// Compare strings.Builder.String().
-	return *(*string)(unsafe.Pointer(&bs))
+// Ioctl implements Linux syscall ioctl(2).
+func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
+
+	file := t.GetFileVFS2(fd)
+	if file == nil {
+		return 0, nil, syserror.EBADF
+	}
+	defer file.DecRef()
+
+	ret, err := file.Ioctl(t, t.MemoryManager(), args)
+	return ret, nil, err
 }

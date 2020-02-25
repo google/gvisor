@@ -28,6 +28,8 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// LINT.IfChange
+
 const (
 	// EventMaskWrite contains events that can be triggered on writes.
 	//
@@ -358,3 +360,5 @@ func pwritev(t *kernel.Task, f *fs.File, src usermem.IOSequence, offset int64) (
 
 	return total, err
 }
+
+// LINT.ThenChange(vfs2/read_write.go)

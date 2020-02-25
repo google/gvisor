@@ -15,6 +15,8 @@
 package linux
 
 // EpollEvent is equivalent to struct epoll_event from epoll(2).
+//
+// +marshal
 type EpollEvent struct {
 	Events uint32
 	// Linux makes struct epoll_event a __u64, necessitating 4 bytes of padding

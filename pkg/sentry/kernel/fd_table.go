@@ -296,6 +296,50 @@ func (f *FDTable) NewFDs(ctx context.Context, fd int32, files []*fs.File, flags 
 	return fds, nil
 }
 
+// NewFDVFS2 allocates a file descriptor greater than or equal to minfd for
+// the given file description. If it succeeds, it takes a reference on file.
+func (f *FDTable) NewFDVFS2(ctx context.Context, minfd int32, file *vfs.FileDescription, flags FDFlags) (int32, error) {
+	if minfd < 0 {
+		// Don't accept negative FDs.
+		return -1, syscall.EINVAL
+	}
+
+	// Default limit.
+	end := int32(math.MaxInt32)
+
+	// Ensure we don't get past the provided limit.
+	if limitSet := limits.FromContext(ctx); limitSet != nil {
+		lim := limitSet.Get(limits.NumberOfFiles)
+		if lim.Cur != limits.Infinity {
+			end = int32(lim.Cur)
+		}
+		if minfd >= end {
+			return -1, syscall.EMFILE
+		}
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	// From f.next to find available fd.
+	fd := minfd
+	if fd < f.next {
+		fd = f.next
+	}
+	for fd < end {
+		if d, _, _ := f.get(fd); d == nil {
+			f.setVFS2(fd, file, flags)
+			if fd == f.next {
+				// Update next search start position.
+				f.next = fd + 1
+			}
+			return fd, nil
+		}
+		fd++
+	}
+	return -1, syscall.EMFILE
+}
+
 // NewFDAt sets the file reference for the given FD. If there is an active
 // reference for that FD, the ref count for that existing reference is
 // decremented.
@@ -316,9 +360,6 @@ func (f *FDTable) newFDAt(ctx context.Context, fd int32, file *fs.File, fileVFS2
 		return syscall.EBADF
 	}
 
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
 	// Check the limit for the provided file.
 	if limitSet := limits.FromContext(ctx); limitSet != nil {
 		if lim := limitSet.Get(limits.NumberOfFiles); lim.Cur != limits.Infinity && uint64(fd) >= lim.Cur {
@@ -327,6 +368,8 @@ func (f *FDTable) newFDAt(ctx context.Context, fd int32, file *fs.File, fileVFS2
 	}
 
 	// Install the entry.
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.setAll(fd, file, fileVFS2, flags)
 	return nil
 }
