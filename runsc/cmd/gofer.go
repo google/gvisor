@@ -335,7 +335,7 @@ func setupRootFS(spec *specs.Spec, conf *boot.Config) error {
 
 	if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		if err := pivotRoot("/proc"); err != nil {
-			Fatalf("faild to change the root file system: %v", err)
+			Fatalf("failed to change the root file system: %v", err)
 		}
 		if err := os.Chdir("/"); err != nil {
 			Fatalf("failed to change working directory")
