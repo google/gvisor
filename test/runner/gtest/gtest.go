@@ -43,6 +43,10 @@ type TestCase struct {
 	// Name is the name of this individual test.
 	Name string
 
+	// all indicates that this will run without flags. This takes
+	// precendence over benchmark below.
+	all bool
+
 	// benchmark indicates that this is a benchmark. In this case, the
 	// suite will be empty, and we will use the appropriate test and
 	// benchmark flags.
@@ -57,6 +61,9 @@ func (tc TestCase) FullName() string {
 
 // Args returns arguments to be passed when invoking the test.
 func (tc TestCase) Args() []string {
+	if tc.all {
+		return []string{} // No arguments.
+	}
 	if tc.benchmark {
 		return []string{
 			fmt.Sprintf("%s=^$", filterTestFlag),
@@ -81,11 +88,16 @@ func ParseTestCases(testBin string, benchmarks bool, extraArgs ...string) ([]Tes
 	cmd := exec.Command(testBin, args...)
 	out, err := cmd.Output()
 	if err != nil {
-		exitErr, ok := err.(*exec.ExitError)
-		if !ok {
-			return nil, fmt.Errorf("could not enumerate gtest tests: %v", err)
-		}
-		return nil, fmt.Errorf("could not enumerate gtest tests: %v\nstderr:\n%s", err, exitErr.Stderr)
+		// We failed to list tests with the given flags. Just
+		// return something that will run the binary with no
+		// flags, which should execute all tests.
+		return []TestCase{
+			TestCase{
+				Suite: "Default",
+				Name:  "All",
+				all:   true,
+			},
+		}, nil
 	}
 
 	// Parse test output.
@@ -114,7 +126,6 @@ func ParseTestCases(testBin string, benchmarks bool, extraArgs ...string) ([]Tes
 			Suite: suite,
 			Name:  name,
 		})
-
 	}
 
 	// Finished?
@@ -127,6 +138,8 @@ func ParseTestCases(testBin string, benchmarks bool, extraArgs ...string) ([]Tes
 	cmd = exec.Command(testBin, args...)
 	out, err = cmd.Output()
 	if err != nil {
+		// We were able to enumerate tests above, but not benchmarks?
+		// We requested them, so we return an error in this case.
 		exitErr, ok := err.(*exec.ExitError)
 		if !ok {
 			return nil, fmt.Errorf("could not enumerate gtest benchmarks: %v", err)
