@@ -60,13 +60,15 @@ func forEachMount(t *kernel.Task, fn func(string, *fs.Mount)) {
 	})
 	for _, m := range ms {
 		mroot := m.Root()
+		if mroot == nil {
+			continue // No longer valid.
+		}
 		mountPath, desc := mroot.FullName(rootDir)
 		mroot.DecRef()
 		if !desc {
 			// MountSources that are not descendants of the chroot jail are ignored.
 			continue
 		}
-
 		fn(mountPath, m)
 	}
 }
@@ -91,6 +93,12 @@ func (mif *mountInfoFile) ReadSeqFileData(ctx context.Context, handle seqfile.Se
 
 	var buf bytes.Buffer
 	forEachMount(mif.t, func(mountPath string, m *fs.Mount) {
+		mroot := m.Root()
+		if mroot == nil {
+			return // No longer valid.
+		}
+		defer mroot.DecRef()
+
 		// Format:
 		// 36 35 98:0 /mnt1 /mnt2 rw,noatime master:1 - ext3 /dev/root rw,errors=continue
 		// (1)(2)(3)   (4)   (5)      (6)      (7)   (8) (9)   (10)         (11)
@@ -107,9 +115,6 @@ func (mif *mountInfoFile) ReadSeqFileData(ctx context.Context, handle seqfile.Se
 
 		// (3) Major:Minor device ID. We don't have a superblock, so we
 		// just use the root inode device number.
-		mroot := m.Root()
-		defer mroot.DecRef()
-
 		sa := mroot.Inode.StableAttr
 		fmt.Fprintf(&buf, "%d:%d ", sa.DeviceFileMajor, sa.DeviceFileMinor)
 
@@ -207,6 +212,9 @@ func (mf *mountsFile) ReadSeqFileData(ctx context.Context, handle seqfile.SeqHan
 		//
 		// The "needs dump"and fsck flags are always 0, which is allowed.
 		root := m.Root()
+		if root == nil {
+			return // No longer valid.
+		}
 		defer root.DecRef()
 
 		flags := root.Inode.MountSource.Flags
