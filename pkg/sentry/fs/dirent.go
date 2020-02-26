@@ -1438,8 +1438,8 @@ func lockForRename(oldParent *Dirent, oldName string, newParent *Dirent, newName
 	}, nil
 }
 
-func checkSticky(ctx context.Context, dir *Dirent, victim *Dirent) error {
-	uattr, err := dir.Inode.UnstableAttr(ctx)
+func (d *Dirent) checkSticky(ctx context.Context, victim *Dirent) error {
+	uattr, err := d.Inode.UnstableAttr(ctx)
 	if err != nil {
 		return syserror.EPERM
 	}
@@ -1465,30 +1465,33 @@ func checkSticky(ctx context.Context, dir *Dirent, victim *Dirent) error {
 	return syserror.EPERM
 }
 
-// MayDelete determines whether `name`, a child of `dir`, can be deleted or
+// MayDelete determines whether `name`, a child of `d`, can be deleted or
 // renamed by `ctx`.
 //
 // Compare Linux kernel fs/namei.c:may_delete.
-func MayDelete(ctx context.Context, root, dir *Dirent, name string) error {
-	if err := dir.Inode.CheckPermission(ctx, PermMask{Write: true, Execute: true}); err != nil {
+func (d *Dirent) MayDelete(ctx context.Context, root *Dirent, name string) error {
+	if err := d.Inode.CheckPermission(ctx, PermMask{Write: true, Execute: true}); err != nil {
 		return err
 	}
 
-	victim, err := dir.Walk(ctx, root, name)
+	unlock := d.lockDirectory()
+	defer unlock()
+
+	victim, err := d.walk(ctx, root, name, true /* may unlock */)
 	if err != nil {
 		return err
 	}
 	defer victim.DecRef()
 
-	return mayDelete(ctx, dir, victim)
+	return d.mayDelete(ctx, victim)
 }
 
 // mayDelete determines whether `victim`, a child of `dir`, can be deleted or
 // renamed by `ctx`.
 //
 // Preconditions: `dir` is writable and executable by `ctx`.
-func mayDelete(ctx context.Context, dir, victim *Dirent) error {
-	if err := checkSticky(ctx, dir, victim); err != nil {
+func (d *Dirent) mayDelete(ctx context.Context, victim *Dirent) error {
+	if err := d.checkSticky(ctx, victim); err != nil {
 		return err
 	}
 
@@ -1542,7 +1545,7 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 	defer renamed.DecRef()
 
 	// Check that the renamed dirent is deletable.
-	if err := mayDelete(ctx, oldParent, renamed); err != nil {
+	if err := oldParent.mayDelete(ctx, renamed); err != nil {
 		return err
 	}
 
@@ -1580,7 +1583,7 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 		// across the Rename, so must call DecRef manually (no defer).
 
 		// Check that we can delete replaced.
-		if err := mayDelete(ctx, newParent, replaced); err != nil {
+		if err := newParent.mayDelete(ctx, replaced); err != nil {
 			replaced.DecRef()
 			return err
 		}
