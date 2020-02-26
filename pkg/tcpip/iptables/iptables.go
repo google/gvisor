@@ -171,7 +171,6 @@ const (
 	chainReturn
 )
 
-
 // Check runs pkt through the rules for hook. It returns true when the packet
 // should continue traversing the network stack and false when it should be
 // dropped.
@@ -242,7 +241,7 @@ func (it *IPTables) checkChain(hook Hook, pkt tcpip.PacketBuffer, table Table, r
 				return chainDrop
 			case chainReturn:
 				ruleIdx++
-				continue   
+				continue
 			default:
 				panic(fmt.Sprintf("Unknown verdict: %d", verdict))
 			}
@@ -289,5 +288,5 @@ func (it *IPTables) checkRule(hook Hook, pkt tcpip.PacketBuffer, table Table, ru
 	}
 
 	// All the matchers matched, so run the target.
-  return rule.Target.Action(pkt, rule.Filter)
+	return rule.Target.Action(pkt)
 }
