@@ -167,3 +167,17 @@ func (mm *MemoryManager) SetExecutable(file fsbridge.File) {
 		orig.DecRef()
 	}
 }
+
+// VDSOSigReturn returns the address of vdso_sigreturn.
+func (mm *MemoryManager) VDSOSigReturn() uint64 {
+	mm.metadataMu.Lock()
+	defer mm.metadataMu.Unlock()
+	return mm.vdsoSigReturnAddr
+}
+
+// SetVDSOSigReturn sets the address of vdso_sigreturn.
+func (mm *MemoryManager) SetVDSOSigReturn(addr uint64) {
+	mm.metadataMu.Lock()
+	defer mm.metadataMu.Unlock()
+	mm.vdsoSigReturnAddr = addr
+}

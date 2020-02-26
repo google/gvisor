@@ -84,6 +84,7 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 		dumpability:        mm.dumpability,
 		aioManager:         aioManager{contexts: make(map[uint64]*AIOContext)},
 		sleepForActivation: mm.sleepForActivation,
+		vdsoSigReturnAddr : mm.vdsoSigReturnAddr,
 	}
 
 	// Copy vmas.
