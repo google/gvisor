@@ -24,7 +24,7 @@ import (
 type AcceptTarget struct{}
 
 // Action implements Target.Action.
-func (AcceptTarget) Action(packet tcpip.PacketBuffer, filter IPHeaderFilter) (RuleVerdict, int) {
+func (AcceptTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, int) {
 	return RuleAccept, 0
 }
 
@@ -32,7 +32,7 @@ func (AcceptTarget) Action(packet tcpip.PacketBuffer, filter IPHeaderFilter) (Ru
 type DropTarget struct{}
 
 // Action implements Target.Action.
-func (DropTarget) Action(packet tcpip.PacketBuffer, filter IPHeaderFilter) (RuleVerdict, int) {
+func (DropTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, int) {
 	return RuleDrop, 0
 }
 
@@ -41,7 +41,7 @@ func (DropTarget) Action(packet tcpip.PacketBuffer, filter IPHeaderFilter) (Rule
 type ErrorTarget struct{}
 
 // Action implements Target.Action.
-func (ErrorTarget) Action(packet tcpip.PacketBuffer, filter IPHeaderFilter) (RuleVerdict, int) {
+func (ErrorTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, int) {
 	log.Debugf("ErrorTarget triggered.")
 	return RuleDrop, 0
 }
@@ -52,7 +52,7 @@ type UserChainTarget struct {
 }
 
 // Action implements Target.Action.
-func (UserChainTarget) Action(tcpip.PacketBuffer, IPHeaderFilter) (RuleVerdict, int) {
+func (UserChainTarget) Action(tcpip.PacketBuffer) (RuleVerdict, int) {
 	panic("UserChainTarget should never be called.")
 }
 
@@ -61,7 +61,7 @@ func (UserChainTarget) Action(tcpip.PacketBuffer, IPHeaderFilter) (RuleVerdict, 
 type ReturnTarget struct{}
 
 // Action implements Target.Action.
-func (ReturnTarget) Action(tcpip.PacketBuffer, IPHeaderFilter) (RuleVerdict, int) {
+func (ReturnTarget) Action(tcpip.PacketBuffer) (RuleVerdict, int) {
 	return RuleReturn, 0
 }
 
@@ -86,7 +86,7 @@ type RedirectTarget struct {
 }
 
 // Action implements Target.Action.
-func (rt RedirectTarget) Action(pkt tcpip.PacketBuffer, filter IPHeaderFilter) (RuleVerdict, int) {
+func (rt RedirectTarget) Action(pkt tcpip.PacketBuffer) (RuleVerdict, int) {
 	headerView := pkt.Data.First()
 
 	// Network header should be set.
@@ -99,7 +99,7 @@ func (rt RedirectTarget) Action(pkt tcpip.PacketBuffer, filter IPHeaderFilter) (
 	// we need to change dest address (for OUTPUT chain) or ports.
 	hlen := int(netHeader.HeaderLength())
 
-	switch protocol := filter.Protocol; protocol {
+	switch protocol := netHeader.TransportProtocol(); protocol {
 	case header.UDPProtocolNumber:
 		udp := header.UDP(headerView[hlen:])
 		udp.SetDestinationPort(rt.MinPort)
