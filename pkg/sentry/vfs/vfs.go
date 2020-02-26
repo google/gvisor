@@ -126,17 +126,23 @@ func (vfs *VirtualFilesystem) Init() error {
 	// Construct vfs.anonMount.
 	anonfsDevMinor, err := vfs.GetAnonBlockDevMinor()
 	if err != nil {
-		return err
+		// This shouldn't be possible since anonBlockDevMinorNext was
+		// initialized to 1 above (no device numbers have been allocated yet).
+		panic(fmt.Sprintf("VirtualFilesystem.Init: device number allocation for anonfs failed: %v", err))
 	}
 	anonfs := anonFilesystem{
 		devMinor: anonfsDevMinor,
 	}
 	anonfs.vfsfs.Init(vfs, &anonfs)
-	vfs.anonMount = &Mount{
-		vfs:  vfs,
-		fs:   &anonfs.vfsfs,
-		refs: 1,
+	defer anonfs.vfsfs.DecRef()
+	anonMount, err := vfs.NewDisconnectedMount(&anonfs.vfsfs, nil, &MountOptions{})
+	if err != nil {
+		// We should not be passing any MountOptions that would cause
+		// construction of this mount to fail.
+		panic(fmt.Sprintf("VirtualFilesystem.Init: anonfs mount failed: %v", err))
 	}
+	vfs.anonMount = anonMount
+
 	return nil
 }
 
