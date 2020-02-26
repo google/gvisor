@@ -273,19 +273,6 @@ func (mns *MountNamespace) DecRef() {
 	mns.DecRefWithDestructor(mns.destroy)
 }
 
-// Freeze freezes the entire mount tree.
-func (mns *MountNamespace) Freeze() {
-	mns.mu.Lock()
-	defer mns.mu.Unlock()
-
-	// We only want to freeze Dirents with active references, not Dirents referenced
-	// by a mount's MountSource.
-	mns.flushMountSourceRefsLocked()
-
-	// Freeze the entire shebang.
-	mns.root.Freeze()
-}
-
 // withMountLocked prevents further walks to `node`, because `node` is about to
 // be a mount point.
 func (mns *MountNamespace) withMountLocked(node *Dirent, fn func() error) error {

@@ -17,7 +17,6 @@ package fs
 import (
 	"fmt"
 	"path"
-	"sort"
 	"sync/atomic"
 	"syscall"
 
@@ -120,9 +119,6 @@ type Dirent struct {
 
 	// deleted may be set atomically when removed.
 	deleted int32
-
-	// frozen indicates this entry can't walk to unknown nodes.
-	frozen bool
 
 	// mounted is true if Dirent is a mount point, similar to include/linux/dcache.h:DCACHE_MOUNTED.
 	mounted bool
@@ -253,8 +249,7 @@ func (d *Dirent) IsNegative() bool {
 	return d.Inode == nil
 }
 
-// hashChild will hash child into the children list of its new parent d, carrying over
-// any "frozen" state from d.
+// hashChild will hash child into the children list of its new parent d.
 //
 // Returns (*WeakRef, true) if hashing child caused a Dirent to be unhashed. The caller must
 // validate the returned unhashed weak reference. Common cases:
@@ -281,9 +276,6 @@ func (d *Dirent) hashChild(child *Dirent) (*refs.WeakRef, bool) {
 		// Positive dirents must take a reference on their parent.
 		d.IncRef()
 	}
-
-	// Carry over parent's frozen state.
-	child.frozen = d.frozen
 
 	return d.hashChildParentSet(child)
 }
@@ -400,38 +392,6 @@ func (d *Dirent) MountRoot() *Dirent {
 	return mountRoot
 }
 
-// Freeze prevents this dirent from walking to more nodes. Freeze is applied
-// recursively to all children.
-//
-// If this particular Dirent represents a Virtual node, then Walks and Creates
-// may proceed as before.
-//
-// Freeze can only be called before the application starts running, otherwise
-// the root it might be out of sync with the application root if modified by
-// sys_chroot.
-func (d *Dirent) Freeze() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.frozen {
-		// Already frozen.
-		return
-	}
-	d.frozen = true
-
-	// Take a reference when freezing.
-	for _, w := range d.children {
-		if child := w.Get(); child != nil {
-			// NOTE: We would normally drop the reference here. But
-			// instead we're hanging on to it.
-			ch := child.(*Dirent)
-			ch.Freeze()
-		}
-	}
-
-	// Drop all expired weak references.
-	d.flush()
-}
-
 // descendantOf returns true if the receiver dirent is equal to, or a
 // descendant of, the argument dirent.
 //
@@ -522,11 +482,6 @@ func (d *Dirent) walk(ctx context.Context, root *Dirent, name string, walkMayUnl
 		// about to replace it.
 		delete(d.children, name)
 		w.Drop()
-	}
-
-	// Are we allowed to do the lookup?
-	if d.frozen && !d.Inode.IsVirtual() {
-		return nil, syscall.ENOENT
 	}
 
 	// Slow path: load the InodeOperations into memory. Since this is a hot path and the lookup may be
@@ -659,11 +614,6 @@ func (d *Dirent) Create(ctx context.Context, root *Dirent, name string, flags Fi
 		return nil, syscall.EEXIST
 	}
 
-	// Are we frozen?
-	if d.frozen && !d.Inode.IsVirtual() {
-		return nil, syscall.ENOENT
-	}
-
 	// Try the create. We need to trust the file system to return EEXIST (or something
 	// that will translate to EEXIST) if name already exists.
 	file, err := d.Inode.Create(ctx, d, name, flags, perms)
@@ -725,11 +675,6 @@ func (d *Dirent) genericCreate(ctx context.Context, root *Dirent, name string, c
 	// Does something already exist?
 	if d.exists(ctx, root, name) {
 		return syscall.EEXIST
-	}
-
-	// Are we frozen?
-	if d.frozen && !d.Inode.IsVirtual() {
-		return syscall.ENOENT
 	}
 
 	// Remove any negative Dirent. We've already asserted above with d.exists
@@ -862,49 +807,6 @@ func (d *Dirent) GetDotAttrs(root *Dirent) (DentAttr, DentAttr) {
 	return dot, dot
 }
 
-// readdirFrozen returns readdir results based solely on the frozen children.
-func (d *Dirent) readdirFrozen(root *Dirent, offset int64, dirCtx *DirCtx) (int64, error) {
-	// Collect attrs for "." and  "..".
-	attrs := make(map[string]DentAttr)
-	names := []string{".", ".."}
-	attrs["."], attrs[".."] = d.GetDotAttrs(root)
-
-	// Get info from all children.
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	for name, w := range d.children {
-		if child := w.Get(); child != nil {
-			defer child.DecRef()
-
-			// Skip negative children.
-			if child.(*Dirent).IsNegative() {
-				continue
-			}
-
-			sattr := child.(*Dirent).Inode.StableAttr
-			attrs[name] = DentAttr{
-				Type:    sattr.Type,
-				InodeID: sattr.InodeID,
-			}
-			names = append(names, name)
-		}
-	}
-
-	sort.Strings(names)
-
-	if int(offset) >= len(names) {
-		return offset, nil
-	}
-	names = names[int(offset):]
-	for _, name := range names {
-		if err := dirCtx.DirEmit(name, attrs[name]); err != nil {
-			return offset, err
-		}
-		offset++
-	}
-	return offset, nil
-}
-
 // DirIterator is an open directory containing directory entries that can be read.
 type DirIterator interface {
 	// IterateDir emits directory entries by calling dirCtx.EmitDir, beginning
@@ -962,10 +864,6 @@ func direntReaddir(ctx context.Context, d *Dirent, it DirIterator, root *Dirent,
 	// See SeekWithDirCursor for more details.
 	if offset == FileMaxOffset {
 		return offset, nil
-	}
-
-	if d.frozen {
-		return d.readdirFrozen(root, offset, dirCtx)
 	}
 
 	// Collect attrs for "." and "..".
@@ -1068,11 +966,6 @@ func (d *Dirent) mount(ctx context.Context, inode *Inode) (newChild *Dirent, err
 		return nil, syserror.EINVAL
 	}
 
-	// Are we frozen?
-	if d.parent.frozen && !d.parent.Inode.IsVirtual() {
-		return nil, syserror.ENOENT
-	}
-
 	// Dirent that'll replace d.
 	//
 	// Note that NewDirent returns with one reference taken; the reference
@@ -1098,11 +991,6 @@ func (d *Dirent) mount(ctx context.Context, inode *Inode) (newChild *Dirent, err
 func (d *Dirent) unmount(ctx context.Context, replacement *Dirent) error {
 	// Did we race with deletion?
 	if atomic.LoadInt32(&d.deleted) != 0 {
-		return syserror.ENOENT
-	}
-
-	// Are we frozen?
-	if d.parent.frozen && !d.parent.Inode.IsVirtual() {
 		return syserror.ENOENT
 	}
 
@@ -1134,11 +1022,6 @@ func (d *Dirent) Remove(ctx context.Context, root *Dirent, name string, dirPath 
 
 	unlock := d.lockDirectory()
 	defer unlock()
-
-	// Are we frozen?
-	if d.frozen && !d.Inode.IsVirtual() {
-		return syscall.ENOENT
-	}
 
 	// Try to walk to the node.
 	child, err := d.walk(ctx, root, name, false /* may unlock */)
@@ -1200,11 +1083,6 @@ func (d *Dirent) RemoveDirectory(ctx context.Context, root *Dirent, name string)
 
 	unlock := d.lockDirectory()
 	defer unlock()
-
-	// Are we frozen?
-	if d.frozen && !d.Inode.IsVirtual() {
-		return syscall.ENOENT
-	}
 
 	// Check for dots.
 	if name == "." {
@@ -1517,15 +1395,6 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 	defer unlock()
 	if err != nil {
 		return err
-	}
-
-	// Are we frozen?
-	// TODO(jamieliu): Is this the right errno?
-	if oldParent.frozen && !oldParent.Inode.IsVirtual() {
-		return syscall.ENOENT
-	}
-	if newParent.frozen && !newParent.Inode.IsVirtual() {
-		return syscall.ENOENT
 	}
 
 	// Do we have general permission to remove from oldParent and
