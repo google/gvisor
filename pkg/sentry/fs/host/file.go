@@ -101,8 +101,8 @@ func newFileFromDonatedFD(ctx context.Context, donated int, mounter fs.FileOwner
 		})
 		return s, nil
 	default:
-		msrc := newMountSource(ctx, "/", mounter, &Filesystem{}, fs.MountSourceFlags{}, false /* dontTranslateOwnership */)
-		inode, err := newInode(ctx, msrc, donated, saveable, true /* donated */)
+		msrc := fs.NewNonCachingMountSource(ctx, &filesystem{}, fs.MountSourceFlags{})
+		inode, err := newInode(ctx, msrc, donated, saveable)
 		if err != nil {
 			return nil, err
 		}
