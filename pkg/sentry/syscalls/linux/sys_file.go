@@ -1236,7 +1236,7 @@ func rmdirAt(t *kernel.Task, dirFD int32, addr usermem.Addr) error {
 			return syserror.ENOTEMPTY
 		}
 
-		if err := fs.MayDelete(t, root, d, name); err != nil {
+		if err := d.MayDelete(t, root, name); err != nil {
 			return err
 		}
 
@@ -1517,7 +1517,7 @@ func unlinkAt(t *kernel.Task, dirFD int32, addr usermem.Addr) error {
 			return syserror.ENOTDIR
 		}
 
-		if err := fs.MayDelete(t, root, d, name); err != nil {
+		if err := d.MayDelete(t, root, name); err != nil {
 			return err
 		}
 
