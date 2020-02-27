@@ -19,7 +19,17 @@ set -xeo pipefail
 declare -r BAZEL_VERSION=2.0.0
 
 # Install bazel dependencies.
-apt-get update && apt-get install -y openjdk-8-jdk-headless unzip
+while true; do
+  if (apt-get update && apt-get install -y \
+      openjdk-8-jdk-headless \
+      unzip); then
+    break
+  fi
+  result=$?
+  if [[ $result -ne 100 ]]; then
+    exit $result
+  fi
+done
 
 # Use the release installer.
 curl -L -o bazel-${BAZEL_VERSION}-installer-linux-x86_64.sh https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel-${BAZEL_VERSION}-installer-linux-x86_64.sh

@@ -15,12 +15,20 @@
 # limitations under the License.
 
 # Add dependencies.
-apt-get update && apt-get -y install \
-    apt-transport-https \
-    ca-certificates \
-    curl \
-    gnupg-agent \
-    software-properties-common
+while true; do
+  if (apt-get update && apt-get install -y \
+      apt-transport-https \
+      ca-certificates \
+      curl \
+      gnupg-agent \
+      software-properties-common); then
+    break
+  fi
+  result=$?
+  if [[ $result -ne 100 ]]; then
+    exit $result
+  fi
+done
 
 # Install the key.
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
@@ -32,4 +40,15 @@ add-apt-repository \
    stable"
 
 # Install docker.
-apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io
+while true; do
+  if (apt-get update && apt-get install -y \
+      docker-ce \
+      docker-ce-cli \
+      containerd.io); then
+    break
+  fi
+  result=$?
+  if [[ $result -ne 100 ]]; then
+    exit $result
+  fi
+done
