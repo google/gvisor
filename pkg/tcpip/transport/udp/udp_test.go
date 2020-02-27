@@ -441,9 +441,7 @@ func (c *testContext) injectV6Packet(payload []byte, h *header4Tuple, valid bool
 
 	// Inject packet.
 	c.linkEP.InjectInbound(ipv6.ProtocolNumber, stack.PacketBuffer{
-		Data:            buf.ToVectorisedView(),
-		NetworkHeader:   buffer.View(ip),
-		TransportHeader: buffer.View(u),
+		Data: buf.ToVectorisedView(),
 	})
 }
 
@@ -488,9 +486,7 @@ func (c *testContext) injectV4Packet(payload []byte, h *header4Tuple, valid bool
 	// Inject packet.
 
 	c.linkEP.InjectInbound(ipv4.ProtocolNumber, stack.PacketBuffer{
-		Data:            buf.ToVectorisedView(),
-		NetworkHeader:   buffer.View(ip),
-		TransportHeader: buffer.View(u),
+		Data: buf.ToVectorisedView(),
 	})
 }
 
@@ -1717,6 +1713,58 @@ func TestIncrementMalformedPacketsReceived(t *testing.T) {
 	}
 	if got := c.ep.Stats().(*tcpip.TransportEndpointStats).ReceiveErrors.MalformedPacketsReceived.Value(); got != want {
 		t.Errorf("got EP Stats.ReceiveErrors.MalformedPacketsReceived stats = %v, want = %v", got, want)
+	}
+}
+
+// TestShortHeader verifies that when a packet with a too-short UDP header is
+// received, the malformed received global stat gets incremented.
+func TestShortHeader(t *testing.T) {
+	c := newDualTestContext(t, defaultMTU)
+	defer c.cleanup()
+
+	c.createEndpoint(ipv6.ProtocolNumber)
+	// Bind to wildcard.
+	if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+		c.t.Fatalf("Bind failed: %s", err)
+	}
+
+	c.t.Helper()
+	h := unicastV6.header4Tuple(incoming)
+
+	// Allocate a buffer for an IPv6 and too-short UDP header.
+	const udpSize = header.UDPMinimumSize - 1
+	buf := buffer.NewView(header.IPv6MinimumSize + udpSize)
+	// Initialize the IP header.
+	ip := header.IPv6(buf)
+	ip.Encode(&header.IPv6Fields{
+		TrafficClass:  testTOS,
+		PayloadLength: uint16(udpSize),
+		NextHeader:    uint8(udp.ProtocolNumber),
+		HopLimit:      65,
+		SrcAddr:       h.srcAddr.Addr,
+		DstAddr:       h.dstAddr.Addr,
+	})
+
+	// Initialize the UDP header.
+	udpHdr := header.UDP(buffer.NewView(header.UDPMinimumSize))
+	udpHdr.Encode(&header.UDPFields{
+		SrcPort: h.srcAddr.Port,
+		DstPort: h.dstAddr.Port,
+		Length:  header.UDPMinimumSize,
+	})
+	// Calculate the UDP pseudo-header checksum.
+	xsum := header.PseudoHeaderChecksum(udp.ProtocolNumber, h.srcAddr.Addr, h.dstAddr.Addr, uint16(len(udpHdr)))
+	udpHdr.SetChecksum(^udpHdr.CalculateChecksum(xsum))
+	// Copy all but the last byte of the UDP header into the packet.
+	copy(buf[header.IPv6MinimumSize:], udpHdr)
+
+	// Inject packet.
+	c.linkEP.InjectInbound(ipv6.ProtocolNumber, stack.PacketBuffer{
+		Data: buf.ToVectorisedView(),
+	})
+
+	if got, want := c.s.Stats().MalformedRcvdPackets.Value(), uint64(1); got != want {
+		t.Errorf("got c.s.Stats().MalformedRcvdPackets.Value() = %d, want = %d", got, want)
 	}
 }
 

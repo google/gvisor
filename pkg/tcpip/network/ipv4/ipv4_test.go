@@ -644,6 +644,18 @@ func TestReceiveFragments(t *testing.T) {
 			},
 			expectedPayloads: [][]byte{udpPayload1, udpPayload2},
 		},
+		{
+			name: "Fragment without followup",
+			fragments: []fragmentData{
+				{
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload1[:64],
+				},
+			},
+			expectedPayloads: nil,
+		},
 	}
 
 	for _, test := range tests {

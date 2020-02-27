@@ -59,6 +59,9 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt stack.
 func (e *endpoint) handleICMP(r *stack.Route, pkt stack.PacketBuffer) {
 	stats := r.Stats()
 	received := stats.ICMP.V4PacketsReceived
+	// TODO(gvisor.dev/issue/170): ICMP packets don't have their
+	// TransportHeader fields set. See icmp/protocol.go:protocol.Parse for a
+	// full explanation.
 	v, ok := pkt.Data.PullUp(header.ICMPv4MinimumSize)
 	if !ok {
 		received.Invalid.Increment()
