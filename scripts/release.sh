@@ -25,6 +25,14 @@ if ! [[ -v KOKORO_RELEASE_TAG ]]; then
   echo "No KOKORO_RELEASE_TAG provided." >&2
   exit 1
 fi
+if ! [[ -v KOKORO_RELNOTES ]]; then
+  echo "No KOKORO_RELNOTES provided." >&2
+  exit 1
+fi
+if ! [[ -r "${KOKORO_ARTIFACTS_DIR}/${KOKORO_RELNOTES}" ]]; then
+  echo "The file '${KOKORO_ARTIFACTS_DIR}/${KOKORO_RELNOTES}' is not readable." >&2
+  exit 1
+fi
 
 # Unless an explicit releaser is provided, use the bot e-mail.
 declare -r KOKORO_RELEASE_AUTHOR=${KOKORO_RELEASE_AUTHOR:-gvisor-bot}
@@ -46,4 +54,7 @@ EOF
 fi
 
 # Run the release tool, which pushes to the origin repository.
-tools/tag_release.sh "${KOKORO_RELEASE_COMMIT}" "${KOKORO_RELEASE_TAG}"
+tools/tag_release.sh \
+    "${KOKORO_RELEASE_COMMIT}" \
+    "${KOKORO_RELEASE_TAG}" \
+    "${KOKORO_ARTIFACTS_DIR}/${KOKORO_RELNOTES}"

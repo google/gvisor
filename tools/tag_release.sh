@@ -21,13 +21,19 @@
 set -xeu
 
 # Check arguments.
-if [ "$#" -ne 2 ]; then
-  echo "usage: $0 <commit|revid> <release.rc>"
+if [ "$#" -ne 3 ]; then
+  echo "usage: $0 <commit|revid> <release.rc> <message-file>"
   exit 1
 fi
 
 declare -r target_commit="$1"
 declare -r release="$2"
+declare -r message_file="$3"
+
+if ! [[ -r "${message_file}" ]]; then
+  echo "error: message file '${message_file}' is not readable."
+  exit 1
+fi
 
 closest_commit() {
   while read line; do
@@ -64,6 +70,6 @@ fi
 
 # Tag the given commit (annotated, to record the committer).
 declare -r tag="release-${release}"
-(git tag -m "Release ${release}" -a "${tag}" "${commit}" && \
+(git tag -F "${message_file}" -a "${tag}" "${commit}" && \
   git push origin tag "${tag}") || \
   (git tag -d "${tag}" && false)
