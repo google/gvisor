@@ -113,29 +113,6 @@ func fstatat(t *kernel.Task, dirfd int32, pathAddr, statAddr usermem.Addr, flags
 	return stat.CopyOut(t, statAddr)
 }
 
-// This takes both input and output as pointer arguments to avoid copying large
-// structs.
-func convertStatxToUserStat(t *kernel.Task, statx *linux.Statx, stat *linux.Stat) {
-	// Linux just copies fields from struct kstat without regard to struct
-	// kstat::result_mask (fs/stat.c:cp_new_stat()), so we do too.
-	userns := t.UserNamespace()
-	*stat = linux.Stat{
-		Dev:     uint64(linux.MakeDeviceID(uint16(statx.DevMajor), statx.DevMinor)),
-		Ino:     statx.Ino,
-		Nlink:   uint64(statx.Nlink),
-		Mode:    uint32(statx.Mode),
-		UID:     uint32(auth.KUID(statx.UID).In(userns).OrOverflow()),
-		GID:     uint32(auth.KGID(statx.GID).In(userns).OrOverflow()),
-		Rdev:    uint64(linux.MakeDeviceID(uint16(statx.RdevMajor), statx.RdevMinor)),
-		Size:    int64(statx.Size),
-		Blksize: int64(statx.Blksize),
-		Blocks:  int64(statx.Blocks),
-		ATime:   timespecFromStatxTimestamp(statx.Atime),
-		MTime:   timespecFromStatxTimestamp(statx.Mtime),
-		CTime:   timespecFromStatxTimestamp(statx.Ctime),
-	}
-}
-
 func timespecFromStatxTimestamp(sxts linux.StatxTimestamp) linux.Timespec {
 	return linux.Timespec{
 		Sec:  sxts.Sec,
