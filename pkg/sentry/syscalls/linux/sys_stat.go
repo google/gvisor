@@ -25,24 +25,6 @@ import (
 
 // LINT.IfChange
 
-func statFromAttrs(t *kernel.Task, sattr fs.StableAttr, uattr fs.UnstableAttr) linux.Stat {
-	return linux.Stat{
-		Dev:     sattr.DeviceID,
-		Ino:     sattr.InodeID,
-		Nlink:   uattr.Links,
-		Mode:    sattr.Type.LinuxType() | uint32(uattr.Perms.LinuxMode()),
-		UID:     uint32(uattr.Owner.UID.In(t.UserNamespace()).OrOverflow()),
-		GID:     uint32(uattr.Owner.GID.In(t.UserNamespace()).OrOverflow()),
-		Rdev:    uint64(linux.MakeDeviceID(sattr.DeviceFileMajor, sattr.DeviceFileMinor)),
-		Size:    uattr.Size,
-		Blksize: sattr.BlockSize,
-		Blocks:  uattr.Usage / 512,
-		ATime:   uattr.AccessTime.Timespec(),
-		MTime:   uattr.ModificationTime.Timespec(),
-		CTime:   uattr.StatusChangeTime.Timespec(),
-	}
-}
-
 // Stat implements linux syscall stat(2).
 func Stat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
