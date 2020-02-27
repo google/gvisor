@@ -36,6 +36,8 @@ import (
 	"gvisor.dev/gvisor/runsc/cmd"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
+
+	"gvisor.dev/gvisor/runsc/extraargs"
 )
 
 var (
@@ -230,6 +232,7 @@ func main() {
 		ReferenceLeakMode:  refsLeakMode,
 		OverlayfsStaleRead: *overlayfsStaleRead,
 		CPUNumFromQuota:    *cpuNumFromQuota,
+		ExtraArgs:          extraargs.New(),
 
 		TestOnlyAllowRunAsCurrentUserWithoutChroot: *testOnlyAllowRunAsCurrentUserWithoutChroot,
 		TestOnlyTestNameEnv:                        *testOnlyTestNameEnv,

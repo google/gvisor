@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
+	"gvisor.dev/gvisor/runsc/extraargs"
 )
 
 // FileAccessType tells how the filesystem is accessed.
@@ -262,6 +263,9 @@ type Config struct {
 
 	// Enables VFS2 (not plumbled through yet).
 	VFS2 bool
+
+	// ExtraArgs is the set of miscellaneous args specified by the ExtraArgs struct.
+	ExtraArgs *extraargs.ExtraArgs
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.
@@ -305,5 +309,9 @@ func (c *Config) ToFlags() []string {
 	if len(c.TestOnlyTestNameEnv) != 0 {
 		f = append(f, "--TESTONLY-test-name-env="+c.TestOnlyTestNameEnv)
 	}
+	if c.ExtraArgs != nil {
+		f = append(f, c.ExtraArgs.Flags()...)
+	}
+
 	return f
 }

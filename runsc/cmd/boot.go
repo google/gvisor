@@ -82,7 +82,7 @@ type Boot struct {
 	// sandbox (e.g. gofer) and sent through this FD.
 	mountsFD int
 
-	// pidns is set if the sanadbox is in its own pid namespace.
+	// pidns is set if the sandbox is in its own pid namespace.
 	pidns bool
 }
 

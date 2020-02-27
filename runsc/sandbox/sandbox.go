@@ -390,6 +390,12 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 
 	cmd.Args = append(cmd.Args, "--panic-signal="+strconv.Itoa(int(syscall.SIGTERM)))
 
+	// Add any other necessary files not specified here.
+	err := addExtraFiles(conf, args, cmd, &nextFD)
+	if err != nil {
+		return fmt.Errorf("adding extra files: %v", err)
+	}
+
 	// Add the "boot" command to the args.
 	//
 	// All flags after this must be for the boot command

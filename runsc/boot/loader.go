@@ -314,6 +314,12 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("initializing compat logs: %v", err)
 	}
 
+	if args.Conf.ExtraArgs != nil {
+		if err := args.Conf.ExtraArgs.Evaluate(); err != nil {
+			return nil, fmt.Errorf("evaluating extra args: %v", err)
+		}
+	}
+
 	mountHints, err := newPodMountHints(args.Spec)
 	if err != nil {
 		return nil, fmt.Errorf("creating pod mount hints: %v", err)

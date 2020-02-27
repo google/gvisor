@@ -5,6 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "sandbox",
     srcs = [
+        "extra_files.go",
         "network.go",
         "network_unsafe.go",
         "sandbox.go",

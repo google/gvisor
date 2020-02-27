@@ -91,6 +91,7 @@ go_library(
         "//runsc/boot/filter",
         "//runsc/boot/platforms",
         "//runsc/boot/pprof",
+        "//runsc/extraargs",
         "//runsc/specutils",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
