@@ -22,6 +22,8 @@ go_library(
         "read_write.go",
         "setstat.go",
         "stat.go",
+        "stat_amd64.go",
+        "stat_arm64.go",
         "sync.go",
         "xattr.go",
     ],
