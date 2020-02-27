@@ -84,3 +84,17 @@ function install_runsc() {
   # Restart docker to pick up the new runtime configuration.
   sudo systemctl restart docker
 }
+
+# Installs the given packages. Note that the package names should be verified to
+# be correct, otherwise this may result in a loop that spins until time out.
+function apt_install() {
+  while true; do
+    if (sudo apt-get update && sudo apt-get install -y "$@"); then
+      break
+    fi
+    result=$?
+    if [[ $result -ne 100 ]]; then
+      return $result
+    fi
+  done
+}

@@ -19,17 +19,16 @@ set -e
 
 curl -fsSL https://gvisor.dev/archive.key | sudo apt-key add -
 add-apt-repository "deb https://storage.googleapis.com/gvisor/releases release main"
+
 while true; do
-  if apt-get update; then
-    apt-get install -y runsc
+  if (apt-get update && apt-get install -y runsc); then
     break
   fi
   result=$?
-  # Check if apt update failed to aquire the file lock.
   if [[ $result -ne 100 ]]; then
     exit $result
   fi
 done
+
 runsc install
 service docker restart
-

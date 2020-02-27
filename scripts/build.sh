@@ -17,7 +17,7 @@
 source $(dirname $0)/common.sh
 
 # Install required packages for make_repository.sh et al.
-sudo apt-get update && sudo apt-get install -y dpkg-sig coreutils apt-utils xz-utils
+apt_install dpkg-sig coreutils apt-utils xz-utils
 
 # Build runsc.
 runsc=$(build -c opt //runsc)
