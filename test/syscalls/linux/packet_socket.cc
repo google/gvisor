@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <arpa/inet.h>
+#include <ifaddrs.h>
 #include <linux/capability.h>
 #include <linux/if_arp.h>
 #include <linux/if_packet.h>
@@ -163,16 +164,11 @@ int CookedPacketTest::GetLoopbackIndex() {
   return ifr.ifr_ifindex;
 }
 
-// Receive via a packet socket.
-TEST_P(CookedPacketTest, Receive) {
-  // Let's use a simple IP payload: a UDP datagram.
-  FileDescriptor udp_sock =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
-  SendUDPMessage(udp_sock.get());
-
+// Receive and verify the message via packet socket on interface.
+void ReceiveMessage(int sock, int ifindex) {
   // Wait for the socket to become readable.
   struct pollfd pfd = {};
-  pfd.fd = socket_;
+  pfd.fd = sock;
   pfd.events = POLLIN;
   EXPECT_THAT(RetryEINTR(poll)(&pfd, 1, 2000), SyscallSucceedsWithValue(1));
 
@@ -182,9 +178,10 @@ TEST_P(CookedPacketTest, Receive) {
   char buf[64];
   struct sockaddr_ll src = {};
   socklen_t src_len = sizeof(src);
-  ASSERT_THAT(recvfrom(socket_, buf, sizeof(buf), 0,
+  ASSERT_THAT(recvfrom(sock, buf, sizeof(buf), 0,
                        reinterpret_cast<struct sockaddr*>(&src), &src_len),
               SyscallSucceedsWithValue(packet_size));
+
   // sockaddr_ll ends with an 8 byte physical address field, but ethernet
   // addresses only use 6 bytes.  Linux used to return sizeof(sockaddr_ll)-2
   // here, but since commit b2cf86e1563e33a14a1c69b3e508d15dc12f804c returns
@@ -194,7 +191,7 @@ TEST_P(CookedPacketTest, Receive) {
   // TODO(b/129292371): Verify protocol once we return it.
   // Verify the source address.
   EXPECT_EQ(src.sll_family, AF_PACKET);
-  EXPECT_EQ(src.sll_ifindex, GetLoopbackIndex());
+  EXPECT_EQ(src.sll_ifindex, ifindex);
   EXPECT_EQ(src.sll_halen, ETH_ALEN);
   // This came from the loopback device, so the address is all 0s.
   for (int i = 0; i < src.sll_halen; i++) {
@@ -220,6 +217,18 @@ TEST_P(CookedPacketTest, Receive) {
   // Verify the payload.
   char* payload = reinterpret_cast<char*>(buf + sizeof(iphdr) + sizeof(udphdr));
   EXPECT_EQ(strncmp(payload, kMessage, sizeof(kMessage)), 0);
+}
+
+// Receive via a packet socket.
+TEST_P(CookedPacketTest, Receive) {
+  // Let's use a simple IP payload: a UDP datagram.
+  FileDescriptor udp_sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  SendUDPMessage(udp_sock.get());
+
+  // Receive and verify the data.
+  int loopback_index = GetLoopbackIndex();
+  ReceiveMessage(socket_, loopback_index);
 }
 
 // Send via a packet socket.
@@ -311,6 +320,101 @@ TEST_P(CookedPacketTest, Send) {
   EXPECT_EQ(src.sin_family, AF_INET);
   EXPECT_EQ(src.sin_port, kPort);
   EXPECT_EQ(src.sin_addr.s_addr, htonl(INADDR_LOOPBACK));
+}
+
+// Bind and receive via packet socket.
+TEST_P(CookedPacketTest, BindReceive) {
+  struct sockaddr_ll bind_addr = {};
+  bind_addr.sll_family = AF_PACKET;
+  bind_addr.sll_protocol = htons(GetParam());
+  bind_addr.sll_ifindex = GetLoopbackIndex();
+
+  ASSERT_THAT(bind(socket_, reinterpret_cast<struct sockaddr*>(&bind_addr),
+                   sizeof(bind_addr)),
+              SyscallSucceeds());
+
+  // Let's use a simple IP payload: a UDP datagram.
+  FileDescriptor udp_sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  SendUDPMessage(udp_sock.get());
+
+  // Receive and verify the data.
+  ReceiveMessage(socket_, bind_addr.sll_ifindex);
+}
+
+// Double Bind socket.
+TEST_P(CookedPacketTest, DoubleBind) {
+  struct sockaddr_ll bind_addr = {};
+  bind_addr.sll_family = AF_PACKET;
+  bind_addr.sll_protocol = htons(GetParam());
+  bind_addr.sll_ifindex = GetLoopbackIndex();
+
+  ASSERT_THAT(bind(socket_, reinterpret_cast<struct sockaddr*>(&bind_addr),
+                   sizeof(bind_addr)),
+              SyscallSucceeds());
+
+  // Binding socket again should fail.
+  ASSERT_THAT(
+      bind(socket_, reinterpret_cast<struct sockaddr*>(&bind_addr),
+           sizeof(bind_addr)),
+      // Linux 4.09 returns EINVAL here, but some time before 4.19 it switched
+      // to EADDRINUSE.
+      AnyOf(SyscallFailsWithErrno(EADDRINUSE), SyscallFailsWithErrno(EINVAL)));
+}
+
+// Bind and verify we do not receive data on interface which is not bound
+TEST_P(CookedPacketTest, BindDrop) {
+  // Let's use a simple IP payload: a UDP datagram.
+  FileDescriptor udp_sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+
+  struct ifaddrs* if_addr_list = nullptr;
+  auto cleanup = Cleanup([&if_addr_list]() { freeifaddrs(if_addr_list); });
+
+  ASSERT_THAT(getifaddrs(&if_addr_list), SyscallSucceeds());
+
+  // Get interface other than loopback.
+  struct ifreq ifr = {};
+  for (struct ifaddrs* i = if_addr_list; i; i = i->ifa_next) {
+    if (strcmp(i->ifa_name, "lo") != 0) {
+      strncpy(ifr.ifr_name, i->ifa_name, sizeof(ifr.ifr_name));
+      break;
+    }
+  }
+
+  // Skip if no interface is available other than loopback.
+  if (strlen(ifr.ifr_name) == 0) {
+    GTEST_SKIP();
+  }
+
+  // Get interface index.
+  EXPECT_THAT(ioctl(socket_, SIOCGIFINDEX, &ifr), SyscallSucceeds());
+  EXPECT_NE(ifr.ifr_ifindex, 0);
+
+  // Bind to packet socket requires only family, protocol and ifindex.
+  struct sockaddr_ll bind_addr = {};
+  bind_addr.sll_family = AF_PACKET;
+  bind_addr.sll_protocol = htons(GetParam());
+  bind_addr.sll_ifindex = ifr.ifr_ifindex;
+
+  ASSERT_THAT(bind(socket_, reinterpret_cast<struct sockaddr*>(&bind_addr),
+                   sizeof(bind_addr)),
+              SyscallSucceeds());
+
+  // Send to loopback interface.
+  struct sockaddr_in dest = {};
+  dest.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  dest.sin_family = AF_INET;
+  dest.sin_port = kPort;
+  EXPECT_THAT(sendto(udp_sock.get(), kMessage, sizeof(kMessage), 0,
+                     reinterpret_cast<struct sockaddr*>(&dest), sizeof(dest)),
+              SyscallSucceedsWithValue(sizeof(kMessage)));
+
+  // Wait and make sure the socket never receives any data.
+  struct pollfd pfd = {};
+  pfd.fd = socket_;
+  pfd.events = POLLIN;
+  EXPECT_THAT(RetryEINTR(poll)(&pfd, 1, 1000), SyscallSucceedsWithValue(0));
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, CookedPacketTest,
