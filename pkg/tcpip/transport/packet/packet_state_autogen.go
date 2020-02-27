@@ -38,6 +38,7 @@ func (x *endpoint) save(m state.Map) {
 	m.Save("rcvClosed", &x.rcvClosed)
 	m.Save("sndBufSize", &x.sndBufSize)
 	m.Save("closed", &x.closed)
+	m.Save("bound", &x.bound)
 }
 
 func (x *endpoint) load(m state.Map) {
@@ -50,6 +51,7 @@ func (x *endpoint) load(m state.Map) {
 	m.Load("rcvClosed", &x.rcvClosed)
 	m.Load("sndBufSize", &x.sndBufSize)
 	m.Load("closed", &x.closed)
+	m.Load("bound", &x.bound)
 	m.LoadValue("rcvBufSizeMax", new(int), func(y interface{}) { x.loadRcvBufSizeMax(y.(int)) })
 	m.AfterLoad(x.afterLoad)
 }
