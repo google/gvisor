@@ -12,12 +12,6 @@ proto_library(
     srcs = ["stub.proto"],
 )
 
-go_grpc_library(
-    name = "stub_go_grpc_proto",
-    importpath = "test/packetimpact/proto/stub_go_grpc_proto",
-    protos = [":stub_proto"],
-)
-
 cc_grpc_library(
     name = "stub_cc_grpc_proto",
     srcs = [":stub_proto"],
@@ -25,4 +19,10 @@ cc_grpc_library(
     grpc_only = True,
     #service_namespace = "grpc_gen",
     deps = [":stub_cc_proto"],
+)
+
+go_grpc_library(
+    name = "stub_go_grpc_proto",
+    importpath = "test/packetimpact/proto/stub_go_grpc_proto",
+    protos = [":stub_proto"],
 )
