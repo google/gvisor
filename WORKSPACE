@@ -215,7 +215,7 @@ go_repository(
 go_repository(
     name = "com_github_golang_mock",
     importpath = "github.com/golang/mock",
-    sum = "h1:qGJ6qTW+x6xX/my+8YUVl4WNpX9B7+/l2tRsHGZ7f2s=",
+    sum = "h1:YF8+flBXS5eO826T4nzqPrxfhQThhXl0YzfuUPu4SBg=",
     version = "v1.3.1",
 )
 
@@ -385,102 +385,4 @@ http_archive(
         "https://mirror.bazel.build/github.com/google/benchmark/archive/v1.5.0.tar.gz",
         "https://github.com/google/benchmark/archive/v1.5.0.tar.gz",
     ],
-)
-
-go_repository(
-    name = "com_github_google_go_github_v28",
-    importpath = "github.com/google/go-github/v28",
-    sum = "h1:kORf5ekX5qwXO2mGzXXOjMe/g6ap8ahVe0sBEulhSxo=",
-    version = "v28.1.1",
-)
-
-go_repository(
-    name = "com_google_cloud_go",
-    importpath = "cloud.google.com/go",
-    sum = "h1:eOI3/cP2VTU6uZLDYAoic+eyzzB9YyGmJ7eIjl8rOPg=",
-    version = "v0.34.0",
-)
-
-go_repository(
-    name = "org_golang_google_appengine",
-    importpath = "google.golang.org/appengine",
-    sum = "h1:/wp5JvzpHIxhs/dumFmF7BXTf3Z+dd4uXta4kVyO508=",
-    version = "v1.4.0",
-)
-
-go_repository(
-    name = "co_honnef_go_tools",
-    importpath = "honnef.co/go/tools",
-    sum = "h1:/hemPrYIhOhy8zYrNj+069zDB68us2sMGsfkFJO0iZs=",
-    version = "v0.0.0-20190523083050-ea95bdfd59fc",
-)
-
-go_repository(
-    name = "com_github_burntsushi_toml",
-    importpath = "github.com/BurntSushi/toml",
-    sum = "h1:WXkYYl6Yr3qBf1K79EBnL4mak0OimBfB0XUf9Vl28OQ=",
-    version = "v0.3.1",
-)
-
-go_repository(
-    name = "com_github_census_instrumentation_opencensus_proto",
-    importpath = "github.com/census-instrumentation/opencensus-proto",
-    sum = "h1:glEXhBS5PSLLv4IXzLA5yPRVX4bilULVyxxbrfOtDAk=",
-    version = "v0.2.1",
-)
-
-go_repository(
-    name = "com_github_client9_misspell",
-    importpath = "github.com/client9/misspell",
-    sum = "h1:ta993UF76GwbvJcIo3Y68y/M3WxlpEHPWIGDkJYwzJI=",
-    version = "v0.3.4",
-)
-
-go_repository(
-    name = "com_github_envoyproxy_go_control_plane",
-    importpath = "github.com/envoyproxy/go-control-plane",
-    sum = "h1:4cmBvAEBNJaGARUEs3/suWRyfyBfhf7I60WBZq+bv2w=",
-    version = "v0.9.1-0.20191026205805-5f8ba28d4473",
-)
-
-go_repository(
-    name = "com_github_envoyproxy_protoc_gen_validate",
-    importpath = "github.com/envoyproxy/protoc-gen-validate",
-    sum = "h1:EQciDnbrYxy13PgWoY8AqoxGiPrpgBZ1R8UNe3ddc+A=",
-    version = "v0.1.0",
-)
-
-go_repository(
-    name = "com_github_golang_glog",
-    importpath = "github.com/golang/glog",
-    sum = "h1:VKtxabqXZkF25pY9ekfRL6a582T4P37/31XEstQ5p58=",
-    version = "v0.0.0-20160126235308-23def4e6c14b",
-)
-
-go_repository(
-    name = "com_github_prometheus_client_model",
-    importpath = "github.com/prometheus/client_model",
-    sum = "h1:gQz4mCbXsO+nc9n1hCxHcGA3Zx3Eo+UHZoInFGUIXNM=",
-    version = "v0.0.0-20190812154241-14fe0d1b01d4",
-)
-
-go_repository(
-    name = "org_golang_google_genproto",
-    importpath = "google.golang.org/genproto",
-    sum = "h1:gSJIx1SDwno+2ElGhA4+qG2zF97qiUzTM+rQ0klBOcE=",
-    version = "v0.0.0-20190819201941-24fa4b261c55",
-)
-
-go_repository(
-    name = "org_golang_x_exp",
-    importpath = "golang.org/x/exp",
-    sum = "h1:c2HOrn5iMezYjSlGPncknSEr/8x5LELb/ilJbXi9DEA=",
-    version = "v0.0.0-20190121172915-509febef88a4",
-)
-
-go_repository(
-    name = "org_golang_x_lint",
-    importpath = "golang.org/x/lint",
-    sum = "h1:XQyxROzUlZH+WIQwySDgnISgOivlhjIEwaQaJEJrrN0=",
-    version = "v0.0.0-20190313153728-d0100b6bd8b3",
 )
