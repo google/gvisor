@@ -13,15 +13,19 @@ py_library(
 py_library(
     name = "machine_producer",
     srcs = ["machine_producer.py"],
+    srcs_version = "PY2AND3",
+    deps = ["//third_party/py/six"],
 )
 
 py_library(
     name = "mock_producer",
     srcs = ["mock_producer.py"],
+    srcs_version = "PY2AND3",
     deps = [
         "//benchmarks/harness:machine",
         "//benchmarks/harness/machine_producers:gcloud_producer",
         "//benchmarks/harness/machine_producers:machine_producer",
+        "//third_party/py/six",
     ],
 )
 
@@ -41,15 +45,18 @@ py_library(
 py_library(
     name = "gcloud_mock_recorder",
     srcs = ["gcloud_mock_recorder.py"],
+    srcs_version = "PY2AND3",
 )
 
 py_library(
     name = "gcloud_producer",
     srcs = ["gcloud_producer.py"],
+    srcs_version = "PY2AND3",
     deps = [
         "//benchmarks/harness:machine",
         "//benchmarks/harness/machine_producers:gcloud_mock_recorder",
         "//benchmarks/harness/machine_producers:machine_producer",
+        "//third_party/py/six",
     ],
 )
 
@@ -64,6 +71,7 @@ filegroup(
 py_library(
     name = "gcloud_producer_test_lib",
     srcs = ["gcloud_producer_test.py"],
+    srcs_version = "PY2AND3",
     deps = [
         "//benchmarks/harness/machine_producers:machine_producer",
         "//benchmarks/harness/machine_producers:mock_producer",

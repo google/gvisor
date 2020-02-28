@@ -28,12 +28,18 @@ collisions with user instances shouldn't happen.
   # run stuff on machines with machines[i].run(CMD)
   producer.release_machines(NUM_MACHINES)
 """
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
 import datetime
 import json
 import subprocess
 import threading
 from typing import List, Dict, Any
 import uuid
+
+from six.moves import range
 
 from benchmarks.harness import machine
 from benchmarks.harness.machine_producers import gcloud_mock_recorder

@@ -13,7 +13,13 @@
 # limitations under the License.
 """Producers of mocks."""
 
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
 from typing import List, Any
+
+from six.moves import range
 
 from benchmarks.harness import machine
 from benchmarks.harness.machine_producers import gcloud_mock_recorder
