@@ -8,6 +8,7 @@ package(
 py_library(
     name = "harness",
     srcs = ["__init__.py"],
+    srcs_version = "PY2AND3",
 )
 
 py_library(
