@@ -22,7 +22,7 @@ go_library(
         "@com_github_google_go-cmp//cmp:go_default_library",
         "@com_github_google_go-cmp//cmp/cmpopts:go_default_library",
         "@com_github_imdario_mergo//:go_default_library",
-        "@com_github_jinzhu_copier//:go_default_library",
+        "@com_github_mohae_deepcopy//:go_default_library",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//keepalive:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",

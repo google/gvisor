@@ -176,9 +176,9 @@ go_repository(
 )
 
 go_repository(
-    name = "com_github_jinzhu_copier",
-    importpath = "github.com/jinzhu/copier",
-    commit = "b57f9002281ac48ed8cbc489b1e91121e1a0824c",
+    name = "com_github_mohae_deepcopy",
+    importpath = "github.com/mohae/deepcopy",
+    commit = "c48cc78d482608239f6c4c92a4abd87eb8761c90",
 )
 
 http_archive(
