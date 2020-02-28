@@ -17,7 +17,6 @@ cc_grpc_library(
     srcs = [":stub_proto"],
     generate_mocks = False,
     grpc_only = True,
-    #service_namespace = "grpc_gen",
     deps = [":stub_cc_proto"],
 )
 
