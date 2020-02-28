@@ -32,6 +32,9 @@ will need to be added to the appropriate `BUILD` files, and the `:gopath` target
 will need to be re-run to generate appropriate symlinks in the `GOPATH`
 directory tree.
 
+Dependencies can be added by using `go mod get`. In order to keep the
+`WORKSPACE` file in sync, run `tools/go_mod.sh` in place of `go mod`.
+
 ### Coding Guidelines
 
 All Go code should conform to the [Go style guidelines][gostyle]. C++ code
