@@ -158,6 +158,9 @@ type Config struct {
 	// DebugLog is the path to log debug information to, if not empty.
 	DebugLog string
 
+	// PanicLog is the path to log GO's runtime messages, if not empty.
+	PanicLog string
+
 	// DebugLogFormat is the log format for debug.
 	DebugLogFormat string
 
@@ -269,6 +272,7 @@ func (c *Config) ToFlags() []string {
 		"--log=" + c.LogFilename,
 		"--log-format=" + c.LogFormat,
 		"--debug-log=" + c.DebugLog,
+		"--panic-log=" + c.PanicLog,
 		"--debug-log-format=" + c.DebugLogFormat,
 		"--file-access=" + c.FileAccess.String(),
 		"--overlay=" + strconv.FormatBool(c.Overlay),
