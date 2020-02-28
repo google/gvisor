@@ -26,6 +26,7 @@ namespace {
 
 constexpr long kFudgeSeconds = 5;
 
+#if defined(__x86_64__) || defined(__i386__)
 // Mimics the time(2) wrapper from glibc prior to 2.15.
 time_t vsyscall_time(time_t* t) {
   constexpr uint64_t kVsyscallTimeEntry = 0xffffffffff600400;
@@ -98,6 +99,7 @@ TEST(TimeTest, VsyscallGettimeofday_InvalidAddressSIGSEGV) {
                                     reinterpret_cast<struct timezone*>(0x1)),
               ::testing::KilledBySignal(SIGSEGV), "");
 }
+#endif
 
 }  // namespace
 
