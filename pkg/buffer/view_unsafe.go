@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,21 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package pipe
+package buffer
 
 import (
-	"testing"
 	"unsafe"
-
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-func TestBufferSize(t *testing.T) {
-	bufferSize := unsafe.Sizeof(buffer{})
-	if bufferSize < usermem.PageSize {
-		t.Errorf("buffer is less than a page")
-	}
-	if bufferSize > (2 * usermem.PageSize) {
-		t.Errorf("buffer is greater than two pages")
-	}
-}
+// minBatch is the smallest Read or Write operation that the
+// WriteFromReader and ReadToWriter functions will use.
+//
+// This is defined as the size of a native pointer.
+const minBatch = int(unsafe.Sizeof(uintptr(0)))
