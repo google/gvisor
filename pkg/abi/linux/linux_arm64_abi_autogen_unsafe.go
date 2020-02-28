@@ -237,7 +237,7 @@ func (s *Stat) UnmarshalUnsafe(src []byte) {
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 func (s *Stat) CopyOut(task marshal.Task, addr usermem.Addr) error {
-    if !s.MTime.Packed() && s.CTime.Packed() && s.ATime.Packed() {
+    if !s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
         // Type Stat doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := task.CopyScratchBuffer(s.SizeBytes())
         s.MarshalBytes(buf)

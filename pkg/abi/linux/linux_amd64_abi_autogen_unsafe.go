@@ -206,12 +206,12 @@ func (s *Stat) UnmarshalBytes(src []byte) {
 
 // Packed implements marshal.Marshallable.Packed.
 func (s *Stat) Packed() bool {
-    return s.CTime.Packed() && s.ATime.Packed() && s.MTime.Packed()
+    return s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *Stat) MarshalUnsafe(dst []byte) {
-    if s.MTime.Packed() && s.CTime.Packed() && s.ATime.Packed() {
+    if s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
         safecopy.CopyIn(dst, unsafe.Pointer(s))
     } else {
         s.MarshalBytes(dst)
