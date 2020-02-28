@@ -10,9 +10,9 @@ cc_binary(
     srcs = ["stub.cc"],
     # This is needed for running in a docker container.
     linkopts = [
-        "-static",
+        "-static",  # security: disable=cc-static-no-pie
         "-lstdc++",
-    ],  # security: disable=cc-static-no-pie
+    ],
     linkstatic = 1,
     deps = [
         "//test/packetimpact/proto:stub_cc_grpc_proto",
