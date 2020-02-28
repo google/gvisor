@@ -19,9 +19,11 @@
 
 // User-kernel ABI for restartable sequences.
 
-#ifdef __x86_64__
 // Syscall numbers.
+#if defined(__x86_64__)
 constexpr int kRseqSyscall = 334;
+#elif defined(__aarch64__)
+constexpr int kRseqSyscall = 293;
 #else
 #error "Unknown architecture"
 #endif  // __x86_64__
