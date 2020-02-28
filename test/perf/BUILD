@@ -30,6 +30,7 @@ syscall_test(
 
 syscall_test(
     size = "enormous",
+    tags = ["nogotsan"],
     test = "//test/perf/linux:getdents_benchmark",
 )
 
@@ -40,6 +41,7 @@ syscall_test(
 
 syscall_test(
     size = "enormous",
+    tags = ["nogotsan"],
     test = "//test/perf/linux:gettid_benchmark",
 )
 
