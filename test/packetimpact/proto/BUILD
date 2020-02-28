@@ -1,5 +1,5 @@
-load("@com_github_grpc_grpc//bazel:cc_grpc_library.bzl", "cc_grpc_library")
 load("//tools:defs.bzl", "proto_library")
+load("@com_github_grpc_grpc//bazel:cc_grpc_library.bzl", "cc_grpc_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_grpc_library")
 
 package(
@@ -15,7 +15,6 @@ proto_library(
 cc_grpc_library(
     name = "stub_cc_grpc_proto",
     srcs = [":stub_proto"],
-    generate_mocks = False,
     grpc_only = True,
     deps = [":stub_cc_proto"],
 )
