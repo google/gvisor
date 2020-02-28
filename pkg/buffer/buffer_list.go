@@ -1,4 +1,4 @@
-package pipe
+package buffer
 
 // ElementMapper provides an identity mapping by default.
 //
@@ -13,7 +13,7 @@ type bufferElementMapper struct{}
 // This default implementation should be inlined.
 //
 //go:nosplit
-func (bufferElementMapper) linkerFor(elem *buffer) *buffer { return elem }
+func (bufferElementMapper) linkerFor(elem *Buffer) *Buffer { return elem }
 
 // List is an intrusive list. Entries can be added to or removed from the list
 // in O(1) time and with no additional memory allocations.
@@ -27,8 +27,8 @@ func (bufferElementMapper) linkerFor(elem *buffer) *buffer { return elem }
 //
 // +stateify savable
 type bufferList struct {
-	head *buffer
-	tail *buffer
+	head *Buffer
+	tail *Buffer
 }
 
 // Reset resets list l to the empty state.
@@ -43,17 +43,17 @@ func (l *bufferList) Empty() bool {
 }
 
 // Front returns the first element of list l or nil.
-func (l *bufferList) Front() *buffer {
+func (l *bufferList) Front() *Buffer {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
-func (l *bufferList) Back() *buffer {
+func (l *bufferList) Back() *Buffer {
 	return l.tail
 }
 
 // PushFront inserts the element e at the front of list l.
-func (l *bufferList) PushFront(e *buffer) {
+func (l *bufferList) PushFront(e *Buffer) {
 	bufferElementMapper{}.linkerFor(e).SetNext(l.head)
 	bufferElementMapper{}.linkerFor(e).SetPrev(nil)
 
@@ -67,7 +67,7 @@ func (l *bufferList) PushFront(e *buffer) {
 }
 
 // PushBack inserts the element e at the back of list l.
-func (l *bufferList) PushBack(e *buffer) {
+func (l *bufferList) PushBack(e *Buffer) {
 	bufferElementMapper{}.linkerFor(e).SetNext(nil)
 	bufferElementMapper{}.linkerFor(e).SetPrev(l.tail)
 
@@ -97,7 +97,7 @@ func (l *bufferList) PushBackList(m *bufferList) {
 }
 
 // InsertAfter inserts e after b.
-func (l *bufferList) InsertAfter(b, e *buffer) {
+func (l *bufferList) InsertAfter(b, e *Buffer) {
 	a := bufferElementMapper{}.linkerFor(b).Next()
 	bufferElementMapper{}.linkerFor(e).SetNext(a)
 	bufferElementMapper{}.linkerFor(e).SetPrev(b)
@@ -111,7 +111,7 @@ func (l *bufferList) InsertAfter(b, e *buffer) {
 }
 
 // InsertBefore inserts e before a.
-func (l *bufferList) InsertBefore(a, e *buffer) {
+func (l *bufferList) InsertBefore(a, e *Buffer) {
 	b := bufferElementMapper{}.linkerFor(a).Prev()
 	bufferElementMapper{}.linkerFor(e).SetNext(a)
 	bufferElementMapper{}.linkerFor(e).SetPrev(b)
@@ -125,7 +125,7 @@ func (l *bufferList) InsertBefore(a, e *buffer) {
 }
 
 // Remove removes e from l.
-func (l *bufferList) Remove(e *buffer) {
+func (l *bufferList) Remove(e *Buffer) {
 	prev := bufferElementMapper{}.linkerFor(e).Prev()
 	next := bufferElementMapper{}.linkerFor(e).Next()
 
@@ -148,26 +148,26 @@ func (l *bufferList) Remove(e *buffer) {
 //
 // +stateify savable
 type bufferEntry struct {
-	next *buffer
-	prev *buffer
+	next *Buffer
+	prev *Buffer
 }
 
 // Next returns the entry that follows e in the list.
-func (e *bufferEntry) Next() *buffer {
+func (e *bufferEntry) Next() *Buffer {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
-func (e *bufferEntry) Prev() *buffer {
+func (e *bufferEntry) Prev() *Buffer {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
-func (e *bufferEntry) SetNext(elem *buffer) {
+func (e *bufferEntry) SetNext(elem *Buffer) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
-func (e *bufferEntry) SetPrev(elem *buffer) {
+func (e *bufferEntry) SetPrev(elem *Buffer) {
 	e.prev = elem
 }
