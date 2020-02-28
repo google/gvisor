@@ -14,7 +14,7 @@ go_test(
     name = "fin_wait2_timeout_test",
     size = "small",
     srcs = ["fin_wait2_timeout_test.go"],
-    nocgo = 1,
+    #nocgo = 1,
     tags = PACKETIMPACT_TAGS,
     deps = [
         "//pkg/tcpip/header",

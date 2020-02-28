@@ -24,8 +24,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getlantern/deepcopy"
 	"github.com/imdario/mergo"
+	"github.com/jinzhu/copier"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -149,8 +149,12 @@ func (conn *TCPIPv4) Send(tcp TCP) {
 	if tcp.AckNum == nil {
 		tcp.AckNum = &conn.remoteSeqNum
 	}
-	layersToSend := deepcopy.Copy(conn.outgoing).(Layers)
-	err := mergo.Merge(layersToSend[2], tcp, mergo.WithOverride)
+	var layersToSend Layers
+	err := copier.Copy(&layersToSend, &conn.outgoing)
+	if err != nil {
+		conn.t.Fatalf("can't copy outgoing TCP packet: %s", err)
+	}
+	err = mergo.Merge(layersToSend[2], tcp, mergo.WithOverride)
 	if err != nil {
 		conn.t.Fatalf("can't merge outgoing TCP packet: %s", err)
 	}

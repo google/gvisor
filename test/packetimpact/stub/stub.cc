@@ -17,7 +17,7 @@
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include <string>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -26,10 +26,10 @@
 #include <unordered_map>
 
 #include "arpa/inet.h"
-#include "net/grpc/public/include/grpcpp/security/server_credentials.h"
-#include "net/grpc/public/include/grpcpp/server_builder.h"
+#include "include/grpcpp/security/server_credentials.h"
+#include "include/grpcpp/server_builder.h"
 #include "test/packetimpact/proto/stub.grpc.pb.h"
-#include "test/packetimpact/proto/stub.proto.h"
+#include "test/packetimpact/proto/stub.pb.h"
 
 // Converts a sockaddr_storage to a Sockaddr message.
 ::grpc::Status sockaddr_to_proto(const sockaddr_storage &addr,
@@ -60,7 +60,7 @@
   return ::grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Unknown Sockaddr");
 }
 
-class PosixImpl final : public stub::grpc_gen::Posix::Service {
+class PosixImpl final : public stub::Posix::Service {
   ::grpc::Status Socket(grpc_impl::ServerContext *context,
                         const ::stub::SocketRequest *request,
                         ::stub::SocketResponse *response) override {

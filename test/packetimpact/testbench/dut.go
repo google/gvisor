@@ -24,11 +24,11 @@ import (
 	"testing"
 	"time"
 
+	grpcpb "test/packetimpact/proto/stub_go_grpc_proto"
+
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
-	grpcpb "gvisor.dev/gvisor/test/packetimpact/proto/stub_go_grpc_proto"
-	pb "gvisor.dev/gvisor/test/packetimpact/proto/stub_go_proto"
 )
 
 var stubIP = flag.String("stub_ip", "", "ip address to listen to for UDP commands")
@@ -59,7 +59,7 @@ func NewDUT(t *testing.T) DUT {
 
 // SocketWithErrno calls socket on the DUT and returns the fd and errno.
 func (dut *DUT) SocketWithErrno(domain, typ, proto int32) (int32, error) {
-	req := pb.SocketRequest{
+	req := grpcpb.SocketRequest{
 		Domain:   domain,
 		Type:     typ,
 		Protocol: proto,
@@ -82,12 +82,12 @@ func (dut *DUT) Socket(domain, typ, proto int32) int32 {
 	return fd
 }
 
-func (dut *DUT) sockaddrToProto(sa unix.Sockaddr) *pb.Sockaddr {
+func (dut *DUT) sockaddrToProto(sa unix.Sockaddr) *grpcpb.Sockaddr {
 	switch s := sa.(type) {
 	case *unix.SockaddrInet4:
-		return &pb.Sockaddr{
-			Sockaddr: &pb.Sockaddr_In{
-				In: &pb.SockaddrIn{
+		return &grpcpb.Sockaddr{
+			Sockaddr: &grpcpb.Sockaddr_In{
+				In: &grpcpb.SockaddrIn{
 					Family: unix.AF_INET,
 					Port:   uint32(s.Port),
 					Addr:   s.Addr[:],
@@ -95,9 +95,9 @@ func (dut *DUT) sockaddrToProto(sa unix.Sockaddr) *pb.Sockaddr {
 			},
 		}
 	case *unix.SockaddrInet6:
-		return &pb.Sockaddr{
-			Sockaddr: &pb.Sockaddr_In6{
-				In6: &pb.SockaddrIn6{
+		return &grpcpb.Sockaddr{
+			Sockaddr: &grpcpb.Sockaddr_In6{
+				In6: &grpcpb.SockaddrIn6{
 					Family:   unix.AF_INET6,
 					Port:     uint32(s.Port),
 					Flowinfo: 0,
@@ -111,15 +111,15 @@ func (dut *DUT) sockaddrToProto(sa unix.Sockaddr) *pb.Sockaddr {
 	return nil
 }
 
-func (dut *DUT) protoToSockaddr(sa *pb.Sockaddr) unix.Sockaddr {
+func (dut *DUT) protoToSockaddr(sa *grpcpb.Sockaddr) unix.Sockaddr {
 	switch s := sa.Sockaddr.(type) {
-	case *pb.Sockaddr_In:
+	case *grpcpb.Sockaddr_In:
 		ret := unix.SockaddrInet4{
 			Port: int(s.In.GetPort()),
 		}
 		copy(ret.Addr[:], s.In.GetAddr())
 		return &ret
-	case *pb.Sockaddr_In6:
+	case *grpcpb.Sockaddr_In6:
 		ret := unix.SockaddrInet6{
 			Port:   int(s.In6.GetPort()),
 			ZoneId: s.In6.GetScopeId(),
@@ -132,7 +132,7 @@ func (dut *DUT) protoToSockaddr(sa *pb.Sockaddr) unix.Sockaddr {
 
 // BindWithErrno calls bind on the DUT.
 func (dut *DUT) BindWithErrno(fd int32, sa unix.Sockaddr) (int32, error) {
-	req := pb.BindRequest{
+	req := grpcpb.BindRequest{
 		Sockfd: fd,
 		Addr:   dut.sockaddrToProto(sa),
 	}
@@ -154,7 +154,7 @@ func (dut *DUT) Bind(fd int32, sa unix.Sockaddr) {
 
 // GetSockNameWithErrno calls getsockname on the DUT.
 func (dut *DUT) GetSockNameWithErrno(sockfd int32) (int32, unix.Sockaddr, error) {
-	req := pb.GetSockNameRequest{
+	req := grpcpb.GetSockNameRequest{
 		Sockfd: sockfd,
 	}
 	ctx := context.Background()
@@ -177,7 +177,7 @@ func (dut *DUT) GetSockName(sockfd int32) unix.Sockaddr {
 
 // ListenWithErrno calls listen on the DUT.
 func (dut *DUT) ListenWithErrno(sockfd, backlog int32) (int32, error) {
-	req := pb.ListenRequest{
+	req := grpcpb.ListenRequest{
 		Sockfd:  sockfd,
 		Backlog: backlog,
 	}
@@ -201,7 +201,7 @@ func (dut *DUT) Listen(sockfd, backlog int32) {
 
 // AcceptWithErrno calls accept on the DUT.
 func (dut *DUT) AcceptWithErrno(sockfd int32) (int32, unix.Sockaddr, error) {
-	req := pb.AcceptRequest{
+	req := grpcpb.AcceptRequest{
 		Sockfd: sockfd,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
@@ -225,7 +225,7 @@ func (dut *DUT) Accept(sockfd int32) (int32, unix.Sockaddr) {
 
 // SetSockOptWithErrno calls setsockopt on the DUT.
 func (dut *DUT) SetSockOptWithErrno(sockfd, level, optname int32, optval []byte) (int32, error) {
-	req := pb.SetSockOptRequest{
+	req := grpcpb.SetSockOptRequest{
 		Sockfd:  sockfd,
 		Level:   level,
 		Optname: optname,
@@ -269,7 +269,7 @@ func (dut *DUT) SetSockOptTimeval(fd, level, opt int, tv *unix.Timeval) {
 
 // CloseWithErrno calls close on the DUT.
 func (dut *DUT) CloseWithErrno(fd int32) (int32, error) {
-	req := pb.CloseRequest{
+	req := grpcpb.CloseRequest{
 		Fd: fd,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
