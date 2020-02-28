@@ -126,6 +126,10 @@ extern "C" int __kernel_clock_getres(clockid_t clock, struct timespec* res) {
     case CLOCK_REALTIME:
     case CLOCK_MONOTONIC:
     case CLOCK_BOOTTIME: {
+      if (res == nullptr) {
+        return 0;
+      }
+
       res->tv_sec = 0;
       res->tv_nsec = 1;
       break;
