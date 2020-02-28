@@ -1,7 +1,7 @@
 # This package contains a standalone rseq test binary. This binary must not
 # depend on libc, which might use rseq itself.
 
-load("//tools:defs.bzl", "cc_flags_supplier", "cc_library", "cc_toolchain")
+load("//tools:defs.bzl", "cc_flags_supplier", "cc_library", "cc_toolchain", "select_arch")
 
 package(licenses = ["notice"])
 
@@ -9,32 +9,35 @@ genrule(
     name = "rseq_binary",
     srcs = [
         "critical.h",
-        "critical.S",
+        "critical_amd64.S",
+        "critical_arm64.S",
         "rseq.cc",
         "syscalls.h",
-        "start.S",
+        "start_amd64.S",
+        "start_arm64.S",
         "test.h",
         "types.h",
         "uapi.h",
     ],
     outs = ["rseq"],
-    cmd = " ".join([
-        "$(CC)",
-        "$(CC_FLAGS) ",
-        "-I.",
-        "-Wall",
-        "-Werror",
-        "-O2",
-        "-std=c++17",
-        "-static",
-        "-nostdlib",
-        "-ffreestanding",
-        "-o",
-        "$(location rseq)",
-        "$(location critical.S)",
+    cmd = "$(CC) " +
+        "$(CC_FLAGS) " +
+        "-I. " +
+        "-Wall " +
+        "-Werror " +
+        "-O2 " +
+        "-std=c++17 " +
+        "-static " +
+        "-nostdlib " +
+        "-ffreestanding " +
+        "-o " +
+        "$(location rseq) " +
+        select_arch(
+            amd64 = "$(location critical_amd64.S) $(location start_amd64.S) ",
+            arm64 = "$(location critical_arm64.S) $(location start_arm64.S) ",
+	    no_match_error = "unsupported architecture",
+        ) +
         "$(location rseq.cc)",
-        "$(location start.S)",
-    ]),
     toolchains = [
         cc_toolchain,
         ":no_pie_cc_flags",
