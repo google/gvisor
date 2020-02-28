@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -167,4 +168,10 @@ func (fops *netTunFileOperations) EventRegister(e *waiter.Entry, mask waiter.Eve
 // EventUnregister implements watier.Waitable.EventUnregister.
 func (fops *netTunFileOperations) EventUnregister(e *waiter.Entry) {
 	fops.device.EventUnregister(e)
+}
+
+// isNetTunSupported returns whether /dev/net/tun device is supported for s.
+func isNetTunSupported(s inet.Stack) bool {
+	_, ok := s.(*netstack.Stack)
+	return ok
 }
