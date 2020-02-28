@@ -292,9 +292,9 @@ func marshalRedirectTarget() []byte {
 		},
 	}
 	copy(target.Target.Name[:], redirectTargetName)
-  
+
 	ret := make([]byte, 0, linux.SizeOfXTRedirectTarget)
-  return binary.Marshal(ret, usermem.ByteOrder, target)
+	return binary.Marshal(ret, usermem.ByteOrder, target)
 }
 
 func marshalJumpTarget(jt JumpTarget) []byte {
@@ -670,14 +670,20 @@ func parseTarget(filter iptables.IPHeaderFilter, optVal []byte) (iptables.Target
 
 		// TODO(gvisor.dev/issue/170): Check if the flags are valid.
 		// Also check if we need to map ports or IP.
-		// For now, redirect target only supports dest port change.
+		// For now, redirect target only supports destination port change.
+		// Port range and IP range are not supported yet.
 		if nfRange.RangeIPV4.Flags&linux.NF_NAT_RANGE_PROTO_SPECIFIED == 0 {
 			return nil, fmt.Errorf("netfilter.SetEntries: invalid argument.")
 		}
-		target.Flags = nfRange.RangeIPV4.Flags
+		target.RangeProtoSpecified = true
 
 		target.MinIP = tcpip.Address(nfRange.RangeIPV4.MinIP[:])
 		target.MaxIP = tcpip.Address(nfRange.RangeIPV4.MaxIP[:])
+
+		// TODO(gvisor.dev/issue/170): Port range is not supported yet.
+		if nfRange.RangeIPV4.MinPort != nfRange.RangeIPV4.MaxPort {
+			return nil, fmt.Errorf("netfilter.SetEntries: invalid argument.")
+		}
 
 		// Convert port from big endian to little endian.
 		port := make([]byte, 2)
