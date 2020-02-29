@@ -481,7 +481,10 @@ func send6(r *stack.Route, ident uint16, data buffer.View, ttl uint8) *tcpip.Err
 }
 
 func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress) (tcpip.NetworkProtocolNumber, *tcpip.Error) {
-	unwrapped, netProto, err := e.TransportEndpointInfo.AddrNetProto(*addr, false /* v6only */)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	unwrapped, netProto, err := e.TransportEndpointInfo.AddrNetProtoLocked(*addr, false /* v6only */)
 	if err != nil {
 		return 0, err
 	}

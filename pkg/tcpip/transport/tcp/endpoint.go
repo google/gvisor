@@ -1869,7 +1869,10 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 }
 
 func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress) (tcpip.NetworkProtocolNumber, *tcpip.Error) {
-	unwrapped, netProto, err := e.TransportEndpointInfo.AddrNetProto(*addr, e.v6only)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	unwrapped, netProto, err := e.TransportEndpointInfo.AddrNetProtoLocked(*addr, e.v6only)
 	if err != nil {
 		return 0, err
 	}
