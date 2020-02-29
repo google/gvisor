@@ -221,7 +221,7 @@ func (w *Watchdog) waitForStart() {
 		return
 	}
 	var buf bytes.Buffer
-	buf.WriteString("Watchdog.Start() not called within %s:\n")
+	buf.WriteString(fmt.Sprintf("Watchdog.Start() not called within %s", w.StartupTimeout))
 	w.doAction(w.StartupTimeoutAction, false, &buf)
 }
 
@@ -325,7 +325,7 @@ func (w *Watchdog) report(offenders map[*kernel.Task]*offender, newTaskFound boo
 
 func (w *Watchdog) reportStuckWatchdog() {
 	var buf bytes.Buffer
-	buf.WriteString("Watchdog goroutine is stuck:\n")
+	buf.WriteString("Watchdog goroutine is stuck:")
 	w.doAction(w.TaskTimeoutAction, false, &buf)
 }
 
@@ -359,7 +359,7 @@ func (w *Watchdog) doAction(action Action, skipStack bool, msg *bytes.Buffer) {
 		case <-metricsEmitted:
 		case <-time.After(1 * time.Second):
 		}
-		panic(fmt.Sprintf("Stack for running G's are skipped while panicking.\n%s", msg.String()))
+		panic(fmt.Sprintf("%s\nStack for running G's are skipped while panicking.", msg.String()))
 	default:
 		panic(fmt.Sprintf("Unknown watchdog action %v", action))
 
