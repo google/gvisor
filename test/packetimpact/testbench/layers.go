@@ -32,7 +32,11 @@ import (
 type Layer interface {
 	// toBytes converts the Layer into bytes. In places where the Layer's field
 	// isn't nil, the value that is pointed to is used. When the field is nil, a
-	// reasonable default for the Layer is used.
+	// reasonable default for the Layer is used. For example, "64" for IPv4 TTL
+	// and a calculated checksum for TCP or IP. Some layers require information
+	// from the previous or next layers in order to compute a default, such as
+	// TCP's checksum or Ethernet's type, so each Layer has a doubly-linked list
+	// to the layer's neighbors.
 	toBytes() ([]byte, error)
 
 	// match checks if the current Layer matches the provided Layer. If either

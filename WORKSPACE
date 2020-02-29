@@ -161,41 +161,6 @@ _go_image_repos()
 # External repositories, in sorted order.
 
 go_repository(
-    name = "org_golang_google_grpc",
-    build_file_proto_mode = "disable",
-    importpath = "google.golang.org/grpc",
-    sum = "h1:zvIju4sqAGvwKspUQOhwnpcqSbzi7/H6QomNNjTL4sk=",
-    version = "v1.27.1",
-)
-
-go_repository(
-    name = "com_github_imdario_mergo",
-    importpath = "github.com/imdario/mergo",
-    version = "v0.3.8",
-    sum = "h1:CGgOkSJeqMRmt0D9XLWExdT4m4F1vd3FV3VPt+0VxkQ=",
-)
-
-go_repository(
-    name = "com_github_mohae_deepcopy",
-    importpath = "github.com/mohae/deepcopy",
-    commit = "c48cc78d482608239f6c4c92a4abd87eb8761c90",
-)
-
-http_archive(
-    name = "com_github_grpc_grpc",
-    sha256 = "2fcb7f1ab160d6fd3aaade64520be3e5446fc4c6fa7ba6581afdc4e26094bd81",
-    strip_prefix = "grpc-1.26.0",
-    urls = [
-        "https://github.com/grpc/grpc/archive/v1.26.0.tar.gz",
-    ],
-)
-
-load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
-grpc_deps()
-load("@com_github_grpc_grpc//bazel:grpc_extra_deps.bzl", "grpc_extra_deps")
-grpc_extra_deps()
-
-go_repository(
     name = "com_github_cenkalti_backoff",
     importpath = "github.com/cenkalti/backoff",
     sum = "h1:+FKjzBIdfBHYDvxCv+djmDJdes/AoDtg8gpcxowBlF8=",
@@ -237,11 +202,37 @@ go_repository(
     version = "v0.0.0-20171129191014-dec09d789f3d",
 )
 
+http_archive(
+    name = "com_github_grpc_grpc",
+    sha256 = "2fcb7f1ab160d6fd3aaade64520be3e5446fc4c6fa7ba6581afdc4e26094bd81",
+    strip_prefix = "grpc-1.26.0",
+    urls = [
+        "https://github.com/grpc/grpc/archive/v1.26.0.tar.gz",
+    ],
+)
+load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
+grpc_deps()
+load("@com_github_grpc_grpc//bazel:grpc_extra_deps.bzl", "grpc_extra_deps")
+grpc_extra_deps()
+
+go_repository(
+    name = "com_github_imdario_mergo",
+    importpath = "github.com/imdario/mergo",
+    version = "v0.3.8",
+    sum = "h1:CGgOkSJeqMRmt0D9XLWExdT4m4F1vd3FV3VPt+0VxkQ=",
+)
+
 go_repository(
     name = "com_github_kr_pty",
     importpath = "github.com/kr/pty",
     sum = "h1:VkoXIwSboBpnk99O/KFauAEILuNHv5DVFKZMBN/gUgw=",
     version = "v1.1.1",
+)
+
+go_repository(
+    name = "com_github_mohae_deepcopy",
+    importpath = "github.com/mohae/deepcopy",
+    commit = "c48cc78d482608239f6c4c92a4abd87eb8761c90",
 )
 
 go_repository(
@@ -270,6 +261,14 @@ go_repository(
     importpath = "github.com/vishvananda/netns",
     sum = "h1:J9gO8RJCAFlln1jsvRba/CWVUnMHwObklfxxjErl1uk=",
     version = "v0.0.0-20171111001504-be1fbeda1936",
+)
+
+go_repository(
+    name = "org_golang_google_grpc",
+    build_file_proto_mode = "disable",
+    importpath = "google.golang.org/grpc",
+    sum = "h1:zvIju4sqAGvwKspUQOhwnpcqSbzi7/H6QomNNjTL4sk=",
+    version = "v1.27.1",
 )
 
 go_repository(
