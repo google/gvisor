@@ -798,7 +798,21 @@ func (e *endpoint) Abort() {
 	// If the endpoint disconnected after the check, nothing needs to be
 	// done, so sending a notification which will potentially be ignored is
 	// fine.
-	if e.EndpointState().connected() {
+	//
+	// If the endpoint connecting finishes after the check, the endpoint
+	// is either in a connected state (where we would notifyAbort anyway),
+	// SYN-RECV (where we would also notifyAbort anyway), or in an error
+	// state where nothing is required and the notification can be safely
+	// ignored.
+	//
+	// Endpoints where a Close during connecting or SYN-RECV state would be
+	// problematic are set to state connecting before being registered (and
+	// thus possible to be Aborted). They are never available in initial
+	// state.
+	//
+	// Endpoints transitioning from initial to connecting state may be
+	// safely either closed or sent notifyAbort.
+	if s := e.EndpointState(); s == StateConnecting || s == StateSynRecv || s.connected() {
 		e.notifyProtocolGoroutine(notifyAbort)
 		return
 	}

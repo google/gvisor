@@ -34,7 +34,17 @@ install_helper() {
 }
 
 # Install dependencies for the crictl tests.
-apt-get install -y btrfs-tools libseccomp-dev
+while true; do
+  if (apt-get update && apt-get install -y \
+      btrfs-tools \
+      libseccomp-dev); then
+    break
+  fi
+  result=$?
+  if [[ $result -ne 100 ]]; then
+    exit $result
+  fi
+done
 
 # Install containerd & cri-tools.
 GOPATH=$(mktemp -d --tmpdir gopathXXXXX)

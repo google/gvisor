@@ -755,6 +755,8 @@ func (ctx *createProcessContext) Value(key interface{}) interface{} {
 		return ctx.k.GlobalInit().Leader().MountNamespaceVFS2()
 	case fs.CtxDirentCacheLimiter:
 		return ctx.k.DirentCacheLimiter
+	case inet.CtxStack:
+		return ctx.k.RootNetworkNamespace().Stack()
 	case ktime.CtxRealtimeClock:
 		return ctx.k.RealtimeClock()
 	case limits.CtxLimits:
@@ -1481,6 +1483,8 @@ func (ctx supervisorContext) Value(key interface{}) interface{} {
 		return ctx.k.GlobalInit().Leader().MountNamespaceVFS2()
 	case fs.CtxDirentCacheLimiter:
 		return ctx.k.DirentCacheLimiter
+	case inet.CtxStack:
+		return ctx.k.RootNetworkNamespace().Stack()
 	case ktime.CtxRealtimeClock:
 		return ctx.k.RealtimeClock()
 	case limits.CtxLimits:

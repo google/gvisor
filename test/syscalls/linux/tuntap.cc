@@ -153,6 +153,13 @@ std::string CreateArpPacket(const uint8_t srcmac[ETH_ALEN], const char* srcip,
 
 }  // namespace
 
+TEST(TuntapStaticTest, NetTunExists) {
+  struct stat statbuf;
+  ASSERT_THAT(stat(kDevNetTun, &statbuf), SyscallSucceeds());
+  // Check that it's a character device with rw-rw-rw- permissions.
+  EXPECT_EQ(statbuf.st_mode, S_IFCHR | 0666);
+}
+
 class TuntapTest : public ::testing::Test {
  protected:
   void TearDown() override {

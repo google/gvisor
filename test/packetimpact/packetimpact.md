@@ -29,12 +29,12 @@ There are a few ways to write networking tests for gVisor currently:
 
 The right choice depends on the needs of the test.
 
-              | Go unit test                          | syscall test                              | packetdrill                                   | packetimpact
-------------- | ------------------------------------- | ----------------------------------------- | --------------------------------------------- | ------------
-Multiplatform | <span style="color:red">no</span>     | <span style="color:green">yes</span>      | <span style="color:green">yes</span>          | <span style="color:green">yes</span>
-Concise       | <span style="color:red">no</span>     | <span style="color:green">somewhat</span> | <span style="color:goldenrod">somewhat</span> | <span style="color:goldenrod">very</span>
-Control-flow  | <span style="color:green">yes</span>  | <span style="color:green">yes</span>      | <span style="color:red">no</span>             | <span style="color:green">yes</span>
-Flexible      | <span style="color:green">very</span> | <span style="color:red">no</span>         | <span style="color:goldenrod">somewhat</span> | <span style="color:green">very</span>
+              | Go unit test | syscall test | packetdrill | packetimpact
+------------- | ------------ | ------------ | ----------- | ------------
+Multiplatform | no           | **YES**      | **YES**     | **YES**
+Concise       | no           | somewhat     | somewhat    | **VERY**
+Control-flow  | **YES**      | **YES**      | no          | **YES**
+Flexible      | **VERY**     | no           | somewhat    | **VERY**
 
 ### Go unit tests
 
@@ -297,32 +297,38 @@ to marshal them to bytes or compare them. For those, each encapsulation
 implements the `Layer` interface:
 
 ```go
+// Layer is the interface that all encapsulations must implement.
+//
+// A Layer is an encapsulation in a packet, such as TCP, IPv4, IPv6, etc. A
+// Layer contains all the fields of the encapsulation. Each field is a pointer
+// and may be nil.
 type Layer interface {
-  toBytes() ([]byte, error) // Convert to bytes.
-  match(Layer) bool // Compare against another Layer.
-  length() int // Get length of header in bytes.
-  // Setters and getters for the pointers to previous and next Layer.
-  getNext() Layer
-  getPrev() Layer
-  setNext(Layer)
-  setPrev(Layer)
+    // toBytes converts the Layer into bytes. In places where the Layer's field
+    // isn't nil, the value that is pointed to is used. When the field is nil, a
+    // reasonable default for the Layer is used.
+    toBytes() ([]byte, error)
+
+    // match checks if the current Layer matches the provided Layer. If either
+    // Layer has a nil in a given field, that field is considered matching.
+    // Otherwise, the values pointed to by the fields must match.
+    match(Layer) bool
+
+    // length in bytes of the current encapsulation
+    length() int
+
+    // getNext gets a pointer to the encapsulated Layer.
+    getNext() Layer
+
+    // getPrev gets a pointer to the Layer encapsulating this one.
+    getPrev() Layer
+
+    // setNext sets the pointer to the encapsulated Layer.
+    setNext(Layer)
+
+    // setPrev sets the pointer to the Layer encapsulating this one.
+    setPrev(Layer)
 }
 ```
-
-`toBytes()` converts a Layer to bytes which can be sent. Fields that are not
-`nil` are copied into the output. Fields that are `nil` are filled in with
-reasonable defaults, such as `64` for IPv4 TTL and the calculated checksum for
-TCP/IP checksums. Pointers to the previous and next encapsulation are part of
-each `Layer` so that layers that require fields from adjacent layers can use
-them. For example, TCP's checksum requires the length of the following payload
-and also the IP addresses from the previous `Layer`.
-
-`match(Layer)` compares two `Layer` structures for equality. It returns true
-only if the two layers are the same type and match in all fields, ignoring
-fields where either is `nil`. Because both structs being compared are the same
-type, the matching is done concisely with one usage of
-[go-cmp](https://github.com/google/go-cmp) and one function suffices for all
-types of `Layer`.
 
 For each `Layer` there is also a parsing function. For example, this one is for
 Ethernet:
@@ -509,7 +515,7 @@ func TestMyTcpTest(t *testing.T) {
   conn.Handshake()
 
   // Tell the DUT to accept the new connection.
-  acceptFd := dut.Accept(acceptFd)
+  acceptFD := dut.Accept(acceptFd)
 }
 ```
 

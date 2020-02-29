@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright 2019 The gVisor Authors.
+# Copyright 2020 The gVisor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,21 +14,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Install runsc from the master branch.
-set -e
+set -eo pipefail
 
-curl -fsSL https://gvisor.dev/archive.key | sudo apt-key add -
-add-apt-repository "deb https://storage.googleapis.com/gvisor/releases release main"
+# Build the :gopath target.
+bazel build //:gopath
+declare -r gopathdir="bazel-bin/gopath/src/gvisor.dev/gvisor/"
 
-while true; do
-  if (apt-get update && apt-get install -y runsc); then
-    break
-  fi
-  result=$?
-  if [[ $result -ne 100 ]]; then
-    exit $result
-  fi
-done
+# Copy go.mod and execute the command.
+cp -a go.mod go.sum "${gopathdir}"
+(cd "${gopathdir}" && go mod "$@")
+cp -a "${gopathdir}/go.mod" "${gopathdir}/go.sum" .
 
-runsc install
-service docker restart
+# Cleanup the WORKSPACE file.
+bazel run //:gazelle -- update-repos -from_file=go.mod

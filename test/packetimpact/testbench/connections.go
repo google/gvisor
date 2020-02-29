@@ -61,15 +61,15 @@ func pickPort() (int, uint16, error) {
 	if err := unix.Bind(fd, &sa); err != nil {
 		return fd, 0, err
 	}
-	newSa, err := unix.Getsockname(fd)
+	newSockAddr, err := unix.Getsockname(fd)
 	if err != nil {
 		return fd, 0, err
 	}
-	newInet4Sa, ok := newSa.(*unix.SockaddrInet4)
+	newSockAddrInet4, ok := newSockAddr.(*unix.SockaddrInet4)
 	if !ok {
 		return fd, 0, fmt.Errorf("can't cast Getsockname result to SockaddrInet4")
 	}
-	return fd, uint16(newInet4Sa.Port), nil
+	return fd, uint16(newSockAddrInet4.Port), nil
 }
 
 // NewTCPIPv4 creates a new TCPIPv4 connection with reasonable defaults.
@@ -102,11 +102,9 @@ func NewTCPIPv4(t *testing.T, dut DUT, outgoingTCP, incomingTCP TCP) TCPIPv4 {
 		t.Fatalf("can't make new injector: %s", err)
 	}
 
-	dataOffset := uint8(header.TCPMinimumSize)
-	windowSize := uint16(32768)
 	newOutgoingTCP := &TCP{
-		DataOffset: &dataOffset,
-		WindowSize: &windowSize,
+		DataOffset: Uint8(header.TCPMinimumSize),
+		WindowSize: Uint16(32768),
 		SrcPort:    &localPort,
 	}
 	mergo.Merge(newOutgoingTCP, outgoingTCP, mergo.WithOverride)
@@ -223,16 +221,14 @@ func (conn *TCPIPv4) Expect(tcp TCP, timeout time.Duration) *TCP {
 
 // Handshake performs a TCP 3-way handshake.
 func (conn *TCPIPv4) Handshake() {
-	syn := uint8(header.TCPFlagSyn)
-	conn.Send(TCP{Flags: &syn})
+	// Send the SYN.
+	conn.Send(TCP{Flags: Uint8(header.TCPFlagSyn)})
 
 	// Wait for the SYNACK.
-	synack := uint8(header.TCPFlagSyn | header.TCPFlagAck)
-	if gotOne := conn.Expect(TCP{Flags: &synack}, time.Second); gotOne == nil {
+	if gotOne := conn.Expect(TCP{Flags: Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second); gotOne == nil {
 		conn.t.Fatalf("didn't get synack during handshake")
 	}
 
 	// Send an ACK.
-	ack := uint8(header.TCPFlagAck)
-	conn.Send(TCP{Flags: &ack})
+	conn.Send(TCP{Flags: Uint8(header.TCPFlagAck)})
 }

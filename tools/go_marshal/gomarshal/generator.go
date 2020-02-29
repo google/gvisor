@@ -235,6 +235,10 @@ func (g *Generator) collectMarshallableTypes(a *ast.File, f *token.FileSet) []*a
 				debugfAt(f.Position(t.Pos()), "Collected marshallable newtype on primitive %s.\n", t.Name.Name)
 				types = append(types, t)
 				continue
+			case *ast.ArrayType: // Newtype on array.
+				debugfAt(f.Position(t.Pos()), "Collected marshallable newtype on array %s.\n", t.Name.Name)
+				types = append(types, t)
+				continue
 			}
 			// A user specifically requested marshalling on this type, but we
 			// don't support it.
@@ -281,17 +285,20 @@ func (g *Generator) generateOne(t *ast.TypeSpec, fset *token.FileSet) *interface
 	i := newInterfaceGenerator(t, fset)
 	switch ty := t.Type.(type) {
 	case *ast.StructType:
-		i.validateStruct()
-		i.emitMarshallableForStruct()
-		return i
+		i.validateStruct(t, ty)
+		i.emitMarshallableForStruct(ty)
 	case *ast.Ident:
 		i.validatePrimitiveNewtype(ty)
-		i.emitMarshallableForPrimitiveNewtype()
-		return i
+		i.emitMarshallableForPrimitiveNewtype(ty)
+	case *ast.ArrayType:
+		i.validateArrayNewtype(t.Name, ty)
+		// After validate, we can safely call arrayLen.
+		i.emitMarshallableForArrayNewtype(t.Name, ty.Elt.(*ast.Ident), arrayLen(ty))
 	default:
 		// This should've been filtered out by collectMarshallabeTypes.
 		panic(fmt.Sprintf("Unexpected type %+v", ty))
 	}
+	return i
 }
 
 // generateOneTestSuite generates a test suite for the automatically generated
