@@ -10,7 +10,7 @@ go_library(
         "sharedmem_unsafe.go",
         "tx.go",
     ],
-    visibility = ["//visibility:public"],
+    visibility = ["//visibility:private"],
     deps = [
         "//pkg/log",
         "//pkg/sync",

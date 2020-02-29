@@ -12,7 +12,7 @@ go_binary(
         "proctor.go",
         "python.go",
     ],
-    visibility = ["//test/runtimes/images:__subpackages__"],
+    visibility = ["//visibility:private"],
 )
 
 go_test(
