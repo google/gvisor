@@ -32,6 +32,12 @@ import (
 const (
 	// SyscallWidth is the width of insturctions.
 	SyscallWidth = 4
+
+	// fpsimdMagic is the magic number which is used in fpsimd_context.
+	fpsimdMagic = 0x46508001
+
+	// fpsimdContextSize is the size of fpsimd_context.
+	fpsimdContextSize = 0x210
 )
 
 // ARMTrapFlag is the mask for the trap flag.
@@ -40,24 +46,24 @@ const ARMTrapFlag = uint64(1) << 21
 // aarch64FPState is aarch64 floating point state.
 type aarch64FPState []byte
 
-// initAarch64FPState (defined in asm files) sets up initial state.
-func initAarch64FPState(data *FloatingPointData) {
-	// TODO(gvisor.dev/issue/1238): floating-point is not supported.
+// initAarch64FPState sets up initial state.
+func initAarch64FPState(data aarch64FPState) {
+	binary.LittleEndian.PutUint32(data, fpsimdMagic)
+	binary.LittleEndian.PutUint32(data[4:], fpsimdContextSize)
 }
 
 func newAarch64FPStateSlice() []byte {
-	return alignedBytes(4096, 32)[:4096]
+	return alignedBytes(4096, 16)[:fpsimdContextSize]
 }
 
 // newAarch64FPState returns an initialized floating point state.
 //
 // The returned state is large enough to store all floating point state
 // supported by host, even if the app won't use much of it due to a restricted
-// FeatureSet. Since they may still be able to see state not advertised by
-// CPUID we must ensure it does not contain any sentry state.
+// FeatureSet.
 func newAarch64FPState() aarch64FPState {
 	f := aarch64FPState(newAarch64FPStateSlice())
-	initAarch64FPState(f.FloatingPointData())
+	initAarch64FPState(f)
 	return f
 }
 
@@ -136,10 +142,10 @@ func (s State) Proto() *rpb.Registers {
 
 // Fork creates and returns an identical copy of the state.
 func (s *State) Fork() State {
-	// TODO(gvisor.dev/issue/1238): floating-point is not supported.
 	return State{
-		Regs:       s.Regs,
-		FeatureSet: s.FeatureSet,
+		Regs:           s.Regs,
+		aarch64FPState: s.aarch64FPState.fork(),
+		FeatureSet:     s.FeatureSet,
 	}
 }
 
@@ -288,8 +294,10 @@ func New(arch Arch, fs *cpuid.FeatureSet) Context {
 	case ARM64:
 		return &context64{
 			State{
-				FeatureSet: fs,
+				aarch64FPState: newAarch64FPState(),
+				FeatureSet:     fs,
 			},
+			[]aarch64FPState(nil),
 		}
 	}
 	panic(fmt.Sprintf("unknown architecture %v", arch))

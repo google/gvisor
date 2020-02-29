@@ -24,11 +24,12 @@ import (
 	"testing"
 	"time"
 
+	grpcpb "gvisor.dev/gvisor/test/packetimpact/proto/stub_go_grpc_proto"
+	pb "gvisor.dev/gvisor/test/packetimpact/proto/stub_go_proto"
+
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
-	grpcpb "gvisor.dev/gvisor/test/packetimpact/proto/stub_go_grpc_proto"
-	pb "gvisor.dev/gvisor/test/packetimpact/proto/stub_go_proto"
 )
 
 var stubIP = flag.String("stub_ip", "", "ip address to listen to for UDP commands")

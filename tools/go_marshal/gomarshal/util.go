@@ -64,6 +64,12 @@ func kindString(e ast.Expr) string {
 	}
 }
 
+func forEachStructField(st *ast.StructType, fn func(f *ast.Field)) {
+	for _, field := range st.Fields.List {
+		fn(field)
+	}
+}
+
 // fieldDispatcher is a collection of callbacks for handling different types of
 // fields in a struct declaration.
 type fieldDispatcher struct {
@@ -71,6 +77,25 @@ type fieldDispatcher struct {
 	selector  func(n, tX, tSel *ast.Ident)
 	array     func(n, t *ast.Ident, size int)
 	unhandled func(n *ast.Ident)
+}
+
+// Precondition: a must have a literal for the array length. Consts and
+// expressions are not allowed as array lengths, and should be rejected by the
+// caller.
+func arrayLen(a *ast.ArrayType) int {
+	if a.Len == nil {
+		// Probably a slice? Must be handled by caller.
+		panic("Nil array length in array type")
+	}
+	lenLit, ok := a.Len.(*ast.BasicLit)
+	if !ok {
+		panic("Array has non-literal for length")
+	}
+	len, err := strconv.Atoi(lenLit.Value)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to parse array length '%s' as number: %v", lenLit.Value, err))
+	}
+	return len
 }
 
 // Precondition: All dispatch callbacks that will be invoked must be
@@ -96,22 +121,12 @@ func (fd fieldDispatcher) dispatch(f *ast.Field) {
 		case *ast.SelectorExpr:
 			fd.selector(name, v.X.(*ast.Ident), v.Sel)
 		case *ast.ArrayType:
-			len := 0
-			if v.Len != nil {
-				// Non-literal array length is handled by generatorInterfaces.validate().
-				if lenLit, ok := v.Len.(*ast.BasicLit); ok {
-					var err error
-					len, err = strconv.Atoi(lenLit.Value)
-					if err != nil {
-						panic(err)
-					}
-				}
-			}
 			switch t := v.Elt.(type) {
 			case *ast.Ident:
-				fd.array(name, t, len)
+				fd.array(name, t, arrayLen(v))
 			default:
-				fd.array(name, nil, len)
+				// Should be handled with a better error message during validate.
+				panic(fmt.Sprintf("Array element type is of unsupported kind. Expected *ast.Ident, got %v", t))
 			}
 		default:
 			fd.unhandled(name)

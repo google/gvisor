@@ -60,7 +60,7 @@
   return ::grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Unknown Sockaddr");
 }
 
-class PosixImpl final : public stub::grpc_gen::Posix::Service {
+class PosixImpl final : public stub::Posix::Service {
   ::grpc::Status Socket(grpc_impl::ServerContext *context,
                         const ::stub::SocketRequest *request,
                         ::stub::SocketResponse *response) override {

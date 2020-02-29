@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/tmpfs"
+	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -124,10 +125,12 @@ func New(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 		"ptmx": newSymlink(ctx, "pts/ptmx", msrc),
 
 		"tty": newCharacterDevice(ctx, newTTYDevice(ctx, fs.RootOwner, 0666), msrc, ttyDevMajor, ttyDevMinor),
+	}
 
-		"net": newDirectory(ctx, map[string]*fs.Inode{
+	if isNetTunSupported(inet.StackFromContext(ctx)) {
+		contents["net"] = newDirectory(ctx, map[string]*fs.Inode{
 			"tun": newCharacterDevice(ctx, newNetTunDevice(ctx, fs.RootOwner, 0666), msrc, netTunDevMajor, netTunDevMinor),
-		}, msrc),
+		}, msrc)
 	}
 
 	iops := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))

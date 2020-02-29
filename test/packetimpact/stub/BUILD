@@ -12,7 +12,6 @@ cc_binary(
     linkopts = ["-static"],  # security: disable=cc-static-no-pie
     linkstatic = 1,
     deps = [
-        "//net/grpc",
         "//net/grpc:grpc++",
         "//test/packetimpact/proto:stub_cc_grpc_proto",
         "//test/packetimpact/proto:stub_cc_proto",

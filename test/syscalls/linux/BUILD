@@ -3460,6 +3460,18 @@ cc_binary(
     ],
 )
 
+cc_binary(
+    name = "tuntap_hostinet_test",
+    testonly = 1,
+    srcs = ["tuntap_hostinet.cc"],
+    linkstatic = 1,
+    deps = [
+        gtest,
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
 cc_library(
     name = "udp_socket_test_cases",
     testonly = 1,

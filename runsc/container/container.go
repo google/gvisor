@@ -17,6 +17,7 @@ package container
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -1066,18 +1067,10 @@ func runInCgroup(cg *cgroup.Cgroup, fn func() error) error {
 
 // adjustGoferOOMScoreAdj sets the oom_store_adj for the container's gofer.
 func (c *Container) adjustGoferOOMScoreAdj() error {
-	if c.GoferPid != 0 && c.Spec.Process.OOMScoreAdj != nil {
-		if err := setOOMScoreAdj(c.GoferPid, *c.Spec.Process.OOMScoreAdj); err != nil {
-			// Ignore NotExist error because it can be returned when the sandbox
-			// exited while OOM score was being adjusted.
-			if !os.IsNotExist(err) {
-				return fmt.Errorf("setting gofer oom_score_adj for container %q: %v", c.ID, err)
-			}
-			log.Warningf("Gofer process (%d) not found setting oom_score_adj", c.GoferPid)
-		}
+	if c.GoferPid == 0 || c.Spec.Process.OOMScoreAdj == nil {
+		return nil
 	}
-
-	return nil
+	return setOOMScoreAdj(c.GoferPid, *c.Spec.Process.OOMScoreAdj)
 }
 
 // adjustSandboxOOMScoreAdj sets the oom_score_adj for the sandbox.
@@ -1154,29 +1147,29 @@ func adjustSandboxOOMScoreAdj(s *sandbox.Sandbox, rootDir string, destroy bool) 
 	}
 
 	// Set the lowest of all containers oom_score_adj to the sandbox.
-	if err := setOOMScoreAdj(s.Pid, lowScore); err != nil {
-		// Ignore NotExist error because it can be returned when the sandbox
-		// exited while OOM score was being adjusted.
-		if !os.IsNotExist(err) {
-			return fmt.Errorf("setting oom_score_adj for sandbox %q: %v", s.ID, err)
-		}
-		log.Warningf("Sandbox process (%d) not found setting oom_score_adj", s.Pid)
-	}
-
-	return nil
+	return setOOMScoreAdj(s.Pid, lowScore)
 }
 
 // setOOMScoreAdj sets oom_score_adj to the given value for the given PID.
 // /proc must be available and mounted read-write. scoreAdj should be between
-// -1000 and 1000.
+// -1000 and 1000. It's a noop if the process has already exited.
 func setOOMScoreAdj(pid int, scoreAdj int) error {
 	f, err := os.OpenFile(fmt.Sprintf("/proc/%d/oom_score_adj", pid), os.O_WRONLY, 0644)
 	if err != nil {
+		// Ignore NotExist errors because it can race with process exit.
+		if os.IsNotExist(err) {
+			log.Warningf("Process (%d) not found setting oom_score_adj", pid)
+			return nil
+		}
 		return err
 	}
 	defer f.Close()
 	if _, err := f.WriteString(strconv.Itoa(scoreAdj)); err != nil {
-		return err
+		if errors.Is(err, syscall.ESRCH) {
+			log.Warningf("Process (%d) exited while setting oom_score_adj", pid)
+			return nil
+		}
+		return fmt.Errorf("setting oom_score_adj to %q: %v", scoreAdj, err)
 	}
 	return nil
 }

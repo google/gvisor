@@ -204,6 +204,7 @@ func (c *Context) Cleanup() {
 	if c.EP != nil {
 		c.EP.Close()
 	}
+	c.Stack().Close()
 }
 
 // Stack returns a reference to the stack in the Context.

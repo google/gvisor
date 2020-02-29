@@ -45,6 +45,11 @@ func NewSniffer(t *testing.T) (Sniffer, error) {
 	}, nil
 }
 
+// maxReadSize should be at least 1 more than the maximum frame szie in bytes.
+// If a packet too large for the buffer arrives, the test will get a fatal
+// error.
+const maxReadSize int = 65536
+
 // Recv tries to read one frame until the timeout is up.
 func (s *Sniffer) Recv(timeout time.Duration) []byte {
 	deadline := time.Now().Add(timeout)
@@ -63,7 +68,7 @@ func (s *Sniffer) Recv(timeout time.Duration) []byte {
 			s.t.Fatalf("can't setsockopt SO_RCVTIMEO: %s", err)
 		}
 
-		buf := make([]byte, 32768)
+		buf := make([]byte, maxReadSize)
 		nread, err := unix.Read(s.fd, buf)
 		if err == unix.EINTR || err == unix.EAGAIN {
 			// There was a timeout.
@@ -71,6 +76,10 @@ func (s *Sniffer) Recv(timeout time.Duration) []byte {
 		}
 		if err != nil {
 			s.t.Fatalf("can't read: %s", err)
+		}
+		if nread >= maxReadSize {
+			// Either we received exactly maxReadSize bytes or, more likely, the packet was truncated.
+			s.t.Fatalf("received a frame of %d bytes that may have been truncated", nread)
 		}
 		return buf[:nread]
 	}

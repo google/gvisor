@@ -32,7 +32,11 @@ import (
 type Layer interface {
 	// toBytes converts the Layer into bytes. In places where the Layer's field
 	// isn't nil, the value that is pointed to is used. When the field is nil, a
-	// reasonable default for the Layer is used.
+	// reasonable default for the Layer is used. For example, "64" for IPv4 TTL
+	// and a calculated checksum for TCP or IP. Some layers require information
+	// from the previous or next layers in order to compute a default, such as
+	// TCP's checksum or Ethernet's type, so each Layer has a doubly-linked list
+	// to the layer's neighbors.
 	toBytes() ([]byte, error)
 
 	// match checks if the current Layer matches the provided Layer. If either
@@ -124,20 +128,29 @@ func (l *Ether) toBytes() ([]byte, error) {
 	return h, nil
 }
 
+// LinkAddress is a helper routine that allocates a new tcpip.LinkAddress value
+// to store v and returns a pointer to it.
+func LinkAddress(v tcpip.LinkAddress) *tcpip.LinkAddress {
+	return &v
+}
+
+// NetworkProtocolNumber is a helper routine that allocates a new
+// tcpip.NetworkProtocolNumber value to store v and returns a pointer to it.
+func NetworkProtocolNumber(v tcpip.NetworkProtocolNumber) *tcpip.NetworkProtocolNumber {
+	return &v
+}
+
 // ParseEther parses the bytes assuming that they start with an ethernet header
 // and continues parsing further encapsulations.
 func ParseEther(b []byte) (Layers, error) {
 	h := header.Ethernet(b)
-	srcAddr := h.SourceAddress()
-	dstAddr := h.DestinationAddress()
-	typ := h.Type()
 	ether := Ether{
-		SrcAddr: &srcAddr,
-		DstAddr: &dstAddr,
-		Type:    &typ,
+		SrcAddr: LinkAddress(h.SourceAddress()),
+		DstAddr: LinkAddress(h.DestinationAddress()),
+		Type:    NetworkProtocolNumber(h.Type()),
 	}
 	layers := Layers{&ether}
-	switch typ {
+	switch h.Type() {
 	case header.IPv4ProtocolNumber:
 		moreLayers, err := ParseIPv4(b[ether.length():])
 		if err != nil {
@@ -240,36 +253,44 @@ func (l *IPv4) toBytes() ([]byte, error) {
 	return h, nil
 }
 
+// Uint16 is a helper routine that allocates a new
+// uint16 value to store v and returns a pointer to it.
+func Uint16(v uint16) *uint16 {
+	return &v
+}
+
+// Uint8 is a helper routine that allocates a new
+// uint8 value to store v and returns a pointer to it.
+func Uint8(v uint8) *uint8 {
+	return &v
+}
+
+// Address is a helper routine that allocates a new tcpip.Address value to store
+// v and returns a pointer to it.
+func Address(v tcpip.Address) *tcpip.Address {
+	return &v
+}
+
 // ParseIPv4 parses the bytes assuming that they start with an ipv4 header and
 // continues parsing further encapsulations.
 func ParseIPv4(b []byte) (Layers, error) {
 	h := header.IPv4(b)
-	ihl := h.HeaderLength()
 	tos, _ := h.TOS()
-	totalLength := h.TotalLength()
-	id := h.ID()
-	flags := h.Flags()
-	fragmentOffset := h.FragmentOffset()
-	ttl := h.TTL()
-	protocol := h.Protocol()
-	checksum := h.Checksum()
-	srcAddr := h.SourceAddress()
-	dstAddr := h.DestinationAddress()
 	ipv4 := IPv4{
-		IHL:            &ihl,
-		TOS:            &tos,
-		TotalLength:    &totalLength,
-		ID:             &id,
-		Flags:          &flags,
-		FragmentOffset: &fragmentOffset,
-		TTL:            &ttl,
-		Protocol:       &protocol,
-		Checksum:       &checksum,
-		SrcAddr:        &srcAddr,
-		DstAddr:        &dstAddr,
+		IHL:            Uint8(h.HeaderLength()),
+		TOS:            Uint8(tos),
+		TotalLength:    Uint16(h.TotalLength()),
+		ID:             Uint16(h.ID()),
+		Flags:          Uint8(h.Flags()),
+		FragmentOffset: Uint16(h.FragmentOffset()),
+		TTL:            Uint8(h.TTL()),
+		Protocol:       Uint8(h.Protocol()),
+		Checksum:       Uint16(h.Checksum()),
+		SrcAddr:        Address(h.SourceAddress()),
+		DstAddr:        Address(h.DestinationAddress()),
 	}
 	layers := Layers{&ipv4}
-	switch protocol {
+	switch h.Protocol() {
 	case uint8(header.TCPProtocolNumber):
 		moreLayers, err := ParseTCP(b[ipv4.length():])
 		if err != nil {
@@ -277,7 +298,7 @@ func ParseIPv4(b []byte) (Layers, error) {
 		}
 		return append(layers, moreLayers...), nil
 	}
-	return nil, fmt.Errorf("can't deduce the ethernet header's next protocol: %d", protocol)
+	return nil, fmt.Errorf("can't deduce the ethernet header's next protocol: %d", h.Protocol())
 }
 
 func (l *IPv4) match(other Layer) bool {
@@ -365,29 +386,26 @@ func (l *TCP) toBytes() ([]byte, error) {
 	return h, nil
 }
 
+// Uint32 is a helper routine that allocates a new
+// uint32 value to store v and returns a pointer to it.
+func Uint32(v uint32) *uint32 {
+	return &v
+}
+
 // ParseTCP parses the bytes assuming that they start with a tcp header and
 // continues parsing further encapsulations.
 func ParseTCP(b []byte) (Layers, error) {
 	h := header.TCP(b)
-	srcPort := h.SourcePort()
-	dstPort := h.DestinationPort()
-	seqNum := h.SequenceNumber()
-	ackNum := h.AckNumber()
-	dataOffset := h.DataOffset()
-	flags := h.Flags()
-	windowSize := h.WindowSize()
-	checksum := h.Checksum()
-	urgentPointer := h.UrgentPointer()
 	tcp := TCP{
-		SrcPort:       &srcPort,
-		DstPort:       &dstPort,
-		SeqNum:        &seqNum,
-		AckNum:        &ackNum,
-		DataOffset:    &dataOffset,
-		Flags:         &flags,
-		WindowSize:    &windowSize,
-		Checksum:      &checksum,
-		UrgentPointer: &urgentPointer,
+		SrcPort:       Uint16(h.SourcePort()),
+		DstPort:       Uint16(h.DestinationPort()),
+		SeqNum:        Uint32(h.SequenceNumber()),
+		AckNum:        Uint32(h.AckNumber()),
+		DataOffset:    Uint8(h.DataOffset()),
+		Flags:         Uint8(h.Flags()),
+		WindowSize:    Uint16(h.WindowSize()),
+		Checksum:      Uint16(h.Checksum()),
+		UrgentPointer: Uint16(h.UrgentPointer()),
 	}
 	layers := Layers{&tcp}
 	moreLayers, err := ParsePayload(b[tcp.length():])

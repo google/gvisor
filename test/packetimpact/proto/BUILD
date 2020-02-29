@@ -16,7 +16,6 @@ proto_library(
 cc_grpc_library(
     name = "stub_cc_grpc_proto",
     srcs = [":stub_proto"],
-    service_namespace = "grpc_gen",
     deps = [":stub_cc_proto"],
 )
 

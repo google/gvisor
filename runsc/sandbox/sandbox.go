@@ -369,6 +369,24 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 		cmd.Args = append(cmd.Args, "--debug-log-fd="+strconv.Itoa(nextFD))
 		nextFD++
 	}
+	if conf.PanicLog != "" {
+		test := ""
+		if len(conf.TestOnlyTestNameEnv) != 0 {
+			// Fetch test name if one is provided and the test only flag was set.
+			if t, ok := specutils.EnvVar(args.Spec.Process.Env, conf.TestOnlyTestNameEnv); ok {
+				test = t
+			}
+		}
+
+		panicLogFile, err := specutils.DebugLogFile(conf.PanicLog, "panic", test)
+		if err != nil {
+			return fmt.Errorf("opening debug log file in %q: %v", conf.PanicLog, err)
+		}
+		defer panicLogFile.Close()
+		cmd.ExtraFiles = append(cmd.ExtraFiles, panicLogFile)
+		cmd.Args = append(cmd.Args, "--panic-log-fd="+strconv.Itoa(nextFD))
+		nextFD++
+	}
 
 	cmd.Args = append(cmd.Args, "--panic-signal="+strconv.Itoa(int(syscall.SIGTERM)))
 

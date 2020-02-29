@@ -20,7 +20,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/test/packetimpact/testbench"
+	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func TestFinWait2Timeout(t *testing.T) {
@@ -32,10 +32,10 @@ func TestFinWait2Timeout(t *testing.T) {
 		{"WithoutLinger2", false},
 	} {
 		t.Run(tt.description, func(t *testing.T) {
-			dut := testbench.NewDUT(t)
+			dut := tb.NewDUT(t)
 			listenFd, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
 			defer dut.Close(listenFd)
-			conn := testbench.NewTCPIPv4(t, dut, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
+			conn := tb.NewTCPIPv4(t, dut, tb.TCP{DstPort: &remotePort}, tb.TCP{SrcPort: &remotePort})
 			defer conn.Close()
 			conn.Handshake()
 
@@ -46,22 +46,19 @@ func TestFinWait2Timeout(t *testing.T) {
 			}
 			dut.Close(acceptFd)
 
-			finack := uint8(header.TCPFlagFin | header.TCPFlagAck)
-			if gotOne := conn.Expect(testbench.TCP{Flags: &finack}, time.Second); gotOne == nil {
+			if gotOne := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagFin | header.TCPFlagAck)}, time.Second); gotOne == nil {
 				t.Fatal("expected a FIN-ACK within 1 second but got none")
 			}
-			ack := uint8(header.TCPFlagAck)
-			conn.Send(testbench.TCP{Flags: &ack})
+			conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
 
 			time.Sleep(5 * time.Second)
-			conn.Send(testbench.TCP{Flags: &ack})
-			rst := uint8(header.TCPFlagRst)
+			conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
 			if tt.linger2 {
-				if gotOne := conn.Expect(testbench.TCP{Flags: &rst}, time.Second); gotOne == nil {
+				if gotOne := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)}, time.Second); gotOne == nil {
 					t.Fatal("expected a RST packet within a second but got none")
 				}
 			} else {
-				if gotOne := conn.Expect(testbench.TCP{Flags: &rst}, 10*time.Second); gotOne != nil {
+				if gotOne := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)}, 10*time.Second); gotOne != nil {
 					t.Fatal("expected no RST packets within ten seconds but got one")
 				}
 			}
