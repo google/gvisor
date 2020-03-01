@@ -8,6 +8,8 @@ load("@rules_pkg//:pkg.bzl", _pkg_deb = "pkg_deb", _pkg_tar = "pkg_tar")
 load("@io_bazel_rules_docker//go:image.bzl", _go_image = "go_image")
 load("@io_bazel_rules_docker//container:container.bzl", _container_image = "container_image")
 load("@pydeps//:requirements.bzl", _py_requirement = "requirement")
+load("@com_github_grpc_grpc//bazel:cc_grpc_library.bzl", _cc_grpc_library = "cc_grpc_library")
+load("@io_bazel_rules_go//proto:def.bzl", _go_grpc_library = "go_grpc_library")
 
 container_image = _container_image
 cc_binary = _cc_binary
@@ -27,6 +29,10 @@ pkg_tar = _pkg_tar
 py_library = native.py_library
 py_binary = native.py_binary
 py_test = native.py_test
+
+def cc_grpc_library(**kwargs):
+    _cc_grpc_library(grpc_only = True, **kwargs)
+
 
 def go_binary(name, static = False, pure = False, **kwargs):
     if static:
