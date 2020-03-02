@@ -1349,6 +1349,21 @@ TEST_P(SimpleTcpSocketTest, RecvOnClosedSocket) {
               SyscallFailsWithErrno(ENOTCONN));
 }
 
+TEST_P(SimpleTcpSocketTest, TCPConnectSoRcvBufRace) {
+  auto s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(GetParam(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+  sockaddr_storage addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+  socklen_t addrlen = sizeof(addr);
+
+  RetryEINTR(connect)(s.get(), reinterpret_cast<struct sockaddr*>(&addr),
+                      addrlen);
+  int buf_sz = 1 << 18;
+  EXPECT_THAT(
+      setsockopt(s.get(), SOL_SOCKET, SO_RCVBUF, &buf_sz, sizeof(buf_sz)),
+      SyscallSucceedsWithValue(0));
+}
+
 INSTANTIATE_TEST_SUITE_P(AllInetTests, SimpleTcpSocketTest,
                          ::testing::Values(AF_INET, AF_INET6));
 
