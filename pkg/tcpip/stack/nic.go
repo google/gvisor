@@ -451,7 +451,7 @@ func (n *NIC) primaryIPv6Endpoint(remoteAddr tcpip.Address) *referencedNetworkEn
 	cs := make([]ipv6AddrCandidate, 0, len(primaryAddrs))
 	for _, r := range primaryAddrs {
 		// If r is not valid for outgoing connections, it is not a valid endpoint.
-		if !r.isValidForOutgoing() {
+		if !r.isValidForOutgoingRLocked() {
 			continue
 		}
 
