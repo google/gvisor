@@ -21,6 +21,7 @@ import (
 	"strings"
 	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -183,13 +184,26 @@ func enableCpuidFault() {
 
 // appendArchSeccompRules append architecture specific seccomp rules when creating BPF program.
 // Ref attachedThread() for more detail.
-func appendArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
-	return append(rules, seccomp.RuleSet{
+func appendArchSeccompRules(rules []seccomp.RuleSet, defaultAction linux.BPFAction) []seccomp.RuleSet {
+	rules = append(rules, seccomp.RuleSet{
 		Rules: seccomp.SyscallRules{
-			syscall.SYS_ARCH_PRCTL: []seccomp.Rule{
-				{seccomp.AllowValue(linux.ARCH_SET_CPUID), seccomp.AllowValue(0)},
-			},
+			syscall.SYS_TIME: {},
+			unix.SYS_GETCPU:  {}, // SYS_GETCPU was not defined in package syscall on amd64.
 		},
-		Action: linux.SECCOMP_RET_ALLOW,
+		Action:   linux.SECCOMP_RET_TRAP,
+		Vsyscall: true,
 	})
+
+	if defaultAction != linux.SECCOMP_RET_ALLOW {
+		rules = append(rules, seccomp.RuleSet{
+			Rules: seccomp.SyscallRules{
+				syscall.SYS_ARCH_PRCTL: []seccomp.Rule{
+					{seccomp.AllowValue(linux.ARCH_SET_CPUID), seccomp.AllowValue(0)},
+				},
+			},
+			Action: linux.SECCOMP_RET_ALLOW,
+		})
+	}
+
+	return rules
 }

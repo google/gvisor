@@ -128,8 +128,6 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 		{
 			Rules: seccomp.SyscallRules{
 				syscall.SYS_GETTIMEOFDAY: {},
-				syscall.SYS_TIME:         {},
-				unix.SYS_GETCPU:          {}, // SYS_GETCPU was not defined in package syscall on amd64.
 			},
 			Action:   linux.SECCOMP_RET_TRAP,
 			Vsyscall: true,
@@ -173,9 +171,10 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 			},
 			Action: linux.SECCOMP_RET_ALLOW,
 		})
-
-		rules = appendArchSeccompRules(rules)
 	}
+
+	rules = appendArchSeccompRules(rules, defaultAction)
+
 	instrs, err := seccomp.BuildProgram(rules, defaultAction)
 	if err != nil {
 		return nil, err

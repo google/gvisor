@@ -21,6 +21,7 @@ import (
 	"strings"
 	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -160,6 +161,13 @@ func enableCpuidFault() {
 
 // appendArchSeccompRules append architecture specific seccomp rules when creating BPF program.
 // Ref attachedThread() for more detail.
-func appendArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
+func appendArchSeccompRules(rules []seccomp.RuleSet, defaultAction linux.BPFAction) []seccomp.RuleSet {
+	rules = append(rules, seccomp.RuleSet{
+		Rules: seccomp.SyscallRules{
+			unix.SYS_GETCPU: {}, // No vsyscall support for SYS_GETCPU on arm64.
+		},
+		Action: linux.SECCOMP_RET_TRAP,
+	})
+
 	return rules
 }
