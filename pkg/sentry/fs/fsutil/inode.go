@@ -259,8 +259,8 @@ func (i *InodeSimpleExtendedAttributes) ListXattr(context.Context, *fs.Inode, ui
 
 // RemoveXattr implements fs.InodeOperations.RemoveXattr.
 func (i *InodeSimpleExtendedAttributes) RemoveXattr(_ context.Context, _ *fs.Inode, name string) error {
-	i.mu.RLock()
-	defer i.mu.RUnlock()
+	i.mu.Lock()
+	defer i.mu.Unlock()
 	if _, ok := i.xattrs[name]; ok {
 		delete(i.xattrs, name)
 		return nil
