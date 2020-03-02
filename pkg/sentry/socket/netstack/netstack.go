@@ -2663,7 +2663,9 @@ func (s *SocketOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO,
 		}
 
 		// Add bytes removed from the endpoint but not yet sent to the caller.
+		s.readMu.Lock()
 		v += len(s.readView)
+		s.readMu.Unlock()
 
 		if v > math.MaxInt32 {
 			v = math.MaxInt32
