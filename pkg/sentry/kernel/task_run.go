@@ -126,13 +126,39 @@ func (t *Task) doStop() {
 	}
 }
 
+func (*runApp) handleCPUIDInstruction(t *Task) error {
+	if len(arch.CPUIDInstruction) == 0 {
+		// CPUID emulation isn't supported, but this code can be
+		// executed, because the ptrace platform returns
+		// ErrContextSignalCPUID on page faults too. Look at
+		// pkg/sentry/platform/ptrace/ptrace.go:context.Switch for more
+		// details.
+		return platform.ErrContextSignal
+	}
+	// Is this a CPUID instruction?
+	region := trace.StartRegion(t.traceContext, cpuidRegion)
+	expected := arch.CPUIDInstruction[:]
+	found := make([]byte, len(expected))
+	_, err := t.CopyIn(usermem.Addr(t.Arch().IP()), &found)
+	if err == nil && bytes.Equal(expected, found) {
+		// Skip the cpuid instruction.
+		t.Arch().CPUIDEmulate(t)
+		t.Arch().SetIP(t.Arch().IP() + uintptr(len(expected)))
+		region.End()
+
+		return nil
+	}
+	region.End() // Not an actual CPUID, but required copy-in.
+	return platform.ErrContextSignal
+}
+
 // The runApp state checks for interrupts before executing untrusted
 // application code.
 //
 // +stateify savable
 type runApp struct{}
 
-func (*runApp) execute(t *Task) taskRunState {
+func (app *runApp) execute(t *Task) taskRunState {
 	if t.interrupted() {
 		// Checkpointing instructs tasks to stop by sending an interrupt, so we
 		// must check for stops before entering runInterrupt (instead of
@@ -237,21 +263,10 @@ func (*runApp) execute(t *Task) taskRunState {
 		return (*runApp)(nil)
 
 	case platform.ErrContextSignalCPUID:
-		// Is this a CPUID instruction?
-		region := trace.StartRegion(t.traceContext, cpuidRegion)
-		expected := arch.CPUIDInstruction[:]
-		found := make([]byte, len(expected))
-		_, err := t.CopyIn(usermem.Addr(t.Arch().IP()), &found)
-		if err == nil && bytes.Equal(expected, found) {
-			// Skip the cpuid instruction.
-			t.Arch().CPUIDEmulate(t)
-			t.Arch().SetIP(t.Arch().IP() + uintptr(len(expected)))
-			region.End()
-
+		if err := app.handleCPUIDInstruction(t); err == nil {
 			// Resume execution.
 			return (*runApp)(nil)
 		}
-		region.End() // Not an actual CPUID, but required copy-in.
 
 		// The instruction at the given RIP was not a CPUID, and we
 		// fallthrough to the default signal deliver behavior below.
