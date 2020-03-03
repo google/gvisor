@@ -66,13 +66,12 @@ func (tc TestCase) Args() []string {
 	}
 	if tc.benchmark {
 		return []string{
-			fmt.Sprintf("%s=^$", filterTestFlag),
 			fmt.Sprintf("%s=^%s$", filterBenchmarkFlag, tc.Name),
+			fmt.Sprintf("%s=", filterTestFlag),
 		}
 	}
 	return []string{
-		fmt.Sprintf("%s=^%s$", filterTestFlag, tc.FullName()),
-		fmt.Sprintf("%s=^$", filterBenchmarkFlag),
+		fmt.Sprintf("%s=%s", filterTestFlag, tc.FullName()),
 	}
 }
 
@@ -146,6 +145,8 @@ func ParseTestCases(testBin string, benchmarks bool, extraArgs ...string) ([]Tes
 		}
 		return nil, fmt.Errorf("could not enumerate gtest benchmarks: %v\nstderr\n%s", err, exitErr.Stderr)
 	}
+
+	out = []byte(strings.Trim(string(out), "\n"))
 
 	// Parse benchmark output.
 	for _, line := range strings.Split(string(out), "\n") {
