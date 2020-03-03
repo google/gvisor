@@ -88,8 +88,9 @@ func (l *List) Back() Element {
 
 // PushFront inserts the element e at the front of list l.
 func (l *List) PushFront(e Element) {
-	ElementMapper{}.linkerFor(e).SetNext(l.head)
-	ElementMapper{}.linkerFor(e).SetPrev(nil)
+	linker := ElementMapper{}.linkerFor(e)
+	linker.SetNext(l.head)
+	linker.SetPrev(nil)
 
 	if l.head != nil {
 		ElementMapper{}.linkerFor(l.head).SetPrev(e)
@@ -102,8 +103,9 @@ func (l *List) PushFront(e Element) {
 
 // PushBack inserts the element e at the back of list l.
 func (l *List) PushBack(e Element) {
-	ElementMapper{}.linkerFor(e).SetNext(nil)
-	ElementMapper{}.linkerFor(e).SetPrev(l.tail)
+	linker := ElementMapper{}.linkerFor(e)
+	linker.SetNext(nil)
+	linker.SetPrev(l.tail)
 
 	if l.tail != nil {
 		ElementMapper{}.linkerFor(l.tail).SetNext(e)
@@ -132,10 +134,14 @@ func (l *List) PushBackList(m *List) {
 
 // InsertAfter inserts e after b.
 func (l *List) InsertAfter(b, e Element) {
-	a := ElementMapper{}.linkerFor(b).Next()
-	ElementMapper{}.linkerFor(e).SetNext(a)
-	ElementMapper{}.linkerFor(e).SetPrev(b)
-	ElementMapper{}.linkerFor(b).SetNext(e)
+	bLinker := ElementMapper{}.linkerFor(b)
+	eLinker := ElementMapper{}.linkerFor(e)
+
+	a := bLinker.Next()
+
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	bLinker.SetNext(e)
 
 	if a != nil {
 		ElementMapper{}.linkerFor(a).SetPrev(e)
@@ -146,10 +152,13 @@ func (l *List) InsertAfter(b, e Element) {
 
 // InsertBefore inserts e before a.
 func (l *List) InsertBefore(a, e Element) {
-	b := ElementMapper{}.linkerFor(a).Prev()
-	ElementMapper{}.linkerFor(e).SetNext(a)
-	ElementMapper{}.linkerFor(e).SetPrev(b)
-	ElementMapper{}.linkerFor(a).SetPrev(e)
+	aLinker := ElementMapper{}.linkerFor(a)
+	eLinker := ElementMapper{}.linkerFor(e)
+
+	b := aLinker.Prev()
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	aLinker.SetPrev(e)
 
 	if b != nil {
 		ElementMapper{}.linkerFor(b).SetNext(e)
