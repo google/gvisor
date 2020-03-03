@@ -41,6 +41,7 @@ func (h *segmentHeap) Pop() interface{} {
 	old := *h
 	n := len(old)
 	x := old[n-1]
+	old[n-1] = nil
 	*h = old[:n-1]
 	return x
 }
