@@ -54,8 +54,9 @@ func (l *bufferList) Back() *Buffer {
 
 // PushFront inserts the element e at the front of list l.
 func (l *bufferList) PushFront(e *Buffer) {
-	bufferElementMapper{}.linkerFor(e).SetNext(l.head)
-	bufferElementMapper{}.linkerFor(e).SetPrev(nil)
+	linker := bufferElementMapper{}.linkerFor(e)
+	linker.SetNext(l.head)
+	linker.SetPrev(nil)
 
 	if l.head != nil {
 		bufferElementMapper{}.linkerFor(l.head).SetPrev(e)
@@ -68,8 +69,9 @@ func (l *bufferList) PushFront(e *Buffer) {
 
 // PushBack inserts the element e at the back of list l.
 func (l *bufferList) PushBack(e *Buffer) {
-	bufferElementMapper{}.linkerFor(e).SetNext(nil)
-	bufferElementMapper{}.linkerFor(e).SetPrev(l.tail)
+	linker := bufferElementMapper{}.linkerFor(e)
+	linker.SetNext(nil)
+	linker.SetPrev(l.tail)
 
 	if l.tail != nil {
 		bufferElementMapper{}.linkerFor(l.tail).SetNext(e)
@@ -98,10 +100,14 @@ func (l *bufferList) PushBackList(m *bufferList) {
 
 // InsertAfter inserts e after b.
 func (l *bufferList) InsertAfter(b, e *Buffer) {
-	a := bufferElementMapper{}.linkerFor(b).Next()
-	bufferElementMapper{}.linkerFor(e).SetNext(a)
-	bufferElementMapper{}.linkerFor(e).SetPrev(b)
-	bufferElementMapper{}.linkerFor(b).SetNext(e)
+	bLinker := bufferElementMapper{}.linkerFor(b)
+	eLinker := bufferElementMapper{}.linkerFor(e)
+
+	a := bLinker.Next()
+
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	bLinker.SetNext(e)
 
 	if a != nil {
 		bufferElementMapper{}.linkerFor(a).SetPrev(e)
@@ -112,10 +118,13 @@ func (l *bufferList) InsertAfter(b, e *Buffer) {
 
 // InsertBefore inserts e before a.
 func (l *bufferList) InsertBefore(a, e *Buffer) {
-	b := bufferElementMapper{}.linkerFor(a).Prev()
-	bufferElementMapper{}.linkerFor(e).SetNext(a)
-	bufferElementMapper{}.linkerFor(e).SetPrev(b)
-	bufferElementMapper{}.linkerFor(a).SetPrev(e)
+	aLinker := bufferElementMapper{}.linkerFor(a)
+	eLinker := bufferElementMapper{}.linkerFor(e)
+
+	b := aLinker.Prev()
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	aLinker.SetPrev(e)
 
 	if b != nil {
 		bufferElementMapper{}.linkerFor(b).SetNext(e)

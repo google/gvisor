@@ -54,8 +54,9 @@ func (l *pollEntryList) Back() *pollEntry {
 
 // PushFront inserts the element e at the front of list l.
 func (l *pollEntryList) PushFront(e *pollEntry) {
-	pollEntryElementMapper{}.linkerFor(e).SetNext(l.head)
-	pollEntryElementMapper{}.linkerFor(e).SetPrev(nil)
+	linker := pollEntryElementMapper{}.linkerFor(e)
+	linker.SetNext(l.head)
+	linker.SetPrev(nil)
 
 	if l.head != nil {
 		pollEntryElementMapper{}.linkerFor(l.head).SetPrev(e)
@@ -68,8 +69,9 @@ func (l *pollEntryList) PushFront(e *pollEntry) {
 
 // PushBack inserts the element e at the back of list l.
 func (l *pollEntryList) PushBack(e *pollEntry) {
-	pollEntryElementMapper{}.linkerFor(e).SetNext(nil)
-	pollEntryElementMapper{}.linkerFor(e).SetPrev(l.tail)
+	linker := pollEntryElementMapper{}.linkerFor(e)
+	linker.SetNext(nil)
+	linker.SetPrev(l.tail)
 
 	if l.tail != nil {
 		pollEntryElementMapper{}.linkerFor(l.tail).SetNext(e)
@@ -98,10 +100,14 @@ func (l *pollEntryList) PushBackList(m *pollEntryList) {
 
 // InsertAfter inserts e after b.
 func (l *pollEntryList) InsertAfter(b, e *pollEntry) {
-	a := pollEntryElementMapper{}.linkerFor(b).Next()
-	pollEntryElementMapper{}.linkerFor(e).SetNext(a)
-	pollEntryElementMapper{}.linkerFor(e).SetPrev(b)
-	pollEntryElementMapper{}.linkerFor(b).SetNext(e)
+	bLinker := pollEntryElementMapper{}.linkerFor(b)
+	eLinker := pollEntryElementMapper{}.linkerFor(e)
+
+	a := bLinker.Next()
+
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	bLinker.SetNext(e)
 
 	if a != nil {
 		pollEntryElementMapper{}.linkerFor(a).SetPrev(e)
@@ -112,10 +118,13 @@ func (l *pollEntryList) InsertAfter(b, e *pollEntry) {
 
 // InsertBefore inserts e before a.
 func (l *pollEntryList) InsertBefore(a, e *pollEntry) {
-	b := pollEntryElementMapper{}.linkerFor(a).Prev()
-	pollEntryElementMapper{}.linkerFor(e).SetNext(a)
-	pollEntryElementMapper{}.linkerFor(e).SetPrev(b)
-	pollEntryElementMapper{}.linkerFor(a).SetPrev(e)
+	aLinker := pollEntryElementMapper{}.linkerFor(a)
+	eLinker := pollEntryElementMapper{}.linkerFor(e)
+
+	b := aLinker.Prev()
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	aLinker.SetPrev(e)
 
 	if b != nil {
 		pollEntryElementMapper{}.linkerFor(b).SetNext(e)

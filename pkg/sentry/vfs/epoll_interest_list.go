@@ -54,8 +54,9 @@ func (l *epollInterestList) Back() *epollInterest {
 
 // PushFront inserts the element e at the front of list l.
 func (l *epollInterestList) PushFront(e *epollInterest) {
-	epollInterestElementMapper{}.linkerFor(e).SetNext(l.head)
-	epollInterestElementMapper{}.linkerFor(e).SetPrev(nil)
+	linker := epollInterestElementMapper{}.linkerFor(e)
+	linker.SetNext(l.head)
+	linker.SetPrev(nil)
 
 	if l.head != nil {
 		epollInterestElementMapper{}.linkerFor(l.head).SetPrev(e)
@@ -68,8 +69,9 @@ func (l *epollInterestList) PushFront(e *epollInterest) {
 
 // PushBack inserts the element e at the back of list l.
 func (l *epollInterestList) PushBack(e *epollInterest) {
-	epollInterestElementMapper{}.linkerFor(e).SetNext(nil)
-	epollInterestElementMapper{}.linkerFor(e).SetPrev(l.tail)
+	linker := epollInterestElementMapper{}.linkerFor(e)
+	linker.SetNext(nil)
+	linker.SetPrev(l.tail)
 
 	if l.tail != nil {
 		epollInterestElementMapper{}.linkerFor(l.tail).SetNext(e)
@@ -98,10 +100,14 @@ func (l *epollInterestList) PushBackList(m *epollInterestList) {
 
 // InsertAfter inserts e after b.
 func (l *epollInterestList) InsertAfter(b, e *epollInterest) {
-	a := epollInterestElementMapper{}.linkerFor(b).Next()
-	epollInterestElementMapper{}.linkerFor(e).SetNext(a)
-	epollInterestElementMapper{}.linkerFor(e).SetPrev(b)
-	epollInterestElementMapper{}.linkerFor(b).SetNext(e)
+	bLinker := epollInterestElementMapper{}.linkerFor(b)
+	eLinker := epollInterestElementMapper{}.linkerFor(e)
+
+	a := bLinker.Next()
+
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	bLinker.SetNext(e)
 
 	if a != nil {
 		epollInterestElementMapper{}.linkerFor(a).SetPrev(e)
@@ -112,10 +118,13 @@ func (l *epollInterestList) InsertAfter(b, e *epollInterest) {
 
 // InsertBefore inserts e before a.
 func (l *epollInterestList) InsertBefore(a, e *epollInterest) {
-	b := epollInterestElementMapper{}.linkerFor(a).Prev()
-	epollInterestElementMapper{}.linkerFor(e).SetNext(a)
-	epollInterestElementMapper{}.linkerFor(e).SetPrev(b)
-	epollInterestElementMapper{}.linkerFor(a).SetPrev(e)
+	aLinker := epollInterestElementMapper{}.linkerFor(a)
+	eLinker := epollInterestElementMapper{}.linkerFor(e)
+
+	b := aLinker.Prev()
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	aLinker.SetPrev(e)
 
 	if b != nil {
 		epollInterestElementMapper{}.linkerFor(b).SetNext(e)

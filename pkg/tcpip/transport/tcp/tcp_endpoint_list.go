@@ -54,8 +54,9 @@ func (l *endpointList) Back() *endpoint {
 
 // PushFront inserts the element e at the front of list l.
 func (l *endpointList) PushFront(e *endpoint) {
-	endpointElementMapper{}.linkerFor(e).SetNext(l.head)
-	endpointElementMapper{}.linkerFor(e).SetPrev(nil)
+	linker := endpointElementMapper{}.linkerFor(e)
+	linker.SetNext(l.head)
+	linker.SetPrev(nil)
 
 	if l.head != nil {
 		endpointElementMapper{}.linkerFor(l.head).SetPrev(e)
@@ -68,8 +69,9 @@ func (l *endpointList) PushFront(e *endpoint) {
 
 // PushBack inserts the element e at the back of list l.
 func (l *endpointList) PushBack(e *endpoint) {
-	endpointElementMapper{}.linkerFor(e).SetNext(nil)
-	endpointElementMapper{}.linkerFor(e).SetPrev(l.tail)
+	linker := endpointElementMapper{}.linkerFor(e)
+	linker.SetNext(nil)
+	linker.SetPrev(l.tail)
 
 	if l.tail != nil {
 		endpointElementMapper{}.linkerFor(l.tail).SetNext(e)
@@ -98,10 +100,14 @@ func (l *endpointList) PushBackList(m *endpointList) {
 
 // InsertAfter inserts e after b.
 func (l *endpointList) InsertAfter(b, e *endpoint) {
-	a := endpointElementMapper{}.linkerFor(b).Next()
-	endpointElementMapper{}.linkerFor(e).SetNext(a)
-	endpointElementMapper{}.linkerFor(e).SetPrev(b)
-	endpointElementMapper{}.linkerFor(b).SetNext(e)
+	bLinker := endpointElementMapper{}.linkerFor(b)
+	eLinker := endpointElementMapper{}.linkerFor(e)
+
+	a := bLinker.Next()
+
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	bLinker.SetNext(e)
 
 	if a != nil {
 		endpointElementMapper{}.linkerFor(a).SetPrev(e)
@@ -112,10 +118,13 @@ func (l *endpointList) InsertAfter(b, e *endpoint) {
 
 // InsertBefore inserts e before a.
 func (l *endpointList) InsertBefore(a, e *endpoint) {
-	b := endpointElementMapper{}.linkerFor(a).Prev()
-	endpointElementMapper{}.linkerFor(e).SetNext(a)
-	endpointElementMapper{}.linkerFor(e).SetPrev(b)
-	endpointElementMapper{}.linkerFor(a).SetPrev(e)
+	aLinker := endpointElementMapper{}.linkerFor(a)
+	eLinker := endpointElementMapper{}.linkerFor(e)
+
+	b := aLinker.Prev()
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	aLinker.SetPrev(e)
 
 	if b != nil {
 		endpointElementMapper{}.linkerFor(b).SetNext(e)

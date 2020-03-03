@@ -54,8 +54,9 @@ func (l *socketList) Back() *SocketEntry {
 
 // PushFront inserts the element e at the front of list l.
 func (l *socketList) PushFront(e *SocketEntry) {
-	socketElementMapper{}.linkerFor(e).SetNext(l.head)
-	socketElementMapper{}.linkerFor(e).SetPrev(nil)
+	linker := socketElementMapper{}.linkerFor(e)
+	linker.SetNext(l.head)
+	linker.SetPrev(nil)
 
 	if l.head != nil {
 		socketElementMapper{}.linkerFor(l.head).SetPrev(e)
@@ -68,8 +69,9 @@ func (l *socketList) PushFront(e *SocketEntry) {
 
 // PushBack inserts the element e at the back of list l.
 func (l *socketList) PushBack(e *SocketEntry) {
-	socketElementMapper{}.linkerFor(e).SetNext(nil)
-	socketElementMapper{}.linkerFor(e).SetPrev(l.tail)
+	linker := socketElementMapper{}.linkerFor(e)
+	linker.SetNext(nil)
+	linker.SetPrev(l.tail)
 
 	if l.tail != nil {
 		socketElementMapper{}.linkerFor(l.tail).SetNext(e)
@@ -98,10 +100,14 @@ func (l *socketList) PushBackList(m *socketList) {
 
 // InsertAfter inserts e after b.
 func (l *socketList) InsertAfter(b, e *SocketEntry) {
-	a := socketElementMapper{}.linkerFor(b).Next()
-	socketElementMapper{}.linkerFor(e).SetNext(a)
-	socketElementMapper{}.linkerFor(e).SetPrev(b)
-	socketElementMapper{}.linkerFor(b).SetNext(e)
+	bLinker := socketElementMapper{}.linkerFor(b)
+	eLinker := socketElementMapper{}.linkerFor(e)
+
+	a := bLinker.Next()
+
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	bLinker.SetNext(e)
 
 	if a != nil {
 		socketElementMapper{}.linkerFor(a).SetPrev(e)
@@ -112,10 +118,13 @@ func (l *socketList) InsertAfter(b, e *SocketEntry) {
 
 // InsertBefore inserts e before a.
 func (l *socketList) InsertBefore(a, e *SocketEntry) {
-	b := socketElementMapper{}.linkerFor(a).Prev()
-	socketElementMapper{}.linkerFor(e).SetNext(a)
-	socketElementMapper{}.linkerFor(e).SetPrev(b)
-	socketElementMapper{}.linkerFor(a).SetPrev(e)
+	aLinker := socketElementMapper{}.linkerFor(a)
+	eLinker := socketElementMapper{}.linkerFor(e)
+
+	b := aLinker.Prev()
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	aLinker.SetPrev(e)
 
 	if b != nil {
 		socketElementMapper{}.linkerFor(b).SetNext(e)

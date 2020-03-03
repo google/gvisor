@@ -54,8 +54,9 @@ func (l *linkAddrEntryList) Back() *linkAddrEntry {
 
 // PushFront inserts the element e at the front of list l.
 func (l *linkAddrEntryList) PushFront(e *linkAddrEntry) {
-	linkAddrEntryElementMapper{}.linkerFor(e).SetNext(l.head)
-	linkAddrEntryElementMapper{}.linkerFor(e).SetPrev(nil)
+	linker := linkAddrEntryElementMapper{}.linkerFor(e)
+	linker.SetNext(l.head)
+	linker.SetPrev(nil)
 
 	if l.head != nil {
 		linkAddrEntryElementMapper{}.linkerFor(l.head).SetPrev(e)
@@ -68,8 +69,9 @@ func (l *linkAddrEntryList) PushFront(e *linkAddrEntry) {
 
 // PushBack inserts the element e at the back of list l.
 func (l *linkAddrEntryList) PushBack(e *linkAddrEntry) {
-	linkAddrEntryElementMapper{}.linkerFor(e).SetNext(nil)
-	linkAddrEntryElementMapper{}.linkerFor(e).SetPrev(l.tail)
+	linker := linkAddrEntryElementMapper{}.linkerFor(e)
+	linker.SetNext(nil)
+	linker.SetPrev(l.tail)
 
 	if l.tail != nil {
 		linkAddrEntryElementMapper{}.linkerFor(l.tail).SetNext(e)
@@ -98,10 +100,14 @@ func (l *linkAddrEntryList) PushBackList(m *linkAddrEntryList) {
 
 // InsertAfter inserts e after b.
 func (l *linkAddrEntryList) InsertAfter(b, e *linkAddrEntry) {
-	a := linkAddrEntryElementMapper{}.linkerFor(b).Next()
-	linkAddrEntryElementMapper{}.linkerFor(e).SetNext(a)
-	linkAddrEntryElementMapper{}.linkerFor(e).SetPrev(b)
-	linkAddrEntryElementMapper{}.linkerFor(b).SetNext(e)
+	bLinker := linkAddrEntryElementMapper{}.linkerFor(b)
+	eLinker := linkAddrEntryElementMapper{}.linkerFor(e)
+
+	a := bLinker.Next()
+
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	bLinker.SetNext(e)
 
 	if a != nil {
 		linkAddrEntryElementMapper{}.linkerFor(a).SetPrev(e)
@@ -112,10 +118,13 @@ func (l *linkAddrEntryList) InsertAfter(b, e *linkAddrEntry) {
 
 // InsertBefore inserts e before a.
 func (l *linkAddrEntryList) InsertBefore(a, e *linkAddrEntry) {
-	b := linkAddrEntryElementMapper{}.linkerFor(a).Prev()
-	linkAddrEntryElementMapper{}.linkerFor(e).SetNext(a)
-	linkAddrEntryElementMapper{}.linkerFor(e).SetPrev(b)
-	linkAddrEntryElementMapper{}.linkerFor(a).SetPrev(e)
+	aLinker := linkAddrEntryElementMapper{}.linkerFor(a)
+	eLinker := linkAddrEntryElementMapper{}.linkerFor(e)
+
+	b := aLinker.Prev()
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	aLinker.SetPrev(e)
 
 	if b != nil {
 		linkAddrEntryElementMapper{}.linkerFor(b).SetNext(e)

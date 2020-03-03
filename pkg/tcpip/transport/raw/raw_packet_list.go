@@ -54,8 +54,9 @@ func (l *rawPacketList) Back() *rawPacket {
 
 // PushFront inserts the element e at the front of list l.
 func (l *rawPacketList) PushFront(e *rawPacket) {
-	rawPacketElementMapper{}.linkerFor(e).SetNext(l.head)
-	rawPacketElementMapper{}.linkerFor(e).SetPrev(nil)
+	linker := rawPacketElementMapper{}.linkerFor(e)
+	linker.SetNext(l.head)
+	linker.SetPrev(nil)
 
 	if l.head != nil {
 		rawPacketElementMapper{}.linkerFor(l.head).SetPrev(e)
@@ -68,8 +69,9 @@ func (l *rawPacketList) PushFront(e *rawPacket) {
 
 // PushBack inserts the element e at the back of list l.
 func (l *rawPacketList) PushBack(e *rawPacket) {
-	rawPacketElementMapper{}.linkerFor(e).SetNext(nil)
-	rawPacketElementMapper{}.linkerFor(e).SetPrev(l.tail)
+	linker := rawPacketElementMapper{}.linkerFor(e)
+	linker.SetNext(nil)
+	linker.SetPrev(l.tail)
 
 	if l.tail != nil {
 		rawPacketElementMapper{}.linkerFor(l.tail).SetNext(e)
@@ -98,10 +100,14 @@ func (l *rawPacketList) PushBackList(m *rawPacketList) {
 
 // InsertAfter inserts e after b.
 func (l *rawPacketList) InsertAfter(b, e *rawPacket) {
-	a := rawPacketElementMapper{}.linkerFor(b).Next()
-	rawPacketElementMapper{}.linkerFor(e).SetNext(a)
-	rawPacketElementMapper{}.linkerFor(e).SetPrev(b)
-	rawPacketElementMapper{}.linkerFor(b).SetNext(e)
+	bLinker := rawPacketElementMapper{}.linkerFor(b)
+	eLinker := rawPacketElementMapper{}.linkerFor(e)
+
+	a := bLinker.Next()
+
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	bLinker.SetNext(e)
 
 	if a != nil {
 		rawPacketElementMapper{}.linkerFor(a).SetPrev(e)
@@ -112,10 +118,13 @@ func (l *rawPacketList) InsertAfter(b, e *rawPacket) {
 
 // InsertBefore inserts e before a.
 func (l *rawPacketList) InsertBefore(a, e *rawPacket) {
-	b := rawPacketElementMapper{}.linkerFor(a).Prev()
-	rawPacketElementMapper{}.linkerFor(e).SetNext(a)
-	rawPacketElementMapper{}.linkerFor(e).SetPrev(b)
-	rawPacketElementMapper{}.linkerFor(a).SetPrev(e)
+	aLinker := rawPacketElementMapper{}.linkerFor(a)
+	eLinker := rawPacketElementMapper{}.linkerFor(e)
+
+	b := aLinker.Prev()
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	aLinker.SetPrev(e)
 
 	if b != nil {
 		rawPacketElementMapper{}.linkerFor(b).SetNext(e)

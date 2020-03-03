@@ -54,8 +54,9 @@ func (l *processGroupList) Back() *ProcessGroup {
 
 // PushFront inserts the element e at the front of list l.
 func (l *processGroupList) PushFront(e *ProcessGroup) {
-	processGroupElementMapper{}.linkerFor(e).SetNext(l.head)
-	processGroupElementMapper{}.linkerFor(e).SetPrev(nil)
+	linker := processGroupElementMapper{}.linkerFor(e)
+	linker.SetNext(l.head)
+	linker.SetPrev(nil)
 
 	if l.head != nil {
 		processGroupElementMapper{}.linkerFor(l.head).SetPrev(e)
@@ -68,8 +69,9 @@ func (l *processGroupList) PushFront(e *ProcessGroup) {
 
 // PushBack inserts the element e at the back of list l.
 func (l *processGroupList) PushBack(e *ProcessGroup) {
-	processGroupElementMapper{}.linkerFor(e).SetNext(nil)
-	processGroupElementMapper{}.linkerFor(e).SetPrev(l.tail)
+	linker := processGroupElementMapper{}.linkerFor(e)
+	linker.SetNext(nil)
+	linker.SetPrev(l.tail)
 
 	if l.tail != nil {
 		processGroupElementMapper{}.linkerFor(l.tail).SetNext(e)
@@ -98,10 +100,14 @@ func (l *processGroupList) PushBackList(m *processGroupList) {
 
 // InsertAfter inserts e after b.
 func (l *processGroupList) InsertAfter(b, e *ProcessGroup) {
-	a := processGroupElementMapper{}.linkerFor(b).Next()
-	processGroupElementMapper{}.linkerFor(e).SetNext(a)
-	processGroupElementMapper{}.linkerFor(e).SetPrev(b)
-	processGroupElementMapper{}.linkerFor(b).SetNext(e)
+	bLinker := processGroupElementMapper{}.linkerFor(b)
+	eLinker := processGroupElementMapper{}.linkerFor(e)
+
+	a := bLinker.Next()
+
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	bLinker.SetNext(e)
 
 	if a != nil {
 		processGroupElementMapper{}.linkerFor(a).SetPrev(e)
@@ -112,10 +118,13 @@ func (l *processGroupList) InsertAfter(b, e *ProcessGroup) {
 
 // InsertBefore inserts e before a.
 func (l *processGroupList) InsertBefore(a, e *ProcessGroup) {
-	b := processGroupElementMapper{}.linkerFor(a).Prev()
-	processGroupElementMapper{}.linkerFor(e).SetNext(a)
-	processGroupElementMapper{}.linkerFor(e).SetPrev(b)
-	processGroupElementMapper{}.linkerFor(a).SetPrev(e)
+	aLinker := processGroupElementMapper{}.linkerFor(a)
+	eLinker := processGroupElementMapper{}.linkerFor(e)
+
+	b := aLinker.Prev()
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	aLinker.SetPrev(e)
 
 	if b != nil {
 		processGroupElementMapper{}.linkerFor(b).SetNext(e)
