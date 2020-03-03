@@ -24,9 +24,9 @@ lint:
 .PHONY: lint
 
 update: lint
-	@mkdir -p _site && sudo chmod a+rw _site
-	@docker run -v $$PWD:/site -w /site gvisor-website || ($(MAKE) clean && exit 1)
-	@sudo chown -R $$(id -u):$$(id -g) _site
+	@sudo mkdir -p _site && sudo chmod a+rw _site
+	@find content -type f -exec chmod a+r {} \; && find content -type d -exec chmod a+rx {} \;
+	@docker run -v $$PWD:/site -w /site gvisor-website
 .PHONY: build
 
 clean:

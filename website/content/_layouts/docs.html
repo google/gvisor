@@ -14,7 +14,7 @@ categories:
         {% for category in layout.categories %}
           <h3>{{ category }}</h3>
           <ul class="sidebar-nav">
-          {% assign sorted_pages = site.pages | where: 'layout', 'docs' | where: 'category', category | sort: 'weight' %}
+          {% assign sorted_pages = site.pages | where: 'layout', 'docs' | where: 'category', category | sort: 'weight' | sort: 'subcategory' %}
           {% assign subcategory = nil %}
           {% for p in sorted_pages %}
             {% if p.subcategory != subcategory %}
@@ -24,10 +24,11 @@ categories:
               {% endif %}
               {% assign subcategory = p.subcategory %}
               {% if subcategory != nil %}
-                {% assign id = p.subcategory | remove: " " | downcase %}
+                {% assign cid = p.category | remove: " " | downcase %}
+                {% assign sid = p.subcategory | remove: " " | downcase %}
                 <li>
-                  <a class="sidebar-nav-heading" data-toggle="collapse" href="#{{ id }}" aria-expanded="false" aria-controls="{{ id }}">{{ subcategory }}<span class="caret"></span></a>
-                  <ul class="collapse sidebar-nav sidebar-submenu" id="{{ id }}">
+                  <a class="sidebar-nav-heading" data-toggle="collapse" href="#{{ cid }}-{{ sid }}" aria-expanded="false" aria-controls="{{ cid }}-{{ sid }}">{{ subcategory }}<span class="caret"></span></a>
+                  <ul class="collapse sidebar-nav sidebar-submenu" id="{{ cid }}-{{ sid }}">
               {% endif %}
             {% endif %}
             <li><a href="{{ p.url }}">{{ p.title }}</a></li>
