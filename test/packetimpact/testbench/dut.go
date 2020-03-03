@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	grpcpb "test/packetimpact/proto/stub_go_grpc_proto"
+	grpcpb "gvisor.dev/gvisor/test/packetimpact/proto/stub_go_grpc_proto"
 
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"

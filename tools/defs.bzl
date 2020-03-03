@@ -7,37 +7,39 @@ change for Google-internal and bazel-compatible rules.
 
 load("//tools/go_stateify:defs.bzl", "go_stateify")
 load("//tools/go_marshal:defs.bzl", "go_marshal", "marshal_deps", "marshal_test_deps")
-load("//tools/bazeldefs:defs.bzl", _cc_binary = "cc_binary", _cc_flags_supplier = "cc_flags_supplier", _cc_grpc_library = "cc_grpc_library", _cc_library = "cc_library", _cc_proto_library = "cc_proto_library", _cc_test = "cc_test", _cc_toolchain = "cc_toolchain", _container_image = "container_image", _default_installer = "default_installer", _default_net_util = "default_net_util", _gbenchmark = "gbenchmark", _go_binary = "go_binary", _go_embed_data = "go_embed_data", _go_image = "go_image", _go_library = "go_library", _go_proto_library = "go_proto_library", _go_test = "go_test", _go_tool_library = "go_tool_library", _gtest = "gtest", _loopback = "loopback", _pkg_deb = "pkg_deb", _pkg_tar = "pkg_tar", _proto_library = "proto_library", _py_binary = "py_binary", _py_library = "py_library", _py_requirement = "py_requirement", _py_test = "py_test", _select_arch = "select_arch", _select_system = "select_system")
+load("//tools/bazeldefs:defs.bzl", _cc_binary = "cc_binary", _cc_flags_supplier = "cc_flags_supplier", _cc_grpc_library = "cc_grpc_library", _cc_library = "cc_library", _cc_proto_library = "cc_proto_library", _cc_test = "cc_test", _cc_toolchain = "cc_toolchain", _container_image = "container_image", _default_installer = "default_installer", _default_net_util = "default_net_util", _gbenchmark = "gbenchmark", _go_binary = "go_binary", _go_embed_data = "go_embed_data", _go_image = "go_image", _go_library = "go_library", _go_proto_library = "go_proto_library", _go_test = "go_test", _go_tool_library = "go_tool_library", _gtest = "gtest", _loopback = "loopback", _pkg_deb = "pkg_deb", _pkg_tar = "pkg_tar", _proto_library = "proto_library", _py_binary = "py_binary", _py_library = "py_library", _py_requirement = "py_requirement", _py_test = "py_test", _select_arch = "select_arch", _select_system = "select_system", _go_grpc_library = "go_grpc_library")
 load("//tools/bazeldefs:platforms.bzl", _default_platform = "default_platform", _platforms = "platforms")
 load("//tools/bazeldefs:tags.bzl", "go_suffixes")
 
 # Delegate directly.
-cc_grpc_library = _cc_grpc_library
 cc_binary = _cc_binary
+cc_flags_supplier = _cc_flags_supplier
+cc_grpc_library = _cc_grpc_library
 cc_library = _cc_library
 cc_test = _cc_test
 cc_toolchain = _cc_toolchain
-cc_flags_supplier = _cc_flags_supplier
 container_image = _container_image
+default_installer = _default_installer
+default_net_util = _default_net_util
+gbenchmark = _gbenchmark
 go_embed_data = _go_embed_data
+go_grpc_library = _go_grpc_library
 go_image = _go_image
 go_test = _go_test
 go_tool_library = _go_tool_library
 gtest = _gtest
-gbenchmark = _gbenchmark
+loopback = _loopback
 pkg_deb = _pkg_deb
 pkg_tar = _pkg_tar
-py_library = _py_library
 py_binary = _py_binary
-py_test = _py_test
+py_library = _py_library
 py_requirement = _py_requirement
+py_test = _py_test
 select_arch = _select_arch
 select_system = _select_system
-loopback = _loopback
-default_installer = _default_installer
-default_net_util = _default_net_util
-platforms = _platforms
+
 default_platform = _default_platform
+platforms = _platforms
 
 def go_binary(name, **kwargs):
     """Wraps the standard go_binary.
@@ -194,10 +196,12 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
 def proto_library(name, srcs, **kwargs):
     """Wraps the standard proto_library.
 
-    Given a proto_library named "foo", this produces three different targets:
+    Given a proto_library named "foo", this produces five different targets:
     - foo_proto: proto_library rule.
     - foo_go_proto: go_proto_library rule.
     - foo_cc_proto: cc_proto_library rule.
+    - foo_go_grpc_proto: go_grpc_library rule.
+    - foo_cc_grpc_proto: cc_grpc_library rule.
 
     Args:
       srcs: the proto sources.
@@ -210,7 +214,6 @@ def proto_library(name, srcs, **kwargs):
         deps = deps,
         **kwargs
     )
-    kwargs.pop("has_services", None)
     _go_proto_library(
         name = name + "_go_proto",
         proto = ":" + name + "_proto",
@@ -220,5 +223,18 @@ def proto_library(name, srcs, **kwargs):
     _cc_proto_library(
         name = name + "_cc_proto",
         deps = [":" + name + "_proto"],
+        **kwargs
+    )
+    kwargs.pop("srcs", None)
+    _go_grpc_library(
+        name = name + "_go_grpc_proto",
+        srcs = [":" + name + "_proto"],
+        deps = [":" + name + "_go_proto"],
+        **kwargs
+    )
+    _cc_grpc_library(
+        name = name + "_cc_grpc_proto",
+        srcs = [":" + name + "_proto"],
+        deps = [":" + name + "_cc_proto"],
         **kwargs
     )
