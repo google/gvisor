@@ -712,6 +712,10 @@ func (s *SocketOperations) Connect(t *kernel.Task, sockaddr []byte, blocking boo
 // Bind implements the linux syscall bind(2) for sockets backed by
 // tcpip.Endpoint.
 func (s *SocketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
+	if len(sockaddr) < 2 {
+		return syserr.ErrInvalidArgument
+	}
+
 	family := usermem.ByteOrder.Uint16(sockaddr)
 	var addr tcpip.FullAddress
 
