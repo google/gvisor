@@ -54,8 +54,9 @@ func (l *ioList) Back() *ioResult {
 
 // PushFront inserts the element e at the front of list l.
 func (l *ioList) PushFront(e *ioResult) {
-	ioElementMapper{}.linkerFor(e).SetNext(l.head)
-	ioElementMapper{}.linkerFor(e).SetPrev(nil)
+	linker := ioElementMapper{}.linkerFor(e)
+	linker.SetNext(l.head)
+	linker.SetPrev(nil)
 
 	if l.head != nil {
 		ioElementMapper{}.linkerFor(l.head).SetPrev(e)
@@ -68,8 +69,9 @@ func (l *ioList) PushFront(e *ioResult) {
 
 // PushBack inserts the element e at the back of list l.
 func (l *ioList) PushBack(e *ioResult) {
-	ioElementMapper{}.linkerFor(e).SetNext(nil)
-	ioElementMapper{}.linkerFor(e).SetPrev(l.tail)
+	linker := ioElementMapper{}.linkerFor(e)
+	linker.SetNext(nil)
+	linker.SetPrev(l.tail)
 
 	if l.tail != nil {
 		ioElementMapper{}.linkerFor(l.tail).SetNext(e)
@@ -98,10 +100,14 @@ func (l *ioList) PushBackList(m *ioList) {
 
 // InsertAfter inserts e after b.
 func (l *ioList) InsertAfter(b, e *ioResult) {
-	a := ioElementMapper{}.linkerFor(b).Next()
-	ioElementMapper{}.linkerFor(e).SetNext(a)
-	ioElementMapper{}.linkerFor(e).SetPrev(b)
-	ioElementMapper{}.linkerFor(b).SetNext(e)
+	bLinker := ioElementMapper{}.linkerFor(b)
+	eLinker := ioElementMapper{}.linkerFor(e)
+
+	a := bLinker.Next()
+
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	bLinker.SetNext(e)
 
 	if a != nil {
 		ioElementMapper{}.linkerFor(a).SetPrev(e)
@@ -112,10 +118,13 @@ func (l *ioList) InsertAfter(b, e *ioResult) {
 
 // InsertBefore inserts e before a.
 func (l *ioList) InsertBefore(a, e *ioResult) {
-	b := ioElementMapper{}.linkerFor(a).Prev()
-	ioElementMapper{}.linkerFor(e).SetNext(a)
-	ioElementMapper{}.linkerFor(e).SetPrev(b)
-	ioElementMapper{}.linkerFor(a).SetPrev(e)
+	aLinker := ioElementMapper{}.linkerFor(a)
+	eLinker := ioElementMapper{}.linkerFor(e)
+
+	b := aLinker.Prev()
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	aLinker.SetPrev(e)
 
 	if b != nil {
 		ioElementMapper{}.linkerFor(b).SetNext(e)

@@ -54,8 +54,9 @@ func (l *sessionList) Back() *Session {
 
 // PushFront inserts the element e at the front of list l.
 func (l *sessionList) PushFront(e *Session) {
-	sessionElementMapper{}.linkerFor(e).SetNext(l.head)
-	sessionElementMapper{}.linkerFor(e).SetPrev(nil)
+	linker := sessionElementMapper{}.linkerFor(e)
+	linker.SetNext(l.head)
+	linker.SetPrev(nil)
 
 	if l.head != nil {
 		sessionElementMapper{}.linkerFor(l.head).SetPrev(e)
@@ -68,8 +69,9 @@ func (l *sessionList) PushFront(e *Session) {
 
 // PushBack inserts the element e at the back of list l.
 func (l *sessionList) PushBack(e *Session) {
-	sessionElementMapper{}.linkerFor(e).SetNext(nil)
-	sessionElementMapper{}.linkerFor(e).SetPrev(l.tail)
+	linker := sessionElementMapper{}.linkerFor(e)
+	linker.SetNext(nil)
+	linker.SetPrev(l.tail)
 
 	if l.tail != nil {
 		sessionElementMapper{}.linkerFor(l.tail).SetNext(e)
@@ -98,10 +100,14 @@ func (l *sessionList) PushBackList(m *sessionList) {
 
 // InsertAfter inserts e after b.
 func (l *sessionList) InsertAfter(b, e *Session) {
-	a := sessionElementMapper{}.linkerFor(b).Next()
-	sessionElementMapper{}.linkerFor(e).SetNext(a)
-	sessionElementMapper{}.linkerFor(e).SetPrev(b)
-	sessionElementMapper{}.linkerFor(b).SetNext(e)
+	bLinker := sessionElementMapper{}.linkerFor(b)
+	eLinker := sessionElementMapper{}.linkerFor(e)
+
+	a := bLinker.Next()
+
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	bLinker.SetNext(e)
 
 	if a != nil {
 		sessionElementMapper{}.linkerFor(a).SetPrev(e)
@@ -112,10 +118,13 @@ func (l *sessionList) InsertAfter(b, e *Session) {
 
 // InsertBefore inserts e before a.
 func (l *sessionList) InsertBefore(a, e *Session) {
-	b := sessionElementMapper{}.linkerFor(a).Prev()
-	sessionElementMapper{}.linkerFor(e).SetNext(a)
-	sessionElementMapper{}.linkerFor(e).SetPrev(b)
-	sessionElementMapper{}.linkerFor(a).SetPrev(e)
+	aLinker := sessionElementMapper{}.linkerFor(a)
+	eLinker := sessionElementMapper{}.linkerFor(e)
+
+	b := aLinker.Prev()
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	aLinker.SetPrev(e)
 
 	if b != nil {
 		sessionElementMapper{}.linkerFor(b).SetNext(e)

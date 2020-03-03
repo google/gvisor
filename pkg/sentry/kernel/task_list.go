@@ -54,8 +54,9 @@ func (l *taskList) Back() *Task {
 
 // PushFront inserts the element e at the front of list l.
 func (l *taskList) PushFront(e *Task) {
-	taskElementMapper{}.linkerFor(e).SetNext(l.head)
-	taskElementMapper{}.linkerFor(e).SetPrev(nil)
+	linker := taskElementMapper{}.linkerFor(e)
+	linker.SetNext(l.head)
+	linker.SetPrev(nil)
 
 	if l.head != nil {
 		taskElementMapper{}.linkerFor(l.head).SetPrev(e)
@@ -68,8 +69,9 @@ func (l *taskList) PushFront(e *Task) {
 
 // PushBack inserts the element e at the back of list l.
 func (l *taskList) PushBack(e *Task) {
-	taskElementMapper{}.linkerFor(e).SetNext(nil)
-	taskElementMapper{}.linkerFor(e).SetPrev(l.tail)
+	linker := taskElementMapper{}.linkerFor(e)
+	linker.SetNext(nil)
+	linker.SetPrev(l.tail)
 
 	if l.tail != nil {
 		taskElementMapper{}.linkerFor(l.tail).SetNext(e)
@@ -98,10 +100,14 @@ func (l *taskList) PushBackList(m *taskList) {
 
 // InsertAfter inserts e after b.
 func (l *taskList) InsertAfter(b, e *Task) {
-	a := taskElementMapper{}.linkerFor(b).Next()
-	taskElementMapper{}.linkerFor(e).SetNext(a)
-	taskElementMapper{}.linkerFor(e).SetPrev(b)
-	taskElementMapper{}.linkerFor(b).SetNext(e)
+	bLinker := taskElementMapper{}.linkerFor(b)
+	eLinker := taskElementMapper{}.linkerFor(e)
+
+	a := bLinker.Next()
+
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	bLinker.SetNext(e)
 
 	if a != nil {
 		taskElementMapper{}.linkerFor(a).SetPrev(e)
@@ -112,10 +118,13 @@ func (l *taskList) InsertAfter(b, e *Task) {
 
 // InsertBefore inserts e before a.
 func (l *taskList) InsertBefore(a, e *Task) {
-	b := taskElementMapper{}.linkerFor(a).Prev()
-	taskElementMapper{}.linkerFor(e).SetNext(a)
-	taskElementMapper{}.linkerFor(e).SetPrev(b)
-	taskElementMapper{}.linkerFor(a).SetPrev(e)
+	aLinker := taskElementMapper{}.linkerFor(a)
+	eLinker := taskElementMapper{}.linkerFor(e)
+
+	b := aLinker.Prev()
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	aLinker.SetPrev(e)
 
 	if b != nil {
 		taskElementMapper{}.linkerFor(b).SetNext(e)

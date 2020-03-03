@@ -54,8 +54,9 @@ func (l *reassemblerList) Back() *reassembler {
 
 // PushFront inserts the element e at the front of list l.
 func (l *reassemblerList) PushFront(e *reassembler) {
-	reassemblerElementMapper{}.linkerFor(e).SetNext(l.head)
-	reassemblerElementMapper{}.linkerFor(e).SetPrev(nil)
+	linker := reassemblerElementMapper{}.linkerFor(e)
+	linker.SetNext(l.head)
+	linker.SetPrev(nil)
 
 	if l.head != nil {
 		reassemblerElementMapper{}.linkerFor(l.head).SetPrev(e)
@@ -68,8 +69,9 @@ func (l *reassemblerList) PushFront(e *reassembler) {
 
 // PushBack inserts the element e at the back of list l.
 func (l *reassemblerList) PushBack(e *reassembler) {
-	reassemblerElementMapper{}.linkerFor(e).SetNext(nil)
-	reassemblerElementMapper{}.linkerFor(e).SetPrev(l.tail)
+	linker := reassemblerElementMapper{}.linkerFor(e)
+	linker.SetNext(nil)
+	linker.SetPrev(l.tail)
 
 	if l.tail != nil {
 		reassemblerElementMapper{}.linkerFor(l.tail).SetNext(e)
@@ -98,10 +100,14 @@ func (l *reassemblerList) PushBackList(m *reassemblerList) {
 
 // InsertAfter inserts e after b.
 func (l *reassemblerList) InsertAfter(b, e *reassembler) {
-	a := reassemblerElementMapper{}.linkerFor(b).Next()
-	reassemblerElementMapper{}.linkerFor(e).SetNext(a)
-	reassemblerElementMapper{}.linkerFor(e).SetPrev(b)
-	reassemblerElementMapper{}.linkerFor(b).SetNext(e)
+	bLinker := reassemblerElementMapper{}.linkerFor(b)
+	eLinker := reassemblerElementMapper{}.linkerFor(e)
+
+	a := bLinker.Next()
+
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	bLinker.SetNext(e)
 
 	if a != nil {
 		reassemblerElementMapper{}.linkerFor(a).SetPrev(e)
@@ -112,10 +118,13 @@ func (l *reassemblerList) InsertAfter(b, e *reassembler) {
 
 // InsertBefore inserts e before a.
 func (l *reassemblerList) InsertBefore(a, e *reassembler) {
-	b := reassemblerElementMapper{}.linkerFor(a).Prev()
-	reassemblerElementMapper{}.linkerFor(e).SetNext(a)
-	reassemblerElementMapper{}.linkerFor(e).SetPrev(b)
-	reassemblerElementMapper{}.linkerFor(a).SetPrev(e)
+	aLinker := reassemblerElementMapper{}.linkerFor(a)
+	eLinker := reassemblerElementMapper{}.linkerFor(e)
+
+	b := aLinker.Prev()
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	aLinker.SetPrev(e)
 
 	if b != nil {
 		reassemblerElementMapper{}.linkerFor(b).SetNext(e)

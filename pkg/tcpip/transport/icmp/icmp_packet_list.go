@@ -54,8 +54,9 @@ func (l *icmpPacketList) Back() *icmpPacket {
 
 // PushFront inserts the element e at the front of list l.
 func (l *icmpPacketList) PushFront(e *icmpPacket) {
-	icmpPacketElementMapper{}.linkerFor(e).SetNext(l.head)
-	icmpPacketElementMapper{}.linkerFor(e).SetPrev(nil)
+	linker := icmpPacketElementMapper{}.linkerFor(e)
+	linker.SetNext(l.head)
+	linker.SetPrev(nil)
 
 	if l.head != nil {
 		icmpPacketElementMapper{}.linkerFor(l.head).SetPrev(e)
@@ -68,8 +69,9 @@ func (l *icmpPacketList) PushFront(e *icmpPacket) {
 
 // PushBack inserts the element e at the back of list l.
 func (l *icmpPacketList) PushBack(e *icmpPacket) {
-	icmpPacketElementMapper{}.linkerFor(e).SetNext(nil)
-	icmpPacketElementMapper{}.linkerFor(e).SetPrev(l.tail)
+	linker := icmpPacketElementMapper{}.linkerFor(e)
+	linker.SetNext(nil)
+	linker.SetPrev(l.tail)
 
 	if l.tail != nil {
 		icmpPacketElementMapper{}.linkerFor(l.tail).SetNext(e)
@@ -98,10 +100,14 @@ func (l *icmpPacketList) PushBackList(m *icmpPacketList) {
 
 // InsertAfter inserts e after b.
 func (l *icmpPacketList) InsertAfter(b, e *icmpPacket) {
-	a := icmpPacketElementMapper{}.linkerFor(b).Next()
-	icmpPacketElementMapper{}.linkerFor(e).SetNext(a)
-	icmpPacketElementMapper{}.linkerFor(e).SetPrev(b)
-	icmpPacketElementMapper{}.linkerFor(b).SetNext(e)
+	bLinker := icmpPacketElementMapper{}.linkerFor(b)
+	eLinker := icmpPacketElementMapper{}.linkerFor(e)
+
+	a := bLinker.Next()
+
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	bLinker.SetNext(e)
 
 	if a != nil {
 		icmpPacketElementMapper{}.linkerFor(a).SetPrev(e)
@@ -112,10 +118,13 @@ func (l *icmpPacketList) InsertAfter(b, e *icmpPacket) {
 
 // InsertBefore inserts e before a.
 func (l *icmpPacketList) InsertBefore(a, e *icmpPacket) {
-	b := icmpPacketElementMapper{}.linkerFor(a).Prev()
-	icmpPacketElementMapper{}.linkerFor(e).SetNext(a)
-	icmpPacketElementMapper{}.linkerFor(e).SetPrev(b)
-	icmpPacketElementMapper{}.linkerFor(a).SetPrev(e)
+	aLinker := icmpPacketElementMapper{}.linkerFor(a)
+	eLinker := icmpPacketElementMapper{}.linkerFor(e)
+
+	b := aLinker.Prev()
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	aLinker.SetPrev(e)
 
 	if b != nil {
 		icmpPacketElementMapper{}.linkerFor(b).SetNext(e)

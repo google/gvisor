@@ -54,8 +54,9 @@ func (l *weakRefList) Back() *WeakRef {
 
 // PushFront inserts the element e at the front of list l.
 func (l *weakRefList) PushFront(e *WeakRef) {
-	weakRefElementMapper{}.linkerFor(e).SetNext(l.head)
-	weakRefElementMapper{}.linkerFor(e).SetPrev(nil)
+	linker := weakRefElementMapper{}.linkerFor(e)
+	linker.SetNext(l.head)
+	linker.SetPrev(nil)
 
 	if l.head != nil {
 		weakRefElementMapper{}.linkerFor(l.head).SetPrev(e)
@@ -68,8 +69,9 @@ func (l *weakRefList) PushFront(e *WeakRef) {
 
 // PushBack inserts the element e at the back of list l.
 func (l *weakRefList) PushBack(e *WeakRef) {
-	weakRefElementMapper{}.linkerFor(e).SetNext(nil)
-	weakRefElementMapper{}.linkerFor(e).SetPrev(l.tail)
+	linker := weakRefElementMapper{}.linkerFor(e)
+	linker.SetNext(nil)
+	linker.SetPrev(l.tail)
 
 	if l.tail != nil {
 		weakRefElementMapper{}.linkerFor(l.tail).SetNext(e)
@@ -98,10 +100,14 @@ func (l *weakRefList) PushBackList(m *weakRefList) {
 
 // InsertAfter inserts e after b.
 func (l *weakRefList) InsertAfter(b, e *WeakRef) {
-	a := weakRefElementMapper{}.linkerFor(b).Next()
-	weakRefElementMapper{}.linkerFor(e).SetNext(a)
-	weakRefElementMapper{}.linkerFor(e).SetPrev(b)
-	weakRefElementMapper{}.linkerFor(b).SetNext(e)
+	bLinker := weakRefElementMapper{}.linkerFor(b)
+	eLinker := weakRefElementMapper{}.linkerFor(e)
+
+	a := bLinker.Next()
+
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	bLinker.SetNext(e)
 
 	if a != nil {
 		weakRefElementMapper{}.linkerFor(a).SetPrev(e)
@@ -112,10 +118,13 @@ func (l *weakRefList) InsertAfter(b, e *WeakRef) {
 
 // InsertBefore inserts e before a.
 func (l *weakRefList) InsertBefore(a, e *WeakRef) {
-	b := weakRefElementMapper{}.linkerFor(a).Prev()
-	weakRefElementMapper{}.linkerFor(e).SetNext(a)
-	weakRefElementMapper{}.linkerFor(e).SetPrev(b)
-	weakRefElementMapper{}.linkerFor(a).SetPrev(e)
+	aLinker := weakRefElementMapper{}.linkerFor(a)
+	eLinker := weakRefElementMapper{}.linkerFor(e)
+
+	b := aLinker.Prev()
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	aLinker.SetPrev(e)
 
 	if b != nil {
 		weakRefElementMapper{}.linkerFor(b).SetNext(e)

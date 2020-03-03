@@ -54,8 +54,9 @@ func (l *segmentList) Back() *segment {
 
 // PushFront inserts the element e at the front of list l.
 func (l *segmentList) PushFront(e *segment) {
-	segmentElementMapper{}.linkerFor(e).SetNext(l.head)
-	segmentElementMapper{}.linkerFor(e).SetPrev(nil)
+	linker := segmentElementMapper{}.linkerFor(e)
+	linker.SetNext(l.head)
+	linker.SetPrev(nil)
 
 	if l.head != nil {
 		segmentElementMapper{}.linkerFor(l.head).SetPrev(e)
@@ -68,8 +69,9 @@ func (l *segmentList) PushFront(e *segment) {
 
 // PushBack inserts the element e at the back of list l.
 func (l *segmentList) PushBack(e *segment) {
-	segmentElementMapper{}.linkerFor(e).SetNext(nil)
-	segmentElementMapper{}.linkerFor(e).SetPrev(l.tail)
+	linker := segmentElementMapper{}.linkerFor(e)
+	linker.SetNext(nil)
+	linker.SetPrev(l.tail)
 
 	if l.tail != nil {
 		segmentElementMapper{}.linkerFor(l.tail).SetNext(e)
@@ -98,10 +100,14 @@ func (l *segmentList) PushBackList(m *segmentList) {
 
 // InsertAfter inserts e after b.
 func (l *segmentList) InsertAfter(b, e *segment) {
-	a := segmentElementMapper{}.linkerFor(b).Next()
-	segmentElementMapper{}.linkerFor(e).SetNext(a)
-	segmentElementMapper{}.linkerFor(e).SetPrev(b)
-	segmentElementMapper{}.linkerFor(b).SetNext(e)
+	bLinker := segmentElementMapper{}.linkerFor(b)
+	eLinker := segmentElementMapper{}.linkerFor(e)
+
+	a := bLinker.Next()
+
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	bLinker.SetNext(e)
 
 	if a != nil {
 		segmentElementMapper{}.linkerFor(a).SetPrev(e)
@@ -112,10 +118,13 @@ func (l *segmentList) InsertAfter(b, e *segment) {
 
 // InsertBefore inserts e before a.
 func (l *segmentList) InsertBefore(a, e *segment) {
-	b := segmentElementMapper{}.linkerFor(a).Prev()
-	segmentElementMapper{}.linkerFor(e).SetNext(a)
-	segmentElementMapper{}.linkerFor(e).SetPrev(b)
-	segmentElementMapper{}.linkerFor(a).SetPrev(e)
+	aLinker := segmentElementMapper{}.linkerFor(a)
+	eLinker := segmentElementMapper{}.linkerFor(e)
+
+	b := aLinker.Prev()
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	aLinker.SetPrev(e)
 
 	if b != nil {
 		segmentElementMapper{}.linkerFor(b).SetNext(e)

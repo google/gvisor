@@ -54,8 +54,9 @@ func (l *messageList) Back() *message {
 
 // PushFront inserts the element e at the front of list l.
 func (l *messageList) PushFront(e *message) {
-	messageElementMapper{}.linkerFor(e).SetNext(l.head)
-	messageElementMapper{}.linkerFor(e).SetPrev(nil)
+	linker := messageElementMapper{}.linkerFor(e)
+	linker.SetNext(l.head)
+	linker.SetPrev(nil)
 
 	if l.head != nil {
 		messageElementMapper{}.linkerFor(l.head).SetPrev(e)
@@ -68,8 +69,9 @@ func (l *messageList) PushFront(e *message) {
 
 // PushBack inserts the element e at the back of list l.
 func (l *messageList) PushBack(e *message) {
-	messageElementMapper{}.linkerFor(e).SetNext(nil)
-	messageElementMapper{}.linkerFor(e).SetPrev(l.tail)
+	linker := messageElementMapper{}.linkerFor(e)
+	linker.SetNext(nil)
+	linker.SetPrev(l.tail)
 
 	if l.tail != nil {
 		messageElementMapper{}.linkerFor(l.tail).SetNext(e)
@@ -98,10 +100,14 @@ func (l *messageList) PushBackList(m *messageList) {
 
 // InsertAfter inserts e after b.
 func (l *messageList) InsertAfter(b, e *message) {
-	a := messageElementMapper{}.linkerFor(b).Next()
-	messageElementMapper{}.linkerFor(e).SetNext(a)
-	messageElementMapper{}.linkerFor(e).SetPrev(b)
-	messageElementMapper{}.linkerFor(b).SetNext(e)
+	bLinker := messageElementMapper{}.linkerFor(b)
+	eLinker := messageElementMapper{}.linkerFor(e)
+
+	a := bLinker.Next()
+
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	bLinker.SetNext(e)
 
 	if a != nil {
 		messageElementMapper{}.linkerFor(a).SetPrev(e)
@@ -112,10 +118,13 @@ func (l *messageList) InsertAfter(b, e *message) {
 
 // InsertBefore inserts e before a.
 func (l *messageList) InsertBefore(a, e *message) {
-	b := messageElementMapper{}.linkerFor(a).Prev()
-	messageElementMapper{}.linkerFor(e).SetNext(a)
-	messageElementMapper{}.linkerFor(e).SetPrev(b)
-	messageElementMapper{}.linkerFor(a).SetPrev(e)
+	aLinker := messageElementMapper{}.linkerFor(a)
+	eLinker := messageElementMapper{}.linkerFor(e)
+
+	b := aLinker.Prev()
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	aLinker.SetPrev(e)
 
 	if b != nil {
 		messageElementMapper{}.linkerFor(b).SetNext(e)

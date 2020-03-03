@@ -54,8 +54,9 @@ func (l *pendingSignalList) Back() *pendingSignal {
 
 // PushFront inserts the element e at the front of list l.
 func (l *pendingSignalList) PushFront(e *pendingSignal) {
-	pendingSignalElementMapper{}.linkerFor(e).SetNext(l.head)
-	pendingSignalElementMapper{}.linkerFor(e).SetPrev(nil)
+	linker := pendingSignalElementMapper{}.linkerFor(e)
+	linker.SetNext(l.head)
+	linker.SetPrev(nil)
 
 	if l.head != nil {
 		pendingSignalElementMapper{}.linkerFor(l.head).SetPrev(e)
@@ -68,8 +69,9 @@ func (l *pendingSignalList) PushFront(e *pendingSignal) {
 
 // PushBack inserts the element e at the back of list l.
 func (l *pendingSignalList) PushBack(e *pendingSignal) {
-	pendingSignalElementMapper{}.linkerFor(e).SetNext(nil)
-	pendingSignalElementMapper{}.linkerFor(e).SetPrev(l.tail)
+	linker := pendingSignalElementMapper{}.linkerFor(e)
+	linker.SetNext(nil)
+	linker.SetPrev(l.tail)
 
 	if l.tail != nil {
 		pendingSignalElementMapper{}.linkerFor(l.tail).SetNext(e)
@@ -98,10 +100,14 @@ func (l *pendingSignalList) PushBackList(m *pendingSignalList) {
 
 // InsertAfter inserts e after b.
 func (l *pendingSignalList) InsertAfter(b, e *pendingSignal) {
-	a := pendingSignalElementMapper{}.linkerFor(b).Next()
-	pendingSignalElementMapper{}.linkerFor(e).SetNext(a)
-	pendingSignalElementMapper{}.linkerFor(e).SetPrev(b)
-	pendingSignalElementMapper{}.linkerFor(b).SetNext(e)
+	bLinker := pendingSignalElementMapper{}.linkerFor(b)
+	eLinker := pendingSignalElementMapper{}.linkerFor(e)
+
+	a := bLinker.Next()
+
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	bLinker.SetNext(e)
 
 	if a != nil {
 		pendingSignalElementMapper{}.linkerFor(a).SetPrev(e)
@@ -112,10 +118,13 @@ func (l *pendingSignalList) InsertAfter(b, e *pendingSignal) {
 
 // InsertBefore inserts e before a.
 func (l *pendingSignalList) InsertBefore(a, e *pendingSignal) {
-	b := pendingSignalElementMapper{}.linkerFor(a).Prev()
-	pendingSignalElementMapper{}.linkerFor(e).SetNext(a)
-	pendingSignalElementMapper{}.linkerFor(e).SetPrev(b)
-	pendingSignalElementMapper{}.linkerFor(a).SetPrev(e)
+	aLinker := pendingSignalElementMapper{}.linkerFor(a)
+	eLinker := pendingSignalElementMapper{}.linkerFor(e)
+
+	b := aLinker.Prev()
+	eLinker.SetNext(a)
+	eLinker.SetPrev(b)
+	aLinker.SetPrev(e)
 
 	if b != nil {
 		pendingSignalElementMapper{}.linkerFor(b).SetNext(e)
