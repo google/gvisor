@@ -1,8 +1,10 @@
 ---
 title: gVisor Security Basics - Part 1
 layout: post
-author: jsprad, zkoopmans
-permlink: /blog/:title/
+authors:
+- jsprad
+- zkoopmans
+permalink: /blog/2019/11/18/gvisor-security-basics-part-1/
 ---
 
 # Part 1 - Introduction
@@ -87,7 +89,7 @@ Least-Privilege is applied throughout gVisor. Each component and more importantl
 
 ----
 
-![Figure 2](./2019-11-18-security-basics-figure2.png)
+![Figure 2](/assets/images/2019-11-18-security-basics-figure2.png)
 
 Figure 2: runsc components and their privileges.
 
@@ -136,11 +138,11 @@ So, of the 350 syscalls in the Linux kernel, the Sentry needs to implement only 
 
 ----
 
-![Figure 3](./2019-11-18-security-basics-figure3.png)
+![Figure 3](/assets/images/2019-11-18-security-basics-figure3.png)
 
 Figure 3: Reduction of Attack Surface of the Syscall Table. Note that the Senty's Syscall Emulation Layer keeps the Containerized Process from ever calling the Host OS.
 
----
+----
 
 ## Secure-by-default
 

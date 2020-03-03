@@ -18,3 +18,10 @@ defaults:
       path: ""
     values:
       layout: default
+authors:
+  jsprad:
+    name: Jeremiah Spradlin
+    email: jsprad@google.com
+  zkoopmans:
+    name: Zach Koopmans
+    email: zkoopmans@google.com

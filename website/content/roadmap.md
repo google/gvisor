@@ -16,23 +16,22 @@ feature work.
 
 Most gVisor work is focused on four areas.
 
-* [Performance][performance]: overall sandbox performance, including platform performance, is
-  a critical area for investment. This includes, e.g. network performance
-  (throughput and latency), file system performance (metadata and actual I/O),
-  application switch and fault costs, etc. The goal of gVisor is to provide
-  sandboxing without a material performance or efficiency impact on all but the
-  most performance-sensitive applications.
+* [Performance][performance]: overall sandbox performance, including platform
+  performance, is a critical area for investment. This includes: network
+  performance (throughput and latency), file system performance (metadata and
+  data I/O), application switch and fault costs, etc. The goal of gVisor is to
+  provide sandboxing without a material performance or efficiency impact on all
+  but the most performance-sensitive applications.
 
-* [Compatibility][compatibility]: supporting a wide range of applications requires supporting a
-  large system API, including special system files (e.g. proc, sys, dev, etc.).
-  The goal of gVisor is to support the broad set of applications that depend on
-  a generic Linux API, rather than a specific kernel version (e.g. system
-  administration tools, or tools that depend on kernel internals).
+* [Compatibility][compatibility]: supporting a wide range of applications
+  requires supporting a large system API, including special system files (e.g.
+  proc, sys, dev, etc.). The goal of gVisor is to support the broad set of
+  applications that depend on a generic Linux API, rather than a specific kernel
+  version.
 
-* [Infrastructure][infrastructure]: the above performance and compatibility
-  goals require aggressive testing and coverage, and continuous improvement.
-  This includes adding appropriate system call coverage, end-to-end suites and
-  runtime tests.
+* [Infrastructure & tooling][infrastructure]: the above goals require aggressive
+  testing and coverage, and well-established processes. This includes adding
+  appropriate system call coverage, end-to-end suites and runtime tests.
 
 * [Integration][integration]: Container infrastructure is evolving rapidly and
   becoming more complex, and gVisor must continuously implement relevant and
@@ -52,4 +51,4 @@ are available via the [Installation instructions](/docs/user_guide/install/).
 [performance]: https://github.com/google/gvisor/issues?q=is%3Aopen+is%3Aissue+label%3A%22area%3A+performance%22
 [integration]: https://github.com/google/gvisor/issues?q=is%3Aopen+is%3Aissue+label%3A%22area%3A+integration%22
 [compatibility]: https://github.com/google/gvisor/issues?q=is%3Aopen+is%3Aissue+label%3A%22area%3A+compatibility%22
-[infrastructure]: https://github.com/google/gvisor/issues?q=is%3Aopen+is%3Aissue+label%3A%22area%3A+infrastructure%22
+[infrastructure]: https://github.com/google/gvisor/issues?q=is%3Aopen+is%3Aissue+label%3A%22area%3A+tooling%22
