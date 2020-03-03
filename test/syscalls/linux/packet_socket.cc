@@ -417,6 +417,19 @@ TEST_P(CookedPacketTest, BindDrop) {
   EXPECT_THAT(RetryEINTR(poll)(&pfd, 1, 1000), SyscallSucceedsWithValue(0));
 }
 
+// Bind with invalid address.
+TEST_P(CookedPacketTest, BindFail) {
+  // Null address.
+  ASSERT_THAT(bind(socket_, nullptr, sizeof(struct sockaddr)),
+              SyscallFailsWithErrno(EFAULT));
+
+  // Address of size 1.
+  uint8_t addr = 0;
+  ASSERT_THAT(
+      bind(socket_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
+      SyscallFailsWithErrno(EINVAL));
+}
+
 INSTANTIATE_TEST_SUITE_P(AllInetTests, CookedPacketTest,
                          ::testing::Values(ETH_P_IP, ETH_P_ALL));
 

@@ -168,16 +168,15 @@ class PosixImpl final : public stub::Posix::Service {
   }
 };
 
-/* Parse command line options. Returns a pointer to the first argument
- * beyond the options.
- */
+// Parse command line options. Returns a pointer to the first argument beyond
+// the options.
 void parse_command_line_options(int argc, char *argv[], std::string *ip,
                                 int *port) {
   static struct option options[] = {{"ip", required_argument, NULL, 1},
                                     {"port", required_argument, NULL, 2},
                                     {0, 0, 0, 0}};
 
-  /* Parse the arguments. */
+  // Parse the arguments.
   int c;
   while ((c = getopt_long(argc, argv, "", options, NULL)) > 0) {
     if (c == 1) {

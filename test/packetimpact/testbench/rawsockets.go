@@ -15,6 +15,7 @@
 package testbench
 
 import (
+	"encoding/binary"
 	"flag"
 	"math"
 	"net"
@@ -22,6 +23,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 var device = flag.String("device", "", "local device for test packets")
@@ -30,6 +32,12 @@ var device = flag.String("device", "", "local device for test packets")
 type Sniffer struct {
 	t  *testing.T
 	fd int
+}
+
+func htons(x uint16) uint16 {
+	buf := [2]byte{}
+	binary.BigEndian.PutUint16(buf[:], x)
+	return usermem.ByteOrder.Uint16(buf[:])
 }
 
 // NewSniffer creates a Sniffer connected to *device.

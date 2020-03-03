@@ -43,8 +43,8 @@ gazelle_dependencies()
 go_repository(
     name = "org_golang_x_sys",
     importpath = "golang.org/x/sys",
-    sum = "h1:+R4KGOnez64A81RvjARKc4UT5/tI9ujCIVX+P5KiHuI=",
-    version = "v0.0.0-20190412213103-97732733099d",
+    sum = "h1:uYVVQ9WP/Ds2ROhcaGPeIdVq0RIXVLwsHlnvJ+cT1So=",
+    version = "v0.0.0-20200302150141-5c8b2ff67527",
 )
 
 # Load C++ rules.

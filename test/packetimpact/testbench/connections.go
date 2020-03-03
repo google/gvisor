@@ -72,6 +72,10 @@ func pickPort() (int, uint16, error) {
 	return fd, uint16(newSockAddrInet4.Port), nil
 }
 
+// tcpLayerIndex is the position of the TCP layer in the TCPIPv4 connection. It
+// is the third, after Ethernet and IPv4.
+const tcpLayerIndex int = 2
+
 // NewTCPIPv4 creates a new TCPIPv4 connection with reasonable defaults.
 func NewTCPIPv4(t *testing.T, dut DUT, outgoingTCP, incomingTCP TCP) TCPIPv4 {
 	lMAC, err := tcpip.ParseMACAddress(*localMAC)
@@ -148,7 +152,7 @@ func (conn *TCPIPv4) Send(tcp TCP) {
 		tcp.AckNum = &conn.remoteSeqNum
 	}
 	layersToSend := deepcopy.Copy(conn.outgoing).(Layers)
-	err := mergo.Merge(layersToSend[2], tcp, mergo.WithOverride)
+	err := mergo.Merge(layersToSend[tcpLayerIndex], tcp, mergo.WithOverride)
 	if err != nil {
 		conn.t.Fatalf("can't merge outgoing TCP packet: %s", err)
 	}
@@ -159,7 +163,7 @@ func (conn *TCPIPv4) Send(tcp TCP) {
 	conn.injector.Send(outBytes)
 
 	// Compute the next TCP sequence number.
-	for i := 3; i < len(layersToSend); i++ {
+	for i := tcpLayerIndex + 1; i < len(layersToSend); i++ {
 		conn.localSeqNum += uint32(layersToSend[i].length())
 	}
 	if tcp.Flags != nil && *tcp.Flags&(header.TCPFlagSyn|header.TCPFlagFin) != 0 {
@@ -187,12 +191,12 @@ func (conn *TCPIPv4) Recv(timeout time.Duration) *TCP {
 		if !conn.incoming.match(layers) {
 			continue // Ignore packets that don't match the expected incoming.
 		}
-		tcpHeader := (layers[2]).(*TCP)
+		tcpHeader := (layers[tcpLayerIndex]).(*TCP)
 		conn.remoteSeqNum = *tcpHeader.SeqNum
 		if *tcpHeader.Flags&(header.TCPFlagSyn|header.TCPFlagFin) != 0 {
 			conn.remoteSeqNum++
 		}
-		for i := 3; i < len(layers); i++ {
+		for i := tcpLayerIndex + 1; i < len(layers); i++ {
 			conn.remoteSeqNum += uint32(layers[i].length())
 		}
 		return tcpHeader

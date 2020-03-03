@@ -59,6 +59,7 @@ func NewDUT(t *testing.T) DUT {
 
 // SocketWithErrno calls socket on the DUT and returns the fd and errno.
 func (dut *DUT) SocketWithErrno(domain, typ, proto int32) (int32, error) {
+	dut.t.Helper()
 	req := grpcpb.SocketRequest{
 		Domain:   domain,
 		Type:     typ,
@@ -75,6 +76,7 @@ func (dut *DUT) SocketWithErrno(domain, typ, proto int32) (int32, error) {
 // Socket calls socket on the DUT and returns the file descriptor. If socket
 // fails on the DUT, the test ends.
 func (dut *DUT) Socket(domain, typ, proto int32) int32 {
+	dut.t.Helper()
 	fd, err := dut.SocketWithErrno(domain, typ, proto)
 	if fd < 0 {
 		dut.t.Fatalf("failed to create socket: %s", err)
@@ -83,6 +85,7 @@ func (dut *DUT) Socket(domain, typ, proto int32) int32 {
 }
 
 func (dut *DUT) sockaddrToProto(sa unix.Sockaddr) *grpcpb.Sockaddr {
+	dut.t.Helper()
 	switch s := sa.(type) {
 	case *unix.SockaddrInet4:
 		return &grpcpb.Sockaddr{
@@ -112,6 +115,7 @@ func (dut *DUT) sockaddrToProto(sa unix.Sockaddr) *grpcpb.Sockaddr {
 }
 
 func (dut *DUT) protoToSockaddr(sa *grpcpb.Sockaddr) unix.Sockaddr {
+	dut.t.Helper()
 	switch s := sa.Sockaddr.(type) {
 	case *grpcpb.Sockaddr_In:
 		ret := unix.SockaddrInet4{
@@ -146,6 +150,7 @@ func (dut *DUT) BindWithErrno(fd int32, sa unix.Sockaddr) (int32, error) {
 
 // Bind calls bind on the DUT and causes a fatal test failure if it doesn't succeed.
 func (dut *DUT) Bind(fd int32, sa unix.Sockaddr) {
+	dut.t.Helper()
 	ret, err := dut.BindWithErrno(fd, sa)
 	if ret != 0 {
 		dut.t.Fatalf("failed to bind socket: %s", err)
@@ -154,6 +159,7 @@ func (dut *DUT) Bind(fd int32, sa unix.Sockaddr) {
 
 // GetSockNameWithErrno calls getsockname on the DUT.
 func (dut *DUT) GetSockNameWithErrno(sockfd int32) (int32, unix.Sockaddr, error) {
+	dut.t.Helper()
 	req := grpcpb.GetSockNameRequest{
 		Sockfd: sockfd,
 	}
@@ -168,6 +174,7 @@ func (dut *DUT) GetSockNameWithErrno(sockfd int32) (int32, unix.Sockaddr, error)
 // GetSockName calls getsockname on the DUT and causes a fatal test failure if
 // it doens't succeed.
 func (dut *DUT) GetSockName(sockfd int32) unix.Sockaddr {
+	dut.t.Helper()
 	ret, sa, err := dut.GetSockNameWithErrno(sockfd)
 	if ret != 0 {
 		dut.t.Fatalf("failed to getsockname: %s", err)
@@ -177,6 +184,7 @@ func (dut *DUT) GetSockName(sockfd int32) unix.Sockaddr {
 
 // ListenWithErrno calls listen on the DUT.
 func (dut *DUT) ListenWithErrno(sockfd, backlog int32) (int32, error) {
+	dut.t.Helper()
 	req := grpcpb.ListenRequest{
 		Sockfd:  sockfd,
 		Backlog: backlog,
@@ -193,6 +201,7 @@ func (dut *DUT) ListenWithErrno(sockfd, backlog int32) (int32, error) {
 // Listen calls listen on the DUT and causes a fatal test failure if it doesn't
 // succeed.
 func (dut *DUT) Listen(sockfd, backlog int32) {
+	dut.t.Helper()
 	ret, err := dut.ListenWithErrno(sockfd, backlog)
 	if ret != 0 {
 		dut.t.Fatalf("failed to listen: %s", err)
@@ -201,6 +210,7 @@ func (dut *DUT) Listen(sockfd, backlog int32) {
 
 // AcceptWithErrno calls accept on the DUT.
 func (dut *DUT) AcceptWithErrno(sockfd int32) (int32, unix.Sockaddr, error) {
+	dut.t.Helper()
 	req := grpcpb.AcceptRequest{
 		Sockfd: sockfd,
 	}
@@ -216,6 +226,7 @@ func (dut *DUT) AcceptWithErrno(sockfd int32) (int32, unix.Sockaddr, error) {
 // Accept calls accept on the DUT and causes a fatal test failure if it doesn't
 // succeed.
 func (dut *DUT) Accept(sockfd int32) (int32, unix.Sockaddr) {
+	dut.t.Helper()
 	fd, sa, err := dut.AcceptWithErrno(sockfd)
 	if fd < 0 {
 		dut.t.Fatalf("failed to accept: %s", err)
@@ -225,6 +236,7 @@ func (dut *DUT) Accept(sockfd int32) (int32, unix.Sockaddr) {
 
 // SetSockOptWithErrno calls setsockopt on the DUT.
 func (dut *DUT) SetSockOptWithErrno(sockfd, level, optname int32, optval []byte) (int32, error) {
+	dut.t.Helper()
 	req := grpcpb.SetSockOptRequest{
 		Sockfd:  sockfd,
 		Level:   level,
@@ -243,6 +255,7 @@ func (dut *DUT) SetSockOptWithErrno(sockfd, level, optname int32, optval []byte)
 // SetSockOpt calls setsockopt on the DUT and causes a fatal test failure if it
 // doesn't succeed.
 func (dut *DUT) SetSockOpt(sockfd, level, optname int32, optval []byte) {
+	dut.t.Helper()
 	ret, err := dut.SetSockOptWithErrno(sockfd, level, optname, optval)
 	if ret != 0 {
 		dut.t.Fatalf("failed to SetSockOpt: %s", err)
@@ -252,6 +265,7 @@ func (dut *DUT) SetSockOpt(sockfd, level, optname int32, optval []byte) {
 // SetSockOptTimevalWithErrno calls setsockopt with the timeval converted to
 // bytes.
 func (dut *DUT) SetSockOptTimevalWithErrno(fd, level, opt int, tv *unix.Timeval) (int32, error) {
+	dut.t.Helper()
 	var optval [16]byte
 	binary.LittleEndian.PutUint64(optval[0:8], uint64(tv.Sec))
 	binary.LittleEndian.PutUint64(optval[8:16], uint64(tv.Usec))
@@ -261,6 +275,7 @@ func (dut *DUT) SetSockOptTimevalWithErrno(fd, level, opt int, tv *unix.Timeval)
 // SetSockOptTimeval calls setsockopt on the DUT and causes a fatal test failure
 // if it doesn't succeed.
 func (dut *DUT) SetSockOptTimeval(fd, level, opt int, tv *unix.Timeval) {
+	dut.t.Helper()
 	ret, err := dut.SetSockOptTimevalWithErrno(fd, level, opt, tv)
 	if ret != 0 {
 		dut.t.Fatalf("failed to SetSockOptTimeval: %s", err)
@@ -269,6 +284,7 @@ func (dut *DUT) SetSockOptTimeval(fd, level, opt int, tv *unix.Timeval) {
 
 // CloseWithErrno calls close on the DUT.
 func (dut *DUT) CloseWithErrno(fd int32) (int32, error) {
+	dut.t.Helper()
 	req := grpcpb.CloseRequest{
 		Fd: fd,
 	}
@@ -284,6 +300,7 @@ func (dut *DUT) CloseWithErrno(fd int32) (int32, error) {
 // Close calls close on the DUT and causes a fatal test failure if it doesn't
 // succeed.
 func (dut *DUT) Close(fd int32) {
+	dut.t.Helper()
 	ret, err := dut.CloseWithErrno(fd)
 	if ret != 0 {
 		dut.t.Fatalf("failed to close: %s", err)
@@ -292,6 +309,7 @@ func (dut *DUT) Close(fd int32) {
 
 // CreateListener makes a new TCP connection.  If it fails, the test ends.
 func (dut *DUT) CreateListener(typ, proto, backlog int32) (int32, uint16) {
+	dut.t.Helper()
 	addr := net.ParseIP(*remoteIP)
 	var fd int32
 	if addr.To4() != nil {

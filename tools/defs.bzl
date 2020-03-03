@@ -207,6 +207,8 @@ def proto_library(name, srcs, deps = [], has_services = 0, **kwargs):
     Args:
       name: the name to which _proto, _go_proto, etc, will be appended.
       srcs: the proto sources.
+      deps: for the proto library and the go_proto_library.
+      has_services: 1 to build gRPC code, otherwise 0.
       **kwargs: standard proto_library arguments.
     """
     _proto_library(

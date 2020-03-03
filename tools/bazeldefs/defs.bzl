@@ -34,7 +34,6 @@ def proto_library(has_services = None, **kwargs):
         **kwargs
     )
 
-
 def go_grpc_library(name, srcs, deps, **kwargs):
     _go_grpc_library(
         name = name,
@@ -79,8 +78,9 @@ def go_proto_library(name, proto, deps = [], **kwargs):
         **kwargs
     )
 
-def go_test(name, **kwargs):
-    library = kwargs.pop("library", None)
+def go_test(name, pure = False, library = None, **kwargs):
+    if pure:
+        kwargs["pure"] = "on"
     if library:
         kwargs["embed"] = [library]
     _go_test(

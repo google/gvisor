@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "cc_binary")
+load("//tools:defs.bzl", "cc_binary", "grpcpp")
 
 package(
     default_visibility = ["//test/packetimpact:__subpackages__"],
@@ -15,8 +15,8 @@ cc_binary(
     ],
     linkstatic = 1,
     deps = [
+        grpcpp,
         "//test/packetimpact/proto:stub_cc_grpc_proto",
         "//test/packetimpact/proto:stub_cc_proto",
-        "@com_github_grpc_grpc//:grpc++",
     ],
 )

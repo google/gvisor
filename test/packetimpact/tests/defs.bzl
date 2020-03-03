@@ -1,4 +1,6 @@
-"""Defines a rule for packetimpact test targets."""
+"""Defines rules for packetimpact test targets."""
+
+load("//tools:defs.bzl", "go_test")
 
 def _packetimpact_test_impl(ctx):
     testbench = ctx.executable._testbench
@@ -60,42 +62,48 @@ _packetimpact_test = rule(
 
 PACKETIMPACT_TAGS = ["local", "manual"]
 
-def packetimpact_linux_test(name, **kwargs):
+def packetimpact_linux_test(name, test_binary, **kwargs):
     """Add a packetimpact test on linux.
 
     Args:
         name: name of the test
+        test_binary: the testbench binary
         **kwargs: all the other args, forwarded to _packetimpact_test
     """
-    if "tags" not in kwargs:
-        kwargs["tags"] = PACKETIMPACT_TAGS
-    if "test_binary" not in kwargs:
-        kwargs["test_binary"] = ":" + name + "_test"
     _packetimpact_test(
         name = name + "_linux_test",
+        test_binary = test_binary,
         flags = ["--dut_platform", "linux"],
+        tags = PACKETIMPACT_TAGS,
         **kwargs
     )
 
-def packetimpact_netstack_test(name, **kwargs):
+def packetimpact_netstack_test(name, test_binary, **kwargs):
     """Add a packetimpact test on netstack.
 
     Args:
         name: name of the test
+        test_binary: the testbench binary
         **kwargs: all the other args, forwarded to _packetimpact_test
     """
-    if "tags" not in kwargs:
-        kwargs["tags"] = PACKETIMPACT_TAGS
-    if "test_binary" not in kwargs:
-        kwargs["test_binary"] = ":" + name + "_test"
     _packetimpact_test(
         name = name + "_netstack_test",
+        test_binary = test_binary,
         # This is the default runtime unless
         # "--test_arg=--runtime=OTHER_RUNTIME" is used to override the value.
         flags = ["--dut_platform", "netstack", "--runtime", "runsc-d"],
+        tags = PACKETIMPACT_TAGS,
         **kwargs
     )
 
-def packetimpact_test(**kwargs):
-    packetimpact_linux_test(**kwargs)
-    packetimpact_netstack_test(**kwargs)
+def packetimpact_go_test(name, size = "small", pure = True, **kwargs):
+    test_binary = name + "_test"
+    go_test(
+        name = test_binary,
+        size = size,
+        pure = pure,
+        tags = PACKETIMPACT_TAGS,
+        **kwargs
+    )
+    packetimpact_linux_test(name = name, test_binary = test_binary)
+    packetimpact_netstack_test(name = name, test_binary = test_binary)

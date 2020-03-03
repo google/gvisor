@@ -10,13 +10,13 @@ go_library(
     srcs = [
         "connections.go",
         "dut.go",
-        "endian_unsafe.go",
         "layers.go",
         "rawsockets.go",
     ],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/header",
+        "//pkg/usermem",
         "//test/packetimpact/proto:stub_go_grpc_proto",
         "//test/packetimpact/proto:stub_go_proto",
         "@com_github_google_go-cmp//cmp:go_default_library",
