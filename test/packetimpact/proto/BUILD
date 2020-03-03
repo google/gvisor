@@ -8,4 +8,5 @@ package(
 proto_library(
     name = "stub",
     srcs = ["stub.proto"],
+    has_services = 1,
 )
