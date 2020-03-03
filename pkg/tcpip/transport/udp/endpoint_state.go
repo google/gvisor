@@ -69,6 +69,9 @@ func (e *endpoint) afterLoad() {
 
 // Resume implements tcpip.ResumableEndpoint.Resume.
 func (e *endpoint) Resume(s *stack.Stack) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	e.stack = s
 
 	for _, m := range e.multicastMemberships {
