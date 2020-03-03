@@ -350,3 +350,9 @@ cc_library(
         ":save_util",
     ],
 )
+
+cc_library(
+    name = "temp_umask",
+    testonly = 1,
+    hdrs = ["temp_umask.h"],
+)

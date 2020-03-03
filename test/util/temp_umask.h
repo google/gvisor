@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef GVISOR_TEST_SYSCALLS_TEMP_UMASK_H_
-#define GVISOR_TEST_SYSCALLS_TEMP_UMASK_H_
+#ifndef GVISOR_TEST_UTIL_TEMP_UMASK_H_
+#define GVISOR_TEST_UTIL_TEMP_UMASK_H_
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -36,4 +36,4 @@ class TempUmask {
 }  // namespace testing
 }  // namespace gvisor
 
-#endif  // GVISOR_TEST_SYSCALLS_TEMP_UMASK_H_
+#endif  // GVISOR_TEST_UTIL_TEMP_UMASK_H_

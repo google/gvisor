@@ -19,11 +19,11 @@
 #include <unistd.h>
 
 #include "gtest/gtest.h"
-#include "test/syscalls/linux/temp_umask.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/temp_path.h"
+#include "test/util/temp_umask.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
