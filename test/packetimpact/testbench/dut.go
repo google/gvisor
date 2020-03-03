@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	grpcpb "gvisor.dev/gvisor/test/packetimpact/proto/stub_go_grpc_proto"
+	pb "gvisor.dev/gvisor/test/packetimpact/proto/stub_go_grpc_proto"
 
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
@@ -39,7 +39,7 @@ var rpcKeepalive = flag.Duration("rpc_keepalive", 10*time.Second, "gRPC keepaliv
 // DUT communicates with the DUT to force it to make POSIX calls.
 type DUT struct {
 	t    *testing.T
-	stub grpcpb.PosixClient
+	stub pb.PosixClient
 }
 
 // NewDUT creates a new connection with the DUT over gRPC.
@@ -50,7 +50,7 @@ func NewDUT(t *testing.T) DUT {
 	if err != nil {
 		t.Fatalf("failed to grpc.Dial(%s): %s", stubAddress, err)
 	}
-	stub := grpcpb.NewPosixClient(conn)
+	stub := pb.NewPosixClient(conn)
 	return DUT{
 		t:    t,
 		stub: stub,
@@ -60,7 +60,7 @@ func NewDUT(t *testing.T) DUT {
 // SocketWithErrno calls socket on the DUT and returns the fd and errno.
 func (dut *DUT) SocketWithErrno(domain, typ, proto int32) (int32, error) {
 	dut.t.Helper()
-	req := grpcpb.SocketRequest{
+	req := pb.SocketRequest{
 		Domain:   domain,
 		Type:     typ,
 		Protocol: proto,
@@ -84,13 +84,13 @@ func (dut *DUT) Socket(domain, typ, proto int32) int32 {
 	return fd
 }
 
-func (dut *DUT) sockaddrToProto(sa unix.Sockaddr) *grpcpb.Sockaddr {
+func (dut *DUT) sockaddrToProto(sa unix.Sockaddr) *pb.Sockaddr {
 	dut.t.Helper()
 	switch s := sa.(type) {
 	case *unix.SockaddrInet4:
-		return &grpcpb.Sockaddr{
-			Sockaddr: &grpcpb.Sockaddr_In{
-				In: &grpcpb.SockaddrIn{
+		return &pb.Sockaddr{
+			Sockaddr: &pb.Sockaddr_In{
+				In: &pb.SockaddrIn{
 					Family: unix.AF_INET,
 					Port:   uint32(s.Port),
 					Addr:   s.Addr[:],
@@ -98,9 +98,9 @@ func (dut *DUT) sockaddrToProto(sa unix.Sockaddr) *grpcpb.Sockaddr {
 			},
 		}
 	case *unix.SockaddrInet6:
-		return &grpcpb.Sockaddr{
-			Sockaddr: &grpcpb.Sockaddr_In6{
-				In6: &grpcpb.SockaddrIn6{
+		return &pb.Sockaddr{
+			Sockaddr: &pb.Sockaddr_In6{
+				In6: &pb.SockaddrIn6{
 					Family:   unix.AF_INET6,
 					Port:     uint32(s.Port),
 					Flowinfo: 0,
@@ -114,16 +114,16 @@ func (dut *DUT) sockaddrToProto(sa unix.Sockaddr) *grpcpb.Sockaddr {
 	return nil
 }
 
-func (dut *DUT) protoToSockaddr(sa *grpcpb.Sockaddr) unix.Sockaddr {
+func (dut *DUT) protoToSockaddr(sa *pb.Sockaddr) unix.Sockaddr {
 	dut.t.Helper()
 	switch s := sa.Sockaddr.(type) {
-	case *grpcpb.Sockaddr_In:
+	case *pb.Sockaddr_In:
 		ret := unix.SockaddrInet4{
 			Port: int(s.In.GetPort()),
 		}
 		copy(ret.Addr[:], s.In.GetAddr())
 		return &ret
-	case *grpcpb.Sockaddr_In6:
+	case *pb.Sockaddr_In6:
 		ret := unix.SockaddrInet6{
 			Port:   int(s.In6.GetPort()),
 			ZoneId: s.In6.GetScopeId(),
@@ -136,7 +136,8 @@ func (dut *DUT) protoToSockaddr(sa *grpcpb.Sockaddr) unix.Sockaddr {
 
 // BindWithErrno calls bind on the DUT.
 func (dut *DUT) BindWithErrno(fd int32, sa unix.Sockaddr) (int32, error) {
-	req := grpcpb.BindRequest{
+	dut.t.Helper()
+	req := pb.BindRequest{
 		Sockfd: fd,
 		Addr:   dut.sockaddrToProto(sa),
 	}
@@ -160,7 +161,7 @@ func (dut *DUT) Bind(fd int32, sa unix.Sockaddr) {
 // GetSockNameWithErrno calls getsockname on the DUT.
 func (dut *DUT) GetSockNameWithErrno(sockfd int32) (int32, unix.Sockaddr, error) {
 	dut.t.Helper()
-	req := grpcpb.GetSockNameRequest{
+	req := pb.GetSockNameRequest{
 		Sockfd: sockfd,
 	}
 	ctx := context.Background()
@@ -185,7 +186,7 @@ func (dut *DUT) GetSockName(sockfd int32) unix.Sockaddr {
 // ListenWithErrno calls listen on the DUT.
 func (dut *DUT) ListenWithErrno(sockfd, backlog int32) (int32, error) {
 	dut.t.Helper()
-	req := grpcpb.ListenRequest{
+	req := pb.ListenRequest{
 		Sockfd:  sockfd,
 		Backlog: backlog,
 	}
@@ -211,7 +212,7 @@ func (dut *DUT) Listen(sockfd, backlog int32) {
 // AcceptWithErrno calls accept on the DUT.
 func (dut *DUT) AcceptWithErrno(sockfd int32) (int32, unix.Sockaddr, error) {
 	dut.t.Helper()
-	req := grpcpb.AcceptRequest{
+	req := pb.AcceptRequest{
 		Sockfd: sockfd,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
@@ -237,7 +238,7 @@ func (dut *DUT) Accept(sockfd int32) (int32, unix.Sockaddr) {
 // SetSockOptWithErrno calls setsockopt on the DUT.
 func (dut *DUT) SetSockOptWithErrno(sockfd, level, optname int32, optval []byte) (int32, error) {
 	dut.t.Helper()
-	req := grpcpb.SetSockOptRequest{
+	req := pb.SetSockOptRequest{
 		Sockfd:  sockfd,
 		Level:   level,
 		Optname: optname,
@@ -285,7 +286,7 @@ func (dut *DUT) SetSockOptTimeval(fd, level, opt int, tv *unix.Timeval) {
 // CloseWithErrno calls close on the DUT.
 func (dut *DUT) CloseWithErrno(fd int32) (int32, error) {
 	dut.t.Helper()
-	req := grpcpb.CloseRequest{
+	req := pb.CloseRequest{
 		Fd: fd,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
