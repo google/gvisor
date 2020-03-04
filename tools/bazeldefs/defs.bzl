@@ -11,7 +11,6 @@ load("@pydeps//:requirements.bzl", _py_requirement = "requirement")
 load("@com_github_grpc_grpc//bazel:cc_grpc_library.bzl", _cc_grpc_library = "cc_grpc_library")
 
 container_image = _container_image
-cc_binary = _cc_binary
 cc_library = _cc_library
 cc_flags_supplier = _cc_flags_supplier
 cc_proto_library = _cc_proto_library
@@ -28,6 +27,14 @@ pkg_tar = _pkg_tar
 py_library = native.py_library
 py_binary = native.py_binary
 py_test = native.py_test
+
+def cc_binary(static = False, **kwargs):
+    _cc_binary(
+        linkopts = [
+            "-static",
+            "-lstdc++",
+        ],
+    )
 
 def proto_library(has_services = None, **kwargs):
     native.proto_library(
