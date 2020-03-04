@@ -565,8 +565,77 @@ func (s *service) Shutdown(ctx context.Context, r *taskAPI.ShutdownRequest) (*pt
 }
 
 func (s *service) Stats(ctx context.Context, r *taskAPI.StatsRequest) (*taskAPI.StatsResponse, error) {
-	// TODO(random-liu): Use `runsc events --stats`.
-	data, err := typeurl.MarshalAny(&cgroups.Metrics{})
+	path, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	ns, err := namespaces.NamespaceRequired(ctx)
+	if err != nil {
+		return nil, err
+	}
+	runtime, err := s.readRuntime(path)
+	if err != nil {
+		return nil, err
+	}
+	rs := proc.NewRunsc(proc.RunscRoot, path, ns, runtime, nil)
+	stats, err := rs.Stats(ctx, s.id)
+	if err != nil {
+		return nil, err
+	}
+
+	// gvisor currently (as of 2020-03-03) only returns the total memory
+	// usage and current PID value[0]. However, we copy the common fields here
+	// so that future updates will propagate correct information.  We're
+	// using the cgroups.Metrics structure so we're returning the same type
+	// as runc.
+	//
+	// [0]: https://github.com/google/gvisor/blob/277a0d5a1fbe8272d4729c01ee4c6e374d047ebc/runsc/boot/events.go#L61-L81
+	data, err := typeurl.MarshalAny(&cgroups.Metrics{
+		CPU: &cgroups.CPUStat{
+			Usage: &cgroups.CPUUsage{
+				Total:  stats.Cpu.Usage.Total,
+				Kernel: stats.Cpu.Usage.Kernel,
+				User:   stats.Cpu.Usage.User,
+				PerCPU: stats.Cpu.Usage.Percpu,
+			},
+			Throttling: &cgroups.Throttle{
+				Periods:          stats.Cpu.Throttling.Periods,
+				ThrottledPeriods: stats.Cpu.Throttling.ThrottledPeriods,
+				ThrottledTime:    stats.Cpu.Throttling.ThrottledTime,
+			},
+		},
+		Memory: &cgroups.MemoryStat{
+			Cache: stats.Memory.Cache,
+			Usage: &cgroups.MemoryEntry{
+				Limit:   stats.Memory.Usage.Limit,
+				Usage:   stats.Memory.Usage.Usage,
+				Max:     stats.Memory.Usage.Max,
+				Failcnt: stats.Memory.Usage.Failcnt,
+			},
+			Swap: &cgroups.MemoryEntry{
+				Limit:   stats.Memory.Swap.Limit,
+				Usage:   stats.Memory.Swap.Usage,
+				Max:     stats.Memory.Swap.Max,
+				Failcnt: stats.Memory.Swap.Failcnt,
+			},
+			Kernel: &cgroups.MemoryEntry{
+				Limit:   stats.Memory.Kernel.Limit,
+				Usage:   stats.Memory.Kernel.Usage,
+				Max:     stats.Memory.Kernel.Max,
+				Failcnt: stats.Memory.Kernel.Failcnt,
+			},
+			KernelTCP: &cgroups.MemoryEntry{
+				Limit:   stats.Memory.KernelTCP.Limit,
+				Usage:   stats.Memory.KernelTCP.Usage,
+				Max:     stats.Memory.KernelTCP.Max,
+				Failcnt: stats.Memory.KernelTCP.Failcnt,
+			},
+		},
+		Pids: &cgroups.PidsStat{
+			Current: stats.Pids.Current,
+			Limit:   stats.Pids.Limit,
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
