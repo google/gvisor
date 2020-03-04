@@ -46,6 +46,14 @@ def cc_grpc_library(**kwargs):
     _cc_grpc_library(grpc_only = True, **kwargs)
 
 def go_binary(name, static = False, pure = False, **kwargs):
+    """Build a go binary.
+
+    Args:
+        name: name of the target.
+        static: build a static binary.
+        pure: build without cgo.
+        **kwargs: rest of the arguments are passed to _go_binary.
+    """
     if static:
         kwargs["static"] = "on"
     if pure:
@@ -79,6 +87,14 @@ def go_proto_library(name, proto, deps = [], **kwargs):
     )
 
 def go_test(name, pure = False, library = None, **kwargs):
+    """Build a go test.
+
+    Args:
+        name: name of the output binary.
+        pure: should it be built without cgo.
+        library: the library to embed.
+        **kwargs: rest of the arguments to pass to _go_test.
+    """
     if pure:
         kwargs["pure"] = "on"
     if library:
