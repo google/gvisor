@@ -151,6 +151,18 @@ func TestNDPRouterAdvert(t *testing.T) {
 	if got, want := ra.RetransTimer(), time.Millisecond*117967114; got != want {
 		t.Errorf("got ra.RetransTimer = %d, want = %d", got, want)
 	}
+
+	// Test updating the Cur Hop Limit.
+	ra.SetCurHopLimit(46)
+	if got := ra.CurHopLimit(); got != 46 {
+		t.Errorf("got ra.CurHopLimit = %d, want = 46", got)
+	}
+
+	// Test updating the Router Lifetime.
+	ra.SetRouterLifetime(123)
+	if got, want := ra.RouterLifetime(), time.Second*123; got != want {
+		t.Errorf("got ra.RouterLifetime = %d, want = %d", got, want)
+	}
 }
 
 // TestNDPSourceLinkLayerAddressOptionEthernetAddress tests getting the

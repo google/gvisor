@@ -69,6 +69,11 @@ func (b NDPRouterAdvert) CurHopLimit() uint8 {
 	return b[ndpRACurHopLimitOffset]
 }
 
+// SetCurHopLimit sets the Cur Hop Limit field.
+func (b NDPRouterAdvert) SetCurHopLimit(limit uint8) {
+	b[ndpRACurHopLimitOffset] = limit
+}
+
 // ManagedAddrConfFlag returns the value of the Managed Address Configuration
 // flag.
 func (b NDPRouterAdvert) ManagedAddrConfFlag() bool {
@@ -78,6 +83,11 @@ func (b NDPRouterAdvert) ManagedAddrConfFlag() bool {
 // OtherConfFlag returns the value of the Other Configuration flag.
 func (b NDPRouterAdvert) OtherConfFlag() bool {
 	return b[ndpRAFlagsOffset]&ndpRAOtherConfFlagMask != 0
+}
+
+// SetRouterLifetime sets the router lifetime, in seconds.
+func (b NDPRouterAdvert) SetRouterLifetime(d uint16) {
+	binary.BigEndian.PutUint16(b[ndpRARouterLifetimeOffset:], d)
 }
 
 // RouterLifetime returns the lifetime associated with the default router. A
