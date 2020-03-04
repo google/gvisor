@@ -34,6 +34,7 @@ def cc_binary(static = False, **kwargs):
             "-static",
             "-lstdc++",
         ],
+        **kwargs
     )
 
 def proto_library(has_services = None, **kwargs):
