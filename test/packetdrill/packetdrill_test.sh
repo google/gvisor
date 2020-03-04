@@ -91,8 +91,8 @@ fi
 # Variables specific to the test runner start with TEST_RUNNER_.
 declare -r PACKETDRILL="/packetdrill/gtests/net/packetdrill/packetdrill"
 # Use random numbers so that test networks don't collide.
-declare -r CTRL_NET="ctrl_net-${RANDOM}${RANDOM}"
-declare -r TEST_NET="test_net-${RANDOM}${RANDOM}"
+declare -r CTRL_NET="ctrl_net-$(shuf -i 0-99999999 -n 1)"
+declare -r TEST_NET="test_net-$(shuf -i 0-99999999 -n 1)"
 declare -r tolerance_usecs=100000
 # On both DUT and test runner, testing packets are on the eth2 interface.
 declare -r TEST_DEVICE="eth2"
