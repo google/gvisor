@@ -453,39 +453,42 @@ func TestNDPPrefixInformationOption(t *testing.T) {
 		t.Errorf("got Type = %d, want = %d", got, NDPPrefixInformationType)
 	}
 
+	checkPI := func(pi NDPPrefixInformation) {
+		if got := pi.Type(); got != 3 {
+			t.Errorf("got Type = %d, want = 3", got)
+		}
+
+		if got := pi.Length(); got != 30 {
+			t.Errorf("got Length = %d, want = 30", got)
+		}
+
+		if got := pi.PrefixLength(); got != 43 {
+			t.Errorf("got PrefixLength = %d, want = 43", got)
+		}
+
+		if pi.OnLinkFlag() {
+			t.Error("got OnLinkFlag = true, want = false")
+		}
+
+		if !pi.AutonomousAddressConfigurationFlag() {
+			t.Error("got AutonomousAddressConfigurationFlag = false, want = true")
+		}
+
+		if got, want := pi.ValidLifetime(), 16909060*time.Second; got != want {
+			t.Errorf("got ValidLifetime = %d, want = %d", got, want)
+		}
+
+		if got, want := pi.PreferredLifetime(), 84281096*time.Second; got != want {
+			t.Errorf("got PreferredLifetime = %d, want = %d", got, want)
+		}
+
+		if got, want := pi.Prefix(), tcpip.Address("\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18"); got != want {
+			t.Errorf("got Prefix = %s, want = %s", got, want)
+		}
+	}
+
 	pi := next.(NDPPrefixInformation)
-
-	if got := pi.Type(); got != 3 {
-		t.Errorf("got Type = %d, want = 3", got)
-	}
-
-	if got := pi.Length(); got != 30 {
-		t.Errorf("got Length = %d, want = 30", got)
-	}
-
-	if got := pi.PrefixLength(); got != 43 {
-		t.Errorf("got PrefixLength = %d, want = 43", got)
-	}
-
-	if pi.OnLinkFlag() {
-		t.Error("got OnLinkFlag = true, want = false")
-	}
-
-	if !pi.AutonomousAddressConfigurationFlag() {
-		t.Error("got AutonomousAddressConfigurationFlag = false, want = true")
-	}
-
-	if got, want := pi.ValidLifetime(), 16909060*time.Second; got != want {
-		t.Errorf("got ValidLifetime = %d, want = %d", got, want)
-	}
-
-	if got, want := pi.PreferredLifetime(), 84281096*time.Second; got != want {
-		t.Errorf("got PreferredLifetime = %d, want = %d", got, want)
-	}
-
-	if got, want := pi.Prefix(), tcpip.Address("\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18"); got != want {
-		t.Errorf("got Prefix = %s, want = %s", got, want)
-	}
+	checkPI(pi)
 
 	// Iterator should not return anything else.
 	next, done, err = it.Next()
@@ -498,6 +501,18 @@ func TestNDPPrefixInformationOption(t *testing.T) {
 	if next != nil {
 		t.Errorf("got Next = (%x, _, _), want = (nil, _, _)", next)
 	}
+
+	// Test crafting a NDPPrefixInformation option.
+	pi = NewNDPPrefixInformation()
+	pi.Encode(&NDPPrefixInformationFields{
+		tcpip.Address("\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18"),
+		43,
+		false,
+		true,
+		16909060,
+		84281096,
+	})
+	checkPI(pi)
 }
 
 func TestNDPRecursiveDNSServerOptionSerialize(t *testing.T) {

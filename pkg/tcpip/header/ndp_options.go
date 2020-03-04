@@ -458,12 +458,55 @@ func (o NDPTargetLinkLayerAddressOption) EthernetAddress() tcpip.LinkAddress {
 	return tcpip.LinkAddress([]byte(nil))
 }
 
+// NDPPrefixInformationFields contains the fields of an NDP Prefix
+// Information option that needs to be encoded.
+type NDPPrefixInformationFields struct {
+	// An IP address or a prefix of an IP address.
+	Prefix tcpip.Address
+
+	// The number of leading bits in the Prefix that are valid.
+	// The value ranges from 0 to 128.
+	PrefixLength uint8
+
+	// When set, indicates that this prefix can be used for
+	// on-link determination.
+	OnLinkFlag bool
+
+	// When set indicates that this prefix can be used for
+	// stateless address configuration
+	AutonomousFlag bool
+
+	// The length of time in seconds (relative to the time the
+	// packet is sent) that the prefix is valid for the purpose of
+	// on-link determination.
+	ValidLifetime uint32
+
+	// The length of time in seconds (relative to the time the
+	// packet is sent) that addresses generated from the prefix
+	// via stateless address autoconfiguration remain preferred
+	PreferredLifetime uint32
+}
+
 // NDPPrefixInformation is the NDP Prefix Information option as defined by
 // RFC 4861 section 4.6.2.
 //
 // The length, in bytes, of a valid NDP Prefix Information option body MUST be
 // ndpPrefixInformationLength bytes.
 type NDPPrefixInformation []byte
+
+// NewNDPPrefixInformation creates a new NDPPrefixInformation.
+func NewNDPPrefixInformation() NDPPrefixInformation {
+	return NDPPrefixInformation(make([]byte, ndpPrefixInformationLength))
+}
+
+func (o NDPPrefixInformation) Encode(f *NDPPrefixInformationFields) {
+	o.SetPrefix(f.Prefix)
+	o.SetPrefixLength(f.PrefixLength)
+	o.SetValidLifetime(f.ValidLifetime)
+	o.SetOnLinkFlag(f.OnLinkFlag)
+	o.SetPreferredLifetime(f.PreferredLifetime)
+	o.SetAutonomousAddressConfigurationFlag(f.AutonomousFlag)
+}
 
 // Type implements NDPOption.Type.
 func (o NDPPrefixInformation) Type() uint8 {
@@ -511,6 +554,12 @@ func (o NDPPrefixInformation) PrefixLength() uint8 {
 	return o[ndpPrefixInformationPrefixLengthOffset]
 }
 
+// SetPrefixLength sets the number of leading bits in the Prefix that
+// are valid.
+func (o NDPPrefixInformation) SetPrefixLength(len uint8) {
+	o[ndpPrefixInformationPrefixLengthOffset] = len
+}
+
 // OnLinkFlag returns true of the prefix is considered on-link. On-link means
 // that a forwarding node is not needed to send packets to other nodes on the
 // same prefix.
@@ -523,10 +572,30 @@ func (o NDPPrefixInformation) OnLinkFlag() bool {
 	return o[ndpPrefixInformationFlagsOffset]&ndpPrefixInformationOnLinkFlagMask != 0
 }
 
+// SetOnLinkFlag sets whether the prefix is considered on-link.
+func (o NDPPrefixInformation) SetOnLinkFlag(b bool) {
+	if b {
+		o[ndpPrefixInformationFlagsOffset] |= ndpPrefixInformationOnLinkFlagMask
+	} else {
+		o[ndpPrefixInformationFlagsOffset] &^= ndpPrefixInformationOnLinkFlagMask
+	}
+}
+
 // AutonomousAddressConfigurationFlag returns true if the prefix can be used for
 // Stateless Address Auto-Configuration (as specified in RFC 4862).
 func (o NDPPrefixInformation) AutonomousAddressConfigurationFlag() bool {
 	return o[ndpPrefixInformationFlagsOffset]&ndpPrefixInformationAutoAddrConfFlagMask != 0
+}
+
+// SetAutonomousAddressConfigurationFlag sets whether the prefix can
+// be used for Stateless Address Auto-Configuration (as specified in
+// RFC 4862).
+func (o NDPPrefixInformation) SetAutonomousAddressConfigurationFlag(b bool) {
+	if b {
+		o[ndpPrefixInformationFlagsOffset] |= ndpPrefixInformationAutoAddrConfFlagMask
+	} else {
+		o[ndpPrefixInformationFlagsOffset] &^= ndpPrefixInformationAutoAddrConfFlagMask
+	}
 }
 
 // ValidLifetime returns the length of time that the prefix is valid for the
@@ -539,6 +608,12 @@ func (o NDPPrefixInformation) AutonomousAddressConfigurationFlag() bool {
 func (o NDPPrefixInformation) ValidLifetime() time.Duration {
 	// The field is the time in seconds, as per RFC 4861 section 4.6.2.
 	return time.Second * time.Duration(binary.BigEndian.Uint32(o[ndpPrefixInformationValidLifetimeOffset:]))
+}
+
+// SetValidLifetime sets the length of time that the prefix is valid
+// for the purpose of on-link determination.
+func (o NDPPrefixInformation) SetValidLifetime(d uint32) {
+	binary.BigEndian.PutUint32(o[ndpPrefixInformationValidLifetimeOffset:], d)
 }
 
 // PreferredLifetime returns the length of time that an address generated from
@@ -558,6 +633,13 @@ func (o NDPPrefixInformation) PreferredLifetime() time.Duration {
 	return time.Second * time.Duration(binary.BigEndian.Uint32(o[ndpPrefixInformationPreferredLifetimeOffset:]))
 }
 
+// SetPreferredLifetime sets the length of time that an address
+// generated from the prefix via Stateless Address Auto-Configuration
+// remains preferred.
+func (o NDPPrefixInformation) SetPreferredLifetime(d uint32) {
+	binary.BigEndian.PutUint32(o[ndpPrefixInformationPreferredLifetimeOffset:], d)
+}
+
 // Prefix returns an IPv6 address or a prefix of an IPv6 address. The Prefix
 // Length field (see NDPPrefixInformation.PrefixLength) contains the number
 // of valid leading bits in the prefix.
@@ -566,6 +648,11 @@ func (o NDPPrefixInformation) PreferredLifetime() time.Duration {
 // holds the link-local prefix (fe80::).
 func (o NDPPrefixInformation) Prefix() tcpip.Address {
 	return tcpip.Address(o[ndpPrefixInformationPrefixOffset:][:IPv6AddressSize])
+}
+
+// SetPrefix sets the IPv6 address prefix.
+func (o NDPPrefixInformation) SetPrefix(addr tcpip.Address) {
+	copy(o[ndpPrefixInformationPrefixOffset:][:IPv6AddressSize], addr)
 }
 
 // Subnet returns the Prefix field and Prefix Length field represented in a
