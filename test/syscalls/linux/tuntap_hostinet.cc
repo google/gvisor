@@ -26,6 +26,7 @@ namespace {
 
 TEST(TuntapHostInetTest, NoNetTun) {
   SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(!IsRunningWithHostinet());
 
   struct stat statbuf;
   ASSERT_THAT(stat("/dev/net/tun", &statbuf), SyscallFailsWithErrno(ENOENT));
