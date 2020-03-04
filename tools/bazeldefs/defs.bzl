@@ -29,11 +29,9 @@ py_binary = native.py_binary
 py_test = native.py_test
 
 def cc_binary(static = False, **kwargs):
+    if static:
+        kwargs["linkopts"] = kwargs.get("linkopts", []) + ["-static", "-lstdc++"]
     _cc_binary(
-        linkopts = [
-            "-static",
-            "-lstdc++",
-        ],
         **kwargs
     )
 
