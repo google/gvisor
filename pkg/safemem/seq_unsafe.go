@@ -56,6 +56,9 @@ type BlockSeq struct {
 
 // BlockSeqOf returns a BlockSeq representing the single Block b.
 func BlockSeqOf(b Block) BlockSeq {
+	if b.length == 0 {
+		return BlockSeq{}
+	}
 	bs := BlockSeq{
 		data:   b.start,
 		length: -1,
