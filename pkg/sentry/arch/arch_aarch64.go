@@ -97,6 +97,9 @@ type State struct {
 
 	// FeatureSet is a pointer to the currently active feature set.
 	FeatureSet *cpuid.FeatureSet
+
+	// OrigR0 stores the value of register R0.
+	OrigR0 uint64
 }
 
 // Proto returns a protobuf representation of the system registers in State.
@@ -146,6 +149,7 @@ func (s *State) Fork() State {
 		Regs:           s.Regs,
 		aarch64FPState: s.aarch64FPState.fork(),
 		FeatureSet:     s.FeatureSet,
+		OrigR0:         s.OrigR0,
 	}
 }
 
