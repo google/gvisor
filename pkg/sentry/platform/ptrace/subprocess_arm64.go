@@ -160,6 +160,15 @@ func enableCpuidFault() {
 
 // appendArchSeccompRules append architecture specific seccomp rules when creating BPF program.
 // Ref attachedThread() for more detail.
-func appendArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
+func appendArchSeccompRules(rules []seccomp.RuleSet, defaultAction linux.BPFAction) []seccomp.RuleSet {
 	return rules
+}
+
+// probeSeccomp returns true if seccomp is run after ptrace notifications,
+// which is generally the case for kernel version >= 4.8.
+//
+// On arm64, the support of PTRACE_SYSEMU was added in the 5.3 kernel, so
+// probeSeccomp can always return true.
+func probeSeccomp() bool {
+	return true
 }

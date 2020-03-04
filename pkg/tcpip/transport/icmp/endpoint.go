@@ -291,15 +291,13 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 			nicID = e.BindNICID
 		}
 
-		toCopy := *to
-		to = &toCopy
-		netProto, err := e.checkV4Mapped(to)
+		dst, netProto, err := e.checkV4MappedLocked(*to)
 		if err != nil {
 			return 0, nil, err
 		}
 
-		// Find the enpoint.
-		r, err := e.stack.FindRoute(nicID, e.BindAddr, to.Addr, netProto, false /* multicastLoop */)
+		// Find the endpoint.
+		r, err := e.stack.FindRoute(nicID, e.BindAddr, dst.Addr, netProto, false /* multicastLoop */)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -480,13 +478,14 @@ func send6(r *stack.Route, ident uint16, data buffer.View, ttl uint8) *tcpip.Err
 	})
 }
 
-func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress) (tcpip.NetworkProtocolNumber, *tcpip.Error) {
-	unwrapped, netProto, err := e.TransportEndpointInfo.AddrNetProto(*addr, false /* v6only */)
+// checkV4MappedLocked determines the effective network protocol and converts
+// addr to its canonical form.
+func (e *endpoint) checkV4MappedLocked(addr tcpip.FullAddress) (tcpip.FullAddress, tcpip.NetworkProtocolNumber, *tcpip.Error) {
+	unwrapped, netProto, err := e.TransportEndpointInfo.AddrNetProtoLocked(addr, false /* v6only */)
 	if err != nil {
-		return 0, err
+		return tcpip.FullAddress{}, 0, err
 	}
-	*addr = unwrapped
-	return netProto, nil
+	return unwrapped, netProto, nil
 }
 
 // Disconnect implements tcpip.Endpoint.Disconnect.
@@ -517,7 +516,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	netProto, err := e.checkV4Mapped(&addr)
+	addr, netProto, err := e.checkV4MappedLocked(addr)
 	if err != nil {
 		return err
 	}
@@ -630,7 +629,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) *tcpip.Error {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	netProto, err := e.checkV4Mapped(&addr)
+	addr, netProto, err := e.checkV4MappedLocked(addr)
 	if err != nil {
 		return err
 	}

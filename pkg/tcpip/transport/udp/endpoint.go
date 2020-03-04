@@ -443,19 +443,19 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 			return 0, nil, tcpip.ErrBroadcastDisabled
 		}
 
-		netProto, err := e.checkV4Mapped(to)
+		dst, netProto, err := e.checkV4MappedLocked(*to)
 		if err != nil {
 			return 0, nil, err
 		}
 
-		r, _, err := e.connectRoute(nicID, *to, netProto)
+		r, _, err := e.connectRoute(nicID, dst, netProto)
 		if err != nil {
 			return 0, nil, err
 		}
 		defer r.Release()
 
 		route = &r
-		dstPort = to.Port
+		dstPort = dst.Port
 	}
 
 	if route.IsResolutionRequired() {
@@ -566,7 +566,7 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		defer e.mu.Unlock()
 
 		fa := tcpip.FullAddress{Addr: v.InterfaceAddr}
-		netProto, err := e.checkV4Mapped(&fa)
+		fa, netProto, err := e.checkV4MappedLocked(fa)
 		if err != nil {
 			return err
 		}
@@ -927,13 +927,14 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 	return nil
 }
 
-func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress) (tcpip.NetworkProtocolNumber, *tcpip.Error) {
-	unwrapped, netProto, err := e.TransportEndpointInfo.AddrNetProto(*addr, e.v6only)
+// checkV4MappedLocked determines the effective network protocol and converts
+// addr to its canonical form.
+func (e *endpoint) checkV4MappedLocked(addr tcpip.FullAddress) (tcpip.FullAddress, tcpip.NetworkProtocolNumber, *tcpip.Error) {
+	unwrapped, netProto, err := e.TransportEndpointInfo.AddrNetProtoLocked(addr, e.v6only)
 	if err != nil {
-		return 0, err
+		return tcpip.FullAddress{}, 0, err
 	}
-	*addr = unwrapped
-	return netProto, nil
+	return unwrapped, netProto, nil
 }
 
 // Disconnect implements tcpip.Endpoint.Disconnect.
@@ -981,10 +982,6 @@ func (e *endpoint) Disconnect() *tcpip.Error {
 
 // Connect connects the endpoint to its peer. Specifying a NIC is optional.
 func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
-	netProto, err := e.checkV4Mapped(&addr)
-	if err != nil {
-		return err
-	}
 	if addr.Port == 0 {
 		// We don't support connecting to port zero.
 		return tcpip.ErrInvalidEndpointState
@@ -1010,6 +1007,11 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 		nicID = e.BindNICID
 	default:
 		return tcpip.ErrInvalidEndpointState
+	}
+
+	addr, netProto, err := e.checkV4MappedLocked(addr)
+	if err != nil {
+		return err
 	}
 
 	r, nicID, err := e.connectRoute(nicID, addr, netProto)
@@ -1139,7 +1141,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) *tcpip.Error {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	netProto, err := e.checkV4Mapped(&addr)
+	addr, netProto, err := e.checkV4MappedLocked(addr)
 	if err != nil {
 		return err
 	}

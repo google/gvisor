@@ -21,6 +21,7 @@ import (
 	"strings"
 	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -183,13 +184,76 @@ func enableCpuidFault() {
 
 // appendArchSeccompRules append architecture specific seccomp rules when creating BPF program.
 // Ref attachedThread() for more detail.
-func appendArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
-	return append(rules, seccomp.RuleSet{
-		Rules: seccomp.SyscallRules{
-			syscall.SYS_ARCH_PRCTL: []seccomp.Rule{
-				{seccomp.AllowValue(linux.ARCH_SET_CPUID), seccomp.AllowValue(0)},
+func appendArchSeccompRules(rules []seccomp.RuleSet, defaultAction linux.BPFAction) []seccomp.RuleSet {
+	rules = append(rules,
+		// Rules for trapping vsyscall access.
+		seccomp.RuleSet{
+			Rules: seccomp.SyscallRules{
+				syscall.SYS_GETTIMEOFDAY: {},
+				syscall.SYS_TIME:         {},
+				unix.SYS_GETCPU:          {}, // SYS_GETCPU was not defined in package syscall on amd64.
 			},
-		},
-		Action: linux.SECCOMP_RET_ALLOW,
-	})
+			Action:   linux.SECCOMP_RET_TRAP,
+			Vsyscall: true,
+		})
+	if defaultAction != linux.SECCOMP_RET_ALLOW {
+		rules = append(rules,
+			seccomp.RuleSet{
+				Rules: seccomp.SyscallRules{
+					syscall.SYS_ARCH_PRCTL: []seccomp.Rule{
+						{seccomp.AllowValue(linux.ARCH_SET_CPUID), seccomp.AllowValue(0)},
+					},
+				},
+				Action: linux.SECCOMP_RET_ALLOW,
+			})
+	}
+	return rules
+}
+
+// probeSeccomp returns true iff seccomp is run after ptrace notifications,
+// which is generally the case for kernel version >= 4.8. This check is dynamic
+// because kernels have be backported behavior.
+//
+// See createStub for more information.
+//
+// Precondition: the runtime OS thread must be locked.
+func probeSeccomp() bool {
+	// Create a completely new, destroyable process.
+	t, err := attachedThread(0, linux.SECCOMP_RET_ERRNO)
+	if err != nil {
+		panic(fmt.Sprintf("seccomp probe failed: %v", err))
+	}
+	defer t.destroy()
+
+	// Set registers to the yield system call. This call is not allowed
+	// by the filters specified in the attachThread function.
+	regs := createSyscallRegs(&t.initRegs, syscall.SYS_SCHED_YIELD)
+	if err := t.setRegs(&regs); err != nil {
+		panic(fmt.Sprintf("ptrace set regs failed: %v", err))
+	}
+
+	for {
+		// Attempt an emulation.
+		if _, _, errno := syscall.RawSyscall6(syscall.SYS_PTRACE, unix.PTRACE_SYSEMU, uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
+			panic(fmt.Sprintf("ptrace syscall-enter failed: %v", errno))
+		}
+
+		sig := t.wait(stopped)
+		if sig == (syscallEvent | syscall.SIGTRAP) {
+			// Did the seccomp errno hook already run? This would
+			// indicate that seccomp is first in line and we're
+			// less than 4.8.
+			if err := t.getRegs(&regs); err != nil {
+				panic(fmt.Sprintf("ptrace get-regs failed: %v", err))
+			}
+			if _, err := syscallReturnValue(&regs); err == nil {
+				// The seccomp errno mode ran first, and reset
+				// the error in the registers.
+				return false
+			}
+			// The seccomp hook did not run yet, and therefore it
+			// is safe to use RET_KILL mode for dispatched calls.
+			return true
+		}
+	}
 }

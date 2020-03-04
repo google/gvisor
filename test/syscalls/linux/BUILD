@@ -167,11 +167,6 @@ cc_library(
 )
 
 cc_library(
-    name = "temp_umask",
-    hdrs = ["temp_umask.h"],
-)
-
-cc_library(
     name = "unix_domain_socket_test_util",
     testonly = 1,
     srcs = ["unix_domain_socket_test_util.cc"],
@@ -1140,11 +1135,11 @@ cc_binary(
     srcs = ["mkdir.cc"],
     linkstatic = 1,
     deps = [
-        ":temp_umask",
         "//test/util:capability_util",
         "//test/util:fs_util",
         gtest,
         "//test/util:temp_path",
+        "//test/util:temp_umask",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -1299,12 +1294,12 @@ cc_binary(
     srcs = ["open_create.cc"],
     linkstatic = 1,
     deps = [
-        ":temp_umask",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
         gtest,
         "//test/util:temp_path",
+        "//test/util:temp_umask",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
