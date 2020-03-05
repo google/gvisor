@@ -603,7 +603,10 @@ cc_binary(
 cc_binary(
     name = "exceptions_test",
     testonly = 1,
-    srcs = ["exceptions.cc"],
+    srcs = select_arch(
+        amd64 = ["exceptions.cc"],
+        arm64 = [],
+    ),
     linkstatic = 1,
     deps = [
         gtest,
@@ -1470,7 +1473,10 @@ cc_binary(
 cc_binary(
     name = "arch_prctl_test",
     testonly = 1,
-    srcs = ["arch_prctl.cc"],
+    srcs = select_arch(
+        amd64 = ["arch_prctl.cc"],
+        arm64 = [],
+    ),
     linkstatic = 1,
     deps = [
         "//test/util:file_descriptor",
@@ -3317,7 +3323,10 @@ cc_binary(
 cc_binary(
     name = "sysret_test",
     testonly = 1,
-    srcs = ["sysret.cc"],
+    srcs = select_arch(
+        amd64 = ["sysret.cc"],
+        arm64 = [],
+    ),
     linkstatic = 1,
     deps = [
         gtest,
