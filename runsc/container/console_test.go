@@ -333,13 +333,13 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 	// file. Writes after a certain point will block unless we drain the
 	// PTY, so we must continually copy from it.
 	//
-	// We log the output to stdout for debugabilitly, and also to a buffer,
+	// We log the output to stderr for debugabilitly, and also to a buffer,
 	// since we wait on particular output from bash below. We use a custom
 	// blockingBuffer which is thread-safe and also blocks on Read calls,
 	// which makes this a suitable Reader for WaitUntilRead.
 	ptyBuf := newBlockingBuffer()
 	tee := io.TeeReader(ptyMaster, ptyBuf)
-	go io.Copy(os.Stdout, tee)
+	go io.Copy(os.Stderr, tee)
 
 	// Start the container.
 	if err := c.Start(conf); err != nil {

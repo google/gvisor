@@ -451,7 +451,7 @@ func TestRandom(t *testing.T) {
 		}
 	}
 
-	fmt.Printf("Testing filters: %v", syscallRules)
+	t.Logf("Testing filters: %v", syscallRules)
 	instrs, err := BuildProgram([]RuleSet{
 		RuleSet{
 			Rules:  syscallRules,
