@@ -32,6 +32,7 @@ go_library(
     srcs = [
         "accept.go",
         "connect.go",
+        "connect_unsafe.go",
         "cubic.go",
         "cubic_state.go",
         "dispatcher.go",
