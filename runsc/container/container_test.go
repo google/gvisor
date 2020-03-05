@@ -2092,7 +2092,7 @@ func TestOverlayfsStaleRead(t *testing.T) {
 	defer out.Close()
 
 	const want = "foobar"
-	cmd := fmt.Sprintf("cat %q && echo %q> %q && cp %q %q", in.Name(), want, in.Name(), in.Name(), out.Name())
+	cmd := fmt.Sprintf("cat %q >&2 && echo %q> %q && cp %q %q", in.Name(), want, in.Name(), in.Name(), out.Name())
 	spec := testutil.NewSpecWithArgs("/bin/bash", "-c", cmd)
 	if err := run(spec, conf); err != nil {
 		t.Fatalf("Error running container: %v", err)
