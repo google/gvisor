@@ -78,9 +78,9 @@ rules_proto_toolchains()
 # Load python dependencies.
 git_repository(
     name = "rules_python",
-    commit = "94677401bc56ed5d756f50b441a6a5c7f735a6d4",
+    commit = "abc4869e02fe9b3866942e89f07b7341f830e805",
     remote = "https://github.com/bazelbuild/rules_python.git",
-    shallow_since = "1573842889 -0500",
+    shallow_since = "1583341286 -0500",
 )
 
 load("@rules_python//python:pip.bzl", "pip_import")
