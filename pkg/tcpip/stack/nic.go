@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 )
 
 var ipv4BroadcastAddr = tcpip.ProtocolAddress{
@@ -1116,6 +1117,7 @@ func (n *NIC) isInGroup(addr tcpip.Address) bool {
 func handlePacket(protocol tcpip.NetworkProtocolNumber, dst, src tcpip.Address, localLinkAddr, remotelinkAddr tcpip.LinkAddress, ref *referencedNetworkEndpoint, pkt tcpip.PacketBuffer) {
 	r := makeRoute(protocol, dst, src, localLinkAddr, ref, false /* handleLocal */, false /* multicastLoop */)
 	r.RemoteLinkAddress = remotelinkAddr
+
 	ref.ep.HandlePacket(&r, pkt)
 	ref.decRef()
 }
@@ -1186,6 +1188,16 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 		n.stack.stats.IP.InvalidSourceAddressesReceived.Increment()
 		return
 	}
+
+	// TODO(gvisor.dev/issue/170): Not supporting iptables for IPv6 yet.
+	if protocol == header.IPv4ProtocolNumber {
+		ipt := n.stack.IPTables()
+		if ok := ipt.Check(iptables.Prerouting, pkt); !ok {
+			// iptables is telling us to drop the packet.
+			return
+		}
+	}
+
 	if ref := n.getRef(protocol, dst); ref != nil {
 		handlePacket(protocol, dst, src, linkEP.LinkAddress(), remote, ref, pkt)
 		return

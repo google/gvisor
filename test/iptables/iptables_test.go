@@ -196,8 +196,20 @@ func TestNATRedirectUDPPort(t *testing.T) {
 	}
 }
 
+func TestNATRedirectTCPPort(t *testing.T) {
+	if err := singleTest(NATRedirectTCPPort{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNATDropUDP(t *testing.T) {
 	if err := singleTest(NATDropUDP{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNATAcceptAll(t *testing.T) {
+	if err := singleTest(NATAcceptAll{}); err != nil {
 		t.Fatal(err)
 	}
 }

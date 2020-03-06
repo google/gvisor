@@ -17,6 +17,7 @@ package iptables
 import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 // AcceptTarget accepts packets.
@@ -62,4 +63,82 @@ type ReturnTarget struct{}
 // Action implements Target.Action.
 func (ReturnTarget) Action(tcpip.PacketBuffer) (RuleVerdict, int) {
 	return RuleReturn, 0
+}
+
+// RedirectTarget redirects the packet by modifying the destination port/IP.
+// Min and Max values for IP and Ports in the struct indicate the range of
+// values which can be used to redirect.
+type RedirectTarget struct {
+	// TODO(gvisor.dev/issue/170): Other flags need to be added after
+	// we support them.
+	// RangeProtoSpecified flag indicates single port is specified to
+	// redirect.
+	RangeProtoSpecified bool
+
+	// Min address used to redirect.
+	MinIP tcpip.Address
+
+	// Max address used to redirect.
+	MaxIP tcpip.Address
+
+	// Min port used to redirect.
+	MinPort uint16
+
+	// Max port used to redirect.
+	MaxPort uint16
+}
+
+// Action implements Target.Action.
+// TODO(gvisor.dev/issue/170): Parse headers without copying. The current
+// implementation only works for PREROUTING and calls pkt.Clone(), neither
+// of which should be the case.
+func (rt RedirectTarget) Action(pkt tcpip.PacketBuffer) (RuleVerdict, int) {
+	newPkt := pkt.Clone()
+
+	// Set network header.
+	headerView := newPkt.Data.First()
+	netHeader := header.IPv4(headerView)
+	newPkt.NetworkHeader = headerView[:header.IPv4MinimumSize]
+
+	hlen := int(netHeader.HeaderLength())
+	tlen := int(netHeader.TotalLength())
+	newPkt.Data.TrimFront(hlen)
+	newPkt.Data.CapLength(tlen - hlen)
+
+	// TODO(gvisor.dev/issue/170): Change destination address to
+	// loopback or interface address on which the packet was
+	// received.
+
+	// TODO(gvisor.dev/issue/170): Check Flags in RedirectTarget if
+	// we need to change dest address (for OUTPUT chain) or ports.
+	switch protocol := netHeader.TransportProtocol(); protocol {
+	case header.UDPProtocolNumber:
+		var udpHeader header.UDP
+		if newPkt.TransportHeader != nil {
+			udpHeader = header.UDP(newPkt.TransportHeader)
+		} else {
+			if len(pkt.Data.First()) < header.UDPMinimumSize {
+				return RuleDrop, 0
+			}
+			udpHeader = header.UDP(newPkt.Data.First())
+		}
+		udpHeader.SetDestinationPort(rt.MinPort)
+	case header.TCPProtocolNumber:
+		var tcpHeader header.TCP
+		if newPkt.TransportHeader != nil {
+			tcpHeader = header.TCP(newPkt.TransportHeader)
+		} else {
+			if len(pkt.Data.First()) < header.TCPMinimumSize {
+				return RuleDrop, 0
+			}
+			tcpHeader = header.TCP(newPkt.TransportHeader)
+		}
+		// TODO(gvisor.dev/issue/170): Need to recompute checksum
+		// and implement nat connection tracking to support TCP.
+		tcpHeader.SetDestinationPort(rt.MinPort)
+	default:
+		return RuleDrop, 0
+	}
+
+	return RuleAccept, 0
 }
