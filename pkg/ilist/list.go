@@ -169,8 +169,9 @@ func (l *List) InsertBefore(a, e Element) {
 
 // Remove removes e from l.
 func (l *List) Remove(e Element) {
-	prev := ElementMapper{}.linkerFor(e).Prev()
-	next := ElementMapper{}.linkerFor(e).Next()
+	linker := ElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		ElementMapper{}.linkerFor(prev).SetNext(next)
@@ -183,6 +184,9 @@ func (l *List) Remove(e Element) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields
