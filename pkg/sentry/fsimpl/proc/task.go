@@ -62,11 +62,13 @@ func newTaskInode(inoGen InoGenerator, task *kernel.Task, pidns *kernel.PIDNames
 			"pid":  newNamespaceSymlink(task, inoGen.NextIno(), "pid"),
 			"user": newNamespaceSymlink(task, inoGen.NextIno(), "user"),
 		}),
-		"smaps":   newTaskOwnedFile(task, inoGen.NextIno(), 0444, &smapsData{task: task}),
-		"stat":    newTaskOwnedFile(task, inoGen.NextIno(), 0444, &taskStatData{task: task, pidns: pidns, tgstats: isThreadGroup}),
-		"statm":   newTaskOwnedFile(task, inoGen.NextIno(), 0444, &statmData{task: task}),
-		"status":  newTaskOwnedFile(task, inoGen.NextIno(), 0444, &statusData{task: task, pidns: pidns}),
-		"uid_map": newTaskOwnedFile(task, inoGen.NextIno(), 0644, &idMapData{task: task, gids: false}),
+		"oom_score":     newTaskOwnedFile(task, inoGen.NextIno(), 0444, newStaticFile("0\n")),
+		"oom_score_adj": newTaskOwnedFile(task, inoGen.NextIno(), 0644, &oomScoreAdj{task: task}),
+		"smaps":         newTaskOwnedFile(task, inoGen.NextIno(), 0444, &smapsData{task: task}),
+		"stat":          newTaskOwnedFile(task, inoGen.NextIno(), 0444, &taskStatData{task: task, pidns: pidns, tgstats: isThreadGroup}),
+		"statm":         newTaskOwnedFile(task, inoGen.NextIno(), 0444, &statmData{task: task}),
+		"status":        newTaskOwnedFile(task, inoGen.NextIno(), 0444, &statusData{task: task, pidns: pidns}),
+		"uid_map":       newTaskOwnedFile(task, inoGen.NextIno(), 0644, &idMapData{task: task, gids: false}),
 	}
 	if isThreadGroup {
 		contents["task"] = newSubtasks(task, pidns, inoGen, cgroupControllers)

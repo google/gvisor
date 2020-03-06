@@ -1431,6 +1431,12 @@ TEST(ProcPidFile, SubprocessRunning) {
 
   EXPECT_THAT(ReadWhileRunning("uid_map", buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
+
+  EXPECT_THAT(ReadWhileRunning("oom_score", buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  EXPECT_THAT(ReadWhileRunning("oom_score_adj", buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
 }
 
 // Test whether /proc/PID/ files can be read for a zombie process.
@@ -1464,6 +1470,12 @@ TEST(ProcPidFile, SubprocessZombie) {
               SyscallSucceedsWithValue(sizeof(buf)));
 
   EXPECT_THAT(ReadWhileZombied("uid_map", buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  EXPECT_THAT(ReadWhileZombied("oom_score", buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  EXPECT_THAT(ReadWhileZombied("oom_score_adj", buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
 
   // FIXME(gvisor.dev/issue/164): Inconsistent behavior between gVisor and linux
@@ -1527,6 +1539,15 @@ TEST(ProcPidFile, SubprocessExited) {
 
   EXPECT_THAT(ReadWhileExited("uid_map", buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
+
+  if (!IsRunningOnGvisor()) {
+    // FIXME(gvisor.dev/issue/164): Succeeds on gVisor.
+    EXPECT_THAT(ReadWhileExited("oom_score", buf, sizeof(buf)),
+                SyscallFailsWithErrno(ESRCH));
+  }
+
+  EXPECT_THAT(ReadWhileExited("oom_score_adj", buf, sizeof(buf)),
+              SyscallFailsWithErrno(ESRCH));
 }
 
 PosixError DirContainsImpl(absl::string_view path,
