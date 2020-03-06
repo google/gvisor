@@ -135,8 +135,9 @@ func (l *socketList) InsertBefore(a, e *SocketEntry) {
 
 // Remove removes e from l.
 func (l *socketList) Remove(e *SocketEntry) {
-	prev := socketElementMapper{}.linkerFor(e).Prev()
-	next := socketElementMapper{}.linkerFor(e).Next()
+	linker := socketElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		socketElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *socketList) Remove(e *SocketEntry) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields

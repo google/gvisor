@@ -135,8 +135,9 @@ func (l *eventList) InsertBefore(a, e *Event) {
 
 // Remove removes e from l.
 func (l *eventList) Remove(e *Event) {
-	prev := eventElementMapper{}.linkerFor(e).Prev()
-	next := eventElementMapper{}.linkerFor(e).Next()
+	linker := eventElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		eventElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *eventList) Remove(e *Event) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields

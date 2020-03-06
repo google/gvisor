@@ -135,8 +135,9 @@ func (l *udpPacketList) InsertBefore(a, e *udpPacket) {
 
 // Remove removes e from l.
 func (l *udpPacketList) Remove(e *udpPacket) {
-	prev := udpPacketElementMapper{}.linkerFor(e).Prev()
-	next := udpPacketElementMapper{}.linkerFor(e).Next()
+	linker := udpPacketElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		udpPacketElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *udpPacketList) Remove(e *udpPacket) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields

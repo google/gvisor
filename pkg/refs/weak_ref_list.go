@@ -135,8 +135,9 @@ func (l *weakRefList) InsertBefore(a, e *WeakRef) {
 
 // Remove removes e from l.
 func (l *weakRefList) Remove(e *WeakRef) {
-	prev := weakRefElementMapper{}.linkerFor(e).Prev()
-	next := weakRefElementMapper{}.linkerFor(e).Next()
+	linker := weakRefElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		weakRefElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *weakRefList) Remove(e *WeakRef) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields

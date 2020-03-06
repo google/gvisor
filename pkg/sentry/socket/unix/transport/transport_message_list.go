@@ -135,8 +135,9 @@ func (l *messageList) InsertBefore(a, e *message) {
 
 // Remove removes e from l.
 func (l *messageList) Remove(e *message) {
-	prev := messageElementMapper{}.linkerFor(e).Prev()
-	next := messageElementMapper{}.linkerFor(e).Next()
+	linker := messageElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		messageElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *messageList) Remove(e *message) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields

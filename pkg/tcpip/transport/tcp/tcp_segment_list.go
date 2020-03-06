@@ -135,8 +135,9 @@ func (l *segmentList) InsertBefore(a, e *segment) {
 
 // Remove removes e from l.
 func (l *segmentList) Remove(e *segment) {
-	prev := segmentElementMapper{}.linkerFor(e).Prev()
-	next := segmentElementMapper{}.linkerFor(e).Next()
+	linker := segmentElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		segmentElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *segmentList) Remove(e *segment) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields

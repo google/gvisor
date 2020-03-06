@@ -135,8 +135,9 @@ func (l *ioList) InsertBefore(a, e *ioResult) {
 
 // Remove removes e from l.
 func (l *ioList) Remove(e *ioResult) {
-	prev := ioElementMapper{}.linkerFor(e).Prev()
-	next := ioElementMapper{}.linkerFor(e).Next()
+	linker := ioElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		ioElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *ioList) Remove(e *ioResult) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields

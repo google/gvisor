@@ -135,8 +135,9 @@ func (l *pendingSignalList) InsertBefore(a, e *pendingSignal) {
 
 // Remove removes e from l.
 func (l *pendingSignalList) Remove(e *pendingSignal) {
-	prev := pendingSignalElementMapper{}.linkerFor(e).Prev()
-	next := pendingSignalElementMapper{}.linkerFor(e).Next()
+	linker := pendingSignalElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		pendingSignalElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *pendingSignalList) Remove(e *pendingSignal) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields
