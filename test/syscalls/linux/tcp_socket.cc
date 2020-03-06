@@ -143,6 +143,20 @@ TEST_P(TcpSocketTest, ConnectOnEstablishedConnection) {
       SyscallFailsWithErrno(EISCONN));
 }
 
+TEST_P(TcpSocketTest, ShutdownWriteInTimeWait) {
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallSucceeds());
+  EXPECT_THAT(shutdown(s_, SHUT_RDWR), SyscallSucceeds());
+  absl::SleepFor(absl::Seconds(1));  // Wait to enter TIME_WAIT.
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallFailsWithErrno(ENOTCONN));
+}
+
+TEST_P(TcpSocketTest, ShutdownWriteInFinWait1) {
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallSucceeds());
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallSucceeds());
+  absl::SleepFor(absl::Seconds(1));  // Wait to enter FIN-WAIT2.
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallSucceeds());
+}
+
 TEST_P(TcpSocketTest, DataCoalesced) {
   char buf[10];
 
