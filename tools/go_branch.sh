@@ -87,6 +87,9 @@ EOF
 # because they may correspond to unused templates, etc.
 cp "${repo_orig}"/runsc/*.go runsc/
 
+# Don't run Travis-CI on the go branch.
+git rm --force .travis.yml
+
 # Update the current working set and commit.
 git add . && git commit -m "Merge ${head} (automated)"
 
