@@ -1,0 +1,38 @@
+// Test that a socket w/ TCP_USER_TIMEOUT set aborts the connection
+// if there is pending unacked data after the user specified timeout.
+
+0  socket(..., SOCK_STREAM, IPPROTO_TCP) = 3
++0 bind(3, ..., ...) = 0
+
++0 listen(3, 1) = 0
+
+// Establish a connection without timestamps.
++0 < S 0:0(0) win 32792 <mss 1460,sackOK,nop,nop,nop,wscale 7>
++0 > S. 0:0(0) ack 1 <...>
++0.1 < . 1:1(0) ack 1 win 32792
+
++0.100 accept(3, ..., ...) = 4
+
+// Okay, we received nothing, and decide to close this idle socket.
+// We set TCP_USER_TIMEOUT to 3 seconds because really it is not worth
+// trying hard to cleanly close this flow, at the price of keeping
+// a TCP structure in kernel for about 1 minute!
++2 setsockopt(4, SOL_TCP, TCP_USER_TIMEOUT, [3000], 4) = 0
+
+// The write/ack is required mainly for netstack as netstack does
+// not update its RTO during the handshake.
++0 write(4, ..., 100) = 100
++0 > P. 1:101(100) ack 1 <...>
++0 < . 1:1(0) ack 101 win 32792
+
++0 close(4) = 0
+
++0 > F. 101:101(0) ack 1 <...>
++.2~+.300 > F. 101:101(0) ack 1 <...>
++.4~+.500 > F. 101:101(0) ack 1 <...>
++.8~+.900 > F. 101:101(0) ack 1 <...>
+
+// We finally receive something from the peer, but it is way too late
+// Our socket vanished because TCP_USER_TIMEOUT was really small.
++1.61 < . 1:2(1) ack 102 win 32792
++0 > R 102:102(0) win 0

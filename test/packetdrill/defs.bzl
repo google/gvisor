@@ -66,7 +66,7 @@ def packetdrill_linux_test(name, **kwargs):
     if "tags" not in kwargs:
         kwargs["tags"] = _PACKETDRILL_TAGS
     _packetdrill_test(
-        name = name + "_linux_test",
+        name = name,
         flags = ["--dut_platform", "linux"],
         **kwargs
     )
@@ -75,13 +75,13 @@ def packetdrill_netstack_test(name, **kwargs):
     if "tags" not in kwargs:
         kwargs["tags"] = _PACKETDRILL_TAGS
     _packetdrill_test(
-        name = name + "_netstack_test",
+        name = name,
         # This is the default runtime unless
         # "--test_arg=--runtime=OTHER_RUNTIME" is used to override the value.
         flags = ["--dut_platform", "netstack", "--runtime", "runsc-d"],
         **kwargs
     )
 
-def packetdrill_test(**kwargs):
-    packetdrill_linux_test(**kwargs)
-    packetdrill_netstack_test(**kwargs)
+def packetdrill_test(name, **kwargs):
+    packetdrill_linux_test(name + "_linux_test", **kwargs)
+    packetdrill_netstack_test(name + "_netstack_test", **kwargs)
