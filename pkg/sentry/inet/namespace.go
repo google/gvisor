@@ -23,7 +23,10 @@ type Namespace struct {
 
 	// creator allows kernel to create new network stack for network namespaces.
 	// If nil, no networking will function if network is namespaced.
-	creator NetworkStackCreator
+	//
+	// At afterLoad(), creator will be used to create network stack. Stateify
+	// needs to wait for this field to be loaded before calling afterLoad().
+	creator NetworkStackCreator `state:"wait"`
 
 	// isRoot indicates whether this is the root network namespace.
 	isRoot bool
