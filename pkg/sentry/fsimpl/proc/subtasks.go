@@ -121,8 +121,13 @@ func (i *subtasksInode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.O
 }
 
 // Stat implements kernfs.Inode.
-func (i *subtasksInode) Stat(vsfs *vfs.Filesystem) linux.Statx {
-	stat := i.InodeAttrs.Stat(vsfs)
-	stat.Nlink += uint32(i.task.ThreadGroup().Count())
-	return stat
+func (i *subtasksInode) Stat(vsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
+	stat, err := i.InodeAttrs.Stat(vsfs, opts)
+	if err != nil {
+		return linux.Statx{}, err
+	}
+	if opts.Mask&linux.STATX_NLINK != 0 {
+		stat.Nlink += uint32(i.task.ThreadGroup().Count())
+	}
+	return stat, nil
 }

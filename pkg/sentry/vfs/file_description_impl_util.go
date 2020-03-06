@@ -33,8 +33,8 @@ import (
 // implementations to adapt:
 //   - Have a local fileDescription struct (containing FileDescription) which
 //     embeds FileDescriptionDefaultImpl and overrides the default methods
-//     which are common to all fd implementations for that for that filesystem
-//     like StatusFlags, SetStatusFlags, Stat, SetStat, StatFS, etc.
+//     which are common to all fd implementations for that filesystem like
+//     StatusFlags, SetStatusFlags, Stat, SetStat, StatFS, etc.
 //   - This should be embedded in all file description implementations as the
 //     first field by value.
 //   - Directory FDs would also embed DirectoryFileDescriptionDefaultImpl.
