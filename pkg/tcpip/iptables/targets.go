@@ -69,7 +69,7 @@ func (ReturnTarget) Action(tcpip.PacketBuffer) (RuleVerdict, int) {
 // Min and Max values for IP and Ports in the struct indicate the range of
 // values which can be used to redirect.
 type RedirectTarget struct {
-	// TODO(gvisor.dev/issue/170): Other flags need to be aded after
+	// TODO(gvisor.dev/issue/170): Other flags need to be added after
 	// we support them.
 	// RangeProtoSpecified flag indicates single port is specified to
 	// redirect.
@@ -98,7 +98,7 @@ func (rt RedirectTarget) Action(pkt tcpip.PacketBuffer) (RuleVerdict, int) {
 	// Set network header.
 	headerView := newPkt.Data.First()
 	netHeader := header.IPv4(headerView)
-	newPkt.NetworkHeader = headerView[:netHeader.HeaderLength()]
+	newPkt.NetworkHeader = headerView[:header.IPv4MinimumSize]
 
 	hlen := int(netHeader.HeaderLength())
 	tlen := int(netHeader.TotalLength())
