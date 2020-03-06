@@ -135,8 +135,9 @@ func (l *bufferList) InsertBefore(a, e *Buffer) {
 
 // Remove removes e from l.
 func (l *bufferList) Remove(e *Buffer) {
-	prev := bufferElementMapper{}.linkerFor(e).Prev()
-	next := bufferElementMapper{}.linkerFor(e).Next()
+	linker := bufferElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		bufferElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *bufferList) Remove(e *Buffer) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields

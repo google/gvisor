@@ -135,8 +135,9 @@ func (l *linkAddrEntryList) InsertBefore(a, e *linkAddrEntry) {
 
 // Remove removes e from l.
 func (l *linkAddrEntryList) Remove(e *linkAddrEntry) {
-	prev := linkAddrEntryElementMapper{}.linkerFor(e).Prev()
-	next := linkAddrEntryElementMapper{}.linkerFor(e).Next()
+	linker := linkAddrEntryElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		linkAddrEntryElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *linkAddrEntryList) Remove(e *linkAddrEntry) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields

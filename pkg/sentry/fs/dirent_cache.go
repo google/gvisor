@@ -101,8 +101,6 @@ func (c *DirentCache) remove(d *Dirent) {
 		panic(fmt.Sprintf("trying to remove %v, which is not in the dirent cache", d))
 	}
 	c.list.Remove(d)
-	d.SetPrev(nil)
-	d.SetNext(nil)
 	d.DecRef()
 	c.currentSize--
 	if c.limit != nil {

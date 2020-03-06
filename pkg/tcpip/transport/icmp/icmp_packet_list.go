@@ -135,8 +135,9 @@ func (l *icmpPacketList) InsertBefore(a, e *icmpPacket) {
 
 // Remove removes e from l.
 func (l *icmpPacketList) Remove(e *icmpPacket) {
-	prev := icmpPacketElementMapper{}.linkerFor(e).Prev()
-	next := icmpPacketElementMapper{}.linkerFor(e).Next()
+	linker := icmpPacketElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		icmpPacketElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *icmpPacketList) Remove(e *icmpPacket) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields

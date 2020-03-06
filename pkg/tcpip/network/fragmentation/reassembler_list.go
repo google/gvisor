@@ -135,8 +135,9 @@ func (l *reassemblerList) InsertBefore(a, e *reassembler) {
 
 // Remove removes e from l.
 func (l *reassemblerList) Remove(e *reassembler) {
-	prev := reassemblerElementMapper{}.linkerFor(e).Prev()
-	next := reassemblerElementMapper{}.linkerFor(e).Next()
+	linker := reassemblerElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		reassemblerElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *reassemblerList) Remove(e *reassembler) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields

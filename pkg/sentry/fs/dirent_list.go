@@ -135,8 +135,9 @@ func (l *direntList) InsertBefore(a, e *Dirent) {
 
 // Remove removes e from l.
 func (l *direntList) Remove(e *Dirent) {
-	prev := direntElementMapper{}.linkerFor(e).Prev()
-	next := direntElementMapper{}.linkerFor(e).Next()
+	linker := direntElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		direntElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *direntList) Remove(e *Dirent) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields

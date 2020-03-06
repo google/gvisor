@@ -135,8 +135,9 @@ func (l *epollInterestList) InsertBefore(a, e *epollInterest) {
 
 // Remove removes e from l.
 func (l *epollInterestList) Remove(e *epollInterest) {
-	prev := epollInterestElementMapper{}.linkerFor(e).Prev()
-	next := epollInterestElementMapper{}.linkerFor(e).Next()
+	linker := epollInterestElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		epollInterestElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *epollInterestList) Remove(e *epollInterest) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields

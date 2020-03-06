@@ -135,8 +135,9 @@ func (l *waiterList) InsertBefore(a, e *waiter) {
 
 // Remove removes e from l.
 func (l *waiterList) Remove(e *waiter) {
-	prev := waiterElementMapper{}.linkerFor(e).Prev()
-	next := waiterElementMapper{}.linkerFor(e).Next()
+	linker := waiterElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		waiterElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *waiterList) Remove(e *waiter) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields

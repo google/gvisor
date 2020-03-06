@@ -135,8 +135,9 @@ func (l *endpointList) InsertBefore(a, e *endpoint) {
 
 // Remove removes e from l.
 func (l *endpointList) Remove(e *endpoint) {
-	prev := endpointElementMapper{}.linkerFor(e).Prev()
-	next := endpointElementMapper{}.linkerFor(e).Next()
+	linker := endpointElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		endpointElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *endpointList) Remove(e *endpoint) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields

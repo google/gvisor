@@ -135,8 +135,9 @@ func (l *taskList) InsertBefore(a, e *Task) {
 
 // Remove removes e from l.
 func (l *taskList) Remove(e *Task) {
-	prev := taskElementMapper{}.linkerFor(e).Prev()
-	next := taskElementMapper{}.linkerFor(e).Next()
+	linker := taskElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		taskElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *taskList) Remove(e *Task) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields

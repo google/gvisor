@@ -135,8 +135,9 @@ func (l *sessionList) InsertBefore(a, e *Session) {
 
 // Remove removes e from l.
 func (l *sessionList) Remove(e *Session) {
-	prev := sessionElementMapper{}.linkerFor(e).Prev()
-	next := sessionElementMapper{}.linkerFor(e).Next()
+	linker := sessionElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		sessionElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *sessionList) Remove(e *Session) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields

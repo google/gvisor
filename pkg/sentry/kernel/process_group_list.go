@@ -135,8 +135,9 @@ func (l *processGroupList) InsertBefore(a, e *ProcessGroup) {
 
 // Remove removes e from l.
 func (l *processGroupList) Remove(e *ProcessGroup) {
-	prev := processGroupElementMapper{}.linkerFor(e).Prev()
-	next := processGroupElementMapper{}.linkerFor(e).Next()
+	linker := processGroupElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		processGroupElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *processGroupList) Remove(e *ProcessGroup) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields

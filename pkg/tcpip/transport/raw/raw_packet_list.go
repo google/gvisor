@@ -135,8 +135,9 @@ func (l *rawPacketList) InsertBefore(a, e *rawPacket) {
 
 // Remove removes e from l.
 func (l *rawPacketList) Remove(e *rawPacket) {
-	prev := rawPacketElementMapper{}.linkerFor(e).Prev()
-	next := rawPacketElementMapper{}.linkerFor(e).Next()
+	linker := rawPacketElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		rawPacketElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *rawPacketList) Remove(e *rawPacket) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields

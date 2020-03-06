@@ -135,8 +135,9 @@ func (l *pollEntryList) InsertBefore(a, e *pollEntry) {
 
 // Remove removes e from l.
 func (l *pollEntryList) Remove(e *pollEntry) {
-	prev := pollEntryElementMapper{}.linkerFor(e).Prev()
-	next := pollEntryElementMapper{}.linkerFor(e).Next()
+	linker := pollEntryElementMapper{}.linkerFor(e)
+	prev := linker.Prev()
+	next := linker.Next()
 
 	if prev != nil {
 		pollEntryElementMapper{}.linkerFor(prev).SetNext(next)
@@ -149,6 +150,9 @@ func (l *pollEntryList) Remove(e *pollEntry) {
 	} else {
 		l.tail = prev
 	}
+
+	linker.SetNext(nil)
+	linker.SetPrev(nil)
 }
 
 // Entry is a default implementation of Linker. Users can add anonymous fields
