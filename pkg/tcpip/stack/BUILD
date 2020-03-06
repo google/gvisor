@@ -18,6 +18,7 @@ go_template_instance(
 go_library(
     name = "stack",
     srcs = [
+        "dhcpv6configurationfromndpra_string.go",
         "icmp_rate_limit.go",
         "linkaddrcache.go",
         "linkaddrentry_list.go",
