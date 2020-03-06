@@ -29,7 +29,7 @@ func (x *Namespace) save(m state.Map) {
 }
 
 func (x *Namespace) load(m state.Map) {
-	m.Load("creator", &x.creator)
+	m.LoadWait("creator", &x.creator)
 	m.Load("isRoot", &x.isRoot)
 	m.AfterLoad(x.afterLoad)
 }
