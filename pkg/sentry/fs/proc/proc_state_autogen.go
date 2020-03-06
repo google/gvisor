@@ -596,6 +596,30 @@ func (x *auxvecFile) load(m state.Map) {
 	m.Load("t", &x.t)
 }
 
+func (x *oomScoreAdj) beforeSave() {}
+func (x *oomScoreAdj) save(m state.Map) {
+	x.beforeSave()
+	m.Save("SimpleFileInode", &x.SimpleFileInode)
+	m.Save("t", &x.t)
+}
+
+func (x *oomScoreAdj) afterLoad() {}
+func (x *oomScoreAdj) load(m state.Map) {
+	m.Load("SimpleFileInode", &x.SimpleFileInode)
+	m.Load("t", &x.t)
+}
+
+func (x *oomScoreAdjFile) beforeSave() {}
+func (x *oomScoreAdjFile) save(m state.Map) {
+	x.beforeSave()
+	m.Save("t", &x.t)
+}
+
+func (x *oomScoreAdjFile) afterLoad() {}
+func (x *oomScoreAdjFile) load(m state.Map) {
+	m.Load("t", &x.t)
+}
+
 func (x *idMapInodeOperations) beforeSave() {}
 func (x *idMapInodeOperations) save(m state.Map) {
 	x.beforeSave()
@@ -709,6 +733,8 @@ func init() {
 	state.Register("pkg/sentry/fs/proc.commFile", (*commFile)(nil), state.Fns{Save: (*commFile).save, Load: (*commFile).load})
 	state.Register("pkg/sentry/fs/proc.auxvec", (*auxvec)(nil), state.Fns{Save: (*auxvec).save, Load: (*auxvec).load})
 	state.Register("pkg/sentry/fs/proc.auxvecFile", (*auxvecFile)(nil), state.Fns{Save: (*auxvecFile).save, Load: (*auxvecFile).load})
+	state.Register("pkg/sentry/fs/proc.oomScoreAdj", (*oomScoreAdj)(nil), state.Fns{Save: (*oomScoreAdj).save, Load: (*oomScoreAdj).load})
+	state.Register("pkg/sentry/fs/proc.oomScoreAdjFile", (*oomScoreAdjFile)(nil), state.Fns{Save: (*oomScoreAdjFile).save, Load: (*oomScoreAdjFile).load})
 	state.Register("pkg/sentry/fs/proc.idMapInodeOperations", (*idMapInodeOperations)(nil), state.Fns{Save: (*idMapInodeOperations).save, Load: (*idMapInodeOperations).load})
 	state.Register("pkg/sentry/fs/proc.idMapFileOperations", (*idMapFileOperations)(nil), state.Fns{Save: (*idMapFileOperations).save, Load: (*idMapFileOperations).load})
 	state.Register("pkg/sentry/fs/proc.uptime", (*uptime)(nil), state.Fns{Save: (*uptime).save, Load: (*uptime).load})

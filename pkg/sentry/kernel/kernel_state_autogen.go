@@ -597,6 +597,7 @@ func (x *Task) save(m state.Map) {
 	m.Save("rseqAddr", &x.rseqAddr)
 	m.Save("rseqSignature", &x.rseqSignature)
 	m.Save("startTime", &x.startTime)
+	m.Save("oomScoreAdj", &x.oomScoreAdj)
 }
 
 func (x *Task) load(m state.Map) {
@@ -656,6 +657,7 @@ func (x *Task) load(m state.Map) {
 	m.Load("rseqAddr", &x.rseqAddr)
 	m.Load("rseqSignature", &x.rseqSignature)
 	m.Load("startTime", &x.startTime)
+	m.Load("oomScoreAdj", &x.oomScoreAdj)
 	m.LoadValue("ptraceTracer", new(*Task), func(y interface{}) { x.loadPtraceTracer(y.(*Task)) })
 	m.LoadValue("syscallFilters", new([]bpf.Program), func(y interface{}) { x.loadSyscallFilters(y.([]bpf.Program)) })
 	m.AfterLoad(x.afterLoad)
