@@ -252,6 +252,9 @@ func MaybeRunAsRoot() error {
 		},
 		Credential:                 &syscall.Credential{Uid: 0, Gid: 0},
 		GidMappingsEnableSetgroups: false,
+
+		// Make sure child is killed when the parent terminates.
+		Pdeathsig: syscall.SIGKILL,
 	}
 
 	cmd.Env = os.Environ()

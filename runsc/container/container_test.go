@@ -124,23 +124,6 @@ func procListsEqual(got, want []*control.Process) (bool, error) {
 	return true, nil
 }
 
-// getAndCheckProcLists is similar to waitForProcessList, but does not wait and retry the
-// test for equality. This is because we already confirmed that exec occurred.
-func getAndCheckProcLists(cont *Container, want []*control.Process) error {
-	got, err := cont.Processes()
-	if err != nil {
-		return fmt.Errorf("error getting process data from container: %v", err)
-	}
-	equal, err := procListsEqual(got, want)
-	if err != nil {
-		return err
-	}
-	if equal {
-		return nil
-	}
-	return fmt.Errorf("container got process list: %s, want: %s", procListToString(got), procListToString(want))
-}
-
 func procListToString(pl []*control.Process) string {
 	strs := make([]string, 0, len(pl))
 	for _, p := range pl {

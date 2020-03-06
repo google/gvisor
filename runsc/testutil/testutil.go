@@ -87,18 +87,19 @@ func TestConfig() *boot.Config {
 		logDir = dir + "/"
 	}
 	return &boot.Config{
-		Debug:           true,
-		DebugLog:        logDir,
-		LogFormat:       "text",
-		DebugLogFormat:  "text",
-		AlsoLogToStderr: true,
-		LogPackets:      true,
-		Network:         boot.NetworkNone,
-		Strace:          true,
-		Platform:        "ptrace",
-		FileAccess:      boot.FileAccessExclusive,
+		Debug:              true,
+		DebugLog:           logDir,
+		LogFormat:          "text",
+		DebugLogFormat:     "text",
+		AlsoLogToStderr:    true,
+		LogPackets:         true,
+		Network:            boot.NetworkNone,
+		Strace:             true,
+		Platform:           "ptrace",
+		FileAccess:         boot.FileAccessExclusive,
+		NumNetworkChannels: 1,
+
 		TestOnlyAllowRunAsCurrentUserWithoutChroot: true,
-		NumNetworkChannels:                         1,
 	}
 }
 
