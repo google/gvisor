@@ -1220,9 +1220,15 @@ func (ndp *ndpState) startSolicitingRouters() {
 	}
 
 	ndp.rtrSolicitTimer = time.AfterFunc(delay, func() {
-		// Send an RS message with the unspecified source address.
-		ref := ndp.nic.getRefOrCreateTemp(header.IPv6ProtocolNumber, header.IPv6Any, NeverPrimaryEndpoint, forceSpoofing)
-		r := makeRoute(header.IPv6ProtocolNumber, header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.nic.linkEP.LinkAddress(), ref, false, false)
+		// As per RFC 4861 section 4.1, the source of the RS is an address assigned
+		// to the sending interface, or the unspecified address if no address is
+		// assigned to the sending interface.
+		ref := ndp.nic.primaryIPv6Endpoint(header.IPv6AllRoutersMulticastAddress)
+		if ref == nil {
+			ref = ndp.nic.getRefOrCreateTemp(header.IPv6ProtocolNumber, header.IPv6Any, NeverPrimaryEndpoint, forceSpoofing)
+		}
+		localAddr := ref.ep.ID().LocalAddress
+		r := makeRoute(header.IPv6ProtocolNumber, localAddr, header.IPv6AllRoutersMulticastAddress, ndp.nic.linkEP.LinkAddress(), ref, false, false)
 		defer r.Release()
 
 		// Route should resolve immediately since
@@ -1234,10 +1240,25 @@ func (ndp *ndpState) startSolicitingRouters() {
 			log.Fatalf("ndp: route resolution not immediate for route to send NDP RS (%s -> %s on NIC(%d))", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.nic.ID())
 		}
 
-		payloadSize := header.ICMPv6HeaderSize + header.NDPRSMinimumSize
+		// As per RFC 4861 section 4.1, an NDP RS SHOULD include the source
+		// link-layer address option if the source address of the NDP RS is
+		// specified. This option MUST NOT be included if the source address is
+		// unspecified.
+		//
+		// TODO(b/141011931): Validate a LinkEndpoint's link address (provided by
+		// LinkEndpoint.LinkAddress) before reaching this point.
+		var optsSerializer header.NDPOptionsSerializer
+		if localAddr != header.IPv6Any && header.IsValidUnicastEthernetAddress(r.LocalLinkAddress) {
+			optsSerializer = header.NDPOptionsSerializer{
+				header.NDPSourceLinkLayerAddressOption(r.LocalLinkAddress),
+			}
+		}
+		payloadSize := header.ICMPv6HeaderSize + header.NDPRSMinimumSize + int(optsSerializer.Length())
 		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + payloadSize)
 		pkt := header.ICMPv6(hdr.Prepend(payloadSize))
 		pkt.SetType(header.ICMPv6RouterSolicit)
+		rs := header.NDPRouterSolicit(pkt.NDPPayload())
+		rs.Options().Serialize(optsSerializer)
 		pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 
 		sent := r.Stats().ICMP.V6PacketsSent

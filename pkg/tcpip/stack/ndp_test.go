@@ -3384,6 +3384,10 @@ func TestRouterSolicitation(t *testing.T) {
 	tests := []struct {
 		name                        string
 		linkHeaderLen               uint16
+		linkAddr                    tcpip.LinkAddress
+		nicAddr                     tcpip.Address
+		expectedSrcAddr             tcpip.Address
+		expectedNDPOpts             []header.NDPOption
 		maxRtrSolicit               uint8
 		rtrSolicitInt               time.Duration
 		effectiveRtrSolicitInt      time.Duration
@@ -3392,6 +3396,7 @@ func TestRouterSolicitation(t *testing.T) {
 	}{
 		{
 			name:                        "Single RS with delay",
+			expectedSrcAddr:             header.IPv6Any,
 			maxRtrSolicit:               1,
 			rtrSolicitInt:               time.Second,
 			effectiveRtrSolicitInt:      time.Second,
@@ -3401,6 +3406,8 @@ func TestRouterSolicitation(t *testing.T) {
 		{
 			name:                        "Two RS with delay",
 			linkHeaderLen:               1,
+			nicAddr:                     llAddr1,
+			expectedSrcAddr:             llAddr1,
 			maxRtrSolicit:               2,
 			rtrSolicitInt:               time.Second,
 			effectiveRtrSolicitInt:      time.Second,
@@ -3408,8 +3415,14 @@ func TestRouterSolicitation(t *testing.T) {
 			effectiveMaxRtrSolicitDelay: 500 * time.Millisecond,
 		},
 		{
-			name:                        "Single RS without delay",
-			linkHeaderLen:               2,
+			name:            "Single RS without delay",
+			linkHeaderLen:   2,
+			linkAddr:        linkAddr1,
+			nicAddr:         llAddr1,
+			expectedSrcAddr: llAddr1,
+			expectedNDPOpts: []header.NDPOption{
+				header.NDPSourceLinkLayerAddressOption(linkAddr1),
+			},
 			maxRtrSolicit:               1,
 			rtrSolicitInt:               time.Second,
 			effectiveRtrSolicitInt:      time.Second,
@@ -3419,6 +3432,8 @@ func TestRouterSolicitation(t *testing.T) {
 		{
 			name:                        "Two RS without delay and invalid zero interval",
 			linkHeaderLen:               3,
+			linkAddr:                    linkAddr1,
+			expectedSrcAddr:             header.IPv6Any,
 			maxRtrSolicit:               2,
 			rtrSolicitInt:               0,
 			effectiveRtrSolicitInt:      4 * time.Second,
@@ -3427,6 +3442,8 @@ func TestRouterSolicitation(t *testing.T) {
 		},
 		{
 			name:                        "Three RS without delay",
+			linkAddr:                    linkAddr1,
+			expectedSrcAddr:             header.IPv6Any,
 			maxRtrSolicit:               3,
 			rtrSolicitInt:               500 * time.Millisecond,
 			effectiveRtrSolicitInt:      500 * time.Millisecond,
@@ -3435,6 +3452,8 @@ func TestRouterSolicitation(t *testing.T) {
 		},
 		{
 			name:                        "Two RS with invalid negative delay",
+			linkAddr:                    linkAddr1,
+			expectedSrcAddr:             header.IPv6Any,
 			maxRtrSolicit:               2,
 			rtrSolicitInt:               time.Second,
 			effectiveRtrSolicitInt:      time.Second,
@@ -3457,7 +3476,7 @@ func TestRouterSolicitation(t *testing.T) {
 			t.Run(test.name, func(t *testing.T) {
 				t.Parallel()
 				e := channelLinkWithHeaderLength{
-					Endpoint:     channel.New(int(test.maxRtrSolicit), 1280, linkAddr1),
+					Endpoint:     channel.New(int(test.maxRtrSolicit), 1280, test.linkAddr),
 					headerLength: test.linkHeaderLen,
 				}
 				e.Endpoint.LinkEPCapabilities |= stack.CapabilityResolutionRequired
@@ -3481,10 +3500,10 @@ func TestRouterSolicitation(t *testing.T) {
 
 					checker.IPv6(t,
 						p.Pkt.Header.View(),
-						checker.SrcAddr(header.IPv6Any),
+						checker.SrcAddr(test.expectedSrcAddr),
 						checker.DstAddr(header.IPv6AllRoutersMulticastAddress),
 						checker.TTL(header.NDPHopLimit),
-						checker.NDPRS(),
+						checker.NDPRS(checker.NDPRSOptions(test.expectedNDPOpts)),
 					)
 
 					if l, want := p.Pkt.Header.AvailableLength(), int(test.linkHeaderLen); l != want {
@@ -3510,13 +3529,19 @@ func TestRouterSolicitation(t *testing.T) {
 					t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 				}
 
-				// Make sure each RS got sent at the right
-				// times.
+				if addr := test.nicAddr; addr != "" {
+					if err := s.AddAddress(nicID, header.IPv6ProtocolNumber, addr); err != nil {
+						t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv6ProtocolNumber, addr, err)
+					}
+				}
+
+				// Make sure each RS is sent at the right time.
 				remaining := test.maxRtrSolicit
 				if remaining > 0 {
 					waitForPkt(test.effectiveMaxRtrSolicitDelay + defaultAsyncEventTimeout)
 					remaining--
 				}
+
 				for ; remaining > 0; remaining-- {
 					waitForNothing(test.effectiveRtrSolicitInt - defaultTimeout)
 					waitForPkt(defaultAsyncEventTimeout)
