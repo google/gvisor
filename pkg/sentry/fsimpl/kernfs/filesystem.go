@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This file implements vfs.FilesystemImpl for kernfs.
-
 package kernfs
+
+// This file implements vfs.FilesystemImpl for kernfs.
 
 import (
 	"fmt"
@@ -634,7 +634,7 @@ func (fs *Filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	if err != nil {
 		return linux.Statx{}, err
 	}
-	return inode.Stat(fs.VFSFilesystem()), nil
+	return inode.Stat(fs.VFSFilesystem(), opts)
 }
 
 // StatFSAt implements vfs.FilesystemImpl.StatFSAt.

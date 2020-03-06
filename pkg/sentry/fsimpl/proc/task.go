@@ -154,12 +154,21 @@ func newTaskOwnedDir(task *kernel.Task, ino uint64, perm linux.FileMode, childre
 }
 
 // Stat implements kernfs.Inode.
-func (i *taskOwnedInode) Stat(fs *vfs.Filesystem) linux.Statx {
-	stat := i.Inode.Stat(fs)
-	uid, gid := i.getOwner(linux.FileMode(stat.Mode))
-	stat.UID = uint32(uid)
-	stat.GID = uint32(gid)
-	return stat
+func (i *taskOwnedInode) Stat(fs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
+	stat, err := i.Inode.Stat(fs, opts)
+	if err != nil {
+		return linux.Statx{}, err
+	}
+	if opts.Mask&(linux.STATX_UID|linux.STATX_GID) != 0 {
+		uid, gid := i.getOwner(linux.FileMode(stat.Mode))
+		if opts.Mask&linux.STATX_UID != 0 {
+			stat.UID = uint32(uid)
+		}
+		if opts.Mask&linux.STATX_GID != 0 {
+			stat.GID = uint32(gid)
+		}
+	}
+	return stat, nil
 }
 
 // CheckPermissions implements kernfs.Inode.
@@ -236,7 +245,7 @@ func newNamespaceSymlink(task *kernel.Task, ino uint64, ns string) *kernfs.Dentr
 // member, there is one entry containing three colon-separated fields:
 //   hierarchy-ID:controller-list:cgroup-path"
 func newCgroupData(controllers map[string]string) dynamicInode {
-	buf := bytes.Buffer{}
+	var buf bytes.Buffer
 
 	// The hierarchy ids must be positive integers (for cgroup v1), but the
 	// exact number does not matter, so long as they are unique. We can

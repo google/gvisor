@@ -122,7 +122,7 @@ func (fd *DynamicBytesFD) Release() {}
 // Stat implements vfs.FileDescriptionImpl.Stat.
 func (fd *DynamicBytesFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
 	fs := fd.vfsfd.VirtualDentry().Mount().Filesystem()
-	return fd.inode.Stat(fs), nil
+	return fd.inode.Stat(fs, opts)
 }
 
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
