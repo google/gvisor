@@ -117,15 +117,15 @@ func (p *Profile) HeapProfile(o *ProfileOpts, _ *struct{}) error {
 	return nil
 }
 
-// GoroutineProfile is an RPC stub which dumps out the stack trace for all running
-// goroutines.
+// GoroutineProfile is an RPC stub which dumps out the stack trace for all
+// running goroutines.
 func (p *Profile) GoroutineProfile(o *ProfileOpts, _ *struct{}) error {
 	if len(o.FilePayload.Files) < 1 {
 		return errNoOutput
 	}
 	output := o.FilePayload.Files[0]
 	defer output.Close()
-	if err := pprof.Lookup("goroutine").WriteTo(output, 0); err != nil {
+	if err := pprof.Lookup("goroutine").WriteTo(output, 2); err != nil {
 		return err
 	}
 	return nil
