@@ -318,9 +318,13 @@ syscall_test(
     test = "//test/syscalls/linux:proc_test",
 )
 
-syscall_test(test = "//test/syscalls/linux:proc_pid_uid_gid_map_test")
-
 syscall_test(test = "//test/syscalls/linux:proc_net_test")
+
+syscall_test(test = "//test/syscalls/linux:proc_pid_oomscore_test")
+
+syscall_test(test = "//test/syscalls/linux:proc_pid_smaps_test")
+
+syscall_test(test = "//test/syscalls/linux:proc_pid_uid_gid_map_test")
 
 syscall_test(
     size = "medium",

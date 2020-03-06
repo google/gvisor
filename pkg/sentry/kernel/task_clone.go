@@ -264,6 +264,11 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		rseqSignature = t.rseqSignature
 	}
 
+	adj, err := t.OOMScoreAdj()
+	if err != nil {
+		return 0, nil, err
+	}
+
 	cfg := &TaskConfig{
 		Kernel:                  t.k,
 		ThreadGroup:             tg,
@@ -282,6 +287,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		RSeqAddr:                rseqAddr,
 		RSeqSignature:           rseqSignature,
 		ContainerID:             t.ContainerID(),
+		OOMScoreAdj:             adj,
 	}
 	if opts.NewThreadGroup {
 		cfg.Parent = t
