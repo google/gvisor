@@ -23,6 +23,7 @@
 
 namespace gvisor {
 namespace testing {
+namespace {
 
 std::vector<SocketPairKind> GetSocketPairs() {
   return VecCat<SocketPairKind>(VecCat<SocketPairKind>(
@@ -52,5 +53,6 @@ INSTANTIATE_TEST_SUITE_P(
     DgramUnixSockets, NonStreamSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 
+}  // namespace
 }  // namespace testing
 }  // namespace gvisor

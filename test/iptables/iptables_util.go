@@ -27,10 +27,29 @@ const iptablesBinary = "iptables"
 
 // filterTable calls `iptables -t filter` with the given args.
 func filterTable(args ...string) error {
-	args = append([]string{"-t", "filter"}, args...)
+	return tableCmd("filter", args)
+}
+
+// natTable calls `iptables -t nat` with the given args.
+func natTable(args ...string) error {
+	return tableCmd("nat", args)
+}
+
+func tableCmd(table string, args []string) error {
+	args = append([]string{"-t", table}, args...)
 	cmd := exec.Command(iptablesBinary, args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("error running iptables with args %v\nerror: %v\noutput: %s", args, err, string(out))
+	}
+	return nil
+}
+
+// filterTableRules is like filterTable, but runs multiple iptables commands.
+func filterTableRules(argsList [][]string) error {
+	for _, args := range argsList {
+		if err := filterTable(args...); err != nil {
+			return err
+		}
 	}
 	return nil
 }

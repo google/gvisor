@@ -38,6 +38,8 @@ import (
 //
 // Mount is analogous to Linux's struct mount. (gVisor does not distinguish
 // between struct mount and struct vfsmount.)
+//
+// +stateify savable
 type Mount struct {
 	// vfs, fs, and root are immutable. References are held on fs and root.
 	//
@@ -85,6 +87,8 @@ type Mount struct {
 // MountNamespace methods require that a reference is held.
 //
 // MountNamespace is analogous to Linux's struct mnt_namespace.
+//
+// +stateify savable
 type MountNamespace struct {
 	// root is the MountNamespace's root mount. root is immutable.
 	root *Mount
@@ -114,6 +118,7 @@ type MountNamespace struct {
 func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth.Credentials, source, fsTypeName string, opts *GetFilesystemOptions) (*MountNamespace, error) {
 	rft := vfs.getFilesystemType(fsTypeName)
 	if rft == nil {
+		ctx.Warningf("Unknown filesystem: %s", fsTypeName)
 		return nil, syserror.ENODEV
 	}
 	fs, root, err := rft.fsType.GetFilesystem(ctx, vfs, creds, source, *opts)
@@ -132,6 +137,23 @@ func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth
 		refs: 1,
 	}
 	return mntns, nil
+}
+
+// NewDisconnectedMount returns a Mount representing fs with the given root
+// (which may be nil). The new Mount is not associated with any MountNamespace
+// and is not connected to any other Mounts. References are taken on fs and
+// root.
+func (vfs *VirtualFilesystem) NewDisconnectedMount(fs *Filesystem, root *Dentry, opts *MountOptions) (*Mount, error) {
+	fs.IncRef()
+	if root != nil {
+		root.IncRef()
+	}
+	return &Mount{
+		vfs:  vfs,
+		fs:   fs,
+		root: root,
+		refs: 1,
+	}, nil
 }
 
 // MountAt creates and mounts a Filesystem configured by the given arguments.
@@ -231,9 +253,12 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 		return syserror.EINVAL
 	}
 	vfs.mountMu.Lock()
-	if mntns := MountNamespaceFromContext(ctx); mntns != nil && mntns != vd.mount.ns {
-		vfs.mountMu.Unlock()
-		return syserror.EINVAL
+	if mntns := MountNamespaceFromContext(ctx); mntns != nil {
+		defer mntns.DecRef()
+		if mntns != vd.mount.ns {
+			vfs.mountMu.Unlock()
+			return syserror.EINVAL
+		}
 	}
 
 	// TODO(jamieliu): Linux special-cases umount of the caller's root, which
@@ -423,7 +448,8 @@ func (mntns *MountNamespace) IncRef() {
 }
 
 // DecRef decrements mntns' reference count.
-func (mntns *MountNamespace) DecRef(vfs *VirtualFilesystem) {
+func (mntns *MountNamespace) DecRef() {
+	vfs := mntns.root.fs.VirtualFilesystem()
 	if refs := atomic.AddInt64(&mntns.refs, -1); refs == 0 {
 		vfs.mountMu.Lock()
 		vfs.mounts.seq.BeginWrite()

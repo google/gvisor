@@ -37,7 +37,7 @@ package mm
 import (
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -215,7 +215,7 @@ type MemoryManager struct {
 	// is not nil, it holds a reference on the Dirent.
 	//
 	// executable is protected by metadataMu.
-	executable *fs.Dirent
+	executable fsbridge.File
 
 	// dumpability describes if and how this MemoryManager may be dumped to
 	// userspace.
@@ -226,6 +226,11 @@ type MemoryManager struct {
 	// aioManager keeps track of AIOContexts used for async IOs. AIOManager
 	// must be cloned when CLONE_VM is used.
 	aioManager aioManager
+
+	// sleepForActivation indicates whether the task should report to be sleeping
+	// before trying to activate the address space. When set to true, delays in
+	// activation are not reported as stuck tasks by the watchdog.
+	sleepForActivation bool
 }
 
 // vma represents a virtual memory area.

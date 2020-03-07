@@ -18,8 +18,8 @@ import (
 	"context"
 	"fmt"
 
-	"flag"
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
 // NewHelp returns a help command for the given commander.

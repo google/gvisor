@@ -10,4 +10,7 @@ go_library(
     visibility = [
         "//:sandbox",
     ],
+    deps = [
+        "//pkg/usermem",
+    ],
 )

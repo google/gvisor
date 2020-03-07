@@ -143,7 +143,10 @@ func (i *Inotify) Read(ctx context.Context, _ *File, dst usermem.IOSequence, _ i
 	}
 
 	var writeLen int64
-	for event := i.events.Front(); event != nil; event = event.Next() {
+	for it := i.events.Front(); it != nil; {
+		event := it
+		it = it.Next()
+
 		// Does the buffer have enough remaining space to hold the event we're
 		// about to write out?
 		if dst.NumBytes() < int64(event.sizeOf()) {

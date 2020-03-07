@@ -130,6 +130,8 @@ func copyInPath(t *kernel.Task, addr usermem.Addr, allowEmpty bool) (path string
 	return path, dirPath, nil
 }
 
+// LINT.IfChange
+
 func openAt(t *kernel.Task, dirFD int32, addr usermem.Addr, flags uint) (fd uintptr, err error) {
 	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
@@ -575,6 +577,10 @@ func Faccessat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	return 0, nil, accessAt(t, dirFD, addr, flags&linux.AT_SYMLINK_NOFOLLOW == 0, mode)
 }
 
+// LINT.ThenChange(vfs2/filesystem.go)
+
+// LINT.IfChange
+
 // Ioctl implements linux syscall ioctl(2).
 func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
@@ -649,6 +655,10 @@ func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return ret, nil, nil
 	}
 }
+
+// LINT.ThenChange(vfs2/ioctl.go)
+
+// LINT.IfChange
 
 // Getcwd implements the linux syscall getcwd(2).
 func Getcwd(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
@@ -759,6 +769,10 @@ func Fchdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	t.FSContext().SetWorkingDirectory(file.Dirent)
 	return 0, nil, nil
 }
+
+// LINT.ThenChange(vfs2/fscontext.go)
+
+// LINT.IfChange
 
 // Close implements linux syscall close(2).
 func Close(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
@@ -1094,6 +1108,8 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	}
 }
 
+// LINT.ThenChange(vfs2/fd.go)
+
 const (
 	_FADV_NORMAL     = 0
 	_FADV_RANDOM     = 1
@@ -1140,6 +1156,8 @@ func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	// Sure, whatever.
 	return 0, nil, nil
 }
+
+// LINT.IfChange
 
 func mkdirAt(t *kernel.Task, dirFD int32, addr usermem.Addr, mode linux.FileMode) error {
 	path, _, err := copyInPath(t, addr, false /* allowEmpty */)
@@ -1218,7 +1236,7 @@ func rmdirAt(t *kernel.Task, dirFD int32, addr usermem.Addr) error {
 			return syserror.ENOTEMPTY
 		}
 
-		if err := fs.MayDelete(t, root, d, name); err != nil {
+		if err := d.MayDelete(t, root, name); err != nil {
 			return err
 		}
 
@@ -1421,6 +1439,10 @@ func Linkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	return 0, nil, linkAt(t, oldDirFD, oldAddr, newDirFD, newAddr, resolve, allowEmpty)
 }
 
+// LINT.ThenChange(vfs2/filesystem.go)
+
+// LINT.IfChange
+
 func readlinkAt(t *kernel.Task, dirFD int32, addr usermem.Addr, bufAddr usermem.Addr, size uint) (copied uintptr, err error) {
 	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
@@ -1480,6 +1502,10 @@ func Readlinkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	return n, nil, err
 }
 
+// LINT.ThenChange(vfs2/stat.go)
+
+// LINT.IfChange
+
 func unlinkAt(t *kernel.Task, dirFD int32, addr usermem.Addr) error {
 	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
@@ -1491,7 +1517,7 @@ func unlinkAt(t *kernel.Task, dirFD int32, addr usermem.Addr) error {
 			return syserror.ENOTDIR
 		}
 
-		if err := fs.MayDelete(t, root, d, name); err != nil {
+		if err := d.MayDelete(t, root, name); err != nil {
 			return err
 		}
 
@@ -1515,6 +1541,10 @@ func Unlinkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	}
 	return 0, nil, unlinkAt(t, dirFD, addr)
 }
+
+// LINT.ThenChange(vfs2/filesystem.go)
+
+// LINT.IfChange
 
 // Truncate implements linux syscall truncate(2).
 func Truncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
@@ -1614,12 +1644,16 @@ func Ftruncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	return 0, nil, nil
 }
 
+// LINT.ThenChange(vfs2/setstat.go)
+
 // Umask implements linux syscall umask(2).
 func Umask(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	mask := args[0].ModeT()
 	mask = t.FSContext().SwapUmask(mask & 0777)
 	return uintptr(mask), nil, nil
 }
+
+// LINT.IfChange
 
 // Change ownership of a file.
 //
@@ -1987,6 +2021,10 @@ func Futimesat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	return 0, nil, utimes(t, dirFD, pathnameAddr, ts, true)
 }
 
+// LINT.ThenChange(vfs2/setstat.go)
+
+// LINT.IfChange
+
 func renameAt(t *kernel.Task, oldDirFD int32, oldAddr usermem.Addr, newDirFD int32, newAddr usermem.Addr) error {
 	newPath, _, err := copyInPath(t, newAddr, false /* allowEmpty */)
 	if err != nil {
@@ -2041,6 +2079,8 @@ func Renameat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	newPathAddr := args[3].Pointer()
 	return 0, nil, renameAt(t, oldDirFD, oldPathAddr, newDirFD, newPathAddr)
 }
+
+// LINT.ThenChange(vfs2/filesystem.go)
 
 // Fallocate implements linux system call fallocate(2).
 func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {

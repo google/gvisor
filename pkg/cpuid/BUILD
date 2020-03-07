@@ -7,6 +7,8 @@ go_library(
     srcs = [
         "cpu_amd64.s",
         "cpuid.go",
+        "cpuid_arm64.go",
+        "cpuid_x86.go",
     ],
     visibility = ["//:sandbox"],
     deps = ["//pkg/log"],
@@ -15,7 +17,10 @@ go_library(
 go_test(
     name = "cpuid_test",
     size = "small",
-    srcs = ["cpuid_test.go"],
+    srcs = [
+        "cpuid_arm64_test.go",
+        "cpuid_x86_test.go",
+    ],
     library = ":cpuid",
 )
 
@@ -23,7 +28,7 @@ go_test(
     name = "cpuid_parse_test",
     size = "small",
     srcs = [
-        "cpuid_parse_test.go",
+        "cpuid_parse_x86_test.go",
     ],
     library = ":cpuid",
     tags = ["manual"],

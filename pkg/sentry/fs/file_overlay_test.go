@@ -177,6 +177,7 @@ func TestReaddirRevalidation(t *testing.T) {
 
 // TestReaddirOverlayFrozen tests that calling Readdir on an overlay file with
 // a frozen dirent tree does not make Readdir calls to the underlying files.
+// This is a regression test for b/114808269.
 func TestReaddirOverlayFrozen(t *testing.T) {
 	ctx := contexttest.Context(t)
 

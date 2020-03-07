@@ -148,8 +148,8 @@ func newInode(fs *filesystem, inodeNum uint32) (*inode, error) {
 }
 
 // open creates and returns a file description for the dentry passed in.
-func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*vfs.FileDescription, error) {
-	ats := vfs.AccessTypesForOpenFlags(flags)
+func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+	ats := vfs.AccessTypesForOpenFlags(opts)
 	if err := in.checkPermissions(rp.Credentials(), ats); err != nil {
 		return nil, err
 	}
@@ -157,7 +157,7 @@ func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*v
 	switch in.impl.(type) {
 	case *regularFile:
 		var fd regularFileFD
-		if err := fd.vfsfd.Init(&fd, flags, mnt, vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+		if err := fd.vfsfd.Init(&fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{}); err != nil {
 			return nil, err
 		}
 		return &fd.vfsfd, nil
@@ -168,17 +168,17 @@ func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*v
 			return nil, syserror.EISDIR
 		}
 		var fd directoryFD
-		if err := fd.vfsfd.Init(&fd, flags, mnt, vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+		if err := fd.vfsfd.Init(&fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{}); err != nil {
 			return nil, err
 		}
 		return &fd.vfsfd, nil
 	case *symlink:
-		if flags&linux.O_PATH == 0 {
+		if opts.Flags&linux.O_PATH == 0 {
 			// Can't open symlinks without O_PATH.
 			return nil, syserror.ELOOP
 		}
 		var fd symlinkFD
-		fd.vfsfd.Init(&fd, flags, mnt, vfsd, &vfs.FileDescriptionOptions{})
+		fd.vfsfd.Init(&fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{})
 		return &fd.vfsfd, nil
 	default:
 		panic(fmt.Sprintf("unknown inode type: %T", in.impl))

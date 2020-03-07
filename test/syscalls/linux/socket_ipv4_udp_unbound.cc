@@ -15,6 +15,7 @@
 #include "test/syscalls/linux/socket_ipv4_udp_unbound.h"
 
 #include <arpa/inet.h>
+#include <net/if.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -29,27 +30,6 @@
 
 namespace gvisor {
 namespace testing {
-
-constexpr char kMulticastAddress[] = "224.0.2.1";
-constexpr char kBroadcastAddress[] = "255.255.255.255";
-
-TestAddress V4Multicast() {
-  TestAddress t("V4Multicast");
-  t.addr.ss_family = AF_INET;
-  t.addr_len = sizeof(sockaddr_in);
-  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr =
-      inet_addr(kMulticastAddress);
-  return t;
-}
-
-TestAddress V4Broadcast() {
-  TestAddress t("V4Broadcast");
-  t.addr.ss_family = AF_INET;
-  t.addr_len = sizeof(sockaddr_in);
-  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr =
-      inet_addr(kBroadcastAddress);
-  return t;
-}
 
 // Check that packets are not received without a group membership. Default send
 // interface configured by bind.
@@ -2149,5 +2129,88 @@ TEST_P(IPv4UDPUnboundSocketTest, ReuseAddrReusePortDistribution) {
               SyscallSucceedsWithValue(kMessageSize));
 }
 
+// Test that socket will receive packet info control message.
+TEST_P(IPv4UDPUnboundSocketTest, SetAndReceiveIPPKTINFO) {
+  // TODO(gvisor.dev/issue/1202): ioctl() is not supported by hostinet.
+  SKIP_IF((IsRunningWithHostinet()));
+
+  auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto receiver = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto sender_addr = V4Loopback();
+  int level = SOL_IP;
+  int type = IP_PKTINFO;
+
+  ASSERT_THAT(
+      bind(receiver->get(), reinterpret_cast<sockaddr*>(&sender_addr.addr),
+           sender_addr.addr_len),
+      SyscallSucceeds());
+  socklen_t sender_addr_len = sender_addr.addr_len;
+  ASSERT_THAT(getsockname(receiver->get(),
+                          reinterpret_cast<sockaddr*>(&sender_addr.addr),
+                          &sender_addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(sender_addr_len, sender_addr.addr_len);
+
+  auto receiver_addr = V4Loopback();
+  reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port =
+      reinterpret_cast<sockaddr_in*>(&sender_addr.addr)->sin_port;
+  ASSERT_THAT(
+      connect(sender->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+              receiver_addr.addr_len),
+      SyscallSucceeds());
+
+  // Allow socket to receive control message.
+  ASSERT_THAT(
+      setsockopt(receiver->get(), level, type, &kSockOptOn, sizeof(kSockOptOn)),
+      SyscallSucceeds());
+
+  // Prepare message to send.
+  constexpr size_t kDataLength = 1024;
+  msghdr sent_msg = {};
+  iovec sent_iov = {};
+  char sent_data[kDataLength];
+  sent_iov.iov_base = sent_data;
+  sent_iov.iov_len = kDataLength;
+  sent_msg.msg_iov = &sent_iov;
+  sent_msg.msg_iovlen = 1;
+  sent_msg.msg_flags = 0;
+
+  ASSERT_THAT(RetryEINTR(sendmsg)(sender->get(), &sent_msg, 0),
+              SyscallSucceedsWithValue(kDataLength));
+
+  msghdr received_msg = {};
+  iovec received_iov = {};
+  char received_data[kDataLength];
+  char received_cmsg_buf[CMSG_SPACE(sizeof(in_pktinfo))] = {};
+  size_t cmsg_data_len = sizeof(in_pktinfo);
+  received_iov.iov_base = received_data;
+  received_iov.iov_len = kDataLength;
+  received_msg.msg_iov = &received_iov;
+  received_msg.msg_iovlen = 1;
+  received_msg.msg_controllen = CMSG_LEN(cmsg_data_len);
+  received_msg.msg_control = received_cmsg_buf;
+
+  ASSERT_THAT(RetryEINTR(recvmsg)(receiver->get(), &received_msg, 0),
+              SyscallSucceedsWithValue(kDataLength));
+
+  cmsghdr* cmsg = CMSG_FIRSTHDR(&received_msg);
+  ASSERT_NE(cmsg, nullptr);
+  EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(cmsg_data_len));
+  EXPECT_EQ(cmsg->cmsg_level, level);
+  EXPECT_EQ(cmsg->cmsg_type, type);
+
+  // Get loopback index.
+  ifreq ifr = {};
+  absl::SNPrintF(ifr.ifr_name, IFNAMSIZ, "lo");
+  ASSERT_THAT(ioctl(sender->get(), SIOCGIFINDEX, &ifr), SyscallSucceeds());
+  ASSERT_NE(ifr.ifr_ifindex, 0);
+
+  // Check the data
+  in_pktinfo received_pktinfo = {};
+  memcpy(&received_pktinfo, CMSG_DATA(cmsg), sizeof(in_pktinfo));
+  EXPECT_EQ(received_pktinfo.ipi_ifindex, ifr.ifr_ifindex);
+  EXPECT_EQ(received_pktinfo.ipi_spec_dst.s_addr, htonl(INADDR_LOOPBACK));
+  EXPECT_EQ(received_pktinfo.ipi_addr.s_addr, htonl(INADDR_LOOPBACK));
+}
 }  // namespace testing
 }  // namespace gvisor

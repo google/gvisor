@@ -50,6 +50,21 @@ SocketPairKind IPv4TCPAcceptBindSocketPair(int type);
 // given type bound to the IPv4 loopback.
 SocketPairKind DualStackTCPAcceptBindSocketPair(int type);
 
+// IPv6TCPAcceptBindPersistentListenerSocketPair is like
+// IPv6TCPAcceptBindSocketPair except it uses a persistent listening socket to
+// create all socket pairs.
+SocketPairKind IPv6TCPAcceptBindPersistentListenerSocketPair(int type);
+
+// IPv4TCPAcceptBindPersistentListenerSocketPair is like
+// IPv4TCPAcceptBindSocketPair except it uses a persistent listening socket to
+// create all socket pairs.
+SocketPairKind IPv4TCPAcceptBindPersistentListenerSocketPair(int type);
+
+// DualStackTCPAcceptBindPersistentListenerSocketPair is like
+// DualStackTCPAcceptBindSocketPair except it uses a persistent listening socket
+// to create all socket pairs.
+SocketPairKind DualStackTCPAcceptBindPersistentListenerSocketPair(int type);
+
 // IPv6UDPBidirectionalBindSocketPair returns a SocketPairKind that represents
 // SocketPairs created with bind() and connect() syscalls with AF_INET6 and the
 // given type bound to the IPv6 loopback.
@@ -69,20 +84,20 @@ SocketPairKind DualStackUDPBidirectionalBindSocketPair(int type);
 // SocketPairs created with AF_INET and the given type.
 SocketPairKind IPv4UDPUnboundSocketPair(int type);
 
-// IPv4UDPUnboundSocketPair returns a SocketKind that represents
-// a SimpleSocket created with AF_INET, SOCK_DGRAM, and the given type.
+// IPv4UDPUnboundSocket returns a SocketKind that represents a SimpleSocket
+// created with AF_INET, SOCK_DGRAM, and the given type.
 SocketKind IPv4UDPUnboundSocket(int type);
 
-// IPv6UDPUnboundSocketPair returns a SocketKind that represents
-// a SimpleSocket created with AF_INET6, SOCK_DGRAM, and the given type.
+// IPv6UDPUnboundSocket returns a SocketKind that represents a SimpleSocket
+// created with AF_INET6, SOCK_DGRAM, and the given type.
 SocketKind IPv6UDPUnboundSocket(int type);
 
-// IPv4TCPUnboundSocketPair returns a SocketKind that represents
-// a SimpleSocket created with AF_INET, SOCK_STREAM and the given type.
+// IPv4TCPUnboundSocket returns a SocketKind that represents a SimpleSocket
+// created with AF_INET, SOCK_STREAM and the given type.
 SocketKind IPv4TCPUnboundSocket(int type);
 
-// IPv6TCPUnboundSocketPair returns a SocketKind that represents
-// a SimpleSocket created with AF_INET6, SOCK_STREAM and the given type.
+// IPv6TCPUnboundSocket returns a SocketKind that represents a SimpleSocket
+// created with AF_INET6, SOCK_STREAM and the given type.
 SocketKind IPv6TCPUnboundSocket(int type);
 
 // IfAddrHelper is a helper class that determines the local interfaces present

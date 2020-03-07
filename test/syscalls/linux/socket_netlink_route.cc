@@ -14,6 +14,7 @@
 
 #include <arpa/inet.h>
 #include <ifaddrs.h>
+#include <linux/if.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <sys/socket.h>
@@ -25,8 +26,10 @@
 
 #include "gtest/gtest.h"
 #include "absl/strings/str_format.h"
+#include "absl/types/optional.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/syscalls/linux/socket_test_util.h"
+#include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/test_util.h"
@@ -37,6 +40,8 @@ namespace gvisor {
 namespace testing {
 
 namespace {
+
+constexpr uint32_t kSeq = 12345;
 
 using ::testing::AnyOf;
 using ::testing::Eq;
@@ -113,46 +118,214 @@ void CheckGetLinkResponse(const struct nlmsghdr* hdr, int seq, int port) {
   // TODO(mpratt): Check ifinfomsg contents and following attrs.
 }
 
+PosixError DumpLinks(
+    const FileDescriptor& fd, uint32_t seq,
+    const std::function<void(const struct nlmsghdr* hdr)>& fn) {
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_GETLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+  req.hdr.nlmsg_seq = seq;
+  req.ifm.ifi_family = AF_UNSPEC;
+
+  return NetlinkRequestResponse(fd, &req, sizeof(req), fn, false);
+}
+
 TEST(NetlinkRouteTest, GetLinkDump) {
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
   uint32_t port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
+
+  // Loopback is common among all tests, check that it's found.
+  bool loopbackFound = false;
+  ASSERT_NO_ERRNO(DumpLinks(fd, kSeq, [&](const struct nlmsghdr* hdr) {
+    CheckGetLinkResponse(hdr, kSeq, port);
+    if (hdr->nlmsg_type != RTM_NEWLINK) {
+      return;
+    }
+    ASSERT_GE(hdr->nlmsg_len, NLMSG_SPACE(sizeof(struct ifinfomsg)));
+    const struct ifinfomsg* msg =
+        reinterpret_cast<const struct ifinfomsg*>(NLMSG_DATA(hdr));
+    std::cout << "Found interface idx=" << msg->ifi_index
+              << ", type=" << std::hex << msg->ifi_type;
+    if (msg->ifi_type == ARPHRD_LOOPBACK) {
+      loopbackFound = true;
+      EXPECT_NE(msg->ifi_flags & IFF_LOOPBACK, 0);
+    }
+  }));
+  EXPECT_TRUE(loopbackFound);
+}
+
+struct Link {
+  int index;
+  std::string name;
+};
+
+PosixErrorOr<absl::optional<Link>> FindLoopbackLink() {
+  ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, NetlinkBoundSocket(NETLINK_ROUTE));
+
+  absl::optional<Link> link;
+  RETURN_IF_ERRNO(DumpLinks(fd, kSeq, [&](const struct nlmsghdr* hdr) {
+    if (hdr->nlmsg_type != RTM_NEWLINK ||
+        hdr->nlmsg_len < NLMSG_SPACE(sizeof(struct ifinfomsg))) {
+      return;
+    }
+    const struct ifinfomsg* msg =
+        reinterpret_cast<const struct ifinfomsg*>(NLMSG_DATA(hdr));
+    if (msg->ifi_type == ARPHRD_LOOPBACK) {
+      const auto* rta = FindRtAttr(hdr, msg, IFLA_IFNAME);
+      if (rta == nullptr) {
+        // Ignore links that do not have a name.
+        return;
+      }
+
+      link = Link();
+      link->index = msg->ifi_index;
+      link->name = std::string(reinterpret_cast<const char*>(RTA_DATA(rta)));
+    }
+  }));
+  return link;
+}
+
+// CheckLinkMsg checks a netlink message against an expected link.
+void CheckLinkMsg(const struct nlmsghdr* hdr, const Link& link) {
+  ASSERT_THAT(hdr->nlmsg_type, Eq(RTM_NEWLINK));
+  ASSERT_GE(hdr->nlmsg_len, NLMSG_SPACE(sizeof(struct ifinfomsg)));
+  const struct ifinfomsg* msg =
+      reinterpret_cast<const struct ifinfomsg*>(NLMSG_DATA(hdr));
+  EXPECT_EQ(msg->ifi_index, link.index);
+
+  const struct rtattr* rta = FindRtAttr(hdr, msg, IFLA_IFNAME);
+  EXPECT_NE(nullptr, rta) << "IFLA_IFNAME not found in message.";
+  if (rta != nullptr) {
+    std::string name(reinterpret_cast<const char*>(RTA_DATA(rta)));
+    EXPECT_EQ(name, link.name);
+  }
+}
+
+TEST(NetlinkRouteTest, GetLinkByIndex) {
+  absl::optional<Link> loopback_link =
+      ASSERT_NO_ERRNO_AND_VALUE(FindLoopbackLink());
+  ASSERT_TRUE(loopback_link.has_value());
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
 
   struct request {
     struct nlmsghdr hdr;
     struct ifinfomsg ifm;
   };
 
-  constexpr uint32_t kSeq = 12345;
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_GETLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST;
+  req.hdr.nlmsg_seq = kSeq;
+  req.ifm.ifi_family = AF_UNSPEC;
+  req.ifm.ifi_index = loopback_link->index;
+
+  bool found = false;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, &req, sizeof(req),
+      [&](const struct nlmsghdr* hdr) {
+        CheckLinkMsg(hdr, *loopback_link);
+        found = true;
+      },
+      false));
+  EXPECT_TRUE(found) << "Netlink response does not contain any links.";
+}
+
+TEST(NetlinkRouteTest, GetLinkByName) {
+  absl::optional<Link> loopback_link =
+      ASSERT_NO_ERRNO_AND_VALUE(FindLoopbackLink());
+  ASSERT_TRUE(loopback_link.has_value());
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+    struct rtattr rtattr;
+    char ifname[IFNAMSIZ];
+    char pad[NLMSG_ALIGNTO + RTA_ALIGNTO];
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_type = RTM_GETLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST;
+  req.hdr.nlmsg_seq = kSeq;
+  req.ifm.ifi_family = AF_UNSPEC;
+  req.rtattr.rta_type = IFLA_IFNAME;
+  req.rtattr.rta_len = RTA_LENGTH(loopback_link->name.size() + 1);
+  strncpy(req.ifname, loopback_link->name.c_str(), sizeof(req.ifname));
+  req.hdr.nlmsg_len =
+      NLMSG_LENGTH(sizeof(req.ifm)) + NLMSG_ALIGN(req.rtattr.rta_len);
+
+  bool found = false;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, &req, sizeof(req),
+      [&](const struct nlmsghdr* hdr) {
+        CheckLinkMsg(hdr, *loopback_link);
+        found = true;
+      },
+      false));
+  EXPECT_TRUE(found) << "Netlink response does not contain any links.";
+}
+
+TEST(NetlinkRouteTest, GetLinkByIndexNotFound) {
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+  };
 
   struct request req = {};
   req.hdr.nlmsg_len = sizeof(req);
   req.hdr.nlmsg_type = RTM_GETLINK;
-  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST;
   req.hdr.nlmsg_seq = kSeq;
   req.ifm.ifi_family = AF_UNSPEC;
+  req.ifm.ifi_index = 1234590;
 
-  // Loopback is common among all tests, check that it's found.
-  bool loopbackFound = false;
-  ASSERT_NO_ERRNO(NetlinkRequestResponse(
-      fd, &req, sizeof(req),
-      [&](const struct nlmsghdr* hdr) {
-        CheckGetLinkResponse(hdr, kSeq, port);
-        if (hdr->nlmsg_type != RTM_NEWLINK) {
-          return;
-        }
-        ASSERT_GE(hdr->nlmsg_len, NLMSG_SPACE(sizeof(struct ifinfomsg)));
-        const struct ifinfomsg* msg =
-            reinterpret_cast<const struct ifinfomsg*>(NLMSG_DATA(hdr));
-        std::cout << "Found interface idx=" << msg->ifi_index
-                  << ", type=" << std::hex << msg->ifi_type;
-        if (msg->ifi_type == ARPHRD_LOOPBACK) {
-          loopbackFound = true;
-          EXPECT_NE(msg->ifi_flags & IFF_LOOPBACK, 0);
-        }
-      },
-      false));
-  EXPECT_TRUE(loopbackFound);
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)),
+              PosixErrorIs(ENODEV, ::testing::_));
+}
+
+TEST(NetlinkRouteTest, GetLinkByNameNotFound) {
+  const std::string name = "nodevice?!";
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+    struct rtattr rtattr;
+    char ifname[IFNAMSIZ];
+    char pad[NLMSG_ALIGNTO + RTA_ALIGNTO];
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_type = RTM_GETLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST;
+  req.hdr.nlmsg_seq = kSeq;
+  req.ifm.ifi_family = AF_UNSPEC;
+  req.rtattr.rta_type = IFLA_IFNAME;
+  req.rtattr.rta_len = RTA_LENGTH(name.size() + 1);
+  strncpy(req.ifname, name.c_str(), sizeof(req.ifname));
+  req.hdr.nlmsg_len =
+      NLMSG_LENGTH(sizeof(req.ifm)) + NLMSG_ALIGN(req.rtattr.rta_len);
+
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)),
+              PosixErrorIs(ENODEV, ::testing::_));
 }
 
 TEST(NetlinkRouteTest, MsgHdrMsgUnsuppType) {
@@ -164,8 +337,6 @@ TEST(NetlinkRouteTest, MsgHdrMsgUnsuppType) {
     struct ifinfomsg ifm;
   };
 
-  constexpr uint32_t kSeq = 12345;
-
   struct request req = {};
   req.hdr.nlmsg_len = sizeof(req);
   // If type & 0x3 is equal to 0x2, this means a get request
@@ -175,18 +346,8 @@ TEST(NetlinkRouteTest, MsgHdrMsgUnsuppType) {
   req.hdr.nlmsg_seq = kSeq;
   req.ifm.ifi_family = AF_UNSPEC;
 
-  ASSERT_NO_ERRNO(NetlinkRequestResponse(
-      fd, &req, sizeof(req),
-      [&](const struct nlmsghdr* hdr) {
-        EXPECT_THAT(hdr->nlmsg_type, Eq(NLMSG_ERROR));
-        EXPECT_EQ(hdr->nlmsg_seq, kSeq);
-        EXPECT_GE(hdr->nlmsg_len, sizeof(*hdr) + sizeof(struct nlmsgerr));
-
-        const struct nlmsgerr* msg =
-            reinterpret_cast<const struct nlmsgerr*>(NLMSG_DATA(hdr));
-        EXPECT_EQ(msg->error, -EOPNOTSUPP);
-      },
-      true));
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)),
+              PosixErrorIs(EOPNOTSUPP, ::testing::_));
 }
 
 TEST(NetlinkRouteTest, MsgHdrMsgTrunc) {
@@ -197,8 +358,6 @@ TEST(NetlinkRouteTest, MsgHdrMsgTrunc) {
     struct nlmsghdr hdr;
     struct ifinfomsg ifm;
   };
-
-  constexpr uint32_t kSeq = 12345;
 
   struct request req = {};
   req.hdr.nlmsg_len = sizeof(req);
@@ -237,8 +396,6 @@ TEST(NetlinkRouteTest, MsgTruncMsgHdrMsgTrunc) {
     struct nlmsghdr hdr;
     struct ifinfomsg ifm;
   };
-
-  constexpr uint32_t kSeq = 12345;
 
   struct request req = {};
   req.hdr.nlmsg_len = sizeof(req);
@@ -282,8 +439,6 @@ TEST(NetlinkRouteTest, ControlMessageIgnored) {
     struct ifinfomsg ifm;
   };
 
-  constexpr uint32_t kSeq = 12345;
-
   struct request req = {};
 
   // This control message is ignored. We still receive a response for the
@@ -316,8 +471,6 @@ TEST(NetlinkRouteTest, GetAddrDump) {
     struct nlmsghdr hdr;
     struct rtgenmsg rgm;
   };
-
-  constexpr uint32_t kSeq = 12345;
 
   struct request req;
   req.hdr.nlmsg_len = sizeof(req);
@@ -367,6 +520,57 @@ TEST(NetlinkRouteTest, LookupAll) {
   ASSERT_GT(count, 0);
 }
 
+TEST(NetlinkRouteTest, AddAddr) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  absl::optional<Link> loopback_link =
+      ASSERT_NO_ERRNO_AND_VALUE(FindLoopbackLink());
+  ASSERT_TRUE(loopback_link.has_value());
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifaddrmsg ifa;
+    struct rtattr rtattr;
+    struct in_addr addr;
+    char pad[NLMSG_ALIGNTO + RTA_ALIGNTO];
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_type = RTM_NEWADDR;
+  req.hdr.nlmsg_seq = kSeq;
+  req.ifa.ifa_family = AF_INET;
+  req.ifa.ifa_prefixlen = 24;
+  req.ifa.ifa_flags = 0;
+  req.ifa.ifa_scope = 0;
+  req.ifa.ifa_index = loopback_link->index;
+  req.rtattr.rta_type = IFA_LOCAL;
+  req.rtattr.rta_len = RTA_LENGTH(sizeof(req.addr));
+  inet_pton(AF_INET, "10.0.0.1", &req.addr);
+  req.hdr.nlmsg_len =
+      NLMSG_LENGTH(sizeof(req.ifa)) + NLMSG_ALIGN(req.rtattr.rta_len);
+
+  // Create should succeed, as no such address in kernel.
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_ACK;
+  EXPECT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, req.hdr.nlmsg_seq, &req, req.hdr.nlmsg_len));
+
+  // Replace an existing address should succeed.
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_REPLACE | NLM_F_ACK;
+  req.hdr.nlmsg_seq++;
+  EXPECT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, req.hdr.nlmsg_seq, &req, req.hdr.nlmsg_len));
+
+  // Create exclusive should fail, as we created the address above.
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL | NLM_F_ACK;
+  req.hdr.nlmsg_seq++;
+  EXPECT_THAT(
+      NetlinkRequestAckOrError(fd, req.hdr.nlmsg_seq, &req, req.hdr.nlmsg_len),
+      PosixErrorIs(EEXIST, ::testing::_));
+}
+
 // GetRouteDump tests a RTM_GETROUTE + NLM_F_DUMP request.
 TEST(NetlinkRouteTest, GetRouteDump) {
   FileDescriptor fd =
@@ -377,8 +581,6 @@ TEST(NetlinkRouteTest, GetRouteDump) {
     struct nlmsghdr hdr;
     struct rtmsg rtm;
   };
-
-  constexpr uint32_t kSeq = 12345;
 
   struct request req = {};
   req.hdr.nlmsg_len = sizeof(req);
@@ -538,8 +740,6 @@ TEST(NetlinkRouteTest, RecvmsgTrunc) {
     struct rtgenmsg rgm;
   };
 
-  constexpr uint32_t kSeq = 12345;
-
   struct request req;
   req.hdr.nlmsg_len = sizeof(req);
   req.hdr.nlmsg_type = RTM_GETADDR;
@@ -614,8 +814,6 @@ TEST(NetlinkRouteTest, RecvmsgTruncPeek) {
     struct nlmsghdr hdr;
     struct rtgenmsg rgm;
   };
-
-  constexpr uint32_t kSeq = 12345;
 
   struct request req;
   req.hdr.nlmsg_len = sizeof(req);
@@ -695,8 +893,6 @@ TEST(NetlinkRouteTest, NoPasscredNoCreds) {
     struct rtgenmsg rgm;
   };
 
-  constexpr uint32_t kSeq = 12345;
-
   struct request req;
   req.hdr.nlmsg_len = sizeof(req);
   req.hdr.nlmsg_type = RTM_GETADDR;
@@ -742,8 +938,6 @@ TEST(NetlinkRouteTest, PasscredCreds) {
     struct nlmsghdr hdr;
     struct rtgenmsg rgm;
   };
-
-  constexpr uint32_t kSeq = 12345;
 
   struct request req;
   req.hdr.nlmsg_len = sizeof(req);

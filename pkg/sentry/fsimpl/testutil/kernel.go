@@ -24,7 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/memutil"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/time"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 
 	// Platforms are plugable.
 	_ "gvisor.dev/gvisor/pkg/sentry/platform/kvm"
@@ -99,36 +100,41 @@ func Boot() (*kernel.Kernel, error) {
 		return nil, fmt.Errorf("initializing kernel: %v", err)
 	}
 
-	ctx := k.SupervisorContext()
+	kernel.VFS2Enabled = true
 
-	// Create mount namespace without root as it's the minimum required to create
-	// the global thread group.
-	mntns, err := fs.NewMountNamespace(ctx, nil)
-	if err != nil {
-		return nil, err
+	if err := k.VFS().Init(); err != nil {
+		return nil, fmt.Errorf("VFS init: %v", err)
 	}
+	k.VFS().MustRegisterFilesystemType(tmpfs.Name, &tmpfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
+		AllowUserMount: true,
+		AllowUserList:  true,
+	})
+
 	ls, err := limits.NewLinuxLimitSet()
 	if err != nil {
 		return nil, err
 	}
-	tg := k.NewThreadGroup(mntns, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, ls)
+	tg := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, ls)
 	k.TestOnly_SetGlobalInit(tg)
 
 	return k, nil
 }
 
 // CreateTask creates a new bare bones task for tests.
-func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup) (*kernel.Task, error) {
+func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns *vfs.MountNamespace, root, cwd vfs.VirtualDentry) (*kernel.Task, error) {
 	k := kernel.KernelFromContext(ctx)
 	config := &kernel.TaskConfig{
 		Kernel:                  k,
 		ThreadGroup:             tc,
 		TaskContext:             &kernel.TaskContext{Name: name},
 		Credentials:             auth.CredentialsFromContext(ctx),
+		NetworkNamespace:        k.RootNetworkNamespace(),
 		AllowedCPUMask:          sched.NewFullCPUSet(k.ApplicationCores()),
 		UTSNamespace:            kernel.UTSNamespaceFromContext(ctx),
 		IPCNamespace:            kernel.IPCNamespaceFromContext(ctx),
 		AbstractSocketNamespace: kernel.NewAbstractSocketNamespace(),
+		MountNamespaceVFS2:      mntns,
+		FSContext:               kernel.NewFSContextVFS2(root, cwd, 0022),
 	}
 	return k.TaskSet().NewTask(config)
 }

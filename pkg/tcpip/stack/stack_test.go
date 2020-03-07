@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
@@ -234,8 +235,31 @@ func (f *fakeNetworkProtocol) Option(option interface{}) *tcpip.Error {
 	}
 }
 
+// Close implements TransportProtocol.Close.
+func (*fakeNetworkProtocol) Close() {}
+
+// Wait implements TransportProtocol.Wait.
+func (*fakeNetworkProtocol) Wait() {}
+
 func fakeNetFactory() stack.NetworkProtocol {
 	return &fakeNetworkProtocol{}
+}
+
+// linkEPWithMockedAttach is a stack.LinkEndpoint that tests can use to verify
+// that LinkEndpoint.Attach was called.
+type linkEPWithMockedAttach struct {
+	stack.LinkEndpoint
+	attached bool
+}
+
+// Attach implements stack.LinkEndpoint.Attach.
+func (l *linkEPWithMockedAttach) Attach(d stack.NetworkDispatcher) {
+	l.LinkEndpoint.Attach(d)
+	l.attached = true
+}
+
+func (l *linkEPWithMockedAttach) isAttached() bool {
+	return l.attached
 }
 
 func TestNetworkReceive(t *testing.T) {
@@ -507,6 +531,296 @@ func testNoRoute(t *testing.T, s *stack.Stack, nic tcpip.NICID, srcAddr, dstAddr
 	if err != tcpip.ErrNoRoute {
 		t.Fatalf("FindRoute returned unexpected error, got = %v, want = %s", err, tcpip.ErrNoRoute)
 	}
+}
+
+// TestAttachToLinkEndpointImmediately tests that a LinkEndpoint is attached to
+// a NetworkDispatcher when the NIC is created.
+func TestAttachToLinkEndpointImmediately(t *testing.T) {
+	const nicID = 1
+
+	tests := []struct {
+		name    string
+		nicOpts stack.NICOptions
+	}{
+		{
+			name:    "Create enabled NIC",
+			nicOpts: stack.NICOptions{Disabled: false},
+		},
+		{
+			name:    "Create disabled NIC",
+			nicOpts: stack.NICOptions{Disabled: true},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
+			})
+
+			e := linkEPWithMockedAttach{
+				LinkEndpoint: loopback.New(),
+			}
+
+			if err := s.CreateNICWithOptions(nicID, &e, test.nicOpts); err != nil {
+				t.Fatalf("CreateNICWithOptions(%d, _, %+v) = %s", nicID, test.nicOpts, err)
+			}
+			if !e.isAttached() {
+				t.Fatalf("link endpoint not attached to a network disatcher")
+			}
+		})
+	}
+}
+
+func TestDisableUnknownNIC(t *testing.T) {
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
+	})
+
+	if err := s.DisableNIC(1); err != tcpip.ErrUnknownNICID {
+		t.Fatalf("got s.DisableNIC(1) = %v, want = %s", err, tcpip.ErrUnknownNICID)
+	}
+}
+
+func TestDisabledNICsNICInfoAndCheckNIC(t *testing.T) {
+	const nicID = 1
+
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
+	})
+
+	e := loopback.New()
+	nicOpts := stack.NICOptions{Disabled: true}
+	if err := s.CreateNICWithOptions(nicID, e, nicOpts); err != nil {
+		t.Fatalf("CreateNICWithOptions(%d, _, %+v) = %s", nicID, nicOpts, err)
+	}
+
+	checkNIC := func(enabled bool) {
+		t.Helper()
+
+		allNICInfo := s.NICInfo()
+		nicInfo, ok := allNICInfo[nicID]
+		if !ok {
+			t.Errorf("entry for %d missing from allNICInfo = %+v", nicID, allNICInfo)
+		} else if nicInfo.Flags.Running != enabled {
+			t.Errorf("got nicInfo.Flags.Running = %t, want = %t", nicInfo.Flags.Running, enabled)
+		}
+
+		if got := s.CheckNIC(nicID); got != enabled {
+			t.Errorf("got s.CheckNIC(%d) = %t, want = %t", nicID, got, enabled)
+		}
+	}
+
+	// NIC should initially report itself as disabled.
+	checkNIC(false)
+
+	if err := s.EnableNIC(nicID); err != nil {
+		t.Fatalf("s.EnableNIC(%d): %s", nicID, err)
+	}
+	checkNIC(true)
+
+	// If the NIC is not reporting a correct enabled status, we cannot trust the
+	// next check so end the test here.
+	if t.Failed() {
+		t.FailNow()
+	}
+
+	if err := s.DisableNIC(nicID); err != nil {
+		t.Fatalf("s.DisableNIC(%d): %s", nicID, err)
+	}
+	checkNIC(false)
+}
+
+func TestRoutesWithDisabledNIC(t *testing.T) {
+	const unspecifiedNIC = 0
+	const nicID1 = 1
+	const nicID2 = 2
+
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
+	})
+
+	ep1 := channel.New(0, defaultMTU, "")
+	if err := s.CreateNIC(nicID1, ep1); err != nil {
+		t.Fatalf("CreateNIC(%d, _): %s", nicID1, err)
+	}
+
+	addr1 := tcpip.Address("\x01")
+	if err := s.AddAddress(nicID1, fakeNetNumber, addr1); err != nil {
+		t.Fatalf("AddAddress(%d, %d, %s): %s", nicID1, fakeNetNumber, addr1, err)
+	}
+
+	ep2 := channel.New(0, defaultMTU, "")
+	if err := s.CreateNIC(nicID2, ep2); err != nil {
+		t.Fatalf("CreateNIC(%d, _): %s", nicID2, err)
+	}
+
+	addr2 := tcpip.Address("\x02")
+	if err := s.AddAddress(nicID2, fakeNetNumber, addr2); err != nil {
+		t.Fatalf("AddAddress(%d, %d, %s): %s", nicID2, fakeNetNumber, addr2, err)
+	}
+
+	// Set a route table that sends all packets with odd destination
+	// addresses through the first NIC, and all even destination address
+	// through the second one.
+	{
+		subnet0, err := tcpip.NewSubnet("\x00", "\x01")
+		if err != nil {
+			t.Fatal(err)
+		}
+		subnet1, err := tcpip.NewSubnet("\x01", "\x01")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetRouteTable([]tcpip.Route{
+			{Destination: subnet1, Gateway: "\x00", NIC: nicID1},
+			{Destination: subnet0, Gateway: "\x00", NIC: nicID2},
+		})
+	}
+
+	// Test routes to odd address.
+	testRoute(t, s, unspecifiedNIC, "", "\x05", addr1)
+	testRoute(t, s, unspecifiedNIC, addr1, "\x05", addr1)
+	testRoute(t, s, nicID1, addr1, "\x05", addr1)
+
+	// Test routes to even address.
+	testRoute(t, s, unspecifiedNIC, "", "\x06", addr2)
+	testRoute(t, s, unspecifiedNIC, addr2, "\x06", addr2)
+	testRoute(t, s, nicID2, addr2, "\x06", addr2)
+
+	// Disabling NIC1 should result in no routes to odd addresses. Routes to even
+	// addresses should continue to be available as NIC2 is still enabled.
+	if err := s.DisableNIC(nicID1); err != nil {
+		t.Fatalf("s.DisableNIC(%d): %s", nicID1, err)
+	}
+	nic1Dst := tcpip.Address("\x05")
+	testNoRoute(t, s, unspecifiedNIC, "", nic1Dst)
+	testNoRoute(t, s, unspecifiedNIC, addr1, nic1Dst)
+	testNoRoute(t, s, nicID1, addr1, nic1Dst)
+	nic2Dst := tcpip.Address("\x06")
+	testRoute(t, s, unspecifiedNIC, "", nic2Dst, addr2)
+	testRoute(t, s, unspecifiedNIC, addr2, nic2Dst, addr2)
+	testRoute(t, s, nicID2, addr2, nic2Dst, addr2)
+
+	// Disabling NIC2 should result in no routes to even addresses. No route
+	// should be available to any address as routes to odd addresses were made
+	// unavailable by disabling NIC1 above.
+	if err := s.DisableNIC(nicID2); err != nil {
+		t.Fatalf("s.DisableNIC(%d): %s", nicID2, err)
+	}
+	testNoRoute(t, s, unspecifiedNIC, "", nic1Dst)
+	testNoRoute(t, s, unspecifiedNIC, addr1, nic1Dst)
+	testNoRoute(t, s, nicID1, addr1, nic1Dst)
+	testNoRoute(t, s, unspecifiedNIC, "", nic2Dst)
+	testNoRoute(t, s, unspecifiedNIC, addr2, nic2Dst)
+	testNoRoute(t, s, nicID2, addr2, nic2Dst)
+
+	// Enabling NIC1 should make routes to odd addresses available again. Routes
+	// to even addresses should continue to be unavailable as NIC2 is still
+	// disabled.
+	if err := s.EnableNIC(nicID1); err != nil {
+		t.Fatalf("s.EnableNIC(%d): %s", nicID1, err)
+	}
+	testRoute(t, s, unspecifiedNIC, "", nic1Dst, addr1)
+	testRoute(t, s, unspecifiedNIC, addr1, nic1Dst, addr1)
+	testRoute(t, s, nicID1, addr1, nic1Dst, addr1)
+	testNoRoute(t, s, unspecifiedNIC, "", nic2Dst)
+	testNoRoute(t, s, unspecifiedNIC, addr2, nic2Dst)
+	testNoRoute(t, s, nicID2, addr2, nic2Dst)
+}
+
+func TestRouteWritePacketWithDisabledNIC(t *testing.T) {
+	const unspecifiedNIC = 0
+	const nicID1 = 1
+	const nicID2 = 2
+
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
+	})
+
+	ep1 := channel.New(1, defaultMTU, "")
+	if err := s.CreateNIC(nicID1, ep1); err != nil {
+		t.Fatalf("CreateNIC(%d, _): %s", nicID1, err)
+	}
+
+	addr1 := tcpip.Address("\x01")
+	if err := s.AddAddress(nicID1, fakeNetNumber, addr1); err != nil {
+		t.Fatalf("AddAddress(%d, %d, %s): %s", nicID1, fakeNetNumber, addr1, err)
+	}
+
+	ep2 := channel.New(1, defaultMTU, "")
+	if err := s.CreateNIC(nicID2, ep2); err != nil {
+		t.Fatalf("CreateNIC(%d, _): %s", nicID2, err)
+	}
+
+	addr2 := tcpip.Address("\x02")
+	if err := s.AddAddress(nicID2, fakeNetNumber, addr2); err != nil {
+		t.Fatalf("AddAddress(%d, %d, %s): %s", nicID2, fakeNetNumber, addr2, err)
+	}
+
+	// Set a route table that sends all packets with odd destination
+	// addresses through the first NIC, and all even destination address
+	// through the second one.
+	{
+		subnet0, err := tcpip.NewSubnet("\x00", "\x01")
+		if err != nil {
+			t.Fatal(err)
+		}
+		subnet1, err := tcpip.NewSubnet("\x01", "\x01")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetRouteTable([]tcpip.Route{
+			{Destination: subnet1, Gateway: "\x00", NIC: nicID1},
+			{Destination: subnet0, Gateway: "\x00", NIC: nicID2},
+		})
+	}
+
+	nic1Dst := tcpip.Address("\x05")
+	r1, err := s.FindRoute(nicID1, addr1, nic1Dst, fakeNetNumber, false /* multicastLoop */)
+	if err != nil {
+		t.Errorf("FindRoute(%d, %s, %s, %d, false): %s", nicID1, addr1, nic1Dst, fakeNetNumber, err)
+	}
+	defer r1.Release()
+
+	nic2Dst := tcpip.Address("\x06")
+	r2, err := s.FindRoute(nicID2, addr2, nic2Dst, fakeNetNumber, false /* multicastLoop */)
+	if err != nil {
+		t.Errorf("FindRoute(%d, %s, %s, %d, false): %s", nicID2, addr2, nic2Dst, fakeNetNumber, err)
+	}
+	defer r2.Release()
+
+	// If we failed to get routes r1 or r2, we cannot proceed with the test.
+	if t.Failed() {
+		t.FailNow()
+	}
+
+	buf := buffer.View([]byte{1})
+	testSend(t, r1, ep1, buf)
+	testSend(t, r2, ep2, buf)
+
+	// Writes with Routes that use the disabled NIC1 should fail.
+	if err := s.DisableNIC(nicID1); err != nil {
+		t.Fatalf("s.DisableNIC(%d): %s", nicID1, err)
+	}
+	testFailingSend(t, r1, ep1, buf, tcpip.ErrInvalidEndpointState)
+	testSend(t, r2, ep2, buf)
+
+	// Writes with Routes that use the disabled NIC2 should fail.
+	if err := s.DisableNIC(nicID2); err != nil {
+		t.Fatalf("s.DisableNIC(%d): %s", nicID2, err)
+	}
+	testFailingSend(t, r1, ep1, buf, tcpip.ErrInvalidEndpointState)
+	testFailingSend(t, r2, ep2, buf, tcpip.ErrInvalidEndpointState)
+
+	// Writes with Routes that use the re-enabled NIC1 should succeed.
+	// TODO(b/147015577): Should we instead completely invalidate all Routes that
+	// were bound to a disabled NIC at some point?
+	if err := s.EnableNIC(nicID1); err != nil {
+		t.Fatalf("s.EnableNIC(%d): %s", nicID1, err)
+	}
+	testSend(t, r1, ep1, buf)
+	testFailingSend(t, r2, ep2, buf, tcpip.ErrInvalidEndpointState)
 }
 
 func TestRoutes(t *testing.T) {
@@ -1792,6 +2106,91 @@ func TestAddProtocolAddressWithOptions(t *testing.T) {
 	verifyAddresses(t, expectedAddresses, gotAddresses)
 }
 
+func TestCreateNICWithOptions(t *testing.T) {
+	type callArgsAndExpect struct {
+		nicID tcpip.NICID
+		opts  stack.NICOptions
+		err   *tcpip.Error
+	}
+
+	tests := []struct {
+		desc  string
+		calls []callArgsAndExpect
+	}{
+		{
+			desc: "DuplicateNICID",
+			calls: []callArgsAndExpect{
+				{
+					nicID: tcpip.NICID(1),
+					opts:  stack.NICOptions{Name: "eth1"},
+					err:   nil,
+				},
+				{
+					nicID: tcpip.NICID(1),
+					opts:  stack.NICOptions{Name: "eth2"},
+					err:   tcpip.ErrDuplicateNICID,
+				},
+			},
+		},
+		{
+			desc: "DuplicateName",
+			calls: []callArgsAndExpect{
+				{
+					nicID: tcpip.NICID(1),
+					opts:  stack.NICOptions{Name: "lo"},
+					err:   nil,
+				},
+				{
+					nicID: tcpip.NICID(2),
+					opts:  stack.NICOptions{Name: "lo"},
+					err:   tcpip.ErrDuplicateNICID,
+				},
+			},
+		},
+		{
+			desc: "Unnamed",
+			calls: []callArgsAndExpect{
+				{
+					nicID: tcpip.NICID(1),
+					opts:  stack.NICOptions{},
+					err:   nil,
+				},
+				{
+					nicID: tcpip.NICID(2),
+					opts:  stack.NICOptions{},
+					err:   nil,
+				},
+			},
+		},
+		{
+			desc: "UnnamedDuplicateNICID",
+			calls: []callArgsAndExpect{
+				{
+					nicID: tcpip.NICID(1),
+					opts:  stack.NICOptions{},
+					err:   nil,
+				},
+				{
+					nicID: tcpip.NICID(1),
+					opts:  stack.NICOptions{},
+					err:   tcpip.ErrDuplicateNICID,
+				},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.desc, func(t *testing.T) {
+			s := stack.New(stack.Options{})
+			ep := channel.New(0, 0, tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00"))
+			for _, call := range test.calls {
+				if got, want := s.CreateNICWithOptions(call.nicID, ep, call.opts), call.err; got != want {
+					t.Fatalf("CreateNICWithOptions(%v, _, %+v) = %v, want %v", call.nicID, call.opts, got, want)
+				}
+			}
+		})
+	}
+}
+
 func TestNICStats(t *testing.T) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
@@ -1894,112 +2293,6 @@ func TestNICForwarding(t *testing.T) {
 	}
 }
 
-// TestNICAutoGenAddr tests the auto-generation of IPv6 link-local addresses
-// using the modified EUI-64 of the NIC's MAC address (or lack there-of if
-// disabled (default)). Note, DAD will be disabled in these tests.
-func TestNICAutoGenAddr(t *testing.T) {
-	tests := []struct {
-		name      string
-		autoGen   bool
-		linkAddr  tcpip.LinkAddress
-		iidOpts   stack.OpaqueInterfaceIdentifierOptions
-		shouldGen bool
-	}{
-		{
-			"Disabled",
-			false,
-			linkAddr1,
-			stack.OpaqueInterfaceIdentifierOptions{
-				NICNameFromID: func(nicID tcpip.NICID, _ string) string {
-					return fmt.Sprintf("nic%d", nicID)
-				},
-			},
-			false,
-		},
-		{
-			"Enabled",
-			true,
-			linkAddr1,
-			stack.OpaqueInterfaceIdentifierOptions{},
-			true,
-		},
-		{
-			"Nil MAC",
-			true,
-			tcpip.LinkAddress([]byte(nil)),
-			stack.OpaqueInterfaceIdentifierOptions{},
-			false,
-		},
-		{
-			"Empty MAC",
-			true,
-			tcpip.LinkAddress(""),
-			stack.OpaqueInterfaceIdentifierOptions{},
-			false,
-		},
-		{
-			"Invalid MAC",
-			true,
-			tcpip.LinkAddress("\x01\x02\x03"),
-			stack.OpaqueInterfaceIdentifierOptions{},
-			false,
-		},
-		{
-			"Multicast MAC",
-			true,
-			tcpip.LinkAddress("\x01\x02\x03\x04\x05\x06"),
-			stack.OpaqueInterfaceIdentifierOptions{},
-			false,
-		},
-		{
-			"Unspecified MAC",
-			true,
-			tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00"),
-			stack.OpaqueInterfaceIdentifierOptions{},
-			false,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			opts := stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-				OpaqueIIDOpts:    test.iidOpts,
-			}
-
-			if test.autoGen {
-				// Only set opts.AutoGenIPv6LinkLocal when test.autoGen is true because
-				// opts.AutoGenIPv6LinkLocal should be false by default.
-				opts.AutoGenIPv6LinkLocal = true
-			}
-
-			e := channel.New(10, 1280, test.linkAddr)
-			s := stack.New(opts)
-			if err := s.CreateNIC(1, e); err != nil {
-				t.Fatalf("CreateNIC(_) = %s", err)
-			}
-
-			addr, err := s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
-			if err != nil {
-				t.Fatalf("stack.GetMainNICAddress(_, _) err = %s", err)
-			}
-
-			if test.shouldGen {
-				// Should have auto-generated an address and resolved immediately (DAD
-				// is disabled).
-				if want := (tcpip.AddressWithPrefix{Address: header.LinkLocalAddr(test.linkAddr), PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen}); addr != want {
-					t.Fatalf("got stack.GetMainNICAddress(_, _) = %s, want = %s", addr, want)
-				}
-			} else {
-				// Should not have auto-generated an address.
-				if want := (tcpip.AddressWithPrefix{}); addr != want {
-					t.Fatalf("got stack.GetMainNICAddress(_, _) = (%s, nil), want = (%s, nil)", addr, want)
-				}
-			}
-		})
-	}
-}
-
 // TestNICContextPreservation tests that you can read out via stack.NICInfo the
 // Context data you pass via NICContext.Context in stack.CreateNICWithOptions.
 func TestNICContextPreservation(t *testing.T) {
@@ -2040,11 +2333,9 @@ func TestNICContextPreservation(t *testing.T) {
 	}
 }
 
-// TestNICAutoGenAddrWithOpaque tests the auto-generation of IPv6 link-local
-// addresses with opaque interface identifiers. Link Local addresses should
-// always be generated with opaque IIDs if configured to use them, even if the
-// NIC has an invalid MAC address.
-func TestNICAutoGenAddrWithOpaque(t *testing.T) {
+// TestNICAutoGenLinkLocalAddr tests the auto-generation of IPv6 link-local
+// addresses.
+func TestNICAutoGenLinkLocalAddr(t *testing.T) {
 	const nicID = 1
 
 	var secretKey [header.OpaqueIIDSecretKeyMinBytes]byte
@@ -2056,107 +2347,200 @@ func TestNICAutoGenAddrWithOpaque(t *testing.T) {
 		t.Fatalf("expected rand.Read to read %d bytes, read %d bytes", header.OpaqueIIDSecretKeyMinBytes, n)
 	}
 
+	nicNameFunc := func(_ tcpip.NICID, name string) string {
+		return name
+	}
+
 	tests := []struct {
-		name      string
-		nicName   string
-		autoGen   bool
-		linkAddr  tcpip.LinkAddress
-		secretKey []byte
+		name         string
+		nicName      string
+		autoGen      bool
+		linkAddr     tcpip.LinkAddress
+		iidOpts      stack.OpaqueInterfaceIdentifierOptions
+		shouldGen    bool
+		expectedAddr tcpip.Address
 	}{
 		{
 			name:      "Disabled",
 			nicName:   "nic1",
 			autoGen:   false,
 			linkAddr:  linkAddr1,
-			secretKey: secretKey[:],
+			shouldGen: false,
 		},
 		{
-			name:      "Enabled",
-			nicName:   "nic1",
+			name:     "Disabled without OIID options",
+			nicName:  "nic1",
+			autoGen:  false,
+			linkAddr: linkAddr1,
+			iidOpts: stack.OpaqueInterfaceIdentifierOptions{
+				NICNameFromID: nicNameFunc,
+				SecretKey:     secretKey[:],
+			},
+			shouldGen: false,
+		},
+
+		// Tests for EUI64 based addresses.
+		{
+			name:         "EUI64 Enabled",
+			autoGen:      true,
+			linkAddr:     linkAddr1,
+			shouldGen:    true,
+			expectedAddr: header.LinkLocalAddr(linkAddr1),
+		},
+		{
+			name:      "EUI64 Empty MAC",
 			autoGen:   true,
-			linkAddr:  linkAddr1,
-			secretKey: secretKey[:],
+			shouldGen: false,
+		},
+		{
+			name:      "EUI64 Invalid MAC",
+			autoGen:   true,
+			linkAddr:  "\x01\x02\x03",
+			shouldGen: false,
+		},
+		{
+			name:      "EUI64 Multicast MAC",
+			autoGen:   true,
+			linkAddr:  "\x01\x02\x03\x04\x05\x06",
+			shouldGen: false,
+		},
+		{
+			name:      "EUI64 Unspecified MAC",
+			autoGen:   true,
+			linkAddr:  "\x00\x00\x00\x00\x00\x00",
+			shouldGen: false,
+		},
+
+		// Tests for Opaque IID based addresses.
+		{
+			name:     "OIID Enabled",
+			nicName:  "nic1",
+			autoGen:  true,
+			linkAddr: linkAddr1,
+			iidOpts: stack.OpaqueInterfaceIdentifierOptions{
+				NICNameFromID: nicNameFunc,
+				SecretKey:     secretKey[:],
+			},
+			shouldGen:    true,
+			expectedAddr: header.LinkLocalAddrWithOpaqueIID("nic1", 0, secretKey[:]),
 		},
 		// These are all cases where we would not have generated a
 		// link-local address if opaque IIDs were disabled.
 		{
-			name:      "Nil MAC and empty nicName",
-			nicName:   "",
-			autoGen:   true,
-			linkAddr:  tcpip.LinkAddress([]byte(nil)),
-			secretKey: secretKey[:1],
+			name:    "OIID Empty MAC and empty nicName",
+			autoGen: true,
+			iidOpts: stack.OpaqueInterfaceIdentifierOptions{
+				NICNameFromID: nicNameFunc,
+				SecretKey:     secretKey[:1],
+			},
+			shouldGen:    true,
+			expectedAddr: header.LinkLocalAddrWithOpaqueIID("", 0, secretKey[:1]),
 		},
 		{
-			name:      "Empty MAC and empty nicName",
-			autoGen:   true,
-			linkAddr:  tcpip.LinkAddress(""),
-			secretKey: secretKey[:2],
+			name:     "OIID Invalid MAC",
+			nicName:  "test",
+			autoGen:  true,
+			linkAddr: "\x01\x02\x03",
+			iidOpts: stack.OpaqueInterfaceIdentifierOptions{
+				NICNameFromID: nicNameFunc,
+				SecretKey:     secretKey[:2],
+			},
+			shouldGen:    true,
+			expectedAddr: header.LinkLocalAddrWithOpaqueIID("test", 0, secretKey[:2]),
 		},
 		{
-			name:      "Invalid MAC",
-			nicName:   "test",
-			autoGen:   true,
-			linkAddr:  tcpip.LinkAddress("\x01\x02\x03"),
-			secretKey: secretKey[:3],
+			name:     "OIID Multicast MAC",
+			nicName:  "test2",
+			autoGen:  true,
+			linkAddr: "\x01\x02\x03\x04\x05\x06",
+			iidOpts: stack.OpaqueInterfaceIdentifierOptions{
+				NICNameFromID: nicNameFunc,
+				SecretKey:     secretKey[:3],
+			},
+			shouldGen:    true,
+			expectedAddr: header.LinkLocalAddrWithOpaqueIID("test2", 0, secretKey[:3]),
 		},
 		{
-			name:      "Multicast MAC",
-			nicName:   "test2",
-			autoGen:   true,
-			linkAddr:  tcpip.LinkAddress("\x01\x02\x03\x04\x05\x06"),
-			secretKey: secretKey[:4],
-		},
-		{
-			name:     "Unspecified MAC and nil SecretKey",
+			name:     "OIID Unspecified MAC and nil SecretKey",
 			nicName:  "test3",
 			autoGen:  true,
-			linkAddr: tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00"),
+			linkAddr: "\x00\x00\x00\x00\x00\x00",
+			iidOpts: stack.OpaqueInterfaceIdentifierOptions{
+				NICNameFromID: nicNameFunc,
+			},
+			shouldGen:    true,
+			expectedAddr: header.LinkLocalAddrWithOpaqueIID("test3", 0, nil),
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			ndpDisp := ndpDispatcher{
+				autoGenAddrC: make(chan ndpAutoGenAddrEvent, 1),
+			}
 			opts := stack.Options{
-				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-				OpaqueIIDOpts: stack.OpaqueInterfaceIdentifierOptions{
-					NICNameFromID: func(_ tcpip.NICID, nicName string) string {
-						return nicName
-					},
-					SecretKey: test.secretKey,
-				},
+				NetworkProtocols:     []stack.NetworkProtocol{ipv6.NewProtocol()},
+				AutoGenIPv6LinkLocal: test.autoGen,
+				NDPDisp:              &ndpDisp,
+				OpaqueIIDOpts:        test.iidOpts,
 			}
 
-			if test.autoGen {
-				// Only set opts.AutoGenIPv6LinkLocal when
-				// test.autoGen is true because
-				// opts.AutoGenIPv6LinkLocal should be false by
-				// default.
-				opts.AutoGenIPv6LinkLocal = true
-			}
-
-			e := channel.New(10, 1280, test.linkAddr)
+			e := channel.New(0, 1280, test.linkAddr)
 			s := stack.New(opts)
-			nicOpts := stack.NICOptions{Name: test.nicName}
+			nicOpts := stack.NICOptions{Name: test.nicName, Disabled: true}
 			if err := s.CreateNICWithOptions(nicID, e, nicOpts); err != nil {
 				t.Fatalf("CreateNICWithOptions(%d, _, %+v) = %s", nicID, opts, err)
 			}
 
-			addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
-			if err != nil {
-				t.Fatalf("stack.GetMainNICAddress(%d, _) err = %s", nicID, err)
+			// A new disabled NIC should not have any address, even if auto generation
+			// was enabled.
+			allStackAddrs := s.AllAddresses()
+			allNICAddrs, ok := allStackAddrs[nicID]
+			if !ok {
+				t.Fatalf("entry for %d missing from allStackAddrs = %+v", nicID, allStackAddrs)
+			}
+			if l := len(allNICAddrs); l != 0 {
+				t.Fatalf("got len(allNICAddrs) = %d, want = 0", l)
 			}
 
-			if test.autoGen {
-				// Should have auto-generated an address and
-				// resolved immediately (DAD is disabled).
-				if want := (tcpip.AddressWithPrefix{Address: header.LinkLocalAddrWithOpaqueIID(test.nicName, 0, test.secretKey), PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen}); addr != want {
-					t.Fatalf("got stack.GetMainNICAddress(_, _) = %s, want = %s", addr, want)
+			// Enabling the NIC should attempt auto-generation of a link-local
+			// address.
+			if err := s.EnableNIC(nicID); err != nil {
+				t.Fatalf("s.EnableNIC(%d): %s", nicID, err)
+			}
+
+			var expectedMainAddr tcpip.AddressWithPrefix
+			if test.shouldGen {
+				expectedMainAddr = tcpip.AddressWithPrefix{
+					Address:   test.expectedAddr,
+					PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen,
+				}
+
+				// Should have auto-generated an address and resolved immediately (DAD
+				// is disabled).
+				select {
+				case e := <-ndpDisp.autoGenAddrC:
+					if diff := checkAutoGenAddrEvent(e, expectedMainAddr, newAddr); diff != "" {
+						t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
+					}
+				default:
+					t.Fatal("expected addr auto gen event")
 				}
 			} else {
 				// Should not have auto-generated an address.
-				if want := (tcpip.AddressWithPrefix{}); addr != want {
-					t.Fatalf("got stack.GetMainNICAddress(_, _) = (%s, nil), want = (%s, nil)", addr, want)
+				select {
+				case <-ndpDisp.autoGenAddrC:
+					t.Fatal("unexpectedly auto-generated an address")
+				default:
 				}
+			}
+
+			gotMainAddr, err := s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
+			if err != nil {
+				t.Fatalf("stack.GetMainNICAddress(_, _) err = %s", err)
+			}
+			if gotMainAddr != expectedMainAddr {
+				t.Fatalf("got stack.GetMainNICAddress(_, _) = %s, want = %s", gotMainAddr, expectedMainAddr)
 			}
 		})
 	}
@@ -2215,6 +2599,8 @@ func TestNoLinkLocalAutoGenForLoopbackNIC(t *testing.T) {
 // TestNICAutoGenAddrDoesDAD tests that the successful auto-generation of IPv6
 // link-local addresses will only be assigned after the DAD process resolves.
 func TestNICAutoGenAddrDoesDAD(t *testing.T) {
+	const nicID = 1
+
 	ndpDisp := ndpDispatcher{
 		dadC: make(chan ndpDADEvent),
 	}
@@ -2226,20 +2612,20 @@ func TestNICAutoGenAddrDoesDAD(t *testing.T) {
 		NDPDisp:              &ndpDisp,
 	}
 
-	e := channel.New(10, 1280, linkAddr1)
+	e := channel.New(int(ndpConfigs.DupAddrDetectTransmits), 1280, linkAddr1)
 	s := stack.New(opts)
-	if err := s.CreateNIC(1, e); err != nil {
-		t.Fatalf("CreateNIC(_) = %s", err)
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 	}
 
 	// Address should not be considered bound to the
 	// NIC yet (DAD ongoing).
-	addr, err := s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
+	addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
 	if err != nil {
-		t.Fatalf("got stack.GetMainNICAddress(_, _) = (_, %v), want = (_, nil)", err)
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
 	}
 	if want := (tcpip.AddressWithPrefix{}); addr != want {
-		t.Fatalf("got stack.GetMainNICAddress(_, _) = (%s, nil), want = (%s, nil)", addr, want)
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, addr, want)
 	}
 
 	linkLocalAddr := header.LinkLocalAddr(linkAddr1)
@@ -2253,25 +2639,16 @@ func TestNICAutoGenAddrDoesDAD(t *testing.T) {
 		// means something is wrong.
 		t.Fatal("timed out waiting for DAD resolution")
 	case e := <-ndpDisp.dadC:
-		if e.err != nil {
-			t.Fatal("got DAD error: ", e.err)
-		}
-		if e.nicID != 1 {
-			t.Fatalf("got DAD event w/ nicID = %d, want = 1", e.nicID)
-		}
-		if e.addr != linkLocalAddr {
-			t.Fatalf("got DAD event w/ addr = %s, want = %s", addr, linkLocalAddr)
-		}
-		if !e.resolved {
-			t.Fatal("got DAD event w/ resolved = false, want = true")
+		if diff := checkDADEvent(e, nicID, linkLocalAddr, true, nil); diff != "" {
+			t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 		}
 	}
-	addr, err = s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
+	addr, err = s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
 	if err != nil {
-		t.Fatalf("stack.GetMainNICAddress(_, _) err = %s", err)
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
 	}
 	if want := (tcpip.AddressWithPrefix{Address: linkLocalAddr, PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen}); addr != want {
-		t.Fatalf("got stack.GetMainNICAddress(_, _) = %s, want = %s", addr, want)
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, addr, want)
 	}
 }
 
@@ -2413,13 +2790,14 @@ func TestNewPEBOnPromotionToPermanent(t *testing.T) {
 
 func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
 	const (
-		linkLocalAddr1   = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-		linkLocalAddr2   = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-		uniqueLocalAddr1 = tcpip.Address("\xfc\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-		uniqueLocalAddr2 = tcpip.Address("\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-		globalAddr1      = tcpip.Address("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-		globalAddr2      = tcpip.Address("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-		nicID            = 1
+		linkLocalAddr1         = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+		linkLocalAddr2         = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+		linkLocalMulticastAddr = tcpip.Address("\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+		uniqueLocalAddr1       = tcpip.Address("\xfc\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+		uniqueLocalAddr2       = tcpip.Address("\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+		globalAddr1            = tcpip.Address("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+		globalAddr2            = tcpip.Address("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+		nicID                  = 1
 	)
 
 	// Rule 3 is not tested here, and is instead tested by NDP's AutoGenAddr test.
@@ -2493,6 +2871,18 @@ func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
 			expectedLocalAddr: linkLocalAddr1,
 		},
 		{
+			name:              "Link Local most preferred for link local multicast (last address)",
+			nicAddrs:          []tcpip.Address{globalAddr1, uniqueLocalAddr1, linkLocalAddr1},
+			connectAddr:       linkLocalMulticastAddr,
+			expectedLocalAddr: linkLocalAddr1,
+		},
+		{
+			name:              "Link Local most preferred for link local multicast (first address)",
+			nicAddrs:          []tcpip.Address{linkLocalAddr1, uniqueLocalAddr1, globalAddr1},
+			connectAddr:       linkLocalMulticastAddr,
+			expectedLocalAddr: linkLocalAddr1,
+		},
+		{
 			name:              "Unique Local most preferred (last address)",
 			nicAddrs:          []tcpip.Address{uniqueLocalAddr1, globalAddr1, linkLocalAddr1},
 			connectAddr:       uniqueLocalAddr2,
@@ -2559,5 +2949,216 @@ func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
 				t.Errorf("got local address = %s, want = %s", got, test.expectedLocalAddr)
 			}
 		})
+	}
+}
+
+func TestAddRemoveIPv4BroadcastAddressOnNICEnableDisable(t *testing.T) {
+	const nicID = 1
+
+	e := loopback.New()
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv4.NewProtocol()},
+	})
+	nicOpts := stack.NICOptions{Disabled: true}
+	if err := s.CreateNICWithOptions(nicID, e, nicOpts); err != nil {
+		t.Fatalf("CreateNIC(%d, _, %+v) = %s", nicID, nicOpts, err)
+	}
+
+	allStackAddrs := s.AllAddresses()
+	allNICAddrs, ok := allStackAddrs[nicID]
+	if !ok {
+		t.Fatalf("entry for %d missing from allStackAddrs = %+v", nicID, allStackAddrs)
+	}
+	if l := len(allNICAddrs); l != 0 {
+		t.Fatalf("got len(allNICAddrs) = %d, want = 0", l)
+	}
+
+	// Enabling the NIC should add the IPv4 broadcast address.
+	if err := s.EnableNIC(nicID); err != nil {
+		t.Fatalf("s.EnableNIC(%d): %s", nicID, err)
+	}
+	allStackAddrs = s.AllAddresses()
+	allNICAddrs, ok = allStackAddrs[nicID]
+	if !ok {
+		t.Fatalf("entry for %d missing from allStackAddrs = %+v", nicID, allStackAddrs)
+	}
+	if l := len(allNICAddrs); l != 1 {
+		t.Fatalf("got len(allNICAddrs) = %d, want = 1", l)
+	}
+	want := tcpip.ProtocolAddress{
+		Protocol: header.IPv4ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   header.IPv4Broadcast,
+			PrefixLen: 32,
+		},
+	}
+	if allNICAddrs[0] != want {
+		t.Fatalf("got allNICAddrs[0] = %+v, want = %+v", allNICAddrs[0], want)
+	}
+
+	// Disabling the NIC should remove the IPv4 broadcast address.
+	if err := s.DisableNIC(nicID); err != nil {
+		t.Fatalf("s.DisableNIC(%d): %s", nicID, err)
+	}
+	allStackAddrs = s.AllAddresses()
+	allNICAddrs, ok = allStackAddrs[nicID]
+	if !ok {
+		t.Fatalf("entry for %d missing from allStackAddrs = %+v", nicID, allStackAddrs)
+	}
+	if l := len(allNICAddrs); l != 0 {
+		t.Fatalf("got len(allNICAddrs) = %d, want = 0", l)
+	}
+}
+
+func TestJoinLeaveAllNodesMulticastOnNICEnableDisable(t *testing.T) {
+	const nicID = 1
+
+	e := loopback.New()
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+	})
+	nicOpts := stack.NICOptions{Disabled: true}
+	if err := s.CreateNICWithOptions(nicID, e, nicOpts); err != nil {
+		t.Fatalf("CreateNIC(%d, _, %+v) = %s", nicID, nicOpts, err)
+	}
+
+	// Should not be in the IPv6 all-nodes multicast group yet because the NIC has
+	// not been enabled yet.
+	isInGroup, err := s.IsInGroup(nicID, header.IPv6AllNodesMulticastAddress)
+	if err != nil {
+		t.Fatalf("IsInGroup(%d, %s): %s", nicID, header.IPv6AllNodesMulticastAddress, err)
+	}
+	if isInGroup {
+		t.Fatalf("got IsInGroup(%d, %s) = true, want = false", nicID, header.IPv6AllNodesMulticastAddress)
+	}
+
+	// The all-nodes multicast group should be joined when the NIC is enabled.
+	if err := s.EnableNIC(nicID); err != nil {
+		t.Fatalf("s.EnableNIC(%d): %s", nicID, err)
+	}
+	isInGroup, err = s.IsInGroup(nicID, header.IPv6AllNodesMulticastAddress)
+	if err != nil {
+		t.Fatalf("IsInGroup(%d, %s): %s", nicID, header.IPv6AllNodesMulticastAddress, err)
+	}
+	if !isInGroup {
+		t.Fatalf("got IsInGroup(%d, %s) = false, want = true", nicID, header.IPv6AllNodesMulticastAddress)
+	}
+
+	// The all-nodes multicast group should be left when the NIC is disabled.
+	if err := s.DisableNIC(nicID); err != nil {
+		t.Fatalf("s.DisableNIC(%d): %s", nicID, err)
+	}
+	isInGroup, err = s.IsInGroup(nicID, header.IPv6AllNodesMulticastAddress)
+	if err != nil {
+		t.Fatalf("IsInGroup(%d, %s): %s", nicID, header.IPv6AllNodesMulticastAddress, err)
+	}
+	if isInGroup {
+		t.Fatalf("got IsInGroup(%d, %s) = true, want = false", nicID, header.IPv6AllNodesMulticastAddress)
+	}
+}
+
+// TestDoDADWhenNICEnabled tests that IPv6 endpoints that were added while a NIC
+// was disabled have DAD performed on them when the NIC is enabled.
+func TestDoDADWhenNICEnabled(t *testing.T) {
+	t.Parallel()
+
+	const dadTransmits = 1
+	const retransmitTimer = time.Second
+	const nicID = 1
+
+	ndpDisp := ndpDispatcher{
+		dadC: make(chan ndpDADEvent),
+	}
+	opts := stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+		NDPConfigs: stack.NDPConfigurations{
+			DupAddrDetectTransmits: dadTransmits,
+			RetransmitTimer:        retransmitTimer,
+		},
+		NDPDisp: &ndpDisp,
+	}
+
+	e := channel.New(dadTransmits, 1280, linkAddr1)
+	s := stack.New(opts)
+	nicOpts := stack.NICOptions{Disabled: true}
+	if err := s.CreateNICWithOptions(nicID, e, nicOpts); err != nil {
+		t.Fatalf("CreateNIC(%d, _, %+v) = %s", nicID, nicOpts, err)
+	}
+
+	addr := tcpip.ProtocolAddress{
+		Protocol: header.IPv6ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   llAddr1,
+			PrefixLen: 128,
+		},
+	}
+	if err := s.AddProtocolAddress(nicID, addr); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v): %s", nicID, addr, err)
+	}
+
+	// Address should be in the list of all addresses.
+	if addrs := s.AllAddresses()[nicID]; !containsV6Addr(addrs, addr.AddressWithPrefix) {
+		t.Fatalf("got s.AllAddresses()[%d] = %+v, want = %+v", nicID, addrs, addr)
+	}
+
+	// Address should be tentative so it should not be a main address.
+	got, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
+	if err != nil {
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
+	}
+	if want := (tcpip.AddressWithPrefix{}); got != want {
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, got, want)
+	}
+
+	// Enabling the NIC should start DAD for the address.
+	if err := s.EnableNIC(nicID); err != nil {
+		t.Fatalf("s.EnableNIC(%d): %s", nicID, err)
+	}
+	if addrs := s.AllAddresses()[nicID]; !containsV6Addr(addrs, addr.AddressWithPrefix) {
+		t.Fatalf("got s.AllAddresses()[%d] = %+v, want = %+v", nicID, addrs, addr)
+	}
+
+	// Address should not be considered bound to the NIC yet (DAD ongoing).
+	got, err = s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
+	if err != nil {
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
+	}
+	if want := (tcpip.AddressWithPrefix{}); got != want {
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, got, want)
+	}
+
+	// Wait for DAD to resolve.
+	select {
+	case <-time.After(dadTransmits*retransmitTimer + defaultAsyncEventTimeout):
+		t.Fatal("timed out waiting for DAD resolution")
+	case e := <-ndpDisp.dadC:
+		if diff := checkDADEvent(e, nicID, addr.AddressWithPrefix.Address, true, nil); diff != "" {
+			t.Errorf("dad event mismatch (-want +got):\n%s", diff)
+		}
+	}
+	if addrs := s.AllAddresses()[nicID]; !containsV6Addr(addrs, addr.AddressWithPrefix) {
+		t.Fatalf("got s.AllAddresses()[%d] = %+v, want = %+v", nicID, addrs, addr)
+	}
+	got, err = s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
+	if err != nil {
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
+	}
+	if got != addr.AddressWithPrefix {
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, header.IPv6ProtocolNumber, got, addr.AddressWithPrefix)
+	}
+
+	// Enabling the NIC again should be a no-op.
+	if err := s.EnableNIC(nicID); err != nil {
+		t.Fatalf("s.EnableNIC(%d): %s", nicID, err)
+	}
+	if addrs := s.AllAddresses()[nicID]; !containsV6Addr(addrs, addr.AddressWithPrefix) {
+		t.Fatalf("got s.AllAddresses()[%d] = %+v, want = %+v", nicID, addrs, addr)
+	}
+	got, err = s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
+	if err != nil {
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
+	}
+	if got != addr.AddressWithPrefix {
+		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, got, addr.AddressWithPrefix)
 	}
 }

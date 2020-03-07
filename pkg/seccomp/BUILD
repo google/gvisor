@@ -26,7 +26,7 @@ go_library(
         "seccomp_rules.go",
         "seccomp_unsafe.go",
     ],
-    visibility = ["//visibility:public"],
+    visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/bpf",

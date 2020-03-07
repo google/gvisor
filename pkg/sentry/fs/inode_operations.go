@@ -190,7 +190,18 @@ type InodeOperations interface {
 	// ListXattr returns the set of all extended attributes names that
 	// have values. Inodes that do not support extended attributes return
 	// EOPNOTSUPP.
-	ListXattr(ctx context.Context, inode *Inode) (map[string]struct{}, error)
+	//
+	// If this is called through the listxattr(2) syscall, size indicates the
+	// size of the buffer that the application has allocated to hold the
+	// attribute list. If the list would be larger than size, implementations may
+	// return ERANGE to indicate that the buffer is too small, but they are also
+	// free to ignore the hint entirely. All size checking is done independently
+	// at the syscall layer.
+	ListXattr(ctx context.Context, inode *Inode, size uint64) (map[string]struct{}, error)
+
+	// RemoveXattr removes an extended attribute specified by name. Inodes that
+	// do not support extended attributes return EOPNOTSUPP.
+	RemoveXattr(ctx context.Context, inode *Inode, name string) error
 
 	// Check determines whether an Inode can be accessed with the
 	// requested permission mask using the context (which gives access

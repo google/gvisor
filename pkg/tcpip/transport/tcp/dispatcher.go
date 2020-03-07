@@ -68,15 +68,26 @@ func (q *epQueue) empty() bool {
 type processor struct {
 	epQ              epQueue
 	newEndpointWaker sleep.Waker
+	closeWaker       sleep.Waker
 	id               int
+	wg               sync.WaitGroup
 }
 
 func newProcessor(id int) *processor {
 	p := &processor{
 		id: id,
 	}
+	p.wg.Add(1)
 	go p.handleSegments()
 	return p
+}
+
+func (p *processor) close() {
+	p.closeWaker.Assert()
+}
+
+func (p *processor) wait() {
+	p.wg.Wait()
 }
 
 func (p *processor) queueEndpoint(ep *endpoint) {
@@ -87,11 +98,17 @@ func (p *processor) queueEndpoint(ep *endpoint) {
 
 func (p *processor) handleSegments() {
 	const newEndpointWaker = 1
+	const closeWaker = 2
 	s := sleep.Sleeper{}
 	s.AddWaker(&p.newEndpointWaker, newEndpointWaker)
+	s.AddWaker(&p.closeWaker, closeWaker)
 	defer s.Done()
 	for {
-		s.Fetch(true)
+		id, ok := s.Fetch(true)
+		if ok && id == closeWaker {
+			p.wg.Done()
+			return
+		}
 		for ep := p.epQ.dequeue(); ep != nil; ep = p.epQ.dequeue() {
 			if ep.segmentQueue.empty() {
 				continue
@@ -157,6 +174,18 @@ func newDispatcher(nProcessors int) *dispatcher {
 	return &dispatcher{
 		processors: processors,
 		seed:       generateRandUint32(),
+	}
+}
+
+func (d *dispatcher) close() {
+	for _, p := range d.processors {
+		p.close()
+	}
+}
+
+func (d *dispatcher) wait() {
+	for _, p := range d.processors {
+		p.wait()
 	}
 }
 

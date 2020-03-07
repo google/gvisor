@@ -204,6 +204,7 @@ func (c *Context) Cleanup() {
 	if c.EP != nil {
 		c.EP.Close()
 	}
+	c.Stack().Close()
 }
 
 // Stack returns a reference to the stack in the Context.
@@ -1082,7 +1083,11 @@ func (c *Context) SACKEnabled() bool {
 
 // SetGSOEnabled enables or disables generic segmentation offload.
 func (c *Context) SetGSOEnabled(enable bool) {
-	c.linkEP.GSO = enable
+	if enable {
+		c.linkEP.LinkEPCapabilities |= stack.CapabilityHardwareGSO
+	} else {
+		c.linkEP.LinkEPCapabilities &^= stack.CapabilityHardwareGSO
+	}
 }
 
 // MSSWithoutOptions returns the value for the MSS used by the stack when no

@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -393,7 +394,25 @@ type FileDescriptionImpl interface {
 	// Removexattr removes the given extended attribute from the file.
 	Removexattr(ctx context.Context, name string) error
 
-	// TODO: file locking
+	// LockBSD tries to acquire a BSD-style advisory file lock.
+	//
+	// TODO(gvisor.dev/issue/1480): BSD-style file locking
+	LockBSD(ctx context.Context, uid lock.UniqueID, t lock.LockType, block lock.Blocker) error
+
+	// LockBSD releases a BSD-style advisory file lock.
+	//
+	// TODO(gvisor.dev/issue/1480): BSD-style file locking
+	UnlockBSD(ctx context.Context, uid lock.UniqueID) error
+
+	// LockPOSIX tries to acquire a POSIX-style advisory file lock.
+	//
+	// TODO(gvisor.dev/issue/1480): POSIX-style file locking
+	LockPOSIX(ctx context.Context, uid lock.UniqueID, t lock.LockType, rng lock.LockRange, block lock.Blocker) error
+
+	// UnlockPOSIX releases a POSIX-style advisory file lock.
+	//
+	// TODO(gvisor.dev/issue/1480): POSIX-style file locking
+	UnlockPOSIX(ctx context.Context, uid lock.UniqueID, rng lock.LockRange) error
 }
 
 // Dirent holds the information contained in struct linux_dirent64.
@@ -416,11 +435,11 @@ type Dirent struct {
 
 // IterDirentsCallback receives Dirents from FileDescriptionImpl.IterDirents.
 type IterDirentsCallback interface {
-	// Handle handles the given iterated Dirent. It returns true if iteration
-	// should continue, and false if FileDescriptionImpl.IterDirents should
-	// terminate now and restart with the same Dirent the next time it is
-	// called.
-	Handle(dirent Dirent) bool
+	// Handle handles the given iterated Dirent. If Handle returns a non-nil
+	// error, FileDescriptionImpl.IterDirents must stop iteration and return
+	// the error; the next call to FileDescriptionImpl.IterDirents should
+	// restart with the same Dirent.
+	Handle(dirent Dirent) error
 }
 
 // OnClose is called when a file descriptor representing the FileDescription is

@@ -22,6 +22,7 @@
 
 namespace gvisor {
 namespace testing {
+namespace {
 
 std::vector<SocketKind> GetSockets() {
   return ApplyVec<SocketKind>(
@@ -32,5 +33,7 @@ std::vector<SocketKind> GetSockets() {
 INSTANTIATE_TEST_SUITE_P(IPv4UDPUnboundSockets,
                          IPv4UDPUnboundExternalNetworkingSocketTest,
                          ::testing::ValuesIn(GetSockets()));
+
+}  // namespace
 }  // namespace testing
 }  // namespace gvisor

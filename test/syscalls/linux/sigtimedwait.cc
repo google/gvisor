@@ -319,6 +319,5 @@ int main(int argc, char** argv) {
   TEST_PCHECK(sigprocmask(SIG_BLOCK, &set, nullptr) == 0);
 
   gvisor::testing::TestInit(&argc, &argv);
-
-  return RUN_ALL_TESTS();
+  return gvisor::testing::RunAllTests();
 }

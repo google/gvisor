@@ -41,12 +41,12 @@ type System struct {
 	Creds *auth.Credentials
 	VFS   *vfs.VirtualFilesystem
 	Root  vfs.VirtualDentry
-	mns   *vfs.MountNamespace
+	MntNs *vfs.MountNamespace
 }
 
 // NewSystem constructs a System.
 //
-// Precondition: Caller must hold a reference on mns, whose ownership
+// Precondition: Caller must hold a reference on MntNs, whose ownership
 // is transferred to the new System.
 func NewSystem(ctx context.Context, t *testing.T, v *vfs.VirtualFilesystem, mns *vfs.MountNamespace) *System {
 	s := &System{
@@ -54,7 +54,7 @@ func NewSystem(ctx context.Context, t *testing.T, v *vfs.VirtualFilesystem, mns 
 		Ctx:   ctx,
 		Creds: auth.CredentialsFromContext(ctx),
 		VFS:   v,
-		mns:   mns,
+		MntNs: mns,
 		Root:  mns.Root(),
 	}
 	return s
@@ -75,7 +75,7 @@ func (s *System) WithSubtest(t *testing.T) *System {
 		Ctx:   s.Ctx,
 		Creds: s.Creds,
 		VFS:   s.VFS,
-		mns:   s.mns,
+		MntNs: s.MntNs,
 		Root:  s.Root,
 	}
 }
@@ -90,7 +90,7 @@ func (s *System) WithTemporaryContext(ctx context.Context) *System {
 		Ctx:   ctx,
 		Creds: s.Creds,
 		VFS:   s.VFS,
-		mns:   s.mns,
+		MntNs: s.MntNs,
 		Root:  s.Root,
 	}
 }
@@ -98,7 +98,7 @@ func (s *System) WithTemporaryContext(ctx context.Context) *System {
 // Destroy release resources associated with a test system.
 func (s *System) Destroy() {
 	s.Root.DecRef()
-	s.mns.DecRef(s.VFS) // Reference on mns passed to NewSystem.
+	s.MntNs.DecRef() // Reference on MntNs passed to NewSystem.
 }
 
 // ReadToEnd reads the contents of fd until EOF to a string.
@@ -226,7 +226,7 @@ func (d *DirentCollector) SkipDotsChecks(value bool) {
 }
 
 // Handle implements vfs.IterDirentsCallback.Handle.
-func (d *DirentCollector) Handle(dirent vfs.Dirent) bool {
+func (d *DirentCollector) Handle(dirent vfs.Dirent) error {
 	d.mu.Lock()
 	if d.dirents == nil {
 		d.dirents = make(map[string]*vfs.Dirent)
@@ -234,7 +234,7 @@ func (d *DirentCollector) Handle(dirent vfs.Dirent) bool {
 	d.order = append(d.order, &dirent)
 	d.dirents[dirent.Name] = &dirent
 	d.mu.Unlock()
-	return true
+	return nil
 }
 
 // Count returns the number of dirents currently in the collector.

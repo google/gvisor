@@ -2,6 +2,9 @@
 
 iptables tests are run via `scripts/iptables_test.sh`.
 
+iptables requires raw socket support, so you must add the `--net-raw=true` flag
+to `/etc/docker/daemon.json` in order to use it.
+
 ## Test Structure
 
 Each test implements `TestCase`, providing (1) a function to run inside the
@@ -25,10 +28,17 @@ Your test is now runnable with bazel!
 
 ## Run individual tests
 
-Build the testing Docker container:
+Build and install `runsc`. Re-run this when you modify gVisor:
 
 ```bash
-$ bazel run //test/iptables/runner -- --norun
+$ bazel build //runsc && sudo cp bazel-bin/runsc/linux_amd64_pure_stripped/runsc $(which runsc)
+```
+
+Build the testing Docker container. Re-run this when you modify the test code in
+this directory:
+
+```bash
+$ bazel run //test/iptables/runner:runner-image -- --norun
 ```
 
 Run an individual test via:

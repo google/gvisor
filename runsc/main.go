@@ -28,14 +28,13 @@ import (
 	"syscall"
 	"time"
 
-	"flag"
-
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd"
+	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -55,9 +54,11 @@ var (
 
 	// Debugging flags.
 	debugLog        = flag.String("debug-log", "", "additional location for logs. If it ends with '/', log files are created inside the directory with default names. The following variables are available: %TIMESTAMP%, %COMMAND%.")
+	panicLog        = flag.String("panic-log", "", "file path were panic reports and other Go's runtime messages are written.")
 	logPackets      = flag.Bool("log-packets", false, "enable network packet logging.")
 	logFD           = flag.Int("log-fd", -1, "file descriptor to log to.  If set, the 'log' flag is ignored.")
 	debugLogFD      = flag.Int("debug-log-fd", -1, "file descriptor to write debug logs to.  If set, the 'debug-log-dir' flag is ignored.")
+	panicLogFD      = flag.Int("panic-log-fd", -1, "file descriptor to write Go's runtime messages.")
 	debugLogFormat  = flag.String("debug-log-format", "text", "log format: text (default), json, or json-k8s.")
 	alsoLogToStderr = flag.Bool("alsologtostderr", false, "send log messages to stderr.")
 
@@ -117,8 +118,8 @@ func main() {
 	subcommands.Register(new(cmd.Resume), "")
 	subcommands.Register(new(cmd.Run), "")
 	subcommands.Register(new(cmd.Spec), "")
-	subcommands.Register(new(cmd.Start), "")
 	subcommands.Register(new(cmd.State), "")
+	subcommands.Register(new(cmd.Start), "")
 	subcommands.Register(new(cmd.Wait), "")
 
 	// Register internal commands with the internal group name. This causes
@@ -128,6 +129,7 @@ func main() {
 	subcommands.Register(new(cmd.Boot), internalGroup)
 	subcommands.Register(new(cmd.Debug), internalGroup)
 	subcommands.Register(new(cmd.Gofer), internalGroup)
+	subcommands.Register(new(cmd.Statefile), internalGroup)
 
 	// All subcommands must be registered before flag parsing.
 	flag.Parse()
@@ -206,6 +208,7 @@ func main() {
 		LogFilename:        *logFilename,
 		LogFormat:          *logFormat,
 		DebugLog:           *debugLog,
+		PanicLog:           *panicLog,
 		DebugLogFormat:     *debugLogFormat,
 		FileAccess:         fsAccess,
 		FSGoferHostUDS:     *fsGoferHostUDS,
@@ -258,20 +261,6 @@ func main() {
 	if *debugLogFD > -1 {
 		f := os.NewFile(uintptr(*debugLogFD), "debug log file")
 
-		// Quick sanity check to make sure no other commands get passed
-		// a log fd (they should use log dir instead).
-		if subcommand != "boot" && subcommand != "gofer" {
-			cmd.Fatalf("flag --debug-log-fd should only be passed to 'boot' and 'gofer' command, but was passed to %q", subcommand)
-		}
-
-		// If we are the boot process, then we own our stdio FDs and can do what we
-		// want with them. Since Docker and Containerd both eat boot's stderr, we
-		// dup our stderr to the provided log FD so that panics will appear in the
-		// logs, rather than just disappear.
-		if err := syscall.Dup3(int(f.Fd()), int(os.Stderr.Fd()), 0); err != nil {
-			cmd.Fatalf("error dup'ing fd %d to stderr: %v", f.Fd(), err)
-		}
-
 		e = newEmitter(*debugLogFormat, f)
 
 	} else if *debugLog != "" {
@@ -285,6 +274,26 @@ func main() {
 		// Stderr is reserved for the application, just discard the logs if no debug
 		// log is specified.
 		e = newEmitter("text", ioutil.Discard)
+	}
+
+	if *panicLogFD > -1 || *debugLogFD > -1 {
+		fd := *panicLogFD
+		if fd < 0 {
+			fd = *debugLogFD
+		}
+		// Quick sanity check to make sure no other commands get passed
+		// a log fd (they should use log dir instead).
+		if subcommand != "boot" && subcommand != "gofer" {
+			cmd.Fatalf("flags --debug-log-fd and --panic-log-fd should only be passed to 'boot' and 'gofer' command, but was passed to %q", subcommand)
+		}
+
+		// If we are the boot process, then we own our stdio FDs and can do what we
+		// want with them. Since Docker and Containerd both eat boot's stderr, we
+		// dup our stderr to the provided log FD so that panics will appear in the
+		// logs, rather than just disappear.
+		if err := syscall.Dup3(fd, int(os.Stderr.Fd()), 0); err != nil {
+			cmd.Fatalf("error dup'ing fd %d to stderr: %v", fd, err)
+		}
 	}
 
 	if *alsoLogToStderr {

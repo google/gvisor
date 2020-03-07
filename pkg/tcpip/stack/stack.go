@@ -551,11 +551,13 @@ type TransportEndpointInfo struct {
 	RegisterNICID tcpip.NICID
 }
 
-// AddrNetProto unwraps the specified address if it is a V4-mapped V6 address
-// and returns the network protocol number to be used to communicate with the
-// specified address. It returns an error if the passed address is incompatible
-// with the receiver.
-func (e *TransportEndpointInfo) AddrNetProto(addr tcpip.FullAddress, v6only bool) (tcpip.FullAddress, tcpip.NetworkProtocolNumber, *tcpip.Error) {
+// AddrNetProtoLocked unwraps the specified address if it is a V4-mapped V6
+// address and returns the network protocol number to be used to communicate
+// with the specified address. It returns an error if the passed address is
+// incompatible with the receiver.
+//
+// Preconditon: the parent endpoint mu must be held while calling this method.
+func (e *TransportEndpointInfo) AddrNetProtoLocked(addr tcpip.FullAddress, v6only bool) (tcpip.FullAddress, tcpip.NetworkProtocolNumber, *tcpip.Error) {
 	netProto := e.NetProto
 	switch len(addr.Addr) {
 	case header.IPv4AddressSize:
@@ -795,6 +797,8 @@ func (s *Stack) Forwarding() bool {
 
 // SetRouteTable assigns the route table to be used by this stack. It
 // specifies which NIC to use for given destination address ranges.
+//
+// This method takes ownership of the table.
 func (s *Stack) SetRouteTable(table []tcpip.Route) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -807,6 +811,13 @@ func (s *Stack) GetRouteTable() []tcpip.Route {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]tcpip.Route(nil), s.routeTable...)
+}
+
+// AddRoute appends a route to the route table.
+func (s *Stack) AddRoute(route tcpip.Route) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.routeTable = append(s.routeTable, route)
 }
 
 // NewEndpoint creates a new transport layer endpoint of the given protocol.
@@ -872,6 +883,8 @@ type NICOptions struct {
 // CreateNICWithOptions creates a NIC with the provided id, LinkEndpoint, and
 // NICOptions. See the documentation on type NICOptions for details on how
 // NICs can be configured.
+//
+// LinkEndpoint.Attach will be called to bind ep with a NetworkDispatcher.
 func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *tcpip.Error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -881,8 +894,16 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 		return tcpip.ErrDuplicateNICID
 	}
 
-	n := newNIC(s, id, opts.Name, ep, opts.Context)
+	// Make sure name is unique, unless unnamed.
+	if opts.Name != "" {
+		for _, n := range s.nics {
+			if n.Name() == opts.Name {
+				return tcpip.ErrDuplicateNICID
+			}
+		}
+	}
 
+	n := newNIC(s, id, opts.Name, ep, opts.Context)
 	s.nics[id] = n
 	if !opts.Disabled {
 		return n.enable()
@@ -892,9 +913,21 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 }
 
 // CreateNIC creates a NIC with the provided id and LinkEndpoint and calls
-// `LinkEndpoint.Attach` to start delivering packets to it.
+// LinkEndpoint.Attach to bind ep with a NetworkDispatcher.
 func (s *Stack) CreateNIC(id tcpip.NICID, ep LinkEndpoint) *tcpip.Error {
 	return s.CreateNICWithOptions(id, ep, NICOptions{})
+}
+
+// GetNICByName gets the NIC specified by name.
+func (s *Stack) GetNICByName(name string) (*NIC, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, nic := range s.nics {
+		if nic.Name() == name {
+			return nic, true
+		}
+	}
+	return nil, false
 }
 
 // EnableNIC enables the given NIC so that the link-layer endpoint can start
@@ -903,23 +936,65 @@ func (s *Stack) EnableNIC(id tcpip.NICID) *tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	nic := s.nics[id]
-	if nic == nil {
+	nic, ok := s.nics[id]
+	if !ok {
 		return tcpip.ErrUnknownNICID
 	}
 
 	return nic.enable()
 }
 
+// DisableNIC disables the given NIC.
+func (s *Stack) DisableNIC(id tcpip.NICID) *tcpip.Error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	nic, ok := s.nics[id]
+	if !ok {
+		return tcpip.ErrUnknownNICID
+	}
+
+	return nic.disable()
+}
+
 // CheckNIC checks if a NIC is usable.
 func (s *Stack) CheckNIC(id tcpip.NICID) bool {
 	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	nic, ok := s.nics[id]
-	s.mu.RUnlock()
-	if ok {
-		return nic.linkEP.IsAttached()
+	if !ok {
+		return false
 	}
-	return false
+
+	return nic.enabled()
+}
+
+// RemoveNIC removes NIC and all related routes from the network stack.
+func (s *Stack) RemoveNIC(id tcpip.NICID) *tcpip.Error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	nic, ok := s.nics[id]
+	if !ok {
+		return tcpip.ErrUnknownNICID
+	}
+	delete(s.nics, id)
+
+	// Remove routes in-place. n tracks the number of routes written.
+	n := 0
+	for i, r := range s.routeTable {
+		if r.NIC != id {
+			// Keep this route.
+			if i > n {
+				s.routeTable[n] = r
+			}
+			n++
+		}
+	}
+	s.routeTable = s.routeTable[:n]
+
+	return nic.remove()
 }
 
 // NICAddressRanges returns a map of NICIDs to their associated subnets.
@@ -971,7 +1046,7 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 	for id, nic := range s.nics {
 		flags := NICStateFlags{
 			Up:          true, // Netstack interfaces are always up.
-			Running:     nic.linkEP.IsAttached(),
+			Running:     nic.enabled(),
 			Promiscuous: nic.isPromiscuousMode(),
 			Loopback:    nic.isLoopback(),
 		}
@@ -1133,7 +1208,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	isMulticast := header.IsV4MulticastAddress(remoteAddr) || header.IsV6MulticastAddress(remoteAddr)
 	needRoute := !(isBroadcast || isMulticast || header.IsV6LinkLocalAddress(remoteAddr))
 	if id != 0 && !needRoute {
-		if nic, ok := s.nics[id]; ok {
+		if nic, ok := s.nics[id]; ok && nic.enabled() {
 			if ref := s.getRefEP(nic, localAddr, remoteAddr, netProto); ref != nil {
 				return makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.isLoopback(), multicastLoop && !nic.isLoopback()), nil
 			}
@@ -1143,7 +1218,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 			if (id != 0 && id != route.NIC) || (len(remoteAddr) != 0 && !route.Destination.Contains(remoteAddr)) {
 				continue
 			}
-			if nic, ok := s.nics[route.NIC]; ok {
+			if nic, ok := s.nics[route.NIC]; ok && nic.enabled() {
 				if ref := s.getRefEP(nic, localAddr, remoteAddr, netProto); ref != nil {
 					if len(remoteAddr) == 0 {
 						// If no remote address was provided, then the route
@@ -1373,7 +1448,13 @@ func (s *Stack) RestoreCleanupEndpoints(es []TransportEndpoint) {
 // Endpoints created or modified during this call may not get closed.
 func (s *Stack) Close() {
 	for _, e := range s.RegisteredEndpoints() {
-		e.Close()
+		e.Abort()
+	}
+	for _, p := range s.transportProtocols {
+		p.proto.Close()
+	}
+	for _, p := range s.networkProtocols {
+		p.Close()
 	}
 }
 
@@ -1390,6 +1471,12 @@ func (s *Stack) Wait() {
 	}
 	for _, e := range s.CleanupEndpoints() {
 		e.Wait()
+	}
+	for _, p := range s.transportProtocols {
+		p.proto.Wait()
+	}
+	for _, p := range s.networkProtocols {
+		p.Wait()
 	}
 
 	s.mu.RLock()
@@ -1594,6 +1681,18 @@ func (s *Stack) LeaveGroup(protocol tcpip.NetworkProtocolNumber, nicID tcpip.NIC
 		return nic.leaveGroup(multicastAddr)
 	}
 	return tcpip.ErrUnknownNICID
+}
+
+// IsInGroup returns true if the NIC with ID nicID has joined the multicast
+// group multicastAddr.
+func (s *Stack) IsInGroup(nicID tcpip.NICID, multicastAddr tcpip.Address) (bool, *tcpip.Error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if nic, ok := s.nics[nicID]; ok {
+		return nic.isInGroup(multicastAddr), nil
+	}
+	return false, tcpip.ErrUnknownNICID
 }
 
 // IPTables returns the stack's iptables.

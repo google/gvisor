@@ -30,7 +30,7 @@ import (
 
 const timeout = 18 * time.Second
 
-var image = flag.String("image", "bazel/test/iptables/runner:runner", "image to run tests in")
+var image = flag.String("image", "bazel/test/iptables/runner:runner-image", "image to run tests in")
 
 type result struct {
 	output string
@@ -214,6 +214,30 @@ func TestFilterInputDropTCPSrcPort(t *testing.T) {
 	}
 }
 
+func TestFilterInputCreateUserChain(t *testing.T) {
+	if err := singleTest(FilterInputCreateUserChain{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFilterInputDefaultPolicyAccept(t *testing.T) {
+	if err := singleTest(FilterInputDefaultPolicyAccept{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFilterInputDefaultPolicyDrop(t *testing.T) {
+	if err := singleTest(FilterInputDefaultPolicyDrop{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFilterInputReturnUnderflow(t *testing.T) {
+	if err := singleTest(FilterInputReturnUnderflow{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestFilterOutputDropTCPDestPort(t *testing.T) {
 	if err := singleTest(FilterOutputDropTCPDestPort{}); err != nil {
 		t.Fatal(err)
@@ -222,6 +246,42 @@ func TestFilterOutputDropTCPDestPort(t *testing.T) {
 
 func TestFilterOutputDropTCPSrcPort(t *testing.T) {
 	if err := singleTest(FilterOutputDropTCPSrcPort{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestJumpSerialize(t *testing.T) {
+	if err := singleTest(FilterInputSerializeJump{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestJumpBasic(t *testing.T) {
+	if err := singleTest(FilterInputJumpBasic{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestJumpReturn(t *testing.T) {
+	if err := singleTest(FilterInputJumpReturn{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestJumpReturnDrop(t *testing.T) {
+	if err := singleTest(FilterInputJumpReturnDrop{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestJumpBuiltin(t *testing.T) {
+	if err := singleTest(FilterInputJumpBuiltin{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestJumpTwice(t *testing.T) {
+	if err := singleTest(FilterInputJumpTwice{}); err != nil {
 		t.Fatal(err)
 	}
 }

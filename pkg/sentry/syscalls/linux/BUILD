@@ -74,6 +74,7 @@ go_library(
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/fs/timerfd",
         "//pkg/sentry/fs/tmpfs",
+        "//pkg/sentry/fsbridge",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/epoll",

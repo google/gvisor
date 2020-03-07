@@ -16,7 +16,17 @@
 
 set -xeou pipefail
 
-source $(dirname $0)/common_build.sh
+# Get the path to the directory this script lives in.
+# If this script is being called with `source`, $0 will be the path of the
+# *sourcing* script, so we can't use `dirname $0` to find scripts in this
+# directory.
+if [[ -v BASH_SOURCE && "$0" != "$BASH_SOURCE" ]]; then
+  declare -r script_dir="$(dirname "$BASH_SOURCE")"
+else
+  declare -r script_dir="$(dirname "$0")"
+fi
+
+source "${script_dir}/common_build.sh"
 
 # Ensure it attempts to collect logs in all cases.
 trap collect_logs EXIT
@@ -73,4 +83,18 @@ function install_runsc() {
 
   # Restart docker to pick up the new runtime configuration.
   sudo systemctl restart docker
+}
+
+# Installs the given packages. Note that the package names should be verified to
+# be correct, otherwise this may result in a loop that spins until time out.
+function apt_install() {
+  while true; do
+    if (sudo apt-get update && sudo apt-get install -y "$@"); then
+      break
+    fi
+    result=$?
+    if [[ $result -ne 100 ]]; then
+      return $result
+    fi
+  done
 }

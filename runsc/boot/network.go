@@ -17,6 +17,7 @@ package boot
 import (
 	"fmt"
 	"net"
+	"strings"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/log"
@@ -29,6 +30,32 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/urpc"
+)
+
+var (
+	// DefaultLoopbackLink contains IP addresses and routes of "127.0.0.1/8" and
+	// "::1/8" on "lo" interface.
+	DefaultLoopbackLink = LoopbackLink{
+		Name: "lo",
+		Addresses: []net.IP{
+			net.IP("\x7f\x00\x00\x01"),
+			net.IPv6loopback,
+		},
+		Routes: []Route{
+			{
+				Destination: net.IPNet{
+					IP:   net.IPv4(0x7f, 0, 0, 0),
+					Mask: net.IPv4Mask(0xff, 0, 0, 0),
+				},
+			},
+			{
+				Destination: net.IPNet{
+					IP:   net.IPv6loopback,
+					Mask: net.IPMask(strings.Repeat("\xff", net.IPv6len)),
+				},
+			},
+		},
+	}
 )
 
 // Network exposes methods that can be used to configure a network stack.

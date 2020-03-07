@@ -20,6 +20,27 @@ import (
 	"testing"
 )
 
+func TestBlockSeqOfEmptyBlock(t *testing.T) {
+	bs := BlockSeqOf(Block{})
+	if !bs.IsEmpty() {
+		t.Errorf("BlockSeqOf(Block{}).IsEmpty(): got false, wanted true; BlockSeq is %v", bs)
+	}
+}
+
+func TestBlockSeqOfNonemptyBlock(t *testing.T) {
+	b := BlockFromSafeSlice(make([]byte, 1))
+	bs := BlockSeqOf(b)
+	if bs.IsEmpty() {
+		t.Fatalf("BlockSeqOf(non-empty Block).IsEmpty(): got true, wanted false; BlockSeq is %v", bs)
+	}
+	if head := bs.Head(); head != b {
+		t.Fatalf("BlockSeqOf(non-empty Block).Head(): got %v, wanted %v", head, b)
+	}
+	if tail := bs.Tail(); !tail.IsEmpty() {
+		t.Fatalf("BlockSeqOf(non-empty Block).Tail().IsEmpty(): got false, wanted true: tail is %v", tail)
+	}
+}
+
 type blockSeqTest struct {
 	desc string
 

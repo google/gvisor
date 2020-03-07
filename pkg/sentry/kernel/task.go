@@ -37,6 +37,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -424,6 +425,11 @@ type Task struct {
 	// abstractSockets is protected by mu.
 	abstractSockets *AbstractSocketNamespace
 
+	// mountNamespaceVFS2 is the task's mount namespace.
+	//
+	// It is protected by mu. It is owned by the task goroutine.
+	mountNamespaceVFS2 *vfs.MountNamespace
+
 	// parentDeathSignal is sent to this task's thread group when its parent exits.
 	//
 	// parentDeathSignal is protected by mu.
@@ -481,13 +487,10 @@ type Task struct {
 	numaPolicy   int32
 	numaNodeMask uint64
 
-	// If netns is true, the task is in a non-root network namespace. Network
-	// namespaces aren't currently implemented in full; being in a network
-	// namespace simply prevents the task from observing any network devices
-	// (including loopback) or using abstract socket addresses (see unix(7)).
+	// netns is the task's network namespace. netns is never nil.
 	//
-	// netns is protected by mu. netns is owned by the task goroutine.
-	netns bool
+	// netns is protected by mu.
+	netns *inet.Namespace
 
 	// If rseqPreempted is true, before the next call to p.Switch(),
 	// interrupt rseq critical regions as defined by rseqAddr and
@@ -552,6 +555,13 @@ type Task struct {
 	//
 	// startTime is protected by mu.
 	startTime ktime.Time
+
+	// oomScoreAdj is the task's OOM score adjustment. This is currently not
+	// used but is maintained for consistency.
+	// TODO(gvisor.dev/issue/1967)
+	//
+	// oomScoreAdj is protected by mu, and is owned by the task goroutine.
+	oomScoreAdj int32
 }
 
 func (t *Task) savePtraceTracer() *Task {
@@ -638,6 +648,11 @@ func (t *Task) Value(key interface{}) interface{} {
 		return int32(t.ThreadGroup().ID())
 	case fs.CtxRoot:
 		return t.fsContext.RootDirectory()
+	case vfs.CtxRoot:
+		return t.fsContext.RootDirectoryVFS2()
+	case vfs.CtxMountNamespace:
+		t.mountNamespaceVFS2.IncRef()
+		return t.mountNamespaceVFS2
 	case fs.CtxDirentCacheLimiter:
 		return t.k.DirentCacheLimiter
 	case inet.CtxStack:
@@ -701,6 +716,14 @@ func (t *Task) SyscallRestartBlock() SyscallRestartBlock {
 // Preconditions: The caller must be running on the task goroutine, or t.mu
 // must be locked.
 func (t *Task) IsChrooted() bool {
+	if VFS2Enabled {
+		realRoot := t.mountNamespaceVFS2.Root()
+		defer realRoot.DecRef()
+		root := t.fsContext.RootDirectoryVFS2()
+		defer root.DecRef()
+		return root != realRoot
+	}
+
 	realRoot := t.tg.mounts.Root()
 	defer realRoot.DecRef()
 	root := t.fsContext.RootDirectory()
@@ -774,6 +797,15 @@ func (t *Task) NewFDFrom(fd int32, file *fs.File, flags FDFlags) (int32, error) 
 	return fds[0], nil
 }
 
+// NewFDFromVFS2 is a convenience wrapper for t.FDTable().NewFDVFS2.
+//
+// This automatically passes the task as the context.
+//
+// Precondition: same as FDTable.Get.
+func (t *Task) NewFDFromVFS2(fd int32, file *vfs.FileDescription, flags FDFlags) (int32, error) {
+	return t.fdTable.NewFDVFS2(t, fd, file, flags)
+}
+
 // NewFDAt is a convenience wrapper for t.FDTable().NewFDAt.
 //
 // This automatically passes the task as the context.
@@ -781,6 +813,15 @@ func (t *Task) NewFDFrom(fd int32, file *fs.File, flags FDFlags) (int32, error) 
 // Precondition: same as FDTable.
 func (t *Task) NewFDAt(fd int32, file *fs.File, flags FDFlags) error {
 	return t.fdTable.NewFDAt(t, fd, file, flags)
+}
+
+// NewFDAtVFS2 is a convenience wrapper for t.FDTable().NewFDAtVFS2.
+//
+// This automatically passes the task as the context.
+//
+// Precondition: same as FDTable.
+func (t *Task) NewFDAtVFS2(fd int32, file *vfs.FileDescription, flags FDFlags) error {
+	return t.fdTable.NewFDAtVFS2(t, fd, file, flags)
 }
 
 // WithMuLocked executes f with t.mu locked.
@@ -796,6 +837,15 @@ func (t *Task) MountNamespace() *fs.MountNamespace {
 	return t.tg.mounts
 }
 
+// MountNamespaceVFS2 returns t's MountNamespace. A reference is taken on the
+// returned mount namespace.
+func (t *Task) MountNamespaceVFS2() *vfs.MountNamespace {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.mountNamespaceVFS2.IncRef()
+	return t.mountNamespaceVFS2
+}
+
 // AbstractSockets returns t's AbstractSocketNamespace.
 func (t *Task) AbstractSockets() *AbstractSocketNamespace {
 	return t.abstractSockets
@@ -804,4 +854,29 @@ func (t *Task) AbstractSockets() *AbstractSocketNamespace {
 // ContainerID returns t's container ID.
 func (t *Task) ContainerID() string {
 	return t.containerID
+}
+
+// OOMScoreAdj gets the task's OOM score adjustment.
+func (t *Task) OOMScoreAdj() (int32, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.ExitState() == TaskExitDead {
+		return 0, syserror.ESRCH
+	}
+	return t.oomScoreAdj, nil
+}
+
+// SetOOMScoreAdj sets the task's OOM score adjustment. The value should be
+// between -1000 and 1000 inclusive.
+func (t *Task) SetOOMScoreAdj(adj int32) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.ExitState() == TaskExitDead {
+		return syserror.ESRCH
+	}
+	if adj > 1000 || adj < -1000 {
+		return syserror.EINVAL
+	}
+	t.oomScoreAdj = adj
+	return nil
 }

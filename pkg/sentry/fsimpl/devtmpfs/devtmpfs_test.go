@@ -29,7 +29,10 @@ func TestDevtmpfs(t *testing.T) {
 	ctx := contexttest.Context(t)
 	creds := auth.CredentialsFromContext(ctx)
 
-	vfsObj := vfs.New()
+	vfsObj := &vfs.VirtualFilesystem{}
+	if err := vfsObj.Init(); err != nil {
+		t.Fatalf("VFS init: %v", err)
+	}
 	// Register tmpfs just so that we can have a root filesystem that isn't
 	// devtmpfs.
 	vfsObj.MustRegisterFilesystemType("tmpfs", tmpfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
@@ -45,7 +48,7 @@ func TestDevtmpfs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create tmpfs root mount: %v", err)
 	}
-	defer mntns.DecRef(vfsObj)
+	defer mntns.DecRef()
 	root := mntns.Root()
 	defer root.DecRef()
 	devpop := vfs.PathOperation{

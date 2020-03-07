@@ -297,8 +297,12 @@ class IntervalTimer {
 PosixErrorOr<IntervalTimer> TimerCreate(clockid_t clockid,
                                         const struct sigevent& sev) {
   int timerid;
-  if (syscall(SYS_timer_create, clockid, &sev, &timerid) < 0) {
+  int ret = syscall(SYS_timer_create, clockid, &sev, &timerid);
+  if (ret < 0) {
     return PosixError(errno, "timer_create");
+  }
+  if (ret > 0) {
+    return PosixError(EINVAL, "timer_create should never return positive");
   }
   MaybeSave();
   return IntervalTimer(timerid);
@@ -315,6 +319,18 @@ TEST(IntervalTimerTest, IsInitiallyStopped) {
   const struct itimerspec its = ASSERT_NO_ERRNO_AND_VALUE(timer.Get());
   EXPECT_EQ(0, its.it_value.tv_sec);
   EXPECT_EQ(0, its.it_value.tv_nsec);
+}
+
+// Kernel can create multiple timers without issue.
+//
+// Regression test for gvisor.dev/issue/1738.
+TEST(IntervalTimerTest, MultipleTimers) {
+  struct sigevent sev = {};
+  sev.sigev_notify = SIGEV_NONE;
+  const auto timer1 =
+      ASSERT_NO_ERRNO_AND_VALUE(TimerCreate(CLOCK_MONOTONIC, sev));
+  const auto timer2 =
+      ASSERT_NO_ERRNO_AND_VALUE(TimerCreate(CLOCK_MONOTONIC, sev));
 }
 
 TEST(IntervalTimerTest, SingleShotSilent) {
@@ -642,5 +658,5 @@ int main(int argc, char** argv) {
     }
   }
 
-  return RUN_ALL_TESTS();
+  return gvisor::testing::RunAllTests();
 }

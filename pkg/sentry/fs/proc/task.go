@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
+	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
@@ -71,24 +72,26 @@ var _ fs.InodeOperations = (*taskDir)(nil)
 // newTaskDir creates a new proc task entry.
 func (p *proc) newTaskDir(t *kernel.Task, msrc *fs.MountSource, isThreadGroup bool) *fs.Inode {
 	contents := map[string]*fs.Inode{
-		"auxv":      newAuxvec(t, msrc),
-		"cmdline":   newExecArgInode(t, msrc, cmdlineExecArg),
-		"comm":      newComm(t, msrc),
-		"environ":   newExecArgInode(t, msrc, environExecArg),
-		"exe":       newExe(t, msrc),
-		"fd":        newFdDir(t, msrc),
-		"fdinfo":    newFdInfoDir(t, msrc),
-		"gid_map":   newGIDMap(t, msrc),
-		"io":        newIO(t, msrc, isThreadGroup),
-		"maps":      newMaps(t, msrc),
-		"mountinfo": seqfile.NewSeqFileInode(t, &mountInfoFile{t: t}, msrc),
-		"mounts":    seqfile.NewSeqFileInode(t, &mountsFile{t: t}, msrc),
-		"ns":        newNamespaceDir(t, msrc),
-		"smaps":     newSmaps(t, msrc),
-		"stat":      newTaskStat(t, msrc, isThreadGroup, p.pidns),
-		"statm":     newStatm(t, msrc),
-		"status":    newStatus(t, msrc, p.pidns),
-		"uid_map":   newUIDMap(t, msrc),
+		"auxv":          newAuxvec(t, msrc),
+		"cmdline":       newExecArgInode(t, msrc, cmdlineExecArg),
+		"comm":          newComm(t, msrc),
+		"environ":       newExecArgInode(t, msrc, environExecArg),
+		"exe":           newExe(t, msrc),
+		"fd":            newFdDir(t, msrc),
+		"fdinfo":        newFdInfoDir(t, msrc),
+		"gid_map":       newGIDMap(t, msrc),
+		"io":            newIO(t, msrc, isThreadGroup),
+		"maps":          newMaps(t, msrc),
+		"mountinfo":     seqfile.NewSeqFileInode(t, &mountInfoFile{t: t}, msrc),
+		"mounts":        seqfile.NewSeqFileInode(t, &mountsFile{t: t}, msrc),
+		"ns":            newNamespaceDir(t, msrc),
+		"oom_score":     newOOMScore(t, msrc),
+		"oom_score_adj": newOOMScoreAdj(t, msrc),
+		"smaps":         newSmaps(t, msrc),
+		"stat":          newTaskStat(t, msrc, isThreadGroup, p.pidns),
+		"statm":         newStatm(t, msrc),
+		"status":        newStatus(t, msrc, p.pidns),
+		"uid_map":       newUIDMap(t, msrc),
 	}
 	if isThreadGroup {
 		contents["task"] = p.newSubtasks(t, msrc)
@@ -249,7 +252,7 @@ func newExe(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 	return newProcInode(t, exeSymlink, msrc, fs.Symlink, t)
 }
 
-func (e *exe) executable() (d *fs.Dirent, err error) {
+func (e *exe) executable() (file fsbridge.File, err error) {
 	e.t.WithMuLocked(func(t *kernel.Task) {
 		mm := t.MemoryManager()
 		if mm == nil {
@@ -262,8 +265,8 @@ func (e *exe) executable() (d *fs.Dirent, err error) {
 		// The MemoryManager may be destroyed, in which case
 		// MemoryManager.destroy will simply set the executable to nil
 		// (with locks held).
-		d = mm.Executable()
-		if d == nil {
+		file = mm.Executable()
+		if file == nil {
 			err = syserror.ENOENT
 		}
 	})
@@ -283,15 +286,7 @@ func (e *exe) Readlink(ctx context.Context, inode *fs.Inode) (string, error) {
 	}
 	defer exec.DecRef()
 
-	root := fs.RootFromContext(ctx)
-	if root == nil {
-		// This doesn't correspond to anything in Linux because the vfs is
-		// global there.
-		return "", syserror.EINVAL
-	}
-	defer root.DecRef()
-	n, _ := exec.FullName(root)
-	return n, nil
+	return exec.PathnameWithDeleted(ctx), nil
 }
 
 // namespaceSymlink represents a symlink in the namespacefs, such as the files
@@ -801,6 +796,94 @@ func (f *auxvecFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequenc
 
 	n, err := dst.CopyOut(ctx, buf[offset:])
 	return int64(n), err
+}
+
+// newOOMScore returns a oom_score file. It is a stub that always returns 0.
+// TODO(gvisor.dev/issue/1967)
+func newOOMScore(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+	return newStaticProcInode(t, msrc, []byte("0\n"))
+}
+
+// oomScoreAdj is a file containing the oom_score adjustment for a task.
+//
+// +stateify savable
+type oomScoreAdj struct {
+	fsutil.SimpleFileInode
+
+	t *kernel.Task
+}
+
+// +stateify savable
+type oomScoreAdjFile struct {
+	fsutil.FileGenericSeek          `state:"nosave"`
+	fsutil.FileNoIoctl              `state:"nosave"`
+	fsutil.FileNoMMap               `state:"nosave"`
+	fsutil.FileNoSplice             `state:"nosave"`
+	fsutil.FileNoopFlush            `state:"nosave"`
+	fsutil.FileNoopFsync            `state:"nosave"`
+	fsutil.FileNoopRelease          `state:"nosave"`
+	fsutil.FileNotDirReaddir        `state:"nosave"`
+	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
+	waiter.AlwaysReady              `state:"nosave"`
+
+	t *kernel.Task
+}
+
+// newOOMScoreAdj returns a oom_score_adj file.
+func newOOMScoreAdj(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+	i := &oomScoreAdj{
+		SimpleFileInode: *fsutil.NewSimpleFileInode(t, fs.RootOwner, fs.FilePermsFromMode(0644), linux.PROC_SUPER_MAGIC),
+		t:               t,
+	}
+	return newProcInode(t, i, msrc, fs.SpecialFile, t)
+}
+
+// Truncate implements fs.InodeOperations.Truncate. Truncate is called when
+// O_TRUNC is specified for any kind of existing Dirent but is not called via
+// (f)truncate for proc files.
+func (*oomScoreAdj) Truncate(context.Context, *fs.Inode, int64) error {
+	return nil
+}
+
+// GetFile implements fs.InodeOperations.GetFile.
+func (o *oomScoreAdj) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	return fs.NewFile(ctx, dirent, flags, &oomScoreAdjFile{t: o.t}), nil
+}
+
+// Read implements fs.FileOperations.Read.
+func (f *oomScoreAdjFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
+	if offset != 0 {
+		return 0, io.EOF
+	}
+	adj, err := f.t.OOMScoreAdj()
+	if err != nil {
+		return 0, err
+	}
+	adjBytes := []byte(strconv.FormatInt(int64(adj), 10) + "\n")
+	n, err := dst.CopyOut(ctx, adjBytes)
+	return int64(n), err
+}
+
+// Write implements fs.FileOperations.Write.
+func (f *oomScoreAdjFile) Write(ctx context.Context, _ *fs.File, src usermem.IOSequence, offset int64) (int64, error) {
+	if src.NumBytes() == 0 {
+		return 0, nil
+	}
+
+	// Limit input size so as not to impact performance if input size is large.
+	src = src.TakeFirst(usermem.PageSize - 1)
+
+	var v int32
+	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
+	if err != nil {
+		return 0, err
+	}
+
+	if err := f.t.SetOOMScoreAdj(v); err != nil {
+		return 0, err
+	}
+
+	return n, nil
 }
 
 // LINT.ThenChange(../../fsimpl/proc/task.go|../../fsimpl/proc/task_files.go)

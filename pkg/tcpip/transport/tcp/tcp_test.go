@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -542,8 +543,9 @@ func TestCurrentConnectedIncrement(t *testing.T) {
 		),
 	)
 
-	// Wait for the TIME-WAIT state to transition to CLOSED.
-	time.Sleep(1 * time.Second)
+	// Wait for a little more than the TIME-WAIT duration for the socket to
+	// transition to CLOSED state.
+	time.Sleep(1200 * time.Millisecond)
 
 	if got := c.Stack().Stats().TCP.CurrentEstablished.Value(); got != 0 {
 		t.Errorf("got stats.TCP.CurrentEstablished.Value() = %v, want = 0", got)
@@ -5404,12 +5406,11 @@ func TestEndpointBindListenAcceptState(t *testing.T) {
 		t.Errorf("Unexpected endpoint state: want %v, got %v", want, got)
 	}
 
-	// Expect InvalidEndpointState errors on a read at this point.
-	if _, _, err := ep.Read(nil); err != tcpip.ErrInvalidEndpointState {
-		t.Fatalf("got c.EP.Read(nil) = %v, want = %v", err, tcpip.ErrInvalidEndpointState)
+	if _, _, err := ep.Read(nil); err != tcpip.ErrNotConnected {
+		t.Errorf("got c.EP.Read(nil) = %v, want = %v", err, tcpip.ErrNotConnected)
 	}
-	if got := ep.Stats().(*tcp.Stats).ReadErrors.InvalidEndpointState.Value(); got != 1 {
-		t.Fatalf("got EP stats Stats.ReadErrors.InvalidEndpointState got %v want %v", got, 1)
+	if got := ep.Stats().(*tcp.Stats).ReadErrors.NotConnected.Value(); got != 1 {
+		t.Errorf("got EP stats Stats.ReadErrors.NotConnected got %v want %v", got, 1)
 	}
 
 	if err := ep.Listen(10); err != nil {
@@ -6786,4 +6787,184 @@ func TestIncreaseWindowOnBufferResize(t *testing.T) {
 			checker.TCPFlags(header.TCPFlagAck),
 		),
 	)
+}
+
+func TestTCPDeferAccept(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	c.Create(-1)
+
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		t.Fatal("Bind failed:", err)
+	}
+
+	if err := c.EP.Listen(10); err != nil {
+		t.Fatal("Listen failed:", err)
+	}
+
+	const tcpDeferAccept = 1 * time.Second
+	if err := c.EP.SetSockOpt(tcpip.TCPDeferAcceptOption(tcpDeferAccept)); err != nil {
+		t.Fatalf("c.EP.SetSockOpt(TCPDeferAcceptOption(%s) failed: %v", tcpDeferAccept, err)
+	}
+
+	irs, iss := executeHandshake(t, c, context.TestPort, false /* synCookiesInUse */)
+
+	if _, _, err := c.EP.Accept(); err != tcpip.ErrWouldBlock {
+		t.Fatalf("c.EP.Accept() returned unexpected error got: %v, want: %s", err, tcpip.ErrWouldBlock)
+	}
+
+	// Send data. This should result in an acceptable endpoint.
+	c.SendPacket([]byte{1, 2, 3, 4}, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  irs + 1,
+		AckNum:  iss + 1,
+	})
+
+	// Receive ACK for the data we sent.
+	checker.IPv4(t, c.GetPacket(), checker.TCP(
+		checker.DstPort(context.TestPort),
+		checker.TCPFlags(header.TCPFlagAck),
+		checker.SeqNum(uint32(iss+1)),
+		checker.AckNum(uint32(irs+5))))
+
+	// Give a bit of time for the socket to be delivered to the accept queue.
+	time.Sleep(50 * time.Millisecond)
+	aep, _, err := c.EP.Accept()
+	if err != nil {
+		t.Fatalf("c.EP.Accept() returned unexpected error got: %v, want: nil", err)
+	}
+
+	aep.Close()
+	// Closing aep without reading the data should trigger a RST.
+	checker.IPv4(t, c.GetPacket(), checker.TCP(
+		checker.DstPort(context.TestPort),
+		checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck),
+		checker.SeqNum(uint32(iss+1)),
+		checker.AckNum(uint32(irs+5))))
+}
+
+func TestTCPDeferAcceptTimeout(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	c.Create(-1)
+
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		t.Fatal("Bind failed:", err)
+	}
+
+	if err := c.EP.Listen(10); err != nil {
+		t.Fatal("Listen failed:", err)
+	}
+
+	const tcpDeferAccept = 1 * time.Second
+	if err := c.EP.SetSockOpt(tcpip.TCPDeferAcceptOption(tcpDeferAccept)); err != nil {
+		t.Fatalf("c.EP.SetSockOpt(TCPDeferAcceptOption(%s) failed: %v", tcpDeferAccept, err)
+	}
+
+	irs, iss := executeHandshake(t, c, context.TestPort, false /* synCookiesInUse */)
+
+	if _, _, err := c.EP.Accept(); err != tcpip.ErrWouldBlock {
+		t.Fatalf("c.EP.Accept() returned unexpected error got: %v, want: %s", err, tcpip.ErrWouldBlock)
+	}
+
+	// Sleep for a little of the tcpDeferAccept timeout.
+	time.Sleep(tcpDeferAccept + 100*time.Millisecond)
+
+	// On timeout expiry we should get a SYN-ACK retransmission.
+	checker.IPv4(t, c.GetPacket(), checker.TCP(
+		checker.SrcPort(context.StackPort),
+		checker.DstPort(context.TestPort),
+		checker.TCPFlags(header.TCPFlagAck|header.TCPFlagSyn),
+		checker.AckNum(uint32(irs)+1)))
+
+	// Send data. This should result in an acceptable endpoint.
+	c.SendPacket([]byte{1, 2, 3, 4}, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  irs + 1,
+		AckNum:  iss + 1,
+	})
+
+	// Receive ACK for the data we sent.
+	checker.IPv4(t, c.GetPacket(), checker.TCP(
+		checker.SrcPort(context.StackPort),
+		checker.DstPort(context.TestPort),
+		checker.TCPFlags(header.TCPFlagAck),
+		checker.SeqNum(uint32(iss+1)),
+		checker.AckNum(uint32(irs+5))))
+
+	// Give sometime for the endpoint to be delivered to the accept queue.
+	time.Sleep(50 * time.Millisecond)
+	aep, _, err := c.EP.Accept()
+	if err != nil {
+		t.Fatalf("c.EP.Accept() returned unexpected error got: %v, want: nil", err)
+	}
+
+	aep.Close()
+	// Closing aep without reading the data should trigger a RST.
+	checker.IPv4(t, c.GetPacket(), checker.TCP(
+		checker.SrcPort(context.StackPort),
+		checker.DstPort(context.TestPort),
+		checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck),
+		checker.SeqNum(uint32(iss+1)),
+		checker.AckNum(uint32(irs+5))))
+}
+
+func TestResetDuringClose(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	iss := seqnum.Value(789)
+	c.CreateConnected(iss, 30000, -1 /* epRecvBuf */)
+	// Send some data to make sure there is some unread
+	// data to trigger a reset on c.Close.
+	irs := c.IRS
+	c.SendPacket([]byte{1, 2, 3, 4}, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  iss.Add(1),
+		AckNum:  irs.Add(1),
+		RcvWnd:  30000,
+	})
+
+	// Receive ACK for the data we sent.
+	checker.IPv4(t, c.GetPacket(), checker.TCP(
+		checker.DstPort(context.TestPort),
+		checker.TCPFlags(header.TCPFlagAck),
+		checker.SeqNum(uint32(irs.Add(1))),
+		checker.AckNum(uint32(iss.Add(5)))))
+
+	// Close in a separate goroutine so that we can trigger
+	// a race with the RST we send below. This should not
+	// panic due to the route being released depeding on
+	// whether Close() sends an active RST or the RST sent
+	// below is processed by the worker first.
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		c.SendPacket(nil, &context.Headers{
+			SrcPort: context.TestPort,
+			DstPort: c.Port,
+			SeqNum:  iss.Add(5),
+			AckNum:  c.IRS.Add(5),
+			RcvWnd:  30000,
+			Flags:   header.TCPFlagRst,
+		})
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		c.EP.Close()
+	}()
+
+	wg.Wait()
 }

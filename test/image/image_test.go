@@ -107,7 +107,7 @@ func TestHttpd(t *testing.T) {
 	}
 	d := dockerutil.MakeDocker("http-test")
 
-	dir, err := dockerutil.PrepareFiles("latin10k.txt")
+	dir, err := dockerutil.PrepareFiles("test/image/latin10k.txt")
 	if err != nil {
 		t.Fatalf("PrepareFiles() failed: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestNginx(t *testing.T) {
 	}
 	d := dockerutil.MakeDocker("net-test")
 
-	dir, err := dockerutil.PrepareFiles("latin10k.txt")
+	dir, err := dockerutil.PrepareFiles("test/image/latin10k.txt")
 	if err != nil {
 		t.Fatalf("PrepareFiles() failed: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestMysql(t *testing.T) {
 	}
 
 	client := dockerutil.MakeDocker("mysql-client-test")
-	dir, err := dockerutil.PrepareFiles("mysql.sql")
+	dir, err := dockerutil.PrepareFiles("test/image/mysql.sql")
 	if err != nil {
 		t.Fatalf("PrepareFiles() failed: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestRuby(t *testing.T) {
 	}
 	d := dockerutil.MakeDocker("ruby-test")
 
-	dir, err := dockerutil.PrepareFiles("ruby.rb", "ruby.sh")
+	dir, err := dockerutil.PrepareFiles("test/image/ruby.rb", "test/image/ruby.sh")
 	if err != nil {
 		t.Fatalf("PrepareFiles() failed: %v", err)
 	}

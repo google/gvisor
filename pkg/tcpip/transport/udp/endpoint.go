@@ -29,9 +29,11 @@ import (
 type udpPacket struct {
 	udpPacketEntry
 	senderAddress tcpip.FullAddress
+	packetInfo    tcpip.IPPacketInfo
 	data          buffer.VectorisedView `state:".(buffer.VectorisedView)"`
 	timestamp     int64
-	tos           uint8
+	// tos stores either the receiveTOS or receiveTClass value.
+	tos uint8
 }
 
 // EndpointState represents the state of a UDP endpoint.
@@ -118,6 +120,13 @@ type endpoint struct {
 	// as ancillary data to ControlMessages on Read.
 	receiveTOS bool
 
+	// receiveTClass determines if the incoming IPv6 TClass header field is
+	// passed as ancillary data to ControlMessages on Read.
+	receiveTClass bool
+
+	// receiveIPPacketInfo determines if the packet info is returned by Read.
+	receiveIPPacketInfo bool
+
 	// shutdownFlags represent the current shutdown state of the endpoint.
 	shutdownFlags tcpip.ShutdownFlags
 
@@ -175,6 +184,11 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 // UniqueID implements stack.TransportEndpoint.UniqueID.
 func (e *endpoint) UniqueID() uint64 {
 	return e.uniqueID
+}
+
+// Abort implements stack.TransportEndpoint.Abort.
+func (e *endpoint) Abort() {
+	e.Close()
 }
 
 // Close puts the endpoint in a closed state and frees all resources
@@ -254,10 +268,21 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMess
 	}
 	e.mu.RLock()
 	receiveTOS := e.receiveTOS
+	receiveTClass := e.receiveTClass
+	receiveIPPacketInfo := e.receiveIPPacketInfo
 	e.mu.RUnlock()
 	if receiveTOS {
 		cm.HasTOS = true
 		cm.TOS = p.tos
+	}
+	if receiveTClass {
+		cm.HasTClass = true
+		// Although TClass is an 8-bit value it's read in the CMsg as a uint32.
+		cm.TClass = uint32(p.tos)
+	}
+	if receiveIPPacketInfo {
+		cm.HasIPPacketInfo = true
+		cm.PacketInfo = p.packetInfo
 	}
 	return p.data.ToView(), cm, nil
 }
@@ -418,19 +443,19 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 			return 0, nil, tcpip.ErrBroadcastDisabled
 		}
 
-		netProto, err := e.checkV4Mapped(to)
+		dst, netProto, err := e.checkV4MappedLocked(*to)
 		if err != nil {
 			return 0, nil, err
 		}
 
-		r, _, err := e.connectRoute(nicID, *to, netProto)
+		r, _, err := e.connectRoute(nicID, dst, netProto)
 		if err != nil {
 			return 0, nil, err
 		}
 		defer r.Release()
 
 		route = &r
-		dstPort = to.Port
+		dstPort = dst.Port
 	}
 
 	if route.IsResolutionRequired() {
@@ -480,6 +505,17 @@ func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 		e.mu.Unlock()
 		return nil
 
+	case tcpip.ReceiveTClassOption:
+		// We only support this option on v6 endpoints.
+		if e.NetProto != header.IPv6ProtocolNumber {
+			return tcpip.ErrNotSupported
+		}
+
+		e.mu.Lock()
+		e.receiveTClass = v
+		e.mu.Unlock()
+		return nil
+
 	case tcpip.V6OnlyOption:
 		// We only recognize this option on v6 endpoints.
 		if e.NetProto != header.IPv6ProtocolNumber {
@@ -495,6 +531,13 @@ func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 		}
 
 		e.v6only = v
+		return nil
+
+	case tcpip.ReceiveIPPacketInfoOption:
+		e.mu.Lock()
+		e.receiveIPPacketInfo = v
+		e.mu.Unlock()
+		return nil
 	}
 
 	return nil
@@ -523,7 +566,7 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		defer e.mu.Unlock()
 
 		fa := tcpip.FullAddress{Addr: v.InterfaceAddr}
-		netProto, err := e.checkV4Mapped(&fa)
+		fa, netProto, err := e.checkV4MappedLocked(fa)
 		if err != nil {
 			return err
 		}
@@ -692,6 +735,17 @@ func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 		e.mu.RUnlock()
 		return v, nil
 
+	case tcpip.ReceiveTClassOption:
+		// We only support this option on v6 endpoints.
+		if e.NetProto != header.IPv6ProtocolNumber {
+			return false, tcpip.ErrNotSupported
+		}
+
+		e.mu.RLock()
+		v := e.receiveTClass
+		e.mu.RUnlock()
+		return v, nil
+
 	case tcpip.V6OnlyOption:
 		// We only recognize this option on v6 endpoints.
 		if e.NetProto != header.IPv6ProtocolNumber {
@@ -702,6 +756,12 @@ func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 		v := e.v6only
 		e.mu.RUnlock()
 
+		return v, nil
+
+	case tcpip.ReceiveIPPacketInfoOption:
+		e.mu.RLock()
+		v := e.receiveIPPacketInfo
+		e.mu.RUnlock()
 		return v, nil
 	}
 
@@ -867,13 +927,14 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 	return nil
 }
 
-func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress) (tcpip.NetworkProtocolNumber, *tcpip.Error) {
-	unwrapped, netProto, err := e.TransportEndpointInfo.AddrNetProto(*addr, e.v6only)
+// checkV4MappedLocked determines the effective network protocol and converts
+// addr to its canonical form.
+func (e *endpoint) checkV4MappedLocked(addr tcpip.FullAddress) (tcpip.FullAddress, tcpip.NetworkProtocolNumber, *tcpip.Error) {
+	unwrapped, netProto, err := e.TransportEndpointInfo.AddrNetProtoLocked(addr, e.v6only)
 	if err != nil {
-		return 0, err
+		return tcpip.FullAddress{}, 0, err
 	}
-	*addr = unwrapped
-	return netProto, nil
+	return unwrapped, netProto, nil
 }
 
 // Disconnect implements tcpip.Endpoint.Disconnect.
@@ -921,10 +982,6 @@ func (e *endpoint) Disconnect() *tcpip.Error {
 
 // Connect connects the endpoint to its peer. Specifying a NIC is optional.
 func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
-	netProto, err := e.checkV4Mapped(&addr)
-	if err != nil {
-		return err
-	}
 	if addr.Port == 0 {
 		// We don't support connecting to port zero.
 		return tcpip.ErrInvalidEndpointState
@@ -950,6 +1007,11 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 		nicID = e.BindNICID
 	default:
 		return tcpip.ErrInvalidEndpointState
+	}
+
+	addr, netProto, err := e.checkV4MappedLocked(addr)
+	if err != nil {
+		return err
 	}
 
 	r, nicID, err := e.connectRoute(nicID, addr, netProto)
@@ -1079,7 +1141,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) *tcpip.Error {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	netProto, err := e.checkV4Mapped(&addr)
+	addr, netProto, err := e.checkV4MappedLocked(addr)
 	if err != nil {
 		return err
 	}
@@ -1247,6 +1309,11 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 	switch r.NetProto {
 	case header.IPv4ProtocolNumber:
 		packet.tos, _ = header.IPv4(pkt.NetworkHeader).TOS()
+		packet.packetInfo.LocalAddr = r.LocalAddress
+		packet.packetInfo.DestinationAddr = r.RemoteAddress
+		packet.packetInfo.NIC = r.NICID()
+	case header.IPv6ProtocolNumber:
+		packet.tos, _ = header.IPv6(pkt.NetworkHeader).TOS()
 	}
 
 	packet.timestamp = e.stack.NowNanoseconds()

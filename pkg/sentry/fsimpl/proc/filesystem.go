@@ -26,15 +26,18 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
-// procFSType is the factory class for procfs.
+// Name is the default filesystem name.
+const Name = "proc"
+
+// FilesystemType is the factory class for procfs.
 //
 // +stateify savable
-type procFSType struct{}
+type FilesystemType struct{}
 
-var _ vfs.FilesystemType = (*procFSType)(nil)
+var _ vfs.FilesystemType = (*FilesystemType)(nil)
 
 // GetFilesystem implements vfs.FilesystemType.
-func (ft *procFSType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
+func (ft *FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	k := kernel.KernelFromContext(ctx)
 	if k == nil {
 		return nil, nil, fmt.Errorf("procfs requires a kernel")
@@ -47,12 +50,13 @@ func (ft *procFSType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFile
 	procfs := &kernfs.Filesystem{}
 	procfs.VFSFilesystem().Init(vfsObj, procfs)
 
-	var data *InternalData
+	var cgroups map[string]string
 	if opts.InternalData != nil {
-		data = opts.InternalData.(*InternalData)
+		data := opts.InternalData.(*InternalData)
+		cgroups = data.Cgroups
 	}
 
-	_, dentry := newTasksInode(procfs, k, pidns, data.Cgroups)
+	_, dentry := newTasksInode(procfs, k, pidns, cgroups)
 	return procfs.VFSFilesystem(), dentry.VFSDentry(), nil
 }
 

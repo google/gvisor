@@ -278,11 +278,19 @@ func (i *Inode) SetXattr(ctx context.Context, d *Dirent, name, value string, fla
 }
 
 // ListXattr calls i.InodeOperations.ListXattr with i as the Inode.
-func (i *Inode) ListXattr(ctx context.Context) (map[string]struct{}, error) {
+func (i *Inode) ListXattr(ctx context.Context, size uint64) (map[string]struct{}, error) {
 	if i.overlay != nil {
-		return overlayListXattr(ctx, i.overlay)
+		return overlayListXattr(ctx, i.overlay, size)
 	}
-	return i.InodeOperations.ListXattr(ctx, i)
+	return i.InodeOperations.ListXattr(ctx, i, size)
+}
+
+// RemoveXattr calls i.InodeOperations.RemoveXattr with i as the Inode.
+func (i *Inode) RemoveXattr(ctx context.Context, d *Dirent, name string) error {
+	if i.overlay != nil {
+		return overlayRemoveXattr(ctx, i.overlay, d, name)
+	}
+	return i.InodeOperations.RemoveXattr(ctx, i, name)
 }
 
 // CheckPermission will check if the caller may access this file in the

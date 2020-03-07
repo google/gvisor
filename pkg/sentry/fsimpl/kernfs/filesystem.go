@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This file implements vfs.FilesystemImpl for kernfs.
-
 package kernfs
+
+// This file implements vfs.FilesystemImpl for kernfs.
 
 import (
 	"fmt"
@@ -111,10 +111,10 @@ func (fs *Filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.Vir
 		// Dentry isn't cached; it either doesn't exist or failed
 		// revalidation. Attempt to resolve it via Lookup.
 		//
-		// FIXME(b/144498111): Inode.Lookup() should return *(kernfs.)Dentry,
-		// not *vfs.Dentry, since (kernfs.)Filesystem assumes that all dentries
-		// in the filesystem are (kernfs.)Dentry and performs vfs.DentryImpl
-		// casts accordingly.
+		// FIXME(gvisor.dev/issue/1193): Inode.Lookup() should return
+		// *(kernfs.)Dentry, not *vfs.Dentry, since (kernfs.)Filesystem assumes
+		// that all dentries in the filesystem are (kernfs.)Dentry and performs
+		// vfs.DentryImpl casts accordingly.
 		var err error
 		childVFSD, err = parent.inode.Lookup(ctx, name)
 		if err != nil {
@@ -365,7 +365,7 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	// appropriate bits in rp), but are returned by
 	// FileDescriptionImpl.StatusFlags().
 	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_TRUNC | linux.O_DIRECTORY | linux.O_NOFOLLOW
-	ats := vfs.AccessTypesForOpenFlags(opts.Flags)
+	ats := vfs.AccessTypesForOpenFlags(&opts)
 
 	// Do not create new file.
 	if opts.Flags&linux.O_CREAT == 0 {
@@ -379,7 +379,7 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if err := inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 			return nil, err
 		}
-		return inode.Open(rp, vfsd, opts.Flags)
+		return inode.Open(rp, vfsd, opts)
 	}
 
 	// May create new file.
@@ -398,7 +398,7 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if err := inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 			return nil, err
 		}
-		return inode.Open(rp, vfsd, opts.Flags)
+		return inode.Open(rp, vfsd, opts)
 	}
 afterTrailingSymlink:
 	parentVFSD, parentInode, err := fs.walkParentDirLocked(ctx, rp)
@@ -438,7 +438,7 @@ afterTrailingSymlink:
 			return nil, err
 		}
 		parentVFSD.Impl().(*Dentry).InsertChild(pc, child)
-		return child.Impl().(*Dentry).inode.Open(rp, child, opts.Flags)
+		return child.Impl().(*Dentry).inode.Open(rp, child, opts)
 	}
 	// Open existing file or follow symlink.
 	if mustCreate {
@@ -463,7 +463,7 @@ afterTrailingSymlink:
 	if err := childInode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 		return nil, err
 	}
-	return childInode.Open(rp, childVFSD, opts.Flags)
+	return childInode.Open(rp, childVFSD, opts)
 }
 
 // ReadlinkAt implements vfs.FilesystemImpl.ReadlinkAt.
@@ -544,6 +544,7 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 
 	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
 	virtfs := rp.VirtualFilesystem()
 
 	srcDirDentry := srcDirVFSD.Impl().(*Dentry)
@@ -595,7 +596,10 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	parentDentry := vfsd.Parent().Impl().(*Dentry)
 	parentDentry.dirMu.Lock()
 	defer parentDentry.dirMu.Unlock()
-	if err := virtfs.PrepareDeleteDentry(vfs.MountNamespaceFromContext(ctx), vfsd); err != nil {
+
+	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
+	if err := virtfs.PrepareDeleteDentry(mntns, vfsd); err != nil {
 		return err
 	}
 	if err := parentDentry.inode.RmDir(ctx, rp.Component(), vfsd); err != nil {
@@ -630,7 +634,7 @@ func (fs *Filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	if err != nil {
 		return linux.Statx{}, err
 	}
-	return inode.Stat(fs.VFSFilesystem()), nil
+	return inode.Stat(fs.VFSFilesystem(), opts)
 }
 
 // StatFSAt implements vfs.FilesystemImpl.StatFSAt.
@@ -697,7 +701,9 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	parentDentry := vfsd.Parent().Impl().(*Dentry)
 	parentDentry.dirMu.Lock()
 	defer parentDentry.dirMu.Unlock()
-	if err := virtfs.PrepareDeleteDentry(vfs.MountNamespaceFromContext(ctx), vfsd); err != nil {
+	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
+	if err := virtfs.PrepareDeleteDentry(mntns, vfsd); err != nil {
 		return err
 	}
 	if err := parentDentry.inode.Unlink(ctx, rp.Component(), vfsd); err != nil {

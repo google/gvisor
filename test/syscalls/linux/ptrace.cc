@@ -1208,5 +1208,5 @@ int main(int argc, char** argv) {
     gvisor::testing::RunExecveChild();
   }
 
-  return RUN_ALL_TESTS();
+  return gvisor::testing::RunAllTests();
 }

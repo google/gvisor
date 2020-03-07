@@ -73,7 +73,7 @@ func (si *slaveInodeOperations) Release(ctx context.Context) {
 }
 
 // Truncate implements fs.InodeOperations.Truncate.
-func (slaveInodeOperations) Truncate(context.Context, *fs.Inode, int64) error {
+func (*slaveInodeOperations) Truncate(context.Context, *fs.Inode, int64) error {
 	return nil
 }
 

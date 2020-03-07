@@ -1,5 +1,5 @@
 # python3
-# Copyright 2019 Google LLC
+# Copyright 2019 The gVisor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
 # limitations under the License.
 """SSHConnection handles the details of SSH connections."""
 
+import logging
 import os
 import warnings
 
@@ -23,19 +24,27 @@ from benchmarks import harness
 # Get rid of paramiko Cryptography Warnings.
 warnings.filterwarnings(action="ignore", module=".*paramiko.*")
 
+log = logging.getLogger(__name__)
 
-def send_one_file(client: paramiko.SSHClient, path: str, remote_dir: str):
+
+def send_one_file(client: paramiko.SSHClient, path: str,
+                  remote_dir: str) -> str:
   """Sends a single file via an SSH client.
 
   Args:
     client: The existing SSH client.
     path: The local path.
     remote_dir: The remote directory.
+
+  Returns:
+    :return: The remote path as a string.
   """
   filename = path.split("/").pop()
-  client.exec_command("mkdir -p " + remote_dir)
+  if remote_dir != ".":
+    client.exec_command("mkdir -p " + remote_dir)
   with client.open_sftp() as ftp_client:
     ftp_client.put(path, os.path.join(remote_dir, filename))
+  return os.path.join(remote_dir, filename)
 
 
 class SSHConnection:
@@ -87,10 +96,13 @@ class SSHConnection:
       The contents of stdout and stderr.
     """
     with self._client() as client:
+      log.info("running command: %s", cmd)
       _, stdout, stderr = client.exec_command(command=cmd)
-      stdout.channel.recv_exit_status()
+      log.info("returned status: %d", stdout.channel.recv_exit_status())
       stdout = stdout.read().decode("utf-8")
       stderr = stderr.read().decode("utf-8")
+      log.info("stdout: %s", stdout)
+      log.info("stderr: %s", stderr)
     return stdout, stderr
 
   def send_workload(self, name: str) -> str:
@@ -103,6 +115,12 @@ class SSHConnection:
       The remote path.
     """
     with self._client() as client:
-      send_one_file(client, harness.LOCAL_WORKLOADS_PATH.format(name),
-                    harness.REMOTE_WORKLOADS_PATH.format(name))
-    return harness.REMOTE_WORKLOADS_PATH.format(name)
+      return send_one_file(client, harness.LOCAL_WORKLOADS_PATH.format(name),
+                           harness.REMOTE_WORKLOADS_PATH.format(name))
+
+  def send_installers(self) -> str:
+    with self._client() as client:
+      return send_one_file(
+          client,
+          path=harness.INSTALLER_ARCHIVE,
+          remote_dir=harness.REMOTE_INSTALLERS_PATH)

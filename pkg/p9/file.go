@@ -105,6 +105,22 @@ type File interface {
 	// TODO(b/127675828): Determine concurrency guarantees once implemented.
 	SetXattr(name, value string, flags uint32) error
 
+	// ListXattr lists the names of the extended attributes on this node.
+	//
+	// Size indicates the size of the buffer that has been allocated to hold the
+	// attribute list. If the list would be larger than size, implementations may
+	// return ERANGE to indicate that the buffer is too small, but they are also
+	// free to ignore the hint entirely (i.e. the value returned may be larger
+	// than size). All size checking is done independently at the syscall layer.
+	//
+	// TODO(b/148303075): Determine concurrency guarantees once implemented.
+	ListXattr(size uint64) (map[string]struct{}, error)
+
+	// RemoveXattr removes extended attributes on this node.
+	//
+	// TODO(b/148303075): Determine concurrency guarantees once implemented.
+	RemoveXattr(name string) error
+
 	// Allocate allows the caller to directly manipulate the allocated disk space
 	// for the file. See fallocate(2) for more details.
 	Allocate(mode AllocateMode, offset, length uint64) error

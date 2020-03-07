@@ -49,6 +49,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -60,6 +61,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/runsc/boot/filter"
 	_ "gvisor.dev/gvisor/runsc/boot/platforms" // register all platforms.
+	"gvisor.dev/gvisor/runsc/boot/pprof"
 	"gvisor.dev/gvisor/runsc/specutils"
 
 	// Include supported socket providers.
@@ -230,11 +232,8 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("enabling strace: %v", err)
 	}
 
-	// Create an empty network stack because the network namespace may be empty at
-	// this point. Netns is configured before Run() is called. Netstack is
-	// configured using a control uRPC message. Host network is configured inside
-	// Run().
-	networkStack, err := newEmptyNetworkStack(args.Conf, k, k)
+	// Create root network namespace/stack.
+	netns, err := newRootNetworkNamespace(args.Conf, k, k)
 	if err != nil {
 		return nil, fmt.Errorf("creating network: %v", err)
 	}
@@ -277,7 +276,7 @@ func New(args Args) (*Loader, error) {
 		FeatureSet:                  cpuid.HostFeatureSet(),
 		Timekeeper:                  tk,
 		RootUserNamespace:           creds.UserNamespace,
-		NetworkStack:                networkStack,
+		RootNetworkNamespace:        netns,
 		ApplicationCores:            uint(args.NumCPU),
 		Vdso:                        vdso,
 		RootUTSNamespace:            kernel.NewUTSNamespace(args.Spec.Hostname, args.Spec.Hostname, creds.UserNamespace),
@@ -466,7 +465,7 @@ func (l *Loader) run() error {
 		// Delay host network configuration to this point because network namespace
 		// is configured after the loader is created and before Run() is called.
 		log.Debugf("Configuring host network")
-		stack := l.k.NetworkStack().(*hostinet.Stack)
+		stack := l.k.RootNetworkNamespace().Stack().(*hostinet.Stack)
 		if err := stack.Configure(); err != nil {
 			return err
 		}
@@ -485,7 +484,7 @@ func (l *Loader) run() error {
 	// l.restore is set by the container manager when a restore call is made.
 	if !l.restore {
 		if l.conf.ProfileEnable {
-			initializePProf()
+			pprof.Initialize()
 		}
 
 		// Finally done with all configuration. Setup filters before user code
@@ -795,16 +794,19 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 		return 0, fmt.Errorf("container %q not started", args.ContainerID)
 	}
 
+	// TODO(gvisor.dev/issue/1623): Add VFS2 support
+
 	// Get the container MountNamespace from the Task.
 	tg.Leader().WithMuLocked(func(t *kernel.Task) {
-		// task.MountNamespace() does not take a ref, so we must do so
-		// ourselves.
+		// task.MountNamespace() does not take a ref, so we must do so ourselves.
 		args.MountNamespace = t.MountNamespace()
 		args.MountNamespace.IncRef()
 	})
-	defer args.MountNamespace.DecRef()
+	if args.MountNamespace != nil {
+		defer args.MountNamespace.DecRef()
+	}
 
-	// Add the HOME enviroment varible if it is not already set.
+	// Add the HOME environment variable if it is not already set.
 	root := args.MountNamespace.Root()
 	defer root.DecRef()
 	ctx := fs.WithRoot(l.k.SupervisorContext(), root)
@@ -905,48 +907,92 @@ func (l *Loader) WaitExit() kernel.ExitStatus {
 	return l.k.GlobalInit().ExitStatus()
 }
 
-func newEmptyNetworkStack(conf *Config, clock tcpip.Clock, uniqueID stack.UniqueID) (inet.Stack, error) {
+func newRootNetworkNamespace(conf *Config, clock tcpip.Clock, uniqueID stack.UniqueID) (*inet.Namespace, error) {
+	// Create an empty network stack because the network namespace may be empty at
+	// this point. Netns is configured before Run() is called. Netstack is
+	// configured using a control uRPC message. Host network is configured inside
+	// Run().
 	switch conf.Network {
 	case NetworkHost:
-		return hostinet.NewStack(), nil
+		// No network namespacing support for hostinet yet, hence creator is nil.
+		return inet.NewRootNamespace(hostinet.NewStack(), nil), nil
 
 	case NetworkNone, NetworkSandbox:
-		// NetworkNone sets up loopback using netstack.
-		netProtos := []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol(), arp.NewProtocol()}
-		transProtos := []stack.TransportProtocol{tcp.NewProtocol(), udp.NewProtocol(), icmp.NewProtocol4()}
-		s := netstack.Stack{stack.New(stack.Options{
-			NetworkProtocols:   netProtos,
-			TransportProtocols: transProtos,
-			Clock:              clock,
-			Stats:              netstack.Metrics,
-			HandleLocal:        true,
-			// Enable raw sockets for users with sufficient
-			// privileges.
-			RawFactory: raw.EndpointFactory{},
-			UniqueID:   uniqueID,
-		})}
-
-		// Enable SACK Recovery.
-		if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SACKEnabled(true)); err != nil {
-			return nil, fmt.Errorf("failed to enable SACK: %v", err)
+		s, err := newEmptySandboxNetworkStack(clock, uniqueID)
+		if err != nil {
+			return nil, err
 		}
-
-		// Set default TTLs as required by socket/netstack.
-		s.Stack.SetNetworkProtocolOption(ipv4.ProtocolNumber, tcpip.DefaultTTLOption(netstack.DefaultTTL))
-		s.Stack.SetNetworkProtocolOption(ipv6.ProtocolNumber, tcpip.DefaultTTLOption(netstack.DefaultTTL))
-
-		// Enable Receive Buffer Auto-Tuning.
-		if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.ModerateReceiveBufferOption(true)); err != nil {
-			return nil, fmt.Errorf("SetTransportProtocolOption failed: %v", err)
+		creator := &sandboxNetstackCreator{
+			clock:    clock,
+			uniqueID: uniqueID,
 		}
-
-		s.FillDefaultIPTables()
-
-		return &s, nil
+		return inet.NewRootNamespace(s, creator), nil
 
 	default:
 		panic(fmt.Sprintf("invalid network configuration: %v", conf.Network))
 	}
+
+}
+
+func newEmptySandboxNetworkStack(clock tcpip.Clock, uniqueID stack.UniqueID) (inet.Stack, error) {
+	netProtos := []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol(), arp.NewProtocol()}
+	transProtos := []stack.TransportProtocol{tcp.NewProtocol(), udp.NewProtocol(), icmp.NewProtocol4()}
+	s := netstack.Stack{stack.New(stack.Options{
+		NetworkProtocols:   netProtos,
+		TransportProtocols: transProtos,
+		Clock:              clock,
+		Stats:              netstack.Metrics,
+		HandleLocal:        true,
+		// Enable raw sockets for users with sufficient
+		// privileges.
+		RawFactory: raw.EndpointFactory{},
+		UniqueID:   uniqueID,
+	})}
+
+	// Enable SACK Recovery.
+	if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SACKEnabled(true)); err != nil {
+		return nil, fmt.Errorf("failed to enable SACK: %v", err)
+	}
+
+	// Set default TTLs as required by socket/netstack.
+	s.Stack.SetNetworkProtocolOption(ipv4.ProtocolNumber, tcpip.DefaultTTLOption(netstack.DefaultTTL))
+	s.Stack.SetNetworkProtocolOption(ipv6.ProtocolNumber, tcpip.DefaultTTLOption(netstack.DefaultTTL))
+
+	// Enable Receive Buffer Auto-Tuning.
+	if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.ModerateReceiveBufferOption(true)); err != nil {
+		return nil, fmt.Errorf("SetTransportProtocolOption failed: %v", err)
+	}
+
+	s.FillDefaultIPTables()
+
+	return &s, nil
+}
+
+// sandboxNetstackCreator implements kernel.NetworkStackCreator.
+//
+// +stateify savable
+type sandboxNetstackCreator struct {
+	clock    tcpip.Clock
+	uniqueID stack.UniqueID
+}
+
+// CreateStack implements kernel.NetworkStackCreator.CreateStack.
+func (f *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
+	s, err := newEmptySandboxNetworkStack(f.clock, f.uniqueID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Setup loopback.
+	n := &Network{Stack: s.(*netstack.Stack).Stack}
+	nicID := tcpip.NICID(f.uniqueID.UniqueID())
+	link := DefaultLoopbackLink
+	linkEP := loopback.New()
+	if err := n.createNICWithAddrs(nicID, link.Name, linkEP, link.Addresses); err != nil {
+		return nil, err
+	}
+
+	return s, nil
 }
 
 // signal sends a signal to one or more processes in a container. If PID is 0,
@@ -994,7 +1040,7 @@ func (l *Loader) signalProcess(cid string, tgid kernel.ThreadID, signo int32) er
 	execTG, _, err := l.threadGroupFromID(execID{cid: cid, pid: tgid})
 	if err == nil {
 		// Send signal directly to the identified process.
-		return execTG.SendSignal(&arch.SignalInfo{Signo: signo})
+		return l.k.SendExternalSignalThreadGroup(execTG, &arch.SignalInfo{Signo: signo})
 	}
 
 	// The caller may be signaling a process not started directly via exec.
@@ -1011,7 +1057,7 @@ func (l *Loader) signalProcess(cid string, tgid kernel.ThreadID, signo int32) er
 	if tg.Leader().ContainerID() != cid {
 		return fmt.Errorf("process %d is part of a different container: %q", tgid, tg.Leader().ContainerID())
 	}
-	return tg.SendSignal(&arch.SignalInfo{Signo: signo})
+	return l.k.SendExternalSignalThreadGroup(tg, &arch.SignalInfo{Signo: signo})
 }
 
 func (l *Loader) signalForegrondProcessGroup(cid string, tgid kernel.ThreadID, signo int32) error {
@@ -1029,7 +1075,7 @@ func (l *Loader) signalForegrondProcessGroup(cid string, tgid kernel.ThreadID, s
 		// No foreground process group has been set. Signal the
 		// original thread group.
 		log.Warningf("No foreground process group for container %q and PID %d. Sending signal directly to PID %d.", cid, tgid, tgid)
-		return tg.SendSignal(&arch.SignalInfo{Signo: signo})
+		return l.k.SendExternalSignalThreadGroup(tg, &arch.SignalInfo{Signo: signo})
 	}
 	// Send the signal to all processes in the process group.
 	var lastErr error
@@ -1037,7 +1083,7 @@ func (l *Loader) signalForegrondProcessGroup(cid string, tgid kernel.ThreadID, s
 		if tg.ProcessGroup() != pg {
 			continue
 		}
-		if err := tg.SendSignal(&arch.SignalInfo{Signo: signo}); err != nil {
+		if err := l.k.SendExternalSignalThreadGroup(tg, &arch.SignalInfo{Signo: signo}); err != nil {
 			lastErr = err
 		}
 	}

@@ -36,7 +36,7 @@ namespace {
 // We must be very careful about how these tests are written. Each thread may
 // only have one struct rseq registration, which may be done automatically at
 // thread start (as of 2019-11-13, glibc does *not* support rseq and thus does
-// not do so).
+// not do so, but other libraries do).
 //
 // Testing of rseq is thus done primarily in a child process with no
 // registration. This means exec'ing a nostdlib binary, as rseq registration can

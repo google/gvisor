@@ -56,44 +56,21 @@ const (
 	NumHooks
 )
 
-// A Verdict is returned by a rule's target to indicate how traversal of rules
-// should (or should not) continue.
-type Verdict int
+// A RuleVerdict is what a rule decides should be done with a packet.
+type RuleVerdict int
 
 const (
-	// Invalid indicates an unkonwn or erroneous verdict.
-	Invalid Verdict = iota
+	// RuleAccept indicates the packet should continue through netstack.
+	RuleAccept RuleVerdict = iota
 
-	// Accept indicates the packet should continue traversing netstack as
-	// normal.
-	Accept
+	// RuleDrop indicates the packet should be dropped.
+	RuleDrop
 
-	// Drop inicates the packet should be dropped, stopping traversing
-	// netstack.
-	Drop
+	// RuleJump indicates the packet should jump to another chain.
+	RuleJump
 
-	// Stolen indicates the packet was co-opted by the target and should
-	// stop traversing netstack.
-	Stolen
-
-	// Queue indicates the packet should be queued for userspace processing.
-	Queue
-
-	// Repeat indicates the packet should re-traverse the chains for the
-	// current hook.
-	Repeat
-
-	// None indicates no verdict was reached.
-	None
-
-	// Jump indicates a jump to another chain.
-	Jump
-
-	// Continue indicates that traversal should continue at the next rule.
-	Continue
-
-	// Return indicates that traversal should return to the calling chain.
-	Return
+	// RuleReturn indicates the packet should return to the previous chain.
+	RuleReturn
 )
 
 // IPTables holds all the tables for a netstack.
@@ -132,7 +109,7 @@ type Table struct {
 // ValidHooks returns a bitmap of the builtin hooks for the given table.
 func (table *Table) ValidHooks() uint32 {
 	hooks := uint32(0)
-	for hook, _ := range table.BuiltinChains {
+	for hook := range table.BuiltinChains {
 		hooks |= 1 << hook
 	}
 	return hooks
@@ -171,9 +148,14 @@ type IPHeaderFilter struct {
 
 // A Matcher is the interface for matching packets.
 type Matcher interface {
+	// Name returns the name of the Matcher.
+	Name() string
+
 	// Match returns whether the packet matches and whether the packet
 	// should be "hotdropped", i.e. dropped immediately. This is usually
 	// used for suspicious packets.
+	//
+	// Precondition: packet.NetworkHeader is set.
 	Match(hook Hook, packet tcpip.PacketBuffer, interfaceName string) (matches bool, hotdrop bool)
 }
 
@@ -181,6 +163,6 @@ type Matcher interface {
 type Target interface {
 	// Action takes an action on the packet and returns a verdict on how
 	// traversal should (or should not) continue. If the return value is
-	// Jump, it also returns the name of the chain to jump to.
-	Action(packet tcpip.PacketBuffer) (Verdict, string)
+	// Jump, it also returns the index of the rule to jump to.
+	Action(packet tcpip.PacketBuffer) (RuleVerdict, int)
 }

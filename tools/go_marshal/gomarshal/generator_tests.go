@@ -22,9 +22,11 @@ import (
 )
 
 var standardImports = []string{
+	"bytes",
 	"fmt",
 	"reflect",
 	"testing",
+
 	"gvisor.dev/gvisor/tools/go_marshal/analysis",
 }
 
@@ -47,9 +49,6 @@ type testGenerator struct {
 }
 
 func newTestGenerator(t *ast.TypeSpec) *testGenerator {
-	if _, ok := t.Type.(*ast.StructType); !ok {
-		panic(fmt.Sprintf("Attempting to generate code for a not struct type %v", t))
-	}
 	g := &testGenerator{
 		t:       t,
 		r:       receiverName(t),
@@ -67,14 +66,6 @@ func (g *testGenerator) typeName() string {
 	return g.t.Name.Name
 }
 
-func (g *testGenerator) forEachField(fn func(f *ast.Field)) {
-	// This is guaranteed to succeed because g.t is always a struct.
-	st := g.t.Type.(*ast.StructType)
-	for _, field := range st.Fields.List {
-		fn(field)
-	}
-}
-
 func (g *testGenerator) testFuncName(base string) string {
 	return fmt.Sprintf("%s%s", base, strings.Title(g.t.Name.Name))
 }
@@ -87,10 +78,10 @@ func (g *testGenerator) inTestFunction(name string, body func()) {
 
 func (g *testGenerator) emitTestNonZeroSize() {
 	g.inTestFunction("TestSizeNonZero", func() {
-		g.emit("x := &%s{}\n", g.typeName())
+		g.emit("var x %v\n", g.typeName())
 		g.emit("if x.SizeBytes() == 0 {\n")
 		g.inIndent(func() {
-			g.emit("t.Fatal(\"Marshallable.Size() should not return zero\")\n")
+			g.emit("t.Fatal(\"Marshallable.SizeBytes() should not return zero\")\n")
 		})
 		g.emit("}\n")
 	})
@@ -98,7 +89,7 @@ func (g *testGenerator) emitTestNonZeroSize() {
 
 func (g *testGenerator) emitTestSuspectAlignment() {
 	g.inTestFunction("TestSuspectAlignment", func() {
-		g.emit("x := %s{}\n", g.typeName())
+		g.emit("var x %v\n", g.typeName())
 		g.emit("analysis.AlignmentCheck(t, reflect.TypeOf(x))\n")
 	})
 }
@@ -116,26 +107,64 @@ func (g *testGenerator) emitTestMarshalUnmarshalPreservesData() {
 		g.emit("y.UnmarshalBytes(buf)\n")
 		g.emit("if !reflect.DeepEqual(x, y) {\n")
 		g.inIndent(func() {
-			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across Marshal/Unmarshal cycle:\\nBefore: %%+v\\nAfter: %%+v\\n\", x, y))\n")
+			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across MarshalBytes/UnmarshalBytes cycle:\\nBefore: %+v\\nAfter: %+v\\n\", x, y))\n")
 		})
 		g.emit("}\n")
 		g.emit("yUnsafe.UnmarshalBytes(bufUnsafe)\n")
 		g.emit("if !reflect.DeepEqual(x, yUnsafe) {\n")
 		g.inIndent(func() {
-			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across MarshalUnsafe/Unmarshal cycle:\\nBefore: %%+v\\nAfter: %%+v\\n\", x, yUnsafe))\n")
+			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across MarshalUnsafe/UnmarshalBytes cycle:\\nBefore: %+v\\nAfter: %+v\\n\", x, yUnsafe))\n")
 		})
 		g.emit("}\n\n")
 
 		g.emit("z.UnmarshalUnsafe(buf)\n")
 		g.emit("if !reflect.DeepEqual(x, z) {\n")
 		g.inIndent(func() {
-			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across Marshal/UnmarshalUnsafe cycle:\\nBefore: %%+v\\nAfter: %%+v\\n\", x, z))\n")
+			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across MarshalBytes/UnmarshalUnsafe cycle:\\nBefore: %+v\\nAfter: %+v\\n\", x, z))\n")
 		})
 		g.emit("}\n")
 		g.emit("zUnsafe.UnmarshalUnsafe(bufUnsafe)\n")
 		g.emit("if !reflect.DeepEqual(x, zUnsafe) {\n")
 		g.inIndent(func() {
-			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across MarshalUnsafe/UnmarshalUnsafe cycle:\\nBefore: %%+v\\nAfter: %%+v\\n\", x, zUnsafe))\n")
+			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across MarshalUnsafe/UnmarshalUnsafe cycle:\\nBefore: %+v\\nAfter: %+v\\n\", x, zUnsafe))\n")
+		})
+		g.emit("}\n")
+	})
+}
+
+func (g *testGenerator) emitTestWriteToUnmarshalPreservesData() {
+	g.inTestFunction("TestWriteToUnmarshalPreservesData", func() {
+		g.emit("var x, y, yUnsafe %s\n", g.typeName())
+		g.emit("analysis.RandomizeValue(&x)\n\n")
+
+		g.emit("var buf bytes.Buffer\n\n")
+
+		g.emit("x.WriteTo(&buf)\n")
+		g.emit("y.UnmarshalBytes(buf.Bytes())\n\n")
+		g.emit("yUnsafe.UnmarshalUnsafe(buf.Bytes())\n\n")
+
+		g.emit("if !reflect.DeepEqual(x, y) {\n")
+		g.inIndent(func() {
+			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across WriteTo/UnmarshalBytes cycle:\\nBefore: %+v\\nAfter: %+v\\n\", x, y))\n")
+		})
+		g.emit("}\n")
+		g.emit("if !reflect.DeepEqual(x, yUnsafe) {\n")
+		g.inIndent(func() {
+			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across WriteTo/UnmarshalUnsafe cycle:\\nBefore: %+v\\nAfter: %+v\\n\", x, yUnsafe))\n")
+		})
+		g.emit("}\n")
+	})
+}
+
+func (g *testGenerator) emitTestSizeBytesOnTypedNilPtr() {
+	g.inTestFunction("TestSizeBytesOnTypedNilPtr", func() {
+		g.emit("var x %s\n", g.typeName())
+		g.emit("sizeFromConcrete := x.SizeBytes()\n")
+		g.emit("sizeFromTypedNilPtr := (*%s)(nil).SizeBytes()\n\n", g.typeName())
+
+		g.emit("if sizeFromTypedNilPtr != sizeFromConcrete {\n")
+		g.inIndent(func() {
+			g.emit("t.Fatalf(\"SizeBytes() on typed nil pointer (%v) doesn't match size returned by a concrete object (%v).\\n\", sizeFromTypedNilPtr, sizeFromConcrete)\n")
 		})
 		g.emit("}\n")
 	})
@@ -145,6 +174,8 @@ func (g *testGenerator) emitTests() {
 	g.emitTestNonZeroSize()
 	g.emitTestSuspectAlignment()
 	g.emitTestMarshalUnmarshalPreservesData()
+	g.emitTestWriteToUnmarshalPreservesData()
+	g.emitTestSizeBytesOnTypedNilPtr()
 }
 
 func (g *testGenerator) write(out io.Writer) error {

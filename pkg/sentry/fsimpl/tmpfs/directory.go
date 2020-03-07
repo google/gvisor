@@ -74,25 +74,25 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 	defer fs.mu.Unlock()
 
 	if fd.off == 0 {
-		if !cb.Handle(vfs.Dirent{
+		if err := cb.Handle(vfs.Dirent{
 			Name:    ".",
 			Type:    linux.DT_DIR,
 			Ino:     vfsd.Impl().(*dentry).inode.ino,
 			NextOff: 1,
-		}) {
-			return nil
+		}); err != nil {
+			return err
 		}
 		fd.off++
 	}
 	if fd.off == 1 {
 		parentInode := vfsd.ParentOrSelf().Impl().(*dentry).inode
-		if !cb.Handle(vfs.Dirent{
+		if err := cb.Handle(vfs.Dirent{
 			Name:    "..",
 			Type:    parentInode.direntType(),
 			Ino:     parentInode.ino,
 			NextOff: 2,
-		}) {
-			return nil
+		}); err != nil {
+			return err
 		}
 		fd.off++
 	}
@@ -111,14 +111,14 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 	for child != nil {
 		// Skip other directoryFD iterators.
 		if child.inode != nil {
-			if !cb.Handle(vfs.Dirent{
+			if err := cb.Handle(vfs.Dirent{
 				Name:    child.vfsd.Name(),
 				Type:    child.inode.direntType(),
 				Ino:     child.inode.ino,
 				NextOff: fd.off + 1,
-			}) {
+			}); err != nil {
 				dir.childList.InsertBefore(child, fd.iter)
-				return nil
+				return err
 			}
 			fd.off++
 		}

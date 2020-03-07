@@ -23,13 +23,23 @@ import (
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // maxFilenameLen is the maximum length of a filename. This is dictated by 9P's
 // encoding of strings, which uses 2 bytes for the length prefix.
 const maxFilenameLen = (1 << 16) - 1
+
+func changeType(mode p9.FileMode, newType p9.FileMode) p9.FileMode {
+	if newType&^p9.FileModeMask != 0 {
+		panic(fmt.Sprintf("newType contained more bits than just file mode: %x", newType))
+	}
+	clear := mode &^ p9.FileModeMask
+	return clear | newType
+}
 
 // Lookup loads an Inode at name into a Dirent based on the session's cache
 // policy.
@@ -69,8 +79,25 @@ func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string
 		return nil, err
 	}
 
+	if i.session().overrides != nil {
+		// Check if file belongs to a internal named pipe. Note that it doesn't need
+		// to check for sockets because it's done in newInodeOperations below.
+		deviceKey := device.MultiDeviceKey{
+			Device:          p9attr.RDev,
+			SecondaryDevice: i.session().connID,
+			Inode:           qids[0].Path,
+		}
+		unlock := i.session().overrides.lock()
+		if pipeInode := i.session().overrides.getPipe(deviceKey); pipeInode != nil {
+			unlock()
+			pipeInode.IncRef()
+			return fs.NewDirent(ctx, pipeInode, name), nil
+		}
+		unlock()
+	}
+
 	// Construct the Inode operations.
-	sattr, node := newInodeOperations(ctx, i.fileState.s, newFile, qids[0], mask, p9attr, false)
+	sattr, node := newInodeOperations(ctx, i.fileState.s, newFile, qids[0], mask, p9attr)
 
 	// Construct a positive Dirent.
 	return fs.NewDirent(ctx, fs.NewInode(ctx, node, dir.MountSource, sattr), name), nil
@@ -138,7 +165,7 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 	qid := qids[0]
 
 	// Construct the InodeOperations.
-	sattr, iops := newInodeOperations(ctx, i.fileState.s, unopened, qid, mask, p9attr, false)
+	sattr, iops := newInodeOperations(ctx, i.fileState.s, unopened, qid, mask, p9attr)
 
 	// Construct the positive Dirent.
 	d := fs.NewDirent(ctx, fs.NewInode(ctx, iops, dir.MountSource, sattr), name)
@@ -223,63 +250,22 @@ func (i *inodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, 
 		return nil, syserror.ENAMETOOLONG
 	}
 
-	if i.session().endpoints == nil {
+	if i.session().overrides == nil {
 		return nil, syscall.EOPNOTSUPP
 	}
 
-	// Create replaces the directory fid with the newly created/opened
-	// file, so clone this directory so it doesn't change out from under
-	// this node.
-	_, newFile, err := i.fileState.file.walk(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	// We're not going to use newFile after return.
-	defer newFile.close(ctx)
-
-	// Stabilize the endpoint map while creation is in progress.
-	unlock := i.session().endpoints.lock()
+	// Stabilize the override map while creation is in progress.
+	unlock := i.session().overrides.lock()
 	defer unlock()
 
-	// Create a regular file in the gofer and then mark it as a socket by
-	// adding this inode key in the 'endpoints' map.
-	owner := fs.FileOwnerFromContext(ctx)
-	hostFile, err := newFile.create(ctx, name, p9.ReadWrite, p9.FileMode(perm.LinuxMode()), p9.UID(owner.UID), p9.GID(owner.GID))
+	sattr, iops, err := i.createEndpointFile(ctx, dir, name, perm, p9.ModeSocket)
 	if err != nil {
 		return nil, err
 	}
-	// We're not going to use this file.
-	hostFile.Close()
-
-	i.touchModificationAndStatusChangeTime(ctx, dir)
-
-	// Get the attributes of the file to create inode key.
-	qid, mask, attr, err := getattr(ctx, newFile)
-	if err != nil {
-		return nil, err
-	}
-
-	key := device.MultiDeviceKey{
-		Device:          attr.RDev,
-		SecondaryDevice: i.session().connID,
-		Inode:           qid.Path,
-	}
-
-	// Create child dirent.
-
-	// Get an unopened p9.File for the file we created so that it can be
-	// cloned and re-opened multiple times after creation.
-	_, unopened, err := i.fileState.file.walk(ctx, []string{name})
-	if err != nil {
-		return nil, err
-	}
-
-	// Construct the InodeOperations.
-	sattr, iops := newInodeOperations(ctx, i.fileState.s, unopened, qid, mask, attr, true)
 
 	// Construct the positive Dirent.
 	childDir := fs.NewDirent(ctx, fs.NewInode(ctx, iops, dir.MountSource, sattr), name)
-	i.session().endpoints.add(key, childDir, ep)
+	i.session().overrides.addBoundEndpoint(iops.fileState.key, childDir, ep)
 	return childDir, nil
 }
 
@@ -294,11 +280,85 @@ func (i *inodeOperations) CreateFifo(ctx context.Context, dir *fs.Inode, name st
 
 	// N.B. FIFOs use major/minor numbers 0.
 	if _, err := i.fileState.file.mknod(ctx, name, mode, 0, 0, p9.UID(owner.UID), p9.GID(owner.GID)); err != nil {
-		return err
+		if i.session().overrides == nil || err != syscall.EPERM {
+			return err
+		}
+		// If gofer doesn't support mknod, check if we can create an internal fifo.
+		return i.createInternalFifo(ctx, dir, name, owner, perm)
 	}
 
 	i.touchModificationAndStatusChangeTime(ctx, dir)
 	return nil
+}
+
+func (i *inodeOperations) createInternalFifo(ctx context.Context, dir *fs.Inode, name string, owner fs.FileOwner, perm fs.FilePermissions) error {
+	if i.session().overrides == nil {
+		return syserror.EPERM
+	}
+
+	// Stabilize the override map while creation is in progress.
+	unlock := i.session().overrides.lock()
+	defer unlock()
+
+	sattr, fileOps, err := i.createEndpointFile(ctx, dir, name, perm, p9.ModeNamedPipe)
+	if err != nil {
+		return err
+	}
+
+	// First create a pipe.
+	p := pipe.NewPipe(true /* isNamed */, pipe.DefaultPipeSize, usermem.PageSize)
+
+	// Wrap the fileOps with our Fifo.
+	iops := &fifo{
+		InodeOperations: pipe.NewInodeOperations(ctx, perm, p),
+		fileIops:        fileOps,
+	}
+	inode := fs.NewInode(ctx, iops, dir.MountSource, sattr)
+
+	// Construct the positive Dirent.
+	childDir := fs.NewDirent(ctx, fs.NewInode(ctx, iops, dir.MountSource, sattr), name)
+	i.session().overrides.addPipe(fileOps.fileState.key, childDir, inode)
+	return nil
+}
+
+// Caller must hold Session.endpoint lock.
+func (i *inodeOperations) createEndpointFile(ctx context.Context, dir *fs.Inode, name string, perm fs.FilePermissions, fileType p9.FileMode) (fs.StableAttr, *inodeOperations, error) {
+	_, dirClone, err := i.fileState.file.walk(ctx, nil)
+	if err != nil {
+		return fs.StableAttr{}, nil, err
+	}
+	// We're not going to use dirClone after return.
+	defer dirClone.close(ctx)
+
+	// Create a regular file in the gofer and then mark it as a socket by
+	// adding this inode key in the 'overrides' map.
+	owner := fs.FileOwnerFromContext(ctx)
+	hostFile, err := dirClone.create(ctx, name, p9.ReadWrite, p9.FileMode(perm.LinuxMode()), p9.UID(owner.UID), p9.GID(owner.GID))
+	if err != nil {
+		return fs.StableAttr{}, nil, err
+	}
+	// We're not going to use this file.
+	hostFile.Close()
+
+	i.touchModificationAndStatusChangeTime(ctx, dir)
+
+	// Get the attributes of the file to create inode key.
+	qid, mask, attr, err := getattr(ctx, dirClone)
+	if err != nil {
+		return fs.StableAttr{}, nil, err
+	}
+
+	// Get an unopened p9.File for the file we created so that it can be
+	// cloned and re-opened multiple times after creation.
+	_, unopened, err := i.fileState.file.walk(ctx, []string{name})
+	if err != nil {
+		return fs.StableAttr{}, nil, err
+	}
+
+	// Construct new inode with file type overridden.
+	attr.Mode = changeType(attr.Mode, fileType)
+	sattr, iops := newInodeOperations(ctx, i.fileState.s, unopened, qid, mask, attr)
+	return sattr, iops, nil
 }
 
 // Remove implements InodeOperations.Remove.
@@ -307,20 +367,23 @@ func (i *inodeOperations) Remove(ctx context.Context, dir *fs.Inode, name string
 		return syserror.ENAMETOOLONG
 	}
 
-	var key device.MultiDeviceKey
-	removeSocket := false
-	if i.session().endpoints != nil {
-		// Find out if file being deleted is a socket that needs to be
+	var key *device.MultiDeviceKey
+	if i.session().overrides != nil {
+		// Find out if file being deleted is a socket or pipe that needs to be
 		// removed from endpoint map.
 		if d, err := i.Lookup(ctx, dir, name); err == nil {
 			defer d.DecRef()
-			if fs.IsSocket(d.Inode.StableAttr) {
-				child := d.Inode.InodeOperations.(*inodeOperations)
-				key = child.fileState.key
-				removeSocket = true
 
-				// Stabilize the endpoint map while deletion is in progress.
-				unlock := i.session().endpoints.lock()
+			if fs.IsSocket(d.Inode.StableAttr) || fs.IsPipe(d.Inode.StableAttr) {
+				switch iops := d.Inode.InodeOperations.(type) {
+				case *inodeOperations:
+					key = &iops.fileState.key
+				case *fifo:
+					key = &iops.fileIops.fileState.key
+				}
+
+				// Stabilize the override map while deletion is in progress.
+				unlock := i.session().overrides.lock()
 				defer unlock()
 			}
 		}
@@ -329,8 +392,8 @@ func (i *inodeOperations) Remove(ctx context.Context, dir *fs.Inode, name string
 	if err := i.fileState.file.unlinkAt(ctx, name, 0); err != nil {
 		return err
 	}
-	if removeSocket {
-		i.session().endpoints.remove(key)
+	if key != nil {
+		i.session().overrides.remove(*key)
 	}
 	i.touchModificationAndStatusChangeTime(ctx, dir)
 

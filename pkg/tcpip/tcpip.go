@@ -323,11 +323,17 @@ type ControlMessages struct {
 	// TOS is the IPv4 type of service of the associated packet.
 	TOS uint8
 
-	// HasTClass indicates whether Tclass is valid/set.
+	// HasTClass indicates whether TClass is valid/set.
 	HasTClass bool
 
-	// Tclass is the IPv6 traffic class of the associated packet.
-	TClass int32
+	// TClass is the IPv6 traffic class of the associated packet.
+	TClass uint32
+
+	// HasIPPacketInfo indicates whether PacketInfo is set.
+	HasIPPacketInfo bool
+
+	// PacketInfo holds interface and address data on an incoming packet.
+	PacketInfo IPPacketInfo
 }
 
 // Endpoint is the interface implemented by transport protocols (e.g., tcp, udp)
@@ -335,8 +341,14 @@ type ControlMessages struct {
 // networking stack.
 type Endpoint interface {
 	// Close puts the endpoint in a closed state and frees all resources
-	// associated with it.
+	// associated with it. Close initiates the teardown process, the
+	// Endpoint may not be fully closed when Close returns.
 	Close()
+
+	// Abort initiates an expedited endpoint teardown. As compared to
+	// Close, Abort prioritizes closing the Endpoint quickly over cleanly.
+	// Abort is best effort; implementing Abort with Close is acceptable.
+	Abort()
 
 	// Read reads data from the endpoint and optionally returns the sender.
 	//
@@ -496,13 +508,25 @@ type WriteOptions struct {
 type SockOptBool int
 
 const (
+	// ReceiveTClassOption is used by SetSockOpt/GetSockOpt to specify if the
+	// IPV6_TCLASS ancillary message is passed with incoming packets.
+	ReceiveTClassOption SockOptBool = iota
+
 	// ReceiveTOSOption is used by SetSockOpt/GetSockOpt to specify if the TOS
 	// ancillary message is passed with incoming packets.
-	ReceiveTOSOption SockOptBool = iota
+	ReceiveTOSOption
 
 	// V6OnlyOption is used by {G,S}etSockOptBool to specify whether an IPv6
 	// socket is to be restricted to sending and receiving IPv6 packets only.
 	V6OnlyOption
+
+	// ReceiveIPPacketInfoOption is used by {G,S}etSockOptBool to specify
+	// if more inforamtion is provided with incoming packets such
+	// as interface index and address.
+	ReceiveIPPacketInfoOption
+
+	// TODO(b/146901447): convert existing bool socket options to be handled via
+	// Get/SetSockOptBool
 )
 
 // SockOptInt represents socket options which values have the int type.
@@ -626,6 +650,12 @@ type TCPLingerTimeoutOption time.Duration
 // before being marked closed.
 type TCPTimeWaitTimeoutOption time.Duration
 
+// TCPDeferAcceptOption is used by SetSockOpt/GetSockOpt to allow a
+// accept to return a completed connection only when there is data to be
+// read. This usually means the listening socket will drop the final ACK
+// for a handshake till the specified timeout until a segment with data arrives.
+type TCPDeferAcceptOption time.Duration
+
 // MulticastTTLOption is used by SetSockOpt/GetSockOpt to control the default
 // TTL value for multicast messages. The default is 1.
 type MulticastTTLOption uint8
@@ -678,6 +708,20 @@ type IPv4TOSOption uint8
 // IPv6TrafficClassOption is used by SetSockOpt/GetSockOpt to specify TOS
 // for all subsequent outgoing IPv6 packets from the endpoint.
 type IPv6TrafficClassOption uint8
+
+// IPPacketInfo is the message struture for IP_PKTINFO.
+//
+// +stateify savable
+type IPPacketInfo struct {
+	// NIC is the ID of the NIC to be used.
+	NIC NICID
+
+	// LocalAddr is the local address.
+	LocalAddr Address
+
+	// DestinationAddr is the destination address.
+	DestinationAddr Address
+}
 
 // Route is a row in the routing table. It specifies through which NIC (and
 // gateway) sets of packets should be routed. A row is considered viable if the
@@ -1118,6 +1162,10 @@ type ReadErrors struct {
 	// InvalidEndpointState is the number of times we found the endpoint state
 	// to be unexpected.
 	InvalidEndpointState StatCounter
+
+	// NotConnected is the number of times we tried to read but found that the
+	// endpoint was not connected.
+	NotConnected StatCounter
 }
 
 // WriteErrors collects packet write errors from an endpoint write call.
@@ -1160,7 +1208,9 @@ type TransportEndpointStats struct {
 // marker interface.
 func (*TransportEndpointStats) IsEndpointStats() {}
 
-func fillIn(v reflect.Value) {
+// InitStatCounters initializes v's fields with nil StatCounter fields to new
+// StatCounters.
+func InitStatCounters(v reflect.Value) {
 	for i := 0; i < v.NumField(); i++ {
 		v := v.Field(i)
 		if s, ok := v.Addr().Interface().(**StatCounter); ok {
@@ -1168,14 +1218,14 @@ func fillIn(v reflect.Value) {
 				*s = new(StatCounter)
 			}
 		} else {
-			fillIn(v)
+			InitStatCounters(v)
 		}
 	}
 }
 
 // FillIn returns a copy of s with nil fields initialized to new StatCounters.
 func (s Stats) FillIn() Stats {
-	fillIn(reflect.ValueOf(&s).Elem())
+	InitStatCounters(reflect.ValueOf(&s).Elem())
 	return s
 }
 

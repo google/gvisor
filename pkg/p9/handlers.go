@@ -942,6 +942,39 @@ func (t *Tsetxattr) handle(cs *connState) message {
 }
 
 // handle implements handler.handle.
+func (t *Tlistxattr) handle(cs *connState) message {
+	ref, ok := cs.LookupFID(t.FID)
+	if !ok {
+		return newErr(syscall.EBADF)
+	}
+	defer ref.DecRef()
+
+	xattrs, err := ref.file.ListXattr(t.Size)
+	if err != nil {
+		return newErr(err)
+	}
+	xattrList := make([]string, 0, len(xattrs))
+	for x := range xattrs {
+		xattrList = append(xattrList, x)
+	}
+	return &Rlistxattr{Xattrs: xattrList}
+}
+
+// handle implements handler.handle.
+func (t *Tremovexattr) handle(cs *connState) message {
+	ref, ok := cs.LookupFID(t.FID)
+	if !ok {
+		return newErr(syscall.EBADF)
+	}
+	defer ref.DecRef()
+
+	if err := ref.file.RemoveXattr(t.Name); err != nil {
+		return newErr(err)
+	}
+	return &Rremovexattr{}
+}
+
+// handle implements handler.handle.
 func (t *Treaddir) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.Directory)
 	if !ok {

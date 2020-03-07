@@ -16,7 +16,6 @@ package tmpfs
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -334,7 +333,7 @@ afterTrailingSymlink:
 }
 
 func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions, afterCreate bool) (*vfs.FileDescription, error) {
-	ats := vfs.AccessTypesForOpenFlags(opts.Flags)
+	ats := vfs.AccessTypesForOpenFlags(opts)
 	if !afterCreate {
 		if err := d.inode.checkPermissions(rp.Credentials(), ats, d.inode.isDir()); err != nil {
 			return nil, err
@@ -347,10 +346,9 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 			return nil, err
 		}
 		if opts.Flags&linux.O_TRUNC != 0 {
-			impl.mu.Lock()
-			impl.data.Truncate(0, impl.memFile)
-			atomic.StoreUint64(&impl.size, 0)
-			impl.mu.Unlock()
+			if _, err := impl.truncate(0); err != nil {
+				return nil, err
+			}
 		}
 		return &fd.vfsfd, nil
 	case *directory:
@@ -486,7 +484,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	vfsObj := rp.VirtualFilesystem()
 	oldParentDir := oldParent.inode.impl.(*directory)
 	newParentDir := newParent.inode.impl.(*directory)
-	if err := vfsObj.PrepareRenameDentry(vfs.MountNamespaceFromContext(ctx), renamedVFSD, replacedVFSD); err != nil {
+	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
+	if err := vfsObj.PrepareRenameDentry(mntns, renamedVFSD, replacedVFSD); err != nil {
 		return err
 	}
 	if replaced != nil {
@@ -543,7 +543,9 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	}
 	defer mnt.EndWrite()
 	vfsObj := rp.VirtualFilesystem()
-	if err := vfsObj.PrepareDeleteDentry(vfs.MountNamespaceFromContext(ctx), childVFSD); err != nil {
+	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
+	if err := vfsObj.PrepareDeleteDentry(mntns, childVFSD); err != nil {
 		return err
 	}
 	parent.inode.impl.(*directory).childList.Remove(child)
@@ -622,7 +624,7 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	if child.inode.isDir() {
 		return syserror.EISDIR
 	}
-	if !rp.MustBeDir() {
+	if rp.MustBeDir() {
 		return syserror.ENOTDIR
 	}
 	mnt := rp.Mount()
@@ -631,7 +633,9 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	}
 	defer mnt.EndWrite()
 	vfsObj := rp.VirtualFilesystem()
-	if err := vfsObj.PrepareDeleteDentry(vfs.MountNamespaceFromContext(ctx), childVFSD); err != nil {
+	mntns := vfs.MountNamespaceFromContext(ctx)
+	defer mntns.DecRef()
+	if err := vfsObj.PrepareDeleteDentry(mntns, childVFSD); err != nil {
 		return err
 	}
 	parent.inode.impl.(*directory).childList.Remove(child)

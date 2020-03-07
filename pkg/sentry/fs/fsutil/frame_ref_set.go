@@ -20,24 +20,25 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
 
-type frameRefSetFunctions struct{}
+// FrameRefSetFunctions implements segment.Functions for FrameRefSet.
+type FrameRefSetFunctions struct{}
 
 // MinKey implements segment.Functions.MinKey.
-func (frameRefSetFunctions) MinKey() uint64 {
+func (FrameRefSetFunctions) MinKey() uint64 {
 	return 0
 }
 
 // MaxKey implements segment.Functions.MaxKey.
-func (frameRefSetFunctions) MaxKey() uint64 {
+func (FrameRefSetFunctions) MaxKey() uint64 {
 	return math.MaxUint64
 }
 
 // ClearValue implements segment.Functions.ClearValue.
-func (frameRefSetFunctions) ClearValue(val *uint64) {
+func (FrameRefSetFunctions) ClearValue(val *uint64) {
 }
 
 // Merge implements segment.Functions.Merge.
-func (frameRefSetFunctions) Merge(_ platform.FileRange, val1 uint64, _ platform.FileRange, val2 uint64) (uint64, bool) {
+func (FrameRefSetFunctions) Merge(_ platform.FileRange, val1 uint64, _ platform.FileRange, val2 uint64) (uint64, bool) {
 	if val1 != val2 {
 		return 0, false
 	}
@@ -45,6 +46,6 @@ func (frameRefSetFunctions) Merge(_ platform.FileRange, val1 uint64, _ platform.
 }
 
 // Split implements segment.Functions.Split.
-func (frameRefSetFunctions) Split(_ platform.FileRange, val uint64, _ uint64) (uint64, uint64) {
+func (FrameRefSetFunctions) Split(_ platform.FileRange, val uint64, _ uint64) (uint64, uint64) {
 	return val, val
 }

@@ -91,6 +91,7 @@ go_library(
         "fs_context.go",
         "ipc_namespace.go",
         "kernel.go",
+        "kernel_opts.go",
         "kernel_state.go",
         "pending_signals.go",
         "pending_signals_list.go",
@@ -156,6 +157,7 @@ go_library(
         "//pkg/context",
         "//pkg/cpuid",
         "//pkg/eventchannel",
+        "//pkg/fspath",
         "//pkg/log",
         "//pkg/metric",
         "//pkg/refs",
@@ -166,6 +168,7 @@ go_library(
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/fs/timerfd",
+        "//pkg/sentry/fsbridge",
         "//pkg/sentry/hostcpu",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel/auth",
@@ -198,6 +201,7 @@ go_library(
         "//pkg/tcpip/stack",
         "//pkg/usermem",
         "//pkg/waiter",
+        "//tools/go_marshal/marshal",
     ],
 )
 

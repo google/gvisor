@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build arm64
+
 package linux
 
 // Constants for open(2).
@@ -23,6 +25,8 @@ const (
 )
 
 // Stat represents struct stat.
+//
+// +marshal
 type Stat struct {
 	Dev     uint64
 	Ino     uint64

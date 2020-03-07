@@ -20,6 +20,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -86,6 +88,59 @@ func (s *Stack) InterfaceAddrs() map[int32][]inet.InterfaceAddr {
 		nicAddrs[int32(id)] = addrs
 	}
 	return nicAddrs
+}
+
+// AddInterfaceAddr implements inet.Stack.AddInterfaceAddr.
+func (s *Stack) AddInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
+	var (
+		protocol tcpip.NetworkProtocolNumber
+		address  tcpip.Address
+	)
+	switch addr.Family {
+	case linux.AF_INET:
+		if len(addr.Addr) < header.IPv4AddressSize {
+			return syserror.EINVAL
+		}
+		if addr.PrefixLen > header.IPv4AddressSize*8 {
+			return syserror.EINVAL
+		}
+		protocol = ipv4.ProtocolNumber
+		address = tcpip.Address(addr.Addr[:header.IPv4AddressSize])
+
+	case linux.AF_INET6:
+		if len(addr.Addr) < header.IPv6AddressSize {
+			return syserror.EINVAL
+		}
+		if addr.PrefixLen > header.IPv6AddressSize*8 {
+			return syserror.EINVAL
+		}
+		protocol = ipv6.ProtocolNumber
+		address = tcpip.Address(addr.Addr[:header.IPv6AddressSize])
+
+	default:
+		return syserror.ENOTSUP
+	}
+
+	protocolAddress := tcpip.ProtocolAddress{
+		Protocol: protocol,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   address,
+			PrefixLen: int(addr.PrefixLen),
+		},
+	}
+
+	// Attach address to interface.
+	if err := s.Stack.AddProtocolAddressWithOptions(tcpip.NICID(idx), protocolAddress, stack.CanBePrimaryEndpoint); err != nil {
+		return syserr.TranslateNetstackError(err).ToError()
+	}
+
+	// Add route for local network.
+	s.Stack.AddRoute(tcpip.Route{
+		Destination: protocolAddress.AddressWithPrefix.Subnet(),
+		Gateway:     "", // No gateway for local network.
+		NIC:         tcpip.NICID(idx),
+	})
+	return nil
 }
 
 // TCPReceiveBufferSize implements inet.Stack.TCPReceiveBufferSize.

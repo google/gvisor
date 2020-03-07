@@ -28,13 +28,13 @@ go_template_instance(
         "platform": "gvisor.dev/gvisor/pkg/sentry/platform",
     },
     package = "fsutil",
-    prefix = "frameRef",
+    prefix = "FrameRef",
     template = "//pkg/segment:generic_set",
     types = {
         "Key": "uint64",
         "Range": "platform.FileRange",
         "Value": "uint64",
-        "Functions": "frameRefSetFunctions",
+        "Functions": "FrameRefSetFunctions",
     },
 )
 
