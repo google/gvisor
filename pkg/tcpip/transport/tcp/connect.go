@@ -86,6 +86,19 @@ type handshake struct {
 
 	// rcvWndScale is the receive window scale, as defined in RFC 1323.
 	rcvWndScale int
+
+	// startTime is the time at which the first SYN/SYN-ACK was sent.
+	startTime time.Time
+
+	// deferAccept if non-zero will drop the final ACK for a passive
+	// handshake till an ACK segment with data is received or the timeout is
+	// hit.
+	deferAccept time.Duration
+
+	// acked is true if the the final ACK for a 3-way handshake has
+	// been received. This is required to stop retransmitting the
+	// original SYN-ACK when deferAccept is enabled.
+	acked bool
 }
 
 func newHandshake(ep *endpoint, rcvWnd seqnum.Size) handshake {
@@ -109,6 +122,12 @@ func newHandshake(ep *endpoint, rcvWnd seqnum.Size) handshake {
 		rcvWndScale: int(rcvWndScale),
 	}
 	h.resetState()
+	return h
+}
+
+func newPassiveHandshake(ep *endpoint, rcvWnd seqnum.Size, isn, irs seqnum.Value, opts *header.TCPSynOptions, deferAccept time.Duration) handshake {
+	h := newHandshake(ep, rcvWnd)
+	h.resetToSynRcvd(isn, irs, opts, deferAccept)
 	return h
 }
 
@@ -181,7 +200,7 @@ func (h *handshake) effectiveRcvWndScale() uint8 {
 
 // resetToSynRcvd resets the state of the handshake object to the SYN-RCVD
 // state.
-func (h *handshake) resetToSynRcvd(iss seqnum.Value, irs seqnum.Value, opts *header.TCPSynOptions) {
+func (h *handshake) resetToSynRcvd(iss seqnum.Value, irs seqnum.Value, opts *header.TCPSynOptions, deferAccept time.Duration) {
 	h.active = false
 	h.state = handshakeSynRcvd
 	h.flags = header.TCPFlagSyn | header.TCPFlagAck
@@ -189,6 +208,7 @@ func (h *handshake) resetToSynRcvd(iss seqnum.Value, irs seqnum.Value, opts *hea
 	h.ackNum = irs + 1
 	h.mss = opts.MSS
 	h.sndWndScale = opts.WS
+	h.deferAccept = deferAccept
 	h.ep.mu.Lock()
 	h.ep.setEndpointState(StateSynRecv)
 	h.ep.mu.Unlock()
@@ -275,6 +295,7 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 	h.state = handshakeSynRcvd
 	h.ep.mu.Lock()
 	ttl := h.ep.ttl
+	amss := h.ep.amss
 	h.ep.setEndpointState(StateSynRecv)
 	h.ep.mu.Unlock()
 	synOpts := header.TCPSynOptions{
@@ -287,7 +308,7 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 		// permits SACK. This is not explicitly defined in the RFC but
 		// this is the behaviour implemented by Linux.
 		SACKPermitted: rcvSynOpts.SACKPermitted,
-		MSS:           h.ep.amss,
+		MSS:           amss,
 	}
 	if ttl == 0 {
 		ttl = s.route.DefaultTTL()
@@ -336,6 +357,10 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 			return tcpip.ErrInvalidEndpointState
 		}
 
+		h.ep.mu.RLock()
+		amss := h.ep.amss
+		h.ep.mu.RUnlock()
+
 		h.resetState()
 		synOpts := header.TCPSynOptions{
 			WS:            h.rcvWndScale,
@@ -343,7 +368,7 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 			TSVal:         h.ep.timestamp(),
 			TSEcr:         h.ep.recentTimestamp(),
 			SACKPermitted: h.ep.sackPermitted,
-			MSS:           h.ep.amss,
+			MSS:           amss,
 		}
 		h.ep.sendSynTCP(&s.route, h.ep.ID, h.ep.ttl, h.ep.sendTOS, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
 		return nil
@@ -352,6 +377,14 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 	// We have previously received (and acknowledged) the peer's SYN. If the
 	// peer acknowledges our SYN, the handshake is completed.
 	if s.flagIsSet(header.TCPFlagAck) {
+		// If deferAccept is not zero and this is a bare ACK and the
+		// timeout is not hit then drop the ACK.
+		if h.deferAccept != 0 && s.data.Size() == 0 && time.Since(h.startTime) < h.deferAccept {
+			h.acked = true
+			h.ep.stack.Stats().DroppedPackets.Increment()
+			return nil
+		}
+
 		// If the timestamp option is negotiated and the segment does
 		// not carry a timestamp option then the segment must be dropped
 		// as per https://tools.ietf.org/html/rfc7323#section-3.2.
@@ -365,10 +398,16 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 			h.ep.updateRecentTimestamp(s.parsedOptions.TSVal, h.ackNum, s.sequenceNumber)
 		}
 		h.state = handshakeCompleted
+
 		h.ep.mu.Lock()
 		h.ep.transitionToStateEstablishedLocked(h)
+		// If the segment has data then requeue it for the receiver
+		// to process it again once main loop is started.
+		if s.data.Size() > 0 {
+			s.incRef()
+			h.ep.enqueueSegment(s)
+		}
 		h.ep.mu.Unlock()
-
 		return nil
 	}
 
@@ -471,6 +510,7 @@ func (h *handshake) execute() *tcpip.Error {
 		}
 	}
 
+	h.startTime = time.Now()
 	// Initialize the resend timer.
 	resendWaker := sleep.Waker{}
 	timeOut := time.Duration(time.Second)
@@ -495,6 +535,7 @@ func (h *handshake) execute() *tcpip.Error {
 
 	// Send the initial SYN segment and loop until the handshake is
 	// completed.
+	h.ep.mu.Lock()
 	h.ep.amss = calculateAdvertisedMSS(h.ep.userMSS, h.ep.route)
 
 	synOpts := header.TCPSynOptions{
@@ -505,6 +546,7 @@ func (h *handshake) execute() *tcpip.Error {
 		SACKPermitted: bool(sackEnabled),
 		MSS:           h.ep.amss,
 	}
+	h.ep.mu.Unlock()
 
 	// Execute is also called in a listen context so we want to make sure we
 	// only send the TS/SACK option when we received the TS/SACK in the
@@ -524,15 +566,25 @@ func (h *handshake) execute() *tcpip.Error {
 		switch index, _ := s.Fetch(true); index {
 		case wakerForResend:
 			timeOut *= 2
-			if timeOut > 60*time.Second {
+			if timeOut > MaxRTO {
 				return tcpip.ErrTimeout
 			}
 			rt.Reset(timeOut)
-			h.ep.sendSynTCP(&h.ep.route, h.ep.ID, h.ep.ttl, h.ep.sendTOS, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
+			// Resend the SYN/SYN-ACK only if the following conditions hold.
+			//  - It's an active handshake (deferAccept does not apply)
+			//  - It's a passive handshake and we have not yet got the final-ACK.
+			//  - It's a passive handshake and we got an ACK but deferAccept is
+			//    enabled and we are now past the deferAccept duration.
+			// The last is required to provide a way for the peer to complete
+			// the connection with another ACK or data (as ACKs are never
+			// retransmitted on their own).
+			if h.active || !h.acked || h.deferAccept != 0 && time.Since(h.startTime) > h.deferAccept {
+				h.ep.sendSynTCP(&h.ep.route, h.ep.ID, h.ep.ttl, h.ep.sendTOS, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
+			}
 
 		case wakerForNotification:
 			n := h.ep.fetchNotifications()
-			if n&notifyClose != 0 {
+			if (n&notifyClose)|(n&notifyAbort) != 0 {
 				return tcpip.ErrAborted
 			}
 			if n&notifyDrain != 0 {
@@ -572,17 +624,17 @@ func parseSynSegmentOptions(s *segment) header.TCPSynOptions {
 
 var optionPool = sync.Pool{
 	New: func() interface{} {
-		return make([]byte, maxOptionSize)
+		return &[maxOptionSize]byte{}
 	},
 }
 
 func getOptions() []byte {
-	return optionPool.Get().([]byte)
+	return (*optionPool.Get().(*[maxOptionSize]byte))[:]
 }
 
 func putOptions(options []byte) {
 	// Reslice to full capacity.
-	optionPool.Put(options[0:cap(options)])
+	optionPool.Put(optionsToArray(options))
 }
 
 func makeSynOptions(opts header.TCPSynOptions) []byte {
@@ -944,6 +996,10 @@ func (e *endpoint) transitionToStateCloseLocked() {
 // to any other listening endpoint. We reply with RST if we cannot find one.
 func (e *endpoint) tryDeliverSegmentFromClosedEndpoint(s *segment) {
 	ep := e.stack.FindTransportEndpoint(e.NetProto, e.TransProto, e.ID, &s.route)
+	if ep == nil && e.NetProto == header.IPv6ProtocolNumber && e.EndpointInfo.TransportEndpointInfo.ID.LocalAddress.To4() != "" {
+		// Dual-stack socket, try IPv4.
+		ep = e.stack.FindTransportEndpoint(header.IPv4ProtocolNumber, e.TransProto, e.ID, &s.route)
+	}
 	if ep == nil {
 		replyWithReset(s)
 		s.decRef()
@@ -1323,7 +1379,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 					e.snd.updateMaxPayloadSize(mtu, count)
 				}
 
-				if n&notifyReset != 0 {
+				if n&notifyReset != 0 || n&notifyAbort != 0 {
 					return tcpip.ErrConnectionAborted
 				}
 
@@ -1606,7 +1662,7 @@ func (e *endpoint) doTimeWait() (twReuse func()) {
 			}
 		case notification:
 			n := e.fetchNotifications()
-			if n&notifyClose != 0 {
+			if n&notifyClose != 0 || n&notifyAbort != 0 {
 				return nil
 			}
 			if n&notifyDrain != 0 {

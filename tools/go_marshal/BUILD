@@ -12,3 +12,8 @@ go_binary(
         "//tools/go_marshal/gomarshal",
     ],
 )
+
+config_setting(
+    name = "marshal_config_verbose",
+    values = {"define": "gomarshal=verbose"},
+)

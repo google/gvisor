@@ -25,6 +25,8 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// LINT.IfChange
+
 // EpollCreate1 implements the epoll_create1(2) linux syscall.
 func EpollCreate1(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	flags := args[0].Int()
@@ -83,8 +85,7 @@ func EpollCtl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		}
 
 		mask = waiter.EventMaskFromLinux(e.Events)
-		data[0] = e.Fd
-		data[1] = e.Data
+		data = e.Data
 	}
 
 	// Perform the requested operations.
@@ -165,3 +166,5 @@ func EpollPwait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 
 	return EpollWait(t, args)
 }
+
+// LINT.ThenChange(vfs2/epoll.go)

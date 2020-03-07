@@ -19,13 +19,14 @@ go_binary(
         "//pkg/sentry/platform",
         "//runsc/boot",
         "//runsc/cmd",
+        "//runsc/flag",
         "//runsc/specutils",
         "@com_github_google_subcommands//:go_default_library",
     ],
 )
 
 # The runsc-race target is a race-compatible BUILD target. This must be built
-# via: bazel build --features=race //runsc:runsc-race
+# via: bazel build --features=race :runsc-race
 #
 # This is neccessary because the race feature must apply to all dependencies
 # due a bug in gazelle file selection.  The pure attribute must be off because
@@ -54,6 +55,7 @@ go_binary(
         "//pkg/sentry/platform",
         "//runsc/boot",
         "//runsc/cmd",
+        "//runsc/flag",
         "//runsc/specutils",
         "@com_github_google_subcommands//:go_default_library",
     ],
@@ -117,4 +119,5 @@ sh_test(
     srcs = ["version_test.sh"],
     args = ["$(location :runsc)"],
     data = [":runsc"],
+    tags = ["noguitar"],
 )

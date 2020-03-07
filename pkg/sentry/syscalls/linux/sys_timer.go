@@ -146,7 +146,7 @@ func TimerCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 		return 0, nil, err
 	}
 
-	return uintptr(id), nil, nil
+	return 0, nil, nil
 }
 
 // TimerSettime implements linux syscall timer_settime(2).

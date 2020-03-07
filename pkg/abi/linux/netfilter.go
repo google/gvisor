@@ -198,6 +198,13 @@ type XTEntryMatch struct {
 // SizeOfXTEntryMatch is the size of an XTEntryMatch.
 const SizeOfXTEntryMatch = 32
 
+// KernelXTEntryMatch is identical to XTEntryMatch, but contains
+// variable-length Data field.
+type KernelXTEntryMatch struct {
+	XTEntryMatch
+	Data []byte
+}
+
 // XTEntryTarget holds a target for a rule. For example, it can specify that
 // packets matching the rule should DROP, ACCEPT, or use an extension target.
 // iptables-extension(8) has a list of possible targets.
@@ -218,11 +225,14 @@ type XTEntryTarget struct {
 // SizeOfXTEntryTarget is the size of an XTEntryTarget.
 const SizeOfXTEntryTarget = 32
 
-// XTStandardTarget is a builtin target, one of ACCEPT, DROP, JUMP, QUEUE, or
-// RETURN. It corresponds to struct xt_standard_target in
+// XTStandardTarget is a built-in target, one of ACCEPT, DROP, JUMP, QUEUE,
+// RETURN, or jump. It corresponds to struct xt_standard_target in
 // include/uapi/linux/netfilter/x_tables.h.
 type XTStandardTarget struct {
-	Target  XTEntryTarget
+	Target XTEntryTarget
+	// A positive verdict indicates a jump, and is the offset from the
+	// start of the table to jump to. A negative value means one of the
+	// other built-in targets.
 	Verdict int32
 	_       [4]byte
 }
@@ -340,3 +350,96 @@ func goString(cstring []byte) string {
 	}
 	return string(cstring)
 }
+
+// XTTCP holds data for matching TCP packets. It corresponds to struct xt_tcp
+// in include/uapi/linux/netfilter/xt_tcpudp.h.
+type XTTCP struct {
+	// SourcePortStart specifies the inclusive start of the range of source
+	// ports to which the matcher applies.
+	SourcePortStart uint16
+
+	// SourcePortEnd specifies the inclusive end of the range of source ports
+	// to which the matcher applies.
+	SourcePortEnd uint16
+
+	// DestinationPortStart specifies the start of the destination port
+	// range to which the matcher applies.
+	DestinationPortStart uint16
+
+	// DestinationPortEnd specifies the end of the destination port
+	// range to which the matcher applies.
+	DestinationPortEnd uint16
+
+	// Option specifies that a particular TCP option must be set.
+	Option uint8
+
+	// FlagMask masks TCP flags when comparing to the FlagCompare byte. It allows
+	// for specification of which flags are important to the matcher.
+	FlagMask uint8
+
+	// FlagCompare, in combination with FlagMask, is used to match only packets
+	// that have certain flags set.
+	FlagCompare uint8
+
+	// InverseFlags flips the meaning of certain fields. See the
+	// TX_TCP_INV_* flags.
+	InverseFlags uint8
+}
+
+// SizeOfXTTCP is the size of an XTTCP.
+const SizeOfXTTCP = 12
+
+// Flags in XTTCP.InverseFlags. Corresponding constants are in
+// include/uapi/linux/netfilter/xt_tcpudp.h.
+const (
+	// Invert the meaning of SourcePortStart/End.
+	XT_TCP_INV_SRCPT = 0x01
+	// Invert the meaning of DestinationPortStart/End.
+	XT_TCP_INV_DSTPT = 0x02
+	// Invert the meaning of FlagCompare.
+	XT_TCP_INV_FLAGS = 0x04
+	// Invert the meaning of Option.
+	XT_TCP_INV_OPTION = 0x08
+	// Enable all flags.
+	XT_TCP_INV_MASK = 0x0F
+)
+
+// XTUDP holds data for matching UDP packets. It corresponds to struct xt_udp
+// in include/uapi/linux/netfilter/xt_tcpudp.h.
+type XTUDP struct {
+	// SourcePortStart is the inclusive start of the range of source ports
+	// to which the matcher applies.
+	SourcePortStart uint16
+
+	// SourcePortEnd is the inclusive end of the range of source ports to
+	// which the matcher applies.
+	SourcePortEnd uint16
+
+	// DestinationPortStart is the inclusive start of the destination port
+	// range to which the matcher applies.
+	DestinationPortStart uint16
+
+	// DestinationPortEnd is the inclusive end of the destination port
+	// range to which the matcher applies.
+	DestinationPortEnd uint16
+
+	// InverseFlags flips the meaning of certain fields. See the
+	// TX_UDP_INV_* flags.
+	InverseFlags uint8
+
+	_ uint8
+}
+
+// SizeOfXTUDP is the size of an XTUDP.
+const SizeOfXTUDP = 10
+
+// Flags in XTUDP.InverseFlags. Corresponding constants are in
+// include/uapi/linux/netfilter/xt_tcpudp.h.
+const (
+	// Invert the meaning of SourcePortStart/End.
+	XT_UDP_INV_SRCPT = 0x01
+	// Invert the meaning of DestinationPortStart/End.
+	XT_UDP_INV_DSTPT = 0x02
+	// Enable all flags.
+	XT_UDP_INV_MASK = 0x03
+)

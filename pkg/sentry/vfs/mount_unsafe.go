@@ -26,6 +26,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
+	"gvisor.dev/gvisor/pkg/gohacks"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -64,6 +65,8 @@ func (mnt *Mount) storeKey(vd VirtualDentry) {
 // (provided mutation is sufficiently uncommon).
 //
 // mountTable.Init() must be called on new mountTables before use.
+//
+// +stateify savable
 type mountTable struct {
 	// mountTable is implemented as a seqcount-protected hash table that
 	// resolves collisions with linear probing, featuring Robin Hood insertion
@@ -75,8 +78,8 @@ type mountTable struct {
 	// intrinsics and inline assembly, limiting the performance of this
 	// approach.)
 
-	seq  sync.SeqCount
-	seed uint32 // for hashing keys
+	seq  sync.SeqCount `state:"nosave"`
+	seed uint32        // for hashing keys
 
 	// size holds both length (number of elements) and capacity (number of
 	// slots): capacity is stored as its base-2 log (referred to as order) in
@@ -89,7 +92,7 @@ type mountTable struct {
 	// length and cap in separate uint32s) for ~free.
 	size uint64
 
-	slots unsafe.Pointer // []mountSlot; never nil after Init
+	slots unsafe.Pointer `state:"nosave"` // []mountSlot; never nil after Init
 }
 
 type mountSlot struct {
@@ -158,7 +161,7 @@ func newMountTableSlots(cap uintptr) unsafe.Pointer {
 // Lookup may be called even if there are concurrent mutators of mt.
 func (mt *mountTable) Lookup(parent *Mount, point *Dentry) *Mount {
 	key := mountKey{parent: unsafe.Pointer(parent), point: unsafe.Pointer(point)}
-	hash := memhash(noescape(unsafe.Pointer(&key)), uintptr(mt.seed), mountKeyBytes)
+	hash := memhash(gohacks.Noescape(unsafe.Pointer(&key)), uintptr(mt.seed), mountKeyBytes)
 
 loop:
 	for {
@@ -359,12 +362,3 @@ func memhash(p unsafe.Pointer, seed, s uintptr) uintptr
 
 //go:linkname rand32 runtime.fastrand
 func rand32() uint32
-
-// This is copy/pasted from runtime.noescape(), and is needed because arguments
-// apparently escape from all functions defined by linkname.
-//
-//go:nosplit
-func noescape(p unsafe.Pointer) unsafe.Pointer {
-	x := uintptr(p)
-	return unsafe.Pointer(x ^ 0)
-}

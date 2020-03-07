@@ -167,8 +167,8 @@ type NDPDispatcher interface {
 	// reason, such as the address being removed). If an error occured
 	// during DAD, err will be set and resolved must be ignored.
 	//
-	// This function is permitted to block indefinitely without interfering
-	// with the stack's operation.
+	// This function is not permitted to block indefinitely. This function
+	// is also not permitted to call into the stack.
 	OnDuplicateAddressDetectionStatus(nicID tcpip.NICID, addr tcpip.Address, resolved bool, err *tcpip.Error)
 
 	// OnDefaultRouterDiscovered will be called when a new default router is
@@ -448,6 +448,13 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 	remaining := ndp.configs.DupAddrDetectTransmits
 	if remaining == 0 {
 		ref.setKind(permanent)
+
+		// Consider DAD to have resolved even if no DAD messages were actually
+		// transmitted.
+		if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
+			ndpDisp.OnDuplicateAddressDetectionStatus(ndp.nic.ID(), addr, true, nil)
+		}
+
 		return nil
 	}
 
@@ -538,29 +545,19 @@ func (ndp *ndpState) sendDADPacket(addr tcpip.Address) *tcpip.Error {
 	r := makeRoute(header.IPv6ProtocolNumber, header.IPv6Any, snmc, ndp.nic.linkEP.LinkAddress(), ref, false, false)
 	defer r.Release()
 
-	linkAddr := ndp.nic.linkEP.LinkAddress()
-	isValidLinkAddr := header.IsValidUnicastEthernetAddress(linkAddr)
-	ndpNSSize := header.ICMPv6NeighborSolicitMinimumSize
-	if isValidLinkAddr {
-		// Only include a Source Link Layer Address option if the NIC has a valid
-		// link layer address.
-		//
-		// TODO(b/141011931): Validate a LinkEndpoint's link address (provided by
-		// LinkEndpoint.LinkAddress) before reaching this point.
-		ndpNSSize += header.NDPLinkLayerAddressSize
+	// Route should resolve immediately since snmc is a multicast address so a
+	// remote link address can be calculated without a resolution process.
+	if c, err := r.Resolve(nil); err != nil {
+		log.Fatalf("ndp: error when resolving route to send NDP NS for DAD (%s -> %s on NIC(%d)): %s", header.IPv6Any, snmc, ndp.nic.ID(), err)
+	} else if c != nil {
+		log.Fatalf("ndp: route resolution not immediate for route to send NDP NS for DAD (%s -> %s on NIC(%d))", header.IPv6Any, snmc, ndp.nic.ID())
 	}
 
-	hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + ndpNSSize)
-	pkt := header.ICMPv6(hdr.Prepend(ndpNSSize))
+	hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv6NeighborSolicitMinimumSize)
+	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborSolicitMinimumSize))
 	pkt.SetType(header.ICMPv6NeighborSolicit)
 	ns := header.NDPNeighborSolicit(pkt.NDPPayload())
 	ns.SetTargetAddress(addr)
-
-	if isValidLinkAddr {
-		ns.Options().Serialize(header.NDPOptionsSerializer{
-			header.NDPSourceLinkLayerAddressOption(linkAddr),
-		})
-	}
 	pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 
 	sent := r.Stats().ICMP.V6PacketsSent
@@ -607,8 +604,8 @@ func (ndp *ndpState) stopDuplicateAddressDetection(addr tcpip.Address) {
 	delete(ndp.dad, addr)
 
 	// Let the integrator know DAD did not resolve.
-	if ndp.nic.stack.ndpDisp != nil {
-		go ndp.nic.stack.ndpDisp.OnDuplicateAddressDetectionStatus(ndp.nic.ID(), addr, false, nil)
+	if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
+		ndpDisp.OnDuplicateAddressDetectionStatus(ndp.nic.ID(), addr, false, nil)
 	}
 }
 
@@ -916,22 +913,21 @@ func (ndp *ndpState) handleAutonomousPrefixInformation(pi header.NDPPrefixInform
 		return
 	}
 
-	// We do not already have an address within the prefix, prefix. Do the
+	// We do not already have an address with the prefix prefix. Do the
 	// work as outlined by RFC 4862 section 5.5.3.d if n is configured
-	// to auto-generated global addresses by SLAAC.
-	ndp.newAutoGenAddress(prefix, pl, vl)
-}
-
-// newAutoGenAddress generates a new SLAAC address with the provided lifetimes
-// for prefix.
-//
-// pl is the new preferred lifetime. vl is the new valid lifetime.
-func (ndp *ndpState) newAutoGenAddress(prefix tcpip.Subnet, pl, vl time.Duration) {
-	// Are we configured to auto-generate new global addresses?
+	// to auto-generate global addresses by SLAAC.
 	if !ndp.configs.AutoGenGlobalAddresses {
 		return
 	}
 
+	ndp.doSLAAC(prefix, pl, vl)
+}
+
+// doSLAAC generates a new SLAAC address with the provided lifetimes
+// for prefix.
+//
+// pl is the new preferred lifetime. vl is the new valid lifetime.
+func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 	// If we do not already have an address for this prefix and the valid
 	// lifetime is 0, no need to do anything further, as per RFC 4862
 	// section 5.5.3.d.
@@ -1152,22 +1148,36 @@ func (ndp *ndpState) cleanupAutoGenAddrResourcesAndNotify(addr tcpip.Address) bo
 	return true
 }
 
-// cleanupHostOnlyState cleans up any state that is only useful for hosts.
+// cleanupState cleans up ndp's state.
 //
-// cleanupHostOnlyState MUST be called when ndp's NIC is transitioning from a
-// host to a router. This function will invalidate all discovered on-link
-// prefixes, discovered routers, and auto-generated addresses as routers do not
-// normally process Router Advertisements to discover default routers and
-// on-link prefixes, and auto-generate addresses via SLAAC.
+// If hostOnly is true, then only host-specific state will be cleaned up.
+//
+// cleanupState MUST be called with hostOnly set to true when ndp's NIC is
+// transitioning from a host to a router. This function will invalidate all
+// discovered on-link prefixes, discovered routers, and auto-generated
+// addresses.
+//
+// If hostOnly is true, then the link-local auto-generated address will not be
+// invalidated as routers are also expected to generate a link-local address.
 //
 // The NIC that ndp belongs to MUST be locked.
-func (ndp *ndpState) cleanupHostOnlyState() {
+func (ndp *ndpState) cleanupState(hostOnly bool) {
+	linkLocalSubnet := header.IPv6LinkLocalPrefix.Subnet()
+	linkLocalAddrs := 0
 	for addr := range ndp.autoGenAddresses {
+		// RFC 4862 section 5 states that routers are also expected to generate a
+		// link-local address so we do not invalidate them if we are cleaning up
+		// host-only state.
+		if hostOnly && linkLocalSubnet.Contains(addr) {
+			linkLocalAddrs++
+			continue
+		}
+
 		ndp.invalidateAutoGenAddress(addr)
 	}
 
-	if got := len(ndp.autoGenAddresses); got != 0 {
-		log.Fatalf("ndp: still have auto-generated addresses after cleaning up, found = %d", got)
+	if got := len(ndp.autoGenAddresses); got != linkLocalAddrs {
+		log.Fatalf("ndp: still have non-linklocal auto-generated addresses after cleaning up; found = %d prefixes, of which %d are link-local", got, linkLocalAddrs)
 	}
 
 	for prefix := range ndp.onLinkPrefixes {
@@ -1175,7 +1185,7 @@ func (ndp *ndpState) cleanupHostOnlyState() {
 	}
 
 	if got := len(ndp.onLinkPrefixes); got != 0 {
-		log.Fatalf("ndp: still have discovered on-link prefixes after cleaning up, found = %d", got)
+		log.Fatalf("ndp: still have discovered on-link prefixes after cleaning up; found = %d", got)
 	}
 
 	for router := range ndp.defaultRouters {
@@ -1183,7 +1193,7 @@ func (ndp *ndpState) cleanupHostOnlyState() {
 	}
 
 	if got := len(ndp.defaultRouters); got != 0 {
-		log.Fatalf("ndp: still have discovered default routers after cleaning up, found = %d", got)
+		log.Fatalf("ndp: still have discovered default routers after cleaning up; found = %d", got)
 	}
 }
 
@@ -1210,15 +1220,45 @@ func (ndp *ndpState) startSolicitingRouters() {
 	}
 
 	ndp.rtrSolicitTimer = time.AfterFunc(delay, func() {
-		// Send an RS message with the unspecified source address.
-		ref := ndp.nic.getRefOrCreateTemp(header.IPv6ProtocolNumber, header.IPv6Any, NeverPrimaryEndpoint, forceSpoofing)
-		r := makeRoute(header.IPv6ProtocolNumber, header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.nic.linkEP.LinkAddress(), ref, false, false)
+		// As per RFC 4861 section 4.1, the source of the RS is an address assigned
+		// to the sending interface, or the unspecified address if no address is
+		// assigned to the sending interface.
+		ref := ndp.nic.primaryIPv6Endpoint(header.IPv6AllRoutersMulticastAddress)
+		if ref == nil {
+			ref = ndp.nic.getRefOrCreateTemp(header.IPv6ProtocolNumber, header.IPv6Any, NeverPrimaryEndpoint, forceSpoofing)
+		}
+		localAddr := ref.ep.ID().LocalAddress
+		r := makeRoute(header.IPv6ProtocolNumber, localAddr, header.IPv6AllRoutersMulticastAddress, ndp.nic.linkEP.LinkAddress(), ref, false, false)
 		defer r.Release()
 
-		payloadSize := header.ICMPv6HeaderSize + header.NDPRSMinimumSize
-		hdr := buffer.NewPrependable(header.IPv6MinimumSize + payloadSize)
+		// Route should resolve immediately since
+		// header.IPv6AllRoutersMulticastAddress is a multicast address so a
+		// remote link address can be calculated without a resolution process.
+		if c, err := r.Resolve(nil); err != nil {
+			log.Fatalf("ndp: error when resolving route to send NDP RS (%s -> %s on NIC(%d)): %s", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.nic.ID(), err)
+		} else if c != nil {
+			log.Fatalf("ndp: route resolution not immediate for route to send NDP RS (%s -> %s on NIC(%d))", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.nic.ID())
+		}
+
+		// As per RFC 4861 section 4.1, an NDP RS SHOULD include the source
+		// link-layer address option if the source address of the NDP RS is
+		// specified. This option MUST NOT be included if the source address is
+		// unspecified.
+		//
+		// TODO(b/141011931): Validate a LinkEndpoint's link address (provided by
+		// LinkEndpoint.LinkAddress) before reaching this point.
+		var optsSerializer header.NDPOptionsSerializer
+		if localAddr != header.IPv6Any && header.IsValidUnicastEthernetAddress(r.LocalLinkAddress) {
+			optsSerializer = header.NDPOptionsSerializer{
+				header.NDPSourceLinkLayerAddressOption(r.LocalLinkAddress),
+			}
+		}
+		payloadSize := header.ICMPv6HeaderSize + header.NDPRSMinimumSize + int(optsSerializer.Length())
+		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + payloadSize)
 		pkt := header.ICMPv6(hdr.Prepend(payloadSize))
 		pkt.SetType(header.ICMPv6RouterSolicit)
+		rs := header.NDPRouterSolicit(pkt.NDPPayload())
+		rs.Options().Serialize(optsSerializer)
 		pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 
 		sent := r.Stats().ICMP.V6PacketsSent

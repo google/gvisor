@@ -128,6 +128,18 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_MADVISE:      {},
 	unix.SYS_MEMFD_CREATE:    {}, /// Used by flipcall.PacketWindowAllocator.Init().
 	syscall.SYS_MKDIRAT:      {},
+	// Used by the Go runtime as a temporarily workaround for a Linux
+	// 5.2-5.4 bug.
+	//
+	// See src/runtime/os_linux_x86.go.
+	//
+	// TODO(b/148688965): Remove once this is gone from Go.
+	syscall.SYS_MLOCK: []seccomp.Rule{
+		{
+			seccomp.AllowAny{},
+			seccomp.AllowValue(4096),
+		},
+	},
 	syscall.SYS_MMAP: []seccomp.Rule{
 		{
 			seccomp.AllowAny{},

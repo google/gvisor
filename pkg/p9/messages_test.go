@@ -382,7 +382,7 @@ func TestEncodeDecode(t *testing.T) {
 		// Encode the original.
 		data := make([]byte, initialBufferLength)
 		buf := buffer{data: data[:0]}
-		enc.Encode(&buf)
+		enc.encode(&buf)
 
 		// Create a new object, same as the first.
 		enc2 := reflect.New(reflect.ValueOf(enc).Elem().Type()).Interface().(encoder)
@@ -399,7 +399,7 @@ func TestEncodeDecode(t *testing.T) {
 		}
 
 		// Mark sure it was okay.
-		enc2.Decode(&buf2)
+		enc2.decode(&buf2)
 		if buf2.isOverrun() {
 			t.Errorf("object %#v->%#v got overrun on decode", enc, enc2)
 			continue

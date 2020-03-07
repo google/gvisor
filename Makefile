@@ -2,6 +2,9 @@ UID := $(shell id -u ${USER})
 GID := $(shell id -g ${USER})
 GVISOR_BAZEL_CACHE := $(shell readlink -f ~/.cache/bazel/)
 
+# The  --privileged is required to run tests.
+DOCKER_RUN_OPTIONS ?= --privileged
+
 all: runsc
 
 docker-build:
@@ -19,7 +22,7 @@ bazel-server-start: docker-build
 		-v "$(CURDIR):$(CURDIR)" \
 		--workdir "$(CURDIR)" \
 		--tmpfs /tmp:rw,exec \
-		--privileged \
+		$(DOCKER_RUN_OPTIONS) \
 		gvisor-bazel \
 		sh -c "while :; do sleep 100; done" && \
 	docker exec --user 0:0 -i gvisor-bazel sh -c "groupadd --gid $(GID) --non-unique gvisor && useradd --uid $(UID) --non-unique --gid $(GID) -d $(HOME) gvisor"

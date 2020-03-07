@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"syscall"
 
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/procid"
@@ -29,54 +28,6 @@ import (
 )
 
 const syscallEvent syscall.Signal = 0x80
-
-// probeSeccomp returns true iff seccomp is run after ptrace notifications,
-// which is generally the case for kernel version >= 4.8. This check is dynamic
-// because kernels have be backported behavior.
-//
-// See createStub for more information.
-//
-// Precondition: the runtime OS thread must be locked.
-func probeSeccomp() bool {
-	// Create a completely new, destroyable process.
-	t, err := attachedThread(0, linux.SECCOMP_RET_ERRNO)
-	if err != nil {
-		panic(fmt.Sprintf("seccomp probe failed: %v", err))
-	}
-	defer t.destroy()
-
-	// Set registers to the yield system call. This call is not allowed
-	// by the filters specified in the attachThread function.
-	regs := createSyscallRegs(&t.initRegs, syscall.SYS_SCHED_YIELD)
-	if err := t.setRegs(&regs); err != nil {
-		panic(fmt.Sprintf("ptrace set regs failed: %v", err))
-	}
-
-	for {
-		// Attempt an emulation.
-		if _, _, errno := syscall.RawSyscall6(syscall.SYS_PTRACE, unix.PTRACE_SYSEMU, uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
-			panic(fmt.Sprintf("ptrace syscall-enter failed: %v", errno))
-		}
-
-		sig := t.wait(stopped)
-		if sig == (syscallEvent | syscall.SIGTRAP) {
-			// Did the seccomp errno hook already run? This would
-			// indicate that seccomp is first in line and we're
-			// less than 4.8.
-			if err := t.getRegs(&regs); err != nil {
-				panic(fmt.Sprintf("ptrace get-regs failed: %v", err))
-			}
-			if _, err := syscallReturnValue(&regs); err == nil {
-				// The seccomp errno mode ran first, and reset
-				// the error in the registers.
-				return false
-			}
-			// The seccomp hook did not run yet, and therefore it
-			// is safe to use RET_KILL mode for dispatched calls.
-			return true
-		}
-	}
-}
 
 // createStub creates a fresh stub processes.
 //
@@ -123,18 +74,7 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 	// stub and all its children. This is used to create child stubs
 	// (below), so we must include the ability to fork, but otherwise lock
 	// down available calls only to what is needed.
-	rules := []seccomp.RuleSet{
-		// Rules for trapping vsyscall access.
-		{
-			Rules: seccomp.SyscallRules{
-				syscall.SYS_GETTIMEOFDAY: {},
-				syscall.SYS_TIME:         {},
-				unix.SYS_GETCPU:          {}, // SYS_GETCPU was not defined in package syscall on amd64.
-			},
-			Action:   linux.SECCOMP_RET_TRAP,
-			Vsyscall: true,
-		},
-	}
+	rules := []seccomp.RuleSet{}
 	if defaultAction != linux.SECCOMP_RET_ALLOW {
 		rules = append(rules, seccomp.RuleSet{
 			Rules: seccomp.SyscallRules{
@@ -173,9 +113,8 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 			},
 			Action: linux.SECCOMP_RET_ALLOW,
 		})
-
-		rules = appendArchSeccompRules(rules)
 	}
+	rules = appendArchSeccompRules(rules, defaultAction)
 	instrs, err := seccomp.BuildProgram(rules, defaultAction)
 	if err != nil {
 		return nil, err

@@ -16,6 +16,8 @@ package fspath
 
 import (
 	"fmt"
+
+	"gvisor.dev/gvisor/pkg/gohacks"
 )
 
 // Builder is similar to strings.Builder, but is used to produce pathnames
@@ -101,4 +103,10 @@ func (b *Builder) AppendString(str string) {
 	b.start -= len(str)
 	copy(b.buf[b.start:], b.buf[oldStart:])
 	copy(b.buf[len(b.buf)-len(str):], str)
+}
+
+// String returns the accumulated string. No other methods should be called
+// after String.
+func (b *Builder) String() string {
+	return gohacks.StringFromImmutableBytes(b.buf[b.start:])
 }

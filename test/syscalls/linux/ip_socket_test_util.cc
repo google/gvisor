@@ -79,6 +79,33 @@ SocketPairKind DualStackTCPAcceptBindSocketPair(int type) {
                                      /* dual_stack = */ true)};
 }
 
+SocketPairKind IPv6TCPAcceptBindPersistentListenerSocketPair(int type) {
+  std::string description =
+      absl::StrCat(DescribeSocketType(type), "connected IPv6 TCP socket");
+  return SocketPairKind{description, AF_INET6, type | SOCK_STREAM, IPPROTO_TCP,
+                        TCPAcceptBindPersistentListenerSocketPairCreator(
+                            AF_INET6, type | SOCK_STREAM, 0,
+                            /* dual_stack = */ false)};
+}
+
+SocketPairKind IPv4TCPAcceptBindPersistentListenerSocketPair(int type) {
+  std::string description =
+      absl::StrCat(DescribeSocketType(type), "connected IPv4 TCP socket");
+  return SocketPairKind{description, AF_INET, type | SOCK_STREAM, IPPROTO_TCP,
+                        TCPAcceptBindPersistentListenerSocketPairCreator(
+                            AF_INET, type | SOCK_STREAM, 0,
+                            /* dual_stack = */ false)};
+}
+
+SocketPairKind DualStackTCPAcceptBindPersistentListenerSocketPair(int type) {
+  std::string description =
+      absl::StrCat(DescribeSocketType(type), "connected dual stack TCP socket");
+  return SocketPairKind{description, AF_INET6, type | SOCK_STREAM, IPPROTO_TCP,
+                        TCPAcceptBindPersistentListenerSocketPairCreator(
+                            AF_INET6, type | SOCK_STREAM, 0,
+                            /* dual_stack = */ true)};
+}
+
 SocketPairKind IPv6UDPBidirectionalBindSocketPair(int type) {
   std::string description =
       absl::StrCat(DescribeSocketType(type), "connected IPv6 UDP socket");

@@ -156,3 +156,9 @@ func (vv *VectorisedView) Append(vv2 VectorisedView) {
 	vv.views = append(vv.views, vv2.views...)
 	vv.size += vv2.size
 }
+
+// AppendView appends the given view into this vectorised view.
+func (vv *VectorisedView) AppendView(v View) {
+	vv.views = append(vv.views, v)
+	vv.size += len(v)
+}

@@ -27,12 +27,12 @@ import (
 	"strings"
 	"syscall"
 
-	"flag"
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/container"
+	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 

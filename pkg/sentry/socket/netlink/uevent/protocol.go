@@ -49,7 +49,7 @@ func (p *Protocol) CanSend() bool {
 }
 
 // ProcessMessage implements netlink.Protocol.ProcessMessage.
-func (p *Protocol) ProcessMessage(ctx context.Context, hdr linux.NetlinkMessageHeader, data []byte, ms *netlink.MessageSet) *syserr.Error {
+func (p *Protocol) ProcessMessage(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
 	// Silently ignore all messages.
 	return nil
 }

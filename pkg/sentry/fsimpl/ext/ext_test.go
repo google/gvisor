@@ -65,7 +65,10 @@ func setUp(t *testing.T, imagePath string) (context.Context, *vfs.VirtualFilesys
 	creds := auth.CredentialsFromContext(ctx)
 
 	// Create VFS.
-	vfsObj := vfs.New()
+	vfsObj := &vfs.VirtualFilesystem{}
+	if err := vfsObj.Init(); err != nil {
+		t.Fatalf("VFS init: %v", err)
+	}
 	vfsObj.MustRegisterFilesystemType("extfs", FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 	})
@@ -496,9 +499,9 @@ func newIterDirentCb() *iterDirentsCb {
 }
 
 // Handle implements vfs.IterDirentsCallback.Handle.
-func (cb *iterDirentsCb) Handle(dirent vfs.Dirent) bool {
+func (cb *iterDirentsCb) Handle(dirent vfs.Dirent) error {
 	cb.dirents = append(cb.dirents, dirent)
-	return true
+	return nil
 }
 
 // TestIterDirents tests the FileDescriptionImpl.IterDirents functionality.

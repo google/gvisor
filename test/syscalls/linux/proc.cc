@@ -100,18 +100,6 @@ namespace {
 #define SUID_DUMP_ROOT 2
 #endif /* SUID_DUMP_ROOT */
 
-// O_LARGEFILE as defined by Linux. glibc tries to be clever by setting it to 0
-// because "it isn't needed", even though Linux can return it via F_GETFL.
-#if defined(__x86_64__) || defined(__i386__)
-constexpr int kOLargeFile = 00100000;
-#elif __aarch64__
-// The value originate from the Linux
-// kernel's arch/arm64/include/uapi/asm/fcntl.h.
-constexpr int kOLargeFile = 00400000;
-#else
-#error "Unknown architecture"
-#endif
-
 #if defined(__x86_64__) || defined(__i386__)
 // This list of "required" fields is taken from reading the file
 // arch/x86/kernel/cpu/proc.c and seeing which fields will be unconditionally
@@ -1364,13 +1352,19 @@ TEST(ProcPidSymlink, SubprocessZombied) {
 
   // FIXME(gvisor.dev/issue/164): Inconsistent behavior between gVisor and linux
   // on proc files.
-  // 4.17 & gVisor: Syscall succeeds and returns 1
+  //
+  // ~4.3: Syscall fails with EACCES.
+  // 4.17 & gVisor: Syscall succeeds and returns 1.
+  //
   // EXPECT_THAT(ReadlinkWhileZombied("ns/pid", buf, sizeof(buf)),
   //            SyscallFailsWithErrno(EACCES));
 
   // FIXME(gvisor.dev/issue/164): Inconsistent behavior between gVisor and linux
   // on proc files.
-  // 4.17 &  gVisor: Syscall succeeds and returns 1.
+  //
+  // ~4.3: Syscall fails with EACCES.
+  // 4.17 & gVisor: Syscall succeeds and returns 1.
+  //
   // EXPECT_THAT(ReadlinkWhileZombied("ns/user", buf, sizeof(buf)),
   //            SyscallFailsWithErrno(EACCES));
 }
@@ -1437,14 +1431,24 @@ TEST(ProcPidFile, SubprocessRunning) {
 
   EXPECT_THAT(ReadWhileRunning("uid_map", buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
+
+  EXPECT_THAT(ReadWhileRunning("oom_score", buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  EXPECT_THAT(ReadWhileRunning("oom_score_adj", buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
 }
 
 // Test whether /proc/PID/ files can be read for a zombie process.
 TEST(ProcPidFile, SubprocessZombie) {
   char buf[1];
 
-  // 4.17: Succeeds and returns 1
-  // gVisor: Succeeds and returns 0
+  // FIXME(gvisor.dev/issue/164): Loosen requirement due to inconsistent
+  // behavior on different kernels.
+  //
+  // ~4.3: Succeds and returns 0.
+  // 4.17: Succeeds and returns 1.
+  // gVisor: Succeeds and returns 0.
   EXPECT_THAT(ReadWhileZombied("auxv", buf, sizeof(buf)), SyscallSucceeds());
 
   EXPECT_THAT(ReadWhileZombied("cmdline", buf, sizeof(buf)),
@@ -1468,9 +1472,18 @@ TEST(ProcPidFile, SubprocessZombie) {
   EXPECT_THAT(ReadWhileZombied("uid_map", buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
 
+  EXPECT_THAT(ReadWhileZombied("oom_score", buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  EXPECT_THAT(ReadWhileZombied("oom_score_adj", buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
   // FIXME(gvisor.dev/issue/164): Inconsistent behavior between gVisor and linux
   // on proc files.
+  //
+  // ~4.3: Fails and returns EACCES.
   // gVisor & 4.17: Succeeds and returns 1.
+  //
   // EXPECT_THAT(ReadWhileZombied("io", buf, sizeof(buf)),
   //          SyscallFailsWithErrno(EACCES));
 }
@@ -1479,9 +1492,12 @@ TEST(ProcPidFile, SubprocessZombie) {
 TEST(ProcPidFile, SubprocessExited) {
   char buf[1];
 
-  // FIXME(gvisor.dev/issue/164): Inconsistent behavior between kernels
+  // FIXME(gvisor.dev/issue/164): Inconsistent behavior between kernels.
+  //
+  // ~4.3: Fails and returns ESRCH.
   // gVisor: Fails with ESRCH.
   // 4.17: Succeeds and returns 1.
+  //
   // EXPECT_THAT(ReadWhileExited("auxv", buf, sizeof(buf)),
   //            SyscallFailsWithErrno(ESRCH));
 
@@ -1523,6 +1539,15 @@ TEST(ProcPidFile, SubprocessExited) {
 
   EXPECT_THAT(ReadWhileExited("uid_map", buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
+
+  if (!IsRunningOnGvisor()) {
+    // FIXME(gvisor.dev/issue/164): Succeeds on gVisor.
+    EXPECT_THAT(ReadWhileExited("oom_score", buf, sizeof(buf)),
+                SyscallFailsWithErrno(ESRCH));
+  }
+
+  EXPECT_THAT(ReadWhileExited("oom_score_adj", buf, sizeof(buf)),
+              SyscallFailsWithErrno(ESRCH));
 }
 
 PosixError DirContainsImpl(absl::string_view path,
@@ -1653,7 +1678,7 @@ TEST(ProcTask, KilledThreadsDisappear) {
   EXPECT_NO_ERRNO(DirContainsExactly("/proc/self/task",
                                      TaskFiles(initial, {child1.Tid()})));
 
-  // Stat child1's task file.
+  // Stat child1's task file. Regression test for b/32097707.
   struct stat statbuf;
   const std::string child1_task_file =
       absl::StrCat("/proc/self/task/", child1.Tid());
@@ -1681,7 +1706,7 @@ TEST(ProcTask, KilledThreadsDisappear) {
   EXPECT_NO_ERRNO(EventuallyDirContainsExactly(
       "/proc/self/task", TaskFiles(initial, {child3.Tid(), child5.Tid()})));
 
-  // Stat child1's task file again.  This time it should fail.
+  // Stat child1's task file again.  This time it should fail. See b/32097707.
   EXPECT_THAT(stat(child1_task_file.c_str(), &statbuf),
               SyscallFailsWithErrno(ENOENT));
 
@@ -1836,7 +1861,7 @@ TEST(ProcSysVmOvercommitMemory, HasNumericValue) {
 }
 
 // Check that link for proc fd entries point the target node, not the
-// symlink itself.
+// symlink itself. Regression test for b/31155070.
 TEST(ProcTaskFd, FstatatFollowsSymlink) {
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd =
@@ -1893,6 +1918,20 @@ TEST(ProcFilesystems, PresenceOfShmMaxMniAll) {
 TEST(ProcMounts, IsSymlink) {
   auto link = ASSERT_NO_ERRNO_AND_VALUE(ReadLink("/proc/mounts"));
   EXPECT_EQ(link, "self/mounts");
+}
+
+TEST(ProcSelfMountinfo, RequiredFieldsArePresent) {
+  auto mountinfo =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/mountinfo"));
+  EXPECT_THAT(
+      mountinfo,
+      AllOf(
+          // Root mount.
+          ContainsRegex(
+              R"([0-9]+ [0-9]+ [0-9]+:[0-9]+ / / (rw|ro).*- \S+ \S+ (rw|ro)\S*)"),
+          // Proc mount - always rw.
+          ContainsRegex(
+              R"([0-9]+ [0-9]+ [0-9]+:[0-9]+ / /proc rw.*- \S+ \S+ rw\S*)")));
 }
 
 // Check that /proc/self/mounts looks something like a real mounts file.
@@ -2006,7 +2045,7 @@ TEST(Proc, GetdentsEnoent) {
       },
       nullptr, nullptr));
   char buf[1024];
-  ASSERT_THAT(syscall(SYS_getdents, fd.get(), buf, sizeof(buf)),
+  ASSERT_THAT(syscall(SYS_getdents64, fd.get(), buf, sizeof(buf)),
               SyscallFailsWithErrno(ENOENT));
 }
 
@@ -2058,5 +2097,5 @@ int main(int argc, char** argv) {
   }
 
   gvisor::testing::TestInit(&argc, &argv);
-  return RUN_ALL_TESTS();
+  return gvisor::testing::RunAllTests();
 }

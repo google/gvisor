@@ -18,6 +18,7 @@ go_template_instance(
 go_library(
     name = "stack",
     srcs = [
+        "dhcpv6configurationfromndpra_string.go",
         "icmp_rate_limit.go",
         "linkaddrcache.go",
         "linkaddrentry_list.go",
@@ -78,11 +79,15 @@ go_test(
 go_test(
     name = "stack_test",
     size = "small",
-    srcs = ["linkaddrcache_test.go"],
+    srcs = [
+        "linkaddrcache_test.go",
+        "nic_test.go",
+    ],
     library = ":stack",
     deps = [
         "//pkg/sleep",
         "//pkg/sync",
         "//pkg/tcpip",
+        "//pkg/tcpip/buffer",
     ],
 )

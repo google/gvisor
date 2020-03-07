@@ -14,6 +14,7 @@
 
 #include "test/syscalls/linux/socket_ip_udp_generic.h"
 
+#include <errno.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
@@ -209,46 +210,6 @@ TEST_P(UDPSocketPairTest, SetMulticastLoopChar) {
   EXPECT_EQ(get, kSockOptOn);
 }
 
-// Ensure that Receiving TOS is off by default.
-TEST_P(UDPSocketPairTest, RecvTosDefault) {
-  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
-
-  int get = -1;
-  socklen_t get_len = sizeof(get);
-  ASSERT_THAT(
-      getsockopt(sockets->first_fd(), IPPROTO_IP, IP_RECVTOS, &get, &get_len),
-      SyscallSucceedsWithValue(0));
-  EXPECT_EQ(get_len, sizeof(get));
-  EXPECT_EQ(get, kSockOptOff);
-}
-
-// Test that setting and getting IP_RECVTOS works as expected.
-TEST_P(UDPSocketPairTest, SetRecvTos) {
-  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
-
-  ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_IP, IP_RECVTOS,
-                         &kSockOptOff, sizeof(kSockOptOff)),
-              SyscallSucceeds());
-
-  int get = -1;
-  socklen_t get_len = sizeof(get);
-  ASSERT_THAT(
-      getsockopt(sockets->first_fd(), IPPROTO_IP, IP_RECVTOS, &get, &get_len),
-      SyscallSucceedsWithValue(0));
-  EXPECT_EQ(get_len, sizeof(get));
-  EXPECT_EQ(get, kSockOptOff);
-
-  ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_IP, IP_RECVTOS,
-                         &kSockOptOn, sizeof(kSockOptOn)),
-              SyscallSucceeds());
-
-  ASSERT_THAT(
-      getsockopt(sockets->first_fd(), IPPROTO_IP, IP_RECVTOS, &get, &get_len),
-      SyscallSucceedsWithValue(0));
-  EXPECT_EQ(get_len, sizeof(get));
-  EXPECT_EQ(get, kSockOptOn);
-}
-
 TEST_P(UDPSocketPairTest, ReuseAddrDefault) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
@@ -355,6 +316,142 @@ TEST_P(UDPSocketPairTest, SetReuseAddrReusePort) {
       SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
   EXPECT_EQ(get, kSockOptOn);
+}
+
+// Test getsockopt for a socket which is not set with IP_PKTINFO option.
+TEST_P(UDPSocketPairTest, IPPKTINFODefault) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_IP, IP_PKTINFO, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kSockOptOff);
+}
+
+// Test setsockopt and getsockopt for a socket with IP_PKTINFO option.
+TEST_P(UDPSocketPairTest, SetAndGetIPPKTINFO) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int level = SOL_IP;
+  int type = IP_PKTINFO;
+
+  // Check getsockopt before IP_PKTINFO is set.
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+
+  ASSERT_THAT(setsockopt(sockets->first_fd(), level, type, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceedsWithValue(0));
+
+  ASSERT_THAT(getsockopt(sockets->first_fd(), level, type, &get, &get_len),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get, kSockOptOn);
+  EXPECT_EQ(get_len, sizeof(get));
+
+  ASSERT_THAT(setsockopt(sockets->first_fd(), level, type, &kSockOptOff,
+                         sizeof(kSockOptOff)),
+              SyscallSucceedsWithValue(0));
+
+  ASSERT_THAT(getsockopt(sockets->first_fd(), level, type, &get, &get_len),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get, kSockOptOff);
+  EXPECT_EQ(get_len, sizeof(get));
+}
+
+// Holds TOS or TClass information for IPv4 or IPv6 respectively.
+struct RecvTosOption {
+  int level;
+  int option;
+};
+
+RecvTosOption GetRecvTosOption(int domain) {
+  TEST_CHECK(domain == AF_INET || domain == AF_INET6);
+  RecvTosOption opt;
+  switch (domain) {
+    case AF_INET:
+      opt.level = IPPROTO_IP;
+      opt.option = IP_RECVTOS;
+      break;
+    case AF_INET6:
+      opt.level = IPPROTO_IPV6;
+      opt.option = IPV6_RECVTCLASS;
+      break;
+  }
+  return opt;
+}
+
+// Ensure that Receiving TOS or TCLASS is off by default.
+TEST_P(UDPSocketPairTest, RecvTosDefault) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  RecvTosOption t = GetRecvTosOption(GetParam().domain);
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), t.level, t.option, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kSockOptOff);
+}
+
+// Test that setting and getting IP_RECVTOS or IPV6_RECVTCLASS works as
+// expected.
+TEST_P(UDPSocketPairTest, SetRecvTos) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  RecvTosOption t = GetRecvTosOption(GetParam().domain);
+
+  ASSERT_THAT(setsockopt(sockets->first_fd(), t.level, t.option, &kSockOptOff,
+                         sizeof(kSockOptOff)),
+              SyscallSucceeds());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), t.level, t.option, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kSockOptOff);
+
+  ASSERT_THAT(setsockopt(sockets->first_fd(), t.level, t.option, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), t.level, t.option, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kSockOptOn);
+}
+
+// Test that any socket (including IPv6 only) accepts the IPv4 TOS option: this
+// mirrors behavior in linux.
+TEST_P(UDPSocketPairTest, TOSRecvMismatch) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  RecvTosOption t = GetRecvTosOption(AF_INET);
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), t.level, t.option, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+}
+
+// Test that an IPv4 socket does not support the IPv6 TClass option.
+TEST_P(UDPSocketPairTest, TClassRecvMismatch) {
+  // This should only test AF_INET sockets for the mismatch behavior.
+  SKIP_IF(GetParam().domain != AF_INET);
+
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IPV6, IPV6_RECVTCLASS,
+                         &get, &get_len),
+              SyscallFailsWithErrno(EOPNOTSUPP));
 }
 
 }  // namespace testing

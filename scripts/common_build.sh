@@ -14,8 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Install the latest version of Bazel and log the version.
-(which use_bazel.sh && use_bazel.sh latest) || which bazel
+which bazel
 bazel version
 
 # Switch into the workspace; only necessary if run with kokoro.
@@ -26,27 +25,30 @@ elif [[ -v KOKORO_GIT_COMMIT ]] && [[ -d github/repo ]]; then
 fi
 
 # Set the standard bazel flags.
-declare -r BAZEL_FLAGS=(
+declare -a BAZEL_FLAGS=(
   "--show_timestamps"
   "--test_output=errors"
   "--keep_going"
   "--verbose_failures=true"
 )
 if [[ -v KOKORO_BAZEL_AUTH_CREDENTIAL ]]; then
-  declare -r BAZEL_RBE_AUTH_FLAGS=(
+  BAZEL_FLAGS+=(
     "--auth_credentials=${KOKORO_BAZEL_AUTH_CREDENTIAL}"
+    "--config=remote"
   )
-  declare -r BAZEL_RBE_FLAGS=("--config=remote")
 fi
+declare -r BAZEL_FLAGS
 
 # Wrap bazel.
 function build() {
-  bazel build "${BAZEL_RBE_FLAGS[@]}" "${BAZEL_RBE_AUTH_FLAGS[@]}" "${BAZEL_FLAGS[@]}" "$@" 2>&1 |
-    tee /dev/fd/2 | grep -E '^  bazel-bin/' | awk '{ print $1; }'
+  bazel build "${BAZEL_FLAGS[@]}" "$@" 2>&1 \
+    | tee /dev/fd/2 \
+    | grep -E '^  bazel-bin/' \
+    | awk '{ print $1; }'
 }
 
 function test() {
-  bazel test "${BAZEL_RBE_FLAGS[@]}" "${BAZEL_RBE_AUTH_FLAGS[@]}" "${BAZEL_FLAGS[@]}" "$@"
+  bazel test "${BAZEL_FLAGS[@]}" "$@"
 }
 
 function run() {
@@ -68,7 +70,9 @@ function collect_logs() {
     for d in `find -L "bazel-testlogs" -name 'shard_*_of_*' | xargs dirname | sort | uniq`; do
       junitparser merge `find $d -name test.xml` $d/test.xml
       cat $d/shard_*_of_*/test.log > $d/test.log
-      ls -l $d/shard_*_of_*/test.outputs/outputs.zip && zip -r -1 $d/outputs.zip $d/shard_*_of_*/test.outputs/outputs.zip
+      if ls -l $d/shard_*_of_*/test.outputs/outputs.zip 2>/dev/null; then
+        zip -r -1 "$d/outputs.zip" $d/shard_*_of_*/test.outputs/outputs.zip
+      fi
     done
     find -L "bazel-testlogs" -name 'shard_*_of_*' | xargs rm -rf
     # Move test logs to Kokoro directory. tar is used to conveniently perform
@@ -88,12 +92,21 @@ function collect_logs() {
           echo "    gsutil cp gs://gvisor/logs/${KOKORO_BUILD_ARTIFACTS_SUBDIR}/${archive} /tmp"
           echo "    https://storage.cloud.google.com/gvisor/logs/${KOKORO_BUILD_ARTIFACTS_SUBDIR}/${archive}"
         fi
-        tar --create --gzip --file="${KOKORO_ARTIFACTS_DIR}/${archive}" -C "${RUNSC_LOGS_DIR}" .
+        time tar \
+          --verbose \
+          --create \
+          --gzip \
+          --file="${KOKORO_ARTIFACTS_DIR}/${archive}" \
+          --directory "${RUNSC_LOGS_DIR}" \
+          .
       fi
     fi
   fi
 }
 
 function find_branch_name() {
-  git branch --show-current || git rev-parse HEAD || bazel info workspace | xargs basename
+  git branch --show-current \
+    || git rev-parse HEAD \
+    || bazel info workspace \
+    | xargs basename
 }

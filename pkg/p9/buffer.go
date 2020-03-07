@@ -20,16 +20,16 @@ import (
 
 // encoder is used for messages and 9P primitives.
 type encoder interface {
-	// Decode decodes from the given buffer. Decode may be called more than once
+	// decode decodes from the given buffer. decode may be called more than once
 	// to reuse the instance. It must clear any previous state.
 	//
 	// This may not fail, exhaustion will be recorded in the buffer.
-	Decode(b *buffer)
+	decode(b *buffer)
 
-	// Encode encodes to the given buffer.
+	// encode encodes to the given buffer.
 	//
 	// This may not fail.
-	Encode(b *buffer)
+	encode(b *buffer)
 }
 
 // order is the byte order used for encoding.
@@ -39,7 +39,7 @@ var order = binary.LittleEndian
 //
 // This is passed to the encoder methods.
 type buffer struct {
-	// data is the underlying data. This may grow during Encode.
+	// data is the underlying data. This may grow during encode.
 	data []byte
 
 	// overflow indicates whether an overflow has occurred.

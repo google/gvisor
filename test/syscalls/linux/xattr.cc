@@ -24,6 +24,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/container/flat_hash_set.h"
 #include "test/syscalls/linux/file_base.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
@@ -38,6 +39,16 @@ namespace {
 
 class XattrTest : public FileTest {};
 
+TEST_F(XattrTest, XattrNonexistentFile) {
+  const char* path = "/does/not/exist";
+  EXPECT_THAT(setxattr(path, nullptr, nullptr, 0, /*flags=*/0),
+              SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(getxattr(path, nullptr, nullptr, 0),
+              SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(listxattr(path, nullptr, 0), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(removexattr(path, nullptr), SyscallFailsWithErrno(ENOENT));
+}
+
 TEST_F(XattrTest, XattrNullName) {
   const char* path = test_file_name_.c_str();
 
@@ -45,6 +56,7 @@ TEST_F(XattrTest, XattrNullName) {
               SyscallFailsWithErrno(EFAULT));
   EXPECT_THAT(getxattr(path, nullptr, nullptr, 0),
               SyscallFailsWithErrno(EFAULT));
+  EXPECT_THAT(removexattr(path, nullptr), SyscallFailsWithErrno(EFAULT));
 }
 
 TEST_F(XattrTest, XattrEmptyName) {
@@ -53,6 +65,7 @@ TEST_F(XattrTest, XattrEmptyName) {
   EXPECT_THAT(setxattr(path, "", nullptr, 0, /*flags=*/0),
               SyscallFailsWithErrno(ERANGE));
   EXPECT_THAT(getxattr(path, "", nullptr, 0), SyscallFailsWithErrno(ERANGE));
+  EXPECT_THAT(removexattr(path, ""), SyscallFailsWithErrno(ERANGE));
 }
 
 TEST_F(XattrTest, XattrLargeName) {
@@ -74,6 +87,7 @@ TEST_F(XattrTest, XattrLargeName) {
               SyscallFailsWithErrno(ERANGE));
   EXPECT_THAT(getxattr(path, name.c_str(), nullptr, 0),
               SyscallFailsWithErrno(ERANGE));
+  EXPECT_THAT(removexattr(path, name.c_str()), SyscallFailsWithErrno(ERANGE));
 }
 
 TEST_F(XattrTest, XattrInvalidPrefix) {
@@ -82,6 +96,8 @@ TEST_F(XattrTest, XattrInvalidPrefix) {
   EXPECT_THAT(setxattr(path, name.c_str(), nullptr, 0, /*flags=*/0),
               SyscallFailsWithErrno(EOPNOTSUPP));
   EXPECT_THAT(getxattr(path, name.c_str(), nullptr, 0),
+              SyscallFailsWithErrno(EOPNOTSUPP));
+  EXPECT_THAT(removexattr(path, name.c_str()),
               SyscallFailsWithErrno(EOPNOTSUPP));
 }
 
@@ -104,10 +120,16 @@ TEST_F(XattrTest, XattrReadOnly_NoRandomSave) {
 
   EXPECT_THAT(setxattr(path, name, &val, size, /*flags=*/0),
               SyscallFailsWithErrno(EACCES));
+  EXPECT_THAT(removexattr(path, name), SyscallFailsWithErrno(EACCES));
 
   char buf = '-';
   EXPECT_THAT(getxattr(path, name, &buf, size), SyscallSucceedsWithValue(size));
   EXPECT_EQ(buf, val);
+
+  char list[sizeof(name)];
+  EXPECT_THAT(listxattr(path, list, sizeof(list)),
+              SyscallSucceedsWithValue(sizeof(name)));
+  EXPECT_STREQ(list, name);
 }
 
 // Do not allow save/restore cycles after making the test file write-only, as
@@ -128,6 +150,14 @@ TEST_F(XattrTest, XattrWriteOnly_NoRandomSave) {
   EXPECT_THAT(setxattr(path, name, &val, size, /*flags=*/0), SyscallSucceeds());
 
   EXPECT_THAT(getxattr(path, name, nullptr, 0), SyscallFailsWithErrno(EACCES));
+
+  // listxattr will succeed even without read permissions.
+  char list[sizeof(name)];
+  EXPECT_THAT(listxattr(path, list, sizeof(list)),
+              SyscallSucceedsWithValue(sizeof(name)));
+  EXPECT_STREQ(list, name);
+
+  EXPECT_THAT(removexattr(path, name), SyscallSucceeds());
 }
 
 TEST_F(XattrTest, XattrTrustedWithNonadmin) {
@@ -139,16 +169,24 @@ TEST_F(XattrTest, XattrTrustedWithNonadmin) {
   const char name[] = "trusted.abc";
   EXPECT_THAT(setxattr(path, name, nullptr, 0, /*flags=*/0),
               SyscallFailsWithErrno(EPERM));
+  EXPECT_THAT(removexattr(path, name), SyscallFailsWithErrno(EPERM));
   EXPECT_THAT(getxattr(path, name, nullptr, 0), SyscallFailsWithErrno(ENODATA));
 }
 
 TEST_F(XattrTest, XattrOnDirectory) {
   TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const char name[] = "user.test";
-  EXPECT_THAT(setxattr(dir.path().c_str(), name, NULL, 0, /*flags=*/0),
+  EXPECT_THAT(setxattr(dir.path().c_str(), name, nullptr, 0, /*flags=*/0),
               SyscallSucceeds());
-  EXPECT_THAT(getxattr(dir.path().c_str(), name, NULL, 0),
+  EXPECT_THAT(getxattr(dir.path().c_str(), name, nullptr, 0),
               SyscallSucceedsWithValue(0));
+
+  char list[sizeof(name)];
+  EXPECT_THAT(listxattr(dir.path().c_str(), list, sizeof(list)),
+              SyscallSucceedsWithValue(sizeof(name)));
+  EXPECT_STREQ(list, name);
+
+  EXPECT_THAT(removexattr(dir.path().c_str(), name), SyscallSucceeds());
 }
 
 TEST_F(XattrTest, XattrOnSymlink) {
@@ -156,28 +194,38 @@ TEST_F(XattrTest, XattrOnSymlink) {
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo(dir.path(), test_file_name_));
   const char name[] = "user.test";
-  EXPECT_THAT(setxattr(link.path().c_str(), name, NULL, 0, /*flags=*/0),
+  EXPECT_THAT(setxattr(link.path().c_str(), name, nullptr, 0, /*flags=*/0),
               SyscallSucceeds());
-  EXPECT_THAT(getxattr(link.path().c_str(), name, NULL, 0),
+  EXPECT_THAT(getxattr(link.path().c_str(), name, nullptr, 0),
               SyscallSucceedsWithValue(0));
+
+  char list[sizeof(name)];
+  EXPECT_THAT(listxattr(link.path().c_str(), list, sizeof(list)),
+              SyscallSucceedsWithValue(sizeof(name)));
+  EXPECT_STREQ(list, name);
+
+  EXPECT_THAT(removexattr(link.path().c_str(), name), SyscallSucceeds());
 }
 
 TEST_F(XattrTest, XattrOnInvalidFileTypes) {
   const char name[] = "user.test";
 
   char char_device[] = "/dev/zero";
-  EXPECT_THAT(setxattr(char_device, name, NULL, 0, /*flags=*/0),
+  EXPECT_THAT(setxattr(char_device, name, nullptr, 0, /*flags=*/0),
               SyscallFailsWithErrno(EPERM));
-  EXPECT_THAT(getxattr(char_device, name, NULL, 0),
+  EXPECT_THAT(getxattr(char_device, name, nullptr, 0),
               SyscallFailsWithErrno(ENODATA));
+  EXPECT_THAT(listxattr(char_device, nullptr, 0), SyscallSucceedsWithValue(0));
 
   // Use tmpfs, where creation of named pipes is supported.
   const std::string fifo = NewTempAbsPathInDir("/dev/shm");
   const char* path = fifo.c_str();
   EXPECT_THAT(mknod(path, S_IFIFO | S_IRUSR | S_IWUSR, 0), SyscallSucceeds());
-  EXPECT_THAT(setxattr(path, name, NULL, 0, /*flags=*/0),
+  EXPECT_THAT(setxattr(path, name, nullptr, 0, /*flags=*/0),
               SyscallFailsWithErrno(EPERM));
-  EXPECT_THAT(getxattr(path, name, NULL, 0), SyscallFailsWithErrno(ENODATA));
+  EXPECT_THAT(getxattr(path, name, nullptr, 0), SyscallFailsWithErrno(ENODATA));
+  EXPECT_THAT(listxattr(path, nullptr, 0), SyscallSucceedsWithValue(0));
+  EXPECT_THAT(removexattr(path, name), SyscallFailsWithErrno(EPERM));
 }
 
 TEST_F(XattrTest, SetxattrSizeSmallerThanValue) {
@@ -415,18 +463,104 @@ TEST_F(XattrTest, GetxattrNonexistentName) {
   EXPECT_THAT(getxattr(path, name, nullptr, 0), SyscallFailsWithErrno(ENODATA));
 }
 
-TEST_F(XattrTest, LGetSetxattrOnSymlink) {
+TEST_F(XattrTest, Listxattr) {
+  const char* path = test_file_name_.c_str();
+  const std::string name = "user.test";
+  const std::string name2 = "user.test2";
+  const std::string name3 = "user.test3";
+  EXPECT_THAT(setxattr(path, name.c_str(), nullptr, 0, /*flags=*/0),
+              SyscallSucceeds());
+  EXPECT_THAT(setxattr(path, name2.c_str(), nullptr, 0, /*flags=*/0),
+              SyscallSucceeds());
+  EXPECT_THAT(setxattr(path, name3.c_str(), nullptr, 0, /*flags=*/0),
+              SyscallSucceeds());
+
+  std::vector<char> list(name.size() + 1 + name2.size() + 1 + name3.size() + 1);
+  char* buf = list.data();
+  EXPECT_THAT(listxattr(path, buf, XATTR_SIZE_MAX),
+              SyscallSucceedsWithValue(list.size()));
+
+  absl::flat_hash_set<std::string> got = {};
+  for (char* p = buf; p < buf + list.size(); p += strlen(p) + 1) {
+    got.insert(std::string{p});
+  }
+
+  absl::flat_hash_set<std::string> expected = {name, name2, name3};
+  EXPECT_EQ(got, expected);
+}
+
+TEST_F(XattrTest, ListxattrNoXattrs) {
+  const char* path = test_file_name_.c_str();
+
+  std::vector<char> list, expected;
+  EXPECT_THAT(listxattr(path, list.data(), sizeof(list)),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(list, expected);
+
+  // Listxattr should succeed if there are no attributes, even if the buffer
+  // passed in is a nullptr.
+  EXPECT_THAT(listxattr(path, nullptr, sizeof(list)),
+              SyscallSucceedsWithValue(0));
+}
+
+TEST_F(XattrTest, ListxattrNullBuffer) {
+  const char* path = test_file_name_.c_str();
+  const char name[] = "user.test";
+  EXPECT_THAT(setxattr(path, name, nullptr, 0, /*flags=*/0), SyscallSucceeds());
+
+  EXPECT_THAT(listxattr(path, nullptr, sizeof(name)),
+              SyscallFailsWithErrno(EFAULT));
+}
+
+TEST_F(XattrTest, ListxattrSizeTooSmall) {
+  const char* path = test_file_name_.c_str();
+  const char name[] = "user.test";
+  EXPECT_THAT(setxattr(path, name, nullptr, 0, /*flags=*/0), SyscallSucceeds());
+
+  char list[sizeof(name) - 1];
+  EXPECT_THAT(listxattr(path, list, sizeof(list)),
+              SyscallFailsWithErrno(ERANGE));
+}
+
+TEST_F(XattrTest, ListxattrZeroSize) {
+  const char* path = test_file_name_.c_str();
+  const char name[] = "user.test";
+  EXPECT_THAT(setxattr(path, name, nullptr, 0, /*flags=*/0), SyscallSucceeds());
+  EXPECT_THAT(listxattr(path, nullptr, 0),
+              SyscallSucceedsWithValue(sizeof(name)));
+}
+
+TEST_F(XattrTest, RemoveXattr) {
+  const char* path = test_file_name_.c_str();
+  const char name[] = "user.test";
+  EXPECT_THAT(setxattr(path, name, nullptr, 0, /*flags=*/0), SyscallSucceeds());
+  EXPECT_THAT(removexattr(path, name), SyscallSucceeds());
+  EXPECT_THAT(getxattr(path, name, nullptr, 0), SyscallFailsWithErrno(ENODATA));
+}
+
+TEST_F(XattrTest, RemoveXattrNonexistentName) {
+  const char* path = test_file_name_.c_str();
+  const char name[] = "user.test";
+  EXPECT_THAT(removexattr(path, name), SyscallFailsWithErrno(ENODATA));
+}
+
+TEST_F(XattrTest, LXattrOnSymlink) {
+  const char name[] = "user.test";
   TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo(dir.path(), test_file_name_));
 
-  EXPECT_THAT(lsetxattr(link.path().c_str(), nullptr, nullptr, 0, 0),
+  EXPECT_THAT(lsetxattr(link.path().c_str(), name, nullptr, 0, 0),
               SyscallFailsWithErrno(EPERM));
-  EXPECT_THAT(lgetxattr(link.path().c_str(), nullptr, nullptr, 0),
+  EXPECT_THAT(lgetxattr(link.path().c_str(), name, nullptr, 0),
               SyscallFailsWithErrno(ENODATA));
+  EXPECT_THAT(llistxattr(link.path().c_str(), nullptr, 0),
+              SyscallSucceedsWithValue(0));
+  EXPECT_THAT(lremovexattr(link.path().c_str(), name),
+              SyscallFailsWithErrno(EPERM));
 }
 
-TEST_F(XattrTest, LGetSetxattrOnNonsymlink) {
+TEST_F(XattrTest, LXattrOnNonsymlink) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
   int val = 1234;
@@ -438,9 +572,16 @@ TEST_F(XattrTest, LGetSetxattrOnNonsymlink) {
   EXPECT_THAT(lgetxattr(path, name, &buf, size),
               SyscallSucceedsWithValue(size));
   EXPECT_EQ(buf, val);
+
+  char list[sizeof(name)];
+  EXPECT_THAT(llistxattr(path, list, sizeof(list)),
+              SyscallSucceedsWithValue(sizeof(name)));
+  EXPECT_STREQ(list, name);
+
+  EXPECT_THAT(lremovexattr(path, name), SyscallSucceeds());
 }
 
-TEST_F(XattrTest, FGetSetxattr) {
+TEST_F(XattrTest, XattrWithFD) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_.c_str(), 0));
   const char name[] = "user.test";
@@ -453,6 +594,13 @@ TEST_F(XattrTest, FGetSetxattr) {
   EXPECT_THAT(fgetxattr(fd.get(), name, &buf, size),
               SyscallSucceedsWithValue(size));
   EXPECT_EQ(buf, val);
+
+  char list[sizeof(name)];
+  EXPECT_THAT(flistxattr(fd.get(), list, sizeof(list)),
+              SyscallSucceedsWithValue(sizeof(name)));
+  EXPECT_STREQ(list, name);
+
+  EXPECT_THAT(fremovexattr(fd.get(), name), SyscallSucceeds());
 }
 
 }  // namespace

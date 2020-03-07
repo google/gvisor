@@ -32,21 +32,21 @@ const (
 // Infof logs an formatted info message by calling log.Infof.
 func (t *Task) Infof(fmt string, v ...interface{}) {
 	if log.IsLogging(log.Info) {
-		log.Infof(t.logPrefix.Load().(string)+fmt, v...)
+		log.InfofAtDepth(1, t.logPrefix.Load().(string)+fmt, v...)
 	}
 }
 
 // Warningf logs a warning string by calling log.Warningf.
 func (t *Task) Warningf(fmt string, v ...interface{}) {
 	if log.IsLogging(log.Warning) {
-		log.Warningf(t.logPrefix.Load().(string)+fmt, v...)
+		log.WarningfAtDepth(1, t.logPrefix.Load().(string)+fmt, v...)
 	}
 }
 
 // Debugf creates a debug string that includes the task ID.
 func (t *Task) Debugf(fmt string, v ...interface{}) {
 	if log.IsLogging(log.Debug) {
-		log.Debugf(t.logPrefix.Load().(string)+fmt, v...)
+		log.DebugfAtDepth(1, t.logPrefix.Load().(string)+fmt, v...)
 	}
 }
 
@@ -198,18 +198,11 @@ func (t *Task) traceExecEvent(tc *TaskContext) {
 	if !trace.IsEnabled() {
 		return
 	}
-	d := tc.MemoryManager.Executable()
-	if d == nil {
+	file := tc.MemoryManager.Executable()
+	if file == nil {
 		trace.Logf(t.traceContext, traceCategory, "exec: << unknown >>")
 		return
 	}
-	defer d.DecRef()
-	root := t.fsContext.RootDirectory()
-	if root == nil {
-		trace.Logf(t.traceContext, traceCategory, "exec: << no root directory >>")
-		return
-	}
-	defer root.DecRef()
-	n, _ := d.FullName(root)
-	trace.Logf(t.traceContext, traceCategory, "exec: %s", n)
+	defer file.DecRef()
+	trace.Logf(t.traceContext, traceCategory, "exec: %s", file.PathnameWithDeleted(t))
 }

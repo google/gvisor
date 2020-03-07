@@ -45,7 +45,10 @@ type RootDentryFn func(*auth.Credentials, *filesystem) *kernfs.Dentry
 func newTestSystem(t *testing.T, rootFn RootDentryFn) *testutil.System {
 	ctx := contexttest.Context(t)
 	creds := auth.CredentialsFromContext(ctx)
-	v := vfs.New()
+	v := &vfs.VirtualFilesystem{}
+	if err := v.Init(); err != nil {
+		t.Fatalf("VFS init: %v", err)
+	}
 	v.MustRegisterFilesystemType("testfs", &fsType{rootFn: rootFn}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 	})
@@ -113,9 +116,9 @@ func (fs *filesystem) newReadonlyDir(creds *auth.Credentials, mode linux.FileMod
 	return &dir.dentry
 }
 
-func (d *readonlyDir) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*vfs.FileDescription, error) {
+func (d *readonlyDir) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fd := &kernfs.GenericDirectoryFD{}
-	if err := fd.Init(rp.Mount(), vfsd, &d.OrderedChildren, flags); err != nil {
+	if err := fd.Init(rp.Mount(), vfsd, &d.OrderedChildren, &opts); err != nil {
 		return nil, err
 	}
 	return fd.VFSFileDescription(), nil
@@ -143,9 +146,9 @@ func (fs *filesystem) newDir(creds *auth.Credentials, mode linux.FileMode, conte
 	return &dir.dentry
 }
 
-func (d *dir) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*vfs.FileDescription, error) {
+func (d *dir) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fd := &kernfs.GenericDirectoryFD{}
-	fd.Init(rp.Mount(), vfsd, &d.OrderedChildren, flags)
+	fd.Init(rp.Mount(), vfsd, &d.OrderedChildren, &opts)
 	return fd.VFSFileDescription(), nil
 }
 

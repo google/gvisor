@@ -44,6 +44,7 @@ type GetFilesystemOptions struct {
 	InternalData interface{}
 }
 
+// +stateify savable
 type registeredFilesystemType struct {
 	fsType FilesystemType
 	opts   RegisterFilesystemTypeOptions

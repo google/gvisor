@@ -13,6 +13,6 @@ go_library(
         "simple.go",
     ],
     visibility = [
-        "//visibility:public",
+        "//:sandbox",
     ],
 )

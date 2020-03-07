@@ -53,6 +53,11 @@ const (
 	preferredPIELoadAddr usermem.Addr = maxAddr64 / 6 * 5
 )
 
+var (
+	// CPUIDInstruction doesn't exist on ARM64.
+	CPUIDInstruction = []byte{}
+)
+
 // These constants are selected as heuristics to help make the Platform's
 // potentially limited address space conform as closely to Linux as possible.
 const (
@@ -68,6 +73,7 @@ const (
 // context64 represents an ARM64 context.
 type context64 struct {
 	State
+	sigFPState []aarch64FPState // fpstate to be restored on sigreturn.
 }
 
 // Arch implements Context.Arch.
@@ -75,10 +81,19 @@ func (c *context64) Arch() Arch {
 	return ARM64
 }
 
+func (c *context64) copySigFPState() []aarch64FPState {
+	var sigfps []aarch64FPState
+	for _, s := range c.sigFPState {
+		sigfps = append(sigfps, s.fork())
+	}
+	return sigfps
+}
+
 // Fork returns an exact copy of this context.
 func (c *context64) Fork() Context {
 	return &context64{
-		State: c.State.Fork(),
+		State:      c.State.Fork(),
+		sigFPState: c.copySigFPState(),
 	}
 }
 
@@ -137,8 +152,8 @@ func (c *context64) SetTLS(value uintptr) bool {
 	return false
 }
 
-// SetRSEQInterruptedIP implements Context.SetRSEQInterruptedIP.
-func (c *context64) SetRSEQInterruptedIP(value uintptr) {
+// SetOldRSeqInterruptedIP implements Context.SetOldRSeqInterruptedIP.
+func (c *context64) SetOldRSeqInterruptedIP(value uintptr) {
 	c.Regs.Regs[3] = uint64(value)
 }
 

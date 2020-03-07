@@ -24,7 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -152,9 +152,9 @@ func unstableAttr(mo *superOperations, s *syscall.Stat_t) fs.UnstableAttr {
 		Usage:            s.Blocks * 512,
 		Perms:            fs.FilePermsFromMode(linux.FileMode(s.Mode)),
 		Owner:            owner(mo, s),
-		AccessTime:       ktime.FromUnix(s.Atim.Sec, s.Atim.Nsec),
-		ModificationTime: ktime.FromUnix(s.Mtim.Sec, s.Mtim.Nsec),
-		StatusChangeTime: ktime.FromUnix(s.Ctim.Sec, s.Ctim.Nsec),
+		AccessTime:       time.FromUnix(s.Atim.Sec, s.Atim.Nsec),
+		ModificationTime: time.FromUnix(s.Mtim.Sec, s.Mtim.Nsec),
+		StatusChangeTime: time.FromUnix(s.Ctim.Sec, s.Ctim.Nsec),
 		Links:            uint64(s.Nlink),
 	}
 }
@@ -164,6 +164,8 @@ type dirInfo struct {
 	nbuf int    // length of buf; return value from ReadDirent.
 	bufp int    // location of next record in buf.
 }
+
+// LINT.IfChange
 
 // isBlockError unwraps os errors and checks if they are caused by EAGAIN or
 // EWOULDBLOCK. This is so they can be transformed into syserror.ErrWouldBlock.
@@ -176,6 +178,8 @@ func isBlockError(err error) bool {
 	}
 	return false
 }
+
+// LINT.ThenChange(../../fsimpl/host/util.go)
 
 func hostEffectiveKIDs() (uint32, []uint32, error) {
 	gids, err := os.Getgroups()

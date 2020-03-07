@@ -136,11 +136,11 @@ func (t *Task) Stack() *arch.Stack {
 func (k *Kernel) LoadTaskImage(ctx context.Context, args loader.LoadArgs) (*TaskContext, *syserr.Error) {
 	// If File is not nil, we should load that instead of resolving Filename.
 	if args.File != nil {
-		args.Filename = args.File.MappedName(ctx)
+		args.Filename = args.File.PathnameWithDeleted(ctx)
 	}
 
 	// Prepare a new user address space to load into.
-	m := mm.NewMemoryManager(k, k)
+	m := mm.NewMemoryManager(k, k, k.SleepForAddressSpaceActivation)
 	defer m.DecUsers(ctx)
 	args.MemoryManager = m
 

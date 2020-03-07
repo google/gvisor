@@ -28,6 +28,9 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
+// Name is the default filesystem name.
+const Name = "sysfs"
+
 // FilesystemType implements vfs.FilesystemType.
 type FilesystemType struct{}
 
@@ -97,9 +100,9 @@ func (d *dir) SetStat(fs *vfs.Filesystem, opts vfs.SetStatOptions) error {
 }
 
 // Open implements kernfs.Inode.Open.
-func (d *dir) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*vfs.FileDescription, error) {
+func (d *dir) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fd := &kernfs.GenericDirectoryFD{}
-	fd.Init(rp.Mount(), vfsd, &d.OrderedChildren, flags)
+	fd.Init(rp.Mount(), vfsd, &d.OrderedChildren, &opts)
 	return fd.VFSFileDescription(), nil
 }
 

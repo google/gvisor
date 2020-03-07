@@ -105,8 +105,8 @@ func (i *subtasksInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallb
 			Ino:     i.inoGen.NextIno(),
 			NextOff: offset + 1,
 		}
-		if !cb.Handle(dirent) {
-			return offset, nil
+		if err := cb.Handle(dirent); err != nil {
+			return offset, err
 		}
 		offset++
 	}
@@ -114,15 +114,20 @@ func (i *subtasksInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallb
 }
 
 // Open implements kernfs.Inode.
-func (i *subtasksInode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*vfs.FileDescription, error) {
+func (i *subtasksInode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fd := &kernfs.GenericDirectoryFD{}
-	fd.Init(rp.Mount(), vfsd, &i.OrderedChildren, flags)
+	fd.Init(rp.Mount(), vfsd, &i.OrderedChildren, &opts)
 	return fd.VFSFileDescription(), nil
 }
 
 // Stat implements kernfs.Inode.
-func (i *subtasksInode) Stat(vsfs *vfs.Filesystem) linux.Statx {
-	stat := i.InodeAttrs.Stat(vsfs)
-	stat.Nlink += uint32(i.task.ThreadGroup().Count())
-	return stat
+func (i *subtasksInode) Stat(vsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
+	stat, err := i.InodeAttrs.Stat(vsfs, opts)
+	if err != nil {
+		return linux.Statx{}, err
+	}
+	if opts.Mask&linux.STATX_NLINK != 0 {
+		stat.Nlink += uint32(i.task.ThreadGroup().Count())
+	}
+	return stat, nil
 }

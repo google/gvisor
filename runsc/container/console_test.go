@@ -196,7 +196,10 @@ func TestJobControlSignalExec(t *testing.T) {
 	defer ptyMaster.Close()
 	defer ptySlave.Close()
 
-	// Exec bash and attach a terminal.
+	// Exec bash and attach a terminal. Note that occasionally /bin/sh
+	// may be a different shell or have a different configuration (such
+	// as disabling interactive mode and job control). Since we want to
+	// explicitly test interactive mode, use /bin/bash. See b/116981926.
 	execArgs := &control.ExecArgs{
 		Filename: "/bin/bash",
 		// Don't let bash execute from profile or rc files, otherwise
@@ -330,13 +333,13 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 	// file. Writes after a certain point will block unless we drain the
 	// PTY, so we must continually copy from it.
 	//
-	// We log the output to stdout for debugabilitly, and also to a buffer,
+	// We log the output to stderr for debugabilitly, and also to a buffer,
 	// since we wait on particular output from bash below. We use a custom
 	// blockingBuffer which is thread-safe and also blocks on Read calls,
 	// which makes this a suitable Reader for WaitUntilRead.
 	ptyBuf := newBlockingBuffer()
 	tee := io.TeeReader(ptyMaster, ptyBuf)
-	go io.Copy(os.Stdout, tee)
+	go io.Copy(os.Stderr, tee)
 
 	// Start the container.
 	if err := c.Start(conf); err != nil {

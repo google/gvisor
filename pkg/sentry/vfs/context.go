@@ -29,9 +29,10 @@ const (
 	CtxRoot
 )
 
-// MountNamespaceFromContext returns the MountNamespace used by ctx. It does
-// not take a reference on the returned MountNamespace. If ctx is not
-// associated with a MountNamespace, MountNamespaceFromContext returns nil.
+// MountNamespaceFromContext returns the MountNamespace used by ctx. If ctx is
+// not associated with a MountNamespace, MountNamespaceFromContext returns nil.
+//
+// A reference is taken on the returned MountNamespace.
 func MountNamespaceFromContext(ctx context.Context) *MountNamespace {
 	if v := ctx.Value(CtxMountNamespace); v != nil {
 		return v.(*MountNamespace)

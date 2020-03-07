@@ -114,6 +114,10 @@ func newX86FPStateSlice() []byte {
 	size, align := cpuid.HostFeatureSet().ExtendedStateSize()
 	capacity := size
 	// Always use at least 4096 bytes.
+	//
+	// For the KVM platform, this state is a fixed 4096 bytes, so make sure
+	// that the underlying array is at _least_ that size otherwise we will
+	// corrupt random memory. This is not a pleasant thing to debug.
 	if capacity < 4096 {
 		capacity = 4096
 	}
@@ -149,21 +153,6 @@ func (f x86FPState) FloatingPointData() *FloatingPointData {
 // This is primarily for use in tests.
 func NewFloatingPointData() *FloatingPointData {
 	return (*FloatingPointData)(&(newX86FPState()[0]))
-}
-
-// State contains the common architecture bits for X86 (the build tag of this
-// file ensures it's only built on x86).
-//
-// +stateify savable
-type State struct {
-	// The system registers.
-	Regs syscall.PtraceRegs `state:".(syscallPtraceRegs)"`
-
-	// Our floating point state.
-	x86FPState `state:"wait"`
-
-	// FeatureSet is a pointer to the currently active feature set.
-	FeatureSet *cpuid.FeatureSet
 }
 
 // Proto returns a protobuf representation of the system registers in State.

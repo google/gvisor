@@ -66,6 +66,7 @@ if [[ ${REFRESH} -eq 0 ]]; then
 else
   mkdir -p "$(dirname ${RUNSC_BIN})"
   cp -f ${OUTPUT} "${RUNSC_BIN}"
+  chmod a+rx "${RUNSC_BIN}"
 
   echo
   echo "Runtime ${RUNTIME} refreshed."

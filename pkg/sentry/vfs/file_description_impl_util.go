@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -32,8 +33,8 @@ import (
 // implementations to adapt:
 //   - Have a local fileDescription struct (containing FileDescription) which
 //     embeds FileDescriptionDefaultImpl and overrides the default methods
-//     which are common to all fd implementations for that for that filesystem
-//     like StatusFlags, SetStatusFlags, Stat, SetStat, StatFS, etc.
+//     which are common to all fd implementations for that filesystem like
+//     StatusFlags, SetStatusFlags, Stat, SetStat, StatFS, etc.
 //   - This should be embedded in all file description implementations as the
 //     first field by value.
 //   - Directory FDs would also embed DirectoryFileDescriptionDefaultImpl.
@@ -150,6 +151,26 @@ func (FileDescriptionDefaultImpl) Setxattr(ctx context.Context, opts SetxattrOpt
 // inode::i_opflags & IOP_XATTR == 0 in Linux.
 func (FileDescriptionDefaultImpl) Removexattr(ctx context.Context, name string) error {
 	return syserror.ENOTSUP
+}
+
+// LockBSD implements FileDescriptionImpl.LockBSD.
+func (FileDescriptionDefaultImpl) LockBSD(ctx context.Context, uid lock.UniqueID, t lock.LockType, block lock.Blocker) error {
+	return syserror.EBADF
+}
+
+// UnlockBSD implements FileDescriptionImpl.UnlockBSD.
+func (FileDescriptionDefaultImpl) UnlockBSD(ctx context.Context, uid lock.UniqueID) error {
+	return syserror.EBADF
+}
+
+// LockPOSIX implements FileDescriptionImpl.LockPOSIX.
+func (FileDescriptionDefaultImpl) LockPOSIX(ctx context.Context, uid lock.UniqueID, t lock.LockType, rng lock.LockRange, block lock.Blocker) error {
+	return syserror.EBADF
+}
+
+// UnlockPOSIX implements FileDescriptionImpl.UnlockPOSIX.
+func (FileDescriptionDefaultImpl) UnlockPOSIX(ctx context.Context, uid lock.UniqueID, rng lock.LockRange) error {
+	return syserror.EBADF
 }
 
 // DirectoryFileDescriptionDefaultImpl may be embedded by implementations of

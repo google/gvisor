@@ -296,7 +296,7 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	if vfs.MayWriteFileWithOpenFlags(opts.Flags) || opts.Flags&(linux.O_CREAT|linux.O_EXCL|linux.O_TMPFILE) != 0 {
 		return nil, syserror.EROFS
 	}
-	return inode.open(rp, vfsd, opts.Flags)
+	return inode.open(rp, vfsd, &opts)
 }
 
 // ReadlinkAt implements vfs.FilesystemImpl.ReadlinkAt.

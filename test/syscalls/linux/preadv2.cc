@@ -35,6 +35,8 @@ namespace {
 #ifndef SYS_preadv2
 #if defined(__x86_64__)
 #define SYS_preadv2 327
+#elif defined(__aarch64__)
+#define SYS_preadv2 286
 #else
 #error "Unknown architecture"
 #endif

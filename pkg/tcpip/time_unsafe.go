@@ -25,6 +25,8 @@ import (
 )
 
 // StdClock implements Clock with the time package.
+//
+// +stateify savable
 type StdClock struct{}
 
 var _ Clock = (*StdClock)(nil)

@@ -1418,7 +1418,7 @@ TEST_P(MMapFileParamTest, NoSigBusOnPageContainingEOF) {
 //
 // On most platforms this is trivial, but when the file is mapped via the sentry
 // page cache (which does not yet support writing to shared mappings), a bug
-// caused reads to fail unnecessarily on such mappings.
+// caused reads to fail unnecessarily on such mappings. See b/28913513.
 TEST_F(MMapFileTest, ReadingWritableSharedFilePageSucceeds) {
   uintptr_t addr;
   size_t len = strlen(kFileContents);
@@ -1435,7 +1435,7 @@ TEST_F(MMapFileTest, ReadingWritableSharedFilePageSucceeds) {
 
 // Tests that EFAULT is returned when invoking a syscall that requires the OS to
 // read past end of file (resulting in a fault in sentry context in the gVisor
-// case).
+// case). See b/28913513.
 TEST_F(MMapFileTest, InternalSigBus) {
   uintptr_t addr;
   ASSERT_THAT(addr = Map(0, 2 * kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE,
@@ -1578,7 +1578,7 @@ TEST_F(MMapFileTest, Bug38498194) {
 }
 
 // Tests that reading from a file to a memory mapping of the same file does not
-// deadlock.
+// deadlock. See b/34813270.
 TEST_F(MMapFileTest, SelfRead) {
   uintptr_t addr;
   ASSERT_THAT(addr = Map(0, kPageSize, PROT_READ | PROT_WRITE, MAP_SHARED,
@@ -1590,7 +1590,7 @@ TEST_F(MMapFileTest, SelfRead) {
 }
 
 // Tests that writing to a file from a memory mapping of the same file does not
-// deadlock.
+// deadlock. Regression test for b/34813270.
 TEST_F(MMapFileTest, SelfWrite) {
   uintptr_t addr;
   ASSERT_THAT(addr = Map(0, kPageSize, PROT_READ, MAP_SHARED, fd_.get(), 0),

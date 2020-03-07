@@ -73,9 +73,9 @@ func newTasksInode(inoGen InoGenerator, k *kernel.Kernel, pidns *kernel.PIDNames
 		"meminfo": newDentry(root, inoGen.NextIno(), 0444, &meminfoData{}),
 		"mounts":  kernfs.NewStaticSymlink(root, inoGen.NextIno(), "self/mounts"),
 		"net":     newNetDir(root, inoGen, k),
-		"stat":    newDentry(root, inoGen.NextIno(), 0444, &statData{}),
+		"stat":    newDentry(root, inoGen.NextIno(), 0444, &statData{k: k}),
 		"uptime":  newDentry(root, inoGen.NextIno(), 0444, &uptimeData{}),
-		"version": newDentry(root, inoGen.NextIno(), 0444, &versionData{}),
+		"version": newDentry(root, inoGen.NextIno(), 0444, &versionData{k: k}),
 	}
 
 	inode := &tasksInode{
@@ -151,8 +151,8 @@ func (i *tasksInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback
 			Ino:     i.inoGen.NextIno(),
 			NextOff: offset + 1,
 		}
-		if !cb.Handle(dirent) {
-			return offset, nil
+		if err := cb.Handle(dirent); err != nil {
+			return offset, err
 		}
 		offset++
 	}
@@ -163,8 +163,8 @@ func (i *tasksInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback
 			Ino:     i.inoGen.NextIno(),
 			NextOff: offset + 1,
 		}
-		if !cb.Handle(dirent) {
-			return offset, nil
+		if err := cb.Handle(dirent); err != nil {
+			return offset, err
 		}
 		offset++
 	}
@@ -196,8 +196,8 @@ func (i *tasksInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback
 			Ino:     i.inoGen.NextIno(),
 			NextOff: FIRST_PROCESS_ENTRY + 2 + int64(tid) + 1,
 		}
-		if !cb.Handle(dirent) {
-			return offset, nil
+		if err := cb.Handle(dirent); err != nil {
+			return offset, err
 		}
 		offset++
 	}
@@ -205,23 +205,28 @@ func (i *tasksInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback
 }
 
 // Open implements kernfs.Inode.
-func (i *tasksInode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*vfs.FileDescription, error) {
+func (i *tasksInode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fd := &kernfs.GenericDirectoryFD{}
-	fd.Init(rp.Mount(), vfsd, &i.OrderedChildren, flags)
+	fd.Init(rp.Mount(), vfsd, &i.OrderedChildren, &opts)
 	return fd.VFSFileDescription(), nil
 }
 
-func (i *tasksInode) Stat(vsfs *vfs.Filesystem) linux.Statx {
-	stat := i.InodeAttrs.Stat(vsfs)
+func (i *tasksInode) Stat(vsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
+	stat, err := i.InodeAttrs.Stat(vsfs, opts)
+	if err != nil {
+		return linux.Statx{}, err
+	}
 
-	// Add dynamic children to link count.
-	for _, tg := range i.pidns.ThreadGroups() {
-		if leader := tg.Leader(); leader != nil {
-			stat.Nlink++
+	if opts.Mask&linux.STATX_NLINK != 0 {
+		// Add dynamic children to link count.
+		for _, tg := range i.pidns.ThreadGroups() {
+			if leader := tg.Leader(); leader != nil {
+				stat.Nlink++
+			}
 		}
 	}
 
-	return stat
+	return stat, nil
 }
 
 func cpuInfoData(k *kernel.Kernel) string {

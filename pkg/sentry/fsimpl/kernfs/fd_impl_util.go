@@ -43,12 +43,12 @@ type GenericDirectoryFD struct {
 }
 
 // Init initializes a GenericDirectoryFD.
-func (fd *GenericDirectoryFD) Init(m *vfs.Mount, d *vfs.Dentry, children *OrderedChildren, flags uint32) error {
-	if vfs.AccessTypesForOpenFlags(flags)&vfs.MayWrite != 0 {
+func (fd *GenericDirectoryFD) Init(m *vfs.Mount, d *vfs.Dentry, children *OrderedChildren, opts *vfs.OpenOptions) error {
+	if vfs.AccessTypesForOpenFlags(opts)&vfs.MayWrite != 0 {
 		// Can't open directories for writing.
 		return syserror.EISDIR
 	}
-	if err := fd.vfsfd.Init(fd, flags, m, d, &vfs.FileDescriptionOptions{}); err != nil {
+	if err := fd.vfsfd.Init(fd, opts.Flags, m, d, &vfs.FileDescriptionOptions{}); err != nil {
 		return err
 	}
 	fd.children = children
@@ -107,17 +107,21 @@ func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirent
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
+	opts := vfs.StatOptions{Mask: linux.STATX_INO}
 	// Handle ".".
 	if fd.off == 0 {
-		stat := fd.inode().Stat(vfsFS)
+		stat, err := fd.inode().Stat(vfsFS, opts)
+		if err != nil {
+			return err
+		}
 		dirent := vfs.Dirent{
 			Name:    ".",
 			Type:    linux.DT_DIR,
 			Ino:     stat.Ino,
 			NextOff: 1,
 		}
-		if !cb.Handle(dirent) {
-			return nil
+		if err := cb.Handle(dirent); err != nil {
+			return err
 		}
 		fd.off++
 	}
@@ -125,15 +129,18 @@ func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirent
 	// Handle "..".
 	if fd.off == 1 {
 		parentInode := vfsd.ParentOrSelf().Impl().(*Dentry).inode
-		stat := parentInode.Stat(vfsFS)
+		stat, err := parentInode.Stat(vfsFS, opts)
+		if err != nil {
+			return err
+		}
 		dirent := vfs.Dirent{
 			Name:    "..",
 			Type:    linux.FileMode(stat.Mode).DirentType(),
 			Ino:     stat.Ino,
 			NextOff: 2,
 		}
-		if !cb.Handle(dirent) {
-			return nil
+		if err := cb.Handle(dirent); err != nil {
+			return err
 		}
 		fd.off++
 	}
@@ -146,15 +153,18 @@ func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirent
 	childIdx := fd.off - 2
 	for it := fd.children.nthLocked(childIdx); it != nil; it = it.Next() {
 		inode := it.Dentry.Impl().(*Dentry).inode
-		stat := inode.Stat(vfsFS)
+		stat, err := inode.Stat(vfsFS, opts)
+		if err != nil {
+			return err
+		}
 		dirent := vfs.Dirent{
 			Name:    it.Name,
 			Type:    linux.FileMode(stat.Mode).DirentType(),
 			Ino:     stat.Ino,
 			NextOff: fd.off + 1,
 		}
-		if !cb.Handle(dirent) {
-			return nil
+		if err := cb.Handle(dirent); err != nil {
+			return err
 		}
 		fd.off++
 	}
@@ -190,7 +200,7 @@ func (fd *GenericDirectoryFD) Seek(ctx context.Context, offset int64, whence int
 func (fd *GenericDirectoryFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
 	fs := fd.filesystem()
 	inode := fd.inode()
-	return inode.Stat(fs), nil
+	return inode.Stat(fs, opts)
 }
 
 // SetStat implements vfs.FileDescriptionImpl.SetStat.

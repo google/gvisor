@@ -17,7 +17,20 @@
 set -xeo pipefail
 
 # Install all essential build tools.
-apt-get update && apt-get -y install make git-core build-essential linux-headers-$(uname -r) pkg-config
+while true; do
+  if (apt-get update && apt-get install -y \
+      make \
+      git-core \
+      build-essential \
+      linux-headers-$(uname -r) \
+      pkg-config); then
+    break
+  fi
+  result=$?
+  if [[ $result -ne 100 ]]; then
+    exit $result
+  fi
+done
 
 # Install a recent go toolchain.
 if ! [[ -d /usr/local/go ]]; then

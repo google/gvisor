@@ -5,5 +5,6 @@ package(licenses = ["notice"])
 go_binary(
     name = "stateify",
     srcs = ["main.go"],
-    visibility = ["//visibility:public"],
+    visibility = ["//:sandbox"],
+    deps = ["//tools/tags"],
 )

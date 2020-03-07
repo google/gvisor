@@ -27,6 +27,8 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// LINT.IfChange
+
 // Getdents implements linux syscall getdents(2) for 64bit systems.
 func Getdents(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
@@ -244,3 +246,5 @@ func (ds *direntSerializer) CopyOut(name string, attr fs.DentAttr) error {
 func (ds *direntSerializer) Written() int {
 	return ds.written
 }
+
+// LINT.ThenChange(vfs2/getdents.go)

@@ -237,7 +237,7 @@ TEST_F(SigProcMaskTest, SignalHandler) {
 }
 
 // Check that sigprocmask correctly handles aliasing of the set and oldset
-// pointers.
+// pointers. Regression test for b/30502311.
 TEST_F(SigProcMaskTest, AliasedSets) {
   sigset_t mask;
 

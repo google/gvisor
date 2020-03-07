@@ -115,10 +115,12 @@ func (f *Fragmentation) Process(id uint32, first, last uint16, more bool, vv buf
 	// Evict reassemblers if we are consuming more memory than highLimit until
 	// we reach lowLimit.
 	if f.size > f.highLimit {
-		tail := f.rList.Back()
-		for f.size > f.lowLimit && tail != nil {
+		for f.size > f.lowLimit {
+			tail := f.rList.Back()
+			if tail == nil {
+				break
+			}
 			f.release(tail)
-			tail = tail.Prev()
 		}
 	}
 	f.mu.Unlock()

@@ -71,6 +71,7 @@ func waitForProcessCount(cont *Container, want int) error {
 			return &backoff.PermanentError{Err: err}
 		}
 		if got := len(pss); got != want {
+			log.Infof("Waiting for process count to reach %d. Current: %d", want, got)
 			return fmt.Errorf("wrong process count, got: %d, want: %d", got, want)
 		}
 		return nil
@@ -163,7 +164,7 @@ func createWriteableOutputFile(path string) (*os.File, error) {
 	return outputFile, nil
 }
 
-func waitForFile(f *os.File) error {
+func waitForFileNotEmpty(f *os.File) error {
 	op := func() error {
 		fi, err := f.Stat()
 		if err != nil {
@@ -171,6 +172,17 @@ func waitForFile(f *os.File) error {
 		}
 		if fi.Size() == 0 {
 			return fmt.Errorf("file %q is empty", f.Name())
+		}
+		return nil
+	}
+
+	return testutil.Poll(op, 30*time.Second)
+}
+
+func waitForFileExist(path string) error {
+	op := func() error {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return err
 		}
 		return nil
 	}
@@ -187,7 +199,7 @@ func readOutputNum(file string, position int) (int, error) {
 	}
 
 	// Ensure that there is content in output file.
-	if err := waitForFile(f); err != nil {
+	if err := waitForFileNotEmpty(f); err != nil {
 		return 0, fmt.Errorf("error waiting for output file: %v", err)
 	}
 
@@ -801,7 +813,7 @@ func TestCheckpointRestore(t *testing.T) {
 		defer file.Close()
 
 		// Wait until application has ran.
-		if err := waitForFile(outputFile); err != nil {
+		if err := waitForFileNotEmpty(outputFile); err != nil {
 			t.Fatalf("Failed to wait for output file: %v", err)
 		}
 
@@ -843,7 +855,7 @@ func TestCheckpointRestore(t *testing.T) {
 		}
 
 		// Wait until application has ran.
-		if err := waitForFile(outputFile2); err != nil {
+		if err := waitForFileNotEmpty(outputFile2); err != nil {
 			t.Fatalf("Failed to wait for output file: %v", err)
 		}
 
@@ -887,7 +899,7 @@ func TestCheckpointRestore(t *testing.T) {
 		}
 
 		// Wait until application has ran.
-		if err := waitForFile(outputFile3); err != nil {
+		if err := waitForFileNotEmpty(outputFile3); err != nil {
 			t.Fatalf("Failed to wait for output file: %v", err)
 		}
 
@@ -981,7 +993,7 @@ func TestUnixDomainSockets(t *testing.T) {
 		defer os.RemoveAll(imagePath)
 
 		// Wait until application has ran.
-		if err := waitForFile(outputFile); err != nil {
+		if err := waitForFileNotEmpty(outputFile); err != nil {
 			t.Fatalf("Failed to wait for output file: %v", err)
 		}
 
@@ -1023,7 +1035,7 @@ func TestUnixDomainSockets(t *testing.T) {
 		}
 
 		// Wait until application has ran.
-		if err := waitForFile(outputFile2); err != nil {
+		if err := waitForFileNotEmpty(outputFile2); err != nil {
 			t.Fatalf("Failed to wait for output file: %v", err)
 		}
 
@@ -1042,126 +1054,84 @@ func TestUnixDomainSockets(t *testing.T) {
 }
 
 // TestPauseResume tests that we can successfully pause and resume a container.
-// It checks starts running sleep and executes another sleep. It pauses and checks
-// that both processes are still running: sleep will be paused and still exist.
-// It will then unpause and confirm that both processes are running. Then it will
-// wait until one sleep completes and check to make sure the other is running.
+// The container will keep touching a file to indicate it's running. The test
+// pauses the container, removes the file, and checks that it doesn't get
+// recreated. Then it resumes the container, verify that the file gets created
+// again.
 func TestPauseResume(t *testing.T) {
 	for _, conf := range configs(noOverlay...) {
-		t.Logf("Running test with conf: %+v", conf)
-		const uid = 343
-		spec := testutil.NewSpecWithArgs("sleep", "20")
+		t.Run(fmt.Sprintf("conf: %+v", conf), func(t *testing.T) {
+			t.Logf("Running test with conf: %+v", conf)
 
-		lock, err := ioutil.TempFile(testutil.TmpDir(), "lock")
-		if err != nil {
-			t.Fatalf("error creating output file: %v", err)
-		}
-		defer lock.Close()
+			tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "lock")
+			if err != nil {
+				t.Fatalf("error creating temp dir: %v", err)
+			}
+			defer os.RemoveAll(tmpDir)
 
-		rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
-		if err != nil {
-			t.Fatalf("error setting up container: %v", err)
-		}
-		defer os.RemoveAll(rootDir)
-		defer os.RemoveAll(bundleDir)
+			running := path.Join(tmpDir, "running")
+			script := fmt.Sprintf("while [[ true ]]; do touch %q; sleep 0.1; done", running)
+			spec := testutil.NewSpecWithArgs("/bin/bash", "-c", script)
 
-		// Create and start the container.
-		args := Args{
-			ID:        testutil.UniqueContainerID(),
-			Spec:      spec,
-			BundleDir: bundleDir,
-		}
-		cont, err := New(conf, args)
-		if err != nil {
-			t.Fatalf("error creating container: %v", err)
-		}
-		defer cont.Destroy()
-		if err := cont.Start(conf); err != nil {
-			t.Fatalf("error starting container: %v", err)
-		}
+			rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer os.RemoveAll(rootDir)
+			defer os.RemoveAll(bundleDir)
 
-		// expectedPL lists the expected process state of the container.
-		expectedPL := []*control.Process{
-			{
-				UID:     0,
-				PID:     1,
-				PPID:    0,
-				C:       0,
-				Cmd:     "sleep",
-				Threads: []kernel.ThreadID{1},
-			},
-			{
-				UID:     uid,
-				PID:     2,
-				PPID:    0,
-				C:       0,
-				Cmd:     "bash",
-				Threads: []kernel.ThreadID{2},
-			},
-		}
+			// Create and start the container.
+			args := Args{
+				ID:        testutil.UniqueContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			cont, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer cont.Destroy()
+			if err := cont.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
 
-		script := fmt.Sprintf("while [[ -f %q ]]; do sleep 0.1; done", lock.Name())
-		execArgs := &control.ExecArgs{
-			Filename:         "/bin/bash",
-			Argv:             []string{"bash", "-c", script},
-			WorkingDirectory: "/",
-			KUID:             uid,
-		}
+			// Wait until container starts running, observed by the existence of running
+			// file.
+			if err := waitForFileExist(running); err != nil {
+				t.Errorf("error waiting for container to start: %v", err)
+			}
 
-		// First, start running exec.
-		_, err = cont.Execute(execArgs)
-		if err != nil {
-			t.Fatalf("error executing: %v", err)
-		}
+			// Pause the running container.
+			if err := cont.Pause(); err != nil {
+				t.Errorf("error pausing container: %v", err)
+			}
+			if got, want := cont.Status, Paused; got != want {
+				t.Errorf("container status got %v, want %v", got, want)
+			}
 
-		// Verify that "sleep 5" is running.
-		if err := waitForProcessList(cont, expectedPL); err != nil {
-			t.Fatal(err)
-		}
+			if err := os.Remove(running); err != nil {
+				t.Fatalf("os.Remove(%q) failed: %v", running, err)
+			}
+			// Script touches the file every 100ms. Give a bit a time for it to run to
+			// catch the case that pause didn't work.
+			time.Sleep(200 * time.Millisecond)
+			if _, err := os.Stat(running); !os.IsNotExist(err) {
+				t.Fatalf("container did not pause: file exist check: %v", err)
+			}
 
-		// Pause the running container.
-		if err := cont.Pause(); err != nil {
-			t.Errorf("error pausing container: %v", err)
-		}
-		if got, want := cont.Status, Paused; got != want {
-			t.Errorf("container status got %v, want %v", got, want)
-		}
+			// Resume the running container.
+			if err := cont.Resume(); err != nil {
+				t.Errorf("error pausing container: %v", err)
+			}
+			if got, want := cont.Status, Running; got != want {
+				t.Errorf("container status got %v, want %v", got, want)
+			}
 
-		if err := os.Remove(lock.Name()); err != nil {
-			t.Fatalf("os.Remove(lock) failed: %v", err)
-		}
-		// Script loops and sleeps for 100ms. Give a bit a time for it to exit in
-		// case pause didn't work.
-		time.Sleep(200 * time.Millisecond)
-
-		// Verify that the two processes still exist.
-		if err := getAndCheckProcLists(cont, expectedPL); err != nil {
-			t.Fatal(err)
-		}
-
-		// Resume the running container.
-		if err := cont.Resume(); err != nil {
-			t.Errorf("error pausing container: %v", err)
-		}
-		if got, want := cont.Status, Running; got != want {
-			t.Errorf("container status got %v, want %v", got, want)
-		}
-
-		expectedPL2 := []*control.Process{
-			{
-				UID:     0,
-				PID:     1,
-				PPID:    0,
-				C:       0,
-				Cmd:     "sleep",
-				Threads: []kernel.ThreadID{1},
-			},
-		}
-
-		// Verify that deleting the file triggered the process to exit.
-		if err := waitForProcessList(cont, expectedPL2); err != nil {
-			t.Fatal(err)
-		}
+			// Verify that the file is once again created by container.
+			if err := waitForFileExist(running); err != nil {
+				t.Fatalf("error resuming container: file exist check: %v", err)
+			}
+		})
 	}
 }
 
@@ -2122,7 +2092,7 @@ func TestOverlayfsStaleRead(t *testing.T) {
 	defer out.Close()
 
 	const want = "foobar"
-	cmd := fmt.Sprintf("cat %q && echo %q> %q && cp %q %q", in.Name(), want, in.Name(), in.Name(), out.Name())
+	cmd := fmt.Sprintf("cat %q >&2 && echo %q> %q && cp %q %q", in.Name(), want, in.Name(), in.Name(), out.Name())
 	spec := testutil.NewSpecWithArgs("/bin/bash", "-c", cmd)
 	if err := run(spec, conf); err != nil {
 		t.Fatalf("Error running container: %v", err)

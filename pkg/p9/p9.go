@@ -335,6 +335,8 @@ const (
 	MsgRgetattr             = 25
 	MsgTsetattr             = 26
 	MsgRsetattr             = 27
+	MsgTlistxattr           = 28
+	MsgRlistxattr           = 29
 	MsgTxattrwalk           = 30
 	MsgRxattrwalk           = 31
 	MsgTxattrcreate         = 32
@@ -343,6 +345,8 @@ const (
 	MsgRgetxattr            = 35
 	MsgTsetxattr            = 36
 	MsgRsetxattr            = 37
+	MsgTremovexattr         = 38
+	MsgRremovexattr         = 39
 	MsgTreaddir             = 40
 	MsgRreaddir             = 41
 	MsgTfsync               = 50
@@ -446,15 +450,15 @@ func (q QID) String() string {
 	return fmt.Sprintf("QID{Type: %d, Version: %d, Path: %d}", q.Type, q.Version, q.Path)
 }
 
-// Decode implements encoder.Decode.
-func (q *QID) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (q *QID) decode(b *buffer) {
 	q.Type = b.ReadQIDType()
 	q.Version = b.Read32()
 	q.Path = b.Read64()
 }
 
-// Encode implements encoder.Encode.
-func (q *QID) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (q *QID) encode(b *buffer) {
 	b.WriteQIDType(q.Type)
 	b.Write32(q.Version)
 	b.Write64(q.Path)
@@ -511,8 +515,8 @@ type FSStat struct {
 	NameLength uint32
 }
 
-// Decode implements encoder.Decode.
-func (f *FSStat) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (f *FSStat) decode(b *buffer) {
 	f.Type = b.Read32()
 	f.BlockSize = b.Read32()
 	f.Blocks = b.Read64()
@@ -524,8 +528,8 @@ func (f *FSStat) Decode(b *buffer) {
 	f.NameLength = b.Read32()
 }
 
-// Encode implements encoder.Encode.
-func (f *FSStat) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (f *FSStat) encode(b *buffer) {
 	b.Write32(f.Type)
 	b.Write32(f.BlockSize)
 	b.Write64(f.Blocks)
@@ -675,8 +679,8 @@ func (a AttrMask) String() string {
 	return fmt.Sprintf("AttrMask{with: %s}", strings.Join(masks, " "))
 }
 
-// Decode implements encoder.Decode.
-func (a *AttrMask) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (a *AttrMask) decode(b *buffer) {
 	mask := b.Read64()
 	a.Mode = mask&0x00000001 != 0
 	a.NLink = mask&0x00000002 != 0
@@ -694,8 +698,8 @@ func (a *AttrMask) Decode(b *buffer) {
 	a.DataVersion = mask&0x00002000 != 0
 }
 
-// Encode implements encoder.Encode.
-func (a *AttrMask) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (a *AttrMask) encode(b *buffer) {
 	var mask uint64
 	if a.Mode {
 		mask |= 0x00000001
@@ -770,8 +774,8 @@ func (a Attr) String() string {
 		a.Mode, a.UID, a.GID, a.NLink, a.RDev, a.Size, a.BlockSize, a.Blocks, a.ATimeSeconds, a.ATimeNanoSeconds, a.MTimeSeconds, a.MTimeNanoSeconds, a.CTimeSeconds, a.CTimeNanoSeconds, a.BTimeSeconds, a.BTimeNanoSeconds, a.Gen, a.DataVersion)
 }
 
-// Encode implements encoder.Encode.
-func (a *Attr) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (a *Attr) encode(b *buffer) {
 	b.WriteFileMode(a.Mode)
 	b.WriteUID(a.UID)
 	b.WriteGID(a.GID)
@@ -792,8 +796,8 @@ func (a *Attr) Encode(b *buffer) {
 	b.Write64(a.DataVersion)
 }
 
-// Decode implements encoder.Decode.
-func (a *Attr) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (a *Attr) decode(b *buffer) {
 	a.Mode = b.ReadFileMode()
 	a.UID = b.ReadUID()
 	a.GID = b.ReadGID()
@@ -922,8 +926,8 @@ func (s SetAttrMask) Empty() bool {
 	return !s.Permissions && !s.UID && !s.GID && !s.Size && !s.ATime && !s.MTime && !s.CTime && !s.ATimeNotSystemTime && !s.MTimeNotSystemTime
 }
 
-// Decode implements encoder.Decode.
-func (s *SetAttrMask) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (s *SetAttrMask) decode(b *buffer) {
 	mask := b.Read32()
 	s.Permissions = mask&0x00000001 != 0
 	s.UID = mask&0x00000002 != 0
@@ -968,8 +972,8 @@ func (s SetAttrMask) bitmask() uint32 {
 	return mask
 }
 
-// Encode implements encoder.Encode.
-func (s *SetAttrMask) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (s *SetAttrMask) encode(b *buffer) {
 	b.Write32(s.bitmask())
 }
 
@@ -990,8 +994,8 @@ func (s SetAttr) String() string {
 	return fmt.Sprintf("SetAttr{Permissions: 0o%o, UID: %d, GID: %d, Size: %d, ATime: {Sec: %d, NanoSec: %d}, MTime: {Sec: %d, NanoSec: %d}}", s.Permissions, s.UID, s.GID, s.Size, s.ATimeSeconds, s.ATimeNanoSeconds, s.MTimeSeconds, s.MTimeNanoSeconds)
 }
 
-// Decode implements encoder.Decode.
-func (s *SetAttr) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (s *SetAttr) decode(b *buffer) {
 	s.Permissions = b.ReadPermissions()
 	s.UID = b.ReadUID()
 	s.GID = b.ReadGID()
@@ -1002,8 +1006,8 @@ func (s *SetAttr) Decode(b *buffer) {
 	s.MTimeNanoSeconds = b.Read64()
 }
 
-// Encode implements encoder.Encode.
-func (s *SetAttr) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (s *SetAttr) encode(b *buffer) {
 	b.WritePermissions(s.Permissions)
 	b.WriteUID(s.UID)
 	b.WriteGID(s.GID)
@@ -1060,17 +1064,17 @@ func (d Dirent) String() string {
 	return fmt.Sprintf("Dirent{QID: %d, Offset: %d, Type: 0x%X, Name: %s}", d.QID, d.Offset, d.Type, d.Name)
 }
 
-// Decode implements encoder.Decode.
-func (d *Dirent) Decode(b *buffer) {
-	d.QID.Decode(b)
+// decode implements encoder.decode.
+func (d *Dirent) decode(b *buffer) {
+	d.QID.decode(b)
 	d.Offset = b.Read64()
 	d.Type = b.ReadQIDType()
 	d.Name = b.ReadString()
 }
 
-// Encode implements encoder.Encode.
-func (d *Dirent) Encode(b *buffer) {
-	d.QID.Encode(b)
+// encode implements encoder.encode.
+func (d *Dirent) encode(b *buffer) {
+	d.QID.encode(b)
 	b.Write64(d.Offset)
 	b.WriteQIDType(d.Type)
 	b.WriteString(d.Name)
@@ -1114,8 +1118,8 @@ func (a *AllocateMode) ToLinux() uint32 {
 	return rv
 }
 
-// Decode implements encoder.Decode.
-func (a *AllocateMode) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (a *AllocateMode) decode(b *buffer) {
 	mask := b.Read32()
 	a.KeepSize = mask&0x01 != 0
 	a.PunchHole = mask&0x02 != 0
@@ -1126,8 +1130,8 @@ func (a *AllocateMode) Decode(b *buffer) {
 	a.Unshare = mask&0x40 != 0
 }
 
-// Encode implements encoder.Encode.
-func (a *AllocateMode) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (a *AllocateMode) encode(b *buffer) {
 	mask := uint32(0)
 	if a.KeepSize {
 		mask |= 0x01

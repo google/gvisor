@@ -157,13 +157,13 @@ func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, 
 		TSVal:         r.synOptions.TSVal,
 		TSEcr:         r.synOptions.TSEcr,
 		SACKPermitted: r.synOptions.SACKPermitted,
-	})
+	}, queue)
 	if err != nil {
 		return nil, err
 	}
 
 	// Start the protocol goroutine.
-	ep.startAcceptedLoop(queue)
+	ep.startAcceptedLoop()
 
 	return ep, nil
 }

@@ -525,3 +525,46 @@ func (i *ioData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	fmt.Fprintf(buf, "cancelled_write_bytes: %d\n", io.BytesWriteCancelled)
 	return nil
 }
+
+// oomScoreAdj is a stub of the /proc/<pid>/oom_score_adj file.
+//
+// +stateify savable
+type oomScoreAdj struct {
+	kernfs.DynamicBytesFile
+
+	task *kernel.Task
+}
+
+var _ vfs.WritableDynamicBytesSource = (*oomScoreAdj)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (o *oomScoreAdj) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	adj, err := o.task.OOMScoreAdj()
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(buf, "%d\n", adj)
+	return nil
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (o *oomScoreAdj) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+	if src.NumBytes() == 0 {
+		return 0, nil
+	}
+
+	// Limit input size so as not to impact performance if input size is large.
+	src = src.TakeFirst(usermem.PageSize - 1)
+
+	var v int32
+	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
+	if err != nil {
+		return 0, err
+	}
+
+	if err := o.task.SetOOMScoreAdj(v); err != nil {
+		return 0, err
+	}
+
+	return n, nil
+}

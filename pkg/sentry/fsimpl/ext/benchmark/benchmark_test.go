@@ -15,6 +15,9 @@
 // These benchmarks emulate memfs benchmarks. Ext4 images must be created
 // before this benchmark is run using the `make_deep_ext4.sh` script at
 // /tmp/image-{depth}.ext4 for all the depths tested below.
+//
+// The benchmark itself cannot run the script because the script requires
+// sudo privileges to create the file system images.
 package benchmark_test
 
 import (
@@ -49,7 +52,10 @@ func setUp(b *testing.B, imagePath string) (context.Context, *vfs.VirtualFilesys
 	creds := auth.CredentialsFromContext(ctx)
 
 	// Create VFS.
-	vfsObj := vfs.New()
+	vfsObj := &vfs.VirtualFilesystem{}
+	if err := vfsObj.Init(); err != nil {
+		return nil, nil, nil, nil, err
+	}
 	vfsObj.MustRegisterFilesystemType("extfs", ext.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 	})

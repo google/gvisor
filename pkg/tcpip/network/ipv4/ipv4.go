@@ -353,6 +353,11 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
 	}
 	pkt.NetworkHeader = headerView[:h.HeaderLength()]
 
+	hlen := int(h.HeaderLength())
+	tlen := int(h.TotalLength())
+	pkt.Data.TrimFront(hlen)
+	pkt.Data.CapLength(tlen - hlen)
+
 	// iptables filtering. All packets that reach here are intended for
 	// this machine and will not be forwarded.
 	ipt := e.stack.IPTables()
@@ -360,11 +365,6 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
 		// iptables is telling us to drop the packet.
 		return
 	}
-
-	hlen := int(h.HeaderLength())
-	tlen := int(h.TotalLength())
-	pkt.Data.TrimFront(hlen)
-	pkt.Data.CapLength(tlen - hlen)
 
 	more := (h.Flags() & header.IPv4FlagMoreFragments) != 0
 	if more || h.FragmentOffset() != 0 {
@@ -472,6 +472,12 @@ func (p *protocol) SetDefaultTTL(ttl uint8) {
 func (p *protocol) DefaultTTL() uint8 {
 	return uint8(atomic.LoadUint32(&p.defaultTTL))
 }
+
+// Close implements stack.TransportProtocol.Close.
+func (*protocol) Close() {}
+
+// Wait implements stack.TransportProtocol.Wait.
+func (*protocol) Wait() {}
 
 // calculateMTU calculates the network-layer payload MTU based on the link-layer
 // payload mtu.

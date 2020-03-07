@@ -325,6 +325,12 @@ TEST_P(SocketInetLoopbackTest, TCPListenClose) {
   TestAddress const& listener = param.listener;
   TestAddress const& connector = param.connector;
 
+  constexpr int kAcceptCount = 32;
+  constexpr int kBacklog = kAcceptCount * 2;
+  constexpr int kFDs = 128;
+  constexpr int kThreadCount = 4;
+  constexpr int kFDsPerThread = kFDs / kThreadCount;
+
   // Create the listening socket.
   FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
       Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
@@ -332,7 +338,7 @@ TEST_P(SocketInetLoopbackTest, TCPListenClose) {
   ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
                    listener.addr_len),
               SyscallSucceeds());
-  ASSERT_THAT(listen(listen_fd.get(), 1001), SyscallSucceeds());
+  ASSERT_THAT(listen(listen_fd.get(), kBacklog), SyscallSucceeds());
 
   // Get the port bound by the listening socket.
   socklen_t addrlen = listener.addr_len;
@@ -345,9 +351,6 @@ TEST_P(SocketInetLoopbackTest, TCPListenClose) {
   DisableSave ds;  // Too many system calls.
   sockaddr_storage conn_addr = connector.addr;
   ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
-  constexpr int kFDs = 2048;
-  constexpr int kThreadCount = 4;
-  constexpr int kFDsPerThread = kFDs / kThreadCount;
   FileDescriptor clients[kFDs];
   std::unique_ptr<ScopedThread> threads[kThreadCount];
   for (int i = 0; i < kFDs; i++) {
@@ -371,7 +374,7 @@ TEST_P(SocketInetLoopbackTest, TCPListenClose) {
   for (int i = 0; i < kThreadCount; i++) {
     threads[i]->Join();
   }
-  for (int i = 0; i < 32; i++) {
+  for (int i = 0; i < kAcceptCount; i++) {
     auto accepted =
         ASSERT_NO_ERRNO_AND_VALUE(Accept(listen_fd.get(), nullptr, nullptr));
   }
@@ -826,6 +829,164 @@ TEST_P(SocketInetLoopbackTest, AcceptedInheritsTCPUserTimeout) {
       SyscallSucceeds());
   EXPECT_EQ(get_len, sizeof(get));
   EXPECT_EQ(get, kUserTimeout);
+}
+
+// TODO(gvisor.dev/issue/1688): Partially completed passive endpoints are not
+// saved. Enable S/R once issue is fixed.
+TEST_P(SocketInetLoopbackTest, TCPDeferAccept_NoRandomSave) {
+  // TODO(gvisor.dev/issue/1688): Partially completed passive endpoints are not
+  // saved. Enable S/R issue is fixed.
+  DisableSave ds;
+
+  auto const& param = GetParam();
+  TestAddress const& listener = param.listener;
+  TestAddress const& connector = param.connector;
+
+  // Create the listening socket.
+  const FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
+  sockaddr_storage listen_addr = listener.addr;
+  ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
+                   listener.addr_len),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(listen_fd.get(), SOMAXCONN), SyscallSucceeds());
+
+  // Get the port bound by the listening socket.
+  socklen_t addrlen = listener.addr_len;
+  ASSERT_THAT(getsockname(listen_fd.get(),
+                          reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
+              SyscallSucceeds());
+
+  const uint16_t port =
+      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
+
+  // Set the TCP_DEFER_ACCEPT on the listening socket.
+  constexpr int kTCPDeferAccept = 3;
+  ASSERT_THAT(setsockopt(listen_fd.get(), IPPROTO_TCP, TCP_DEFER_ACCEPT,
+                         &kTCPDeferAccept, sizeof(kTCPDeferAccept)),
+              SyscallSucceeds());
+
+  // Connect to the listening socket.
+  FileDescriptor conn_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
+
+  sockaddr_storage conn_addr = connector.addr;
+  ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
+  ASSERT_THAT(RetryEINTR(connect)(conn_fd.get(),
+                                  reinterpret_cast<sockaddr*>(&conn_addr),
+                                  connector.addr_len),
+              SyscallSucceeds());
+
+  // Set the listening socket to nonblock so that we can verify that there is no
+  // connection in queue despite the connect above succeeding since the peer has
+  // sent no data and TCP_DEFER_ACCEPT is set on the listening socket. Set the
+  // FD to O_NONBLOCK.
+  int opts;
+  ASSERT_THAT(opts = fcntl(listen_fd.get(), F_GETFL), SyscallSucceeds());
+  opts |= O_NONBLOCK;
+  ASSERT_THAT(fcntl(listen_fd.get(), F_SETFL, opts), SyscallSucceeds());
+
+  ASSERT_THAT(accept(listen_fd.get(), nullptr, nullptr),
+              SyscallFailsWithErrno(EWOULDBLOCK));
+
+  // Set FD back to blocking.
+  opts &= ~O_NONBLOCK;
+  ASSERT_THAT(fcntl(listen_fd.get(), F_SETFL, opts), SyscallSucceeds());
+
+  // Now write some data to the socket.
+  int data = 0;
+  ASSERT_THAT(RetryEINTR(write)(conn_fd.get(), &data, sizeof(data)),
+              SyscallSucceedsWithValue(sizeof(data)));
+
+  // This should now cause the connection to complete and be delivered to the
+  // accept socket.
+
+  // Accept the connection.
+  auto accepted =
+      ASSERT_NO_ERRNO_AND_VALUE(Accept(listen_fd.get(), nullptr, nullptr));
+
+  // Verify that the accepted socket returns the data written.
+  int get = -1;
+  ASSERT_THAT(RetryEINTR(recv)(accepted.get(), &get, sizeof(get), 0),
+              SyscallSucceedsWithValue(sizeof(get)));
+
+  EXPECT_EQ(get, data);
+}
+
+// TODO(gvisor.dev/issue/1688): Partially completed passive endpoints are not
+// saved. Enable S/R once issue is fixed.
+TEST_P(SocketInetLoopbackTest, TCPDeferAcceptTimeout_NoRandomSave) {
+  // TODO(gvisor.dev/issue/1688): Partially completed passive endpoints are not
+  // saved. Enable S/R once issue is fixed.
+  DisableSave ds;
+
+  auto const& param = GetParam();
+  TestAddress const& listener = param.listener;
+  TestAddress const& connector = param.connector;
+
+  // Create the listening socket.
+  const FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
+  sockaddr_storage listen_addr = listener.addr;
+  ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
+                   listener.addr_len),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(listen_fd.get(), SOMAXCONN), SyscallSucceeds());
+
+  // Get the port bound by the listening socket.
+  socklen_t addrlen = listener.addr_len;
+  ASSERT_THAT(getsockname(listen_fd.get(),
+                          reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
+              SyscallSucceeds());
+
+  const uint16_t port =
+      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
+
+  // Set the TCP_DEFER_ACCEPT on the listening socket.
+  constexpr int kTCPDeferAccept = 3;
+  ASSERT_THAT(setsockopt(listen_fd.get(), IPPROTO_TCP, TCP_DEFER_ACCEPT,
+                         &kTCPDeferAccept, sizeof(kTCPDeferAccept)),
+              SyscallSucceeds());
+
+  // Connect to the listening socket.
+  FileDescriptor conn_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
+
+  sockaddr_storage conn_addr = connector.addr;
+  ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
+  ASSERT_THAT(RetryEINTR(connect)(conn_fd.get(),
+                                  reinterpret_cast<sockaddr*>(&conn_addr),
+                                  connector.addr_len),
+              SyscallSucceeds());
+
+  // Set the listening socket to nonblock so that we can verify that there is no
+  // connection in queue despite the connect above succeeding since the peer has
+  // sent no data and TCP_DEFER_ACCEPT is set on the listening socket. Set the
+  // FD to O_NONBLOCK.
+  int opts;
+  ASSERT_THAT(opts = fcntl(listen_fd.get(), F_GETFL), SyscallSucceeds());
+  opts |= O_NONBLOCK;
+  ASSERT_THAT(fcntl(listen_fd.get(), F_SETFL, opts), SyscallSucceeds());
+
+  // Verify that there is no acceptable connection before TCP_DEFER_ACCEPT
+  // timeout is hit.
+  absl::SleepFor(absl::Seconds(kTCPDeferAccept - 1));
+  ASSERT_THAT(accept(listen_fd.get(), nullptr, nullptr),
+              SyscallFailsWithErrno(EWOULDBLOCK));
+
+  // Set FD back to blocking.
+  opts &= ~O_NONBLOCK;
+  ASSERT_THAT(fcntl(listen_fd.get(), F_SETFL, opts), SyscallSucceeds());
+
+  // Now sleep for a little over the TCP_DEFER_ACCEPT duration. When the timeout
+  // is hit a SYN-ACK should be retransmitted by the listener as a last ditch
+  // attempt to complete the connection with or without data.
+  absl::SleepFor(absl::Seconds(2));
+
+  // Verify that we have a connection that can be accepted even though no
+  // data was written.
+  auto accepted =
+      ASSERT_NO_ERRNO_AND_VALUE(Accept(listen_fd.get(), nullptr, nullptr));
 }
 
 INSTANTIATE_TEST_SUITE_P(

@@ -17,10 +17,12 @@ package kernel
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -64,9 +66,8 @@ type TaskConfig struct {
 	// Niceness is the niceness of the new task.
 	Niceness int
 
-	// If NetworkNamespaced is true, the new task should observe a non-root
-	// network namespace.
-	NetworkNamespaced bool
+	// NetworkNamespace is the network namespace to be used for the new task.
+	NetworkNamespace *inet.Namespace
 
 	// AllowedCPUMask contains the cpus that this task can run on.
 	AllowedCPUMask sched.CPUSet
@@ -80,6 +81,9 @@ type TaskConfig struct {
 	// AbstractSocketNamespace is the AbstractSocketNamespace of the new task.
 	AbstractSocketNamespace *AbstractSocketNamespace
 
+	// MountNamespaceVFS2 is the MountNamespace of the new task.
+	MountNamespaceVFS2 *vfs.MountNamespace
+
 	// RSeqAddr is a pointer to the the userspace linux.RSeq structure.
 	RSeqAddr usermem.Addr
 
@@ -89,6 +93,9 @@ type TaskConfig struct {
 
 	// ContainerID is the container the new task belongs to.
 	ContainerID string
+
+	// oomScoreAdj is the task's OOM score adjustment.
+	OOMScoreAdj int32
 }
 
 // NewTask creates a new task defined by cfg.
@@ -116,28 +123,30 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 			parent:   cfg.Parent,
 			children: make(map[*Task]struct{}),
 		},
-		runState:        (*runApp)(nil),
-		interruptChan:   make(chan struct{}, 1),
-		signalMask:      cfg.SignalMask,
-		signalStack:     arch.SignalStack{Flags: arch.SignalStackFlagDisable},
-		tc:              *tc,
-		fsContext:       cfg.FSContext,
-		fdTable:         cfg.FDTable,
-		p:               cfg.Kernel.Platform.NewContext(),
-		k:               cfg.Kernel,
-		ptraceTracees:   make(map[*Task]struct{}),
-		allowedCPUMask:  cfg.AllowedCPUMask.Copy(),
-		ioUsage:         &usage.IO{},
-		niceness:        cfg.Niceness,
-		netns:           cfg.NetworkNamespaced,
-		utsns:           cfg.UTSNamespace,
-		ipcns:           cfg.IPCNamespace,
-		abstractSockets: cfg.AbstractSocketNamespace,
-		rseqCPU:         -1,
-		rseqAddr:        cfg.RSeqAddr,
-		rseqSignature:   cfg.RSeqSignature,
-		futexWaiter:     futex.NewWaiter(),
-		containerID:     cfg.ContainerID,
+		runState:           (*runApp)(nil),
+		interruptChan:      make(chan struct{}, 1),
+		signalMask:         cfg.SignalMask,
+		signalStack:        arch.SignalStack{Flags: arch.SignalStackFlagDisable},
+		tc:                 *tc,
+		fsContext:          cfg.FSContext,
+		fdTable:            cfg.FDTable,
+		p:                  cfg.Kernel.Platform.NewContext(),
+		k:                  cfg.Kernel,
+		ptraceTracees:      make(map[*Task]struct{}),
+		allowedCPUMask:     cfg.AllowedCPUMask.Copy(),
+		ioUsage:            &usage.IO{},
+		niceness:           cfg.Niceness,
+		netns:              cfg.NetworkNamespace,
+		utsns:              cfg.UTSNamespace,
+		ipcns:              cfg.IPCNamespace,
+		abstractSockets:    cfg.AbstractSocketNamespace,
+		mountNamespaceVFS2: cfg.MountNamespaceVFS2,
+		rseqCPU:            -1,
+		rseqAddr:           cfg.RSeqAddr,
+		rseqSignature:      cfg.RSeqSignature,
+		futexWaiter:        futex.NewWaiter(),
+		containerID:        cfg.ContainerID,
+		oomScoreAdj:        cfg.OOMScoreAdj,
 	}
 	t.creds.Store(cfg.Credentials)
 	t.endStopCond.L = &t.tg.signalHandlers.mu

@@ -21,6 +21,8 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
+// LINT.IfChange
+
 // Lseek implements linux syscall lseek(2).
 func Lseek(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
@@ -52,3 +54,5 @@ func Lseek(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	}
 	return uintptr(offset), nil, err
 }
+
+// LINT.ThenChange(vfs2/read_write.go)

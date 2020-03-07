@@ -43,8 +43,8 @@ func (e ErrFloatingPoint) Error() string {
 // and SSE state, so this is the equivalent XSTATE_BV value.
 const fxsaveBV uint64 = cpuid.XSAVEFeatureX87 | cpuid.XSAVEFeatureSSE
 
-// afterLoad is invoked by stateify.
-func (s *State) afterLoad() {
+// afterLoadFPState is invoked by afterLoad.
+func (s *State) afterLoadFPState() {
 	old := s.x86FPState
 
 	// Recreate the slice. This is done to ensure that it is aligned

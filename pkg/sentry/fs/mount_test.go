@@ -36,11 +36,12 @@ func mountPathsAre(root *Dirent, got []*Mount, want ...string) error {
 	gotPaths := make(map[string]struct{}, len(got))
 	gotStr := make([]string, len(got))
 	for i, g := range got {
-		groot := g.Root()
-		name, _ := groot.FullName(root)
-		groot.DecRef()
-		gotStr[i] = name
-		gotPaths[name] = struct{}{}
+		if groot := g.Root(); groot != nil {
+			name, _ := groot.FullName(root)
+			groot.DecRef()
+			gotStr[i] = name
+			gotPaths[name] = struct{}{}
+		}
 	}
 	if len(got) != len(want) {
 		return fmt.Errorf("mount paths are different, got: %q, want: %q", gotStr, want)

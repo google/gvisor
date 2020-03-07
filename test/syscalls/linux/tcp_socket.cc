@@ -143,6 +143,20 @@ TEST_P(TcpSocketTest, ConnectOnEstablishedConnection) {
       SyscallFailsWithErrno(EISCONN));
 }
 
+TEST_P(TcpSocketTest, ShutdownWriteInTimeWait) {
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallSucceeds());
+  EXPECT_THAT(shutdown(s_, SHUT_RDWR), SyscallSucceeds());
+  absl::SleepFor(absl::Seconds(1));  // Wait to enter TIME_WAIT.
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallFailsWithErrno(ENOTCONN));
+}
+
+TEST_P(TcpSocketTest, ShutdownWriteInFinWait1) {
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallSucceeds());
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallSucceeds());
+  absl::SleepFor(absl::Seconds(1));  // Wait to enter FIN-WAIT2.
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallSucceeds());
+}
+
 TEST_P(TcpSocketTest, DataCoalesced) {
   char buf[10];
 
@@ -244,7 +258,8 @@ TEST_P(TcpSocketTest, ZeroWriteAllowed) {
 }
 
 // Test that a non-blocking write with a buffer that is larger than the send
-// buffer size will not actually write the whole thing at once.
+// buffer size will not actually write the whole thing at once. Regression test
+// for b/64438887.
 TEST_P(TcpSocketTest, NonblockingLargeWrite) {
   // Set the FD to O_NONBLOCK.
   int opts;
@@ -1284,6 +1299,83 @@ TEST_P(SimpleTcpSocketTest, SetTCPUserTimeout) {
       SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
   EXPECT_EQ(get, kTCPUserTimeout);
+}
+
+TEST_P(SimpleTcpSocketTest, SetTCPDeferAcceptNeg) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  // -ve TCP_DEFER_ACCEPT is same as setting it to zero.
+  constexpr int kNeg = -1;
+  EXPECT_THAT(
+      setsockopt(s.get(), IPPROTO_TCP, TCP_DEFER_ACCEPT, &kNeg, sizeof(kNeg)),
+      SyscallSucceeds());
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(s.get(), IPPROTO_TCP, TCP_USER_TIMEOUT, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, 0);
+}
+
+TEST_P(SimpleTcpSocketTest, GetTCPDeferAcceptDefault) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(s.get(), IPPROTO_TCP, TCP_USER_TIMEOUT, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, 0);
+}
+
+TEST_P(SimpleTcpSocketTest, SetTCPDeferAcceptGreaterThanZero) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  // kTCPDeferAccept is in seconds.
+  // NOTE: linux translates seconds to # of retries and back from
+  //   #of retries to seconds. Which means only certain values
+  //   translate back exactly. That's why we use 3 here, a value of
+  //   5 will result in us getting back 7 instead of 5 in the
+  //   getsockopt.
+  constexpr int kTCPDeferAccept = 3;
+  ASSERT_THAT(setsockopt(s.get(), IPPROTO_TCP, TCP_DEFER_ACCEPT,
+                         &kTCPDeferAccept, sizeof(kTCPDeferAccept)),
+              SyscallSucceeds());
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(s.get(), IPPROTO_TCP, TCP_DEFER_ACCEPT, &get, &get_len),
+      SyscallSucceeds());
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kTCPDeferAccept);
+}
+
+TEST_P(SimpleTcpSocketTest, RecvOnClosedSocket) {
+  auto s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  char buf[1];
+  EXPECT_THAT(recv(s.get(), buf, 0, 0), SyscallFailsWithErrno(ENOTCONN));
+  EXPECT_THAT(recv(s.get(), buf, sizeof(buf), 0),
+              SyscallFailsWithErrno(ENOTCONN));
+}
+
+TEST_P(SimpleTcpSocketTest, TCPConnectSoRcvBufRace) {
+  auto s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(GetParam(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+  sockaddr_storage addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+  socklen_t addrlen = sizeof(addr);
+
+  RetryEINTR(connect)(s.get(), reinterpret_cast<struct sockaddr*>(&addr),
+                      addrlen);
+  int buf_sz = 1 << 18;
+  EXPECT_THAT(
+      setsockopt(s.get(), SOL_SOCKET, SO_RCVBUF, &buf_sz, sizeof(buf_sz)),
+      SyscallSucceedsWithValue(0));
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, SimpleTcpSocketTest,

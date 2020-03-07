@@ -74,7 +74,7 @@ void ExitGroup32(const char instruction[2], int code) {
       "int $3\n"
       :
       : [ code ] "m"(code), [ ip ] "d"(m.ptr())
-      : "rax", "rbx", "rsp");
+      : "rax", "rbx");
 }
 
 constexpr int kExitCode = 42;
@@ -102,7 +102,8 @@ TEST(Syscall32Bit, Int80) {
 }
 
 TEST(Syscall32Bit, Sysenter) {
-  if (PlatformSupport32Bit() == PlatformSupport::Allowed &&
+  if ((PlatformSupport32Bit() == PlatformSupport::Allowed ||
+       PlatformSupport32Bit() == PlatformSupport::Ignored) &&
       GetCPUVendor() == CPUVendor::kAMD) {
     // SYSENTER is an illegal instruction in compatibility mode on AMD.
     EXPECT_EXIT(ExitGroup32(kSysenter, kExitCode),
@@ -133,7 +134,8 @@ TEST(Syscall32Bit, Sysenter) {
 }
 
 TEST(Syscall32Bit, Syscall) {
-  if (PlatformSupport32Bit() == PlatformSupport::Allowed &&
+  if ((PlatformSupport32Bit() == PlatformSupport::Allowed ||
+       PlatformSupport32Bit() == PlatformSupport::Ignored) &&
       GetCPUVendor() == CPUVendor::kIntel) {
     // SYSCALL is an illegal instruction in compatibility mode on Intel.
     EXPECT_EXIT(ExitGroup32(kSyscall, kExitCode),
@@ -153,7 +155,7 @@ TEST(Syscall32Bit, Syscall) {
     case PlatformSupport::Ignored:
       // See above.
       EXPECT_EXIT(ExitGroup32(kSyscall, kExitCode),
-                  ::testing::KilledBySignal(SIGILL), "");
+                  ::testing::KilledBySignal(SIGSEGV), "");
       break;
 
     case PlatformSupport::Allowed:

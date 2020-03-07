@@ -49,7 +49,12 @@ namespace testing {
 namespace {
 
 // A syscall not implemented by Linux that we don't expect to be called.
+#ifdef __x86_64__
 constexpr uint32_t kFilteredSyscall = SYS_vserver;
+#elif __aarch64__
+// Use the last of arch_specific_syscalls which are not implemented on arm64.
+constexpr uint32_t kFilteredSyscall = __NR_arch_specific_syscall + 15;
+#endif
 
 // Applies a seccomp-bpf filter that returns `filtered_result` for
 // `sysno` and allows all other syscalls. Async-signal-safe.
@@ -406,5 +411,5 @@ int main(int argc, char** argv) {
   }
 
   gvisor::testing::TestInit(&argc, &argv);
-  return RUN_ALL_TESTS();
+  return gvisor::testing::RunAllTests();
 }

@@ -21,7 +21,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
 	"syscall"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -75,30 +74,8 @@ func setupNetwork(conn *urpc.Client, pid int, spec *specs.Spec, conf *boot.Confi
 }
 
 func createDefaultLoopbackInterface(conn *urpc.Client) error {
-	link := boot.LoopbackLink{
-		Name: "lo",
-		Addresses: []net.IP{
-			net.IP("\x7f\x00\x00\x01"),
-			net.IPv6loopback,
-		},
-		Routes: []boot.Route{
-			{
-				Destination: net.IPNet{
-
-					IP:   net.IPv4(0x7f, 0, 0, 0),
-					Mask: net.IPv4Mask(0xff, 0, 0, 0),
-				},
-			},
-			{
-				Destination: net.IPNet{
-					IP:   net.IPv6loopback,
-					Mask: net.IPMask(strings.Repeat("\xff", net.IPv6len)),
-				},
-			},
-		},
-	}
 	if err := conn.Call(boot.NetworkCreateLinksAndRoutes, &boot.CreateLinksAndRoutesArgs{
-		LoopbackLinks: []boot.LoopbackLink{link},
+		LoopbackLinks: []boot.LoopbackLink{boot.DefaultLoopbackLink},
 	}, nil); err != nil {
 		return fmt.Errorf("creating loopback link and routes: %v", err)
 	}
@@ -174,13 +151,13 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareG
 			return fmt.Errorf("fetching interface addresses for %q: %v", iface.Name, err)
 		}
 
-		// We build our own loopback devices.
+		// We build our own loopback device.
 		if iface.Flags&net.FlagLoopback != 0 {
-			links, err := loopbackLinks(iface, allAddrs)
+			link, err := loopbackLink(iface, allAddrs)
 			if err != nil {
-				return fmt.Errorf("getting loopback routes and links for iface %q: %v", iface.Name, err)
+				return fmt.Errorf("getting loopback link for iface %q: %v", iface.Name, err)
 			}
-			args.LoopbackLinks = append(args.LoopbackLinks, links...)
+			args.LoopbackLinks = append(args.LoopbackLinks, link)
 			continue
 		}
 
@@ -339,25 +316,25 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 	return &socketEntry{deviceFile, gsoMaxSize}, nil
 }
 
-// loopbackLinks collects the links for a loopback interface.
-func loopbackLinks(iface net.Interface, addrs []net.Addr) ([]boot.LoopbackLink, error) {
-	var links []boot.LoopbackLink
+// loopbackLink returns the link with addresses and routes for a loopback
+// interface.
+func loopbackLink(iface net.Interface, addrs []net.Addr) (boot.LoopbackLink, error) {
+	link := boot.LoopbackLink{
+		Name: iface.Name,
+	}
 	for _, addr := range addrs {
 		ipNet, ok := addr.(*net.IPNet)
 		if !ok {
-			return nil, fmt.Errorf("address is not IPNet: %+v", addr)
+			return boot.LoopbackLink{}, fmt.Errorf("address is not IPNet: %+v", addr)
 		}
 		dst := *ipNet
 		dst.IP = dst.IP.Mask(dst.Mask)
-		links = append(links, boot.LoopbackLink{
-			Name:      iface.Name,
-			Addresses: []net.IP{ipNet.IP},
-			Routes: []boot.Route{{
-				Destination: dst,
-			}},
+		link.Addresses = append(link.Addresses, ipNet.IP)
+		link.Routes = append(link.Routes, boot.Route{
+			Destination: dst,
 		})
 	}
-	return links, nil
+	return link, nil
 }
 
 // routesForIface iterates over all routes for the given interface and converts

@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "capability.go",
         "clone.go",
+        "epoll.go",
         "futex.go",
         "linux64_amd64.go",
         "linux64_arm64.go",
@@ -30,7 +31,6 @@ go_library(
         "//pkg/seccomp",
         "//pkg/sentry/arch",
         "//pkg/sentry/kernel",
-        "//pkg/sentry/socket/control",
         "//pkg/sentry/socket/netlink",
         "//pkg/sentry/socket/netstack",
         "//pkg/sentry/syscalls/linux",

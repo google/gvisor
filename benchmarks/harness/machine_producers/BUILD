@@ -31,7 +31,10 @@ py_library(
     deps = [
         "//benchmarks/harness:machine",
         "//benchmarks/harness/machine_producers:machine_producer",
-        py_requirement("PyYAML", False),
+        py_requirement(
+            "PyYAML",
+            direct = False,
+        ),
     ],
 )
 
@@ -76,5 +79,6 @@ py_test(
     python_version = "PY3",
     tags = [
         "local",
+        "manual",
     ],
 )
