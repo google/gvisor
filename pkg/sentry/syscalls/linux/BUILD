@@ -16,6 +16,8 @@ go_library(
         "sys_clone_amd64.go",
         "sys_clone_arm64.go",
         "sys_epoll.go",
+        "sys_epoll_amd64.go",
+        "sys_epoll_arm64.go",
         "sys_eventfd.go",
         "sys_file.go",
         "sys_futex.go",

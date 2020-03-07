@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/epoll"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -103,28 +102,6 @@ func EpollCtl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	default:
 		return 0, nil, syserror.EINVAL
 	}
-}
-
-// copyOutEvents copies epoll events from the kernel to user memory.
-func copyOutEvents(t *kernel.Task, addr usermem.Addr, e []epoll.Event) error {
-	const itemLen = 12
-	buffLen := len(e) * itemLen
-	if _, ok := addr.AddLength(uint64(buffLen)); !ok {
-		return syserror.EFAULT
-	}
-
-	b := t.CopyScratchBuffer(buffLen)
-	for i := range e {
-		usermem.ByteOrder.PutUint32(b[i*itemLen:], e[i].Events)
-		usermem.ByteOrder.PutUint32(b[i*itemLen+4:], uint32(e[i].Data[0]))
-		usermem.ByteOrder.PutUint32(b[i*itemLen+8:], uint32(e[i].Data[1]))
-	}
-
-	if _, err := t.CopyOutBytes(addr, b); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // EpollWait implements the epoll_wait(2) linux syscall.
