@@ -30,9 +30,9 @@ const (
 	// Advertisement message (body of an ICMPv6 packet).
 	NDPRAMinimumSize = 12
 
-	// ndpRACurrHopLimitOffset is the byte of the Curr Hop Limit field
+	// ndpRACurHopLimitOffset is the byte of the Cur Hop Limit field
 	// within an NDPRouterAdvert.
-	ndpRACurrHopLimitOffset = 0
+	ndpRACurHopLimitOffset = 0
 
 	// ndpRAFlagsOffset is the byte with the NDP RA bit-fields/flags
 	// within an NDPRouterAdvert.
@@ -64,9 +64,9 @@ const (
 	ndpRAOptionsOffset = 12
 )
 
-// CurrHopLimit returns the value of the Curr Hop Limit field.
-func (b NDPRouterAdvert) CurrHopLimit() uint8 {
-	return b[ndpRACurrHopLimitOffset]
+// CurHopLimit returns the value of the Cur Hop Limit field.
+func (b NDPRouterAdvert) CurHopLimit() uint8 {
+	return b[ndpRACurHopLimitOffset]
 }
 
 // ManagedAddrConfFlag returns the value of the Managed Address Configuration

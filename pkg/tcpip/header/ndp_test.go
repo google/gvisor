@@ -128,8 +128,8 @@ func TestNDPRouterAdvert(t *testing.T) {
 
 	ra := NDPRouterAdvert(b)
 
-	if got := ra.CurrHopLimit(); got != 64 {
-		t.Errorf("got ra.CurrHopLimit = %d, want = 64", got)
+	if got := ra.CurHopLimit(); got != 64 {
+		t.Errorf("got ra.CurHopLimit = %d, want = 64", got)
 	}
 
 	if got := ra.ManagedAddrConfFlag(); !got {
