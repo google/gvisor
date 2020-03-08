@@ -444,6 +444,16 @@ type ndpState struct {
 	// Information option.
 	slaacPrefixes map[tcpip.Subnet]slaacPrefixState
 
+	// The timer used to send the next router solicitation message.
+	// If routers are being solicited, rtrSolicitTimer MUST NOT be nil.
+	rtrSolicitTimer *time.Timer
+
+	// The timer used to send the next router advertisements message.
+	rtrAdvTimer *time.Timer
+
+	// The last time a RA was sent.
+	rtrAdvLastTime time.Time
+
 	// The last learned DHCPv6 configuration from an NDP RA.
 	dhcpv6Configuration DHCPv6ConfigurationFromNDPRA
 }
@@ -790,11 +800,108 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 	}
 }
 
+func (ndp *ndpState) sendRouterAdvert() {
+	ref := ndp.nic.getRefOrCreateTemp(header.IPv6ProtocolNumber, header.IPv6AllRoutersMulticastAddress, NeverPrimaryEndpoint, forceSpoofing)
+	ap, err := ndp.nic.stack.GetMainNICAddress(ndp.nic.ID(), header.IPv6ProtocolNumber)
+	if err != nil {
+		log.Fatalf("ndp: the NIC doesn't have an address")
+	}
+	la := ap.Address
+	if !header.IsV6LinkLocalAddress(la) {
+		log.Fatalf("ndp: the NIC doesn't have a link-local address")
+	}
+
+	r := makeRoute(header.IPv6ProtocolNumber, la, header.IPv6AllNodesMulticastAddress, ndp.nic.linkEP.LinkAddress(), ref, false, false)
+	defer r.Release()
+
+	// Route should resolve immediately since
+	// header.IPv6AllNodesMulticastAddress is a multicast address so a
+	// remote link address can be calculated without a resolution process.
+	if c, err := r.Resolve(nil); err != nil {
+		log.Fatalf("ndp: error when resolving route to send NDP RA (%s -> %s on NIC(%d)): %s", header.IPv6Any, header.IPv6AllNodesMulticastAddress, ndp.nic.ID(), err)
+	} else if c != nil {
+		log.Fatalf("ndp: route resolution not immediate for route to send NDP RA (%s -> %s on NIC(%d))", header.IPv6Any, header.IPv6AllNodesMulticastAddress, ndp.nic.ID())
+	}
+
+	optsSerializer := header.NDPOptionsSerializer{}
+	if r.LocalLinkAddress != "" {
+		optsSerializer = append(optsSerializer, header.NDPSourceLinkLayerAddressOption(r.LocalLinkAddress[:]))
+	}
+	for _, pif := range ndp.configs.RouterConfig.Prefixes {
+		pi := header.NewNDPPrefixInformation()
+		pi.Encode(&pif)
+		optsSerializer = append(optsSerializer, pi)
+	}
+
+	icmpv6RASize := header.ICMPv6RouterAdvertMinimumSize + int(optsSerializer.Length())
+	hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv6RouterAdvertMinimumSize + icmpv6RASize)
+
+	pkt := header.ICMPv6(hdr.Prepend(icmpv6RASize))
+	pkt.SetType(header.ICMPv6RouterAdvert)
+
+	ra := header.NDPRouterAdvert(pkt.NDPPayload())
+	ra.SetRouterLifetime(ndp.configs.RouterConfig.RouterLifetime)
+	ra.SetCurHopLimit(ndp.configs.RouterConfig.CurHopLimit)
+	opts := ra.Options()
+	opts.Serialize(optsSerializer)
+
+	pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
+
+	sent := r.Stats().ICMP.V6PacketsSent
+	if err := r.WritePacket(nil,
+		NetworkHeaderParams{
+			Protocol: header.ICMPv6ProtocolNumber,
+			TTL:      header.NDPHopLimit,
+			TOS:      DefaultTOS,
+		}, tcpip.PacketBuffer{Header: hdr},
+	); err != nil {
+		sent.Dropped.Increment()
+		log.Printf("sendRouterAdvert: error writing NDP router advert message on NIC(%d); err = %s", ndp.nic.ID(), err)
+	} else {
+		sent.RouterAdvert.Increment()
+	}
+}
+
 // handleRS handles a Router Solicitation message that arrived on the NIC
 // this ndp is for. Does nothing if the NIC is configured to not handle RSs.
 //
 // The NIC that ndp belongs to MUST be locked.
 func (ndp *ndpState) handleRS(rs header.NDPRouterSolicit) {
+	rc := ndp.configs.RouterConfig
+	// Is the NIC configured to handle RSs at all?
+	//
+	// Currently, the stack does not determine router interface status on a
+	// per-interface basis; it is a stack-wide configuration, so we check
+	// stack's forwarding flag to determine if the NIC is a routing
+	// interface.
+	if !rc.AdvSendAdvertisements || !ndp.nic.stack.forwarding {
+		return
+	}
+
+	// If we have one RA already scheduled, drop this RS
+	if ndp.rtrAdvTimer != nil {
+		return
+	}
+
+	// Router Advertisements sent in response to a Router
+	// Solicitation MUST be delayed by a random time between 0 and
+	// MAX_RA_DELAY_TIME seconds.
+	// 4861 section 6.2.6.
+	delay := time.Duration(rand.Int63n(int64(MaxRaDelayTime)))
+
+	// Consecutive Router Advertisements sent to the all-nodes
+	// multicast address MUST be rate limited to no more than one
+	// advertisement every MIN_DELAY_BETWEEN_RAS seconds.
+	now := time.Now()
+	if now.Sub(ndp.rtrAdvLastTime) < MinDelayBetweenRas {
+		delay += MinDelayBetweenRas
+	}
+
+	ndp.rtrAdvTimer = time.AfterFunc(delay, func() {
+		ndp.rtrAdvLastTime = time.Now()
+		ndp.sendRouterAdvert()
+		ndp.rtrAdvTimer = nil
+	})
 }
 
 // invalidateDefaultRouter invalidates a discovered default router.

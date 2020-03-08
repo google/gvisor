@@ -870,3 +870,9 @@ func NDPRSOptions(opts []header.NDPOption) TransportChecker {
 		ndpOptions(t, rs.Options(), opts)
 	}
 }
+
+// NDPRA creates a checker that checks that the packet contains a valid NDP
+// Router Advertisement message (as per the raw wire format).
+func NDPRA() NetworkChecker {
+	return NDP(header.ICMPv6RouterAdvert, header.NDPRAMinimumSize)
+}

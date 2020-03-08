@@ -916,6 +916,27 @@ func TestSetNDPConfigurations(t *testing.T) {
 	}
 }
 
+// rsBuf returns a valid NDP Router Solicitation.
+func rsBuf() tcpip.PacketBuffer {
+	payloadSize := header.ICMPv6HeaderSize + header.NDPRSMinimumSize
+	hdr := buffer.NewPrependable(header.IPv6MinimumSize + payloadSize)
+	pkt := header.ICMPv6(hdr.Prepend(payloadSize))
+	pkt.SetType(header.ICMPv6RouterSolicit)
+	pkt.SetChecksum(header.ICMPv6Checksum(pkt, header.IPv6Any, header.IPv6AllRoutersMulticastAddress, buffer.VectorisedView{}))
+
+	payloadLength := hdr.UsedLength()
+	iph := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+	iph.Encode(&header.IPv6Fields{
+		PayloadLength: uint16(payloadLength),
+		NextHeader:    uint8(icmp.ProtocolNumber6),
+		HopLimit:      header.NDPHopLimit,
+		SrcAddr:       header.IPv6Any,
+		DstAddr:       header.IPv6AllRoutersMulticastAddress,
+	})
+
+	return tcpip.PacketBuffer{Data: hdr.View().ToVectorisedView()}
+}
+
 // raBufWithOptsAndDHCPv6 returns a valid NDP Router Advertisement with options
 // and DHCPv6 configurations specified.
 func raBufWithOptsAndDHCPv6(ip tcpip.Address, rl uint16, managedAddress, otherConfigurations bool, optSer header.NDPOptionsSerializer) tcpip.PacketBuffer {
@@ -3755,5 +3776,59 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 				t.Fatal("unexpectedly got a packet after finishing router solicitations")
 			}
 		})
+	}
+}
+
+func TestRouterAdvert(t *testing.T) {
+	e := channel.New(1, 1280, linkAddr1)
+	waitForPkt := func(timeout time.Duration) {
+		t.Helper()
+		ctx, _ := context.WithTimeout(context.Background(), timeout)
+		p, ok := e.ReadContext(ctx)
+		if !ok {
+			t.Fatal("timed out waiting for packet")
+			return
+		}
+
+		if p.Proto != header.IPv6ProtocolNumber {
+			t.Fatalf("got Proto = %d, want = %d", p.Proto, header.IPv6ProtocolNumber)
+		}
+		checker.IPv6(t, p.Pkt.Header.View(),
+			checker.SrcAddr(header.LinkLocalAddr(linkAddr1)),
+			checker.DstAddr(header.IPv6AllNodesMulticastAddress),
+			checker.NDPRA())
+	}
+
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+		NDPConfigs: stack.NDPConfigurations{
+			MaxRtrSolicitations: 0,
+			RouterConfig: stack.NDPRouterConfiguration{
+				AdvSendAdvertisements: true,
+			},
+		},
+	})
+
+	if err := s.CreateNIC(1, e); err != nil {
+		t.Fatalf("CreateNIC(1) = %s", err)
+	}
+
+	s.AddAddress(1, ipv6.ProtocolNumber, header.LinkLocalAddr(linkAddr1))
+	s.AddAddressRange(1, ipv6.ProtocolNumber, header.IPv6EmptySubnet)
+
+	s.SetForwarding(true)
+	ctx, _ := context.WithTimeout(context.Background(), defaultTimeout)
+	if _, ok := e.ReadContext(ctx); ok {
+		t.Fatal("Should not have sent any message")
+	}
+
+	e.InjectInbound(header.IPv6ProtocolNumber, rsBuf())
+
+	waitForPkt(stack.MaxRaDelayTime + defaultTimeout)
+
+	stats := s.Stats().ICMP.V6PacketsSent
+	txRA := stats.RouterAdvert
+	if got := txRA.Value(); got != 1 {
+		t.Fatalf("got txRA = %d, want = 1", got)
 	}
 }
