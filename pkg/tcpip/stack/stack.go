@@ -1795,6 +1795,22 @@ func (s *Stack) SetNDPConfigurations(id tcpip.NICID, c NDPConfigurations) *tcpip
 	return nil
 }
 
+// SetNDPRouterConfiguration sets the per-interface NDP router
+// configurations on the NIC with ID id to c.
+func (s *Stack) SetNDPRouterConfiguration(id tcpip.NICID, c NDPRouterConfiguration) *tcpip.Error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	nic, ok := s.nics[id]
+	if !ok {
+		return tcpip.ErrUnknownNICID
+	}
+
+	nic.setNDPRouterConfig(c)
+
+	return nil
+}
+
 // HandleNDPRA provides a NIC with ID id a validated NDP Router Advertisement
 // message that it needs to handle.
 func (s *Stack) HandleNDPRA(id tcpip.NICID, ip tcpip.Address, ra header.NDPRouterAdvert) *tcpip.Error {

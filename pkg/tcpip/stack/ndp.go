@@ -38,6 +38,23 @@ const (
 	// Default = 1s (from RFC 4861 section 10).
 	defaultRetransmitTimer = time.Second
 
+	// defaultMaxRtrAdvInterval is the default maximum time
+	// allowed between sending unsolicited multicast Router
+	// Advertisements from the interface.
+	//
+	// Default = 600 seconds (from RFC 4861 section 6.2.1).
+	defaultMaxRtrAdvInterval = 600 * time.Second
+
+	// MinDelayBetweenRas is the minimum delay between Router
+	// Advertisements sent to the all-nodes multicast address
+	// (from RFC 4861 section 10).
+	MinDelayBetweenRas = 3 * time.Second
+
+	// Router Advertisements sent in response to a Router
+	// Solicitation MUST be delayed by a random time between 0 and
+	// MaxRaDelayTime seconds (from RFC 4861 section 10).
+	MaxRaDelayTime = 500 * time.Millisecond
+
 	// defaultMaxRtrSolicitations is the default number of Router
 	// Solicitation messages to send when a NIC becomes enabled.
 	//
@@ -251,6 +268,37 @@ type NDPDispatcher interface {
 	OnDHCPv6Configuration(tcpip.NICID, DHCPv6ConfigurationFromNDPRA)
 }
 
+// NDPRouterConfiguration is the NDP configuration for Router Advertisements
+type NDPRouterConfiguration struct {
+	// Whether or not the router sends periodic Router
+	// Advertisements and responds to Router Solicitations.
+	// TODO: add support for unsolicited multicast RA
+	AdvSendAdvertisements bool
+
+	// MaxRtrAdvInterval is the maximum time allowed between
+	// sending unsolicited multicast Router Advertisements from
+	// the interface, in seconds.  MUST be no less than 4 seconds
+	// and no greater than 1800 seconds.
+	MaxRtrAdvInterval time.Duration
+
+	// The value to be placed in the Router Lifetime field of
+	// Router Advertisements sent from the interface, in seconds.
+	//
+	// Must be either 0 or between MaxRtrAdvInterval and 9000 seconds.
+	RouterLifetime uint16
+
+	// The default value to be placed in the Cur Hop Limit field
+	// in the Router Advertisement messages sent by the router.
+	//
+	// The value should be set to the current diameter of the
+	// Internet.  The value 0 means unspecified (by this router).
+	CurHopLimit uint8
+
+	// Specify the prefixes that are on-link and/or are used for
+	// stateless address autoconfiguration.
+	Prefixes []header.NDPPrefixInformationFields
+}
+
 // NDPConfigurations is the NDP configurations for the netstack.
 type NDPConfigurations struct {
 	// The number of Neighbor Solicitation messages to send when doing
@@ -283,6 +331,9 @@ type NDPConfigurations struct {
 	// HandleRAs determines whether or not Router Advertisements will be
 	// processed.
 	HandleRAs bool
+
+	// RouterConfig is the router configuration for the netstack.
+	RouterConfig NDPRouterConfiguration
 
 	// DiscoverDefaultRouters determines whether or not default routers will
 	// be discovered from Router Advertisements. This configuration is
@@ -344,6 +395,27 @@ func (c *NDPConfigurations) validate() {
 
 	if c.MaxRtrSolicitationDelay < minimumMaxRtrSolicitationDelay {
 		c.MaxRtrSolicitationDelay = defaultMaxRtrSolicitationDelay
+	}
+
+	c.RouterConfig.validate()
+}
+
+// validate modifies an NDPRouterConfiguration with valid values. If
+// invalid values are present in c, the corresponding default values
+// will be used instead.
+//
+// If MaxRtrAdvInterval is not between 4s and 1800s, the
+// defaultMaxRtrAdvInterval value will be used.
+//
+// If RouterLifetime is !0 and not between MaxRtrAdvInterval and 9000s,
+// a value of 3 * MaxRtrAdvInterval will be used.
+func (c *NDPRouterConfiguration) validate() {
+	if c.MaxRtrAdvInterval < 4*time.Second || c.MaxRtrAdvInterval > 1800*time.Second {
+		c.MaxRtrAdvInterval = defaultMaxRtrAdvInterval
+	}
+
+	if c.RouterLifetime != 0 && (c.RouterLifetime < uint16(c.MaxRtrAdvInterval.Seconds()) || c.RouterLifetime > 9000) {
+		c.RouterLifetime = uint16(3 * c.MaxRtrAdvInterval.Seconds())
 	}
 }
 

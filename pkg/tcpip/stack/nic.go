@@ -1459,6 +1459,15 @@ func (n *NIC) setNDPConfigs(c NDPConfigurations) {
 	n.mu.Unlock()
 }
 
+// setNDPRouterConfig sets the NDP router configurations for n.
+func (n *NIC) setNDPRouterConfig(c NDPRouterConfiguration) {
+	c.validate()
+
+	n.mu.Lock()
+	n.mu.ndp.configs.RouterConfig = c
+	n.mu.Unlock()
+}
+
 // handleNDPRA handles an NDP Router Advertisement message that arrived on n.
 func (n *NIC) handleNDPRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 	n.mu.Lock()
