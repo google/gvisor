@@ -54,6 +54,10 @@ const (
 	// address.
 	ICMPv6NeighborAdvertSize = ICMPv6HeaderSize + NDPNAMinimumSize + NDPLinkLayerAddressSize
 
+	// ICMPv6RouterAdvertMinimumSize is the minimum size of a
+	// router advertisement packet.
+	ICMPv6RouterAdvertMinimumSize = ICMPv6HeaderSize + NDPRAMinimumSize
+
 	// ICMPv6EchoMinimumSize is the minimum size of a valid ICMP echo packet.
 	ICMPv6EchoMinimumSize = 8
 

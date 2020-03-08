@@ -611,3 +611,167 @@ func TestRouterAdvertValidation(t *testing.T) {
 		})
 	}
 }
+
+// TestRouterSolicitValidation tests that when the NIC is configured
+// to handle NDP Router Solicitation packets, it validates the Router
+// Solicitation properly before handling them.
+func TestRouterSolicitValidation(t *testing.T) {
+	tests := []struct {
+		name            string
+		src             tcpip.Address
+		hopLimit        uint8
+		code            uint8
+		ndpPayload      []byte
+		expectedSuccess bool
+	}{
+		{
+			"OK",
+			lladdr0,
+			255,
+			0,
+			[]byte{
+				0, 0, 0, 0,
+			},
+			true,
+		},
+		{
+			"HopLimitNot255",
+			lladdr0,
+			254,
+			0,
+			[]byte{
+				0, 0, 0, 0,
+			},
+			false,
+		},
+		{
+			"NonZeroCode",
+			lladdr0,
+			255,
+			1,
+			[]byte{
+				0, 0, 0, 0,
+			},
+			false,
+		},
+		{
+			"NDPPayloadTooSmall",
+			lladdr0,
+			255,
+			0,
+			[]byte{
+				0, 0, 0,
+			},
+			false,
+		},
+		{
+			"OKWithOptions",
+			lladdr0,
+			255,
+			0,
+			[]byte{
+				// RS payload
+				0, 0, 0, 0,
+
+				// Option #1 (TargetLinkLayerAddress)
+				2, 1, 0, 0, 0, 0, 0, 0,
+
+				// Option #2 (unrecognized)
+				255, 1, 0, 0, 0, 0, 0, 0,
+
+				// Option #3 (PrefixInformation)
+				3, 4, 0, 0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0,
+			},
+			true,
+		},
+		{
+			"OptionWithZeroLength",
+			lladdr0,
+			255,
+			0,
+			[]byte{
+				// RS payload
+				0, 0, 0, 0,
+
+				// Option #1 (TargetLinkLayerAddress)
+				// Invalid as it has 0 length.
+				2, 0, 0, 0, 0, 0, 0, 0,
+
+				// Option #2 (unrecognized)
+				255, 1, 0, 0, 0, 0, 0, 0,
+
+				// Option #3 (PrefixInformation)
+				3, 4, 0, 0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0,
+			},
+			false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			e := channel.New(10, 1280, linkAddr1)
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
+			})
+
+			if err := s.CreateNIC(1, e); err != nil {
+				t.Fatalf("CreateNIC(_) = %s", err)
+			}
+
+			icmpSize := header.ICMPv6HeaderSize + len(test.ndpPayload)
+			hdr := buffer.NewPrependable(header.IPv6MinimumSize + icmpSize)
+			pkt := header.ICMPv6(hdr.Prepend(icmpSize))
+			pkt.SetType(header.ICMPv6RouterSolicit)
+			pkt.SetCode(test.code)
+			copy(pkt.NDPPayload(), test.ndpPayload)
+			payloadLength := hdr.UsedLength()
+			pkt.SetChecksum(header.ICMPv6Checksum(pkt, test.src, header.IPv6AllNodesMulticastAddress, buffer.VectorisedView{}))
+			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+			ip.Encode(&header.IPv6Fields{
+				PayloadLength: uint16(payloadLength),
+				NextHeader:    uint8(icmp.ProtocolNumber6),
+				HopLimit:      test.hopLimit,
+				SrcAddr:       test.src,
+				DstAddr:       header.IPv6AllNodesMulticastAddress,
+			})
+
+			stats := s.Stats().ICMP.V6PacketsReceived
+			invalid := stats.Invalid
+			rxRS := stats.RouterSolicit
+
+			if got := invalid.Value(); got != 0 {
+				t.Fatalf("got invalid = %d, want = 0", got)
+			}
+			if got := rxRS.Value(); got != 0 {
+				t.Fatalf("got rxRS = %d, want = 0", got)
+			}
+
+			e.InjectInbound(header.IPv6ProtocolNumber, tcpip.PacketBuffer{
+				Data: hdr.View().ToVectorisedView(),
+			})
+
+			if test.expectedSuccess {
+				if got := invalid.Value(); got != 0 {
+					t.Fatalf("got invalid = %d, want = 0", got)
+				}
+				if got := rxRS.Value(); got != 1 {
+					t.Fatalf("got rxRS = %d, want = 1", got)
+				}
+
+			} else {
+				if got := invalid.Value(); got != 1 {
+					t.Fatalf("got invalid = %d, want = 1", got)
+				}
+				if got := rxRS.Value(); got != 0 {
+					t.Fatalf("got rxRS = %d, want = 0", got)
+				}
+			}
+		})
+	}
+}

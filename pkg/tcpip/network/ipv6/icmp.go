@@ -354,7 +354,60 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt tcpip.P
 		received.ParamProblem.Increment()
 
 	case header.ICMPv6RouterSolicit:
+		p := h.NDPPayload()
+
+		// Is the NDP payload of sufficient size to hold a Router
+		// Solicitation?
+		if len(p) < header.NDPRSMinimumSize {
+			received.Invalid.Increment()
+			//panic(fmt.Sprintf("1 %+v", v))
+			return
+		}
+
+		rs := header.NDPRouterSolicit(p)
+		opts := rs.Options()
+
+		// Are options valid as per the wire format?
+		it, err := opts.Iter(true)
+		if err != nil {
+			// ...No, silently drop the packet.
+			received.Invalid.Increment()
+			return
+		}
+
+		// If the IP source address is the unspecified
+		// address, there is no source link-layer address
+		// option in the message.
+		if iph.SourceAddress() == header.IPv6Any {
+			for {
+				opt, done, err := it.Next()
+				if err != nil {
+					// This should never happen as Iter(true) above did not return an error.
+					log.Fatalf("unexpected error when iterating over NDP options: %s", err)
+				}
+				if done {
+					break
+				}
+
+				switch opt.(type) {
+				case header.NDPSourceLinkLayerAddressOption:
+					received.Invalid.Increment()
+					return
+				}
+			}
+		}
+
+		//
+		// At this point, we have a valid Router Advertisement, as far
+		// as RFC 4861 section 6.1.1 is concerned.
+		//
+
 		received.RouterSolicit.Increment()
+
+		// Tell the NIC to handle the RS.
+		stack := r.Stack()
+		rxNICID := r.NICID()
+		stack.HandleNDPRS(rxNICID, rs)
 
 	case header.ICMPv6RouterAdvert:
 		routerAddr := iph.SourceAddress()

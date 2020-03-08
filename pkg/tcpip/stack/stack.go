@@ -1827,6 +1827,22 @@ func (s *Stack) HandleNDPRA(id tcpip.NICID, ip tcpip.Address, ra header.NDPRoute
 	return nil
 }
 
+// HandleNDPRS provides a NIC with ID id a validated NDP Router Solicitation
+// message that it needs to handle.
+func (s *Stack) HandleNDPRS(id tcpip.NICID, rs header.NDPRouterSolicit) *tcpip.Error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	nic, ok := s.nics[id]
+	if !ok {
+		return tcpip.ErrUnknownNICID
+	}
+
+	nic.handleNDPRS(rs)
+
+	return nil
+}
+
 // Seed returns a 32 bit value that can be used as a seed value for port
 // picking, ISN generation etc.
 //

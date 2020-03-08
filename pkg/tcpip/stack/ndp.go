@@ -790,6 +790,13 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 	}
 }
 
+// handleRS handles a Router Solicitation message that arrived on the NIC
+// this ndp is for. Does nothing if the NIC is configured to not handle RSs.
+//
+// The NIC that ndp belongs to MUST be locked.
+func (ndp *ndpState) handleRS(rs header.NDPRouterSolicit) {
+}
+
 // invalidateDefaultRouter invalidates a discovered default router.
 //
 // The NIC that ndp belongs to MUST be locked.

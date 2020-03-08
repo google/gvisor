@@ -1476,6 +1476,14 @@ func (n *NIC) handleNDPRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 	n.mu.ndp.handleRA(ip, ra)
 }
 
+// handleNDPRS handles an NDP Router Solicitation message that arrived on n.
+func (n *NIC) handleNDPRS(rs header.NDPRouterSolicit) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	n.mu.ndp.handleRS(rs)
+}
+
 type networkEndpointKind int32
 
 const (
