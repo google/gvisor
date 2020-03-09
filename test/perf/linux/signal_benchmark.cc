@@ -43,11 +43,13 @@ void BM_FaultSignalFixup(benchmark::State& state) {
 
   // Fault, fault, fault.
   for (auto _ : state) {
-    register volatile unsigned int* ptr asm("rax");
-
     // Trigger the segfault.
-    ptr = nullptr;
-    *ptr = 0;
+    asm volatile(
+        "movq $0, %%rax\n"
+        "movq $0x77777777, (%%rax)\n"
+        :
+        :
+        : "rax");
   }
 }
 
