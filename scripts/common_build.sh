@@ -73,6 +73,9 @@ function collect_logs() {
       if ls -l $d/shard_*_of_*/test.outputs/outputs.zip 2>/dev/null; then
         zip -r -1 "$d/outputs.zip" $d/shard_*_of_*/test.outputs/outputs.zip
       fi
+      if ls -l $d/shard_*_of_*/test.outputs 2>/dev/null; then
+        zip -r -1 "$d/outputs.zip" $d/shard_*_of_*/test.outputs
+      fi
     done
     find -L "bazel-testlogs" -name 'shard_*_of_*' | xargs rm -rf
     # Move test logs to Kokoro directory. tar is used to conveniently perform
