@@ -376,6 +376,10 @@ type endpoint struct {
 	ttl               uint8
 	v6only            bool
 	isConnectNotified bool
+	// h stores a reference to the current handshake state if the endpoint
+	// is in the SYN-SENT or SYN-RECV states. nil otherwise.
+	h *handshake `state:"nosave"`
+
 	// TCP should never broadcast but Linux nevertheless supports enabling/
 	// disabling SO_BROADCAST, albeit as a NOOP.
 	broadcast bool
@@ -854,6 +858,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 	e.segmentQueue.setLimit(MaxUnprocessedSegments)
 	e.tsOffset = timeStampOffset()
 	e.acceptCond = sync.NewCond(&e.acceptMu)
+	e.keepalive.timer.init(&e.keepalive.waker)
 
 	return e
 }
@@ -1047,6 +1052,7 @@ func (e *endpoint) cleanupLocked() {
 	// Close all endpoints that might have been accepted by TCP but not by
 	// the client.
 	e.closePendingAcceptableConnectionsLocked()
+	e.keepalive.timer.cleanup()
 
 	e.workerCleanup = false
 
@@ -1977,6 +1983,8 @@ func (*endpoint) Disconnect() *tcpip.Error {
 func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	err := e.connect(addr, true, true)
 	if err != nil && !err.IgnoreStats() {
+		// Connect failed. Let's wake up any waiters.
+		e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
 		e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
 		e.stats.FailedConnectionAttempts.Increment()
 	}
@@ -2144,12 +2152,61 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) *tc
 	}
 
 	if run {
-		e.workerRunning = true
-		e.stack.Stats().TCP.ActiveConnectionOpenings.Increment()
-		go e.protocolMainLoop(handshake, nil) // S/R-SAFE: will be drained before save.
+		if err := e.startMainLoop(handshake); err != nil {
+			return err
+		}
 	}
 
 	return tcpip.ErrConnectStarted
+}
+
+func (e *endpoint) startHandshake() *tcpip.Error {
+	initialRcvWnd := e.initialReceiveWindow()
+	h := newHandshake(e, seqnum.Size(initialRcvWnd))
+	e.setEndpointState(StateSynSent)
+	// We do the initial route resolution and sending of the
+	// first SYN inline to reduce latency.
+	if err := h.start(); err != nil {
+		e.lastErrorMu.Lock()
+		e.lastError = err
+		e.lastErrorMu.Unlock()
+
+		e.setEndpointState(StateError)
+		e.HardError = err
+
+		// Call cleanupLocked to free up any reservations.
+		e.cleanupLocked()
+		return err
+	}
+	return nil
+}
+
+// startMainLoop sends the initial SYN if possible withouth blocking the syscall
+// goroutine and starts the main loop for the endpoint. Further to reduce
+// latency if no route resolution is required it will send the initial SYN in
+// the syscall context itself otherwise it will do it in a separate goroutine
+// and return immediately.
+func (e *endpoint) startMainLoop(handshake bool) *tcpip.Error {
+	if e.route.IsResolutionRequired() {
+		go func() { // S/R-SAFE: will be drained before save.
+			if err := e.startHandshake(); err != nil {
+				return
+			}
+			e.stack.Stats().TCP.ActiveConnectionOpenings.Increment()
+			e.workerRunning = true
+			e.protocolMainLoop(handshake, nil)
+		}()
+		return nil
+	}
+
+	if err := e.startHandshake(); err != nil {
+		return err
+	}
+	e.stack.Stats().TCP.ActiveConnectionOpenings.Increment()
+	e.workerRunning = true
+	go e.protocolMainLoop(handshake, nil) // S/R-SAFE: will be drained before save.
+
+	return nil
 }
 
 // ConnectEndpoint is not supported.

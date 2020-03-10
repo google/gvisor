@@ -249,11 +249,12 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 	return n, nil
 }
 
-// createEndpointAndPerformHandshake creates a new endpoint in connected state
-// and then performs the TCP 3-way handshake.
+// createEndpointAndStartHandshake creates a new endpoint in connecting state
+// and then sends the SYN-ACK for the TCP 3-way handshake. It returns an
+// endpoint in SYN-RCVD state.
 //
 // The new endpoint is returned with e.mu held.
-func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *header.TCPSynOptions, queue *waiter.Queue, owner tcpip.PacketOwner) (*endpoint, *tcpip.Error) {
+func (l *listenContext) createEndpointAndStartHandshake(s *segment, opts *header.TCPSynOptions, queue *waiter.Queue, owner tcpip.PacketOwner) (*endpoint, *tcpip.Error) {
 	// Create new endpoint.
 	irs := s.sequenceNumber
 	isn := generateSecureISN(s.id, l.stack.Seed())
@@ -266,7 +267,6 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 	// listenEP is nil when listenContext is used by tcp.Forwarder.
 	deferAccept := time.Duration(0)
 	if l.listenEP != nil {
-		l.listenEP.mu.Lock()
 		if l.listenEP.EndpointState() != StateListen {
 			l.listenEP.mu.Unlock()
 			// Ensure we release any registrations done by the newly
@@ -289,36 +289,37 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 		l.listenEP.propagateInheritableOptionsLocked(ep)
 
 		deferAccept = l.listenEP.deferAccept
-		l.listenEP.mu.Unlock()
 	}
 
-	// Perform the 3-way handshake.
+	// Initialize and start the handshake.
 	h := newPassiveHandshake(ep, ep.rcv.rcvWnd, isn, irs, opts, deferAccept)
-	if err := h.execute(); err != nil {
-		ep.mu.Unlock()
-		ep.Close()
-		// Wake up any waiters. This is strictly not required normally
-		// as a socket that was never accepted can't really have any
-		// registered waiters except when stack.Wait() is called which
-		// waits for all registered endpoints to stop and expects an
-		// EventHUp.
-		ep.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
-
-		if l.listenEP != nil {
-			l.removePendingEndpoint(ep)
-		}
-
-		ep.drainClosingSegmentQueue()
-
+	if err := h.start(); err != nil {
+		l.cleanupFailedHandshake(h)
 		return nil, err
 	}
-	ep.isConnectNotified = true
+	return ep, nil
+}
 
-	// Update the receive window scaling. We can't do it before the
-	// handshake because it's possible that the peer doesn't support window
-	// scaling.
-	ep.rcv.rcvWndScale = h.effectiveRcvWndScale()
+// createEndpointAndPerformHandshake creates a new endpoint in connecting state
+// and then performs the TCP 3-way handshake.
+//
+// The new endpoint is returned with e.mu held.
+func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *header.TCPSynOptions, queue *waiter.Queue, owner tcpip.PacketOwner) (*endpoint, *tcpip.Error) {
+	ep, err := l.createEndpointAndStartHandshake(s, opts, queue, owner)
+	if err != nil {
+		return nil, err
+	}
 
+	if err := ep.h.execute(); err != nil {
+		ep.stack.Stats().TCP.FailedConnectionAttempts.Increment()
+		ep.stats.FailedConnectionAttempts.Increment()
+		l.cleanupFailedHandshake(ep.h)
+		return nil, err
+	}
+	l.completeHandshake(ep.h)
+
+	// handshake is complete clear out any handshake state.
+	ep.h = nil
 	return ep, nil
 }
 
@@ -343,6 +344,41 @@ func (l *listenContext) closeAllPendingEndpoints() {
 	}
 	l.pendingMu.Unlock()
 	l.pending.Wait()
+}
+
+func (l *listenContext) cleanupFailedHandshake(h *handshake) {
+	ep := h.ep
+	ep.mu.Unlock()
+	ep.Close()
+
+	// Wake up any waiters. This is strictly not required normally
+	// as a socket that was never accepted can't really have any
+	// registered waiters except when stack.Wait() is called which
+	// waits for all registered endpoints to stop and expects an
+	// EventHUp.
+	ep.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
+
+	if l.listenEP != nil {
+		l.removePendingEndpoint(ep)
+	}
+
+	ep.drainClosingSegmentQueue()
+}
+
+// completeHandshake transfers any state from the handshake state to
+// the endpoint.
+func (l *listenContext) completeHandshake(h *handshake) {
+	ep := h.ep
+
+	if l.listenEP != nil {
+		l.removePendingEndpoint(ep)
+	}
+
+	ep.isConnectNotified = true
+	// Update the receive window scaling. We can't do it before the
+	// handshake because it's possible that the peer doesn't support window
+	// scaling.
+	ep.rcv.rcvWndScale = h.effectiveRcvWndScale()
 }
 
 // deliverAccepted delivers the newly-accepted endpoint to the listener. If the
@@ -387,25 +423,36 @@ func (e *endpoint) propagateInheritableOptionsLocked(n *endpoint) {
 // A limited number of these goroutines are allowed before TCP starts using SYN
 // cookies to accept connections.
 func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header.TCPSynOptions) {
-	defer ctx.synRcvdCount.dec()
-	defer func() {
-		e.mu.Lock()
-		e.decSynRcvdCount()
-		e.mu.Unlock()
-	}()
 	defer s.decRef()
 
-	n, err := ctx.createEndpointAndPerformHandshake(s, opts, &waiter.Queue{}, e.owner)
+	n, err := ctx.createEndpointAndStartHandshake(s, opts, &waiter.Queue{}, e.owner)
 	if err != nil {
 		e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
 		e.stats.FailedConnectionAttempts.Increment()
 		return
 	}
-	ctx.removePendingEndpoint(n)
-	n.startAcceptedLoop()
-	e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
 
-	e.deliverAccepted(n)
+	go func() {
+		defer ctx.synRcvdCount.dec()
+		defer func() {
+			e.mu.Lock()
+			e.decSynRcvdCount()
+			e.mu.Unlock()
+		}()
+		if err := n.h.execute(); err != nil {
+			e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
+			e.stats.FailedConnectionAttempts.Increment()
+			ctx.cleanupFailedHandshake(n.h)
+			return
+		}
+		ctx.completeHandshake(n.h)
+		// Clean up handshake state so that it can be GCed.
+		n.h = nil
+
+		n.startAcceptedLoop()
+		e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
+		e.deliverAccepted(n)
+	}() // S/R-SAFE: synRcvdCount is the barrier.
 }
 
 func (e *endpoint) incSynRcvdCount() bool {
@@ -458,7 +505,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			//     backlog.
 			if !e.acceptQueueIsFull() && e.incSynRcvdCount() {
 				s.incRef()
-				go e.handleSynSegment(ctx, s, &opts) // S/R-SAFE: synRcvdCount is the barrier.
+				e.handleSynSegment(ctx, s, &opts)
 				return
 			}
 			ctx.synRcvdCount.dec()

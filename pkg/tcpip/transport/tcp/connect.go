@@ -102,20 +102,25 @@ type handshake struct {
 	// been received. This is required to stop retransmitting the
 	// original SYN-ACK when deferAccept is enabled.
 	acked bool
+
+	// sendSYNOpts is the cached values for the SYN options to be sent.
+	sendSYNOpts header.TCPSynOptions
 }
 
-func newHandshake(ep *endpoint, rcvWnd seqnum.Size) handshake {
-	h := handshake{
+func newHandshake(ep *endpoint, rcvWnd seqnum.Size) *handshake {
+	h := &handshake{
 		ep:          ep,
 		active:      true,
 		rcvWnd:      rcvWnd,
 		rcvWndScale: ep.rcvWndScaleForHandshake(),
 	}
 	h.resetState()
+	// Store reference to handshake state in endpoint.
+	ep.h = h
 	return h
 }
 
-func newPassiveHandshake(ep *endpoint, rcvWnd seqnum.Size, isn, irs seqnum.Value, opts *header.TCPSynOptions, deferAccept time.Duration) handshake {
+func newPassiveHandshake(ep *endpoint, rcvWnd seqnum.Size, isn, irs seqnum.Value, opts *header.TCPSynOptions, deferAccept time.Duration) *handshake {
 	h := newHandshake(ep, rcvWnd)
 	h.resetToSynRcvd(isn, irs, opts, deferAccept)
 	return h
@@ -497,8 +502,9 @@ func (h *handshake) resolveRoute() *tcpip.Error {
 	}
 }
 
-// execute executes the TCP 3-way handshake.
-func (h *handshake) execute() *tcpip.Error {
+// start resolves the route if necessary and sends the first
+// SYN/SYN-ACK.
+func (h *handshake) start() *tcpip.Error {
 	if h.ep.route.IsResolutionRequired() {
 		if err := h.resolveRoute(); err != nil {
 			return err
@@ -506,20 +512,6 @@ func (h *handshake) execute() *tcpip.Error {
 	}
 
 	h.startTime = time.Now()
-	// Initialize the resend timer.
-	resendWaker := sleep.Waker{}
-	timeOut := time.Duration(time.Second)
-	rt := time.AfterFunc(timeOut, func() {
-		resendWaker.Assert()
-	})
-	defer rt.Stop()
-
-	// Set up the wakers.
-	s := sleep.Sleeper{}
-	s.AddWaker(&resendWaker, wakerForResend)
-	s.AddWaker(&h.ep.notificationWaker, wakerForNotification)
-	s.AddWaker(&h.ep.newSegmentWaker, wakerForNewSegment)
-	defer s.Done()
 
 	var sackEnabled SACKEnabled
 	if err := h.ep.stack.TransportProtocolOption(ProtocolNumber, &sackEnabled); err != nil {
@@ -554,6 +546,7 @@ func (h *handshake) execute() *tcpip.Error {
 		}
 	}
 
+	h.sendSYNOpts = synOpts
 	h.ep.sendSynTCP(&h.ep.route, tcpFields{
 		id:     h.ep.ID,
 		ttl:    h.ep.ttl,
@@ -563,6 +556,25 @@ func (h *handshake) execute() *tcpip.Error {
 		ack:    h.ackNum,
 		rcvWnd: h.rcvWnd,
 	}, synOpts)
+	return nil
+}
+
+// execute executes the TCP 3-way handshake.
+func (h *handshake) execute() *tcpip.Error {
+	// Initialize the resend timer.
+	resendWaker := sleep.Waker{}
+	timeOut := time.Duration(time.Second)
+	rt := time.AfterFunc(timeOut, func() {
+		resendWaker.Assert()
+	})
+	defer rt.Stop()
+
+	// Set up the wakers.
+	s := sleep.Sleeper{}
+	s.AddWaker(&resendWaker, wakerForResend)
+	s.AddWaker(&h.ep.notificationWaker, wakerForNotification)
+	s.AddWaker(&h.ep.newSegmentWaker, wakerForNewSegment)
+	defer s.Done()
 
 	for h.state != handshakeCompleted {
 		h.ep.mu.Unlock()
@@ -593,7 +605,7 @@ func (h *handshake) execute() *tcpip.Error {
 					seq:    h.iss,
 					ack:    h.ackNum,
 					rcvWnd: h.rcvWnd,
-				}, synOpts)
+				}, h.sendSYNOpts)
 			}
 
 		case wakerForNotification:
@@ -1332,14 +1344,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 	}
 
 	if handshake {
-		// This is an active connection, so we must initiate the 3-way
-		// handshake, and then inform potential waiters about its
-		// completion.
-		initialRcvWnd := e.initialReceiveWindow()
-		h := newHandshake(e, seqnum.Size(initialRcvWnd))
-		h.ep.setEndpointState(StateSynSent)
-
-		if err := h.execute(); err != nil {
+		if err := e.h.execute(); err != nil {
 			e.lastErrorMu.Lock()
 			e.lastError = err
 			e.lastErrorMu.Unlock()
@@ -1352,9 +1357,6 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 			return err
 		}
 	}
-
-	e.keepalive.timer.init(&e.keepalive.waker)
-	defer e.keepalive.timer.cleanup()
 
 	drained := e.drainDone != nil
 	if drained {
