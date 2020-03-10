@@ -1201,10 +1201,6 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 			n.stack.stats.IP.InvalidDestinationAddressesReceived.Increment()
 			return
 		}
-		defer r.Release()
-
-		r.LocalLinkAddress = n.linkEP.LinkAddress()
-		r.RemoteLinkAddress = remote
 
 		// Found a NIC.
 		n := r.ref.nic
@@ -1213,24 +1209,33 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 		ok = ok && ref.isValidForOutgoingRLocked() && ref.tryIncRef()
 		n.mu.RUnlock()
 		if ok {
+			r.LocalLinkAddress = n.linkEP.LinkAddress()
+			r.RemoteLinkAddress = remote
 			r.RemoteAddress = src
 			// TODO(b/123449044): Update the source NIC as well.
 			ref.ep.HandlePacket(&r, pkt)
 			ref.decRef()
-		} else {
-			// n doesn't have a destination endpoint.
-			// Send the packet out of n.
-			pkt.Header = buffer.NewPrependableFromView(pkt.Data.First())
-			pkt.Data.RemoveFirst()
-
-			// TODO(b/128629022): use route.WritePacket.
-			if err := n.linkEP.WritePacket(&r, nil /* gso */, protocol, pkt); err != nil {
-				r.Stats().IP.OutgoingPacketErrors.Increment()
-			} else {
-				n.stats.Tx.Packets.Increment()
-				n.stats.Tx.Bytes.IncrementBy(uint64(pkt.Header.UsedLength() + pkt.Data.Size()))
-			}
+			r.Release()
+			return
 		}
+
+		// n doesn't have a destination endpoint.
+		// Send the packet out of n.
+		// TODO(b/128629022): move this logic to route.WritePacket.
+		if ch, err := r.Resolve(nil); err != nil {
+			if err == tcpip.ErrWouldBlock {
+				n.stack.forwarder.enqueue(ch, n, &r, protocol, pkt)
+				// forwarder will release route.
+				return
+			}
+			n.stack.stats.IP.InvalidDestinationAddressesReceived.Increment()
+			r.Release()
+			return
+		}
+
+		// The link-address resolution finished immediately.
+		n.forwardPacket(&r, protocol, pkt)
+		r.Release()
 		return
 	}
 
@@ -1238,6 +1243,20 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 	if len(packetEPs) == 0 {
 		n.stack.stats.IP.InvalidDestinationAddressesReceived.Increment()
 	}
+}
+
+func (n *NIC) forwardPacket(r *Route, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) {
+	// TODO(b/143425874) Decrease the TTL field in forwarded packets.
+	pkt.Header = buffer.NewPrependableFromView(pkt.Data.First())
+	pkt.Data.RemoveFirst()
+
+	if err := n.linkEP.WritePacket(r, nil /* gso */, protocol, pkt); err != nil {
+		r.Stats().IP.OutgoingPacketErrors.Increment()
+		return
+	}
+
+	n.stats.Tx.Packets.Increment()
+	n.stats.Tx.Bytes.IncrementBy(uint64(pkt.Header.UsedLength() + pkt.Data.Size()))
 }
 
 // DeliverTransportPacket delivers the packets to the appropriate transport
