@@ -142,6 +142,9 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 		"-watchdog-action=panic",
 		"-platform", *platform,
 		"-file-access", *fileAccess,
+		"--alsologtostderr",
+		"--debug",
+		"--strace",
 	}
 	if *overlay {
 		args = append(args, "-overlay")
