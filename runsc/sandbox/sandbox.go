@@ -337,6 +337,7 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 	binPath := specutils.ExePath
 	cmd := exec.Command(binPath, conf.ToFlags()...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{}
+	cmd.Env = []string{"GODEBUG=asyncpreemptoff=1"}
 
 	// Open the log files to pass to the sandbox as FDs.
 	//
