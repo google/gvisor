@@ -7,6 +7,7 @@ def _runner_test_impl(ctx):
     runner = ctx.actions.declare_file("%s-runner" % ctx.label.name)
     runner_content = "\n".join([
         "#!/bin/bash",
+        "uname -a",
         "set -euf -x -o pipefail",
         "if [[ -n \"${TEST_UNDECLARED_OUTPUTS_DIR}\" ]]; then",
         "  mkdir -p \"${TEST_UNDECLARED_OUTPUTS_DIR}\"",
