@@ -70,6 +70,7 @@ func New(ctx context.Context, msrc *fs.MountSource, cgroupControllers map[string
 		"loadavg":     seqfile.NewSeqFileInode(ctx, &loadavgData{}, msrc),
 		"meminfo":     seqfile.NewSeqFileInode(ctx, &meminfoData{k}, msrc),
 		"mounts":      newProcInode(ctx, ramfs.NewSymlink(ctx, fs.RootOwner, "self/mounts"), msrc, fs.Symlink, nil),
+		"net":         newProcInode(ctx, ramfs.NewSymlink(ctx, fs.RootOwner, "self/net"), msrc, fs.Symlink, nil),
 		"self":        newSelf(ctx, pidns, msrc),
 		"stat":        seqfile.NewSeqFileInode(ctx, &statData{k}, msrc),
 		"thread-self": newThreadSelf(ctx, pidns, msrc),
@@ -86,7 +87,6 @@ func New(ctx context.Context, msrc *fs.MountSource, cgroupControllers map[string
 	}
 
 	// Add more contents that need proc to be initialized.
-	p.AddChild(ctx, "net", p.newNetDir(ctx, k, msrc))
 	p.AddChild(ctx, "sys", p.newSysDir(ctx, msrc))
 
 	return newProcInode(ctx, p, msrc, fs.SpecialDirectory, nil), nil
