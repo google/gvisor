@@ -76,7 +76,7 @@ func (NATRedirectTCPPort) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (NATRedirectTCPPort) LocalAction(ip net.IP) error {
-	return connectTCP(ip, dropPort, acceptPort, sendloopDuration)
+	return connectTCP(ip, dropPort, sendloopDuration)
 }
 
 // NATDropUDP tests that packets are not received in ports other than redirect port.
