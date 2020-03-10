@@ -19,6 +19,7 @@ go_library(
     name = "stack",
     srcs = [
         "dhcpv6configurationfromndpra_string.go",
+        "forwarder.go",
         "icmp_rate_limit.go",
         "linkaddrcache.go",
         "linkaddrentry_list.go",
@@ -80,6 +81,7 @@ go_test(
     name = "stack_test",
     size = "small",
     srcs = [
+        "forwarder_test.go",
         "linkaddrcache_test.go",
         "nic_test.go",
     ],
