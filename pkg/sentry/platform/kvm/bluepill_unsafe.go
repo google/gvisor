@@ -103,7 +103,7 @@ func bluepillHandler(context unsafe.Pointer) {
 			if errno != 0 {
 				throw("error waiting for pending signal")
 			}
-			if sig != uintptr(bounceSignal) {
+			if sig != uintptr(bounceSignal) && sig != uintptr(syscall.SIGURG) {
 				throw("unexpected signal")
 			}
 
