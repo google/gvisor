@@ -62,24 +62,24 @@ Most common utilities work. Note that:
 | gdb      | Working |
 | gosu     | Working |
 | grep     | Working (unless stdin is a pipe and stdout is /dev/null) |
-| ifconfig | Works partially, like ip |
-| ip       | [In progress](https://github.com/google/gvisor/issues/769). Some subcommands work (e.g. addr, route) on alpine images. Not working on newest debian/ubuntu images. |
+| ifconfig | Works partially, like ip. Full support [in progress](https://gvisor.dev/issue/578) |
+| ip       | Some subcommands work (e.g. addr, route). Full support [in progress](https://gvisor.dev/issue/578) |
 | less     | Working |
 | ls       | Working |
 | lsof     | Working |
 | mount    | Works in readonly mode. gVisor doesn't currently support creating new mounts at runtime |
 | nc       | Working |
 | nmap     | Not working |
-| netstat  | [In progress](https://github.com/google/gvisor/issues/506) |
+| netstat  | [In progress](https://gvisor.dev/issue/2112) |
 | nslookup | Working |
 | ping     | Working |
 | ps       | Working |
-| route    | [In progress](https://github.com/google/gvisor/issues/764) |
-| ss       | [In progress](https://github.com/google/gvisor/issues/506) |
-| sshd     | Partially working. Job control [in progress](https://github.com/google/gvisor/issues/154) |
+| route    | Working |
+| ss       | [In progress](https://gvisor.dev/issue/2114) |
+| sshd     | Partially working. Job control [in progress](https://gvisor.dev/issue/154) |
 | strace   | Working |
 | tar      | Working |
-| tcpdump  | Working |
+| tcpdump  | [In progress](https://gvisor.dev/issue/173) |
 | top      | Working |
 | uptime   | Working |
 | vim      | Working |
