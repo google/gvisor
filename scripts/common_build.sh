@@ -48,7 +48,7 @@ function build() {
 }
 
 function test() {
-  bazel test "${BAZEL_FLAGS[@]}" "$@"
+  bazel test --nocache_test_results "${BAZEL_FLAGS[@]}" "$@"
 }
 
 function run() {
