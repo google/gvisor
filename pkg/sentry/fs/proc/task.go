@@ -84,6 +84,7 @@ func (p *proc) newTaskDir(t *kernel.Task, msrc *fs.MountSource, isThreadGroup bo
 		"maps":          newMaps(t, msrc),
 		"mountinfo":     seqfile.NewSeqFileInode(t, &mountInfoFile{t: t}, msrc),
 		"mounts":        seqfile.NewSeqFileInode(t, &mountsFile{t: t}, msrc),
+		"net":           newNetDir(t, msrc),
 		"ns":            newNamespaceDir(t, msrc),
 		"oom_score":     newOOMScore(t, msrc),
 		"oom_score_adj": newOOMScoreAdj(t, msrc),

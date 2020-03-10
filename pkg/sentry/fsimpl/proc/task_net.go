@@ -37,12 +37,13 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-func newNetDir(root *auth.Credentials, inoGen InoGenerator, k *kernel.Kernel) *kernfs.Dentry {
+func newTaskNetDir(task *kernel.Task, inoGen InoGenerator) *kernfs.Dentry {
+	k := task.Kernel()
+	pidns := task.PIDNamespace()
+	root := auth.NewRootCredentials(pidns.UserNamespace())
+
 	var contents map[string]*kernfs.Dentry
-	// TODO(gvisor.dev/issue/1833): Support for using the network stack in the
-	// network namespace of the calling process. We should make this per-process,
-	// a.k.a. /proc/PID/net, and make /proc/net a symlink to /proc/self/net.
-	if stack := k.RootNetworkNamespace().Stack(); stack != nil {
+	if stack := task.NetworkNamespace().Stack(); stack != nil {
 		const (
 			arp       = "IP address       HW type     Flags       HW address            Mask     Device\n"
 			netlink   = "sk       Eth Pid    Groups   Rmem     Wmem     Dump     Locks     Drops     Inode\n"
@@ -53,6 +54,8 @@ func newNetDir(root *auth.Credentials, inoGen InoGenerator, k *kernel.Kernel) *k
 		)
 		psched := fmt.Sprintf("%08x %08x %08x %08x\n", uint64(time.Microsecond/time.Nanosecond), 64, 1000000, uint64(time.Second/time.Nanosecond))
 
+		// TODO(gvisor.dev/issue/1833): Make sure file contents reflect the task
+		// network namespace.
 		contents = map[string]*kernfs.Dentry{
 			"dev":  newDentry(root, inoGen.NextIno(), 0444, &netDevData{stack: stack}),
 			"snmp": newDentry(root, inoGen.NextIno(), 0444, &netSnmpData{stack: stack}),
@@ -84,7 +87,7 @@ func newNetDir(root *auth.Credentials, inoGen InoGenerator, k *kernel.Kernel) *k
 		}
 	}
 
-	return kernfs.NewStaticDir(root, inoGen.NextIno(), 0555, contents)
+	return newTaskOwnedDir(task, inoGen.NextIno(), 0555, contents)
 }
 
 // ifinet6 implements vfs.DynamicBytesSource for /proc/net/if_inet6.

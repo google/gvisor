@@ -57,6 +57,7 @@ func newTaskInode(inoGen InoGenerator, task *kernel.Task, pidns *kernel.PIDNames
 		"maps":    newTaskOwnedFile(task, inoGen.NextIno(), 0444, &mapsData{task: task}),
 		//"mountinfo": seqfile.NewSeqFileInode(t, &mountInfoFile{t: t}, msrc),
 		//"mounts":    seqfile.NewSeqFileInode(t, &mountsFile{t: t}, msrc),
+		"net": newTaskNetDir(task, inoGen),
 		"ns": newTaskOwnedDir(task, inoGen.NextIno(), 0511, map[string]*kernfs.Dentry{
 			"net":  newNamespaceSymlink(task, inoGen.NextIno(), "net"),
 			"pid":  newNamespaceSymlink(task, inoGen.NextIno(), "pid"),
