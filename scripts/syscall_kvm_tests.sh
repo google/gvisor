@@ -18,10 +18,6 @@ source $(dirname $0)/common.sh
 
 # TODO(b/112165693): "test --test_tag_filters=runsc_kvm" can be used
 # when the "manual" tag will be removed for kvm tests.
-#test --test_timeout=200 //test/syscalls:socket_ip_tcp_generic_loopback_test_runsc_kvm
-
-bazel build runsc:runsc
-bazel build //test/syscalls/linux:socket_ip_tcp_generic_loopback_test
-bazel-bin/runsc/linux_amd64_pure_stripped/runsc --rootless --network=none --debug --alsologtostderr do bazel-bin/test/syscalls/linux/socket_ip_tcp_generic_loopback_test '--gtest_filter=AllTCPSockets/TCPSocketPairTest.TCPResetDuringClose_NoRandomSave/*'
+test --test_timeout=200 //test/syscalls:socket_ip_tcp_generic_loopback_test_runsc_kvm
 
 # test `bazel query "attr(tags, runsc_kvm, tests(//test/syscalls/...))"`
