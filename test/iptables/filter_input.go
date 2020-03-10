@@ -106,7 +106,7 @@ func (FilterInputDropOnlyUDP) ContainerAction(ip net.IP) error {
 func (FilterInputDropOnlyUDP) LocalAction(ip net.IP) error {
 	// Try to establish a TCP connection with the container, which should
 	// succeed.
-	return connectTCP(ip, acceptPort, dropPort, sendloopDuration)
+	return connectTCP(ip, acceptPort, sendloopDuration)
 }
 
 // FilterInputDropUDPPort tests that we can drop UDP traffic by port.
@@ -192,7 +192,7 @@ func (FilterInputDropTCPDestPort) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputDropTCPDestPort) LocalAction(ip net.IP) error {
-	if err := connectTCP(ip, dropPort, acceptPort, sendloopDuration); err == nil {
+	if err := connectTCP(ip, dropPort, sendloopDuration); err == nil {
 		return fmt.Errorf("connection destined to port %d should not be accepted, but got accepted", dropPort)
 	}
 
@@ -209,13 +209,14 @@ func (FilterInputDropTCPSrcPort) Name() string {
 
 // ContainerAction implements TestCase.ContainerAction.
 func (FilterInputDropTCPSrcPort) ContainerAction(ip net.IP) error {
-	if err := filterTable("-A", "INPUT", "-p", "tcp", "-m", "tcp", "--sport", fmt.Sprintf("%d", dropPort), "-j", "DROP"); err != nil {
+	// Drop anything from an ephemeral port.
+	if err := filterTable("-A", "INPUT", "-p", "tcp", "-m", "tcp", "--sport", "1024:65535", "-j", "DROP"); err != nil {
 		return err
 	}
 
 	// Listen for TCP packets on accept port.
 	if err := listenTCP(acceptPort, sendloopDuration); err == nil {
-		return fmt.Errorf("connection destined to port %d should not be accepted, but got accepted", dropPort)
+		return fmt.Errorf("connection destined to port %d should not be accepted, but was", dropPort)
 	}
 
 	return nil
@@ -223,8 +224,8 @@ func (FilterInputDropTCPSrcPort) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputDropTCPSrcPort) LocalAction(ip net.IP) error {
-	if err := connectTCP(ip, acceptPort, dropPort, sendloopDuration); err == nil {
-		return fmt.Errorf("connection on port %d should not be acceptedi, but got accepted", dropPort)
+	if err := connectTCP(ip, acceptPort, sendloopDuration); err == nil {
+		return fmt.Errorf("connection should not be accepted, but was")
 	}
 
 	return nil
