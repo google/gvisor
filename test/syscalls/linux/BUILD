@@ -3336,10 +3336,7 @@ cc_binary(
 cc_binary(
     name = "sysret_test",
     testonly = 1,
-    srcs = select_arch(
-        amd64 = ["sysret.cc"],
-        arm64 = [],
-    ),
+    srcs = ["sysret.cc"],
     linkstatic = 1,
     deps = [
         gtest,
