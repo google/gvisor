@@ -25,7 +25,9 @@ const (
 
 func init() {
 	RegisterTestCase(NATRedirectUDPPort{})
+	RegisterTestCase(NATRedirectTCPPort{})
 	RegisterTestCase(NATDropUDP{})
+	RegisterTestCase(NATAcceptAll{})
 }
 
 // NATRedirectUDPPort tests that packets are redirected to different port.
@@ -45,12 +47,36 @@ func (NATRedirectUDPPort) ContainerAction(ip net.IP) error {
 	if err := listenUDP(redirectPort, sendloopDuration); err != nil {
 		return fmt.Errorf("packets on port %d should be allowed, but encountered an error: %v", redirectPort, err)
 	}
+
 	return nil
 }
 
 // LocalAction implements TestCase.LocalAction.
 func (NATRedirectUDPPort) LocalAction(ip net.IP) error {
 	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// NATRedirectTCPPort tests that connections are redirected on specified ports.
+type NATRedirectTCPPort struct{}
+
+// Name implements TestCase.Name.
+func (NATRedirectTCPPort) Name() string {
+	return "NATRedirectTCPPort"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (NATRedirectTCPPort) ContainerAction(ip net.IP) error {
+	if err := natTable("-A", "PREROUTING", "-p", "tcp", "-m", "tcp", "--dport", fmt.Sprintf("%d", dropPort), "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", redirectPort)); err != nil {
+		return err
+	}
+
+	// Listen for TCP packets on redirect port.
+	return listenTCP(redirectPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (NATRedirectTCPPort) LocalAction(ip net.IP) error {
+	return connectTCP(ip, dropPort, acceptPort, sendloopDuration)
 }
 
 // NATDropUDP tests that packets are not received in ports other than redirect port.
@@ -76,5 +102,31 @@ func (NATDropUDP) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (NATDropUDP) LocalAction(ip net.IP) error {
+	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// NATAcceptAll tests that all UDP packets are accepted.
+type NATAcceptAll struct{}
+
+// Name implements TestCase.Name.
+func (NATAcceptAll) Name() string {
+	return "NATAcceptAll"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (NATAcceptAll) ContainerAction(ip net.IP) error {
+	if err := natTable("-A", "PREROUTING", "-p", "udp", "-j", "ACCEPT"); err != nil {
+		return err
+	}
+
+	if err := listenUDP(acceptPort, sendloopDuration); err != nil {
+		return fmt.Errorf("packets on port %d should be allowed, but encountered an error: %v", acceptPort, err)
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (NATAcceptAll) LocalAction(ip net.IP) error {
 	return sendUDPLoop(ip, acceptPort, sendloopDuration)
 }

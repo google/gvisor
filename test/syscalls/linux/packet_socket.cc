@@ -420,8 +420,9 @@ TEST_P(CookedPacketTest, BindDrop) {
 // Bind with invalid address.
 TEST_P(CookedPacketTest, BindFail) {
   // Null address.
-  ASSERT_THAT(bind(socket_, nullptr, sizeof(struct sockaddr)),
-              SyscallFailsWithErrno(EFAULT));
+  ASSERT_THAT(
+      bind(socket_, nullptr, sizeof(struct sockaddr)),
+      AnyOf(SyscallFailsWithErrno(EFAULT), SyscallFailsWithErrno(EINVAL)));
 
   // Address of size 1.
   uint8_t addr = 0;
