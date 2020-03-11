@@ -83,6 +83,10 @@ func StartSignalForwarding(handler func(linux.Signal)) func() {
 	// for their handling.
 	var sigchans []chan os.Signal
 	for sig := 1; sig <= numSignals+1; sig++ {
+		// SIGURG is used by Go's runtime scheduler.
+		if sig == int(linux.SIGURG) {
+			continue
+		}
 		sigchan := make(chan os.Signal, 1)
 		sigchans = append(sigchans, sigchan)
 		signal.Notify(sigchan, syscall.Signal(sig))
