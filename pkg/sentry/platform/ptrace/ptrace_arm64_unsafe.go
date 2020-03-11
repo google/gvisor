@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,36 +12,51 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build arm64
+
 package ptrace
 
 import (
 	"syscall"
+	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
-// fpRegSet returns the GETREGSET/SETREGSET register set type to be used.
-func fpRegSet(useXsave bool) uintptr {
-	if useXsave {
-		return linux.NT_X86_XSTATE
-	}
-	return linux.NT_PRFPREG
-}
-
-func stackPointer(r *syscall.PtraceRegs) uintptr {
-	return uintptr(r.Rsp)
-}
-
-// x86 use the fs_base register to store the TLS pointer which can be
-// get/set in "func (t *thread) get/setRegs(regs *syscall.PtraceRegs)".
-// So both of the get/setTLS() operations are noop here.
-
 // getTLS gets the thread local storage register.
 func (t *thread) getTLS(tls *uint64) error {
+	iovec := syscall.Iovec{
+		Base: (*byte)(unsafe.Pointer(tls)),
+		Len:  uint64(unsafe.Sizeof(*tls)),
+	}
+	_, _, errno := syscall.RawSyscall6(
+		syscall.SYS_PTRACE,
+		syscall.PTRACE_GETREGSET,
+		uintptr(t.tid),
+		linux.NT_ARM_TLS,
+		uintptr(unsafe.Pointer(&iovec)),
+		0, 0)
+	if errno != 0 {
+		return errno
+	}
 	return nil
 }
 
 // setTLS sets the thread local storage register.
 func (t *thread) setTLS(tls *uint64) error {
+	iovec := syscall.Iovec{
+		Base: (*byte)(unsafe.Pointer(tls)),
+		Len:  uint64(unsafe.Sizeof(*tls)),
+	}
+	_, _, errno := syscall.RawSyscall6(
+		syscall.SYS_PTRACE,
+		syscall.PTRACE_SETREGSET,
+		uintptr(t.tid),
+		linux.NT_ARM_TLS,
+		uintptr(unsafe.Pointer(&iovec)),
+		0, 0)
+	if errno != 0 {
+		return errno
+	}
 	return nil
 }
