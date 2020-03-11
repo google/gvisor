@@ -18,6 +18,17 @@ package arch
 
 const restartSyscallNr = uintptr(128)
 
+// SyscallSaveOrig save the value of the register R0 which is clobbered in
+// syscall handler(doSyscall()).
+//
+// In linux, at the entry of the syscall handler(el0_svc_common()), value of R0
+// is saved to the pt_regs.orig_x0 in kernel code. But currently, the orig_x0
+// was not accessible to the user space application, so we have to do the same
+// operation in the sentry code to save the R0 value into the App context.
+func (c *context64) SyscallSaveOrig() {
+	c.OrigR0 = c.Regs.Regs[0]
+}
+
 // SyscallNo returns the syscall number according to the 64-bit convention.
 func (c *context64) SyscallNo() uintptr {
 	return uintptr(c.Regs.Regs[8])
@@ -40,7 +51,7 @@ func (c *context64) SyscallNo() uintptr {
 // R30: the link register.
 func (c *context64) SyscallArgs() SyscallArguments {
 	return SyscallArguments{
-		SyscallArgument{Value: uintptr(c.Regs.Regs[0])},
+		SyscallArgument{Value: uintptr(c.OrigR0)},
 		SyscallArgument{Value: uintptr(c.Regs.Regs[1])},
 		SyscallArgument{Value: uintptr(c.Regs.Regs[2])},
 		SyscallArgument{Value: uintptr(c.Regs.Regs[3])},
