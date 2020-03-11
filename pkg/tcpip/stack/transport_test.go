@@ -641,10 +641,10 @@ func TestTransportForwarding(t *testing.T) {
 		t.Fatal("Response packet not forwarded")
 	}
 
-	if dst := p.Pkt.Header.View()[0]; dst != 3 {
+	if dst := p.Pkt.Data.First()[0]; dst != 3 {
 		t.Errorf("Response packet has incorrect destination addresss: got = %d, want = 3", dst)
 	}
-	if src := p.Pkt.Header.View()[1]; src != 1 {
+	if src := p.Pkt.Data.First()[1]; src != 1 {
 		t.Errorf("Response packet has incorrect source addresss: got = %d, want = 3", src)
 	}
 }
