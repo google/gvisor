@@ -908,5 +908,70 @@ TEST_P(TCPSocketPairTest, TCPResetDuringClose_NoRandomSave) {
   }
 }
 
+TEST_P(TCPSocketPairTest, TCPCloseWhenSending) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  ScopedThread t([&]() {
+    struct pollfd poll_fd = {sockets->second_fd(), POLLIN | POLLHUP, 0};
+    // Wait up to 20 seconds for the data.
+    constexpr int kPollTimeoutMs = 20000;
+    ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+                SyscallSucceedsWithValue(1));
+    ASSERT_THAT(close(sockets->release_second_fd()), SyscallSucceeds());
+  });
+
+  // We're about to fill the send buffer; shrink it and the other side's
+  // receive buffer to the minimum allowed.
+  {
+    const int bufsize = 1;
+    socklen_t optlen = sizeof(bufsize);
+
+    EXPECT_EQ(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDBUF, &bufsize,
+                         optlen),
+              0)
+        << strerror(errno);
+    EXPECT_EQ(setsockopt(sockets->second_fd(), SOL_SOCKET, SO_RCVBUF, &bufsize,
+                         optlen),
+              0)
+        << strerror(errno);
+  }
+
+  int sndbuf_opt;
+  socklen_t sndbuf_optlen = sizeof(sndbuf_opt);
+  EXPECT_EQ(getsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDBUF, &sndbuf_opt,
+                       &sndbuf_optlen),
+            0)
+      << strerror(errno);
+  EXPECT_EQ(sndbuf_optlen, sizeof(sndbuf_opt));
+
+  int rcvbuf_opt;
+  socklen_t rcvbuf_optlen = sizeof(rcvbuf_opt);
+  EXPECT_EQ(getsockopt(sockets->second_fd(), SOL_SOCKET, SO_RCVBUF, &rcvbuf_opt,
+                       &rcvbuf_optlen),
+            0)
+      << strerror(errno);
+  EXPECT_EQ(rcvbuf_optlen, sizeof(rcvbuf_opt));
+
+  int flags;
+  EXPECT_GE(flags = fcntl(sockets->first_fd(), F_GETFL), 0) << strerror(errno);
+  EXPECT_EQ(fcntl(sockets->first_fd(), F_SETFL, flags | O_NONBLOCK), 0)
+      << strerror(errno);
+
+  // buf size should be neither too small in which case too many writes
+  // operation is required to fill out the sending buffer nor too big in which
+  // case a big stack is needed for the buf array.
+  int cnt = 0;
+  {
+    std::vector<char> buf(sndbuf_opt + rcvbuf_opt);
+    int size;
+    while ((size = write(sockets->first_fd(), buf.data(), buf.size())) > 0) {
+      cnt += size;
+    }
+  }
+  EXPECT_GT(cnt, 0);
+  ASSERT_TRUE(errno == ECONNRESET || errno == EAGAIN || errno == EWOULDBLOCK)
+      << strerror(errno);
+}
+
 }  // namespace testing
 }  // namespace gvisor

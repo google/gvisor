@@ -1458,6 +1458,14 @@ func DeleteDanglingEndpoint(e Endpoint) {
 	danglingEndpointsMu.Unlock()
 }
 
+// ClearDanglingEndpoints removes all entries in danglingEndpoints.
+// Primarily used in tests.
+func ClearDanglingEndpoints() {
+	danglingEndpointsMu.Lock()
+	danglingEndpoints = make(map[Endpoint]struct{})
+	danglingEndpointsMu.Unlock()
+}
+
 // AsyncLoading is the global barrier for asynchronous endpoint loading
 // activities.
 var AsyncLoading sync.WaitGroup

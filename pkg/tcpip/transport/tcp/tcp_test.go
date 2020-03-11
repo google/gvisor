@@ -6968,3 +6968,190 @@ func TestResetDuringClose(t *testing.T) {
 
 	wg.Wait()
 }
+
+var loopbackAddr = tcpip.Address("\x7f\x00\x00\x01")
+
+func newStackWithLoopback(t *testing.T) *stack.Stack {
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{tcp.NewProtocol()},
+	})
+	linkEP := loopback.New()
+	if testing.Verbose() {
+		linkEP = sniffer.New(linkEP)
+	}
+
+	opts := stack.NICOptions{Name: "lo"}
+	loopbackNet := tcpip.Address("\x7f\x00\x00\x00")
+	loopbackMask := tcpip.AddressMask("\xff\x00\x00\x00")
+	loopbackSubnet, e := tcpip.NewSubnet(loopbackNet, loopbackMask)
+	if e != nil {
+		t.Fatalf("tcpip.NewSubnet failed: %s", e)
+	}
+
+	nicID := tcpip.NICID(1)
+	if err := s.CreateNICWithOptions(nicID, linkEP, opts); err != nil {
+		t.Fatalf("CreateNICWithOptions(_, _, %+v) failed: %v", opts, err)
+	}
+
+	if err := s.AddAddress(1, ipv4.ProtocolNumber, loopbackAddr); err != nil {
+		t.Fatalf("s.AddAddress(_, _, %s) = %v", loopbackAddr, err)
+	}
+
+	loopbackRoute := tcpip.Route{Destination: loopbackSubnet, NIC: nicID}
+	s.AddRoute(loopbackRoute)
+	return s
+}
+
+type epWQPair struct {
+	ep tcpip.Endpoint
+	wq *waiter.Queue
+}
+
+func createConnectedEndpoints(s *stack.Stack, t *testing.T) (connEPWQ, acceptEPWQ epWQPair) {
+	// Setup listening endpoint.
+	listenWQ := &waiter.Queue{}
+	listenEP, err := s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, listenWQ)
+	if err != nil {
+		t.Fatalf("c.s.NewEndpoint(tcp, ipv4, ..) = %v", err)
+	}
+	// Bind to wildcard.
+	if err := listenEP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		t.Fatalf("Bind failed: %v", err)
+	}
+
+	// Start listening.
+	if err := listenEP.Listen(10); err != nil {
+		t.Fatalf("Listen failed: %v", err)
+	}
+
+	// Create connecting endpoint.
+	connWQ := &waiter.Queue{}
+	connEP, err := s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, connWQ)
+	if err != nil {
+		t.Fatalf("c.s.NewEndpoint(tcp, ipv4, ..) = %v", err)
+	}
+	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
+	connWQ.EventRegister(&waitEntry, waiter.EventOut)
+	defer connWQ.EventUnregister(&waitEntry)
+	if err := connEP.Connect(tcpip.FullAddress{Addr: loopbackAddr, Port: context.StackPort}); err != tcpip.ErrConnectStarted {
+		t.Fatalf("connect failed w/ error : %v", err)
+	}
+	// Wait for connection to be established.
+	select {
+	case <-notifyCh:
+		if err := connEP.GetSockOpt(tcpip.ErrorOption{}); err != nil {
+			t.Fatalf("unexpected error when connecting: %v", err)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("Timed out waiting for connect to complete")
+	}
+
+	acceptWaitEntry, acceptCh := waiter.NewChannelEntry(nil)
+	listenWQ.EventRegister(&acceptWaitEntry, waiter.EventIn)
+	defer listenWQ.EventUnregister(&acceptWaitEntry)
+
+	// Let's accept now.
+	acceptEP, acceptWQ, err := listenEP.Accept()
+	if err != nil && err != tcpip.ErrWouldBlock {
+		t.Fatalf("listenEP.Accept failed: %v", err)
+	}
+	if err == tcpip.ErrWouldBlock {
+		select {
+		case <-acceptCh:
+			acceptEP, acceptWQ, err = listenEP.Accept()
+			if err != nil {
+				t.Fatalf("listenEP.Accept() = %v", err)
+			}
+		case <-time.After(1 * time.Second):
+			t.Fatalf("Timed out waiting for accept")
+		}
+	}
+
+	// Now close the listening endpoint
+	listenEP.Close()
+	time.Sleep(10 * time.Millisecond)
+	if v := tcpip.GetDanglingEndpoints(); len(v) > 0 {
+		t.Fatalf("danglingEndpoints is not empty, want empty")
+	}
+	return epWQPair{connEP, connWQ}, epWQPair{acceptEP, acceptWQ}
+}
+
+// TestDanglingEndpointsCleanShutdown verifies that endpoints are removed from
+// the dangling endpoint list when they are fully closed via a normal 4-way
+// shutdown process.
+func TestDanglingEndpointsCleanShutdown(t *testing.T) {
+	// Clear dangling endpoints as it's a global and other tests could have
+	// left sockets lying around in TIME-WAIT state which could still have
+	// references held in danglingEndpoints.
+	tcpip.ClearDanglingEndpoints()
+
+	s := newStackWithLoopback(t)
+	defer s.Close()
+
+	connEPWQ, acceptEPWQ := createConnectedEndpoints(s, t)
+
+	// Lower stackwide TIME_WAIT timeout so that the reservations
+	// are released instantly on Close.
+	tcpTW := tcpip.TCPTimeWaitTimeoutOption(1 * time.Millisecond)
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcpTW); err != nil {
+		t.Fatalf("s.SetTransportProtocolOption(%d, %d) = %s", tcp.ProtocolNumber, tcpTW, err)
+	}
+
+	// Now close both endpoints with a small TIME-WAIT duration and verify
+	// that at end of TIME-WAIT thre are no dangling endpoints.
+	connEPWQ.ep.Close()
+	acceptEPWQ.ep.Close()
+
+	time.Sleep(2 * time.Second)
+	if v := tcpip.GetDanglingEndpoints(); len(v) > 0 {
+		t.Fatalf("danglingEndpoints is not empty, want empty")
+	}
+}
+
+// TestDanglingEndpointsConnReset verifies that endpoints are removed from
+// the dangling endpoint list when the shutdown is abnormal due to one
+// peer sending a RST for e.g.
+func TestDanglingEndpointsConnReset(t *testing.T) {
+	// Clear dangling endpoints as it's a global and other tests could have
+	// left sockets lying around in TIME-WAIT state which could still have
+	// references held in danglingEndpoints.
+	tcpip.ClearDanglingEndpoints()
+	s := newStackWithLoopback(t)
+	defer s.Close()
+
+	connEPWQ, acceptEPWQ := createConnectedEndpoints(s, t)
+
+	// Leave some unread data on the acceptEP so that when we close it
+	// generates a RST resulting in an unclean shutdown of both ends.
+	payload := []byte{1, 2, 3}
+	if n, _, err := connEPWQ.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{Atomic: true}); n != int64(len(payload)) || err != nil {
+		t.Fatalf("connEPWQ.ep.Write(%+v, ...) = %v", payload, err)
+	}
+
+	// Wait for acceptEP to be come readable.
+	we, ch := waiter.NewChannelEntry(nil)
+	acceptEPWQ.wq.EventRegister(&we, waiter.EventIn)
+	defer acceptEPWQ.wq.EventUnregister(&we)
+	_, _, err := acceptEPWQ.ep.Peek([][]byte{make([]byte, 1)})
+	if err != nil && err != tcpip.ErrWouldBlock {
+		t.Fatalf("acceptEPWQ.ep.Peek(..) = %v", err)
+	}
+	if err == tcpip.ErrWouldBlock {
+		select {
+		case <-ch:
+		case <-time.After(1 * time.Second):
+			t.Fatalf("timed out waiting for acceptEP to be come readable")
+		}
+	}
+
+	connEPWQ.ep.Close()
+	acceptEPWQ.ep.Close()
+
+	// Wait for a short while to ensure the stack has time to process the
+	// resets and close the sockets fully.
+	time.Sleep(100 * time.Millisecond)
+	if v := tcpip.GetDanglingEndpoints(); len(v) > 0 {
+		t.Fatalf("danglingEndpoints is not empty, want empty")
+	}
+}
