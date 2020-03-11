@@ -506,6 +506,9 @@ func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
 	regs := &ac.StateData().Regs
 	t.resetSysemuRegs(regs)
 
+	// Extract TLS register
+	tls := uint64(ac.TLS())
+
 	// Check for interrupts, and ensure that future interrupts will signal t.
 	if !c.interrupt.Enable(t) {
 		// Pending interrupt; simulate.
@@ -525,6 +528,9 @@ func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
 	}
 	if err := t.setFPRegs(fpState, uint64(fpLen), useXsave); err != nil {
 		panic(fmt.Sprintf("ptrace set fpregs (%+v) failed: %v", fpState, err))
+	}
+	if err := t.setTLS(&tls); err != nil {
+		panic(fmt.Sprintf("ptrace set tls (%+v) failed: %v", tls, err))
 	}
 
 	for {
@@ -554,6 +560,12 @@ func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
 		}
 		if err := t.getFPRegs(fpState, uint64(fpLen), useXsave); err != nil {
 			panic(fmt.Sprintf("ptrace get fpregs failed: %v", err))
+		}
+		if err := t.getTLS(&tls); err != nil {
+			panic(fmt.Sprintf("ptrace get tls failed: %v", err))
+		}
+		if !ac.SetTLS(uintptr(tls)) {
+			panic(fmt.Sprintf("tls value %v is invalid", tls))
 		}
 
 		// Is it a system call?
