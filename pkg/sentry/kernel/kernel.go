@@ -447,6 +447,7 @@ func (k *Kernel) flushMountSourceRefs() error {
 	k.tasks.forEachThreadGroupLocked(func(tg *ThreadGroup) {
 		if _, ok := flushed[tg.mounts]; ok {
 			// Already flushed.
+			k.tasks.mu.RUnlock()
 			return
 		}
 		tg.mounts.FlushMountSourceRefs()
