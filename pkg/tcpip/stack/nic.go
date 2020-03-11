@@ -1246,10 +1246,10 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 }
 
 func (n *NIC) forwardPacket(r *Route, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) {
-	// TODO(b/143425874): Decrease the TTL field in forwarded packets.
+	// TODO(b/143425874) Decrease the TTL field in forwarded packets.
+	pkt.Header = buffer.NewPrependableFromView(pkt.Data.First())
+	pkt.Data.RemoveFirst()
 
-	// pkt.Header should have enough capacity to hold the link's headers.
-	pkt.Header = buffer.NewPrependable(int(n.linkEP.MaxHeaderLength()))
 	if err := n.linkEP.WritePacket(r, nil /* gso */, protocol, pkt); err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 		return
