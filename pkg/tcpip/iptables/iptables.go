@@ -135,6 +135,27 @@ func EmptyFilterTable() Table {
 	}
 }
 
+// EmptyNatTable returns a Table with no rules and the filter table chains
+// mapped to HookUnset.
+func EmptyNatTable() Table {
+	return Table{
+		Rules: []Rule{},
+		BuiltinChains: map[Hook]int{
+			Prerouting:  HookUnset,
+			Input:       HookUnset,
+			Output:      HookUnset,
+			Postrouting: HookUnset,
+		},
+		Underflows: map[Hook]int{
+			Prerouting:  HookUnset,
+			Input:       HookUnset,
+			Output:      HookUnset,
+			Postrouting: HookUnset,
+		},
+		UserChains: map[string]int{},
+	}
+}
+
 // A chainVerdict is what a table decides should be done with a packet.
 type chainVerdict int
 
@@ -239,6 +260,12 @@ func (it *IPTables) checkChain(hook Hook, pkt tcpip.PacketBuffer, table Table, r
 // Precondition: pk.NetworkHeader is set.
 func (it *IPTables) checkRule(hook Hook, pkt tcpip.PacketBuffer, table Table, ruleIdx int) (RuleVerdict, int) {
 	rule := table.Rules[ruleIdx]
+
+	// If pkt.NetworkHeader hasn't been set yet, it will be contained in
+	// pkt.Data.First().
+	if pkt.NetworkHeader == nil {
+		pkt.NetworkHeader = pkt.Data.First()
+	}
 
 	// First check whether the packet matches the IP header filter.
 	// TODO(gvisor.dev/issue/170): Support other fields of the filter.
