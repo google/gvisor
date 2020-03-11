@@ -17,9 +17,10 @@
 # Run in the root of the repo.
 cd "$(dirname "$0")"
 
-KEY_PATH=${KEY_PATH:-"${KOKORO_KEYSTORE_DIR}/${KOKORO_SERVICE_ACCOUNT}"}
+export GOOGLE_APPLICATION_CREDENTIALS="${KOKORO_KEYSTORE_DIR}/${GCLOUD_CREDENTIALS}"
 
-gcloud auth activate-service-account --key-file "${KEY_PATH}"
+gcloud auth activate-service-account --key-file "${GOOGLE_APPLICATION_CREDENTIALS}"
 
 gcloud compute instances list
 
+bq show gvisor-benchmarks:test.test
