@@ -253,6 +253,50 @@ type XTErrorTarget struct {
 // SizeOfXTErrorTarget is the size of an XTErrorTarget.
 const SizeOfXTErrorTarget = 64
 
+// Flag values for NfNATIPV4Range. The values indicate whether to map
+// protocol specific part(ports) or IPs. It corresponds to values in
+// include/uapi/linux/netfilter/nf_nat.h.
+const (
+	NF_NAT_RANGE_MAP_IPS            = 1 << 0
+	NF_NAT_RANGE_PROTO_SPECIFIED    = 1 << 1
+	NF_NAT_RANGE_PROTO_RANDOM       = 1 << 2
+	NF_NAT_RANGE_PERSISTENT         = 1 << 3
+	NF_NAT_RANGE_PROTO_RANDOM_FULLY = 1 << 4
+	NF_NAT_RANGE_PROTO_RANDOM_ALL   = (NF_NAT_RANGE_PROTO_RANDOM | NF_NAT_RANGE_PROTO_RANDOM_FULLY)
+	NF_NAT_RANGE_MASK               = (NF_NAT_RANGE_MAP_IPS |
+		NF_NAT_RANGE_PROTO_SPECIFIED | NF_NAT_RANGE_PROTO_RANDOM |
+		NF_NAT_RANGE_PERSISTENT | NF_NAT_RANGE_PROTO_RANDOM_FULLY)
+)
+
+// NfNATIPV4Range corresponds to struct nf_nat_ipv4_range
+// in include/uapi/linux/netfilter/nf_nat.h. The fields are in
+// network byte order.
+type NfNATIPV4Range struct {
+	Flags   uint32
+	MinIP   [4]byte
+	MaxIP   [4]byte
+	MinPort uint16
+	MaxPort uint16
+}
+
+// NfNATIPV4MultiRangeCompat corresponds to struct
+// nf_nat_ipv4_multi_range_compat in include/uapi/linux/netfilter/nf_nat.h.
+type NfNATIPV4MultiRangeCompat struct {
+	RangeSize uint32
+	RangeIPV4 NfNATIPV4Range
+}
+
+// XTRedirectTarget triggers a redirect when reached.
+// Adding 4 bytes of padding to make the struct 8 byte aligned.
+type XTRedirectTarget struct {
+	Target  XTEntryTarget
+	NfRange NfNATIPV4MultiRangeCompat
+	_       [4]byte
+}
+
+// SizeOfXTRedirectTarget is the size of an XTRedirectTarget.
+const SizeOfXTRedirectTarget = 56
+
 // IPTGetinfo is the argument for the IPT_SO_GET_INFO sockopt. It corresponds
 // to struct ipt_getinfo in include/uapi/linux/netfilter_ipv4/ip_tables.h.
 type IPTGetinfo struct {
