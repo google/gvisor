@@ -2648,6 +2648,24 @@ cc_binary(
 )
 
 cc_binary(
+    name = "socket_bind_to_device_bcast_test",
+    testonly = 1,
+    srcs = [
+        "socket_bind_to_device_bcast.cc",
+    ],
+    linkstatic = 1,
+    deps = [
+        ":socket_bind_to_device_util",
+        ":socket_test_util",
+        gtest,
+        "//test/util:file_descriptor",
+        "//test/util:posix_error",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "socket_ip_udp_loopback_non_blocking_test",
     testonly = 1,
     srcs = [
