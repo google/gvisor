@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/boot/platforms"
@@ -82,8 +83,13 @@ type Boot struct {
 	// sandbox (e.g. gofer) and sent through this FD.
 	mountsFD int
 
-	// pidns is set if the sanadbox is in its own pid namespace.
+	// pidns is set if the sandbox is in its own pid namespace.
 	pidns bool
+
+	// attached is set to true to kill the sandbox process when the parent process
+	// terminates. This flag is set when the command execve's itself because
+	// parent death signal doesn't propagate through execve when uid/gid changes.
+	attached bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -118,6 +124,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
 	f.IntVar(&b.startSyncFD, "start-sync-fd", -1, "required FD to used to synchronize sandbox startup")
 	f.IntVar(&b.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to read list of mounts after they have been resolved (direct paths, no symlinks).")
+	f.BoolVar(&b.attached, "attached", false, "if attached is true, kills the sandbox process when the parent process terminates")
 }
 
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
@@ -133,29 +140,32 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 
 	conf := args[0].(*boot.Config)
 
+	if b.attached {
+		// Ensure this process is killed after parent process terminates when
+		// attached mode is enabled. In the unfortunate event that the parent
+		// terminates before this point, this process leaks.
+		if err := unix.Prctl(unix.PR_SET_PDEATHSIG, uintptr(unix.SIGKILL), 0, 0, 0); err != nil {
+			Fatalf("error setting parent death signal: %v", err)
+		}
+	}
+
 	if b.setUpRoot {
 		if err := setUpChroot(b.pidns); err != nil {
 			Fatalf("error setting up chroot: %v", err)
 		}
 
-		if !b.applyCaps {
-			// Remove --setup-root arg to call myself.
-			var args []string
-			for _, arg := range os.Args {
-				if !strings.Contains(arg, "setup-root") {
-					args = append(args, arg)
-				}
+		if !b.applyCaps && !conf.Rootless {
+			// Remove --apply-caps arg to call myself. It has already been done.
+			args := prepareArgs(b.attached, "setup-root")
+
+			// Note that we've already read the spec from the spec FD, and
+			// we will read it again after the exec call. This works
+			// because the ReadSpecFromFile function seeks to the beginning
+			// of the file before reading.
+			if err := callSelfAsNobody(args); err != nil {
+				Fatalf("%v", err)
 			}
-			if !conf.Rootless {
-				// Note that we've already read the spec from the spec FD, and
-				// we will read it again after the exec call. This works
-				// because the ReadSpecFromFile function seeks to the beginning
-				// of the file before reading.
-				if err := callSelfAsNobody(args); err != nil {
-					Fatalf("%v", err)
-				}
-				panic("callSelfAsNobody must never return success")
-			}
+			panic("callSelfAsNobody must never return success")
 		}
 	}
 
@@ -181,13 +191,9 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 			caps.Permitted = append(caps.Permitted, c)
 		}
 
-		// Remove --apply-caps arg to call myself.
-		var args []string
-		for _, arg := range os.Args {
-			if !strings.Contains(arg, "setup-root") && !strings.Contains(arg, "apply-caps") {
-				args = append(args, arg)
-			}
-		}
+		// Remove --apply-caps and --setup-root arg to call myself. Both have
+		// already been done.
+		args := prepareArgs(b.attached, "setup-root", "apply-caps")
 
 		// Note that we've already read the spec from the spec FD, and
 		// we will read it again after the exec call. This works
@@ -257,4 +263,23 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	*waitStatus = syscall.WaitStatus(ws.Status())
 	l.Destroy()
 	return subcommands.ExitSuccess
+}
+
+func prepareArgs(attached bool, exclude ...string) []string {
+	var args []string
+	for _, arg := range os.Args {
+		for _, excl := range exclude {
+			if strings.Contains(arg, excl) {
+				goto skip
+			}
+		}
+		args = append(args, arg)
+		if attached && arg == "boot" {
+			// Strategicaly place "--attached" after the command. This is needed
+			// to ensure the new process is killed when the parent process terminates.
+			args = append(args, "--attached")
+		}
+	skip:
+	}
+	return args
 }
