@@ -10,8 +10,8 @@ go_template_instance(
     prefix = "buffer",
     template = "//pkg/ilist:generic_list",
     types = {
-        "Element": "*Buffer",
-        "Linker": "*Buffer",
+        "Element": "*buffer",
+        "Linker": "*buffer",
     },
 )
 
@@ -34,6 +34,10 @@ go_library(
 go_test(
     name = "buffer_test",
     size = "small",
-    srcs = ["view_test.go"],
+    srcs = [
+        "safemem_test.go",
+        "view_test.go",
+    ],
     library = ":buffer",
+    deps = ["//pkg/safemem"],
 )

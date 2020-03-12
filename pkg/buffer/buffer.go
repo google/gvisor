@@ -13,6 +13,10 @@
 // limitations under the License.
 
 // Package buffer provides the implementation of a buffer view.
+//
+// A view is an flexible buffer, backed by a pool, supporting the safecopy
+// operations natively as well as the ability to grow via either prepend or
+// append, as well as shrink.
 package buffer
 
 import (
@@ -21,7 +25,7 @@ import (
 
 const bufferSize = 8144 // See below.
 
-// Buffer encapsulates a queueable byte buffer.
+// buffer encapsulates a queueable byte buffer.
 //
 // Note that the total size is slightly less than two pages. This is done
 // intentionally to ensure that the buffer object aligns with runtime
@@ -30,38 +34,61 @@ const bufferSize = 8144 // See below.
 // large enough chunk to limit excessive segmentation.
 //
 // +stateify savable
-type Buffer struct {
+type buffer struct {
 	data  [bufferSize]byte
 	read  int
 	write int
 	bufferEntry
 }
 
-// Reset resets internal data.
+// reset resets internal data.
 //
-// This must be called before use.
-func (b *Buffer) Reset() {
+// This must be called before returning the buffer to the pool.
+func (b *buffer) Reset() {
 	b.read = 0
 	b.write = 0
-}
-
-// Empty indicates the buffer is empty.
-//
-// This indicates there is no data left to read.
-func (b *Buffer) Empty() bool {
-	return b.read == b.write
 }
 
 // Full indicates the buffer is full.
 //
 // This indicates there is no capacity left to write.
-func (b *Buffer) Full() bool {
+func (b *buffer) Full() bool {
 	return b.write == len(b.data)
+}
+
+// ReadSize returns the number of bytes available for reading.
+func (b *buffer) ReadSize() int {
+	return b.write - b.read
+}
+
+// ReadMove advances the read index by the given amount.
+func (b *buffer) ReadMove(n int) {
+	b.read += n
+}
+
+// ReadSlice returns the read slice for this buffer.
+func (b *buffer) ReadSlice() []byte {
+	return b.data[b.read:b.write]
+}
+
+// WriteSize returns the number of bytes available for writing.
+func (b *buffer) WriteSize() int {
+	return len(b.data) - b.write
+}
+
+// WriteMove advances the write index by the given amount.
+func (b *buffer) WriteMove(n int) {
+	b.write += n
+}
+
+// WriteSlice returns the write slice for this buffer.
+func (b *buffer) WriteSlice() []byte {
+	return b.data[b.write:]
 }
 
 // bufferPool is a pool for buffers.
 var bufferPool = sync.Pool{
 	New: func() interface{} {
-		return new(Buffer)
+		return new(buffer)
 	},
 }
