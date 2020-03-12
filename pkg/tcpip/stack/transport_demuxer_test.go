@@ -167,8 +167,18 @@ func TestTransportDemuxerRegister(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
 				NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
-				TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()}})
-			if got, want := s.RegisterTransportEndpoint(0, []tcpip.NetworkProtocolNumber{test.proto}, udp.ProtocolNumber, stack.TransportEndpointID{}, nil, false, 0), test.want; got != want {
+				TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+			})
+			var wq waiter.Queue
+			ep, err := s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tEP, ok := ep.(stack.TransportEndpoint)
+			if !ok {
+				t.Fatalf("%T does not implement stack.TransportEndpoint", ep)
+			}
+			if got, want := s.RegisterTransportEndpoint(0, []tcpip.NetworkProtocolNumber{test.proto}, udp.ProtocolNumber, stack.TransportEndpointID{}, tEP, false, 0), test.want; got != want {
 				t.Fatalf("s.RegisterTransportEndpoint(...) = %v, want %v", got, want)
 			}
 		})
