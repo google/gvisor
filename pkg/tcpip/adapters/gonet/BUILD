@@ -22,6 +22,7 @@ go_test(
     size = "small",
     srcs = ["gonet_test.go"],
     library = ":gonet",
+    tags = ["flaky"],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/header",
