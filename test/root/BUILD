@@ -16,6 +16,7 @@ go_test(
         "crictl_test.go",
         "main_test.go",
         "oom_score_adj_test.go",
+        "runsc_test.go",
     ],
     data = [
         "//runsc",
@@ -37,7 +38,9 @@ go_test(
         "//runsc/specutils",
         "//runsc/testutil",
         "//test/root/testdata",
+        "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
         "@com_github_syndtr_gocapability//capability:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
