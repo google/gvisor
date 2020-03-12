@@ -6,8 +6,8 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *Buffer) beforeSave() {}
-func (x *Buffer) save(m state.Map) {
+func (x *buffer) beforeSave() {}
+func (x *buffer) save(m state.Map) {
 	x.beforeSave()
 	m.Save("data", &x.data)
 	m.Save("read", &x.read)
@@ -15,8 +15,8 @@ func (x *Buffer) save(m state.Map) {
 	m.Save("bufferEntry", &x.bufferEntry)
 }
 
-func (x *Buffer) afterLoad() {}
-func (x *Buffer) load(m state.Map) {
+func (x *buffer) afterLoad() {}
+func (x *buffer) load(m state.Map) {
 	m.Load("data", &x.data)
 	m.Load("read", &x.read)
 	m.Load("write", &x.write)
@@ -63,7 +63,7 @@ func (x *View) load(m state.Map) {
 }
 
 func init() {
-	state.Register("pkg/buffer.Buffer", (*Buffer)(nil), state.Fns{Save: (*Buffer).save, Load: (*Buffer).load})
+	state.Register("pkg/buffer.buffer", (*buffer)(nil), state.Fns{Save: (*buffer).save, Load: (*buffer).load})
 	state.Register("pkg/buffer.bufferList", (*bufferList)(nil), state.Fns{Save: (*bufferList).save, Load: (*bufferList).load})
 	state.Register("pkg/buffer.bufferEntry", (*bufferEntry)(nil), state.Fns{Save: (*bufferEntry).save, Load: (*bufferEntry).load})
 	state.Register("pkg/buffer.View", (*View)(nil), state.Fns{Save: (*View).save, Load: (*View).load})

@@ -15,19 +15,17 @@
 package buffer
 
 import (
-	"io"
-
 	"gvisor.dev/gvisor/pkg/safemem"
 )
 
 // WriteBlock returns this buffer as a write Block.
-func (b *Buffer) WriteBlock() safemem.Block {
-	return safemem.BlockFromSafeSlice(b.data[b.write:])
+func (b *buffer) WriteBlock() safemem.Block {
+	return safemem.BlockFromSafeSlice(b.WriteSlice())
 }
 
 // ReadBlock returns this buffer as a read Block.
-func (b *Buffer) ReadBlock() safemem.Block {
-	return safemem.BlockFromSafeSlice(b.data[b.read:b.write])
+func (b *buffer) ReadBlock() safemem.Block {
+	return safemem.BlockFromSafeSlice(b.ReadSlice())
 }
 
 // WriteFromBlocks implements safemem.Writer.WriteFromBlocks.
@@ -47,21 +45,21 @@ func (v *View) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) {
 	// Need at least one buffer.
 	firstBuf := v.data.Back()
 	if firstBuf == nil {
-		firstBuf = bufferPool.Get().(*Buffer)
+		firstBuf = bufferPool.Get().(*buffer)
 		v.data.PushBack(firstBuf)
 	}
 
 	// Does the last block have sufficient capacity alone?
-	if l := len(firstBuf.data) - firstBuf.write; l >= need {
+	if l := firstBuf.WriteSize(); l >= need {
 		dst = safemem.BlockSeqOf(firstBuf.WriteBlock())
 	} else {
 		// Append blocks until sufficient.
 		need -= l
 		blocks = append(blocks, firstBuf.WriteBlock())
 		for need > 0 {
-			emptyBuf := bufferPool.Get().(*Buffer)
+			emptyBuf := bufferPool.Get().(*buffer)
 			v.data.PushBack(emptyBuf)
-			need -= len(emptyBuf.data) // Full block.
+			need -= emptyBuf.WriteSize()
 			blocks = append(blocks, emptyBuf.WriteBlock())
 		}
 		dst = safemem.BlockSeqFromSlice(blocks)
@@ -73,11 +71,11 @@ func (v *View) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) {
 
 	// Update all indices.
 	for left := int(n); left > 0; firstBuf = firstBuf.Next() {
-		if l := len(firstBuf.data) - firstBuf.write; left >= l {
-			firstBuf.write += l // Whole block.
+		if l := firstBuf.WriteSize(); left >= l {
+			firstBuf.WriteMove(l) // Whole block.
 			left -= l
 		} else {
-			firstBuf.write += left // Partial block.
+			firstBuf.WriteMove(left) // Partial block.
 			left = 0
 		}
 	}
@@ -103,18 +101,18 @@ func (v *View) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 
 	firstBuf := v.data.Front()
 	if firstBuf == nil {
-		return 0, io.EOF
+		return 0, nil // No EOF.
 	}
 
 	// Is all the data in a single block?
-	if l := firstBuf.write - firstBuf.read; l >= need {
+	if l := firstBuf.ReadSize(); l >= need {
 		src = safemem.BlockSeqOf(firstBuf.ReadBlock())
 	} else {
 		// Build a list of all the buffers.
 		need -= l
 		blocks = append(blocks, firstBuf.ReadBlock())
 		for buf := firstBuf.Next(); buf != nil && need > 0; buf = buf.Next() {
-			need -= buf.write - buf.read
+			need -= buf.ReadSize()
 			blocks = append(blocks, buf.ReadBlock())
 		}
 		src = safemem.BlockSeqFromSlice(blocks)
