@@ -25,9 +25,9 @@ Second, as gVisor is an independent implementation of the system call surface,
 many of the subsystems or specific calls are not as optimized as more mature
 implementations. A good example here is the network stack, which is continuing
 to evolve but does not support all the advanced recovery mechanisms offered by
-other stacks and is less CPU efficient. This an **implementation cost** and is
-distinct from **structural costs**. Improvements here are ongoing and driven by
-the workloads that matter to gVisor users and contributors.
+other stacks and is less CPU efficient. This is an **implementation cost** and
+is distinct from **structural costs**. Improvements here are ongoing and driven
+by the workloads that matter to gVisor users and contributors.
 
 This page provides a guide for understanding baseline performance, and calls out
 distint **structural costs** and **implementation costs**, highlighting where
