@@ -78,6 +78,18 @@ sudo chown root:root /usr/local/bin/runsc
 sudo chmod 0755 /usr/local/bin/runsc
 ```
 
+### I'm getting an error like `mount submount "/etc/hostname": creating mount with source ".../hostname": input/output error: unknown.`
+
+There is a bug in Linux kernel versions 5.1 to 5.3.15, 5.4.2, and 5.5. Upgrade to a newer kernel or add the following to `/lib/systemd/system/containerd.service` as a workaround.
+
+```
+LimitMEMLOCK=infinity
+```
+
+And run `systemctl daemon-reload && systemctl restart containerd` to restart containerd.
+
+See [issue #1765](https://gvisor.dev/issue/1765) for more details.
+
 ### My container cannot resolve another container's name when using Docker user defined bridge
 
 This is normally indicated by errors like `bad address 'container-name'` when
