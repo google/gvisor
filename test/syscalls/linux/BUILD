@@ -3707,11 +3707,10 @@ cc_binary(
         ":socket_test_util",
         gtest,
         "//test/util:capability_util",
-        "//test/util:memory_util",
+        "//test/util:posix_error",
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",
-        "@com_google_absl//absl/synchronization",
     ],
 )
 
