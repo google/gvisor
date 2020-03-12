@@ -105,8 +105,7 @@ func (x *multiPortEndpoint) save(m state.Map) {
 	m.Save("demux", &x.demux)
 	m.Save("netProto", &x.netProto)
 	m.Save("transProto", &x.transProto)
-	m.Save("endpointsArr", &x.endpointsArr)
-	m.Save("endpointsMap", &x.endpointsMap)
+	m.Save("endpoints", &x.endpoints)
 	m.Save("reuse", &x.reuse)
 }
 
@@ -115,8 +114,7 @@ func (x *multiPortEndpoint) load(m state.Map) {
 	m.Load("demux", &x.demux)
 	m.Load("netProto", &x.netProto)
 	m.Load("transProto", &x.transProto)
-	m.Load("endpointsArr", &x.endpointsArr)
-	m.Load("endpointsMap", &x.endpointsMap)
+	m.Load("endpoints", &x.endpoints)
 	m.Load("reuse", &x.reuse)
 }
 
