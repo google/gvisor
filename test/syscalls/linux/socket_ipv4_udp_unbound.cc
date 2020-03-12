@@ -1573,6 +1573,103 @@ TEST_P(IPv4UDPUnboundSocketTest, TestBindToMcastThenSend) {
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
 
+// Check that a receiving socket can bind to the ANY address and receive
+// broadcast packets.
+TEST_P(IPv4UDPUnboundSocketTest, TestBindToAnyThenReceive) {
+  auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto receiver = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Bind receiver to IPv4 ANY.
+  auto receiver_addr = V4Any();
+  ASSERT_THAT(
+      bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+           receiver_addr.addr_len),
+      SyscallSucceeds());
+  socklen_t receiver_addr_len = receiver_addr.addr_len;
+  ASSERT_THAT(getsockname(receiver->get(),
+                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                          &receiver_addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+
+  // Send a broadcast packet on the first socket out the loopback interface.
+  EXPECT_THAT(setsockopt(sender->get(), SOL_SOCKET, SO_BROADCAST, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceedsWithValue(0));
+  // Note: Binding to the loopback interface makes the broadcast go out of it.
+  auto sender_bind_addr = V4Loopback();
+  ASSERT_THAT(
+      bind(sender->get(), reinterpret_cast<sockaddr*>(&sender_bind_addr.addr),
+           sender_bind_addr.addr_len),
+      SyscallSucceeds());
+  auto sendto_addr = V4Broadcast();
+  reinterpret_cast<sockaddr_in*>(&sendto_addr.addr)->sin_port =
+      reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  ASSERT_THAT(RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
+                                 reinterpret_cast<sockaddr*>(&sendto_addr.addr),
+                                 sendto_addr.addr_len),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Check that we received the multicast packet.
+  char recv_buf[sizeof(send_buf)] = {};
+  ASSERT_THAT(RetryEINTR(recv)(receiver->get(), recv_buf, sizeof(recv_buf),
+                               MSG_DONTWAIT),
+              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
+}
+
+// Check that a socket can bind to the ANY address and still send out packets.
+TEST_P(IPv4UDPUnboundSocketTest, TestBindToAnyThenSend) {
+  auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto receiver = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Bind receiver to the ANY address.
+  auto receiver_addr = V4Any();
+  ASSERT_THAT(
+      bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+           receiver_addr.addr_len),
+      SyscallSucceeds());
+  socklen_t receiver_addr_len = receiver_addr.addr_len;
+  ASSERT_THAT(getsockname(receiver->get(),
+                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                          &receiver_addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+
+  // Bind sender to the ANY address.
+  auto sender_addr = V4Any();
+  ASSERT_THAT(
+      bind(sender->get(), reinterpret_cast<sockaddr*>(&sender_addr.addr),
+           sender_addr.addr_len),
+      SyscallSucceeds());
+  socklen_t sender_addr_len = sender_addr.addr_len;
+  ASSERT_THAT(
+      getsockname(sender->get(), reinterpret_cast<sockaddr*>(&sender_addr.addr),
+                  &sender_addr_len),
+      SyscallSucceeds());
+  EXPECT_EQ(sender_addr_len, sender_addr.addr_len);
+
+  // Send a packet from sender to the loopback address.
+  auto sendto_addr = V4Loopback();
+  reinterpret_cast<sockaddr_in*>(&sendto_addr.addr)->sin_port =
+      reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  ASSERT_THAT(RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
+                                 reinterpret_cast<sockaddr*>(&sendto_addr.addr),
+                                 sendto_addr.addr_len),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Check that we received the packet.
+  char recv_buf[sizeof(send_buf)] = {};
+  ASSERT_THAT(RetryEINTR(recv)(receiver->get(), recv_buf, sizeof(recv_buf),
+                               MSG_DONTWAIT),
+              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
+}
+
 // Check that a receiving socket can bind to the broadcast address and receive
 // broadcast packets.
 TEST_P(IPv4UDPUnboundSocketTest, TestBindToBcastThenReceive) {
