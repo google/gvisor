@@ -1639,6 +1639,7 @@ func (e *endpoint) doTimeWait() (twReuse func()) {
 	const timeWaitDone = 3
 
 	s := sleep.Sleeper{}
+	defer s.Done()
 	s.AddWaker(&e.newSegmentWaker, newSegment)
 	s.AddWaker(&e.notificationWaker, notification)
 
