@@ -191,24 +191,28 @@ func TestFilterInputDropOnlyUDP(t *testing.T) {
 }
 
 func TestNATRedirectUDPPort(t *testing.T) {
+	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
 	if err := singleTest(NATRedirectUDPPort{}); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestNATRedirectTCPPort(t *testing.T) {
+	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
 	if err := singleTest(NATRedirectTCPPort{}); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestNATDropUDP(t *testing.T) {
+	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
 	if err := singleTest(NATDropUDP{}); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestNATAcceptAll(t *testing.T) {
+	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
 	if err := singleTest(NATAcceptAll{}); err != nil {
 		t.Fatal(err)
 	}
@@ -251,12 +255,14 @@ func TestFilterInputReturnUnderflow(t *testing.T) {
 }
 
 func TestFilterOutputDropTCPDestPort(t *testing.T) {
+	t.Skip("filter OUTPUT isn't supported yet (gvisor.dev/issue/170).")
 	if err := singleTest(FilterOutputDropTCPDestPort{}); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestFilterOutputDropTCPSrcPort(t *testing.T) {
+	t.Skip("filter OUTPUT isn't supported yet (gvisor.dev/issue/170).")
 	if err := singleTest(FilterOutputDropTCPSrcPort{}); err != nil {
 		t.Fatal(err)
 	}

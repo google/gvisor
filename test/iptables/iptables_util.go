@@ -125,26 +125,23 @@ func listenTCP(port int, timeout time.Duration) error {
 	return nil
 }
 
-// connectTCP connects the TCP server over specified local port, server IP and remote/server port.
-func connectTCP(ip net.IP, remotePort, localPort int, timeout time.Duration) error {
+// connectTCP connects to the given IP and port from an ephemeral local address.
+func connectTCP(ip net.IP, port int, timeout time.Duration) error {
 	contAddr := net.TCPAddr{
 		IP:   ip,
-		Port: remotePort,
+		Port: port,
 	}
 	// The container may not be listening when we first connect, so retry
 	// upon error.
 	callback := func() error {
-		localAddr := net.TCPAddr{
-			Port: localPort,
-		}
-		conn, err := net.DialTCP("tcp4", &localAddr, &contAddr)
+		conn, err := net.DialTCP("tcp4", nil, &contAddr)
 		if conn != nil {
 			conn.Close()
 		}
 		return err
 	}
 	if err := testutil.Poll(callback, timeout); err != nil {
-		return fmt.Errorf("timed out waiting to send IP, most recent error: %v", err)
+		return fmt.Errorf("timed out waiting to connect IP, most recent error: %v", err)
 	}
 
 	return nil

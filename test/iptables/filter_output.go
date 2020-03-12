@@ -24,7 +24,8 @@ func init() {
 	RegisterTestCase(FilterOutputDropTCPSrcPort{})
 }
 
-// FilterOutputDropTCPDestPort tests that connections are not accepted on specified source ports.
+// FilterOutputDropTCPDestPort tests that connections are not accepted on
+// specified source ports.
 type FilterOutputDropTCPDestPort struct{}
 
 // Name implements TestCase.Name.
@@ -48,14 +49,15 @@ func (FilterOutputDropTCPDestPort) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterOutputDropTCPDestPort) LocalAction(ip net.IP) error {
-	if err := connectTCP(ip, acceptPort, dropPort, sendloopDuration); err == nil {
+	if err := connectTCP(ip, acceptPort, sendloopDuration); err == nil {
 		return fmt.Errorf("connection on port %d should not be accepted, but got accepted", dropPort)
 	}
 
 	return nil
 }
 
-// FilterOutputDropTCPSrcPort tests that connections are not accepted on specified source ports.
+// FilterOutputDropTCPSrcPort tests that connections are not accepted on
+// specified source ports.
 type FilterOutputDropTCPSrcPort struct{}
 
 // Name implements TestCase.Name.
@@ -79,7 +81,7 @@ func (FilterOutputDropTCPSrcPort) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterOutputDropTCPSrcPort) LocalAction(ip net.IP) error {
-	if err := connectTCP(ip, dropPort, acceptPort, sendloopDuration); err == nil {
+	if err := connectTCP(ip, dropPort, sendloopDuration); err == nil {
 		return fmt.Errorf("connection destined to port %d should not be accepted, but got accepted", dropPort)
 	}
 
