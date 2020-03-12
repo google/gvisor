@@ -862,7 +862,6 @@ func (e *endpoint) closeNoShutdown() {
 	e.closed = true
 	// Either perform the local cleanup or kick the worker to make sure it
 	// knows it needs to cleanup.
-	tcpip.AddDanglingEndpoint(e)
 	switch e.EndpointState() {
 	// Sockets in StateSynRecv state(passive connections) are closed when
 	// the handshake fails or if the listening socket is closed while
@@ -876,6 +875,9 @@ func (e *endpoint) closeNoShutdown() {
 		// do nothing.
 	default:
 		e.workerCleanup = true
+		tcpip.AddDanglingEndpoint(e)
+		// Worker will remove the dangling endpoint when the endpoint
+		// goroutine terminates.
 		e.notifyProtocolGoroutine(notifyClose)
 	}
 
