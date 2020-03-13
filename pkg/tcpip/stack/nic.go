@@ -56,7 +56,7 @@ type NIC struct {
 		primary       map[tcpip.NetworkProtocolNumber][]*referencedNetworkEndpoint
 		endpoints     map[NetworkEndpointID]*referencedNetworkEndpoint
 		addressRanges []tcpip.Subnet
-		mcastJoins    map[NetworkEndpointID]int32
+		mcastJoins    map[NetworkEndpointID]uint32
 		// packetEPs is protected by mu, but the contained PacketEndpoint
 		// values are not.
 		packetEPs map[tcpip.NetworkProtocolNumber][]PacketEndpoint
@@ -123,7 +123,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 	}
 	nic.mu.primary = make(map[tcpip.NetworkProtocolNumber][]*referencedNetworkEndpoint)
 	nic.mu.endpoints = make(map[NetworkEndpointID]*referencedNetworkEndpoint)
-	nic.mu.mcastJoins = make(map[NetworkEndpointID]int32)
+	nic.mu.mcastJoins = make(map[NetworkEndpointID]uint32)
 	nic.mu.packetEPs = make(map[tcpip.NetworkProtocolNumber][]PacketEndpoint)
 	nic.mu.ndp = ndpState{
 		nic:              nic,
@@ -167,8 +167,17 @@ func (n *NIC) disable() *tcpip.Error {
 	}
 
 	n.mu.Lock()
-	defer n.mu.Unlock()
+	err := n.disableLocked()
+	n.mu.Unlock()
+	return err
+}
 
+// disableLocked disables n.
+//
+// It undoes the work done by enable.
+//
+// n MUST be locked.
+func (n *NIC) disableLocked() *tcpip.Error {
 	if !n.mu.enabled {
 		return nil
 	}
@@ -191,7 +200,7 @@ func (n *NIC) disable() *tcpip.Error {
 		}
 
 		// The NIC may have already left the multicast group.
-		if err := n.leaveGroupLocked(header.IPv6AllNodesMulticastAddress); err != nil && err != tcpip.ErrBadLocalAddress {
+		if err := n.leaveGroupLocked(header.IPv6AllNodesMulticastAddress, false /* force */); err != nil && err != tcpip.ErrBadLocalAddress {
 			return err
 		}
 	}
@@ -307,24 +316,33 @@ func (n *NIC) remove() *tcpip.Error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
-	// Detach from link endpoint, so no packet comes in.
-	n.linkEP.Attach(nil)
+	n.disableLocked()
+
+	// TODO(b/151378115): come up with a better way to pick an error than the
+	// first one.
+	var err *tcpip.Error
+
+	// Forcefully leave multicast groups.
+	for nid := range n.mu.mcastJoins {
+		if tempErr := n.leaveGroupLocked(nid.LocalAddress, true /* force */); tempErr != nil && err == nil {
+			err = tempErr
+		}
+	}
 
 	// Remove permanent and permanentTentative addresses, so no packet goes out.
-	var errs []*tcpip.Error
 	for nid, ref := range n.mu.endpoints {
 		switch ref.getKind() {
 		case permanentTentative, permanent:
-			if err := n.removePermanentAddressLocked(nid.LocalAddress); err != nil {
-				errs = append(errs, err)
+			if tempErr := n.removePermanentAddressLocked(nid.LocalAddress); tempErr != nil && err == nil {
+				err = tempErr
 			}
 		}
 	}
-	if len(errs) > 0 {
-		return errs[0]
-	}
 
-	return nil
+	// Detach from link endpoint, so no packet comes in.
+	n.linkEP.Attach(nil)
+
+	return err
 }
 
 // becomeIPv6Router transitions n into an IPv6 router.
@@ -971,6 +989,7 @@ func (n *NIC) removeEndpointLocked(r *referencedNetworkEndpoint) {
 	for i, ref := range refs {
 		if ref == r {
 			n.mu.primary[r.protocol] = append(refs[:i], refs[i+1:]...)
+			refs[len(refs)-1] = nil
 			break
 		}
 	}
@@ -1021,9 +1040,12 @@ func (n *NIC) removePermanentAddressLocked(addr tcpip.Address) *tcpip.Error {
 
 	// If we are removing an IPv6 unicast address, leave the solicited-node
 	// multicast address.
+	//
+	// We ignore the tcpip.ErrBadLocalAddress error because the solicited-node
+	// multicast group may be left by user action.
 	if isIPv6Unicast {
 		snmc := header.SolicitedNodeAddr(addr)
-		if err := n.leaveGroupLocked(snmc); err != nil {
+		if err := n.leaveGroupLocked(snmc, false /* force */); err != nil && err != tcpip.ErrBadLocalAddress {
 			return err
 		}
 	}
@@ -1083,26 +1105,31 @@ func (n *NIC) leaveGroup(addr tcpip.Address) *tcpip.Error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
-	return n.leaveGroupLocked(addr)
+	return n.leaveGroupLocked(addr, false /* force */)
 }
 
 // leaveGroupLocked decrements the count for the given multicast address, and
 // when it reaches zero removes the endpoint for this address. n MUST be locked
 // before leaveGroupLocked is called.
-func (n *NIC) leaveGroupLocked(addr tcpip.Address) *tcpip.Error {
+//
+// If force is true, then the count for the multicast addres is ignored and the
+// endpoint will be removed immediately.
+func (n *NIC) leaveGroupLocked(addr tcpip.Address, force bool) *tcpip.Error {
 	id := NetworkEndpointID{addr}
-	joins := n.mu.mcastJoins[id]
-	switch joins {
-	case 0:
+	joins, ok := n.mu.mcastJoins[id]
+	if !ok {
 		// There are no joins with this address on this NIC.
 		return tcpip.ErrBadLocalAddress
-	case 1:
-		// This is the last one, clean up.
-		if err := n.removePermanentAddressLocked(addr); err != nil {
-			return err
-		}
 	}
-	n.mu.mcastJoins[id] = joins - 1
+
+	joins--
+	if force || joins == 0 {
+		// There are no outstanding joins or we are forced to leave, clean up.
+		delete(n.mu.mcastJoins, id)
+		return n.removePermanentAddressLocked(addr)
+	}
+
+	n.mu.mcastJoins[id] = joins
 	return nil
 }
 

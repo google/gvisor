@@ -255,7 +255,7 @@ type linkEPWithMockedAttach struct {
 // Attach implements stack.LinkEndpoint.Attach.
 func (l *linkEPWithMockedAttach) Attach(d stack.NetworkDispatcher) {
 	l.LinkEndpoint.Attach(d)
-	l.attached = true
+	l.attached = d != nil
 }
 
 func (l *linkEPWithMockedAttach) isAttached() bool {
@@ -566,7 +566,7 @@ func TestAttachToLinkEndpointImmediately(t *testing.T) {
 				t.Fatalf("CreateNICWithOptions(%d, _, %+v) = %s", nicID, test.nicOpts, err)
 			}
 			if !e.isAttached() {
-				t.Fatalf("link endpoint not attached to a network disatcher")
+				t.Fatal("link endpoint not attached to a network dispatcher")
 			}
 		})
 	}
@@ -631,196 +631,240 @@ func TestDisabledNICsNICInfoAndCheckNIC(t *testing.T) {
 	checkNIC(false)
 }
 
-func TestRoutesWithDisabledNIC(t *testing.T) {
-	const unspecifiedNIC = 0
-	const nicID1 = 1
-	const nicID2 = 2
-
+func TestRemoveUnknownNIC(t *testing.T) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
 
-	ep1 := channel.New(0, defaultMTU, "")
-	if err := s.CreateNIC(nicID1, ep1); err != nil {
-		t.Fatalf("CreateNIC(%d, _): %s", nicID1, err)
+	if err := s.RemoveNIC(1); err != tcpip.ErrUnknownNICID {
+		t.Fatalf("got s.RemoveNIC(1) = %v, want = %s", err, tcpip.ErrUnknownNICID)
 	}
-
-	addr1 := tcpip.Address("\x01")
-	if err := s.AddAddress(nicID1, fakeNetNumber, addr1); err != nil {
-		t.Fatalf("AddAddress(%d, %d, %s): %s", nicID1, fakeNetNumber, addr1, err)
-	}
-
-	ep2 := channel.New(0, defaultMTU, "")
-	if err := s.CreateNIC(nicID2, ep2); err != nil {
-		t.Fatalf("CreateNIC(%d, _): %s", nicID2, err)
-	}
-
-	addr2 := tcpip.Address("\x02")
-	if err := s.AddAddress(nicID2, fakeNetNumber, addr2); err != nil {
-		t.Fatalf("AddAddress(%d, %d, %s): %s", nicID2, fakeNetNumber, addr2, err)
-	}
-
-	// Set a route table that sends all packets with odd destination
-	// addresses through the first NIC, and all even destination address
-	// through the second one.
-	{
-		subnet0, err := tcpip.NewSubnet("\x00", "\x01")
-		if err != nil {
-			t.Fatal(err)
-		}
-		subnet1, err := tcpip.NewSubnet("\x01", "\x01")
-		if err != nil {
-			t.Fatal(err)
-		}
-		s.SetRouteTable([]tcpip.Route{
-			{Destination: subnet1, Gateway: "\x00", NIC: nicID1},
-			{Destination: subnet0, Gateway: "\x00", NIC: nicID2},
-		})
-	}
-
-	// Test routes to odd address.
-	testRoute(t, s, unspecifiedNIC, "", "\x05", addr1)
-	testRoute(t, s, unspecifiedNIC, addr1, "\x05", addr1)
-	testRoute(t, s, nicID1, addr1, "\x05", addr1)
-
-	// Test routes to even address.
-	testRoute(t, s, unspecifiedNIC, "", "\x06", addr2)
-	testRoute(t, s, unspecifiedNIC, addr2, "\x06", addr2)
-	testRoute(t, s, nicID2, addr2, "\x06", addr2)
-
-	// Disabling NIC1 should result in no routes to odd addresses. Routes to even
-	// addresses should continue to be available as NIC2 is still enabled.
-	if err := s.DisableNIC(nicID1); err != nil {
-		t.Fatalf("s.DisableNIC(%d): %s", nicID1, err)
-	}
-	nic1Dst := tcpip.Address("\x05")
-	testNoRoute(t, s, unspecifiedNIC, "", nic1Dst)
-	testNoRoute(t, s, unspecifiedNIC, addr1, nic1Dst)
-	testNoRoute(t, s, nicID1, addr1, nic1Dst)
-	nic2Dst := tcpip.Address("\x06")
-	testRoute(t, s, unspecifiedNIC, "", nic2Dst, addr2)
-	testRoute(t, s, unspecifiedNIC, addr2, nic2Dst, addr2)
-	testRoute(t, s, nicID2, addr2, nic2Dst, addr2)
-
-	// Disabling NIC2 should result in no routes to even addresses. No route
-	// should be available to any address as routes to odd addresses were made
-	// unavailable by disabling NIC1 above.
-	if err := s.DisableNIC(nicID2); err != nil {
-		t.Fatalf("s.DisableNIC(%d): %s", nicID2, err)
-	}
-	testNoRoute(t, s, unspecifiedNIC, "", nic1Dst)
-	testNoRoute(t, s, unspecifiedNIC, addr1, nic1Dst)
-	testNoRoute(t, s, nicID1, addr1, nic1Dst)
-	testNoRoute(t, s, unspecifiedNIC, "", nic2Dst)
-	testNoRoute(t, s, unspecifiedNIC, addr2, nic2Dst)
-	testNoRoute(t, s, nicID2, addr2, nic2Dst)
-
-	// Enabling NIC1 should make routes to odd addresses available again. Routes
-	// to even addresses should continue to be unavailable as NIC2 is still
-	// disabled.
-	if err := s.EnableNIC(nicID1); err != nil {
-		t.Fatalf("s.EnableNIC(%d): %s", nicID1, err)
-	}
-	testRoute(t, s, unspecifiedNIC, "", nic1Dst, addr1)
-	testRoute(t, s, unspecifiedNIC, addr1, nic1Dst, addr1)
-	testRoute(t, s, nicID1, addr1, nic1Dst, addr1)
-	testNoRoute(t, s, unspecifiedNIC, "", nic2Dst)
-	testNoRoute(t, s, unspecifiedNIC, addr2, nic2Dst)
-	testNoRoute(t, s, nicID2, addr2, nic2Dst)
 }
 
-func TestRouteWritePacketWithDisabledNIC(t *testing.T) {
-	const unspecifiedNIC = 0
-	const nicID1 = 1
-	const nicID2 = 2
+func TestRemoveNIC(t *testing.T) {
+	const nicID = 1
 
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
 
-	ep1 := channel.New(1, defaultMTU, "")
-	if err := s.CreateNIC(nicID1, ep1); err != nil {
-		t.Fatalf("CreateNIC(%d, _): %s", nicID1, err)
+	e := linkEPWithMockedAttach{
+		LinkEndpoint: loopback.New(),
+	}
+	if err := s.CreateNIC(nicID, &e); err != nil {
+		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 	}
 
-	addr1 := tcpip.Address("\x01")
-	if err := s.AddAddress(nicID1, fakeNetNumber, addr1); err != nil {
-		t.Fatalf("AddAddress(%d, %d, %s): %s", nicID1, fakeNetNumber, addr1, err)
+	// NIC should be present in NICInfo and attached to a NetworkDispatcher.
+	allNICInfo := s.NICInfo()
+	if _, ok := allNICInfo[nicID]; !ok {
+		t.Errorf("entry for %d missing from allNICInfo = %+v", nicID, allNICInfo)
+	}
+	if !e.isAttached() {
+		t.Fatal("link endpoint not attached to a network dispatcher")
 	}
 
-	ep2 := channel.New(1, defaultMTU, "")
-	if err := s.CreateNIC(nicID2, ep2); err != nil {
-		t.Fatalf("CreateNIC(%d, _): %s", nicID2, err)
+	// Removing a NIC should remove it from NICInfo and e should be detached from
+	// the NetworkDispatcher.
+	if err := s.RemoveNIC(nicID); err != nil {
+		t.Fatalf("s.RemoveNIC(%d): %s", nicID, err)
+	}
+	if nicInfo, ok := s.NICInfo()[nicID]; ok {
+		t.Errorf("got unexpected NICInfo entry for deleted NIC %d = %+v", nicID, nicInfo)
+	}
+	if e.isAttached() {
+		t.Error("link endpoint for removed NIC still attached to a network dispatcher")
+	}
+}
+
+func TestRouteWithDownNIC(t *testing.T) {
+	tests := []struct {
+		name   string
+		downFn func(s *stack.Stack, nicID tcpip.NICID) *tcpip.Error
+		upFn   func(s *stack.Stack, nicID tcpip.NICID) *tcpip.Error
+	}{
+		{
+			name:   "Disabled NIC",
+			downFn: (*stack.Stack).DisableNIC,
+			upFn:   (*stack.Stack).EnableNIC,
+		},
+
+		// Once a NIC is removed, it cannot be brought up.
+		{
+			name:   "Removed NIC",
+			downFn: (*stack.Stack).RemoveNIC,
+		},
 	}
 
-	addr2 := tcpip.Address("\x02")
-	if err := s.AddAddress(nicID2, fakeNetNumber, addr2); err != nil {
-		t.Fatalf("AddAddress(%d, %d, %s): %s", nicID2, fakeNetNumber, addr2, err)
-	}
+	const unspecifiedNIC = 0
+	const nicID1 = 1
+	const nicID2 = 2
+	const addr1 = tcpip.Address("\x01")
+	const addr2 = tcpip.Address("\x02")
+	const nic1Dst = tcpip.Address("\x05")
+	const nic2Dst = tcpip.Address("\x06")
 
-	// Set a route table that sends all packets with odd destination
-	// addresses through the first NIC, and all even destination address
-	// through the second one.
-	{
-		subnet0, err := tcpip.NewSubnet("\x00", "\x01")
-		if err != nil {
-			t.Fatal(err)
-		}
-		subnet1, err := tcpip.NewSubnet("\x01", "\x01")
-		if err != nil {
-			t.Fatal(err)
-		}
-		s.SetRouteTable([]tcpip.Route{
-			{Destination: subnet1, Gateway: "\x00", NIC: nicID1},
-			{Destination: subnet0, Gateway: "\x00", NIC: nicID2},
+	setup := func(t *testing.T) (*stack.Stack, *channel.Endpoint, *channel.Endpoint) {
+		s := stack.New(stack.Options{
+			NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 		})
+
+		ep1 := channel.New(1, defaultMTU, "")
+		if err := s.CreateNIC(nicID1, ep1); err != nil {
+			t.Fatalf("CreateNIC(%d, _): %s", nicID1, err)
+		}
+
+		if err := s.AddAddress(nicID1, fakeNetNumber, addr1); err != nil {
+			t.Fatalf("AddAddress(%d, %d, %s): %s", nicID1, fakeNetNumber, addr1, err)
+		}
+
+		ep2 := channel.New(1, defaultMTU, "")
+		if err := s.CreateNIC(nicID2, ep2); err != nil {
+			t.Fatalf("CreateNIC(%d, _): %s", nicID2, err)
+		}
+
+		if err := s.AddAddress(nicID2, fakeNetNumber, addr2); err != nil {
+			t.Fatalf("AddAddress(%d, %d, %s): %s", nicID2, fakeNetNumber, addr2, err)
+		}
+
+		// Set a route table that sends all packets with odd destination
+		// addresses through the first NIC, and all even destination address
+		// through the second one.
+		{
+			subnet0, err := tcpip.NewSubnet("\x00", "\x01")
+			if err != nil {
+				t.Fatal(err)
+			}
+			subnet1, err := tcpip.NewSubnet("\x01", "\x01")
+			if err != nil {
+				t.Fatal(err)
+			}
+			s.SetRouteTable([]tcpip.Route{
+				{Destination: subnet1, Gateway: "\x00", NIC: nicID1},
+				{Destination: subnet0, Gateway: "\x00", NIC: nicID2},
+			})
+		}
+
+		return s, ep1, ep2
 	}
 
-	nic1Dst := tcpip.Address("\x05")
-	r1, err := s.FindRoute(nicID1, addr1, nic1Dst, fakeNetNumber, false /* multicastLoop */)
-	if err != nil {
-		t.Errorf("FindRoute(%d, %s, %s, %d, false): %s", nicID1, addr1, nic1Dst, fakeNetNumber, err)
-	}
-	defer r1.Release()
+	// Tests that routes through a down NIC are not used when looking up a route
+	// for a destination.
+	t.Run("Find", func(t *testing.T) {
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				s, _, _ := setup(t)
 
-	nic2Dst := tcpip.Address("\x06")
-	r2, err := s.FindRoute(nicID2, addr2, nic2Dst, fakeNetNumber, false /* multicastLoop */)
-	if err != nil {
-		t.Errorf("FindRoute(%d, %s, %s, %d, false): %s", nicID2, addr2, nic2Dst, fakeNetNumber, err)
-	}
-	defer r2.Release()
+				// Test routes to odd address.
+				testRoute(t, s, unspecifiedNIC, "", "\x05", addr1)
+				testRoute(t, s, unspecifiedNIC, addr1, "\x05", addr1)
+				testRoute(t, s, nicID1, addr1, "\x05", addr1)
 
-	// If we failed to get routes r1 or r2, we cannot proceed with the test.
-	if t.Failed() {
-		t.FailNow()
-	}
+				// Test routes to even address.
+				testRoute(t, s, unspecifiedNIC, "", "\x06", addr2)
+				testRoute(t, s, unspecifiedNIC, addr2, "\x06", addr2)
+				testRoute(t, s, nicID2, addr2, "\x06", addr2)
 
-	buf := buffer.View([]byte{1})
-	testSend(t, r1, ep1, buf)
-	testSend(t, r2, ep2, buf)
+				// Bringing NIC1 down should result in no routes to odd addresses. Routes to
+				// even addresses should continue to be available as NIC2 is still up.
+				if err := test.downFn(s, nicID1); err != nil {
+					t.Fatalf("test.downFn(_, %d): %s", nicID1, err)
+				}
+				testNoRoute(t, s, unspecifiedNIC, "", nic1Dst)
+				testNoRoute(t, s, unspecifiedNIC, addr1, nic1Dst)
+				testNoRoute(t, s, nicID1, addr1, nic1Dst)
+				testRoute(t, s, unspecifiedNIC, "", nic2Dst, addr2)
+				testRoute(t, s, unspecifiedNIC, addr2, nic2Dst, addr2)
+				testRoute(t, s, nicID2, addr2, nic2Dst, addr2)
 
-	// Writes with Routes that use the disabled NIC1 should fail.
-	if err := s.DisableNIC(nicID1); err != nil {
-		t.Fatalf("s.DisableNIC(%d): %s", nicID1, err)
-	}
-	testFailingSend(t, r1, ep1, buf, tcpip.ErrInvalidEndpointState)
-	testSend(t, r2, ep2, buf)
+				// Bringing NIC2 down should result in no routes to even addresses. No
+				// route should be available to any address as routes to odd addresses
+				// were made unavailable by bringing NIC1 down above.
+				if err := test.downFn(s, nicID2); err != nil {
+					t.Fatalf("test.downFn(_, %d): %s", nicID2, err)
+				}
+				testNoRoute(t, s, unspecifiedNIC, "", nic1Dst)
+				testNoRoute(t, s, unspecifiedNIC, addr1, nic1Dst)
+				testNoRoute(t, s, nicID1, addr1, nic1Dst)
+				testNoRoute(t, s, unspecifiedNIC, "", nic2Dst)
+				testNoRoute(t, s, unspecifiedNIC, addr2, nic2Dst)
+				testNoRoute(t, s, nicID2, addr2, nic2Dst)
 
-	// Writes with Routes that use the disabled NIC2 should fail.
-	if err := s.DisableNIC(nicID2); err != nil {
-		t.Fatalf("s.DisableNIC(%d): %s", nicID2, err)
-	}
-	testFailingSend(t, r1, ep1, buf, tcpip.ErrInvalidEndpointState)
-	testFailingSend(t, r2, ep2, buf, tcpip.ErrInvalidEndpointState)
+				if upFn := test.upFn; upFn != nil {
+					// Bringing NIC1 up should make routes to odd addresses available
+					// again. Routes to even addresses should continue to be unavailable
+					// as NIC2 is still down.
+					if err := upFn(s, nicID1); err != nil {
+						t.Fatalf("test.upFn(_, %d): %s", nicID1, err)
+					}
+					testRoute(t, s, unspecifiedNIC, "", nic1Dst, addr1)
+					testRoute(t, s, unspecifiedNIC, addr1, nic1Dst, addr1)
+					testRoute(t, s, nicID1, addr1, nic1Dst, addr1)
+					testNoRoute(t, s, unspecifiedNIC, "", nic2Dst)
+					testNoRoute(t, s, unspecifiedNIC, addr2, nic2Dst)
+					testNoRoute(t, s, nicID2, addr2, nic2Dst)
+				}
+			})
+		}
+	})
 
-	// Writes with Routes that use the re-enabled NIC1 should succeed.
-	// TODO(b/147015577): Should we instead completely invalidate all Routes that
-	// were bound to a disabled NIC at some point?
-	if err := s.EnableNIC(nicID1); err != nil {
-		t.Fatalf("s.EnableNIC(%d): %s", nicID1, err)
-	}
-	testSend(t, r1, ep1, buf)
-	testFailingSend(t, r2, ep2, buf, tcpip.ErrInvalidEndpointState)
+	// Tests that writing a packet using a Route through a down NIC fails.
+	t.Run("WritePacket", func(t *testing.T) {
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				s, ep1, ep2 := setup(t)
+
+				r1, err := s.FindRoute(nicID1, addr1, nic1Dst, fakeNetNumber, false /* multicastLoop */)
+				if err != nil {
+					t.Errorf("FindRoute(%d, %s, %s, %d, false): %s", nicID1, addr1, nic1Dst, fakeNetNumber, err)
+				}
+				defer r1.Release()
+
+				r2, err := s.FindRoute(nicID2, addr2, nic2Dst, fakeNetNumber, false /* multicastLoop */)
+				if err != nil {
+					t.Errorf("FindRoute(%d, %s, %s, %d, false): %s", nicID2, addr2, nic2Dst, fakeNetNumber, err)
+				}
+				defer r2.Release()
+
+				// If we failed to get routes r1 or r2, we cannot proceed with the test.
+				if t.Failed() {
+					t.FailNow()
+				}
+
+				buf := buffer.View([]byte{1})
+				testSend(t, r1, ep1, buf)
+				testSend(t, r2, ep2, buf)
+
+				// Writes with Routes that use NIC1 after being brought down should fail.
+				if err := test.downFn(s, nicID1); err != nil {
+					t.Fatalf("test.downFn(_, %d): %s", nicID1, err)
+				}
+				testFailingSend(t, r1, ep1, buf, tcpip.ErrInvalidEndpointState)
+				testSend(t, r2, ep2, buf)
+
+				// Writes with Routes that use NIC2 after being brought down should fail.
+				if err := test.downFn(s, nicID2); err != nil {
+					t.Fatalf("test.downFn(_, %d): %s", nicID2, err)
+				}
+				testFailingSend(t, r1, ep1, buf, tcpip.ErrInvalidEndpointState)
+				testFailingSend(t, r2, ep2, buf, tcpip.ErrInvalidEndpointState)
+
+				if upFn := test.upFn; upFn != nil {
+					// Writes with Routes that use NIC1 after being brought up should
+					// succeed.
+					//
+					// TODO(b/147015577): Should we instead completely invalidate all
+					// Routes that were bound to a NIC that was brought down at some
+					// point?
+					if err := upFn(s, nicID1); err != nil {
+						t.Fatalf("test.upFn(_, %d): %s", nicID1, err)
+					}
+					testSend(t, r1, ep1, buf)
+					testFailingSend(t, r2, ep2, buf, tcpip.ErrInvalidEndpointState)
+				}
+			})
+		}
+	})
 }
 
 func TestRoutes(t *testing.T) {
@@ -3035,6 +3079,50 @@ func TestAddRemoveIPv4BroadcastAddressOnNICEnableDisable(t *testing.T) {
 	}
 	if l := len(allNICAddrs); l != 0 {
 		t.Fatalf("got len(allNICAddrs) = %d, want = 0", l)
+	}
+}
+
+// TestLeaveIPv6SolicitedNodeAddrBeforeAddrRemoval tests that removing an IPv6
+// address after leaving its solicited node multicast address does not result in
+// an error.
+func TestLeaveIPv6SolicitedNodeAddrBeforeAddrRemoval(t *testing.T) {
+	const nicID = 1
+
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+	})
+	e := channel.New(10, 1280, linkAddr1)
+	if err := s.CreateNIC(1, e); err != nil {
+		t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+	}
+
+	if err := s.AddAddress(nicID, ipv6.ProtocolNumber, addr1); err != nil {
+		t.Fatalf("AddAddress(%d, %d, %s): %s", nicID, ipv6.ProtocolNumber, addr1, err)
+	}
+
+	// The NIC should have joined addr1's solicited node multicast address.
+	snmc := header.SolicitedNodeAddr(addr1)
+	in, err := s.IsInGroup(nicID, snmc)
+	if err != nil {
+		t.Fatalf("IsInGroup(%d, %s): %s", nicID, snmc, err)
+	}
+	if !in {
+		t.Fatalf("got IsInGroup(%d, %s) = false, want = true", nicID, snmc)
+	}
+
+	if err := s.LeaveGroup(ipv6.ProtocolNumber, nicID, snmc); err != nil {
+		t.Fatalf("LeaveGroup(%d, %d, %s): %s", ipv6.ProtocolNumber, nicID, snmc, err)
+	}
+	in, err = s.IsInGroup(nicID, snmc)
+	if err != nil {
+		t.Fatalf("IsInGroup(%d, %s): %s", nicID, snmc, err)
+	}
+	if in {
+		t.Fatalf("got IsInGroup(%d, %s) = true, want = false", nicID, snmc)
+	}
+
+	if err := s.RemoveAddress(nicID, addr1); err != nil {
+		t.Fatalf("RemoveAddress(%d, %s) = %s", nicID, addr1, err)
 	}
 }
 
