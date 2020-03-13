@@ -72,8 +72,15 @@ void ApplySeccompFilter(uint32_t sysno, uint32_t filtered_result,
   struct sock_filter filter[] = {
       // A = seccomp_data.arch
       BPF_STMT(BPF_LD | BPF_ABS | BPF_W, 4),
+#if defined(__x86_64__)
       // if (A != AUDIT_ARCH_X86_64) goto kill
       BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_X86_64, 0, 4),
+#elif defined(__aarch64__)
+      // if (A != AUDIT_ARCH_AARCH64) goto kill
+      BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_AARCH64, 0, 4),
+#else
+#error "Unknown architecture"
+#endif
       // A = seccomp_data.nr
       BPF_STMT(BPF_LD | BPF_ABS | BPF_W, 0),
       // if (A != sysno) goto allow
@@ -179,9 +186,12 @@ TEST(SeccompTest, RetTrapCausesSIGSYS) {
           TEST_CHECK(info->si_errno == kTrapValue);
           TEST_CHECK(info->si_call_addr != nullptr);
           TEST_CHECK(info->si_syscall == kFilteredSyscall);
-#ifdef __x86_64__
+#if defined(__x86_64__)
           TEST_CHECK(info->si_arch == AUDIT_ARCH_X86_64);
           TEST_CHECK(uc->uc_mcontext.gregs[REG_RAX] == kFilteredSyscall);
+#elif defined(__aarch64__)
+          TEST_CHECK(info->si_arch == AUDIT_ARCH_AARCH64);
+          TEST_CHECK(uc->uc_mcontext.regs[8] == kFilteredSyscall);
 #endif  // defined(__x86_64__)
           _exit(0);
         });
