@@ -74,11 +74,30 @@ type Mount struct {
 	// umounted is true. umounted is protected by VirtualFilesystem.mountMu.
 	umounted bool
 
+	// flags contains settings as specified for mount(2), e.g. MS_NOEXEC, except
+	// for MS_RDONLY which is tracked in "writers".
+	flags MountFlags
+
 	// The lower 63 bits of writers is the number of calls to
 	// Mount.CheckBeginWrite() that have not yet been paired with a call to
 	// Mount.EndWrite(). The MSB of writers is set if MS_RDONLY is in effect.
 	// writers is accessed using atomic memory operations.
 	writers int64
+}
+
+func newMount(vfs *VirtualFilesystem, fs *Filesystem, root *Dentry, mntns *MountNamespace, opts *MountOptions) *Mount {
+	mnt := &Mount{
+		vfs:   vfs,
+		fs:    fs,
+		root:  root,
+		flags: opts.Flags,
+		ns:    mntns,
+		refs:  1,
+	}
+	if opts.ReadOnly {
+		mnt.setReadOnlyLocked(true)
+	}
+	return mnt
 }
 
 // A MountNamespace is a collection of Mounts.
@@ -129,13 +148,7 @@ func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth
 		refs:        1,
 		mountpoints: make(map[*Dentry]uint32),
 	}
-	mntns.root = &Mount{
-		vfs:  vfs,
-		fs:   fs,
-		root: root,
-		ns:   mntns,
-		refs: 1,
-	}
+	mntns.root = newMount(vfs, fs, root, mntns, &MountOptions{})
 	return mntns, nil
 }
 
@@ -148,12 +161,7 @@ func (vfs *VirtualFilesystem) NewDisconnectedMount(fs *Filesystem, root *Dentry,
 	if root != nil {
 		root.IncRef()
 	}
-	return &Mount{
-		vfs:  vfs,
-		fs:   fs,
-		root: root,
-		refs: 1,
-	}, nil
+	return newMount(vfs, fs, root, nil /* mntns */, opts), nil
 }
 
 // MountAt creates and mounts a Filesystem configured by the given arguments.
@@ -218,13 +226,7 @@ func (vfs *VirtualFilesystem) MountAt(ctx context.Context, creds *auth.Credentia
 	// are directories, or neither are, and returns ENOTDIR if this is not the
 	// case.
 	mntns := vd.mount.ns
-	mnt := &Mount{
-		vfs:  vfs,
-		fs:   fs,
-		root: root,
-		ns:   mntns,
-		refs: 1,
-	}
+	mnt := newMount(vfs, fs, root, mntns, opts)
 	vfs.mounts.seq.BeginWrite()
 	vfs.connectLocked(mnt, vd, mntns)
 	vfs.mounts.seq.EndWrite()
