@@ -14,13 +14,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Run in the root of the repo.
-cd "$(dirname "$0")"
+source $(dirname $0)/common.sh
 
+# Exporting for subprocesses as GCP APIs and tools check this environmental
+# variable for authentication.
 export GOOGLE_APPLICATION_CREDENTIALS="${KOKORO_KEYSTORE_DIR}/${GCLOUD_CREDENTIALS}"
 
-gcloud auth activate-service-account --key-file "${GOOGLE_APPLICATION_CREDENTIALS}"
+gcloud auth activate-service-account \
+   --key-file "${GOOGLE_APPLICATION_CREDENTIALS}"
 
-gcloud compute instances list
-
-bq show gvisor-benchmarks:test.test
+bazel run //benchmarks:benchmarks -- \
+  --verbose \
+  run-gcp \
+  startup \
+  --runtime=runc \
+  --runtime=runsc \
+  --installers=head
