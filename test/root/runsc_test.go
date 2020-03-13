@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -117,6 +118,10 @@ func sandboxPid(pid int) (int, error) {
 
 		cmdline, err := ioutil.ReadFile(filepath.Join("/proc", line, "cmdline"))
 		if err != nil {
+			if os.IsNotExist(err) {
+				// Raced with process exit.
+				continue
+			}
 			return 0, err
 		}
 		args := strings.SplitN(string(cmdline), "\x00", 2)
