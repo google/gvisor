@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
+	"gvisor.dev/gvisor/runsc/argument"
 )
 
 // FileAccessType tells how the filesystem is accessed.
@@ -262,6 +263,9 @@ type Config struct {
 
 	// Enables VFS2 (not plumbled through yet).
 	VFS2 bool
+
+	// ExtraArgs is a list of other arguments that are not explicitly listed above.
+	ExtraArgs []argument.Argument
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.

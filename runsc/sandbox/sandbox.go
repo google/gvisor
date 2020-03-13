@@ -42,6 +42,16 @@ import (
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
+// ExtraBootFiles provides a spot for external modules to specify additional
+// files that should be added to the cmd.ExtraFiles; all files in this map
+// will automatically be added to cmd.ExtraFiles using the mapped string key as
+// its arg (do not include the `--` at the front of the string key).
+var ExtraBootFiles map[string]*os.File
+
+func init() {
+	ExtraBootFiles = make(map[string]*os.File)
+}
+
 // Sandbox wraps a sandbox process.
 //
 // It is used to start/stop sandbox process (and associated processes like
@@ -509,6 +519,12 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 		}
+	}
+
+	for name, f := range ExtraBootFiles {
+		cmd.ExtraFiles = append(cmd.ExtraFiles, f)
+		cmd.Args = append(cmd.Args, "--"+name+"="+strconv.Itoa(nextFD))
+		nextFD++
 	}
 
 	// Detach from this session, otherwise cmd will get SIGHUP and SIGCONT

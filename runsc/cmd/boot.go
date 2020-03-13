@@ -25,6 +25,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/argument"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/boot/platforms"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -125,6 +126,8 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.startSyncFD, "start-sync-fd", -1, "required FD to used to synchronize sandbox startup")
 	f.IntVar(&b.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to read list of mounts after they have been resolved (direct paths, no symlinks).")
 	f.BoolVar(&b.attached, "attached", false, "if attached is true, kills the sandbox process when the parent process terminates")
+
+	argument.SetBootArguments(f)
 }
 
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
@@ -214,6 +217,10 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	}
 	mountsFile.Close()
 	spec.Mounts = cleanMounts
+
+	if err = argument.EvaluateBootArgs(); err != nil {
+		return Errorf("evaluating extra args in Boot: %v", err)
+	}
 
 	// Create the loader.
 	bootArgs := boot.Args{

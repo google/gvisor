@@ -49,6 +49,7 @@ go_library(
         "//pkg/sync",
         "//pkg/unet",
         "//pkg/urpc",
+        "//runsc/argument",
         "//runsc/boot",
         "//runsc/boot/platforms",
         "//runsc/console",

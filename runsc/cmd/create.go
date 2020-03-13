@@ -18,6 +18,7 @@ import (
 	"context"
 
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/runsc/argument"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -96,6 +97,10 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 		return Errorf("reading spec: %v", err)
 	}
 	specutils.LogSpec(spec)
+
+	if err := argument.EvaluateArgs(id); err != nil {
+		return Errorf("Evaluating extra arg in conf.ExtraArgs: %v", err)
+	}
 
 	// Create the container. A new sandbox will be created for the
 	// container unless the metadata specifies that it should be run in an
