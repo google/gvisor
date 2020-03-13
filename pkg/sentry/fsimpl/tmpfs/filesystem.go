@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -152,6 +153,17 @@ func (fs *filesystem) doCreateAt(rp *vfs.ResolvingPath, dir bool, create func(pa
 	}
 	defer mnt.EndWrite()
 	return create(parent, name)
+}
+
+// AccessAt implements vfs.Filesystem.Impl.AccessAt.
+func (fs *filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds *auth.Credentials, ats vfs.AccessTypes) error {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	d, err := resolveLocked(rp)
+	if err != nil {
+		return err
+	}
+	return d.inode.checkPermissions(creds, ats, d.inode.isDir())
 }
 
 // GetDentryAt implements vfs.FilesystemImpl.GetDentryAt.

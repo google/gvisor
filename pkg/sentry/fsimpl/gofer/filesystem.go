@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/p9"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -497,6 +498,18 @@ func (fs *filesystem) renameMuUnlockAndCheckCaching(ds **[]*dentry) {
 	}
 	fs.renameMu.Unlock()
 	putDentrySlice(*ds)
+}
+
+// AccessAt implements vfs.Filesystem.Impl.AccessAt.
+func (fs *filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds *auth.Credentials, ats vfs.AccessTypes) error {
+	var ds *[]*dentry
+	fs.renameMu.RLock()
+	defer fs.renameMuRUnlockAndCheckCaching(&ds)
+	d, err := fs.resolveLocked(ctx, rp, &ds)
+	if err != nil {
+		return err
+	}
+	return d.checkPermissions(creds, ats, d.isDir())
 }
 
 // GetDentryAt implements vfs.FilesystemImpl.GetDentryAt.
