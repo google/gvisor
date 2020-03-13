@@ -388,6 +388,11 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 			// TODO(gvisor.dev/issue/1193): Move inside fsimpl to avoid another call
 			// to FileDescription.Stat().
 			if opts.FileExec {
+				if fd.Mount().flags.NoExec {
+					fd.DecRef()
+					return nil, syserror.EACCES
+				}
+
 				// Only a regular file can be executed.
 				stat, err := fd.Stat(ctx, StatOptions{Mask: linux.STATX_TYPE})
 				if err != nil {

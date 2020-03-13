@@ -46,8 +46,21 @@ type MknodOptions struct {
 	DevMinor uint32
 }
 
+// MountFlags contains flags as specified for mount(2), e.g. MS_NOEXEC.
+// MS_RDONLY is not part of MountFlags because it's tracked in Mount.writers.
+type MountFlags struct {
+	// NoExec is equivalent to MS_NOEXEC.
+	NoExec bool
+}
+
 // MountOptions contains options to VirtualFilesystem.MountAt().
 type MountOptions struct {
+	// Flags contains flags as specified for mount(2), e.g. MS_NOEXEC.
+	Flags MountFlags
+
+	// ReadOnly is equivalent to MS_RDONLY.
+	ReadOnly bool
+
 	// GetFilesystemOptions contains options to FilesystemType.GetFilesystem().
 	GetFilesystemOptions GetFilesystemOptions
 
@@ -75,7 +88,8 @@ type OpenOptions struct {
 
 	// FileExec is set when the file is being opened to be executed.
 	// VirtualFilesystem.OpenAt() checks that the caller has execute permissions
-	// on the file, and that the file is a regular file.
+	// on the file, that the file is a regular file, and that the mount doesn't
+	// have MS_NOEXEC set.
 	FileExec bool
 }
 
