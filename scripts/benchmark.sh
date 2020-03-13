@@ -23,6 +23,9 @@ export GOOGLE_APPLICATION_CREDENTIALS="${KOKORO_KEYSTORE_DIR}/${GCLOUD_CREDENTIA
 gcloud auth activate-service-account \
    --key-file "${GOOGLE_APPLICATION_CREDENTIALS}"
 
+gcloud config set project ${PROJECT}
+gcloud config set compute/zone ${ZONE}
+
 bazel run //benchmarks:benchmarks -- \
   --verbose \
   run-gcp \
