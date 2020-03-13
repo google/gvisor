@@ -93,9 +93,6 @@ type TaskConfig struct {
 
 	// ContainerID is the container the new task belongs to.
 	ContainerID string
-
-	// oomScoreAdj is the task's OOM score adjustment.
-	OOMScoreAdj int32
 }
 
 // NewTask creates a new task defined by cfg.
@@ -146,7 +143,6 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 		rseqSignature:      cfg.RSeqSignature,
 		futexWaiter:        futex.NewWaiter(),
 		containerID:        cfg.ContainerID,
-		oomScoreAdj:        cfg.OOMScoreAdj,
 	}
 	t.creds.Store(cfg.Credentials)
 	t.endStopCond.L = &t.tg.signalHandlers.mu

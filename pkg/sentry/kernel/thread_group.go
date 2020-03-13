@@ -254,6 +254,13 @@ type ThreadGroup struct {
 	//
 	// tty is protected by the signal mutex.
 	tty *TTY
+
+	// oomScoreAdj is the thread group's OOM score adjustment. This is
+	// currently not used but is maintained for consistency.
+	// TODO(gvisor.dev/issue/1967)
+	//
+	// oomScoreAdj is accessed using atomic memory operations.
+	oomScoreAdj int32
 }
 
 // NewThreadGroup returns a new, empty thread group in PID namespace pidns. The
