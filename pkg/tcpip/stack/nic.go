@@ -15,6 +15,7 @@
 package stack
 
 import (
+	"fmt"
 	"log"
 	"reflect"
 	"sort"
@@ -1259,8 +1260,23 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 
 func (n *NIC) forwardPacket(r *Route, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) {
 	// TODO(b/143425874) Decrease the TTL field in forwarded packets.
-	pkt.Header = buffer.NewPrependableFromView(pkt.Data.First())
+
+	firstData := pkt.Data.First()
 	pkt.Data.RemoveFirst()
+
+	if linkHeaderLen := int(n.linkEP.MaxHeaderLength()); linkHeaderLen == 0 {
+		pkt.Header = buffer.NewPrependableFromView(firstData)
+	} else {
+		firstDataLen := len(firstData)
+
+		// pkt.Header should have enough capacity to hold n.linkEP's headers.
+		pkt.Header = buffer.NewPrependable(firstDataLen + linkHeaderLen)
+
+		// TODO(b/151227689): avoid copying the packet when forwarding
+		if n := copy(pkt.Header.Prepend(firstDataLen), firstData); n != firstDataLen {
+			panic(fmt.Sprintf("copied %d bytes, expected %d", n, firstDataLen))
+		}
+	}
 
 	if err := n.linkEP.WritePacket(r, nil /* gso */, protocol, pkt); err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
