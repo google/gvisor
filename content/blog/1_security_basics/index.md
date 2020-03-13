@@ -67,7 +67,7 @@ In this post, we are only discussing security-related features of gVisor, and yo
 
 ## Defense-in-Depth
 
-For gVisor, Defense-in-Depth means each component of the software stack trusts each other component as little as possible.
+For gVisor, Defense-in-Depth means each component of the software stack trusts the other components as little as possible.
 
 It may seem strange that we would want our own software components to distrust each other. But by limiting the trust between small, discrete components, each component is forced to defend itself against potentially malicious input. And when you stack these components on top of each other, you can ensure that multiple security barriers must be overcome by an attacker.
 
