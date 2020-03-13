@@ -539,11 +539,10 @@ var _ vfs.WritableDynamicBytesSource = (*oomScoreAdj)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (o *oomScoreAdj) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	adj, err := o.task.OOMScoreAdj()
-	if err != nil {
-		return err
+	if o.task.ExitState() == kernel.TaskExitDead {
+		return syserror.ESRCH
 	}
-	fmt.Fprintf(buf, "%d\n", adj)
+	fmt.Fprintf(buf, "%d\n", o.task.OOMScoreAdj())
 	return nil
 }
 
@@ -562,6 +561,9 @@ func (o *oomScoreAdj) Write(ctx context.Context, src usermem.IOSequence, offset 
 		return 0, err
 	}
 
+	if o.task.ExitState() == kernel.TaskExitDead {
+		return 0, syserror.ESRCH
+	}
 	if err := o.task.SetOOMScoreAdj(v); err != nil {
 		return 0, err
 	}

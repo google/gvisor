@@ -555,13 +555,6 @@ type Task struct {
 	//
 	// startTime is protected by mu.
 	startTime ktime.Time
-
-	// oomScoreAdj is the task's OOM score adjustment. This is currently not
-	// used but is maintained for consistency.
-	// TODO(gvisor.dev/issue/1967)
-	//
-	// oomScoreAdj is protected by mu, and is owned by the task goroutine.
-	oomScoreAdj int32
 }
 
 func (t *Task) savePtraceTracer() *Task {
@@ -856,27 +849,17 @@ func (t *Task) ContainerID() string {
 	return t.containerID
 }
 
-// OOMScoreAdj gets the task's OOM score adjustment.
-func (t *Task) OOMScoreAdj() (int32, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.ExitState() == TaskExitDead {
-		return 0, syserror.ESRCH
-	}
-	return t.oomScoreAdj, nil
+// OOMScoreAdj gets the task's thread group's OOM score adjustment.
+func (t *Task) OOMScoreAdj() int32 {
+	return atomic.LoadInt32(&t.tg.oomScoreAdj)
 }
 
-// SetOOMScoreAdj sets the task's OOM score adjustment. The value should be
-// between -1000 and 1000 inclusive.
+// SetOOMScoreAdj sets the task's thread group's OOM score adjustment. The
+// value should be between -1000 and 1000 inclusive.
 func (t *Task) SetOOMScoreAdj(adj int32) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.ExitState() == TaskExitDead {
-		return syserror.ESRCH
-	}
 	if adj > 1000 || adj < -1000 {
 		return syserror.EINVAL
 	}
-	t.oomScoreAdj = adj
+	atomic.StoreInt32(&t.tg.oomScoreAdj, adj)
 	return nil
 }

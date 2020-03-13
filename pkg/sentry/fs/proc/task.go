@@ -853,15 +853,15 @@ func (o *oomScoreAdj) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.F
 
 // Read implements fs.FileOperations.Read.
 func (f *oomScoreAdjFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
-	if offset != 0 {
+	if f.t.ExitState() == kernel.TaskExitDead {
+		return 0, syserror.ESRCH
+	}
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "%d\n", f.t.OOMScoreAdj())
+	if offset >= int64(buf.Len()) {
 		return 0, io.EOF
 	}
-	adj, err := f.t.OOMScoreAdj()
-	if err != nil {
-		return 0, err
-	}
-	adjBytes := []byte(strconv.FormatInt(int64(adj), 10) + "\n")
-	n, err := dst.CopyOut(ctx, adjBytes)
+	n, err := dst.CopyOut(ctx, buf.Bytes()[offset:])
 	return int64(n), err
 }
 
@@ -880,6 +880,9 @@ func (f *oomScoreAdjFile) Write(ctx context.Context, _ *fs.File, src usermem.IOS
 		return 0, err
 	}
 
+	if f.t.ExitState() == kernel.TaskExitDead {
+		return 0, syserror.ESRCH
+	}
 	if err := f.t.SetOOMScoreAdj(v); err != nil {
 		return 0, err
 	}
