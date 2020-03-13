@@ -123,6 +123,7 @@ func (c *vCPU) initArchState() error {
 	reg.addr = uint64(reflect.ValueOf(&data).Pointer())
 	regGet.addr = uint64(reflect.ValueOf(&dataGet).Pointer())
 
+	vcpuInit.target = _KVM_ARM_TARGET_GENERIC_V8
 	vcpuInit.features[0] |= (1 << _KVM_ARM_VCPU_PSCI_0_2)
 	if _, _, errno := syscall.RawSyscall(
 		syscall.SYS_IOCTL,
@@ -134,7 +135,8 @@ func (c *vCPU) initArchState() error {
 
 	// cpacr_el1
 	reg.id = _KVM_ARM64_REGS_CPACR_EL1
-	data = (_FPEN_NOTRAP << _FPEN_SHIFT)
+	// It is off by default, and it is turned on only when in use.
+	data = 0 // Disable fpsimd.
 	if err := c.setOneRegister(&reg); err != nil {
 		return err
 	}
@@ -226,6 +228,7 @@ func (c *vCPU) initArchState() error {
 		return err
 	}
 
+	c.floatingPointState = arch.NewFloatingPointData()
 	return nil
 }
 

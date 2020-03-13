@@ -23,6 +23,13 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 )
 
+// fpsimdPtr returns a fpsimd64 for the given address.
+//
+//go:nosplit
+func fpsimdPtr(addr *byte) *arch.FpsimdContext {
+	return (*arch.FpsimdContext)(unsafe.Pointer(addr))
+}
+
 // dieArchSetup initialies the state for dieTrampoline.
 //
 // The arm64 dieTrampoline requires the vCPU to be set in R1, and the last PC
@@ -46,4 +53,11 @@ func dieArchSetup(c *vCPU, context *arch.SignalContext64, guestRegs *userRegs) {
 	}
 	context.Regs[1] = uint64(uintptr(unsafe.Pointer(c)))
 	context.Pc = uint64(dieTrampolineAddr)
+}
+
+// bluepillArchFpContext returns the arch-specific fpsimd context.
+//
+//go:nosplit
+func bluepillArchFpContext(context unsafe.Pointer) *arch.FpsimdContext {
+	return &((*arch.SignalContext64)(context).Fpsimd64)
 }
