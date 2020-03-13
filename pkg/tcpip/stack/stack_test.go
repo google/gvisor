@@ -902,6 +902,60 @@ func TestRoutes(t *testing.T) {
 	testNoRoute(t, s, 1, "\x03", "\x06")
 }
 
+func TestRoutesMostSpecific(t *testing.T) {
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
+	})
+
+	// Interfaces.
+	ep1 := channel.New(10, defaultMTU, "")
+	if err := s.CreateNIC(1, ep1); err != nil {
+		t.Fatal("CreateNIC failed:", err)
+	}
+
+	if err := s.AddAddress(1, fakeNetNumber, "\x01\x01"); err != nil {
+		t.Fatal("AddAddress failed:", err)
+	}
+
+	ep2 := channel.New(10, defaultMTU, "")
+	if err := s.CreateNIC(2, ep2); err != nil {
+		t.Fatal("CreateNIC failed:", err)
+	}
+
+	if err := s.AddAddress(2, fakeNetNumber, "\x02\x01"); err != nil {
+		t.Fatal("AddAddress failed:", err)
+	}
+
+	// Route table. The default route is put at the beginning of array. This is to
+	// test that stack can pick the most specific route, not just the first one
+	// that works.
+	{
+		subnet0, err := tcpip.NewSubnet("\x00\x00", "\x00\x00")
+		if err != nil {
+			t.Fatal(err)
+		}
+		subnet1, err := tcpip.NewSubnet("\x01\x00", "\xff\x00")
+		if err != nil {
+			t.Fatal(err)
+		}
+		subnet2, err := tcpip.NewSubnet("\x02\x00", "\xff\x00")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetRouteTable([]tcpip.Route{
+			{Destination: subnet0, Gateway: "\x01\xfe", NIC: 1}, // Default route.
+			{Destination: subnet1, Gateway: "\x00\x00", NIC: 1}, // Local route.
+			{Destination: subnet2, Gateway: "\x00\x00", NIC: 2}, // Local route.
+		})
+	}
+
+	// Test that the most specific route is picked.
+	testRoute(t, s, 0, "", "\x01\x05", "\x01\x01")
+	testRoute(t, s, 0, "", "\x02\x05", "\x02\x01")
+	// Test that the default route is picked.
+	testRoute(t, s, 0, "", "\x03\x05", "\x01\x01")
+}
+
 func TestAddressRemoval(t *testing.T) {
 	const localAddrByte byte = 0x01
 	localAddr := tcpip.Address([]byte{localAddrByte})

@@ -21,6 +21,7 @@ package stack
 
 import (
 	"encoding/binary"
+	"sort"
 	"sync/atomic"
 	"time"
 
@@ -1219,10 +1220,26 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 			}
 		}
 	} else {
-		for _, route := range s.routeTable {
-			if (id != 0 && id != route.NIC) || (len(remoteAddr) != 0 && !route.Destination.Contains(remoteAddr)) {
+		// Compute the list of eligible routes, sort in most-specific-first order.
+		var routesStorage [8]*tcpip.Route
+		routes := routesStorage[:0]
+		for i := range s.routeTable {
+			r := &s.routeTable[i]
+			if id != 0 && id != r.NIC {
 				continue
 			}
+			if len(remoteAddr) != 0 && !r.Destination.Contains(remoteAddr) {
+				continue
+			}
+			routes = append(routes, r)
+		}
+		if len(routes) > 1 {
+			sort.Slice(routes, func(i, j int) bool {
+				return routes[j].Destination.Prefix() < routes[i].Destination.Prefix()
+			})
+		}
+		// Pick an available route.
+		for _, route := range routes {
 			if nic, ok := s.nics[route.NIC]; ok && nic.enabled() {
 				if ref := s.getRefEP(nic, localAddr, remoteAddr, netProto); ref != nil {
 					if len(remoteAddr) == 0 {
