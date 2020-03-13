@@ -420,11 +420,18 @@ func (d *transportDemuxer) deliverPacket(r *Route, protocol tcpip.TransportProto
 	switch protocol {
 	case header.UDPProtocolNumber:
 		if isMulticastOrBroadcast(id.LocalAddress) {
-			destEps = d.findAllEndpointsLocked(eps, id)
-			break
+			destEps = findAllEndpointsLocked(eps, id)
+		} else if ep := findEndpointLocked(eps, id); ep != nil {
+			destEps = append(destEps, ep)
 		}
 
-		if ep := d.findEndpointLocked(eps, id); ep != nil {
+		// Send both unicast and broadcast to endpoint bound to ANY listening to this port.
+		// DHCP client is the only known user of this feature, so limit this to UDP only.
+		any := TransportEndpointID{
+			LocalPort:    id.LocalPort,
+			LocalAddress: header.IPv4Any,
+		}
+		if ep := eps.endpoints[any]; ep != nil {
 			destEps = append(destEps, ep)
 		}
 
@@ -441,7 +448,7 @@ func (d *transportDemuxer) deliverPacket(r *Route, protocol tcpip.TransportProto
 		fallthrough
 
 	default:
-		if ep := d.findEndpointLocked(eps, id); ep != nil {
+		if ep := findEndpointLocked(eps, id); ep != nil {
 			destEps = append(destEps, ep)
 		}
 	}
@@ -501,7 +508,7 @@ func (d *transportDemuxer) deliverControlPacket(n *NIC, net tcpip.NetworkProtoco
 
 	// Try to find the endpoint.
 	eps.mu.RLock()
-	ep := d.findEndpointLocked(eps, id)
+	ep := findEndpointLocked(eps, id)
 	eps.mu.RUnlock()
 
 	// Fail if we didn't find one.
@@ -515,7 +522,7 @@ func (d *transportDemuxer) deliverControlPacket(n *NIC, net tcpip.NetworkProtoco
 	return true
 }
 
-func (d *transportDemuxer) findAllEndpointsLocked(eps *transportEndpoints, id TransportEndpointID) []*endpointsByNic {
+func findAllEndpointsLocked(eps *transportEndpoints, id TransportEndpointID) []*endpointsByNic {
 	var matchedEPs []*endpointsByNic
 	// Try to find a match with the id as provided.
 	if ep, ok := eps.endpoints[id]; ok {
@@ -554,7 +561,7 @@ func (d *transportDemuxer) findTransportEndpoint(netProto tcpip.NetworkProtocolN
 	}
 	// Try to find the endpoint.
 	eps.mu.RLock()
-	epsByNic := d.findEndpointLocked(eps, id)
+	epsByNic := findEndpointLocked(eps, id)
 	// Fail if we didn't find one.
 	if epsByNic == nil {
 		eps.mu.RUnlock()
@@ -577,10 +584,9 @@ func (d *transportDemuxer) findTransportEndpoint(netProto tcpip.NetworkProtocolN
 	return ep
 }
 
-// findEndpointLocked returns the endpoint that most closely matches the given
-// id.
-func (d *transportDemuxer) findEndpointLocked(eps *transportEndpoints, id TransportEndpointID) *endpointsByNic {
-	if matchedEPs := d.findAllEndpointsLocked(eps, id); len(matchedEPs) > 0 {
+// findEndpointLocked returns the endpoint that most closely matches the given id.
+func findEndpointLocked(eps *transportEndpoints, id TransportEndpointID) *endpointsByNic {
+	if matchedEPs := findAllEndpointsLocked(eps, id); len(matchedEPs) > 0 {
 		return matchedEPs[0]
 	}
 	return nil

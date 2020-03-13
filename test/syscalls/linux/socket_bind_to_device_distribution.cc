@@ -245,6 +245,58 @@ TEST_P(BindToDeviceDistributionTest, Tcp) {
   }
 }
 
+TEST(BindToDeviceDistributionTest,
+     UdpReceiveBroadcastOnAnyWithoutBoundToAddress) {
+  const FileDescriptor receiver =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+  string if_name = "lo";
+  ASSERT_THAT(setsockopt(receiver.get(), SOL_SOCKET, SO_BINDTODEVICE,
+                         if_name.c_str(), if_name.size() + 1),
+              SyscallSucceeds());
+  auto receiver_addr = V4Any();
+  ASSERT_THAT(
+      bind(receiver.get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+           receiver_addr.addr_len),
+      SyscallSucceeds());
+  socklen_t receiver_addr_len = receiver_addr.addr_len;
+  ASSERT_THAT(getsockname(receiver.get(),
+                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                          &receiver_addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+
+  const FileDescriptor sender =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  ASSERT_THAT(setsockopt(sender.get(), SOL_SOCKET, SO_BROADCAST, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  /*
+  // Binding to the loopback interface makes the broadcast go out of it.
+  // Receiver bound to 'lo' won't receive this broadcast without this.
+  auto sender_bind_addr = V4Loopback();
+  ASSERT_THAT(
+      bind(sender.get(), reinterpret_cast<sockaddr*>(&sender_bind_addr.addr),
+           sender_bind_addr.addr_len),
+      SyscallSucceeds());
+      */
+
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  auto sendto_addr = V4Broadcast();
+  reinterpret_cast<sockaddr_in*>(&sendto_addr.addr)->sin_port =
+      reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
+  EXPECT_THAT(RetryEINTR(sendto)(sender.get(), send_buf, sizeof(send_buf), 0,
+                                 reinterpret_cast<sockaddr*>(&sendto_addr.addr),
+                                 sendto_addr.addr_len),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  char recv_buf[sizeof(send_buf)] = {};
+  EXPECT_THAT(RetryEINTR(recv)(receiver.get(), &recv_buf, sizeof(recv_buf), 0),
+              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
+}
+
 // Binds sockets to different devices and then sends many UDP packets.  Checks
 // that the distribution of packets received on the sockets matches the
 // expectation.
