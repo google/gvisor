@@ -597,7 +597,6 @@ func (x *Task) save(m state.Map) {
 	m.Save("rseqAddr", &x.rseqAddr)
 	m.Save("rseqSignature", &x.rseqSignature)
 	m.Save("startTime", &x.startTime)
-	m.Save("oomScoreAdj", &x.oomScoreAdj)
 }
 
 func (x *Task) load(m state.Map) {
@@ -657,7 +656,6 @@ func (x *Task) load(m state.Map) {
 	m.Load("rseqAddr", &x.rseqAddr)
 	m.Load("rseqSignature", &x.rseqSignature)
 	m.Load("startTime", &x.startTime)
-	m.Load("oomScoreAdj", &x.oomScoreAdj)
 	m.LoadValue("ptraceTracer", new(*Task), func(y interface{}) { x.loadPtraceTracer(y.(*Task)) })
 	m.LoadValue("syscallFilters", new([]bpf.Program), func(y interface{}) { x.loadSyscallFilters(y.([]bpf.Program)) })
 	m.AfterLoad(x.afterLoad)
@@ -952,6 +950,7 @@ func (x *ThreadGroup) save(m state.Map) {
 	m.Save("execed", &x.execed)
 	m.Save("mounts", &x.mounts)
 	m.Save("tty", &x.tty)
+	m.Save("oomScoreAdj", &x.oomScoreAdj)
 }
 
 func (x *ThreadGroup) afterLoad() {}
@@ -987,6 +986,7 @@ func (x *ThreadGroup) load(m state.Map) {
 	m.Load("execed", &x.execed)
 	m.Load("mounts", &x.mounts)
 	m.Load("tty", &x.tty)
+	m.Load("oomScoreAdj", &x.oomScoreAdj)
 	m.LoadValue("oldRSeqCritical", new(*OldRSeqCriticalRegion), func(y interface{}) { x.loadOldRSeqCritical(y.(*OldRSeqCriticalRegion)) })
 }
 
