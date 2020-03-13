@@ -246,7 +246,7 @@ func (pg *ProcessGroup) SendSignal(info *arch.SignalInfo) error {
 
 	var lastErr error
 	for tg := range tasks.Root.tgids {
-		if tg.ProcessGroup() == pg {
+		if tg.processGroup == pg {
 			tg.signalHandlers.mu.Lock()
 			infoCopy := *info
 			if err := tg.leader.sendSignalLocked(&infoCopy, true /*group*/); err != nil {
