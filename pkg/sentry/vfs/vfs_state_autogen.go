@@ -119,6 +119,7 @@ func (x *Mount) save(m state.Map) {
 	m.Save("refs", &x.refs)
 	m.Save("children", &x.children)
 	m.Save("umounted", &x.umounted)
+	m.Save("flags", &x.flags)
 	m.Save("writers", &x.writers)
 }
 
@@ -132,6 +133,7 @@ func (x *Mount) load(m state.Map) {
 	m.Load("refs", &x.refs)
 	m.Load("children", &x.children)
 	m.Load("umounted", &x.umounted)
+	m.Load("flags", &x.flags)
 	m.Load("writers", &x.writers)
 }
 

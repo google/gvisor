@@ -115,8 +115,6 @@ func NewVFSLookup(mntns *vfs.MountNamespace, root, workingDir vfs.VirtualDentry)
 //
 // remainingTraversals is not configurable in VFS2, all callers are using the
 // default anyways.
-//
-// TODO(gvisor.dev/issue/1623): Check mount has read and exec permission.
 func (l *vfsLookup) OpenPath(ctx context.Context, pathname string, opts vfs.OpenOptions, _ *uint, resolveFinal bool) (File, error) {
 	vfsObj := l.mntns.Root().Mount().Filesystem().VirtualFilesystem()
 	creds := auth.CredentialsFromContext(ctx)
