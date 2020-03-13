@@ -467,7 +467,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []tcpip.Pac
 
 	views := pkts[0].Data.Views()
 	/*
-	 * Each bondary in views can add one more iovec.
+	 * Each boundary in views can add one more iovec.
 	 *
 	 * payload |      |          |         |
 	 *         -----------------------------
