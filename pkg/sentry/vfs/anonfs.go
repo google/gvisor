@@ -41,7 +41,14 @@ func (vfs *VirtualFilesystem) NewAnonVirtualDentry(name string) VirtualDentry {
 	}
 }
 
-const anonfsBlockSize = usermem.PageSize // via fs/libfs.c:pseudo_fs_fill_super()
+const (
+	anonfsBlockSize = usermem.PageSize // via fs/libfs.c:pseudo_fs_fill_super()
+
+	// Mode, UID, and GID for a generic anonfs file.
+	anonFileMode = 0600 // no type is correct
+	anonFileUID  = auth.RootKUID
+	anonFileGID  = auth.RootKGID
+)
 
 // anonFilesystem is the implementation of FilesystemImpl that backs
 // VirtualDentries returned by VirtualFilesystem.NewAnonVirtualDentry().
@@ -67,6 +74,16 @@ func (fs *anonFilesystem) Release() {
 // Sync implements FilesystemImpl.Sync.
 func (fs *anonFilesystem) Sync(ctx context.Context) error {
 	return nil
+}
+
+// AccessAt implements vfs.Filesystem.Impl.AccessAt.
+//
+// TODO(gvisor.dev/issue/1965): Implement access permissions.
+func (fs *anonFilesystem) AccessAt(ctx context.Context, rp *ResolvingPath, creds *auth.Credentials, ats AccessTypes) error {
+	if !rp.Done() {
+		return syserror.ENOTDIR
+	}
+	return GenericCheckPermissions(creds, ats, false /* isDir */, anonFileMode, anonFileUID, anonFileGID)
 }
 
 // GetDentryAt implements FilesystemImpl.GetDentryAt.
@@ -167,9 +184,9 @@ func (fs *anonFilesystem) StatAt(ctx context.Context, rp *ResolvingPath, opts St
 		Mask:     linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_NLINK | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_SIZE | linux.STATX_BLOCKS,
 		Blksize:  anonfsBlockSize,
 		Nlink:    1,
-		UID:      uint32(auth.RootKUID),
-		GID:      uint32(auth.RootKGID),
-		Mode:     0600, // no type is correct
+		UID:      uint32(anonFileUID),
+		GID:      uint32(anonFileGID),
+		Mode:     anonFileMode,
 		Ino:      1,
 		Size:     0,
 		Blocks:   0,

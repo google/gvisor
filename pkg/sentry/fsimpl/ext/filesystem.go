@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -253,6 +254,15 @@ func (fs *filesystem) statTo(stat *linux.Statfs) {
 	stat.NameLength = disklayout.MaxFileName
 	stat.FragmentSize = int64(fs.sb.BlockSize())
 	// TODO(b/134676337): Set Statfs.Flags and Statfs.FSID.
+}
+
+// AccessAt implements vfs.Filesystem.Impl.AccessAt.
+func (fs *filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds *auth.Credentials, ats vfs.AccessTypes) error {
+	_, inode, err := fs.walk(rp, false)
+	if err != nil {
+		return err
+	}
+	return inode.checkPermissions(rp.Credentials(), ats)
 }
 
 // GetDentryAt implements vfs.FilesystemImpl.GetDentryAt.

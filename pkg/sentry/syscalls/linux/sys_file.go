@@ -514,7 +514,7 @@ func (ac accessContext) Value(key interface{}) interface{} {
 	}
 }
 
-func accessAt(t *kernel.Task, dirFD int32, addr usermem.Addr, resolve bool, mode uint) error {
+func accessAt(t *kernel.Task, dirFD int32, addr usermem.Addr, mode uint) error {
 	const rOK = 4
 	const wOK = 2
 	const xOK = 1
@@ -529,7 +529,7 @@ func accessAt(t *kernel.Task, dirFD int32, addr usermem.Addr, resolve bool, mode
 		return syserror.EINVAL
 	}
 
-	return fileOpOn(t, dirFD, path, resolve, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
+	return fileOpOn(t, dirFD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
 		// access(2) and faccessat(2) check permissions using real
 		// UID/GID, not effective UID/GID.
 		//
@@ -564,17 +564,23 @@ func Access(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	addr := args[0].Pointer()
 	mode := args[1].ModeT()
 
-	return 0, nil, accessAt(t, linux.AT_FDCWD, addr, true, mode)
+	return 0, nil, accessAt(t, linux.AT_FDCWD, addr, mode)
 }
 
 // Faccessat implements linux syscall faccessat(2).
+//
+// Note that the faccessat() system call does not take a flags argument:
+// "The raw faccessat() system call takes only the first three arguments. The
+// AT_EACCESS and AT_SYMLINK_NOFOLLOW flags are actually implemented within
+// the glibc wrapper function for faccessat().  If either of these flags is
+// specified, then the wrapper function employs fstatat(2) to determine access
+// permissions." - faccessat(2)
 func Faccessat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	dirFD := args[0].Int()
 	addr := args[1].Pointer()
 	mode := args[2].ModeT()
-	flags := args[3].Int()
 
-	return 0, nil, accessAt(t, dirFD, addr, flags&linux.AT_SYMLINK_NOFOLLOW == 0, mode)
+	return 0, nil, accessAt(t, dirFD, addr, mode)
 }
 
 // LINT.ThenChange(vfs2/filesystem.go)
