@@ -554,6 +554,7 @@ func (s *sem) wakeWaiters() {
 	for w := s.waiters.Front(); w != nil; {
 		if s.value < w.value {
 			// Still blocked, skip it.
+			w = w.Next()
 			continue
 		}
 		w.ch <- struct{}{}
