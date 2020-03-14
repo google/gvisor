@@ -554,3 +554,11 @@ func (s *StaticDirectory) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs
 	fd.Init(rp.Mount(), vfsd, &s.OrderedChildren, &opts)
 	return fd.VFSFileDescription(), nil
 }
+
+// AlwaysValid partially implements kernfs.inodeDynamicLookup.
+type AlwaysValid struct{}
+
+// Valid implements kernfs.inodeDynamicLookup.
+func (*AlwaysValid) Valid(context.Context) bool {
+	return true
+}

@@ -34,6 +34,7 @@ type subtasksInode struct {
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeAttrs
 	kernfs.OrderedChildren
+	kernfs.AlwaysValid
 
 	task              *kernel.Task
 	pidns             *kernel.PIDNamespace
@@ -59,11 +60,6 @@ func newSubtasks(task *kernel.Task, pidns *kernel.PIDNamespace, inoGen InoGenera
 	dentry.Init(inode)
 
 	return dentry
-}
-
-// Valid implements kernfs.inodeDynamicLookup.
-func (i *subtasksInode) Valid(ctx context.Context) bool {
-	return true
 }
 
 // Lookup implements kernfs.inodeDynamicLookup.

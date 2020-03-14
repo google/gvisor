@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -47,6 +48,7 @@ var (
 var (
 	tasksStaticFiles = map[string]testutil.DirentType{
 		"cpuinfo":     linux.DT_REG,
+		"filesystems": linux.DT_REG,
 		"loadavg":     linux.DT_REG,
 		"meminfo":     linux.DT_REG,
 		"mounts":      linux.DT_LNK,
@@ -68,9 +70,14 @@ var (
 		"cmdline":       linux.DT_REG,
 		"comm":          linux.DT_REG,
 		"environ":       linux.DT_REG,
+		"exe":           linux.DT_LNK,
+		"fd":            linux.DT_DIR,
+		"fdinfo":        linux.DT_DIR,
 		"gid_map":       linux.DT_REG,
 		"io":            linux.DT_REG,
 		"maps":          linux.DT_REG,
+		"mountinfo":     linux.DT_REG,
+		"mounts":        linux.DT_REG,
 		"net":           linux.DT_DIR,
 		"ns":            linux.DT_DIR,
 		"oom_score":     linux.DT_REG,
@@ -96,17 +103,37 @@ func setup(t *testing.T) *testutil.System {
 	k.VFS().MustRegisterFilesystemType(Name, &FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 	})
-	fsOpts := vfs.GetFilesystemOptions{
-		InternalData: &InternalData{
-			Cgroups: map[string]string{
-				"cpuset": "/foo/cpuset",
-				"memory": "/foo/memory",
+
+	mntns, err := k.VFS().NewMountNamespace(ctx, creds, "", tmpfs.Name, &vfs.GetFilesystemOptions{})
+	if err != nil {
+		t.Fatalf("NewMountNamespace(): %v", err)
+	}
+	pop := &vfs.PathOperation{
+		Root:  mntns.Root(),
+		Start: mntns.Root(),
+		Path:  fspath.Parse("/proc"),
+	}
+	if err := k.VFS().MkdirAt(ctx, creds, pop, &vfs.MkdirOptions{Mode: 0777}); err != nil {
+		t.Fatalf("MkDir(/proc): %v", err)
+	}
+
+	pop = &vfs.PathOperation{
+		Root:  mntns.Root(),
+		Start: mntns.Root(),
+		Path:  fspath.Parse("/proc"),
+	}
+	mntOpts := &vfs.MountOptions{
+		GetFilesystemOptions: vfs.GetFilesystemOptions{
+			InternalData: &InternalData{
+				Cgroups: map[string]string{
+					"cpuset": "/foo/cpuset",
+					"memory": "/foo/memory",
+				},
 			},
 		},
 	}
-	mntns, err := k.VFS().NewMountNamespace(ctx, creds, "", Name, &fsOpts)
-	if err != nil {
-		t.Fatalf("NewMountNamespace(): %v", err)
+	if err := k.VFS().MountAt(ctx, creds, "", pop, Name, mntOpts); err != nil {
+		t.Fatalf("MountAt(/proc): %v", err)
 	}
 	return testutil.NewSystem(ctx, t, k.VFS(), mntns)
 }
@@ -115,7 +142,7 @@ func TestTasksEmpty(t *testing.T) {
 	s := setup(t)
 	defer s.Destroy()
 
-	collector := s.ListDirents(s.PathOpAtRoot("/"))
+	collector := s.ListDirents(s.PathOpAtRoot("/proc"))
 	s.AssertAllDirentTypes(collector, tasksStaticFiles)
 	s.AssertDirentOffsets(collector, tasksStaticFilesNextOffs)
 }
@@ -141,7 +168,7 @@ func TestTasks(t *testing.T) {
 		expectedDirents[fmt.Sprintf("%d", i+1)] = linux.DT_DIR
 	}
 
-	collector := s.ListDirents(s.PathOpAtRoot("/"))
+	collector := s.ListDirents(s.PathOpAtRoot("/proc"))
 	s.AssertAllDirentTypes(collector, expectedDirents)
 	s.AssertDirentOffsets(collector, tasksStaticFilesNextOffs)
 
@@ -181,7 +208,7 @@ func TestTasks(t *testing.T) {
 	}
 
 	// Test lookup.
-	for _, path := range []string{"/1", "/2"} {
+	for _, path := range []string{"/proc/1", "/proc/2"} {
 		fd, err := s.VFS.OpenAt(
 			s.Ctx,
 			s.Creds,
@@ -191,6 +218,7 @@ func TestTasks(t *testing.T) {
 		if err != nil {
 			t.Fatalf("vfsfs.OpenAt(%q) failed: %v", path, err)
 		}
+		defer fd.DecRef()
 		buf := make([]byte, 1)
 		bufIOSeq := usermem.BytesIOSequence(buf)
 		if _, err := fd.Read(s.Ctx, bufIOSeq, vfs.ReadOptions{}); err != syserror.EISDIR {
@@ -201,10 +229,10 @@ func TestTasks(t *testing.T) {
 	if _, err := s.VFS.OpenAt(
 		s.Ctx,
 		s.Creds,
-		s.PathOpAtRoot("/9999"),
+		s.PathOpAtRoot("/proc/9999"),
 		&vfs.OpenOptions{},
 	); err != syserror.ENOENT {
-		t.Fatalf("wrong error from vfsfs.OpenAt(/9999): %v", err)
+		t.Fatalf("wrong error from vfsfs.OpenAt(/proc/9999): %v", err)
 	}
 }
 
@@ -302,12 +330,13 @@ func TestTasksOffset(t *testing.T) {
 			fd, err := s.VFS.OpenAt(
 				s.Ctx,
 				s.Creds,
-				s.PathOpAtRoot("/"),
+				s.PathOpAtRoot("/proc"),
 				&vfs.OpenOptions{},
 			)
 			if err != nil {
 				t.Fatalf("vfsfs.OpenAt(/) failed: %v", err)
 			}
+			defer fd.DecRef()
 			if _, err := fd.Seek(s.Ctx, tc.offset, linux.SEEK_SET); err != nil {
 				t.Fatalf("Seek(%d, SEEK_SET): %v", tc.offset, err)
 			}
@@ -344,7 +373,7 @@ func TestTask(t *testing.T) {
 		t.Fatalf("CreateTask(): %v", err)
 	}
 
-	collector := s.ListDirents(s.PathOpAtRoot("/1"))
+	collector := s.ListDirents(s.PathOpAtRoot("/proc/1"))
 	s.AssertAllDirentTypes(collector, taskStaticFiles)
 }
 
@@ -362,14 +391,14 @@ func TestProcSelf(t *testing.T) {
 	collector := s.WithTemporaryContext(task).ListDirents(&vfs.PathOperation{
 		Root:               s.Root,
 		Start:              s.Root,
-		Path:               fspath.Parse("/self/"),
+		Path:               fspath.Parse("/proc/self/"),
 		FollowFinalSymlink: true,
 	})
 	s.AssertAllDirentTypes(collector, taskStaticFiles)
 }
 
 func iterateDir(ctx context.Context, t *testing.T, s *testutil.System, fd *vfs.FileDescription) {
-	t.Logf("Iterating: /proc%s", fd.MappedName(ctx))
+	t.Logf("Iterating: %s", fd.MappedName(ctx))
 
 	var collector testutil.DirentCollector
 	if err := fd.IterDirents(ctx, &collector); err != nil {
@@ -412,6 +441,7 @@ func iterateDir(ctx context.Context, t *testing.T, s *testutil.System, fd *vfs.F
 			t.Errorf("vfsfs.OpenAt(%v) failed: %v", childPath, err)
 			continue
 		}
+		defer child.DecRef()
 		stat, err := child.Stat(ctx, vfs.StatOptions{})
 		if err != nil {
 			t.Errorf("Stat(%v) failed: %v", childPath, err)
@@ -432,6 +462,22 @@ func TestTree(t *testing.T) {
 	defer s.Destroy()
 
 	k := kernel.KernelFromContext(s.Ctx)
+
+	pop := &vfs.PathOperation{
+		Root:  s.Root,
+		Start: s.Root,
+		Path:  fspath.Parse("test-file"),
+	}
+	opts := &vfs.OpenOptions{
+		Flags: linux.O_RDONLY | linux.O_CREAT,
+		Mode:  0777,
+	}
+	file, err := s.VFS.OpenAt(s.Ctx, s.Creds, pop, opts)
+	if err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+	defer file.DecRef()
+
 	var tasks []*kernel.Task
 	for i := 0; i < 5; i++ {
 		tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
@@ -439,6 +485,8 @@ func TestTree(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateTask(): %v", err)
 		}
+		// Add file to populate /proc/[pid]/fd and fdinfo directories.
+		task.FDTable().NewFDVFS2(task, 0, file, kernel.FDFlags{})
 		tasks = append(tasks, task)
 	}
 
@@ -446,11 +494,12 @@ func TestTree(t *testing.T) {
 	fd, err := s.VFS.OpenAt(
 		ctx,
 		auth.CredentialsFromContext(s.Ctx),
-		&vfs.PathOperation{Root: s.Root, Start: s.Root, Path: fspath.Parse("/")},
+		&vfs.PathOperation{Root: s.Root, Start: s.Root, Path: fspath.Parse("/proc")},
 		&vfs.OpenOptions{},
 	)
 	if err != nil {
-		t.Fatalf("vfsfs.OpenAt(/) failed: %v", err)
+		t.Fatalf("vfsfs.OpenAt(/proc) failed: %v", err)
 	}
 	iterateDir(ctx, t, s, fd)
+	fd.DecRef()
 }

@@ -23,13 +23,16 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/memutil"
+	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/loader"
+	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/time"
@@ -123,10 +126,17 @@ func Boot() (*kernel.Kernel, error) {
 // CreateTask creates a new bare bones task for tests.
 func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns *vfs.MountNamespace, root, cwd vfs.VirtualDentry) (*kernel.Task, error) {
 	k := kernel.KernelFromContext(ctx)
+	exe, err := newFakeExecutable(ctx, k.VFS(), auth.CredentialsFromContext(ctx), root)
+	if err != nil {
+		return nil, err
+	}
+	m := mm.NewMemoryManager(k, k, k.SleepForAddressSpaceActivation)
+	m.SetExecutable(fsbridge.NewVFSFile(exe))
+
 	config := &kernel.TaskConfig{
 		Kernel:                  k,
 		ThreadGroup:             tc,
-		TaskContext:             &kernel.TaskContext{Name: name},
+		TaskContext:             &kernel.TaskContext{Name: name, MemoryManager: m},
 		Credentials:             auth.CredentialsFromContext(ctx),
 		NetworkNamespace:        k.RootNetworkNamespace(),
 		AllowedCPUMask:          sched.NewFullCPUSet(k.ApplicationCores()),
@@ -135,8 +145,23 @@ func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns 
 		AbstractSocketNamespace: kernel.NewAbstractSocketNamespace(),
 		MountNamespaceVFS2:      mntns,
 		FSContext:               kernel.NewFSContextVFS2(root, cwd, 0022),
+		FDTable:                 k.NewFDTable(),
 	}
 	return k.TaskSet().NewTask(config)
+}
+
+func newFakeExecutable(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, root vfs.VirtualDentry) (*vfs.FileDescription, error) {
+	const name = "executable"
+	pop := &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse(name),
+	}
+	opts := &vfs.OpenOptions{
+		Flags: linux.O_RDONLY | linux.O_CREAT,
+		Mode:  0777,
+	}
+	return vfsObj.OpenAt(ctx, creds, pop, opts)
 }
 
 func createMemoryFile() (*pgalloc.MemoryFile, error) {

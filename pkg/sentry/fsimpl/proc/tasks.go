@@ -46,6 +46,7 @@ type tasksInode struct {
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeAttrs
 	kernfs.OrderedChildren
+	kernfs.AlwaysValid
 
 	inoGen InoGenerator
 	pidns  *kernel.PIDNamespace
@@ -66,23 +67,23 @@ var _ kernfs.Inode = (*tasksInode)(nil)
 func newTasksInode(inoGen InoGenerator, k *kernel.Kernel, pidns *kernel.PIDNamespace, cgroupControllers map[string]string) (*tasksInode, *kernfs.Dentry) {
 	root := auth.NewRootCredentials(pidns.UserNamespace())
 	contents := map[string]*kernfs.Dentry{
-		"cpuinfo": newDentry(root, inoGen.NextIno(), 0444, newStaticFile(cpuInfoData(k))),
-		//"filesystems": newDentry(root, inoGen.NextIno(), 0444, &filesystemsData{}),
-		"loadavg": newDentry(root, inoGen.NextIno(), 0444, &loadavgData{}),
-		"sys":     newSysDir(root, inoGen, k),
-		"meminfo": newDentry(root, inoGen.NextIno(), 0444, &meminfoData{}),
-		"mounts":  kernfs.NewStaticSymlink(root, inoGen.NextIno(), "self/mounts"),
-		"net":     kernfs.NewStaticSymlink(root, inoGen.NextIno(), "self/net"),
-		"stat":    newDentry(root, inoGen.NextIno(), 0444, &statData{k: k}),
-		"uptime":  newDentry(root, inoGen.NextIno(), 0444, &uptimeData{}),
-		"version": newDentry(root, inoGen.NextIno(), 0444, &versionData{k: k}),
+		"cpuinfo":     newDentry(root, inoGen.NextIno(), 0444, newStaticFile(cpuInfoData(k))),
+		"filesystems": newDentry(root, inoGen.NextIno(), 0444, &filesystemsData{}),
+		"loadavg":     newDentry(root, inoGen.NextIno(), 0444, &loadavgData{}),
+		"sys":         newSysDir(root, inoGen, k),
+		"meminfo":     newDentry(root, inoGen.NextIno(), 0444, &meminfoData{}),
+		"mounts":      kernfs.NewStaticSymlink(root, inoGen.NextIno(), "self/mounts"),
+		"net":         kernfs.NewStaticSymlink(root, inoGen.NextIno(), "self/net"),
+		"stat":        newDentry(root, inoGen.NextIno(), 0444, &statData{}),
+		"uptime":      newDentry(root, inoGen.NextIno(), 0444, &uptimeData{}),
+		"version":     newDentry(root, inoGen.NextIno(), 0444, &versionData{}),
 	}
 
 	inode := &tasksInode{
 		pidns:             pidns,
 		inoGen:            inoGen,
-		selfSymlink:       newSelfSymlink(root, inoGen.NextIno(), 0444, pidns).VFSDentry(),
-		threadSelfSymlink: newThreadSelfSymlink(root, inoGen.NextIno(), 0444, pidns).VFSDentry(),
+		selfSymlink:       newSelfSymlink(root, inoGen.NextIno(), pidns).VFSDentry(),
+		threadSelfSymlink: newThreadSelfSymlink(root, inoGen.NextIno(), pidns).VFSDentry(),
 		cgroupControllers: cgroupControllers,
 	}
 	inode.InodeAttrs.Init(root, inoGen.NextIno(), linux.ModeDirectory|0555)
@@ -119,11 +120,6 @@ func (i *tasksInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, erro
 
 	taskDentry := newTaskInode(i.inoGen, task, i.pidns, true, i.cgroupControllers)
 	return taskDentry.VFSDentry(), nil
-}
-
-// Valid implements kernfs.inodeDynamicLookup.
-func (i *tasksInode) Valid(ctx context.Context) bool {
-	return true
 }
 
 // IterDirents implements kernfs.inodeDynamicLookup.
