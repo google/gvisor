@@ -172,6 +172,15 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
         name = name,
         srcs = all_srcs,
         deps = all_deps,
+        # Go-marshal performs unsafe pointer arithmetic that breaks GoTSAN.
+        # Particularly, go-marshal intentionally copies pointers to heap objects
+        # in a way that prevents the runtime from deducing that the copied
+        # pointers are related to the original object. This allows bypassing of
+        # escape analysis for performance, but trips GoTSAN.
+        #
+        # See src/runtime/checkptr.go:checkptrArithmetic() in the golang
+        # toolchain.
+        tags = ["nogotsan"],
         **kwargs
     )
 
@@ -187,6 +196,8 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
                 srcs = [name + suffix + "_abi_autogen_test.go"],
                 library = ":" + name,
                 deps = marshal_test_deps,
+                # See comment above in the _go_library rules.
+                tags = ["nogotsan"],
                 **kwargs
             )
 
