@@ -18,10 +18,14 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"sort"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/safemem"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -496,7 +500,7 @@ func (s *statusData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	return nil
 }
 
-// ioUsage is the /proc/<pid>/io and /proc/<pid>/task/<tid>/io data provider.
+// ioUsage is the /proc/[pid]/io and /proc/[pid]/task/[tid]/io data provider.
 type ioUsage interface {
 	// IOUsage returns the io usage data.
 	IOUsage() *usage.IO
@@ -569,4 +573,249 @@ func (o *oomScoreAdj) Write(ctx context.Context, src usermem.IOSequence, offset 
 	}
 
 	return n, nil
+}
+
+// exeSymlink is an symlink for the /proc/[pid]/exe file.
+//
+// +stateify savable
+type exeSymlink struct {
+	kernfs.InodeAttrs
+	kernfs.InodeNoopRefCount
+	kernfs.InodeSymlink
+
+	task *kernel.Task
+}
+
+var _ kernfs.Inode = (*exeSymlink)(nil)
+
+func newExeSymlink(task *kernel.Task, ino uint64) *kernfs.Dentry {
+	inode := &exeSymlink{task: task}
+	inode.Init(task.Credentials(), ino, linux.ModeSymlink|0777)
+
+	d := &kernfs.Dentry{}
+	d.Init(inode)
+	return d
+}
+
+// Readlink implements kernfs.Inode.
+func (s *exeSymlink) Readlink(ctx context.Context) (string, error) {
+	if !kernel.ContextCanTrace(ctx, s.task, false) {
+		return "", syserror.EACCES
+	}
+
+	// Pull out the executable for /proc/[pid]/exe.
+	exec, err := s.executable()
+	if err != nil {
+		return "", err
+	}
+	defer exec.DecRef()
+
+	return exec.PathnameWithDeleted(ctx), nil
+}
+
+func (s *exeSymlink) executable() (file fsbridge.File, err error) {
+	s.task.WithMuLocked(func(t *kernel.Task) {
+		mm := t.MemoryManager()
+		if mm == nil {
+			// TODO(b/34851096): Check shouldn't allow Readlink once the
+			// Task is zombied.
+			err = syserror.EACCES
+			return
+		}
+
+		// The MemoryManager may be destroyed, in which case
+		// MemoryManager.destroy will simply set the executable to nil
+		// (with locks held).
+		file = mm.Executable()
+		if file == nil {
+			err = syserror.ENOENT
+		}
+	})
+	return
+}
+
+// forEachMountSource runs f for the process root mount and each mount that is
+// a descendant of the root.
+func forEachMount(t *kernel.Task, fn func(string, *fs.Mount)) {
+	var fsctx *kernel.FSContext
+	t.WithMuLocked(func(t *kernel.Task) {
+		fsctx = t.FSContext()
+	})
+	if fsctx == nil {
+		// The task has been destroyed. Nothing to show here.
+		return
+	}
+
+	// All mount points must be relative to the rootDir, and mounts outside
+	// will be excluded.
+	rootDir := fsctx.RootDirectory()
+	if rootDir == nil {
+		// The task has been destroyed. Nothing to show here.
+		return
+	}
+	defer rootDir.DecRef()
+
+	mnt := t.MountNamespace().FindMount(rootDir)
+	if mnt == nil {
+		// Has it just been unmounted?
+		return
+	}
+	ms := t.MountNamespace().AllMountsUnder(mnt)
+	sort.Slice(ms, func(i, j int) bool {
+		return ms[i].ID < ms[j].ID
+	})
+	for _, m := range ms {
+		mroot := m.Root()
+		if mroot == nil {
+			continue // No longer valid.
+		}
+		mountPath, desc := mroot.FullName(rootDir)
+		mroot.DecRef()
+		if !desc {
+			// MountSources that are not descendants of the chroot jail are ignored.
+			continue
+		}
+		fn(mountPath, m)
+	}
+}
+
+// mountInfoData is used to implement /proc/[pid]/mountinfo.
+//
+// +stateify savable
+type mountInfoData struct {
+	kernfs.DynamicBytesFile
+
+	task *kernel.Task
+}
+
+var _ dynamicInode = (*mountInfoData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (i *mountInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	forEachMount(i.task, func(mountPath string, m *fs.Mount) {
+		mroot := m.Root()
+		if mroot == nil {
+			return // No longer valid.
+		}
+		defer mroot.DecRef()
+
+		// Format:
+		// 36 35 98:0 /mnt1 /mnt2 rw,noatime master:1 - ext3 /dev/root rw,errors=continue
+		// (1)(2)(3)   (4)   (5)      (6)      (7)   (8) (9)   (10)         (11)
+
+		// (1) MountSource ID.
+		fmt.Fprintf(buf, "%d ", m.ID)
+
+		// (2)  Parent ID (or this ID if there is no parent).
+		pID := m.ID
+		if !m.IsRoot() && !m.IsUndo() {
+			pID = m.ParentID
+		}
+		fmt.Fprintf(buf, "%d ", pID)
+
+		// (3) Major:Minor device ID. We don't have a superblock, so we
+		// just use the root inode device number.
+		sa := mroot.Inode.StableAttr
+		fmt.Fprintf(buf, "%d:%d ", sa.DeviceFileMajor, sa.DeviceFileMinor)
+
+		// (4) Root: the pathname of the directory in the filesystem
+		// which forms the root of this mount.
+		//
+		// NOTE(b/78135857): This will always be "/" until we implement
+		// bind mounts.
+		fmt.Fprintf(buf, "/ ")
+
+		// (5) Mount point (relative to process root).
+		fmt.Fprintf(buf, "%s ", mountPath)
+
+		// (6) Mount options.
+		flags := mroot.Inode.MountSource.Flags
+		opts := "rw"
+		if flags.ReadOnly {
+			opts = "ro"
+		}
+		if flags.NoAtime {
+			opts += ",noatime"
+		}
+		if flags.NoExec {
+			opts += ",noexec"
+		}
+		fmt.Fprintf(buf, "%s ", opts)
+
+		// (7) Optional fields: zero or more fields of the form "tag[:value]".
+		// (8) Separator: the end of the optional fields is marked by a single hyphen.
+		fmt.Fprintf(buf, "- ")
+
+		// (9) Filesystem type.
+		fmt.Fprintf(buf, "%s ", mroot.Inode.MountSource.FilesystemType)
+
+		// (10) Mount source: filesystem-specific information or "none".
+		fmt.Fprintf(buf, "none ")
+
+		// (11) Superblock options, and final newline.
+		fmt.Fprintf(buf, "%s\n", superBlockOpts(mountPath, mroot.Inode.MountSource))
+	})
+	return nil
+}
+
+func superBlockOpts(mountPath string, msrc *fs.MountSource) string {
+	// gVisor doesn't (yet) have a concept of super block options, so we
+	// use the ro/rw bit from the mount flag.
+	opts := "rw"
+	if msrc.Flags.ReadOnly {
+		opts = "ro"
+	}
+
+	// NOTE(b/147673608): If the mount is a cgroup, we also need to include
+	// the cgroup name in the options. For now we just read that from the
+	// path.
+	// TODO(gvisor.dev/issues/190): Once gVisor has full cgroup support, we
+	// should get this value from the cgroup itself, and not rely on the
+	// path.
+	if msrc.FilesystemType == "cgroup" {
+		splitPath := strings.Split(mountPath, "/")
+		cgroupType := splitPath[len(splitPath)-1]
+		opts += "," + cgroupType
+	}
+	return opts
+}
+
+// mountsData is used to implement /proc/[pid]/mounts.
+//
+// +stateify savable
+type mountsData struct {
+	kernfs.DynamicBytesFile
+
+	task *kernel.Task
+}
+
+var _ dynamicInode = (*mountInfoData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (i *mountsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	forEachMount(i.task, func(mountPath string, m *fs.Mount) {
+		// Format:
+		// <special device or remote filesystem> <mount point> <filesystem type> <mount options> <needs dump> <fsck order>
+		//
+		// We use the filesystem name as the first field, since there
+		// is no real block device we can point to, and we also should
+		// not expose anything about the remote filesystem.
+		//
+		// Only ro/rw option is supported for now.
+		//
+		// The "needs dump"and fsck flags are always 0, which is allowed.
+		root := m.Root()
+		if root == nil {
+			return // No longer valid.
+		}
+		defer root.DecRef()
+
+		flags := root.Inode.MountSource.Flags
+		opts := "rw"
+		if flags.ReadOnly {
+			opts = "ro"
+		}
+		fmt.Fprintf(buf, "%s %s %s %s %d %d\n", "none", mountPath, root.Inode.MountSource.FilesystemType, opts, 0, 0)
+	})
+	return nil
 }
