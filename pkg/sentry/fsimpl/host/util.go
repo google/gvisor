@@ -35,32 +35,12 @@ func toTimespec(ts linux.StatxTimestamp, omit bool) unix.Timespec {
 	}
 }
 
-func unixToLinuxStatx(s unix.Statx_t) linux.Statx {
-	return linux.Statx{
-		Mask:           s.Mask,
-		Blksize:        s.Blksize,
-		Attributes:     s.Attributes,
-		Nlink:          s.Nlink,
-		UID:            s.Uid,
-		GID:            s.Gid,
-		Mode:           s.Mode,
-		Ino:            s.Ino,
-		Size:           s.Size,
-		Blocks:         s.Blocks,
-		AttributesMask: s.Attributes_mask,
-		Atime:          unixToLinuxStatxTimestamp(s.Atime),
-		Btime:          unixToLinuxStatxTimestamp(s.Btime),
-		Ctime:          unixToLinuxStatxTimestamp(s.Ctime),
-		Mtime:          unixToLinuxStatxTimestamp(s.Mtime),
-		RdevMajor:      s.Rdev_major,
-		RdevMinor:      s.Rdev_minor,
-		DevMajor:       s.Dev_major,
-		DevMinor:       s.Dev_minor,
-	}
-}
-
 func unixToLinuxStatxTimestamp(ts unix.StatxTimestamp) linux.StatxTimestamp {
 	return linux.StatxTimestamp{Sec: ts.Sec, Nsec: ts.Nsec}
+}
+
+func timespecToStatxTimestamp(ts unix.Timespec) linux.StatxTimestamp {
+	return linux.StatxTimestamp{Sec: int64(ts.Sec), Nsec: uint32(ts.Nsec)}
 }
 
 // wouldBlock returns true for file types that can return EWOULDBLOCK

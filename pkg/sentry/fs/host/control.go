@@ -32,6 +32,8 @@ func newSCMRights(fds []int) control.SCMRights {
 }
 
 // Files implements control.SCMRights.Files.
+//
+// TODO(gvisor.dev/issue/2017): Port to VFS2.
 func (c *scmRights) Files(ctx context.Context, max int) (control.RightsFiles, bool) {
 	n := max
 	var trunc bool

@@ -9,9 +9,11 @@ go_library(
         "host.go",
         "util.go",
     ],
+    visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/fd",
         "//pkg/log",
         "//pkg/refs",
         "//pkg/safemem",
