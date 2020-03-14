@@ -266,6 +266,9 @@ type Statx struct {
 	DevMinor       uint32
 }
 
+// SizeOfStatx is the size of a Statx struct.
+var SizeOfStatx = binary.Size(Statx{})
+
 // FileMode represents a mode_t.
 type FileMode uint16
 

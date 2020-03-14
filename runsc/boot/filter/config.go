@@ -284,6 +284,7 @@ var allowedSyscalls = seccomp.SyscallRules{
 		{seccomp.AllowAny{}, seccomp.AllowValue(syscall.SHUT_RDWR)},
 	},
 	syscall.SYS_SIGALTSTACK:     {},
+	unix.SYS_STATX:              {},
 	syscall.SYS_SYNC_FILE_RANGE: {},
 	syscall.SYS_TGKILL: []seccomp.Rule{
 		{
