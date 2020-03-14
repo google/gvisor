@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -64,9 +65,7 @@ func (f *defaultFileFD) Read(ctx context.Context, dst usermem.IOSequence, opts v
 			panic("files that can return EWOULDBLOCK (sockets, pipes, etc.) cannot be memory mapped")
 		}
 
-		f.mu.Lock()
 		n, err := readFromHostFD(ctx, f.inode.hostFD, dst, -1, int(opts.Flags))
-		f.mu.Unlock()
 		if isBlockError(err) {
 			// If we got any data at all, return it as a "completed" partial read
 			// rather than retrying until complete.
@@ -86,16 +85,22 @@ func (f *defaultFileFD) Read(ctx context.Context, dst usermem.IOSequence, opts v
 	return n, err
 }
 
-func readFromHostFD(ctx context.Context, fd int, dst usermem.IOSequence, offset int64, flags int) (int64, error) {
-	if flags&^(linux.RWF_VALID) != 0 {
+func readFromHostFD(ctx context.Context, hostFD int, dst usermem.IOSequence, offset int64, flags int) (int64, error) {
+	// TODO(gvisor.dev/issue/1672): Support select preadv2 flags.
+	if flags != 0 {
 		return 0, syserror.EOPNOTSUPP
 	}
 
-	reader := safemem.FromVecReaderFunc{
-		func(srcs [][]byte) (int64, error) {
-			n, err := unix.Preadv2(fd, srcs, offset, flags)
-			return int64(n), err
-		},
+	var reader safemem.Reader
+	if offset == -1 {
+		reader = safemem.FromIOReader{fd.NewReadWriter(hostFD)}
+	} else {
+		reader = safemem.FromVecReaderFunc{
+			func(srcs [][]byte) (int64, error) {
+				n, err := unix.Preadv(hostFD, srcs, offset)
+				return int64(n), err
+			},
+		}
 	}
 	n, err := dst.CopyOutFrom(ctx, reader)
 	return int64(n), err
@@ -120,9 +125,7 @@ func (f *defaultFileFD) Write(ctx context.Context, src usermem.IOSequence, opts 
 			panic("files that can return EWOULDBLOCK (sockets, pipes, etc.) cannot be memory mapped")
 		}
 
-		f.mu.Lock()
 		n, err := writeToHostFD(ctx, f.inode.hostFD, src, -1, int(opts.Flags))
-		f.mu.Unlock()
 		if isBlockError(err) {
 			err = syserror.ErrWouldBlock
 		}
@@ -137,16 +140,22 @@ func (f *defaultFileFD) Write(ctx context.Context, src usermem.IOSequence, opts 
 	return n, err
 }
 
-func writeToHostFD(ctx context.Context, fd int, src usermem.IOSequence, offset int64, flags int) (int64, error) {
-	if flags&^(linux.RWF_VALID) != 0 {
+func writeToHostFD(ctx context.Context, hostFD int, src usermem.IOSequence, offset int64, flags int) (int64, error) {
+	// TODO(gvisor.dev/issue/1672): Support select pwritev2 flags.
+	if flags != 0 {
 		return 0, syserror.EOPNOTSUPP
 	}
 
-	writer := safemem.FromVecWriterFunc{
-		func(srcs [][]byte) (int64, error) {
-			n, err := unix.Pwritev2(fd, srcs, offset, flags)
-			return int64(n), err
-		},
+	var writer safemem.Writer
+	if offset == -1 {
+		writer = safemem.FromIOWriter{fd.NewReadWriter(hostFD)}
+	} else {
+		writer = safemem.FromVecWriterFunc{
+			func(srcs [][]byte) (int64, error) {
+				n, err := unix.Pwritev(hostFD, srcs, offset)
+				return int64(n), err
+			},
+		}
 	}
 	n, err := src.CopyInTo(ctx, writer)
 	return int64(n), err

@@ -136,7 +136,10 @@ func Statx(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	mask := args[3].Uint()
 	statxAddr := args[4].Pointer()
 
-	if mask&linux.STATX__RESERVED > 0 {
+	if mask&linux.STATX__RESERVED != 0 {
+		return 0, nil, syserror.EINVAL
+	}
+	if flags&^(linux.AT_SYMLINK_NOFOLLOW|linux.AT_EMPTY_PATH|linux.AT_STATX_SYNC_TYPE) != 0 {
 		return 0, nil, syserror.EINVAL
 	}
 	if flags&linux.AT_STATX_SYNC_TYPE == linux.AT_STATX_SYNC_TYPE {

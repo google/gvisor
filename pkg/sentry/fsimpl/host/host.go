@@ -38,10 +38,19 @@ type filesystem struct {
 	kernfs.Filesystem
 }
 
+// NewMount returns a new disconnected mount in vfsObj that may be passed to ImportFD.
+func NewMount(vfsObj *vfs.VirtualFilesystem) (*vfs.Mount, error) {
+	fs := &filesystem{}
+	fs.Init(vfsObj)
+	vfsfs := fs.VFSFilesystem()
+	// NewDisconnectedMount will take an additional reference on vfsfs.
+	defer vfsfs.DecRef()
+	return vfsObj.NewDisconnectedMount(vfsfs, nil, &vfs.MountOptions{})
+}
+
 // ImportFD sets up and returns a vfs.FileDescription from a donated fd.
 func ImportFD(mnt *vfs.Mount, hostFD int, ownerUID auth.KUID, ownerGID auth.KGID, isTTY bool) (*vfs.FileDescription, error) {
-	// Must be importing to a mount of host.filesystem.
-	fs, ok := mnt.Filesystem().Impl().(*filesystem)
+	fs, ok := mnt.Filesystem().Impl().(*kernfs.Filesystem)
 	if !ok {
 		return nil, fmt.Errorf("can't import host FDs into filesystems of type %T", mnt.Filesystem().Impl())
 	}
@@ -54,8 +63,7 @@ func ImportFD(mnt *vfs.Mount, hostFD int, ownerUID auth.KUID, ownerGID auth.KGID
 
 	fileMode := linux.FileMode(s.Mode)
 	fileType := fileMode.FileType()
-	// Pipes, character devices, and sockets can return EWOULDBLOCK for
-	// operations that would block.
+	// Pipes, character devices, and sockets.
 	isStream := fileType == syscall.S_IFIFO || fileType == syscall.S_IFCHR || fileType == syscall.S_IFSOCK
 
 	i := &inode{
@@ -143,11 +151,109 @@ func (i *inode) Mode() linux.FileMode {
 
 // Stat implements kernfs.Inode.
 func (i *inode) Stat(_ *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
+	if opts.Mask&linux.STATX__RESERVED != 0 {
+		return linux.Statx{}, syserror.EINVAL
+	}
+	if opts.Sync&linux.AT_STATX_SYNC_TYPE == linux.AT_STATX_SYNC_TYPE {
+		return linux.Statx{}, syserror.EINVAL
+	}
+
+	// Limit our host call only to known flags.
+	mask := opts.Mask & linux.STATX_ALL
 	var s unix.Statx_t
-	if err := unix.Statx(i.hostFD, "", int(unix.AT_EMPTY_PATH|opts.Sync), int(opts.Mask), &s); err != nil {
+	err := unix.Statx(i.hostFD, "", int(unix.AT_EMPTY_PATH|opts.Sync), int(mask), &s)
+	// Fallback to fstat(2), if statx(2) is not supported on the host.
+	//
+	// TODO(b/151263641): Remove fallback.
+	if err == syserror.ENOSYS {
+		return i.fstat(opts)
+	} else if err != nil {
 		return linux.Statx{}, err
 	}
-	ls := unixToLinuxStatx(s)
+
+	ls := linux.Statx{Mask: mask}
+	// Unconditionally fill blksize, attributes, and device numbers, as indicated
+	// by /include/uapi/linux/stat.h.
+	//
+	// RdevMajor/RdevMinor are left as zero, so as not to expose host device
+	// numbers.
+	//
+	// TODO(gvisor.dev/issue/1672): Use kernfs-specific, internally defined
+	// device numbers. If we use the device number from the host, it may collide
+	// with another sentry-internal device number. We handle device/inode
+	// numbers without relying on the host to prevent collisions.
+	ls.Blksize = s.Blksize
+	ls.Attributes = s.Attributes
+	ls.AttributesMask = s.Attributes_mask
+
+	if mask|linux.STATX_TYPE != 0 {
+		ls.Mode |= s.Mode & linux.S_IFMT
+	}
+	if mask|linux.STATX_MODE != 0 {
+		ls.Mode |= s.Mode &^ linux.S_IFMT
+	}
+	if mask|linux.STATX_NLINK != 0 {
+		ls.Nlink = s.Nlink
+	}
+	if mask|linux.STATX_ATIME != 0 {
+		ls.Atime = unixToLinuxStatxTimestamp(s.Atime)
+	}
+	if mask|linux.STATX_BTIME != 0 {
+		ls.Btime = unixToLinuxStatxTimestamp(s.Btime)
+	}
+	if mask|linux.STATX_CTIME != 0 {
+		ls.Ctime = unixToLinuxStatxTimestamp(s.Ctime)
+	}
+	if mask|linux.STATX_MTIME != 0 {
+		ls.Mtime = unixToLinuxStatxTimestamp(s.Mtime)
+	}
+	if mask|linux.STATX_SIZE != 0 {
+		ls.Size = s.Size
+	}
+	if mask|linux.STATX_BLOCKS != 0 {
+		ls.Blocks = s.Blocks
+	}
+
+	// Use our own internal inode number and file owner.
+	if mask|linux.STATX_INO != 0 {
+		ls.Ino = i.ino
+	}
+	if mask|linux.STATX_UID != 0 {
+		ls.UID = uint32(i.uid)
+	}
+	if mask|linux.STATX_GID != 0 {
+		ls.GID = uint32(i.gid)
+	}
+
+	return ls, nil
+}
+
+// fstat is a best-effort fallback for inode.Stat() if the host does not
+// support statx(2).
+//
+// We ignore the mask and sync flags in opts and simply supply
+// STATX_BASIC_STATS, as fstat(2) itself does not allow the specification
+// of a mask or sync flags. fstat(2) does not provide any metadata
+// equivalent to Statx.Attributes, Statx.AttributesMask, or Statx.Btime, so
+// those fields remain empty.
+func (i *inode) fstat(opts vfs.StatOptions) (linux.Statx, error) {
+	var s unix.Stat_t
+	if err := unix.Fstat(i.hostFD, &s); err != nil {
+		return linux.Statx{}, err
+	}
+
+	// Note that rdev numbers are left as 0; do not expose host device numbers.
+	ls := linux.Statx{
+		Mask:    linux.STATX_BASIC_STATS,
+		Blksize: uint32(s.Blksize),
+		Nlink:   uint32(s.Nlink),
+		Mode:    uint16(s.Mode),
+		Size:    uint64(s.Size),
+		Blocks:  uint64(s.Blocks),
+		Atime:   timespecToStatxTimestamp(s.Atim),
+		Ctime:   timespecToStatxTimestamp(s.Ctim),
+		Mtime:   timespecToStatxTimestamp(s.Mtim),
+	}
 
 	// Use our own internal inode number and file owner.
 	//
@@ -158,9 +264,6 @@ func (i *inode) Stat(_ *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, erro
 	ls.Ino = i.ino
 	ls.UID = uint32(i.uid)
 	ls.GID = uint32(i.gid)
-
-	// Update file mode from the host.
-	i.mode = linux.FileMode(ls.Mode)
 
 	return ls, nil
 }
@@ -217,7 +320,6 @@ func (i *inode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptio
 }
 
 func (i *inode) open(d *vfs.Dentry, mnt *vfs.Mount) (*vfs.FileDescription, error) {
-
 	fileType := i.mode.FileType()
 	if fileType == syscall.S_IFSOCK {
 		if i.isTTY {
@@ -227,6 +329,8 @@ func (i *inode) open(d *vfs.Dentry, mnt *vfs.Mount) (*vfs.FileDescription, error
 		return nil, errors.New("importing host sockets not supported")
 	}
 
+	// TODO(gvisor.dev/issue/1672): Whitelist specific file types here, so that
+	// we don't allow importing arbitrary file types without proper support.
 	if i.isTTY {
 		// TODO(gvisor.dev/issue/1672): support importing host fd as TTY.
 		return nil, errors.New("importing host fd as TTY not supported")
