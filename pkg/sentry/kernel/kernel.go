@@ -467,6 +467,11 @@ func (k *Kernel) flushMountSourceRefs() error {
 //
 // Precondition: Must be called with the kernel paused.
 func (ts *TaskSet) forEachFDPaused(f func(*fs.File, *vfs.FileDescription) error) (err error) {
+	// TODO(gvisor.dev/issue/1663): Add save support for VFS2.
+	if VFS2Enabled {
+		return nil
+	}
+
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 	for t := range ts.Root.tids {
@@ -484,7 +489,7 @@ func (ts *TaskSet) forEachFDPaused(f func(*fs.File, *vfs.FileDescription) error)
 }
 
 func (ts *TaskSet) flushWritesToFiles(ctx context.Context) error {
-	// TODO(gvisor.dev/issues/1663): Add save support for VFS2.
+	// TODO(gvisor.dev/issue/1663): Add save support for VFS2.
 	return ts.forEachFDPaused(func(file *fs.File, _ *vfs.FileDescription) error {
 		if flags := file.Flags(); !flags.Write {
 			return nil
@@ -533,6 +538,11 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 }
 
 func (ts *TaskSet) unregisterEpollWaiters() {
+	// TODO(gvisor.dev/issue/1663): Add save support for VFS2.
+	if VFS2Enabled {
+		return
+	}
+
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 	for t := range ts.Root.tids {
@@ -1005,11 +1015,14 @@ func (k *Kernel) pauseTimeLocked() {
 		// This means we'll iterate FDTables shared by multiple tasks repeatedly,
 		// but ktime.Timer.Pause is idempotent so this is harmless.
 		if t.fdTable != nil {
-			t.fdTable.forEach(func(_ int32, file *fs.File, _ *vfs.FileDescription, _ FDFlags) {
-				if tfd, ok := file.FileOperations.(*timerfd.TimerOperations); ok {
-					tfd.PauseTimer()
-				}
-			})
+			// TODO(gvisor.dev/issue/1663): Add save support for VFS2.
+			if !VFS2Enabled {
+				t.fdTable.forEach(func(_ int32, file *fs.File, _ *vfs.FileDescription, _ FDFlags) {
+					if tfd, ok := file.FileOperations.(*timerfd.TimerOperations); ok {
+						tfd.PauseTimer()
+					}
+				})
+			}
 		}
 	}
 	k.timekeeper.PauseUpdates()
@@ -1034,12 +1047,15 @@ func (k *Kernel) resumeTimeLocked() {
 				it.ResumeTimer()
 			}
 		}
-		if t.fdTable != nil {
-			t.fdTable.forEach(func(_ int32, file *fs.File, _ *vfs.FileDescription, _ FDFlags) {
-				if tfd, ok := file.FileOperations.(*timerfd.TimerOperations); ok {
-					tfd.ResumeTimer()
-				}
-			})
+		// TODO(gvisor.dev/issue/1663): Add save support for VFS2.
+		if !VFS2Enabled {
+			if t.fdTable != nil {
+				t.fdTable.forEach(func(_ int32, file *fs.File, _ *vfs.FileDescription, _ FDFlags) {
+					if tfd, ok := file.FileOperations.(*timerfd.TimerOperations); ok {
+						tfd.ResumeTimer()
+					}
+				})
+			}
 		}
 	}
 }
