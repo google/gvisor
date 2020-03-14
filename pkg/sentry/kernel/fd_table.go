@@ -195,6 +195,8 @@ func (f *FDTable) Size() int {
 //
 // It is the caller's responsibility to acquire an appropriate lock.
 func (f *FDTable) forEach(fn func(fd int32, file *fs.File, fileVFS2 *vfs.FileDescription, flags FDFlags)) {
+	// retries tracks the number of failed TryIncRef attempts for the same FD.
+	retries := 0
 	fd := int32(0)
 	for {
 		file, fileVFS2, flags, ok := f.getAll(fd)
@@ -204,17 +206,26 @@ func (f *FDTable) forEach(fn func(fd int32, file *fs.File, fileVFS2 *vfs.FileDes
 		switch {
 		case file != nil:
 			if !file.TryIncRef() {
+				retries++
+				if retries > 1000 {
+					panic(fmt.Sprintf("File in FD table has been destroyed. FD: %d, File: %+v, FileOps: %+v", fd, file, file.FileOperations))
+				}
 				continue // Race caught.
 			}
 			fn(fd, file, nil, flags)
 			file.DecRef()
 		case fileVFS2 != nil:
 			if !fileVFS2.TryIncRef() {
+				retries++
+				if retries > 1000 {
+					panic(fmt.Sprintf("File in FD table has been destroyed. FD: %d, File: %+v, Impl: %+v", fd, fileVFS2, fileVFS2.Impl()))
+				}
 				continue // Race caught.
 			}
 			fn(fd, nil, fileVFS2, flags)
 			fileVFS2.DecRef()
 		}
+		retries = 0
 		fd++
 	}
 }
