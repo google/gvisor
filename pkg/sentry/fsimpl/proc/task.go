@@ -107,13 +107,9 @@ func (i *taskInode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenO
 	return fd.VFSFileDescription(), nil
 }
 
-// SetStat implements kernfs.Inode.
-func (i *taskInode) SetStat(_ *vfs.Filesystem, opts vfs.SetStatOptions) error {
-	stat := opts.Stat
-	if stat.Mask&linux.STATX_MODE != 0 {
-		return syserror.EPERM
-	}
-	return nil
+// SetStat implements Inode.SetStat not allowing inode attributes to be changed.
+func (*taskInode) SetStat(*vfs.Filesystem, vfs.SetStatOptions) error {
+	return syserror.EPERM
 }
 
 // taskOwnedInode implements kernfs.Inode and overrides inode owner with task

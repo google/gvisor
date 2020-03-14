@@ -67,7 +67,7 @@ var _ kernfs.Inode = (*tasksInode)(nil)
 func newTasksInode(inoGen InoGenerator, k *kernel.Kernel, pidns *kernel.PIDNamespace, cgroupControllers map[string]string) (*tasksInode, *kernfs.Dentry) {
 	root := auth.NewRootCredentials(pidns.UserNamespace())
 	contents := map[string]*kernfs.Dentry{
-		"cpuinfo":     newDentry(root, inoGen.NextIno(), 0444, newStaticFile(cpuInfoData(k))),
+		"cpuinfo":     newDentry(root, inoGen.NextIno(), 0444, newStaticFileSetStat(cpuInfoData(k))),
 		"filesystems": newDentry(root, inoGen.NextIno(), 0444, &filesystemsData{}),
 		"loadavg":     newDentry(root, inoGen.NextIno(), 0444, &loadavgData{}),
 		"sys":         newSysDir(root, inoGen, k),
@@ -223,6 +223,20 @@ func (i *tasksInode) Stat(vsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Sta
 	}
 
 	return stat, nil
+}
+
+// staticFileSetStat implements a special static file that allows inode
+// attributes to be set. This is to support /proc files that are readonly, but
+// allow attributes to be set.
+type staticFileSetStat struct {
+	dynamicBytesFileSetAttr
+	vfs.StaticData
+}
+
+var _ dynamicInode = (*staticFileSetStat)(nil)
+
+func newStaticFileSetStat(data string) *staticFileSetStat {
+	return &staticFileSetStat{StaticData: vfs.StaticData{Data: data}}
 }
 
 func cpuInfoData(k *kernel.Kernel) string {
