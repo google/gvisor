@@ -94,15 +94,17 @@ func (fs *filesystem) newDir(creds *auth.Credentials, mode linux.FileMode, conte
 	return &d.dentry
 }
 
-// SetStat implements kernfs.Inode.SetStat.
-func (d *dir) SetStat(fs *vfs.Filesystem, opts vfs.SetStatOptions) error {
+// SetStat implements Inode.SetStat not allowing inode attributes to be changed.
+func (*dir) SetStat(*vfs.Filesystem, vfs.SetStatOptions) error {
 	return syserror.EPERM
 }
 
 // Open implements kernfs.Inode.Open.
 func (d *dir) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fd := &kernfs.GenericDirectoryFD{}
-	fd.Init(rp.Mount(), vfsd, &d.OrderedChildren, &opts)
+	if err := fd.Init(rp.Mount(), vfsd, &d.OrderedChildren, &opts); err != nil {
+		return nil, err
+	}
 	return fd.VFSFileDescription(), nil
 }
 

@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -62,6 +63,11 @@ func (s *selfSymlink) Readlink(ctx context.Context) (string, error) {
 	return strconv.FormatUint(uint64(tgid), 10), nil
 }
 
+// SetStat implements Inode.SetStat not allowing inode attributes to be changed.
+func (*selfSymlink) SetStat(*vfs.Filesystem, vfs.SetStatOptions) error {
+	return syserror.EPERM
+}
+
 type threadSelfSymlink struct {
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
@@ -93,6 +99,23 @@ func (s *threadSelfSymlink) Readlink(ctx context.Context) (string, error) {
 		return "", syserror.ENOENT
 	}
 	return fmt.Sprintf("%d/task/%d", tgid, tid), nil
+}
+
+// SetStat implements Inode.SetStat not allowing inode attributes to be changed.
+func (*threadSelfSymlink) SetStat(*vfs.Filesystem, vfs.SetStatOptions) error {
+	return syserror.EPERM
+}
+
+// dynamicBytesFileSetAttr implements a special file that allows inode
+// attributes to be set. This is to support /proc files that are readonly, but
+// allow attributes to be set.
+type dynamicBytesFileSetAttr struct {
+	kernfs.DynamicBytesFile
+}
+
+// SetStat implements Inode.SetStat.
+func (d *dynamicBytesFileSetAttr) SetStat(fs *vfs.Filesystem, opts vfs.SetStatOptions) error {
+	return d.DynamicBytesFile.InodeAttrs.SetStat(fs, opts)
 }
 
 // cpuStats contains the breakdown of CPU time for /proc/stat.
@@ -137,7 +160,7 @@ func (c cpuStats) String() string {
 //
 // +stateify savable
 type statData struct {
-	kernfs.DynamicBytesFile
+	dynamicBytesFileSetAttr
 }
 
 var _ dynamicInode = (*statData)(nil)
@@ -201,7 +224,7 @@ func (*statData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 //
 // +stateify savable
 type loadavgData struct {
-	kernfs.DynamicBytesFile
+	dynamicBytesFileSetAttr
 }
 
 var _ dynamicInode = (*loadavgData)(nil)
@@ -220,7 +243,7 @@ func (*loadavgData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 //
 // +stateify savable
 type meminfoData struct {
-	kernfs.DynamicBytesFile
+	dynamicBytesFileSetAttr
 }
 
 var _ dynamicInode = (*meminfoData)(nil)
@@ -271,7 +294,7 @@ func (*meminfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 //
 // +stateify savable
 type uptimeData struct {
-	kernfs.DynamicBytesFile
+	dynamicBytesFileSetAttr
 }
 
 var _ dynamicInode = (*uptimeData)(nil)
@@ -290,7 +313,7 @@ func (*uptimeData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 //
 // +stateify savable
 type versionData struct {
-	kernfs.DynamicBytesFile
+	dynamicBytesFileSetAttr
 }
 
 var _ dynamicInode = (*versionData)(nil)

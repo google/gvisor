@@ -127,3 +127,8 @@ func (i *subtasksInode) Stat(vsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.
 	}
 	return stat, nil
 }
+
+// SetStat implements Inode.SetStat not allowing inode attributes to be changed.
+func (*subtasksInode) SetStat(*vfs.Filesystem, vfs.SetStatOptions) error {
+	return syserror.EPERM
+}

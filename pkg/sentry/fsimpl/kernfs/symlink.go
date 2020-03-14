@@ -18,6 +18,8 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // StaticSymlink provides an Inode implementation for symlinks that point to
@@ -51,4 +53,9 @@ func (s *StaticSymlink) Init(creds *auth.Credentials, ino uint64, target string)
 // Readlink implements Inode.
 func (s *StaticSymlink) Readlink(_ context.Context) (string, error) {
 	return s.target, nil
+}
+
+// SetStat implements Inode.SetStat not allowing inode attributes to be changed.
+func (*StaticSymlink) SetStat(*vfs.Filesystem, vfs.SetStatOptions) error {
+	return syserror.EPERM
 }

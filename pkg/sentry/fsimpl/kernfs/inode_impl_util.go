@@ -228,7 +228,7 @@ func (a *InodeAttrs) Stat(*vfs.Filesystem, vfs.StatOptions) (linux.Statx, error)
 	stat.GID = atomic.LoadUint32(&a.gid)
 	stat.Nlink = atomic.LoadUint32(&a.nlink)
 
-	// TODO: Implement other stat fields like timestamps.
+	// TODO(gvisor.dev/issue/1193): Implement other stat fields like timestamps.
 
 	return stat, nil
 }
@@ -256,7 +256,7 @@ func (a *InodeAttrs) SetStat(_ *vfs.Filesystem, opts vfs.SetStatOptions) error {
 	// Note that not all fields are modifiable. For example, the file type and
 	// inode numbers are immutable after node creation.
 
-	// TODO: Implement other stat fields like timestamps.
+	// TODO(gvisor.dev/issue/1193): Implement other stat fields like timestamps.
 
 	return nil
 }
@@ -553,6 +553,11 @@ func (s *StaticDirectory) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs
 	fd := &GenericDirectoryFD{}
 	fd.Init(rp.Mount(), vfsd, &s.OrderedChildren, &opts)
 	return fd.VFSFileDescription(), nil
+}
+
+// SetStat implements Inode.SetStat not allowing inode attributes to be changed.
+func (*StaticDirectory) SetStat(*vfs.Filesystem, vfs.SetStatOptions) error {
+	return syserror.EPERM
 }
 
 // AlwaysValid partially implements kernfs.inodeDynamicLookup.
