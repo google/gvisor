@@ -191,7 +191,7 @@ func (f *FDTable) Size() int {
 	return int(size)
 }
 
-// forEach iterates over all non-nil files.
+// forEach iterates over all non-nil files in sorted order.
 //
 // It is the caller's responsibility to acquire an appropriate lock.
 func (f *FDTable) forEach(fn func(fd int32, file *fs.File, fileVFS2 *vfs.FileDescription, flags FDFlags)) {
@@ -458,7 +458,10 @@ func (f *FDTable) GetVFS2(fd int32) (*vfs.FileDescription, FDFlags) {
 	}
 }
 
-// GetFDs returns a list of valid fds.
+// GetFDs returns a sorted list of valid fds.
+//
+// Precondition: The caller must be running on the task goroutine, or Task.mu
+// must be locked.
 func (f *FDTable) GetFDs() []int32 {
 	fds := make([]int32, 0, int(atomic.LoadInt32(&f.used)))
 	f.forEach(func(fd int32, _ *fs.File, _ *vfs.FileDescription, _ FDFlags) {
