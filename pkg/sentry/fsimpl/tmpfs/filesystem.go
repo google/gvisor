@@ -575,7 +575,7 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 	if err != nil {
 		return err
 	}
-	return d.inode.setStat(rp.Credentials(), &opts.Stat)
+	return d.inode.setStat(ctx, rp.Credentials(), &opts.Stat)
 }
 
 // StatAt implements vfs.FilesystemImpl.StatAt.

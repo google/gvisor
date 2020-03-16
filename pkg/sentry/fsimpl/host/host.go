@@ -270,7 +270,7 @@ func (i *inode) fstat(opts vfs.StatOptions) (linux.Statx, error) {
 }
 
 // SetStat implements kernfs.Inode.
-func (i *inode) SetStat(fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
+func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
 	s := opts.Stat
 
 	m := s.Mask
@@ -280,7 +280,7 @@ func (i *inode) SetStat(fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.Se
 	if m&^(linux.STATX_MODE|linux.STATX_SIZE|linux.STATX_ATIME|linux.STATX_MTIME) != 0 {
 		return syserror.EPERM
 	}
-	if err := vfs.CheckSetStat(creds, &s, uint16(i.Mode().Permissions()), i.uid, i.gid); err != nil {
+	if err := vfs.CheckSetStat(ctx, creds, &s, uint16(i.Mode().Permissions()), i.uid, i.gid); err != nil {
 		return err
 	}
 
@@ -382,7 +382,7 @@ type fileDescription struct {
 // SetStat implements vfs.FileDescriptionImpl.
 func (f *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 	creds := auth.CredentialsFromContext(ctx)
-	return f.inode.SetStat(nil, creds, opts)
+	return f.inode.SetStat(ctx, nil, creds, opts)
 }
 
 // Stat implements vfs.FileDescriptionImpl.

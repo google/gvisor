@@ -15,8 +15,12 @@
 package vfs
 
 import (
+	"math"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -147,7 +151,16 @@ func MayWriteFileWithOpenFlags(flags uint32) bool {
 // CheckSetStat checks that creds has permission to change the metadata of a
 // file with the given permissions, UID, and GID as specified by stat, subject
 // to the rules of Linux's fs/attr.c:setattr_prepare().
-func CheckSetStat(creds *auth.Credentials, stat *linux.Statx, mode uint16, kuid auth.KUID, kgid auth.KGID) error {
+func CheckSetStat(ctx context.Context, creds *auth.Credentials, stat *linux.Statx, mode uint16, kuid auth.KUID, kgid auth.KGID) error {
+	if stat.Mask&linux.STATX_SIZE != 0 {
+		limit, err := CheckLimit(ctx, 0, int64(stat.Size))
+		if err != nil {
+			return err
+		}
+		if limit < int64(stat.Size) {
+			return syserror.ErrExceedsFileSizeLimit
+		}
+	}
 	if stat.Mask&linux.STATX_MODE != 0 {
 		if !CanActAsOwner(creds, kuid) {
 			return syserror.EPERM
@@ -204,4 +217,22 @@ func CanActAsOwner(creds *auth.Credentials, kuid auth.KUID) bool {
 // kernel/capability.c:capable_wrt_inode_uidgid().
 func HasCapabilityOnFile(creds *auth.Credentials, cp linux.Capability, kuid auth.KUID, kgid auth.KGID) bool {
 	return creds.HasCapability(cp) && creds.UserNamespace.MapFromKUID(kuid).Ok() && creds.UserNamespace.MapFromKGID(kgid).Ok()
+}
+
+// CheckLimit enforces file size rlimits. It returns error if the write
+// operation must not proceed. Otherwise it returns the max length allowed to
+// without violating the limit.
+func CheckLimit(ctx context.Context, offset, size int64) (int64, error) {
+	fileSizeLimit := limits.FromContext(ctx).Get(limits.FileSize).Cur
+	if fileSizeLimit > math.MaxInt64 {
+		return size, nil
+	}
+	if offset >= int64(fileSizeLimit) {
+		return 0, syserror.ErrExceedsFileSizeLimit
+	}
+	remaining := int64(fileSizeLimit) - offset
+	if remaining < size {
+		return remaining, nil
+	}
+	return size, nil
 }

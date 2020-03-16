@@ -126,6 +126,11 @@ func (fd *regularFileFD) PWrite(ctx context.Context, src usermem.IOSequence, off
 	if opts.Flags != 0 {
 		return 0, syserror.EOPNOTSUPP
 	}
+	limit, err := vfs.CheckLimit(ctx, offset, src.NumBytes())
+	if err != nil {
+		return 0, err
+	}
+	src = src.TakeFirst64(limit)
 
 	d := fd.dentry()
 	d.metadataMu.Lock()

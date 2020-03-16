@@ -308,11 +308,18 @@ func (fd *regularFileFD) PWrite(ctx context.Context, src usermem.IOSequence, off
 		return 0, nil
 	}
 	f := fd.inode().impl.(*regularFile)
-	end := offset + srclen
-	if end < offset {
+	if end := offset + srclen; end < offset {
 		// Overflow.
 		return 0, syserror.EFBIG
 	}
+
+	var err error
+	srclen, err = vfs.CheckLimit(ctx, offset, srclen)
+	if err != nil {
+		return 0, err
+	}
+	src = src.TakeFirst64(srclen)
+
 	f.inode.mu.Lock()
 	rw := getRegularFileReadWriter(f, offset)
 	n, err := src.CopyInTo(ctx, rw)

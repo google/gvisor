@@ -333,7 +333,7 @@ type inodeMetadata interface {
 	// vfs.FilesystemImpl.SetStatAt. Implementations are responsible for checking
 	// if the operation can be performed (see vfs.CheckSetStat() for common
 	// checks).
-	SetStat(fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error
+	SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error
 }
 
 // Precondition: All methods in this interface may only be called on directory
