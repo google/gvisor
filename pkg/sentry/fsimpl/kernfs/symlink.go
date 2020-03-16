@@ -56,6 +56,6 @@ func (s *StaticSymlink) Readlink(_ context.Context) (string, error) {
 }
 
 // SetStat implements Inode.SetStat not allowing inode attributes to be changed.
-func (*StaticSymlink) SetStat(*vfs.Filesystem, vfs.SetStatOptions) error {
+func (*StaticSymlink) SetStat(*vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
 	return syserror.EPERM
 }

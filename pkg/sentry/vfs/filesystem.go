@@ -366,7 +366,9 @@ type FilesystemImpl interface {
 	// ResolvingPath.Resolve*(), then !rp.Done().
 	RmdirAt(ctx context.Context, rp *ResolvingPath) error
 
-	// SetStatAt updates metadata for the file at the given path.
+	// SetStatAt updates metadata for the file at the given path. Implementations
+	// are responsible for checking if the operation can be performed
+	// (see vfs.CheckSetStat() for common checks).
 	//
 	// Errors:
 	//

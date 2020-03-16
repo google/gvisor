@@ -286,7 +286,8 @@ type FileDescriptionImpl interface {
 	Stat(ctx context.Context, opts StatOptions) (linux.Statx, error)
 
 	// SetStat updates metadata for the file represented by the
-	// FileDescription.
+	// FileDescription. Implementations are responsible for checking if the
+	// operation can be performed (see vfs.CheckSetStat() for common checks).
 	SetStat(ctx context.Context, opts SetStatOptions) error
 
 	// StatFS returns metadata for the filesystem containing the file
