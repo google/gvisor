@@ -703,25 +703,34 @@ func filterFromIPTIP(iptip linux.IPTIP) (iptables.IPHeaderFilter, error) {
 	if containsUnsupportedFields(iptip) {
 		return iptables.IPHeaderFilter{}, fmt.Errorf("unsupported fields in struct iptip: %+v", iptip)
 	}
+	if len(iptip.Dst) != header.IPv4AddressSize || len(iptip.DstMask) != header.IPv4AddressSize {
+		return iptables.IPHeaderFilter{}, fmt.Errorf("incorrect length of destination (%d) and/or destination mask (%d) fields", len(iptip.Dst), len(iptip.DstMask))
+	}
 	return iptables.IPHeaderFilter{
-		Protocol: tcpip.TransportProtocolNumber(iptip.Protocol),
+		Protocol:  tcpip.TransportProtocolNumber(iptip.Protocol),
+		Dst:       tcpip.Address(iptip.Dst[:]),
+		DstMask:   tcpip.Address(iptip.DstMask[:]),
+		DstInvert: iptip.InverseFlags&linux.IPT_INV_DSTIP != 0,
 	}, nil
 }
 
 func containsUnsupportedFields(iptip linux.IPTIP) bool {
-	// Currently we check that everything except protocol is zeroed.
+	// The following features are supported:
+	// - Protocol
+	// - Dst and DstMask
+	// - The inverse destination IP check flag
 	var emptyInetAddr = linux.InetAddr{}
 	var emptyInterface = [linux.IFNAMSIZ]byte{}
-	return iptip.Dst != emptyInetAddr ||
-		iptip.Src != emptyInetAddr ||
+	// Disable any supported inverse flags.
+	inverseMask := uint8(linux.IPT_INV_DSTIP)
+	return iptip.Src != emptyInetAddr ||
 		iptip.SrcMask != emptyInetAddr ||
-		iptip.DstMask != emptyInetAddr ||
 		iptip.InputInterface != emptyInterface ||
 		iptip.OutputInterface != emptyInterface ||
 		iptip.InputInterfaceMask != emptyInterface ||
 		iptip.OutputInterfaceMask != emptyInterface ||
 		iptip.Flags != 0 ||
-		iptip.InverseFlags != 0
+		iptip.InverseFlags&^inverseMask != 0
 }
 
 func validUnderflow(rule iptables.Rule) bool {

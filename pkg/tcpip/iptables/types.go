@@ -144,6 +144,18 @@ type Rule struct {
 type IPHeaderFilter struct {
 	// Protocol matches the transport protocol.
 	Protocol tcpip.TransportProtocolNumber
+
+	// Dst matches the destination IP address.
+	Dst tcpip.Address
+
+	// DstMask masks bits of the destination IP address when comparing with
+	// Dst.
+	DstMask tcpip.Address
+
+	// DstInvert inverts the meaning of the destination IP check, i.e. when
+	// true the filter will match packets that fail the destination
+	// comparison.
+	DstInvert bool
 }
 
 // A Matcher is the interface for matching packets.
