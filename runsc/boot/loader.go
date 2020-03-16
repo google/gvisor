@@ -408,6 +408,7 @@ func New(args Args) (*Loader, error) {
 		processes:  map[execID]*execProcess{eid: {}},
 		mountHints: mountHints,
 		root:       info,
+		containers: map[string]int{args.ID: 0},
 	}
 
 	// We don't care about child signals; some platforms can generate a
