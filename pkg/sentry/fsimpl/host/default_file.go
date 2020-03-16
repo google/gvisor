@@ -112,7 +112,6 @@ func (f *defaultFileFD) PWrite(ctx context.Context, src usermem.IOSequence, offs
 	if f.inode.isStream {
 		return 0, syserror.ESPIPE
 	}
-
 	return writeToHostFD(ctx, f.inode.hostFD, src, offset, int(opts.Flags))
 }
 
@@ -145,6 +144,12 @@ func writeToHostFD(ctx context.Context, hostFD int, src usermem.IOSequence, offs
 	if flags != 0 {
 		return 0, syserror.EOPNOTSUPP
 	}
+
+	limit, err := vfs.CheckLimit(ctx, offset, src.NumBytes())
+	if err != nil {
+		return 0, err
+	}
+	src = src.TakeFirst64(limit)
 
 	var writer safemem.Writer
 	if offset == -1 {

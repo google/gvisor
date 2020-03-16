@@ -95,7 +95,7 @@ func (fs *filesystem) newDir(creds *auth.Credentials, mode linux.FileMode, conte
 }
 
 // SetStat implements Inode.SetStat not allowing inode attributes to be changed.
-func (*dir) SetStat(*vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
+func (*dir) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
 	return syserror.EPERM
 }
 

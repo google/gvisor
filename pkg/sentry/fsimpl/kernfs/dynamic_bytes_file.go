@@ -64,7 +64,7 @@ func (f *DynamicBytesFile) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vf
 // SetStat implements Inode.SetStat. By default DynamicBytesFile doesn't allow
 // inode attributes to be changed. Override SetStat() making it call
 // f.InodeAttrs to allow it.
-func (*DynamicBytesFile) SetStat(*vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
+func (*DynamicBytesFile) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
 	return syserror.EPERM
 }
 

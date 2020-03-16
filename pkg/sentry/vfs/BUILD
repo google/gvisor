@@ -51,6 +51,7 @@ go_library(
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/limits",
         "//pkg/sentry/memmap",
         "//pkg/sync",
         "//pkg/syserror",

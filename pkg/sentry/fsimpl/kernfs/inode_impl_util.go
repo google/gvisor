@@ -234,14 +234,14 @@ func (a *InodeAttrs) Stat(*vfs.Filesystem, vfs.StatOptions) (linux.Statx, error)
 }
 
 // SetStat implements Inode.SetStat.
-func (a *InodeAttrs) SetStat(fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
+func (a *InodeAttrs) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
 	if opts.Stat.Mask == 0 {
 		return nil
 	}
 	if opts.Stat.Mask&^(linux.STATX_MODE|linux.STATX_UID|linux.STATX_GID) != 0 {
 		return syserror.EPERM
 	}
-	if err := vfs.CheckSetStat(creds, &opts.Stat, uint16(a.Mode().Permissions()), auth.KUID(atomic.LoadUint32(&a.uid)), auth.KGID(atomic.LoadUint32(&a.gid))); err != nil {
+	if err := vfs.CheckSetStat(ctx, creds, &opts.Stat, uint16(a.Mode().Permissions()), auth.KUID(atomic.LoadUint32(&a.uid)), auth.KGID(atomic.LoadUint32(&a.gid))); err != nil {
 		return err
 	}
 
@@ -566,7 +566,7 @@ func (s *StaticDirectory) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs
 }
 
 // SetStat implements Inode.SetStat not allowing inode attributes to be changed.
-func (*StaticDirectory) SetStat(*vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
+func (*StaticDirectory) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
 	return syserror.EPERM
 }
 

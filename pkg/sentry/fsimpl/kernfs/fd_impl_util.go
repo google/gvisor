@@ -209,5 +209,5 @@ func (fd *GenericDirectoryFD) SetStat(ctx context.Context, opts vfs.SetStatOptio
 	fs := fd.filesystem()
 	creds := auth.CredentialsFromContext(ctx)
 	inode := fd.vfsfd.VirtualDentry().Dentry().Impl().(*Dentry).inode
-	return inode.SetStat(fs, creds, opts)
+	return inode.SetStat(ctx, fs, creds, opts)
 }

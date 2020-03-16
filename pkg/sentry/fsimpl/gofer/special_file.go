@@ -107,6 +107,14 @@ func (fd *specialFileFD) PWrite(ctx context.Context, src usermem.IOSequence, off
 		return 0, syserror.EOPNOTSUPP
 	}
 
+	if fd.dentry().fileType() == linux.S_IFREG {
+		limit, err := vfs.CheckLimit(ctx, offset, src.NumBytes())
+		if err != nil {
+			return 0, err
+		}
+		src = src.TakeFirst64(limit)
+	}
+
 	// Do a buffered write. See rationale in PRead.
 	if d := fd.dentry(); d.fs.opts.interop != InteropModeShared {
 		d.touchCMtime(ctx)

@@ -108,7 +108,7 @@ func (i *taskInode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenO
 }
 
 // SetStat implements Inode.SetStat not allowing inode attributes to be changed.
-func (*taskInode) SetStat(*vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
+func (*taskInode) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
 	return syserror.EPERM
 }
 

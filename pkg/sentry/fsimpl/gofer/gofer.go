@@ -713,7 +713,7 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, stat *lin
 	if stat.Mask&^(linux.STATX_MODE|linux.STATX_UID|linux.STATX_GID|linux.STATX_ATIME|linux.STATX_MTIME|linux.STATX_SIZE) != 0 {
 		return syserror.EPERM
 	}
-	if err := vfs.CheckSetStat(creds, stat, uint16(atomic.LoadUint32(&d.mode))&^linux.S_IFMT, auth.KUID(atomic.LoadUint32(&d.uid)), auth.KGID(atomic.LoadUint32(&d.gid))); err != nil {
+	if err := vfs.CheckSetStat(ctx, creds, stat, uint16(atomic.LoadUint32(&d.mode))&^linux.S_IFMT, auth.KUID(atomic.LoadUint32(&d.uid)), auth.KGID(atomic.LoadUint32(&d.gid))); err != nil {
 		return err
 	}
 	if err := mnt.CheckBeginWrite(); err != nil {
