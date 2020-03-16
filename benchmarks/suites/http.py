@@ -1,5 +1,5 @@
-# python3
-# Copyright 2019 Google LLC
+## python3
+# Copyright 2019 The gVisor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -46,9 +46,12 @@ def http(server: machine.Machine,
   apachebench = client.pull("ab")
   netcat = client.pull("netcat")
   image = server.pull(workload)
+  tmpfs = {"/disk": ""}
 
-  with server.container(image, port=port, **kwargs).detach() as container:
+  with server.container(image, port=port, tmpfs=tmpfs, **kwargs)\
+      .detach() as container:
     (host, port) = container.address()
+
     # Wait for the server to come up.
     client.container(netcat).run(host=host, port=port)
     # Run the benchmark, no arguments.

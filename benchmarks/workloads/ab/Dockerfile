@@ -12,4 +12,4 @@ ENV connections 10
 ENV host localhost
 ENV port 8080
 ENV path notfound
-CMD ["sh", "-c", "ab -n ${requests} -c ${connections} http://${host}:${port}/${path}"]
+CMD ["sh", "-c", "ab -r -n ${requests} -c ${connections} http://${host}:${port}/${path}"]
