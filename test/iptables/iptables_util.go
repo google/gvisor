@@ -24,6 +24,7 @@ import (
 )
 
 const iptablesBinary = "iptables"
+const localIP = "127.0.0.1"
 
 // filterTable calls `iptables -t filter` with the given args.
 func filterTable(args ...string) error {
@@ -46,8 +47,17 @@ func tableCmd(table string, args []string) error {
 
 // filterTableRules is like filterTable, but runs multiple iptables commands.
 func filterTableRules(argsList [][]string) error {
+	return tableRules("filter", argsList)
+}
+
+// natTableRules is like natTable, but runs multiple iptables commands.
+func natTableRules(argsList [][]string) error {
+	return tableRules("nat", argsList)
+}
+
+func tableRules(table string, argsList [][]string) error {
 	for _, args := range argsList {
-		if err := filterTable(args...); err != nil {
+		if err := tableCmd(table, args); err != nil {
 			return err
 		}
 	}
@@ -145,4 +155,17 @@ func connectTCP(ip net.IP, port int, timeout time.Duration) error {
 	}
 
 	return nil
+}
+
+// localAddrs returns a list of local network interface addresses.
+func localAddrs() ([]string, error) {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil, err
+	}
+	addrStrs := make([]string, 0, len(addrs))
+	for _, addr := range addrs {
+		addrStrs = append(addrStrs, addr.String())
+	}
+	return addrStrs, nil
 }

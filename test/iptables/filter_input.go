@@ -47,6 +47,8 @@ func init() {
 	RegisterTestCase(FilterInputJumpReturnDrop{})
 	RegisterTestCase(FilterInputJumpBuiltin{})
 	RegisterTestCase(FilterInputJumpTwice{})
+	RegisterTestCase(FilterInputDestination{})
+	RegisterTestCase(FilterInputInvertDestination{})
 }
 
 // FilterInputDropUDP tests that we can drop UDP traffic.
@@ -594,5 +596,68 @@ func (FilterInputJumpTwice) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputJumpTwice) LocalAction(ip net.IP) error {
+	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// FilterInputDestination verifies that we can filter packets via `-d
+// <ipaddr>`.
+type FilterInputDestination struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputDestination) Name() string {
+	return "FilterInputDestination"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputDestination) ContainerAction(ip net.IP) error {
+	addrs, err := localAddrs()
+	if err != nil {
+		return err
+	}
+
+	// Make INPUT's default action DROP, then ACCEPT all packets bound for
+	// this machine.
+	rules := [][]string{{"-P", "INPUT", "DROP"}}
+	for _, addr := range addrs {
+		rules = append(rules, []string{"-A", "INPUT", "-d", addr, "-j", "ACCEPT"})
+	}
+	if err := filterTableRules(rules); err != nil {
+		return err
+	}
+
+	return listenUDP(acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputDestination) LocalAction(ip net.IP) error {
+	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// FilterInputInvertDestination verifies that we can filter packets via `! -d
+// <ipaddr>`.
+type FilterInputInvertDestination struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputInvertDestination) Name() string {
+	return "FilterInputInvertDestination"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputInvertDestination) ContainerAction(ip net.IP) error {
+	// Make INPUT's default action DROP, then ACCEPT all packets not bound
+	// for 127.0.0.1.
+	rules := [][]string{
+		{"-P", "INPUT", "DROP"},
+		{"-A", "INPUT", "!", "-d", localIP, "-j", "ACCEPT"},
+	}
+	if err := filterTableRules(rules); err != nil {
+		return err
+	}
+
+	return listenUDP(acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputInvertDestination) LocalAction(ip net.IP) error {
 	return sendUDPLoop(ip, acceptPort, sendloopDuration)
 }

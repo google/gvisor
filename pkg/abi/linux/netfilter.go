@@ -158,9 +158,31 @@ type IPTIP struct {
 	// Flags define matching behavior for the IP header.
 	Flags uint8
 
-	// InverseFlags invert the meaning of fields in struct IPTIP.
+	// InverseFlags invert the meaning of fields in struct IPTIP. See the
+	// IPT_INV_* flags.
 	InverseFlags uint8
 }
+
+// Flags in IPTIP.InverseFlags. Corresponding constants are in
+// include/uapi/linux/netfilter_ipv4/ip_tables.h.
+const (
+	// Invert the meaning of InputInterface.
+	IPT_INV_VIA_IN = 0x01
+	// Invert the meaning of OutputInterface.
+	IPT_INV_VIA_OUT = 0x02
+	// Unclear what this is, as no references to it exist in the kernel.
+	IPT_INV_TOS = 0x04
+	// Invert the meaning of Src.
+	IPT_INV_SRCIP = 0x08
+	// Invert the meaning of Dst.
+	IPT_INV_DSTIP = 0x10
+	// Invert the meaning of the IPT_F_FRAG flag.
+	IPT_INV_FRAG = 0x20
+	// Invert the meaning of the Protocol field.
+	IPT_INV_PROTO = 0x40
+	// Enable all flags.
+	IPT_INV_MASK = 0x7F
+)
 
 // SizeOfIPTIP is the size of an IPTIP.
 const SizeOfIPTIP = 84

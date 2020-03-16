@@ -22,6 +22,8 @@ import (
 func init() {
 	RegisterTestCase(FilterOutputDropTCPDestPort{})
 	RegisterTestCase(FilterOutputDropTCPSrcPort{})
+	RegisterTestCase(FilterOutputDestination{})
+	RegisterTestCase(FilterOutputInvertDestination{})
 }
 
 // FilterOutputDropTCPDestPort tests that connections are not accepted on
@@ -86,4 +88,58 @@ func (FilterOutputDropTCPSrcPort) LocalAction(ip net.IP) error {
 	}
 
 	return nil
+}
+
+// FilterOutputDestination tests that we can selectively allow packets to
+// certain destinations.
+type FilterOutputDestination struct{}
+
+// Name implements TestCase.Name.
+func (FilterOutputDestination) Name() string {
+	return "FilterOutputDestination"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterOutputDestination) ContainerAction(ip net.IP) error {
+	rules := [][]string{
+		{"-A", "OUTPUT", "-d", ip.String(), "-j", "ACCEPT"},
+		{"-P", "OUTPUT", "DROP"},
+	}
+	if err := filterTableRules(rules); err != nil {
+		return err
+	}
+
+	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterOutputDestination) LocalAction(ip net.IP) error {
+	return listenUDP(acceptPort, sendloopDuration)
+}
+
+// FilterOutputInvertDestination tests that we can selectively allow packets
+// not headed for a particular destination.
+type FilterOutputInvertDestination struct{}
+
+// Name implements TestCase.Name.
+func (FilterOutputInvertDestination) Name() string {
+	return "FilterOutputInvertDestination"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterOutputInvertDestination) ContainerAction(ip net.IP) error {
+	rules := [][]string{
+		{"-A", "OUTPUT", "!", "-d", localIP, "-j", "ACCEPT"},
+		{"-P", "OUTPUT", "DROP"},
+	}
+	if err := filterTableRules(rules); err != nil {
+		return err
+	}
+
+	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterOutputInvertDestination) LocalAction(ip net.IP) error {
+	return listenUDP(acceptPort, sendloopDuration)
 }
