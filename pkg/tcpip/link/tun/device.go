@@ -98,7 +98,12 @@ func (d *Device) SetIff(s *stack.Stack, name string, flags uint16) error {
 		prefix = "tap"
 	}
 
-	endpoint, err := attachOrCreateNIC(s, name, prefix)
+	linkCaps := stack.CapabilityNone
+	if isTap {
+		linkCaps |= stack.CapabilityResolutionRequired
+	}
+
+	endpoint, err := attachOrCreateNIC(s, name, prefix, linkCaps)
 	if err != nil {
 		return syserror.EINVAL
 	}
@@ -109,7 +114,7 @@ func (d *Device) SetIff(s *stack.Stack, name string, flags uint16) error {
 	return nil
 }
 
-func attachOrCreateNIC(s *stack.Stack, name, prefix string) (*tunEndpoint, error) {
+func attachOrCreateNIC(s *stack.Stack, name, prefix string, linkCaps stack.LinkEndpointCapabilities) (*tunEndpoint, error) {
 	for {
 		// 1. Try to attach to an existing NIC.
 		if name != "" {
@@ -135,6 +140,7 @@ func attachOrCreateNIC(s *stack.Stack, name, prefix string) (*tunEndpoint, error
 			nicID:    id,
 			name:     name,
 		}
+		endpoint.Endpoint.LinkEPCapabilities = linkCaps
 		if endpoint.name == "" {
 			endpoint.name = fmt.Sprintf("%s%d", prefix, id)
 		}

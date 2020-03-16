@@ -256,6 +256,40 @@ TEST_F(TuntapTest, WriteToDownDevice) {
   EXPECT_THAT(write(fd.get(), buf, sizeof(buf)), SyscallFailsWithErrno(EIO));
 }
 
+PosixErrorOr<FileDescriptor> OpenAndAttachTap(
+    const std::string& dev_name, const std::string& dev_ipv4_addr) {
+  // Interface creation.
+  ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, Open(kDevNetTun, O_RDWR));
+
+  struct ifreq ifr_set = {};
+  ifr_set.ifr_flags = IFF_TAP;
+  strncpy(ifr_set.ifr_name, dev_name.c_str(), IFNAMSIZ);
+  if (ioctl(fd.get(), TUNSETIFF, &ifr_set) < 0) {
+    return PosixError(errno);
+  }
+
+  ASSIGN_OR_RETURN_ERRNO(absl::optional<Link> link, GetLinkByName(dev_name));
+  if (!link.has_value()) {
+    return PosixError(ENOENT, "no link");
+  }
+
+  // Interface setup.
+  struct in_addr addr;
+  inet_pton(AF_INET, dev_ipv4_addr.c_str(), &addr);
+  EXPECT_NO_ERRNO(LinkAddLocalAddr(link->index, AF_INET, /*prefixlen=*/24,
+                                   &addr, sizeof(addr)));
+
+  if (!IsRunningOnGvisor()) {
+    // FIXME: gVisor doesn't support setting MAC address on interfaces yet.
+    RETURN_IF_ERRNO(LinkSetMacAddr(link->index, kMacA, sizeof(kMacA)));
+
+    // FIXME: gVisor always creates enabled/up'd interfaces.
+    RETURN_IF_ERRNO(LinkChangeFlags(link->index, IFF_UP, IFF_UP));
+  }
+
+  return fd;
+}
+
 // This test sets up a TAP device and pings kernel by sending ICMP echo request.
 //
 // It works as the following:
@@ -273,33 +307,8 @@ TEST_F(TuntapTest, WriteToDownDevice) {
 TEST_F(TuntapTest, PingKernel) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
-  // Interface creation.
-  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kDevNetTun, O_RDWR));
-
-  struct ifreq ifr_set = {};
-  ifr_set.ifr_flags = IFF_TAP;
-  strncpy(ifr_set.ifr_name, kTapName, IFNAMSIZ);
-  EXPECT_THAT(ioctl(fd.get(), TUNSETIFF, &ifr_set),
-              SyscallSucceedsWithValue(0));
-
-  absl::optional<Link> link =
-      ASSERT_NO_ERRNO_AND_VALUE(GetLinkByName(kTapName));
-  ASSERT_TRUE(link.has_value());
-
-  // Interface setup.
-  struct in_addr addr;
-  inet_pton(AF_INET, "10.0.0.1", &addr);
-  EXPECT_NO_ERRNO(LinkAddLocalAddr(link->index, AF_INET, /*prefixlen=*/24,
-                                   &addr, sizeof(addr)));
-
-  if (!IsRunningOnGvisor()) {
-    // FIXME: gVisor doesn't support setting MAC address on interfaces yet.
-    EXPECT_NO_ERRNO(LinkSetMacAddr(link->index, kMacA, sizeof(kMacA)));
-
-    // FIXME: gVisor always creates enabled/up'd interfaces.
-    EXPECT_NO_ERRNO(LinkChangeFlags(link->index, IFF_UP, IFF_UP));
-  }
-
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTap(kTapName, "10.0.0.1"));
   ping_pkt ping_req = CreatePingPacket(kMacB, "10.0.0.2", kMacA, "10.0.0.1");
   std::string arp_rep = CreateArpPacket(kMacB, "10.0.0.2", kMacA, "10.0.0.1");
 
@@ -344,6 +353,48 @@ TEST_F(TuntapTest, PingKernel) {
         !memcmp(&r.ping.ip.daddr, &ping_req.ip.saddr, kIPLen) &&
         r.ping.icmp.type == 0 && r.ping.icmp.code == 0) {
       // Ends and passes the test.
+      break;
+    }
+  }
+}
+
+TEST_F(TuntapTest, SendUdpTriggersArpResolution) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTap(kTapName, "10.0.0.1"));
+
+  // Send a UDP packet to remote.
+  int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+  ASSERT_THAT(sock, SyscallSucceeds());
+
+  struct sockaddr_in remote = {};
+  remote.sin_family = AF_INET;
+  remote.sin_port = htons(42);
+  inet_pton(AF_INET, "10.0.0.2", &remote.sin_addr);
+  int ret = sendto(sock, "hello", 5, 0, reinterpret_cast<sockaddr*>(&remote),
+                   sizeof(remote));
+  ASSERT_THAT(ret, ::testing::AnyOf(SyscallSucceeds(),
+                                    SyscallFailsWithErrno(EHOSTDOWN)));
+
+  struct inpkt {
+    union {
+      pihdr pi;
+      arp_pkt arp;
+    };
+  };
+  while (1) {
+    inpkt r = {};
+    int n = read(fd.get(), &r, sizeof(r));
+    EXPECT_THAT(n, SyscallSucceeds());
+
+    if (n < sizeof(pihdr)) {
+      std::cerr << "Ignored packet, protocol: " << r.pi.pi_protocol
+                << " len: " << n << std::endl;
+      continue;
+    }
+
+    if (n >= sizeof(arp_pkt) && r.pi.pi_protocol == htons(ETH_P_ARP)) {
       break;
     }
   }
