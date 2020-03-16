@@ -17,6 +17,7 @@ package kernfs
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -206,6 +207,7 @@ func (fd *GenericDirectoryFD) Stat(ctx context.Context, opts vfs.StatOptions) (l
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
 func (fd *GenericDirectoryFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 	fs := fd.filesystem()
+	creds := auth.CredentialsFromContext(ctx)
 	inode := fd.vfsfd.VirtualDentry().Dentry().Impl().(*Dentry).inode
-	return inode.SetStat(fs, opts)
+	return inode.SetStat(fs, creds, opts)
 }

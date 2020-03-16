@@ -64,7 +64,7 @@ func (s *selfSymlink) Readlink(ctx context.Context) (string, error) {
 }
 
 // SetStat implements Inode.SetStat not allowing inode attributes to be changed.
-func (*selfSymlink) SetStat(*vfs.Filesystem, vfs.SetStatOptions) error {
+func (*selfSymlink) SetStat(*vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
 	return syserror.EPERM
 }
 
@@ -102,7 +102,7 @@ func (s *threadSelfSymlink) Readlink(ctx context.Context) (string, error) {
 }
 
 // SetStat implements Inode.SetStat not allowing inode attributes to be changed.
-func (*threadSelfSymlink) SetStat(*vfs.Filesystem, vfs.SetStatOptions) error {
+func (*threadSelfSymlink) SetStat(*vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
 	return syserror.EPERM
 }
 
@@ -114,8 +114,8 @@ type dynamicBytesFileSetAttr struct {
 }
 
 // SetStat implements Inode.SetStat.
-func (d *dynamicBytesFileSetAttr) SetStat(fs *vfs.Filesystem, opts vfs.SetStatOptions) error {
-	return d.DynamicBytesFile.InodeAttrs.SetStat(fs, opts)
+func (d *dynamicBytesFileSetAttr) SetStat(fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
+	return d.DynamicBytesFile.InodeAttrs.SetStat(fs, creds, opts)
 }
 
 // cpuStats contains the breakdown of CPU time for /proc/stat.
