@@ -24,9 +24,10 @@ import (
 const virtioNetHdrSize = int(unsafe.Sizeof(virtioNetHdr{}))
 
 func vnetHdrToByteSlice(hdr *virtioNetHdr) (slice []byte) {
-	sh := (*reflect.SliceHeader)(unsafe.Pointer(&slice))
-	sh.Data = uintptr(unsafe.Pointer(hdr))
-	sh.Len = virtioNetHdrSize
-	sh.Cap = virtioNetHdrSize
+	*(*reflect.SliceHeader)(unsafe.Pointer(&slice)) = reflect.SliceHeader{
+		Data: uintptr((unsafe.Pointer(hdr))),
+		Len:  virtioNetHdrSize,
+		Cap:  virtioNetHdrSize,
+	}
 	return
 }
