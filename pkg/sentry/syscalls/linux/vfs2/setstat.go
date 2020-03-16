@@ -173,12 +173,13 @@ func Truncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		return 0, nil, err
 	}
 
-	return 0, nil, setstatat(t, linux.AT_FDCWD, path, disallowEmptyPath, followFinalSymlink, &vfs.SetStatOptions{
+	err = setstatat(t, linux.AT_FDCWD, path, disallowEmptyPath, followFinalSymlink, &vfs.SetStatOptions{
 		Stat: linux.Statx{
 			Mask: linux.STATX_SIZE,
 			Size: uint64(length),
 		},
 	})
+	return 0, nil, handleSetSizeError(t, err)
 }
 
 // Ftruncate implements Linux syscall ftruncate(2).
@@ -196,12 +197,13 @@ func Ftruncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	}
 	defer file.DecRef()
 
-	return 0, nil, file.SetStat(t, vfs.SetStatOptions{
+	err := file.SetStat(t, vfs.SetStatOptions{
 		Stat: linux.Statx{
 			Mask: linux.STATX_SIZE,
 			Size: uint64(length),
 		},
 	})
+	return 0, nil, handleSetSizeError(t, err)
 }
 
 // Utime implements Linux syscall utime(2).
@@ -377,4 +379,13 @@ func setstatat(t *kernel.Task, dirfd int32, path fspath.Path, shouldAllowEmptyPa
 		Path:               path,
 		FollowFinalSymlink: bool(shouldFollowFinalSymlink),
 	}, opts)
+}
+
+func handleSetSizeError(t *kernel.Task, err error) error {
+	if err == syserror.ErrExceedsFileSizeLimit {
+		// Convert error to EFBIG and send a SIGXFSZ per setrlimit(2).
+		t.SendSignal(kernel.SignalInfoNoInfo(linux.SIGXFSZ, t, t))
+		return syserror.EFBIG
+	}
+	return err
 }
