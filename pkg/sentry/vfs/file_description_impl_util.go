@@ -339,6 +339,11 @@ func (fd *DynamicBytesFileDescriptionImpl) pwriteLocked(ctx context.Context, src
 	if opts.Flags&^(linux.RWF_HIPRI|linux.RWF_DSYNC|linux.RWF_SYNC) != 0 {
 		return 0, syserror.EOPNOTSUPP
 	}
+	limit, err := CheckLimit(ctx, offset, src.NumBytes())
+	if err != nil {
+		return 0, err
+	}
+	src = src.TakeFirst64(limit)
 
 	writable, ok := fd.data.(WritableDynamicBytesSource)
 	if !ok {
