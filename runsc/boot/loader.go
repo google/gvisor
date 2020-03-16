@@ -175,6 +175,9 @@ type Args struct {
 	UserLogFD int
 }
 
+// make sure stdioFDs are always the same on initial start and on restore
+const startingStdioFD = 64
+
 // New initializes a new kernel loader configured by spec.
 // New also handles setting up a kernel for restoring a container.
 func New(args Args) (*Loader, error) {
@@ -319,6 +322,21 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("creating pod mount hints: %v", err)
 	}
 
+	var stdioFDs []int
+	newfd := startingStdioFD
+	for _, fd := range args.StdioFDs {
+		err := syscall.Dup3(fd, newfd, syscall.O_CLOEXEC)
+		if err != nil {
+			return nil, fmt.Errorf("dup3 of stdioFDs failed: %v", err)
+		}
+		stdioFDs = append(stdioFDs, newfd)
+		err = syscall.Close(fd)
+		if err != nil {
+			return nil, fmt.Errorf("close original stdioFDs failed: %v", err)
+		}
+		newfd++
+	}
+
 	eid := execID{cid: args.ID}
 	l := &Loader{
 		k:            k,
@@ -327,7 +345,7 @@ func New(args Args) (*Loader, error) {
 		watchdog:     dog,
 		spec:         args.Spec,
 		goferFDs:     args.GoferFDs,
-		stdioFDs:     args.StdioFDs,
+		stdioFDs:     stdioFDs,
 		rootProcArgs: procArgs,
 		sandboxID:    args.ID,
 		processes:    map[execID]*execProcess{eid: {}},
@@ -568,6 +586,16 @@ func (l *Loader) run() error {
 			log.Warningf("error sending signal %v to container %q: %v", sig, l.sandboxID, err)
 		}
 	})
+
+	// l.stdioFDs are derived from dup() in boot.New() and they are now dup()ed again
+	// either in createFDTable() during initial start or in descriptor.initAfterLoad()
+	// during restore, we can release l.stdioFDs now.
+	for _, fd := range l.stdioFDs {
+		err := syscall.Close(fd)
+		if err != nil {
+			return fmt.Errorf("close dup()ed stdioFDs: %v", err)
+		}
+	}
 
 	log.Infof("Process should have started...")
 	l.watchdog.Start()
