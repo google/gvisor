@@ -10,7 +10,7 @@ go_library(
         "descriptor_state.go",
         "device.go",
         "file.go",
-        "fs.go",
+        "host.go",
         "inode.go",
         "inode_state.go",
         "ioctl_unsafe.go",
@@ -62,14 +62,12 @@ go_test(
     size = "small",
     srcs = [
         "descriptor_test.go",
-        "fs_test.go",
         "inode_test.go",
         "socket_test.go",
         "wait_test.go",
     ],
     library = ":host",
     deps = [
-        "//pkg/context",
         "//pkg/fd",
         "//pkg/fdnotifier",
         "//pkg/sentry/contexttest",
