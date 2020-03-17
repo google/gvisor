@@ -8,13 +8,11 @@ import (
 
 func (x *descriptor) save(m state.Map) {
 	x.beforeSave()
-	m.Save("donated", &x.donated)
 	m.Save("origFD", &x.origFD)
 	m.Save("wouldBlock", &x.wouldBlock)
 }
 
 func (x *descriptor) load(m state.Map) {
-	m.Load("donated", &x.donated)
 	m.Load("origFD", &x.origFD)
 	m.Load("wouldBlock", &x.wouldBlock)
 	m.AfterLoad(x.afterLoad)
@@ -33,34 +31,13 @@ func (x *fileOperations) load(m state.Map) {
 	m.Load("dirCursor", &x.dirCursor)
 }
 
-func (x *Filesystem) beforeSave() {}
-func (x *Filesystem) save(m state.Map) {
+func (x *filesystem) beforeSave() {}
+func (x *filesystem) save(m state.Map) {
 	x.beforeSave()
-	m.Save("paths", &x.paths)
 }
 
-func (x *Filesystem) afterLoad() {}
-func (x *Filesystem) load(m state.Map) {
-	m.Load("paths", &x.paths)
-}
-
-func (x *superOperations) beforeSave() {}
-func (x *superOperations) save(m state.Map) {
-	x.beforeSave()
-	m.Save("SimpleMountSourceOperations", &x.SimpleMountSourceOperations)
-	m.Save("root", &x.root)
-	m.Save("inodeMappings", &x.inodeMappings)
-	m.Save("mounter", &x.mounter)
-	m.Save("dontTranslateOwnership", &x.dontTranslateOwnership)
-}
-
-func (x *superOperations) afterLoad() {}
-func (x *superOperations) load(m state.Map) {
-	m.Load("SimpleMountSourceOperations", &x.SimpleMountSourceOperations)
-	m.Load("root", &x.root)
-	m.Load("inodeMappings", &x.inodeMappings)
-	m.Load("mounter", &x.mounter)
-	m.Load("dontTranslateOwnership", &x.dontTranslateOwnership)
+func (x *filesystem) afterLoad() {}
+func (x *filesystem) load(m state.Map) {
 }
 
 func (x *inodeOperations) beforeSave() {}
@@ -76,19 +53,18 @@ func (x *inodeOperations) load(m state.Map) {
 	m.Load("cachingInodeOps", &x.cachingInodeOps)
 }
 
+func (x *inodeFileState) beforeSave() {}
 func (x *inodeFileState) save(m state.Map) {
 	x.beforeSave()
 	if !state.IsZeroValue(x.queue) {
 		m.Failf("queue is %v, expected zero", x.queue)
 	}
-	m.Save("mops", &x.mops)
 	m.Save("descriptor", &x.descriptor)
 	m.Save("sattr", &x.sattr)
 	m.Save("savedUAttr", &x.savedUAttr)
 }
 
 func (x *inodeFileState) load(m state.Map) {
-	m.LoadWait("mops", &x.mops)
 	m.LoadWait("descriptor", &x.descriptor)
 	m.LoadWait("sattr", &x.sattr)
 	m.Load("savedUAttr", &x.savedUAttr)
@@ -133,8 +109,7 @@ func (x *TTYFileOperations) load(m state.Map) {
 func init() {
 	state.Register("pkg/sentry/fs/host.descriptor", (*descriptor)(nil), state.Fns{Save: (*descriptor).save, Load: (*descriptor).load})
 	state.Register("pkg/sentry/fs/host.fileOperations", (*fileOperations)(nil), state.Fns{Save: (*fileOperations).save, Load: (*fileOperations).load})
-	state.Register("pkg/sentry/fs/host.Filesystem", (*Filesystem)(nil), state.Fns{Save: (*Filesystem).save, Load: (*Filesystem).load})
-	state.Register("pkg/sentry/fs/host.superOperations", (*superOperations)(nil), state.Fns{Save: (*superOperations).save, Load: (*superOperations).load})
+	state.Register("pkg/sentry/fs/host.filesystem", (*filesystem)(nil), state.Fns{Save: (*filesystem).save, Load: (*filesystem).load})
 	state.Register("pkg/sentry/fs/host.inodeOperations", (*inodeOperations)(nil), state.Fns{Save: (*inodeOperations).save, Load: (*inodeOperations).load})
 	state.Register("pkg/sentry/fs/host.inodeFileState", (*inodeFileState)(nil), state.Fns{Save: (*inodeFileState).save, Load: (*inodeFileState).load})
 	state.Register("pkg/sentry/fs/host.ConnectedEndpoint", (*ConnectedEndpoint)(nil), state.Fns{Save: (*ConnectedEndpoint).save, Load: (*ConnectedEndpoint).load})
