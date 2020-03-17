@@ -1,0 +1,150 @@
+// Copyright 2020 The gVisor Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package posix_server;
+
+message SocketRequest {
+  int32 domain = 1;
+  int32 type = 2;
+  int32 protocol = 3;
+}
+
+message SocketResponse {
+  int32 fd = 1;
+  int32 errno_ = 2;
+}
+
+message SockaddrIn {
+  int32 family = 1;
+  uint32 port = 2;
+  bytes addr = 3;
+}
+
+message SockaddrIn6 {
+  uint32 family = 1;
+  uint32 port = 2;
+  uint32 flowinfo = 3;
+  bytes addr = 4;
+  uint32 scope_id = 5;
+}
+
+message Sockaddr {
+  oneof sockaddr {
+    SockaddrIn in = 1;
+    SockaddrIn6 in6 = 2;
+  }
+}
+
+message BindRequest {
+  int32 sockfd = 1;
+  Sockaddr addr = 2;
+}
+
+message BindResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;
+}
+
+message GetSockNameRequest {
+  int32 sockfd = 1;
+}
+
+message GetSockNameResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;
+  Sockaddr addr = 3;
+}
+
+message ListenRequest {
+  int32 sockfd = 1;
+  int32 backlog = 2;
+}
+
+message ListenResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;
+}
+
+message AcceptRequest {
+  int32 sockfd = 1;
+}
+
+message AcceptResponse {
+  int32 fd = 1;
+  int32 errno_ = 2;
+  Sockaddr addr = 3;
+}
+
+message SetSockOptRequest {
+  int32 sockfd = 1;
+  int32 level = 2;
+  int32 optname = 3;
+  bytes optval = 4;
+}
+
+message SetSockOptResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;
+}
+
+message Timeval {
+  int64 seconds = 1;
+  int64 microseconds = 2;
+}
+
+message SetSockOptTimevalRequest {
+  int32 sockfd = 1;
+  int32 level = 2;
+  int32 optname = 3;
+  Timeval timeval = 4;
+}
+
+message SetSockOptTimevalResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;
+}
+
+message CloseRequest {
+  int32 fd = 1;
+}
+
+message CloseResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;
+}
+
+service Posix {
+  // Call socket() on the DUT.
+  rpc Socket(SocketRequest) returns (SocketResponse);
+  // Call bind() on the DUT.
+  rpc Bind(BindRequest) returns (BindResponse);
+  // Call getsockname() on the DUT.
+  rpc GetSockName(GetSockNameRequest) returns (GetSockNameResponse);
+  // Call listen() on the DUT.
+  rpc Listen(ListenRequest) returns (ListenResponse);
+  // Call accept() on the DUT.
+  rpc Accept(AcceptRequest) returns (AcceptResponse);
+  // Call setsockopt() on the DUT.  You should prefer one of the other
+  // SetSockOpt* functions with a more structured optval or else you may get the
+  // encoding wrong, such as making a bad assumption about the server's word
+  // sizes or endianness.
+  rpc SetSockOpt(SetSockOptRequest) returns (SetSockOptResponse);
+  // Call setsockopt() on the DUT with a Timeval optval.
+  rpc SetSockOptTimeval(SetSockOptTimevalRequest)
+      returns (SetSockOptTimevalResponse);
+  // Call close() on the DUT.
+  rpc Close(CloseRequest) returns (CloseResponse);
+}
