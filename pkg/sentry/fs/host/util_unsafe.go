@@ -26,26 +26,6 @@ import (
 // NulByte is a single NUL byte. It is passed to readlinkat as an empty string.
 var NulByte byte = '\x00'
 
-func createLink(fd int, name string, linkName string) error {
-	namePtr, err := syscall.BytePtrFromString(name)
-	if err != nil {
-		return err
-	}
-	linkNamePtr, err := syscall.BytePtrFromString(linkName)
-	if err != nil {
-		return err
-	}
-	_, _, errno := syscall.Syscall(
-		syscall.SYS_SYMLINKAT,
-		uintptr(unsafe.Pointer(namePtr)),
-		uintptr(fd),
-		uintptr(unsafe.Pointer(linkNamePtr)))
-	if errno != 0 {
-		return errno
-	}
-	return nil
-}
-
 func readLink(fd int) (string, error) {
 	// Buffer sizing copied from os.Readlink.
 	for l := 128; ; l *= 2 {
@@ -64,27 +44,6 @@ func readLink(fd int) (string, error) {
 			return string(b[:n]), nil
 		}
 	}
-}
-
-func unlinkAt(fd int, name string, dir bool) error {
-	namePtr, err := syscall.BytePtrFromString(name)
-	if err != nil {
-		return err
-	}
-	var flags uintptr
-	if dir {
-		flags = linux.AT_REMOVEDIR
-	}
-	_, _, errno := syscall.Syscall(
-		syscall.SYS_UNLINKAT,
-		uintptr(fd),
-		uintptr(unsafe.Pointer(namePtr)),
-		flags,
-	)
-	if errno != 0 {
-		return errno
-	}
-	return nil
 }
 
 func timespecFromTimestamp(t ktime.Time, omit, setSysTime bool) syscall.Timespec {
