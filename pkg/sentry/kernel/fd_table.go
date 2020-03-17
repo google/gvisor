@@ -536,7 +536,9 @@ func (f *FDTable) Remove(fd int32) (*fs.File, *vfs.FileDescription) {
 	case orig2 != nil:
 		orig2.IncRef()
 	}
-	f.setAll(fd, nil, nil, FDFlags{}) // Zap entry.
+	if orig != nil || orig2 != nil {
+		f.setAll(fd, nil, nil, FDFlags{}) // Zap entry.
+	}
 	return orig, orig2
 }
 
