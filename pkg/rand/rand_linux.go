@@ -45,12 +45,18 @@ func (r *reader) Read(p []byte) (int, error) {
 	return rand.Read(p)
 }
 
+// mu protects the global Reader below.
+var mu sync.Mutex
+
 // Reader is the default reader.
 var Reader io.Reader = &reader{}
 
 // Read reads from the default reader.
 func Read(b []byte) (int, error) {
-	return io.ReadFull(Reader, b)
+	mu.Lock()
+	n, err := io.ReadFull(Reader, b)
+	mu.Unlock()
+	return n, err
 }
 
 // Init can be called to make sure /dev/urandom is pre-opened on kernels that
