@@ -338,7 +338,7 @@ func (f *FDTable) NewFDVFS2(ctx context.Context, minfd int32, file *vfs.FileDesc
 		fd = f.next
 	}
 	for fd < end {
-		if d, _, _ := f.get(fd); d == nil {
+		if d, _, _ := f.getVFS2(fd); d == nil {
 			f.setVFS2(fd, file, flags)
 			if fd == f.next {
 				// Update next search start position.
