@@ -191,7 +191,6 @@ func TestFilterInputDropOnlyUDP(t *testing.T) {
 }
 
 func TestNATRedirectUDPPort(t *testing.T) {
-	// TODO(gvisor.dev/issue/170): Enable when supported.
 	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
 	if err := singleTest(NATRedirectUDPPort{}); err != nil {
 		t.Fatal(err)
@@ -199,7 +198,6 @@ func TestNATRedirectUDPPort(t *testing.T) {
 }
 
 func TestNATRedirectTCPPort(t *testing.T) {
-	// TODO(gvisor.dev/issue/170): Enable when supported.
 	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
 	if err := singleTest(NATRedirectTCPPort{}); err != nil {
 		t.Fatal(err)
@@ -207,7 +205,6 @@ func TestNATRedirectTCPPort(t *testing.T) {
 }
 
 func TestNATDropUDP(t *testing.T) {
-	// TODO(gvisor.dev/issue/170): Enable when supported.
 	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
 	if err := singleTest(NATDropUDP{}); err != nil {
 		t.Fatal(err)
@@ -215,7 +212,6 @@ func TestNATDropUDP(t *testing.T) {
 }
 
 func TestNATAcceptAll(t *testing.T) {
-	// TODO(gvisor.dev/issue/170): Enable when supported.
 	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
 	if err := singleTest(NATAcceptAll{}); err != nil {
 		t.Fatal(err)
@@ -259,7 +255,6 @@ func TestFilterInputReturnUnderflow(t *testing.T) {
 }
 
 func TestFilterOutputDropTCPDestPort(t *testing.T) {
-	// TODO(gvisor.dev/issue/170): Enable when supported.
 	t.Skip("filter OUTPUT isn't supported yet (gvisor.dev/issue/170).")
 	if err := singleTest(FilterOutputDropTCPDestPort{}); err != nil {
 		t.Fatal(err)
@@ -267,7 +262,6 @@ func TestFilterOutputDropTCPDestPort(t *testing.T) {
 }
 
 func TestFilterOutputDropTCPSrcPort(t *testing.T) {
-	// TODO(gvisor.dev/issue/170): Enable when supported.
 	t.Skip("filter OUTPUT isn't supported yet (gvisor.dev/issue/170).")
 	if err := singleTest(FilterOutputDropTCPSrcPort{}); err != nil {
 		t.Fatal(err)
@@ -335,56 +329,42 @@ func TestOutputInvertDestination(t *testing.T) {
 }
 
 func TestNATOutRedirectIP(t *testing.T) {
-	// TODO(gvisor.dev/issue/170): Enable when supported.
-	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
 	if err := singleTest(NATOutRedirectIP{}); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestNATOutDontRedirectIP(t *testing.T) {
-	// TODO(gvisor.dev/issue/170): Enable when supported.
-	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
 	if err := singleTest(NATOutDontRedirectIP{}); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestNATOutRedirectInvert(t *testing.T) {
-	// TODO(gvisor.dev/issue/170): Enable when supported.
-	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
 	if err := singleTest(NATOutRedirectInvert{}); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestNATPreRedirectIP(t *testing.T) {
-	// TODO(gvisor.dev/issue/170): Enable when supported.
-	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
 	if err := singleTest(NATPreRedirectIP{}); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestNATPreDontRedirectIP(t *testing.T) {
-	// TODO(gvisor.dev/issue/170): Enable when supported.
-	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
 	if err := singleTest(NATPreDontRedirectIP{}); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestNATPreRedirectInvert(t *testing.T) {
-	// TODO(gvisor.dev/issue/170): Enable when supported.
-	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
 	if err := singleTest(NATPreRedirectInvert{}); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestNATRedirectRequiresProtocol(t *testing.T) {
-	// TODO(gvisor.dev/issue/170): Enable when supported.
-	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
 	if err := singleTest(NATRedirectRequiresProtocol{}); err != nil {
 		t.Fatal(err)
 	}
