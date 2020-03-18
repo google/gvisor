@@ -15,6 +15,27 @@ packetimpact_go_test(
     ],
 )
 
+# I put these in on behalf of GlobalEdge.
+packetimpact_go_test(
+    name = "syn_with_same_ip",
+    srcs = ["syn_with_same_ip_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
+    name = "fin_wait2_reset",
+    srcs = ["fin_wait2_reset_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
 sh_binary(
     name = "test_runner",
     srcs = ["test_runner.sh"],

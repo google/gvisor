@@ -36,6 +36,12 @@ var remoteIPv4 = flag.String("remote_ipv4", "", "remote IPv4 address for test pa
 var localMAC = flag.String("local_mac", "", "local mac address for test packets")
 var remoteMAC = flag.String("remote_mac", "", "remote mac address for test packets")
 
+// SetSameLocalRemoteIP is a global (Eyal added this to please the linter.)
+// Flag to configure LocalIP and RemoteIP,
+//   0 : configures default LocalIP and RemoteIP
+//   1 : configure LocalIP same as RemoteIP.
+var SetSameLocalRemoteIP = 0
+
 // TCPIPv4 maintains state about a TCP/IPv4 connection.
 type TCPIPv4 struct {
 	outgoing     Layers
@@ -95,6 +101,12 @@ func NewTCPIPv4(t *testing.T, dut DUT, outgoingTCP, incomingTCP TCP) TCPIPv4 {
 	if err != nil {
 		t.Fatalf("can't pick a port: %s", err)
 	}
+
+	// Checking flag for configuring LocalIP and RemoteIP.
+	if SetSameLocalRemoteIP == 1 {
+		*localIPv4 = *remoteIPv4
+	}
+
 	lIP := tcpip.Address(net.ParseIP(*localIPv4).To4())
 	rIP := tcpip.Address(net.ParseIP(*remoteIPv4).To4())
 
