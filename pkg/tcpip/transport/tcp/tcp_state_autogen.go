@@ -307,6 +307,7 @@ func (x *segment) save(m state.Map) {
 	m.Save("csumValid", &x.csumValid)
 	m.Save("parsedOptions", &x.parsedOptions)
 	m.Save("hasNewSACKInfo", &x.hasNewSACKInfo)
+	m.Save("xmitCount", &x.xmitCount)
 }
 
 func (x *segment) afterLoad() {}
@@ -322,6 +323,7 @@ func (x *segment) load(m state.Map) {
 	m.Load("csumValid", &x.csumValid)
 	m.Load("parsedOptions", &x.parsedOptions)
 	m.Load("hasNewSACKInfo", &x.hasNewSACKInfo)
+	m.Load("xmitCount", &x.xmitCount)
 	m.LoadValue("data", new(buffer.VectorisedView), func(y interface{}) { x.loadData(y.(buffer.VectorisedView)) })
 	m.LoadValue("options", new([]byte), func(y interface{}) { x.loadOptions(y.([]byte)) })
 	m.LoadValue("rcvdTime", new(unixTime), func(y interface{}) { x.loadRcvdTime(y.(unixTime)) })
