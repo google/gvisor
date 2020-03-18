@@ -14,6 +14,7 @@ go_test(
         "ruby.rb",
         "ruby.sh",
     ],
+    flaky = True,
     library = ":image",
     tags = [
         # Requires docker and runsc to be configured before the test runs.
