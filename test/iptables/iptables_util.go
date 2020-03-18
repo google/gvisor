@@ -144,7 +144,7 @@ func connectTCP(ip net.IP, port int, timeout time.Duration) error {
 	// The container may not be listening when we first connect, so retry
 	// upon error.
 	callback := func() error {
-		conn, err := net.DialTCP("tcp4", nil, &contAddr)
+		conn, err := net.DialTimeout("tcp", contAddr.String(), timeout)
 		if conn != nil {
 			conn.Close()
 		}

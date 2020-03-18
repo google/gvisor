@@ -194,8 +194,14 @@ func (FilterInputDropTCPDestPort) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputDropTCPDestPort) LocalAction(ip net.IP) error {
-	if err := connectTCP(ip, dropPort, sendloopDuration); err == nil {
-		return fmt.Errorf("connection destined to port %d should not be accepted, but got accepted", dropPort)
+	// After the container sets its DROP rule, we shouldn't be able to connect.
+	// However, we may succeed in connecting if this runs before the container
+	// sets the rule. To avoid this race, we retry connecting until
+	// sendloopDuration has elapsed, ignoring whether the connect succeeds. The
+	// test works becuase the container will error if a connection is
+	// established after the rule is set.
+	for start := time.Now(); time.Since(start) < sendloopDuration; {
+		connectTCP(ip, dropPort, sendloopDuration-time.Since(start))
 	}
 
 	return nil
@@ -226,8 +232,14 @@ func (FilterInputDropTCPSrcPort) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputDropTCPSrcPort) LocalAction(ip net.IP) error {
-	if err := connectTCP(ip, acceptPort, sendloopDuration); err == nil {
-		return fmt.Errorf("connection should not be accepted, but was")
+	// After the container sets its DROP rule, we shouldn't be able to connect.
+	// However, we may succeed in connecting if this runs before the container
+	// sets the rule. To avoid this race, we retry connecting until
+	// sendloopDuration has elapsed, ignoring whether the connect succeeds. The
+	// test works becuase the container will error if a connection is
+	// established after the rule is set.
+	for start := time.Now(); time.Since(start) < sendloopDuration; {
+		connectTCP(ip, acceptPort, sendloopDuration-time.Since(start))
 	}
 
 	return nil
