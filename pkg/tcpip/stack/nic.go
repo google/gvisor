@@ -1207,7 +1207,25 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 		return
 	}
 
-	src, dst := netProto.ParseAddresses(pkt.Data.First())
+	// Workaround to avoid copying if this packet is fowarded.
+	headers := pkt.Data.First()
+	origSize := pkt.Data.Size()
+	// netProto.Parse will always set pkt.NetworkHeader even if there is a
+	// problem with the packet (e.g. an invalid checksum or destination). This
+	// is to allow for proper stats accounting that happens elsewhere in the
+	// stack.
+	if transProtoNum, ok := netProto.Parse(&pkt); ok {
+		if state, ok := n.stack.transportProtocols[transProtoNum]; ok {
+			if len(pkt.Data.First()) >= state.proto.MinimumPacketSize() {
+				state.proto.Parse(&pkt, netProto.Number())
+			}
+		}
+	}
+	// headers is a buffer.View of any network and transport headers that were
+	// trimmed.
+	headers = headers[:origSize-pkt.Data.Size()]
+
+	src, dst := netProto.ParseAddresses(pkt.NetworkHeader)
 
 	if n.stack.handleLocal && !n.isLoopback() && n.getRef(protocol, src) != nil {
 		// The source address is one of our own, so we never should have gotten a
@@ -1260,6 +1278,8 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 			return
 		}
 
+		// Set the headers in pkt.Header so they're written out when forwarded.
+		pkt.Header = buffer.NewPrependableFromView(headers)
 		// n doesn't have a destination endpoint.
 		// Send the packet out of n.
 		// TODO(b/128629022): move this logic to route.WritePacket.
@@ -1288,21 +1308,12 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 
 func (n *NIC) forwardPacket(r *Route, protocol tcpip.NetworkProtocolNumber, pkt PacketBuffer) {
 	// TODO(b/143425874) Decrease the TTL field in forwarded packets.
-
-	firstData := pkt.Data.First()
-	pkt.Data.RemoveFirst()
-
-	if linkHeaderLen := int(n.linkEP.MaxHeaderLength()); linkHeaderLen == 0 {
-		pkt.Header = buffer.NewPrependableFromView(firstData)
-	} else {
-		firstDataLen := len(firstData)
-
-		// pkt.Header should have enough capacity to hold n.linkEP's headers.
-		pkt.Header = buffer.NewPrependable(firstDataLen + linkHeaderLen)
-
+	if linkHeaderLen := int(n.linkEP.MaxHeaderLength()); linkHeaderLen != 0 {
+		headers := pkt.Header.View()
+		pkt.Header = buffer.NewPrependable(len(headers) + linkHeaderLen)
 		// TODO(b/151227689): avoid copying the packet when forwarding
-		if n := copy(pkt.Header.Prepend(firstDataLen), firstData); n != firstDataLen {
-			panic(fmt.Sprintf("copied %d bytes, expected %d", n, firstDataLen))
+		if n := copy(pkt.Header.Prepend(len(headers)), headers); n != len(headers) {
+			panic(fmt.Sprintf("copied %d bytes, expected %d", n, len(headers)))
 		}
 	}
 
@@ -1331,12 +1342,18 @@ func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolN
 	// validly formed.
 	n.stack.demux.deliverRawPacket(r, protocol, pkt)
 
-	if len(pkt.Data.First()) < transProto.MinimumPacketSize() {
+	// TODO(gvisor.dev/issue/170): ICMP packets don't have their
+	// TransportHeader fields set. See icmp/protocol.go:protocol.Parse for a
+	// full explanation.
+	if protocol == header.ICMPv4ProtocolNumber || protocol == header.ICMPv6ProtocolNumber {
+		pkt.TransportHeader = pkt.Data.First()
+	}
+	if len(pkt.TransportHeader) < transProto.MinimumPacketSize() {
 		n.stack.stats.MalformedRcvdPackets.Increment()
 		return
 	}
 
-	srcPort, dstPort, err := transProto.ParsePorts(pkt.Data.First())
+	srcPort, dstPort, err := transProto.ParsePorts(pkt.TransportHeader)
 	if err != nil {
 		n.stack.stats.MalformedRcvdPackets.Increment()
 		return

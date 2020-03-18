@@ -623,6 +623,7 @@ func (e *endpoint) HandlePacket(route *stack.Route, pkt stack.PacketBuffer) {
 
 	networkHeader := append(buffer.View(nil), pkt.NetworkHeader...)
 	combinedVV := networkHeader.ToVectorisedView()
+	combinedVV.AppendView(pkt.TransportHeader)
 	combinedVV.Append(pkt.Data)
 	packet.data = combinedVV
 	packet.timestampNS = e.stack.NowNanoseconds()

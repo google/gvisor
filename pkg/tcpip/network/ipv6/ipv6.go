@@ -169,15 +169,11 @@ func (*endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt stack.PacketBuffe
 // HandlePacket is called by the link layer when new ipv6 packets arrive for
 // this endpoint.
 func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
-	headerView := pkt.Data.First()
+	headerView := pkt.NetworkHeader
 	h := header.IPv6(headerView)
-	if !h.IsValid(pkt.Data.Size()) {
+	if !h.IsValid(pkt.Data.Size() + len(pkt.NetworkHeader) + len(pkt.TransportHeader)) {
 		return
 	}
-
-	pkt.NetworkHeader = headerView[:header.IPv6MinimumSize]
-	pkt.Data.TrimFront(header.IPv6MinimumSize)
-	pkt.Data.CapLength(int(h.PayloadLength()))
 
 	p := h.TransportProtocol()
 	if p == header.ICMPv6ProtocolNumber {
@@ -270,6 +266,16 @@ func (*protocol) Close() {}
 
 // Wait implements stack.TransportProtocol.Wait.
 func (*protocol) Wait() {}
+
+// Parse implements stack.TransportProtocol.Parse.
+func (*protocol) Parse(pkt *stack.PacketBuffer) (tcpip.TransportProtocolNumber, bool) {
+	headerView := pkt.Data.First()
+	h := header.IPv6(headerView)
+	pkt.NetworkHeader = headerView[:header.IPv6MinimumSize]
+	pkt.Data.TrimFront(header.IPv6MinimumSize)
+	pkt.Data.CapLength(int(h.PayloadLength()))
+	return h.TransportProtocol(), true
+}
 
 // calculateMTU calculates the network-layer payload MTU based on the link-layer
 // payload mtu.

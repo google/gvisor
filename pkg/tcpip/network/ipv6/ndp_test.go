@@ -294,18 +294,18 @@ func TestHopLimitValidation(t *testing.T) {
 		return s, ep, r
 	}
 
-	handleIPv6Payload := func(hdr buffer.Prependable, hopLimit uint8, ep stack.NetworkEndpoint, r *stack.Route) {
-		payloadLength := hdr.UsedLength()
-		ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+	handleIPv6Payload := func(payload buffer.View, hopLimit uint8, ep stack.NetworkEndpoint, r *stack.Route) {
+		ip := header.IPv6(buffer.NewView(header.IPv6MinimumSize))
 		ip.Encode(&header.IPv6Fields{
-			PayloadLength: uint16(payloadLength),
+			PayloadLength: uint16(len(payload)),
 			NextHeader:    uint8(header.ICMPv6ProtocolNumber),
 			HopLimit:      hopLimit,
 			SrcAddr:       r.LocalAddress,
 			DstAddr:       r.RemoteAddress,
 		})
 		ep.HandlePacket(r, stack.PacketBuffer{
-			Data: hdr.View().ToVectorisedView(),
+			NetworkHeader: buffer.View(ip),
+			Data:          payload.ToVectorisedView(),
 		})
 	}
 
@@ -373,13 +373,10 @@ func TestHopLimitValidation(t *testing.T) {
 			invalid := stats.Invalid
 			typStat := typ.statCounter(stats)
 
-			extraDataLen := len(typ.extraData)
-			hdr := buffer.NewPrependable(header.IPv6MinimumSize + typ.size + extraDataLen)
-			extraData := buffer.View(hdr.Prepend(extraDataLen))
-			copy(extraData, typ.extraData)
-			pkt := header.ICMPv6(hdr.Prepend(typ.size))
-			pkt.SetType(typ.typ)
-			pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, extraData.ToVectorisedView()))
+			icmp := header.ICMPv6(buffer.NewView(typ.size + len(typ.extraData)))
+			copy(icmp[typ.size:], typ.extraData)
+			icmp.SetType(typ.typ)
+			icmp.SetChecksum(header.ICMPv6Checksum(icmp[:typ.size], r.LocalAddress, r.RemoteAddress, buffer.View(typ.extraData).ToVectorisedView()))
 
 			// Invalid count should initially be 0.
 			if got := invalid.Value(); got != 0 {
@@ -394,7 +391,7 @@ func TestHopLimitValidation(t *testing.T) {
 
 			// Receive the NDP packet with an invalid hop limit
 			// value.
-			handleIPv6Payload(hdr, header.NDPHopLimit-1, ep, &r)
+			handleIPv6Payload(buffer.View(icmp), header.NDPHopLimit-1, ep, &r)
 
 			// Invalid count should have increased.
 			if got := invalid.Value(); got != 1 {
@@ -408,7 +405,7 @@ func TestHopLimitValidation(t *testing.T) {
 			}
 
 			// Receive the NDP packet with a valid hop limit value.
-			handleIPv6Payload(hdr, header.NDPHopLimit, ep, &r)
+			handleIPv6Payload(buffer.View(icmp), header.NDPHopLimit, ep, &r)
 
 			// Rx count of NDP packet of type typ.typ should have
 			// increased.

@@ -69,12 +69,8 @@ func (f *fwdTestNetworkEndpoint) ID() *NetworkEndpointID {
 }
 
 func (f *fwdTestNetworkEndpoint) HandlePacket(r *Route, pkt PacketBuffer) {
-	// Consume the network header.
-	b := pkt.Data.First()
-	pkt.Data.TrimFront(fwdTestNetHeaderLen)
-
 	// Dispatch the packet to the transport protocol.
-	f.dispatcher.DeliverTransportPacket(r, tcpip.TransportProtocolNumber(b[2]), pkt)
+	f.dispatcher.DeliverTransportPacket(r, tcpip.TransportProtocolNumber(pkt.NetworkHeader[2]), pkt)
 }
 
 func (f *fwdTestNetworkEndpoint) MaxHeaderLength() uint16 {
@@ -134,6 +130,12 @@ func (f *fwdTestNetworkProtocol) DefaultPrefixLen() int {
 
 func (*fwdTestNetworkProtocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 	return tcpip.Address(v[1:2]), tcpip.Address(v[0:1])
+}
+
+func (*fwdTestNetworkProtocol) Parse(pkt *PacketBuffer) (tcpip.TransportProtocolNumber, bool) {
+	pkt.NetworkHeader = pkt.Data.First()[:fwdTestNetHeaderLen]
+	pkt.Data.TrimFront(fwdTestNetHeaderLen)
+	return tcpip.TransportProtocolNumber(pkt.NetworkHeader[2]), true
 }
 
 func (f *fwdTestNetworkProtocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache LinkAddressCache, dispatcher TransportDispatcher, ep LinkEndpoint, _ *Stack) (NetworkEndpoint, *tcpip.Error) {
@@ -564,14 +566,13 @@ func TestForwardingWithFakeResolverManyPackets(t *testing.T) {
 			t.Fatal("packet not forwarded")
 		}
 
-		b := p.Pkt.Header.View()
-		if b[0] != 3 {
+		if b := p.Pkt.Header.View(); b[0] != 3 {
 			t.Fatalf("got b[0] = %d, want = 3", b[0])
 		}
 		// The first 5 packets should not be forwarded so the the
-		// sequemnce number should start with 5.
+		// sequence number should start with 5.
 		want := uint16(i + 5)
-		if n := binary.BigEndian.Uint16(b[fwdTestNetHeaderLen:]); n != want {
+		if n := binary.BigEndian.Uint16(p.Pkt.Data.First()); n != want {
 			t.Fatalf("got the packet #%d, want = #%d", n, want)
 		}
 

@@ -289,9 +289,9 @@ func TestIPv4Receive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
-	ep.HandlePacket(&r, stack.PacketBuffer{
-		Data: view.ToVectorisedView(),
-	})
+	pkt := stack.PacketBuffer{Data: view.ToVectorisedView()}
+	proto.Parse(&pkt)
+	ep.HandlePacket(&r, pkt)
 	if o.dataCalls != 1 {
 		t.Fatalf("Bad number of data calls: got %x, want 1", o.dataCalls)
 	}
@@ -378,10 +378,14 @@ func TestIPv4ReceiveControl(t *testing.T) {
 			o.typ = c.expectedTyp
 			o.extra = c.expectedExtra
 
-			vv := view[:len(view)-c.trunc].ToVectorisedView()
-			ep.HandlePacket(&r, stack.PacketBuffer{
-				Data: vv,
-			})
+			var pkt stack.PacketBuffer
+			if v := view[:len(view)-c.trunc]; len(v) < header.IPv4MinimumSize {
+				pkt.Data = v.ToVectorisedView()
+			} else {
+				pkt.NetworkHeader = v[:header.IPv4MinimumSize]
+				pkt.Data = v[header.IPv4MinimumSize:].ToVectorisedView()
+			}
+			ep.HandlePacket(&r, pkt)
 			if want := c.expectedCount; o.controlCalls != want {
 				t.Fatalf("Bad number of control calls for %q case: got %v, want %v", c.name, o.controlCalls, want)
 			}
@@ -444,17 +448,17 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 	}
 
 	// Send first segment.
-	ep.HandlePacket(&r, stack.PacketBuffer{
-		Data: frag1.ToVectorisedView(),
-	})
+	pkt := stack.PacketBuffer{Data: frag1.ToVectorisedView()}
+	proto.Parse(&pkt)
+	ep.HandlePacket(&r, pkt)
 	if o.dataCalls != 0 {
 		t.Fatalf("Bad number of data calls: got %x, want 0", o.dataCalls)
 	}
 
 	// Send second segment.
-	ep.HandlePacket(&r, stack.PacketBuffer{
-		Data: frag2.ToVectorisedView(),
-	})
+	pkt = stack.PacketBuffer{Data: frag2.ToVectorisedView()}
+	proto.Parse(&pkt)
+	ep.HandlePacket(&r, pkt)
 	if o.dataCalls != 1 {
 		t.Fatalf("Bad number of data calls: got %x, want 1", o.dataCalls)
 	}
@@ -530,9 +534,9 @@ func TestIPv6Receive(t *testing.T) {
 		t.Fatalf("could not find route: %v", err)
 	}
 
-	ep.HandlePacket(&r, stack.PacketBuffer{
-		Data: view.ToVectorisedView(),
-	})
+	pkt := stack.PacketBuffer{Data: view.ToVectorisedView()}
+	proto.Parse(&pkt)
+	ep.HandlePacket(&r, pkt)
 	if o.dataCalls != 1 {
 		t.Fatalf("Bad number of data calls: got %x, want 1", o.dataCalls)
 	}
@@ -644,9 +648,14 @@ func TestIPv6ReceiveControl(t *testing.T) {
 			// Set ICMPv6 checksum.
 			icmp.SetChecksum(header.ICMPv6Checksum(icmp, outerSrcAddr, localIpv6Addr, buffer.VectorisedView{}))
 
-			ep.HandlePacket(&r, stack.PacketBuffer{
-				Data: view[:len(view)-c.trunc].ToVectorisedView(),
-			})
+			var pkt stack.PacketBuffer
+			if v := view[:len(view)-c.trunc]; len(v) < header.IPv6MinimumSize {
+				pkt.Data = v.ToVectorisedView()
+			} else {
+				pkt.NetworkHeader = v[:header.IPv6MinimumSize]
+				pkt.Data = v[header.IPv6MinimumSize:].ToVectorisedView()
+			}
+			ep.HandlePacket(&r, pkt)
 			if want := c.expectedCount; o.controlCalls != want {
 				t.Fatalf("Bad number of control calls for %q case: got %v, want %v", c.name, o.controlCalls, want)
 			}

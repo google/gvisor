@@ -66,6 +66,9 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.P
 	stats := r.Stats().ICMP
 	sent := stats.V6PacketsSent
 	received := stats.V6PacketsReceived
+	// TODO(gvisor.dev/issue/170): ICMP packets don't have their
+	// TransportHeader fields set. See icmp/protocol.go:protocol.Parse for a
+	// full explanation.
 	v := pkt.Data.First()
 	if len(v) < header.ICMPv6MinimumSize {
 		received.Invalid.Increment()

@@ -1261,15 +1261,13 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 // endpoint.
 func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt stack.PacketBuffer) {
 	// Get the header then trim it from the view.
-	hdr := header.UDP(pkt.Data.First())
-	if int(hdr.Length()) > pkt.Data.Size() {
+	hdr := header.UDP(pkt.TransportHeader)
+	if int(hdr.Length()) > pkt.Data.Size()+header.UDPMinimumSize {
 		// Malformed packet.
 		e.stack.Stats().UDP.MalformedPacketsReceived.Increment()
 		e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
 		return
 	}
-
-	pkt.Data.TrimFront(header.UDPMinimumSize)
 
 	e.rcvMu.Lock()
 	e.stack.Stats().UDP.PacketsReceived.Increment()

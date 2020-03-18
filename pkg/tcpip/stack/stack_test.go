@@ -94,9 +94,7 @@ func (f *fakeNetworkEndpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffe
 	// Increment the received packet count in the protocol descriptor.
 	f.proto.packetCount[int(f.id.LocalAddress[0])%len(f.proto.packetCount)]++
 
-	// Consume the network header.
-	b := pkt.Data.First()
-	pkt.Data.TrimFront(fakeNetHeaderLen)
+	b := pkt.NetworkHeader
 
 	// Handle control packets.
 	if b[2] == uint8(fakeControlProtocol) {
@@ -240,6 +238,13 @@ func (*fakeNetworkProtocol) Close() {}
 
 // Wait implements TransportProtocol.Wait.
 func (*fakeNetworkProtocol) Wait() {}
+
+// Parse implements TransportProtocol.Parse.
+func (*fakeNetworkProtocol) Parse(pkt *stack.PacketBuffer) (tcpip.TransportProtocolNumber, bool) {
+	pkt.NetworkHeader = pkt.Data.First()[:fakeNetHeaderLen]
+	pkt.Data.TrimFront(fakeNetHeaderLen)
+	return tcpip.TransportProtocolNumber(pkt.NetworkHeader[2]), true
+}
 
 func fakeNetFactory() stack.NetworkProtocol {
 	return &fakeNetworkProtocol{}

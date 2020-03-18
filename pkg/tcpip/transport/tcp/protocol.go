@@ -349,6 +349,17 @@ func (p *protocol) Wait() {
 	p.dispatcher.wait()
 }
 
+// Parse implements stack.TransportProtocol.Parse.
+func (*protocol) Parse(pkt *stack.PacketBuffer, _ tcpip.NetworkProtocolNumber) {
+	h := header.TCP(pkt.Data.First())
+	offset := header.TCPMinimumSize
+	if dataOffset := int(h.DataOffset()); dataOffset > offset && dataOffset <= len(h) {
+		offset = dataOffset
+	}
+	pkt.TransportHeader = buffer.View(h[:offset])
+	pkt.Data.TrimFront(offset)
+}
+
 // NewProtocol returns a TCP transport protocol.
 func NewProtocol() stack.TransportProtocol {
 	return &protocol{
