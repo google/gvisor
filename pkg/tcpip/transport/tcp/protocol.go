@@ -95,7 +95,7 @@ const (
 )
 
 type protocol struct {
-	mu                         sync.Mutex
+	mu                         sync.RWMutex
 	sackEnabled                bool
 	delayEnabled               bool
 	sendBufferSize             SendBufferSizeOption
@@ -273,57 +273,57 @@ func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 func (p *protocol) Option(option interface{}) *tcpip.Error {
 	switch v := option.(type) {
 	case *SACKEnabled:
-		p.mu.Lock()
+		p.mu.RLock()
 		*v = SACKEnabled(p.sackEnabled)
-		p.mu.Unlock()
+		p.mu.RUnlock()
 		return nil
 
 	case *DelayEnabled:
-		p.mu.Lock()
+		p.mu.RLock()
 		*v = DelayEnabled(p.delayEnabled)
-		p.mu.Unlock()
+		p.mu.RUnlock()
 		return nil
 
 	case *SendBufferSizeOption:
-		p.mu.Lock()
+		p.mu.RLock()
 		*v = p.sendBufferSize
-		p.mu.Unlock()
+		p.mu.RUnlock()
 		return nil
 
 	case *ReceiveBufferSizeOption:
-		p.mu.Lock()
+		p.mu.RLock()
 		*v = p.recvBufferSize
-		p.mu.Unlock()
+		p.mu.RUnlock()
 		return nil
 
 	case *tcpip.CongestionControlOption:
-		p.mu.Lock()
+		p.mu.RLock()
 		*v = tcpip.CongestionControlOption(p.congestionControl)
-		p.mu.Unlock()
+		p.mu.RUnlock()
 		return nil
 
 	case *tcpip.AvailableCongestionControlOption:
-		p.mu.Lock()
+		p.mu.RLock()
 		*v = tcpip.AvailableCongestionControlOption(strings.Join(p.availableCongestionControl, " "))
-		p.mu.Unlock()
+		p.mu.RUnlock()
 		return nil
 
 	case *tcpip.ModerateReceiveBufferOption:
-		p.mu.Lock()
+		p.mu.RLock()
 		*v = tcpip.ModerateReceiveBufferOption(p.moderateReceiveBuffer)
-		p.mu.Unlock()
+		p.mu.RUnlock()
 		return nil
 
 	case *tcpip.TCPLingerTimeoutOption:
-		p.mu.Lock()
+		p.mu.RLock()
 		*v = tcpip.TCPLingerTimeoutOption(p.tcpLingerTimeout)
-		p.mu.Unlock()
+		p.mu.RUnlock()
 		return nil
 
 	case *tcpip.TCPTimeWaitTimeoutOption:
-		p.mu.Lock()
+		p.mu.RLock()
 		*v = tcpip.TCPTimeWaitTimeoutOption(p.tcpTimeWaitTimeout)
-		p.mu.Unlock()
+		p.mu.RUnlock()
 		return nil
 
 	default:

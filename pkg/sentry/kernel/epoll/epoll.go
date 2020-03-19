@@ -296,8 +296,10 @@ func (*readyCallback) Callback(w *waiter.Entry) {
 		e.waitingList.Remove(entry)
 		e.readyList.PushBack(entry)
 		entry.curList = &e.readyList
+		e.listsMu.Unlock()
 
 		e.Notify(waiter.EventIn)
+		return
 	}
 
 	e.listsMu.Unlock()

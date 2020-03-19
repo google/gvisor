@@ -221,7 +221,8 @@ func (l *listenContext) isCookieValid(id stack.TransportEndpointID, cookie seqnu
 }
 
 // createConnectingEndpoint creates a new endpoint in a connecting state, with
-// the connection parameters given by the arguments.
+// the connection parameters given by the arguments. The endpoint is returned
+// with n.mu held.
 func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, irs seqnum.Value, rcvdSynOpts *header.TCPSynOptions, queue *waiter.Queue) (*endpoint, *tcpip.Error) {
 	// Create a new endpoint.
 	netProto := l.netProto
@@ -243,21 +244,6 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 
 	n.initGSO()
 
-	// Now inherit any socket options that should be inherited from the
-	// listening endpoint.
-	// In case of Forwarder listenEP will be nil and hence this check.
-	if l.listenEP != nil {
-		l.listenEP.propagateInheritableOptions(n)
-	}
-
-	// Register new endpoint so that packets are routed to it.
-	if err := n.stack.RegisterTransportEndpoint(n.boundNICID, n.effectiveNetProtos, ProtocolNumber, n.ID, n, n.reusePort, n.boundBindToDevice); err != nil {
-		n.Close()
-		return nil, err
-	}
-
-	n.isRegistered = true
-
 	// Create sender and receiver.
 	//
 	// The receiver at least temporarily has a zero receive window scale,
@@ -269,11 +255,27 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 	// window to grow to a really large value.
 	n.rcvAutoParams.prevCopied = n.initialReceiveWindow()
 
+	// Lock the endpoint before registering to ensure that no out of
+	// band changes are possible due to incoming packets etc till
+	// the endpoint is done initializing.
+	n.mu.Lock()
+
+	// Register new endpoint so that packets are routed to it.
+	if err := n.stack.RegisterTransportEndpoint(n.boundNICID, n.effectiveNetProtos, ProtocolNumber, n.ID, n, n.reusePort, n.boundBindToDevice); err != nil {
+		n.mu.Unlock()
+		n.Close()
+		return nil, err
+	}
+
+	n.isRegistered = true
+
 	return n, nil
 }
 
 // createEndpointAndPerformHandshake creates a new endpoint in connected state
 // and then performs the TCP 3-way handshake.
+//
+// The new endpoint is returned with e.mu held.
 func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *header.TCPSynOptions, queue *waiter.Queue) (*endpoint, *tcpip.Error) {
 	// Create new endpoint.
 	irs := s.sequenceNumber
@@ -289,9 +291,25 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 		l.listenEP.mu.Lock()
 		if l.listenEP.EndpointState() != StateListen {
 			l.listenEP.mu.Unlock()
+			// Ensure we release any registrations done by the newly
+			// created endpoint.
+			ep.mu.Unlock()
+			ep.Close()
+
+			// Wake up any waiters. This is strictly not required normally
+			// as a socket that was never accepted can't really have any
+			// registered waiters except when stack.Wait() is called which
+			// waits for all registered endpoints to stop and expects an
+			// EventHUp.
+			ep.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
 			return nil, tcpip.ErrConnectionAborted
 		}
 		l.addPendingEndpoint(ep)
+
+		// Propagate any inheritable options from the listening endpoint
+		// to the newly created endpoint.
+		l.listenEP.propagateInheritableOptionsLocked(ep)
+
 		deferAccept = l.listenEP.deferAccept
 		l.listenEP.mu.Unlock()
 	}
@@ -299,6 +317,7 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 	// Perform the 3-way handshake.
 	h := newPassiveHandshake(ep, seqnum.Size(ep.initialReceiveWindow()), isn, irs, opts, deferAccept)
 	if err := h.execute(); err != nil {
+		ep.mu.Unlock()
 		ep.Close()
 		// Wake up any waiters. This is strictly not required normally
 		// as a socket that was never accepted can't really have any
@@ -312,9 +331,7 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 		}
 		return nil, err
 	}
-	ep.mu.Lock()
 	ep.isConnectNotified = true
-	ep.mu.Unlock()
 
 	// Update the receive window scaling. We can't do it before the
 	// handshake because it's possible that the peer doesn't support window
@@ -366,12 +383,12 @@ func (e *endpoint) deliverAccepted(n *endpoint) {
 	}
 }
 
-// propagateInheritableOptions propagates any options set on the listening
+// propagateInheritableOptionsLocked propagates any options set on the listening
 // endpoint to the newly created endpoint.
-func (e *endpoint) propagateInheritableOptions(n *endpoint) {
-	e.mu.Lock()
+//
+// Precondition: e.mu and n.mu must be held.
+func (e *endpoint) propagateInheritableOptionsLocked(n *endpoint) {
 	n.userTimeout = e.userTimeout
-	e.mu.Unlock()
 }
 
 // handleSynSegment is called in its own goroutine once the listening endpoint
@@ -382,7 +399,11 @@ func (e *endpoint) propagateInheritableOptions(n *endpoint) {
 // cookies to accept connections.
 func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header.TCPSynOptions) {
 	defer decSynRcvdCount()
-	defer e.decSynRcvdCount()
+	defer func() {
+		e.mu.Lock()
+		e.decSynRcvdCount()
+		e.mu.Unlock()
+	}()
 	defer s.decRef()
 
 	n, err := ctx.createEndpointAndPerformHandshake(s, opts, &waiter.Queue{})
@@ -399,29 +420,21 @@ func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header
 }
 
 func (e *endpoint) incSynRcvdCount() bool {
-	e.mu.Lock()
-	if e.synRcvdCount >= cap(e.acceptedChan) {
-		e.mu.Unlock()
+	if e.synRcvdCount >= (cap(e.acceptedChan)) {
 		return false
 	}
 	e.synRcvdCount++
-	e.mu.Unlock()
 	return true
 }
 
 func (e *endpoint) decSynRcvdCount() {
-	e.mu.Lock()
 	e.synRcvdCount--
-	e.mu.Unlock()
 }
 
 func (e *endpoint) acceptQueueIsFull() bool {
-	e.mu.Lock()
 	if l, c := len(e.acceptedChan)+e.synRcvdCount, cap(e.acceptedChan); l >= c {
-		e.mu.Unlock()
 		return true
 	}
-	e.mu.Unlock()
 	return false
 }
 
@@ -559,6 +572,10 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			return
 		}
 
+		// Propagate any inheritable options from the listening endpoint
+		// to the newly created endpoint.
+		e.propagateInheritableOptionsLocked(n)
+
 		// clear the tsOffset for the newly created
 		// endpoint as the Timestamp was already
 		// randomly offset when the original SYN-ACK was
@@ -593,14 +610,12 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 	e.mu.Lock()
 	v6only := e.v6only
-	e.mu.Unlock()
 	ctx := newListenContext(e.stack, e, rcvWnd, v6only, e.NetProto)
 
 	defer func() {
 		// Mark endpoint as closed. This will prevent goroutines running
 		// handleSynSegment() from attempting to queue new connections
 		// to the endpoint.
-		e.mu.Lock()
 		e.setEndpointState(StateClose)
 
 		// close any endpoints in SYN-RCVD state.
@@ -622,7 +637,10 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 	s.AddWaker(&e.notificationWaker, wakerForNotification)
 	s.AddWaker(&e.newSegmentWaker, wakerForNewSegment)
 	for {
-		switch index, _ := s.Fetch(true); index {
+		e.mu.Unlock()
+		index, _ := s.Fetch(true)
+		e.mu.Lock()
+		switch index {
 		case wakerForNotification:
 			n := e.fetchNotifications()
 			if n&notifyClose != 0 {
@@ -635,7 +653,9 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 					s.decRef()
 				}
 				close(e.drainDone)
+				e.mu.Unlock()
 				<-e.undrain
+				e.mu.Lock()
 			}
 
 		case wakerForNewSegment:
