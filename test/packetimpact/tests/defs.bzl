@@ -71,7 +71,7 @@ def packetimpact_linux_test(name, testbench_binary, **kwargs):
         name = name + "_linux_test",
         testbench_binary = testbench_binary,
         flags = ["--dut_platform", "linux"],
-        tags = PACKETIMPACT_TAGS,
+        tags = PACKETIMPACT_TAGS + ["packetimpact"],
         **kwargs
     )
 
@@ -89,7 +89,7 @@ def packetimpact_netstack_test(name, testbench_binary, **kwargs):
         # This is the default runtime unless
         # "--test_arg=--runtime=OTHER_RUNTIME" is used to override the value.
         flags = ["--dut_platform", "netstack", "--runtime=runsc-d"],
-        tags = PACKETIMPACT_TAGS,
+        tags = PACKETIMPACT_TAGS + ["packetimpact"],
         **kwargs
     )
 
