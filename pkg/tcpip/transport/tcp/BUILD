@@ -71,7 +71,6 @@ go_library(
         "//pkg/tcpip/seqnum",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport/raw",
-        "//pkg/tmutex",
         "//pkg/waiter",
         "@com_github_google_btree//:go_default_library",
     ],
