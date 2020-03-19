@@ -2236,12 +2236,13 @@ func TestSegmentMerging(t *testing.T) {
 
 			c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
-			// Send 10 1 byte segments to fill up InitialWindow but don't
-			// ACK. That should prevent anymore packets from going out.
-			for i := 0; i < 10; i++ {
+			// Send tcp.InitialCwnd number of segments to fill up
+			// InitialWindow but don't ACK. That should prevent
+			// anymore packets from going out.
+			for i := 0; i < tcp.InitialCwnd; i++ {
 				view := buffer.NewViewFromBytes([]byte{0})
 				if _, _, err := c.EP.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
-					t.Fatalf("Write #%d failed: %v", i+1, err)
+					t.Fatalf("Write #%d failed: %s", i+1, err)
 				}
 			}
 
@@ -2256,8 +2257,8 @@ func TestSegmentMerging(t *testing.T) {
 				}
 			}
 
-			// Check that we get 10 packets of 1 byte each.
-			for i := 0; i < 10; i++ {
+			// Check that we get tcp.InitialCwnd packets.
+			for i := 0; i < tcp.InitialCwnd; i++ {
 				b := c.GetPacket()
 				checker.IPv4(t, b,
 					checker.PayloadLen(header.TCPMinimumSize+1),
