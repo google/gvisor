@@ -15,7 +15,6 @@
 // Package procid provides a way to get the current system thread identifier.
 package procid
 
-// Current returns the current system thread identifier.
-//
-// Precondition: This should only be called with the runtime OS thread locked.
+// Current returns the current system thread identifier. Note that if
+// runtime.LockOSThread() is not in effect, this is inherently racy.
 func Current() uint64

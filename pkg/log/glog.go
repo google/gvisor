@@ -16,10 +16,11 @@ package log
 
 import (
 	"fmt"
-	"os"
 	"runtime"
 	"strings"
 	"time"
+
+	"gvisor.dev/gvisor/pkg/procid"
 )
 
 // GoogleEmitter is a wrapper that emits logs in a format compatible with
@@ -27,9 +28,6 @@ import (
 type GoogleEmitter struct {
 	Writer
 }
-
-// pid is used for the threadid component of the header.
-var pid = os.Getpid()
 
 // Emit emits the message, google-style.
 //
@@ -81,5 +79,5 @@ func (g *GoogleEmitter) Emit(depth int, level Level, timestamp time.Time, format
 	message := fmt.Sprintf(format, args...)
 
 	// Emit the formatted result.
-	fmt.Fprintf(&g.Writer, "%c%02d%02d %02d:%02d:%02d.%06d % 7d %s:%d] %s\n", prefix, int(month), day, hour, minute, second, microsecond, pid, file, line, message)
+	fmt.Fprintf(&g.Writer, "%c%02d%02d %02d:%02d:%02d.%06d % 7d %s:%d] %s\n", prefix, int(month), day, hour, minute, second, microsecond, procid.Current(), file, line, message)
 }

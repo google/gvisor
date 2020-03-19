@@ -15,6 +15,7 @@ go_library(
     ],
     deps = [
         "//pkg/linewriter",
+        "//pkg/procid",
         "//pkg/sync",
     ],
 )
