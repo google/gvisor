@@ -23,7 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -80,9 +80,9 @@ func unstableAttr(s *syscall.Stat_t) fs.UnstableAttr {
 		Usage:            s.Blocks * 512,
 		Perms:            fs.FilePermsFromMode(linux.FileMode(s.Mode)),
 		Owner:            owner(s),
-		AccessTime:       time.FromUnix(s.Atim.Sec, s.Atim.Nsec),
-		ModificationTime: time.FromUnix(s.Mtim.Sec, s.Mtim.Nsec),
-		StatusChangeTime: time.FromUnix(s.Ctim.Sec, s.Ctim.Nsec),
+		AccessTime:       ktime.FromUnix(s.Atim.Sec, s.Atim.Nsec),
+		ModificationTime: ktime.FromUnix(s.Mtim.Sec, s.Mtim.Nsec),
+		StatusChangeTime: ktime.FromUnix(s.Ctim.Sec, s.Ctim.Nsec),
 		Links:            uint64(s.Nlink),
 	}
 }
