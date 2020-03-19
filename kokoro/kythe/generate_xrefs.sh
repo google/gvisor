@@ -23,7 +23,7 @@ bazel version
 
 python3 -V
 
-readonly KYTHE_VERSION='v0.0.43'
+readonly KYTHE_VERSION='v0.0.41'
 readonly WORKDIR="$(mktemp -d)"
 readonly KYTHE_DIR="${WORKDIR}/kythe-${KYTHE_VERSION}"
 if [[ -n "$KOKORO_GIT_COMMIT" ]]; then
