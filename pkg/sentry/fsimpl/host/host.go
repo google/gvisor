@@ -19,18 +19,23 @@ package host
 import (
 	"errors"
 	"fmt"
+	"math"
 	"syscall"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // filesystem implements vfs.FilesystemImpl.
@@ -70,10 +75,20 @@ func ImportFD(mnt *vfs.Mount, hostFD int, ownerUID auth.KUID, ownerGID auth.KGID
 		hostFD:   hostFD,
 		isStream: isStream,
 		isTTY:    isTTY,
+		canMap:   canMap(uint32(fileType)),
 		ino:      fs.NextIno(),
 		mode:     fileMode,
 		uid:      ownerUID,
 		gid:      ownerGID,
+		// For simplicity, set offset to 0. Technically, we should
+		// only set to 0 on files that are not seekable (sockets, pipes, etc.),
+		// and use the offset from the host fd otherwise.
+		offset: 0,
+	}
+
+	// These files can't be memory mapped, assert this.
+	if i.isStream && i.canMap {
+		panic("files that can return EWOULDBLOCK (sockets, pipes, etc.) cannot be memory mapped")
 	}
 
 	d := &kernfs.Dentry{}
@@ -110,12 +125,17 @@ type inode struct {
 	// This field is initialized at creation time and is immutable.
 	isTTY bool
 
+	// canMap specifies whether we allow the file to be memory mapped.
+	//
+	// This field is initialized at creation time and is immutable.
+	canMap bool
+
 	// ino is an inode number unique within this filesystem.
+	//
+	// This field is initialized at creation time and is immutable.
 	ino uint64
 
-	// mu protects the inode metadata below.
-	// TODO(gvisor.dev/issue/1672): actually protect fields below.
-	//mu sync.Mutex
+	// TODO(gvisor.dev/issue/1672): protect mode, uid, and gid with mutex.
 
 	// mode is the file mode of this inode. Note that this value may become out
 	// of date if the mode is changed on the host, e.g. with chmod.
@@ -125,6 +145,12 @@ type inode struct {
 	// file created on import, not the fd on the host.
 	uid auth.KUID
 	gid auth.KGID
+
+	// offsetMu protects offset.
+	offsetMu sync.Mutex
+
+	// offset specifies the current file offset.
+	offset int64
 }
 
 // Note that these flags may become out of date, since they can be modified
@@ -336,36 +362,40 @@ func (i *inode) open(d *vfs.Dentry, mnt *vfs.Mount) (*vfs.FileDescription, error
 
 	// TODO(gvisor.dev/issue/1672): Whitelist specific file types here, so that
 	// we don't allow importing arbitrary file types without proper support.
+	var (
+		vfsfd  *vfs.FileDescription
+		fdImpl vfs.FileDescriptionImpl
+	)
 	if i.isTTY {
-		// TODO(gvisor.dev/issue/1672): support importing host fd as TTY.
-		return nil, errors.New("importing host fd as TTY not supported")
+		fd := &ttyFD{
+			fileDescription: fileDescription{inode: i},
+			termios:         linux.DefaultSlaveTermios,
+		}
+		vfsfd = &fd.vfsfd
+		fdImpl = fd
+	} else {
+		// For simplicity, set offset to 0. Technically, we should
+		// only set to 0 on files that are not seekable (sockets, pipes, etc.),
+		// and use the offset from the host fd otherwise.
+		fd := &fileDescription{inode: i}
+		vfsfd = &fd.vfsfd
+		fdImpl = fd
 	}
 
-	// For simplicity, set offset to 0. Technically, we should
-	// only set to 0 on files that are not seekable (sockets, pipes, etc.),
-	// and use the offset from the host fd otherwise.
-	fd := &defaultFileFD{
-		fileDescription: fileDescription{
-			inode: i,
-		},
-		canMap: canMap(uint32(fileType)),
-		mu:     sync.Mutex{},
-		offset: 0,
-	}
-
-	vfsfd := &fd.vfsfd
 	flags, err := fileFlagsFromHostFD(i.hostFD)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := vfsfd.Init(fd, uint32(flags), mnt, d, &vfs.FileDescriptionOptions{}); err != nil {
+	if err := vfsfd.Init(fdImpl, uint32(flags), mnt, d, &vfs.FileDescriptionOptions{}); err != nil {
 		return nil, err
 	}
 	return vfsfd, nil
 }
 
 // fileDescription is embedded by host fd implementations of FileDescriptionImpl.
+//
+// TODO(gvisor.dev/issue/1672): Implement Waitable interface.
 type fileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
@@ -393,4 +423,194 @@ func (f *fileDescription) Stat(_ context.Context, opts vfs.StatOptions) (linux.S
 // Release implements vfs.FileDescriptionImpl.
 func (f *fileDescription) Release() {
 	// noop
+}
+
+// PRead implements FileDescriptionImpl.
+func (f *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
+	i := f.inode
+	// TODO(b/34716638): Some char devices do support offsets, e.g. /dev/null.
+	if i.isStream {
+		return 0, syserror.ESPIPE
+	}
+
+	return readFromHostFD(ctx, i.hostFD, dst, offset, opts.Flags)
+}
+
+// Read implements FileDescriptionImpl.
+func (f *fileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
+	i := f.inode
+	// TODO(b/34716638): Some char devices do support offsets, e.g. /dev/null.
+	if i.isStream {
+		n, err := readFromHostFD(ctx, i.hostFD, dst, -1, opts.Flags)
+		if isBlockError(err) {
+			// If we got any data at all, return it as a "completed" partial read
+			// rather than retrying until complete.
+			if n != 0 {
+				err = nil
+			} else {
+				err = syserror.ErrWouldBlock
+			}
+		}
+		return n, err
+	}
+	// TODO(gvisor.dev/issue/1672): Cache pages, when forced to do so.
+	i.offsetMu.Lock()
+	n, err := readFromHostFD(ctx, i.hostFD, dst, i.offset, opts.Flags)
+	i.offset += n
+	i.offsetMu.Unlock()
+	return n, err
+}
+
+func readFromHostFD(ctx context.Context, hostFD int, dst usermem.IOSequence, offset int64, flags uint32) (int64, error) {
+	// TODO(gvisor.dev/issue/1672): Support select preadv2 flags.
+	if flags != 0 {
+		return 0, syserror.EOPNOTSUPP
+	}
+
+	var reader safemem.Reader
+	if offset == -1 {
+		reader = safemem.FromIOReader{fd.NewReadWriter(hostFD)}
+	} else {
+		reader = safemem.FromVecReaderFunc{
+			func(srcs [][]byte) (int64, error) {
+				n, err := unix.Preadv(hostFD, srcs, offset)
+				return int64(n), err
+			},
+		}
+	}
+	n, err := dst.CopyOutFrom(ctx, reader)
+	return int64(n), err
+}
+
+// PWrite implements FileDescriptionImpl.
+func (f *fileDescription) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
+	i := f.inode
+	// TODO(b/34716638): Some char devices do support offsets, e.g. /dev/null.
+	if i.isStream {
+		return 0, syserror.ESPIPE
+	}
+
+	return writeToHostFD(ctx, i.hostFD, src, offset, opts.Flags)
+}
+
+// Write implements FileDescriptionImpl.
+func (f *fileDescription) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
+	i := f.inode
+	// TODO(b/34716638): Some char devices do support offsets, e.g. /dev/null.
+	if i.isStream {
+		n, err := writeToHostFD(ctx, i.hostFD, src, -1, opts.Flags)
+		if isBlockError(err) {
+			err = syserror.ErrWouldBlock
+		}
+		return n, err
+	}
+	// TODO(gvisor.dev/issue/1672): Cache pages, when forced to do so.
+	// TODO(gvisor.dev/issue/1672): Write to end of file and update offset if O_APPEND is set on this file.
+	i.offsetMu.Lock()
+	n, err := writeToHostFD(ctx, i.hostFD, src, i.offset, opts.Flags)
+	i.offset += n
+	i.offsetMu.Unlock()
+	return n, err
+}
+
+func writeToHostFD(ctx context.Context, hostFD int, src usermem.IOSequence, offset int64, flags uint32) (int64, error) {
+	// TODO(gvisor.dev/issue/1672): Support select pwritev2 flags.
+	if flags != 0 {
+		return 0, syserror.EOPNOTSUPP
+	}
+
+	var writer safemem.Writer
+	if offset == -1 {
+		writer = safemem.FromIOWriter{fd.NewReadWriter(hostFD)}
+	} else {
+		writer = safemem.FromVecWriterFunc{
+			func(srcs [][]byte) (int64, error) {
+				n, err := unix.Pwritev(hostFD, srcs, offset)
+				return int64(n), err
+			},
+		}
+	}
+	n, err := src.CopyInTo(ctx, writer)
+	return int64(n), err
+}
+
+// Seek implements FileDescriptionImpl.
+//
+// Note that we do not support seeking on directories, since we do not even
+// allow directory fds to be imported at all.
+func (f *fileDescription) Seek(_ context.Context, offset int64, whence int32) (int64, error) {
+	i := f.inode
+	// TODO(b/34716638): Some char devices do support seeking, e.g. /dev/null.
+	if i.isStream {
+		return 0, syserror.ESPIPE
+	}
+
+	i.offsetMu.Lock()
+	defer i.offsetMu.Unlock()
+
+	switch whence {
+	case linux.SEEK_SET:
+		if offset < 0 {
+			return i.offset, syserror.EINVAL
+		}
+		i.offset = offset
+
+	case linux.SEEK_CUR:
+		// Check for overflow. Note that underflow cannot occur, since i.offset >= 0.
+		if offset > math.MaxInt64-i.offset {
+			return i.offset, syserror.EOVERFLOW
+		}
+		if i.offset+offset < 0 {
+			return i.offset, syserror.EINVAL
+		}
+		i.offset += offset
+
+	case linux.SEEK_END:
+		var s syscall.Stat_t
+		if err := syscall.Fstat(i.hostFD, &s); err != nil {
+			return i.offset, err
+		}
+		size := s.Size
+
+		// Check for overflow. Note that underflow cannot occur, since size >= 0.
+		if offset > math.MaxInt64-size {
+			return i.offset, syserror.EOVERFLOW
+		}
+		if size+offset < 0 {
+			return i.offset, syserror.EINVAL
+		}
+		i.offset = size + offset
+
+	case linux.SEEK_DATA, linux.SEEK_HOLE:
+		// Modifying the offset in the host file table should not matter, since
+		// this is the only place where we use it.
+		//
+		// For reading and writing, we always rely on our internal offset.
+		n, err := unix.Seek(i.hostFD, offset, int(whence))
+		if err != nil {
+			return i.offset, err
+		}
+		i.offset = n
+
+	default:
+		// Invalid whence.
+		return i.offset, syserror.EINVAL
+	}
+
+	return i.offset, nil
+}
+
+// Sync implements FileDescriptionImpl.
+func (f *fileDescription) Sync(context.Context) error {
+	// TODO(gvisor.dev/issue/1672): Currently we do not support the SyncData optimization, so we always sync everything.
+	return unix.Fsync(f.inode.hostFD)
+}
+
+// ConfigureMMap implements FileDescriptionImpl.
+func (f *fileDescription) ConfigureMMap(_ context.Context, opts *memmap.MMapOpts) error {
+	if !f.inode.canMap {
+		return syserror.ENODEV
+	}
+	// TODO(gvisor.dev/issue/1672): Implement ConfigureMMap and Mappable interface.
+	return syserror.ENODEV
 }

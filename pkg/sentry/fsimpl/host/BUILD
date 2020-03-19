@@ -5,8 +5,9 @@ licenses(["notice"])
 go_library(
     name = "host",
     srcs = [
-        "default_file.go",
         "host.go",
+        "ioctl_unsafe.go",
+        "tty.go",
         "util.go",
     ],
     visibility = ["//pkg/sentry:internal"],
@@ -17,9 +18,12 @@ go_library(
         "//pkg/log",
         "//pkg/refs",
         "//pkg/safemem",
+        "//pkg/sentry/arch",
         "//pkg/sentry/fsimpl/kernfs",
+        "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
+        "//pkg/sentry/unimpl",
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/syserror",

@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,8 +20,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
-
-// LINT.IfChange
 
 func ioctlGetTermios(fd int) (*linux.Termios, error) {
 	var t linux.Termios
@@ -56,5 +54,3 @@ func ioctlSetWinsize(fd int, w *linux.Winsize) error {
 	}
 	return nil
 }
-
-// LINT.ThenChange(../../fsimpl/host/ioctl_unsafe.go)

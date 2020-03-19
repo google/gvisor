@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,27 +18,23 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// LINT.IfChange
-
-// TTYFileOperations implements fs.FileOperations for a host file descriptor
+// ttyFD implements vfs.FileDescriptionImpl for a host file descriptor
 // that wraps a TTY FD.
-//
-// +stateify savable
-type TTYFileOperations struct {
-	fileOperations
+type ttyFD struct {
+	fileDescription
 
 	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
 
-	// session is the session attached to this TTYFileOperations.
+	// session is the session attached to this ttyFD.
 	session *kernel.Session
 
 	// fgProcessGroup is the foreground process group that is currently
@@ -49,18 +45,10 @@ type TTYFileOperations struct {
 	termios linux.KernelTermios
 }
 
-// newTTYFile returns a new fs.File that wraps a TTY FD.
-func newTTYFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags, iops *inodeOperations) *fs.File {
-	return fs.NewFile(ctx, dirent, flags, &TTYFileOperations{
-		fileOperations: fileOperations{iops: iops},
-		termios:        linux.DefaultSlaveTermios,
-	})
-}
-
 // InitForegroundProcessGroup sets the foreground process group and session for
 // the TTY. This should only be called once, after the foreground process group
 // has been created, but before it has started running.
-func (t *TTYFileOperations) InitForegroundProcessGroup(pg *kernel.ProcessGroup) {
+func (t *ttyFD) InitForegroundProcessGroup(pg *kernel.ProcessGroup) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.fgProcessGroup != nil {
@@ -71,19 +59,26 @@ func (t *TTYFileOperations) InitForegroundProcessGroup(pg *kernel.ProcessGroup) 
 }
 
 // ForegroundProcessGroup returns the foreground process for the TTY.
-func (t *TTYFileOperations) ForegroundProcessGroup() *kernel.ProcessGroup {
+func (t *ttyFD) ForegroundProcessGroup() *kernel.ProcessGroup {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.fgProcessGroup
 }
 
-// Read implements fs.FileOperations.Read.
+// Release implements fs.FileOperations.Release.
+func (t *ttyFD) Release() {
+	t.mu.Lock()
+	t.fgProcessGroup = nil
+	t.mu.Unlock()
+
+	t.fileDescription.Release()
+}
+
+// PRead implements vfs.FileDescriptionImpl.
 //
 // Reading from a TTY is only allowed for foreground process groups. Background
 // process groups will either get EIO or a SIGTTIN.
-//
-// See drivers/tty/n_tty.c:n_tty_read()=>job_control().
-func (t *TTYFileOperations) Read(ctx context.Context, file *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
+func (t *ttyFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -94,11 +89,29 @@ func (t *TTYFileOperations) Read(ctx context.Context, file *fs.File, dst usermem
 	}
 
 	// Do the read.
-	return t.fileOperations.Read(ctx, file, dst, offset)
+	return t.fileDescription.PRead(ctx, dst, offset, opts)
 }
 
-// Write implements fs.FileOperations.Write.
-func (t *TTYFileOperations) Write(ctx context.Context, file *fs.File, src usermem.IOSequence, offset int64) (int64, error) {
+// Read implements vfs.FileDescriptionImpl.
+//
+// Reading from a TTY is only allowed for foreground process groups. Background
+// process groups will either get EIO or a SIGTTIN.
+func (t *ttyFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// Are we allowed to do the read?
+	// drivers/tty/n_tty.c:n_tty_read()=>job_control()=>tty_check_change().
+	if err := t.checkChange(ctx, linux.SIGTTIN); err != nil {
+		return 0, err
+	}
+
+	// Do the read.
+	return t.fileDescription.Read(ctx, dst, opts)
+}
+
+// PWrite implements vfs.FileDescriptionImpl.
+func (t *ttyFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -109,22 +122,28 @@ func (t *TTYFileOperations) Write(ctx context.Context, file *fs.File, src userme
 			return 0, err
 		}
 	}
-	return t.fileOperations.Write(ctx, file, src, offset)
+	return t.fileDescription.PWrite(ctx, src, offset, opts)
 }
 
-// Release implements fs.FileOperations.Release.
-func (t *TTYFileOperations) Release() {
+// Write implements vfs.FileDescriptionImpl.
+func (t *ttyFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	t.mu.Lock()
-	t.fgProcessGroup = nil
-	t.mu.Unlock()
+	defer t.mu.Unlock()
 
-	t.fileOperations.Release()
+	// Check whether TOSTOP is enabled. This corresponds to the check in
+	// drivers/tty/n_tty.c:n_tty_write().
+	if t.termios.LEnabled(linux.TOSTOP) {
+		if err := t.checkChange(ctx, linux.SIGTTOU); err != nil {
+			return 0, err
+		}
+	}
+	return t.fileDescription.Write(ctx, src, opts)
 }
 
-// Ioctl implements fs.FileOperations.Ioctl.
-func (t *TTYFileOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
-	// Ignore arg[0].  This is the real FD:
-	fd := t.fileOperations.iops.fileState.FD()
+// Ioctl implements vfs.FileDescriptionImpl.
+func (t *ttyFD) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+	// Ignore arg[0]. This is the real FD:
+	fd := t.inode.hostFD
 	ioctl := args[1].Uint64()
 	switch ioctl {
 	case linux.TCGETS:
@@ -160,8 +179,8 @@ func (t *TTYFileOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO
 	case linux.TIOCGPGRP:
 		// Args: pid_t *argp
 		// When successful, equivalent to *argp = tcgetpgrp(fd).
-		// Get the process group ID of the foreground process group on
-		// this terminal.
+		// Get the process group ID of the foreground process group on this
+		// terminal.
 
 		pidns := kernel.PIDNamespaceFromContext(ctx)
 		if pidns == nil {
@@ -171,8 +190,7 @@ func (t *TTYFileOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO
 		t.mu.Lock()
 		defer t.mu.Unlock()
 
-		// Map the ProcessGroup into a ProcessGroupID in the task's PID
-		// namespace.
+		// Map the ProcessGroup into a ProcessGroupID in the task's PID namespace.
 		pgID := pidns.IDOfProcessGroup(t.fgProcessGroup)
 		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), &pgID, usermem.IOOpts{
 			AddressSpaceActive: true,
@@ -194,16 +212,15 @@ func (t *TTYFileOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO
 
 		// Check that we are allowed to set the process group.
 		if err := t.checkChange(ctx, linux.SIGTTOU); err != nil {
-			// drivers/tty/tty_io.c:tiocspgrp() converts -EIO from
-			// tty_check_change() to -ENOTTY.
+			// drivers/tty/tty_io.c:tiocspgrp() converts -EIO from tty_check_change()
+			// to -ENOTTY.
 			if err == syserror.EIO {
 				return 0, syserror.ENOTTY
 			}
 			return 0, err
 		}
 
-		// Check that calling task's process group is in the TTY
-		// session.
+		// Check that calling task's process group is in the TTY session.
 		if task.ThreadGroup().Session() != t.session {
 			return 0, syserror.ENOTTY
 		}
@@ -251,8 +268,8 @@ func (t *TTYFileOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO
 		// Args: const struct winsize *argp
 		// Set window size.
 
-		// Unlike setting the termios, any process group (even
-		// background ones) can set the winsize.
+		// Unlike setting the termios, any process group (even background ones) can
+		// set the winsize.
 
 		var winsize linux.Winsize
 		if _, err := usermem.CopyObjectIn(ctx, io, args[2].Pointer(), &winsize, usermem.IOOpts{
@@ -304,7 +321,7 @@ func (t *TTYFileOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO
 // is a bit convoluted, but documented inline.
 //
 // Preconditions: t.mu must be held.
-func (t *TTYFileOperations) checkChange(ctx context.Context, sig linux.Signal) error {
+func (t *ttyFD) checkChange(ctx context.Context, sig linux.Signal) error {
 	task := kernel.TaskFromContext(ctx)
 	if task == nil {
 		// No task? Linux does not have an analog for this case, but
@@ -360,5 +377,3 @@ func (t *TTYFileOperations) checkChange(ctx context.Context, sig linux.Signal) e
 	_ = pg.SendSignal(kernel.SignalInfoPriv(sig))
 	return kernel.ERESTARTSYS
 }
-
-// LINT.ThenChange(../../fsimpl/host/tty.go)
