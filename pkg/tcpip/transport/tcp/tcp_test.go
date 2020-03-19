@@ -2236,9 +2236,17 @@ func TestSegmentMerging(t *testing.T) {
 
 			c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
-			// Prevent the endpoint from processing packets.
-			test.stop(c.EP)
+			// Send 10 1 byte segments to fill up InitialWindow but don't
+			// ACK. That should prevent anymore packets from going out.
+			for i := 0; i < 10; i++ {
+				view := buffer.NewViewFromBytes([]byte{0})
+				if _, _, err := c.EP.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
+					t.Fatalf("Write #%d failed: %v", i+1, err)
+				}
+			}
 
+			// Now send the segments that should get merged as the congestion
+			// window is full and we won't be able to send any more packets.
 			var allData []byte
 			for i, data := range [][]byte{{1, 2, 3, 4}, {5, 6, 7}, {8, 9}, {10}, {11}} {
 				allData = append(allData, data...)
@@ -2248,8 +2256,29 @@ func TestSegmentMerging(t *testing.T) {
 				}
 			}
 
-			// Let the endpoint process the segments that we just sent.
-			test.resume(c.EP)
+			// Check that we get 10 packets of 1 byte each.
+			for i := 0; i < 10; i++ {
+				b := c.GetPacket()
+				checker.IPv4(t, b,
+					checker.PayloadLen(header.TCPMinimumSize+1),
+					checker.TCP(
+						checker.DstPort(context.TestPort),
+						checker.SeqNum(uint32(c.IRS)+uint32(i)+1),
+						checker.AckNum(790),
+						checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+					),
+				)
+			}
+
+			// Acknowledge the data.
+			c.SendPacket(nil, &context.Headers{
+				SrcPort: context.TestPort,
+				DstPort: c.Port,
+				Flags:   header.TCPFlagAck,
+				SeqNum:  790,
+				AckNum:  c.IRS.Add(1 + 10), // 10 for the 10 bytes of payload.
+				RcvWnd:  30000,
+			})
 
 			// Check that data is received.
 			b := c.GetPacket()
@@ -2257,7 +2286,7 @@ func TestSegmentMerging(t *testing.T) {
 				checker.PayloadLen(len(allData)+header.TCPMinimumSize),
 				checker.TCP(
 					checker.DstPort(context.TestPort),
-					checker.SeqNum(uint32(c.IRS)+1),
+					checker.SeqNum(uint32(c.IRS)+11),
 					checker.AckNum(790),
 					checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
 				),
@@ -2273,7 +2302,7 @@ func TestSegmentMerging(t *testing.T) {
 				DstPort: c.Port,
 				Flags:   header.TCPFlagAck,
 				SeqNum:  790,
-				AckNum:  c.IRS.Add(1 + seqnum.Size(len(allData))),
+				AckNum:  c.IRS.Add(11 + seqnum.Size(len(allData))),
 				RcvWnd:  30000,
 			})
 		})
