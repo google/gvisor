@@ -26,6 +26,8 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// LINT.IfChange
+
 // TTYFileOperations implements fs.FileOperations for a host file descriptor
 // that wraps a TTY FD.
 //
@@ -43,6 +45,7 @@ type TTYFileOperations struct {
 	// connected to this TTY.
 	fgProcessGroup *kernel.ProcessGroup
 
+	// termios contains the terminal attributes for this TTY.
 	termios linux.KernelTermios
 }
 
@@ -357,3 +360,5 @@ func (t *TTYFileOperations) checkChange(ctx context.Context, sig linux.Signal) e
 	_ = pg.SendSignal(kernel.SignalInfoPriv(sig))
 	return kernel.ERESTARTSYS
 }
+
+// LINT.ThenChange(../../fsimpl/host/tty.go)
