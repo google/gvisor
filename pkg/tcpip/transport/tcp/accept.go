@@ -420,7 +420,7 @@ func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header
 }
 
 func (e *endpoint) incSynRcvdCount() bool {
-	if e.synRcvdCount >= (cap(e.acceptedChan)) {
+	if e.synRcvdCount >= cap(e.acceptedChan) {
 		return false
 	}
 	e.synRcvdCount++
