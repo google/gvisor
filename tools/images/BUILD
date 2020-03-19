@@ -9,7 +9,7 @@ package(
 genrule(
     name = "zone",
     outs = ["zone.txt"],
-    cmd = "gcloud config get-value compute/zone > $@",
+    cmd = "gcloud config get-value compute/zone > \"$@\"",
     tags = [
         "local",
         "manual",
