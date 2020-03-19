@@ -15,6 +15,7 @@
 package gate_test
 
 import (
+	"runtime"
 	"testing"
 	"time"
 
@@ -165,6 +166,8 @@ func worker(g *gate.Gate, done *sync.WaitGroup) {
 		if !g.Enter() {
 			break
 		}
+		// Golang before v1.14 doesn't preempt busyloops.
+		runtime.Gosched()
 		g.Leave()
 	}
 	done.Done()
