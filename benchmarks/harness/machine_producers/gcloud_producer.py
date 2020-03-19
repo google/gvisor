@@ -168,7 +168,9 @@ class GCloudProducer(machine_producer.MachineProducer):
     cmd.append("--zone=" + self.zone)
     cmd.append("--machine-type=" + self.machine_type)
     res = self._run_command(cmd)
-    return json.loads(res.stdout)
+    data = res.stdout
+    data = str(data, "utf-8") if isinstance(data, (bytes, bytearray)) else data
+    return json.loads(data)
 
   def _add_ssh_key_to_instances(self, names: List[str]) -> None:
     """Adds ssh key to instances by calling gcloud ssh command.
@@ -186,11 +188,11 @@ class GCloudProducer(machine_producer.MachineProducer):
       TimeoutError: when 3 unsuccessful tries to ssh into the host return 255.
     """
     for name in names:
-      cmd = "gcloud compute ssh {name}".format(name=name).split(" ")
+      cmd = "gcloud compute ssh {user}@{name}".format(
+          user=self.ssh_user, name=name).split(" ")
       cmd.append("--ssh-key-file={key}".format(key=self.ssh_key_file))
       cmd.append("--zone={zone}".format(zone=self.zone))
       cmd.append("--command=uname")
-      cmd.append("--ssh-key-expire-after=60m")
       timeout = datetime.timedelta(seconds=5 * 60)
       start = datetime.datetime.now()
       while datetime.datetime.now() <= timeout + start:
