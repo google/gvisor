@@ -21,6 +21,8 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
+// LINT.IfChange
+
 func ioctlGetTermios(fd int) (*linux.Termios, error) {
 	var t linux.Termios
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), linux.TCGETS, uintptr(unsafe.Pointer(&t)))
@@ -54,3 +56,5 @@ func ioctlSetWinsize(fd int, w *linux.Winsize) error {
 	}
 	return nil
 }
+
+// LINT.ThenChange(../../fsimpl/host/ioctl_unsafe.go)
