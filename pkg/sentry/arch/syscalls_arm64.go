@@ -50,13 +50,21 @@ func (c *context64) SyscallArgs() SyscallArguments {
 }
 
 // RestartSyscall implements Context.RestartSyscall.
+// Prepare for system call restart, OrigR0 will be restored to R0.
+// Please see the linux code as reference:
+// arch/arm64/kernel/signal.c:do_signal()
 func (c *context64) RestartSyscall() {
 	c.Regs.Pc -= SyscallWidth
-	c.Regs.Regs[8] = uint64(restartSyscallNr)
+	// R0 will be backed up into OrigR0 when entering doSyscall().
+	// Please see the linux code as reference:
+	// arch/arm64/kernel/syscall.c:el0_svc_common().
+	// Here we restore it back.
+	c.Regs.Regs[0] = uint64(c.OrigR0)
 }
 
 // RestartSyscallWithRestartBlock implements Context.RestartSyscallWithRestartBlock.
 func (c *context64) RestartSyscallWithRestartBlock() {
 	c.Regs.Pc -= SyscallWidth
+	c.Regs.Regs[0] = uint64(c.OrigR0)
 	c.Regs.Regs[8] = uint64(restartSyscallNr)
 }
