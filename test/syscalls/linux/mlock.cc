@@ -199,8 +199,10 @@ TEST(MunlockallTest, Basic) {
 }
 
 #ifndef SYS_mlock2
-#ifdef __x86_64__
+#if defined(__x86_64__)
 #define SYS_mlock2 325
+#elif defined(__aarch64__)
+#define SYS_mlock2 284
 #endif
 #endif
 
