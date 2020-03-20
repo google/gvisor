@@ -400,9 +400,11 @@ TEST(PtraceTest, GetRegSet) {
   // Read exactly the full register set.
   EXPECT_EQ(iov.iov_len, sizeof(regs));
 
-#ifdef __x86_64__
+#if defined(__x86_64__)
   // Child called kill(2), with SIGSTOP as arg 2.
   EXPECT_EQ(regs.rsi, SIGSTOP);
+#elif defined(__aarch64__)
+  EXPECT_EQ(regs.regs[1], SIGSTOP);
 #endif
 
   // Suppress SIGSTOP and resume the child.
@@ -752,15 +754,24 @@ TEST(PtraceTest,
               SyscallSucceeds());
   EXPECT_TRUE(siginfo.si_code == SIGTRAP || siginfo.si_code == (SIGTRAP | 0x80))
       << "si_code = " << siginfo.si_code;
-#ifdef __x86_64__
+
   {
     struct user_regs_struct regs = {};
-    ASSERT_THAT(ptrace(PTRACE_GETREGS, child_pid, 0, &regs), SyscallSucceeds());
+    struct iovec iov;
+    iov.iov_base = &regs;
+    iov.iov_len = sizeof(regs);
+    EXPECT_THAT(ptrace(PTRACE_GETREGSET, child_pid, NT_PRSTATUS, &iov),
+                SyscallSucceeds());
+#if defined(__x86_64__)
     EXPECT_TRUE(regs.orig_rax == SYS_vfork || regs.orig_rax == SYS_clone)
         << "orig_rax = " << regs.orig_rax;
     EXPECT_EQ(grandchild_pid, regs.rax);
-  }
+#elif defined(__aarch64__)
+    EXPECT_TRUE(regs.regs[8] == SYS_clone)
+        << "regs[8] = " << regs.regs[8];
+    EXPECT_EQ(grandchild_pid, regs.regs[0]);
 #endif  // defined(__x86_64__)
+  }
 
   // After this point, the child will be making wait4 syscalls that will be
   // interrupted by saving, so saving is not permitted. Note that this is
@@ -805,14 +816,21 @@ TEST(PtraceTest,
               SyscallSucceedsWithValue(child_pid));
   EXPECT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == (SIGTRAP | 0x80))
       << " status " << status;
-#ifdef __x86_64__
   {
     struct user_regs_struct regs = {};
-    ASSERT_THAT(ptrace(PTRACE_GETREGS, child_pid, 0, &regs), SyscallSucceeds());
+    struct iovec iov;
+    iov.iov_base = &regs;
+    iov.iov_len = sizeof(regs);
+    EXPECT_THAT(ptrace(PTRACE_GETREGSET, child_pid, NT_PRSTATUS, &iov),
+                  SyscallSucceeds());
+#if defined(__x86_64__)
     EXPECT_EQ(SYS_wait4, regs.orig_rax);
     EXPECT_EQ(grandchild_pid, regs.rax);
-  }
+#elif defined(__aarch64__)
+    EXPECT_EQ(SYS_wait4, regs.regs[8]);
+    EXPECT_EQ(grandchild_pid, regs.regs[0]);
 #endif  // defined(__x86_64__)
+  }
 
   // Detach from the child and wait for it to exit.
   ASSERT_THAT(ptrace(PTRACE_DETACH, child_pid, 0, 0), SyscallSucceeds());
