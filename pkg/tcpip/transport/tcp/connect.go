@@ -878,7 +878,6 @@ func (e *endpoint) handleWrite() *tcpip.Error {
 	first := e.sndQueue.Front()
 	if first != nil {
 		e.snd.writeList.PushBackList(&e.sndQueue)
-		e.snd.sndNxtList.UpdateForward(e.sndBufInQueue)
 		e.sndBufInQueue = 0
 	}
 
