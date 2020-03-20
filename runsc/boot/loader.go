@@ -59,6 +59,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/raw"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
+	"gvisor.dev/gvisor/runsc/argument"
 	"gvisor.dev/gvisor/runsc/boot/filter"
 	_ "gvisor.dev/gvisor/runsc/boot/platforms" // register all platforms.
 	"gvisor.dev/gvisor/runsc/boot/pprof"
@@ -289,6 +290,13 @@ func New(args Args) (*Loader, error) {
 
 	if err := adjustDirentCache(k); err != nil {
 		return nil, err
+	}
+
+	for _, arg := range argument.RegisteredArgs {
+		err = arg.OnBoot()
+		if err != nil {
+			return nil, fmt.Errorf("executing OnBoot from extra args: %v", err)
+		}
 	}
 
 	// Turn on packet logging if enabled.

@@ -88,6 +88,7 @@ go_library(
         "//pkg/tcpip/transport/udp",
         "//pkg/urpc",
         "//pkg/usermem",
+        "//runsc/argument",
         "//runsc/boot/filter",
         "//runsc/boot/platforms",
         "//runsc/boot/pprof",

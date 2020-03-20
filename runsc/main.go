@@ -32,6 +32,8 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/runsc/argument"
+	_ "gvisor.dev/gvisor/runsc/arguments"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -130,6 +132,9 @@ func main() {
 	subcommands.Register(new(cmd.Debug), internalGroup)
 	subcommands.Register(new(cmd.Gofer), internalGroup)
 	subcommands.Register(new(cmd.Statefile), internalGroup)
+
+	// Set additional arguments
+	argument.SetRegisteredArgs(nil)
 
 	// All subcommands must be registered before flag parsing.
 	flag.Parse()
@@ -254,6 +259,8 @@ func main() {
 	// that will force initialization, but force initialization here in
 	// case that does not occur.
 	_ = time.Local.String()
+
+	conf.ExtraArgs = argument.RegisteredArgs
 
 	subcommand := flag.CommandLine.Arg(0)
 
