@@ -56,6 +56,8 @@ func (f *fakeTransportEndpoint) Stats() tcpip.EndpointStats {
 	return nil
 }
 
+func (f *fakeTransportEndpoint) SetOwner(owner tcpip.PacketOwner) {}
+
 func newFakeTransportEndpoint(s *stack.Stack, proto *fakeTransportProtocol, netProto tcpip.NetworkProtocolNumber, uniqueID uint64) tcpip.Endpoint {
 	return &fakeTransportEndpoint{stack: s, TransportEndpointInfo: stack.TransportEndpointInfo{NetProto: netProto}, proto: proto, uniqueID: uniqueID}
 }

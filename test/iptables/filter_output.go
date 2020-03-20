@@ -24,6 +24,11 @@ func init() {
 	RegisterTestCase(FilterOutputDropTCPSrcPort{})
 	RegisterTestCase(FilterOutputDestination{})
 	RegisterTestCase(FilterOutputInvertDestination{})
+	RegisterTestCase(FilterOutputAcceptTCPOwner{})
+	RegisterTestCase(FilterOutputDropTCPOwner{})
+	RegisterTestCase(FilterOutputAcceptUDPOwner{})
+	RegisterTestCase(FilterOutputDropUDPOwner{})
+	RegisterTestCase(FilterOutputOwnerFail{})
 }
 
 // FilterOutputDropTCPDestPort tests that connections are not accepted on
@@ -87,6 +92,144 @@ func (FilterOutputDropTCPSrcPort) LocalAction(ip net.IP) error {
 		return fmt.Errorf("connection destined to port %d should not be accepted, but got accepted", dropPort)
 	}
 
+	return nil
+}
+
+// FilterOutputAcceptTCPOwner tests that TCP connections from uid owner are accepted.
+type FilterOutputAcceptTCPOwner struct{}
+
+// Name implements TestCase.Name.
+func (FilterOutputAcceptTCPOwner) Name() string {
+	return "FilterOutputAcceptTCPOwner"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterOutputAcceptTCPOwner) ContainerAction(ip net.IP) error {
+	if err := filterTable("-A", "OUTPUT", "-p", "tcp", "-m", "owner", "--uid-owner", "root", "-j", "ACCEPT"); err != nil {
+		return err
+	}
+
+	// Listen for TCP packets on accept port.
+	if err := listenTCP(acceptPort, sendloopDuration); err != nil {
+		return fmt.Errorf("connection on port %d should be accepted, but got dropped", acceptPort)
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterOutputAcceptTCPOwner) LocalAction(ip net.IP) error {
+	if err := connectTCP(ip, acceptPort, sendloopDuration); err != nil {
+		return fmt.Errorf("connection destined to port %d should be accepted, but got dropped", acceptPort)
+	}
+
+	return nil
+}
+
+// FilterOutputDropTCPOwner tests that TCP connections from uid owner are dropped.
+type FilterOutputDropTCPOwner struct{}
+
+// Name implements TestCase.Name.
+func (FilterOutputDropTCPOwner) Name() string {
+	return "FilterOutputDropTCPOwner"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterOutputDropTCPOwner) ContainerAction(ip net.IP) error {
+	if err := filterTable("-A", "OUTPUT", "-p", "tcp", "-m", "owner", "--uid-owner", "root", "-j", "DROP"); err != nil {
+		return err
+	}
+
+	// Listen for TCP packets on accept port.
+	if err := listenTCP(acceptPort, sendloopDuration); err == nil {
+		return fmt.Errorf("connection on port %d should be dropped, but got accepted", acceptPort)
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterOutputDropTCPOwner) LocalAction(ip net.IP) error {
+	if err := connectTCP(ip, acceptPort, sendloopDuration); err == nil {
+		return fmt.Errorf("connection destined to port %d should be dropped, but got accepted", acceptPort)
+	}
+
+	return nil
+}
+
+// FilterOutputAcceptUDPOwner tests that UDP packets from uid owner are accepted.
+type FilterOutputAcceptUDPOwner struct{}
+
+// Name implements TestCase.Name.
+func (FilterOutputAcceptUDPOwner) Name() string {
+	return "FilterOutputAcceptUDPOwner"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterOutputAcceptUDPOwner) ContainerAction(ip net.IP) error {
+	if err := filterTable("-A", "OUTPUT", "-p", "udp", "-m", "owner", "--uid-owner", "root", "-j", "ACCEPT"); err != nil {
+		return err
+	}
+
+	// Send UDP packets on acceptPort.
+	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterOutputAcceptUDPOwner) LocalAction(ip net.IP) error {
+	// Listen for UDP packets on acceptPort.
+	return listenUDP(acceptPort, sendloopDuration)
+}
+
+// FilterOutputDropUDPOwner tests that UDP packets from uid owner are dropped.
+type FilterOutputDropUDPOwner struct{}
+
+// Name implements TestCase.Name.
+func (FilterOutputDropUDPOwner) Name() string {
+	return "FilterOutputDropUDPOwner"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterOutputDropUDPOwner) ContainerAction(ip net.IP) error {
+	if err := filterTable("-A", "OUTPUT", "-p", "udp", "-m", "owner", "--uid-owner", "root", "-j", "DROP"); err != nil {
+		return err
+	}
+
+	// Send UDP packets on dropPort.
+	return sendUDPLoop(ip, dropPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterOutputDropUDPOwner) LocalAction(ip net.IP) error {
+	// Listen for UDP packets on dropPort.
+	if err := listenUDP(dropPort, sendloopDuration); err == nil {
+		return fmt.Errorf("packets should not be received")
+	}
+
+	return nil
+}
+
+// FilterOutputOwnerFail tests that without uid/gid option, owner rule
+// will fail.
+type FilterOutputOwnerFail struct{}
+
+// Name implements TestCase.Name.
+func (FilterOutputOwnerFail) Name() string {
+	return "FilterOutputOwnerFail"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterOutputOwnerFail) ContainerAction(ip net.IP) error {
+	if err := filterTable("-A", "OUTPUT", "-p", "udp", "-m", "owner", "-j", "ACCEPT"); err == nil {
+		return fmt.Errorf("Invalid argument")
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterOutputOwnerFail) LocalAction(ip net.IP) error {
+	// no-op.
 	return nil
 }
 

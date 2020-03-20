@@ -509,3 +509,44 @@ const (
 	// Enable all flags.
 	XT_UDP_INV_MASK = 0x03
 )
+
+// IPTOwnerInfo holds data for matching packets with owner. It corresponds
+// to struct ipt_owner_info in libxt_owner.c of iptables binary.
+type IPTOwnerInfo struct {
+	// UID is user id which created the packet.
+	UID uint32
+
+	// GID is group id which created the packet.
+	GID uint32
+
+	// PID is process id of the process which created the packet.
+	PID uint32
+
+	// SID is session id which created the packet.
+	SID uint32
+
+	// Comm is the command name which created the packet.
+	Comm [16]byte
+
+	// Match is used to match UID/GID of the socket. See the
+	// XT_OWNER_* flags below.
+	Match uint8
+
+	// Invert flips the meaning of Match field.
+	Invert uint8
+}
+
+// SizeOfIPTOwnerInfo is the size of an XTOwnerMatchInfo.
+const SizeOfIPTOwnerInfo = 34
+
+// Flags in IPTOwnerInfo.Match. Corresponding constants are in
+// include/uapi/linux/netfilter/xt_owner.h.
+const (
+	// Match the UID of the packet.
+	XT_OWNER_UID = 1 << 0
+	// Match the GID of the packet.
+	XT_OWNER_GID = 1 << 1
+	// Match if the socket exists for the packet. Forwarded
+	// packets do not have an associated socket.
+	XT_OWNER_SOCKET = 1 << 2
+)

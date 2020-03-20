@@ -13,7 +13,10 @@
 
 package stack
 
-import "gvisor.dev/gvisor/pkg/tcpip/buffer"
+import (
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+)
 
 // A PacketBuffer contains all the data of a network packet.
 //
@@ -59,6 +62,10 @@ type PacketBuffer struct {
 	// Hash is the transport layer hash of this packet. A value of zero
 	// indicates no valid hash has been set.
 	Hash uint32
+
+	// Owner is implemented by task to get the uid and gid.
+	// Only set for locally generated packets.
+	Owner tcpip.PacketOwner
 }
 
 // Clone makes a copy of pk. It clones the Data field, which creates a new
