@@ -126,10 +126,6 @@ type sender struct {
 	// sndNxt is the sequence number of the next segment to be sent.
 	sndNxt seqnum.Value
 
-	// sndNxtList is the sequence number of the next segment to be added to
-	// the send list.
-	sndNxtList seqnum.Value
-
 	// rttMeasureSeqNum is the sequence number being used for the latest RTT
 	// measurement.
 	rttMeasureSeqNum seqnum.Value
@@ -229,7 +225,6 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 		sndWnd:           sndWnd,
 		sndUna:           iss + 1,
 		sndNxt:           iss + 1,
-		sndNxtList:       iss + 1,
 		rto:              1 * time.Second,
 		rttMeasureSeqNum: iss + 1,
 		lastSendTime:     time.Now(),
