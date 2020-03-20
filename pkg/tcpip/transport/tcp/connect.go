@@ -745,7 +745,7 @@ func (e *endpoint) sendSynTCP(r *stack.Route, tf tcpFields, opts header.TCPSynOp
 
 func (e *endpoint) sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO) *tcpip.Error {
 	tf.txHash = e.txHash
-	if err := sendTCP(r, tf, data, gso); err != nil {
+	if err := sendTCP(r, tf, data, gso, e.owner); err != nil {
 		e.stats.SendErrors.SegmentSendToNetworkFailed.Increment()
 		return err
 	}
@@ -787,7 +787,7 @@ func buildTCPHdr(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso *sta
 	}
 }
 
-func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO) *tcpip.Error {
+func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO, owner tcpip.PacketOwner) *tcpip.Error {
 	optLen := len(tf.opts)
 	if tf.rcvWnd > 0xffff {
 		tf.rcvWnd = 0xffff
@@ -816,6 +816,7 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso 
 		pkts[i].DataSize = packetSize
 		pkts[i].Data = data
 		pkts[i].Hash = tf.txHash
+		pkts[i].Owner = owner
 		buildTCPHdr(r, tf, &pkts[i], gso)
 		off += packetSize
 		tf.seq = tf.seq.Add(seqnum.Size(packetSize))
@@ -833,14 +834,14 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso 
 
 // sendTCP sends a TCP segment with the provided options via the provided
 // network endpoint and under the provided identity.
-func sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO) *tcpip.Error {
+func sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO, owner tcpip.PacketOwner) *tcpip.Error {
 	optLen := len(tf.opts)
 	if tf.rcvWnd > 0xffff {
 		tf.rcvWnd = 0xffff
 	}
 
 	if r.Loop&stack.PacketLoop == 0 && gso != nil && gso.Type == stack.GSOSW && int(gso.MSS) < data.Size() {
-		return sendTCPBatch(r, tf, data, gso)
+		return sendTCPBatch(r, tf, data, gso, owner)
 	}
 
 	pkt := stack.PacketBuffer{
@@ -849,6 +850,7 @@ func sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stac
 		DataSize:   data.Size(),
 		Data:       data,
 		Hash:       tf.txHash,
+		Owner:      owner,
 	}
 	buildTCPHdr(r, tf, &pkt, gso)
 

@@ -126,6 +126,12 @@ func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*
 		ep, e = eps.Stack.NewRawEndpoint(transProto, p.netProto, wq, associated)
 	} else {
 		ep, e = eps.Stack.NewEndpoint(transProto, p.netProto, wq)
+
+		// Assign task to PacketOwner interface to get the UID and GID for
+		// iptables owner matching.
+		if e == nil {
+			ep.SetOwner(t)
+		}
 	}
 	if e != nil {
 		return nil, syserr.TranslateNetstackError(e)

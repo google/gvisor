@@ -392,3 +392,5 @@ func (ep *endpoint) Info() tcpip.EndpointInfo {
 func (ep *endpoint) Stats() tcpip.EndpointStats {
 	return &ep.stats
 }
+
+func (ep *endpoint) SetOwner(owner tcpip.PacketOwner) {}
