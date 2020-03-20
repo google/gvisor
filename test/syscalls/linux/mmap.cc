@@ -361,7 +361,7 @@ TEST_F(MMapTest, MapFixed) {
 }
 
 // 64-bit addresses work too
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(__aarch64__)
 TEST_F(MMapTest, MapFixed64) {
   EXPECT_THAT(Map(0x300000000000, kPageSize, PROT_NONE,
                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0),
@@ -571,6 +571,12 @@ const uint8_t machine_code[] = {
     0xb8, 0x2a, 0x00, 0x00, 0x00,  // movl $42, %eax
     0xc3,                          // retq
 };
+#elif defined(__aarch64__)
+const uint8_t machine_code[] = {
+    0x40, 0x05, 0x80, 0x52,  // mov w0, #42
+    0xc0, 0x03, 0x5f, 0xd6,  // ret
+};
+#endif
 
 // PROT_EXEC allows code execution
 TEST_F(MMapTest, ProtExec) {
@@ -605,7 +611,6 @@ TEST_F(MMapTest, NoProtExecDeath) {
 
   EXPECT_EXIT(func(), ::testing::KilledBySignal(SIGSEGV), "");
 }
-#endif
 
 TEST_F(MMapTest, NoExceedLimitData) {
   void* prevbrk;
@@ -1644,6 +1649,7 @@ TEST(MMapNoFixtureTest, MapReadOnlyAfterCreateWriteOnly) {
 }
 
 // Conditional on MAP_32BIT.
+// This flag is supported only on x86-64, for 64-bit programs.
 #ifdef __x86_64__
 
 TEST(MMapNoFixtureTest, Map32Bit) {
