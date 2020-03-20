@@ -291,6 +291,14 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.AllowValue(uint64(os.Getpid())),
 		},
 	},
+	syscall.SYS_UTIMENSAT: []seccomp.Rule{
+		{
+			seccomp.AllowAny{},
+			seccomp.AllowValue(0), /* null pathname */
+			seccomp.AllowAny{},
+			seccomp.AllowValue(0), /* flags */
+		},
+	},
 	syscall.SYS_WRITE: {},
 	// The only user in rawfile.NonBlockingWrite3 always passes iovcnt with
 	// values 2 or 3. Three iovec-s are passed, when the PACKET_VNET_HDR

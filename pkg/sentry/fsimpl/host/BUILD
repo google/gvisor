@@ -9,6 +9,7 @@ go_library(
         "ioctl_unsafe.go",
         "tty.go",
         "util.go",
+        "util_unsafe.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
