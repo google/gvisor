@@ -109,6 +109,16 @@ type LoadOpts struct {
 	Key []byte
 }
 
+func (opts LoadOpts) GetMetadata() (map[string]string, error) {
+	// Open the file.
+	_, m, err := statefile.NewReader(opts.Source, opts.Key)
+	if err != nil {
+		return nil, ErrStateFile{err}
+	}
+
+	return m, err
+}
+
 // Load loads the given kernel, setting the provided platform and stack.
 func (opts LoadOpts) Load(ctx context.Context, k *kernel.Kernel, n inet.Stack, clocks time.Clocks, vfsOpts *vfs.CompleteRestoreOptions) error {
 	// Open the file.

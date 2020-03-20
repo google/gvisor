@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"syscall"
+	"strconv"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/control/server"
@@ -334,6 +335,15 @@ func (cm *containerManager) Checkpoint(o *control.SaveOpts, _ *struct{}) error {
 		Kernel:   cm.l.k,
 		Watchdog: cm.l.watchdog,
 	}
+
+	num := 0
+	for _, _ = range cm.l.processes {
+		num++
+	}
+	if o.Metadata == nil {
+		o.Metadata = make(map[string]string)
+	}
+	o.Metadata["container_num"] = strconv.Itoa(num)
 	return state.Save(o, nil)
 }
 
