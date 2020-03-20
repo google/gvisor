@@ -22,15 +22,15 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
-func toTimespec(ts linux.StatxTimestamp, omit bool) unix.Timespec {
+func toTimespec(ts linux.StatxTimestamp, omit bool) syscall.Timespec {
 	if omit {
-		return unix.Timespec{
+		return syscall.Timespec{
 			Sec:  0,
 			Nsec: unix.UTIME_OMIT,
 		}
 	}
-	return unix.Timespec{
-		Sec:  int64(ts.Sec),
+	return syscall.Timespec{
+		Sec:  ts.Sec,
 		Nsec: int64(ts.Nsec),
 	}
 }

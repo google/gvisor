@@ -322,11 +322,11 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 		}
 	}
 	if m&(linux.STATX_ATIME|linux.STATX_MTIME) != 0 {
-		timestamps := []unix.Timespec{
+		ts := [2]syscall.Timespec{
 			toTimespec(s.Atime, m&linux.STATX_ATIME == 0),
 			toTimespec(s.Mtime, m&linux.STATX_MTIME == 0),
 		}
-		if err := unix.UtimesNanoAt(i.hostFD, "", timestamps, unix.AT_EMPTY_PATH); err != nil {
+		if err := setTimestamps(i.hostFD, &ts); err != nil {
 			return err
 		}
 	}
