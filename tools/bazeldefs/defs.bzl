@@ -65,10 +65,17 @@ def cc_binary(name, static = False, **kwargs):
         **kwargs: the rest of the args.
     """
     if static:
-        if "linkopts" in kwargs:
-            kwargs["linkopts"] += ["-static", "-lstdc++"]
-        else:
-            kwargs["linkopts"] = ["-static", "-lstdc++"]
+        # How to statically link a c++ program that uses threads, like for gRPC:
+        # https://gcc.gnu.org/legacy-ml/gcc-help/2010-05/msg00029.html
+        if "linkopts" not in kwargs:
+            kwargs["linkopts"] = []
+        kwargs["linkopts"] += [
+            "-static",
+            "-lstdc++",
+            "-Wl,--whole-archive",
+            "-lpthread",
+            "-Wl,--no-whole-archive",
+        ]
     _cc_binary(
         name = name,
         **kwargs
