@@ -300,6 +300,7 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 
 	// Test spec comes with pre-defined mounts that we don't want. Reset it.
 	spec.Mounts = nil
+	testTmpDir := "/tmp"
 	if *useTmpfs {
 		// Forces '/tmp' to be mounted as tmpfs, otherwise test that rely on
 		// features only available in gVisor's internal tmpfs may fail.
@@ -325,11 +326,19 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 			t.Fatalf("could not chmod temp dir: %v", err)
 		}
 
-		spec.Mounts = append(spec.Mounts, specs.Mount{
-			Type:        "bind",
-			Destination: "/tmp",
-			Source:      tmpDir,
-		})
+		// "/tmp" is not replaced with a tmpfs mount inside the sandbox
+		// when it's not empty. This ensures that testTmpDir uses gofer
+		// in exclusive mode.
+		testTmpDir = tmpDir
+		if *fileAccess == "shared" {
+			// All external mounts except the root mount are shared.
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Type:        "bind",
+				Destination: "/tmp",
+				Source:      tmpDir,
+			})
+			testTmpDir = "/tmp"
+		}
 	}
 
 	// Set environment variables that indicate we are
@@ -349,12 +358,8 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 
 	// Set TEST_TMPDIR to /tmp, as some of the syscall tests require it to
 	// be backed by tmpfs.
-	for i, kv := range env {
-		if strings.HasPrefix(kv, "TEST_TMPDIR=") {
-			env[i] = "TEST_TMPDIR=/tmp"
-			break
-		}
-	}
+	env = filterEnv(env, []string{"TEST_TMPDIR"})
+	env = append(env, fmt.Sprintf("TEST_TMPDIR=%s", testTmpDir))
 
 	spec.Process.Env = env
 
