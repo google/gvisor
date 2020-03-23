@@ -228,10 +228,14 @@ func TestInputInvertDestination(t *testing.T) {
 }
 
 func TestOutputDestination(t *testing.T) {
+	// TODO(gvisor.dev/issue/170): Enable when supported.
+	t.Skip("OUTPUT isn't supported yet (gvisor.dev/issue/170).")
 	singleTest(t, FilterOutputDestination{})
 }
 
 func TestOutputInvertDestination(t *testing.T) {
+	// TODO(gvisor.dev/issue/170): Enable when supported.
+	t.Skip("OUTPUT isn't supported yet (gvisor.dev/issue/170).")
 	singleTest(t, FilterOutputInvertDestination{})
 }
 
