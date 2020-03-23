@@ -200,36 +200,66 @@ func (s *Stack) SetTCPSACKEnabled(enabled bool) error {
 // Statistics implements inet.Stack.Statistics.
 func (s *Stack) Statistics(stat interface{}, arg string) error {
 	switch stats := stat.(type) {
+	case *inet.StatDev:
+		for _, ni := range s.Stack.NICInfo() {
+			if ni.Name != arg {
+				continue
+			}
+			// TODO(gvisor.dev/issue/2103) Support stubbed stats.
+			*stats = inet.StatDev{
+				// Receive section.
+				ni.Stats.Rx.Bytes.Value(),   // bytes.
+				ni.Stats.Rx.Packets.Value(), // packets.
+				0,                           // errs.
+				0,                           // drop.
+				0,                           // fifo.
+				0,                           // frame.
+				0,                           // compressed.
+				0,                           // multicast.
+				// Transmit section.
+				ni.Stats.Tx.Bytes.Value(),   // bytes.
+				ni.Stats.Tx.Packets.Value(), // packets.
+				0,                           // errs.
+				0,                           // drop.
+				0,                           // fifo.
+				0,                           // colls.
+				0,                           // carrier.
+				0,                           // compressed.
+			}
+			break
+		}
 	case *inet.StatSNMPIP:
 		ip := Metrics.IP
+		// TODO(gvisor.dev/issue/969) Support stubbed stats.
 		*stats = inet.StatSNMPIP{
-			0,                          // TODO(gvisor.dev/issue/969): Support Ip/Forwarding.
-			0,                          // TODO(gvisor.dev/issue/969): Support Ip/DefaultTTL.
+			0,                          // Ip/Forwarding.
+			0,                          // Ip/DefaultTTL.
 			ip.PacketsReceived.Value(), // InReceives.
-			0,                          // TODO(gvisor.dev/issue/969): Support Ip/InHdrErrors.
+			0,                          // Ip/InHdrErrors.
 			ip.InvalidDestinationAddressesReceived.Value(), // InAddrErrors.
-			0,                               // TODO(gvisor.dev/issue/969): Support Ip/ForwDatagrams.
-			0,                               // TODO(gvisor.dev/issue/969): Support Ip/InUnknownProtos.
-			0,                               // TODO(gvisor.dev/issue/969): Support Ip/InDiscards.
+			0,                               // Ip/ForwDatagrams.
+			0,                               // Ip/InUnknownProtos.
+			0,                               // Ip/InDiscards.
 			ip.PacketsDelivered.Value(),     // InDelivers.
 			ip.PacketsSent.Value(),          // OutRequests.
 			ip.OutgoingPacketErrors.Value(), // OutDiscards.
-			0,                               // TODO(gvisor.dev/issue/969): Support Ip/OutNoRoutes.
-			0,                               // TODO(gvisor.dev/issue/969): Support Ip/ReasmTimeout.
-			0,                               // TODO(gvisor.dev/issue/969): Support Ip/ReasmReqds.
-			0,                               // TODO(gvisor.dev/issue/969): Support Ip/ReasmOKs.
-			0,                               // TODO(gvisor.dev/issue/969): Support Ip/ReasmFails.
-			0,                               // TODO(gvisor.dev/issue/969): Support Ip/FragOKs.
-			0,                               // TODO(gvisor.dev/issue/969): Support Ip/FragFails.
-			0,                               // TODO(gvisor.dev/issue/969): Support Ip/FragCreates.
+			0,                               // Ip/OutNoRoutes.
+			0,                               // Support Ip/ReasmTimeout.
+			0,                               // Support Ip/ReasmReqds.
+			0,                               // Support Ip/ReasmOKs.
+			0,                               // Support Ip/ReasmFails.
+			0,                               // Support Ip/FragOKs.
+			0,                               // Support Ip/FragFails.
+			0,                               // Support Ip/FragCreates.
 		}
 	case *inet.StatSNMPICMP:
 		in := Metrics.ICMP.V4PacketsReceived.ICMPv4PacketStats
 		out := Metrics.ICMP.V4PacketsSent.ICMPv4PacketStats
+		// TODO(gvisor.dev/issue/969) Support stubbed stats.
 		*stats = inet.StatSNMPICMP{
-			0, // TODO(gvisor.dev/issue/969): Support Icmp/InMsgs.
+			0, // Icmp/InMsgs.
 			Metrics.ICMP.V4PacketsSent.Dropped.Value(), // InErrors.
-			0,                         // TODO(gvisor.dev/issue/969): Support Icmp/InCsumErrors.
+			0,                         // Icmp/InCsumErrors.
 			in.DstUnreachable.Value(), // InDestUnreachs.
 			in.TimeExceeded.Value(),   // InTimeExcds.
 			in.ParamProblem.Value(),   // InParmProbs.
@@ -241,7 +271,7 @@ func (s *Stack) Statistics(stat interface{}, arg string) error {
 			in.TimestampReply.Value(), // InTimestampReps.
 			in.InfoRequest.Value(),    // InAddrMasks.
 			in.InfoReply.Value(),      // InAddrMaskReps.
-			0,                         // TODO(gvisor.dev/issue/969): Support Icmp/OutMsgs.
+			0,                         // Icmp/OutMsgs.
 			Metrics.ICMP.V4PacketsReceived.Invalid.Value(), // OutErrors.
 			out.DstUnreachable.Value(),                     // OutDestUnreachs.
 			out.TimeExceeded.Value(),                       // OutTimeExcds.
@@ -277,15 +307,16 @@ func (s *Stack) Statistics(stat interface{}, arg string) error {
 		}
 	case *inet.StatSNMPUDP:
 		udp := Metrics.UDP
+		// TODO(gvisor.dev/issue/969) Support stubbed stats.
 		*stats = inet.StatSNMPUDP{
 			udp.PacketsReceived.Value(),     // InDatagrams.
 			udp.UnknownPortErrors.Value(),   // NoPorts.
-			0,                               // TODO(gvisor.dev/issue/969): Support Udp/InErrors.
+			0,                               // Udp/InErrors.
 			udp.PacketsSent.Value(),         // OutDatagrams.
 			udp.ReceiveBufferErrors.Value(), // RcvbufErrors.
-			0,                               // TODO(gvisor.dev/issue/969): Support Udp/SndbufErrors.
-			0,                               // TODO(gvisor.dev/issue/969): Support Udp/InCsumErrors.
-			0,                               // TODO(gvisor.dev/issue/969): Support Udp/IgnoredMulti.
+			0,                               // Udp/SndbufErrors.
+			0,                               // Udp/InCsumErrors.
+			0,                               // Udp/IgnoredMulti.
 		}
 	default:
 		return syserr.ErrEndpointOperation.ToError()
