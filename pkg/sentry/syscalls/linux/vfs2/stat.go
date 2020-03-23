@@ -272,6 +272,7 @@ func accessAt(t *kernel.Task, dirfd int32, pathAddr usermem.Addr, mode uint) err
 	if err != nil {
 		return err
 	}
+	defer tpop.Release()
 
 	// access(2) and faccessat(2) check permissions using real
 	// UID/GID, not effective UID/GID.
