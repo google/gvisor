@@ -92,6 +92,59 @@ TEST(ProcSysNetIpv4Sack, CanReadAndWrite) {
   EXPECT_EQ(buf, to_write);
 }
 
+// DeviceEntry is an entry in /proc/net/dev
+struct DeviceEntry {
+  std::string name;
+  uint64_t stats[16];
+};
+
+PosixErrorOr<std::vector<DeviceEntry>> GetDeviceMetricsFromProc(
+    const std::string dev) {
+  std::vector<std::string> lines = absl::StrSplit(dev, '\n');
+  std::vector<DeviceEntry> entries;
+
+  // /proc/net/dev prints 2 lines of headers followed by a line of metrics for
+  // each network interface.
+  for (unsigned i = 2; i < lines.size(); i++) {
+    // Ignore empty lines.
+    if (lines[i].empty()) {
+      continue;
+    }
+
+    std::vector<std::string> values =
+        absl::StrSplit(lines[i], ' ', absl::SkipWhitespace());
+
+    // Interface name + 16 values.
+    if (values.size() != 17) {
+      return PosixError(EINVAL, "invalid line: " + lines[i]);
+    }
+
+    DeviceEntry entry;
+    entry.name = values[0];
+    // Skip the interface name and read only the values.
+    for (unsigned j = 1; j < 17; j++) {
+      uint64_t num;
+      if (!absl::SimpleAtoi(values[j], &num)) {
+        return PosixError(EINVAL, "invalid value: " + values[j]);
+      }
+      entry.stats[j - 1] = num;
+    }
+
+    entries.push_back(entry);
+  }
+
+  return entries;
+}
+
+// TEST(ProcNetDev, Format) tests that /proc/net/dev is parsable and
+// contains at least one entry.
+TEST(ProcNetDev, Format) {
+  auto dev = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/dev"));
+  auto entries = ASSERT_NO_ERRNO_AND_VALUE(GetDeviceMetricsFromProc(dev));
+
+  EXPECT_GT(entries.size(), 0);
+}
+
 PosixErrorOr<uint64_t> GetSNMPMetricFromProc(const std::string snmp,
                                              const std::string& type,
                                              const std::string& item) {
