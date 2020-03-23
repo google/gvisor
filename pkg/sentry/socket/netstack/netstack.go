@@ -2382,9 +2382,9 @@ func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSe
 		// caller-supplied  buffer.
 		s.readMu.Lock()
 		n, err := s.coalescingRead(ctx, dst, trunc)
-		s.readMu.Unlock()
 		cmsg := s.controlMessages()
 		s.fillCmsgInq(&cmsg)
+		s.readMu.Unlock()
 		return n, 0, nil, 0, cmsg, err
 	}
 
