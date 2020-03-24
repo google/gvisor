@@ -30,6 +30,7 @@ go_library(
         "nic.go",
         "packet_buffer.go",
         "packet_buffer_state.go",
+        "rand.go",
         "registration.go",
         "route.go",
         "stack.go",

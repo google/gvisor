@@ -191,7 +191,15 @@ func replyWithReset(s *segment) {
 		flags |= header.TCPFlagAck
 		ack = s.sequenceNumber.Add(s.logicalLen())
 	}
-	sendTCP(&s.route, s.id, buffer.VectorisedView{}, s.route.DefaultTTL(), stack.DefaultTOS, flags, seq, ack, 0 /* rcvWnd */, nil /* options */, nil /* gso */)
+	sendTCP(&s.route, tcpFields{
+		id:     s.id,
+		ttl:    s.route.DefaultTTL(),
+		tos:    stack.DefaultTOS,
+		flags:  flags,
+		seq:    seq,
+		ack:    ack,
+		rcvWnd: 0,
+	}, buffer.VectorisedView{}, nil /* gso */)
 }
 
 // SetOption implements stack.TransportProtocol.SetOption.

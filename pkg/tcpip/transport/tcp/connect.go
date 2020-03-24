@@ -308,7 +308,15 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 	if ttl == 0 {
 		ttl = s.route.DefaultTTL()
 	}
-	h.ep.sendSynTCP(&s.route, h.ep.ID, ttl, h.ep.sendTOS, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
+	h.ep.sendSynTCP(&s.route, tcpFields{
+		id:     h.ep.ID,
+		ttl:    ttl,
+		tos:    h.ep.sendTOS,
+		flags:  h.flags,
+		seq:    h.iss,
+		ack:    h.ackNum,
+		rcvWnd: h.rcvWnd,
+	}, synOpts)
 	return nil
 }
 
@@ -361,7 +369,15 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 			SACKPermitted: h.ep.sackPermitted,
 			MSS:           h.ep.amss,
 		}
-		h.ep.sendSynTCP(&s.route, h.ep.ID, h.ep.ttl, h.ep.sendTOS, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
+		h.ep.sendSynTCP(&s.route, tcpFields{
+			id:     h.ep.ID,
+			ttl:    h.ep.ttl,
+			tos:    h.ep.sendTOS,
+			flags:  h.flags,
+			seq:    h.iss,
+			ack:    h.ackNum,
+			rcvWnd: h.rcvWnd,
+		}, synOpts)
 		return nil
 	}
 
@@ -550,7 +566,16 @@ func (h *handshake) execute() *tcpip.Error {
 			synOpts.WS = -1
 		}
 	}
-	h.ep.sendSynTCP(&h.ep.route, h.ep.ID, h.ep.ttl, h.ep.sendTOS, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
+
+	h.ep.sendSynTCP(&h.ep.route, tcpFields{
+		id:     h.ep.ID,
+		ttl:    h.ep.ttl,
+		tos:    h.ep.sendTOS,
+		flags:  h.flags,
+		seq:    h.iss,
+		ack:    h.ackNum,
+		rcvWnd: h.rcvWnd,
+	}, synOpts)
 
 	for h.state != handshakeCompleted {
 		h.ep.mu.Unlock()
@@ -573,7 +598,15 @@ func (h *handshake) execute() *tcpip.Error {
 			// the connection with another ACK or data (as ACKs are never
 			// retransmitted on their own).
 			if h.active || !h.acked || h.deferAccept != 0 && time.Since(h.startTime) > h.deferAccept {
-				h.ep.sendSynTCP(&h.ep.route, h.ep.ID, h.ep.ttl, h.ep.sendTOS, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
+				h.ep.sendSynTCP(&h.ep.route, tcpFields{
+					id:     h.ep.ID,
+					ttl:    h.ep.ttl,
+					tos:    h.ep.sendTOS,
+					flags:  h.flags,
+					seq:    h.iss,
+					ack:    h.ackNum,
+					rcvWnd: h.rcvWnd,
+				}, synOpts)
 			}
 
 		case wakerForNotification:
@@ -686,18 +719,33 @@ func makeSynOptions(opts header.TCPSynOptions) []byte {
 	return options[:offset]
 }
 
-func (e *endpoint) sendSynTCP(r *stack.Route, id stack.TransportEndpointID, ttl, tos uint8, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts header.TCPSynOptions) *tcpip.Error {
-	options := makeSynOptions(opts)
+// tcpFields is a struct to carry different parameters required by the
+// send*TCP variant functions below.
+type tcpFields struct {
+	id     stack.TransportEndpointID
+	ttl    uint8
+	tos    uint8
+	flags  byte
+	seq    seqnum.Value
+	ack    seqnum.Value
+	rcvWnd seqnum.Size
+	opts   []byte
+	txHash uint32
+}
+
+func (e *endpoint) sendSynTCP(r *stack.Route, tf tcpFields, opts header.TCPSynOptions) *tcpip.Error {
+	tf.opts = makeSynOptions(opts)
 	// We ignore SYN send errors and let the callers re-attempt send.
-	if err := e.sendTCP(r, id, buffer.VectorisedView{}, ttl, tos, flags, seq, ack, rcvWnd, options, nil); err != nil {
+	if err := e.sendTCP(r, tf, buffer.VectorisedView{}, nil); err != nil {
 		e.stats.SendErrors.SynSendToNetworkFailed.Increment()
 	}
-	putOptions(options)
+	putOptions(tf.opts)
 	return nil
 }
 
-func (e *endpoint) sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.VectorisedView, ttl, tos uint8, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts []byte, gso *stack.GSO) *tcpip.Error {
-	if err := sendTCP(r, id, data, ttl, tos, flags, seq, ack, rcvWnd, opts, gso); err != nil {
+func (e *endpoint) sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO) *tcpip.Error {
+	tf.txHash = e.txHash
+	if err := sendTCP(r, tf, data, gso); err != nil {
 		e.stats.SendErrors.SegmentSendToNetworkFailed.Increment()
 		return err
 	}
@@ -705,8 +753,8 @@ func (e *endpoint) sendTCP(r *stack.Route, id stack.TransportEndpointID, data bu
 	return nil
 }
 
-func buildTCPHdr(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts []byte, gso *stack.GSO) {
-	optLen := len(opts)
+func buildTCPHdr(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso *stack.GSO) {
+	optLen := len(tf.opts)
 	hdr := &pkt.Header
 	packetSize := pkt.DataSize
 	off := pkt.DataOffset
@@ -714,15 +762,15 @@ func buildTCPHdr(r *stack.Route, id stack.TransportEndpointID, pkt *stack.Packet
 	tcp := header.TCP(hdr.Prepend(header.TCPMinimumSize + optLen))
 	pkt.TransportHeader = buffer.View(tcp)
 	tcp.Encode(&header.TCPFields{
-		SrcPort:    id.LocalPort,
-		DstPort:    id.RemotePort,
-		SeqNum:     uint32(seq),
-		AckNum:     uint32(ack),
+		SrcPort:    tf.id.LocalPort,
+		DstPort:    tf.id.RemotePort,
+		SeqNum:     uint32(tf.seq),
+		AckNum:     uint32(tf.ack),
 		DataOffset: uint8(header.TCPMinimumSize + optLen),
-		Flags:      flags,
-		WindowSize: uint16(rcvWnd),
+		Flags:      tf.flags,
+		WindowSize: uint16(tf.rcvWnd),
 	})
-	copy(tcp[header.TCPMinimumSize:], opts)
+	copy(tcp[header.TCPMinimumSize:], tf.opts)
 
 	length := uint16(hdr.UsedLength() + packetSize)
 	xsum := r.PseudoHeaderChecksum(ProtocolNumber, length)
@@ -737,13 +785,12 @@ func buildTCPHdr(r *stack.Route, id stack.TransportEndpointID, pkt *stack.Packet
 		xsum = header.ChecksumVVWithOffset(pkt.Data, xsum, off, packetSize)
 		tcp.SetChecksum(^tcp.CalculateChecksum(xsum))
 	}
-
 }
 
-func sendTCPBatch(r *stack.Route, id stack.TransportEndpointID, data buffer.VectorisedView, ttl, tos uint8, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts []byte, gso *stack.GSO) *tcpip.Error {
-	optLen := len(opts)
-	if rcvWnd > 0xffff {
-		rcvWnd = 0xffff
+func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO) *tcpip.Error {
+	optLen := len(tf.opts)
+	if tf.rcvWnd > 0xffff {
+		tf.rcvWnd = 0xffff
 	}
 
 	mss := int(gso.MSS)
@@ -768,14 +815,15 @@ func sendTCPBatch(r *stack.Route, id stack.TransportEndpointID, data buffer.Vect
 		pkts[i].DataOffset = off
 		pkts[i].DataSize = packetSize
 		pkts[i].Data = data
-		buildTCPHdr(r, id, &pkts[i], flags, seq, ack, rcvWnd, opts, gso)
+		pkts[i].Hash = tf.txHash
+		buildTCPHdr(r, tf, &pkts[i], gso)
 		off += packetSize
-		seq = seq.Add(seqnum.Size(packetSize))
+		tf.seq = tf.seq.Add(seqnum.Size(packetSize))
 	}
-	if ttl == 0 {
-		ttl = r.DefaultTTL()
+	if tf.ttl == 0 {
+		tf.ttl = r.DefaultTTL()
 	}
-	sent, err := r.WritePackets(gso, pkts, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: ttl, TOS: tos})
+	sent, err := r.WritePackets(gso, pkts, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: tf.ttl, TOS: tf.tos})
 	if err != nil {
 		r.Stats().TCP.SegmentSendErrors.IncrementBy(uint64(n - sent))
 	}
@@ -785,14 +833,14 @@ func sendTCPBatch(r *stack.Route, id stack.TransportEndpointID, data buffer.Vect
 
 // sendTCP sends a TCP segment with the provided options via the provided
 // network endpoint and under the provided identity.
-func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.VectorisedView, ttl, tos uint8, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts []byte, gso *stack.GSO) *tcpip.Error {
-	optLen := len(opts)
-	if rcvWnd > 0xffff {
-		rcvWnd = 0xffff
+func sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO) *tcpip.Error {
+	optLen := len(tf.opts)
+	if tf.rcvWnd > 0xffff {
+		tf.rcvWnd = 0xffff
 	}
 
 	if r.Loop&stack.PacketLoop == 0 && gso != nil && gso.Type == stack.GSOSW && int(gso.MSS) < data.Size() {
-		return sendTCPBatch(r, id, data, ttl, tos, flags, seq, ack, rcvWnd, opts, gso)
+		return sendTCPBatch(r, tf, data, gso)
 	}
 
 	pkt := stack.PacketBuffer{
@@ -800,18 +848,19 @@ func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.Vectorise
 		DataOffset: 0,
 		DataSize:   data.Size(),
 		Data:       data,
+		Hash:       tf.txHash,
 	}
-	buildTCPHdr(r, id, &pkt, flags, seq, ack, rcvWnd, opts, gso)
+	buildTCPHdr(r, tf, &pkt, gso)
 
-	if ttl == 0 {
-		ttl = r.DefaultTTL()
+	if tf.ttl == 0 {
+		tf.ttl = r.DefaultTTL()
 	}
-	if err := r.WritePacket(gso, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: ttl, TOS: tos}, pkt); err != nil {
+	if err := r.WritePacket(gso, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: tf.ttl, TOS: tf.tos}, pkt); err != nil {
 		r.Stats().TCP.SegmentSendErrors.Increment()
 		return err
 	}
 	r.Stats().TCP.SegmentsSent.Increment()
-	if (flags & header.TCPFlagRst) != 0 {
+	if (tf.flags & header.TCPFlagRst) != 0 {
 		r.Stats().TCP.ResetsSent.Increment()
 	}
 	return nil
@@ -863,7 +912,16 @@ func (e *endpoint) sendRaw(data buffer.VectorisedView, flags byte, seq, ack seqn
 		sackBlocks = e.sack.Blocks[:e.sack.NumBlocks]
 	}
 	options := e.makeOptions(sackBlocks)
-	err := e.sendTCP(&e.route, e.ID, data, e.ttl, e.sendTOS, flags, seq, ack, rcvWnd, options, e.gso)
+	err := e.sendTCP(&e.route, tcpFields{
+		id:     e.ID,
+		ttl:    e.ttl,
+		tos:    e.sendTOS,
+		flags:  flags,
+		seq:    seq,
+		ack:    ack,
+		rcvWnd: rcvWnd,
+		opts:   options,
+	}, data, e.gso)
 	putOptions(options)
 	return err
 }

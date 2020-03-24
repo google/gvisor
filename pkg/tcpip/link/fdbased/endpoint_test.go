@@ -49,36 +49,42 @@ type packetInfo struct {
 }
 
 type context struct {
-	t    *testing.T
-	fds  [2]int
-	ep   stack.LinkEndpoint
-	ch   chan packetInfo
-	done chan struct{}
+	t        *testing.T
+	readFDs  []int
+	writeFDs []int
+	ep       stack.LinkEndpoint
+	ch       chan packetInfo
+	done     chan struct{}
 }
 
 func newContext(t *testing.T, opt *Options) *context {
-	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_SEQPACKET, 0)
+	firstFDPair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_SEQPACKET, 0)
+	if err != nil {
+		t.Fatalf("Socketpair failed: %v", err)
+	}
+	secondFDPair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_SEQPACKET, 0)
 	if err != nil {
 		t.Fatalf("Socketpair failed: %v", err)
 	}
 
-	done := make(chan struct{}, 1)
+	done := make(chan struct{}, 2)
 	opt.ClosedFunc = func(*tcpip.Error) {
 		done <- struct{}{}
 	}
 
-	opt.FDs = []int{fds[1]}
+	opt.FDs = []int{firstFDPair[1], secondFDPair[1]}
 	ep, err := New(opt)
 	if err != nil {
 		t.Fatalf("Failed to create FD endpoint: %v", err)
 	}
 
 	c := &context{
-		t:    t,
-		fds:  fds,
-		ep:   ep,
-		ch:   make(chan packetInfo, 100),
-		done: done,
+		t:        t,
+		readFDs:  []int{firstFDPair[0], secondFDPair[0]},
+		writeFDs: opt.FDs,
+		ep:       ep,
+		ch:       make(chan packetInfo, 100),
+		done:     done,
 	}
 
 	ep.Attach(c)
@@ -87,9 +93,14 @@ func newContext(t *testing.T, opt *Options) *context {
 }
 
 func (c *context) cleanup() {
-	syscall.Close(c.fds[0])
+	for _, fd := range c.readFDs {
+		syscall.Close(fd)
+	}
 	<-c.done
-	syscall.Close(c.fds[1])
+	<-c.done
+	for _, fd := range c.writeFDs {
+		syscall.Close(fd)
+	}
 }
 
 func (c *context) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote tcpip.LinkAddress, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
@@ -136,7 +147,7 @@ func TestAddress(t *testing.T) {
 	}
 }
 
-func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32) {
+func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash uint32) {
 	c := newContext(t, &Options{Address: laddr, MTU: mtu, EthernetHeader: eth, GSOMaxSize: gsoMaxSize})
 	defer c.cleanup()
 
@@ -171,13 +182,15 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32) {
 	if err := c.ep.WritePacket(r, gso, proto, stack.PacketBuffer{
 		Header: hdr,
 		Data:   payload.ToVectorisedView(),
+		Hash:   hash,
 	}); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 
-	// Read from fd, then compare with what we wrote.
+	// Read from the corresponding FD, then compare with what we wrote.
 	b = make([]byte, mtu)
-	n, err := syscall.Read(c.fds[0], b)
+	fd := c.readFDs[hash%uint32(len(c.readFDs))]
+	n, err := syscall.Read(fd, b)
 	if err != nil {
 		t.Fatalf("Read failed: %v", err)
 	}
@@ -238,9 +251,30 @@ func TestWritePacket(t *testing.T) {
 				t.Run(
 					fmt.Sprintf("Eth=%v,PayloadLen=%v,GSOMaxSize=%v", eth, plen, gso),
 					func(t *testing.T) {
-						testWritePacket(t, plen, eth, gso)
+						testWritePacket(t, plen, eth, gso, 0)
 					},
 				)
+			}
+		}
+	}
+}
+
+func TestHashedWritePacket(t *testing.T) {
+	lengths := []int{0, 100, 1000}
+	eths := []bool{true, false}
+	gsos := []uint32{0, 32768}
+	hashes := []uint32{0, 1}
+	for _, eth := range eths {
+		for _, plen := range lengths {
+			for _, gso := range gsos {
+				for _, hash := range hashes {
+					t.Run(
+						fmt.Sprintf("Eth=%v,PayloadLen=%v,GSOMaxSize=%v,Hash=%d", eth, plen, gso, hash),
+						func(t *testing.T) {
+							testWritePacket(t, plen, eth, gso, hash)
+						},
+					)
+				}
 			}
 		}
 	}
@@ -270,7 +304,7 @@ func TestPreserveSrcAddress(t *testing.T) {
 
 	// Read from the FD, then compare with what we wrote.
 	b := make([]byte, mtu)
-	n, err := syscall.Read(c.fds[0], b)
+	n, err := syscall.Read(c.readFDs[0], b)
 	if err != nil {
 		t.Fatalf("Read failed: %v", err)
 	}
@@ -314,7 +348,7 @@ func TestDeliverPacket(t *testing.T) {
 				}
 
 				// Write packet via the file descriptor.
-				if _, err := syscall.Write(c.fds[0], all); err != nil {
+				if _, err := syscall.Write(c.readFDs[0], all); err != nil {
 					t.Fatalf("Write failed: %v", err)
 				}
 
