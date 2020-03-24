@@ -38,7 +38,7 @@ var remoteMAC = flag.String("remote_mac", "", "remote mac address for test packe
 
 // TCPIPv4 maintains state about a TCP/IPv4 connection.
 type TCPIPv4 struct {
-	outgoing     Layers
+	Outgoing     Layers
 	incoming     Layers
 	LocalSeqNum  seqnum.Value
 	RemoteSeqNum seqnum.Value
@@ -113,17 +113,17 @@ func NewTCPIPv4(t *testing.T, dut DUT, outgoingTCP, incomingTCP TCP) TCPIPv4 {
 		WindowSize: Uint16(32768),
 		SrcPort:    &localPort,
 	}
-	if err := newOutgoingTCP.merge(outgoingTCP); err != nil {
+	if err := newOutgoingTCP.MERGE(outgoingTCP); err != nil {
 		t.Fatalf("can't merge %v into %v: %s", outgoingTCP, newOutgoingTCP, err)
 	}
 	newIncomingTCP := &TCP{
 		DstPort: &localPort,
 	}
-	if err := newIncomingTCP.merge(incomingTCP); err != nil {
+	if err := newIncomingTCP.MERGE(incomingTCP); err != nil {
 		t.Fatalf("can't merge %v into %v: %s", incomingTCP, newIncomingTCP, err)
 	}
 	return TCPIPv4{
-		outgoing: Layers{
+		Outgoing: Layers{
 			&Ether{SrcAddr: &lMAC, DstAddr: &rMAC},
 			&IPv4{SrcAddr: &lIP, DstAddr: &rIP},
 			newOutgoingTCP},
@@ -157,8 +157,8 @@ func (conn *TCPIPv4) Send(tcp TCP, additionalLayers ...Layer) {
 	if tcp.AckNum == nil {
 		tcp.AckNum = Uint32(uint32(conn.RemoteSeqNum))
 	}
-	layersToSend := deepcopy.Copy(conn.outgoing).(Layers)
-	if err := layersToSend[tcpLayerIndex].(*TCP).merge(tcp); err != nil {
+	layersToSend := deepcopy.Copy(conn.Outgoing).(Layers)
+	if err := layersToSend[tcpLayerIndex].(*TCP).MERGE(tcp); err != nil {
 		conn.t.Fatalf("can't merge %v into %v: %s", tcp, layersToSend[tcpLayerIndex], err)
 	}
 	layersToSend = append(layersToSend, additionalLayers...)
@@ -175,6 +175,16 @@ func (conn *TCPIPv4) Send(tcp TCP, additionalLayers ...Layer) {
 	if tcp.Flags != nil && *tcp.Flags&(header.TCPFlagSyn|header.TCPFlagFin) != 0 {
 		conn.LocalSeqNum.UpdateForward(1)
 	}
+}
+
+// Send a packet with reasonable defaults and override some fields by tcp.
+func (conn *TCPIPv4) SendFrame(Frame Layers, additionalLayers ...Layer) {
+	layersToSend := append(Frame, additionalLayers...)
+	outBytes, err := layersToSend.toBytes()
+	if err != nil {
+		conn.t.Fatalf("can't build outgoing TCP packet: %s", err)
+	}
+	conn.injector.Send(outBytes)
 }
 
 // Recv gets a packet from the sniffer within the timeout provided. If no packet
