@@ -183,7 +183,7 @@ func IsCanonical(addr uint64) bool {
 //go:nosplit
 func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	userCR3 := switchOpts.PageTables.CR3(!switchOpts.Flush, switchOpts.UserPCID)
-	kernelCR3 := c.kernel.PageTables.CR3(true, switchOpts.KernelPCID)
+	c.kernelCR3 = uintptr(c.kernel.PageTables.CR3(true, switchOpts.KernelPCID))
 
 	// Sanitize registers.
 	regs := switchOpts.Registers
@@ -203,7 +203,6 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	} else {
 		vector = sysret(c, regs, uintptr(userCR3))
 	}
-	writeCR3(uintptr(kernelCR3))                     // Return to kernel address space.
 	jumpToUser()                                     // Return to lower half.
 	SaveFloatingPoint(switchOpts.FloatingPointState) // escapes: no. Copy out floating point.
 	WriteFS(uintptr(c.registers.Fs_base))            // escapes: no. Restore kernel FS.
