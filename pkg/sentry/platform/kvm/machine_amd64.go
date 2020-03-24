@@ -144,6 +144,7 @@ func (c *vCPU) initArchState() error {
 	// Set the entrypoint for the kernel.
 	kernelUserRegs.RIP = uint64(reflect.ValueOf(ring0.Start).Pointer())
 	kernelUserRegs.RAX = uint64(reflect.ValueOf(&c.CPU).Pointer())
+	kernelUserRegs.RSP = c.StackTop()
 	kernelUserRegs.RFLAGS = ring0.KernelFlagsSet
 
 	// Set the system registers.
