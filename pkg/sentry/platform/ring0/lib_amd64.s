@@ -152,28 +152,6 @@ TEXT ·jumpToKernel(SB),NOSPLIT,$0
 	MOVQ AX, 0(SP)
 	RET
 
-// writeCR3 writes the given CR3 value.
-//
-// The code corresponds to:
-//
-// 	mov %rax, %cr3
-//
-TEXT ·writeCR3(SB),NOSPLIT,$0-8
-	MOVQ cr3+0(FP), AX
-	BYTE $0x0f; BYTE $0x22; BYTE $0xd8;
-	RET
-
-// readCR3 reads the current CR3 value.
-//
-// The code corresponds to:
-//
-// 	mov %cr3, %rax
-//
-TEXT ·readCR3(SB),NOSPLIT,$0-8
-	BYTE $0x0f; BYTE $0x20; BYTE $0xd8;
-	MOVQ AX, ret+0(FP)
-	RET
-
 // readCR2 reads the current CR2 value.
 //
 // The code corresponds to:

@@ -85,6 +85,9 @@ type CPUArchState struct {
 	// stack is the stack used for interrupts on this CPU.
 	stack [256]byte
 
+	// kernelCR3 is the cr3 used for sentry kernel.
+	kernelCR3 uintptr
+
 	// errorCode is the error code from the last exception.
 	errorCode uintptr
 

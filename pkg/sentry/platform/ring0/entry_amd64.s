@@ -189,10 +189,14 @@ TEXT ·sysenter(SB),NOSPLIT,$0
 
 user:
 	SWAP_GS()
+	MOVQ AX, CPU_REGISTERS+PTRACE_RCX(GS)  // Save user AX on scratch.
+	MOVQ CPU_KERNEL_CR3(GS), AX            // Get kernel cr3 on AX.
+	WRITE_CR3()                            // Switch to kernel cr3.
+
 	XCHGQ CPU_REGISTERS+PTRACE_RSP(GS), SP // Swap stacks.
-	XCHGQ CPU_REGISTERS+PTRACE_RAX(GS), AX // Swap for AX (regs).
+	MOVQ CPU_REGISTERS+PTRACE_RAX(GS), AX  // Get user regs.
 	REGISTERS_SAVE(AX, 0)                  // Save all except IP, FLAGS, SP, AX.
-	MOVQ CPU_REGISTERS+PTRACE_RAX(GS), BX  // Load saved AX value.
+	MOVQ CPU_REGISTERS+PTRACE_RCX(GS), BX  // Load saved user AX value.
 	MOVQ BX,  PTRACE_RAX(AX)               // Save everything else.
 	MOVQ BX,  PTRACE_ORIGRAX(AX)
 	MOVQ CX,  PTRACE_RIP(AX)
@@ -263,9 +267,13 @@ user:
 	SWAP_GS()
 	ADDQ $-8, SP                            // Adjust for flags.
 	MOVQ $_KERNEL_FLAGS, 0(SP); BYTE $0x9d; // Reset flags (POPFQ).
-	XCHGQ CPU_REGISTERS+PTRACE_RAX(GS), AX  // Swap for user regs.
+	PUSHQ AX                                // Save user AX on stack.
+	MOVQ CPU_KERNEL_CR3(GS), AX             // Get kernel cr3 on AX.
+	WRITE_CR3()                             // Switch to kernel cr3.
+
+	MOVQ CPU_REGISTERS+PTRACE_RAX(GS), AX   // Get user regs.
 	REGISTERS_SAVE(AX, 0)                   // Save all except IP, FLAGS, SP, AX.
-	MOVQ CPU_REGISTERS+PTRACE_RAX(GS), BX   // Restore original AX.
+	POPQ BX                                 // Restore original AX.
 	MOVQ BX, PTRACE_RAX(AX)                 // Save it.
 	MOVQ BX, PTRACE_ORIGRAX(AX)
 	MOVQ 16(SP), BX; MOVQ BX, PTRACE_RIP(AX)

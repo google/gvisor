@@ -61,12 +61,6 @@ func wrgsbase(addr uintptr)
 // wrgsmsr writes to the GS_BASE MSR.
 func wrgsmsr(addr uintptr)
 
-// writeCR3 writes the CR3 value.
-func writeCR3(phys uintptr)
-
-// readCR3 reads the current CR3 value.
-func readCR3() uintptr
-
 // readCR2 reads the current CR2 value.
 func readCR2() uintptr
 
