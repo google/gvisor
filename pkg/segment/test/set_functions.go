@@ -18,7 +18,13 @@ package segment
 // TODO(nlacasse): These should be Math.MaxInt64/MinInt64?
 const (
 	maxInt = int(^uint(0) >> 1)
-	minInt = -maxInt - 1
+	minInt = (-maxInt - 1) / 2
+	// This is adjusted to make sure no add overflow would happen in test cases
+	// e.g. a gap with range {minInt, 2} would cause overflow in Range().Length().
+	// It's not an issue in real use case since the Range would be unsigned
+	// such that addition and subtraction should both be closure operation
+	// It's not set be zero because TestAddSequentialAdjacent and TestAddSequentialNonAdjacent
+	// expect there to be a gap in front of the first segment which starts at 0.
 )
 
 type setFunctions struct{}
