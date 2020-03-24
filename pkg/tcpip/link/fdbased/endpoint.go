@@ -405,6 +405,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 		eth.Encode(ethHdr)
 	}
 
+	fd := e.fds[pkt.Hash%uint32(len(e.fds))]
 	if e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
 		vnetHdr := virtioNetHdr{}
 		if gso != nil {
@@ -428,14 +429,14 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 		}
 
 		vnetHdrBuf := vnetHdrToByteSlice(&vnetHdr)
-		return rawfile.NonBlockingWrite3(e.fds[0], vnetHdrBuf, pkt.Header.View(), pkt.Data.ToView())
+		return rawfile.NonBlockingWrite3(fd, vnetHdrBuf, pkt.Header.View(), pkt.Data.ToView())
 	}
 
 	if pkt.Data.Size() == 0 {
-		return rawfile.NonBlockingWrite(e.fds[0], pkt.Header.View())
+		return rawfile.NonBlockingWrite(fd, pkt.Header.View())
 	}
 
-	return rawfile.NonBlockingWrite3(e.fds[0], pkt.Header.View(), pkt.Data.ToView(), nil)
+	return rawfile.NonBlockingWrite3(fd, pkt.Header.View(), pkt.Data.ToView(), nil)
 }
 
 // WritePackets writes outbound packets to the file descriptor. If it is not
@@ -551,7 +552,8 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []stack.Pac
 
 	packets := 0
 	for packets < n {
-		sent, err := rawfile.NonBlockingSendMMsg(e.fds[0], mmsgHdrs)
+		fd := e.fds[pkts[packets].Hash%uint32(len(e.fds))]
+		sent, err := rawfile.NonBlockingSendMMsg(fd, mmsgHdrs)
 		if err != nil {
 			return packets, err
 		}
