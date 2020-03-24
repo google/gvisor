@@ -55,7 +55,7 @@ func testReceiveICMP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst
 		DstAddr:       dst,
 	})
 
-	e.InjectInbound(ProtocolNumber, tcpip.PacketBuffer{
+	e.InjectInbound(ProtocolNumber, stack.PacketBuffer{
 		Data: hdr.View().ToVectorisedView(),
 	})
 
@@ -113,7 +113,7 @@ func testReceiveUDP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst 
 		DstAddr:       dst,
 	})
 
-	e.InjectInbound(ProtocolNumber, tcpip.PacketBuffer{
+	e.InjectInbound(ProtocolNumber, stack.PacketBuffer{
 		Data: hdr.View().ToVectorisedView(),
 	})
 

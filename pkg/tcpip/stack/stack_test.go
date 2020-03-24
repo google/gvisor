@@ -90,7 +90,7 @@ func (f *fakeNetworkEndpoint) ID() *stack.NetworkEndpointID {
 	return &f.id
 }
 
-func (f *fakeNetworkEndpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
+func (f *fakeNetworkEndpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
 	// Increment the received packet count in the protocol descriptor.
 	f.proto.packetCount[int(f.id.LocalAddress[0])%len(f.proto.packetCount)]++
 
@@ -126,7 +126,7 @@ func (f *fakeNetworkEndpoint) Capabilities() stack.LinkEndpointCapabilities {
 	return f.ep.Capabilities()
 }
 
-func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, pkt tcpip.PacketBuffer) *tcpip.Error {
+func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, pkt stack.PacketBuffer) *tcpip.Error {
 	// Increment the sent packet count in the protocol descriptor.
 	f.proto.sendPacketCount[int(r.RemoteAddress[0])%len(f.proto.sendPacketCount)]++
 
@@ -141,7 +141,7 @@ func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, params
 		views := make([]buffer.View, 1, 1+len(pkt.Data.Views()))
 		views[0] = pkt.Header.View()
 		views = append(views, pkt.Data.Views()...)
-		f.HandlePacket(r, tcpip.PacketBuffer{
+		f.HandlePacket(r, stack.PacketBuffer{
 			Data: buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views),
 		})
 	}
@@ -153,11 +153,11 @@ func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, params
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-func (f *fakeNetworkEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []tcpip.PacketBuffer, params stack.NetworkHeaderParams) (int, *tcpip.Error) {
+func (f *fakeNetworkEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []stack.PacketBuffer, params stack.NetworkHeaderParams) (int, *tcpip.Error) {
 	panic("not implemented")
 }
 
-func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt tcpip.PacketBuffer) *tcpip.Error {
+func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt stack.PacketBuffer) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }
 
@@ -287,7 +287,7 @@ func TestNetworkReceive(t *testing.T) {
 
 	// Make sure packet with wrong address is not delivered.
 	buf[0] = 3
-	ep.InjectInbound(fakeNetNumber, tcpip.PacketBuffer{
+	ep.InjectInbound(fakeNetNumber, stack.PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
 	if fakeNet.packetCount[1] != 0 {
@@ -299,7 +299,7 @@ func TestNetworkReceive(t *testing.T) {
 
 	// Make sure packet is delivered to first endpoint.
 	buf[0] = 1
-	ep.InjectInbound(fakeNetNumber, tcpip.PacketBuffer{
+	ep.InjectInbound(fakeNetNumber, stack.PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
 	if fakeNet.packetCount[1] != 1 {
@@ -311,7 +311,7 @@ func TestNetworkReceive(t *testing.T) {
 
 	// Make sure packet is delivered to second endpoint.
 	buf[0] = 2
-	ep.InjectInbound(fakeNetNumber, tcpip.PacketBuffer{
+	ep.InjectInbound(fakeNetNumber, stack.PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
 	if fakeNet.packetCount[1] != 1 {
@@ -322,7 +322,7 @@ func TestNetworkReceive(t *testing.T) {
 	}
 
 	// Make sure packet is not delivered if protocol number is wrong.
-	ep.InjectInbound(fakeNetNumber-1, tcpip.PacketBuffer{
+	ep.InjectInbound(fakeNetNumber-1, stack.PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
 	if fakeNet.packetCount[1] != 1 {
@@ -334,7 +334,7 @@ func TestNetworkReceive(t *testing.T) {
 
 	// Make sure packet that is too small is dropped.
 	buf.CapLength(2)
-	ep.InjectInbound(fakeNetNumber, tcpip.PacketBuffer{
+	ep.InjectInbound(fakeNetNumber, stack.PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
 	if fakeNet.packetCount[1] != 1 {
@@ -356,7 +356,7 @@ func sendTo(s *stack.Stack, addr tcpip.Address, payload buffer.View) *tcpip.Erro
 
 func send(r stack.Route, payload buffer.View) *tcpip.Error {
 	hdr := buffer.NewPrependable(int(r.MaxHeaderLength()))
-	return r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, tcpip.PacketBuffer{
+	return r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, stack.PacketBuffer{
 		Header: hdr,
 		Data:   payload.ToVectorisedView(),
 	})
@@ -414,7 +414,7 @@ func testFailingRecv(t *testing.T, fakeNet *fakeNetworkProtocol, localAddrByte b
 
 func testRecvInternal(t *testing.T, fakeNet *fakeNetworkProtocol, localAddrByte byte, ep *channel.Endpoint, buf buffer.View, want int) {
 	t.Helper()
-	ep.InjectInbound(fakeNetNumber, tcpip.PacketBuffer{
+	ep.InjectInbound(fakeNetNumber, stack.PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
 	if got := fakeNet.PacketCount(localAddrByte); got != want {
@@ -2257,7 +2257,7 @@ func TestNICStats(t *testing.T) {
 
 	// Send a packet to address 1.
 	buf := buffer.NewView(30)
-	ep1.InjectInbound(fakeNetNumber, tcpip.PacketBuffer{
+	ep1.InjectInbound(fakeNetNumber, stack.PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
 	if got, want := s.NICInfo()[1].Stats.Rx.Packets.Value(), uint64(1); got != want {
@@ -2339,7 +2339,7 @@ func TestNICForwarding(t *testing.T) {
 			// Send a packet to dstAddr.
 			buf := buffer.NewView(30)
 			buf[0] = dstAddr[0]
-			ep1.InjectInbound(fakeNetNumber, tcpip.PacketBuffer{
+			ep1.InjectInbound(fakeNetNumber, stack.PacketBuffer{
 				Data: buf.ToVectorisedView(),
 			})
 

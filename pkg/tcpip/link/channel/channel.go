@@ -28,7 +28,7 @@ import (
 
 // PacketInfo holds all the information about an outbound packet.
 type PacketInfo struct {
-	Pkt   tcpip.PacketBuffer
+	Pkt   stack.PacketBuffer
 	Proto tcpip.NetworkProtocolNumber
 	GSO   *stack.GSO
 	Route stack.Route
@@ -203,12 +203,12 @@ func (e *Endpoint) NumQueued() int {
 }
 
 // InjectInbound injects an inbound packet.
-func (e *Endpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) {
+func (e *Endpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
 	e.InjectLinkAddr(protocol, "", pkt)
 }
 
 // InjectLinkAddr injects an inbound packet with a remote link address.
-func (e *Endpoint) InjectLinkAddr(protocol tcpip.NetworkProtocolNumber, remote tcpip.LinkAddress, pkt tcpip.PacketBuffer) {
+func (e *Endpoint) InjectLinkAddr(protocol tcpip.NetworkProtocolNumber, remote tcpip.LinkAddress, pkt stack.PacketBuffer) {
 	e.dispatcher.DeliverNetworkPacket(e, remote, "" /* local */, protocol, pkt)
 }
 
@@ -251,7 +251,7 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 }
 
 // WritePacket stores outbound packets into the channel.
-func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) *tcpip.Error {
+func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) *tcpip.Error {
 	// Clone r then release its resource so we only get the relevant fields from
 	// stack.Route without holding a reference to a NIC's endpoint.
 	route := r.Clone()
@@ -269,7 +269,7 @@ func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 }
 
 // WritePackets stores outbound packets into the channel.
-func (e *Endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []tcpip.PacketBuffer, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (e *Endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []stack.PacketBuffer, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	// Clone r then release its resource so we only get the relevant fields from
 	// stack.Route without holding a reference to a NIC's endpoint.
 	route := r.Clone()
@@ -280,7 +280,7 @@ func (e *Endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []tcpip.Pac
 		off := pkt.DataOffset
 		size := pkt.DataSize
 		p := PacketInfo{
-			Pkt: tcpip.PacketBuffer{
+			Pkt: stack.PacketBuffer{
 				Header: pkt.Header,
 				Data:   buffer.NewViewFromBytes(payloadView[off : off+size]).ToVectorisedView(),
 			},
@@ -301,7 +301,7 @@ func (e *Endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []tcpip.Pac
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
 func (e *Endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
 	p := PacketInfo{
-		Pkt:   tcpip.PacketBuffer{Data: vv},
+		Pkt:   stack.PacketBuffer{Data: vv},
 		Proto: 0,
 		GSO:   nil,
 	}

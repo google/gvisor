@@ -50,7 +50,7 @@ func TestInjectableEndpointDispatch(t *testing.T) {
 	hdr.Prepend(1)[0] = 0xFA
 	packetRoute := stack.Route{RemoteAddress: dstIP}
 
-	endpoint.WritePacket(&packetRoute, nil /* gso */, ipv4.ProtocolNumber, tcpip.PacketBuffer{
+	endpoint.WritePacket(&packetRoute, nil /* gso */, ipv4.ProtocolNumber, stack.PacketBuffer{
 		Header: hdr,
 		Data:   buffer.NewViewFromBytes([]byte{0xFB}).ToVectorisedView(),
 	})
@@ -70,7 +70,7 @@ func TestInjectableEndpointDispatchHdrOnly(t *testing.T) {
 	hdr := buffer.NewPrependable(1)
 	hdr.Prepend(1)[0] = 0xFA
 	packetRoute := stack.Route{RemoteAddress: dstIP}
-	endpoint.WritePacket(&packetRoute, nil /* gso */, ipv4.ProtocolNumber, tcpip.PacketBuffer{
+	endpoint.WritePacket(&packetRoute, nil /* gso */, ipv4.ProtocolNumber, stack.PacketBuffer{
 		Header: hdr,
 		Data:   buffer.NewView(0).ToVectorisedView(),
 	})

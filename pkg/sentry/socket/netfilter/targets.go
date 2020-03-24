@@ -15,11 +15,10 @@
 package netfilter
 
 import (
-	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/iptables"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-// JumpTarget implements iptables.Target.
+// JumpTarget implements stack.Target.
 type JumpTarget struct {
 	// Offset is the byte offset of the rule to jump to. It is used for
 	// marshaling and unmarshaling.
@@ -29,7 +28,7 @@ type JumpTarget struct {
 	RuleNum int
 }
 
-// Action implements iptables.Target.Action.
-func (jt JumpTarget) Action(tcpip.PacketBuffer) (iptables.RuleVerdict, int) {
-	return iptables.RuleJump, jt.RuleNum
+// Action implements stack.Target.Action.
+func (jt JumpTarget) Action(stack.PacketBuffer) (stack.RuleVerdict, int) {
+	return stack.RuleJump, jt.RuleNum
 }

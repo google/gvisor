@@ -103,7 +103,7 @@ func TestDirectRequest(t *testing.T) {
 
 	inject := func(addr tcpip.Address) {
 		copy(h.ProtocolAddressTarget(), addr)
-		c.linkEP.InjectInbound(arp.ProtocolNumber, tcpip.PacketBuffer{
+		c.linkEP.InjectInbound(arp.ProtocolNumber, stack.PacketBuffer{
 			Data: v.ToVectorisedView(),
 		})
 	}

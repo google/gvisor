@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package iptables
+package stack
 
 import (
 	"gvisor.dev/gvisor/pkg/log"
@@ -24,7 +24,7 @@ import (
 type AcceptTarget struct{}
 
 // Action implements Target.Action.
-func (AcceptTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, int) {
+func (AcceptTarget) Action(packet PacketBuffer) (RuleVerdict, int) {
 	return RuleAccept, 0
 }
 
@@ -32,7 +32,7 @@ func (AcceptTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, int) {
 type DropTarget struct{}
 
 // Action implements Target.Action.
-func (DropTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, int) {
+func (DropTarget) Action(packet PacketBuffer) (RuleVerdict, int) {
 	return RuleDrop, 0
 }
 
@@ -41,7 +41,7 @@ func (DropTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, int) {
 type ErrorTarget struct{}
 
 // Action implements Target.Action.
-func (ErrorTarget) Action(packet tcpip.PacketBuffer) (RuleVerdict, int) {
+func (ErrorTarget) Action(packet PacketBuffer) (RuleVerdict, int) {
 	log.Debugf("ErrorTarget triggered.")
 	return RuleDrop, 0
 }
@@ -52,7 +52,7 @@ type UserChainTarget struct {
 }
 
 // Action implements Target.Action.
-func (UserChainTarget) Action(tcpip.PacketBuffer) (RuleVerdict, int) {
+func (UserChainTarget) Action(PacketBuffer) (RuleVerdict, int) {
 	panic("UserChainTarget should never be called.")
 }
 
@@ -61,7 +61,7 @@ func (UserChainTarget) Action(tcpip.PacketBuffer) (RuleVerdict, int) {
 type ReturnTarget struct{}
 
 // Action implements Target.Action.
-func (ReturnTarget) Action(tcpip.PacketBuffer) (RuleVerdict, int) {
+func (ReturnTarget) Action(PacketBuffer) (RuleVerdict, int) {
 	return RuleReturn, 0
 }
 
@@ -92,7 +92,7 @@ type RedirectTarget struct {
 // TODO(gvisor.dev/issue/170): Parse headers without copying. The current
 // implementation only works for PREROUTING and calls pkt.Clone(), neither
 // of which should be the case.
-func (rt RedirectTarget) Action(pkt tcpip.PacketBuffer) (RuleVerdict, int) {
+func (rt RedirectTarget) Action(pkt PacketBuffer) (RuleVerdict, int) {
 	newPkt := pkt.Clone()
 
 	// Set network header.

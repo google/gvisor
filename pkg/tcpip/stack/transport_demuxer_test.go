@@ -150,7 +150,7 @@ func (c *testContext) sendV6Packet(payload []byte, h *headers, linkEpID tcpip.NI
 	u.SetChecksum(^u.CalculateChecksum(xsum))
 
 	// Inject packet.
-	c.linkEps[linkEpID].InjectInbound(ipv6.ProtocolNumber, tcpip.PacketBuffer{
+	c.linkEps[linkEpID].InjectInbound(ipv6.ProtocolNumber, stack.PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
 }

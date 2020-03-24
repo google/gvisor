@@ -602,7 +602,7 @@ func TestDADFail(t *testing.T) {
 			// Receive a packet to simulate multiple nodes owning or
 			// attempting to own the same address.
 			hdr := test.makeBuf(addr1)
-			e.InjectInbound(header.IPv6ProtocolNumber, tcpip.PacketBuffer{
+			e.InjectInbound(header.IPv6ProtocolNumber, stack.PacketBuffer{
 				Data: hdr.View().ToVectorisedView(),
 			})
 
@@ -918,7 +918,7 @@ func TestSetNDPConfigurations(t *testing.T) {
 
 // raBufWithOptsAndDHCPv6 returns a valid NDP Router Advertisement with options
 // and DHCPv6 configurations specified.
-func raBufWithOptsAndDHCPv6(ip tcpip.Address, rl uint16, managedAddress, otherConfigurations bool, optSer header.NDPOptionsSerializer) tcpip.PacketBuffer {
+func raBufWithOptsAndDHCPv6(ip tcpip.Address, rl uint16, managedAddress, otherConfigurations bool, optSer header.NDPOptionsSerializer) stack.PacketBuffer {
 	icmpSize := header.ICMPv6HeaderSize + header.NDPRAMinimumSize + int(optSer.Length())
 	hdr := buffer.NewPrependable(header.IPv6MinimumSize + icmpSize)
 	pkt := header.ICMPv6(hdr.Prepend(icmpSize))
@@ -953,14 +953,14 @@ func raBufWithOptsAndDHCPv6(ip tcpip.Address, rl uint16, managedAddress, otherCo
 		DstAddr:       header.IPv6AllNodesMulticastAddress,
 	})
 
-	return tcpip.PacketBuffer{Data: hdr.View().ToVectorisedView()}
+	return stack.PacketBuffer{Data: hdr.View().ToVectorisedView()}
 }
 
 // raBufWithOpts returns a valid NDP Router Advertisement with options.
 //
 // Note, raBufWithOpts does not populate any of the RA fields other than the
 // Router Lifetime.
-func raBufWithOpts(ip tcpip.Address, rl uint16, optSer header.NDPOptionsSerializer) tcpip.PacketBuffer {
+func raBufWithOpts(ip tcpip.Address, rl uint16, optSer header.NDPOptionsSerializer) stack.PacketBuffer {
 	return raBufWithOptsAndDHCPv6(ip, rl, false, false, optSer)
 }
 
@@ -969,7 +969,7 @@ func raBufWithOpts(ip tcpip.Address, rl uint16, optSer header.NDPOptionsSerializ
 //
 // Note, raBufWithDHCPv6 does not populate any of the RA fields other than the
 // DHCPv6 related ones.
-func raBufWithDHCPv6(ip tcpip.Address, managedAddresses, otherConfiguratiosns bool) tcpip.PacketBuffer {
+func raBufWithDHCPv6(ip tcpip.Address, managedAddresses, otherConfiguratiosns bool) stack.PacketBuffer {
 	return raBufWithOptsAndDHCPv6(ip, 0, managedAddresses, otherConfiguratiosns, header.NDPOptionsSerializer{})
 }
 
@@ -977,7 +977,7 @@ func raBufWithDHCPv6(ip tcpip.Address, managedAddresses, otherConfiguratiosns bo
 //
 // Note, raBuf does not populate any of the RA fields other than the
 // Router Lifetime.
-func raBuf(ip tcpip.Address, rl uint16) tcpip.PacketBuffer {
+func raBuf(ip tcpip.Address, rl uint16) stack.PacketBuffer {
 	return raBufWithOpts(ip, rl, header.NDPOptionsSerializer{})
 }
 
@@ -986,7 +986,7 @@ func raBuf(ip tcpip.Address, rl uint16) tcpip.PacketBuffer {
 //
 // Note, raBufWithPI does not populate any of the RA fields other than the
 // Router Lifetime.
-func raBufWithPI(ip tcpip.Address, rl uint16, prefix tcpip.AddressWithPrefix, onLink, auto bool, vl, pl uint32) tcpip.PacketBuffer {
+func raBufWithPI(ip tcpip.Address, rl uint16, prefix tcpip.AddressWithPrefix, onLink, auto bool, vl, pl uint32) stack.PacketBuffer {
 	flags := uint8(0)
 	if onLink {
 		// The OnLink flag is the 7th bit in the flags byte.

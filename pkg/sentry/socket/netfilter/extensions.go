@@ -19,7 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
-	"gvisor.dev/gvisor/pkg/tcpip/iptables"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -37,12 +37,12 @@ type matchMaker interface {
 	// name is the matcher name as stored in the xt_entry_match struct.
 	name() string
 
-	// marshal converts from an iptables.Matcher to an ABI struct.
-	marshal(matcher iptables.Matcher) []byte
+	// marshal converts from an stack.Matcher to an ABI struct.
+	marshal(matcher stack.Matcher) []byte
 
 	// unmarshal converts from the ABI matcher struct to an
-	// iptables.Matcher.
-	unmarshal(buf []byte, filter iptables.IPHeaderFilter) (iptables.Matcher, error)
+	// stack.Matcher.
+	unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error)
 }
 
 // matchMakers maps the name of supported matchers to the matchMaker that
@@ -58,7 +58,7 @@ func registerMatchMaker(mm matchMaker) {
 	matchMakers[mm.name()] = mm
 }
 
-func marshalMatcher(matcher iptables.Matcher) []byte {
+func marshalMatcher(matcher stack.Matcher) []byte {
 	matchMaker, ok := matchMakers[matcher.Name()]
 	if !ok {
 		panic(fmt.Sprintf("Unknown matcher of type %T.", matcher))
@@ -86,7 +86,7 @@ func marshalEntryMatch(name string, data []byte) []byte {
 	return append(buf, make([]byte, size-len(buf))...)
 }
 
-func unmarshalMatcher(match linux.XTEntryMatch, filter iptables.IPHeaderFilter, buf []byte) (iptables.Matcher, error) {
+func unmarshalMatcher(match linux.XTEntryMatch, filter stack.IPHeaderFilter, buf []byte) (stack.Matcher, error) {
 	matchMaker, ok := matchMakers[match.Name.String()]
 	if !ok {
 		return nil, fmt.Errorf("unsupported matcher with name %q", match.Name.String())

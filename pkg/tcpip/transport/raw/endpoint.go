@@ -30,7 +30,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -161,7 +160,7 @@ func (e *endpoint) Close() {
 func (e *endpoint) ModerateRecvBuf(copied int) {}
 
 // IPTables implements tcpip.Endpoint.IPTables.
-func (e *endpoint) IPTables() (iptables.IPTables, error) {
+func (e *endpoint) IPTables() (stack.IPTables, error) {
 	return e.stack.IPTables(), nil
 }
 
@@ -342,7 +341,7 @@ func (e *endpoint) finishWrite(payloadBytes []byte, route *stack.Route) (int64, 
 	switch e.NetProto {
 	case header.IPv4ProtocolNumber:
 		if !e.associated {
-			if err := route.WriteHeaderIncludedPacket(tcpip.PacketBuffer{
+			if err := route.WriteHeaderIncludedPacket(stack.PacketBuffer{
 				Data: buffer.View(payloadBytes).ToVectorisedView(),
 			}); err != nil {
 				return 0, nil, err
@@ -350,7 +349,7 @@ func (e *endpoint) finishWrite(payloadBytes []byte, route *stack.Route) (int64, 
 			break
 		}
 		hdr := buffer.NewPrependable(len(payloadBytes) + int(route.MaxHeaderLength()))
-		if err := route.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: e.TransProto, TTL: route.DefaultTTL(), TOS: stack.DefaultTOS}, tcpip.PacketBuffer{
+		if err := route.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: e.TransProto, TTL: route.DefaultTTL(), TOS: stack.DefaultTOS}, stack.PacketBuffer{
 			Header: hdr,
 			Data:   buffer.View(payloadBytes).ToVectorisedView(),
 		}); err != nil {
@@ -574,7 +573,7 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 }
 
 // HandlePacket implements stack.RawTransportEndpoint.HandlePacket.
-func (e *endpoint) HandlePacket(route *stack.Route, pkt tcpip.PacketBuffer) {
+func (e *endpoint) HandlePacket(route *stack.Route, pkt stack.PacketBuffer) {
 	e.rcvMu.Lock()
 
 	// Drop the packet if our buffer is currently full.

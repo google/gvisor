@@ -5,8 +5,6 @@ package(licenses = ["notice"])
 go_library(
     name = "tcpip",
     srcs = [
-        "packet_buffer.go",
-        "packet_buffer_state.go",
         "tcpip.go",
         "time_unsafe.go",
         "timer.go",

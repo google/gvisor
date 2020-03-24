@@ -22,7 +22,6 @@ go_library(
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
-        "//pkg/tcpip/iptables",
         "//pkg/tcpip/stack",
         "//pkg/usermem",
     ],
