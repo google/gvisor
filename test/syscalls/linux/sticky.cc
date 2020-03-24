@@ -42,8 +42,9 @@ TEST(StickyTest, StickyBitPermDenied) {
 
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   EXPECT_THAT(chmod(dir.path().c_str(), 0777 | S_ISVTX), SyscallSucceeds());
-  std::string path = JoinPath(dir.path(), "NewDir");
-  ASSERT_THAT(mkdir(path.c_str(), 0755), SyscallSucceeds());
+  const FileDescriptor dirfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_DIRECTORY));
+  ASSERT_THAT(mkdirat(dirfd.get(), "NewDir", 0755), SyscallSucceeds());
 
   // Drop privileges and change IDs only in child thread, or else this parent
   // thread won't be able to open some log files after the test ends.
@@ -61,7 +62,8 @@ TEST(StickyTest, StickyBitPermDenied) {
         syscall(SYS_setresuid, -1, absl::GetFlag(FLAGS_scratch_uid), -1),
         SyscallSucceeds());
 
-    EXPECT_THAT(rmdir(path.c_str()), SyscallFailsWithErrno(EPERM));
+    EXPECT_THAT(unlinkat(dirfd.get(), "NewDir", AT_REMOVEDIR),
+                SyscallFailsWithErrno(EPERM));
   });
 }
 
@@ -96,8 +98,9 @@ TEST(StickyTest, StickyBitCapFOWNER) {
 
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   EXPECT_THAT(chmod(dir.path().c_str(), 0777 | S_ISVTX), SyscallSucceeds());
-  std::string path = JoinPath(dir.path(), "NewDir");
-  ASSERT_THAT(mkdir(path.c_str(), 0755), SyscallSucceeds());
+  const FileDescriptor dirfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_DIRECTORY));
+  ASSERT_THAT(mkdirat(dirfd.get(), "NewDir", 0755), SyscallSucceeds());
 
   // Drop privileges and change IDs only in child thread, or else this parent
   // thread won't be able to open some log files after the test ends.
@@ -114,7 +117,8 @@ TEST(StickyTest, StickyBitCapFOWNER) {
         SyscallSucceeds());
 
     EXPECT_NO_ERRNO(SetCapability(CAP_FOWNER, true));
-    EXPECT_THAT(rmdir(path.c_str()), SyscallSucceeds());
+    EXPECT_THAT(unlinkat(dirfd.get(), "NewDir", AT_REMOVEDIR),
+                SyscallSucceeds());
   });
 }
 }  // namespace
