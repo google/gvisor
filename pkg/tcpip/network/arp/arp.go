@@ -79,20 +79,20 @@ func (e *endpoint) MaxHeaderLength() uint16 {
 
 func (e *endpoint) Close() {}
 
-func (e *endpoint) WritePacket(*stack.Route, *stack.GSO, stack.NetworkHeaderParams, tcpip.PacketBuffer) *tcpip.Error {
+func (e *endpoint) WritePacket(*stack.Route, *stack.GSO, stack.NetworkHeaderParams, stack.PacketBuffer) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }
 
 // WritePackets implements stack.NetworkEndpoint.WritePackets.
-func (e *endpoint) WritePackets(*stack.Route, *stack.GSO, []tcpip.PacketBuffer, stack.NetworkHeaderParams) (int, *tcpip.Error) {
+func (e *endpoint) WritePackets(*stack.Route, *stack.GSO, []stack.PacketBuffer, stack.NetworkHeaderParams) (int, *tcpip.Error) {
 	return 0, tcpip.ErrNotSupported
 }
 
-func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt tcpip.PacketBuffer) *tcpip.Error {
+func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt stack.PacketBuffer) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }
 
-func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
+func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
 	v := pkt.Data.First()
 	h := header.ARP(v)
 	if !h.IsValid() {
@@ -113,7 +113,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
 		copy(packet.ProtocolAddressSender(), h.ProtocolAddressTarget())
 		copy(packet.HardwareAddressTarget(), h.HardwareAddressSender())
 		copy(packet.ProtocolAddressTarget(), h.ProtocolAddressSender())
-		e.linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, tcpip.PacketBuffer{
+		e.linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, stack.PacketBuffer{
 			Header: hdr,
 		})
 		fallthrough // also fill the cache from requests
@@ -167,7 +167,7 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.
 	copy(h.ProtocolAddressSender(), localAddr)
 	copy(h.ProtocolAddressTarget(), addr)
 
-	return linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, tcpip.PacketBuffer{
+	return linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, stack.PacketBuffer{
 		Header: hdr,
 	})
 }

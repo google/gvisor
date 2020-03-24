@@ -19,9 +19,8 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/iptables"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -40,7 +39,7 @@ func (udpMarshaler) name() string {
 }
 
 // marshal implements matchMaker.marshal.
-func (udpMarshaler) marshal(mr iptables.Matcher) []byte {
+func (udpMarshaler) marshal(mr stack.Matcher) []byte {
 	matcher := mr.(*UDPMatcher)
 	xtudp := linux.XTUDP{
 		SourcePortStart:      matcher.sourcePortStart,
@@ -53,7 +52,7 @@ func (udpMarshaler) marshal(mr iptables.Matcher) []byte {
 }
 
 // unmarshal implements matchMaker.unmarshal.
-func (udpMarshaler) unmarshal(buf []byte, filter iptables.IPHeaderFilter) (iptables.Matcher, error) {
+func (udpMarshaler) unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error) {
 	if len(buf) < linux.SizeOfXTUDP {
 		return nil, fmt.Errorf("buf has insufficient size for UDP match: %d", len(buf))
 	}
@@ -94,11 +93,11 @@ func (*UDPMatcher) Name() string {
 }
 
 // Match implements Matcher.Match.
-func (um *UDPMatcher) Match(hook iptables.Hook, pkt tcpip.PacketBuffer, interfaceName string) (bool, bool) {
+func (um *UDPMatcher) Match(hook stack.Hook, pkt stack.PacketBuffer, interfaceName string) (bool, bool) {
 	netHeader := header.IPv4(pkt.NetworkHeader)
 
 	// TODO(gvisor.dev/issue/170): Proto checks should ultimately be moved
-	// into the iptables.Check codepath as matchers are added.
+	// into the stack.Check codepath as matchers are added.
 	if netHeader.TransportProtocol() != header.UDPProtocolNumber {
 		return false, false
 	}
@@ -114,7 +113,7 @@ func (um *UDPMatcher) Match(hook iptables.Hook, pkt tcpip.PacketBuffer, interfac
 	// Now we need the transport header. However, this may not have been set
 	// yet.
 	// TODO(gvisor.dev/issue/170): Parsing the transport header should
-	// ultimately be moved into the iptables.Check codepath as matchers are
+	// ultimately be moved into the stack.Check codepath as matchers are
 	// added.
 	var udpHeader header.UDP
 	if pkt.TransportHeader != nil {

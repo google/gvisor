@@ -12,14 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package iptables supports packet filtering and manipulation via the iptables
-// tool.
-package iptables
+package stack
 
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -176,7 +173,7 @@ const (
 // dropped.
 //
 // Precondition: pkt.NetworkHeader is set.
-func (it *IPTables) Check(hook Hook, pkt tcpip.PacketBuffer) bool {
+func (it *IPTables) Check(hook Hook, pkt PacketBuffer) bool {
 	// Go through each table containing the hook.
 	for _, tablename := range it.Priorities[hook] {
 		table := it.Tables[tablename]
@@ -213,7 +210,7 @@ func (it *IPTables) Check(hook Hook, pkt tcpip.PacketBuffer) bool {
 }
 
 // Precondition: pkt.NetworkHeader is set.
-func (it *IPTables) checkChain(hook Hook, pkt tcpip.PacketBuffer, table Table, ruleIdx int) chainVerdict {
+func (it *IPTables) checkChain(hook Hook, pkt PacketBuffer, table Table, ruleIdx int) chainVerdict {
 	// Start from ruleIdx and walk the list of rules until a rule gives us
 	// a verdict.
 	for ruleIdx < len(table.Rules) {
@@ -258,7 +255,7 @@ func (it *IPTables) checkChain(hook Hook, pkt tcpip.PacketBuffer, table Table, r
 }
 
 // Precondition: pk.NetworkHeader is set.
-func (it *IPTables) checkRule(hook Hook, pkt tcpip.PacketBuffer, table Table, ruleIdx int) (RuleVerdict, int) {
+func (it *IPTables) checkRule(hook Hook, pkt PacketBuffer, table Table, ruleIdx int) (RuleVerdict, int) {
 	rule := table.Rules[ruleIdx]
 
 	// If pkt.NetworkHeader hasn't been set yet, it will be contained in

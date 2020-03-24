@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 	"gvisor.dev/gvisor/pkg/tcpip/network/fragmentation"
 	"gvisor.dev/gvisor/pkg/tcpip/network/hash"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -125,7 +124,7 @@ func (e *endpoint) GSOMaxSize() uint32 {
 // packet's stated length matches the length of the header+payload. mtu
 // includes the IP header and options. This does not support the DontFragment
 // IP flag.
-func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int, pkt tcpip.PacketBuffer) *tcpip.Error {
+func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int, pkt stack.PacketBuffer) *tcpip.Error {
 	// This packet is too big, it needs to be fragmented.
 	ip := header.IPv4(pkt.Header.View())
 	flags := ip.Flags()
@@ -165,7 +164,7 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int,
 		if i > 0 {
 			newPayload := pkt.Data.Clone(nil)
 			newPayload.CapLength(innerMTU)
-			if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, tcpip.PacketBuffer{
+			if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, stack.PacketBuffer{
 				Header:        pkt.Header,
 				Data:          newPayload,
 				NetworkHeader: buffer.View(h),
@@ -184,7 +183,7 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int,
 			newPayload := pkt.Data.Clone(nil)
 			newPayloadLength := outerMTU - pkt.Header.UsedLength()
 			newPayload.CapLength(newPayloadLength)
-			if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, tcpip.PacketBuffer{
+			if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, stack.PacketBuffer{
 				Header:        pkt.Header,
 				Data:          newPayload,
 				NetworkHeader: buffer.View(h),
@@ -198,7 +197,7 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int,
 			startOfHdr := pkt.Header
 			startOfHdr.TrimBack(pkt.Header.UsedLength() - outerMTU)
 			emptyVV := buffer.NewVectorisedView(0, []buffer.View{})
-			if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, tcpip.PacketBuffer{
+			if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, stack.PacketBuffer{
 				Header:        startOfHdr,
 				Data:          emptyVV,
 				NetworkHeader: buffer.View(h),
@@ -241,7 +240,7 @@ func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadS
 }
 
 // WritePacket writes a packet to the given destination address and protocol.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, pkt tcpip.PacketBuffer) *tcpip.Error {
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, pkt stack.PacketBuffer) *tcpip.Error {
 	ip := e.addIPHeader(r, &pkt.Header, pkt.Data.Size(), params)
 	pkt.NetworkHeader = buffer.View(ip)
 
@@ -253,7 +252,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 		views = append(views, pkt.Data.Views()...)
 		loopedR := r.MakeLoopedRoute()
 
-		e.HandlePacket(&loopedR, tcpip.PacketBuffer{
+		e.HandlePacket(&loopedR, stack.PacketBuffer{
 			Data: buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views),
 		})
 
@@ -273,7 +272,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 }
 
 // WritePackets implements stack.NetworkEndpoint.WritePackets.
-func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []tcpip.PacketBuffer, params stack.NetworkHeaderParams) (int, *tcpip.Error) {
+func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []stack.PacketBuffer, params stack.NetworkHeaderParams) (int, *tcpip.Error) {
 	if r.Loop&stack.PacketLoop != 0 {
 		panic("multiple packets in local loop")
 	}
@@ -292,7 +291,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []tcpip.Pac
 
 // WriteHeaderIncludedPacket writes a packet already containing a network
 // header through the given route.
-func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt tcpip.PacketBuffer) *tcpip.Error {
+func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt stack.PacketBuffer) *tcpip.Error {
 	// The packet already has an IP header, but there are a few required
 	// checks.
 	ip := header.IPv4(pkt.Data.First())
@@ -344,7 +343,7 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt tcpip.PacketBuf
 
 // HandlePacket is called by the link layer when new ipv4 packets arrive for
 // this endpoint.
-func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
+func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
 	headerView := pkt.Data.First()
 	h := header.IPv4(headerView)
 	if !h.IsValid(pkt.Data.Size()) {
@@ -361,7 +360,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
 	// iptables filtering. All packets that reach here are intended for
 	// this machine and will not be forwarded.
 	ipt := e.stack.IPTables()
-	if ok := ipt.Check(iptables.Input, pkt); !ok {
+	if ok := ipt.Check(stack.Input, pkt); !ok {
 		// iptables is telling us to drop the packet.
 		return
 	}

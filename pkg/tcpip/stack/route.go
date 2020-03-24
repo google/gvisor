@@ -153,7 +153,7 @@ func (r *Route) IsResolutionRequired() bool {
 }
 
 // WritePacket writes the packet through the given route.
-func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt tcpip.PacketBuffer) *tcpip.Error {
+func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt PacketBuffer) *tcpip.Error {
 	if !r.ref.isValidForOutgoing() {
 		return tcpip.ErrInvalidEndpointState
 	}
@@ -169,7 +169,7 @@ func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt tcpip.Pack
 }
 
 // WritePackets writes the set of packets through the given route.
-func (r *Route) WritePackets(gso *GSO, pkts []tcpip.PacketBuffer, params NetworkHeaderParams) (int, *tcpip.Error) {
+func (r *Route) WritePackets(gso *GSO, pkts []PacketBuffer, params NetworkHeaderParams) (int, *tcpip.Error) {
 	if !r.ref.isValidForOutgoing() {
 		return 0, tcpip.ErrInvalidEndpointState
 	}
@@ -190,7 +190,7 @@ func (r *Route) WritePackets(gso *GSO, pkts []tcpip.PacketBuffer, params Network
 
 // WriteHeaderIncludedPacket writes a packet already containing a network
 // header through the given route.
-func (r *Route) WriteHeaderIncludedPacket(pkt tcpip.PacketBuffer) *tcpip.Error {
+func (r *Route) WriteHeaderIncludedPacket(pkt PacketBuffer) *tcpip.Error {
 	if !r.ref.isValidForOutgoing() {
 		return tcpip.ErrInvalidEndpointState
 	}

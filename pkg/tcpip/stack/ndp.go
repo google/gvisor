@@ -564,7 +564,7 @@ func (ndp *ndpState) sendDADPacket(addr tcpip.Address) *tcpip.Error {
 			Protocol: header.ICMPv6ProtocolNumber,
 			TTL:      header.NDPHopLimit,
 			TOS:      DefaultTOS,
-		}, tcpip.PacketBuffer{Header: hdr},
+		}, PacketBuffer{Header: hdr},
 	); err != nil {
 		sent.Dropped.Increment()
 		return err
@@ -1283,7 +1283,7 @@ func (ndp *ndpState) startSolicitingRouters() {
 				Protocol: header.ICMPv6ProtocolNumber,
 				TTL:      header.NDPHopLimit,
 				TOS:      DefaultTOS,
-			}, tcpip.PacketBuffer{Header: hdr},
+			}, PacketBuffer{Header: hdr},
 		); err != nil {
 			sent.Dropped.Increment()
 			log.Printf("startSolicitingRouters: error writing NDP router solicit message on NIC(%d); err = %s", ndp.nic.ID(), err)

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package iptables
+package stack
 
 import (
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -168,7 +168,7 @@ type Matcher interface {
 	// used for suspicious packets.
 	//
 	// Precondition: packet.NetworkHeader is set.
-	Match(hook Hook, packet tcpip.PacketBuffer, interfaceName string) (matches bool, hotdrop bool)
+	Match(hook Hook, packet PacketBuffer, interfaceName string) (matches bool, hotdrop bool)
 }
 
 // A Target is the interface for taking an action for a packet.
@@ -176,5 +176,5 @@ type Target interface {
 	// Action takes an action on the packet and returns a verdict on how
 	// traversal should (or should not) continue. If the return value is
 	// Jump, it also returns the index of the rule to jump to.
-	Action(packet tcpip.PacketBuffer) (RuleVerdict, int)
+	Action(packet PacketBuffer) (RuleVerdict, int)
 }

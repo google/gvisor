@@ -386,7 +386,7 @@ const (
 
 // WritePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) *tcpip.Error {
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) *tcpip.Error {
 	if e.hdrSize > 0 {
 		// Add ethernet header if needed.
 		eth := header.Ethernet(pkt.Header.Prepend(header.EthernetMinimumSize))
@@ -440,7 +440,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 
 // WritePackets writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
-func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []tcpip.PacketBuffer, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []stack.PacketBuffer, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	var ethHdrBuf []byte
 	// hdr + data
 	iovLen := 2
@@ -610,7 +610,7 @@ func (e *InjectableEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 }
 
 // InjectInbound injects an inbound packet.
-func (e *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) {
+func (e *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
 	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, protocol, pkt)
 }
 

@@ -18,7 +18,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
@@ -61,7 +60,7 @@ type segment struct {
 	xmitCount uint32
 }
 
-func newSegment(r *stack.Route, id stack.TransportEndpointID, pkt tcpip.PacketBuffer) *segment {
+func newSegment(r *stack.Route, id stack.TransportEndpointID, pkt stack.PacketBuffer) *segment {
 	s := &segment{
 		refCnt: 1,
 		id:     id,
