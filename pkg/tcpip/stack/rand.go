@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,14 +14,27 @@
 
 package stack
 
-import "gvisor.dev/gvisor/pkg/tcpip/buffer"
+import (
+	mathrand "math/rand"
 
-// beforeSave is invoked by stateify.
-func (pk *PacketBuffer) beforeSave() {
-	// Non-Data fields may be slices of the Data field. This causes
-	// problems for SR, so during save we make each header independent.
-	pk.Header = pk.Header.DeepCopy()
-	pk.LinkHeader = append(buffer.View(nil), pk.LinkHeader...)
-	pk.NetworkHeader = append(buffer.View(nil), pk.NetworkHeader...)
-	pk.TransportHeader = append(buffer.View(nil), pk.TransportHeader...)
+	"gvisor.dev/gvisor/pkg/sync"
+)
+
+// lockedRandomSource provides a threadsafe rand.Source.
+type lockedRandomSource struct {
+	mu  sync.Mutex
+	src mathrand.Source
+}
+
+func (r *lockedRandomSource) Int63() (n int64) {
+	r.mu.Lock()
+	n = r.src.Int63()
+	r.mu.Unlock()
+	return n
+}
+
+func (r *lockedRandomSource) Seed(seed int64) {
+	r.mu.Lock()
+	r.src.Seed(seed)
+	r.mu.Unlock()
 }
