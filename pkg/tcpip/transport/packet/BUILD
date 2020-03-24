@@ -31,7 +31,6 @@ go_library(
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
-        "//pkg/tcpip/iptables",
         "//pkg/tcpip/stack",
         "//pkg/waiter",
     ],

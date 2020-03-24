@@ -15,7 +15,6 @@
 package ipv4
 
 import (
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -25,7 +24,7 @@ import (
 // the original packet that caused the ICMP one to be sent. This information is
 // used to find out which transport endpoint must be notified about the ICMP
 // packet.
-func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt tcpip.PacketBuffer) {
+func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt stack.PacketBuffer) {
 	h := header.IPv4(pkt.Data.First())
 
 	// We don't use IsValid() here because ICMP only requires that the IP
@@ -53,7 +52,7 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt tcpip.
 	e.dispatcher.DeliverTransportControlPacket(e.id.LocalAddress, h.DestinationAddress(), ProtocolNumber, p, typ, extra, pkt)
 }
 
-func (e *endpoint) handleICMP(r *stack.Route, pkt tcpip.PacketBuffer) {
+func (e *endpoint) handleICMP(r *stack.Route, pkt stack.PacketBuffer) {
 	stats := r.Stats()
 	received := stats.ICMP.V4PacketsReceived
 	v := pkt.Data.First()
@@ -85,7 +84,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt tcpip.PacketBuffer) {
 
 		// It's possible that a raw socket expects to receive this.
 		h.SetChecksum(wantChecksum)
-		e.dispatcher.DeliverTransportPacket(r, header.ICMPv4ProtocolNumber, tcpip.PacketBuffer{
+		e.dispatcher.DeliverTransportPacket(r, header.ICMPv4ProtocolNumber, stack.PacketBuffer{
 			Data:          pkt.Data.Clone(nil),
 			NetworkHeader: append(buffer.View(nil), pkt.NetworkHeader...),
 		})
@@ -99,7 +98,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt tcpip.PacketBuffer) {
 		pkt.SetChecksum(0)
 		pkt.SetChecksum(^header.Checksum(pkt, header.ChecksumVV(vv, 0)))
 		sent := stats.ICMP.V4PacketsSent
-		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv4ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}, tcpip.PacketBuffer{
+		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv4ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}, stack.PacketBuffer{
 			Header:          hdr,
 			Data:            vv,
 			TransportHeader: buffer.View(pkt),

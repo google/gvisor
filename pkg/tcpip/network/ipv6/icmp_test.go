@@ -56,7 +56,7 @@ func (*stubLinkEndpoint) LinkAddress() tcpip.LinkAddress {
 	return ""
 }
 
-func (*stubLinkEndpoint) WritePacket(*stack.Route, *stack.GSO, tcpip.NetworkProtocolNumber, tcpip.PacketBuffer) *tcpip.Error {
+func (*stubLinkEndpoint) WritePacket(*stack.Route, *stack.GSO, tcpip.NetworkProtocolNumber, stack.PacketBuffer) *tcpip.Error {
 	return nil
 }
 
@@ -66,7 +66,7 @@ type stubDispatcher struct {
 	stack.TransportDispatcher
 }
 
-func (*stubDispatcher) DeliverTransportPacket(*stack.Route, tcpip.TransportProtocolNumber, tcpip.PacketBuffer) {
+func (*stubDispatcher) DeliverTransportPacket(*stack.Route, tcpip.TransportProtocolNumber, stack.PacketBuffer) {
 }
 
 type stubLinkAddressCache struct {
@@ -187,7 +187,7 @@ func TestICMPCounts(t *testing.T) {
 			SrcAddr:       r.LocalAddress,
 			DstAddr:       r.RemoteAddress,
 		})
-		ep.HandlePacket(&r, tcpip.PacketBuffer{
+		ep.HandlePacket(&r, stack.PacketBuffer{
 			Data: hdr.View().ToVectorisedView(),
 		})
 	}
@@ -326,7 +326,7 @@ func routeICMPv6Packet(t *testing.T, args routeArgs, fn func(*testing.T, header.
 		views := []buffer.View{pi.Pkt.Header.View(), pi.Pkt.Data.ToView()}
 		size := pi.Pkt.Header.UsedLength() + pi.Pkt.Data.Size()
 		vv := buffer.NewVectorisedView(size, views)
-		args.dst.InjectLinkAddr(pi.Proto, args.dst.LinkAddress(), tcpip.PacketBuffer{
+		args.dst.InjectLinkAddr(pi.Proto, args.dst.LinkAddress(), stack.PacketBuffer{
 			Data: vv,
 		})
 	}
@@ -561,7 +561,7 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 					SrcAddr:       lladdr1,
 					DstAddr:       lladdr0,
 				})
-				e.InjectInbound(ProtocolNumber, tcpip.PacketBuffer{
+				e.InjectInbound(ProtocolNumber, stack.PacketBuffer{
 					Data: hdr.View().ToVectorisedView(),
 				})
 			}
@@ -738,7 +738,7 @@ func TestICMPChecksumValidationWithPayload(t *testing.T) {
 					SrcAddr:       lladdr1,
 					DstAddr:       lladdr0,
 				})
-				e.InjectInbound(ProtocolNumber, tcpip.PacketBuffer{
+				e.InjectInbound(ProtocolNumber, stack.PacketBuffer{
 					Data: hdr.View().ToVectorisedView(),
 				})
 			}
@@ -916,7 +916,7 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 					SrcAddr:       lladdr1,
 					DstAddr:       lladdr0,
 				})
-				e.InjectInbound(ProtocolNumber, tcpip.PacketBuffer{
+				e.InjectInbound(ProtocolNumber, stack.PacketBuffer{
 					Data: buffer.NewVectorisedView(header.IPv6MinimumSize+size+payloadSize, []buffer.View{hdr.View(), payload}),
 				})
 			}

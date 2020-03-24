@@ -85,7 +85,7 @@ func (epsByNic *endpointsByNic) transportEndpoints() []TransportEndpoint {
 
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
-func (epsByNic *endpointsByNic) handlePacket(r *Route, id TransportEndpointID, pkt tcpip.PacketBuffer) {
+func (epsByNic *endpointsByNic) handlePacket(r *Route, id TransportEndpointID, pkt PacketBuffer) {
 	epsByNic.mu.RLock()
 
 	mpep, ok := epsByNic.endpoints[r.ref.nic.ID()]
@@ -116,7 +116,7 @@ func (epsByNic *endpointsByNic) handlePacket(r *Route, id TransportEndpointID, p
 }
 
 // HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
-func (epsByNic *endpointsByNic) handleControlPacket(n *NIC, id TransportEndpointID, typ ControlType, extra uint32, pkt tcpip.PacketBuffer) {
+func (epsByNic *endpointsByNic) handleControlPacket(n *NIC, id TransportEndpointID, typ ControlType, extra uint32, pkt PacketBuffer) {
 	epsByNic.mu.RLock()
 	defer epsByNic.mu.RUnlock()
 
@@ -184,7 +184,7 @@ type transportDemuxer struct {
 // the dispatcher to delivery packets to the QueuePacket method instead of
 // calling HandlePacket directly on the endpoint.
 type queuedTransportProtocol interface {
-	QueuePacket(r *Route, ep TransportEndpoint, id TransportEndpointID, pkt tcpip.PacketBuffer)
+	QueuePacket(r *Route, ep TransportEndpoint, id TransportEndpointID, pkt PacketBuffer)
 }
 
 func newTransportDemuxer(stack *Stack) *transportDemuxer {
@@ -312,7 +312,7 @@ func selectEndpoint(id TransportEndpointID, mpep *multiPortEndpoint, seed uint32
 	return mpep.endpoints[idx]
 }
 
-func (ep *multiPortEndpoint) handlePacketAll(r *Route, id TransportEndpointID, pkt tcpip.PacketBuffer) {
+func (ep *multiPortEndpoint) handlePacketAll(r *Route, id TransportEndpointID, pkt PacketBuffer) {
 	ep.mu.RLock()
 	queuedProtocol, mustQueue := ep.demux.queuedProtocols[protocolIDs{ep.netProto, ep.transProto}]
 	// HandlePacket takes ownership of pkt, so each endpoint needs
@@ -403,7 +403,7 @@ func (d *transportDemuxer) unregisterEndpoint(netProtos []tcpip.NetworkProtocolN
 // deliverPacket attempts to find one or more matching transport endpoints, and
 // then, if matches are found, delivers the packet to them. Returns true if
 // the packet no longer needs to be handled.
-func (d *transportDemuxer) deliverPacket(r *Route, protocol tcpip.TransportProtocolNumber, pkt tcpip.PacketBuffer, id TransportEndpointID) bool {
+func (d *transportDemuxer) deliverPacket(r *Route, protocol tcpip.TransportProtocolNumber, pkt PacketBuffer, id TransportEndpointID) bool {
 	eps, ok := d.protocol[protocolIDs{r.NetProto, protocol}]
 	if !ok {
 		return false
@@ -453,7 +453,7 @@ func (d *transportDemuxer) deliverPacket(r *Route, protocol tcpip.TransportProto
 
 // deliverRawPacket attempts to deliver the given packet and returns whether it
 // was delivered successfully.
-func (d *transportDemuxer) deliverRawPacket(r *Route, protocol tcpip.TransportProtocolNumber, pkt tcpip.PacketBuffer) bool {
+func (d *transportDemuxer) deliverRawPacket(r *Route, protocol tcpip.TransportProtocolNumber, pkt PacketBuffer) bool {
 	eps, ok := d.protocol[protocolIDs{r.NetProto, protocol}]
 	if !ok {
 		return false
@@ -477,7 +477,7 @@ func (d *transportDemuxer) deliverRawPacket(r *Route, protocol tcpip.TransportPr
 
 // deliverControlPacket attempts to deliver the given control packet. Returns
 // true if it found an endpoint, false otherwise.
-func (d *transportDemuxer) deliverControlPacket(n *NIC, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ ControlType, extra uint32, pkt tcpip.PacketBuffer, id TransportEndpointID) bool {
+func (d *transportDemuxer) deliverControlPacket(n *NIC, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ ControlType, extra uint32, pkt PacketBuffer, id TransportEndpointID) bool {
 	eps, ok := d.protocol[protocolIDs{net, trans}]
 	if !ok {
 		return false

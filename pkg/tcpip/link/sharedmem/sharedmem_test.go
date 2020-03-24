@@ -131,7 +131,7 @@ func newTestContext(t *testing.T, mtu, bufferSize uint32, addr tcpip.LinkAddress
 	return c
 }
 
-func (c *testContext) DeliverNetworkPacket(_ stack.LinkEndpoint, remoteLinkAddr, localLinkAddr tcpip.LinkAddress, proto tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) {
+func (c *testContext) DeliverNetworkPacket(_ stack.LinkEndpoint, remoteLinkAddr, localLinkAddr tcpip.LinkAddress, proto tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
 	c.mu.Lock()
 	c.packets = append(c.packets, packetInfo{
 		addr:  remoteLinkAddr,
@@ -273,7 +273,7 @@ func TestSimpleSend(t *testing.T) {
 			randomFill(buf)
 
 			proto := tcpip.NetworkProtocolNumber(rand.Intn(0x10000))
-			if err := c.ep.WritePacket(&r, nil /* gso */, proto, tcpip.PacketBuffer{
+			if err := c.ep.WritePacket(&r, nil /* gso */, proto, stack.PacketBuffer{
 				Header: hdr,
 				Data:   buf.ToVectorisedView(),
 			}); err != nil {
@@ -345,7 +345,7 @@ func TestPreserveSrcAddressInSend(t *testing.T) {
 	hdr := buffer.NewPrependable(header.EthernetMinimumSize)
 
 	proto := tcpip.NetworkProtocolNumber(rand.Intn(0x10000))
-	if err := c.ep.WritePacket(&r, nil /* gso */, proto, tcpip.PacketBuffer{
+	if err := c.ep.WritePacket(&r, nil /* gso */, proto, stack.PacketBuffer{
 		Header: hdr,
 	}); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
@@ -401,7 +401,7 @@ func TestFillTxQueue(t *testing.T) {
 	for i := queuePipeSize / 40; i > 0; i-- {
 		hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
 
-		if err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, tcpip.PacketBuffer{
+		if err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, stack.PacketBuffer{
 			Header: hdr,
 			Data:   buf.ToVectorisedView(),
 		}); err != nil {
@@ -419,7 +419,7 @@ func TestFillTxQueue(t *testing.T) {
 
 	// Next attempt to write must fail.
 	hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
-	if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, tcpip.PacketBuffer{
+	if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, stack.PacketBuffer{
 		Header: hdr,
 		Data:   buf.ToVectorisedView(),
 	}); err != want {
@@ -447,7 +447,7 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 	// Send two packets so that the id slice has at least two slots.
 	for i := 2; i > 0; i-- {
 		hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
-		if err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, tcpip.PacketBuffer{
+		if err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, stack.PacketBuffer{
 			Header: hdr,
 			Data:   buf.ToVectorisedView(),
 		}); err != nil {
@@ -470,7 +470,7 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 	ids := make(map[uint64]struct{})
 	for i := queuePipeSize / 40; i > 0; i-- {
 		hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
-		if err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, tcpip.PacketBuffer{
+		if err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, stack.PacketBuffer{
 			Header: hdr,
 			Data:   buf.ToVectorisedView(),
 		}); err != nil {
@@ -488,7 +488,7 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 
 	// Next attempt to write must fail.
 	hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
-	if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, tcpip.PacketBuffer{
+	if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, stack.PacketBuffer{
 		Header: hdr,
 		Data:   buf.ToVectorisedView(),
 	}); err != want {
@@ -514,7 +514,7 @@ func TestFillTxMemory(t *testing.T) {
 	ids := make(map[uint64]struct{})
 	for i := queueDataSize / bufferSize; i > 0; i-- {
 		hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
-		if err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, tcpip.PacketBuffer{
+		if err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, stack.PacketBuffer{
 			Header: hdr,
 			Data:   buf.ToVectorisedView(),
 		}); err != nil {
@@ -533,7 +533,7 @@ func TestFillTxMemory(t *testing.T) {
 
 	// Next attempt to write must fail.
 	hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
-	err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, tcpip.PacketBuffer{
+	err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, stack.PacketBuffer{
 		Header: hdr,
 		Data:   buf.ToVectorisedView(),
 	})
@@ -561,7 +561,7 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 	// until there is only one buffer left.
 	for i := queueDataSize/bufferSize - 1; i > 0; i-- {
 		hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
-		if err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, tcpip.PacketBuffer{
+		if err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, stack.PacketBuffer{
 			Header: hdr,
 			Data:   buf.ToVectorisedView(),
 		}); err != nil {
@@ -577,7 +577,7 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 	{
 		hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
 		uu := buffer.NewView(bufferSize).ToVectorisedView()
-		if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, tcpip.PacketBuffer{
+		if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, stack.PacketBuffer{
 			Header: hdr,
 			Data:   uu,
 		}); err != want {
@@ -588,7 +588,7 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 	// Attempt to write the one-buffer packet again. It must succeed.
 	{
 		hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
-		if err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, tcpip.PacketBuffer{
+		if err := c.ep.WritePacket(&r, nil /* gso */, header.IPv4ProtocolNumber, stack.PacketBuffer{
 			Header: hdr,
 			Data:   buf.ToVectorisedView(),
 		}); err != nil {

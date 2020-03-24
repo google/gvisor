@@ -13,7 +13,6 @@ go_library(
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
-        "//pkg/tcpip/iptables",
         "//pkg/tcpip/network/fragmentation",
         "//pkg/tcpip/network/hash",
         "//pkg/tcpip/stack",
