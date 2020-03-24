@@ -11,6 +11,9 @@ disabled_plugins = ["restart"]
 [plugins.linux]
   shim = "/usr/local/bin/gvisor-containerd-shim"
   shim_debug = true
+# Set to avoid port overlap on older versions of containerd where default is 10010.
+[plugins.cri]
+  stream_server_port = "10011"
 [plugins.cri.containerd.untrusted_workload_runtime]
   runtime_type = "io.containerd.runtime.v1.linux"
   runtime_engine = "/usr/local/bin/runsc"
@@ -20,5 +23,5 @@ EOF
 
 { # Step 2: Restart containerd
 sudo pkill containerd
-sudo containerd -log-level debug &> /tmp/containerd-cri.log &
+sudo containerd -log-level debug &>/tmp/containerd-cri.log &
 }
