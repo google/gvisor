@@ -41,7 +41,7 @@ func swapgs()
 // The return code is the vector that interrupted execution.
 //
 // See stubs.go for a note regarding the frame size of this function.
-func sysret(*CPU, *arch.Registers) Vector
+func sysret(cpu *CPU, regs *arch.Registers, userCR3 uintptr) Vector
 
 // "iret is the cadillac of CPL switching."
 //
@@ -50,7 +50,7 @@ func sysret(*CPU, *arch.Registers) Vector
 // iret is nearly identical to sysret, except an iret is used to fully restore
 // all user state. This must be called in cases where all registers need to be
 // restored.
-func iret(*CPU, *arch.Registers) Vector
+func iret(cpu *CPU, regs *arch.Registers, userCR3 uintptr) Vector
 
 // exception is the generic exception entry.
 //
