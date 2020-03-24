@@ -197,13 +197,11 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	WriteFS(uintptr(regs.Fs_base))                   // escapes: no. Set application FS.
 	WriteGS(uintptr(regs.Gs_base))                   // escapes: no. Set application GS.
 	LoadFloatingPoint(switchOpts.FloatingPointState) // escapes: no. Copy in floating point.
-	jumpToKernel()                                   // Switch to upper half.
 	if switchOpts.FullRestore {
 		vector = iret(c, regs, uintptr(userCR3))
 	} else {
 		vector = sysret(c, regs, uintptr(userCR3))
 	}
-	jumpToUser()                                     // Return to lower half.
 	SaveFloatingPoint(switchOpts.FloatingPointState) // escapes: no. Copy out floating point.
 	WriteFS(uintptr(c.registers.Fs_base))            // escapes: no. Restore kernel FS.
 	return

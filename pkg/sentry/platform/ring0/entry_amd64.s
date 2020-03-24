@@ -104,11 +104,24 @@ TEXT ·swapgs(SB),NOSPLIT,$0
 	SWAP_GS()
 	RET
 
+// jumpToKernel changes execution to the kernel address space.
+//
+// This works by changing the return value to the kernel version.
+TEXT ·jumpToKernel(SB),NOSPLIT,$0
+	MOVQ 0(SP), AX
+	ORQ ·KernelStartAddress(SB), AX // Future return value.
+	MOVQ AX, 0(SP)
+	RET
+
 // See entry_amd64.go.
 TEXT ·sysret(SB),NOSPLIT,$0-24
-	// Save original state.
-	LOAD_KERNEL_ADDRESS(cpu+0(FP), BX)
-	LOAD_KERNEL_ADDRESS(regs+8(FP), AX)
+	CALL ·jumpToKernel(SB)
+	// Save original state and stack. sysenter() or exception()
+	// from APP(gr3) will switch to this stack, set the return
+	// value (vector: 32(SP)) and then do RET, which will also
+	// automatically return to the lower half.
+	MOVQ cpu+0(FP), BX
+	MOVQ regs+8(FP), AX
 	MOVQ userCR3+16(FP), CX
 	MOVQ SP, CPU_REGISTERS+PTRACE_RSP(BX)
 	MOVQ BP, CPU_REGISTERS+PTRACE_RBP(BX)
@@ -134,9 +147,13 @@ TEXT ·sysret(SB),NOSPLIT,$0-24
 
 // See entry_amd64.go.
 TEXT ·iret(SB),NOSPLIT,$0-24
-	// Save original state.
-	LOAD_KERNEL_ADDRESS(cpu+0(FP), BX)
-	LOAD_KERNEL_ADDRESS(regs+8(FP), AX)
+	CALL ·jumpToKernel(SB)
+	// Save original state and stack. sysenter() or exception()
+	// from APP(gr3) will switch to this stack, set the return
+	// value (vector: 32(SP)) and then do RET, which will also
+	// automatically return to the lower half.
+	MOVQ cpu+0(FP), BX
+	MOVQ regs+8(FP), AX
 	MOVQ userCR3+16(FP), CX
 	MOVQ SP, CPU_REGISTERS+PTRACE_RSP(BX)
 	MOVQ BP, CPU_REGISTERS+PTRACE_RBP(BX)
