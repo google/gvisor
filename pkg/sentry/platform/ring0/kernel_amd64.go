@@ -198,11 +198,10 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	WriteGS(uintptr(regs.Gs_base))                   // escapes: no. Set application GS.
 	LoadFloatingPoint(switchOpts.FloatingPointState) // escapes: no. Copy in floating point.
 	jumpToKernel()                                   // Switch to upper half.
-	writeCR3(uintptr(userCR3))                       // Change to user address space.
 	if switchOpts.FullRestore {
-		vector = iret(c, regs)
+		vector = iret(c, regs, uintptr(userCR3))
 	} else {
-		vector = sysret(c, regs)
+		vector = sysret(c, regs, uintptr(userCR3))
 	}
 	writeCR3(uintptr(kernelCR3))                     // Return to kernel address space.
 	jumpToUser()                                     // Return to lower half.

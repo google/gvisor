@@ -63,6 +63,15 @@
   MOVQ offset+PTRACE_RSI(reg), SI; \
   MOVQ offset+PTRACE_RDI(reg), DI;
 
+// WRITE_CR3() writes the given CR3 value.
+//
+// The code corresponds to:
+//
+//     mov %rax, %cr3
+//
+#define WRITE_CR3() \
+	BYTE $0x0f; BYTE $0x22; BYTE $0xd8;
+
 // SWAP_GS swaps the kernel GS (CPU).
 #define SWAP_GS() \
 	BYTE $0x0F; BYTE $0x01; BYTE $0xf8;
@@ -100,16 +109,27 @@ TEXT ·sysret(SB),NOSPLIT,$0-24
 	// Save original state.
 	LOAD_KERNEL_ADDRESS(cpu+0(FP), BX)
 	LOAD_KERNEL_ADDRESS(regs+8(FP), AX)
+	MOVQ userCR3+16(FP), CX
 	MOVQ SP, CPU_REGISTERS+PTRACE_RSP(BX)
 	MOVQ BP, CPU_REGISTERS+PTRACE_RBP(BX)
 	MOVQ AX, CPU_REGISTERS+PTRACE_RAX(BX)
+
+	// save SP AX userCR3 on the kernel stack.
+	LOAD_KERNEL_STACK(BX)
+	PUSHQ PTRACE_RSP(AX)
+	PUSHQ PTRACE_RAX(AX)
+	PUSHQ CX
 
 	// Restore user register state.
 	REGISTERS_LOAD(AX, 0)
 	MOVQ PTRACE_RIP(AX), CX    // Needed for SYSRET.
 	MOVQ PTRACE_FLAGS(AX), R11 // Needed for SYSRET.
-	MOVQ PTRACE_RSP(AX), SP    // Restore the stack directly.
-	MOVQ PTRACE_RAX(AX), AX    // Restore AX (scratch).
+
+	// restore userCR3, AX, SP.
+	POPQ AX	                            // Get userCR3.
+	WRITE_CR3()                         // Switch to userCR3.
+	POPQ AX                             // Restore AX.
+	POPQ SP                             // Restore SP.
 	SYSRET64()
 
 // See entry_amd64.go.
@@ -117,19 +137,24 @@ TEXT ·iret(SB),NOSPLIT,$0-24
 	// Save original state.
 	LOAD_KERNEL_ADDRESS(cpu+0(FP), BX)
 	LOAD_KERNEL_ADDRESS(regs+8(FP), AX)
+	MOVQ userCR3+16(FP), CX
 	MOVQ SP, CPU_REGISTERS+PTRACE_RSP(BX)
 	MOVQ BP, CPU_REGISTERS+PTRACE_RBP(BX)
 	MOVQ AX, CPU_REGISTERS+PTRACE_RAX(BX)
 
 	// Build an IRET frame & restore state.
 	LOAD_KERNEL_STACK(BX)
-	MOVQ PTRACE_SS(AX), BX;    PUSHQ BX
-	MOVQ PTRACE_RSP(AX), CX;   PUSHQ CX
-	MOVQ PTRACE_FLAGS(AX), DX; PUSHQ DX
-	MOVQ PTRACE_CS(AX), DI;    PUSHQ DI
-	MOVQ PTRACE_RIP(AX), SI;   PUSHQ SI
-	REGISTERS_LOAD(AX, 0)   // Restore most registers.
-	MOVQ PTRACE_RAX(AX), AX // Restore AX (scratch).
+	PUSHQ PTRACE_SS(AX)
+	PUSHQ PTRACE_RSP(AX)
+	PUSHQ PTRACE_FLAGS(AX)
+	PUSHQ PTRACE_CS(AX)
+	PUSHQ PTRACE_RIP(AX)
+	PUSHQ PTRACE_RAX(AX)                // Save AX on kernel stack.
+	PUSHQ CX                            // Save userCR3 on kernel stack.
+	REGISTERS_LOAD(AX, 0)               // Restore most registers.
+	POPQ AX	                            // Get userCR3.
+	WRITE_CR3()                         // Switch to userCR3.
+	POPQ AX                             // Restore AX.
 	IRET()
 
 // See entry_amd64.go.
@@ -178,13 +203,14 @@ user:
 
 	// Return to the kernel, where the frame is:
 	//
-	//	vector      (sp+24)
+	//	vector      (sp+32)
+	//	userCR3     (sp+24)
 	// 	regs        (sp+16)
 	// 	cpu         (sp+8)
 	// 	vcpu.Switch (sp+0)
 	//
 	MOVQ CPU_REGISTERS+PTRACE_RBP(GS), BP // Original base pointer.
-	MOVQ $Syscall, 24(SP)                 // Output vector.
+	MOVQ $Syscall, 32(SP)                 // Output vector.
 	RET
 
 kernel:
@@ -255,7 +281,7 @@ user:
 	MOVQ CPU_REGISTERS+PTRACE_RBP(GS), BP // Original base pointer.
 	MOVQ CX, CPU_ERROR_CODE(GS)           // Set error code.
 	MOVQ $1, CPU_ERROR_TYPE(GS)           // Set error type to user.
-	MOVQ BX, 24(SP)                       // Output vector.
+	MOVQ BX, 32(SP)                       // Output vector.
 	RET
 
 kernel:
