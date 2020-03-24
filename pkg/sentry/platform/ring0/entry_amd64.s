@@ -84,15 +84,9 @@
 #define SYSRET64() \
 	BYTE $0x48; BYTE $0x0f; BYTE $0x07;
 
-// LOAD_KERNEL_ADDRESS loads a kernel address.
-#define LOAD_KERNEL_ADDRESS(from, to) \
-	MOVQ from, to; \
-	ORQ ·KernelStartAddress(SB), to;
-
 // LOAD_KERNEL_STACK loads the kernel stack.
-#define LOAD_KERNEL_STACK(from) \
-	LOAD_KERNEL_ADDRESS(CPU_SELF(from), SP); \
-	LEAQ CPU_STACK_TOP(SP), SP;
+#define LOAD_KERNEL_STACK(entry) \
+	MOVQ ENTRY_STACK_TOP(entry), SP;
 
 // See kernel.go.
 TEXT ·Halt(SB),NOSPLIT,$0
@@ -128,6 +122,7 @@ TEXT ·sysret(SB),NOSPLIT,$0-24
 	MOVQ AX, CPU_REGISTERS+PTRACE_RAX(BX)
 
 	// save SP AX userCR3 on the kernel stack.
+	MOVQ CPU_ENTRY(BX), BX
 	LOAD_KERNEL_STACK(BX)
 	PUSHQ PTRACE_RSP(AX)
 	PUSHQ PTRACE_RAX(AX)
@@ -160,6 +155,7 @@ TEXT ·iret(SB),NOSPLIT,$0-24
 	MOVQ AX, CPU_REGISTERS+PTRACE_RAX(BX)
 
 	// Build an IRET frame & restore state.
+	MOVQ CPU_ENTRY(BX), BX
 	LOAD_KERNEL_STACK(BX)
 	PUSHQ PTRACE_SS(AX)
 	PUSHQ PTRACE_RSP(AX)
@@ -177,18 +173,18 @@ TEXT ·iret(SB),NOSPLIT,$0-24
 // See entry_amd64.go.
 TEXT ·resume(SB),NOSPLIT,$0
 	// See iret, above.
-	MOVQ CPU_REGISTERS+PTRACE_SS(GS), BX;    PUSHQ BX
-	MOVQ CPU_REGISTERS+PTRACE_RSP(GS), CX;   PUSHQ CX
-	MOVQ CPU_REGISTERS+PTRACE_FLAGS(GS), DX; PUSHQ DX
-	MOVQ CPU_REGISTERS+PTRACE_CS(GS), DI;    PUSHQ DI
-	MOVQ CPU_REGISTERS+PTRACE_RIP(GS), SI;   PUSHQ SI
-	REGISTERS_LOAD(GS, CPU_REGISTERS)
-	MOVQ CPU_REGISTERS+PTRACE_RAX(GS), AX
+	MOVQ ENTRY_CPU_SELF(GS), AX                 // Load vCPU.
+	PUSHQ CPU_REGISTERS+PTRACE_SS(AX)
+	PUSHQ CPU_REGISTERS+PTRACE_RSP(AX)
+	PUSHQ CPU_REGISTERS+PTRACE_FLAGS(AX)
+	PUSHQ CPU_REGISTERS+PTRACE_CS(AX)
+	PUSHQ CPU_REGISTERS+PTRACE_RIP(AX)
+	REGISTERS_LOAD(AX, CPU_REGISTERS)
+	MOVQ CPU_REGISTERS+PTRACE_RAX(AX), AX
 	IRET()
 
 // See entry_amd64.go.
 TEXT ·Start(SB),NOSPLIT,$0
-	LOAD_KERNEL_STACK(AX) // Set the stack.
 	PUSHQ $0x0            // Previous frame pointer.
 	MOVQ SP, BP           // Set frame pointer.
 	PUSHQ AX              // First argument (CPU).
@@ -206,21 +202,24 @@ TEXT ·sysenter(SB),NOSPLIT,$0
 
 user:
 	SWAP_GS()
-	MOVQ AX, CPU_REGISTERS+PTRACE_RCX(GS)  // Save user AX on scratch.
-	MOVQ CPU_KERNEL_CR3(GS), AX            // Get kernel cr3 on AX.
+	MOVQ AX, ENTRY_SCRATCH0(GS)            // Save user AX on scratch.
+	MOVQ ENTRY_KERNEL_CR3(GS), AX          // Get kernel cr3 on AX.
 	WRITE_CR3()                            // Switch to kernel cr3.
 
-	XCHGQ CPU_REGISTERS+PTRACE_RSP(GS), SP // Swap stacks.
-	MOVQ CPU_REGISTERS+PTRACE_RAX(GS), AX  // Get user regs.
+	MOVQ ENTRY_CPU_SELF(GS), AX            // Load vCPU.
+	MOVQ CPU_REGISTERS+PTRACE_RAX(AX), AX  // Get user regs.
 	REGISTERS_SAVE(AX, 0)                  // Save all except IP, FLAGS, SP, AX.
-	MOVQ CPU_REGISTERS+PTRACE_RCX(GS), BX  // Load saved user AX value.
-	MOVQ BX,  PTRACE_RAX(AX)               // Save everything else.
-	MOVQ BX,  PTRACE_ORIGRAX(AX)
 	MOVQ CX,  PTRACE_RIP(AX)
 	MOVQ R11, PTRACE_FLAGS(AX)
-	MOVQ CPU_REGISTERS+PTRACE_RSP(GS), BX; MOVQ BX, PTRACE_RSP(AX)
-	MOVQ $0, CPU_ERROR_CODE(GS) // Clear error code.
-	MOVQ $1, CPU_ERROR_TYPE(GS) // Set error type to user.
+	MOVQ SP,  PTRACE_RSP(AX)
+	MOVQ ENTRY_SCRATCH0(GS), CX            // Load saved user AX value.
+	MOVQ CX,  PTRACE_RAX(AX)               // Save everything else.
+	MOVQ CX,  PTRACE_ORIGRAX(AX)
+
+	MOVQ ENTRY_CPU_SELF(GS), AX            // Load vCPU.
+	MOVQ CPU_REGISTERS+PTRACE_RSP(AX), SP  // Get stacks.
+	MOVQ $0, CPU_ERROR_CODE(AX)            // Clear error code.
+	MOVQ $1, CPU_ERROR_TYPE(AX)            // Set error type to user.
 
 	// Return to the kernel, where the frame is:
 	//
@@ -230,25 +229,27 @@ user:
 	// 	cpu         (sp+8)
 	// 	vcpu.Switch (sp+0)
 	//
-	MOVQ CPU_REGISTERS+PTRACE_RBP(GS), BP // Original base pointer.
+	MOVQ CPU_REGISTERS+PTRACE_RBP(AX), BP // Original base pointer.
 	MOVQ $Syscall, 32(SP)                 // Output vector.
 	RET
 
 kernel:
 	// We can't restore the original stack, but we can access the registers
 	// in the CPU state directly. No need for temporary juggling.
-	MOVQ AX,  CPU_REGISTERS+PTRACE_ORIGRAX(GS)
-	MOVQ AX,  CPU_REGISTERS+PTRACE_RAX(GS)
-	REGISTERS_SAVE(GS, CPU_REGISTERS)
-	MOVQ CX,  CPU_REGISTERS+PTRACE_RIP(GS)
-	MOVQ R11, CPU_REGISTERS+PTRACE_FLAGS(GS)
-	MOVQ SP,  CPU_REGISTERS+PTRACE_RSP(GS)
-	MOVQ $0, CPU_ERROR_CODE(GS) // Clear error code.
-	MOVQ $0, CPU_ERROR_TYPE(GS) // Set error type to kernel.
+	MOVQ AX,  ENTRY_SCRATCH0(GS)
+	MOVQ ENTRY_CPU_SELF(GS), AX                 // Load vCPU.
+	REGISTERS_SAVE(AX, CPU_REGISTERS)
+	MOVQ CX,  CPU_REGISTERS+PTRACE_RIP(AX)
+	MOVQ R11, CPU_REGISTERS+PTRACE_FLAGS(AX)
+	MOVQ SP,  CPU_REGISTERS+PTRACE_RSP(AX)
+	MOVQ ENTRY_SCRATCH0(GS), BX
+	MOVQ BX,  CPU_REGISTERS+PTRACE_ORIGRAX(AX)
+	MOVQ BX,  CPU_REGISTERS+PTRACE_RAX(AX)
+	MOVQ $0,  CPU_ERROR_CODE(AX)                // Clear error code.
+	MOVQ $0,  CPU_ERROR_TYPE(AX)                // Set error type to kernel.
 
 	// Call the syscall trampoline.
 	LOAD_KERNEL_STACK(GS)
-	MOVQ CPU_SELF(GS), AX   // Load vCPU.
 	PUSHQ AX                // First argument (vCPU).
 	CALL ·kernelSyscall(SB) // Call the trampoline.
 	POPQ AX                 // Pop vCPU.
@@ -285,10 +286,11 @@ user:
 	ADDQ $-8, SP                            // Adjust for flags.
 	MOVQ $_KERNEL_FLAGS, 0(SP); BYTE $0x9d; // Reset flags (POPFQ).
 	PUSHQ AX                                // Save user AX on stack.
-	MOVQ CPU_KERNEL_CR3(GS), AX             // Get kernel cr3 on AX.
+	MOVQ ENTRY_KERNEL_CR3(GS), AX           // Get kernel cr3 on AX.
 	WRITE_CR3()                             // Switch to kernel cr3.
 
-	MOVQ CPU_REGISTERS+PTRACE_RAX(GS), AX   // Get user regs.
+	MOVQ ENTRY_CPU_SELF(GS), AX             // Load vCPU.
+	MOVQ CPU_REGISTERS+PTRACE_RAX(AX), AX   // Get user regs.
 	REGISTERS_SAVE(AX, 0)                   // Save all except IP, FLAGS, SP, AX.
 	POPQ BX                                 // Restore original AX.
 	MOVQ BX, PTRACE_RAX(AX)                 // Save it.
@@ -300,34 +302,36 @@ user:
 	MOVQ 48(SP), SI; MOVQ SI, PTRACE_SS(AX)
 
 	// Copy out and return.
+	MOVQ ENTRY_CPU_SELF(GS), AX           // Load vCPU.
 	MOVQ 0(SP), BX                        // Load vector.
 	MOVQ 8(SP), CX                        // Load error code.
-	MOVQ CPU_REGISTERS+PTRACE_RSP(GS), SP // Original stack (kernel version).
-	MOVQ CPU_REGISTERS+PTRACE_RBP(GS), BP // Original base pointer.
-	MOVQ CX, CPU_ERROR_CODE(GS)           // Set error code.
-	MOVQ $1, CPU_ERROR_TYPE(GS)           // Set error type to user.
+	MOVQ CPU_REGISTERS+PTRACE_RSP(AX), SP // Original stack (kernel version).
+	MOVQ CPU_REGISTERS+PTRACE_RBP(AX), BP // Original base pointer.
+	MOVQ CX, CPU_ERROR_CODE(AX)           // Set error code.
+	MOVQ $1, CPU_ERROR_TYPE(AX)           // Set error type to user.
 	MOVQ BX, 32(SP)                       // Output vector.
 	RET
 
 kernel:
 	// As per above, we can save directly.
-	MOVQ AX, CPU_REGISTERS+PTRACE_RAX(GS)
-	MOVQ AX, CPU_REGISTERS+PTRACE_ORIGRAX(GS)
-	REGISTERS_SAVE(GS, CPU_REGISTERS)
-	MOVQ 16(SP), AX; MOVQ AX, CPU_REGISTERS+PTRACE_RIP(GS)
-	MOVQ 32(SP), BX; MOVQ BX, CPU_REGISTERS+PTRACE_FLAGS(GS)
-	MOVQ 40(SP), CX; MOVQ CX, CPU_REGISTERS+PTRACE_RSP(GS)
+	PUSHQ AX
+	MOVQ ENTRY_CPU_SELF(GS), AX                        // Load vCPU.
+	REGISTERS_SAVE(AX, CPU_REGISTERS)
+	POPQ BX
+	MOVQ BX, CPU_REGISTERS+PTRACE_RAX(AX)
+	MOVQ BX, CPU_REGISTERS+PTRACE_ORIGRAX(AX)
+	MOVQ 16(SP), BX; MOVQ BX, CPU_REGISTERS+PTRACE_RIP(AX)
+	MOVQ 32(SP), BX; MOVQ BX, CPU_REGISTERS+PTRACE_FLAGS(AX)
+	MOVQ 40(SP), BX; MOVQ BX, CPU_REGISTERS+PTRACE_RSP(AX)
 
 	// Set the error code and adjust the stack.
-	MOVQ 8(SP), AX              // Load the error code.
-	MOVQ AX, CPU_ERROR_CODE(GS) // Copy out to the CPU.
-	MOVQ $0, CPU_ERROR_TYPE(GS) // Set error type to kernel.
+	MOVQ 8(SP), BX              // Load the error code.
+	MOVQ BX, CPU_ERROR_CODE(AX) // Copy out to the CPU.
+	MOVQ $0, CPU_ERROR_TYPE(AX) // Set error type to kernel.
 	MOVQ 0(SP), BX              // BX contains the vector.
-	ADDQ $48, SP                // Drop the exception frame.
 
 	// Call the exception trampoline.
 	LOAD_KERNEL_STACK(GS)
-	MOVQ CPU_SELF(GS), AX     // Load vCPU.
 	PUSHQ BX                  // Second argument (vector).
 	PUSHQ AX                  // First argument (vCPU).
 	CALL ·kernelException(SB) // Call the trampoline.

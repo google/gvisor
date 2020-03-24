@@ -41,6 +41,8 @@ func (k *Kernel) init(opts KernelOpts) {
 
 // init initializes architecture-specific state.
 func (c *CPU) init() {
+	c.kernelEntry = &kernelEntry{}
+	c.cpuSelf = c
 	// Null segment.
 	c.gdt[0].setNull()
 
@@ -65,6 +67,7 @@ func (c *CPU) init() {
 
 	// Set the kernel stack pointer in the TSS (virtual address).
 	stackAddr := c.StackTop()
+	c.stackTop = stackAddr
 	c.tss.rsp0Lo = uint32(stackAddr)
 	c.tss.rsp0Hi = uint32(stackAddr >> 32)
 	c.tss.ist1Lo = uint32(stackAddr)
@@ -215,7 +218,7 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 //go:nosplit
 func start(c *CPU) {
 	// Save per-cpu & FS segment.
-	WriteGS(kernelAddr(c))
+	WriteGS(kernelAddr(c.kernelEntry))
 	WriteFS(uintptr(c.registers.Fs_base))
 
 	// Initialize floating point.
