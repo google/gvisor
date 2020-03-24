@@ -36,6 +36,9 @@ func sysenter()
 // This must be called prior to sysret/iret.
 func swapgs()
 
+// jumpToKernel jumps to the kernel version of the current RIP.
+func jumpToKernel()
+
 // sysret returns to userspace from a system call.
 //
 // The return code is the vector that interrupted execution.
