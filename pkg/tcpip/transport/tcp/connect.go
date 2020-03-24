@@ -705,7 +705,7 @@ func (e *endpoint) sendTCP(r *stack.Route, id stack.TransportEndpointID, data bu
 	return nil
 }
 
-func buildTCPHdr(r *stack.Route, id stack.TransportEndpointID, pkt *tcpip.PacketBuffer, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts []byte, gso *stack.GSO) {
+func buildTCPHdr(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts []byte, gso *stack.GSO) {
 	optLen := len(opts)
 	hdr := &pkt.Header
 	packetSize := pkt.DataSize
@@ -752,7 +752,7 @@ func sendTCPBatch(r *stack.Route, id stack.TransportEndpointID, data buffer.Vect
 	// Allocate one big slice for all the headers.
 	hdrSize := header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen
 	buf := make([]byte, n*hdrSize)
-	pkts := make([]tcpip.PacketBuffer, n)
+	pkts := make([]stack.PacketBuffer, n)
 	for i := range pkts {
 		pkts[i].Header = buffer.NewEmptyPrependableFromView(buf[i*hdrSize:][:hdrSize])
 	}
@@ -795,7 +795,7 @@ func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.Vectorise
 		return sendTCPBatch(r, id, data, ttl, tos, flags, seq, ack, rcvWnd, opts, gso)
 	}
 
-	pkt := tcpip.PacketBuffer{
+	pkt := stack.PacketBuffer{
 		Header:     buffer.NewPrependable(header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen),
 		DataOffset: 0,
 		DataSize:   data.Size(),

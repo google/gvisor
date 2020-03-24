@@ -29,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -100,8 +99,8 @@ func NewEndpoint(s *stack.Stack, cooked bool, netProto tcpip.NetworkProtocolNumb
 }
 
 // Abort implements stack.TransportEndpoint.Abort.
-func (e *endpoint) Abort() {
-	e.Close()
+func (ep *endpoint) Abort() {
+	ep.Close()
 }
 
 // Close implements tcpip.Endpoint.Close.
@@ -134,7 +133,7 @@ func (ep *endpoint) Close() {
 func (ep *endpoint) ModerateRecvBuf(copied int) {}
 
 // IPTables implements tcpip.Endpoint.IPTables.
-func (ep *endpoint) IPTables() (iptables.IPTables, error) {
+func (ep *endpoint) IPTables() (stack.IPTables, error) {
 	return ep.stack.IPTables(), nil
 }
 
@@ -299,7 +298,7 @@ func (ep *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 }
 
 // HandlePacket implements stack.PacketEndpoint.HandlePacket.
-func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) {
+func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
 	ep.rcvMu.Lock()
 
 	// Drop the packet if our buffer is currently full.

@@ -9,28 +9,6 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *PacketBuffer) save(m state.Map) {
-	x.beforeSave()
-	m.Save("Data", &x.Data)
-	m.Save("DataOffset", &x.DataOffset)
-	m.Save("DataSize", &x.DataSize)
-	m.Save("Header", &x.Header)
-	m.Save("LinkHeader", &x.LinkHeader)
-	m.Save("NetworkHeader", &x.NetworkHeader)
-	m.Save("TransportHeader", &x.TransportHeader)
-}
-
-func (x *PacketBuffer) afterLoad() {}
-func (x *PacketBuffer) load(m state.Map) {
-	m.Load("Data", &x.Data)
-	m.Load("DataOffset", &x.DataOffset)
-	m.Load("DataSize", &x.DataSize)
-	m.Load("Header", &x.Header)
-	m.Load("LinkHeader", &x.LinkHeader)
-	m.Load("NetworkHeader", &x.NetworkHeader)
-	m.Load("TransportHeader", &x.TransportHeader)
-}
-
 func (x *FullAddress) beforeSave() {}
 func (x *FullAddress) save(m state.Map) {
 	x.beforeSave()
@@ -100,7 +78,6 @@ func (x *StdClock) load(m state.Map) {
 }
 
 func init() {
-	state.Register("pkg/tcpip.PacketBuffer", (*PacketBuffer)(nil), state.Fns{Save: (*PacketBuffer).save, Load: (*PacketBuffer).load})
 	state.Register("pkg/tcpip.FullAddress", (*FullAddress)(nil), state.Fns{Save: (*FullAddress).save, Load: (*FullAddress).load})
 	state.Register("pkg/tcpip.ControlMessages", (*ControlMessages)(nil), state.Fns{Save: (*ControlMessages).save, Load: (*ControlMessages).load})
 	state.Register("pkg/tcpip.IPPacketInfo", (*IPPacketInfo)(nil), state.Fns{Save: (*IPPacketInfo).save, Load: (*IPPacketInfo).load})

@@ -31,7 +31,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -51,7 +50,7 @@ const (
 
 type transportProtocolState struct {
 	proto          TransportProtocol
-	defaultHandler func(r *Route, id TransportEndpointID, pkt tcpip.PacketBuffer) bool
+	defaultHandler func(r *Route, id TransportEndpointID, pkt PacketBuffer) bool
 }
 
 // TCPProbeFunc is the expected function type for a TCP probe function to be
@@ -428,7 +427,7 @@ type Stack struct {
 
 	// tables are the iptables packet filtering and manipulation rules. The are
 	// protected by tablesMu.`
-	tables iptables.IPTables
+	tables IPTables
 
 	// resumableEndpoints is a list of endpoints that need to be resumed if the
 	// stack is being restored.
@@ -738,7 +737,7 @@ func (s *Stack) TransportProtocolOption(transport tcpip.TransportProtocolNumber,
 //
 // It must be called only during initialization of the stack. Changing it as the
 // stack is operating is not supported.
-func (s *Stack) SetTransportProtocolHandler(p tcpip.TransportProtocolNumber, h func(*Route, TransportEndpointID, tcpip.PacketBuffer) bool) {
+func (s *Stack) SetTransportProtocolHandler(p tcpip.TransportProtocolNumber, h func(*Route, TransportEndpointID, PacketBuffer) bool) {
 	state := s.transportProtocols[p]
 	if state != nil {
 		state.defaultHandler = h
@@ -1701,7 +1700,7 @@ func (s *Stack) IsInGroup(nicID tcpip.NICID, multicastAddr tcpip.Address) (bool,
 }
 
 // IPTables returns the stack's iptables.
-func (s *Stack) IPTables() iptables.IPTables {
+func (s *Stack) IPTables() IPTables {
 	s.tablesMu.RLock()
 	t := s.tables
 	s.tablesMu.RUnlock()
@@ -1709,7 +1708,7 @@ func (s *Stack) IPTables() iptables.IPTables {
 }
 
 // SetIPTables sets the stack's iptables.
-func (s *Stack) SetIPTables(ipt iptables.IPTables) {
+func (s *Stack) SetIPTables(ipt IPTables) {
 	s.tablesMu.Lock()
 	s.tables = ipt
 	s.tablesMu.Unlock()
