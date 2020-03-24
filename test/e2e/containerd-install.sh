@@ -10,6 +10,13 @@ sudo mkdir -p /etc/containerd /etc/cni/net.d /opt/cni/bin
 sudo tar -xvf cni-plugins-amd64-v0.7.0.tgz -C /opt/cni/bin/
 sudo tar -xvf containerd-${CONTAINERD_VERSION}.linux-amd64.tar.gz -C /
 
+cat <<EOF | sudo tee /etc/containerd/config.toml
+disabled_plugins = ["restart"]
+# Set to avoid port overlap on older versions of containerd where default is 10010.
+[plugins.cri]
+  stream_server_port = "10011"
+EOF
+
 cat <<EOF | sudo tee /etc/cni/net.d/10-bridge.conf
 {
   "cniVersion": "0.3.1",
@@ -34,5 +41,4 @@ cat <<EOF | sudo tee /etc/cni/net.d/99-loopback.conf
 }
 EOF
 
-sudo PATH=$PATH containerd -log-level debug &> /tmp/containerd-cri.log &
-
+sudo PATH=$PATH containerd -log-level debug &>/tmp/containerd-cri.log &
