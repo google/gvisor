@@ -10,6 +10,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 package stack
 
 import "gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -54,6 +55,10 @@ type PacketBuffer struct {
 	LinkHeader      buffer.View
 	NetworkHeader   buffer.View
 	TransportHeader buffer.View
+
+	// Hash is the transport layer hash of this packet. A value of zero
+	// indicates no valid hash has been set.
+	Hash uint32
 }
 
 // Clone makes a copy of pk. It clones the Data field, which creates a new

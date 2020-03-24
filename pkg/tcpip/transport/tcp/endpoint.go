@@ -581,6 +581,10 @@ type endpoint struct {
 	// endpoint and at this point the endpoint is only around
 	// to complete the TCP shutdown.
 	closed bool
+
+	// txHash is the transport layer hash to be set on outbound packets
+	// emitted by this endpoint.
+	txHash uint32
 }
 
 // UniqueID implements stack.TransportEndpoint.UniqueID.
@@ -771,6 +775,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 			count:    9,
 		},
 		uniqueID: s.UniqueID(),
+		txHash:   s.Rand().Uint32(),
 	}
 
 	var ss SendBufferSizeOption

@@ -445,7 +445,15 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		// RFC 793 section 3.4 page 35 (figure 12) outlines that a RST
 		// must be sent in response to a SYN-ACK while in the listen
 		// state to prevent completing a handshake from an old SYN.
-		e.sendTCP(&s.route, s.id, buffer.VectorisedView{}, e.ttl, e.sendTOS, header.TCPFlagRst, s.ackNumber, 0, 0, nil, nil)
+		e.sendTCP(&s.route, tcpFields{
+			id:     s.id,
+			ttl:    e.ttl,
+			tos:    e.sendTOS,
+			flags:  header.TCPFlagRst,
+			seq:    s.ackNumber,
+			ack:    0,
+			rcvWnd: 0,
+		}, buffer.VectorisedView{}, nil)
 		return
 	}
 
@@ -493,7 +501,15 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 				TSEcr: opts.TSVal,
 				MSS:   mssForRoute(&s.route),
 			}
-			e.sendSynTCP(&s.route, s.id, e.ttl, e.sendTOS, header.TCPFlagSyn|header.TCPFlagAck, cookie, s.sequenceNumber+1, ctx.rcvWnd, synOpts)
+			e.sendSynTCP(&s.route, tcpFields{
+				id:     s.id,
+				ttl:    e.ttl,
+				tos:    e.sendTOS,
+				flags:  header.TCPFlagSyn | header.TCPFlagAck,
+				seq:    cookie,
+				ack:    s.sequenceNumber + 1,
+				rcvWnd: ctx.rcvWnd,
+			}, synOpts)
 			e.stack.Stats().TCP.ListenOverflowSynCookieSent.Increment()
 		}
 

@@ -20,7 +20,9 @@
 package stack
 
 import (
+	"bytes"
 	"encoding/binary"
+	mathrand "math/rand"
 	"sync/atomic"
 	"time"
 
@@ -465,6 +467,10 @@ type Stack struct {
 	// forwarder holds the packets that wait for their link-address resolutions
 	// to complete, and forwards them when each resolution is done.
 	forwarder *forwardQueue
+
+	// randomGenerator is an injectable pseudo random generator that can be
+	// used when a random number is required.
+	randomGenerator *mathrand.Rand
 }
 
 // UniqueID is an abstract generator of unique identifiers.
@@ -525,9 +531,16 @@ type Options struct {
 	// this is non-nil.
 	RawFactory RawFactory
 
-	// OpaqueIIDOpts hold the options for generating opaque interface identifiers
-	// (IIDs) as outlined by RFC 7217.
+	// OpaqueIIDOpts hold the options for generating opaque interface
+	// identifiers (IIDs) as outlined by RFC 7217.
 	OpaqueIIDOpts OpaqueInterfaceIdentifierOptions
+
+	// RandSource is an optional source to use to generate random
+	// numbers. If omitted it defaults to a Source seeded by the data
+	// returned by rand.Read().
+	//
+	// RandSource must be thread-safe.
+	RandSource mathrand.Source
 }
 
 // TransportEndpointInfo holds useful information about a transport endpoint
@@ -623,6 +636,13 @@ func New(opts Options) *Stack {
 		opts.UniqueID = new(uniqueIDGenerator)
 	}
 
+	randSrc := opts.RandSource
+	if randSrc == nil {
+		// Source provided by mathrand.NewSource is not thread-safe so
+		// we wrap it in a simple thread-safe version.
+		randSrc = &lockedRandomSource{src: mathrand.NewSource(generateRandInt64())}
+	}
+
 	// Make sure opts.NDPConfigs contains valid values only.
 	opts.NDPConfigs.validate()
 
@@ -645,6 +665,7 @@ func New(opts Options) *Stack {
 		ndpDisp:              opts.NDPDisp,
 		opaqueIIDOpts:        opts.OpaqueIIDOpts,
 		forwarder:            newForwardQueue(),
+		randomGenerator:      mathrand.New(randSrc),
 	}
 
 	// Add specified network protocols.
@@ -1818,10 +1839,29 @@ func (s *Stack) Seed() uint32 {
 	return s.seed
 }
 
+// Rand returns a reference to a pseudo random generator that can be used
+// to generate random numbers as required.
+func (s *Stack) Rand() *mathrand.Rand {
+	return s.randomGenerator
+}
+
 func generateRandUint32() uint32 {
 	b := make([]byte, 4)
 	if _, err := rand.Read(b); err != nil {
 		panic(err)
 	}
 	return binary.LittleEndian.Uint32(b)
+}
+
+func generateRandInt64() int64 {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	buf := bytes.NewReader(b)
+	var v int64
+	if err := binary.Read(buf, binary.LittleEndian, &v); err != nil {
+		panic(err)
+	}
+	return v
 }
