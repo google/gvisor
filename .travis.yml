@@ -17,3 +17,7 @@ matrix:
 script:
    - uname -a
    - make DOCKER_RUN_OPTIONS="" BAZEL_OPTIONS="build runsc:runsc" bazel && $RUNSC_PATH --alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do ls
+branches:
+  except:
+  # Skip copybara branches.
+  - /^test\/cl.*$/
