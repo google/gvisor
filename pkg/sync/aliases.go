@@ -29,3 +29,8 @@ type (
 	// Map is an alias of sync.Map.
 	Map = sync.Map
 )
+
+// NewCond is a wrapper around sync.NewCond.
+func NewCond(l Locker) *Cond {
+	return sync.NewCond(l)
+}
