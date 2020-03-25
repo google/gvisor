@@ -34,6 +34,13 @@
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
+#ifndef AT_STATX_FORCE_SYNC
+#define AT_STATX_FORCE_SYNC 0x2000
+#endif
+#ifndef AT_STATX_DONT_SYNC
+#define AT_STATX_DONT_SYNC 0x4000
+#endif
+
 namespace gvisor {
 namespace testing {
 
@@ -700,8 +707,10 @@ TEST_F(StatTest, StatxInvalidFlags) {
   struct kernel_statx stx;
   EXPECT_THAT(statx(AT_FDCWD, test_file_name_.c_str(), 12345, 0, &stx),
               SyscallFailsWithErrno(EINVAL));
+
+  // Sync flags are mutually exclusive.
   EXPECT_THAT(statx(AT_FDCWD, test_file_name_.c_str(),
-                    0x6000 /* AT_STATX_SYNC_TYPE */, 0, &stx),
+                    AT_STATX_FORCE_SYNC | AT_STATX_DONT_SYNC, 0, &stx),
               SyscallFailsWithErrno(EINVAL));
 }
 

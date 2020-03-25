@@ -31,6 +31,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/bits",
         "//pkg/fspath",
         "//pkg/gohacks",
         "//pkg/sentry/arch",
