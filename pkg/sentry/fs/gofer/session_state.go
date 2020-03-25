@@ -37,7 +37,11 @@ func (s *session) beforeSave() {
 func (s *session) afterLoad() {
 	// The restore environment contains the 9p connection of this mount.
 	fsys := filesystem{}
-	env, ok := fs.CurrentRestoreEnvironment()
+
+	var cindex int
+	var notUsed string
+	fmt.Sscanf(s.connID, "9pfs-%d%v", &cindex, &notUsed)
+	env, ok := fs.CurrentRestoreEnvironment(cindex)
 	if !ok {
 		panic("failed to find restore environment")
 	}

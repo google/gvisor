@@ -49,30 +49,28 @@ type MountArgs struct {
 }
 
 // restoreEnv holds the fs package global RestoreEnvironment.
+// []RestoreEnvironment and []set are per-container
 var restoreEnv = struct {
 	mu  sync.Mutex
-	env RestoreEnvironment
-	set bool
+	env []RestoreEnvironment
+	set []bool
 }{}
 
 // SetRestoreEnvironment sets the RestoreEnvironment. Must be called before
-// state.Load and only once.
+// state.Load and once for each container.
 func SetRestoreEnvironment(r RestoreEnvironment) {
 	restoreEnv.mu.Lock()
 	defer restoreEnv.mu.Unlock()
-	if restoreEnv.set {
-		panic("RestoreEnvironment may only be set once")
-	}
-	restoreEnv.env = r
-	restoreEnv.set = true
+	restoreEnv.env = append(restoreEnv.env, r)
+	restoreEnv.set = append(restoreEnv.set, true)
 }
 
 // CurrentRestoreEnvironment returns the current, read-only RestoreEnvironment.
 // If no RestoreEnvironment was ever set, returns (_, false).
-func CurrentRestoreEnvironment() (RestoreEnvironment, bool) {
+func CurrentRestoreEnvironment(cindex int) (RestoreEnvironment, bool) {
 	restoreEnv.mu.Lock()
 	defer restoreEnv.mu.Unlock()
-	e := restoreEnv.env
-	set := restoreEnv.set
+	e := restoreEnv.env[cindex]
+	set := restoreEnv.set[cindex]
 	return e, set
 }

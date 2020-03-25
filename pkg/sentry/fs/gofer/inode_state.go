@@ -150,7 +150,10 @@ func (i *inodeFileState) afterLoad() {
 		}
 
 		if i.sattr.Type == fs.RegularFile {
-			env, ok := fs.CurrentRestoreEnvironment()
+			var cindex int
+			var notUsed string
+			fmt.Sscanf(i.s.connID, "9pfs-%d%v", &cindex, &notUsed)
+			env, ok := fs.CurrentRestoreEnvironment(cindex)
 			if !ok {
 				return errors.New("missing restore environment")
 			}
