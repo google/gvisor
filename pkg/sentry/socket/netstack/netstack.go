@@ -29,6 +29,7 @@ import (
 	"io"
 	"math"
 	"reflect"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -264,8 +265,14 @@ type SocketOperations struct {
 	skType   linux.SockType
 	protocol int
 
+	// readViewHasData is 1 iff readView has data to be read, 0 otherwise.
+	// Must be accessed using atomic operations. It must only be written
+	// with readMu held but can be read without holding readMu. The latter
+	// is required to avoid deadlocks in epoll Readiness checks.
+	readViewHasData uint32
+
 	// readMu protects access to the below fields.
-	readMu sync.RWMutex `state:"nosave"`
+	readMu sync.Mutex `state:"nosave"`
 	// readView contains the remaining payload from the last packet.
 	readView buffer.View
 	// readCM holds control message information for the last packet read
@@ -421,11 +428,13 @@ func (s *SocketOperations) fetchReadView() *syserr.Error {
 
 	v, cms, err := s.Endpoint.Read(&s.sender)
 	if err != nil {
+		atomic.StoreUint32(&s.readViewHasData, 0)
 		return syserr.TranslateNetstackError(err)
 	}
 
 	s.readView = v
 	s.readCM = cms
+	atomic.StoreUint32(&s.readViewHasData, 1)
 
 	return nil
 }
@@ -624,11 +633,9 @@ func (s *SocketOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
 	// Check our cached value iff the caller asked for readability and the
 	// endpoint itself is currently not readable.
 	if (mask & ^r & waiter.EventIn) != 0 {
-		s.readMu.RLock()
-		if len(s.readView) > 0 {
+		if atomic.LoadUint32(&s.readViewHasData) == 1 {
 			r |= waiter.EventIn
 		}
-		s.readMu.RUnlock()
 	}
 
 	return r
@@ -2335,6 +2342,9 @@ func (s *SocketOperations) coalescingRead(ctx context.Context, dst usermem.IOSeq
 		}
 		copied += n
 		s.readView.TrimFront(n)
+		if len(s.readView) == 0 {
+			atomic.StoreUint32(&s.readViewHasData, 0)
+		}
 
 		dst = dst.DropFirst(n)
 		if e != nil {
@@ -2456,6 +2466,10 @@ func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSe
 	} else {
 		msgLen = int(n)
 		s.readView.TrimFront(int(n))
+	}
+
+	if len(s.readView) == 0 {
+		atomic.StoreUint32(&s.readViewHasData, 0)
 	}
 
 	var flags int
