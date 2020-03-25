@@ -402,8 +402,6 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 		if err == nil {
 			vfs.putResolvingPath(rp)
 
-			// TODO(gvisor.dev/issue/1193): Move inside fsimpl to avoid another call
-			// to FileDescription.Stat().
 			if opts.FileExec {
 				if fd.Mount().flags.NoExec {
 					fd.DecRef()
