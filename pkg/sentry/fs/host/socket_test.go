@@ -199,14 +199,14 @@ func TestListen(t *testing.T) {
 }
 
 func TestPasscred(t *testing.T) {
-	e := ConnectedEndpoint{}
+	e := &ConnectedEndpoint{}
 	if got, want := e.Passcred(), false; got != want {
 		t.Errorf("Got %#v.Passcred() = %t, want = %t", e, got, want)
 	}
 }
 
 func TestGetLocalAddress(t *testing.T) {
-	e := ConnectedEndpoint{path: "foo"}
+	e := &ConnectedEndpoint{path: "foo"}
 	want := tcpip.FullAddress{Addr: tcpip.Address("foo")}
 	if got, err := e.GetLocalAddress(); err != nil || got != want {
 		t.Errorf("Got %#v.GetLocalAddress() = %#v, %v, want = %#v, %v", e, got, err, want, nil)
@@ -214,7 +214,7 @@ func TestGetLocalAddress(t *testing.T) {
 }
 
 func TestQueuedSize(t *testing.T) {
-	e := ConnectedEndpoint{}
+	e := &ConnectedEndpoint{}
 	tests := []struct {
 		name string
 		f    func() int64

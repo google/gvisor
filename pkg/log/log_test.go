@@ -52,7 +52,7 @@ func TestDropMessages(t *testing.T) {
 		t.Fatalf("Write should have failed")
 	}
 
-	fmt.Printf("writer: %+v\n", w)
+	fmt.Printf("writer: %#v\n", &w)
 
 	tw.fail = false
 	if _, err := w.Write([]byte("line 2\n")); err != nil {
@@ -76,7 +76,7 @@ func TestDropMessages(t *testing.T) {
 
 func TestCaller(t *testing.T) {
 	tw := &testWriter{}
-	e := &GoogleEmitter{Writer: Writer{Next: tw}}
+	e := GoogleEmitter{Writer: &Writer{Next: tw}}
 	bl := &BasicLogger{
 		Emitter: e,
 		Level:   Debug,
@@ -94,7 +94,7 @@ func BenchmarkGoogleLogging(b *testing.B) {
 	tw := &testWriter{
 		limit: 1, // Only record one message.
 	}
-	e := &GoogleEmitter{Writer: Writer{Next: tw}}
+	e := GoogleEmitter{Writer: &Writer{Next: tw}}
 	bl := &BasicLogger{
 		Emitter: e,
 		Level:   Debug,
