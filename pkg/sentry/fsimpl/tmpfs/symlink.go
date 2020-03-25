@@ -15,6 +15,7 @@
 package tmpfs
 
 import (
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
@@ -27,7 +28,7 @@ func (fs *filesystem) newSymlink(creds *auth.Credentials, target string) *inode 
 	link := &symlink{
 		target: target,
 	}
-	link.inode.init(link, fs, creds, 0777)
+	link.inode.init(link, fs, creds, linux.S_IFLNK|0777)
 	link.inode.nlink = 1 // from parent directory
 	return &link.inode
 }

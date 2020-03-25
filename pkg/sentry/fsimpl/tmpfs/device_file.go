@@ -15,6 +15,8 @@
 package tmpfs
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -32,6 +34,14 @@ func (fs *filesystem) newDeviceFile(creds *auth.Credentials, mode linux.FileMode
 		kind:  kind,
 		major: major,
 		minor: minor,
+	}
+	switch kind {
+	case vfs.BlockDevice:
+		mode |= linux.S_IFBLK
+	case vfs.CharDevice:
+		mode |= linux.S_IFCHR
+	default:
+		panic(fmt.Sprintf("invalid DeviceKind: %v", kind))
 	}
 	file.inode.init(file, fs, creds, mode)
 	file.inode.nlink = 1 // from parent directory

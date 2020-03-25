@@ -34,7 +34,7 @@ type namedPipe struct {
 //   * rp.Mount().CheckBeginWrite() has been called successfully.
 func (fs *filesystem) newNamedPipe(creds *auth.Credentials, mode linux.FileMode) *inode {
 	file := &namedPipe{pipe: pipe.NewVFSPipe(pipe.DefaultPipeSize, usermem.PageSize)}
-	file.inode.init(file, fs, creds, mode)
+	file.inode.init(file, fs, creds, linux.S_IFIFO|mode)
 	file.inode.nlink = 1 // Only the parent has a link.
 	return &file.inode
 }

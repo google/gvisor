@@ -89,7 +89,7 @@ func (fs *filesystem) newRegularFile(creds *auth.Credentials, mode linux.FileMod
 	file := &regularFile{
 		memFile: fs.memFile,
 	}
-	file.inode.init(file, fs, creds, mode)
+	file.inode.init(file, fs, creds, linux.S_IFREG|mode)
 	file.inode.nlink = 1 // from parent directory
 	return &file.inode
 }
