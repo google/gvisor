@@ -33,24 +33,24 @@ namespace testing {
 namespace {
 
 inline int FutexWait(std::atomic<int32_t>* v, int32_t val) {
-  return syscall(SYS_futex, v, FUTEX_BITSET_MATCH_ANY, nullptr);
+  return syscall(SYS_futex, v, FUTEX_WAIT_PRIVATE, val, nullptr);
 }
 
-inline int FutexWaitRelativeTimeout(std::atomic<int32_t>* v, int32_t val,
-                                    const struct timespec* reltime) {
-  return syscall(SYS_futex, v, FUTEX_WAIT_PRIVATE, reltime);
+inline int FutexWaitMonotonicTimeout(std::atomic<int32_t>* v, int32_t val,
+                                     const struct timespec* timeout) {
+  return syscall(SYS_futex, v, FUTEX_WAIT_PRIVATE, val, timeout);
 }
 
-inline int FutexWaitAbsoluteTimeout(std::atomic<int32_t>* v, int32_t val,
-                                    const struct timespec* abstime) {
-  return syscall(SYS_futex, v, FUTEX_BITSET_MATCH_ANY, abstime);
+inline int FutexWaitMonotonicDeadline(std::atomic<int32_t>* v, int32_t val,
+                                      const struct timespec* deadline) {
+  return syscall(SYS_futex, v, FUTEX_WAIT_BITSET_PRIVATE, val, deadline,
+                 nullptr, FUTEX_BITSET_MATCH_ANY);
 }
 
-inline int FutexWaitBitsetAbsoluteTimeout(std::atomic<int32_t>* v, int32_t val,
-                                          int32_t bits,
-                                          const struct timespec* abstime) {
+inline int FutexWaitRealtimeDeadline(std::atomic<int32_t>* v, int32_t val,
+                                     const struct timespec* deadline) {
   return syscall(SYS_futex, v, FUTEX_WAIT_BITSET_PRIVATE | FUTEX_CLOCK_REALTIME,
-                 val, abstime, nullptr, bits);
+                 val, deadline, nullptr, FUTEX_BITSET_MATCH_ANY);
 }
 
 inline int FutexWake(std::atomic<int32_t>* v, int32_t count) {
@@ -62,11 +62,11 @@ void BM_FutexWakeNop(benchmark::State& state) {
   std::atomic<int32_t> v(0);
 
   for (auto _ : state) {
-    EXPECT_EQ(0, FutexWake(&v, 1));
+    TEST_PCHECK(FutexWake(&v, 1) == 0);
   }
 }
 
-BENCHMARK(BM_FutexWakeNop);
+BENCHMARK(BM_FutexWakeNop)->MinTime(5);
 
 // This just uses FUTEX_WAIT on an address whose value has changed, i.e., the
 // syscall won't wait.
@@ -74,43 +74,63 @@ void BM_FutexWaitNop(benchmark::State& state) {
   std::atomic<int32_t> v(0);
 
   for (auto _ : state) {
-    EXPECT_EQ(-EAGAIN, FutexWait(&v, 1));
+    TEST_PCHECK(FutexWait(&v, 1) == -1 && errno == EAGAIN);
   }
 }
 
-BENCHMARK(BM_FutexWaitNop);
+BENCHMARK(BM_FutexWaitNop)->MinTime(5);
 
 // This uses FUTEX_WAIT with a timeout on an address whose value never
 // changes, such that it always times out. Timeout overhead can be estimated by
 // timer overruns for short timeouts.
-void BM_FutexWaitTimeout(benchmark::State& state) {
+void BM_FutexWaitMonotonicTimeout(benchmark::State& state) {
   const int timeout_ns = state.range(0);
   std::atomic<int32_t> v(0);
   auto ts = absl::ToTimespec(absl::Nanoseconds(timeout_ns));
 
   for (auto _ : state) {
-    EXPECT_EQ(-ETIMEDOUT, FutexWaitRelativeTimeout(&v, 0, &ts));
+    TEST_PCHECK(FutexWaitMonotonicTimeout(&v, 0, &ts) == -1 &&
+                errno == ETIMEDOUT);
   }
 }
 
-BENCHMARK(BM_FutexWaitTimeout)
+BENCHMARK(BM_FutexWaitMonotonicTimeout)
+    ->MinTime(5)
+    ->UseRealTime()
     ->Arg(1)
     ->Arg(10)
     ->Arg(100)
     ->Arg(1000)
     ->Arg(10000);
 
-// This calls FUTEX_WAIT_BITSET with CLOCK_REALTIME.
-void BM_FutexWaitBitset(benchmark::State& state) {
+// This uses FUTEX_WAIT_BITSET with a deadline that is in the past. This allows
+// estimation of the overhead of setting up a timer for a deadline (as opposed
+// to a timeout as specified for FUTEX_WAIT).
+void BM_FutexWaitMonotonicDeadline(benchmark::State& state) {
   std::atomic<int32_t> v(0);
-  int timeout_ns = state.range(0);
-  auto ts = absl::ToTimespec(absl::Nanoseconds(timeout_ns));
+  struct timespec ts = {};
+
   for (auto _ : state) {
-    EXPECT_EQ(-ETIMEDOUT, FutexWaitBitsetAbsoluteTimeout(&v, 0, 1, &ts));
+    TEST_PCHECK(FutexWaitMonotonicDeadline(&v, 0, &ts) == -1 &&
+                errno == ETIMEDOUT);
   }
 }
 
-BENCHMARK(BM_FutexWaitBitset)->Range(0, 100000);
+BENCHMARK(BM_FutexWaitMonotonicDeadline)->MinTime(5);
+
+// This is equivalent to BM_FutexWaitMonotonicDeadline, but uses CLOCK_REALTIME
+// instead of CLOCK_MONOTONIC for the deadline.
+void BM_FutexWaitRealtimeDeadline(benchmark::State& state) {
+  std::atomic<int32_t> v(0);
+  struct timespec ts = {};
+
+  for (auto _ : state) {
+    TEST_PCHECK(FutexWaitRealtimeDeadline(&v, 0, &ts) == -1 &&
+                errno == ETIMEDOUT);
+  }
+}
+
+BENCHMARK(BM_FutexWaitRealtimeDeadline)->MinTime(5);
 
 int64_t GetCurrentMonotonicTimeNanos() {
   struct timespec ts;
@@ -130,11 +150,10 @@ void SpinNanos(int64_t delay_ns) {
 
 // Each iteration of FutexRoundtripDelayed involves a thread sending a futex
 // wakeup to another thread, which spins for delay_us and then sends a futex
-// wakeup back. The time per iteration is 2*  (delay_us + kBeforeWakeDelayNs +
+// wakeup back. The time per iteration is 2 * (delay_us + kBeforeWakeDelayNs +
 // futex/scheduling overhead).
 void BM_FutexRoundtripDelayed(benchmark::State& state) {
   const int delay_us = state.range(0);
-
   const int64_t delay_ns = delay_us * 1000;
   // Spin for an extra kBeforeWakeDelayNs before invoking FUTEX_WAKE to reduce
   // the probability that the wakeup comes before the wait, preventing the wait
@@ -165,82 +184,13 @@ void BM_FutexRoundtripDelayed(benchmark::State& state) {
 }
 
 BENCHMARK(BM_FutexRoundtripDelayed)
+    ->MinTime(5)
+    ->UseRealTime()
     ->Arg(0)
     ->Arg(10)
     ->Arg(20)
     ->Arg(50)
     ->Arg(100);
-
-// FutexLock is a simple, dumb futex based lock implementation.
-// It will try to acquire the lock by atomically incrementing the
-// lock word. If it did not increment the lock from 0 to 1, someone
-// else has the lock, so it will FUTEX_WAIT until it is woken in
-// the unlock path.
-class FutexLock {
- public:
-  FutexLock() : lock_word_(0) {}
-
-  void lock(struct timespec* deadline) {
-    int32_t val;
-    while ((val = lock_word_.fetch_add(1, std::memory_order_acquire) + 1) !=
-           1) {
-      // If we didn't get the lock by incrementing from 0 to 1,
-      // do a FUTEX_WAIT with the desired current value set to
-      // val. If val is no longer what the atomic increment returned,
-      // someone might have set it to 0 so we can try to acquire
-      // again.
-      int ret = FutexWaitAbsoluteTimeout(&lock_word_, val, deadline);
-      if (ret == 0 || ret == -EWOULDBLOCK || ret == -EINTR) {
-        continue;
-      } else {
-        FAIL() << "unexpected FUTEX_WAIT return: " << ret;
-      }
-    }
-  }
-
-  void unlock() {
-    // Store 0 into the lock word and wake one waiter. We intentionally
-    // ignore the return value of the FUTEX_WAKE here, since there may be
-    // no waiters to wake anyway.
-    lock_word_.store(0, std::memory_order_release);
-    (void)FutexWake(&lock_word_, 1);
-  }
-
- private:
-  std::atomic<int32_t> lock_word_;
-};
-
-FutexLock* test_lock;  // Used below.
-
-void FutexContend(benchmark::State& state, int thread_index,
-                  struct timespec* deadline) {
-  int counter = 0;
-  if (thread_index == 0) {
-    test_lock = new FutexLock();
-  }
-  for (auto _ : state) {
-    test_lock->lock(deadline);
-    counter++;
-    test_lock->unlock();
-  }
-  if (thread_index == 0) {
-    delete test_lock;
-  }
-  state.SetItemsProcessed(state.iterations());
-}
-
-void BM_FutexContend(benchmark::State& state) {
-  FutexContend(state, state.thread_index, nullptr);
-}
-
-BENCHMARK(BM_FutexContend)->ThreadRange(1, 1024)->UseRealTime();
-
-void BM_FutexDeadlineContend(benchmark::State& state) {
-  auto deadline = absl::ToTimespec(absl::Now() + absl::Minutes(10));
-  FutexContend(state, state.thread_index, &deadline);
-}
-
-BENCHMARK(BM_FutexDeadlineContend)->ThreadRange(1, 1024)->UseRealTime();
 
 }  // namespace
 
