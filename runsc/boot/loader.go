@@ -715,6 +715,7 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *config.Config, cid strin
 		return fmt.Errorf("creating new process: %v", err)
 	}
 
+	var dupedStdioFDs []int
 	// Use stdios or TTY depending on the spec configuration.
 	if spec.Process.Terminal {
 		if len(stdioFDs) > 0 {
@@ -726,13 +727,36 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *config.Config, cid strin
 		info.stdioFDs = []*fd.FD{ep.hostTTY, ep.hostTTY, ep.hostTTY}
 		ep.hostTTY = nil
 	} else {
-		info.stdioFDs = stdioFDs
+		// For reasons similarly to what we have fixed for root container, we
+		// require child containers stdioFDs also sarting at fixed locations:
+		// (cindex+1) * 64. With this rule, we can avoid panic on restore due
+		// to host FS inodes of child containers.
+		fd := (l.ctrl.manager.cindex + 1) * startingStdioFD
+		for _, f := range files[:3] {
+			// FIXME: set O_CLOEXEC will fail
+			err := syscall.Dup3(int(f.Fd()), fd, 0)
+			if err != nil {
+				return fmt.Errorf("failed to dup3: %v", err)
+			}
+			dupedStdioFds = append(dupedStdioFds, fd)
+			fd++
+		}
+		info.stdioFDs = newStdioFDs
 	}
 
 	ep.tg, ep.tty, ep.ttyVFS2, err = l.createContainerProcess(false, cid, info)
 	if err != nil {
 		return err
 	}
+
+	// after createFDTable, the dup()ed FD is no longer needed
+	for _, fd := range dupedStdioFDs {
+		err := syscall.Close(fd)
+		if err != nil {
+			return fmt.Errorf("failed to close dup()ed FD: %v", err)
+		}
+	}
+
 	l.k.StartProcess(ep.tg)
 	return nil
 }

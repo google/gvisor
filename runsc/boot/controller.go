@@ -18,8 +18,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"syscall"
 	"strconv"
+	"syscall"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/control/server"
@@ -183,6 +183,9 @@ type containerManager struct {
 
 	// l is the loader that creates containers and sandboxes.
 	l *Loader
+
+	// cindex is the current index of the containers inside a sandbox
+	cindex int
 }
 
 // StartRoot will start the root container process.
@@ -226,7 +229,11 @@ func (cm *containerManager) Create(args *CreateArgs, _ *struct{}) error {
 			return fmt.Errorf("error dup'ing TTY file: %w", err)
 		}
 	}
-	return cm.l.createContainer(args.CID, tty)
+	err := cm.l.createContainer(args.CID, tty)
+	if err == nil {
+		cm.cindex++
+	}
+	return err
 }
 
 // StartArgs contains arguments to the Start method.
