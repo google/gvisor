@@ -43,11 +43,13 @@ In general, Design Principles outline good engineering practices, but in the cas
 
 A simplified version of the design is below ([more detailed version](https://gvisor.dev/docs/architecture_guide/))[^2]:
 
-____ 
+----
+
 ![Figure 1](./figure1.png)
 
 Figure 1: Simplified design of gVisor.
-____
+
+----
 
 In order to discuss design principles, the following components are important to know:
 
@@ -86,12 +88,13 @@ The principle of Least-Privilege implies that each software component has only t
 
 Least-Privilege is applied throughout gVisor. Each component and more importantly, each interface between the components, is designed so that only the minimum level of permission is required for it to perform its function. Specifically, the closer you are to the untrusted application, the less privilege you have.
 
-____
+----
 
 ![Figure 2](./figure2.png)
 
 Figure 2: runsc components and their privileges.  
-____
+
+----
 
 This is evident in how runsc (the drop in gVisor binary for Docker/Kubernetes) constructs the sandbox. The Sentry has the least privilege possible (it can't even open a file!). Gofers are only allowed file access, so even if it were compromised, the host network would be unavailable. Only the runsc binary itself has full access to the host OS, and even runsc's access to the host OS is often limited through capabilities / chroot / namespacing.
 
@@ -134,13 +137,13 @@ The Sentry communicates with the Gofer through a local unix domain socket (UDS) 
 
 So, of the 350 syscalls in the Linux kernel, the Sentry needs to implement only 237 of them to support containers. At most, the Sentry only needs to call 68 of the host Linux syscalls. In other words, with gVisor, applications get the vast majority (and growing) functionality of Linux containers for only 68 possible syscalls to the Host OS. 350 syscalls to 68 is attack surface reduction.
 
-____
+----
 
 ![Figure 3](./figure3.png)
 
 Figure 3: Reduction of Attack Surface of the Syscall Table. Note that the Senty's Syscall Emulation Layer keeps the Containerized Process from ever calling the Host OS.
-____
 
+---
 
 ## Secure-by-default
 
