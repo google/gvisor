@@ -135,6 +135,11 @@ type Loader struct {
 	// processes is guardded by mu.
 	processes map[execID]*execProcess
 
+	// containers maps container ID to container index
+	// this is needed during restore when we need to know
+	// the index of the child container from its ID
+	containers map[string]int
+
 	// mountHints provides extra information about mounts for containers that
 	// apply to the entire pod.
 	mountHints *podMountHints
@@ -649,6 +654,9 @@ func (l *Loader) createContainer(cid string, tty *fd.FD) error {
 		return fmt.Errorf("container %q already exists", cid)
 	}
 	l.processes[eid] = &execProcess{hostTTY: tty}
+
+	l.ctrl.manager.cindex++
+	l.containers[cid] = l.ctrl.manager.cindex
 	return nil
 }
 

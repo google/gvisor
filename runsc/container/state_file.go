@@ -305,10 +305,16 @@ func (s *StateFile) saveLocked(v interface{}) error {
 }
 
 func (s *StateFile) load(v interface{}) error {
-	if err := s.lock(); err != nil {
-		return err
-	}
-	defer s.unlock()
+	// FIXME: root container restore will lock the state file
+	// then when child container load root container's state file,
+	// the below s.lock() will need wait till root container's
+	// restore finish. But since root container's restore is also
+	// waiting for child container to appear, this will deadlock.
+	// skip lock for now.
+//	if err := s.lock(); err != nil {
+//		return err
+//	}
+//	defer s.unlock()
 
 	metaBytes, err := ioutil.ReadFile(s.statePath())
 	if err != nil {

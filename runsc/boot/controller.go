@@ -66,8 +66,11 @@ const (
 	// processes running in a container.
 	ContainerProcesses = "containerManager.Processes"
 
+	// RootRestore restores the root container from a statefile.
+	RootRestore = "containerManager.RootRestore"
+
 	// ContainerRestore restores a container from a statefile.
-	ContainerRestore = "containerManager.Restore"
+	ContainerRestore = "containerManager.ContainerRestore"
 
 	// ContainerResume unpauses the paused container.
 	ContainerResume = "containerManager.Resume"
@@ -146,6 +149,8 @@ func newController(fd int, l *Loader) (*controller, error) {
 		startChan:       make(chan struct{}),
 		startResultChan: make(chan error),
 		l:               l,
+		restoreStartChan:  make(chan struct{}),
+		restoreResultChan: make(chan error),
 	}
 	ctrl.srv.Register(ctrl.manager)
 
@@ -186,6 +191,17 @@ type containerManager struct {
 
 	// cindex is the current index of the containers inside a sandbox
 	cindex int
+
+	// total container number retrieved from checkpoint image
+	totalContainerNum int
+
+	// restoreStartChan is used to block Restore till all child
+	// containers have called restore cmd
+	restoreStartChan chan struct{}
+
+	// restoreResultChan is used to tell child container the
+	// result of restore
+	restoreResultChan chan error
 }
 
 // StartRoot will start the root container process.
@@ -369,14 +385,24 @@ type RestoreOpts struct {
 
 	// SandboxID contains the ID of the sandbox.
 	SandboxID string
+
+	// below fields are only useful for child containers
+
+	// ID of the to be restored child container
+	CID string
+
+	// spec and conf of the to be restored child container.
+	// root container's spec and conf are stored in loader.
+	Spec *specs.Spec
+	Conf *Config
 }
 
-// Restore loads a container from a statefile.
+// RootRestore loads a container from a statefile.
 // The container's current kernel is destroyed, a restore environment is
 // created, and the kernel is recreated with the restore state file. The
 // container then sends the signal to start.
-func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
-	log.Debugf("containerManager.Restore")
+func (cm *containerManager) RootRestore(o *RestoreOpts, _ *struct{}) error {
+	log.Debugf("containerManager.RootRestore")
 
 	var specFile, deviceFile *os.File
 	switch numFiles := len(o.Files); numFiles {
@@ -431,6 +457,23 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		fs.SetRestoreEnvironment(*renv)
 	}
 
+	// get container number saved in the image
+	loadOpts := state.LoadOpts{Source: specFile}
+	m, err := loadOpts.GetMetadata()
+	if err != nil {
+		log.Infof("get statefile's metadata error %v\n", err)
+		return err
+	}
+	cm.totalContainerNum, err = strconv.Atoi(m["container_num"])
+	if err != nil {
+		return fmt.Errorf("strconv Atoi %v failed. %v", m["container_num"], err)
+	}
+
+	// wait till all child containers call restore
+	for i := 0; i < cm.totalContainerNum - 1; i++ {
+		<-cm.restoreStartChan
+	}
+
 	// Prepare to load from the state file.
 	if eps, ok := networkStack.(*netstack.Stack); ok {
 		stack.StackFromEnv = eps.Stack // FIXME(b/36201077)
@@ -454,9 +497,17 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return err
 	}
 
+	// loadOpts.Load() expects specFile's offset at 0 and
+	// we have moved its offet in loadOpts.GetMetadata()
+	specFile.Seek(0, 0)
+
 	// Load the state.
 	loadOpts := state.LoadOpts{Source: specFile}
 	if err := loadOpts.Load(ctx, k, networkStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}); err != nil {
+		// Propagate RootRestore failure to child containers
+		for i := 0; i < cm.totalContainerNum - 1; i++ {
+			cm.restoreResultChan <- err
+		}
 		return err
 	}
 
@@ -471,22 +522,82 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	cm.l.root.procArgs = kernel.CreateProcessArgs{}
 	cm.l.restore = true
 
-	// Reinitialize the sandbox ID and processes map. Note that it doesn't
-	// restore the state of multiple containers, nor exec processes.
+	// Reinitialize the sandbox ID and processes map.
 	cm.l.sandboxID = o.SandboxID
 	cm.l.mu.Lock()
-	eid := execID{cid: o.SandboxID}
-	cm.l.processes = map[execID]*execProcess{
-		eid: {
-			tg: cm.l.k.GlobalInit(),
-		},
+	for cid, index := range cm.l.containers {
+		eid := execID{cid: cid}
+		cm.l.processes[eid] = &execProcess{
+			tg: cm.l.k.ContainerInit(index),
+		}
 	}
 	cm.l.mu.Unlock()
 
 	// Tell the root container to start and wait for the result.
 	cm.startChan <- struct{}{}
 	if err := <-cm.startResultChan; err != nil {
+		for i := 0; i < cm.totalContainerNum - 1; i++ {
+			cm.restoreResultChan <- err
+		}
 		return fmt.Errorf("starting sandbox: %v", err)
+	}
+
+	// tell child container to continue
+	for i := 0; i < cm.totalContainerNum - 1; i++ {
+		cm.restoreResultChan <- nil
+	}
+	return nil
+}
+
+func (cm *containerManager) ContainerRestore(o *RestoreOpts, _ *struct{}) error {
+	log.Debugf("containerManager.ContainerRestore")
+
+	// make sure stdioFDs are the same as when this container first started
+	myindex := cm.l.containers[o.CID]
+	var stdioFDs []int
+	newfd := (myindex + 1) * startingStdioFD
+	for _, f := range o.FilePayload.Files[:3] {
+		err := syscall.Dup3(int(f.Fd()), newfd, syscall.O_CLOEXEC)
+		if err != nil {
+			fmt.Errorf("dup3 of child container stdioFDs")
+		}
+		stdioFDs = append(stdioFDs, newfd)
+		newfd++
+	}
+
+	// Can't take ownership away from os.File. dup them to get a new FDs.
+	var goferFDs []int
+	for _, f := range o.FilePayload.Files[3:] {
+		fd, err := syscall.Dup(int(f.Fd()))
+		if err != nil {
+			return fmt.Errorf("failed to dup file: %v", err)
+		}
+		goferFDs = append(goferFDs, fd)
+	}
+
+	// Set up the restore environment for child container.
+	mntr := newContainerMounter(o.Spec, goferFDs, cm.l.k, cm.l.mountHints)
+	renv, err := mntr.createRestoreEnvironment(o.Conf)
+	if err != nil {
+		return fmt.Errorf("creating ContainerRestoreEnvironment: %v", err)
+	}
+	fs.SetRestoreEnvironment(*renv)
+
+	// tell RootRestore to start
+	cm.restoreStartChan <- struct{}{}
+
+	// wait till restore done
+	err = <-cm.restoreResultChan
+	if err != nil {
+		return err
+	}
+
+	// the dup()ed stdioFDs are no longer needed
+	for fd := range stdioFDs {
+		err = syscall.Close(fd)
+		if err != nil {
+			fmt.Errorf("close dup()ed child container stdioFDs: %v", err)
+		}
 	}
 
 	return nil
