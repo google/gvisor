@@ -365,21 +365,29 @@ func (l *listenContext) closeAllPendingEndpoints() {
 }
 
 // deliverAccepted delivers the newly-accepted endpoint to the listener. If the
-// endpoint has transitioned out of the listen state, the new endpoint is closed
-// instead.
+// endpoint has transitioned out of the listen state (acceptedChan is nil),
+// the new endpoint is closed instead.
 func (e *endpoint) deliverAccepted(n *endpoint) {
 	e.mu.Lock()
-	state := e.EndpointState()
 	e.pendingAccepted.Add(1)
-	defer e.pendingAccepted.Done()
-	acceptedChan := e.acceptedChan
 	e.mu.Unlock()
+	defer e.pendingAccepted.Done()
 
-	if state == StateListen {
-		acceptedChan <- n
-		e.waiterQueue.Notify(waiter.EventIn)
-	} else {
-		n.Close()
+	e.acceptMu.Lock()
+	for {
+		if e.acceptedChan == nil {
+			e.acceptMu.Unlock()
+			n.Close()
+			return
+		}
+		select {
+		case e.acceptedChan <- n:
+			e.acceptMu.Unlock()
+			e.waiterQueue.Notify(waiter.EventIn)
+			return
+		default:
+			e.acceptCond.Wait()
+		}
 	}
 }
 
@@ -420,11 +428,13 @@ func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header
 }
 
 func (e *endpoint) incSynRcvdCount() bool {
-	if e.synRcvdCount >= cap(e.acceptedChan) {
-		return false
+	e.acceptMu.Lock()
+	canInc := e.synRcvdCount < cap(e.acceptedChan)
+	e.acceptMu.Unlock()
+	if canInc {
+		e.synRcvdCount++
 	}
-	e.synRcvdCount++
-	return true
+	return canInc
 }
 
 func (e *endpoint) decSynRcvdCount() {
@@ -432,10 +442,10 @@ func (e *endpoint) decSynRcvdCount() {
 }
 
 func (e *endpoint) acceptQueueIsFull() bool {
-	if l, c := len(e.acceptedChan)+e.synRcvdCount, cap(e.acceptedChan); l >= c {
-		return true
-	}
-	return false
+	e.acceptMu.Lock()
+	full := len(e.acceptedChan)+e.synRcvdCount >= cap(e.acceptedChan)
+	e.acceptMu.Unlock()
+	return full
 }
 
 // handleListenSegment is called when a listening endpoint receives a segment
