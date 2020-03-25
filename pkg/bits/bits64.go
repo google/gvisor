@@ -23,3 +23,11 @@ func Mask64(is ...int) uint64 {
 func MaskOf64(i int) uint64 {
 	return uint64(1) << uint64(i)
 }
+
+// IsPowerOfTwo returns true if v is power of 2.
+func IsPowerOfTwo64(v uint64) bool {
+	if v == 0 {
+		return false
+	}
+	return v&(v-1) == 0
+}
