@@ -49,7 +49,7 @@ type TaskContext struct {
 	fu *futex.Manager
 
 	// st is the task's syscall table.
-	st *SyscallTable
+	st *SyscallTable `state:".(syscallTableInfo)"`
 }
 
 // release releases all resources held by the TaskContext. release is called by

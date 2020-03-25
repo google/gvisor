@@ -9,19 +9,6 @@
       "/external/": "allowed: not subject to unsafe naming rules"
     }
   },
-  "copylocks": {
-    "exclude_files": {
-      ".*_state_autogen.go": "fix: m.Failf copies by value",
-      "/pkg/log/json.go": "fix: Emit passes lock by value: gvisor.dev/gvisor/pkg/log.JSONEmitter contains gvisor.dev/gvisor/pkg/log.Writer contains gvisor.dev/gvisor/pkg/sync.Mutex",
-      "/pkg/log/log_test.go": "fix: call of fmt.Printf copies lock value: gvisor.dev/gvisor/pkg/log.Writer contains gvisor.dev/gvisor/pkg/sync.Mutex",
-      "/pkg/sentry/fs/host/socket_test.go": "fix: call of t.Errorf copies lock value: gvisor.dev/gvisor/pkg/sentry/fs/host.ConnectedEndpoint contains gvisor.dev/gvisor/pkg/refs.AtomicRefCount contains gvisor.dev/gvisor/pkg/sync.Mutex",
-      "/pkg/sentry/fs/proc/sys_net.go": "fix: Truncate passes lock by value: gvisor.dev/gvisor/pkg/sentry/fs/proc.tcpMemInode contains gvisor.dev/gvisor/pkg/sentry/fs/fsutil.SimpleFileInode contains gvisor.dev/gvisor/pkg/sentry/fs/fsutil.InodeSimpleAttributes contains gvisor.dev/gvisor/pkg/sync.RWMutex",
-      "/pkg/sentry/fs/proc/sys_net.go": "fix: Truncate passes lock by value: gvisor.dev/gvisor/pkg/sentry/fs/proc.tcpSack contains gvisor.dev/gvisor/pkg/sentry/fs/fsutil.SimpleFileInode contains gvisor.dev/gvisor/pkg/sentry/fs/fsutil.InodeSimpleAttributes contains gvisor.dev/gvisor/pkg/sync.RWMutex",
-      "/pkg/sentry/fs/tty/slave.go": "fix: Truncate passes lock by value: gvisor.dev/gvisor/pkg/sentry/fs/tty.slaveInodeOperations contains gvisor.dev/gvisor/pkg/sentry/fs/fsutil.SimpleFileInode contains gvisor.dev/gvisor/pkg/sentry/fs/fsutil.InodeSimpleAttributes contains gvisor.dev/gvisor/pkg/sync.RWMutex",
-      "/pkg/sentry/kernel/time/time.go": "fix: Readiness passes lock by value: gvisor.dev/gvisor/pkg/sentry/kernel/time.ClockEventsQueue contains gvisor.dev/gvisor/pkg/waiter.Queue contains gvisor.dev/gvisor/pkg/sync.RWMutex",
-      "/pkg/sentry/kernel/syscalls_state.go": "fix: assignment copies lock value to *s: gvisor.dev/gvisor/pkg/sentry/kernel.SyscallTable contains gvisor.dev/gvisor/pkg/sentry/kernel.SyscallFlagsTable contains gvisor.dev/gvisor/pkg/sync.Mutex"
-    }
-  },
   "lostcancel": {
     "exclude_files": {
       "/pkg/tcpip/network/arp/arp_test.go": "fix: the cancel function returned by context.WithTimeout should be called, not discarded, to avoid a context leak",
