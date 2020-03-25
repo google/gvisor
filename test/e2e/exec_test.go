@@ -240,17 +240,7 @@ func TestExecEnvHasHome(t *testing.T) {
 	}
 	d := dockerutil.MakeDocker("exec-env-home-test")
 
-	// We will check that HOME is set for root user, and also for a new
-	// non-root user we will create.
-	newUID := 1234
-	newHome := "/foo/bar"
-
-	// Create a new user with a home directory, and then sleep.
-	script := fmt.Sprintf(`
-	mkdir -p -m 777 %s && \
-	adduser foo -D -u %d -h %s && \
-	sleep 1000`, newHome, newUID, newHome)
-	if err := d.Run("alpine", "/bin/sh", "-c", script); err != nil {
+	if err := d.Run("alpine", "sleep", "1000"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 	defer d.CleanUp()
@@ -264,7 +254,15 @@ func TestExecEnvHasHome(t *testing.T) {
 		t.Errorf("wanted exec output to contain %q, got %q", want, got)
 	}
 
-	// Execute the same as uid 123 and expect newHome.
+	// Create a new user with a home directory.
+	newUID := 1234
+	newHome := "/foo/bar"
+	cmd := fmt.Sprintf("mkdir -p -m 777 %q && adduser foo -D -u %d -h %q", newHome, newUID, newHome)
+	if _, err := d.Exec("/bin/sh", "-c", cmd); err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+
+	// Execute the same as the new user and expect newHome.
 	got, err = d.ExecAsUser(strconv.Itoa(newUID), "/bin/sh", "-c", "echo $HOME")
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
