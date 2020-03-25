@@ -842,6 +842,9 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 		}
 	}
 
+	l.processes[eid].tg = tg
+	l.k.SetContainerInit(tg)
+
 	return tg, ttyFile, ttyFileVFS2, nil
 }
 
