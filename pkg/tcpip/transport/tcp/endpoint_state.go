@@ -173,6 +173,9 @@ func (e *endpoint) afterLoad() {
 	// Restore the endpoint to InitialState as it will be moved to
 	// its origEndpointState during Resume.
 	e.state = StateInitial
+	// Condition variables and mutexs are not S/R'ed so reinitialize
+	// acceptCond with e.acceptMu.
+	e.acceptCond = sync.NewCond(&e.acceptMu)
 	stack.StackFromEnv.RegisterRestoredEndpoint(e)
 }
 
