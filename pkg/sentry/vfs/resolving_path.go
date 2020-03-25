@@ -329,10 +329,22 @@ func (rp *ResolvingPath) ResolveComponent(d *Dentry) (*Dentry, error) {
 // component in pcs represents a symbolic link, the symbolic link should be
 // followed.
 //
+// If path is terminated with '/', the '/' is considered the last element and
+// any symlink before that is followed:
+//   - For most non-creating walks, the last path component is handled by
+//     fs/namei.c:lookup_last(), which sets LOOKUP_FOLLOW if the first byte
+//     after the path component is non-NULL (which is only possible if it's '/')
+//     and the path component is of type LAST_NORM.
+//
+//   - For open/openat/openat2 without O_CREAT, the last path component is
+//     handled by fs/namei.c:do_last(), which does the same, though without the
+//     LAST_NORM check.
+//
 // Preconditions: !rp.Done().
 func (rp *ResolvingPath) ShouldFollowSymlink() bool {
-	// Non-final symlinks are always followed.
-	return rp.flags&rpflagsFollowFinalSymlink != 0 || !rp.Final()
+	// Non-final symlinks are always followed. Paths terminated with '/' are also
+	// always followed.
+	return rp.flags&rpflagsFollowFinalSymlink != 0 || !rp.Final() || rp.MustBeDir()
 }
 
 // HandleSymlink is called when the current path component is a symbolic link
