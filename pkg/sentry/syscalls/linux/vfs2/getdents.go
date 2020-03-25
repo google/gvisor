@@ -97,7 +97,7 @@ func (cb *getdentsCallback) Handle(dirent vfs.Dirent) error {
 		//     char           d_name[]; /* Filename (null-terminated) */
 		// };
 		size := 8 + 8 + 2 + 1 + 1 + len(dirent.Name)
-		if size < cb.remaining {
+		if size > cb.remaining {
 			return syserror.EINVAL
 		}
 		buf = cb.t.CopyScratchBuffer(size)
@@ -125,7 +125,7 @@ func (cb *getdentsCallback) Handle(dirent vfs.Dirent) error {
 			panic(fmt.Sprintf("unsupported sizeof(unsigned long): %d", cb.t.Arch().Width()))
 		}
 		size := 8 + 8 + 2 + 1 + 1 + 1 + len(dirent.Name)
-		if size < cb.remaining {
+		if size > cb.remaining {
 			return syserror.EINVAL
 		}
 		buf = cb.t.CopyScratchBuffer(size)

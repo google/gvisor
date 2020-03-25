@@ -23,3 +23,11 @@ func Mask32(is ...int) uint32 {
 func MaskOf32(i int) uint32 {
 	return uint32(1) << uint32(i)
 }
+
+// IsPowerOfTwo returns true if v is power of 2.
+func IsPowerOfTwo32(v uint32) bool {
+	if v == 0 {
+		return false
+	}
+	return v&(v-1) == 0
+}

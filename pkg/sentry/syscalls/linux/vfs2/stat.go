@@ -16,6 +16,7 @@ package vfs2
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/gohacks"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -153,7 +154,11 @@ func Statx(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW|linux.AT_STATX_SYNC_TYPE) != 0 {
 		return 0, nil, syserror.EINVAL
 	}
-
+	// Make sure that only one sync type option is set.
+	syncType := uint32(flags & linux.AT_STATX_SYNC_TYPE)
+	if syncType != 0 && !bits.IsPowerOfTwo32(syncType) {
+		return 0, nil, syserror.EINVAL
+	}
 	if mask&linux.STATX__RESERVED != 0 {
 		return 0, nil, syserror.EINVAL
 	}
