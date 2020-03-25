@@ -44,11 +44,5 @@
       "/pkg/sentry/platform/safecopy/safecopy_unsafe.go": "allowed: special case",
       "/pkg/sentry/vfs/mount_unsafe.go": "allowed: special case"
     }
-  },
-  "unusedresult": {
-    "exclude_files": {
-      "/pkg/sentry/fsimpl/proc/task_net.go": "fix: result of fmt.Sprintf call not used",
-      "/pkg/sentry/fsimpl/proc/tasks_net.go": "fix: result of fmt.Sprintf call not used"
-    }
   }
 }
