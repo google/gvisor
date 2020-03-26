@@ -14,16 +14,6 @@
 
 #include "textflag.h"
 
-// VCPU_CPU is the location of the CPU in the vCPU struct.
-//
-// This is guaranteed to be zero.
-#define VCPU_CPU 0x0
-
-// CPU_SELF is the self reference in ring0's percpu.
-//
-// This is guaranteed to be zero.
-#define CPU_SELF 0x0
-
 // Context offsets.
 //
 // Only limited use of the context is done in the assembly stub below, most is
@@ -39,18 +29,8 @@
 
 // See bluepill.go.
 TEXT ·bluepill(SB),NOSPLIT,$0
-begin:
 	MOVQ vcpu+0(FP), AX
-	LEAQ VCPU_CPU(AX), BX
 	BYTE CLI;
-check_vcpu:
-	MOVQ CPU_SELF(GS), CX
-	CMPQ BX, CX
-	JE right_vCPU
-wrong_vcpu:
-	CALL ·redpill(SB)
-	JMP begin
-right_vCPU:
 	RET
 
 // sighandler: see bluepill.go for documentation.
