@@ -15,7 +15,7 @@
 package ipv6
 
 import (
-	"log"
+	"fmt"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -199,7 +199,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.P
 			opt, done, err := it.Next()
 			if err != nil {
 				// This should never happen as Iter(true) above did not return an error.
-				log.Fatalf("unexpected error when iterating over NDP options: %s", err)
+				panic(fmt.Sprintf("unexpected error when iterating over NDP options: %s", err))
 			}
 			if done {
 				break
@@ -306,7 +306,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.P
 			opt, done, err := it.Next()
 			if err != nil {
 				// This should never happen as Iter(true) above did not return an error.
-				log.Fatalf("unexpected error when iterating over NDP options: %s", err)
+				panic(fmt.Sprintf("unexpected error when iterating over NDP options: %s", err))
 			}
 			if done {
 				break
