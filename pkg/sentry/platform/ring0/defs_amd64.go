@@ -102,6 +102,13 @@ type CPUArchState struct {
 
 	// tss is the CPU's task state.
 	tss TaskState64
+
+	// GS is the cached GS segment value.
+	//
+	// This is saved to avoid having to reset the GS segment on each
+	// transition. This is an expensive operation since the full pipeline
+	// must be flushed since the swapgs is still in progress.
+	GS uintptr
 }
 
 // ErrorCode returns the last error code.
