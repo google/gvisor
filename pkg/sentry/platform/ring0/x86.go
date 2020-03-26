@@ -104,7 +104,7 @@ const (
 	VirtualizationException
 	SecurityException = 0x1e
 	SyscallInt80      = 0x80
-	_NR_INTERRUPTS    = SyscallInt80 + 1
+	_NR_INTERRUPTS    = 0x100
 )
 
 // System call vectors.

@@ -346,3 +346,43 @@ func rdonlyRegionsForSetMem() (phyRegions []physicalRegion) {
 func availableRegionsForSetMem() (phyRegions []physicalRegion) {
 	return physicalRegions
 }
+
+var execRegions []region
+
+func init() {
+	applyVirtualRegions(func(vr virtualRegion) {
+		if excludeVirtualRegion(vr) || vr.filename == "[vsyscall]" {
+			return
+		}
+
+		if vr.accessType.Execute {
+			execRegions = append(execRegions, vr.region)
+		}
+	})
+}
+
+func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
+	for _, r := range execRegions {
+		physical, length, ok := translateToPhysical(r.virtual)
+		if !ok || length < r.length {
+			panic("impossilbe translation")
+		}
+		pageTable.Map(
+			usermem.Addr(ring0.KernelStartAddress|r.virtual),
+			r.length,
+			pagetables.MapOpts{AccessType: usermem.Execute},
+			physical)
+	}
+	for start, end := range m.kernel.EntryRegions() {
+		regionLen := end - start
+		physical, length, ok := translateToPhysical(start)
+		if !ok || length < regionLen {
+			panic("impossible translation")
+		}
+		pageTable.Map(
+			usermem.Addr(ring0.KernelStartAddress|start),
+			regionLen,
+			pagetables.MapOpts{AccessType: usermem.ReadWrite},
+			physical)
+	}
+}

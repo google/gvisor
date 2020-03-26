@@ -76,8 +76,11 @@ type KernelOpts struct {
 type KernelArchState struct {
 	KernelOpts
 
+	// cpuEntries is array of kernelEntry for all cpus
+	cpuEntries []kernelEntry
+
 	// globalIDT is our set of interrupt gates.
-	globalIDT idt64
+	globalIDT *idt64
 }
 
 // kernelEntry contains minimal CPU-specific arch state
