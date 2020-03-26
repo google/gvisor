@@ -18,12 +18,41 @@ package ring0
 
 import (
 	"encoding/binary"
+	"reflect"
+
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // init initializes architecture-specific state.
-func (k *Kernel) init(opts KernelOpts) {
+func (k *Kernel) init(opts KernelOpts, maxCPUs int) {
 	// Save the root page tables.
 	k.PageTables = opts.PageTables
+
+	entrySize := reflect.TypeOf(kernelEntry{}).Size()
+	var (
+		entries []kernelEntry
+		padding = 1
+	)
+	for {
+		entries = make([]kernelEntry, maxCPUs + padding - 1)
+		totalSize := entrySize * uintptr(maxCPUs + padding - 1)
+		addr := reflect.ValueOf(&entries[0]).Pointer()
+		if addr&(usermem.PageSize-1) == 0 && totalSize >= usermem.PageSize {
+			// The runtime forces power-of-2 alignment for allocations, and we are therefore
+			// safe once the first address is aligned and the chunk is at least a full page.
+			break
+		}
+		padding = padding << 1
+	}
+	k.cpuEntries = entries
+
+	k.globalIDT = &idt64{}
+	if reflect.TypeOf(idt64{}).Size() != usermem.PageSize {
+		panic("Size of globalIDT should be PageSize")
+	}
+	if reflect.ValueOf(k.globalIDT).Pointer() & (usermem.PageSize-1) != 0 {
+		panic("Allocated globalIDT should be page aligned")
+	}
 
 	// Setup the IDT, which is uniform.
 	for v, handler := range handlers {
@@ -39,9 +68,25 @@ func (k *Kernel) init(opts KernelOpts) {
 	}
 }
 
+func (k *Kernel) EntryRegions() map[uintptr]uintptr {
+	regions := make(map[uintptr]uintptr)
+
+	addr := reflect.ValueOf(&k.cpuEntries[0]).Pointer()
+	size := reflect.TypeOf(kernelEntry{}).Size() * uintptr(len(k.cpuEntries))
+	end, _ := usermem.Addr(addr + size).RoundUp()
+	regions[uintptr(usermem.Addr(addr).RoundDown())] = uintptr(end)
+
+	addr = reflect.ValueOf(k.globalIDT).Pointer()
+	size = reflect.TypeOf(idt64{}).Size()
+	end, _ = usermem.Addr(addr + size).RoundUp()
+	regions[uintptr(usermem.Addr(addr).RoundDown())] = uintptr(end)
+
+	return regions
+}
+
 // init initializes architecture-specific state.
-func (c *CPU) init() {
-	c.kernelEntry = &kernelEntry{}
+func (c *CPU) init(cpuID int) {
+	c.kernelEntry = &c.kernel.cpuEntries[cpuID]
 	c.cpuSelf = c
 	// Null segment.
 	c.gdt[0].setNull()

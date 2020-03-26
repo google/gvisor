@@ -19,8 +19,8 @@ package ring0
 // N.B. that constraints on KernelOpts must be satisfied.
 //
 //go:nosplit
-func (k *Kernel) Init(opts KernelOpts) {
-	k.init(opts)
+func (k *Kernel) Init(opts KernelOpts, maxCPUs int) {
+	k.init(opts, maxCPUs)
 }
 
 // Halt halts execution.
@@ -49,6 +49,11 @@ func (defaultHooks) KernelException(Vector) {
 
 // kernelSyscall is a trampoline.
 //
+// When in amd64, it is called with %rip on the upper half, so it can
+// NOT access to any global data which is not mapped on upper and must
+// call to function pointers or interfaces to switch to the lower half
+// so that callee can access to global data.
+//
 // +checkescape:hard,stack
 //
 //go:nosplit
@@ -57,6 +62,11 @@ func kernelSyscall(c *CPU) {
 }
 
 // kernelException is a trampoline.
+//
+// When in amd64, it is called with %rip on the upper half, so it can
+// NOT access to any global data which is not mapped on upper and must
+// call to function pointers or interfaces to switch to the lower half
+// so that callee can access to global data.
 //
 // +checkescape:hard,stack
 //
@@ -68,10 +78,10 @@ func kernelException(c *CPU, vector Vector) {
 // Init initializes a new CPU.
 //
 // Init allows embedding in other objects.
-func (c *CPU) Init(k *Kernel, hooks Hooks) {
-	c.self = c   // Set self reference.
-	c.kernel = k // Set kernel reference.
-	c.init()     // Perform architectural init.
+func (c *CPU) Init(k *Kernel, cpuID int, hooks Hooks) {
+	c.self = c    // Set self reference.
+	c.kernel = k  // Set kernel reference.
+	c.init(cpuID) // Perform architectural init.
 
 	// Require hooks.
 	if hooks != nil {
