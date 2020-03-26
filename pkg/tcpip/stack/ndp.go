@@ -15,6 +15,7 @@
 package stack
 
 import (
+	"fmt"
 	"log"
 	"math/rand"
 	"time"
@@ -428,7 +429,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 
 	if ref.getKind() != permanentTentative {
 		// The endpoint should be marked as tentative since we are starting DAD.
-		log.Fatalf("ndpdad: addr %s is not tentative on NIC(%d)", addr, ndp.nic.ID())
+		panic(fmt.Sprintf("ndpdad: addr %s is not tentative on NIC(%d)", addr, ndp.nic.ID()))
 	}
 
 	// Should not attempt to perform DAD on an address that is currently in the
@@ -440,7 +441,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 		// address, or its reference count would have been increased without doing
 		// the work that would have been done for an address that was brand new.
 		// See NIC.addAddressLocked.
-		log.Fatalf("ndpdad: already performing DAD for addr %s on NIC(%d)", addr, ndp.nic.ID())
+		panic(fmt.Sprintf("ndpdad: already performing DAD for addr %s on NIC(%d)", addr, ndp.nic.ID()))
 	}
 
 	remaining := ndp.configs.DupAddrDetectTransmits
@@ -476,7 +477,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 		if ref.getKind() != permanentTentative {
 			// The endpoint should still be marked as tentative since we are still
 			// performing DAD on it.
-			log.Fatalf("ndpdad: addr %s is no longer tentative on NIC(%d)", addr, ndp.nic.ID())
+			panic(fmt.Sprintf("ndpdad: addr %s is no longer tentative on NIC(%d)", addr, ndp.nic.ID()))
 		}
 
 		dadDone := remaining == 0
@@ -546,9 +547,9 @@ func (ndp *ndpState) sendDADPacket(addr tcpip.Address) *tcpip.Error {
 	// Route should resolve immediately since snmc is a multicast address so a
 	// remote link address can be calculated without a resolution process.
 	if c, err := r.Resolve(nil); err != nil {
-		log.Fatalf("ndp: error when resolving route to send NDP NS for DAD (%s -> %s on NIC(%d)): %s", header.IPv6Any, snmc, ndp.nic.ID(), err)
+		panic(fmt.Sprintf("ndp: error when resolving route to send NDP NS for DAD (%s -> %s on NIC(%d)): %s", header.IPv6Any, snmc, ndp.nic.ID(), err))
 	} else if c != nil {
-		log.Fatalf("ndp: route resolution not immediate for route to send NDP NS for DAD (%s -> %s on NIC(%d))", header.IPv6Any, snmc, ndp.nic.ID())
+		panic(fmt.Sprintf("ndp: route resolution not immediate for route to send NDP NS for DAD (%s -> %s on NIC(%d))", header.IPv6Any, snmc, ndp.nic.ID()))
 	}
 
 	hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv6NeighborSolicitMinimumSize)
@@ -949,7 +950,7 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 		deprecationTimer: tcpip.MakeCancellableTimer(&ndp.nic.mu, func() {
 			prefixState, ok := ndp.slaacPrefixes[prefix]
 			if !ok {
-				log.Fatalf("ndp: must have a slaacPrefixes entry for the SLAAC prefix %s", prefix)
+				panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for the SLAAC prefix %s", prefix))
 			}
 
 			ndp.deprecateSLAACAddress(prefixState.ref)
@@ -1029,7 +1030,7 @@ func (ndp *ndpState) addSLAACAddr(prefix tcpip.Subnet, deprecated bool) *referen
 
 	ref, err := ndp.nic.addAddressLocked(generatedAddr, FirstPrimaryEndpoint, permanent, slaac, deprecated)
 	if err != nil {
-		log.Fatalf("ndp: error when adding address %+v: %s", generatedAddr, err)
+		panic(fmt.Sprintf("ndp: error when adding address %+v: %s", generatedAddr, err))
 	}
 
 	return ref
@@ -1043,7 +1044,7 @@ func (ndp *ndpState) addSLAACAddr(prefix tcpip.Subnet, deprecated bool) *referen
 func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, pl, vl time.Duration) {
 	prefixState, ok := ndp.slaacPrefixes[prefix]
 	if !ok {
-		log.Fatalf("ndp: SLAAC prefix state not found to refresh lifetimes for %s", prefix)
+		panic(fmt.Sprintf("ndp: SLAAC prefix state not found to refresh lifetimes for %s", prefix))
 	}
 	defer func() { ndp.slaacPrefixes[prefix] = prefixState }()
 
@@ -1144,7 +1145,7 @@ func (ndp *ndpState) invalidateSLAACPrefix(prefix tcpip.Subnet, removeAddr bool)
 
 	if removeAddr {
 		if err := ndp.nic.removePermanentAddressLocked(addr); err != nil {
-			log.Fatalf("ndp: removePermanentAddressLocked(%s): %s", addr, err)
+			panic(fmt.Sprintf("ndp: removePermanentAddressLocked(%s): %s", addr, err))
 		}
 	}
 
@@ -1193,7 +1194,7 @@ func (ndp *ndpState) cleanupState(hostOnly bool) {
 	}
 
 	if got := len(ndp.slaacPrefixes); got != linkLocalPrefixes {
-		log.Fatalf("ndp: still have non-linklocal SLAAC prefixes after cleaning up; found = %d prefixes, of which %d are link-local", got, linkLocalPrefixes)
+		panic(fmt.Sprintf("ndp: still have non-linklocal SLAAC prefixes after cleaning up; found = %d prefixes, of which %d are link-local", got, linkLocalPrefixes))
 	}
 
 	for prefix := range ndp.onLinkPrefixes {
@@ -1201,7 +1202,7 @@ func (ndp *ndpState) cleanupState(hostOnly bool) {
 	}
 
 	if got := len(ndp.onLinkPrefixes); got != 0 {
-		log.Fatalf("ndp: still have discovered on-link prefixes after cleaning up; found = %d", got)
+		panic(fmt.Sprintf("ndp: still have discovered on-link prefixes after cleaning up; found = %d", got))
 	}
 
 	for router := range ndp.defaultRouters {
@@ -1209,7 +1210,7 @@ func (ndp *ndpState) cleanupState(hostOnly bool) {
 	}
 
 	if got := len(ndp.defaultRouters); got != 0 {
-		log.Fatalf("ndp: still have discovered default routers after cleaning up; found = %d", got)
+		panic(fmt.Sprintf("ndp: still have discovered default routers after cleaning up; found = %d", got))
 	}
 }
 
@@ -1251,9 +1252,9 @@ func (ndp *ndpState) startSolicitingRouters() {
 		// header.IPv6AllRoutersMulticastAddress is a multicast address so a
 		// remote link address can be calculated without a resolution process.
 		if c, err := r.Resolve(nil); err != nil {
-			log.Fatalf("ndp: error when resolving route to send NDP RS (%s -> %s on NIC(%d)): %s", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.nic.ID(), err)
+			panic(fmt.Sprintf("ndp: error when resolving route to send NDP RS (%s -> %s on NIC(%d)): %s", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.nic.ID(), err))
 		} else if c != nil {
-			log.Fatalf("ndp: route resolution not immediate for route to send NDP RS (%s -> %s on NIC(%d))", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.nic.ID())
+			panic(fmt.Sprintf("ndp: route resolution not immediate for route to send NDP RS (%s -> %s on NIC(%d))", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.nic.ID()))
 		}
 
 		// As per RFC 4861 section 4.1, an NDP RS SHOULD include the source
