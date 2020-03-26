@@ -35,7 +35,7 @@ type protocolIDs struct {
 type transportEndpoints struct {
 	// mu protects all fields of the transportEndpoints.
 	mu        sync.RWMutex
-	endpoints map[TransportEndpointID]*endpointsByNic
+	endpoints map[TransportEndpointID]*endpointsByNIC
 	// rawEndpoints contains endpoints for raw sockets, which receive all
 	// traffic of a given protocol regardless of port.
 	rawEndpoints []RawTransportEndpoint
@@ -46,11 +46,11 @@ type transportEndpoints struct {
 func (eps *transportEndpoints) unregisterEndpoint(id TransportEndpointID, ep TransportEndpoint, bindToDevice tcpip.NICID) {
 	eps.mu.Lock()
 	defer eps.mu.Unlock()
-	epsByNic, ok := eps.endpoints[id]
+	epsByNIC, ok := eps.endpoints[id]
 	if !ok {
 		return
 	}
-	if !epsByNic.unregisterEndpoint(bindToDevice, ep) {
+	if !epsByNIC.unregisterEndpoint(bindToDevice, ep) {
 		return
 	}
 	delete(eps.endpoints, id)
@@ -66,18 +66,85 @@ func (eps *transportEndpoints) transportEndpoints() []TransportEndpoint {
 	return es
 }
 
-type endpointsByNic struct {
+// iterEndpointsLocked yields all endpointsByNIC in eps that match id, in
+// descending order of match quality. If a call to yield returns false,
+// iterEndpointsLocked stops iteration and returns immediately.
+//
+// Preconditions: eps.mu must be locked.
+func (eps *transportEndpoints) iterEndpointsLocked(id TransportEndpointID, yield func(*endpointsByNIC) bool) {
+	// Try to find a match with the id as provided.
+	if ep, ok := eps.endpoints[id]; ok {
+		if !yield(ep) {
+			return
+		}
+	}
+
+	// Try to find a match with the id minus the local address.
+	nid := id
+
+	nid.LocalAddress = ""
+	if ep, ok := eps.endpoints[nid]; ok {
+		if !yield(ep) {
+			return
+		}
+	}
+
+	// Try to find a match with the id minus the remote part.
+	nid.LocalAddress = id.LocalAddress
+	nid.RemoteAddress = ""
+	nid.RemotePort = 0
+	if ep, ok := eps.endpoints[nid]; ok {
+		if !yield(ep) {
+			return
+		}
+	}
+
+	// Try to find a match with only the local port.
+	nid.LocalAddress = ""
+	if ep, ok := eps.endpoints[nid]; ok {
+		if !yield(ep) {
+			return
+		}
+	}
+}
+
+// findAllEndpointsLocked returns all endpointsByNIC in eps that match id, in
+// descending order of match quality.
+//
+// Preconditions: eps.mu must be locked.
+func (eps *transportEndpoints) findAllEndpointsLocked(id TransportEndpointID) []*endpointsByNIC {
+	var matchedEPs []*endpointsByNIC
+	eps.iterEndpointsLocked(id, func(ep *endpointsByNIC) bool {
+		matchedEPs = append(matchedEPs, ep)
+		return true
+	})
+	return matchedEPs
+}
+
+// findEndpointLocked returns the endpoint that most closely matches the given id.
+//
+// Preconditions: eps.mu must be locked.
+func (eps *transportEndpoints) findEndpointLocked(id TransportEndpointID) *endpointsByNIC {
+	var matchedEP *endpointsByNIC
+	eps.iterEndpointsLocked(id, func(ep *endpointsByNIC) bool {
+		matchedEP = ep
+		return false
+	})
+	return matchedEP
+}
+
+type endpointsByNIC struct {
 	mu        sync.RWMutex
 	endpoints map[tcpip.NICID]*multiPortEndpoint
 	// seed is a random secret for a jenkins hash.
 	seed uint32
 }
 
-func (epsByNic *endpointsByNic) transportEndpoints() []TransportEndpoint {
-	epsByNic.mu.RLock()
-	defer epsByNic.mu.RUnlock()
+func (epsByNIC *endpointsByNIC) transportEndpoints() []TransportEndpoint {
+	epsByNIC.mu.RLock()
+	defer epsByNIC.mu.RUnlock()
 	var eps []TransportEndpoint
-	for _, ep := range epsByNic.endpoints {
+	for _, ep := range epsByNIC.endpoints {
 		eps = append(eps, ep.transportEndpoints()...)
 	}
 	return eps
@@ -85,13 +152,13 @@ func (epsByNic *endpointsByNic) transportEndpoints() []TransportEndpoint {
 
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
-func (epsByNic *endpointsByNic) handlePacket(r *Route, id TransportEndpointID, pkt PacketBuffer) {
-	epsByNic.mu.RLock()
+func (epsByNIC *endpointsByNIC) handlePacket(r *Route, id TransportEndpointID, pkt PacketBuffer) {
+	epsByNIC.mu.RLock()
 
-	mpep, ok := epsByNic.endpoints[r.ref.nic.ID()]
+	mpep, ok := epsByNIC.endpoints[r.ref.nic.ID()]
 	if !ok {
-		if mpep, ok = epsByNic.endpoints[0]; !ok {
-			epsByNic.mu.RUnlock() // Don't use defer for performance reasons.
+		if mpep, ok = epsByNIC.endpoints[0]; !ok {
+			epsByNIC.mu.RUnlock() // Don't use defer for performance reasons.
 			return
 		}
 	}
@@ -100,29 +167,29 @@ func (epsByNic *endpointsByNic) handlePacket(r *Route, id TransportEndpointID, p
 	// endpoints bound to the right device.
 	if isMulticastOrBroadcast(id.LocalAddress) {
 		mpep.handlePacketAll(r, id, pkt)
-		epsByNic.mu.RUnlock() // Don't use defer for performance reasons.
+		epsByNIC.mu.RUnlock() // Don't use defer for performance reasons.
 		return
 	}
 	// multiPortEndpoints are guaranteed to have at least one element.
-	transEP := selectEndpoint(id, mpep, epsByNic.seed)
+	transEP := selectEndpoint(id, mpep, epsByNIC.seed)
 	if queuedProtocol, mustQueue := mpep.demux.queuedProtocols[protocolIDs{mpep.netProto, mpep.transProto}]; mustQueue {
 		queuedProtocol.QueuePacket(r, transEP, id, pkt)
-		epsByNic.mu.RUnlock()
+		epsByNIC.mu.RUnlock()
 		return
 	}
 
 	transEP.HandlePacket(r, id, pkt)
-	epsByNic.mu.RUnlock() // Don't use defer for performance reasons.
+	epsByNIC.mu.RUnlock() // Don't use defer for performance reasons.
 }
 
 // HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
-func (epsByNic *endpointsByNic) handleControlPacket(n *NIC, id TransportEndpointID, typ ControlType, extra uint32, pkt PacketBuffer) {
-	epsByNic.mu.RLock()
-	defer epsByNic.mu.RUnlock()
+func (epsByNIC *endpointsByNIC) handleControlPacket(n *NIC, id TransportEndpointID, typ ControlType, extra uint32, pkt PacketBuffer) {
+	epsByNIC.mu.RLock()
+	defer epsByNIC.mu.RUnlock()
 
-	mpep, ok := epsByNic.endpoints[n.ID()]
+	mpep, ok := epsByNIC.endpoints[n.ID()]
 	if !ok {
-		mpep, ok = epsByNic.endpoints[0]
+		mpep, ok = epsByNIC.endpoints[0]
 	}
 	if !ok {
 		return
@@ -132,16 +199,16 @@ func (epsByNic *endpointsByNic) handleControlPacket(n *NIC, id TransportEndpoint
 	// broadcast like we are doing with handlePacket above?
 
 	// multiPortEndpoints are guaranteed to have at least one element.
-	selectEndpoint(id, mpep, epsByNic.seed).HandleControlPacket(id, typ, extra, pkt)
+	selectEndpoint(id, mpep, epsByNIC.seed).HandleControlPacket(id, typ, extra, pkt)
 }
 
 // registerEndpoint returns true if it succeeds. It fails and returns
 // false if ep already has an element with the same key.
-func (epsByNic *endpointsByNic) registerEndpoint(d *transportDemuxer, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, t TransportEndpoint, reusePort bool, bindToDevice tcpip.NICID) *tcpip.Error {
-	epsByNic.mu.Lock()
-	defer epsByNic.mu.Unlock()
+func (epsByNIC *endpointsByNIC) registerEndpoint(d *transportDemuxer, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, t TransportEndpoint, reusePort bool, bindToDevice tcpip.NICID) *tcpip.Error {
+	epsByNIC.mu.Lock()
+	defer epsByNIC.mu.Unlock()
 
-	multiPortEp, ok := epsByNic.endpoints[bindToDevice]
+	multiPortEp, ok := epsByNIC.endpoints[bindToDevice]
 	if !ok {
 		multiPortEp = &multiPortEndpoint{
 			demux:      d,
@@ -149,24 +216,24 @@ func (epsByNic *endpointsByNic) registerEndpoint(d *transportDemuxer, netProto t
 			transProto: transProto,
 			reuse:      reusePort,
 		}
-		epsByNic.endpoints[bindToDevice] = multiPortEp
+		epsByNIC.endpoints[bindToDevice] = multiPortEp
 	}
 
 	return multiPortEp.singleRegisterEndpoint(t, reusePort)
 }
 
-// unregisterEndpoint returns true if endpointsByNic has to be unregistered.
-func (epsByNic *endpointsByNic) unregisterEndpoint(bindToDevice tcpip.NICID, t TransportEndpoint) bool {
-	epsByNic.mu.Lock()
-	defer epsByNic.mu.Unlock()
-	multiPortEp, ok := epsByNic.endpoints[bindToDevice]
+// unregisterEndpoint returns true if endpointsByNIC has to be unregistered.
+func (epsByNIC *endpointsByNIC) unregisterEndpoint(bindToDevice tcpip.NICID, t TransportEndpoint) bool {
+	epsByNIC.mu.Lock()
+	defer epsByNIC.mu.Unlock()
+	multiPortEp, ok := epsByNIC.endpoints[bindToDevice]
 	if !ok {
 		return false
 	}
 	if multiPortEp.unregisterEndpoint(t) {
-		delete(epsByNic.endpoints, bindToDevice)
+		delete(epsByNIC.endpoints, bindToDevice)
 	}
-	return len(epsByNic.endpoints) == 0
+	return len(epsByNIC.endpoints) == 0
 }
 
 // transportDemuxer demultiplexes packets targeted at a transport endpoint
@@ -198,7 +265,7 @@ func newTransportDemuxer(stack *Stack) *transportDemuxer {
 		for proto := range stack.transportProtocols {
 			protoIDs := protocolIDs{netProto, proto}
 			d.protocol[protoIDs] = &transportEndpoints{
-				endpoints: make(map[TransportEndpointID]*endpointsByNic),
+				endpoints: make(map[TransportEndpointID]*endpointsByNIC),
 			}
 			qTransProto, isQueued := (stack.transportProtocols[proto].proto).(queuedTransportProtocol)
 			if isQueued {
@@ -378,16 +445,16 @@ func (d *transportDemuxer) singleRegisterEndpoint(netProto tcpip.NetworkProtocol
 	eps.mu.Lock()
 	defer eps.mu.Unlock()
 
-	epsByNic, ok := eps.endpoints[id]
+	epsByNIC, ok := eps.endpoints[id]
 	if !ok {
-		epsByNic = &endpointsByNic{
+		epsByNIC = &endpointsByNIC{
 			endpoints: make(map[tcpip.NICID]*multiPortEndpoint),
 			seed:      rand.Uint32(),
 		}
-		eps.endpoints[id] = epsByNic
+		eps.endpoints[id] = epsByNIC
 	}
 
-	return epsByNic.registerEndpoint(d, netProto, protocol, ep, reusePort, bindToDevice)
+	return epsByNIC.registerEndpoint(d, netProto, protocol, ep, reusePort, bindToDevice)
 }
 
 // unregisterEndpoint unregisters the endpoint with the given id such that it
@@ -413,7 +480,7 @@ func (d *transportDemuxer) deliverPacket(r *Route, protocol tcpip.TransportProto
 	// transport endpoints.
 	if protocol == header.UDPProtocolNumber && isMulticastOrBroadcast(id.LocalAddress) {
 		eps.mu.RLock()
-		destEPs := d.findAllEndpointsLocked(eps, id)
+		destEPs := eps.findAllEndpointsLocked(id)
 		eps.mu.RUnlock()
 		// Fail if we didn't find at least one matching transport endpoint.
 		if len(destEPs) == 0 {
@@ -439,7 +506,7 @@ func (d *transportDemuxer) deliverPacket(r *Route, protocol tcpip.TransportProto
 	}
 
 	eps.mu.RLock()
-	ep := d.findEndpointLocked(eps, id)
+	ep := eps.findEndpointLocked(id)
 	eps.mu.RUnlock()
 	if ep == nil {
 		if protocol == header.UDPProtocolNumber {
@@ -483,71 +550,15 @@ func (d *transportDemuxer) deliverControlPacket(n *NIC, net tcpip.NetworkProtoco
 		return false
 	}
 
-	// Try to find the endpoint.
 	eps.mu.RLock()
-	ep := d.findEndpointLocked(eps, id)
+	ep := eps.findEndpointLocked(id)
 	eps.mu.RUnlock()
-
-	// Fail if we didn't find one.
 	if ep == nil {
 		return false
 	}
 
-	// Deliver the packet.
 	ep.handleControlPacket(n, id, typ, extra, pkt)
-
 	return true
-}
-
-// iterEndpointsLocked yields all endpointsByNic in eps that match id, in
-// descending order of match quality. If a call to yield returns false,
-// iterEndpointsLocked stops iteration and returns immediately.
-//
-// Preconditions: eps.mu must be locked.
-func (d *transportDemuxer) iterEndpointsLocked(eps *transportEndpoints, id TransportEndpointID, yield func(*endpointsByNic) bool) {
-	// Try to find a match with the id as provided.
-	if ep, ok := eps.endpoints[id]; ok {
-		if !yield(ep) {
-			return
-		}
-	}
-
-	// Try to find a match with the id minus the local address.
-	nid := id
-
-	nid.LocalAddress = ""
-	if ep, ok := eps.endpoints[nid]; ok {
-		if !yield(ep) {
-			return
-		}
-	}
-
-	// Try to find a match with the id minus the remote part.
-	nid.LocalAddress = id.LocalAddress
-	nid.RemoteAddress = ""
-	nid.RemotePort = 0
-	if ep, ok := eps.endpoints[nid]; ok {
-		if !yield(ep) {
-			return
-		}
-	}
-
-	// Try to find a match with only the local port.
-	nid.LocalAddress = ""
-	if ep, ok := eps.endpoints[nid]; ok {
-		if !yield(ep) {
-			return
-		}
-	}
-}
-
-func (d *transportDemuxer) findAllEndpointsLocked(eps *transportEndpoints, id TransportEndpointID) []*endpointsByNic {
-	var matchedEPs []*endpointsByNic
-	d.iterEndpointsLocked(eps, id, func(ep *endpointsByNic) bool {
-		matchedEPs = append(matchedEPs, ep)
-		return true
-	})
-	return matchedEPs
 }
 
 // findTransportEndpoint find a single endpoint that most closely matches the provided id.
@@ -556,40 +567,28 @@ func (d *transportDemuxer) findTransportEndpoint(netProto tcpip.NetworkProtocolN
 	if !ok {
 		return nil
 	}
-	// Try to find the endpoint.
+
 	eps.mu.RLock()
-	epsByNic := d.findEndpointLocked(eps, id)
-	// Fail if we didn't find one.
-	if epsByNic == nil {
+	epsByNIC := eps.findEndpointLocked(id)
+	if epsByNIC == nil {
 		eps.mu.RUnlock()
 		return nil
 	}
 
-	epsByNic.mu.RLock()
+	epsByNIC.mu.RLock()
 	eps.mu.RUnlock()
 
-	mpep, ok := epsByNic.endpoints[r.ref.nic.ID()]
+	mpep, ok := epsByNIC.endpoints[r.ref.nic.ID()]
 	if !ok {
-		if mpep, ok = epsByNic.endpoints[0]; !ok {
-			epsByNic.mu.RUnlock() // Don't use defer for performance reasons.
+		if mpep, ok = epsByNIC.endpoints[0]; !ok {
+			epsByNIC.mu.RUnlock() // Don't use defer for performance reasons.
 			return nil
 		}
 	}
 
-	ep := selectEndpoint(id, mpep, epsByNic.seed)
-	epsByNic.mu.RUnlock()
+	ep := selectEndpoint(id, mpep, epsByNIC.seed)
+	epsByNIC.mu.RUnlock()
 	return ep
-}
-
-// findEndpointLocked returns the endpoint that most closely matches the given
-// id.
-func (d *transportDemuxer) findEndpointLocked(eps *transportEndpoints, id TransportEndpointID) *endpointsByNic {
-	var matchedEP *endpointsByNic
-	d.iterEndpointsLocked(eps, id, func(ep *endpointsByNic) bool {
-		matchedEP = ep
-		return false
-	})
-	return matchedEP
 }
 
 // registerRawEndpoint registers the given endpoint with the dispatcher such
