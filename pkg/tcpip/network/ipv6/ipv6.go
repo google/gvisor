@@ -21,11 +21,14 @@
 package ipv6
 
 import (
+	"fmt"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/network/fragmentation"
+	"gvisor.dev/gvisor/pkg/tcpip/network/hash"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -49,6 +52,7 @@ type endpoint struct {
 	linkEP        stack.LinkEndpoint
 	linkAddrCache stack.LinkAddressCache
 	dispatcher    stack.TransportDispatcher
+	fragmentation *fragmentation.Fragmentation
 	protocol      *protocol
 }
 
@@ -172,6 +176,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
 	headerView := pkt.Data.First()
 	h := header.IPv6(headerView)
 	if !h.IsValid(pkt.Data.Size()) {
+		r.Stats().IP.MalformedPacketsReceived.Increment()
 		return
 	}
 
@@ -179,14 +184,120 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
 	pkt.Data.TrimFront(header.IPv6MinimumSize)
 	pkt.Data.CapLength(int(h.PayloadLength()))
 
-	p := h.TransportProtocol()
-	if p == header.ICMPv6ProtocolNumber {
-		e.handleICMP(r, headerView, pkt)
+	it, err := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(h.NextHeader()), pkt.Data, true)
+	if err != nil {
+		r.Stats().IP.MalformedPacketsReceived.Increment()
 		return
 	}
 
-	r.Stats().IP.PacketsDelivered.Increment()
-	e.dispatcher.DeliverTransportPacket(r, p, pkt)
+	for {
+		extHdr, done, err := it.Next()
+		if err != nil {
+			// This should never happen as MakeIPv6PayloadIterator above did not
+			// return an error.
+			panic(fmt.Sprintf("unexpected error when iterating over IPv6 payload: %s", err))
+		}
+		if done {
+			break
+		}
+
+		switch extHdr := extHdr.(type) {
+		case header.IPv6RoutingExtHdr:
+			// As per RFC 8200 section 4.4, if a node encounters a routing header with
+			// an unrecognized routing type value, with a non-zero Segments Left
+			// value, the node must discard the packet and send an ICMP Parameter
+			// Problem, Code 0. If the Segments Left is 0, the node must ignore the
+			// Routing extension header and process the next header in the packet.
+			//
+			// Note, the stack does not yet handle any type of routing extension
+			// header, so we just make sure Segments Left is zero before processing
+			// the next extension header.
+			//
+			// TODO(b/152019344): Send an ICMPv6 Parameter Problem Code 0 for
+			// unrecognized routing types with a non-zero Segments Left value.
+			if extHdr.SegmentsLeft() != 0 {
+				return
+			}
+
+		case header.IPv6FragmentExtHdr:
+			fragmentOffset := extHdr.FragmentOffset()
+			more := extHdr.More()
+			if !more && fragmentOffset == 0 {
+				// This fragment extension header indicates that this packet is an
+				// atomic fragment. An atomic fragment is a fragment that contains
+				// all the data required to reassemble a full packet. As per RFC 6946,
+				// atomic fragments must not interfere with "normal" fragmented traffic
+				// so we skip processing the fragment instead of feeding it through the
+				// reassembly process below.
+				continue
+			}
+
+			rawPayload := it.AsRawHeader()
+			fragmentPayloadLen := rawPayload.Buf.Size()
+			if fragmentPayloadLen == 0 {
+				// Drop the packet as it's marked as a fragment but has no payload.
+				r.Stats().IP.MalformedPacketsReceived.Increment()
+				r.Stats().IP.MalformedFragmentsReceived.Increment()
+				return
+			}
+
+			// The packet is a fragment, let's try to reassemble it.
+			start := fragmentOffset * header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit
+			last := start + uint16(fragmentPayloadLen) - 1
+
+			// Drop the packet if the fragmentOffset is incorrect. i.e the
+			// combination of fragmentOffset and pkt.Data.size() causes a
+			// wrap around resulting in last being less than the offset.
+			if last < start {
+				r.Stats().IP.MalformedPacketsReceived.Increment()
+				r.Stats().IP.MalformedFragmentsReceived.Increment()
+				return
+			}
+
+			var ready bool
+			pkt.Data, ready, err = e.fragmentation.Process(hash.IPv6FragmentHash(h, extHdr.ID()), start, last, more, rawPayload.Buf)
+			if err != nil {
+				r.Stats().IP.MalformedPacketsReceived.Increment()
+				r.Stats().IP.MalformedFragmentsReceived.Increment()
+				return
+			}
+
+			if ready {
+				// We create a new iterator with the reassembled packet because we could
+				// have more extension headers in the reassembled payload, as per RFC
+				// 8200 section 4.5.
+				it, err = header.MakeIPv6PayloadIterator(rawPayload.Identifier, pkt.Data, true)
+				if err != nil {
+					r.Stats().IP.MalformedPacketsReceived.Increment()
+					r.Stats().IP.MalformedFragmentsReceived.Increment()
+					return
+				}
+			}
+
+		case header.IPv6RawPayloadHeader:
+			// If the last header in the payload isn't a known IPv6 extension header,
+			// handle it as if it is transport layer data.
+			pkt.Data = extHdr.Buf
+
+			if p := tcpip.TransportProtocolNumber(extHdr.Identifier); p == header.ICMPv6ProtocolNumber {
+				e.handleICMP(r, headerView, pkt)
+			} else {
+				r.Stats().IP.PacketsDelivered.Increment()
+				// TODO(b/152019344): Send an ICMPv6 Parameter Problem, Code 1 error
+				// in response to unrecognized next header values.
+				e.dispatcher.DeliverTransportPacket(r, p, pkt)
+			}
+
+		default:
+			// If we receive a packet for an extension header we do not yet handle,
+			// drop the packet for now.
+			//
+			// TODO(b/152019344): Send an ICMPv6 Parameter Problem, Code 1 error
+			// in response to unrecognized next header values.
+			r.Stats().UnknownProtocolRcvdPackets.Increment()
+			return
+		}
+	}
 }
 
 // Close cleans up resources associated with the endpoint.
@@ -229,6 +340,7 @@ func (p *protocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWi
 		linkEP:        linkEP,
 		linkAddrCache: linkAddrCache,
 		dispatcher:    dispatcher,
+		fragmentation: fragmentation.NewFragmentation(fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, fragmentation.DefaultReassembleTimeout),
 		protocol:      p,
 	}, nil
 }

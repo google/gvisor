@@ -14,6 +14,7 @@ go_library(
         "interfaces.go",
         "ipv4.go",
         "ipv6.go",
+        "ipv6_extension_headers.go",
         "ipv6_fragment.go",
         "ndp_neighbor_advert.go",
         "ndp_neighbor_solicit.go",
@@ -55,11 +56,13 @@ go_test(
     size = "small",
     srcs = [
         "eth_test.go",
+        "ipv6_extension_headers_test.go",
         "ndp_test.go",
     ],
     library = ":header",
     deps = [
         "//pkg/tcpip",
+        "//pkg/tcpip/buffer",
         "@com_github_google_go-cmp//cmp:go_default_library",
     ],
 )

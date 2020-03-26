@@ -13,6 +13,8 @@ go_library(
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
+        "//pkg/tcpip/network/fragmentation",
+        "//pkg/tcpip/network/hash",
         "//pkg/tcpip/stack",
     ],
 )
@@ -36,5 +38,6 @@ go_test(
         "//pkg/tcpip/transport/icmp",
         "//pkg/tcpip/transport/udp",
         "//pkg/waiter",
+        "@com_github_google_go-cmp//cmp:go_default_library",
     ],
 )
