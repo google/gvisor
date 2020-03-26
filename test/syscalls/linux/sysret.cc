@@ -14,6 +14,8 @@
 
 // Tests to verify that the behavior of linux and gvisor matches when
 // 'sysret' returns to bad (aka non-canonical) %rip or %rsp.
+
+#include <linux/elf.h>
 #include <sys/ptrace.h>
 #include <sys/user.h>
 
@@ -32,6 +34,7 @@ constexpr uint64_t kNonCanonicalRsp = 0xFFFF000000000000;
 class SysretTest : public ::testing::Test {
  protected:
   struct user_regs_struct regs_;
+  struct iovec iov;
   pid_t child_;
 
   void SetUp() override {
@@ -48,10 +51,15 @@ class SysretTest : public ::testing::Test {
 
     // Parent.
     int status;
+    memset(&iov, 0, sizeof(iov));
     ASSERT_THAT(pid, SyscallSucceeds());  // Might still be < 0.
     ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
     EXPECT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP);
-    ASSERT_THAT(ptrace(PTRACE_GETREGS, pid, 0, &regs_), SyscallSucceeds());
+
+    iov.iov_base = &regs_;
+    iov.iov_len = sizeof(regs_);
+    ASSERT_THAT(ptrace(PTRACE_GETREGSET, pid, NT_PRSTATUS, &iov),
+                SyscallSucceeds());
 
     child_ = pid;
   }
@@ -61,13 +69,27 @@ class SysretTest : public ::testing::Test {
   }
 
   void SetRip(uint64_t newrip) {
+#if defined(__x86_64__)
     regs_.rip = newrip;
-    ASSERT_THAT(ptrace(PTRACE_SETREGS, child_, 0, &regs_), SyscallSucceeds());
+#elif defined(__aarch64__)
+    regs_.pc = newrip;
+#else
+#error "Unknown architecture"
+#endif
+    ASSERT_THAT(ptrace(PTRACE_SETREGSET, child_, NT_PRSTATUS, &iov),
+                SyscallSucceeds());
   }
 
   void SetRsp(uint64_t newrsp) {
+#if defined(__x86_64__)
     regs_.rsp = newrsp;
-    ASSERT_THAT(ptrace(PTRACE_SETREGS, child_, 0, &regs_), SyscallSucceeds());
+#elif defined(__aarch64__)
+    regs_.sp = newrsp;
+#else
+#error "Unknown architecture"
+#endif
+    ASSERT_THAT(ptrace(PTRACE_SETREGSET, child_, NT_PRSTATUS, &iov),
+                SyscallSucceeds());
   }
 
   // Wait waits for the child pid and returns the exit status.
@@ -104,8 +126,15 @@ TEST_F(SysretTest, BadRsp) {
   SetRsp(kNonCanonicalRsp);
   Detach();
   int status = Wait();
+#if defined(__x86_64__)
   EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGBUS)
       << "status = " << status;
+#elif defined(__aarch64__)
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSEGV)
+      << "status = " << status;
+#else
+#error "Unknown architecture"
+#endif
 }
 }  // namespace
 
