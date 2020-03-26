@@ -224,8 +224,6 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		}
 	}
 
-	mounter := fs.FileOwnerFromContext(ctx)
-
 	// TODO(gvisor.dev/issue/1623): Use host FD when supported in VFS2.
 	var ttyFile *fs.File
 	for appFD, hostFile := range args.FilePayload.Files {
@@ -235,7 +233,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 			// Import the file as a host TTY file.
 			if ttyFile == nil {
 				var err error
-				appFile, err = host.ImportFile(ctx, int(hostFile.Fd()), mounter, true /* isTTY */)
+				appFile, err = host.ImportFile(ctx, int(hostFile.Fd()), true /* isTTY */)
 				if err != nil {
 					return nil, 0, nil, err
 				}
@@ -254,7 +252,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		} else {
 			// Import the file as a regular host file.
 			var err error
-			appFile, err = host.ImportFile(ctx, int(hostFile.Fd()), mounter, false /* isTTY */)
+			appFile, err = host.ImportFile(ctx, int(hostFile.Fd()), false /* isTTY */)
 			if err != nil {
 				return nil, 0, nil, err
 			}
