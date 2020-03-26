@@ -607,7 +607,7 @@ func testReadInternal(c *testContext, flow testFlow, packetShouldBeDropped, expe
 	// Check the peer address.
 	h := flow.header4Tuple(incoming)
 	if addr.Addr != h.srcAddr.Addr {
-		c.t.Fatalf("unexpected remote address: got %s, want %s", addr.Addr, h.srcAddr)
+		c.t.Fatalf("unexpected remote address: got %s, want %v", addr.Addr, h.srcAddr)
 	}
 
 	// Check the payload.

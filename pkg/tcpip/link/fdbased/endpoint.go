@@ -91,7 +91,7 @@ func (p PacketDispatchMode) String() string {
 	case PacketMMap:
 		return "PacketMMap"
 	default:
-		return fmt.Sprintf("unknown packet dispatch mode %v", p)
+		return fmt.Sprintf("unknown packet dispatch mode '%d'", p)
 	}
 }
 

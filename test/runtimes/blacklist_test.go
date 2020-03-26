@@ -32,6 +32,6 @@ func TestBlacklists(t *testing.T) {
 		t.Fatalf("error parsing blacklist: %v", err)
 	}
 	if *blacklistFile != "" && len(bl) == 0 {
-		t.Errorf("got empty blacklist for file %q", blacklistFile)
+		t.Errorf("got empty blacklist for file %q", *blacklistFile)
 	}
 }
