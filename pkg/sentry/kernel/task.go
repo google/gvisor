@@ -248,12 +248,12 @@ type Task struct {
 	// k is the Kernel that this task belongs to. The k pointer is immutable.
 	k *Kernel
 
-	// containerID has no equivalent in Linux; it's used by runsc to track all
+	// containerIndex has no equivalent in Linux; it's used by runsc to track all
 	// tasks that belong to a given containers since cgroups aren't implemented.
 	// It's inherited by the children, is immutable, and may be empty.
 	//
 	// NOTE: cgroups can be used to track this when implemented.
-	containerID string
+	containerIndex int
 
 	// mu protects some of the following fields.
 	mu sync.Mutex `state:"nosave"`
@@ -820,9 +820,9 @@ func (t *Task) AbstractSockets() *AbstractSocketNamespace {
 	return t.abstractSockets
 }
 
-// ContainerID returns t's container ID.
-func (t *Task) ContainerID() string {
-	return t.containerID
+// ContainerIndex returns t's container Index.
+func (t *Task) ContainerIndex() int {
+	return t.containerIndex
 }
 
 // OOMScoreAdj gets the task's thread group's OOM score adjustment.

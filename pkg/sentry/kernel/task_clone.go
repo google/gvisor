@@ -301,7 +301,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		MountNamespaceVFS2:      mntnsVFS2,
 		RSeqAddr:                rseqAddr,
 		RSeqSignature:           rseqSignature,
-		ContainerID:             t.ContainerID(),
+		ContainerIndex:          t.ContainerIndex(),
 	}
 	if opts.NewThreadGroup {
 		cfg.Parent = t

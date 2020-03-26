@@ -95,7 +95,11 @@ type ExecArgs struct {
 	urpc.FilePayload
 
 	// ContainerID is the container for the process being executed.
+	// Note: Only ContainerIndex is used inside sentry, ContainerID
+	// here is used in runsc to propagate containerID information to
+	// loader, but it's not used in sentry.
 	ContainerID string
+	ContainerIndex int
 
 	// PIDNamespace is the pid namespace for the process being executed.
 	PIDNamespace *kernel.PIDNamespace
@@ -162,7 +166,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		UTSNamespace:            proc.Kernel.RootUTSNamespace(),
 		IPCNamespace:            proc.Kernel.RootIPCNamespace(),
 		AbstractSocketNamespace: proc.Kernel.RootAbstractSocketNamespace(),
-		ContainerID:             args.ContainerID,
+		ContainerIndex:          args.ContainerIndex,
 		PIDNamespace:            args.PIDNamespace,
 	}
 	if initArgs.MountNamespace != nil {
@@ -245,7 +249,7 @@ type PsArgs struct {
 // Ps provides a process listing for the running kernel.
 func (proc *Proc) Ps(args *PsArgs, out *string) error {
 	var p []*Process
-	if e := Processes(proc.Kernel, "", &p); e != nil {
+	if e := Processes(proc.Kernel, -1, &p); e != nil {
 		return e
 	}
 	if !args.JSON {
@@ -327,7 +331,7 @@ func PrintPIDsJSON(pl []*Process) (string, error) {
 
 // Processes retrieves information about processes running in the sandbox with
 // the given container id. All processes are returned if 'containerID' is empty.
-func Processes(k *kernel.Kernel, containerID string, out *[]*Process) error {
+func Processes(k *kernel.Kernel, containerIndex int, out *[]*Process) error {
 	ts := k.TaskSet()
 	now := k.RealtimeClock().Now()
 	for _, tg := range ts.Root.ThreadGroups() {
@@ -338,7 +342,7 @@ func Processes(k *kernel.Kernel, containerID string, out *[]*Process) error {
 		if pid == 0 {
 			continue
 		}
-		if containerID != "" && containerID != tg.Leader().ContainerID() {
+		if containerIndex != -1 && containerIndex != tg.Leader().ContainerIndex() {
 			continue
 		}
 

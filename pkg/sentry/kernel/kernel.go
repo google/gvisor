@@ -814,8 +814,8 @@ type CreateProcessArgs struct {
 	// increment it).
 	MountNamespaceVFS2 *vfs.MountNamespace
 
-	// ContainerID is the container that the process belongs to.
-	ContainerID string
+	// ContainerIndex is the container that the process belongs to.
+	ContainerIndex int
 }
 
 // NewContext returns a context.Context that represents the task that will be
@@ -1046,7 +1046,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		IPCNamespace:            args.IPCNamespace,
 		AbstractSocketNamespace: args.AbstractSocketNamespace,
 		MountNamespaceVFS2:      mntnsVFS2,
-		ContainerID:             args.ContainerID,
+		ContainerIndex:          args.ContainerIndex,
 	}
 	t, err := k.tasks.NewTask(ctx, config)
 	if err != nil {
@@ -1340,7 +1340,7 @@ func (k *Kernel) SendExternalSignalThreadGroup(tg *ThreadGroup, info *arch.Signa
 
 // SendContainerSignal sends the given signal to all processes inside the
 // namespace that match the given container ID.
-func (k *Kernel) SendContainerSignal(cid string, info *arch.SignalInfo) error {
+func (k *Kernel) SendContainerSignal(cindex int, info *arch.SignalInfo) error {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
 	k.tasks.mu.RLock()
@@ -1348,7 +1348,7 @@ func (k *Kernel) SendContainerSignal(cid string, info *arch.SignalInfo) error {
 
 	var lastErr error
 	for tg := range k.tasks.Root.tgids {
-		if tg.leader.ContainerID() == cid {
+		if tg.leader.ContainerIndex() == cindex {
 			tg.signalHandlers.mu.Lock()
 			infoCopy := *info
 			if err := tg.leader.sendSignalLocked(&infoCopy, true /*group*/); err != nil {

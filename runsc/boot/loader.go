@@ -346,7 +346,7 @@ func New(args Args) (*Loader, error) {
 	dogOpts.TaskTimeoutAction = args.Conf.WatchdogAction
 	dog := watchdog.New(k, dogOpts)
 
-	procArgs, err := createProcessArgs(args.ID, args.Spec, creds, k, k.RootPIDNamespace())
+	procArgs, err := createProcessArgs(0, args.Spec, creds, k, k.RootPIDNamespace())
 	if err != nil {
 		return nil, fmt.Errorf("creating init process for root container: %v", err)
 	}
@@ -442,7 +442,7 @@ func New(args Args) (*Loader, error) {
 }
 
 // createProcessArgs creates args that can be used with kernel.CreateProcess.
-func createProcessArgs(id string, spec *specs.Spec, creds *auth.Credentials, k *kernel.Kernel, pidns *kernel.PIDNamespace) (kernel.CreateProcessArgs, error) {
+func createProcessArgs(index int, spec *specs.Spec, creds *auth.Credentials, k *kernel.Kernel, pidns *kernel.PIDNamespace) (kernel.CreateProcessArgs, error) {
 	// Create initial limits.
 	ls, err := createLimitSet(spec)
 	if err != nil {
@@ -470,7 +470,7 @@ func createProcessArgs(id string, spec *specs.Spec, creds *auth.Credentials, k *
 		UTSNamespace:            k.RootUTSNamespace(),
 		IPCNamespace:            k.RootIPCNamespace(),
 		AbstractSocketNamespace: k.RootAbstractSocketNamespace(),
-		ContainerID:             id,
+		ContainerIndex:          index,
 		PIDNamespace:            pidns,
 	}
 
@@ -718,7 +718,8 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *config.Config, cid strin
 		spec:     spec,
 		goferFDs: goferFDs,
 	}
-	info.procArgs, err = createProcessArgs(cid, spec, creds, l.k, pidns)
+	info.procArgs, err = createProcessArgs(l.containers[cid], spec, creds, l.k, pidns)
+	info.procArgs, err := createProcessARgs(l.containers[cid], spec, creds, l.k, pidns)
 	if err != nil {
 		return fmt.Errorf("creating new process: %v", err)
 	}
@@ -912,7 +913,7 @@ func (l *Loader) destroyContainer(cid string) error {
 		// Wait for all processes that belong to the container to exit (including
 		// exec'd processes).
 		for _, t := range l.k.TaskSet().Root.Tasks() {
-			if t.ContainerID() == cid {
+			if t.ContainerIndex() == l.containers[cid] {
 				t.ThreadGroup().WaitExited()
 			}
 		}
@@ -954,6 +955,7 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	if tg == nil {
 		return 0, fmt.Errorf("container %q not started", args.ContainerID)
 	}
+	args.ContainerIndex = l.containers[args.ContainerID]
 
 	// Get the container MountNamespace from the Task. Try to acquire ref may fail
 	// in case it raced with task exit.
@@ -1066,8 +1068,9 @@ func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, waitStatus *uint32) e
 	if tg == nil {
 		return fmt.Errorf("waiting for PID %d: no such process", tgid)
 	}
-	if tg.Leader().ContainerID() != cid {
-		return fmt.Errorf("process %d is part of a different container: %q", tgid, tg.Leader().ContainerID())
+	if tg.Leader().ContainerIndex() != l.containers[cid] {
+		// TODO: convert index to ID for readability
+		return fmt.Errorf("process %d is part of a different container: %d", tgid, tg.Leader().ContainerIndex())
 	}
 	ws := l.wait(tg)
 	*waitStatus = ws
@@ -1263,8 +1266,9 @@ func (l *Loader) signalProcess(cid string, tgid kernel.ThreadID, signo int32) er
 	if tg == nil {
 		return fmt.Errorf("no such process with PID %d", tgid)
 	}
-	if tg.Leader().ContainerID() != cid {
-		return fmt.Errorf("process %d is part of a different container: %q", tgid, tg.Leader().ContainerID())
+	if tg.Leader().ContainerIndex() != l.containers[cid] {
+		// TODO: convert index to ID for readability
+		return fmt.Errorf("process %d is part of a different container: %d", tgid, tg.Leader().ContainerIndex())
 	}
 	return l.k.SendExternalSignalThreadGroup(tg, &arch.SignalInfo{Signo: signo})
 }
@@ -1325,7 +1329,7 @@ func (l *Loader) signalAllProcesses(cid string, signo int32) error {
 	// sent to the entire container.
 	l.k.Pause()
 	defer l.k.Unpause()
-	return l.k.SendContainerSignal(cid, &arch.SignalInfo{Signo: signo})
+	return l.k.SendContainerSignal(l.containers[cid], &arch.SignalInfo{Signo: signo})
 }
 
 // threadGroupFromID is similar to tryThreadGroupFromIDLocked except that it

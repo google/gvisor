@@ -92,8 +92,8 @@ type TaskConfig struct {
 	// with.
 	RSeqSignature uint32
 
-	// ContainerID is the container the new task belongs to.
-	ContainerID string
+	// ContainerIndex is the container the new task belongs to.
+	ContainerIndex int
 }
 
 // NewTask creates a new task defined by cfg.
@@ -150,7 +150,7 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 		rseqAddr:           cfg.RSeqAddr,
 		rseqSignature:      cfg.RSeqSignature,
 		futexWaiter:        futex.NewWaiter(),
-		containerID:        cfg.ContainerID,
+		containerIndex:     cfg.ContainerIndex,
 	}
 	t.creds.Store(cfg.Credentials)
 	t.endStopCond.L = &t.tg.signalHandlers.mu
