@@ -217,7 +217,8 @@ func (c *Context) Stack() *stack.Stack {
 func (c *Context) CheckNoPacketTimeout(errMsg string, wait time.Duration) {
 	c.t.Helper()
 
-	ctx, _ := context.WithTimeout(context.Background(), wait)
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
 	if _, ok := c.linkEP.ReadContext(ctx); ok {
 		c.t.Fatal(errMsg)
 	}
@@ -235,7 +236,8 @@ func (c *Context) CheckNoPacket(errMsg string) {
 func (c *Context) GetPacket() []byte {
 	c.t.Helper()
 
-	ctx, _ := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 	p, ok := c.linkEP.ReadContext(ctx)
 	if !ok {
 		c.t.Fatalf("Packet wasn't written out")
@@ -486,7 +488,8 @@ func (c *Context) CreateV6Endpoint(v6only bool) {
 func (c *Context) GetV6Packet() []byte {
 	c.t.Helper()
 
-	ctx, _ := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 	p, ok := c.linkEP.ReadContext(ctx)
 	if !ok {
 		c.t.Fatalf("Packet wasn't written out")
