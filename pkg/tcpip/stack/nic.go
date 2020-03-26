@@ -16,7 +16,6 @@ package stack
 
 import (
 	"fmt"
-	"log"
 	"reflect"
 	"sort"
 	"strings"
@@ -480,7 +479,7 @@ func (n *NIC) primaryIPv6Endpoint(remoteAddr tcpip.Address) *referencedNetworkEn
 			// Should never happen as we got r from the primary IPv6 endpoint list and
 			// ScopeForIPv6Address only returns an error if addr is not an IPv6
 			// address.
-			log.Fatalf("header.ScopeForIPv6Address(%s): %s", addr, err)
+			panic(fmt.Sprintf("header.ScopeForIPv6Address(%s): %s", addr, err))
 		}
 
 		cs = append(cs, ipv6AddrCandidate{
@@ -492,7 +491,7 @@ func (n *NIC) primaryIPv6Endpoint(remoteAddr tcpip.Address) *referencedNetworkEn
 	remoteScope, err := header.ScopeForIPv6Address(remoteAddr)
 	if err != nil {
 		// primaryIPv6Endpoint should never be called with an invalid IPv6 address.
-		log.Fatalf("header.ScopeForIPv6Address(%s): %s", remoteAddr, err)
+		panic(fmt.Sprintf("header.ScopeForIPv6Address(%s): %s", remoteAddr, err))
 	}
 
 	// Sort the addresses as per RFC 6724 section 5 rules 1-3.
