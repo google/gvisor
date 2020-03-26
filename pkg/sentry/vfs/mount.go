@@ -24,6 +24,9 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
+// lastMountID is used to allocate mount ids. Must be accessed atomically.
+var lastMountID uint64
+
 // A Mount is a replacement of a Dentry (Mount.key.point) from one Filesystem
 // (Mount.key.parent.fs) with a Dentry (Mount.root) from another Filesystem
 // (Mount.fs), which applies to path resolution in the context of a particular
@@ -47,6 +50,9 @@ type Mount struct {
 	vfs  *VirtualFilesystem
 	fs   *Filesystem
 	root *Dentry
+
+	// ID is the immutable mount ID.
+	ID uint64
 
 	// key is protected by VirtualFilesystem.mountMu and
 	// VirtualFilesystem.mounts.seq, and may be nil. References are held on
@@ -87,6 +93,7 @@ type Mount struct {
 
 func newMount(vfs *VirtualFilesystem, fs *Filesystem, root *Dentry, mntns *MountNamespace, opts *MountOptions) *Mount {
 	mnt := &Mount{
+		ID:    atomic.AddUint64(&lastMountID, 1),
 		vfs:   vfs,
 		fs:    fs,
 		root:  root,
