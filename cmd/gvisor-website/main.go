@@ -30,10 +30,14 @@ import (
 )
 
 var redirects = map[string]string{
+	// Github redirects
 	"/change":    "https://github.com/google/gvisor",
 	"/issue":     "https://github.com/google/gvisor/issues",
 	"/issue/new": "https://github.com/google/gvisor/issues/new",
 	"/pr":        "https://github.com/google/gvisor/pulls",
+
+	// For links
+	"/faq": "/docs/user_guide/faq/",
 
 	// Redirects to compatibility docs.
 	"/c":             "/docs/user_guide/compatibility/",
