@@ -287,6 +287,11 @@ func (m FileMode) ExtraBits() FileMode {
 	return m &^ (PermissionsMask | FileTypeMask)
 }
 
+// IsDir returns true if file type represents a directory.
+func (m FileMode) IsDir() bool {
+	return m.FileType() == S_IFDIR
+}
+
 // String returns a string representation of m.
 func (m FileMode) String() string {
 	var s []string
