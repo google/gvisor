@@ -81,6 +81,7 @@
       "/pkg/gohacks/gohacks_unsafe.go": "allowed: special case",
       "/pkg/sentry/fs/fsutil/host_file_mapper_unsafe.go": "allowed: special case",
       "/pkg/sentry/platform/kvm/(bluepill|machine)_unsafe.go": "allowed: special case",
+      "/pkg/sentry/platform/kvm/machine_arm64_unsafe.go": "fix: gvisor.dev/issue/22464",
       "/pkg/sentry/platform/ring0/pagetables/allocator_unsafe.go": "allowed: special case",
       "/pkg/sentry/platform/safecopy/safecopy_unsafe.go": "allowed: special case",
       "/pkg/sentry/vfs/mount_unsafe.go": "allowed: special case"
