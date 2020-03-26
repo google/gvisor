@@ -60,8 +60,8 @@ var _ fs.FileOperations = (*fileOperations)(nil)
 // The returned File cannot be saved, since there is no guarantee that the same
 // FD will exist or represent the same file at time of restore. If such a
 // guarantee does exist, use ImportFile instead.
-func NewFile(ctx context.Context, fd int, mounter fs.FileOwner) (*fs.File, error) {
-	return newFileFromDonatedFD(ctx, fd, mounter, false, false)
+func NewFile(ctx context.Context, fd int) (*fs.File, error) {
+	return newFileFromDonatedFD(ctx, fd, false, false)
 }
 
 // ImportFile creates a new File backed by the provided host file descriptor.
@@ -71,13 +71,13 @@ func NewFile(ctx context.Context, fd int, mounter fs.FileOwner) (*fs.File, error
 // If the returned file is saved, it will be restored by re-importing the FD
 // originally passed to ImportFile. It is the restorer's responsibility to
 // ensure that the FD represents the same file.
-func ImportFile(ctx context.Context, fd int, mounter fs.FileOwner, isTTY bool) (*fs.File, error) {
-	return newFileFromDonatedFD(ctx, fd, mounter, true, isTTY)
+func ImportFile(ctx context.Context, fd int, isTTY bool) (*fs.File, error) {
+	return newFileFromDonatedFD(ctx, fd, true, isTTY)
 }
 
 // newFileFromDonatedFD returns an fs.File from a donated FD. If the FD is
 // saveable, then saveable is true.
-func newFileFromDonatedFD(ctx context.Context, donated int, mounter fs.FileOwner, saveable, isTTY bool) (*fs.File, error) {
+func newFileFromDonatedFD(ctx context.Context, donated int, saveable, isTTY bool) (*fs.File, error) {
 	var s syscall.Stat_t
 	if err := syscall.Fstat(donated, &s); err != nil {
 		return nil, err
