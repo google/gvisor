@@ -284,7 +284,7 @@ func TestTCPResetSentForACKWhenNotUsingSynCookies(t *testing.T) {
 	// are released instantly on Close.
 	tcpTW := tcpip.TCPTimeWaitTimeoutOption(1 * time.Millisecond)
 	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpTW); err != nil {
-		t.Fatalf("e.stack.SetTransportProtocolOption(%d, %s) = %s", tcp.ProtocolNumber, tcpTW, err)
+		t.Fatalf("e.stack.SetTransportProtocolOption(%d, %v) = %v", tcp.ProtocolNumber, tcpTW, err)
 	}
 
 	c.EP.Close()
@@ -5609,7 +5609,7 @@ func TestReceiveBufferAutoTuningApplicationLimited(t *testing.T) {
 				return
 			}
 			if w := tcp.WindowSize(); w == 0 || w > uint16(wantRcvWnd) {
-				t.Errorf("expected a non-zero window: got %d, want <= wantRcvWnd", w, wantRcvWnd)
+				t.Errorf("expected a non-zero window: got %d, want <= wantRcvWnd", w)
 			}
 		},
 	))

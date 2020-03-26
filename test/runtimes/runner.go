@@ -114,7 +114,7 @@ func getTests(d dockerutil.Docker, blacklist map[string]struct{}) ([]testing.Int
 			F: func(t *testing.T) {
 				// Is the test blacklisted?
 				if _, ok := blacklist[tc]; ok {
-					t.Skip("SKIP: blacklisted test %q", tc)
+					t.Skipf("SKIP: blacklisted test %q", tc)
 				}
 
 				var (

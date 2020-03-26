@@ -119,7 +119,7 @@ func TestNewPipe(t *testing.T) {
 				continue
 			}
 			if flags := p.flags; test.flags != flags {
-				t.Errorf("%s: got file flags %s, want %s", test.desc, flags, test.flags)
+				t.Errorf("%s: got file flags %v, want %v", test.desc, flags, test.flags)
 				continue
 			}
 			if len(test.readAheadBuffer) != len(p.readAheadBuffer) {
@@ -136,7 +136,7 @@ func TestNewPipe(t *testing.T) {
 				continue
 			}
 			if !fdnotifier.HasFD(int32(f.FD())) {
-				t.Errorf("%s: pipe fd %d is not registered for events", test.desc, f.FD)
+				t.Errorf("%s: pipe fd %d is not registered for events", test.desc, f.FD())
 			}
 		}
 	}

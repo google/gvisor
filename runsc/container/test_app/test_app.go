@@ -96,7 +96,7 @@ func (c *uds) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{})
 
 	listener, err := net.Listen("unix", c.socketPath)
 	if err != nil {
-		log.Fatal("error listening on socket %q:", c.socketPath, err)
+		log.Fatalf("error listening on socket %q: %v", c.socketPath, err)
 	}
 
 	go server(listener, outputFile)
