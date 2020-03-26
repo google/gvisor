@@ -244,6 +244,14 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 	ip := e.addIPHeader(r, &pkt.Header, pkt.Data.Size(), params)
 	pkt.NetworkHeader = buffer.View(ip)
 
+	// iptables filtering. All packets that reach here are locally
+	// generated.
+	ipt := e.stack.IPTables()
+	if ok := ipt.Check(stack.Output, pkt); !ok {
+		// iptables is telling us to drop the packet.
+		return nil
+	}
+
 	if r.Loop&stack.PacketLoop != 0 {
 		// The inbound path expects the network header to still be in
 		// the PacketBuffer's Data field.
@@ -280,7 +288,14 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []stack.Pac
 		return len(pkts), nil
 	}
 
+	// iptables filtering. All packets that reach here are locally
+	// generated.
+	ipt := e.stack.IPTables()
 	for i := range pkts {
+		if ok := ipt.Check(stack.Output, pkts[i]); !ok {
+			// iptables is telling us to drop the packet.
+			continue
+		}
 		ip := e.addIPHeader(r, &pkts[i].Header, pkts[i].DataSize, params)
 		pkts[i].NetworkHeader = buffer.View(ip)
 	}

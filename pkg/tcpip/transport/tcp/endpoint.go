@@ -603,6 +603,9 @@ type endpoint struct {
 	// txHash is the transport layer hash to be set on outbound packets
 	// emitted by this endpoint.
 	txHash uint32
+
+	// owner is used to get uid and gid of the packet.
+	owner tcpip.PacketOwner
 }
 
 // UniqueID implements stack.TransportEndpoint.UniqueID.
@@ -1130,6 +1133,10 @@ func (e *endpoint) ModerateRecvBuf(copied int) {
 	e.rcvAutoParams.measureTime = now
 	e.rcvAutoParams.copied = 0
 	e.rcvListMu.Unlock()
+}
+
+func (e *endpoint) SetOwner(owner tcpip.PacketOwner) {
+	e.owner = owner
 }
 
 // IPTables implements tcpip.Endpoint.IPTables.

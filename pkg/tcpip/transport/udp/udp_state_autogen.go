@@ -61,6 +61,7 @@ func (x *endpoint) save(m state.Map) {
 	m.Save("shutdownFlags", &x.shutdownFlags)
 	m.Save("multicastMemberships", &x.multicastMemberships)
 	m.Save("effectiveNetProtos", &x.effectiveNetProtos)
+	m.Save("owner", &x.owner)
 }
 
 func (x *endpoint) load(m state.Map) {
@@ -92,6 +93,7 @@ func (x *endpoint) load(m state.Map) {
 	m.Load("shutdownFlags", &x.shutdownFlags)
 	m.Load("multicastMemberships", &x.multicastMemberships)
 	m.Load("effectiveNetProtos", &x.effectiveNetProtos)
+	m.Load("owner", &x.owner)
 	m.LoadValue("rcvBufSizeMax", new(int), func(y interface{}) { x.loadRcvBufSizeMax(y.(int)) })
 	m.AfterLoad(x.afterLoad)
 }

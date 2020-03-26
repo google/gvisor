@@ -199,7 +199,7 @@ func replyWithReset(s *segment) {
 		seq:    seq,
 		ack:    ack,
 		rcvWnd: 0,
-	}, buffer.VectorisedView{}, nil /* gso */)
+	}, buffer.VectorisedView{}, nil /* gso */, nil /* PacketOwner */)
 }
 
 // SetOption implements stack.TransportProtocol.SetOption.

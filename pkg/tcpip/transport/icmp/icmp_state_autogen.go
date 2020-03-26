@@ -40,6 +40,7 @@ func (x *endpoint) save(m state.Map) {
 	m.Save("shutdownFlags", &x.shutdownFlags)
 	m.Save("state", &x.state)
 	m.Save("ttl", &x.ttl)
+	m.Save("owner", &x.owner)
 }
 
 func (x *endpoint) load(m state.Map) {
@@ -54,6 +55,7 @@ func (x *endpoint) load(m state.Map) {
 	m.Load("shutdownFlags", &x.shutdownFlags)
 	m.Load("state", &x.state)
 	m.Load("ttl", &x.ttl)
+	m.Load("owner", &x.owner)
 	m.LoadValue("rcvBufSizeMax", new(int), func(y interface{}) { x.loadRcvBufSizeMax(y.(int)) })
 	m.AfterLoad(x.afterLoad)
 }

@@ -336,6 +336,15 @@ type ControlMessages struct {
 	PacketInfo IPPacketInfo
 }
 
+// PacketOwner is used to get UID and GID of the packet.
+type PacketOwner interface {
+	// UID returns UID of the packet.
+	UID() uint32
+
+	// GID returns GID of the packet.
+	GID() uint32
+}
+
 // Endpoint is the interface implemented by transport protocols (e.g., tcp, udp)
 // that exposes functionality like read, write, connect, etc. to users of the
 // networking stack.
@@ -470,6 +479,9 @@ type Endpoint interface {
 
 	// Stats returns a reference to the endpoint stats.
 	Stats() EndpointStats
+
+	// SetOwner sets the task owner to the endpoint owner.
+	SetOwner(owner PacketOwner)
 }
 
 // EndpointInfo is the interface implemented by each endpoint info struct.

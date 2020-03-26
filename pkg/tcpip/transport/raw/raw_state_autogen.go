@@ -39,6 +39,7 @@ func (x *endpoint) save(m state.Map) {
 	m.Save("closed", &x.closed)
 	m.Save("connected", &x.connected)
 	m.Save("bound", &x.bound)
+	m.Save("owner", &x.owner)
 }
 
 func (x *endpoint) load(m state.Map) {
@@ -52,6 +53,7 @@ func (x *endpoint) load(m state.Map) {
 	m.Load("closed", &x.closed)
 	m.Load("connected", &x.connected)
 	m.Load("bound", &x.bound)
+	m.Load("owner", &x.owner)
 	m.LoadValue("rcvBufSizeMax", new(int), func(y interface{}) { x.loadRcvBufSizeMax(y.(int)) })
 	m.AfterLoad(x.afterLoad)
 }
