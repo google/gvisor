@@ -83,7 +83,7 @@ func (fs *anonFilesystem) AccessAt(ctx context.Context, rp *ResolvingPath, creds
 	if !rp.Done() {
 		return syserror.ENOTDIR
 	}
-	return GenericCheckPermissions(creds, ats, false /* isDir */, anonFileMode, anonFileUID, anonFileGID)
+	return GenericCheckPermissions(creds, ats, anonFileMode, anonFileUID, anonFileGID)
 }
 
 // GetDentryAt implements FilesystemImpl.GetDentryAt.

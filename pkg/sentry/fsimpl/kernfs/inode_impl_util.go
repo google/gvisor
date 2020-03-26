@@ -241,7 +241,7 @@ func (a *InodeAttrs) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *aut
 	if opts.Stat.Mask&^(linux.STATX_MODE|linux.STATX_UID|linux.STATX_GID) != 0 {
 		return syserror.EPERM
 	}
-	if err := vfs.CheckSetStat(ctx, creds, &opts.Stat, uint16(a.Mode().Permissions()), auth.KUID(atomic.LoadUint32(&a.uid)), auth.KGID(atomic.LoadUint32(&a.gid))); err != nil {
+	if err := vfs.CheckSetStat(ctx, creds, &opts.Stat, a.Mode(), auth.KUID(atomic.LoadUint32(&a.uid)), auth.KGID(atomic.LoadUint32(&a.gid))); err != nil {
 		return err
 	}
 
@@ -273,12 +273,10 @@ func (a *InodeAttrs) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *aut
 
 // CheckPermissions implements Inode.CheckPermissions.
 func (a *InodeAttrs) CheckPermissions(_ context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
-	mode := a.Mode()
 	return vfs.GenericCheckPermissions(
 		creds,
 		ats,
-		mode.FileType() == linux.ModeDirectory,
-		uint16(mode),
+		a.Mode(),
 		auth.KUID(atomic.LoadUint32(&a.uid)),
 		auth.KGID(atomic.LoadUint32(&a.gid)),
 	)
