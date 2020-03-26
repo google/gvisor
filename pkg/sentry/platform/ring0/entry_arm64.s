@@ -394,6 +394,8 @@ TEXT ·Current(SB),NOSPLIT,$0-8
 
 #define STACK_FRAME_SIZE 16
 
+// kernelExitToEl0 is the entrypoint for application in guest_el0.
+// Prepare the vcpu environment for container application.
 TEXT ·kernelExitToEl0(SB),NOSPLIT,$0
 	// Step1, save sentry context into memory.
 	REGISTERS_SAVE(RSV_REG, CPU_REGISTERS)
@@ -464,7 +466,23 @@ TEXT ·kernelExitToEl0(SB),NOSPLIT,$0
 
 	ERET()
 
+// kernelExitToEl1 is the entrypoint for sentry in guest_el1.
+// Prepare the vcpu environment for sentry.
 TEXT ·kernelExitToEl1(SB),NOSPLIT,$0
+	WORD $0xd538d092     //MRS   TPIDR_EL1, R18
+
+	MOVD CPU_REGISTERS+PTRACE_PSTATE(RSV_REG), R1
+	WORD $0xd5184001  //MSR R1, SPSR_EL1
+
+	MOVD CPU_REGISTERS+PTRACE_PC(RSV_REG), R1
+	MSR R1, ELR_EL1
+
+	MOVD CPU_REGISTERS+PTRACE_SP(RSV_REG), R1
+	MOVD R1, RSP
+
+	REGISTERS_LOAD(RSV_REG, CPU_REGISTERS)
+	MOVD CPU_REGISTERS+PTRACE_R9(RSV_REG), RSV_REG_APP
+
 	ERET()
 
 // Start is the CPU entrypoint.
