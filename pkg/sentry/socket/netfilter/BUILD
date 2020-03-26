@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "extensions.go",
         "netfilter.go",
+        "owner_matcher.go",
         "targets.go",
         "tcp_matcher.go",
         "udp_matcher.go",

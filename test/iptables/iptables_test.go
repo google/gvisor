@@ -274,6 +274,36 @@ func TestFilterOutputDropTCPSrcPort(t *testing.T) {
 	}
 }
 
+func TestFilterOutputAcceptTCPOwner(t *testing.T) {
+	if err := singleTest(FilterOutputAcceptTCPOwner{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFilterOutputDropTCPOwner(t *testing.T) {
+	if err := singleTest(FilterOutputDropTCPOwner{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFilterOutputAcceptUDPOwner(t *testing.T) {
+	if err := singleTest(FilterOutputAcceptUDPOwner{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFilterOutputDropUDPOwner(t *testing.T) {
+	if err := singleTest(FilterOutputDropUDPOwner{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFilterOutputOwnerFail(t *testing.T) {
+	if err := singleTest(FilterOutputOwnerFail{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestJumpSerialize(t *testing.T) {
 	if err := singleTest(FilterInputSerializeJump{}); err != nil {
 		t.Fatal(err)

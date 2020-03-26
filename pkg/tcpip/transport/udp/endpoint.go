@@ -143,6 +143,9 @@ type endpoint struct {
 
 	// TODO(b/142022063): Add ability to save and restore per endpoint stats.
 	stats tcpip.TransportEndpointStats `state:"nosave"`
+
+	// owner is used to get uid and gid of the packet.
+	owner tcpip.PacketOwner
 }
 
 // +stateify savable
@@ -484,7 +487,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		useDefaultTTL = false
 	}
 
-	if err := sendUDP(route, buffer.View(v).ToVectorisedView(), e.ID.LocalPort, dstPort, ttl, useDefaultTTL, e.sendTOS); err != nil {
+	if err := sendUDP(route, buffer.View(v).ToVectorisedView(), e.ID.LocalPort, dstPort, ttl, useDefaultTTL, e.sendTOS, e.owner); err != nil {
 		return 0, nil, err
 	}
 	return int64(len(v)), nil, nil
@@ -886,7 +889,7 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 
 // sendUDP sends a UDP segment via the provided network endpoint and under the
 // provided identity.
-func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort uint16, ttl uint8, useDefaultTTL bool, tos uint8) *tcpip.Error {
+func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort uint16, ttl uint8, useDefaultTTL bool, tos uint8, owner tcpip.PacketOwner) *tcpip.Error {
 	// Allocate a buffer for the UDP header.
 	hdr := buffer.NewPrependable(header.UDPMinimumSize + int(r.MaxHeaderLength()))
 
@@ -916,6 +919,7 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 		Header:          hdr,
 		Data:            data,
 		TransportHeader: buffer.View(udp),
+		Owner:           owner,
 	}); err != nil {
 		r.Stats().UDP.PacketSendErrors.Increment()
 		return err
@@ -1355,4 +1359,8 @@ func (*endpoint) Wait() {}
 
 func isBroadcastOrMulticast(a tcpip.Address) bool {
 	return a == header.IPv4Broadcast || header.IsV4MulticastAddress(a) || header.IsV6MulticastAddress(a)
+}
+
+func (e *endpoint) SetOwner(owner tcpip.PacketOwner) {
+	e.owner = owner
 }
