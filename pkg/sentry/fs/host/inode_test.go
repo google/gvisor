@@ -19,7 +19,6 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
 
 // TestCloseFD verifies fds will be closed.
@@ -33,7 +32,7 @@ func TestCloseFD(t *testing.T) {
 
 	// Use the write-end because we will detect if it's closed on the read end.
 	ctx := contexttest.Context(t)
-	file, err := NewFile(ctx, p[1], fs.RootOwner)
+	file, err := NewFile(ctx, p[1])
 	if err != nil {
 		t.Fatalf("Failed to create File: %v", err)
 	}

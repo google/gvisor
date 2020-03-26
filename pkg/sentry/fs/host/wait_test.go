@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -34,7 +33,7 @@ func TestWait(t *testing.T) {
 	defer syscall.Close(fds[1])
 
 	ctx := contexttest.Context(t)
-	file, err := NewFile(ctx, fds[0], fs.RootOwner)
+	file, err := NewFile(ctx, fds[0])
 	if err != nil {
 		syscall.Close(fds[0])
 		t.Fatalf("NewFile failed: %v", err)

@@ -34,7 +34,6 @@ func createFDTable(ctx context.Context, console bool, stdioFDs []int) (*kernel.F
 	k := kernel.KernelFromContext(ctx)
 	fdTable := k.NewFDTable()
 	defer fdTable.DecRef()
-	mounter := fs.FileOwnerFromContext(ctx)
 
 	var ttyFile *fs.File
 	for appFD, hostFD := range stdioFDs {
@@ -44,7 +43,7 @@ func createFDTable(ctx context.Context, console bool, stdioFDs []int) (*kernel.F
 			// Import the file as a host TTY file.
 			if ttyFile == nil {
 				var err error
-				appFile, err = host.ImportFile(ctx, hostFD, mounter, true /* isTTY */)
+				appFile, err = host.ImportFile(ctx, hostFD, true /* isTTY */)
 				if err != nil {
 					return nil, err
 				}
@@ -63,7 +62,7 @@ func createFDTable(ctx context.Context, console bool, stdioFDs []int) (*kernel.F
 		} else {
 			// Import the file as a regular host file.
 			var err error
-			appFile, err = host.ImportFile(ctx, hostFD, mounter, false /* isTTY */)
+			appFile, err = host.ImportFile(ctx, hostFD, false /* isTTY */)
 			if err != nil {
 				return nil, err
 			}

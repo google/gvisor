@@ -71,7 +71,6 @@ go_test(
         "//pkg/fd",
         "//pkg/fdnotifier",
         "//pkg/sentry/contexttest",
-        "//pkg/sentry/fs",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/unix/transport",

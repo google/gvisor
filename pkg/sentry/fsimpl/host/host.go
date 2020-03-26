@@ -54,7 +54,7 @@ func NewMount(vfsObj *vfs.VirtualFilesystem) (*vfs.Mount, error) {
 }
 
 // ImportFD sets up and returns a vfs.FileDescription from a donated fd.
-func ImportFD(mnt *vfs.Mount, hostFD int, ownerUID auth.KUID, ownerGID auth.KGID, isTTY bool) (*vfs.FileDescription, error) {
+func ImportFD(mnt *vfs.Mount, hostFD int, isTTY bool) (*vfs.FileDescription, error) {
 	fs, ok := mnt.Filesystem().Impl().(*kernfs.Filesystem)
 	if !ok {
 		return nil, fmt.Errorf("can't import host FDs into filesystems of type %T", mnt.Filesystem().Impl())
@@ -78,8 +78,6 @@ func ImportFD(mnt *vfs.Mount, hostFD int, ownerUID auth.KUID, ownerGID auth.KGID
 		canMap:   canMap(uint32(fileType)),
 		ino:      fs.NextIno(),
 		mode:     fileMode,
-		uid:      ownerUID,
-		gid:      ownerGID,
 		// For simplicity, set offset to 0. Technically, we should
 		// only set to 0 on files that are not seekable (sockets, pipes, etc.),
 		// and use the offset from the host fd otherwise.
@@ -135,16 +133,19 @@ type inode struct {
 	// This field is initialized at creation time and is immutable.
 	ino uint64
 
-	// TODO(gvisor.dev/issue/1672): protect mode, uid, and gid with mutex.
+	// modeMu protects mode.
+	modeMu sync.Mutex
 
-	// mode is the file mode of this inode. Note that this value may become out
-	// of date if the mode is changed on the host, e.g. with chmod.
+	// mode is a cached version of the file mode on the host. Note that it may
+	// become out of date if the mode is changed on the host, e.g. with chmod.
+	//
+	// Generally, it is better to retrieve the mode from the host through an
+	// fstat syscall. We only use this value in inode.Mode(), which cannot
+	// return an error, if the syscall to host fails.
+	//
+	// FIXME(b/152294168): Plumb error into Inode.Mode() return value so we
+	// can get rid of this.
 	mode linux.FileMode
-
-	// uid and gid of the file owner. Note that these refer to the owner of the
-	// file created on import, not the fd on the host.
-	uid auth.KUID
-	gid auth.KGID
 
 	// offsetMu protects offset.
 	offsetMu sync.Mutex
@@ -168,12 +169,35 @@ func fileFlagsFromHostFD(fd int) (int, error) {
 
 // CheckPermissions implements kernfs.Inode.
 func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
-	return vfs.GenericCheckPermissions(creds, ats, i.mode, i.uid, i.gid)
+	mode, uid, gid, err := i.getPermissions()
+	if err != nil {
+		return err
+	}
+	return vfs.GenericCheckPermissions(creds, ats, mode, uid, gid)
 }
 
 // Mode implements kernfs.Inode.
 func (i *inode) Mode() linux.FileMode {
-	return i.mode
+	mode, _, _, err := i.getPermissions()
+	if err != nil {
+		return i.mode
+	}
+
+	return linux.FileMode(mode)
+}
+
+func (i *inode) getPermissions() (linux.FileMode, auth.KUID, auth.KGID, error) {
+	// Retrieve metadata.
+	var s syscall.Stat_t
+	if err := syscall.Fstat(i.hostFD, &s); err != nil {
+		return 0, 0, 0, err
+	}
+
+	// Update cached mode.
+	i.modeMu.Lock()
+	i.mode = linux.FileMode(s.Mode)
+	i.modeMu.Unlock()
+	return linux.FileMode(s.Mode), auth.KUID(s.Uid), auth.KGID(s.Gid), nil
 }
 
 // Stat implements kernfs.Inode.
@@ -213,45 +237,51 @@ func (i *inode) Stat(_ *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, erro
 	ls.Attributes = s.Attributes
 	ls.AttributesMask = s.Attributes_mask
 
-	if mask|linux.STATX_TYPE != 0 {
+	if mask&linux.STATX_TYPE != 0 {
 		ls.Mode |= s.Mode & linux.S_IFMT
 	}
-	if mask|linux.STATX_MODE != 0 {
+	if mask&linux.STATX_MODE != 0 {
 		ls.Mode |= s.Mode &^ linux.S_IFMT
 	}
-	if mask|linux.STATX_NLINK != 0 {
+	if mask&linux.STATX_NLINK != 0 {
 		ls.Nlink = s.Nlink
 	}
-	if mask|linux.STATX_ATIME != 0 {
+	if mask&linux.STATX_UID != 0 {
+		ls.UID = s.Uid
+	}
+	if mask&linux.STATX_GID != 0 {
+		ls.GID = s.Gid
+	}
+	if mask&linux.STATX_ATIME != 0 {
 		ls.Atime = unixToLinuxStatxTimestamp(s.Atime)
 	}
-	if mask|linux.STATX_BTIME != 0 {
+	if mask&linux.STATX_BTIME != 0 {
 		ls.Btime = unixToLinuxStatxTimestamp(s.Btime)
 	}
-	if mask|linux.STATX_CTIME != 0 {
+	if mask&linux.STATX_CTIME != 0 {
 		ls.Ctime = unixToLinuxStatxTimestamp(s.Ctime)
 	}
-	if mask|linux.STATX_MTIME != 0 {
+	if mask&linux.STATX_MTIME != 0 {
 		ls.Mtime = unixToLinuxStatxTimestamp(s.Mtime)
 	}
-	if mask|linux.STATX_SIZE != 0 {
+	if mask&linux.STATX_SIZE != 0 {
 		ls.Size = s.Size
 	}
-	if mask|linux.STATX_BLOCKS != 0 {
+	if mask&linux.STATX_BLOCKS != 0 {
 		ls.Blocks = s.Blocks
 	}
 
-	// Use our own internal inode number and file owner.
-	if mask|linux.STATX_INO != 0 {
+	// Use our own internal inode number.
+	if mask&linux.STATX_INO != 0 {
 		ls.Ino = i.ino
 	}
-	if mask|linux.STATX_UID != 0 {
-		ls.UID = uint32(i.uid)
-	}
-	if mask|linux.STATX_GID != 0 {
-		ls.GID = uint32(i.gid)
-	}
 
+	// Update cached mode.
+	if (mask&linux.STATX_TYPE != 0) && (mask&linux.STATX_MODE != 0) {
+		i.modeMu.Lock()
+		i.mode = linux.FileMode(s.Mode)
+		i.modeMu.Unlock()
+	}
 	return ls, nil
 }
 
@@ -274,6 +304,8 @@ func (i *inode) fstat(opts vfs.StatOptions) (linux.Statx, error) {
 		Mask:    linux.STATX_BASIC_STATS,
 		Blksize: uint32(s.Blksize),
 		Nlink:   uint32(s.Nlink),
+		UID:     s.Uid,
+		GID:     s.Gid,
 		Mode:    uint16(s.Mode),
 		Size:    uint64(s.Size),
 		Blocks:  uint64(s.Blocks),
@@ -282,15 +314,13 @@ func (i *inode) fstat(opts vfs.StatOptions) (linux.Statx, error) {
 		Mtime:   timespecToStatxTimestamp(s.Mtim),
 	}
 
-	// Use our own internal inode number and file owner.
+	// Use our own internal inode number.
 	//
 	// TODO(gvisor.dev/issue/1672): Use a kernfs-specific device number as well.
 	// If we use the device number from the host, it may collide with another
 	// sentry-internal device number. We handle device/inode numbers without
 	// relying on the host to prevent collisions.
 	ls.Ino = i.ino
-	ls.UID = uint32(i.uid)
-	ls.GID = uint32(i.gid)
 
 	return ls, nil
 }
@@ -306,7 +336,11 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	if m&^(linux.STATX_MODE|linux.STATX_SIZE|linux.STATX_ATIME|linux.STATX_MTIME) != 0 {
 		return syserror.EPERM
 	}
-	if err := vfs.CheckSetStat(ctx, creds, &s, i.Mode(), i.uid, i.gid); err != nil {
+	mode, uid, gid, err := i.getPermissions()
+	if err != nil {
+		return err
+	}
+	if err := vfs.CheckSetStat(ctx, creds, &s, mode.Permissions(), uid, gid); err != nil {
 		return err
 	}
 
@@ -314,7 +348,9 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 		if err := syscall.Fchmod(i.hostFD, uint32(s.Mode)); err != nil {
 			return err
 		}
+		i.modeMu.Lock()
 		i.mode = linux.FileMode(s.Mode)
+		i.modeMu.Unlock()
 	}
 	if m&linux.STATX_SIZE != 0 {
 		if err := syscall.Ftruncate(i.hostFD, int64(s.Size)); err != nil {
@@ -351,7 +387,11 @@ func (i *inode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptio
 }
 
 func (i *inode) open(d *vfs.Dentry, mnt *vfs.Mount) (*vfs.FileDescription, error) {
-	fileType := i.mode.FileType()
+	mode, _, _, err := i.getPermissions()
+	if err != nil {
+		return nil, err
+	}
+	fileType := mode.FileType()
 	if fileType == syscall.S_IFSOCK {
 		if i.isTTY {
 			return nil, errors.New("cannot use host socket as TTY")
