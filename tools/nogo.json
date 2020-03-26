@@ -9,14 +9,6 @@
       "/external/": "allowed: not subject to unsafe naming rules"
     }
   },
-  "lostcancel": {
-    "exclude_files": {
-      "/pkg/tcpip/network/arp/arp_test.go": "fix: the cancel function returned by context.WithTimeout should be called, not discarded, to avoid a context leak",
-      "/pkg/tcpip/stack/ndp_test.go": "fix: the cancel function returned by context.WithTimeout should be called, not discarded, to avoid a context leak",
-      "/pkg/tcpip/transport/udp/udp_test.go": "fix: the cancel function returned by context.WithTimeout should be called, not discarded, to avoid a context leak",
-      "/pkg/tcpip/transport/tcp/testing/context/context.go": "fix: the cancel function returned by context.WithTimeout should be called, not discarded, to avoid a context leak"
-    }
-  },
   "nilness": {
     "exclude_files": {
       "/com_github_vishvananda_netlink/route_linux.go": "allowed: false positive",

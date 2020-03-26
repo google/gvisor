@@ -3483,7 +3483,8 @@ func TestRouterSolicitation(t *testing.T) {
 				e.Endpoint.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 				waitForPkt := func(timeout time.Duration) {
 					t.Helper()
-					ctx, _ := context.WithTimeout(context.Background(), timeout)
+					ctx, cancel := context.WithTimeout(context.Background(), timeout)
+					defer cancel()
 					p, ok := e.ReadContext(ctx)
 					if !ok {
 						t.Fatal("timed out waiting for packet")
@@ -3513,7 +3514,8 @@ func TestRouterSolicitation(t *testing.T) {
 				}
 				waitForNothing := func(timeout time.Duration) {
 					t.Helper()
-					ctx, _ := context.WithTimeout(context.Background(), timeout)
+					ctx, cancel := context.WithTimeout(context.Background(), timeout)
+					defer cancel()
 					if _, ok := e.ReadContext(ctx); ok {
 						t.Fatal("unexpectedly got a packet")
 					}
