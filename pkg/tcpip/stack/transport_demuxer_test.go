@@ -40,75 +40,47 @@ const (
 )
 
 type testContext struct {
-	t       *testing.T
 	linkEps map[tcpip.NICID]*channel.Endpoint
 	s       *stack.Stack
-
-	ep tcpip.Endpoint
-	wq waiter.Queue
-}
-
-func (c *testContext) cleanup() {
-	if c.ep != nil {
-		c.ep.Close()
-	}
-}
-
-func (c *testContext) createV6Endpoint(v6only bool) {
-	var err *tcpip.Error
-	c.ep, err = c.s.NewEndpoint(udp.ProtocolNumber, ipv6.ProtocolNumber, &c.wq)
-	if err != nil {
-		c.t.Fatalf("NewEndpoint failed: %v", err)
-	}
-
-	if err := c.ep.SetSockOptBool(tcpip.V6OnlyOption, v6only); err != nil {
-		c.t.Fatalf("SetSockOpt failed: %v", err)
-	}
+	wq      waiter.Queue
 }
 
 // newDualTestContextMultiNIC creates the testing context and also linkEpIDs NICs.
 func newDualTestContextMultiNIC(t *testing.T, mtu uint32, linkEpIDs []tcpip.NICID) *testContext {
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
-		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()}})
+		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+	})
 	linkEps := make(map[tcpip.NICID]*channel.Endpoint)
 	for _, linkEpID := range linkEpIDs {
 		channelEp := channel.New(256, mtu, "")
 		if err := s.CreateNIC(linkEpID, channelEp); err != nil {
-			t.Fatalf("CreateNIC failed: %v", err)
+			t.Fatalf("CreateNIC failed: %s", err)
 		}
 		linkEps[linkEpID] = channelEp
 
 		if err := s.AddAddress(linkEpID, ipv4.ProtocolNumber, stackAddr); err != nil {
-			t.Fatalf("AddAddress IPv4 failed: %v", err)
+			t.Fatalf("AddAddress IPv4 failed: %s", err)
 		}
 
 		if err := s.AddAddress(linkEpID, ipv6.ProtocolNumber, stackV6Addr); err != nil {
-			t.Fatalf("AddAddress IPv6 failed: %v", err)
+			t.Fatalf("AddAddress IPv6 failed: %s", err)
 		}
 	}
 
 	s.SetRouteTable([]tcpip.Route{
-		{
-			Destination: header.IPv4EmptySubnet,
-			NIC:         1,
-		},
-		{
-			Destination: header.IPv6EmptySubnet,
-			NIC:         1,
-		},
+		{Destination: header.IPv4EmptySubnet, NIC: 1},
+		{Destination: header.IPv6EmptySubnet, NIC: 1},
 	})
 
 	return &testContext{
-		t:       t,
 		s:       s,
 		linkEps: linkEps,
 	}
 }
 
 type headers struct {
-	srcPort uint16
-	dstPort uint16
+	srcPort, dstPort uint16
 }
 
 func newPayload() []byte {
@@ -179,15 +151,15 @@ func TestTransportDemuxerRegister(t *testing.T) {
 				t.Fatalf("%T does not implement stack.TransportEndpoint", ep)
 			}
 			if got, want := s.RegisterTransportEndpoint(0, []tcpip.NetworkProtocolNumber{test.proto}, udp.ProtocolNumber, stack.TransportEndpointID{}, tEP, false, 0), test.want; got != want {
-				t.Fatalf("s.RegisterTransportEndpoint(...) = %v, want %v", got, want)
+				t.Fatalf("s.RegisterTransportEndpoint(...) = %s, want %s", got, want)
 			}
 		})
 	}
 }
 
-// TestReuseBindToDevice injects varied packets on input devices and checks that
+// TestBindToDeviceDistribution injects varied packets on input devices and checks that
 // the distribution of packets received matches expectations.
-func TestDistribution(t *testing.T) {
+func TestBindToDeviceDistribution(t *testing.T) {
 	type endpointSockopts struct {
 		reuse        int
 		bindToDevice tcpip.NICID
@@ -196,19 +168,19 @@ func TestDistribution(t *testing.T) {
 		name string
 		// endpoints will received the inject packets.
 		endpoints []endpointSockopts
-		// wantedDistribution is the wanted ratio of packets received on each
+		// wantDistributions is the want ratio of packets received on each
 		// endpoint for each NIC on which packets are injected.
-		wantedDistributions map[tcpip.NICID][]float64
+		wantDistributions map[tcpip.NICID][]float64
 	}{
 		{
 			"BindPortReuse",
 			// 5 endpoints that all have reuse set.
 			[]endpointSockopts{
-				{1, 0},
-				{1, 0},
-				{1, 0},
-				{1, 0},
-				{1, 0},
+				{reuse: 1, bindToDevice: 0},
+				{reuse: 1, bindToDevice: 0},
+				{reuse: 1, bindToDevice: 0},
+				{reuse: 1, bindToDevice: 0},
+				{reuse: 1, bindToDevice: 0},
 			},
 			map[tcpip.NICID][]float64{
 				// Injected packets on dev0 get distributed evenly.
@@ -219,9 +191,9 @@ func TestDistribution(t *testing.T) {
 			"BindToDevice",
 			// 3 endpoints with various bindings.
 			[]endpointSockopts{
-				{0, 1},
-				{0, 2},
-				{0, 3},
+				{reuse: 0, bindToDevice: 1},
+				{reuse: 0, bindToDevice: 2},
+				{reuse: 0, bindToDevice: 3},
 			},
 			map[tcpip.NICID][]float64{
 				// Injected packets on dev0 go only to the endpoint bound to dev0.
@@ -236,12 +208,12 @@ func TestDistribution(t *testing.T) {
 			"ReuseAndBindToDevice",
 			// 6 endpoints with various bindings.
 			[]endpointSockopts{
-				{1, 1},
-				{1, 1},
-				{1, 2},
-				{1, 2},
-				{1, 2},
-				{1, 0},
+				{reuse: 1, bindToDevice: 1},
+				{reuse: 1, bindToDevice: 1},
+				{reuse: 1, bindToDevice: 2},
+				{reuse: 1, bindToDevice: 2},
+				{reuse: 1, bindToDevice: 2},
+				{reuse: 1, bindToDevice: 0},
 			},
 			map[tcpip.NICID][]float64{
 				// Injected packets on dev0 get distributed among endpoints bound to
@@ -256,16 +228,13 @@ func TestDistribution(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			for device, wantedDistribution := range test.wantedDistributions {
+			for device, wantDistribution := range test.wantDistributions {
 				t.Run(string(device), func(t *testing.T) {
 					var devices []tcpip.NICID
-					for d := range test.wantedDistributions {
+					for d := range test.wantDistributions {
 						devices = append(devices, d)
 					}
 					c := newDualTestContextMultiNIC(t, defaultMTU, devices)
-					defer c.cleanup()
-
-					c.createV6Endpoint(false)
 
 					eps := make(map[tcpip.Endpoint]int)
 
@@ -281,7 +250,7 @@ func TestDistribution(t *testing.T) {
 						var err *tcpip.Error
 						ep, err := c.s.NewEndpoint(udp.ProtocolNumber, ipv6.ProtocolNumber, &wq)
 						if err != nil {
-							c.t.Fatalf("NewEndpoint failed: %v", err)
+							t.Fatalf("NewEndpoint failed: %s", err)
 						}
 						eps[ep] = i
 
@@ -294,20 +263,20 @@ func TestDistribution(t *testing.T) {
 						defer ep.Close()
 						reusePortOption := tcpip.ReusePortOption(endpoint.reuse)
 						if err := ep.SetSockOpt(reusePortOption); err != nil {
-							c.t.Fatalf("SetSockOpt(%#v) on endpoint %d failed: %v", reusePortOption, i, err)
+							t.Fatalf("SetSockOpt(%#v) on endpoint %d failed: %s", reusePortOption, i, err)
 						}
 						bindToDeviceOption := tcpip.BindToDeviceOption(endpoint.bindToDevice)
 						if err := ep.SetSockOpt(bindToDeviceOption); err != nil {
-							c.t.Fatalf("SetSockOpt(%#v) on endpoint %d failed: %v", bindToDeviceOption, i, err)
+							t.Fatalf("SetSockOpt(%#v) on endpoint %d failed: %s", bindToDeviceOption, i, err)
 						}
 						if err := ep.Bind(tcpip.FullAddress{Addr: stackV6Addr, Port: stackPort}); err != nil {
-							t.Fatalf("ep.Bind(...) on endpoint %d failed: %v", i, err)
+							t.Fatalf("ep.Bind(...) on endpoint %d failed: %s", i, err)
 						}
 					}
 
 					npackets := 100000
 					nports := 10000
-					if got, want := len(test.endpoints), len(wantedDistribution); got != want {
+					if got, want := len(test.endpoints), len(wantDistribution); got != want {
 						t.Fatalf("got len(test.endpoints) = %d, want %d", got, want)
 					}
 					ports := make(map[uint16]tcpip.Endpoint)
@@ -322,11 +291,9 @@ func TestDistribution(t *testing.T) {
 								dstPort: stackPort},
 							device)
 
-						var addr tcpip.FullAddress
 						ep := <-pollChannel
-						_, _, err := ep.Read(&addr)
-						if err != nil {
-							c.t.Fatalf("Read on endpoint %d failed: %v", eps[ep], err)
+						if _, _, err := ep.Read(nil); err != nil {
+							t.Fatalf("Read on endpoint %d failed: %s", eps[ep], err)
 						}
 						stats[ep]++
 						if i < nports {
@@ -342,13 +309,13 @@ func TestDistribution(t *testing.T) {
 
 					// Check that a packet distribution is as expected.
 					for ep, i := range eps {
-						wantedRatio := wantedDistribution[i]
-						wantedRecv := wantedRatio * float64(npackets)
+						wantRatio := wantDistribution[i]
+						wantRecv := wantRatio * float64(npackets)
 						actualRecv := stats[ep]
 						actualRatio := float64(stats[ep]) / float64(npackets)
 						// The deviation is less than 10%.
-						if math.Abs(actualRatio-wantedRatio) > 0.05 {
-							t.Errorf("wanted about %.0f%% (%.0f of %d) packets to arrive on endpoint %d, got %.0f%% (%d of %d)", wantedRatio*100, wantedRecv, npackets, i, actualRatio*100, actualRecv, npackets)
+						if math.Abs(actualRatio-wantRatio) > 0.05 {
+							t.Errorf("want about %.0f%% (%.0f of %d) packets to arrive on endpoint %d, got %.0f%% (%d of %d)", wantRatio*100, wantRecv, npackets, i, actualRatio*100, actualRecv, npackets)
 						}
 					}
 				})
