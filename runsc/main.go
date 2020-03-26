@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/runsc/argument"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -90,6 +91,9 @@ var (
 	testOnlyTestNameEnv                        = flag.String("TESTONLY-test-name-env", "", "TEST ONLY; do not ever use! Used for automated tests to improve logging.")
 )
 
+// ExtraArgs is a list of arguments that can be set in runsc
+var extraArgs argument.ArgSet
+
 func main() {
 	// Help and flags commands are generated automatically.
 	help := cmd.NewHelp(subcommands.DefaultCommander)
@@ -130,6 +134,9 @@ func main() {
 	subcommands.Register(new(cmd.Debug), internalGroup)
 	subcommands.Register(new(cmd.Gofer), internalGroup)
 	subcommands.Register(new(cmd.Statefile), internalGroup)
+
+	// Set additional arguments
+	extraArgs.SetFlags(flag.CommandLine)
 
 	// All subcommands must be registered before flag parsing.
 	flag.Parse()
@@ -254,6 +261,8 @@ func main() {
 	// that will force initialization, but force initialization here in
 	// case that does not occur.
 	_ = time.Local.String()
+
+	conf.ExtraArgs = extraArgs
 
 	subcommand := flag.CommandLine.Arg(0)
 

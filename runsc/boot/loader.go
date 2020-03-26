@@ -319,6 +319,13 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("creating pod mount hints: %v", err)
 	}
 
+	for _, arg := range args.Conf.ExtraArgs.All() {
+		err = arg.OnBoot()
+		if err != nil {
+			return nil, fmt.Errorf("executing OnBoot from extra args: %w", err)
+		}
+	}
+
 	eid := execID{cid: args.ID}
 	l := &Loader{
 		k:            k,
