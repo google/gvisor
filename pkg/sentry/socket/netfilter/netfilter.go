@@ -517,11 +517,10 @@ func SetEntries(stk *stack.Stack, optVal []byte) *syserr.Error {
 	}
 
 	// TODO(gvisor.dev/issue/170): Support other chains.
-	// Since we only support modifying the INPUT chain and redirect for
-	// PREROUTING chain right now, make sure all other chains point to
-	// ACCEPT rules.
+	// Since we only support modifying the INPUT, PREROUTING and OUTPUT chain right now,
+	// make sure all other chains point to ACCEPT rules.
 	for hook, ruleIdx := range table.BuiltinChains {
-		if hook != stack.Input && hook != stack.Prerouting {
+		if hook == stack.Forward || hook == stack.Postrouting {
 			if _, ok := table.Rules[ruleIdx].Target.(stack.AcceptTarget); !ok {
 				nflog("hook %d is unsupported.", hook)
 				return syserr.ErrInvalidArgument

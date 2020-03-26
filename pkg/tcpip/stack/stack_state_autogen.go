@@ -42,6 +42,7 @@ func (x *PacketBuffer) save(m state.Map) {
 	m.Save("NetworkHeader", &x.NetworkHeader)
 	m.Save("TransportHeader", &x.TransportHeader)
 	m.Save("Hash", &x.Hash)
+	m.Save("Owner", &x.Owner)
 }
 
 func (x *PacketBuffer) afterLoad() {}
@@ -54,6 +55,7 @@ func (x *PacketBuffer) load(m state.Map) {
 	m.Load("NetworkHeader", &x.NetworkHeader)
 	m.Load("TransportHeader", &x.TransportHeader)
 	m.Load("Hash", &x.Hash)
+	m.Load("Owner", &x.Owner)
 }
 
 func (x *TransportEndpointID) beforeSave() {}

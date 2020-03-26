@@ -151,6 +151,7 @@ func (x *endpoint) save(m state.Map) {
 	m.Save("tcpLingerTimeout", &x.tcpLingerTimeout)
 	m.Save("closed", &x.closed)
 	m.Save("txHash", &x.txHash)
+	m.Save("owner", &x.owner)
 }
 
 func (x *endpoint) load(m state.Map) {
@@ -208,6 +209,7 @@ func (x *endpoint) load(m state.Map) {
 	m.Load("tcpLingerTimeout", &x.tcpLingerTimeout)
 	m.Load("closed", &x.closed)
 	m.Load("txHash", &x.txHash)
+	m.Load("owner", &x.owner)
 	m.LoadValue("lastError", new(string), func(y interface{}) { x.loadLastError(y.(string)) })
 	m.LoadValue("state", new(EndpointState), func(y interface{}) { x.loadState(y.(EndpointState)) })
 	m.LoadValue("acceptedChan", new([]*endpoint), func(y interface{}) { x.loadAcceptedChan(y.([]*endpoint)) })

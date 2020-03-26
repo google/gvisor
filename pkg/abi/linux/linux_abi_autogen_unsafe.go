@@ -121,12 +121,12 @@ func (s *Statx) UnmarshalBytes(src []byte) {
 
 // Packed implements marshal.Marshallable.Packed.
 func (s *Statx) Packed() bool {
-    return s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed()
+    return s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() && s.Atime.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *Statx) MarshalUnsafe(dst []byte) {
-    if s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() {
+    if s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() && s.Atime.Packed() {
         safecopy.CopyIn(dst, unsafe.Pointer(s))
     } else {
         s.MarshalBytes(dst)
@@ -209,7 +209,7 @@ func (s *Statx) CopyIn(task marshal.Task, addr usermem.Addr) error {
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (s *Statx) WriteTo(w io.Writer) (int64, error) {
-    if !s.Ctime.Packed() && s.Mtime.Packed() && s.Atime.Packed() && s.Btime.Packed() {
+    if !s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() {
         // Type Statx doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, s.SizeBytes())
         s.MarshalBytes(buf)
