@@ -206,8 +206,7 @@ func (fd *GenericDirectoryFD) Stat(ctx context.Context, opts vfs.StatOptions) (l
 
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
 func (fd *GenericDirectoryFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
-	fs := fd.filesystem()
 	creds := auth.CredentialsFromContext(ctx)
 	inode := fd.vfsfd.VirtualDentry().Dentry().Impl().(*Dentry).inode
-	return inode.SetStat(ctx, fs, creds, opts)
+	return inode.SetStat(ctx, fd.filesystem(), creds, opts)
 }
