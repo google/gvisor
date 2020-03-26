@@ -413,7 +413,7 @@ func (g *Generator) writeTests(ts []*testGenerator) error {
 	// empty example instead.
 	if len(ts) == 0 {
 		b.reset()
-		b.emit("func ExampleEmptyTestSuite() {\n")
+		b.emit("func Example() {\n")
 		b.inIndent(func() {
 			b.emit("// This example is intentionally empty to ensure this file contains at least\n")
 			b.emit("// one testable entity. go-marshal is forced to emit a test file if a package\n")
