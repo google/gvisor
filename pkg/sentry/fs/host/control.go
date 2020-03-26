@@ -78,7 +78,7 @@ func fdsToFiles(ctx context.Context, fds []int) []*fs.File {
 		}
 
 		// Create the file backed by hostFD.
-		file, err := NewFile(ctx, fd, fs.FileOwnerFromContext(ctx))
+		file, err := NewFile(ctx, fd)
 		if err != nil {
 			ctx.Warningf("Error creating file from host FD: %v", err)
 			break
