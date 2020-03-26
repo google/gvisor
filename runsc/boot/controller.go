@@ -359,14 +359,10 @@ func (cm *containerManager) Checkpoint(o *control.SaveOpts, _ *struct{}) error {
 		Watchdog: cm.l.watchdog,
 	}
 
-	num := 0
-	for _, _ = range cm.l.processes {
-		num++
-	}
 	if o.Metadata == nil {
 		o.Metadata = make(map[string]string)
 	}
-	o.Metadata["container_num"] = strconv.Itoa(num)
+	o.Metadata["container_num"] = strconv.Itoa(cm.cindex + 1)
 	return state.Save(o, nil)
 }
 
