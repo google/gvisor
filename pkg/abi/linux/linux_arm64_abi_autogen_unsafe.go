@@ -268,7 +268,7 @@ func (s *Stat) CopyOut(task marshal.Task, addr usermem.Addr) error {
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 func (s *Stat) CopyIn(task marshal.Task, addr usermem.Addr) error {
-    if !s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
+    if !s.MTime.Packed() && s.CTime.Packed() && s.ATime.Packed() {
         // Type Stat doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := task.CopyScratchBuffer(s.SizeBytes())
         _, err := task.CopyInBytes(addr, buf)
