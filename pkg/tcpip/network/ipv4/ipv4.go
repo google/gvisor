@@ -252,9 +252,29 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 	// iptables filtering. All packets that reach here are locally
 	// generated.
 	ipt := e.stack.IPTables()
-	if ok := ipt.Check(stack.Output, pkt); !ok {
+	if ok := ipt.Check(stack.Output, &pkt, gso, r, ""); !ok {
 		// iptables is telling us to drop the packet.
 		return nil
+	}
+
+	if pkt.NatDone {
+		// If the packet is manipulated as per NAT Ouput rules, handle packet
+		// based on destination address and do not send the packet to link layer.
+		netHeader := header.IPv4(pkt.NetworkHeader)
+		ep, err := e.stack.FindNetworkEndpoint(header.IPv4ProtocolNumber, netHeader.DestinationAddress())
+		if err == nil {
+			src := netHeader.SourceAddress()
+			dst := netHeader.DestinationAddress()
+			route := r.ReverseRoute(src, dst)
+
+			views := make([]buffer.View, 1, 1+len(pkt.Data.Views()))
+			views[0] = pkt.Header.View()
+			views = append(views, pkt.Data.Views()...)
+			packet := stack.PacketBuffer{
+				Data: buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views)}
+			ep.HandlePacket(&route, packet)
+			return nil
+		}
 	}
 
 	if r.Loop&stack.PacketLoop != 0 {
@@ -302,8 +322,8 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 	// iptables filtering. All packets that reach here are locally
 	// generated.
 	ipt := e.stack.IPTables()
-	dropped := ipt.CheckPackets(stack.Output, pkts)
-	if len(dropped) == 0 {
+	dropped, natPkts := ipt.CheckPackets(stack.Output, pkts, gso, r)
+	if len(dropped) == 0 && len(natPkts) == 0 {
 		// Fast path: If no packets are to be dropped then we can just invoke the
 		// faster WritePackets API directly.
 		n, err := e.linkEP.WritePackets(r, gso, pkts, ProtocolNumber)
@@ -317,6 +337,24 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		if _, ok := dropped[pkt]; ok {
 			continue
+		}
+		if _, ok := natPkts[pkt]; ok {
+			netHeader := header.IPv4(pkt.NetworkHeader)
+			ep, err := e.stack.FindNetworkEndpoint(header.IPv4ProtocolNumber, netHeader.DestinationAddress())
+			if err == nil {
+				src := netHeader.SourceAddress()
+				dst := netHeader.DestinationAddress()
+				route := r.ReverseRoute(src, dst)
+
+				views := make([]buffer.View, 1, 1+len(pkt.Data.Views()))
+				views[0] = pkt.Header.View()
+				views = append(views, pkt.Data.Views()...)
+				packet := stack.PacketBuffer{
+					Data: buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views)}
+				ep.HandlePacket(&route, packet)
+				n++
+				continue
+			}
 		}
 		if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, *pkt); err != nil {
 			r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
@@ -407,7 +445,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
 	// iptables filtering. All packets that reach here are intended for
 	// this machine and will not be forwarded.
 	ipt := e.stack.IPTables()
-	if ok := ipt.Check(stack.Input, pkt); !ok {
+	if ok := ipt.Check(stack.Input, &pkt, nil, nil, ""); !ok {
 		// iptables is telling us to drop the packet.
 		return
 	}

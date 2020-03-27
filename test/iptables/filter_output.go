@@ -42,7 +42,7 @@ func (FilterOutputDropTCPDestPort) Name() string {
 
 // ContainerAction implements TestCase.ContainerAction.
 func (FilterOutputDropTCPDestPort) ContainerAction(ip net.IP) error {
-	if err := filterTable("-A", "OUTPUT", "-p", "tcp", "-m", "tcp", "--dport", fmt.Sprintf("%d", dropPort), "-j", "DROP"); err != nil {
+	if err := filterTable("-A", "OUTPUT", "-p", "tcp", "-m", "tcp", "--dport", "1024:65535", "-j", "DROP"); err != nil {
 		return err
 	}
 

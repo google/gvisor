@@ -20,7 +20,6 @@ package tcpconntrack
 import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
-	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 )
 
 // Result is returned when the state of a TCB is updated in response to an
@@ -312,7 +311,7 @@ type stream struct {
 // the window is zero, if it's a packet with no payload and sequence number
 // equal to una.
 func (s *stream) acceptable(segSeq seqnum.Value, segLen seqnum.Size) bool {
-	return tcp.Acceptable(segSeq, segLen, s.una, s.end)
+	return header.Acceptable(segSeq, segLen, s.una, s.end)
 }
 
 // closed determines if the stream has already been closed. This happens when
@@ -337,4 +336,17 @@ func logicalLen(tcp header.TCP) seqnum.Size {
 		l++
 	}
 	return l
+}
+
+// IsEmpty returns true if tcb is not initialized.
+func (t *TCB) IsEmpty() bool {
+	if t.inbound != (stream{}) || t.outbound != (stream{}) {
+		return false
+	}
+
+	if t.firstFin != nil || t.state != ResultDrop {
+		return false
+	}
+
+	return true
 }
