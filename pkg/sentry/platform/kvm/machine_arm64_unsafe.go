@@ -273,8 +273,8 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 
 	case ring0.PageFault:
 		return c.fault(int32(syscall.SIGSEGV), info)
-	case 0xaa:
-		return usermem.NoAccess, nil
+	case ring0.Vector(bounce): // ring0.VirtualizationException
+		return usermem.NoAccess, platform.ErrContextInterrupt
 	default:
 		return usermem.NoAccess, platform.ErrContextSignal
 	}
