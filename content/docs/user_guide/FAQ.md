@@ -7,7 +7,7 @@ weight = 1000
 
 gVisor requires Linux {{< required_linux >}} ([older Linux][old-linux]).
 
-### What CPU architectures are supported? {#supported-cpu}
+### What CPU architectures are supported? {#supported-cpus}
 
 gVisor currently supports [x86_64/AMD64](https://en.wikipedia.org/wiki/X86-64)
 compatible processors.
@@ -16,7 +16,7 @@ compatible processors.
 
 No. gVisor is capable of running unmodified Linux binaries.
 
-### What binary formats does gVisor support? {#supported-binary}
+### What binary formats does gVisor support? {#supported-binaries}
 
 gVisor supports Linux
 [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) binaries.
@@ -50,7 +50,7 @@ gVisor requires Linux {{< required_linux >}} ([older Linux][old-linux]).
 
 This is tracked in [bug #268](https://gvisor.dev/issue/268).
 
-### When I run my container, docker fails with: `flag provided but not defined: -console` {#docker-old}
+### When I run my container, docker fails with: `flag provided but not defined: -console` {#old-docker}
 
 You're using an old version of Docker. See [Docker Quick Start][docker].
 
