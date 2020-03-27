@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 )
 
 // A Filesystem is a tree of nodes represented by Dentries, which forms part of
@@ -460,6 +461,11 @@ type FilesystemImpl interface {
 	// RemovexattrAt returns ENOTSUP.
 	RemovexattrAt(ctx context.Context, rp *ResolvingPath, name string) error
 
+	// BoundEndpointAt returns the Unix socket endpoint bound at the path rp.
+	//
+	// - If a non-socket file exists at rp, then BoundEndpointAt returns ECONNREFUSED.
+	BoundEndpointAt(ctx context.Context, rp *ResolvingPath) (transport.BoundEndpoint, error)
+
 	// PrependPath prepends a path from vd to vd.Mount().Root() to b.
 	//
 	// If vfsroot.Ok(), it is the contextual VFS root; if it is encountered
@@ -482,7 +488,7 @@ type FilesystemImpl interface {
 	// Preconditions: vd.Mount().Filesystem().Impl() == this FilesystemImpl.
 	PrependPath(ctx context.Context, vfsroot, vd VirtualDentry, b *fspath.Builder) error
 
-	// TODO: inotify_add_watch(); bind()
+	// TODO: inotify_add_watch()
 }
 
 // PrependPathAtVFSRootError is returned by implementations of
