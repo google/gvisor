@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -654,6 +655,13 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	child.inode.decLinksLocked()
 	vfsObj.CommitDeleteDentry(childVFSD)
 	return nil
+}
+
+// BoundEndpointAt implements FilesystemImpl.BoundEndpointAt.
+//
+// TODO(gvisor.dev/issue/1476): Implement BoundEndpointAt.
+func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath) (transport.BoundEndpoint, error) {
+	return nil, syserror.ECONNREFUSED
 }
 
 // ListxattrAt implements vfs.FilesystemImpl.ListxattrAt.
