@@ -45,6 +45,7 @@ go_library(
         "//pkg/sentry/fsimpl/ext/disklayout",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
+        "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/syscalls/linux",
         "//pkg/sentry/vfs",
         "//pkg/sync",

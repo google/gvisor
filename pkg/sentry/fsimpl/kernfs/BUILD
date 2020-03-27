@@ -35,6 +35,7 @@ go_library(
         "//pkg/refs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
+        "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/syserror",

@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -230,7 +231,7 @@ func (vfs *VirtualFilesystem) getParentDirAndName(ctx context.Context, creds *au
 		}
 		if checkInvariants {
 			if rp.canHandleError(err) && rp.Done() {
-				panic(fmt.Sprintf("%T.GetParentDentryAt() consumed all path components and returned %T", rp.mount.fs.impl, err))
+				panic(fmt.Sprintf("%T.GetParentDentryAt() consumed all path components and returned %v", rp.mount.fs.impl, err))
 			}
 		}
 		if !rp.handleError(err) {
@@ -271,7 +272,7 @@ func (vfs *VirtualFilesystem) LinkAt(ctx context.Context, creds *auth.Credential
 		}
 		if checkInvariants {
 			if rp.canHandleError(err) && rp.Done() {
-				panic(fmt.Sprintf("%T.LinkAt() consumed all path components and returned %T", rp.mount.fs.impl, err))
+				panic(fmt.Sprintf("%T.LinkAt() consumed all path components and returned %v", rp.mount.fs.impl, err))
 			}
 		}
 		if !rp.handleError(err) {
@@ -307,7 +308,7 @@ func (vfs *VirtualFilesystem) MkdirAt(ctx context.Context, creds *auth.Credentia
 		}
 		if checkInvariants {
 			if rp.canHandleError(err) && rp.Done() {
-				panic(fmt.Sprintf("%T.MkdirAt() consumed all path components and returned %T", rp.mount.fs.impl, err))
+				panic(fmt.Sprintf("%T.MkdirAt() consumed all path components and returned %v", rp.mount.fs.impl, err))
 			}
 		}
 		if !rp.handleError(err) {
@@ -340,12 +341,39 @@ func (vfs *VirtualFilesystem) MknodAt(ctx context.Context, creds *auth.Credentia
 		}
 		if checkInvariants {
 			if rp.canHandleError(err) && rp.Done() {
-				panic(fmt.Sprintf("%T.MknodAt() consumed all path components and returned %T", rp.mount.fs.impl, err))
+				panic(fmt.Sprintf("%T.MknodAt() consumed all path components and returned %v", rp.mount.fs.impl, err))
 			}
 		}
 		if !rp.handleError(err) {
 			vfs.putResolvingPath(rp)
 			return err
+		}
+	}
+}
+
+// BoundEndpointAt gets the bound endpoint at the given path, if one exists.
+func (vfs *VirtualFilesystem) BoundEndpointAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) (transport.BoundEndpoint, error) {
+	if !pop.Path.Begin.Ok() {
+		if pop.Path.Absolute {
+			return nil, syserror.ECONNREFUSED
+		}
+		return nil, syserror.ENOENT
+	}
+	rp := vfs.getResolvingPath(creds, pop)
+	for {
+		bep, err := rp.mount.fs.impl.BoundEndpointAt(ctx, rp)
+		if err == nil {
+			vfs.putResolvingPath(rp)
+			return bep, nil
+		}
+		if checkInvariants {
+			if rp.canHandleError(err) && rp.Done() {
+				panic(fmt.Sprintf("%T.BoundEndpointAt() consumed all path components and returned %v", rp.mount.fs.impl, err))
+			}
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return nil, err
 		}
 	}
 }
@@ -494,7 +522,7 @@ func (vfs *VirtualFilesystem) RenameAt(ctx context.Context, creds *auth.Credenti
 		}
 		if checkInvariants {
 			if rp.canHandleError(err) && rp.Done() {
-				panic(fmt.Sprintf("%T.RenameAt() consumed all path components and returned %T", rp.mount.fs.impl, err))
+				panic(fmt.Sprintf("%T.RenameAt() consumed all path components and returned %v", rp.mount.fs.impl, err))
 			}
 		}
 		if !rp.handleError(err) {
@@ -527,7 +555,7 @@ func (vfs *VirtualFilesystem) RmdirAt(ctx context.Context, creds *auth.Credentia
 		}
 		if checkInvariants {
 			if rp.canHandleError(err) && rp.Done() {
-				panic(fmt.Sprintf("%T.RmdirAt() consumed all path components and returned %T", rp.mount.fs.impl, err))
+				panic(fmt.Sprintf("%T.RmdirAt() consumed all path components and returned %v", rp.mount.fs.impl, err))
 			}
 		}
 		if !rp.handleError(err) {
@@ -608,7 +636,7 @@ func (vfs *VirtualFilesystem) SymlinkAt(ctx context.Context, creds *auth.Credent
 		}
 		if checkInvariants {
 			if rp.canHandleError(err) && rp.Done() {
-				panic(fmt.Sprintf("%T.SymlinkAt() consumed all path components and returned %T", rp.mount.fs.impl, err))
+				panic(fmt.Sprintf("%T.SymlinkAt() consumed all path components and returned %v", rp.mount.fs.impl, err))
 			}
 		}
 		if !rp.handleError(err) {
@@ -640,7 +668,7 @@ func (vfs *VirtualFilesystem) UnlinkAt(ctx context.Context, creds *auth.Credenti
 		}
 		if checkInvariants {
 			if rp.canHandleError(err) && rp.Done() {
-				panic(fmt.Sprintf("%T.UnlinkAt() consumed all path components and returned %T", rp.mount.fs.impl, err))
+				panic(fmt.Sprintf("%T.UnlinkAt() consumed all path components and returned %v", rp.mount.fs.impl, err))
 			}
 		}
 		if !rp.handleError(err) {
