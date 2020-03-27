@@ -37,9 +37,11 @@ const (
 
 	// Tests use the extension header identifier values as uint8 instead of
 	// header.IPv6ExtensionHeaderIdentifier.
-	routingExtHdrID  = uint8(header.IPv6RoutingExtHdrIdentifier)
-	fragmentExtHdrID = uint8(header.IPv6FragmentExtHdrIdentifier)
-	noNextHdrID      = uint8(header.IPv6NoNextHeaderIdentifier)
+	hopByHopExtHdrID    = uint8(header.IPv6HopByHopOptionsExtHdrIdentifier)
+	routingExtHdrID     = uint8(header.IPv6RoutingExtHdrIdentifier)
+	fragmentExtHdrID    = uint8(header.IPv6FragmentExtHdrIdentifier)
+	destinationExtHdrID = uint8(header.IPv6DestinationOptionsExtHdrIdentifier)
+	noNextHdrID         = uint8(header.IPv6NoNextHeaderIdentifier)
 )
 
 // testReceiveICMP tests receiving an ICMP packet from src to dst. want is the
@@ -290,6 +292,67 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 			shouldAccept: true,
 		},
 		{
+			name: "hopbyhop with unknown option skippable action",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					nextHdr, 1,
+
+					// Skippable unknown.
+					63, 4, 1, 2, 3, 4,
+
+					// Skippable unknown.
+					62, 6, 1, 2, 3, 4, 5, 6,
+				}, hopByHopExtHdrID
+			},
+			shouldAccept: true,
+		},
+		{
+			name: "hopbyhop with unknown option discard action",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					nextHdr, 1,
+
+					// Skippable unknown.
+					63, 4, 1, 2, 3, 4,
+
+					// Discard unknown.
+					127, 6, 1, 2, 3, 4, 5, 6,
+				}, hopByHopExtHdrID
+			},
+			shouldAccept: false,
+		},
+		{
+			name: "hopbyhop with unknown option discard and send icmp action",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					nextHdr, 1,
+
+					// Skippable unknown.
+					63, 4, 1, 2, 3, 4,
+
+					// Discard & send ICMP if option is unknown.
+					191, 6, 1, 2, 3, 4, 5, 6,
+				}, hopByHopExtHdrID
+			},
+			shouldAccept: false,
+		},
+		{
+			name: "hopbyhop with unknown option discard and send icmp action unless multicast dest",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					nextHdr, 1,
+
+					// Skippable unknown.
+					63, 4, 1, 2, 3, 4,
+
+					// Discard & send ICMP unless packet is for multicast destination if
+					// option is unknown.
+					255, 6, 1, 2, 3, 4, 5, 6,
+				}, hopByHopExtHdrID
+			},
+			shouldAccept: false,
+		},
+		{
 			name:         "routing with zero segments left",
 			extHdr:       func(nextHdr uint8) ([]byte, uint8) { return []byte{nextHdr, 0, 1, 0, 2, 3, 4, 5}, routingExtHdrID },
 			shouldAccept: true,
@@ -312,6 +375,72 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 		{
 			name:         "fragment",
 			extHdr:       func(nextHdr uint8) ([]byte, uint8) { return []byte{nextHdr, 0, 1, 0, 1, 2, 3, 4}, fragmentExtHdrID },
+			shouldAccept: false,
+		},
+		{
+			name:         "No next header",
+			extHdr:       func(nextHdr uint8) ([]byte, uint8) { return []byte{}, noNextHdrID },
+			shouldAccept: false,
+		},
+		{
+			name: "destination with unknown option skippable action",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					nextHdr, 1,
+
+					// Skippable unknown.
+					63, 4, 1, 2, 3, 4,
+
+					// Skippable unknown.
+					62, 6, 1, 2, 3, 4, 5, 6,
+				}, destinationExtHdrID
+			},
+			shouldAccept: true,
+		},
+		{
+			name: "destination with unknown option discard action",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					nextHdr, 1,
+
+					// Skippable unknown.
+					63, 4, 1, 2, 3, 4,
+
+					// Discard unknown.
+					127, 6, 1, 2, 3, 4, 5, 6,
+				}, destinationExtHdrID
+			},
+			shouldAccept: false,
+		},
+		{
+			name: "destination with unknown option discard and send icmp action",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					nextHdr, 1,
+
+					// Skippable unknown.
+					63, 4, 1, 2, 3, 4,
+
+					// Discard & send ICMP if option is unknown.
+					191, 6, 1, 2, 3, 4, 5, 6,
+				}, destinationExtHdrID
+			},
+			shouldAccept: false,
+		},
+		{
+			name: "destination with unknown option discard and send icmp action unless multicast dest",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					nextHdr, 1,
+
+					// Skippable unknown.
+					63, 4, 1, 2, 3, 4,
+
+					// Discard & send ICMP unless packet is for multicast destination if
+					// option is unknown.
+					255, 6, 1, 2, 3, 4, 5, 6,
+				}, destinationExtHdrID
+			},
 			shouldAccept: false,
 		},
 		{
@@ -341,8 +470,92 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 			shouldAccept: true,
 		},
 		{
+			name: "hop by hop (with skippable unknown) - routing",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					// Hop By Hop extension header with skippable unknown option.
+					routingExtHdrID, 0, 62, 4, 1, 2, 3, 4,
+
+					// Routing extension header.
+					nextHdr, 0, 1, 0, 2, 3, 4, 5,
+				}, hopByHopExtHdrID
+			},
+			shouldAccept: true,
+		},
+		{
+			name: "routing - hop by hop (with skippable unknown)",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					// Routing extension header.
+					hopByHopExtHdrID, 0, 1, 0, 2, 3, 4, 5,
+
+					// Hop By Hop extension header with skippable unknown option.
+					nextHdr, 0, 62, 4, 1, 2, 3, 4,
+				}, routingExtHdrID
+			},
+			shouldAccept: false,
+		},
+		{
 			name:         "No next header",
 			extHdr:       func(nextHdr uint8) ([]byte, uint8) { return []byte{}, noNextHdrID },
+			shouldAccept: false,
+		},
+		{
+			name: "hopbyhop (with skippable unknown) - routing - atomic fragment - destination (with skippable unknown)",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					// Hop By Hop extension header with skippable unknown option.
+					routingExtHdrID, 0, 62, 4, 1, 2, 3, 4,
+
+					// Routing extension header.
+					fragmentExtHdrID, 0, 1, 0, 2, 3, 4, 5,
+
+					// Fragment extension header.
+					destinationExtHdrID, 0, 0, 0, 1, 2, 3, 4,
+
+					// Destination extension header with skippable unknown option.
+					nextHdr, 0, 63, 4, 1, 2, 3, 4,
+				}, hopByHopExtHdrID
+			},
+			shouldAccept: true,
+		},
+		{
+			name: "hopbyhop (with discard unknown) - routing - atomic fragment - destination (with skippable unknown)",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					// Hop By Hop extension header with discard action for unknown option.
+					routingExtHdrID, 0, 65, 4, 1, 2, 3, 4,
+
+					// Routing extension header.
+					fragmentExtHdrID, 0, 1, 0, 2, 3, 4, 5,
+
+					// Fragment extension header.
+					destinationExtHdrID, 0, 0, 0, 1, 2, 3, 4,
+
+					// Destination extension header with skippable unknown option.
+					nextHdr, 0, 63, 4, 1, 2, 3, 4,
+				}, hopByHopExtHdrID
+			},
+			shouldAccept: false,
+		},
+		{
+			name: "hopbyhop (with skippable unknown) - routing - atomic fragment - destination (with discard unknown)",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					// Hop By Hop extension header with skippable unknown option.
+					routingExtHdrID, 0, 62, 4, 1, 2, 3, 4,
+
+					// Routing extension header.
+					fragmentExtHdrID, 0, 1, 0, 2, 3, 4, 5,
+
+					// Fragment extension header.
+					destinationExtHdrID, 0, 0, 0, 1, 2, 3, 4,
+
+					// Destination extension header with discard action for unknown
+					// option.
+					nextHdr, 0, 65, 4, 1, 2, 3, 4,
+				}, hopByHopExtHdrID
+			},
 			shouldAccept: false,
 		},
 	}
