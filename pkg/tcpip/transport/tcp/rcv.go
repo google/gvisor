@@ -70,24 +70,7 @@ func newReceiver(ep *endpoint, irs seqnum.Value, rcvWnd seqnum.Size, rcvWndScale
 // acceptable checks if the segment sequence number range is acceptable
 // according to the table on page 26 of RFC 793.
 func (r *receiver) acceptable(segSeq seqnum.Value, segLen seqnum.Size) bool {
-	return Acceptable(segSeq, segLen, r.rcvNxt, r.rcvAcc)
-}
-
-// Acceptable checks if a segment that starts at segSeq and has length segLen is
-// "acceptable" for arriving in a receive window that starts at rcvNxt and ends
-// before rcvAcc, according to the table on page 26 and 69 of RFC 793.
-func Acceptable(segSeq seqnum.Value, segLen seqnum.Size, rcvNxt, rcvAcc seqnum.Value) bool {
-	if rcvNxt == rcvAcc {
-		return segLen == 0 && segSeq == rcvNxt
-	}
-	if segLen == 0 {
-		// rcvWnd is incremented by 1 because that is Linux's behavior despite the
-		// RFC.
-		return segSeq.InRange(rcvNxt, rcvAcc.Add(1))
-	}
-	// Page 70 of RFC 793 allows packets that can be made "acceptable" by trimming
-	// the payload, so we'll accept any payload that overlaps the receieve window.
-	return rcvNxt.LessThan(segSeq.Add(segLen)) && segSeq.LessThan(rcvAcc)
+	return header.Acceptable(segSeq, segLen, r.rcvNxt, r.rcvAcc)
 }
 
 // getSendParams returns the parameters needed by the sender when building

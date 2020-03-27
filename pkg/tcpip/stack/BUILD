@@ -30,6 +30,7 @@ go_template_instance(
 go_library(
     name = "stack",
     srcs = [
+        "conntrack.go",
         "dhcpv6configurationfromndpra_string.go",
         "forwarder.go",
         "icmp_rate_limit.go",
@@ -62,6 +63,7 @@ go_library(
         "//pkg/tcpip/header",
         "//pkg/tcpip/ports",
         "//pkg/tcpip/seqnum",
+        "//pkg/tcpip/transport/tcpconntrack",
         "//pkg/waiter",
         "@org_golang_x_time//rate:go_default_library",
     ],

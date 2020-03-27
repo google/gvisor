@@ -17,8 +17,8 @@ package rcv_test
 import (
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
-	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 )
 
 func TestAcceptable(t *testing.T) {
@@ -67,8 +67,8 @@ func TestAcceptable(t *testing.T) {
 		{105, 2, 108, 108, false},
 		{105, 2, 109, 109, false},
 	} {
-		if got := tcp.Acceptable(tt.segSeq, tt.segLen, tt.rcvNxt, tt.rcvAcc); got != tt.want {
-			t.Errorf("tcp.Acceptable(%d, %d, %d, %d) = %t, want %t", tt.segSeq, tt.segLen, tt.rcvNxt, tt.rcvAcc, got, tt.want)
+		if got := header.Acceptable(tt.segSeq, tt.segLen, tt.rcvNxt, tt.rcvAcc); got != tt.want {
+			t.Errorf("header.Acceptable(%d, %d, %d, %d) = %t, want %t", tt.segSeq, tt.segLen, tt.rcvNxt, tt.rcvAcc, got, tt.want)
 		}
 	}
 }
