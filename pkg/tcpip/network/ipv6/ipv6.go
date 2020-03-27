@@ -184,24 +184,61 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
 	pkt.Data.TrimFront(header.IPv6MinimumSize)
 	pkt.Data.CapLength(int(h.PayloadLength()))
 
-	it, err := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(h.NextHeader()), pkt.Data, true)
-	if err != nil {
-		r.Stats().IP.MalformedPacketsReceived.Increment()
-		return
-	}
+	it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(h.NextHeader()), pkt.Data)
 
-	for {
+	for firstHeader := true; ; firstHeader = false {
 		extHdr, done, err := it.Next()
 		if err != nil {
-			// This should never happen as MakeIPv6PayloadIterator above did not
-			// return an error.
-			panic(fmt.Sprintf("unexpected error when iterating over IPv6 payload: %s", err))
+			r.Stats().IP.MalformedPacketsReceived.Increment()
+			return
 		}
 		if done {
 			break
 		}
 
 		switch extHdr := extHdr.(type) {
+		case header.IPv6HopByHopOptionsExtHdr:
+			// As per RFC 8200 section 4.1, the Hop By Hop extension header is
+			// restricted to appear immediately after an IPv6 fixed header.
+			//
+			// TODO(b/152019344): Send an ICMPv6 Parameter Problem, Code 1
+			// (unrecognized next header) error in response to an extension header's
+			// Next Header field with the Hop By Hop extension header identifier.
+			if !firstHeader {
+				return
+			}
+
+			optsIt := extHdr.Iter()
+
+			for {
+				opt, done, err := optsIt.Next()
+				if err != nil {
+					r.Stats().IP.MalformedPacketsReceived.Increment()
+					return
+				}
+				if done {
+					break
+				}
+
+				// We currently do not support any IPv6 Hop By Hop extension header
+				// options.
+				switch opt.UnknownAction() {
+				case header.IPv6OptionUnknownActionSkip:
+				case header.IPv6OptionUnknownActionDiscard:
+					return
+				case header.IPv6OptionUnknownActionDiscardSendICMP:
+					// TODO(b/152019344): Send an ICMPv6 Parameter Problem Code 2 for
+					// unrecognized IPv6 extension header options.
+					return
+				case header.IPv6OptionUnknownActionDiscardSendICMPNoMulticastDest:
+					// TODO(b/152019344): Send an ICMPv6 Parameter Problem Code 2 for
+					// unrecognized IPv6 extension header options.
+					return
+				default:
+					panic(fmt.Sprintf("unrecognized action for an unrecognized Hop By Hop extension header option = %d", opt))
+				}
+			}
+
 		case header.IPv6RoutingExtHdr:
 			// As per RFC 8200 section 4.4, if a node encounters a routing header with
 			// an unrecognized routing type value, with a non-zero Segments Left
@@ -266,11 +303,38 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
 				// We create a new iterator with the reassembled packet because we could
 				// have more extension headers in the reassembled payload, as per RFC
 				// 8200 section 4.5.
-				it, err = header.MakeIPv6PayloadIterator(rawPayload.Identifier, pkt.Data, true)
+				it = header.MakeIPv6PayloadIterator(rawPayload.Identifier, pkt.Data)
+			}
+
+		case header.IPv6DestinationOptionsExtHdr:
+			optsIt := extHdr.Iter()
+
+			for {
+				opt, done, err := optsIt.Next()
 				if err != nil {
 					r.Stats().IP.MalformedPacketsReceived.Increment()
-					r.Stats().IP.MalformedFragmentsReceived.Increment()
 					return
+				}
+				if done {
+					break
+				}
+
+				// We currently do not support any IPv6 Destination extension header
+				// options.
+				switch opt.UnknownAction() {
+				case header.IPv6OptionUnknownActionSkip:
+				case header.IPv6OptionUnknownActionDiscard:
+					return
+				case header.IPv6OptionUnknownActionDiscardSendICMP:
+					// TODO(b/152019344): Send an ICMPv6 Parameter Problem Code 2 for
+					// unrecognized IPv6 extension header options.
+					return
+				case header.IPv6OptionUnknownActionDiscardSendICMPNoMulticastDest:
+					// TODO(b/152019344): Send an ICMPv6 Parameter Problem Code 2 for
+					// unrecognized IPv6 extension header options.
+					return
+				default:
+					panic(fmt.Sprintf("unrecognized action for an unrecognized Destination extension header option = %d", opt))
 				}
 			}
 
