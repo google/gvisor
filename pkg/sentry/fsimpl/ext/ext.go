@@ -30,6 +30,9 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
+// Name is the name of this filesystem.
+const Name = "ext"
+
 // FilesystemType implements vfs.FilesystemType.
 type FilesystemType struct{}
 
@@ -91,8 +94,13 @@ func isCompatible(sb disklayout.SuperBlock) bool {
 	return true
 }
 
+// Name implements vfs.FilesystemType.Name.
+func (FilesystemType) Name() string {
+	return Name
+}
+
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
-func (FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
+func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	// TODO(b/134676337): Ensure that the user is mounting readonly. If not,
 	// EACCESS should be returned according to mount(2). Filesystem independent
 	// flags (like readonly) are currently not available in pkg/sentry/vfs.
@@ -103,7 +111,7 @@ func (FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFile
 	}
 
 	fs := filesystem{dev: dev, inodeCache: make(map[uint32]*inode)}
-	fs.vfsfs.Init(vfsObj, &fs)
+	fs.vfsfs.Init(vfsObj, &fsType, &fs)
 	fs.sb, err = readSuperBlock(dev)
 	if err != nil {
 		return nil, nil, err

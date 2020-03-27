@@ -42,6 +42,11 @@ type FilesystemType struct {
 	root *vfs.Dentry
 }
 
+// Name implements vfs.FilesystemType.Name.
+func (*FilesystemType) Name() string {
+	return Name
+}
+
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (fst *FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	fst.initOnce.Do(func() {

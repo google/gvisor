@@ -38,6 +38,19 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// filesystemType implements vfs.FilesystemType.
+type filesystemType struct{}
+
+// GetFilesystem implements FilesystemType.GetFilesystem.
+func (filesystemType) GetFilesystem(context.Context, *vfs.VirtualFilesystem, *auth.Credentials, string, vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
+	panic("cannot instaniate a host filesystem")
+}
+
+// Name implements FilesystemType.Name.
+func (filesystemType) Name() string {
+	return "none"
+}
+
 // filesystem implements vfs.FilesystemImpl.
 type filesystem struct {
 	kernfs.Filesystem
@@ -46,7 +59,7 @@ type filesystem struct {
 // NewMount returns a new disconnected mount in vfsObj that may be passed to ImportFD.
 func NewMount(vfsObj *vfs.VirtualFilesystem) (*vfs.Mount, error) {
 	fs := &filesystem{}
-	fs.Init(vfsObj)
+	fs.Init(vfsObj, &filesystemType{})
 	vfsfs := fs.VFSFilesystem()
 	// NewDisconnectedMount will take an additional reference on vfsfs.
 	defer vfsfs.DecRef()
