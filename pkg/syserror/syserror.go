@@ -27,6 +27,7 @@ import (
 var (
 	E2BIG        = error(syscall.E2BIG)
 	EACCES       = error(syscall.EACCES)
+	EADDRINUSE   = error(syscall.EADDRINUSE)
 	EAGAIN       = error(syscall.EAGAIN)
 	EBADF        = error(syscall.EBADF)
 	EBADFD       = error(syscall.EBADFD)
