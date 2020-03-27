@@ -1408,6 +1408,12 @@ func (k *Kernel) RootUTSNamespace() *UTSNamespace {
 	return k.rootUTSNamespace
 }
 
+// UpdateRootUTSNamespace updates RootUTSNamespace's hostName and domainName
+func (k *Kernel) UpdateRootUTSNamespace(hostName string, domainName string) () {
+	k.rootUTSNamespace.SetHostName(hostName)
+	k.rootUTSNamespace.SetDomainName(domainName)
+}
+
 // RootIPCNamespace takes a reference and returns the root IPCNamespace.
 func (k *Kernel) RootIPCNamespace() *IPCNamespace {
 	k.rootIPCNamespace.IncRef()

@@ -529,6 +529,10 @@ func (cm *containerManager) RootRestore(o *RestoreOpts, _ *struct{}) error {
 	}
 	cm.l.mu.Unlock()
 
+	// Update the restored kernel's rootUTSNamespace according to the restore spec
+	// Loader.spec contains hostname information for the restore root container
+	cm.l.k.UpdateRootUTSNamespace(cm.l.spec.Hostname, cm.l.spec.Hostname)
+
 	// Tell the root container to start and wait for the result.
 	cm.startChan <- struct{}{}
 	if err := <-cm.startResultChan; err != nil {
