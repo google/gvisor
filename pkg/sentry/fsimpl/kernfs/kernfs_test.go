@@ -187,9 +187,13 @@ func (*dir) NewNode(context.Context, string, vfs.MknodOptions) (*vfs.Dentry, err
 	return nil, syserror.EPERM
 }
 
-func (fst *fsType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opt vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
+func (fsType) Name() string {
+	return "kernfs"
+}
+
+func (fst fsType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opt vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	fs := &filesystem{}
-	fs.Init(vfsObj)
+	fs.Init(vfsObj, &fst)
 	root := fst.rootFn(creds, fs)
 	return fs.VFSFilesystem(), root.VFSDentry(), nil
 }

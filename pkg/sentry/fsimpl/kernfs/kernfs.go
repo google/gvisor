@@ -63,9 +63,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
-// FilesystemType implements vfs.FilesystemType.
-type FilesystemType struct{}
-
 // Filesystem mostly implements vfs.FilesystemImpl for a generic in-memory
 // filesystem. Concrete implementations are expected to embed this in their own
 // Filesystem type.
@@ -138,8 +135,8 @@ func (fs *Filesystem) processDeferredDecRefsLocked() {
 // Init initializes a kernfs filesystem. This should be called from during
 // vfs.FilesystemType.NewFilesystem for the concrete filesystem embedding
 // kernfs.
-func (fs *Filesystem) Init(vfsObj *vfs.VirtualFilesystem) {
-	fs.vfsfs.Init(vfsObj, fs)
+func (fs *Filesystem) Init(vfsObj *vfs.VirtualFilesystem, fsType vfs.FilesystemType) {
+	fs.vfsfs.Init(vfsObj, fsType, fs)
 }
 
 // VFSFilesystem returns the generic vfs filesystem object.

@@ -199,6 +199,11 @@ const (
 	InteropModeShared
 )
 
+// Name implements vfs.FilesystemType.Name.
+func (FilesystemType) Name() string {
+	return Name
+}
+
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
@@ -374,7 +379,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		dentries:       make(map[*dentry]struct{}),
 		specialFileFDs: make(map[*specialFileFD]struct{}),
 	}
-	fs.vfsfs.Init(vfsObj, fs)
+	fs.vfsfs.Init(vfsObj, &fstype, fs)
 
 	// Construct the root dentry.
 	root, err := fs.newDentry(ctx, attachFile, qid, attrMask, &attr)

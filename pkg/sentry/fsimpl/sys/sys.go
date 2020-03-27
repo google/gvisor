@@ -39,10 +39,15 @@ type filesystem struct {
 	kernfs.Filesystem
 }
 
+// Name implements vfs.FilesystemType.Name.
+func (FilesystemType) Name() string {
+	return Name
+}
+
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
-func (FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
+func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	fs := &filesystem{}
-	fs.Filesystem.Init(vfsObj)
+	fs.Filesystem.Init(vfsObj, &fsType)
 	k := kernel.KernelFromContext(ctx)
 	maxCPUCores := k.ApplicationCores()
 	defaultSysDirMode := linux.FileMode(0755)

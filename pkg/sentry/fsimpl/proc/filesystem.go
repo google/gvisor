@@ -36,8 +36,13 @@ type FilesystemType struct{}
 
 var _ vfs.FilesystemType = (*FilesystemType)(nil)
 
-// GetFilesystem implements vfs.FilesystemType.
-func (ft *FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
+// Name implements vfs.FilesystemType.Name.
+func (FilesystemType) Name() string {
+	return Name
+}
+
+// GetFilesystem implements vfs.FilesystemType.GetFilesystem.
+func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	k := kernel.KernelFromContext(ctx)
 	if k == nil {
 		return nil, nil, fmt.Errorf("procfs requires a kernel")
@@ -48,7 +53,7 @@ func (ft *FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virtual
 	}
 
 	procfs := &kernfs.Filesystem{}
-	procfs.VFSFilesystem().Init(vfsObj, procfs)
+	procfs.VFSFilesystem().Init(vfsObj, &ft, procfs)
 
 	var cgroups map[string]string
 	if opts.InternalData != nil {

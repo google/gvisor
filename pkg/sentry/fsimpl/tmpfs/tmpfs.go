@@ -63,6 +63,11 @@ type filesystem struct {
 	nextInoMinusOne uint64 // accessed using atomic memory operations
 }
 
+// Name implements vfs.FilesystemType.Name.
+func (FilesystemType) Name() string {
+	return Name
+}
+
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	memFileProvider := pgalloc.MemoryFileProviderFromContext(ctx)
@@ -74,7 +79,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		memFile: memFileProvider.MemoryFile(),
 		clock:   clock,
 	}
-	fs.vfsfs.Init(vfsObj, &fs)
+	fs.vfsfs.Init(vfsObj, &fstype, &fs)
 	root := fs.newDentry(fs.newDirectory(creds, 01777))
 	return &fs.vfsfs, &root.vfsd, nil
 }
