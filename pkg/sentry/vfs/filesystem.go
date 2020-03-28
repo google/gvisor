@@ -42,19 +42,28 @@ type Filesystem struct {
 	// immutable.
 	vfs *VirtualFilesystem
 
+	// fsType is the FilesystemType of this Filesystem.
+	fsType FilesystemType
+
 	// impl is the FilesystemImpl associated with this Filesystem. impl is
 	// immutable. This should be the last field in Dentry.
 	impl FilesystemImpl
 }
 
 // Init must be called before first use of fs.
-func (fs *Filesystem) Init(vfsObj *VirtualFilesystem, impl FilesystemImpl) {
+func (fs *Filesystem) Init(vfsObj *VirtualFilesystem, fsType FilesystemType, impl FilesystemImpl) {
 	fs.refs = 1
 	fs.vfs = vfsObj
+	fs.fsType = fsType
 	fs.impl = impl
 	vfsObj.filesystemsMu.Lock()
 	vfsObj.filesystems[fs] = struct{}{}
 	vfsObj.filesystemsMu.Unlock()
+}
+
+// FilesystemType returns the FilesystemType for this Filesystem.
+func (fs *Filesystem) FilesystemType() FilesystemType {
+	return fs.fsType
 }
 
 // VirtualFilesystem returns the containing VirtualFilesystem.

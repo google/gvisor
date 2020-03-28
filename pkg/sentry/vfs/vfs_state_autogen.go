@@ -85,6 +85,7 @@ func (x *Filesystem) save(m state.Map) {
 	x.beforeSave()
 	m.Save("refs", &x.refs)
 	m.Save("vfs", &x.vfs)
+	m.Save("fsType", &x.fsType)
 	m.Save("impl", &x.impl)
 }
 
@@ -92,6 +93,7 @@ func (x *Filesystem) afterLoad() {}
 func (x *Filesystem) load(m state.Map) {
 	m.Load("refs", &x.refs)
 	m.Load("vfs", &x.vfs)
+	m.Load("fsType", &x.fsType)
 	m.Load("impl", &x.impl)
 }
 

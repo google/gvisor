@@ -134,7 +134,7 @@ func (vfs *VirtualFilesystem) Init() error {
 	anonfs := anonFilesystem{
 		devMinor: anonfsDevMinor,
 	}
-	anonfs.vfsfs.Init(vfs, &anonfs)
+	anonfs.vfsfs.Init(vfs, &anonFilesystemType{}, &anonfs)
 	defer anonfs.vfsfs.DecRef()
 	anonMount, err := vfs.NewDisconnectedMount(&anonfs.vfsfs, nil, &MountOptions{})
 	if err != nil {
