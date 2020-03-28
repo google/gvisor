@@ -30,6 +30,9 @@ type FilesystemType interface {
 	// along with its mount root. A reference is taken on the returned
 	// Filesystem and Dentry.
 	GetFilesystem(ctx context.Context, vfsObj *VirtualFilesystem, creds *auth.Credentials, source string, opts GetFilesystemOptions) (*Filesystem, *Dentry, error)
+
+	// Name returns the name of this FilesystemType.
+	Name() string
 }
 
 // GetFilesystemOptions contains options to FilesystemType.GetFilesystem.
