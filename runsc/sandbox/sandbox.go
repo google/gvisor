@@ -444,12 +444,6 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 		nextFD++
 	}
 
-	// TODO(b/151157106): syscall tests fail by timeout if asyncpreemptoff
-	// isn't set.
-	if conf.Platform == "kvm" {
-		cmd.Env = append(cmd.Env, "GODEBUG=asyncpreemptoff=1")
-	}
-
 	// The current process' stdio must be passed to the application via the
 	// --stdio-fds flag. The stdio of the sandbox process itself must not
 	// be connected to the same FDs, otherwise we risk leaking sandbox

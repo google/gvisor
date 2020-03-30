@@ -46,6 +46,14 @@ var (
 	// bounceSignalMask has only bounceSignal set.
 	bounceSignalMask = uint64(1 << (uint64(bounceSignal) - 1))
 
+	// otherSignalsMask includes all other signals that will be cause the
+	// vCPU to exit during execution.
+	//
+	// Currently, this includes the preemption signal and the profiling
+	// signal. In general, these should be signals whose delivery actually
+	// influences the way the program executes as the switch can be costly.
+	otherSignalsMask = uint64(1<<(uint64(syscall.SIGURG)-1)) | uint64(1<<(uint64(syscall.SIGPROF)-1))
+
 	// bounce is the interrupt vector used to return to the kernel.
 	bounce = uint32(ring0.VirtualizationException)
 
@@ -86,8 +94,8 @@ func (c *vCPU) die(context *arch.SignalContext64, msg string) {
 }
 
 func init() {
-	// Install the handler.
-	if err := safecopy.ReplaceSignalHandler(bluepillSignal, reflect.ValueOf(sighandler).Pointer(), &savedHandler); err != nil {
+	// Install the handler, masking all signals.
+	if err := safecopy.ReplaceSignalHandler(bluepillSignal, reflect.ValueOf(sighandler).Pointer(), &savedHandler, ^uint64(0)); err != nil {
 		panic(fmt.Sprintf("Unable to set handler for signal %d: %v", bluepillSignal, err))
 	}
 
