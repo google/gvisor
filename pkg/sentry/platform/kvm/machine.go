@@ -108,6 +108,9 @@ type vCPU struct {
 	// This is a bitmask of the three fields (vCPU*) described above.
 	state uint32
 
+	// signalMask is the vCPU signal mask.
+	signalMask uint64
+
 	// runData for this vCPU.
 	runData *runData
 
@@ -121,6 +124,7 @@ type vCPU struct {
 	// vCPUArchState is the architecture-specific state.
 	vCPUArchState
 
+	// dieState is the temporary state associated with throwing exceptions.
 	dieState dieState
 }
 
@@ -152,11 +156,6 @@ func (m *machine) newVCPU() *vCPU {
 	}
 	c.CPU.Init(&m.kernel, c)
 	m.vCPUsByID[c.id] = c
-
-	// Ensure the signal mask is correct.
-	if err := c.setSignalMask(); err != nil {
-		panic(fmt.Sprintf("error setting signal mask: %v", err))
-	}
 
 	// Map the run data.
 	runData, err := mapRunData(int(fd))

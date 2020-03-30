@@ -324,11 +324,13 @@ func errorFromFaultSignal(addr uintptr, sig int32) error {
 //
 // It stores the value of the previously set handler in previous.
 //
+// The extraMask parameter is OR'ed into the existing signal handler mask.
+//
 // This function will be called on initialization in order to install safecopy
 // handlers for appropriate signals. These handlers will call the previous
 // handler however, and if this is function is being used externally then the
 // same courtesy is expected.
-func ReplaceSignalHandler(sig syscall.Signal, handler uintptr, previous *uintptr) error {
+func ReplaceSignalHandler(sig syscall.Signal, handler uintptr, previous *uintptr, extraMask uint64) error {
 	var sa struct {
 		handler  uintptr
 		flags    uint64
@@ -348,10 +350,10 @@ func ReplaceSignalHandler(sig syscall.Signal, handler uintptr, previous *uintptr
 	if sa.handler == 0 {
 		return fmt.Errorf("previous handler for signal %x isn't set", sig)
 	}
-
 	*previous = sa.handler
 
 	// Install our own handler.
+	sa.mask |= extraMask
 	sa.handler = handler
 	if _, _, e := syscall.RawSyscall6(syscall.SYS_RT_SIGACTION, uintptr(sig), uintptr(unsafe.Pointer(&sa)), 0, maskLen, 0, 0); e != 0 {
 		return e

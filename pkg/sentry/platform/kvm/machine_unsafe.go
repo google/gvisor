@@ -87,6 +87,47 @@ func unmapRunData(r *runData) error {
 	return nil
 }
 
+// setSignalMask sets the vCPU signal mask.
+//
+// This will be called from the bluepill handler, and therefore must not
+// perform any allocation.
+//
+//go:nosplit
+func (c *vCPU) setSignalMask(enableOthers bool) {
+	// The signal mask is either:
+	// *) Only the bounce signal, which we need to use to execute the
+	//    machine state up until the bounce interrupt can be processed.
+	//    or
+	// *) All signals, which is the default state unless we need to
+	//    continue execution to exit guest mode (the case above).
+	mask := bounceSignalMask
+	if enableOthers {
+		mask |= otherSignalsMask
+	}
+	if c.signalMask == mask {
+		return // Already set.
+	}
+
+	// The layout of this structure implies that it will not necessarily be
+	// the same layout chosen by the Go compiler. It gets fudged here.
+	var data struct {
+		length uint32
+		mask1  uint32
+		mask2  uint32
+		_      uint32
+	}
+	data.length = 8 // Fixed sigset size.
+	data.mask1 = ^uint32(mask & 0xffffffff)
+	data.mask2 = ^uint32(mask >> 32)
+	if _, _, errno := syscall.RawSyscall(
+		syscall.SYS_IOCTL,
+		uintptr(c.fd),
+		_KVM_SET_SIGNAL_MASK,
+		uintptr(unsafe.Pointer(&data))); errno != 0 {
+		throw("setSignal mask failed")
+	}
+}
+
 // atomicAddressSpace is an atomic address space pointer.
 type atomicAddressSpace struct {
 	pointer unsafe.Pointer

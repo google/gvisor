@@ -70,6 +70,7 @@ go_test(
         "requires-kvm",
     ],
     deps = [
+        "//pkg/procid",
         "//pkg/sentry/arch",
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/kvm/testutil",

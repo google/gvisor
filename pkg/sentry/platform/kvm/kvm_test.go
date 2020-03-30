@@ -16,12 +16,15 @@ package kvm
 
 import (
 	"math/rand"
+	"os"
 	"reflect"
+	"runtime"
 	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/procid"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/kvm/testutil"
@@ -320,15 +323,18 @@ func TestBounce(t *testing.T) {
 	})
 }
 
+// randomSleep is used by some race tests below.
+//
+// O(hundreds of microseconds) is appropriate to ensure different overlaps and
+// different schedules.
+func randomSleep() {
+	if n := rand.Intn(1000); n > 100 {
+		time.Sleep(time.Duration(n) * time.Microsecond)
+	}
+}
+
 func TestBounceStress(t *testing.T) {
 	applicationTest(t, true, testutil.SpinLoop, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
-		randomSleep := func() {
-			// O(hundreds of microseconds) is appropriate to ensure
-			// different overlaps and different schedules.
-			if n := rand.Intn(1000); n > 100 {
-				time.Sleep(time.Duration(n) * time.Microsecond)
-			}
-		}
 		for i := 0; i < 1000; i++ {
 			// Start an asynchronously executing goroutine that
 			// calls Bounce at pseudo-random point in time.
@@ -348,6 +354,50 @@ func TestBounceStress(t *testing.T) {
 				t.Errorf("application partial restore: got %v, wanted %v", err, platform.ErrContextInterrupt)
 			}
 			c.unlock()
+			randomSleep()
+			c.lock()
+		}
+		return false
+	})
+}
+
+func TestPreemption(t *testing.T) {
+	applicationTest(t, true, testutil.SpinLoop, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
+		// Lock the main vCPU thread.
+		runtime.LockOSThread()
+		pid := os.Getpid()
+		tid := procid.Current()
+		running := uint32(1)
+		defer atomic.StoreUint32(&running, 0)
+
+		// Start generating "preemptions".
+		go func() {
+			for atomic.LoadUint32(&running) != 0 {
+				// Kick via a preemption: best effort.
+				syscall.Tgkill(pid, int(tid), syscall.SIGURG)
+				randomSleep()
+			}
+		}()
+
+		for i := 0; i < 1000; i++ {
+			randomSleep()
+			var si arch.SignalInfo
+			if _, err := c.SwitchToUser(ring0.SwitchOpts{
+				Registers:          regs,
+				FloatingPointState: dummyFPState,
+				PageTables:         pt,
+			}, &si); err != platform.ErrContextInterrupt {
+				t.Errorf("application partial restore: got %v, wanted %v", err, platform.ErrContextInterrupt)
+			}
+			// Was this caused by a preemption signal?
+			if got := atomic.LoadUint32(&c.state); got&vCPUGuest != 0 && got&vCPUWaiter == 0 {
+				continue
+			}
+			c.unlock()
+			// Should have dropped from guest mode, processed preemption.
+			if got := atomic.LoadUint32(&c.state); got != vCPUReady {
+				t.Errorf("vCPU not in ready state: got %v", got)
+			}
 			randomSleep()
 			c.lock()
 		}
