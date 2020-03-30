@@ -386,6 +386,49 @@ go_repository(
     version = "v1.0.0",
 )
 
+go_repository(
+    name = "com_google_cloud_go_bigquery",
+    importpath = "cloud.google.com/go/bigquery",
+    sum = "h1:K2NyuHRuv15ku6eUpe0DQk5ZykPMnSOnvuVf6IHcjaE=",
+    version = "v1.5.0",
+)
+
+go_repository(
+    name = "org_golang_google_api",
+    importpath = "google.golang.org/api",
+    sum = "h1:jz2KixHX7EcCPiQrySzPdnYT7DbINAypCqKZ1Z7GM40=",
+    version = "v0.20.0",
+)
+
+# BigQuery Dependencies for Benchmarks
+go_repository(
+    name = "com_google_cloud_go",
+    importpath = "cloud.google.com/go",
+    sum = "h1:eoz/lYxKSL4CNAiaUJ0ZfD1J3bfMYbU5B3rwM1C1EIU=",
+    version = "v0.55.0",
+)
+
+go_repository(
+    name = "com_github_googleapis_gax_go_v2",
+    importpath = "github.com/googleapis/gax-go/v2",
+    sum = "h1:sjZBwGj9Jlw33ImPtvFviGYvseOtDM7hkSKB7+Tv3SM=",
+    version = "v2.0.5",
+)
+
+go_repository(
+    name = "io_opencensus_go",
+    importpath = "go.opencensus.io",
+    sum = "h1:8sGtKOrtQqkN1bp2AtX+misvLIlOmsEsNd+9NIcPEm8=",
+    version = "v0.22.3",
+)
+
+go_repository(
+    name = "com_github_golang_groupcache",
+    importpath = "github.com/golang/groupcache",
+    sum = "h1:1r7pUrabqp18hOBcwBwiTsbnFeTZHV9eER/QT5JVZxY=",
+    version = "v0.0.0-20200121045136-8c9f03a8e57e",
+)
+
 # System Call test dependencies.
 http_archive(
     name = "com_google_absl",
