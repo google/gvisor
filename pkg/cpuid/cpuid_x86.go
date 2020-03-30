@@ -235,7 +235,9 @@ const (
 	X86FeaturePERFCTR_TSC
 	X86FeaturePERFCTR_LLC
 	X86FeatureMWAITX
-	// ECX[31:30] are reserved.
+	// TODO(b/152776797): Some CPUs set this but it is not documented anywhere.
+	X86FeatureBlock5Bit30
+	_ // ecx bit 31 is reserved.
 )
 
 // Block 6 constants are the extended feature bits in
@@ -438,6 +440,9 @@ var x86FeatureParseOnlyStrings = map[Feature]string{
 
 	// Block 3.
 	X86FeaturePREFETCHWT1: "prefetchwt1",
+
+	// Block 5.
+	X86FeatureBlock5Bit30: "block5_bit30",
 }
 
 // intelCacheDescriptors describe the caches and TLBs on the system. They are
