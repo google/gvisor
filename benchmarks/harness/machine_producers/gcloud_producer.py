@@ -53,6 +53,8 @@ class GCloudProducer(machine_producer.MachineProducer):
     ssh_key_file: path to a valid ssh private key. See README on vaild ssh keys.
     ssh_user: string of user name for ssh_key
     ssh_password: string of password for ssh key
+    internal: if true, use internal IPs of instances. Used if bm-tools is
+    running on a GCP vm when a firewall is set for external IPs.
     mock: a mock printer which will print mock data if required. Mock data is
       recorded output from subprocess calls (returncode, stdout, args).
     condition: mutex for this class around machine creation and deleteion.
@@ -66,6 +68,7 @@ class GCloudProducer(machine_producer.MachineProducer):
                ssh_key_file: str,
                ssh_user: str,
                ssh_password: str,
+               internal: bool,
                mock: gcloud_mock_recorder.MockPrinter = None):
     self.image = image
     self.zone = zone
@@ -74,6 +77,7 @@ class GCloudProducer(machine_producer.MachineProducer):
     self.ssh_key_file = ssh_key_file
     self.ssh_user = ssh_user
     self.ssh_password = ssh_password
+    self.internal = internal
     self.mock = mock
     self.condition = threading.Condition()
 
@@ -129,15 +133,13 @@ class GCloudProducer(machine_producer.MachineProducer):
     machines = []
     for instance in instances:
       name = instance["name"]
+      external = instance["networkInterfaces"][0]["accessConfigs"][0]["natIP"]
+      internal = instance["networkInterfaces"][0]["networkIP"]
       kwargs = {
-          "hostname":
-              instance["networkInterfaces"][0]["accessConfigs"][0]["natIP"],
-          "key_path":
-              self.ssh_key_file,
-          "username":
-              self.ssh_user,
-          "key_password":
-              self.ssh_password
+          "hostname": internal if self.internal else external,
+          "key_path": self.ssh_key_file,
+          "username": self.ssh_user,
+          "key_password": self.ssh_password
       }
       machines.append(machine.RemoteMachine(name=name, **kwargs))
     return machines
@@ -190,6 +192,8 @@ class GCloudProducer(machine_producer.MachineProducer):
     for name in names:
       cmd = "gcloud compute ssh {user}@{name}".format(
           user=self.ssh_user, name=name).split(" ")
+      if self.internal:
+        cmd.append("--internal-ip")
       cmd.append("--ssh-key-file={key}".format(key=self.ssh_key_file))
       cmd.append("--zone={zone}".format(zone=self.zone))
       cmd.append("--command=uname")

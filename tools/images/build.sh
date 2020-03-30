@@ -63,13 +63,18 @@ trap cleanup EXIT
 # Wait for the instance to become available (up to 5 minutes).
 declare timeout=300
 declare success=0
+declare internal=""
 declare -r start=$(date +%s)
 declare -r end=$((${start}+${timeout}))
 while [[ "$(date +%s)" -lt "${end}" ]] && [[ "${success}" -lt 3 ]]; do
-  if gcloud compute ssh --zone "${ZONE}" "${USERNAME}"@"${INSTANCE_NAME}" -- env - true 2>/dev/null; then
+  if gcloud compute ssh --zone "${internal}" "${ZONE}" "${USERNAME}"@"${INSTANCE_NAME}" -- env - true 2>/dev/null; then
     success=$((${success}+1))
+  elif gcloud compute ssh --zone --internal-ip "${ZONE}" "${USERNAME}"@"${INSTANCE_NAME}" -- env - true 2>/dev/null; then
+    success=$((${success}+1))
+    internal="--internal-ip"
   fi
 done
+
 if [[ "${success}" -eq "0" ]]; then
   echo "connect timed out after ${timeout} seconds."
   exit 1
@@ -77,7 +82,7 @@ fi
 
 # Run the install scripts provided.
 for arg; do
-  gcloud compute ssh --zone "${ZONE}" "${USERNAME}"@"${INSTANCE_NAME}" -- sudo bash - <"${arg}" >/dev/null
+  gcloud compute ssh --zone "${internal}" "${ZONE}" "${USERNAME}"@"${INSTANCE_NAME}" -- sudo bash - <"${arg}" >/dev/null
 done
 
 # Stop the instance; required before creating an image.

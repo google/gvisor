@@ -111,6 +111,12 @@ class GCPCommand(RunCommand):
         default=os.path.join(
             os.path.dirname(__file__), "../../tools/images/zone.txt"),
     )
+    internal = click.core.Option(
+        ("--internal/--no-internal",),
+        help="""Use instance internal IPs. Used if bm-tools runner is running on
+        GCP instance with firewall rules blocking external IPs.""",
+        default=False,
+    )
     installers = click.core.Option(
         ("--installers",),
         help="The set of installers to use.",
@@ -124,6 +130,7 @@ class GCPCommand(RunCommand):
     self.params.extend([
         image_file,
         zone_file,
+        internal,
         machine_type,
         installers,
     ])

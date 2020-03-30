@@ -29,7 +29,8 @@ gcloud config set compute/zone ${ZONE}
 bazel run //benchmarks:benchmarks -- \
   --verbose \
   run-gcp \
-  startup \
+  "(startup|absl)" \
+  --internal \
   --runtime=runc \
   --runtime=runsc \
   --installers=head
