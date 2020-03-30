@@ -120,8 +120,8 @@ def run_mock(ctx, **kwargs):
 
 @runner.command("run-gcp", commands.GCPCommand)
 @click.pass_context
-def run_gcp(ctx, image_file: str, zone_file: str, machine_type: str,
-            installers: List[str], **kwargs):
+def run_gcp(ctx, image_file: str, zone_file: str, internal: bool,
+            machine_type: str, installers: List[str], **kwargs):
   """Runs all benchmarks on GCP instances."""
 
   # Resolve all files.
@@ -137,7 +137,8 @@ def run_gcp(ctx, image_file: str, zone_file: str, machine_type: str,
       installers,
       ssh_key_file=key_file,
       ssh_user=harness.DEFAULT_USER,
-      ssh_password="")
+      ssh_password="",
+      internal=internal)
 
   try:
     run(ctx, producer, **kwargs)
