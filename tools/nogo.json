@@ -35,7 +35,9 @@
       "/com_github_vishvananda_netlink/route_linux.go": "allowed: false positive",
       "/external/bazel_gazelle/cmd/gazelle/.*": "allowed: false positive",
       "/org_golang_x_tools/go/packages/golist.go": "allowed: runtime internals",
-      "/pkg/sentry/platform/kvm/kvm_test.go": "allowed: intentional"
+      "/pkg/sentry/platform/kvm/kvm_test.go": "allowed: intentional",
+      "/tools/bigquery/bigquery.go": "allowed: false positive",
+      "/external/io_opencensus_go/tag/map_codec.go": "allowed: false positive"
     }
   },
   "printf": {
