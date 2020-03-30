@@ -127,10 +127,10 @@ func initializeAddresses() {
 
 func init() {
 	initializeAddresses()
-	if err := ReplaceSignalHandler(syscall.SIGSEGV, reflect.ValueOf(signalHandler).Pointer(), &savedSigSegVHandler); err != nil {
+	if err := ReplaceSignalHandler(syscall.SIGSEGV, reflect.ValueOf(signalHandler).Pointer(), &savedSigSegVHandler, 0); err != nil {
 		panic(fmt.Sprintf("Unable to set handler for SIGSEGV: %v", err))
 	}
-	if err := ReplaceSignalHandler(syscall.SIGBUS, reflect.ValueOf(signalHandler).Pointer(), &savedSigBusHandler); err != nil {
+	if err := ReplaceSignalHandler(syscall.SIGBUS, reflect.ValueOf(signalHandler).Pointer(), &savedSigBusHandler, 0); err != nil {
 		panic(fmt.Sprintf("Unable to set handler for SIGBUS: %v", err))
 	}
 	syserror.AddErrorUnwrapper(func(e error) (syscall.Errno, bool) {

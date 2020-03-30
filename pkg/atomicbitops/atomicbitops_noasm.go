@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 )
 
+//go:nosplit
 func AndUint32(addr *uint32, val uint32) {
 	for {
 		o := atomic.LoadUint32(addr)
@@ -30,6 +31,7 @@ func AndUint32(addr *uint32, val uint32) {
 	}
 }
 
+//go:nosplit
 func OrUint32(addr *uint32, val uint32) {
 	for {
 		o := atomic.LoadUint32(addr)
@@ -40,6 +42,7 @@ func OrUint32(addr *uint32, val uint32) {
 	}
 }
 
+//go:nosplit
 func XorUint32(addr *uint32, val uint32) {
 	for {
 		o := atomic.LoadUint32(addr)
@@ -50,6 +53,7 @@ func XorUint32(addr *uint32, val uint32) {
 	}
 }
 
+//go:nosplit
 func CompareAndSwapUint32(addr *uint32, old, new uint32) (prev uint32) {
 	for {
 		prev = atomic.LoadUint32(addr)
@@ -62,6 +66,7 @@ func CompareAndSwapUint32(addr *uint32, old, new uint32) (prev uint32) {
 	}
 }
 
+//go:nosplit
 func AndUint64(addr *uint64, val uint64) {
 	for {
 		o := atomic.LoadUint64(addr)
@@ -72,6 +77,7 @@ func AndUint64(addr *uint64, val uint64) {
 	}
 }
 
+//go:nosplit
 func OrUint64(addr *uint64, val uint64) {
 	for {
 		o := atomic.LoadUint64(addr)
@@ -82,6 +88,7 @@ func OrUint64(addr *uint64, val uint64) {
 	}
 }
 
+//go:nosplit
 func XorUint64(addr *uint64, val uint64) {
 	for {
 		o := atomic.LoadUint64(addr)
@@ -92,6 +99,7 @@ func XorUint64(addr *uint64, val uint64) {
 	}
 }
 
+//go:nosplit
 func CompareAndSwapUint64(addr *uint64, old, new uint64) (prev uint64) {
 	for {
 		prev = atomic.LoadUint64(addr)

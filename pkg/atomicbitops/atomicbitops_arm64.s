@@ -16,7 +16,7 @@
 
 #include "textflag.h"
 
-TEXT ·AndUint32(SB),$0-12
+TEXT ·AndUint32(SB),NOSPLIT,$0-12
   MOVD    ptr+0(FP), R0
   MOVW    val+8(FP), R1
 again:
@@ -26,7 +26,7 @@ again:
   CBNZ    R3, again
   RET
 
-TEXT ·OrUint32(SB),$0-12
+TEXT ·OrUint32(SB),NOSPLIT,$0-12
   MOVD    ptr+0(FP), R0
   MOVW    val+8(FP), R1
 again:
@@ -36,7 +36,7 @@ again:
   CBNZ    R3, again
   RET
 
-TEXT ·XorUint32(SB),$0-12
+TEXT ·XorUint32(SB),NOSPLIT,$0-12
   MOVD    ptr+0(FP), R0
   MOVW    val+8(FP), R1
 again:
@@ -46,7 +46,7 @@ again:
   CBNZ    R3, again
   RET
 
-TEXT ·CompareAndSwapUint32(SB),$0-20
+TEXT ·CompareAndSwapUint32(SB),NOSPLIT,$0-20
   MOVD addr+0(FP), R0
   MOVW old+8(FP), R1
   MOVW new+12(FP), R2
@@ -60,7 +60,7 @@ done:
   MOVW R3, prev+16(FP)
   RET
 
-TEXT ·AndUint64(SB),$0-16
+TEXT ·AndUint64(SB),NOSPLIT,$0-16
   MOVD    ptr+0(FP), R0
   MOVD    val+8(FP), R1
 again:
@@ -70,7 +70,7 @@ again:
   CBNZ    R3, again
   RET
 
-TEXT ·OrUint64(SB),$0-16
+TEXT ·OrUint64(SB),NOSPLIT,$0-16
   MOVD    ptr+0(FP), R0
   MOVD    val+8(FP), R1
 again:
@@ -80,7 +80,7 @@ again:
   CBNZ    R3, again
   RET
 
-TEXT ·XorUint64(SB),$0-16
+TEXT ·XorUint64(SB),NOSPLIT,$0-16
   MOVD    ptr+0(FP), R0
   MOVD    val+8(FP), R1
 again:
@@ -90,7 +90,7 @@ again:
   CBNZ    R3, again
   RET
 
-TEXT ·CompareAndSwapUint64(SB),$0-32
+TEXT ·CompareAndSwapUint64(SB),NOSPLIT,$0-32
   MOVD addr+0(FP), R0
   MOVD old+8(FP), R1
   MOVD new+16(FP), R2
