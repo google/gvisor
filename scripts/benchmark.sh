@@ -20,6 +20,8 @@ source $(dirname $0)/common.sh
 # variable for authentication.
 export GOOGLE_APPLICATION_CREDENTIALS="${KOKORO_KEYSTORE_DIR}/${GCLOUD_CREDENTIALS}"
 
+which gcloud
+
 gcloud auth activate-service-account \
    --key-file "${GOOGLE_APPLICATION_CREDENTIALS}"
 
