@@ -15,7 +15,11 @@
 package vfs
 
 import (
+	"bytes"
+	"fmt"
 	"math"
+	"sort"
+	"strings"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -44,7 +48,7 @@ var lastMountID uint64
 //
 // +stateify savable
 type Mount struct {
-	// vfs, fs, and root are immutable. References are held on fs and root.
+	// vfs, fs, root are immutable. References are held on fs and root.
 	//
 	// Invariant: root belongs to fs.
 	vfs  *VirtualFilesystem
@@ -639,10 +643,26 @@ func (mnt *Mount) setReadOnlyLocked(ro bool) error {
 	return nil
 }
 
+func (mnt *Mount) readOnly() bool {
+	return atomic.LoadInt64(&mnt.writers) < 0
+}
+
 // Filesystem returns the mounted Filesystem. It does not take a reference on
 // the returned Filesystem.
 func (mnt *Mount) Filesystem() *Filesystem {
 	return mnt.fs
+}
+
+// submountsLocked returns this Mount and all Mounts that are descendents of
+// it.
+//
+// Precondition: mnt.vfs.mountMu must be held.
+func (mnt *Mount) submountsLocked() []*Mount {
+	mounts := []*Mount{mnt}
+	for m := range mnt.children {
+		mounts = append(mounts, m.submountsLocked()...)
+	}
+	return mounts
 }
 
 // Root returns mntns' root. A reference is taken on the returned
@@ -654,4 +674,174 @@ func (mntns *MountNamespace) Root() VirtualDentry {
 	}
 	vd.IncRef()
 	return vd
+}
+
+// GenerateProcMounts emits the contents of /proc/[pid]/mounts for vfs to buf.
+//
+// Preconditions: taskRootDir.Ok().
+func (vfs *VirtualFilesystem) GenerateProcMounts(ctx context.Context, taskRootDir VirtualDentry, buf *bytes.Buffer) {
+	vfs.mountMu.Lock()
+	defer vfs.mountMu.Unlock()
+	rootMnt := taskRootDir.mount
+	mounts := rootMnt.submountsLocked()
+	sort.Slice(mounts, func(i, j int) bool { return mounts[i].ID < mounts[j].ID })
+	for _, mnt := range mounts {
+		// Get the path to this mount relative to task root.
+		mntRootVD := VirtualDentry{
+			mount:  mnt,
+			dentry: mnt.root,
+		}
+		path, err := vfs.PathnameReachable(ctx, taskRootDir, mntRootVD)
+		if err != nil {
+			// For some reason we didn't get a path. Log a warning
+			// and run with empty path.
+			ctx.Warningf("Error getting pathname for mount root %+v: %v", mnt.root, err)
+			path = ""
+		}
+		if path == "" {
+			// Either an error occurred, or path is not reachable
+			// from root.
+			break
+		}
+
+		opts := "rw"
+		if mnt.readOnly() {
+			opts = "ro"
+		}
+		if mnt.flags.NoExec {
+			opts += ",noexec"
+		}
+
+		// Format:
+		// <special device or remote filesystem> <mount point> <filesystem type> <mount options> <needs dump> <fsck order>
+		//
+		// The "needs dump" and "fsck order" flags are always 0, which
+		// is allowed.
+		fmt.Fprintf(buf, "%s %s %s %s %d %d\n", "none", path, mnt.fs.FilesystemType().Name(), opts, 0, 0)
+	}
+}
+
+// GenerateProcMountInfo emits the contents of /proc/[pid]/mountinfo for vfs to
+// buf.
+//
+// Preconditions: taskRootDir.Ok().
+func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRootDir VirtualDentry, buf *bytes.Buffer) {
+	vfs.mountMu.Lock()
+	defer vfs.mountMu.Unlock()
+	rootMnt := taskRootDir.mount
+	mounts := rootMnt.submountsLocked()
+	sort.Slice(mounts, func(i, j int) bool { return mounts[i].ID < mounts[j].ID })
+	for _, mnt := range mounts {
+		// Get the path to this mount relative to task root.
+		mntRootVD := VirtualDentry{
+			mount:  mnt,
+			dentry: mnt.root,
+		}
+		path, err := vfs.PathnameReachable(ctx, taskRootDir, mntRootVD)
+		if err != nil {
+			// For some reason we didn't get a path. Log a warning
+			// and run with empty path.
+			ctx.Warningf("Error getting pathname for mount root %+v: %v", mnt.root, err)
+			path = ""
+		}
+		if path == "" {
+			// Either an error occurred, or path is not reachable
+			// from root.
+			break
+		}
+		// Stat the mount root to get the major/minor device numbers.
+		pop := &PathOperation{
+			Root:  mntRootVD,
+			Start: mntRootVD,
+		}
+		statx, err := vfs.StatAt(ctx, auth.NewAnonymousCredentials(), pop, &StatOptions{})
+		if err != nil {
+			// Well that's not good. Ignore this mount.
+			break
+		}
+
+		// Format:
+		// 36 35 98:0 /mnt1 /mnt2 rw,noatime master:1 - ext3 /dev/root rw,errors=continue
+		// (1)(2)(3)   (4)   (5)      (6)      (7)   (8) (9)   (10)         (11)
+
+		// (1) Mount ID.
+		fmt.Fprintf(buf, "%d ", mnt.ID)
+
+		// (2)  Parent ID (or this ID if there is no parent).
+		pID := mnt.ID
+		if p := mnt.parent(); p != nil {
+			pID = p.ID
+		}
+		fmt.Fprintf(buf, "%d ", pID)
+
+		// (3) Major:Minor device ID. We don't have a superblock, so we
+		// just use the root inode device number.
+		fmt.Fprintf(buf, "%d:%d ", statx.DevMajor, statx.DevMinor)
+
+		// (4) Root: the pathname of the directory in the filesystem
+		// which forms the root of this mount.
+		//
+		// NOTE(b/78135857): This will always be "/" until we implement
+		// bind mounts.
+		fmt.Fprintf(buf, "/ ")
+
+		// (5) Mount point (relative to process root).
+		fmt.Fprintf(buf, "%s ", manglePath(path))
+
+		// (6) Mount options.
+		opts := "rw"
+		if mnt.readOnly() {
+			opts = "ro"
+		}
+		if mnt.flags.NoExec {
+			opts += ",noexec"
+		}
+		// TODO(gvisor.dev/issue/1193): Add "noatime" if MS_NOATIME is
+		// set.
+		fmt.Fprintf(buf, "%s ", opts)
+
+		// (7) Optional fields: zero or more fields of the form "tag[:value]".
+		// (8) Separator: the end of the optional fields is marked by a single hyphen.
+		fmt.Fprintf(buf, "- ")
+
+		// (9) Filesystem type.
+		fmt.Fprintf(buf, "%s ", mnt.fs.FilesystemType().Name())
+
+		// (10) Mount source: filesystem-specific information or "none".
+		fmt.Fprintf(buf, "none ")
+
+		// (11) Superblock options, and final newline.
+		fmt.Fprintf(buf, "%s\n", superBlockOpts(path, mnt))
+	}
+}
+
+// manglePath replaces ' ', '\t', '\n', and '\\' with their octal equivalents.
+// See Linux fs/seq_file.c:mangle_path.
+func manglePath(p string) string {
+	r := strings.NewReplacer(" ", "\\040", "\t", "\\011", "\n", "\\012", "\\", "\\134")
+	return r.Replace(p)
+}
+
+// superBlockOpts returns the super block options string for the the mount at
+// the given path.
+func superBlockOpts(mountPath string, mnt *Mount) string {
+	// gVisor doesn't (yet) have a concept of super block options, so we
+	// use the ro/rw bit from the mount flag.
+	opts := "rw"
+	if mnt.readOnly() {
+		opts = "ro"
+	}
+
+	// NOTE(b/147673608): If the mount is a cgroup, we also need to include
+	// the cgroup name in the options. For now we just read that from the
+	// path.
+	// TODO(gvisor.dev/issues/190): Once gVisor has full cgroup support, we
+	// should get this value from the cgroup itself, and not rely on the
+	// path.
+	if mnt.fs.FilesystemType().Name() == "cgroup" {
+		splitPath := strings.Split(mountPath, "/")
+		cgroupType := splitPath[len(splitPath)-1]
+		opts += "," + cgroupType
+	}
+	return opts
 }

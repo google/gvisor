@@ -231,7 +231,8 @@ func overlayCreate(ctx context.Context, o *overlayEntry, parent *Dirent, name st
 	upperFile.Dirent.Inode.IncRef()
 	entry, err := newOverlayEntry(ctx, upperFile.Dirent.Inode, nil, false)
 	if err != nil {
-		cleanupUpper(ctx, o.upper, name)
+		werr := fmt.Errorf("newOverlayEntry failed: %v", err)
+		cleanupUpper(ctx, o.upper, name, werr)
 		return nil, err
 	}
 
