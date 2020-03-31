@@ -162,6 +162,9 @@ func (s *System) ListDirents(pop *vfs.PathOperation) *DirentCollector {
 // exactly the specified set of expected entries. AssertAllDirentTypes respects
 // collector.skipDots, and implicitly checks for "." and ".." accordingly.
 func (s *System) AssertAllDirentTypes(collector *DirentCollector, expected map[string]DirentType) {
+	if expected == nil {
+		expected = make(map[string]DirentType)
+	}
 	// Also implicitly check for "." and "..", if enabled.
 	if !collector.skipDots {
 		expected["."] = linux.DT_DIR
