@@ -36,7 +36,7 @@ func TestTCPCloseWaitState(t *testing.T) {
 		{"SYNACK", header.TCPFlagSyn | header.TCPFlagAck, nil, 2},
 		{"ACK", header.TCPFlagAck, nil, 2},
 		{"FIN", header.TCPFlagFin | header.TCPFlagAck, nil, 2},
-		{"Data", header.TCPFlagAck, []tb.Layer{&tb.Payload{Bytes: []byte("abcdef12345")}}, 2},
+		{"Data", header.TCPFlagAck, []tb.Layer{&tb.Payload{Bytes: []byte("payload data")}}, 2},
 	} {
 		t.Run(fmt.Sprintf("%s%d", tt.description, tt.seqNumOffset), func(t *testing.T) {
 			println("\nCASE : ", tt.description, "\n")
@@ -54,10 +54,9 @@ func TestTCPCloseWaitState(t *testing.T) {
 
 			// Expecting ACK from DUT
 			if (conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)}, 3*time.Second) == nil) {
-				t.Fatal("expected an ACK packet within 3 seconds but got nonei")
+				t.Fatal("expected an ACK packet within 3 seconds but got none")
 			}
-
-			println("DUT In CLOSED_WAIT STATE")
+			fmt.Println("DUT is in CLOSE-WAIT State")
 
 			windowSize := seqnum.Size(*conn.SynAck.WindowSize) + tt.seqNumOffset
 			conn.Send(tb.TCP{
@@ -70,17 +69,20 @@ func TestTCPCloseWaitState(t *testing.T) {
 				t.Fatal("expected an ACK packet within 3 seconds but got none")
 			}
 
+			// Verifying that DUT is in the CLOSE-WAIT state Causing DUT to issue a CLOSE call
 			dut.Close(acceptFd)
 			if (conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagFin | header.TCPFlagAck)}, time.Second) == nil) {
-				t.Fatal("expected an FIN-ACK packet within a second but got nonei")
+				t.Fatal("expected an FIN-ACK packet within a second but got none")
 			}
 			conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
 
-			conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)}, []tb.Layer{&tb.Payload{Bytes: []byte("abcdef12345")}}...)
+			// Sending a TCP data packet to DUT and Expecting RST response from DUT
+			conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)}, []tb.Layer{&tb.Payload{Bytes: []byte("Extra Payload")}}...)
 			if (conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)}, time.Second) == nil) {
-				t.Fatal("expected an RSTpacket within a second but got nonei")
+				t.Fatal("expected an RSTpacket within a second but got none")
 			}
 			conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagRst | header.TCPFlagAck)})
+
 		})
 	}
 }
