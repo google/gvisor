@@ -50,6 +50,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/timerfd"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
 	"gvisor.dev/gvisor/pkg/sentry/hostcpu"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -225,6 +226,11 @@ type Kernel struct {
 	// by extMu.
 	nextSocketEntry uint64
 
+	// socketMount is a disconnected vfs.Mount, not included in k.vfs,
+	// representing a sockfs.filesystem. socketMount is used to back
+	// VirtualDentries representing anonymous sockets.
+	socketMount *vfs.Mount
+
 	// deviceRegistry is used to save/restore device.SimpleDevices.
 	deviceRegistry struct{} `state:".(*device.Registry)"`
 
@@ -348,6 +354,19 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.monotonicClock = &timekeeperClock{tk: args.Timekeeper, c: sentrytime.Monotonic}
 	k.futexes = futex.NewManager()
 	k.netlinkPorts = port.New()
+	if VFS2Enabled {
+		if err := k.vfs.Init(); err != nil {
+			return fmt.Errorf("failed to initialize VFS: %v", err)
+		}
+		fs := sockfs.NewFilesystem(&k.vfs)
+		// NewDisconnectedMount will take an additional reference on fs.
+		defer fs.DecRef()
+		sm, err := k.vfs.NewDisconnectedMount(fs, nil, &vfs.MountOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to initialize socket mount: %v", err)
+		}
+		k.socketMount = sm
+	}
 	return nil
 }
 
@@ -1450,6 +1469,11 @@ func (k *Kernel) ListSockets() []*SocketEntry {
 	}
 	k.extMu.Unlock()
 	return socks
+}
+
+// SocketMount returns the global socket mount.
+func (k *Kernel) SocketMount() *vfs.Mount {
+	return k.socketMount
 }
 
 // supervisorContext is a privileged context.

@@ -257,6 +257,8 @@ TEST_P(UnixSocketPairTest, ShutdownWrite) {
 
 TEST_P(UnixSocketPairTest, SocketReopenFromProcfs) {
   // TODO(b/122310852): We should be returning ENXIO and NOT EIO.
+  // TODO(github.dev/issue/1624): This should be resolved in VFS2. Verify
+  // that this is the case and delete the SKIP_IF once we delete VFS1.
   SKIP_IF(IsRunningOnGvisor());
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
