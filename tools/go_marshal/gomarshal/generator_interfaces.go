@@ -72,7 +72,6 @@ func (g *interfaceGenerator) recordUsedMarshallable(m string) {
 
 func (g *interfaceGenerator) recordUsedImport(i string) {
 	g.is[i] = struct{}{}
-
 }
 
 func (g *interfaceGenerator) recordPotentiallyNonPackedField(fieldName string) {
