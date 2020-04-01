@@ -39,3 +39,17 @@ go_binary(
         "//tools/go_marshal/marshal",
     ],
 )
+
+go_test(
+    name = "marshal_test",
+    size = "small",
+    srcs = ["marshal_test.go"],
+    deps = [
+        ":test",
+        "//pkg/syserror",
+        "//pkg/usermem",
+        "//tools/go_marshal/analysis",
+        "//tools/go_marshal/marshal",
+        "@com_github_google_go-cmp//cmp:go_default_library",
+    ],
+)

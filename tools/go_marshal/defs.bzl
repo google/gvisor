@@ -53,9 +53,10 @@ go_marshal = rule(
 
 # marshal_deps are the dependencies requied by generated code.
 marshal_deps = [
-    "//tools/go_marshal/marshal",
+    "//pkg/gohacks",
     "//pkg/safecopy",
     "//pkg/usermem",
+    "//tools/go_marshal/marshal",
 ]
 
 # marshal_test_deps are required by test targets.

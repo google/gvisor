@@ -374,7 +374,8 @@ func copyOutTimespecRemaining(t *kernel.Task, startNs ktime.Time, timeout time.D
 	}
 	remaining := timeoutRemaining(t, startNs, timeout)
 	tsRemaining := linux.NsecToTimespec(remaining.Nanoseconds())
-	return tsRemaining.CopyOut(t, timespecAddr)
+	_, err := tsRemaining.CopyOut(t, timespecAddr)
+	return err
 }
 
 // copyOutTimevalRemaining copies the time remaining in timeout to timevalAddr.
@@ -386,7 +387,8 @@ func copyOutTimevalRemaining(t *kernel.Task, startNs ktime.Time, timeout time.Du
 	}
 	remaining := timeoutRemaining(t, startNs, timeout)
 	tvRemaining := linux.NsecToTimeval(remaining.Nanoseconds())
-	return tvRemaining.CopyOut(t, timevalAddr)
+	_, err := tvRemaining.CopyOut(t, timevalAddr)
+	return err
 }
 
 // pollRestartBlock encapsulates the state required to restart poll(2) via
@@ -477,7 +479,7 @@ func Select(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	timeout := time.Duration(-1)
 	if timevalAddr != 0 {
 		var timeval linux.Timeval
-		if err := timeval.CopyIn(t, timevalAddr); err != nil {
+		if _, err := timeval.CopyIn(t, timevalAddr); err != nil {
 			return 0, nil, err
 		}
 		if timeval.Sec < 0 || timeval.Usec < 0 {
@@ -519,7 +521,7 @@ func Pselect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 			panic(fmt.Sprintf("unsupported sizeof(void*): %d", t.Arch().Width()))
 		}
 		var maskStruct sigSetWithSize
-		if err := maskStruct.CopyIn(t, maskWithSizeAddr); err != nil {
+		if _, err := maskStruct.CopyIn(t, maskWithSizeAddr); err != nil {
 			return 0, nil, err
 		}
 		if err := setTempSignalSet(t, usermem.Addr(maskStruct.sigsetAddr), uint(maskStruct.sizeofSigset)); err != nil {
@@ -554,7 +556,7 @@ func copyTimespecInToDuration(t *kernel.Task, timespecAddr usermem.Addr) (time.D
 	timeout := time.Duration(-1)
 	if timespecAddr != 0 {
 		var timespec linux.Timespec
-		if err := timespec.CopyIn(t, timespecAddr); err != nil {
+		if _, err := timespec.CopyIn(t, timespecAddr); err != nil {
 			return 0, err
 		}
 		if !timespec.Valid() {
@@ -573,7 +575,7 @@ func setTempSignalSet(t *kernel.Task, maskAddr usermem.Addr, maskSize uint) erro
 		return syserror.EINVAL
 	}
 	var mask linux.SignalSet
-	if err := mask.CopyIn(t, maskAddr); err != nil {
+	if _, err := mask.CopyIn(t, maskAddr); err != nil {
 		return err
 	}
 	mask &^= kernel.UnblockableSignals

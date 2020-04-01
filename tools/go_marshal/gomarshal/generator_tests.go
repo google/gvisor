@@ -30,6 +30,11 @@ var standardImports = []string{
 	"gvisor.dev/gvisor/tools/go_marshal/analysis",
 }
 
+var sliceAPIImports = []string{
+	"encoding/binary",
+	"gvisor.dev/gvisor/pkg/usermem",
+}
+
 type testGenerator struct {
 	sourceBuffer
 
@@ -57,6 +62,11 @@ func newTestGenerator(t *ast.TypeSpec) *testGenerator {
 
 	for _, i := range standardImports {
 		g.imports.add(i).markUsed()
+	}
+	// These imports are used if a type requests the slice API. Don't
+	// mark them as used by default.
+	for _, i := range sliceAPIImports {
+		g.imports.add(i)
 	}
 
 	return g
@@ -132,6 +142,42 @@ func (g *testGenerator) emitTestMarshalUnmarshalPreservesData() {
 	})
 }
 
+func (g *testGenerator) emitTestMarshalUnmarshalSlicePreservesData(slice *sliceAPI) {
+	for _, name := range []string{"binary", "usermem"} {
+		if !g.imports.markUsed(name) {
+			panic(fmt.Sprintf("Generated test for '%s' referenced a non-existent import with local name '%s'", g.typeName(), name))
+		}
+	}
+
+	g.inTestFunction("TestSafeMarshalUnmarshalSlicePreservesData", func() {
+		g.emit("var x, y, yUnsafe [8]%s\n", g.typeName())
+		g.emit("analysis.RandomizeValue(&x)\n\n")
+		g.emit("size := (*%s)(nil).SizeBytes() * len(x)\n", g.typeName())
+		g.emit("buf := bytes.NewBuffer(make([]byte, size))\n")
+		g.emit("buf.Reset()\n")
+		g.emit("if err := binary.Write(buf, usermem.ByteOrder, x[:]); err != nil {\n")
+		g.inIndent(func() {
+			g.emit("t.Fatal(fmt.Sprintf(\"binary.Write failed: %v\", err))\n")
+		})
+		g.emit("}\n")
+		g.emit("bufUnsafe := make([]byte, size)\n")
+		g.emit("MarshalUnsafe%s(x[:], bufUnsafe)\n\n", slice.ident)
+
+		g.emit("UnmarshalUnsafe%s(y[:], buf.Bytes())\n", slice.ident)
+		g.emit("if !reflect.DeepEqual(x, y) {\n")
+		g.inIndent(func() {
+			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across binary.Write/UnmarshalUnsafeSlice cycle:\\nBefore: %+v\\nAfter: %+v\\n\", x, y))\n")
+		})
+		g.emit("}\n")
+		g.emit("UnmarshalUnsafe%s(yUnsafe[:], bufUnsafe)\n", slice.ident)
+		g.emit("if !reflect.DeepEqual(x, yUnsafe) {\n")
+		g.inIndent(func() {
+			g.emit("t.Fatal(fmt.Sprintf(\"Data corrupted across MarshalUnsafeSlice/UnmarshalUnsafeSlice cycle:\\nBefore: %+v\\nAfter: %+v\\n\", x, yUnsafe))\n")
+		})
+		g.emit("}\n\n")
+	})
+}
+
 func (g *testGenerator) emitTestWriteToUnmarshalPreservesData() {
 	g.inTestFunction("TestWriteToUnmarshalPreservesData", func() {
 		g.emit("var x, y, yUnsafe %s\n", g.typeName())
@@ -170,12 +216,16 @@ func (g *testGenerator) emitTestSizeBytesOnTypedNilPtr() {
 	})
 }
 
-func (g *testGenerator) emitTests() {
+func (g *testGenerator) emitTests(slice *sliceAPI) {
 	g.emitTestNonZeroSize()
 	g.emitTestSuspectAlignment()
 	g.emitTestMarshalUnmarshalPreservesData()
 	g.emitTestWriteToUnmarshalPreservesData()
 	g.emitTestSizeBytesOnTypedNilPtr()
+
+	if slice != nil {
+		g.emitTestMarshalUnmarshalSlicePreservesData(slice)
+	}
 }
 
 func (g *testGenerator) write(out io.Writer) error {

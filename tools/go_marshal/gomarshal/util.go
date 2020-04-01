@@ -344,22 +344,25 @@ func newImportTable() *importTable {
 // result in a panic.
 func (i *importTable) merge(other *importTable) {
 	for name, im := range other.is {
-		if dup, ok := i.is[name]; ok && !dup.equivalent(im) {
-			panic(fmt.Sprintf("Found colliding import statements: ours: %+v, other's: %+v", dup, im))
-		}
+		dup, ok := i.is[name]
+		if ok {
+			// When merging two imports, if either are marked used, the merged entry
+			// should also be marked used.
+			im.used = im.used || dup.used
 
+			if !dup.equivalent(im) {
+				panic(fmt.Sprintf("Found colliding import statements: ours: %+v, other's: %+v", dup, im))
+			}
+		}
 		i.is[name] = im
 	}
 }
 
 func (i *importTable) addStmt(s *importStmt) *importStmt {
 	if old, ok := i.is[s.name]; ok && !old.equivalent(s) {
-		// A collision should always be between an import inserted by the
-		// go-marshal tool and an import from the original source file (assuming
-		// the original source file was valid). We could theoretically handle
-		// the collision by assigning a local name to our import. However, this
-		// would need to be plumbed throughout the generator. Given that
-		// collisions should be rare, simply panic on collision.
+		// We could theoretically handle the collision by assigning a local name
+		// to one of the imports. However, this is a non-trivial transformation.
+		// Given that collisions should be rare, simply panic on collision.
 		panic(fmt.Sprintf("Import collision: old: %s as %v; new: %v as %v", old.path, old.name, s.path, s.name))
 	}
 	i.is[s.name] = s

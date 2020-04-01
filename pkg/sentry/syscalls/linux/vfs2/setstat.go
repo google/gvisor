@@ -226,7 +226,7 @@ func Utime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		opts.Stat.Mtime.Nsec = linux.UTIME_NOW
 	} else {
 		var times linux.Utime
-		if err := times.CopyIn(t, timesAddr); err != nil {
+		if _, err := times.CopyIn(t, timesAddr); err != nil {
 			return 0, nil, err
 		}
 		opts.Stat.Atime.Sec = times.Actime
