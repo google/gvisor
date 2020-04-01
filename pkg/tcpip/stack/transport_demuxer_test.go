@@ -15,6 +15,8 @@
 package stack_test
 
 import (
+	"bytes"
+	"fmt"
 	"math"
 	"math/rand"
 	"testing"
@@ -69,12 +71,10 @@ func newDualTestContextMultiNIC(t *testing.T, mtu uint32, linkEpIDs []tcpip.NICI
 			t.Fatalf("AddAddress IPv6 failed: %s", err)
 		}
 	}
-
 	s.SetRouteTable([]tcpip.Route{
 		{Destination: header.IPv4EmptySubnet, NIC: 1},
 		{Destination: header.IPv6EmptySubnet, NIC: 1},
 	})
-
 	return &testContext{
 		s:       s,
 		linkEps: linkEps,
@@ -93,7 +93,7 @@ func newPayload() []byte {
 	return b
 }
 
-func (c *testContext) sendV4Packet(payload []byte, h *headers, linkEpID tcpip.NICID) {
+func (c *testContext) sendV4Packet(payload []byte, h *headers, linkEpID tcpip.NICID, dstAddr tcpip.Address) {
 	buf := buffer.NewView(header.UDPMinimumSize + header.IPv4MinimumSize + len(payload))
 	payloadStart := len(buf) - len(payload)
 	copy(buf[payloadStart:], payload)
@@ -107,7 +107,7 @@ func (c *testContext) sendV4Packet(payload []byte, h *headers, linkEpID tcpip.NI
 		TTL:         65,
 		Protocol:    uint8(udp.ProtocolNumber),
 		SrcAddr:     testSrcAddrV4,
-		DstAddr:     testDstAddrV4,
+		DstAddr:     dstAddr,
 	})
 	ip.SetChecksum(^ip.CalculateChecksum())
 
@@ -218,29 +218,29 @@ func TestBindToDeviceDistribution(t *testing.T) {
 		wantDistributions map[tcpip.NICID][]float64
 	}{
 		{
-			"BindPortReuse",
+			name: "BindPortReuse",
 			// 5 endpoints that all have reuse set.
-			[]endpointSockopts{
+			endpoints: []endpointSockopts{
 				{reuse: 1, bindToDevice: 0},
 				{reuse: 1, bindToDevice: 0},
 				{reuse: 1, bindToDevice: 0},
 				{reuse: 1, bindToDevice: 0},
 				{reuse: 1, bindToDevice: 0},
 			},
-			map[tcpip.NICID][]float64{
+			wantDistributions: map[tcpip.NICID][]float64{
 				// Injected packets on dev0 get distributed evenly.
 				1: {0.2, 0.2, 0.2, 0.2, 0.2},
 			},
 		},
 		{
-			"BindToDevice",
+			name: "BindToDevice",
 			// 3 endpoints with various bindings.
-			[]endpointSockopts{
+			endpoints: []endpointSockopts{
 				{reuse: 0, bindToDevice: 1},
 				{reuse: 0, bindToDevice: 2},
 				{reuse: 0, bindToDevice: 3},
 			},
-			map[tcpip.NICID][]float64{
+			wantDistributions: map[tcpip.NICID][]float64{
 				// Injected packets on dev0 go only to the endpoint bound to dev0.
 				1: {1, 0, 0},
 				// Injected packets on dev1 go only to the endpoint bound to dev1.
@@ -250,9 +250,9 @@ func TestBindToDeviceDistribution(t *testing.T) {
 			},
 		},
 		{
-			"ReuseAndBindToDevice",
+			name: "ReuseAndBindToDevice",
 			// 6 endpoints with various bindings.
-			[]endpointSockopts{
+			endpoints: []endpointSockopts{
 				{reuse: 1, bindToDevice: 1},
 				{reuse: 1, bindToDevice: 1},
 				{reuse: 1, bindToDevice: 2},
@@ -260,7 +260,7 @@ func TestBindToDeviceDistribution(t *testing.T) {
 				{reuse: 1, bindToDevice: 2},
 				{reuse: 1, bindToDevice: 0},
 			},
-			map[tcpip.NICID][]float64{
+			wantDistributions: map[tcpip.NICID][]float64{
 				// Injected packets on dev0 get distributed among endpoints bound to
 				// dev0.
 				1: {0.5, 0.5, 0, 0, 0, 0},
@@ -349,7 +349,7 @@ func TestBindToDeviceDistribution(t *testing.T) {
 						}
 						switch netProtoNum {
 						case ipv4.ProtocolNumber:
-							c.sendV4Packet(payload, hdrs, device)
+							c.sendV4Packet(payload, hdrs, device, testDstAddrV4)
 						case ipv6.ProtocolNumber:
 							c.sendV6Packet(payload, hdrs, device)
 						default:
@@ -386,5 +386,153 @@ func TestBindToDeviceDistribution(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+func TestIPv4AnyReceive(t *testing.T) {
+	testNICID := tcpip.NICID(1)
+	devices := []tcpip.NICID{testNICID}
+	c := newDualTestContextMultiNIC(t, defaultMTU, devices)
+
+	if err := c.s.AddAddress(testNICID, ipv4.ProtocolNumber, header.IPv4Any); err != nil {
+		t.Fatalf("Failed to add %s to stack: %s", header.IPv4Any, err)
+	}
+
+	for _, v := range []struct {
+		desc         string
+		bindToDevice bool
+		dstAddr      tcpip.Address
+	}{
+		{dstAddr: testDstAddrV4},
+		{dstAddr: header.IPv4Broadcast},
+		{bindToDevice: true, dstAddr: testDstAddrV4},
+		{bindToDevice: true, dstAddr: header.IPv4Broadcast},
+	} {
+		t.Run(fmt.Sprintf("bindToDevice=%t,dstAddr=%s", v.bindToDevice, v.dstAddr), func(t *testing.T) {
+			// An endpoint bound to ANY should receive unicast sent to this EP as well.
+			ep, err := c.s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &c.wq)
+			if err != nil {
+				t.Fatalf("Failed to create new endpont: %s", err)
+			}
+			defer ep.Close()
+
+			addr := tcpip.FullAddress{Addr: testDstAddrV4, Port: testDstPort}
+			if err := ep.Bind(addr); err != nil {
+				t.Fatalf("Failed to bind to address %#v: %s", addr, err)
+			}
+
+			epAny, err := c.s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &c.wq)
+			if err != nil {
+				t.Fatalf("Failed to create new endpont: %s", err)
+			}
+			defer epAny.Close()
+
+			if v.bindToDevice {
+				if err := epAny.SetSockOpt(tcpip.BindToDeviceOption(testNICID)); err != nil {
+					t.Fatalf("Failed to bind to device %d: %s", testNICID, err)
+				}
+			}
+			addrAny := tcpip.FullAddress{Addr: header.IPv4Any, Port: testDstPort}
+			if err := epAny.Bind(addrAny); err != nil {
+				t.Fatalf("Failed to bind to address %#v: %s", addrAny, err)
+			}
+
+			want := newPayload()
+			c.sendV4Packet(want, &headers{
+				srcPort: testSrcPort,
+				dstPort: testDstPort,
+			}, testNICID, v.dstAddr)
+
+			got, _, err := epAny.Read(nil)
+			if err != nil {
+				t.Errorf("Read on endpoint bound to %#v failed: %s", addrAny, err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Errorf("Payload mismatch on endponit bound to %#v, got: %x, want: %x", addrAny, got, want)
+			}
+
+			if v.dstAddr == header.IPv4Broadcast {
+				return
+			}
+			got, _, err = ep.Read(nil)
+			if err != nil {
+				t.Errorf("Read on endpoint bound to %#v failed: %s", addr, err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Errorf("Payload mismatch on endponit bound to %#v, got: %x, want: %x", addr, got, want)
+			}
+		})
+	}
+
+}
+
+func TestIPv4AnyNoReceiveFromDifferentPort(t *testing.T) {
+	testNICID := tcpip.NICID(1)
+	devices := []tcpip.NICID{testNICID}
+	c := newDualTestContextMultiNIC(t, defaultMTU, devices)
+
+	if err := c.s.AddAddress(testNICID, ipv4.ProtocolNumber, header.IPv4Any); err != nil {
+		t.Fatalf("Failed to add %s to stack: %s", header.IPv4Any, err)
+	}
+
+	for _, v := range []struct {
+		desc         string
+		bindToDevice bool
+		dstAddr      tcpip.Address
+	}{
+		{dstAddr: testDstAddrV4},
+		{dstAddr: header.IPv4Broadcast},
+		{bindToDevice: true, dstAddr: testDstAddrV4},
+		{bindToDevice: true, dstAddr: header.IPv4Broadcast},
+	} {
+		t.Run(fmt.Sprintf("bindToDevice=%t,dstAddr=%s", v.bindToDevice, v.dstAddr), func(t *testing.T) {
+			ep, err := c.s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &c.wq)
+			if err != nil {
+				t.Fatalf("Failed to create new endpont: %s", err)
+			}
+			defer ep.Close()
+			addr := tcpip.FullAddress{Addr: testDstAddrV4, Port: testDstPort + 1}
+			if err := ep.Bind(addr); err != nil {
+				t.Fatalf("Failed to bind to address %#v: %s", addr, err)
+			}
+
+			epAny, err := c.s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &c.wq)
+			if err != nil {
+				t.Fatalf("Failed to create new endpont: %s", err)
+			}
+			defer epAny.Close()
+
+			if v.bindToDevice {
+				if err := epAny.SetSockOpt(tcpip.BindToDeviceOption(testNICID)); err != nil {
+					t.Fatalf("Failed to bind to device %d: %s", testNICID, err)
+				}
+			}
+			addrAny := tcpip.FullAddress{Addr: header.IPv4Any, Port: testDstPort}
+			if err := epAny.Bind(addrAny); err != nil {
+				t.Fatalf("Failed to bind to address %#v: %s", addrAny, err)
+			}
+
+			want := newPayload()
+			c.sendV4Packet(want, &headers{
+				srcPort: testSrcPort,
+				dstPort: testDstPort + 1,
+			}, testNICID, v.dstAddr)
+
+			// ErrWouldBlock indicates no message was delivered to this endpoint.
+			if _, _, err := epAny.Read(nil); err != tcpip.ErrWouldBlock {
+				t.Fatalf("Got unexpected error: %s, want: %s", err, tcpip.ErrWouldBlock)
+			}
+
+			if v.dstAddr == header.IPv4Broadcast {
+				return
+			}
+			got, _, err := ep.Read(nil)
+			if err != nil {
+				t.Errorf("Read on endpoint bound to %#v failed: %s", addr, err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Errorf("Payload mismatch on endponit bound to %#v, got: %x, want: %x", addr, got, want)
+			}
+		})
 	}
 }
