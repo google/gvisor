@@ -3176,8 +3176,6 @@ func TestJoinLeaveAllNodesMulticastOnNICEnableDisable(t *testing.T) {
 // TestDoDADWhenNICEnabled tests that IPv6 endpoints that were added while a NIC
 // was disabled have DAD performed on them when the NIC is enabled.
 func TestDoDADWhenNICEnabled(t *testing.T) {
-	t.Parallel()
-
 	const dadTransmits = 1
 	const retransmitTimer = time.Second
 	const nicID = 1
