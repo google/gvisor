@@ -22,7 +22,8 @@ var _ marshal.Marshallable = (*Timespec)(nil)
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (e *EpollEvent) SizeBytes() int {
-    return 12
+    return 4 +
+        4*2
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
@@ -115,10 +116,11 @@ func (e *EpollEvent) WriteTo(w io.Writer) (int64, error) {
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (s *Stat) SizeBytes() int {
-    return 96 +
+    return 72 +
         (*Timespec)(nil).SizeBytes() +
         (*Timespec)(nil).SizeBytes() +
-        (*Timespec)(nil).SizeBytes()
+        (*Timespec)(nil).SizeBytes() +
+        8*3
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
@@ -152,7 +154,7 @@ func (s *Stat) MarshalBytes(dst []byte) {
     s.CTime.MarshalBytes(dst[:s.CTime.SizeBytes()])
     dst = dst[s.CTime.SizeBytes():]
     // Padding: dst[:sizeof(int64)*3] ~= [3]int64{0}
-    dst = dst[24:]
+    dst = dst[8*(3):]
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
@@ -186,12 +188,12 @@ func (s *Stat) UnmarshalBytes(src []byte) {
     s.CTime.UnmarshalBytes(src[:s.CTime.SizeBytes()])
     src = src[s.CTime.SizeBytes():]
     // Padding: ~ copy([3]int64(s._), src[:sizeof(int64)*3])
-    src = src[24:]
+    src = src[8*(3):]
 }
 
 // Packed implements marshal.Marshallable.Packed.
 func (s *Stat) Packed() bool {
-    return s.CTime.Packed() && s.ATime.Packed() && s.MTime.Packed()
+    return s.MTime.Packed() && s.CTime.Packed() && s.ATime.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
@@ -205,7 +207,7 @@ func (s *Stat) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *Stat) UnmarshalUnsafe(src []byte) {
-    if s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
+    if s.CTime.Packed() && s.ATime.Packed() && s.MTime.Packed() {
         safecopy.CopyOut(unsafe.Pointer(s), src)
     } else {
         s.UnmarshalBytes(src)
@@ -214,7 +216,7 @@ func (s *Stat) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 func (s *Stat) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {
-    if !s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
+    if !s.MTime.Packed() && s.CTime.Packed() && s.ATime.Packed() {
         // Type Stat doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := task.CopyScratchBuffer(s.SizeBytes())
         s.MarshalBytes(buf)
@@ -242,7 +244,7 @@ func (s *Stat) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 func (s *Stat) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
-    if !s.CTime.Packed() && s.ATime.Packed() && s.MTime.Packed() {
+    if !s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
         // Type Stat doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := task.CopyScratchBuffer(s.SizeBytes())
         length, err := task.CopyInBytes(addr, buf)
@@ -268,7 +270,7 @@ func (s *Stat) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (s *Stat) WriteTo(w io.Writer) (int64, error) {
-    if !s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
+    if !s.CTime.Packed() && s.ATime.Packed() && s.MTime.Packed() {
         // Type Stat doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, s.SizeBytes())
         s.MarshalBytes(buf)
