@@ -285,6 +285,11 @@ type importStmt struct {
 	aliased bool
 	// Indicates whether this import was referenced by generated code.
 	used bool
+	// AST node and file set representing the import statement, if any. These
+	// are only non-nil if the import statement originates from an input source
+	// file.
+	spec *ast.ImportSpec
+	fset *token.FileSet
 }
 
 func newImport(p string) *importStmt {
@@ -310,14 +315,27 @@ func newImportFromSpec(spec *ast.ImportSpec, f *token.FileSet) *importStmt {
 		name:    name,
 		path:    p,
 		aliased: spec.Name != nil,
+		spec:    spec,
+		fset:    f,
 	}
 }
 
+// String implements fmt.Stringer.String. This generates a string for the import
+// statement appropriate for writing directly to generated code.
 func (i *importStmt) String() string {
 	if i.aliased {
-		return fmt.Sprintf("%s \"%s\"", i.name, i.path)
+		return fmt.Sprintf("%s %q", i.name, i.path)
 	}
-	return fmt.Sprintf("\"%s\"", i.path)
+	return fmt.Sprintf("%q", i.path)
+}
+
+// debugString returns a debug string representing an import statement. This
+// representation is not valid golang code and is used for debugging output.
+func (i *importStmt) debugString() string {
+	if i.spec != nil && i.fset != nil {
+		return fmt.Sprintf("%s: %s", i.fset.Position(i.spec.Path.Pos()), i)
+	}
+	return fmt.Sprintf("(go-marshal import): %s", i)
 }
 
 func (i *importStmt) markUsed() {
@@ -329,43 +347,78 @@ func (i *importStmt) equivalent(other *importStmt) bool {
 }
 
 // importTable represents a collection of importStmts.
+//
+// An importTable may contain multiple import statements referencing the same
+// local name. All import statements aliasing to the same local name are
+// technically ambiguous, as if such an import name is used in the generated
+// code, it's not clear which import statement it refers to. We ignore any
+// potential collisions until actually writing the import table to the generated
+// source file. See importTable.write.
+//
+// Given the following import statements across all the files comprising a
+// package marshalled:
+//
+// "sync"
+// "pkg/sync"
+// "pkg/sentry/kernel"
+// ktime "pkg/sentry/kernel/time"
+//
+// An importTable representing them would look like this:
+//
+// importTable {
+//     is: map[string][]*importStmt {
+//         "sync": []*importStmt{
+//             importStmt{name:"sync", path:"sync", aliased:false}
+//             importStmt{name:"sync", path:"pkg/sync", aliased:false}
+//         },
+//         "kernel": []*importStmt{importStmt{
+//            name: "kernel",
+//            path: "pkg/sentry/kernel",
+//            aliased: false
+//         }},
+//         "ktime": []*importStmt{importStmt{
+//             name: "ktime",
+//             path: "pkg/sentry/kernel/time",
+//             aliased: true,
+//         }},
+//     }
+// }
+//
+// Note that the local name "sync" is assigned to two different import
+// statements. This is possible if the import statements are from different
+// source files in the same package.
+//
+// Since go-marshal generates a single output file per package regardless of the
+// number of input files, if "sync" is referenced by any generated code, it's
+// unclear which import statement "sync" refers to. While it's theoretically
+// possible to resolve this by assigning a unique local alias to each instance
+// of the sync package, go-marshal currently aborts when it encounters such an
+// ambiguity.
+//
+// TODO(b/151478251): importTable considers the final component of an import
+// path to be the package name, but this is only a convention. The actual
+// package name is determined by the package statement in the source files for
+// the package.
 type importTable struct {
 	// Map of imports and whether they should be copied to the output.
-	is map[string]*importStmt
+	is map[string][]*importStmt
 }
 
 func newImportTable() *importTable {
 	return &importTable{
-		is: make(map[string]*importStmt),
+		is: make(map[string][]*importStmt),
 	}
 }
 
-// Merges import statements from other into i. Collisions in import statements
-// result in a panic.
+// Merges import statements from other into i.
 func (i *importTable) merge(other *importTable) {
-	for name, im := range other.is {
-		dup, ok := i.is[name]
-		if ok {
-			// When merging two imports, if either are marked used, the merged entry
-			// should also be marked used.
-			im.used = im.used || dup.used
-
-			if !dup.equivalent(im) {
-				panic(fmt.Sprintf("Found colliding import statements: ours: %+v, other's: %+v", dup, im))
-			}
-		}
-		i.is[name] = im
+	for name, ims := range other.is {
+		i.is[name] = append(i.is[name], ims...)
 	}
 }
 
 func (i *importTable) addStmt(s *importStmt) *importStmt {
-	if old, ok := i.is[s.name]; ok && !old.equivalent(s) {
-		// We could theoretically handle the collision by assigning a local name
-		// to one of the imports. However, this is a non-trivial transformation.
-		// Given that collisions should be rare, simply panic on collision.
-		panic(fmt.Sprintf("Import collision: old: %s as %v; new: %v as %v", old.path, old.name, s.path, s.name))
-	}
-	i.is[s.name] = s
+	i.is[s.name] = append(i.is[s.name], s)
 	return s
 }
 
@@ -381,16 +434,20 @@ func (i *importTable) addFromSpec(spec *ast.ImportSpec, f *token.FileSet) *impor
 // Marks the import named n as used. If no such import is in the table, returns
 // false.
 func (i *importTable) markUsed(n string) bool {
-	if n, ok := i.is[n]; ok {
-		n.markUsed()
+	if ns, ok := i.is[n]; ok {
+		for _, n := range ns {
+			n.markUsed()
+		}
 		return true
 	}
 	return false
 }
 
 func (i *importTable) clear() {
-	for _, i := range i.is {
-		i.used = false
+	for _, is := range i.is {
+		for _, i := range is {
+			i.used = false
+		}
 	}
 }
 
@@ -401,9 +458,42 @@ func (i *importTable) write(out io.Writer) error {
 	}
 
 	imports := make([]string, 0, len(i.is))
-	for _, i := range i.is {
-		if i.used {
-			imports = append(imports, i.String())
+	for name, is := range i.is {
+		var lastUsed *importStmt
+		var ambiguous bool
+
+		for _, i := range is {
+			if i.used {
+				if lastUsed != nil {
+					if !i.equivalent(lastUsed) {
+						ambiguous = true
+					}
+				}
+				lastUsed = i
+			}
+		}
+
+		if ambiguous {
+			// We have two or more import statements across the different source
+			// files that share a local name, and at least one of these imports
+			// are used by the generated code. This ambiguity can't be resolved
+			// by go-marshal and requires the user intervention. Dump a list of
+			// the colliding import statements and let the user modify the input
+			// files as appropriate.
+			var b strings.Builder
+			fmt.Fprintf(&b, "The imported name %q is used by one of the types marked for marshalling, and which import statement the code refers to is ambiguous. Perhaps give the imports unique local names?\n\n", name)
+			fmt.Fprintf(&b, "The following %d import statements are ambiguous for the local name %q:\n", len(is), name)
+			// Note: len(is) is guaranteed to be 1 or greater or ambiguous can't
+			// be true. Therefore the slicing below is safe.
+			for _, i := range is[:len(is)-1] {
+				fmt.Fprintf(&b, "  %v\n", i.debugString())
+			}
+			fmt.Fprintf(&b, "  %v", is[len(is)-1].debugString())
+			panic(b.String())
+		}
+
+		if lastUsed != nil {
+			imports = append(imports, lastUsed.String())
 		}
 	}
 	sort.Strings(imports)

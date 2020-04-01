@@ -152,7 +152,7 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 						g.shift("dst", len)
 					} else {
 						// We can't use shiftDynamic here because we don't have
-						// an instance of the dynamic type we can referece here
+						// an instance of the dynamic type we can reference here
 						// (since the version in this struct is anonymous). Use
 						// a typed nil pointer to call SizeBytes() instead.
 						g.emit("dst = dst[(*%s)(nil).SizeBytes():]\n", t.Name)
@@ -162,6 +162,11 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 				g.marshalScalar(g.fieldAccessor(n), t.Name, "dst")
 			},
 			selector: func(n, tX, tSel *ast.Ident) {
+				if n.Name == "_" {
+					g.emit("// Padding: dst[:sizeof(%s)] ~= %s(0)\n", tX.Name, tSel.Name)
+					g.emit("dst = dst[(*%s.%s)(nil).SizeBytes():]\n", tX.Name, tSel.Name)
+					return
+				}
 				g.marshalScalar(g.fieldAccessor(n), fmt.Sprintf("%s.%s", tX.Name, tSel.Name), "dst")
 			},
 			array: func(n, t *ast.Ident, size int) {
@@ -199,11 +204,11 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 					if len, dynamic := g.scalarSize(t); !dynamic {
 						g.shift("src", len)
 					} else {
-						// We can't use shiftDynamic here because we don't have
-						// an instance of the dynamic type we can reference here
-						// (since the version in this struct is anonymous). Use
-						// a typed nil pointer to call SizeBytes() instead.
-						g.emit("src = src[(*%s)(nil).SizeBytes():]\n", t.Name)
+						// We don't have an instance of the dynamic type we can
+						// reference here (since the version in this struct is
+						// anonymous). Use a typed nil pointer to call
+						// SizeBytes() instead.
+						g.shiftDynamic("src", fmt.Sprintf("(*%s)(nil)", t.Name))
 						g.recordPotentiallyNonPackedField(fmt.Sprintf("(*%s)(nil)", t.Name))
 					}
 					return
@@ -211,6 +216,12 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 				g.unmarshalScalar(g.fieldAccessor(n), t.Name, "src")
 			},
 			selector: func(n, tX, tSel *ast.Ident) {
+				if n.Name == "_" {
+					g.emit("// Padding: %s ~= src[:sizeof(%s.%s)]\n", g.fieldAccessor(n), tX.Name, tSel.Name)
+					g.emit("src = src[(*%s.%s)(nil).SizeBytes():]\n", tX.Name, tSel.Name)
+					g.recordPotentiallyNonPackedField(fmt.Sprintf("(*%s.%s)(nil)", tX.Name, tSel.Name))
+					return
+				}
 				g.unmarshalScalar(g.fieldAccessor(n), fmt.Sprintf("%s.%s", tX.Name, tSel.Name), "src")
 			},
 			array: func(n, t *ast.Ident, size int) {
