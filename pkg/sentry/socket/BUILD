@@ -16,6 +16,7 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/socket/unix/transport",
+        "//pkg/sentry/vfs",
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/usermem",
