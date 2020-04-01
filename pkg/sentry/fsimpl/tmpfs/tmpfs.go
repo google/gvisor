@@ -77,6 +77,11 @@ type FilesystemOpts struct {
 	// RootSymlinkTarget is the target of the root symlink. Only valid if
 	// RootFileType == S_IFLNK.
 	RootSymlinkTarget string
+
+	// FilesystemType allows setting a different FilesystemType for this
+	// tmpfs filesystem. This allows tmpfs to "impersonate" other
+	// filesystems, like ramdiskfs and cgroupfs.
+	FilesystemType vfs.FilesystemType
 }
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
@@ -91,15 +96,22 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		clock:   clock,
 	}
 
-	fs.vfsfs.Init(vfsObj, &fstype, &fs)
-
-	typ := uint16(linux.S_IFDIR)
+	rootFileType := uint16(linux.S_IFDIR)
+	newFSType := vfs.FilesystemType(&fstype)
 	tmpfsOpts, ok := opts.InternalData.(FilesystemOpts)
-	if ok && tmpfsOpts.RootFileType != 0 {
-		typ = tmpfsOpts.RootFileType
+	if ok {
+		if tmpfsOpts.RootFileType != 0 {
+			rootFileType = tmpfsOpts.RootFileType
+		}
+		if tmpfsOpts.FilesystemType != nil {
+			newFSType = tmpfsOpts.FilesystemType
+		}
 	}
+
+	fs.vfsfs.Init(vfsObj, newFSType, &fs)
+
 	var root *inode
-	switch typ {
+	switch rootFileType {
 	case linux.S_IFREG:
 		root = fs.newRegularFile(creds, 0777)
 	case linux.S_IFLNK:
@@ -107,7 +119,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	case linux.S_IFDIR:
 		root = fs.newDirectory(creds, 01777)
 	default:
-		return nil, nil, fmt.Errorf("invalid tmpfs root file type: %#o", typ)
+		return nil, nil, fmt.Errorf("invalid tmpfs root file type: %#o", rootFileType)
 	}
 	return &fs.vfsfs, &fs.newDentry(root).vfsd, nil
 }
