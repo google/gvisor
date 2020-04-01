@@ -406,8 +406,7 @@ func TestDADResolve(t *testing.T) {
 				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv6ProtocolNumber, addr1, err)
 			}
 
-			// Address should not be considered bound to the NIC yet
-			// (DAD ongoing).
+			// Address should not be considered bound to the NIC yet (DAD ongoing).
 			addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
 			if err != nil {
 				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
@@ -416,10 +415,9 @@ func TestDADResolve(t *testing.T) {
 				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, addr, want)
 			}
 
-			// Wait for the remaining time - some delta (500ms), to
-			// make sure the address is still not resolved.
-			const delta = 500 * time.Millisecond
-			time.Sleep(test.expectedRetransmitTimer*time.Duration(test.dupAddrDetectTransmits) - delta)
+			// Make sure the address does not resolve before the resolution time has
+			// passed.
+			time.Sleep(test.expectedRetransmitTimer*time.Duration(test.dupAddrDetectTransmits) - defaultAsyncEventTimeout)
 			addr, err = s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
 			if err != nil {
 				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
@@ -430,13 +428,7 @@ func TestDADResolve(t *testing.T) {
 
 			// Wait for DAD to resolve.
 			select {
-			case <-time.After(2 * delta):
-				// We should get a resolution event after 500ms
-				// (delta) since we wait for 500ms less than the
-				// expected resolution time above to make sure
-				// that the address did not yet resolve. Waiting
-				// for 1s (2x delta) without a resolution event
-				// means something is wrong.
+			case <-time.After(2 * defaultAsyncEventTimeout):
 				t.Fatal("timed out waiting for DAD resolution")
 			case e := <-ndpDisp.dadC:
 				if diff := checkDADEvent(e, nicID, addr1, true, nil); diff != "" {
@@ -1034,8 +1026,6 @@ func TestNoRouterDiscovery(t *testing.T) {
 		forwarding := i&4 == 0
 
 		t.Run(fmt.Sprintf("HandleRAs(%t), DiscoverDefaultRouters(%t), Forwarding(%t)", handle, discover, forwarding), func(t *testing.T) {
-			t.Parallel()
-
 			ndpDisp := ndpDispatcher{
 				routerC: make(chan ndpRouterEvent, 1),
 			}
@@ -1074,8 +1064,6 @@ func checkRouterEvent(e ndpRouterEvent, addr tcpip.Address, discovered bool) str
 // TestRouterDiscoveryDispatcherNoRemember tests that the stack does not
 // remember a discovered router when the dispatcher asks it not to.
 func TestRouterDiscoveryDispatcherNoRemember(t *testing.T) {
-	t.Parallel()
-
 	ndpDisp := ndpDispatcher{
 		routerC: make(chan ndpRouterEvent, 1),
 	}
@@ -1116,8 +1104,6 @@ func TestRouterDiscoveryDispatcherNoRemember(t *testing.T) {
 }
 
 func TestRouterDiscovery(t *testing.T) {
-	t.Parallel()
-
 	ndpDisp := ndpDispatcher{
 		routerC:        make(chan ndpRouterEvent, 1),
 		rememberRouter: true,
@@ -1219,8 +1205,6 @@ func TestRouterDiscovery(t *testing.T) {
 // TestRouterDiscoveryMaxRouters tests that only
 // stack.MaxDiscoveredDefaultRouters discovered routers are remembered.
 func TestRouterDiscoveryMaxRouters(t *testing.T) {
-	t.Parallel()
-
 	ndpDisp := ndpDispatcher{
 		routerC:        make(chan ndpRouterEvent, 1),
 		rememberRouter: true,
@@ -1287,8 +1271,6 @@ func TestNoPrefixDiscovery(t *testing.T) {
 		forwarding := i&4 == 0
 
 		t.Run(fmt.Sprintf("HandleRAs(%t), DiscoverOnLinkPrefixes(%t), Forwarding(%t)", handle, discover, forwarding), func(t *testing.T) {
-			t.Parallel()
-
 			ndpDisp := ndpDispatcher{
 				prefixC: make(chan ndpPrefixEvent, 1),
 			}
@@ -1328,8 +1310,6 @@ func checkPrefixEvent(e ndpPrefixEvent, prefix tcpip.Subnet, discovered bool) st
 // TestPrefixDiscoveryDispatcherNoRemember tests that the stack does not
 // remember a discovered on-link prefix when the dispatcher asks it not to.
 func TestPrefixDiscoveryDispatcherNoRemember(t *testing.T) {
-	t.Parallel()
-
 	prefix, subnet, _ := prefixSubnetAddr(0, "")
 
 	ndpDisp := ndpDispatcher{
@@ -1373,8 +1353,6 @@ func TestPrefixDiscoveryDispatcherNoRemember(t *testing.T) {
 }
 
 func TestPrefixDiscovery(t *testing.T) {
-	t.Parallel()
-
 	prefix1, subnet1, _ := prefixSubnetAddr(0, "")
 	prefix2, subnet2, _ := prefixSubnetAddr(1, "")
 	prefix3, subnet3, _ := prefixSubnetAddr(2, "")
@@ -1563,8 +1541,6 @@ func TestPrefixDiscoveryWithInfiniteLifetime(t *testing.T) {
 // TestPrefixDiscoveryMaxRouters tests that only
 // stack.MaxDiscoveredOnLinkPrefixes discovered on-link prefixes are remembered.
 func TestPrefixDiscoveryMaxOnLinkPrefixes(t *testing.T) {
-	t.Parallel()
-
 	ndpDisp := ndpDispatcher{
 		prefixC:        make(chan ndpPrefixEvent, stack.MaxDiscoveredOnLinkPrefixes+3),
 		rememberPrefix: true,
@@ -1659,8 +1635,6 @@ func TestNoAutoGenAddr(t *testing.T) {
 		forwarding := i&4 == 0
 
 		t.Run(fmt.Sprintf("HandleRAs(%t), AutoGenAddr(%t), Forwarding(%t)", handle, autogen, forwarding), func(t *testing.T) {
-			t.Parallel()
-
 			ndpDisp := ndpDispatcher{
 				autoGenAddrC: make(chan ndpAutoGenAddrEvent, 1),
 			}
@@ -2410,8 +2384,6 @@ func TestAutoGenAddrValidLifetimeUpdates(t *testing.T) {
 		},
 	}
 
-	const delta = 500 * time.Millisecond
-
 	// This Run will not return until the parallel tests finish.
 	//
 	// We need this because we need to do some teardown work after the
@@ -2464,24 +2436,21 @@ func TestAutoGenAddrValidLifetimeUpdates(t *testing.T) {
 				// to test.evl.
 				//
 
-				// Make sure we do not get any invalidation
-				// events until atleast 500ms (delta) before
-				// test.evl.
+				// The address should not be invalidated until the effective valid
+				// lifetime has passed.
 				select {
 				case <-ndpDisp.autoGenAddrC:
 					t.Fatal("unexpectedly received an auto gen addr event")
-				case <-time.After(time.Duration(test.evl)*time.Second - delta):
+				case <-time.After(time.Duration(test.evl)*time.Second - defaultAsyncEventTimeout):
 				}
 
-				// Wait for another second (2x delta), but now
-				// we expect the invalidation event.
+				// Wait for the invalidation event.
 				select {
 				case e := <-ndpDisp.autoGenAddrC:
 					if diff := checkAutoGenAddrEvent(e, addr, invalidatedAddr); diff != "" {
 						t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 					}
-
-				case <-time.After(2 * delta):
+				case <-time.After(2 * defaultAsyncEventTimeout):
 					t.Fatal("timeout waiting for addr auto gen event")
 				}
 			})
@@ -2493,8 +2462,6 @@ func TestAutoGenAddrValidLifetimeUpdates(t *testing.T) {
 // by the user, its resources will be cleaned up and an invalidation event will
 // be sent to the integrator.
 func TestAutoGenAddrRemoval(t *testing.T) {
-	t.Parallel()
-
 	prefix, _, addr := prefixSubnetAddr(0, linkAddr1)
 
 	ndpDisp := ndpDispatcher{
@@ -2551,8 +2518,6 @@ func TestAutoGenAddrRemoval(t *testing.T) {
 // TestAutoGenAddrAfterRemoval tests adding a SLAAC address that was previously
 // assigned to the NIC but is in the permanentExpired state.
 func TestAutoGenAddrAfterRemoval(t *testing.T) {
-	t.Parallel()
-
 	const nicID = 1
 
 	prefix1, _, addr1 := prefixSubnetAddr(0, linkAddr1)
@@ -2664,8 +2629,6 @@ func TestAutoGenAddrAfterRemoval(t *testing.T) {
 // TestAutoGenAddrStaticConflict tests that if SLAAC generates an address that
 // is already assigned to the NIC, the static address remains.
 func TestAutoGenAddrStaticConflict(t *testing.T) {
-	t.Parallel()
-
 	prefix, _, addr := prefixSubnetAddr(0, linkAddr1)
 
 	ndpDisp := ndpDispatcher{
@@ -2721,8 +2684,6 @@ func TestAutoGenAddrStaticConflict(t *testing.T) {
 // TestAutoGenAddrWithOpaqueIID tests that SLAAC generated addresses will use
 // opaque interface identifiers when configured to do so.
 func TestAutoGenAddrWithOpaqueIID(t *testing.T) {
-	t.Parallel()
-
 	const nicID = 1
 	const nicName = "nic1"
 	var secretKeyBuf [header.OpaqueIIDSecretKeyMinBytes]byte
@@ -2826,8 +2787,6 @@ func TestAutoGenAddrWithOpaqueIID(t *testing.T) {
 // to the integrator when an RA is received with the NDP Recursive DNS Server
 // option with at least one valid address.
 func TestNDPRecursiveDNSServerDispatch(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		name     string
 		opt      header.NDPRecursiveDNSServer
@@ -2919,11 +2878,7 @@ func TestNDPRecursiveDNSServerDispatch(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
-
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
 			ndpDisp := ndpDispatcher{
 				// We do not expect more than a single RDNSS
 				// event at any time for this test.
@@ -2973,8 +2928,6 @@ func TestNDPRecursiveDNSServerDispatch(t *testing.T) {
 // TestCleanupNDPState tests that all discovered routers and prefixes, and
 // auto-generated addresses are invalidated when a NIC becomes a router.
 func TestCleanupNDPState(t *testing.T) {
-	t.Parallel()
-
 	const (
 		lifetimeSeconds          = 5
 		maxRouterAndPrefixEvents = 4
@@ -3417,8 +3370,6 @@ func TestDHCPv6ConfigurationFromNDPDA(t *testing.T) {
 // TestRouterSolicitation tests the initial Router Solicitations that are sent
 // when a NIC newly becomes enabled.
 func TestRouterSolicitation(t *testing.T) {
-	t.Parallel()
-
 	const nicID = 1
 
 	tests := []struct {
@@ -3435,13 +3386,22 @@ func TestRouterSolicitation(t *testing.T) {
 		effectiveMaxRtrSolicitDelay time.Duration
 	}{
 		{
-			name:                        "Single RS with delay",
+			name:                        "Single RS with 2s delay and interval",
 			expectedSrcAddr:             header.IPv6Any,
 			maxRtrSolicit:               1,
-			rtrSolicitInt:               time.Second,
-			effectiveRtrSolicitInt:      time.Second,
-			maxRtrSolicitDelay:          time.Second,
-			effectiveMaxRtrSolicitDelay: time.Second,
+			rtrSolicitInt:               2 * time.Second,
+			effectiveRtrSolicitInt:      2 * time.Second,
+			maxRtrSolicitDelay:          2 * time.Second,
+			effectiveMaxRtrSolicitDelay: 2 * time.Second,
+		},
+		{
+			name:                        "Single RS with 4s delay and interval",
+			expectedSrcAddr:             header.IPv6Any,
+			maxRtrSolicit:               1,
+			rtrSolicitInt:               4 * time.Second,
+			effectiveRtrSolicitInt:      4 * time.Second,
+			maxRtrSolicitDelay:          4 * time.Second,
+			effectiveMaxRtrSolicitDelay: 4 * time.Second,
 		},
 		{
 			name:                        "Two RS with delay",
@@ -3449,8 +3409,8 @@ func TestRouterSolicitation(t *testing.T) {
 			nicAddr:                     llAddr1,
 			expectedSrcAddr:             llAddr1,
 			maxRtrSolicit:               2,
-			rtrSolicitInt:               time.Second,
-			effectiveRtrSolicitInt:      time.Second,
+			rtrSolicitInt:               2 * time.Second,
+			effectiveRtrSolicitInt:      2 * time.Second,
 			maxRtrSolicitDelay:          500 * time.Millisecond,
 			effectiveMaxRtrSolicitDelay: 500 * time.Millisecond,
 		},
@@ -3464,8 +3424,8 @@ func TestRouterSolicitation(t *testing.T) {
 				header.NDPSourceLinkLayerAddressOption(linkAddr1),
 			},
 			maxRtrSolicit:               1,
-			rtrSolicitInt:               time.Second,
-			effectiveRtrSolicitInt:      time.Second,
+			rtrSolicitInt:               2 * time.Second,
+			effectiveRtrSolicitInt:      2 * time.Second,
 			maxRtrSolicitDelay:          0,
 			effectiveMaxRtrSolicitDelay: 0,
 		},
@@ -3515,6 +3475,7 @@ func TestRouterSolicitation(t *testing.T) {
 
 			t.Run(test.name, func(t *testing.T) {
 				t.Parallel()
+
 				e := channelLinkWithHeaderLength{
 					Endpoint:     channel.New(int(test.maxRtrSolicit), 1280, test.linkAddr),
 					headerLength: test.linkHeaderLen,
@@ -3583,15 +3544,19 @@ func TestRouterSolicitation(t *testing.T) {
 				}
 
 				for ; remaining > 0; remaining-- {
-					waitForNothing(test.effectiveRtrSolicitInt - defaultTimeout)
-					waitForPkt(defaultAsyncEventTimeout)
+					if test.effectiveRtrSolicitInt > defaultAsyncEventTimeout {
+						waitForNothing(test.effectiveRtrSolicitInt - defaultAsyncEventTimeout)
+						waitForPkt(2 * defaultAsyncEventTimeout)
+					} else {
+						waitForPkt(test.effectiveRtrSolicitInt * defaultAsyncEventTimeout)
+					}
 				}
 
 				// Make sure no more RS.
 				if test.effectiveRtrSolicitInt > test.effectiveMaxRtrSolicitDelay {
-					waitForNothing(test.effectiveRtrSolicitInt + defaultTimeout)
+					waitForNothing(test.effectiveRtrSolicitInt + defaultAsyncEventTimeout)
 				} else {
-					waitForNothing(test.effectiveMaxRtrSolicitDelay + defaultTimeout)
+					waitForNothing(test.effectiveMaxRtrSolicitDelay + defaultAsyncEventTimeout)
 				}
 
 				// Make sure the counter got properly
@@ -3605,11 +3570,9 @@ func TestRouterSolicitation(t *testing.T) {
 }
 
 func TestStopStartSolicitingRouters(t *testing.T) {
-	t.Parallel()
-
 	const nicID = 1
+	const delay = 0
 	const interval = 500 * time.Millisecond
-	const delay = time.Second
 	const maxRtrSolicitations = 3
 
 	tests := []struct {
@@ -3684,7 +3647,6 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 				p, ok := e.ReadContext(ctx)
 				if !ok {
 					t.Fatal("timed out waiting for packet")
-					return
 				}
 
 				if p.Proto != header.IPv6ProtocolNumber {
@@ -3710,11 +3672,11 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 
 			// Stop soliciting routers.
 			test.stopFn(t, s, true /* first */)
-			ctx, cancel := context.WithTimeout(context.Background(), delay+defaultTimeout)
+			ctx, cancel := context.WithTimeout(context.Background(), delay+defaultAsyncEventTimeout)
 			defer cancel()
 			if _, ok := e.ReadContext(ctx); ok {
-				// A single RS may have been sent before forwarding was enabled.
-				ctx, cancel := context.WithTimeout(context.Background(), interval+defaultTimeout)
+				// A single RS may have been sent before solicitations were stopped.
+				ctx, cancel := context.WithTimeout(context.Background(), interval+defaultAsyncEventTimeout)
 				defer cancel()
 				if _, ok = e.ReadContext(ctx); ok {
 					t.Fatal("should not have sent more than one RS message")
@@ -3724,7 +3686,7 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 			// Stopping router solicitations after it has already been stopped should
 			// do nothing.
 			test.stopFn(t, s, false /* first */)
-			ctx, cancel = context.WithTimeout(context.Background(), delay+defaultTimeout)
+			ctx, cancel = context.WithTimeout(context.Background(), delay+defaultAsyncEventTimeout)
 			defer cancel()
 			if _, ok := e.ReadContext(ctx); ok {
 				t.Fatal("unexpectedly got a packet after router solicitation has been stopepd")
@@ -3740,7 +3702,7 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 			waitForPkt(delay + defaultAsyncEventTimeout)
 			waitForPkt(interval + defaultAsyncEventTimeout)
 			waitForPkt(interval + defaultAsyncEventTimeout)
-			ctx, cancel = context.WithTimeout(context.Background(), interval+defaultTimeout)
+			ctx, cancel = context.WithTimeout(context.Background(), interval+defaultAsyncEventTimeout)
 			defer cancel()
 			if _, ok := e.ReadContext(ctx); ok {
 				t.Fatal("unexpectedly got an extra packet after sending out the expected RSs")
@@ -3749,7 +3711,7 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 			// Starting router solicitations after it has already completed should do
 			// nothing.
 			test.startFn(t, s)
-			ctx, cancel = context.WithTimeout(context.Background(), delay+defaultTimeout)
+			ctx, cancel = context.WithTimeout(context.Background(), delay+defaultAsyncEventTimeout)
 			defer cancel()
 			if _, ok := e.ReadContext(ctx); ok {
 				t.Fatal("unexpectedly got a packet after finishing router solicitations")
