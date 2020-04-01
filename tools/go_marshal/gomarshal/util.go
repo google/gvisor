@@ -25,7 +25,6 @@ import (
 	"path"
 	"reflect"
 	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -75,27 +74,8 @@ func forEachStructField(st *ast.StructType, fn func(f *ast.Field)) {
 type fieldDispatcher struct {
 	primitive func(n, t *ast.Ident)
 	selector  func(n, tX, tSel *ast.Ident)
-	array     func(n, t *ast.Ident, size int)
+	array     func(n *ast.Ident, a *ast.ArrayType, t *ast.Ident)
 	unhandled func(n *ast.Ident)
-}
-
-// Precondition: a must have a literal for the array length. Consts and
-// expressions are not allowed as array lengths, and should be rejected by the
-// caller.
-func arrayLen(a *ast.ArrayType) int {
-	if a.Len == nil {
-		// Probably a slice? Must be handled by caller.
-		panic("Nil array length in array type")
-	}
-	lenLit, ok := a.Len.(*ast.BasicLit)
-	if !ok {
-		panic("Array has non-literal for length")
-	}
-	len, err := strconv.Atoi(lenLit.Value)
-	if err != nil {
-		panic(fmt.Sprintf("Failed to parse array length '%s' as number: %v", lenLit.Value, err))
-	}
-	return len
 }
 
 // Precondition: All dispatch callbacks that will be invoked must be
@@ -123,7 +103,7 @@ func (fd fieldDispatcher) dispatch(f *ast.Field) {
 		case *ast.ArrayType:
 			switch t := v.Elt.(type) {
 			case *ast.Ident:
-				fd.array(name, t, arrayLen(v))
+				fd.array(name, v, t)
 			default:
 				// Should be handled with a better error message during validate.
 				panic(fmt.Sprintf("Array element type is of unsupported kind. Expected *ast.Ident, got %v", t))
