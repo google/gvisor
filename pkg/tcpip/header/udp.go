@@ -99,6 +99,11 @@ func (b UDP) SetChecksum(checksum uint16) {
 	binary.BigEndian.PutUint16(b[udpChecksum:], checksum)
 }
 
+// SetLength sets the "length" field of the udp header.
+func (b UDP) SetLength(length uint16) {
+	binary.BigEndian.PutUint16(b[udpLength:], length)
+}
+
 // CalculateChecksum calculates the checksum of the udp packet, given the
 // checksum of the network-layer pseudo-header and the checksum of the payload.
 func (b UDP) CalculateChecksum(partialChecksum uint16) uint16 {

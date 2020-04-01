@@ -29,12 +29,14 @@ function failure() {
 }
 trap 'failure ${LINENO} "$BASH_COMMAND"' ERR
 
-declare -r LONGOPTS="dut_platform:,posix_server_binary:,testbench_binary:,runtime:,tshark"
+declare -r LONGOPTS="dut_platform:,posix_server_binary:,testbench_binary:,runtime:,tshark,extra_test_arg:"
 
 # Don't use declare below so that the error from getopt will end the script.
 PARSED=$(getopt --options "" --longoptions=$LONGOPTS --name "$0" -- "$@")
 
 eval set -- "$PARSED"
+
+declare -a EXTRA_TEST_ARGS
 
 while true; do
   case "$1" in
@@ -61,6 +63,10 @@ while true; do
     --tshark)
       declare -r TSHARK="1"
       shift 1
+      ;;
+    --extra_test_arg)
+      EXTRA_TEST_ARGS+="$2"
+      shift 2
       ;;
     --)
       shift
@@ -125,6 +131,19 @@ docker --version
 
 function finish {
   local cleanup_success=1
+
+  if [[ -z "${TSHARK-}" ]]; then
+    # Kill tcpdump so that it will flush output.
+    docker exec -t "${TESTBENCH}" \
+      killall tcpdump || \
+      cleanup_success=0
+  else
+    # Kill tshark so that it will flush output.
+    docker exec -t "${TESTBENCH}" \
+      killall tshark || \
+      cleanup_success=0
+  fi
+
   for net in "${CTRL_NET}" "${TEST_NET}"; do
     # Kill all processes attached to ${net}.
     for docker_command in "kill" "rm"; do
@@ -224,6 +243,8 @@ else
   # interface with the test packets.
   docker exec -t "${TESTBENCH}" \
     tshark -V -l -n -i "${TEST_DEVICE}" \
+    -o tcp.check_checksum:TRUE \
+    -o udp.check_checksum:TRUE \
     host "${TEST_NET_PREFIX}${TESTBENCH_NET_SUFFIX}" &
 fi
 
@@ -235,6 +256,7 @@ sleep 3
 # be executed on the DUT.
 docker exec -t "${TESTBENCH}" \
   /bin/bash -c "${DOCKER_TESTBENCH_BINARY} \
+  ${EXTRA_TEST_ARGS[@]-} \
   --posix_server_ip=${CTRL_NET_PREFIX}${DUT_NET_SUFFIX} \
   --posix_server_port=${CTRL_PORT} \
   --remote_ipv4=${TEST_NET_PREFIX}${DUT_NET_SUFFIX} \

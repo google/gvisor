@@ -181,6 +181,17 @@ class PosixImpl final : public posix_server::Posix::Service {
     response->set_errno_(errno);
     return ::grpc::Status::OK;
   }
+
+  ::grpc::Status Recv(::grpc::ServerContext *context,
+                      const ::posix_server::RecvRequest *request,
+                      ::posix_server::RecvResponse *response) override {
+    std::vector<char> buf(request->len());
+    response->set_ret(
+        recv(request->sockfd(), buf.data(), buf.size(), request->flags()));
+    response->set_errno_(errno);
+    response->set_buf(buf.data(), response->ret());
+    return ::grpc::Status::OK;
+  }
 };
 
 // Parse command line options. Returns a pointer to the first argument beyond
