@@ -101,14 +101,14 @@ func EpollCtl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	var event linux.EpollEvent
 	switch op {
 	case linux.EPOLL_CTL_ADD:
-		if err := event.CopyIn(t, eventAddr); err != nil {
+		if _, err := event.CopyIn(t, eventAddr); err != nil {
 			return 0, nil, err
 		}
 		return 0, nil, ep.AddInterest(file, fd, event)
 	case linux.EPOLL_CTL_DEL:
 		return 0, nil, ep.DeleteInterest(file, fd)
 	case linux.EPOLL_CTL_MOD:
-		if err := event.CopyIn(t, eventAddr); err != nil {
+		if _, err := event.CopyIn(t, eventAddr); err != nil {
 			return 0, nil, err
 		}
 		return 0, nil, ep.ModifyInterest(file, fd, event)
