@@ -28,6 +28,17 @@ packetimpact_go_test(
     ],
 )
 
+packetimpact_go_test(
+    name = "close_wait_state",
+    srcs = ["close_wait_state_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+        "//pkg/tcpip/seqnum",
+    ],
+)
+
 sh_binary(
     name = "test_runner",
     srcs = ["test_runner.sh"],
