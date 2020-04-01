@@ -36,7 +36,7 @@ func TestFinWait2Timeout(t *testing.T) {
 			defer dut.TearDown()
 			listenFd, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
 			defer dut.Close(listenFd)
-			conn := tb.NewTCPIPv4(t, dut, tb.TCP{DstPort: &remotePort}, tb.TCP{SrcPort: &remotePort})
+			conn := tb.NewTCPIPv4(t, tb.TCP{DstPort: &remotePort}, tb.TCP{SrcPort: &remotePort})
 			defer conn.Close()
 			conn.Handshake()
 

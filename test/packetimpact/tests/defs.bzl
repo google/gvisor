@@ -93,7 +93,17 @@ def packetimpact_netstack_test(name, testbench_binary, **kwargs):
         **kwargs
     )
 
-def packetimpact_go_test(name, size = "small", pure = True, **kwargs):
+def packetimpact_go_test(name, size = "small", pure = True, linux = True, netstack = True, **kwargs):
+    """Add packetimpact tests written in go.
+
+    Args:
+        name: name of the test
+        size: size of the test
+        pure: make a static go binary
+        linux: generate a linux test
+        netstack: generate a netstack test
+        **kwargs: all the other args, forwarded to go_test
+    """
     testbench_binary = name + "_test"
     go_test(
         name = testbench_binary,
@@ -102,5 +112,7 @@ def packetimpact_go_test(name, size = "small", pure = True, **kwargs):
         tags = PACKETIMPACT_TAGS,
         **kwargs
     )
-    packetimpact_linux_test(name = name, testbench_binary = testbench_binary)
-    packetimpact_netstack_test(name = name, testbench_binary = testbench_binary)
+    if linux:
+        packetimpact_linux_test(name = name, testbench_binary = testbench_binary)
+    if netstack:
+        packetimpact_netstack_test(name = name, testbench_binary = testbench_binary)
