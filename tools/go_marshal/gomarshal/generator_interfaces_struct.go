@@ -62,8 +62,8 @@ func (g *interfaceGenerator) validateStruct(ts *ast.TypeSpec, st *ast.StructType
 				// No validation to perform on selector fields. However this
 				// callback must still be provided.
 			},
-			array: func(n, _ *ast.Ident, len int) {
-				g.validateArrayNewtype(n, f.Type.(*ast.ArrayType))
+			array: func(n *ast.Ident, a *ast.ArrayType, _ *ast.Ident) {
+				g.validateArrayNewtype(n, a)
 			},
 			unhandled: func(_ *ast.Ident) {
 				g.abortAt(f.Pos(), fmt.Sprintf("Marshalling not supported for %s fields", kindString(f.Type)))
@@ -112,16 +112,13 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 				g.recordUsedMarshallable(tName)
 				dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("(*%s)(nil).SizeBytes()", tName))
 			},
-			array: func(n, t *ast.Ident, len int) {
-				if len < 1 {
-					// Zero-length arrays should've been rejected by validate().
-					panic("unreachable")
-				}
+			array: func(n *ast.Ident, a *ast.ArrayType, t *ast.Ident) {
+				lenExpr := g.arrayLenExpr(a)
 				if size, dynamic := g.scalarSize(t); !dynamic {
-					primitiveSize += size * len
+					dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("%d*%s", size, lenExpr))
 				} else {
 					g.recordUsedMarshallable(t.Name)
-					dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("(*%s)(nil).SizeBytes()*%d", t.Name, len))
+					dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("(*%s)(nil).SizeBytes()*%s", t.Name, lenExpr))
 				}
 			},
 		}.dispatch)
@@ -169,22 +166,23 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 				}
 				g.marshalScalar(g.fieldAccessor(n), fmt.Sprintf("%s.%s", tX.Name, tSel.Name), "dst")
 			},
-			array: func(n, t *ast.Ident, size int) {
+			array: func(n *ast.Ident, a *ast.ArrayType, t *ast.Ident) {
+				lenExpr := g.arrayLenExpr(a)
 				if n.Name == "_" {
-					g.emit("// Padding: dst[:sizeof(%s)*%d] ~= [%d]%s{0}\n", t.Name, size, size, t.Name)
-					if len, dynamic := g.scalarSize(t); !dynamic {
-						g.shift("dst", len*size)
+					g.emit("// Padding: dst[:sizeof(%s)*%s] ~= [%s]%s{0}\n", t.Name, lenExpr, lenExpr, t.Name)
+					if size, dynamic := g.scalarSize(t); !dynamic {
+						g.emit("dst = dst[%d*(%s):]\n", size, lenExpr)
 					} else {
 						// We can't use shiftDynamic here because we don't have
 						// an instance of the dynamic type we can reference here
 						// (since the version in this struct is anonymous). Use
 						// a typed nil pointer to call SizeBytes() instead.
-						g.emit("dst = dst[(*%s)(nil).SizeBytes()*%d:]\n", t.Name, size)
+						g.emit("dst = dst[(*%s)(nil).SizeBytes()*(%s):]\n", t.Name, lenExpr)
 					}
 					return
 				}
 
-				g.emit("for idx := 0; idx < %d; idx++ {\n", size)
+				g.emit("for idx := 0; idx < %s; idx++ {\n", lenExpr)
 				g.inIndent(func() {
 					g.marshalScalar(fmt.Sprintf("%s[idx]", g.fieldAccessor(n)), t.Name, "dst")
 				})
@@ -224,22 +222,23 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 				}
 				g.unmarshalScalar(g.fieldAccessor(n), fmt.Sprintf("%s.%s", tX.Name, tSel.Name), "src")
 			},
-			array: func(n, t *ast.Ident, size int) {
+			array: func(n *ast.Ident, a *ast.ArrayType, t *ast.Ident) {
+				lenExpr := g.arrayLenExpr(a)
 				if n.Name == "_" {
-					g.emit("// Padding: ~ copy([%d]%s(%s), src[:sizeof(%s)*%d])\n", size, t.Name, g.fieldAccessor(n), t.Name, size)
-					if len, dynamic := g.scalarSize(t); !dynamic {
-						g.shift("src", len*size)
+					g.emit("// Padding: ~ copy([%s]%s(%s), src[:sizeof(%s)*%s])\n", lenExpr, t.Name, g.fieldAccessor(n), t.Name, lenExpr)
+					if size, dynamic := g.scalarSize(t); !dynamic {
+						g.emit("src = src[%d*(%s):]\n", size, lenExpr)
 					} else {
 						// We can't use shiftDynamic here because we don't have
 						// an instance of the dynamic type we can referece here
 						// (since the version in this struct is anonymous). Use
 						// a typed nil pointer to call SizeBytes() instead.
-						g.emit("src = src[(*%s)(nil).SizeBytes()*%d:]\n", t.Name, size)
+						g.emit("src = src[(*%s)(nil).SizeBytes()*(%s):]\n", t.Name, lenExpr)
 					}
 					return
 				}
 
-				g.emit("for idx := 0; idx < %d; idx++ {\n", size)
+				g.emit("for idx := 0; idx < %s; idx++ {\n", lenExpr)
 				g.inIndent(func() {
 					g.unmarshalScalar(fmt.Sprintf("%s[idx]", g.fieldAccessor(n)), t.Name, "src")
 				})

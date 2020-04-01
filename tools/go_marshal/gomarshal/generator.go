@@ -356,7 +356,7 @@ func (g *Generator) generateOne(t marshallableType, fset *token.FileSet) *interf
 	case *ast.ArrayType:
 		i.validateArrayNewtype(t.spec.Name, ty)
 		// After validate, we can safely call arrayLen.
-		i.emitMarshallableForArrayNewtype(t.spec.Name, ty.Elt.(*ast.Ident), arrayLen(ty))
+		i.emitMarshallableForArrayNewtype(t.spec.Name, ty, ty.Elt.(*ast.Ident))
 		if t.slice != nil {
 			abortAt(fset.Position(t.slice.comment.Slash), fmt.Sprintf("Array type marked as '+marshal slice:...', but this is not supported. Perhaps fold one of the dimensions?"))
 		}
