@@ -381,44 +381,48 @@ func TestHopLimitValidation(t *testing.T) {
 			pkt.SetType(typ.typ)
 			pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, extraData.ToVectorisedView()))
 
+			// Rx count of the NDP message should initially be 0.
+			if got := typStat.Value(); got != 0 {
+				t.Errorf("got %s = %d, want = 0", typ.name, got)
+			}
+
 			// Invalid count should initially be 0.
 			if got := invalid.Value(); got != 0 {
-				t.Fatalf("got invalid = %d, want = 0", got)
+				t.Errorf("got invalid = %d, want = 0", got)
 			}
 
-			// Should not have received any ICMPv6 packets with
-			// type = typ.typ.
-			if got := typStat.Value(); got != 0 {
-				t.Fatalf("got %s = %d, want = 0", typ.name, got)
+			if t.Failed() {
+				t.FailNow()
 			}
 
-			// Receive the NDP packet with an invalid hop limit
-			// value.
+			// Receive the NDP packet with an invalid hop limit.
 			handleIPv6Payload(hdr, header.NDPHopLimit-1, ep, &r)
+
+			// Rx count of the NDP packet should have increased.
+			if got := typStat.Value(); got != 1 {
+				t.Errorf("got %s = %d, want = 1", typ.name, got)
+			}
 
 			// Invalid count should have increased.
 			if got := invalid.Value(); got != 1 {
-				t.Fatalf("got invalid = %d, want = 1", got)
+				t.Errorf("got invalid = %d, want = 1", got)
 			}
 
-			// Rx count of NDP packet of type typ.typ should not
-			// have increased.
-			if got := typStat.Value(); got != 0 {
-				t.Fatalf("got %s = %d, want = 0", typ.name, got)
+			if t.Failed() {
+				t.FailNow()
 			}
 
 			// Receive the NDP packet with a valid hop limit value.
 			handleIPv6Payload(hdr, header.NDPHopLimit, ep, &r)
 
-			// Rx count of NDP packet of type typ.typ should have
-			// increased.
-			if got := typStat.Value(); got != 1 {
-				t.Fatalf("got %s = %d, want = 1", typ.name, got)
+			// Rx count of the NDP packet should have increased.
+			if got := typStat.Value(); got != 2 {
+				t.Errorf("got %s = %d, want = 2", typ.name, got)
 			}
 
 			// Invalid count should not have increased again.
 			if got := invalid.Value(); got != 1 {
-				t.Fatalf("got invalid = %d, want = 1", got)
+				t.Errorf("got invalid = %d, want = 1", got)
 			}
 		})
 	}
@@ -592,20 +596,17 @@ func TestRouterAdvertValidation(t *testing.T) {
 				Data: hdr.View().ToVectorisedView(),
 			})
 
+			if got := rxRA.Value(); got != 1 {
+				t.Fatalf("got rxRA = %d, want = 1", got)
+			}
+
 			if test.expectedSuccess {
 				if got := invalid.Value(); got != 0 {
 					t.Fatalf("got invalid = %d, want = 0", got)
 				}
-				if got := rxRA.Value(); got != 1 {
-					t.Fatalf("got rxRA = %d, want = 1", got)
-				}
-
 			} else {
 				if got := invalid.Value(); got != 1 {
 					t.Fatalf("got invalid = %d, want = 1", got)
-				}
-				if got := rxRA.Value(); got != 0 {
-					t.Fatalf("got rxRA = %d, want = 0", got)
 				}
 			}
 		})
