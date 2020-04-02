@@ -99,6 +99,8 @@ func (vfs *VirtualFilesystem) NewEpollInstanceFD() (*FileDescription, error) {
 		interest: make(map[epollInterestKey]*epollInterest),
 	}
 	if err := ep.vfsfd.Init(ep, linux.O_RDWR, vd.Mount(), vd.Dentry(), &FileDescriptionOptions{
+		DenyPRead:         true,
+		DenyPWrite:        true,
 		UseDentryMetadata: true,
 	}); err != nil {
 		return nil, err
