@@ -59,4 +59,6 @@ The goal of the Secure by Default principle is to make it easy to securely sandb
 
 Another way in which gVisor makes it easy to securely sandbox containers is by allowing applications to run unmodified, with no special configuration needed. In order to do this, gVisor needs to support all of the features and syscalls that applications use. Neither seccomp nor gVisor's passthrough mode can do this as applications commonly use syscalls which are too dangerous to be included in a secure policy. Even if this dream isn't fully realized today, gVisor's architecture with Netstack makes this possible.
 
+## Give Netstack a Try
+
 If you haven't already, try running a workload in gVisor with Netstack. You can find instructions on how to get started in our [Quick Start](https://gvisor.dev/docs/user_guide/quick_start/docker/). We want to hear about both your successes and any issues you encounter. We welcome your contributions, whether that be verbal feedback or code contributions, via our [Gitter channel](https://gitter.im/gvisor/community), [email list](https://groups.google.com/forum/#!forum/gvisor-users), [issue tracker](https://gvisor.dev/issue/new), and [Github repository](https://github.com/google/gvisor). Feel free to express interest in an [open issue](https://gvisor.dev/issue/), or reach out if you aren't sure where to start.
