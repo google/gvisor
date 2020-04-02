@@ -18,11 +18,11 @@ source $(dirname $0)/common.sh
 
 # gcloud may be installed as a "snap". If it is, include it in PATH.
 declare -r snap="/snap/bin"
-if [[ -d "-d ${snap}" ]]; then
+if [[ -d "${snap}" ]]; then
   export PATH="${PATH}:${snap}"
 fi
 
-# Make sure we can call gcloud and exit if not.
+# Make sure we can find gcloud and exit if not.
 which gcloud
 
 # Exporting for subprocesses as GCP APIs and tools check this environmental
