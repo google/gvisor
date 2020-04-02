@@ -31,13 +31,13 @@ go_library(
     name = "sync",
     srcs = [
         "aliases.go",
-        "downgradable_rwmutex_unsafe.go",
         "memmove_unsafe.go",
+        "mutex_unsafe.go",
         "norace_unsafe.go",
         "race_unsafe.go",
+        "rwmutex_unsafe.go",
         "seqcount.go",
-        "syncutil.go",
-        "tmutex_unsafe.go",
+        "sync.go",
     ],
 )
 
@@ -45,9 +45,9 @@ go_test(
     name = "sync_test",
     size = "small",
     srcs = [
-        "downgradable_rwmutex_test.go",
+        "mutex_test.go",
+        "rwmutex_test.go",
         "seqcount_test.go",
-        "tmutex_test.go",
     ],
     library = ":sync",
 )
