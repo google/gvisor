@@ -605,15 +605,23 @@ TEST_P(SocketInetLoopbackTest, TCPLinger2TimeoutAfterClose_NoRandomSave) {
                   &conn_addrlen),
       SyscallSucceeds());
 
-  constexpr int kTCPLingerTimeout = 5;
-  EXPECT_THAT(setsockopt(conn_fd.get(), IPPROTO_TCP, TCP_LINGER2,
-                         &kTCPLingerTimeout, sizeof(kTCPLingerTimeout)),
-              SyscallSucceedsWithValue(0));
+  // Disable cooperative saves after this point as TCP timers are not restored
+  // across a S/R.
+  {
+    DisableSave ds;
+    constexpr int kTCPLingerTimeout = 5;
+    EXPECT_THAT(setsockopt(conn_fd.get(), IPPROTO_TCP, TCP_LINGER2,
+                           &kTCPLingerTimeout, sizeof(kTCPLingerTimeout)),
+                SyscallSucceedsWithValue(0));
 
-  // close the connecting FD to trigger FIN_WAIT2  on the connected fd.
-  conn_fd.reset();
+    // close the connecting FD to trigger FIN_WAIT2  on the connected fd.
+    conn_fd.reset();
 
-  absl::SleepFor(absl::Seconds(kTCPLingerTimeout + 1));
+    absl::SleepFor(absl::Seconds(kTCPLingerTimeout + 1));
+
+    // ds going out of scope will Re-enable S/R's since at this point the timer
+    // must have fired and cleaned up the endpoint.
+  }
 
   // Now bind and connect a new socket and verify that we can immediately
   // rebind the address bound by the conn_fd as it never entered TIME_WAIT.
