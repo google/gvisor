@@ -48,69 +48,6 @@ func (m *machine) initArchState() error {
 	return nil
 }
 
-func getPageWithReflect(p uintptr) []byte {
-	return (*(*[0xFFFFFF]byte)(unsafe.Pointer(p & ^uintptr(syscall.Getpagesize()-1))))[:syscall.Getpagesize()]
-}
-
-// Work around: move ring0.Vectors() into a specific address with 11-bits alignment.
-//
-// According to the design documentation of Arm64,
-// the start address of exception vector table should be 11-bits aligned.
-// Please see the code in linux kernel as reference: arch/arm64/kernel/entry.S
-// But, we can't align a function's start address to a specific address by using golang.
-// We have raised this question in golang community:
-// https://groups.google.com/forum/m/#!topic/golang-dev/RPj90l5x86I
-// This function will be removed when golang supports this feature.
-//
-// There are 2 jobs were implemented in this function:
-// 1, move the start address of exception vector table into the specific address.
-// 2, modify the offset of each instruction.
-func updateVectorTable() {
-	fromLocation := reflect.ValueOf(ring0.Vectors).Pointer()
-	offset := fromLocation & (1<<11 - 1)
-	if offset != 0 {
-		offset = 1<<11 - offset
-	}
-
-	toLocation := fromLocation + offset
-	page := getPageWithReflect(toLocation)
-	if err := syscall.Mprotect(page, syscall.PROT_READ|syscall.PROT_WRITE|syscall.PROT_EXEC); err != nil {
-		panic(err)
-	}
-
-	page = getPageWithReflect(toLocation + 4096)
-	if err := syscall.Mprotect(page, syscall.PROT_READ|syscall.PROT_WRITE|syscall.PROT_EXEC); err != nil {
-		panic(err)
-	}
-
-	// Move exception-vector-table into the specific address.
-	var entry *uint32
-	var entryFrom *uint32
-	for i := 1; i <= 0x800; i++ {
-		entry = (*uint32)(unsafe.Pointer(toLocation + 0x800 - uintptr(i)))
-		entryFrom = (*uint32)(unsafe.Pointer(fromLocation + 0x800 - uintptr(i)))
-		*entry = *entryFrom
-	}
-
-	// The offset from the address of each unconditionally branch is changed.
-	// We should modify the offset of each instruction.
-	nums := []uint32{0x0, 0x80, 0x100, 0x180, 0x200, 0x280, 0x300, 0x380, 0x400, 0x480, 0x500, 0x580, 0x600, 0x680, 0x700, 0x780}
-	for _, num := range nums {
-		entry = (*uint32)(unsafe.Pointer(toLocation + uintptr(num)))
-		*entry = *entry - (uint32)(offset/4)
-	}
-
-	page = getPageWithReflect(toLocation)
-	if err := syscall.Mprotect(page, syscall.PROT_READ|syscall.PROT_EXEC); err != nil {
-		panic(err)
-	}
-
-	page = getPageWithReflect(toLocation + 4096)
-	if err := syscall.Mprotect(page, syscall.PROT_READ|syscall.PROT_EXEC); err != nil {
-		panic(err)
-	}
-}
-
 // initArchState initializes architecture-specific state.
 func (c *vCPU) initArchState() error {
 	var (
