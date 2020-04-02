@@ -92,6 +92,9 @@ func (e *overrideMaps) addPipe(key device.MultiDeviceKey, d *fs.Dirent, inode *f
 func (e *overrideMaps) remove(key device.MultiDeviceKey) {
 	endpoint := e.keyMap[key]
 	delete(e.keyMap, key)
+	if endpoint.dirent.Overlay != nil {
+		endpoint.dirent.Overlay.DecRef()
+	}
 	endpoint.dirent.DecRef()
 }
 
@@ -398,9 +401,13 @@ func (s *session) fillPathMap() error {
 	defer unlock()
 
 	for _, endpoint := range s.overrides.keyMap {
-		mountRoot := endpoint.dirent.MountRoot()
+		dirent := endpoint.dirent
+		if dirent.Overlay != nil {
+			dirent = dirent.Overlay
+		}
+		mountRoot := dirent.MountRoot()
 		defer mountRoot.DecRef()
-		dirPath, _ := endpoint.dirent.FullName(mountRoot)
+		dirPath, _ := dirent.FullName(mountRoot)
 		if dirPath == "" {
 			return fmt.Errorf("error getting path from dirent")
 		}

@@ -117,6 +117,13 @@ type Dirent struct {
 	// parent is protected by renameMu.
 	parent *Dirent
 
+	// In gofer, the Dirent created by Bind() is used to fetch full path information
+	// during checkpoint in fillPathMap() but since it is not returned in overlayBind(),
+	// it didn't have parent set and lacks path information. For this reason, the Dirent
+	// returned in overlayBind() is stored here named Overlay to fetch path information.
+	// It may also serve other purposes in overlay case for other upper layer FS.
+	Overlay *Dirent
+
 	// deleted may be set atomically when removed.
 	deleted int32
 

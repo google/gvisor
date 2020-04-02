@@ -455,17 +455,28 @@ func overlayBind(ctx context.Context, o *overlayEntry, parent *Dirent, name stri
 	// Grab the inode and drop the dirent, we don't need it.
 	inode := d.Inode
 	inode.IncRef()
-	d.DecRef()
 
 	// Create a new overlay entry and dirent for the socket.
 	entry, err := newOverlayEntry(ctx, inode, nil, false)
 	if err != nil {
+		d.DecRef()
 		inode.DecRef()
 		return nil, err
 	}
 	// Use the parent's MountSource, since that corresponds to the overlay,
 	// and not the upper filesystem.
-	return NewDirent(ctx, newOverlayInode(ctx, entry, parent.Inode.MountSource), name), nil
+	overlayd := NewDirent(ctx, newOverlayInode(ctx, entry, parent.Inode.MountSource), name)
+	d.Overlay = overlayd
+
+	// If our upper layer has taken an extra ref on d, we will need
+	// to take an extra ref on overlayd or overlayd can be destroyed and
+	// the upper layer will not be able to use it. The overlayd's DecRef()
+	// will have to be taken care of by upper layer when it DecRef() d.
+	if d.ReadRefs() > 1 {
+		overlayd.IncRef()
+	}
+	d.DecRef()
+	return overlayd, nil
 }
 
 func overlayBoundEndpoint(o *overlayEntry, path string) transport.BoundEndpoint {
