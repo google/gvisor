@@ -530,6 +530,34 @@ TEST(SendFileTest, SendToSpecialFile) {
               SyscallSucceedsWithValue(kSize & (~7)));
 }
 
+TEST(SendFileTest, SendFileToPipe) {
+  // Create temp file.
+  constexpr char kData[] = "<insert-quote-here>";
+  constexpr int kDataSize = sizeof(kData) - 1;
+  const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), kData, TempPath::kDefaultFileMode));
+  const FileDescriptor inf =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
+
+  // Create a pipe for sending to a pipe.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor rfd(fds[0]);
+  const FileDescriptor wfd(fds[1]);
+
+  // Expect to read up to the given size.
+  std::vector<char> buf(kDataSize);
+  ScopedThread t([&]() {
+    absl::SleepFor(absl::Milliseconds(100));
+    ASSERT_THAT(read(rfd.get(), buf.data(), buf.size()),
+                SyscallSucceedsWithValue(kDataSize));
+  });
+
+  // Send with twice the size of the file, which should hit EOF.
+  EXPECT_THAT(sendfile(wfd.get(), inf.get(), nullptr, kDataSize * 2),
+              SyscallSucceedsWithValue(kDataSize));
+}
+
 }  // namespace
 
 }  // namespace testing
