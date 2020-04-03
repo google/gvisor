@@ -63,6 +63,9 @@ afterSymlink:
 		rp.Advance()
 		return nextVFSD, nil
 	}
+	if len(name) > linux.NAME_MAX {
+		return nil, syserror.ENAMETOOLONG
+	}
 	d.dirMu.Lock()
 	nextVFSD, err := rp.ResolveChild(vfsd, name)
 	if err != nil {
@@ -190,6 +193,9 @@ func checkCreateLocked(ctx context.Context, rp *vfs.ResolvingPath, parentVFSD *v
 	pc := rp.Component()
 	if pc == "." || pc == ".." {
 		return "", syserror.EEXIST
+	}
+	if len(pc) > linux.NAME_MAX {
+		return "", syserror.ENAMETOOLONG
 	}
 	childVFSD, err := rp.ResolveChild(parentVFSD, pc)
 	if err != nil {
@@ -432,6 +438,9 @@ afterTrailingSymlink:
 	pc := rp.Component()
 	if pc == "." || pc == ".." {
 		return nil, syserror.EISDIR
+	}
+	if len(pc) > linux.NAME_MAX {
+		return nil, syserror.ENAMETOOLONG
 	}
 	// Determine whether or not we need to create a file.
 	childVFSD, err := rp.ResolveChild(parentVFSD, pc)
