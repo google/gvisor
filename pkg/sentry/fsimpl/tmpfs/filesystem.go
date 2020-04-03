@@ -57,7 +57,7 @@ afterSymlink:
 	}
 	next := nextVFSD.Impl().(*dentry)
 	if symlink, ok := next.inode.impl.(*symlink); ok && rp.ShouldFollowSymlink() {
-		// TODO(gvisor.dev/issues/1197): Symlink traversals updates
+		// TODO(gvisor.dev/issue/1197): Symlink traversals updates
 		// access time.
 		if err := rp.HandleSymlink(symlink.target); err != nil {
 			return nil, err
@@ -515,7 +515,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		oldParent.inode.decLinksLocked()
 		newParent.inode.incLinksLocked()
 	}
-	// TODO(gvisor.dev/issues/1197): Update timestamps and parent directory
+	// TODO(gvisor.dev/issue/1197): Update timestamps and parent directory
 	// sizes.
 	vfsObj.CommitRenameReplaceDentry(renamedVFSD, &newParent.vfsd, newName, replacedVFSD)
 	return nil
@@ -600,7 +600,7 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 	if err != nil {
 		return linux.Statfs{}, err
 	}
-	// TODO(gvisor.dev/issues/1197): Actually implement statfs.
+	// TODO(gvisor.dev/issue/1197): Actually implement statfs.
 	return linux.Statfs{}, syserror.ENOSYS
 }
 

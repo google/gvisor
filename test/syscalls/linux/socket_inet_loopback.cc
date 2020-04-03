@@ -234,7 +234,7 @@ TEST_P(DualStackSocketTest, AddressOperations) {
   }
 }
 
-// TODO(gvisor.dev/issues/1556): uncomment V4MappedAny.
+// TODO(gvisor.dev/issue/1556): uncomment V4MappedAny.
 INSTANTIATE_TEST_SUITE_P(
     All, DualStackSocketTest,
     ::testing::Combine(

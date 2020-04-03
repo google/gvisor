@@ -29,7 +29,7 @@ func TestStatAfterCreate(t *testing.T) {
 	mode := linux.FileMode(0644)
 
 	// Run with different file types.
-	// TODO(gvisor.dev/issues/1197): Also test symlinks and sockets.
+	// TODO(gvisor.dev/issue/1197): Also test symlinks and sockets.
 	for _, typ := range []string{"file", "dir", "pipe"} {
 		t.Run(fmt.Sprintf("type=%q", typ), func(t *testing.T) {
 			var (
@@ -169,7 +169,7 @@ func TestSetStat(t *testing.T) {
 	mode := linux.FileMode(0644)
 
 	// Run with different file types.
-	// TODO(gvisor.dev/issues/1197): Also test symlinks and sockets.
+	// TODO(gvisor.dev/issue/1197): Also test symlinks and sockets.
 	for _, typ := range []string{"file", "dir", "pipe"} {
 		t.Run(fmt.Sprintf("type=%q", typ), func(t *testing.T) {
 			var (

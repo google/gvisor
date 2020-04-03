@@ -663,7 +663,7 @@ func (s *SocketOperations) checkFamily(family uint16, exact bool) *syserr.Error 
 // This is a hack to work around the fact that both IPv4 and IPv6 ANY are
 // represented by the empty string.
 //
-// TODO(gvisor.dev/issues/1556): remove this function.
+// TODO(gvisor.dev/issue/1556): remove this function.
 func (s *SocketOperations) mapFamily(addr tcpip.FullAddress, family uint16) tcpip.FullAddress {
 	if len(addr.Addr) == 0 && s.family == linux.AF_INET6 && family == linux.AF_INET {
 		addr.Addr = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\x00\x00\x00\x00"
