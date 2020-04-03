@@ -7,6 +7,7 @@ go_library(
     srcs = ["sockfs.go"],
     visibility = ["//pkg/sentry:internal"],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/kernel/auth",
