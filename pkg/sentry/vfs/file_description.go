@@ -84,6 +84,13 @@ type FileDescriptionOptions struct {
 	// usually only the case if O_DIRECT would actually have an effect.
 	AllowDirectIO bool
 
+	// If DenyPRead is true, calls to FileDescription.PRead() return ESPIPE.
+	DenyPRead bool
+
+	// If DenyPWrite is true, calls to FileDescription.PWrite() return
+	// ESPIPE.
+	DenyPWrite bool
+
 	// If UseDentryMetadata is true, calls to FileDescription methods that
 	// interact with file and filesystem metadata (Stat, SetStat, StatFS,
 	// Listxattr, Getxattr, Setxattr, Removexattr) are implemented by calling
@@ -306,6 +313,7 @@ type FileDescriptionImpl interface {
 	// - If opts.Flags specifies unsupported options, PRead returns EOPNOTSUPP.
 	//
 	// Preconditions: The FileDescription was opened for reading.
+	// FileDescriptionOptions.DenyPRead == false.
 	PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts ReadOptions) (int64, error)
 
 	// Read is similar to PRead, but does not specify an offset.
@@ -337,6 +345,7 @@ type FileDescriptionImpl interface {
 	// EOPNOTSUPP.
 	//
 	// Preconditions: The FileDescription was opened for writing.
+	// FileDescriptionOptions.DenyPWrite == false.
 	PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts WriteOptions) (int64, error)
 
 	// Write is similar to PWrite, but does not specify an offset, which is
@@ -515,6 +524,9 @@ func (fd *FileDescription) EventUnregister(e *waiter.Entry) {
 // offset, and returns the number of bytes read. PRead is permitted to return
 // partial reads with a nil error.
 func (fd *FileDescription) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts ReadOptions) (int64, error) {
+	if fd.opts.DenyPRead {
+		return 0, syserror.ESPIPE
+	}
 	if !fd.readable {
 		return 0, syserror.EBADF
 	}
@@ -533,6 +545,9 @@ func (fd *FileDescription) Read(ctx context.Context, dst usermem.IOSequence, opt
 // offset, and returns the number of bytes written. PWrite is permitted to
 // return partial writes with a nil error.
 func (fd *FileDescription) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts WriteOptions) (int64, error) {
+	if fd.opts.DenyPWrite {
+		return 0, syserror.ESPIPE
+	}
 	if !fd.writable {
 		return 0, syserror.EBADF
 	}
