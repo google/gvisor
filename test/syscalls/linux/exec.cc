@@ -812,26 +812,28 @@ void ExecFromThread() {
 bool ValidateProcCmdlineVsArgv(const int argc, const char* const* argv) {
   auto contents_or = GetContents("/proc/self/cmdline");
   if (!contents_or.ok()) {
-    std::cerr << "Unable to get /proc/self/cmdline: " << contents_or.error();
+    std::cerr << "Unable to get /proc/self/cmdline: " << contents_or.error()
+              << std::endl;
     return false;
   }
   auto contents = contents_or.ValueOrDie();
   if (contents.back() != '\0') {
-    std::cerr << "Non-null terminated /proc/self/cmdline!";
+    std::cerr << "Non-null terminated /proc/self/cmdline!" << std::endl;
     return false;
   }
   contents.pop_back();
   std::vector<std::string> procfs_cmdline = absl::StrSplit(contents, '\0');
 
   if (static_cast<int>(procfs_cmdline.size()) != argc) {
-    std::cerr << "argc = " << argc << " != " << procfs_cmdline.size();
+    std::cerr << "argc = " << argc << " != " << procfs_cmdline.size()
+              << std::endl;
     return false;
   }
 
   for (int i = 0; i < argc; ++i) {
     if (procfs_cmdline[i] != argv[i]) {
       std::cerr << "Procfs command line argument " << i << " mismatch "
-                << procfs_cmdline[i] << " != " << argv[i];
+                << procfs_cmdline[i] << " != " << argv[i] << std::endl;
       return false;
     }
   }

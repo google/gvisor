@@ -152,7 +152,7 @@ TEST(NetlinkRouteTest, GetLinkDump) {
     const struct ifinfomsg* msg =
         reinterpret_cast<const struct ifinfomsg*>(NLMSG_DATA(hdr));
     std::cout << "Found interface idx=" << msg->ifi_index
-              << ", type=" << std::hex << msg->ifi_type;
+              << ", type=" << std::hex << msg->ifi_type << std::endl;
     if (msg->ifi_type == ARPHRD_LOOPBACK) {
       loopbackFound = true;
       EXPECT_NE(msg->ifi_flags & IFF_LOOPBACK, 0);

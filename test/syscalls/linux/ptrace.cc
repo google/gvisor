@@ -1188,7 +1188,7 @@ TEST(PtraceTest, SeizeSetOptions) {
     // gVisor is not susceptible to this race because
     // kernel.Task.waitCollectTraceeStopLocked() checks specifically for an
     // active ptraceStop, which is not initiated if SIGKILL is pending.
-    std::cout << "Observed syscall-exit after SIGKILL";
+    std::cout << "Observed syscall-exit after SIGKILL" << std::endl;
     ASSERT_THAT(waitpid(child_pid, &status, 0),
                 SyscallSucceedsWithValue(child_pid));
   }

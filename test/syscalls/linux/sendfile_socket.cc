@@ -149,7 +149,7 @@ TEST_P(SendFileTest, SendMultiple) {
   for (size_t sent = 0; sent < data.size(); cnt++) {
     const size_t remain = data.size() - sent;
     std::cout << "sendfile, size=" << data.size() << ", sent=" << sent
-              << ", remain=" << remain;
+              << ", remain=" << remain << std::endl;
 
     // Send data and verify that sendfile returns the correct value.
     int res = sendfile(client.get(), inf.get(), nullptr, remain);
