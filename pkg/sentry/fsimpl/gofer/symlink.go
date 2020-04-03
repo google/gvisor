@@ -27,7 +27,7 @@ func (d *dentry) isSymlink() bool {
 // Precondition: d.isSymlink().
 func (d *dentry) readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
 	if d.fs.opts.interop != InteropModeShared {
-		d.touchAtime(ctx, mnt)
+		d.touchAtime(mnt)
 		d.dataMu.Lock()
 		if d.haveTarget {
 			target := d.target

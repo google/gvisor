@@ -46,6 +46,9 @@ func stepLocked(rp *vfs.ResolvingPath, d *dentry) (*dentry, error) {
 		return nil, err
 	}
 afterSymlink:
+	if len(rp.Component()) > linux.NAME_MAX {
+		return nil, syserror.ENAMETOOLONG
+	}
 	nextVFSD, err := rp.ResolveComponent(&d.vfsd)
 	if err != nil {
 		return nil, err
@@ -133,6 +136,9 @@ func (fs *filesystem) doCreateAt(rp *vfs.ResolvingPath, dir bool, create func(pa
 	if name == "." || name == ".." {
 		return syserror.EEXIST
 	}
+	if len(name) > linux.NAME_MAX {
+		return syserror.ENAMETOOLONG
+	}
 	// Call parent.vfsd.Child() instead of stepLocked() or rp.ResolveChild(),
 	// because if the child exists we want to return EEXIST immediately instead
 	// of attempting symlink/mount traversal.
@@ -153,7 +159,11 @@ func (fs *filesystem) doCreateAt(rp *vfs.ResolvingPath, dir bool, create func(pa
 		return err
 	}
 	defer mnt.EndWrite()
-	return create(parent, name)
+	if err := create(parent, name); err != nil {
+		return err
+	}
+	parent.inode.touchCMtime()
+	return nil
 }
 
 // AccessAt implements vfs.Filesystem.Impl.AccessAt.
@@ -328,7 +338,12 @@ afterTrailingSymlink:
 		child := fs.newDentry(fs.newRegularFile(rp.Credentials(), opts.Mode))
 		parent.vfsd.InsertChild(&child.vfsd, name)
 		parent.inode.impl.(*directory).childList.PushBack(child)
-		return child.open(ctx, rp, &opts, true)
+		fd, err := child.open(ctx, rp, &opts, true)
+		if err != nil {
+			return nil, err
+		}
+		parent.inode.touchCMtime()
+		return fd, nil
 	}
 	if err != nil {
 		return nil, err
@@ -398,6 +413,7 @@ func (fs *filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (st
 	if !ok {
 		return "", syserror.EINVAL
 	}
+	symlink.inode.touchAtime(rp.Mount())
 	return symlink.target, nil
 }
 
@@ -515,6 +531,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		oldParent.inode.decLinksLocked()
 		newParent.inode.incLinksLocked()
 	}
+	oldParent.inode.touchCMtime()
+	newParent.inode.touchCMtime()
+	renamed.inode.touchCtime()
 	// TODO(gvisor.dev/issue/1197): Update timestamps and parent directory
 	// sizes.
 	vfsObj.CommitRenameReplaceDentry(renamedVFSD, &newParent.vfsd, newName, replacedVFSD)
@@ -565,6 +584,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	parent.inode.decLinksLocked() // from child's ".."
 	child.inode.decLinksLocked()
 	vfsObj.CommitDeleteDentry(childVFSD)
+	parent.inode.touchCMtime()
 	return nil
 }
 
@@ -654,6 +674,7 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	parent.inode.impl.(*directory).childList.Remove(child)
 	child.inode.decLinksLocked()
 	vfsObj.CommitDeleteDentry(childVFSD)
+	parent.inode.touchCMtime()
 	return nil
 }
 

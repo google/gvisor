@@ -44,6 +44,7 @@ import (
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -71,6 +72,9 @@ type filesystem struct {
 
 	// client is the client used by this filesystem. client is immutable.
 	client *p9.Client
+
+	// clock is a realtime clock used to set timestamps in file operations.
+	clock ktime.Clock
 
 	// uid and gid are the effective KUID and KGID of the filesystem's creator,
 	// and are used as the owner and group for files that don't specify one.
@@ -376,6 +380,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		uid:            creds.EffectiveKUID,
 		gid:            creds.EffectiveKGID,
 		client:         client,
+		clock:          ktime.RealtimeClockFromContext(ctx),
 		dentries:       make(map[*dentry]struct{}),
 		specialFileFDs: make(map[*specialFileFD]struct{}),
 	}
@@ -779,10 +784,7 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, stat *lin
 		// data, so there's no cache to truncate either.)
 		return nil
 	}
-	now, haveNow := nowFromContext(ctx)
-	if !haveNow {
-		ctx.Warningf("gofer.dentry.setStat: current time not available")
-	}
+	now := d.fs.clock.Now().Nanoseconds()
 	if stat.Mask&linux.STATX_MODE != 0 {
 		atomic.StoreUint32(&d.mode, d.fileType()|uint32(stat.Mode))
 	}
@@ -794,25 +796,19 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, stat *lin
 	}
 	if setLocalAtime {
 		if stat.Atime.Nsec == linux.UTIME_NOW {
-			if haveNow {
-				atomic.StoreInt64(&d.atime, now)
-			}
+			atomic.StoreInt64(&d.atime, now)
 		} else {
 			atomic.StoreInt64(&d.atime, dentryTimestampFromStatx(stat.Atime))
 		}
 	}
 	if setLocalMtime {
 		if stat.Mtime.Nsec == linux.UTIME_NOW {
-			if haveNow {
-				atomic.StoreInt64(&d.mtime, now)
-			}
+			atomic.StoreInt64(&d.mtime, now)
 		} else {
 			atomic.StoreInt64(&d.mtime, dentryTimestampFromStatx(stat.Mtime))
 		}
 	}
-	if haveNow {
-		atomic.StoreInt64(&d.ctime, now)
-	}
+	atomic.StoreInt64(&d.ctime, now)
 	if stat.Mask&linux.STATX_SIZE != 0 {
 		d.dataMu.Lock()
 		oldSize := d.size
