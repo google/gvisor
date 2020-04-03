@@ -255,7 +255,8 @@ func (p *Pipe) write(ctx context.Context, ops writeOps) (int64, error) {
 	// POSIX requires that a write smaller than atomicIOBytes (PIPE_BUF) be
 	// atomic, but requires no atomicity for writes larger than this.
 	wanted := ops.left()
-	if avail := p.max - p.view.Size(); wanted > avail {
+	avail := p.max - p.view.Size()
+	if wanted > avail {
 		if wanted <= p.atomicIOBytes {
 			return 0, syserror.ErrWouldBlock
 		}
@@ -268,8 +269,14 @@ func (p *Pipe) write(ctx context.Context, ops writeOps) (int64, error) {
 		return done, err
 	}
 
-	if wanted > done {
-		// Partial write due to full pipe.
+	if done < avail {
+		// Non-failure, but short write.
+		return done, nil
+	}
+	if done < wanted {
+		// Partial write due to full pipe. Note that this could also be
+		// the short write case above, we would expect a second call
+		// and the write to return zero bytes in this case.
 		return done, syserror.ErrWouldBlock
 	}
 
