@@ -1126,7 +1126,7 @@ TEST_F(PtyTest, SwitchTwiceMultiline) {
   std::string kExpected = "GO\nBLUE\n!";
 
   // Write each line.
-  for (std::string input : kInputs) {
+  for (const std::string& input : kInputs) {
     ASSERT_THAT(WriteFd(master_.get(), input.c_str(), input.size()),
                 SyscallSucceedsWithValue(input.size()));
   }
