@@ -2212,7 +2212,7 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, PortReuseTwoSockets) {
           setsockopt(fd2, SOL_SOCKET, SO_REUSEPORT, &portreuse2, sizeof(int)),
           SyscallSucceeds());
 
-      std::cout << portreuse1 << " " << portreuse2;
+      std::cout << portreuse1 << " " << portreuse2 << std::endl;
       int ret = bind(fd2, reinterpret_cast<sockaddr*>(&addr), addrlen);
 
       // Verify that two sockets can be bound to the same port only if

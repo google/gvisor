@@ -266,7 +266,7 @@ TEST_F(PollTest, Nfds) {
   }
 
   rlim_t max_fds = rlim.rlim_cur;
-  std::cout << "Using limit: " << max_fds;
+  std::cout << "Using limit: " << max_fds << std::endl;
 
   // Create an eventfd. Since its value is initially zero, it is writable.
   FileDescriptor efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD());
