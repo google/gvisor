@@ -356,7 +356,9 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	if err := create(parent, name); err != nil {
 		return err
 	}
-	parent.touchCMtime(ctx)
+	if fs.opts.interop != InteropModeShared {
+		parent.touchCMtime()
+	}
 	delete(parent.negativeChildren, name)
 	parent.dirents = nil
 	return nil
@@ -454,7 +456,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 		return err
 	}
 	if fs.opts.interop != InteropModeShared {
-		parent.touchCMtime(ctx)
+		parent.touchCMtime()
 		if dir {
 			parent.decLinks()
 		}
@@ -802,7 +804,6 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 	d.IncRef() // reference held by child on its parent d
 	d.vfsd.InsertChild(&child.vfsd, name)
 	if d.fs.opts.interop != InteropModeShared {
-		d.touchCMtime(ctx)
 		delete(d.negativeChildren, name)
 		d.dirents = nil
 	}
@@ -833,6 +834,9 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 			return nil, err
 		}
 		childVFSFD = &fd.vfsfd
+	}
+	if d.fs.opts.interop != InteropModeShared {
+		d.touchCMtime()
 	}
 	return childVFSFD, nil
 }
@@ -975,6 +979,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			oldParent.decLinks()
 			newParent.incLinks()
 		}
+		oldParent.touchCMtime()
+		newParent.touchCMtime()
+		renamed.touchCtime()
 	}
 	vfsObj.CommitRenameReplaceDentry(&renamed.vfsd, &newParent.vfsd, newName, replacedVFSD)
 	return nil

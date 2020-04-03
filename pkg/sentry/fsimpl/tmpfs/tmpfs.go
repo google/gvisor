@@ -385,28 +385,41 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, stat *linu
 			return syserror.EINVAL
 		}
 	}
+	now := i.clock.Now().Nanoseconds()
 	if mask&linux.STATX_ATIME != 0 {
-		atomic.StoreInt64(&i.atime, stat.Atime.ToNsecCapped())
+		if stat.Atime.Nsec == linux.UTIME_NOW {
+			atomic.StoreInt64(&i.atime, now)
+		} else {
+			atomic.StoreInt64(&i.atime, stat.Atime.ToNsecCapped())
+		}
 		needsCtimeBump = true
 	}
 	if mask&linux.STATX_MTIME != 0 {
-		atomic.StoreInt64(&i.mtime, stat.Mtime.ToNsecCapped())
+		if stat.Mtime.Nsec == linux.UTIME_NOW {
+			atomic.StoreInt64(&i.mtime, now)
+		} else {
+			atomic.StoreInt64(&i.mtime, stat.Mtime.ToNsecCapped())
+		}
 		needsCtimeBump = true
 		// Ignore the mtime bump, since we just set it ourselves.
 		needsMtimeBump = false
 	}
 	if mask&linux.STATX_CTIME != 0 {
-		atomic.StoreInt64(&i.ctime, stat.Ctime.ToNsecCapped())
+		if stat.Ctime.Nsec == linux.UTIME_NOW {
+			atomic.StoreInt64(&i.ctime, now)
+		} else {
+			atomic.StoreInt64(&i.ctime, stat.Ctime.ToNsecCapped())
+		}
 		// Ignore the ctime bump, since we just set it ourselves.
 		needsCtimeBump = false
 	}
-	now := i.clock.Now().Nanoseconds()
 	if needsMtimeBump {
 		atomic.StoreInt64(&i.mtime, now)
 	}
 	if needsCtimeBump {
 		atomic.StoreInt64(&i.ctime, now)
 	}
+
 	i.mu.Unlock()
 	return nil
 }
@@ -482,6 +495,42 @@ func (i *inode) direntType() uint8 {
 
 func (i *inode) isDir() bool {
 	return linux.FileMode(i.mode).FileType() == linux.S_IFDIR
+}
+
+func (i *inode) touchAtime(mnt *vfs.Mount) {
+	if err := mnt.CheckBeginWrite(); err != nil {
+		return
+	}
+	now := i.clock.Now().Nanoseconds()
+	i.mu.Lock()
+	atomic.StoreInt64(&i.atime, now)
+	i.mu.Unlock()
+	mnt.EndWrite()
+}
+
+// Preconditions: The caller has called vfs.Mount.CheckBeginWrite().
+func (i *inode) touchCtime() {
+	now := i.clock.Now().Nanoseconds()
+	i.mu.Lock()
+	atomic.StoreInt64(&i.ctime, now)
+	i.mu.Unlock()
+}
+
+// Preconditions: The caller has called vfs.Mount.CheckBeginWrite().
+func (i *inode) touchCMtime() {
+	now := i.clock.Now().Nanoseconds()
+	i.mu.Lock()
+	atomic.StoreInt64(&i.mtime, now)
+	atomic.StoreInt64(&i.ctime, now)
+	i.mu.Unlock()
+}
+
+// Preconditions: The caller has called vfs.Mount.CheckBeginWrite() and holds
+// inode.mu.
+func (i *inode) touchCMtimeLocked() {
+	now := i.clock.Now().Nanoseconds()
+	atomic.StoreInt64(&i.mtime, now)
+	atomic.StoreInt64(&i.ctime, now)
 }
 
 // fileDescription is embedded by tmpfs implementations of

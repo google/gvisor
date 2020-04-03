@@ -104,7 +104,7 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	putDentryReadWriter(rw)
 	if d.fs.opts.interop != InteropModeShared {
 		// Compare Linux's mm/filemap.c:do_generic_file_read() => file_accessed().
-		d.touchAtime(ctx, fd.vfsfd.Mount())
+		d.touchAtime(fd.vfsfd.Mount())
 	}
 	return n, err
 }
@@ -139,10 +139,7 @@ func (fd *regularFileFD) PWrite(ctx context.Context, src usermem.IOSequence, off
 		// Compare Linux's mm/filemap.c:__generic_file_write_iter() =>
 		// file_update_time(). This is d.touchCMtime(), but without locking
 		// d.metadataMu (recursively).
-		if now, ok := nowFromContext(ctx); ok {
-			atomic.StoreInt64(&d.mtime, now)
-			atomic.StoreInt64(&d.ctime, now)
-		}
+		d.touchCMtimeLocked()
 	}
 	if fd.vfsfd.StatusFlags()&linux.O_DIRECT != 0 {
 		// Write dirty cached pages that will be touched by the write back to

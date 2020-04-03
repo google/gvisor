@@ -76,7 +76,7 @@ func (fd *specialFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	// hold here since specialFileFD doesn't client-cache data. Just buffer the
 	// read instead.
 	if d := fd.dentry(); d.fs.opts.interop != InteropModeShared {
-		d.touchAtime(ctx, fd.vfsfd.Mount())
+		d.touchAtime(fd.vfsfd.Mount())
 	}
 	buf := make([]byte, dst.NumBytes())
 	n, err := fd.handle.readToBlocksAt(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf)), uint64(offset))
@@ -117,7 +117,7 @@ func (fd *specialFileFD) PWrite(ctx context.Context, src usermem.IOSequence, off
 
 	// Do a buffered write. See rationale in PRead.
 	if d := fd.dentry(); d.fs.opts.interop != InteropModeShared {
-		d.touchCMtime(ctx)
+		d.touchCMtime()
 	}
 	buf := make([]byte, src.NumBytes())
 	// Don't do partial writes if we get a partial read from src.

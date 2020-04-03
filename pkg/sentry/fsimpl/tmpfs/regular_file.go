@@ -286,7 +286,8 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	rw := getRegularFileReadWriter(f, offset)
 	n, err := dst.CopyOutFrom(ctx, rw)
 	putRegularFileReadWriter(rw)
-	return int64(n), err
+	fd.inode().touchAtime(fd.vfsfd.Mount())
+	return n, err
 }
 
 // Read implements vfs.FileDescriptionImpl.Read.
@@ -323,6 +324,7 @@ func (fd *regularFileFD) PWrite(ctx context.Context, src usermem.IOSequence, off
 	f.inode.mu.Lock()
 	rw := getRegularFileReadWriter(f, offset)
 	n, err := src.CopyInTo(ctx, rw)
+	fd.inode().touchCMtimeLocked()
 	f.inode.mu.Unlock()
 	putRegularFileReadWriter(rw)
 	return n, err

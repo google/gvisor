@@ -56,12 +56,17 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
 
+	d := fd.dentry()
 	if fd.dirents == nil {
-		ds, err := fd.dentry().getDirents(ctx)
+		ds, err := d.getDirents(ctx)
 		if err != nil {
 			return err
 		}
 		fd.dirents = ds
+	}
+
+	if d.fs.opts.interop != InteropModeShared {
+		d.touchAtime(fd.vfsfd.Mount())
 	}
 
 	for fd.off < int64(len(fd.dirents)) {

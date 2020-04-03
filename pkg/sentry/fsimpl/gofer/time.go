@@ -18,8 +18,6 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/context"
-	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -38,23 +36,12 @@ func statxTimestampFromDentry(ns int64) linux.StatxTimestamp {
 	}
 }
 
-func nowFromContext(ctx context.Context) (int64, bool) {
-	if clock := ktime.RealtimeClockFromContext(ctx); clock != nil {
-		return clock.Now().Nanoseconds(), true
-	}
-	return 0, false
-}
-
 // Preconditions: fs.interop != InteropModeShared.
-func (d *dentry) touchAtime(ctx context.Context, mnt *vfs.Mount) {
+func (d *dentry) touchAtime(mnt *vfs.Mount) {
 	if err := mnt.CheckBeginWrite(); err != nil {
 		return
 	}
-	now, ok := nowFromContext(ctx)
-	if !ok {
-		mnt.EndWrite()
-		return
-	}
+	now := d.fs.clock.Now().Nanoseconds()
 	d.metadataMu.Lock()
 	atomic.StoreInt64(&d.atime, now)
 	d.metadataMu.Unlock()
@@ -63,13 +50,25 @@ func (d *dentry) touchAtime(ctx context.Context, mnt *vfs.Mount) {
 
 // Preconditions: fs.interop != InteropModeShared. The caller has successfully
 // called vfs.Mount.CheckBeginWrite().
-func (d *dentry) touchCMtime(ctx context.Context) {
-	now, ok := nowFromContext(ctx)
-	if !ok {
-		return
-	}
+func (d *dentry) touchCtime() {
+	now := d.fs.clock.Now().Nanoseconds()
+	d.metadataMu.Lock()
+	atomic.StoreInt64(&d.ctime, now)
+	d.metadataMu.Unlock()
+}
+
+// Preconditions: fs.interop != InteropModeShared. The caller has successfully
+// called vfs.Mount.CheckBeginWrite().
+func (d *dentry) touchCMtime() {
+	now := d.fs.clock.Now().Nanoseconds()
 	d.metadataMu.Lock()
 	atomic.StoreInt64(&d.mtime, now)
 	atomic.StoreInt64(&d.ctime, now)
 	d.metadataMu.Unlock()
+}
+
+func (d *dentry) touchCMtimeLocked() {
+	now := d.fs.clock.Now().Nanoseconds()
+	atomic.StoreInt64(&d.mtime, now)
+	atomic.StoreInt64(&d.ctime, now)
 }

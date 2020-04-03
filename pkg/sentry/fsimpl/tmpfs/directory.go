@@ -68,6 +68,8 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
+	fd.inode().touchAtime(fd.vfsfd.Mount())
+
 	if fd.off == 0 {
 		if err := cb.Handle(vfs.Dirent{
 			Name:    ".",
