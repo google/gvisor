@@ -1926,19 +1926,17 @@ func (r *Rreaddir) decode(b *buffer) {
 // encode implements encoder.encode.
 func (r *Rreaddir) encode(b *buffer) {
 	entriesBuf := buffer{}
+	payloadSize := 0
 	for _, d := range r.Entries {
 		d.encode(&entriesBuf)
-		if len(entriesBuf.data) >= int(r.Count) {
+		if len(entriesBuf.data) > int(r.Count) {
 			break
 		}
+		payloadSize = len(entriesBuf.data)
 	}
-	if len(entriesBuf.data) < int(r.Count) {
-		r.Count = uint32(len(entriesBuf.data))
-		r.payload = entriesBuf.data
-	} else {
-		r.payload = entriesBuf.data[:r.Count]
-	}
-	b.Write32(uint32(r.Count))
+	r.Count = uint32(payloadSize)
+	r.payload = entriesBuf.data[:payloadSize]
+	b.Write32(r.Count)
 }
 
 // Type implements message.Type.
