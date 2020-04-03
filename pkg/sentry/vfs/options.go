@@ -16,6 +16,7 @@ package vfs
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 )
 
 // GetDentryOptions contains options to VirtualFilesystem.GetDentryAt() and
@@ -44,6 +45,10 @@ type MknodOptions struct {
 	// DevMinor are the major and minor device numbers for the created device.
 	DevMajor uint32
 	DevMinor uint32
+
+	// Endpoint is the endpoint to bind to the created file, if a socket file is
+	// being created for bind(2) on a Unix domain socket.
+	Endpoint transport.BoundEndpoint
 }
 
 // MountFlags contains flags as specified for mount(2), e.g. MS_NOEXEC.
