@@ -835,7 +835,8 @@ func superBlockOpts(mountPath string, mnt *Mount) string {
 	// NOTE(b/147673608): If the mount is a cgroup, we also need to include
 	// the cgroup name in the options. For now we just read that from the
 	// path.
-	// TODO(gvisor.dev/issues/190): Once gVisor has full cgroup support, we
+	//
+	// TODO(gvisor.dev/issue/190): Once gVisor has full cgroup support, we
 	// should get this value from the cgroup itself, and not rely on the
 	// path.
 	if mnt.fs.FilesystemType().Name() == "cgroup" {
