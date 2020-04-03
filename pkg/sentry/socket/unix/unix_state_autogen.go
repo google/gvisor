@@ -9,14 +9,25 @@ import (
 func (x *SocketOperations) beforeSave() {}
 func (x *SocketOperations) save(m state.Map) {
 	x.beforeSave()
+	m.Save("socketOpsCommon", &x.socketOpsCommon)
+}
+
+func (x *SocketOperations) afterLoad() {}
+func (x *SocketOperations) load(m state.Map) {
+	m.Load("socketOpsCommon", &x.socketOpsCommon)
+}
+
+func (x *socketOpsCommon) beforeSave() {}
+func (x *socketOpsCommon) save(m state.Map) {
+	x.beforeSave()
 	m.Save("AtomicRefCount", &x.AtomicRefCount)
 	m.Save("SendReceiveTimeout", &x.SendReceiveTimeout)
 	m.Save("ep", &x.ep)
 	m.Save("stype", &x.stype)
 }
 
-func (x *SocketOperations) afterLoad() {}
-func (x *SocketOperations) load(m state.Map) {
+func (x *socketOpsCommon) afterLoad() {}
+func (x *socketOpsCommon) load(m state.Map) {
 	m.Load("AtomicRefCount", &x.AtomicRefCount)
 	m.Load("SendReceiveTimeout", &x.SendReceiveTimeout)
 	m.Load("ep", &x.ep)
@@ -25,4 +36,5 @@ func (x *SocketOperations) load(m state.Map) {
 
 func init() {
 	state.Register("pkg/sentry/socket/unix.SocketOperations", (*SocketOperations)(nil), state.Fns{Save: (*SocketOperations).save, Load: (*SocketOperations).load})
+	state.Register("pkg/sentry/socket/unix.socketOpsCommon", (*socketOpsCommon)(nil), state.Fns{Save: (*socketOpsCommon).save, Load: (*socketOpsCommon).load})
 }
