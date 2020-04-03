@@ -246,6 +246,10 @@ func NewNegativeDirent(name string) *Dirent {
 	return newDirent(nil, name)
 }
 
+func (d *Dirent) BecameInvisible() {
+	allDirents.remove(d)
+}
+
 // IsRoot returns true if d is a root Dirent.
 func (d *Dirent) IsRoot() bool {
 	return d.parent == nil

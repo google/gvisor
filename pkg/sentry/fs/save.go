@@ -37,10 +37,7 @@ func SaveInodeMappings() {
 	}
 
 	for dirent := range allDirents.dirents {
-		// skip upper layer's dirents if they have overlay dirent set
-		// as upper layer's dirents do not have parent set and will be
-		// incorrectly regarded as root path in d.Fullname().
-		if dirent.Inode != nil && dirent.Overlay == nil {
+		if dirent.Inode != nil {
 			// We cannot trust the root provided in the mount due
 			// to the overlay. We can trust the overlay to delegate
 			// SaveInodeMappings to the right underlying

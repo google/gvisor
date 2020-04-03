@@ -474,6 +474,7 @@ func overlayBind(ctx context.Context, o *overlayEntry, parent *Dirent, name stri
 	// will have to be taken care of by upper layer when it DecRef() d.
 	if d.ReadRefs() > 1 {
 		overlayd.IncRef()
+		d.BecameInvisible()
 	}
 	d.DecRef()
 	return overlayd, nil
