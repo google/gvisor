@@ -315,7 +315,7 @@ func (i *inode) statTo(stat *linux.Statx) {
 	stat.Atime = linux.NsecToStatxTimestamp(i.atime)
 	stat.Ctime = linux.NsecToStatxTimestamp(i.ctime)
 	stat.Mtime = linux.NsecToStatxTimestamp(i.mtime)
-	// TODO(gvisor.dev/issues/1197): Device number.
+	// TODO(gvisor.dev/issue/1197): Device number.
 	switch impl := i.impl.(type) {
 	case *regularFile:
 		stat.Mask |= linux.STATX_SIZE | linux.STATX_BLOCKS
