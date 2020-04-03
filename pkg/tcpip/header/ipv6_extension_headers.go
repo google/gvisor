@@ -62,6 +62,10 @@ const (
 	// within an IPv6RoutingExtHdr.
 	ipv6RoutingExtHdrSegmentsLeftIdx = 1
 
+	// IPv6FragmentExtHdrLength is the length of an IPv6 extension header, in
+	// bytes.
+	IPv6FragmentExtHdrLength = 8
+
 	// ipv6FragmentExtHdrFragmentOffsetOffset is the offset to the start of the
 	// Fragment Offset field within an IPv6FragmentExtHdr.
 	ipv6FragmentExtHdrFragmentOffsetOffset = 0
