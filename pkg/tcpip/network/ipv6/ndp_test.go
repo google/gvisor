@@ -276,9 +276,7 @@ func TestNeighorAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 	}
 }
 
-// TestHopLimitValidation is a test that makes sure that NDP packets are only
-// received if their IP header's hop limit is set to 255.
-func TestHopLimitValidation(t *testing.T) {
+func TestNDPValidation(t *testing.T) {
 	setup := func(t *testing.T) (*stack.Stack, stack.NetworkEndpoint, stack.Route) {
 		t.Helper()
 
@@ -294,12 +292,19 @@ func TestHopLimitValidation(t *testing.T) {
 		return s, ep, r
 	}
 
-	handleIPv6Payload := func(hdr buffer.Prependable, hopLimit uint8, ep stack.NetworkEndpoint, r *stack.Route) {
+	handleIPv6Payload := func(hdr buffer.Prependable, hopLimit uint8, atomicFragment bool, ep stack.NetworkEndpoint, r *stack.Route) {
+		nextHdr := uint8(header.ICMPv6ProtocolNumber)
+		if atomicFragment {
+			bytes := hdr.Prepend(header.IPv6FragmentExtHdrLength)
+			bytes[0] = nextHdr
+			nextHdr = uint8(header.IPv6FragmentExtHdrIdentifier)
+		}
+
 		payloadLength := hdr.UsedLength()
 		ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 		ip.Encode(&header.IPv6Fields{
 			PayloadLength: uint16(payloadLength),
-			NextHeader:    uint8(header.ICMPv6ProtocolNumber),
+			NextHeader:    nextHdr,
 			HopLimit:      hopLimit,
 			SrcAddr:       r.LocalAddress,
 			DstAddr:       r.RemoteAddress,
@@ -364,65 +369,93 @@ func TestHopLimitValidation(t *testing.T) {
 		},
 	}
 
+	subTests := []struct {
+		name           string
+		atomicFragment bool
+		hopLimit       uint8
+		code           uint8
+		valid          bool
+	}{
+		{
+			name:           "Valid",
+			atomicFragment: false,
+			hopLimit:       header.NDPHopLimit,
+			code:           0,
+			valid:          true,
+		},
+		{
+			name:           "Fragmented",
+			atomicFragment: true,
+			hopLimit:       header.NDPHopLimit,
+			code:           0,
+			valid:          false,
+		},
+		{
+			name:           "Invalid hop limit",
+			atomicFragment: false,
+			hopLimit:       header.NDPHopLimit - 1,
+			code:           0,
+			valid:          false,
+		},
+		{
+			name:           "Invalid ICMPv6 code",
+			atomicFragment: false,
+			hopLimit:       header.NDPHopLimit,
+			code:           1,
+			valid:          false,
+		},
+	}
+
 	for _, typ := range types {
 		t.Run(typ.name, func(t *testing.T) {
-			s, ep, r := setup(t)
-			defer r.Release()
+			for _, test := range subTests {
+				t.Run(test.name, func(t *testing.T) {
+					s, ep, r := setup(t)
+					defer r.Release()
 
-			stats := s.Stats().ICMP.V6PacketsReceived
-			invalid := stats.Invalid
-			typStat := typ.statCounter(stats)
+					stats := s.Stats().ICMP.V6PacketsReceived
+					invalid := stats.Invalid
+					typStat := typ.statCounter(stats)
 
-			extraDataLen := len(typ.extraData)
-			hdr := buffer.NewPrependable(header.IPv6MinimumSize + typ.size + extraDataLen)
-			extraData := buffer.View(hdr.Prepend(extraDataLen))
-			copy(extraData, typ.extraData)
-			pkt := header.ICMPv6(hdr.Prepend(typ.size))
-			pkt.SetType(typ.typ)
-			pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, extraData.ToVectorisedView()))
+					extraDataLen := len(typ.extraData)
+					hdr := buffer.NewPrependable(header.IPv6MinimumSize + typ.size + extraDataLen + header.IPv6FragmentExtHdrLength)
+					extraData := buffer.View(hdr.Prepend(extraDataLen))
+					copy(extraData, typ.extraData)
+					pkt := header.ICMPv6(hdr.Prepend(typ.size))
+					pkt.SetType(typ.typ)
+					pkt.SetCode(test.code)
+					pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, extraData.ToVectorisedView()))
 
-			// Rx count of the NDP message should initially be 0.
-			if got := typStat.Value(); got != 0 {
-				t.Errorf("got %s = %d, want = 0", typ.name, got)
-			}
+					// Rx count of the NDP message should initially be 0.
+					if got := typStat.Value(); got != 0 {
+						t.Errorf("got %s = %d, want = 0", typ.name, got)
+					}
 
-			// Invalid count should initially be 0.
-			if got := invalid.Value(); got != 0 {
-				t.Errorf("got invalid = %d, want = 0", got)
-			}
+					// Invalid count should initially be 0.
+					if got := invalid.Value(); got != 0 {
+						t.Errorf("got invalid = %d, want = 0", got)
+					}
 
-			if t.Failed() {
-				t.FailNow()
-			}
+					if t.Failed() {
+						t.FailNow()
+					}
 
-			// Receive the NDP packet with an invalid hop limit.
-			handleIPv6Payload(hdr, header.NDPHopLimit-1, ep, &r)
+					handleIPv6Payload(hdr, test.hopLimit, test.atomicFragment, ep, &r)
 
-			// Rx count of the NDP packet should have increased.
-			if got := typStat.Value(); got != 1 {
-				t.Errorf("got %s = %d, want = 1", typ.name, got)
-			}
+					// Rx count of the NDP packet should have increased.
+					if got := typStat.Value(); got != 1 {
+						t.Errorf("got %s = %d, want = 1", typ.name, got)
+					}
 
-			// Invalid count should have increased.
-			if got := invalid.Value(); got != 1 {
-				t.Errorf("got invalid = %d, want = 1", got)
-			}
-
-			if t.Failed() {
-				t.FailNow()
-			}
-
-			// Receive the NDP packet with a valid hop limit value.
-			handleIPv6Payload(hdr, header.NDPHopLimit, ep, &r)
-
-			// Rx count of the NDP packet should have increased.
-			if got := typStat.Value(); got != 2 {
-				t.Errorf("got %s = %d, want = 2", typ.name, got)
-			}
-
-			// Invalid count should not have increased again.
-			if got := invalid.Value(); got != 1 {
-				t.Errorf("got invalid = %d, want = 1", got)
+					want := uint64(0)
+					if !test.valid {
+						// Invalid count should have increased.
+						want = 1
+					}
+					if got := invalid.Value(); got != want {
+						t.Errorf("got invalid = %d, want = %d", got, want)
+					}
+				})
 			}
 		})
 	}

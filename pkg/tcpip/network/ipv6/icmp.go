@@ -62,7 +62,7 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt stack.
 	e.dispatcher.DeliverTransportControlPacket(e.id.LocalAddress, h.DestinationAddress(), ProtocolNumber, p, typ, extra, pkt)
 }
 
-func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.PacketBuffer) {
+func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.PacketBuffer, hasFragmentHeader bool) {
 	stats := r.Stats().ICMP
 	sent := stats.V6PacketsSent
 	received := stats.V6PacketsReceived
@@ -91,7 +91,10 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.P
 		// 8.1, nodes MUST silently drop NDP packets where the Hop Limit field
 		// in the IPv6 header is not set to 255, or the ICMPv6 Code field is not
 		// set to 0.
-		return iph.HopLimit() == header.NDPHopLimit && h.Code() == 0
+		//
+		// As per RFC 6980 section 5, nodes MUST silently drop NDP messages if the
+		// packet includes a fragmentation header.
+		return !hasFragmentHeader && iph.HopLimit() == header.NDPHopLimit && h.Code() == 0
 	}
 
 	// TODO(b/112892170): Meaningfully handle all ICMP types.

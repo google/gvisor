@@ -185,6 +185,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
 	pkt.Data.CapLength(int(h.PayloadLength()))
 
 	it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(h.NextHeader()), pkt.Data)
+	hasFragmentHeader := false
 
 	for firstHeader := true; ; firstHeader = false {
 		extHdr, done, err := it.Next()
@@ -257,6 +258,8 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
 			}
 
 		case header.IPv6FragmentExtHdr:
+			hasFragmentHeader = true
+
 			fragmentOffset := extHdr.FragmentOffset()
 			more := extHdr.More()
 			if !more && fragmentOffset == 0 {
@@ -344,7 +347,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
 			pkt.Data = extHdr.Buf
 
 			if p := tcpip.TransportProtocolNumber(extHdr.Identifier); p == header.ICMPv6ProtocolNumber {
-				e.handleICMP(r, headerView, pkt)
+				e.handleICMP(r, headerView, pkt, hasFragmentHeader)
 			} else {
 				r.Stats().IP.PacketsDelivered.Increment()
 				// TODO(b/152019344): Send an ICMPv6 Parameter Problem, Code 1 error
