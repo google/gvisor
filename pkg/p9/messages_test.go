@@ -216,7 +216,7 @@ func TestEncodeDecode(t *testing.T) {
 		},
 		&Rreaddir{
 			// Count must be sufficient to encode a dirent.
-			Count:   0x18,
+			Count:   0x1a,
 			Entries: []Dirent{{QID: QID{Type: 2}}},
 		},
 		&Tfsync{
