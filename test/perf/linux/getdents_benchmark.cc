@@ -38,7 +38,7 @@ namespace testing {
 
 namespace {
 
-constexpr int kBufferSize = 16384;
+constexpr int kBufferSize = 65536;
 
 PosixErrorOr<TempPath> CreateDirectory(int count,
                                        std::vector<std::string>* files) {

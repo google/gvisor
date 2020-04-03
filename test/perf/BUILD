@@ -30,6 +30,7 @@ syscall_test(
 
 syscall_test(
     size = "enormous",
+    shard_count = 10,
     tags = ["nogotsan"],
     test = "//test/perf/linux:getdents_benchmark",
 )
