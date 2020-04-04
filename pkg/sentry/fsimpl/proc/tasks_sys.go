@@ -39,6 +39,7 @@ func newSysDir(root *auth.Credentials, inoGen InoGenerator, k *kernel.Kernel) *k
 			"shmmni":   newDentry(root, inoGen.NextIno(), 0444, shmData(linux.SHMMNI)),
 		}),
 		"vm": kernfs.NewStaticDir(root, inoGen.NextIno(), 0555, map[string]*kernfs.Dentry{
+			"max_map_count":     newDentry(root, inoGen.NextIno(), 0444, newStaticFile("65530\n")),
 			"mmap_min_addr":     newDentry(root, inoGen.NextIno(), 0444, &mmapMinAddrData{}),
 			"overcommit_memory": newDentry(root, inoGen.NextIno(), 0444, newStaticFile("0\n")),
 		}),
