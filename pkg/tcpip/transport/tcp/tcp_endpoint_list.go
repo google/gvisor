@@ -52,12 +52,21 @@ func (l *endpointList) Back() *endpoint {
 	return l.tail
 }
 
+// Len returns the number of elements in the list.
+//
+// NOTE: This is an O(n) operation.
+func (l *endpointList) Len() (count int) {
+	for e := l.Front(); e != nil; e = e.Next() {
+		count++
+	}
+	return count
+}
+
 // PushFront inserts the element e at the front of list l.
 func (l *endpointList) PushFront(e *endpoint) {
 	linker := endpointElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
 	linker.SetPrev(nil)
-
 	if l.head != nil {
 		endpointElementMapper{}.linkerFor(l.head).SetPrev(e)
 	} else {
@@ -72,7 +81,6 @@ func (l *endpointList) PushBack(e *endpoint) {
 	linker := endpointElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
 	linker.SetPrev(l.tail)
-
 	if l.tail != nil {
 		endpointElementMapper{}.linkerFor(l.tail).SetNext(e)
 	} else {
@@ -93,7 +101,6 @@ func (l *endpointList) PushBackList(m *endpointList) {
 
 		l.tail = m.tail
 	}
-
 	m.head = nil
 	m.tail = nil
 }

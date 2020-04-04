@@ -28,7 +28,7 @@ import (
 
 // PacketInfo holds all the information about an outbound packet.
 type PacketInfo struct {
-	Pkt   stack.PacketBuffer
+	Pkt   *stack.PacketBuffer
 	Proto tcpip.NetworkProtocolNumber
 	GSO   *stack.GSO
 	Route stack.Route
@@ -257,7 +257,7 @@ func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 	route := r.Clone()
 	route.Release()
 	p := PacketInfo{
-		Pkt:   pkt,
+		Pkt:   &pkt,
 		Proto: protocol,
 		GSO:   gso,
 		Route: route,
@@ -269,21 +269,15 @@ func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 }
 
 // WritePackets stores outbound packets into the channel.
-func (e *Endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []stack.PacketBuffer, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (e *Endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	// Clone r then release its resource so we only get the relevant fields from
 	// stack.Route without holding a reference to a NIC's endpoint.
 	route := r.Clone()
 	route.Release()
-	payloadView := pkts[0].Data.ToView()
 	n := 0
-	for _, pkt := range pkts {
-		off := pkt.DataOffset
-		size := pkt.DataSize
+	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		p := PacketInfo{
-			Pkt: stack.PacketBuffer{
-				Header: pkt.Header,
-				Data:   buffer.NewViewFromBytes(payloadView[off : off+size]).ToVectorisedView(),
-			},
+			Pkt:   pkt,
 			Proto: protocol,
 			GSO:   gso,
 			Route: route,
@@ -301,7 +295,7 @@ func (e *Endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []stack.Pac
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
 func (e *Endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
 	p := PacketInfo{
-		Pkt:   stack.PacketBuffer{Data: vv},
+		Pkt:   &stack.PacketBuffer{Data: vv},
 		Proto: 0,
 		GSO:   nil,
 	}

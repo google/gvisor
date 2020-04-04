@@ -52,12 +52,21 @@ func (l *pollEntryList) Back() *pollEntry {
 	return l.tail
 }
 
+// Len returns the number of elements in the list.
+//
+// NOTE: This is an O(n) operation.
+func (l *pollEntryList) Len() (count int) {
+	for e := l.Front(); e != nil; e = e.Next() {
+		count++
+	}
+	return count
+}
+
 // PushFront inserts the element e at the front of list l.
 func (l *pollEntryList) PushFront(e *pollEntry) {
 	linker := pollEntryElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
 	linker.SetPrev(nil)
-
 	if l.head != nil {
 		pollEntryElementMapper{}.linkerFor(l.head).SetPrev(e)
 	} else {
@@ -72,7 +81,6 @@ func (l *pollEntryList) PushBack(e *pollEntry) {
 	linker := pollEntryElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
 	linker.SetPrev(l.tail)
-
 	if l.tail != nil {
 		pollEntryElementMapper{}.linkerFor(l.tail).SetNext(e)
 	} else {
@@ -93,7 +101,6 @@ func (l *pollEntryList) PushBackList(m *pollEntryList) {
 
 		l.tail = m.tail
 	}
-
 	m.head = nil
 	m.tail = nil
 }

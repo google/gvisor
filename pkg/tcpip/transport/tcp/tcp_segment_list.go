@@ -52,12 +52,21 @@ func (l *segmentList) Back() *segment {
 	return l.tail
 }
 
+// Len returns the number of elements in the list.
+//
+// NOTE: This is an O(n) operation.
+func (l *segmentList) Len() (count int) {
+	for e := l.Front(); e != nil; e = e.Next() {
+		count++
+	}
+	return count
+}
+
 // PushFront inserts the element e at the front of list l.
 func (l *segmentList) PushFront(e *segment) {
 	linker := segmentElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
 	linker.SetPrev(nil)
-
 	if l.head != nil {
 		segmentElementMapper{}.linkerFor(l.head).SetPrev(e)
 	} else {
@@ -72,7 +81,6 @@ func (l *segmentList) PushBack(e *segment) {
 	linker := segmentElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
 	linker.SetPrev(l.tail)
-
 	if l.tail != nil {
 		segmentElementMapper{}.linkerFor(l.tail).SetNext(e)
 	} else {
@@ -93,7 +101,6 @@ func (l *segmentList) PushBackList(m *segmentList) {
 
 		l.tail = m.tail
 	}
-
 	m.head = nil
 	m.tail = nil
 }
