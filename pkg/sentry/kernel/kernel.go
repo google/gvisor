@@ -564,15 +564,25 @@ func (ts *TaskSet) unregisterEpollWaiters() {
 
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
+
+	// Tasks that belong to the same process could potentially point to the
+	// same FDTable. So we retain a map of processed ones to avoid
+	// processing the same FDTable multiple times.
+	processed := make(map[*FDTable]struct{})
 	for t := range ts.Root.tids {
 		// We can skip locking Task.mu here since the kernel is paused.
-		if t.fdTable != nil {
-			t.fdTable.forEach(func(_ int32, file *fs.File, _ *vfs.FileDescription, _ FDFlags) {
-				if e, ok := file.FileOperations.(*epoll.EventPoll); ok {
-					e.UnregisterEpollWaiters()
-				}
-			})
+		if t.fdTable == nil {
+			continue
 		}
+		if _, ok := processed[t.fdTable]; ok {
+			continue
+		}
+		t.fdTable.forEach(func(_ int32, file *fs.File, _ *vfs.FileDescription, _ FDFlags) {
+			if e, ok := file.FileOperations.(*epoll.EventPoll); ok {
+				e.UnregisterEpollWaiters()
+			}
+		})
+		processed[t.fdTable] = struct{}{}
 	}
 }
 

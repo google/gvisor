@@ -756,8 +756,7 @@ func (e *endpoint) sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedV
 func buildTCPHdr(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso *stack.GSO) {
 	optLen := len(tf.opts)
 	hdr := &pkt.Header
-	packetSize := pkt.DataSize
-	off := pkt.DataOffset
+	packetSize := pkt.Data.Size()
 	// Initialize the header.
 	tcp := header.TCP(hdr.Prepend(header.TCPMinimumSize + optLen))
 	pkt.TransportHeader = buffer.View(tcp)
@@ -782,12 +781,18 @@ func buildTCPHdr(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso *sta
 		// header and data and get the right sum of the TCP packet.
 		tcp.SetChecksum(xsum)
 	} else if r.Capabilities()&stack.CapabilityTXChecksumOffload == 0 {
-		xsum = header.ChecksumVVWithOffset(pkt.Data, xsum, off, packetSize)
+		xsum = header.ChecksumVV(pkt.Data, xsum)
 		tcp.SetChecksum(^tcp.CalculateChecksum(xsum))
 	}
 }
 
 func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO, owner tcpip.PacketOwner) *tcpip.Error {
+	// We need to shallow clone the VectorisedView here as ReadToView will
+	// split the VectorisedView and Trim underlying views as it splits. Not
+	// doing the clone here will cause the underlying views of data itself
+	// to be altered.
+	data = data.Clone(nil)
+
 	optLen := len(tf.opts)
 	if tf.rcvWnd > 0xffff {
 		tf.rcvWnd = 0xffff
@@ -796,31 +801,25 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso 
 	mss := int(gso.MSS)
 	n := (data.Size() + mss - 1) / mss
 
-	// Allocate one big slice for all the headers.
-	hdrSize := header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen
-	buf := make([]byte, n*hdrSize)
-	pkts := make([]stack.PacketBuffer, n)
-	for i := range pkts {
-		pkts[i].Header = buffer.NewEmptyPrependableFromView(buf[i*hdrSize:][:hdrSize])
-	}
-
 	size := data.Size()
-	off := 0
+	hdrSize := header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen
+	var pkts stack.PacketBufferList
 	for i := 0; i < n; i++ {
 		packetSize := mss
 		if packetSize > size {
 			packetSize = size
 		}
 		size -= packetSize
-		pkts[i].DataOffset = off
-		pkts[i].DataSize = packetSize
-		pkts[i].Data = data
-		pkts[i].Hash = tf.txHash
-		pkts[i].Owner = owner
-		buildTCPHdr(r, tf, &pkts[i], gso)
-		off += packetSize
+		var pkt stack.PacketBuffer
+		pkt.Header = buffer.NewPrependable(hdrSize)
+		pkt.Hash = tf.txHash
+		pkt.Owner = owner
+		data.ReadToVV(&pkt.Data, packetSize)
+		buildTCPHdr(r, tf, &pkt, gso)
 		tf.seq = tf.seq.Add(seqnum.Size(packetSize))
+		pkts.PushBack(&pkt)
 	}
+
 	if tf.ttl == 0 {
 		tf.ttl = r.DefaultTTL()
 	}
@@ -845,12 +844,10 @@ func sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stac
 	}
 
 	pkt := stack.PacketBuffer{
-		Header:     buffer.NewPrependable(header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen),
-		DataOffset: 0,
-		DataSize:   data.Size(),
-		Data:       data,
-		Hash:       tf.txHash,
-		Owner:      owner,
+		Header: buffer.NewPrependable(header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen),
+		Data:   data,
+		Hash:   tf.txHash,
+		Owner:  owner,
 	}
 	buildTCPHdr(r, tf, &pkt, gso)
 

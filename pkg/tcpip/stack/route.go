@@ -168,23 +168,26 @@ func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt PacketBuff
 	return err
 }
 
-// WritePackets writes the set of packets through the given route.
-func (r *Route) WritePackets(gso *GSO, pkts []PacketBuffer, params NetworkHeaderParams) (int, *tcpip.Error) {
+// WritePackets writes a list of n packets through the given route and returns
+// the number of packets written.
+func (r *Route) WritePackets(gso *GSO, pkts PacketBufferList, params NetworkHeaderParams) (int, *tcpip.Error) {
 	if !r.ref.isValidForOutgoing() {
 		return 0, tcpip.ErrInvalidEndpointState
 	}
 
 	n, err := r.ref.ep.WritePackets(r, gso, pkts, params)
 	if err != nil {
-		r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(len(pkts) - n))
+		r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(pkts.Len() - n))
 	}
 	r.ref.nic.stats.Tx.Packets.IncrementBy(uint64(n))
-	payloadSize := 0
-	for i := 0; i < n; i++ {
-		r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(pkts[i].Header.UsedLength()))
-		payloadSize += pkts[i].DataSize
+
+	writtenBytes := 0
+	for i, pb := 0, pkts.Front(); i < n && pb != nil; i, pb = i+1, pb.Next() {
+		writtenBytes += pb.Header.UsedLength()
+		writtenBytes += pb.Data.Size()
 	}
-	r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(payloadSize))
+
+	r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(writtenBytes))
 	return n, err
 }
 

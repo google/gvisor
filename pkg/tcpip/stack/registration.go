@@ -246,7 +246,7 @@ type NetworkEndpoint interface {
 
 	// WritePackets writes packets to the given destination address and
 	// protocol. pkts must not be zero length.
-	WritePackets(r *Route, gso *GSO, pkts []PacketBuffer, params NetworkHeaderParams) (int, *tcpip.Error)
+	WritePackets(r *Route, gso *GSO, pkts PacketBufferList, params NetworkHeaderParams) (int, *tcpip.Error)
 
 	// WriteHeaderIncludedPacket writes a packet that includes a network
 	// header to the given destination address.
@@ -393,7 +393,7 @@ type LinkEndpoint interface {
 	// Right now, WritePackets is used only when the software segmentation
 	// offload is enabled. If it will be used for something else, it may
 	// require to change syscall filters.
-	WritePackets(r *Route, gso *GSO, pkts []PacketBuffer, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error)
+	WritePackets(r *Route, gso *GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error)
 
 	// WriteRawPacket writes a packet directly to the link. The packet
 	// should already have an ethernet header.

@@ -200,7 +200,7 @@ func (e *endpoint) GSOMaxSize() uint32 {
 	return 0
 }
 
-func (e *endpoint) dumpPacket(gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
+func (e *endpoint) dumpPacket(gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
 		logPacket("send", protocol, pkt.Header.View(), gso)
 	}
@@ -233,20 +233,16 @@ func (e *endpoint) dumpPacket(gso *stack.GSO, protocol tcpip.NetworkProtocolNumb
 // higher-level protocols to write packets; it just logs the packet and
 // forwards the request to the lower endpoint.
 func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) *tcpip.Error {
-	e.dumpPacket(gso, protocol, pkt)
+	e.dumpPacket(gso, protocol, &pkt)
 	return e.lower.WritePacket(r, gso, protocol, pkt)
 }
 
 // WritePackets implements the stack.LinkEndpoint interface. It is called by
 // higher-level protocols to write packets; it just logs the packet and
 // forwards the request to the lower endpoint.
-func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []stack.PacketBuffer, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
-	view := pkts[0].Data.ToView()
-	for _, pkt := range pkts {
-		e.dumpPacket(gso, protocol, stack.PacketBuffer{
-			Header: pkt.Header,
-			Data:   view[pkt.DataOffset:][:pkt.DataSize].ToVectorisedView(),
-		})
+func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+		e.dumpPacket(gso, protocol, pkt)
 	}
 	return e.lower.WritePackets(r, gso, pkts, protocol)
 }
