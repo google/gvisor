@@ -71,9 +71,9 @@ func (e *countedEndpoint) WritePacket(r *stack.Route, _ *stack.GSO, protocol tcp
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-func (e *countedEndpoint) WritePackets(r *stack.Route, _ *stack.GSO, pkts []stack.PacketBuffer, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
-	e.writeCount += len(pkts)
-	return len(pkts), nil
+func (e *countedEndpoint) WritePackets(r *stack.Route, _ *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+	e.writeCount += pkts.Len()
+	return pkts.Len(), nil
 }
 
 func (e *countedEndpoint) WriteRawPacket(buffer.VectorisedView) *tcpip.Error {

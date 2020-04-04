@@ -143,19 +143,17 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []stack.PacketBuffer, params stack.NetworkHeaderParams) (int, *tcpip.Error) {
+func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, params stack.NetworkHeaderParams) (int, *tcpip.Error) {
 	if r.Loop&stack.PacketLoop != 0 {
 		panic("not implemented")
 	}
 	if r.Loop&stack.PacketOut == 0 {
-		return len(pkts), nil
+		return pkts.Len(), nil
 	}
 
-	for i := range pkts {
-		hdr := &pkts[i].Header
-		size := pkts[i].DataSize
-		ip := e.addIPHeader(r, hdr, size, params)
-		pkts[i].NetworkHeader = buffer.View(ip)
+	for pb := pkts.Front(); pb != nil; pb = pb.Next() {
+		ip := e.addIPHeader(r, &pb.Header, pb.Data.Size(), params)
+		pb.NetworkHeader = buffer.View(ip)
 	}
 
 	n, err := e.linkEP.WritePackets(r, gso, pkts, ProtocolNumber)

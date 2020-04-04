@@ -280,28 +280,47 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 }
 
 // WritePackets implements stack.NetworkEndpoint.WritePackets.
-func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []stack.PacketBuffer, params stack.NetworkHeaderParams) (int, *tcpip.Error) {
+func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, params stack.NetworkHeaderParams) (int, *tcpip.Error) {
 	if r.Loop&stack.PacketLoop != 0 {
 		panic("multiple packets in local loop")
 	}
 	if r.Loop&stack.PacketOut == 0 {
-		return len(pkts), nil
+		return pkts.Len(), nil
+	}
+
+	for pkt := pkts.Front(); pkt != nil; {
+		ip := e.addIPHeader(r, &pkt.Header, pkt.Data.Size(), params)
+		pkt.NetworkHeader = buffer.View(ip)
+		pkt = pkt.Next()
 	}
 
 	// iptables filtering. All packets that reach here are locally
 	// generated.
 	ipt := e.stack.IPTables()
-	for i := range pkts {
-		if ok := ipt.Check(stack.Output, pkts[i]); !ok {
-			// iptables is telling us to drop the packet.
+	dropped := ipt.CheckPackets(stack.Output, pkts)
+	if len(dropped) == 0 {
+		// Fast path: If no packets are to be dropped then we can just invoke the
+		// faster WritePackets API directly.
+		n, err := e.linkEP.WritePackets(r, gso, pkts, ProtocolNumber)
+		r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
+		return n, err
+	}
+
+	// Slow Path as we are dropping some packets in the batch degrade to
+	// emitting one packet at a time.
+	n := 0
+	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+		if _, ok := dropped[pkt]; ok {
 			continue
 		}
-		ip := e.addIPHeader(r, &pkts[i].Header, pkts[i].DataSize, params)
-		pkts[i].NetworkHeader = buffer.View(ip)
+		if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, *pkt); err != nil {
+			r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
+			return n, err
+		}
+		n++
 	}
-	n, err := e.linkEP.WritePackets(r, gso, pkts, ProtocolNumber)
 	r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
-	return n, err
+	return n, nil
 }
 
 // WriteHeaderIncludedPacket writes a packet already containing a network

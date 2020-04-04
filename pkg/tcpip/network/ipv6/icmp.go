@@ -79,7 +79,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.P
 	// Only the first view in vv is accounted for by h. To account for the
 	// rest of vv, a shallow copy is made and the first view is removed.
 	// This copy is used as extra payload during the checksum calculation.
-	payload := pkt.Data
+	payload := pkt.Data.Clone(nil)
 	payload.RemoveFirst()
 	if got, want := h.Checksum(), header.ICMPv6Checksum(h, iph.SourceAddress(), iph.DestinationAddress(), payload); got != want {
 		received.Invalid.Increment()

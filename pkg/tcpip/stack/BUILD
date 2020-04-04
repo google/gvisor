@@ -15,6 +15,18 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "packet_buffer_list",
+    out = "packet_buffer_list.go",
+    package = "stack",
+    prefix = "PacketBuffer",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*PacketBuffer",
+        "Linker": "*PacketBuffer",
+    },
+)
+
 go_library(
     name = "stack",
     srcs = [
@@ -29,7 +41,7 @@ go_library(
         "ndp.go",
         "nic.go",
         "packet_buffer.go",
-        "packet_buffer_state.go",
+        "packet_buffer_list.go",
         "rand.go",
         "registration.go",
         "route.go",
