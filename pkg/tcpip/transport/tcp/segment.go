@@ -77,9 +77,11 @@ func newSegmentFromView(r *stack.Route, id stack.TransportEndpointID, v buffer.V
 		id:     id,
 		route:  r.Clone(),
 	}
-	s.views[0] = v
-	s.data = buffer.NewVectorisedView(len(v), s.views[:1])
 	s.rcvdTime = time.Now()
+	if len(v) != 0 {
+		s.views[0] = v
+		s.data = buffer.NewVectorisedView(len(v), s.views[:1])
+	}
 	return s
 }
 

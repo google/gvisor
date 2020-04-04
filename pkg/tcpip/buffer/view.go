@@ -17,6 +17,7 @@ package buffer
 
 import (
 	"bytes"
+	"io"
 )
 
 // View is a slice of a buffer, with convenience methods.
@@ -89,6 +90,47 @@ func (vv *VectorisedView) TrimFront(count int) {
 	}
 }
 
+// Read implements io.Reader.
+func (vv *VectorisedView) Read(v View) (copied int, err error) {
+	count := len(v)
+	for count > 0 && len(vv.views) > 0 {
+		if count < len(vv.views[0]) {
+			vv.size -= count
+			copy(v[copied:], vv.views[0][:count])
+			vv.views[0].TrimFront(count)
+			copied += count
+			return copied, nil
+		}
+		count -= len(vv.views[0])
+		copy(v[copied:], vv.views[0])
+		copied += len(vv.views[0])
+		vv.RemoveFirst()
+	}
+	if copied == 0 {
+		return 0, io.EOF
+	}
+	return copied, nil
+}
+
+// ReadToVV reads up to n bytes from vv to dstVV and removes them from vv. It
+// returns the number of bytes copied.
+func (vv *VectorisedView) ReadToVV(dstVV *VectorisedView, count int) (copied int) {
+	for count > 0 && len(vv.views) > 0 {
+		if count < len(vv.views[0]) {
+			vv.size -= count
+			dstVV.AppendView(vv.views[0][:count])
+			vv.views[0].TrimFront(count)
+			copied += count
+			return
+		}
+		count -= len(vv.views[0])
+		dstVV.AppendView(vv.views[0])
+		copied += len(vv.views[0])
+		vv.RemoveFirst()
+	}
+	return copied
+}
+
 // CapLength irreversibly reduces the length of the vectorised view.
 func (vv *VectorisedView) CapLength(length int) {
 	if length < 0 {
@@ -116,12 +158,12 @@ func (vv *VectorisedView) CapLength(length int) {
 // Clone returns a clone of this VectorisedView.
 // If the buffer argument is large enough to contain all the Views of this VectorisedView,
 // the method will avoid allocations and use the buffer to store the Views of the clone.
-func (vv VectorisedView) Clone(buffer []View) VectorisedView {
+func (vv *VectorisedView) Clone(buffer []View) VectorisedView {
 	return VectorisedView{views: append(buffer[:0], vv.views...), size: vv.size}
 }
 
 // First returns the first view of the vectorised view.
-func (vv VectorisedView) First() View {
+func (vv *VectorisedView) First() View {
 	if len(vv.views) == 0 {
 		return nil
 	}
@@ -134,11 +176,12 @@ func (vv *VectorisedView) RemoveFirst() {
 		return
 	}
 	vv.size -= len(vv.views[0])
+	vv.views[0] = nil
 	vv.views = vv.views[1:]
 }
 
 // Size returns the size in bytes of the entire content stored in the vectorised view.
-func (vv VectorisedView) Size() int {
+func (vv *VectorisedView) Size() int {
 	return vv.size
 }
 
@@ -146,7 +189,7 @@ func (vv VectorisedView) Size() int {
 //
 // If the vectorised view contains a single view, that view will be returned
 // directly.
-func (vv VectorisedView) ToView() View {
+func (vv *VectorisedView) ToView() View {
 	if len(vv.views) == 1 {
 		return vv.views[0]
 	}
@@ -158,7 +201,7 @@ func (vv VectorisedView) ToView() View {
 }
 
 // Views returns the slice containing the all views.
-func (vv VectorisedView) Views() []View {
+func (vv *VectorisedView) Views() []View {
 	return vv.views
 }
 

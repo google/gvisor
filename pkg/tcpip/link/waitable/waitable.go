@@ -112,9 +112,9 @@ func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 // WritePackets implements stack.LinkEndpoint.WritePackets. It is called by
 // higher-level protocols to write packets. It only forwards packets to the
 // lower endpoint if Wait or WaitWrite haven't been called.
-func (e *Endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts []stack.PacketBuffer, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (e *Endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	if !e.writeGate.Enter() {
-		return len(pkts), nil
+		return pkts.Len(), nil
 	}
 
 	n, err := e.lower.WritePackets(r, gso, pkts, protocol)

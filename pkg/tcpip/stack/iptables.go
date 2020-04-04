@@ -209,6 +209,23 @@ func (it *IPTables) Check(hook Hook, pkt PacketBuffer) bool {
 	return true
 }
 
+// CheckPackets runs pkts through the rules for hook and returns a map of packets that
+// should not go forward.
+//
+// NOTE: unlike the Check API the returned map contains packets that should be
+// dropped.
+func (it *IPTables) CheckPackets(hook Hook, pkts PacketBufferList) (drop map[*PacketBuffer]struct{}) {
+	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+		if ok := it.Check(hook, *pkt); !ok {
+			if drop == nil {
+				drop = make(map[*PacketBuffer]struct{})
+			}
+			drop[pkt] = struct{}{}
+		}
+	}
+	return drop
+}
+
 // Precondition: pkt.NetworkHeader is set.
 func (it *IPTables) checkChain(hook Hook, pkt PacketBuffer, table Table, ruleIdx int) chainVerdict {
 	// Start from ruleIdx and walk the list of rules until a rule gives us

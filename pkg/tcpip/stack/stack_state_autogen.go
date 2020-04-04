@@ -32,30 +32,30 @@ func (x *linkAddrEntryEntry) load(m state.Map) {
 	m.Load("prev", &x.prev)
 }
 
-func (x *PacketBuffer) save(m state.Map) {
+func (x *PacketBufferList) beforeSave() {}
+func (x *PacketBufferList) save(m state.Map) {
 	x.beforeSave()
-	m.Save("Data", &x.Data)
-	m.Save("DataOffset", &x.DataOffset)
-	m.Save("DataSize", &x.DataSize)
-	m.Save("Header", &x.Header)
-	m.Save("LinkHeader", &x.LinkHeader)
-	m.Save("NetworkHeader", &x.NetworkHeader)
-	m.Save("TransportHeader", &x.TransportHeader)
-	m.Save("Hash", &x.Hash)
-	m.Save("Owner", &x.Owner)
+	m.Save("head", &x.head)
+	m.Save("tail", &x.tail)
 }
 
-func (x *PacketBuffer) afterLoad() {}
-func (x *PacketBuffer) load(m state.Map) {
-	m.Load("Data", &x.Data)
-	m.Load("DataOffset", &x.DataOffset)
-	m.Load("DataSize", &x.DataSize)
-	m.Load("Header", &x.Header)
-	m.Load("LinkHeader", &x.LinkHeader)
-	m.Load("NetworkHeader", &x.NetworkHeader)
-	m.Load("TransportHeader", &x.TransportHeader)
-	m.Load("Hash", &x.Hash)
-	m.Load("Owner", &x.Owner)
+func (x *PacketBufferList) afterLoad() {}
+func (x *PacketBufferList) load(m state.Map) {
+	m.Load("head", &x.head)
+	m.Load("tail", &x.tail)
+}
+
+func (x *PacketBufferEntry) beforeSave() {}
+func (x *PacketBufferEntry) save(m state.Map) {
+	x.beforeSave()
+	m.Save("next", &x.next)
+	m.Save("prev", &x.prev)
+}
+
+func (x *PacketBufferEntry) afterLoad() {}
+func (x *PacketBufferEntry) load(m state.Map) {
+	m.Load("next", &x.next)
+	m.Load("prev", &x.prev)
 }
 
 func (x *TransportEndpointID) beforeSave() {}
@@ -147,7 +147,8 @@ func (x *multiPortEndpoint) load(m state.Map) {
 func init() {
 	state.Register("pkg/tcpip/stack.linkAddrEntryList", (*linkAddrEntryList)(nil), state.Fns{Save: (*linkAddrEntryList).save, Load: (*linkAddrEntryList).load})
 	state.Register("pkg/tcpip/stack.linkAddrEntryEntry", (*linkAddrEntryEntry)(nil), state.Fns{Save: (*linkAddrEntryEntry).save, Load: (*linkAddrEntryEntry).load})
-	state.Register("pkg/tcpip/stack.PacketBuffer", (*PacketBuffer)(nil), state.Fns{Save: (*PacketBuffer).save, Load: (*PacketBuffer).load})
+	state.Register("pkg/tcpip/stack.PacketBufferList", (*PacketBufferList)(nil), state.Fns{Save: (*PacketBufferList).save, Load: (*PacketBufferList).load})
+	state.Register("pkg/tcpip/stack.PacketBufferEntry", (*PacketBufferEntry)(nil), state.Fns{Save: (*PacketBufferEntry).save, Load: (*PacketBufferEntry).load})
 	state.Register("pkg/tcpip/stack.TransportEndpointID", (*TransportEndpointID)(nil), state.Fns{Save: (*TransportEndpointID).save, Load: (*TransportEndpointID).load})
 	state.Register("pkg/tcpip/stack.GSOType", (*GSOType)(nil), state.Fns{Save: (*GSOType).save, Load: (*GSOType).load})
 	state.Register("pkg/tcpip/stack.GSO", (*GSO)(nil), state.Fns{Save: (*GSO).save, Load: (*GSO).load})
