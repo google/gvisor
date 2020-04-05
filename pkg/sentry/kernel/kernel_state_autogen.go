@@ -206,6 +206,7 @@ func (x *SocketEntry) save(m state.Map) {
 	m.Save("socketEntry", &x.socketEntry)
 	m.Save("k", &x.k)
 	m.Save("Sock", &x.Sock)
+	m.Save("SockVFS2", &x.SockVFS2)
 	m.Save("ID", &x.ID)
 }
 
@@ -214,6 +215,7 @@ func (x *SocketEntry) load(m state.Map) {
 	m.Load("socketEntry", &x.socketEntry)
 	m.Load("k", &x.k)
 	m.Load("Sock", &x.Sock)
+	m.Load("SockVFS2", &x.SockVFS2)
 	m.Load("ID", &x.ID)
 }
 
