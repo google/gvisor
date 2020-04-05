@@ -22,7 +22,6 @@ go_library(
         "//pkg/log",
         "//pkg/refs",
         "//pkg/safemem",
-        "//pkg/sentry/fs",
         "//pkg/sentry/fsbridge",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/inet",

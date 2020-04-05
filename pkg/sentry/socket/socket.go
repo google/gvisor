@@ -269,7 +269,7 @@ func NewVFS2(t *kernel.Task, family int, stype linux.SockType, protocol int) (*v
 			return nil, err
 		}
 		if s != nil {
-			// TODO: Add vfs2 sockets to global socket table.
+			t.Kernel().RecordSocketVFS2(s)
 			return s, nil
 		}
 	}
@@ -291,7 +291,9 @@ func PairVFS2(t *kernel.Task, family int, stype linux.SockType, protocol int) (*
 			return nil, nil, err
 		}
 		if s1 != nil && s2 != nil {
-			// TODO: Add vfs2 sockets to global socket table.
+			k := t.Kernel()
+			k.RecordSocketVFS2(s1)
+			k.RecordSocketVFS2(s2)
 			return s1, s2, nil
 		}
 	}
