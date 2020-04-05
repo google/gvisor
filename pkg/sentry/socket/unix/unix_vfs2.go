@@ -141,7 +141,7 @@ func (s *SocketVFS2) Accept(t *kernel.Task, peerRequested bool, flags int, block
 		return 0, nil, 0, syserr.FromError(e)
 	}
 
-	// TODO: add vfs2 sockets to global table.
+	t.Kernel().RecordSocketVFS2(ns)
 	return fd, addr, addrLen, nil
 }
 
