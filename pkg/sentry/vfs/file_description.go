@@ -182,6 +182,12 @@ func (fd *FileDescription) DecRef() {
 	}
 }
 
+// Refs returns the current number of references. The returned count
+// is inherently racy and is unsafe to use without external synchronization.
+func (fd *FileDescription) Refs() int64 {
+	return atomic.LoadInt64(&fd.refs)
+}
+
 // Mount returns the mount on which fd was opened. It does not take a reference
 // on the returned Mount.
 func (fd *FileDescription) Mount() *Mount {
