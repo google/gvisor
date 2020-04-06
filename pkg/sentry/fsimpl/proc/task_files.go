@@ -610,6 +610,23 @@ func (s *exeSymlink) Readlink(ctx context.Context) (string, error) {
 	return exec.PathnameWithDeleted(ctx), nil
 }
 
+// Getlink implements kernfs.Inode.Getlink.
+func (s *exeSymlink) Getlink(ctx context.Context) (vfs.VirtualDentry, string, error) {
+	if !kernel.ContextCanTrace(ctx, s.task, false) {
+		return vfs.VirtualDentry{}, "", syserror.EACCES
+	}
+
+	exec, err := s.executable()
+	if err != nil {
+		return vfs.VirtualDentry{}, "", err
+	}
+	defer exec.DecRef()
+
+	vd := exec.(*fsbridge.VFSFile).FileDescription().VirtualDentry()
+	vd.IncRef()
+	return vd, "", nil
+}
+
 func (s *exeSymlink) executable() (file fsbridge.File, err error) {
 	s.task.WithMuLocked(func(t *kernel.Task) {
 		mm := t.MemoryManager()

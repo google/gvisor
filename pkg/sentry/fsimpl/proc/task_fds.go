@@ -196,6 +196,12 @@ func (s *fdSymlink) Readlink(ctx context.Context) (string, error) {
 	return vfsObj.PathnameWithDeleted(ctx, root, s.file.VirtualDentry())
 }
 
+func (s *fdSymlink) Getlink(ctx context.Context) (vfs.VirtualDentry, string, error) {
+	vd := s.file.VirtualDentry()
+	vd.IncRef()
+	return vd, "", nil
+}
+
 func (s *fdSymlink) DecRef() {
 	s.AtomicRefCount.DecRefWithDestructor(func() {
 		s.Destroy()

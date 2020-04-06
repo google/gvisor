@@ -414,7 +414,21 @@ type inodeDynamicLookup interface {
 }
 
 type inodeSymlink interface {
-	// Readlink resolves the target of a symbolic link. If an inode is not a
+	// Readlink returns the target of a symbolic link. If an inode is not a
 	// symlink, the implementation should return EINVAL.
 	Readlink(ctx context.Context) (string, error)
+
+	// Getlink returns the target of a symbolic link, as used by path
+	// resolution:
+	//
+	// - If the inode is a "magic link" (a link whose target is most accurately
+	// represented as a VirtualDentry), Getlink returns (ok VirtualDentry, "",
+	// nil). A reference is taken on the returned VirtualDentry.
+	//
+	// - If the inode is an ordinary symlink, Getlink returns (zero-value
+	// VirtualDentry, symlink target, nil).
+	//
+	// - If the inode is not a symlink, Getlink returns (zero-value
+	// VirtualDentry, "", EINVAL).
+	Getlink(ctx context.Context) (vfs.VirtualDentry, string, error)
 }
