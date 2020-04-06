@@ -139,11 +139,11 @@ func Override(table map[uintptr]kernel.Syscall) {
 	table[280] = syscalls.Supported("utimensat", Utimensat)
 	table[281] = syscalls.Supported("epoll_pwait", EpollPwait)
 	delete(table, 282) // signalfd
-	delete(table, 283) // timerfd_create
+	table[283] = syscalls.Supported("timerfd_create", TimerfdCreate)
 	delete(table, 284) // eventfd
 	delete(table, 285) // fallocate
-	delete(table, 286) // timerfd_settime
-	delete(table, 287) // timerfd_gettime
+	table[286] = syscalls.Supported("timerfd_settime", TimerfdSettime)
+	table[287] = syscalls.Supported("timerfd_gettime", TimerfdGettime)
 	delete(table, 288) // accept4
 	delete(table, 289) // signalfd4
 	delete(table, 290) // eventfd2
