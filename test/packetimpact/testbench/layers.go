@@ -17,6 +17,7 @@ package testbench
 import (
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -32,6 +33,8 @@ import (
 // Layer contains all the fields of the encapsulation. Each field is a pointer
 // and may be nil.
 type Layer interface {
+	fmt.Stringer
+
 	// toBytes converts the Layer into bytes. In places where the Layer's field
 	// isn't nil, the value that is pointed to is used. When the field is nil, a
 	// reasonable default for the Layer is used. For example, "64" for IPv4 TTL
@@ -43,7 +46,8 @@ type Layer interface {
 
 	// match checks if the current Layer matches the provided Layer. If either
 	// Layer has a nil in a given field, that field is considered matching.
-	// Otherwise, the values pointed to by the fields must match.
+	// Otherwise, the values pointed to by the fields must match. The LayerBase is
+	// ignored.
 	match(Layer) bool
 
 	// length in bytes of the current encapsulation
@@ -84,18 +88,39 @@ func (lb *LayerBase) setPrev(l Layer) {
 	lb.prevLayer = l
 }
 
+// equalLayer compares that two Layer structs match while ignoring field in
+// which either input has a nil and also ignoring the LayerBase of the inputs.
 func equalLayer(x, y Layer) bool {
+	// opt ignores comparison pairs where either of the inputs is a nil.
 	opt := cmp.FilterValues(func(x, y interface{}) bool {
-		if reflect.ValueOf(x).Kind() == reflect.Ptr && reflect.ValueOf(x).IsNil() {
-			return true
-		}
-		if reflect.ValueOf(y).Kind() == reflect.Ptr && reflect.ValueOf(y).IsNil() {
-			return true
+		for _, l := range []interface{}{x, y} {
+			v := reflect.ValueOf(l)
+			if (v.Kind() == reflect.Ptr || v.Kind() == reflect.Slice) && v.IsNil() {
+				return true
+			}
 		}
 		return false
-
 	}, cmp.Ignore())
-	return cmp.Equal(x, y, opt, cmpopts.IgnoreUnexported(LayerBase{}))
+	return cmp.Equal(x, y, opt, cmpopts.IgnoreTypes(LayerBase{}))
+}
+
+func stringLayer(l Layer) string {
+	v := reflect.ValueOf(l).Elem()
+	t := v.Type()
+	var ret []string
+	for i := 0; i < v.NumField(); i++ {
+		t := t.Field(i)
+		if t.Anonymous {
+			// Ignore the LayerBase in the Layer struct.
+			continue
+		}
+		v := v.Field(i)
+		if v.IsNil() {
+			continue
+		}
+		ret = append(ret, fmt.Sprintf("%s:%v", t.Name, v))
+	}
+	return fmt.Sprintf("&%s{%s}", t, strings.Join(ret, " "))
 }
 
 // Ether can construct and match an ethernet encapsulation.
@@ -104,6 +129,10 @@ type Ether struct {
 	SrcAddr *tcpip.LinkAddress
 	DstAddr *tcpip.LinkAddress
 	Type    *tcpip.NetworkProtocolNumber
+}
+
+func (l *Ether) String() string {
+	return stringLayer(l)
 }
 
 func (l *Ether) toBytes() ([]byte, error) {
@@ -188,6 +217,10 @@ type IPv4 struct {
 	Checksum       *uint16
 	SrcAddr        *tcpip.Address
 	DstAddr        *tcpip.Address
+}
+
+func (l *IPv4) String() string {
+	return stringLayer(l)
 }
 
 func (l *IPv4) toBytes() ([]byte, error) {
@@ -339,6 +372,10 @@ type TCP struct {
 	UrgentPointer *uint16
 }
 
+func (l *TCP) String() string {
+	return stringLayer(l)
+}
+
 func (l *TCP) toBytes() ([]byte, error) {
 	b := make([]byte, header.TCPMinimumSize)
 	h := header.TCP(b)
@@ -480,6 +517,10 @@ type UDP struct {
 	Checksum *uint16
 }
 
+func (l *UDP) String() string {
+	return stringLayer(l)
+}
+
 func (l *UDP) toBytes() ([]byte, error) {
 	b := make([]byte, header.UDPMinimumSize)
 	h := header.UDP(b)
@@ -554,6 +595,10 @@ func (l *UDP) merge(other UDP) error {
 type Payload struct {
 	LayerBase
 	Bytes []byte
+}
+
+func (l *Payload) String() string {
+	return stringLayer(l)
 }
 
 // ParsePayload parses the bytes assuming that they start with a payload and
