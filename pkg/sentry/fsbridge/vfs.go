@@ -26,22 +26,22 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// fsFile implements File interface over vfs.FileDescription.
+// VFSFile implements File interface over vfs.FileDescription.
 //
 // +stateify savable
-type vfsFile struct {
+type VFSFile struct {
 	file *vfs.FileDescription
 }
 
-var _ File = (*vfsFile)(nil)
+var _ File = (*VFSFile)(nil)
 
 // NewVFSFile creates a new File over fs.File.
 func NewVFSFile(file *vfs.FileDescription) File {
-	return &vfsFile{file: file}
+	return &VFSFile{file: file}
 }
 
 // PathnameWithDeleted implements File.
-func (f *vfsFile) PathnameWithDeleted(ctx context.Context) string {
+func (f *VFSFile) PathnameWithDeleted(ctx context.Context) string {
 	root := vfs.RootFromContext(ctx)
 	defer root.DecRef()
 
@@ -51,7 +51,7 @@ func (f *vfsFile) PathnameWithDeleted(ctx context.Context) string {
 }
 
 // ReadFull implements File.
-func (f *vfsFile) ReadFull(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error) {
+func (f *VFSFile) ReadFull(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error) {
 	var total int64
 	for dst.NumBytes() > 0 {
 		n, err := f.file.PRead(ctx, dst, offset+total, vfs.ReadOptions{})
@@ -67,12 +67,12 @@ func (f *vfsFile) ReadFull(ctx context.Context, dst usermem.IOSequence, offset i
 }
 
 // ConfigureMMap implements File.
-func (f *vfsFile) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
+func (f *VFSFile) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	return f.file.ConfigureMMap(ctx, opts)
 }
 
 // Type implements File.
-func (f *vfsFile) Type(ctx context.Context) (linux.FileMode, error) {
+func (f *VFSFile) Type(ctx context.Context) (linux.FileMode, error) {
 	stat, err := f.file.Stat(ctx, vfs.StatOptions{})
 	if err != nil {
 		return 0, err
@@ -81,13 +81,19 @@ func (f *vfsFile) Type(ctx context.Context) (linux.FileMode, error) {
 }
 
 // IncRef implements File.
-func (f *vfsFile) IncRef() {
+func (f *VFSFile) IncRef() {
 	f.file.IncRef()
 }
 
 // DecRef implements File.
-func (f *vfsFile) DecRef() {
+func (f *VFSFile) DecRef() {
 	f.file.DecRef()
+}
+
+// FileDescription returns the FileDescription represented by f. It does not
+// take an additional reference on the returned FileDescription.
+func (f *VFSFile) FileDescription() *vfs.FileDescription {
+	return f.file
 }
 
 // fsLookup implements Lookup interface using fs.File.
@@ -132,5 +138,5 @@ func (l *vfsLookup) OpenPath(ctx context.Context, pathname string, opts vfs.Open
 	if err != nil {
 		return nil, err
 	}
-	return &vfsFile{file: fd}, nil
+	return &VFSFile{file: fd}, nil
 }

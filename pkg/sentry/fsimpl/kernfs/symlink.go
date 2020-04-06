@@ -55,6 +55,11 @@ func (s *StaticSymlink) Readlink(_ context.Context) (string, error) {
 	return s.target, nil
 }
 
+// Getlink implements Inode.Getlink.
+func (s *StaticSymlink) Getlink(_ context.Context) (vfs.VirtualDentry, string, error) {
+	return vfs.VirtualDentry{}, s.target, nil
+}
+
 // SetStat implements Inode.SetStat not allowing inode attributes to be changed.
 func (*StaticSymlink) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
 	return syserror.EPERM

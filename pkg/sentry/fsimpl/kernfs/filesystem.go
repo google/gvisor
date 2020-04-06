@@ -79,16 +79,22 @@ afterSymlink:
 	}
 	// Resolve any symlink at current path component.
 	if rp.ShouldFollowSymlink() && next.isSymlink() {
-		// TODO: VFS2 needs something extra for /proc/[pid]/fd/ "magic symlinks".
-		target, err := next.inode.Readlink(ctx)
+		targetVD, targetPathname, err := next.inode.Getlink(ctx)
 		if err != nil {
 			return nil, err
 		}
-		if err := rp.HandleSymlink(target); err != nil {
-			return nil, err
+		if targetVD.Ok() {
+			err := rp.HandleJump(targetVD)
+			targetVD.DecRef()
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			if err := rp.HandleSymlink(targetPathname); err != nil {
+				return nil, err
+			}
 		}
 		goto afterSymlink
-
 	}
 	rp.Advance()
 	return &next.vfsd, nil
@@ -470,19 +476,25 @@ afterTrailingSymlink:
 	}
 	childDentry := childVFSD.Impl().(*Dentry)
 	childInode := childDentry.inode
-	if rp.ShouldFollowSymlink() {
-		if childDentry.isSymlink() {
-			target, err := childInode.Readlink(ctx)
+	if rp.ShouldFollowSymlink() && childDentry.isSymlink() {
+		targetVD, targetPathname, err := childInode.Getlink(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if targetVD.Ok() {
+			err := rp.HandleJump(targetVD)
+			targetVD.DecRef()
 			if err != nil {
 				return nil, err
 			}
-			if err := rp.HandleSymlink(target); err != nil {
+		} else {
+			if err := rp.HandleSymlink(targetPathname); err != nil {
 				return nil, err
 			}
-			// rp.Final() may no longer be true since we now need to resolve the
-			// symlink target.
-			goto afterTrailingSymlink
 		}
+		// rp.Final() may no longer be true since we now need to resolve the
+		// symlink target.
+		goto afterTrailingSymlink
 	}
 	if err := childInode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 		return nil, err
