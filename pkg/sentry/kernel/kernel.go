@@ -1044,14 +1044,17 @@ func (k *Kernel) pauseTimeLocked() {
 		// This means we'll iterate FDTables shared by multiple tasks repeatedly,
 		// but ktime.Timer.Pause is idempotent so this is harmless.
 		if t.fdTable != nil {
-			// TODO(gvisor.dev/issue/1663): Add save support for VFS2.
-			if !VFS2Enabled {
-				t.fdTable.forEach(func(_ int32, file *fs.File, _ *vfs.FileDescription, _ FDFlags) {
+			t.fdTable.forEach(func(_ int32, file *fs.File, fd *vfs.FileDescription, _ FDFlags) {
+				if VFS2Enabled {
+					if tfd, ok := fd.Impl().(*vfs.TimerFileDescription); ok {
+						tfd.PauseTimer()
+					}
+				} else {
 					if tfd, ok := file.FileOperations.(*timerfd.TimerOperations); ok {
 						tfd.PauseTimer()
 					}
-				})
-			}
+				}
+			})
 		}
 	}
 	k.timekeeper.PauseUpdates()
@@ -1076,15 +1079,18 @@ func (k *Kernel) resumeTimeLocked() {
 				it.ResumeTimer()
 			}
 		}
-		// TODO(gvisor.dev/issue/1663): Add save support for VFS2.
-		if !VFS2Enabled {
-			if t.fdTable != nil {
-				t.fdTable.forEach(func(_ int32, file *fs.File, _ *vfs.FileDescription, _ FDFlags) {
+		if t.fdTable != nil {
+			t.fdTable.forEach(func(_ int32, file *fs.File, fd *vfs.FileDescription, _ FDFlags) {
+				if VFS2Enabled {
+					if tfd, ok := fd.Impl().(*vfs.TimerFileDescription); ok {
+						tfd.ResumeTimer()
+					}
+				} else {
 					if tfd, ok := file.FileOperations.(*timerfd.TimerOperations); ok {
 						tfd.ResumeTimer()
 					}
-				})
-			}
+				}
+			})
 		}
 	}
 }
