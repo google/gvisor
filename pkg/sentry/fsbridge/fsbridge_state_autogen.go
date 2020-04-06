@@ -32,14 +32,14 @@ func (x *fsLookup) load(m state.Map) {
 	m.Load("workingDir", &x.workingDir)
 }
 
-func (x *vfsFile) beforeSave() {}
-func (x *vfsFile) save(m state.Map) {
+func (x *VFSFile) beforeSave() {}
+func (x *VFSFile) save(m state.Map) {
 	x.beforeSave()
 	m.Save("file", &x.file)
 }
 
-func (x *vfsFile) afterLoad() {}
-func (x *vfsFile) load(m state.Map) {
+func (x *VFSFile) afterLoad() {}
+func (x *VFSFile) load(m state.Map) {
 	m.Load("file", &x.file)
 }
 
@@ -61,6 +61,6 @@ func (x *vfsLookup) load(m state.Map) {
 func init() {
 	state.Register("pkg/sentry/fsbridge.fsFile", (*fsFile)(nil), state.Fns{Save: (*fsFile).save, Load: (*fsFile).load})
 	state.Register("pkg/sentry/fsbridge.fsLookup", (*fsLookup)(nil), state.Fns{Save: (*fsLookup).save, Load: (*fsLookup).load})
-	state.Register("pkg/sentry/fsbridge.vfsFile", (*vfsFile)(nil), state.Fns{Save: (*vfsFile).save, Load: (*vfsFile).load})
+	state.Register("pkg/sentry/fsbridge.VFSFile", (*VFSFile)(nil), state.Fns{Save: (*VFSFile).save, Load: (*VFSFile).load})
 	state.Register("pkg/sentry/fsbridge.vfsLookup", (*vfsLookup)(nil), state.Fns{Save: (*vfsLookup).save, Load: (*vfsLookup).load})
 }
