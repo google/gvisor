@@ -246,7 +246,7 @@ int TestSIGPROFFairness(absl::Duration sleep) {
 
   // The number of samples on the main thread should be very low as it did
   // nothing.
-  TEST_CHECK(result.main_thread_samples < 60);
+  TEST_CHECK(result.main_thread_samples < 80);
 
   // Both workers should get roughly equal number of samples.
   TEST_CHECK(result.worker_samples.size() == 2);
