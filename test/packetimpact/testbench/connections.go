@@ -190,6 +190,12 @@ func (conn *TCPIPv4) Send(tcp TCP, additionalLayers ...Layer) {
 // Recv gets a packet from the sniffer within the timeout provided. If no packet
 // arrives before the timeout, it returns nil.
 func (conn *TCPIPv4) Recv(timeout time.Duration) *TCP {
+	return (conn.RecvFrame(timeout)[tcpLayerIndex]).(*TCP)
+}
+
+// RecvFrame gets a frame from the sniffer within the timeout provided. If no
+// frame arrives before the timeout, it returns nil.
+func (conn *TCPIPv4) RecvFrame(timeout time.Duration) Layers {
 	deadline := time.Now().Add(timeout)
 	for {
 		timeout = time.Until(deadline)
@@ -216,9 +222,28 @@ func (conn *TCPIPv4) Recv(timeout time.Duration) *TCP {
 		for i := tcpLayerIndex + 1; i < len(layers); i++ {
 			conn.RemoteSeqNum.UpdateForward(seqnum.Size(layers[i].length()))
 		}
-		return tcpHeader
+		return layers
 	}
 	return nil
+}
+
+// ExpectFrame expects a frame that matches the provided frame within the
+// timeout specified. If it doesn't arrive in time, the test fails.
+func (conn *TCPIPv4) ExpectFrame(frame Layers, timeout time.Duration) Layers {
+	deadline := time.Now().Add(timeout)
+	for {
+		timeout = time.Until(deadline)
+		if timeout <= 0 {
+			return nil
+		}
+		gotFrame := conn.RecvFrame(timeout)
+		if gotFrame == nil {
+			return nil
+		}
+		if frame.match(gotFrame) {
+			return gotFrame
+		}
+	}
 }
 
 // Expect a packet that matches the provided tcp within the timeout specified.
@@ -364,6 +389,12 @@ func (conn *UDPIPv4) Send(udp UDP, additionalLayers ...Layer) {
 // Recv gets a packet from the sniffer within the timeout provided. If no packet
 // arrives before the timeout, it returns nil.
 func (conn *UDPIPv4) Recv(timeout time.Duration) *UDP {
+	return (conn.RecvFrame(timeout)[udpLayerIndex]).(*UDP)
+}
+
+// RecvFrame gets a frame from the sniffer within the timeout provided. If no
+// frame arrives before the timeout, it returns nil.
+func (conn *UDPIPv4) RecvFrame(timeout time.Duration) Layers {
 	deadline := time.Now().Add(timeout)
 	for {
 		timeout = time.Until(deadline)
@@ -382,7 +413,7 @@ func (conn *UDPIPv4) Recv(timeout time.Duration) *UDP {
 		if !conn.incoming.match(layers) {
 			continue // Ignore packets that don't match the expected incoming.
 		}
-		return (layers[udpLayerIndex]).(*UDP)
+		return layers
 	}
 	return nil
 }
@@ -402,6 +433,25 @@ func (conn *UDPIPv4) Expect(udp UDP, timeout time.Duration) *UDP {
 		}
 		if udp.match(gotUDP) {
 			return gotUDP
+		}
+	}
+}
+
+// ExpectFrame expects a frame that matches the provided frame within the
+// timeout specified. If it doesn't arrive in time, the test fails.
+func (conn *UDPIPv4) ExpectFrame(frame Layers, timeout time.Duration) Layers {
+	deadline := time.Now().Add(timeout)
+	for {
+		timeout = time.Until(deadline)
+		if timeout <= 0 {
+			return nil
+		}
+		gotFrame := conn.RecvFrame(timeout)
+		if gotFrame == nil {
+			return nil
+		}
+		if frame.match(gotFrame) {
+			return gotFrame
 		}
 	}
 }
