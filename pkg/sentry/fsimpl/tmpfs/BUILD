@@ -24,6 +24,7 @@ go_library(
         "filesystem.go",
         "named_pipe.go",
         "regular_file.go",
+        "socket_file.go",
         "symlink.go",
         "tmpfs.go",
     ],

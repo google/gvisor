@@ -261,8 +261,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		case linux.S_IFCHR:
 			childInode = fs.newDeviceFile(rp.Credentials(), opts.Mode, vfs.CharDevice, opts.DevMajor, opts.DevMinor)
 		case linux.S_IFSOCK:
-			// Not yet supported.
-			return syserror.EPERM
+			childInode = fs.newSocketFile(rp.Credentials(), opts.Mode, opts.Endpoint)
 		default:
 			return syserror.EINVAL
 		}
@@ -396,6 +395,8 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		return newNamedPipeFD(ctx, impl, rp, &d.vfsd, opts.Flags)
 	case *deviceFile:
 		return rp.VirtualFilesystem().OpenDeviceSpecialFile(ctx, rp.Mount(), &d.vfsd, impl.kind, impl.major, impl.minor, opts)
+	case *socketFile:
+		return nil, syserror.ENXIO
 	default:
 		panic(fmt.Sprintf("unknown inode type: %T", d.inode.impl))
 	}
@@ -679,10 +680,19 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 }
 
 // BoundEndpointAt implements FilesystemImpl.BoundEndpointAt.
-//
-// TODO(gvisor.dev/issue/1476): Implement BoundEndpointAt.
 func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath) (transport.BoundEndpoint, error) {
-	return nil, syserror.ECONNREFUSED
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	d, err := resolveLocked(rp)
+	if err != nil {
+		return nil, err
+	}
+	switch impl := d.inode.impl.(type) {
+	case *socketFile:
+		return impl.ep, nil
+	default:
+		return nil, syserror.ECONNREFUSED
+	}
 }
 
 // ListxattrAt implements vfs.FilesystemImpl.ListxattrAt.
