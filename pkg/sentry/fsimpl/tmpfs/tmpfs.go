@@ -331,7 +331,7 @@ func (i *inode) statTo(stat *linux.Statx) {
 	case *deviceFile:
 		stat.RdevMajor = impl.major
 		stat.RdevMinor = impl.minor
-	case *directory, *namedPipe:
+	case *socketFile, *directory, *namedPipe:
 		// Nothing to do.
 	default:
 		panic(fmt.Sprintf("unknown inode type: %T", i.impl))
@@ -479,6 +479,8 @@ func (i *inode) direntType() uint8 {
 		return linux.DT_DIR
 	case *symlink:
 		return linux.DT_LNK
+	case *socketFile:
+		return linux.DT_SOCK
 	case *deviceFile:
 		switch impl.kind {
 		case vfs.BlockDevice:
