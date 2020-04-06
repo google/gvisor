@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_visibility = ["//test/packetimpact:__subpackages__"],
@@ -29,4 +29,11 @@ go_library(
         "@org_golang_google_grpc//keepalive:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
+)
+
+go_test(
+    name = "testbench_test",
+    size = "small",
+    srcs = ["layers_test.go"],
+    library = ":testbench",
 )
