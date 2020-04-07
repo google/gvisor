@@ -36,8 +36,8 @@ class IPv4UDPUnboundExternalNetworkingSocketTest : public SimpleSocketTest {
   // Interface infos.
   int lo_if_idx_;
   int eth_if_idx_;
-  sockaddr* lo_if_addr_;
-  sockaddr* eth_if_addr_;
+  sockaddr lo_if_addr_;
+  sockaddr eth_if_addr_;
   in_addr lo_if_sin_addr_;
   in_addr eth_if_sin_addr_;
 };

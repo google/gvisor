@@ -25,6 +25,7 @@
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
+#include "test/syscalls/linux/socket_netlink_route_util.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/test_util.h"
 
@@ -140,7 +141,7 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackNicNoDefaultSendIf) {
   // Register to receive multicast packets.
   ip_mreqn group = {};
   group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
-  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink()).index;
   EXPECT_THAT(setsockopt(socket2->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
                          sizeof(group)),
               SyscallSucceeds());
@@ -243,7 +244,7 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackNic) {
   // Register to receive multicast packets.
   ip_mreqn group = {};
   group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
-  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink()).index;
   ASSERT_THAT(setsockopt(socket2->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
                          sizeof(group)),
               SyscallSucceeds());
@@ -331,7 +332,7 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNic) {
 
   // Set the default send interface.
   ip_mreqn iface = {};
-  iface.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  iface.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink()).index;
   ASSERT_THAT(setsockopt(socket1->get(), IPPROTO_IP, IP_MULTICAST_IF, &iface,
                          sizeof(iface)),
               SyscallSucceeds());
@@ -353,7 +354,7 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNic) {
   // Register to receive multicast packets.
   ip_mreqn group = {};
   group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
-  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink()).index;
   ASSERT_THAT(setsockopt(socket2->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
                          sizeof(group)),
               SyscallSucceeds());
@@ -445,7 +446,7 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicConnect) {
 
   // Set the default send interface.
   ip_mreqn iface = {};
-  iface.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  iface.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink()).index;
   ASSERT_THAT(setsockopt(socket1->get(), IPPROTO_IP, IP_MULTICAST_IF, &iface,
                          sizeof(iface)),
               SyscallSucceeds());
@@ -467,7 +468,7 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicConnect) {
   // Register to receive multicast packets.
   ip_mreqn group = {};
   group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
-  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink()).index;
   ASSERT_THAT(setsockopt(socket2->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
                          sizeof(group)),
               SyscallSucceeds());
@@ -559,7 +560,7 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicSelf) {
 
   // Set the default send interface.
   ip_mreqn iface = {};
-  iface.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  iface.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink()).index;
   ASSERT_THAT(setsockopt(socket1->get(), IPPROTO_IP, IP_MULTICAST_IF, &iface,
                          sizeof(iface)),
               SyscallSucceeds());
@@ -581,7 +582,7 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicSelf) {
   // Register to receive multicast packets.
   ip_mreqn group = {};
   group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
-  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink()).index;
   ASSERT_THAT(setsockopt(socket1->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
                          sizeof(group)),
               SyscallSucceeds());
@@ -672,7 +673,7 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicSelfConnect) {
 
   // Set the default send interface.
   ip_mreqn iface = {};
-  iface.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  iface.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink()).index;
   ASSERT_THAT(setsockopt(socket1->get(), IPPROTO_IP, IP_MULTICAST_IF, &iface,
                          sizeof(iface)),
               SyscallSucceeds());
@@ -694,7 +695,7 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicSelfConnect) {
   // Register to receive multicast packets.
   ip_mreqn group = {};
   group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
-  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink()).index;
   ASSERT_THAT(setsockopt(socket1->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
                          sizeof(group)),
               SyscallSucceeds());
@@ -789,7 +790,7 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicSelfNoLoop) {
 
   // Set the default send interface.
   ip_mreqn iface = {};
-  iface.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  iface.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink()).index;
   ASSERT_THAT(setsockopt(socket1->get(), IPPROTO_IP, IP_MULTICAST_IF, &iface,
                          sizeof(iface)),
               SyscallSucceeds());
@@ -815,7 +816,7 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicSelfNoLoop) {
   // Register to receive multicast packets.
   ip_mreqn group = {};
   group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
-  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink()).index;
   EXPECT_THAT(setsockopt(socket1->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
                          sizeof(group)),
               SyscallSucceeds());
@@ -943,7 +944,7 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastDropNic) {
   // Register and unregister to receive multicast packets.
   ip_mreqn group = {};
   group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
-  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink()).index;
   EXPECT_THAT(setsockopt(socket2->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
                          sizeof(group)),
               SyscallSucceeds());
@@ -1007,7 +1008,7 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastIfSetShort) {
 
   // Create a valid full-sized request.
   ip_mreqn iface = {};
-  iface.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  iface.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink()).index;
 
   // Send an optlen of 1 to check that optlen is enforced.
   EXPECT_THAT(
@@ -1105,7 +1106,7 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastIfSetNicGetReqn) {
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
   ip_mreqn set = {};
-  set.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  set.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink()).index;
   ASSERT_THAT(setsockopt(socket1->get(), IPPROTO_IP, IP_MULTICAST_IF, &set,
                          sizeof(set)),
               SyscallSucceeds());
@@ -1166,7 +1167,7 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastIfSetNic) {
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
   ip_mreqn set = {};
-  set.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  set.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink()).index;
   ASSERT_THAT(setsockopt(socket1->get(), IPPROTO_IP, IP_MULTICAST_IF, &set,
                          sizeof(set)),
               SyscallSucceeds());
@@ -1210,7 +1211,7 @@ TEST_P(IPv4UDPUnboundSocketTest, TestMultipleJoinsOnSingleSocket) {
   auto fd = socket1->get();
   ip_mreqn group = {};
   group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
-  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink()).index;
 
   EXPECT_THAT(
       setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &group, sizeof(group)),
@@ -1228,7 +1229,7 @@ TEST_P(IPv4UDPUnboundSocketTest, TestTwoSocketsJoinSameMulticastGroup) {
 
   ip_mreqn group = {};
   group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
-  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink()).index;
   EXPECT_THAT(setsockopt(socket1->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
                          sizeof(group)),
               SyscallSucceeds());
@@ -1450,7 +1451,7 @@ TEST_P(IPv4UDPUnboundSocketTest, TestBindToMcastThenJoinThenReceive) {
   // Register to receive multicast packets.
   ip_mreqn group = {};
   group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
-  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink()).index;
   ASSERT_THAT(setsockopt(socket2->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
                          sizeof(group)),
               SyscallSucceeds());

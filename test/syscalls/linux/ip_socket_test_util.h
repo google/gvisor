@@ -19,6 +19,7 @@
 #include <ifaddrs.h>
 #include <sys/types.h>
 
+#include <map>
 #include <string>
 
 #include "test/syscalls/linux/socket_test_util.h"
@@ -110,13 +111,14 @@ class IfAddrHelper {
   PosixError Load();
   void Release();
 
-  std::vector<std::string> InterfaceList(int family);
+  std::vector<std::string> InterfaceList(int family) const;
 
-  struct sockaddr* GetAddr(int family, std::string name);
-  PosixErrorOr<int> GetIndex(std::string name);
+  const struct sockaddr* GetAddr(int family, std::string name) const;
+  PosixErrorOr<int> GetIndex(std::string name) const;
 
  private:
   struct ifaddrs* ifaddr_;
+  std::map<std::string, int> ifname_to_index_;
 };
 
 // GetAddr4Str returns the given IPv4 network address structure as a string.

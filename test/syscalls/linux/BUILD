@@ -138,7 +138,6 @@ cc_library(
     hdrs = ["socket_netlink_route_util.h"],
     deps = [
         ":socket_netlink_util",
-        "@com_google_absl//absl/types:optional",
     ],
 )
 
@@ -185,7 +184,9 @@ cc_library(
     srcs = ["ip_socket_test_util.cc"],
     hdrs = ["ip_socket_test_util.h"],
     deps = [
+        ":socket_netlink_route_util",
         ":socket_test_util",
+        "//test/util:posix_error",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -2336,6 +2337,7 @@ cc_library(
     ],
     deps = [
         ":ip_socket_test_util",
+        ":socket_netlink_route_util",
         ":socket_test_util",
         "@com_google_absl//absl/memory",
         gtest,
@@ -2802,13 +2804,13 @@ cc_binary(
     srcs = ["socket_netlink_route.cc"],
     linkstatic = 1,
     deps = [
+        ":socket_netlink_route_util",
         ":socket_netlink_util",
         ":socket_test_util",
         "//test/util:capability_util",
         "//test/util:cleanup",
         "//test/util:file_descriptor",
         "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/types:optional",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",

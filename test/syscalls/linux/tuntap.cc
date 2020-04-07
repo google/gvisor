@@ -56,14 +56,14 @@ PosixErrorOr<std::set<std::string>> DumpLinkNames() {
   return names;
 }
 
-PosixErrorOr<absl::optional<Link>> GetLinkByName(const std::string& name) {
+PosixErrorOr<Link> GetLinkByName(const std::string& name) {
   ASSIGN_OR_RETURN_ERRNO(auto links, DumpLinks());
   for (const auto& link : links) {
     if (link.name == name) {
-      return absl::optional<Link>(link);
+      return link;
     }
   }
-  return absl::optional<Link>();
+  return PosixError(ENOENT, "interface not found");
 }
 
 struct pihdr {
@@ -268,23 +268,20 @@ PosixErrorOr<FileDescriptor> OpenAndAttachTap(
     return PosixError(errno);
   }
 
-  ASSIGN_OR_RETURN_ERRNO(absl::optional<Link> link, GetLinkByName(dev_name));
-  if (!link.has_value()) {
-    return PosixError(ENOENT, "no link");
-  }
+  ASSIGN_OR_RETURN_ERRNO(auto link, GetLinkByName(dev_name));
 
   // Interface setup.
   struct in_addr addr;
   inet_pton(AF_INET, dev_ipv4_addr.c_str(), &addr);
-  EXPECT_NO_ERRNO(LinkAddLocalAddr(link->index, AF_INET, /*prefixlen=*/24,
-                                   &addr, sizeof(addr)));
+  EXPECT_NO_ERRNO(LinkAddLocalAddr(link.index, AF_INET, /*prefixlen=*/24, &addr,
+                                   sizeof(addr)));
 
   if (!IsRunningOnGvisor()) {
     // FIXME: gVisor doesn't support setting MAC address on interfaces yet.
-    RETURN_IF_ERRNO(LinkSetMacAddr(link->index, kMacA, sizeof(kMacA)));
+    RETURN_IF_ERRNO(LinkSetMacAddr(link.index, kMacA, sizeof(kMacA)));
 
     // FIXME: gVisor always creates enabled/up'd interfaces.
-    RETURN_IF_ERRNO(LinkChangeFlags(link->index, IFF_UP, IFF_UP));
+    RETURN_IF_ERRNO(LinkChangeFlags(link.index, IFF_UP, IFF_UP));
   }
 
   return fd;

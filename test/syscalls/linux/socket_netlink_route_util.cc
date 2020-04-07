@@ -18,7 +18,6 @@
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 
-#include "absl/types/optional.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
 
 namespace gvisor {
@@ -73,14 +72,14 @@ PosixErrorOr<std::vector<Link>> DumpLinks() {
   return links;
 }
 
-PosixErrorOr<absl::optional<Link>> FindLoopbackLink() {
+PosixErrorOr<Link> LoopbackLink() {
   ASSIGN_OR_RETURN_ERRNO(auto links, DumpLinks());
   for (const auto& link : links) {
     if (link.type == ARPHRD_LOOPBACK) {
-      return absl::optional<Link>(link);
+      return link;
     }
   }
-  return absl::optional<Link>();
+  return PosixError(ENOENT, "loopback link not found");
 }
 
 PosixError LinkAddLocalAddr(int index, int family, int prefixlen,

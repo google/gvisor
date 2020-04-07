@@ -64,18 +64,20 @@ void IPv4UDPUnboundExternalNetworkingSocketTest::SetUp() {
   }
 
   lo_if_idx_ = ASSERT_NO_ERRNO_AND_VALUE(if_helper_.GetIndex(if_names[lo]));
-  lo_if_addr_ = if_helper_.GetAddr(AF_INET, if_names[lo]);
-  if (lo_if_addr_ == nullptr) {
+  auto lo_if_addr = if_helper_.GetAddr(AF_INET, if_names[lo]);
+  if (lo_if_addr == nullptr) {
     return;
   }
-  lo_if_sin_addr_ = reinterpret_cast<sockaddr_in*>(lo_if_addr_)->sin_addr;
+  lo_if_addr_ = *lo_if_addr;
+  lo_if_sin_addr_ = reinterpret_cast<sockaddr_in*>(&lo_if_addr_)->sin_addr;
 
   eth_if_idx_ = ASSERT_NO_ERRNO_AND_VALUE(if_helper_.GetIndex(if_names[eth]));
-  eth_if_addr_ = if_helper_.GetAddr(AF_INET, if_names[eth]);
-  if (eth_if_addr_ == nullptr) {
+  auto eth_if_addr = if_helper_.GetAddr(AF_INET, if_names[eth]);
+  if (eth_if_addr == nullptr) {
     return;
   }
-  eth_if_sin_addr_ = reinterpret_cast<sockaddr_in*>(eth_if_addr_)->sin_addr;
+  eth_if_addr_ = *eth_if_addr;
+  eth_if_sin_addr_ = reinterpret_cast<sockaddr_in*>(&eth_if_addr_)->sin_addr;
 
   got_if_infos_ = true;
 }
@@ -1075,7 +1077,7 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 
   // Create sender and bind to eth interface.
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
-  ASSERT_THAT(bind(sender->get(), eth_if_addr_, sizeof(sockaddr_in)),
+  ASSERT_THAT(bind(sender->get(), &eth_if_addr_, sizeof(sockaddr_in)),
               SyscallSucceeds());
 
   // Run through all possible combinations of index and address for

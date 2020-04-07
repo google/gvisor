@@ -26,7 +26,7 @@
 
 #include "gtest/gtest.h"
 #include "absl/strings/str_format.h"
-#include "absl/types/optional.h"
+#include "test/syscalls/linux/socket_netlink_route_util.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/capability_util.h"
@@ -118,24 +118,6 @@ void CheckGetLinkResponse(const struct nlmsghdr* hdr, int seq, int port) {
   // TODO(mpratt): Check ifinfomsg contents and following attrs.
 }
 
-PosixError DumpLinks(
-    const FileDescriptor& fd, uint32_t seq,
-    const std::function<void(const struct nlmsghdr* hdr)>& fn) {
-  struct request {
-    struct nlmsghdr hdr;
-    struct ifinfomsg ifm;
-  };
-
-  struct request req = {};
-  req.hdr.nlmsg_len = sizeof(req);
-  req.hdr.nlmsg_type = RTM_GETLINK;
-  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
-  req.hdr.nlmsg_seq = seq;
-  req.ifm.ifi_family = AF_UNSPEC;
-
-  return NetlinkRequestResponse(fd, &req, sizeof(req), fn, false);
-}
-
 TEST(NetlinkRouteTest, GetLinkDump) {
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
@@ -161,37 +143,6 @@ TEST(NetlinkRouteTest, GetLinkDump) {
   EXPECT_TRUE(loopbackFound);
 }
 
-struct Link {
-  int index;
-  std::string name;
-};
-
-PosixErrorOr<absl::optional<Link>> FindLoopbackLink() {
-  ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, NetlinkBoundSocket(NETLINK_ROUTE));
-
-  absl::optional<Link> link;
-  RETURN_IF_ERRNO(DumpLinks(fd, kSeq, [&](const struct nlmsghdr* hdr) {
-    if (hdr->nlmsg_type != RTM_NEWLINK ||
-        hdr->nlmsg_len < NLMSG_SPACE(sizeof(struct ifinfomsg))) {
-      return;
-    }
-    const struct ifinfomsg* msg =
-        reinterpret_cast<const struct ifinfomsg*>(NLMSG_DATA(hdr));
-    if (msg->ifi_type == ARPHRD_LOOPBACK) {
-      const auto* rta = FindRtAttr(hdr, msg, IFLA_IFNAME);
-      if (rta == nullptr) {
-        // Ignore links that do not have a name.
-        return;
-      }
-
-      link = Link();
-      link->index = msg->ifi_index;
-      link->name = std::string(reinterpret_cast<const char*>(RTA_DATA(rta)));
-    }
-  }));
-  return link;
-}
-
 // CheckLinkMsg checks a netlink message against an expected link.
 void CheckLinkMsg(const struct nlmsghdr* hdr, const Link& link) {
   ASSERT_THAT(hdr->nlmsg_type, Eq(RTM_NEWLINK));
@@ -209,9 +160,7 @@ void CheckLinkMsg(const struct nlmsghdr* hdr, const Link& link) {
 }
 
 TEST(NetlinkRouteTest, GetLinkByIndex) {
-  absl::optional<Link> loopback_link =
-      ASSERT_NO_ERRNO_AND_VALUE(FindLoopbackLink());
-  ASSERT_TRUE(loopback_link.has_value());
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
 
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
@@ -227,13 +176,13 @@ TEST(NetlinkRouteTest, GetLinkByIndex) {
   req.hdr.nlmsg_flags = NLM_F_REQUEST;
   req.hdr.nlmsg_seq = kSeq;
   req.ifm.ifi_family = AF_UNSPEC;
-  req.ifm.ifi_index = loopback_link->index;
+  req.ifm.ifi_index = loopback_link.index;
 
   bool found = false;
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
       fd, &req, sizeof(req),
       [&](const struct nlmsghdr* hdr) {
-        CheckLinkMsg(hdr, *loopback_link);
+        CheckLinkMsg(hdr, loopback_link);
         found = true;
       },
       false));
@@ -241,9 +190,7 @@ TEST(NetlinkRouteTest, GetLinkByIndex) {
 }
 
 TEST(NetlinkRouteTest, GetLinkByName) {
-  absl::optional<Link> loopback_link =
-      ASSERT_NO_ERRNO_AND_VALUE(FindLoopbackLink());
-  ASSERT_TRUE(loopback_link.has_value());
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
 
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
@@ -262,8 +209,8 @@ TEST(NetlinkRouteTest, GetLinkByName) {
   req.hdr.nlmsg_seq = kSeq;
   req.ifm.ifi_family = AF_UNSPEC;
   req.rtattr.rta_type = IFLA_IFNAME;
-  req.rtattr.rta_len = RTA_LENGTH(loopback_link->name.size() + 1);
-  strncpy(req.ifname, loopback_link->name.c_str(), sizeof(req.ifname));
+  req.rtattr.rta_len = RTA_LENGTH(loopback_link.name.size() + 1);
+  strncpy(req.ifname, loopback_link.name.c_str(), sizeof(req.ifname));
   req.hdr.nlmsg_len =
       NLMSG_LENGTH(sizeof(req.ifm)) + NLMSG_ALIGN(req.rtattr.rta_len);
 
@@ -271,7 +218,7 @@ TEST(NetlinkRouteTest, GetLinkByName) {
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
       fd, &req, sizeof(req),
       [&](const struct nlmsghdr* hdr) {
-        CheckLinkMsg(hdr, *loopback_link);
+        CheckLinkMsg(hdr, loopback_link);
         found = true;
       },
       false));
@@ -523,9 +470,7 @@ TEST(NetlinkRouteTest, LookupAll) {
 TEST(NetlinkRouteTest, AddAddr) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
-  absl::optional<Link> loopback_link =
-      ASSERT_NO_ERRNO_AND_VALUE(FindLoopbackLink());
-  ASSERT_TRUE(loopback_link.has_value());
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
 
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
@@ -545,7 +490,7 @@ TEST(NetlinkRouteTest, AddAddr) {
   req.ifa.ifa_prefixlen = 24;
   req.ifa.ifa_flags = 0;
   req.ifa.ifa_scope = 0;
-  req.ifa.ifa_index = loopback_link->index;
+  req.ifa.ifa_index = loopback_link.index;
   req.rtattr.rta_type = IFA_LOCAL;
   req.rtattr.rta_len = RTA_LENGTH(sizeof(req.addr));
   inet_pton(AF_INET, "10.0.0.1", &req.addr);

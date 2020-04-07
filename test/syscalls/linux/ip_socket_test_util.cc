@@ -14,12 +14,14 @@
 
 #include "test/syscalls/linux/ip_socket_test_util.h"
 
-#include <net/if.h>
 #include <netinet/in.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 
 #include <cstring>
+
+#include "test/syscalls/linux/socket_netlink_route_util.h"
+#include "test/util/posix_error.h"
 
 namespace gvisor {
 namespace testing {
@@ -32,15 +34,6 @@ uint32_t IPFromInetSockaddr(const struct sockaddr* addr) {
 uint16_t PortFromInetSockaddr(const struct sockaddr* addr) {
   auto* in_addr = reinterpret_cast<const struct sockaddr_in*>(addr);
   return ntohs(in_addr->sin_port);
-}
-
-PosixErrorOr<int> InterfaceIndex(std::string name) {
-  // TODO(igudger): Consider using netlink.
-  ifreq req = {};
-  memcpy(req.ifr_name, name.c_str(), name.size());
-  ASSIGN_OR_RETURN_ERRNO(auto sock, Socket(AF_INET, SOCK_DGRAM, 0));
-  RETURN_ERROR_IF_SYSCALL_FAIL(ioctl(sock.get(), SIOCGIFINDEX, &req));
-  return req.ifr_ifindex;
 }
 
 namespace {
@@ -176,8 +169,15 @@ SocketKind IPv6TCPUnboundSocket(int type) {
 
 PosixError IfAddrHelper::Load() {
   Release();
+
   RETURN_ERROR_IF_SYSCALL_FAIL(getifaddrs(&ifaddr_));
-  return PosixError(0);
+
+  ASSIGN_OR_RETURN_ERRNO(auto links, DumpLinks());
+  for (const auto& link : links) {
+    ifname_to_index_.emplace(link.name, link.index);
+  }
+
+  return NoError();
 }
 
 void IfAddrHelper::Release() {
@@ -185,9 +185,10 @@ void IfAddrHelper::Release() {
     freeifaddrs(ifaddr_);
   }
   ifaddr_ = nullptr;
+  ifname_to_index_.clear();
 }
 
-std::vector<std::string> IfAddrHelper::InterfaceList(int family) {
+std::vector<std::string> IfAddrHelper::InterfaceList(int family) const {
   std::vector<std::string> names;
   for (auto ifa = ifaddr_; ifa != NULL; ifa = ifa->ifa_next) {
     if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family != family) {
@@ -198,7 +199,7 @@ std::vector<std::string> IfAddrHelper::InterfaceList(int family) {
   return names;
 }
 
-sockaddr* IfAddrHelper::GetAddr(int family, std::string name) {
+const sockaddr* IfAddrHelper::GetAddr(int family, std::string name) const {
   for (auto ifa = ifaddr_; ifa != NULL; ifa = ifa->ifa_next) {
     if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family != family) {
       continue;
@@ -210,8 +211,12 @@ sockaddr* IfAddrHelper::GetAddr(int family, std::string name) {
   return nullptr;
 }
 
-PosixErrorOr<int> IfAddrHelper::GetIndex(std::string name) {
-  return InterfaceIndex(name);
+PosixErrorOr<int> IfAddrHelper::GetIndex(std::string name) const {
+  auto it = ifname_to_index_.find(name);
+  if (it != ifname_to_index_.end()) {
+    return it->second;
+  }
+  return PosixError(ENOENT, "interface not fonud");
 }
 
 std::string GetAddr4Str(const in_addr* a) {

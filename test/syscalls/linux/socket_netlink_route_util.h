@@ -20,7 +20,6 @@
 
 #include <vector>
 
-#include "absl/types/optional.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
 
 namespace gvisor {
@@ -37,7 +36,8 @@ PosixError DumpLinks(const FileDescriptor& fd, uint32_t seq,
 
 PosixErrorOr<std::vector<Link>> DumpLinks();
 
-PosixErrorOr<absl::optional<Link>> FindLoopbackLink();
+// Returns the loopback link on the system. ENOENT if not found.
+PosixErrorOr<Link> LoopbackLink();
 
 // LinkAddLocalAddr sets IFA_LOCAL attribute on the interface.
 PosixError LinkAddLocalAddr(int index, int family, int prefixlen,
