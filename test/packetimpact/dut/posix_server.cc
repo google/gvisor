@@ -61,13 +61,15 @@
 }
 
 class PosixImpl final : public posix_server::Posix::Service {
-  ::grpc::Status Socket(grpc_impl::ServerContext *context,
-                        const ::posix_server::SocketRequest *request,
-                        ::posix_server::SocketResponse *response) override {
-    response->set_fd(
-        socket(request->domain(), request->type(), request->protocol()));
+  ::grpc::Status Accept(grpc_impl::ServerContext *context,
+                        const ::posix_server::AcceptRequest *request,
+                        ::posix_server::AcceptResponse *response) override {
+    sockaddr_storage addr;
+    socklen_t addrlen = sizeof(addr);
+    response->set_fd(accept(request->sockfd(),
+                            reinterpret_cast<sockaddr *>(&addr), &addrlen));
     response->set_errno_(errno);
-    return ::grpc::Status::OK;
+    return sockaddr_to_proto(addr, addrlen, response->mutable_addr());
   }
 
   ::grpc::Status Bind(grpc_impl::ServerContext *context,
@@ -119,6 +121,14 @@ class PosixImpl final : public posix_server::Posix::Service {
     return ::grpc::Status::OK;
   }
 
+  ::grpc::Status Close(grpc_impl::ServerContext *context,
+                       const ::posix_server::CloseRequest *request,
+                       ::posix_server::CloseResponse *response) override {
+    response->set_ret(close(request->fd()));
+    response->set_errno_(errno);
+    return ::grpc::Status::OK;
+  }
+
   ::grpc::Status GetSockName(
       grpc_impl::ServerContext *context,
       const ::posix_server::GetSockNameRequest *request,
@@ -137,17 +147,6 @@ class PosixImpl final : public posix_server::Posix::Service {
     response->set_ret(listen(request->sockfd(), request->backlog()));
     response->set_errno_(errno);
     return ::grpc::Status::OK;
-  }
-
-  ::grpc::Status Accept(grpc_impl::ServerContext *context,
-                        const ::posix_server::AcceptRequest *request,
-                        ::posix_server::AcceptResponse *response) override {
-    sockaddr_storage addr;
-    socklen_t addrlen = sizeof(addr);
-    response->set_fd(accept(request->sockfd(),
-                            reinterpret_cast<sockaddr *>(&addr), &addrlen));
-    response->set_errno_(errno);
-    return sockaddr_to_proto(addr, addrlen, response->mutable_addr());
   }
 
   ::grpc::Status SetSockOpt(
@@ -174,10 +173,11 @@ class PosixImpl final : public posix_server::Posix::Service {
     return ::grpc::Status::OK;
   }
 
-  ::grpc::Status Close(grpc_impl::ServerContext *context,
-                       const ::posix_server::CloseRequest *request,
-                       ::posix_server::CloseResponse *response) override {
-    response->set_ret(close(request->fd()));
+  ::grpc::Status Socket(grpc_impl::ServerContext *context,
+                        const ::posix_server::SocketRequest *request,
+                        ::posix_server::SocketResponse *response) override {
+    response->set_fd(
+        socket(request->domain(), request->type(), request->protocol()));
     response->set_errno_(errno);
     return ::grpc::Status::OK;
   }

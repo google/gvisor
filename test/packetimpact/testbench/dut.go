@@ -65,33 +65,6 @@ func (dut *DUT) TearDown() {
 	dut.conn.Close()
 }
 
-// SocketWithErrno calls socket on the DUT and returns the fd and errno.
-func (dut *DUT) SocketWithErrno(domain, typ, proto int32) (int32, error) {
-	dut.t.Helper()
-	req := pb.SocketRequest{
-		Domain:   domain,
-		Type:     typ,
-		Protocol: proto,
-	}
-	ctx := context.Background()
-	resp, err := dut.posixServer.Socket(ctx, &req)
-	if err != nil {
-		dut.t.Fatalf("failed to call Socket: %s", err)
-	}
-	return resp.GetFd(), syscall.Errno(resp.GetErrno_())
-}
-
-// Socket calls socket on the DUT and returns the file descriptor. If socket
-// fails on the DUT, the test ends.
-func (dut *DUT) Socket(domain, typ, proto int32) int32 {
-	dut.t.Helper()
-	fd, err := dut.SocketWithErrno(domain, typ, proto)
-	if fd < 0 {
-		dut.t.Fatalf("failed to create socket: %s", err)
-	}
-	return fd
-}
-
 func (dut *DUT) sockaddrToProto(sa unix.Sockaddr) *pb.Sockaddr {
 	dut.t.Helper()
 	switch s := sa.(type) {
@@ -142,236 +115,6 @@ func (dut *DUT) protoToSockaddr(sa *pb.Sockaddr) unix.Sockaddr {
 	return nil
 }
 
-// BindWithErrno calls bind on the DUT.
-func (dut *DUT) BindWithErrno(ctx context.Context, fd int32, sa unix.Sockaddr) (int32, error) {
-	dut.t.Helper()
-	req := pb.BindRequest{
-		Sockfd: fd,
-		Addr:   dut.sockaddrToProto(sa),
-	}
-	resp, err := dut.posixServer.Bind(ctx, &req)
-	if err != nil {
-		dut.t.Fatalf("failed to call Bind: %s", err)
-	}
-	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
-}
-
-// Bind calls bind on the DUT and causes a fatal test failure if it doesn't
-// succeed. If more control over the timeout or error handling is
-// needed, use BindWithErrno.
-func (dut *DUT) Bind(fd int32, sa unix.Sockaddr) {
-	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
-	defer cancel()
-	ret, err := dut.BindWithErrno(ctx, fd, sa)
-	if ret != 0 {
-		dut.t.Fatalf("failed to bind socket: %s", err)
-	}
-}
-
-// GetSockNameWithErrno calls getsockname on the DUT.
-func (dut *DUT) GetSockNameWithErrno(ctx context.Context, sockfd int32) (int32, unix.Sockaddr, error) {
-	dut.t.Helper()
-	req := pb.GetSockNameRequest{
-		Sockfd: sockfd,
-	}
-	resp, err := dut.posixServer.GetSockName(ctx, &req)
-	if err != nil {
-		dut.t.Fatalf("failed to call Bind: %s", err)
-	}
-	return resp.GetRet(), dut.protoToSockaddr(resp.GetAddr()), syscall.Errno(resp.GetErrno_())
-}
-
-// GetSockName calls getsockname on the DUT and causes a fatal test failure if
-// it doesn't succeed. If more control over the timeout or error handling is
-// needed, use GetSockNameWithErrno.
-func (dut *DUT) GetSockName(sockfd int32) unix.Sockaddr {
-	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
-	defer cancel()
-	ret, sa, err := dut.GetSockNameWithErrno(ctx, sockfd)
-	if ret != 0 {
-		dut.t.Fatalf("failed to getsockname: %s", err)
-	}
-	return sa
-}
-
-// ListenWithErrno calls listen on the DUT.
-func (dut *DUT) ListenWithErrno(ctx context.Context, sockfd, backlog int32) (int32, error) {
-	dut.t.Helper()
-	req := pb.ListenRequest{
-		Sockfd:  sockfd,
-		Backlog: backlog,
-	}
-	resp, err := dut.posixServer.Listen(ctx, &req)
-	if err != nil {
-		dut.t.Fatalf("failed to call Listen: %s", err)
-	}
-	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
-}
-
-// Listen calls listen on the DUT and causes a fatal test failure if it doesn't
-// succeed. If more control over the timeout or error handling is needed, use
-// ListenWithErrno.
-func (dut *DUT) Listen(sockfd, backlog int32) {
-	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
-	defer cancel()
-	ret, err := dut.ListenWithErrno(ctx, sockfd, backlog)
-	if ret != 0 {
-		dut.t.Fatalf("failed to listen: %s", err)
-	}
-}
-
-// AcceptWithErrno calls accept on the DUT.
-func (dut *DUT) AcceptWithErrno(ctx context.Context, sockfd int32) (int32, unix.Sockaddr, error) {
-	dut.t.Helper()
-	req := pb.AcceptRequest{
-		Sockfd: sockfd,
-	}
-	resp, err := dut.posixServer.Accept(ctx, &req)
-	if err != nil {
-		dut.t.Fatalf("failed to call Accept: %s", err)
-	}
-	return resp.GetFd(), dut.protoToSockaddr(resp.GetAddr()), syscall.Errno(resp.GetErrno_())
-}
-
-// Accept calls accept on the DUT and causes a fatal test failure if it doesn't
-// succeed. If more control over the timeout or error handling is needed, use
-// AcceptWithErrno.
-func (dut *DUT) Accept(sockfd int32) (int32, unix.Sockaddr) {
-	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
-	defer cancel()
-	fd, sa, err := dut.AcceptWithErrno(ctx, sockfd)
-	if fd < 0 {
-		dut.t.Fatalf("failed to accept: %s", err)
-	}
-	return fd, sa
-}
-
-// SetSockOptWithErrno calls setsockopt on the DUT. Because endianess and the
-// width of values might differ between the testbench and DUT architectures,
-// prefer to use a more specific SetSockOptXxxWithErrno function.
-func (dut *DUT) SetSockOptWithErrno(ctx context.Context, sockfd, level, optname int32, optval []byte) (int32, error) {
-	dut.t.Helper()
-	req := pb.SetSockOptRequest{
-		Sockfd:  sockfd,
-		Level:   level,
-		Optname: optname,
-		Optval:  optval,
-	}
-	resp, err := dut.posixServer.SetSockOpt(ctx, &req)
-	if err != nil {
-		dut.t.Fatalf("failed to call SetSockOpt: %s", err)
-	}
-	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
-}
-
-// SetSockOpt calls setsockopt on the DUT and causes a fatal test failure if it
-// doesn't succeed. If more control over the timeout or error handling is
-// needed, use SetSockOptWithErrno. Because endianess and the width of values
-// might differ between the testbench and DUT architectures, prefer to use a
-// more specific SetSockOptXxx function.
-func (dut *DUT) SetSockOpt(sockfd, level, optname int32, optval []byte) {
-	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
-	defer cancel()
-	ret, err := dut.SetSockOptWithErrno(ctx, sockfd, level, optname, optval)
-	if ret != 0 {
-		dut.t.Fatalf("failed to SetSockOpt: %s", err)
-	}
-}
-
-// SetSockOptTimevalWithErrno calls setsockopt with the timeval converted to
-// bytes.
-func (dut *DUT) SetSockOptTimevalWithErrno(ctx context.Context, sockfd, level, optname int32, tv *unix.Timeval) (int32, error) {
-	dut.t.Helper()
-	timeval := pb.Timeval{
-		Seconds:      int64(tv.Sec),
-		Microseconds: int64(tv.Usec),
-	}
-	req := pb.SetSockOptTimevalRequest{
-		Sockfd:  sockfd,
-		Level:   level,
-		Optname: optname,
-		Timeval: &timeval,
-	}
-	resp, err := dut.posixServer.SetSockOptTimeval(ctx, &req)
-	if err != nil {
-		dut.t.Fatalf("failed to call SetSockOptTimeval: %s", err)
-	}
-	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
-}
-
-// SetSockOptTimeval calls setsockopt on the DUT and causes a fatal test failure
-// if it doesn't succeed. If more control over the timeout or error handling is
-// needed, use SetSockOptTimevalWithErrno.
-func (dut *DUT) SetSockOptTimeval(sockfd, level, optname int32, tv *unix.Timeval) {
-	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
-	defer cancel()
-	ret, err := dut.SetSockOptTimevalWithErrno(ctx, sockfd, level, optname, tv)
-	if ret != 0 {
-		dut.t.Fatalf("failed to SetSockOptTimeval: %s", err)
-	}
-}
-
-// RecvWithErrno calls recv on the DUT.
-func (dut *DUT) RecvWithErrno(ctx context.Context, sockfd, len, flags int32) (int32, []byte, error) {
-	dut.t.Helper()
-	req := pb.RecvRequest{
-		Sockfd: sockfd,
-		Len:    len,
-		Flags:  flags,
-	}
-	resp, err := dut.posixServer.Recv(ctx, &req)
-	if err != nil {
-		dut.t.Fatalf("failed to call Recv: %s", err)
-	}
-	return resp.GetRet(), resp.GetBuf(), syscall.Errno(resp.GetErrno_())
-}
-
-// Recv calls recv on the DUT and causes a fatal test failure if it doesn't
-// succeed. If more control over the timeout or error handling is needed, use
-// RecvWithErrno.
-func (dut *DUT) Recv(sockfd, len, flags int32) []byte {
-	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
-	defer cancel()
-	ret, buf, err := dut.RecvWithErrno(ctx, sockfd, len, flags)
-	if ret == -1 {
-		dut.t.Fatalf("failed to recv: %s", err)
-	}
-	return buf
-}
-
-// CloseWithErrno calls close on the DUT.
-func (dut *DUT) CloseWithErrno(ctx context.Context, fd int32) (int32, error) {
-	dut.t.Helper()
-	req := pb.CloseRequest{
-		Fd: fd,
-	}
-	resp, err := dut.posixServer.Close(ctx, &req)
-	if err != nil {
-		dut.t.Fatalf("failed to call Close: %s", err)
-	}
-	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
-}
-
-// Close calls close on the DUT and causes a fatal test failure if it doesn't
-// succeed. If more control over the timeout or error handling is needed, use
-// CloseWithErrno.
-func (dut *DUT) Close(fd int32) {
-	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
-	defer cancel()
-	ret, err := dut.CloseWithErrno(ctx, fd)
-	if ret != 0 {
-		dut.t.Fatalf("failed to close: %s", err)
-	}
-}
-
 // CreateBoundSocket makes a new socket on the DUT, with type typ and protocol
 // proto, and bound to the IP address addr. Returns the new file descriptor and
 // the port that was selected on the DUT.
@@ -409,4 +152,264 @@ func (dut *DUT) CreateListener(typ, proto, backlog int32) (int32, uint16) {
 	fd, remotePort := dut.CreateBoundSocket(typ, proto, net.ParseIP(*remoteIPv4))
 	dut.Listen(fd, backlog)
 	return fd, remotePort
+}
+
+// All the functions that make gRPC calls to the Posix service are below, sorted
+// alphabetically.
+
+// Accept calls accept on the DUT and causes a fatal test failure if it doesn't
+// succeed. If more control over the timeout or error handling is needed, use
+// AcceptWithErrno.
+func (dut *DUT) Accept(sockfd int32) (int32, unix.Sockaddr) {
+	dut.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	defer cancel()
+	fd, sa, err := dut.AcceptWithErrno(ctx, sockfd)
+	if fd < 0 {
+		dut.t.Fatalf("failed to accept: %s", err)
+	}
+	return fd, sa
+}
+
+// AcceptWithErrno calls accept on the DUT.
+func (dut *DUT) AcceptWithErrno(ctx context.Context, sockfd int32) (int32, unix.Sockaddr, error) {
+	dut.t.Helper()
+	req := pb.AcceptRequest{
+		Sockfd: sockfd,
+	}
+	resp, err := dut.posixServer.Accept(ctx, &req)
+	if err != nil {
+		dut.t.Fatalf("failed to call Accept: %s", err)
+	}
+	return resp.GetFd(), dut.protoToSockaddr(resp.GetAddr()), syscall.Errno(resp.GetErrno_())
+}
+
+// Bind calls bind on the DUT and causes a fatal test failure if it doesn't
+// succeed. If more control over the timeout or error handling is
+// needed, use BindWithErrno.
+func (dut *DUT) Bind(fd int32, sa unix.Sockaddr) {
+	dut.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	defer cancel()
+	ret, err := dut.BindWithErrno(ctx, fd, sa)
+	if ret != 0 {
+		dut.t.Fatalf("failed to bind socket: %s", err)
+	}
+}
+
+// BindWithErrno calls bind on the DUT.
+func (dut *DUT) BindWithErrno(ctx context.Context, fd int32, sa unix.Sockaddr) (int32, error) {
+	dut.t.Helper()
+	req := pb.BindRequest{
+		Sockfd: fd,
+		Addr:   dut.sockaddrToProto(sa),
+	}
+	resp, err := dut.posixServer.Bind(ctx, &req)
+	if err != nil {
+		dut.t.Fatalf("failed to call Bind: %s", err)
+	}
+	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
+}
+
+// Close calls close on the DUT and causes a fatal test failure if it doesn't
+// succeed. If more control over the timeout or error handling is needed, use
+// CloseWithErrno.
+func (dut *DUT) Close(fd int32) {
+	dut.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	defer cancel()
+	ret, err := dut.CloseWithErrno(ctx, fd)
+	if ret != 0 {
+		dut.t.Fatalf("failed to close: %s", err)
+	}
+}
+
+// CloseWithErrno calls close on the DUT.
+func (dut *DUT) CloseWithErrno(ctx context.Context, fd int32) (int32, error) {
+	dut.t.Helper()
+	req := pb.CloseRequest{
+		Fd: fd,
+	}
+	resp, err := dut.posixServer.Close(ctx, &req)
+	if err != nil {
+		dut.t.Fatalf("failed to call Close: %s", err)
+	}
+	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
+}
+
+// GetSockName calls getsockname on the DUT and causes a fatal test failure if
+// it doesn't succeed. If more control over the timeout or error handling is
+// needed, use GetSockNameWithErrno.
+func (dut *DUT) GetSockName(sockfd int32) unix.Sockaddr {
+	dut.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	defer cancel()
+	ret, sa, err := dut.GetSockNameWithErrno(ctx, sockfd)
+	if ret != 0 {
+		dut.t.Fatalf("failed to getsockname: %s", err)
+	}
+	return sa
+}
+
+// GetSockNameWithErrno calls getsockname on the DUT.
+func (dut *DUT) GetSockNameWithErrno(ctx context.Context, sockfd int32) (int32, unix.Sockaddr, error) {
+	dut.t.Helper()
+	req := pb.GetSockNameRequest{
+		Sockfd: sockfd,
+	}
+	resp, err := dut.posixServer.GetSockName(ctx, &req)
+	if err != nil {
+		dut.t.Fatalf("failed to call Bind: %s", err)
+	}
+	return resp.GetRet(), dut.protoToSockaddr(resp.GetAddr()), syscall.Errno(resp.GetErrno_())
+}
+
+// Listen calls listen on the DUT and causes a fatal test failure if it doesn't
+// succeed. If more control over the timeout or error handling is needed, use
+// ListenWithErrno.
+func (dut *DUT) Listen(sockfd, backlog int32) {
+	dut.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	defer cancel()
+	ret, err := dut.ListenWithErrno(ctx, sockfd, backlog)
+	if ret != 0 {
+		dut.t.Fatalf("failed to listen: %s", err)
+	}
+}
+
+// ListenWithErrno calls listen on the DUT.
+func (dut *DUT) ListenWithErrno(ctx context.Context, sockfd, backlog int32) (int32, error) {
+	dut.t.Helper()
+	req := pb.ListenRequest{
+		Sockfd:  sockfd,
+		Backlog: backlog,
+	}
+	resp, err := dut.posixServer.Listen(ctx, &req)
+	if err != nil {
+		dut.t.Fatalf("failed to call Listen: %s", err)
+	}
+	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
+}
+
+// SetSockOpt calls setsockopt on the DUT and causes a fatal test failure if it
+// doesn't succeed. If more control over the timeout or error handling is
+// needed, use SetSockOptWithErrno. Because endianess and the width of values
+// might differ between the testbench and DUT architectures, prefer to use a
+// more specific SetSockOptXxx function.
+func (dut *DUT) SetSockOpt(sockfd, level, optname int32, optval []byte) {
+	dut.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	defer cancel()
+	ret, err := dut.SetSockOptWithErrno(ctx, sockfd, level, optname, optval)
+	if ret != 0 {
+		dut.t.Fatalf("failed to SetSockOpt: %s", err)
+	}
+}
+
+// SetSockOptWithErrno calls setsockopt on the DUT. Because endianess and the
+// width of values might differ between the testbench and DUT architectures,
+// prefer to use a more specific SetSockOptXxxWithErrno function.
+func (dut *DUT) SetSockOptWithErrno(ctx context.Context, sockfd, level, optname int32, optval []byte) (int32, error) {
+	dut.t.Helper()
+	req := pb.SetSockOptRequest{
+		Sockfd:  sockfd,
+		Level:   level,
+		Optname: optname,
+		Optval:  optval,
+	}
+	resp, err := dut.posixServer.SetSockOpt(ctx, &req)
+	if err != nil {
+		dut.t.Fatalf("failed to call SetSockOpt: %s", err)
+	}
+	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
+}
+
+// SetSockOptTimeval calls setsockopt on the DUT and causes a fatal test failure
+// if it doesn't succeed. If more control over the timeout or error handling is
+// needed, use SetSockOptTimevalWithErrno.
+func (dut *DUT) SetSockOptTimeval(sockfd, level, optname int32, tv *unix.Timeval) {
+	dut.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	defer cancel()
+	ret, err := dut.SetSockOptTimevalWithErrno(ctx, sockfd, level, optname, tv)
+	if ret != 0 {
+		dut.t.Fatalf("failed to SetSockOptTimeval: %s", err)
+	}
+}
+
+// SetSockOptTimevalWithErrno calls setsockopt with the timeval converted to
+// bytes.
+func (dut *DUT) SetSockOptTimevalWithErrno(ctx context.Context, sockfd, level, optname int32, tv *unix.Timeval) (int32, error) {
+	dut.t.Helper()
+	timeval := pb.Timeval{
+		Seconds:      int64(tv.Sec),
+		Microseconds: int64(tv.Usec),
+	}
+	req := pb.SetSockOptTimevalRequest{
+		Sockfd:  sockfd,
+		Level:   level,
+		Optname: optname,
+		Timeval: &timeval,
+	}
+	resp, err := dut.posixServer.SetSockOptTimeval(ctx, &req)
+	if err != nil {
+		dut.t.Fatalf("failed to call SetSockOptTimeval: %s", err)
+	}
+	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
+}
+
+// Socket calls socket on the DUT and returns the file descriptor. If socket
+// fails on the DUT, the test ends.
+func (dut *DUT) Socket(domain, typ, proto int32) int32 {
+	dut.t.Helper()
+	fd, err := dut.SocketWithErrno(domain, typ, proto)
+	if fd < 0 {
+		dut.t.Fatalf("failed to create socket: %s", err)
+	}
+	return fd
+}
+
+// SocketWithErrno calls socket on the DUT and returns the fd and errno.
+func (dut *DUT) SocketWithErrno(domain, typ, proto int32) (int32, error) {
+	dut.t.Helper()
+	req := pb.SocketRequest{
+		Domain:   domain,
+		Type:     typ,
+		Protocol: proto,
+	}
+	ctx := context.Background()
+	resp, err := dut.posixServer.Socket(ctx, &req)
+	if err != nil {
+		dut.t.Fatalf("failed to call Socket: %s", err)
+	}
+	return resp.GetFd(), syscall.Errno(resp.GetErrno_())
+}
+
+// Recv calls recv on the DUT and causes a fatal test failure if it doesn't
+// succeed. If more control over the timeout or error handling is needed, use
+// RecvWithErrno.
+func (dut *DUT) Recv(sockfd, len, flags int32) []byte {
+	dut.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	defer cancel()
+	ret, buf, err := dut.RecvWithErrno(ctx, sockfd, len, flags)
+	if ret == -1 {
+		dut.t.Fatalf("failed to recv: %s", err)
+	}
+	return buf
+}
+
+// RecvWithErrno calls recv on the DUT.
+func (dut *DUT) RecvWithErrno(ctx context.Context, sockfd, len, flags int32) (int32, []byte, error) {
+	dut.t.Helper()
+	req := pb.RecvRequest{
+		Sockfd: sockfd,
+		Len:    len,
+		Flags:  flags,
+	}
+	resp, err := dut.posixServer.Recv(ctx, &req)
+	if err != nil {
+		dut.t.Fatalf("failed to call Recv: %s", err)
+	}
+	return resp.GetRet(), resp.GetBuf(), syscall.Errno(resp.GetErrno_())
 }
