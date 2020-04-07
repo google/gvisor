@@ -767,22 +767,18 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	return err
 }
 
-// TODO(b/127675828): support getxattr.
 func (*localFile) GetXattr(string, uint64) (string, error) {
 	return "", syscall.EOPNOTSUPP
 }
 
-// TODO(b/127675828): support setxattr.
 func (*localFile) SetXattr(string, string, uint32) error {
 	return syscall.EOPNOTSUPP
 }
 
-// TODO(b/148303075): support listxattr.
 func (*localFile) ListXattr(uint64) (map[string]struct{}, error) {
 	return nil, syscall.EOPNOTSUPP
 }
 
-// TODO(b/148303075): support removexattr.
 func (*localFile) RemoveXattr(string) error {
 	return syscall.EOPNOTSUPP
 }
