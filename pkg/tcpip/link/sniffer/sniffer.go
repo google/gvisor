@@ -24,15 +24,14 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"os"
 	"sync/atomic"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer/pcap"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -71,34 +70,6 @@ func New(lower stack.LinkEndpoint) stack.LinkEndpoint {
 	}
 }
 
-func zoneOffset() (int32, error) {
-	loc, err := time.LoadLocation("Local")
-	if err != nil {
-		return 0, err
-	}
-	date := time.Date(0, 0, 0, 0, 0, 0, 0, loc)
-	_, offset := date.Zone()
-	return int32(offset), nil
-}
-
-func writePCAPHeader(w io.Writer, maxLen uint32) error {
-	offset, err := zoneOffset()
-	if err != nil {
-		return err
-	}
-	return binary.Write(w, binary.BigEndian, pcapHeader{
-		// From https://wiki.wireshark.org/Development/LibpcapFileFormat
-		MagicNumber: 0xa1b2c3d4,
-
-		VersionMajor: 2,
-		VersionMinor: 4,
-		Thiszone:     offset,
-		Sigfigs:      0,
-		Snaplen:      maxLen,
-		Network:      101, // LINKTYPE_RAW
-	})
-}
-
 // NewWithFile creates a new sniffer link-layer endpoint. It wraps around
 // another endpoint and logs packets and they traverse the endpoint.
 //
@@ -110,7 +81,11 @@ func writePCAPHeader(w io.Writer, maxLen uint32) error {
 // less than or equal too snapLen will be saved in their entirety. Longer
 // packets will be truncated to snapLen.
 func NewWithFile(lower stack.LinkEndpoint, file *os.File, snapLen uint32) (stack.LinkEndpoint, error) {
-	if err := writePCAPHeader(file, snapLen); err != nil {
+	h, err := pcap.MakeHeader(snapLen)
+	if err != nil {
+		return nil, err
+	}
+	if err := binary.Write(file, binary.BigEndian, h); err != nil {
 		return nil, err
 	}
 	return &endpoint{
@@ -134,8 +109,8 @@ func (e *endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local
 			length = int(e.maxPCAPLen)
 		}
 
-		buf := bytes.NewBuffer(make([]byte, 0, pcapPacketHeaderLen+length))
-		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(pkt.Data.Size()))); err != nil {
+		buf := bytes.NewBuffer(make([]byte, 0, pcap.PacketHeaderLen+length))
+		if err := binary.Write(buf, binary.BigEndian, pcap.MakePacketHeader(uint32(length), uint32(pkt.Data.Size()))); err != nil {
 			panic(err)
 		}
 		for _, v := range vs {
@@ -211,8 +186,8 @@ func (e *endpoint) dumpPacket(gso *stack.GSO, protocol tcpip.NetworkProtocolNumb
 			length = int(e.maxPCAPLen)
 		}
 
-		buf := bytes.NewBuffer(make([]byte, 0, pcapPacketHeaderLen+length))
-		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(len(hdrBuf)+pkt.Data.Size()))); err != nil {
+		buf := bytes.NewBuffer(make([]byte, 0, pcap.PacketHeaderLen+length))
+		if err := binary.Write(buf, binary.BigEndian, pcap.MakePacketHeader(uint32(length), uint32(len(hdrBuf)+pkt.Data.Size()))); err != nil {
 			panic(err)
 		}
 		if len(hdrBuf) > length {
@@ -258,8 +233,8 @@ func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
 			length = int(e.maxPCAPLen)
 		}
 
-		buf := bytes.NewBuffer(make([]byte, 0, pcapPacketHeaderLen+length))
-		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(vv.Size()))); err != nil {
+		buf := bytes.NewBuffer(make([]byte, 0, pcap.PacketHeaderLen+length))
+		if err := binary.Write(buf, binary.BigEndian, pcap.MakePacketHeader(uint32(length), uint32(vv.Size()))); err != nil {
 			panic(err)
 		}
 		logVectorisedView(vv, length, buf)

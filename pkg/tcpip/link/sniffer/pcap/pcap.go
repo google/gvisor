@@ -12,11 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sniffer
+// Package pcap impliments the libpcap file format.
+//
+// Spec: https://wiki.wireshark.org/Development/LibpcapFileFormat
+package pcap
 
-import "time"
+import (
+	"time"
+)
 
-type pcapHeader struct {
+// HeaderLen is the binary size of a Header struct.
+const HeaderLen = 24
+
+// A Header is the top-level header in a pcap file.
+type Header struct {
 	// MagicNumber is the file magic number.
 	MagicNumber uint32
 
@@ -39,9 +48,41 @@ type pcapHeader struct {
 	Network uint32
 }
 
-const pcapPacketHeaderLen = 16
+func zoneOffset() (int32, error) {
+	loc, err := time.LoadLocation("Local")
+	if err != nil {
+		return 0, err
+	}
+	date := time.Date(0, 0, 0, 0, 0, 0, 0, loc)
+	_, offset := date.Zone()
+	return int32(offset), nil
+}
 
-type pcapPacketHeader struct {
+// MakeHeader initializes a Header.
+func MakeHeader(maxLen uint32) (Header, error) {
+	offset, err := zoneOffset()
+	if err != nil {
+		return Header{}, err
+	}
+
+	return Header{
+		// From https://wiki.wireshark.org/Development/LibpcapFileFormat
+		MagicNumber: 0xa1b2c3d4,
+
+		VersionMajor: 2,
+		VersionMinor: 4,
+		Thiszone:     offset,
+		Sigfigs:      0,
+		Snaplen:      maxLen,
+		Network:      101, // LINKTYPE_RAW
+	}, nil
+}
+
+// PacketHeaderLen is the binary size of a PacketHeader struct.
+const PacketHeaderLen = 16
+
+// A PacketHeader is the per-packet header in a pcap file.
+type PacketHeader struct {
 	// Seconds is the timestamp seconds.
 	Seconds uint32
 
@@ -55,9 +96,10 @@ type pcapPacketHeader struct {
 	OriginalLength uint32
 }
 
-func newPCAPPacketHeader(incLen, orgLen uint32) pcapPacketHeader {
+// MakePacketHeader initializes a PacketHeadern with the current time.
+func MakePacketHeader(incLen, orgLen uint32) PacketHeader {
 	now := time.Now()
-	return pcapPacketHeader{
+	return PacketHeader{
 		Seconds:        uint32(now.Unix()),
 		Microseconds:   uint32(now.Nanosecond() / 1000),
 		IncludedLength: incLen,
