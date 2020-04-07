@@ -1014,7 +1014,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 					),
 				},
 			},
-			expectedPayloads: [][]byte{udpPayload1},
+			expectedPayloads: nil,
 		},
 		{
 			name: "Two fragments with routing header with non-zero segments left across fragments",

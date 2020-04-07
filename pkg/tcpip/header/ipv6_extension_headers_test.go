@@ -673,19 +673,26 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 		payload      buffer.VectorisedView
 		expected     []IPv6PayloadHeader
 	}{
-		// With a non-atomic fragment, the payload after the fragment will not be
-		// parsed because the payload may not be complete.
+		// With a non-atomic fragment that is not the first fragment, the payload
+		// after the fragment will not be parsed because the payload is expected to
+		// only hold upper layer data.
 		{
-			name:         "hopbyhop - fragment - routing - upper",
+			name:         "hopbyhop - fragment (not first) - routing - upper",
 			firstNextHdr: IPv6HopByHopOptionsExtHdrIdentifier,
 			payload: makeVectorisedViewFromByteBuffers([]byte{
 				// Hop By Hop extension header.
 				uint8(IPv6FragmentExtHdrIdentifier), 0, 1, 4, 1, 2, 3, 4,
 
 				// Fragment extension header.
+				//
+				// More = 1, Fragment Offset = 2117, ID = 2147746305
 				uint8(IPv6RoutingExtHdrIdentifier), 0, 68, 9, 128, 4, 2, 1,
 
 				// Routing extension header.
+				//
+				// Even though we have a routing ext header here, it should be
+				// be interpretted as raw bytes as only the first fragment is expected
+				// to hold headers.
 				255, 0, 1, 2, 3, 4, 5, 6,
 
 				// Upper layer data.
@@ -697,6 +704,34 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 				IPv6RawPayloadHeader{
 					Identifier: IPv6RoutingExtHdrIdentifier,
 					Buf:        routingExtHdrWithUpperLayerData.ToVectorisedView(),
+				},
+			},
+		},
+		{
+			name:         "hopbyhop - fragment (first) - routing - upper",
+			firstNextHdr: IPv6HopByHopOptionsExtHdrIdentifier,
+			payload: makeVectorisedViewFromByteBuffers([]byte{
+				// Hop By Hop extension header.
+				uint8(IPv6FragmentExtHdrIdentifier), 0, 1, 4, 1, 2, 3, 4,
+
+				// Fragment extension header.
+				//
+				// More = 1, Fragment Offset = 0, ID = 2147746305
+				uint8(IPv6RoutingExtHdrIdentifier), 0, 0, 1, 128, 4, 2, 1,
+
+				// Routing extension header.
+				255, 0, 1, 2, 3, 4, 5, 6,
+
+				// Upper layer data.
+				1, 2, 3, 4,
+			}),
+			expected: []IPv6PayloadHeader{
+				IPv6HopByHopOptionsExtHdr{ipv6OptionsExtHdr: []byte{1, 4, 1, 2, 3, 4}},
+				IPv6FragmentExtHdr([6]byte{0, 1, 128, 4, 2, 1}),
+				IPv6RoutingExtHdr([]byte{1, 2, 3, 4, 5, 6}),
+				IPv6RawPayloadHeader{
+					Identifier: 255,
+					Buf:        upperLayerData.ToVectorisedView(),
 				},
 			},
 		},
