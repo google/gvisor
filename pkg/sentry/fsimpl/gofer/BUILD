@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 licenses(["notice"])
@@ -52,5 +52,15 @@ go_library(
         "//pkg/syserror",
         "//pkg/unet",
         "//pkg/usermem",
+    ],
+)
+
+go_test(
+    name = "gofer_test",
+    srcs = ["gofer_test.go"],
+    library = ":gofer",
+    deps = [
+        "//pkg/p9",
+        "//pkg/sentry/contexttest",
     ],
 )
