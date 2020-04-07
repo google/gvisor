@@ -202,6 +202,11 @@ func (*fakeNetworkProtocol) ParseAddresses(v buffer.View) (src, dst tcpip.Addres
 	return tcpip.Address(v[1:2]), tcpip.Address(v[0:1])
 }
 
+func (*fakeNetworkProtocol) IsValidAddress(addr tcpip.Address) bool {
+	// Fake net accepts any length of addresses.
+	return true
+}
+
 func (f *fakeNetworkProtocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, ep stack.LinkEndpoint, _ *stack.Stack) (stack.NetworkEndpoint, *tcpip.Error) {
 	return &fakeNetworkEndpoint{
 		nicID:      nicID,

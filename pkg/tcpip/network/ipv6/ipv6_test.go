@@ -15,6 +15,7 @@
 package ipv6
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -238,19 +239,25 @@ func TestAddIpv6Address(t *testing.T) {
 	tests := []struct {
 		name string
 		addr tcpip.Address
+		err  *tcpip.Error
 	}{
-		// This test is in response to b/140943433.
 		{
-			"Nil",
-			tcpip.Address([]byte(nil)),
+			name: "Nil",
+			addr: tcpip.Address([]byte(nil)),
+			err:  tcpip.ErrBadAddress,
 		},
 		{
-			"ValidUnicast",
-			addr1,
+			name: "AddressTooLong",
+			addr: tcpip.Address(strings.Repeat("\x00", header.IPv6AddressSize+1)),
+			err:  tcpip.ErrBadAddress,
 		},
 		{
-			"ValidLinkLocalUnicast",
-			lladdr0,
+			name: "ValidUnicast",
+			addr: addr1,
+		},
+		{
+			name: "ValidLinkLocalUnicast",
+			addr: lladdr0,
 		},
 	}
 
@@ -260,19 +267,24 @@ func TestAddIpv6Address(t *testing.T) {
 				NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
 			})
 			if err := s.CreateNIC(1, &stubLinkEndpoint{}); err != nil {
-				t.Fatalf("CreateNIC(_) = %s", err)
+				t.Fatalf("stack.CreateNIC(_) = %v", err)
 			}
 
-			if err := s.AddAddress(1, ProtocolNumber, test.addr); err != nil {
-				t.Fatalf("AddAddress(_, %d, nil) = %s", ProtocolNumber, err)
+			if err := s.AddAddress(1, ProtocolNumber, test.addr); err != test.err {
+				t.Fatalf("stack.AddAddress(_, %d, nil) = %v, want %v", ProtocolNumber, err, test.err)
 			}
 
-			addr, err := s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
+			// Following tests are for successful cases.
+			if test.err != nil {
+				return
+			}
+
+			addr, err := s.GetMainNICAddress(1, ProtocolNumber)
 			if err != nil {
-				t.Fatalf("stack.GetMainNICAddress(_, _) err = %s", err)
+				t.Fatalf("stack.GetMainNICAddress(_, _) err = %v", err)
 			}
 			if addr.Address != test.addr {
-				t.Fatalf("got stack.GetMainNICAddress(_, _) = %s, want = %s", addr.Address, test.addr)
+				t.Fatalf("stack.GetMainNICAddress(_, _) = %s, want = %s", addr.Address, test.addr)
 			}
 		})
 	}

@@ -474,6 +474,11 @@ func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 	return h.SourceAddress(), h.DestinationAddress()
 }
 
+// IsValidAddress implements stack.NetworkProtocol.IsValidAddress.
+func (*protocol) IsValidAddress(addr tcpip.Address) bool {
+	return len(addr) == header.IPv4AddressSize
+}
+
 // SetOption implements NetworkProtocol.SetOption.
 func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 	switch v := option.(type) {

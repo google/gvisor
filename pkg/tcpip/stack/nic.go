@@ -685,7 +685,13 @@ func (n *NIC) getRefOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address t
 // permanent, that address will be promoted in place and its properties set to
 // the properties provided. Otherwise, it returns tcpip.ErrDuplicateAddress.
 func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior, kind networkEndpointKind, configType networkEndpointConfigType, deprecated bool) (*referencedNetworkEndpoint, *tcpip.Error) {
-	// TODO(b/141022673): Validate IP addresses before adding them.
+	netProto, ok := n.stack.networkProtocols[protocolAddress.Protocol]
+	if !ok {
+		return nil, tcpip.ErrUnknownProtocol
+	}
+	if !netProto.IsValidAddress(protocolAddress.AddressWithPrefix.Address) {
+		return nil, tcpip.ErrBadAddress
+	}
 
 	// Sanity check.
 	id := NetworkEndpointID{LocalAddress: protocolAddress.AddressWithPrefix.Address}
@@ -736,11 +742,6 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 			// case.
 			n.removeEndpointLocked(ref)
 		}
-	}
-
-	netProto, ok := n.stack.networkProtocols[protocolAddress.Protocol]
-	if !ok {
-		return nil, tcpip.ErrUnknownProtocol
 	}
 
 	// Create the new network endpoint.

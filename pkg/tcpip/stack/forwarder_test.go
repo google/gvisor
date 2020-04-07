@@ -136,6 +136,10 @@ func (*fwdTestNetworkProtocol) ParseAddresses(v buffer.View) (src, dst tcpip.Add
 	return tcpip.Address(v[1:2]), tcpip.Address(v[0:1])
 }
 
+func (*fwdTestNetworkProtocol) IsValidAddress(addr tcpip.Address) bool {
+	return len(addr) == 1
+}
+
 func (f *fwdTestNetworkProtocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache LinkAddressCache, dispatcher TransportDispatcher, ep LinkEndpoint, _ *Stack) (NetworkEndpoint, *tcpip.Error) {
 	return &fwdTestNetworkEndpoint{
 		nicID:      nicID,

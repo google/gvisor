@@ -289,6 +289,9 @@ type NetworkProtocol interface {
 	// packet of this protocol.
 	ParseAddresses(v buffer.View) (src, dst tcpip.Address)
 
+	// IsValidAddress returns whether addr is valid for this protocol.
+	IsValidAddress(addr tcpip.Address) bool
+
 	// NewEndpoint creates a new endpoint of this protocol.
 	NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache LinkAddressCache, dispatcher TransportDispatcher, sender LinkEndpoint, st *Stack) (NetworkEndpoint, *tcpip.Error)
 

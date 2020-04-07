@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ipv4_test
+package ipv4
 
 import (
 	"bytes"
 	"encoding/hex"
 	"math/rand"
+	"strings"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -25,16 +26,71 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
-	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// TestAddIpv4Address tests adding IPv4 addresses.
+func TestAddIpv4Address(t *testing.T) {
+	tests := []struct {
+		name string
+		addr tcpip.Address
+		err  *tcpip.Error
+	}{
+		{
+			name: "Nil",
+			addr: tcpip.Address([]byte(nil)),
+			err:  tcpip.ErrBadAddress,
+		},
+		{
+			name: "AddressTooLong",
+			addr: tcpip.Address(strings.Repeat("\x00", header.IPv4AddressSize+1)),
+			err:  tcpip.ErrBadAddress,
+		},
+		{
+			name: "ValidUnicast",
+			addr: tcpip.Address("\x01\x02\x03\x04"),
+		},
+		{
+			name: "ValidMulticast",
+			addr: tcpip.Address("\xe0\x00\x00\x01"),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
+			})
+			if err := s.CreateNIC(1, channel.New(10, 1500, "")); err != nil {
+				t.Fatalf("stack.CreateNIC(_) = %v", err)
+			}
+
+			if err := s.AddAddress(1, ProtocolNumber, test.addr); err != test.err {
+				t.Fatalf("stack.AddAddress(_, %d, nil) = %v, want %v", ProtocolNumber, err, test.err)
+			}
+
+			// Following tests are for successful cases.
+			if test.err != nil {
+				return
+			}
+
+			addr, err := s.GetMainNICAddress(1, ProtocolNumber)
+			if err != nil {
+				t.Fatalf("stack.GetMainNICAddress(_, _) err = %v", err)
+			}
+			if addr.Address != test.addr {
+				t.Fatalf("stack.GetMainNICAddress(_, _) = %s, want = %s", addr.Address, test.addr)
+			}
+		})
+	}
+}
+
 func TestExcludeBroadcast(t *testing.T) {
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
+		NetworkProtocols:   []stack.NetworkProtocol{NewProtocol()},
 		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
 	})
 
@@ -56,7 +112,7 @@ func TestExcludeBroadcast(t *testing.T) {
 
 	var wq waiter.Queue
 	t.Run("WithoutPrimaryAddress", func(t *testing.T) {
-		ep, err := s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
+		ep, err := s.NewEndpoint(udp.ProtocolNumber, ProtocolNumber, &wq)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -74,14 +130,14 @@ func TestExcludeBroadcast(t *testing.T) {
 	})
 
 	t.Run("WithPrimaryAddress", func(t *testing.T) {
-		ep, err := s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
+		ep, err := s.NewEndpoint(udp.ProtocolNumber, ProtocolNumber, &wq)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer ep.Close()
 
 		// Add a valid primary endpoint address, now we can connect.
-		if err := s.AddAddress(1, ipv4.ProtocolNumber, "\x0a\x00\x00\x02"); err != nil {
+		if err := s.AddAddress(1, ProtocolNumber, "\x0a\x00\x00\x02"); err != nil {
 			t.Fatalf("AddAddress failed: %v", err)
 		}
 		if err := ep.Connect(randomAddr); err != nil {
@@ -224,7 +280,7 @@ type context struct {
 func buildContext(t *testing.T, packetCollectorErrors []*tcpip.Error, mtu uint32) context {
 	// Make the packet and write it.
 	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv4.NewProtocol()},
+		NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
 	})
 	ep := newErrorChannel(100 /* Enough for all tests. */, mtu, "", packetCollectorErrors)
 	s.CreateNIC(1, ep)
@@ -232,7 +288,7 @@ func buildContext(t *testing.T, packetCollectorErrors []*tcpip.Error, mtu uint32
 		src = "\x10\x00\x00\x01"
 		dst = "\x10\x00\x00\x02"
 	)
-	s.AddAddress(1, ipv4.ProtocolNumber, src)
+	s.AddAddress(1, ProtocolNumber, src)
 	{
 		subnet, err := tcpip.NewSubnet(dst, tcpip.AddressMask(header.IPv4Broadcast))
 		if err != nil {
@@ -243,7 +299,7 @@ func buildContext(t *testing.T, packetCollectorErrors []*tcpip.Error, mtu uint32
 			NIC:         1,
 		}})
 	}
-	r, err := s.FindRoute(0, src, dst, ipv4.ProtocolNumber, false /* multicastLoop */)
+	r, err := s.FindRoute(0, src, dst, ProtocolNumber, false /* multicastLoop */)
 	if err != nil {
 		t.Fatalf("s.FindRoute got %v, want %v", err, nil)
 	}
@@ -449,7 +505,7 @@ func TestInvalidFragments(t *testing.T) {
 			const nicID tcpip.NICID = 42
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocol{
-					ipv4.NewProtocol(),
+					NewProtocol(),
 				},
 			})
 

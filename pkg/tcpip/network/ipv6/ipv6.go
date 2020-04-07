@@ -444,6 +444,11 @@ func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 	return h.SourceAddress(), h.DestinationAddress()
 }
 
+// IsValidAddress implements stack.NetworkProtocol.IsValidAddress.
+func (*protocol) IsValidAddress(addr tcpip.Address) bool {
+	return len(addr) == header.IPv6AddressSize
+}
+
 // NewEndpoint creates a new ipv6 endpoint.
 func (p *protocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint, st *stack.Stack) (stack.NetworkEndpoint, *tcpip.Error) {
 	return &endpoint{
