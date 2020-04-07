@@ -1060,6 +1060,19 @@ func (e *endpoint) initialReceiveWindow() int {
 	if rcvWnd > routeWnd {
 		rcvWnd = routeWnd
 	}
+	rcvWndScale := e.rcvWndScaleForHandshake()
+
+	// Round-down the rcvWnd to a multiple of wndScale. This ensures that the
+	// window offered in SYN won't be reduced due to the loss of precision if
+	// window scaling is enabled after the handshake.
+	rcvWnd = (rcvWnd >> uint8(rcvWndScale)) << uint8(rcvWndScale)
+
+	// Ensure we can always accept at least 1 byte if the scale specified
+	// was too high for the provided rcvWnd.
+	if rcvWnd == 0 {
+		rcvWnd = 1
+	}
+
 	return rcvWnd
 }
 

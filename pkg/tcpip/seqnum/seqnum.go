@@ -46,11 +46,6 @@ func (v Value) InWindow(first Value, size Size) bool {
 	return v.InRange(first, first.Add(size))
 }
 
-// Overlap checks if the window [a,a+b) overlaps with the window [x, x+y).
-func Overlap(a Value, b Size, x Value, y Size) bool {
-	return a.LessThan(x.Add(y)) && x.LessThan(a.Add(b))
-}
-
 // Add calculates the sequence number following the [v, v+s) window.
 func (v Value) Add(s Size) Value {
 	return v + Value(s)

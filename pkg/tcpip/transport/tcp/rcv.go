@@ -75,8 +75,8 @@ func (r *receiver) acceptable(segSeq seqnum.Value, segLen seqnum.Size) bool {
 		return segLen == 0 && segSeq == r.rcvNxt
 	}
 
-	return segSeq.InWindow(r.rcvNxt, rcvWnd) ||
-		seqnum.Overlap(r.rcvNxt, rcvWnd, segSeq, segLen)
+	return segSeq.InWindow(r.rcvNxt, rcvWnd+1) ||
+		(segLen > 0 && segSeq.Add(segLen-1).InWindow(r.rcvNxt, rcvWnd))
 }
 
 // getSendParams returns the parameters needed by the sender when building

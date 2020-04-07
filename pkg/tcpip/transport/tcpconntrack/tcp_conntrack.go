@@ -321,7 +321,7 @@ func (s *stream) acceptable(segSeq seqnum.Value, segLen seqnum.Size) bool {
 		segLen = 1
 	}
 
-	return seqnum.Overlap(s.una, wnd, segSeq, segLen)
+	return segSeq.Add(segLen-1).InWindow(s.una, wnd)
 }
 
 // closed determines if the stream has already been closed. This happens when
