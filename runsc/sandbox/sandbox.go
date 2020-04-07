@@ -588,44 +588,31 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 			nss = append(nss, specs.LinuxNamespace{Type: specs.UserNamespace})
 			cmd.Args = append(cmd.Args, "--setup-root")
 
+			const nobody = 65534
 			if conf.Rootless {
-				log.Infof("Rootless mode: sandbox will run as root inside user namespace, mapped to the current user, uid: %d, gid: %d", os.Getuid(), os.Getgid())
+				log.Infof("Rootless mode: sandbox will run as nobody inside user namespace, mapped to the current user, uid: %d, gid: %d", os.Getuid(), os.Getgid())
 				cmd.SysProcAttr.UidMappings = []syscall.SysProcIDMap{
 					{
-						ContainerID: 0,
+						ContainerID: nobody,
 						HostID:      os.Getuid(),
 						Size:        1,
 					},
 				}
 				cmd.SysProcAttr.GidMappings = []syscall.SysProcIDMap{
 					{
-						ContainerID: 0,
+						ContainerID: nobody,
 						HostID:      os.Getgid(),
 						Size:        1,
 					},
 				}
-				cmd.SysProcAttr.Credential = &syscall.Credential{Uid: 0, Gid: 0}
 
 			} else {
 				// Map nobody in the new namespace to nobody in the parent namespace.
 				//
 				// A sandbox process will construct an empty
-				// root for itself, so it has to have the CAP_SYS_ADMIN
-				// capability.
-				//
-				// FIXME(b/122554829): The current implementations of
-				// os/exec doesn't allow to set ambient capabilities if
-				// a process is started in a new user namespace. As a
-				// workaround, we start the sandbox process with the 0
-				// UID and then it constructs a chroot and sets UID to
-				// nobody.  https://github.com/golang/go/issues/2315
-				const nobody = 65534
+				// root for itself, so it has to have
+				// CAP_SYS_ADMIN and CAP_SYS_CHROOT capabilities.
 				cmd.SysProcAttr.UidMappings = []syscall.SysProcIDMap{
-					{
-						ContainerID: 0,
-						HostID:      nobody - 1,
-						Size:        1,
-					},
 					{
 						ContainerID: nobody,
 						HostID:      nobody,
@@ -639,11 +626,11 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 						Size:        1,
 					},
 				}
-
-				// Set credentials to run as user and group nobody.
-				cmd.SysProcAttr.Credential = &syscall.Credential{Uid: 0, Gid: nobody}
 			}
 
+			// Set credentials to run as user and group nobody.
+			cmd.SysProcAttr.Credential = &syscall.Credential{Uid: nobody, Gid: nobody}
+			cmd.SysProcAttr.AmbientCaps = append(cmd.SysProcAttr.AmbientCaps, uintptr(capability.CAP_SYS_ADMIN), uintptr(capability.CAP_SYS_CHROOT))
 		} else {
 			return fmt.Errorf("can't run sandbox process as user nobody since we don't have CAP_SETUID or CAP_SETGID")
 		}
