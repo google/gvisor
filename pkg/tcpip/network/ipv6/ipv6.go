@@ -270,7 +270,55 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
 				continue
 			}
 
-			rawPayload := it.AsRawHeader()
+			// Don't consume the iterator if we have the first fragment because we
+			// will use it to validate that the first fragment holds the upper layer
+			// header.
+			rawPayload := it.AsRawHeader(fragmentOffset != 0 /* consume */)
+
+			if fragmentOffset == 0 {
+				// Check that the iterator ends with a raw payload as the first fragment
+				// should include all headers up to and including any upper layer
+				// headers, as per RFC 8200 section 4.5; only upper layer data
+				// (non-headers) should follow the fragment extension header.
+				var lastHdr header.IPv6PayloadHeader
+
+				for {
+					it, done, err := it.Next()
+					if err != nil {
+						r.Stats().IP.MalformedPacketsReceived.Increment()
+						r.Stats().IP.MalformedPacketsReceived.Increment()
+						return
+					}
+					if done {
+						break
+					}
+
+					lastHdr = it
+				}
+
+				// If the last header is a raw header, then the last portion of the IPv6
+				// payload is not a known IPv6 extension header. Note, this does not
+				// mean that the last portion is an upper layer header or not an
+				// extension header because:
+				//  1) we do not yet support all extension headers
+				//  2) we do not validate the upper layer header before reassembling.
+				//
+				// This check makes sure that a known IPv6 extension header is not
+				// present after the Fragment extension header in a non-initial
+				// fragment.
+				//
+				// TODO(#2196): Support IPv6 Authentication and Encapsulated
+				// Security Payload extension headers.
+				// TODO(#2333): Validate that the upper layer header is valid.
+				switch lastHdr.(type) {
+				case header.IPv6RawPayloadHeader:
+				default:
+					r.Stats().IP.MalformedPacketsReceived.Increment()
+					r.Stats().IP.MalformedFragmentsReceived.Increment()
+					return
+				}
+			}
+
 			fragmentPayloadLen := rawPayload.Buf.Size()
 			if fragmentPayloadLen == 0 {
 				// Drop the packet as it's marked as a fragment but has no payload.

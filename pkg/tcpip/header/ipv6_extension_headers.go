@@ -395,17 +395,24 @@ func MakeIPv6PayloadIterator(nextHdrIdentifier IPv6ExtensionHeaderIdentifier, pa
 }
 
 // AsRawHeader returns the remaining payload of i as a raw header and
-// completes the iterator.
+// optionally consumes the iterator.
 //
-// Calls to Next after calling AsRawHeader on i will indicate that the
-// iterator is done.
-func (i *IPv6PayloadIterator) AsRawHeader() IPv6RawPayloadHeader {
-	buf := i.payload
+// If consume is true, calls to Next after calling AsRawHeader on i will
+// indicate that the iterator is done.
+func (i *IPv6PayloadIterator) AsRawHeader(consume bool) IPv6RawPayloadHeader {
 	identifier := i.nextHdrIdentifier
 
-	// Mark i as done.
-	*i = IPv6PayloadIterator{
-		nextHdrIdentifier: IPv6NoNextHeaderIdentifier,
+	var buf buffer.VectorisedView
+	if consume {
+		// Since we consume the iterator, we return the payload as is.
+		buf = i.payload
+
+		// Mark i as done.
+		*i = IPv6PayloadIterator{
+			nextHdrIdentifier: IPv6NoNextHeaderIdentifier,
+		}
+	} else {
+		buf = i.payload.Clone(nil)
 	}
 
 	return IPv6RawPayloadHeader{Identifier: identifier, Buf: buf}
@@ -424,7 +431,7 @@ func (i *IPv6PayloadIterator) Next() (IPv6PayloadHeader, bool, error) {
 	// a fragment extension header as the data following the fragment extension
 	// header may not be complete.
 	if i.forceRaw {
-		return i.AsRawHeader(), false, nil
+		return i.AsRawHeader(true /* consume */), false, nil
 	}
 
 	// Is the header we are parsing a known extension header?
@@ -456,10 +463,12 @@ func (i *IPv6PayloadIterator) Next() (IPv6PayloadHeader, bool, error) {
 
 		fragmentExtHdr := IPv6FragmentExtHdr(data)
 
-		// If the packet is a fragmented packet, do not attempt to parse
-		// anything after the fragment extension header as the data following
-		// the extension header may not be complete.
-		if fragmentExtHdr.More() || fragmentExtHdr.FragmentOffset() != 0 {
+		// If the packet is not the first fragment, do not attempt to parse anything
+		// after the fragment extension header as the payload following the fragment
+		// extension header should not contain any headers; the first fragment must
+		// hold all the headers up to and including any upper layer headers, as per
+		// RFC 8200 section 4.5.
+		if fragmentExtHdr.FragmentOffset() != 0 {
 			i.forceRaw = true
 		}
 
@@ -480,7 +489,7 @@ func (i *IPv6PayloadIterator) Next() (IPv6PayloadHeader, bool, error) {
 	default:
 		// The header we are parsing is not a known extension header. Return the
 		// raw payload.
-		return i.AsRawHeader(), false, nil
+		return i.AsRawHeader(true /* consume */), false, nil
 	}
 }
 
