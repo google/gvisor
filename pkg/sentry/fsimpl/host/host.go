@@ -74,31 +74,34 @@ func ImportFD(mnt *vfs.Mount, hostFD int, isTTY bool) (*vfs.FileDescription, err
 	}
 
 	// Retrieve metadata.
-	var s syscall.Stat_t
-	if err := syscall.Fstat(hostFD, &s); err != nil {
+	var s unix.Stat_t
+	if err := unix.Fstat(hostFD, &s); err != nil {
 		return nil, err
 	}
 
 	fileMode := linux.FileMode(s.Mode)
 	fileType := fileMode.FileType()
-	// Pipes, character devices, and sockets.
-	isStream := fileType == syscall.S_IFIFO || fileType == syscall.S_IFCHR || fileType == syscall.S_IFSOCK
+
+	// Determine if hostFD is seekable. If not, this syscall will return ESPIPE
+	// (see fs/read_write.c:llseek), e.g. for pipes, sockets, and some character
+	// devices.
+	_, err := unix.Seek(hostFD, 0, linux.SEEK_CUR)
+	seekable := err != syserror.ESPIPE
 
 	i := &inode{
 		hostFD:   hostFD,
-		isStream: isStream,
+		seekable: seekable,
 		isTTY:    isTTY,
 		canMap:   canMap(uint32(fileType)),
 		ino:      fs.NextIno(),
 		mode:     fileMode,
-		// For simplicity, set offset to 0. Technically, we should
-		// only set to 0 on files that are not seekable (sockets, pipes, etc.),
-		// and use the offset from the host fd otherwise.
+		// For simplicity, set offset to 0. Technically, we should use the existing
+		// offset on the host if the file is seekable.
 		offset: 0,
 	}
 
-	// These files can't be memory mapped, assert this.
-	if i.isStream && i.canMap {
+	// Non-seekable files can't be memory mapped, assert this.
+	if !i.seekable && i.canMap {
 		panic("files that can return EWOULDBLOCK (sockets, pipes, etc.) cannot be memory mapped")
 	}
 
@@ -124,12 +127,12 @@ type inode struct {
 	// This field is initialized at creation time and is immutable.
 	hostFD int
 
-	// isStream is true if the host fd points to a file representing a stream,
+	// seekable is false if the host fd points to a file representing a stream,
 	// e.g. a socket or a pipe. Such files are not seekable and can return
 	// EWOULDBLOCK for I/O operations.
 	//
 	// This field is initialized at creation time and is immutable.
-	isStream bool
+	seekable bool
 
 	// isTTY is true if this file represents a TTY.
 	//
@@ -481,8 +484,7 @@ func (f *fileDescription) Release() {
 // PRead implements FileDescriptionImpl.
 func (f *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	i := f.inode
-	// TODO(b/34716638): Some char devices do support offsets, e.g. /dev/null.
-	if i.isStream {
+	if !i.seekable {
 		return 0, syserror.ESPIPE
 	}
 
@@ -492,8 +494,7 @@ func (f *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, off
 // Read implements FileDescriptionImpl.
 func (f *fileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	i := f.inode
-	// TODO(b/34716638): Some char devices do support offsets, e.g. /dev/null.
-	if i.isStream {
+	if !i.seekable {
 		n, err := readFromHostFD(ctx, i.hostFD, dst, -1, opts.Flags)
 		if isBlockError(err) {
 			// If we got any data at all, return it as a "completed" partial read
@@ -538,8 +539,7 @@ func readFromHostFD(ctx context.Context, hostFD int, dst usermem.IOSequence, off
 // PWrite implements FileDescriptionImpl.
 func (f *fileDescription) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
 	i := f.inode
-	// TODO(b/34716638): Some char devices do support offsets, e.g. /dev/null.
-	if i.isStream {
+	if !i.seekable {
 		return 0, syserror.ESPIPE
 	}
 
@@ -549,8 +549,7 @@ func (f *fileDescription) PWrite(ctx context.Context, src usermem.IOSequence, of
 // Write implements FileDescriptionImpl.
 func (f *fileDescription) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	i := f.inode
-	// TODO(b/34716638): Some char devices do support offsets, e.g. /dev/null.
-	if i.isStream {
+	if !i.seekable {
 		n, err := writeToHostFD(ctx, i.hostFD, src, -1, opts.Flags)
 		if isBlockError(err) {
 			err = syserror.ErrWouldBlock
@@ -593,8 +592,7 @@ func writeToHostFD(ctx context.Context, hostFD int, src usermem.IOSequence, offs
 // allow directory fds to be imported at all.
 func (f *fileDescription) Seek(_ context.Context, offset int64, whence int32) (int64, error) {
 	i := f.inode
-	// TODO(b/34716638): Some char devices do support seeking, e.g. /dev/null.
-	if i.isStream {
+	if !i.seekable {
 		return 0, syserror.ESPIPE
 	}
 
