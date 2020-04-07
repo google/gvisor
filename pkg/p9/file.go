@@ -97,12 +97,12 @@ type File interface {
 	// free to ignore the hint entirely (i.e. the value returned may be larger
 	// than size). All size checking is done independently at the syscall layer.
 	//
-	// TODO(b/127675828): Determine concurrency guarantees once implemented.
+	// On the server, GetXattr has a read concurrency guarantee.
 	GetXattr(name string, size uint64) (string, error)
 
 	// SetXattr sets extended attributes on this node.
 	//
-	// TODO(b/127675828): Determine concurrency guarantees once implemented.
+	// On the server, SetXattr has a write concurrency guarantee.
 	SetXattr(name, value string, flags uint32) error
 
 	// ListXattr lists the names of the extended attributes on this node.
@@ -113,12 +113,12 @@ type File interface {
 	// free to ignore the hint entirely (i.e. the value returned may be larger
 	// than size). All size checking is done independently at the syscall layer.
 	//
-	// TODO(b/148303075): Determine concurrency guarantees once implemented.
+	// On the server, ListXattr has a read concurrency guarantee.
 	ListXattr(size uint64) (map[string]struct{}, error)
 
 	// RemoveXattr removes extended attributes on this node.
 	//
-	// TODO(b/148303075): Determine concurrency guarantees once implemented.
+	// On the server, RemoveXattr has a write concurrency guarantee.
 	RemoveXattr(name string) error
 
 	// Allocate allows the caller to directly manipulate the allocated disk space
