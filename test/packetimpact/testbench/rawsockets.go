@@ -47,6 +47,12 @@ func NewSniffer(t *testing.T) (Sniffer, error) {
 	if err != nil {
 		return Sniffer{}, err
 	}
+	if err := unix.SetsockoptInt(snifferFd, unix.SOL_SOCKET, unix.SO_RCVBUFFORCE, 1); err != nil {
+		t.Fatalf("can't set sockopt SO_RCVBUFFORCE to 1: %s", err)
+	}
+	if err := unix.SetsockoptInt(snifferFd, unix.SOL_SOCKET, unix.SO_RCVBUF, 1e7); err != nil {
+		t.Fatalf("can't setsockopt SO_RCVBUF to 10M: %s", err)
+	}
 	return Sniffer{
 		t:  t,
 		fd: snifferFd,
