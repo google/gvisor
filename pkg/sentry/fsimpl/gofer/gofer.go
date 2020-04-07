@@ -444,7 +444,8 @@ type dentry struct {
 
 	// refs is the reference count. Each dentry holds a reference on its
 	// parent, even if disowned. refs is accessed using atomic memory
-	// operations.
+	// operations. When refs reaches 0, the dentry may be added to the cache or
+	// destroyed. If refs==-1 the dentry has already been destroyed.
 	refs int64
 
 	// fs is the owning filesystem. fs is immutable.
@@ -860,7 +861,7 @@ func (d *dentry) IncRef() {
 func (d *dentry) TryIncRef() bool {
 	for {
 		refs := atomic.LoadInt64(&d.refs)
-		if refs == 0 {
+		if refs <= 0 {
 			return false
 		}
 		if atomic.CompareAndSwapInt64(&d.refs, refs, refs+1) {
@@ -883,18 +884,29 @@ func (d *dentry) DecRef() {
 // checkCachingLocked should be called after d's reference count becomes 0 or it
 // becomes disowned.
 //
+// It may be called on a destroyed dentry. For example,
+// renameMu[R]UnlockAndCheckCaching may call checkCachingLocked multiple times
+// for the same dentry when the dentry is visited more than once in the same
+// operation. One of the calls may destroy the dentry, so subsequent calls will
+// do nothing.
+//
 // Preconditions: d.fs.renameMu must be locked for writing.
 func (d *dentry) checkCachingLocked() {
 	// Dentries with a non-zero reference count must be retained. (The only way
 	// to obtain a reference on a dentry with zero references is via path
 	// resolution, which requires renameMu, so if d.refs is zero then it will
 	// remain zero while we hold renameMu for writing.)
-	if atomic.LoadInt64(&d.refs) != 0 {
+	refs := atomic.LoadInt64(&d.refs)
+	if refs > 0 {
 		if d.cached {
 			d.fs.cachedDentries.Remove(d)
 			d.fs.cachedDentriesLen--
 			d.cached = false
 		}
+		return
+	}
+	if refs == -1 {
+		// Dentry has already been destroyed.
 		return
 	}
 	// Non-child dentries with zero references are no longer reachable by path
@@ -949,9 +961,22 @@ func (d *dentry) checkCachingLocked() {
 	}
 }
 
+// destroyLocked destroys the dentry. It may flushes dirty pages from cache,
+// close p9 file and remove reference on parent dentry.
+//
 // Preconditions: d.fs.renameMu must be locked for writing. d.refs == 0. d is
 // not a child dentry.
 func (d *dentry) destroyLocked() {
+	switch atomic.LoadInt64(&d.refs) {
+	case 0:
+		// Mark the dentry destroyed.
+		atomic.StoreInt64(&d.refs, -1)
+	case -1:
+		panic("dentry.destroyLocked() called on already destroyed dentry")
+	default:
+		panic("dentry.destroyLocked() called with references on the dentry")
+	}
+
 	ctx := context.Background()
 	d.handleMu.Lock()
 	if !d.handle.file.isNil() {
@@ -971,7 +996,10 @@ func (d *dentry) destroyLocked() {
 		d.handle.close(ctx)
 	}
 	d.handleMu.Unlock()
-	d.file.close(ctx)
+	if !d.file.isNil() {
+		d.file.close(ctx)
+		d.file = p9file{}
+	}
 	// Remove d from the set of all dentries.
 	d.fs.syncMu.Lock()
 	delete(d.fs.dentries, d)

@@ -186,6 +186,28 @@ TEST_F(OpenTest, OpenNoFollowStillFollowsLinksInPath) {
       ASSERT_NO_ERRNO_AND_VALUE(Open(path_via_symlink, O_RDONLY | O_NOFOLLOW));
 }
 
+// Test that open(2) can follow symlinks that point back to the same tree.
+// Test sets up files as follows:
+//   root/child/symlink => redirects to ../..
+//   root/child/target => regular file
+//
+// open("root/child/symlink/root/child/file")
+TEST_F(OpenTest, SymlinkRecurse) {
+  auto root =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(GetAbsoluteTestTmpdir()));
+  auto child = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(root.path()));
+  auto symlink = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateSymlinkTo(child.path(), "../.."));
+  auto target = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(child.path(), "abc", 0644));
+  auto path_via_symlink =
+      JoinPath(symlink.path(), Basename(root.path()), Basename(child.path()),
+               Basename(target.path()));
+  const auto contents =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents(path_via_symlink));
+  ASSERT_EQ(contents, "abc");
+}
+
 TEST_F(OpenTest, Fault) {
   char* totally_not_null = nullptr;
   ASSERT_THAT(open(totally_not_null, O_RDONLY), SyscallFailsWithErrno(EFAULT));
