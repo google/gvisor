@@ -18,10 +18,12 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -142,7 +144,19 @@ func New(conf *boot.Config, args *Args) (*Sandbox, error) {
 	// Wait until the sandbox has booted.
 	b := make([]byte, 1)
 	if l, err := clientSyncFile.Read(b); err != nil || l != 1 {
-		return nil, fmt.Errorf("waiting for sandbox to start: %v", err)
+		err := fmt.Errorf("waiting for sandbox to start: %v", err)
+		// If the sandbox failed to start, it may be because the binary
+		// permissions were incorrect. Check the bits and return a more helpful
+		// error message.
+		//
+		// NOTE: The error message is checked because error types are lost over
+		// rpc calls.
+		if strings.Contains(err.Error(), io.EOF.Error()) {
+			if permsErr := checkBinaryPermissions(conf); permsErr != nil {
+				return nil, fmt.Errorf("%v: %v", err, permsErr)
+			}
+		}
+		return nil, err
 	}
 
 	c.Release()
@@ -706,7 +720,19 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 	log.Debugf("Starting sandbox: %s %v", binPath, cmd.Args)
 	log.Debugf("SysProcAttr: %+v", cmd.SysProcAttr)
 	if err := specutils.StartInNS(cmd, nss); err != nil {
-		return fmt.Errorf("Sandbox: %v", err)
+		err := fmt.Errorf("starting sandbox: %v", err)
+		// If the sandbox failed to start, it may be because the binary
+		// permissions were incorrect. Check the bits and return a more helpful
+		// error message.
+		//
+		// NOTE: The error message is checked because error types are lost over
+		// rpc calls.
+		if strings.Contains(err.Error(), syscall.EACCES.Error()) {
+			if permsErr := checkBinaryPermissions(conf); permsErr != nil {
+				return fmt.Errorf("%v: %v", err, permsErr)
+			}
+		}
+		return err
 	}
 	s.child = true
 	s.Pid = cmd.Process.Pid
@@ -1168,4 +1194,32 @@ func deviceFileForPlatform(name string) (*os.File, error) {
 		return nil, fmt.Errorf("opening device file for platform %q: %v", p, err)
 	}
 	return f, nil
+}
+
+// checkBinaryPermissions verifies that the required binary bits are set on
+// the runsc executable.
+func checkBinaryPermissions(conf *boot.Config) error {
+	// All platforms need the other exe bit
+	neededBits := os.FileMode(0001)
+	if conf.Platform == platforms.Ptrace {
+		// Ptrace needs the other read bit
+		neededBits |= os.FileMode(0004)
+	}
+
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("getting exe path: %v", err)
+	}
+
+	// Check the permissions of the runsc binary and print an error if it
+	// doesn't match expectations.
+	info, err := os.Stat(exePath)
+	if err != nil {
+		return fmt.Errorf("stat file: %v", err)
+	}
+
+	if info.Mode().Perm()&neededBits != neededBits {
+		return fmt.Errorf(specutils.FaqErrorMsg("runsc-perms", fmt.Sprintf("%s does not have the correct permissions", exePath)))
+	}
+	return nil
 }

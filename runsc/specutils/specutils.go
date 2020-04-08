@@ -528,3 +528,8 @@ func EnvVar(env []string, name string) (string, bool) {
 	}
 	return "", false
 }
+
+// FaqErrorMsg returns an error message pointing to the FAQ.
+func FaqErrorMsg(anchor, msg string) string {
+	return fmt.Sprintf("%s; see https://gvisor.dev/faq#%s for more details", msg, anchor)
+}
