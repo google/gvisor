@@ -631,7 +631,7 @@ func (s *exeSymlink) executable() (file fsbridge.File, err error) {
 	s.task.WithMuLocked(func(t *kernel.Task) {
 		mm := t.MemoryManager()
 		if mm == nil {
-			// TODO(b/34851096): Check shouldn't allow Readlink once the
+			// TODO(b/37471547): Check shouldn't allow Readlink once the
 			// Task is zombied.
 			err = syserror.EACCES
 			return
