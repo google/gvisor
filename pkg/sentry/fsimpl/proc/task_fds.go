@@ -30,6 +30,28 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
+func getTaskFD(t *kernel.Task, fd int32) (*vfs.FileDescription, kernel.FDFlags) {
+	var (
+		file  *vfs.FileDescription
+		flags kernel.FDFlags
+	)
+	t.WithMuLocked(func(t *kernel.Task) {
+		if fdt := t.FDTable(); fdt != nil {
+			file, flags = fdt.GetVFS2(fd)
+		}
+	})
+	return file, flags
+}
+
+func taskFDExists(t *kernel.Task, fd int32) bool {
+	file, _ := getTaskFD(t, fd)
+	if file == nil {
+		return false
+	}
+	file.DecRef()
+	return true
+}
+
 type fdDir struct {
 	inoGen InoGenerator
 	task   *kernel.Task
@@ -37,27 +59,6 @@ type fdDir struct {
 	// When produceSymlinks is set, dirents produces for the FDs are reported
 	// as symlink. Otherwise, they are reported as regular files.
 	produceSymlink bool
-}
-
-func (i *fdDir) lookup(name string) (*vfs.FileDescription, kernel.FDFlags, error) {
-	fd, err := strconv.ParseUint(name, 10, 64)
-	if err != nil {
-		return nil, kernel.FDFlags{}, syserror.ENOENT
-	}
-
-	var (
-		file  *vfs.FileDescription
-		flags kernel.FDFlags
-	)
-	i.task.WithMuLocked(func(t *kernel.Task) {
-		if fdTable := t.FDTable(); fdTable != nil {
-			file, flags = fdTable.GetVFS2(int32(fd))
-		}
-	})
-	if file == nil {
-		return nil, kernel.FDFlags{}, syserror.ENOENT
-	}
-	return file, flags, nil
 }
 
 // IterDirents implements kernfs.inodeDynamicLookup.
@@ -128,11 +129,15 @@ func newFDDirInode(task *kernel.Task, inoGen InoGenerator) *kernfs.Dentry {
 
 // Lookup implements kernfs.inodeDynamicLookup.
 func (i *fdDirInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, error) {
-	file, _, err := i.lookup(name)
+	fdInt, err := strconv.ParseInt(name, 10, 32)
 	if err != nil {
-		return nil, err
+		return nil, syserror.ENOENT
 	}
-	taskDentry := newFDSymlink(i.task.Credentials(), file, i.inoGen.NextIno())
+	fd := int32(fdInt)
+	if !taskFDExists(i.task, fd) {
+		return nil, syserror.ENOENT
+	}
+	taskDentry := newFDSymlink(i.task, fd, i.inoGen.NextIno())
 	return taskDentry.VFSDentry(), nil
 }
 
@@ -169,19 +174,22 @@ func (i *fdDirInode) CheckPermissions(ctx context.Context, creds *auth.Credentia
 //
 // +stateify savable
 type fdSymlink struct {
-	refs.AtomicRefCount
 	kernfs.InodeAttrs
+	kernfs.InodeNoopRefCount
 	kernfs.InodeSymlink
 
-	file *vfs.FileDescription
+	task *kernel.Task
+	fd   int32
 }
 
 var _ kernfs.Inode = (*fdSymlink)(nil)
 
-func newFDSymlink(creds *auth.Credentials, file *vfs.FileDescription, ino uint64) *kernfs.Dentry {
-	file.IncRef()
-	inode := &fdSymlink{file: file}
-	inode.Init(creds, ino, linux.ModeSymlink|0777)
+func newFDSymlink(task *kernel.Task, fd int32, ino uint64) *kernfs.Dentry {
+	inode := &fdSymlink{
+		task: task,
+		fd:   fd,
+	}
+	inode.Init(task.Credentials(), ino, linux.ModeSymlink|0777)
 
 	d := &kernfs.Dentry{}
 	d.Init(inode)
@@ -189,27 +197,25 @@ func newFDSymlink(creds *auth.Credentials, file *vfs.FileDescription, ino uint64
 }
 
 func (s *fdSymlink) Readlink(ctx context.Context) (string, error) {
+	file, _ := getTaskFD(s.task, s.fd)
+	if file == nil {
+		return "", syserror.ENOENT
+	}
+	defer file.DecRef()
 	root := vfs.RootFromContext(ctx)
 	defer root.DecRef()
-
-	vfsObj := s.file.VirtualDentry().Mount().Filesystem().VirtualFilesystem()
-	return vfsObj.PathnameWithDeleted(ctx, root, s.file.VirtualDentry())
+	return s.task.Kernel().VFS().PathnameWithDeleted(ctx, root, file.VirtualDentry())
 }
 
 func (s *fdSymlink) Getlink(ctx context.Context) (vfs.VirtualDentry, string, error) {
-	vd := s.file.VirtualDentry()
+	file, _ := getTaskFD(s.task, s.fd)
+	if file == nil {
+		return vfs.VirtualDentry{}, "", syserror.ENOENT
+	}
+	defer file.DecRef()
+	vd := file.VirtualDentry()
 	vd.IncRef()
 	return vd, "", nil
-}
-
-func (s *fdSymlink) DecRef() {
-	s.AtomicRefCount.DecRefWithDestructor(func() {
-		s.Destroy()
-	})
-}
-
-func (s *fdSymlink) Destroy() {
-	s.file.DecRef()
 }
 
 // fdInfoDirInode represents the inode for /proc/[pid]/fdinfo directory.
@@ -244,12 +250,18 @@ func newFDInfoDirInode(task *kernel.Task, inoGen InoGenerator) *kernfs.Dentry {
 
 // Lookup implements kernfs.inodeDynamicLookup.
 func (i *fdInfoDirInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, error) {
-	file, flags, err := i.lookup(name)
+	fdInt, err := strconv.ParseInt(name, 10, 32)
 	if err != nil {
-		return nil, err
+		return nil, syserror.ENOENT
 	}
-
-	data := &fdInfoData{file: file, flags: flags}
+	fd := int32(fdInt)
+	if !taskFDExists(i.task, fd) {
+		return nil, syserror.ENOENT
+	}
+	data := &fdInfoData{
+		task: i.task,
+		fd:   fd,
+	}
 	dentry := newTaskOwnedFile(i.task, i.inoGen.NextIno(), 0444, data)
 	return dentry.VFSDentry(), nil
 }
@@ -268,26 +280,23 @@ type fdInfoData struct {
 	kernfs.DynamicBytesFile
 	refs.AtomicRefCount
 
-	file  *vfs.FileDescription
-	flags kernel.FDFlags
+	task *kernel.Task
+	fd   int32
 }
 
 var _ dynamicInode = (*fdInfoData)(nil)
 
-func (d *fdInfoData) DecRef() {
-	d.AtomicRefCount.DecRefWithDestructor(d.destroy)
-}
-
-func (d *fdInfoData) destroy() {
-	d.file.DecRef()
-}
-
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (d *fdInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	file, descriptorFlags := getTaskFD(d.task, d.fd)
+	if file == nil {
+		return syserror.ENOENT
+	}
+	defer file.DecRef()
 	// TODO(b/121266871): Include pos, locks, and other data. For now we only
 	// have flags.
 	// See https://www.kernel.org/doc/Documentation/filesystems/proc.txt
-	flags := uint(d.file.StatusFlags()) | d.flags.ToLinuxFileFlags()
+	flags := uint(file.StatusFlags()) | descriptorFlags.ToLinuxFileFlags()
 	fmt.Fprintf(buf, "flags:\t0%o\n", flags)
 	return nil
 }
