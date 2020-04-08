@@ -57,6 +57,16 @@ func getTaskMM(t *kernel.Task) (*mm.MemoryManager, error) {
 	return m, nil
 }
 
+func checkTaskState(t *kernel.Task) error {
+	switch t.ExitState() {
+	case kernel.TaskExitZombie:
+		return syserror.EACCES
+	case kernel.TaskExitDead:
+		return syserror.ESRCH
+	}
+	return nil
+}
+
 // taskDir represents a task-level directory.
 //
 // +stateify savable
@@ -254,11 +264,12 @@ func newExe(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 }
 
 func (e *exe) executable() (file fsbridge.File, err error) {
+	if err := checkTaskState(e.t); err != nil {
+		return nil, err
+	}
 	e.t.WithMuLocked(func(t *kernel.Task) {
 		mm := t.MemoryManager()
 		if mm == nil {
-			// TODO(b/34851096): Check shouldn't allow Readlink once the
-			// Task is zombied.
 			err = syserror.EACCES
 			return
 		}
@@ -268,7 +279,7 @@ func (e *exe) executable() (file fsbridge.File, err error) {
 		// (with locks held).
 		file = mm.Executable()
 		if file == nil {
-			err = syserror.ENOENT
+			err = syserror.ESRCH
 		}
 	})
 	return
@@ -313,10 +324,21 @@ func newNamespaceSymlink(t *kernel.Task, msrc *fs.MountSource, name string) *fs.
 	return newProcInode(t, n, msrc, fs.Symlink, t)
 }
 
+// Readlink reads the symlink value.
+func (n *namespaceSymlink) Readlink(ctx context.Context, inode *fs.Inode) (string, error) {
+	if err := checkTaskState(n.t); err != nil {
+		return "", err
+	}
+	return n.Symlink.Readlink(ctx, inode)
+}
+
 // Getlink implements fs.InodeOperations.Getlink.
 func (n *namespaceSymlink) Getlink(ctx context.Context, inode *fs.Inode) (*fs.Dirent, error) {
 	if !kernel.ContextCanTrace(ctx, n.t, false) {
 		return nil, syserror.EACCES
+	}
+	if err := checkTaskState(n.t); err != nil {
+		return nil, err
 	}
 
 	// Create a new regular file to fake the namespace file.
