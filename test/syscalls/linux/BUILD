@@ -663,10 +663,7 @@ cc_binary(
 cc_binary(
     name = "exec_binary_test",
     testonly = 1,
-    srcs = select_arch(
-        amd64 = ["exec_binary.cc"],
-        arm64 = [],
-    ),
+    srcs = ["exec_binary.cc"],
     linkstatic = 1,
     deps = [
         "//test/util:cleanup",
