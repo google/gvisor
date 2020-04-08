@@ -324,7 +324,7 @@ TEST_F(OpenTest, Truncate) {
 
   // Read the data and ensure only the latest write is in the file.
   std::vector<char> got(want.size() + 1, 'c');
-  ASSERT_THAT(pread(fd1.get(), got.data(), got.size(), 0),
+  ASSERT_THAT(pread(fd1.get(), got.data(), want.size(), 0),
               SyscallSucceedsWithValue(want.size()));
   EXPECT_EQ(memcmp(want.data(), got.data(), want.size()), 0)
       << "rbuf=" << got.data();
