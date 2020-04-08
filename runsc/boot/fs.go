@@ -824,7 +824,20 @@ func (c *containerMounter) mountSubmount(ctx context.Context, conf *Config, mns 
 
 	inode, err := filesystem.Mount(ctx, mountDevice(m), mf, strings.Join(opts, ","), nil)
 	if err != nil {
-		return fmt.Errorf("creating mount with source %q: %v", m.Source, err)
+		err := fmt.Errorf("creating mount with source %q: %v", m.Source, err)
+		// Check to see if this is a common error due to a Linux bug.
+		// This error is generated here in order to cause it to be
+		// printed to the user using Docker via 'runsc create' etc. rather
+		// than simply printed to the logs for the 'runsc boot' command.
+		//
+		// We check the error message string rather than type because the
+		// actual error types (syscall.EIO, syscall.EPIPE) are lost by file system
+		// implementation (e.g. p9).
+		// TODO(gvisor.dev/issue/1765): Remove message when bug is resolved.
+		if strings.Contains(err.Error(), syscall.EIO.Error()) || strings.Contains(err.Error(), syscall.EPIPE.Error()) {
+			return fmt.Errorf("%v: %s", err, specutils.FaqErrorMsg("memlock", "you may be encountering a Linux kernel bug"))
+		}
+		return err
 	}
 
 	// If there are submounts, we need to overlay the mount on top of a ramfs

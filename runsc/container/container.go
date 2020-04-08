@@ -1077,9 +1077,9 @@ func (c *Container) adjustGoferOOMScoreAdj() error {
 // oom_score_adj is set to the lowest oom_score_adj among the containers
 // running in the sandbox.
 //
-// TODO(gvisor.dev/issue/512): This call could race with other containers being
+// TODO(gvisor.dev/issue/238): This call could race with other containers being
 // created at the same time and end up setting the wrong oom_score_adj to the
-// sandbox.
+// sandbox. Use rpc client to synchronize.
 func adjustSandboxOOMScoreAdj(s *sandbox.Sandbox, rootDir string, destroy bool) error {
 	containers, err := loadSandbox(rootDir, s.ID)
 	if err != nil {
