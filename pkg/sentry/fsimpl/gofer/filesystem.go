@@ -437,14 +437,19 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 	flags := uint32(0)
 	if dir {
 		if child != nil && !child.isDir() {
+			vfsObj.AbortDeleteDentry(childVFSD)
 			return syserror.ENOTDIR
 		}
 		flags = linux.AT_REMOVEDIR
 	} else {
 		if child != nil && child.isDir() {
+			vfsObj.AbortDeleteDentry(childVFSD)
 			return syserror.EISDIR
 		}
 		if rp.MustBeDir() {
+			if childVFSD != nil {
+				vfsObj.AbortDeleteDentry(childVFSD)
+			}
 			return syserror.ENOTDIR
 		}
 	}
