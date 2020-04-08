@@ -34,17 +34,10 @@ namespace testing {
 
 namespace {
 
-// TODO(b/36516566): utimes(nullptr) does not pick the "now" time in the
-// application's time domain, so when asserting that times are within a window,
-// we expand the window to allow for differences between the time domains.
-constexpr absl::Duration kClockSlack = absl::Milliseconds(100);
-
 // TimeBoxed runs fn, setting before and after to (coarse realtime) times
 // guaranteed* to come before and after fn started and completed, respectively.
 //
 // fn may be called more than once if the clock is adjusted.
-//
-// * See the comment on kClockSlack. gVisor breaks this guarantee.
 void TimeBoxed(absl::Time* before, absl::Time* after,
                std::function<void()> const& fn) {
   do {
@@ -68,12 +61,6 @@ void TimeBoxed(absl::Time* before, absl::Time* after,
       // Technically this misses jumps small enough to keep after > before,
       // which could lead to test failures, but that is very unlikely to happen.
       continue;
-    }
-
-    if (IsRunningOnGvisor()) {
-      // See comment on kClockSlack.
-      *before -= kClockSlack;
-      *after += kClockSlack;
     }
   } while (*after < *before);
 }
@@ -235,10 +222,7 @@ void TestUtimensat(int dirFd, std::string const& path) {
   EXPECT_GE(mtime3, before);
   EXPECT_LE(mtime3, after);
 
-  if (!IsRunningOnGvisor()) {
-    // FIXME(b/36516566): Gofers set atime and mtime to different "now" times.
-    EXPECT_EQ(atime3, mtime3);
-  }
+  EXPECT_EQ(atime3, mtime3);
 }
 
 TEST(UtimensatTest, OnAbsPath) {
