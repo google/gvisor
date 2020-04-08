@@ -64,6 +64,16 @@ func getMMIncRef(task *kernel.Task) (*mm.MemoryManager, error) {
 	return m, nil
 }
 
+func checkTaskState(t *kernel.Task) error {
+	switch t.ExitState() {
+	case kernel.TaskExitZombie:
+		return syserror.EACCES
+	case kernel.TaskExitDead:
+		return syserror.ESRCH
+	}
+	return nil
+}
+
 type bufferWriter struct {
 	buf *bytes.Buffer
 }
@@ -628,11 +638,13 @@ func (s *exeSymlink) Getlink(ctx context.Context) (vfs.VirtualDentry, string, er
 }
 
 func (s *exeSymlink) executable() (file fsbridge.File, err error) {
+	if err := checkTaskState(s.task); err != nil {
+		return nil, err
+	}
+
 	s.task.WithMuLocked(func(t *kernel.Task) {
 		mm := t.MemoryManager()
 		if mm == nil {
-			// TODO(b/34851096): Check shouldn't allow Readlink once the
-			// Task is zombied.
 			err = syserror.EACCES
 			return
 		}
@@ -642,7 +654,7 @@ func (s *exeSymlink) executable() (file fsbridge.File, err error) {
 		// (with locks held).
 		file = mm.Executable()
 		if file == nil {
-			err = syserror.ENOENT
+			err = syserror.ESRCH
 		}
 	})
 	return
@@ -708,4 +720,42 @@ func (i *mountsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	defer rootDir.DecRef()
 	i.task.Kernel().VFS().GenerateProcMounts(ctx, rootDir, buf)
 	return nil
+}
+
+type namespaceSymlink struct {
+	kernfs.StaticSymlink
+
+	task *kernel.Task
+}
+
+func newNamespaceSymlink(task *kernel.Task, ino uint64, ns string) *kernfs.Dentry {
+	// Namespace symlinks should contain the namespace name and the inode number
+	// for the namespace instance, so for example user:[123456]. We currently fake
+	// the inode number by sticking the symlink inode in its place.
+	target := fmt.Sprintf("%s:[%d]", ns, ino)
+
+	inode := &namespaceSymlink{task: task}
+	// Note: credentials are overridden by taskOwnedInode.
+	inode.Init(task.Credentials(), ino, target)
+
+	taskInode := &taskOwnedInode{Inode: inode, owner: task}
+	d := &kernfs.Dentry{}
+	d.Init(taskInode)
+	return d
+}
+
+// Readlink implements Inode.
+func (s *namespaceSymlink) Readlink(ctx context.Context) (string, error) {
+	if err := checkTaskState(s.task); err != nil {
+		return "", err
+	}
+	return s.StaticSymlink.Readlink(ctx)
+}
+
+// Getlink implements Inode.Getlink.
+func (s *namespaceSymlink) Getlink(ctx context.Context) (vfs.VirtualDentry, string, error) {
+	if err := checkTaskState(s.task); err != nil {
+		return vfs.VirtualDentry{}, "", err
+	}
+	return s.StaticSymlink.Getlink(ctx)
 }
