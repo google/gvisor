@@ -1326,8 +1326,6 @@ TEST(ProcPidSymlink, SubprocessRunning) {
               SyscallSucceedsWithValue(sizeof(buf)));
 }
 
-// FIXME(gvisor.dev/issue/164): Inconsistent behavior between gVisor and linux
-// on proc files.
 TEST(ProcPidSymlink, SubprocessZombied) {
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
@@ -1337,7 +1335,7 @@ TEST(ProcPidSymlink, SubprocessZombied) {
   int want = EACCES;
   if (!IsRunningOnGvisor()) {
     auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
-    if (version.major == 4 && version.minor > 3) {
+    if (version.major > 4 || (version.major == 4 && version.minor > 3)) {
       want = ENOENT;
     }
   }
@@ -1350,30 +1348,25 @@ TEST(ProcPidSymlink, SubprocessZombied) {
                 SyscallFailsWithErrno(want));
   }
 
-  // FIXME(gvisor.dev/issue/164): Inconsistent behavior between gVisor and linux
-  // on proc files.
+  // FIXME(gvisor.dev/issue/164): Inconsistent behavior between linux on proc
+  // files.
   //
   // ~4.3: Syscall fails with EACCES.
-  // 4.17 & gVisor: Syscall succeeds and returns 1.
+  // 4.17: Syscall succeeds and returns 1.
   //
-  // EXPECT_THAT(ReadlinkWhileZombied("ns/pid", buf, sizeof(buf)),
-  //            SyscallFailsWithErrno(EACCES));
+  if (!IsRunningOnGvisor()) {
+    return;
+  }
 
-  // FIXME(gvisor.dev/issue/164): Inconsistent behavior between gVisor and linux
-  // on proc files.
-  //
-  // ~4.3: Syscall fails with EACCES.
-  // 4.17 & gVisor: Syscall succeeds and returns 1.
-  //
-  // EXPECT_THAT(ReadlinkWhileZombied("ns/user", buf, sizeof(buf)),
-  //            SyscallFailsWithErrno(EACCES));
+  EXPECT_THAT(ReadlinkWhileZombied("ns/pid", buf, sizeof(buf)),
+              SyscallFailsWithErrno(want));
+
+  EXPECT_THAT(ReadlinkWhileZombied("ns/user", buf, sizeof(buf)),
+              SyscallFailsWithErrno(want));
 }
 
 // Test whether /proc/PID/ symlinks can be read for an exited process.
 TEST(ProcPidSymlink, SubprocessExited) {
-  // FIXME(gvisor.dev/issue/164): These all succeed on gVisor.
-  SKIP_IF(IsRunningOnGvisor());
-
   char buf[1];
 
   EXPECT_THAT(ReadlinkWhileExited("exe", buf, sizeof(buf)),

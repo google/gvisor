@@ -214,22 +214,6 @@ func newIO(t *kernel.Task, isThreadGroup bool) *ioData {
 	return &ioData{ioUsage: t}
 }
 
-func newNamespaceSymlink(task *kernel.Task, ino uint64, ns string) *kernfs.Dentry {
-	// Namespace symlinks should contain the namespace name and the inode number
-	// for the namespace instance, so for example user:[123456]. We currently fake
-	// the inode number by sticking the symlink inode in its place.
-	target := fmt.Sprintf("%s:[%d]", ns, ino)
-
-	inode := &kernfs.StaticSymlink{}
-	// Note: credentials are overridden by taskOwnedInode.
-	inode.Init(task.Credentials(), ino, target)
-
-	taskInode := &taskOwnedInode{Inode: inode, owner: task}
-	d := &kernfs.Dentry{}
-	d.Init(taskInode)
-	return d
-}
-
 // newCgroupData creates inode that shows cgroup information.
 // From man 7 cgroups: "For each cgroup hierarchy of which the process is a
 // member, there is one entry containing three colon-separated fields:
