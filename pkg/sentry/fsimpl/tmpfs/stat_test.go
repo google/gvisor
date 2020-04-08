@@ -140,7 +140,7 @@ func TestSetStatAtime(t *testing.T) {
 		Mask:  0,
 		Atime: linux.NsecToStatxTimestamp(100),
 	}}); err != nil {
-		t.Errorf("SetStat atime without mask failed: %v")
+		t.Errorf("SetStat atime without mask failed: %v", err)
 	}
 	// Atime should be unchanged.
 	if gotStat, err := fd.Stat(ctx, allStatOptions); err != nil {
@@ -155,7 +155,7 @@ func TestSetStatAtime(t *testing.T) {
 		Atime: linux.NsecToStatxTimestamp(100),
 	}
 	if err := fd.SetStat(ctx, vfs.SetStatOptions{Stat: setStat}); err != nil {
-		t.Errorf("SetStat atime with mask failed: %v")
+		t.Errorf("SetStat atime with mask failed: %v", err)
 	}
 	if gotStat, err := fd.Stat(ctx, allStatOptions); err != nil {
 		t.Errorf("Stat got error: %v", err)
@@ -205,7 +205,7 @@ func TestSetStat(t *testing.T) {
 				Mask:  0,
 				Atime: linux.NsecToStatxTimestamp(100),
 			}}); err != nil {
-				t.Errorf("SetStat atime without mask failed: %v")
+				t.Errorf("SetStat atime without mask failed: %v", err)
 			}
 			// Atime should be unchanged.
 			if gotStat, err := fd.Stat(ctx, allStatOptions); err != nil {
@@ -220,7 +220,7 @@ func TestSetStat(t *testing.T) {
 				Atime: linux.NsecToStatxTimestamp(100),
 			}
 			if err := fd.SetStat(ctx, vfs.SetStatOptions{Stat: setStat}); err != nil {
-				t.Errorf("SetStat atime with mask failed: %v")
+				t.Errorf("SetStat atime with mask failed: %v", err)
 			}
 			if gotStat, err := fd.Stat(ctx, allStatOptions); err != nil {
 				t.Errorf("Stat got error: %v", err)

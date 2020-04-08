@@ -25,7 +25,7 @@ import (
 // GoogleEmitter is a wrapper that emits logs in a format compatible with
 // package github.com/golang/glog.
 type GoogleEmitter struct {
-	Writer
+	*Writer
 }
 
 // pid is used for the threadid component of the header.
@@ -46,7 +46,7 @@ var pid = os.Getpid()
 //   line             The line number
 //   msg              The user-supplied message
 //
-func (g *GoogleEmitter) Emit(depth int, level Level, timestamp time.Time, format string, args ...interface{}) {
+func (g GoogleEmitter) Emit(depth int, level Level, timestamp time.Time, format string, args ...interface{}) {
 	// Log level.
 	prefix := byte('?')
 	switch level {
@@ -81,5 +81,5 @@ func (g *GoogleEmitter) Emit(depth int, level Level, timestamp time.Time, format
 	message := fmt.Sprintf(format, args...)
 
 	// Emit the formatted result.
-	fmt.Fprintf(&g.Writer, "%c%02d%02d %02d:%02d:%02d.%06d % 7d %s:%d] %s\n", prefix, int(month), day, hour, minute, second, microsecond, pid, file, line, message)
+	fmt.Fprintf(g.Writer, "%c%02d%02d %02d:%02d:%02d.%06d % 7d %s:%d] %s\n", prefix, int(month), day, hour, minute, second, microsecond, pid, file, line, message)
 }

@@ -138,7 +138,8 @@ func TestDirectRequest(t *testing.T) {
 	// Sleep tests are gross, but this will only potentially flake
 	// if there's a bug. If there is no bug this will reliably
 	// succeed.
-	ctx, _ := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
 	if pkt, ok := c.linkEP.ReadContext(ctx); ok {
 		t.Errorf("stackAddrBad: unexpected packet sent, Proto=%v", pkt.Proto)
 	}

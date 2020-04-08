@@ -1445,19 +1445,19 @@ func TestOutgoingBroadcastWithEmptyRouteTable(t *testing.T) {
 
 	protoAddr := tcpip.ProtocolAddress{Protocol: fakeNetNumber, AddressWithPrefix: tcpip.AddressWithPrefix{header.IPv4Any, 0}}
 	if err := s.AddProtocolAddress(1, protoAddr); err != nil {
-		t.Fatalf("AddProtocolAddress(1, %s) failed: %s", protoAddr, err)
+		t.Fatalf("AddProtocolAddress(1, %v) failed: %v", protoAddr, err)
 	}
 	r, err := s.FindRoute(1, header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, false /* multicastLoop */)
 	if err != nil {
-		t.Fatalf("FindRoute(1, %s, %s, %d) failed: %s", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err)
+		t.Fatalf("FindRoute(1, %v, %v, %d) failed: %v", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err)
 	}
 	if err := verifyRoute(r, stack.Route{LocalAddress: header.IPv4Any, RemoteAddress: header.IPv4Broadcast}); err != nil {
-		t.Errorf("FindRoute(1, %s, %s, %d) returned unexpected Route: %s)", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err)
+		t.Errorf("FindRoute(1, %v, %v, %d) returned unexpected Route: %v", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err)
 	}
 
 	// If the NIC doesn't exist, it won't work.
 	if _, err := s.FindRoute(2, header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, false /* multicastLoop */); err != tcpip.ErrNetworkUnreachable {
-		t.Fatalf("got FindRoute(2, %s, %s, %d) = %s want = %s", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err, tcpip.ErrNetworkUnreachable)
+		t.Fatalf("got FindRoute(2, %v, %v, %d) = %v want = %v", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err, tcpip.ErrNetworkUnreachable)
 	}
 }
 
@@ -1483,12 +1483,12 @@ func TestOutgoingBroadcastWithRouteTable(t *testing.T) {
 	}
 	nic1ProtoAddr := tcpip.ProtocolAddress{fakeNetNumber, nic1Addr}
 	if err := s.AddProtocolAddress(1, nic1ProtoAddr); err != nil {
-		t.Fatalf("AddProtocolAddress(1, %s) failed: %s", nic1ProtoAddr, err)
+		t.Fatalf("AddProtocolAddress(1, %v) failed: %v", nic1ProtoAddr, err)
 	}
 
 	nic2ProtoAddr := tcpip.ProtocolAddress{fakeNetNumber, nic2Addr}
 	if err := s.AddProtocolAddress(2, nic2ProtoAddr); err != nil {
-		t.Fatalf("AddAddress(2, %s) failed: %s", nic2ProtoAddr, err)
+		t.Fatalf("AddAddress(2, %v) failed: %v", nic2ProtoAddr, err)
 	}
 
 	// Set the initial route table.
@@ -1503,10 +1503,10 @@ func TestOutgoingBroadcastWithRouteTable(t *testing.T) {
 	// When an interface is given, the route for a broadcast goes through it.
 	r, err := s.FindRoute(1, nic1Addr.Address, header.IPv4Broadcast, fakeNetNumber, false /* multicastLoop */)
 	if err != nil {
-		t.Fatalf("FindRoute(1, %s, %s, %d) failed: %s", nic1Addr.Address, header.IPv4Broadcast, fakeNetNumber, err)
+		t.Fatalf("FindRoute(1, %v, %v, %d) failed: %v", nic1Addr.Address, header.IPv4Broadcast, fakeNetNumber, err)
 	}
 	if err := verifyRoute(r, stack.Route{LocalAddress: nic1Addr.Address, RemoteAddress: header.IPv4Broadcast}); err != nil {
-		t.Errorf("FindRoute(1, %s, %s, %d) returned unexpected Route: %s)", nic1Addr.Address, header.IPv4Broadcast, fakeNetNumber, err)
+		t.Errorf("FindRoute(1, %v, %v, %d) returned unexpected Route: %v", nic1Addr.Address, header.IPv4Broadcast, fakeNetNumber, err)
 	}
 
 	// When an interface is not given, it consults the route table.
@@ -2399,7 +2399,7 @@ func TestNICContextPreservation(t *testing.T) {
 				t.Fatalf("got nicinfos[%d] = _, %t, want _, true; nicinfos = %+v", id, ok, nicinfos)
 			}
 			if got, want := nicinfo.Context == test.want, true; got != want {
-				t.Fatal("got nicinfo.Context == ctx = %t, want %t; nicinfo.Context = %p, ctx = %p", got, want, nicinfo.Context, test.want)
+				t.Fatalf("got nicinfo.Context == ctx = %t, want %t; nicinfo.Context = %p, ctx = %p", got, want, nicinfo.Context, test.want)
 			}
 		})
 	}
@@ -2768,7 +2768,7 @@ func TestNewPEBOnPromotionToPermanent(t *testing.T) {
 				{
 					subnet, err := tcpip.NewSubnet("\x00", "\x00")
 					if err != nil {
-						t.Fatalf("NewSubnet failed:", err)
+						t.Fatalf("NewSubnet failed: %v", err)
 					}
 					s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 1}})
 				}
@@ -2782,11 +2782,11 @@ func TestNewPEBOnPromotionToPermanent(t *testing.T) {
 				// permanentExpired kind.
 				r, err := s.FindRoute(1, "\x01", "\x02", fakeNetNumber, false)
 				if err != nil {
-					t.Fatal("FindRoute failed:", err)
+					t.Fatalf("FindRoute failed: %v", err)
 				}
 				defer r.Release()
 				if err := s.RemoveAddress(1, "\x01"); err != nil {
-					t.Fatalf("RemoveAddress failed:", err)
+					t.Fatalf("RemoveAddress failed: %v", err)
 				}
 
 				//
@@ -2798,7 +2798,7 @@ func TestNewPEBOnPromotionToPermanent(t *testing.T) {
 				// Add some other address with peb set to
 				// FirstPrimaryEndpoint.
 				if err := s.AddAddressWithOptions(1, fakeNetNumber, "\x03", stack.FirstPrimaryEndpoint); err != nil {
-					t.Fatal("AddAddressWithOptions failed:", err)
+					t.Fatalf("AddAddressWithOptions failed: %v", err)
 
 				}
 
@@ -2806,7 +2806,7 @@ func TestNewPEBOnPromotionToPermanent(t *testing.T) {
 				// make sure the new peb was respected.
 				// (The address should just be promoted now).
 				if err := s.AddAddressWithOptions(1, fakeNetNumber, "\x01", ps); err != nil {
-					t.Fatal("AddAddressWithOptions failed:", err)
+					t.Fatalf("AddAddressWithOptions failed: %v", err)
 				}
 				var primaryAddrs []tcpip.Address
 				for _, pa := range s.NICInfo()[1].ProtocolAddresses {
@@ -2839,11 +2839,11 @@ func TestNewPEBOnPromotionToPermanent(t *testing.T) {
 				// GetMainNICAddress; else, our original address
 				// should be returned.
 				if err := s.RemoveAddress(1, "\x03"); err != nil {
-					t.Fatalf("RemoveAddress failed:", err)
+					t.Fatalf("RemoveAddress failed: %v", err)
 				}
 				addr, err = s.GetMainNICAddress(1, fakeNetNumber)
 				if err != nil {
-					t.Fatal("s.GetMainNICAddress failed:", err)
+					t.Fatalf("s.GetMainNICAddress failed: %v", err)
 				}
 				if ps == stack.NeverPrimaryEndpoint {
 					if want := (tcpip.AddressWithPrefix{}); addr != want {
