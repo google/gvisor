@@ -1157,7 +1157,7 @@ TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread_NoRandomSave) {
                 EquivalentWithin((kConnectAttempts / kThreadCount), 0.10));
 }
 
-TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThread) {
+TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThread_NoRandomSave) {
   auto const& param = GetParam();
 
   TestAddress const& listener = param.listener;
@@ -1270,7 +1270,7 @@ TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThread) {
                 EquivalentWithin((kConnectAttempts / kThreadCount), 0.10));
 }
 
-TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThreadShort) {
+TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThreadShort_NoRandomSave) {
   auto const& param = GetParam();
 
   TestAddress const& listener = param.listener;
@@ -2146,8 +2146,9 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V4EphemeralPortReservedReuseAddr) {
                          &kSockOptOn, sizeof(kSockOptOn)),
               SyscallSucceeds());
 
-  ASSERT_THAT(connect(connected_fd.get(),
-                      reinterpret_cast<sockaddr*>(&bound_addr), bound_addr_len),
+  ASSERT_THAT(RetryEINTR(connect)(connected_fd.get(),
+                                  reinterpret_cast<sockaddr*>(&bound_addr),
+                                  bound_addr_len),
               SyscallSucceeds());
 
   // Get the ephemeral port.
