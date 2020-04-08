@@ -28,6 +28,18 @@ packetimpact_go_test(
     ],
 )
 
+packetimpact_go_test(
+    name = "tcp_window_shrink",
+    srcs = ["tcp_window_shrink_test.go"],
+    # TODO(b/153202472): Fix netstack then remove the line below.
+    netstack = False,
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
 sh_binary(
     name = "test_runner",
     srcs = ["test_runner.sh"],

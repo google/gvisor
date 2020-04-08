@@ -291,6 +291,35 @@ func (dut *DUT) ListenWithErrno(ctx context.Context, sockfd, backlog int32) (int
 	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
 }
 
+// Send calls send on the DUT and causes a fatal test failure if it doesn't
+// succeed. If more control over the timeout or error handling is needed, use
+// SendWithErrno.
+func (dut *DUT) Send(sockfd int32, buf []byte, flags int32) int32 {
+	dut.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	defer cancel()
+	ret, err := dut.SendWithErrno(ctx, sockfd, buf, flags)
+	if ret == -1 {
+		dut.t.Fatalf("failed to send: %s", err)
+	}
+	return ret
+}
+
+// SendWithErrno calls send on the DUT.
+func (dut *DUT) SendWithErrno(ctx context.Context, sockfd int32, buf []byte, flags int32) (int32, error) {
+	dut.t.Helper()
+	req := pb.SendRequest{
+		Sockfd: sockfd,
+		Buf:    buf,
+		Flags:  flags,
+	}
+	resp, err := dut.posixServer.Send(ctx, &req)
+	if err != nil {
+		dut.t.Fatalf("failed to call Send: %s", err)
+	}
+	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
+}
+
 // SetSockOpt calls setsockopt on the DUT and causes a fatal test failure if it
 // doesn't succeed. If more control over the timeout or error handling is
 // needed, use SetSockOptWithErrno. Because endianess and the width of values
@@ -320,6 +349,35 @@ func (dut *DUT) SetSockOptWithErrno(ctx context.Context, sockfd, level, optname 
 	resp, err := dut.posixServer.SetSockOpt(ctx, &req)
 	if err != nil {
 		dut.t.Fatalf("failed to call SetSockOpt: %s", err)
+	}
+	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
+}
+
+// SetSockOptInt calls setsockopt on the DUT and causes a fatal test failure
+// if it doesn't succeed. If more control over the int optval or error handling
+// is needed, use SetSockOptIntWithErrno.
+func (dut *DUT) SetSockOptInt(sockfd, level, optname, optval int32) {
+	dut.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	defer cancel()
+	ret, err := dut.SetSockOptIntWithErrno(ctx, sockfd, level, optname, optval)
+	if ret != 0 {
+		dut.t.Fatalf("failed to SetSockOptInt: %s", err)
+	}
+}
+
+// SetSockOptIntWithErrno calls setsockopt with an integer optval.
+func (dut *DUT) SetSockOptIntWithErrno(ctx context.Context, sockfd, level, optname, optval int32) (int32, error) {
+	dut.t.Helper()
+	req := pb.SetSockOptIntRequest{
+		Sockfd:  sockfd,
+		Level:   level,
+		Optname: optname,
+		Intval:  optval,
+	}
+	resp, err := dut.posixServer.SetSockOptInt(ctx, &req)
+	if err != nil {
+		dut.t.Fatalf("failed to call SetSockOptInt: %s", err)
 	}
 	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
 }
