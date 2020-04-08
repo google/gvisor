@@ -52,17 +52,6 @@ class FileTest : public ::testing::Test {
     test_file_fd_ = ASSERT_NO_ERRNO_AND_VALUE(
         Open(test_file_name_, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR));
 
-    // FIXME(edahlgren): enable when mknod syscall is supported.
-    // test_fifo_name_ = NewTempAbsPath();
-    // ASSERT_THAT(mknod(test_fifo_name_.c_str()), S_IFIFO|0644, 0,
-    //             SyscallSucceeds());
-    // ASSERT_THAT(test_fifo_[1] = open(test_fifo_name_.c_str(),
-    //                                             O_WRONLY),
-    //             SyscallSucceeds());
-    // ASSERT_THAT(test_fifo_[0] = open(test_fifo_name_.c_str(),
-    //                                             O_RDONLY),
-    //             SyscallSucceeds());
-
     ASSERT_THAT(pipe(test_pipe_), SyscallSucceeds());
     ASSERT_THAT(fcntl(test_pipe_[0], F_SETFL, O_NONBLOCK), SyscallSucceeds());
   }
@@ -96,18 +85,11 @@ class FileTest : public ::testing::Test {
     CloseFile();
     UnlinkFile();
     ClosePipes();
-
-    // FIXME(edahlgren): enable when mknod syscall is supported.
-    // close(test_fifo_[0]);
-    // close(test_fifo_[1]);
-    // unlink(test_fifo_name_.c_str());
   }
 
   std::string test_file_name_;
-  std::string test_fifo_name_;
   FileDescriptor test_file_fd_;
 
-  int test_fifo_[2];
   int test_pipe_[2];
 };
 
