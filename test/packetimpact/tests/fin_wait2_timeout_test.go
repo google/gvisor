@@ -47,20 +47,20 @@ func TestFinWait2Timeout(t *testing.T) {
 			}
 			dut.Close(acceptFd)
 
-			if gotOne := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagFin | header.TCPFlagAck)}, time.Second); gotOne == nil {
-				t.Fatal("expected a FIN-ACK within 1 second but got none")
+			if _, err := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagFin | header.TCPFlagAck)}, time.Second); err != nil {
+				t.Fatalf("expected a FIN-ACK within 1 second but got none: %s", err)
 			}
 			conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
 
 			time.Sleep(5 * time.Second)
 			conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
 			if tt.linger2 {
-				if gotOne := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)}, time.Second); gotOne == nil {
-					t.Fatal("expected a RST packet within a second but got none")
+				if _, err := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)}, time.Second); err != nil {
+					t.Fatalf("expected a RST packet within a second but got none: %s", err)
 				}
 			} else {
-				if gotOne := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)}, 10*time.Second); gotOne != nil {
-					t.Fatal("expected no RST packets within ten seconds but got one")
+				if _, err := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)}, 10*time.Second); err == nil {
+					t.Fatalf("expected no RST packets within ten seconds but got one: %s", err)
 				}
 			}
 		})

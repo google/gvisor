@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -233,19 +234,23 @@ func (conn *TCPIPv4) RecvFrame(timeout time.Duration) Layers {
 
 // Expect a packet that matches the provided tcp within the timeout specified.
 // If it doesn't arrive in time, it returns nil.
-func (conn *TCPIPv4) Expect(tcp TCP, timeout time.Duration) *TCP {
+func (conn *TCPIPv4) Expect(tcp TCP, timeout time.Duration) (*TCP, error) {
 	// We cannot implement this directly using ExpectFrame as we cannot specify
 	// the Payload part.
 	deadline := time.Now().Add(timeout)
+	var allTCP []string
 	for {
-		timeout = time.Until(deadline)
-		if timeout <= 0 {
-			return nil
+		var gotTCP *TCP
+		if timeout = time.Until(deadline); timeout > 0 {
+			gotTCP = conn.Recv(timeout)
 		}
-		gotTCP := conn.Recv(timeout)
+		if gotTCP == nil {
+			return nil, fmt.Errorf("got %d packets:\n%s", len(allTCP), strings.Join(allTCP, "\n"))
+		}
 		if tcp.match(gotTCP) {
-			return gotTCP
+			return gotTCP, nil
 		}
+		allTCP = append(allTCP, gotTCP.String())
 	}
 }
 
@@ -284,10 +289,11 @@ func (conn *TCPIPv4) Handshake() {
 	conn.Send(TCP{Flags: Uint8(header.TCPFlagSyn)})
 
 	// Wait for the SYN-ACK.
-	conn.SynAck = conn.Expect(TCP{Flags: Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second)
-	if conn.SynAck == nil {
-		conn.t.Fatalf("didn't get synack during handshake")
+	synAck, err := conn.Expect(TCP{Flags: Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second)
+	if synAck == nil {
+		conn.t.Fatalf("didn't get synack during handshake: %s", err)
 	}
+	conn.SynAck = synAck
 
 	// Send an ACK.
 	conn.Send(TCP{Flags: Uint8(header.TCPFlagAck)})
@@ -427,19 +433,20 @@ func (conn *UDPIPv4) Recv(timeout time.Duration) *UDP {
 
 // Expect a packet that matches the provided udp within the timeout specified.
 // If it doesn't arrive in time, the test fails.
-func (conn *UDPIPv4) Expect(udp UDP, timeout time.Duration) *UDP {
+func (conn *UDPIPv4) Expect(udp UDP, timeout time.Duration) (*UDP, error) {
 	deadline := time.Now().Add(timeout)
+	var allUDP []string
 	for {
-		timeout = time.Until(deadline)
-		if timeout <= 0 {
-			return nil
+		var gotUDP *UDP
+		if timeout = time.Until(deadline); timeout > 0 {
+			gotUDP = conn.Recv(timeout)
 		}
-		gotUDP := conn.Recv(timeout)
 		if gotUDP == nil {
-			return nil
+			return nil, fmt.Errorf("got %d packets:\n%s", len(allUDP), strings.Join(allUDP, "\n"))
 		}
 		if udp.match(gotUDP) {
-			return gotUDP
+			return gotUDP, nil
 		}
+		allUDP = append(allUDP, gotUDP.String())
 	}
 }
