@@ -48,6 +48,8 @@ func ExtractErrno(err error) syscall.Errno {
 		return ExtractErrno(e.Err)
 	case *os.SyscallError:
 		return ExtractErrno(e.Err)
+	case *os.LinkError:
+		return ExtractErrno(e.Err)
 	}
 
 	// Default case.
