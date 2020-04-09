@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -838,24 +839,45 @@ func (e *baseEndpoint) SendMsg(ctx context.Context, data [][]byte, c ControlMess
 
 // SetSockOpt sets a socket option. Currently not supported.
 func (e *baseEndpoint) SetSockOpt(opt interface{}) *tcpip.Error {
-	switch v := opt.(type) {
-	case tcpip.PasscredOption:
-		e.setPasscred(v != 0)
-		return nil
-	}
 	return nil
 }
 
 func (e *baseEndpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
+	switch opt {
+	case tcpip.BroadcastOption:
+	case tcpip.PasscredOption:
+		e.setPasscred(v)
+	case tcpip.ReuseAddressOption:
+	default:
+		log.Warningf("Unsupported socket option: %d", opt)
+		return tcpip.ErrUnknownProtocolOption
+	}
 	return nil
 }
 
 func (e *baseEndpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
+	switch opt {
+	case tcpip.SendBufferSizeOption:
+	case tcpip.ReceiveBufferSizeOption:
+	default:
+		log.Warningf("Unsupported socket option: %d", opt)
+		return tcpip.ErrUnknownProtocolOption
+	}
 	return nil
 }
 
 func (e *baseEndpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
-	return false, tcpip.ErrUnknownProtocolOption
+	switch opt {
+	case tcpip.KeepaliveEnabledOption:
+		return false, nil
+
+	case tcpip.PasscredOption:
+		return e.Passcred(), nil
+
+	default:
+		log.Warningf("Unsupported socket option: %d", opt)
+		return false, tcpip.ErrUnknownProtocolOption
+	}
 }
 
 func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
@@ -914,29 +936,19 @@ func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 		return int(v), nil
 
 	default:
+		log.Warningf("Unsupported socket option: %d", opt)
 		return -1, tcpip.ErrUnknownProtocolOption
 	}
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (e *baseEndpoint) GetSockOpt(opt interface{}) *tcpip.Error {
-	switch o := opt.(type) {
+	switch opt.(type) {
 	case tcpip.ErrorOption:
 		return nil
 
-	case *tcpip.PasscredOption:
-		if e.Passcred() {
-			*o = tcpip.PasscredOption(1)
-		} else {
-			*o = tcpip.PasscredOption(0)
-		}
-		return nil
-
-	case *tcpip.KeepaliveEnabledOption:
-		*o = 0
-		return nil
-
 	default:
+		log.Warningf("Unsupported socket option: %T", opt)
 		return tcpip.ErrUnknownProtocolOption
 	}
 }

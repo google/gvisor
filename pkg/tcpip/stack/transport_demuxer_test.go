@@ -206,7 +206,7 @@ func TestTransportDemuxerRegister(t *testing.T) {
 // the distribution of packets received matches expectations.
 func TestBindToDeviceDistribution(t *testing.T) {
 	type endpointSockopts struct {
-		reuse        int
+		reuse        bool
 		bindToDevice tcpip.NICID
 	}
 	for _, test := range []struct {
@@ -221,11 +221,11 @@ func TestBindToDeviceDistribution(t *testing.T) {
 			"BindPortReuse",
 			// 5 endpoints that all have reuse set.
 			[]endpointSockopts{
-				{reuse: 1, bindToDevice: 0},
-				{reuse: 1, bindToDevice: 0},
-				{reuse: 1, bindToDevice: 0},
-				{reuse: 1, bindToDevice: 0},
-				{reuse: 1, bindToDevice: 0},
+				{reuse: true, bindToDevice: 0},
+				{reuse: true, bindToDevice: 0},
+				{reuse: true, bindToDevice: 0},
+				{reuse: true, bindToDevice: 0},
+				{reuse: true, bindToDevice: 0},
 			},
 			map[tcpip.NICID][]float64{
 				// Injected packets on dev0 get distributed evenly.
@@ -236,9 +236,9 @@ func TestBindToDeviceDistribution(t *testing.T) {
 			"BindToDevice",
 			// 3 endpoints with various bindings.
 			[]endpointSockopts{
-				{reuse: 0, bindToDevice: 1},
-				{reuse: 0, bindToDevice: 2},
-				{reuse: 0, bindToDevice: 3},
+				{reuse: false, bindToDevice: 1},
+				{reuse: false, bindToDevice: 2},
+				{reuse: false, bindToDevice: 3},
 			},
 			map[tcpip.NICID][]float64{
 				// Injected packets on dev0 go only to the endpoint bound to dev0.
@@ -253,12 +253,12 @@ func TestBindToDeviceDistribution(t *testing.T) {
 			"ReuseAndBindToDevice",
 			// 6 endpoints with various bindings.
 			[]endpointSockopts{
-				{reuse: 1, bindToDevice: 1},
-				{reuse: 1, bindToDevice: 1},
-				{reuse: 1, bindToDevice: 2},
-				{reuse: 1, bindToDevice: 2},
-				{reuse: 1, bindToDevice: 2},
-				{reuse: 1, bindToDevice: 0},
+				{reuse: true, bindToDevice: 1},
+				{reuse: true, bindToDevice: 1},
+				{reuse: true, bindToDevice: 2},
+				{reuse: true, bindToDevice: 2},
+				{reuse: true, bindToDevice: 2},
+				{reuse: true, bindToDevice: 0},
 			},
 			map[tcpip.NICID][]float64{
 				// Injected packets on dev0 get distributed among endpoints bound to
@@ -309,9 +309,8 @@ func TestBindToDeviceDistribution(t *testing.T) {
 						}(ep)
 
 						defer ep.Close()
-						reusePortOption := tcpip.ReusePortOption(endpoint.reuse)
-						if err := ep.SetSockOpt(reusePortOption); err != nil {
-							t.Fatalf("SetSockOpt(%#v) on endpoint %d failed: %s", reusePortOption, i, err)
+						if err := ep.SetSockOptBool(tcpip.ReusePortOption, endpoint.reuse); err != nil {
+							t.Fatalf("SetSockOptBool(ReusePortOption, %t) on endpoint %d failed: %s", endpoint.reuse, i, err)
 						}
 						bindToDeviceOption := tcpip.BindToDeviceOption(endpoint.bindToDevice)
 						if err := ep.SetSockOpt(bindToDeviceOption); err != nil {
