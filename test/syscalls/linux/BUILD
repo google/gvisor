@@ -2026,6 +2026,8 @@ cc_binary(
         "//test/util:file_descriptor",
         "@com_google_absl//absl/strings",
         gtest,
+        ":ip_socket_test_util",
+        ":unix_domain_socket_test_util",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
