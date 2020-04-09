@@ -242,7 +242,7 @@ TEST_F(TuntapTest, InvalidReadWrite) {
 TEST_F(TuntapTest, WriteToDownDevice) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
-  // FIXME: gVisor always creates enabled/up'd interfaces.
+  // FIXME(b/110961832): gVisor always creates enabled/up'd interfaces.
   SKIP_IF(IsRunningOnGvisor());
 
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kDevNetTun, O_RDWR));
@@ -280,10 +280,11 @@ PosixErrorOr<FileDescriptor> OpenAndAttachTap(
                                    &addr, sizeof(addr)));
 
   if (!IsRunningOnGvisor()) {
-    // FIXME: gVisor doesn't support setting MAC address on interfaces yet.
+    // FIXME(b/110961832): gVisor doesn't support setting MAC address on
+    // interfaces yet.
     RETURN_IF_ERRNO(LinkSetMacAddr(link->index, kMacA, sizeof(kMacA)));
 
-    // FIXME: gVisor always creates enabled/up'd interfaces.
+    // FIXME(b/110961832): gVisor always creates enabled/up'd interfaces.
     RETURN_IF_ERRNO(LinkChangeFlags(link->index, IFF_UP, IFF_UP));
   }
 

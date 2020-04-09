@@ -184,7 +184,6 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 	if targetCreds.PermittedCaps&^callerCreds.PermittedCaps != 0 {
 		return false
 	}
-	// TODO: Yama LSM
 	return true
 }
 
