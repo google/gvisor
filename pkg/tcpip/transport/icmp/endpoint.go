@@ -348,29 +348,37 @@ func (e *endpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
 
 // SetSockOpt sets a socket option.
 func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
-	switch o := opt.(type) {
-	case tcpip.TTLOption:
-		e.mu.Lock()
-		e.ttl = uint8(o)
-		e.mu.Unlock()
-	}
-
 	return nil
 }
 
 // SetSockOptBool sets a socket option. Currently not supported.
 func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
-	return nil
+	return tcpip.ErrUnknownProtocolOption
 }
 
 // SetSockOptInt sets a socket option. Currently not supported.
 func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
+	switch opt {
+	case tcpip.TTLOption:
+		e.mu.Lock()
+		e.ttl = uint8(v)
+		e.mu.Unlock()
+
+	default:
+		return tcpip.ErrUnknownProtocolOption
+	}
 	return nil
 }
 
 // GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.
 func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
-	return false, tcpip.ErrUnknownProtocolOption
+	switch opt {
+	case tcpip.KeepaliveEnabledOption:
+		return false, nil
+
+	default:
+		return false, tcpip.ErrUnknownProtocolOption
+	}
 }
 
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
@@ -397,24 +405,21 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 		e.rcvMu.Unlock()
 		return v, nil
 
+	case tcpip.TTLOption:
+		e.rcvMu.Lock()
+		v := int(e.ttl)
+		e.rcvMu.Unlock()
+		return v, nil
+
+	default:
+		return -1, tcpip.ErrUnknownProtocolOption
 	}
-	return -1, tcpip.ErrUnknownProtocolOption
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
-	switch o := opt.(type) {
+	switch opt.(type) {
 	case tcpip.ErrorOption:
-		return nil
-
-	case *tcpip.KeepaliveEnabledOption:
-		*o = 0
-		return nil
-
-	case *tcpip.TTLOption:
-		e.rcvMu.Lock()
-		*o = tcpip.TTLOption(e.ttl)
-		e.rcvMu.Unlock()
 		return nil
 
 	default:

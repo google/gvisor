@@ -501,11 +501,20 @@ func (e *endpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
 // SetSockOptBool implements tcpip.Endpoint.SetSockOptBool.
 func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 	switch opt {
+	case tcpip.BroadcastOption:
+		e.mu.Lock()
+		e.broadcast = v
+		e.mu.Unlock()
+
+	case tcpip.MulticastLoopOption:
+		e.mu.Lock()
+		e.multicastLoop = v
+		e.mu.Unlock()
+
 	case tcpip.ReceiveTOSOption:
 		e.mu.Lock()
 		e.receiveTOS = v
 		e.mu.Unlock()
-		return nil
 
 	case tcpip.ReceiveTClassOption:
 		// We only support this option on v6 endpoints.
@@ -516,7 +525,18 @@ func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 		e.mu.Lock()
 		e.receiveTClass = v
 		e.mu.Unlock()
-		return nil
+
+	case tcpip.ReceiveIPPacketInfoOption:
+		e.mu.Lock()
+		e.receiveIPPacketInfo = v
+		e.mu.Unlock()
+
+	case tcpip.ReuseAddressOption:
+
+	case tcpip.ReusePortOption:
+		e.mu.Lock()
+		e.reusePort = v
+		e.mu.Unlock()
 
 	case tcpip.V6OnlyOption:
 		// We only recognize this option on v6 endpoints.
@@ -533,13 +553,8 @@ func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 		}
 
 		e.v6only = v
-		return nil
-
-	case tcpip.ReceiveIPPacketInfoOption:
-		e.mu.Lock()
-		e.receiveIPPacketInfo = v
-		e.mu.Unlock()
-		return nil
+	default:
+		return tcpip.ErrUnknownProtocolOption
 	}
 
 	return nil
@@ -547,22 +562,40 @@ func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 
 // SetSockOptInt implements tcpip.Endpoint.SetSockOptInt.
 func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
+	switch opt {
+	case tcpip.MulticastTTLOption:
+		e.mu.Lock()
+		e.multicastTTL = uint8(v)
+		e.mu.Unlock()
+
+	case tcpip.TTLOption:
+		e.mu.Lock()
+		e.ttl = uint8(v)
+		e.mu.Unlock()
+
+	case tcpip.IPv4TOSOption:
+		e.mu.Lock()
+		e.sendTOS = uint8(v)
+		e.mu.Unlock()
+
+	case tcpip.IPv6TrafficClassOption:
+		e.mu.Lock()
+		e.sendTOS = uint8(v)
+		e.mu.Unlock()
+
+	case tcpip.ReceiveBufferSizeOption:
+	case tcpip.SendBufferSizeOption:
+
+	default:
+		return tcpip.ErrUnknownProtocolOption
+	}
+
 	return nil
 }
 
 // SetSockOpt implements tcpip.Endpoint.SetSockOpt.
 func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 	switch v := opt.(type) {
-	case tcpip.TTLOption:
-		e.mu.Lock()
-		e.ttl = uint8(v)
-		e.mu.Unlock()
-
-	case tcpip.MulticastTTLOption:
-		e.mu.Lock()
-		e.multicastTTL = uint8(v)
-		e.mu.Unlock()
-
 	case tcpip.MulticastInterfaceOption:
 		e.mu.Lock()
 		defer e.mu.Unlock()
@@ -686,16 +719,6 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.multicastMemberships[memToRemoveIndex] = e.multicastMemberships[len(e.multicastMemberships)-1]
 		e.multicastMemberships = e.multicastMemberships[:len(e.multicastMemberships)-1]
 
-	case tcpip.MulticastLoopOption:
-		e.mu.Lock()
-		e.multicastLoop = bool(v)
-		e.mu.Unlock()
-
-	case tcpip.ReusePortOption:
-		e.mu.Lock()
-		e.reusePort = v != 0
-		e.mu.Unlock()
-
 	case tcpip.BindToDeviceOption:
 		id := tcpip.NICID(v)
 		if id != 0 && !e.stack.HasNIC(id) {
@@ -704,26 +727,6 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.mu.Lock()
 		e.bindToDevice = id
 		e.mu.Unlock()
-		return nil
-
-	case tcpip.BroadcastOption:
-		e.mu.Lock()
-		e.broadcast = v != 0
-		e.mu.Unlock()
-
-		return nil
-
-	case tcpip.IPv4TOSOption:
-		e.mu.Lock()
-		e.sendTOS = uint8(v)
-		e.mu.Unlock()
-		return nil
-
-	case tcpip.IPv6TrafficClassOption:
-		e.mu.Lock()
-		e.sendTOS = uint8(v)
-		e.mu.Unlock()
-		return nil
 	}
 	return nil
 }
@@ -731,6 +734,21 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 // GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.
 func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 	switch opt {
+	case tcpip.BroadcastOption:
+		e.mu.RLock()
+		v := e.broadcast
+		e.mu.RUnlock()
+		return v, nil
+
+	case tcpip.KeepaliveEnabledOption:
+		return false, nil
+
+	case tcpip.MulticastLoopOption:
+		e.mu.RLock()
+		v := e.multicastLoop
+		e.mu.RUnlock()
+		return v, nil
+
 	case tcpip.ReceiveTOSOption:
 		e.mu.RLock()
 		v := e.receiveTOS
@@ -748,6 +766,22 @@ func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 		e.mu.RUnlock()
 		return v, nil
 
+	case tcpip.ReceiveIPPacketInfoOption:
+		e.mu.RLock()
+		v := e.receiveIPPacketInfo
+		e.mu.RUnlock()
+		return v, nil
+
+	case tcpip.ReuseAddressOption:
+		return false, nil
+
+	case tcpip.ReusePortOption:
+		e.mu.RLock()
+		v := e.reusePort
+		e.mu.RUnlock()
+
+		return v, nil
+
 	case tcpip.V6OnlyOption:
 		// We only recognize this option on v6 endpoints.
 		if e.NetProto != header.IPv6ProtocolNumber {
@@ -760,19 +794,32 @@ func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 
 		return v, nil
 
-	case tcpip.ReceiveIPPacketInfoOption:
-		e.mu.RLock()
-		v := e.receiveIPPacketInfo
-		e.mu.RUnlock()
-		return v, nil
+	default:
+		return false, tcpip.ErrUnknownProtocolOption
 	}
-
-	return false, tcpip.ErrUnknownProtocolOption
 }
 
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
 func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 	switch opt {
+	case tcpip.IPv4TOSOption:
+		e.mu.RLock()
+		v := int(e.sendTOS)
+		e.mu.RUnlock()
+		return v, nil
+
+	case tcpip.IPv6TrafficClassOption:
+		e.mu.RLock()
+		v := int(e.sendTOS)
+		e.mu.RUnlock()
+		return v, nil
+
+	case tcpip.MulticastTTLOption:
+		e.mu.Lock()
+		v := int(e.multicastTTL)
+		e.mu.Unlock()
+		return v, nil
+
 	case tcpip.ReceiveQueueSizeOption:
 		v := 0
 		e.rcvMu.Lock()
@@ -794,29 +841,22 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 		v := e.rcvBufSizeMax
 		e.rcvMu.Unlock()
 		return v, nil
-	}
 
-	return -1, tcpip.ErrUnknownProtocolOption
+	case tcpip.TTLOption:
+		e.mu.Lock()
+		v := int(e.ttl)
+		e.mu.Unlock()
+		return v, nil
+
+	default:
+		return -1, tcpip.ErrUnknownProtocolOption
+	}
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 	switch o := opt.(type) {
 	case tcpip.ErrorOption:
-		return nil
-
-	case *tcpip.TTLOption:
-		e.mu.Lock()
-		*o = tcpip.TTLOption(e.ttl)
-		e.mu.Unlock()
-		return nil
-
-	case *tcpip.MulticastTTLOption:
-		e.mu.Lock()
-		*o = tcpip.MulticastTTLOption(e.multicastTTL)
-		e.mu.Unlock()
-		return nil
-
 	case *tcpip.MulticastInterfaceOption:
 		e.mu.Lock()
 		*o = tcpip.MulticastInterfaceOption{
@@ -824,67 +864,16 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 			e.multicastAddr,
 		}
 		e.mu.Unlock()
-		return nil
-
-	case *tcpip.MulticastLoopOption:
-		e.mu.RLock()
-		v := e.multicastLoop
-		e.mu.RUnlock()
-
-		*o = tcpip.MulticastLoopOption(v)
-		return nil
-
-	case *tcpip.ReuseAddressOption:
-		*o = 0
-		return nil
-
-	case *tcpip.ReusePortOption:
-		e.mu.RLock()
-		v := e.reusePort
-		e.mu.RUnlock()
-
-		*o = 0
-		if v {
-			*o = 1
-		}
-		return nil
 
 	case *tcpip.BindToDeviceOption:
 		e.mu.RLock()
 		*o = tcpip.BindToDeviceOption(e.bindToDevice)
 		e.mu.RUnlock()
-		return nil
-
-	case *tcpip.KeepaliveEnabledOption:
-		*o = 0
-		return nil
-
-	case *tcpip.BroadcastOption:
-		e.mu.RLock()
-		v := e.broadcast
-		e.mu.RUnlock()
-
-		*o = 0
-		if v {
-			*o = 1
-		}
-		return nil
-
-	case *tcpip.IPv4TOSOption:
-		e.mu.RLock()
-		*o = tcpip.IPv4TOSOption(e.sendTOS)
-		e.mu.RUnlock()
-		return nil
-
-	case *tcpip.IPv6TrafficClassOption:
-		e.mu.RLock()
-		*o = tcpip.IPv6TrafficClassOption(e.sendTOS)
-		e.mu.RUnlock()
-		return nil
 
 	default:
 		return tcpip.ErrUnknownProtocolOption
 	}
+	return nil
 }
 
 // sendUDP sends a UDP segment via the provided network endpoint and under the
