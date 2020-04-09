@@ -994,7 +994,7 @@ constexpr uint64_t kMappingSize = 100 << 20;
 
 // Tolerance on RSS comparisons to account for background thread mappings,
 // reclaimed pages, newly faulted pages, etc.
-constexpr uint64_t kRSSTolerance = 5 << 20;
+constexpr uint64_t kRSSTolerance = 10 << 20;
 
 // Capture RSS before and after an anonymous mapping with passed prot.
 void MapPopulateRSS(int prot, uint64_t* before, uint64_t* after) {
