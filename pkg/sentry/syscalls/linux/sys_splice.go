@@ -29,6 +29,10 @@ func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonB
 		return 0, syserror.EINVAL
 	}
 
+	if opts.Length > int64(kernel.MAX_RW_COUNT) {
+		opts.Length = int64(kernel.MAX_RW_COUNT)
+	}
+
 	var (
 		total int64
 		n     int64
