@@ -682,7 +682,7 @@ func (fs *Filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 	if err != nil {
 		return linux.Statfs{}, err
 	}
-	// TODO: actually implement statfs
+	// TODO(gvisor.dev/issue/1193): actually implement statfs.
 	return linux.Statfs{}, syserror.ENOSYS
 }
 

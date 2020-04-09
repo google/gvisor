@@ -44,9 +44,6 @@ const (
 	// lookup.
 	cacheRevalidate = "revalidate"
 
-	// TODO(edahlgren/mpratt): support a tmpfs size limit.
-	// size = "size"
-
 	// Permissions that exceed modeMask will be rejected.
 	modeMask = 01777
 
