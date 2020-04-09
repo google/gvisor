@@ -233,9 +233,9 @@ func (vfs *VirtualFilesystem) MountAt(ctx context.Context, creds *auth.Credentia
 		}
 		vd.dentry.mu.Lock()
 	}
-	// TODO: Linux requires that either both the mount point and the mount root
-	// are directories, or neither are, and returns ENOTDIR if this is not the
-	// case.
+	// TODO(gvisor.dev/issue/1035): Linux requires that either both the mount
+	// point and the mount root are directories, or neither are, and returns
+	// ENOTDIR if this is not the case.
 	mntns := vd.mount.ns
 	mnt := newMount(vfs, fs, root, mntns, opts)
 	vfs.mounts.seq.BeginWrite()
@@ -274,9 +274,9 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 		}
 	}
 
-	// TODO(jamieliu): Linux special-cases umount of the caller's root, which
-	// we don't implement yet (we'll just fail it since the caller holds a
-	// reference on it).
+	// TODO(gvisor.dev/issue/1035): Linux special-cases umount of the caller's
+	// root, which we don't implement yet (we'll just fail it since the caller
+	// holds a reference on it).
 
 	vfs.mounts.seq.BeginWrite()
 	if opts.Flags&linux.MNT_DETACH == 0 {

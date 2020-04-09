@@ -497,7 +497,7 @@ type FilesystemImpl interface {
 	// Preconditions: vd.Mount().Filesystem().Impl() == this FilesystemImpl.
 	PrependPath(ctx context.Context, vfsroot, vd VirtualDentry, b *fspath.Builder) error
 
-	// TODO: inotify_add_watch()
+	// TODO(gvisor.dev/issue/1479): inotify_add_watch()
 }
 
 // PrependPathAtVFSRootError is returned by implementations of

@@ -272,9 +272,8 @@ func setupRootFS(spec *specs.Spec, conf *boot.Config) error {
 
 	root := spec.Root.Path
 	if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
-		// FIXME: runsc can't be re-executed without
-		// /proc, so we create a tmpfs mount, mount ./proc and ./root
-		// there, then move this mount to the root and after
+		// runsc can't be re-executed without /proc, so we create a tmpfs mount,
+		// mount ./proc and ./root there, then move this mount to the root and after
 		// setCapsAndCallSelf, runsc will chroot into /root.
 		//
 		// We need a directory to construct a new root and we know that
