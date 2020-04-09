@@ -110,10 +110,10 @@ class IfAddrHelper {
   PosixError Load();
   void Release();
 
-  std::vector<std::string> InterfaceList(int family);
+  std::vector<std::string> InterfaceList(int family) const;
 
-  struct sockaddr* GetAddr(int family, std::string name);
-  PosixErrorOr<int> GetIndex(std::string name);
+  const sockaddr* GetAddr(int family, std::string name) const;
+  PosixErrorOr<int> GetIndex(std::string name) const;
 
  private:
   struct ifaddrs* ifaddr_;
