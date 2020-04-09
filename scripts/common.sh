@@ -89,12 +89,20 @@ function install_runsc() {
 # be correct, otherwise this may result in a loop that spins until time out.
 function apt_install() {
   while true; do
-    if (sudo apt-get update && sudo apt-get install -y "$@"); then
-      break
-    fi
-    result=$?
-    if [[ $result -ne 100 ]]; then
-      return $result
-    fi
+    sudo apt-get update &&
+      sudo apt-get install -y "$@" &&
+      true
+    result="${?}"
+    case $result in
+      0)
+        break
+        ;;
+      100)
+        # 100 is the error code that apt-get returns.
+        ;;
+      *)
+        exit $result
+        ;;
+    esac
   done
 }
