@@ -261,9 +261,6 @@ func configs(opts ...configOption) []*boot.Config {
 		case overlay:
 			c.Overlay = true
 		case kvm:
-			// TODO(b/112165693): KVM tests are flaky. Disable until fixed.
-			continue
-
 			c.Platform = platforms.KVM
 		case nonExclusiveFS:
 			c.FileAccess = boot.FileAccessShared
