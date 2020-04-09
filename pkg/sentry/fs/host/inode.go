@@ -397,15 +397,12 @@ func (i *inodeOperations) StatFS(context.Context) (fs.Info, error) {
 }
 
 // AddLink implements fs.InodeOperations.AddLink.
-// FIXME(b/63117438): Remove this from InodeOperations altogether.
 func (i *inodeOperations) AddLink() {}
 
 // DropLink implements fs.InodeOperations.DropLink.
-// FIXME(b/63117438): Remove this from InodeOperations altogether.
 func (i *inodeOperations) DropLink() {}
 
 // NotifyStatusChange implements fs.InodeOperations.NotifyStatusChange.
-// FIXME(b/63117438): Remove this from InodeOperations altogether.
 func (i *inodeOperations) NotifyStatusChange(ctx context.Context) {}
 
 // readdirAll returns all of the directory entries in i.
