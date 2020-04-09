@@ -36,4 +36,5 @@ go_test(
     size = "small",
     srcs = ["layers_test.go"],
     library = ":testbench",
+    deps = ["//pkg/tcpip"],
 )
