@@ -397,8 +397,6 @@ func (i *Inode) Getlink(ctx context.Context) (*Dirent, error) {
 // AddLink calls i.InodeOperations.AddLink.
 func (i *Inode) AddLink() {
 	if i.overlay != nil {
-		// FIXME(b/63117438): Remove this from InodeOperations altogether.
-		//
 		// This interface is only used by ramfs to update metadata of
 		// children. These filesystems should _never_ have overlay
 		// Inodes cached as children. So explicitly disallow this
