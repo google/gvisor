@@ -177,17 +177,17 @@ SocketKind IPv6TCPUnboundSocket(int type) {
 PosixError IfAddrHelper::Load() {
   Release();
   RETURN_ERROR_IF_SYSCALL_FAIL(getifaddrs(&ifaddr_));
-  return PosixError(0);
+  return NoError();
 }
 
 void IfAddrHelper::Release() {
   if (ifaddr_) {
     freeifaddrs(ifaddr_);
+    ifaddr_ = nullptr;
   }
-  ifaddr_ = nullptr;
 }
 
-std::vector<std::string> IfAddrHelper::InterfaceList(int family) {
+std::vector<std::string> IfAddrHelper::InterfaceList(int family) const {
   std::vector<std::string> names;
   for (auto ifa = ifaddr_; ifa != NULL; ifa = ifa->ifa_next) {
     if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family != family) {
@@ -198,7 +198,7 @@ std::vector<std::string> IfAddrHelper::InterfaceList(int family) {
   return names;
 }
 
-sockaddr* IfAddrHelper::GetAddr(int family, std::string name) {
+const sockaddr* IfAddrHelper::GetAddr(int family, std::string name) const {
   for (auto ifa = ifaddr_; ifa != NULL; ifa = ifa->ifa_next) {
     if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family != family) {
       continue;
@@ -210,7 +210,7 @@ sockaddr* IfAddrHelper::GetAddr(int family, std::string name) {
   return nullptr;
 }
 
-PosixErrorOr<int> IfAddrHelper::GetIndex(std::string name) {
+PosixErrorOr<int> IfAddrHelper::GetIndex(std::string name) const {
   return InterfaceIndex(name);
 }
 

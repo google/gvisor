@@ -45,37 +45,31 @@ void IPv4UDPUnboundExternalNetworkingSocketTest::SetUp() {
   got_if_infos_ = false;
 
   // Get interface list.
-  std::vector<std::string> if_names;
   ASSERT_NO_ERRNO(if_helper_.Load());
-  if_names = if_helper_.InterfaceList(AF_INET);
+  std::vector<std::string> if_names = if_helper_.InterfaceList(AF_INET);
   if (if_names.size() != 2) {
     return;
   }
 
   // Figure out which interface is where.
-  int lo = 0, eth = 1;
-  if (if_names[lo] != "lo") {
-    lo = 1;
-    eth = 0;
-  }
+  std::string lo = if_names[0];
+  std::string eth = if_names[1];
+  if (lo != "lo") std::swap(lo, eth);
+  if (lo != "lo") return;
 
-  if (if_names[lo] != "lo") {
+  lo_if_idx_ = ASSERT_NO_ERRNO_AND_VALUE(if_helper_.GetIndex(lo));
+  auto lo_if_addr = if_helper_.GetAddr(AF_INET, lo);
+  if (lo_if_addr == nullptr) {
     return;
   }
+  lo_if_addr_ = *reinterpret_cast<const sockaddr_in*>(lo_if_addr);
 
-  lo_if_idx_ = ASSERT_NO_ERRNO_AND_VALUE(if_helper_.GetIndex(if_names[lo]));
-  lo_if_addr_ = if_helper_.GetAddr(AF_INET, if_names[lo]);
-  if (lo_if_addr_ == nullptr) {
+  eth_if_idx_ = ASSERT_NO_ERRNO_AND_VALUE(if_helper_.GetIndex(eth));
+  auto eth_if_addr = if_helper_.GetAddr(AF_INET, eth);
+  if (eth_if_addr == nullptr) {
     return;
   }
-  lo_if_sin_addr_ = reinterpret_cast<sockaddr_in*>(lo_if_addr_)->sin_addr;
-
-  eth_if_idx_ = ASSERT_NO_ERRNO_AND_VALUE(if_helper_.GetIndex(if_names[eth]));
-  eth_if_addr_ = if_helper_.GetAddr(AF_INET, if_names[eth]);
-  if (eth_if_addr_ == nullptr) {
-    return;
-  }
-  eth_if_sin_addr_ = reinterpret_cast<sockaddr_in*>(eth_if_addr_)->sin_addr;
+  eth_if_addr_ = *reinterpret_cast<const sockaddr_in*>(eth_if_addr);
 
   got_if_infos_ = true;
 }
@@ -242,7 +236,7 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   // Bind the non-receiving socket to the unicast ethernet address.
   auto norecv_addr = rcv1_addr;
   reinterpret_cast<sockaddr_in*>(&norecv_addr.addr)->sin_addr =
-      eth_if_sin_addr_;
+      eth_if_addr_.sin_addr;
   ASSERT_THAT(bind(norcv->get(), reinterpret_cast<sockaddr*>(&norecv_addr.addr),
                    norecv_addr.addr_len),
               SyscallSucceedsWithValue(0));
@@ -1028,7 +1022,7 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   ip_mreqn iface = {};
   iface.imr_ifindex = lo_if_idx_;
-  iface.imr_address = eth_if_sin_addr_;
+  iface.imr_address = eth_if_addr_.sin_addr;
   ASSERT_THAT(setsockopt(sender->get(), IPPROTO_IP, IP_MULTICAST_IF, &iface,
                          sizeof(iface)),
               SyscallSucceeds());
@@ -1058,7 +1052,7 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   SKIP_IF(IsRunningOnGvisor());
 
   // Verify the received source address.
-  EXPECT_EQ(eth_if_sin_addr_.s_addr, src_addr_in->sin_addr.s_addr);
+  EXPECT_EQ(eth_if_addr_.sin_addr.s_addr, src_addr_in->sin_addr.s_addr);
 }
 
 // Check that when we are bound to one interface we can set IP_MULTICAST_IF to
@@ -1075,7 +1069,8 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 
   // Create sender and bind to eth interface.
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
-  ASSERT_THAT(bind(sender->get(), eth_if_addr_, sizeof(sockaddr_in)),
+  ASSERT_THAT(bind(sender->get(), reinterpret_cast<sockaddr*>(&eth_if_addr_),
+                   sizeof(eth_if_addr_)),
               SyscallSucceeds());
 
   // Run through all possible combinations of index and address for
@@ -1085,9 +1080,9 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
     struct in_addr imr_address;
   } test_data[] = {
       {lo_if_idx_, {}},
-      {0, lo_if_sin_addr_},
-      {lo_if_idx_, lo_if_sin_addr_},
-      {lo_if_idx_, eth_if_sin_addr_},
+      {0, lo_if_addr_.sin_addr},
+      {lo_if_idx_, lo_if_addr_.sin_addr},
+      {lo_if_idx_, eth_if_addr_.sin_addr},
   };
   for (auto t : test_data) {
     ip_mreqn iface = {};
