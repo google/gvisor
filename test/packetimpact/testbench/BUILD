@@ -18,6 +18,7 @@ go_library(
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
+        "//pkg/tcpip/link/sniffer/pcap",
         "//pkg/tcpip/seqnum",
         "//pkg/usermem",
         "//test/packetimpact/proto:posix_server_go_proto",

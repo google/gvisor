@@ -157,6 +157,9 @@ function finish {
       cleanup_success=0
   done
 
+  cp -r "${DUT_OUTPUT}" "${TEST_UNDECLARED_OUTPUTS_DIR}/dut"
+  cp -r "${TESTBENCH_OUTPUT}" "${TEST_UNDECLARED_OUTPUTS_DIR}/testbench"
+
   if ((!$cleanup_success)); then
     echo "FAIL: Cleanup command failed"
     exit 4
@@ -182,8 +185,13 @@ done
 
 docker pull "${IMAGE_TAG}"
 
+DUT_OUTPUT=$(mktemp -d)
+TESTBENCH_OUTPUT=$(mktemp -d)
+
 # Create the DUT container and connect to network.
 DUT=$(docker create ${RUNTIME_ARG} --privileged --rm \
+  -v "${DUT_OUTPUT}:/tmp/testoutput" \
+  -e "TEST_UNDECLARED_OUTPUTS_DIR=/tmp/testoutput" \
   --stop-timeout ${TIMEOUT} -it ${IMAGE_TAG})
 docker network connect "${CTRL_NET}" \
   --ip "${CTRL_NET_PREFIX}${DUT_NET_SUFFIX}" "${DUT}" \
@@ -195,6 +203,8 @@ docker start "${DUT}"
 
 # Create the test bench container and connect to network.
 TESTBENCH=$(docker create --privileged --rm \
+  -v "${TESTBENCH_OUTPUT}:/tmp/testoutput" \
+  -e "TEST_UNDECLARED_OUTPUTS_DIR=/tmp/testoutput" \
   --stop-timeout ${TIMEOUT} -it ${IMAGE_TAG})
 docker network connect "${CTRL_NET}" \
   --ip "${CTRL_NET_PREFIX}${TESTBENCH_NET_SUFFIX}" "${TESTBENCH}" \

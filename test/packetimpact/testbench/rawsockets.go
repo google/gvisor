@@ -17,12 +17,16 @@ package testbench
 import (
 	"encoding/binary"
 	"flag"
+	"fmt"
 	"math"
 	"net"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer/pcap"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -30,8 +34,9 @@ var device = flag.String("device", "", "local device for test packets")
 
 // Sniffer can sniff raw packets on the wire.
 type Sniffer struct {
-	t  *testing.T
-	fd int
+	t    *testing.T
+	fd   int
+	pcap *os.File
 }
 
 func htons(x uint16) uint16 {
@@ -43,25 +48,54 @@ func htons(x uint16) uint16 {
 // NewSniffer creates a Sniffer connected to *device.
 func NewSniffer(t *testing.T) (Sniffer, error) {
 	flag.Parse()
-	snifferFd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, int(htons(unix.ETH_P_ALL)))
+	snifferFD, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, int(htons(unix.ETH_P_ALL)))
 	if err != nil {
 		return Sniffer{}, err
 	}
-	if err := unix.SetsockoptInt(snifferFd, unix.SOL_SOCKET, unix.SO_RCVBUFFORCE, 1); err != nil {
+	if err := unix.SetsockoptInt(snifferFD, unix.SOL_SOCKET, unix.SO_RCVBUFFORCE, 1); err != nil {
 		t.Fatalf("can't set sockopt SO_RCVBUFFORCE to 1: %s", err)
 	}
-	if err := unix.SetsockoptInt(snifferFd, unix.SOL_SOCKET, unix.SO_RCVBUF, 1e7); err != nil {
+	if err := unix.SetsockoptInt(snifferFD, unix.SOL_SOCKET, unix.SO_RCVBUF, 1e7); err != nil {
 		t.Fatalf("can't setsockopt SO_RCVBUF to 10M: %s", err)
 	}
+
+	pf, err := pcapLogFile(fmt.Sprintf("sniffer_dump_%d.pcap", snifferFD))
+	if err != nil {
+		return Sniffer{}, err
+	}
+
 	return Sniffer{
-		t:  t,
-		fd: snifferFd,
+		t:    t,
+		fd:   snifferFD,
+		pcap: pf,
 	}, nil
+}
+
+func pcapLogFile(name string) (*os.File, error) {
+	dir, ok := os.LookupEnv("TEST_UNDECLARED_OUTPUTS_DIR")
+	if !ok {
+		dir = "/tmp"
+	}
+	pf, err := os.OpenFile(filepath.Join(dir, name), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		return nil, fmt.Errorf("creating pcap file: %s", err)
+	}
+
+	h, err := pcap.MakeHeader(pcap.MaxSnaplen)
+	if err != nil {
+		return nil, fmt.Errorf("making pcap file header: %s", err)
+	}
+	h.Network = 1 // LINKTYPE_ETHERNET
+	if err := binary.Write(pf, binary.BigEndian, h); err != nil {
+		return nil, fmt.Errorf("writing to pcap file: %s", err)
+	}
+
+	return pf, nil
 }
 
 // maxReadSize should be large enough for the maximum frame size in bytes. If a
 // packet too large for the buffer arrives, the test will get a fatal error.
-const maxReadSize int = 65536
+const maxReadSize = 65536
 
 // Recv tries to read one frame until the timeout is up.
 func (s *Sniffer) Recv(timeout time.Duration) []byte {
@@ -93,12 +127,37 @@ func (s *Sniffer) Recv(timeout time.Duration) []byte {
 		if nread > maxReadSize {
 			s.t.Fatalf("received a truncated frame of %d bytes", nread)
 		}
-		return buf[:nread]
+		buf = buf[:nread]
+
+		writePacket(s.t, s.pcap, buf)
+
+		return buf
+	}
+}
+
+func writePacket(t *testing.T, f *os.File, buf []byte) {
+	t.Helper()
+
+	if f == nil {
+		return
+	}
+
+	pb := buf
+	if len(pb) > pcap.MaxSnaplen {
+		pb = pb[:pcap.MaxSnaplen]
+	}
+	if err := binary.Write(f, binary.BigEndian, pcap.MakePacketHeader(uint32(len(pb)), uint32(len(buf)))); err != nil {
+		t.Fatal("can't write packet header to pcap file:", err)
+	}
+
+	if _, err := f.Write(pb); err != nil {
+		t.Fatal("can't write packet data to pcap file:", err)
 	}
 }
 
 // Close the socket that Sniffer is using.
 func (s *Sniffer) Close() {
+	s.pcap.Close()
 	if err := unix.Close(s.fd); err != nil {
 		s.t.Fatalf("can't close sniffer socket: %s", err)
 	}
@@ -107,8 +166,10 @@ func (s *Sniffer) Close() {
 
 // Injector can inject raw frames.
 type Injector struct {
-	t  *testing.T
-	fd int
+	t    *testing.T
+	fd   int
+	mtu  int
+	pcap *os.File
 }
 
 // NewInjector creates a new injector on *device.
@@ -128,16 +189,24 @@ func NewInjector(t *testing.T) (Injector, error) {
 		Addr:     haddr,
 	}
 
-	injectFd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, int(htons(unix.ETH_P_ALL)))
+	injectFD, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, int(htons(unix.ETH_P_ALL)))
 	if err != nil {
 		return Injector{}, err
 	}
-	if err := unix.Bind(injectFd, &sa); err != nil {
+	if err := unix.Bind(injectFD, &sa); err != nil {
 		return Injector{}, err
 	}
+
+	pf, err := pcapLogFile(fmt.Sprintf("injector_dump_%d.pcap", injectFD))
+	if err != nil {
+		return Injector{}, err
+	}
+
 	return Injector{
-		t:  t,
-		fd: injectFd,
+		t:    t,
+		fd:   injectFD,
+		mtu:  ifInfo.MTU,
+		pcap: pf,
 	}, nil
 }
 
@@ -146,10 +215,13 @@ func (i *Injector) Send(b []byte) {
 	if _, err := unix.Write(i.fd, b); err != nil {
 		i.t.Fatalf("can't write: %s", err)
 	}
+
+	writePacket(i.t, i.pcap, b)
 }
 
 // Close the underlying socket.
 func (i *Injector) Close() {
+	i.pcap.Close()
 	if err := unix.Close(i.fd); err != nil {
 		i.t.Fatalf("can't close sniffer socket: %s", err)
 	}
