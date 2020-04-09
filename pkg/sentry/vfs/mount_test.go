@@ -55,7 +55,7 @@ func TestMountTableInsertLookup(t *testing.T) {
 	}
 }
 
-// TODO: concurrent lookup/insertion/removal
+// TODO(gvisor.dev/issue/1035): concurrent lookup/insertion/removal.
 
 // must be powers of 2
 var benchNumMounts = []int{1 << 2, 1 << 5, 1 << 8}

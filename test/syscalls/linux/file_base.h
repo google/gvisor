@@ -87,6 +87,7 @@ class FileTest : public ::testing::Test {
     ClosePipes();
   }
 
+ protected:
   std::string test_file_name_;
   FileDescriptor test_file_fd_;
 

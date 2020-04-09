@@ -27,14 +27,7 @@ namespace testing {
 
 namespace {
 
-// This test is currently very rudimentary.
-//
-// TODO(edahlgren):
-// * bad buffer states (EFAULT).
-// * bad fds (wrong permission, wrong type of file, EBADF).
-// * check offset is not incremented.
-// * check for EOF.
-// * writing to pipes, symlinks, special files.
+// TODO(gvisor.dev/issue/2370): This test is currently very rudimentary.
 class Pwrite64 : public ::testing::Test {
   void SetUp() override {
     name_ = NewTempAbsPath();
