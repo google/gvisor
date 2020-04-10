@@ -16,7 +16,10 @@
 
 set -xeo pipefail
 
-declare -r BAZEL_VERSION=2.0.0
+# Bazel version on Kokoro must be kept in sync with RBE.
+# LINT.IfChange
+declare -r BAZEL_VERSION=3.0.0
+# LINT.ThenChange(../../../BUILD.opensource)
 
 # Install bazel dependencies.
 while true; do
