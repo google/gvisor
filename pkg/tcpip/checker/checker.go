@@ -728,7 +728,7 @@ func ICMPv6Code(want byte) TransportChecker {
 // message for type of ty, with potentially additional checks specified by
 // checkers.
 //
-// checkers may assume that a valid ICMPv6 is passed to it containing a valid
+// Checkers may assume that a valid ICMPv6 is passed to it containing a valid
 // NDP message as far as the size of the message (minSize) is concerned. The
 // values within the message are up to checkers to validate.
 func NDP(msgType header.ICMPv6Type, minSize int, checkers ...TransportChecker) NetworkChecker {
@@ -760,9 +760,9 @@ func NDP(msgType header.ICMPv6Type, minSize int, checkers ...TransportChecker) N
 // Neighbor Solicitation message (as per the raw wire format), with potentially
 // additional checks specified by checkers.
 //
-// checkers may assume that a valid ICMPv6 is passed to it containing a valid
-// NDPNS message as far as the size of the messages concerned. The values within
-// the message are up to checkers to validate.
+// Checkers may assume that a valid ICMPv6 is passed to it containing a valid
+// NDPNS message as far as the size of the message is concerned. The values
+// within the message are up to checkers to validate.
 func NDPNS(checkers ...TransportChecker) NetworkChecker {
 	return NDP(header.ICMPv6NeighborSolicit, header.NDPNSMinimumSize, checkers...)
 }
@@ -780,7 +780,54 @@ func NDPNSTargetAddress(want tcpip.Address) TransportChecker {
 		ns := header.NDPNeighborSolicit(icmp.NDPPayload())
 
 		if got := ns.TargetAddress(); got != want {
-			t.Fatalf("got %T.TargetAddress = %s, want = %s", ns, got, want)
+			t.Errorf("got %T.TargetAddress() = %s, want = %s", ns, got, want)
+		}
+	}
+}
+
+// NDPNA creates a checker that checks that the packet contains a valid NDP
+// Neighbor Advertisement message (as per the raw wire format), with potentially
+// additional checks specified by checkers.
+//
+// Checkers may assume that a valid ICMPv6 is passed to it containing a valid
+// NDPNA message as far as the size of the message is concerned. The values
+// within the message are up to checkers to validate.
+func NDPNA(checkers ...TransportChecker) NetworkChecker {
+	return NDP(header.ICMPv6NeighborAdvert, header.NDPNAMinimumSize, checkers...)
+}
+
+// NDPNATargetAddress creates a checker that checks the Target Address field of
+// a header.NDPNeighborAdvert.
+//
+// The returned TransportChecker assumes that a valid ICMPv6 is passed to it
+// containing a valid NDPNA message as far as the size is concerned.
+func NDPNATargetAddress(want tcpip.Address) TransportChecker {
+	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+
+		icmp := h.(header.ICMPv6)
+		na := header.NDPNeighborAdvert(icmp.NDPPayload())
+
+		if got := na.TargetAddress(); got != want {
+			t.Errorf("got %T.TargetAddress() = %s, want = %s", na, got, want)
+		}
+	}
+}
+
+// NDPNASolicitedFlag creates a checker that checks the Solicited field of
+// a header.NDPNeighborAdvert.
+//
+// The returned TransportChecker assumes that a valid ICMPv6 is passed to it
+// containing a valid NDPNA message as far as the size is concerned.
+func NDPNASolicitedFlag(want bool) TransportChecker {
+	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+
+		icmp := h.(header.ICMPv6)
+		na := header.NDPNeighborAdvert(icmp.NDPPayload())
+
+		if got := na.SolicitedFlag(); got != want {
+			t.Errorf("got %T.SolicitedFlag = %t, want = %t", na, got, want)
 		}
 	}
 }
@@ -819,6 +866,13 @@ func ndpOptions(t *testing.T, optsBuf header.NDPOptions, opts []header.NDPOption
 			} else if got, want := gotOpt.EthernetAddress(), wantOpt.EthernetAddress(); got != want {
 				t.Errorf("got EthernetAddress() = %s at index %d, want = %s", got, i, want)
 			}
+		case header.NDPTargetLinkLayerAddressOption:
+			gotOpt, ok := opt.(header.NDPTargetLinkLayerAddressOption)
+			if !ok {
+				t.Errorf("got type = %T at index = %d; want = %T", opt, i, wantOpt)
+			} else if got, want := gotOpt.EthernetAddress(), wantOpt.EthernetAddress(); got != want {
+				t.Errorf("got EthernetAddress() = %s at index %d, want = %s", got, i, want)
+			}
 		default:
 			t.Fatalf("checker not implemented for expected NDP option: %T", wantOpt)
 		}
@@ -828,6 +882,21 @@ func ndpOptions(t *testing.T, optsBuf header.NDPOptions, opts []header.NDPOption
 
 	if missing := opts[i:]; len(missing) > 0 {
 		t.Errorf("missing options: %s", missing)
+	}
+}
+
+// NDPNAOptions creates a checker that checks that the packet contains the
+// provided NDP options within an NDP Neighbor Solicitation message.
+//
+// The returned TransportChecker assumes that a valid ICMPv6 is passed to it
+// containing a valid NDPNA message as far as the size is concerned.
+func NDPNAOptions(opts []header.NDPOption) TransportChecker {
+	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+
+		icmp := h.(header.ICMPv6)
+		na := header.NDPNeighborAdvert(icmp.NDPPayload())
+		ndpOptions(t, na.Options(), opts)
 	}
 }
 
@@ -849,7 +918,7 @@ func NDPNSOptions(opts []header.NDPOption) TransportChecker {
 // NDPRS creates a checker that checks that the packet contains a valid NDP
 // Router Solicitation message (as per the raw wire format).
 //
-// checkers may assume that a valid ICMPv6 is passed to it containing a valid
+// Checkers may assume that a valid ICMPv6 is passed to it containing a valid
 // NDPRS as far as the size of the message is concerned. The values within the
 // message are up to checkers to validate.
 func NDPRS(checkers ...TransportChecker) NetworkChecker {
