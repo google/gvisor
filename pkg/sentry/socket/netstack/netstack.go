@@ -535,7 +535,7 @@ func (s *SocketOperations) Write(ctx context.Context, _ *fs.File, src usermem.IO
 	}
 
 	if resCh != nil {
-		t := ctx.(*kernel.Task)
+		t := kernel.TaskFromContext(ctx)
 		if err := t.Block(resCh); err != nil {
 			return 0, syserr.FromError(err).ToError()
 		}
@@ -608,7 +608,7 @@ func (s *SocketOperations) ReadFrom(ctx context.Context, _ *fs.File, r io.Reader
 	}
 
 	if resCh != nil {
-		t := ctx.(*kernel.Task)
+		t := kernel.TaskFromContext(ctx)
 		if err := t.Block(resCh); err != nil {
 			return 0, syserr.FromError(err).ToError()
 		}
