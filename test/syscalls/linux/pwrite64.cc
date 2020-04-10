@@ -14,6 +14,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/unistd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -61,6 +62,17 @@ TEST_F(Pwrite64, InvalidArgs) {
   std::vector<char> buf(kBufSize);
   std::fill(buf.begin(), buf.end(), 'a');
   EXPECT_THAT(PwriteFd(fd, buf.data(), buf.size(), -1),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(close(fd), SyscallSucceeds());
+}
+
+TEST_F(Pwrite64, Overflow) {
+  int fd;
+  ASSERT_THAT(fd = open(name_.c_str(), O_APPEND | O_RDWR), SyscallSucceeds());
+  constexpr int64_t kBufSize = 1024;
+  std::vector<char> buf(kBufSize);
+  std::fill(buf.begin(), buf.end(), 'a');
+  EXPECT_THAT(PwriteFd(fd, buf.data(), buf.size(), 0x7fffffffffffffffull),
               SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(close(fd), SyscallSucceeds());
 }
