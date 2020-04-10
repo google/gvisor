@@ -32,7 +32,8 @@ import (
 
 const (
 	linkAddr0 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
-	linkAddr1 = tcpip.LinkAddress("\x0a\x0b\x0c\x0d\x0e\x0f")
+	linkAddr1 = tcpip.LinkAddress("\x0a\x0b\x0c\x0d\x0e\x0e")
+	linkAddr2 = tcpip.LinkAddress("\x0a\x0b\x0c\x0d\x0e\x0f")
 )
 
 var (

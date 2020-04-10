@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -169,6 +170,257 @@ func TestNeighorSolicitationWithSourceLinkLayerOption(t *testing.T) {
 					t.Errorf("got invalid = %d, want = 1", got)
 				}
 			}
+		})
+	}
+}
+
+func TestNeighorSolicitationResponse(t *testing.T) {
+	const nicID = 1
+	nicAddr := lladdr0
+	remoteAddr := lladdr1
+	nicAddrSNMC := header.SolicitedNodeAddr(nicAddr)
+	nicLinkAddr := linkAddr0
+	remoteLinkAddr0 := linkAddr1
+	remoteLinkAddr1 := linkAddr2
+
+	tests := []struct {
+		name          string
+		nsOpts        header.NDPOptionsSerializer
+		nsSrcLinkAddr tcpip.LinkAddress
+		nsSrc         tcpip.Address
+		nsDst         tcpip.Address
+		nsInvalid     bool
+		naDstLinkAddr tcpip.LinkAddress
+		naSolicited   bool
+		naSrc         tcpip.Address
+		naDst         tcpip.Address
+	}{
+		{
+			name:          "Unspecified source to multicast destination",
+			nsOpts:        nil,
+			nsSrcLinkAddr: remoteLinkAddr0,
+			nsSrc:         header.IPv6Any,
+			nsDst:         nicAddrSNMC,
+			nsInvalid:     false,
+			naDstLinkAddr: remoteLinkAddr0,
+			naSolicited:   false,
+			naSrc:         nicAddr,
+			naDst:         header.IPv6AllNodesMulticastAddress,
+		},
+		{
+			name: "Unspecified source with source ll option to multicast destination",
+			nsOpts: header.NDPOptionsSerializer{
+				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr0[:]),
+			},
+			nsSrcLinkAddr: remoteLinkAddr0,
+			nsSrc:         header.IPv6Any,
+			nsDst:         nicAddrSNMC,
+			nsInvalid:     true,
+		},
+		{
+			name:          "Unspecified source to unicast destination",
+			nsOpts:        nil,
+			nsSrcLinkAddr: remoteLinkAddr0,
+			nsSrc:         header.IPv6Any,
+			nsDst:         nicAddr,
+			nsInvalid:     false,
+			naDstLinkAddr: remoteLinkAddr0,
+			naSolicited:   false,
+			naSrc:         nicAddr,
+			naDst:         header.IPv6AllNodesMulticastAddress,
+		},
+		{
+			name: "Unspecified source with source ll option to unicast destination",
+			nsOpts: header.NDPOptionsSerializer{
+				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr0[:]),
+			},
+			nsSrcLinkAddr: remoteLinkAddr0,
+			nsSrc:         header.IPv6Any,
+			nsDst:         nicAddr,
+			nsInvalid:     true,
+		},
+
+		{
+			name: "Specified source with 1 source ll to multicast destination",
+			nsOpts: header.NDPOptionsSerializer{
+				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr0[:]),
+			},
+			nsSrcLinkAddr: remoteLinkAddr0,
+			nsSrc:         remoteAddr,
+			nsDst:         nicAddrSNMC,
+			nsInvalid:     false,
+			naDstLinkAddr: remoteLinkAddr0,
+			naSolicited:   true,
+			naSrc:         nicAddr,
+			naDst:         remoteAddr,
+		},
+		{
+			name: "Specified source with 1 source ll different from route to multicast destination",
+			nsOpts: header.NDPOptionsSerializer{
+				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr1[:]),
+			},
+			nsSrcLinkAddr: remoteLinkAddr0,
+			nsSrc:         remoteAddr,
+			nsDst:         nicAddrSNMC,
+			nsInvalid:     false,
+			naDstLinkAddr: remoteLinkAddr1,
+			naSolicited:   true,
+			naSrc:         nicAddr,
+			naDst:         remoteAddr,
+		},
+		{
+			name:          "Specified source to multicast destination",
+			nsOpts:        nil,
+			nsSrcLinkAddr: remoteLinkAddr0,
+			nsSrc:         remoteAddr,
+			nsDst:         nicAddrSNMC,
+			nsInvalid:     true,
+		},
+		{
+			name: "Specified source with 2 source ll to multicast destination",
+			nsOpts: header.NDPOptionsSerializer{
+				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr0[:]),
+				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr1[:]),
+			},
+			nsSrcLinkAddr: remoteLinkAddr0,
+			nsSrc:         remoteAddr,
+			nsDst:         nicAddrSNMC,
+			nsInvalid:     true,
+		},
+
+		{
+			name:          "Specified source to unicast destination",
+			nsOpts:        nil,
+			nsSrcLinkAddr: remoteLinkAddr0,
+			nsSrc:         remoteAddr,
+			nsDst:         nicAddr,
+			nsInvalid:     false,
+			naDstLinkAddr: remoteLinkAddr0,
+			naSolicited:   true,
+			naSrc:         nicAddr,
+			naDst:         remoteAddr,
+		},
+		{
+			name: "Specified source with 1 source ll to unicast destination",
+			nsOpts: header.NDPOptionsSerializer{
+				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr0[:]),
+			},
+			nsSrcLinkAddr: remoteLinkAddr0,
+			nsSrc:         remoteAddr,
+			nsDst:         nicAddr,
+			nsInvalid:     false,
+			naDstLinkAddr: remoteLinkAddr0,
+			naSolicited:   true,
+			naSrc:         nicAddr,
+			naDst:         remoteAddr,
+		},
+		{
+			name: "Specified source with 1 source ll different from route to unicast destination",
+			nsOpts: header.NDPOptionsSerializer{
+				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr1[:]),
+			},
+			nsSrcLinkAddr: remoteLinkAddr0,
+			nsSrc:         remoteAddr,
+			nsDst:         nicAddr,
+			nsInvalid:     false,
+			naDstLinkAddr: remoteLinkAddr1,
+			naSolicited:   true,
+			naSrc:         nicAddr,
+			naDst:         remoteAddr,
+		},
+		{
+			name: "Specified source with 2 source ll to unicast destination",
+			nsOpts: header.NDPOptionsSerializer{
+				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr0[:]),
+				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr1[:]),
+			},
+			nsSrcLinkAddr: remoteLinkAddr0,
+			nsSrc:         remoteAddr,
+			nsDst:         nicAddr,
+			nsInvalid:     true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
+			})
+			e := channel.New(1, 1280, nicLinkAddr)
+			if err := s.CreateNIC(nicID, e); err != nil {
+				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+			}
+			if err := s.AddAddress(nicID, ProtocolNumber, nicAddr); err != nil {
+				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, nicAddr, err)
+			}
+
+			ndpNSSize := header.ICMPv6NeighborSolicitMinimumSize + test.nsOpts.Length()
+			hdr := buffer.NewPrependable(header.IPv6MinimumSize + ndpNSSize)
+			pkt := header.ICMPv6(hdr.Prepend(ndpNSSize))
+			pkt.SetType(header.ICMPv6NeighborSolicit)
+			ns := header.NDPNeighborSolicit(pkt.NDPPayload())
+			ns.SetTargetAddress(nicAddr)
+			opts := ns.Options()
+			opts.Serialize(test.nsOpts)
+			pkt.SetChecksum(header.ICMPv6Checksum(pkt, test.nsSrc, test.nsDst, buffer.VectorisedView{}))
+			payloadLength := hdr.UsedLength()
+			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+			ip.Encode(&header.IPv6Fields{
+				PayloadLength: uint16(payloadLength),
+				NextHeader:    uint8(header.ICMPv6ProtocolNumber),
+				HopLimit:      255,
+				SrcAddr:       test.nsSrc,
+				DstAddr:       test.nsDst,
+			})
+
+			invalid := s.Stats().ICMP.V6PacketsReceived.Invalid
+
+			// Invalid count should initially be 0.
+			if got := invalid.Value(); got != 0 {
+				t.Fatalf("got invalid = %d, want = 0", got)
+			}
+
+			e.InjectLinkAddr(ProtocolNumber, test.nsSrcLinkAddr, stack.PacketBuffer{
+				Data: hdr.View().ToVectorisedView(),
+			})
+
+			if test.nsInvalid {
+				if got := invalid.Value(); got != 1 {
+					t.Fatalf("got invalid = %d, want = 1", got)
+				}
+
+				if p, got := e.Read(); got {
+					t.Fatalf("unexpected response to an invalid NS = %+v", p.Pkt)
+				}
+
+				// If we expected the NS to be invalid, we have nothing else to check.
+				return
+			}
+
+			if got := invalid.Value(); got != 0 {
+				t.Fatalf("got invalid = %d, want = 0", got)
+			}
+
+			p, got := e.Read()
+			if !got {
+				t.Fatal("expected an NDP NA response")
+			}
+
+			if p.Route.RemoteLinkAddress != test.naDstLinkAddr {
+				t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, test.naDstLinkAddr)
+			}
+
+			checker.IPv6(t, p.Pkt.Header.View(),
+				checker.SrcAddr(test.naSrc),
+				checker.DstAddr(test.naDst),
+				checker.TTL(header.NDPHopLimit),
+				checker.NDPNA(
+					checker.NDPNASolicitedFlag(test.naSolicited),
+					checker.NDPNATargetAddress(nicAddr),
+					checker.NDPNAOptions([]header.NDPOption{
+						header.NDPTargetLinkLayerAddressOption(nicLinkAddr[:]),
+					}),
+				))
 		})
 	}
 }
