@@ -44,7 +44,7 @@ var allowedSyscalls = seccomp.SyscallRules{
 		{
 			seccomp.AllowAny{},
 			seccomp.AllowAny{},
-			seccomp.AllowValue(0),
+			seccomp.AllowValue(syscall.O_CLOEXEC),
 		},
 	},
 	syscall.SYS_EPOLL_CREATE1: {},
