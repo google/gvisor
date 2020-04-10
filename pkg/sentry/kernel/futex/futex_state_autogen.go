@@ -21,8 +21,8 @@ func (x *AtomicPtrBucket) load(m state.Map) {
 func (x *bucket) beforeSave() {}
 func (x *bucket) save(m state.Map) {
 	x.beforeSave()
-	if !state.IsZeroValue(x.waiters) {
-		m.Failf("waiters is %v, expected zero", x.waiters)
+	if !state.IsZeroValue(&x.waiters) {
+		m.Failf("waiters is %#v, expected zero", &x.waiters)
 	}
 }
 
@@ -33,8 +33,8 @@ func (x *bucket) load(m state.Map) {
 func (x *Manager) beforeSave() {}
 func (x *Manager) save(m state.Map) {
 	x.beforeSave()
-	if !state.IsZeroValue(x.privateBuckets) {
-		m.Failf("privateBuckets is %v, expected zero", x.privateBuckets)
+	if !state.IsZeroValue(&x.privateBuckets) {
+		m.Failf("privateBuckets is %#v, expected zero", &x.privateBuckets)
 	}
 	m.Save("sharedBucket", &x.sharedBucket)
 }
