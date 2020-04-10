@@ -364,11 +364,6 @@ CreateTCPConnectAcceptSocketPair(int bound, int connected, int type,
   }
   MaybeSave();  // Successful accept.
 
-  // FIXME(b/110484944)
-  if (connect_result == -1) {
-    absl::SleepFor(absl::Seconds(1));
-  }
-
   T extra_addr = {};
   LocalhostAddr(&extra_addr, dual_stack);
   return absl::make_unique<AddrFDSocketPair>(connected, accepted, bind_addr,
