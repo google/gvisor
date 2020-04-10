@@ -312,9 +312,9 @@ func (d *Dirent) SyncAll(ctx context.Context) {
 
 	// There is nothing to sync for a read-only filesystem.
 	if !d.Inode.MountSource.Flags.ReadOnly {
-		// FIXME(b/34856369): This should be a mount traversal, not a
-		// Dirent traversal, because some Inodes that need to be synced
-		// may no longer be reachable by name (after sys_unlink).
+		// NOTE(b/34856369): This should be a mount traversal, not a Dirent
+		// traversal, because some Inodes that need to be synced may no longer
+		// be reachable by name (after sys_unlink).
 		//
 		// Write out metadata, dirty page cached pages, and sync disk/remote
 		// caches.
