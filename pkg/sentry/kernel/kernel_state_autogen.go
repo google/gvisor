@@ -511,17 +511,17 @@ func (x *socketEntry) load(m state.Map) {
 	m.Load("prev", &x.prev)
 }
 
-func (x *SyscallTable) beforeSave() {}
-func (x *SyscallTable) save(m state.Map) {
+func (x *syscallTableInfo) beforeSave() {}
+func (x *syscallTableInfo) save(m state.Map) {
 	x.beforeSave()
 	m.Save("OS", &x.OS)
 	m.Save("Arch", &x.Arch)
 }
 
-func (x *SyscallTable) load(m state.Map) {
-	m.LoadWait("OS", &x.OS)
-	m.LoadWait("Arch", &x.Arch)
-	m.AfterLoad(x.afterLoad)
+func (x *syscallTableInfo) afterLoad() {}
+func (x *syscallTableInfo) load(m state.Map) {
+	m.Load("OS", &x.OS)
+	m.Load("Arch", &x.Arch)
 }
 
 func (x *syslog) beforeSave() {}
@@ -538,8 +538,8 @@ func (x *syslog) load(m state.Map) {
 func (x *Task) beforeSave() {}
 func (x *Task) save(m state.Map) {
 	x.beforeSave()
-	if !state.IsZeroValue(x.signalQueue) {
-		m.Failf("signalQueue is %v, expected zero", x.signalQueue)
+	if !state.IsZeroValue(&x.signalQueue) {
+		m.Failf("signalQueue is %#v, expected zero", &x.signalQueue)
 	}
 	var ptraceTracer *Task = x.savePtraceTracer()
 	m.SaveValue("ptraceTracer", ptraceTracer)
@@ -701,11 +701,12 @@ func (x *vforkStop) load(m state.Map) {
 func (x *TaskContext) beforeSave() {}
 func (x *TaskContext) save(m state.Map) {
 	x.beforeSave()
+	var st syscallTableInfo = x.saveSt()
+	m.SaveValue("st", st)
 	m.Save("Name", &x.Name)
 	m.Save("Arch", &x.Arch)
 	m.Save("MemoryManager", &x.MemoryManager)
 	m.Save("fu", &x.fu)
-	m.Save("st", &x.st)
 }
 
 func (x *TaskContext) afterLoad() {}
@@ -714,7 +715,7 @@ func (x *TaskContext) load(m state.Map) {
 	m.Load("Arch", &x.Arch)
 	m.Load("MemoryManager", &x.MemoryManager)
 	m.Load("fu", &x.fu)
-	m.Load("st", &x.st)
+	m.LoadValue("st", new(syscallTableInfo), func(y interface{}) { x.loadSt(y.(syscallTableInfo)) })
 }
 
 func (x *execStop) beforeSave() {}
@@ -1194,7 +1195,7 @@ func init() {
 	state.Register("pkg/sentry/kernel.SignalHandlers", (*SignalHandlers)(nil), state.Fns{Save: (*SignalHandlers).save, Load: (*SignalHandlers).load})
 	state.Register("pkg/sentry/kernel.socketList", (*socketList)(nil), state.Fns{Save: (*socketList).save, Load: (*socketList).load})
 	state.Register("pkg/sentry/kernel.socketEntry", (*socketEntry)(nil), state.Fns{Save: (*socketEntry).save, Load: (*socketEntry).load})
-	state.Register("pkg/sentry/kernel.SyscallTable", (*SyscallTable)(nil), state.Fns{Save: (*SyscallTable).save, Load: (*SyscallTable).load})
+	state.Register("pkg/sentry/kernel.syscallTableInfo", (*syscallTableInfo)(nil), state.Fns{Save: (*syscallTableInfo).save, Load: (*syscallTableInfo).load})
 	state.Register("pkg/sentry/kernel.syslog", (*syslog)(nil), state.Fns{Save: (*syslog).save, Load: (*syslog).load})
 	state.Register("pkg/sentry/kernel.Task", (*Task)(nil), state.Fns{Save: (*Task).save, Load: (*Task).load})
 	state.Register("pkg/sentry/kernel.runSyscallAfterPtraceEventClone", (*runSyscallAfterPtraceEventClone)(nil), state.Fns{Save: (*runSyscallAfterPtraceEventClone).save, Load: (*runSyscallAfterPtraceEventClone).load})

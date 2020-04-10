@@ -24,8 +24,8 @@ func (x *Lock) load(m state.Map) {
 func (x *Locks) beforeSave() {}
 func (x *Locks) save(m state.Map) {
 	x.beforeSave()
-	if !state.IsZeroValue(x.blockedQueue) {
-		m.Failf("blockedQueue is %v, expected zero", x.blockedQueue)
+	if !state.IsZeroValue(&x.blockedQueue) {
+		m.Failf("blockedQueue is %#v, expected zero", &x.blockedQueue)
 	}
 	m.Save("locks", &x.locks)
 }

@@ -190,11 +190,11 @@ func (x *Dirent) load(m state.Map) {
 func (x *DirentCache) beforeSave() {}
 func (x *DirentCache) save(m state.Map) {
 	x.beforeSave()
-	if !state.IsZeroValue(x.currentSize) {
-		m.Failf("currentSize is %v, expected zero", x.currentSize)
+	if !state.IsZeroValue(&x.currentSize) {
+		m.Failf("currentSize is %#v, expected zero", &x.currentSize)
 	}
-	if !state.IsZeroValue(x.list) {
-		m.Failf("list is %v, expected zero", x.list)
+	if !state.IsZeroValue(&x.list) {
+		m.Failf("list is %#v, expected zero", &x.list)
 	}
 	m.Save("maxSize", &x.maxSize)
 	m.Save("limit", &x.limit)
@@ -209,8 +209,8 @@ func (x *DirentCache) load(m state.Map) {
 func (x *DirentCacheLimiter) beforeSave() {}
 func (x *DirentCacheLimiter) save(m state.Map) {
 	x.beforeSave()
-	if !state.IsZeroValue(x.count) {
-		m.Failf("count is %v, expected zero", x.count)
+	if !state.IsZeroValue(&x.count) {
+		m.Failf("count is %#v, expected zero", &x.count)
 	}
 	m.Save("max", &x.max)
 }
