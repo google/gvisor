@@ -1089,7 +1089,7 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 				// description, but this doesn't matter since they refer to the
 				// same file (unless d.fs.opts.overlayfsStaleRead is true,
 				// which we handle separately).
-				if err := syscall.Dup3(int(h.fd), int(d.handle.fd), 0); err != nil {
+				if err := syscall.Dup3(int(h.fd), int(d.handle.fd), syscall.O_CLOEXEC); err != nil {
 					d.handleMu.Unlock()
 					ctx.Warningf("gofer.dentry.ensureSharedHandle: failed to dup fd %d to fd %d: %v", h.fd, d.handle.fd, err)
 					h.close(ctx)
