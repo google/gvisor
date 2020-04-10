@@ -58,7 +58,7 @@ func (lv *Level) UnmarshalJSON(b []byte) error {
 
 // JSONEmitter logs messages in json format.
 type JSONEmitter struct {
-	Writer
+	*Writer
 }
 
 // Emit implements Emitter.Emit.

@@ -241,10 +241,7 @@ func Register(name string, instance interface{}, fns Fns) {
 //
 // This function is used by the stateify tool.
 func IsZeroValue(val interface{}) bool {
-	if val == nil {
-		return true
-	}
-	return reflect.DeepEqual(val, reflect.Zero(reflect.TypeOf(val)).Interface())
+	return val == nil || reflect.ValueOf(val).Elem().IsZero()
 }
 
 // step captures one encoding / decoding step. On each step, there is up to one

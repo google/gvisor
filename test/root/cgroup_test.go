@@ -53,7 +53,7 @@ func verifyPid(pid int, path string) error {
 	if scanner.Err() != nil {
 		return scanner.Err()
 	}
-	return fmt.Errorf("got: %s, want: %d", gots, pid)
+	return fmt.Errorf("got: %v, want: %d", gots, pid)
 }
 
 // TestCgroup sets cgroup options and checks that cgroup was properly configured.
@@ -106,7 +106,7 @@ func TestMemCGroup(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	t.Fatalf("%vMB is less than %vMB: %v", memUsage>>20, allocMemSize>>20)
+	t.Fatalf("%vMB is less than %vMB", memUsage>>20, allocMemSize>>20)
 }
 
 // TestCgroup sets cgroup options and checks that cgroup was properly configured.

@@ -115,7 +115,7 @@ func TestNDPNeighborAdvert(t *testing.T) {
 
 	// Make sure flags got updated in the backing buffer.
 	if got := b[ndpNAFlagsOffset]; got != 64 {
-		t.Errorf("got flags byte = %d, want = 64")
+		t.Errorf("got flags byte = %d, want = 64", got)
 	}
 }
 

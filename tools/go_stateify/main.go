@@ -206,7 +206,7 @@ func main() {
 		initCalls = append(initCalls, fmt.Sprintf("%sRegister(\"%s.%s\", (*%s)(nil), state.Fns{Save: (*%s).save, Load: (*%s).load})", statePrefix, *fullPkg, name, name, name, name))
 	}
 	emitZeroCheck := func(name string) {
-		fmt.Fprintf(outputFile, "	if !%sIsZeroValue(x.%s) { m.Failf(\"%s is %%v, expected zero\", x.%s) }\n", statePrefix, name, name, name)
+		fmt.Fprintf(outputFile, "	if !%sIsZeroValue(&x.%s) { m.Failf(\"%s is %%#v, expected zero\", &x.%s) }\n", statePrefix, name, name, name)
 	}
 	emitLoadValue := func(name, typName string) {
 		fmt.Fprintf(outputFile, "	m.LoadValue(\"%s\", new(%s), func(y interface{}) { x.load%s(y.(%s)) })\n", name, typName, camelCased(name), typName)
