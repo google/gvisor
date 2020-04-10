@@ -97,7 +97,7 @@ platform(
     remote_execution_properties = """
         properties: {
           name: "container-image"
-          value:"docker://gcr.io/cloud-marketplace/google/rbe-ubuntu16-04@sha256:5464e3e83dc656fc6e4eae6a01f5c2645f1f7e95854b3802b85e86484132d90e"
+          value:"docker://gcr.io/cloud-marketplace/google/rbe-ubuntu16-04@sha256:93f7e127196b9b653d39830c50f8b05d49ef6fd8739a9b5b8ab16e1df5399e50"
         }
         properties: {
           name: "dockerAddCapabilities"
@@ -110,15 +110,12 @@ platform(
     """,
 )
 
-# Bazel version on RBE must by in sync with version on Kokoro.
-# LINT.IfChange
 toolchain(
     name = "cc-toolchain-clang-x86_64-default",
     exec_compatible_with = [
     ],
     target_compatible_with = [
     ],
-    toolchain = "@bazel_toolchains//configs/ubuntu16_04_clang/11.0.0/bazel_3.0.0/cc:cc-compiler-k8",
+    toolchain = "@bazel_toolchains//configs/ubuntu16_04_clang/10.0.0/bazel_2.0.0/cc:cc-compiler-k8",
     toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
 )
-# LINT.ThenChange(tools/images/ubuntu1604/20_bazel.sh)
