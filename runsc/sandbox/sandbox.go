@@ -402,8 +402,6 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 		nextFD++
 	}
 
-	cmd.Args = append(cmd.Args, "--panic-signal="+strconv.Itoa(int(syscall.SIGTERM)))
-
 	// Add the "boot" command to the args.
 	//
 	// All flags after this must be for the boot command
