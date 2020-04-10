@@ -97,7 +97,7 @@ type hostClock struct {
 }
 
 // Now implements ktime.Clock.Now.
-func (hostClock) Now() ktime.Time {
+func (*hostClock) Now() ktime.Time {
 	return ktime.FromNanoseconds(time.Now().UnixNano())
 }
 
@@ -127,7 +127,7 @@ func (t *TestContext) Value(key interface{}) interface{} {
 	case uniqueid.CtxInotifyCookie:
 		return atomic.AddUint32(&lastInotifyCookie, 1)
 	case ktime.CtxRealtimeClock:
-		return hostClock{}
+		return &hostClock{}
 	default:
 		if val, ok := t.otherValues[key]; ok {
 			return val

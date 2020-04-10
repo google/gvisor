@@ -688,9 +688,9 @@ func (d *netSnmpData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		if line.prefix == "Tcp" {
 			tcp := stat.(*inet.StatSNMPTCP)
 			// "Tcp" needs special processing because MaxConn is signed. RFC 2012.
-			fmt.Sprintf("%s: %s %d %s\n", line.prefix, sprintSlice(tcp[:3]), int64(tcp[3]), sprintSlice(tcp[4:]))
+			fmt.Fprintf(buf, "%s: %s %d %s\n", line.prefix, sprintSlice(tcp[:3]), int64(tcp[3]), sprintSlice(tcp[4:]))
 		} else {
-			fmt.Sprintf("%s: %s\n", line.prefix, sprintSlice(toSlice(stat)))
+			fmt.Fprintf(buf, "%s: %s\n", line.prefix, sprintSlice(toSlice(stat)))
 		}
 	}
 	return nil

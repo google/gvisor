@@ -63,7 +63,7 @@ func checkSet(s *Set, expectedSegments int) error {
 			return fmt.Errorf("incorrect order: key %d (segment %d) >= key %d (segment %d)", prev, nrSegments-1, next, nrSegments)
 		}
 		if got, want := seg.Value(), seg.Start()+valueOffset; got != want {
-			return fmt.Errorf("segment %d has key %d, value %d (expected %d)", nrSegments, seg.Start, got, want)
+			return fmt.Errorf("segment %d has key %d, value %d (expected %d)", nrSegments, seg.Start(), got, want)
 		}
 		prev = next
 		havePrev = true

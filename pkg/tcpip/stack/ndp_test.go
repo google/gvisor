@@ -1959,7 +1959,7 @@ func TestAutoGenAddrDeprecateFromPI(t *testing.T) {
 	// addr2 is deprecated but if explicitly requested, it should be used.
 	fullAddr2 := tcpip.FullAddress{Addr: addr2.Address, NIC: nicID}
 	if got := addrForNewConnectionWithAddr(t, s, fullAddr2); got != addr2.Address {
-		t.Errorf("got addrForNewConnectionWithAddr(_, _, %+v) = %s, want = %s", got, addr2.Address)
+		t.Errorf("got addrForNewConnectionWithAddr(_, _, %+v) = %s, want = %s", fullAddr2, got, addr2.Address)
 	}
 
 	// Another PI w/ 0 preferred lifetime should not result in a deprecation
@@ -1972,7 +1972,7 @@ func TestAutoGenAddrDeprecateFromPI(t *testing.T) {
 	}
 	expectPrimaryAddr(addr1)
 	if got := addrForNewConnectionWithAddr(t, s, fullAddr2); got != addr2.Address {
-		t.Errorf("got addrForNewConnectionWithAddr(_, _, %+v) = %s, want = %s", got, addr2.Address)
+		t.Errorf("got addrForNewConnectionWithAddr(_, _, %+v) = %s, want = %s", fullAddr2, got, addr2.Address)
 	}
 
 	// Refresh lifetimes of addr generated from prefix2.
@@ -2084,7 +2084,7 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 	// addr1 is deprecated but if explicitly requested, it should be used.
 	fullAddr1 := tcpip.FullAddress{Addr: addr1.Address, NIC: nicID}
 	if got := addrForNewConnectionWithAddr(t, s, fullAddr1); got != addr1.Address {
-		t.Errorf("got addrForNewConnectionWithAddr(_, _, %+v) = %s, want = %s", got, addr1.Address)
+		t.Errorf("got addrForNewConnectionWithAddr(_, _, %+v) = %s, want = %s", fullAddr1, got, addr1.Address)
 	}
 
 	// Refresh valid lifetime for addr of prefix1, w/ 0 preferred lifetime to make
@@ -2097,7 +2097,7 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 	}
 	expectPrimaryAddr(addr2)
 	if got := addrForNewConnectionWithAddr(t, s, fullAddr1); got != addr1.Address {
-		t.Errorf("got addrForNewConnectionWithAddr(_, _, %+v) = %s, want = %s", got, addr1.Address)
+		t.Errorf("got addrForNewConnectionWithAddr(_, _, %+v) = %s, want = %s", fullAddr1, got, addr1.Address)
 	}
 
 	// Refresh lifetimes for addr of prefix1.
@@ -2121,7 +2121,7 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 	// addr2 should be the primary endpoint now since it is not deprecated.
 	expectPrimaryAddr(addr2)
 	if got := addrForNewConnectionWithAddr(t, s, fullAddr1); got != addr1.Address {
-		t.Errorf("got addrForNewConnectionWithAddr(_, _, %+v) = %s, want = %s", got, addr1.Address)
+		t.Errorf("got addrForNewConnectionWithAddr(_, _, %+v) = %s, want = %s", fullAddr1, got, addr1.Address)
 	}
 
 	// Wait for addr of prefix1 to be invalidated.
@@ -2564,7 +2564,7 @@ func TestAutoGenAddrAfterRemoval(t *testing.T) {
 		AddressWithPrefix: addr2,
 	}
 	if err := s.AddProtocolAddressWithOptions(nicID, protoAddr2, stack.FirstPrimaryEndpoint); err != nil {
-		t.Fatalf("AddProtocolAddressWithOptions(%d, %+v, %d, %s) = %s", nicID, protoAddr2, stack.FirstPrimaryEndpoint, err)
+		t.Fatalf("AddProtocolAddressWithOptions(%d, %+v, %d) = %s", nicID, protoAddr2, stack.FirstPrimaryEndpoint, err)
 	}
 	// addr2 should be more preferred now since it is at the front of the primary
 	// list.
@@ -3483,7 +3483,8 @@ func TestRouterSolicitation(t *testing.T) {
 				e.Endpoint.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 				waitForPkt := func(timeout time.Duration) {
 					t.Helper()
-					ctx, _ := context.WithTimeout(context.Background(), timeout)
+					ctx, cancel := context.WithTimeout(context.Background(), timeout)
+					defer cancel()
 					p, ok := e.ReadContext(ctx)
 					if !ok {
 						t.Fatal("timed out waiting for packet")
@@ -3513,7 +3514,8 @@ func TestRouterSolicitation(t *testing.T) {
 				}
 				waitForNothing := func(timeout time.Duration) {
 					t.Helper()
-					ctx, _ := context.WithTimeout(context.Background(), timeout)
+					ctx, cancel := context.WithTimeout(context.Background(), timeout)
+					defer cancel()
 					if _, ok := e.ReadContext(ctx); ok {
 						t.Fatal("unexpectedly got a packet")
 					}

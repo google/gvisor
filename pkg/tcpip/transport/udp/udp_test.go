@@ -358,7 +358,8 @@ func (c *testContext) createEndpointForFlow(flow testFlow) {
 func (c *testContext) getPacketAndVerify(flow testFlow, checkers ...checker.NetworkChecker) []byte {
 	c.t.Helper()
 
-	ctx, _ := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 	p, ok := c.linkEP.ReadContext(ctx)
 	if !ok {
 		c.t.Fatalf("Packet wasn't written out")
@@ -607,7 +608,7 @@ func testReadInternal(c *testContext, flow testFlow, packetShouldBeDropped, expe
 	// Check the peer address.
 	h := flow.header4Tuple(incoming)
 	if addr.Addr != h.srcAddr.Addr {
-		c.t.Fatalf("unexpected remote address: got %s, want %s", addr.Addr, h.srcAddr)
+		c.t.Fatalf("unexpected remote address: got %s, want %v", addr.Addr, h.srcAddr)
 	}
 
 	// Check the payload.
@@ -1565,7 +1566,8 @@ func TestV4UnknownDestination(t *testing.T) {
 			}
 			c.injectPacket(tc.flow, payload)
 			if !tc.icmpRequired {
-				ctx, _ := context.WithTimeout(context.Background(), time.Second)
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
 				if p, ok := c.linkEP.ReadContext(ctx); ok {
 					t.Fatalf("unexpected packet received: %+v", p)
 				}
@@ -1573,7 +1575,8 @@ func TestV4UnknownDestination(t *testing.T) {
 			}
 
 			// ICMP required.
-			ctx, _ := context.WithTimeout(context.Background(), time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
 			p, ok := c.linkEP.ReadContext(ctx)
 			if !ok {
 				t.Fatalf("packet wasn't written out")
@@ -1641,7 +1644,8 @@ func TestV6UnknownDestination(t *testing.T) {
 			}
 			c.injectPacket(tc.flow, payload)
 			if !tc.icmpRequired {
-				ctx, _ := context.WithTimeout(context.Background(), time.Second)
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
 				if p, ok := c.linkEP.ReadContext(ctx); ok {
 					t.Fatalf("unexpected packet received: %+v", p)
 				}
@@ -1649,7 +1653,8 @@ func TestV6UnknownDestination(t *testing.T) {
 			}
 
 			// ICMP required.
-			ctx, _ := context.WithTimeout(context.Background(), time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
 			p, ok := c.linkEP.ReadContext(ctx)
 			if !ok {
 				t.Fatalf("packet wasn't written out")
