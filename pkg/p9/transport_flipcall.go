@@ -236,7 +236,7 @@ func (ch *channel) recv(r message, rsz uint32) (message, error) {
 
 	// Convert errors appropriately; see above.
 	if rlerr, ok := r.(*Rlerror); ok {
-		return nil, syscall.Errno(rlerr.Error)
+		return r, syscall.Errno(rlerr.Error)
 	}
 
 	return r, nil
