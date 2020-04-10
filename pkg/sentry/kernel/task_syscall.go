@@ -194,6 +194,19 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 //
 // The syscall path is very hot; avoid defer.
 func (t *Task) doSyscall() taskRunState {
+	// Save value of the register which is clobbered in the following
+	// t.Arch().SetReturn(-ENOSYS) operation. This is dedicated to arm64.
+	//
+	// On x86, register rax was shared by syscall number and return
+	// value, and at the entry of the syscall handler, the rax was
+	// saved to regs.orig_rax which was exposed to user space.
+	// But on arm64, syscall number was passed through X8, and the X0
+	// was shared by the first syscall argument and return value. The
+	// X0 was saved to regs.orig_x0 which was not exposed to user space.
+	// So we have to do the same operation here to save the X0 value
+	// into the task context.
+	t.Arch().SyscallSaveOrig()
+
 	sysno := t.Arch().SyscallNo()
 	args := t.Arch().SyscallArgs()
 
@@ -269,6 +282,7 @@ func (*runSyscallAfterSyscallEnterStop) execute(t *Task) taskRunState {
 		return (*runSyscallExit)(nil)
 	}
 	args := t.Arch().SyscallArgs()
+
 	return t.doSyscallInvoke(sysno, args)
 }
 
