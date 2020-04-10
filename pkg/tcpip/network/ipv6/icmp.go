@@ -138,53 +138,48 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.P
 
 		targetAddr := ns.TargetAddress()
 		s := r.Stack()
-		rxNICID := r.NICID()
-		if isTentative, err := s.IsAddrTentative(rxNICID, targetAddr); err != nil {
-			// We will only get an error if rxNICID is unrecognized,
-			// which should not happen. For now short-circuit this
-			// packet.
+		if isTentative, err := s.IsAddrTentative(e.nicID, targetAddr); err != nil {
+			// We will only get an error if the NIC is unrecognized, which should not
+			// happen. For now, drop this packet.
 			//
 			// TODO(b/141002840): Handle this better?
 			return
 		} else if isTentative {
-			// If the target address is tentative and the source
-			// of the packet is a unicast (specified) address, then
-			// the source of the packet is attempting to perform
-			// address resolution on the target. In this case, the
-			// solicitation is silently ignored, as per RFC 4862
-			// section 5.4.3.
+			// If the target address is tentative and the source of the packet is a
+			// unicast (specified) address, then the source of the packet is
+			// attempting to perform address resolution on the target. In this case,
+			// the solicitation is silently ignored, as per RFC 4862 section 5.4.3.
 			//
-			// If the target address is tentative and the source of
-			// the packet is the unspecified address (::), then we
-			// know another node is also performing DAD for the
-			// same address (since targetAddr is tentative for us,
-			// we know we are also performing DAD on it). In this
-			// case we let the stack know so it can handle such a
-			// scenario and do nothing further with the NDP NS.
-			if iph.SourceAddress() == header.IPv6Any {
-				s.DupTentativeAddrDetected(rxNICID, targetAddr)
+			// If the target address is tentative and the source of the packet is the
+			// unspecified address (::), then we know another node is also performing
+			// DAD for the same address (since the target address is tentative for us,
+			// we know we are also performing DAD on it). In this case we let the
+			// stack know so it can handle such a scenario and do nothing further with
+			// the NS.
+			if r.RemoteAddress == header.IPv6Any {
+				s.DupTentativeAddrDetected(e.nicID, targetAddr)
 			}
 
-			// Do not handle neighbor solicitations targeted
-			// to an address that is tentative on the received
-			// NIC any further.
+			// Do not handle neighbor solicitations targeted to an address that is
+			// tentative on the NIC any further.
 			return
 		}
 
-		// At this point we know that targetAddr is not tentative on
-		// rxNICID so the packet is processed as defined in RFC 4861,
-		// as per RFC 4862 section 5.4.3.
+		// At this point we know that the target address is not tentative on the NIC
+		// so the packet is processed as defined in RFC 4861, as per RFC 4862
+		// section 5.4.3.
 
+		// Is the NS targetting us?
 		if e.linkAddrCache.CheckLocalAddress(e.nicID, ProtocolNumber, targetAddr) == 0 {
-			// We don't have a useful answer; the best we can do is ignore the request.
 			return
 		}
 
-		// If the NS message has the source link layer option, update the link
-		// address cache with the link address for the sender of the message.
+		// If the NS message contains the Source Link-Layer Address option, update
+		// the link address cache with the value of the option.
 		//
 		// TODO(b/148429853): Properly process the NS message and do Neighbor
 		// Unreachability Detection.
+		var sourceLinkAddr tcpip.LinkAddress
 		for {
 			opt, done, err := it.Next()
 			if err != nil {
@@ -197,22 +192,36 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.P
 
 			switch opt := opt.(type) {
 			case header.NDPSourceLinkLayerAddressOption:
-				e.linkAddrCache.AddLinkAddress(e.nicID, r.RemoteAddress, opt.EthernetAddress())
+				// No RFCs define what to do when an NS message has multiple Source
+				// Link-Layer Address options. Since no interface can have multiple
+				// link-layer addresses, we consider such messages invalid.
+				if len(sourceLinkAddr) != 0 {
+					received.Invalid.Increment()
+					return
+				}
+
+				sourceLinkAddr = opt.EthernetAddress()
 			}
 		}
 
-		optsSerializer := header.NDPOptionsSerializer{
-			header.NDPTargetLinkLayerAddressOption(r.LocalLinkAddress[:]),
+		unspecifiedSource := r.RemoteAddress == header.IPv6Any
+
+		// As per RFC 4861 section 4.3, the Source Link-Layer Address Option MUST
+		// NOT be included when the source IP address is the unspecified address.
+		// Otherwise, on link layers that have addresses this option MUST be
+		// included in multicast solicitations and SHOULD be included in unicast
+		// solicitations.
+		if len(sourceLinkAddr) == 0 {
+			if header.IsV6MulticastAddress(r.LocalAddress) && !unspecifiedSource {
+				received.Invalid.Increment()
+				return
+			}
+		} else if unspecifiedSource {
+			received.Invalid.Increment()
+			return
+		} else {
+			e.linkAddrCache.AddLinkAddress(e.nicID, r.RemoteAddress, sourceLinkAddr)
 		}
-		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv6NeighborAdvertMinimumSize + int(optsSerializer.Length()))
-		packet := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborAdvertSize))
-		packet.SetType(header.ICMPv6NeighborAdvert)
-		na := header.NDPNeighborAdvert(packet.NDPPayload())
-		na.SetSolicitedFlag(true)
-		na.SetOverrideFlag(true)
-		na.SetTargetAddress(targetAddr)
-		opts := na.Options()
-		opts.Serialize(optsSerializer)
 
 		// ICMPv6 Neighbor Solicit messages are always sent to
 		// specially crafted IPv6 multicast addresses. As a result, the
@@ -225,6 +234,40 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.P
 		r := r.Clone()
 		defer r.Release()
 		r.LocalAddress = targetAddr
+
+		// As per RFC 4861 section 7.2.4, if the the source of the solicitation is
+		// the unspecified address, the node MUST set the Solicited flag to zero and
+		// multicast the advertisement to the all-nodes address.
+		solicited := true
+		if unspecifiedSource {
+			solicited = false
+			r.RemoteAddress = header.IPv6AllNodesMulticastAddress
+		}
+
+		// If the NS has a source link-layer option, use the link address it
+		// specifies as the remote link address for the response instead of the
+		// source link address of the packet.
+		//
+		// TODO(#2401): As per RFC 4861 section 7.2.4 we should consult our link
+		// address cache for the right destination link address instead of manually
+		// patching the route with the remote link address if one is specified in a
+		// Source Link-Layer Address option.
+		if len(sourceLinkAddr) != 0 {
+			r.RemoteLinkAddress = sourceLinkAddr
+		}
+
+		optsSerializer := header.NDPOptionsSerializer{
+			header.NDPTargetLinkLayerAddressOption(r.LocalLinkAddress),
+		}
+		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv6NeighborAdvertMinimumSize + int(optsSerializer.Length()))
+		packet := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborAdvertSize))
+		packet.SetType(header.ICMPv6NeighborAdvert)
+		na := header.NDPNeighborAdvert(packet.NDPPayload())
+		na.SetSolicitedFlag(solicited)
+		na.SetOverrideFlag(true)
+		na.SetTargetAddress(targetAddr)
+		opts := na.Options()
+		opts.Serialize(optsSerializer)
 		packet.SetChecksum(header.ICMPv6Checksum(packet, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 
 		// RFC 4861 Neighbor Discovery for IP version 6 (IPv6)
