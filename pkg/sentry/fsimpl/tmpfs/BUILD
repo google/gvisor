@@ -51,6 +51,7 @@ go_library(
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
         "//pkg/sentry/vfs/lock",
+        "//pkg/sentry/vfs/memxattr",
         "//pkg/sync",
         "//pkg/syserror",
         "//pkg/usermem",

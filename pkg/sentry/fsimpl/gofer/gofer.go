@@ -34,6 +34,7 @@ package gofer
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -1024,21 +1025,50 @@ func (d *dentry) setDeleted() {
 	atomic.StoreUint32(&d.deleted, 1)
 }
 
-func (d *dentry) listxattr(ctx context.Context) ([]string, error) {
-	return nil, syserror.ENOTSUP
+// We only support xattrs prefixed with "user." (see b/148380782). Currently,
+// there is no need to expose any other xattrs through a gofer.
+func (d *dentry) listxattr(ctx context.Context, creds *auth.Credentials, size uint64) ([]string, error) {
+	xattrMap, err := d.file.listXattr(ctx, size)
+	if err != nil {
+		return nil, err
+	}
+	xattrs := make([]string, 0, len(xattrMap))
+	for x := range xattrMap {
+		if strings.HasPrefix(x, linux.XATTR_USER_PREFIX) {
+			xattrs = append(xattrs, x)
+		}
+	}
+	return xattrs, nil
 }
 
-func (d *dentry) getxattr(ctx context.Context, name string) (string, error) {
-	// TODO(jamieliu): add vfs.GetxattrOptions.Size
-	return d.file.getXattr(ctx, name, linux.XATTR_SIZE_MAX)
+func (d *dentry) getxattr(ctx context.Context, creds *auth.Credentials, opts *vfs.GetxattrOptions) (string, error) {
+	if err := d.checkPermissions(creds, vfs.MayRead); err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(opts.Name, linux.XATTR_USER_PREFIX) {
+		return "", syserror.EOPNOTSUPP
+	}
+	return d.file.getXattr(ctx, opts.Name, opts.Size)
 }
 
-func (d *dentry) setxattr(ctx context.Context, opts *vfs.SetxattrOptions) error {
+func (d *dentry) setxattr(ctx context.Context, creds *auth.Credentials, opts *vfs.SetxattrOptions) error {
+	if err := d.checkPermissions(creds, vfs.MayWrite); err != nil {
+		return err
+	}
+	if !strings.HasPrefix(opts.Name, linux.XATTR_USER_PREFIX) {
+		return syserror.EOPNOTSUPP
+	}
 	return d.file.setXattr(ctx, opts.Name, opts.Value, opts.Flags)
 }
 
-func (d *dentry) removexattr(ctx context.Context, name string) error {
-	return syserror.ENOTSUP
+func (d *dentry) removexattr(ctx context.Context, creds *auth.Credentials, name string) error {
+	if err := d.checkPermissions(creds, vfs.MayWrite); err != nil {
+		return err
+	}
+	if !strings.HasPrefix(name, linux.XATTR_USER_PREFIX) {
+		return syserror.EOPNOTSUPP
+	}
+	return d.file.removeXattr(ctx, name)
 }
 
 // Preconditions: d.isRegularFile() || d.isDirectory().
@@ -1189,21 +1219,21 @@ func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions)
 }
 
 // Listxattr implements vfs.FileDescriptionImpl.Listxattr.
-func (fd *fileDescription) Listxattr(ctx context.Context) ([]string, error) {
-	return fd.dentry().listxattr(ctx)
+func (fd *fileDescription) Listxattr(ctx context.Context, size uint64) ([]string, error) {
+	return fd.dentry().listxattr(ctx, auth.CredentialsFromContext(ctx), size)
 }
 
 // Getxattr implements vfs.FileDescriptionImpl.Getxattr.
-func (fd *fileDescription) Getxattr(ctx context.Context, name string) (string, error) {
-	return fd.dentry().getxattr(ctx, name)
+func (fd *fileDescription) Getxattr(ctx context.Context, opts vfs.GetxattrOptions) (string, error) {
+	return fd.dentry().getxattr(ctx, auth.CredentialsFromContext(ctx), &opts)
 }
 
 // Setxattr implements vfs.FileDescriptionImpl.Setxattr.
 func (fd *fileDescription) Setxattr(ctx context.Context, opts vfs.SetxattrOptions) error {
-	return fd.dentry().setxattr(ctx, &opts)
+	return fd.dentry().setxattr(ctx, auth.CredentialsFromContext(ctx), &opts)
 }
 
 // Removexattr implements vfs.FileDescriptionImpl.Removexattr.
 func (fd *fileDescription) Removexattr(ctx context.Context, name string) error {
-	return fd.dentry().removexattr(ctx, name)
+	return fd.dentry().removexattr(ctx, auth.CredentialsFromContext(ctx), name)
 }
