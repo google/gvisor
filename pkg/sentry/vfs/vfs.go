@@ -680,10 +680,10 @@ func (vfs *VirtualFilesystem) UnlinkAt(ctx context.Context, creds *auth.Credenti
 
 // ListxattrAt returns all extended attribute names for the file at the given
 // path.
-func (vfs *VirtualFilesystem) ListxattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) ([]string, error) {
+func (vfs *VirtualFilesystem) ListxattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, size uint64) ([]string, error) {
 	rp := vfs.getResolvingPath(creds, pop)
 	for {
-		names, err := rp.mount.fs.impl.ListxattrAt(ctx, rp)
+		names, err := rp.mount.fs.impl.ListxattrAt(ctx, rp, size)
 		if err == nil {
 			vfs.putResolvingPath(rp)
 			return names, nil
@@ -705,10 +705,10 @@ func (vfs *VirtualFilesystem) ListxattrAt(ctx context.Context, creds *auth.Crede
 
 // GetxattrAt returns the value associated with the given extended attribute
 // for the file at the given path.
-func (vfs *VirtualFilesystem) GetxattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, name string) (string, error) {
+func (vfs *VirtualFilesystem) GetxattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *GetxattrOptions) (string, error) {
 	rp := vfs.getResolvingPath(creds, pop)
 	for {
-		val, err := rp.mount.fs.impl.GetxattrAt(ctx, rp, name)
+		val, err := rp.mount.fs.impl.GetxattrAt(ctx, rp, *opts)
 		if err == nil {
 			vfs.putResolvingPath(rp)
 			return val, nil
