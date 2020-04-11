@@ -213,7 +213,7 @@ func (conn *TCPIPv4) RecvFrame(timeout time.Duration) Layers {
 		}
 		layers, err := ParseEther(b)
 		if err != nil {
-			conn.t.Logf("can't parse frame: %s", err)
+			conn.t.Logf("debug: can't parse frame, ignoring: %s", err)
 			continue // Ignore packets that can't be parsed.
 		}
 		if !conn.incoming.match(layers) {
