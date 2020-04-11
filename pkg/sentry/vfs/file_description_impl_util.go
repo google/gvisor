@@ -130,14 +130,14 @@ func (FileDescriptionDefaultImpl) Ioctl(ctx context.Context, uio usermem.IO, arg
 
 // Listxattr implements FileDescriptionImpl.Listxattr analogously to
 // inode_operations::listxattr == NULL in Linux.
-func (FileDescriptionDefaultImpl) Listxattr(ctx context.Context) ([]string, error) {
+func (FileDescriptionDefaultImpl) Listxattr(ctx context.Context, size uint64) ([]string, error) {
 	// This isn't exactly accurate; see FileDescription.Listxattr.
 	return nil, syserror.ENOTSUP
 }
 
 // Getxattr implements FileDescriptionImpl.Getxattr analogously to
 // inode::i_opflags & IOP_XATTR == 0 in Linux.
-func (FileDescriptionDefaultImpl) Getxattr(ctx context.Context, name string) (string, error) {
+func (FileDescriptionDefaultImpl) Getxattr(ctx context.Context, opts GetxattrOptions) (string, error) {
 	return "", syserror.ENOTSUP
 }
 

@@ -132,6 +132,20 @@ type SetStatOptions struct {
 	Stat linux.Statx
 }
 
+// GetxattrOptions contains options to VirtualFilesystem.GetxattrAt(),
+// FilesystemImpl.GetxattrAt(), FileDescription.Getxattr(), and
+// FileDescriptionImpl.Getxattr().
+type GetxattrOptions struct {
+	// Name is the name of the extended attribute to retrieve.
+	Name string
+
+	// Size is the maximum value size that the caller will tolerate. If the value
+	// is larger than size, getxattr methods may return ERANGE, but they are also
+	// free to ignore the hint entirely (i.e. the value returned may be larger
+	// than size). All size checking is done independently at the syscall layer.
+	Size uint64
+}
+
 // SetxattrOptions contains options to VirtualFilesystem.SetxattrAt(),
 // FilesystemImpl.SetxattrAt(), FileDescription.Setxattr(), and
 // FileDescriptionImpl.Setxattr().
