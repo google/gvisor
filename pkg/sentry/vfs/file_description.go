@@ -401,11 +401,11 @@ type FileDescriptionImpl interface {
 	Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error)
 
 	// Listxattr returns all extended attribute names for the file.
-	Listxattr(ctx context.Context) ([]string, error)
+	Listxattr(ctx context.Context, size uint64) ([]string, error)
 
 	// Getxattr returns the value associated with the given extended attribute
 	// for the file.
-	Getxattr(ctx context.Context, name string) (string, error)
+	Getxattr(ctx context.Context, opts GetxattrOptions) (string, error)
 
 	// Setxattr changes the value associated with the given extended attribute
 	// for the file.
@@ -605,18 +605,23 @@ func (fd *FileDescription) Ioctl(ctx context.Context, uio usermem.IO, args arch.
 
 // Listxattr returns all extended attribute names for the file represented by
 // fd.
-func (fd *FileDescription) Listxattr(ctx context.Context) ([]string, error) {
+//
+// If the size of the list (including a NUL terminating byte after every entry)
+// would exceed size, ERANGE may be returned. Note that implementations
+// are free to ignore size entirely and return without error). In all cases,
+// if size is 0, the list should be returned without error, regardless of size.
+func (fd *FileDescription) Listxattr(ctx context.Context, size uint64) ([]string, error) {
 	if fd.opts.UseDentryMetadata {
 		vfsObj := fd.vd.mount.vfs
 		rp := vfsObj.getResolvingPath(auth.CredentialsFromContext(ctx), &PathOperation{
 			Root:  fd.vd,
 			Start: fd.vd,
 		})
-		names, err := fd.vd.mount.fs.impl.ListxattrAt(ctx, rp)
+		names, err := fd.vd.mount.fs.impl.ListxattrAt(ctx, rp, size)
 		vfsObj.putResolvingPath(rp)
 		return names, err
 	}
-	names, err := fd.impl.Listxattr(ctx)
+	names, err := fd.impl.Listxattr(ctx, size)
 	if err == syserror.ENOTSUP {
 		// Linux doesn't actually return ENOTSUP in this case; instead,
 		// fs/xattr.c:vfs_listxattr() falls back to allowing the security
@@ -629,34 +634,39 @@ func (fd *FileDescription) Listxattr(ctx context.Context) ([]string, error) {
 
 // Getxattr returns the value associated with the given extended attribute for
 // the file represented by fd.
-func (fd *FileDescription) Getxattr(ctx context.Context, name string) (string, error) {
+//
+// If the size of the return value exceeds opts.Size, ERANGE may be returned
+// (note that implementations are free to ignore opts.Size entirely and return
+// without error). In all cases, if opts.Size is 0, the value should be
+// returned without error, regardless of size.
+func (fd *FileDescription) Getxattr(ctx context.Context, opts *GetxattrOptions) (string, error) {
 	if fd.opts.UseDentryMetadata {
 		vfsObj := fd.vd.mount.vfs
 		rp := vfsObj.getResolvingPath(auth.CredentialsFromContext(ctx), &PathOperation{
 			Root:  fd.vd,
 			Start: fd.vd,
 		})
-		val, err := fd.vd.mount.fs.impl.GetxattrAt(ctx, rp, name)
+		val, err := fd.vd.mount.fs.impl.GetxattrAt(ctx, rp, *opts)
 		vfsObj.putResolvingPath(rp)
 		return val, err
 	}
-	return fd.impl.Getxattr(ctx, name)
+	return fd.impl.Getxattr(ctx, *opts)
 }
 
 // Setxattr changes the value associated with the given extended attribute for
 // the file represented by fd.
-func (fd *FileDescription) Setxattr(ctx context.Context, opts SetxattrOptions) error {
+func (fd *FileDescription) Setxattr(ctx context.Context, opts *SetxattrOptions) error {
 	if fd.opts.UseDentryMetadata {
 		vfsObj := fd.vd.mount.vfs
 		rp := vfsObj.getResolvingPath(auth.CredentialsFromContext(ctx), &PathOperation{
 			Root:  fd.vd,
 			Start: fd.vd,
 		})
-		err := fd.vd.mount.fs.impl.SetxattrAt(ctx, rp, opts)
+		err := fd.vd.mount.fs.impl.SetxattrAt(ctx, rp, *opts)
 		vfsObj.putResolvingPath(rp)
 		return err
 	}
-	return fd.impl.Setxattr(ctx, opts)
+	return fd.impl.Setxattr(ctx, *opts)
 }
 
 // Removexattr removes the given extended attribute from the file represented

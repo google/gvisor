@@ -27,6 +27,7 @@ package tmpfs
 import (
 	"fmt"
 	"math"
+	"strings"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -37,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
+	"gvisor.dev/gvisor/pkg/sentry/vfs/memxattr"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -185,6 +187,11 @@ type inode struct {
 	// nlink never reaches 0 due to the "." entry; instead,
 	// filesystem.RmdirAt() drops the reference.
 	refs int64
+
+	// xattrs implements extended attributes.
+	//
+	// TODO(b/148380782): Support xattrs other than user.*
+	xattrs memxattr.SimpleExtendedAttributes
 
 	// Inode metadata. Writing multiple fields atomically requires holding
 	// mu, othewise atomic operations can be used.
@@ -535,6 +542,56 @@ func (i *inode) touchCMtimeLocked() {
 	atomic.StoreInt64(&i.ctime, now)
 }
 
+func (i *inode) listxattr(size uint64) ([]string, error) {
+	return i.xattrs.Listxattr(size)
+}
+
+func (i *inode) getxattr(creds *auth.Credentials, opts *vfs.GetxattrOptions) (string, error) {
+	if err := i.checkPermissions(creds, vfs.MayRead); err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(opts.Name, linux.XATTR_USER_PREFIX) {
+		return "", syserror.EOPNOTSUPP
+	}
+	if !i.userXattrSupported() {
+		return "", syserror.ENODATA
+	}
+	return i.xattrs.Getxattr(opts)
+}
+
+func (i *inode) setxattr(creds *auth.Credentials, opts *vfs.SetxattrOptions) error {
+	if err := i.checkPermissions(creds, vfs.MayWrite); err != nil {
+		return err
+	}
+	if !strings.HasPrefix(opts.Name, linux.XATTR_USER_PREFIX) {
+		return syserror.EOPNOTSUPP
+	}
+	if !i.userXattrSupported() {
+		return syserror.EPERM
+	}
+	return i.xattrs.Setxattr(opts)
+}
+
+func (i *inode) removexattr(creds *auth.Credentials, name string) error {
+	if err := i.checkPermissions(creds, vfs.MayWrite); err != nil {
+		return err
+	}
+	if !strings.HasPrefix(name, linux.XATTR_USER_PREFIX) {
+		return syserror.EOPNOTSUPP
+	}
+	if !i.userXattrSupported() {
+		return syserror.EPERM
+	}
+	return i.xattrs.Removexattr(name)
+}
+
+// Extended attributes in the user.* namespace are only supported for regular
+// files and directories.
+func (i *inode) userXattrSupported() bool {
+	filetype := linux.S_IFMT & atomic.LoadUint32(&i.mode)
+	return filetype == linux.S_IFREG || filetype == linux.S_IFDIR
+}
+
 // fileDescription is embedded by tmpfs implementations of
 // vfs.FileDescriptionImpl.
 type fileDescription struct {
@@ -561,4 +618,24 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 	creds := auth.CredentialsFromContext(ctx)
 	return fd.inode().setStat(ctx, creds, &opts.Stat)
+}
+
+// Listxattr implements vfs.FileDescriptionImpl.Listxattr.
+func (fd *fileDescription) Listxattr(ctx context.Context, size uint64) ([]string, error) {
+	return fd.inode().listxattr(size)
+}
+
+// Getxattr implements vfs.FileDescriptionImpl.Getxattr.
+func (fd *fileDescription) Getxattr(ctx context.Context, opts vfs.GetxattrOptions) (string, error) {
+	return fd.inode().getxattr(auth.CredentialsFromContext(ctx), &opts)
+}
+
+// Setxattr implements vfs.FileDescriptionImpl.Setxattr.
+func (fd *fileDescription) Setxattr(ctx context.Context, opts vfs.SetxattrOptions) error {
+	return fd.inode().setxattr(auth.CredentialsFromContext(ctx), &opts)
+}
+
+// Removexattr implements vfs.FileDescriptionImpl.Removexattr.
+func (fd *fileDescription) Removexattr(ctx context.Context, name string) error {
+	return fd.inode().removexattr(auth.CredentialsFromContext(ctx), name)
 }

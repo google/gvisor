@@ -51,7 +51,7 @@ func listxattr(t *kernel.Task, args arch.SyscallArguments, shouldFollowFinalSyml
 	}
 	defer tpop.Release()
 
-	names, err := t.Kernel().VFS().ListxattrAt(t, t.Credentials(), &tpop.pop)
+	names, err := t.Kernel().VFS().ListxattrAt(t, t.Credentials(), &tpop.pop, uint64(size))
 	if err != nil {
 		return 0, nil, err
 	}
@@ -74,7 +74,7 @@ func Flistxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	}
 	defer file.DecRef()
 
-	names, err := file.Listxattr(t)
+	names, err := file.Listxattr(t, uint64(size))
 	if err != nil {
 		return 0, nil, err
 	}
@@ -116,7 +116,10 @@ func getxattr(t *kernel.Task, args arch.SyscallArguments, shouldFollowFinalSymli
 		return 0, nil, err
 	}
 
-	value, err := t.Kernel().VFS().GetxattrAt(t, t.Credentials(), &tpop.pop, name)
+	value, err := t.Kernel().VFS().GetxattrAt(t, t.Credentials(), &tpop.pop, &vfs.GetxattrOptions{
+		Name: name,
+		Size: uint64(size),
+	})
 	if err != nil {
 		return 0, nil, err
 	}
@@ -145,7 +148,7 @@ func Fgetxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		return 0, nil, err
 	}
 
-	value, err := file.Getxattr(t, name)
+	value, err := file.Getxattr(t, &vfs.GetxattrOptions{Name: name, Size: uint64(size)})
 	if err != nil {
 		return 0, nil, err
 	}
@@ -230,7 +233,7 @@ func Fsetxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		return 0, nil, err
 	}
 
-	return 0, nil, file.Setxattr(t, vfs.SetxattrOptions{
+	return 0, nil, file.Setxattr(t, &vfs.SetxattrOptions{
 		Name:  name,
 		Value: value,
 		Flags: uint32(flags),

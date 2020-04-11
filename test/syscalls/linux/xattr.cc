@@ -41,12 +41,12 @@ class XattrTest : public FileTest {};
 
 TEST_F(XattrTest, XattrNonexistentFile) {
   const char* path = "/does/not/exist";
-  EXPECT_THAT(setxattr(path, nullptr, nullptr, 0, /*flags=*/0),
+  const char* name = "user.test";
+  EXPECT_THAT(setxattr(path, name, nullptr, 0, /*flags=*/0),
               SyscallFailsWithErrno(ENOENT));
-  EXPECT_THAT(getxattr(path, nullptr, nullptr, 0),
-              SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(getxattr(path, name, nullptr, 0), SyscallFailsWithErrno(ENOENT));
   EXPECT_THAT(listxattr(path, nullptr, 0), SyscallFailsWithErrno(ENOENT));
-  EXPECT_THAT(removexattr(path, nullptr), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(removexattr(path, name), SyscallFailsWithErrno(ENOENT));
 }
 
 TEST_F(XattrTest, XattrNullName) {

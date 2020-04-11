@@ -85,6 +85,13 @@ func (f p9file) setAttr(ctx context.Context, valid p9.SetAttrMask, attr p9.SetAt
 	return err
 }
 
+func (f p9file) listXattr(ctx context.Context, size uint64) (map[string]struct{}, error) {
+	ctx.UninterruptibleSleepStart(false)
+	xattrs, err := f.file.ListXattr(size)
+	ctx.UninterruptibleSleepFinish(false)
+	return xattrs, err
+}
+
 func (f p9file) getXattr(ctx context.Context, name string, size uint64) (string, error) {
 	ctx.UninterruptibleSleepStart(false)
 	val, err := f.file.GetXattr(name, size)
@@ -95,6 +102,13 @@ func (f p9file) getXattr(ctx context.Context, name string, size uint64) (string,
 func (f p9file) setXattr(ctx context.Context, name, value string, flags uint32) error {
 	ctx.UninterruptibleSleepStart(false)
 	err := f.file.SetXattr(name, value, flags)
+	ctx.UninterruptibleSleepFinish(false)
+	return err
+}
+
+func (f p9file) removeXattr(ctx context.Context, name string) error {
+	ctx.UninterruptibleSleepStart(false)
+	err := f.file.RemoveXattr(name)
 	ctx.UninterruptibleSleepFinish(false)
 	return err
 }

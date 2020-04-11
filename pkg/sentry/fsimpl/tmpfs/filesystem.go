@@ -696,51 +696,47 @@ func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 }
 
 // ListxattrAt implements vfs.FilesystemImpl.ListxattrAt.
-func (fs *filesystem) ListxattrAt(ctx context.Context, rp *vfs.ResolvingPath) ([]string, error) {
+func (fs *filesystem) ListxattrAt(ctx context.Context, rp *vfs.ResolvingPath, size uint64) ([]string, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	_, err := resolveLocked(rp)
+	d, err := resolveLocked(rp)
 	if err != nil {
 		return nil, err
 	}
-	// TODO(b/127675828): support extended attributes
-	return nil, syserror.ENOTSUP
+	return d.inode.listxattr(size)
 }
 
 // GetxattrAt implements vfs.FilesystemImpl.GetxattrAt.
-func (fs *filesystem) GetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) (string, error) {
+func (fs *filesystem) GetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetxattrOptions) (string, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	_, err := resolveLocked(rp)
+	d, err := resolveLocked(rp)
 	if err != nil {
 		return "", err
 	}
-	// TODO(b/127675828): support extended attributes
-	return "", syserror.ENOTSUP
+	return d.inode.getxattr(rp.Credentials(), &opts)
 }
 
 // SetxattrAt implements vfs.FilesystemImpl.SetxattrAt.
 func (fs *filesystem) SetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetxattrOptions) error {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	_, err := resolveLocked(rp)
+	d, err := resolveLocked(rp)
 	if err != nil {
 		return err
 	}
-	// TODO(b/127675828): support extended attributes
-	return syserror.ENOTSUP
+	return d.inode.setxattr(rp.Credentials(), &opts)
 }
 
 // RemovexattrAt implements vfs.FilesystemImpl.RemovexattrAt.
 func (fs *filesystem) RemovexattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) error {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	_, err := resolveLocked(rp)
+	d, err := resolveLocked(rp)
 	if err != nil {
 		return err
 	}
-	// TODO(b/127675828): support extended attributes
-	return syserror.ENOTSUP
+	return d.inode.removexattr(rp.Credentials(), name)
 }
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.
