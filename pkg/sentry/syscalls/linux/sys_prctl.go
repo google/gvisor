@@ -161,8 +161,8 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		if args[1].Int() != 1 || args[2].Int() != 0 || args[3].Int() != 0 || args[4].Int() != 0 {
 			return 0, nil, syserror.EINVAL
 		}
-		// no_new_privs is assumed to always be set. See
-		// kernel.Task.updateCredsForExec.
+		// PR_SET_NO_NEW_PRIVS is assumed to always be set.
+		// See kernel.Task.updateCredsForExecLocked.
 		return 0, nil, nil
 
 	case linux.PR_GET_NO_NEW_PRIVS:
