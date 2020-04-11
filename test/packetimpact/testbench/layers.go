@@ -153,7 +153,7 @@ func (l *Ether) toBytes() ([]byte, error) {
 			fields.Type = header.IPv4ProtocolNumber
 		default:
 			// TODO(b/150301488): Support more protocols, like IPv6.
-			return nil, fmt.Errorf("can't deduce the ethernet header's next protocol: %d", n)
+			return nil, fmt.Errorf("ethernet header's next layer is unrecognized: %#v", n)
 		}
 	}
 	h.Encode(fields)
@@ -191,7 +191,7 @@ func ParseEther(b []byte) (Layers, error) {
 		return append(layers, moreLayers...), nil
 	default:
 		// TODO(b/150301488): Support more protocols, like IPv6.
-		return nil, fmt.Errorf("can't deduce the ethernet header's next protocol: %#v", b)
+		return nil, fmt.Errorf("ethernet header's type field is unrecognized: %#04x", h.Type())
 	}
 }
 
@@ -274,7 +274,7 @@ func (l *IPv4) toBytes() ([]byte, error) {
 			fields.Protocol = uint8(header.UDPProtocolNumber)
 		default:
 			// TODO(b/150301488): Support more protocols as needed.
-			return nil, fmt.Errorf("can't deduce the ip header's next protocol: %#v", n)
+			return nil, fmt.Errorf("ipv4 header's next layer is unrecognized: %#v", n)
 		}
 	}
 	if l.SrcAddr != nil {
@@ -344,7 +344,7 @@ func ParseIPv4(b []byte) (Layers, error) {
 		}
 		return append(layers, moreLayers...), nil
 	}
-	return nil, fmt.Errorf("can't deduce the ethernet header's next protocol: %d", h.Protocol())
+	return nil, fmt.Errorf("ipv4 header's protocol field is unrecognized: %#02x", h.Protocol())
 }
 
 func (l *IPv4) match(other Layer) bool {
