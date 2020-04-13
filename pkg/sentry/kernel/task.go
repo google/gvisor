@@ -777,6 +777,15 @@ func (t *Task) NewFDs(fd int32, files []*fs.File, flags FDFlags) ([]int32, error
 	return t.fdTable.NewFDs(t, fd, files, flags)
 }
 
+// NewFDsVFS2 is a convenience wrapper for t.FDTable().NewFDsVFS2.
+//
+// This automatically passes the task as the context.
+//
+// Precondition: same as FDTable.
+func (t *Task) NewFDsVFS2(fd int32, files []*vfs.FileDescription, flags FDFlags) ([]int32, error) {
+	return t.fdTable.NewFDsVFS2(t, fd, files, flags)
+}
+
 // NewFDFrom is a convenience wrapper for t.FDTable().NewFDs with a single file.
 //
 // This automatically passes the task as the context.
