@@ -6,14 +6,9 @@ package(
     licenses = ["notice"],
 )
 
-genrule(
+sh_binary(
     name = "zone",
-    outs = ["zone.txt"],
-    cmd = "gcloud config get-value compute/zone > \"$@\"",
-    tags = [
-        "local",
-        "manual",
-    ],
+    srcs = ["zone.sh"],
 )
 
 sh_binary(

@@ -19,6 +19,7 @@ import logging
 import pkgutil
 import pydoc
 import re
+import subprocess
 import sys
 import types
 from typing import List
@@ -125,9 +126,8 @@ def run_gcp(ctx, image_file: str, zone_file: str, internal: bool,
   """Runs all benchmarks on GCP instances."""
 
   # Resolve all files.
-  image = open(image_file).read().rstrip()
-  zone = open(zone_file).read().rstrip()
-
+  image = subprocess.check_output([image_file]).rstrip()
+  zone = subprocess.check_output([zone_file]).rstrip()
   key_file = harness.make_key()
 
   producer = gcloud_producer.GCloudProducer(
