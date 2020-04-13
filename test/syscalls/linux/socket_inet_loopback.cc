@@ -325,11 +325,9 @@ TEST_P(SocketInetLoopbackTest, TCPListenClose) {
   TestAddress const& listener = param.listener;
   TestAddress const& connector = param.connector;
 
-  constexpr int kAcceptCount = 32;
-  constexpr int kBacklog = kAcceptCount * 2;
-  constexpr int kFDs = 128;
-  constexpr int kThreadCount = 4;
-  constexpr int kFDsPerThread = kFDs / kThreadCount;
+  constexpr int kAcceptCount = 2;
+  constexpr int kBacklog = kAcceptCount + 2;
+  constexpr int kFDs = kBacklog * 3;
 
   // Create the listening socket.
   FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
@@ -348,39 +346,23 @@ TEST_P(SocketInetLoopbackTest, TCPListenClose) {
   uint16_t const port =
       ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
 
-  DisableSave ds;  // Too many system calls.
   sockaddr_storage conn_addr = connector.addr;
   ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
-  FileDescriptor clients[kFDs];
-  std::unique_ptr<ScopedThread> threads[kThreadCount];
+  std::vector<FileDescriptor> clients;
   for (int i = 0; i < kFDs; i++) {
-    clients[i] = ASSERT_NO_ERRNO_AND_VALUE(
+    auto client = ASSERT_NO_ERRNO_AND_VALUE(
         Socket(connector.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
-  }
-  for (int i = 0; i < kThreadCount; i++) {
-    threads[i] = absl::make_unique<ScopedThread>([&connector, &conn_addr,
-                                                  &clients, i]() {
-      for (int j = 0; j < kFDsPerThread; j++) {
-        int k = i * kFDsPerThread + j;
-        int ret =
-            connect(clients[k].get(), reinterpret_cast<sockaddr*>(&conn_addr),
-                    connector.addr_len);
-        if (ret != 0) {
-          EXPECT_THAT(ret, SyscallFailsWithErrno(EINPROGRESS));
-        }
-      }
-    });
-  }
-  for (int i = 0; i < kThreadCount; i++) {
-    threads[i]->Join();
+    int ret = connect(client.get(), reinterpret_cast<sockaddr*>(&conn_addr),
+                      connector.addr_len);
+    if (ret != 0) {
+      EXPECT_THAT(ret, SyscallFailsWithErrno(EINPROGRESS));
+    }
+    clients.push_back(std::move(client));
   }
   for (int i = 0; i < kAcceptCount; i++) {
     auto accepted =
         ASSERT_NO_ERRNO_AND_VALUE(Accept(listen_fd.get(), nullptr, nullptr));
   }
-  // TODO(b/138400178): Fix cooperative S/R failure when ds.reset() is invoked
-  // before function end.
-  // ds.reset();
 }
 
 TEST_P(SocketInetLoopbackTest, TCPbacklog) {
