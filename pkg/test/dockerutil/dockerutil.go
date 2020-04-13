@@ -148,6 +148,65 @@ func (m MountMode) String() string {
 	panic(fmt.Sprintf("invalid mode: %d", m))
 }
 
+// DockerNetwork contains the name of a docker network.
+type DockerNetwork struct {
+	logger testutil.Logger
+	Name   string
+	Subnet *net.IPNet
+}
+
+// NewDockerNetwork sets up the struct for a Docker network. Names of networks
+// will be unique.
+func NewDockerNetwork(logger testutil.Logger) *DockerNetwork {
+	return &DockerNetwork{
+		logger: logger,
+		Name:   testutil.RandomID(logger.Name()),
+	}
+}
+
+// Create calls 'docker network create'.
+func (n *DockerNetwork) Create(args ...string) error {
+	a := []string{"docker", "network", "create"}
+	if n.Subnet != nil {
+		a = append(a, fmt.Sprintf("--subnet=%s", n.Subnet))
+	}
+	a = append(a, args...)
+	a = append(a, n.Name)
+	return testutil.Command(n.logger, a...).Run()
+}
+
+// Connect calls 'docker network connect' with the arguments provided.
+func (n *DockerNetwork) Connect(container *Docker, args ...string) error {
+	a := []string{"docker", "network", "connect"}
+	a = append(a, args...)
+	a = append(a, n.Name, container.Name)
+	return testutil.Command(n.logger, a...).Run()
+}
+
+// Cleanup cleans up the docker network and all the containers attached to it.
+func (n *DockerNetwork) Cleanup() error {
+	output, err := testutil.Command(n.logger, "docker", "network", "inspect", n.Name, "--format",
+		"{{range $key, $value := .Containers}}{{$key}} {{end}}").CombinedOutput()
+	if err != nil {
+		return err
+	}
+	trimmedOutput := strings.TrimSpace(string(output))
+	containers := strings.Split(trimmedOutput, " ")
+	for _, cmd := range []string{"kill", "rm"} {
+		for _, container := range containers {
+			if len(container) != 0 {
+				// Ignore the error, it might be that the container was already cleaned
+				// up.
+				testutil.Command(n.logger, append([]string{"docker", cmd}, container)...).Run()
+			}
+		}
+	}
+	if err := testutil.Command(n.logger, "docker", "network", "rm", n.Name).Run(); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Docker contains the name and the runtime of a docker container.
 type Docker struct {
 	logger   testutil.Logger
@@ -309,7 +368,9 @@ func (d *Docker) argsFor(r *RunOpts, command string, p []string) (rv []string) {
 		rv = append(rv, d.Name)
 	} else {
 		rv = append(rv, d.mounts...)
-		rv = append(rv, fmt.Sprintf("--runtime=%s", d.Runtime))
+		if len(d.Runtime) > 0 {
+			rv = append(rv, fmt.Sprintf("--runtime=%s", d.Runtime))
+		}
 		rv = append(rv, fmt.Sprintf("--name=%s", d.Name))
 		rv = append(rv, testutil.ImageByName(r.Image))
 	}
