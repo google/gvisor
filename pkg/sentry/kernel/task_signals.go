@@ -513,8 +513,6 @@ func (t *Task) canReceiveSignalLocked(sig linux.Signal) bool {
 	if t.stop != nil {
 		return false
 	}
-	// - TODO(b/38173783): No special case for when t is also the sending task,
-	// because the identity of the sender is unknown.
 	// - Do not choose tasks that have already been interrupted, as they may be
 	// busy handling another signal.
 	if len(t.interruptChan) != 0 {

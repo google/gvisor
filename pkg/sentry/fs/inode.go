@@ -102,7 +102,6 @@ func (i *Inode) DecRef() {
 
 // destroy releases the Inode and releases the msrc reference taken.
 func (i *Inode) destroy() {
-	// FIXME(b/38173783): Context is not plumbed here.
 	ctx := context.Background()
 	if err := i.WriteOut(ctx); err != nil {
 		// FIXME(b/65209558): Mark as warning again once noatime is
