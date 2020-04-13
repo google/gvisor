@@ -104,7 +104,6 @@ func (s *session) afterLoad() {
 	// If private unix sockets are enabled, create and fill the session's endpoint
 	// maps.
 	if opts.privateunixsocket {
-		// TODO(b/38173783): Context is not plumbed to save/restore.
 		ctx := &dummyClockContext{context.Background()}
 
 		if err = s.restoreEndpointMaps(ctx); err != nil {
