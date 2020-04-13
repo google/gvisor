@@ -29,9 +29,6 @@ import (
 )
 
 // IO provides access to the contents of a virtual memory space.
-//
-// FIXME(b/38173783): Implementations of IO cannot expect ctx to contain any
-// meaningful data.
 type IO interface {
 	// CopyOut copies len(src) bytes from src to the memory mapped at addr. It
 	// returns the number of bytes copied. If the number of bytes copied is <
