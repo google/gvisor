@@ -431,7 +431,6 @@ TEST(CloneTest, NewUserNamespacePermitsAllOtherNamespaces) {
       << "status = " << status;
 }
 
-#ifdef __x86_64__
 // Clone with CLONE_SETTLS and a non-canonical TLS address is rejected.
 TEST(CloneTest, NonCanonicalTLS) {
   constexpr uintptr_t kNonCanonical = 1ull << 48;
@@ -440,11 +439,25 @@ TEST(CloneTest, NonCanonicalTLS) {
   // on this.
   char stack;
 
+  // The raw system call interface on x86-64 is:
+  // long clone(unsigned long flags, void *stack,
+  //            int *parent_tid, int *child_tid,
+  //            unsigned long tls);
+  //
+  // While on arm64, the order of the last two arguments is reversed:
+  // long clone(unsigned long flags, void *stack,
+  //            int *parent_tid, unsigned long tls,
+  //            int *child_tid);
+#if defined(__x86_64__)
   EXPECT_THAT(syscall(__NR_clone, SIGCHLD | CLONE_SETTLS, &stack, nullptr,
                       nullptr, kNonCanonical),
               SyscallFailsWithErrno(EPERM));
-}
+#elif defined(__aarch64__)
+  EXPECT_THAT(syscall(__NR_clone, SIGCHLD | CLONE_SETTLS, &stack, nullptr,
+                      kNonCanonical, nullptr),
+              SyscallFailsWithErrno(EPERM));
 #endif
+}
 
 }  // namespace
 }  // namespace testing
