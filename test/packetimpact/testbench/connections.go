@@ -211,11 +211,7 @@ func (conn *TCPIPv4) RecvFrame(timeout time.Duration) Layers {
 		if b == nil {
 			break
 		}
-		layers, err := ParseEther(b)
-		if err != nil {
-			conn.t.Logf("debug: can't parse frame, ignoring: %s", err)
-			continue // Ignore packets that can't be parsed.
-		}
+		layers := Parse(ParseEther, b)
 		if !conn.incoming.match(layers) {
 			continue // Ignore packets that don't match the expected incoming.
 		}
@@ -418,11 +414,7 @@ func (conn *UDPIPv4) Recv(timeout time.Duration) *UDP {
 		if b == nil {
 			break
 		}
-		layers, err := ParseEther(b)
-		if err != nil {
-			conn.t.Logf("can't parse frame: %s", err)
-			continue // Ignore packets that can't be parsed.
-		}
+		layers := Parse(ParseEther, b)
 		if !conn.incoming.match(layers) {
 			continue // Ignore packets that don't match the expected incoming.
 		}
