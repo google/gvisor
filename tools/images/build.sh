@@ -19,7 +19,7 @@
 # image_setup.sh script. This script should be idempotent, as we memoize the
 # setup script with a hash and check for that name.
 
-set -xeou pipefail
+set -eou pipefail
 
 # Parameters.
 declare -r USERNAME=${USERNAME:-test}
@@ -34,10 +34,10 @@ declare -r INSTANCE_NAME=$(mktemp -u build-XXXXXX | tr A-Z a-z)
 
 # Hash inputs in order to memoize the produced image.
 declare -r SETUP_HASH=$( (echo ${USERNAME} ${IMAGE_PROJECT} ${IMAGE_FAMILY} && cat "$@") | sha256sum - | cut -d' ' -f1 | cut -c 1-16)
-declare -r IMAGE_NAME=${IMAGE_FAMILY:-image-}${SETUP_HASH}
+declare -r IMAGE_NAME=${IMAGE_FAMILY:-image}-${SETUP_HASH}
 
 # Does the image already exist? Skip the build.
-declare -r existing=$(gcloud compute images list --filter="name=(${IMAGE_NAME})" --format="value(name)")
+declare -r existing=$(set -x; gcloud compute images list --filter="name=(${IMAGE_NAME})" --format="value(name)")
 if ! [[ -z "${existing}" ]]; then
   echo "${existing}"
   exit 0
@@ -48,28 +48,30 @@ export PATH=${PATH:-/bin:/usr/bin:/usr/local/bin}
 
 # Start a unique instance. Note that this instance will have a unique persistent
 # disk as it's boot disk with the same name as the instance.
-gcloud compute instances create \
+(set -x; gcloud compute instances create \
     --quiet \
     --image-project "${IMAGE_PROJECT}" \
     --image-family "${IMAGE_FAMILY}" \
     --boot-disk-size "200GB" \
     --zone "${ZONE}" \
-    "${INSTANCE_NAME}" >/dev/null
+    "${INSTANCE_NAME}" >/dev/null)
 function cleanup {
-    gcloud compute instances delete --quiet --zone "${ZONE}" "${INSTANCE_NAME}"
+  (set -x; gcloud compute instances delete --quiet --zone "${ZONE}" "${INSTANCE_NAME}")
 }
 trap cleanup EXIT
 
 # Wait for the instance to become available (up to 5 minutes).
+echo -n "Waiting for ${INSTANCE_NAME}"
 declare timeout=300
 declare success=0
 declare internal=""
 declare -r start=$(date +%s)
 declare -r end=$((${start}+${timeout}))
 while [[ "$(date +%s)" -lt "${end}" ]] && [[ "${success}" -lt 3 ]]; do
-  if gcloud compute ssh --zone "${internal}" "${ZONE}" "${USERNAME}"@"${INSTANCE_NAME}" -- env - true 2>/dev/null; then
+  echo -n "."
+  if gcloud compute ssh --zone "${ZONE}" "${USERNAME}"@"${INSTANCE_NAME}" -- env - true 2>/dev/null; then
     success=$((${success}+1))
-  elif gcloud compute ssh --zone --internal-ip "${ZONE}" "${USERNAME}"@"${INSTANCE_NAME}" -- env - true 2>/dev/null; then
+  elif gcloud compute ssh --internal-ip --zone "${ZONE}" "${USERNAME}"@"${INSTANCE_NAME}" -- env - true 2>/dev/null; then
     success=$((${success}+1))
     internal="--internal-ip"
   fi
@@ -78,29 +80,34 @@ done
 if [[ "${success}" -eq "0" ]]; then
   echo "connect timed out after ${timeout} seconds."
   exit 1
+else
+  echo "done."
 fi
 
 # Run the install scripts provided.
 for arg; do
-  gcloud compute ssh --zone "${internal}" "${ZONE}" "${USERNAME}"@"${INSTANCE_NAME}" -- sudo bash - <"${arg}" >/dev/null
+  (set -x; gcloud compute ssh ${internal} \
+      --zone "${ZONE}" \
+      "${USERNAME}"@"${INSTANCE_NAME}" -- \
+      sudo bash - <"${arg}" >/dev/null)
 done
 
 # Stop the instance; required before creating an image.
-gcloud compute instances stop --quiet --zone "${ZONE}" "${INSTANCE_NAME}" >/dev/null
+(set -x; gcloud compute instances stop --quiet --zone "${ZONE}" "${INSTANCE_NAME}" >/dev/null)
 
 # Create a snapshot of the instance disk.
-gcloud compute disks snapshot \
+(set -x; gcloud compute disks snapshot \
     --quiet \
     --zone "${ZONE}" \
     --snapshot-names="${SNAPSHOT_NAME}" \
-    "${INSTANCE_NAME}" >/dev/null
+    "${INSTANCE_NAME}" >/dev/null)
 
 # Create the disk image.
-gcloud compute images create \
+(set -x; gcloud compute images create \
     --quiet \
     --source-snapshot="${SNAPSHOT_NAME}" \
     --licenses="https://www.googleapis.com/compute/v1/projects/vm-options/global/licenses/enable-vmx" \
-    "${IMAGE_NAME}" >/dev/null
+    "${IMAGE_NAME}" >/dev/null)
 
 # Finish up.
 echo "${IMAGE_NAME}"
