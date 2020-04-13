@@ -123,7 +123,6 @@ func (i *inodeFileState) afterLoad() {
 			// beforeSave.
 			return fmt.Errorf("failed to find path for inode number %d. Device %s contains %s", i.sattr.InodeID, i.s.connID, fs.InodeMappings(i.s.inodeMappings))
 		}
-		// TODO(b/38173783): Context is not plumbed to save/restore.
 		ctx := &dummyClockContext{context.Background()}
 
 		_, i.file, err = i.s.attach.walk(ctx, splitAbsolutePath(name))
