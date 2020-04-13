@@ -44,21 +44,22 @@ func Override(table map[uintptr]kernel.Syscall) {
 	table[32] = syscalls.Supported("dup", Dup)
 	table[33] = syscalls.Supported("dup2", Dup2)
 	delete(table, 40) // sendfile
-	delete(table, 41) // socket
-	delete(table, 42) // connect
-	delete(table, 43) // accept
-	delete(table, 44) // sendto
-	delete(table, 45) // recvfrom
-	delete(table, 46) // sendmsg
-	delete(table, 47) // recvmsg
-	delete(table, 48) // shutdown
-	delete(table, 49) // bind
-	delete(table, 50) // listen
-	delete(table, 51) // getsockname
-	delete(table, 52) // getpeername
-	delete(table, 53) // socketpair
-	delete(table, 54) // setsockopt
-	delete(table, 55) // getsockopt
+	// TODO(gvisor.dev/issue/1485): Port all socket variants to VFS2.
+	table[41] = syscalls.PartiallySupported("socket", Socket, "In process of porting socket syscalls to VFS2.", nil)
+	table[42] = syscalls.PartiallySupported("connect", Connect, "In process of porting socket syscalls to VFS2.", nil)
+	table[43] = syscalls.PartiallySupported("accept", Accept, "In process of porting socket syscalls to VFS2.", nil)
+	table[44] = syscalls.PartiallySupported("sendto", SendTo, "In process of porting socket syscalls to VFS2.", nil)
+	table[45] = syscalls.PartiallySupported("recvfrom", RecvFrom, "In process of porting socket syscalls to VFS2.", nil)
+	table[46] = syscalls.PartiallySupported("sendmsg", SendMsg, "In process of porting socket syscalls to VFS2.", nil)
+	table[47] = syscalls.PartiallySupported("recvmsg", RecvMsg, "In process of porting socket syscalls to VFS2.", nil)
+	table[48] = syscalls.PartiallySupported("shutdown", Shutdown, "In process of porting socket syscalls to VFS2.", nil)
+	table[49] = syscalls.PartiallySupported("bind", Bind, "In process of porting socket syscalls to VFS2.", nil)
+	table[50] = syscalls.PartiallySupported("listen", Listen, "In process of porting socket syscalls to VFS2.", nil)
+	table[51] = syscalls.PartiallySupported("getsockname", GetSockName, "In process of porting socket syscalls to VFS2.", nil)
+	table[52] = syscalls.PartiallySupported("getpeername", GetPeerName, "In process of porting socket syscalls to VFS2.", nil)
+	table[53] = syscalls.PartiallySupported("socketpair", SocketPair, "In process of porting socket syscalls to VFS2.", nil)
+	table[54] = syscalls.PartiallySupported("getsockopt", GetSockOpt, "In process of porting socket syscalls to VFS2.", nil)
+	table[55] = syscalls.PartiallySupported("setsockopt", SetSockOpt, "In process of porting socket syscalls to VFS2.", nil)
 	table[59] = syscalls.Supported("execve", Execve)
 	table[72] = syscalls.Supported("fcntl", Fcntl)
 	delete(table, 73) // flock
@@ -144,7 +145,8 @@ func Override(table map[uintptr]kernel.Syscall) {
 	delete(table, 285) // fallocate
 	table[286] = syscalls.Supported("timerfd_settime", TimerfdSettime)
 	table[287] = syscalls.Supported("timerfd_gettime", TimerfdGettime)
-	delete(table, 288) // accept4
+	// TODO(gvisor.dev/issue/1485): Port all socket variants to VFS2.
+	table[288] = syscalls.PartiallySupported("accept4", Accept4, "In process of porting socket syscalls to VFS2.", nil)
 	delete(table, 289) // signalfd4
 	delete(table, 290) // eventfd2
 	table[291] = syscalls.Supported("epoll_create1", EpollCreate1)
@@ -153,9 +155,11 @@ func Override(table map[uintptr]kernel.Syscall) {
 	delete(table, 294) // inotify_init1
 	table[295] = syscalls.Supported("preadv", Preadv)
 	table[296] = syscalls.Supported("pwritev", Pwritev)
-	delete(table, 299) // recvmmsg
+	// TODO(gvisor.dev/issue/1485): Port all socket variants to VFS2.
+	table[299] = syscalls.PartiallySupported("recvmmsg", RecvMMsg, "In process of porting socket syscalls to VFS2.", nil)
 	table[306] = syscalls.Supported("syncfs", Syncfs)
-	delete(table, 307) // sendmmsg
+	// TODO(gvisor.dev/issue/1485): Port all socket variants to VFS2.
+	table[307] = syscalls.PartiallySupported("sendmmsg", SendMMsg, "In process of porting socket syscalls to VFS2.", nil)
 	table[316] = syscalls.Supported("renameat2", Renameat2)
 	delete(table, 319) // memfd_create
 	table[322] = syscalls.Supported("execveat", Execveat)
