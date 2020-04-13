@@ -72,11 +72,13 @@ go_library(
         "lib_amd64.s",
         "lib_arm64.go",
         "lib_arm64.s",
+        "lib_arm64_unsafe.go",
         "ring0.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/cpuid",
+        "//pkg/safecopy",
         "//pkg/sentry/platform/ring0/pagetables",
         "//pkg/usermem",
     ],

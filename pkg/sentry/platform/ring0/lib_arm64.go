@@ -37,3 +37,10 @@ func SaveVRegs(*byte)
 
 // LoadVRegs loads V0-V31 registers.
 func LoadVRegs(*byte)
+
+// Init sets function pointers based on architectural features.
+//
+// This must be called prior to using ring0.
+func Init() {
+	rewriteVectors()
+}

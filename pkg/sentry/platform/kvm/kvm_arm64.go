@@ -18,6 +18,8 @@ package kvm
 
 import (
 	"syscall"
+
+	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 )
 
 type kvmOneReg struct {
@@ -46,6 +48,6 @@ type userRegs struct {
 func updateGlobalOnce(fd int) error {
 	physicalInit()
 	err := updateSystemValues(int(fd))
-	updateVectorTable()
+	ring0.Init()
 	return err
 }
