@@ -307,6 +307,61 @@ func (f *FDTable) NewFDs(ctx context.Context, fd int32, files []*fs.File, flags 
 	return fds, nil
 }
 
+// NewFDsVFS2 allocates new FDs guaranteed to be the lowest number available
+// greater than or equal to the fd parameter. All files will share the set
+// flags. Success is guaranteed to be all or none.
+func (f *FDTable) NewFDsVFS2(ctx context.Context, fd int32, files []*vfs.FileDescription, flags FDFlags) (fds []int32, err error) {
+	if fd < 0 {
+		// Don't accept negative FDs.
+		return nil, syscall.EINVAL
+	}
+
+	// Default limit.
+	end := int32(math.MaxInt32)
+
+	// Ensure we don't get past the provided limit.
+	if limitSet := limits.FromContext(ctx); limitSet != nil {
+		lim := limitSet.Get(limits.NumberOfFiles)
+		if lim.Cur != limits.Infinity {
+			end = int32(lim.Cur)
+		}
+		if fd >= end {
+			return nil, syscall.EMFILE
+		}
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	// From f.next to find available fd.
+	if fd < f.next {
+		fd = f.next
+	}
+
+	// Install all entries.
+	for i := fd; i < end && len(fds) < len(files); i++ {
+		if d, _, _ := f.getVFS2(i); d == nil {
+			f.setVFS2(i, files[len(fds)], flags) // Set the descriptor.
+			fds = append(fds, i)                 // Record the file descriptor.
+		}
+	}
+
+	// Failure? Unwind existing FDs.
+	if len(fds) < len(files) {
+		for _, i := range fds {
+			f.setVFS2(i, nil, FDFlags{}) // Zap entry.
+		}
+		return nil, syscall.EMFILE
+	}
+
+	if fd == f.next {
+		// Update next search start position.
+		f.next = fds[len(fds)-1] + 1
+	}
+
+	return fds, nil
+}
+
 // NewFDVFS2 allocates a file descriptor greater than or equal to minfd for
 // the given file description. If it succeeds, it takes a reference on file.
 func (f *FDTable) NewFDVFS2(ctx context.Context, minfd int32, file *vfs.FileDescription, flags FDFlags) (int32, error) {
