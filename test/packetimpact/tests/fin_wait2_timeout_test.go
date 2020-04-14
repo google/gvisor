@@ -53,6 +53,8 @@ func TestFinWait2Timeout(t *testing.T) {
 			conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
 
 			time.Sleep(5 * time.Second)
+			conn.Drain()
+
 			conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
 			if tt.linger2 {
 				if _, err := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)}, time.Second); err != nil {

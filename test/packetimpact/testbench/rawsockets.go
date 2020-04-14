@@ -97,6 +97,29 @@ func (s *Sniffer) Recv(timeout time.Duration) []byte {
 	}
 }
 
+// Drain drains the Sniffer's socket receive buffer by receiving until there's
+// nothing else to receive.
+func (s *Sniffer) Drain() {
+	s.t.Helper()
+	flags, err := unix.FcntlInt(uintptr(s.fd), unix.F_GETFL, 0)
+	if err != nil {
+		s.t.Fatalf("failed to get sniffer socket fd flags: %s", err)
+	}
+	if _, err := unix.FcntlInt(uintptr(s.fd), unix.F_SETFL, flags|unix.O_NONBLOCK); err != nil {
+		s.t.Fatalf("failed to make sniffer socket non-blocking: %s", err)
+	}
+	for {
+		buf := make([]byte, maxReadSize)
+		_, _, err := unix.Recvfrom(s.fd, buf, unix.MSG_TRUNC)
+		if err == unix.EINTR || err == unix.EAGAIN || err == unix.EWOULDBLOCK {
+			break
+		}
+	}
+	if _, err := unix.FcntlInt(uintptr(s.fd), unix.F_SETFL, flags); err != nil {
+		s.t.Fatalf("failed to restore sniffer socket fd flags: %s", err)
+	}
+}
+
 // Close the socket that Sniffer is using.
 func (s *Sniffer) Close() {
 	if err := unix.Close(s.fd); err != nil {
