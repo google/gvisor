@@ -1250,8 +1250,8 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 // endpoint.
 func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt stack.PacketBuffer) {
 	// Get the header then trim it from the view.
-	hdr := header.UDP(pkt.Data.First())
-	if int(hdr.Length()) > pkt.Data.Size() {
+	hdr, ok := pkt.Data.PullUp(header.UDPMinimumSize)
+	if !ok || int(header.UDP(hdr).Length()) > pkt.Data.Size() {
 		// Malformed packet.
 		e.stack.Stats().UDP.MalformedPacketsReceived.Increment()
 		e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
@@ -1286,7 +1286,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 		senderAddress: tcpip.FullAddress{
 			NIC:  r.NICID(),
 			Addr: id.RemoteAddress,
-			Port: hdr.SourcePort(),
+			Port: header.UDP(hdr).SourcePort(),
 		},
 	}
 	packet.data = pkt.Data
