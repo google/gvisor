@@ -343,11 +343,11 @@ func (c *testContext) createEndpointForFlow(flow testFlow) {
 	c.createEndpoint(flow.sockProto())
 	if flow.isV6Only() {
 		if err := c.ep.SetSockOptBool(tcpip.V6OnlyOption, true); err != nil {
-			c.t.Fatalf("SetSockOptBool failed: %s", err)
+			c.t.Fatalf("SetSockOpt failed: %v", err)
 		}
 	} else if flow.isBroadcast() {
-		if err := c.ep.SetSockOptBool(tcpip.BroadcastOption, true); err != nil {
-			c.t.Fatalf("SetSockOptBool failed: %s", err)
+		if err := c.ep.SetSockOpt(tcpip.BroadcastOption(1)); err != nil {
+			c.t.Fatal("SetSockOpt failed:", err)
 		}
 	}
 }
@@ -1272,8 +1272,8 @@ func TestTTL(t *testing.T) {
 			c.createEndpointForFlow(flow)
 
 			const multicastTTL = 42
-			if err := c.ep.SetSockOptInt(tcpip.MulticastTTLOption, multicastTTL); err != nil {
-				c.t.Fatalf("SetSockOptInt failed: %s", err)
+			if err := c.ep.SetSockOpt(tcpip.MulticastTTLOption(multicastTTL)); err != nil {
+				c.t.Fatalf("SetSockOpt failed: %v", err)
 			}
 
 			var wantTTL uint8
@@ -1312,8 +1312,8 @@ func TestSetTTL(t *testing.T) {
 
 					c.createEndpointForFlow(flow)
 
-					if err := c.ep.SetSockOptInt(tcpip.TTLOption, int(wantTTL)); err != nil {
-						c.t.Fatalf("SetSockOptInt(TTLOption, %d) failed: %s", wantTTL, err)
+					if err := c.ep.SetSockOpt(tcpip.TTLOption(wantTTL)); err != nil {
+						c.t.Fatalf("SetSockOpt failed: %v", err)
 					}
 
 					var p stack.NetworkProtocol
@@ -1347,26 +1347,25 @@ func TestSetTOS(t *testing.T) {
 			c.createEndpointForFlow(flow)
 
 			const tos = testTOS
-			v, err := c.ep.GetSockOptInt(tcpip.IPv4TOSOption)
-			if err != nil {
-				c.t.Errorf("GetSockOptInt(IPv4TOSOption) failed: %s", err)
+			var v tcpip.IPv4TOSOption
+			if err := c.ep.GetSockOpt(&v); err != nil {
+				c.t.Errorf("GetSockopt(%T) failed: %s", v, err)
 			}
 			// Test for expected default value.
 			if v != 0 {
-				c.t.Errorf("got GetSockOpt(IPv4TOSOption) = 0x%x, want = 0x%x", v, 0)
+				c.t.Errorf("got GetSockOpt(%T) = 0x%x, want = 0x%x", v, v, 0)
 			}
 
-			if err := c.ep.SetSockOptInt(tcpip.IPv4TOSOption, tos); err != nil {
-				c.t.Errorf("SetSockOptInt(IPv4TOSOption, 0x%x) failed: %s", tos, err)
+			if err := c.ep.SetSockOpt(tcpip.IPv4TOSOption(tos)); err != nil {
+				c.t.Errorf("SetSockOpt(%T, 0x%x) failed: %s", v, tcpip.IPv4TOSOption(tos), err)
 			}
 
-			v, err = c.ep.GetSockOptInt(tcpip.IPv4TOSOption)
-			if err != nil {
-				c.t.Errorf("GetSockOptInt(IPv4TOSOption) failed: %s", err)
+			if err := c.ep.GetSockOpt(&v); err != nil {
+				c.t.Errorf("GetSockopt(%T) failed: %s", v, err)
 			}
 
-			if v != tos {
-				c.t.Errorf("got GetSockOptInt(IPv4TOSOption) = 0x%x, want = 0x%x", v, tos)
+			if want := tcpip.IPv4TOSOption(tos); v != want {
+				c.t.Errorf("got GetSockOpt(%T) = 0x%x, want = 0x%x", v, v, want)
 			}
 
 			testWrite(c, flow, checker.TOS(tos, 0))
@@ -1383,26 +1382,25 @@ func TestSetTClass(t *testing.T) {
 			c.createEndpointForFlow(flow)
 
 			const tClass = testTOS
-			v, err := c.ep.GetSockOptInt(tcpip.IPv6TrafficClassOption)
-			if err != nil {
-				c.t.Errorf("GetSockOptInt(IPv6TrafficClassOption) failed: %s", err)
+			var v tcpip.IPv6TrafficClassOption
+			if err := c.ep.GetSockOpt(&v); err != nil {
+				c.t.Errorf("GetSockopt(%T) failed: %s", v, err)
 			}
 			// Test for expected default value.
 			if v != 0 {
-				c.t.Errorf("got GetSockOptInt(IPv6TrafficClassOption) = 0x%x, want = 0x%x", v, 0)
+				c.t.Errorf("got GetSockOpt(%T) = 0x%x, want = 0x%x", v, v, 0)
 			}
 
-			if err := c.ep.SetSockOptInt(tcpip.IPv6TrafficClassOption, tClass); err != nil {
-				c.t.Errorf("SetSockOptInt(IPv6TrafficClassOption, 0x%x) failed: %s", tClass, err)
+			if err := c.ep.SetSockOpt(tcpip.IPv6TrafficClassOption(tClass)); err != nil {
+				c.t.Errorf("SetSockOpt(%T, 0x%x) failed: %s", v, tcpip.IPv6TrafficClassOption(tClass), err)
 			}
 
-			v, err = c.ep.GetSockOptInt(tcpip.IPv6TrafficClassOption)
-			if err != nil {
-				c.t.Errorf("GetSockOptInt(IPv6TrafficClassOption) failed: %s", err)
+			if err := c.ep.GetSockOpt(&v); err != nil {
+				c.t.Errorf("GetSockopt(%T) failed: %s", v, err)
 			}
 
-			if v != tClass {
-				c.t.Errorf("got GetSockOptInt(IPv6TrafficClassOption) = 0x%x, want = 0x%x", v, tClass)
+			if want := tcpip.IPv6TrafficClassOption(tClass); v != want {
+				c.t.Errorf("got GetSockOpt(%T) = 0x%x, want = 0x%x", v, v, want)
 			}
 
 			// The header getter for TClass is called TOS, so use that checker.
@@ -1433,7 +1431,7 @@ func TestReceiveTosTClass(t *testing.T) {
 				// Verify that setting and reading the option works.
 				v, err := c.ep.GetSockOptBool(option)
 				if err != nil {
-					c.t.Errorf("GetSockOptBool(%s) failed: %s", name, err)
+					c.t.Errorf("GetSockoptBool(%s) failed: %s", name, err)
 				}
 				// Test for expected default value.
 				if v != false {
@@ -1447,7 +1445,7 @@ func TestReceiveTosTClass(t *testing.T) {
 
 				got, err := c.ep.GetSockOptBool(option)
 				if err != nil {
-					c.t.Errorf("GetSockOptBool(%s) failed: %s", name, err)
+					c.t.Errorf("GetSockoptBool(%s) failed: %s", name, err)
 				}
 
 				if got != want {

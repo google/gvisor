@@ -728,7 +728,7 @@ func TestUserSuppliedMSSOnConnectV4(t *testing.T) {
 	const maxMSS = mtu - header.IPv4MinimumSize - header.TCPMinimumSize
 	tests := []struct {
 		name   string
-		setMSS int
+		setMSS uint16
 		expMSS uint16
 	}{
 		{
@@ -756,14 +756,15 @@ func TestUserSuppliedMSSOnConnectV4(t *testing.T) {
 			c.Create(-1)
 
 			// Set the MSS socket option.
-			if err := c.EP.SetSockOptInt(tcpip.MaxSegOption, test.setMSS); err != nil {
-				t.Fatalf("SetSockOptInt(MaxSegOption, %d) failed: %s", test.setMSS, err)
+			opt := tcpip.MaxSegOption(test.setMSS)
+			if err := c.EP.SetSockOpt(opt); err != nil {
+				t.Fatalf("SetSockOpt(%#v) failed: %s", opt, err)
 			}
 
 			// Get expected window size.
 			rcvBufSize, err := c.EP.GetSockOptInt(tcpip.ReceiveBufferSizeOption)
 			if err != nil {
-				t.Fatalf("GetSockOptInt(ReceiveBufferSizeOption) failed: %s", err)
+				t.Fatalf("GetSockOpt(%v) failed: %s", tcpip.ReceiveBufferSizeOption, err)
 			}
 			ws := tcp.FindWndScale(seqnum.Size(rcvBufSize))
 
@@ -817,14 +818,15 @@ func TestUserSuppliedMSSOnConnectV6(t *testing.T) {
 			c.CreateV6Endpoint(true)
 
 			// Set the MSS socket option.
-			if err := c.EP.SetSockOptInt(tcpip.MaxSegOption, int(test.setMSS)); err != nil {
-				t.Fatalf("SetSockOptInt(MaxSegOption, %d) failed: %s", test.setMSS, err)
+			opt := tcpip.MaxSegOption(test.setMSS)
+			if err := c.EP.SetSockOpt(opt); err != nil {
+				t.Fatalf("SetSockOpt(%#v) failed: %s", opt, err)
 			}
 
 			// Get expected window size.
 			rcvBufSize, err := c.EP.GetSockOptInt(tcpip.ReceiveBufferSizeOption)
 			if err != nil {
-				t.Fatalf("GetSockOptInt(ReceiveBufferSizeOption) failed: %s", err)
+				t.Fatalf("GetSockOpt(%v) failed: %s", tcpip.ReceiveBufferSizeOption, err)
 			}
 			ws := tcp.FindWndScale(seqnum.Size(rcvBufSize))
 
@@ -1075,17 +1077,17 @@ func TestTOSV4(t *testing.T) {
 	c.EP = ep
 
 	const tos = 0xC0
-	if err := c.EP.SetSockOptInt(tcpip.IPv4TOSOption, tos); err != nil {
-		t.Errorf("SetSockOptInt(IPv4TOSOption, %d) failed: %s", tos, err)
+	if err := c.EP.SetSockOpt(tcpip.IPv4TOSOption(tos)); err != nil {
+		t.Errorf("SetSockOpt(%#v) failed: %s", tcpip.IPv4TOSOption(tos), err)
 	}
 
-	v, err := c.EP.GetSockOptInt(tcpip.IPv4TOSOption)
-	if err != nil {
-		t.Errorf("GetSockoptInt(IPv4TOSOption) failed: %s", err)
+	var v tcpip.IPv4TOSOption
+	if err := c.EP.GetSockOpt(&v); err != nil {
+		t.Errorf("GetSockopt failed: %s", err)
 	}
 
-	if v != tos {
-		t.Errorf("got GetSockOptInt(IPv4TOSOption) = %d, want = %d", v, tos)
+	if want := tcpip.IPv4TOSOption(tos); v != want {
+		t.Errorf("got GetSockOpt(...) = %#v, want = %#v", v, want)
 	}
 
 	testV4Connect(t, c, checker.TOS(tos, 0))
@@ -1123,17 +1125,17 @@ func TestTrafficClassV6(t *testing.T) {
 	c.CreateV6Endpoint(false)
 
 	const tos = 0xC0
-	if err := c.EP.SetSockOptInt(tcpip.IPv6TrafficClassOption, tos); err != nil {
-		t.Errorf("SetSockOpInt(IPv6TrafficClassOption, %d) failed: %s", tos, err)
+	if err := c.EP.SetSockOpt(tcpip.IPv6TrafficClassOption(tos)); err != nil {
+		t.Errorf("SetSockOpt(%#v) failed: %s", tcpip.IPv6TrafficClassOption(tos), err)
 	}
 
-	v, err := c.EP.GetSockOptInt(tcpip.IPv6TrafficClassOption)
-	if err != nil {
-		t.Fatalf("GetSockoptInt(IPv6TrafficClassOption) failed: %s", err)
+	var v tcpip.IPv6TrafficClassOption
+	if err := c.EP.GetSockOpt(&v); err != nil {
+		t.Fatalf("GetSockopt failed: %s", err)
 	}
 
-	if v != tos {
-		t.Errorf("got GetSockOptInt(IPv6TrafficClassOption) = %d, want = %d", v, tos)
+	if want := tcpip.IPv6TrafficClassOption(tos); v != want {
+		t.Errorf("got GetSockOpt(...) = %#v, want = %#v", v, want)
 	}
 
 	// Test the connection request.
@@ -1709,7 +1711,7 @@ func TestNoWindowShrinking(t *testing.T) {
 	c.CreateConnected(789, 30000, 10)
 
 	if err := c.EP.SetSockOptInt(tcpip.ReceiveBufferSizeOption, 5); err != nil {
-		t.Fatalf("SetSockOptInt(ReceiveBufferSizeOption, 5) failed: %v", err)
+		t.Fatalf("SetSockOpt failed: %v", err)
 	}
 
 	we, ch := waiter.NewChannelEntry(nil)
@@ -1982,7 +1984,7 @@ func TestScaledWindowAccept(t *testing.T) {
 
 	// Set the window size greater than the maximum non-scaled window.
 	if err := ep.SetSockOptInt(tcpip.ReceiveBufferSizeOption, 65535*3); err != nil {
-		t.Fatalf("SetSockOptInt(ReceiveBufferSizeOption, 65535*3) failed failed: %v", err)
+		t.Fatalf("SetSockOpt failed failed: %v", err)
 	}
 
 	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
@@ -2055,7 +2057,7 @@ func TestNonScaledWindowAccept(t *testing.T) {
 
 	// Set the window size greater than the maximum non-scaled window.
 	if err := ep.SetSockOptInt(tcpip.ReceiveBufferSizeOption, 65535*3); err != nil {
-		t.Fatalf("SetSockOptInt(ReceiveBufferSizeOption, 65535*3) failed failed: %v", err)
+		t.Fatalf("SetSockOpt failed failed: %v", err)
 	}
 
 	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
@@ -2219,10 +2221,10 @@ func TestSegmentMerging(t *testing.T) {
 		{
 			"cork",
 			func(ep tcpip.Endpoint) {
-				ep.SetSockOptBool(tcpip.CorkOption, true)
+				ep.SetSockOpt(tcpip.CorkOption(1))
 			},
 			func(ep tcpip.Endpoint) {
-				ep.SetSockOptBool(tcpip.CorkOption, false)
+				ep.SetSockOpt(tcpip.CorkOption(0))
 			},
 		},
 	}
@@ -2314,7 +2316,7 @@ func TestDelay(t *testing.T) {
 
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
-	c.EP.SetSockOptBool(tcpip.DelayOption, true)
+	c.EP.SetSockOptInt(tcpip.DelayOption, 1)
 
 	var allData []byte
 	for i, data := range [][]byte{{0}, {1, 2, 3, 4}, {5, 6, 7}, {8, 9}, {10}, {11}} {
@@ -2362,7 +2364,7 @@ func TestUndelay(t *testing.T) {
 
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
-	c.EP.SetSockOptBool(tcpip.DelayOption, true)
+	c.EP.SetSockOptInt(tcpip.DelayOption, 1)
 
 	allData := [][]byte{{0}, {1, 2, 3}}
 	for i, data := range allData {
@@ -2395,7 +2397,7 @@ func TestUndelay(t *testing.T) {
 	// Check that we don't get the second packet yet.
 	c.CheckNoPacketTimeout("delayed second packet transmitted", 100*time.Millisecond)
 
-	c.EP.SetSockOptBool(tcpip.DelayOption, false)
+	c.EP.SetSockOptInt(tcpip.DelayOption, 0)
 
 	// Check that data is received.
 	second := c.GetPacket()
@@ -2432,8 +2434,8 @@ func TestMSSNotDelayed(t *testing.T) {
 		fn   func(tcpip.Endpoint)
 	}{
 		{"no-op", func(tcpip.Endpoint) {}},
-		{"delay", func(ep tcpip.Endpoint) { ep.SetSockOptBool(tcpip.DelayOption, true) }},
-		{"cork", func(ep tcpip.Endpoint) { ep.SetSockOptBool(tcpip.CorkOption, true) }},
+		{"delay", func(ep tcpip.Endpoint) { ep.SetSockOptInt(tcpip.DelayOption, 1) }},
+		{"cork", func(ep tcpip.Endpoint) { ep.SetSockOpt(tcpip.CorkOption(1)) }},
 	}
 
 	for _, test := range tests {
@@ -2574,12 +2576,12 @@ func TestSetTTL(t *testing.T) {
 				t.Fatalf("NewEndpoint failed: %v", err)
 			}
 
-			if err := c.EP.SetSockOptInt(tcpip.TTLOption, int(wantTTL)); err != nil {
-				t.Fatalf("SetSockOptInt(TTLOption, %d) failed: %s", wantTTL, err)
+			if err := c.EP.SetSockOpt(tcpip.TTLOption(wantTTL)); err != nil {
+				t.Fatalf("SetSockOpt failed: %v", err)
 			}
 
 			if err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}); err != tcpip.ErrConnectStarted {
-				t.Fatalf("Unexpected return value from Connect: %s", err)
+				t.Fatalf("Unexpected return value from Connect: %v", err)
 			}
 
 			// Receive SYN packet.
@@ -2619,7 +2621,7 @@ func TestPassiveSendMSSLessThanMTU(t *testing.T) {
 	// window scaling option.
 	const rcvBufferSize = 0x20000
 	if err := ep.SetSockOptInt(tcpip.ReceiveBufferSizeOption, rcvBufferSize); err != nil {
-		t.Fatalf("SetSockOptInt(ReceiveBufferSizeOption, %d) failed failed: %s", rcvBufferSize, err)
+		t.Fatalf("SetSockOpt failed failed: %v", err)
 	}
 
 	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
@@ -2763,7 +2765,7 @@ func TestSynOptionsOnActiveConnect(t *testing.T) {
 	const rcvBufferSize = 0x20000
 	const wndScale = 2
 	if err := c.EP.SetSockOptInt(tcpip.ReceiveBufferSizeOption, rcvBufferSize); err != nil {
-		t.Fatalf("SetSockOptInt(ReceiveBufferSizeOption, %d) failed failed: %s", rcvBufferSize, err)
+		t.Fatalf("SetSockOpt failed failed: %v", err)
 	}
 
 	// Start connection attempt.
@@ -3880,26 +3882,26 @@ func TestMinMaxBufferSizes(t *testing.T) {
 
 	// Set values below the min.
 	if err := ep.SetSockOptInt(tcpip.ReceiveBufferSizeOption, 199); err != nil {
-		t.Fatalf("SetSockOptInt(ReceiveBufferSizeOption, 199) failed: %s", err)
+		t.Fatalf("GetSockOpt failed: %v", err)
 	}
 
 	checkRecvBufferSize(t, ep, 200)
 
 	if err := ep.SetSockOptInt(tcpip.SendBufferSizeOption, 299); err != nil {
-		t.Fatalf("SetSockOptInt(SendBufferSizeOption, 299) failed: %s", err)
+		t.Fatalf("GetSockOpt failed: %v", err)
 	}
 
 	checkSendBufferSize(t, ep, 300)
 
 	// Set values above the max.
 	if err := ep.SetSockOptInt(tcpip.ReceiveBufferSizeOption, 1+tcp.DefaultReceiveBufferSize*20); err != nil {
-		t.Fatalf("SetSockOptInt(ReceiveBufferSizeOption) failed: %s", err)
+		t.Fatalf("GetSockOpt failed: %v", err)
 	}
 
 	checkRecvBufferSize(t, ep, tcp.DefaultReceiveBufferSize*20)
 
 	if err := ep.SetSockOptInt(tcpip.SendBufferSizeOption, 1+tcp.DefaultSendBufferSize*30); err != nil {
-		t.Fatalf("SetSockOptInt(SendBufferSizeOption) failed: %s", err)
+		t.Fatalf("GetSockOpt failed: %v", err)
 	}
 
 	checkSendBufferSize(t, ep, tcp.DefaultSendBufferSize*30)
@@ -4145,11 +4147,11 @@ func TestConnectAvoidsBoundPorts(t *testing.T) {
 												case "ipv4":
 												case "ipv6":
 													if err := ep.SetSockOptBool(tcpip.V6OnlyOption, true); err != nil {
-														t.Fatalf("SetSockOptBool(V6OnlyOption(true)) failed: %s", err)
+														t.Fatalf("SetSockOpt(V6OnlyOption(true)) failed: %v", err)
 													}
 												case "dual":
 													if err := ep.SetSockOptBool(tcpip.V6OnlyOption, false); err != nil {
-														t.Fatalf("SetSockOptBool(V6OnlyOption(false)) failed: %s", err)
+														t.Fatalf("SetSockOpt(V6OnlyOption(false)) failed: %v", err)
 													}
 												default:
 													t.Fatalf("unknown network: '%s'", network)
@@ -4475,8 +4477,8 @@ func TestKeepalive(t *testing.T) {
 	const keepAliveInterval = 10 * time.Millisecond
 	c.EP.SetSockOpt(tcpip.KeepaliveIdleOption(10 * time.Millisecond))
 	c.EP.SetSockOpt(tcpip.KeepaliveIntervalOption(keepAliveInterval))
-	c.EP.SetSockOptInt(tcpip.KeepaliveCountOption, 5)
-	c.EP.SetSockOptBool(tcpip.KeepaliveEnabledOption, true)
+	c.EP.SetSockOpt(tcpip.KeepaliveCountOption(5))
+	c.EP.SetSockOpt(tcpip.KeepaliveEnabledOption(1))
 
 	// 5 unacked keepalives are sent. ACK each one, and check that the
 	// connection stays alive after 5.
@@ -5768,14 +5770,14 @@ func TestReceiveBufferAutoTuning(t *testing.T) {
 func TestDelayEnabled(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
-	checkDelayOption(t, c, false, false) // Delay is disabled by default.
+	checkDelayOption(t, c, false, 0) // Delay is disabled by default.
 
 	for _, v := range []struct {
 		delayEnabled    tcp.DelayEnabled
-		wantDelayOption bool
+		wantDelayOption int
 	}{
-		{delayEnabled: false, wantDelayOption: false},
-		{delayEnabled: true, wantDelayOption: true},
+		{delayEnabled: false, wantDelayOption: 0},
+		{delayEnabled: true, wantDelayOption: 1},
 	} {
 		c := context.New(t, defaultMTU)
 		defer c.Cleanup()
@@ -5786,7 +5788,7 @@ func TestDelayEnabled(t *testing.T) {
 	}
 }
 
-func checkDelayOption(t *testing.T, c *context.Context, wantDelayEnabled tcp.DelayEnabled, wantDelayOption bool) {
+func checkDelayOption(t *testing.T, c *context.Context, wantDelayEnabled tcp.DelayEnabled, wantDelayOption int) {
 	t.Helper()
 
 	var gotDelayEnabled tcp.DelayEnabled
@@ -5801,12 +5803,12 @@ func checkDelayOption(t *testing.T, c *context.Context, wantDelayEnabled tcp.Del
 	if err != nil {
 		t.Fatalf("NewEndPoint(tcp, ipv4, new(waiter.Queue)) failed: %v", err)
 	}
-	gotDelayOption, err := ep.GetSockOptBool(tcpip.DelayOption)
+	gotDelayOption, err := ep.GetSockOptInt(tcpip.DelayOption)
 	if err != nil {
-		t.Fatalf("ep.GetSockOptBool(tcpip.DelayOption) failed: %s", err)
+		t.Fatalf("ep.GetSockOptInt(tcpip.DelayOption) failed: %v", err)
 	}
 	if gotDelayOption != wantDelayOption {
-		t.Errorf("ep.GetSockOptBool(tcpip.DelayOption) got: %t, want: %t", gotDelayOption, wantDelayOption)
+		t.Errorf("ep.GetSockOptInt(tcpip.DelayOption) got: %d, want: %d", gotDelayOption, wantDelayOption)
 	}
 }
 
@@ -6618,8 +6620,8 @@ func TestKeepaliveWithUserTimeout(t *testing.T) {
 	const keepAliveInterval = 10 * time.Millisecond
 	c.EP.SetSockOpt(tcpip.KeepaliveIdleOption(10 * time.Millisecond))
 	c.EP.SetSockOpt(tcpip.KeepaliveIntervalOption(keepAliveInterval))
-	c.EP.SetSockOptInt(tcpip.KeepaliveCountOption, 10)
-	c.EP.SetSockOptBool(tcpip.KeepaliveEnabledOption, true)
+	c.EP.SetSockOpt(tcpip.KeepaliveCountOption(10))
+	c.EP.SetSockOpt(tcpip.KeepaliveEnabledOption(1))
 
 	// Set userTimeout to be the duration for 3 keepalive probes.
 	userTimeout := 30 * time.Millisecond

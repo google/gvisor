@@ -30,7 +30,6 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/ilist",
-        "//pkg/log",
         "//pkg/refs",
         "//pkg/sync",
         "//pkg/syserr",

@@ -533,8 +533,12 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
-	switch opt.(type) {
+	switch o := opt.(type) {
 	case tcpip.ErrorOption:
+		return nil
+
+	case *tcpip.KeepaliveEnabledOption:
+		*o = 0
 		return nil
 
 	default:
@@ -544,13 +548,7 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 
 // GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.
 func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
-	switch opt {
-	case tcpip.KeepaliveEnabledOption:
-		return false, nil
-
-	default:
-		return false, tcpip.ErrUnknownProtocolOption
-	}
+	return false, tcpip.ErrUnknownProtocolOption
 }
 
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
@@ -578,9 +576,9 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 		e.rcvMu.Unlock()
 		return v, nil
 
-	default:
-		return -1, tcpip.ErrUnknownProtocolOption
 	}
+
+	return -1, tcpip.ErrUnknownProtocolOption
 }
 
 // HandlePacket implements stack.RawTransportEndpoint.HandlePacket.
