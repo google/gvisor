@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <linux/unistd.h>
 #include <sys/eventfd.h>
 #include <sys/sendfile.h>
 #include <unistd.h>
@@ -67,6 +68,28 @@ TEST(SendFileTest, InvalidOffset) {
   // Send data and verify that sendfile returns the correct value.
   off_t offset = -1;
   EXPECT_THAT(sendfile(outf.get(), inf.get(), &offset, 0),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+int memfd_create(const std::string& name, unsigned int flags) {
+  return syscall(__NR_memfd_create, name.c_str(), flags);
+}
+
+TEST(SendFileTest, Overflow) {
+  // Create input file.
+  const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor inf =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
+
+  // Open the output file.
+  int fd;
+  EXPECT_THAT(fd = memfd_create("overflow", 0), SyscallSucceeds());
+  const FileDescriptor outf(fd);
+
+  // out_offset + kSize overflows INT64_MAX.
+  loff_t out_offset = 0x7ffffffffffffffeull;
+  constexpr int kSize = 3;
+  EXPECT_THAT(sendfile(outf.get(), inf.get(), &out_offset, kSize),
               SyscallFailsWithErrno(EINVAL));
 }
 
