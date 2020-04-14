@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <linux/unistd.h>
 #include <sys/eventfd.h>
 #include <sys/resource.h>
 #include <sys/sendfile.h>
