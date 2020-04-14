@@ -24,6 +24,7 @@ import (
 	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
@@ -113,7 +114,16 @@ func createLoader() (*Loader, func(), error) {
 		return nil, nil, err
 	}
 
-	stdio := []int{int(os.Stdin.Fd()), int(os.Stdout.Fd()), int(os.Stderr.Fd())}
+	// Loader takes ownership of stdio.
+	var stdio []int
+	for _, f := range []*os.File{os.Stdin, os.Stdout, os.Stderr} {
+		newFd, err := unix.Dup(int(f.Fd()))
+		if err != nil {
+			return nil, nil, err
+		}
+		stdio = append(stdio, newFd)
+	}
+
 	args := Args{
 		ID:           "foo",
 		Spec:         spec,
