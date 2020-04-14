@@ -247,8 +247,9 @@ func SocketPair(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	// Copy the file descriptors out.
 	if _, err := t.CopyOut(socks, fds); err != nil {
 		for _, fd := range fds {
-			_, file := t.FDTable().Remove(fd)
-			file.DecRef()
+			if file, _ := t.FDTable().Remove(fd); file != nil {
+				file.DecRef()
+			}
 		}
 		return 0, nil, err
 	}
