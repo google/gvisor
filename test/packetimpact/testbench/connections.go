@@ -454,3 +454,46 @@ func (conn *UDPIPv4) Expect(udp UDP, timeout time.Duration) (*UDP, error) {
 		allUDP = append(allUDP, gotUDP.String())
 	}
 }
+
+// RecvICMPv4 gets a packet from the sniffer within the timeout provided. If no packet
+// arrives before the timeout, it returns nil. Otherwise, it returns icmp header.
+func (conn *UDPIPv4) RecvICMPv4(timeout time.Duration) []byte {
+	deadline := time.Now().Add(timeout)
+	for {
+		timeout = time.Until(deadline)
+		if timeout <= 0 {
+			break
+		}
+		b := conn.sniffer.Recv(timeout)
+		if b == nil {
+			break
+		}
+		eth := header.Ethernet(b)
+		if eth.Type() != header.IPv4ProtocolNumber {
+			continue
+		}
+		ipv4 := header.IPv4(b[header.EthernetMinimumSize:])
+		if ipv4.Protocol() != uint8(header.ICMPv4ProtocolNumber) {
+			continue
+		}
+		return b[(header.EthernetMinimumSize + header.IPv4MinimumSize):]
+	}
+	return nil
+}
+
+// ExpectICMPv4 a packet that matches the provided icmp within the timeout specified.
+// If it doesn't arrive in time, the test fails.
+func (conn *UDPIPv4) ExpectICMPv4(timeout time.Duration) []byte {
+	deadline := time.Now().Add(timeout)
+	for {
+		timeout = time.Until(deadline)
+		if timeout <= 0 {
+			return nil
+		}
+		gotICMPv4 := conn.RecvICMPv4(timeout)
+		if gotICMPv4 == nil {
+			return nil
+		}
+		return gotICMPv4
+	}
+}
