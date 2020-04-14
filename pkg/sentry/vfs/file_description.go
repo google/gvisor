@@ -122,7 +122,7 @@ func (fd *FileDescription) Init(impl FileDescriptionImpl, statusFlags uint32, mn
 	}
 
 	fd.refs = 1
-	fd.statusFlags = statusFlags | linux.O_LARGEFILE
+	fd.statusFlags = statusFlags
 	fd.vd = VirtualDentry{
 		mount:  mnt,
 		dentry: d,
