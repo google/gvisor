@@ -51,6 +51,16 @@ packetimpact_go_test(
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
+packetimpact_go_test(
+    name = "close_wait_state_ack",
+    srcs = ["close_wait_state_ack_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/seqnum",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
 
 sh_binary(
     name = "test_runner",
