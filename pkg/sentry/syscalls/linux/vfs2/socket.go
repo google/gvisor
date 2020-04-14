@@ -250,8 +250,9 @@ func SocketPair(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 
 	if _, err := t.CopyOut(addr, fds); err != nil {
 		for _, fd := range fds {
-			_, file := t.FDTable().Remove(fd)
-			file.DecRef()
+			if _, file := t.FDTable().Remove(fd); file != nil {
+				file.DecRef()
+			}
 		}
 		return 0, nil, err
 	}
