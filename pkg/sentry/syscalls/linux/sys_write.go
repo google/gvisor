@@ -87,8 +87,8 @@ func Pwrite64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	}
 	defer file.DecRef()
 
-	// Check that the offset is legitimate.
-	if offset < 0 {
+	// Check that the offset is legitimate and does not overflow.
+	if offset < 0 || offset+int64(size) < 0 {
 		return 0, nil, syserror.EINVAL
 	}
 
