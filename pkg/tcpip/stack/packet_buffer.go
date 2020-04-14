@@ -37,7 +37,9 @@ type PacketBuffer struct {
 	Data buffer.VectorisedView
 
 	// Header holds the headers of outbound packets. As a packet is passed
-	// down the stack, each layer adds to Header.
+	// down the stack, each layer adds to Header. Note that forwarded
+	// packets don't populate Headers on their way out -- their headers and
+	// payload are never parsed out and remain in Data.
 	Header buffer.Prependable
 
 	// These fields are used by both inbound and outbound packets. They

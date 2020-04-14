@@ -171,7 +171,11 @@ func (*endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt stack.PacketBuffe
 // HandlePacket is called by the link layer when new ipv6 packets arrive for
 // this endpoint.
 func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
-	headerView := pkt.Data.First()
+	headerView, ok := pkt.Data.PullUp(header.IPv6MinimumSize)
+	if !ok {
+		r.Stats().IP.MalformedPacketsReceived.Increment()
+		return
+	}
 	h := header.IPv6(headerView)
 	if !h.IsValid(pkt.Data.Size()) {
 		r.Stats().IP.MalformedPacketsReceived.Increment()
