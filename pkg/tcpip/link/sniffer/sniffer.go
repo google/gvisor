@@ -42,13 +42,6 @@ import (
 // LogPackets must be accessed atomically.
 var LogPackets uint32 = 1
 
-// LogPacketsToFile is a flag used to enable or disable logging packets to a
-// pcap file. Valid values are 0 or 1. A file must have been specified when the
-// sniffer was created for this flag to have effect.
-//
-// LogPacketsToFile must be accessed atomically.
-var LogPacketsToFile uint32 = 1
-
 var transportProtocolMinSizes map[tcpip.TransportProtocolNumber]int = map[tcpip.TransportProtocolNumber]int{
 	header.ICMPv4ProtocolNumber: header.IPv4MinimumSize,
 	header.ICMPv6ProtocolNumber: header.IPv6MinimumSize,
