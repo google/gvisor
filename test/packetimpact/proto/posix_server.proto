@@ -163,6 +163,18 @@ message RecvResponse {
   bytes buf = 3;
 }
 
+message SendToRequest {
+  int32 sockfd = 1;
+  string buf = 2;
+  int32 length = 3;
+  Sockaddr addr = 4;
+}
+
+message SendToResponse {
+  int32 ret = 1;
+  int32 errno_ = 3;
+}
+
 service Posix {
   // Call accept() on the DUT.
   rpc Accept(AcceptRequest) returns (AcceptResponse);
@@ -190,4 +202,6 @@ service Posix {
   rpc Socket(SocketRequest) returns (SocketResponse);
   // Call recv() on the DUT.
   rpc Recv(RecvRequest) returns (RecvResponse);
+  // Call SendTo() on DUT
+  rpc SendTo(SendToRequest) returns (SendToResponse);
 }

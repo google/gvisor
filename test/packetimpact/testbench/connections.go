@@ -307,7 +307,7 @@ type UDPIPv4 struct {
 	incoming     Layers
 	sniffer      Sniffer
 	injector     Injector
-	portPickerFD int
+	PortPickerFD int
 	t            *testing.T
 }
 
@@ -327,7 +327,7 @@ func NewUDPIPv4(t *testing.T, outgoingUDP, incomingUDP UDP) UDPIPv4 {
 		t.Fatalf("can't parse remoteMAC %q: %s", *remoteMAC, err)
 	}
 
-	portPickerFD, localPort, err := pickPort()
+	PortPickerFD, localPort, err := pickPort()
 	if err != nil {
 		t.Fatalf("can't pick a port: %s", err)
 	}
@@ -367,7 +367,7 @@ func NewUDPIPv4(t *testing.T, outgoingUDP, incomingUDP UDP) UDPIPv4 {
 			newIncomingUDP},
 		sniffer:      sniffer,
 		injector:     injector,
-		portPickerFD: portPickerFD,
+		PortPickerFD: PortPickerFD,
 		t:            t,
 	}
 }
@@ -376,10 +376,10 @@ func NewUDPIPv4(t *testing.T, outgoingUDP, incomingUDP UDP) UDPIPv4 {
 func (conn *UDPIPv4) Close() {
 	conn.sniffer.Close()
 	conn.injector.Close()
-	if err := unix.Close(conn.portPickerFD); err != nil {
+	if err := unix.Close(conn.PortPickerFD); err != nil {
 		conn.t.Fatalf("can't close portPickerFD: %s", err)
 	}
-	conn.portPickerFD = -1
+	conn.PortPickerFD = -1
 }
 
 // CreateFrame builds a frame for the connection with the provided udp
@@ -453,4 +453,45 @@ func (conn *UDPIPv4) Expect(udp UDP, timeout time.Duration) (*UDP, error) {
 		}
 		allUDP = append(allUDP, gotUDP.String())
 	}
+}
+
+func (conn *UDPIPv4) RecvIPv4(timeout time.Duration) []byte {
+        deadline := time.Now().Add(timeout)
+        for {
+                timeout = time.Until(deadline)
+                if timeout <= 0 {
+                        break
+                }
+                b := conn.sniffer.Recv(timeout)
+                if b == nil {
+                        break
+                }
+                eth := header.Ethernet(b)
+                if eth.Type() != header.IPv4ProtocolNumber {
+                        continue
+                }
+                ipv4 := header.IPv4(b[header.EthernetMinimumSize:])
+                if ipv4.Protocol() != uint8(header.UDPProtocolNumber) {
+                        continue
+                }
+                return b[(header.EthernetMinimumSize + header.IPv4MinimumSize):]
+        }
+        return nil
+}
+
+// Expect a packet that matches IP_OPT timestamp set.
+// If it doesn't arrive in time, the test fails.
+func (conn *UDPIPv4) ExpectIPv4(timeout time.Duration) []byte {
+        deadline := time.Now().Add(timeout)
+        for {
+                timeout = time.Until(deadline)
+                if timeout <= 0 {
+                        return nil
+                }
+                gotIPv4 := conn.RecvIPv4(timeout)
+                if gotIPv4 == nil {
+                        return nil
+                }
+                return gotIPv4
+        }
 }

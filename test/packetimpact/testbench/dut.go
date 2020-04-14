@@ -471,3 +471,29 @@ func (dut *DUT) RecvWithErrno(ctx context.Context, sockfd, len, flags int32) (in
 	}
 	return resp.GetRet(), resp.GetBuf(), syscall.Errno(resp.GetErrno_())
 }
+
+func (dut *DUT) SendToWithErrno(sockfd int32, buf []byte, length int32, newSockAddr unix.Sockaddr) (int32, error) {
+	dut.t.Helper()
+	req := pb.SendToRequest{
+		Sockfd: sockfd,
+		Buf:    string(buf),
+		Length: length,
+		Addr:   dut.sockaddrToProto(newSockAddr),
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	defer cancel()
+	resp, err := dut.posixServer.SendTo(ctx, &req)
+	if err != nil {
+		dut.t.Fatalf("failed to call SendTo: %s", err)
+	}
+	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
+}
+
+func (dut *DUT) SendTo(fd int32, buf []byte, length int32, newSockAddr unix.Sockaddr) (int32, error) {
+	dut.t.Helper()
+	ret, err := dut.SendToWithErrno(fd, buf, length, newSockAddr)
+	if ret < 0 {
+		dut.t.Fatalf("failed to SendTo: %s", err)
+	}
+	return ret, err
+}

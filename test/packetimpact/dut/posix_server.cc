@@ -212,6 +212,22 @@ class PosixImpl final : public posix_server::Posix::Service {
     response->set_buf(buf.data(), response->ret());
     return ::grpc::Status::OK;
   }
+
+   ::grpc::Status SendTo(grpc_impl::ServerContext *context,
+                        const ::posix_server::SendToRequest *request,
+                        ::posix_server::SendToResponse *response) override {
+    const void* vptr = request->buf().c_str();
+    sockaddr_storage addr;
+    auto request_in = request->addr().in();
+    auto addr_in = reinterpret_cast<sockaddr_in *>(&addr);
+    addr_in->sin_family = request_in.family();
+    addr_in->sin_port = htons(request_in.port());
+    request_in.addr().copy(reinterpret_cast<char *>(&addr_in->sin_addr.s_addr), 4);
+
+    response->set_ret(sendto(request->sockfd(), vptr, request->length(), 0, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+    response->set_errno_(errno);
+    return ::grpc::Status::OK;
+  }
 };
 
 // Parse command line options. Returns a pointer to the first argument beyond
