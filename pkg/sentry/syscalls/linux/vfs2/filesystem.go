@@ -172,7 +172,7 @@ func openat(t *kernel.Task, dirfd int32, pathAddr usermem.Addr, flags uint32, mo
 	defer tpop.Release()
 
 	file, err := t.Kernel().VFS().OpenAt(t, t.Credentials(), &tpop.pop, &vfs.OpenOptions{
-		Flags: flags,
+		Flags: flags | linux.O_LARGEFILE,
 		Mode:  linux.FileMode(mode & (0777 | linux.S_ISUID | linux.S_ISGID | linux.S_ISVTX) &^ t.FSContext().Umask()),
 	})
 	if err != nil {

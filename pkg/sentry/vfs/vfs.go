@@ -383,14 +383,11 @@ func (vfs *VirtualFilesystem) BoundEndpointAt(ctx context.Context, creds *auth.C
 func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *OpenOptions) (*FileDescription, error) {
 	// Remove:
 	//
-	// - O_LARGEFILE, which we always report in FileDescription status flags
-	// since only 64-bit architectures are supported at this time.
-	//
 	// - O_CLOEXEC, which affects file descriptors and therefore must be
 	// handled outside of VFS.
 	//
 	// - Unknown flags.
-	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_NOCTTY | linux.O_TRUNC | linux.O_APPEND | linux.O_NONBLOCK | linux.O_DSYNC | linux.O_ASYNC | linux.O_DIRECT | linux.O_DIRECTORY | linux.O_NOFOLLOW | linux.O_NOATIME | linux.O_SYNC | linux.O_PATH | linux.O_TMPFILE
+	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_NOCTTY | linux.O_TRUNC | linux.O_APPEND | linux.O_NONBLOCK | linux.O_DSYNC | linux.O_ASYNC | linux.O_DIRECT | linux.O_LARGEFILE | linux.O_DIRECTORY | linux.O_NOFOLLOW | linux.O_NOATIME | linux.O_SYNC | linux.O_PATH | linux.O_TMPFILE
 	// Linux's __O_SYNC (which we call linux.O_SYNC) implies O_DSYNC.
 	if opts.Flags&linux.O_SYNC != 0 {
 		opts.Flags |= linux.O_DSYNC
