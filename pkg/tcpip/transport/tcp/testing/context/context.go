@@ -152,6 +152,13 @@ func New(t *testing.T, mtu uint32) *Context {
 		t.Fatalf("SetTransportProtocolOption failed: %v", err)
 	}
 
+	// Increase minimum RTO in tests to avoid test flakes due to early
+	// retransmit in case the test executors are overloaded and cause timers
+	// to fire earlier than expected.
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPMinRTOOption(3*time.Second)); err != nil {
+		t.Fatalf("failed to set stack-wide minRTO: %s", err)
+	}
+
 	// Some of the congestion control tests send up to 640 packets, we so
 	// set the channel size to 1000.
 	ep := channel.New(1000, mtu, "")
@@ -236,7 +243,7 @@ func (c *Context) CheckNoPacket(errMsg string) {
 func (c *Context) GetPacket() []byte {
 	c.t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	p, ok := c.linkEP.ReadContext(ctx)
 	if !ok {
@@ -417,6 +424,8 @@ func (c *Context) SendAckWithSACK(seq seqnum.Value, bytesReceived int, sackBlock
 // verifies that the packet packet payload of packet matches the slice
 // of data indicated by offset & size.
 func (c *Context) ReceiveAndCheckPacket(data []byte, offset, size int) {
+	c.t.Helper()
+
 	c.ReceiveAndCheckPacketWithOptions(data, offset, size, 0)
 }
 
@@ -425,6 +434,8 @@ func (c *Context) ReceiveAndCheckPacket(data []byte, offset, size int) {
 // data indicated by offset & size and skips optlen bytes in addition to the IP
 // TCP headers when comparing the data.
 func (c *Context) ReceiveAndCheckPacketWithOptions(data []byte, offset, size, optlen int) {
+	c.t.Helper()
+
 	b := c.GetPacket()
 	checker.IPv4(c.t, b,
 		checker.PayloadLen(size+header.TCPMinimumSize+optlen),
@@ -447,6 +458,8 @@ func (c *Context) ReceiveAndCheckPacketWithOptions(data []byte, offset, size, op
 // data indicated by offset & size. It returns true if a packet was received and
 // processed.
 func (c *Context) ReceiveNonBlockingAndCheckPacket(data []byte, offset, size int) bool {
+	c.t.Helper()
+
 	b := c.GetPacketNonBlocking()
 	if b == nil {
 		return false
@@ -570,6 +583,8 @@ func (c *Context) CreateConnected(iss seqnum.Value, rcvWnd seqnum.Size, epRcvBuf
 //
 // PreCondition: c.EP must already be created.
 func (c *Context) Connect(iss seqnum.Value, rcvWnd seqnum.Size, options []byte) {
+	c.t.Helper()
+
 	// Start connection attempt.
 	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
 	c.WQ.EventRegister(&waitEntry, waiter.EventOut)

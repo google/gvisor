@@ -590,6 +590,10 @@ func TestClosingWithEnqueuedSegments(t *testing.T) {
 		),
 	)
 
+	// Give the stack a few ms to transition the endpoint out of ESTABLISHED
+	// state.
+	time.Sleep(10 * time.Millisecond)
+
 	if got, want := tcp.EndpointState(ep.State()), tcp.StateCloseWait; got != want {
 		t.Errorf("Unexpected endpoint state: want %v, got %v", want, got)
 	}
@@ -4472,8 +4476,8 @@ func TestKeepalive(t *testing.T) {
 
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
-	const keepAliveInterval = 10 * time.Millisecond
-	c.EP.SetSockOpt(tcpip.KeepaliveIdleOption(10 * time.Millisecond))
+	const keepAliveInterval = 3 * time.Second
+	c.EP.SetSockOpt(tcpip.KeepaliveIdleOption(100 * time.Millisecond))
 	c.EP.SetSockOpt(tcpip.KeepaliveIntervalOption(keepAliveInterval))
 	c.EP.SetSockOptInt(tcpip.KeepaliveCountOption, 5)
 	c.EP.SetSockOptBool(tcpip.KeepaliveEnabledOption, true)
@@ -4567,7 +4571,7 @@ func TestKeepalive(t *testing.T) {
 	// Sleep for a litte over the KeepAlive interval to make sure
 	// the timer has time to fire after the last ACK and close the
 	// close the socket.
-	time.Sleep(keepAliveInterval + 5*time.Millisecond)
+	time.Sleep(keepAliveInterval + keepAliveInterval/2)
 
 	// The connection should be terminated after 5 unacked keepalives.
 	// Send an ACK to trigger a RST from the stack as the endpoint should
@@ -6615,14 +6619,17 @@ func TestKeepaliveWithUserTimeout(t *testing.T) {
 
 	origEstablishedTimedout := c.Stack().Stats().TCP.EstablishedTimedout.Value()
 
-	const keepAliveInterval = 10 * time.Millisecond
-	c.EP.SetSockOpt(tcpip.KeepaliveIdleOption(10 * time.Millisecond))
+	const keepAliveInterval = 3 * time.Second
+	c.EP.SetSockOpt(tcpip.KeepaliveIdleOption(100 * time.Millisecond))
 	c.EP.SetSockOpt(tcpip.KeepaliveIntervalOption(keepAliveInterval))
 	c.EP.SetSockOptInt(tcpip.KeepaliveCountOption, 10)
 	c.EP.SetSockOptBool(tcpip.KeepaliveEnabledOption, true)
 
-	// Set userTimeout to be the duration for 3 keepalive probes.
-	userTimeout := 30 * time.Millisecond
+	// Set userTimeout to be the duration to be 1 keepalive
+	// probes. Which means that after the first probe is sent
+	// the second one should cause the connection to be
+	// closed due to userTimeout being hit.
+	userTimeout := 1 * keepAliveInterval
 	c.EP.SetSockOpt(tcpip.TCPUserTimeoutOption(userTimeout))
 
 	// Check that the connection is still alive.
@@ -6630,28 +6637,23 @@ func TestKeepaliveWithUserTimeout(t *testing.T) {
 		t.Fatalf("got c.EP.Read(nil) = %v, want = %v", err, tcpip.ErrWouldBlock)
 	}
 
-	// Now receive 2 keepalives, but don't ACK them. The connection should
-	// be reset when the 3rd one should be sent due to userTimeout being
-	// 30ms and each keepalive probe should be sent 10ms apart as set above after
-	// the connection has been idle for 10ms.
-	for i := 0; i < 2; i++ {
-		b := c.GetPacket()
-		checker.IPv4(t, b,
-			checker.TCP(
-				checker.DstPort(context.TestPort),
-				checker.SeqNum(uint32(c.IRS)),
-				checker.AckNum(uint32(790)),
-				checker.TCPFlags(header.TCPFlagAck),
-			),
-		)
-	}
+	// Now receive 1 keepalives, but don't ACK it.
+	b := c.GetPacket()
+	checker.IPv4(t, b,
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(c.IRS)),
+			checker.AckNum(uint32(790)),
+			checker.TCPFlags(header.TCPFlagAck),
+		),
+	)
 
 	// Sleep for a litte over the KeepAlive interval to make sure
 	// the timer has time to fire after the last ACK and close the
 	// close the socket.
-	time.Sleep(keepAliveInterval + 5*time.Millisecond)
+	time.Sleep(keepAliveInterval + keepAliveInterval/2)
 
-	// The connection should be terminated after 30ms.
+	// The connection should be closed with a timeout.
 	// Send an ACK to trigger a RST from the stack as the endpoint should
 	// be dead.
 	c.SendPacket(nil, &context.Headers{
