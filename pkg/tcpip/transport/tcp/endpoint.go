@@ -1457,13 +1457,11 @@ func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 		e.LockUser()
 		e.reuseAddr = v
 		e.UnlockUser()
-		return nil
 
 	case tcpip.ReusePortOption:
 		e.LockUser()
 		e.reusePort = v
 		e.UnlockUser()
-		return nil
 
 	case tcpip.V6OnlyOption:
 		// We only recognize this option on v6 endpoints.
@@ -1494,7 +1492,7 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	switch opt {
 	case tcpip.KeepaliveCountOption:
 		e.keepalive.Lock()
-		e.keepalive.count = int(v)
+		e.keepalive.count = v
 		e.keepalive.Unlock()
 		e.notifyProtocolGoroutine(notifyKeepaliveChanged)
 
@@ -1526,13 +1524,12 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 		// Make sure the receive buffer size is within the min and max
 		// allowed.
 		var rs ReceiveBufferSizeOption
-		size := int(v)
 		if err := e.stack.TransportProtocolOption(ProtocolNumber, &rs); err == nil {
-			if size < rs.Min {
-				size = rs.Min
+			if v < rs.Min {
+				v = rs.Min
 			}
-			if size > rs.Max {
-				size = rs.Max
+			if v > rs.Max {
+				v = rs.Max
 			}
 		}
 
@@ -1547,17 +1544,17 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 		if e.rcv != nil {
 			scale = e.rcv.rcvWndScale
 		}
-		if size>>scale == 0 {
-			size = 1 << scale
+		if v>>scale == 0 {
+			v = 1 << scale
 		}
 
 		// Make sure 2*size doesn't overflow.
-		if size > math.MaxInt32/2 {
-			size = math.MaxInt32 / 2
+		if v > math.MaxInt32/2 {
+			v = math.MaxInt32 / 2
 		}
 
 		availBefore := e.receiveBufferAvailableLocked()
-		e.rcvBufSize = size
+		e.rcvBufSize = v
 		availAfter := e.receiveBufferAvailableLocked()
 
 		e.rcvAutoParams.disabled = true
@@ -1576,19 +1573,18 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	case tcpip.SendBufferSizeOption:
 		// Make sure the send buffer size is within the min and max
 		// allowed.
-		size := int(v)
 		var ss SendBufferSizeOption
 		if err := e.stack.TransportProtocolOption(ProtocolNumber, &ss); err == nil {
-			if size < ss.Min {
-				size = ss.Min
+			if v < ss.Min {
+				v = ss.Min
 			}
-			if size > ss.Max {
-				size = ss.Max
+			if v > ss.Max {
+				v = ss.Max
 			}
 		}
 
 		e.sndBufMu.Lock()
-		e.sndBufSize = size
+		e.sndBufSize = v
 		e.sndBufMu.Unlock()
 
 	case tcpip.TTLOption:
