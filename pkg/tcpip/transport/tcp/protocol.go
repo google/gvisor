@@ -105,6 +105,7 @@ type protocol struct {
 	moderateReceiveBuffer      bool
 	tcpLingerTimeout           time.Duration
 	tcpTimeWaitTimeout         time.Duration
+	minRTO                     time.Duration
 	dispatcher                 *dispatcher
 }
 
@@ -272,6 +273,15 @@ func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 		p.mu.Unlock()
 		return nil
 
+	case tcpip.TCPMinRTOOption:
+		if v < 0 {
+			v = tcpip.TCPMinRTOOption(MinRTO)
+		}
+		p.mu.Lock()
+		p.minRTO = time.Duration(v)
+		p.mu.Unlock()
+		return nil
+
 	default:
 		return tcpip.ErrUnknownProtocolOption
 	}
@@ -334,6 +344,12 @@ func (p *protocol) Option(option interface{}) *tcpip.Error {
 		p.mu.RUnlock()
 		return nil
 
+	case *tcpip.TCPMinRTOOption:
+		p.mu.RLock()
+		*v = tcpip.TCPMinRTOOption(p.minRTO)
+		p.mu.RUnlock()
+		return nil
+
 	default:
 		return tcpip.ErrUnknownProtocolOption
 	}
@@ -359,5 +375,6 @@ func NewProtocol() stack.TransportProtocol {
 		tcpLingerTimeout:           DefaultTCPLingerTimeout,
 		tcpTimeWaitTimeout:         DefaultTCPTimeWaitTimeout,
 		dispatcher:                 newDispatcher(runtime.GOMAXPROCS(0)),
+		minRTO:                     MinRTO,
 	}
 }

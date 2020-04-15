@@ -15,6 +15,7 @@
 package tcp
 
 import (
+	"fmt"
 	"math"
 	"sync/atomic"
 	"time"
@@ -149,6 +150,9 @@ type sender struct {
 	rtt rtt
 	rto time.Duration
 
+	// minRTO is the minimum permitted value for sender.rto.
+	minRTO time.Duration
+
 	// maxPayloadSize is the maximum size of the payload of a given segment.
 	// It is initialized on demand.
 	maxPayloadSize int
@@ -259,6 +263,13 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 	// the maxPayloadSize as the smss when determining if a segment is lost
 	// etc.
 	s.ep.scoreboard = NewSACKScoreboard(uint16(s.maxPayloadSize), iss)
+
+	// Get Stack wide minRTO.
+	var v tcpip.TCPMinRTOOption
+	if err := ep.stack.TransportProtocolOption(ProtocolNumber, &v); err != nil {
+		panic(fmt.Sprintf("unable to get minRTO from stack: %s", err))
+	}
+	s.minRTO = time.Duration(v)
 
 	return s
 }
@@ -394,8 +405,8 @@ func (s *sender) updateRTO(rtt time.Duration) {
 
 	s.rto = s.rtt.srtt + 4*s.rtt.rttvar
 	s.rtt.Unlock()
-	if s.rto < MinRTO {
-		s.rto = MinRTO
+	if s.rto < s.minRTO {
+		s.rto = s.minRTO
 	}
 }
 

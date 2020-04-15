@@ -681,6 +681,10 @@ type TCPTimeWaitTimeoutOption time.Duration
 // for a handshake till the specified timeout until a segment with data arrives.
 type TCPDeferAcceptOption time.Duration
 
+// TCPMinRTOOption is use by SetSockOpt/GetSockOpt to allow overriding
+// default MinRTO used by the Stack.
+type TCPMinRTOOption time.Duration
+
 // MulticastInterfaceOption is used by SetSockOpt/GetSockOpt to specify a
 // default interface for multicast.
 type MulticastInterfaceOption struct {
