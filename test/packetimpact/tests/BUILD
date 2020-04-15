@@ -43,8 +43,6 @@ packetimpact_go_test(
 packetimpact_go_test(
     name = "tcp_noaccept_close_rst",
     srcs = ["tcp_noaccept_close_rst_test.go"],
-    # TODO(b/153380909): Fix netstack then remove the line below.
-    netstack = False,
     deps = [
         "//pkg/tcpip/header",
         "//test/packetimpact/testbench",

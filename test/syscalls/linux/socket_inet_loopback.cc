@@ -365,6 +365,68 @@ TEST_P(SocketInetLoopbackTest, TCPListenClose) {
   }
 }
 
+TEST_P(SocketInetLoopbackTest, TCPListenCloseWhileConnect) {
+  auto const& param = GetParam();
+
+  TestAddress const& listener = param.listener;
+  TestAddress const& connector = param.connector;
+
+  constexpr int kBacklog = 2;
+  constexpr int kClients = kBacklog + 1;
+
+  // Create the listening socket.
+  FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
+  sockaddr_storage listen_addr = listener.addr;
+  ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
+                   listener.addr_len),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(listen_fd.get(), kBacklog), SyscallSucceeds());
+
+  // Get the port bound by the listening socket.
+  socklen_t addrlen = listener.addr_len;
+  ASSERT_THAT(getsockname(listen_fd.get(),
+                          reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
+              SyscallSucceeds());
+  uint16_t const port =
+      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
+
+  sockaddr_storage conn_addr = connector.addr;
+  ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
+  std::vector<FileDescriptor> clients;
+  for (int i = 0; i < kClients; i++) {
+    FileDescriptor client = ASSERT_NO_ERRNO_AND_VALUE(
+        Socket(connector.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+    int ret = connect(client.get(), reinterpret_cast<sockaddr*>(&conn_addr),
+                      connector.addr_len);
+    if (ret != 0) {
+      EXPECT_THAT(ret, SyscallFailsWithErrno(EINPROGRESS));
+      clients.push_back(std::move(client));
+    }
+  }
+  // Close the listening socket.
+  listen_fd.reset();
+
+  for (auto& client : clients) {
+    const int kTimeout = 10000;
+    struct pollfd pfd = {
+        .fd = client.get(),
+        .events = POLLIN,
+    };
+    // When the listening socket is closed, then we expect the remote to reset
+    // the connection.
+    ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+    ASSERT_EQ(pfd.revents, POLLIN | POLLHUP | POLLERR);
+    char c;
+    // Subsequent read can fail with:
+    // ECONNRESET: If the client connection was established and was reset by the
+    // remote. ECONNREFUSED: If the client connection failed to be established.
+    ASSERT_THAT(read(client.get(), &c, sizeof(c)),
+                AnyOf(SyscallFailsWithErrno(ECONNRESET),
+                      SyscallFailsWithErrno(ECONNREFUSED)));
+  }
+}
+
 TEST_P(SocketInetLoopbackTest, TCPbacklog) {
   auto const& param = GetParam();
 
