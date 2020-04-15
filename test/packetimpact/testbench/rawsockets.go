@@ -17,6 +17,7 @@ package testbench
 import (
 	"encoding/binary"
 	"flag"
+	"fmt"
 	"math"
 	"net"
 	"testing"
@@ -120,12 +121,13 @@ func (s *Sniffer) Drain() {
 	}
 }
 
-// Close the socket that Sniffer is using.
-func (s *Sniffer) Close() {
+// close the socket that Sniffer is using.
+func (s *Sniffer) close() error {
 	if err := unix.Close(s.fd); err != nil {
-		s.t.Fatalf("can't close sniffer socket: %s", err)
+		return fmt.Errorf("can't close sniffer socket: %w", err)
 	}
 	s.fd = -1
+	return nil
 }
 
 // Injector can inject raw frames.
@@ -171,10 +173,11 @@ func (i *Injector) Send(b []byte) {
 	}
 }
 
-// Close the underlying socket.
-func (i *Injector) Close() {
+// close the underlying socket.
+func (i *Injector) close() error {
 	if err := unix.Close(i.fd); err != nil {
-		i.t.Fatalf("can't close sniffer socket: %s", err)
+		return fmt.Errorf("can't close sniffer socket: %w", err)
 	}
 	i.fd = -1
+	return nil
 }

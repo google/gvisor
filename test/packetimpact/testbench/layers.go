@@ -64,6 +64,9 @@ type Layer interface {
 
 	// setPrev sets the pointer to the Layer encapsulating this one.
 	setPrev(Layer)
+
+	// merge overrides the values in the interface with the provided values.
+	merge(Layer) error
 }
 
 // LayerBase is the common elements of all layers.
@@ -91,6 +94,9 @@ func (lb *LayerBase) setPrev(l Layer) {
 // equalLayer compares that two Layer structs match while ignoring field in
 // which either input has a nil and also ignoring the LayerBase of the inputs.
 func equalLayer(x, y Layer) bool {
+	if x == nil || y == nil {
+		return true
+	}
 	// opt ignores comparison pairs where either of the inputs is a nil.
 	opt := cmp.FilterValues(func(x, y interface{}) bool {
 		for _, l := range []interface{}{x, y} {
@@ -102,6 +108,15 @@ func equalLayer(x, y Layer) bool {
 		return false
 	}, cmp.Ignore())
 	return cmp.Equal(x, y, opt, cmpopts.IgnoreTypes(LayerBase{}))
+}
+
+// mergeLayer merges other in layer. Any non-nil value in other overrides the
+// corresponding value in layer. If other is nil, no action is performed.
+func mergeLayer(layer, other Layer) error {
+	if other == nil {
+		return nil
+	}
+	return mergo.Merge(layer, other, mergo.WithOverride)
 }
 
 func stringLayer(l Layer) string {
@@ -172,14 +187,14 @@ func NetworkProtocolNumber(v tcpip.NetworkProtocolNumber) *tcpip.NetworkProtocol
 	return &v
 }
 
-// LayerParser parses the input bytes and returns a Layer along with the next
-// LayerParser to run. If there is no more parsing to do, the returned
-// LayerParser is nil.
-type LayerParser func([]byte) (Layer, LayerParser)
+// layerParser parses the input bytes and returns a Layer along with the next
+// layerParser to run. If there is no more parsing to do, the returned
+// layerParser is nil.
+type layerParser func([]byte) (Layer, layerParser)
 
-// Parse parses bytes starting with the first LayerParser and using successive
-// LayerParsers until all the bytes are parsed.
-func Parse(parser LayerParser, b []byte) Layers {
+// parse parses bytes starting with the first layerParser and using successive
+// layerParsers until all the bytes are parsed.
+func parse(parser layerParser, b []byte) Layers {
 	var layers Layers
 	for {
 		var layer Layer
@@ -194,22 +209,22 @@ func Parse(parser LayerParser, b []byte) Layers {
 	return layers
 }
 
-// ParseEther parses the bytes assuming that they start with an ethernet header
+// parseEther parses the bytes assuming that they start with an ethernet header
 // and continues parsing further encapsulations.
-func ParseEther(b []byte) (Layer, LayerParser) {
+func parseEther(b []byte) (Layer, layerParser) {
 	h := header.Ethernet(b)
 	ether := Ether{
 		SrcAddr: LinkAddress(h.SourceAddress()),
 		DstAddr: LinkAddress(h.DestinationAddress()),
 		Type:    NetworkProtocolNumber(h.Type()),
 	}
-	var nextParser LayerParser
+	var nextParser layerParser
 	switch h.Type() {
 	case header.IPv4ProtocolNumber:
-		nextParser = ParseIPv4
+		nextParser = parseIPv4
 	default:
 		// Assume that the rest is a payload.
-		nextParser = ParsePayload
+		nextParser = parsePayload
 	}
 	return &ether, nextParser
 }
@@ -220,6 +235,12 @@ func (l *Ether) match(other Layer) bool {
 
 func (l *Ether) length() int {
 	return header.EthernetMinimumSize
+}
+
+// merge overrides the values in l with the values from other but only in fields
+// where the value is not nil.
+func (l *Ether) merge(other Layer) error {
+	return mergeLayer(l, other)
 }
 
 // IPv4 can construct and match an IPv4 encapsulation.
@@ -330,9 +351,9 @@ func Address(v tcpip.Address) *tcpip.Address {
 	return &v
 }
 
-// ParseIPv4 parses the bytes assuming that they start with an ipv4 header and
+// parseIPv4 parses the bytes assuming that they start with an ipv4 header and
 // continues parsing further encapsulations.
-func ParseIPv4(b []byte) (Layer, LayerParser) {
+func parseIPv4(b []byte) (Layer, layerParser) {
 	h := header.IPv4(b)
 	tos, _ := h.TOS()
 	ipv4 := IPv4{
@@ -348,15 +369,15 @@ func ParseIPv4(b []byte) (Layer, LayerParser) {
 		SrcAddr:        Address(h.SourceAddress()),
 		DstAddr:        Address(h.DestinationAddress()),
 	}
-	var nextParser LayerParser
+	var nextParser layerParser
 	switch h.TransportProtocol() {
 	case header.TCPProtocolNumber:
-		nextParser = ParseTCP
+		nextParser = parseTCP
 	case header.UDPProtocolNumber:
-		nextParser = ParseUDP
+		nextParser = parseUDP
 	default:
 		// Assume that the rest is a payload.
-		nextParser = ParsePayload
+		nextParser = parsePayload
 	}
 	return &ipv4, nextParser
 }
@@ -370,6 +391,12 @@ func (l *IPv4) length() int {
 		return header.IPv4MinimumSize
 	}
 	return int(*l.IHL)
+}
+
+// merge overrides the values in l with the values from other but only in fields
+// where the value is not nil.
+func (l *IPv4) merge(other Layer) error {
+	return mergeLayer(l, other)
 }
 
 // TCP can construct and match a TCP encapsulation.
@@ -482,9 +509,9 @@ func Uint32(v uint32) *uint32 {
 	return &v
 }
 
-// ParseTCP parses the bytes assuming that they start with a tcp header and
+// parseTCP parses the bytes assuming that they start with a tcp header and
 // continues parsing further encapsulations.
-func ParseTCP(b []byte) (Layer, LayerParser) {
+func parseTCP(b []byte) (Layer, layerParser) {
 	h := header.TCP(b)
 	tcp := TCP{
 		SrcPort:       Uint16(h.SourcePort()),
@@ -497,7 +524,7 @@ func ParseTCP(b []byte) (Layer, LayerParser) {
 		Checksum:      Uint16(h.Checksum()),
 		UrgentPointer: Uint16(h.UrgentPointer()),
 	}
-	return &tcp, ParsePayload
+	return &tcp, parsePayload
 }
 
 func (l *TCP) match(other Layer) bool {
@@ -513,8 +540,8 @@ func (l *TCP) length() int {
 
 // merge overrides the values in l with the values from other but only in fields
 // where the value is not nil.
-func (l *TCP) merge(other TCP) error {
-	return mergo.Merge(l, other, mergo.WithOverride)
+func (l *TCP) merge(other Layer) error {
+	return mergeLayer(l, other)
 }
 
 // UDP can construct and match a UDP encapsulation.
@@ -565,9 +592,9 @@ func setUDPChecksum(h *header.UDP, udp *UDP) error {
 	return nil
 }
 
-// ParseUDP parses the bytes assuming that they start with a udp header and
+// parseUDP parses the bytes assuming that they start with a udp header and
 // returns the parsed layer and the next parser to use.
-func ParseUDP(b []byte) (Layer, LayerParser) {
+func parseUDP(b []byte) (Layer, layerParser) {
 	h := header.UDP(b)
 	udp := UDP{
 		SrcPort:  Uint16(h.SourcePort()),
@@ -575,7 +602,7 @@ func ParseUDP(b []byte) (Layer, LayerParser) {
 		Length:   Uint16(h.Length()),
 		Checksum: Uint16(h.Checksum()),
 	}
-	return &udp, ParsePayload
+	return &udp, parsePayload
 }
 
 func (l *UDP) match(other Layer) bool {
@@ -591,8 +618,8 @@ func (l *UDP) length() int {
 
 // merge overrides the values in l with the values from other but only in fields
 // where the value is not nil.
-func (l *UDP) merge(other UDP) error {
-	return mergo.Merge(l, other, mergo.WithOverride)
+func (l *UDP) merge(other Layer) error {
+	return mergeLayer(l, other)
 }
 
 // Payload has bytes beyond OSI layer 4.
@@ -605,9 +632,9 @@ func (l *Payload) String() string {
 	return stringLayer(l)
 }
 
-// ParsePayload parses the bytes assuming that they start with a payload and
+// parsePayload parses the bytes assuming that they start with a payload and
 // continue to the end. There can be no further encapsulations.
-func ParsePayload(b []byte) (Layer, LayerParser) {
+func parsePayload(b []byte) (Layer, layerParser) {
 	payload := Payload{
 		Bytes: b,
 	}
@@ -624,6 +651,12 @@ func (l *Payload) match(other Layer) bool {
 
 func (l *Payload) length() int {
 	return len(l.Bytes)
+}
+
+// merge overrides the values in l with the values from other but only in fields
+// where the value is not nil.
+func (l *Payload) merge(other Layer) error {
+	return mergeLayer(l, other)
 }
 
 // Layers is an array of Layer and supports similar functions to Layer.
@@ -662,8 +695,8 @@ func (ls *Layers) match(other Layers) bool {
 	if len(*ls) > len(other) {
 		return false
 	}
-	for i := 0; i < len(*ls); i++ {
-		if !equalLayer((*ls)[i], other[i]) {
+	for i, l := range *ls {
+		if !equalLayer(l, other[i]) {
 			return false
 		}
 	}
