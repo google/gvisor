@@ -1068,6 +1068,43 @@ func TestListenShutdown(t *testing.T) {
 	c.CheckNoPacket("Packet received when listening socket was shutdown")
 }
 
+// TestListenCloseWhileConnect tests for the listening endpoint to
+// drain the accept-queue when closed. This should reset all of the
+// pending connections that are waiting to be accepted.
+func TestListenCloseWhileConnect(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	c.Create(-1 /* epRcvBuf */)
+
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		t.Fatal("Bind failed:", err)
+	}
+
+	if err := c.EP.Listen(1 /* backlog */); err != nil {
+		t.Fatal("Listen failed:", err)
+	}
+
+	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
+	c.WQ.EventRegister(&waitEntry, waiter.EventIn)
+	defer c.WQ.EventUnregister(&waitEntry)
+
+	executeHandshake(t, c, context.TestPort, false /* synCookiesInUse */)
+	// Wait for the new endpoint created because of handshake to be delivered
+	// to the listening endpoint's accept queue.
+	<-notifyCh
+
+	// Close the listening endpoint.
+	c.EP.Close()
+
+	// Expect the listening endpoint to reset the connection.
+	checker.IPv4(t, c.GetPacket(),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.TCPFlags(header.TCPFlagAck|header.TCPFlagRst),
+		))
+}
+
 func TestTOSV4(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()

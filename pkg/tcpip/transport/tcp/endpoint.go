@@ -980,25 +980,22 @@ func (e *endpoint) closeNoShutdownLocked() {
 
 	// Mark endpoint as closed.
 	e.closed = true
+
+	switch e.EndpointState() {
+	case StateClose, StateError:
+		return
+	}
+
 	// Either perform the local cleanup or kick the worker to make sure it
 	// knows it needs to cleanup.
-	switch e.EndpointState() {
-	// Sockets in StateSynRecv state(passive connections) are closed when
-	// the handshake fails or if the listening socket is closed while
-	// handshake was in progress. In such cases the handshake goroutine
-	// is already gone by the time Close is called and we need to cleanup
-	// here.
-	case StateInitial, StateBound, StateSynRecv:
-		e.cleanupLocked()
-		e.setEndpointState(StateClose)
-	case StateError, StateClose:
-		// do nothing.
-	default:
+	if e.workerRunning {
 		e.workerCleanup = true
 		tcpip.AddDanglingEndpoint(e)
 		// Worker will remove the dangling endpoint when the endpoint
 		// goroutine terminates.
 		e.notifyProtocolGoroutine(notifyClose)
+	} else {
+		e.transitionToStateCloseLocked()
 	}
 }
 
@@ -1010,13 +1007,18 @@ func (e *endpoint) closePendingAcceptableConnectionsLocked() {
 		e.acceptMu.Unlock()
 		return
 	}
-
 	close(e.acceptedChan)
+	ch := e.acceptedChan
 	e.acceptedChan = nil
 	e.acceptCond.Broadcast()
 	e.acceptMu.Unlock()
 
-	// Wait for all pending endpoints to close.
+	// Reset all connections that are waiting to be accepted.
+	for n := range ch {
+		n.notifyProtocolGoroutine(notifyReset)
+	}
+	// Wait for reset of all endpoints that are still waiting to be delivered to
+	// the now closed acceptedChan.
 	e.pendingAccepted.Wait()
 }
 

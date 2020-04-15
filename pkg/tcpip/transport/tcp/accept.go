@@ -330,6 +330,9 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 		if l.listenEP != nil {
 			l.removePendingEndpoint(ep)
 		}
+
+		ep.drainClosingSegmentQueue()
+
 		return nil, err
 	}
 	ep.isConnectNotified = true
@@ -378,7 +381,7 @@ func (e *endpoint) deliverAccepted(n *endpoint) {
 	for {
 		if e.acceptedChan == nil {
 			e.acceptMu.Unlock()
-			n.Close()
+			n.notifyProtocolGoroutine(notifyReset)
 			return
 		}
 		select {
@@ -655,6 +658,8 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 			close(e.drainDone)
 		}
 		e.mu.Unlock()
+
+		e.drainClosingSegmentQueue()
 
 		// Notify waiters that the endpoint is shutdown.
 		e.waiterQueue.Notify(waiter.EventIn | waiter.EventOut | waiter.EventHUp | waiter.EventErr)
