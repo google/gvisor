@@ -16,7 +16,6 @@
 
 #include <net/if.h>
 #include <netinet/in.h>
-#include <sys/ioctl.h>
 #include <sys/socket.h>
 
 #include <cstring>
@@ -35,12 +34,11 @@ uint16_t PortFromInetSockaddr(const struct sockaddr* addr) {
 }
 
 PosixErrorOr<int> InterfaceIndex(std::string name) {
-  // TODO(igudger): Consider using netlink.
-  ifreq req = {};
-  memcpy(req.ifr_name, name.c_str(), name.size());
-  ASSIGN_OR_RETURN_ERRNO(auto sock, Socket(AF_INET, SOCK_DGRAM, 0));
-  RETURN_ERROR_IF_SYSCALL_FAIL(ioctl(sock.get(), SIOCGIFINDEX, &req));
-  return req.ifr_ifindex;
+  int index = if_nametoindex(name.c_str());
+  if (index) {
+    return index;
+  }
+  return PosixError(errno);
 }
 
 namespace {
