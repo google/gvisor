@@ -15,6 +15,7 @@
 package testbench
 
 import (
+	"encoding/hex"
 	"fmt"
 	"reflect"
 	"strings"
@@ -133,7 +134,12 @@ func stringLayer(l Layer) string {
 		if v.IsNil() {
 			continue
 		}
-		ret = append(ret, fmt.Sprintf("%s:%v", t.Name, reflect.Indirect(v)))
+		v = reflect.Indirect(v)
+		if v.Kind() == reflect.Slice && v.Type().Elem().Kind() == reflect.Uint8 {
+			ret = append(ret, fmt.Sprintf("%s:\n%v", t.Name, hex.Dump(v.Bytes())))
+		} else {
+			ret = append(ret, fmt.Sprintf("%s:%v", t.Name, v))
+		}
 	}
 	return fmt.Sprintf("&%s{%s}", t, strings.Join(ret, " "))
 }
