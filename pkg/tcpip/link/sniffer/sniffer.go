@@ -21,7 +21,6 @@
 package sniffer
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -124,36 +123,7 @@ func NewWithFile(lower stack.LinkEndpoint, file *os.File, snapLen uint32) (stack
 // called by the link-layer endpoint being wrapped when a packet arrives, and
 // logs the packet before forwarding to the actual dispatcher.
 func (e *endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
-	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
-		logPacket("recv", protocol, pkt.Data.First(), nil)
-	}
-	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
-		vs := pkt.Data.Views()
-		length := pkt.Data.Size()
-		if length > int(e.maxPCAPLen) {
-			length = int(e.maxPCAPLen)
-		}
-
-		buf := bytes.NewBuffer(make([]byte, 0, pcapPacketHeaderLen+length))
-		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(pkt.Data.Size()))); err != nil {
-			panic(err)
-		}
-		for _, v := range vs {
-			if length == 0 {
-				break
-			}
-			if len(v) > length {
-				v = v[:length]
-			}
-			if _, err := buf.Write([]byte(v)); err != nil {
-				panic(err)
-			}
-			length -= len(v)
-		}
-		if _, err := e.file.Write(buf.Bytes()); err != nil {
-			panic(err)
-		}
-	}
+	e.dumpPacket("recv", nil, protocol, &pkt)
 	e.dispatcher.DeliverNetworkPacket(e, remote, local, protocol, pkt)
 }
 
@@ -200,31 +170,43 @@ func (e *endpoint) GSOMaxSize() uint32 {
 	return 0
 }
 
-func (e *endpoint) dumpPacket(gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
-		logPacket("send", protocol, pkt.Header.View(), gso)
+func (e *endpoint) dumpPacket(prefix string, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	file := e.file
+	if file == nil && atomic.LoadUint32(&LogPackets) == 1 {
+		first := pkt.Header.View()
+		if len(first) == 0 {
+			first = pkt.Data.First()
+		}
+		logPacket(prefix, protocol, first, gso)
 	}
-	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
-		hdrBuf := pkt.Header.View()
-		length := len(hdrBuf) + pkt.Data.Size()
-		if length > int(e.maxPCAPLen) {
-			length = int(e.maxPCAPLen)
+	if file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
+		totalLength := pkt.Header.UsedLength() + pkt.Data.Size()
+		length := totalLength
+		if max := int(e.maxPCAPLen); length > max {
+			length = max
 		}
-
-		buf := bytes.NewBuffer(make([]byte, 0, pcapPacketHeaderLen+length))
-		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(len(hdrBuf)+pkt.Data.Size()))); err != nil {
+		if err := binary.Write(file, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(totalLength))); err != nil {
 			panic(err)
 		}
-		if len(hdrBuf) > length {
-			hdrBuf = hdrBuf[:length]
+		write := func(b []byte) {
+			if len(b) > length {
+				b = b[:length]
+			}
+			for len(b) != 0 {
+				n, err := file.Write(b)
+				if err != nil {
+					panic(err)
+				}
+				b = b[n:]
+				length -= n
+			}
 		}
-		if _, err := buf.Write(hdrBuf); err != nil {
-			panic(err)
-		}
-		length -= len(hdrBuf)
-		logVectorisedView(pkt.Data, length, buf)
-		if _, err := e.file.Write(buf.Bytes()); err != nil {
-			panic(err)
+		write(pkt.Header.View())
+		for _, view := range pkt.Data.Views() {
+			if length == 0 {
+				break
+			}
+			write(view)
 		}
 	}
 }
@@ -233,7 +215,7 @@ func (e *endpoint) dumpPacket(gso *stack.GSO, protocol tcpip.NetworkProtocolNumb
 // higher-level protocols to write packets; it just logs the packet and
 // forwards the request to the lower endpoint.
 func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) *tcpip.Error {
-	e.dumpPacket(gso, protocol, &pkt)
+	e.dumpPacket("send", gso, protocol, &pkt)
 	return e.lower.WritePacket(r, gso, protocol, pkt)
 }
 
@@ -242,51 +224,17 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 // forwards the request to the lower endpoint.
 func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
-		e.dumpPacket(gso, protocol, pkt)
+		e.dumpPacket("send", gso, protocol, pkt)
 	}
 	return e.lower.WritePackets(r, gso, pkts, protocol)
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
 func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
-	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
-		logPacket("send", 0, buffer.View("[raw packet, no header available]"), nil /* gso */)
-	}
-	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
-		length := vv.Size()
-		if length > int(e.maxPCAPLen) {
-			length = int(e.maxPCAPLen)
-		}
-
-		buf := bytes.NewBuffer(make([]byte, 0, pcapPacketHeaderLen+length))
-		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(vv.Size()))); err != nil {
-			panic(err)
-		}
-		logVectorisedView(vv, length, buf)
-		if _, err := e.file.Write(buf.Bytes()); err != nil {
-			panic(err)
-		}
-	}
+	e.dumpPacket("send", nil, 0, &stack.PacketBuffer{
+		Data: vv,
+	})
 	return e.lower.WriteRawPacket(vv)
-}
-
-func logVectorisedView(vv buffer.VectorisedView, length int, buf *bytes.Buffer) {
-	if length <= 0 {
-		return
-	}
-	for _, v := range vv.Views() {
-		if len(v) > length {
-			v = v[:length]
-		}
-		n, err := buf.Write(v)
-		if err != nil {
-			panic(err)
-		}
-		length -= n
-		if length == 0 {
-			return
-		}
-	}
 }
 
 // Wait implements stack.LinkEndpoint.Wait.
