@@ -1012,29 +1012,31 @@ func (n *NIC) removePermanentAddressLocked(addr tcpip.Address) *tcpip.Error {
 		return tcpip.ErrBadLocalAddress
 	}
 
-	isIPv6Unicast := r.protocol == header.IPv6ProtocolNumber && header.IsV6UnicastAddress(addr)
+	switch r.protocol {
+	case header.IPv6ProtocolNumber:
+		return n.removePermanentIPv6EndpointLocked(r, true /* allowSLAAPrefixInvalidation */)
+	default:
+		r.expireLocked()
+		return nil
+	}
+}
+
+func (n *NIC) removePermanentIPv6EndpointLocked(r *referencedNetworkEndpoint, allowSLAACPrefixInvalidation bool) *tcpip.Error {
+	addr := r.addrWithPrefix()
+
+	isIPv6Unicast := header.IsV6UnicastAddress(addr.Address)
 
 	if isIPv6Unicast {
-		// If we are removing a tentative IPv6 unicast address, stop DAD.
-		if kind == permanentTentative {
-			n.mu.ndp.stopDuplicateAddressDetection(addr)
-		}
+		n.mu.ndp.stopDuplicateAddressDetection(addr.Address)
 
 		// If we are removing an address generated via SLAAC, cleanup
 		// its SLAAC resources and notify the integrator.
 		if r.configType == slaac {
-			n.mu.ndp.cleanupSLAACAddrResourcesAndNotify(tcpip.AddressWithPrefix{
-				Address:   addr,
-				PrefixLen: r.ep.PrefixLen(),
-			})
+			n.mu.ndp.cleanupSLAACAddrResourcesAndNotify(addr, allowSLAACPrefixInvalidation)
 		}
 	}
 
-	r.setKind(permanentExpired)
-	if !r.decRefLocked() {
-		// The endpoint still has references to it.
-		return nil
-	}
+	r.expireLocked()
 
 	// At this point the endpoint is deleted.
 
@@ -1044,7 +1046,7 @@ func (n *NIC) removePermanentAddressLocked(addr tcpip.Address) *tcpip.Error {
 	// We ignore the tcpip.ErrBadLocalAddress error because the solicited-node
 	// multicast group may be left by user action.
 	if isIPv6Unicast {
-		snmc := header.SolicitedNodeAddr(addr)
+		snmc := header.SolicitedNodeAddr(addr.Address)
 		if err := n.leaveGroupLocked(snmc, false /* force */); err != nil && err != tcpip.ErrBadLocalAddress {
 			return err
 		}
@@ -1425,10 +1427,12 @@ func (n *NIC) isAddrTentative(addr tcpip.Address) bool {
 	return ref.getKind() == permanentTentative
 }
 
-// dupTentativeAddrDetected attempts to inform n that a tentative addr
-// is a duplicate on a link.
+// dupTentativeAddrDetected attempts to inform n that a tentative addr is a
+// duplicate on a link.
 //
-// dupTentativeAddrDetected will delete the tentative address if it exists.
+// dupTentativeAddrDetected will remove the tentative address if it exists. If
+// the address was generated via SLAAC, an attempt will be made to generate a
+// new address.
 func (n *NIC) dupTentativeAddrDetected(addr tcpip.Address) *tcpip.Error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -1442,7 +1446,17 @@ func (n *NIC) dupTentativeAddrDetected(addr tcpip.Address) *tcpip.Error {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	return n.removePermanentAddressLocked(addr)
+	// If the address is a SLAAC address, do not invalidate its SLAAC prefix as a
+	// new address will be generated for it.
+	if err := n.removePermanentIPv6EndpointLocked(ref, false /* allowSLAACPrefixInvalidation */); err != nil {
+		return err
+	}
+
+	if ref.configType == slaac {
+		n.mu.ndp.regenerateSLAACAddr(ref.addrWithPrefix().Subnet())
+	}
+
+	return nil
 }
 
 // setNDPConfigs sets the NDP configurations for n.
@@ -1570,6 +1584,13 @@ type referencedNetworkEndpoint struct {
 	deprecated bool
 }
 
+func (r *referencedNetworkEndpoint) addrWithPrefix() tcpip.AddressWithPrefix {
+	return tcpip.AddressWithPrefix{
+		Address:   r.ep.ID().LocalAddress,
+		PrefixLen: r.ep.PrefixLen(),
+	}
+}
+
 func (r *referencedNetworkEndpoint) getKind() networkEndpointKind {
 	return networkEndpointKind(atomic.LoadInt32((*int32)(&r.kind)))
 }
@@ -1597,6 +1618,13 @@ func (r *referencedNetworkEndpoint) isValidForOutgoingRLocked() bool {
 	return r.nic.mu.enabled && (r.getKind() != permanentExpired || r.nic.mu.spoofing)
 }
 
+// expireLocked decrements the reference count and marks the permanent endpoint
+// as expired.
+func (r *referencedNetworkEndpoint) expireLocked() {
+	r.setKind(permanentExpired)
+	r.decRefLocked()
+}
+
 // decRef decrements the ref count and cleans up the endpoint once it reaches
 // zero.
 func (r *referencedNetworkEndpoint) decRef() {
@@ -1606,14 +1634,11 @@ func (r *referencedNetworkEndpoint) decRef() {
 }
 
 // decRefLocked is the same as decRef but assumes that the NIC.mu mutex is
-// locked. Returns true if the endpoint was removed.
-func (r *referencedNetworkEndpoint) decRefLocked() bool {
+// locked.
+func (r *referencedNetworkEndpoint) decRefLocked() {
 	if atomic.AddInt32(&r.refs, -1) == 0 {
 		r.nic.removeEndpointLocked(r)
-		return true
 	}
-
-	return false
 }
 
 // incRef increments the ref count. It must only be called when the caller is

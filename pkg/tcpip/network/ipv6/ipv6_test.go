@@ -34,6 +34,7 @@ const (
 	// The least significant 3 bytes are the same as addr2 so both addr2 and
 	// addr3 will have the same solicited-node address.
 	addr3 = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x02"
+	addr4 = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x03"
 
 	// Tests use the extension header identifier values as uint8 instead of
 	// header.IPv6ExtensionHeaderIdentifier.
@@ -167,6 +168,8 @@ func TestReceiveOnAllNodesMulticastAddr(t *testing.T) {
 // packets destined to the IPv6 solicited-node address of an assigned IPv6
 // address.
 func TestReceiveOnSolicitedNodeAddr(t *testing.T) {
+	const nicID = 1
+
 	tests := []struct {
 		name            string
 		protocolFactory stack.TransportProtocol
@@ -184,50 +187,61 @@ func TestReceiveOnSolicitedNodeAddr(t *testing.T) {
 				NetworkProtocols:   []stack.NetworkProtocol{NewProtocol()},
 				TransportProtocols: []stack.TransportProtocol{test.protocolFactory},
 			})
-			e := channel.New(10, 1280, linkAddr1)
-			if err := s.CreateNIC(1, e); err != nil {
-				t.Fatalf("CreateNIC(_) = %s", err)
+			e := channel.New(1, 1280, linkAddr1)
+			if err := s.CreateNIC(nicID, e); err != nil {
+				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
 
-			// Should not receive a packet destined to the solicited
-			// node address of addr2/addr3 yet as we haven't added
-			// those addresses.
+			s.SetRouteTable([]tcpip.Route{
+				tcpip.Route{
+					Destination: header.IPv6EmptySubnet,
+					NIC:         nicID,
+				},
+			})
+
+			// Should not receive a packet destined to the solicited node address of
+			// addr2/addr3 yet as we haven't added those addresses.
 			test.rxf(t, s, e, addr1, snmc, 0)
 
-			if err := s.AddAddress(1, ProtocolNumber, addr2); err != nil {
-				t.Fatalf("AddAddress(_, %d, %s) = %s", ProtocolNumber, addr2, err)
+			if err := s.AddAddress(nicID, ProtocolNumber, addr2); err != nil {
+				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, addr2, err)
 			}
 
-			// Should receive a packet destined to the solicited
-			// node address of addr2/addr3 now that we have added
-			// added addr2.
+			// Should receive a packet destined to the solicited node address of
+			// addr2/addr3 now that we have added added addr2.
 			test.rxf(t, s, e, addr1, snmc, 1)
 
-			if err := s.AddAddress(1, ProtocolNumber, addr3); err != nil {
-				t.Fatalf("AddAddress(_, %d, %s) = %s", ProtocolNumber, addr3, err)
+			if err := s.AddAddress(nicID, ProtocolNumber, addr3); err != nil {
+				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, addr3, err)
 			}
 
-			// Should still receive a packet destined to the
-			// solicited node address of addr2/addr3 now that we
-			// have added addr3.
+			// Should still receive a packet destined to the solicited node address of
+			// addr2/addr3 now that we have added addr3.
 			test.rxf(t, s, e, addr1, snmc, 2)
 
-			if err := s.RemoveAddress(1, addr2); err != nil {
-				t.Fatalf("RemoveAddress(_, %s) = %s", addr2, err)
+			if err := s.RemoveAddress(nicID, addr2); err != nil {
+				t.Fatalf("RemoveAddress(%d, %s) = %s", nicID, addr2, err)
 			}
 
-			// Should still receive a packet destined to the
-			// solicited node address of addr2/addr3 now that we
-			// have removed addr2.
+			// Should still receive a packet destined to the solicited node address of
+			// addr2/addr3 now that we have removed addr2.
 			test.rxf(t, s, e, addr1, snmc, 3)
 
-			if err := s.RemoveAddress(1, addr3); err != nil {
-				t.Fatalf("RemoveAddress(_, %s) = %s", addr3, err)
+			// Make sure addr3's endpoint does not get removed from the NIC by
+			// incrementing its reference count with a route.
+			r, err := s.FindRoute(nicID, addr3, addr4, ProtocolNumber, false)
+			if err != nil {
+				t.Fatalf("FindRoute(%d, %s, %s, %d, false): %s", nicID, addr3, addr4, ProtocolNumber, err)
+			}
+			defer r.Release()
+
+			if err := s.RemoveAddress(nicID, addr3); err != nil {
+				t.Fatalf("RemoveAddress(%d, %s) = %s", nicID, addr3, err)
 			}
 
-			// Should not receive a packet destined to the solicited
-			// node address of addr2/addr3 yet as both of them got
-			// removed.
+			// Should not receive a packet destined to the solicited node address of
+			// addr2/addr3 yet as both of them got removed, even though a route using
+			// addr3 exists.
 			test.rxf(t, s, e, addr1, snmc, 3)
 		})
 	}
