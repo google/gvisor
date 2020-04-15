@@ -107,6 +107,8 @@ func DstAddr(addr tcpip.Address) NetworkChecker {
 // TTL creates a checker that checks the TTL (ipv4) or HopLimit (ipv6).
 func TTL(ttl uint8) NetworkChecker {
 	return func(t *testing.T, h []header.Network) {
+		t.Helper()
+
 		var v uint8
 		switch ip := h[0].(type) {
 		case header.IPv4:
@@ -310,6 +312,8 @@ func SrcPort(port uint16) TransportChecker {
 // DstPort creates a checker that checks the destination port.
 func DstPort(port uint16) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+
 		if p := h.DestinationPort(); p != port {
 			t.Errorf("Bad destination port, got %v, want %v", p, port)
 		}
@@ -336,6 +340,7 @@ func SeqNum(seq uint32) TransportChecker {
 func AckNum(seq uint32) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
 		t.Helper()
+
 		tcp, ok := h.(header.TCP)
 		if !ok {
 			return
@@ -350,6 +355,8 @@ func AckNum(seq uint32) TransportChecker {
 // Window creates a checker that checks the tcp window.
 func Window(window uint16) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+
 		tcp, ok := h.(header.TCP)
 		if !ok {
 			return
@@ -381,6 +388,8 @@ func TCPFlags(flags uint8) TransportChecker {
 // given mask, match the supplied flags.
 func TCPFlagsMatch(flags, mask uint8) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+
 		tcp, ok := h.(header.TCP)
 		if !ok {
 			return
@@ -398,6 +407,8 @@ func TCPFlagsMatch(flags, mask uint8) TransportChecker {
 // If wndscale is negative, the window scale option must not be present.
 func TCPSynOptions(wantOpts header.TCPSynOptions) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+
 		tcp, ok := h.(header.TCP)
 		if !ok {
 			return
@@ -494,6 +505,8 @@ func TCPSynOptions(wantOpts header.TCPSynOptions) TransportChecker {
 // skipped.
 func TCPTimestampChecker(wantTS bool, wantTSVal uint32, wantTSEcr uint32) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+
 		tcp, ok := h.(header.TCP)
 		if !ok {
 			return
@@ -612,6 +625,8 @@ func TCPSACKBlockChecker(sackBlocks []header.SACKBlock) TransportChecker {
 // Payload creates a checker that checks the payload.
 func Payload(want []byte) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+
 		if got := h.Payload(); !reflect.DeepEqual(got, want) {
 			t.Errorf("Wrong payload, got %v, want %v", got, want)
 		}
@@ -644,6 +659,7 @@ func ICMPv4(checkers ...TransportChecker) NetworkChecker {
 func ICMPv4Type(want header.ICMPv4Type) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
 		t.Helper()
+
 		icmpv4, ok := h.(header.ICMPv4)
 		if !ok {
 			t.Fatalf("unexpected transport header passed to checker got: %+v, want: header.ICMPv4", h)
@@ -658,6 +674,7 @@ func ICMPv4Type(want header.ICMPv4Type) TransportChecker {
 func ICMPv4Code(want byte) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
 		t.Helper()
+
 		icmpv4, ok := h.(header.ICMPv4)
 		if !ok {
 			t.Fatalf("unexpected transport header passed to checker got: %+v, want: header.ICMPv4", h)
@@ -700,6 +717,7 @@ func ICMPv6(checkers ...TransportChecker) NetworkChecker {
 func ICMPv6Type(want header.ICMPv6Type) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
 		t.Helper()
+
 		icmpv6, ok := h.(header.ICMPv6)
 		if !ok {
 			t.Fatalf("unexpected transport header passed to checker got: %+v, want: header.ICMPv6", h)
@@ -714,6 +732,7 @@ func ICMPv6Type(want header.ICMPv6Type) TransportChecker {
 func ICMPv6Code(want byte) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
 		t.Helper()
+
 		icmpv6, ok := h.(header.ICMPv6)
 		if !ok {
 			t.Fatalf("unexpected transport header passed to checker got: %+v, want: header.ICMPv6", h)

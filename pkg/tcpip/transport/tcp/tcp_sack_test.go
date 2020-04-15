@@ -387,7 +387,7 @@ func TestSACKRecovery(t *testing.T) {
 	setStackSACKPermitted(t, c, true)
 	createConnectedWithSACKAndTS(c)
 
-	const iterations = 7
+	const iterations = 3
 	data := buffer.NewView(2 * maxPayload * (tcp.InitialCwnd << (iterations + 1)))
 	for i := range data {
 		data[i] = byte(i)
