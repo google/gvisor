@@ -14,9 +14,11 @@
 
 package testbench
 
-import "testing"
+import (
+	"testing"
 
-import "gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip"
+)
 
 func TestLayerMatch(t *testing.T) {
 	var nilPayload *Payload
@@ -132,6 +134,16 @@ func TestLayerStringFormat(t *testing.T) {
 				"SrcAddr:02:42:c5:22:3f:0a " +
 				"DstAddr:02:42:c5:22:3f:14 " +
 				"Type:4" +
+				"}",
+		},
+		{
+			name: "Payload",
+			l: &Payload{
+				Bytes: []byte("Hooray for packetimpact."),
+			},
+			want: "&testbench.Payload{Bytes:\n" +
+				"00000000  48 6f 6f 72 61 79 20 66  6f 72 20 70 61 63 6b 65  |Hooray for packe|\n" +
+				"00000010  74 69 6d 70 61 63 74 2e                           |timpact.|\n" +
 				"}",
 		},
 	} {
