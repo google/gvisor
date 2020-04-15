@@ -1062,6 +1062,20 @@ func (e *endpoint) tryDeliverSegmentFromClosedEndpoint(s *segment) {
 	}
 }
 
+// Drain segment queue from the endpoint and try to re-match the segment to a
+// different endpoint. This is used when the current endpoint is transitioned to
+// StateClose and has been unregistered from the transport demuxer.
+func (e *endpoint) drainClosingSegmentQueue() {
+	for {
+		s := e.segmentQueue.dequeue()
+		if s == nil {
+			break
+		}
+
+		e.tryDeliverSegmentFromClosedEndpoint(s)
+	}
+}
+
 func (e *endpoint) handleReset(s *segment) (ok bool, err *tcpip.Error) {
 	if e.rcv.acceptable(s.sequenceNumber, 0) {
 		// RFC 793, page 37 states that "in all states
@@ -1315,6 +1329,9 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 		}
 
 		e.mu.Unlock()
+
+		e.drainClosingSegmentQueue()
+
 		// When the protocol loop exits we should wake up our waiters.
 		e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
 	}
@@ -1564,19 +1581,6 @@ loop:
 
 	// Lock released below.
 	epilogue()
-
-	// epilogue removes the endpoint from the transport-demuxer and
-	// unlocks e.mu. Now that no new segments can get enqueued to this
-	// endpoint, try to re-match the segment to a different endpoint
-	// as the current endpoint is closed.
-	for {
-		s := e.segmentQueue.dequeue()
-		if s == nil {
-			break
-		}
-
-		e.tryDeliverSegmentFromClosedEndpoint(s)
-	}
 
 	// A new SYN was received during TIME_WAIT and we need to abort
 	// the timewait and redirect the segment to the listener queue
