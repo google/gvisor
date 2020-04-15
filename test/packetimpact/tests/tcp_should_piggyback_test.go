@@ -40,7 +40,11 @@ func TestPiggyback(t *testing.T) {
 	sampleData := []byte("Sample Data")
 
 	dut.Send(acceptFd, sampleData, 0)
-	conn.ExpectData(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, sampleData, time.Second)
+	expectedTCP := tb.TCP{Flags: tb.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}
+	expectedPayload := tb.Payload{Bytes: sampleData}
+	if _, err := conn.ExpectData(&expectedTCP, &expectedPayload, time.Second); err != nil {
+		t.Fatalf("Expected %v but didn't get one: %s", tb.Layers{&expectedTCP, &expectedPayload}, err)
+	}
 
 	// Cause DUT to send us more data as soon as we ACK their first data segment because we have
 	// a small window.
@@ -48,6 +52,8 @@ func TestPiggyback(t *testing.T) {
 
 	// DUT should ACK our segment by piggybacking ACK to their outstanding data segment instead of
 	// sending a separate ACK packet.
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, &tb.Payload{Bytes: sampleData})
-	conn.ExpectData(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, sampleData, time.Second)
+	conn.Send(expectedTCP, &expectedPayload)
+	if _, err := conn.ExpectData(&expectedTCP, &expectedPayload, time.Second); err != nil {
+		t.Fatalf("Expected %v but didn't get one: %s", tb.Layers{&expectedTCP, &expectedPayload}, err)
+	}
 }

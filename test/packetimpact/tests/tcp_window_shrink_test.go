@@ -38,15 +38,22 @@ func TestWindowShrink(t *testing.T) {
 	dut.SetSockOptInt(acceptFd, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
 
 	sampleData := []byte("Sample Data")
+	samplePayload := &tb.Payload{Bytes: sampleData}
 
 	dut.Send(acceptFd, sampleData, 0)
-	conn.ExpectData(tb.TCP{}, sampleData, time.Second)
+	if _, err := conn.ExpectData(&tb.TCP{}, samplePayload, time.Second); err != nil {
+		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
+	}
 	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
 
 	dut.Send(acceptFd, sampleData, 0)
 	dut.Send(acceptFd, sampleData, 0)
-	conn.ExpectData(tb.TCP{}, sampleData, time.Second)
-	conn.ExpectData(tb.TCP{}, sampleData, time.Second)
+	if _, err := conn.ExpectData(&tb.TCP{}, samplePayload, time.Second); err != nil {
+		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
+	}
+	if _, err := conn.ExpectData(&tb.TCP{}, samplePayload, time.Second); err != nil {
+		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
+	}
 	// We close our receiving window here
 	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck), WindowSize: tb.Uint16(0)})
 
@@ -54,5 +61,8 @@ func TestWindowShrink(t *testing.T) {
 	// Note: There is another kind of zero-window probing which Windows uses (by sending one
 	// new byte at `RemoteSeqNum`), if netstack wants to go that way, we may want to change
 	// the following lines.
-	conn.ExpectData(tb.TCP{SeqNum: tb.Uint32(uint32(conn.RemoteSeqNum - 1))}, nil, time.Second)
+	expectedRemoteSeqNum := *conn.RemoteSeqNum() - 1
+	if _, err := conn.ExpectData(&tb.TCP{SeqNum: tb.Uint32(uint32(expectedRemoteSeqNum))}, nil, time.Second); err != nil {
+		t.Fatalf("expected a packet with sequence number %v: %s", expectedRemoteSeqNum, err)
+	}
 }
