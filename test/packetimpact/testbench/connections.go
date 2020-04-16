@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/mohae/deepcopy"
+	"go.uber.org/multierr"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -382,16 +383,14 @@ func (conn *Connection) match(override, received Layers) bool {
 
 // Close frees associated resources held by the Connection.
 func (conn *Connection) Close() {
-	if err := conn.sniffer.close(); err != nil {
-		conn.t.Fatal(err)
-	}
-	if err := conn.injector.close(); err != nil {
-		conn.t.Fatal(err)
-	}
+	errs := multierr.Combine(conn.sniffer.close(), conn.injector.close())
 	for _, s := range conn.layerStates {
 		if err := s.close(); err != nil {
-			conn.t.Fatalf("unable to close %+v: %s", s, err)
+			errs = multierr.Append(errs, fmt.Errorf("unable to close %+v: %s", s, err))
 		}
+	}
+	if errs != nil {
+		conn.t.Fatalf("unable to close %+v: %s", conn, errs)
 	}
 }
 

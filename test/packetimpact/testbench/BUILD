@@ -28,6 +28,7 @@ go_library(
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//keepalive:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
+        "@org_uber_go_multierr//:go_default_library",
     ],
 )
 
