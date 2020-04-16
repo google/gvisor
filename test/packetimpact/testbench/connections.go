@@ -189,6 +189,7 @@ type tcpState struct {
 	localSeqNum, remoteSeqNum *seqnum.Value
 	synAck                    *TCP
 	portPickerFD              int
+	finSent                   bool
 }
 
 var _ layerState = (*tcpState)(nil)
@@ -210,6 +211,7 @@ func newTCPState(out, in TCP) (*tcpState, error) {
 		in:           TCP{DstPort: &localPort},
 		localSeqNum:  SeqNumValue(seqnum.Value(rand.Uint32())),
 		portPickerFD: portPickerFD,
+		finSent:      false,
 	}
 	if err := s.out.merge(&out); err != nil {
 		return nil, err
@@ -254,11 +256,17 @@ func (s *tcpState) sent(sent Layer) error {
 	if !ok {
 		return fmt.Errorf("can't update tcpState with %T Layer", sent)
 	}
-	for current := tcp.next(); current != nil; current = current.next() {
-		s.localSeqNum.UpdateForward(seqnum.Size(current.length()))
+	if !s.finSent {
+		// update localSeqNum by the payload only when FIN is not yet sent by us
+		for current := tcp.next(); current != nil; current = current.next() {
+			s.localSeqNum.UpdateForward(seqnum.Size(current.length()))
+		}
 	}
 	if tcp.Flags != nil && *tcp.Flags&(header.TCPFlagSyn|header.TCPFlagFin) != 0 {
 		s.localSeqNum.UpdateForward(1)
+	}
+	if *tcp.Flags&(header.TCPFlagFin) != 0 {
+		s.finSent = true
 	}
 	return nil
 }
@@ -590,7 +598,7 @@ func (conn *TCPIPv4) RemoteSeqNum() *seqnum.Value {
 	return conn.state().remoteSeqNum
 }
 
-// LocalSeqNum returns the next expected sequence number from the DUT.
+// LocalSeqNum returns the next sequence number to send from the testbench.
 func (conn *TCPIPv4) LocalSeqNum() *seqnum.Value {
 	return conn.state().localSeqNum
 }
