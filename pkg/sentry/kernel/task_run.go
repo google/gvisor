@@ -353,7 +353,7 @@ func (app *runApp) execute(t *Task) taskRunState {
 	default:
 		// What happened? Can't continue.
 		t.Warningf("Unexpected SwitchToApp error: %v", err)
-		t.PrepareExit(ExitStatus{Code: t.ExtractErrno(err, -1)})
+		t.PrepareExit(ExitStatus{Code: ExtractErrno(err, -1)})
 		return (*runExit)(nil)
 	}
 }

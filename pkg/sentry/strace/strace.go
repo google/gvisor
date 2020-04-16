@@ -719,7 +719,7 @@ func (s SyscallMap) SyscallEnter(t *kernel.Task, sysno uintptr, args arch.Syscal
 // SyscallExit implements kernel.Stracer.SyscallExit. It logs the syscall
 // exit trace.
 func (s SyscallMap) SyscallExit(context interface{}, t *kernel.Task, sysno, rval uintptr, err error) {
-	errno := t.ExtractErrno(err, int(sysno))
+	errno := kernel.ExtractErrno(err, int(sysno))
 	c := context.(*syscallContext)
 
 	elapsed := time.Since(c.start)
