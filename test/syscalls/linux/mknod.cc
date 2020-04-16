@@ -98,7 +98,7 @@ TEST(MknodTest, Fifo) {
     FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(fifo.c_str(), O_RDONLY));
     EXPECT_THAT(ReadFd(fd.get(), buf.data(), buf.size()),
                 SyscallSucceedsWithValue(msg.length()));
-    EXPECT_EQ(msg, std::string(buf.data()));
+    EXPECT_EQ(msg, std::string(buf.data(), msg.length()));
   });
 
   // Write-end of the pipe.
@@ -123,7 +123,7 @@ TEST(MknodTest, FifoOtrunc) {
     FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(fifo.c_str(), O_RDONLY));
     EXPECT_THAT(ReadFd(fd.get(), buf.data(), buf.size()),
                 SyscallSucceedsWithValue(msg.length()));
-    EXPECT_EQ(msg, std::string(buf.data()));
+    EXPECT_EQ(msg, std::string(buf.data(), msg.length()));
   });
 
   // Write-end of the pipe.
@@ -151,7 +151,7 @@ TEST(MknodTest, FifoTruncNoOp) {
     FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(fifo.c_str(), O_RDONLY));
     EXPECT_THAT(ReadFd(fd.get(), buf.data(), buf.size()),
                 SyscallSucceedsWithValue(msg.length()));
-    EXPECT_EQ(msg, std::string(buf.data()));
+    EXPECT_EQ(msg, std::string(buf.data(), msg.length()));
   });
 
   FileDescriptor wfd =
