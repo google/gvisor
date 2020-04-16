@@ -685,6 +685,11 @@ type TCPDeferAcceptOption time.Duration
 // default MinRTO used by the Stack.
 type TCPMinRTOOption time.Duration
 
+// TCPSynRcvdCountThresholdOption is used by SetSockOpt/GetSockOpt to specify
+// the number of endpoints that can be in SYN-RCVD state before the stack
+// switches to using SYN cookies.
+type TCPSynRcvdCountThresholdOption uint64
+
 // MulticastInterfaceOption is used by SetSockOpt/GetSockOpt to specify a
 // default interface for multicast.
 type MulticastInterfaceOption struct {

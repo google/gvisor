@@ -127,16 +127,14 @@ func TestTimeStampDisabledConnect(t *testing.T) {
 }
 
 func timeStampEnabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wndSize uint16) {
-	savedSynCountThreshold := tcp.SynRcvdCountThreshold
-	defer func() {
-		tcp.SynRcvdCountThreshold = savedSynCountThreshold
-	}()
-
-	if cookieEnabled {
-		tcp.SynRcvdCountThreshold = 0
-	}
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
+
+	if cookieEnabled {
+		if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPSynRcvdCountThresholdOption(0)); err != nil {
+			t.Fatalf("setting TCPSynRcvdCountThresholdOption to 0 failed: %s", err)
+		}
+	}
 
 	t.Logf("Test w/ CookieEnabled = %v", cookieEnabled)
 	tsVal := rand.Uint32()
@@ -148,7 +146,7 @@ func timeStampEnabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wndS
 	copy(view, data)
 
 	if _, _, err := c.EP.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
-		t.Fatalf("Unexpected error from Write: %v", err)
+		t.Fatalf("Unexpected error from Write: %s", err)
 	}
 
 	// Check that data is received and that the timestamp option TSEcr field
@@ -190,16 +188,14 @@ func TestTimeStampEnabledAccept(t *testing.T) {
 }
 
 func timeStampDisabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wndSize uint16) {
-	savedSynCountThreshold := tcp.SynRcvdCountThreshold
-	defer func() {
-		tcp.SynRcvdCountThreshold = savedSynCountThreshold
-	}()
-	if cookieEnabled {
-		tcp.SynRcvdCountThreshold = 0
-	}
-
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
+
+	if cookieEnabled {
+		if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPSynRcvdCountThresholdOption(0)); err != nil {
+			t.Fatalf("setting TCPSynRcvdCountThresholdOption to 0 failed: %s", err)
+		}
+	}
 
 	t.Logf("Test w/ CookieEnabled = %v", cookieEnabled)
 	c.AcceptWithOptions(wndScale, header.TCPSynOptions{MSS: defaultIPv4MSS})
@@ -211,7 +207,7 @@ func timeStampDisabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wnd
 	copy(view, data)
 
 	if _, _, err := c.EP.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
-		t.Fatalf("Unexpected error from Write: %v", err)
+		t.Fatalf("Unexpected error from Write: %s", err)
 	}
 
 	// Check that data is received and that the timestamp option is disabled
