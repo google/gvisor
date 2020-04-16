@@ -2706,26 +2706,24 @@ func TestSynCookiePassiveSendMSSLessThanMTU(t *testing.T) {
 
 	// Set the SynRcvd threshold to zero to force a syn cookie based accept
 	// to happen.
-	saved := tcp.SynRcvdCountThreshold
-	defer func() {
-		tcp.SynRcvdCountThreshold = saved
-	}()
-	tcp.SynRcvdCountThreshold = 0
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPSynRcvdCountThresholdOption(0)); err != nil {
+		t.Fatalf("setting TCPSynRcvdCountThresholdOption to 0 failed: %s", err)
+	}
 
 	// Create EP and start listening.
 	wq := &waiter.Queue{}
 	ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, wq)
 	if err != nil {
-		t.Fatalf("NewEndpoint failed: %v", err)
+		t.Fatalf("NewEndpoint failed: %s", err)
 	}
 	defer ep.Close()
 
 	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
-		t.Fatalf("Bind failed: %v", err)
+		t.Fatalf("Bind failed: %s", err)
 	}
 
 	if err := ep.Listen(10); err != nil {
-		t.Fatalf("Listen failed: %v", err)
+		t.Fatalf("Listen failed: %s", err)
 	}
 
 	// Do 3-way handshake.
@@ -2743,7 +2741,7 @@ func TestSynCookiePassiveSendMSSLessThanMTU(t *testing.T) {
 		case <-ch:
 			c.EP, _, err = ep.Accept()
 			if err != nil {
-				t.Fatalf("Accept failed: %v", err)
+				t.Fatalf("Accept failed: %s", err)
 			}
 
 		case <-time.After(1 * time.Second):
@@ -5143,25 +5141,23 @@ func TestListenSynRcvdQueueFull(t *testing.T) {
 }
 
 func TestListenBacklogFullSynCookieInUse(t *testing.T) {
-	saved := tcp.SynRcvdCountThreshold
-	defer func() {
-		tcp.SynRcvdCountThreshold = saved
-	}()
-	tcp.SynRcvdCountThreshold = 1
-
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
+
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPSynRcvdCountThresholdOption(1)); err != nil {
+		t.Fatalf("setting TCPSynRcvdCountThresholdOption to 1 failed: %s", err)
+	}
 
 	// Create TCP endpoint.
 	var err *tcpip.Error
 	c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
 	if err != nil {
-		t.Fatalf("NewEndpoint failed: %v", err)
+		t.Fatalf("NewEndpoint failed: %s", err)
 	}
 
 	// Bind to wildcard.
 	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
-		t.Fatalf("Bind failed: %v", err)
+		t.Fatalf("Bind failed: %s", err)
 	}
 
 	// Test acceptance.
@@ -5169,7 +5165,7 @@ func TestListenBacklogFullSynCookieInUse(t *testing.T) {
 	listenBacklog := 1
 	portOffset := uint16(0)
 	if err := c.EP.Listen(listenBacklog); err != nil {
-		t.Fatalf("Listen failed: %v", err)
+		t.Fatalf("Listen failed: %s", err)
 	}
 
 	executeHandshake(t, c, context.TestPort+portOffset, false)
