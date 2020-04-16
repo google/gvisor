@@ -41,6 +41,19 @@ packetimpact_go_test(
 )
 
 packetimpact_go_test(
+    name = "tcp_outside_the_window",
+    srcs = ["tcp_outside_the_window_test.go"],
+    # TODO(eyalsoha): Fix #1607 then remove the line below.
+    netstack = False,
+    deps = [
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/seqnum",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
     name = "tcp_noaccept_close_rst",
     srcs = ["tcp_noaccept_close_rst_test.go"],
     deps = [
