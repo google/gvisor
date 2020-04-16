@@ -577,13 +577,27 @@ func (conn *TCPIPv4) Expect(tcp TCP, timeout time.Duration) (*TCP, error) {
 	return gotTCP, err
 }
 
-// RemoteSeqNum returns the next expected sequence number from the DUT.
-func (conn *TCPIPv4) RemoteSeqNum() *seqnum.Value {
+func (conn *TCPIPv4) state() *tcpState {
 	state, ok := conn.layerStates[len(conn.layerStates)-1].(*tcpState)
 	if !ok {
 		conn.t.Fatalf("expected final state of %v to be tcpState", conn.layerStates)
 	}
-	return state.remoteSeqNum
+	return state
+}
+
+// RemoteSeqNum returns the next expected sequence number from the DUT.
+func (conn *TCPIPv4) RemoteSeqNum() *seqnum.Value {
+	return conn.state().remoteSeqNum
+}
+
+// LocalSeqNum returns the next expected sequence number from the DUT.
+func (conn *TCPIPv4) LocalSeqNum() *seqnum.Value {
+	return conn.state().localSeqNum
+}
+
+// SynAck returns the SynAck that was part of the handshake.
+func (conn *TCPIPv4) SynAck() *TCP {
+	return conn.state().synAck
 }
 
 // Drain drains the sniffer's receive buffer by receiving packets until there's
