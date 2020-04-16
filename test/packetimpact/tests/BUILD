@@ -75,6 +75,19 @@ packetimpact_go_test(
     ],
 )
 
+packetimpact_go_test(
+    name = "tcp_close_wait_ack",
+    srcs = ["tcp_close_wait_ack_test.go"],
+    # TODO(b/153574037): Fix netstack then remove the line below.
+    netstack = False,
+    deps = [
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/seqnum",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
 sh_binary(
     name = "test_runner",
     srcs = ["test_runner.sh"],
