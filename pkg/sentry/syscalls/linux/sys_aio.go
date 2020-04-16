@@ -290,7 +290,7 @@ func performCallback(t *kernel.Task, file *fs.File, cbAddr usermem.Addr, cb *ioC
 	// Update the result.
 	if err != nil {
 		err = handleIOError(t, ev.Result != 0 /* partial */, err, nil /* never interrupted */, "aio", file)
-		ev.Result = -int64(t.ExtractErrno(err, 0))
+		ev.Result = -int64(kernel.ExtractErrno(err, 0))
 	}
 
 	file.DecRef()
