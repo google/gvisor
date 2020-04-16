@@ -400,6 +400,20 @@ go_repository(
     version = "v0.20.0",
 )
 
+go_repository(
+    name = "org_uber_go_atomic",
+    importpath = "go.uber.org/atomic",
+    version = "v1.6.0",
+    sum = "h1:Ezj3JGmsOnG1MoRWQkPBsKLe9DwWD9QeXzTRzzldNVk=",
+)
+
+go_repository(
+    name = "org_uber_go_multierr",
+    importpath = "go.uber.org/multierr",
+    version = "v1.5.0",
+    sum = "h1:KCa4XfM8CWFCpxXRGok+Q0SS/0XBhMDbHHGABQLvD2A=",
+)
+
 # BigQuery Dependencies for Benchmarks
 go_repository(
     name = "com_google_cloud_go",
