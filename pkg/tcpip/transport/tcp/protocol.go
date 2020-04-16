@@ -94,6 +94,63 @@ const (
 	ccCubic = "cubic"
 )
 
+// syncRcvdCounter tracks the number of endpoints in the SYN-RCVD state. The
+// value is protected by a mutex so that we can increment only when it's
+// guaranteed not to go above a threshold.
+type synRcvdCounter struct {
+	sync.Mutex
+	value     uint64
+	pending   sync.WaitGroup
+	threshold uint64
+}
+
+// inc tries to increment the global number of endpoints in SYN-RCVD state. It
+// succeeds if the increment doesn't make the count go beyond the threshold, and
+// fails otherwise.
+func (s *synRcvdCounter) inc() bool {
+	s.Lock()
+	defer s.Unlock()
+	if s.value >= s.threshold {
+		return false
+	}
+
+	s.pending.Add(1)
+	s.value++
+
+	return true
+}
+
+// dec atomically decrements the global number of endpoints in SYN-RCVD
+// state. It must only be called if a previous call to inc succeeded.
+func (s *synRcvdCounter) dec() {
+	s.Lock()
+	defer s.Unlock()
+	s.value--
+	s.pending.Done()
+}
+
+// synCookiesInUse returns true if the synRcvdCount is greater than
+// SynRcvdCountThreshold.
+func (s *synRcvdCounter) synCookiesInUse() bool {
+	s.Lock()
+	defer s.Unlock()
+	return s.value >= s.threshold
+}
+
+// SetThreshold sets synRcvdCounter.Threshold to ths new threshold.
+func (s *synRcvdCounter) SetThreshold(threshold uint64) {
+	s.Lock()
+	defer s.Unlock()
+	s.threshold = threshold
+}
+
+// Threshold returns the current value of synRcvdCounter.Threhsold.
+func (s *synRcvdCounter) Threshold() uint64 {
+	s.Lock()
+	defer s.Unlock()
+	return s.threshold
+}
+
 type protocol struct {
 	mu                         sync.RWMutex
 	sackEnabled                bool
@@ -106,6 +163,7 @@ type protocol struct {
 	tcpLingerTimeout           time.Duration
 	tcpTimeWaitTimeout         time.Duration
 	minRTO                     time.Duration
+	synRcvdCount               synRcvdCounter
 	dispatcher                 *dispatcher
 }
 
@@ -282,6 +340,12 @@ func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 		p.mu.Unlock()
 		return nil
 
+	case tcpip.TCPSynRcvdCountThresholdOption:
+		p.mu.Lock()
+		p.synRcvdCount.SetThreshold(uint64(v))
+		p.mu.Unlock()
+		return nil
+
 	default:
 		return tcpip.ErrUnknownProtocolOption
 	}
@@ -350,6 +414,12 @@ func (p *protocol) Option(option interface{}) *tcpip.Error {
 		p.mu.RUnlock()
 		return nil
 
+	case *tcpip.TCPSynRcvdCountThresholdOption:
+		p.mu.RLock()
+		*v = tcpip.TCPSynRcvdCountThresholdOption(p.synRcvdCount.Threshold())
+		p.mu.RUnlock()
+		return nil
+
 	default:
 		return tcpip.ErrUnknownProtocolOption
 	}
@@ -365,6 +435,12 @@ func (p *protocol) Wait() {
 	p.dispatcher.wait()
 }
 
+// SynRcvdCounter returns a reference to the synRcvdCount for this protocol
+// instance.
+func (p *protocol) SynRcvdCounter() *synRcvdCounter {
+	return &p.synRcvdCount
+}
+
 // NewProtocol returns a TCP transport protocol.
 func NewProtocol() stack.TransportProtocol {
 	return &protocol{
@@ -374,6 +450,7 @@ func NewProtocol() stack.TransportProtocol {
 		availableCongestionControl: []string{ccReno, ccCubic},
 		tcpLingerTimeout:           DefaultTCPLingerTimeout,
 		tcpTimeWaitTimeout:         DefaultTCPTimeWaitTimeout,
+		synRcvdCount:               synRcvdCounter{threshold: SynRcvdCountThreshold},
 		dispatcher:                 newDispatcher(runtime.GOMAXPROCS(0)),
 		minRTO:                     MinRTO,
 	}
