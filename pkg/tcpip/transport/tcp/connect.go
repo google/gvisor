@@ -1053,10 +1053,15 @@ func (e *endpoint) tryDeliverSegmentFromClosedEndpoint(s *segment) {
 		ep = e.stack.FindTransportEndpoint(header.IPv4ProtocolNumber, e.TransProto, e.ID, &s.route)
 	}
 	if ep == nil {
-		replyWithReset(s)
+		replyWithReset(s, stack.DefaultTOS, s.route.DefaultTTL())
 		s.decRef()
 		return
 	}
+
+	if e == ep {
+		panic("current endpoint not removed from demuxer, enqueing segments to itself")
+	}
+
 	if ep.(*endpoint).enqueueSegment(s) {
 		ep.(*endpoint).newSegmentWaker.Assert()
 	}
