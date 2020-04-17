@@ -449,6 +449,13 @@ func TestNeighorAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 			name:    "Invalid Length",
 			optsBuf: []byte{2, 2, 2, 3, 4, 5, 6, 7},
 		},
+		{
+			name: "Multiple",
+			optsBuf: []byte{
+				2, 1, 2, 3, 4, 5, 6, 7,
+				2, 1, 2, 3, 4, 5, 6, 8,
+			},
+		},
 	}
 
 	for _, test := range tests {
