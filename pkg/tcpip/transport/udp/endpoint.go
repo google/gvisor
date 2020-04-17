@@ -553,8 +553,6 @@ func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 		}
 
 		e.v6only = v
-	default:
-		return tcpip.ErrUnknownProtocolOption
 	}
 
 	return nil
@@ -586,8 +584,6 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	case tcpip.ReceiveBufferSizeOption:
 	case tcpip.SendBufferSizeOption:
 
-	default:
-		return tcpip.ErrUnknownProtocolOption
 	}
 
 	return nil
