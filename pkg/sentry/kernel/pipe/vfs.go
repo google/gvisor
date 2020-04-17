@@ -49,38 +49,42 @@ type VFSPipe struct {
 }
 
 // NewVFSPipe returns an initialized VFSPipe.
-func NewVFSPipe(sizeBytes, atomicIOBytes int64) *VFSPipe {
+func NewVFSPipe(isNamed bool, sizeBytes, atomicIOBytes int64) *VFSPipe {
 	var vp VFSPipe
-	initPipe(&vp.pipe, true /* isNamed */, sizeBytes, atomicIOBytes)
+	initPipe(&vp.pipe, isNamed, sizeBytes, atomicIOBytes)
 	return &vp
 }
 
-// NewVFSPipeFD opens a named pipe. Named pipes have special blocking semantics
-// during open:
+// ReaderWriterPair returns read-only and write-only FDs for vp.
 //
-// "Normally, opening the FIFO blocks until the other end is opened also. A
-// process can open a FIFO in nonblocking mode. In this case, opening for
-// read-only will succeed even if no-one has opened on the write side yet,
-// opening for write-only will fail with ENXIO (no such device or address)
-// unless the other end has already been opened. Under Linux, opening a FIFO
-// for read and write will succeed both in blocking and nonblocking mode. POSIX
-// leaves this behavior undefined. This can be used to open a FIFO for writing
-// while there are no readers available." - fifo(7)
-func (vp *VFSPipe) NewVFSPipeFD(ctx context.Context, vfsd *vfs.Dentry, vfsfd *vfs.FileDescription, flags uint32) (*VFSPipeFD, error) {
+// Preconditions: statusFlags should not contain an open access mode.
+func (vp *VFSPipe) ReaderWriterPair(mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32) (*vfs.FileDescription, *vfs.FileDescription) {
+	return vp.newFD(mnt, vfsd, linux.O_RDONLY|statusFlags), vp.newFD(mnt, vfsd, linux.O_WRONLY|statusFlags)
+}
+
+// Open opens the pipe represented by vp.
+func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32) (*vfs.FileDescription, error) {
 	vp.mu.Lock()
 	defer vp.mu.Unlock()
 
-	readable := vfs.MayReadFileWithOpenFlags(flags)
-	writable := vfs.MayWriteFileWithOpenFlags(flags)
+	readable := vfs.MayReadFileWithOpenFlags(statusFlags)
+	writable := vfs.MayWriteFileWithOpenFlags(statusFlags)
 	if !readable && !writable {
 		return nil, syserror.EINVAL
 	}
 
-	vfd, err := vp.open(vfsd, vfsfd, flags)
-	if err != nil {
-		return nil, err
-	}
+	fd := vp.newFD(mnt, vfsd, statusFlags)
 
+	// Named pipes have special blocking semantics during open:
+	//
+	// "Normally, opening the FIFO blocks until the other end is opened also. A
+	// process can open a FIFO in nonblocking mode. In this case, opening for
+	// read-only will succeed even if no-one has opened on the write side yet,
+	// opening for write-only will fail with ENXIO (no such device or address)
+	// unless the other end has already been opened. Under Linux, opening a
+	// FIFO for read and write will succeed both in blocking and nonblocking
+	// mode. POSIX leaves this behavior undefined. This can be used to open a
+	// FIFO for writing while there are no readers available." - fifo(7)
 	switch {
 	case readable && writable:
 		// Pipes opened for read-write always succeed without blocking.
@@ -89,23 +93,26 @@ func (vp *VFSPipe) NewVFSPipeFD(ctx context.Context, vfsd *vfs.Dentry, vfsfd *vf
 
 	case readable:
 		newHandleLocked(&vp.rWakeup)
-		// If this pipe is being opened as nonblocking and there's no
+		// If this pipe is being opened as blocking and there's no
 		// writer, we have to wait for a writer to open the other end.
-		if flags&linux.O_NONBLOCK == 0 && !vp.pipe.HasWriters() && !waitFor(&vp.mu, &vp.wWakeup, ctx) {
+		if vp.pipe.isNamed && statusFlags&linux.O_NONBLOCK == 0 && !vp.pipe.HasWriters() && !waitFor(&vp.mu, &vp.wWakeup, ctx) {
+			fd.DecRef()
 			return nil, syserror.EINTR
 		}
 
 	case writable:
 		newHandleLocked(&vp.wWakeup)
 
-		if !vp.pipe.HasReaders() {
-			// Nonblocking, write-only opens fail with ENXIO when
-			// the read side isn't open yet.
-			if flags&linux.O_NONBLOCK != 0 {
+		if vp.pipe.isNamed && !vp.pipe.HasReaders() {
+			// Non-blocking, write-only opens fail with ENXIO when the read
+			// side isn't open yet.
+			if statusFlags&linux.O_NONBLOCK != 0 {
+				fd.DecRef()
 				return nil, syserror.ENXIO
 			}
 			// Wait for a reader to open the other end.
 			if !waitFor(&vp.mu, &vp.rWakeup, ctx) {
+				fd.DecRef()
 				return nil, syserror.EINTR
 			}
 		}
@@ -114,100 +121,111 @@ func (vp *VFSPipe) NewVFSPipeFD(ctx context.Context, vfsd *vfs.Dentry, vfsfd *vf
 		panic("invalid pipe flags: must be readable, writable, or both")
 	}
 
-	return vfd, nil
+	return fd, nil
 }
 
 // Preconditions: vp.mu must be held.
-func (vp *VFSPipe) open(vfsd *vfs.Dentry, vfsfd *vfs.FileDescription, flags uint32) (*VFSPipeFD, error) {
-	var fd VFSPipeFD
-	fd.flags = flags
-	fd.readable = vfs.MayReadFileWithOpenFlags(flags)
-	fd.writable = vfs.MayWriteFileWithOpenFlags(flags)
-	fd.vfsfd = vfsfd
-	fd.pipe = &vp.pipe
+func (vp *VFSPipe) newFD(mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32) *vfs.FileDescription {
+	fd := &VFSPipeFD{
+		pipe: &vp.pipe,
+	}
+	fd.vfsfd.Init(fd, statusFlags, mnt, vfsd, &vfs.FileDescriptionOptions{
+		DenyPRead:         true,
+		DenyPWrite:        true,
+		UseDentryMetadata: true,
+	})
 
 	switch {
-	case fd.readable && fd.writable:
+	case fd.vfsfd.IsReadable() && fd.vfsfd.IsWritable():
 		vp.pipe.rOpen()
 		vp.pipe.wOpen()
-	case fd.readable:
+	case fd.vfsfd.IsReadable():
 		vp.pipe.rOpen()
-	case fd.writable:
+	case fd.vfsfd.IsWritable():
 		vp.pipe.wOpen()
 	default:
 		panic("invalid pipe flags: must be readable, writable, or both")
 	}
 
-	return &fd, nil
+	return &fd.vfsfd
 }
 
-// VFSPipeFD implements a subset of vfs.FileDescriptionImpl for pipes. It is
-// expected that filesystesm will use this in a struct implementing
-// vfs.FileDescriptionImpl.
+// VFSPipeFD implements vfs.FileDescriptionImpl for pipes.
 type VFSPipeFD struct {
-	pipe     *Pipe
-	flags    uint32
-	readable bool
-	writable bool
-	vfsfd    *vfs.FileDescription
+	vfsfd vfs.FileDescription
+	vfs.FileDescriptionDefaultImpl
+	vfs.DentryMetadataFileDescriptionImpl
+
+	pipe *Pipe
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *VFSPipeFD) Release() {
 	var event waiter.EventMask
-	if fd.readable {
+	if fd.vfsfd.IsReadable() {
 		fd.pipe.rClose()
-		event |= waiter.EventIn
-	}
-	if fd.writable {
-		fd.pipe.wClose()
 		event |= waiter.EventOut
+	}
+	if fd.vfsfd.IsWritable() {
+		fd.pipe.wClose()
+		event |= waiter.EventIn | waiter.EventHUp
 	}
 	if event == 0 {
 		panic("invalid pipe flags: must be readable, writable, or both")
 	}
 
-	if fd.writable {
-		fd.vfsfd.VirtualDentry().Mount().EndWrite()
-	}
-
 	fd.pipe.Notify(event)
 }
 
-// OnClose implements vfs.FileDescriptionImpl.OnClose.
-func (fd *VFSPipeFD) OnClose(_ context.Context) error {
-	return nil
+// Readiness implements waiter.Waitable.Readiness.
+func (fd *VFSPipeFD) Readiness(mask waiter.EventMask) waiter.EventMask {
+	switch {
+	case fd.vfsfd.IsReadable() && fd.vfsfd.IsWritable():
+		return fd.pipe.rwReadiness()
+	case fd.vfsfd.IsReadable():
+		return fd.pipe.rReadiness()
+	case fd.vfsfd.IsWritable():
+		return fd.pipe.wReadiness()
+	default:
+		panic("pipe FD is neither readable nor writable")
+	}
 }
 
-// PRead implements vfs.FileDescriptionImpl.PRead.
-func (fd *VFSPipeFD) PRead(_ context.Context, _ usermem.IOSequence, _ int64, _ vfs.ReadOptions) (int64, error) {
-	return 0, syserror.ESPIPE
+// EventRegister implements waiter.Waitable.EventRegister.
+func (fd *VFSPipeFD) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
+	fd.pipe.EventRegister(e, mask)
+}
+
+// EventUnregister implements waiter.Waitable.EventUnregister.
+func (fd *VFSPipeFD) EventUnregister(e *waiter.Entry) {
+	fd.pipe.EventUnregister(e)
 }
 
 // Read implements vfs.FileDescriptionImpl.Read.
 func (fd *VFSPipeFD) Read(ctx context.Context, dst usermem.IOSequence, _ vfs.ReadOptions) (int64, error) {
-	if !fd.readable {
-		return 0, syserror.EINVAL
-	}
-
 	return fd.pipe.Read(ctx, dst)
-}
-
-// PWrite implements vfs.FileDescriptionImpl.PWrite.
-func (fd *VFSPipeFD) PWrite(_ context.Context, _ usermem.IOSequence, _ int64, _ vfs.WriteOptions) (int64, error) {
-	return 0, syserror.ESPIPE
 }
 
 // Write implements vfs.FileDescriptionImpl.Write.
 func (fd *VFSPipeFD) Write(ctx context.Context, src usermem.IOSequence, _ vfs.WriteOptions) (int64, error) {
-	if !fd.writable {
-		return 0, syserror.EINVAL
-	}
-
 	return fd.pipe.Write(ctx, src)
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
 func (fd *VFSPipeFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	return fd.pipe.Ioctl(ctx, uio, args)
+}
+
+// PipeSize implements fcntl(F_GETPIPE_SZ).
+func (fd *VFSPipeFD) PipeSize() int64 {
+	// Inline Pipe.FifoSize() rather than calling it with nil Context and
+	// fs.File and ignoring the returned error (which is always nil).
+	fd.pipe.mu.Lock()
+	defer fd.pipe.mu.Unlock()
+	return fd.pipe.max
+}
+
+// SetPipeSize implements fcntl(F_SETPIPE_SZ).
+func (fd *VFSPipeFD) SetPipeSize(size int64) (int64, error) {
+	return fd.pipe.SetFifoSize(size)
 }

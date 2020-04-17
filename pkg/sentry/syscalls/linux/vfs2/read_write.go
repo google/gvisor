@@ -103,7 +103,7 @@ func read(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, opt
 
 		// Issue the request and break out if it completes with anything other than
 		// "would block".
-		n, err := file.Read(t, dst, opts)
+		n, err = file.Read(t, dst, opts)
 		total += n
 		if err != syserror.ErrWouldBlock {
 			break
@@ -248,7 +248,7 @@ func pread(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, of
 
 		// Issue the request and break out if it completes with anything other than
 		// "would block".
-		n, err := file.PRead(t, dst, offset+total, opts)
+		n, err = file.PRead(t, dst, offset+total, opts)
 		total += n
 		if err != syserror.ErrWouldBlock {
 			break
@@ -335,7 +335,7 @@ func write(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, op
 
 		// Issue the request and break out if it completes with anything other than
 		// "would block".
-		n, err := file.Write(t, src, opts)
+		n, err = file.Write(t, src, opts)
 		total += n
 		if err != syserror.ErrWouldBlock {
 			break
@@ -480,7 +480,7 @@ func pwrite(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, o
 
 		// Issue the request and break out if it completes with anything other than
 		// "would block".
-		n, err := file.PWrite(t, src, offset+total, opts)
+		n, err = file.PWrite(t, src, offset+total, opts)
 		total += n
 		if err != syserror.ErrWouldBlock {
 			break
