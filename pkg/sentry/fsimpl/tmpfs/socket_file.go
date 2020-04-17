@@ -12,15 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build arm64
-
-package boot
+package tmpfs
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 )
 
-func init() {
-	// Set the global syscall table.
-	syscallTable = linux.ARM64
+// socketFile is a socket (=S_IFSOCK) tmpfs file.
+type socketFile struct {
+	inode inode
+	ep    transport.BoundEndpoint
+}
+
+func (fs *filesystem) newSocketFile(creds *auth.Credentials, mode linux.FileMode, ep transport.BoundEndpoint) *inode {
+	file := &socketFile{ep: ep}
+	file.inode.init(file, fs, creds, mode)
+	file.inode.nlink = 1 // from parent directory
+	return &file.inode
 }

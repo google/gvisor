@@ -12,15 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build arm64
-
-package boot
+package tmpfs
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
-func init() {
-	// Set the global syscall table.
-	syscallTable = linux.ARM64
+type symlink struct {
+	inode  inode
+	target string // immutable
 }
+
+func (fs *filesystem) newSymlink(creds *auth.Credentials, target string) *inode {
+	link := &symlink{
+		target: target,
+	}
+	link.inode.init(link, fs, creds, linux.S_IFLNK|0777)
+	link.inode.nlink = 1 // from parent directory
+	return &link.inode
+}
+
+// O_PATH is unimplemented, so there's no way to get a FileDescription
+// representing a symlink yet.

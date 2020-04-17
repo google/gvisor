@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/host"
+	vfshost "gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 )
 
@@ -29,6 +30,10 @@ import (
 func createFDTable(ctx context.Context, console bool, stdioFDs []int) (*kernel.FDTable, error) {
 	if len(stdioFDs) != 3 {
 		return nil, fmt.Errorf("stdioFDs should contain exactly 3 FDs (stdin, stdout, and stderr), but %d FDs received", len(stdioFDs))
+	}
+
+	if kernel.VFS2Enabled {
+		return createFDTableVFS2(ctx, console, stdioFDs)
 	}
 
 	k := kernel.KernelFromContext(ctx)
@@ -73,6 +78,34 @@ func createFDTable(ctx context.Context, console bool, stdioFDs []int) (*kernel.F
 		if err := fdTable.NewFDAt(ctx, int32(appFD), appFile, kernel.FDFlags{}); err != nil {
 			return nil, err
 		}
+	}
+
+	fdTable.IncRef()
+	return fdTable, nil
+}
+
+func createFDTableVFS2(ctx context.Context, console bool, stdioFDs []int) (*kernel.FDTable, error) {
+	k := kernel.KernelFromContext(ctx)
+	fdTable := k.NewFDTable()
+	defer fdTable.DecRef()
+
+	hostMount, err := vfshost.NewMount(k.VFS())
+	if err != nil {
+		return nil, fmt.Errorf("creating host mount: %w", err)
+	}
+
+	for appFD, hostFD := range stdioFDs {
+		// TODO(gvisor.dev/issue/1482): Add TTY support.
+		appFile, err := vfshost.ImportFD(hostMount, hostFD, false)
+		if err != nil {
+			return nil, err
+		}
+
+		if err := fdTable.NewFDAtVFS2(ctx, int32(appFD), appFile, kernel.FDFlags{}); err != nil {
+			appFile.DecRef()
+			return nil, err
+		}
+		appFile.DecRef()
 	}
 
 	fdTable.IncRef()

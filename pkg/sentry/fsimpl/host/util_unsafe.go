@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,15 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build arm64
-
-package boot
+package host
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
+	"syscall"
+	"unsafe"
 )
 
-func init() {
-	// Set the global syscall table.
-	syscallTable = linux.ARM64
+func setTimestamps(fd int, ts *[2]syscall.Timespec) error {
+	_, _, errno := syscall.Syscall6(
+		syscall.SYS_UTIMENSAT,
+		uintptr(fd),
+		0, /* path */
+		uintptr(unsafe.Pointer(ts)),
+		0, /* flags */
+		0, 0)
+	if errno != 0 {
+		return errno
+	}
+	return nil
 }
