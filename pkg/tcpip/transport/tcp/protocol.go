@@ -223,12 +223,12 @@ func (*protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.Transpo
 		return true
 	}
 
-	replyWithReset(s)
+	replyWithReset(s, stack.DefaultTOS, s.route.DefaultTTL())
 	return true
 }
 
 // replyWithReset replies to the given segment with a reset segment.
-func replyWithReset(s *segment) {
+func replyWithReset(s *segment, tos, ttl uint8) {
 	// Get the seqnum from the packet if the ack flag is set.
 	seq := seqnum.Value(0)
 	ack := seqnum.Value(0)
@@ -252,8 +252,8 @@ func replyWithReset(s *segment) {
 	}
 	sendTCP(&s.route, tcpFields{
 		id:     s.id,
-		ttl:    s.route.DefaultTTL(),
-		tos:    stack.DefaultTOS,
+		ttl:    ttl,
+		tos:    tos,
 		flags:  flags,
 		seq:    seq,
 		ack:    ack,

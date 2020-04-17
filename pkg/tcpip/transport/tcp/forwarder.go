@@ -130,7 +130,7 @@ func (r *ForwarderRequest) Complete(sendReset bool) {
 
 	// If the caller requested, send a reset.
 	if sendReset {
-		replyWithReset(r.segment)
+		replyWithReset(r.segment, stack.DefaultTOS, r.segment.route.DefaultTTL())
 	}
 
 	// Release all resources.
