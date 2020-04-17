@@ -392,7 +392,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		// Can't open symlinks without O_PATH (which is unimplemented).
 		return nil, syserror.ELOOP
 	case *namedPipe:
-		return newNamedPipeFD(ctx, impl, rp, &d.vfsd, opts.Flags)
+		return impl.pipe.Open(ctx, rp.Mount(), &d.vfsd, opts.Flags)
 	case *deviceFile:
 		return rp.VirtualFilesystem().OpenDeviceSpecialFile(ctx, rp.Mount(), &d.vfsd, impl.kind, impl.major, impl.minor, opts)
 	case *socketFile:

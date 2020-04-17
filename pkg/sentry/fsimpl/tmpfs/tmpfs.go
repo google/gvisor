@@ -357,6 +357,7 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, stat *linu
 		return err
 	}
 	i.mu.Lock()
+	defer i.mu.Unlock()
 	var (
 		needsMtimeBump bool
 		needsCtimeBump bool
@@ -427,7 +428,6 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, stat *linu
 		atomic.StoreInt64(&i.ctime, now)
 	}
 
-	i.mu.Unlock()
 	return nil
 }
 

@@ -16,10 +16,8 @@ package tmpfs
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
-	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -33,27 +31,8 @@ type namedPipe struct {
 //   * fs.mu must be locked.
 //   * rp.Mount().CheckBeginWrite() has been called successfully.
 func (fs *filesystem) newNamedPipe(creds *auth.Credentials, mode linux.FileMode) *inode {
-	file := &namedPipe{pipe: pipe.NewVFSPipe(pipe.DefaultPipeSize, usermem.PageSize)}
+	file := &namedPipe{pipe: pipe.NewVFSPipe(true /* isNamed */, pipe.DefaultPipeSize, usermem.PageSize)}
 	file.inode.init(file, fs, creds, linux.S_IFIFO|mode)
 	file.inode.nlink = 1 // Only the parent has a link.
 	return &file.inode
-}
-
-// namedPipeFD implements vfs.FileDescriptionImpl. Methods are implemented
-// entirely via struct embedding.
-type namedPipeFD struct {
-	fileDescription
-
-	*pipe.VFSPipeFD
-}
-
-func newNamedPipeFD(ctx context.Context, np *namedPipe, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*vfs.FileDescription, error) {
-	var err error
-	var fd namedPipeFD
-	fd.VFSPipeFD, err = np.pipe.NewVFSPipeFD(ctx, vfsd, &fd.vfsfd, flags)
-	if err != nil {
-		return nil, err
-	}
-	fd.vfsfd.Init(&fd, flags, rp.Mount(), vfsd, &vfs.FileDescriptionOptions{})
-	return &fd.vfsfd, nil
 }

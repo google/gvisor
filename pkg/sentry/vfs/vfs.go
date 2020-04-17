@@ -335,7 +335,7 @@ func (vfs *VirtualFilesystem) MknodAt(ctx context.Context, creds *auth.Credentia
 	rp := vfs.getResolvingPath(creds, pop)
 	for {
 		err := rp.mount.fs.impl.MknodAt(ctx, rp, *opts)
-		if err != nil {
+		if err == nil {
 			vfs.putResolvingPath(rp)
 			return nil
 		}
