@@ -1034,8 +1034,8 @@ func TestSendRstOnListenerRxAckV6(t *testing.T) {
 		checker.SeqNum(200)))
 }
 
-// TestListenShutdown tests for the listening endpoint not processing
-// any receive when it is on read shutdown.
+// TestListenShutdown tests for the listening endpoint replying with RST
+// on read shutdown.
 func TestListenShutdown(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
@@ -1046,16 +1046,13 @@ func TestListenShutdown(t *testing.T) {
 		t.Fatal("Bind failed:", err)
 	}
 
-	if err := c.EP.Listen(10 /* backlog */); err != nil {
+	if err := c.EP.Listen(1 /* backlog */); err != nil {
 		t.Fatal("Listen failed:", err)
 	}
 
 	if err := c.EP.Shutdown(tcpip.ShutdownRead); err != nil {
 		t.Fatal("Shutdown failed:", err)
 	}
-
-	// Wait for the endpoint state to be propagated.
-	time.Sleep(10 * time.Millisecond)
 
 	c.SendPacket(nil, &context.Headers{
 		SrcPort: context.TestPort,
@@ -1065,7 +1062,12 @@ func TestListenShutdown(t *testing.T) {
 		AckNum:  200,
 	})
 
-	c.CheckNoPacket("Packet received when listening socket was shutdown")
+	// Expect the listening endpoint to reset the connection.
+	checker.IPv4(t, c.GetPacket(),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.TCPFlags(header.TCPFlagAck|header.TCPFlagRst),
+		))
 }
 
 // TestListenCloseWhileConnect tests for the listening endpoint to
