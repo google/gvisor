@@ -168,6 +168,7 @@ func (x *MemoryManager) save(m state.Map) {
 	m.Save("dumpability", &x.dumpability)
 	m.Save("aioManager", &x.aioManager)
 	m.Save("sleepForActivation", &x.sleepForActivation)
+	m.Save("vdsoSigReturnAddr", &x.vdsoSigReturnAddr)
 }
 
 func (x *MemoryManager) load(m state.Map) {
@@ -192,6 +193,7 @@ func (x *MemoryManager) load(m state.Map) {
 	m.Load("dumpability", &x.dumpability)
 	m.Load("aioManager", &x.aioManager)
 	m.Load("sleepForActivation", &x.sleepForActivation)
+	m.Load("vdsoSigReturnAddr", &x.vdsoSigReturnAddr)
 	m.AfterLoad(x.afterLoad)
 }
 
