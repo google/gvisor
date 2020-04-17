@@ -231,6 +231,9 @@ type MemoryManager struct {
 	// before trying to activate the address space. When set to true, delays in
 	// activation are not reported as stuck tasks by the watchdog.
 	sleepForActivation bool
+
+	// vdsoSigReturnAddr is the address of 'vdso_sigreturn'.
+	vdsoSigReturnAddr uint64
 }
 
 // vma represents a virtual memory area.
