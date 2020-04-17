@@ -17,11 +17,10 @@
 package boot
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 )
 
 func init() {
-	// Register the global syscall table.
-	kernel.RegisterSyscallTable(linux.AMD64)
+	// Set the global syscall table.
+	syscallTable = linux.AMD64
 }

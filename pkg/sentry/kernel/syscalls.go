@@ -326,6 +326,13 @@ func RegisterSyscallTable(s *SyscallTable) {
 	allSyscallTables = append(allSyscallTables, s)
 }
 
+// FlushSyscallTablesTestOnly flushes the syscall tables for tests. Used for
+// parameterized VFSv2 tests.
+// TODO(gvisor.dv/issue/1624): Remove when VFS1 is no longer supported.
+func FlushSyscallTablesTestOnly() {
+	allSyscallTables = nil
+}
+
 // Lookup returns the syscall implementation, if one exists.
 func (s *SyscallTable) Lookup(sysno uintptr) SyscallFn {
 	if sysno < uintptr(len(s.lookup)) {

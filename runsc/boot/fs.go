@@ -278,6 +278,9 @@ func subtargets(root string, mnts []specs.Mount) []string {
 }
 
 func setupContainerFS(ctx context.Context, conf *Config, mntr *containerMounter, procArgs *kernel.CreateProcessArgs) error {
+	if conf.VFS2 {
+		return setupContainerVFS2(ctx, conf, mntr, procArgs)
+	}
 	mns, err := mntr.setupFS(conf, procArgs)
 	if err != nil {
 		return err
@@ -573,6 +576,9 @@ func newContainerMounter(spec *specs.Spec, goferFDs []int, k *kernel.Kernel, hin
 // should be mounted (e.g. a volume shared between containers). It must be
 // called for the root container only.
 func (c *containerMounter) processHints(conf *Config) error {
+	if conf.VFS2 {
+		return nil
+	}
 	ctx := c.k.SupervisorContext()
 	for _, hint := range c.hints.mounts {
 		// TODO(b/142076984): Only support tmpfs for now. Bind mounts require a
@@ -781,9 +787,6 @@ func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (
 		useOverlay = conf.Overlay && !mountFlags(m.Options).ReadOnly
 
 	default:
-		// TODO(nlacasse): Support all the mount types and make this a fatal error.
-		// Most applications will "just work" without them, so this is a warning
-		// for now.
 		log.Warningf("ignoring unknown filesystem type %q", m.Type)
 	}
 	return fsName, opts, useOverlay, nil
