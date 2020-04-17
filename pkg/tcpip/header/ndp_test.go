@@ -16,6 +16,8 @@ package header
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"testing"
 	"time"
 
@@ -543,8 +545,12 @@ func TestNDPRecursiveDNSServerOptionSerialize(t *testing.T) {
 	want := []tcpip.Address{
 		"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
 	}
-	if got := opt.Addresses(); !cmp.Equal(got, want) {
-		t.Errorf("got Addresses = %v, want = %v", got, want)
+	addrs, err := opt.Addresses()
+	if err != nil {
+		t.Errorf("opt.Addresses() = %s", err)
+	}
+	if diff := cmp.Diff(addrs, want); diff != "" {
+		t.Errorf("mismatched addresses (-want +got):\n%s", diff)
 	}
 
 	// Iterator should not return anything else.
@@ -638,8 +644,12 @@ func TestNDPRecursiveDNSServerOption(t *testing.T) {
 			if got := opt.Lifetime(); got != test.lifetime {
 				t.Errorf("got Lifetime = %d, want = %d", got, test.lifetime)
 			}
-			if got := opt.Addresses(); !cmp.Equal(got, test.addrs) {
-				t.Errorf("got Addresses = %v, want = %v", got, test.addrs)
+			addrs, err := opt.Addresses()
+			if err != nil {
+				t.Errorf("opt.Addresses() = %s", err)
+			}
+			if diff := cmp.Diff(addrs, test.addrs); diff != "" {
+				t.Errorf("mismatched addresses (-want +got):\n%s", diff)
 			}
 
 			// Iterator should not return anything else.
@@ -661,38 +671,38 @@ func TestNDPRecursiveDNSServerOption(t *testing.T) {
 // the iterator was returned for is malformed.
 func TestNDPOptionsIterCheck(t *testing.T) {
 	tests := []struct {
-		name     string
-		buf      []byte
-		expected error
+		name        string
+		buf         []byte
+		expectedErr error
 	}{
 		{
-			"ZeroLengthField",
-			[]byte{0, 0, 0, 0, 0, 0, 0, 0},
-			ErrNDPOptZeroLength,
+			name:        "ZeroLengthField",
+			buf:         []byte{0, 0, 0, 0, 0, 0, 0, 0},
+			expectedErr: ErrNDPOptMalformedHeader,
 		},
 		{
-			"ValidSourceLinkLayerAddressOption",
-			[]byte{1, 1, 1, 2, 3, 4, 5, 6},
-			nil,
+			name:        "ValidSourceLinkLayerAddressOption",
+			buf:         []byte{1, 1, 1, 2, 3, 4, 5, 6},
+			expectedErr: nil,
 		},
 		{
-			"TooSmallSourceLinkLayerAddressOption",
-			[]byte{1, 1, 1, 2, 3, 4, 5},
-			ErrNDPOptBufExhausted,
+			name:        "TooSmallSourceLinkLayerAddressOption",
+			buf:         []byte{1, 1, 1, 2, 3, 4, 5},
+			expectedErr: io.ErrUnexpectedEOF,
 		},
 		{
-			"ValidTargetLinkLayerAddressOption",
-			[]byte{2, 1, 1, 2, 3, 4, 5, 6},
-			nil,
+			name:        "ValidTargetLinkLayerAddressOption",
+			buf:         []byte{2, 1, 1, 2, 3, 4, 5, 6},
+			expectedErr: nil,
 		},
 		{
-			"TooSmallTargetLinkLayerAddressOption",
-			[]byte{2, 1, 1, 2, 3, 4, 5},
-			ErrNDPOptBufExhausted,
+			name:        "TooSmallTargetLinkLayerAddressOption",
+			buf:         []byte{2, 1, 1, 2, 3, 4, 5},
+			expectedErr: io.ErrUnexpectedEOF,
 		},
 		{
-			"ValidPrefixInformation",
-			[]byte{
+			name: "ValidPrefixInformation",
+			buf: []byte{
 				3, 4, 43, 64,
 				1, 2, 3, 4,
 				5, 6, 7, 8,
@@ -702,11 +712,11 @@ func TestNDPOptionsIterCheck(t *testing.T) {
 				17, 18, 19, 20,
 				21, 22, 23, 24,
 			},
-			nil,
+			expectedErr: nil,
 		},
 		{
-			"TooSmallPrefixInformation",
-			[]byte{
+			name: "TooSmallPrefixInformation",
+			buf: []byte{
 				3, 4, 43, 64,
 				1, 2, 3, 4,
 				5, 6, 7, 8,
@@ -716,11 +726,11 @@ func TestNDPOptionsIterCheck(t *testing.T) {
 				17, 18, 19, 20,
 				21, 22, 23,
 			},
-			ErrNDPOptBufExhausted,
+			expectedErr: io.ErrUnexpectedEOF,
 		},
 		{
-			"InvalidPrefixInformationLength",
-			[]byte{
+			name: "InvalidPrefixInformationLength",
+			buf: []byte{
 				3, 3, 43, 64,
 				1, 2, 3, 4,
 				5, 6, 7, 8,
@@ -728,11 +738,11 @@ func TestNDPOptionsIterCheck(t *testing.T) {
 				9, 10, 11, 12,
 				13, 14, 15, 16,
 			},
-			ErrNDPOptMalformedBody,
+			expectedErr: ErrNDPOptMalformedBody,
 		},
 		{
-			"ValidSourceAndTargetLinkLayerAddressWithPrefixInformation",
-			[]byte{
+			name: "ValidSourceAndTargetLinkLayerAddressWithPrefixInformation",
+			buf: []byte{
 				// Source Link-Layer Address.
 				1, 1, 1, 2, 3, 4, 5, 6,
 
@@ -749,11 +759,11 @@ func TestNDPOptionsIterCheck(t *testing.T) {
 				17, 18, 19, 20,
 				21, 22, 23, 24,
 			},
-			nil,
+			expectedErr: nil,
 		},
 		{
-			"ValidSourceAndTargetLinkLayerAddressWithPrefixInformationWithUnrecognized",
-			[]byte{
+			name: "ValidSourceAndTargetLinkLayerAddressWithPrefixInformationWithUnrecognized",
+			buf: []byte{
 				// Source Link-Layer Address.
 				1, 1, 1, 2, 3, 4, 5, 6,
 
@@ -775,52 +785,52 @@ func TestNDPOptionsIterCheck(t *testing.T) {
 				17, 18, 19, 20,
 				21, 22, 23, 24,
 			},
-			nil,
+			expectedErr: nil,
 		},
 		{
-			"InvalidRecursiveDNSServerCutsOffAddress",
-			[]byte{
+			name: "InvalidRecursiveDNSServerCutsOffAddress",
+			buf: []byte{
 				25, 4, 0, 0,
 				0, 0, 0, 0,
 				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
 				0, 1, 2, 3, 4, 5, 6, 7,
 			},
-			ErrNDPOptMalformedBody,
+			expectedErr: ErrNDPOptMalformedBody,
 		},
 		{
-			"InvalidRecursiveDNSServerInvalidLengthField",
-			[]byte{
+			name: "InvalidRecursiveDNSServerInvalidLengthField",
+			buf: []byte{
 				25, 2, 0, 0,
 				0, 0, 0, 0,
 				0, 1, 2, 3, 4, 5, 6, 7, 8,
 			},
-			ErrNDPInvalidLength,
+			expectedErr: io.ErrUnexpectedEOF,
 		},
 		{
-			"RecursiveDNSServerTooSmall",
-			[]byte{
+			name: "RecursiveDNSServerTooSmall",
+			buf: []byte{
 				25, 1, 0, 0,
 				0, 0, 0,
 			},
-			ErrNDPOptBufExhausted,
+			expectedErr: io.ErrUnexpectedEOF,
 		},
 		{
-			"RecursiveDNSServerMulticast",
-			[]byte{
+			name: "RecursiveDNSServerMulticast",
+			buf: []byte{
 				25, 3, 0, 0,
 				0, 0, 0, 0,
 				255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
 			},
-			ErrNDPOptMalformedBody,
+			expectedErr: ErrNDPOptMalformedBody,
 		},
 		{
-			"RecursiveDNSServerUnspecified",
-			[]byte{
+			name: "RecursiveDNSServerUnspecified",
+			buf: []byte{
 				25, 3, 0, 0,
 				0, 0, 0, 0,
 				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 			},
-			ErrNDPOptMalformedBody,
+			expectedErr: ErrNDPOptMalformedBody,
 		},
 	}
 
@@ -828,8 +838,8 @@ func TestNDPOptionsIterCheck(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			opts := NDPOptions(test.buf)
 
-			if _, err := opts.Iter(true); err != test.expected {
-				t.Fatalf("got Iter(true) = (_, %v), want = (_, %v)", err, test.expected)
+			if _, err := opts.Iter(true); !errors.Is(err, test.expectedErr) {
+				t.Fatalf("got Iter(true) = (_, %v), want = (_, %v)", err, test.expectedErr)
 			}
 
 			// test.buf may be malformed but we chose not to check

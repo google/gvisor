@@ -15,31 +15,42 @@
 package header
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
+// NDPOptionIdentifier is an NDP option type identifier.
+type NDPOptionIdentifier uint8
+
 const (
 	// NDPSourceLinkLayerAddressOptionType is the type of the Source Link Layer
 	// Address option, as per RFC 4861 section 4.6.1.
-	NDPSourceLinkLayerAddressOptionType = 1
+	NDPSourceLinkLayerAddressOptionType NDPOptionIdentifier = 1
 
 	// NDPTargetLinkLayerAddressOptionType is the type of the Target Link Layer
 	// Address option, as per RFC 4861 section 4.6.1.
-	NDPTargetLinkLayerAddressOptionType = 2
-
-	// NDPLinkLayerAddressSize is the size of a Source or Target Link Layer
-	// Address option for an Ethernet address.
-	NDPLinkLayerAddressSize = 8
+	NDPTargetLinkLayerAddressOptionType NDPOptionIdentifier = 2
 
 	// NDPPrefixInformationType is the type of the Prefix Information
 	// option, as per RFC 4861 section 4.6.2.
-	NDPPrefixInformationType = 3
+	NDPPrefixInformationType NDPOptionIdentifier = 3
+
+	// NDPRecursiveDNSServerOptionType is the type of the Recursive DNS
+	// Server option, as per RFC 8106 section 5.1.
+	NDPRecursiveDNSServerOptionType NDPOptionIdentifier = 25
+)
+
+const (
+	// NDPLinkLayerAddressSize is the size of a Source or Target Link Layer
+	// Address option for an Ethernet address.
+	NDPLinkLayerAddressSize = 8
 
 	// ndpPrefixInformationLength is the expected length, in bytes, of the
 	// body of an NDP Prefix Information option, as per RFC 4861 section
@@ -91,10 +102,6 @@ const (
 	// within an NDPPrefixInformation.
 	ndpPrefixInformationPrefixOffset = 14
 
-	// NDPRecursiveDNSServerOptionType is the type of the Recursive DNS
-	// Server option, as per RFC 8106 section 5.1.
-	NDPRecursiveDNSServerOptionType = 25
-
 	// ndpRecursiveDNSServerLifetimeOffset is the start of the 4-byte
 	// Lifetime field within an NDPRecursiveDNSServer.
 	ndpRecursiveDNSServerLifetimeOffset = 2
@@ -103,10 +110,10 @@ const (
 	// for IPv6 Recursive DNS Servers within an NDPRecursiveDNSServer.
 	ndpRecursiveDNSServerAddressesOffset = 6
 
-	// minNDPRecursiveDNSServerLength is the minimum NDP Recursive DNS
-	// Server option's length field value when it contains at least one
-	// IPv6 address.
-	minNDPRecursiveDNSServerLength = 3
+	// minNDPRecursiveDNSServerLength is the minimum NDP Recursive DNS Server
+	// option's body size when it contains at least one IPv6 address, as per
+	// RFC 8106 section 5.3.1.
+	minNDPRecursiveDNSServerBodySize = 22
 
 	// lengthByteUnits is the multiplier factor for the Length field of an
 	// NDP option. That is, the length field for NDP options is in units of
@@ -132,16 +139,13 @@ var (
 // few NDPOption then modify the backing NDPOptions so long as the
 // NDPOptionIterator obtained before modification is no longer used.
 type NDPOptionIterator struct {
-	// The NDPOptions this NDPOptionIterator is iterating over.
-	opts NDPOptions
+	opts *bytes.Buffer
 }
 
 // Potential errors when iterating over an NDPOptions.
 var (
-	ErrNDPOptBufExhausted  = errors.New("Buffer unexpectedly exhausted")
-	ErrNDPOptZeroLength    = errors.New("NDP option has zero-valued Length field")
-	ErrNDPOptMalformedBody = errors.New("NDP option has a malformed body")
-	ErrNDPInvalidLength    = errors.New("NDP option's Length value is invalid as per relevant RFC")
+	ErrNDPOptMalformedBody   = errors.New("NDP option has a malformed body")
+	ErrNDPOptMalformedHeader = errors.New("NDP option has a malformed header")
 )
 
 // Next returns the next element in the backing NDPOptions, or true if we are
@@ -152,48 +156,50 @@ var (
 func (i *NDPOptionIterator) Next() (NDPOption, bool, error) {
 	for {
 		// Do we still have elements to look at?
-		if len(i.opts) == 0 {
+		if i.opts.Len() == 0 {
 			return nil, true, nil
 		}
 
-		// Do we have enough bytes for an NDP option that has a Length
-		// field of at least 1? Note, 0 in the Length field is invalid.
-		if len(i.opts) < lengthByteUnits {
-			return nil, true, ErrNDPOptBufExhausted
-		}
-
 		// Get the Type field.
-		t := i.opts[0]
+		temp, err := i.opts.ReadByte()
+		if err != nil {
+			if err != io.EOF {
+				// ReadByte should only ever return nil or io.EOF.
+				panic(fmt.Sprintf("unexpected error when reading the option's Type field: %s", err))
+			}
+
+			// We use io.ErrUnexpectedEOF as exhausting the buffer is unexpected once
+			// we start parsing an option; we expect the buffer to contain enough
+			// bytes for the whole option.
+			return nil, true, fmt.Errorf("unexpectedly exhausted buffer when reading the option's Type field: %w", io.ErrUnexpectedEOF)
+		}
+		kind := NDPOptionIdentifier(temp)
 
 		// Get the Length field.
-		l := i.opts[1]
+		length, err := i.opts.ReadByte()
+		if err != nil {
+			if err != io.EOF {
+				panic(fmt.Sprintf("unexpected error when reading the option's Length field for %s: %s", kind, err))
+			}
 
-		// This would indicate an erroneous NDP option as the Length
-		// field should never be 0.
-		if l == 0 {
-			return nil, true, ErrNDPOptZeroLength
+			return nil, true, fmt.Errorf("unexpectedly exhausted buffer when reading the option's Length field for %s: %w", kind, io.ErrUnexpectedEOF)
 		}
 
-		// How many bytes are in the option body?
-		numBytes := int(l) * lengthByteUnits
+		// This would indicate an erroneous NDP option as the Length field should
+		// never be 0.
+		if length == 0 {
+			return nil, true, fmt.Errorf("zero valued Length field for %s: %w", kind, ErrNDPOptMalformedHeader)
+		}
+
+		// Get the body.
+		numBytes := int(length) * lengthByteUnits
 		numBodyBytes := numBytes - 2
-
-		potentialBody := i.opts[2:]
-
-		// This would indicate an erroenous NDPOptions buffer as we ran
-		// out of the buffer in the middle of an NDP option.
-		if left := len(potentialBody); left < numBodyBytes {
-			return nil, true, ErrNDPOptBufExhausted
+		body := i.opts.Next(numBodyBytes)
+		if len(body) < numBodyBytes {
+			return nil, true, fmt.Errorf("unexpectedly exhausted buffer when reading the option's Body for %s: %w", kind, io.ErrUnexpectedEOF)
 		}
 
-		// Get only the options body, leaving the rest of the options
-		// buffer alone.
-		body := potentialBody[:numBodyBytes]
-
-		// Update opts with the remaining options body.
-		i.opts = i.opts[numBytes:]
-
-		switch t {
+		switch kind {
 		case NDPSourceLinkLayerAddressOptionType:
 			return NDPSourceLinkLayerAddressOption(body), false, nil
 
@@ -205,22 +211,15 @@ func (i *NDPOptionIterator) Next() (NDPOption, bool, error) {
 			// body is ndpPrefixInformationLength, as per RFC 4861
 			// section 4.6.2.
 			if numBodyBytes != ndpPrefixInformationLength {
-				return nil, true, ErrNDPOptMalformedBody
+				return nil, true, fmt.Errorf("got %d bytes for NDP Prefix Information option's body, expected %d bytes: %w", numBodyBytes, ndpPrefixInformationLength, ErrNDPOptMalformedBody)
 			}
 
 			return NDPPrefixInformation(body), false, nil
 
 		case NDPRecursiveDNSServerOptionType:
-			// RFC 8106 section 5.3.1 outlines that the RDNSS option
-			// must have a minimum length of 3 so it contains at
-			// least one IPv6 address.
-			if l < minNDPRecursiveDNSServerLength {
-				return nil, true, ErrNDPInvalidLength
-			}
-
 			opt := NDPRecursiveDNSServer(body)
-			if len(opt.Addresses()) == 0 {
-				return nil, true, ErrNDPOptMalformedBody
+			if err := opt.checkAddresses(); err != nil {
+				return nil, true, err
 			}
 
 			return opt, false, nil
@@ -247,10 +246,16 @@ type NDPOptions []byte
 //
 // See NDPOptionIterator for more information.
 func (b NDPOptions) Iter(check bool) (NDPOptionIterator, error) {
-	it := NDPOptionIterator{opts: b}
+	it := NDPOptionIterator{
+		opts: bytes.NewBuffer(b),
+	}
 
 	if check {
-		for it2 := it; true; {
+		it2 := NDPOptionIterator{
+			opts: bytes.NewBuffer(b),
+		}
+
+		for {
 			if _, done, err := it2.Next(); err != nil || done {
 				return it, err
 			}
@@ -278,7 +283,7 @@ func (b NDPOptions) Serialize(s NDPOptionsSerializer) int {
 			continue
 		}
 
-		b[0] = o.Type()
+		b[0] = byte(o.Type())
 
 		// We know this safe because paddedLength would have returned
 		// 0 if o had an invalid length (> 255 * lengthByteUnits).
@@ -304,7 +309,7 @@ type NDPOption interface {
 	fmt.Stringer
 
 	// Type returns the type of the receiver.
-	Type() uint8
+	Type() NDPOptionIdentifier
 
 	// Length returns the length of the body of the receiver, in bytes.
 	Length() int
@@ -386,7 +391,7 @@ func (b NDPOptionsSerializer) Length() int {
 type NDPSourceLinkLayerAddressOption tcpip.LinkAddress
 
 // Type implements NDPOption.Type.
-func (o NDPSourceLinkLayerAddressOption) Type() uint8 {
+func (o NDPSourceLinkLayerAddressOption) Type() NDPOptionIdentifier {
 	return NDPSourceLinkLayerAddressOptionType
 }
 
@@ -426,7 +431,7 @@ func (o NDPSourceLinkLayerAddressOption) EthernetAddress() tcpip.LinkAddress {
 type NDPTargetLinkLayerAddressOption tcpip.LinkAddress
 
 // Type implements NDPOption.Type.
-func (o NDPTargetLinkLayerAddressOption) Type() uint8 {
+func (o NDPTargetLinkLayerAddressOption) Type() NDPOptionIdentifier {
 	return NDPTargetLinkLayerAddressOptionType
 }
 
@@ -466,7 +471,7 @@ func (o NDPTargetLinkLayerAddressOption) EthernetAddress() tcpip.LinkAddress {
 type NDPPrefixInformation []byte
 
 // Type implements NDPOption.Type.
-func (o NDPPrefixInformation) Type() uint8 {
+func (o NDPPrefixInformation) Type() NDPOptionIdentifier {
 	return NDPPrefixInformationType
 }
 
@@ -590,7 +595,7 @@ type NDPRecursiveDNSServer []byte
 // Type returns the type of an NDP Recursive DNS Server option.
 //
 // Type implements NDPOption.Type.
-func (NDPRecursiveDNSServer) Type() uint8 {
+func (NDPRecursiveDNSServer) Type() NDPOptionIdentifier {
 	return NDPRecursiveDNSServerOptionType
 }
 
@@ -613,7 +618,12 @@ func (o NDPRecursiveDNSServer) serializeInto(b []byte) int {
 
 // String implements fmt.Stringer.String.
 func (o NDPRecursiveDNSServer) String() string {
-	return fmt.Sprintf("%T(%s valid for %s)", o, o.Addresses(), o.Lifetime())
+	lt := o.Lifetime()
+	addrs, err := o.Addresses()
+	if err != nil {
+		return fmt.Sprintf("%T([] valid for %s; err = %s)", o, lt, err)
+	}
+	return fmt.Sprintf("%T(%s valid for %s)", o, addrs, lt)
 }
 
 // Lifetime returns the length of time that the DNS server addresses
@@ -632,29 +642,45 @@ func (o NDPRecursiveDNSServer) Lifetime() time.Duration {
 // Addresses returns the recursive DNS server IPv6 addresses that may be
 // used for name resolution.
 //
-// Note, some of the addresses returned MAY be link-local addresses.
-//
-// Addresses may panic if o does not hold valid IPv6 addresses.
-func (o NDPRecursiveDNSServer) Addresses() []tcpip.Address {
-	l := len(o)
-	if l < ndpRecursiveDNSServerAddressesOffset {
-		return nil
-	}
-
-	l -= ndpRecursiveDNSServerAddressesOffset
-	if l%IPv6AddressSize != 0 {
-		return nil
-	}
-
-	buf := o[ndpRecursiveDNSServerAddressesOffset:]
+// Note, the addresses MAY be link-local addresses.
+func (o NDPRecursiveDNSServer) Addresses() ([]tcpip.Address, error) {
 	var addrs []tcpip.Address
-	for len(buf) > 0 {
-		addr := tcpip.Address(buf[:IPv6AddressSize])
-		if !IsV6UnicastAddress(addr) {
-			return nil
-		}
-		addrs = append(addrs, addr)
-		buf = buf[IPv6AddressSize:]
+	return addrs, o.iterAddresses(func(addr tcpip.Address) { addrs = append(addrs, addr) })
+}
+
+// checkAddresses iterates over the addresses in an NDP Recursive DNS Server
+// option and returns any error it encounters.
+func (o NDPRecursiveDNSServer) checkAddresses() error {
+	return o.iterAddresses(nil)
+}
+
+// iterAddresses iterates over the addresses in an NDP Recursive DNS Server
+// option and calls a function with each valid unicast IPv6 address.
+//
+// Note, the addresses MAY be link-local addresses.
+func (o NDPRecursiveDNSServer) iterAddresses(fn func(tcpip.Address)) error {
+	if l := len(o); l < minNDPRecursiveDNSServerBodySize {
+		return fmt.Errorf("got %d bytes for NDP Recursive DNS Server option's body, expected at least %d bytes: %w", l, minNDPRecursiveDNSServerBodySize, io.ErrUnexpectedEOF)
 	}
-	return addrs
+
+	o = o[ndpRecursiveDNSServerAddressesOffset:]
+	l := len(o)
+	if l%IPv6AddressSize != 0 {
+		return fmt.Errorf("NDP Recursive DNS Server option's body ends in the middle of an IPv6 address (addresses body size = %d bytes): %w", l, ErrNDPOptMalformedBody)
+	}
+
+	for i := 0; len(o) != 0; i++ {
+		addr := tcpip.Address(o[:IPv6AddressSize])
+		if !IsV6UnicastAddress(addr) {
+			return fmt.Errorf("%d-th address (%s) in NDP Recursive DNS Server option is not a valid unicast IPv6 address: %w", i, addr, ErrNDPOptMalformedBody)
+		}
+
+		if fn != nil {
+			fn(addr)
+		}
+
+		o = o[IPv6AddressSize:]
+	}
+
+	return nil
 }
