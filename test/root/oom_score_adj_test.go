@@ -46,7 +46,7 @@ func TestOOMScoreAdjSingle(t *testing.T) {
 	}
 	defer os.RemoveAll(rootDir)
 
-	conf := testutil.TestConfig()
+	conf := testutil.TestConfig(t)
 	conf.RootDir = rootDir
 
 	ppid, err := specutils.GetParentPid(os.Getpid())
@@ -137,7 +137,7 @@ func TestOOMScoreAdjMulti(t *testing.T) {
 	}
 	defer os.RemoveAll(rootDir)
 
-	conf := testutil.TestConfig()
+	conf := testutil.TestConfig(t)
 	conf.RootDir = rootDir
 
 	ppid, err := specutils.GetParentPid(os.Getpid())

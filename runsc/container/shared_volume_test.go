@@ -31,7 +31,7 @@ import (
 // TestSharedVolume checks that modifications to a volume mount are propagated
 // into and out of the sandbox.
 func TestSharedVolume(t *testing.T) {
-	conf := testutil.TestConfig()
+	conf := testutil.TestConfig(t)
 	conf.FileAccess = boot.FileAccessShared
 	t.Logf("Running test with conf: %+v", conf)
 
@@ -190,7 +190,7 @@ func checkFile(c *Container, filename string, want []byte) error {
 // TestSharedVolumeFile tests that changes to file content outside the sandbox
 // is reflected inside.
 func TestSharedVolumeFile(t *testing.T) {
-	conf := testutil.TestConfig()
+	conf := testutil.TestConfig(t)
 	conf.FileAccess = boot.FileAccessShared
 	t.Logf("Running test with conf: %+v", conf)
 

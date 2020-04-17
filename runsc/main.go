@@ -296,9 +296,7 @@ func main() {
 		if err := syscall.Dup3(fd, int(os.Stderr.Fd()), 0); err != nil {
 			cmd.Fatalf("error dup'ing fd %d to stderr: %v", fd, err)
 		}
-	}
-
-	if *alsoLogToStderr {
+	} else if *alsoLogToStderr {
 		e = &log.MultiEmitter{e, newEmitter(*debugLogFormat, os.Stderr)}
 	}
 
