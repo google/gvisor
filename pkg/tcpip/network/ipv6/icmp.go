@@ -301,40 +301,38 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.P
 
 		targetAddr := na.TargetAddress()
 		stack := r.Stack()
-		rxNICID := r.NICID()
 
-		if isTentative, err := stack.IsAddrTentative(rxNICID, targetAddr); err != nil {
-			// We will only get an error if rxNICID is unrecognized,
-			// which should not happen. For now short-circuit this
-			// packet.
+		if isTentative, err := stack.IsAddrTentative(e.nicID, targetAddr); err != nil {
+			// We will only get an error if the NIC is unrecognized, which should not
+			// happen. For now short-circuit this packet.
 			//
 			// TODO(b/141002840): Handle this better?
 			return
 		} else if isTentative {
-			// We just got an NA from a node that owns an address we
-			// are performing DAD on, implying the address is not
-			// unique. In this case we let the stack know so it can
-			// handle such a scenario and do nothing furthur with
+			// We just got an NA from a node that owns an address we are performing
+			// DAD on, implying the address is not unique. In this case we let the
+			// stack know so it can handle such a scenario and do nothing furthur with
 			// the NDP NA.
-			stack.DupTentativeAddrDetected(rxNICID, targetAddr)
+			stack.DupTentativeAddrDetected(e.nicID, targetAddr)
 			return
 		}
 
-		// At this point we know that the targetAddress is not tentative
-		// on rxNICID. However, targetAddr may still be assigned to
-		// rxNICID but not tentative (it could be permanent). Such a
-		// scenario is beyond the scope of RFC 4862. As such, we simply
-		// ignore such a scenario for now and proceed as normal.
+		// At this point we know that the target address is not tentative on the
+		// NIC. However, the target address may still be assigned to the NIC but not
+		// tentative (it could be permanent). Such a scenario is beyond the scope of
+		// RFC 4862. As such, we simply ignore such a scenario for now and proceed
+		// as normal.
 		//
+		// TODO(b/143147598): Handle the scenario described above. Also inform the
+		// netstack integration that a duplicate address was detected outside of
+		// DAD.
+
 		// If the NA message has the target link layer option, update the link
 		// address cache with the link address for the target of the message.
 		//
-		// TODO(b/143147598): Handle the scenario described above. Also
-		// inform the netstack integration that a duplicate address was
-		// detected outside of DAD.
-		//
 		// TODO(b/148429853): Properly process the NA message and do Neighbor
 		// Unreachability Detection.
+		var targetLinkAddr tcpip.LinkAddress
 		for {
 			opt, done, err := it.Next()
 			if err != nil {
@@ -347,8 +345,20 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.P
 
 			switch opt := opt.(type) {
 			case header.NDPTargetLinkLayerAddressOption:
-				e.linkAddrCache.AddLinkAddress(e.nicID, targetAddr, opt.EthernetAddress())
+				// No RFCs define what to do when an NA message has multiple Target
+				// Link-Layer Address options. Since no interface can have multiple
+				// link-layer addresses, we consider such messages invalid.
+				if len(targetLinkAddr) != 0 {
+					received.Invalid.Increment()
+					return
+				}
+
+				targetLinkAddr = opt.EthernetAddress()
 			}
+		}
+
+		if len(targetLinkAddr) != 0 {
+			e.linkAddrCache.AddLinkAddress(e.nicID, targetAddr, targetLinkAddr)
 		}
 
 	case header.ICMPv6EchoRequest:
