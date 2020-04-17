@@ -241,6 +241,16 @@ type NDPDispatcher interface {
 	// call functions on the stack itself.
 	OnRecursiveDNSServerOption(nicID tcpip.NICID, addrs []tcpip.Address, lifetime time.Duration)
 
+	// OnDNSSearchListOption will be called when an NDP option with a DNS
+	// search list has been received.
+	//
+	// It is up to the caller to use the domain names in the search list
+	// for only their valid lifetime. OnDNSSearchListOption may be called
+	// with new or already known domain names. If called with known domain
+	// names, their valid lifetimes must be refreshed to lifetime (it may
+	// be increased, decreased or completely invalidated when lifetime = 0.
+	OnDNSSearchListOption(nicID tcpip.NICID, domainNames []string, lifetime time.Duration)
+
 	// OnDHCPv6Configuration will be called with an updated configuration that is
 	// available via DHCPv6 for a specified NIC.
 	//
@@ -713,6 +723,14 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 
 			addrs, _ := opt.Addresses()
 			ndp.nic.stack.ndpDisp.OnRecursiveDNSServerOption(ndp.nic.ID(), addrs, opt.Lifetime())
+
+		case header.NDPDNSSearchList:
+			if ndp.nic.stack.ndpDisp == nil {
+				continue
+			}
+
+			domainNames, _ := opt.DomainNames()
+			ndp.nic.stack.ndpDisp.OnDNSSearchListOption(ndp.nic.ID(), domainNames, opt.Lifetime())
 
 		case header.NDPPrefixInformation:
 			prefix := opt.Subnet()
