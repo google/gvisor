@@ -133,6 +133,12 @@ type ndpRDNSSEvent struct {
 	rdnss ndpRDNSS
 }
 
+type ndpDNSSLEvent struct {
+	nicID       tcpip.NICID
+	domainNames []string
+	lifetime    time.Duration
+}
+
 type ndpDHCPv6Event struct {
 	nicID         tcpip.NICID
 	configuration stack.DHCPv6ConfigurationFromNDPRA
@@ -150,6 +156,8 @@ type ndpDispatcher struct {
 	rememberPrefix       bool
 	autoGenAddrC         chan ndpAutoGenAddrEvent
 	rdnssC               chan ndpRDNSSEvent
+	dnsslC               chan ndpDNSSLEvent
+	routeTable           []tcpip.Route
 	dhcpv6ConfigurationC chan ndpDHCPv6Event
 }
 
@@ -253,6 +261,17 @@ func (n *ndpDispatcher) OnRecursiveDNSServerOption(nicID tcpip.NICID, addrs []tc
 				addrs,
 				lifetime,
 			},
+		}
+	}
+}
+
+// Implements stack.NDPDispatcher.OnDNSSearchListOption.
+func (n *ndpDispatcher) OnDNSSearchListOption(nicID tcpip.NICID, domainNames []string, lifetime time.Duration) {
+	if n.dnsslC != nil {
+		n.dnsslC <- ndpDNSSLEvent{
+			nicID,
+			domainNames,
+			lifetime,
 		}
 	}
 }
@@ -3383,6 +3402,112 @@ func TestNDPRecursiveDNSServerDispatch(t *testing.T) {
 			default:
 			}
 		})
+	}
+}
+
+// TestNDPDNSSearchListDispatch tests that the integrator is informed when an
+// NDP DNS Search List option is received with at least one domain name in the
+// search list.
+func TestNDPDNSSearchListDispatch(t *testing.T) {
+	const nicID = 1
+
+	ndpDisp := ndpDispatcher{
+		dnsslC: make(chan ndpDNSSLEvent, 3),
+	}
+	e := channel.New(0, 1280, linkAddr1)
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+		NDPConfigs: stack.NDPConfigurations{
+			HandleRAs: true,
+		},
+		NDPDisp: &ndpDisp,
+	})
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+	}
+
+	optSer := header.NDPOptionsSerializer{
+		header.NDPDNSSearchList([]byte{
+			0, 0,
+			0, 0, 0, 0,
+			2, 'h', 'i',
+			0,
+		}),
+		header.NDPDNSSearchList([]byte{
+			0, 0,
+			0, 0, 0, 1,
+			1, 'i',
+			0,
+			2, 'a', 'm',
+			2, 'm', 'e',
+			0,
+		}),
+		header.NDPDNSSearchList([]byte{
+			0, 0,
+			0, 0, 1, 0,
+			3, 'x', 'y', 'z',
+			0,
+			5, 'h', 'e', 'l', 'l', 'o',
+			5, 'w', 'o', 'r', 'l', 'd',
+			0,
+			4, 't', 'h', 'i', 's',
+			2, 'i', 's',
+			1, 'a',
+			4, 't', 'e', 's', 't',
+			0,
+		}),
+	}
+	expected := []struct {
+		domainNames []string
+		lifetime    time.Duration
+	}{
+		{
+			domainNames: []string{
+				"hi",
+			},
+			lifetime: 0,
+		},
+		{
+			domainNames: []string{
+				"i",
+				"am.me",
+			},
+			lifetime: time.Second,
+		},
+		{
+			domainNames: []string{
+				"xyz",
+				"hello.world",
+				"this.is.a.test",
+			},
+			lifetime: 256 * time.Second,
+		},
+	}
+
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithOpts(llAddr1, 0, optSer))
+
+	for i, expected := range expected {
+		select {
+		case dnssl := <-ndpDisp.dnsslC:
+			if dnssl.nicID != nicID {
+				t.Errorf("got %d-th dnssl nicID = %d, want = %d", i, dnssl.nicID, nicID)
+			}
+			if diff := cmp.Diff(dnssl.domainNames, expected.domainNames); diff != "" {
+				t.Errorf("%d-th dnssl domain names mismatch (-want +got):\n%s", i, diff)
+			}
+			if dnssl.lifetime != expected.lifetime {
+				t.Errorf("got %d-th dnssl lifetime = %s, want = %s", i, dnssl.lifetime, expected.lifetime)
+			}
+		default:
+			t.Fatal("expected a DNSSL event")
+		}
+	}
+
+	// Should have no more DNSSL options.
+	select {
+	case <-ndpDisp.dnsslC:
+		t.Fatal("unexpectedly got a DNSSL event")
+	default:
 	}
 }
 

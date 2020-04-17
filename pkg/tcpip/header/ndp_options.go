@@ -45,6 +45,10 @@ const (
 	// NDPRecursiveDNSServerOptionType is the type of the Recursive DNS
 	// Server option, as per RFC 8106 section 5.1.
 	NDPRecursiveDNSServerOptionType NDPOptionIdentifier = 25
+
+	// NDPDNSSearchListOptionType is the type of the DNS Search List option,
+	// as per RFC 8106 section 5.2.
+	NDPDNSSearchListOptionType = 31
 )
 
 const (
@@ -114,6 +118,27 @@ const (
 	// option's body size when it contains at least one IPv6 address, as per
 	// RFC 8106 section 5.3.1.
 	minNDPRecursiveDNSServerBodySize = 22
+
+	// ndpDNSSearchListLifetimeOffset is the start of the 4-byte
+	// Lifetime field within an NDPDNSSearchList.
+	ndpDNSSearchListLifetimeOffset = 2
+
+	// ndpDNSSearchListDomainNamesOffset is the start of the DNS search list
+	// domain names within an NDPDNSSearchList.
+	ndpDNSSearchListDomainNamesOffset = 6
+
+	// minNDPDNSSearchListBodySize is the minimum NDP DNS Search List option's
+	// body size when it contains at least one domain name, as per RFC 8106
+	// section 5.3.1.
+	minNDPDNSSearchListBodySize = 14
+
+	// maxDomainNameLabelLength is the maximum length of a domain name
+	// label, as per RFC 1035 section 3.1.
+	maxDomainNameLabelLength = 63
+
+	// maxDomainNameLength is the maximum length of a domain name, including
+	// label AND label length octet, as per RFC 1035 section 3.1.
+	maxDomainNameLength = 255
 
 	// lengthByteUnits is the multiplier factor for the Length field of an
 	// NDP option. That is, the length field for NDP options is in units of
@@ -219,6 +244,14 @@ func (i *NDPOptionIterator) Next() (NDPOption, bool, error) {
 		case NDPRecursiveDNSServerOptionType:
 			opt := NDPRecursiveDNSServer(body)
 			if err := opt.checkAddresses(); err != nil {
+				return nil, true, err
+			}
+
+			return opt, false, nil
+
+		case NDPDNSSearchListOptionType:
+			opt := NDPDNSSearchList(body)
+			if err := opt.checkDomainNames(); err != nil {
 				return nil, true, err
 			}
 
@@ -683,4 +716,184 @@ func (o NDPRecursiveDNSServer) iterAddresses(fn func(tcpip.Address)) error {
 	}
 
 	return nil
+}
+
+// NDPDNSSearchList is the NDP DNS Search List option, as defined by
+// RFC 8106 section 5.2.
+type NDPDNSSearchList []byte
+
+// Type implements NDPOption.Type.
+func (o NDPDNSSearchList) Type() NDPOptionIdentifier {
+	return NDPDNSSearchListOptionType
+}
+
+// Length implements NDPOption.Length.
+func (o NDPDNSSearchList) Length() int {
+	return len(o)
+}
+
+// serializeInto implements NDPOption.serializeInto.
+func (o NDPDNSSearchList) serializeInto(b []byte) int {
+	used := copy(b, o)
+
+	// Zero out the reserved bytes that are before the Lifetime field.
+	for i := 0; i < ndpDNSSearchListLifetimeOffset; i++ {
+		b[i] = 0
+	}
+
+	return used
+}
+
+// String implements fmt.Stringer.String.
+func (o NDPDNSSearchList) String() string {
+	lt := o.Lifetime()
+	domainNames, err := o.DomainNames()
+	if err != nil {
+		return fmt.Sprintf("%T([] valid for %s; err = %s)", o, lt, err)
+	}
+	return fmt.Sprintf("%T(%s valid for %s)", o, domainNames, lt)
+}
+
+// Lifetime returns the length of time that the DNS search list of domain names
+// in this option may be used for name resolution.
+//
+// Note, a value of 0 implies the domain names should no longer be used,
+// and a value of infinity/forever is represented by NDPInfiniteLifetime.
+func (o NDPDNSSearchList) Lifetime() time.Duration {
+	// The field is the time in seconds, as per RFC 8106 section 5.1.
+	return time.Second * time.Duration(binary.BigEndian.Uint32(o[ndpDNSSearchListLifetimeOffset:]))
+}
+
+// DomainNames returns a DNS search list of domain names.
+//
+// DomainNames will parse the backing buffer as outlined by RFC 1035 section
+// 3.1 and return a list of strings, with all domain names in lower case.
+func (o NDPDNSSearchList) DomainNames() ([]string, error) {
+	var domainNames []string
+	return domainNames, o.iterDomainNames(func(domainName string) { domainNames = append(domainNames, domainName) })
+}
+
+// checkDomainNames iterates over the domain names in an NDP DNS Search List
+// option and returns any error it encounters.
+func (o NDPDNSSearchList) checkDomainNames() error {
+	return o.iterDomainNames(nil)
+}
+
+// iterDomainNames iterates over the domain names in an NDP DNS Search List
+// option and calls a function with each valid domain name.
+func (o NDPDNSSearchList) iterDomainNames(fn func(string)) error {
+	if l := len(o); l < minNDPDNSSearchListBodySize {
+		return fmt.Errorf("got %d bytes for NDP DNS Search List  option's body, expected at least %d bytes: %w", l, minNDPDNSSearchListBodySize, io.ErrUnexpectedEOF)
+	}
+
+	var searchList bytes.Reader
+	searchList.Reset(o[ndpDNSSearchListDomainNamesOffset:])
+
+	var scratch [maxDomainNameLength]byte
+	domainName := bytes.NewBuffer(scratch[:])
+
+	// Parse the domain names, as per RFC 1035 section 3.1.
+	for searchList.Len() != 0 {
+		domainName.Reset()
+
+		// Parse a label within a domain name, as per RFC 1035 section 3.1.
+		for {
+			// The first byte is the label length.
+			labelLenByte, err := searchList.ReadByte()
+			if err != nil {
+				if err != io.EOF {
+					// ReadByte should only ever return nil or io.EOF.
+					panic(fmt.Sprintf("unexpected error when reading a label's length: %s", err))
+				}
+
+				// We use io.ErrUnexpectedEOF as exhausting the buffer is unexpected
+				// once we start parsing a domain name; we expect the buffer to contain
+				// enough bytes for the whole domain name.
+				return fmt.Errorf("unexpected exhausted buffer while parsing a new label for a domain from NDP Search List option: %w", io.ErrUnexpectedEOF)
+			}
+			labelLen := int(labelLenByte)
+
+			// A zero-length label implies the end of a domain name.
+			if labelLen == 0 {
+				// If the domain name is empty or we have no callback function, do
+				// nothing further with the current domain name.
+				if domainName.Len() == 0 || fn == nil {
+					break
+				}
+
+				// Ignore the trailing period in the parsed domain name.
+				domainName.Truncate(domainName.Len() - 1)
+				fn(domainName.String())
+				break
+			}
+
+			// The label's length must not exceed the maximum length for a label.
+			if labelLen > maxDomainNameLabelLength {
+				return fmt.Errorf("label length of %d bytes is greater than the max label length of %d bytes for an NDP Search List option: %w", labelLen, maxDomainNameLabelLength, ErrNDPOptMalformedBody)
+			}
+
+			// The label (and trailing period) must not make the domain name too long.
+			if labelLen+1 > domainName.Cap()-domainName.Len() {
+				return fmt.Errorf("label would make an NDP Search List option's domain name longer than the max domain name length of %d bytes: %w", maxDomainNameLength, ErrNDPOptMalformedBody)
+			}
+
+			// Copy the label and add a trailing period.
+			for i := 0; i < labelLen; i++ {
+				b, err := searchList.ReadByte()
+				if err != nil {
+					if err != io.EOF {
+						panic(fmt.Sprintf("unexpected error when reading domain name's label: %s", err))
+					}
+
+					return fmt.Errorf("read %d out of %d bytes for a domain name's label from NDP Search List option: %w", i, labelLen, io.ErrUnexpectedEOF)
+				}
+
+				// As per RFC 1035 section 2.3.1:
+				//  1) the label must only contain ASCII include letters, digits and
+				//     hyphens
+				//  2) the first character in a label must be a letter
+				//  3) the last letter in a label must be a letter or digit
+
+				if !isLetter(b) {
+					if i == 0 {
+						return fmt.Errorf("first character of a domain name's label in an NDP Search List option must be a letter, got character code = %d: %w", b, ErrNDPOptMalformedBody)
+					}
+
+					if b == '-' {
+						if i == labelLen-1 {
+							return fmt.Errorf("last character of a domain name's label in an NDP Search List option must not be a hyphen (-): %w", ErrNDPOptMalformedBody)
+						}
+					} else if !isDigit(b) {
+						return fmt.Errorf("domain name's label in an NDP Search List option may only contain letters, digits and hyphens, got character code = %d: %w", b, ErrNDPOptMalformedBody)
+					}
+				}
+
+				// If b is an upper case character, make it lower case.
+				if isUpperLetter(b) {
+					b = b - 'A' + 'a'
+				}
+
+				if err := domainName.WriteByte(b); err != nil {
+					panic(fmt.Sprintf("unexpected error writing label to domain name buffer: %s", err))
+				}
+			}
+			if err := domainName.WriteByte('.'); err != nil {
+				panic(fmt.Sprintf("unexpected error writing trailing period to domain name buffer: %s", err))
+			}
+		}
+	}
+
+	return nil
+}
+
+func isLetter(b byte) bool {
+	return b >= 'a' && b <= 'z' || isUpperLetter(b)
+}
+
+func isUpperLetter(b byte) bool {
+	return b >= 'A' && b <= 'Z'
+}
+
+func isDigit(b byte) bool {
+	return b >= '0' && b <= '9'
 }
