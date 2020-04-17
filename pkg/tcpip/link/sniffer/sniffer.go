@@ -238,7 +238,7 @@ func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
 }
 
 // Wait implements stack.LinkEndpoint.Wait.
-func (*endpoint) Wait() {}
+func (e *endpoint) Wait() { e.lower.Wait() }
 
 func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.View, gso *stack.GSO) {
 	// Figure out the network layer info.
