@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -433,19 +432,16 @@ func (e *endpoint) acceptQueueIsFull() bool {
 // handleListenSegment is called when a listening endpoint receives a segment
 // and needs to handle it.
 func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
-	if s.flagsAreSet(header.TCPFlagSyn | header.TCPFlagAck) {
+	e.rcvListMu.Lock()
+	rcvClosed := e.rcvClosed
+	e.rcvListMu.Unlock()
+	if rcvClosed || s.flagsAreSet(header.TCPFlagSyn|header.TCPFlagAck) {
+		// If the endpoint is shutdown, reply with reset.
+		//
 		// RFC 793 section 3.4 page 35 (figure 12) outlines that a RST
 		// must be sent in response to a SYN-ACK while in the listen
 		// state to prevent completing a handshake from an old SYN.
-		e.sendTCP(&s.route, tcpFields{
-			id:     s.id,
-			ttl:    e.ttl,
-			tos:    e.sendTOS,
-			flags:  header.TCPFlagRst,
-			seq:    s.ackNumber,
-			ack:    0,
-			rcvWnd: 0,
-		}, buffer.VectorisedView{}, nil)
+		replyWithReset(s, e.sendTOS, e.ttl)
 		return
 	}
 
@@ -534,7 +530,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			// The only time we should reach here when a connection
 			// was opened and closed really quickly and a delayed
 			// ACK was received from the sender.
-			replyWithReset(s)
+			replyWithReset(s, e.sendTOS, e.ttl)
 			return
 		}
 

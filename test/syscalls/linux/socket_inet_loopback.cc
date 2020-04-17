@@ -319,6 +319,75 @@ TEST_P(SocketInetLoopbackTest, TCPListenUnbound) {
   tcpSimpleConnectTest(listener, connector, false);
 }
 
+TEST_P(SocketInetLoopbackTest, TCPListenShutdown) {
+  auto const& param = GetParam();
+
+  TestAddress const& listener = param.listener;
+  TestAddress const& connector = param.connector;
+
+  constexpr int kBacklog = 2;
+  constexpr int kFDs = kBacklog + 1;
+
+  // Create the listening socket.
+  FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
+  sockaddr_storage listen_addr = listener.addr;
+  ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
+                   listener.addr_len),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(listen_fd.get(), kBacklog), SyscallSucceeds());
+
+  // Get the port bound by the listening socket.
+  socklen_t addrlen = listener.addr_len;
+  ASSERT_THAT(getsockname(listen_fd.get(),
+                          reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
+              SyscallSucceeds());
+  uint16_t const port =
+      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
+
+  sockaddr_storage conn_addr = connector.addr;
+  ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
+
+  // Shutdown the write of the listener, expect to not have any effect.
+  ASSERT_THAT(shutdown(listen_fd.get(), SHUT_WR), SyscallSucceeds());
+
+  for (int i = 0; i < kFDs; i++) {
+    auto client = ASSERT_NO_ERRNO_AND_VALUE(
+        Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
+    ASSERT_THAT(connect(client.get(), reinterpret_cast<sockaddr*>(&conn_addr),
+                        connector.addr_len),
+                SyscallSucceeds());
+    ASSERT_THAT(accept(listen_fd.get(), nullptr, nullptr), SyscallSucceeds());
+  }
+
+  // Shutdown the read of the listener, expect to fail subsequent
+  // server accepts, binds and client connects.
+  ASSERT_THAT(shutdown(listen_fd.get(), SHUT_RD), SyscallSucceeds());
+
+  ASSERT_THAT(accept(listen_fd.get(), nullptr, nullptr),
+              SyscallFailsWithErrno(EINVAL));
+
+  // Check that shutdown did not release the port.
+  FileDescriptor new_listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
+  ASSERT_THAT(
+      bind(new_listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
+           listener.addr_len),
+      SyscallFailsWithErrno(EADDRINUSE));
+
+  // Check that subsequent connection attempts receive a RST.
+  auto client = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
+
+  for (int i = 0; i < kFDs; i++) {
+    auto client = ASSERT_NO_ERRNO_AND_VALUE(
+        Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
+    ASSERT_THAT(connect(client.get(), reinterpret_cast<sockaddr*>(&conn_addr),
+                        connector.addr_len),
+                SyscallFailsWithErrno(ECONNREFUSED));
+  }
+}
+
 TEST_P(SocketInetLoopbackTest, TCPListenClose) {
   auto const& param = GetParam();
 
@@ -365,9 +434,8 @@ TEST_P(SocketInetLoopbackTest, TCPListenClose) {
   }
 }
 
-TEST_P(SocketInetLoopbackTest, TCPListenCloseWhileConnect) {
-  auto const& param = GetParam();
-
+void TestListenWhileConnect(const TestParam& param,
+                            void (*stopListen)(FileDescriptor&)) {
   TestAddress const& listener = param.listener;
   TestAddress const& connector = param.connector;
 
@@ -404,8 +472,8 @@ TEST_P(SocketInetLoopbackTest, TCPListenCloseWhileConnect) {
       clients.push_back(std::move(client));
     }
   }
-  // Close the listening socket.
-  listen_fd.reset();
+
+  stopListen(listen_fd);
 
   for (auto& client : clients) {
     const int kTimeout = 10000;
@@ -420,11 +488,24 @@ TEST_P(SocketInetLoopbackTest, TCPListenCloseWhileConnect) {
     char c;
     // Subsequent read can fail with:
     // ECONNRESET: If the client connection was established and was reset by the
-    // remote. ECONNREFUSED: If the client connection failed to be established.
+    // remote.
+    // ECONNREFUSED: If the client connection failed to be established.
     ASSERT_THAT(read(client.get(), &c, sizeof(c)),
                 AnyOf(SyscallFailsWithErrno(ECONNRESET),
                       SyscallFailsWithErrno(ECONNREFUSED)));
   }
+}
+
+TEST_P(SocketInetLoopbackTest, TCPListenCloseWhileConnect) {
+  TestListenWhileConnect(GetParam(), [](FileDescriptor& f) {
+    ASSERT_THAT(close(f.release()), SyscallSucceeds());
+  });
+}
+
+TEST_P(SocketInetLoopbackTest, TCPListenShutdownWhileConnect) {
+  TestListenWhileConnect(GetParam(), [](FileDescriptor& f) {
+    ASSERT_THAT(shutdown(f.get(), SHUT_RD), SyscallSucceeds());
+  });
 }
 
 TEST_P(SocketInetLoopbackTest, TCPbacklog) {
@@ -1134,6 +1215,7 @@ TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread_NoRandomSave) {
               if (connects_received >= kConnectAttempts) {
                 // Another thread have shutdown our read side causing the
                 // accept to fail.
+                ASSERT_EQ(errno, EINVAL);
                 break;
               }
               ASSERT_NO_ERRNO(fd);

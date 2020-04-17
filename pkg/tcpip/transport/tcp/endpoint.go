@@ -2101,7 +2101,7 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) *tcpip.Error {
 	switch {
 	case e.EndpointState().connected():
 		// Close for read.
-		if (e.shutdownFlags & tcpip.ShutdownRead) != 0 {
+		if e.shutdownFlags&tcpip.ShutdownRead != 0 {
 			// Mark read side as closed.
 			e.rcvListMu.Lock()
 			e.rcvClosed = true
@@ -2110,7 +2110,7 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) *tcpip.Error {
 
 			// If we're fully closed and we have unread data we need to abort
 			// the connection with a RST.
-			if (e.shutdownFlags&tcpip.ShutdownWrite) != 0 && rcvBufUsed > 0 {
+			if e.shutdownFlags&tcpip.ShutdownWrite != 0 && rcvBufUsed > 0 {
 				e.resetConnectionLocked(tcpip.ErrConnectionAborted)
 				// Wake up worker to terminate loop.
 				e.notifyProtocolGoroutine(notifyTickleWorker)
@@ -2119,7 +2119,7 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) *tcpip.Error {
 		}
 
 		// Close for write.
-		if (e.shutdownFlags & tcpip.ShutdownWrite) != 0 {
+		if e.shutdownFlags&tcpip.ShutdownWrite != 0 {
 			e.sndBufMu.Lock()
 			if e.sndClosed {
 				// Already closed.
@@ -2142,12 +2142,23 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) *tcpip.Error {
 
 		return nil
 	case e.EndpointState() == StateListen:
-		// Tell protocolListenLoop to stop.
-		if flags&tcpip.ShutdownRead != 0 {
-			e.notifyProtocolGoroutine(notifyClose)
+		if e.shutdownFlags&tcpip.ShutdownRead != 0 {
+			// Reset all connections from the accept queue and keep the
+			// worker running so that it can continue handling incoming
+			// segments by replying with RST.
+			//
+			// By not removing this endpoint from the demuxer mapping, we
+			// ensure that any other bind to the same port fails, as on Linux.
+			// TODO(gvisor.dev/issue/2468): We need to enable applications to
+			// start listening on this endpoint again similar to Linux.
+			e.rcvListMu.Lock()
+			e.rcvClosed = true
+			e.rcvListMu.Unlock()
+			e.closePendingAcceptableConnectionsLocked()
+			// Notify waiters that the endpoint is shutdown.
+			e.waiterQueue.Notify(waiter.EventIn | waiter.EventOut | waiter.EventHUp | waiter.EventErr)
 		}
 		return nil
-
 	default:
 		return tcpip.ErrNotConnected
 	}
@@ -2251,8 +2262,11 @@ func (e *endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 	e.LockUser()
 	defer e.UnlockUser()
 
+	e.rcvListMu.Lock()
+	rcvClosed := e.rcvClosed
+	e.rcvListMu.Unlock()
 	// Endpoint must be in listen state before it can accept connections.
-	if e.EndpointState() != StateListen {
+	if rcvClosed || e.EndpointState() != StateListen {
 		return nil, nil, tcpip.ErrInvalidEndpointState
 	}
 
