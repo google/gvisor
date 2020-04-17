@@ -23,8 +23,10 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -84,6 +86,48 @@ func getExecUserHome(ctx context.Context, rootMns *fs.MountNamespace, uid auth.K
 		File: f,
 	}
 
+	return findHomeInPasswd(uint32(uid), r, defaultHome)
+}
+
+type fileReaderVFS2 struct {
+	ctx context.Context
+	fd  *vfs.FileDescription
+}
+
+func (r *fileReaderVFS2) Read(buf []byte) (int, error) {
+	n, err := r.fd.Read(r.ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
+	return int(n), err
+}
+
+func getExecUserHomeVFS2(ctx context.Context, mns *vfs.MountNamespace, uid auth.KUID) (string, error) {
+	const defaultHome = "/"
+
+	root := mns.Root()
+	defer root.DecRef()
+
+	creds := auth.CredentialsFromContext(ctx)
+
+	target := &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse("/etc/passwd"),
+	}
+
+	opts := &vfs.OpenOptions{
+		Flags: linux.O_RDONLY,
+	}
+
+	fd, err := root.Mount().Filesystem().VirtualFilesystem().OpenAt(ctx, creds, target, opts)
+	if err != nil {
+		return defaultHome, nil
+	}
+	defer fd.DecRef()
+
+	r := &fileReaderVFS2{
+		ctx: ctx,
+		fd:  fd,
+	}
+
 	homeDir, err := findHomeInPasswd(uint32(uid), r, defaultHome)
 	if err != nil {
 		return "", err
@@ -108,6 +152,26 @@ func maybeAddExecUserHome(ctx context.Context, mns *fs.MountNamespace, uid auth.
 	// environment variable as required by POSIX if it is not overridden by
 	// the user.
 	homeDir, err := getExecUserHome(ctx, mns, uid)
+	if err != nil {
+		return nil, fmt.Errorf("error reading exec user: %v", err)
+	}
+
+	return append(envv, "HOME="+homeDir), nil
+}
+
+func maybeAddExecUserHomeVFS2(ctx context.Context, vmns *vfs.MountNamespace, uid auth.KUID, envv []string) ([]string, error) {
+	// Check if the envv already contains HOME.
+	for _, env := range envv {
+		if strings.HasPrefix(env, "HOME=") {
+			// We have it. Return the original slice unmodified.
+			return envv, nil
+		}
+	}
+
+	// Read /etc/passwd for the user's HOME directory and set the HOME
+	// environment variable as required by POSIX if it is not overridden by
+	// the user.
+	homeDir, err := getExecUserHomeVFS2(ctx, vmns, uid)
 	if err != nil {
 		return nil, fmt.Errorf("error reading exec user: %v", err)
 	}

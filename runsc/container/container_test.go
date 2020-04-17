@@ -521,9 +521,21 @@ func TestExePath(t *testing.T) {
 
 // Test the we can retrieve the application exit status from the container.
 func TestAppExitStatus(t *testing.T) {
+	conf := testutil.TestConfig()
+	conf.VFS2 = false
+	doAppExitStatus(t, conf)
+}
+
+// This is TestAppExitStatus for VFSv2.
+func TestAppExitStatusVFS2(t *testing.T) {
+	conf := testutil.TestConfig()
+	conf.VFS2 = true
+	doAppExitStatus(t, conf)
+}
+
+func doAppExitStatus(t *testing.T, conf *boot.Config) {
 	// First container will succeed.
 	succSpec := testutil.NewSpecWithArgs("true")
-	conf := testutil.TestConfig()
 	rootDir, bundleDir, err := testutil.SetupContainer(succSpec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)

@@ -26,7 +26,6 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/log"
@@ -72,6 +71,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/unix"
 )
+
+var syscallTable *kernel.SyscallTable
 
 // Loader keeps state needed to start the kernel and run the container..
 type Loader struct {
@@ -195,12 +196,13 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("setting up memory usage: %v", err)
 	}
 
-	if args.Conf.VFS2 {
-		st, ok := kernel.LookupSyscallTable(abi.Linux, arch.Host)
-		if ok {
-			vfs2.Override(st.Table)
-		}
+	// Patch the syscall table.
+	kernel.VFS2Enabled = args.Conf.VFS2
+	if kernel.VFS2Enabled {
+		vfs2.Override(syscallTable.Table)
 	}
+
+	kernel.RegisterSyscallTable(syscallTable)
 
 	// Create kernel and platform.
 	p, err := createPlatform(args.Conf, args.Device)
@@ -392,11 +394,16 @@ func newProcess(id string, spec *specs.Spec, creds *auth.Credentials, k *kernel.
 		return kernel.CreateProcessArgs{}, fmt.Errorf("creating limits: %v", err)
 	}
 
+	wd := spec.Process.Cwd
+	if wd == "" {
+		wd = "/"
+	}
+
 	// Create the process arguments.
 	procArgs := kernel.CreateProcessArgs{
 		Argv:                    spec.Process.Args,
 		Envv:                    spec.Process.Env,
-		WorkingDirectory:        spec.Process.Cwd, // Defaults to '/' if empty.
+		WorkingDirectory:        wd,
 		Credentials:             creds,
 		Umask:                   0022,
 		Limits:                  ls,
@@ -541,7 +548,15 @@ func (l *Loader) run() error {
 		}
 
 		// Add the HOME enviroment variable if it is not already set.
-		envv, err := maybeAddExecUserHome(ctx, l.rootProcArgs.MountNamespace, l.rootProcArgs.Credentials.RealKUID, l.rootProcArgs.Envv)
+		var envv []string
+		if kernel.VFS2Enabled {
+			envv, err = maybeAddExecUserHomeVFS2(ctx, l.rootProcArgs.MountNamespaceVFS2,
+				l.rootProcArgs.Credentials.RealKUID, l.rootProcArgs.Envv)
+
+		} else {
+			envv, err = maybeAddExecUserHome(ctx, l.rootProcArgs.MountNamespace,
+				l.rootProcArgs.Credentials.RealKUID, l.rootProcArgs.Envv)
+		}
 		if err != nil {
 			return err
 		}

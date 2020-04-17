@@ -305,5 +305,10 @@ func (c *Config) ToFlags() []string {
 	if len(c.TestOnlyTestNameEnv) != 0 {
 		f = append(f, "--TESTONLY-test-name-env="+c.TestOnlyTestNameEnv)
 	}
+
+	if c.VFS2 {
+		f = append(f, "--vfs2=true")
+	}
+
 	return f
 }

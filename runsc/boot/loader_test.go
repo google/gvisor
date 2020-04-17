@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/runsc/fsgofer"
@@ -64,6 +65,11 @@ func testSpec() *specs.Spec {
 			Args: []string{"/bin/true"},
 		},
 	}
+}
+
+func resetSyscallTable() {
+	kernel.VFS2Enabled = false
+	kernel.FlushSyscallTablesTestOnly()
 }
 
 // startGofer starts a new gofer routine serving 'root' path. It returns the
@@ -101,13 +107,15 @@ func startGofer(root string) (int, func(), error) {
 	return sandboxEnd, cleanup, nil
 }
 
-func createLoader() (*Loader, func(), error) {
+func createLoader(vfsEnabled bool) (*Loader, func(), error) {
 	fd, err := server.CreateSocket(ControlSocketAddr(fmt.Sprintf("%010d", rand.Int())[:10]))
 	if err != nil {
 		return nil, nil, err
 	}
 	conf := testConfig()
 	spec := testSpec()
+
+	conf.VFS2 = vfsEnabled
 
 	sandEnd, cleanup, err := startGofer(spec.Root.Path)
 	if err != nil {
@@ -142,10 +150,22 @@ func createLoader() (*Loader, func(), error) {
 
 // TestRun runs a simple application in a sandbox and checks that it succeeds.
 func TestRun(t *testing.T) {
-	l, cleanup, err := createLoader()
+	defer resetSyscallTable()
+	doRun(t, false)
+}
+
+// TestRunVFS2 runs TestRun in VFSv2.
+func TestRunVFS2(t *testing.T) {
+	defer resetSyscallTable()
+	doRun(t, true)
+}
+
+func doRun(t *testing.T, vfsEnabled bool) {
+	l, cleanup, err := createLoader(vfsEnabled)
 	if err != nil {
 		t.Fatalf("error creating loader: %v", err)
 	}
+
 	defer l.Destroy()
 	defer cleanup()
 
@@ -179,7 +199,18 @@ func TestRun(t *testing.T) {
 // TestStartSignal tests that the controller Start message will cause
 // WaitForStartSignal to return.
 func TestStartSignal(t *testing.T) {
-	l, cleanup, err := createLoader()
+	defer resetSyscallTable()
+	doStartSignal(t, false)
+}
+
+// TestStartSignalVFS2 does TestStartSignal with VFS2.
+func TestStartSignalVFS2(t *testing.T) {
+	defer resetSyscallTable()
+	doStartSignal(t, true)
+}
+
+func doStartSignal(t *testing.T, vfsEnabled bool) {
+	l, cleanup, err := createLoader(vfsEnabled)
 	if err != nil {
 		t.Fatalf("error creating loader: %v", err)
 	}
