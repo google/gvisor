@@ -850,7 +850,6 @@ func (e *baseEndpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Erro
 	case tcpip.ReuseAddressOption:
 	default:
 		log.Warningf("Unsupported socket option: %d", opt)
-		return tcpip.ErrUnknownProtocolOption
 	}
 	return nil
 }
@@ -861,7 +860,6 @@ func (e *baseEndpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	case tcpip.ReceiveBufferSizeOption:
 	default:
 		log.Warningf("Unsupported socket option: %d", opt)
-		return tcpip.ErrUnknownProtocolOption
 	}
 	return nil
 }
