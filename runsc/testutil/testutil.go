@@ -31,11 +31,13 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
+	"testing"
 	"time"
 
 	"github.com/cenkalti/backoff"
@@ -81,17 +83,16 @@ func ConfigureExePath() error {
 
 // TestConfig returns the default configuration to use in tests. Note that
 // 'RootDir' must be set by caller if required.
-func TestConfig() *boot.Config {
+func TestConfig(t *testing.T) *boot.Config {
 	logDir := ""
 	if dir, ok := os.LookupEnv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
 		logDir = dir + "/"
 	}
 	return &boot.Config{
 		Debug:              true,
-		DebugLog:           logDir,
+		DebugLog:           path.Join(logDir, "runsc.log."+t.Name()+".%TIMESTAMP%.%COMMAND%"),
 		LogFormat:          "text",
 		DebugLogFormat:     "text",
-		AlsoLogToStderr:    true,
 		LogPackets:         true,
 		Network:            boot.NetworkNone,
 		Strace:             true,

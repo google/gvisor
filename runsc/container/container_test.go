@@ -251,12 +251,12 @@ var noOverlay = []configOption{kvm, nonExclusiveFS}
 var all = append(noOverlay, overlay)
 
 // configs generates different configurations to run tests.
-func configs(opts ...configOption) []*boot.Config {
+func configs(t *testing.T, opts ...configOption) []*boot.Config {
 	// Always load the default config.
-	cs := []*boot.Config{testutil.TestConfig()}
+	cs := []*boot.Config{testutil.TestConfig(t)}
 
 	for _, o := range opts {
-		c := testutil.TestConfig()
+		c := testutil.TestConfig(t)
 		switch o {
 		case overlay:
 			c.Overlay = true
@@ -285,7 +285,7 @@ func TestLifecycle(t *testing.T) {
 	childReaper.Start()
 	defer childReaper.Stop()
 
-	for _, conf := range configs(all...) {
+	for _, conf := range configs(t, all...) {
 		t.Logf("Running test with conf: %+v", conf)
 		// The container will just sleep for a long time.  We will kill it before
 		// it finishes sleeping.
@@ -457,7 +457,7 @@ func TestExePath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, conf := range configs(overlay) {
+	for _, conf := range configs(t, overlay) {
 		t.Logf("Running test with conf: %+v", conf)
 		for _, test := range []struct {
 			path    string
@@ -521,21 +521,19 @@ func TestExePath(t *testing.T) {
 
 // Test the we can retrieve the application exit status from the container.
 func TestAppExitStatus(t *testing.T) {
-	conf := testutil.TestConfig()
-	conf.VFS2 = false
-	doAppExitStatus(t, conf)
+	doAppExitStatus(t, false)
 }
 
 // This is TestAppExitStatus for VFSv2.
 func TestAppExitStatusVFS2(t *testing.T) {
-	conf := testutil.TestConfig()
-	conf.VFS2 = true
-	doAppExitStatus(t, conf)
+	doAppExitStatus(t, true)
 }
 
-func doAppExitStatus(t *testing.T, conf *boot.Config) {
+func doAppExitStatus(t *testing.T, vfs2 bool) {
 	// First container will succeed.
 	succSpec := testutil.NewSpecWithArgs("true")
+	conf := testutil.TestConfig(t)
+	conf.VFS2 = vfs2
 	rootDir, bundleDir, err := testutil.SetupContainer(succSpec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -585,7 +583,7 @@ func doAppExitStatus(t *testing.T, conf *boot.Config) {
 
 // TestExec verifies that a container can exec a new program.
 func TestExec(t *testing.T) {
-	for _, conf := range configs(overlay) {
+	for _, conf := range configs(t, overlay) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		const uid = 343
@@ -679,7 +677,7 @@ func TestExec(t *testing.T) {
 
 // TestKillPid verifies that we can signal individual exec'd processes.
 func TestKillPid(t *testing.T) {
-	for _, conf := range configs(overlay) {
+	for _, conf := range configs(t, overlay) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		app, err := testutil.FindFile("runsc/container/test_app/test_app")
@@ -755,7 +753,7 @@ func TestKillPid(t *testing.T) {
 // be the next consecutive number after the last number from the checkpointed container.
 func TestCheckpointRestore(t *testing.T) {
 	// Skip overlay because test requires writing to host file.
-	for _, conf := range configs(noOverlay...) {
+	for _, conf := range configs(t, noOverlay...) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		dir, err := ioutil.TempDir(testutil.TmpDir(), "checkpoint-test")
@@ -916,7 +914,7 @@ func TestCheckpointRestore(t *testing.T) {
 // with filesystem Unix Domain Socket use.
 func TestUnixDomainSockets(t *testing.T) {
 	// Skip overlay because test requires writing to host file.
-	for _, conf := range configs(noOverlay...) {
+	for _, conf := range configs(t, noOverlay...) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		// UDS path is limited to 108 chars for compatibility with older systems.
@@ -1054,7 +1052,7 @@ func TestUnixDomainSockets(t *testing.T) {
 // recreated. Then it resumes the container, verify that the file gets created
 // again.
 func TestPauseResume(t *testing.T) {
-	for _, conf := range configs(noOverlay...) {
+	for _, conf := range configs(t, noOverlay...) {
 		t.Run(fmt.Sprintf("conf: %+v", conf), func(t *testing.T) {
 			t.Logf("Running test with conf: %+v", conf)
 
@@ -1135,7 +1133,7 @@ func TestPauseResume(t *testing.T) {
 // occurs given the correct state.
 func TestPauseResumeStatus(t *testing.T) {
 	spec := testutil.NewSpecWithArgs("sleep", "20")
-	conf := testutil.TestConfig()
+	conf := testutil.TestConfig(t)
 	rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -1201,7 +1199,7 @@ func TestCapabilities(t *testing.T) {
 	uid := auth.KUID(os.Getuid() + 1)
 	gid := auth.KGID(os.Getgid() + 1)
 
-	for _, conf := range configs(all...) {
+	for _, conf := range configs(t, all...) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		spec := testutil.NewSpecWithArgs("sleep", "100")
@@ -1290,7 +1288,7 @@ func TestCapabilities(t *testing.T) {
 // TestRunNonRoot checks that sandbox can be configured when running as
 // non-privileged user.
 func TestRunNonRoot(t *testing.T) {
-	for _, conf := range configs(noOverlay...) {
+	for _, conf := range configs(t, noOverlay...) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		spec := testutil.NewSpecWithArgs("/bin/true")
@@ -1334,7 +1332,7 @@ func TestRunNonRoot(t *testing.T) {
 // TestMountNewDir checks that runsc will create destination directory if it
 // doesn't exit.
 func TestMountNewDir(t *testing.T) {
-	for _, conf := range configs(overlay) {
+	for _, conf := range configs(t, overlay) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		root, err := ioutil.TempDir(testutil.TmpDir(), "root")
@@ -1363,7 +1361,7 @@ func TestMountNewDir(t *testing.T) {
 }
 
 func TestReadonlyRoot(t *testing.T) {
-	for _, conf := range configs(overlay) {
+	for _, conf := range configs(t, overlay) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		spec := testutil.NewSpecWithArgs("/bin/touch", "/foo")
@@ -1401,7 +1399,7 @@ func TestReadonlyRoot(t *testing.T) {
 }
 
 func TestUIDMap(t *testing.T) {
-	for _, conf := range configs(noOverlay...) {
+	for _, conf := range configs(t, noOverlay...) {
 		t.Logf("Running test with conf: %+v", conf)
 		testDir, err := ioutil.TempDir(testutil.TmpDir(), "test-mount")
 		if err != nil {
@@ -1482,7 +1480,7 @@ func TestUIDMap(t *testing.T) {
 }
 
 func TestReadonlyMount(t *testing.T) {
-	for _, conf := range configs(overlay) {
+	for _, conf := range configs(t, overlay) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		dir, err := ioutil.TempDir(testutil.TmpDir(), "ro-mount")
@@ -1539,7 +1537,7 @@ func TestAbbreviatedIDs(t *testing.T) {
 	}
 	defer os.RemoveAll(rootDir)
 
-	conf := testutil.TestConfig()
+	conf := testutil.TestConfig(t)
 	conf.RootDir = rootDir
 
 	cids := []string{
@@ -1597,7 +1595,7 @@ func TestAbbreviatedIDs(t *testing.T) {
 
 func TestGoferExits(t *testing.T) {
 	spec := testutil.NewSpecWithArgs("/bin/sleep", "10000")
-	conf := testutil.TestConfig()
+	conf := testutil.TestConfig(t)
 	rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -1666,7 +1664,7 @@ func TestRootNotMount(t *testing.T) {
 	spec.Root.Readonly = true
 	spec.Mounts = nil
 
-	conf := testutil.TestConfig()
+	conf := testutil.TestConfig(t)
 	if err := run(spec, conf); err != nil {
 		t.Fatalf("error running sandbox: %v", err)
 	}
@@ -1680,7 +1678,7 @@ func TestUserLog(t *testing.T) {
 
 	// sched_rr_get_interval = 148 - not implemented in gvisor.
 	spec := testutil.NewSpecWithArgs(app, "syscall", "--syscall=148")
-	conf := testutil.TestConfig()
+	conf := testutil.TestConfig(t)
 	rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -1720,7 +1718,7 @@ func TestUserLog(t *testing.T) {
 }
 
 func TestWaitOnExitedSandbox(t *testing.T) {
-	for _, conf := range configs(all...) {
+	for _, conf := range configs(t, all...) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		// Run a shell that sleeps for 1 second and then exits with a
@@ -1775,7 +1773,7 @@ func TestWaitOnExitedSandbox(t *testing.T) {
 
 func TestDestroyNotStarted(t *testing.T) {
 	spec := testutil.NewSpecWithArgs("/bin/sleep", "100")
-	conf := testutil.TestConfig()
+	conf := testutil.TestConfig(t)
 	rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -1802,7 +1800,7 @@ func TestDestroyNotStarted(t *testing.T) {
 func TestDestroyStarting(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		spec := testutil.NewSpecWithArgs("/bin/sleep", "100")
-		conf := testutil.TestConfig()
+		conf := testutil.TestConfig(t)
 		rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
 		if err != nil {
 			t.Fatalf("error setting up container: %v", err)
@@ -1847,7 +1845,7 @@ func TestDestroyStarting(t *testing.T) {
 }
 
 func TestCreateWorkingDir(t *testing.T) {
-	for _, conf := range configs(overlay) {
+	for _, conf := range configs(t, overlay) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "cwd-create")
@@ -1920,7 +1918,7 @@ func TestMountPropagation(t *testing.T) {
 		},
 	}
 
-	conf := testutil.TestConfig()
+	conf := testutil.TestConfig(t)
 	rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -1971,7 +1969,7 @@ func TestMountPropagation(t *testing.T) {
 }
 
 func TestMountSymlink(t *testing.T) {
-	for _, conf := range configs(overlay) {
+	for _, conf := range configs(t, overlay) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		dir, err := ioutil.TempDir(testutil.TmpDir(), "mount-symlink")
@@ -2051,7 +2049,7 @@ func TestNetRaw(t *testing.T) {
 	}
 
 	for _, enableRaw := range []bool{true, false} {
-		conf := testutil.TestConfig()
+		conf := testutil.TestConfig(t)
 		conf.EnableRaw = enableRaw
 
 		test := "--enabled"
@@ -2068,7 +2066,7 @@ func TestNetRaw(t *testing.T) {
 
 // TestOverlayfsStaleRead most basic test that '--overlayfs-stale-read' works.
 func TestOverlayfsStaleRead(t *testing.T) {
-	conf := testutil.TestConfig()
+	conf := testutil.TestConfig(t)
 	conf.OverlayfsStaleRead = true
 
 	in, err := ioutil.TempFile(testutil.TmpDir(), "stale-read.in")
@@ -2132,7 +2130,7 @@ func TestTTYField(t *testing.T) {
 
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
-			conf := testutil.TestConfig()
+			conf := testutil.TestConfig(t)
 
 			// We will run /bin/sleep, possibly with an open TTY.
 			cmd := []string{"/bin/sleep", "10000"}

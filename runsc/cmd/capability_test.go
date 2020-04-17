@@ -85,7 +85,7 @@ func TestCapabilities(t *testing.T) {
 		Inheritable: caps,
 	}
 
-	conf := testutil.TestConfig()
+	conf := testutil.TestConfig(t)
 
 	// Use --network=host to make sandbox use spec's capabilities.
 	conf.Network = boot.NetworkHost

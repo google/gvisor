@@ -118,7 +118,7 @@ func receiveConsolePTY(srv *unet.ServerSocket) (*os.File, error) {
 
 // Test that an pty FD is sent over the console socket if one is provided.
 func TestConsoleSocket(t *testing.T) {
-	for _, conf := range configs(all...) {
+	for _, conf := range configs(t, all...) {
 		t.Logf("Running test with conf: %+v", conf)
 		spec := testutil.NewSpecWithArgs("true")
 		rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
@@ -163,7 +163,7 @@ func TestConsoleSocket(t *testing.T) {
 // Test that job control signals work on a console created with "exec -ti".
 func TestJobControlSignalExec(t *testing.T) {
 	spec := testutil.NewSpecWithArgs("/bin/sleep", "10000")
-	conf := testutil.TestConfig()
+	conf := testutil.TestConfig(t)
 
 	rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
@@ -286,7 +286,7 @@ func TestJobControlSignalExec(t *testing.T) {
 
 // Test that job control signals work on a console created with "run -ti".
 func TestJobControlSignalRootContainer(t *testing.T) {
-	conf := testutil.TestConfig()
+	conf := testutil.TestConfig(t)
 	// Don't let bash execute from profile or rc files, otherwise our PID
 	// counts get messed up.
 	spec := testutil.NewSpecWithArgs("/bin/bash", "--noprofile", "--norc")
