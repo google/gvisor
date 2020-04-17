@@ -1477,8 +1477,6 @@ func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 		e.LockUser()
 		e.v6only = v
 		e.UnlockUser()
-	default:
-		return tcpip.ErrUnknownProtocolOption
 	}
 
 	return nil
@@ -1592,8 +1590,6 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 		e.ttl = uint8(v)
 		e.UnlockUser()
 
-	default:
-		return tcpip.ErrUnknownProtocolOption
 	}
 	return nil
 }
