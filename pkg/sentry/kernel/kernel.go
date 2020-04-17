@@ -50,6 +50,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/timerfd"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
 	"gvisor.dev/gvisor/pkg/sentry/hostcpu"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -254,6 +255,10 @@ type Kernel struct {
 	// VFS keeps the filesystem state used across the kernel.
 	vfs vfs.VirtualFilesystem
 
+	// pipeMount is the Mount used for pipes created by the pipe() and pipe2()
+	// syscalls (as opposed to named pipes created by mknod()).
+	pipeMount *vfs.Mount
+
 	// If set to true, report address space activation waits as if the task is in
 	// external wait so that the watchdog doesn't report the task stuck.
 	SleepForAddressSpaceActivation bool
@@ -354,19 +359,29 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.monotonicClock = &timekeeperClock{tk: args.Timekeeper, c: sentrytime.Monotonic}
 	k.futexes = futex.NewManager()
 	k.netlinkPorts = port.New()
+
 	if VFS2Enabled {
 		if err := k.vfs.Init(); err != nil {
 			return fmt.Errorf("failed to initialize VFS: %v", err)
 		}
-		fs := sockfs.NewFilesystem(&k.vfs)
-		// NewDisconnectedMount will take an additional reference on fs.
-		defer fs.DecRef()
-		sm, err := k.vfs.NewDisconnectedMount(fs, nil, &vfs.MountOptions{})
+
+		pipeFilesystem := pipefs.NewFilesystem(&k.vfs)
+		defer pipeFilesystem.DecRef()
+		pipeMount, err := k.vfs.NewDisconnectedMount(pipeFilesystem, nil, &vfs.MountOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to create pipefs mount: %v", err)
+		}
+		k.pipeMount = pipeMount
+
+		socketFilesystem := sockfs.NewFilesystem(&k.vfs)
+		defer socketFilesystem.DecRef()
+		socketMount, err := k.vfs.NewDisconnectedMount(socketFilesystem, nil, &vfs.MountOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to initialize socket mount: %v", err)
 		}
-		k.socketMount = sm
+		k.socketMount = socketMount
 	}
+
 	return nil
 }
 
@@ -1612,4 +1627,9 @@ func (k *Kernel) EmitUnimplementedEvent(ctx context.Context) {
 // VFS returns the virtual filesystem for the kernel.
 func (k *Kernel) VFS() *vfs.VirtualFilesystem {
 	return &k.vfs
+}
+
+// PipeMount returns the pipefs mount.
+func (k *Kernel) PipeMount() *vfs.Mount {
+	return k.pipeMount
 }

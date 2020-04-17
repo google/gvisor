@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -140,6 +141,22 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return uintptr(file.StatusFlags()), nil, nil
 	case linux.F_SETFL:
 		return 0, nil, file.SetStatusFlags(t, t.Credentials(), args[2].Uint())
+	case linux.F_SETPIPE_SZ:
+		pipefile, ok := file.Impl().(*pipe.VFSPipeFD)
+		if !ok {
+			return 0, nil, syserror.EBADF
+		}
+		n, err := pipefile.SetPipeSize(int64(args[2].Int()))
+		if err != nil {
+			return 0, nil, err
+		}
+		return uintptr(n), nil, nil
+	case linux.F_GETPIPE_SZ:
+		pipefile, ok := file.Impl().(*pipe.VFSPipeFD)
+		if !ok {
+			return 0, nil, syserror.EBADF
+		}
+		return uintptr(pipefile.PipeSize()), nil, nil
 	default:
 		// TODO(gvisor.dev/issue/1623): Everything else is not yet supported.
 		return 0, nil, syserror.EINVAL
