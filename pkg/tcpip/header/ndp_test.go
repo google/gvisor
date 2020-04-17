@@ -17,7 +17,9 @@ package header
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
+	"regexp"
 	"testing"
 	"time"
 
@@ -667,6 +669,477 @@ func TestNDPRecursiveDNSServerOption(t *testing.T) {
 	}
 }
 
+// TestNDPDNSSearchListOption tests the getters of NDPDNSSearchList.
+func TestNDPDNSSearchListOption(t *testing.T) {
+	tests := []struct {
+		name        string
+		buf         []byte
+		lifetime    time.Duration
+		domainNames []string
+		err         error
+	}{
+		{
+			name: "Valid1Label",
+			buf: []byte{
+				0, 0,
+				0, 0, 0, 1,
+				3, 'a', 'b', 'c',
+				0,
+				0, 0, 0,
+			},
+			lifetime: time.Second,
+			domainNames: []string{
+				"abc",
+			},
+			err: nil,
+		},
+		{
+			name: "Valid2Label",
+			buf: []byte{
+				0, 0,
+				0, 0, 0, 5,
+				3, 'a', 'b', 'c',
+				4, 'a', 'b', 'c', 'd',
+				0,
+				0, 0, 0, 0, 0, 0,
+			},
+			lifetime: 5 * time.Second,
+			domainNames: []string{
+				"abc.abcd",
+			},
+			err: nil,
+		},
+		{
+			name: "Valid3Label",
+			buf: []byte{
+				0, 0,
+				1, 0, 0, 0,
+				3, 'a', 'b', 'c',
+				4, 'a', 'b', 'c', 'd',
+				1, 'e',
+				0,
+				0, 0, 0, 0,
+			},
+			lifetime: 16777216 * time.Second,
+			domainNames: []string{
+				"abc.abcd.e",
+			},
+			err: nil,
+		},
+		{
+			name: "Valid2Domains",
+			buf: []byte{
+				0, 0,
+				1, 2, 3, 4,
+				3, 'a', 'b', 'c',
+				0,
+				2, 'd', 'e',
+				3, 'x', 'y', 'z',
+				0,
+				0, 0, 0,
+			},
+			lifetime: 16909060 * time.Second,
+			domainNames: []string{
+				"abc",
+				"de.xyz",
+			},
+			err: nil,
+		},
+		{
+			name: "Valid3DomainsMixedCase",
+			buf: []byte{
+				0, 0,
+				0, 0, 0, 0,
+				3, 'a', 'B', 'c',
+				0,
+				2, 'd', 'E',
+				3, 'X', 'y', 'z',
+				0,
+				1, 'J',
+				0,
+			},
+			lifetime: 0,
+			domainNames: []string{
+				"abc",
+				"de.xyz",
+				"j",
+			},
+			err: nil,
+		},
+		{
+			name: "ValidDomainAfterNULL",
+			buf: []byte{
+				0, 0,
+				0, 0, 0, 0,
+				3, 'a', 'B', 'c',
+				0, 0, 0, 0,
+				2, 'd', 'E',
+				3, 'X', 'y', 'z',
+				0,
+			},
+			lifetime: 0,
+			domainNames: []string{
+				"abc",
+				"de.xyz",
+			},
+			err: nil,
+		},
+		{
+			name: "Valid0Domains",
+			buf: []byte{
+				0, 0,
+				0, 0, 0, 0,
+				0,
+				0, 0, 0, 0, 0, 0, 0,
+			},
+			lifetime:    0,
+			domainNames: nil,
+			err:         nil,
+		},
+		{
+			name: "NoTrailingNull",
+			buf: []byte{
+				0, 0,
+				0, 0, 0, 0,
+				7, 'a', 'b', 'c', 'd', 'e', 'f', 'g',
+			},
+			lifetime:    0,
+			domainNames: nil,
+			err:         io.ErrUnexpectedEOF,
+		},
+		{
+			name: "IncorrectLength",
+			buf: []byte{
+				0, 0,
+				0, 0, 0, 0,
+				8, 'a', 'b', 'c', 'd', 'e', 'f', 'g',
+			},
+			lifetime:    0,
+			domainNames: nil,
+			err:         io.ErrUnexpectedEOF,
+		},
+		{
+			name: "IncorrectLengthWithNULL",
+			buf: []byte{
+				0, 0,
+				0, 0, 0, 0,
+				7, 'a', 'b', 'c', 'd', 'e', 'f',
+				0,
+			},
+			lifetime:    0,
+			domainNames: nil,
+			err:         ErrNDPOptMalformedBody,
+		},
+		{
+			name: "LabelOfLength63",
+			buf: []byte{
+				0, 0,
+				0, 0, 0, 0,
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				0,
+			},
+			lifetime: 0,
+			domainNames: []string{
+				"abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk",
+			},
+			err: nil,
+		},
+		{
+			name: "LabelOfLength64",
+			buf: []byte{
+				0, 0,
+				0, 0, 0, 0,
+				64, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l',
+				0,
+			},
+			lifetime:    0,
+			domainNames: nil,
+			err:         ErrNDPOptMalformedBody,
+		},
+		{
+			name: "DomainNameOfLength255",
+			buf: []byte{
+				0, 0,
+				0, 0, 0, 0,
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				62, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j',
+				0,
+			},
+			lifetime: 0,
+			domainNames: []string{
+				"abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghij",
+			},
+			err: nil,
+		},
+		{
+			name: "DomainNameOfLength256",
+			buf: []byte{
+				0, 0,
+				0, 0, 0, 0,
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				0,
+			},
+			lifetime:    0,
+			domainNames: nil,
+			err:         ErrNDPOptMalformedBody,
+		},
+		{
+			name: "StartingDigitForLabel",
+			buf: []byte{
+				0, 0,
+				0, 0, 0, 1,
+				3, '9', 'b', 'c',
+				0,
+				0, 0, 0,
+			},
+			lifetime:    time.Second,
+			domainNames: nil,
+			err:         ErrNDPOptMalformedBody,
+		},
+		{
+			name: "StartingHyphenForLabel",
+			buf: []byte{
+				0, 0,
+				0, 0, 0, 1,
+				3, '-', 'b', 'c',
+				0,
+				0, 0, 0,
+			},
+			lifetime:    time.Second,
+			domainNames: nil,
+			err:         ErrNDPOptMalformedBody,
+		},
+		{
+			name: "EndingHyphenForLabel",
+			buf: []byte{
+				0, 0,
+				0, 0, 0, 1,
+				3, 'a', 'b', '-',
+				0,
+				0, 0, 0,
+			},
+			lifetime:    time.Second,
+			domainNames: nil,
+			err:         ErrNDPOptMalformedBody,
+		},
+		{
+			name: "EndingDigitForLabel",
+			buf: []byte{
+				0, 0,
+				0, 0, 0, 1,
+				3, 'a', 'b', '9',
+				0,
+				0, 0, 0,
+			},
+			lifetime: time.Second,
+			domainNames: []string{
+				"ab9",
+			},
+			err: nil,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			opt := NDPDNSSearchList(test.buf)
+
+			if got := opt.Lifetime(); got != test.lifetime {
+				t.Errorf("got Lifetime = %d, want = %d", got, test.lifetime)
+			}
+			domainNames, err := opt.DomainNames()
+			if !errors.Is(err, test.err) {
+				t.Errorf("opt.DomainNames() = %s", err)
+			}
+			if diff := cmp.Diff(domainNames, test.domainNames); diff != "" {
+				t.Errorf("mismatched domain names (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestNDPSearchListOptionDomainNameLabelInvalidSymbols(t *testing.T) {
+	for r := rune(0); r <= 255; r++ {
+		t.Run(fmt.Sprintf("RuneVal=%d", r), func(t *testing.T) {
+			buf := []byte{
+				0, 0,
+				0, 0, 0, 0,
+				3, 'a', 0 /* will be replaced */, 'c',
+				0,
+				0, 0, 0,
+			}
+			buf[8] = uint8(r)
+			opt := NDPDNSSearchList(buf)
+
+			// As per RFC 1035 section 2.3.1, the label must only include ASCII
+			// letters, digits and hyphens (a-z, A-Z, 0-9, -).
+			var expectedErr error
+			re := regexp.MustCompile(`[a-zA-Z0-9-]`)
+			if !re.Match([]byte{byte(r)}) {
+				expectedErr = ErrNDPOptMalformedBody
+			}
+
+			if domainNames, err := opt.DomainNames(); !errors.Is(err, expectedErr) {
+				t.Errorf("got opt.DomainNames() = (%s, %v), want = (_, %v)", domainNames, err, ErrNDPOptMalformedBody)
+			}
+		})
+	}
+}
+
+func TestNDPDNSSearchListOptionSerialize(t *testing.T) {
+	b := []byte{
+		9, 8,
+		1, 0, 0, 0,
+		3, 'a', 'b', 'c',
+		4, 'a', 'b', 'c', 'd',
+		1, 'e',
+		0,
+	}
+	targetBuf := []byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
+	expected := []byte{
+		31, 3, 0, 0,
+		1, 0, 0, 0,
+		3, 'a', 'b', 'c',
+		4, 'a', 'b', 'c', 'd',
+		1, 'e',
+		0,
+		0, 0, 0, 0,
+	}
+	opts := NDPOptions(targetBuf)
+	serializer := NDPOptionsSerializer{
+		NDPDNSSearchList(b),
+	}
+	if got, want := opts.Serialize(serializer), len(expected); got != want {
+		t.Errorf("got Serialize = %d, want = %d", got, want)
+	}
+	if !bytes.Equal(targetBuf, expected) {
+		t.Fatalf("got targetBuf = %x, want = %x", targetBuf, expected)
+	}
+
+	it, err := opts.Iter(true)
+	if err != nil {
+		t.Fatalf("got Iter = (_, %s), want = (_, nil)", err)
+	}
+
+	next, done, err := it.Next()
+	if err != nil {
+		t.Fatalf("got Next = (_, _, %s), want = (_, _, nil)", err)
+	}
+	if done {
+		t.Fatal("got Next = (_, true, _), want = (_, false, _)")
+	}
+	if got := next.Type(); got != NDPDNSSearchListOptionType {
+		t.Errorf("got Type = %d, want = %d", got, NDPDNSSearchListOptionType)
+	}
+
+	opt, ok := next.(NDPDNSSearchList)
+	if !ok {
+		t.Fatalf("next (type = %T) cannot be casted to an NDPDNSSearchList", next)
+	}
+	if got := opt.Type(); got != 31 {
+		t.Errorf("got Type = %d, want = 31", got)
+	}
+	if got := opt.Length(); got != 22 {
+		t.Errorf("got Length = %d, want = 22", got)
+	}
+	if got, want := opt.Lifetime(), 16777216*time.Second; got != want {
+		t.Errorf("got Lifetime = %s, want = %s", got, want)
+	}
+	domainNames, err := opt.DomainNames()
+	if err != nil {
+		t.Errorf("opt.DomainNames() = %s", err)
+	}
+	if diff := cmp.Diff(domainNames, []string{"abc.abcd.e"}); diff != "" {
+		t.Errorf("domain names mismatch (-want +got):\n%s", diff)
+	}
+
+	// Iterator should not return anything else.
+	next, done, err = it.Next()
+	if err != nil {
+		t.Errorf("got Next = (_, _, %s), want = (_, _, nil)", err)
+	}
+	if !done {
+		t.Error("got Next = (_, false, _), want = (_, true, _)")
+	}
+	if next != nil {
+		t.Errorf("got Next = (%x, _, _), want = (nil, _, _)", next)
+	}
+}
+
 // TestNDPOptionsIterCheck tests that Iter will return false if the NDPOptions
 // the iterator was returned for is malformed.
 func TestNDPOptionsIterCheck(t *testing.T) {
@@ -831,6 +1304,107 @@ func TestNDPOptionsIterCheck(t *testing.T) {
 				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 			},
 			expectedErr: ErrNDPOptMalformedBody,
+		},
+		{
+			name: "DNSSearchListLargeCompliantRFC1035",
+			buf: []byte{
+				31, 33, 0, 0,
+				0, 0, 0, 0,
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				62, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j',
+				0,
+			},
+			expectedErr: nil,
+		},
+		{
+			name: "DNSSearchListNonCompliantRFC1035",
+			buf: []byte{
+				31, 33, 0, 0,
+				0, 0, 0, 0,
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				63, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+				'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+				'i', 'j', 'k',
+				0,
+				0, 0, 0, 0, 0, 0, 0, 0,
+			},
+			expectedErr: ErrNDPOptMalformedBody,
+		},
+		{
+			name: "DNSSearchListValidSmall",
+			buf: []byte{
+				31, 2, 0, 0,
+				0, 0, 0, 0,
+				6, 'a', 'b', 'c', 'd', 'e', 'f',
+				0,
+			},
+			expectedErr: nil,
+		},
+		{
+			name: "DNSSearchListTooSmall",
+			buf: []byte{
+				31, 1, 0, 0,
+				0, 0, 0,
+			},
+			expectedErr: io.ErrUnexpectedEOF,
 		},
 	}
 
