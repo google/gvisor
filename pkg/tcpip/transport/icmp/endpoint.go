@@ -353,7 +353,7 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 
 // SetSockOptBool sets a socket option. Currently not supported.
 func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
-	return tcpip.ErrUnknownProtocolOption
+	return nil
 }
 
 // SetSockOptInt sets a socket option. Currently not supported.
@@ -364,8 +364,6 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 		e.ttl = uint8(v)
 		e.mu.Unlock()
 
-	default:
-		return tcpip.ErrUnknownProtocolOption
 	}
 	return nil
 }
