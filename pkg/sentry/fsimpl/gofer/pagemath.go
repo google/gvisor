@@ -12,15 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build arm64
-
-package boot
+package gofer
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-func init() {
-	// Set the global syscall table.
-	syscallTable = linux.ARM64
+// This are equivalent to usermem.Addr.RoundDown/Up, but without the
+// potentially truncating conversion to usermem.Addr. This is necessary because
+// there is no way to define generic "PageRoundDown/Up" functions in Go.
+
+func pageRoundDown(x uint64) uint64 {
+	return x &^ (usermem.PageSize - 1)
+}
+
+func pageRoundUp(x uint64) uint64 {
+	return pageRoundDown(x + usermem.PageSize - 1)
 }
