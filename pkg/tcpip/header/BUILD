@@ -21,6 +21,7 @@ go_library(
         "ndp_options.go",
         "ndp_router_advert.go",
         "ndp_router_solicit.go",
+        "ndpoptionidentifier_string.go",
         "tcp.go",
         "udp.go",
     ],
