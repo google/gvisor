@@ -24,7 +24,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"os"
 	"sync/atomic"
 	"time"
 
@@ -41,12 +40,12 @@ import (
 // LogPackets must be accessed atomically.
 var LogPackets uint32 = 1
 
-// LogPacketsToFile is a flag used to enable or disable logging packets to a
-// pcap file. Valid values are 0 or 1. A file must have been specified when the
+// LogPacketsToPCAP is a flag used to enable or disable logging packets to a
+// pcap writer. Valid values are 0 or 1. A writer must have been specified when the
 // sniffer was created for this flag to have effect.
 //
-// LogPacketsToFile must be accessed atomically.
-var LogPacketsToFile uint32 = 1
+// LogPacketsToPCAP must be accessed atomically.
+var LogPacketsToPCAP uint32 = 1
 
 var transportProtocolMinSizes map[tcpip.TransportProtocolNumber]int = map[tcpip.TransportProtocolNumber]int{
 	header.ICMPv4ProtocolNumber: header.IPv4MinimumSize,
@@ -58,7 +57,7 @@ var transportProtocolMinSizes map[tcpip.TransportProtocolNumber]int = map[tcpip.
 type endpoint struct {
 	dispatcher stack.NetworkDispatcher
 	lower      stack.LinkEndpoint
-	file       *os.File
+	writer     io.Writer
 	maxPCAPLen uint32
 }
 
@@ -98,23 +97,22 @@ func writePCAPHeader(w io.Writer, maxLen uint32) error {
 	})
 }
 
-// NewWithFile creates a new sniffer link-layer endpoint. It wraps around
-// another endpoint and logs packets and they traverse the endpoint.
+// NewWithWriter creates a new sniffer link-layer endpoint. It wraps around
+// another endpoint and logs packets as they traverse the endpoint.
 //
-// Packets can be logged to file in the pcap format. A sniffer created
-// with this function will not emit packets using the standard log
-// package.
+// Packets are logged to writer in the pcap format. A sniffer created with this
+// function will not emit packets using the standard log package.
 //
 // snapLen is the maximum amount of a packet to be saved. Packets with a length
-// less than or equal too snapLen will be saved in their entirety. Longer
+// less than or equal to snapLen will be saved in their entirety. Longer
 // packets will be truncated to snapLen.
-func NewWithFile(lower stack.LinkEndpoint, file *os.File, snapLen uint32) (stack.LinkEndpoint, error) {
-	if err := writePCAPHeader(file, snapLen); err != nil {
+func NewWithWriter(lower stack.LinkEndpoint, writer io.Writer, snapLen uint32) (stack.LinkEndpoint, error) {
+	if err := writePCAPHeader(writer, snapLen); err != nil {
 		return nil, err
 	}
 	return &endpoint{
 		lower:      lower,
-		file:       file,
+		writer:     writer,
 		maxPCAPLen: snapLen,
 	}, nil
 }
@@ -171,21 +169,21 @@ func (e *endpoint) GSOMaxSize() uint32 {
 }
 
 func (e *endpoint) dumpPacket(prefix string, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	file := e.file
-	if file == nil && atomic.LoadUint32(&LogPackets) == 1 {
+	writer := e.writer
+	if writer == nil && atomic.LoadUint32(&LogPackets) == 1 {
 		first := pkt.Header.View()
 		if len(first) == 0 {
 			first = pkt.Data.First()
 		}
 		logPacket(prefix, protocol, first, gso)
 	}
-	if file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
+	if writer != nil && atomic.LoadUint32(&LogPacketsToPCAP) == 1 {
 		totalLength := pkt.Header.UsedLength() + pkt.Data.Size()
 		length := totalLength
 		if max := int(e.maxPCAPLen); length > max {
 			length = max
 		}
-		if err := binary.Write(file, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(totalLength))); err != nil {
+		if err := binary.Write(writer, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(totalLength))); err != nil {
 			panic(err)
 		}
 		write := func(b []byte) {
@@ -193,7 +191,7 @@ func (e *endpoint) dumpPacket(prefix string, gso *stack.GSO, protocol tcpip.Netw
 				b = b[:length]
 			}
 			for len(b) != 0 {
-				n, err := file.Write(b)
+				n, err := writer.Write(b)
 				if err != nil {
 					panic(err)
 				}
