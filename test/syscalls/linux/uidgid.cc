@@ -14,6 +14,7 @@
 
 #include <errno.h>
 #include <grp.h>
+#include <sys/resource.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -247,6 +248,17 @@ TEST(UidGidRootTest, Setgroups) {
   // "EFAULT: list has an invalid address."
   EXPECT_THAT(getgroups(100, reinterpret_cast<gid_t*>(-1)),
               SyscallFailsWithErrno(EFAULT));
+}
+
+TEST(UidGidRootTest, Setuid_prlimit) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsRoot()));
+
+  // Change our UID.
+  EXPECT_THAT(seteuid(65534), SyscallSucceeds());
+
+  // Despite the UID change, we should be able to get our own limits.
+  struct rlimit rl = {};
+  ASSERT_THAT(prlimit(0, RLIMIT_NOFILE, NULL, &rl), SyscallSucceeds());
 }
 
 }  // namespace
