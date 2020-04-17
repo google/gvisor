@@ -353,7 +353,7 @@ TEST(ProcNetSnmp, UdpNoPorts_NoRandomSave) {
   EXPECT_EQ(oldNoPorts, newNoPorts - 1);
 }
 
-TEST(ProcNetSnmp, UdpIn) {
+TEST(ProcNetSnmp, UdpIn_NoRandomSave) {
   // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
   const DisableSave ds;
 
