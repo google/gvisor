@@ -39,7 +39,7 @@ func Override(table map[uintptr]kernel.Syscall) {
 	table[19] = syscalls.Supported("readv", Readv)
 	table[20] = syscalls.Supported("writev", Writev)
 	table[21] = syscalls.Supported("access", Access)
-	delete(table, 22) // pipe
+	table[22] = syscalls.Supported("pipe", Pipe)
 	table[23] = syscalls.Supported("select", Select)
 	table[32] = syscalls.Supported("dup", Dup)
 	table[33] = syscalls.Supported("dup2", Dup2)
@@ -151,7 +151,7 @@ func Override(table map[uintptr]kernel.Syscall) {
 	delete(table, 290) // eventfd2
 	table[291] = syscalls.Supported("epoll_create1", EpollCreate1)
 	table[292] = syscalls.Supported("dup3", Dup3)
-	delete(table, 293) // pipe2
+	table[293] = syscalls.Supported("pipe2", Pipe2)
 	delete(table, 294) // inotify_init1
 	table[295] = syscalls.Supported("preadv", Preadv)
 	table[296] = syscalls.Supported("pwritev", Pwritev)

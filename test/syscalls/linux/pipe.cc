@@ -265,6 +265,8 @@ TEST_P(PipeTest, OffsetCalls) {
               SyscallFailsWithErrno(ESPIPE));
 
   struct iovec iov;
+  iov.iov_base = &buf;
+  iov.iov_len = sizeof(buf);
   EXPECT_THAT(preadv(wfd_.get(), &iov, 1, 0), SyscallFailsWithErrno(ESPIPE));
   EXPECT_THAT(pwritev(rfd_.get(), &iov, 1, 0), SyscallFailsWithErrno(ESPIPE));
 }

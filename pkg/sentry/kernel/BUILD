@@ -170,6 +170,7 @@ go_library(
         "//pkg/sentry/fs/timerfd",
         "//pkg/sentry/fsbridge",
         "//pkg/sentry/fsimpl/kernfs",
+        "//pkg/sentry/fsimpl/pipefs",
         "//pkg/sentry/fsimpl/sockfs",
         "//pkg/sentry/hostcpu",
         "//pkg/sentry/inet",
