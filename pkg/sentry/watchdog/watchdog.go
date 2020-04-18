@@ -319,8 +319,8 @@ func (w *Watchdog) report(offenders map[*kernel.Task]*offender, newTaskFound boo
 
 	// Dump stack only if a new task is detected or if it sometime has
 	// passed since the last time a stack dump was generated.
-	skipStack := newTaskFound || time.Since(w.lastStackDump) >= stackDumpSameTaskPeriod
-	w.doAction(w.TaskTimeoutAction, skipStack, &buf)
+	showStack := newTaskFound || time.Since(w.lastStackDump) >= stackDumpSameTaskPeriod
+	w.doAction(w.TaskTimeoutAction, showStack, &buf)
 }
 
 func (w *Watchdog) reportStuckWatchdog() {
@@ -329,16 +329,15 @@ func (w *Watchdog) reportStuckWatchdog() {
 	w.doAction(w.TaskTimeoutAction, false, &buf)
 }
 
-// doAction will take the given action. If the action is LogWarnind and
-// skipStack is true, then the stack printing will be skipped.
-func (w *Watchdog) doAction(action Action, skipStack bool, msg *bytes.Buffer) {
+// doAction will take the given action. If the action is LogWarning and
+// showStack is false, then the stack printing will be skipped.
+func (w *Watchdog) doAction(action Action, showStack bool, msg *bytes.Buffer) {
 	switch action {
 	case LogWarning:
-		if skipStack {
+		if !showStack {
 			msg.WriteString("\n...[stack dump skipped]...")
 			log.Warningf(msg.String())
 			return
-
 		}
 		log.TracebackAll(msg.String())
 		w.lastStackDump = time.Now()
