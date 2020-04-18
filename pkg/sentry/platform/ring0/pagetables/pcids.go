@@ -18,9 +18,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
-// limitPCID is the number of valid PCIDs.
-const limitPCID = 4096
-
 // PCIDs is a simple PCID database.
 //
 // This is not protected by locks and is thus suitable for use only with a
@@ -44,7 +41,7 @@ type PCIDs struct {
 //
 // Nil is returned iff the start and size are out of range.
 func NewPCIDs(start, size uint16) *PCIDs {
-	if start+uint16(size) >= limitPCID {
+	if start+uint16(size) > limitPCID {
 		return nil // See comment.
 	}
 	p := &PCIDs{
