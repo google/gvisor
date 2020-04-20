@@ -247,7 +247,7 @@ func (i *inode) incLinksLocked() {
 		panic("tmpfs.inode.incLinksLocked() called with no existing links")
 	}
 	if i.nlink == maxLinks {
-		panic("memfs.inode.incLinksLocked() called with maximum link count")
+		panic("tmpfs.inode.incLinksLocked() called with maximum link count")
 	}
 	atomic.AddUint32(&i.nlink, 1)
 }
