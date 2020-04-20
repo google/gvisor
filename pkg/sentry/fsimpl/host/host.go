@@ -94,7 +94,6 @@ func ImportFD(mnt *vfs.Mount, hostFD int, isTTY bool) (*vfs.FileDescription, err
 		isTTY:    isTTY,
 		canMap:   canMap(uint32(fileType)),
 		ino:      fs.NextIno(),
-		mode:     fileMode,
 		// For simplicity, set offset to 0. Technically, we should use the existing
 		// offset on the host if the file is seekable.
 		offset: 0,
@@ -149,20 +148,6 @@ type inode struct {
 	// This field is initialized at creation time and is immutable.
 	ino uint64
 
-	// modeMu protects mode.
-	modeMu sync.Mutex
-
-	// mode is a cached version of the file mode on the host. Note that it may
-	// become out of date if the mode is changed on the host, e.g. with chmod.
-	//
-	// Generally, it is better to retrieve the mode from the host through an
-	// fstat syscall. We only use this value in inode.Mode(), which cannot
-	// return an error, if the syscall to host fails.
-	//
-	// FIXME(b/152294168): Plumb error into Inode.Mode() return value so we
-	// can get rid of this.
-	mode linux.FileMode
-
 	// offsetMu protects offset.
 	offsetMu sync.Mutex
 
@@ -195,10 +180,11 @@ func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, a
 // Mode implements kernfs.Inode.
 func (i *inode) Mode() linux.FileMode {
 	mode, _, _, err := i.getPermissions()
+	// Retrieving the mode from the host fd using fstat(2) should not fail.
+	// If the syscall does not succeed, something is fundamentally wrong.
 	if err != nil {
-		return i.mode
+		panic(fmt.Sprintf("failed to retrieve mode from host fd %d: %v", i.hostFD, err))
 	}
-
 	return linux.FileMode(mode)
 }
 
@@ -208,11 +194,6 @@ func (i *inode) getPermissions() (linux.FileMode, auth.KUID, auth.KGID, error) {
 	if err := syscall.Fstat(i.hostFD, &s); err != nil {
 		return 0, 0, 0, err
 	}
-
-	// Update cached mode.
-	i.modeMu.Lock()
-	i.mode = linux.FileMode(s.Mode)
-	i.modeMu.Unlock()
 	return linux.FileMode(s.Mode), auth.KUID(s.Uid), auth.KGID(s.Gid), nil
 }
 
@@ -292,12 +273,6 @@ func (i *inode) Stat(_ *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, erro
 		ls.Ino = i.ino
 	}
 
-	// Update cached mode.
-	if (mask&linux.STATX_TYPE != 0) && (mask&linux.STATX_MODE != 0) {
-		i.modeMu.Lock()
-		i.mode = linux.FileMode(s.Mode)
-		i.modeMu.Unlock()
-	}
 	return ls, nil
 }
 
@@ -364,9 +339,6 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 		if err := syscall.Fchmod(i.hostFD, uint32(s.Mode)); err != nil {
 			return err
 		}
-		i.modeMu.Lock()
-		i.mode = linux.FileMode(s.Mode)
-		i.modeMu.Unlock()
 	}
 	if m&linux.STATX_SIZE != 0 {
 		if err := syscall.Ftruncate(i.hostFD, int64(s.Size)); err != nil {
