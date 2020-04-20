@@ -144,6 +144,10 @@ type MountSourceFlags struct {
 	// NoExec corresponds to mount(2)'s "MS_NOEXEC" and indicates that
 	// binaries from this file system can't be executed.
 	NoExec bool
+
+	// Bind corresponds to mount(2)'s MS_BIND and indicates that
+	// the filesystem should be bind mounted.
+	Bind bool
 }
 
 // GenericMountSourceOptions splits a string containing comma separated tokens of the
