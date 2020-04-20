@@ -28,6 +28,31 @@ const (
 	longDuration   = 1 * time.Second
 )
 
+func TestCancellableTimerReassignment(t *testing.T) {
+	var timer tcpip.CancellableTimer
+	var wg sync.WaitGroup
+	var lock sync.Mutex
+
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+
+		go func() {
+			lock.Lock()
+			// Assigning a new timer value updates the timer's locker and function.
+			// This test makes sure there is no data race when reassigning a timer
+			// that has an active timer (even if it has been stopped as a stopped
+			// timer may be blocked on a lock before it can check if it has been
+			// stopped while another goroutine holds the same lock).
+			timer = tcpip.MakeCancellableTimer(&lock, func() {
+				wg.Done()
+			})
+			timer.Reset(shortDuration)
+			lock.Unlock()
+		}()
+	}
+	wg.Wait()
+}
+
 func TestCancellableTimerFire(t *testing.T) {
 	t.Parallel()
 
