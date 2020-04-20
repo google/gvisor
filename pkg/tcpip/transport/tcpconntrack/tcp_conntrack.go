@@ -20,6 +20,7 @@ package tcpconntrack
 import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 )
 
 // Result is returned when the state of a TCB is updated in response to an
@@ -311,17 +312,7 @@ type stream struct {
 // the window is zero, if it's a packet with no payload and sequence number
 // equal to una.
 func (s *stream) acceptable(segSeq seqnum.Value, segLen seqnum.Size) bool {
-	wnd := s.una.Size(s.end)
-	if wnd == 0 {
-		return segLen == 0 && segSeq == s.una
-	}
-
-	// Make sure [segSeq, seqSeq+segLen) is non-empty.
-	if segLen == 0 {
-		segLen = 1
-	}
-
-	return seqnum.Overlap(s.una, wnd, segSeq, segLen)
+	return tcp.Acceptable(segSeq, segLen, s.una, s.end)
 }
 
 // closed determines if the stream has already been closed. This happens when

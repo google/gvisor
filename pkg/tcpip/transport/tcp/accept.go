@@ -101,7 +101,7 @@ type listenContext struct {
 
 	// v6Only is true if listenEP is a dual stack socket and has the
 	// IPV6_V6ONLY option set.
-	v6only bool
+	v6Only bool
 
 	// netProto indicates the network protocol(IPv4/v6) for the listening
 	// endpoint.
@@ -126,12 +126,12 @@ func timeStamp() uint32 {
 }
 
 // newListenContext creates a new listen context.
-func newListenContext(stk *stack.Stack, listenEP *endpoint, rcvWnd seqnum.Size, v6only bool, netProto tcpip.NetworkProtocolNumber) *listenContext {
+func newListenContext(stk *stack.Stack, listenEP *endpoint, rcvWnd seqnum.Size, v6Only bool, netProto tcpip.NetworkProtocolNumber) *listenContext {
 	l := &listenContext{
 		stack:            stk,
 		rcvWnd:           rcvWnd,
 		hasher:           sha1.New(),
-		v6only:           v6only,
+		v6Only:           v6Only,
 		netProto:         netProto,
 		listenEP:         listenEP,
 		pendingEndpoints: make(map[stack.TransportEndpointID]*endpoint),
@@ -207,7 +207,7 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 		netProto = s.route.NetProto
 	}
 	n := newEndpoint(l.stack, netProto, queue)
-	n.v6only = l.v6only
+	n.v6only = l.v6Only
 	n.ID = s.id
 	n.boundNICID = s.route.NICID()
 	n.route = s.route.Clone()
@@ -293,7 +293,7 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 	}
 
 	// Perform the 3-way handshake.
-	h := newPassiveHandshake(ep, seqnum.Size(ep.initialReceiveWindow()), isn, irs, opts, deferAccept)
+	h := newPassiveHandshake(ep, ep.rcv.rcvWnd, isn, irs, opts, deferAccept)
 	if err := h.execute(); err != nil {
 		ep.mu.Unlock()
 		ep.Close()
@@ -613,8 +613,8 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 // its own goroutine and is responsible for handling connection requests.
 func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 	e.mu.Lock()
-	v6only := e.v6only
-	ctx := newListenContext(e.stack, e, rcvWnd, v6only, e.NetProto)
+	v6Only := e.v6only
+	ctx := newListenContext(e.stack, e, rcvWnd, v6Only, e.NetProto)
 
 	defer func() {
 		// Mark endpoint as closed. This will prevent goroutines running
