@@ -17,10 +17,13 @@
 
 #include "test/syscalls/linux/rseq/types.h"
 
-#ifdef __x86_64__
 // Syscall numbers.
+#if defined(__x86_64__)
 constexpr int kGetpid = 39;
 constexpr int kExitGroup = 231;
+#elif defined(__aarch64__)
+constexpr int kGetpid = 172;
+constexpr int kExitGroup = 94;
 #else
 #error "Unknown architecture"
 #endif
