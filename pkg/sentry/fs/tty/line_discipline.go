@@ -129,6 +129,21 @@ func (l *lineDiscipline) getTermios(task *kernel.Task, args arch.SyscallArgument
 func (l *lineDiscipline) setTermios(task *kernel.Task, args arch.SyscallArguments) (uintptr, error) {
 	l.termiosMu.Lock()
 	defer l.termiosMu.Unlock()
+	return l.setTermiosLocked(task, args)
+}
+
+// setTermios sets a linux.Termios for the tty, discarding all pending input.
+func (l *lineDiscipline) setTermiosFlush(task *kernel.Task, args arch.SyscallArguments) (uintptr, error) {
+	l.termiosMu.Lock()
+	defer l.termiosMu.Unlock()
+	l.inQueue.discardPending()
+	return l.setTermiosLocked(task, args)
+}
+
+// setTermiosLocked sets a linux.Termios for the tty.
+// Precondition:
+// * l.termiosMu must be held for writing
+func (l *lineDiscipline) setTermiosLocked(task *kernel.Task, args arch.SyscallArguments) (uintptr, error) {
 	oldCanonEnabled := l.termios.LEnabled(linux.ICANON)
 	// We must copy a Termios struct, not KernelTermios.
 	var t linux.Termios
