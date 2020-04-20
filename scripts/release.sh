@@ -14,7 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-source $(dirname $0)/common.sh
+cd $(dirname $0)/..
+source scripts/common.sh
 
 # Tag a release only if provided.
 if ! [[ -v KOKORO_RELEASE_COMMIT ]]; then
