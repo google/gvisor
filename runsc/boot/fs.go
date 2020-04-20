@@ -756,6 +756,15 @@ func (c *containerMounter) createRootMount(ctx context.Context, conf *Config) (*
 	return rootInode, nil
 }
 
+func (c *containerMounter) getBindMountNameAndOptions(conf *Config, m specs.Mount) (string, []string, bool) {
+	fd := c.fds.remove()
+	fsName = "9p"
+	opts = p9MountOptions(fd, c.getMountAccessType(m))
+	// If configured, add overlay to all writable mounts.
+	useOverlay = conf.Overlay && !mountFlags(m.Options).ReadOnly
+	return fsName, opts, useOverlay
+}
+
 // getMountNameAndOptions retrieves the fsName, opts, and useOverlay values
 // used for mounts.
 func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (string, []string, bool, error) {
@@ -769,6 +778,13 @@ func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (
 	case devpts, devtmpfs, proc, sysfs:
 		fsName = m.Type
 	case nonefs:
+		for _, opt := range m.Options {
+			if opt == "bind" || opt == "rbind" {
+				fsName, opts, useOverlay = c.getBindMountNameAndOptions(conf, m)
+				return fsName, opts, useOverlay, nil
+			}
+		}
+
 		fsName = sysfs
 	case tmpfs:
 		fsName = m.Type
@@ -778,15 +794,16 @@ func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (
 		if err != nil {
 			return "", nil, false, err
 		}
-
 	case bind:
-		fd := c.fds.remove()
-		fsName = "9p"
-		opts = p9MountOptions(fd, c.getMountAccessType(m))
-		// If configured, add overlay to all writable mounts.
-		useOverlay = conf.Overlay && !mountFlags(m.Options).ReadOnly
-
+		fsName, opts, useOverlay = c.getBindMountNameAndOptions(conf, m)
 	default:
+		for _, opt := range m.Options {
+			if opt == "bind" || opt == "rbind" {
+				fsName, opts, useOverlay = c.getBindMountNameAndOptions(conf, m)
+				return fsName, opts, useOverlay, nil
+			}
+		}
+
 		log.Warningf("ignoring unknown filesystem type %q", m.Type)
 	}
 	return fsName, opts, useOverlay, nil
