@@ -25,7 +25,11 @@ import (
 // used to find out which transport endpoint must be notified about the ICMP
 // packet.
 func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt stack.PacketBuffer) {
-	h := header.IPv4(pkt.Data.First())
+	h, ok := pkt.Data.PullUp(header.IPv4MinimumSize)
+	if !ok {
+		return
+	}
+	hdr := header.IPv4(h)
 
 	// We don't use IsValid() here because ICMP only requires that the IP
 	// header plus 8 bytes of the transport header be included. So it's
@@ -34,12 +38,12 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt stack.
 	//
 	// Drop packet if it doesn't have the basic IPv4 header or if the
 	// original source address doesn't match the endpoint's address.
-	if len(h) < header.IPv4MinimumSize || h.SourceAddress() != e.id.LocalAddress {
+	if hdr.SourceAddress() != e.id.LocalAddress {
 		return
 	}
 
-	hlen := int(h.HeaderLength())
-	if pkt.Data.Size() < hlen || h.FragmentOffset() != 0 {
+	hlen := int(hdr.HeaderLength())
+	if pkt.Data.Size() < hlen || hdr.FragmentOffset() != 0 {
 		// We won't be able to handle this if it doesn't contain the
 		// full IPv4 header, or if it's a fragment not at offset 0
 		// (because it won't have the transport header).
@@ -48,15 +52,15 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt stack.
 
 	// Skip the ip header, then deliver control message.
 	pkt.Data.TrimFront(hlen)
-	p := h.TransportProtocol()
-	e.dispatcher.DeliverTransportControlPacket(e.id.LocalAddress, h.DestinationAddress(), ProtocolNumber, p, typ, extra, pkt)
+	p := hdr.TransportProtocol()
+	e.dispatcher.DeliverTransportControlPacket(e.id.LocalAddress, hdr.DestinationAddress(), ProtocolNumber, p, typ, extra, pkt)
 }
 
 func (e *endpoint) handleICMP(r *stack.Route, pkt stack.PacketBuffer) {
 	stats := r.Stats()
 	received := stats.ICMP.V4PacketsReceived
-	v := pkt.Data.First()
-	if len(v) < header.ICMPv4MinimumSize {
+	v, ok := pkt.Data.PullUp(header.ICMPv4MinimumSize)
+	if !ok {
 		received.Invalid.Increment()
 		return
 	}
