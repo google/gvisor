@@ -36,8 +36,18 @@ import (
 )
 
 var (
+	// runtime is the runtime to use for tests. This will be applied to all
+	// containers. Note that the default here ("runsc") corresponds to the
+	// default used by the installations. This is important, because the
+	// default installer for vm_tests (in tools/installers:head, invoked
+	// via tools/vm:defs.bzl) will install with this name. So without
+	// changing anything, tests should have a runsc runtime available to
+	// them. Otherwise installers should update the existing runtime
+	// instead of installing a new one.
 	runtime = flag.String("runtime", "runsc", "specify which runtime to use")
-	config  = flag.String("config_path", "/etc/docker/daemon.json", "configuration file for reading paths")
+
+	// config is the default Docker daemon configuration path.
+	config = flag.String("config_path", "/etc/docker/daemon.json", "configuration file for reading paths")
 )
 
 // EnsureSupportedDockerVersion checks if correct docker is installed.

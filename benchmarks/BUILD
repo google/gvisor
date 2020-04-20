@@ -13,8 +13,8 @@ py_binary(
     data = select({
         ":gcloud_rule": [],
         "//conditions:default": [
-            "//tools/images:ubuntu1604",
-            "//tools/images:zone",
+            "//tools/vm:ubuntu1604",
+            "//tools/vm:zone",
         ],
     }),
     main = "run.py",

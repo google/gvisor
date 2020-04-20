@@ -31,6 +31,9 @@ declare -r MACHINE=${MACHINE:-n1-standard-1}
 declare -r ZONE=${ZONE:-us-central1-f}
 declare -r SUDO=${SUDO:-false}
 
+# Standard arguments (applies only on script execution).
+declare -ar SSH_ARGS=("-o" "ConnectTimeout=60" "--")
+
 # This script is executed as a test rule, which will reset the value of HOME.
 # Unfortunately, it is needed to load the gconfig credentials. We will reset
 # HOME when we actually execute in the remote environment, defined below.
@@ -81,7 +84,9 @@ tar czf - --dereference --exclude=.git . |
     gcloud compute ssh \
         --ssh-key-file="${KEYNAME}" \
         --zone "${ZONE}" \
-        "${USERNAME}"@"${INSTANCE_NAME}" -- tar xzf -
+        "${USERNAME}"@"${INSTANCE_NAME}" -- \
+        "${SSH_ARGS[@]}" \
+        tar xzf -
 
 # Execute the command remotely.
 for cmd; do
@@ -108,6 +113,7 @@ for cmd; do
       --ssh-key-file="${KEYNAME}" \
       --zone "${ZONE}" \
       "${USERNAME}"@"${INSTANCE_NAME}" -- \
+      "${SSH_ARGS[@]}" \
       mkdir -p "/tmp/${REMOTE_TMPDIR}"
   fi
   if [[ -v XML_OUTPUT_FILE ]]; then
@@ -123,6 +129,7 @@ for cmd; do
     --ssh-key-file="${KEYNAME}" \
     --zone "${ZONE}" \
     "${USERNAME}"@"${INSTANCE_NAME}" -- \
+    "${SSH_ARGS[@]}" \
     "${PREFIX[@]}" "${cmd}"
 
   # Collect relevant results.
@@ -147,6 +154,7 @@ for cmd; do
       --ssh-key-file="${KEYNAME}" \
       --zone "${ZONE}" \
       "${USERNAME}"@"${INSTANCE_NAME}" -- \
+      "${SSH_ARGS[@]}" \
       rm -rf "/tmp/${REMOTE_TMPDIR}"
   fi
 done

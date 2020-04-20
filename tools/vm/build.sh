@@ -43,6 +43,9 @@ if ! [[ -z "${existing}" ]]; then
   exit 0
 fi
 
+# Standard arguments (applies only on script execution).
+declare -ar SSH_ARGS=("-o" "ConnectTimeout=60" "--")
+
 # gcloud has path errors; is this a result of being a genrule?
 export PATH=${PATH:-/bin:/usr/bin:/usr/local/bin}
 
@@ -69,9 +72,9 @@ declare -r start=$(date +%s)
 declare -r end=$((${start}+${timeout}))
 while [[ "$(date +%s)" -lt "${end}" ]] && [[ "${success}" -lt 3 ]]; do
   echo -n "."
-  if gcloud compute ssh --zone "${ZONE}" "${USERNAME}"@"${INSTANCE_NAME}" -- env - true 2>/dev/null; then
+  if gcloud compute ssh --zone "${ZONE}" "${USERNAME}"@"${INSTANCE_NAME}" -- true 2>/dev/null; then
     success=$((${success}+1))
-  elif gcloud compute ssh --internal-ip --zone "${ZONE}" "${USERNAME}"@"${INSTANCE_NAME}" -- env - true 2>/dev/null; then
+  elif gcloud compute ssh --internal-ip --zone "${ZONE}" "${USERNAME}"@"${INSTANCE_NAME}" -- true 2>/dev/null; then
     success=$((${success}+1))
     internal="--internal-ip"
   fi
@@ -89,6 +92,7 @@ for arg; do
   (set -x; gcloud compute ssh ${internal} \
       --zone "${ZONE}" \
       "${USERNAME}"@"${INSTANCE_NAME}" -- \
+      "${SSH_ARGS[@]}" \
       sudo bash - <"${arg}" >/dev/null)
 done
 

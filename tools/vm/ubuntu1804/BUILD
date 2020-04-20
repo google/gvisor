@@ -2,6 +2,6 @@ package(licenses = ["notice"])
 
 alias(
     name = "ubuntu1804",
-    actual = "//tools/images/ubuntu1604",
+    actual = "//tools/vm/ubuntu1604",
     visibility = ["//:sandbox"],
 )
