@@ -1,5 +1,5 @@
 load("//tools:defs.bzl", "cc_binary", "gtest")
-load("//tools/images:defs.bzl", "vm_image", "vm_test")
+load("//tools/vm:defs.bzl", "vm_image", "vm_test")
 
 package(
     default_visibility = ["//:sandbox"],
@@ -37,14 +37,8 @@ vm_image(
     family = "ubuntu-1604-lts",
     project = "ubuntu-os-cloud",
     scripts = [
-        "//tools/images/ubuntu1604",
+        "//tools/vm/ubuntu1604",
     ],
-)
-
-vm_test(
-    name = "ubuntu1604_test",
-    image = ":ubuntu1604",
-    targets = [":test"],
 )
 
 vm_image(
@@ -52,12 +46,12 @@ vm_image(
     family = "ubuntu-1804-lts",
     project = "ubuntu-os-cloud",
     scripts = [
-        "//tools/images/ubuntu1804",
+        "//tools/vm/ubuntu1804",
     ],
 )
 
 vm_test(
-    name = "ubuntu1804_test",
-    image = ":ubuntu1804",
+    name = "vm_test",
+    shard_count = 2,
     targets = [":test"],
 )

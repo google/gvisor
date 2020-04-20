@@ -103,13 +103,12 @@ class GCPCommand(RunCommand):
         ("--image_file",),
         help="The binary that emits the GCP image.",
         default=os.path.join(
-            os.path.dirname(__file__), "../../tools/images/ubuntu1604"),
+            os.path.dirname(__file__), "../../tools/vm/ubuntu1604"),
     )
     zone_file = click.core.Option(
         ("--zone_file",),
         help="The binary that emits the GCP zone.",
-        default=os.path.join(
-            os.path.dirname(__file__), "../../tools/images/zone"),
+        default=os.path.join(os.path.dirname(__file__), "../../tools/vm/zone"),
     )
     internal = click.core.Option(
         ("--internal/--no-internal",),

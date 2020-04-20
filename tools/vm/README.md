@@ -1,4 +1,4 @@
-# Images
+# VM Images & Tests
 
 All commands in this directory require the `gcloud` project to be set.
 

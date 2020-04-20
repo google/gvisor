@@ -16,8 +16,12 @@
 
 namespace {
 
-TEST(Image, Sanity) {
-  // Do nothing.
+TEST(Image, Sanity0) {
+  // Do nothing (in shard 0).
+}
+
+TEST(Image, Sanity1) {
+  // Do nothing (in shard 1).
 }
 
 }  // namespace
