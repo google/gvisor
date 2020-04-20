@@ -70,10 +70,7 @@ func (f *fwdTestNetworkEndpoint) ID() *NetworkEndpointID {
 
 func (f *fwdTestNetworkEndpoint) HandlePacket(r *Route, pkt PacketBuffer) {
 	// Consume the network header.
-	b, ok := pkt.Data.PullUp(fwdTestNetHeaderLen)
-	if !ok {
-		return
-	}
+	b := pkt.Data.First()
 	pkt.Data.TrimFront(fwdTestNetHeaderLen)
 
 	// Dispatch the packet to the transport protocol.
@@ -476,7 +473,7 @@ func TestForwardingWithFakeResolverPartialTimeout(t *testing.T) {
 		t.Fatal("packet not forwarded")
 	}
 
-	b := p.Pkt.Data.ToView()
+	b := p.Pkt.Header.View()
 	if b[0] != 3 {
 		t.Fatalf("got b[0] = %d, want = 3", b[0])
 	}
@@ -520,7 +517,7 @@ func TestForwardingWithFakeResolverTwoPackets(t *testing.T) {
 			t.Fatal("packet not forwarded")
 		}
 
-		b := p.Pkt.Data.ToView()
+		b := p.Pkt.Header.View()
 		if b[0] != 3 {
 			t.Fatalf("got b[0] = %d, want = 3", b[0])
 		}
@@ -567,7 +564,7 @@ func TestForwardingWithFakeResolverManyPackets(t *testing.T) {
 			t.Fatal("packet not forwarded")
 		}
 
-		b := p.Pkt.Data.ToView()
+		b := p.Pkt.Header.View()
 		if b[0] != 3 {
 			t.Fatalf("got b[0] = %d, want = 3", b[0])
 		}
@@ -622,7 +619,7 @@ func TestForwardingWithFakeResolverManyResolutions(t *testing.T) {
 
 		// The first 5 packets (address 3 to 7) should not be forwarded
 		// because their address resolutions are interrupted.
-		b := p.Pkt.Data.ToView()
+		b := p.Pkt.Header.View()
 		if b[0] < 8 {
 			t.Fatalf("got b[0] = %d, want b[0] >= 8", b[0])
 		}

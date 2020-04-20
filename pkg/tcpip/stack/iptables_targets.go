@@ -96,12 +96,9 @@ func (rt RedirectTarget) Action(pkt PacketBuffer) (RuleVerdict, int) {
 	newPkt := pkt.Clone()
 
 	// Set network header.
-	headerView, ok := newPkt.Data.PullUp(header.IPv4MinimumSize)
-	if !ok {
-		return RuleDrop, 0
-	}
+	headerView := newPkt.Data.First()
 	netHeader := header.IPv4(headerView)
-	newPkt.NetworkHeader = headerView
+	newPkt.NetworkHeader = headerView[:header.IPv4MinimumSize]
 
 	hlen := int(netHeader.HeaderLength())
 	tlen := int(netHeader.TotalLength())
@@ -120,14 +117,10 @@ func (rt RedirectTarget) Action(pkt PacketBuffer) (RuleVerdict, int) {
 		if newPkt.TransportHeader != nil {
 			udpHeader = header.UDP(newPkt.TransportHeader)
 		} else {
-			if pkt.Data.Size() < header.UDPMinimumSize {
+			if len(pkt.Data.First()) < header.UDPMinimumSize {
 				return RuleDrop, 0
 			}
-			hdr, ok := newPkt.Data.PullUp(header.UDPMinimumSize)
-			if !ok {
-				return RuleDrop, 0
-			}
-			udpHeader = header.UDP(hdr)
+			udpHeader = header.UDP(newPkt.Data.First())
 		}
 		udpHeader.SetDestinationPort(rt.MinPort)
 	case header.TCPProtocolNumber:
@@ -135,14 +128,10 @@ func (rt RedirectTarget) Action(pkt PacketBuffer) (RuleVerdict, int) {
 		if newPkt.TransportHeader != nil {
 			tcpHeader = header.TCP(newPkt.TransportHeader)
 		} else {
-			if pkt.Data.Size() < header.TCPMinimumSize {
+			if len(pkt.Data.First()) < header.TCPMinimumSize {
 				return RuleDrop, 0
 			}
-			hdr, ok := newPkt.Data.PullUp(header.TCPMinimumSize)
-			if !ok {
-				return RuleDrop, 0
-			}
-			tcpHeader = header.TCP(hdr)
+			tcpHeader = header.TCP(newPkt.TransportHeader)
 		}
 		// TODO(gvisor.dev/issue/170): Need to recompute checksum
 		// and implement nat connection tracking to support TCP.
