@@ -148,7 +148,7 @@ func (fs *filesystem) doCreateAt(rp *vfs.ResolvingPath, dir bool, create func(pa
 	if !dir && rp.MustBeDir() {
 		return syserror.ENOENT
 	}
-	// In memfs, the only way to cause a dentry to be disowned is by removing
+	// In tmpfs, the only way to cause a dentry to be disowned is by removing
 	// it from the filesystem, so this check is equivalent to checking if
 	// parent has been removed.
 	if parent.vfsd.IsDisowned() {

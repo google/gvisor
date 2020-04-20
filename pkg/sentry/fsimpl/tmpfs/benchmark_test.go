@@ -168,7 +168,7 @@ func BenchmarkVFS1TmpfsStat(b *testing.B) {
 	}
 }
 
-func BenchmarkVFS2MemfsStat(b *testing.B) {
+func BenchmarkVFS2TmpfsStat(b *testing.B) {
 	for _, depth := range depths {
 		b.Run(fmt.Sprintf("%d", depth), func(b *testing.B) {
 			ctx := contexttest.Context(b)
@@ -362,7 +362,7 @@ func BenchmarkVFS1TmpfsMountStat(b *testing.B) {
 	}
 }
 
-func BenchmarkVFS2MemfsMountStat(b *testing.B) {
+func BenchmarkVFS2TmpfsMountStat(b *testing.B) {
 	for _, depth := range depths {
 		b.Run(fmt.Sprintf("%d", depth), func(b *testing.B) {
 			ctx := contexttest.Context(b)
