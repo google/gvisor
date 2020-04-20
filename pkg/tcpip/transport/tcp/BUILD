@@ -109,3 +109,13 @@ go_test(
         "//runsc/testutil",
     ],
 )
+
+go_test(
+    name = "rcv_test",
+    size = "small",
+    srcs = ["rcv_test.go"],
+    deps = [
+        ":tcp",
+        "//pkg/tcpip/seqnum",
+    ],
+)

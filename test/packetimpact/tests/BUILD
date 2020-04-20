@@ -43,8 +43,6 @@ packetimpact_go_test(
 packetimpact_go_test(
     name = "tcp_outside_the_window",
     srcs = ["tcp_outside_the_window_test.go"],
-    # TODO(eyalsoha): Fix #1607 then remove the line below.
-    netstack = False,
     deps = [
         "//pkg/tcpip/header",
         "//pkg/tcpip/seqnum",

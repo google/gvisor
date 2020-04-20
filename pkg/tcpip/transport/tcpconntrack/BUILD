@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//pkg/tcpip/header",
         "//pkg/tcpip/seqnum",
+        "//pkg/tcpip/transport/tcp",
     ],
 )
 
