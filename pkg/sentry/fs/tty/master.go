@@ -167,6 +167,8 @@ func (mf *masterFileOperations) Ioctl(ctx context.Context, _ *fs.File, io userme
 	case linux.TCSETSW:
 		// TODO(b/29356795): This should drain the output queue first.
 		return mf.t.ld.setTermios(ctx, io, args)
+	case linux.TCSETSF:
+		return mf.t.ld.setTermiosFlush(ctx, io, args)
 	case linux.TIOCGPTN:
 		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), uint32(mf.t.n), usermem.IOOpts{
 			AddressSpaceActive: true,

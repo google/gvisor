@@ -126,10 +126,17 @@ func (l *lineDiscipline) getTermios(ctx context.Context, io usermem.IO, args arc
 	return 0, err
 }
 
-// setTermios sets a linux.Termios for the tty.
-func (l *lineDiscipline) setTermios(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (l *lineDiscipline) setTermiosFlush(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	l.termiosMu.Lock()
 	defer l.termiosMu.Unlock()
+	l.inQueue.discardPending(ctx)
+	return l.setTermiosLocked(ctx, io, args)
+}
+
+// setTermiosLocked sets a linux.Termios for the tty.
+// Precondition:
+// * l.termiosMu must be held for writing
+func (l *lineDiscipline) setTermiosLocked(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	oldCanonEnabled := l.termios.LEnabled(linux.ICANON)
 	// We must copy a Termios struct, not KernelTermios.
 	var t linux.Termios
@@ -150,6 +157,13 @@ func (l *lineDiscipline) setTermios(ctx context.Context, io usermem.IO, args arc
 	}
 
 	return 0, err
+}
+
+// setTermios sets a linux.Termios for the tty.
+func (l *lineDiscipline) setTermios(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+	l.termiosMu.Lock()
+	defer l.termiosMu.Unlock()
+	return l.setTermiosLocked(ctx, io, args)
 }
 
 func (l *lineDiscipline) windowSize(ctx context.Context, io usermem.IO, args arch.SyscallArguments) error {
