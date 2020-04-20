@@ -171,11 +171,7 @@ func (e *endpoint) GSOMaxSize() uint32 {
 func (e *endpoint) dumpPacket(prefix string, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	writer := e.writer
 	if writer == nil && atomic.LoadUint32(&LogPackets) == 1 {
-		first := pkt.Header.View()
-		if len(first) == 0 {
-			first = pkt.Data.First()
-		}
-		logPacket(prefix, protocol, first, gso)
+		logPacket(prefix, protocol, pkt, gso)
 	}
 	if writer != nil && atomic.LoadUint32(&LogPacketsToPCAP) == 1 {
 		totalLength := pkt.Header.UsedLength() + pkt.Data.Size()
@@ -238,7 +234,7 @@ func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
 // Wait implements stack.LinkEndpoint.Wait.
 func (e *endpoint) Wait() { e.lower.Wait() }
 
-func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.View, gso *stack.GSO) {
+func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, gso *stack.GSO) {
 	// Figure out the network layer info.
 	var transProto uint8
 	src := tcpip.Address("unknown")
@@ -247,28 +243,49 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.Vie
 	size := uint16(0)
 	var fragmentOffset uint16
 	var moreFragments bool
+
+	// Create a clone of pkt, including any headers if present. Avoid allocating
+	// backing memory for the clone.
+	views := [8]buffer.View{}
+	vv := buffer.NewVectorisedView(0, views[:0])
+	vv.AppendView(pkt.Header.View())
+	vv.Append(pkt.Data)
+
 	switch protocol {
 	case header.IPv4ProtocolNumber:
-		ipv4 := header.IPv4(b)
+		hdr, ok := vv.PullUp(header.IPv4MinimumSize)
+		if !ok {
+			return
+		}
+		ipv4 := header.IPv4(hdr)
 		fragmentOffset = ipv4.FragmentOffset()
 		moreFragments = ipv4.Flags()&header.IPv4FlagMoreFragments == header.IPv4FlagMoreFragments
 		src = ipv4.SourceAddress()
 		dst = ipv4.DestinationAddress()
 		transProto = ipv4.Protocol()
 		size = ipv4.TotalLength() - uint16(ipv4.HeaderLength())
-		b = b[ipv4.HeaderLength():]
+		vv.TrimFront(int(ipv4.HeaderLength()))
 		id = int(ipv4.ID())
 
 	case header.IPv6ProtocolNumber:
-		ipv6 := header.IPv6(b)
+		hdr, ok := vv.PullUp(header.IPv6MinimumSize)
+		if !ok {
+			return
+		}
+		ipv6 := header.IPv6(hdr)
 		src = ipv6.SourceAddress()
 		dst = ipv6.DestinationAddress()
 		transProto = ipv6.NextHeader()
 		size = ipv6.PayloadLength()
-		b = b[header.IPv6MinimumSize:]
+		vv.TrimFront(header.IPv6MinimumSize)
 
 	case header.ARPProtocolNumber:
-		arp := header.ARP(b)
+		hdr, ok := vv.PullUp(header.ARPSize)
+		if !ok {
+			return
+		}
+		vv.TrimFront(header.ARPSize)
+		arp := header.ARP(hdr)
 		log.Infof(
 			"%s arp %v (%v) -> %v (%v) valid:%v",
 			prefix,
@@ -284,7 +301,7 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.Vie
 
 	// We aren't guaranteed to have a transport header - it's possible for
 	// writes via raw endpoints to contain only network headers.
-	if minSize, ok := transportProtocolMinSizes[tcpip.TransportProtocolNumber(transProto)]; ok && len(b) < minSize {
+	if minSize, ok := transportProtocolMinSizes[tcpip.TransportProtocolNumber(transProto)]; ok && vv.Size() < minSize {
 		log.Infof("%s %v -> %v transport protocol: %d, but no transport header found (possible raw packet)", prefix, src, dst, transProto)
 		return
 	}
@@ -297,7 +314,11 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.Vie
 	switch tcpip.TransportProtocolNumber(transProto) {
 	case header.ICMPv4ProtocolNumber:
 		transName = "icmp"
-		icmp := header.ICMPv4(b)
+		hdr, ok := vv.PullUp(header.ICMPv4MinimumSize)
+		if !ok {
+			break
+		}
+		icmp := header.ICMPv4(hdr)
 		icmpType := "unknown"
 		if fragmentOffset == 0 {
 			switch icmp.Type() {
@@ -330,7 +351,11 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.Vie
 
 	case header.ICMPv6ProtocolNumber:
 		transName = "icmp"
-		icmp := header.ICMPv6(b)
+		hdr, ok := vv.PullUp(header.ICMPv6MinimumSize)
+		if !ok {
+			break
+		}
+		icmp := header.ICMPv6(hdr)
 		icmpType := "unknown"
 		switch icmp.Type() {
 		case header.ICMPv6DstUnreachable:
@@ -361,7 +386,11 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.Vie
 
 	case header.UDPProtocolNumber:
 		transName = "udp"
-		udp := header.UDP(b)
+		hdr, ok := vv.PullUp(header.UDPMinimumSize)
+		if !ok {
+			break
+		}
+		udp := header.UDP(hdr)
 		if fragmentOffset == 0 && len(udp) >= header.UDPMinimumSize {
 			srcPort = udp.SourcePort()
 			dstPort = udp.DestinationPort()
@@ -371,7 +400,11 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.Vie
 
 	case header.TCPProtocolNumber:
 		transName = "tcp"
-		tcp := header.TCP(b)
+		hdr, ok := vv.PullUp(header.TCPMinimumSize)
+		if !ok {
+			break
+		}
+		tcp := header.TCP(hdr)
 		if fragmentOffset == 0 && len(tcp) >= header.TCPMinimumSize {
 			offset := int(tcp.DataOffset())
 			if offset < header.TCPMinimumSize {

@@ -328,7 +328,11 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt stack.PacketBuffer) *tcpip.Error {
 	// The packet already has an IP header, but there are a few required
 	// checks.
-	ip := header.IPv4(pkt.Data.First())
+	h, ok := pkt.Data.PullUp(header.IPv4MinimumSize)
+	if !ok {
+		return tcpip.ErrInvalidOptionValue
+	}
+	ip := header.IPv4(h)
 	if !ip.IsValid(pkt.Data.Size()) {
 		return tcpip.ErrInvalidOptionValue
 	}
@@ -378,7 +382,11 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt stack.PacketBuf
 // HandlePacket is called by the link layer when new ipv4 packets arrive for
 // this endpoint.
 func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
-	headerView := pkt.Data.First()
+	headerView, ok := pkt.Data.PullUp(header.IPv4MinimumSize)
+	if !ok {
+		r.Stats().IP.MalformedPacketsReceived.Increment()
+		return
+	}
 	h := header.IPv4(headerView)
 	if !h.IsValid(pkt.Data.Size()) {
 		r.Stats().IP.MalformedPacketsReceived.Increment()
