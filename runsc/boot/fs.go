@@ -63,8 +63,13 @@ const (
 	nonefs   = "none"
 )
 
-// tmpfs has some extra supported options that we must pass through.
-var tmpfsAllowedOptions = []string{"mode", "uid", "gid"}
+var (
+	// tmpfs has some extra supported options that we must pass through.
+	tmpfsAllowedOptions = []string{"mode", "uid", "gid"}
+
+	// filesystems supported on gVisor.
+	supportedFilesystems = []string{bind, devpts, devtmpfs, proc, sysfs, tmpfs}
+)
 
 func addOverlay(ctx context.Context, conf *Config, lower *fs.Inode, name string, lowerFlags fs.MountSourceFlags) (*fs.Inode, error) {
 	// Upper layer uses the same flags as lower, but it must be read-write.
@@ -219,6 +224,8 @@ func mountFlags(opts []string) fs.MountSourceFlags {
 			mf.NoAtime = true
 		case "noexec":
 			mf.NoExec = true
+		case "bind", "rbind":
+			mf.Bind = true
 		default:
 			log.Warningf("ignoring unknown mount option %q", o)
 		}
@@ -230,6 +237,10 @@ func isSupportedMountFlag(fstype, opt string) bool {
 	switch opt {
 	case "rw", "ro", "noatime", "noexec":
 		return true
+	case "bind", "rbind":
+		if fstype == nonefs || !specutils.ContainsStr(supportedFilesystems, fstype) {
+			return true
+		}
 	}
 	if fstype == tmpfs {
 		ok, err := parseMountOption(opt, tmpfsAllowedOptions...)
@@ -756,12 +767,14 @@ func (c *containerMounter) createRootMount(ctx context.Context, conf *Config) (*
 	return rootInode, nil
 }
 
+// getBindMountNameAndOptions retrieves the fsName, opts, and useOverlay values
+// used for bind mounts.
 func (c *containerMounter) getBindMountNameAndOptions(conf *Config, m specs.Mount) (string, []string, bool) {
 	fd := c.fds.remove()
-	fsName = "9p"
-	opts = p9MountOptions(fd, c.getMountAccessType(m))
+	fsName := "9p"
+	opts := p9MountOptions(fd, c.getMountAccessType(m))
 	// If configured, add overlay to all writable mounts.
-	useOverlay = conf.Overlay && !mountFlags(m.Options).ReadOnly
+	useOverlay := conf.Overlay && !mountFlags(m.Options).ReadOnly
 	return fsName, opts, useOverlay
 }
 
