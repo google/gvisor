@@ -246,8 +246,8 @@ func (fs *Filesystem) Sync(ctx context.Context) error {
 // AccessAt implements vfs.Filesystem.Impl.AccessAt.
 func (fs *Filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds *auth.Credentials, ats vfs.AccessTypes) error {
 	fs.mu.RLock()
-	defer fs.mu.RUnlock()
 	defer fs.processDeferredDecRefs()
+	defer fs.mu.RUnlock()
 
 	_, inode, err := fs.walkExistingLocked(ctx, rp)
 	if err != nil {

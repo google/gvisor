@@ -111,17 +111,18 @@ func (d *auxvData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	}
 	defer m.DecUsers(ctx)
 
-	// Space for buffer with AT_NULL (0) terminator at the end.
 	auxv := m.Auxv()
+	// Space for buffer with AT_NULL (0) terminator at the end.
 	buf.Grow((len(auxv) + 1) * 16)
 	for _, e := range auxv {
-		var tmp [8]byte
-		usermem.ByteOrder.PutUint64(tmp[:], e.Key)
-		buf.Write(tmp[:])
-
-		usermem.ByteOrder.PutUint64(tmp[:], uint64(e.Value))
+		var tmp [16]byte
+		usermem.ByteOrder.PutUint64(tmp[:8], e.Key)
+		usermem.ByteOrder.PutUint64(tmp[8:], uint64(e.Value))
 		buf.Write(tmp[:])
 	}
+	var atNull [16]byte
+	buf.Write(atNull[:])
+
 	return nil
 }
 
