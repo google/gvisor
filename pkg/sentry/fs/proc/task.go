@@ -73,8 +73,7 @@ func checkTaskState(t *kernel.Task) error {
 type taskDir struct {
 	ramfs.Dir
 
-	t     *kernel.Task
-	pidns *kernel.PIDNamespace
+	t *kernel.Task
 }
 
 var _ fs.InodeOperations = (*taskDir)(nil)

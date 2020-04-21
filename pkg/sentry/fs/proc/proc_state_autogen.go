@@ -412,14 +412,12 @@ func (x *taskDir) save(m state.Map) {
 	x.beforeSave()
 	m.Save("Dir", &x.Dir)
 	m.Save("t", &x.t)
-	m.Save("pidns", &x.pidns)
 }
 
 func (x *taskDir) afterLoad() {}
 func (x *taskDir) load(m state.Map) {
 	m.Load("Dir", &x.Dir)
 	m.Load("t", &x.t)
-	m.Load("pidns", &x.pidns)
 }
 
 func (x *subtasks) beforeSave() {}
