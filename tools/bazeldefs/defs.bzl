@@ -1,7 +1,7 @@
 """Bazel implementations of standard rules."""
 
 load("@bazel_tools//tools/cpp:cc_flags_supplier.bzl", _cc_flags_supplier = "cc_flags_supplier")
-load("@io_bazel_rules_go//go:def.bzl", _go_binary = "go_binary", _go_embed_data = "go_embed_data", _go_library = "go_library", _go_test = "go_test", _go_tool_library = "go_tool_library")
+load("@io_bazel_rules_go//go:def.bzl", "GoLibrary", _go_binary = "go_binary", _go_context = "go_context", _go_embed_data = "go_embed_data", _go_library = "go_library", _go_test = "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", _go_grpc_library = "go_grpc_library", _go_proto_library = "go_proto_library")
 load("@rules_cc//cc:defs.bzl", _cc_binary = "cc_binary", _cc_library = "cc_library", _cc_proto_library = "cc_proto_library", _cc_test = "cc_test")
 load("@rules_pkg//:pkg.bzl", _pkg_deb = "pkg_deb", _pkg_tar = "pkg_tar")
@@ -99,15 +99,12 @@ def go_binary(name, static = False, pure = False, **kwargs):
         **kwargs
     )
 
+def go_importpath(target):
+    """Returns the importpath for the target."""
+    return target[GoLibrary].importpath
+
 def go_library(name, **kwargs):
     _go_library(
-        name = name,
-        importpath = "gvisor.dev/gvisor/" + native.package_name(),
-        **kwargs
-    )
-
-def go_tool_library(name, **kwargs):
-    _go_tool_library(
         name = name,
         importpath = "gvisor.dev/gvisor/" + native.package_name(),
         **kwargs
@@ -129,6 +126,34 @@ def go_test(name, pure = False, library = None, **kwargs):
     _go_test(
         name = name,
         **kwargs
+    )
+
+def go_rule(rule, implementation, **kwargs):
+    """Wraps a rule definition with Go attributes.
+
+    Args:
+      rule: rule function (typically rule or aspect).
+      implementation: implementation function.
+      **kwargs: other arguments to pass to rule.
+
+    Returns:
+        The result of invoking the rule.
+    """
+    attrs = kwargs.pop("attrs", [])
+    attrs["_go_context_data"] = attr.label(default = "@io_bazel_rules_go//:go_context_data")
+    attrs["_stdlib"] = attr.label(default = "@io_bazel_rules_go//:stdlib")
+    toolchains = kwargs.get("toolchains", []) + ["@io_bazel_rules_go//go:toolchain"]
+    return rule(implementation, attrs = attrs, toolchains = toolchains, **kwargs)
+
+def go_context(ctx):
+    go_ctx = _go_context(ctx)
+    return struct(
+        go = go_ctx.go,
+        env = go_ctx.env,
+        runfiles = depset([go_ctx.go] + go_ctx.sdk.tools + go_ctx.stdlib.libs),
+        goos = go_ctx.sdk.goos,
+        goarch = go_ctx.sdk.goarch,
+        tags = go_ctx.tags,
     )
 
 def py_requirement(name, direct = True):

@@ -2,8 +2,16 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
 # Load go bazel rules and gazelle.
+#
+# Note that this repository actually patches some other Go repositories as it
+# loads it, in order to limit visibility. We hack this process by patching the
+# patch used by the Go rules, turning the trick against itself.
 http_archive(
     name = "io_bazel_rules_go",
+    patch_args = ["-p1"],
+    patches = [
+        "//tools/nogo:io_bazel_rules_go-visibility.patch",
+    ],
     sha256 = "db2b2d35293f405430f553bc7a865a8749a8ef60c30287e90d2b278c32771afe",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.22.3/rules_go-v0.22.3.tar.gz",
@@ -24,10 +32,7 @@ load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_depe
 
 go_rules_dependencies()
 
-go_register_toolchains(
-    go_version = "1.14.2",
-    nogo = "@//:nogo",
-)
+go_register_toolchains(go_version = "1.14.2")
 
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
 
@@ -170,9 +175,13 @@ http_archive(
         "https://github.com/grpc/grpc/archive/v1.26.0.tar.gz",
     ],
 )
+
 load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
+
 grpc_deps()
+
 load("@com_github_grpc_grpc//bazel:grpc_extra_deps.bzl", "grpc_extra_deps")
+
 grpc_extra_deps()
 
 # External repositories, in sorted order.
@@ -221,8 +230,8 @@ go_repository(
 go_repository(
     name = "com_github_imdario_mergo",
     importpath = "github.com/imdario/mergo",
-    version = "v0.3.8",
     sum = "h1:CGgOkSJeqMRmt0D9XLWExdT4m4F1vd3FV3VPt+0VxkQ=",
+    version = "v0.3.8",
 )
 
 go_repository(
@@ -248,8 +257,8 @@ go_repository(
 
 go_repository(
     name = "com_github_mohae_deepcopy",
-    importpath = "github.com/mohae/deepcopy",
     commit = "c48cc78d482608239f6c4c92a4abd87eb8761c90",
+    importpath = "github.com/mohae/deepcopy",
 )
 
 go_repository(
@@ -298,8 +307,8 @@ go_repository(
 go_repository(
     name = "org_golang_x_crypto",
     importpath = "golang.org/x/crypto",
-    sum = "h1:ObdrDkeb4kJdCP557AjRjq69pTHfNouLtWZG7j9rPN8=",
-    version = "v0.0.0-20191011191535-87dc89f01550",
+    sum = "h1:VklqNMn3ovrHsnt90PveolxSbWFaJdECFbxSq0Mqo2M=",
+    version = "v0.0.0-20190308221718-c2843e01d9a2",
 )
 
 go_repository(
@@ -340,15 +349,15 @@ go_repository(
 go_repository(
     name = "org_golang_x_tools",
     importpath = "golang.org/x/tools",
-    sum = "h1:aZzprAO9/8oim3qStq3wc1Xuxx4QmAGriC4VU4ojemQ=",
-    version = "v0.0.0-20191119224855-298f0cb1881e",
+    sum = "h1:Uglradbb4KfUWaYasZhlsDsGRwHHvRsHoNAEONef0W8=",
+    version = "v0.0.0-20200131233409-575de47986ce",
 )
 
 go_repository(
     name = "org_golang_x_xerrors",
     importpath = "golang.org/x/xerrors",
-    sum = "h1:E7g+9GITq07hpfrRu66IVDexMakfv52eLZ2CXBWiKr4=",
-    version = "v0.0.0-20191204190536-9bdfabe68543",
+    sum = "h1:9zdDQZ7Thm29KFXgAX/+yaf3eVbP7djjWp/dXAppNCc=",
+    version = "v0.0.0-20190717185122-a985d3407aa7",
 )
 
 go_repository(

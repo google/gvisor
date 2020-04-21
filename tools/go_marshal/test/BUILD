@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_binary", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 licenses(["notice"])
 
@@ -25,19 +25,8 @@ go_library(
     testonly = 1,
     srcs = ["test.go"],
     marshal = True,
+    visibility = ["//tools/go_marshal/test:__subpackages__"],
     deps = ["//tools/go_marshal/test/external"],
-)
-
-go_binary(
-    name = "escape",
-    testonly = 1,
-    srcs = ["escape.go"],
-    gc_goopts = ["-m"],
-    deps = [
-        ":test",
-        "//pkg/usermem",
-        "//tools/go_marshal/marshal",
-    ],
 )
 
 go_test(
