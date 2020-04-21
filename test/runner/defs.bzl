@@ -23,7 +23,7 @@ def _runner_test_impl(ctx):
     # Return with all transitive files.
     runfiles = ctx.runfiles(
         transitive_files = depset(transitive = [
-            depset(target.data_runfiles.files)
+            target.data_runfiles.files
             for target in (ctx.attr.runner, ctx.attr.test)
             if hasattr(target, "data_runfiles")
         ]),
