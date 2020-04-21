@@ -148,7 +148,7 @@ func (mm *MemoryManager) appendVMAMapsEntryLocked(ctx context.Context, vseg vmaI
 
 	// Do not include the guard page: fs/proc/task_mmu.c:show_map_vma() =>
 	// stack_guard_page_start().
-	fmt.Fprintf(b, "%08x-%08x %s%s %08x %02x:%02x %d ",
+	lineLen, _ := fmt.Fprintf(b, "%08x-%08x %s%s %08x %02x:%02x %d ",
 		vseg.Start(), vseg.End(), vma.realPerms, private, vma.off, devMajor, devMinor, ino)
 
 	// Figure out our filename or hint.
@@ -165,7 +165,7 @@ func (mm *MemoryManager) appendVMAMapsEntryLocked(ctx context.Context, vseg vmaI
 	}
 	if s != "" {
 		// Per linux, we pad until the 74th character.
-		if pad := 73 - b.Len(); pad > 0 {
+		if pad := 73 - lineLen; pad > 0 {
 			b.WriteString(strings.Repeat(" ", pad))
 		}
 		b.WriteString(s)
