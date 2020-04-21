@@ -244,6 +244,6 @@ func EmitMetricUpdate() {
 		return
 	}
 
-	log.Debugf("Emitting metrics: %v", m)
+	log.Debugf("Emitting metrics: %v", &m)
 	eventchannel.Emit(&m)
 }
