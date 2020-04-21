@@ -154,3 +154,53 @@ func TestLayerStringFormat(t *testing.T) {
 		})
 	}
 }
+
+func TestConnectionMatch(t *testing.T) {
+	conn := Connection{
+		layerStates: []layerState{&etherState{}},
+	}
+	protoNum0 := tcpip.NetworkProtocolNumber(0)
+	protoNum1 := tcpip.NetworkProtocolNumber(1)
+	for _, tt := range []struct {
+		description        string
+		override, received Layers
+		wantMatch          bool
+	}{
+		{
+			description: "shorter override",
+			override:    []Layer{&Ether{}},
+			received:    []Layer{&Ether{}, &Payload{Bytes: []byte("hello")}},
+			wantMatch:   true,
+		},
+		{
+			description: "longer override",
+			override:    []Layer{&Ether{}, &Payload{Bytes: []byte("hello")}},
+			received:    []Layer{&Ether{}},
+			wantMatch:   false,
+		},
+		{
+			description: "ether layer mismatch",
+			override:    []Layer{&Ether{Type: &protoNum0}},
+			received:    []Layer{&Ether{Type: &protoNum1}},
+			wantMatch:   false,
+		},
+		{
+			description: "both nil",
+			override:    nil,
+			received:    nil,
+			wantMatch:   false,
+		},
+		{
+			description: "nil override",
+			override:    nil,
+			received:    []Layer{&Ether{}},
+			wantMatch:   true,
+		},
+	} {
+		t.Run(tt.description, func(t *testing.T) {
+			if gotMatch := conn.match(tt.override, tt.received); gotMatch != tt.wantMatch {
+				t.Fatalf("conn.match(%s, %s) = %t, want %t", tt.override, tt.received, gotMatch, tt.wantMatch)
+			}
+		})
+	}
+}
