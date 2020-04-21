@@ -452,6 +452,16 @@ type dentry struct {
 	// fs is the owning filesystem. fs is immutable.
 	fs *filesystem
 
+	// parent is this dentry's parent directory. Each dentry holds a reference
+	// on its parent. If this dentry is a filesystem root, parent is nil.
+	// parent is protected by filesystem.renameMu.
+	parent *dentry
+
+	// name is the name of this dentry in its parent. If this dentry is a
+	// filesystem root, name is the empty string. name is protected by
+	// filesystem.renameMu.
+	name string
+
 	// We don't support hard links, so each dentry maps 1:1 to an inode.
 
 	// file is the unopened p9.File that backs this dentry. file is immutable.
@@ -469,10 +479,15 @@ type dentry struct {
 
 	dirMu sync.Mutex
 
-	// If this dentry represents a directory, and InteropModeShared is not in
-	// effect, negativeChildren is a set of child names in this directory that
-	// are known not to exist. negativeChildren is protected by dirMu.
-	negativeChildren map[string]struct{}
+	// If this dentry represents a directory, children contains:
+	//
+	// - Mappings of child filenames to dentries representing those children.
+	//
+	// - Mappings of child filenames that are known not to exist to nil
+	// dentries (only if InteropModeShared is not in effect).
+	//
+	// children is protected by dirMu.
+	children map[string]*dentry
 
 	// If this dentry represents a directory, InteropModeShared is not in
 	// effect, and dirents is not nil, it is a cache of all entries in the
@@ -910,9 +925,9 @@ func (d *dentry) checkCachingLocked() {
 		// Dentry has already been destroyed.
 		return
 	}
-	// Non-child dentries with zero references are no longer reachable by path
-	// resolution and should be dropped immediately.
-	if d.vfsd.Parent() == nil || d.vfsd.IsDisowned() {
+	// Deleted and invalidated dentries with zero references are no longer
+	// reachable by path resolution and should be dropped immediately.
+	if d.vfsd.IsDead() {
 		if d.cached {
 			d.fs.cachedDentries.Remove(d)
 			d.fs.cachedDentriesLen--
@@ -937,28 +952,26 @@ func (d *dentry) checkCachingLocked() {
 		d.fs.cachedDentries.Remove(victim)
 		d.fs.cachedDentriesLen--
 		victim.cached = false
-		// victim.refs may have become non-zero from an earlier path
-		// resolution since it was inserted into fs.cachedDentries; see
-		// dentry.incRefLocked(). Either way, we brought
-		// fs.cachedDentriesLen back down to fs.opts.maxCachedDentries, so
-		// we don't loop.
+		// victim.refs may have become non-zero from an earlier path resolution
+		// since it was inserted into fs.cachedDentries.
 		if atomic.LoadInt64(&victim.refs) == 0 {
-			if victimParentVFSD := victim.vfsd.Parent(); victimParentVFSD != nil {
-				victimParent := victimParentVFSD.Impl().(*dentry)
-				victimParent.dirMu.Lock()
-				if !victim.vfsd.IsDisowned() {
-					// victim can't be a mount point (in any mount
-					// namespace), since VFS holds references on mount
-					// points.
-					d.fs.vfsfs.VirtualFilesystem().ForceDeleteDentry(&victim.vfsd)
+			if victim.parent != nil {
+				victim.parent.dirMu.Lock()
+				if !victim.vfsd.IsDead() {
+					// Note that victim can't be a mount point (in any mount
+					// namespace), since VFS holds references on mount points.
+					d.fs.vfsfs.VirtualFilesystem().InvalidateDentry(&victim.vfsd)
+					delete(victim.parent.children, victim.name)
 					// We're only deleting the dentry, not the file it
 					// represents, so we don't need to update
 					// victimParent.dirents etc.
 				}
-				victimParent.dirMu.Unlock()
+				victim.parent.dirMu.Unlock()
 			}
 			victim.destroyLocked()
 		}
+		// Whether or not victim was destroyed, we brought fs.cachedDentriesLen
+		// back down to fs.opts.maxCachedDentries, so we don't loop.
 	}
 }
 
@@ -1005,12 +1018,11 @@ func (d *dentry) destroyLocked() {
 	d.fs.syncMu.Lock()
 	delete(d.fs.dentries, d)
 	d.fs.syncMu.Unlock()
-	// Drop the reference held by d on its parent.
-	if parentVFSD := d.vfsd.Parent(); parentVFSD != nil {
-		parent := parentVFSD.Impl().(*dentry)
-		// This is parent.DecRef() without recursive locking of d.fs.renameMu.
-		if refs := atomic.AddInt64(&parent.refs, -1); refs == 0 {
-			parent.checkCachingLocked()
+	// Drop the reference held by d on its parent without recursively locking
+	// d.fs.renameMu.
+	if d.parent != nil {
+		if refs := atomic.AddInt64(&d.parent.refs, -1); refs == 0 {
+			d.parent.checkCachingLocked()
 		} else if refs < 0 {
 			panic("gofer.dentry.DecRef() called without holding a reference")
 		}

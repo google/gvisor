@@ -15,35 +15,77 @@
 package tmpfs
 
 import (
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 type directory struct {
-	inode inode
+	// Since directories can't be hard-linked, each directory can only be
+	// associated with a single dentry, which we can store in the directory
+	// struct.
+	dentry dentry
+	inode  inode
 
-	// childList is a list containing (1) child Dentries and (2) fake Dentries
+	// childMap maps the names of the directory's children to their dentries.
+	// childMap is protected by filesystem.mu.
+	childMap map[string]*dentry
+
+	// numChildren is len(childMap), but accessed using atomic memory
+	// operations to avoid locking in inode.statTo().
+	numChildren int64
+
+	// childList is a list containing (1) child dentries and (2) fake dentries
 	// (with inode == nil) that represent the iteration position of
 	// directoryFDs. childList is used to support directoryFD.IterDirents()
-	// efficiently. childList is protected by filesystem.mu.
+	// efficiently. childList is protected by iterMu.
+	iterMu    sync.Mutex
 	childList dentryList
 }
 
-func (fs *filesystem) newDirectory(creds *auth.Credentials, mode linux.FileMode) *inode {
+func (fs *filesystem) newDirectory(creds *auth.Credentials, mode linux.FileMode) *directory {
 	dir := &directory{}
 	dir.inode.init(dir, fs, creds, linux.S_IFDIR|mode)
 	dir.inode.nlink = 2 // from "." and parent directory or ".." for root
-	return &dir.inode
+	dir.dentry.inode = &dir.inode
+	dir.dentry.vfsd.Init(&dir.dentry)
+	return dir
+}
+
+// Preconditions: filesystem.mu must be locked for writing. dir must not
+// already contain a child with the given name.
+func (dir *directory) insertChildLocked(child *dentry, name string) {
+	child.parent = &dir.dentry
+	child.name = name
+	if dir.childMap == nil {
+		dir.childMap = make(map[string]*dentry)
+	}
+	dir.childMap[name] = child
+	atomic.AddInt64(&dir.numChildren, 1)
+	dir.iterMu.Lock()
+	dir.childList.PushBack(child)
+	dir.iterMu.Unlock()
+}
+
+// Preconditions: filesystem.mu must be locked for writing.
+func (dir *directory) removeChildLocked(child *dentry) {
+	delete(dir.childMap, child.name)
+	atomic.AddInt64(&dir.numChildren, -1)
+	dir.iterMu.Lock()
+	dir.childList.Remove(child)
+	dir.iterMu.Unlock()
 }
 
 type directoryFD struct {
 	fileDescription
 	vfs.DirectoryFileDescriptionDefaultImpl
 
-	// Protected by filesystem.mu.
+	// Protected by directory.iterMu.
 	iter *dentry
 	off  int64
 }
@@ -51,11 +93,10 @@ type directoryFD struct {
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *directoryFD) Release() {
 	if fd.iter != nil {
-		fs := fd.filesystem()
 		dir := fd.inode().impl.(*directory)
-		fs.mu.Lock()
+		dir.iterMu.Lock()
 		dir.childList.Remove(fd.iter)
-		fs.mu.Unlock()
+		dir.iterMu.Unlock()
 		fd.iter = nil
 	}
 }
@@ -63,10 +104,13 @@ func (fd *directoryFD) Release() {
 // IterDirents implements vfs.FileDescriptionImpl.IterDirents.
 func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback) error {
 	fs := fd.filesystem()
-	vfsd := fd.vfsfd.VirtualDentry().Dentry()
+	dir := fd.inode().impl.(*directory)
 
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
+	// fs.mu is required to read d.parent and dentry.name.
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	dir.iterMu.Lock()
+	defer dir.iterMu.Unlock()
 
 	fd.inode().touchAtime(fd.vfsfd.Mount())
 
@@ -74,15 +118,16 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 		if err := cb.Handle(vfs.Dirent{
 			Name:    ".",
 			Type:    linux.DT_DIR,
-			Ino:     vfsd.Impl().(*dentry).inode.ino,
+			Ino:     dir.inode.ino,
 			NextOff: 1,
 		}); err != nil {
 			return err
 		}
 		fd.off++
 	}
+
 	if fd.off == 1 {
-		parentInode := vfsd.ParentOrSelf().Impl().(*dentry).inode
+		parentInode := genericParentOrSelf(&dir.dentry).inode
 		if err := cb.Handle(vfs.Dirent{
 			Name:    "..",
 			Type:    parentInode.direntType(),
@@ -94,7 +139,6 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 		fd.off++
 	}
 
-	dir := vfsd.Impl().(*dentry).inode.impl.(*directory)
 	var child *dentry
 	if fd.iter == nil {
 		// Start iteration at the beginning of dir.
@@ -109,7 +153,7 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 		// Skip other directoryFD iterators.
 		if child.inode != nil {
 			if err := cb.Handle(vfs.Dirent{
-				Name:    child.vfsd.Name(),
+				Name:    child.name,
 				Type:    child.inode.direntType(),
 				Ino:     child.inode.ino,
 				NextOff: fd.off + 1,
@@ -127,9 +171,9 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 
 // Seek implements vfs.FileDescriptionImpl.Seek.
 func (fd *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
-	fs := fd.filesystem()
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
+	dir := fd.inode().impl.(*directory)
+	dir.iterMu.Lock()
+	defer dir.iterMu.Unlock()
 
 	switch whence {
 	case linux.SEEK_SET:
@@ -156,8 +200,6 @@ func (fd *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (in
 	if offset >= 2 {
 		remChildren = offset - 2
 	}
-
-	dir := fd.inode().impl.(*directory)
 
 	// Ensure that fd.iter exists and is not linked into dir.childList.
 	if fd.iter == nil {

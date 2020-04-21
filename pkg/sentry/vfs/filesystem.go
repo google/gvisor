@@ -346,7 +346,10 @@ type FilesystemImpl interface {
 	// ENOTEMPTY.
 	//
 	// Preconditions: !rp.Done(). For the final path component in rp,
-	// !rp.ShouldFollowSymlink(). oldName is not "." or "..".
+	// !rp.ShouldFollowSymlink(). oldParentVD.Dentry() was obtained from a
+	// previous call to
+	// oldParentVD.Mount().Filesystem().Impl().GetParentDentryAt(). oldName is
+	// not "." or "..".
 	//
 	// Postconditions: If RenameAt returns an error returned by
 	// ResolvingPath.Resolve*(), then !rp.Done().
