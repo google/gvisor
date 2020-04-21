@@ -28,7 +28,7 @@ To enable networking functionality while preserving gVisor's security properties
 
 ----
 
-![Figure 1](./2020-04-02-networking-security-figure1.png)
+![Figure 1](/assets/images/2020-04-02-networking-security-figure1.png)
 
 Figure 1: Netstack and gVisor
 
