@@ -12,12 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-build:
+build: content/.jekyll-cache
 	@bazel run //runsc -- help syscalls -format json -filename $(PWD)/syscalls.json
 	@docker build -t gvisor-website .
 	@docker run -v $$PWD:/work -w /work gcr.io/cloud-builders/npm ci
 	@$(MAKE) update
 .PHONY: build
+
+content/.jekyll-cache:
+	@mkdir -p $@ && chmod a+rw $@
 
 lint:
 	@docker run -v $$PWD:/work -w /work gcr.io/cloud-builders/npm run lint-md
