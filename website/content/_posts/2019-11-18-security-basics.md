@@ -46,7 +46,7 @@ A simplified version of the design is below ([more detailed version](https://gvi
 
 ----
 
-![Figure 1](./2019-11-18-security-basics-figure1.png)
+![Figure 1](/assets/images/2019-11-18-security-basics-figure1.png)
 
 Figure 1: Simplified design of gVisor.
 
