@@ -415,36 +415,36 @@ func iterateDir(ctx context.Context, t *testing.T, s *testutil.System, fd *vfs.F
 		if d.Name == "." || d.Name == ".." {
 			continue
 		}
-		childPath := path.Join(fd.MappedName(ctx), d.Name)
+		absPath := path.Join(fd.MappedName(ctx), d.Name)
 		if d.Type == linux.DT_LNK {
 			link, err := s.VFS.ReadlinkAt(
 				ctx,
 				auth.CredentialsFromContext(ctx),
-				&vfs.PathOperation{Root: s.Root, Start: s.Root, Path: fspath.Parse(childPath)},
+				&vfs.PathOperation{Root: s.Root, Start: s.Root, Path: fspath.Parse(absPath)},
 			)
 			if err != nil {
-				t.Errorf("vfsfs.ReadlinkAt(%v) failed: %v", childPath, err)
+				t.Errorf("vfsfs.ReadlinkAt(%v) failed: %v", absPath, err)
 			} else {
-				t.Logf("Skipping symlink: /proc%s => %s", childPath, link)
+				t.Logf("Skipping symlink: %s => %s", absPath, link)
 			}
 			continue
 		}
 
-		t.Logf("Opening: /proc%s", childPath)
+		t.Logf("Opening: %s", absPath)
 		child, err := s.VFS.OpenAt(
 			ctx,
 			auth.CredentialsFromContext(ctx),
-			&vfs.PathOperation{Root: s.Root, Start: s.Root, Path: fspath.Parse(childPath)},
+			&vfs.PathOperation{Root: s.Root, Start: s.Root, Path: fspath.Parse(absPath)},
 			&vfs.OpenOptions{},
 		)
 		if err != nil {
-			t.Errorf("vfsfs.OpenAt(%v) failed: %v", childPath, err)
+			t.Errorf("vfsfs.OpenAt(%v) failed: %v", absPath, err)
 			continue
 		}
 		defer child.DecRef()
 		stat, err := child.Stat(ctx, vfs.StatOptions{})
 		if err != nil {
-			t.Errorf("Stat(%v) failed: %v", childPath, err)
+			t.Errorf("Stat(%v) failed: %v", absPath, err)
 		}
 		if got := linux.FileMode(stat.Mode).DirentType(); got != d.Type {
 			t.Errorf("wrong file mode, stat: %v, dirent: %v", got, d.Type)

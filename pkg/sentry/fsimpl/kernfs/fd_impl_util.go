@@ -129,7 +129,7 @@ func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirent
 
 	// Handle "..".
 	if fd.off == 1 {
-		parentInode := vfsd.ParentOrSelf().Impl().(*Dentry).inode
+		parentInode := genericParentOrSelf(vfsd.Impl().(*Dentry)).inode
 		stat, err := parentInode.Stat(vfsFS, opts)
 		if err != nil {
 			return err

@@ -89,14 +89,33 @@ func stepLocked(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, inode *inode, write boo
 	}
 
 	for {
-		nextVFSD, err := rp.ResolveComponent(vfsd)
-		if err != nil {
-			return nil, nil, err
+		name := rp.Component()
+		if name == "." {
+			rp.Advance()
+			return vfsd, inode, nil
 		}
-		if nextVFSD == nil {
-			// Since the Dentry tree is not the sole source of truth for extfs, if it's
-			// not in the Dentry tree, it might need to be pulled from disk.
-			childDirent, ok := inode.impl.(*directory).childMap[rp.Component()]
+		d := vfsd.Impl().(*dentry)
+		if name == ".." {
+			isRoot, err := rp.CheckRoot(vfsd)
+			if err != nil {
+				return nil, nil, err
+			}
+			if isRoot || d.parent == nil {
+				rp.Advance()
+				return vfsd, inode, nil
+			}
+			if err := rp.CheckMount(&d.parent.vfsd); err != nil {
+				return nil, nil, err
+			}
+			rp.Advance()
+			return &d.parent.vfsd, d.parent.inode, nil
+		}
+
+		dir := inode.impl.(*directory)
+		child, ok := dir.childCache[name]
+		if !ok {
+			// We may need to instantiate a new dentry for this child.
+			childDirent, ok := dir.childMap[name]
 			if !ok {
 				// The underlying inode does not exist on disk.
 				return nil, nil, syserror.ENOENT
@@ -115,21 +134,22 @@ func stepLocked(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, inode *inode, write boo
 			}
 			// incRef because this is being added to the dentry tree.
 			childInode.incRef()
-			child := newDentry(childInode)
-			vfsd.InsertChild(&child.vfsd, rp.Component())
-
-			// Continue as usual now that nextVFSD is not nil.
-			nextVFSD = &child.vfsd
+			child = newDentry(childInode)
+			child.parent = d
+			child.name = name
+			dir.childCache[name] = child
 		}
-		nextInode := nextVFSD.Impl().(*dentry).inode
-		if nextInode.isSymlink() && rp.ShouldFollowSymlink() {
-			if err := rp.HandleSymlink(inode.impl.(*symlink).target); err != nil {
+		if err := rp.CheckMount(&child.vfsd); err != nil {
+			return nil, nil, err
+		}
+		if child.inode.isSymlink() && rp.ShouldFollowSymlink() {
+			if err := rp.HandleSymlink(child.inode.impl.(*symlink).target); err != nil {
 				return nil, nil, err
 			}
 			continue
 		}
 		rp.Advance()
-		return nextVFSD, nextInode, nil
+		return &child.vfsd, child.inode, nil
 	}
 }
 
@@ -515,5 +535,5 @@ func (fs *filesystem) RemovexattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDentry, b *fspath.Builder) error {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	return vfs.GenericPrependPath(vfsroot, vd, b)
+	return genericPrependPath(vfsroot, vd.Mount(), vd.Dentry().Impl().(*dentry), b)
 }

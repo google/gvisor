@@ -15,6 +15,17 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "fstree",
+    out = "fstree.go",
+    package = "tmpfs",
+    prefix = "generic",
+    template = "//pkg/sentry/vfs/genericfstree:generic_fstree",
+    types = {
+        "Dentry": "dentry",
+    },
+)
+
 go_library(
     name = "tmpfs",
     srcs = [
@@ -22,6 +33,7 @@ go_library(
         "device_file.go",
         "directory.go",
         "filesystem.go",
+        "fstree.go",
         "named_pipe.go",
         "regular_file.go",
         "socket_file.go",

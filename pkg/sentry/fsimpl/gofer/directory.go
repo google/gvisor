@@ -29,13 +29,25 @@ func (d *dentry) isDir() bool {
 	return d.fileType() == linux.S_IFDIR
 }
 
+// Preconditions: filesystem.renameMu must be locked. d.dirMu must be locked.
+// d.isDir(). child must be a newly-created dentry that has never had a parent.
+func (d *dentry) cacheNewChildLocked(child *dentry, name string) {
+	d.IncRef() // reference held by child on its parent
+	child.parent = d
+	child.name = name
+	if d.children == nil {
+		d.children = make(map[string]*dentry)
+	}
+	d.children[name] = child
+}
+
 // Preconditions: d.dirMu must be locked. d.isDir(). fs.opts.interop !=
 // InteropModeShared.
 func (d *dentry) cacheNegativeChildLocked(name string) {
-	if d.negativeChildren == nil {
-		d.negativeChildren = make(map[string]struct{})
+	if d.children == nil {
+		d.children = make(map[string]*dentry)
 	}
-	d.negativeChildren[name] = struct{}{}
+	d.children[name] = nil
 }
 
 type directoryFD struct {
@@ -80,34 +92,32 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 
 // Preconditions: d.isDir(). There exists at least one directoryFD representing d.
 func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
-	// 9P2000.L's readdir does not specify behavior in the presence of
-	// concurrent mutation of an iterated directory, so implementations may
-	// duplicate or omit entries in this case, which violates POSIX semantics.
-	// Thus we read all directory entries while holding d.dirMu to exclude
-	// directory mutations. (Note that it is impossible for the client to
-	// exclude concurrent mutation from other remote filesystem users. Since
-	// there is no way to detect if the server has incorrectly omitted
-	// directory entries, we simply assume that the server is well-behaved
-	// under InteropModeShared.) This is inconsistent with Linux (which appears
-	// to assume that directory fids have the correct semantics, and translates
-	// struct file_operations::readdir calls directly to readdir RPCs), but is
-	// consistent with VFS1.
-	//
-	// NOTE(b/135560623): In particular, some gofer implementations may not
-	// retain state between calls to Readdir, so may not provide a coherent
-	// directory stream across in the presence of mutation.
+	// NOTE(b/135560623): 9P2000.L's readdir does not specify behavior in the
+	// presence of concurrent mutation of an iterated directory, so
+	// implementations may duplicate or omit entries in this case, which
+	// violates POSIX semantics. Thus we read all directory entries while
+	// holding d.dirMu to exclude directory mutations. (Note that it is
+	// impossible for the client to exclude concurrent mutation from other
+	// remote filesystem users. Since there is no way to detect if the server
+	// has incorrectly omitted directory entries, we simply assume that the
+	// server is well-behaved under InteropModeShared.) This is inconsistent
+	// with Linux (which appears to assume that directory fids have the correct
+	// semantics, and translates struct file_operations::readdir calls directly
+	// to readdir RPCs), but is consistent with VFS1.
 
+	// filesystem.renameMu is needed for d.parent, and must be locked before
+	// dentry.dirMu.
 	d.fs.renameMu.RLock()
-	defer d.fs.renameMu.RUnlock()
 	d.dirMu.Lock()
 	defer d.dirMu.Unlock()
 	if d.dirents != nil {
+		d.fs.renameMu.RUnlock()
 		return d.dirents, nil
 	}
 
 	// It's not clear if 9P2000.L's readdir is expected to return "." and "..",
 	// so we generate them here.
-	parent := d.vfsd.ParentOrSelf().Impl().(*dentry)
+	parent := genericParentOrSelf(d)
 	dirents := []vfs.Dirent{
 		{
 			Name:    ".",
@@ -122,6 +132,7 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 			NextOff: 2,
 		},
 	}
+	d.fs.renameMu.RUnlock()
 	off := uint64(0)
 	const count = 64 * 1024 // for consistency with the vfs1 client
 	d.handleMu.RLock()

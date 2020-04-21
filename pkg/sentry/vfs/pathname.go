@@ -58,7 +58,7 @@ loop:
 		switch err.(type) {
 		case nil:
 			if vd.mount == vfsroot.mount && vd.mount.root == vfsroot.dentry {
-				// GenericPrependPath() will have returned
+				// genericfstree.PrependPath() will have returned
 				// PrependPathAtVFSRootError in this case since it checks
 				// against vfsroot before mnt.root, but other implementations
 				// of FilesystemImpl.PrependPath() may return nil instead.
@@ -84,7 +84,7 @@ loop:
 		}
 	}
 	b.PrependByte('/')
-	if origD.IsDisowned() {
+	if origD.IsDead() {
 		b.AppendString(" (deleted)")
 	}
 	return b.String(), nil
@@ -136,7 +136,7 @@ loop:
 // PathnameForGetcwd returns an absolute pathname to vd, consistent with
 // Linux's sys_getcwd().
 func (vfs *VirtualFilesystem) PathnameForGetcwd(ctx context.Context, vfsroot, vd VirtualDentry) (string, error) {
-	if vd.dentry.IsDisowned() {
+	if vd.dentry.IsDead() {
 		return "", syserror.ENOENT
 	}
 

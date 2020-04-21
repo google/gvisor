@@ -438,13 +438,6 @@ func BenchmarkVFS2TmpfsMountStat(b *testing.B) {
 				filePathBuilder.WriteByte('/')
 			}
 
-			// Verify that we didn't create any directories under the mount
-			// point (i.e. they were all created on the submount).
-			firstDirName := fmt.Sprintf("%d", depth)
-			if child := mountPoint.Dentry().Child(firstDirName); child != nil {
-				b.Fatalf("created directory %q under root mount, not submount", firstDirName)
-			}
-
 			// Create the file that will be stat'd.
 			fd, err := vfsObj.OpenAt(ctx, creds, &vfs.PathOperation{
 				Root:               root,

@@ -370,7 +370,7 @@ func (o *OrderedChildren) Populate(d *Dentry, children map[string]*Dentry) uint3
 		if err := o.Insert(name, child.VFSDentry()); err != nil {
 			panic(fmt.Sprintf("Collision when attempting to insert child %q (%+v) into %+v", name, child, d))
 		}
-		d.InsertChild(name, child.VFSDentry())
+		d.InsertChild(name, child)
 	}
 	return links
 }
