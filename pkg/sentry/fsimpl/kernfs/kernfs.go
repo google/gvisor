@@ -168,17 +168,22 @@ const (
 //
 // Must be initialized by Init prior to first use.
 type Dentry struct {
-	refs.AtomicRefCount
+	vfsd vfs.Dentry
 
-	vfsd  vfs.Dentry
-	inode Inode
+	refs.AtomicRefCount
 
 	// flags caches useful information about the dentry from the inode. See the
 	// dflags* consts above. Must be accessed by atomic ops.
 	flags uint32
 
-	// dirMu protects vfsd.children for directory dentries.
-	dirMu sync.Mutex
+	parent *Dentry
+	name   string
+
+	// dirMu protects children and the names of child Dentries.
+	dirMu    sync.Mutex
+	children map[string]*Dentry
+
+	inode Inode
 }
 
 // Init initializes this dentry.
@@ -222,8 +227,8 @@ func (d *Dentry) DecRef() {
 func (d *Dentry) destroy() {
 	d.inode.DecRef() // IncRef from Init.
 	d.inode = nil
-	if parent := d.vfsd.Parent(); parent != nil {
-		parent.DecRef() // IncRef from Dentry.InsertChild.
+	if d.parent != nil {
+		d.parent.DecRef() // IncRef from Dentry.InsertChild.
 	}
 }
 
@@ -233,7 +238,7 @@ func (d *Dentry) destroy() {
 // updates the link count on d if required.
 //
 // Precondition: d must represent a directory inode.
-func (d *Dentry) InsertChild(name string, child *vfs.Dentry) {
+func (d *Dentry) InsertChild(name string, child *Dentry) {
 	d.dirMu.Lock()
 	d.insertChildLocked(name, child)
 	d.dirMu.Unlock()
@@ -243,13 +248,17 @@ func (d *Dentry) InsertChild(name string, child *vfs.Dentry) {
 // preconditions.
 //
 // Precondition: d.dirMu must be locked.
-func (d *Dentry) insertChildLocked(name string, child *vfs.Dentry) {
+func (d *Dentry) insertChildLocked(name string, child *Dentry) {
 	if !d.isDir() {
 		panic(fmt.Sprintf("InsertChild called on non-directory Dentry: %+v.", d))
 	}
-	vfsDentry := d.VFSDentry()
-	vfsDentry.IncRef() // DecRef in child's Dentry.destroy.
-	vfsDentry.InsertChild(child, name)
+	d.IncRef() // DecRef in child's Dentry.destroy.
+	child.parent = d
+	child.name = name
+	if d.children == nil {
+		d.children = make(map[string]*Dentry)
+	}
+	d.children[name] = child
 }
 
 // The Inode interface maps filesystem-level operations that operate on paths to

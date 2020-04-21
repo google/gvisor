@@ -188,6 +188,7 @@ func (vfs *VirtualFilesystem) MountAt(ctx context.Context, creds *auth.Credentia
 	if err != nil {
 		return err
 	}
+
 	// We can't hold vfs.mountMu while calling FilesystemImpl methods due to
 	// lock ordering.
 	vd, err := vfs.GetDentryAt(ctx, creds, target, &GetDentryOptions{})
@@ -199,7 +200,7 @@ func (vfs *VirtualFilesystem) MountAt(ctx context.Context, creds *auth.Credentia
 	vfs.mountMu.Lock()
 	vd.dentry.mu.Lock()
 	for {
-		if vd.dentry.IsDisowned() {
+		if vd.dentry.dead {
 			vd.dentry.mu.Unlock()
 			vfs.mountMu.Unlock()
 			vd.DecRef()
@@ -663,6 +664,12 @@ func (mnt *Mount) submountsLocked() []*Mount {
 		mounts = append(mounts, m.submountsLocked()...)
 	}
 	return mounts
+}
+
+// Root returns the mount's root. It does not take a reference on the returned
+// Dentry.
+func (mnt *Mount) Root() *Dentry {
+	return mnt.root
 }
 
 // Root returns mntns' root. A reference is taken on the returned

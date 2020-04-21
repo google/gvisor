@@ -12,21 +12,15 @@ import (
 func (x *Dentry) beforeSave() {}
 func (x *Dentry) save(m state.Map) {
 	x.beforeSave()
-	m.Save("parent", &x.parent)
-	m.Save("name", &x.name)
-	m.Save("flags", &x.flags)
+	m.Save("dead", &x.dead)
 	m.Save("mounts", &x.mounts)
-	m.Save("children", &x.children)
 	m.Save("impl", &x.impl)
 }
 
 func (x *Dentry) afterLoad() {}
 func (x *Dentry) load(m state.Map) {
-	m.Load("parent", &x.parent)
-	m.Load("name", &x.name)
-	m.Load("flags", &x.flags)
+	m.Load("dead", &x.dead)
 	m.Load("mounts", &x.mounts)
-	m.Load("children", &x.children)
 	m.Load("impl", &x.impl)
 }
 
