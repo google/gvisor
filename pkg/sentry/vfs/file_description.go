@@ -111,10 +111,10 @@ type FileDescriptionOptions struct {
 }
 
 // Init must be called before first use of fd. If it succeeds, it takes
-// references on mnt and d. statusFlags is the initial file description status
-// flags, which is usually the full set of flags passed to open(2).
-func (fd *FileDescription) Init(impl FileDescriptionImpl, statusFlags uint32, mnt *Mount, d *Dentry, opts *FileDescriptionOptions) error {
-	writable := MayWriteFileWithOpenFlags(statusFlags)
+// references on mnt and d. flags is the initial file description flags, which
+// is usually the full set of flags passed to open(2).
+func (fd *FileDescription) Init(impl FileDescriptionImpl, flags uint32, mnt *Mount, d *Dentry, opts *FileDescriptionOptions) error {
+	writable := MayWriteFileWithOpenFlags(flags)
 	if writable {
 		if err := mnt.CheckBeginWrite(); err != nil {
 			return err
@@ -122,7 +122,10 @@ func (fd *FileDescription) Init(impl FileDescriptionImpl, statusFlags uint32, mn
 	}
 
 	fd.refs = 1
-	fd.statusFlags = statusFlags
+
+	// Remove "file creation flags" to mirror the behavior from file.f_flags in
+	// fs/open.c:do_dentry_open
+	fd.statusFlags = flags &^ (linux.O_CREAT | linux.O_EXCL | linux.O_NOCTTY | linux.O_TRUNC)
 	fd.vd = VirtualDentry{
 		mount:  mnt,
 		dentry: d,
@@ -130,7 +133,7 @@ func (fd *FileDescription) Init(impl FileDescriptionImpl, statusFlags uint32, mn
 	mnt.IncRef()
 	d.IncRef()
 	fd.opts = *opts
-	fd.readable = MayReadFileWithOpenFlags(statusFlags)
+	fd.readable = MayReadFileWithOpenFlags(flags)
 	fd.writable = writable
 	fd.impl = impl
 	return nil

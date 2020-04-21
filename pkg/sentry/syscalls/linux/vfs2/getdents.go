@@ -130,7 +130,7 @@ func (cb *getdentsCallback) Handle(dirent vfs.Dirent) error {
 		if cb.t.Arch().Width() != 8 {
 			panic(fmt.Sprintf("unsupported sizeof(unsigned long): %d", cb.t.Arch().Width()))
 		}
-		size := 8 + 8 + 2 + 1 + 1 + 1 + len(dirent.Name)
+		size := 8 + 8 + 2 + 1 + 1 + len(dirent.Name)
 		size = (size + 7) &^ 7 // round up to multiple of sizeof(long)
 		if size > cb.remaining {
 			return syserror.EINVAL
@@ -143,11 +143,11 @@ func (cb *getdentsCallback) Handle(dirent vfs.Dirent) error {
 		// Zero out all remaining bytes in buf, including the NUL terminator
 		// after dirent.Name and the zero padding byte between the name and
 		// dirent type.
-		bufTail := buf[18+len(dirent.Name):]
+		bufTail := buf[18+len(dirent.Name) : size-1]
 		for i := range bufTail {
 			bufTail[i] = 0
 		}
-		bufTail[2] = dirent.Type
+		buf[size-1] = dirent.Type
 	}
 	n, err := cb.t.CopyOutBytes(cb.addr, buf)
 	if err != nil {
