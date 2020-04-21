@@ -15,9 +15,11 @@
 package loader
 
 import (
+	"bytes"
 	"debug/elf"
 	"fmt"
 	"io"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/context"
@@ -37,6 +39,8 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
+
+const vdsoPrelink = 0xffffffffff700000
 
 type fileContext struct {
 	context.Context
@@ -219,6 +223,27 @@ type VDSO struct {
 
 	// phdrs are the VDSO ELF phdrs.
 	phdrs []elf.ProgHeader `state:".([]elfProgHeader)"`
+}
+
+// getSymbolValueFromVDSO returns the specific symbol value in vdso.so.
+func getSymbolValueFromVDSO(symbol string) (uint64, error) {
+	f, err := elf.NewFile(bytes.NewReader(vdsoBin))
+	if err != nil {
+		return 0, err
+	}
+	syms, err := f.Symbols()
+	if err != nil {
+		return 0, err
+	}
+
+	for _, sym := range syms {
+		if elf.ST_BIND(sym.Info) != elf.STB_LOCAL && sym.Section != elf.SHN_UNDEF {
+			if strings.Contains(sym.Name, symbol) {
+				return sym.Value, nil
+			}
+		}
+	}
+	return 0, fmt.Errorf("no %v in vdso.so", symbol)
 }
 
 // PrepareVDSO validates the system VDSO and returns a VDSO, containing the
