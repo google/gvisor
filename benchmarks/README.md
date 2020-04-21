@@ -10,7 +10,7 @@ The scripts assume the following:
     (controller) and one or more machines on which docker containers will be run
     (environment).
 *   The controller machine must have bazel installed along with this source
-    code. You should be able to run a command like `bazel run :benchmarks --
+    code. You should be able to run a command like `bazel run //benchmarks --
     --list`
 *   Environment machines must have docker and the required runtimes installed.
     More specifically, you should be able to run a command like: `docker run
@@ -33,7 +33,7 @@ but it does support GCP workflows. To run locally, run the following from the
 benchmarks directory:
 
 ```bash
-bazel run --define gcloud=off :benchmarks -- run-local startup
+bazel run --define gcloud=off //benchmarks -- run-local startup
 
 ...
 method,metric,result
@@ -48,16 +48,20 @@ runtime, runc. Running on another installed runtime, like say runsc, is as
 simple as:
 
 ```bash
-bazel run  --define gcloud=off :benchmarks -- run-local startup --runtime=runsc
+bazel run  --define gcloud=off //benchmarks -- run-local startup --runtime=runsc
 ```
 
-There is help: `bash bazel run --define gcloud=off :benchmarks -- --help bazel
-run --define gcloud=off :benchmarks -- run-local --help`
+There is help:
+
+```bash
+bazel run --define gcloud=off //benchmarks -- --help
+bazel run --define gcloud=off //benchmarks -- run-local --help
+```
 
 To list available benchmarks, use the `list` commmand:
 
 ```bash
-bazel --define gcloud=off  run :benchmarks -- list
+bazel --define gcloud=off  run //benchmarks -- list
 
 ...
 Benchmark: sysbench.cpu
@@ -70,7 +74,7 @@ Metrics: events_per_second
 You can choose benchmarks by name or regex like:
 
 ```bash
-bazel run --define gcloud=off :benchmarks -- run-local startup.node
+bazel run --define gcloud=off //benchmarks -- run-local startup.node
 ...
 metric,result
 startup_time_ms,1671.7178000000001
@@ -80,7 +84,7 @@ startup_time_ms,1671.7178000000001
 or
 
 ```bash
-bazel run --define gcloud=off :benchmarks -- run-local s
+bazel run --define gcloud=off //benchmarks -- run-local s
 ...
 method,metric,result
 startup.empty,startup_time_ms,1792.8292
@@ -98,13 +102,13 @@ You can run parameterized benchmarks, for example to run with different
 runtimes:
 
 ```bash
-bazel run --define gcloud=off :benchmarks -- run-local --runtime=runc --runtime=runsc sysbench.cpu
+bazel run --define gcloud=off //benchmarks -- run-local --runtime=runc --runtime=runsc sysbench.cpu
 ```
 
 Or with different parameters:
 
 ```bash
-bazel run --define gcloud=off :benchmarks -- run-local --max_prime=10 --max_prime=100 sysbench.cpu
+bazel run --define gcloud=off //benchmarks -- run-local --max_prime=10 --max_prime=100 sysbench.cpu
 ```
 
 ### On Google Compute Engine (GCE)
@@ -117,7 +121,7 @@ runtime is installed from the workspace. See the files in `tools/installers` for
 supported install targets.
 
 ```bash
-bazel run :benchmarks -- run-gcp --installers=head --runtime=runsc sysbench.cpu
+bazel run //benchmarks -- run-gcp --installers=head --runtime=runsc sysbench.cpu
 ```
 
 When running on GCE, the scripts generate a per run SSH key, which is added to
