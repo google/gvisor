@@ -23,7 +23,7 @@ import (
 
 // analyzers returns all configured analyzers.
 func analyzers() (all []*analysis.Analyzer) {
-	for a, _ := range analyzerConfig {
+	for a := range analyzerConfig {
 		all = append(all, a)
 	}
 	return all

@@ -523,7 +523,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			es = append(es, Escape{
 				Reason: stackSplit,
 				Detail: call,
-				Chain: []CallSite{CallSite{
+				Chain: []CallSite{{
 					LocalPos: fn.Pos(),
 					Resolved: linePosition(fn, fn.Parent()),
 				}},
@@ -564,7 +564,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		var newEscapes []Escape
 		for _, escape := range escapes {
 			isExempt := false
-			for line, _ := range exemptions {
+			for line := range exemptions {
 				// Note that an exemption applies if it is
 				// marked as an exemption anywhere in the call
 				// chain. It need not be marked as escapes in

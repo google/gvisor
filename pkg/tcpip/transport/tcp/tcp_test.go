@@ -5281,13 +5281,11 @@ func TestListenBacklogFullSynCookieInUse(t *testing.T) {
 	// Test acceptance.
 	// Start listening.
 	listenBacklog := 1
-	portOffset := uint16(0)
 	if err := c.EP.Listen(listenBacklog); err != nil {
 		t.Fatalf("Listen failed: %s", err)
 	}
 
-	executeHandshake(t, c, context.TestPort+portOffset, false)
-	portOffset++
+	executeHandshake(t, c, context.TestPort, false)
 	// Wait for this to be delivered to the accept queue.
 	time.Sleep(50 * time.Millisecond)
 

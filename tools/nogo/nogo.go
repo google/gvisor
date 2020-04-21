@@ -246,7 +246,7 @@ func checkPackage(config pkgConfig) ([]string, error) {
 	}
 
 	// Visit all analysis recursively.
-	for a, _ := range analyzerConfig {
+	for a := range analyzerConfig {
 		if err := visit(a); err != nil {
 			return nil, err // Already has context.
 		}

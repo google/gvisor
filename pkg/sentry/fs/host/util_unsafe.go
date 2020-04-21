@@ -24,7 +24,9 @@ import (
 )
 
 // NulByte is a single NUL byte. It is passed to readlinkat as an empty string.
-var NulByte byte = '\x00'
+// Note that the default value is null, so explicitly noting '\x00' actually
+// triggers a linter error.
+var NulByte byte
 
 func readLink(fd int) (string, error) {
 	// Buffer sizing copied from os.Readlink.

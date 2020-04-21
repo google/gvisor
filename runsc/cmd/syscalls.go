@@ -147,7 +147,7 @@ func getCompatibilityInfo(osName string, archName string) (CompatibilityInfo, er
 	info := CompatibilityInfo(make(map[string]map[string]ArchInfo))
 	if osName == osAll {
 		// Special processing for the 'all' OS name.
-		for osName, _ := range syscallTableMap {
+		for osName := range syscallTableMap {
 			info[osName] = make(map[string]ArchInfo)
 			// osName is a specific OS name.
 			if err := addToCompatibilityInfo(info, osName, archName); err != nil {
@@ -171,7 +171,7 @@ func getCompatibilityInfo(osName string, archName string) (CompatibilityInfo, er
 func addToCompatibilityInfo(info CompatibilityInfo, osName string, archName string) error {
 	if archName == archAll {
 		// Special processing for the 'all' architecture name.
-		for archName, _ := range syscallTableMap[osName] {
+		for archName := range syscallTableMap[osName] {
 			archInfo, err := getArchInfo(osName, archName)
 			if err != nil {
 				return err

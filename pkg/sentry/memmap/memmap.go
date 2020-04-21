@@ -94,7 +94,7 @@ type Mappable interface {
 	InvalidateUnsavable(ctx context.Context) error
 }
 
-// Translations are returned by Mappable.Translate.
+// Translation is returned by Mappable.Translate.
 type Translation struct {
 	// Source is the translated range in the Mappable.
 	Source MappableRange

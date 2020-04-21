@@ -668,7 +668,7 @@ func (mm *MemoryManager) Pin(ctx context.Context, ar usermem.AddrRange, at userm
 	return prs, verr
 }
 
-// PinnedRanges are returned by MemoryManager.Pin.
+// PinnedRange is returned by MemoryManager.Pin.
 type PinnedRange struct {
 	// Source is the corresponding range of addresses.
 	Source usermem.AddrRange

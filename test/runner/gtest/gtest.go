@@ -91,7 +91,7 @@ func ParseTestCases(testBin string, benchmarks bool, extraArgs ...string) ([]Tes
 		// return something that will run the binary with no
 		// flags, which should execute all tests.
 		return []TestCase{
-			TestCase{
+			{
 				Suite: "Default",
 				Name:  "All",
 				all:   true,

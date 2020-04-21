@@ -48,13 +48,13 @@ func DefaultTables() *IPTables {
 	// iotas.
 	return &IPTables{
 		tables: map[string]Table{
-			TablenameNat: Table{
+			TablenameNat: {
 				Rules: []Rule{
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: ErrorTarget{}},
+					{Target: AcceptTarget{}},
+					{Target: AcceptTarget{}},
+					{Target: AcceptTarget{}},
+					{Target: AcceptTarget{}},
+					{Target: ErrorTarget{}},
 				},
 				BuiltinChains: map[Hook]int{
 					Prerouting:  0,
@@ -70,11 +70,11 @@ func DefaultTables() *IPTables {
 				},
 				UserChains: map[string]int{},
 			},
-			TablenameMangle: Table{
+			TablenameMangle: {
 				Rules: []Rule{
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: ErrorTarget{}},
+					{Target: AcceptTarget{}},
+					{Target: AcceptTarget{}},
+					{Target: ErrorTarget{}},
 				},
 				BuiltinChains: map[Hook]int{
 					Prerouting: 0,
@@ -86,12 +86,12 @@ func DefaultTables() *IPTables {
 				},
 				UserChains: map[string]int{},
 			},
-			TablenameFilter: Table{
+			TablenameFilter: {
 				Rules: []Rule{
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: AcceptTarget{}},
-					Rule{Target: ErrorTarget{}},
+					{Target: AcceptTarget{}},
+					{Target: AcceptTarget{}},
+					{Target: AcceptTarget{}},
+					{Target: ErrorTarget{}},
 				},
 				BuiltinChains: map[Hook]int{
 					Input:   0,
@@ -107,9 +107,9 @@ func DefaultTables() *IPTables {
 			},
 		},
 		priorities: map[Hook][]string{
-			Input:      []string{TablenameNat, TablenameFilter},
-			Prerouting: []string{TablenameMangle, TablenameNat},
-			Output:     []string{TablenameMangle, TablenameNat, TablenameFilter},
+			Input:      {TablenameNat, TablenameFilter},
+			Prerouting: {TablenameMangle, TablenameNat},
+			Output:     {TablenameMangle, TablenameNat, TablenameFilter},
 		},
 		connections: ConnTrackTable{
 			CtMap: make(map[uint32]ConnTrackTupleHolder),

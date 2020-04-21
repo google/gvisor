@@ -468,40 +468,39 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			e.stats.ReceiveErrors.ListenOverflowSynDrop.Increment()
 			e.stack.Stats().DroppedPackets.Increment()
 			return
-		} else {
-			// If cookies are in use but the endpoint accept queue
-			// is full then drop the syn.
-			if e.acceptQueueIsFull() {
-				e.stack.Stats().TCP.ListenOverflowSynDrop.Increment()
-				e.stats.ReceiveErrors.ListenOverflowSynDrop.Increment()
-				e.stack.Stats().DroppedPackets.Increment()
-				return
-			}
-			cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
-
-			// Send SYN without window scaling because we currently
-			// dont't encode this information in the cookie.
-			//
-			// Enable Timestamp option if the original syn did have
-			// the timestamp option specified.
-			synOpts := header.TCPSynOptions{
-				WS:    -1,
-				TS:    opts.TS,
-				TSVal: tcpTimeStamp(timeStampOffset()),
-				TSEcr: opts.TSVal,
-				MSS:   mssForRoute(&s.route),
-			}
-			e.sendSynTCP(&s.route, tcpFields{
-				id:     s.id,
-				ttl:    e.ttl,
-				tos:    e.sendTOS,
-				flags:  header.TCPFlagSyn | header.TCPFlagAck,
-				seq:    cookie,
-				ack:    s.sequenceNumber + 1,
-				rcvWnd: ctx.rcvWnd,
-			}, synOpts)
-			e.stack.Stats().TCP.ListenOverflowSynCookieSent.Increment()
 		}
+		// If cookies are in use but the endpoint accept queue is full
+		// then drop the syn.
+		if e.acceptQueueIsFull() {
+			e.stack.Stats().TCP.ListenOverflowSynDrop.Increment()
+			e.stats.ReceiveErrors.ListenOverflowSynDrop.Increment()
+			e.stack.Stats().DroppedPackets.Increment()
+			return
+		}
+		cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
+
+		// Send SYN without window scaling because we currently dont't
+		// encode this information in the cookie.
+		//
+		// Enable Timestamp option if the original syn did have the
+		// timestamp option specified.
+		synOpts := header.TCPSynOptions{
+			WS:    -1,
+			TS:    opts.TS,
+			TSVal: tcpTimeStamp(timeStampOffset()),
+			TSEcr: opts.TSVal,
+			MSS:   mssForRoute(&s.route),
+		}
+		e.sendSynTCP(&s.route, tcpFields{
+			id:     s.id,
+			ttl:    e.ttl,
+			tos:    e.sendTOS,
+			flags:  header.TCPFlagSyn | header.TCPFlagAck,
+			seq:    cookie,
+			ack:    s.sequenceNumber + 1,
+			rcvWnd: ctx.rcvWnd,
+		}, synOpts)
+		e.stack.Stats().TCP.ListenOverflowSynCookieSent.Increment()
 
 	case (s.flags & header.TCPFlagAck) != 0:
 		if e.acceptQueueIsFull() {

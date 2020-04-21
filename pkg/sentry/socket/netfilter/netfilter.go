@@ -485,7 +485,7 @@ func SetEntries(stk *stack.Stack, optVal []byte) *syserr.Error {
 
 	// Go through the list of supported hooks for this table and, for each
 	// one, set the rule it corresponds to.
-	for hook, _ := range replace.HookEntry {
+	for hook := range replace.HookEntry {
 		if table.ValidHooks()&(1<<hook) != 0 {
 			hk := hookFromLinux(hook)
 			for offset, ruleIdx := range offsets {

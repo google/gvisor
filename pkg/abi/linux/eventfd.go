@@ -17,6 +17,6 @@ package linux
 // Constants for eventfd2(2).
 const (
 	EFD_SEMAPHORE = 0x1
-	EFD_CLOEXEC   = O_CLOEXEC
-	EFD_NONBLOCK  = O_NONBLOCK
+	EFD_CLOEXEC   = 0x800
+	EFD_NONBLOCK  = 0x80000
 )

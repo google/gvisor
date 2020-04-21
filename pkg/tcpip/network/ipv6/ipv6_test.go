@@ -193,7 +193,7 @@ func TestReceiveOnSolicitedNodeAddr(t *testing.T) {
 			}
 
 			s.SetRouteTable([]tcpip.Route{
-				tcpip.Route{
+				{
 					Destination: header.IPv6EmptySubnet,
 					NIC:         nicID,
 				},
