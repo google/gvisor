@@ -38,6 +38,7 @@ func (s *sigSetWithSize) UnmarshalBytes(src []byte) {
 }
 
 // Packed implements marshal.Marshallable.Packed.
+//go:nosplit
 func (s *sigSetWithSize) Packed() bool {
     return true
 }
@@ -53,6 +54,7 @@ func (s *sigSetWithSize) UnmarshalUnsafe(src []byte) {
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
 func (s *sigSetWithSize) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
@@ -61,7 +63,7 @@ func (s *sigSetWithSize) CopyOutN(task marshal.Task, addr usermem.Addr, limit in
     hdr.Len = s.SizeBytes()
     hdr.Cap = s.SizeBytes()
 
-    length, err := task.CopyOutBytes(addr, buf[:limit])
+    length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
     runtime.KeepAlive(s)
@@ -69,11 +71,13 @@ func (s *sigSetWithSize) CopyOutN(task marshal.Task, addr usermem.Addr, limit in
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
 func (s *sigSetWithSize) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
     return s.CopyOutN(task, addr, s.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
 func (s *sigSetWithSize) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
@@ -82,7 +86,7 @@ func (s *sigSetWithSize) CopyIn(task marshal.Task, addr usermem.Addr) (int, erro
     hdr.Len = s.SizeBytes()
     hdr.Cap = s.SizeBytes()
 
-    length, err := task.CopyInBytes(addr, buf)
+    length, err := task.CopyInBytes(addr, buf) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
     runtime.KeepAlive(s)
