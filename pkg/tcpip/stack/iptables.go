@@ -212,11 +212,6 @@ func (it *IPTables) Check(hook Hook, pkt PacketBuffer) bool {
 // CheckPackets runs pkts through the rules for hook and returns a map of packets that
 // should not go forward.
 //
-// Precondition: pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
-//
-// TODO(gvisor.dev/issue/170): pk.NetworkHeader will always be set as a
-// precondition.
-//
 // NOTE: unlike the Check API the returned map contains packets that should be
 // dropped.
 func (it *IPTables) CheckPackets(hook Hook, pkts PacketBufferList) (drop map[*PacketBuffer]struct{}) {
@@ -231,9 +226,7 @@ func (it *IPTables) CheckPackets(hook Hook, pkts PacketBufferList) (drop map[*Pa
 	return drop
 }
 
-// Precondition: pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
-// TODO(gvisor.dev/issue/170): pk.NetworkHeader will always be set as a
-// precondition.
+// Precondition: pkt.NetworkHeader is set.
 func (it *IPTables) checkChain(hook Hook, pkt PacketBuffer, table Table, ruleIdx int) chainVerdict {
 	// Start from ruleIdx and walk the list of rules until a rule gives us
 	// a verdict.
@@ -278,21 +271,14 @@ func (it *IPTables) checkChain(hook Hook, pkt PacketBuffer, table Table, ruleIdx
 	return chainDrop
 }
 
-// Precondition: pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
-// TODO(gvisor.dev/issue/170): pk.NetworkHeader will always be set as a
-// precondition.
+// Precondition: pk.NetworkHeader is set.
 func (it *IPTables) checkRule(hook Hook, pkt PacketBuffer, table Table, ruleIdx int) (RuleVerdict, int) {
 	rule := table.Rules[ruleIdx]
 
 	// If pkt.NetworkHeader hasn't been set yet, it will be contained in
-	// pkt.Data.
+	// pkt.Data.First().
 	if pkt.NetworkHeader == nil {
-		var ok bool
-		pkt.NetworkHeader, ok = pkt.Data.PullUp(header.IPv4MinimumSize)
-		if !ok {
-			// Precondition has been violated.
-			panic(fmt.Sprintf("iptables checks require IPv4 headers of at least %d bytes", header.IPv4MinimumSize))
-		}
+		pkt.NetworkHeader = pkt.Data.First()
 	}
 
 	// Check whether the packet matches the IP header filter.

@@ -28,11 +28,7 @@ import (
 // used to find out which transport endpoint must be notified about the ICMP
 // packet.
 func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt stack.PacketBuffer) {
-	h, ok := pkt.Data.PullUp(header.IPv6MinimumSize)
-	if !ok {
-		return
-	}
-	hdr := header.IPv6(h)
+	h := header.IPv6(pkt.Data.First())
 
 	// We don't use IsValid() here because ICMP only requires that up to
 	// 1280 bytes of the original packet be included. So it's likely that it
@@ -40,21 +36,17 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt stack.
 	//
 	// Drop packet if it doesn't have the basic IPv6 header or if the
 	// original source address doesn't match the endpoint's address.
-	if hdr.SourceAddress() != e.id.LocalAddress {
+	if len(h) < header.IPv6MinimumSize || h.SourceAddress() != e.id.LocalAddress {
 		return
 	}
 
 	// Skip the IP header, then handle the fragmentation header if there
 	// is one.
 	pkt.Data.TrimFront(header.IPv6MinimumSize)
-	p := hdr.TransportProtocol()
+	p := h.TransportProtocol()
 	if p == header.IPv6FragmentHeader {
-		f, ok := pkt.Data.PullUp(header.IPv6FragmentHeaderSize)
-		if !ok {
-			return
-		}
-		fragHdr := header.IPv6Fragment(f)
-		if !fragHdr.IsValid() || fragHdr.FragmentOffset() != 0 {
+		f := header.IPv6Fragment(pkt.Data.First())
+		if !f.IsValid() || f.FragmentOffset() != 0 {
 			// We can't handle fragments that aren't at offset 0
 			// because they don't have the transport headers.
 			return
@@ -63,19 +55,19 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt stack.
 		// Skip fragmentation header and find out the actual protocol
 		// number.
 		pkt.Data.TrimFront(header.IPv6FragmentHeaderSize)
-		p = fragHdr.TransportProtocol()
+		p = f.TransportProtocol()
 	}
 
 	// Deliver the control packet to the transport endpoint.
-	e.dispatcher.DeliverTransportControlPacket(e.id.LocalAddress, hdr.DestinationAddress(), ProtocolNumber, p, typ, extra, pkt)
+	e.dispatcher.DeliverTransportControlPacket(e.id.LocalAddress, h.DestinationAddress(), ProtocolNumber, p, typ, extra, pkt)
 }
 
 func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.PacketBuffer, hasFragmentHeader bool) {
 	stats := r.Stats().ICMP
 	sent := stats.V6PacketsSent
 	received := stats.V6PacketsReceived
-	v, ok := pkt.Data.PullUp(header.ICMPv6HeaderSize)
-	if !ok {
+	v := pkt.Data.First()
+	if len(v) < header.ICMPv6MinimumSize {
 		received.Invalid.Increment()
 		return
 	}
@@ -84,9 +76,11 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.P
 
 	// Validate ICMPv6 checksum before processing the packet.
 	//
+	// Only the first view in vv is accounted for by h. To account for the
+	// rest of vv, a shallow copy is made and the first view is removed.
 	// This copy is used as extra payload during the checksum calculation.
 	payload := pkt.Data.Clone(nil)
-	payload.TrimFront(len(h))
+	payload.RemoveFirst()
 	if got, want := h.Checksum(), header.ICMPv6Checksum(h, iph.SourceAddress(), iph.DestinationAddress(), payload); got != want {
 		received.Invalid.Increment()
 		return
@@ -107,40 +101,34 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.P
 	switch h.Type() {
 	case header.ICMPv6PacketTooBig:
 		received.PacketTooBig.Increment()
-		hdr, ok := pkt.Data.PullUp(header.ICMPv6PacketTooBigMinimumSize)
-		if !ok {
+		if len(v) < header.ICMPv6PacketTooBigMinimumSize {
 			received.Invalid.Increment()
 			return
 		}
 		pkt.Data.TrimFront(header.ICMPv6PacketTooBigMinimumSize)
-		mtu := header.ICMPv6(hdr).MTU()
+		mtu := h.MTU()
 		e.handleControl(stack.ControlPacketTooBig, calculateMTU(mtu), pkt)
 
 	case header.ICMPv6DstUnreachable:
 		received.DstUnreachable.Increment()
-		hdr, ok := pkt.Data.PullUp(header.ICMPv6DstUnreachableMinimumSize)
-		if !ok {
+		if len(v) < header.ICMPv6DstUnreachableMinimumSize {
 			received.Invalid.Increment()
 			return
 		}
 		pkt.Data.TrimFront(header.ICMPv6DstUnreachableMinimumSize)
-		switch header.ICMPv6(hdr).Code() {
+		switch h.Code() {
 		case header.ICMPv6PortUnreachable:
 			e.handleControl(stack.ControlPortUnreachable, 0, pkt)
 		}
 
 	case header.ICMPv6NeighborSolicit:
 		received.NeighborSolicit.Increment()
-		if pkt.Data.Size() < header.ICMPv6NeighborSolicitMinimumSize || !isNDPValid() {
+		if len(v) < header.ICMPv6NeighborSolicitMinimumSize || !isNDPValid() {
 			received.Invalid.Increment()
 			return
 		}
 
-		// The remainder of payload must be only the neighbor solicitation, so
-		// payload.ToView() always returns the solicitation. Per RFC 6980 section 5,
-		// NDP messages cannot be fragmented. Also note that in the common case NDP
-		// datagrams are very small and ToView() will not incur allocations.
-		ns := header.NDPNeighborSolicit(payload.ToView())
+		ns := header.NDPNeighborSolicit(h.NDPPayload())
 		it, err := ns.Options().Iter(true)
 		if err != nil {
 			// If we have a malformed NDP NS option, drop the packet.
@@ -298,16 +286,12 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.P
 
 	case header.ICMPv6NeighborAdvert:
 		received.NeighborAdvert.Increment()
-		if pkt.Data.Size() < header.ICMPv6NeighborAdvertSize || !isNDPValid() {
+		if len(v) < header.ICMPv6NeighborAdvertSize || !isNDPValid() {
 			received.Invalid.Increment()
 			return
 		}
 
-		// The remainder of payload must be only the neighbor advertisement, so
-		// payload.ToView() always returns the advertisement. Per RFC 6980 section
-		// 5, NDP messages cannot be fragmented. Also note that in the common case
-		// NDP datagrams are very small and ToView() will not incur allocations.
-		na := header.NDPNeighborAdvert(payload.ToView())
+		na := header.NDPNeighborAdvert(h.NDPPayload())
 		it, err := na.Options().Iter(true)
 		if err != nil {
 			// If we have a malformed NDP NA option, drop the packet.
@@ -379,15 +363,14 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.P
 
 	case header.ICMPv6EchoRequest:
 		received.EchoRequest.Increment()
-		icmpHdr, ok := pkt.Data.PullUp(header.ICMPv6EchoMinimumSize)
-		if !ok {
+		if len(v) < header.ICMPv6EchoMinimumSize {
 			received.Invalid.Increment()
 			return
 		}
 		pkt.Data.TrimFront(header.ICMPv6EchoMinimumSize)
 		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv6EchoMinimumSize)
 		packet := header.ICMPv6(hdr.Prepend(header.ICMPv6EchoMinimumSize))
-		copy(packet, icmpHdr)
+		copy(packet, h)
 		packet.SetType(header.ICMPv6EchoReply)
 		packet.SetChecksum(header.ICMPv6Checksum(packet, r.LocalAddress, r.RemoteAddress, pkt.Data))
 		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}, stack.PacketBuffer{
@@ -401,7 +384,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.P
 
 	case header.ICMPv6EchoReply:
 		received.EchoReply.Increment()
-		if pkt.Data.Size() < header.ICMPv6EchoMinimumSize {
+		if len(v) < header.ICMPv6EchoMinimumSize {
 			received.Invalid.Increment()
 			return
 		}
@@ -423,9 +406,8 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.P
 	case header.ICMPv6RouterAdvert:
 		received.RouterAdvert.Increment()
 
-		// Is the NDP payload of sufficient size to hold a Router
-		// Advertisement?
-		if pkt.Data.Size()-header.ICMPv6HeaderSize < header.NDPRAMinimumSize || !isNDPValid() {
+		p := h.NDPPayload()
+		if len(p) < header.NDPRAMinimumSize || !isNDPValid() {
 			received.Invalid.Increment()
 			return
 		}
@@ -443,11 +425,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.P
 			return
 		}
 
-		// The remainder of payload must be only the router advertisement, so
-		// payload.ToView() always returns the advertisement. Per RFC 6980 section
-		// 5, NDP messages cannot be fragmented. Also note that in the common case
-		// NDP datagrams are very small and ToView() will not incur allocations.
-		ra := header.NDPRouterAdvert(payload.ToView())
+		ra := header.NDPRouterAdvert(p)
 		opts := ra.Options()
 
 		// Are options valid as per the wire format?
