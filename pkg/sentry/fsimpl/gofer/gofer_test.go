@@ -48,8 +48,7 @@ func TestDestroyIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fs.newDentry(): %v", err)
 	}
-	parent.IncRef() // reference held by child on its parent.
-	parent.vfsd.InsertChild(&child.vfsd, "child")
+	parent.cacheNewChildLocked(child, "child")
 
 	child.checkCachingLocked()
 	if got := atomic.LoadInt64(&child.refs); got != -1 {

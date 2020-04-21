@@ -127,7 +127,8 @@ func (fd *FileDescription) Init(impl FileDescriptionImpl, statusFlags uint32, mn
 		mount:  mnt,
 		dentry: d,
 	}
-	fd.vd.IncRef()
+	mnt.IncRef()
+	d.IncRef()
 	fd.opts = *opts
 	fd.readable = MayReadFileWithOpenFlags(statusFlags)
 	fd.writable = writable

@@ -29,7 +29,9 @@ import (
 //
 // From the perspective of FilesystemImpl methods, a ResolvingPath represents a
 // starting Dentry on the associated Filesystem (on which a reference is
-// already held) and a stream of path components relative to that Dentry.
+// already held), a stream of path components relative to that Dentry, and
+// elements of the invoking Context that are commonly required by
+// FilesystemImpl methods.
 //
 // ResolvingPath is loosely analogous to Linux's struct nameidata.
 type ResolvingPath struct {
@@ -251,18 +253,17 @@ func (rp *ResolvingPath) relpathCommit() {
 	rp.origParts[rp.curPart] = rp.pit
 }
 
-// ResolveParent returns the VFS parent of d. It does not take a reference on
-// the returned Dentry.
-//
-// Preconditions: There are no concurrent mutators of d.
-//
-// Postconditions: If the returned error is nil, then the returned Dentry is
-// not nil.
-func (rp *ResolvingPath) ResolveParent(d *Dentry) (*Dentry, error) {
-	var parent *Dentry
+// CheckRoot is called before resolving the parent of the Dentry d. If the
+// Dentry is contextually a VFS root, such that path resolution should treat
+// d's parent as itself, CheckRoot returns (true, nil). If the Dentry is the
+// root of a non-root mount, such that path resolution should switch to another
+// Mount, CheckRoot returns (unspecified, non-nil error). Otherwise, path
+// resolution should resolve d's parent normally, and CheckRoot returns (false,
+// nil).
+func (rp *ResolvingPath) CheckRoot(d *Dentry) (bool, error) {
 	if d == rp.root.dentry && rp.mount == rp.root.mount {
-		// At contextual VFS root.
-		parent = d
+		// At contextual VFS root (due to e.g. chroot(2)).
+		return true, nil
 	} else if d == rp.mount.root {
 		// At mount root ...
 		vd := rp.vfs.getMountpointAt(rp.mount, rp.root)
@@ -270,59 +271,27 @@ func (rp *ResolvingPath) ResolveParent(d *Dentry) (*Dentry, error) {
 			// ... of non-root mount.
 			rp.nextMount = vd.mount
 			rp.nextStart = vd.dentry
-			return nil, resolveMountRootOrJumpError{}
+			return false, resolveMountRootOrJumpError{}
 		}
 		// ... of root mount.
-		parent = d
-	} else if d.parent == nil {
-		// At filesystem root.
-		parent = d
-	} else {
-		parent = d.parent
+		return true, nil
 	}
-	if parent.isMounted() {
-		if mnt := rp.vfs.getMountAt(rp.mount, parent); mnt != nil {
-			rp.nextMount = mnt
-			return nil, resolveMountPointError{}
-		}
-	}
-	return parent, nil
+	return false, nil
 }
 
-// ResolveChild returns the VFS child of d with the given name. It does not
-// take a reference on the returned Dentry. If no such child exists,
-// ResolveChild returns (nil, nil).
-//
-// Preconditions: There are no concurrent mutators of d.
-func (rp *ResolvingPath) ResolveChild(d *Dentry, name string) (*Dentry, error) {
-	child := d.children[name]
-	if child == nil {
-		return nil, nil
+// CheckMount is called after resolving the parent or child of another Dentry
+// to d. If d is a mount point, such that path resolution should switch to
+// another Mount, CheckMount returns a non-nil error. Otherwise, CheckMount
+// returns nil.
+func (rp *ResolvingPath) CheckMount(d *Dentry) error {
+	if !d.isMounted() {
+		return nil
 	}
-	if child.isMounted() {
-		if mnt := rp.vfs.getMountAt(rp.mount, child); mnt != nil {
-			rp.nextMount = mnt
-			return nil, resolveMountPointError{}
-		}
+	if mnt := rp.vfs.getMountAt(rp.mount, d); mnt != nil {
+		rp.nextMount = mnt
+		return resolveMountPointError{}
 	}
-	return child, nil
-}
-
-// ResolveComponent returns the Dentry reached by starting at d and resolving
-// the current path component in the stream represented by rp. It does not
-// advance the stream. It does not take a reference on the returned Dentry. If
-// no such Dentry exists, ResolveComponent returns (nil, nil).
-//
-// Preconditions: !rp.Done(). There are no concurrent mutators of d.
-func (rp *ResolvingPath) ResolveComponent(d *Dentry) (*Dentry, error) {
-	switch pc := rp.Component(); pc {
-	case ".":
-		return d, nil
-	case "..":
-		return rp.ResolveParent(d)
-	default:
-		return rp.ResolveChild(d, pc)
-	}
+	return nil
 }
 
 // ShouldFollowSymlink returns true if, supposing that the current path

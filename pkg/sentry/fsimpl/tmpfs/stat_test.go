@@ -71,9 +71,15 @@ func TestStatAfterCreate(t *testing.T) {
 				t.Errorf("got btime %d, want 0", got.Btime.ToNsec())
 			}
 
-			// Size should be 0.
-			if got.Size != 0 {
-				t.Errorf("got size %d, want 0", got.Size)
+			// Size should be 0 (except for directories, which make up a size
+			// of 20 per entry, including the "." and ".." entries present in
+			// otherwise-empty directories).
+			wantSize := uint64(0)
+			if typ == "dir" {
+				wantSize = 40
+			}
+			if got.Size != wantSize {
+				t.Errorf("got size %d, want %d", got.Size, wantSize)
 			}
 
 			// Nlink should be 1 for files, 2 for dirs.

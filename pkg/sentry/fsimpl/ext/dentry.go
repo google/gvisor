@@ -22,6 +22,10 @@ import (
 type dentry struct {
 	vfsd vfs.Dentry
 
+	// Protected by filesystem.mu.
+	parent *dentry
+	name   string
+
 	// inode is the inode represented by this dentry. Multiple Dentries may
 	// share a single non-directory Inode (with hard links). inode is
 	// immutable.

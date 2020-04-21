@@ -12,16 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package tmpfs provides a filesystem implementation that behaves like tmpfs:
-// the Dentry tree is the sole source of truth for the state of the filesystem.
+// Package tmpfs provides an in-memory filesystem whose contents are
+// application-mutable, consistent with Linux's tmpfs.
 //
 // Lock order:
 //
 // filesystem.mu
 //   inode.mu
 //     regularFileFD.offMu
+//       *** "memmap.Mappable locks" below this point
 //       regularFile.mapsMu
+//         *** "memmap.Mappable locks taken by Translate" below this point
 //         regularFile.dataMu
+//     directory.iterMu
 package tmpfs
 
 import (
@@ -41,6 +44,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs/memxattr"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Name is the default filesystem name.
@@ -112,18 +116,18 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	fs.vfsfs.Init(vfsObj, newFSType, &fs)
 
-	var root *inode
+	var root *dentry
 	switch rootFileType {
 	case linux.S_IFREG:
-		root = fs.newRegularFile(creds, 0777)
+		root = fs.newDentry(fs.newRegularFile(creds, 0777))
 	case linux.S_IFLNK:
-		root = fs.newSymlink(creds, tmpfsOpts.RootSymlinkTarget)
+		root = fs.newDentry(fs.newSymlink(creds, tmpfsOpts.RootSymlinkTarget))
 	case linux.S_IFDIR:
-		root = fs.newDirectory(creds, 01777)
+		root = &fs.newDirectory(creds, 01777).dentry
 	default:
 		return nil, nil, fmt.Errorf("invalid tmpfs root file type: %#o", rootFileType)
 	}
-	return &fs.vfsfs, &fs.newDentry(root).vfsd, nil
+	return &fs.vfsfs, &root.vfsd, nil
 }
 
 // Release implements vfs.FilesystemImpl.Release.
@@ -134,20 +138,29 @@ func (fs *filesystem) Release() {
 type dentry struct {
 	vfsd vfs.Dentry
 
+	// parent is this dentry's parent directory. Each referenced dentry holds a
+	// reference on parent.dentry. If this dentry is a filesystem root, parent
+	// is nil. parent is protected by filesystem.mu.
+	parent *dentry
+
+	// name is the name of this dentry in its parent. If this dentry is a
+	// filesystem root, name is the empty string. name is protected by
+	// filesystem.mu.
+	name string
+
+	// dentryEntry (ugh) links dentries into their parent directory.childList.
+	dentryEntry
+
 	// inode is the inode represented by this dentry. Multiple Dentries may
 	// share a single non-directory inode (with hard links). inode is
 	// immutable.
-	inode *inode
-
+	//
 	// tmpfs doesn't count references on dentries; because the dentry tree is
 	// the sole source of truth, it is by definition always consistent with the
 	// state of the filesystem. However, it does count references on inodes,
 	// because inode resources are released when all references are dropped.
-	// (tmpfs doesn't really have resources to release, but we implement
-	// reference counting because tmpfs regular files will.)
-
-	// dentryEntry (ugh) links dentries into their parent directory.childList.
-	dentryEntry
+	// dentry therefore forwards reference counting directly to inode.
+	inode *inode
 }
 
 func (fs *filesystem) newDentry(inode *inode) *dentry {
@@ -207,10 +220,6 @@ type inode struct {
 	ctime int64 // nanoseconds
 	mtime int64 // nanoseconds
 
-	// Only meaningful for device special files.
-	rdevMajor uint32
-	rdevMinor uint32
-
 	// Advisory file locks, which lock at the inode level.
 	locks lock.FileLocks
 
@@ -230,7 +239,7 @@ func (i *inode) init(impl interface{}, fs *filesystem, creds *auth.Credentials, 
 	i.gid = uint32(creds.EffectiveKGID)
 	i.ino = atomic.AddUint64(&fs.nextInoMinusOne, 1)
 	// Tmpfs creation sets atime, ctime, and mtime to current time.
-	now := i.clock.Now().Nanoseconds()
+	now := fs.clock.Now().Nanoseconds()
 	i.atime = now
 	i.ctime = now
 	i.mtime = now
@@ -283,14 +292,10 @@ func (i *inode) tryIncRef() bool {
 func (i *inode) decRef() {
 	if refs := atomic.AddInt64(&i.refs, -1); refs == 0 {
 		if regFile, ok := i.impl.(*regularFile); ok {
-			// Hold inode.mu and regFile.dataMu while mutating
-			// size.
-			i.mu.Lock()
-			regFile.dataMu.Lock()
+			// Release memory used by regFile to store data. Since regFile is
+			// no longer usable, we don't need to grab any locks or update any
+			// metadata.
 			regFile.data.DropAll(regFile.memFile)
-			atomic.StoreUint64(&regFile.size, 0)
-			regFile.dataMu.Unlock()
-			i.mu.Unlock()
 		}
 	} else if refs < 0 {
 		panic("tmpfs.inode.decRef() called without holding a reference")
@@ -310,15 +315,15 @@ func (i *inode) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) e
 // a concurrent modification), so we do not require holding inode.mu.
 func (i *inode) statTo(stat *linux.Statx) {
 	stat.Mask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_NLINK |
-		linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_ATIME |
-		linux.STATX_BTIME | linux.STATX_CTIME | linux.STATX_MTIME
-	stat.Blksize = 1 // usermem.PageSize in tmpfs
+		linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_SIZE |
+		linux.STATX_BLOCKS | linux.STATX_ATIME | linux.STATX_CTIME |
+		linux.STATX_MTIME
+	stat.Blksize = usermem.PageSize
 	stat.Nlink = atomic.LoadUint32(&i.nlink)
 	stat.UID = atomic.LoadUint32(&i.uid)
 	stat.GID = atomic.LoadUint32(&i.gid)
 	stat.Mode = uint16(atomic.LoadUint32(&i.mode))
 	stat.Ino = i.ino
-	// Linux's tmpfs has no concept of btime, so zero-value is returned.
 	stat.Atime = linux.NsecToStatxTimestamp(i.atime)
 	stat.Ctime = linux.NsecToStatxTimestamp(i.ctime)
 	stat.Mtime = linux.NsecToStatxTimestamp(i.mtime)
@@ -327,19 +332,22 @@ func (i *inode) statTo(stat *linux.Statx) {
 	case *regularFile:
 		stat.Mask |= linux.STATX_SIZE | linux.STATX_BLOCKS
 		stat.Size = uint64(atomic.LoadUint64(&impl.size))
-		// In tmpfs, this will be FileRangeSet.Span() / 512 (but also cached in
-		// a uint64 accessed using atomic memory operations to avoid taking
-		// locks).
+		// TODO(jamieliu): This should be impl.data.Span() / 512, but this is
+		// too expensive to compute here. Cache it in regularFile.
 		stat.Blocks = allocatedBlocksForSize(stat.Size)
+	case *directory:
+		// "20" is mm/shmem.c:BOGO_DIRENT_SIZE.
+		stat.Size = 20 * (2 + uint64(atomic.LoadInt64(&impl.numChildren)))
+		// stat.Blocks is 0.
 	case *symlink:
-		stat.Mask |= linux.STATX_SIZE | linux.STATX_BLOCKS
 		stat.Size = uint64(len(impl.target))
-		stat.Blocks = allocatedBlocksForSize(stat.Size)
+		// stat.Blocks is 0.
+	case *namedPipe, *socketFile:
+		// stat.Size and stat.Blocks are 0.
 	case *deviceFile:
+		// stat.Size and stat.Blocks are 0.
 		stat.RdevMajor = impl.major
 		stat.RdevMinor = impl.minor
-	case *socketFile, *directory, *namedPipe:
-		// Nothing to do.
 	default:
 		panic(fmt.Sprintf("unknown inode type: %T", i.impl))
 	}

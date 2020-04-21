@@ -4,6 +4,17 @@ load("//tools/go_generics:defs.bzl", "go_template_instance")
 licenses(["notice"])
 
 go_template_instance(
+    name = "fstree",
+    out = "fstree.go",
+    package = "kernfs",
+    prefix = "generic",
+    template = "//pkg/sentry/vfs/genericfstree:generic_fstree",
+    types = {
+        "Dentry": "Dentry",
+    },
+)
+
+go_template_instance(
     name = "slot_list",
     out = "slot_list.go",
     package = "kernfs",
@@ -21,6 +32,7 @@ go_library(
         "dynamic_bytes_file.go",
         "fd_impl_util.go",
         "filesystem.go",
+        "fstree.go",
         "inode_impl_util.go",
         "kernfs.go",
         "slot_list.go",

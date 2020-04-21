@@ -136,7 +136,7 @@ func newInode(fs *filesystem, inodeNum uint32) (*inode, error) {
 		}
 		return &f.inode, nil
 	case linux.ModeDirectory:
-		f, err := newDirectroy(inode, fs.sb.IncompatibleFeatures().DirentFileType)
+		f, err := newDirectory(inode, fs.sb.IncompatibleFeatures().DirentFileType)
 		if err != nil {
 			return nil, err
 		}
