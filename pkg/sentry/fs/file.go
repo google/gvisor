@@ -44,7 +44,7 @@ var (
 	RecordWaitTime = false
 
 	reads    = metric.MustCreateNewUint64Metric("/fs/reads", false /* sync */, "Number of file reads.")
-	readWait = metric.MustCreateNewUint64Metric("/fs/read_wait", false /* sync */, "Time waiting on file reads, in nanoseconds.")
+	readWait = metric.MustCreateNewUint64NanosecondsMetric("/fs/read_wait", false /* sync */, "Time waiting on file reads, in nanoseconds.")
 )
 
 // IncrementWait increments the given wait time metric, if enabled.
