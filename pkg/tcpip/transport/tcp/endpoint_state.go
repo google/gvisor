@@ -247,6 +247,11 @@ func (e *endpoint) Resume(s *stack.Stack) {
 			if err := e.Listen(backlog); err != nil {
 				panic("endpoint listening failed: " + err.String())
 			}
+			e.LockUser()
+			if e.shutdownFlags != 0 {
+				e.shutdownLocked(e.shutdownFlags)
+			}
+			e.UnlockUser()
 			listenLoading.Done()
 			tcpip.AsyncLoading.Done()
 		}()
