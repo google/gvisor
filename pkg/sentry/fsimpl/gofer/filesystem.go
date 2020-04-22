@@ -1089,9 +1089,15 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 }
 
 // BoundEndpointAt implements FilesystemImpl.BoundEndpointAt.
-//
-// TODO(gvisor.dev/issue/1476): Implement BoundEndpointAt.
 func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath) (transport.BoundEndpoint, error) {
+	var ds *[]*dentry
+	fs.renameMu.RLock()
+	defer fs.renameMuRUnlockAndCheckCaching(&ds)
+	_, err := fs.resolveLocked(ctx, rp, &ds)
+	if err != nil {
+		return nil, err
+	}
+	// TODO(gvisor.dev/issue/1476): Implement BoundEndpointAt.
 	return nil, syserror.ECONNREFUSED
 }
 
