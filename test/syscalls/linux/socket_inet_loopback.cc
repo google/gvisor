@@ -319,6 +319,49 @@ TEST_P(SocketInetLoopbackTest, TCPListenUnbound) {
   tcpSimpleConnectTest(listener, connector, false);
 }
 
+TEST_P(SocketInetLoopbackTest, TCPListenShutdownListen) {
+  const auto& param = GetParam();
+
+  const TestAddress& listener = param.listener;
+  const TestAddress& connector = param.connector;
+
+  constexpr int kBacklog = 5;
+
+  // Create the listening socket.
+  FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
+  sockaddr_storage listen_addr = listener.addr;
+  ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
+                   listener.addr_len),
+              SyscallSucceeds());
+
+  ASSERT_THAT(listen(listen_fd.get(), kBacklog), SyscallSucceeds());
+  ASSERT_THAT(shutdown(listen_fd.get(), SHUT_RD), SyscallSucceeds());
+  ASSERT_THAT(listen(listen_fd.get(), kBacklog), SyscallSucceeds());
+
+  // Get the port bound by the listening socket.
+  socklen_t addrlen = listener.addr_len;
+  ASSERT_THAT(getsockname(listen_fd.get(),
+                          reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
+              SyscallSucceeds());
+  const uint16_t port =
+      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
+
+  sockaddr_storage conn_addr = connector.addr;
+  ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
+
+  for (int i = 0; i < kBacklog; i++) {
+    auto client = ASSERT_NO_ERRNO_AND_VALUE(
+        Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
+    ASSERT_THAT(connect(client.get(), reinterpret_cast<sockaddr*>(&conn_addr),
+                        connector.addr_len),
+                SyscallSucceeds());
+  }
+  for (int i = 0; i < kBacklog; i++) {
+    ASSERT_THAT(accept(listen_fd.get(), nullptr, nullptr), SyscallSucceeds());
+  }
+}
+
 TEST_P(SocketInetLoopbackTest, TCPListenShutdown) {
   auto const& param = GetParam();
 
