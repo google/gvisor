@@ -72,7 +72,8 @@ type layerState interface {
 	// incoming creates an expected Layer for comparing against a received Layer.
 	// Because the expectation can depend on values in the received Layer, it is
 	// an input to incoming. For example, the ACK number needs to be checked in a
-	// TCP packet but only if the ACK flag is set in the received packet.
+	// TCP packet but only if the ACK flag is set in the received packet. The
+	// calles takes ownership of the returned Layer.
 	incoming(received Layer) Layer
 
 	// sent updates the layerState based on the Layer that was sent. The input is
@@ -124,6 +125,7 @@ func (s *etherState) outgoing() Layer {
 	return &s.out
 }
 
+// incoming implements layerState.incoming.
 func (s *etherState) incoming(Layer) Layer {
 	return deepcopy.Copy(&s.in).(Layer)
 }
@@ -168,6 +170,7 @@ func (s *ipv4State) outgoing() Layer {
 	return &s.out
 }
 
+// incoming implements layerState.incoming.
 func (s *ipv4State) incoming(Layer) Layer {
 	return deepcopy.Copy(&s.in).(Layer)
 }
@@ -234,6 +237,7 @@ func (s *tcpState) outgoing() Layer {
 	return &newOutgoing
 }
 
+// incoming implements layerState.incoming.
 func (s *tcpState) incoming(received Layer) Layer {
 	tcpReceived, ok := received.(*TCP)
 	if !ok {
@@ -328,6 +332,7 @@ func (s *udpState) outgoing() Layer {
 	return &s.out
 }
 
+// incoming implements layerState.incoming.
 func (s *udpState) incoming(Layer) Layer {
 	return deepcopy.Copy(&s.in).(Layer)
 }
