@@ -2158,8 +2158,6 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) *tcpip.Error {
 			//
 			// By not removing this endpoint from the demuxer mapping, we
 			// ensure that any other bind to the same port fails, as on Linux.
-			// TODO(gvisor.dev/issue/2468): We need to enable applications to
-			// start listening on this endpoint again similar to Linux.
 			e.rcvListMu.Lock()
 			e.rcvClosed = true
 			e.rcvListMu.Unlock()
@@ -2188,26 +2186,31 @@ func (e *endpoint) listen(backlog int) *tcpip.Error {
 	e.LockUser()
 	defer e.UnlockUser()
 
-	// Allow the backlog to be adjusted if the endpoint is not shutting down.
-	// When the endpoint shuts down, it sets workerCleanup to true, and from
-	// that point onward, acceptedChan is the responsibility of the cleanup()
-	// method (and should not be touched anywhere else, including here).
-	if e.EndpointState() == StateListen && !e.workerCleanup {
-		// Adjust the size of the channel iff we can fix existing
-		// pending connections into the new one.
+	if e.EndpointState() == StateListen && !e.closed {
 		e.acceptMu.Lock()
 		defer e.acceptMu.Unlock()
-		if len(e.acceptedChan) > backlog {
-			return tcpip.ErrInvalidEndpointState
-		}
-		if cap(e.acceptedChan) == backlog {
-			return nil
-		}
-		origChan := e.acceptedChan
-		e.acceptedChan = make(chan *endpoint, backlog)
-		close(origChan)
-		for ep := range origChan {
-			e.acceptedChan <- ep
+		if e.acceptedChan == nil {
+			// listen is called after shutdown.
+			e.acceptedChan = make(chan *endpoint, backlog)
+			e.shutdownFlags = 0
+			e.rcvListMu.Lock()
+			e.rcvClosed = false
+			e.rcvListMu.Unlock()
+		} else {
+			// Adjust the size of the channel iff we can fix
+			// existing pending connections into the new one.
+			if len(e.acceptedChan) > backlog {
+				return tcpip.ErrInvalidEndpointState
+			}
+			if cap(e.acceptedChan) == backlog {
+				return nil
+			}
+			origChan := e.acceptedChan
+			e.acceptedChan = make(chan *endpoint, backlog)
+			close(origChan)
+			for ep := range origChan {
+				e.acceptedChan <- ep
+			}
 		}
 
 		// Notify any blocked goroutines that they can attempt to
