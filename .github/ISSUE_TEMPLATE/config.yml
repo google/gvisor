@@ -8,7 +8,4 @@ contact_links:
     about: Please see our documentation for debugging tips.
   - name: gVisor User Forum
     url: https://groups.google.com/g/gvisor-users
-    about: Please ask and answer questions here.
-  - name: gVisor Security List
-    url: https://github.com/google/gvisor/blob/master/SECURITY.md
-    about: Please report security vulnerabilities using the process described here.
+    about: Ask and answer general questions here.
