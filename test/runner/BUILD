@@ -12,8 +12,8 @@ go_binary(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",
+        "//pkg/test/testutil",
         "//runsc/specutils",
-        "//runsc/testutil",
         "//test/runner/gtest",
         "//test/uds",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",

@@ -23,24 +23,24 @@ import (
 	"strings"
 	"testing"
 
-	"gvisor.dev/gvisor/runsc/testutil"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
 func touch(t *testing.T, name string) {
 	t.Helper()
 	f, err := os.Create(name)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("error creating file %q: %v", name, err)
 	}
 	if err := f.Close(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("error closing file %q: %v", name, err)
 	}
 }
 
 func TestSearchEmptyDir(t *testing.T) {
 	td, err := ioutil.TempDir(testutil.TmpDir(), "searchtest")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("error creating searchtest: %v", err)
 	}
 	defer os.RemoveAll(td)
 
@@ -60,7 +60,7 @@ func TestSearchEmptyDir(t *testing.T) {
 func TestSearch(t *testing.T) {
 	td, err := ioutil.TempDir(testutil.TmpDir(), "searchtest")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("error creating searchtest: %v", err)
 	}
 	defer os.RemoveAll(td)
 
@@ -101,14 +101,14 @@ func TestSearch(t *testing.T) {
 		if strings.HasSuffix(item, "/") {
 			// This item is a directory, create it.
 			if err := os.MkdirAll(filepath.Join(td, item), 0755); err != nil {
-				t.Fatal(err)
+				t.Fatalf("error making directory: %v", err)
 			}
 		} else {
 			// This item is a file, create the directory and touch file.
 			// Create directory in which file should be created
 			fullDirPath := filepath.Join(td, filepath.Dir(item))
 			if err := os.MkdirAll(fullDirPath, 0755); err != nil {
-				t.Fatal(err)
+				t.Fatalf("error making directory: %v", err)
 			}
 			// Create file with full path to file.
 			touch(t, filepath.Join(td, item))

@@ -32,8 +32,8 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/specutils"
-	"gvisor.dev/gvisor/runsc/testutil"
 	"gvisor.dev/gvisor/test/runner/gtest"
 	"gvisor.dev/gvisor/test/uds"
 )
@@ -115,20 +115,20 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 //
 // Returns an error if the sandboxed application exits non-zero.
 func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
-	bundleDir, err := testutil.SetupBundleDir(spec)
+	bundleDir, cleanup, err := testutil.SetupBundleDir(spec)
 	if err != nil {
 		return fmt.Errorf("SetupBundleDir failed: %v", err)
 	}
-	defer os.RemoveAll(bundleDir)
+	defer cleanup()
 
-	rootDir, err := testutil.SetupRootDir()
+	rootDir, cleanup, err := testutil.SetupRootDir()
 	if err != nil {
 		return fmt.Errorf("SetupRootDir failed: %v", err)
 	}
-	defer os.RemoveAll(rootDir)
+	defer cleanup()
 
 	name := tc.FullName()
-	id := testutil.UniqueContainerID()
+	id := testutil.RandomContainerID()
 	log.Infof("Running test %q in container %q", name, id)
 	specutils.LogSpec(spec)
 

@@ -107,21 +107,24 @@ if [[ ! -f "${TESTBENCH_BINARY-}" ]]; then
   exit 2
 fi
 
+function new_net_prefix() {
+  # Class C, 192.0.0.0 to 223.255.255.255, transitionally has mask 24.
+  echo "$(shuf -i 192-223 -n 1).$(shuf -i 0-255 -n 1).$(shuf -i 0-255 -n 1)"
+}
+
 # Variables specific to the control network and interface start with CTRL_.
 # Variables specific to the test network and interface start with TEST_.
 # Variables specific to the DUT start with DUT_.
 # Variables specific to the test bench start with TESTBENCH_.
 # Use random numbers so that test networks don't collide.
-declare -r CTRL_NET="ctrl_net-${RANDOM}${RANDOM}"
-declare -r TEST_NET="test_net-${RANDOM}${RANDOM}"
+declare CTRL_NET="ctrl_net-${RANDOM}${RANDOM}"
+declare CTRL_NET_PREFIX=$(new_net_prefix)
+declare TEST_NET="test_net-${RANDOM}${RANDOM}"
+declare TEST_NET_PREFIX=$(new_net_prefix)
 # On both DUT and test bench, testing packets are on the eth2 interface.
 declare -r TEST_DEVICE="eth2"
 # Number of bits in the *_NET_PREFIX variables.
 declare -r NET_MASK="24"
-function new_net_prefix() {
-  # Class C, 192.0.0.0 to 223.255.255.255, transitionally has mask 24.
-  echo "$(shuf -i 192-223 -n 1).$(shuf -i 0-255 -n 1).$(shuf -i 0-255 -n 1)"
-}
 # Last bits of the DUT's IP address.
 declare -r DUT_NET_SUFFIX=".10"
 # Control port.
@@ -130,6 +133,7 @@ declare -r CTRL_PORT="40000"
 declare -r TESTBENCH_NET_SUFFIX=".20"
 declare -r TIMEOUT="60"
 declare -r IMAGE_TAG="gcr.io/gvisor-presubmit/packetimpact"
+
 # Make sure that docker is installed.
 docker --version
 
@@ -169,19 +173,19 @@ function finish {
 trap finish EXIT
 
 # Subnet for control packets between test bench and DUT.
-declare CTRL_NET_PREFIX=$(new_net_prefix)
 while ! docker network create \
   "--subnet=${CTRL_NET_PREFIX}.0/${NET_MASK}" "${CTRL_NET}"; do
   sleep 0.1
-  declare CTRL_NET_PREFIX=$(new_net_prefix)
+  CTRL_NET_PREFIX=$(new_net_prefix)
+  CTRL_NET="ctrl_net-${RANDOM}${RANDOM}"
 done
 
 # Subnet for the packets that are part of the test.
-declare TEST_NET_PREFIX=$(new_net_prefix)
 while ! docker network create \
   "--subnet=${TEST_NET_PREFIX}.0/${NET_MASK}" "${TEST_NET}"; do
   sleep 0.1
-  declare TEST_NET_PREFIX=$(new_net_prefix)
+  TEST_NET_PREFIX=$(new_net_prefix)
+  TEST_NET="test_net-${RANDOM}${RANDOM}"
 done
 
 docker pull "${IMAGE_TAG}"

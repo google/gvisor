@@ -12,19 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package testdata
+// +build !race
 
-// Sandbox is a default JSON config for a sandbox.
-const Sandbox = `
-{
-    "metadata": {
-        "name": "default-sandbox",
-        "namespace": "default",
-        "attempt": 1,
-        "uid": "hdishd83djaidwnduwk28bcsb"
-    },
-    "linux": {
-    },
-    "log_directory": "/tmp"
-}
-`
+package container
+
+// Allow both kvm and ptrace for non-race builds.
+var platformOptions = []configOption{ptrace, kvm}

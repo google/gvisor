@@ -31,7 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context"
-	"gvisor.dev/gvisor/runsc/testutil"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
 func TestFastRecovery(t *testing.T) {

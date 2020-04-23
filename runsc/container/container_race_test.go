@@ -12,30 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package testdata
+// +build race
 
-import (
-	"encoding/json"
-	"fmt"
-)
+package container
 
-// SimpleSpec returns a JSON config for a simple container that runs the
-// specified command in the specified image.
-func SimpleSpec(name, image string, cmd []string) string {
-	cmds, err := json.Marshal(cmd)
-	if err != nil {
-		// This shouldn't happen.
-		panic(err)
-	}
-	return fmt.Sprintf(`
-{
-        "metadata": {
-                "name": %q
-        },
-        "image": {
-                "image": %q
-        },
-        "command": %s
-	}
-`, name, image, cmds)
-}
+// Only enabled ptrace with race builds.
+var platformOptions = []configOption{ptrace}

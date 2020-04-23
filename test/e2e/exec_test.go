@@ -23,6 +23,8 @@ package integration
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"syscall"
@@ -31,23 +33,23 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
-	"gvisor.dev/gvisor/runsc/dockerutil"
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 // Test that exec uses the exact same capability set as the container.
 func TestExecCapabilities(t *testing.T) {
-	if err := dockerutil.Pull("alpine"); err != nil {
-		t.Fatalf("docker pull failed: %v", err)
-	}
-	d := dockerutil.MakeDocker("exec-capabilities-test")
-
-	// Start the container.
-	if err := d.Run("alpine", "sh", "-c", "cat /proc/self/status; sleep 100"); err != nil {
-		t.Fatalf("docker run failed: %v", err)
-	}
+	d := dockerutil.MakeDocker(t)
 	defer d.CleanUp()
 
+	// Start the container.
+	if err := d.Spawn(dockerutil.RunOpts{
+		Image: "basic/alpine",
+	}, "sh", "-c", "cat /proc/self/status; sleep 100"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	// Check that capability.
 	matches, err := d.WaitForOutputSubmatch("CapEff:\t([0-9a-f]+)\n", 5*time.Second)
 	if err != nil {
 		t.Fatalf("WaitForOutputSubmatch() timeout: %v", err)
@@ -59,7 +61,7 @@ func TestExecCapabilities(t *testing.T) {
 	t.Log("Root capabilities:", want)
 
 	// Now check that exec'd process capabilities match the root.
-	got, err := d.Exec("grep", "CapEff:", "/proc/self/status")
+	got, err := d.Exec(dockerutil.RunOpts{}, "grep", "CapEff:", "/proc/self/status")
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
 	}
@@ -72,16 +74,16 @@ func TestExecCapabilities(t *testing.T) {
 // Test that 'exec --privileged' adds all capabilities, except for CAP_NET_RAW
 // which is removed from the container when --net-raw=false.
 func TestExecPrivileged(t *testing.T) {
-	if err := dockerutil.Pull("alpine"); err != nil {
-		t.Fatalf("docker pull failed: %v", err)
-	}
-	d := dockerutil.MakeDocker("exec-privileged-test")
+	d := dockerutil.MakeDocker(t)
+	defer d.CleanUp()
 
 	// Start the container with all capabilities dropped.
-	if err := d.Run("--cap-drop=all", "alpine", "sh", "-c", "cat /proc/self/status; sleep 100"); err != nil {
+	if err := d.Spawn(dockerutil.RunOpts{
+		Image:   "basic/alpine",
+		CapDrop: []string{"all"},
+	}, "sh", "-c", "cat /proc/self/status; sleep 100"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
-	defer d.CleanUp()
 
 	// Check that all capabilities where dropped from container.
 	matches, err := d.WaitForOutputSubmatch("CapEff:\t([0-9a-f]+)\n", 5*time.Second)
@@ -100,9 +102,11 @@ func TestExecPrivileged(t *testing.T) {
 		t.Fatalf("Container should have no capabilities: %x", containerCaps)
 	}
 
-	// Check that 'exec --privileged' adds all capabilities, except
-	// for CAP_NET_RAW.
-	got, err := d.ExecWithFlags([]string{"--privileged"}, "grep", "CapEff:", "/proc/self/status")
+	// Check that 'exec --privileged' adds all capabilities, except for
+	// CAP_NET_RAW.
+	got, err := d.Exec(dockerutil.RunOpts{
+		Privileged: true,
+	}, "grep", "CapEff:", "/proc/self/status")
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
 	}
@@ -114,97 +118,99 @@ func TestExecPrivileged(t *testing.T) {
 }
 
 func TestExecJobControl(t *testing.T) {
-	if err := dockerutil.Pull("alpine"); err != nil {
-		t.Fatalf("docker pull failed: %v", err)
-	}
-	d := dockerutil.MakeDocker("exec-job-control-test")
-
-	// Start the container.
-	if err := d.Run("alpine", "sleep", "1000"); err != nil {
-		t.Fatalf("docker run failed: %v", err)
-	}
+	d := dockerutil.MakeDocker(t)
 	defer d.CleanUp()
 
+	// Start the container.
+	if err := d.Spawn(dockerutil.RunOpts{
+		Image: "basic/alpine",
+	}, "sleep", "1000"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
 	// Exec 'sh' with an attached pty.
-	cmd, ptmx, err := d.ExecWithTerminal("sh")
-	if err != nil {
+	if _, err := d.Exec(dockerutil.RunOpts{
+		Pty: func(cmd *exec.Cmd, ptmx *os.File) {
+			// Call "sleep 100 | cat" in the shell. We pipe to cat
+			// so that there will be two processes in the
+			// foreground process group.
+			if _, err := ptmx.Write([]byte("sleep 100 | cat\n")); err != nil {
+				t.Fatalf("error writing to pty: %v", err)
+			}
+
+			// Give shell a few seconds to start executing the sleep.
+			time.Sleep(2 * time.Second)
+
+			// Send a ^C to the pty, which should kill sleep and
+			// cat, but not the shell.  \x03 is ASCII "end of
+			// text", which is the same as ^C.
+			if _, err := ptmx.Write([]byte{'\x03'}); err != nil {
+				t.Fatalf("error writing to pty: %v", err)
+			}
+
+			// The shell should still be alive at this point. Sleep
+			// should have exited with code 2+128=130. We'll exit
+			// with 10 plus that number, so that we can be sure
+			// that the shell did not get signalled.
+			if _, err := ptmx.Write([]byte("exit $(expr $? + 10)\n")); err != nil {
+				t.Fatalf("error writing to pty: %v", err)
+			}
+
+			// Exec process should exit with code 10+130=140.
+			ps, err := cmd.Process.Wait()
+			if err != nil {
+				t.Fatalf("error waiting for exec process: %v", err)
+			}
+			ws := ps.Sys().(syscall.WaitStatus)
+			if !ws.Exited() {
+				t.Errorf("ws.Exited got false, want true")
+			}
+			if got, want := ws.ExitStatus(), 140; got != want {
+				t.Errorf("ws.ExitedStatus got %d, want %d", got, want)
+			}
+		},
+	}, "sh"); err != nil {
 		t.Fatalf("docker exec failed: %v", err)
-	}
-	defer ptmx.Close()
-
-	// Call "sleep 100 | cat" in the shell.  We pipe to cat so that there
-	// will be two processes in the foreground process group.
-	if _, err := ptmx.Write([]byte("sleep 100 | cat\n")); err != nil {
-		t.Fatalf("error writing to pty: %v", err)
-	}
-
-	// Give shell a few seconds to start executing the sleep.
-	time.Sleep(2 * time.Second)
-
-	// Send a ^C to the pty, which should kill sleep and cat, but not the
-	// shell.  \x03 is ASCII "end of text", which is the same as ^C.
-	if _, err := ptmx.Write([]byte{'\x03'}); err != nil {
-		t.Fatalf("error writing to pty: %v", err)
-	}
-
-	// The shell should still be alive at this point. Sleep should have
-	// exited with code 2+128=130. We'll exit with 10 plus that number, so
-	// that we can be sure that the shell did not get signalled.
-	if _, err := ptmx.Write([]byte("exit $(expr $? + 10)\n")); err != nil {
-		t.Fatalf("error writing to pty: %v", err)
-	}
-
-	// Exec process should exit with code 10+130=140.
-	ps, err := cmd.Process.Wait()
-	if err != nil {
-		t.Fatalf("error waiting for exec process: %v", err)
-	}
-	ws := ps.Sys().(syscall.WaitStatus)
-	if !ws.Exited() {
-		t.Errorf("ws.Exited got false, want true")
-	}
-	if got, want := ws.ExitStatus(), 140; got != want {
-		t.Errorf("ws.ExitedStatus got %d, want %d", got, want)
 	}
 }
 
 // Test that failure to exec returns proper error message.
 func TestExecError(t *testing.T) {
-	if err := dockerutil.Pull("alpine"); err != nil {
-		t.Fatalf("docker pull failed: %v", err)
-	}
-	d := dockerutil.MakeDocker("exec-error-test")
-
-	// Start the container.
-	if err := d.Run("alpine", "sleep", "1000"); err != nil {
-		t.Fatalf("docker run failed: %v", err)
-	}
+	d := dockerutil.MakeDocker(t)
 	defer d.CleanUp()
 
-	_, err := d.Exec("no_can_find")
+	// Start the container.
+	if err := d.Spawn(dockerutil.RunOpts{
+		Image: "basic/alpine",
+	}, "sleep", "1000"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	// Attempt to exec a binary that doesn't exist.
+	out, err := d.Exec(dockerutil.RunOpts{}, "no_can_find")
 	if err == nil {
 		t.Fatalf("docker exec didn't fail")
 	}
-	if want := `error finding executable "no_can_find" in PATH`; !strings.Contains(err.Error(), want) {
-		t.Fatalf("docker exec wrong error, got: %s, want: .*%s.*", err.Error(), want)
+	if want := `error finding executable "no_can_find" in PATH`; !strings.Contains(out, want) {
+		t.Fatalf("docker exec wrong error, got: %s, want: .*%s.*", out, want)
 	}
 }
 
 // Test that exec inherits environment from run.
 func TestExecEnv(t *testing.T) {
-	if err := dockerutil.Pull("alpine"); err != nil {
-		t.Fatalf("docker pull failed: %v", err)
-	}
-	d := dockerutil.MakeDocker("exec-env-test")
-
-	// Start the container with env FOO=BAR.
-	if err := d.Run("-e", "FOO=BAR", "alpine", "sleep", "1000"); err != nil {
-		t.Fatalf("docker run failed: %v", err)
-	}
+	d := dockerutil.MakeDocker(t)
 	defer d.CleanUp()
 
+	// Start the container with env FOO=BAR.
+	if err := d.Spawn(dockerutil.RunOpts{
+		Image: "basic/alpine",
+		Env:   []string{"FOO=BAR"},
+	}, "sleep", "1000"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
 	// Exec "echo $FOO".
-	got, err := d.Exec("/bin/sh", "-c", "echo $FOO")
+	got, err := d.Exec(dockerutil.RunOpts{}, "/bin/sh", "-c", "echo $FOO")
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
 	}
@@ -216,17 +222,19 @@ func TestExecEnv(t *testing.T) {
 // TestRunEnvHasHome tests that run always has HOME environment set.
 func TestRunEnvHasHome(t *testing.T) {
 	// Base alpine image does not have any environment variables set.
-	if err := dockerutil.Pull("alpine"); err != nil {
-		t.Fatalf("docker pull failed: %v", err)
-	}
-	d := dockerutil.MakeDocker("run-env-test")
+	d := dockerutil.MakeDocker(t)
+	defer d.CleanUp()
 
 	// Exec "echo $HOME". The 'bin' user's home dir is '/bin'.
-	got, err := d.RunFg("--user", "bin", "alpine", "/bin/sh", "-c", "echo $HOME")
+	got, err := d.Run(dockerutil.RunOpts{
+		Image: "basic/alpine",
+		User:  "bin",
+	}, "/bin/sh", "-c", "echo $HOME")
 	if err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
-	defer d.CleanUp()
+
+	// Check that the directory matches.
 	if got, want := strings.TrimSpace(got), "/bin"; got != want {
 		t.Errorf("bad output from 'docker run'. Got %q; Want %q.", got, want)
 	}
@@ -235,18 +243,17 @@ func TestRunEnvHasHome(t *testing.T) {
 // Test that exec always has HOME environment set, even when not set in run.
 func TestExecEnvHasHome(t *testing.T) {
 	// Base alpine image does not have any environment variables set.
-	if err := dockerutil.Pull("alpine"); err != nil {
-		t.Fatalf("docker pull failed: %v", err)
-	}
-	d := dockerutil.MakeDocker("exec-env-home-test")
-
-	if err := d.Run("alpine", "sleep", "1000"); err != nil {
-		t.Fatalf("docker run failed: %v", err)
-	}
+	d := dockerutil.MakeDocker(t)
 	defer d.CleanUp()
 
+	if err := d.Spawn(dockerutil.RunOpts{
+		Image: "basic/alpine",
+	}, "sleep", "1000"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
 	// Exec "echo $HOME", and expect to see "/root".
-	got, err := d.Exec("/bin/sh", "-c", "echo $HOME")
+	got, err := d.Exec(dockerutil.RunOpts{}, "/bin/sh", "-c", "echo $HOME")
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
 	}
@@ -258,12 +265,14 @@ func TestExecEnvHasHome(t *testing.T) {
 	newUID := 1234
 	newHome := "/foo/bar"
 	cmd := fmt.Sprintf("mkdir -p -m 777 %q && adduser foo -D -u %d -h %q", newHome, newUID, newHome)
-	if _, err := d.Exec("/bin/sh", "-c", cmd); err != nil {
+	if _, err := d.Exec(dockerutil.RunOpts{}, "/bin/sh", "-c", cmd); err != nil {
 		t.Fatalf("docker exec failed: %v", err)
 	}
 
 	// Execute the same as the new user and expect newHome.
-	got, err = d.ExecAsUser(strconv.Itoa(newUID), "/bin/sh", "-c", "echo $HOME")
+	got, err = d.Exec(dockerutil.RunOpts{
+		User: strconv.Itoa(newUID),
+	}, "/bin/sh", "-c", "echo $HOME")
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
 	}

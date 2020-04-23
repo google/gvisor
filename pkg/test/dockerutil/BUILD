@@ -8,7 +8,7 @@ go_library(
     srcs = ["dockerutil.go"],
     visibility = ["//:sandbox"],
     deps = [
-        "//runsc/testutil",
+        "//pkg/test/testutil",
         "@com_github_kr_pty//:go_default_library",
     ],
 )

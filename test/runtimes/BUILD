@@ -1,19 +1,6 @@
-# These packages are used to run language runtime tests inside gVisor sandboxes.
-
-load("//tools:defs.bzl", "go_binary", "go_test")
-load("//test/runtimes:build_defs.bzl", "runtime_test")
+load("//test/runtimes:defs.bzl", "runtime_test")
 
 package(licenses = ["notice"])
-
-go_binary(
-    name = "runner",
-    testonly = 1,
-    srcs = ["runner.go"],
-    deps = [
-        "//runsc/dockerutil",
-        "//runsc/testutil",
-    ],
-)
 
 runtime_test(
     name = "go1.12",
@@ -43,11 +30,4 @@ runtime_test(
     name = "python3.7.3",
     blacklist_file = "blacklist_python3.7.3.csv",
     lang = "python",
-)
-
-go_test(
-    name = "blacklist_test",
-    size = "small",
-    srcs = ["blacklist_test.go"],
-    library = ":runner",
 )

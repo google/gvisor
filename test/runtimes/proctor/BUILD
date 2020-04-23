@@ -12,7 +12,8 @@ go_binary(
         "proctor.go",
         "python.go",
     ],
-    visibility = ["//test/runtimes/images:__subpackages__"],
+    pure = True,
+    visibility = ["//test/runtimes:__pkg__"],
 )
 
 go_test(
@@ -21,6 +22,6 @@ go_test(
     srcs = ["proctor_test.go"],
     library = ":proctor",
     deps = [
-        "//runsc/testutil",
+        "//pkg/test/testutil",
     ],
 )

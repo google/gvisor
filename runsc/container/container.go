@@ -274,7 +274,7 @@ func New(conf *boot.Config, args Args) (*Container, error) {
 	}
 
 	if err := os.MkdirAll(conf.RootDir, 0711); err != nil {
-		return nil, fmt.Errorf("creating container root directory: %v", err)
+		return nil, fmt.Errorf("creating container root directory %q: %v", conf.RootDir, err)
 	}
 
 	c := &Container{

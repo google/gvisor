@@ -26,8 +26,8 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.dev/gvisor/runsc/dockerutil"
-	"gvisor.dev/gvisor/runsc/testutil"
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
 var (
@@ -45,7 +45,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "lang and image flags must not be empty\n")
 		os.Exit(1)
 	}
-
 	os.Exit(runTests())
 }
 
@@ -60,8 +59,8 @@ func runTests() int {
 		return 1
 	}
 
-	// Create a single docker container that will be used for all tests.
-	d := dockerutil.MakeDocker("gvisor-" + *lang)
+	// Construct the shared docker instance.
+	d := dockerutil.MakeDocker(testutil.DefaultLogger(*lang))
 	defer d.CleanUp()
 
 	// Get a slice of tests to run. This will also start a single Docker
@@ -77,21 +76,18 @@ func runTests() int {
 	return m.Run()
 }
 
-// getTests returns a slice of tests to run, subject to the shard size and
-// index.
-func getTests(d dockerutil.Docker, blacklist map[string]struct{}) ([]testing.InternalTest, error) {
-	// Pull the image.
-	if err := dockerutil.Pull(*image); err != nil {
-		return nil, fmt.Errorf("docker pull %q failed: %v", *image, err)
-	}
-
-	// Run proctor with --pause flag to keep container alive forever.
-	if err := d.Run(*image, "--pause"); err != nil {
+// getTests executes all tests as table tests.
+func getTests(d *dockerutil.Docker, blacklist map[string]struct{}) ([]testing.InternalTest, error) {
+	// Start the container.
+	d.CopyFiles("/proctor", "test/runtimes/proctor/proctor")
+	if err := d.Spawn(dockerutil.RunOpts{
+		Image: fmt.Sprintf("runtimes/%s", *image),
+	}, "/proctor/proctor", "--pause"); err != nil {
 		return nil, fmt.Errorf("docker run failed: %v", err)
 	}
 
 	// Get a list of all tests in the image.
-	list, err := d.Exec("/proctor", "--runtime", *lang, "--list")
+	list, err := d.Exec(dockerutil.RunOpts{}, "/proctor/proctor", "--runtime", *lang, "--list")
 	if err != nil {
 		return nil, fmt.Errorf("docker exec failed: %v", err)
 	}
@@ -126,7 +122,7 @@ func getTests(d dockerutil.Docker, blacklist map[string]struct{}) ([]testing.Int
 
 				go func() {
 					fmt.Printf("RUNNING %s...\n", tc)
-					output, err = d.Exec("/proctor", "--runtime", *lang, "--test", tc)
+					output, err = d.Exec(dockerutil.RunOpts{}, "/proctor/proctor", "--runtime", *lang, "--test", tc)
 					close(done)
 				}()
 
@@ -143,6 +139,7 @@ func getTests(d dockerutil.Docker, blacklist map[string]struct{}) ([]testing.Int
 			},
 		})
 	}
+
 	return itests, nil
 }
 
@@ -153,11 +150,7 @@ func getBlacklist() (map[string]struct{}, error) {
 	if *blacklistFile == "" {
 		return blacklist, nil
 	}
-	file, err := testutil.FindFile(*blacklistFile)
-	if err != nil {
-		return nil, err
-	}
-	f, err := os.Open(file)
+	f, err := os.Open(*blacklistFile)
 	if err != nil {
 		return nil, err
 	}

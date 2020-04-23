@@ -20,7 +20,7 @@ import (
 	"os/exec"
 	"time"
 
-	"gvisor.dev/gvisor/runsc/testutil"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
 const iptablesBinary = "iptables"
