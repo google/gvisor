@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package boot
+package user
 
 import (
 	"bufio"
@@ -136,10 +136,10 @@ func getExecUserHomeVFS2(ctx context.Context, mns *vfs.MountNamespace, uid auth.
 	return homeDir, nil
 }
 
-// maybeAddExecUserHome returns a new slice with the HOME enviroment variable
+// MaybeAddExecUserHome returns a new slice with the HOME enviroment variable
 // set if the slice does not already contain it, otherwise it returns the
 // original slice unmodified.
-func maybeAddExecUserHome(ctx context.Context, mns *fs.MountNamespace, uid auth.KUID, envv []string) ([]string, error) {
+func MaybeAddExecUserHome(ctx context.Context, mns *fs.MountNamespace, uid auth.KUID, envv []string) ([]string, error) {
 	// Check if the envv already contains HOME.
 	for _, env := range envv {
 		if strings.HasPrefix(env, "HOME=") {
@@ -159,7 +159,10 @@ func maybeAddExecUserHome(ctx context.Context, mns *fs.MountNamespace, uid auth.
 	return append(envv, "HOME="+homeDir), nil
 }
 
-func maybeAddExecUserHomeVFS2(ctx context.Context, vmns *vfs.MountNamespace, uid auth.KUID, envv []string) ([]string, error) {
+// MaybeAddExecUserHomeVFS2 returns a new slice with the HOME enviroment
+// variable set if the slice does not already contain it, otherwise it returns
+// the original slice unmodified.
+func MaybeAddExecUserHomeVFS2(ctx context.Context, vmns *vfs.MountNamespace, uid auth.KUID, envv []string) ([]string, error) {
 	// Check if the envv already contains HOME.
 	for _, env := range envv {
 		if strings.HasPrefix(env, "HOME=") {
