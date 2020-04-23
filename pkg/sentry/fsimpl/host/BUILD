@@ -15,12 +15,11 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
-        "//pkg/fd",
         "//pkg/log",
         "//pkg/refs",
-        "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/fsimpl/kernfs",
+        "//pkg/sentry/hostfd",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
