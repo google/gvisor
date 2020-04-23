@@ -29,7 +29,7 @@ function failure() {
 }
 trap 'failure ${LINENO} "$BASH_COMMAND"' ERR
 
-declare -r LONGOPTS="dut_platform:,posix_server_binary:,testbench_binary:,runtime:,tshark,extra_test_arg:"
+declare -r LONGOPTS="dut_platform:,posix_server_binary:,testbench_binary:,runtime:,tshark,extra_test_arg:,expect_failure"
 
 # Don't use declare below so that the error from getopt will end the script.
 PARSED=$(getopt --options "" --longoptions=$LONGOPTS --name "$0" -- "$@")
@@ -67,6 +67,10 @@ while true; do
     --extra_test_arg)
       EXTRA_TEST_ARGS+="$2"
       shift 2
+      ;;
+    --expect_failure)
+      declare -r EXPECT_FAILURE="1"
+      shift 1
       ;;
     --)
       shift
@@ -263,6 +267,15 @@ docker exec -t "${TESTBENCH}" \
   --local_ipv4=${TEST_NET_PREFIX}${TESTBENCH_NET_SUFFIX} \
   --remote_mac=${REMOTE_MAC} \
   --local_mac=${LOCAL_MAC} \
-  --device=${TEST_DEVICE}"
-
+  --device=${TEST_DEVICE}" && true
+declare -r TEST_RESULT="${?}"
+if [[ -z "${EXPECT_FAILURE-}" && "${TEST_RESULT}" != 0 ]]; then
+  echo 'FAIL: This test was expected to pass.'
+  exit ${TEST_RESULT}
+fi
+if [[ ! -z "${EXPECT_FAILURE-}" && "${TEST_RESULT}" == 0 ]]; then
+  echo 'FAIL: This test was expected to fail but passed.  Enable the test and' \
+    'mark the corresponding bug as fixed.'
+  exit 1
+fi
 echo PASS: No errors.
