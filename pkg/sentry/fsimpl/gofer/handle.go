@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/safemem"
+	"gvisor.dev/gvisor/pkg/sentry/hostfd"
 )
 
 // handle represents a remote "open file descriptor", consisting of an opened
@@ -77,7 +78,7 @@ func (h *handle) readToBlocksAt(ctx context.Context, dsts safemem.BlockSeq, offs
 	}
 	if h.fd >= 0 {
 		ctx.UninterruptibleSleepStart(false)
-		n, err := hostPreadv(h.fd, dsts, int64(offset))
+		n, err := hostfd.Preadv2(h.fd, dsts, int64(offset), 0 /* flags */)
 		ctx.UninterruptibleSleepFinish(false)
 		return n, err
 	}
@@ -103,7 +104,7 @@ func (h *handle) writeFromBlocksAt(ctx context.Context, srcs safemem.BlockSeq, o
 	}
 	if h.fd >= 0 {
 		ctx.UninterruptibleSleepStart(false)
-		n, err := hostPwritev(h.fd, srcs, int64(offset))
+		n, err := hostfd.Pwritev2(h.fd, srcs, int64(offset), 0 /* flags */)
 		ctx.UninterruptibleSleepFinish(false)
 		return n, err
 	}
