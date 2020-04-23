@@ -251,6 +251,12 @@ func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *Config, 
 	// All writes go to upper, be paranoid and make lower readonly.
 	opts.ReadOnly = useOverlay
 
+	if err := c.k.VFS().MkdirAt(ctx, creds, target, &vfs.MkdirOptions{
+		ForSyntheticMountpoint: true,
+	}); err != nil && err != syserror.EEXIST {
+		// Log a warning, but attempt the mount anyway.
+		log.Warningf("Failed to create mount point at %q: %v", submount.Destination, err)
+	}
 	if err := c.k.VFS().MountAt(ctx, creds, "", target, submount.Type, opts); err != nil {
 		return fmt.Errorf("failed to mount %q (type: %s): %w, opts: %v", submount.Destination, submount.Type, err, opts)
 	}
