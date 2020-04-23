@@ -24,7 +24,7 @@ import (
 
 func TestDestroyIdempotent(t *testing.T) {
 	fs := filesystem{
-		dentries: make(map[*dentry]struct{}),
+		syncableDentries: make(map[*dentry]struct{}),
 		opts: filesystemOptions{
 			// Test relies on no dentry being held in the cache.
 			maxCachedDentries: 0,
