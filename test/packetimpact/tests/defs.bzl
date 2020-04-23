@@ -59,7 +59,11 @@ _packetimpact_test = rule(
 
 PACKETIMPACT_TAGS = ["local", "manual"]
 
-def packetimpact_linux_test(name, testbench_binary, **kwargs):
+def packetimpact_linux_test(
+        name,
+        testbench_binary,
+        expect_failure = False,
+        **kwargs):
     """Add a packetimpact test on linux.
 
     Args:
@@ -67,28 +71,37 @@ def packetimpact_linux_test(name, testbench_binary, **kwargs):
         testbench_binary: the testbench binary
         **kwargs: all the other args, forwarded to _packetimpact_test
     """
+    expect_failure_flag = ["--expect_failure"] if expect_failure else []
     _packetimpact_test(
         name = name + "_linux_test",
         testbench_binary = testbench_binary,
-        flags = ["--dut_platform", "linux"],
+        flags = ["--dut_platform", "linux"] + expect_failure_flag,
         tags = PACKETIMPACT_TAGS + ["packetimpact"],
         **kwargs
     )
 
-def packetimpact_netstack_test(name, testbench_binary, **kwargs):
+def packetimpact_netstack_test(
+        name,
+        testbench_binary,
+        expect_failure = False,
+        **kwargs):
     """Add a packetimpact test on netstack.
 
     Args:
         name: name of the test
         testbench_binary: the testbench binary
+        expect_failure: the test must fail
         **kwargs: all the other args, forwarded to _packetimpact_test
     """
+    expect_failure_flag = []
+    if expect_failure:
+        expect_failure_flag = ["--expect_failure"]
     _packetimpact_test(
         name = name + "_netstack_test",
         testbench_binary = testbench_binary,
         # This is the default runtime unless
         # "--test_arg=--runtime=OTHER_RUNTIME" is used to override the value.
-        flags = ["--dut_platform", "netstack", "--runtime=runsc-d"],
+        flags = ["--dut_platform", "netstack", "--runtime=runsc-d"] + expect_failure_flag,
         tags = PACKETIMPACT_TAGS + ["packetimpact"],
         **kwargs
     )
@@ -112,7 +125,13 @@ def packetimpact_go_test(name, size = "small", pure = True, linux = True, netsta
         tags = PACKETIMPACT_TAGS,
         **kwargs
     )
-    if linux:
-        packetimpact_linux_test(name = name, testbench_binary = testbench_binary)
-    if netstack:
-        packetimpact_netstack_test(name = name, testbench_binary = testbench_binary)
+    packetimpact_linux_test(
+        name = name,
+        expect_failure = not linux,
+        testbench_binary = testbench_binary,
+    )
+    packetimpact_netstack_test(
+        name = name,
+        expect_failure = not netstack,
+        testbench_binary = testbench_binary,
+    )
