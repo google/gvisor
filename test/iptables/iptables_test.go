@@ -15,27 +15,13 @@
 package iptables
 
 import (
-	"flag"
 	"fmt"
 	"net"
-	"os"
-	"path"
 	"testing"
-	"time"
 
-	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/runsc/dockerutil"
-	"gvisor.dev/gvisor/runsc/testutil"
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 )
-
-const timeout = 18 * time.Second
-
-var image = flag.String("image", "bazel/test/iptables/runner:runner-image", "image to run tests in")
-
-type result struct {
-	output string
-	err    error
-}
 
 // singleTest runs a TestCase. Each test follows a pattern:
 // - Create a container.
@@ -46,77 +32,45 @@ type result struct {
 //
 // Container output is logged to $TEST_UNDECLARED_OUTPUTS_DIR if it exists, or
 // to stderr.
-func singleTest(test TestCase) error {
+func singleTest(t *testing.T, test TestCase) {
 	if _, ok := Tests[test.Name()]; !ok {
-		return fmt.Errorf("no test found with name %q. Has it been registered?", test.Name())
+		t.Fatalf("no test found with name %q. Has it been registered?", test.Name())
 	}
 
+	d := dockerutil.MakeDocker(t)
+	defer d.CleanUp()
+
 	// Create and start the container.
-	cont := dockerutil.MakeDocker("gvisor-iptables")
-	defer cont.CleanUp()
-	resultChan := make(chan *result)
-	go func() {
-		output, err := cont.RunFg("--cap-add=NET_ADMIN", *image, "-name", test.Name())
-		logContainer(output, err)
-		resultChan <- &result{output, err}
-	}()
+	d.CopyFiles("/runner", "test/iptables/runner/runner")
+	if err := d.Spawn(dockerutil.RunOpts{
+		Image:  "iptables",
+		CapAdd: []string{"NET_ADMIN"},
+	}, "/runner/runner", "-name", test.Name()); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
 
 	// Get the container IP.
-	ip, err := getIP(cont)
+	ip, err := d.FindIP()
 	if err != nil {
-		return fmt.Errorf("failed to get container IP: %v", err)
+		t.Fatalf("failed to get container IP: %v", err)
 	}
 
 	// Give the container our IP.
 	if err := sendIP(ip); err != nil {
-		return fmt.Errorf("failed to send IP to container: %v", err)
+		t.Fatalf("failed to send IP to container: %v", err)
 	}
 
 	// Run our side of the test.
-	errChan := make(chan error)
-	go func() {
-		errChan <- test.LocalAction(ip)
-	}()
-
-	// Wait for both the container and local tests to finish.
-	var res *result
-	to := time.After(timeout)
-	for localDone := false; res == nil || !localDone; {
-		select {
-		case res = <-resultChan:
-			log.Infof("Container finished.")
-		case err, localDone = <-errChan:
-			log.Infof("Local finished.")
-			if err != nil {
-				return fmt.Errorf("local test failed: %v", err)
-			}
-		case <-to:
-			return fmt.Errorf("timed out after %f seconds", timeout.Seconds())
-		}
+	if err := test.LocalAction(ip); err != nil {
+		t.Fatalf("LocalAction failed: %v", err)
 	}
 
-	return res.err
-}
-
-func getIP(cont dockerutil.Docker) (net.IP, error) {
-	// The container might not have started yet, so retry a few times.
-	var ipStr string
-	to := time.After(timeout)
-	for ipStr == "" {
-		ipStr, _ = cont.FindIP()
-		select {
-		case <-to:
-			return net.IP{}, fmt.Errorf("timed out getting IP after %f seconds", timeout.Seconds())
-		default:
-			time.Sleep(250 * time.Millisecond)
-		}
+	// Wait for the final statement. This structure has the side effect
+	// that all container logs will appear within the individual test
+	// context.
+	if _, err := d.WaitForOutput(TerminalStatement, TestTimeout); err != nil {
+		t.Fatalf("test failed: %v", err)
 	}
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
-		return net.IP{}, fmt.Errorf("invalid IP: %q", ipStr)
-	}
-	log.Infof("Container has IP of %s", ipStr)
-	return ip, nil
 }
 
 func sendIP(ip net.IP) error {
@@ -132,7 +86,7 @@ func sendIP(ip net.IP) error {
 		conn = c
 		return err
 	}
-	if err := testutil.Poll(cb, timeout); err != nil {
+	if err := testutil.Poll(cb, TestTimeout); err != nil {
 		return fmt.Errorf("timed out waiting to send IP, most recent error: %v", err)
 	}
 	if _, err := conn.Write([]byte{0}); err != nil {
@@ -141,281 +95,184 @@ func sendIP(ip net.IP) error {
 	return nil
 }
 
-func logContainer(output string, err error) {
-	msg := fmt.Sprintf("Container error: %v\nContainer output:\n%v", err, output)
-	if artifactsDir := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"); artifactsDir != "" {
-		fpath := path.Join(artifactsDir, "container.log")
-		if file, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE, 0644); err != nil {
-			log.Warningf("Failed to open log file %q: %v", fpath, err)
-		} else {
-			defer file.Close()
-			if _, err := file.Write([]byte(msg)); err == nil {
-				return
-			}
-			log.Warningf("Failed to write to log file %s: %v", fpath, err)
-		}
-	}
-
-	// We couldn't write to the output directory -- just log to stderr.
-	log.Infof(msg)
-}
-
 func TestFilterInputDropUDP(t *testing.T) {
-	if err := singleTest(FilterInputDropUDP{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterInputDropUDP{})
 }
 
 func TestFilterInputDropUDPPort(t *testing.T) {
-	if err := singleTest(FilterInputDropUDPPort{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterInputDropUDPPort{})
 }
 
 func TestFilterInputDropDifferentUDPPort(t *testing.T) {
-	if err := singleTest(FilterInputDropDifferentUDPPort{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterInputDropDifferentUDPPort{})
 }
 
 func TestFilterInputDropAll(t *testing.T) {
-	if err := singleTest(FilterInputDropAll{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterInputDropAll{})
 }
 
 func TestFilterInputDropOnlyUDP(t *testing.T) {
-	if err := singleTest(FilterInputDropOnlyUDP{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterInputDropOnlyUDP{})
 }
 
 func TestNATRedirectUDPPort(t *testing.T) {
 	// TODO(gvisor.dev/issue/170): Enable when supported.
 	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
-	if err := singleTest(NATRedirectUDPPort{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, NATRedirectUDPPort{})
 }
 
 func TestNATRedirectTCPPort(t *testing.T) {
 	// TODO(gvisor.dev/issue/170): Enable when supported.
 	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
-	if err := singleTest(NATRedirectTCPPort{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, NATRedirectTCPPort{})
 }
 
 func TestNATDropUDP(t *testing.T) {
 	// TODO(gvisor.dev/issue/170): Enable when supported.
 	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
-	if err := singleTest(NATDropUDP{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, NATDropUDP{})
 }
 
 func TestNATAcceptAll(t *testing.T) {
 	// TODO(gvisor.dev/issue/170): Enable when supported.
 	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
-	if err := singleTest(NATAcceptAll{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, NATAcceptAll{})
 }
 
 func TestFilterInputDropTCPDestPort(t *testing.T) {
-	if err := singleTest(FilterInputDropTCPDestPort{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterInputDropTCPDestPort{})
 }
 
 func TestFilterInputDropTCPSrcPort(t *testing.T) {
-	if err := singleTest(FilterInputDropTCPSrcPort{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterInputDropTCPSrcPort{})
 }
 
 func TestFilterInputCreateUserChain(t *testing.T) {
-	if err := singleTest(FilterInputCreateUserChain{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterInputCreateUserChain{})
 }
 
 func TestFilterInputDefaultPolicyAccept(t *testing.T) {
-	if err := singleTest(FilterInputDefaultPolicyAccept{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterInputDefaultPolicyAccept{})
 }
 
 func TestFilterInputDefaultPolicyDrop(t *testing.T) {
-	if err := singleTest(FilterInputDefaultPolicyDrop{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterInputDefaultPolicyDrop{})
 }
 
 func TestFilterInputReturnUnderflow(t *testing.T) {
-	if err := singleTest(FilterInputReturnUnderflow{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterInputReturnUnderflow{})
 }
 
 func TestFilterOutputDropTCPDestPort(t *testing.T) {
 	// TODO(gvisor.dev/issue/170): Enable when supported.
 	t.Skip("filter OUTPUT isn't supported yet (gvisor.dev/issue/170).")
-	if err := singleTest(FilterOutputDropTCPDestPort{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterOutputDropTCPDestPort{})
 }
 
 func TestFilterOutputDropTCPSrcPort(t *testing.T) {
 	// TODO(gvisor.dev/issue/170): Enable when supported.
 	t.Skip("filter OUTPUT isn't supported yet (gvisor.dev/issue/170).")
-	if err := singleTest(FilterOutputDropTCPSrcPort{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterOutputDropTCPSrcPort{})
 }
 
 func TestFilterOutputAcceptTCPOwner(t *testing.T) {
-	if err := singleTest(FilterOutputAcceptTCPOwner{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterOutputAcceptTCPOwner{})
 }
 
 func TestFilterOutputDropTCPOwner(t *testing.T) {
-	if err := singleTest(FilterOutputDropTCPOwner{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterOutputDropTCPOwner{})
 }
 
 func TestFilterOutputAcceptUDPOwner(t *testing.T) {
-	if err := singleTest(FilterOutputAcceptUDPOwner{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterOutputAcceptUDPOwner{})
 }
 
 func TestFilterOutputDropUDPOwner(t *testing.T) {
-	if err := singleTest(FilterOutputDropUDPOwner{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterOutputDropUDPOwner{})
 }
 
 func TestFilterOutputOwnerFail(t *testing.T) {
-	if err := singleTest(FilterOutputOwnerFail{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterOutputOwnerFail{})
 }
 
 func TestJumpSerialize(t *testing.T) {
-	if err := singleTest(FilterInputSerializeJump{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterInputSerializeJump{})
 }
 
 func TestJumpBasic(t *testing.T) {
-	if err := singleTest(FilterInputJumpBasic{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterInputJumpBasic{})
 }
 
 func TestJumpReturn(t *testing.T) {
-	if err := singleTest(FilterInputJumpReturn{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterInputJumpReturn{})
 }
 
 func TestJumpReturnDrop(t *testing.T) {
-	if err := singleTest(FilterInputJumpReturnDrop{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterInputJumpReturnDrop{})
 }
 
 func TestJumpBuiltin(t *testing.T) {
-	if err := singleTest(FilterInputJumpBuiltin{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterInputJumpBuiltin{})
 }
 
 func TestJumpTwice(t *testing.T) {
-	if err := singleTest(FilterInputJumpTwice{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterInputJumpTwice{})
 }
 
 func TestInputDestination(t *testing.T) {
-	if err := singleTest(FilterInputDestination{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterInputDestination{})
 }
 
 func TestInputInvertDestination(t *testing.T) {
-	if err := singleTest(FilterInputInvertDestination{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterInputInvertDestination{})
 }
 
 func TestOutputDestination(t *testing.T) {
-	if err := singleTest(FilterOutputDestination{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterOutputDestination{})
 }
 
 func TestOutputInvertDestination(t *testing.T) {
-	if err := singleTest(FilterOutputInvertDestination{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, FilterOutputInvertDestination{})
 }
 
 func TestNATOutRedirectIP(t *testing.T) {
 	// TODO(gvisor.dev/issue/170): Enable when supported.
 	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
-	if err := singleTest(NATOutRedirectIP{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, NATOutRedirectIP{})
 }
 
 func TestNATOutDontRedirectIP(t *testing.T) {
 	// TODO(gvisor.dev/issue/170): Enable when supported.
 	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
-	if err := singleTest(NATOutDontRedirectIP{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, NATOutDontRedirectIP{})
 }
 
 func TestNATOutRedirectInvert(t *testing.T) {
 	// TODO(gvisor.dev/issue/170): Enable when supported.
 	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
-	if err := singleTest(NATOutRedirectInvert{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, NATOutRedirectInvert{})
 }
 
 func TestNATPreRedirectIP(t *testing.T) {
 	// TODO(gvisor.dev/issue/170): Enable when supported.
 	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
-	if err := singleTest(NATPreRedirectIP{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, NATPreRedirectIP{})
 }
 
 func TestNATPreDontRedirectIP(t *testing.T) {
 	// TODO(gvisor.dev/issue/170): Enable when supported.
 	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
-	if err := singleTest(NATPreDontRedirectIP{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, NATPreDontRedirectIP{})
 }
 
 func TestNATPreRedirectInvert(t *testing.T) {
 	// TODO(gvisor.dev/issue/170): Enable when supported.
 	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
-	if err := singleTest(NATPreRedirectInvert{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, NATPreRedirectInvert{})
 }
 
 func TestNATRedirectRequiresProtocol(t *testing.T) {
 	// TODO(gvisor.dev/issue/170): Enable when supported.
 	t.Skip("NAT isn't supported yet (gvisor.dev/issue/170).")
-	if err := singleTest(NATRedirectRequiresProtocol{}); err != nil {
-		t.Fatal(err)
-	}
+	singleTest(t, NATRedirectRequiresProtocol{})
 }

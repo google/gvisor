@@ -7,5 +7,8 @@ go_library(
     testonly = 1,
     srcs = ["criutil.go"],
     visibility = ["//:sandbox"],
-    deps = ["//runsc/testutil"],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//pkg/test/testutil",
+    ],
 )

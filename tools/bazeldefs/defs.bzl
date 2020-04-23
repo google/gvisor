@@ -5,18 +5,14 @@ load("@io_bazel_rules_go//go:def.bzl", "GoLibrary", _go_binary = "go_binary", _g
 load("@io_bazel_rules_go//proto:def.bzl", _go_grpc_library = "go_grpc_library", _go_proto_library = "go_proto_library")
 load("@rules_cc//cc:defs.bzl", _cc_binary = "cc_binary", _cc_library = "cc_library", _cc_proto_library = "cc_proto_library", _cc_test = "cc_test")
 load("@rules_pkg//:pkg.bzl", _pkg_deb = "pkg_deb", _pkg_tar = "pkg_tar")
-load("@io_bazel_rules_docker//go:image.bzl", _go_image = "go_image")
-load("@io_bazel_rules_docker//container:container.bzl", _container_image = "container_image")
 load("@pydeps//:requirements.bzl", _py_requirement = "requirement")
 load("@com_github_grpc_grpc//bazel:cc_grpc_library.bzl", _cc_grpc_library = "cc_grpc_library")
 
-container_image = _container_image
 cc_library = _cc_library
 cc_flags_supplier = _cc_flags_supplier
 cc_proto_library = _cc_proto_library
 cc_test = _cc_test
 cc_toolchain = "@bazel_tools//tools/cpp:current_cc_toolchain"
-go_image = _go_image
 go_embed_data = _go_embed_data
 gtest = "@com_google_googletest//:gtest"
 grpcpp = "@com_github_grpc_grpc//:grpc++"

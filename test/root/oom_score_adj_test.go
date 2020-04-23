@@ -20,10 +20,9 @@ import (
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/specutils"
-	"gvisor.dev/gvisor/runsc/testutil"
 )
 
 var (
@@ -40,15 +39,6 @@ var (
 // TestOOMScoreAdjSingle tests that oom_score_adj is set properly in a
 // single container sandbox.
 func TestOOMScoreAdjSingle(t *testing.T) {
-	rootDir, err := testutil.SetupRootDir()
-	if err != nil {
-		t.Fatalf("error creating root dir: %v", err)
-	}
-	defer os.RemoveAll(rootDir)
-
-	conf := testutil.TestConfig(t)
-	conf.RootDir = rootDir
-
 	ppid, err := specutils.GetParentPid(os.Getpid())
 	if err != nil {
 		t.Fatalf("getting parent pid: %v", err)
@@ -89,11 +79,11 @@ func TestOOMScoreAdjSingle(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.Name, func(t *testing.T) {
-			id := testutil.UniqueContainerID()
+			id := testutil.RandomContainerID()
 			s := testutil.NewSpecWithArgs("sleep", "1000")
 			s.Process.OOMScoreAdj = testCase.OOMScoreAdj
 
-			containers, cleanup, err := startContainers(conf, []*specs.Spec{s}, []string{id})
+			containers, cleanup, err := startContainers(t, []*specs.Spec{s}, []string{id})
 			if err != nil {
 				t.Fatalf("error starting containers: %v", err)
 			}
@@ -131,15 +121,6 @@ func TestOOMScoreAdjSingle(t *testing.T) {
 // TestOOMScoreAdjMulti tests that oom_score_adj is set properly in a
 // multi-container sandbox.
 func TestOOMScoreAdjMulti(t *testing.T) {
-	rootDir, err := testutil.SetupRootDir()
-	if err != nil {
-		t.Fatalf("error creating root dir: %v", err)
-	}
-	defer os.RemoveAll(rootDir)
-
-	conf := testutil.TestConfig(t)
-	conf.RootDir = rootDir
-
 	ppid, err := specutils.GetParentPid(os.Getpid())
 	if err != nil {
 		t.Fatalf("getting parent pid: %v", err)
@@ -257,7 +238,7 @@ func TestOOMScoreAdjMulti(t *testing.T) {
 				}
 			}
 
-			containers, cleanup, err := startContainers(conf, specs, ids)
+			containers, cleanup, err := startContainers(t, specs, ids)
 			if err != nil {
 				t.Fatalf("error starting containers: %v", err)
 			}
@@ -321,7 +302,7 @@ func TestOOMScoreAdjMulti(t *testing.T) {
 func createSpecs(cmds ...[]string) ([]*specs.Spec, []string) {
 	var specs []*specs.Spec
 	var ids []string
-	rootID := testutil.UniqueContainerID()
+	rootID := testutil.RandomContainerID()
 
 	for i, cmd := range cmds {
 		spec := testutil.NewSpecWithArgs(cmd...)
@@ -335,35 +316,48 @@ func createSpecs(cmds ...[]string) ([]*specs.Spec, []string) {
 				specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeContainer,
 				specutils.ContainerdSandboxIDAnnotation:     rootID,
 			}
-			ids = append(ids, testutil.UniqueContainerID())
+			ids = append(ids, testutil.RandomContainerID())
 		}
 		specs = append(specs, spec)
 	}
 	return specs, ids
 }
 
-func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*container.Container, func(), error) {
-	if len(conf.RootDir) == 0 {
-		panic("conf.RootDir not set. Call testutil.SetupRootDir() to set.")
-	}
-
-	var containers []*container.Container
-	var bundles []string
-	cleanup := func() {
+func startContainers(t *testing.T, specs []*specs.Spec, ids []string) ([]*container.Container, func(), error) {
+	var (
+		containers []*container.Container
+		cleanups   []func()
+	)
+	cleanups = append(cleanups, func() {
 		for _, c := range containers {
 			c.Destroy()
 		}
-		for _, b := range bundles {
-			os.RemoveAll(b)
+	})
+	cleanupAll := func() {
+		for _, c := range cleanups {
+			c()
 		}
 	}
+	localClean := specutils.MakeCleanup(cleanupAll)
+	defer localClean.Clean()
+
+	// All containers must share the same root.
+	rootDir, cleanup, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	cleanups = append(cleanups, cleanup)
+
+	// Point this to from the configuration.
+	conf := testutil.TestConfig(t)
+	conf.RootDir = rootDir
+
 	for i, spec := range specs {
-		bundleDir, err := testutil.SetupBundleDir(spec)
+		bundleDir, cleanup, err := testutil.SetupBundleDir(spec)
 		if err != nil {
-			cleanup()
-			return nil, nil, fmt.Errorf("error setting up container: %v", err)
+			return nil, nil, fmt.Errorf("error setting up bundle: %v", err)
 		}
-		bundles = append(bundles, bundleDir)
+		cleanups = append(cleanups, cleanup)
 
 		args := container.Args{
 			ID:        ids[i],
@@ -372,15 +366,15 @@ func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*c
 		}
 		cont, err := container.New(conf, args)
 		if err != nil {
-			cleanup()
 			return nil, nil, fmt.Errorf("error creating container: %v", err)
 		}
 		containers = append(containers, cont)
 
 		if err := cont.Start(conf); err != nil {
-			cleanup()
 			return nil, nil, fmt.Errorf("error starting container: %v", err)
 		}
 	}
-	return containers, cleanup, nil
+
+	localClean.Release()
+	return containers, cleanupAll, nil
 }

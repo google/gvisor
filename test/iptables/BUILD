@@ -14,7 +14,7 @@ go_library(
     ],
     visibility = ["//test/iptables:__subpackages__"],
     deps = [
-        "//runsc/testutil",
+        "//pkg/test/testutil",
     ],
 )
 
@@ -23,14 +23,14 @@ go_test(
     srcs = [
         "iptables_test.go",
     ],
+    data = ["//test/iptables/runner"],
     library = ":iptables",
     tags = [
         "local",
         "manual",
     ],
     deps = [
-        "//pkg/log",
-        "//runsc/dockerutil",
-        "//runsc/testutil",
+        "//pkg/test/dockerutil",
+        "//pkg/test/testutil",
     ],
 )

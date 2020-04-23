@@ -18,11 +18,18 @@ package iptables
 import (
 	"fmt"
 	"net"
+	"time"
 )
 
 // IPExchangePort is the port the container listens on to receive the IP
 // address of the local process.
 const IPExchangePort = 2349
+
+// TerminalStatement is the last statement in the test runner.
+const TerminalStatement = "Finished!"
+
+// TestTimeout is the timeout used for all tests.
+const TestTimeout = 10 * time.Minute
 
 // A TestCase contains one action to run in the container and one to run
 // locally. The actions run concurrently and each must succeed for the test

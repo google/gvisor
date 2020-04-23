@@ -12,9 +12,9 @@ go_binary(
     pure = True,
     visibility = ["//runsc/container:__pkg__"],
     deps = [
+        "//pkg/test/testutil",
         "//pkg/unet",
         "//runsc/flag",
-        "//runsc/testutil",
         "@com_github_google_subcommands//:go_default_library",
         "@com_github_kr_pty//:go_default_library",
     ],

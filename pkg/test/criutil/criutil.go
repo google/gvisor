@@ -25,40 +25,45 @@ import (
 	"strings"
 	"time"
 
-	"gvisor.dev/gvisor/runsc/testutil"
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 )
-
-const endpointPrefix = "unix://"
 
 // Crictl contains information required to run the crictl utility.
 type Crictl struct {
-	executable      string
-	timeout         time.Duration
-	imageEndpoint   string
-	runtimeEndpoint string
+	logger   testutil.Logger
+	endpoint string
+	cleanup  []func()
+}
+
+// resolvePath attempts to find binary paths. It may set the path to invalid,
+// which will cause the execution to fail with a sensible error.
+func resolvePath(executable string) string {
+	guess, err := exec.LookPath(executable)
+	if err != nil {
+		guess = fmt.Sprintf("/usr/local/bin/%s", executable)
+	}
+	return guess
 }
 
 // NewCrictl returns a Crictl configured with a timeout and an endpoint over
 // which it will talk to containerd.
-func NewCrictl(timeout time.Duration, endpoint string) *Crictl {
-	// Bazel doesn't pass PATH through, assume the location of crictl
-	// unless specified by environment variable.
-	executable := os.Getenv("CRICTL_PATH")
-	if executable == "" {
-		executable = "/usr/local/bin/crictl"
-	}
+func NewCrictl(logger testutil.Logger, endpoint string) *Crictl {
+	// Attempt to find the executable, but don't bother propagating the
+	// error at this point. The first command executed will return with a
+	// binary not found error.
 	return &Crictl{
-		executable:      executable,
-		timeout:         timeout,
-		imageEndpoint:   endpointPrefix + endpoint,
-		runtimeEndpoint: endpointPrefix + endpoint,
+		logger:   logger,
+		endpoint: endpoint,
 	}
 }
 
-// Pull pulls an container image. It corresponds to `crictl pull`.
-func (cc *Crictl) Pull(imageName string) error {
-	_, err := cc.run("pull", imageName)
-	return err
+// CleanUp executes cleanup functions.
+func (cc *Crictl) CleanUp() {
+	for _, c := range cc.cleanup {
+		c()
+	}
+	cc.cleanup = nil
 }
 
 // RunPod creates a sandbox. It corresponds to `crictl runp`.
@@ -157,27 +162,66 @@ func (cc *Crictl) RmPod(podID string) error {
 	return err
 }
 
+// Import imports the given container from the local Docker instance.
+func (cc *Crictl) Import(image string) error {
+	// Note that we provide a 10 minute timeout after connect because we may
+	// be pushing a lot of bytes in order to import the image. The connect
+	// timeout stays the same and is inherited from the Crictl instance.
+	cmd := testutil.Command(cc.logger,
+		resolvePath("ctr"),
+		fmt.Sprintf("--connect-timeout=%s", 30*time.Second),
+		fmt.Sprintf("--address=%s", cc.endpoint),
+		"-n", "k8s.io", "images", "import", "-")
+	cmd.Stderr = os.Stderr // Pass through errors.
+
+	// Create a pipe and start the program.
+	w, err := cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	// Save the image on the other end.
+	if err := dockerutil.Save(cc.logger, image, w); err != nil {
+		cmd.Wait()
+		return err
+	}
+
+	// Close our pipe reference & see if it was loaded.
+	if err := w.Close(); err != nil {
+		return w.Close()
+	}
+
+	return cmd.Wait()
+}
+
 // StartContainer pulls the given image ands starts the container in the
 // sandbox with the given podID.
+//
+// Note that the image will always be imported from the local docker daemon.
 func (cc *Crictl) StartContainer(podID, image, sbSpec, contSpec string) (string, error) {
+	if err := cc.Import(image); err != nil {
+		return "", err
+	}
+
 	// Write the specs to files that can be read by crictl.
-	sbSpecFile, err := testutil.WriteTmpFile("sbSpec", sbSpec)
+	sbSpecFile, cleanup, err := testutil.WriteTmpFile("sbSpec", sbSpec)
 	if err != nil {
 		return "", fmt.Errorf("failed to write sandbox spec: %v", err)
 	}
-	contSpecFile, err := testutil.WriteTmpFile("contSpec", contSpec)
+	cc.cleanup = append(cc.cleanup, cleanup)
+	contSpecFile, cleanup, err := testutil.WriteTmpFile("contSpec", contSpec)
 	if err != nil {
 		return "", fmt.Errorf("failed to write container spec: %v", err)
 	}
+	cc.cleanup = append(cc.cleanup, cleanup)
 
 	return cc.startContainer(podID, image, sbSpecFile, contSpecFile)
 }
 
 func (cc *Crictl) startContainer(podID, image, sbSpecFile, contSpecFile string) (string, error) {
-	if err := cc.Pull(image); err != nil {
-		return "", fmt.Errorf("failed to pull %s: %v", image, err)
-	}
-
 	contID, err := cc.Create(podID, contSpecFile, sbSpecFile)
 	if err != nil {
 		return "", fmt.Errorf("failed to create container in pod %q: %v", podID, err)
@@ -203,18 +247,24 @@ func (cc *Crictl) StopContainer(contID string) error {
 	return nil
 }
 
-// StartPodAndContainer pulls an image, then starts a sandbox and container in
-// that sandbox. It returns the pod ID and container ID.
+// StartPodAndContainer starts a sandbox and container in that sandbox. It
+// returns the pod ID and container ID.
 func (cc *Crictl) StartPodAndContainer(image, sbSpec, contSpec string) (string, string, error) {
+	if err := cc.Import(image); err != nil {
+		return "", "", err
+	}
+
 	// Write the specs to files that can be read by crictl.
-	sbSpecFile, err := testutil.WriteTmpFile("sbSpec", sbSpec)
+	sbSpecFile, cleanup, err := testutil.WriteTmpFile("sbSpec", sbSpec)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to write sandbox spec: %v", err)
 	}
-	contSpecFile, err := testutil.WriteTmpFile("contSpec", contSpec)
+	cc.cleanup = append(cc.cleanup, cleanup)
+	contSpecFile, cleanup, err := testutil.WriteTmpFile("contSpec", contSpec)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to write container spec: %v", err)
 	}
+	cc.cleanup = append(cc.cleanup, cleanup)
 
 	podID, err := cc.RunPod(sbSpecFile)
 	if err != nil {
@@ -243,35 +293,14 @@ func (cc *Crictl) StopPodAndContainer(podID, contID string) error {
 	return nil
 }
 
-// run runs crictl with the given args and returns an error if it takes longer
-// than cc.Timeout to run.
+// run runs crictl with the given args.
 func (cc *Crictl) run(args ...string) (string, error) {
 	defaultArgs := []string{
-		"--image-endpoint", cc.imageEndpoint,
-		"--runtime-endpoint", cc.runtimeEndpoint,
+		resolvePath("crictl"),
+		"--image-endpoint", fmt.Sprintf("unix://%s", cc.endpoint),
+		"--runtime-endpoint", fmt.Sprintf("unix://%s", cc.endpoint),
 	}
-	cmd := exec.Command(cc.executable, append(defaultArgs, args...)...)
-
-	// Run the command with a timeout.
-	done := make(chan string)
-	errCh := make(chan error)
-	go func() {
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			errCh <- fmt.Errorf("error: \"%v\", output: %s", err, string(output))
-			return
-		}
-		done <- string(output)
-	}()
-	select {
-	case output := <-done:
-		return output, nil
-	case err := <-errCh:
-		return "", err
-	case <-time.After(cc.timeout):
-		if err := testutil.KillCommand(cmd); err != nil {
-			return "", fmt.Errorf("timed out, then couldn't kill process %+v: %v", cmd, err)
-		}
-		return "", fmt.Errorf("timed out: %+v", cmd)
-	}
+	fullArgs := append(defaultArgs, args...)
+	out, err := testutil.Command(cc.logger, fullArgs...).CombinedOutput()
+	return string(out), err
 }

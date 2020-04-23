@@ -38,7 +38,7 @@ Build the testing Docker container. Re-run this when you modify the test code in
 this directory:
 
 ```bash
-$ bazel run //test/iptables/runner:runner-image -- --norun
+$ make load-iptables
 ```
 
 Run an individual test via:

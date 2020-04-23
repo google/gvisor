@@ -85,23 +85,26 @@ if [[ ! -x "${INIT_SCRIPT-}" ]]; then
   exit 2
 fi
 
+function new_net_prefix() {
+  # Class C, 192.0.0.0 to 223.255.255.255, transitionally has mask 24.
+  echo "$(shuf -i 192-223 -n 1).$(shuf -i 0-255 -n 1).$(shuf -i 0-255 -n 1)"
+}
+
 # Variables specific to the control network and interface start with CTRL_.
 # Variables specific to the test network and interface start with TEST_.
 # Variables specific to the DUT start with DUT_.
 # Variables specific to the test runner start with TEST_RUNNER_.
 declare -r PACKETDRILL="/packetdrill/gtests/net/packetdrill/packetdrill"
 # Use random numbers so that test networks don't collide.
-declare -r CTRL_NET="ctrl_net-$(shuf -i 0-99999999 -n 1)"
-declare -r TEST_NET="test_net-$(shuf -i 0-99999999 -n 1)"
+declare CTRL_NET="ctrl_net-$(shuf -i 0-99999999 -n 1)"
+declare CTRL_NET_PREFIX=$(new_net_prefix)
+declare TEST_NET="test_net-$(shuf -i 0-99999999 -n 1)"
+declare TEST_NET_PREFIX=$(new_net_prefix)
 declare -r tolerance_usecs=100000
 # On both DUT and test runner, testing packets are on the eth2 interface.
 declare -r TEST_DEVICE="eth2"
 # Number of bits in the *_NET_PREFIX variables.
 declare -r NET_MASK="24"
-function new_net_prefix() {
-  # Class C, 192.0.0.0 to 223.255.255.255, transitionally has mask 24.
-  echo "$(shuf -i 192-223 -n 1).$(shuf -i 0-255 -n 1).$(shuf -i 0-255 -n 1)"
-}
 # Last bits of the DUT's IP address.
 declare -r DUT_NET_SUFFIX=".10"
 # Control port.
@@ -137,22 +140,20 @@ function finish {
 trap finish EXIT
 
 # Subnet for control packets between test runner and DUT.
-declare CTRL_NET_PREFIX=$(new_net_prefix)
 while ! docker network create \
   "--subnet=${CTRL_NET_PREFIX}.0/${NET_MASK}" "${CTRL_NET}"; do
   sleep 0.1
-  declare CTRL_NET_PREFIX=$(new_net_prefix)
+  CTRL_NET_PREFIX=$(new_net_prefix)
+  CTRL_NET="ctrl_net-$(shuf -i 0-99999999 -n 1)"
 done
 
 # Subnet for the packets that are part of the test.
-declare TEST_NET_PREFIX=$(new_net_prefix)
 while ! docker network create \
   "--subnet=${TEST_NET_PREFIX}.0/${NET_MASK}" "${TEST_NET}"; do
   sleep 0.1
-  declare TEST_NET_PREFIX=$(new_net_prefix)
+  TEST_NET_PREFIX=$(new_net_prefix)
+  TEST_NET="test_net-$(shuf -i 0-99999999 -n 1)"
 done
-
-docker pull "${IMAGE_TAG}"
 
 # Create the DUT container and connect to network.
 DUT=$(docker create ${RUNTIME_ARG} --privileged --rm \

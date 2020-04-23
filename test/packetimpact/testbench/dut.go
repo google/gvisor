@@ -132,7 +132,7 @@ func (dut *DUT) CreateBoundSocket(typ, proto int32, addr net.IP) (int32, uint16)
 		copy(sa.Addr[:], addr.To16())
 		dut.Bind(fd, &sa)
 	} else {
-		dut.t.Fatal("unknown ip addr type for remoteIP")
+		dut.t.Fatalf("unknown ip addr type for remoteIP")
 	}
 	sa := dut.GetSockName(fd)
 	var port int

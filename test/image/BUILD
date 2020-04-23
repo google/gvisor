@@ -22,8 +22,8 @@ go_test(
     ],
     visibility = ["//:sandbox"],
     deps = [
-        "//runsc/dockerutil",
-        "//runsc/testutil",
+        "//pkg/test/dockerutil",
+        "//pkg/test/testutil",
     ],
 )
 

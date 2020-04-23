@@ -20,9 +20,9 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/bits",
-        "//runsc/dockerutil",
+        "//pkg/test/dockerutil",
+        "//pkg/test/testutil",
         "//runsc/specutils",
-        "//runsc/testutil",
     ],
 )
 

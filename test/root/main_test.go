@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"github.com/syndtr/gocapability/capability"
-	"gvisor.dev/gvisor/runsc/dockerutil"
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 

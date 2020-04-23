@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"math"
 	"math/rand"
 	"net/http"
@@ -42,7 +43,6 @@ import (
 
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -52,23 +52,47 @@ var (
 	checkpoint = flag.Bool("checkpoint", true, "control checkpoint/restore support")
 )
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
-
 // IsCheckpointSupported returns the relevant command line flag.
 func IsCheckpointSupported() bool {
 	return *checkpoint
 }
 
-// TmpDir returns the absolute path to a writable directory that can be used as
-// scratch by the test.
-func TmpDir() string {
-	dir := os.Getenv("TEST_TMPDIR")
-	if dir == "" {
-		dir = "/tmp"
+// nameToActual is used by ImageByName (for now).
+var nameToActual = map[string]string{
+	"basic/alpine":          "alpine",
+	"basic/busybox":         "busybox:1.31.1",
+	"basic/httpd":           "httpd",
+	"basic/mysql":           "mysql",
+	"basic/nginx":           "nginx",
+	"basic/python":          "gcr.io/gvisor-presubmit/python-hello",
+	"basic/resolv":          "k8s.gcr.io/busybox",
+	"basic/ruby":            "ruby",
+	"basic/tomcat":          "tomcat:8.0",
+	"basic/ubuntu":          "ubuntu:trusty",
+	"iptables":              "gcr.io/gvisor-presubmit/iptables-test",
+	"packetdrill":           "gcr.io/gvisor-presubmit/packetdrill",
+	"packetimpact":          "gcr.io/gvisor-presubmit/packetimpact",
+	"runtimes/go1.12":       "gcr.io/gvisor-presubmit/go1.12",
+	"runtimes/java11":       "gcr.io/gvisor-presubmit/java11",
+	"runtimes/nodejs12.4.0": "gcr.io/gvisor-presubmit/nodejs12.4.0",
+	"runtimes/php7.3.6":     "gcr.io/gvisor-presubmit/php7.3.6",
+	"runtimes/python3.7.3":  "gcr.io/gvisor-presubmit/python3.7.3",
+}
+
+// ImageByName mangles the image name used locally.
+//
+// For now, this is implemented as a static lookup table. In a subsequent
+// change, this will be used to reference a locally-generated image.
+func ImageByName(name string) string {
+	actual, ok := nameToActual[name]
+	if !ok {
+		panic(fmt.Sprintf("unknown image: %v", name))
 	}
-	return dir
+	// A terrible hack, for now execute a manual pull.
+	if out, err := exec.Command("docker", "pull", actual).CombinedOutput(); err != nil {
+		panic(fmt.Sprintf("error pulling image %q -> %q: %v, out: %s", name, actual, err, string(out)))
+	}
+	return actual
 }
 
 // ConfigureExePath configures the executable for runsc in the test environment.
@@ -81,10 +105,68 @@ func ConfigureExePath() error {
 	return nil
 }
 
+// TmpDir returns the absolute path to a writable directory that can be used as
+// scratch by the test.
+func TmpDir() string {
+	dir := os.Getenv("TEST_TMPDIR")
+	if dir == "" {
+		dir = "/tmp"
+	}
+	return dir
+}
+
+// Logger is a simple logging wrapper.
+//
+// This is designed to be implemented by *testing.T.
+type Logger interface {
+	Name() string
+	Logf(fmt string, args ...interface{})
+}
+
+// DefaultLogger logs using the log package.
+type DefaultLogger string
+
+// Name implements Logger.Name.
+func (d DefaultLogger) Name() string {
+	return string(d)
+}
+
+// Logf implements Logger.Logf.
+func (d DefaultLogger) Logf(fmt string, args ...interface{}) {
+	log.Printf(fmt, args...)
+}
+
+// Cmd is a simple wrapper.
+type Cmd struct {
+	logger Logger
+	*exec.Cmd
+}
+
+// CombinedOutput returns the output and logs.
+func (c *Cmd) CombinedOutput() ([]byte, error) {
+	out, err := c.Cmd.CombinedOutput()
+	if len(out) > 0 {
+		c.logger.Logf("output: %s", string(out))
+	}
+	if err != nil {
+		c.logger.Logf("error: %v", err)
+	}
+	return out, err
+}
+
+// Command is a simple wrapper around exec.Command, that logs.
+func Command(logger Logger, args ...string) *Cmd {
+	logger.Logf("command: %s", strings.Join(args, " "))
+	return &Cmd{
+		logger: logger,
+		Cmd:    exec.Command(args[0], args[1:]...),
+	}
+}
+
 // TestConfig returns the default configuration to use in tests. Note that
 // 'RootDir' must be set by caller if required.
 func TestConfig(t *testing.T) *boot.Config {
-	logDir := ""
+	logDir := os.TempDir()
 	if dir, ok := os.LookupEnv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
 		logDir = dir + "/"
 	}
@@ -143,37 +225,45 @@ func NewSpecWithArgs(args ...string) *specs.Spec {
 }
 
 // SetupRootDir creates a root directory for containers.
-func SetupRootDir() (string, error) {
+func SetupRootDir() (string, func(), error) {
 	rootDir, err := ioutil.TempDir(TmpDir(), "containers")
 	if err != nil {
-		return "", fmt.Errorf("error creating root dir: %v", err)
+		return "", nil, fmt.Errorf("error creating root dir: %v", err)
 	}
-	return rootDir, nil
+	return rootDir, func() { os.RemoveAll(rootDir) }, nil
 }
 
 // SetupContainer creates a bundle and root dir for the container, generates a
 // test config, and writes the spec to config.json in the bundle dir.
-func SetupContainer(spec *specs.Spec, conf *boot.Config) (rootDir, bundleDir string, err error) {
-	rootDir, err = SetupRootDir()
+func SetupContainer(spec *specs.Spec, conf *boot.Config) (rootDir, bundleDir string, cleanup func(), err error) {
+	rootDir, rootCleanup, err := SetupRootDir()
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	conf.RootDir = rootDir
-	bundleDir, err = SetupBundleDir(spec)
-	return rootDir, bundleDir, err
+	bundleDir, bundleCleanup, err := SetupBundleDir(spec)
+	if err != nil {
+		rootCleanup()
+		return "", "", nil, err
+	}
+	return rootDir, bundleDir, func() {
+		bundleCleanup()
+		rootCleanup()
+	}, err
 }
 
 // SetupBundleDir creates a bundle dir and writes the spec to config.json.
-func SetupBundleDir(spec *specs.Spec) (bundleDir string, err error) {
-	bundleDir, err = ioutil.TempDir(TmpDir(), "bundle")
+func SetupBundleDir(spec *specs.Spec) (string, func(), error) {
+	bundleDir, err := ioutil.TempDir(TmpDir(), "bundle")
 	if err != nil {
-		return "", fmt.Errorf("error creating bundle dir: %v", err)
+		return "", nil, fmt.Errorf("error creating bundle dir: %v", err)
 	}
-
-	if err = writeSpec(bundleDir, spec); err != nil {
-		return "", fmt.Errorf("error writing spec: %v", err)
+	cleanup := func() { os.RemoveAll(bundleDir) }
+	if err := writeSpec(bundleDir, spec); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("error writing spec: %v", err)
 	}
-	return bundleDir, nil
+	return bundleDir, cleanup, nil
 }
 
 // writeSpec writes the spec to disk in the given directory.
@@ -185,22 +275,25 @@ func writeSpec(dir string, spec *specs.Spec) error {
 	return ioutil.WriteFile(filepath.Join(dir, "config.json"), b, 0755)
 }
 
-// UniqueContainerID generates a unique container id for each test.
-//
-// The container id is used to create an abstract unix domain socket, which must
-// be unique.  While the container forbids creating two containers with the same
-// name, sometimes between test runs the socket does not get cleaned up quickly
-// enough, causing container creation to fail.
-func UniqueContainerID() string {
+// RandomID returns 20 random bytes following the given prefix.
+func RandomID(prefix string) string {
 	// Read 20 random bytes.
 	b := make([]byte, 20)
 	// "[Read] always returns len(p) and a nil error." --godoc
 	if _, err := rand.Read(b); err != nil {
 		panic("rand.Read failed: " + err.Error())
 	}
-	// base32 encode the random bytes, so that the name is a valid
-	// container id and can be used as a socket name in the filesystem.
-	return fmt.Sprintf("test-container-%s", base32.StdEncoding.EncodeToString(b))
+	return fmt.Sprintf("%s-%s", prefix, base32.StdEncoding.EncodeToString(b))
+}
+
+// RandomContainerID generates a random container id for each test.
+//
+// The container id is used to create an abstract unix domain socket, which
+// must be unique. While the container forbids creating two containers with the
+// same name, sometimes between test runs the socket does not get cleaned up
+// quickly enough, causing container creation to fail.
+func RandomContainerID() string {
+	return RandomID("test-container-")
 }
 
 // Copy copies file from src to dst.
@@ -211,11 +304,38 @@ func Copy(src, dst string) error {
 	}
 	defer in.Close()
 
-	out, err := os.Create(dst)
+	st, err := in.Stat()
+	if err != nil {
+		return err
+	}
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, st.Mode().Perm())
 	if err != nil {
 		return err
 	}
 	defer out.Close()
+
+	// Mirror the local user's permissions across all users. This is
+	// because as we inject things into the container, the UID/GID will
+	// change. Also, the build system may generate artifacts with different
+	// modes. At the top-level (volume mapping) we have a big read-only
+	// knob that can be applied to prevent modifications.
+	//
+	// Note that this must be done via a separate Chmod call, otherwise the
+	// current process's umask will get in the way.
+	var mode os.FileMode
+	if st.Mode()&0100 != 0 {
+		mode |= 0111
+	}
+	if st.Mode()&0200 != 0 {
+		mode |= 0222
+	}
+	if st.Mode()&0400 != 0 {
+		mode |= 0444
+	}
+	if err := os.Chmod(dst, mode); err != nil {
+		return err
+	}
 
 	_, err = io.Copy(out, in)
 	return err
@@ -239,7 +359,7 @@ func WaitForHTTP(port int, timeout time.Duration) error {
 		url := fmt.Sprintf("http://localhost:%d/", port)
 		resp, err := c.Get(url)
 		if err != nil {
-			log.Infof("Waiting %s: %v", url, err)
+			log.Printf("Waiting %s: %v", url, err)
 			return err
 		}
 		resp.Body.Close()
@@ -349,6 +469,8 @@ func WaitUntilRead(r io.Reader, want string, split bufio.SplitFunc, timeout time
 // KillCommand kills the process running cmd unless it hasn't been started. It
 // returns an error if it cannot kill the process unless the reason is that the
 // process has already exited.
+//
+// KillCommand will also reap the process.
 func KillCommand(cmd *exec.Cmd) error {
 	if cmd.Process == nil {
 		return nil
@@ -358,26 +480,21 @@ func KillCommand(cmd *exec.Cmd) error {
 			return fmt.Errorf("failed to kill process %v: %v", cmd, err)
 		}
 	}
-	return nil
+	return cmd.Wait()
 }
 
 // WriteTmpFile writes text to a temporary file, closes the file, and returns
-// the name of the file.
-func WriteTmpFile(pattern, text string) (string, error) {
+// the name of the file. A cleanup function is also returned.
+func WriteTmpFile(pattern, text string) (string, func(), error) {
 	file, err := ioutil.TempFile(TmpDir(), pattern)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	defer file.Close()
 	if _, err := file.Write([]byte(text)); err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return file.Name(), nil
-}
-
-// RandomName create a name with a 6 digit random number appended to it.
-func RandomName(prefix string) string {
-	return fmt.Sprintf("%s-%06d", prefix, rand.Int31n(1000000))
+	return file.Name(), func() { os.RemoveAll(file.Name()) }, nil
 }
 
 // IsStatic returns true iff the given file is a static binary.
