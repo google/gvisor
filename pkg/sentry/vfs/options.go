@@ -33,6 +33,25 @@ type GetDentryOptions struct {
 type MkdirOptions struct {
 	// Mode is the file mode bits for the created directory.
 	Mode linux.FileMode
+
+	// If ForSyntheticMountpoint is true, FilesystemImpl.MkdirAt() may create
+	// the given directory in memory only (as opposed to persistent storage).
+	// The created directory should be able to support the creation of
+	// subdirectories with ForSyntheticMountpoint == true. It does not need to
+	// support the creation of subdirectories with ForSyntheticMountpoint ==
+	// false, or files of other types.
+	//
+	// FilesystemImpls are permitted to ignore the ForSyntheticMountpoint
+	// option.
+	//
+	// The ForSyntheticMountpoint option exists because, unlike mount(2), the
+	// OCI Runtime Specification permits the specification of mount points that
+	// do not exist, under the expectation that container runtimes will create
+	// them. (More accurately, the OCI Runtime Specification completely fails
+	// to document this feature, but it's implemented by runc.)
+	// ForSyntheticMountpoint allows such mount points to be created even when
+	// the underlying persistent filesystem is immutable.
+	ForSyntheticMountpoint bool
 }
 
 // MknodOptions contains options to VirtualFilesystem.MknodAt() and
