@@ -35,6 +35,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/host"
+	"gvisor.dev/gvisor/pkg/sentry/fs/user"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -550,11 +551,11 @@ func (l *Loader) run() error {
 		// Add the HOME enviroment variable if it is not already set.
 		var envv []string
 		if kernel.VFS2Enabled {
-			envv, err = maybeAddExecUserHomeVFS2(ctx, l.rootProcArgs.MountNamespaceVFS2,
+			envv, err = user.MaybeAddExecUserHomeVFS2(ctx, l.rootProcArgs.MountNamespaceVFS2,
 				l.rootProcArgs.Credentials.RealKUID, l.rootProcArgs.Envv)
 
 		} else {
-			envv, err = maybeAddExecUserHome(ctx, l.rootProcArgs.MountNamespace,
+			envv, err = user.MaybeAddExecUserHome(ctx, l.rootProcArgs.MountNamespace,
 				l.rootProcArgs.Credentials.RealKUID, l.rootProcArgs.Envv)
 		}
 		if err != nil {
@@ -860,7 +861,7 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	root := args.MountNamespace.Root()
 	defer root.DecRef()
 	ctx := fs.WithRoot(l.k.SupervisorContext(), root)
-	envv, err := maybeAddExecUserHome(ctx, args.MountNamespace, args.KUID, args.Envv)
+	envv, err := user.MaybeAddExecUserHome(ctx, args.MountNamespace, args.KUID, args.Envv)
 	if err != nil {
 		return 0, err
 	}
