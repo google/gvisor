@@ -1,6 +1,7 @@
 // Automatically generated marshal implementation. See tools/go_marshal.
 
 // +build arm64
+// +build arm64
 
 package linux
 
@@ -122,6 +123,92 @@ func (e *EpollEvent) WriteTo(w io.Writer) (int64, error) {
     return int64(length), err
 }
 
+// CopyEpollEventSliceIn copies in a slice of EpollEvent objects from the task's memory.
+func CopyEpollEventSliceIn(task marshal.Task, addr usermem.Addr, dst []EpollEvent) (int, error) {
+    count := len(dst)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*EpollEvent)(nil).SizeBytes()
+
+    ptr := unsafe.Pointer(&dst)
+    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(val)
+    hdr.Len = size * count
+    hdr.Cap = size * count
+
+    length, err := task.CopyInBytes(addr, buf)
+    // Since we bypassed the compiler's escape analysis, indicate that dst
+    // must live until the use above.
+    runtime.KeepAlive(dst)
+    return length, err
+}
+
+// CopyEpollEventSliceOut copies a slice of EpollEvent objects to the task's memory.
+func CopyEpollEventSliceOut(task marshal.Task, addr usermem.Addr, src []EpollEvent) (int, error) {
+    count := len(src)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*EpollEvent)(nil).SizeBytes()
+
+    ptr := unsafe.Pointer(&src)
+    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(val)
+    hdr.Len = size * count
+    hdr.Cap = size * count
+
+    length, err := task.CopyOutBytes(addr, buf)
+    // Since we bypassed the compiler's escape analysis, indicate that src
+    // must live until the use above.
+    runtime.KeepAlive(src)
+    return length, err
+}
+
+// MarshalUnsafeEpollEventSlice is like EpollEvent.MarshalUnsafe, but for a []EpollEvent.
+func MarshalUnsafeEpollEventSlice(src []EpollEvent, dst []byte) (int, error) {
+    count := len(src)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*EpollEvent)(nil).SizeBytes()
+
+    ptr := unsafe.Pointer(&src)
+    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
+
+    length, err := safecopy.CopyIn(dst[:(size*count)], val)
+    // Since we bypassed the compiler's escape analysis, indicate that src
+    // must live until the use above.
+    runtime.KeepAlive(src)
+    return length, err
+}
+
+// UnmarshalUnsafeEpollEventSlice is like EpollEvent.UnmarshalUnsafe, but for a []EpollEvent.
+func UnmarshalUnsafeEpollEventSlice(dst []EpollEvent, src []byte) (int, error) {
+    count := len(dst)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*EpollEvent)(nil).SizeBytes()
+
+    ptr := unsafe.Pointer(&dst)
+    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
+
+    length, err := safecopy.CopyOut(val, src[:(size*count)])
+    // Since we bypassed the compiler's escape analysis, indicate that dst
+    // must live until the use above.
+    runtime.KeepAlive(dst)
+    return length, err
+}
+
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (s *Stat) SizeBytes() int {
     return 72 +
@@ -206,7 +293,7 @@ func (s *Stat) UnmarshalBytes(src []byte) {
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
 func (s *Stat) Packed() bool {
-    return s.CTime.Packed() && s.ATime.Packed() && s.MTime.Packed()
+    return s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
@@ -220,7 +307,7 @@ func (s *Stat) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *Stat) UnmarshalUnsafe(src []byte) {
-    if s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
+    if s.MTime.Packed() && s.CTime.Packed() && s.ATime.Packed() {
         safecopy.CopyOut(unsafe.Pointer(s), src)
     } else {
         s.UnmarshalBytes(src)
@@ -230,7 +317,7 @@ func (s *Stat) UnmarshalUnsafe(src []byte) {
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
 func (s *Stat) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {
-    if !s.CTime.Packed() && s.ATime.Packed() && s.MTime.Packed() {
+    if !s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
         // Type Stat doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := task.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
         s.MarshalBytes(buf) // escapes: fallback.
@@ -260,7 +347,7 @@ func (s *Stat) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
 func (s *Stat) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
-    if !s.CTime.Packed() && s.ATime.Packed() && s.MTime.Packed() {
+    if !s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
         // Type Stat doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := task.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
         length, err := task.CopyInBytes(addr, buf) // escapes: okay.
