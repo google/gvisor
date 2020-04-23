@@ -28,6 +28,8 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+var sizeofEpollEvent = (*linux.EpollEvent)(nil).SizeBytes()
+
 // EpollCreate1 implements Linux syscall epoll_create1(2).
 func EpollCreate1(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	flags := args[0].Int()
@@ -124,7 +126,7 @@ func EpollWait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	maxEvents := int(args[2].Int())
 	timeout := int(args[3].Int())
 
-	const _EP_MAX_EVENTS = math.MaxInt32 / sizeofEpollEvent // Linux: fs/eventpoll.c:EP_MAX_EVENTS
+	var _EP_MAX_EVENTS = math.MaxInt32 / sizeofEpollEvent // Linux: fs/eventpoll.c:EP_MAX_EVENTS
 	if maxEvents <= 0 || maxEvents > _EP_MAX_EVENTS {
 		return 0, nil, syserror.EINVAL
 	}
@@ -157,7 +159,8 @@ func EpollWait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		maxEvents -= n
 		if n != 0 {
 			// Copy what we read out.
-			copiedEvents, err := copyOutEvents(t, eventsAddr, events[:n])
+			copiedBytes, err := linux.CopyEpollEventSliceOut(t, eventsAddr, events[:n])
+			copiedEvents := copiedBytes / sizeofEpollEvent // rounded down
 			eventsAddr += usermem.Addr(copiedEvents * sizeofEpollEvent)
 			total += copiedEvents
 			if err != nil {
