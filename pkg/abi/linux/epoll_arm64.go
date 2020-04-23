@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build arm64
+
 package linux
 
 // EpollEvent is equivalent to struct epoll_event from epoll(2).
 //
-// +marshal
+// +marshal slice:EpollEventSlice
 type EpollEvent struct {
 	Events uint32
 	// Linux makes struct epoll_event a __u64, necessitating 4 bytes of padding
