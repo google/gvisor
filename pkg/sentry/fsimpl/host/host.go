@@ -66,7 +66,7 @@ func NewFilesystem(vfsObj *vfs.VirtualFilesystem) *vfs.Filesystem {
 }
 
 // ImportFD sets up and returns a vfs.FileDescription from a donated fd.
-func ImportFD(mnt *vfs.Mount, hostFD int, isTTY bool) (*vfs.FileDescription, error) {
+func ImportFD(ctx context.Context, mnt *vfs.Mount, hostFD int, isTTY bool) (*vfs.FileDescription, error) {
 	fs, ok := mnt.Filesystem().Impl().(*kernfs.Filesystem)
 	if !ok {
 		return nil, fmt.Errorf("can't import host FDs into filesystems of type %T", mnt.Filesystem().Impl())
@@ -108,7 +108,7 @@ func ImportFD(mnt *vfs.Mount, hostFD int, isTTY bool) (*vfs.FileDescription, err
 	// i.open will take a reference on d.
 	defer d.DecRef()
 
-	return i.open(d.VFSDentry(), mnt)
+	return i.open(ctx, d.VFSDentry(), mnt)
 }
 
 // inode implements kernfs.Inode.
@@ -360,11 +360,11 @@ func (i *inode) Destroy() {
 }
 
 // Open implements kernfs.Inode.
-func (i *inode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	return i.open(vfsd, rp.Mount())
+func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	return i.open(ctx, vfsd, rp.Mount())
 }
 
-func (i *inode) open(d *vfs.Dentry, mnt *vfs.Mount) (*vfs.FileDescription, error) {
+func (i *inode) open(ctx context.Context, d *vfs.Dentry, mnt *vfs.Mount) (*vfs.FileDescription, error) {
 	var s syscall.Stat_t
 	if err := syscall.Fstat(i.hostFD, &s); err != nil {
 		return nil, err
