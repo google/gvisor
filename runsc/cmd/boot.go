@@ -25,8 +25,8 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/runsc/boot"
-	"gvisor.dev/gvisor/runsc/boot/platforms"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -183,7 +183,12 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		if caps == nil {
 			caps = &specs.LinuxCapabilities{}
 		}
-		if conf.Platform == platforms.Ptrace {
+
+		gPlatform, err := platform.Lookup(conf.Platform)
+		if err != nil {
+			Fatalf("loading platform: %v", err)
+		}
+		if gPlatform.Requirements().RequiresCapSysPtrace {
 			// Ptrace platform requires extra capabilities.
 			const c = "CAP_SYS_PTRACE"
 			caps.Bounding = append(caps.Bounding, c)
