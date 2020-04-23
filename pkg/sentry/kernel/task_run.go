@@ -96,6 +96,7 @@ func (t *Task) run(threadID uintptr) {
 			t.tg.liveGoroutines.Done()
 			t.tg.pidns.owner.liveGoroutines.Done()
 			t.tg.pidns.owner.runningGoroutines.Done()
+			t.p.Release()
 
 			// Keep argument alive because stack trace for dead variables may not be correct.
 			runtime.KeepAlive(threadID)

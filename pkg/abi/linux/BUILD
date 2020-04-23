@@ -10,6 +10,7 @@ go_library(
     name = "linux",
     srcs = [
         "aio.go",
+        "arch_amd64.go",
         "audit.go",
         "bpf.go",
         "capability.go",
