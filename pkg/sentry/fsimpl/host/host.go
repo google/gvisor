@@ -25,11 +25,10 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
-	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
+	"gvisor.dev/gvisor/pkg/sentry/hostfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -492,19 +491,9 @@ func readFromHostFD(ctx context.Context, hostFD int, dst usermem.IOSequence, off
 	if flags != 0 {
 		return 0, syserror.EOPNOTSUPP
 	}
-
-	var reader safemem.Reader
-	if offset == -1 {
-		reader = safemem.FromIOReader{fd.NewReadWriter(hostFD)}
-	} else {
-		reader = safemem.FromVecReaderFunc{
-			func(srcs [][]byte) (int64, error) {
-				n, err := unix.Preadv(hostFD, srcs, offset)
-				return int64(n), err
-			},
-		}
-	}
+	reader := hostfd.GetReadWriterAt(int32(hostFD), offset, flags)
 	n, err := dst.CopyOutFrom(ctx, reader)
+	hostfd.PutReadWriterAt(reader)
 	return int64(n), err
 }
 
@@ -542,19 +531,9 @@ func writeToHostFD(ctx context.Context, hostFD int, src usermem.IOSequence, offs
 	if flags != 0 {
 		return 0, syserror.EOPNOTSUPP
 	}
-
-	var writer safemem.Writer
-	if offset == -1 {
-		writer = safemem.FromIOWriter{fd.NewReadWriter(hostFD)}
-	} else {
-		writer = safemem.FromVecWriterFunc{
-			func(srcs [][]byte) (int64, error) {
-				n, err := unix.Pwritev(hostFD, srcs, offset)
-				return int64(n), err
-			},
-		}
-	}
+	writer := hostfd.GetReadWriterAt(int32(hostFD), offset, flags)
 	n, err := src.CopyInTo(ctx, writer)
+	hostfd.PutReadWriterAt(writer)
 	return int64(n), err
 }
 
