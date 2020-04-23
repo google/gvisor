@@ -332,7 +332,7 @@ func (t *thread) unexpectedStubExit() {
 	msg, err := t.getEventMessage()
 	status := syscall.WaitStatus(msg)
 	if status.Signaled() && status.Signal() == syscall.SIGKILL {
-		// SIGKILL can be only sent by an user or OOM-killer. In both
+		// SIGKILL can be only sent by a user or OOM-killer. In both
 		// these cases, we don't need to panic. There is no reasons to
 		// think that something wrong in gVisor.
 		log.Warningf("The ptrace stub process %v has been killed by SIGKILL.", t.tgid)

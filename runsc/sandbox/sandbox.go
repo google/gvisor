@@ -446,9 +446,13 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 		nextFD++
 	}
 
-	// If the platform needs a device FD we must pass it in.
-	if deviceFile, err := deviceFileForPlatform(conf.Platform); err != nil {
+	gPlatform, err := platform.Lookup(conf.Platform)
+	if err != nil {
 		return err
+	}
+
+	if deviceFile, err := gPlatform.OpenDevice(); err != nil {
+		return fmt.Errorf("opening device file for platform %q: %v", gPlatform, err)
 	} else if deviceFile != nil {
 		defer deviceFile.Close()
 		cmd.ExtraFiles = append(cmd.ExtraFiles, deviceFile)
@@ -539,7 +543,7 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 		{Type: specs.UTSNamespace},
 	}
 
-	if conf.Platform == platforms.Ptrace {
+	if gPlatform.Requirements().RequiresCurrentPIDNS {
 		// TODO(b/75837838): Also set a new PID namespace so that we limit
 		// access to other host processes.
 		log.Infof("Sandbox will be started in the current PID namespace")

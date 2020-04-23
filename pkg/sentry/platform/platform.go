@@ -148,6 +148,9 @@ type Context interface {
 	// Interrupt interrupts a concurrent call to Switch(), causing it to return
 	// ErrContextInterrupt.
 	Interrupt()
+
+	// Release() releases any resources associated with this context.
+	Release()
 }
 
 var (
@@ -353,10 +356,28 @@ func (fr FileRange) String() string {
 	return fmt.Sprintf("[%#x, %#x)", fr.Start, fr.End)
 }
 
+// Requirements is used to specify platform specific requirements.
+type Requirements struct {
+	// RequiresCurrentPIDNS indicates that the sandbox has to be started in the
+	// current pid namespace.
+	RequiresCurrentPIDNS bool
+	// RequiresCapSysPtrace indicates that the sandbox has to be started with
+	// the CAP_SYS_PTRACE capability.
+	RequiresCapSysPtrace bool
+}
+
 // Constructor represents a platform type.
 type Constructor interface {
+	// New returns a new platform instance.
+	//
+	// Arguments:
+	//
+	// * deviceFile - the device file (e.g. /dev/kvm for the KVM platform).
 	New(deviceFile *os.File) (Platform, error)
 	OpenDevice() (*os.File, error)
+
+	// Requirements returns platform specific requirements.
+	Requirements() Requirements
 }
 
 // platforms contains all available platform types.
