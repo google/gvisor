@@ -6,7 +6,6 @@ go_library(
     name = "vfs2",
     srcs = [
         "epoll.go",
-        "epoll_unsafe.go",
         "execve.go",
         "fd.go",
         "filesystem.go",
