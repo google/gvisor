@@ -443,8 +443,7 @@ type FilesystemImpl interface {
 	// Errors:
 	//
 	// - If extended attributes are not supported by the filesystem,
-	// ListxattrAt returns nil. (See FileDescription.Listxattr for an
-	// explanation.)
+	// ListxattrAt returns ENOTSUP.
 	//
 	// - If the size of the list (including a NUL terminating byte after every
 	// entry) would exceed size, ERANGE may be returned. Note that
