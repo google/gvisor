@@ -262,7 +262,10 @@ sleep 3
 # Start a packetimpact test on the test bench.  The packetimpact test sends and
 # receives packets and also sends POSIX socket commands to the posix_server to
 # be executed on the DUT.
-docker exec -t "${TESTBENCH}" \
+docker exec \
+  -e XML_OUTPUT_FILE="/test.xml" \
+  -e TEST_TARGET \
+  -t "${TESTBENCH}" \
   /bin/bash -c "${DOCKER_TESTBENCH_BINARY} \
   ${EXTRA_TEST_ARGS[@]-} \
   --posix_server_ip=${CTRL_NET_PREFIX}${DUT_NET_SUFFIX} \
