@@ -24,26 +24,12 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
-// NewFilesystem creates a new sockfs filesystem.
-//
-// Note that there should only ever be one instance of sockfs.Filesystem,
-// backing a global socket mount.
-func NewFilesystem(vfsObj *vfs.VirtualFilesystem) *vfs.Filesystem {
-	fs, _, err := filesystemType{}.GetFilesystem(nil, vfsObj, nil, "", vfs.GetFilesystemOptions{})
-	if err != nil {
-		panic("failed to create sockfs filesystem")
-	}
-	return fs
-}
-
 // filesystemType implements vfs.FilesystemType.
 type filesystemType struct{}
 
 // GetFilesystem implements FilesystemType.GetFilesystem.
 func (fsType filesystemType) GetFilesystem(_ context.Context, vfsObj *vfs.VirtualFilesystem, _ *auth.Credentials, _ string, _ vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
-	fs := &filesystem{}
-	fs.Init(vfsObj, fsType)
-	return fs.VFSFilesystem(), nil, nil
+	panic("sockfs.filesystemType.GetFilesystem should never be called")
 }
 
 // Name implements FilesystemType.Name.
@@ -58,6 +44,16 @@ func (filesystemType) Name() string {
 // filesystem implements vfs.FilesystemImpl.
 type filesystem struct {
 	kernfs.Filesystem
+}
+
+// NewFilesystem sets up and returns a new sockfs filesystem.
+//
+// Note that there should only ever be one instance of sockfs.Filesystem,
+// backing a global socket mount.
+func NewFilesystem(vfsObj *vfs.VirtualFilesystem) *vfs.Filesystem {
+	fs := &filesystem{}
+	fs.Init(vfsObj, filesystemType{})
+	return fs.VFSFilesystem()
 }
 
 // inode implements kernfs.Inode.
