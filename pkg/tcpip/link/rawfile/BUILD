@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -17,4 +17,11 @@ go_library(
         "//pkg/tcpip",
         "@org_golang_x_sys//unix:go_default_library",
     ],
+)
+
+go_test(
+    name = "rawfile_test",
+    size = "small",
+    srcs = ["rawfile_test.go"],
+    library = ":rawfile",
 )

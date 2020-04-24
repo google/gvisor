@@ -3548,7 +3548,7 @@ func TestReceivedInvalidSegmentCountIncrement(t *testing.T) {
 		AckNum:  c.IRS.Add(1),
 		RcvWnd:  30000,
 	})
-	tcpbuf := vv.First()[header.IPv4MinimumSize:]
+	tcpbuf := vv.ToView()[header.IPv4MinimumSize:]
 	tcpbuf[header.TCPDataOffset] = ((header.TCPMinimumSize - 1) / 4) << 4
 
 	c.SendSegment(vv)
@@ -3575,7 +3575,7 @@ func TestReceivedIncorrectChecksumIncrement(t *testing.T) {
 		AckNum:  c.IRS.Add(1),
 		RcvWnd:  30000,
 	})
-	tcpbuf := vv.First()[header.IPv4MinimumSize:]
+	tcpbuf := vv.ToView()[header.IPv4MinimumSize:]
 	// Overwrite a byte in the payload which should cause checksum
 	// verification to fail.
 	tcpbuf[(tcpbuf[header.TCPDataOffset]>>4)*4] = 0x4
