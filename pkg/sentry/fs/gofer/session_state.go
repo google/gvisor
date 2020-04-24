@@ -73,12 +73,6 @@ func (s *session) afterLoad() {
 	if opts.aname != s.aname {
 		panic(fmt.Sprintf("new attach name %v, want %v", opts.aname, s.aname))
 	}
-
-	// Check if overrideMaps exist when uds sockets are enabled (only pathmaps
-	// will actually have been saved).
-	if opts.privateunixsocket != (s.overrides != nil) {
-		panic(fmt.Sprintf("new privateunixsocket option %v, want %v", opts.privateunixsocket, s.overrides != nil))
-	}
 	if args.Flags != s.superBlockFlags {
 		panic(fmt.Sprintf("new mount flags %v, want %v", args.Flags, s.superBlockFlags))
 	}
@@ -101,13 +95,9 @@ func (s *session) afterLoad() {
 		panic(fmt.Sprintf("failed to attach to aname: %v", err))
 	}
 
-	// If private unix sockets are enabled, create and fill the session's endpoint
-	// maps.
-	if opts.privateunixsocket {
-		ctx := &dummyClockContext{context.Background()}
-
-		if err = s.restoreEndpointMaps(ctx); err != nil {
-			panic("failed to restore endpoint maps: " + err.Error())
-		}
+	// Create and fill the session's endpoint maps for private sockets and pipes.
+	ctx := &dummyClockContext{context.Background()}
+	if err = s.restoreEndpointMaps(ctx); err != nil {
+		panic("failed to restore endpoint maps: " + err.Error())
 	}
 }

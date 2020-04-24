@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"path"
 	"sort"
-	"strconv"
 	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -211,7 +210,7 @@ func (c *containerMounter) setupVFS2(ctx context.Context, conf *Config, procArgs
 func (c *containerMounter) createMountNamespaceVFS2(ctx context.Context, conf *Config, creds *auth.Credentials) (*vfs.MountNamespace, error) {
 
 	fd := c.fds.remove()
-	opts := strings.Join(p9MountOptionsVFS2(fd, conf.FileAccess), ",")
+	opts := strings.Join(p9MountOptions(fd, conf.FileAccess), ",")
 
 	log.Infof("Mounting root over 9P, ioFD: %d", fd)
 	mns, err := c.k.VFS().NewMountNamespace(ctx, creds, "", rootFsName, &vfs.GetFilesystemOptions{Data: opts})
@@ -310,7 +309,7 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *Config, m specs.Moun
 	case bind:
 		fd := c.fds.remove()
 		fsName = "9p"
-		opts = p9MountOptionsVFS2(fd, c.getMountAccessType(m))
+		opts = p9MountOptions(fd, c.getMountAccessType(m))
 		// If configured, add overlay to all writable mounts.
 		useOverlay = conf.Overlay && !mountFlags(m.Options).ReadOnly
 
@@ -318,21 +317,6 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *Config, m specs.Moun
 		log.Warningf("ignoring unknown filesystem type %q", m.Type)
 	}
 	return fsName, opts, useOverlay, nil
-}
-
-// p9MountOptions creates a slice of options for a p9 mount.
-// TODO(gvisor.dev/issue/1200): Remove this version in favor of the one in
-// fs.go when privateunixsocket lands.
-func p9MountOptionsVFS2(fd int, fa FileAccessType) []string {
-	opts := []string{
-		"trans=fd",
-		"rfdno=" + strconv.Itoa(fd),
-		"wfdno=" + strconv.Itoa(fd),
-	}
-	if fa == FileAccessShared {
-		opts = append(opts, "cache=remote_revalidating")
-	}
-	return opts
 }
 
 func (c *containerMounter) makeSyntheticMount(ctx context.Context, currentPath string, root vfs.VirtualDentry, creds *auth.Credentials) error {

@@ -90,9 +90,11 @@ func (e *overrideMaps) addPipe(key device.MultiDeviceKey, d *fs.Dirent, inode *f
 //
 // Precondition: maps must have been locked with 'lock'.
 func (e *overrideMaps) remove(key device.MultiDeviceKey) {
-	endpoint := e.keyMap[key]
-	delete(e.keyMap, key)
-	endpoint.dirent.DecRef()
+	endpoint, ok := e.keyMap[key]
+	if ok {
+		delete(e.keyMap, key)
+		endpoint.dirent.DecRef()
+	}
 }
 
 // lock blocks other addition and removal operations from happening while
@@ -313,9 +315,7 @@ func Root(ctx context.Context, dev string, filesystem fs.Filesystem, superBlockF
 	}
 	s.EnableLeakCheck("gofer.session")
 
-	if o.privateunixsocket {
-		s.overrides = newOverrideMaps()
-	}
+	s.overrides = newOverrideMaps()
 
 	// Construct the MountSource with the session and superBlockFlags.
 	m := fs.NewMountSource(ctx, &s, filesystem, superBlockFlags)

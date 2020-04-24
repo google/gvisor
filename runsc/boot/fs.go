@@ -161,7 +161,6 @@ func p9MountOptions(fd int, fa FileAccessType) []string {
 		"trans=fd",
 		"rfdno=" + strconv.Itoa(fd),
 		"wfdno=" + strconv.Itoa(fd),
-		"privateunixsocket=true",
 	}
 	if fa == FileAccessShared {
 		opts = append(opts, "cache=remote_revalidating")

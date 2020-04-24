@@ -50,11 +50,6 @@ const (
 	// The 9p protocol version.
 	versionKey = "version"
 
-	// If set to true allows the creation of unix domain sockets inside the
-	// sandbox using files backed by the gofer. If set to false, unix sockets
-	// cannot be bound to gofer files without an overlay on top.
-	privateUnixSocketKey = "privateunixsocket"
-
 	// If present, sets CachingInodeOperationsOptions.LimitHostFDTranslation to
 	// true.
 	limitHostFDTranslationKey = "limit_host_fd_translation"
@@ -148,7 +143,6 @@ type opts struct {
 	policy                 cachePolicy
 	msize                  uint32
 	version                string
-	privateunixsocket      bool
 	limitHostFDTranslation bool
 	overlayfsStaleRead     bool
 }
@@ -236,16 +230,6 @@ func options(data string) (opts, error) {
 	if v, ok := options[versionKey]; ok {
 		o.version = v
 		delete(options, versionKey)
-	}
-
-	// Parse the unix socket policy. Reject non-booleans.
-	if v, ok := options[privateUnixSocketKey]; ok {
-		b, err := strconv.ParseBool(v)
-		if err != nil {
-			return o, fmt.Errorf("invalid boolean value for '%s=%s': %v", privateUnixSocketKey, v, err)
-		}
-		o.privateunixsocket = b
-		delete(options, privateUnixSocketKey)
 	}
 
 	if _, ok := options[limitHostFDTranslationKey]; ok {
