@@ -27,7 +27,9 @@ const (
 	// IPv6PayloadLenOffset is the offset of the PayloadLength field in
 	// IPv6 header.
 	IPv6PayloadLenOffset = 4
-	nextHdr              = 6
+	// IPv6NextHeaderOffset is the offset of the NextHeader field in
+	// IPv6 header.
+	IPv6NextHeaderOffset = 6
 	hopLimit             = 7
 	v6SrcAddr            = 8
 	v6DstAddr            = v6SrcAddr + IPv6AddressSize
@@ -163,7 +165,7 @@ func (b IPv6) HopLimit() uint8 {
 
 // NextHeader returns the value of the "next header" field of the ipv6 header.
 func (b IPv6) NextHeader() uint8 {
-	return b[nextHdr]
+	return b[IPv6NextHeaderOffset]
 }
 
 // TransportProtocol implements Network.TransportProtocol.
@@ -223,7 +225,7 @@ func (b IPv6) SetDestinationAddress(addr tcpip.Address) {
 
 // SetNextHeader sets the value of the "next header" field of the ipv6 header.
 func (b IPv6) SetNextHeader(v uint8) {
-	b[nextHdr] = v
+	b[IPv6NextHeaderOffset] = v
 }
 
 // SetChecksum implements Network.SetChecksum. Given that IPv6 doesn't have a
@@ -235,7 +237,7 @@ func (IPv6) SetChecksum(uint16) {
 func (b IPv6) Encode(i *IPv6Fields) {
 	b.SetTOS(i.TrafficClass, i.FlowLabel)
 	b.SetPayloadLength(i.PayloadLength)
-	b[nextHdr] = i.NextHeader
+	b[IPv6NextHeaderOffset] = i.NextHeader
 	b[hopLimit] = i.HopLimit
 	b.SetSourceAddress(i.SrcAddr)
 	b.SetDestinationAddress(i.DstAddr)
