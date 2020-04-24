@@ -91,7 +91,7 @@ func createFDTableVFS2(ctx context.Context, console bool, stdioFDs []int) (*kern
 
 	for appFD, hostFD := range stdioFDs {
 		// TODO(gvisor.dev/issue/1482): Add TTY support.
-		appFile, err := vfshost.ImportFD(k.HostMount(), hostFD, false)
+		appFile, err := vfshost.ImportFD(ctx, k.HostMount(), hostFD, false)
 		if err != nil {
 			return nil, err
 		}
