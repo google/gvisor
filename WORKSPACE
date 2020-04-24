@@ -68,6 +68,16 @@ go_repository(
 
 # Load C++ rules.
 http_archive(
+    name = "com_google_absl",
+    sha256 = "84c9f1312d36546e07b8135143319f0f63f577ca4719286e9e0a0986bfc1b898",
+    strip_prefix = "abseil-cpp-c51510d1d87ebce8615ae1752fd5aca912f6cf4c",
+    urls = [
+        "https://mirror.bazel.build/github.com/abseil/abseil-cpp/archive/c51510d1d87ebce8615ae1752fd5aca912f6cf4c.tar.gz",
+        "https://github.com/abseil/abseil-cpp/archive/c51510d1d87ebce8615ae1752fd5aca912f6cf4c.tar.gz",
+    ],
+)
+
+http_archive(
     name = "rules_cc",
     sha256 = "67412176974bfce3f4cf8bdaff39784a72ed709fc58def599d1f68710b58d68b",
     strip_prefix = "rules_cc-b7fe9697c0c76ab2fd431a891dbb9a6a32ed7c3e",
@@ -162,11 +172,11 @@ http_archive(
 
 http_archive(
     name = "com_google_benchmark",
-    sha256 = "3c6a165b6ecc948967a1ead710d4a181d7b0fbcaa183ef7ea84604994966221a",
-    strip_prefix = "benchmark-1.5.0",
+    sha256 = "7c1eea9f1626a2e1303d6a367f4b200718722b01ec46573b1a3c469d8d063cd2",
+    strip_prefix = "benchmark-ecc1685340f58f7fe6b707036bc0bb1fccabb0c1",
     urls = [
-        "https://mirror.bazel.build/github.com/google/benchmark/archive/v1.5.0.tar.gz",
-        "https://github.com/google/benchmark/archive/v1.5.0.tar.gz",
+        "https://mirror.bazel.build/github.com/google/benchmark/archive/ecc1685340f58f7fe6b707036bc0bb1fccabb0c1.tar.gz",
+        "https://github.com/google/benchmark/archive/ecc1685340f58f7fe6b707036bc0bb1fccabb0c1.tar.gz",
     ],
 )
 

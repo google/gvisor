@@ -658,7 +658,10 @@ TEST(NetlinkRouteTest, GetRouteRequest) {
 
   req.nla.nla_len = 8;
   req.nla.nla_type = RTA_DST;
-  inet_aton("127.0.0.2", &req.sin_addr);
+
+  struct in_addr in_addr;
+  inet_aton("127.0.0.2", &in_addr);
+  req.sin_addr = in_addr;
 
   bool rtDstFound = false;
   ASSERT_NO_ERRNO(NetlinkRequestResponseSingle(

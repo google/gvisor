@@ -694,7 +694,7 @@ TEST_P(PrivateAndSharedFutexTest, PIWaiters) {
 
   // Wait until the thread blocks on the futex, setting the waiters bit.
   auto start = absl::Now();
-  while (a.load() != (FUTEX_WAITERS | gettid())) {
+  while (a.load() != int(FUTEX_WAITERS | gettid())) {
     ASSERT_LT(absl::Now() - start, absl::Seconds(5));
     absl::SleepFor(absl::Milliseconds(100));
   }
