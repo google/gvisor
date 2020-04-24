@@ -88,6 +88,9 @@ func (i *subtasksInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallb
 	if len(tasks) == 0 {
 		return offset, syserror.ENOENT
 	}
+	if relOffset >= int64(len(tasks)) {
+		return offset, nil
+	}
 
 	tids := make([]int, 0, len(tasks))
 	for _, tid := range tasks {
@@ -110,10 +113,52 @@ func (i *subtasksInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallb
 	return offset, nil
 }
 
+type subtasksFD struct {
+	kernfs.GenericDirectoryFD
+
+	task *kernel.Task
+}
+
+func (fd *subtasksFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback) error {
+	if fd.task.ExitState() >= kernel.TaskExitZombie {
+		return syserror.ENOENT
+	}
+	return fd.GenericDirectoryFD.IterDirents(ctx, cb)
+}
+
+// Seek implements vfs.FileDecriptionImpl.Seek.
+func (fd *subtasksFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
+	if fd.task.ExitState() >= kernel.TaskExitZombie {
+		return 0, syserror.ENOENT
+	}
+	return fd.GenericDirectoryFD.Seek(ctx, offset, whence)
+}
+
+// Stat implements vfs.FileDescriptionImpl.Stat.
+func (fd *subtasksFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
+	if fd.task.ExitState() >= kernel.TaskExitZombie {
+		return linux.Statx{}, syserror.ENOENT
+	}
+	return fd.GenericDirectoryFD.Stat(ctx, opts)
+}
+
+// SetStat implements vfs.FileDescriptionImpl.SetStat.
+func (fd *subtasksFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
+	if fd.task.ExitState() >= kernel.TaskExitZombie {
+		return syserror.ENOENT
+	}
+	return fd.GenericDirectoryFD.SetStat(ctx, opts)
+}
+
 // Open implements kernfs.Inode.
 func (i *subtasksInode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd := &kernfs.GenericDirectoryFD{}
-	fd.Init(rp.Mount(), vfsd, &i.OrderedChildren, &opts)
+	fd := &subtasksFD{task: i.task}
+	if err := fd.Init(&i.OrderedChildren, &opts); err != nil {
+		return nil, err
+	}
+	if err := fd.VFSFileDescription().Init(fd, opts.Flags, rp.Mount(), vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+		return nil, err
+	}
 	return fd.VFSFileDescription(), nil
 }
 

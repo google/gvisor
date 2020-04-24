@@ -161,8 +161,10 @@ func (i *rootInode) masterClose(t *Terminal) {
 
 // Open implements kernfs.Inode.Open.
 func (i *rootInode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd := &kernfs.GenericDirectoryFD{}
-	fd.Init(rp.Mount(), vfsd, &i.OrderedChildren, &opts)
+	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), vfsd, &i.OrderedChildren, &opts)
+	if err != nil {
+		return nil, err
+	}
 	return fd.VFSFileDescription(), nil
 }
 

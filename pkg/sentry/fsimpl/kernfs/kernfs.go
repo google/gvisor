@@ -439,5 +439,5 @@ type inodeSymlink interface {
 	//
 	// - If the inode is not a symlink, Getlink returns (zero-value
 	// VirtualDentry, "", EINVAL).
-	Getlink(ctx context.Context) (vfs.VirtualDentry, string, error)
+	Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualDentry, string, error)
 }
