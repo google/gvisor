@@ -412,20 +412,33 @@ type dadState struct {
 // defaultRouterState holds data associated with a default router discovered by
 // a Router Advertisement (RA).
 type defaultRouterState struct {
-	invalidationTimer tcpip.CancellableTimer
+	// Timer to invalidate the default router.
+	//
+	// May not be nil.
+	invalidationTimer *tcpip.CancellableTimer
 }
 
 // onLinkPrefixState holds data associated with an on-link prefix discovered by
 // a Router Advertisement's Prefix Information option (PI) when the NDP
 // configurations was configured to do so.
 type onLinkPrefixState struct {
-	invalidationTimer tcpip.CancellableTimer
+	// Timer to invalidate the on-link prefix.
+	//
+	// May not be nil.
+	invalidationTimer *tcpip.CancellableTimer
 }
 
 // slaacPrefixState holds state associated with a SLAAC prefix.
 type slaacPrefixState struct {
-	deprecationTimer  tcpip.CancellableTimer
-	invalidationTimer tcpip.CancellableTimer
+	// Timer to deprecate the prefix.
+	//
+	// May not be nil.
+	deprecationTimer *tcpip.CancellableTimer
+
+	// Timer to invalidate the prefix.
+	//
+	// May not be nil.
+	invalidationTimer *tcpip.CancellableTimer
 
 	// Nonzero only when the address is not valid forever.
 	validUntil time.Time
@@ -775,7 +788,6 @@ func (ndp *ndpState) invalidateDefaultRouter(ip tcpip.Address) {
 	}
 
 	rtr.invalidationTimer.StopLocked()
-
 	delete(ndp.defaultRouters, ip)
 
 	// Let the integrator know a discovered default router is invalidated.
@@ -804,7 +816,7 @@ func (ndp *ndpState) rememberDefaultRouter(ip tcpip.Address, rl time.Duration) {
 	}
 
 	state := defaultRouterState{
-		invalidationTimer: tcpip.MakeCancellableTimer(&ndp.nic.mu, func() {
+		invalidationTimer: tcpip.NewCancellableTimer(&ndp.nic.mu, func() {
 			ndp.invalidateDefaultRouter(ip)
 		}),
 	}
@@ -834,7 +846,7 @@ func (ndp *ndpState) rememberOnLinkPrefix(prefix tcpip.Subnet, l time.Duration) 
 	}
 
 	state := onLinkPrefixState{
-		invalidationTimer: tcpip.MakeCancellableTimer(&ndp.nic.mu, func() {
+		invalidationTimer: tcpip.NewCancellableTimer(&ndp.nic.mu, func() {
 			ndp.invalidateOnLinkPrefix(prefix)
 		}),
 	}
@@ -859,7 +871,6 @@ func (ndp *ndpState) invalidateOnLinkPrefix(prefix tcpip.Subnet) {
 	}
 
 	s.invalidationTimer.StopLocked()
-
 	delete(ndp.onLinkPrefixes, prefix)
 
 	// Let the integrator know a discovered on-link prefix is invalidated.
@@ -979,7 +990,7 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 	}
 
 	state := slaacPrefixState{
-		deprecationTimer: tcpip.MakeCancellableTimer(&ndp.nic.mu, func() {
+		deprecationTimer: tcpip.NewCancellableTimer(&ndp.nic.mu, func() {
 			state, ok := ndp.slaacPrefixes[prefix]
 			if !ok {
 				panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for the deprecated SLAAC prefix %s", prefix))
@@ -987,7 +998,7 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 
 			ndp.deprecateSLAACAddress(state.ref)
 		}),
-		invalidationTimer: tcpip.MakeCancellableTimer(&ndp.nic.mu, func() {
+		invalidationTimer: tcpip.NewCancellableTimer(&ndp.nic.mu, func() {
 			state, ok := ndp.slaacPrefixes[prefix]
 			if !ok {
 				panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for the invalidated SLAAC prefix %s", prefix))
