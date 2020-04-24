@@ -41,6 +41,8 @@ type SCMCredentials interface {
 	Credentials(t *kernel.Task) (kernel.ThreadID, auth.UID, auth.GID)
 }
 
+// LINT.IfChange
+
 // SCMRights represents a SCM_RIGHTS socket control message.
 type SCMRights interface {
 	transport.RightsControlMessage
@@ -141,6 +143,8 @@ func PackRights(t *kernel.Task, rights SCMRights, cloexec bool, buf []byte, flag
 	align := t.Arch().Width()
 	return putCmsg(buf, flags, linux.SCM_RIGHTS, align, fds)
 }
+
+// LINT.ThenChange(./control_vfs2.go)
 
 // scmCredentials represents an SCM_CREDENTIALS socket control message.
 //
@@ -537,11 +541,19 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte) (socket.Con
 	}
 
 	if len(fds) > 0 {
-		rights, err := NewSCMRights(t, fds)
-		if err != nil {
-			return socket.ControlMessages{}, err
+		if kernel.VFS2Enabled {
+			rights, err := NewSCMRightsVFS2(t, fds)
+			if err != nil {
+				return socket.ControlMessages{}, err
+			}
+			cmsgs.Unix.Rights = rights
+		} else {
+			rights, err := NewSCMRights(t, fds)
+			if err != nil {
+				return socket.ControlMessages{}, err
+			}
+			cmsgs.Unix.Rights = rights
 		}
-		cmsgs.Unix.Rights = rights
 	}
 
 	return cmsgs, nil
@@ -566,6 +578,8 @@ func MakeCreds(t *kernel.Task) SCMCredentials {
 	return &scmCredentials{t, tcred.EffectiveKUID, tcred.EffectiveKGID}
 }
 
+// LINT.IfChange
+
 // New creates default control messages if needed.
 func New(t *kernel.Task, socketOrEndpoint interface{}, rights SCMRights) transport.ControlMessages {
 	return transport.ControlMessages{
@@ -573,3 +587,5 @@ func New(t *kernel.Task, socketOrEndpoint interface{}, rights SCMRights) transpo
 		Rights:      rights,
 	}
 }
+
+// LINT.ThenChange(./control_vfs2.go)

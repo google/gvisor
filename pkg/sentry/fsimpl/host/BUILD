@@ -5,6 +5,7 @@ licenses(["notice"])
 go_library(
     name = "host",
     srcs = [
+        "control.go",
         "host.go",
         "ioctl_unsafe.go",
         "tty.go",
@@ -23,6 +24,8 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
+        "//pkg/sentry/socket/control",
+        "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/unimpl",
         "//pkg/sentry/vfs",
         "//pkg/sync",

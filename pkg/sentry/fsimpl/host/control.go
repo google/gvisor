@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,24 +17,25 @@ package host
 import (
 	"syscall"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/control"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
-
-// LINT.IfChange
 
 type scmRights struct {
 	fds []int
 }
 
-func newSCMRights(fds []int) control.SCMRights {
+func newSCMRights(fds []int) control.SCMRightsVFS2 {
 	return &scmRights{fds}
 }
 
 // Files implements control.SCMRights.Files.
-func (c *scmRights) Files(ctx context.Context, max int) (control.RightsFiles, bool) {
+func (c *scmRights) Files(ctx context.Context, max int) (control.RightsFilesVFS2, bool) {
 	n := max
 	var trunc bool
 	if l := len(c.fds); n > l {
@@ -43,7 +44,7 @@ func (c *scmRights) Files(ctx context.Context, max int) (control.RightsFiles, bo
 		trunc = true
 	}
 
-	rf := control.RightsFiles(fdsToFiles(ctx, c.fds[:n]))
+	rf := control.RightsFilesVFS2(fdsToFiles(ctx, c.fds[:n]))
 
 	// Only consume converted FDs (fdsToFiles may convert fewer than n FDs).
 	c.fds = c.fds[len(rf):]
@@ -66,8 +67,8 @@ func (c *scmRights) Release() {
 
 // If an error is encountered, only files created before the error will be
 // returned. This is what Linux does.
-func fdsToFiles(ctx context.Context, fds []int) []*fs.File {
-	files := make([]*fs.File, 0, len(fds))
+func fdsToFiles(ctx context.Context, fds []int) []*vfs.FileDescription {
+	files := make([]*vfs.FileDescription, 0, len(fds))
 	for _, fd := range fds {
 		// Get flags. We do it here because they may be modified
 		// by subsequent functions.
@@ -78,20 +79,18 @@ func fdsToFiles(ctx context.Context, fds []int) []*fs.File {
 		}
 
 		// Create the file backed by hostFD.
-		file, err := NewFile(ctx, fd)
+		file, err := ImportFD(ctx, kernel.KernelFromContext(ctx).HostMount(), fd, false /* isTTY */)
 		if err != nil {
 			ctx.Warningf("Error creating file from host FD: %v", err)
 			break
 		}
 
-		// Set known flags.
-		file.SetFlags(fs.SettableFileFlags{
-			NonBlocking: fileFlags&syscall.O_NONBLOCK != 0,
-		})
+		if err := file.SetStatusFlags(ctx, auth.CredentialsFromContext(ctx), uint32(fileFlags&linux.O_NONBLOCK)); err != nil {
+			ctx.Warningf("Error setting flags on host FD file: %v", err)
+			break
+		}
 
 		files = append(files, file)
 	}
 	return files
 }
-
-// LINT.ThenChange(../../fsimpl/host/control.go)
