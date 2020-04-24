@@ -1,8 +1,3 @@
-# Compile the proctor binary.
-FROM golang:1.12 AS golang
-ADD ["proctor/", "/go/src/proctor/"]
-RUN ["go", "build", "-o", "/proctor", "/go/src/proctor"]
-
 FROM ubuntu:bionic
 RUN apt-get update && apt-get install -y \
   autoconf \
@@ -22,6 +17,3 @@ RUN tar -zxf php-${VERSION}.tar.gz
 WORKDIR /root/php-${VERSION}
 RUN ./configure
 RUN make
-
-COPY --from=golang /proctor /proctor
-ENTRYPOINT ["/proctor", "--runtime=php"]

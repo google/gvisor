@@ -1,5 +1,4 @@
 FROM ubuntu:bionic
-
 RUN apt-get update && apt-get install -y net-tools git iptables iputils-ping \
         netcat tcpdump jq tar bison flex make
 RUN hash -r

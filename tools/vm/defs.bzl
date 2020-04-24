@@ -183,7 +183,10 @@ def vm_test(
     """
     targets = kwargs.pop("targets", [])
     if installers == None:
-        installers = ["//tools/installers:head"]
+        installers = [
+            "//tools/installers:head",
+            "//tools/installers:images",
+        ]
     targets = installers + targets
     if default_installer():
         targets = [default_installer()] + targets

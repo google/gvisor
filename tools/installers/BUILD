@@ -17,6 +17,14 @@ sh_binary(
 )
 
 sh_binary(
+    name = "images",
+    srcs = ["images.sh"],
+    data = [
+        "//images",
+    ],
+)
+
+sh_binary(
     name = "master",
     srcs = ["master.sh"],
 )

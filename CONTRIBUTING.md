@@ -108,32 +108,15 @@ ignored.
 
 ### Build and test with Docker
 
-`scripts/dev.sh` is a convenient script that builds and installs `runsc` as a
-new Docker runtime for you. The scripts tries to extract the runtime name from
-your local environment and will print it at the end. You can also customize it.
-The script creates one regular runtime and another with debug flags enabled.
-Here are a few examples:
+Running `make dev` is a convenient way to build and install `runsc` as a Docker
+runtime. The output of this command will show the runtimes installed.
+
+You may use `make refresh` to refresh the binary after any changes. For example:
 
 ```bash
-# Default case (inside branch my-branch)
-$ scripts/dev.sh
-...
-Runtimes my-branch and my-branch-d (debug enabled) setup.
-Use --runtime=my-branch with your Docker command.
-  docker run --rm --runtime=my-branch --rm hello-world
-
-If you rebuild, use scripts/dev.sh --refresh.
-Logs are in: /tmp/my-branch/logs
-
-# --refresh just updates the runtime binary and doesn't restart docker.
-$ git/my_branch> scripts/dev.sh --refresh
-
-# Using a custom runtime name
-$ git/my_branch> scripts/dev.sh my-runtime
-...
-Runtimes my-runtime and my-runtime-d (debug enabled) setup.
-Use --runtime=my-runtime with your Docker command.
-  docker run --rm --runtime=my-runtime --rm hello-world
+make dev
+docker run --rm --runtime=my-branch --rm hello-world
+make refresh
 ```
 
 ### The small print

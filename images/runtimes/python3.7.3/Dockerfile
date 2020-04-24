@@ -1,10 +1,4 @@
-# Compile the proctor binary.
-FROM golang:1.12 AS golang
-ADD ["proctor/", "/go/src/proctor/"]
-RUN ["go", "build", "-o", "/proctor", "/go/src/proctor"]
-
 FROM ubuntu:bionic
-
 RUN apt-get update && apt-get install -y \
   curl \
   gcc \
@@ -25,6 +19,3 @@ RUN tar -zxf cpython-${VERSION}.tar.gz
 WORKDIR /root/cpython-${VERSION}
 RUN ./configure --with-pydebug
 RUN make -s -j2
-
-COPY --from=golang /proctor /proctor
-ENTRYPOINT ["/proctor", "--runtime=python"]

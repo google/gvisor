@@ -1,5 +1,4 @@
 FROM ubuntu:bionic
-
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
         # iptables to disable OS native packet processing.
         iptables \

@@ -57,42 +57,10 @@ func IsCheckpointSupported() bool {
 	return *checkpoint
 }
 
-// nameToActual is used by ImageByName (for now).
-var nameToActual = map[string]string{
-	"basic/alpine":          "alpine",
-	"basic/busybox":         "busybox:1.31.1",
-	"basic/httpd":           "httpd",
-	"basic/mysql":           "mysql",
-	"basic/nginx":           "nginx",
-	"basic/python":          "gcr.io/gvisor-presubmit/python-hello",
-	"basic/resolv":          "k8s.gcr.io/busybox",
-	"basic/ruby":            "ruby",
-	"basic/tomcat":          "tomcat:8.0",
-	"basic/ubuntu":          "ubuntu:trusty",
-	"iptables":              "gcr.io/gvisor-presubmit/iptables-test",
-	"packetdrill":           "gcr.io/gvisor-presubmit/packetdrill",
-	"packetimpact":          "gcr.io/gvisor-presubmit/packetimpact",
-	"runtimes/go1.12":       "gcr.io/gvisor-presubmit/go1.12",
-	"runtimes/java11":       "gcr.io/gvisor-presubmit/java11",
-	"runtimes/nodejs12.4.0": "gcr.io/gvisor-presubmit/nodejs12.4.0",
-	"runtimes/php7.3.6":     "gcr.io/gvisor-presubmit/php7.3.6",
-	"runtimes/python3.7.3":  "gcr.io/gvisor-presubmit/python3.7.3",
-}
-
-// ImageByName mangles the image name used locally.
-//
-// For now, this is implemented as a static lookup table. In a subsequent
-// change, this will be used to reference a locally-generated image.
+// ImageByName mangles the image name used locally. This depends on the image
+// build infrastructure in images/ and tools/vm.
 func ImageByName(name string) string {
-	actual, ok := nameToActual[name]
-	if !ok {
-		panic(fmt.Sprintf("unknown image: %v", name))
-	}
-	// A terrible hack, for now execute a manual pull.
-	if out, err := exec.Command("docker", "pull", actual).CombinedOutput(); err != nil {
-		panic(fmt.Sprintf("error pulling image %q -> %q: %v, out: %s", name, actual, err, string(out)))
-	}
-	return actual
+	return fmt.Sprintf("gvisor.dev/images/%s", name)
 }
 
 // ConfigureExePath configures the executable for runsc in the test environment.

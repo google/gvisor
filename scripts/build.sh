@@ -16,9 +16,6 @@
 
 source $(dirname $0)/common.sh
 
-# Install required packages for make_repository.sh et al.
-apt_install dpkg-sig coreutils apt-utils xz-utils
-
 # Build runsc.
 runsc=$(build -c opt //runsc)
 
@@ -45,7 +42,6 @@ if [[ -v KOKORO_REPO_KEY ]]; then
   repo=$(tools/make_repository.sh \
           "${KOKORO_KEYSTORE_DIR}/${KOKORO_REPO_KEY}" \
           gvisor-bot@google.com \
-          main \
           "${KOKORO_ARTIFACTS_DIR}" \
           ${pkgs})
 fi
