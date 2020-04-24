@@ -22,6 +22,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"go.uber.org/multierr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -719,4 +720,248 @@ func (ls *Layers) match(other Layers) bool {
 		}
 	}
 	return true
+}
+
+// layerDiff stores the diffs for each field along with the label for the Layer.
+// If rows is nil, that means that there was no diff.
+type layerDiff struct {
+	label string
+	rows  []layerDiffRow
+}
+
+// layerDiffRow stores the fields and corresponding values for two got and want
+// layers. If the value was nil then the string stored is the empty string.
+type layerDiffRow struct {
+	field, got, want string
+}
+
+// diffLayer extracts all differing fields between two layers.
+func diffLayer(got, want Layer) []layerDiffRow {
+	vGot := reflect.ValueOf(got).Elem()
+	vWant := reflect.ValueOf(want).Elem()
+	if vGot.Type() != vWant.Type() {
+		return nil
+	}
+	t := vGot.Type()
+	var result []layerDiffRow
+	for i := 0; i < t.NumField(); i++ {
+		t := t.Field(i)
+		if t.Anonymous {
+			// Ignore the LayerBase in the Layer struct.
+			continue
+		}
+		vGot := vGot.Field(i)
+		vWant := vWant.Field(i)
+		gotString := ""
+		if !vGot.IsNil() {
+			gotString = fmt.Sprint(reflect.Indirect(vGot))
+		}
+		wantString := ""
+		if !vWant.IsNil() {
+			wantString = fmt.Sprint(reflect.Indirect(vWant))
+		}
+		result = append(result, layerDiffRow{t.Name, gotString, wantString})
+	}
+	return result
+}
+
+// layerType returns a concise string describing the type of the Layer, like
+// "TCP", or "IPv6".
+func layerType(l Layer) string {
+	return reflect.TypeOf(l).Elem().Name()
+}
+
+// diff compares Layers and returns a representation of the difference. Each
+// Layer in the Layers is pairwise compared. If an element in either is nil, it
+// is considered a match with the other Layer. If two Layers have differing
+// types, they don't match regardless of the contents. If two Layers have the
+// same type then the fields in the Layer are pairwise compared. Fields that are
+// nil always match. Two non-nil fields only match if they point to equal
+// values. diff returns an empty string if and only if *ls and other match.
+func (ls *Layers) diff(other Layers) string {
+	var allDiffs []layerDiff
+	// Check the cases where one list is longer than the other, where one or both
+	// elements are nil, where the sides have different types, and where the sides
+	// have the same type.
+	for i := 0; i < len(*ls) || i < len(other); i++ {
+		if i >= len(*ls) {
+			// Matching ls against other where other is longer than ls. missing
+			// matches everything so we just include a label without any rows. Having
+			// no rows is a sign that there was no diff.
+			allDiffs = append(allDiffs, layerDiff{
+				label: "missing matches " + layerType(other[i]),
+			})
+			continue
+		}
+
+		if i >= len(other) {
+			// Matching ls against other where ls is longer than other. missing
+			// matches everything so we just include a label without any rows. Having
+			// no rows is a sign that there was no diff.
+			allDiffs = append(allDiffs, layerDiff{
+				label: layerType((*ls)[i]) + " matches missing",
+			})
+			continue
+		}
+
+		if (*ls)[i] == nil && other[i] == nil {
+			// Matching ls against other where both elements are nil. nil matches
+			// everything so we just include a label without any rows. Having no rows
+			// is a sign that there was no diff.
+			allDiffs = append(allDiffs, layerDiff{
+				label: "nil matches nil",
+			})
+			continue
+		}
+
+		if (*ls)[i] == nil {
+			// Matching ls against other where the element in ls is nil. nil matches
+			// everything so we just include a label without any rows. Having no rows
+			// is a sign that there was no diff.
+			allDiffs = append(allDiffs, layerDiff{
+				label: "nil matches " + layerType(other[i]),
+			})
+			continue
+		}
+
+		if other[i] == nil {
+			// Matching ls against other where the element in other is nil. nil
+			// matches everything so we just include a label without any rows. Having
+			// no rows is a sign that there was no diff.
+			allDiffs = append(allDiffs, layerDiff{
+				label: layerType((*ls)[i]) + " matches nil",
+			})
+			continue
+		}
+
+		if reflect.TypeOf((*ls)[i]) == reflect.TypeOf(other[i]) {
+			// Matching ls against other where both elements have the same type. Match
+			// each field pairwise and only report a diff if there is a mismatch,
+			// which is only when both sides are non-nil and have differring values.
+			diff := diffLayer((*ls)[i], other[i])
+			var layerDiffRows []layerDiffRow
+			for _, d := range diff {
+				if d.got == "" || d.want == "" || d.got == d.want {
+					continue
+				}
+				layerDiffRows = append(layerDiffRows, layerDiffRow{
+					d.field,
+					d.got,
+					d.want,
+				})
+			}
+			if len(layerDiffRows) > 0 {
+				allDiffs = append(allDiffs, layerDiff{
+					label: layerType((*ls)[i]),
+					rows:  layerDiffRows,
+				})
+			} else {
+				allDiffs = append(allDiffs, layerDiff{
+					label: layerType((*ls)[i]) + " matches " + layerType(other[i]),
+					// Having no rows is a sign that there was no diff.
+				})
+			}
+			continue
+		}
+		// Neither side is nil and the types are different, so we'll display one
+		// side then the other.
+		allDiffs = append(allDiffs, layerDiff{
+			label: layerType((*ls)[i]) + " doesn't match " + layerType(other[i]),
+		})
+		diff := diffLayer((*ls)[i], (*ls)[i])
+		layerDiffRows := []layerDiffRow{}
+		for _, d := range diff {
+			if len(d.got) == 0 {
+				continue
+			}
+			layerDiffRows = append(layerDiffRows, layerDiffRow{
+				d.field,
+				d.got,
+				"",
+			})
+		}
+		allDiffs = append(allDiffs, layerDiff{
+			label: layerType((*ls)[i]),
+			rows:  layerDiffRows,
+		})
+
+		layerDiffRows = []layerDiffRow{}
+		diff = diffLayer(other[i], other[i])
+		for _, d := range diff {
+			if len(d.want) == 0 {
+				continue
+			}
+			layerDiffRows = append(layerDiffRows, layerDiffRow{
+				d.field,
+				"",
+				d.want,
+			})
+		}
+		allDiffs = append(allDiffs, layerDiff{
+			label: layerType(other[i]),
+			rows:  layerDiffRows,
+		})
+	}
+
+	output := ""
+	// These are for output formatting.
+	maxLabelLen, maxFieldLen, maxGotLen, maxWantLen := 0, 0, 0, 0
+	foundOne := false
+	for _, l := range allDiffs {
+		if len(l.label) > maxLabelLen && len(l.rows) > 0 {
+			maxLabelLen = len(l.label)
+		}
+		if l.rows != nil {
+			foundOne = true
+		}
+		for _, r := range l.rows {
+			if len(r.field) > maxFieldLen {
+				maxFieldLen = len(r.field)
+			}
+			if l := len(fmt.Sprint(r.got)); l > maxGotLen {
+				maxGotLen = l
+			}
+			if l := len(fmt.Sprint(r.want)); l > maxWantLen {
+				maxWantLen = l
+			}
+		}
+	}
+	if !foundOne {
+		return ""
+	}
+	for _, l := range allDiffs {
+		if len(l.rows) == 0 {
+			output += "(" + l.label + ")\n"
+			continue
+		}
+		for i, r := range l.rows {
+			var label string
+			if i == 0 {
+				label = l.label + ":"
+			}
+			output += fmt.Sprintf(
+				"%*s %*s %*v %*v\n",
+				maxLabelLen+1, label,
+				maxFieldLen+1, r.field+":",
+				maxGotLen, r.got,
+				maxWantLen, r.want,
+			)
+		}
+	}
+	return output
+}
+
+// merge merges the other Layers into ls. If the other Layers is longer, those
+// additional Layer structs are added to ls. The errors from merging are
+// collected and returned.
+func (ls *Layers) merge(other Layers) error {
+	var errs error
+	for i, o := range other {
+		if i < len(*ls) {
+			errs = multierr.Combine(errs, (*ls)[i].merge(o))
+		} else {
+			*ls = append(*ls, o)
+		}
+	}
+	return errs
 }

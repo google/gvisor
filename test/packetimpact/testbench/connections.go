@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
-	"strings"
 	"testing"
 	"time"
 
@@ -66,14 +65,16 @@ func pickPort() (int, uint16, error) {
 
 // layerState stores the state of a layer of a connection.
 type layerState interface {
-	// outgoing returns an outgoing layer to be sent in a frame.
+	// outgoing returns an outgoing layer to be sent in a frame. It should not
+	// update layerState, that is done in layerState.sent.
 	outgoing() Layer
 
 	// incoming creates an expected Layer for comparing against a received Layer.
 	// Because the expectation can depend on values in the received Layer, it is
 	// an input to incoming. For example, the ACK number needs to be checked in a
-	// TCP packet but only if the ACK flag is set in the received packet. The
-	// calles takes ownership of the returned Layer.
+	// TCP packet but only if the ACK flag is set in the received packet. It
+	// should not update layerState, that is done in layerState.received. The
+	// caller takes ownership of the returned Layer.
 	incoming(received Layer) Layer
 
 	// sent updates the layerState based on the Layer that was sent. The input is
@@ -363,44 +364,33 @@ type Connection struct {
 	t           *testing.T
 }
 
-// match tries to match each Layer in received against the incoming filter. If
-// received is longer than layerStates then that may still count as a match. The
-// reverse is never a match. override overrides the default matchers for each
-// Layer.
+// Returns the default incoming frame against which to match. If received is
+// longer than layerStates then that may still count as a match. The reverse is
+// never a match and nil is returned.
+func (conn *Connection) incoming(received Layers) Layers {
+	if len(received) < len(conn.layerStates) {
+		return nil
+	}
+	in := Layers{}
+	for i, s := range conn.layerStates {
+		toMatch := s.incoming(received[i])
+		if toMatch == nil {
+			return nil
+		}
+		in = append(in, toMatch)
+	}
+	return in
+}
+
 func (conn *Connection) match(override, received Layers) bool {
-	var layersToMatch int
-	if len(override) < len(conn.layerStates) {
-		layersToMatch = len(conn.layerStates)
-	} else {
-		layersToMatch = len(override)
+	toMatch := conn.incoming(received)
+	if toMatch == nil {
+		return false // Not enough layers in gotLayers for matching.
 	}
-	if len(received) < layersToMatch {
-		return false
+	if err := toMatch.merge(override); err != nil {
+		return false // Failing to merge is not matching.
 	}
-	for i := 0; i < layersToMatch; i++ {
-		var toMatch Layer
-		if i < len(conn.layerStates) {
-			s := conn.layerStates[i]
-			toMatch = s.incoming(received[i])
-			if toMatch == nil {
-				return false
-			}
-			if i < len(override) {
-				if err := toMatch.merge(override[i]); err != nil {
-					conn.t.Fatalf("failed to merge: %s", err)
-				}
-			}
-		} else {
-			toMatch = override[i]
-			if toMatch == nil {
-				conn.t.Fatalf("expect the overriding layers to be non-nil")
-			}
-		}
-		if !toMatch.match(received[i]) {
-			return false
-		}
-	}
-	return true
+	return toMatch.match(received)
 }
 
 // Close frees associated resources held by the Connection.
@@ -470,6 +460,16 @@ func (conn *Connection) recvFrame(timeout time.Duration) Layers {
 	return parse(parseEther, b)
 }
 
+// layersError stores the Layers that we got and the Layers that we wanted to
+// match.
+type layersError struct {
+	got, want Layers
+}
+
+func (e *layersError) Error() string {
+	return e.got.diff(e.want)
+}
+
 // Expect a frame with the final layerStates layer matching the provided Layer
 // within the timeout specified. If it doesn't arrive in time, it returns nil.
 func (conn *Connection) Expect(layer Layer, timeout time.Duration) (Layer, error) {
@@ -485,21 +485,25 @@ func (conn *Connection) Expect(layer Layer, timeout time.Duration) (Layer, error
 		return gotFrame[len(conn.layerStates)-1], nil
 	}
 	conn.t.Fatal("the received frame should be at least as long as the expected layers")
-	return nil, fmt.Errorf("the received frame should be at least as long as the expected layers")
+	panic("unreachable")
 }
 
 // ExpectFrame expects a frame that matches the provided Layers within the
-// timeout specified. If it doesn't arrive in time, it returns nil.
+// timeout specified. If one arrives in time, the Layers is returned without an
+// error. If it doesn't arrive in time, it returns nil and error is non-nil.
 func (conn *Connection) ExpectFrame(layers Layers, timeout time.Duration) (Layers, error) {
 	deadline := time.Now().Add(timeout)
-	var allLayers []string
+	var errs error
 	for {
 		var gotLayers Layers
 		if timeout = time.Until(deadline); timeout > 0 {
 			gotLayers = conn.recvFrame(timeout)
 		}
 		if gotLayers == nil {
-			return nil, fmt.Errorf("got %d packets:\n%s", len(allLayers), strings.Join(allLayers, "\n"))
+			if errs == nil {
+				return nil, fmt.Errorf("got no frames matching %v during %s", layers, timeout)
+			}
+			return nil, fmt.Errorf("got no frames matching %v during %s: got %w", layers, timeout, errs)
 		}
 		if conn.match(layers, gotLayers) {
 			for i, s := range conn.layerStates {
@@ -509,7 +513,7 @@ func (conn *Connection) ExpectFrame(layers Layers, timeout time.Duration) (Layer
 			}
 			return gotLayers, nil
 		}
-		allLayers = append(allLayers, fmt.Sprintf("%s", gotLayers))
+		errs = multierr.Combine(errs, &layersError{got: gotLayers, want: conn.incoming(gotLayers)})
 	}
 }
 
