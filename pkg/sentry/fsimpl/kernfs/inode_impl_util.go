@@ -182,7 +182,7 @@ func (InodeNotSymlink) Readlink(context.Context) (string, error) {
 }
 
 // Getlink implements Inode.Getlink.
-func (InodeNotSymlink) Getlink(context.Context) (vfs.VirtualDentry, string, error) {
+func (InodeNotSymlink) Getlink(context.Context, *vfs.Mount) (vfs.VirtualDentry, string, error) {
 	return vfs.VirtualDentry{}, "", syserror.EINVAL
 }
 
@@ -568,8 +568,10 @@ func (s *StaticDirectory) Init(creds *auth.Credentials, ino uint64, perm linux.F
 
 // Open implements kernfs.Inode.
 func (s *StaticDirectory) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd := &GenericDirectoryFD{}
-	fd.Init(rp.Mount(), vfsd, &s.OrderedChildren, &opts)
+	fd, err := NewGenericDirectoryFD(rp.Mount(), vfsd, &s.OrderedChildren, &opts)
+	if err != nil {
+		return nil, err
+	}
 	return fd.VFSFileDescription(), nil
 }
 

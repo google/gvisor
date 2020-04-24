@@ -797,6 +797,14 @@ type VirtualDentry struct {
 	dentry *Dentry
 }
 
+// MakeVirtualDentry creates a VirtualDentry.
+func MakeVirtualDentry(mount *Mount, dentry *Dentry) VirtualDentry {
+	return VirtualDentry{
+		mount:  mount,
+		dentry: dentry,
+	}
+}
+
 // Ok returns true if vd is not empty. It does not require that a reference is
 // held.
 func (vd VirtualDentry) Ok() bool {
