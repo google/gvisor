@@ -1,13 +1,13 @@
 package ring0
 
 import (
+	"syscall"
+
 	"fmt"
+	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"io"
 	"reflect"
-	"syscall"
-
-	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
 )
 
 // Useful bits.
@@ -293,6 +293,12 @@ func (c *CPU) GetVector() (value Vector) {
 //go:nosplit
 func (c *CPU) SetAppAddr(value uintptr) {
 	c.appAddr = value
+}
+
+// GetLazyVFP returns the value of cpacr_el1.
+//go:nosplit
+func (c *CPU) GetLazyVFP() (value uintptr) {
+	return c.lazyVFP
 }
 
 // SwitchArchOpts are embedded in SwitchOpts.
