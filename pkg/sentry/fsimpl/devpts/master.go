@@ -46,7 +46,7 @@ type masterInode struct {
 var _ kernfs.Inode = (*masterInode)(nil)
 
 // Open implements kernfs.Inode.Open.
-func (mi *masterInode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+func (mi *masterInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	t, err := mi.root.allocateTerminal(rp.Credentials())
 	if err != nil {
 		return nil, err

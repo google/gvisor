@@ -308,7 +308,7 @@ type Inode interface {
 	//
 	// Precondition: rp.Done(). vfsd.Impl() must be the kernfs Dentry containing
 	// the inode on which Open() is being called.
-	Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error)
+	Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error)
 }
 
 type inodeRefs interface {

@@ -129,9 +129,8 @@ func (i *inode) SetStat(ctx context.Context, vfsfs *vfs.Filesystem, creds *auth.
 }
 
 // Open implements kernfs.Inode.Open.
-func (i *inode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	// FIXME(b/38173783): kernfs does not plumb Context here.
-	return i.pipe.Open(context.Background(), rp.Mount(), vfsd, opts.Flags)
+func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	return i.pipe.Open(ctx, rp.Mount(), vfsd, opts.Flags)
 }
 
 // NewConnectedPipeFDs returns a pair of FileDescriptions representing the read

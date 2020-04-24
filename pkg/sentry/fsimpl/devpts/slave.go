@@ -48,7 +48,7 @@ type slaveInode struct {
 var _ kernfs.Inode = (*slaveInode)(nil)
 
 // Open implements kernfs.Inode.Open.
-func (si *slaveInode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+func (si *slaveInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	si.IncRef()
 	fd := &slaveFileDescription{
 		inode: si,
