@@ -61,8 +61,8 @@ func TestFinWait2Timeout(t *testing.T) {
 					t.Fatalf("expected a RST packet within a second but got none: %s", err)
 				}
 			} else {
-				if _, err := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)}, 10*time.Second); err == nil {
-					t.Fatalf("expected no RST packets within ten seconds but got one: %s", err)
+				if got, err := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)}, 10*time.Second); got != nil || err == nil {
+					t.Fatalf("expected no RST packets within ten seconds but got one: %s", got)
 				}
 			}
 		})

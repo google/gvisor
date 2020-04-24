@@ -313,3 +313,83 @@ func TestConnectionMatch(t *testing.T) {
 		})
 	}
 }
+
+func TestLayersDiff(t *testing.T) {
+	for _, tt := range []struct {
+		x, y Layers
+		want string
+	}{
+		{
+			Layers{&Ether{Type: NetworkProtocolNumber(12)}, &TCP{DataOffset: Uint8(5), SeqNum: Uint32(5)}},
+			Layers{&Ether{Type: NetworkProtocolNumber(13)}, &TCP{DataOffset: Uint8(7), SeqNum: Uint32(6)}},
+			"Ether:       Type: 12 13\n" +
+				"  TCP:     SeqNum:  5  6\n" +
+				"       DataOffset:  5  7\n",
+		},
+		{
+			Layers{&Ether{Type: NetworkProtocolNumber(12)}, &UDP{SrcPort: Uint16(123)}},
+			Layers{&Ether{Type: NetworkProtocolNumber(13)}, &TCP{DataOffset: Uint8(7), SeqNum: Uint32(6)}},
+			"Ether:       Type:  12 13\n" +
+				"(UDP doesn't match TCP)\n" +
+				"  UDP:    SrcPort: 123   \n" +
+				"  TCP:     SeqNum:      6\n" +
+				"       DataOffset:      7\n",
+		},
+		{
+			Layers{&UDP{SrcPort: Uint16(123)}},
+			Layers{&Ether{Type: NetworkProtocolNumber(13)}, &TCP{DataOffset: Uint8(7), SeqNum: Uint32(6)}},
+			"(UDP doesn't match Ether)\n" +
+				"  UDP: SrcPort: 123   \n" +
+				"Ether:    Type:     13\n" +
+				"(missing matches TCP)\n",
+		},
+		{
+			Layers{nil, &UDP{SrcPort: Uint16(123)}},
+			Layers{&Ether{Type: NetworkProtocolNumber(13)}, &TCP{DataOffset: Uint8(7), SeqNum: Uint32(6)}},
+			"(nil matches Ether)\n" +
+				"(UDP doesn't match TCP)\n" +
+				"UDP:    SrcPort: 123  \n" +
+				"TCP:     SeqNum:     6\n" +
+				"     DataOffset:     7\n",
+		},
+		{
+			Layers{&Ether{Type: NetworkProtocolNumber(13)}, &IPv4{IHL: Uint8(4)}, &TCP{DataOffset: Uint8(7), SeqNum: Uint32(6)}},
+			Layers{&Ether{Type: NetworkProtocolNumber(13)}, &IPv4{IHL: Uint8(6)}, &TCP{DataOffset: Uint8(7), SeqNum: Uint32(6)}},
+			"(Ether matches Ether)\n" +
+				"IPv4: IHL: 4 6\n" +
+				"(TCP matches TCP)\n",
+		},
+		{
+			Layers{&Payload{Bytes: []byte("foo")}},
+			Layers{&Payload{Bytes: []byte("bar")}},
+			"Payload: Bytes: [102 111 111] [98 97 114]\n",
+		},
+		{
+			Layers{&Payload{Bytes: []byte("")}},
+			Layers{&Payload{}},
+			"",
+		},
+		{
+			Layers{&Payload{Bytes: []byte("")}},
+			Layers{&Payload{Bytes: []byte("")}},
+			"",
+		},
+		{
+			Layers{&UDP{}},
+			Layers{&TCP{}},
+			"(UDP doesn't match TCP)\n" +
+				"(UDP)\n" +
+				"(TCP)\n",
+		},
+	} {
+		if got := tt.x.diff(tt.y); got != tt.want {
+			t.Errorf("%s.diff(%s) = %q, want %q", tt.x, tt.y, got, tt.want)
+		}
+		if tt.x.match(tt.y) != (tt.x.diff(tt.y) == "") {
+			t.Errorf("match and diff of %s and %s disagree", tt.x, tt.y)
+		}
+		if tt.y.match(tt.x) != (tt.y.diff(tt.x) == "") {
+			t.Errorf("match and diff of %s and %s disagree", tt.y, tt.x)
+		}
+	}
+}
