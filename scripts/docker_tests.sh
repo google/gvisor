@@ -16,5 +16,7 @@
 
 source $(dirname $0)/common.sh
 
+make load-all-images
+
 install_runsc_for_test docker
 test_runsc //test/image:image_test //test/e2e:integration_test

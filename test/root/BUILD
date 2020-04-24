@@ -48,6 +48,7 @@ go_test(
 
 vm_test(
     name = "root_vm_test",
+    size = "large",
     shard_count = 1,
     targets = [
         "//tools/installers:shim",

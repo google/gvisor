@@ -17,13 +17,36 @@
 # Parse arguments. We require more than two arguments, which are the private
 # keyring, the e-mail associated with the signer, and the list of packages.
 if [ "$#" -le 3 ]; then
-  echo "usage: $0 <private-key> <signer-email> <component> <root> <packages...>"
+  echo "usage: $0 <private-key> <signer-email> <root> <packages...>"
   exit 1
 fi
 declare -r private_key=$(readlink -e "$1"); shift
 declare -r signer="$1"; shift
-declare -r component="$1"; shift
 declare -r root="$1"; shift
+
+# Ensure that we have the correct packages installed.
+function apt_install() {
+  while true; do
+    sudo apt-get update &&
+      sudo apt-get install -y "$@" &&
+      true
+    result="${?}"
+    case $result in
+      0)
+        break
+        ;;
+      100)
+        # 100 is the error code that apt-get returns.
+        ;;
+      *)
+        exit $result
+        ;;
+    esac
+  done
+}
+dpkg-sig --help >/dev/null       || apt_install dpkg-sig
+apt-ftparchive --help >/dev/null || apt_install apt-utils
+xz --help >/dev/null             || apt_install xz-utils
 
 # Verbose from this point.
 set -xeo pipefail
@@ -78,7 +101,7 @@ for dir in "${root}"/pool/*/binary-*; do
   name=$(basename "${dir}")
   arch=${name##binary-}
   arches+=("${arch}")
-  repo_packages="${tmpdir}"/"${component}"/"${name}"
+  repo_packages="${tmpdir}"/main/"${name}"
   mkdir -p "${repo_packages}"
   (cd "${root}" && apt-ftparchive --arch "${arch}" packages pool > "${repo_packages}"/Packages)
   (cd "${repo_packages}" && cat Packages | gzip > Packages.gz)
@@ -91,7 +114,7 @@ APT {
   FTPArchive {
     Release {
       Architectures "${arches[@]}";
-      Components "${component}";
+      Components "main";
     };
   };
 };

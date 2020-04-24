@@ -1,8 +1,3 @@
-# Compile the proctor binary.
-FROM golang:1.12 AS golang
-ADD ["proctor/", "/go/src/proctor/"]
-RUN ["go", "build", "-o", "/proctor", "/go/src/proctor"]
-
 FROM ubuntu:bionic
 RUN apt-get update && apt-get install -y \
   autoconf \
@@ -25,6 +20,3 @@ RUN set -ex \
 RUN curl -o jtreg.tar.gz https://ci.adoptopenjdk.net/view/Dependencies/job/jtreg/lastSuccessfulBuild/artifact/jtreg-4.2.0-tip.tar.gz
 RUN tar -xzf jtreg.tar.gz
 ENV PATH="/root/jtreg/bin:$PATH"
-
-COPY --from=golang /proctor /proctor
-ENTRYPOINT ["/proctor", "--runtime=java"]
