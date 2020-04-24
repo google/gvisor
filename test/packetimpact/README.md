@@ -29,24 +29,24 @@ There are a few ways to write networking tests for gVisor currently:
 
 The right choice depends on the needs of the test.
 
-Feature       | Go unit test | syscall test | packetdrill | packetimpact
-------------- | ------------ | ------------ | ----------- | ------------
-Multiplatform | no           | **YES**      | **YES**     | **YES**
-Concise       | no           | somewhat     | somewhat    | **VERY**
-Control-flow  | **YES**      | **YES**      | no          | **YES**
-Flexible      | **VERY**     | no           | somewhat    | **VERY**
+Feature        | Go unit test | syscall test | packetdrill | packetimpact
+-------------- | ------------ | ------------ | ----------- | ------------
+Multi-platform | no           | **YES**      | **YES**     | **YES**
+Concise        | no           | somewhat     | somewhat    | **VERY**
+Control-flow   | **YES**      | **YES**      | no          | **YES**
+Flexible       | **VERY**     | no           | somewhat    | **VERY**
 
 ### Go unit tests
 
 If the test depends on the internals of gVisor and doesn't need to run on Linux
 or other platforms for comparison purposes, a Go unit test can be appropriate.
 They can observe internals of gVisor networking. The downside is that they are
-**not concise** and **not multiplatform**. If you require insight on gVisor
+**not concise** and **not multi-platform**. If you require insight on gVisor
 internals, this is the right choice.
 
 ### Syscall tests
 
-Syscall tests are **multiplatform** but cannot examine the internals of gVisor
+Syscall tests are **multi-platform** but cannot examine the internals of gVisor
 networking. They are **concise**. They can use **control-flow** structures like
 conditionals, for loops, and variables. However, they are limited to only what
 the POSIX interface provides so they are **not flexible**. For example, you
@@ -57,7 +57,7 @@ protocols, wrong sequence numbers, etc.
 
 ### Packetdrill tests
 
-Packetdrill tests are **multiplatform** and can run against both Linux and
+Packetdrill tests are **multi-platform** and can run against both Linux and
 gVisor. They are **concise** and use a special packetdrill scripting language.
 They are **more flexible** than a syscall test in that they can send packets
 that a syscall test would have difficulty sending, like a packet with a
@@ -73,7 +73,7 @@ other side supports window scaling, for example.
 Packetimpact tests are similar to Packetdrill tests except that they are written
 in Go instead of the packetdrill scripting language. That gives them all the
 **control-flow** abilities of Go (loops, functions, variables, etc). They are
-**multiplatform** in the same way as packetdrill tests but even more
+**multi-platform** in the same way as packetdrill tests but even more
 **flexible** because Go is more expressive than the scripting language of
 packetdrill. However, Go is **not as concise** as the packetdrill language. Many
 design decisions below are made to mitigate that.
@@ -81,21 +81,27 @@ design decisions below are made to mitigate that.
 ## How it works
 
 ```
-    +--------------+               +--------------+
-    |              |   TEST NET    |              |
-    |              | <===========> |    Device    |
-    |    Test      |               |    Under     |
-    |    Bench     |               |    Test      |
-    |              | <===========> |    (DUT)     |
-    |              |  CONTROL NET  |              |
-    +--------------+               +--------------+
+     Testbench                           Device-Under-Test (DUT)
+    +-------------------+               +------------------------+
+    |                   |   TEST NET    |                        |
+    | rawsockets.go <-->| <===========> | <---+                  |
+    |           ^       |               |     |                  |
+    |           |       |               |     |                  |
+    |           v       |               |     |                  |
+    |     unittest      |               |     |                  |
+    |           ^       |               |     |                  |
+    |           |       |               |     |                  |
+    |           v       |               |     v                  |
+    |         dut.go <========gRPC========> posix server         |
+    |                   |  CONTROL NET  |                        |
+    +-------------------+               +------------------------+
 ```
 
-Two docker containers are created by a script, one for the test bench and the
-other for the device under test (DUT). The script connects the two containers
-with a control network and test network. It also does some other tasks like
-waiting until the DUT is ready before starting the test and disabling Linux
-networking that would interfere with the test bench.
+Two docker containers are created by a "runner" script, one for the testbench
+and the other for the device under test (DUT). The script connects the two
+containers with a control network and test network. It also does some other
+tasks like waiting until the DUT is ready before starting the test and disabling
+Linux networking that would interfere with the test bench.
 
 ### DUT
 
@@ -220,7 +226,8 @@ func (i *Injector) Send(b []byte) {...}
     container and in practice, the container doesn't recognize binaries built on
     the host if they use cgo.
 *   Both gVisor and gopacket have the ability to read and write pcap files
-    without cgo but that is insufficient here.
+    without cgo but that is insufficient here because we can't just replay pcap
+    files, we need a more dynamic solution.
 *   The sniffer and injector can't share a socket because they need to be bound
     differently.
 *   Sniffing could have been done asynchronously with channels, obviating the
@@ -270,11 +277,10 @@ but with a pointer for each field that may be `nil`.
     *   Many functions, one per field, like: `filterByFlag(myBytes, SYN)`,
         `filterByLength(myBytes, 20)`, `filterByNextProto(myBytes, 0x8000)`,
         etc.
-    *   Using pointers allows us to combine `Layer`s with a one-line call to
-        `mergo.Merge(...)`. So the default `Layers` can be overridden by a
-        `Layers` with just the TCP conection's src/dst which can be overridden
-        by one with just a test specific TCP window size. Each override is
-        specified as just one call to `mergo.Merge`.
+    *   Using pointers allows us to combine `Layer`s with reflection. So the
+        default `Layers` can be overridden by a `Layers` with just the TCP
+        conection's src/dst which can be overridden by one with just a test
+        specific TCP window size.
     *   It's a proven way to separate the details of a packet from the byte
         format as shown by scapy's success.
 *   Use packetgo. It's more general than parsing packets with gVisor. However:
@@ -334,6 +340,14 @@ type Layer interface {
 }
 ```
 
+The `next` and `prev` make up a link listed so that each layer can get at the
+information in the layer around it. This is necessary for some protocols, like
+TCP that needs the layer before and payload after to compute the checksum. Any
+sequence of `Layer` structs is valid so long as the parser and `toBytes`
+functions can map from type to protool number and vice-versa. When the mapping
+fails, an error is emitted explaining what functionality is missing. The
+solution is either to fix the ordering or implement the missing protocol.
+
 For each `Layer` there is also a parsing function. For example, this one is for
 Ethernet:
 
@@ -392,81 +406,217 @@ for {
 ##### Alternatives considered
 
 *   Don't use previous and next pointers.
-    *   Each layer may need to be able to interrogate the layers aroung it, like
+    *   Each layer may need to be able to interrogate the layers around it, like
         for computing the next protocol number or total length. So *some*
         mechanism is needed for a `Layer` to see neighboring layers.
     *   We could pass the entire array `Layers` to the `toBytes()` function.
         Passing an array to a method that includes in the array the function
         receiver itself seems wrong.
 
-#### Connections
+#### `layerState`
 
-Using `Layers` above, we can create connection structures to maintain state
-about connections. For example, here is the `TCPIPv4` struct:
-
-```
-type TCPIPv4 struct {
-  outgoing     Layers
-  incoming     Layers
-  localSeqNum  uint32
-  remoteSeqNum uint32
-  sniffer      Sniffer
-  injector     Injector
-  t            *testing.T
-}
-```
-
-`TCPIPv4` contains an `outgoing Layers` which holds the defaults for the
-connection, such as the source and destination MACs, IPs, and ports. When
-`outgoing.toBytes()` is called a valid packet for this TCPIPv4 flow is built.
-
-It also contains `incoming Layers` which holds filter for incoming packets that
-belong to this flow. `incoming.match(Layers)` is used on received bytes to check
-if they are part of the flow.
-
-The `sniffer` and `injector` are for receiving and sending raw packet bytes. The
-`localSeqNum` and `remoteSeqNum` are updated by `Send` and `Recv` so that
-outgoing packets will have, by default, the correct sequence number and ack
-number.
-
-TCPIPv4 provides some functions:
-
-```
-func (conn *TCPIPv4) Send(tcp TCP) {...}
-func (conn *TCPIPv4) Recv(timeout time.Duration) *TCP {...}
-```
-
-`Send(tcp TCP)` uses [mergo](https://github.com/imdario/mergo) to merge the
-provided `TCP` (a `Layer`) into `outgoing`. This way the user can specify
-concisely just which fields of `outgoing` to modify. The packet is sent using
-the `injector`.
-
-`Recv(timeout time.Duration)` reads packets from the sniffer until either the
-timeout has elapsed or a packet that matches `incoming` arrives.
-
-Using those, we can perform a TCP 3-way handshake without too much code:
+`Layers` represents the different headers of a packet but a connection includes
+more state. For example, a TCP connection needs to keep track of the next
+expected sequence number and also the next sequence number to send. This is
+stored in a `layerState` struct. This is the `layerState` for TCP:
 
 ```go
-func (conn *TCPIPv4) Handshake() {
-  syn := uint8(header.TCPFlagSyn)
-  synack := uint8(header.TCPFlagSyn)
-  ack := uint8(header.TCPFlagAck)
-  conn.Send(TCP{Flags: &syn}) // Send a packet with all defaults but set TCP-SYN.
-
-  // Wait for the SYN-ACK response.
-  for {
-    newTCP := conn.Recv(time.Second)  // This already filters by MAC, IP, and ports.
-    if TCP{Flags: &synack}.match(newTCP) {
-      break // Only if it's a SYN-ACK proceed.
-    }
-  }
-
-  conn.Send(TCP{Flags: &ack}) // Send an ACK. The seq and ack numbers are set correctly.
+// tcpState maintains state about a TCP connection.
+type tcpState struct {
+    out, in                   TCP
+    localSeqNum, remoteSeqNum *seqnum.Value
+    synAck                    *TCP
+    portPickerFD              int
+    finSent                   bool
 }
 ```
 
-The handshake code is part of the testbench utilities so tests can share this
-common sequence, making tests even more concise.
+The next sequence numbers for each side of the connection are stored. `out` and
+`in` have defaults for the TCP header, such as the expected source and
+destination ports for outgoing packets and incoming packets.
+
+##### `layerState` interface
+
+```go
+// layerState stores the state of a layer of a connection.
+type layerState interface {
+    // outgoing returns an outgoing layer to be sent in a frame.
+    outgoing() Layer
+
+    // incoming creates an expected Layer for comparing against a received Layer.
+    // Because the expectation can depend on values in the received Layer, it is
+    // an input to incoming. For example, the ACK number needs to be checked in a
+    // TCP packet but only if the ACK flag is set in the received packet.
+    incoming(received Layer) Layer
+
+    // sent updates the layerState based on the Layer that was sent. The input is
+    // a Layer with all prev and next pointers populated so that the entire frame
+    // as it was sent is available.
+    sent(sent Layer) error
+
+    // received updates the layerState based on a Layer that is receieved. The
+    // input is a Layer with all prev and next pointers populated so that the
+    // entire frame as it was receieved is available.
+    received(received Layer) error
+
+    // close frees associated resources held by the LayerState.
+    close() error
+}
+```
+
+`outgoing` generates the default Layer for an outgoing packet. For TCP, this
+would be a `TCP` with the source and destination ports populated. Because they
+are static, they are stored inside the `out` member of `tcpState`. However, the
+sequence numbers change frequently so the outgoing sequence number is stored in
+the `localSeqNum` and put into the output of outgoing for each call.
+
+`incoming` does the same functions for packets that arrive but instead of
+generating a packet to send, it generates an expect packet for filtering packets
+that arrive. For example, if a `TCP` header arrives with the wrong ports, it can
+be ignored as belonging to a different connection. `incoming` needs the received
+header itself as an input because the filter may depend on the input. For
+example, the expected sequence number depends on the flags in the TCP header.
+
+`sent` and `received` are run for each header that is actually sent or received
+and used to update the internal state. `incoming` and `outgoing` should *not* be
+used for these purpose. For example, `incoming` is called on every packet that
+arrives but only packets that match ought to actually update the state.
+`outgoing` is called to created outgoing packets and those packets are always
+sent, so unlike `incoming`/`received`, there is one `outgoing` call for each
+`sent` call.
+
+`close` cleans up after the layerState. For example, TCP and UDP need to keep a
+port reserved and then release it.
+
+#### Connections
+
+Using `layerState` above, we can create connections.
+
+```go
+// Connection holds a collection of layer states for maintaining a connection
+// along with sockets for sniffer and injecting packets.
+type Connection struct {
+    layerStates []layerState
+    injector    Injector
+    sniffer     Sniffer
+    t           *testing.T
+}
+```
+
+The connection stores an array of `layerState` in the order that the headers
+should be present in the frame to send. For example, Ether then IPv4 then TCP.
+The injector and sniffer are for writing and reading frames. A `*testing.T` is
+stored so that internal errors can be reported directly without code in the unit
+test.
+
+The `Connection` has some useful functions:
+
+```go
+// Close frees associated resources held by the Connection.
+func (conn *Connection) Close() {...}
+// CreateFrame builds a frame for the connection with layer overriding defaults
+// of the innermost layer and additionalLayers added after it.
+func (conn *Connection) CreateFrame(layer Layer, additionalLayers ...Layer) Layers {...}
+// SendFrame sends a frame on the wire and updates the state of all layers.
+func (conn *Connection) SendFrame(frame Layers) {...}
+// Send a packet with reasonable defaults. Potentially override the final layer
+// in the connection with the provided layer and add additionLayers.
+func (conn *Connection) Send(layer Layer, additionalLayers ...Layer) {...}
+// Expect a frame with the final layerStates layer matching the provided Layer
+// within the timeout specified. If it doesn't arrive in time, it returns nil.
+func (conn *Connection) Expect(layer Layer, timeout time.Duration) (Layer, error) {...}
+// ExpectFrame expects a frame that matches the provided Layers within the
+// timeout specified. If it doesn't arrive in time, it returns nil.
+func (conn *Connection) ExpectFrame(layers Layers, timeout time.Duration) (Layers, error) {...}
+// Drain drains the sniffer's receive buffer by receiving packets until there's
+// nothing else to receive.
+func (conn *Connection) Drain() {...}
+```
+
+`CreateFrame` uses the `[]layerState` to create a frame to send. The first
+argument is for overriding defaults in the last header of the frame, because
+this is the most common need. For a TCPIPv4 connection, this would be the TCP
+header. Optional additionalLayers can be specified to add to the frame being
+created, such as a `Payload` for `TCP`.
+
+`SendFrame` sends the frame to the DUT. It is combined with `CreateFrame` to
+make `Send`. For unittests with basic sending needs, `Send` can be used. If more
+control is needed over the frame, it can be made with `CreateFrame`, modified in
+the unit test, and then sent with `SendFrame`.
+
+On the receiving side, there is `Expect` and `ExpectFrame`. Like with the
+sending side, there are two forms of each function, one for just the last header
+and one for the whole frame. The expect functions use the `[]layerState` to
+create a template for the expected incoming frame. That frame is then overridden
+by the values in the first argument. Finally, a loop starts sniffing packets on
+the wire for frames. If a matching frame is found before the timeout, it is
+returned without error. If not, nil is returned and the error contains text of
+all the received frames that didn't match. Exactly one of the outputs will be
+non-nil, even if no frames are received at all.
+
+`Drain` sniffs and discards all the frames that have yet to be received. A
+common way to write a test is:
+
+```go
+conn.Drain() // Discard all outstanding frames.
+conn.Send(...) // Send a frame with overrides.
+// Now expect a frame with a certain header and fail if it doesn't arrive.
+if _, err := conn.Expect(...); err != nil { t.Fatal(...) }
+```
+
+Or for a test where we want to check that no frame arrives:
+
+```go
+if gotOne, _ := conn.Expect(...); gotOne != nil { t.Fatal(...) }
+```
+
+#### Specializing `Connection`
+
+Because there are some common combinations of `layerState` into `Connection`,
+they are defined:
+
+```go
+// TCPIPv4 maintains the state for all the layers in a TCP/IPv4 connection.
+type TCPIPv4 Connection
+// UDPIPv4 maintains the state for all the layers in a UDP/IPv4 connection.
+type UDPIPv4 Connection
+```
+
+Each has a `NewXxx` function to create a new connection with reasonable
+defaults. They also have functions that call the underlying `Connection`
+functions but with specialization and tighter type-checking. For example:
+
+```go
+func (conn *TCPIPv4) Send(tcp TCP, additionalLayers ...Layer) {
+    (*Connection)(conn).Send(&tcp, additionalLayers...)
+}
+func (conn *TCPIPv4) Drain() {
+    conn.sniffer.Drain()
+}
+```
+
+They may also have some accessors to get or set the internal state of the
+connection:
+
+```go
+func (conn *TCPIPv4) state() *tcpState {
+    state, ok := conn.layerStates[len(conn.layerStates)-1].(*tcpState)
+    if !ok {
+        conn.t.Fatalf("expected final state of %v to be tcpState", conn.layerStates)
+    }
+    return state
+}
+func (conn *TCPIPv4) RemoteSeqNum() *seqnum.Value {
+    return conn.state().remoteSeqNum
+}
+func (conn *TCPIPv4) LocalSeqNum() *seqnum.Value {
+    return conn.state().localSeqNum
+}
+```
+
+Unittests will in practice use these functions and not the functions on
+`Connection`. For example, `NewTCPIPv4()` and then call `Send` on that rather
+than cast is to a `Connection` and call `Send` on that cast result.
 
 ##### Alternatives considered
 
