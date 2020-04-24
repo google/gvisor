@@ -484,7 +484,7 @@ type Task struct {
 	// bit.
 	//
 	// numaPolicy and numaNodeMask are protected by mu.
-	numaPolicy   int32
+	numaPolicy   linux.NumaPolicy
 	numaNodeMask uint64
 
 	// netns is the task's network namespace. netns is never nil.
