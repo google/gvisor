@@ -120,12 +120,13 @@ func (um *UDPMatcher) Match(hook stack.Hook, pkt stack.PacketBuffer, interfaceNa
 		udpHeader = header.UDP(pkt.TransportHeader)
 	} else {
 		// The UDP header hasn't been parsed yet. We have to do it here.
-		if len(pkt.Data.First()) < header.UDPMinimumSize {
+		hdr, ok := pkt.Data.PullUp(header.UDPMinimumSize)
+		if !ok {
 			// There's no valid UDP header here, so we hotdrop the
 			// packet.
 			return false, true
 		}
-		udpHeader = header.UDP(pkt.Data.First())
+		udpHeader = header.UDP(hdr)
 	}
 
 	// Check whether the source and destination ports are within the
