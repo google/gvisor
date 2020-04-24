@@ -192,6 +192,8 @@ docker pull "${IMAGE_TAG}"
 
 # Create the DUT container and connect to network.
 DUT=$(docker create ${RUNTIME_ARG} --privileged --rm \
+  --cap-add NET_ADMIN \
+  --sysctl net.ipv6.conf.all.disable_ipv6=0 \
   --stop-timeout ${TIMEOUT} -it ${IMAGE_TAG})
 docker network connect "${CTRL_NET}" \
   --ip "${CTRL_NET_PREFIX}${DUT_NET_SUFFIX}" "${DUT}" \
@@ -203,6 +205,8 @@ docker start "${DUT}"
 
 # Create the test bench container and connect to network.
 TESTBENCH=$(docker create --privileged --rm \
+  --cap-add NET_ADMIN \
+  --sysctl net.ipv6.conf.all.disable_ipv6=0 \
   --stop-timeout ${TIMEOUT} -it ${IMAGE_TAG})
 docker network connect "${CTRL_NET}" \
   --ip "${CTRL_NET_PREFIX}${TESTBENCH_NET_SUFFIX}" "${TESTBENCH}" \
@@ -237,6 +241,32 @@ declare -r REMOTE_MAC=$(docker exec -t "${DUT}" ip link show \
   "${TEST_DEVICE}" | tail -1 | cut -d' ' -f6)
 declare -r LOCAL_MAC=$(docker exec -t "${TESTBENCH}" ip link show \
   "${TEST_DEVICE}" | tail -1 | cut -d' ' -f6)
+declare REMOTE_IPV6=$(docker exec -t "${DUT}" ip addr show scope link \
+  "${TEST_DEVICE}" | grep inet6 | cut -d' ' -f6 | cut -d'/' -f1)
+declare -r LOCAL_IPV6=$(docker exec -t "${TESTBENCH}" ip addr show scope link \
+  "${TEST_DEVICE}" | grep inet6 | cut -d' ' -f6 | cut -d'/' -f1)
+
+# Netstack as DUT doesn't assign IPv6 addresses automatically so do it if
+# needed.  Convert the MAC address to an IPv6 link local address as described in
+# RFC 4291 page 20: https://tools.ietf.org/html/rfc4291#page-20
+if [[ -z "${REMOTE_IPV6}" ]]; then
+  # Split the octets of the MAC into an array of strings.
+  IFS=":" read -a REMOTE_OCTETS <<< "${REMOTE_MAC}"
+  # Flip the global bit.
+  REMOTE_OCTETS[0]=$(printf '%x' "$((0x${REMOTE_OCTETS[0]} ^ 2))")
+  # Add the IPv6 address.
+  docker exec "${DUT}" \
+    ip addr add $(printf 'fe80::%02x%02x:%02xff:fe%02x:%02x%02x/64' \
+    "0x${REMOTE_OCTETS[0]}" "0x${REMOTE_OCTETS[1]}" "0x${REMOTE_OCTETS[2]}" \
+    "0x${REMOTE_OCTETS[3]}" "0x${REMOTE_OCTETS[4]}" "0x${REMOTE_OCTETS[5]}") \
+    scope link \
+    dev "${TEST_DEVICE}"
+  # Re-extract the IPv6 address.
+  # TODO(eyalsoha): Add "scope link" below when netstack supports correctly
+  # creating link-local IPv6 addresses.
+  REMOTE_IPV6=$(docker exec -t "${DUT}" ip addr show \
+    "${TEST_DEVICE}" | grep inet6 | cut -d' ' -f6 | cut -d'/' -f1)
+fi
 
 declare -r DOCKER_TESTBENCH_BINARY="/$(basename ${TESTBENCH_BINARY})"
 docker cp -L "${TESTBENCH_BINARY}" "${TESTBENCH}:${DOCKER_TESTBENCH_BINARY}"
@@ -245,7 +275,10 @@ if [[ -z "${TSHARK-}" ]]; then
   # Run tcpdump in the test bench unbuffered, without dns resolution, just on
   # the interface with the test packets.
   docker exec -t "${TESTBENCH}" \
-    tcpdump -S -vvv -U -n -i "${TEST_DEVICE}" net "${TEST_NET_PREFIX}/24" &
+    tcpdump -S -vvv -U -n -i "${TEST_DEVICE}" \
+    net "${TEST_NET_PREFIX}/24" or \
+    host "${REMOTE_IPV6}" or \
+    host "${LOCAL_IPV6}" &
 else
   # Run tshark in the test bench unbuffered, without dns resolution, just on the
   # interface with the test packets.
@@ -253,7 +286,9 @@ else
     tshark -V -l -n -i "${TEST_DEVICE}" \
     -o tcp.check_checksum:TRUE \
     -o udp.check_checksum:TRUE \
-    host "${TEST_NET_PREFIX}${TESTBENCH_NET_SUFFIX}" &
+    net "${TEST_NET_PREFIX}/24" or \
+    host "${REMOTE_IPV6}" or \
+    host "${LOCAL_IPV6}" &
 fi
 
 # tcpdump and tshark take time to startup
@@ -272,6 +307,8 @@ docker exec \
   --posix_server_port=${CTRL_PORT} \
   --remote_ipv4=${TEST_NET_PREFIX}${DUT_NET_SUFFIX} \
   --local_ipv4=${TEST_NET_PREFIX}${TESTBENCH_NET_SUFFIX} \
+  --remote_ipv6=${REMOTE_IPV6} \
+  --local_ipv6=${LOCAL_IPV6} \
   --remote_mac=${REMOTE_MAC} \
   --local_mac=${LOCAL_MAC} \
   --device=${TEST_DEVICE}" && true
