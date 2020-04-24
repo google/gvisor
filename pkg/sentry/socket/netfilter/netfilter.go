@@ -53,6 +53,13 @@ type metadata struct {
 	Size       uint32
 }
 
+// emptyFilter is for comparison with a rule's filters to determine whether it
+// is also empty. It is immutable.
+var emptyFilter = stack.IPHeaderFilter{
+	Dst:     "\x00\x00\x00\x00",
+	DstMask: "\x00\x00\x00\x00",
+}
+
 // nflog logs messages related to the writing and reading of iptables.
 func nflog(format string, args ...interface{}) {
 	if log.IsLogging(log.Debug) {
@@ -458,7 +465,7 @@ func SetEntries(stk *stack.Stack, optVal []byte) *syserr.Error {
 				}
 				if offset == replace.Underflow[hook] {
 					if !validUnderflow(table.Rules[ruleIdx]) {
-						nflog("underflow for hook %d isn't an unconditional ACCEPT or DROP")
+						nflog("underflow for hook %d isn't an unconditional ACCEPT or DROP", ruleIdx)
 						return syserr.ErrInvalidArgument
 					}
 					table.Underflows[hk] = ruleIdx
@@ -521,7 +528,7 @@ func SetEntries(stk *stack.Stack, optVal []byte) *syserr.Error {
 	// make sure all other chains point to ACCEPT rules.
 	for hook, ruleIdx := range table.BuiltinChains {
 		if hook == stack.Forward || hook == stack.Postrouting {
-			if _, ok := table.Rules[ruleIdx].Target.(stack.AcceptTarget); !ok {
+			if !isUnconditionalAccept(table.Rules[ruleIdx]) {
 				nflog("hook %d is unsupported.", hook)
 				return syserr.ErrInvalidArgument
 			}
@@ -735,12 +742,23 @@ func validUnderflow(rule stack.Rule) bool {
 	if len(rule.Matchers) != 0 {
 		return false
 	}
+	if rule.Filter != emptyFilter {
+		return false
+	}
 	switch rule.Target.(type) {
 	case stack.AcceptTarget, stack.DropTarget:
 		return true
 	default:
 		return false
 	}
+}
+
+func isUnconditionalAccept(rule stack.Rule) bool {
+	if !validUnderflow(rule) {
+		return false
+	}
+	_, ok := rule.Target.(stack.AcceptTarget)
+	return ok
 }
 
 func hookFromLinux(hook int) stack.Hook {
