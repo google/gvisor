@@ -230,6 +230,11 @@ func (*PTrace) MaxUserAddress() usermem.Addr {
 	return usermem.Addr(stubStart)
 }
 
+// RequireZeroing is false for PTrace. The host kernel provides zeros for anonymous mappings.
+func (*PTrace) RequireZeroing() bool {
+	return false
+}
+
 // NewAddressSpace returns a new subprocess.
 func (p *PTrace) NewAddressSpace(_ interface{}) (platform.AddressSpace, <-chan struct{}, error) {
 	as, err := newSubprocess(globalPool.master.createStub)

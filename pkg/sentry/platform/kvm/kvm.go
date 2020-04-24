@@ -181,6 +181,11 @@ func (k *KVM) NewContext() platform.Context {
 	}
 }
 
+// RequireZeroing is false for KVM. The host kernel provides zeros for anonymous mappings.
+func (*KVM) RequireZeroing() bool {
+	return false
+}
+
 type constructor struct{}
 
 func (*constructor) New(f *os.File) (platform.Platform, error) {
