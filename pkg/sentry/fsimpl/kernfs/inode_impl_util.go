@@ -216,6 +216,11 @@ func (a *InodeAttrs) Init(creds *auth.Credentials, ino uint64, mode linux.FileMo
 	atomic.StoreUint32(&a.nlink, nlink)
 }
 
+// Ino returns the inode id.
+func (a *InodeAttrs) Ino() uint64 {
+	return atomic.LoadUint64(&a.ino)
+}
+
 // Mode implements Inode.Mode.
 func (a *InodeAttrs) Mode() linux.FileMode {
 	return linux.FileMode(atomic.LoadUint32(&a.mode))
@@ -359,8 +364,8 @@ func (o *OrderedChildren) Destroy() {
 // cache. Populate returns the number of directories inserted, which the caller
 // may use to update the link count for the parent directory.
 //
-// Precondition: d.Impl() must be a kernfs Dentry. d must represent a directory
-// inode. children must not contain any conflicting entries already in o.
+// Precondition: d must represent a directory inode. children must not contain
+// any conflicting entries already in o.
 func (o *OrderedChildren) Populate(d *Dentry, children map[string]*Dentry) uint32 {
 	var links uint32
 	for name, child := range children {

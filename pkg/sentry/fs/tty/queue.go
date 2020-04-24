@@ -25,6 +25,8 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// LINT.IfChange
+
 // waitBufMaxBytes is the maximum size of a wait buffer. It is based on
 // TTYB_DEFAULT_MEM_LIMIT.
 const waitBufMaxBytes = 131072
@@ -234,3 +236,5 @@ func (q *queue) waitBufAppend(b []byte) {
 	q.waitBuf = append(q.waitBuf, b)
 	q.waitBufLen += uint64(len(b))
 }
+
+// LINT.ThenChange(../../fsimpl/devpts/queue.go)
