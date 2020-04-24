@@ -804,7 +804,7 @@ func recvSingleMsg(t *kernel.Task, s socket.SocketVFS2, msgPtr usermem.Addr, fla
 	}
 
 	if cms.Unix.Rights != nil {
-		controlData, mflags = control.PackRights(t, cms.Unix.Rights.(control.SCMRights), flags&linux.MSG_CMSG_CLOEXEC != 0, controlData, mflags)
+		controlData, mflags = control.PackRightsVFS2(t, cms.Unix.Rights.(control.SCMRightsVFS2), flags&linux.MSG_CMSG_CLOEXEC != 0, controlData, mflags)
 	}
 
 	// Copy the address to the caller.
