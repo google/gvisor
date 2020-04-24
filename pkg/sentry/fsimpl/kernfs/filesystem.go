@@ -82,7 +82,7 @@ afterSymlink:
 	}
 	// Resolve any symlink at current path component.
 	if rp.ShouldFollowSymlink() && next.isSymlink() {
-		targetVD, targetPathname, err := next.inode.Getlink(ctx)
+		targetVD, targetPathname, err := next.inode.Getlink(ctx, rp.Mount())
 		if err != nil {
 			return nil, err
 		}
@@ -477,7 +477,7 @@ afterTrailingSymlink:
 	}
 	child := childVFSD.Impl().(*Dentry)
 	if rp.ShouldFollowSymlink() && child.isSymlink() {
-		targetVD, targetPathname, err := child.inode.Getlink(ctx)
+		targetVD, targetPathname, err := child.inode.Getlink(ctx, rp.Mount())
 		if err != nil {
 			return nil, err
 		}

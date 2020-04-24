@@ -63,7 +63,7 @@ func (s *selfSymlink) Readlink(ctx context.Context) (string, error) {
 	return strconv.FormatUint(uint64(tgid), 10), nil
 }
 
-func (s *selfSymlink) Getlink(ctx context.Context) (vfs.VirtualDentry, string, error) {
+func (s *selfSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDentry, string, error) {
 	target, err := s.Readlink(ctx)
 	return vfs.VirtualDentry{}, target, err
 }
@@ -106,7 +106,7 @@ func (s *threadSelfSymlink) Readlink(ctx context.Context) (string, error) {
 	return fmt.Sprintf("%d/task/%d", tgid, tid), nil
 }
 
-func (s *threadSelfSymlink) Getlink(ctx context.Context) (vfs.VirtualDentry, string, error) {
+func (s *threadSelfSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDentry, string, error) {
 	target, err := s.Readlink(ctx)
 	return vfs.VirtualDentry{}, target, err
 }

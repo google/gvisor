@@ -56,7 +56,7 @@ func (s *StaticSymlink) Readlink(_ context.Context) (string, error) {
 }
 
 // Getlink implements Inode.Getlink.
-func (s *StaticSymlink) Getlink(_ context.Context) (vfs.VirtualDentry, string, error) {
+func (s *StaticSymlink) Getlink(context.Context, *vfs.Mount) (vfs.VirtualDentry, string, error) {
 	return vfs.VirtualDentry{}, s.target, nil
 }
 

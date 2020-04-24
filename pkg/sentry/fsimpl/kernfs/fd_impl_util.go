@@ -15,6 +15,8 @@
 package kernfs
 
 import (
+	"math"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -43,14 +45,26 @@ type GenericDirectoryFD struct {
 	off      int64
 }
 
-// Init initializes a GenericDirectoryFD.
-func (fd *GenericDirectoryFD) Init(m *vfs.Mount, d *vfs.Dentry, children *OrderedChildren, opts *vfs.OpenOptions) error {
+// NewGenericDirectoryFD creates a new GenericDirectoryFD and returns its
+// dentry.
+func NewGenericDirectoryFD(m *vfs.Mount, d *vfs.Dentry, children *OrderedChildren, opts *vfs.OpenOptions) (*GenericDirectoryFD, error) {
+	fd := &GenericDirectoryFD{}
+	if err := fd.Init(children, opts); err != nil {
+		return nil, err
+	}
+	if err := fd.vfsfd.Init(fd, opts.Flags, m, d, &vfs.FileDescriptionOptions{}); err != nil {
+		return nil, err
+	}
+	return fd, nil
+}
+
+// Init initializes a GenericDirectoryFD. Use it when overriding
+// GenericDirectoryFD. Caller must call fd.VFSFileDescription.Init() with the
+// correct implementation.
+func (fd *GenericDirectoryFD) Init(children *OrderedChildren, opts *vfs.OpenOptions) error {
 	if vfs.AccessTypesForOpenFlags(opts)&vfs.MayWrite != 0 {
 		// Can't open directories for writing.
 		return syserror.EISDIR
-	}
-	if err := fd.vfsfd.Init(fd, opts.Flags, m, d, &vfs.FileDescriptionOptions{}); err != nil {
-		return err
 	}
 	fd.children = children
 	return nil
@@ -187,6 +201,10 @@ func (fd *GenericDirectoryFD) Seek(ctx context.Context, offset int64, whence int
 		// Use offset as given.
 	case linux.SEEK_CUR:
 		offset += fd.off
+	case linux.SEEK_END:
+		// TODO(gvisor.dev/issue/1193): This can prevent new files from showing up
+		// if they are added after SEEK_END.
+		offset = math.MaxInt64
 	default:
 		return 0, syserror.EINVAL
 	}

@@ -44,6 +44,7 @@ type taskInode struct {
 var _ kernfs.Inode = (*taskInode)(nil)
 
 func newTaskInode(inoGen InoGenerator, task *kernel.Task, pidns *kernel.PIDNamespace, isThreadGroup bool, cgroupControllers map[string]string) *kernfs.Dentry {
+	// TODO(gvisor.dev/issue/164): Fail with ESRCH if task exited.
 	contents := map[string]*kernfs.Dentry{
 		"auxv":      newTaskOwnedFile(task, inoGen.NextIno(), 0444, &auxvData{task: task}),
 		"cmdline":   newTaskOwnedFile(task, inoGen.NextIno(), 0444, &cmdlineData{task: task, arg: cmdlineDataArg}),
@@ -102,8 +103,10 @@ func (i *taskInode) Valid(ctx context.Context) bool {
 
 // Open implements kernfs.Inode.
 func (i *taskInode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd := &kernfs.GenericDirectoryFD{}
-	fd.Init(rp.Mount(), vfsd, &i.OrderedChildren, &opts)
+	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), vfsd, &i.OrderedChildren, &opts)
+	if err != nil {
+		return nil, err
+	}
 	return fd.VFSFileDescription(), nil
 }
 
