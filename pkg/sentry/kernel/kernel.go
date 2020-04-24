@@ -227,11 +227,6 @@ type Kernel struct {
 	// by extMu.
 	nextSocketEntry uint64
 
-	// socketMount is a disconnected vfs.Mount, not included in k.vfs,
-	// representing a sockfs.filesystem. socketMount is used to back
-	// VirtualDentries representing anonymous sockets.
-	socketMount *vfs.Mount
-
 	// deviceRegistry is used to save/restore device.SimpleDevices.
 	deviceRegistry struct{} `state:".(*device.Registry)"`
 
@@ -255,9 +250,21 @@ type Kernel struct {
 	// VFS keeps the filesystem state used across the kernel.
 	vfs vfs.VirtualFilesystem
 
+	// hostMount is the Mount used for file descriptors that were imported
+	// from the host.
+	hostMount *vfs.Mount
+
 	// pipeMount is the Mount used for pipes created by the pipe() and pipe2()
 	// syscalls (as opposed to named pipes created by mknod()).
 	pipeMount *vfs.Mount
+
+	// socketMount is the Mount used for sockets created by the socket() and
+	// socketpair() syscalls. There are several cases where a socket dentry will
+	// not be contained in socketMount:
+	// 1. Socket files created by mknod()
+	// 2. Socket fds imported from the host (Kernel.hostMount is used for these)
+	// 3. Socket files created by binding Unix sockets to a file path
+	socketMount *vfs.Mount
 
 	// If set to true, report address space activation waits as if the task is in
 	// external wait so that the watchdog doesn't report the task stuck.
@@ -377,7 +384,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 		defer socketFilesystem.DecRef()
 		socketMount, err := k.vfs.NewDisconnectedMount(socketFilesystem, nil, &vfs.MountOptions{})
 		if err != nil {
-			return fmt.Errorf("failed to initialize socket mount: %v", err)
+			return fmt.Errorf("failed to create sockfs mount: %v", err)
 		}
 		k.socketMount = socketMount
 	}
@@ -1526,11 +1533,6 @@ func (k *Kernel) ListSockets() []*SocketEntry {
 	return socks
 }
 
-// SocketMount returns the global socket mount.
-func (k *Kernel) SocketMount() *vfs.Mount {
-	return k.socketMount
-}
-
 // supervisorContext is a privileged context.
 type supervisorContext struct {
 	context.NoopSleeper
@@ -1629,7 +1631,25 @@ func (k *Kernel) VFS() *vfs.VirtualFilesystem {
 	return &k.vfs
 }
 
+// SetHostMount sets the hostfs mount.
+func (k *Kernel) SetHostMount(mnt *vfs.Mount) {
+	if k.hostMount != nil {
+		panic("Kernel.hostMount cannot be set more than once")
+	}
+	k.hostMount = mnt
+}
+
+// HostMount returns the hostfs mount.
+func (k *Kernel) HostMount() *vfs.Mount {
+	return k.hostMount
+}
+
 // PipeMount returns the pipefs mount.
 func (k *Kernel) PipeMount() *vfs.Mount {
 	return k.pipeMount
+}
+
+// SocketMount returns the sockfs mount.
+func (k *Kernel) SocketMount() *vfs.Mount {
+	return k.socketMount
 }
