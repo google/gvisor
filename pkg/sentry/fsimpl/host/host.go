@@ -42,7 +42,7 @@ type filesystemType struct{}
 
 // GetFilesystem implements FilesystemType.GetFilesystem.
 func (filesystemType) GetFilesystem(context.Context, *vfs.VirtualFilesystem, *auth.Credentials, string, vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
-	panic("cannot instaniate a host filesystem")
+	panic("host.filesystemType.GetFilesystem should never be called")
 }
 
 // Name implements FilesystemType.Name.
@@ -55,14 +55,14 @@ type filesystem struct {
 	kernfs.Filesystem
 }
 
-// NewMount returns a new disconnected mount in vfsObj that may be passed to ImportFD.
-func NewMount(vfsObj *vfs.VirtualFilesystem) (*vfs.Mount, error) {
+// NewFilesystem sets up and returns a new hostfs filesystem.
+//
+// Note that there should only ever be one instance of host.filesystem,
+// a global mount for host fds.
+func NewFilesystem(vfsObj *vfs.VirtualFilesystem) *vfs.Filesystem {
 	fs := &filesystem{}
-	fs.Init(vfsObj, &filesystemType{})
-	vfsfs := fs.VFSFilesystem()
-	// NewDisconnectedMount will take an additional reference on vfsfs.
-	defer vfsfs.DecRef()
-	return vfsObj.NewDisconnectedMount(vfsfs, nil, &vfs.MountOptions{})
+	fs.Init(vfsObj, filesystemType{})
+	return fs.VFSFilesystem()
 }
 
 // ImportFD sets up and returns a vfs.FileDescription from a donated fd.

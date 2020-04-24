@@ -36,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/host"
 	"gvisor.dev/gvisor/pkg/sentry/fs/user"
+	vfs2host "gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -46,6 +47,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux/vfs2"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -327,6 +329,17 @@ func New(args Args) (*Loader, error) {
 	mountHints, err := newPodMountHints(args.Spec)
 	if err != nil {
 		return nil, fmt.Errorf("creating pod mount hints: %v", err)
+	}
+
+	if kernel.VFS2Enabled {
+		// Set up host mount that will be used for imported fds.
+		hostFilesystem := vfs2host.NewFilesystem(k.VFS())
+		defer hostFilesystem.DecRef()
+		hostMount, err := k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create hostfs mount: %v", err)
+		}
+		k.SetHostMount(hostMount)
 	}
 
 	// Make host FDs stable between invocations. Host FDs must map to the exact
