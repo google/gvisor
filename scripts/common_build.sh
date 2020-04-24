@@ -70,8 +70,8 @@ function collect_logs() {
     for d in `find -L "bazel-testlogs" -name 'shard_*_of_*' | xargs dirname | sort | uniq`; do
       junitparser merge `find $d -name test.xml` $d/test.xml
       cat $d/shard_*_of_*/test.log > $d/test.log
-      if ls -l $d/shard_*_of_*/test.outputs/outputs.zip 2>/dev/null; then
-        zip -r -1 "$d/outputs.zip" $d/shard_*_of_*/test.outputs/outputs.zip
+      if ls -ld $d/shard_*_of_*/test.outputs 2>/dev/null; then
+        zip -r -1 "$d/outputs.zip" $d/shard_*_of_*/test.outputs
       fi
     done
     find -L "bazel-testlogs" -name 'shard_*_of_*' | xargs rm -rf
