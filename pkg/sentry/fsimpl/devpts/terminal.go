@@ -12,30 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tty
+package devpts
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// LINT.IfChange
+// LINT.IfChanges
 
 // Terminal is a pseudoterminal.
 //
 // +stateify savable
 type Terminal struct {
-	refs.AtomicRefCount
-
 	// n is the terminal index. It is immutable.
 	n uint32
-
-	// d is the containing directory. It is immutable.
-	d *dirInodeOperations
 
 	// ld is the line discipline of the terminal. It is immutable.
 	ld *lineDiscipline
@@ -49,16 +43,14 @@ type Terminal struct {
 	slaveKTTY *kernel.TTY
 }
 
-func newTerminal(ctx context.Context, d *dirInodeOperations, n uint32) *Terminal {
+func newTerminal(n uint32) *Terminal {
 	termios := linux.DefaultSlaveTermios
 	t := Terminal{
-		d:          d,
 		n:          n,
 		ld:         newLineDiscipline(termios),
 		masterKTTY: &kernel.TTY{Index: n},
 		slaveKTTY:  &kernel.TTY{Index: n},
 	}
-	t.EnableLeakCheck("tty.Terminal")
 	return &t
 }
 
@@ -129,4 +121,4 @@ func (tm *Terminal) tty(isMaster bool) *kernel.TTY {
 	return tm.slaveKTTY
 }
 
-// LINT.ThenChange(../../fsimpl/devpts/terminal.go)
+// LINT.ThenChange(../../fs/tty/terminal.go)

@@ -26,6 +26,8 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// LINT.IfChange
+
 // masterInodeOperations are the fs.InodeOperations for the master end of the
 // Terminal (ptmx file).
 //
@@ -232,3 +234,5 @@ func maybeEmitUnimplementedEvent(ctx context.Context, cmd uint32) {
 		unimpl.EmitUnimplementedEvent(ctx)
 	}
 }
+
+// LINT.ThenChange(../../fsimpl/devpts/master.go)

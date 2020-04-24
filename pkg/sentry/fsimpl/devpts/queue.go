@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tty
+package devpts
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -237,4 +237,4 @@ func (q *queue) waitBufAppend(b []byte) {
 	q.waitBufLen += uint64(len(b))
 }
 
-// LINT.ThenChange(../../fsimpl/devpts/queue.go)
+// LINT.ThenChange(../../fs/tty/queue.go)
