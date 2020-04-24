@@ -35,6 +35,7 @@
 package mm
 
 import (
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
@@ -286,7 +287,7 @@ type vma struct {
 	mlockMode memmap.MLockMode
 
 	// numaPolicy is the NUMA policy for this vma set by mbind().
-	numaPolicy int32
+	numaPolicy linux.NumaPolicy
 
 	// numaNodemask is the NUMA nodemask for this vma set by mbind().
 	numaNodemask uint64
