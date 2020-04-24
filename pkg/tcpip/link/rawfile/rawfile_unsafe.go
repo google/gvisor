@@ -76,9 +76,13 @@ func NonBlockingWrite3(fd int, b1, b2, b3 []byte) *tcpip.Error {
 
 	// We have two buffers. Build the iovec that represents them and issue
 	// a writev syscall.
+	var base *byte
+	if len(b1) > 0 {
+		base = &b1[0]
+	}
 	iovec := [3]syscall.Iovec{
 		{
-			Base: &b1[0],
+			Base: base,
 			Len:  uint64(len(b1)),
 		},
 		{

@@ -144,7 +144,11 @@ func (s *segment) logicalLen() seqnum.Size {
 // TCP checksum and stores the checksum and result of checksum verification in
 // the csum and csumValid fields of the segment.
 func (s *segment) parse() bool {
-	h := header.TCP(s.data.First())
+	h, ok := s.data.PullUp(header.TCPMinimumSize)
+	if !ok {
+		return false
+	}
+	hdr := header.TCP(h)
 
 	// h is the header followed by the payload. We check that the offset to
 	// the data respects the following constraints:
@@ -156,12 +160,16 @@ func (s *segment) parse() bool {
 	// N.B. The segment has already been validated as having at least the
 	//      minimum TCP size before reaching here, so it's safe to read the
 	//      fields.
-	offset := int(h.DataOffset())
-	if offset < header.TCPMinimumSize || offset > len(h) {
+	offset := int(hdr.DataOffset())
+	if offset < header.TCPMinimumSize {
+		return false
+	}
+	hdrWithOpts, ok := s.data.PullUp(offset)
+	if !ok {
 		return false
 	}
 
-	s.options = []byte(h[header.TCPMinimumSize:offset])
+	s.options = []byte(hdrWithOpts[header.TCPMinimumSize:])
 	s.parsedOptions = header.ParseTCPOptions(s.options)
 
 	// Query the link capabilities to decide if checksum validation is
@@ -173,18 +181,19 @@ func (s *segment) parse() bool {
 		s.data.TrimFront(offset)
 	}
 	if verifyChecksum {
-		s.csum = h.Checksum()
+		hdr = header.TCP(hdrWithOpts)
+		s.csum = hdr.Checksum()
 		xsum := s.route.PseudoHeaderChecksum(ProtocolNumber, uint16(s.data.Size()))
-		xsum = h.CalculateChecksum(xsum)
+		xsum = hdr.CalculateChecksum(xsum)
 		s.data.TrimFront(offset)
 		xsum = header.ChecksumVV(s.data, xsum)
 		s.csumValid = xsum == 0xffff
 	}
 
-	s.sequenceNumber = seqnum.Value(h.SequenceNumber())
-	s.ackNumber = seqnum.Value(h.AckNumber())
-	s.flags = h.Flags()
-	s.window = seqnum.Size(h.WindowSize())
+	s.sequenceNumber = seqnum.Value(hdr.SequenceNumber())
+	s.ackNumber = seqnum.Value(hdr.AckNumber())
+	s.flags = hdr.Flags()
+	s.window = seqnum.Size(hdr.WindowSize())
 	return true
 }
 
