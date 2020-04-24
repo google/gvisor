@@ -17,6 +17,7 @@ package testbench
 import (
 	"testing"
 
+	"github.com/mohae/deepcopy"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
@@ -48,6 +49,114 @@ func TestLayerMatch(t *testing.T) {
 		}
 		if got := tt.b.match(tt.a); got != tt.want {
 			t.Errorf("%s.match(%s) = %t, want %t", tt.b, tt.a, got, tt.want)
+		}
+	}
+}
+
+func TestLayerMergeMismatch(t *testing.T) {
+	tcp := &TCP{}
+	otherTCP := &TCP{}
+	ipv4 := &IPv4{}
+	ether := &Ether{}
+	for _, tt := range []struct {
+		a, b    Layer
+		success bool
+	}{
+		{tcp, tcp, true},
+		{tcp, otherTCP, true},
+		{tcp, ipv4, false},
+		{tcp, ether, false},
+		{tcp, nil, true},
+
+		{otherTCP, otherTCP, true},
+		{otherTCP, ipv4, false},
+		{otherTCP, ether, false},
+		{otherTCP, nil, true},
+
+		{ipv4, ipv4, true},
+		{ipv4, ether, false},
+		{ipv4, nil, true},
+
+		{ether, ether, true},
+		{ether, nil, true},
+	} {
+		if err := tt.a.merge(tt.b); (err == nil) != tt.success {
+			t.Errorf("%s.merge(%s) got %s, wanted the opposite", tt.a, tt.b, err)
+		}
+		if tt.b != nil {
+			if err := tt.b.merge(tt.a); (err == nil) != tt.success {
+				t.Errorf("%s.merge(%s) got %s, wanted the opposite", tt.b, tt.a, err)
+			}
+		}
+	}
+}
+
+func TestLayerMerge(t *testing.T) {
+	zero := Uint32(0)
+	one := Uint32(1)
+	two := Uint32(2)
+	empty := []byte{}
+	foo := []byte("foo")
+	bar := []byte("bar")
+	for _, tt := range []struct {
+		a, b Layer
+		want Layer
+	}{
+		{&TCP{AckNum: nil}, &TCP{AckNum: nil}, &TCP{AckNum: nil}},
+		{&TCP{AckNum: nil}, &TCP{AckNum: zero}, &TCP{AckNum: zero}},
+		{&TCP{AckNum: nil}, &TCP{AckNum: one}, &TCP{AckNum: one}},
+		{&TCP{AckNum: nil}, &TCP{AckNum: two}, &TCP{AckNum: two}},
+		{&TCP{AckNum: nil}, nil, &TCP{AckNum: nil}},
+
+		{&TCP{AckNum: zero}, &TCP{AckNum: nil}, &TCP{AckNum: zero}},
+		{&TCP{AckNum: zero}, &TCP{AckNum: zero}, &TCP{AckNum: zero}},
+		{&TCP{AckNum: zero}, &TCP{AckNum: one}, &TCP{AckNum: one}},
+		{&TCP{AckNum: zero}, &TCP{AckNum: two}, &TCP{AckNum: two}},
+		{&TCP{AckNum: zero}, nil, &TCP{AckNum: zero}},
+
+		{&TCP{AckNum: one}, &TCP{AckNum: nil}, &TCP{AckNum: one}},
+		{&TCP{AckNum: one}, &TCP{AckNum: zero}, &TCP{AckNum: zero}},
+		{&TCP{AckNum: one}, &TCP{AckNum: one}, &TCP{AckNum: one}},
+		{&TCP{AckNum: one}, &TCP{AckNum: two}, &TCP{AckNum: two}},
+		{&TCP{AckNum: one}, nil, &TCP{AckNum: one}},
+
+		{&TCP{AckNum: two}, &TCP{AckNum: nil}, &TCP{AckNum: two}},
+		{&TCP{AckNum: two}, &TCP{AckNum: zero}, &TCP{AckNum: zero}},
+		{&TCP{AckNum: two}, &TCP{AckNum: one}, &TCP{AckNum: one}},
+		{&TCP{AckNum: two}, &TCP{AckNum: two}, &TCP{AckNum: two}},
+		{&TCP{AckNum: two}, nil, &TCP{AckNum: two}},
+
+		{&Payload{Bytes: nil}, &Payload{Bytes: nil}, &Payload{Bytes: nil}},
+		{&Payload{Bytes: nil}, &Payload{Bytes: empty}, &Payload{Bytes: empty}},
+		{&Payload{Bytes: nil}, &Payload{Bytes: foo}, &Payload{Bytes: foo}},
+		{&Payload{Bytes: nil}, &Payload{Bytes: bar}, &Payload{Bytes: bar}},
+		{&Payload{Bytes: nil}, nil, &Payload{Bytes: nil}},
+
+		{&Payload{Bytes: empty}, &Payload{Bytes: nil}, &Payload{Bytes: empty}},
+		{&Payload{Bytes: empty}, &Payload{Bytes: empty}, &Payload{Bytes: empty}},
+		{&Payload{Bytes: empty}, &Payload{Bytes: foo}, &Payload{Bytes: foo}},
+		{&Payload{Bytes: empty}, &Payload{Bytes: bar}, &Payload{Bytes: bar}},
+		{&Payload{Bytes: empty}, nil, &Payload{Bytes: empty}},
+
+		{&Payload{Bytes: foo}, &Payload{Bytes: nil}, &Payload{Bytes: foo}},
+		{&Payload{Bytes: foo}, &Payload{Bytes: empty}, &Payload{Bytes: empty}},
+		{&Payload{Bytes: foo}, &Payload{Bytes: foo}, &Payload{Bytes: foo}},
+		{&Payload{Bytes: foo}, &Payload{Bytes: bar}, &Payload{Bytes: bar}},
+		{&Payload{Bytes: foo}, nil, &Payload{Bytes: foo}},
+
+		{&Payload{Bytes: bar}, &Payload{Bytes: nil}, &Payload{Bytes: bar}},
+		{&Payload{Bytes: bar}, &Payload{Bytes: empty}, &Payload{Bytes: empty}},
+		{&Payload{Bytes: bar}, &Payload{Bytes: foo}, &Payload{Bytes: foo}},
+		{&Payload{Bytes: bar}, &Payload{Bytes: bar}, &Payload{Bytes: bar}},
+		{&Payload{Bytes: bar}, nil, &Payload{Bytes: bar}},
+	} {
+		a := deepcopy.Copy(tt.a).(Layer)
+		if err := a.merge(tt.b); err != nil {
+			t.Errorf("%s.merge(%s) = %s, wanted nil", tt.a, tt.b, err)
+			continue
+		}
+		if a.String() != tt.want.String() {
+			t.Errorf("%s.merge(%s) merge result got %s, want %s", tt.a, tt.b, a, tt.want)
 		}
 	}
 }
