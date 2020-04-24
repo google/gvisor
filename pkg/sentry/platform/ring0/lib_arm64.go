@@ -20,13 +20,13 @@ package ring0
 func CPACREL1() (value uintptr)
 
 // FPCR returns the value of FPCR register.
-func FPCR() (value uintptr)
+func GetFPCR() (value uintptr)
 
 // SetFPCR writes the FPCR value.
 func SetFPCR(value uintptr)
 
 // FPSR returns the value of FPSR register.
-func FPSR() (value uintptr)
+func GetFPSR() (value uintptr)
 
 // SetFPSR writes the FPSR value.
 func SetFPSR(value uintptr)
