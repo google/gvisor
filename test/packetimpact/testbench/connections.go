@@ -34,33 +34,60 @@ import (
 
 var localIPv4 = flag.String("local_ipv4", "", "local IPv4 address for test packets")
 var remoteIPv4 = flag.String("remote_ipv4", "", "remote IPv4 address for test packets")
+var localIPv6 = flag.String("local_ipv6", "", "local IPv6 address for test packets")
+var remoteIPv6 = flag.String("remote_ipv6", "", "remote IPv6 address for test packets")
 var localMAC = flag.String("local_mac", "", "local mac address for test packets")
 var remoteMAC = flag.String("remote_mac", "", "remote mac address for test packets")
 
-// pickPort makes a new socket and returns the socket FD and port. The caller
-// must close the FD when done with the port if there is no error.
-func pickPort() (int, uint16, error) {
-	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM, 0)
+// pickPort makes a new socket and returns the socket FD and port. The domain
+// should be AF_INET or AF_INET6. The caller must close the FD when done with
+// the port if there is no error.
+func pickPort(domain, typ int) (fd int, port uint16, err error) {
+	fd, err = unix.Socket(domain, typ, 0)
 	if err != nil {
 		return -1, 0, err
 	}
-	var sa unix.SockaddrInet4
-	copy(sa.Addr[0:4], net.ParseIP(*localIPv4).To4())
-	if err := unix.Bind(fd, &sa); err != nil {
-		unix.Close(fd)
+	defer func() {
+		if err != nil {
+			err = multierr.Append(err, unix.Close(fd))
+		}
+	}()
+	var sa unix.Sockaddr
+	switch domain {
+	case unix.AF_INET:
+		var sa4 unix.SockaddrInet4
+		copy(sa4.Addr[:], net.ParseIP(*localIPv4).To4())
+		sa = &sa4
+	case unix.AF_INET6:
+		var sa6 unix.SockaddrInet6
+		copy(sa6.Addr[:], net.ParseIP(*localIPv6).To16())
+		sa = &sa6
+	default:
+		return -1, 0, fmt.Errorf("invalid domain %d, it should be one of unix.AF_INET or unix.AF_INET6", domain)
+	}
+	if err = unix.Bind(fd, sa); err != nil {
 		return -1, 0, err
 	}
 	newSockAddr, err := unix.Getsockname(fd)
 	if err != nil {
-		unix.Close(fd)
 		return -1, 0, err
 	}
-	newSockAddrInet4, ok := newSockAddr.(*unix.SockaddrInet4)
-	if !ok {
-		unix.Close(fd)
-		return -1, 0, fmt.Errorf("can't cast Getsockname result to SockaddrInet4")
+	switch domain {
+	case unix.AF_INET:
+		newSockAddrInet4, ok := newSockAddr.(*unix.SockaddrInet4)
+		if !ok {
+			return -1, 0, fmt.Errorf("can't cast Getsockname result %T to SockaddrInet4", newSockAddr)
+		}
+		return fd, uint16(newSockAddrInet4.Port), nil
+	case unix.AF_INET6:
+		newSockAddrInet6, ok := newSockAddr.(*unix.SockaddrInet6)
+		if !ok {
+			return -1, 0, fmt.Errorf("can't cast Getsockname result %T to SockaddrInet6", newSockAddr)
+		}
+		return fd, uint16(newSockAddrInet6.Port), nil
+	default:
+		return -1, 0, fmt.Errorf("invalid domain %d, it should be one of unix.AF_INET or unix.AF_INET6", domain)
 	}
-	return fd, uint16(newSockAddrInet4.Port), nil
 }
 
 // layerState stores the state of a layer of a connection.
@@ -123,7 +150,7 @@ func newEtherState(out, in Ether) (*etherState, error) {
 }
 
 func (s *etherState) outgoing() Layer {
-	return &s.out
+	return deepcopy.Copy(&s.out).(Layer)
 }
 
 // incoming implements layerState.incoming.
@@ -168,7 +195,7 @@ func newIPv4State(out, in IPv4) (*ipv4State, error) {
 }
 
 func (s *ipv4State) outgoing() Layer {
-	return &s.out
+	return deepcopy.Copy(&s.out).(Layer)
 }
 
 // incoming implements layerState.incoming.
@@ -185,6 +212,54 @@ func (*ipv4State) received(Layer) error {
 }
 
 func (*ipv4State) close() error {
+	return nil
+}
+
+// ipv6State maintains state about an IPv6 connection.
+type ipv6State struct {
+	out, in IPv6
+}
+
+var _ layerState = (*ipv6State)(nil)
+
+// newIPv6State creates a new ipv6State.
+func newIPv6State(out, in IPv6) (*ipv6State, error) {
+	lIP := tcpip.Address(net.ParseIP(*localIPv6).To16())
+	rIP := tcpip.Address(net.ParseIP(*remoteIPv6).To16())
+	s := ipv6State{
+		out: IPv6{SrcAddr: &lIP, DstAddr: &rIP},
+		in:  IPv6{SrcAddr: &rIP, DstAddr: &lIP},
+	}
+	if err := s.out.merge(&out); err != nil {
+		return nil, err
+	}
+	if err := s.in.merge(&in); err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+// outgoing returns an outgoing layer to be sent in a frame.
+func (s *ipv6State) outgoing() Layer {
+	return deepcopy.Copy(&s.out).(Layer)
+}
+
+func (s *ipv6State) incoming(Layer) Layer {
+	return deepcopy.Copy(&s.in).(Layer)
+}
+
+func (s *ipv6State) sent(Layer) error {
+	// Nothing to do.
+	return nil
+}
+
+func (s *ipv6State) received(Layer) error {
+	// Nothing to do.
+	return nil
+}
+
+// close cleans up any resources held.
+func (s *ipv6State) close() error {
 	return nil
 }
 
@@ -206,8 +281,8 @@ func SeqNumValue(v seqnum.Value) *seqnum.Value {
 }
 
 // newTCPState creates a new TCPState.
-func newTCPState(out, in TCP) (*tcpState, error) {
-	portPickerFD, localPort, err := pickPort()
+func newTCPState(domain int, out, in TCP) (*tcpState, error) {
+	portPickerFD, localPort, err := pickPort(domain, unix.SOCK_STREAM)
 	if err != nil {
 		return nil, err
 	}
@@ -310,8 +385,8 @@ type udpState struct {
 var _ layerState = (*udpState)(nil)
 
 // newUDPState creates a new udpState.
-func newUDPState(out, in UDP) (*udpState, error) {
-	portPickerFD, localPort, err := pickPort()
+func newUDPState(domain int, out, in UDP) (*udpState, error) {
+	portPickerFD, localPort, err := pickPort(domain, unix.SOCK_DGRAM)
 	if err != nil {
 		return nil, err
 	}
@@ -330,7 +405,7 @@ func newUDPState(out, in UDP) (*udpState, error) {
 }
 
 func (s *udpState) outgoing() Layer {
-	return &s.out
+	return deepcopy.Copy(&s.out).(Layer)
 }
 
 // incoming implements layerState.incoming.
@@ -422,7 +497,7 @@ func (conn *Connection) CreateFrame(layer Layer, additionalLayers ...Layer) Laye
 
 // SendFrame sends a frame on the wire and updates the state of all layers.
 func (conn *Connection) SendFrame(frame Layers) {
-	outBytes, err := frame.toBytes()
+	outBytes, err := frame.ToBytes()
 	if err != nil {
 		conn.t.Fatalf("can't build outgoing TCP packet: %s", err)
 	}
@@ -536,7 +611,7 @@ func NewTCPIPv4(t *testing.T, outgoingTCP, incomingTCP TCP) TCPIPv4 {
 	if err != nil {
 		t.Fatalf("can't make ipv4State: %s", err)
 	}
-	tcpState, err := newTCPState(outgoingTCP, incomingTCP)
+	tcpState, err := newTCPState(unix.AF_INET, outgoingTCP, incomingTCP)
 	if err != nil {
 		t.Fatalf("can't make tcpState: %s", err)
 	}
@@ -633,6 +708,59 @@ func (conn *TCPIPv4) SynAck() *TCP {
 	return conn.state().synAck
 }
 
+// IPv6Conn maintains the state for all the layers in a IPv6 connection.
+type IPv6Conn Connection
+
+// NewIPv6Conn creates a new IPv6Conn connection with reasonable defaults.
+func NewIPv6Conn(t *testing.T, outgoingIPv6, incomingIPv6 IPv6) IPv6Conn {
+	etherState, err := newEtherState(Ether{}, Ether{})
+	if err != nil {
+		t.Fatalf("can't make EtherState: %s", err)
+	}
+	ipv6State, err := newIPv6State(outgoingIPv6, incomingIPv6)
+	if err != nil {
+		t.Fatalf("can't make IPv6State: %s", err)
+	}
+
+	injector, err := NewInjector(t)
+	if err != nil {
+		t.Fatalf("can't make injector: %s", err)
+	}
+	sniffer, err := NewSniffer(t)
+	if err != nil {
+		t.Fatalf("can't make sniffer: %s", err)
+	}
+
+	return IPv6Conn{
+		layerStates: []layerState{etherState, ipv6State},
+		injector:    injector,
+		sniffer:     sniffer,
+		t:           t,
+	}
+}
+
+// SendFrame sends a frame on the wire and updates the state of all layers.
+func (conn *IPv6Conn) SendFrame(frame Layers) {
+	(*Connection)(conn).SendFrame(frame)
+}
+
+// CreateFrame builds a frame for the connection with ipv6 overriding the ipv6
+// layer defaults and additionalLayers added after it.
+func (conn *IPv6Conn) CreateFrame(ipv6 IPv6, additionalLayers ...Layer) Layers {
+	return (*Connection)(conn).CreateFrame(&ipv6, additionalLayers...)
+}
+
+// Close to clean up any resources held.
+func (conn *IPv6Conn) Close() {
+	(*Connection)(conn).Close()
+}
+
+// ExpectFrame expects a frame that matches the provided Layers within the
+// timeout specified. If it doesn't arrive in time, it returns nil.
+func (conn *IPv6Conn) ExpectFrame(frame Layers, timeout time.Duration) (Layers, error) {
+	return (*Connection)(conn).ExpectFrame(frame, timeout)
+}
+
 // Drain drains the sniffer's receive buffer by receiving packets until there's
 // nothing else to receive.
 func (conn *TCPIPv4) Drain() {
@@ -652,7 +780,7 @@ func NewUDPIPv4(t *testing.T, outgoingUDP, incomingUDP UDP) UDPIPv4 {
 	if err != nil {
 		t.Fatalf("can't make ipv4State: %s", err)
 	}
-	tcpState, err := newUDPState(outgoingUDP, incomingUDP)
+	tcpState, err := newUDPState(unix.AF_INET, outgoingUDP, incomingUDP)
 	if err != nil {
 		t.Fatalf("can't make udpState: %s", err)
 	}
