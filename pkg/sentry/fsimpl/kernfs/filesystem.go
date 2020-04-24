@@ -406,7 +406,7 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if err := inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 			return nil, err
 		}
-		return inode.Open(rp, vfsd, opts)
+		return inode.Open(ctx, rp, vfsd, opts)
 	}
 
 	// May create new file.
@@ -425,7 +425,7 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if err := inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 			return nil, err
 		}
-		return inode.Open(rp, vfsd, opts)
+		return inode.Open(ctx, rp, vfsd, opts)
 	}
 afterTrailingSymlink:
 	parentVFSD, parentInode, err := fs.walkParentDirLocked(ctx, rp)
@@ -466,7 +466,7 @@ afterTrailingSymlink:
 		}
 		child := childVFSD.Impl().(*Dentry)
 		parentVFSD.Impl().(*Dentry).InsertChild(pc, child)
-		return child.inode.Open(rp, childVFSD, opts)
+		return child.inode.Open(ctx, rp, childVFSD, opts)
 	}
 	if err != nil {
 		return nil, err
@@ -499,7 +499,7 @@ afterTrailingSymlink:
 	if err := child.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 		return nil, err
 	}
-	return child.inode.Open(rp, &child.vfsd, opts)
+	return child.inode.Open(ctx, rp, &child.vfsd, opts)
 }
 
 // ReadlinkAt implements vfs.FilesystemImpl.ReadlinkAt.
