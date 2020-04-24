@@ -43,7 +43,7 @@ func TestCancellableTimerReassignment(t *testing.T) {
 			// that has an active timer (even if it has been stopped as a stopped
 			// timer may be blocked on a lock before it can check if it has been
 			// stopped while another goroutine holds the same lock).
-			timer = tcpip.MakeCancellableTimer(&lock, func() {
+			timer = *tcpip.NewCancellableTimer(&lock, func() {
 				wg.Done()
 			})
 			timer.Reset(shortDuration)
@@ -59,7 +59,7 @@ func TestCancellableTimerFire(t *testing.T) {
 	ch := make(chan struct{})
 	var lock sync.Mutex
 
-	timer := tcpip.MakeCancellableTimer(&lock, func() {
+	timer := tcpip.NewCancellableTimer(&lock, func() {
 		ch <- struct{}{}
 	})
 	timer.Reset(shortDuration)
@@ -85,7 +85,7 @@ func TestCancellableTimerResetFromLongDuration(t *testing.T) {
 	ch := make(chan struct{})
 	var lock sync.Mutex
 
-	timer := tcpip.MakeCancellableTimer(&lock, func() { ch <- struct{}{} })
+	timer := tcpip.NewCancellableTimer(&lock, func() { ch <- struct{}{} })
 	timer.Reset(middleDuration)
 
 	lock.Lock()
@@ -116,7 +116,7 @@ func TestCancellableTimerResetFromShortDuration(t *testing.T) {
 	var lock sync.Mutex
 
 	lock.Lock()
-	timer := tcpip.MakeCancellableTimer(&lock, func() { ch <- struct{}{} })
+	timer := tcpip.NewCancellableTimer(&lock, func() { ch <- struct{}{} })
 	timer.Reset(shortDuration)
 	timer.StopLocked()
 	lock.Unlock()
@@ -153,7 +153,7 @@ func TestCancellableTimerImmediatelyStop(t *testing.T) {
 
 	for i := 0; i < 1000; i++ {
 		lock.Lock()
-		timer := tcpip.MakeCancellableTimer(&lock, func() { ch <- struct{}{} })
+		timer := tcpip.NewCancellableTimer(&lock, func() { ch <- struct{}{} })
 		timer.Reset(shortDuration)
 		timer.StopLocked()
 		lock.Unlock()
@@ -174,7 +174,7 @@ func TestCancellableTimerStoppedResetWithoutLock(t *testing.T) {
 	var lock sync.Mutex
 
 	lock.Lock()
-	timer := tcpip.MakeCancellableTimer(&lock, func() { ch <- struct{}{} })
+	timer := tcpip.NewCancellableTimer(&lock, func() { ch <- struct{}{} })
 	timer.Reset(shortDuration)
 	timer.StopLocked()
 	lock.Unlock()
@@ -205,7 +205,7 @@ func TestManyCancellableTimerResetAfterBlockedOnLock(t *testing.T) {
 	var lock sync.Mutex
 
 	lock.Lock()
-	timer := tcpip.MakeCancellableTimer(&lock, func() { ch <- struct{}{} })
+	timer := tcpip.NewCancellableTimer(&lock, func() { ch <- struct{}{} })
 	timer.Reset(shortDuration)
 	for i := 0; i < 10; i++ {
 		// Sleep until the timer fires and gets blocked trying to take the lock.
@@ -237,7 +237,7 @@ func TestManyCancellableTimerResetUnderLock(t *testing.T) {
 	var lock sync.Mutex
 
 	lock.Lock()
-	timer := tcpip.MakeCancellableTimer(&lock, func() { ch <- struct{}{} })
+	timer := tcpip.NewCancellableTimer(&lock, func() { ch <- struct{}{} })
 	timer.Reset(shortDuration)
 	for i := 0; i < 10; i++ {
 		timer.StopLocked()

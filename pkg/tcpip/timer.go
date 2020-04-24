@@ -88,6 +88,9 @@ func (t *cancellableTimerInstance) stop() {
 //
 // The term "related work" is defined as some work that needs to be done while
 // holding some lock that the timer must also hold while doing some work.
+//
+// Note, it is not safe to copy a CancellableTimer as its timer instance creates
+// a closure over the address of the CancellableTimer.
 type CancellableTimer struct {
 	// The active instance of a cancellable timer.
 	instance cancellableTimerInstance
@@ -154,12 +157,28 @@ func (t *CancellableTimer) Reset(d time.Duration) {
 	}
 }
 
-// MakeCancellableTimer returns an unscheduled CancellableTimer with the given
+// Lock is a no-op used by the copylocks checker from go vet.
+//
+// See CancellableTimer for details about why it shouldn't be copied.
+//
+// See https://github.com/golang/go/issues/8005#issuecomment-190753527 for more
+// details about the copylocks checker.
+func (*CancellableTimer) Lock() {}
+
+// Unlock is a no-op used by the copylocks checker from go vet.
+//
+// See CancellableTimer for details about why it shouldn't be copied.
+//
+// See https://github.com/golang/go/issues/8005#issuecomment-190753527 for more
+// details about the copylocks checker.
+func (*CancellableTimer) Unlock() {}
+
+// NewCancellableTimer returns an unscheduled CancellableTimer with the given
 // locker and fn.
 //
 // fn MUST NOT attempt to lock locker.
 //
 // Callers must call Reset to schedule the timer to fire.
-func MakeCancellableTimer(locker sync.Locker, fn func()) CancellableTimer {
-	return CancellableTimer{locker: locker, fn: fn}
+func NewCancellableTimer(locker sync.Locker, fn func()) *CancellableTimer {
+	return &CancellableTimer{locker: locker, fn: fn}
 }
