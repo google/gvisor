@@ -974,7 +974,7 @@ func (mm *MemoryManager) MLockAll(ctx context.Context, opts MLockAllOpts) error 
 }
 
 // NumaPolicy implements the semantics of Linux's get_mempolicy(MPOL_F_ADDR).
-func (mm *MemoryManager) NumaPolicy(addr usermem.Addr) (int32, uint64, error) {
+func (mm *MemoryManager) NumaPolicy(addr usermem.Addr) (linux.NumaPolicy, uint64, error) {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
 	vseg := mm.vmas.FindSegment(addr)
@@ -986,7 +986,7 @@ func (mm *MemoryManager) NumaPolicy(addr usermem.Addr) (int32, uint64, error) {
 }
 
 // SetNumaPolicy implements the semantics of Linux's mbind().
-func (mm *MemoryManager) SetNumaPolicy(addr usermem.Addr, length uint64, policy int32, nodemask uint64) error {
+func (mm *MemoryManager) SetNumaPolicy(addr usermem.Addr, length uint64, policy linux.NumaPolicy, nodemask uint64) error {
 	if !addr.IsPageAligned() {
 		return syserror.EINVAL
 	}
