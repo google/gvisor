@@ -169,31 +169,22 @@ func fileFlagsFromHostFD(fd int) (int, error) {
 
 // CheckPermissions implements kernfs.Inode.
 func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
-	mode, uid, gid, err := i.getPermissions()
-	if err != nil {
+	var s syscall.Stat_t
+	if err := syscall.Fstat(i.hostFD, &s); err != nil {
 		return err
 	}
-	return vfs.GenericCheckPermissions(creds, ats, mode, uid, gid)
+	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(s.Mode), auth.KUID(s.Uid), auth.KGID(s.Gid))
 }
 
 // Mode implements kernfs.Inode.
 func (i *inode) Mode() linux.FileMode {
-	mode, _, _, err := i.getPermissions()
-	// Retrieving the mode from the host fd using fstat(2) should not fail.
-	// If the syscall does not succeed, something is fundamentally wrong.
-	if err != nil {
-		panic(fmt.Sprintf("failed to retrieve mode from host fd %d: %v", i.hostFD, err))
-	}
-	return linux.FileMode(mode)
-}
-
-func (i *inode) getPermissions() (linux.FileMode, auth.KUID, auth.KGID, error) {
-	// Retrieve metadata.
 	var s syscall.Stat_t
 	if err := syscall.Fstat(i.hostFD, &s); err != nil {
-		return 0, 0, 0, err
+		// Retrieving the mode from the host fd using fstat(2) should not fail.
+		// If the syscall does not succeed, something is fundamentally wrong.
+		panic(fmt.Sprintf("failed to retrieve mode from host fd %d: %v", i.hostFD, err))
 	}
-	return linux.FileMode(s.Mode), auth.KUID(s.Uid), auth.KGID(s.Gid), nil
+	return linux.FileMode(s.Mode)
 }
 
 // Stat implements kernfs.Inode.
@@ -326,11 +317,11 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	if m&^(linux.STATX_MODE|linux.STATX_SIZE|linux.STATX_ATIME|linux.STATX_MTIME) != 0 {
 		return syserror.EPERM
 	}
-	mode, uid, gid, err := i.getPermissions()
-	if err != nil {
+	var hostStat syscall.Stat_t
+	if err := syscall.Fstat(i.hostFD, &hostStat); err != nil {
 		return err
 	}
-	if err := vfs.CheckSetStat(ctx, creds, &s, mode.Permissions(), uid, gid); err != nil {
+	if err := vfs.CheckSetStat(ctx, creds, &s, linux.FileMode(hostStat.Mode&linux.PermissionsMask), auth.KUID(hostStat.Uid), auth.KGID(hostStat.Gid)); err != nil {
 		return err
 	}
 
@@ -374,11 +365,11 @@ func (i *inode) Open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptio
 }
 
 func (i *inode) open(d *vfs.Dentry, mnt *vfs.Mount) (*vfs.FileDescription, error) {
-	mode, _, _, err := i.getPermissions()
-	if err != nil {
+	var s syscall.Stat_t
+	if err := syscall.Fstat(i.hostFD, &s); err != nil {
 		return nil, err
 	}
-	fileType := mode.FileType()
+	fileType := s.Mode & linux.FileTypeMask
 	if fileType == syscall.S_IFSOCK {
 		if i.isTTY {
 			return nil, errors.New("cannot use host socket as TTY")
