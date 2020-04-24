@@ -22,7 +22,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/imdario/mergo"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -111,13 +110,31 @@ func equalLayer(x, y Layer) bool {
 	return cmp.Equal(x, y, opt, cmpopts.IgnoreTypes(LayerBase{}))
 }
 
-// mergeLayer merges other in layer. Any non-nil value in other overrides the
-// corresponding value in layer. If other is nil, no action is performed.
-func mergeLayer(layer, other Layer) error {
-	if other == nil {
+// mergeLayer merges y into x. Any fields for which y has a non-nil value, that
+// value overwrite the corresponding fields in x.
+func mergeLayer(x, y Layer) error {
+	if y == nil {
 		return nil
 	}
-	return mergo.Merge(layer, other, mergo.WithOverride)
+	if reflect.TypeOf(x) != reflect.TypeOf(y) {
+		return fmt.Errorf("can't merge %T into %T", y, x)
+	}
+	vx := reflect.ValueOf(x).Elem()
+	vy := reflect.ValueOf(y).Elem()
+	t := vy.Type()
+	for i := 0; i < vy.NumField(); i++ {
+		t := t.Field(i)
+		if t.Anonymous {
+			// Ignore the LayerBase in the Layer struct.
+			continue
+		}
+		v := vy.Field(i)
+		if v.IsNil() {
+			continue
+		}
+		vx.Field(i).Set(v)
+	}
+	return nil
 }
 
 func stringLayer(l Layer) string {
@@ -243,8 +260,7 @@ func (l *Ether) length() int {
 	return header.EthernetMinimumSize
 }
 
-// merge overrides the values in l with the values from other but only in fields
-// where the value is not nil.
+// merge implements Layer.merge.
 func (l *Ether) merge(other Layer) error {
 	return mergeLayer(l, other)
 }
@@ -399,8 +415,7 @@ func (l *IPv4) length() int {
 	return int(*l.IHL)
 }
 
-// merge overrides the values in l with the values from other but only in fields
-// where the value is not nil.
+// merge implements Layer.merge.
 func (l *IPv4) merge(other Layer) error {
 	return mergeLayer(l, other)
 }
@@ -544,8 +559,7 @@ func (l *TCP) length() int {
 	return int(*l.DataOffset)
 }
 
-// merge overrides the values in l with the values from other but only in fields
-// where the value is not nil.
+// merge implements Layer.merge.
 func (l *TCP) merge(other Layer) error {
 	return mergeLayer(l, other)
 }
@@ -622,8 +636,7 @@ func (l *UDP) length() int {
 	return int(*l.Length)
 }
 
-// merge overrides the values in l with the values from other but only in fields
-// where the value is not nil.
+// merge implements Layer.merge.
 func (l *UDP) merge(other Layer) error {
 	return mergeLayer(l, other)
 }
@@ -659,8 +672,7 @@ func (l *Payload) length() int {
 	return len(l.Bytes)
 }
 
-// merge overrides the values in l with the values from other but only in fields
-// where the value is not nil.
+// merge implements Layer.merge.
 func (l *Payload) merge(other Layer) error {
 	return mergeLayer(l, other)
 }
