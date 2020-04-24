@@ -4,7 +4,10 @@ package(licenses = ["notice"])
 
 go_library(
     name = "control",
-    srcs = ["control.go"],
+    srcs = [
+        "control.go",
+        "control_vfs2.go",
+    ],
     imports = [
         "gvisor.dev/gvisor/pkg/sentry/fs",
     ],
@@ -18,6 +21,7 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/unix/transport",
+        "//pkg/sentry/vfs",
         "//pkg/syserror",
         "//pkg/tcpip",
         "//pkg/usermem",
