@@ -391,7 +391,7 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	// O_NOFOLLOW have no effect here (they're handled by VFS by setting
 	// appropriate bits in rp), but are returned by
 	// FileDescriptionImpl.StatusFlags().
-	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_TRUNC | linux.O_DIRECTORY | linux.O_NOFOLLOW
+	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_TRUNC | linux.O_DIRECTORY | linux.O_NOFOLLOW | linux.O_NONBLOCK
 	ats := vfs.AccessTypesForOpenFlags(&opts)
 
 	// Do not create new file.

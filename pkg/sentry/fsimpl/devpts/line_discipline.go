@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tty
+package devpts
 
 import (
 	"bytes"
@@ -446,4 +446,4 @@ func (l *lineDiscipline) peek(b []byte) int {
 	return size
 }
 
-// LINT.ThenChange(../../fsimpl/devpts/line_discipline.go)
+// LINT.ThenChange(../../fs/tty/line_discipline.go)
