@@ -25,6 +25,8 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// LINT.IfChange
+
 // slaveInodeOperations are the fs.InodeOperations for the slave end of the
 // Terminal (pts file).
 //
@@ -172,3 +174,5 @@ func (sf *slaveFileOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem
 		return 0, syserror.ENOTTY
 	}
 }
+
+// LINT.ThenChange(../../fsimpl/devpts/slave.go)

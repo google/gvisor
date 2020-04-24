@@ -163,16 +163,25 @@ func (a *Accessor) CreateDeviceFile(ctx context.Context, pathname string, kind v
 func (a *Accessor) UserspaceInit(ctx context.Context) error {
 	actx := a.wrapContext(ctx)
 
-	// systemd: src/shared/dev-setup.c:dev_setup()
+	// Initialize symlinks.
 	for _, symlink := range []struct {
 		source string
 		target string
 	}{
-		// /proc/kcore is not implemented.
+		// systemd: src/shared/dev-setup.c:dev_setup()
 		{source: "fd", target: "/proc/self/fd"},
 		{source: "stdin", target: "/proc/self/fd/0"},
 		{source: "stdout", target: "/proc/self/fd/1"},
 		{source: "stderr", target: "/proc/self/fd/2"},
+		// /proc/kcore is not implemented.
+
+		// Linux implements /dev/ptmx as a device node, but advises
+		// container implementations to create /dev/ptmx as a symlink
+		// to pts/ptmx (Documentation/filesystems/devpts.txt). Systemd
+		// follows this advice (src/nspawn/nspawn.c:setup_pts()), while
+		// LXC tries to create a bind mount and falls back to a symlink
+		// (src/lxc/conf.c:lxc_setup_devpts()).
+		{source: "ptmx", target: "pts/ptmx"},
 	} {
 		if err := a.vfsObj.SymlinkAt(actx, a.creds, a.pathOperationAt(symlink.source), symlink.target); err != nil {
 			return fmt.Errorf("failed to create symlink %q => %q: %v", symlink.source, symlink.target, err)
