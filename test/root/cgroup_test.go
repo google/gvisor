@@ -199,6 +199,12 @@ func TestCgroup(t *testing.T) {
 			want:           "750",
 			skipIfNotFound: true, // blkio groups may not be available.
 		},
+		{
+			arg:  "--pids-limit=1000",
+			ctrl: "pids",
+			file: "pids.max",
+			want: "1000",
+		},
 	}
 
 	args := make([]string, 0, len(attrs))

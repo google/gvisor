@@ -45,13 +45,13 @@ var controllers = map[string]controller{
 	"memory":   &memory{},
 	"net_cls":  &networkClass{},
 	"net_prio": &networkPrio{},
+	"pids":     &pids{},
 
 	// These controllers either don't have anything in the OCI spec or is
-	// irrevalant for a sandbox, e.g. pids.
+	// irrelevant for a sandbox.
 	"devices":    &noop{},
 	"freezer":    &noop{},
 	"perf_event": &noop{},
-	"pids":       &noop{},
 	"systemd":    &noop{},
 }
 
@@ -524,4 +524,14 @@ func (*networkPrio) set(spec *specs.LinuxResources, path string) error {
 		}
 	}
 	return nil
+}
+
+type pids struct{}
+
+func (*pids) set(spec *specs.LinuxResources, path string) error {
+	if spec.Pids == nil {
+		return nil
+	}
+	val := strconv.FormatInt(spec.Pids.Limit, 10)
+	return setValue(path, "pids.max", val)
 }
