@@ -353,7 +353,10 @@ func (d *Docker) run(r RunOpts, command string, p ...string) (string, error) {
 
 // Create calls 'docker create' with the arguments provided.
 func (d *Docker) Create(r RunOpts, args ...string) error {
-	_, err := d.run(r, "create", args...)
+	out, err := d.run(r, "create", args...)
+	if strings.Contains(out, "Unable to find image") {
+		return fmt.Errorf("unable to find image, did you remember to `make load-%s`: %w", r.Image, err)
+	}
 	return err
 }
 
