@@ -625,11 +625,14 @@ func (l *Loader) run() error {
 
 	// l.stdioFDs are derived from dup() in boot.New() and they are now dup()ed again
 	// either in createFDTable() during initial start or in descriptor.initAfterLoad()
-	// during restore, we can release l.stdioFDs now.
-	for _, fd := range l.stdioFDs {
-		err := syscall.Close(fd)
-		if err != nil {
-			return fmt.Errorf("close dup()ed stdioFDs: %v", err)
+	// during restore, we can release l.stdioFDs now. VFS2 takes ownership of the
+	// passed FDs, so only close for VFS1.
+	if !kernel.VFS2Enabled {
+		for _, fd := range l.stdioFDs {
+			err := syscall.Close(fd)
+			if err != nil {
+				return fmt.Errorf("close dup()ed stdioFDs: %v", err)
+			}
 		}
 	}
 

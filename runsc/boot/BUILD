@@ -119,11 +119,13 @@ go_test(
     library = ":boot",
     deps = [
         "//pkg/control/server",
+        "//pkg/fspath",
         "//pkg/log",
         "//pkg/p9",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel",
+        "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/unet",
         "//runsc/fsgofer",

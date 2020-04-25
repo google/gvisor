@@ -26,11 +26,13 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/control/server"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/runsc/fsgofer"
@@ -107,14 +109,12 @@ func startGofer(root string) (int, func(), error) {
 	return sandboxEnd, cleanup, nil
 }
 
-func createLoader(vfsEnabled bool) (*Loader, func(), error) {
+func createLoader(vfsEnabled bool, spec *specs.Spec) (*Loader, func(), error) {
 	fd, err := server.CreateSocket(ControlSocketAddr(fmt.Sprintf("%010d", rand.Int())[:10]))
 	if err != nil {
 		return nil, nil, err
 	}
 	conf := testConfig()
-	spec := testSpec()
-
 	conf.VFS2 = vfsEnabled
 
 	sandEnd, cleanup, err := startGofer(spec.Root.Path)
@@ -161,7 +161,7 @@ func TestRunVFS2(t *testing.T) {
 }
 
 func doRun(t *testing.T, vfsEnabled bool) {
-	l, cleanup, err := createLoader(vfsEnabled)
+	l, cleanup, err := createLoader(vfsEnabled, testSpec())
 	if err != nil {
 		t.Fatalf("error creating loader: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestStartSignalVFS2(t *testing.T) {
 }
 
 func doStartSignal(t *testing.T, vfsEnabled bool) {
-	l, cleanup, err := createLoader(vfsEnabled)
+	l, cleanup, err := createLoader(vfsEnabled, testSpec())
 	if err != nil {
 		t.Fatalf("error creating loader: %v", err)
 	}
@@ -258,18 +258,19 @@ func doStartSignal(t *testing.T, vfsEnabled bool) {
 
 }
 
-// Test that MountNamespace can be created with various specs.
-func TestCreateMountNamespace(t *testing.T) {
-	testCases := []struct {
-		name string
-		// Spec that will be used to create the mount manager.  Note
-		// that we can't mount procfs without a kernel, so each spec
-		// MUST contain something other than procfs mounted at /proc.
-		spec specs.Spec
-		// Paths that are expected to exist in the resulting fs.
-		expectedPaths []string
-	}{
-		{
+type CreateMountTestcase struct {
+	name string
+	// Spec that will be used to create the mount manager.  Note
+	// that we can't mount procfs without a kernel, so each spec
+	// MUST contain something other than procfs mounted at /proc.
+	spec specs.Spec
+	// Paths that are expected to exist in the resulting fs.
+	expectedPaths []string
+}
+
+func createMountTestcases(vfs2 bool) []*CreateMountTestcase {
+	testCases := []*CreateMountTestcase{
+		&CreateMountTestcase{
 			// Only proc.
 			name: "only proc mount",
 			spec: specs.Spec{
@@ -311,7 +312,7 @@ func TestCreateMountNamespace(t *testing.T) {
 			// /dev, and /sys.
 			expectedPaths: []string{"/some/very/very/deep/path", "/proc", "/dev", "/sys"},
 		},
-		{
+		&CreateMountTestcase{
 			// Mounts are nested inside each other.
 			name: "nested mounts",
 			spec: specs.Spec{
@@ -355,7 +356,7 @@ func TestCreateMountNamespace(t *testing.T) {
 			expectedPaths: []string{"/foo", "/foo/bar", "/foo/bar/baz", "/foo/qux",
 				"/foo/qux-quz", "/foo/some/very/very/deep/path", "/proc", "/dev", "/sys"},
 		},
-		{
+		&CreateMountTestcase{
 			name: "mount inside /dev",
 			spec: specs.Spec{
 				Root: &specs.Root{
@@ -398,40 +399,47 @@ func TestCreateMountNamespace(t *testing.T) {
 			},
 			expectedPaths: []string{"/proc", "/dev", "/dev/fd-foo", "/dev/foo", "/dev/bar", "/sys"},
 		},
-		{
-			name: "mounts inside mandatory mounts",
-			spec: specs.Spec{
-				Root: &specs.Root{
-					Path:     os.TempDir(),
-					Readonly: true,
-				},
-				Mounts: []specs.Mount{
-					{
-						Destination: "/proc",
-						Type:        "tmpfs",
-					},
-					// We don't include /sys, and /tmp in
-					// the spec, since they will be added
-					// automatically.
-					//
-					// Instead, add submounts inside these
-					// directories and make sure they are
-					// visible under the mandatory mounts.
-					{
-						Destination: "/sys/bar",
-						Type:        "tmpfs",
-					},
-					{
-						Destination: "/tmp/baz",
-						Type:        "tmpfs",
-					},
-				},
-			},
-			expectedPaths: []string{"/proc", "/sys", "/sys/bar", "/tmp", "/tmp/baz"},
-		},
 	}
 
-	for _, tc := range testCases {
+	vfsCase := &CreateMountTestcase{
+		name: "mounts inside mandatory mounts",
+		spec: specs.Spec{
+			Root: &specs.Root{
+				Path:     os.TempDir(),
+				Readonly: true,
+			},
+			Mounts: []specs.Mount{
+				{
+					Destination: "/proc",
+					Type:        "tmpfs",
+				},
+				// TODO (gvisor.dev/issue/1487): Re-add this case when sysfs supports
+				//  MkDirAt in VFS2 (and remove the reduntant append).
+				// {
+				//		Destination: "/sys/bar",
+				//		Type:        "tmpfs",
+				//	},
+				//
+				{
+					Destination: "/tmp/baz",
+					Type:        "tmpfs",
+				},
+			},
+		},
+		expectedPaths: []string{"/proc", "/sys" /* "/sys/bar" ,*/, "/tmp", "/tmp/baz"},
+	}
+
+	if !vfs2 {
+		vfsCase.spec.Mounts = append(vfsCase.spec.Mounts, specs.Mount{Destination: "/sys/bar", Type: "tmpfs"})
+		vfsCase.expectedPaths = append(vfsCase.expectedPaths, "/sys/bar")
+	}
+	return append(testCases, vfsCase)
+}
+
+// Test that MountNamespace can be created with various specs.
+func TestCreateMountNamespace(t *testing.T) {
+
+	for _, tc := range createMountTestcases(false /* vfs2 */) {
 		t.Run(tc.name, func(t *testing.T) {
 			conf := testConfig()
 			ctx := contexttest.Context(t)
@@ -461,6 +469,56 @@ func TestCreateMountNamespace(t *testing.T) {
 				} else {
 					d.DecRef()
 				}
+			}
+		})
+	}
+}
+
+// Test that MountNamespace can be created with various specs.
+func TestCreateMountNamespaceVFS2(t *testing.T) {
+
+	for _, tc := range createMountTestcases(true /* vfs2 */) {
+		t.Run(tc.name, func(t *testing.T) {
+			defer resetSyscallTable()
+
+			spec := testSpec()
+			spec.Mounts = tc.spec.Mounts
+			spec.Root = tc.spec.Root
+
+			l, loaderCleanup, err := createLoader(true /* VFS2 Enabled */, spec)
+			if err != nil {
+				t.Fatalf("failed to create loader: %v", err)
+			}
+			defer l.Destroy()
+			defer loaderCleanup()
+
+			mntr := newContainerMounter(l.spec, l.goferFDs, l.k, l.mountHints)
+			if err := mntr.processHints(l.conf); err != nil {
+				t.Fatalf("failed process hints: %v", err)
+			}
+
+			ctx := l.rootProcArgs.NewContext(l.k)
+			mns, err := mntr.setupVFS2(ctx, l.conf, &l.rootProcArgs)
+			if err != nil {
+				t.Fatalf("failed to setupVFS2: %v", err)
+			}
+
+			root := mns.Root()
+			defer root.DecRef()
+			for _, p := range tc.expectedPaths {
+
+				target := &vfs.PathOperation{
+					Root:  root,
+					Start: root,
+					Path:  fspath.Parse(p),
+				}
+
+				if d, err := l.k.VFS().GetDentryAt(ctx, l.rootProcArgs.Credentials, target, &vfs.GetDentryOptions{}); err != nil {
+					t.Errorf("expected path %v to exist with spec %v, but got error %v", p, tc.spec, err)
+				} else {
+					d.DecRef()
+				}
+
 			}
 		})
 	}
