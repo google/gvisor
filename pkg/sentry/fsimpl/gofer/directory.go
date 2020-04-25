@@ -75,6 +75,7 @@ func (d *dentry) createSyntheticDirectoryLocked(name string, mode linux.FileMode
 		handle: handle{
 			fd: -1,
 		},
+		nlink: uint32(2),
 	}
 	d2.pf.dentry = d2
 	d2.vfsd.Init(d2)
