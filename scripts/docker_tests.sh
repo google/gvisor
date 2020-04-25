@@ -20,3 +20,6 @@ make load-all-images
 
 install_runsc_for_test docker
 test_runsc //test/image:image_test //test/e2e:integration_test
+
+install_runsc_for_test docker --vfs2
+test_runsc //test/image:image_test --test_filter=.*TestHelloWorld
