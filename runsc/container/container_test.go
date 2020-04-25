@@ -281,6 +281,18 @@ func configs(t *testing.T, opts ...configOption) map[string]*boot.Config {
 	return cs
 }
 
+func configsWithVFS2(t *testing.T, opts []configOption) map[string]*boot.Config {
+	vfs1 := configs(t, opts...)
+	vfs2 := configs(t, opts...)
+
+	for key, value := range vfs2 {
+		value.VFS2 = true
+		vfs1[key+"VFS2"] = value
+	}
+
+	return vfs1
+}
+
 // TestLifecycle tests the basic Create/Start/Signal/Destroy container lifecycle.
 // It verifies after each step that the container can be loaded from disk, and
 // has the correct status.
@@ -290,7 +302,7 @@ func TestLifecycle(t *testing.T) {
 	childReaper.Start()
 	defer childReaper.Stop()
 
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configsWithVFS2(t, all) {
 		t.Run(name, func(t *testing.T) {
 			// The container will just sleep for a long time.  We will kill it before
 			// it finishes sleeping.
@@ -464,7 +476,7 @@ func TestExePath(t *testing.T) {
 		t.Fatalf("error making directory: %v", err)
 	}
 
-	for name, conf := range configs(t, overlay) {
+	for name, conf := range configsWithVFS2(t, []configOption{overlay}) {
 		t.Run(name, func(t *testing.T) {
 			for _, test := range []struct {
 				path    string
@@ -1329,7 +1341,7 @@ func TestRunNonRoot(t *testing.T) {
 // TestMountNewDir checks that runsc will create destination directory if it
 // doesn't exit.
 func TestMountNewDir(t *testing.T) {
-	for name, conf := range configs(t, overlay) {
+	for name, conf := range configsWithVFS2(t, []configOption{overlay}) {
 		t.Run(name, func(t *testing.T) {
 			root, err := ioutil.TempDir(testutil.TmpDir(), "root")
 			if err != nil {
@@ -1358,7 +1370,7 @@ func TestMountNewDir(t *testing.T) {
 }
 
 func TestReadonlyRoot(t *testing.T) {
-	for name, conf := range configs(t, overlay) {
+	for name, conf := range configsWithVFS2(t, []configOption{overlay}) {
 		t.Run(name, func(t *testing.T) {
 			spec := testutil.NewSpecWithArgs("/bin/touch", "/foo")
 			spec.Root.Readonly = true
@@ -1476,7 +1488,7 @@ func TestUIDMap(t *testing.T) {
 }
 
 func TestReadonlyMount(t *testing.T) {
-	for name, conf := range configs(t, overlay) {
+	for name, conf := range configsWithVFS2(t, []configOption{overlay}) {
 		t.Run(name, func(t *testing.T) {
 			dir, err := ioutil.TempDir(testutil.TmpDir(), "ro-mount")
 			spec := testutil.NewSpecWithArgs("/bin/touch", path.Join(dir, "file"))
@@ -1526,6 +1538,14 @@ func TestReadonlyMount(t *testing.T) {
 // TestAbbreviatedIDs checks that runsc supports using abbreviated container
 // IDs in place of full IDs.
 func TestAbbreviatedIDs(t *testing.T) {
+	doAbbreviatedIDsTest(t, false)
+}
+
+func TestAbbreviatedIDsVFS2(t *testing.T) {
+	doAbbreviatedIDsTest(t, true)
+}
+
+func doAbbreviatedIDsTest(t *testing.T, vfs2 bool) {
 	rootDir, cleanup, err := testutil.SetupRootDir()
 	if err != nil {
 		t.Fatalf("error creating root dir: %v", err)
@@ -1534,6 +1554,7 @@ func TestAbbreviatedIDs(t *testing.T) {
 
 	conf := testutil.TestConfig(t)
 	conf.RootDir = rootDir
+	conf.VFS2 = vfs2
 
 	cids := []string{
 		"foo-" + testutil.RandomContainerID(),
@@ -1589,9 +1610,19 @@ func TestAbbreviatedIDs(t *testing.T) {
 }
 
 func TestGoferExits(t *testing.T) {
+	doGoferExitTest(t, false)
+}
+
+func TestGoferExitsVFS2(t *testing.T) {
+	doGoferExitTest(t, true)
+}
+
+func doGoferExitTest(t *testing.T, vfs2 bool) {
 	spec := testutil.NewSpecWithArgs("/bin/sleep", "10000")
 	conf := testutil.TestConfig(t)
+	conf.VFS2 = vfs2
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
@@ -1711,7 +1742,7 @@ func TestUserLog(t *testing.T) {
 }
 
 func TestWaitOnExitedSandbox(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configsWithVFS2(t, all) {
 		t.Run(name, func(t *testing.T) {
 			// Run a shell that sleeps for 1 second and then exits with a
 			// non-zero code.
@@ -1764,8 +1795,17 @@ func TestWaitOnExitedSandbox(t *testing.T) {
 }
 
 func TestDestroyNotStarted(t *testing.T) {
+	doDestroyNotStartedTest(t, false)
+}
+
+func TestDestroyNotStartedVFS2(t *testing.T) {
+	doDestroyNotStartedTest(t, true)
+}
+
+func doDestroyNotStartedTest(t *testing.T, vfs2 bool) {
 	spec := testutil.NewSpecWithArgs("/bin/sleep", "100")
 	conf := testutil.TestConfig(t)
+	conf.VFS2 = vfs2
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -1789,9 +1829,18 @@ func TestDestroyNotStarted(t *testing.T) {
 
 // TestDestroyStarting attempts to force a race between start and destroy.
 func TestDestroyStarting(t *testing.T) {
+	doDestroyNotStartedTest(t, false)
+}
+
+func TestDestroyStartedVFS2(t *testing.T) {
+	doDestroyNotStartedTest(t, true)
+}
+
+func doDestroyStartingTest(t *testing.T, vfs2 bool) {
 	for i := 0; i < 10; i++ {
 		spec := testutil.NewSpecWithArgs("/bin/sleep", "100")
 		conf := testutil.TestConfig(t)
+		conf.VFS2 = vfs2
 		rootDir, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 		if err != nil {
 			t.Fatalf("error setting up container: %v", err)
