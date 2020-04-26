@@ -3,5 +3,77 @@
 // +build amd64
 // +build amd64
 // +build amd64
+// +build amd64
 
 package linux
+
+import (
+	"gvisor.dev/gvisor/pkg/state"
+)
+
+func (x *PtraceRegs) beforeSave() {}
+func (x *PtraceRegs) save(m state.Map) {
+	x.beforeSave()
+	m.Save("R15", &x.R15)
+	m.Save("R14", &x.R14)
+	m.Save("R13", &x.R13)
+	m.Save("R12", &x.R12)
+	m.Save("Rbp", &x.Rbp)
+	m.Save("Rbx", &x.Rbx)
+	m.Save("R11", &x.R11)
+	m.Save("R10", &x.R10)
+	m.Save("R9", &x.R9)
+	m.Save("R8", &x.R8)
+	m.Save("Rax", &x.Rax)
+	m.Save("Rcx", &x.Rcx)
+	m.Save("Rdx", &x.Rdx)
+	m.Save("Rsi", &x.Rsi)
+	m.Save("Rdi", &x.Rdi)
+	m.Save("Orig_rax", &x.Orig_rax)
+	m.Save("Rip", &x.Rip)
+	m.Save("Cs", &x.Cs)
+	m.Save("Eflags", &x.Eflags)
+	m.Save("Rsp", &x.Rsp)
+	m.Save("Ss", &x.Ss)
+	m.Save("Fs_base", &x.Fs_base)
+	m.Save("Gs_base", &x.Gs_base)
+	m.Save("Ds", &x.Ds)
+	m.Save("Es", &x.Es)
+	m.Save("Fs", &x.Fs)
+	m.Save("Gs", &x.Gs)
+}
+
+func (x *PtraceRegs) afterLoad() {}
+func (x *PtraceRegs) load(m state.Map) {
+	m.Load("R15", &x.R15)
+	m.Load("R14", &x.R14)
+	m.Load("R13", &x.R13)
+	m.Load("R12", &x.R12)
+	m.Load("Rbp", &x.Rbp)
+	m.Load("Rbx", &x.Rbx)
+	m.Load("R11", &x.R11)
+	m.Load("R10", &x.R10)
+	m.Load("R9", &x.R9)
+	m.Load("R8", &x.R8)
+	m.Load("Rax", &x.Rax)
+	m.Load("Rcx", &x.Rcx)
+	m.Load("Rdx", &x.Rdx)
+	m.Load("Rsi", &x.Rsi)
+	m.Load("Rdi", &x.Rdi)
+	m.Load("Orig_rax", &x.Orig_rax)
+	m.Load("Rip", &x.Rip)
+	m.Load("Cs", &x.Cs)
+	m.Load("Eflags", &x.Eflags)
+	m.Load("Rsp", &x.Rsp)
+	m.Load("Ss", &x.Ss)
+	m.Load("Fs_base", &x.Fs_base)
+	m.Load("Gs_base", &x.Gs_base)
+	m.Load("Ds", &x.Ds)
+	m.Load("Es", &x.Es)
+	m.Load("Fs", &x.Fs)
+	m.Load("Gs", &x.Gs)
+}
+
+func init() {
+	state.Register("pkg/abi/linux.PtraceRegs", (*PtraceRegs)(nil), state.Fns{Save: (*PtraceRegs).save, Load: (*PtraceRegs).load})
+}

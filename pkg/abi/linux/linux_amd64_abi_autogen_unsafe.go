@@ -3,6 +3,7 @@
 // +build amd64
 // +build amd64
 // +build amd64
+// +build amd64
 
 package linux
 
@@ -19,6 +20,7 @@ import (
 
 // Marshallable types used by this file.
 var _ marshal.Marshallable = (*EpollEvent)(nil)
+var _ marshal.Marshallable = (*PtraceRegs)(nil)
 var _ marshal.Marshallable = (*Stat)(nil)
 var _ marshal.Marshallable = (*Timespec)(nil)
 
@@ -300,7 +302,7 @@ func (s *Stat) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *Stat) UnmarshalUnsafe(src []byte) {
-    if s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
+    if s.MTime.Packed() && s.CTime.Packed() && s.ATime.Packed() {
         safecopy.CopyOut(unsafe.Pointer(s), src)
     } else {
         s.UnmarshalBytes(src)
@@ -310,7 +312,7 @@ func (s *Stat) UnmarshalUnsafe(src []byte) {
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
 func (s *Stat) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {
-    if !s.CTime.Packed() && s.ATime.Packed() && s.MTime.Packed() {
+    if !s.ATime.Packed() && s.MTime.Packed() && s.CTime.Packed() {
         // Type Stat doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := task.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
         s.MarshalBytes(buf) // escapes: fallback.
@@ -385,6 +387,199 @@ func (s *Stat) WriteTo(w io.Writer) (int64, error) {
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
     runtime.KeepAlive(s)
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (p *PtraceRegs) SizeBytes() int {
+    return 216
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (p *PtraceRegs) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.R15))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.R14))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.R13))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.R12))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Rbp))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Rbx))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.R11))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.R10))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.R9))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.R8))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Rax))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Rcx))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Rdx))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Rsi))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Rdi))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Orig_rax))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Rip))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Cs))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Eflags))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Rsp))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Ss))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Fs_base))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Gs_base))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Ds))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Es))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Fs))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Gs))
+    dst = dst[8:]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (p *PtraceRegs) UnmarshalBytes(src []byte) {
+    p.R15 = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.R14 = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.R13 = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.R12 = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.Rbp = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.Rbx = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.R11 = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.R10 = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.R9 = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.R8 = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.Rax = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.Rcx = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.Rdx = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.Rsi = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.Rdi = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.Orig_rax = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.Rip = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.Cs = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.Eflags = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.Rsp = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.Ss = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.Fs_base = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.Gs_base = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.Ds = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.Es = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.Fs = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    p.Gs = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (p *PtraceRegs) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (p *PtraceRegs) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(p))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (p *PtraceRegs) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(p), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (p *PtraceRegs) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(p)))
+    hdr.Len = p.SizeBytes()
+    hdr.Cap = p.SizeBytes()
+
+    length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that p
+    // must live until the use above.
+    runtime.KeepAlive(p)
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (p *PtraceRegs) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
+    return p.CopyOutN(task, addr, p.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (p *PtraceRegs) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(p)))
+    hdr.Len = p.SizeBytes()
+    hdr.Cap = p.SizeBytes()
+
+    length, err := task.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that p
+    // must live until the use above.
+    runtime.KeepAlive(p)
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (p *PtraceRegs) WriteTo(w io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(p)))
+    hdr.Len = p.SizeBytes()
+    hdr.Cap = p.SizeBytes()
+
+    length, err := w.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that p
+    // must live until the use above.
+    runtime.KeepAlive(p)
     return int64(length), err
 }
 

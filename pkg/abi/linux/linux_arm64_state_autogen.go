@@ -2,5 +2,31 @@
 
 // +build arm64
 // +build arm64
+// +build arm64
 
 package linux
+
+import (
+	"gvisor.dev/gvisor/pkg/state"
+)
+
+func (x *PtraceRegs) beforeSave() {}
+func (x *PtraceRegs) save(m state.Map) {
+	x.beforeSave()
+	m.Save("Regs", &x.Regs)
+	m.Save("Sp", &x.Sp)
+	m.Save("Pc", &x.Pc)
+	m.Save("Pstate", &x.Pstate)
+}
+
+func (x *PtraceRegs) afterLoad() {}
+func (x *PtraceRegs) load(m state.Map) {
+	m.Load("Regs", &x.Regs)
+	m.Load("Sp", &x.Sp)
+	m.Load("Pc", &x.Pc)
+	m.Load("Pstate", &x.Pstate)
+}
+
+func init() {
+	state.Register("pkg/abi/linux.PtraceRegs", (*PtraceRegs)(nil), state.Fns{Save: (*PtraceRegs).save, Load: (*PtraceRegs).load})
+}

@@ -22,7 +22,6 @@ import (
 	"math/rand"
 	"syscall"
 
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -301,8 +300,10 @@ func (c *context64) PtracePeekUser(addr uintptr) (interface{}, error) {
 	// PTRACE_PEEKUSER and PTRACE_POKEUSER are only effective on regs and
 	// u_debugreg, returning 0 or silently no-oping for other fields
 	// respectively.
-	if addr < uintptr(ptraceRegsSize) {
-		buf := binary.Marshal(nil, usermem.ByteOrder, c.ptraceGetRegs())
+	if addr < uintptr(registersSize) {
+		regs := c.ptraceGetRegs()
+		buf := make([]byte, regs.SizeBytes())
+		regs.MarshalUnsafe(buf)
 		return c.Native(uintptr(usermem.ByteOrder.Uint64(buf[addr:]))), nil
 	}
 	// Note: x86 debug registers are missing.
@@ -314,8 +315,10 @@ func (c *context64) PtracePokeUser(addr, data uintptr) error {
 	if addr&7 != 0 || addr >= userStructSize {
 		return syscall.EIO
 	}
-	if addr < uintptr(ptraceRegsSize) {
-		buf := binary.Marshal(nil, usermem.ByteOrder, c.ptraceGetRegs())
+	if addr < uintptr(registersSize) {
+		regs := c.ptraceGetRegs()
+		buf := make([]byte, regs.SizeBytes())
+		regs.MarshalUnsafe(buf)
 		usermem.ByteOrder.PutUint64(buf[addr:], uint64(data))
 		_, err := c.PtraceSetRegs(bytes.NewBuffer(buf))
 		return err

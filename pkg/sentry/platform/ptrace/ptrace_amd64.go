@@ -15,9 +15,8 @@
 package ptrace
 
 import (
-	"syscall"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
 // fpRegSet returns the GETREGSET/SETREGSET register set type to be used.
@@ -28,12 +27,12 @@ func fpRegSet(useXsave bool) uintptr {
 	return linux.NT_PRFPREG
 }
 
-func stackPointer(r *syscall.PtraceRegs) uintptr {
+func stackPointer(r *arch.Registers) uintptr {
 	return uintptr(r.Rsp)
 }
 
 // x86 use the fs_base register to store the TLS pointer which can be
-// get/set in "func (t *thread) get/setRegs(regs *syscall.PtraceRegs)".
+// get/set in "func (t *thread) get/setRegs(regs *arch.Registers)".
 // So both of the get/setTLS() operations are noop here.
 
 // getTLS gets the thread local storage register.
