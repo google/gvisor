@@ -17,17 +17,19 @@
 package arch
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
-	"syscall"
 
-	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/log"
 	rpb "gvisor.dev/gvisor/pkg/sentry/arch/registers_go_proto"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
+
+// Registers represents the CPU registers for this architecture.
+type Registers = linux.PtraceRegs
 
 const (
 	// SyscallWidth is the width of insturctions.
@@ -90,7 +92,7 @@ func NewFloatingPointData() *FloatingPointData {
 // file ensures it's only built on aarch64).
 type State struct {
 	// The system registers.
-	Regs syscall.PtraceRegs `state:".(syscallPtraceRegs)"`
+	Regs Registers
 
 	// Our floating point state.
 	aarch64FPState `state:"wait"`
@@ -226,25 +228,27 @@ func (s *State) RegisterMap() (map[string]uintptr, error) {
 
 // PtraceGetRegs implements Context.PtraceGetRegs.
 func (s *State) PtraceGetRegs(dst io.Writer) (int, error) {
-	return dst.Write(binary.Marshal(nil, usermem.ByteOrder, s.ptraceGetRegs()))
+	regs := s.ptraceGetRegs()
+	n, err := regs.WriteTo(dst)
+	return int(n), err
 }
 
-func (s *State) ptraceGetRegs() syscall.PtraceRegs {
+func (s *State) ptraceGetRegs() Registers {
 	return s.Regs
 }
 
-var ptraceRegsSize = int(binary.Size(syscall.PtraceRegs{}))
+var registersSize = (*Registers)(nil).SizeBytes()
 
 // PtraceSetRegs implements Context.PtraceSetRegs.
 func (s *State) PtraceSetRegs(src io.Reader) (int, error) {
-	var regs syscall.PtraceRegs
-	buf := make([]byte, ptraceRegsSize)
+	var regs Registers
+	buf := make([]byte, registersSize)
 	if _, err := io.ReadFull(src, buf); err != nil {
 		return 0, err
 	}
-	binary.Unmarshal(buf, usermem.ByteOrder, &regs)
+	regs.UnmarshalUnsafe(buf)
 	s.Regs = regs
-	return ptraceRegsSize, nil
+	return registersSize, nil
 }
 
 // PtraceGetFPRegs implements Context.PtraceGetFPRegs.

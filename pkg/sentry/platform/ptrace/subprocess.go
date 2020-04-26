@@ -63,7 +63,7 @@ type thread struct {
 	// initRegs are the initial registers for the first thread.
 	//
 	// These are used for the register set for system calls.
-	initRegs syscall.PtraceRegs
+	initRegs arch.Registers
 }
 
 // threadPool is a collection of threads.
@@ -317,7 +317,7 @@ const (
 )
 
 func (t *thread) dumpAndPanic(message string) {
-	var regs syscall.PtraceRegs
+	var regs arch.Registers
 	message += "\n"
 	if err := t.getRegs(&regs); err == nil {
 		message += dumpRegs(&regs)
@@ -423,7 +423,7 @@ func (t *thread) init() {
 // This is _not_ for use by application system calls, rather it is for use when
 // a system call must be injected into the remote context (e.g. mmap, munmap).
 // Note that clones are handled separately.
-func (t *thread) syscall(regs *syscall.PtraceRegs) (uintptr, error) {
+func (t *thread) syscall(regs *arch.Registers) (uintptr, error) {
 	// Set registers.
 	if err := t.setRegs(regs); err != nil {
 		panic(fmt.Sprintf("ptrace set regs failed: %v", err))
@@ -461,7 +461,7 @@ func (t *thread) syscall(regs *syscall.PtraceRegs) (uintptr, error) {
 // syscallIgnoreInterrupt ignores interrupts on the system call thread and
 // restarts the syscall if the kernel indicates that should happen.
 func (t *thread) syscallIgnoreInterrupt(
-	initRegs *syscall.PtraceRegs,
+	initRegs *arch.Registers,
 	sysno uintptr,
 	args ...arch.SyscallArgument) (uintptr, error) {
 	for {

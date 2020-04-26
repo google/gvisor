@@ -11,16 +11,15 @@ import (
 func (x *State) beforeSave() {}
 func (x *State) save(m state.Map) {
 	x.beforeSave()
-	var Regs syscallPtraceRegs = x.saveRegs()
-	m.SaveValue("Regs", Regs)
+	m.Save("Regs", &x.Regs)
 	m.Save("x86FPState", &x.x86FPState)
 	m.Save("FeatureSet", &x.FeatureSet)
 }
 
 func (x *State) load(m state.Map) {
+	m.Load("Regs", &x.Regs)
 	m.LoadWait("x86FPState", &x.x86FPState)
 	m.Load("FeatureSet", &x.FeatureSet)
-	m.LoadValue("Regs", new(syscallPtraceRegs), func(y interface{}) { x.loadRegs(y.(syscallPtraceRegs)) })
 	m.AfterLoad(x.afterLoad)
 }
 

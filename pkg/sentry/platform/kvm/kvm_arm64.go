@@ -17,8 +17,7 @@
 package kvm
 
 import (
-	"syscall"
-
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 )
 
@@ -37,7 +36,7 @@ type userFpsimdState struct {
 }
 
 type userRegs struct {
-	Regs    syscall.PtraceRegs
+	Regs    arch.Registers
 	sp_el1  uint64
 	elr_el1 uint64
 	spsr    [KVM_NR_SPSR]uint64

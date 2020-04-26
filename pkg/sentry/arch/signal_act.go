@@ -14,6 +14,8 @@
 
 package arch
 
+import "gvisor.dev/gvisor/tools/go_marshal/marshal"
+
 // Special values for SignalAct.Handler.
 const (
 	// SignalActDefault is SIG_DFL and specifies that the default behavior for
@@ -71,6 +73,8 @@ func (s SignalAct) HasRestorer() bool {
 // NativeSignalAct is a type that is equivalent to struct sigaction in the
 // guest architecture.
 type NativeSignalAct interface {
+	marshal.Marshallable
+
 	// SerializeFrom copies the data in the host SignalAct s into this object.
 	SerializeFrom(s *SignalAct)
 
