@@ -355,7 +355,7 @@ func Pause(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 func RtSigpending(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	pending := t.PendingSignals()
-	_, err := t.CopyOut(addr, pending)
+	_, err := pending.CopyOut(t, addr)
 	return 0, nil, err
 }
 
@@ -392,7 +392,7 @@ func RtSigtimedwait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 
 	if siginfo != 0 {
 		si.FixSignalCodeForUser()
-		if _, err := t.CopyOut(siginfo, si); err != nil {
+		if _, err := si.CopyOut(t, siginfo); err != nil {
 			return 0, nil, err
 		}
 	}
@@ -411,7 +411,7 @@ func RtSigqueueinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	// same way), and that the code is in the allowed set. This same logic
 	// appears below in RtSigtgqueueinfo and should be kept in sync.
 	var info arch.SignalInfo
-	if _, err := t.CopyIn(infoAddr, &info); err != nil {
+	if _, err := info.CopyIn(t, infoAddr); err != nil {
 		return 0, nil, err
 	}
 	info.Signo = int32(sig)
@@ -455,7 +455,7 @@ func RtTgsigqueueinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *ker
 
 	// Copy in the info. See RtSigqueueinfo above.
 	var info arch.SignalInfo
-	if _, err := t.CopyIn(infoAddr, &info); err != nil {
+	if _, err := info.CopyIn(t, infoAddr); err != nil {
 		return 0, nil, err
 	}
 	info.Signo = int32(sig)
@@ -485,7 +485,7 @@ func RtSigsuspend(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 
 	// Copy in the signal mask.
 	var mask linux.SignalSet
-	if _, err := t.CopyIn(sigset, &mask); err != nil {
+	if _, err := mask.CopyIn(t, sigset); err != nil {
 		return 0, nil, err
 	}
 	mask &^= kernel.UnblockableSignals

@@ -18,6 +18,7 @@ package arch
 
 import (
 	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/tools/go_marshal/marshal"
 )
 
 const (
@@ -55,6 +56,8 @@ func (s *SignalStack) Contains(sp usermem.Addr) bool {
 // NativeSignalStack is a type that is equivalent to stack_t in the guest
 // architecture.
 type NativeSignalStack interface {
+	marshal.Marshallable
+
 	// SerializeFrom copies the data in the host SignalStack s into this
 	// object.
 	SerializeFrom(s *SignalStack)

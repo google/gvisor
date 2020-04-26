@@ -13,4 +13,5 @@ go_library(
         "testutil_arm64.s",
     ],
     visibility = ["//pkg/sentry/platform/kvm:__pkg__"],
+    deps = ["//pkg/sentry/arch"],
 )

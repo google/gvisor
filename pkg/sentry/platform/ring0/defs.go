@@ -15,8 +15,7 @@
 package ring0
 
 import (
-	"syscall"
-
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
 )
 
@@ -72,7 +71,7 @@ type CPU struct {
 
 	// registers is a set of registers; these may be used on kernel system
 	// calls and exceptions via the Registers function.
-	registers syscall.PtraceRegs
+	registers arch.Registers
 
 	// hooks are kernel hooks.
 	hooks Hooks
@@ -83,14 +82,14 @@ type CPU struct {
 // This is explicitly safe to call during KernelException and KernelSyscall.
 //
 //go:nosplit
-func (c *CPU) Registers() *syscall.PtraceRegs {
+func (c *CPU) Registers() *arch.Registers {
 	return &c.registers
 }
 
 // SwitchOpts are passed to the Switch function.
 type SwitchOpts struct {
 	// Registers are the user register state.
-	Registers *syscall.PtraceRegs
+	Registers *arch.Registers
 
 	// FloatingPointState is a byte pointer where floating point state is
 	// saved and restored.
