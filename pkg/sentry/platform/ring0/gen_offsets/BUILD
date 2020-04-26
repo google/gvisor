@@ -27,6 +27,7 @@ go_binary(
     visibility = ["//pkg/sentry/platform/ring0:__pkg__"],
     deps = [
         "//pkg/cpuid",
+        "//pkg/sentry/arch",
         "//pkg/sentry/platform/ring0/pagetables",
         "//pkg/usermem",
     ],

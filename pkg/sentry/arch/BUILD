@@ -11,7 +11,6 @@ go_library(
         "arch_amd64.go",
         "arch_amd64.s",
         "arch_arm64.go",
-        "arch_state_aarch64.go",
         "arch_state_x86.go",
         "arch_x86.go",
         "arch_x86_impl.go",
@@ -26,11 +25,11 @@ go_library(
         "syscalls_amd64.go",
         "syscalls_arm64.go",
     ],
+    marshal = True,
     visibility = ["//:sandbox"],
     deps = [
         ":registers_go_proto",
         "//pkg/abi/linux",
-        "//pkg/binary",
         "//pkg/context",
         "//pkg/cpuid",
         "//pkg/log",
@@ -38,6 +37,7 @@ go_library(
         "//pkg/sync",
         "//pkg/syserror",
         "//pkg/usermem",
+        "//tools/go_marshal/marshal",
     ],
 )
 

@@ -20,7 +20,8 @@ import (
 	"fmt"
 	"io"
 	"reflect"
-	"syscall"
+
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
 // Emit prints architecture-specific offsets.
@@ -87,7 +88,7 @@ func Emit(w io.Writer) {
 	fmt.Fprintf(w, "#define Syscall 0x%02x\n", Syscall)
 	fmt.Fprintf(w, "#define VirtualizationException 0x%02x\n", VirtualizationException)
 
-	p := &syscall.PtraceRegs{}
+	p := &arch.Registers{}
 	fmt.Fprintf(w, "\n// Ptrace registers.\n")
 	fmt.Fprintf(w, "#define PTRACE_R0       0x%02x\n", reflect.ValueOf(&p.Regs[0]).Pointer()-reflect.ValueOf(p).Pointer())
 	fmt.Fprintf(w, "#define PTRACE_R1       0x%02x\n", reflect.ValueOf(&p.Regs[1]).Pointer()-reflect.ValueOf(p).Pointer())

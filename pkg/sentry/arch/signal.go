@@ -22,6 +22,7 @@ import (
 // SignalAct represents the action that should be taken when a signal is
 // delivered, and is equivalent to struct sigaction.
 //
+// +marshal
 // +stateify savable
 type SignalAct struct {
 	Handler  uint64
@@ -43,6 +44,7 @@ func (s *SignalAct) DeserializeTo(other *SignalAct) {
 // SignalStack represents information about a user stack, and is equivalent to
 // stack_t.
 //
+// +marshal
 // +stateify savable
 type SignalStack struct {
 	Addr  uint64
@@ -64,6 +66,7 @@ func (s *SignalStack) DeserializeTo(other *SignalStack) {
 // SignalInfo represents information about a signal being delivered, and is
 // equivalent to struct siginfo in linux kernel(linux/include/uapi/asm-generic/siginfo.h).
 //
+// +marshal
 // +stateify savable
 type SignalInfo struct {
 	Signo int32 // Signal number
