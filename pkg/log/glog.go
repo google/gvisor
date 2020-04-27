@@ -15,149 +15,71 @@
 package log
 
 import (
+	"fmt"
 	"os"
+	"runtime"
+	"strings"
 	"time"
 )
 
 // GoogleEmitter is a wrapper that emits logs in a format compatible with
 // package github.com/golang/glog.
 type GoogleEmitter struct {
-	// Emitter is the underlying emitter.
-	Emitter
-}
-
-// buffer is a simple inline buffer to avoid churn. The data slice is generally
-// kept to the local byte array, and we avoid having to allocate it on the heap.
-type buffer struct {
-	local [256]byte
-	data  []byte
-}
-
-func (b *buffer) start() {
-	b.data = b.local[:0]
-}
-
-func (b *buffer) String() string {
-	return unsafeString(b.data)
-}
-
-func (b *buffer) write(c byte) {
-	b.data = append(b.data, c)
-}
-
-func (b *buffer) writeAll(d []byte) {
-	b.data = append(b.data, d...)
-}
-
-func (b *buffer) writeOneDigit(d byte) {
-	b.write('0' + d)
-}
-
-func (b *buffer) writeTwoDigits(v int) {
-	v = v % 100
-	b.writeOneDigit(byte(v / 10))
-	b.writeOneDigit(byte(v % 10))
-}
-
-func (b *buffer) writeSixDigits(v int) {
-	v = v % 1000000
-	b.writeOneDigit(byte(v / 100000))
-	b.writeOneDigit(byte((v % 100000) / 10000))
-	b.writeOneDigit(byte((v % 10000) / 1000))
-	b.writeOneDigit(byte((v % 1000) / 100))
-	b.writeOneDigit(byte((v % 100) / 10))
-	b.writeOneDigit(byte(v % 10))
-}
-
-func calculateBytes(v int, pad int) []byte {
-	var d []byte
-	r := 1
-
-	for n := 10; v >= r; n = n * 10 {
-		d = append(d, '0'+byte((v%n)/r))
-		r = n
-	}
-
-	for i := len(d); i < pad; i++ {
-		d = append(d, ' ')
-	}
-
-	for i := 0; i < len(d)/2; i++ {
-		d[i], d[len(d)-(i+1)] = d[len(d)-(i+1)], d[i]
-	}
-	return d
+	*Writer
 }
 
 // pid is used for the threadid component of the header.
-//
-// The glog package logger uses 7 spaces of padding. See
-// glob.loggingT.formatHeader.
-var pid = calculateBytes(os.Getpid(), 7)
-
-// caller is faked out as the caller. See FIXME below.
-var caller = []byte("x:0")
+var pid = os.Getpid()
 
 // Emit emits the message, google-style.
-func (g GoogleEmitter) Emit(level Level, timestamp time.Time, format string, args ...interface{}) {
-	var b buffer
-	b.start()
-
-	// Log lines have this form:
-	//   Lmmdd hh:mm:ss.uuuuuu threadid file:line] msg...
-	//
-	// where the fields are defined as follows:
-	//   L                A single character, representing the log level (eg 'I' for INFO)
-	//   mm               The month (zero padded; ie May is '05')
-	//   dd               The day (zero padded)
-	//   hh:mm:ss.uuuuuu  Time in hours, minutes and fractional seconds
-	//   threadid         The space-padded thread ID as returned by GetTID()
-	//   file             The file name
-	//   line             The line number
-	//   msg              The user-supplied message
-
+//
+// Log lines have this form:
+//   Lmmdd hh:mm:ss.uuuuuu threadid file:line] msg...
+//
+// where the fields are defined as follows:
+//   L                A single character, representing the log level (eg 'I' for INFO)
+//   mm               The month (zero padded; ie May is '05')
+//   dd               The day (zero padded)
+//   hh:mm:ss.uuuuuu  Time in hours, minutes and fractional seconds
+//   threadid         The space-padded thread ID as returned by GetTID()
+//   file             The file name
+//   line             The line number
+//   msg              The user-supplied message
+//
+func (g GoogleEmitter) Emit(depth int, level Level, timestamp time.Time, format string, args ...interface{}) {
 	// Log level.
+	prefix := byte('?')
 	switch level {
 	case Debug:
-		b.write('D')
+		prefix = byte('D')
 	case Info:
-		b.write('I')
+		prefix = byte('I')
 	case Warning:
-		b.write('W')
+		prefix = byte('W')
 	}
 
 	// Timestamp.
 	_, month, day := timestamp.Date()
 	hour, minute, second := timestamp.Clock()
-	b.writeTwoDigits(int(month))
-	b.writeTwoDigits(int(day))
-	b.write(' ')
-	b.writeTwoDigits(int(hour))
-	b.write(':')
-	b.writeTwoDigits(int(minute))
-	b.write(':')
-	b.writeTwoDigits(int(second))
-	b.write('.')
-	b.writeSixDigits(int(timestamp.Nanosecond() / 1000))
-	b.write(' ')
+	microsecond := int(timestamp.Nanosecond() / 1000)
 
-	// The pid.
-	b.writeAll(pid)
-	b.write(' ')
-
-	// FIXME(b/73383460): The caller, fabricated. This really sucks, but it
-	// is unacceptable to put runtime.Callers() in the hot path.
-	b.writeAll(caller)
-	b.write(']')
-	b.write(' ')
-
-	// User-provided format string, copied.
-	for i := 0; i < len(format); i++ {
-		b.write(format[i])
+	// 0 = this frame.
+	_, file, line, ok := runtime.Caller(depth + 1)
+	if ok {
+		// Trim any directory path from the file.
+		slash := strings.LastIndexByte(file, byte('/'))
+		if slash >= 0 {
+			file = file[slash+1:]
+		}
+	} else {
+		// We don't have a filename.
+		file = "???"
+		line = 0
 	}
 
-	// End with a newline.
-	b.write('\n')
+	// Generate the message.
+	message := fmt.Sprintf(format, args...)
 
-	// Pass to the underlying routine.
-	g.Emitter.Emit(level, timestamp, b.String(), args...)
+	// Emit the formatted result.
+	fmt.Fprintf(g.Writer, "%c%02d%02d %02d:%02d:%02d.%06d % 7d %s:%d] %s\n", prefix, int(month), day, hour, minute, second, microsecond, pid, file, line, message)
 }

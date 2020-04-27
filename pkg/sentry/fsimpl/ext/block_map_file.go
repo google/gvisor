@@ -154,7 +154,7 @@ func (f *blockMapFile) read(curPhyBlk uint32, relFileOff uint64, height uint, ds
 			toRead = len(dst)
 		}
 
-		n, _ := f.regFile.inode.dev.ReadAt(dst[:toRead], curPhyBlkOff+int64(relFileOff))
+		n, _ := f.regFile.inode.fs.dev.ReadAt(dst[:toRead], curPhyBlkOff+int64(relFileOff))
 		if n < toRead {
 			return n, syserror.EIO
 		}
@@ -174,7 +174,7 @@ func (f *blockMapFile) read(curPhyBlk uint32, relFileOff uint64, height uint, ds
 	curChildOff := relFileOff % childCov
 	for i := startIdx; i < endIdx; i++ {
 		var childPhyBlk uint32
-		err := readFromDisk(f.regFile.inode.dev, curPhyBlkOff+int64(i*4), &childPhyBlk)
+		err := readFromDisk(f.regFile.inode.fs.dev, curPhyBlkOff+int64(i*4), &childPhyBlk)
 		if err != nil {
 			return read, err
 		}

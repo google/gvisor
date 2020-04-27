@@ -17,17 +17,17 @@ package gofer
 import (
 	"fmt"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/p9"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/unet"
 )
 
 // beforeSave is invoked by stateify.
 func (s *session) beforeSave() {
-	if s.endpoints != nil {
+	if s.overrides != nil {
 		if err := s.fillPathMap(); err != nil {
-			panic("failed to save paths to endpoint map before saving" + err.Error())
+			panic("failed to save paths to override map before saving" + err.Error())
 		}
 	}
 }
@@ -74,10 +74,10 @@ func (s *session) afterLoad() {
 		panic(fmt.Sprintf("new attach name %v, want %v", opts.aname, s.aname))
 	}
 
-	// Check if endpointMaps exist when uds sockets are enabled
-	// (only pathmap will actualy have been saved).
-	if opts.privateunixsocket != (s.endpoints != nil) {
-		panic(fmt.Sprintf("new privateunixsocket option %v, want %v", opts.privateunixsocket, s.endpoints != nil))
+	// Check if overrideMaps exist when uds sockets are enabled (only pathmaps
+	// will actually have been saved).
+	if opts.privateunixsocket != (s.overrides != nil) {
+		panic(fmt.Sprintf("new privateunixsocket option %v, want %v", opts.privateunixsocket, s.overrides != nil))
 	}
 	if args.Flags != s.superBlockFlags {
 		panic(fmt.Sprintf("new mount flags %v, want %v", args.Flags, s.superBlockFlags))
@@ -104,7 +104,6 @@ func (s *session) afterLoad() {
 	// If private unix sockets are enabled, create and fill the session's endpoint
 	// maps.
 	if opts.privateunixsocket {
-		// TODO(b/38173783): Context is not plumbed to save/restore.
 		ctx := &dummyClockContext{context.Background()}
 
 		if err = s.restoreEndpointMaps(ctx); err != nil {

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // +build go1.9
-// +build !go1.14
+// +build !go1.15
 
 // Check go:linkname function signatures when updating Go version.
 
@@ -25,6 +25,8 @@ import (
 )
 
 // StdClock implements Clock with the time package.
+//
+// +stateify savable
 type StdClock struct{}
 
 var _ Clock = (*StdClock)(nil)

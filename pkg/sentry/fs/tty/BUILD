@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -14,23 +13,23 @@ go_library(
         "slave.go",
         "terminal.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/tty",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/refs",
+        "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/unimpl",
-        "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
         "//pkg/waiter",
     ],
 )
@@ -39,10 +38,10 @@ go_test(
     name = "tty_test",
     size = "small",
     srcs = ["tty_test.go"],
-    embed = [":tty"],
+    library = ":tty",
     deps = [
         "//pkg/abi/linux",
-        "//pkg/sentry/context/contexttest",
-        "//pkg/sentry/usermem",
+        "//pkg/sentry/contexttest",
+        "//pkg/usermem",
     ],
 )

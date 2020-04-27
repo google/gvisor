@@ -17,12 +17,15 @@ package ext
 import (
 	"errors"
 	"io"
-	"sync"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -86,14 +89,33 @@ func stepLocked(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, inode *inode, write boo
 	}
 
 	for {
-		nextVFSD, err := rp.ResolveComponent(vfsd)
-		if err != nil {
-			return nil, nil, err
+		name := rp.Component()
+		if name == "." {
+			rp.Advance()
+			return vfsd, inode, nil
 		}
-		if nextVFSD == nil {
-			// Since the Dentry tree is not the sole source of truth for extfs, if it's
-			// not in the Dentry tree, it might need to be pulled from disk.
-			childDirent, ok := inode.impl.(*directory).childMap[rp.Component()]
+		d := vfsd.Impl().(*dentry)
+		if name == ".." {
+			isRoot, err := rp.CheckRoot(vfsd)
+			if err != nil {
+				return nil, nil, err
+			}
+			if isRoot || d.parent == nil {
+				rp.Advance()
+				return vfsd, inode, nil
+			}
+			if err := rp.CheckMount(&d.parent.vfsd); err != nil {
+				return nil, nil, err
+			}
+			rp.Advance()
+			return &d.parent.vfsd, d.parent.inode, nil
+		}
+
+		dir := inode.impl.(*directory)
+		child, ok := dir.childCache[name]
+		if !ok {
+			// We may need to instantiate a new dentry for this child.
+			childDirent, ok := dir.childMap[name]
 			if !ok {
 				// The underlying inode does not exist on disk.
 				return nil, nil, syserror.ENOENT
@@ -112,21 +134,22 @@ func stepLocked(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, inode *inode, write boo
 			}
 			// incRef because this is being added to the dentry tree.
 			childInode.incRef()
-			child := newDentry(childInode)
-			vfsd.InsertChild(&child.vfsd, rp.Component())
-
-			// Continue as usual now that nextVFSD is not nil.
-			nextVFSD = &child.vfsd
+			child = newDentry(childInode)
+			child.parent = d
+			child.name = name
+			dir.childCache[name] = child
 		}
-		nextInode := nextVFSD.Impl().(*dentry).inode
-		if nextInode.isSymlink() && rp.ShouldFollowSymlink() {
-			if err := rp.HandleSymlink(inode.impl.(*symlink).target); err != nil {
+		if err := rp.CheckMount(&child.vfsd); err != nil {
+			return nil, nil, err
+		}
+		if child.inode.isSymlink() && rp.ShouldFollowSymlink() {
+			if err := rp.HandleSymlink(child.inode.impl.(*symlink).target); err != nil {
 				return nil, nil, err
 			}
 			continue
 		}
 		rp.Advance()
-		return nextVFSD, nextInode, nil
+		return &child.vfsd, child.inode, nil
 	}
 }
 
@@ -254,6 +277,15 @@ func (fs *filesystem) statTo(stat *linux.Statfs) {
 	// TODO(b/134676337): Set Statfs.Flags and Statfs.FSID.
 }
 
+// AccessAt implements vfs.Filesystem.Impl.AccessAt.
+func (fs *filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds *auth.Credentials, ats vfs.AccessTypes) error {
+	_, inode, err := fs.walk(rp, false)
+	if err != nil {
+		return err
+	}
+	return inode.checkPermissions(rp.Credentials(), ats)
+}
+
 // GetDentryAt implements vfs.FilesystemImpl.GetDentryAt.
 func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetDentryOptions) (*vfs.Dentry, error) {
 	vfsd, inode, err := fs.walk(rp, false)
@@ -274,6 +306,16 @@ func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 	return vfsd, nil
 }
 
+// GetParentDentryAt implements vfs.FilesystemImpl.GetParentDentryAt.
+func (fs *filesystem) GetParentDentryAt(ctx context.Context, rp *vfs.ResolvingPath) (*vfs.Dentry, error) {
+	vfsd, inode, err := fs.walk(rp, true)
+	if err != nil {
+		return nil, err
+	}
+	inode.incRef()
+	return vfsd, nil
+}
+
 // OpenAt implements vfs.FilesystemImpl.OpenAt.
 func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	vfsd, inode, err := fs.walk(rp, false)
@@ -285,7 +327,7 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	if vfs.MayWriteFileWithOpenFlags(opts.Flags) || opts.Flags&(linux.O_CREAT|linux.O_EXCL|linux.O_TMPFILE) != 0 {
 		return nil, syserror.EROFS
 	}
-	return inode.open(rp, vfsd, opts.Flags)
+	return inode.open(rp, vfsd, &opts)
 }
 
 // ReadlinkAt implements vfs.FilesystemImpl.ReadlinkAt.
@@ -377,7 +419,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 }
 
 // RenameAt implements vfs.FilesystemImpl.RenameAt.
-func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.VirtualDentry, opts vfs.RenameOptions) error {
+func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldParentVD vfs.VirtualDentry, oldName string, opts vfs.RenameOptions) error {
 	if rp.Done() {
 		return syserror.ENOENT
 	}
@@ -440,4 +482,58 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	}
 
 	return syserror.EROFS
+}
+
+// BoundEndpointAt implements FilesystemImpl.BoundEndpointAt.
+func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath) (transport.BoundEndpoint, error) {
+	_, _, err := fs.walk(rp, false)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO(b/134676337): Support sockets.
+	return nil, syserror.ECONNREFUSED
+}
+
+// ListxattrAt implements vfs.FilesystemImpl.ListxattrAt.
+func (fs *filesystem) ListxattrAt(ctx context.Context, rp *vfs.ResolvingPath, size uint64) ([]string, error) {
+	_, _, err := fs.walk(rp, false)
+	if err != nil {
+		return nil, err
+	}
+	return nil, syserror.ENOTSUP
+}
+
+// GetxattrAt implements vfs.FilesystemImpl.GetxattrAt.
+func (fs *filesystem) GetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetxattrOptions) (string, error) {
+	_, _, err := fs.walk(rp, false)
+	if err != nil {
+		return "", err
+	}
+	return "", syserror.ENOTSUP
+}
+
+// SetxattrAt implements vfs.FilesystemImpl.SetxattrAt.
+func (fs *filesystem) SetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetxattrOptions) error {
+	_, _, err := fs.walk(rp, false)
+	if err != nil {
+		return err
+	}
+	return syserror.ENOTSUP
+}
+
+// RemovexattrAt implements vfs.FilesystemImpl.RemovexattrAt.
+func (fs *filesystem) RemovexattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) error {
+	_, _, err := fs.walk(rp, false)
+	if err != nil {
+		return err
+	}
+	return syserror.ENOTSUP
+}
+
+// PrependPath implements vfs.FilesystemImpl.PrependPath.
+func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDentry, b *fspath.Builder) error {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	return genericPrependPath(vfsroot, vd.Mount(), vd.Dentry().Impl().(*dentry), b)
 }

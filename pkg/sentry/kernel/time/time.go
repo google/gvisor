@@ -19,10 +19,10 @@ package time
 import (
 	"fmt"
 	"math"
-	"sync"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -245,7 +245,7 @@ type Clock interface {
 type WallRateClock struct{}
 
 // WallTimeUntil implements Clock.WallTimeUntil.
-func (WallRateClock) WallTimeUntil(t, now Time) time.Duration {
+func (*WallRateClock) WallTimeUntil(t, now Time) time.Duration {
 	return t.Sub(now)
 }
 
@@ -254,16 +254,16 @@ func (WallRateClock) WallTimeUntil(t, now Time) time.Duration {
 type NoClockEvents struct{}
 
 // Readiness implements waiter.Waitable.Readiness.
-func (NoClockEvents) Readiness(mask waiter.EventMask) waiter.EventMask {
+func (*NoClockEvents) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return 0
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (NoClockEvents) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
+func (*NoClockEvents) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
-func (NoClockEvents) EventUnregister(e *waiter.Entry) {
+func (*NoClockEvents) EventUnregister(e *waiter.Entry) {
 }
 
 // ClockEventsQueue implements waiter.Waitable by wrapping waiter.Queue and
@@ -273,7 +273,7 @@ type ClockEventsQueue struct {
 }
 
 // Readiness implements waiter.Waitable.Readiness.
-func (ClockEventsQueue) Readiness(mask waiter.EventMask) waiter.EventMask {
+func (*ClockEventsQueue) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return 0
 }
 

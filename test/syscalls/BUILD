@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
-load("//test/syscalls:build_defs.bzl", "syscall_test")
+load("//test/runner:defs.bzl", "syscall_test")
 
 package(licenses = ["notice"])
 
@@ -9,7 +8,7 @@ syscall_test(test = "//test/syscalls/linux:accept_bind_stream_test")
 
 syscall_test(
     size = "large",
-    shard_count = 10,
+    shard_count = 50,
     test = "//test/syscalls/linux:accept_bind_test",
 )
 
@@ -44,6 +43,15 @@ syscall_test(
 syscall_test(test = "//test/syscalls/linux:brk_test")
 
 syscall_test(test = "//test/syscalls/linux:socket_test")
+
+syscall_test(
+    size = "large",
+    shard_count = 50,
+    # Takes too long for TSAN. Since this is kind of a stress test that doesn't
+    # involve much concurrency, TSAN's usefulness here is limited anyway.
+    tags = ["nogotsan"],
+    test = "//test/syscalls/linux:socket_stress_test",
+)
 
 syscall_test(
     add_overlay = True,
@@ -225,7 +233,6 @@ syscall_test(
 syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:mknod_test",
-    use_tmpfs = True,  # mknod is not supported over gofer.
 )
 
 syscall_test(
@@ -250,6 +257,8 @@ syscall_test(
 )
 
 syscall_test(test = "//test/syscalls/linux:munmap_test")
+
+syscall_test(test = "//test/syscalls/linux:network_namespace_test")
 
 syscall_test(
     add_overlay = True,
@@ -309,9 +318,13 @@ syscall_test(
     test = "//test/syscalls/linux:proc_test",
 )
 
-syscall_test(test = "//test/syscalls/linux:proc_pid_uid_gid_map_test")
-
 syscall_test(test = "//test/syscalls/linux:proc_net_test")
+
+syscall_test(test = "//test/syscalls/linux:proc_pid_oomscore_test")
+
+syscall_test(test = "//test/syscalls/linux:proc_pid_smaps_test")
+
+syscall_test(test = "//test/syscalls/linux:proc_pid_uid_gid_map_test")
 
 syscall_test(
     size = "medium",
@@ -376,7 +389,11 @@ syscall_test(
 
 syscall_test(test = "//test/syscalls/linux:rlimits_test")
 
+syscall_test(test = "//test/syscalls/linux:rseq_test")
+
 syscall_test(test = "//test/syscalls/linux:rtsignal_test")
+
+syscall_test(test = "//test/syscalls/linux:signalfd_test")
 
 syscall_test(test = "//test/syscalls/linux:sched_test")
 
@@ -434,7 +451,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    shard_count = 10,
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_abstract_test",
 )
 
@@ -445,7 +462,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    shard_count = 10,
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_domain_test",
 )
 
@@ -458,19 +475,19 @@ syscall_test(
 syscall_test(
     size = "large",
     add_overlay = True,
-    shard_count = 10,
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_filesystem_test",
 )
 
 syscall_test(
     size = "large",
-    shard_count = 10,
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_inet_loopback_test",
 )
 
 syscall_test(
     size = "large",
-    shard_count = 10,
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_ip_tcp_generic_loopback_test",
 )
 
@@ -481,13 +498,13 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    shard_count = 10,
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_ip_tcp_loopback_test",
 )
 
 syscall_test(
     size = "medium",
-    shard_count = 10,
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_ip_tcp_udp_generic_loopback_test",
 )
 
@@ -498,7 +515,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    shard_count = 10,
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_ip_udp_loopback_test",
 )
 
@@ -511,7 +528,11 @@ syscall_test(test = "//test/syscalls/linux:socket_ip_unbound_test")
 
 syscall_test(test = "//test/syscalls/linux:socket_netdevice_test")
 
+syscall_test(test = "//test/syscalls/linux:socket_netlink_test")
+
 syscall_test(test = "//test/syscalls/linux:socket_netlink_route_test")
+
+syscall_test(test = "//test/syscalls/linux:socket_netlink_uevent_test")
 
 syscall_test(test = "//test/syscalls/linux:socket_blocking_local_test")
 
@@ -556,7 +577,7 @@ syscall_test(
 syscall_test(
     size = "large",
     add_overlay = True,
-    shard_count = 10,
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_unix_pair_test",
 )
 
@@ -595,7 +616,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    shard_count = 10,
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_unix_unbound_stream_test",
 )
 
@@ -661,10 +682,18 @@ syscall_test(
     test = "//test/syscalls/linux:truncate_test",
 )
 
+syscall_test(test = "//test/syscalls/linux:tuntap_test")
+
+syscall_test(
+    add_hostinet = True,
+    test = "//test/syscalls/linux:tuntap_hostinet_test",
+)
+
 syscall_test(test = "//test/syscalls/linux:udp_bind_test")
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     shard_count = 10,
     test = "//test/syscalls/linux:udp_socket_test",
 )
@@ -709,21 +738,3 @@ syscall_test(test = "//test/syscalls/linux:proc_net_unix_test")
 syscall_test(test = "//test/syscalls/linux:proc_net_tcp_test")
 
 syscall_test(test = "//test/syscalls/linux:proc_net_udp_test")
-
-go_binary(
-    name = "syscall_test_runner",
-    testonly = 1,
-    srcs = ["syscall_test_runner.go"],
-    data = [
-        "//runsc",
-    ],
-    deps = [
-        "//pkg/log",
-        "//runsc/specutils",
-        "//runsc/testutil",
-        "//test/syscalls/gtest",
-        "//test/uds",
-        "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
-        "@org_golang_x_sys//unix:go_default_library",
-    ],
-)

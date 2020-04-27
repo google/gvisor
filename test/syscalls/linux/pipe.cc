@@ -20,12 +20,12 @@
 #include <vector>
 
 #include "gtest/gtest.h"
-#include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
 #include "absl/synchronization/notification.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/fs_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -145,11 +145,10 @@ TEST_P(PipeTest, Flags) {
 
   if (IsNamedPipe()) {
     // May be stubbed to zero; define locally.
-    constexpr int kLargefile = 0100000;
     EXPECT_THAT(fcntl(rfd_.get(), F_GETFL),
-                SyscallSucceedsWithValue(kLargefile | O_RDONLY));
+                SyscallSucceedsWithValue(kOLargeFile | O_RDONLY));
     EXPECT_THAT(fcntl(wfd_.get(), F_GETFL),
-                SyscallSucceedsWithValue(kLargefile | O_WRONLY));
+                SyscallSucceedsWithValue(kOLargeFile | O_WRONLY));
   } else {
     EXPECT_THAT(fcntl(rfd_.get(), F_GETFL), SyscallSucceedsWithValue(O_RDONLY));
     EXPECT_THAT(fcntl(wfd_.get(), F_GETFL), SyscallSucceedsWithValue(O_WRONLY));
@@ -213,6 +212,20 @@ TEST(Pipe2Test, BadOptions) {
   EXPECT_THAT(pipe2(fds, 0xDEAD), SyscallFailsWithErrno(EINVAL));
 }
 
+// Tests that opening named pipes with O_TRUNC shouldn't cause an error, but
+// calls to (f)truncate should.
+TEST(NamedPipeTest, Truncate) {
+  const std::string tmp_path = NewTempAbsPath();
+  SKIP_IF(mkfifo(tmp_path.c_str(), 0644) != 0);
+
+  ASSERT_THAT(open(tmp_path.c_str(), O_NONBLOCK | O_RDONLY), SyscallSucceeds());
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(tmp_path.c_str(), O_RDWR | O_NONBLOCK | O_TRUNC));
+
+  ASSERT_THAT(truncate(tmp_path.c_str(), 0), SyscallFailsWithErrno(EINVAL));
+  ASSERT_THAT(ftruncate(fd.get(), 0), SyscallFailsWithErrno(EINVAL));
+}
+
 TEST_P(PipeTest, Seek) {
   SKIP_IF(!CreateBlocking());
 
@@ -252,6 +265,8 @@ TEST_P(PipeTest, OffsetCalls) {
               SyscallFailsWithErrno(ESPIPE));
 
   struct iovec iov;
+  iov.iov_base = &buf;
+  iov.iov_len = sizeof(buf);
   EXPECT_THAT(preadv(wfd_.get(), &iov, 1, 0), SyscallFailsWithErrno(ESPIPE));
   EXPECT_THAT(pwritev(rfd_.get(), &iov, 1, 0), SyscallFailsWithErrno(ESPIPE));
 }

@@ -16,6 +16,7 @@ package udp_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"math/rand"
 	"testing"
@@ -56,6 +57,7 @@ const (
 	multicastAddr   = "\xe8\x2b\xd3\xea"
 	multicastV6Addr = "\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
 	broadcastAddr   = header.IPv4Broadcast
+	testTOS         = 0x80
 
 	// defaultMTU is the MTU, in bytes, used throughout the tests, except
 	// where another value is explicitly used. It is chosen to match the MTU
@@ -273,11 +275,16 @@ type testContext struct {
 
 func newDualTestContext(t *testing.T, mtu uint32) *testContext {
 	t.Helper()
-
-	s := stack.New(stack.Options{
+	return newDualTestContextWithOptions(t, mtu, stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
 		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
 	})
+}
+
+func newDualTestContextWithOptions(t *testing.T, mtu uint32, options stack.Options) *testContext {
+	t.Helper()
+
+	s := stack.New(options)
 	ep := channel.New(256, mtu, "")
 	wep := stack.LinkEndpoint(ep)
 
@@ -335,12 +342,12 @@ func (c *testContext) createEndpointForFlow(flow testFlow) {
 
 	c.createEndpoint(flow.sockProto())
 	if flow.isV6Only() {
-		if err := c.ep.SetSockOpt(tcpip.V6OnlyOption(1)); err != nil {
-			c.t.Fatalf("SetSockOpt failed: %v", err)
+		if err := c.ep.SetSockOptBool(tcpip.V6OnlyOption, true); err != nil {
+			c.t.Fatalf("SetSockOptBool failed: %s", err)
 		}
 	} else if flow.isBroadcast() {
-		if err := c.ep.SetSockOpt(tcpip.BroadcastOption(1)); err != nil {
-			c.t.Fatal("SetSockOpt failed:", err)
+		if err := c.ep.SetSockOptBool(tcpip.BroadcastOption, true); err != nil {
+			c.t.Fatalf("SetSockOptBool failed: %s", err)
 		}
 	}
 }
@@ -351,30 +358,30 @@ func (c *testContext) createEndpointForFlow(flow testFlow) {
 func (c *testContext) getPacketAndVerify(flow testFlow, checkers ...checker.NetworkChecker) []byte {
 	c.t.Helper()
 
-	select {
-	case p := <-c.linkEP.C:
-		if p.Proto != flow.netProto() {
-			c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, flow.netProto())
-		}
-		b := make([]byte, len(p.Header)+len(p.Payload))
-		copy(b, p.Header)
-		copy(b[len(p.Header):], p.Payload)
-
-		h := flow.header4Tuple(outgoing)
-		checkers := append(
-			checkers,
-			checker.SrcAddr(h.srcAddr.Addr),
-			checker.DstAddr(h.dstAddr.Addr),
-			checker.UDP(checker.DstPort(h.dstAddr.Port)),
-		)
-		flow.checkerFn()(c.t, b, checkers...)
-		return b
-
-	case <-time.After(2 * time.Second):
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	p, ok := c.linkEP.ReadContext(ctx)
+	if !ok {
 		c.t.Fatalf("Packet wasn't written out")
+		return nil
 	}
 
-	return nil
+	if p.Proto != flow.netProto() {
+		c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, flow.netProto())
+	}
+
+	hdr := p.Pkt.Header.View()
+	b := append(hdr[:len(hdr):len(hdr)], p.Pkt.Data.ToView()...)
+
+	h := flow.header4Tuple(outgoing)
+	checkers = append(
+		checkers,
+		checker.SrcAddr(h.srcAddr.Addr),
+		checker.DstAddr(h.dstAddr.Addr),
+		checker.UDP(checker.DstPort(h.dstAddr.Port)),
+	)
+	flow.checkerFn()(c.t, b, checkers...)
+	return b
 }
 
 // injectPacket creates a packet of the given flow and with the given payload,
@@ -397,11 +404,13 @@ func (c *testContext) injectPacket(flow testFlow, payload []byte) {
 func (c *testContext) injectV6Packet(payload []byte, h *header4Tuple, valid bool) {
 	// Allocate a buffer for data and headers.
 	buf := buffer.NewView(header.UDPMinimumSize + header.IPv6MinimumSize + len(payload))
-	copy(buf[len(buf)-len(payload):], payload)
+	payloadStart := len(buf) - len(payload)
+	copy(buf[payloadStart:], payload)
 
 	// Initialize the IP header.
 	ip := header.IPv6(buf)
 	ip.Encode(&header.IPv6Fields{
+		TrafficClass:  testTOS,
 		PayloadLength: uint16(header.UDPMinimumSize + len(payload)),
 		NextHeader:    uint8(udp.ProtocolNumber),
 		HopLimit:      65,
@@ -431,7 +440,11 @@ func (c *testContext) injectV6Packet(payload []byte, h *header4Tuple, valid bool
 	u.SetChecksum(^u.CalculateChecksum(xsum))
 
 	// Inject packet.
-	c.linkEP.Inject(ipv6.ProtocolNumber, buf.ToVectorisedView())
+	c.linkEP.InjectInbound(ipv6.ProtocolNumber, stack.PacketBuffer{
+		Data:            buf.ToVectorisedView(),
+		NetworkHeader:   buffer.View(ip),
+		TransportHeader: buffer.View(u),
+	})
 }
 
 // injectV4Packet creates a V4 test packet with the given payload and header
@@ -441,12 +454,14 @@ func (c *testContext) injectV6Packet(payload []byte, h *header4Tuple, valid bool
 func (c *testContext) injectV4Packet(payload []byte, h *header4Tuple, valid bool) {
 	// Allocate a buffer for data and headers.
 	buf := buffer.NewView(header.UDPMinimumSize + header.IPv4MinimumSize + len(payload))
-	copy(buf[len(buf)-len(payload):], payload)
+	payloadStart := len(buf) - len(payload)
+	copy(buf[payloadStart:], payload)
 
 	// Initialize the IP header.
 	ip := header.IPv4(buf)
 	ip.Encode(&header.IPv4Fields{
 		IHL:         header.IPv4MinimumSize,
+		TOS:         testTOS,
 		TotalLength: uint16(len(buf)),
 		TTL:         65,
 		Protocol:    uint8(udp.ProtocolNumber),
@@ -471,7 +486,12 @@ func (c *testContext) injectV4Packet(payload []byte, h *header4Tuple, valid bool
 	u.SetChecksum(^u.CalculateChecksum(xsum))
 
 	// Inject packet.
-	c.linkEP.Inject(ipv4.ProtocolNumber, buf.ToVectorisedView())
+
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, stack.PacketBuffer{
+		Data:            buf.ToVectorisedView(),
+		NetworkHeader:   buffer.View(ip),
+		TransportHeader: buffer.View(u),
+	})
 }
 
 func newPayload() []byte {
@@ -497,46 +517,42 @@ func TestBindToDeviceOption(t *testing.T) {
 	}
 	defer ep.Close()
 
-	if err := s.CreateNamedNIC(321, "my_device", loopback.New()); err != nil {
-		t.Errorf("CreateNamedNIC failed: %v", err)
+	opts := stack.NICOptions{Name: "my_device"}
+	if err := s.CreateNICWithOptions(321, loopback.New(), opts); err != nil {
+		t.Errorf("CreateNICWithOptions(_, _, %+v) failed: %v", opts, err)
 	}
 
-	// Make an nameless NIC.
-	if err := s.CreateNIC(54321, loopback.New()); err != nil {
-		t.Errorf("CreateNIC failed: %v", err)
-	}
-
-	// strPtr is used instead of taking the address of string literals, which is
+	// nicIDPtr is used instead of taking the address of NICID literals, which is
 	// a compiler error.
-	strPtr := func(s string) *string {
+	nicIDPtr := func(s tcpip.NICID) *tcpip.NICID {
 		return &s
 	}
 
 	testActions := []struct {
 		name                 string
-		setBindToDevice      *string
+		setBindToDevice      *tcpip.NICID
 		setBindToDeviceError *tcpip.Error
 		getBindToDevice      tcpip.BindToDeviceOption
 	}{
-		{"GetDefaultValue", nil, nil, ""},
-		{"BindToNonExistent", strPtr("non_existent_device"), tcpip.ErrUnknownDevice, ""},
-		{"BindToExistent", strPtr("my_device"), nil, "my_device"},
-		{"UnbindToDevice", strPtr(""), nil, ""},
+		{"GetDefaultValue", nil, nil, 0},
+		{"BindToNonExistent", nicIDPtr(999), tcpip.ErrUnknownDevice, 0},
+		{"BindToExistent", nicIDPtr(321), nil, 321},
+		{"UnbindToDevice", nicIDPtr(0), nil, 0},
 	}
 	for _, testAction := range testActions {
 		t.Run(testAction.name, func(t *testing.T) {
 			if testAction.setBindToDevice != nil {
 				bindToDevice := tcpip.BindToDeviceOption(*testAction.setBindToDevice)
-				if got, want := ep.SetSockOpt(bindToDevice), testAction.setBindToDeviceError; got != want {
-					t.Errorf("SetSockOpt(%v) got %v, want %v", bindToDevice, got, want)
+				if gotErr, wantErr := ep.SetSockOpt(bindToDevice), testAction.setBindToDeviceError; gotErr != wantErr {
+					t.Errorf("SetSockOpt(%v) got %v, want %v", bindToDevice, gotErr, wantErr)
 				}
 			}
-			bindToDevice := tcpip.BindToDeviceOption("to be modified by GetSockOpt")
-			if ep.GetSockOpt(&bindToDevice) != nil {
-				t.Errorf("GetSockOpt got %v, want %v", ep.GetSockOpt(&bindToDevice), nil)
+			bindToDevice := tcpip.BindToDeviceOption(88888)
+			if err := ep.GetSockOpt(&bindToDevice); err != nil {
+				t.Errorf("GetSockOpt got %v, want %v", err, nil)
 			}
 			if got, want := bindToDevice, testAction.getBindToDevice; got != want {
-				t.Errorf("bindToDevice got %q, want %q", got, want)
+				t.Errorf("bindToDevice got %d, want %d", got, want)
 			}
 		})
 	}
@@ -545,8 +561,8 @@ func TestBindToDeviceOption(t *testing.T) {
 // testReadInternal sends a packet of the given test flow into the stack by
 // injecting it into the link endpoint. It then attempts to read it from the
 // UDP endpoint and depending on if this was expected to succeed verifies its
-// correctness.
-func testReadInternal(c *testContext, flow testFlow, packetShouldBeDropped, expectReadError bool) {
+// correctness including any additional checker functions provided.
+func testReadInternal(c *testContext, flow testFlow, packetShouldBeDropped, expectReadError bool, checkers ...checker.ControlMessagesChecker) {
 	c.t.Helper()
 
 	payload := newPayload()
@@ -561,12 +577,12 @@ func testReadInternal(c *testContext, flow testFlow, packetShouldBeDropped, expe
 	epstats := c.ep.Stats().(*tcpip.TransportEndpointStats).Clone()
 
 	var addr tcpip.FullAddress
-	v, _, err := c.ep.Read(&addr)
+	v, cm, err := c.ep.Read(&addr)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for data to become available.
 		select {
 		case <-ch:
-			v, _, err = c.ep.Read(&addr)
+			v, cm, err = c.ep.Read(&addr)
 
 		case <-time.After(300 * time.Millisecond):
 			if packetShouldBeDropped {
@@ -592,22 +608,28 @@ func testReadInternal(c *testContext, flow testFlow, packetShouldBeDropped, expe
 	// Check the peer address.
 	h := flow.header4Tuple(incoming)
 	if addr.Addr != h.srcAddr.Addr {
-		c.t.Fatalf("unexpected remote address: got %s, want %s", addr.Addr, h.srcAddr)
+		c.t.Fatalf("unexpected remote address: got %s, want %v", addr.Addr, h.srcAddr)
 	}
 
 	// Check the payload.
 	if !bytes.Equal(payload, v) {
 		c.t.Fatalf("bad payload: got %x, want %x", v, payload)
 	}
+
+	// Run any checkers against the ControlMessages.
+	for _, f := range checkers {
+		f(c.t, cm)
+	}
+
 	c.checkEndpointReadStats(1, epstats, err)
 }
 
 // testRead sends a packet of the given test flow into the stack by injecting it
 // into the link endpoint. It then reads it from the UDP endpoint and verifies
-// its correctness.
-func testRead(c *testContext, flow testFlow) {
+// its correctness including any additional checker functions provided.
+func testRead(c *testContext, flow testFlow, checkers ...checker.ControlMessagesChecker) {
 	c.t.Helper()
-	testReadInternal(c, flow, false /* packetShouldBeDropped */, false /* expectReadError */)
+	testReadInternal(c, flow, false /* packetShouldBeDropped */, false /* expectReadError */, checkers...)
 }
 
 // testFailingRead sends a packet of the given test flow into the stack by
@@ -746,6 +768,49 @@ func TestV6ReadOnV6(t *testing.T) {
 
 	// Test acceptance.
 	testRead(c, unicastV6)
+}
+
+// TestV4ReadSelfSource checks that packets coming from a local IP address are
+// correctly dropped when handleLocal is true and not otherwise.
+func TestV4ReadSelfSource(t *testing.T) {
+	for _, tt := range []struct {
+		name              string
+		handleLocal       bool
+		wantErr           *tcpip.Error
+		wantInvalidSource uint64
+	}{
+		{"HandleLocal", false, nil, 0},
+		{"NoHandleLocal", true, tcpip.ErrWouldBlock, 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newDualTestContextWithOptions(t, defaultMTU, stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
+				TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+				HandleLocal:        tt.handleLocal,
+			})
+			defer c.cleanup()
+
+			c.createEndpointForFlow(unicastV4)
+
+			if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+				t.Fatalf("Bind failed: %s", err)
+			}
+
+			payload := newPayload()
+			h := unicastV4.header4Tuple(incoming)
+			h.srcAddr = h.dstAddr
+
+			c.injectV4Packet(payload, &h, true /* valid */)
+
+			if got := c.s.Stats().IP.InvalidSourceAddressesReceived.Value(); got != tt.wantInvalidSource {
+				t.Errorf("c.s.Stats().IP.InvalidSourceAddressesReceived got %d, want %d", got, tt.wantInvalidSource)
+			}
+
+			if _, _, err := c.ep.Read(nil); err != tt.wantErr {
+				t.Errorf("c.ep.Read() got error %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
 }
 
 func TestV4ReadOnV4(t *testing.T) {
@@ -1207,8 +1272,8 @@ func TestTTL(t *testing.T) {
 			c.createEndpointForFlow(flow)
 
 			const multicastTTL = 42
-			if err := c.ep.SetSockOpt(tcpip.MulticastTTLOption(multicastTTL)); err != nil {
-				c.t.Fatalf("SetSockOpt failed: %v", err)
+			if err := c.ep.SetSockOptInt(tcpip.MulticastTTLOption, multicastTTL); err != nil {
+				c.t.Fatalf("SetSockOptInt failed: %s", err)
 			}
 
 			var wantTTL uint8
@@ -1221,7 +1286,10 @@ func TestTTL(t *testing.T) {
 				} else {
 					p = ipv6.NewProtocol()
 				}
-				ep, err := p.NewEndpoint(0, tcpip.AddressWithPrefix{}, nil, nil, nil)
+				ep, err := p.NewEndpoint(0, tcpip.AddressWithPrefix{}, nil, nil, nil, stack.New(stack.Options{
+					NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
+					TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+				}))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -1244,8 +1312,8 @@ func TestSetTTL(t *testing.T) {
 
 					c.createEndpointForFlow(flow)
 
-					if err := c.ep.SetSockOpt(tcpip.TTLOption(wantTTL)); err != nil {
-						c.t.Fatalf("SetSockOpt failed: %v", err)
+					if err := c.ep.SetSockOptInt(tcpip.TTLOption, int(wantTTL)); err != nil {
+						c.t.Fatalf("SetSockOptInt(TTLOption, %d) failed: %s", wantTTL, err)
 					}
 
 					var p stack.NetworkProtocol
@@ -1254,7 +1322,10 @@ func TestSetTTL(t *testing.T) {
 					} else {
 						p = ipv6.NewProtocol()
 					}
-					ep, err := p.NewEndpoint(0, tcpip.AddressWithPrefix{}, nil, nil, nil)
+					ep, err := p.NewEndpoint(0, tcpip.AddressWithPrefix{}, nil, nil, nil, stack.New(stack.Options{
+						NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
+						TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+					}))
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -1267,7 +1338,7 @@ func TestSetTTL(t *testing.T) {
 	}
 }
 
-func TestTOSV4(t *testing.T) {
+func TestSetTOS(t *testing.T) {
 	for _, flow := range []testFlow{unicastV4, multicastV4, broadcast} {
 		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
 			c := newDualTestContext(t, defaultMTU)
@@ -1275,26 +1346,27 @@ func TestTOSV4(t *testing.T) {
 
 			c.createEndpointForFlow(flow)
 
-			const tos = 0xC0
-			var v tcpip.IPv4TOSOption
-			if err := c.ep.GetSockOpt(&v); err != nil {
-				c.t.Errorf("GetSockopt failed: %s", err)
+			const tos = testTOS
+			v, err := c.ep.GetSockOptInt(tcpip.IPv4TOSOption)
+			if err != nil {
+				c.t.Errorf("GetSockOptInt(IPv4TOSOption) failed: %s", err)
 			}
 			// Test for expected default value.
 			if v != 0 {
-				c.t.Errorf("got GetSockOpt(...) = %#v, want = %#v", v, 0)
+				c.t.Errorf("got GetSockOpt(IPv4TOSOption) = 0x%x, want = 0x%x", v, 0)
 			}
 
-			if err := c.ep.SetSockOpt(tcpip.IPv4TOSOption(tos)); err != nil {
-				c.t.Errorf("SetSockOpt(%#v) failed: %s", tcpip.IPv4TOSOption(tos), err)
+			if err := c.ep.SetSockOptInt(tcpip.IPv4TOSOption, tos); err != nil {
+				c.t.Errorf("SetSockOptInt(IPv4TOSOption, 0x%x) failed: %s", tos, err)
 			}
 
-			if err := c.ep.GetSockOpt(&v); err != nil {
-				c.t.Errorf("GetSockopt failed: %s", err)
+			v, err = c.ep.GetSockOptInt(tcpip.IPv4TOSOption)
+			if err != nil {
+				c.t.Errorf("GetSockOptInt(IPv4TOSOption) failed: %s", err)
 			}
 
-			if want := tcpip.IPv4TOSOption(tos); v != want {
-				c.t.Errorf("got GetSockOpt(...) = %#v, want = %#v", v, want)
+			if v != tos {
+				c.t.Errorf("got GetSockOptInt(IPv4TOSOption) = 0x%x, want = 0x%x", v, tos)
 			}
 
 			testWrite(c, flow, checker.TOS(tos, 0))
@@ -1302,7 +1374,7 @@ func TestTOSV4(t *testing.T) {
 	}
 }
 
-func TestTOSV6(t *testing.T) {
+func TestSetTClass(t *testing.T) {
 	for _, flow := range []testFlow{unicastV4in6, unicastV6, unicastV6Only, multicastV4in6, multicastV6, broadcastIn6} {
 		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
 			c := newDualTestContext(t, defaultMTU)
@@ -1310,30 +1382,93 @@ func TestTOSV6(t *testing.T) {
 
 			c.createEndpointForFlow(flow)
 
-			const tos = 0xC0
-			var v tcpip.IPv6TrafficClassOption
-			if err := c.ep.GetSockOpt(&v); err != nil {
-				c.t.Errorf("GetSockopt failed: %s", err)
+			const tClass = testTOS
+			v, err := c.ep.GetSockOptInt(tcpip.IPv6TrafficClassOption)
+			if err != nil {
+				c.t.Errorf("GetSockOptInt(IPv6TrafficClassOption) failed: %s", err)
 			}
 			// Test for expected default value.
 			if v != 0 {
-				c.t.Errorf("got GetSockOpt(...) = %#v, want = %#v", v, 0)
+				c.t.Errorf("got GetSockOptInt(IPv6TrafficClassOption) = 0x%x, want = 0x%x", v, 0)
 			}
 
-			if err := c.ep.SetSockOpt(tcpip.IPv6TrafficClassOption(tos)); err != nil {
-				c.t.Errorf("SetSockOpt failed: %s", err)
+			if err := c.ep.SetSockOptInt(tcpip.IPv6TrafficClassOption, tClass); err != nil {
+				c.t.Errorf("SetSockOptInt(IPv6TrafficClassOption, 0x%x) failed: %s", tClass, err)
 			}
 
-			if err := c.ep.GetSockOpt(&v); err != nil {
-				c.t.Errorf("GetSockopt failed: %s", err)
+			v, err = c.ep.GetSockOptInt(tcpip.IPv6TrafficClassOption)
+			if err != nil {
+				c.t.Errorf("GetSockOptInt(IPv6TrafficClassOption) failed: %s", err)
 			}
 
-			if want := tcpip.IPv6TrafficClassOption(tos); v != want {
-				c.t.Errorf("got GetSockOpt(...) = %#v, want = %#v", v, want)
+			if v != tClass {
+				c.t.Errorf("got GetSockOptInt(IPv6TrafficClassOption) = 0x%x, want = 0x%x", v, tClass)
 			}
 
-			testWrite(c, flow, checker.TOS(tos, 0))
+			// The header getter for TClass is called TOS, so use that checker.
+			testWrite(c, flow, checker.TOS(tClass, 0))
 		})
+	}
+}
+
+func TestReceiveTosTClass(t *testing.T) {
+	testCases := []struct {
+		name             string
+		getReceiveOption tcpip.SockOptBool
+		tests            []testFlow
+	}{
+		{"ReceiveTosOption", tcpip.ReceiveTOSOption, []testFlow{unicastV4, broadcast}},
+		{"ReceiveTClassOption", tcpip.ReceiveTClassOption, []testFlow{unicastV4in6, unicastV6, unicastV6Only, broadcastIn6}},
+	}
+	for _, testCase := range testCases {
+		for _, flow := range testCase.tests {
+			t.Run(fmt.Sprintf("%s:flow:%s", testCase.name, flow), func(t *testing.T) {
+				c := newDualTestContext(t, defaultMTU)
+				defer c.cleanup()
+
+				c.createEndpointForFlow(flow)
+				option := testCase.getReceiveOption
+				name := testCase.name
+
+				// Verify that setting and reading the option works.
+				v, err := c.ep.GetSockOptBool(option)
+				if err != nil {
+					c.t.Errorf("GetSockOptBool(%s) failed: %s", name, err)
+				}
+				// Test for expected default value.
+				if v != false {
+					c.t.Errorf("got GetSockOptBool(%s) = %t, want = %t", name, v, false)
+				}
+
+				want := true
+				if err := c.ep.SetSockOptBool(option, want); err != nil {
+					c.t.Fatalf("SetSockOptBool(%s, %t) failed: %s", name, want, err)
+				}
+
+				got, err := c.ep.GetSockOptBool(option)
+				if err != nil {
+					c.t.Errorf("GetSockOptBool(%s) failed: %s", name, err)
+				}
+
+				if got != want {
+					c.t.Errorf("got GetSockOptBool(%s) = %t, want = %t", name, got, want)
+				}
+
+				// Verify that the correct received TOS or TClass is handed through as
+				// ancillary data to the ControlMessages struct.
+				if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+					c.t.Fatalf("Bind failed: %s", err)
+				}
+				switch option {
+				case tcpip.ReceiveTClassOption:
+					testRead(c, flow, checker.ReceiveTClass(testTOS))
+				case tcpip.ReceiveTOSOption:
+					testRead(c, flow, checker.ReceiveTOS(testTOS))
+				default:
+					t.Fatalf("unknown test variant: %s", name)
+				}
+			})
+		}
 	}
 }
 
@@ -1431,48 +1566,52 @@ func TestV4UnknownDestination(t *testing.T) {
 			}
 			c.injectPacket(tc.flow, payload)
 			if !tc.icmpRequired {
-				select {
-				case p := <-c.linkEP.C:
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
+				if p, ok := c.linkEP.ReadContext(ctx); ok {
 					t.Fatalf("unexpected packet received: %+v", p)
-				case <-time.After(1 * time.Second):
-					return
 				}
+				return
 			}
 
-			select {
-			case p := <-c.linkEP.C:
-				var pkt []byte
-				pkt = append(pkt, p.Header...)
-				pkt = append(pkt, p.Payload...)
-				if got, want := len(pkt), header.IPv4MinimumProcessableDatagramSize; got > want {
-					t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
-				}
-
-				hdr := header.IPv4(pkt)
-				checker.IPv4(t, hdr, checker.ICMPv4(
-					checker.ICMPv4Type(header.ICMPv4DstUnreachable),
-					checker.ICMPv4Code(header.ICMPv4PortUnreachable)))
-
-				icmpPkt := header.ICMPv4(hdr.Payload())
-				payloadIPHeader := header.IPv4(icmpPkt.Payload())
-				wantLen := len(payload)
-				if tc.largePayload {
-					wantLen = header.IPv4MinimumProcessableDatagramSize - header.IPv4MinimumSize*2 - header.ICMPv4MinimumSize - header.UDPMinimumSize
-				}
-
-				// In case of large payloads the IP packet may be truncated. Update
-				// the length field before retrieving the udp datagram payload.
-				payloadIPHeader.SetTotalLength(uint16(wantLen + header.UDPMinimumSize + header.IPv4MinimumSize))
-
-				origDgram := header.UDP(payloadIPHeader.Payload())
-				if got, want := len(origDgram.Payload()), wantLen; got != want {
-					t.Fatalf("unexpected payload length got: %d, want: %d", got, want)
-				}
-				if got, want := origDgram.Payload(), payload[:wantLen]; !bytes.Equal(got, want) {
-					t.Fatalf("unexpected payload got: %d, want: %d", got, want)
-				}
-			case <-time.After(1 * time.Second):
+			// ICMP required.
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			p, ok := c.linkEP.ReadContext(ctx)
+			if !ok {
 				t.Fatalf("packet wasn't written out")
+				return
+			}
+
+			var pkt []byte
+			pkt = append(pkt, p.Pkt.Header.View()...)
+			pkt = append(pkt, p.Pkt.Data.ToView()...)
+			if got, want := len(pkt), header.IPv4MinimumProcessableDatagramSize; got > want {
+				t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
+			}
+
+			hdr := header.IPv4(pkt)
+			checker.IPv4(t, hdr, checker.ICMPv4(
+				checker.ICMPv4Type(header.ICMPv4DstUnreachable),
+				checker.ICMPv4Code(header.ICMPv4PortUnreachable)))
+
+			icmpPkt := header.ICMPv4(hdr.Payload())
+			payloadIPHeader := header.IPv4(icmpPkt.Payload())
+			wantLen := len(payload)
+			if tc.largePayload {
+				wantLen = header.IPv4MinimumProcessableDatagramSize - header.IPv4MinimumSize*2 - header.ICMPv4MinimumSize - header.UDPMinimumSize
+			}
+
+			// In case of large payloads the IP packet may be truncated. Update
+			// the length field before retrieving the udp datagram payload.
+			payloadIPHeader.SetTotalLength(uint16(wantLen + header.UDPMinimumSize + header.IPv4MinimumSize))
+
+			origDgram := header.UDP(payloadIPHeader.Payload())
+			if got, want := len(origDgram.Payload()), wantLen; got != want {
+				t.Fatalf("unexpected payload length got: %d, want: %d", got, want)
+			}
+			if got, want := origDgram.Payload(), payload[:wantLen]; !bytes.Equal(got, want) {
+				t.Fatalf("unexpected payload got: %d, want: %d", got, want)
 			}
 		})
 	}
@@ -1505,47 +1644,51 @@ func TestV6UnknownDestination(t *testing.T) {
 			}
 			c.injectPacket(tc.flow, payload)
 			if !tc.icmpRequired {
-				select {
-				case p := <-c.linkEP.C:
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
+				if p, ok := c.linkEP.ReadContext(ctx); ok {
 					t.Fatalf("unexpected packet received: %+v", p)
-				case <-time.After(1 * time.Second):
-					return
 				}
+				return
 			}
 
-			select {
-			case p := <-c.linkEP.C:
-				var pkt []byte
-				pkt = append(pkt, p.Header...)
-				pkt = append(pkt, p.Payload...)
-				if got, want := len(pkt), header.IPv6MinimumMTU; got > want {
-					t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
-				}
-
-				hdr := header.IPv6(pkt)
-				checker.IPv6(t, hdr, checker.ICMPv6(
-					checker.ICMPv6Type(header.ICMPv6DstUnreachable),
-					checker.ICMPv6Code(header.ICMPv6PortUnreachable)))
-
-				icmpPkt := header.ICMPv6(hdr.Payload())
-				payloadIPHeader := header.IPv6(icmpPkt.Payload())
-				wantLen := len(payload)
-				if tc.largePayload {
-					wantLen = header.IPv6MinimumMTU - header.IPv6MinimumSize*2 - header.ICMPv6MinimumSize - header.UDPMinimumSize
-				}
-				// In case of large payloads the IP packet may be truncated. Update
-				// the length field before retrieving the udp datagram payload.
-				payloadIPHeader.SetPayloadLength(uint16(wantLen + header.UDPMinimumSize))
-
-				origDgram := header.UDP(payloadIPHeader.Payload())
-				if got, want := len(origDgram.Payload()), wantLen; got != want {
-					t.Fatalf("unexpected payload length got: %d, want: %d", got, want)
-				}
-				if got, want := origDgram.Payload(), payload[:wantLen]; !bytes.Equal(got, want) {
-					t.Fatalf("unexpected payload got: %v, want: %v", got, want)
-				}
-			case <-time.After(1 * time.Second):
+			// ICMP required.
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			p, ok := c.linkEP.ReadContext(ctx)
+			if !ok {
 				t.Fatalf("packet wasn't written out")
+				return
+			}
+
+			var pkt []byte
+			pkt = append(pkt, p.Pkt.Header.View()...)
+			pkt = append(pkt, p.Pkt.Data.ToView()...)
+			if got, want := len(pkt), header.IPv6MinimumMTU; got > want {
+				t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
+			}
+
+			hdr := header.IPv6(pkt)
+			checker.IPv6(t, hdr, checker.ICMPv6(
+				checker.ICMPv6Type(header.ICMPv6DstUnreachable),
+				checker.ICMPv6Code(header.ICMPv6PortUnreachable)))
+
+			icmpPkt := header.ICMPv6(hdr.Payload())
+			payloadIPHeader := header.IPv6(icmpPkt.Payload())
+			wantLen := len(payload)
+			if tc.largePayload {
+				wantLen = header.IPv6MinimumMTU - header.IPv6MinimumSize*2 - header.ICMPv6MinimumSize - header.UDPMinimumSize
+			}
+			// In case of large payloads the IP packet may be truncated. Update
+			// the length field before retrieving the udp datagram payload.
+			payloadIPHeader.SetPayloadLength(uint16(wantLen + header.UDPMinimumSize))
+
+			origDgram := header.UDP(payloadIPHeader.Payload())
+			if got, want := len(origDgram.Payload()), wantLen; got != want {
+				t.Fatalf("unexpected payload length got: %d, want: %d", got, want)
+			}
+			if got, want := origDgram.Payload(), payload[:wantLen]; !bytes.Equal(got, want) {
+				t.Fatalf("unexpected payload got: %v, want: %v", got, want)
 			}
 		})
 	}

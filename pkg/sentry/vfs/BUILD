@@ -1,40 +1,66 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
-package(licenses = ["notice"])
+licenses(["notice"])
+
+go_template_instance(
+    name = "epoll_interest_list",
+    out = "epoll_interest_list.go",
+    package = "vfs",
+    prefix = "epollInterest",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*epollInterest",
+        "Linker": "*epollInterest",
+    },
+)
 
 go_library(
     name = "vfs",
     srcs = [
+        "anonfs.go",
         "context.go",
         "debug.go",
         "dentry.go",
+        "device.go",
+        "epoll.go",
+        "epoll_interest_list.go",
         "file_description.go",
         "file_description_impl_util.go",
         "filesystem.go",
+        "filesystem_impl_util.go",
         "filesystem_type.go",
         "mount.go",
         "mount_unsafe.go",
         "options.go",
+        "pathname.go",
         "permissions.go",
         "resolving_path.go",
-        "syscalls.go",
-        "testutil.go",
+        "timerfd.go",
         "vfs.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/vfs",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
+        "//pkg/fd",
         "//pkg/fspath",
+        "//pkg/gohacks",
+        "//pkg/log",
+        "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
+        "//pkg/sentry/fs",
+        "//pkg/sentry/fs/lock",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/kernel/time",
+        "//pkg/sentry/limits",
         "//pkg/sentry/memmap",
-        "//pkg/sentry/usermem",
+        "//pkg/sentry/socket/unix/transport",
+        "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
         "//pkg/waiter",
-        "//third_party/gvsync",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
@@ -45,13 +71,13 @@ go_test(
         "file_description_impl_util_test.go",
         "mount_test.go",
     ],
-    embed = [":vfs"],
+    library = ":vfs",
     deps = [
         "//pkg/abi/linux",
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
-        "//pkg/sentry/kernel/auth",
-        "//pkg/sentry/usermem",
+        "//pkg/context",
+        "//pkg/sentry/contexttest",
+        "//pkg/sync",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )

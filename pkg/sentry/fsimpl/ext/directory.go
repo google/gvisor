@@ -15,22 +15,24 @@
 package ext
 
 import (
-	"sync"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
-	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // directory represents a directory inode. It holds the childList in memory.
 type directory struct {
 	inode inode
+
+	// childCache maps filenames to dentries for children for which dentries
+	// have been instantiated. childCache is protected by filesystem.mu.
+	childCache map[string]*dentry
 
 	// mu serializes the changes to childList.
 	// Lock Order (outermost locks must be taken first):
@@ -51,9 +53,13 @@ type directory struct {
 	childMap map[string]*dirent
 }
 
-// newDirectroy is the directory constructor.
-func newDirectroy(inode inode, newDirent bool) (*directory, error) {
-	file := &directory{inode: inode, childMap: make(map[string]*dirent)}
+// newDirectory is the directory constructor.
+func newDirectory(inode inode, newDirent bool) (*directory, error) {
+	file := &directory{
+		inode:      inode,
+		childCache: make(map[string]*dentry),
+		childMap:   make(map[string]*dirent),
+	}
 	file.inode.impl = file
 
 	// Initialize childList by reading dirents from the underlying file.
@@ -189,14 +195,14 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 				childType = fs.ToInodeType(childInode.diskInode.Mode().FileType())
 			}
 
-			if !cb.Handle(vfs.Dirent{
+			if err := cb.Handle(vfs.Dirent{
 				Name:    child.diskDirent.FileName(),
 				Type:    fs.ToDirentType(childType),
 				Ino:     uint64(child.diskDirent.Inode()),
 				NextOff: fd.off + 1,
-			}) {
+			}); err != nil {
 				dir.childList.InsertBefore(child, fd.iter)
-				return nil
+				return err
 			}
 			fd.off++
 		}
@@ -299,10 +305,4 @@ func (fd *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (in
 	dir.childList.PushBack(fd.iter)
 	fd.off = offset
 	return offset, nil
-}
-
-// ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
-func (fd *directoryFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
-	// mmap(2) specifies that EACCESS should be returned for non-regular file fds.
-	return syserror.EACCES
 }

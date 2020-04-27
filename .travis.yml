@@ -1,0 +1,20 @@
+language: shell
+dist: xenial
+cache:
+  directories:
+    - /home/travis/.cache/bazel/
+os: linux
+services:
+  - docker
+jobs:
+  include:
+   - os: linux
+     arch: amd64
+   - os: linux
+     arch: arm64
+script:
+   - uname -a && make smoke-test
+branches:
+  except:
+  # Skip copybara branches.
+  - /^test\/cl.*$/

@@ -15,6 +15,7 @@
 package arp_test
 
 import (
+	"context"
 	"strconv"
 	"testing"
 	"time"
@@ -83,7 +84,7 @@ func newTestContext(t *testing.T) *testContext {
 }
 
 func (c *testContext) cleanup() {
-	close(c.linkEP.C)
+	c.linkEP.Close()
 }
 
 func TestDirectRequest(t *testing.T) {
@@ -102,19 +103,21 @@ func TestDirectRequest(t *testing.T) {
 
 	inject := func(addr tcpip.Address) {
 		copy(h.ProtocolAddressTarget(), addr)
-		c.linkEP.Inject(arp.ProtocolNumber, v.ToVectorisedView())
+		c.linkEP.InjectInbound(arp.ProtocolNumber, stack.PacketBuffer{
+			Data: v.ToVectorisedView(),
+		})
 	}
 
 	for i, address := range []tcpip.Address{stackAddr1, stackAddr2} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			inject(address)
-			pkt := <-c.linkEP.C
-			if pkt.Proto != arp.ProtocolNumber {
-				t.Fatalf("expected ARP response, got network protocol number %d", pkt.Proto)
+			pi, _ := c.linkEP.ReadContext(context.Background())
+			if pi.Proto != arp.ProtocolNumber {
+				t.Fatalf("expected ARP response, got network protocol number %d", pi.Proto)
 			}
-			rep := header.ARP(pkt.Header)
+			rep := header.ARP(pi.Pkt.Header.View())
 			if !rep.IsValid() {
-				t.Fatalf("invalid ARP response len(pkt.Header)=%d", len(pkt.Header))
+				t.Fatalf("invalid ARP response pi.Pkt.Header.UsedLength()=%d", pi.Pkt.Header.UsedLength())
 			}
 			if got, want := tcpip.LinkAddress(rep.HardwareAddressSender()), stackLinkAddr; got != want {
 				t.Errorf("got HardwareAddressSender = %s, want = %s", got, want)
@@ -132,12 +135,12 @@ func TestDirectRequest(t *testing.T) {
 	}
 
 	inject(stackAddrBad)
-	select {
-	case pkt := <-c.linkEP.C:
+	// Sleep tests are gross, but this will only potentially flake
+	// if there's a bug. If there is no bug this will reliably
+	// succeed.
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if pkt, ok := c.linkEP.ReadContext(ctx); ok {
 		t.Errorf("stackAddrBad: unexpected packet sent, Proto=%v", pkt.Proto)
-	case <-time.After(100 * time.Millisecond):
-		// Sleep tests are gross, but this will only potentially flake
-		// if there's a bug. If there is no bug this will reliably
-		// succeed.
 	}
 }

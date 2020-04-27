@@ -55,18 +55,18 @@ type segment struct {
 	options        []byte `state:".([]byte)"`
 	hasNewSACKInfo bool
 	rcvdTime       time.Time `state:".(unixTime)"`
-	// xmitTime is the last transmit time of this segment. A zero value
-	// indicates that the segment has yet to be transmitted.
-	xmitTime time.Time `state:".(unixTime)"`
+	// xmitTime is the last transmit time of this segment.
+	xmitTime  time.Time `state:".(unixTime)"`
+	xmitCount uint32
 }
 
-func newSegment(r *stack.Route, id stack.TransportEndpointID, vv buffer.VectorisedView) *segment {
+func newSegment(r *stack.Route, id stack.TransportEndpointID, pkt stack.PacketBuffer) *segment {
 	s := &segment{
 		refCnt: 1,
 		id:     id,
 		route:  r.Clone(),
 	}
-	s.data = vv.Clone(s.views[:])
+	s.data = pkt.Data.Clone(s.views[:])
 	s.rcvdTime = time.Now()
 	return s
 }
@@ -77,9 +77,11 @@ func newSegmentFromView(r *stack.Route, id stack.TransportEndpointID, v buffer.V
 		id:     id,
 		route:  r.Clone(),
 	}
-	s.views[0] = v
-	s.data = buffer.NewVectorisedView(len(v), s.views[:1])
 	s.rcvdTime = time.Now()
+	if len(v) != 0 {
+		s.views[0] = v
+		s.data = buffer.NewVectorisedView(len(v), s.views[:1])
+	}
 	return s
 }
 
@@ -99,8 +101,14 @@ func (s *segment) clone() *segment {
 	return t
 }
 
-func (s *segment) flagIsSet(flag uint8) bool {
-	return (s.flags & flag) != 0
+// flagIsSet checks if at least one flag in flags is set in s.flags.
+func (s *segment) flagIsSet(flags uint8) bool {
+	return s.flags&flags != 0
+}
+
+// flagsAreSet checks if all flags in flags are set in s.flags.
+func (s *segment) flagsAreSet(flags uint8) bool {
+	return s.flags&flags == flags
 }
 
 func (s *segment) decRef() {
@@ -136,7 +144,11 @@ func (s *segment) logicalLen() seqnum.Size {
 // TCP checksum and stores the checksum and result of checksum verification in
 // the csum and csumValid fields of the segment.
 func (s *segment) parse() bool {
-	h := header.TCP(s.data.First())
+	h, ok := s.data.PullUp(header.TCPMinimumSize)
+	if !ok {
+		return false
+	}
+	hdr := header.TCP(h)
 
 	// h is the header followed by the payload. We check that the offset to
 	// the data respects the following constraints:
@@ -148,12 +160,16 @@ func (s *segment) parse() bool {
 	// N.B. The segment has already been validated as having at least the
 	//      minimum TCP size before reaching here, so it's safe to read the
 	//      fields.
-	offset := int(h.DataOffset())
-	if offset < header.TCPMinimumSize || offset > len(h) {
+	offset := int(hdr.DataOffset())
+	if offset < header.TCPMinimumSize {
+		return false
+	}
+	hdrWithOpts, ok := s.data.PullUp(offset)
+	if !ok {
 		return false
 	}
 
-	s.options = []byte(h[header.TCPMinimumSize:offset])
+	s.options = []byte(hdrWithOpts[header.TCPMinimumSize:])
 	s.parsedOptions = header.ParseTCPOptions(s.options)
 
 	// Query the link capabilities to decide if checksum validation is
@@ -165,18 +181,19 @@ func (s *segment) parse() bool {
 		s.data.TrimFront(offset)
 	}
 	if verifyChecksum {
-		s.csum = h.Checksum()
+		hdr = header.TCP(hdrWithOpts)
+		s.csum = hdr.Checksum()
 		xsum := s.route.PseudoHeaderChecksum(ProtocolNumber, uint16(s.data.Size()))
-		xsum = h.CalculateChecksum(xsum)
+		xsum = hdr.CalculateChecksum(xsum)
 		s.data.TrimFront(offset)
 		xsum = header.ChecksumVV(s.data, xsum)
 		s.csumValid = xsum == 0xffff
 	}
 
-	s.sequenceNumber = seqnum.Value(h.SequenceNumber())
-	s.ackNumber = seqnum.Value(h.AckNumber())
-	s.flags = h.Flags()
-	s.window = seqnum.Size(h.WindowSize())
+	s.sequenceNumber = seqnum.Value(hdr.SequenceNumber())
+	s.ackNumber = seqnum.Value(hdr.AckNumber())
+	s.flags = hdr.Flags()
+	s.window = seqnum.Size(hdr.WindowSize())
 	return true
 }
 

@@ -25,7 +25,6 @@
 #include <vector>
 
 #include "gtest/gtest.h"
-#include "gtest/gtest.h"
 #include "absl/strings/string_view.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
@@ -64,6 +63,21 @@ TEST_P(UnixSocketPairTest, BindToBadName) {
       bind(pair->first_fd(), reinterpret_cast<struct sockaddr*>(&sockaddr),
            sizeof(sockaddr)),
       SyscallFailsWithErrno(ENOENT));
+}
+
+TEST_P(UnixSocketPairTest, BindToBadFamily) {
+  auto pair =
+      ASSERT_NO_ERRNO_AND_VALUE(UnixDomainSocketPair(SOCK_SEQPACKET).Create());
+
+  constexpr char kBadName[] = "/some/path/that/does/not/exist";
+  sockaddr_un sockaddr;
+  sockaddr.sun_family = AF_INET;
+  memcpy(sockaddr.sun_path, kBadName, sizeof(kBadName));
+
+  EXPECT_THAT(
+      bind(pair->first_fd(), reinterpret_cast<struct sockaddr*>(&sockaddr),
+           sizeof(sockaddr)),
+      SyscallFailsWithErrno(EINVAL));
 }
 
 TEST_P(UnixSocketPairTest, RecvmmsgTimeoutAfterRecv) {
@@ -243,6 +257,8 @@ TEST_P(UnixSocketPairTest, ShutdownWrite) {
 
 TEST_P(UnixSocketPairTest, SocketReopenFromProcfs) {
   // TODO(b/122310852): We should be returning ENXIO and NOT EIO.
+  // TODO(github.dev/issue/1624): This should be resolved in VFS2. Verify
+  // that this is the case and delete the SKIP_IF once we delete VFS1.
   SKIP_IF(IsRunningOnGvisor());
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 

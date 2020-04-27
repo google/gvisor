@@ -158,6 +158,9 @@ type Config struct {
 	// DebugLog is the path to log debug information to, if not empty.
 	DebugLog string
 
+	// PanicLog is the path to log GO's runtime messages, if not empty.
+	PanicLog string
+
 	// DebugLogFormat is the log format for debug.
 	DebugLogFormat string
 
@@ -250,6 +253,15 @@ type Config struct {
 	// multiple tests are run in parallel, since there is no way to pass
 	// parameters to the runtime from docker.
 	TestOnlyTestNameEnv string
+
+	// CPUNumFromQuota sets CPU number count to available CPU quota, using
+	// least integer value greater than or equal to quota.
+	//
+	// E.g. 0.2 CPU quota will result in 1, and 1.9 in 2.
+	CPUNumFromQuota bool
+
+	// Enables VFS2 (not plumbled through yet).
+	VFS2 bool
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.
@@ -260,6 +272,7 @@ func (c *Config) ToFlags() []string {
 		"--log=" + c.LogFilename,
 		"--log-format=" + c.LogFormat,
 		"--debug-log=" + c.DebugLog,
+		"--panic-log=" + c.PanicLog,
 		"--debug-log-format=" + c.DebugLogFormat,
 		"--file-access=" + c.FileAccess.String(),
 		"--overlay=" + strconv.FormatBool(c.Overlay),
@@ -282,6 +295,9 @@ func (c *Config) ToFlags() []string {
 		"--software-gso=" + strconv.FormatBool(c.SoftwareGSO),
 		"--overlayfs-stale-read=" + strconv.FormatBool(c.OverlayfsStaleRead),
 	}
+	if c.CPUNumFromQuota {
+		f = append(f, "--cpu-num-from-quota")
+	}
 	// Only include these if set since it is never to be used by users.
 	if c.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		f = append(f, "--TESTONLY-unsafe-nonroot=true")
@@ -289,5 +305,10 @@ func (c *Config) ToFlags() []string {
 	if len(c.TestOnlyTestNameEnv) != 0 {
 		f = append(f, "--TESTONLY-test-name-env="+c.TestOnlyTestNameEnv)
 	}
+
+	if c.VFS2 {
+		f = append(f, "--vfs2=true")
+	}
+
 	return f
 }

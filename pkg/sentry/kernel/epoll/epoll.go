@@ -18,30 +18,18 @@ package epoll
 
 import (
 	"fmt"
-	"sync"
 	"syscall"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refs"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/anon"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
-
-// Event describes the event mask that was observed and the user data to be
-// returned when one of the events occurs. It has this format to match the linux
-// format to avoid extra copying/allocation when writing events to userspace.
-type Event struct {
-	// Events is the event mask containing the set of events that have been
-	// observed on an entry.
-	Events uint32
-
-	// Data is an opaque 64-bit value provided by the caller when adding the
-	// entry, and returned to the caller when the entry reports an event.
-	Data [2]int32
-}
 
 // EntryFlags is a bitmask that holds an entry's flags.
 type EntryFlags int
@@ -174,6 +162,7 @@ func (e *EventPoll) Release() {
 		entry.id.File.EventUnregister(&entry.waiter)
 		entry.file.Drop()
 	}
+	e.files = nil
 }
 
 // Read implements fs.FileOperations.Read.
@@ -226,9 +215,9 @@ func (e *EventPoll) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // ReadEvents returns up to max available events.
-func (e *EventPoll) ReadEvents(max int) []Event {
+func (e *EventPoll) ReadEvents(max int) []linux.EpollEvent {
 	var local pollEntryList
-	var ret []Event
+	var ret []linux.EpollEvent
 
 	e.listsMu.Lock()
 
@@ -250,7 +239,7 @@ func (e *EventPoll) ReadEvents(max int) []Event {
 		}
 
 		// Add event to the array that will be returned to caller.
-		ret = append(ret, Event{
+		ret = append(ret, linux.EpollEvent{
 			Events: uint32(ready),
 			Data:   entry.userData,
 		})
@@ -295,8 +284,10 @@ func (*readyCallback) Callback(w *waiter.Entry) {
 		e.waitingList.Remove(entry)
 		e.readyList.PushBack(entry)
 		entry.curList = &e.readyList
+		e.listsMu.Unlock()
 
 		e.Notify(waiter.EventIn)
+		return
 	}
 
 	e.listsMu.Unlock()

@@ -18,15 +18,46 @@ package kvm
 import (
 	"fmt"
 	"os"
-	"sync"
 	"syscall"
 
-	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
+
+// userMemoryRegion is a region of physical memory.
+//
+// This mirrors kvm_memory_region.
+type userMemoryRegion struct {
+	slot          uint32
+	flags         uint32
+	guestPhysAddr uint64
+	memorySize    uint64
+	userspaceAddr uint64
+}
+
+// runData is the run structure. This may be mapped for synchronous register
+// access (although that doesn't appear to be supported by my kernel at least).
+//
+// This mirrors kvm_run.
+type runData struct {
+	requestInterruptWindow uint8
+	_                      [7]uint8
+
+	exitReason                 uint32
+	readyForInterruptInjection uint8
+	ifFlag                     uint8
+	_                          [2]uint8
+
+	cr8      uint64
+	apicBase uint64
+
+	// This is the union data for exits. Interpretation depends entirely on
+	// the exitReason above (see vCPU code for more information).
+	data [32]uint64
+}
 
 // KVM represents a lightweight VM context.
 type KVM struct {
@@ -56,18 +87,26 @@ func New(deviceFile *os.File) (*KVM, error) {
 
 	// Ensure global initialization is done.
 	globalOnce.Do(func() {
-		physicalInit()
-		globalErr = updateSystemValues(int(fd))
-		ring0.Init(cpuid.HostFeatureSet())
+		globalErr = updateGlobalOnce(int(fd))
 	})
 	if globalErr != nil {
 		return nil, globalErr
 	}
 
 	// Create a new VM fd.
-	vm, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, fd, _KVM_CREATE_VM, 0)
-	if errno != 0 {
-		return nil, fmt.Errorf("creating VM: %v", errno)
+	var (
+		vm    uintptr
+		errno syscall.Errno
+	)
+	for {
+		vm, _, errno = syscall.Syscall(syscall.SYS_IOCTL, fd, _KVM_CREATE_VM, 0)
+		if errno == syscall.EINTR {
+			continue
+		}
+		if errno != 0 {
+			return nil, fmt.Errorf("creating VM: %v", errno)
+		}
+		break
 	}
 	// We are done with the device file.
 	deviceFile.Close()
@@ -150,6 +189,11 @@ func (*constructor) New(f *os.File) (platform.Platform, error) {
 
 func (*constructor) OpenDevice() (*os.File, error) {
 	return OpenDevice()
+}
+
+// Flags implements platform.Constructor.Flags().
+func (*constructor) Requirements() platform.Requirements {
+	return platform.Requirements{}
 }
 
 func init() {

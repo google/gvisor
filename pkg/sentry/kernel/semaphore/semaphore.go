@@ -17,14 +17,14 @@ package semaphore
 
 import (
 	"fmt"
-	"sync"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -302,7 +302,7 @@ func (s *Set) SetVal(ctx context.Context, num int32, val int16, creds *auth.Cred
 		return syserror.ERANGE
 	}
 
-	// TODO(b/29354920): Clear undo entries in all processes
+	// TODO(gvisor.dev/issue/137): Clear undo entries in all processes.
 	sem.value = val
 	sem.pid = pid
 	s.changeTime = ktime.NowFromContext(ctx)
@@ -336,7 +336,7 @@ func (s *Set) SetValAll(ctx context.Context, vals []uint16, creds *auth.Credenti
 	for i, val := range vals {
 		sem := &s.sems[i]
 
-		// TODO(b/29354920): Clear undo entries in all processes
+		// TODO(gvisor.dev/issue/137): Clear undo entries in all processes.
 		sem.value = int16(val)
 		sem.pid = pid
 		sem.wakeWaiters()
@@ -481,7 +481,7 @@ func (s *Set) executeOps(ctx context.Context, ops []linux.Sembuf, pid int32) (ch
 	}
 
 	// All operations succeeded, apply them.
-	// TODO(b/29354920): handle undo operations.
+	// TODO(gvisor.dev/issue/137): handle undo operations.
 	for i, v := range tmpVals {
 		s.sems[i].value = v
 		s.sems[i].wakeWaiters()
@@ -554,6 +554,7 @@ func (s *sem) wakeWaiters() {
 	for w := s.waiters.Front(); w != nil; {
 		if s.value < w.value {
 			// Still blocked, skip it.
+			w = w.Next()
 			continue
 		}
 		w.ch <- struct{}{}

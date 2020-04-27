@@ -1,6 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -28,7 +27,7 @@ go_template_instance(
         "minDegree": "8",
     },
     imports = {
-        "usermem": "gvisor.dev/gvisor/pkg/sentry/usermem",
+        "usermem": "gvisor.dev/gvisor/pkg/usermem",
     },
     package = "mm",
     prefix = "vma",
@@ -48,7 +47,7 @@ go_template_instance(
         "minDegree": "8",
     },
     imports = {
-        "usermem": "gvisor.dev/gvisor/pkg/sentry/usermem",
+        "usermem": "gvisor.dev/gvisor/pkg/usermem",
     },
     package = "mm",
     prefix = "pma",
@@ -96,17 +95,18 @@ go_library(
         "vma.go",
         "vma_set.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/mm",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
+        "//pkg/context",
         "//pkg/log",
         "//pkg/refs",
+        "//pkg/safecopy",
+        "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
-        "//pkg/sentry/fs",
         "//pkg/sentry/fs/proc/seqfile",
+        "//pkg/sentry/fsbridge",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/futex",
         "//pkg/sentry/kernel/shm",
@@ -114,13 +114,11 @@ go_library(
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
-        "//pkg/sentry/platform/safecopy",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
+        "//pkg/sync",
         "//pkg/syserror",
         "//pkg/tcpip/buffer",
-        "//third_party/gvsync",
+        "//pkg/usermem",
     ],
 )
 
@@ -128,16 +126,16 @@ go_test(
     name = "mm_test",
     size = "small",
     srcs = ["mm_test.go"],
-    embed = [":mm"],
+    library = ":mm",
     deps = [
+        "//pkg/context",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/limits",
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
-        "//pkg/sentry/usermem",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )

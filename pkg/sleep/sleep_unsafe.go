@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // +build go1.11
-// +build !go1.14
+// +build !go1.15
 
 // Check go:linkname function signatures when updating Go version.
 
@@ -299,20 +299,17 @@ func (s *Sleeper) enqueueAssertedWaker(w *Waker) {
 		}
 	}
 
-	for {
-		// Nothing to do if there isn't a G waiting.
-		g := atomic.LoadUintptr(&s.waitingG)
-		if g == 0 {
-			return
-		}
+	// Nothing to do if there isn't a G waiting.
+	if atomic.LoadUintptr(&s.waitingG) == 0 {
+		return
+	}
 
-		// Signal to the sleeper that a waker has been asserted.
-		if atomic.CompareAndSwapUintptr(&s.waitingG, g, 0) {
-			if g != preparingG {
-				// We managed to get a G. Wake it up.
-				goready(g, 0)
-			}
-		}
+	// Signal to the sleeper that a waker has been asserted.
+	switch g := atomic.SwapUintptr(&s.waitingG, 0); g {
+	case 0, preparingG:
+	default:
+		// We managed to get a G. Wake it up.
+		goready(g, 0)
 	}
 }
 

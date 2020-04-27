@@ -19,14 +19,16 @@ import (
 	"io"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
+
+// LINT.IfChange
 
 // uptime is a file containing the system uptime.
 //
@@ -85,3 +87,5 @@ func (f *uptimeFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequenc
 	n, err := dst.CopyOut(ctx, s[offset:])
 	return int64(n), err
 }
+
+// LINT.ThenChange(../../fsimpl/proc/tasks_files.go)

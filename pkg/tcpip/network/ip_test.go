@@ -96,16 +96,16 @@ func (t *testObject) checkValues(protocol tcpip.TransportProtocolNumber, vv buff
 // DeliverTransportPacket is called by network endpoints after parsing incoming
 // packets. This is used by the test object to verify that the results of the
 // parsing are expected.
-func (t *testObject) DeliverTransportPacket(r *stack.Route, protocol tcpip.TransportProtocolNumber, netHeader buffer.View, vv buffer.VectorisedView) {
-	t.checkValues(protocol, vv, r.RemoteAddress, r.LocalAddress)
+func (t *testObject) DeliverTransportPacket(r *stack.Route, protocol tcpip.TransportProtocolNumber, pkt stack.PacketBuffer) {
+	t.checkValues(protocol, pkt.Data, r.RemoteAddress, r.LocalAddress)
 	t.dataCalls++
 }
 
 // DeliverTransportControlPacket is called by network endpoints after parsing
 // incoming control (ICMP) packets. This is used by the test object to verify
 // that the results of the parsing are expected.
-func (t *testObject) DeliverTransportControlPacket(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ stack.ControlType, extra uint32, vv buffer.VectorisedView) {
-	t.checkValues(trans, vv, remote, local)
+func (t *testObject) DeliverTransportControlPacket(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ stack.ControlType, extra uint32, pkt stack.PacketBuffer) {
+	t.checkValues(trans, pkt.Data, remote, local)
 	if typ != t.typ {
 		t.t.Errorf("typ = %v, want %v", typ, t.typ)
 	}
@@ -150,29 +150,29 @@ func (*testObject) Wait() {}
 // WritePacket is called by network endpoints after producing a packet and
 // writing it to the link endpoint. This is used by the test object to verify
 // that the produced packet is as expected.
-func (t *testObject) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (t *testObject) WritePacket(_ *stack.Route, _ *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) *tcpip.Error {
 	var prot tcpip.TransportProtocolNumber
 	var srcAddr tcpip.Address
 	var dstAddr tcpip.Address
 
 	if t.v4 {
-		h := header.IPv4(hdr.View())
+		h := header.IPv4(pkt.Header.View())
 		prot = tcpip.TransportProtocolNumber(h.Protocol())
 		srcAddr = h.SourceAddress()
 		dstAddr = h.DestinationAddress()
 
 	} else {
-		h := header.IPv6(hdr.View())
+		h := header.IPv6(pkt.Header.View())
 		prot = tcpip.TransportProtocolNumber(h.NextHeader())
 		srcAddr = h.SourceAddress()
 		dstAddr = h.DestinationAddress()
 	}
-	t.checkValues(prot, payload, srcAddr, dstAddr)
+	t.checkValues(prot, pkt.Data, srcAddr, dstAddr)
 	return nil
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-func (t *testObject) WritePackets(_ *stack.Route, _ *stack.GSO, hdr []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (t *testObject) WritePackets(_ *stack.Route, _ *stack.GSO, pkt stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	panic("not implemented")
 }
 
@@ -212,10 +212,17 @@ func buildIPv6Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
 	return s.FindRoute(1, local, remote, ipv6.ProtocolNumber, false /* multicastLoop */)
 }
 
+func buildDummyStack() *stack.Stack {
+	return stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{ipv6.NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol(), tcp.NewProtocol()},
+	})
+}
+
 func TestIPv4Send(t *testing.T) {
 	o := testObject{t: t, v4: true}
 	proto := ipv4.NewProtocol()
-	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv4Addr, localIpv4PrefixLen}, nil, nil, &o)
+	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv4Addr, localIpv4PrefixLen}, nil, nil, &o, buildDummyStack())
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
@@ -239,7 +246,10 @@ func TestIPv4Send(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
-	if err := ep.WritePacket(&r, nil /* gso */, hdr, payload.ToVectorisedView(), stack.NetworkHeaderParams{Protocol: 123, TTL: 123, TOS: stack.DefaultTOS}, stack.PacketOut); err != nil {
+	if err := ep.WritePacket(&r, nil /* gso */, stack.NetworkHeaderParams{Protocol: 123, TTL: 123, TOS: stack.DefaultTOS}, stack.PacketBuffer{
+		Header: hdr,
+		Data:   payload.ToVectorisedView(),
+	}); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 }
@@ -247,7 +257,7 @@ func TestIPv4Send(t *testing.T) {
 func TestIPv4Receive(t *testing.T) {
 	o := testObject{t: t, v4: true}
 	proto := ipv4.NewProtocol()
-	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv4Addr, localIpv4PrefixLen}, nil, &o, nil)
+	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv4Addr, localIpv4PrefixLen}, nil, &o, nil, buildDummyStack())
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
@@ -279,7 +289,9 @@ func TestIPv4Receive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
-	ep.HandlePacket(&r, view.ToVectorisedView())
+	ep.HandlePacket(&r, stack.PacketBuffer{
+		Data: view.ToVectorisedView(),
+	})
 	if o.dataCalls != 1 {
 		t.Fatalf("Bad number of data calls: got %x, want 1", o.dataCalls)
 	}
@@ -313,7 +325,7 @@ func TestIPv4ReceiveControl(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			o := testObject{t: t}
 			proto := ipv4.NewProtocol()
-			ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv4Addr, localIpv4PrefixLen}, nil, &o, nil)
+			ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv4Addr, localIpv4PrefixLen}, nil, &o, nil, buildDummyStack())
 			if err != nil {
 				t.Fatalf("NewEndpoint failed: %v", err)
 			}
@@ -367,7 +379,9 @@ func TestIPv4ReceiveControl(t *testing.T) {
 			o.extra = c.expectedExtra
 
 			vv := view[:len(view)-c.trunc].ToVectorisedView()
-			ep.HandlePacket(&r, vv)
+			ep.HandlePacket(&r, stack.PacketBuffer{
+				Data: vv,
+			})
 			if want := c.expectedCount; o.controlCalls != want {
 				t.Fatalf("Bad number of control calls for %q case: got %v, want %v", c.name, o.controlCalls, want)
 			}
@@ -378,7 +392,7 @@ func TestIPv4ReceiveControl(t *testing.T) {
 func TestIPv4FragmentationReceive(t *testing.T) {
 	o := testObject{t: t, v4: true}
 	proto := ipv4.NewProtocol()
-	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv4Addr, localIpv4PrefixLen}, nil, &o, nil)
+	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv4Addr, localIpv4PrefixLen}, nil, &o, nil, buildDummyStack())
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
@@ -430,13 +444,17 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 	}
 
 	// Send first segment.
-	ep.HandlePacket(&r, frag1.ToVectorisedView())
+	ep.HandlePacket(&r, stack.PacketBuffer{
+		Data: frag1.ToVectorisedView(),
+	})
 	if o.dataCalls != 0 {
 		t.Fatalf("Bad number of data calls: got %x, want 0", o.dataCalls)
 	}
 
 	// Send second segment.
-	ep.HandlePacket(&r, frag2.ToVectorisedView())
+	ep.HandlePacket(&r, stack.PacketBuffer{
+		Data: frag2.ToVectorisedView(),
+	})
 	if o.dataCalls != 1 {
 		t.Fatalf("Bad number of data calls: got %x, want 1", o.dataCalls)
 	}
@@ -445,7 +463,7 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 func TestIPv6Send(t *testing.T) {
 	o := testObject{t: t}
 	proto := ipv6.NewProtocol()
-	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv6Addr, localIpv6PrefixLen}, nil, nil, &o)
+	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv6Addr, localIpv6PrefixLen}, nil, nil, &o, buildDummyStack())
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
@@ -469,7 +487,10 @@ func TestIPv6Send(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
-	if err := ep.WritePacket(&r, nil /* gso */, hdr, payload.ToVectorisedView(), stack.NetworkHeaderParams{Protocol: 123, TTL: 123, TOS: stack.DefaultTOS}, stack.PacketOut); err != nil {
+	if err := ep.WritePacket(&r, nil /* gso */, stack.NetworkHeaderParams{Protocol: 123, TTL: 123, TOS: stack.DefaultTOS}, stack.PacketBuffer{
+		Header: hdr,
+		Data:   payload.ToVectorisedView(),
+	}); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 }
@@ -477,7 +498,7 @@ func TestIPv6Send(t *testing.T) {
 func TestIPv6Receive(t *testing.T) {
 	o := testObject{t: t}
 	proto := ipv6.NewProtocol()
-	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv6Addr, localIpv6PrefixLen}, nil, &o, nil)
+	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv6Addr, localIpv6PrefixLen}, nil, &o, nil, buildDummyStack())
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
@@ -509,7 +530,9 @@ func TestIPv6Receive(t *testing.T) {
 		t.Fatalf("could not find route: %v", err)
 	}
 
-	ep.HandlePacket(&r, view.ToVectorisedView())
+	ep.HandlePacket(&r, stack.PacketBuffer{
+		Data: view.ToVectorisedView(),
+	})
 	if o.dataCalls != 1 {
 		t.Fatalf("Bad number of data calls: got %x, want 1", o.dataCalls)
 	}
@@ -519,6 +542,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 	newUint16 := func(v uint16) *uint16 { return &v }
 
 	const mtu = 0xffff
+	const outerSrcAddr = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xaa"
 	cases := []struct {
 		name           string
 		expectedCount  int
@@ -551,7 +575,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			o := testObject{t: t}
 			proto := ipv6.NewProtocol()
-			ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv6Addr, localIpv6PrefixLen}, nil, &o, nil)
+			ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv6Addr, localIpv6PrefixLen}, nil, &o, nil, buildDummyStack())
 			if err != nil {
 				t.Fatalf("NewEndpoint failed: %v", err)
 			}
@@ -570,7 +594,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 				PayloadLength: uint16(len(view) - header.IPv6MinimumSize - c.trunc),
 				NextHeader:    uint8(header.ICMPv6ProtocolNumber),
 				HopLimit:      20,
-				SrcAddr:       "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xaa",
+				SrcAddr:       outerSrcAddr,
 				DstAddr:       localIpv6Addr,
 			})
 
@@ -617,8 +641,12 @@ func TestIPv6ReceiveControl(t *testing.T) {
 			o.typ = c.expectedTyp
 			o.extra = c.expectedExtra
 
-			vv := view[:len(view)-c.trunc].ToVectorisedView()
-			ep.HandlePacket(&r, vv)
+			// Set ICMPv6 checksum.
+			icmp.SetChecksum(header.ICMPv6Checksum(icmp, outerSrcAddr, localIpv6Addr, buffer.VectorisedView{}))
+
+			ep.HandlePacket(&r, stack.PacketBuffer{
+				Data: view[:len(view)-c.trunc].ToVectorisedView(),
+			})
 			if want := c.expectedCount; o.controlCalls != want {
 				t.Fatalf("Bad number of control calls for %q case: got %v, want %v", c.name, o.controlCalls, want)
 			}

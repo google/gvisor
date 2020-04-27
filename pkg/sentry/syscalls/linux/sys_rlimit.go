@@ -19,8 +19,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // rlimit describes an implementation of 'struct rlimit', which may vary from
@@ -197,7 +197,7 @@ func Prlimit64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	// saved set user IDs of the target process must match the real user ID of
 	// the caller and the real, effective, and saved set group IDs of the
 	// target process must match the real group ID of the caller."
-	if !t.HasCapabilityIn(linux.CAP_SYS_RESOURCE, t.PIDNamespace().UserNamespace()) {
+	if ot != t && !t.HasCapabilityIn(linux.CAP_SYS_RESOURCE, t.PIDNamespace().UserNamespace()) {
 		cred, tcred := t.Credentials(), ot.Credentials()
 		if cred.RealKUID != tcred.RealKUID ||
 			cred.RealKUID != tcred.EffectiveKUID ||

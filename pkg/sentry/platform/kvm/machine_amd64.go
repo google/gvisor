@@ -26,7 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // initArchState initializes architecture-specific state.
@@ -90,7 +90,9 @@ func (m *machine) dropPageTables(pt *pagetables.PageTables) {
 
 	// Clear from all PCIDs.
 	for _, c := range m.vCPUs {
-		c.PCIDs.Drop(pt)
+		if c.PCIDs != nil {
+			c.PCIDs.Drop(pt)
+		}
 	}
 }
 
@@ -354,4 +356,14 @@ func (m *machine) retryInGuest(fn func()) {
 			break
 		}
 	}
+}
+
+// On x86 platform, the flags for "setMemoryRegion" can always be set as 0.
+// There is no need to return read-only physicalRegions.
+func rdonlyRegionsForSetMem() (phyRegions []physicalRegion) {
+	return nil
+}
+
+func availableRegionsForSetMem() (phyRegions []physicalRegion) {
+	return physicalRegions
 }

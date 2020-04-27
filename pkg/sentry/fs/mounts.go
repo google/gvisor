@@ -19,14 +19,14 @@ import (
 	"math"
 	"path"
 	"strings"
-	"sync"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -100,10 +100,14 @@ func newUndoMount(d *Dirent) *Mount {
 	}
 }
 
-// Root returns the root dirent of this mount. Callers must call DecRef on the
-// returned dirent.
+// Root returns the root dirent of this mount.
+//
+// This may return nil if the mount has already been free. Callers must handle this
+// case appropriately. If non-nil, callers must call DecRef on the returned *Dirent.
 func (m *Mount) Root() *Dirent {
-	m.root.IncRef()
+	if !m.root.TryIncRef() {
+		return nil
+	}
 	return m.root
 }
 
@@ -267,19 +271,6 @@ func (mns *MountNamespace) destroy() {
 // DecRef implements RefCounter.DecRef with destructor mns.destroy.
 func (mns *MountNamespace) DecRef() {
 	mns.DecRefWithDestructor(mns.destroy)
-}
-
-// Freeze freezes the entire mount tree.
-func (mns *MountNamespace) Freeze() {
-	mns.mu.Lock()
-	defer mns.mu.Unlock()
-
-	// We only want to freeze Dirents with active references, not Dirents referenced
-	// by a mount's MountSource.
-	mns.flushMountSourceRefsLocked()
-
-	// Freeze the entire shebang.
-	mns.root.Freeze()
 }
 
 // withMountLocked prevents further walks to `node`, because `node` is about to
@@ -609,8 +600,11 @@ func (mns *MountNamespace) resolve(ctx context.Context, root, node *Dirent, rema
 		}
 
 		// Find the node; we resolve relative to the current symlink's parent.
+		renameMu.RLock()
+		parent := node.parent
+		renameMu.RUnlock()
 		*remainingTraversals--
-		d, err := mns.FindInode(ctx, root, node.parent, targetPath, remainingTraversals)
+		d, err := mns.FindInode(ctx, root, parent, targetPath, remainingTraversals)
 		if err != nil {
 			return nil, err
 		}

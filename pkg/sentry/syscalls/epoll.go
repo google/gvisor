@@ -17,6 +17,7 @@ package syscalls
 import (
 	"time"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/epoll"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -118,7 +119,7 @@ func RemoveEpoll(t *kernel.Task, epfd int32, fd int32) error {
 }
 
 // WaitEpoll implements the epoll_wait(2) linux syscall.
-func WaitEpoll(t *kernel.Task, fd int32, max int, timeout int) ([]epoll.Event, error) {
+func WaitEpoll(t *kernel.Task, fd int32, max int, timeout int) ([]linux.EpollEvent, error) {
 	// Get epoll from the file descriptor.
 	epollfile := t.GetFile(fd)
 	if epollfile == nil {

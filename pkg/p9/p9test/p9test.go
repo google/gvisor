@@ -17,13 +17,13 @@ package p9test
 
 import (
 	"fmt"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
 
 	"github.com/golang/mock/gomock"
 	"gvisor.dev/gvisor/pkg/p9"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
 )
 

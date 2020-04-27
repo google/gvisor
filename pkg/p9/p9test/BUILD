@@ -1,5 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_test")
+load("//tools:defs.bzl", "go_binary", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -64,12 +63,12 @@ go_library(
         "mocks.go",
         "p9test.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/p9/p9test",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/fd",
         "//pkg/log",
         "//pkg/p9",
+        "//pkg/sync",
         "//pkg/unet",
         "@com_github_golang_mock//gomock:go_default_library",
     ],
@@ -79,10 +78,11 @@ go_test(
     name = "client_test",
     size = "medium",
     srcs = ["client_test.go"],
-    embed = [":p9test"],
+    library = ":p9test",
     deps = [
         "//pkg/fd",
         "//pkg/p9",
+        "//pkg/sync",
         "@com_github_golang_mock//gomock:go_default_library",
     ],
 )

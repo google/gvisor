@@ -23,8 +23,8 @@ import (
 	"os"
 	"path"
 
-	"flag"
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
 // Install implements subcommands.Command.

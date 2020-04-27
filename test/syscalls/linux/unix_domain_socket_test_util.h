@@ -16,6 +16,7 @@
 #define GVISOR_TEST_SYSCALLS_UNIX_DOMAIN_SOCKET_TEST_UTIL_H_
 
 #include <string>
+
 #include "test/syscalls/linux/socket_test_util.h"
 
 namespace gvisor {

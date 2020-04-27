@@ -17,19 +17,19 @@ package fsutil
 import (
 	"fmt"
 	"io"
-	"sync"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/pkg/sentry/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Lock order (compare the lock order model in mm/mm.go):
@@ -111,7 +111,7 @@ type CachingInodeOperations struct {
 	// refs tracks active references to data in the cache.
 	//
 	// refs is protected by dataMu.
-	refs frameRefSet
+	refs FrameRefSet
 }
 
 // CachingInodeOperationsOptions configures a CachingInodeOperations.

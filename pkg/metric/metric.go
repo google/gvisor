@@ -18,12 +18,12 @@ package metric
 import (
 	"errors"
 	"fmt"
-	"sync"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/log"
 	pb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 var (
@@ -39,17 +39,11 @@ var (
 // Uint64Metric encapsulates a uint64 that represents some kind of metric to be
 // monitored.
 //
-// All metrics must be cumulative, meaning that their values will only increase
-// over time.
-//
 // Metrics are not saved across save/restore and thus reset to zero on restore.
 //
-// TODO(b/67298402): Support non-cumulative metrics.
 // TODO(b/67298427): Support metric fields.
-//
 type Uint64Metric struct {
-	// value is the actual value of the metric. It must be accessed
-	// atomically.
+	// value is the actual value of the metric. It must be accessed atomically.
 	value uint64
 }
 
@@ -111,13 +105,10 @@ type customUint64Metric struct {
 // Register must only be called at init and will return and error if called
 // after Initialized.
 //
-// All metrics must be cumulative, meaning that the return values of value must
-// only increase over time.
-//
 // Preconditions:
 //  * name must be globally unique.
 //  * Initialize/Disable have not been called.
-func RegisterCustomUint64Metric(name string, sync bool, description string, value func() uint64) error {
+func RegisterCustomUint64Metric(name string, cumulative, sync bool, units pb.MetricMetadata_Units, description string, value func() uint64) error {
 	if initialized {
 		return ErrInitializationDone
 	}
@@ -130,9 +121,10 @@ func RegisterCustomUint64Metric(name string, sync bool, description string, valu
 		metadata: &pb.MetricMetadata{
 			Name:        name,
 			Description: description,
-			Cumulative:  true,
+			Cumulative:  cumulative,
 			Sync:        sync,
-			Type:        pb.MetricMetadata_UINT64,
+			Type:        pb.MetricMetadata_TYPE_UINT64,
+			Units:       units,
 		},
 		value: value,
 	}
@@ -141,24 +133,32 @@ func RegisterCustomUint64Metric(name string, sync bool, description string, valu
 
 // MustRegisterCustomUint64Metric calls RegisterCustomUint64Metric and panics
 // if it returns an error.
-func MustRegisterCustomUint64Metric(name string, sync bool, description string, value func() uint64) {
-	if err := RegisterCustomUint64Metric(name, sync, description, value); err != nil {
+func MustRegisterCustomUint64Metric(name string, cumulative, sync bool, description string, value func() uint64) {
+	if err := RegisterCustomUint64Metric(name, cumulative, sync, pb.MetricMetadata_UNITS_NONE, description, value); err != nil {
 		panic(fmt.Sprintf("Unable to register metric %q: %v", name, err))
 	}
 }
 
-// NewUint64Metric creates and registers a new metric with the given name.
+// NewUint64Metric creates and registers a new cumulative metric with the given name.
 //
 // Metrics must be statically defined (i.e., at init).
-func NewUint64Metric(name string, sync bool, description string) (*Uint64Metric, error) {
+func NewUint64Metric(name string, sync bool, units pb.MetricMetadata_Units, description string) (*Uint64Metric, error) {
 	var m Uint64Metric
-	return &m, RegisterCustomUint64Metric(name, sync, description, m.Value)
+	return &m, RegisterCustomUint64Metric(name, true /* cumulative */, sync, units, description, m.Value)
 }
 
-// MustCreateNewUint64Metric calls NewUint64Metric and panics if it returns an
-// error.
+// MustCreateNewUint64Metric calls NewUint64Metric and panics if it returns an error.
 func MustCreateNewUint64Metric(name string, sync bool, description string) *Uint64Metric {
-	m, err := NewUint64Metric(name, sync, description)
+	m, err := NewUint64Metric(name, sync, pb.MetricMetadata_UNITS_NONE, description)
+	if err != nil {
+		panic(fmt.Sprintf("Unable to create metric %q: %v", name, err))
+	}
+	return m
+}
+
+// MustCreateNewUint64NanosecondsMetric calls NewUint64Metric and panics if it returns an error.
+func MustCreateNewUint64NanosecondsMetric(name string, sync bool, description string) *Uint64Metric {
+	m, err := NewUint64Metric(name, sync, pb.MetricMetadata_UNITS_NANOSECONDS, description)
 	if err != nil {
 		panic(fmt.Sprintf("Unable to create metric %q: %v", name, err))
 	}
@@ -245,6 +245,6 @@ func EmitMetricUpdate() {
 		return
 	}
 
-	log.Debugf("Emitting metrics: %v", m)
+	log.Debugf("Emitting metrics: %v", &m)
 	eventchannel.Emit(&m)
 }

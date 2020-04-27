@@ -14,6 +14,7 @@
 
 #include <errno.h>
 #include <grp.h>
+#include <sys/resource.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -247,6 +248,26 @@ TEST(UidGidRootTest, Setgroups) {
   // "EFAULT: list has an invalid address."
   EXPECT_THAT(getgroups(100, reinterpret_cast<gid_t*>(-1)),
               SyscallFailsWithErrno(EFAULT));
+}
+
+TEST(UidGidRootTest, Setuid_prlimit) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsRoot()));
+
+  // Do seteuid in a separate thread so that after finishing this test, the
+  // process can still open files the test harness created before starting this
+  // test. Otherwise, the files are created by root (UID before the test), but
+  // cannot be opened by the `uid` set below after the test.
+  ScopedThread([&] {
+    // Use syscall instead of glibc setuid wrapper because we want this seteuid
+    // call to only apply to this task. POSIX threads, however, require that all
+    // threads have the same UIDs, so using the seteuid wrapper sets all
+    // threads' UID.
+    EXPECT_THAT(syscall(SYS_setreuid, -1, 65534), SyscallSucceeds());
+
+    // Despite the UID change, we should be able to get our own limits.
+    struct rlimit rl = {};
+    EXPECT_THAT(prlimit(0, RLIMIT_NOFILE, NULL, &rl), SyscallSucceeds());
+  });
 }
 
 }  // namespace

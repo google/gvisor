@@ -26,10 +26,12 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/control"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
+
+// LINT.IfChange
 
 // minListenBacklog is the minimum reasonable backlog for listening sockets.
 const minListenBacklog = 8
@@ -41,7 +43,7 @@ const maxListenBacklog = 1024
 const maxAddrLen = 200
 
 // maxOptLen is the maximum sockopt parameter length we're willing to accept.
-const maxOptLen = 1024
+const maxOptLen = 1024 * 8
 
 // maxControlLen is the maximum length of the msghdr.msg_control buffer we're
 // willing to accept. Note that this limit is smaller than Linux, which allows
@@ -244,7 +246,11 @@ func SocketPair(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 
 	// Copy the file descriptors out.
 	if _, err := t.CopyOut(socks, fds); err != nil {
-		// Note that we don't close files here; see pipe(2) also.
+		for _, fd := range fds {
+			if file, _ := t.FDTable().Remove(fd); file != nil {
+				file.DecRef()
+			}
+		}
 		return 0, nil, err
 	}
 
@@ -447,16 +453,13 @@ func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 		return 0, nil, syserror.ENOTSOCK
 	}
 
-	// Read the length if present. Reject negative values.
+	// Read the length. Reject negative values.
 	optLen := int32(0)
-	if optLenAddr != 0 {
-		if _, err := t.CopyIn(optLenAddr, &optLen); err != nil {
-			return 0, nil, err
-		}
-
-		if optLen < 0 {
-			return 0, nil, syserror.EINVAL
-		}
+	if _, err := t.CopyIn(optLenAddr, &optLen); err != nil {
+		return 0, nil, err
+	}
+	if optLen < 0 {
+		return 0, nil, syserror.EINVAL
 	}
 
 	// Call syscall implementation then copy both value and value len out.
@@ -465,11 +468,9 @@ func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 		return 0, nil, e.ToError()
 	}
 
-	if optLenAddr != 0 {
-		vLen := int32(binary.Size(v))
-		if _, err := t.CopyOut(optLenAddr, vLen); err != nil {
-			return 0, nil, err
-		}
+	vLen := int32(binary.Size(v))
+	if _, err := t.CopyOut(optLenAddr, vLen); err != nil {
+		return 0, nil, err
 	}
 
 	if v != nil {
@@ -769,7 +770,7 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 		}
 		if !cms.Unix.Empty() {
 			mflags |= linux.MSG_CTRUNC
-			cms.Unix.Release()
+			cms.Release()
 		}
 
 		if int(msg.Flags) != mflags {
@@ -789,22 +790,14 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 	if e != nil {
 		return 0, syserror.ConvertIntr(e.ToError(), kernel.ERESTARTSYS)
 	}
-	defer cms.Unix.Release()
+	defer cms.Release()
 
 	controlData := make([]byte, 0, msg.ControlLen)
+	controlData = control.PackControlMessages(t, cms, controlData)
 
 	if cr, ok := s.(transport.Credentialer); ok && cr.Passcred() {
 		creds, _ := cms.Unix.Credentials.(control.SCMCredentials)
 		controlData, mflags = control.PackCredentials(t, creds, controlData, mflags)
-	}
-
-	if cms.IP.HasTimestamp {
-		controlData = control.PackTimestamp(t, cms.IP.Timestamp, controlData)
-	}
-
-	if cms.IP.HasInq {
-		// In Linux, TCP_CM_INQ is added after SO_TIMESTAMP.
-		controlData = control.PackInq(t, cms.IP.Inq, controlData)
 	}
 
 	if cms.Unix.Rights != nil {
@@ -882,7 +875,7 @@ func recvFrom(t *kernel.Task, fd int32, bufPtr usermem.Addr, bufLen uint64, flag
 	}
 
 	n, _, sender, senderLen, cm, e := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, nameLenPtr != 0, 0)
-	cm.Unix.Release()
+	cm.Release()
 	if e != nil {
 		return 0, syserror.ConvertIntr(e.ToError(), kernel.ERESTARTSYS)
 	}
@@ -1065,7 +1058,7 @@ func sendSingleMsg(t *kernel.Task, s socket.Socket, file *fs.File, msgPtr userme
 	}
 
 	// Call the syscall implementation.
-	n, e := s.SendMsg(t, src, to, int(flags), haveDeadline, deadline, socket.ControlMessages{Unix: controlMessages})
+	n, e := s.SendMsg(t, src, to, int(flags), haveDeadline, deadline, controlMessages)
 	err = handleIOError(t, n != 0, e.ToError(), kernel.ERESTARTSYS, "sendmsg", file)
 	if err != nil {
 		controlMessages.Release()
@@ -1141,3 +1134,5 @@ func SendTo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	n, err := sendTo(t, fd, bufPtr, bufLen, flags, namePtr, nameLen)
 	return n, nil, err
 }
+
+// LINT.ThenChange(./vfs2/socket.go)

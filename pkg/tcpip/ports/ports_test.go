@@ -33,7 +33,7 @@ type portReserveTestAction struct {
 	port    uint16
 	ip      tcpip.Address
 	want    *tcpip.Error
-	reuse   bool
+	flags   Flags
 	release bool
 	device  tcpip.NICID
 }
@@ -50,7 +50,7 @@ func TestPortReservation(t *testing.T) {
 				{port: 80, ip: fakeIPAddress1, want: nil},
 				/* N.B. Order of tests matters! */
 				{port: 80, ip: anyIPAddress, want: tcpip.ErrPortInUse},
-				{port: 80, ip: fakeIPAddress, want: tcpip.ErrPortInUse, reuse: true},
+				{port: 80, ip: fakeIPAddress, want: tcpip.ErrPortInUse, flags: Flags{LoadBalanced: true}},
 			},
 		},
 		{
@@ -61,7 +61,7 @@ func TestPortReservation(t *testing.T) {
 				/* release fakeIPAddress, but anyIPAddress is still inuse */
 				{port: 22, ip: fakeIPAddress, release: true},
 				{port: 22, ip: fakeIPAddress, want: tcpip.ErrPortInUse},
-				{port: 22, ip: fakeIPAddress, want: tcpip.ErrPortInUse, reuse: true},
+				{port: 22, ip: fakeIPAddress, want: tcpip.ErrPortInUse, flags: Flags{LoadBalanced: true}},
 				/* Release port 22 from any IP address, then try to reserve fake IP address on 22 */
 				{port: 22, ip: anyIPAddress, want: nil, release: true},
 				{port: 22, ip: fakeIPAddress, want: nil},
@@ -71,36 +71,36 @@ func TestPortReservation(t *testing.T) {
 			actions: []portReserveTestAction{
 				{port: 00, ip: fakeIPAddress, want: nil},
 				{port: 00, ip: fakeIPAddress, want: nil},
-				{port: 00, ip: fakeIPAddress, reuse: true, want: nil},
+				{port: 00, ip: fakeIPAddress, flags: Flags{LoadBalanced: true}, want: nil},
 			},
 		}, {
 			tname: "bind to ip with reuseport",
 			actions: []portReserveTestAction{
-				{port: 25, ip: fakeIPAddress, reuse: true, want: nil},
-				{port: 25, ip: fakeIPAddress, reuse: true, want: nil},
+				{port: 25, ip: fakeIPAddress, flags: Flags{LoadBalanced: true}, want: nil},
+				{port: 25, ip: fakeIPAddress, flags: Flags{LoadBalanced: true}, want: nil},
 
-				{port: 25, ip: fakeIPAddress, reuse: false, want: tcpip.ErrPortInUse},
-				{port: 25, ip: anyIPAddress, reuse: false, want: tcpip.ErrPortInUse},
+				{port: 25, ip: fakeIPAddress, flags: Flags{}, want: tcpip.ErrPortInUse},
+				{port: 25, ip: anyIPAddress, flags: Flags{}, want: tcpip.ErrPortInUse},
 
-				{port: 25, ip: anyIPAddress, reuse: true, want: nil},
+				{port: 25, ip: anyIPAddress, flags: Flags{LoadBalanced: true}, want: nil},
 			},
 		}, {
 			tname: "bind to inaddr any with reuseport",
 			actions: []portReserveTestAction{
-				{port: 24, ip: anyIPAddress, reuse: true, want: nil},
-				{port: 24, ip: anyIPAddress, reuse: true, want: nil},
+				{port: 24, ip: anyIPAddress, flags: Flags{LoadBalanced: true}, want: nil},
+				{port: 24, ip: anyIPAddress, flags: Flags{LoadBalanced: true}, want: nil},
 
-				{port: 24, ip: anyIPAddress, reuse: false, want: tcpip.ErrPortInUse},
-				{port: 24, ip: fakeIPAddress, reuse: false, want: tcpip.ErrPortInUse},
+				{port: 24, ip: anyIPAddress, flags: Flags{}, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, flags: Flags{}, want: tcpip.ErrPortInUse},
 
-				{port: 24, ip: fakeIPAddress, reuse: true, want: nil},
-				{port: 24, ip: fakeIPAddress, release: true, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{LoadBalanced: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{LoadBalanced: true}, release: true, want: nil},
 
-				{port: 24, ip: anyIPAddress, release: true},
-				{port: 24, ip: anyIPAddress, reuse: false, want: tcpip.ErrPortInUse},
+				{port: 24, ip: anyIPAddress, flags: Flags{LoadBalanced: true}, release: true},
+				{port: 24, ip: anyIPAddress, flags: Flags{}, want: tcpip.ErrPortInUse},
 
-				{port: 24, ip: anyIPAddress, release: true},
-				{port: 24, ip: anyIPAddress, reuse: false, want: nil},
+				{port: 24, ip: anyIPAddress, flags: Flags{LoadBalanced: true}, release: true},
+				{port: 24, ip: anyIPAddress, flags: Flags{}, want: nil},
 			},
 		}, {
 			tname: "bind twice with device fails",
@@ -125,88 +125,152 @@ func TestPortReservation(t *testing.T) {
 			actions: []portReserveTestAction{
 				{port: 24, ip: fakeIPAddress, want: nil},
 				{port: 24, ip: fakeIPAddress, device: 123, want: tcpip.ErrPortInUse},
-				{port: 24, ip: fakeIPAddress, device: 123, reuse: true, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, device: 123, flags: Flags{LoadBalanced: true}, want: tcpip.ErrPortInUse},
 				{port: 24, ip: fakeIPAddress, want: tcpip.ErrPortInUse},
-				{port: 24, ip: fakeIPAddress, reuse: true, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, flags: Flags{LoadBalanced: true}, want: tcpip.ErrPortInUse},
 			},
 		}, {
 			tname: "bind with device",
 			actions: []portReserveTestAction{
 				{port: 24, ip: fakeIPAddress, device: 123, want: nil},
 				{port: 24, ip: fakeIPAddress, device: 123, want: tcpip.ErrPortInUse},
-				{port: 24, ip: fakeIPAddress, device: 123, reuse: true, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, device: 123, flags: Flags{LoadBalanced: true}, want: tcpip.ErrPortInUse},
 				{port: 24, ip: fakeIPAddress, device: 0, want: tcpip.ErrPortInUse},
-				{port: 24, ip: fakeIPAddress, device: 0, reuse: true, want: tcpip.ErrPortInUse},
-				{port: 24, ip: fakeIPAddress, device: 456, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 0, flags: Flags{LoadBalanced: true}, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, device: 456, flags: Flags{LoadBalanced: true}, want: nil},
 				{port: 24, ip: fakeIPAddress, device: 789, want: nil},
 				{port: 24, ip: fakeIPAddress, want: tcpip.ErrPortInUse},
-				{port: 24, ip: fakeIPAddress, reuse: true, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, flags: Flags{LoadBalanced: true}, want: tcpip.ErrPortInUse},
 			},
 		}, {
-			tname: "bind with reuse",
+			tname: "bind with reuseport",
 			actions: []portReserveTestAction{
-				{port: 24, ip: fakeIPAddress, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{LoadBalanced: true}, want: nil},
 				{port: 24, ip: fakeIPAddress, device: 123, want: tcpip.ErrPortInUse},
-				{port: 24, ip: fakeIPAddress, device: 123, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 123, flags: Flags{LoadBalanced: true}, want: nil},
 				{port: 24, ip: fakeIPAddress, device: 0, want: tcpip.ErrPortInUse},
-				{port: 24, ip: fakeIPAddress, device: 0, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 0, flags: Flags{LoadBalanced: true}, want: nil},
 			},
 		}, {
-			tname: "binding with reuse and device",
+			tname: "binding with reuseport and device",
 			actions: []portReserveTestAction{
-				{port: 24, ip: fakeIPAddress, device: 123, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 123, flags: Flags{LoadBalanced: true}, want: nil},
 				{port: 24, ip: fakeIPAddress, device: 123, want: tcpip.ErrPortInUse},
-				{port: 24, ip: fakeIPAddress, device: 123, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 123, flags: Flags{LoadBalanced: true}, want: nil},
 				{port: 24, ip: fakeIPAddress, device: 0, want: tcpip.ErrPortInUse},
-				{port: 24, ip: fakeIPAddress, device: 456, reuse: true, want: nil},
-				{port: 24, ip: fakeIPAddress, device: 0, reuse: true, want: nil},
-				{port: 24, ip: fakeIPAddress, device: 789, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 456, flags: Flags{LoadBalanced: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 0, flags: Flags{LoadBalanced: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 789, flags: Flags{LoadBalanced: true}, want: nil},
 				{port: 24, ip: fakeIPAddress, device: 999, want: tcpip.ErrPortInUse},
 			},
 		}, {
-			tname: "mixing reuse and not reuse by binding to device",
+			tname: "mixing reuseport and not reuseport by binding to device",
 			actions: []portReserveTestAction{
-				{port: 24, ip: fakeIPAddress, device: 123, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 123, flags: Flags{LoadBalanced: true}, want: nil},
 				{port: 24, ip: fakeIPAddress, device: 456, want: nil},
-				{port: 24, ip: fakeIPAddress, device: 789, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 789, flags: Flags{LoadBalanced: true}, want: nil},
 				{port: 24, ip: fakeIPAddress, device: 999, want: nil},
 			},
 		}, {
-			tname: "can't bind to 0 after mixing reuse and not reuse",
+			tname: "can't bind to 0 after mixing reuseport and not reuseport",
 			actions: []portReserveTestAction{
-				{port: 24, ip: fakeIPAddress, device: 123, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 123, flags: Flags{LoadBalanced: true}, want: nil},
 				{port: 24, ip: fakeIPAddress, device: 456, want: nil},
-				{port: 24, ip: fakeIPAddress, device: 0, reuse: true, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, device: 0, flags: Flags{LoadBalanced: true}, want: tcpip.ErrPortInUse},
 			},
 		}, {
 			tname: "bind and release",
 			actions: []portReserveTestAction{
-				{port: 24, ip: fakeIPAddress, device: 123, reuse: true, want: nil},
-				{port: 24, ip: fakeIPAddress, device: 0, reuse: true, want: nil},
-				{port: 24, ip: fakeIPAddress, device: 345, reuse: false, want: tcpip.ErrPortInUse},
-				{port: 24, ip: fakeIPAddress, device: 789, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 123, flags: Flags{LoadBalanced: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 0, flags: Flags{LoadBalanced: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 345, flags: Flags{}, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, device: 789, flags: Flags{LoadBalanced: true}, want: nil},
 
 				// Release the bind to device 0 and try again.
-				{port: 24, ip: fakeIPAddress, device: 0, reuse: true, want: nil, release: true},
-				{port: 24, ip: fakeIPAddress, device: 345, reuse: false, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 0, flags: Flags{LoadBalanced: true}, want: nil, release: true},
+				{port: 24, ip: fakeIPAddress, device: 345, flags: Flags{}, want: nil},
 			},
 		}, {
-			tname: "bind twice with reuse once",
+			tname: "bind twice with reuseport once",
 			actions: []portReserveTestAction{
-				{port: 24, ip: fakeIPAddress, device: 123, reuse: false, want: nil},
-				{port: 24, ip: fakeIPAddress, device: 0, reuse: true, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, device: 123, flags: Flags{}, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 0, flags: Flags{LoadBalanced: true}, want: tcpip.ErrPortInUse},
 			},
 		}, {
 			tname: "release an unreserved device",
 			actions: []portReserveTestAction{
-				{port: 24, ip: fakeIPAddress, device: 123, reuse: false, want: nil},
-				{port: 24, ip: fakeIPAddress, device: 456, reuse: false, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 123, flags: Flags{}, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 456, flags: Flags{}, want: nil},
 				// The below don't exist.
-				{port: 24, ip: fakeIPAddress, device: 345, reuse: false, want: nil, release: true},
-				{port: 9999, ip: fakeIPAddress, device: 123, reuse: false, want: nil, release: true},
+				{port: 24, ip: fakeIPAddress, device: 345, flags: Flags{}, want: nil, release: true},
+				{port: 9999, ip: fakeIPAddress, device: 123, flags: Flags{}, want: nil, release: true},
 				// Release all.
-				{port: 24, ip: fakeIPAddress, device: 123, reuse: false, want: nil, release: true},
-				{port: 24, ip: fakeIPAddress, device: 456, reuse: false, want: nil, release: true},
+				{port: 24, ip: fakeIPAddress, device: 123, flags: Flags{}, want: nil, release: true},
+				{port: 24, ip: fakeIPAddress, device: 456, flags: Flags{}, want: nil, release: true},
+			},
+		}, {
+			tname: "bind with reuseaddr",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, flags: Flags{MostRecent: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 123, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, device: 123, flags: Flags{MostRecent: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 0, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, device: 0, flags: Flags{MostRecent: true}, want: nil},
+			},
+		}, {
+			tname: "bind twice with reuseaddr once",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, device: 123, flags: Flags{}, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 0, flags: Flags{MostRecent: true}, want: tcpip.ErrPortInUse},
+			},
+		}, {
+			tname: "bind with reuseaddr and reuseport",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, flags: Flags{MostRecent: true, LoadBalanced: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{MostRecent: true, LoadBalanced: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{MostRecent: true, LoadBalanced: true}, want: nil},
+			},
+		}, {
+			tname: "bind with reuseaddr and reuseport, and then reuseaddr",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, flags: Flags{MostRecent: true, LoadBalanced: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{MostRecent: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{LoadBalanced: true}, want: tcpip.ErrPortInUse},
+			},
+		}, {
+			tname: "bind with reuseaddr and reuseport, and then reuseport",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, flags: Flags{MostRecent: true, LoadBalanced: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{LoadBalanced: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{MostRecent: true}, want: tcpip.ErrPortInUse},
+			},
+		}, {
+			tname: "bind with reuseaddr and reuseport twice, and then reuseaddr",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, flags: Flags{MostRecent: true, LoadBalanced: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{MostRecent: true, LoadBalanced: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{MostRecent: true}, want: nil},
+			},
+		}, {
+			tname: "bind with reuseaddr and reuseport twice, and then reuseport",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, flags: Flags{MostRecent: true, LoadBalanced: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{MostRecent: true, LoadBalanced: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{LoadBalanced: true}, want: nil},
+			},
+		}, {
+			tname: "bind with reuseaddr, and then reuseaddr and reuseport",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, flags: Flags{MostRecent: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{MostRecent: true, LoadBalanced: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{LoadBalanced: true}, want: tcpip.ErrPortInUse},
+			},
+		}, {
+			tname: "bind with reuseport, and then reuseaddr and reuseport",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, flags: Flags{LoadBalanced: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{MostRecent: true, LoadBalanced: true}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{MostRecent: true}, want: tcpip.ErrPortInUse},
 			},
 		},
 	} {
@@ -216,12 +280,12 @@ func TestPortReservation(t *testing.T) {
 
 			for _, test := range test.actions {
 				if test.release {
-					pm.ReleasePort(net, fakeTransNumber, test.ip, test.port, test.device)
+					pm.ReleasePort(net, fakeTransNumber, test.ip, test.port, test.flags, test.device)
 					continue
 				}
-				gotPort, err := pm.ReservePort(net, fakeTransNumber, test.ip, test.port, test.reuse, test.device)
+				gotPort, err := pm.ReservePort(net, fakeTransNumber, test.ip, test.port, test.flags, test.device)
 				if err != test.want {
-					t.Fatalf("ReservePort(.., .., %s, %d, %t, %d) = %v, want %v", test.ip, test.port, test.reuse, test.device, err, test.want)
+					t.Fatalf("ReservePort(.., .., %s, %d, %+v, %d) = %v, want %v", test.ip, test.port, test.flags, test.device, err, test.want)
 				}
 				if test.port == 0 && (gotPort == 0 || gotPort < FirstEphemeral) {
 					t.Fatalf("ReservePort(.., .., .., 0) = %d, want port number >= %d to be picked", gotPort, FirstEphemeral)

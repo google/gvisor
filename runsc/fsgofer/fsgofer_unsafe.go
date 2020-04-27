@@ -18,33 +18,8 @@ import (
 	"syscall"
 	"unsafe"
 
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/syserr"
 )
-
-func statAt(dirFd int, name string) (syscall.Stat_t, error) {
-	nameBytes, err := syscall.BytePtrFromString(name)
-	if err != nil {
-		return syscall.Stat_t{}, err
-	}
-	namePtr := unsafe.Pointer(nameBytes)
-
-	var stat syscall.Stat_t
-	statPtr := unsafe.Pointer(&stat)
-
-	if _, _, errno := syscall.Syscall6(
-		syscall.SYS_NEWFSTATAT,
-		uintptr(dirFd),
-		uintptr(namePtr),
-		uintptr(statPtr),
-		linux.AT_SYMLINK_NOFOLLOW,
-		0,
-		0); errno != 0 {
-
-		return syscall.Stat_t{}, syserr.FromHost(errno).ToError()
-	}
-	return stat, nil
-}
 
 func utimensat(dirFd int, name string, times [2]syscall.Timespec, flags int) error {
 	// utimensat(2) doesn't accept empty name, instead name must be nil to make it

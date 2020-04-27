@@ -20,8 +20,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // ARM64 is a table of Linux arm64 syscall API with the corresponding syscall
@@ -41,18 +41,18 @@ var ARM64 = &kernel.SyscallTable{
 		2:   syscalls.PartiallySupported("io_submit", IoSubmit, "Generally supported with exceptions. User ring optimizations are not implemented.", []string{"gvisor.dev/issue/204"}),
 		3:   syscalls.PartiallySupported("io_cancel", IoCancel, "Generally supported with exceptions. User ring optimizations are not implemented.", []string{"gvisor.dev/issue/204"}),
 		4:   syscalls.PartiallySupported("io_getevents", IoGetevents, "Generally supported with exceptions. User ring optimizations are not implemented.", []string{"gvisor.dev/issue/204"}),
-		5:   syscalls.Error("setxattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
-		6:   syscalls.Error("lsetxattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
-		7:   syscalls.Error("fsetxattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
-		8:   syscalls.ErrorWithEvent("getxattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
-		9:   syscalls.ErrorWithEvent("lgetxattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
-		10:  syscalls.ErrorWithEvent("fgetxattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
-		11:  syscalls.ErrorWithEvent("listxattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
-		12:  syscalls.ErrorWithEvent("llistxattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
-		13:  syscalls.ErrorWithEvent("flistxattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
-		14:  syscalls.ErrorWithEvent("removexattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
-		15:  syscalls.ErrorWithEvent("lremovexattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
-		16:  syscalls.ErrorWithEvent("fremovexattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
+		5:   syscalls.PartiallySupported("setxattr", SetXattr, "Only supported for tmpfs.", nil),
+		6:   syscalls.PartiallySupported("lsetxattr", LSetXattr, "Only supported for tmpfs.", nil),
+		7:   syscalls.PartiallySupported("fsetxattr", FSetXattr, "Only supported for tmpfs.", nil),
+		8:   syscalls.PartiallySupported("getxattr", GetXattr, "Only supported for tmpfs.", nil),
+		9:   syscalls.PartiallySupported("lgetxattr", LGetXattr, "Only supported for tmpfs.", nil),
+		10:  syscalls.PartiallySupported("fgetxattr", FGetXattr, "Only supported for tmpfs.", nil),
+		11:  syscalls.PartiallySupported("listxattr", ListXattr, "Only supported for tmpfs", nil),
+		12:  syscalls.PartiallySupported("llistxattr", LListXattr, "Only supported for tmpfs", nil),
+		13:  syscalls.PartiallySupported("flistxattr", FListXattr, "Only supported for tmpfs", nil),
+		14:  syscalls.PartiallySupported("removexattr", RemoveXattr, "Only supported for tmpfs", nil),
+		15:  syscalls.PartiallySupported("lremovexattr", LRemoveXattr, "Only supported for tmpfs", nil),
+		16:  syscalls.PartiallySupported("fremovexattr", FRemoveXattr, "Only supported for tmpfs", nil),
 		17:  syscalls.Supported("getcwd", Getcwd),
 		18:  syscalls.CapError("lookup_dcookie", linux.CAP_SYS_ADMIN, "", nil),
 		19:  syscalls.Supported("eventfd2", Eventfd2),
@@ -61,6 +61,7 @@ var ARM64 = &kernel.SyscallTable{
 		22:  syscalls.Supported("epoll_pwait", EpollPwait),
 		23:  syscalls.Supported("dup", Dup),
 		24:  syscalls.Supported("dup3", Dup3),
+		25:  syscalls.PartiallySupported("fcntl", Fcntl, "Not all options are supported.", nil),
 		26:  syscalls.Supported("inotify_init1", InotifyInit1),
 		27:  syscalls.PartiallySupported("inotify_add_watch", InotifyAddWatch, "inotify events are only available inside the sandbox.", nil),
 		28:  syscalls.PartiallySupported("inotify_rm_watch", InotifyRmWatch, "inotify events are only available inside the sandbox.", nil),
@@ -78,7 +79,9 @@ var ARM64 = &kernel.SyscallTable{
 		40:  syscalls.PartiallySupported("mount", Mount, "Not all options or file systems are supported.", nil),
 		41:  syscalls.Error("pivot_root", syserror.EPERM, "", nil),
 		42:  syscalls.Error("nfsservctl", syserror.ENOSYS, "Removed after Linux 3.1.", nil),
+		43:  syscalls.PartiallySupported("statfs", Statfs, "Depends on the backing file system implementation.", nil),
 		44:  syscalls.PartiallySupported("fstatfs", Fstatfs, "Depends on the backing file system implementation.", nil),
+		45:  syscalls.Supported("truncate", Truncate),
 		46:  syscalls.Supported("ftruncate", Ftruncate),
 		47:  syscalls.PartiallySupported("fallocate", Fallocate, "Not all options are supported.", nil),
 		48:  syscalls.Supported("faccessat", Faccessat),
@@ -112,6 +115,7 @@ var ARM64 = &kernel.SyscallTable{
 		76:  syscalls.PartiallySupported("splice", Splice, "Stub implementation.", []string{"gvisor.dev/issue/138"}), // TODO(b/29354098)
 		77:  syscalls.Supported("tee", Tee),
 		78:  syscalls.Supported("readlinkat", Readlinkat),
+		79:  syscalls.Supported("fstatat", Fstatat),
 		80:  syscalls.Supported("fstat", Fstat),
 		81:  syscalls.PartiallySupported("sync", Sync, "Full data flush is not guaranteed at this time.", nil),
 		82:  syscalls.PartiallySupported("fsync", Fsync, "Full data flush is not guaranteed at this time.", nil),
@@ -224,7 +228,7 @@ var ARM64 = &kernel.SyscallTable{
 		189: syscalls.ErrorWithEvent("msgsnd", syserror.ENOSYS, "", []string{"gvisor.dev/issue/135"}),          // TODO(b/29354921)
 		190: syscalls.Supported("semget", Semget),
 		191: syscalls.PartiallySupported("semctl", Semctl, "Options IPC_INFO, SEM_INFO, IPC_STAT, SEM_STAT, SEM_STAT_ANY, GETNCNT, GETZCNT not supported.", nil),
-		192: syscalls.ErrorWithEvent("semtimedop", syserror.ENOSYS, "", []string{"gvisor.dev/issue/137"}), // TODO(b/29354920)
+		192: syscalls.ErrorWithEvent("semtimedop", syserror.ENOSYS, "", []string{"gvisor.dev/issue/137"}),
 		193: syscalls.PartiallySupported("semop", Semop, "Option SEM_UNDO not supported.", nil),
 		194: syscalls.PartiallySupported("shmget", Shmget, "Option SHM_HUGETLB is not supported.", nil),
 		195: syscalls.PartiallySupported("shmctl", Shmctl, "Options SHM_LOCK, SHM_UNLOCK are not supported.", nil),
@@ -254,6 +258,8 @@ var ARM64 = &kernel.SyscallTable{
 		219: syscalls.Error("keyctl", syserror.EACCES, "Not available to user.", nil),
 		220: syscalls.PartiallySupported("clone", Clone, "Mount namespace (CLONE_NEWNS) not supported. Options CLONE_PARENT, CLONE_SYSVSEM not supported.", nil),
 		221: syscalls.Supported("execve", Execve),
+		222: syscalls.PartiallySupported("mmap", Mmap, "Generally supported with exceptions. Options MAP_FIXED_NOREPLACE, MAP_SHARED_VALIDATE, MAP_SYNC MAP_GROWSDOWN, MAP_HUGETLB are not supported.", nil),
+		223: syscalls.PartiallySupported("fadvise64", Fadvise64, "Not all options are supported.", nil),
 		224: syscalls.CapError("swapon", linux.CAP_SYS_ADMIN, "", nil),
 		225: syscalls.CapError("swapoff", linux.CAP_SYS_ADMIN, "", nil),
 		226: syscalls.Supported("mprotect", Mprotect),
@@ -295,14 +301,35 @@ var ARM64 = &kernel.SyscallTable{
 		278: syscalls.Supported("getrandom", GetRandom),
 		279: syscalls.Supported("memfd_create", MemfdCreate),
 		280: syscalls.CapError("bpf", linux.CAP_SYS_ADMIN, "", nil),
-		281: syscalls.ErrorWithEvent("execveat", syserror.ENOSYS, "", []string{"gvisor.dev/issue/265"}),    // TODO(b/118901836)
+		281: syscalls.Supported("execveat", Execveat),
 		282: syscalls.ErrorWithEvent("userfaultfd", syserror.ENOSYS, "", []string{"gvisor.dev/issue/266"}), // TODO(b/118906345)
-		283: syscalls.ErrorWithEvent("membarrier", syserror.ENOSYS, "", []string{"gvisor.dev/issue/267"}),  // TODO(b/118904897)
+		283: syscalls.ErrorWithEvent("membarrier", syserror.ENOSYS, "", []string{"gvisor.dev/issue/267"}),  // TODO(gvisor.dev/issue/267)
 		284: syscalls.PartiallySupported("mlock2", Mlock2, "Stub implementation. The sandbox lacks appropriate permissions.", nil),
+
+		// Syscalls after 284 are "backports" from versions of Linux after 4.4.
 		285: syscalls.ErrorWithEvent("copy_file_range", syserror.ENOSYS, "", nil),
 		286: syscalls.Supported("preadv2", Preadv2),
 		287: syscalls.PartiallySupported("pwritev2", Pwritev2, "Flag RWF_HIPRI is not supported.", nil),
+		288: syscalls.ErrorWithEvent("pkey_mprotect", syserror.ENOSYS, "", nil),
+		289: syscalls.ErrorWithEvent("pkey_alloc", syserror.ENOSYS, "", nil),
+		290: syscalls.ErrorWithEvent("pkey_free", syserror.ENOSYS, "", nil),
 		291: syscalls.Supported("statx", Statx),
+		292: syscalls.ErrorWithEvent("io_pgetevents", syserror.ENOSYS, "", nil),
+		293: syscalls.PartiallySupported("rseq", RSeq, "Not supported on all platforms.", nil),
+
+		// Linux skips ahead to syscall 424 to sync numbers between arches.
+		424: syscalls.ErrorWithEvent("pidfd_send_signal", syserror.ENOSYS, "", nil),
+		425: syscalls.ErrorWithEvent("io_uring_setup", syserror.ENOSYS, "", nil),
+		426: syscalls.ErrorWithEvent("io_uring_enter", syserror.ENOSYS, "", nil),
+		427: syscalls.ErrorWithEvent("io_uring_register", syserror.ENOSYS, "", nil),
+		428: syscalls.ErrorWithEvent("open_tree", syserror.ENOSYS, "", nil),
+		429: syscalls.ErrorWithEvent("move_mount", syserror.ENOSYS, "", nil),
+		430: syscalls.ErrorWithEvent("fsopen", syserror.ENOSYS, "", nil),
+		431: syscalls.ErrorWithEvent("fsconfig", syserror.ENOSYS, "", nil),
+		432: syscalls.ErrorWithEvent("fsmount", syserror.ENOSYS, "", nil),
+		433: syscalls.ErrorWithEvent("fspick", syserror.ENOSYS, "", nil),
+		434: syscalls.ErrorWithEvent("pidfd_open", syserror.ENOSYS, "", nil),
+		435: syscalls.ErrorWithEvent("clone3", syserror.ENOSYS, "", nil),
 	},
 	Emulate: map[usermem.Addr]uintptr{},
 

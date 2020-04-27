@@ -18,7 +18,7 @@ import (
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -62,10 +62,6 @@ func getTransportProtocol(ctx context.Context, stype linux.SockType, protocol in
 		}
 
 	case linux.SOCK_RAW:
-		// TODO(b/142504697): "In order to create a raw socket, a
-		// process must have the CAP_NET_RAW capability in the user
-		// namespace that governs its network namespace." - raw(7)
-
 		// Raw sockets require CAP_NET_RAW.
 		creds := auth.CredentialsFromContext(ctx)
 		if !creds.HasCapability(linux.CAP_NET_RAW) {
@@ -75,6 +71,8 @@ func getTransportProtocol(ctx context.Context, stype linux.SockType, protocol in
 		switch protocol {
 		case syscall.IPPROTO_ICMP:
 			return header.ICMPv4ProtocolNumber, true, nil
+		case syscall.IPPROTO_ICMPV6:
+			return header.ICMPv6ProtocolNumber, true, nil
 		case syscall.IPPROTO_UDP:
 			return header.UDPProtocolNumber, true, nil
 		case syscall.IPPROTO_TCP:
@@ -124,6 +122,12 @@ func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*
 		ep, e = eps.Stack.NewRawEndpoint(transProto, p.netProto, wq, associated)
 	} else {
 		ep, e = eps.Stack.NewEndpoint(transProto, p.netProto, wq)
+
+		// Assign task to PacketOwner interface to get the UID and GID for
+		// iptables owner matching.
+		if e == nil {
+			ep.SetOwner(t)
+		}
 	}
 	if e != nil {
 		return nil, syserr.TranslateNetstackError(e)
@@ -133,10 +137,6 @@ func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*
 }
 
 func packetSocket(t *kernel.Task, epStack *Stack, stype linux.SockType, protocol int) (*fs.File, *syserr.Error) {
-	// TODO(b/142504697): "In order to create a packet socket, a process
-	// must have the CAP_NET_RAW capability in the user namespace that
-	// governs its network namespace." - packet(7)
-
 	// Packet sockets require CAP_NET_RAW.
 	creds := auth.CredentialsFromContext(t)
 	if !creds.HasCapability(linux.CAP_NET_RAW) {

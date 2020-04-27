@@ -16,10 +16,5 @@
 
 source $(dirname $0)/common.sh
 
-top_level=$(git rev-parse --show-toplevel 2>/dev/null)
-[[ $? -eq 0 ]] && cd "${top_level}" || exit 1
-
-make
 make runsc
-make BAZEL_OPTIONS="build //..." bazel
 make bazel-shutdown

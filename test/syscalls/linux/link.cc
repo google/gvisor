@@ -55,7 +55,8 @@ TEST(LinkTest, CanCreateLinkFile) {
   const std::string newname = NewTempAbsPath();
 
   // Get the initial link count.
-  uint64_t initial_link_count = ASSERT_NO_ERRNO_AND_VALUE(Links(oldfile.path()));
+  uint64_t initial_link_count =
+      ASSERT_NO_ERRNO_AND_VALUE(Links(oldfile.path()));
 
   EXPECT_THAT(link(oldfile.path().c_str(), newname.c_str()), SyscallSucceeds());
 

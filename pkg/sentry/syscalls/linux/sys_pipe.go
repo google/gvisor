@@ -20,9 +20,11 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
+
+// LINT.IfChange
 
 // pipe2 implements the actual system call with flags.
 func pipe2(t *kernel.Task, addr usermem.Addr, flags uint) (uintptr, error) {
@@ -45,10 +47,12 @@ func pipe2(t *kernel.Task, addr usermem.Addr, flags uint) (uintptr, error) {
 	}
 
 	if _, err := t.CopyOut(addr, fds); err != nil {
-		// The files are not closed in this case, the exact semantics
-		// of this error case are not well defined, but they could have
-		// already been observed by user space.
-		return 0, syserror.EFAULT
+		for _, fd := range fds {
+			if file, _ := t.FDTable().Remove(fd); file != nil {
+				file.DecRef()
+			}
+		}
+		return 0, err
 	}
 	return 0, nil
 }
@@ -69,3 +73,5 @@ func Pipe2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	n, err := pipe2(t, addr, flags)
 	return n, nil, err
 }
+
+// LINT.ThenChange(vfs2/pipe.go)

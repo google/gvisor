@@ -50,7 +50,7 @@ func pivotRoot(root string) error {
 	// new_root, so after umounting the old_root, we will see only
 	// the new_root in "/".
 	if err := syscall.PivotRoot(".", "."); err != nil {
-		return fmt.Errorf("error changing root filesystem: %v", err)
+		return fmt.Errorf("pivot_root failed, make sure that the root mount has a parent: %v", err)
 	}
 
 	if err := syscall.Unmount(".", syscall.MNT_DETACH); err != nil {

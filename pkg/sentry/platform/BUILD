@@ -1,5 +1,5 @@
+load("//tools:defs.bzl", "go_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -22,19 +22,18 @@ go_library(
         "mmap_min_addr.go",
         "platform.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/platform",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
+        "//pkg/context",
         "//pkg/log",
+        "//pkg/safecopy",
+        "//pkg/safemem",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
-        "//pkg/sentry/context",
-        "//pkg/sentry/platform/safecopy",
-        "//pkg/sentry/safemem",
         "//pkg/sentry/usage",
-        "//pkg/sentry/usermem",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )

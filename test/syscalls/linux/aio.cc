@@ -89,6 +89,7 @@ class AIOTest : public FileTest {
     FileTest::TearDown();
     if (ctx_ != 0) {
       ASSERT_THAT(DestroyContext(), SyscallSucceeds());
+      ctx_ = 0;
     }
   }
 
@@ -129,7 +130,7 @@ TEST_F(AIOTest, BasicWrite) {
   // aio implementation uses aio_ring. gVisor doesn't and returns all zeroes.
   // Linux implements aio_ring, so skip the zeroes check.
   //
-  // TODO(b/65486370): Remove when gVisor implements aio_ring.
+  // TODO(gvisor.dev/issue/204): Remove when gVisor implements aio_ring.
   auto ring = reinterpret_cast<struct aio_ring*>(ctx_);
   auto magic = IsRunningOnGvisor() ? 0 : AIO_RING_MAGIC;
   EXPECT_EQ(ring->magic, magic);
@@ -188,14 +189,19 @@ TEST_F(AIOTest, BadWrite) {
 }
 
 TEST_F(AIOTest, ExitWithPendingIo) {
-  // Setup a context that is 5 entries deep.
-  ASSERT_THAT(SetupContext(5), SyscallSucceeds());
+  // Setup a context that is 100 entries deep.
+  ASSERT_THAT(SetupContext(100), SyscallSucceeds());
 
   struct iocb cb = CreateCallback();
   struct iocb* cbs[] = {&cb};
 
   // Submit a request but don't complete it to make it pending.
-  EXPECT_THAT(Submit(1, cbs), SyscallSucceeds());
+  for (int i = 0; i < 100; ++i) {
+    EXPECT_THAT(Submit(1, cbs), SyscallSucceeds());
+  }
+
+  ASSERT_THAT(DestroyContext(), SyscallSucceeds());
+  ctx_ = 0;
 }
 
 int Submitter(void* arg) {

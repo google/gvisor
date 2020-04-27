@@ -29,6 +29,7 @@ func TestSizes(t *testing.T) {
 		{IPTGetEntries{}, SizeOfIPTGetEntries},
 		{IPTGetinfo{}, SizeOfIPTGetinfo},
 		{IPTIP{}, SizeOfIPTIP},
+		{IPTOwnerInfo{}, SizeOfIPTOwnerInfo},
 		{IPTReplace{}, SizeOfIPTReplace},
 		{XTCounters{}, SizeOfXTCounters},
 		{XTEntryMatch{}, SizeOfXTEntryMatch},

@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
@@ -135,7 +136,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			}
 
 			// Set the underlying executable.
-			t.MemoryManager().SetExecutable(file.Dirent)
+			t.MemoryManager().SetExecutable(fsbridge.NewFSFile(file))
 
 		case linux.PR_SET_MM_AUXV,
 			linux.PR_SET_MM_START_CODE,
@@ -160,8 +161,8 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		if args[1].Int() != 1 || args[2].Int() != 0 || args[3].Int() != 0 || args[4].Int() != 0 {
 			return 0, nil, syserror.EINVAL
 		}
-		// no_new_privs is assumed to always be set. See
-		// kernel.Task.updateCredsForExec.
+		// PR_SET_NO_NEW_PRIVS is assumed to always be set.
+		// See kernel.Task.updateCredsForExecLocked.
 		return 0, nil, nil
 
 	case linux.PR_GET_NO_NEW_PRIVS:

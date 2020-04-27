@@ -16,6 +16,7 @@ package state
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -133,6 +134,9 @@ func (os *objectState) findCycle() []*objectState {
 // to ensure that all callbacks are executed, otherwise the callback graph was
 // not acyclic.
 type decodeState struct {
+	// ctx is the decode context.
+	ctx context.Context
+
 	// objectByID is the set of objects in progress.
 	objectsByID map[uint64]*objectState
 

@@ -151,7 +151,7 @@ func (ch *channel) send(m message) (uint32, error) {
 	} else {
 		ch.buf.Write8(0) // No incoming FD.
 	}
-	m.Encode(&ch.buf)
+	m.encode(&ch.buf)
 	ssz := uint32(len(ch.buf.data)) // Updated below.
 
 	// Is there a payload?
@@ -205,7 +205,7 @@ func (ch *channel) recv(r message, rsz uint32) (message, error) {
 		ch.buf.data = ch.buf.data[:fs]
 	}
 
-	r.Decode(&ch.buf)
+	r.decode(&ch.buf)
 	if ch.buf.isOverrun() {
 		// Nothing valid was available.
 		log.Debugf("recv [got %d bytes, needed more]", rsz)
@@ -236,7 +236,7 @@ func (ch *channel) recv(r message, rsz uint32) (message, error) {
 
 	// Convert errors appropriately; see above.
 	if rlerr, ok := r.(*Rlerror); ok {
-		return nil, syscall.Errno(rlerr.Error)
+		return r, syscall.Errno(rlerr.Error)
 	}
 
 	return r, nil

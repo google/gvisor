@@ -22,6 +22,8 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
+// LINT.IfChange
+
 // Sync implements linux system call sync(2).
 func Sync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	t.MountNamespace().SyncAll(t)
@@ -135,3 +137,5 @@ func SyncFileRange(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 
 	return 0, nil, syserror.ConvertIntr(err, kernel.ERESTARTSYS)
 }
+
+// LINT.ThenChange(vfs2/sync.go)

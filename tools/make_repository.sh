@@ -17,13 +17,36 @@
 # Parse arguments. We require more than two arguments, which are the private
 # keyring, the e-mail associated with the signer, and the list of packages.
 if [ "$#" -le 3 ]; then
-  echo "usage: $0 <private-key> <signer-email> <component> <packages...>"
+  echo "usage: $0 <private-key> <signer-email> <root> <packages...>"
   exit 1
 fi
-declare -r private_key=$(readlink -e "$1")
-declare -r signer="$2"
-declare -r component="$3"
-shift; shift; shift
+declare -r private_key=$(readlink -e "$1"); shift
+declare -r signer="$1"; shift
+declare -r root="$1"; shift
+
+# Ensure that we have the correct packages installed.
+function apt_install() {
+  while true; do
+    sudo apt-get update &&
+      sudo apt-get install -y "$@" &&
+      true
+    result="${?}"
+    case $result in
+      0)
+        break
+        ;;
+      100)
+        # 100 is the error code that apt-get returns.
+        ;;
+      *)
+        exit $result
+        ;;
+    esac
+  done
+}
+dpkg-sig --help >/dev/null       || apt_install dpkg-sig
+apt-ftparchive --help >/dev/null || apt_install apt-utils
+xz --help >/dev/null             || apt_install xz-utils
 
 # Verbose from this point.
 set -xeo pipefail
@@ -40,7 +63,7 @@ cleanup() {
 trap cleanup EXIT
 gpg --no-default-keyring --keyring "${keyring}" --import "${private_key}" >&2
 
-# Copy the packages, and ensure permissions are correct.
+# Copy the packages into the root.
 for pkg in "$@"; do
   name=$(basename "${pkg}" .deb)
   name=$(basename "${name}" .changes)
@@ -48,32 +71,61 @@ for pkg in "$@"; do
   if [[ "${name}" == "${arch}" ]]; then
     continue # Not a regular package.
   fi
-  mkdir -p "${tmpdir}"/"${component}"/binary-"${arch}"
-  cp -a "${pkg}" "${tmpdir}"/"${component}"/binary-"${arch}"
+  if [[ "${pkg}" =~ ^.*\.deb$ ]]; then
+    # Extract from the debian file.
+    version=$(dpkg --info "${pkg}" | grep -E 'Version:' | cut -d':' -f2)
+  elif [[ "${pkg}" =~ ^.*\.changes$ ]]; then
+    # Extract from the changes file.
+    version=$(grep -E 'Version:' "${pkg}" | cut -d':' -f2)
+  else
+    # Unsupported file type.
+    echo "Unknown file type: ${pkg}"
+    exit 1
+  fi
+  version=${version// /} # Trim whitespace.
+  mkdir -p "${root}"/pool/"${version}"/binary-"${arch}"
+  cp -a "${pkg}" "${root}"/pool/"${version}"/binary-"${arch}"
 done
-find "${tmpdir}" -type f -exec chmod 0644 {} \;
 
-# Ensure there are no symlinks hanging around; these may be remnants of the
-# build process. They may be useful for other things, but we are going to build
-# an index of the actual packages here.
-find "${tmpdir}" -type l -exec rm -f {} \;
+# Ensure all permissions are correct.
+find "${root}"/pool -type f -exec chmod 0644 {} \;
 
 # Sign all packages.
-for file in "${tmpdir}"/"${component}"/binary-*/*.deb; do
+for file in "${root}"/pool/*/binary-*/*.deb; do
   dpkg-sig -g "--no-default-keyring --keyring ${keyring}" --sign builder "${file}" >&2
 done
 
 # Build the package list.
-for dir in "${tmpdir}"/"${component}"/binary-*; do
-  (cd "${dir}" && apt-ftparchive packages . | gzip > Packages.gz)
+declare arches=()
+for dir in "${root}"/pool/*/binary-*; do
+  name=$(basename "${dir}")
+  arch=${name##binary-}
+  arches+=("${arch}")
+  repo_packages="${tmpdir}"/main/"${name}"
+  mkdir -p "${repo_packages}"
+  (cd "${root}" && apt-ftparchive --arch "${arch}" packages pool > "${repo_packages}"/Packages)
+  (cd "${repo_packages}" && cat Packages | gzip > Packages.gz)
+  (cd "${repo_packages}" && cat Packages | xz > Packages.xz)
 done
 
 # Build the release list.
-(cd "${tmpdir}" && apt-ftparchive release . > Release)
+cat > "${tmpdir}"/apt.conf <<EOF
+APT {
+  FTPArchive {
+    Release {
+      Architectures "${arches[@]}";
+      Components "main";
+    };
+  };
+};
+EOF
+(cd "${tmpdir}" && apt-ftparchive -c=apt.conf release . > Release)
+rm "${tmpdir}"/apt.conf
 
 # Sign the release.
-(cd "${tmpdir}" && gpg --no-default-keyring --keyring "${keyring}" --clearsign -o InRelease Release >&2)
-(cd "${tmpdir}" && gpg --no-default-keyring --keyring "${keyring}" -abs -o Release.gpg Release >&2)
+declare -r digest_opts=("--digest-algo" "SHA512" "--cert-digest-algo" "SHA512")
+(cd "${tmpdir}" && gpg --no-default-keyring --keyring "${keyring}" --clearsign "${digest_opts[@]}" -o InRelease Release >&2)
+(cd "${tmpdir}" && gpg --no-default-keyring --keyring "${keyring}" -abs "${digest_opts[@]}" -o Release.gpg Release >&2)
 
 # Show the results.
 echo "${tmpdir}"

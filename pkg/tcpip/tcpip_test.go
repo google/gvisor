@@ -218,7 +218,7 @@ func TestAddressWithPrefixSubnet(t *testing.T) {
 		gotSubnet := ap.Subnet()
 		wantSubnet, err := NewSubnet(tt.subnetAddr, tt.subnetMask)
 		if err != nil {
-			t.Error("NewSubnet(%q, %q) failed: %s", tt.subnetAddr, tt.subnetMask, err)
+			t.Errorf("NewSubnet(%q, %q) failed: %s", tt.subnetAddr, tt.subnetMask, err)
 			continue
 		}
 		if gotSubnet != wantSubnet {

@@ -21,13 +21,13 @@ import (
 
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
-	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -199,14 +199,14 @@ func TestListen(t *testing.T) {
 }
 
 func TestPasscred(t *testing.T) {
-	e := ConnectedEndpoint{}
+	e := &ConnectedEndpoint{}
 	if got, want := e.Passcred(), false; got != want {
 		t.Errorf("Got %#v.Passcred() = %t, want = %t", e, got, want)
 	}
 }
 
 func TestGetLocalAddress(t *testing.T) {
-	e := ConnectedEndpoint{path: "foo"}
+	e := &ConnectedEndpoint{path: "foo"}
 	want := tcpip.FullAddress{Addr: tcpip.Address("foo")}
 	if got, err := e.GetLocalAddress(); err != nil || got != want {
 		t.Errorf("Got %#v.GetLocalAddress() = %#v, %v, want = %#v, %v", e, got, err, want, nil)
@@ -214,7 +214,7 @@ func TestGetLocalAddress(t *testing.T) {
 }
 
 func TestQueuedSize(t *testing.T) {
-	e := ConnectedEndpoint{}
+	e := &ConnectedEndpoint{}
 	tests := []struct {
 		name string
 		f    func() int64

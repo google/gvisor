@@ -17,9 +17,11 @@ package proc
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
+
+// LINT.IfChange
 
 // filesystem is a procfs.
 //
@@ -79,3 +81,5 @@ func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSou
 	// never want them cached.
 	return New(ctx, fs.NewNonCachingMountSource(ctx, f, flags), cgroups)
 }
+
+// LINT.ThenChange(../../fsimpl/proc/filesystem.go)

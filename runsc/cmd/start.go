@@ -16,10 +16,11 @@ package cmd
 
 import (
 	"context"
-	"flag"
+
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/container"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
 // Start implements subcommands.Command for the "start" command.

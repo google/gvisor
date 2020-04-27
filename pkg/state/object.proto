@@ -18,8 +18,8 @@ package gvisor.state.statefile;
 
 // Slice is a slice value.
 message Slice {
-  uint32 length    = 1;
-  uint32 capacity  = 2;
+  uint32 length = 1;
+  uint32 capacity = 2;
   uint64 ref_value = 3;
 }
 
@@ -30,13 +30,13 @@ message Array {
 
 // Map is a map value.
 message Map {
-  repeated Object keys   = 1;
+  repeated Object keys = 1;
   repeated Object values = 2;
 }
 
 // Interface is an interface value.
 message Interface {
-  string type  = 1;
+  string type = 1;
   Object value = 2;
 }
 
@@ -47,7 +47,7 @@ message Struct {
 
 // Field encodes a single field.
 message Field {
-  string name  = 1;
+  string name = 1;
   Object value = 2;
 }
 
@@ -113,28 +113,28 @@ message Float32s {
 // Note that ref_value references an Object.id, below.
 message Object {
   oneof value {
-    bool      bool_value          = 1;
-    bytes     string_value        = 2;
-    int64     int64_value         = 3;
-    uint64    uint64_value        = 4;
-    double    double_value        = 5;
-    uint64    ref_value           = 6;
-    Slice     slice_value         = 7;
-    Array     array_value         = 8;
-    Interface interface_value     = 9;
-    Struct    struct_value        = 10;
-    Map       map_value           = 11;
-    bytes     byte_array_value    = 12;
-    Uint16s   uint16_array_value  = 13;
-    Uint32s   uint32_array_value  = 14;
-    Uint64s   uint64_array_value  = 15;
-    Uintptrs  uintptr_array_value = 16;
-    Int8s     int8_array_value    = 17;
-    Int16s    int16_array_value   = 18;
-    Int32s    int32_array_value   = 19;
-    Int64s    int64_array_value   = 20;
-    Bools     bool_array_value    = 21;
-    Float64s  float64_array_value = 22;
-    Float32s  float32_array_value = 23;
+    bool bool_value = 1;
+    bytes string_value = 2;
+    int64 int64_value = 3;
+    uint64 uint64_value = 4;
+    double double_value = 5;
+    uint64 ref_value = 6;
+    Slice slice_value = 7;
+    Array array_value = 8;
+    Interface interface_value = 9;
+    Struct struct_value = 10;
+    Map map_value = 11;
+    bytes byte_array_value = 12;
+    Uint16s uint16_array_value = 13;
+    Uint32s uint32_array_value = 14;
+    Uint64s uint64_array_value = 15;
+    Uintptrs uintptr_array_value = 16;
+    Int8s int8_array_value = 17;
+    Int16s int16_array_value = 18;
+    Int32s int32_array_value = 19;
+    Int64s int64_array_value = 20;
+    Bools bool_array_value = 21;
+    Float64s float64_array_value = 22;
+    Float32s float32_array_value = 23;
   }
 }

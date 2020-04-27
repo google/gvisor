@@ -12,14 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build amd64 386
+
 package arch
 
 import (
 	"fmt"
-	"syscall"
 
 	"gvisor.dev/gvisor/pkg/cpuid"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // ErrFloatingPoint indicates a failed restore due to unusable floating point
@@ -41,8 +42,8 @@ func (e ErrFloatingPoint) Error() string {
 // and SSE state, so this is the equivalent XSTATE_BV value.
 const fxsaveBV uint64 = cpuid.XSAVEFeatureX87 | cpuid.XSAVEFeatureSSE
 
-// afterLoad is invoked by stateify.
-func (s *State) afterLoad() {
+// afterLoadFPState is invoked by afterLoad.
+func (s *State) afterLoadFPState() {
 	old := s.x86FPState
 
 	// Recreate the slice. This is done to ensure that it is aligned
@@ -87,45 +88,4 @@ func (s *State) afterLoad() {
 
 	// Copy to the new, aligned location.
 	copy(s.x86FPState, old)
-}
-
-// +stateify savable
-type syscallPtraceRegs struct {
-	R15      uint64
-	R14      uint64
-	R13      uint64
-	R12      uint64
-	Rbp      uint64
-	Rbx      uint64
-	R11      uint64
-	R10      uint64
-	R9       uint64
-	R8       uint64
-	Rax      uint64
-	Rcx      uint64
-	Rdx      uint64
-	Rsi      uint64
-	Rdi      uint64
-	Orig_rax uint64
-	Rip      uint64
-	Cs       uint64
-	Eflags   uint64
-	Rsp      uint64
-	Ss       uint64
-	Fs_base  uint64
-	Gs_base  uint64
-	Ds       uint64
-	Es       uint64
-	Fs       uint64
-	Gs       uint64
-}
-
-// saveRegs is invoked by stateify.
-func (s *State) saveRegs() syscallPtraceRegs {
-	return syscallPtraceRegs(s.Regs)
-}
-
-// loadRegs is invoked by stateify.
-func (s *State) loadRegs(r syscallPtraceRegs) {
-	s.Regs = syscall.PtraceRegs(r)
 }

@@ -17,26 +17,26 @@ package netlink
 
 import (
 	"math"
-	"sync"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
-	"gvisor.dev/gvisor/pkg/sentry/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/port"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -53,6 +53,8 @@ const (
 	maxSendBufferSize = 4 << 20 // 4MB
 )
 
+var errNoFilter = syserr.New("no filter attached", linux.ENOENT)
+
 // netlinkSocketDevice is the netlink socket virtual device.
 var netlinkSocketDevice = device.NewAnonDevice()
 
@@ -61,7 +63,7 @@ var netlinkSocketDevice = device.NewAnonDevice()
 // This implementation only supports userspace sending and receiving messages
 // to/from the kernel.
 //
-// Socket implements socket.Socket.
+// Socket implements socket.Socket and transport.Credentialer.
 //
 // +stateify savable
 type Socket struct {
@@ -104,9 +106,19 @@ type Socket struct {
 	// sendBufferSize is the send buffer "size". We don't actually have a
 	// fixed buffer but only consume this many bytes.
 	sendBufferSize uint32
+
+	// passcred indicates if this socket wants SCM credentials.
+	passcred bool
+
+	// filter indicates that this socket has a BPF filter "installed".
+	//
+	// TODO(gvisor.dev/issue/1119): We don't actually support filtering,
+	// this is just bookkeeping for tracking add/remove.
+	filter bool
 }
 
 var _ socket.Socket = (*Socket)(nil)
+var _ transport.Credentialer = (*Socket)(nil)
 
 // NewSocket creates a new Socket.
 func NewSocket(t *kernel.Task, skType linux.SockType, protocol Protocol) (*Socket, *syserr.Error) {
@@ -170,6 +182,22 @@ func (s *Socket) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
 // EventUnregister implements waiter.Waitable.EventUnregister.
 func (s *Socket) EventUnregister(e *waiter.Entry) {
 	s.ep.EventUnregister(e)
+}
+
+// Passcred implements transport.Credentialer.Passcred.
+func (s *Socket) Passcred() bool {
+	s.mu.Lock()
+	passcred := s.passcred
+	s.mu.Unlock()
+	return passcred
+}
+
+// ConnectedPasscred implements transport.Credentialer.ConnectedPasscred.
+func (s *Socket) ConnectedPasscred() bool {
+	// This socket is connected to the kernel, which doesn't need creds.
+	//
+	// This is arbitrary, as ConnectedPasscred on this type has no callers.
+	return false
 }
 
 // Ioctl implements fs.FileOperations.Ioctl.
@@ -309,9 +337,20 @@ func (s *Socket) GetSockOpt(t *kernel.Task, level int, name int, outPtr usermem.
 			// We don't have limit on receiving size.
 			return int32(math.MaxInt32), nil
 
+		case linux.SO_PASSCRED:
+			if outLen < sizeOfInt32 {
+				return nil, syserr.ErrInvalidArgument
+			}
+			var passcred int32
+			if s.Passcred() {
+				passcred = 1
+			}
+			return passcred, nil
+
 		default:
 			socket.GetSockOptEmitUnimplementedEvent(t, name)
 		}
+
 	case linux.SOL_NETLINK:
 		switch name {
 		case linux.NETLINK_BROADCAST_ERROR,
@@ -348,6 +387,7 @@ func (s *Socket) SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *sy
 			s.sendBufferSize = size
 			s.mu.Unlock()
 			return nil
+
 		case linux.SO_RCVBUF:
 			if len(opt) < sizeOfInt32 {
 				return syserr.ErrInvalidArgument
@@ -355,6 +395,52 @@ func (s *Socket) SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *sy
 			// We don't have limit on receiving size. So just accept anything as
 			// valid for compatibility.
 			return nil
+
+		case linux.SO_PASSCRED:
+			if len(opt) < sizeOfInt32 {
+				return syserr.ErrInvalidArgument
+			}
+			passcred := usermem.ByteOrder.Uint32(opt)
+
+			s.mu.Lock()
+			s.passcred = passcred != 0
+			s.mu.Unlock()
+			return nil
+
+		case linux.SO_ATTACH_FILTER:
+			// TODO(gvisor.dev/issue/1119): We don't actually
+			// support filtering. If this socket can't ever send
+			// messages, then there is nothing to filter and we can
+			// advertise support. Otherwise, be conservative and
+			// return an error.
+			if s.protocol.CanSend() {
+				socket.SetSockOptEmitUnimplementedEvent(t, name)
+				return syserr.ErrProtocolNotAvailable
+			}
+
+			s.mu.Lock()
+			s.filter = true
+			s.mu.Unlock()
+			return nil
+
+		case linux.SO_DETACH_FILTER:
+			// TODO(gvisor.dev/issue/1119): See above.
+			if s.protocol.CanSend() {
+				socket.SetSockOptEmitUnimplementedEvent(t, name)
+				return syserr.ErrProtocolNotAvailable
+			}
+
+			s.mu.Lock()
+			filter := s.filter
+			s.filter = false
+			s.mu.Unlock()
+
+			if !filter {
+				return errNoFilter
+			}
+
+			return nil
+
 		default:
 			socket.SetSockOptEmitUnimplementedEvent(t, name)
 		}
@@ -413,29 +499,29 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 	trunc := flags&linux.MSG_TRUNC != 0
 
 	r := unix.EndpointReader{
+		Ctx:      t,
 		Endpoint: s.ep,
 		Peek:     flags&linux.MSG_PEEK != 0,
+	}
+
+	doRead := func() (int64, error) {
+		return dst.CopyOutFrom(t, &r)
 	}
 
 	// If MSG_TRUNC is set with a zero byte destination then we still need
 	// to read the message and discard it, or in the case where MSG_PEEK is
 	// set, leave it be. In both cases the full message length must be
-	// returned. However, the memory manager for the destination will not read
-	// the endpoint if the destination is zero length.
-	//
-	// In order for the endpoint to be read when the destination size is zero,
-	// we must cause a read of the endpoint by using a separate fake zero
-	// length block sequence and calling the EndpointReader directly.
+	// returned.
 	if trunc && dst.Addrs.NumBytes() == 0 {
-		// Perform a read to a zero byte block sequence. We can ignore the
-		// original destination since it was zero bytes. The length returned by
-		// ReadToBlocks is ignored and we return the full message length to comply
-		// with MSG_TRUNC.
-		_, err := r.ReadToBlocks(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(make([]byte, 0))))
-		return int(r.MsgSize), linux.MSG_TRUNC, from, fromLen, socket.ControlMessages{}, syserr.FromError(err)
+		doRead = func() (int64, error) {
+			err := r.Truncate()
+			// Always return zero for bytes read since the destination size is
+			// zero.
+			return 0, err
+		}
 	}
 
-	if n, err := dst.CopyOutFrom(t, &r); err != syserror.ErrWouldBlock || flags&linux.MSG_DONTWAIT != 0 {
+	if n, err := doRead(); err != syserror.ErrWouldBlock || flags&linux.MSG_DONTWAIT != 0 {
 		var mflags int
 		if n < int64(r.MsgSize) {
 			mflags |= linux.MSG_TRUNC
@@ -453,7 +539,7 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 	defer s.EventUnregister(&e)
 
 	for {
-		if n, err := dst.CopyOutFrom(t, &r); err != syserror.ErrWouldBlock {
+		if n, err := doRead(); err != syserror.ErrWouldBlock {
 			var mflags int
 			if n < int64(r.MsgSize) {
 				mflags |= linux.MSG_TRUNC
@@ -483,6 +569,26 @@ func (s *Socket) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, _
 	})
 }
 
+// kernelSCM implements control.SCMCredentials with credentials that represent
+// the kernel itself rather than a Task.
+//
+// +stateify savable
+type kernelSCM struct{}
+
+// Equals implements transport.CredentialsControlMessage.Equals.
+func (kernelSCM) Equals(oc transport.CredentialsControlMessage) bool {
+	_, ok := oc.(kernelSCM)
+	return ok
+}
+
+// Credentials implements control.SCMCredentials.Credentials.
+func (kernelSCM) Credentials(*kernel.Task) (kernel.ThreadID, auth.UID, auth.GID) {
+	return 0, auth.RootUID, auth.RootGID
+}
+
+// kernelCreds is the concrete version of kernelSCM used in all creds.
+var kernelCreds = &kernelSCM{}
+
 // sendResponse sends the response messages in ms back to userspace.
 func (s *Socket) sendResponse(ctx context.Context, ms *MessageSet) *syserr.Error {
 	// Linux combines multiple netlink messages into a single datagram.
@@ -491,10 +597,15 @@ func (s *Socket) sendResponse(ctx context.Context, ms *MessageSet) *syserr.Error
 		bufs = append(bufs, m.Finalize())
 	}
 
+	// All messages are from the kernel.
+	cms := transport.ControlMessages{
+		Credentials: kernelCreds,
+	}
+
 	if len(bufs) > 0 {
 		// RecvMsg never receives the address, so we don't need to send
 		// one.
-		_, notify, err := s.connection.Send(bufs, transport.ControlMessages{}, tcpip.FullAddress{})
+		_, notify, err := s.connection.Send(bufs, cms, tcpip.FullAddress{})
 		// If the buffer is full, we simply drop messages, just like
 		// Linux.
 		if err != nil && err != syserr.ErrWouldBlock {
@@ -521,7 +632,7 @@ func (s *Socket) sendResponse(ctx context.Context, ms *MessageSet) *syserr.Error
 		// Add the dump_done_errno payload.
 		m.Put(int64(0))
 
-		_, notify, err := s.connection.Send([][]byte{m.Finalize()}, transport.ControlMessages{}, tcpip.FullAddress{})
+		_, notify, err := s.connection.Send([][]byte{m.Finalize()}, cms, tcpip.FullAddress{})
 		if err != nil && err != syserr.ErrWouldBlock {
 			return err
 		}
@@ -533,47 +644,38 @@ func (s *Socket) sendResponse(ctx context.Context, ms *MessageSet) *syserr.Error
 	return nil
 }
 
-func (s *Socket) dumpErrorMesage(ctx context.Context, hdr linux.NetlinkMessageHeader, ms *MessageSet, err *syserr.Error) *syserr.Error {
+func dumpErrorMesage(hdr linux.NetlinkMessageHeader, ms *MessageSet, err *syserr.Error) {
 	m := ms.AddMessage(linux.NetlinkMessageHeader{
 		Type: linux.NLMSG_ERROR,
 	})
-
 	m.Put(linux.NetlinkErrorMessage{
 		Error:  int32(-err.ToLinux().Number()),
 		Header: hdr,
 	})
-	return nil
+}
 
+func dumpAckMesage(hdr linux.NetlinkMessageHeader, ms *MessageSet) {
+	m := ms.AddMessage(linux.NetlinkMessageHeader{
+		Type: linux.NLMSG_ERROR,
+	})
+	m.Put(linux.NetlinkErrorMessage{
+		Error:  0,
+		Header: hdr,
+	})
 }
 
 // processMessages handles each message in buf, passing it to the protocol
 // handler for final handling.
 func (s *Socket) processMessages(ctx context.Context, buf []byte) *syserr.Error {
 	for len(buf) > 0 {
-		if len(buf) < linux.NetlinkMessageHeaderSize {
+		msg, rest, ok := ParseMessage(buf)
+		if !ok {
 			// Linux ignores messages that are too short. See
 			// net/netlink/af_netlink.c:netlink_rcv_skb.
 			break
 		}
-
-		var hdr linux.NetlinkMessageHeader
-		binary.Unmarshal(buf[:linux.NetlinkMessageHeaderSize], usermem.ByteOrder, &hdr)
-
-		if hdr.Length < linux.NetlinkMessageHeaderSize || uint64(hdr.Length) > uint64(len(buf)) {
-			// Linux ignores malformed messages. See
-			// net/netlink/af_netlink.c:netlink_rcv_skb.
-			break
-		}
-
-		// Data from this message.
-		data := buf[linux.NetlinkMessageHeaderSize:hdr.Length]
-
-		// Advance to the next message.
-		next := alignUp(int(hdr.Length), linux.NLMSG_ALIGNTO)
-		if next >= len(buf)-1 {
-			next = len(buf) - 1
-		}
-		buf = buf[next:]
+		buf = rest
+		hdr := msg.Header()
 
 		// Ignore control messages.
 		if hdr.Type < linux.NLMSG_MIN_TYPE {
@@ -581,19 +683,10 @@ func (s *Socket) processMessages(ctx context.Context, buf []byte) *syserr.Error 
 		}
 
 		ms := NewMessageSet(s.portID, hdr.Seq)
-		var err *syserr.Error
-		// TODO(b/68877377): ACKs not supported yet.
-		if hdr.Flags&linux.NLM_F_ACK == linux.NLM_F_ACK {
-			err = syserr.ErrNotSupported
-		} else {
-
-			err = s.protocol.ProcessMessage(ctx, hdr, data, ms)
-		}
-		if err != nil {
-			ms = NewMessageSet(s.portID, hdr.Seq)
-			if err := s.dumpErrorMesage(ctx, hdr, ms, err); err != nil {
-				return err
-			}
+		if err := s.protocol.ProcessMessage(ctx, msg, ms); err != nil {
+			dumpErrorMesage(hdr, ms, err)
+		} else if hdr.Flags&linux.NLM_F_ACK == linux.NLM_F_ACK {
+			dumpAckMesage(hdr, ms)
 		}
 
 		if err := s.sendResponse(ctx, ms); err != nil {

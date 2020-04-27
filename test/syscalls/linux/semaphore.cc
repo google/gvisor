@@ -447,9 +447,8 @@ TEST(SemaphoreTest, SemCtlGetPidFork) {
 
   const pid_t child_pid = fork();
   if (child_pid == 0) {
-    ASSERT_THAT(semctl(sem.get(), 0, SETVAL, 1), SyscallSucceeds());
-    ASSERT_THAT(semctl(sem.get(), 0, GETPID),
-                SyscallSucceedsWithValue(getpid()));
+    TEST_PCHECK(semctl(sem.get(), 0, SETVAL, 1) == 0);
+    TEST_PCHECK(semctl(sem.get(), 0, GETPID) == getpid());
 
     _exit(0);
   }

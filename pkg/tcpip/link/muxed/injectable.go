@@ -80,33 +80,33 @@ func (m *InjectableEndpoint) IsAttached() bool {
 }
 
 // InjectInbound implements stack.InjectableLinkEndpoint.
-func (m *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView) {
-	m.dispatcher.DeliverNetworkPacket(m, "" /* remote */, "" /* local */, protocol, vv, nil /* linkHeader */)
+func (m *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
+	m.dispatcher.DeliverNetworkPacket(m, "" /* remote */, "" /* local */, protocol, pkt)
 }
 
 // WritePackets writes outbound packets to the appropriate
 // LinkInjectableEndpoint based on the RemoteAddress. HandleLocal only works if
 // r.RemoteAddress has a route registered in this endpoint.
-func (m *InjectableEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (m *InjectableEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	endpoint, ok := m.routes[r.RemoteAddress]
 	if !ok {
 		return 0, tcpip.ErrNoRoute
 	}
-	return endpoint.WritePackets(r, gso, hdrs, payload, protocol)
+	return endpoint.WritePackets(r, gso, pkts, protocol)
 }
 
 // WritePacket writes outbound packets to the appropriate LinkInjectableEndpoint
 // based on the RemoteAddress. HandleLocal only works if r.RemoteAddress has a
 // route registered in this endpoint.
-func (m *InjectableEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (m *InjectableEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) *tcpip.Error {
 	if endpoint, ok := m.routes[r.RemoteAddress]; ok {
-		return endpoint.WritePacket(r, gso, hdr, payload, protocol)
+		return endpoint.WritePacket(r, gso, protocol, pkt)
 	}
 	return tcpip.ErrNoRoute
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (m *InjectableEndpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
+func (m *InjectableEndpoint) WriteRawPacket(buffer.VectorisedView) *tcpip.Error {
 	// WriteRawPacket doesn't get a route or network address, so there's
 	// nowhere to write this.
 	return tcpip.ErrNoRoute

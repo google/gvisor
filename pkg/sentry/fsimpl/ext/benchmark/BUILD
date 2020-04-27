@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_test")
 
 package(licenses = ["notice"])
 
@@ -7,8 +7,9 @@ go_test(
     size = "small",
     srcs = ["benchmark_test.go"],
     deps = [
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
+        "//pkg/context",
+        "//pkg/fspath",
+        "//pkg/sentry/contexttest",
         "//pkg/sentry/fsimpl/ext",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",

@@ -89,6 +89,38 @@ type File interface {
 	// On the server, SetAttr has a write concurrency guarantee.
 	SetAttr(valid SetAttrMask, attr SetAttr) error
 
+	// GetXattr returns extended attributes of this node.
+	//
+	// Size indicates the size of the buffer that has been allocated to hold the
+	// attribute value. If the value is larger than size, implementations may
+	// return ERANGE to indicate that the buffer is too small, but they are also
+	// free to ignore the hint entirely (i.e. the value returned may be larger
+	// than size). All size checking is done independently at the syscall layer.
+	//
+	// On the server, GetXattr has a read concurrency guarantee.
+	GetXattr(name string, size uint64) (string, error)
+
+	// SetXattr sets extended attributes on this node.
+	//
+	// On the server, SetXattr has a write concurrency guarantee.
+	SetXattr(name, value string, flags uint32) error
+
+	// ListXattr lists the names of the extended attributes on this node.
+	//
+	// Size indicates the size of the buffer that has been allocated to hold the
+	// attribute list. If the list would be larger than size, implementations may
+	// return ERANGE to indicate that the buffer is too small, but they are also
+	// free to ignore the hint entirely (i.e. the value returned may be larger
+	// than size). All size checking is done independently at the syscall layer.
+	//
+	// On the server, ListXattr has a read concurrency guarantee.
+	ListXattr(size uint64) (map[string]struct{}, error)
+
+	// RemoveXattr removes extended attributes on this node.
+	//
+	// On the server, RemoveXattr has a write concurrency guarantee.
+	RemoveXattr(name string) error
+
 	// Allocate allows the caller to directly manipulate the allocated disk space
 	// for the file. See fallocate(2) for more details.
 	Allocate(mode AllocateMode, offset, length uint64) error
@@ -116,7 +148,7 @@ type File interface {
 	// N.B. The server must resolve any lazy paths when open is called.
 	// After this point, read and write may be called on files with no
 	// deletion check, so resolving in the data path is not viable.
-	Open(mode OpenFlags) (*fd.FD, QID, uint32, error)
+	Open(flags OpenFlags) (*fd.FD, QID, uint32, error)
 
 	// Read reads from this file. Open must be called first.
 	//

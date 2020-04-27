@@ -1,0 +1,42 @@
+"arch: arm":
+  - "**/*_arm64.*"
+  - "**/*_aarch64.*"
+"arch: x86_64":
+  - "**/*_amd64.*"
+  - "**/*_x86.*"
+"area: bazel":
+  - "**/BUILD"
+  - "**/*.bzl"
+"area: docs":
+  - "**/g3doc/**"
+  - "**/README.md"
+"area: filesystem":
+  - "pkg/sentry/fs/**"
+  - "pkg/sentry/vfs/**"
+  - "pkg/sentry/fsimpl/**"
+"area: hostinet":
+  - "pkg/sentry/socket/hostinet/**"
+"area: networking":
+  - "pkg/tcpip/**"
+  - "pkg/sentry/socket/**"
+"area: kernel":
+  - "pkg/sentry/arch/**"
+  - "pkg/sentry/kernel/**"
+  - "pkg/sentry/syscalls/**"
+"area: mm":
+  - "pkg/sentry/mm/**"
+"area: tests":
+  - "**/tests/**"
+  - "**/*_test.go"
+  - "**/test/**"
+"area: tooling":
+  - "tools/**"
+"dependencies":
+  - "WORKSPACE"
+  - "go.mod"
+  - "go.sum"
+"platform: kvm":
+  - "pkg/sentry/platform/kvm/**"
+  - "pkg/sentry/platform/ring0/**"
+"platform: ptrace":
+  - "pkg/sentry/platform/ptrace/**"

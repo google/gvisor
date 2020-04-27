@@ -15,12 +15,13 @@
 package tcp
 
 import (
+	"fmt"
 	"math"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/sleep"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -28,8 +29,11 @@ import (
 )
 
 const (
-	// minRTO is the minimum allowed value for the retransmit timeout.
-	minRTO = 200 * time.Millisecond
+	// MinRTO is the minimum allowed value for the retransmit timeout.
+	MinRTO = 200 * time.Millisecond
+
+	// MaxRTO is the maximum allowed value for the retransmit timeout.
+	MaxRTO = 120 * time.Second
 
 	// InitialCwnd is the initial congestion window.
 	InitialCwnd = 10
@@ -123,16 +127,16 @@ type sender struct {
 	// sndNxt is the sequence number of the next segment to be sent.
 	sndNxt seqnum.Value
 
-	// sndNxtList is the sequence number of the next segment to be added to
-	// the send list.
-	sndNxtList seqnum.Value
-
 	// rttMeasureSeqNum is the sequence number being used for the latest RTT
 	// measurement.
 	rttMeasureSeqNum seqnum.Value
 
 	// rttMeasureTime is the time when the rttMeasureSeqNum was sent.
 	rttMeasureTime time.Time `state:".(unixTime)"`
+
+	// firstRetransmittedSegXmitTime is the original transmit time of
+	// the first segment that was retransmitted due to RTO expiration.
+	firstRetransmittedSegXmitTime time.Time `state:".(unixTime)"`
 
 	closed      bool
 	writeNext   *segment
@@ -145,6 +149,9 @@ type sender struct {
 	// section 2 of RFC 6298.
 	rtt rtt
 	rto time.Duration
+
+	// minRTO is the minimum permitted value for sender.rto.
+	minRTO time.Duration
 
 	// maxPayloadSize is the maximum size of the payload of a given segment.
 	// It is initialized on demand.
@@ -222,7 +229,6 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 		sndWnd:           sndWnd,
 		sndUna:           iss + 1,
 		sndNxt:           iss + 1,
-		sndNxtList:       iss + 1,
 		rto:              1 * time.Second,
 		rttMeasureSeqNum: iss + 1,
 		lastSendTime:     time.Now(),
@@ -257,6 +263,13 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 	// the maxPayloadSize as the smss when determining if a segment is lost
 	// etc.
 	s.ep.scoreboard = NewSACKScoreboard(uint16(s.maxPayloadSize), iss)
+
+	// Get Stack wide minRTO.
+	var v tcpip.TCPMinRTOOption
+	if err := ep.stack.TransportProtocolOption(ProtocolNumber, &v); err != nil {
+		panic(fmt.Sprintf("unable to get minRTO from stack: %s", err))
+	}
+	s.minRTO = time.Duration(v)
 
 	return s
 }
@@ -392,8 +405,8 @@ func (s *sender) updateRTO(rtt time.Duration) {
 
 	s.rto = s.rtt.srtt + 4*s.rtt.rttvar
 	s.rtt.Unlock()
-	if s.rto < minRTO {
-		s.rto = minRTO
+	if s.rto < s.minRTO {
+		s.rto = s.minRTO
 	}
 }
 
@@ -435,17 +448,49 @@ func (s *sender) retransmitTimerExpired() bool {
 		return true
 	}
 
+	// TODO(b/147297758): Band-aid fix, retransmitTimer can fire in some edge cases
+	// when writeList is empty. Remove this once we have a proper fix for this
+	// issue.
+	if s.writeList.Front() == nil {
+		return true
+	}
+
 	s.ep.stack.Stats().TCP.Timeouts.Increment()
 	s.ep.stats.SendErrors.Timeouts.Increment()
 
-	// Give up if we've waited more than a minute since the last resend.
-	if s.rto >= 60*time.Second {
+	// Give up if we've waited more than a minute since the last resend or
+	// if a user time out is set and we have exceeded the user specified
+	// timeout since the first retransmission.
+	uto := s.ep.userTimeout
+
+	if s.firstRetransmittedSegXmitTime.IsZero() {
+		// We store the original xmitTime of the segment that we are
+		// about to retransmit as the retransmission time. This is
+		// required as by the time the retransmitTimer has expired the
+		// segment has already been sent and unacked for the RTO at the
+		// time the segment was sent.
+		s.firstRetransmittedSegXmitTime = s.writeList.Front().xmitTime
+	}
+
+	elapsed := time.Since(s.firstRetransmittedSegXmitTime)
+	remaining := MaxRTO
+	if uto != 0 {
+		// Cap to the user specified timeout if one is specified.
+		remaining = uto - elapsed
+	}
+
+	if remaining <= 0 || s.rto >= MaxRTO {
 		return false
 	}
 
 	// Set new timeout. The timer will be restarted by the call to sendData
 	// below.
 	s.rto *= 2
+
+	// Cap RTO to remaining time.
+	if s.rto > remaining {
+		s.rto = remaining
+	}
 
 	// See: https://tools.ietf.org/html/rfc6582#section-3.2 Step 4.
 	//
@@ -664,17 +709,14 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 		}
 		seg.flags = header.TCPFlagAck | header.TCPFlagFin
 		segEnd = seg.sequenceNumber.Add(1)
-		// Transition to FIN-WAIT1 state since we're initiating an active close.
-		s.ep.mu.Lock()
-		switch s.ep.state {
+		// Update the state to reflect that we have now
+		// queued a FIN.
+		switch s.ep.EndpointState() {
 		case StateCloseWait:
-			// We've already received a FIN and are now sending our own. The
-			// sender is now awaiting a final ACK for this FIN.
-			s.ep.state = StateLastAck
+			s.ep.setEndpointState(StateLastAck)
 		default:
-			s.ep.state = StateFinWait1
+			s.ep.setEndpointState(StateFinWait1)
 		}
-		s.ep.mu.Unlock()
 	} else {
 		// We're sending a non-FIN segment.
 		if seg.flags&header.TCPFlagFin != 0 {
@@ -1168,6 +1210,8 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 		// RFC 6298 Rule 5.3
 		if s.sndUna == s.sndNxt {
 			s.outstanding = 0
+			// Reset firstRetransmittedSegXmitTime to the zero value.
+			s.firstRetransmittedSegXmitTime = time.Time{}
 			s.resendTimer.disable()
 		}
 	}
@@ -1188,7 +1232,7 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 
 // sendSegment sends the specified segment.
 func (s *sender) sendSegment(seg *segment) *tcpip.Error {
-	if !seg.xmitTime.IsZero() {
+	if seg.xmitCount > 0 {
 		s.ep.stack.Stats().TCP.Retransmits.Increment()
 		s.ep.stats.SendErrors.Retransmits.Increment()
 		if s.sndCwnd < s.sndSsthresh {
@@ -1196,6 +1240,7 @@ func (s *sender) sendSegment(seg *segment) *tcpip.Error {
 		}
 	}
 	seg.xmitTime = time.Now()
+	seg.xmitCount++
 	return s.sendSegmentFromView(seg.data, seg.flags, seg.sequenceNumber)
 }
 

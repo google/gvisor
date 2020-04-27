@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <linux/unistd.h>
 #include <sys/eventfd.h>
 #include <sys/resource.h>
 #include <sys/sendfile.h>
@@ -57,6 +58,62 @@ TEST(SpliceTest, TwoRegularFiles) {
   EXPECT_THAT(splice(in_fd.get(), &in_offset, out_fd.get(), nullptr, 1, 0),
               SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(splice(in_fd.get(), nullptr, out_fd.get(), nullptr, 1, 0),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+int memfd_create(const std::string& name, unsigned int flags) {
+  return syscall(__NR_memfd_create, name.c_str(), flags);
+}
+
+TEST(SpliceTest, NegativeOffset) {
+  // Create a new pipe.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor rfd(fds[0]);
+  const FileDescriptor wfd(fds[1]);
+
+  // Fill the pipe.
+  std::vector<char> buf(kPageSize);
+  RandomizeBuffer(buf.data(), buf.size());
+  ASSERT_THAT(write(wfd.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(kPageSize));
+
+  // Open the output file as write only.
+  int fd;
+  EXPECT_THAT(fd = memfd_create("negative", 0), SyscallSucceeds());
+  const FileDescriptor out_fd(fd);
+
+  loff_t out_offset = 0xffffffffffffffffull;
+  constexpr int kSize = 2;
+  EXPECT_THAT(splice(rfd.get(), nullptr, out_fd.get(), &out_offset, kSize, 0),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+// Write offset + size overflows int64.
+//
+// This is a regression test for b/148041624.
+TEST(SpliceTest, WriteOverflow) {
+  // Create a new pipe.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor rfd(fds[0]);
+  const FileDescriptor wfd(fds[1]);
+
+  // Fill the pipe.
+  std::vector<char> buf(kPageSize);
+  RandomizeBuffer(buf.data(), buf.size());
+  ASSERT_THAT(write(wfd.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(kPageSize));
+
+  // Open the output file.
+  int fd;
+  EXPECT_THAT(fd = memfd_create("overflow", 0), SyscallSucceeds());
+  const FileDescriptor out_fd(fd);
+
+  // out_offset + kSize overflows INT64_MAX.
+  loff_t out_offset = 0x7ffffffffffffffeull;
+  constexpr int kSize = 3;
+  EXPECT_THAT(splice(rfd.get(), nullptr, out_fd.get(), &out_offset, kSize, 0),
               SyscallFailsWithErrno(EINVAL));
 }
 

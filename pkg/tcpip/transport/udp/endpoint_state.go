@@ -69,6 +69,9 @@ func (e *endpoint) afterLoad() {
 
 // Resume implements tcpip.ResumableEndpoint.Resume.
 func (e *endpoint) Resume(s *stack.Stack) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	e.stack = s
 
 	for _, m := range e.multicastMemberships {
@@ -109,7 +112,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	// pass it to the reservation machinery.
 	id := e.ID
 	e.ID.LocalPort = 0
-	e.ID, err = e.registerWithStack(e.RegisterNICID, e.effectiveNetProtos, id)
+	e.ID, e.boundBindToDevice, err = e.registerWithStack(e.RegisterNICID, e.effectiveNetProtos, id)
 	if err != nil {
 		panic(err)
 	}

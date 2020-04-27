@@ -14,12 +14,9 @@
 
 package linux
 
-// EpollEvent is equivalent to struct epoll_event from epoll(2).
-type EpollEvent struct {
-	Events uint32
-	Fd     int32
-	Data   int32
-}
+import (
+	"gvisor.dev/gvisor/pkg/binary"
+)
 
 // Event masks.
 const (
@@ -38,8 +35,14 @@ const (
 
 // Per-file descriptor flags.
 const (
-	EPOLLET      = 0x80000000
-	EPOLLONESHOT = 0x40000000
+	EPOLLEXCLUSIVE = 1 << 28
+	EPOLLWAKEUP    = 1 << 29
+	EPOLLONESHOT   = 1 << 30
+	EPOLLET        = 1 << 31
+
+	// EP_PRIVATE_BITS is fs/eventpoll.c:EP_PRIVATE_BITS, the set of all bits
+	// in an epoll event mask that correspond to flags rather than I/O events.
+	EP_PRIVATE_BITS = EPOLLEXCLUSIVE | EPOLLWAKEUP | EPOLLONESHOT | EPOLLET
 )
 
 // Operation flags.
@@ -54,3 +57,6 @@ const (
 	EPOLL_CTL_DEL = 0x2
 	EPOLL_CTL_MOD = 0x3
 )
+
+// SizeOfEpollEvent is the size of EpollEvent struct.
+var SizeOfEpollEvent = int(binary.Size(EpollEvent{}))

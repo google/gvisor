@@ -15,7 +15,6 @@
 package kernel
 
 import (
-	"sync"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -25,6 +24,7 @@ import (
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -238,8 +238,8 @@ type ThreadGroup struct {
 	// execed is protected by the TaskSet mutex.
 	execed bool
 
-	// rscr is the thread group's RSEQ critical region.
-	rscr atomic.Value `state:".(*RSEQCriticalRegion)"`
+	// oldRSeqCritical is the thread group's old rseq critical region.
+	oldRSeqCritical atomic.Value `state:".(*OldRSeqCriticalRegion)"`
 
 	// mounts is the thread group's mount namespace. This does not really
 	// correspond to a "mount namespace" in Linux, but is more like a
@@ -254,37 +254,44 @@ type ThreadGroup struct {
 	//
 	// tty is protected by the signal mutex.
 	tty *TTY
+
+	// oomScoreAdj is the thread group's OOM score adjustment. This is
+	// currently not used but is maintained for consistency.
+	// TODO(gvisor.dev/issue/1967)
+	//
+	// oomScoreAdj is accessed using atomic memory operations.
+	oomScoreAdj int32
 }
 
-// newThreadGroup returns a new, empty thread group in PID namespace ns. The
+// NewThreadGroup returns a new, empty thread group in PID namespace pidns. The
 // thread group leader will send its parent terminationSignal when it exits.
 // The new thread group isn't visible to the system until a task has been
 // created inside of it by a successful call to TaskSet.NewTask.
-func (k *Kernel) newThreadGroup(mounts *fs.MountNamespace, ns *PIDNamespace, sh *SignalHandlers, terminationSignal linux.Signal, limits *limits.LimitSet, monotonicClock *timekeeperClock) *ThreadGroup {
+func (k *Kernel) NewThreadGroup(mntns *fs.MountNamespace, pidns *PIDNamespace, sh *SignalHandlers, terminationSignal linux.Signal, limits *limits.LimitSet) *ThreadGroup {
 	tg := &ThreadGroup{
 		threadGroupNode: threadGroupNode{
-			pidns: ns,
+			pidns: pidns,
 		},
 		signalHandlers:    sh,
 		terminationSignal: terminationSignal,
 		ioUsage:           &usage.IO{},
 		limits:            limits,
-		mounts:            mounts,
+		mounts:            mntns,
 	}
 	tg.itimerRealTimer = ktime.NewTimer(k.monotonicClock, &itimerRealListener{tg: tg})
 	tg.timers = make(map[linux.TimerID]*IntervalTimer)
-	tg.rscr.Store(&RSEQCriticalRegion{})
+	tg.oldRSeqCritical.Store(&OldRSeqCriticalRegion{})
 	return tg
 }
 
-// saveRscr is invoked by stateify.
-func (tg *ThreadGroup) saveRscr() *RSEQCriticalRegion {
-	return tg.rscr.Load().(*RSEQCriticalRegion)
+// saveOldRSeqCritical is invoked by stateify.
+func (tg *ThreadGroup) saveOldRSeqCritical() *OldRSeqCriticalRegion {
+	return tg.oldRSeqCritical.Load().(*OldRSeqCriticalRegion)
 }
 
-// loadRscr is invoked by stateify.
-func (tg *ThreadGroup) loadRscr(rscr *RSEQCriticalRegion) {
-	tg.rscr.Store(rscr)
+// loadOldRSeqCritical is invoked by stateify.
+func (tg *ThreadGroup) loadOldRSeqCritical(r *OldRSeqCriticalRegion) {
+	tg.oldRSeqCritical.Store(r)
 }
 
 // SignalHandlers returns the signal handlers used by tg.
@@ -317,7 +324,9 @@ func (tg *ThreadGroup) release() {
 	for _, it := range its {
 		it.DestroyTimer()
 	}
-	tg.mounts.DecRef()
+	if tg.mounts != nil {
+		tg.mounts.DecRef()
+	}
 }
 
 // forEachChildThreadGroupLocked indicates over all child ThreadGroups.

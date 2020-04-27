@@ -23,6 +23,7 @@
 
 #include "gtest/gtest.h"
 #include "absl/strings/string_view.h"
+#include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/temp_path.h"
@@ -35,61 +36,39 @@ namespace {
 
 class SendFileTest : public ::testing::TestWithParam<int> {
  protected:
-  PosixErrorOr<std::tuple<int, int>> Sockets() {
+  PosixErrorOr<std::unique_ptr<SocketPair>> Sockets(int type) {
     // Bind a server socket.
     int family = GetParam();
-    struct sockaddr server_addr = {};
     switch (family) {
       case AF_INET: {
-        struct sockaddr_in *server_addr_in =
-            reinterpret_cast<struct sockaddr_in *>(&server_addr);
-        server_addr_in->sin_family = family;
-        server_addr_in->sin_addr.s_addr = INADDR_ANY;
-        break;
+        if (type == SOCK_STREAM) {
+          return SocketPairKind{
+              "TCP", AF_INET, type, 0,
+              TCPAcceptBindSocketPairCreator(AF_INET, type, 0, false)}
+              .Create();
+        } else {
+          return SocketPairKind{
+              "UDP", AF_INET, type, 0,
+              UDPBidirectionalBindSocketPairCreator(AF_INET, type, 0, false)}
+              .Create();
+        }
       }
       case AF_UNIX: {
-        struct sockaddr_un *server_addr_un =
-            reinterpret_cast<struct sockaddr_un *>(&server_addr);
-        server_addr_un->sun_family = family;
-        server_addr_un->sun_path[0] = '\0';
-        break;
+        if (type == SOCK_STREAM) {
+          return SocketPairKind{
+              "UNIX", AF_UNIX, type, 0,
+              FilesystemAcceptBindSocketPairCreator(AF_UNIX, type, 0)}
+              .Create();
+        } else {
+          return SocketPairKind{
+              "UNIX", AF_UNIX, type, 0,
+              FilesystemBidirectionalBindSocketPairCreator(AF_UNIX, type, 0)}
+              .Create();
+        }
       }
       default:
         return PosixError(EINVAL);
     }
-    int server = socket(family, SOCK_STREAM, 0);
-    if (bind(server, &server_addr, sizeof(server_addr)) < 0) {
-      return PosixError(errno);
-    }
-    if (listen(server, 1) < 0) {
-      close(server);
-      return PosixError(errno);
-    }
-
-    // Fetch the address; both are anonymous.
-    socklen_t length = sizeof(server_addr);
-    if (getsockname(server, &server_addr, &length) < 0) {
-      close(server);
-      return PosixError(errno);
-    }
-
-    // Connect the client.
-    int client = socket(family, SOCK_STREAM, 0);
-    if (connect(client, &server_addr, length) < 0) {
-      close(server);
-      close(client);
-      return PosixError(errno);
-    }
-
-    // Accept on the server.
-    int server_client = accept(server, nullptr, 0);
-    if (server_client < 0) {
-      close(server);
-      close(client);
-      return PosixError(errno);
-    }
-    close(server);
-    return std::make_tuple(client, server_client);
   }
 };
 
@@ -106,9 +85,7 @@ TEST_P(SendFileTest, SendMultiple) {
   const TempPath out_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
   // Create sockets.
-  std::tuple<int, int> fds = ASSERT_NO_ERRNO_AND_VALUE(Sockets());
-  const FileDescriptor server(std::get<0>(fds));
-  FileDescriptor client(std::get<1>(fds));  // non-const, reset is used.
+  auto socks = ASSERT_NO_ERRNO_AND_VALUE(Sockets(SOCK_STREAM));
 
   // Thread that reads data from socket and dumps to a file.
   ScopedThread th([&] {
@@ -118,7 +95,7 @@ TEST_P(SendFileTest, SendMultiple) {
     // Read until socket is closed.
     char buf[10240];
     for (int cnt = 0;; cnt++) {
-      int r = RetryEINTR(read)(server.get(), buf, sizeof(buf));
+      int r = RetryEINTR(read)(socks->first_fd(), buf, sizeof(buf));
       // We cannot afford to save on every read() call.
       if (cnt % 1000 == 0) {
         ASSERT_THAT(r, SyscallSucceeds());
@@ -149,10 +126,10 @@ TEST_P(SendFileTest, SendMultiple) {
   for (size_t sent = 0; sent < data.size(); cnt++) {
     const size_t remain = data.size() - sent;
     std::cout << "sendfile, size=" << data.size() << ", sent=" << sent
-              << ", remain=" << remain;
+              << ", remain=" << remain << std::endl;
 
     // Send data and verify that sendfile returns the correct value.
-    int res = sendfile(client.get(), inf.get(), nullptr, remain);
+    int res = sendfile(socks->second_fd(), inf.get(), nullptr, remain);
     // We cannot afford to save on every sendfile() call.
     if (cnt % 120 == 0) {
       MaybeSave();
@@ -169,7 +146,7 @@ TEST_P(SendFileTest, SendMultiple) {
   }
 
   // Close socket to stop thread.
-  client.reset();
+  close(socks->release_second_fd());
   th.Join();
 
   // Verify that the output file has the correct data.
@@ -183,9 +160,7 @@ TEST_P(SendFileTest, SendMultiple) {
 
 TEST_P(SendFileTest, Shutdown) {
   // Create a socket.
-  std::tuple<int, int> fds = ASSERT_NO_ERRNO_AND_VALUE(Sockets());
-  const FileDescriptor client(std::get<0>(fds));
-  FileDescriptor server(std::get<1>(fds));  // non-const, released below.
+  auto socks = ASSERT_NO_ERRNO_AND_VALUE(Sockets(SOCK_STREAM));
 
   // If this is a TCP socket, then turn off linger.
   if (GetParam() == AF_INET) {
@@ -193,7 +168,7 @@ TEST_P(SendFileTest, Shutdown) {
     sl.l_onoff = 1;
     sl.l_linger = 0;
     ASSERT_THAT(
-        setsockopt(server.get(), SOL_SOCKET, SO_LINGER, &sl, sizeof(sl)),
+        setsockopt(socks->first_fd(), SOL_SOCKET, SO_LINGER, &sl, sizeof(sl)),
         SyscallSucceeds());
   }
 
@@ -210,14 +185,14 @@ TEST_P(SendFileTest, Shutdown) {
   // checking the contents (other tests do that), so we just re-use the same
   // buffer as above.
   ScopedThread t([&]() {
-    int done = 0;
+    size_t done = 0;
     while (done < data.size()) {
-      int n = read(server.get(), data.data(), data.size());
+      int n = RetryEINTR(read)(socks->first_fd(), data.data(), data.size());
       ASSERT_THAT(n, SyscallSucceeds());
       done += n;
     }
     // Close the server side socket.
-    ASSERT_THAT(close(server.release()), SyscallSucceeds());
+    close(socks->release_first_fd());
   });
 
   // Continuously stream from the file to the socket. Note we do not assert
@@ -225,13 +200,27 @@ TEST_P(SendFileTest, Shutdown) {
   // data is written. Eventually, we should get a connection reset error.
   while (1) {
     off_t offset = 0;  // Always read from the start.
-    int n = sendfile(client.get(), inf.get(), &offset, data.size());
+    int n = sendfile(socks->second_fd(), inf.get(), &offset, data.size());
     EXPECT_THAT(n, AnyOf(SyscallFailsWithErrno(ECONNRESET),
                          SyscallFailsWithErrno(EPIPE), SyscallSucceeds()));
     if (n <= 0) {
       break;
     }
   }
+}
+
+TEST_P(SendFileTest, SendpageFromEmptyFileToUDP) {
+  auto socks = ASSERT_NO_ERRNO_AND_VALUE(Sockets(SOCK_DGRAM));
+
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
+
+  // The value to the count argument has to be so that it is impossible to
+  // allocate a buffer of this size. In Linux, sendfile transfer at most
+  // 0x7ffff000 (MAX_RW_COUNT) bytes.
+  EXPECT_THAT(sendfile(socks->first_fd(), fd.get(), 0x0, 0x8000000000004),
+              SyscallSucceedsWithValue(0));
 }
 
 INSTANTIATE_TEST_SUITE_P(AddressFamily, SendFileTest,

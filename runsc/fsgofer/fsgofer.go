@@ -29,7 +29,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"sync"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -37,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -199,6 +199,7 @@ func (a *attachPoint) makeQID(stat syscall.Stat_t) p9.QID {
 // The reason that the file is not opened initially as read-write is for better
 // performance with 'overlay2' storage driver. overlay2 eagerly copies the
 // entire file up when it's opened in write mode, and would perform badly when
+// multiple files are only being opened for read (esp. startup).
 type localFile struct {
 	p9.DefaultWalkGetAttr
 
@@ -366,23 +367,24 @@ func fchown(fd int, uid p9.UID, gid p9.GID) error {
 }
 
 // Open implements p9.File.
-func (l *localFile) Open(mode p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
+func (l *localFile) Open(flags p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 	if l.isOpen() {
 		panic(fmt.Sprintf("attempting to open already opened file: %q", l.hostPath))
 	}
 
 	// Check if control file can be used or if a new open must be created.
 	var newFile *fd.FD
-	if mode == p9.ReadOnly {
-		log.Debugf("Open reusing control file, mode: %v, %q", mode, l.hostPath)
+	if flags == p9.ReadOnly {
+		log.Debugf("Open reusing control file, flags: %v, %q", flags, l.hostPath)
 		newFile = l.file
 	} else {
 		// Ideally reopen would call name_to_handle_at (with empty name) and
 		// open_by_handle_at to reopen the file without using 'hostPath'. However,
 		// name_to_handle_at and open_by_handle_at aren't supported by overlay2.
-		log.Debugf("Open reopening file, mode: %v, %q", mode, l.hostPath)
+		log.Debugf("Open reopening file, flags: %v, %q", flags, l.hostPath)
 		var err error
-		newFile, err = reopenProcFd(l.file, openFlags|mode.OSFlags())
+		// Constrain open flags to the open mode and O_TRUNC.
+		newFile, err = reopenProcFd(l.file, openFlags|(flags.OSFlags()&(syscall.O_ACCMODE|syscall.O_TRUNC)))
 		if err != nil {
 			return nil, p9.QID{}, 0, extractErrno(err)
 		}
@@ -409,7 +411,7 @@ func (l *localFile) Open(mode p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 		}
 		l.file = newFile
 	}
-	l.mode = mode
+	l.mode = flags & p9.OpenFlagsModeMask
 	return fd, l.attachPoint.makeQID(stat), 0, nil
 }
 
@@ -601,7 +603,7 @@ func (l *localFile) GetAttr(_ p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error)
 		Mode:             p9.FileMode(stat.Mode),
 		UID:              p9.UID(stat.Uid),
 		GID:              p9.GID(stat.Gid),
-		NLink:            stat.Nlink,
+		NLink:            uint64(stat.Nlink),
 		RDev:             stat.Rdev,
 		Size:             uint64(stat.Size),
 		BlockSize:        uint64(stat.Blksize),
@@ -765,6 +767,22 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	return err
 }
 
+func (*localFile) GetXattr(string, uint64) (string, error) {
+	return "", syscall.EOPNOTSUPP
+}
+
+func (*localFile) SetXattr(string, string, uint32) error {
+	return syscall.EOPNOTSUPP
+}
+
+func (*localFile) ListXattr(uint64) (map[string]struct{}, error) {
+	return nil, syscall.EOPNOTSUPP
+}
+
+func (*localFile) RemoveXattr(string) error {
+	return syscall.EOPNOTSUPP
+}
+
 // Allocate implements p9.File.
 func (l *localFile) Allocate(mode p9.AllocateMode, offset, length uint64) error {
 	if !l.isOpen() {
@@ -778,7 +796,7 @@ func (l *localFile) Allocate(mode p9.AllocateMode, offset, length uint64) error 
 }
 
 // Rename implements p9.File; this should never be called.
-func (l *localFile) Rename(p9.File, string) error {
+func (*localFile) Rename(p9.File, string) error {
 	panic("rename called directly")
 }
 
@@ -955,13 +973,13 @@ func (l *localFile) Readdir(offset uint64, count uint32) ([]p9.Dirent, error) {
 }
 
 func (l *localFile) readDirent(f int, offset uint64, count uint32, skip uint64) ([]p9.Dirent, error) {
+	var dirents []p9.Dirent
+
 	// Limit 'count' to cap the slice size that is returned.
 	const maxCount = 100000
 	if count > maxCount {
 		count = maxCount
 	}
-
-	dirents := make([]p9.Dirent, 0, count)
 
 	// Pre-allocate buffers that will be reused to get partial results.
 	direntsBuf := make([]byte, 8192)

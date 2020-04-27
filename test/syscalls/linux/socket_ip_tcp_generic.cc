@@ -24,14 +24,17 @@
 #include <sys/un.h>
 
 #include "gtest/gtest.h"
-#include "gtest/gtest.h"
+#include "absl/memory/memory.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
 
-TEST_P(TCPSocketPairTest, TcpInfoSucceedes) {
+TEST_P(TCPSocketPairTest, TcpInfoSucceeds) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   struct tcp_info opt = {};
@@ -40,7 +43,7 @@ TEST_P(TCPSocketPairTest, TcpInfoSucceedes) {
               SyscallSucceeds());
 }
 
-TEST_P(TCPSocketPairTest, ShortTcpInfoSucceedes) {
+TEST_P(TCPSocketPairTest, ShortTcpInfoSucceeds) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   struct tcp_info opt = {};
@@ -49,7 +52,7 @@ TEST_P(TCPSocketPairTest, ShortTcpInfoSucceedes) {
               SyscallSucceeds());
 }
 
-TEST_P(TCPSocketPairTest, ZeroTcpInfoSucceedes) {
+TEST_P(TCPSocketPairTest, ZeroTcpInfoSucceeds) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   struct tcp_info opt = {};
@@ -242,6 +245,31 @@ TEST_P(TCPSocketPairTest, ShutdownRdAllowsReadOfReceivedDataBeforeEOF) {
               SyscallSucceedsWithValue(1));
   ASSERT_THAT(RetryEINTR(read)(sockets->second_fd(), buf, sizeof(buf)),
               SyscallSucceedsWithValue(0));
+}
+
+// This test verifies that a shutdown(wr) by the server after sending
+// data allows the client to still read() the queued data and a client
+// close after sending response allows server to read the incoming
+// response.
+TEST_P(TCPSocketPairTest, ShutdownWrServerClientClose) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  char buf[10] = {};
+  ScopedThread t([&]() {
+    ASSERT_THAT(RetryEINTR(read)(sockets->first_fd(), buf, sizeof(buf)),
+                SyscallSucceedsWithValue(sizeof(buf)));
+    ASSERT_THAT(RetryEINTR(write)(sockets->first_fd(), buf, sizeof(buf)),
+                SyscallSucceedsWithValue(sizeof(buf)));
+    ASSERT_THAT(close(sockets->release_first_fd()),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(RetryEINTR(write)(sockets->second_fd(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+  ASSERT_THAT(RetryEINTR(shutdown)(sockets->second_fd(), SHUT_WR),
+              SyscallSucceedsWithValue(0));
+  t.Join();
+
+  ASSERT_THAT(RetryEINTR(read)(sockets->second_fd(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
 }
 
 TEST_P(TCPSocketPairTest, ClosedReadNonBlockingSocket) {
@@ -695,6 +723,189 @@ TEST_P(TCPSocketPairTest, SetCongestionControlFailsForUnsupported) {
                          &got_cc, &optlen),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(0, memcmp(got_cc, old_cc, sizeof(old_cc)));
+}
+
+// Linux and Netstack both default to a 60s TCP_LINGER2 timeout.
+constexpr int kDefaultTCPLingerTimeout = 60;
+
+TEST_P(TCPSocketPairTest, TCPLingerTimeoutDefault) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  EXPECT_THAT(
+      getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kDefaultTCPLingerTimeout);
+}
+
+TEST_P(TCPSocketPairTest, SetTCPLingerTimeoutZeroOrLess) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  constexpr int kZero = 0;
+  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2, &kZero,
+                         sizeof(kZero)),
+              SyscallSucceedsWithValue(0));
+
+  constexpr int kNegative = -1234;
+  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2,
+                         &kNegative, sizeof(kNegative)),
+              SyscallSucceedsWithValue(0));
+}
+
+TEST_P(TCPSocketPairTest, SetTCPLingerTimeoutAboveDefault) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Values above the net.ipv4.tcp_fin_timeout are capped to tcp_fin_timeout
+  // on linux (defaults to 60 seconds on linux).
+  constexpr int kAboveDefault = kDefaultTCPLingerTimeout + 1;
+  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2,
+                         &kAboveDefault, sizeof(kAboveDefault)),
+              SyscallSucceedsWithValue(0));
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  EXPECT_THAT(
+      getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kDefaultTCPLingerTimeout);
+}
+
+TEST_P(TCPSocketPairTest, SetTCPLingerTimeout) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Values above the net.ipv4.tcp_fin_timeout are capped to tcp_fin_timeout
+  // on linux (defaults to 60 seconds on linux).
+  constexpr int kTCPLingerTimeout = kDefaultTCPLingerTimeout - 1;
+  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2,
+                         &kTCPLingerTimeout, sizeof(kTCPLingerTimeout)),
+              SyscallSucceedsWithValue(0));
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  EXPECT_THAT(
+      getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kTCPLingerTimeout);
+}
+
+TEST_P(TCPSocketPairTest, TestTCPCloseWithData) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  ScopedThread t([&]() {
+    // Close one end to trigger sending of a FIN.
+    ASSERT_THAT(shutdown(sockets->second_fd(), SHUT_WR), SyscallSucceeds());
+    char buf[3];
+    ASSERT_THAT(read(sockets->second_fd(), buf, 3),
+                SyscallSucceedsWithValue(3));
+    absl::SleepFor(absl::Milliseconds(50));
+    ASSERT_THAT(close(sockets->release_second_fd()), SyscallSucceeds());
+  });
+
+  absl::SleepFor(absl::Milliseconds(50));
+  // Send some data then close.
+  constexpr char kStr[] = "abc";
+  ASSERT_THAT(write(sockets->first_fd(), kStr, 3), SyscallSucceedsWithValue(3));
+  t.Join();
+  ASSERT_THAT(close(sockets->release_first_fd()), SyscallSucceeds());
+}
+
+TEST_P(TCPSocketPairTest, TCPUserTimeoutDefault) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_USER_TIMEOUT,
+                         &get, &get_len),
+              SyscallSucceeds());
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, 0);  // 0 ms (disabled).
+}
+
+TEST_P(TCPSocketPairTest, SetTCPUserTimeoutZero) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  constexpr int kZero = 0;
+  ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_USER_TIMEOUT,
+                         &kZero, sizeof(kZero)),
+              SyscallSucceeds());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_USER_TIMEOUT,
+                         &get, &get_len),
+              SyscallSucceeds());
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, 0);  // 0 ms (disabled).
+}
+
+TEST_P(TCPSocketPairTest, SetTCPUserTimeoutBelowZero) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  constexpr int kNeg = -10;
+  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_USER_TIMEOUT,
+                         &kNeg, sizeof(kNeg)),
+              SyscallFailsWithErrno(EINVAL));
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_USER_TIMEOUT,
+                         &get, &get_len),
+              SyscallSucceeds());
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, 0);  // 0 ms (disabled).
+}
+
+TEST_P(TCPSocketPairTest, SetTCPUserTimeoutAboveZero) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  constexpr int kAbove = 10;
+  ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_USER_TIMEOUT,
+                         &kAbove, sizeof(kAbove)),
+              SyscallSucceeds());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_USER_TIMEOUT,
+                         &get, &get_len),
+              SyscallSucceeds());
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kAbove);
+}
+
+TEST_P(TCPSocketPairTest, TCPResetDuringClose_NoRandomSave) {
+  DisableSave ds;  // Too many syscalls.
+  constexpr int kThreadCount = 1000;
+  std::unique_ptr<ScopedThread> instances[kThreadCount];
+  for (int i = 0; i < kThreadCount; i++) {
+    instances[i] = absl::make_unique<ScopedThread>([&]() {
+      auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+      ScopedThread t([&]() {
+        // Close one end to trigger sending of a FIN.
+        struct pollfd poll_fd = {sockets->second_fd(), POLLIN | POLLHUP, 0};
+        // Wait up to 20 seconds for the data.
+        constexpr int kPollTimeoutMs = 20000;
+        ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+                    SyscallSucceedsWithValue(1));
+        ASSERT_THAT(close(sockets->release_second_fd()), SyscallSucceeds());
+      });
+
+      // Send some data then close.
+      constexpr char kStr[] = "abc";
+      ASSERT_THAT(write(sockets->first_fd(), kStr, 3),
+                  SyscallSucceedsWithValue(3));
+      absl::SleepFor(absl::Milliseconds(10));
+      ASSERT_THAT(close(sockets->release_first_fd()), SyscallSucceeds());
+      t.Join();
+    });
+  }
+  for (int i = 0; i < kThreadCount; i++) {
+    instances[i]->Join();
+  }
 }
 
 }  // namespace testing

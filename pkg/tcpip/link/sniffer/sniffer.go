@@ -21,11 +21,9 @@
 package sniffer
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
-	"os"
 	"sync/atomic"
 	"time"
 
@@ -42,17 +40,24 @@ import (
 // LogPackets must be accessed atomically.
 var LogPackets uint32 = 1
 
-// LogPacketsToFile is a flag used to enable or disable logging packets to a
-// pcap file. Valid values are 0 or 1. A file must have been specified when the
+// LogPacketsToPCAP is a flag used to enable or disable logging packets to a
+// pcap writer. Valid values are 0 or 1. A writer must have been specified when the
 // sniffer was created for this flag to have effect.
 //
-// LogPacketsToFile must be accessed atomically.
-var LogPacketsToFile uint32 = 1
+// LogPacketsToPCAP must be accessed atomically.
+var LogPacketsToPCAP uint32 = 1
+
+var transportProtocolMinSizes map[tcpip.TransportProtocolNumber]int = map[tcpip.TransportProtocolNumber]int{
+	header.ICMPv4ProtocolNumber: header.IPv4MinimumSize,
+	header.ICMPv6ProtocolNumber: header.IPv6MinimumSize,
+	header.UDPProtocolNumber:    header.UDPMinimumSize,
+	header.TCPProtocolNumber:    header.TCPMinimumSize,
+}
 
 type endpoint struct {
 	dispatcher stack.NetworkDispatcher
 	lower      stack.LinkEndpoint
-	file       *os.File
+	writer     io.Writer
 	maxPCAPLen uint32
 }
 
@@ -92,23 +97,22 @@ func writePCAPHeader(w io.Writer, maxLen uint32) error {
 	})
 }
 
-// NewWithFile creates a new sniffer link-layer endpoint. It wraps around
-// another endpoint and logs packets and they traverse the endpoint.
+// NewWithWriter creates a new sniffer link-layer endpoint. It wraps around
+// another endpoint and logs packets as they traverse the endpoint.
 //
-// Packets can be logged to file in the pcap format. A sniffer created
-// with this function will not emit packets using the standard log
-// package.
+// Packets are logged to writer in the pcap format. A sniffer created with this
+// function will not emit packets using the standard log package.
 //
 // snapLen is the maximum amount of a packet to be saved. Packets with a length
-// less than or equal too snapLen will be saved in their entirety. Longer
+// less than or equal to snapLen will be saved in their entirety. Longer
 // packets will be truncated to snapLen.
-func NewWithFile(lower stack.LinkEndpoint, file *os.File, snapLen uint32) (stack.LinkEndpoint, error) {
-	if err := writePCAPHeader(file, snapLen); err != nil {
+func NewWithWriter(lower stack.LinkEndpoint, writer io.Writer, snapLen uint32) (stack.LinkEndpoint, error) {
+	if err := writePCAPHeader(writer, snapLen); err != nil {
 		return nil, err
 	}
 	return &endpoint{
 		lower:      lower,
-		file:       file,
+		writer:     writer,
 		maxPCAPLen: snapLen,
 	}, nil
 }
@@ -116,38 +120,9 @@ func NewWithFile(lower stack.LinkEndpoint, file *os.File, snapLen uint32) (stack
 // DeliverNetworkPacket implements the stack.NetworkDispatcher interface. It is
 // called by the link-layer endpoint being wrapped when a packet arrives, and
 // logs the packet before forwarding to the actual dispatcher.
-func (e *endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView, linkHeader buffer.View) {
-	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
-		logPacket("recv", protocol, vv.First(), nil)
-	}
-	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
-		vs := vv.Views()
-		length := vv.Size()
-		if length > int(e.maxPCAPLen) {
-			length = int(e.maxPCAPLen)
-		}
-
-		buf := bytes.NewBuffer(make([]byte, 0, pcapPacketHeaderLen+length))
-		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(vv.Size()))); err != nil {
-			panic(err)
-		}
-		for _, v := range vs {
-			if length == 0 {
-				break
-			}
-			if len(v) > length {
-				v = v[:length]
-			}
-			if _, err := buf.Write([]byte(v)); err != nil {
-				panic(err)
-			}
-			length -= len(v)
-		}
-		if _, err := e.file.Write(buf.Bytes()); err != nil {
-			panic(err)
-		}
-	}
-	e.dispatcher.DeliverNetworkPacket(e, remote, local, protocol, vv, linkHeader)
+func (e *endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
+	e.dumpPacket("recv", nil, protocol, &pkt)
+	e.dispatcher.DeliverNetworkPacket(e, remote, local, protocol, pkt)
 }
 
 // Attach implements the stack.LinkEndpoint interface. It saves the dispatcher
@@ -193,31 +168,39 @@ func (e *endpoint) GSOMaxSize() uint32 {
 	return 0
 }
 
-func (e *endpoint) dumpPacket(gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) {
-	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
-		logPacket("send", protocol, hdr.View(), gso)
+func (e *endpoint) dumpPacket(prefix string, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	writer := e.writer
+	if writer == nil && atomic.LoadUint32(&LogPackets) == 1 {
+		logPacket(prefix, protocol, pkt, gso)
 	}
-	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
-		hdrBuf := hdr.View()
-		length := len(hdrBuf) + payload.Size()
-		if length > int(e.maxPCAPLen) {
-			length = int(e.maxPCAPLen)
+	if writer != nil && atomic.LoadUint32(&LogPacketsToPCAP) == 1 {
+		totalLength := pkt.Header.UsedLength() + pkt.Data.Size()
+		length := totalLength
+		if max := int(e.maxPCAPLen); length > max {
+			length = max
 		}
-
-		buf := bytes.NewBuffer(make([]byte, 0, pcapPacketHeaderLen+length))
-		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(len(hdrBuf)+payload.Size()))); err != nil {
+		if err := binary.Write(writer, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(totalLength))); err != nil {
 			panic(err)
 		}
-		if len(hdrBuf) > length {
-			hdrBuf = hdrBuf[:length]
+		write := func(b []byte) {
+			if len(b) > length {
+				b = b[:length]
+			}
+			for len(b) != 0 {
+				n, err := writer.Write(b)
+				if err != nil {
+					panic(err)
+				}
+				b = b[n:]
+				length -= n
+			}
 		}
-		if _, err := buf.Write(hdrBuf); err != nil {
-			panic(err)
-		}
-		length -= len(hdrBuf)
-		logVectorisedView(payload, length, buf)
-		if _, err := e.file.Write(buf.Bytes()); err != nil {
-			panic(err)
+		write(pkt.Header.View())
+		for _, view := range pkt.Data.Views() {
+			if length == 0 {
+				break
+			}
+			write(view)
 		}
 	}
 }
@@ -225,68 +208,33 @@ func (e *endpoint) dumpPacket(gso *stack.GSO, hdr buffer.Prependable, payload bu
 // WritePacket implements the stack.LinkEndpoint interface. It is called by
 // higher-level protocols to write packets; it just logs the packet and
 // forwards the request to the lower endpoint.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
-	e.dumpPacket(gso, hdr, payload, protocol)
-	return e.lower.WritePacket(r, gso, hdr, payload, protocol)
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) *tcpip.Error {
+	e.dumpPacket("send", gso, protocol, &pkt)
+	return e.lower.WritePacket(r, gso, protocol, pkt)
 }
 
 // WritePackets implements the stack.LinkEndpoint interface. It is called by
 // higher-level protocols to write packets; it just logs the packet and
 // forwards the request to the lower endpoint.
-func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
-	view := payload.ToView()
-	for _, d := range hdrs {
-		e.dumpPacket(gso, d.Hdr, buffer.NewVectorisedView(d.Size, []buffer.View{view[d.Off:][:d.Size]}), protocol)
+func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+		e.dumpPacket("send", gso, protocol, pkt)
 	}
-	return e.lower.WritePackets(r, gso, hdrs, payload, protocol)
+	return e.lower.WritePackets(r, gso, pkts, protocol)
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (e *endpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
-	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
-		logPacket("send", 0, buffer.View("[raw packet, no header available]"), nil /* gso */)
-	}
-	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
-		length := packet.Size()
-		if length > int(e.maxPCAPLen) {
-			length = int(e.maxPCAPLen)
-		}
-
-		buf := bytes.NewBuffer(make([]byte, 0, pcapPacketHeaderLen+length))
-		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(packet.Size()))); err != nil {
-			panic(err)
-		}
-		logVectorisedView(packet, length, buf)
-		if _, err := e.file.Write(buf.Bytes()); err != nil {
-			panic(err)
-		}
-	}
-	return e.lower.WriteRawPacket(packet)
-}
-
-func logVectorisedView(vv buffer.VectorisedView, length int, buf *bytes.Buffer) {
-	if length <= 0 {
-		return
-	}
-	for _, v := range vv.Views() {
-		if len(v) > length {
-			v = v[:length]
-		}
-		n, err := buf.Write(v)
-		if err != nil {
-			panic(err)
-		}
-		length -= n
-		if length == 0 {
-			return
-		}
-	}
+func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
+	e.dumpPacket("send", nil, 0, &stack.PacketBuffer{
+		Data: vv,
+	})
+	return e.lower.WriteRawPacket(vv)
 }
 
 // Wait implements stack.LinkEndpoint.Wait.
-func (*endpoint) Wait() {}
+func (e *endpoint) Wait() { e.lower.Wait() }
 
-func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.View, gso *stack.GSO) {
+func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, gso *stack.GSO) {
 	// Figure out the network layer info.
 	var transProto uint8
 	src := tcpip.Address("unknown")
@@ -295,28 +243,49 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.Vie
 	size := uint16(0)
 	var fragmentOffset uint16
 	var moreFragments bool
+
+	// Create a clone of pkt, including any headers if present. Avoid allocating
+	// backing memory for the clone.
+	views := [8]buffer.View{}
+	vv := buffer.NewVectorisedView(0, views[:0])
+	vv.AppendView(pkt.Header.View())
+	vv.Append(pkt.Data)
+
 	switch protocol {
 	case header.IPv4ProtocolNumber:
-		ipv4 := header.IPv4(b)
+		hdr, ok := vv.PullUp(header.IPv4MinimumSize)
+		if !ok {
+			return
+		}
+		ipv4 := header.IPv4(hdr)
 		fragmentOffset = ipv4.FragmentOffset()
 		moreFragments = ipv4.Flags()&header.IPv4FlagMoreFragments == header.IPv4FlagMoreFragments
 		src = ipv4.SourceAddress()
 		dst = ipv4.DestinationAddress()
 		transProto = ipv4.Protocol()
 		size = ipv4.TotalLength() - uint16(ipv4.HeaderLength())
-		b = b[ipv4.HeaderLength():]
+		vv.TrimFront(int(ipv4.HeaderLength()))
 		id = int(ipv4.ID())
 
 	case header.IPv6ProtocolNumber:
-		ipv6 := header.IPv6(b)
+		hdr, ok := vv.PullUp(header.IPv6MinimumSize)
+		if !ok {
+			return
+		}
+		ipv6 := header.IPv6(hdr)
 		src = ipv6.SourceAddress()
 		dst = ipv6.DestinationAddress()
 		transProto = ipv6.NextHeader()
 		size = ipv6.PayloadLength()
-		b = b[header.IPv6MinimumSize:]
+		vv.TrimFront(header.IPv6MinimumSize)
 
 	case header.ARPProtocolNumber:
-		arp := header.ARP(b)
+		hdr, ok := vv.PullUp(header.ARPSize)
+		if !ok {
+			return
+		}
+		vv.TrimFront(header.ARPSize)
+		arp := header.ARP(hdr)
 		log.Infof(
 			"%s arp %v (%v) -> %v (%v) valid:%v",
 			prefix,
@@ -330,6 +299,13 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.Vie
 		return
 	}
 
+	// We aren't guaranteed to have a transport header - it's possible for
+	// writes via raw endpoints to contain only network headers.
+	if minSize, ok := transportProtocolMinSizes[tcpip.TransportProtocolNumber(transProto)]; ok && vv.Size() < minSize {
+		log.Infof("%s %v -> %v transport protocol: %d, but no transport header found (possible raw packet)", prefix, src, dst, transProto)
+		return
+	}
+
 	// Figure out the transport layer info.
 	transName := "unknown"
 	srcPort := uint16(0)
@@ -338,7 +314,11 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.Vie
 	switch tcpip.TransportProtocolNumber(transProto) {
 	case header.ICMPv4ProtocolNumber:
 		transName = "icmp"
-		icmp := header.ICMPv4(b)
+		hdr, ok := vv.PullUp(header.ICMPv4MinimumSize)
+		if !ok {
+			break
+		}
+		icmp := header.ICMPv4(hdr)
 		icmpType := "unknown"
 		if fragmentOffset == 0 {
 			switch icmp.Type() {
@@ -371,7 +351,11 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.Vie
 
 	case header.ICMPv6ProtocolNumber:
 		transName = "icmp"
-		icmp := header.ICMPv6(b)
+		hdr, ok := vv.PullUp(header.ICMPv6MinimumSize)
+		if !ok {
+			break
+		}
+		icmp := header.ICMPv6(hdr)
 		icmpType := "unknown"
 		switch icmp.Type() {
 		case header.ICMPv6DstUnreachable:
@@ -402,7 +386,11 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.Vie
 
 	case header.UDPProtocolNumber:
 		transName = "udp"
-		udp := header.UDP(b)
+		hdr, ok := vv.PullUp(header.UDPMinimumSize)
+		if !ok {
+			break
+		}
+		udp := header.UDP(hdr)
 		if fragmentOffset == 0 && len(udp) >= header.UDPMinimumSize {
 			srcPort = udp.SourcePort()
 			dstPort = udp.DestinationPort()
@@ -412,7 +400,11 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.Vie
 
 	case header.TCPProtocolNumber:
 		transName = "tcp"
-		tcp := header.TCP(b)
+		hdr, ok := vv.PullUp(header.TCPMinimumSize)
+		if !ok {
+			break
+		}
+		tcp := header.TCP(hdr)
 		if fragmentOffset == 0 && len(tcp) >= header.TCPMinimumSize {
 			offset := int(tcp.DataOffset())
 			if offset < header.TCPMinimumSize {

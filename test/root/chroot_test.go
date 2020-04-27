@@ -24,17 +24,20 @@ import (
 	"strings"
 	"testing"
 
-	"gvisor.dev/gvisor/runsc/dockerutil"
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
 )
 
 // TestChroot verifies that the sandbox is chroot'd and that mounts are cleaned
 // up after the sandbox is destroyed.
 func TestChroot(t *testing.T) {
-	d := dockerutil.MakeDocker("chroot-test")
-	if err := d.Run("alpine", "sleep", "10000"); err != nil {
+	d := dockerutil.MakeDocker(t)
+	defer d.CleanUp()
+
+	if err := d.Spawn(dockerutil.RunOpts{
+		Image: "basic/alpine",
+	}, "sleep", "10000"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
-	defer d.CleanUp()
 
 	pid, err := d.SandboxPid()
 	if err != nil {
@@ -76,11 +79,14 @@ func TestChroot(t *testing.T) {
 }
 
 func TestChrootGofer(t *testing.T) {
-	d := dockerutil.MakeDocker("chroot-test")
-	if err := d.Run("alpine", "sleep", "10000"); err != nil {
+	d := dockerutil.MakeDocker(t)
+	defer d.CleanUp()
+
+	if err := d.Spawn(dockerutil.RunOpts{
+		Image: "basic/alpine",
+	}, "sleep", "10000"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
-	defer d.CleanUp()
 
 	// It's tricky to find gofers. Get sandbox PID first, then find parent. From
 	// parent get all immediate children, remove the sandbox, and everything else

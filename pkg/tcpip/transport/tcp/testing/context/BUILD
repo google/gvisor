@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -6,9 +6,8 @@ go_library(
     name = "context",
     testonly = 1,
     srcs = ["context.go"],
-    importpath = "gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context",
     visibility = [
-        "//:sandbox",
+        "//visibility:public",
     ],
     deps = [
         "//pkg/tcpip",

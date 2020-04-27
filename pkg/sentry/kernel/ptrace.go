@@ -20,8 +20,8 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // ptraceOptions are the subset of options controlling a task's ptrace behavior
@@ -184,7 +184,6 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 	if targetCreds.PermittedCaps&^callerCreds.PermittedCaps != 0 {
 		return false
 	}
-	// TODO: Yama LSM
 	return true
 }
 

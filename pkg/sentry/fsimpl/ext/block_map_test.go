@@ -87,12 +87,14 @@ func blockMapSetUp(t *testing.T) (*blockMapFile, []byte) {
 	mockDisk := make([]byte, mockBMDiskSize)
 	regFile := regularFile{
 		inode: inode{
+			fs: &filesystem{
+				dev: bytes.NewReader(mockDisk),
+			},
 			diskInode: &disklayout.InodeNew{
 				InodeOld: disklayout.InodeOld{
 					SizeLo: getMockBMFileFize(),
 				},
 			},
-			dev:     bytes.NewReader(mockDisk),
 			blkSize: uint64(mockBMBlkSize),
 		},
 	}

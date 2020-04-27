@@ -1,5 +1,4 @@
-load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("//test/syscalls:build_defs.bzl", "select_for_linux")
+load("//tools:defs.bzl", "cc_library", "cc_test", "gbenchmark", "gtest", "select_system")
 
 package(
     default_visibility = ["//:sandbox"],
@@ -42,7 +41,7 @@ cc_library(
         ":save_util",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -56,7 +55,7 @@ cc_library(
         ":posix_error",
         ":test_util",
         "@com_google_absl//absl/strings",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -68,7 +67,7 @@ cc_test(
         ":proc_util",
         ":test_main",
         ":test_util",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -88,7 +87,7 @@ cc_library(
         ":file_descriptor",
         ":posix_error",
         "@com_google_absl//absl/strings",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -102,7 +101,7 @@ cc_test(
         ":temp_path",
         ":test_main",
         ":test_util",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -135,19 +134,20 @@ cc_library(
         ":cleanup",
         ":posix_error",
         ":test_util",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
 cc_library(
     name = "save_util",
     testonly = 1,
-    srcs = ["save_util.cc"] +
-           select_for_linux(
-               ["save_util_linux.cc"],
-               ["save_util_other.cc"],
-           ),
+    srcs = [
+        "save_util.cc",
+        "save_util_linux.cc",
+        "save_util_other.cc",
+    ],
     hdrs = ["save_util.h"],
+    defines = select_system(),
 )
 
 cc_library(
@@ -166,6 +166,14 @@ cc_library(
 )
 
 cc_library(
+    name = "platform_util",
+    testonly = 1,
+    srcs = ["platform_util.cc"],
+    hdrs = ["platform_util.h"],
+    deps = [":test_util"],
+)
+
+cc_library(
     name = "posix_error",
     testonly = 1,
     srcs = ["posix_error.cc"],
@@ -175,7 +183,7 @@ cc_library(
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:variant",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -186,7 +194,7 @@ cc_test(
     deps = [
         ":posix_error",
         ":test_main",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -210,7 +218,7 @@ cc_library(
         ":cleanup",
         ":posix_error",
         ":test_util",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -225,27 +233,34 @@ cc_library(
         ":test_util",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
 cc_library(
     name = "test_util",
     testonly = 1,
-    srcs = ["test_util.cc"],
+    srcs = [
+        "test_util.cc",
+        "test_util_impl.cc",
+        "test_util_runfiles.cc",
+    ],
     hdrs = ["test_util.h"],
+    defines = select_system(),
     deps = [
         ":fs_util",
         ":logging",
         ":posix_error",
         ":save_util",
+        "@bazel_tools//tools/cpp/runfiles",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/time",
-        "@com_google_googletest//:gtest",
+        gtest,
+        gbenchmark,
     ],
 )
 
@@ -277,7 +292,7 @@ cc_library(
         ":posix_error",
         ":test_util",
         "@com_google_absl//absl/time",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -288,7 +303,7 @@ cc_test(
     deps = [
         ":test_main",
         ":test_util",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -308,7 +323,7 @@ cc_library(
         ":file_descriptor",
         ":posix_error",
         ":save_util",
-        "@com_google_googletest//:gtest",
+        gtest,
     ],
 )
 
@@ -334,4 +349,10 @@ cc_library(
         ":posix_error",
         ":save_util",
     ],
+)
+
+cc_library(
+    name = "temp_umask",
+    testonly = 1,
+    hdrs = ["temp_umask.h"],
 )

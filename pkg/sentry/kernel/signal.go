@@ -38,6 +38,9 @@ const SignalPanic = linux.SIGUSR2
 // Preconditions: Kernel must have an init process.
 func (k *Kernel) sendExternalSignal(info *arch.SignalInfo, context string) {
 	switch linux.Signal(info.Signo) {
+	case linux.SIGURG:
+		// Sent by the Go 1.14+ runtime for asynchronous goroutine preemption.
+
 	case platform.SignalInterrupt:
 		// Assume that a call to platform.Context.Interrupt() misfired.
 

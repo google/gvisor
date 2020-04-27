@@ -32,6 +32,7 @@
 #include "absl/time/time.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
+#include "test/util/platform_util.h"
 #include "test/util/signal_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -178,7 +179,8 @@ TEST(PtraceTest, GetSigMask) {
 
     // Install a signal handler for kBlockSignal to avoid termination and block
     // it.
-    TEST_PCHECK(signal(kBlockSignal, +[](int signo) {}) != SIG_ERR);
+    TEST_PCHECK(signal(
+                    kBlockSignal, +[](int signo) {}) != SIG_ERR);
     MaybeSave();
     TEST_PCHECK(sigprocmask(SIG_SETMASK, &blocked, nullptr) == 0);
     MaybeSave();
@@ -398,9 +400,11 @@ TEST(PtraceTest, GetRegSet) {
   // Read exactly the full register set.
   EXPECT_EQ(iov.iov_len, sizeof(regs));
 
-#ifdef __x86_64__
+#if defined(__x86_64__)
   // Child called kill(2), with SIGSTOP as arg 2.
   EXPECT_EQ(regs.rsi, SIGSTOP);
+#elif defined(__aarch64__)
+  EXPECT_EQ(regs.regs[1], SIGSTOP);
 #endif
 
   // Suppress SIGSTOP and resume the child.
@@ -750,15 +754,23 @@ TEST(PtraceTest,
               SyscallSucceeds());
   EXPECT_TRUE(siginfo.si_code == SIGTRAP || siginfo.si_code == (SIGTRAP | 0x80))
       << "si_code = " << siginfo.si_code;
-#ifdef __x86_64__
+
   {
     struct user_regs_struct regs = {};
-    ASSERT_THAT(ptrace(PTRACE_GETREGS, child_pid, 0, &regs), SyscallSucceeds());
+    struct iovec iov;
+    iov.iov_base = &regs;
+    iov.iov_len = sizeof(regs);
+    EXPECT_THAT(ptrace(PTRACE_GETREGSET, child_pid, NT_PRSTATUS, &iov),
+                SyscallSucceeds());
+#if defined(__x86_64__)
     EXPECT_TRUE(regs.orig_rax == SYS_vfork || regs.orig_rax == SYS_clone)
         << "orig_rax = " << regs.orig_rax;
     EXPECT_EQ(grandchild_pid, regs.rax);
-  }
+#elif defined(__aarch64__)
+    EXPECT_TRUE(regs.regs[8] == SYS_clone) << "regs[8] = " << regs.regs[8];
+    EXPECT_EQ(grandchild_pid, regs.regs[0]);
 #endif  // defined(__x86_64__)
+  }
 
   // After this point, the child will be making wait4 syscalls that will be
   // interrupted by saving, so saving is not permitted. Note that this is
@@ -803,14 +815,21 @@ TEST(PtraceTest,
               SyscallSucceedsWithValue(child_pid));
   EXPECT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == (SIGTRAP | 0x80))
       << " status " << status;
-#ifdef __x86_64__
   {
     struct user_regs_struct regs = {};
-    ASSERT_THAT(ptrace(PTRACE_GETREGS, child_pid, 0, &regs), SyscallSucceeds());
+    struct iovec iov;
+    iov.iov_base = &regs;
+    iov.iov_len = sizeof(regs);
+    EXPECT_THAT(ptrace(PTRACE_GETREGSET, child_pid, NT_PRSTATUS, &iov),
+                SyscallSucceeds());
+#if defined(__x86_64__)
     EXPECT_EQ(SYS_wait4, regs.orig_rax);
     EXPECT_EQ(grandchild_pid, regs.rax);
-  }
+#elif defined(__aarch64__)
+    EXPECT_EQ(SYS_wait4, regs.regs[8]);
+    EXPECT_EQ(grandchild_pid, regs.regs[0]);
 #endif  // defined(__x86_64__)
+  }
 
   // Detach from the child and wait for it to exit.
   ASSERT_THAT(ptrace(PTRACE_DETACH, child_pid, 0, 0), SyscallSucceeds());
@@ -823,13 +842,8 @@ TEST(PtraceTest,
 // These tests requires knowledge of architecture-specific syscall convention.
 #ifdef __x86_64__
 TEST(PtraceTest, Int3) {
-  switch (GvisorPlatform()) {
-    case Platform::kKVM:
-      // TODO(b/124248694): int3 isn't handled properly.
-      return;
-    default:
-      break;
-  }
+  SKIP_IF(PlatformSupportInt3() == PlatformSupport::NotSupported);
+
   pid_t const child_pid = fork();
   if (child_pid == 0) {
     // In child process.
@@ -1191,7 +1205,7 @@ TEST(PtraceTest, SeizeSetOptions) {
     // gVisor is not susceptible to this race because
     // kernel.Task.waitCollectTraceeStopLocked() checks specifically for an
     // active ptraceStop, which is not initiated if SIGKILL is pending.
-    std::cout << "Observed syscall-exit after SIGKILL";
+    std::cout << "Observed syscall-exit after SIGKILL" << std::endl;
     ASSERT_THAT(waitpid(child_pid, &status, 0),
                 SyscallSucceedsWithValue(child_pid));
   }
@@ -1211,5 +1225,5 @@ int main(int argc, char** argv) {
     gvisor::testing::RunExecveChild();
   }
 
-  return RUN_ALL_TESTS();
+  return gvisor::testing::RunAllTests();
 }

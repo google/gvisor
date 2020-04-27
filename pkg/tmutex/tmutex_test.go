@@ -17,10 +17,11 @@ package tmutex
 import (
 	"fmt"
 	"runtime"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 func TestBasicLock(t *testing.T) {

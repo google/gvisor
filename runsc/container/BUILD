@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -7,9 +7,9 @@ go_library(
     srcs = [
         "container.go",
         "hook.go",
+        "state_file.go",
         "status.go",
     ],
-    importpath = "gvisor.dev/gvisor/runsc/container",
     visibility = [
         "//runsc:__subpackages__",
         "//test:__subpackages__",
@@ -17,6 +17,7 @@ go_library(
     deps = [
         "//pkg/log",
         "//pkg/sentry/control",
+        "//pkg/sync",
         "//runsc/boot",
         "//runsc/cgroup",
         "//runsc/sandbox",
@@ -29,18 +30,20 @@ go_library(
 
 go_test(
     name = "container_test",
-    size = "medium",
+    size = "large",
     srcs = [
         "console_test.go",
+        "container_norace_test.go",
+        "container_race_test.go",
         "container_test.go",
         "multi_container_test.go",
         "shared_volume_test.go",
     ],
     data = [
         "//runsc",
-        "//runsc/container/test_app",
+        "//test/cmd/test_app",
     ],
-    embed = [":container"],
+    library = ":container",
     shard_count = 5,
     tags = [
         "requires-kvm",
@@ -52,12 +55,13 @@ go_test(
         "//pkg/sentry/control",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sync",
+        "//pkg/test/testutil",
         "//pkg/unet",
         "//pkg/urpc",
         "//runsc/boot",
         "//runsc/boot/platforms",
         "//runsc/specutils",
-        "//runsc/testutil",
         "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_kr_pty//:go_default_library",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",

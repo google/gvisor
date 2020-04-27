@@ -27,14 +27,15 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
-	"gvisor.dev/gvisor/runsc/dockerutil"
-	"gvisor.dev/gvisor/runsc/testutil"
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
 // httpRequestSucceeds sends a request to a given url and checks that the status is OK.
@@ -53,65 +54,66 @@ func httpRequestSucceeds(client http.Client, server string, port int) error {
 
 // TestLifeCycle tests a basic Create/Start/Stop docker container life cycle.
 func TestLifeCycle(t *testing.T) {
-	if err := dockerutil.Pull("nginx"); err != nil {
-		t.Fatal("docker pull failed:", err)
-	}
-	d := dockerutil.MakeDocker("lifecycle-test")
-	if err := d.Create("-p", "80", "nginx"); err != nil {
-		t.Fatal("docker create failed:", err)
+	d := dockerutil.MakeDocker(t)
+	defer d.CleanUp()
+
+	// Start the container.
+	if err := d.Create(dockerutil.RunOpts{
+		Image: "basic/nginx",
+		Ports: []int{80},
+	}); err != nil {
+		t.Fatalf("docker create failed: %v", err)
 	}
 	if err := d.Start(); err != nil {
-		d.CleanUp()
-		t.Fatal("docker start failed:", err)
+		t.Fatalf("docker start failed: %v", err)
 	}
 
-	// Test that container is working
+	// Test that container is working.
 	port, err := d.FindPort(80)
 	if err != nil {
-		t.Fatal("docker.FindPort(80) failed: ", err)
+		t.Fatalf("docker.FindPort(80) failed: %v", err)
 	}
 	if err := testutil.WaitForHTTP(port, 30*time.Second); err != nil {
-		t.Fatal("WaitForHTTP() timeout:", err)
+		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 	client := http.Client{Timeout: time.Duration(2 * time.Second)}
 	if err := httpRequestSucceeds(client, "localhost", port); err != nil {
-		t.Error("http request failed:", err)
+		t.Errorf("http request failed: %v", err)
 	}
 
 	if err := d.Stop(); err != nil {
-		d.CleanUp()
-		t.Fatal("docker stop failed:", err)
+		t.Fatalf("docker stop failed: %v", err)
 	}
 	if err := d.Remove(); err != nil {
-		t.Fatal("docker rm failed:", err)
+		t.Fatalf("docker rm failed: %v", err)
 	}
 }
 
 func TestPauseResume(t *testing.T) {
-	const img = "gcr.io/gvisor-presubmit/python-hello"
 	if !testutil.IsCheckpointSupported() {
-		t.Log("Checkpoint is not supported, skipping test.")
-		return
+		t.Skip("Checkpoint is not supported.")
 	}
 
-	if err := dockerutil.Pull(img); err != nil {
-		t.Fatal("docker pull failed:", err)
-	}
-	d := dockerutil.MakeDocker("pause-resume-test")
-	if err := d.Run("-p", "8080", img); err != nil {
+	d := dockerutil.MakeDocker(t)
+	defer d.CleanUp()
+
+	// Start the container.
+	if err := d.Spawn(dockerutil.RunOpts{
+		Image: "basic/python",
+		Ports: []int{8080}, // See Dockerfile.
+	}); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
-	defer d.CleanUp()
 
 	// Find where port 8080 is mapped to.
 	port, err := d.FindPort(8080)
 	if err != nil {
-		t.Fatal("docker.FindPort(8080) failed:", err)
+		t.Fatalf("docker.FindPort(8080) failed: %v", err)
 	}
 
 	// Wait until it's up and running.
 	if err := testutil.WaitForHTTP(port, 30*time.Second); err != nil {
-		t.Fatal("WaitForHTTP() timeout:", err)
+		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 
 	// Check that container is working.
@@ -121,7 +123,7 @@ func TestPauseResume(t *testing.T) {
 	}
 
 	if err := d.Pause(); err != nil {
-		t.Fatal("docker pause failed:", err)
+		t.Fatalf("docker pause failed: %v", err)
 	}
 
 	// Check if container is paused.
@@ -137,12 +139,12 @@ func TestPauseResume(t *testing.T) {
 	}
 
 	if err := d.Unpause(); err != nil {
-		t.Fatal("docker unpause failed:", err)
+		t.Fatalf("docker unpause failed: %v", err)
 	}
 
 	// Wait until it's up and running.
 	if err := testutil.WaitForHTTP(port, 30*time.Second); err != nil {
-		t.Fatal("WaitForHTTP() timeout:", err)
+		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 
 	// Check if container is working again.
@@ -152,42 +154,43 @@ func TestPauseResume(t *testing.T) {
 }
 
 func TestCheckpointRestore(t *testing.T) {
-	const img = "gcr.io/gvisor-presubmit/python-hello"
 	if !testutil.IsCheckpointSupported() {
-		t.Log("Pause/resume is not supported, skipping test.")
-		return
+		t.Skip("Pause/resume is not supported.")
 	}
 
-	if err := dockerutil.Pull(img); err != nil {
-		t.Fatal("docker pull failed:", err)
-	}
-	d := dockerutil.MakeDocker("save-restore-test")
-	if err := d.Run("-p", "8080", img); err != nil {
-		t.Fatalf("docker run failed: %v", err)
-	}
+	d := dockerutil.MakeDocker(t)
 	defer d.CleanUp()
 
+	// Start the container.
+	if err := d.Spawn(dockerutil.RunOpts{
+		Image: "basic/python",
+		Ports: []int{8080}, // See Dockerfile.
+	}); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	// Create a snapshot.
 	if err := d.Checkpoint("test"); err != nil {
-		t.Fatal("docker checkpoint failed:", err)
+		t.Fatalf("docker checkpoint failed: %v", err)
 	}
-
 	if _, err := d.Wait(30 * time.Second); err != nil {
-		t.Fatal(err)
+		t.Fatalf("wait failed: %v", err)
 	}
 
-	if err := d.Restore("test"); err != nil {
-		t.Fatal("docker restore failed:", err)
+	// TODO(b/143498576): Remove Poll after github.com/moby/moby/issues/38963 is fixed.
+	if err := testutil.Poll(func() error { return d.Restore("test") }, 15*time.Second); err != nil {
+		t.Fatalf("docker restore failed: %v", err)
 	}
 
 	// Find where port 8080 is mapped to.
 	port, err := d.FindPort(8080)
 	if err != nil {
-		t.Fatal("docker.FindPort(8080) failed:", err)
+		t.Fatalf("docker.FindPort(8080) failed: %v", err)
 	}
 
 	// Wait until it's up and running.
 	if err := testutil.WaitForHTTP(port, 30*time.Second); err != nil {
-		t.Fatal("WaitForHTTP() timeout:", err)
+		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 
 	// Check if container is working again.
@@ -199,26 +202,28 @@ func TestCheckpointRestore(t *testing.T) {
 
 // Create client and server that talk to each other using the local IP.
 func TestConnectToSelf(t *testing.T) {
-	d := dockerutil.MakeDocker("connect-to-self-test")
+	d := dockerutil.MakeDocker(t)
+	defer d.CleanUp()
 
 	// Creates server that replies "server" and exists. Sleeps at the end because
 	// 'docker exec' gets killed if the init process exists before it can finish.
-	if err := d.Run("ubuntu:trusty", "/bin/sh", "-c", "echo server | nc -l -p 8080 && sleep 1"); err != nil {
-		t.Fatal("docker run failed:", err)
+	if err := d.Spawn(dockerutil.RunOpts{
+		Image: "basic/ubuntu",
+	}, "/bin/sh", "-c", "echo server | nc -l -p 8080 && sleep 1"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
 	}
-	defer d.CleanUp()
 
 	// Finds IP address for host.
-	ip, err := d.Exec("/bin/sh", "-c", "cat /etc/hosts | grep ${HOSTNAME} | awk '{print $1}'")
+	ip, err := d.Exec(dockerutil.RunOpts{}, "/bin/sh", "-c", "cat /etc/hosts | grep ${HOSTNAME} | awk '{print $1}'")
 	if err != nil {
-		t.Fatal("docker exec failed:", err)
+		t.Fatalf("docker exec failed: %v", err)
 	}
 	ip = strings.TrimRight(ip, "\n")
 
 	// Runs client that sends "client" to the server and exits.
-	reply, err := d.Exec("/bin/sh", "-c", fmt.Sprintf("echo client | nc %s 8080", ip))
+	reply, err := d.Exec(dockerutil.RunOpts{}, "/bin/sh", "-c", fmt.Sprintf("echo client | nc %s 8080", ip))
 	if err != nil {
-		t.Fatal("docker exec failed:", err)
+		t.Fatalf("docker exec failed: %v", err)
 	}
 
 	// Ensure both client and server got the message from each other.
@@ -226,21 +231,22 @@ func TestConnectToSelf(t *testing.T) {
 		t.Errorf("Error on server, want: %q, got: %q", want, reply)
 	}
 	if _, err := d.WaitForOutput("^client\n$", 1*time.Second); err != nil {
-		t.Fatal("docker.WaitForOutput(client) timeout:", err)
+		t.Fatalf("docker.WaitForOutput(client) timeout: %v", err)
 	}
 }
 
 func TestMemLimit(t *testing.T) {
-	if err := dockerutil.Pull("alpine"); err != nil {
-		t.Fatal("docker pull failed:", err)
-	}
-	d := dockerutil.MakeDocker("cgroup-test")
-	cmd := "cat /proc/meminfo | grep MemTotal: | awk '{print $2}'"
-	out, err := d.RunFg("--memory=500MB", "alpine", "sh", "-c", cmd)
-	if err != nil {
-		t.Fatal("docker run failed:", err)
-	}
+	d := dockerutil.MakeDocker(t)
 	defer d.CleanUp()
+
+	allocMemory := 500 * 1024
+	out, err := d.Run(dockerutil.RunOpts{
+		Image:  "basic/alpine",
+		Memory: allocMemory, // In kB.
+	}, "sh", "-c", "cat /proc/meminfo | grep MemTotal: | awk '{print $2}'")
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
 
 	// Remove warning message that swap isn't present.
 	if strings.HasPrefix(out, "WARNING") {
@@ -251,27 +257,30 @@ func TestMemLimit(t *testing.T) {
 		out = lines[1]
 	}
 
+	// Ensure the memory matches what we want.
 	got, err := strconv.ParseUint(strings.TrimSpace(out), 10, 64)
 	if err != nil {
 		t.Fatalf("failed to parse %q: %v", out, err)
 	}
-	if want := uint64(500 * 1024); got != want {
+	if want := uint64(allocMemory); got != want {
 		t.Errorf("MemTotal got: %d, want: %d", got, want)
 	}
 }
 
 func TestNumCPU(t *testing.T) {
-	if err := dockerutil.Pull("alpine"); err != nil {
-		t.Fatal("docker pull failed:", err)
-	}
-	d := dockerutil.MakeDocker("cgroup-test")
-	cmd := "cat /proc/cpuinfo | grep 'processor.*:' | wc -l"
-	out, err := d.RunFg("--cpuset-cpus=0", "alpine", "sh", "-c", cmd)
-	if err != nil {
-		t.Fatal("docker run failed:", err)
-	}
+	d := dockerutil.MakeDocker(t)
 	defer d.CleanUp()
 
+	// Read how many cores are in the container.
+	out, err := d.Run(dockerutil.RunOpts{
+		Image: "basic/alpine",
+		Extra: []string{"--cpuset-cpus=0"},
+	}, "sh", "-c", "cat /proc/cpuinfo | grep 'processor.*:' | wc -l")
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	// Ensure it matches what we want.
 	got, err := strconv.Atoi(strings.TrimSpace(out))
 	if err != nil {
 		t.Fatalf("failed to parse %q: %v", out, err)
@@ -283,38 +292,38 @@ func TestNumCPU(t *testing.T) {
 
 // TestJobControl tests that job control characters are handled properly.
 func TestJobControl(t *testing.T) {
-	if err := dockerutil.Pull("alpine"); err != nil {
-		t.Fatalf("docker pull failed: %v", err)
-	}
-	d := dockerutil.MakeDocker("job-control-test")
-
-	// Start the container with an attached PTY.
-	_, ptmx, err := d.RunWithPty("alpine", "sh")
-	if err != nil {
-		t.Fatalf("docker run failed: %v", err)
-	}
-	defer ptmx.Close()
+	d := dockerutil.MakeDocker(t)
 	defer d.CleanUp()
 
-	// Call "sleep 100" in the shell.
-	if _, err := ptmx.Write([]byte("sleep 100\n")); err != nil {
-		t.Fatalf("error writing to pty: %v", err)
-	}
+	// Start the container with an attached PTY.
+	if _, err := d.Run(dockerutil.RunOpts{
+		Image: "basic/alpine",
+		Pty: func(_ *exec.Cmd, ptmx *os.File) {
+			// Call "sleep 100" in the shell.
+			if _, err := ptmx.Write([]byte("sleep 100\n")); err != nil {
+				t.Fatalf("error writing to pty: %v", err)
+			}
 
-	// Give shell a few seconds to start executing the sleep.
-	time.Sleep(2 * time.Second)
+			// Give shell a few seconds to start executing the sleep.
+			time.Sleep(2 * time.Second)
 
-	// Send a ^C to the pty, which should kill sleep, but not the shell.
-	// \x03 is ASCII "end of text", which is the same as ^C.
-	if _, err := ptmx.Write([]byte{'\x03'}); err != nil {
-		t.Fatalf("error writing to pty: %v", err)
-	}
+			// Send a ^C to the pty, which should kill sleep, but
+			// not the shell.  \x03 is ASCII "end of text", which
+			// is the same as ^C.
+			if _, err := ptmx.Write([]byte{'\x03'}); err != nil {
+				t.Fatalf("error writing to pty: %v", err)
+			}
 
-	// The shell should still be alive at this point. Sleep should have
-	// exited with code 2+128=130. We'll exit with 10 plus that number, so
-	// that we can be sure that the shell did not get signalled.
-	if _, err := ptmx.Write([]byte("exit $(expr $? + 10)\n")); err != nil {
-		t.Fatalf("error writing to pty: %v", err)
+			// The shell should still be alive at this point. Sleep
+			// should have exited with code 2+128=130. We'll exit
+			// with 10 plus that number, so that we can be sure
+			// that the shell did not get signalled.
+			if _, err := ptmx.Write([]byte("exit $(expr $? + 10)\n")); err != nil {
+				t.Fatalf("error writing to pty: %v", err)
+			}
+		},
+	}, "sh"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
 	}
 
 	// Wait for the container to exit.
@@ -331,14 +340,25 @@ func TestJobControl(t *testing.T) {
 // TestTmpFile checks that files inside '/tmp' are not overridden. In addition,
 // it checks that working dir is created if it doesn't exit.
 func TestTmpFile(t *testing.T) {
-	if err := dockerutil.Pull("alpine"); err != nil {
-		t.Fatal("docker pull failed:", err)
-	}
-	d := dockerutil.MakeDocker("tmp-file-test")
-	if err := d.Run("-w=/tmp/foo/bar", "--read-only", "alpine", "touch", "/tmp/foo/bar/file"); err != nil {
-		t.Fatal("docker run failed:", err)
-	}
+	d := dockerutil.MakeDocker(t)
 	defer d.CleanUp()
+
+	// Should work without ReadOnly
+	if _, err := d.Run(dockerutil.RunOpts{
+		Image:   "basic/alpine",
+		WorkDir: "/tmp/foo/bar",
+	}, "touch", "/tmp/foo/bar/file"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	// Expect failure.
+	if _, err := d.Run(dockerutil.RunOpts{
+		Image:    "basic/alpine",
+		WorkDir:  "/tmp/foo/bar",
+		ReadOnly: true,
+	}, "touch", "/tmp/foo/bar/file"); err == nil {
+		t.Fatalf("docker run expected failure, but succeeded")
+	}
 }
 
 func TestMain(m *testing.M) {

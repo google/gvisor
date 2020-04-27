@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <linux/unistd.h>
 #include <sys/eventfd.h>
 #include <sys/sendfile.h>
 #include <unistd.h>
@@ -67,6 +68,28 @@ TEST(SendFileTest, InvalidOffset) {
   // Send data and verify that sendfile returns the correct value.
   off_t offset = -1;
   EXPECT_THAT(sendfile(outf.get(), inf.get(), &offset, 0),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+int memfd_create(const std::string& name, unsigned int flags) {
+  return syscall(__NR_memfd_create, name.c_str(), flags);
+}
+
+TEST(SendFileTest, Overflow) {
+  // Create input file.
+  const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor inf =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
+
+  // Open the output file.
+  int fd;
+  EXPECT_THAT(fd = memfd_create("overflow", 0), SyscallSucceeds());
+  const FileDescriptor outf(fd);
+
+  // out_offset + kSize overflows INT64_MAX.
+  loff_t out_offset = 0x7ffffffffffffffeull;
+  constexpr int kSize = 3;
+  EXPECT_THAT(sendfile(outf.get(), inf.get(), &out_offset, kSize),
               SyscallFailsWithErrno(EINVAL));
 }
 
@@ -528,6 +551,34 @@ TEST(SendFileTest, SendToSpecialFile) {
   // eventfd can accept a number of bytes which is a multiple of 8.
   EXPECT_THAT(sendfile(eventfd.get(), inf.get(), nullptr, 0xfffff),
               SyscallSucceedsWithValue(kSize & (~7)));
+}
+
+TEST(SendFileTest, SendFileToPipe) {
+  // Create temp file.
+  constexpr char kData[] = "<insert-quote-here>";
+  constexpr int kDataSize = sizeof(kData) - 1;
+  const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), kData, TempPath::kDefaultFileMode));
+  const FileDescriptor inf =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
+
+  // Create a pipe for sending to a pipe.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor rfd(fds[0]);
+  const FileDescriptor wfd(fds[1]);
+
+  // Expect to read up to the given size.
+  std::vector<char> buf(kDataSize);
+  ScopedThread t([&]() {
+    absl::SleepFor(absl::Milliseconds(100));
+    ASSERT_THAT(read(rfd.get(), buf.data(), buf.size()),
+                SyscallSucceedsWithValue(kDataSize));
+  });
+
+  // Send with twice the size of the file, which should hit EOF.
+  EXPECT_THAT(sendfile(wfd.get(), inf.get(), nullptr, kDataSize * 2),
+              SyscallSucceedsWithValue(kDataSize));
 }
 
 }  // namespace

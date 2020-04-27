@@ -24,25 +24,9 @@ import (
 )
 
 var (
-	// bounceSignal is the signal used for bouncing KVM.
-	//
-	// We use SIGCHLD because it is not masked by the runtime, and
-	// it will be ignored properly by other parts of the kernel.
-	bounceSignal = syscall.SIGCHLD
-
-	// bounceSignalMask has only bounceSignal set.
-	bounceSignalMask = uint64(1 << (uint64(bounceSignal) - 1))
-
-	// bounce is the interrupt vector used to return to the kernel.
-	bounce = uint32(ring0.VirtualizationException)
+	// The action for bluepillSignal is changed by sigaction().
+	bluepillSignal = syscall.SIGSEGV
 )
-
-// redpill on amd64 invokes a syscall with -1.
-//
-//go:nosplit
-func redpill() {
-	syscall.RawSyscall(^uintptr(0), 0, 0, 0)
-}
 
 // bluepillArchEnter is called during bluepillEnter.
 //

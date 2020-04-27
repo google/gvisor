@@ -15,10 +15,11 @@
 package transport
 
 import (
-	"sync"
-
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -101,12 +102,16 @@ func (q *queue) IsWritable() bool {
 
 // Enqueue adds an entry to the data queue if room is available.
 //
+// If discardEmpty is true and there are zero bytes of data, the packet is
+// dropped.
+//
 // If truncate is true, Enqueue may truncate the message before enqueuing it.
-// Otherwise, the entire message must fit. If n < e.Length(), err indicates why.
+// Otherwise, the entire message must fit. If l is less than the size of data,
+// err indicates why.
 //
 // If notify is true, ReaderQueue.Notify must be called:
 // q.ReaderQueue.Notify(waiter.EventIn)
-func (q *queue) Enqueue(e *message, truncate bool) (l int64, notify bool, err *syserr.Error) {
+func (q *queue) Enqueue(data [][]byte, c ControlMessages, from tcpip.FullAddress, discardEmpty bool, truncate bool) (l int64, notify bool, err *syserr.Error) {
 	q.mu.Lock()
 
 	if q.closed {
@@ -114,9 +119,16 @@ func (q *queue) Enqueue(e *message, truncate bool) (l int64, notify bool, err *s
 		return 0, false, syserr.ErrClosedForSend
 	}
 
-	free := q.limit - q.used
+	for _, d := range data {
+		l += int64(len(d))
+	}
+	if discardEmpty && l == 0 {
+		q.mu.Unlock()
+		c.Release()
+		return 0, false, nil
+	}
 
-	l = e.Length()
+	free := q.limit - q.used
 
 	if l > free && truncate {
 		if free == 0 {
@@ -125,8 +137,7 @@ func (q *queue) Enqueue(e *message, truncate bool) (l int64, notify bool, err *s
 			return 0, false, syserr.ErrWouldBlock
 		}
 
-		e.Truncate(free)
-		l = e.Length()
+		l = free
 		err = syserr.ErrWouldBlock
 	}
 
@@ -137,14 +148,26 @@ func (q *queue) Enqueue(e *message, truncate bool) (l int64, notify bool, err *s
 	}
 
 	if l > free {
-		// Message can't fit right now.
+		// Message can't fit right now, and could not be truncated.
 		q.mu.Unlock()
 		return 0, false, syserr.ErrWouldBlock
 	}
 
+	// Aggregate l bytes of data. This will truncate the data if l is less than
+	// the total bytes held in data.
+	v := make([]byte, l)
+	for i, b := 0, v; i < len(data) && len(b) > 0; i++ {
+		n := copy(b, data[i])
+		b = b[n:]
+	}
+
 	notify = q.dataList.Front() == nil
 	q.used += l
-	q.dataList.PushBack(e)
+	q.dataList.PushBack(&message{
+		Data:    buffer.View(v),
+		Control: c,
+		Address: from,
+	})
 
 	q.mu.Unlock()
 

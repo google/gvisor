@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
@@ -25,13 +25,14 @@ go_library(
         "transport_message_list.go",
         "unix.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/unix/transport",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/ilist",
+        "//pkg/log",
         "//pkg/refs",
-        "//pkg/sentry/context",
+        "//pkg/sync",
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",

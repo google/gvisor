@@ -15,17 +15,16 @@
 package fs
 
 import (
-	"sync"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/refs"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -103,7 +102,6 @@ func (i *Inode) DecRef() {
 
 // destroy releases the Inode and releases the msrc reference taken.
 func (i *Inode) destroy() {
-	// FIXME(b/38173783): Context is not plumbed here.
 	ctx := context.Background()
 	if err := i.WriteOut(ctx); err != nil {
 		// FIXME(b/65209558): Mark as warning again once noatime is
@@ -262,20 +260,36 @@ func (i *Inode) UnstableAttr(ctx context.Context) (UnstableAttr, error) {
 	return i.InodeOperations.UnstableAttr(ctx, i)
 }
 
-// Getxattr calls i.InodeOperations.Getxattr with i as the Inode.
-func (i *Inode) Getxattr(name string) (string, error) {
+// GetXattr calls i.InodeOperations.GetXattr with i as the Inode.
+func (i *Inode) GetXattr(ctx context.Context, name string, size uint64) (string, error) {
 	if i.overlay != nil {
-		return overlayGetxattr(i.overlay, name)
+		return overlayGetXattr(ctx, i.overlay, name, size)
 	}
-	return i.InodeOperations.Getxattr(i, name)
+	return i.InodeOperations.GetXattr(ctx, i, name, size)
 }
 
-// Listxattr calls i.InodeOperations.Listxattr with i as the Inode.
-func (i *Inode) Listxattr() (map[string]struct{}, error) {
+// SetXattr calls i.InodeOperations.SetXattr with i as the Inode.
+func (i *Inode) SetXattr(ctx context.Context, d *Dirent, name, value string, flags uint32) error {
 	if i.overlay != nil {
-		return overlayListxattr(i.overlay)
+		return overlaySetxattr(ctx, i.overlay, d, name, value, flags)
 	}
-	return i.InodeOperations.Listxattr(i)
+	return i.InodeOperations.SetXattr(ctx, i, name, value, flags)
+}
+
+// ListXattr calls i.InodeOperations.ListXattr with i as the Inode.
+func (i *Inode) ListXattr(ctx context.Context, size uint64) (map[string]struct{}, error) {
+	if i.overlay != nil {
+		return overlayListXattr(ctx, i.overlay, size)
+	}
+	return i.InodeOperations.ListXattr(ctx, i, size)
+}
+
+// RemoveXattr calls i.InodeOperations.RemoveXattr with i as the Inode.
+func (i *Inode) RemoveXattr(ctx context.Context, d *Dirent, name string) error {
+	if i.overlay != nil {
+		return overlayRemoveXattr(ctx, i.overlay, d, name)
+	}
+	return i.InodeOperations.RemoveXattr(ctx, i, name)
 }
 
 // CheckPermission will check if the caller may access this file in the
@@ -344,6 +358,10 @@ func (i *Inode) SetTimestamps(ctx context.Context, d *Dirent, ts TimeSpec) error
 
 // Truncate calls i.InodeOperations.Truncate with i as the Inode.
 func (i *Inode) Truncate(ctx context.Context, d *Dirent, size int64) error {
+	if IsDir(i.StableAttr) {
+		return syserror.EISDIR
+	}
+
 	if i.overlay != nil {
 		return overlayTruncate(ctx, i.overlay, d, size)
 	}
@@ -378,8 +396,6 @@ func (i *Inode) Getlink(ctx context.Context) (*Dirent, error) {
 // AddLink calls i.InodeOperations.AddLink.
 func (i *Inode) AddLink() {
 	if i.overlay != nil {
-		// FIXME(b/63117438): Remove this from InodeOperations altogether.
-		//
 		// This interface is only used by ramfs to update metadata of
 		// children. These filesystems should _never_ have overlay
 		// Inodes cached as children. So explicitly disallow this

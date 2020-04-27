@@ -14,7 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-source $(dirname $0)/common.sh
+cd $(dirname $0)/..
+source scripts/common.sh
 
 # Tag a release only if provided.
 if ! [[ -v KOKORO_RELEASE_COMMIT ]]; then
@@ -23,6 +24,14 @@ if ! [[ -v KOKORO_RELEASE_COMMIT ]]; then
 fi
 if ! [[ -v KOKORO_RELEASE_TAG ]]; then
   echo "No KOKORO_RELEASE_TAG provided." >&2
+  exit 1
+fi
+if ! [[ -v KOKORO_RELNOTES ]]; then
+  echo "No KOKORO_RELNOTES provided." >&2
+  exit 1
+fi
+if ! [[ -r "${KOKORO_ARTIFACTS_DIR}/${KOKORO_RELNOTES}" ]]; then
+  echo "The file '${KOKORO_ARTIFACTS_DIR}/${KOKORO_RELNOTES}' is not readable." >&2
   exit 1
 fi
 
@@ -34,5 +43,19 @@ declare -r EMAIL=${EMAIL:-${KOKORO_RELEASE_AUTHOR}@google.com}
 git config --get user.name || git config user.name "gVisor-bot"
 git config --get user.email || git config user.email "${EMAIL}"
 
+# Provide a credential if available.
+if [[ -v KOKORO_GITHUB_ACCESS_TOKEN ]]; then
+  git config --global credential.helper cache
+  git credential approve <<EOF
+protocol=https
+host=github.com
+username=$(cat "${KOKORO_KEYSTORE_DIR}/${KOKORO_GITHUB_ACCESS_TOKEN}")
+password=x-oauth-basic
+EOF
+fi
+
 # Run the release tool, which pushes to the origin repository.
-tools/tag_release.sh "${KOKORO_RELEASE_COMMIT}" "${KOKORO_RELEASE_TAG}"
+tools/tag_release.sh \
+    "${KOKORO_RELEASE_COMMIT}" \
+    "${KOKORO_RELEASE_TAG}" \
+    "${KOKORO_ARTIFACTS_DIR}/${KOKORO_RELNOTES}"

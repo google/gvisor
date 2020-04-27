@@ -21,7 +21,6 @@
 #include <vector>
 
 #include "gtest/gtest.h"
-#include "gtest/gtest.h"
 #include "test/syscalls/linux/file_base.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/temp_path.h"
@@ -35,6 +34,8 @@ namespace {
 #ifndef SYS_pwritev2
 #if defined(__x86_64__)
 #define SYS_pwritev2 328
+#elif defined(__aarch64__)
+#define SYS_pwritev2 287
 #else
 #error "Unknown architecture"
 #endif

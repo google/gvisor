@@ -18,7 +18,9 @@
 #include <netinet/tcp.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/types.h>
 #include <sys/uio.h>
 #include <unistd.h>
 
@@ -62,9 +64,9 @@ class PartialBadBufferTest : public ::testing::Test {
     // Write some initial data.
     size_t size = sizeof(kMessage) - 1;
     EXPECT_THAT(WriteFd(fd_, &kMessage, size), SyscallSucceedsWithValue(size));
-
     ASSERT_THAT(lseek(fd_, 0, SEEK_SET), SyscallSucceeds());
 
+    // Map a useable buffer.
     addr_ = mmap(0, 2 * kPageSize, PROT_READ | PROT_WRITE,
                  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     ASSERT_NE(addr_, MAP_FAILED);
@@ -77,6 +79,15 @@ class PartialBadBufferTest : public ::testing::Test {
 
     // Leave only one free byte in the buffer.
     bad_buffer_ = buf + kPageSize - 1;
+  }
+
+  off_t Size() {
+    struct stat st;
+    int rc = fstat(fd_, &st);
+    if (rc < 0) {
+      return static_cast<off_t>(rc);
+    }
+    return st.st_size;
   }
 
   void TearDown() override {
@@ -165,97 +176,99 @@ TEST_F(PartialBadBufferTest, PreadvSmall) {
 }
 
 TEST_F(PartialBadBufferTest, WriteBig) {
-  // FIXME(b/24788078): The sentry write syscalls will return immediately
-  // if Access returns an error, but Access may not return an error
-  // and the sentry will instead perform a partial write.
-  SKIP_IF(IsRunningOnGvisor());
+  off_t orig_size = Size();
+  int n;
 
-  EXPECT_THAT(RetryEINTR(write)(fd_, bad_buffer_, kPageSize),
-              SyscallFailsWithErrno(EFAULT));
+  ASSERT_THAT(lseek(fd_, orig_size, SEEK_SET), SyscallSucceeds());
+  EXPECT_THAT(
+      (n = RetryEINTR(write)(fd_, bad_buffer_, kPageSize)),
+      AnyOf(SyscallFailsWithErrno(EFAULT), SyscallSucceedsWithValue(1)));
+  EXPECT_EQ(Size(), orig_size + (n >= 0 ? n : 0));
 }
 
 TEST_F(PartialBadBufferTest, WriteSmall) {
-  // FIXME(b/24788078): The sentry write syscalls will return immediately
-  // if Access returns an error, but Access may not return an error
-  // and the sentry will instead perform a partial write.
-  SKIP_IF(IsRunningOnGvisor());
+  off_t orig_size = Size();
+  int n;
 
-  EXPECT_THAT(RetryEINTR(write)(fd_, bad_buffer_, 10),
-              SyscallFailsWithErrno(EFAULT));
+  ASSERT_THAT(lseek(fd_, orig_size, SEEK_SET), SyscallSucceeds());
+  EXPECT_THAT(
+      (n = RetryEINTR(write)(fd_, bad_buffer_, 10)),
+      AnyOf(SyscallFailsWithErrno(EFAULT), SyscallSucceedsWithValue(1)));
+  EXPECT_EQ(Size(), orig_size + (n >= 0 ? n : 0));
 }
 
 TEST_F(PartialBadBufferTest, PwriteBig) {
-  // FIXME(b/24788078): The sentry write syscalls will return immediately
-  // if Access returns an error, but Access may not return an error
-  // and the sentry will instead perform a partial write.
-  SKIP_IF(IsRunningOnGvisor());
+  off_t orig_size = Size();
+  int n;
 
-  EXPECT_THAT(RetryEINTR(pwrite)(fd_, bad_buffer_, kPageSize, 0),
-              SyscallFailsWithErrno(EFAULT));
+  EXPECT_THAT(
+      (n = RetryEINTR(pwrite)(fd_, bad_buffer_, kPageSize, orig_size)),
+      AnyOf(SyscallFailsWithErrno(EFAULT), SyscallSucceedsWithValue(1)));
+  EXPECT_EQ(Size(), orig_size + (n >= 0 ? n : 0));
 }
 
 TEST_F(PartialBadBufferTest, PwriteSmall) {
-  // FIXME(b/24788078): The sentry write syscalls will return immediately
-  // if Access returns an error, but Access may not return an error
-  // and the sentry will instead perform a partial write.
-  SKIP_IF(IsRunningOnGvisor());
+  off_t orig_size = Size();
+  int n;
 
-  EXPECT_THAT(RetryEINTR(pwrite)(fd_, bad_buffer_, 10, 0),
-              SyscallFailsWithErrno(EFAULT));
+  EXPECT_THAT(
+      (n = RetryEINTR(pwrite)(fd_, bad_buffer_, 10, orig_size)),
+      AnyOf(SyscallFailsWithErrno(EFAULT), SyscallSucceedsWithValue(1)));
+  EXPECT_EQ(Size(), orig_size + (n >= 0 ? n : 0));
 }
 
 TEST_F(PartialBadBufferTest, WritevBig) {
-  // FIXME(b/24788078): The sentry write syscalls will return immediately
-  // if Access returns an error, but Access may not return an error
-  // and the sentry will instead perform a partial write.
-  SKIP_IF(IsRunningOnGvisor());
-
   struct iovec vec;
   vec.iov_base = bad_buffer_;
   vec.iov_len = kPageSize;
+  off_t orig_size = Size();
+  int n;
 
-  EXPECT_THAT(RetryEINTR(writev)(fd_, &vec, 1), SyscallFailsWithErrno(EFAULT));
+  ASSERT_THAT(lseek(fd_, orig_size, SEEK_SET), SyscallSucceeds());
+  EXPECT_THAT(
+      (n = RetryEINTR(writev)(fd_, &vec, 1)),
+      AnyOf(SyscallFailsWithErrno(EFAULT), SyscallSucceedsWithValue(1)));
+  EXPECT_EQ(Size(), orig_size + (n >= 0 ? n : 0));
 }
 
 TEST_F(PartialBadBufferTest, WritevSmall) {
-  // FIXME(b/24788078): The sentry write syscalls will return immediately
-  // if Access returns an error, but Access may not return an error
-  // and the sentry will instead perform a partial write.
-  SKIP_IF(IsRunningOnGvisor());
-
   struct iovec vec;
   vec.iov_base = bad_buffer_;
   vec.iov_len = 10;
+  off_t orig_size = Size();
+  int n;
 
-  EXPECT_THAT(RetryEINTR(writev)(fd_, &vec, 1), SyscallFailsWithErrno(EFAULT));
+  ASSERT_THAT(lseek(fd_, orig_size, SEEK_SET), SyscallSucceeds());
+  EXPECT_THAT(
+      (n = RetryEINTR(writev)(fd_, &vec, 1)),
+      AnyOf(SyscallFailsWithErrno(EFAULT), SyscallSucceedsWithValue(1)));
+  EXPECT_EQ(Size(), orig_size + (n >= 0 ? n : 0));
 }
 
 TEST_F(PartialBadBufferTest, PwritevBig) {
-  // FIXME(b/24788078): The sentry write syscalls will return immediately
-  // if Access returns an error, but Access may not return an error
-  // and the sentry will instead perform a partial write.
-  SKIP_IF(IsRunningOnGvisor());
-
   struct iovec vec;
   vec.iov_base = bad_buffer_;
   vec.iov_len = kPageSize;
+  off_t orig_size = Size();
+  int n;
 
-  EXPECT_THAT(RetryEINTR(pwritev)(fd_, &vec, 1, 0),
-              SyscallFailsWithErrno(EFAULT));
+  EXPECT_THAT(
+      (n = RetryEINTR(pwritev)(fd_, &vec, 1, orig_size)),
+      AnyOf(SyscallFailsWithErrno(EFAULT), SyscallSucceedsWithValue(1)));
+  EXPECT_EQ(Size(), orig_size + (n >= 0 ? n : 0));
 }
 
 TEST_F(PartialBadBufferTest, PwritevSmall) {
-  // FIXME(b/24788078): The sentry write syscalls will return immediately
-  // if Access returns an error, but Access may not return an error
-  // and the sentry will instead perform a partial write.
-  SKIP_IF(IsRunningOnGvisor());
-
   struct iovec vec;
   vec.iov_base = bad_buffer_;
   vec.iov_len = 10;
+  off_t orig_size = Size();
+  int n;
 
-  EXPECT_THAT(RetryEINTR(pwritev)(fd_, &vec, 1, 0),
-              SyscallFailsWithErrno(EFAULT));
+  EXPECT_THAT(
+      (n = RetryEINTR(pwritev)(fd_, &vec, 1, orig_size)),
+      AnyOf(SyscallFailsWithErrno(EFAULT), SyscallSucceedsWithValue(1)));
+  EXPECT_EQ(Size(), orig_size + (n >= 0 ? n : 0));
 }
 
 // getdents returns EFAULT when the you claim the buffer is large enough, but
@@ -281,29 +294,6 @@ TEST_F(PartialBadBufferTest, GetdentsOneEntry) {
   EXPECT_THAT(
       RetryEINTR(syscall)(SYS_getdents64, directory_fd_, buf, kPageSize),
       SyscallSucceedsWithValue(Gt(0)));
-}
-
-// Verify that when write returns EFAULT the kernel hasn't silently written
-// the initial valid bytes.
-TEST_F(PartialBadBufferTest, WriteEfaultIsntPartial) {
-  // FIXME(b/24788078): The sentry write syscalls will return immediately
-  // if Access returns an error, but Access may not return an error
-  // and the sentry will instead perform a partial write.
-  SKIP_IF(IsRunningOnGvisor());
-
-  bad_buffer_[0] = 'A';
-  EXPECT_THAT(RetryEINTR(write)(fd_, bad_buffer_, 10),
-              SyscallFailsWithErrno(EFAULT));
-
-  size_t size = 255;
-  char buf[255];
-  memset(buf, 0, size);
-
-  EXPECT_THAT(RetryEINTR(pread)(fd_, buf, size, 0),
-              SyscallSucceedsWithValue(sizeof(kMessage) - 1));
-
-  // 'A' has not been written.
-  EXPECT_STREQ(buf, kMessage);
 }
 
 PosixErrorOr<sockaddr_storage> InetLoopbackAddr(int family) {

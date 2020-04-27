@@ -50,6 +50,21 @@ TEXT ·SpinLoop(SB),NOSPLIT,$0
 start:
 	B start
 
+TEXT ·FloatingPointWorks(SB),NOSPLIT,$0-8
+	NO_LOCAL_POINTERS
+	FMOVD $(9.9), F0
+	MOVD $SYS_GETPID, R8 // getpid
+	SVC
+	FMOVD $(9.9), F1
+	FCMPD F0, F1
+	BNE isNaN
+	MOVD $1, R0
+	MOVD R0, ret+0(FP)
+	RET
+isNaN:
+	MOVD $0, ret+0(FP)
+	RET
+
 // MVN: bitwise logical NOT
 // This case simulates an application that modified R0-R30.
 #define TWIDDLE_REGS() \

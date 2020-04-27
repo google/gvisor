@@ -26,7 +26,7 @@ const (
 	//
 	// Clients are expected to start requesting this version number and
 	// to continuously decrement it until a Tversion request succeeds.
-	highestSupportedVersion uint32 = 8
+	highestSupportedVersion uint32 = 11
 
 	// lowestSupportedVersion is the lowest supported version X in a
 	// version string of the format 9P2000.L.Google.X.
@@ -154,4 +154,22 @@ func versionSupportsTallocate(v uint32) bool {
 // string indicates that such a facility exists.
 func versionSupportsFlipcall(v uint32) bool {
 	return v >= 8
+}
+
+// VersionSupportsOpenTruncateFlag returns true if version v supports
+// passing the OpenTruncate flag to Tlopen.
+func VersionSupportsOpenTruncateFlag(v uint32) bool {
+	return v >= 9
+}
+
+// versionSupportsGetSetXattr returns true if version v supports
+// the Tgetxattr and Tsetxattr messages.
+func versionSupportsGetSetXattr(v uint32) bool {
+	return v >= 10
+}
+
+// versionSupportsListRemoveXattr returns true if version v supports
+// the Tlistxattr and Tremovexattr messages.
+func versionSupportsListRemoveXattr(v uint32) bool {
+	return v >= 11
 }

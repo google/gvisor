@@ -15,11 +15,12 @@
 package gate_test
 
 import (
-	"sync"
+	"runtime"
 	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/gate"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 func TestBasicEnter(t *testing.T) {
@@ -165,6 +166,8 @@ func worker(g *gate.Gate, done *sync.WaitGroup) {
 		if !g.Enter() {
 			break
 		}
+		// Golang before v1.14 doesn't preempt busyloops.
+		runtime.Gosched()
 		g.Leave()
 	}
 	done.Done()

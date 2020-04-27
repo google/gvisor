@@ -21,10 +21,10 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
-	"sync"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // RefCounter is the interface to be implemented by objects that are reference

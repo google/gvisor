@@ -24,7 +24,8 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"sync"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // maxPorts is a sanity limit on the maximum number of ports to allocate per

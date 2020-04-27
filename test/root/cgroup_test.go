@@ -24,10 +24,11 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/cgroup"
-	"gvisor.dev/gvisor/runsc/dockerutil"
-	"gvisor.dev/gvisor/runsc/testutil"
 )
 
 func verifyPid(pid int, path string) error {
@@ -52,15 +53,82 @@ func verifyPid(pid int, path string) error {
 	if scanner.Err() != nil {
 		return scanner.Err()
 	}
-	return fmt.Errorf("got: %s, want: %d", gots, pid)
+	return fmt.Errorf("got: %v, want: %d", gots, pid)
+}
+
+func TestMemCGroup(t *testing.T) {
+	d := dockerutil.MakeDocker(t)
+	defer d.CleanUp()
+
+	// Start a new container and allocate the specified about of memory.
+	allocMemSize := 128 << 20
+	allocMemLimit := 2 * allocMemSize
+	if err := d.Spawn(dockerutil.RunOpts{
+		Image:  "basic/python",
+		Memory: allocMemLimit / 1024, // Must be in Kb.
+	}, "python", "-c", fmt.Sprintf("import time; s = 'a' * %d; time.sleep(100)", allocMemSize)); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	// Extract the ID to lookup the cgroup.
+	gid, err := d.ID()
+	if err != nil {
+		t.Fatalf("Docker.ID() failed: %v", err)
+	}
+	t.Logf("cgroup ID: %s", gid)
+
+	// Wait when the container will allocate memory.
+	memUsage := 0
+	start := time.Now()
+	for time.Since(start) < 30*time.Second {
+		// Sleep for a brief period of time after spawning the
+		// container (so that Docker can create the cgroup etc.
+		// or after looping below (so the application can start).
+		time.Sleep(100 * time.Millisecond)
+
+		// Read the cgroup memory limit.
+		path := filepath.Join("/sys/fs/cgroup/memory/docker", gid, "memory.limit_in_bytes")
+		outRaw, err := ioutil.ReadFile(path)
+		if err != nil {
+			// It's possible that the container does not exist yet.
+			continue
+		}
+		out := strings.TrimSpace(string(outRaw))
+		memLimit, err := strconv.Atoi(out)
+		if err != nil {
+			t.Fatalf("Atoi(%v): %v", out, err)
+		}
+		if memLimit != allocMemLimit {
+			// The group may not have had the correct limit set yet.
+			continue
+		}
+
+		// Read the cgroup memory usage.
+		path = filepath.Join("/sys/fs/cgroup/memory/docker", gid, "memory.max_usage_in_bytes")
+		outRaw, err = ioutil.ReadFile(path)
+		if err != nil {
+			t.Fatalf("error reading usage: %v", err)
+		}
+		out = strings.TrimSpace(string(outRaw))
+		memUsage, err = strconv.Atoi(out)
+		if err != nil {
+			t.Fatalf("Atoi(%v): %v", out, err)
+		}
+		t.Logf("read usage: %v, wanted: %v", memUsage, allocMemSize)
+
+		// Are we done?
+		if memUsage >= allocMemSize {
+			return
+		}
+	}
+
+	t.Fatalf("%vMB is less than %vMB", memUsage>>20, allocMemSize>>20)
 }
 
 // TestCgroup sets cgroup options and checks that cgroup was properly configured.
 func TestCgroup(t *testing.T) {
-	if err := dockerutil.Pull("alpine"); err != nil {
-		t.Fatal("docker pull failed:", err)
-	}
-	d := dockerutil.MakeDocker("cgroup-test")
+	d := dockerutil.MakeDocker(t)
+	defer d.CleanUp()
 
 	// This is not a comprehensive list of attributes.
 	//
@@ -125,10 +193,17 @@ func TestCgroup(t *testing.T) {
 			want: "5",
 		},
 		{
-			arg:  "--blkio-weight=750",
-			ctrl: "blkio",
-			file: "blkio.weight",
-			want: "750",
+			arg:            "--blkio-weight=750",
+			ctrl:           "blkio",
+			file:           "blkio.weight",
+			want:           "750",
+			skipIfNotFound: true, // blkio groups may not be available.
+		},
+		{
+			arg:  "--pids-limit=1000",
+			ctrl: "pids",
+			file: "pids.max",
+			want: "1000",
 		},
 	}
 
@@ -137,12 +212,15 @@ func TestCgroup(t *testing.T) {
 		args = append(args, attr.arg)
 	}
 
-	args = append(args, "alpine", "sleep", "10000")
-	if err := d.Run(args...); err != nil {
-		t.Fatal("docker create failed:", err)
+	// Start the container.
+	if err := d.Spawn(dockerutil.RunOpts{
+		Image: "basic/alpine",
+		Extra: args, // Cgroup arguments.
+	}, "sleep", "10000"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
 	}
-	defer d.CleanUp()
 
+	// Lookup the relevant cgroup ID.
 	gid, err := d.ID()
 	if err != nil {
 		t.Fatalf("Docker.ID() failed: %v", err)
@@ -191,17 +269,21 @@ func TestCgroup(t *testing.T) {
 	}
 }
 
+// TestCgroup sets cgroup options and checks that cgroup was properly configured.
 func TestCgroupParent(t *testing.T) {
-	if err := dockerutil.Pull("alpine"); err != nil {
-		t.Fatal("docker pull failed:", err)
-	}
-	d := dockerutil.MakeDocker("cgroup-test")
-
-	parent := testutil.RandomName("runsc")
-	if err := d.Run("--cgroup-parent", parent, "alpine", "sleep", "10000"); err != nil {
-		t.Fatal("docker create failed:", err)
-	}
+	d := dockerutil.MakeDocker(t)
 	defer d.CleanUp()
+
+	// Construct a known cgroup name.
+	parent := testutil.RandomID("runsc-")
+	if err := d.Spawn(dockerutil.RunOpts{
+		Image: "basic/alpine",
+		Extra: []string{fmt.Sprintf("--cgroup-parent=%s", parent)},
+	}, "sleep", "10000"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	// Extract the ID to look up the cgroup.
 	gid, err := d.ID()
 	if err != nil {
 		t.Fatalf("Docker.ID() failed: %v", err)

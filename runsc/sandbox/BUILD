@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -9,7 +9,6 @@ go_library(
         "network_unsafe.go",
         "sandbox.go",
     ],
-    importpath = "gvisor.dev/gvisor/runsc/sandbox",
     visibility = [
         "//runsc:__subpackages__",
     ],
@@ -19,6 +18,8 @@ go_library(
         "//pkg/log",
         "//pkg/sentry/control",
         "//pkg/sentry/platform",
+        "//pkg/sync",
+        "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
         "//pkg/urpc",
         "//runsc/boot",

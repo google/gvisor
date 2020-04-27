@@ -16,10 +16,11 @@ package kernel
 
 import (
 	"fmt"
+	"runtime/trace"
 	"sort"
 
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 const (
@@ -31,21 +32,21 @@ const (
 // Infof logs an formatted info message by calling log.Infof.
 func (t *Task) Infof(fmt string, v ...interface{}) {
 	if log.IsLogging(log.Info) {
-		log.Infof(t.logPrefix.Load().(string)+fmt, v...)
+		log.InfofAtDepth(1, t.logPrefix.Load().(string)+fmt, v...)
 	}
 }
 
 // Warningf logs a warning string by calling log.Warningf.
 func (t *Task) Warningf(fmt string, v ...interface{}) {
 	if log.IsLogging(log.Warning) {
-		log.Warningf(t.logPrefix.Load().(string)+fmt, v...)
+		log.WarningfAtDepth(1, t.logPrefix.Load().(string)+fmt, v...)
 	}
 }
 
 // Debugf creates a debug string that includes the task ID.
 func (t *Task) Debugf(fmt string, v ...interface{}) {
 	if log.IsLogging(log.Debug) {
-		log.Debugf(t.logPrefix.Load().(string)+fmt, v...)
+		log.DebugfAtDepth(1, t.logPrefix.Load().(string)+fmt, v...)
 	}
 }
 
@@ -127,11 +128,81 @@ func (t *Task) debugDumpStack() {
 	}
 }
 
-// updateLogPrefix updates the task's cached log prefix to reflect its
-// current thread ID.
+// trace definitions.
+//
+// Note that all region names are prefixed by ':' in order to ensure that they
+// are lexically ordered before all system calls, which use the naked system
+// call name (e.g. "read") for maximum clarity.
+const (
+	traceCategory = "task"
+	runRegion     = ":run"
+	blockRegion   = ":block"
+	cpuidRegion   = ":cpuid"
+	faultRegion   = ":fault"
+)
+
+// updateInfoLocked updates the task's cached log prefix and tracing
+// information to reflect its current thread ID.
 //
 // Preconditions: The task's owning TaskSet.mu must be locked.
-func (t *Task) updateLogPrefixLocked() {
+func (t *Task) updateInfoLocked() {
 	// Use the task's TID in the root PID namespace for logging.
-	t.logPrefix.Store(fmt.Sprintf("[% 4d] ", t.tg.pidns.owner.Root.tids[t]))
+	tid := t.tg.pidns.owner.Root.tids[t]
+	t.logPrefix.Store(fmt.Sprintf("[% 4d] ", tid))
+	t.rebuildTraceContext(tid)
+}
+
+// rebuildTraceContext rebuilds the trace context.
+//
+// Precondition: the passed tid must be the tid in the root namespace.
+func (t *Task) rebuildTraceContext(tid ThreadID) {
+	// Re-initialize the trace context.
+	if t.traceTask != nil {
+		t.traceTask.End()
+	}
+
+	// Note that we define the "task type" to be the dynamic TID. This does
+	// not align perfectly with the documentation for "tasks" in the
+	// tracing package. Tasks may be assumed to be bounded by analysis
+	// tools. However, if we just use a generic "task" type here, then the
+	// "user-defined tasks" page on the tracing dashboard becomes nearly
+	// unusable, as it loads all traces from all tasks.
+	//
+	// We can assume that the number of tasks in the system is not
+	// arbitrarily large (in general it won't be, especially for cases
+	// where we're collecting a brief profile), so using the TID is a
+	// reasonable compromise in this case.
+	t.traceContext, t.traceTask = trace.NewTask(t, fmt.Sprintf("tid:%d", tid))
+}
+
+// traceCloneEvent is called when a new task is spawned.
+//
+// ntid must be the new task's ThreadID in the root namespace.
+func (t *Task) traceCloneEvent(ntid ThreadID) {
+	if !trace.IsEnabled() {
+		return
+	}
+	trace.Logf(t.traceContext, traceCategory, "spawn: %d", ntid)
+}
+
+// traceExitEvent is called when a task exits.
+func (t *Task) traceExitEvent() {
+	if !trace.IsEnabled() {
+		return
+	}
+	trace.Logf(t.traceContext, traceCategory, "exit status: 0x%x", t.exitStatus.Status())
+}
+
+// traceExecEvent is called when a task calls exec.
+func (t *Task) traceExecEvent(tc *TaskContext) {
+	if !trace.IsEnabled() {
+		return
+	}
+	file := tc.MemoryManager.Executable()
+	if file == nil {
+		trace.Logf(t.traceContext, traceCategory, "exec: << unknown >>")
+		return
+	}
+	defer file.DecRef()
+	trace.Logf(t.traceContext, traceCategory, "exec: %s", file.PathnameWithDeleted(t))
 }

@@ -33,7 +33,7 @@ namespace testing {
 namespace {
 
 int fallocate(int fd, int mode, off_t offset, off_t len) {
-  return syscall(__NR_fallocate, fd, mode, offset, len);
+  return RetryEINTR(syscall)(__NR_fallocate, fd, mode, offset, len);
 }
 
 class AllocateTest : public FileTest {
@@ -47,27 +47,27 @@ TEST_F(AllocateTest, Fallocate) {
   EXPECT_EQ(buf.st_size, 0);
 
   // Grow to ten bytes.
-  EXPECT_THAT(fallocate(test_file_fd_.get(), 0, 0, 10), SyscallSucceeds());
+  ASSERT_THAT(fallocate(test_file_fd_.get(), 0, 0, 10), SyscallSucceeds());
   ASSERT_THAT(fstat(test_file_fd_.get(), &buf), SyscallSucceeds());
   EXPECT_EQ(buf.st_size, 10);
 
   // Allocate to a smaller size should be noop.
-  EXPECT_THAT(fallocate(test_file_fd_.get(), 0, 0, 5), SyscallSucceeds());
+  ASSERT_THAT(fallocate(test_file_fd_.get(), 0, 0, 5), SyscallSucceeds());
   ASSERT_THAT(fstat(test_file_fd_.get(), &buf), SyscallSucceeds());
   EXPECT_EQ(buf.st_size, 10);
 
   // Grow again.
-  EXPECT_THAT(fallocate(test_file_fd_.get(), 0, 0, 20), SyscallSucceeds());
+  ASSERT_THAT(fallocate(test_file_fd_.get(), 0, 0, 20), SyscallSucceeds());
   ASSERT_THAT(fstat(test_file_fd_.get(), &buf), SyscallSucceeds());
   EXPECT_EQ(buf.st_size, 20);
 
   // Grow with offset.
-  EXPECT_THAT(fallocate(test_file_fd_.get(), 0, 10, 20), SyscallSucceeds());
+  ASSERT_THAT(fallocate(test_file_fd_.get(), 0, 10, 20), SyscallSucceeds());
   ASSERT_THAT(fstat(test_file_fd_.get(), &buf), SyscallSucceeds());
   EXPECT_EQ(buf.st_size, 30);
 
   // Grow with offset beyond EOF.
-  EXPECT_THAT(fallocate(test_file_fd_.get(), 0, 39, 1), SyscallSucceeds());
+  ASSERT_THAT(fallocate(test_file_fd_.get(), 0, 39, 1), SyscallSucceeds());
   ASSERT_THAT(fstat(test_file_fd_.get(), &buf), SyscallSucceeds());
   EXPECT_EQ(buf.st_size, 40);
 }

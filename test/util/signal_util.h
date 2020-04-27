@@ -18,6 +18,7 @@
 #include <signal.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+
 #include <ostream>
 
 #include "gmock/gmock.h"
@@ -83,6 +84,20 @@ inline void FixupFault(ucontext_t* ctx) {
   //
   // The encoding is 0x48 0xab 0x00.
   ctx->uc_mcontext.gregs[REG_RIP] += 3;
+}
+#elif __aarch64__
+inline void Fault() {
+  // Zero and dereference x0.
+  asm("mov xzr, x0\r\n"
+      "str xzr, [x0]\r\n"
+      :
+      :
+      : "x0");
+}
+
+inline void FixupFault(ucontext_t* ctx) {
+  // Skip the bad instruction above.
+  ctx->uc_mcontext.pc += 4;
 }
 #endif
 

@@ -24,7 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Arch describes an architecture.
@@ -88,6 +88,9 @@ type Context interface {
 	// SyscallNo returns the syscall number.
 	SyscallNo() uintptr
 
+	// SyscallSaveOrig save orignal register value.
+	SyscallSaveOrig()
+
 	// SyscallArgs returns the syscall arguments in an array.
 	SyscallArgs() SyscallArguments
 
@@ -125,9 +128,9 @@ type Context interface {
 	// SetTLS sets the current TLS pointer. Returns false if value is invalid.
 	SetTLS(value uintptr) bool
 
-	// SetRSEQInterruptedIP sets the register that contains the old IP when a
-	// restartable sequence is interrupted.
-	SetRSEQInterruptedIP(value uintptr)
+	// SetOldRSeqInterruptedIP sets the register that contains the old IP
+	// when an "old rseq" restartable sequence is interrupted.
+	SetOldRSeqInterruptedIP(value uintptr)
 
 	// StateData returns a pointer to underlying architecture state.
 	StateData() *State
