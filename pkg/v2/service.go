@@ -75,13 +75,19 @@ const configFile = "config.toml"
 
 // New returns a new shim service that can be used via GRPC
 func New(ctx context.Context, id string, publisher events.Publisher) (shim.Shim, error) {
+	ep, err := newOOMEpoller(publisher)
+	if err != nil {
+		return nil, err
+	}
 	ctx, cancel := context.WithCancel(ctx)
+	go ep.run(ctx)
 	s := &service{
 		id:        id,
 		context:   ctx,
 		processes: make(map[string]rproc.Process),
 		events:    make(chan interface{}, 128),
 		ec:        proc.ExitCh,
+		oomPoller: ep,
 		cancel:    cancel,
 	}
 	go s.processExits()
@@ -104,6 +110,7 @@ type service struct {
 	events    chan interface{}
 	platform  rproc.Platform
 	ec        chan proc.Exit
+	oomPoller *epoller
 
 	id     string
 	bundle string
@@ -343,6 +350,19 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (_ *
 	// save the main task id and bundle to the shim for additional requests
 	s.id = r.ID
 	s.bundle = r.Bundle
+
+	// Set up OOM notification on the sandbox's cgroup. This is done on sandbox
+	// create since the sandbox process will be created here.
+	pid := process.Pid()
+	if pid > 0 {
+		cg, err := cgroups.Load(cgroups.V1, cgroups.PidPath(pid))
+		if err != nil {
+			return nil, errors.Wrapf(err, "loading cgroup for %d", pid)
+		}
+		if err := s.oomPoller.add(s.id, cg); err != nil {
+			return nil, errors.Wrapf(err, "add cg to OOM monitor")
+		}
+	}
 	s.task = process
 	return &taskAPI.CreateTaskResponse{
 		Pid: uint32(process.Pid()),
@@ -359,6 +379,8 @@ func (s *service) Start(ctx context.Context, r *taskAPI.StartRequest) (*taskAPI.
 	if err := p.Start(ctx); err != nil {
 		return nil, err
 	}
+	// TODO: Set the cgroup and oom notifications on restore.
+	// https://github.com/google/gvisor-containerd-shim/issues/58
 	return &taskAPI.StartResponse{
 		Pid: uint32(p.Pid()),
 	}, nil
