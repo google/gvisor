@@ -98,13 +98,13 @@ func (e *endpoint) WritePackets(*stack.Route, *stack.GSO, stack.PacketBufferList
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
 func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
-	// There should be an ethernet header at the beginning of vv.
-	hdr, ok := vv.PullUp(header.EthernetMinimumSize)
-	if !ok {
-		// Reject the packet if it's shorter than an ethernet header.
+	// Reject the packet if it's shorter than an ethernet header.
+	if vv.Size() < header.EthernetMinimumSize {
 		return tcpip.ErrBadAddress
 	}
-	linkHeader := header.Ethernet(hdr)
+
+	// There should be an ethernet header at the beginning of vv.
+	linkHeader := header.Ethernet(vv.First()[:header.EthernetMinimumSize])
 	vv.TrimFront(len(linkHeader))
 	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, linkHeader.Type(), stack.PacketBuffer{
 		Data:       vv,
