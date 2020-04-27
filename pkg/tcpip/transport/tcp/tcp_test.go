@@ -35,6 +35,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -209,8 +210,15 @@ func TestTCPResetsSentIncrement(t *testing.T) {
 	c.SendPacket(nil, ackHeaders)
 
 	c.GetPacket()
-	if got := stats.TCP.ResetsSent.Value(); got != want {
-		t.Errorf("got stats.TCP.ResetsSent.Value() = %v, want = %v", got, want)
+
+	metricPollFn := func() error {
+		if got := stats.TCP.ResetsSent.Value(); got != want {
+			return fmt.Errorf("got stats.TCP.ResetsSent.Value() = %v, want = %v", got, want)
+		}
+		return nil
+	}
+	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
+		t.Error(err)
 	}
 }
 
