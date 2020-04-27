@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,8 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
-
-// LINT.IfChange
 
 // maxIovs is the maximum number of iovecs to pass to the host.
 var maxIovs = linux.UIO_MAXIOV
@@ -113,5 +111,3 @@ func buildIovec(bufs [][]byte, maxlen int64, truncate bool) (length int64, iovec
 
 	return total, iovecs, nil, err
 }
-
-// LINT.ThenChange(../../fsimpl/host/socket_iovec.go)
