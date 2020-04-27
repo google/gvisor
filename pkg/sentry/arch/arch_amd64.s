@@ -26,10 +26,11 @@
 //
 // func initX86FPState(data *FloatingPointData, useXsave bool)
 //
-// We need to clear out and initialize an empty fp state area since the sentry
-// may have left sensitive information in the floating point registers.
+// We need to clear out and initialize an empty fp state area since the sentry,
+// or any previous loader, may have left sensitive information in the floating
+// point registers.
 //
-// Preconditions: data is zeroed
+// Preconditions: data is zeroed.
 TEXT ·initX86FPState(SB), $24-16
 	// Save MXCSR (callee-save)
 	STMXCSR	mxcsr-8(SP)

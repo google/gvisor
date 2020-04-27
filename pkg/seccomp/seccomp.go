@@ -199,6 +199,10 @@ func ruleViolationLabel(ruleSetIdx int, sysno uintptr, idx int) string {
 	return fmt.Sprintf("ruleViolation_%v_%v_%v", ruleSetIdx, sysno, idx)
 }
 
+func ruleLabel(ruleSetIdx int, sysno uintptr, idx int, name string) string {
+	return fmt.Sprintf("rule_%v_%v_%v_%v", ruleSetIdx, sysno, idx, name)
+}
+
 func checkArgsLabel(sysno uintptr) string {
 	return fmt.Sprintf("checkArgs_%v", sysno)
 }
@@ -215,13 +219,38 @@ func addSyscallArgsCheck(p *bpf.ProgramBuilder, rules []Rule, action linux.BPFAc
 				switch a := arg.(type) {
 				case AllowAny:
 				case AllowValue:
+					dataOffsetLow := seccompDataOffsetArgLow(i)
+					dataOffsetHigh := seccompDataOffsetArgHigh(i)
+					if i == RuleIP {
+						dataOffsetLow = seccompDataOffsetIPLow
+						dataOffsetHigh = seccompDataOffsetIPHigh
+					}
 					high, low := uint32(a>>32), uint32(a)
 					// assert arg_low == low
-					p.AddStmt(bpf.Ld|bpf.Abs|bpf.W, seccompDataOffsetArgLow(i))
+					p.AddStmt(bpf.Ld|bpf.Abs|bpf.W, dataOffsetLow)
 					p.AddJumpFalseLabel(bpf.Jmp|bpf.Jeq|bpf.K, low, 0, ruleViolationLabel(ruleSetIdx, sysno, ruleidx))
 					// assert arg_high == high
-					p.AddStmt(bpf.Ld|bpf.Abs|bpf.W, seccompDataOffsetArgHigh(i))
+					p.AddStmt(bpf.Ld|bpf.Abs|bpf.W, dataOffsetHigh)
 					p.AddJumpFalseLabel(bpf.Jmp|bpf.Jeq|bpf.K, high, 0, ruleViolationLabel(ruleSetIdx, sysno, ruleidx))
+					labelled = true
+				case GreaterThan:
+					dataOffsetLow := seccompDataOffsetArgLow(i)
+					dataOffsetHigh := seccompDataOffsetArgHigh(i)
+					if i == RuleIP {
+						dataOffsetLow = seccompDataOffsetIPLow
+						dataOffsetHigh = seccompDataOffsetIPHigh
+					}
+					labelGood := fmt.Sprintf("gt%v", i)
+					high, low := uint32(a>>32), uint32(a)
+					// assert arg_high < high
+					p.AddStmt(bpf.Ld|bpf.Abs|bpf.W, dataOffsetHigh)
+					p.AddJumpFalseLabel(bpf.Jmp|bpf.Jge|bpf.K, high, 0, ruleViolationLabel(ruleSetIdx, sysno, ruleidx))
+					// arg_high > high
+					p.AddJumpFalseLabel(bpf.Jmp|bpf.Jeq|bpf.K, high, 0, ruleLabel(ruleSetIdx, sysno, ruleidx, labelGood))
+					// arg_low < low
+					p.AddStmt(bpf.Ld|bpf.Abs|bpf.W, dataOffsetLow)
+					p.AddJumpFalseLabel(bpf.Jmp|bpf.Jgt|bpf.K, low, 0, ruleViolationLabel(ruleSetIdx, sysno, ruleidx))
+					p.AddLabel(ruleLabel(ruleSetIdx, sysno, ruleidx, labelGood))
 					labelled = true
 				default:
 					return fmt.Errorf("unknown syscall rule type: %v", reflect.TypeOf(a))

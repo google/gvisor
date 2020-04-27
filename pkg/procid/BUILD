@@ -1,5 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -10,7 +9,6 @@ go_library(
         "procid_amd64.s",
         "procid_arm64.s",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/procid",
     visibility = ["//visibility:public"],
 )
 
@@ -20,7 +18,8 @@ go_test(
     srcs = [
         "procid_test.go",
     ],
-    embed = [":procid"],
+    library = ":procid",
+    deps = ["//pkg/sync"],
 )
 
 go_test(
@@ -30,5 +29,6 @@ go_test(
         "procid_net_test.go",
         "procid_test.go",
     ],
-    embed = [":procid"],
+    library = ":procid",
+    deps = ["//pkg/sync"],
 )

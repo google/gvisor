@@ -66,10 +66,15 @@ func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error) {
 
 // HandleUnknownDestinationPacket handles packets targeted at this protocol but
 // that don't match any existing endpoint.
-func (p *protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.TransportEndpointID, netHeader buffer.View, vv buffer.VectorisedView) bool {
+func (p *protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.TransportEndpointID, pkt stack.PacketBuffer) bool {
 	// Get the header then trim it from the view.
-	hdr := header.UDP(vv.First())
-	if int(hdr.Length()) > vv.Size() {
+	h, ok := pkt.Data.PullUp(header.UDPMinimumSize)
+	if !ok {
+		// Malformed packet.
+		r.Stack().Stats().UDP.MalformedPacketsReceived.Increment()
+		return true
+	}
+	if int(header.UDP(h).Length()) > pkt.Data.Size() {
 		// Malformed packet.
 		r.Stack().Stats().UDP.MalformedPacketsReceived.Increment()
 		return true
@@ -116,20 +121,18 @@ func (p *protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.Trans
 		}
 		headerLen := int(r.MaxHeaderLength()) + header.ICMPv4MinimumSize
 		available := int(mtu) - headerLen
-		payloadLen := len(netHeader) + vv.Size()
+		payloadLen := len(pkt.NetworkHeader) + pkt.Data.Size()
 		if payloadLen > available {
 			payloadLen = available
 		}
 
-		// The buffers used by vv and netHeader may be used elsewhere
-		// in the system.  For example, a raw or packet socket may use
-		// what UDP considers an unreachable destination. Thus we deep
-		// copy vv and netHeader to prevent multiple ownership and SR
-		// errors.
-		newNetHeader := make(buffer.View, len(netHeader))
-		copy(newNetHeader, netHeader)
-		payload := buffer.NewVectorisedView(len(newNetHeader), []buffer.View{newNetHeader})
-		payload.Append(vv.ToView().ToVectorisedView())
+		// The buffers used by pkt may be used elsewhere in the system.
+		// For example, a raw or packet socket may use what UDP
+		// considers an unreachable destination. Thus we deep copy pkt
+		// to prevent multiple ownership and SR errors.
+		newNetHeader := append(buffer.View(nil), pkt.NetworkHeader...)
+		payload := newNetHeader.ToVectorisedView()
+		payload.Append(pkt.Data.ToView().ToVectorisedView())
 		payload.CapLength(payloadLen)
 
 		hdr := buffer.NewPrependable(headerLen)
@@ -137,7 +140,10 @@ func (p *protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.Trans
 		pkt.SetType(header.ICMPv4DstUnreachable)
 		pkt.SetCode(header.ICMPv4PortUnreachable)
 		pkt.SetChecksum(header.ICMPv4Checksum(pkt, payload))
-		r.WritePacket(nil /* gso */, hdr, payload, stack.NetworkHeaderParams{Protocol: header.ICMPv4ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS})
+		r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv4ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}, stack.PacketBuffer{
+			Header: hdr,
+			Data:   payload,
+		})
 
 	case header.IPv6AddressSize:
 		if !r.Stack().AllowICMPMessage() {
@@ -158,12 +164,12 @@ func (p *protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.Trans
 		}
 		headerLen := int(r.MaxHeaderLength()) + header.ICMPv6DstUnreachableMinimumSize
 		available := int(mtu) - headerLen
-		payloadLen := len(netHeader) + vv.Size()
+		payloadLen := len(pkt.NetworkHeader) + pkt.Data.Size()
 		if payloadLen > available {
 			payloadLen = available
 		}
-		payload := buffer.NewVectorisedView(len(netHeader), []buffer.View{netHeader})
-		payload.Append(vv)
+		payload := buffer.NewVectorisedView(len(pkt.NetworkHeader), []buffer.View{pkt.NetworkHeader})
+		payload.Append(pkt.Data)
 		payload.CapLength(payloadLen)
 
 		hdr := buffer.NewPrependable(headerLen)
@@ -171,20 +177,29 @@ func (p *protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.Trans
 		pkt.SetType(header.ICMPv6DstUnreachable)
 		pkt.SetCode(header.ICMPv6PortUnreachable)
 		pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, payload))
-		r.WritePacket(nil /* gso */, hdr, payload, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS})
+		r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}, stack.PacketBuffer{
+			Header: hdr,
+			Data:   payload,
+		})
 	}
 	return true
 }
 
-// SetOption implements TransportProtocol.SetOption.
-func (p *protocol) SetOption(option interface{}) *tcpip.Error {
+// SetOption implements stack.TransportProtocol.SetOption.
+func (*protocol) SetOption(option interface{}) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
 }
 
-// Option implements TransportProtocol.Option.
-func (p *protocol) Option(option interface{}) *tcpip.Error {
+// Option implements stack.TransportProtocol.Option.
+func (*protocol) Option(option interface{}) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
 }
+
+// Close implements stack.TransportProtocol.Close.
+func (*protocol) Close() {}
+
+// Wait implements stack.TransportProtocol.Wait.
+func (*protocol) Wait() {}
 
 // NewProtocol returns a UDP transport protocol.
 func NewProtocol() stack.TransportProtocol {

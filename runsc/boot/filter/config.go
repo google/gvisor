@@ -26,10 +26,6 @@ import (
 
 // allowedSyscalls is the set of syscalls executed by the Sentry to the host OS.
 var allowedSyscalls = seccomp.SyscallRules{
-	syscall.SYS_ARCH_PRCTL: []seccomp.Rule{
-		{seccomp.AllowValue(linux.ARCH_GET_FS)},
-		{seccomp.AllowValue(linux.ARCH_SET_FS)},
-	},
 	syscall.SYS_CLOCK_GETTIME: {},
 	syscall.SYS_CLONE: []seccomp.Rule{
 		{
@@ -42,9 +38,15 @@ var allowedSyscalls = seccomp.SyscallRules{
 					syscall.CLONE_THREAD),
 		},
 	},
-	syscall.SYS_CLOSE:         {},
-	syscall.SYS_DUP:           {},
-	syscall.SYS_DUP2:          {},
+	syscall.SYS_CLOSE: {},
+	syscall.SYS_DUP:   {},
+	syscall.SYS_DUP3: []seccomp.Rule{
+		{
+			seccomp.AllowAny{},
+			seccomp.AllowAny{},
+			seccomp.AllowValue(syscall.O_CLOEXEC),
+		},
+	},
 	syscall.SYS_EPOLL_CREATE1: {},
 	syscall.SYS_EPOLL_CTL:     {},
 	syscall.SYS_EPOLL_PWAIT: []seccomp.Rule{
@@ -132,11 +134,6 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.AllowValue(syscall.SOL_SOCKET),
 			seccomp.AllowValue(syscall.SO_SNDBUF),
 		},
-		{
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.SOL_SOCKET),
-			seccomp.AllowValue(syscall.SO_REUSEADDR),
-		},
 	},
 	syscall.SYS_GETTID:       {},
 	syscall.SYS_GETTIMEOFDAY: {},
@@ -177,6 +174,18 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_LSEEK:   {},
 	syscall.SYS_MADVISE: {},
 	syscall.SYS_MINCORE: {},
+	// Used by the Go runtime as a temporarily workaround for a Linux
+	// 5.2-5.4 bug.
+	//
+	// See src/runtime/os_linux_x86.go.
+	//
+	// TODO(b/148688965): Remove once this is gone from Go.
+	syscall.SYS_MLOCK: []seccomp.Rule{
+		{
+			seccomp.AllowAny{},
+			seccomp.AllowValue(4096),
+		},
+	},
 	syscall.SYS_MMAP: []seccomp.Rule{
 		{
 			seccomp.AllowAny{},
@@ -220,7 +229,9 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_NANOSLEEP: {},
 	syscall.SYS_PPOLL:     {},
 	syscall.SYS_PREAD64:   {},
+	syscall.SYS_PREADV:    {},
 	syscall.SYS_PWRITE64:  {},
+	syscall.SYS_PWRITEV:   {},
 	syscall.SYS_READ:      {},
 	syscall.SYS_RECVMSG: []seccomp.Rule{
 		{
@@ -273,10 +284,19 @@ var allowedSyscalls = seccomp.SyscallRules{
 		{seccomp.AllowAny{}, seccomp.AllowValue(syscall.SHUT_RDWR)},
 	},
 	syscall.SYS_SIGALTSTACK:     {},
+	unix.SYS_STATX:              {},
 	syscall.SYS_SYNC_FILE_RANGE: {},
 	syscall.SYS_TGKILL: []seccomp.Rule{
 		{
 			seccomp.AllowValue(uint64(os.Getpid())),
+		},
+	},
+	syscall.SYS_UTIMENSAT: []seccomp.Rule{
+		{
+			seccomp.AllowAny{},
+			seccomp.AllowValue(0), /* null pathname */
+			seccomp.AllowAny{},
+			seccomp.AllowValue(0), /* flags */
 		},
 	},
 	syscall.SYS_WRITE: {},
@@ -313,6 +333,26 @@ func hostInetFilters() seccomp.SyscallRules {
 		syscall.SYS_GETPEERNAME: {},
 		syscall.SYS_GETSOCKNAME: {},
 		syscall.SYS_GETSOCKOPT: []seccomp.Rule{
+			{
+				seccomp.AllowAny{},
+				seccomp.AllowValue(syscall.SOL_IP),
+				seccomp.AllowValue(syscall.IP_TOS),
+			},
+			{
+				seccomp.AllowAny{},
+				seccomp.AllowValue(syscall.SOL_IP),
+				seccomp.AllowValue(syscall.IP_RECVTOS),
+			},
+			{
+				seccomp.AllowAny{},
+				seccomp.AllowValue(syscall.SOL_IPV6),
+				seccomp.AllowValue(syscall.IPV6_TCLASS),
+			},
+			{
+				seccomp.AllowAny{},
+				seccomp.AllowValue(syscall.SOL_IPV6),
+				seccomp.AllowValue(syscall.IPV6_RECVTCLASS),
+			},
 			{
 				seccomp.AllowAny{},
 				seccomp.AllowValue(syscall.SOL_IPV6),
@@ -416,6 +456,34 @@ func hostInetFilters() seccomp.SyscallRules {
 				seccomp.AllowAny{},
 				seccomp.AllowValue(4),
 			},
+			{
+				seccomp.AllowAny{},
+				seccomp.AllowValue(syscall.SOL_IP),
+				seccomp.AllowValue(syscall.IP_TOS),
+				seccomp.AllowAny{},
+				seccomp.AllowValue(4),
+			},
+			{
+				seccomp.AllowAny{},
+				seccomp.AllowValue(syscall.SOL_IP),
+				seccomp.AllowValue(syscall.IP_RECVTOS),
+				seccomp.AllowAny{},
+				seccomp.AllowValue(4),
+			},
+			{
+				seccomp.AllowAny{},
+				seccomp.AllowValue(syscall.SOL_IPV6),
+				seccomp.AllowValue(syscall.IPV6_TCLASS),
+				seccomp.AllowAny{},
+				seccomp.AllowValue(4),
+			},
+			{
+				seccomp.AllowAny{},
+				seccomp.AllowValue(syscall.SOL_IPV6),
+				seccomp.AllowValue(syscall.IPV6_RECVTCLASS),
+				seccomp.AllowAny{},
+				seccomp.AllowValue(4),
+			},
 		},
 		syscall.SYS_SHUTDOWN: []seccomp.Rule{
 			{
@@ -475,19 +543,6 @@ func controlServerFilters(fd int) seccomp.SyscallRules {
 				seccomp.AllowAny{},
 				seccomp.AllowValue(syscall.SOL_SOCKET),
 				seccomp.AllowValue(syscall.SO_PEERCRED),
-			},
-		},
-	}
-}
-
-// profileFilters returns extra syscalls made by runtime/pprof package.
-func profileFilters() seccomp.SyscallRules {
-	return seccomp.SyscallRules{
-		syscall.SYS_OPENAT: []seccomp.Rule{
-			{
-				seccomp.AllowAny{},
-				seccomp.AllowAny{},
-				seccomp.AllowValue(syscall.O_RDONLY | syscall.O_LARGEFILE | syscall.O_CLOEXEC),
 			},
 		},
 	}

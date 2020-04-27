@@ -15,6 +15,7 @@
 package state
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sort"
@@ -218,4 +219,14 @@ func (m Map) AfterLoad(fn func()) {
 	// Queue the local callback; this will execute when all of the above
 	// data dependencies have been cleared.
 	m.os.callbacks = append(m.os.callbacks, fn)
+}
+
+// Context returns the current context object.
+func (m Map) Context() context.Context {
+	if m.es != nil {
+		return m.es.ctx
+	} else if m.ds != nil {
+		return m.ds.ctx
+	}
+	return context.Background() // No context.
 }

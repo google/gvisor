@@ -15,13 +15,13 @@
 package kvm
 
 import (
-	"sync"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // dirtySet tracks vCPUs for invalidation.
@@ -127,7 +127,7 @@ func (as *addressSpace) mapHost(addr usermem.Addr, m hostMapEntry, at usermem.Ac
 		// not have physical mappings, the KVM module may inject
 		// spurious exceptions when emulation fails (i.e. it tries to
 		// emulate because the RIP is pointed at those pages).
-		as.machine.mapPhysical(physical, length)
+		as.machine.mapPhysical(physical, length, physicalRegions, _KVM_MEM_FLAGS_NONE)
 
 		// Install the page table mappings. Note that the ordering is
 		// important; if the pagetable mappings were installed before

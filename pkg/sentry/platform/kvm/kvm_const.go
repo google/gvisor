@@ -49,11 +49,13 @@ const (
 	_KVM_EXIT_SHUTDOWN        = 0x8
 	_KVM_EXIT_FAIL_ENTRY      = 0x9
 	_KVM_EXIT_INTERNAL_ERROR  = 0x11
+	_KVM_EXIT_SYSTEM_EVENT    = 0x18
 )
 
 // KVM capability options.
 const (
-	_KVM_CAP_MAX_VCPUS = 0x42
+	_KVM_CAP_MAX_VCPUS       = 0x42
+	_KVM_CAP_ARM_VM_IPA_SIZE = 0xa5
 )
 
 // KVM limits.
@@ -61,4 +63,11 @@ const (
 	_KVM_NR_VCPUS         = 0xff
 	_KVM_NR_INTERRUPTS    = 0x100
 	_KVM_NR_CPUID_ENTRIES = 0x100
+)
+
+// KVM kvm_memory_region::flags.
+const (
+	_KVM_MEM_LOG_DIRTY_PAGES = uint32(1) << 0
+	_KVM_MEM_READONLY        = uint32(1) << 1
+	_KVM_MEM_FLAGS_NONE      = 0
 )

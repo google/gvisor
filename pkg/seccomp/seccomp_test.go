@@ -340,6 +340,81 @@ func TestBasic(t *testing.T) {
 				},
 			},
 		},
+		{
+			ruleSets: []RuleSet{
+				{
+					Rules: SyscallRules{
+						1: []Rule{
+							{
+								GreaterThan(0xf),
+								GreaterThan(0xabcd000d),
+							},
+						},
+					},
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+			defaultAction: linux.SECCOMP_RET_TRAP,
+			specs: []spec{
+				{
+					desc: "GreaterThan: Syscall argument allowed",
+					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0x10, 0xffffffff}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "GreaterThan: Syscall argument disallowed (equal)",
+					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0xf, 0xffffffff}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "Syscall argument disallowed (smaller)",
+					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0x0, 0xffffffff}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "GreaterThan2: Syscall argument allowed",
+					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0x10, 0xfbcd000d}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "GreaterThan2: Syscall argument disallowed (equal)",
+					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0x10, 0xabcd000d}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "GreaterThan2: Syscall argument disallowed (smaller)",
+					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0x10, 0xa000ffff}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+			},
+		},
+		{
+			ruleSets: []RuleSet{
+				{
+					Rules: SyscallRules{
+						1: []Rule{
+							{
+								RuleIP: AllowValue(0x7aabbccdd),
+							},
+						},
+					},
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+			defaultAction: linux.SECCOMP_RET_TRAP,
+			specs: []spec{
+				{
+					desc: "IP: Syscall instruction pointer allowed",
+					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{}, instructionPointer: 0x7aabbccdd},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "IP: Syscall instruction pointer disallowed",
+					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{}, instructionPointer: 0x711223344},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+			},
+		},
 	} {
 		instrs, err := BuildProgram(test.ruleSets, test.defaultAction)
 		if err != nil {
@@ -376,7 +451,7 @@ func TestRandom(t *testing.T) {
 		}
 	}
 
-	fmt.Printf("Testing filters: %v", syscallRules)
+	t.Logf("Testing filters: %v", syscallRules)
 	instrs, err := BuildProgram([]RuleSet{
 		RuleSet{
 			Rules:  syscallRules,

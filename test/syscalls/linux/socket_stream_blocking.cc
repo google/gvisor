@@ -20,7 +20,6 @@
 #include <sys/un.h>
 
 #include "gtest/gtest.h"
-#include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/socket_test_util.h"
@@ -33,38 +32,38 @@ namespace gvisor {
 namespace testing {
 
 TEST_P(BlockingStreamSocketPairTest, BlockPartialWriteClosed) {
-    // FIXME(b/35921550): gVisor doesn't support SO_SNDBUF on UDS, nor does it
-    // enforce any limit; it will write arbitrary amounts of data without
-    // blocking.
-    SKIP_IF(IsRunningOnGvisor());
+  // FIXME(b/35921550): gVisor doesn't support SO_SNDBUF on UDS, nor does it
+  // enforce any limit; it will write arbitrary amounts of data without
+  // blocking.
+  SKIP_IF(IsRunningOnGvisor());
 
-    auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-    int buffer_size;
-    socklen_t length = sizeof(buffer_size);
-    ASSERT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDBUF,
-                           &buffer_size, &length),
-                SyscallSucceeds());
+  int buffer_size;
+  socklen_t length = sizeof(buffer_size);
+  ASSERT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDBUF,
+                         &buffer_size, &length),
+              SyscallSucceeds());
 
-    int wfd = sockets->first_fd();
-    ScopedThread t([wfd, buffer_size]() {
-      std::vector<char> buf(2 * buffer_size);
-      // Write more than fits in the buffer. Blocks then returns partial write
-      // when the other end is closed. The next call returns EPIPE.
-      //
-      // N.B. writes occur in chunks, so we may see less than buffer_size from
-      // the first call.
-      ASSERT_THAT(write(wfd, buf.data(), buf.size()),
-                  SyscallSucceedsWithValue(::testing::Gt(0)));
-      ASSERT_THAT(write(wfd, buf.data(), buf.size()),
-                  ::testing::AnyOf(SyscallFailsWithErrno(EPIPE),
-                                   SyscallFailsWithErrno(ECONNRESET)));
-    });
+  int wfd = sockets->first_fd();
+  ScopedThread t([wfd, buffer_size]() {
+    std::vector<char> buf(2 * buffer_size);
+    // Write more than fits in the buffer. Blocks then returns partial write
+    // when the other end is closed. The next call returns EPIPE.
+    //
+    // N.B. writes occur in chunks, so we may see less than buffer_size from
+    // the first call.
+    ASSERT_THAT(write(wfd, buf.data(), buf.size()),
+                SyscallSucceedsWithValue(::testing::Gt(0)));
+    ASSERT_THAT(write(wfd, buf.data(), buf.size()),
+                ::testing::AnyOf(SyscallFailsWithErrno(EPIPE),
+                                 SyscallFailsWithErrno(ECONNRESET)));
+  });
 
-    // Leave time for write to become blocked.
-    absl::SleepFor(absl::Seconds(1));
+  // Leave time for write to become blocked.
+  absl::SleepFor(absl::Seconds(1));
 
-    ASSERT_THAT(close(sockets->release_second_fd()), SyscallSucceeds());
+  ASSERT_THAT(close(sockets->release_second_fd()), SyscallSucceeds());
 }
 
 // Random save may interrupt the call to sendmsg() in SendLargeSendMsg(),

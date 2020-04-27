@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -10,7 +10,6 @@ go_library(
         "namespace.go",
         "specutils.go",
     ],
-    importpath = "gvisor.dev/gvisor/runsc/specutils",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
@@ -28,6 +27,6 @@ go_test(
     name = "specutils_test",
     size = "small",
     srcs = ["specutils_test.go"],
-    embed = [":specutils"],
+    library = ":specutils",
     deps = ["@com_github_opencontainers_runtime-spec//specs-go:go_default_library"],
 )

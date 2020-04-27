@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: gVisor Documentation (FAQ)
+    url: https://gvisor.dev/docs/user_guide/faq/
+    about: Please see our documentation for common questions and answers.
+  - name: gVisor Documentation (Debugging)
+    url: https://gvisor.dev/docs/user_guide/debugging/
+    about: Please see our documentation for debugging tips.
+  - name: gVisor User Forum
+    url: https://groups.google.com/g/gvisor-users
+    about: Ask and answer general questions here.

@@ -130,6 +130,33 @@ void TcpSocketTest::TearDown() {
   }
 }
 
+TEST_P(TcpSocketTest, ConnectOnEstablishedConnection) {
+  sockaddr_storage addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+  socklen_t addrlen = sizeof(addr);
+
+  ASSERT_THAT(
+      connect(s_, reinterpret_cast<const struct sockaddr*>(&addr), addrlen),
+      SyscallFailsWithErrno(EISCONN));
+  ASSERT_THAT(
+      connect(t_, reinterpret_cast<const struct sockaddr*>(&addr), addrlen),
+      SyscallFailsWithErrno(EISCONN));
+}
+
+TEST_P(TcpSocketTest, ShutdownWriteInTimeWait) {
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallSucceeds());
+  EXPECT_THAT(shutdown(s_, SHUT_RDWR), SyscallSucceeds());
+  absl::SleepFor(absl::Seconds(1));  // Wait to enter TIME_WAIT.
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallFailsWithErrno(ENOTCONN));
+}
+
+TEST_P(TcpSocketTest, ShutdownWriteInFinWait1) {
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallSucceeds());
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallSucceeds());
+  absl::SleepFor(absl::Seconds(1));  // Wait to enter FIN-WAIT2.
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallSucceeds());
+}
+
 TEST_P(TcpSocketTest, DataCoalesced) {
   char buf[10];
 
@@ -231,7 +258,8 @@ TEST_P(TcpSocketTest, ZeroWriteAllowed) {
 }
 
 // Test that a non-blocking write with a buffer that is larger than the send
-// buffer size will not actually write the whole thing at once.
+// buffer size will not actually write the whole thing at once. Regression test
+// for b/64438887.
 TEST_P(TcpSocketTest, NonblockingLargeWrite) {
   // Set the FD to O_NONBLOCK.
   int opts;
@@ -394,8 +422,15 @@ TEST_P(TcpSocketTest, PollWithFullBufferBlocks) {
                          sizeof(tcp_nodelay_flag)),
               SyscallSucceeds());
 
+  // Set a 256KB send/receive buffer.
+  int buf_sz = 1 << 18;
+  EXPECT_THAT(setsockopt(t_, SOL_SOCKET, SO_RCVBUF, &buf_sz, sizeof(buf_sz)),
+              SyscallSucceedsWithValue(0));
+  EXPECT_THAT(setsockopt(s_, SOL_SOCKET, SO_SNDBUF, &buf_sz, sizeof(buf_sz)),
+              SyscallSucceedsWithValue(0));
+
   // Create a large buffer that will be used for sending.
-  std::vector<char> buf(10 * sendbuf_size_);
+  std::vector<char> buf(1 << 16);
 
   // Write until we receive an error.
   while (RetryEINTR(send)(s_, buf.data(), buf.size(), 0) != -1) {
@@ -405,6 +440,11 @@ TEST_P(TcpSocketTest, PollWithFullBufferBlocks) {
   }
   // The last error should have been EWOULDBLOCK.
   ASSERT_EQ(errno, EWOULDBLOCK);
+
+  // Now polling on the FD with a timeout should return 0 corresponding to no
+  // FDs ready.
+  struct pollfd poll_fd = {s_, POLLOUT, 0};
+  EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 10), SyscallSucceedsWithValue(0));
 }
 
 TEST_P(TcpSocketTest, MsgTrunc) {
@@ -789,6 +829,20 @@ TEST_P(TcpSocketTest, FullBuffer) {
   t_ = -1;
 }
 
+TEST_P(TcpSocketTest, PollAfterShutdown) {
+  ScopedThread client_thread([this]() {
+    EXPECT_THAT(shutdown(s_, SHUT_WR), SyscallSucceedsWithValue(0));
+    struct pollfd poll_fd = {s_, POLLIN | POLLERR | POLLHUP, 0};
+    EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 10000),
+                SyscallSucceedsWithValue(1));
+  });
+
+  EXPECT_THAT(shutdown(t_, SHUT_WR), SyscallSucceedsWithValue(0));
+  struct pollfd poll_fd = {t_, POLLIN | POLLERR | POLLHUP, 0};
+  EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 10000),
+              SyscallSucceedsWithValue(1));
+}
+
 TEST_P(SimpleTcpSocketTest, NonBlockingConnectNoListener) {
   // Initialize address to the loopback one.
   sockaddr_storage addr =
@@ -940,6 +994,78 @@ TEST_P(SimpleTcpSocketTest, BlockingConnectRefused) {
 
   // Avoiding triggering save in destructor of s.
   EXPECT_THAT(close(s.release()), SyscallSucceeds());
+}
+
+// Test that connecting to a non-listening port and thus receiving a RST is
+// handled appropriately by the socket - the port that the socket was bound to
+// is released and the expected error is returned.
+TEST_P(SimpleTcpSocketTest, CleanupOnConnectionRefused) {
+  // Create a socket that is known to not be listening. As is it bound but not
+  // listening, when another socket connects to the port, it will refuse..
+  FileDescriptor bound_s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  sockaddr_storage bound_addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+  socklen_t bound_addrlen = sizeof(bound_addr);
+
+  ASSERT_THAT(
+      bind(bound_s.get(), reinterpret_cast<struct sockaddr*>(&bound_addr),
+           bound_addrlen),
+      SyscallSucceeds());
+
+  // Get the addresses the socket is bound to because the port is chosen by the
+  // stack.
+  ASSERT_THAT(getsockname(bound_s.get(),
+                          reinterpret_cast<struct sockaddr*>(&bound_addr),
+                          &bound_addrlen),
+              SyscallSucceeds());
+
+  // Create, initialize, and bind the socket that is used to test connecting to
+  // the non-listening port.
+  FileDescriptor client_s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  // Initialize client address to the loopback one.
+  sockaddr_storage client_addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+  socklen_t client_addrlen = sizeof(client_addr);
+
+  ASSERT_THAT(
+      bind(client_s.get(), reinterpret_cast<struct sockaddr*>(&client_addr),
+           client_addrlen),
+      SyscallSucceeds());
+
+  ASSERT_THAT(getsockname(client_s.get(),
+                          reinterpret_cast<struct sockaddr*>(&client_addr),
+                          &client_addrlen),
+              SyscallSucceeds());
+
+  // Now the test: connect to the bound but not listening socket with the
+  // client socket. The bound socket should return a RST and cause the client
+  // socket to return an error and clean itself up immediately.
+  // The error being ECONNREFUSED diverges with RFC 793, page 37, but does what
+  // Linux does.
+  ASSERT_THAT(connect(client_s.get(),
+                      reinterpret_cast<const struct sockaddr*>(&bound_addr),
+                      bound_addrlen),
+              SyscallFailsWithErrno(ECONNREFUSED));
+
+  FileDescriptor new_s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  // Test binding to the address from the client socket. This should be okay
+  // if it was dropped correctly.
+  ASSERT_THAT(
+      bind(new_s.get(), reinterpret_cast<struct sockaddr*>(&client_addr),
+           client_addrlen),
+      SyscallSucceeds());
+
+  // Attempt #2, with the new socket and reused addr our connect should fail in
+  // the same way as before, not with an EADDRINUSE.
+  ASSERT_THAT(connect(client_s.get(),
+                      reinterpret_cast<const struct sockaddr*>(&bound_addr),
+                      bound_addrlen),
+              SyscallFailsWithErrno(ECONNREFUSED));
 }
 
 // Test that we get an ECONNREFUSED with a nonblocking socket.
@@ -1148,6 +1274,108 @@ TEST_P(SimpleTcpSocketTest, SetMaxSegFailsForInvalidMSSValues) {
                            sizeof(tcp_max_seg)),
                 SyscallFailsWithErrno(EINVAL));
   }
+}
+
+TEST_P(SimpleTcpSocketTest, SetTCPUserTimeout) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  {
+    constexpr int kTCPUserTimeout = -1;
+    EXPECT_THAT(setsockopt(s.get(), IPPROTO_TCP, TCP_USER_TIMEOUT,
+                           &kTCPUserTimeout, sizeof(kTCPUserTimeout)),
+                SyscallFailsWithErrno(EINVAL));
+  }
+
+  // kTCPUserTimeout is in milliseconds.
+  constexpr int kTCPUserTimeout = 100;
+  ASSERT_THAT(setsockopt(s.get(), IPPROTO_TCP, TCP_USER_TIMEOUT,
+                         &kTCPUserTimeout, sizeof(kTCPUserTimeout)),
+              SyscallSucceedsWithValue(0));
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(s.get(), IPPROTO_TCP, TCP_USER_TIMEOUT, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kTCPUserTimeout);
+}
+
+TEST_P(SimpleTcpSocketTest, SetTCPDeferAcceptNeg) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  // -ve TCP_DEFER_ACCEPT is same as setting it to zero.
+  constexpr int kNeg = -1;
+  EXPECT_THAT(
+      setsockopt(s.get(), IPPROTO_TCP, TCP_DEFER_ACCEPT, &kNeg, sizeof(kNeg)),
+      SyscallSucceeds());
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(s.get(), IPPROTO_TCP, TCP_USER_TIMEOUT, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, 0);
+}
+
+TEST_P(SimpleTcpSocketTest, GetTCPDeferAcceptDefault) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(s.get(), IPPROTO_TCP, TCP_USER_TIMEOUT, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, 0);
+}
+
+TEST_P(SimpleTcpSocketTest, SetTCPDeferAcceptGreaterThanZero) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  // kTCPDeferAccept is in seconds.
+  // NOTE: linux translates seconds to # of retries and back from
+  //   #of retries to seconds. Which means only certain values
+  //   translate back exactly. That's why we use 3 here, a value of
+  //   5 will result in us getting back 7 instead of 5 in the
+  //   getsockopt.
+  constexpr int kTCPDeferAccept = 3;
+  ASSERT_THAT(setsockopt(s.get(), IPPROTO_TCP, TCP_DEFER_ACCEPT,
+                         &kTCPDeferAccept, sizeof(kTCPDeferAccept)),
+              SyscallSucceeds());
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(s.get(), IPPROTO_TCP, TCP_DEFER_ACCEPT, &get, &get_len),
+      SyscallSucceeds());
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kTCPDeferAccept);
+}
+
+TEST_P(SimpleTcpSocketTest, RecvOnClosedSocket) {
+  auto s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  char buf[1];
+  EXPECT_THAT(recv(s.get(), buf, 0, 0), SyscallFailsWithErrno(ENOTCONN));
+  EXPECT_THAT(recv(s.get(), buf, sizeof(buf), 0),
+              SyscallFailsWithErrno(ENOTCONN));
+}
+
+TEST_P(SimpleTcpSocketTest, TCPConnectSoRcvBufRace) {
+  auto s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(GetParam(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+  sockaddr_storage addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+  socklen_t addrlen = sizeof(addr);
+
+  RetryEINTR(connect)(s.get(), reinterpret_cast<struct sockaddr*>(&addr),
+                      addrlen);
+  int buf_sz = 1 << 18;
+  EXPECT_THAT(
+      setsockopt(s.get(), SOL_SOCKET, SO_RCVBUF, &buf_sz, sizeof(buf_sz)),
+      SyscallSucceedsWithValue(0));
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, SimpleTcpSocketTest,

@@ -19,8 +19,9 @@ import (
 	"reflect"
 	"syscall"
 
+	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/platform/safecopy"
+	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 )
 
 // bluepill enters guest mode.
@@ -36,6 +37,18 @@ func sighandler()
 func dieTrampoline()
 
 var (
+	// bounceSignal is the signal used for bouncing KVM.
+	//
+	// We use SIGCHLD because it is not masked by the runtime, and
+	// it will be ignored properly by other parts of the kernel.
+	bounceSignal = syscall.SIGCHLD
+
+	// bounceSignalMask has only bounceSignal set.
+	bounceSignalMask = uint64(1 << (uint64(bounceSignal) - 1))
+
+	// bounce is the interrupt vector used to return to the kernel.
+	bounce = uint32(ring0.VirtualizationException)
+
 	// savedHandler is a pointer to the previous handler.
 	//
 	// This is called by bluepillHandler.
@@ -44,6 +57,13 @@ var (
 	// dieTrampolineAddr is the address of dieTrampoline.
 	dieTrampolineAddr uintptr
 )
+
+// redpill invokes a syscall with -1.
+//
+//go:nosplit
+func redpill() {
+	syscall.RawSyscall(^uintptr(0), 0, 0, 0)
+}
 
 // dieHandler is called by dieTrampoline.
 //
@@ -61,20 +81,14 @@ func (c *vCPU) die(context *arch.SignalContext64, msg string) {
 	// Save the death message, which will be thrown.
 	c.dieState.message = msg
 
-	// Reload all registers to have an accurate stack trace when we return
-	// to host mode. This means that the stack should be unwound correctly.
-	if errno := c.getUserRegisters(&c.dieState.guestRegs); errno != 0 {
-		throw(msg)
-	}
-
 	// Setup the trampoline.
 	dieArchSetup(c, context, &c.dieState.guestRegs)
 }
 
 func init() {
 	// Install the handler.
-	if err := safecopy.ReplaceSignalHandler(syscall.SIGSEGV, reflect.ValueOf(sighandler).Pointer(), &savedHandler); err != nil {
-		panic(fmt.Sprintf("Unable to set handler for signal %d: %v", syscall.SIGSEGV, err))
+	if err := safecopy.ReplaceSignalHandler(bluepillSignal, reflect.ValueOf(sighandler).Pointer(), &savedHandler); err != nil {
+		panic(fmt.Sprintf("Unable to set handler for signal %d: %v", bluepillSignal, err))
 	}
 
 	// Extract the address for the trampoline.

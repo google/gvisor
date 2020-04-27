@@ -19,7 +19,7 @@ import (
 	"sort"
 	"strconv"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/device"
@@ -27,6 +27,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
+
+// LINT.IfChange
 
 // walkDescriptors finds the descriptor (file-flag pair) for the fd identified
 // by p, and calls the toInodeOperations callback with that descriptor.  This is a helper
@@ -277,3 +279,5 @@ func (fdid *fdInfoDir) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.
 	}
 	return fs.NewFile(ctx, dirent, flags, fops), nil
 }
+
+// LINT.ThenChange(../../fsimpl/proc/task_files.go)

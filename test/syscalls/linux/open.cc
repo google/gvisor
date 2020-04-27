@@ -73,6 +73,28 @@ class OpenTest : public FileTest {
   const std::string test_data_ = "hello world\n";
 };
 
+TEST_F(OpenTest, OTrunc) {
+  auto dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncd");
+  ASSERT_THAT(mkdir(dirpath.c_str(), 0777), SyscallSucceeds());
+  ASSERT_THAT(open(dirpath.c_str(), O_TRUNC, 0666),
+              SyscallFailsWithErrno(EISDIR));
+}
+
+TEST_F(OpenTest, OTruncAndReadOnlyDir) {
+  auto dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncd");
+  ASSERT_THAT(mkdir(dirpath.c_str(), 0777), SyscallSucceeds());
+  ASSERT_THAT(open(dirpath.c_str(), O_TRUNC | O_RDONLY, 0666),
+              SyscallFailsWithErrno(EISDIR));
+}
+
+TEST_F(OpenTest, OTruncAndReadOnlyFile) {
+  auto dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncfile");
+  const FileDescriptor existing =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dirpath.c_str(), O_RDWR | O_CREAT, 0666));
+  const FileDescriptor otrunc = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(dirpath.c_str(), O_TRUNC | O_RDONLY, 0666));
+}
+
 TEST_F(OpenTest, ReadOnly) {
   char buf;
   const FileDescriptor ro_file =
@@ -162,6 +184,28 @@ TEST_F(OpenTest, OpenNoFollowStillFollowsLinksInPath) {
   auto path_via_symlink = JoinPath(sym_path.path(), Basename(file_path.path()));
   const FileDescriptor fd2 =
       ASSERT_NO_ERRNO_AND_VALUE(Open(path_via_symlink, O_RDONLY | O_NOFOLLOW));
+}
+
+// Test that open(2) can follow symlinks that point back to the same tree.
+// Test sets up files as follows:
+//   root/child/symlink => redirects to ../..
+//   root/child/target => regular file
+//
+// open("root/child/symlink/root/child/file")
+TEST_F(OpenTest, SymlinkRecurse) {
+  auto root =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(GetAbsoluteTestTmpdir()));
+  auto child = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(root.path()));
+  auto symlink = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateSymlinkTo(child.path(), "../.."));
+  auto target = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(child.path(), "abc", 0644));
+  auto path_via_symlink =
+      JoinPath(symlink.path(), Basename(root.path()), Basename(child.path()),
+               Basename(target.path()));
+  const auto contents =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents(path_via_symlink));
+  ASSERT_EQ(contents, "abc");
 }
 
 TEST_F(OpenTest, Fault) {

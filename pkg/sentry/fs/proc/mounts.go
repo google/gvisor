@@ -18,12 +18,15 @@ import (
 	"bytes"
 	"fmt"
 	"sort"
+	"strings"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 )
+
+// LINT.IfChange
 
 // forEachMountSource runs f for the process root mount and  each mount that is a
 // descendant of the root.
@@ -57,13 +60,15 @@ func forEachMount(t *kernel.Task, fn func(string, *fs.Mount)) {
 	})
 	for _, m := range ms {
 		mroot := m.Root()
+		if mroot == nil {
+			continue // No longer valid.
+		}
 		mountPath, desc := mroot.FullName(rootDir)
 		mroot.DecRef()
 		if !desc {
 			// MountSources that are not descendants of the chroot jail are ignored.
 			continue
 		}
-
 		fn(mountPath, m)
 	}
 }
@@ -88,6 +93,12 @@ func (mif *mountInfoFile) ReadSeqFileData(ctx context.Context, handle seqfile.Se
 
 	var buf bytes.Buffer
 	forEachMount(mif.t, func(mountPath string, m *fs.Mount) {
+		mroot := m.Root()
+		if mroot == nil {
+			return // No longer valid.
+		}
+		defer mroot.DecRef()
+
 		// Format:
 		// 36 35 98:0 /mnt1 /mnt2 rw,noatime master:1 - ext3 /dev/root rw,errors=continue
 		// (1)(2)(3)   (4)   (5)      (6)      (7)   (8) (9)   (10)         (11)
@@ -104,9 +115,6 @@ func (mif *mountInfoFile) ReadSeqFileData(ctx context.Context, handle seqfile.Se
 
 		// (3) Major:Minor device ID. We don't have a superblock, so we
 		// just use the root inode device number.
-		mroot := m.Root()
-		defer mroot.DecRef()
-
 		sa := mroot.Inode.StableAttr
 		fmt.Fprintf(&buf, "%d:%d ", sa.DeviceFileMajor, sa.DeviceFileMinor)
 
@@ -144,12 +152,34 @@ func (mif *mountInfoFile) ReadSeqFileData(ctx context.Context, handle seqfile.Se
 		// (10) Mount source: filesystem-specific information or "none".
 		fmt.Fprintf(&buf, "none ")
 
-		// (11) Superblock options. Only "ro/rw" is supported for now,
-		// and is the same as the filesystem option.
-		fmt.Fprintf(&buf, "%s\n", opts)
+		// (11) Superblock options, and final newline.
+		fmt.Fprintf(&buf, "%s\n", superBlockOpts(mountPath, mroot.Inode.MountSource))
 	})
 
 	return []seqfile.SeqData{{Buf: buf.Bytes(), Handle: (*mountInfoFile)(nil)}}, 0
+}
+
+func superBlockOpts(mountPath string, msrc *fs.MountSource) string {
+	// gVisor doesn't (yet) have a concept of super block options, so we
+	// use the ro/rw bit from the mount flag.
+	opts := "rw"
+	if msrc.Flags.ReadOnly {
+		opts = "ro"
+	}
+
+	// NOTE(b/147673608): If the mount is a cgroup, we also need to include
+	// the cgroup name in the options. For now we just read that from the
+	// path.
+	//
+	// TODO(gvisor.dev/issue/190): Once gVisor has full cgroup support, we
+	// should get this value from the cgroup itself, and not rely on the
+	// path.
+	if msrc.FilesystemType == "cgroup" {
+		splitPath := strings.Split(mountPath, "/")
+		cgroupType := splitPath[len(splitPath)-1]
+		opts += "," + cgroupType
+	}
+	return opts
 }
 
 // mountsFile is used to implement /proc/[pid]/mounts.
@@ -183,6 +213,9 @@ func (mf *mountsFile) ReadSeqFileData(ctx context.Context, handle seqfile.SeqHan
 		//
 		// The "needs dump"and fsck flags are always 0, which is allowed.
 		root := m.Root()
+		if root == nil {
+			return // No longer valid.
+		}
 		defer root.DecRef()
 
 		flags := root.Inode.MountSource.Flags
@@ -195,3 +228,5 @@ func (mf *mountsFile) ReadSeqFileData(ctx context.Context, handle seqfile.SeqHan
 
 	return []seqfile.SeqData{{Buf: buf.Bytes(), Handle: (*mountsFile)(nil)}}, 0
 }
+
+// LINT.ThenChange(../../fsimpl/proc/tasks_files.go)

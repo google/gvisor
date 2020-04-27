@@ -34,7 +34,7 @@ func TestProcessListTable(t *testing.T) {
 	}{
 		{
 			pl:       []*Process{},
-			expected: "UID       PID       PPID      C         STIME     TIME      CMD",
+			expected: "UID       PID       PPID      C         TTY       STIME     TIME      CMD",
 		},
 		{
 			pl: []*Process{
@@ -43,6 +43,7 @@ func TestProcessListTable(t *testing.T) {
 					PID:   0,
 					PPID:  0,
 					C:     0,
+					TTY:   "?",
 					STime: "0",
 					Time:  "0",
 					Cmd:   "zero",
@@ -52,14 +53,15 @@ func TestProcessListTable(t *testing.T) {
 					PID:   1,
 					PPID:  1,
 					C:     1,
+					TTY:   "pts/4",
 					STime: "1",
 					Time:  "1",
 					Cmd:   "one",
 				},
 			},
-			expected: `UID       PID       PPID      C         STIME     TIME      CMD
-0         0         0         0         0         0         zero
-1         1         1         1         1         1         one`,
+			expected: `UID       PID       PPID      C         TTY       STIME     TIME      CMD
+0         0         0         0         ?         0         0         zero
+1         1         1         1         pts/4     1         1         one`,
 		},
 	}
 

@@ -18,8 +18,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/sentry/context"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Stack is a simple wrapper around a usermem.IO and an address.
@@ -97,7 +97,6 @@ func (s *Stack) Push(vals ...interface{}) (usermem.Addr, error) {
 		if c < 0 {
 			return 0, fmt.Errorf("bad binary.Size for %T", v)
 		}
-		// TODO(b/38173783): Use a real context.Context.
 		n, err := usermem.CopyObjectOut(context.Background(), s.IO, s.Bottom-usermem.Addr(c), norm, usermem.IOOpts{})
 		if err != nil || c != n {
 			return 0, err
@@ -121,11 +120,9 @@ func (s *Stack) Pop(vals ...interface{}) (usermem.Addr, error) {
 		var err error
 		if isVaddr {
 			value := s.Arch.Native(uintptr(0))
-			// TODO(b/38173783): Use a real context.Context.
 			n, err = usermem.CopyObjectIn(context.Background(), s.IO, s.Bottom, value, usermem.IOOpts{})
 			*vaddr = usermem.Addr(s.Arch.Value(value))
 		} else {
-			// TODO(b/38173783): Use a real context.Context.
 			n, err = usermem.CopyObjectIn(context.Background(), s.IO, s.Bottom, v, usermem.IOOpts{})
 		}
 		if err != nil {

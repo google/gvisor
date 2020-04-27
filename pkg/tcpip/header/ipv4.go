@@ -38,7 +38,8 @@ const (
 // IPv4Fields contains the fields of an IPv4 packet. It is used to describe the
 // fields of a packet that needs to be encoded.
 type IPv4Fields struct {
-	// IHL is the "internet header length" field of an IPv4 packet.
+	// IHL is the "internet header length" field of an IPv4 packet. The value
+	// is in bytes.
 	IHL uint8
 
 	// TOS is the "type of service" field of an IPv4 packet.
@@ -138,7 +139,7 @@ func IPVersion(b []byte) int {
 }
 
 // HeaderLength returns the value of the "header length" field of the ipv4
-// header.
+// header. The length returned is in bytes.
 func (b IPv4) HeaderLength() uint8 {
 	return (b[versIHL] & 0xf) * 4
 }

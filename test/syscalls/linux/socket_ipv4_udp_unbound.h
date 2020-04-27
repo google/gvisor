@@ -20,8 +20,8 @@
 namespace gvisor {
 namespace testing {
 
-// Test fixture for tests that apply to pairs of IPv4 UDP sockets.
-using IPv4UDPUnboundSocketPairTest = SocketPairTest;
+// Test fixture for tests that apply to IPv4 UDP sockets.
+using IPv4UDPUnboundSocketTest = SimpleSocketTest;
 
 }  // namespace testing
 }  // namespace gvisor

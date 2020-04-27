@@ -50,12 +50,12 @@ func New(lower stack.LinkEndpoint) *Endpoint {
 // It is called by the link-layer endpoint being wrapped when a packet arrives,
 // and only forwards to the actual dispatcher if Wait or WaitDispatch haven't
 // been called.
-func (e *Endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView, linkHeader buffer.View) {
+func (e *Endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
 	if !e.dispatchGate.Enter() {
 		return
 	}
 
-	e.dispatcher.DeliverNetworkPacket(e, remote, local, protocol, vv, linkHeader)
+	e.dispatcher.DeliverNetworkPacket(e, remote, local, protocol, pkt)
 	e.dispatchGate.Leave()
 }
 
@@ -99,12 +99,12 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 // WritePacket implements stack.LinkEndpoint.WritePacket. It is called by
 // higher-level protocols to write packets. It only forwards packets to the
 // lower endpoint if Wait or WaitWrite haven't been called.
-func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) *tcpip.Error {
 	if !e.writeGate.Enter() {
 		return nil
 	}
 
-	err := e.lower.WritePacket(r, gso, hdr, payload, protocol)
+	err := e.lower.WritePacket(r, gso, protocol, pkt)
 	e.writeGate.Leave()
 	return err
 }
@@ -112,23 +112,23 @@ func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 // WritePackets implements stack.LinkEndpoint.WritePackets. It is called by
 // higher-level protocols to write packets. It only forwards packets to the
 // lower endpoint if Wait or WaitWrite haven't been called.
-func (e *Endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (e *Endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	if !e.writeGate.Enter() {
-		return len(hdrs), nil
+		return pkts.Len(), nil
 	}
 
-	n, err := e.lower.WritePackets(r, gso, hdrs, payload, protocol)
+	n, err := e.lower.WritePackets(r, gso, pkts, protocol)
 	e.writeGate.Leave()
 	return n, err
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (e *Endpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
+func (e *Endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
 	if !e.writeGate.Enter() {
 		return nil
 	}
 
-	err := e.lower.WriteRawPacket(packet)
+	err := e.lower.WriteRawPacket(vv)
 	e.writeGate.Leave()
 	return err
 }

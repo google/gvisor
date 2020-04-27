@@ -26,6 +26,7 @@ namespace {
 
 constexpr long kFudgeSeconds = 5;
 
+#if defined(__x86_64__) || defined(__i386__)
 // Mimics the time(2) wrapper from glibc prior to 2.15.
 time_t vsyscall_time(time_t* t) {
   constexpr uint64_t kVsyscallTimeEntry = 0xffffffffff600400;
@@ -62,6 +63,7 @@ TEST(TimeTest, VsyscallTime_InvalidAddressSIGSEGV) {
               ::testing::KilledBySignal(SIGSEGV), "");
 }
 
+// Mimics the gettimeofday(2) wrapper from the Go runtime <= 1.2.
 int vsyscall_gettimeofday(struct timeval* tv, struct timezone* tz) {
   constexpr uint64_t kVsyscallGettimeofdayEntry = 0xffffffffff600000;
   return reinterpret_cast<int (*)(struct timeval*, struct timezone*)>(
@@ -97,6 +99,7 @@ TEST(TimeTest, VsyscallGettimeofday_InvalidAddressSIGSEGV) {
                                     reinterpret_cast<struct timezone*>(0x1)),
               ::testing::KilledBySignal(SIGSEGV), "");
 }
+#endif
 
 }  // namespace
 

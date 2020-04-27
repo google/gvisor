@@ -56,10 +56,6 @@ TEST(EpollTest, AllWritable) {
   struct epoll_event result[kFDsPerEpoll];
   ASSERT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), result, kFDsPerEpoll, -1),
               SyscallSucceedsWithValue(kFDsPerEpoll));
-  // TODO(edahlgren): Why do some tests check epoll_event::data, and others
-  // don't? Does Linux actually guarantee that, in any of these test cases,
-  // epoll_wait will necessarily write out the epoll_events in the order that
-  // they were registered?
   for (int i = 0; i < kFDsPerEpoll; i++) {
     ASSERT_EQ(result[i].events, EPOLLOUT);
   }

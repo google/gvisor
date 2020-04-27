@@ -411,6 +411,15 @@ type ControlMessageCredentials struct {
 	GID uint32
 }
 
+// A ControlMessageIPPacketInfo is IP_PKTINFO socket control message.
+//
+// ControlMessageIPPacketInfo represents struct in_pktinfo from linux/in.h.
+type ControlMessageIPPacketInfo struct {
+	NIC             int32
+	LocalAddr       InetAddr
+	DestinationAddr InetAddr
+}
+
 // SizeOfControlMessageCredentials is the binary size of a
 // ControlMessageCredentials struct.
 var SizeOfControlMessageCredentials = int(binary.Size(ControlMessageCredentials{}))
@@ -421,6 +430,19 @@ type ControlMessageRights []int32
 // SizeOfControlMessageRight is the size of a single element in
 // ControlMessageRights.
 const SizeOfControlMessageRight = 4
+
+// SizeOfControlMessageInq is the size of a TCP_INQ control message.
+const SizeOfControlMessageInq = 4
+
+// SizeOfControlMessageTOS is the size of an IP_TOS control message.
+const SizeOfControlMessageTOS = 1
+
+// SizeOfControlMessageTClass is the size of an IPV6_TCLASS control message.
+const SizeOfControlMessageTClass = 4
+
+// SizeOfControlMessageIPPacketInfo is the size of an IP_PKTINFO
+// control message.
+const SizeOfControlMessageIPPacketInfo = 12
 
 // SCM_MAX_FD is the maximum number of FDs accepted in a single sendmsg call.
 // From net/scm.h.

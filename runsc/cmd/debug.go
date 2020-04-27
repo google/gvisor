@@ -22,26 +22,30 @@ import (
 	"syscall"
 	"time"
 
-	"flag"
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/container"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
 // Debug implements subcommands.Command for the "debug" command.
 type Debug struct {
-	pid          int
-	stacks       bool
-	signal       int
-	profileHeap  string
-	profileCPU   string
-	profileDelay int
-	trace        string
-	strace       string
-	logLevel     string
-	logPackets   string
+	pid              int
+	stacks           bool
+	signal           int
+	profileHeap      string
+	profileCPU       string
+	profileGoroutine string
+	profileBlock     string
+	profileMutex     string
+	trace            string
+	strace           string
+	logLevel         string
+	logPackets       string
+	duration         time.Duration
+	ps               bool
 }
 
 // Name implements subcommands.Command.
@@ -65,12 +69,16 @@ func (d *Debug) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&d.stacks, "stacks", false, "if true, dumps all sandbox stacks to the log")
 	f.StringVar(&d.profileHeap, "profile-heap", "", "writes heap profile to the given file.")
 	f.StringVar(&d.profileCPU, "profile-cpu", "", "writes CPU profile to the given file.")
-	f.IntVar(&d.profileDelay, "profile-delay", 5, "amount of time to wait before stoping CPU profile")
+	f.StringVar(&d.profileGoroutine, "profile-goroutine", "", "writes goroutine profile to the given file.")
+	f.StringVar(&d.profileBlock, "profile-block", "", "writes block profile to the given file.")
+	f.StringVar(&d.profileMutex, "profile-mutex", "", "writes mutex profile to the given file.")
+	f.DurationVar(&d.duration, "duration", time.Second, "amount of time to wait for CPU and trace profiles")
 	f.StringVar(&d.trace, "trace", "", "writes an execution trace to the given file.")
 	f.IntVar(&d.signal, "signal", -1, "sends signal to the sandbox")
 	f.StringVar(&d.strace, "strace", "", `A comma separated list of syscalls to trace. "all" enables all traces, "off" disables all`)
 	f.StringVar(&d.logLevel, "log-level", "", "The log level to set: warning (0), info (1), or debug (2).")
 	f.StringVar(&d.logPackets, "log-packets", "", "A boolean value to enable or disable packet logging: true or false.")
+	f.BoolVar(&d.ps, "ps", false, "lists processes")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -145,6 +153,42 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		}
 		log.Infof("Heap profile written to %q", d.profileHeap)
 	}
+	if d.profileGoroutine != "" {
+		f, err := os.Create(d.profileGoroutine)
+		if err != nil {
+			return Errorf(err.Error())
+		}
+		defer f.Close()
+
+		if err := c.Sandbox.GoroutineProfile(f); err != nil {
+			return Errorf(err.Error())
+		}
+		log.Infof("Goroutine profile written to %q", d.profileGoroutine)
+	}
+	if d.profileBlock != "" {
+		f, err := os.Create(d.profileBlock)
+		if err != nil {
+			return Errorf(err.Error())
+		}
+		defer f.Close()
+
+		if err := c.Sandbox.BlockProfile(f); err != nil {
+			return Errorf(err.Error())
+		}
+		log.Infof("Block profile written to %q", d.profileBlock)
+	}
+	if d.profileMutex != "" {
+		f, err := os.Create(d.profileMutex)
+		if err != nil {
+			return Errorf(err.Error())
+		}
+		defer f.Close()
+
+		if err := c.Sandbox.MutexProfile(f); err != nil {
+			return Errorf(err.Error())
+		}
+		log.Infof("Mutex profile written to %q", d.profileMutex)
+	}
 
 	delay := false
 	if d.profileCPU != "" {
@@ -163,7 +207,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		if err := c.Sandbox.StartCPUProfile(f); err != nil {
 			return Errorf(err.Error())
 		}
-		log.Infof("CPU profile started for %d sec, writing to %q", d.profileDelay, d.profileCPU)
+		log.Infof("CPU profile started for %v, writing to %q", d.duration, d.profileCPU)
 	}
 	if d.trace != "" {
 		delay = true
@@ -181,8 +225,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		if err := c.Sandbox.StartTrace(f); err != nil {
 			return Errorf(err.Error())
 		}
-		log.Infof("Tracing started for %d sec, writing to %q", d.profileDelay, d.trace)
-
+		log.Infof("Tracing started for %v, writing to %q", d.duration, d.trace)
 	}
 
 	if d.strace != "" || len(d.logLevel) != 0 || len(d.logPackets) != 0 {
@@ -241,9 +284,20 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		}
 		log.Infof("Logging options changed")
 	}
+	if d.ps {
+		pList, err := c.Processes()
+		if err != nil {
+			Fatalf("getting processes for container: %v", err)
+		}
+		o, err := control.ProcessListToJSON(pList)
+		if err != nil {
+			Fatalf("generating JSON: %v", err)
+		}
+		log.Infof(o)
+	}
 
 	if delay {
-		time.Sleep(time.Duration(d.profileDelay) * time.Second)
+		time.Sleep(d.duration)
 	}
 
 	return subcommands.ExitSuccess

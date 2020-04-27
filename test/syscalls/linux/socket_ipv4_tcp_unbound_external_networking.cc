@@ -18,11 +18,11 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/un.h>
+
 #include <cstdio>
 #include <cstring>
 
 #include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/test_util.h"

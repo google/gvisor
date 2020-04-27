@@ -26,15 +26,12 @@
 // IsRunningOnGvisor returns true if the test is known to be running on gVisor.
 // GvisorPlatform can be used to get more detail:
 //
-//   switch (GvisorPlatform()) {
-//     case Platform::kNative:
-//     case Platform::kGvisor:
-//       EXPECT_THAT(mmap(...), SyscallSucceeds());
-//       break;
-//     case Platform::kPtrace:
-//       EXPECT_THAT(mmap(...), SyscallFailsWithErrno(ENOSYS));
-//       break;
+//   if (GvisorPlatform() == Platform::kPtrace) {
+//       ...
 //   }
+//
+// SetupGvisorDeathTest ensures that signal handling does not interfere with
+/// tests that rely on fatal signals.
 //
 // Matchers
 // ========
@@ -213,15 +210,20 @@ void TestInit(int* argc, char*** argv);
     if (expr) GTEST_SKIP() << #expr; \
   } while (0)
 
-enum class Platform {
-  kNative,
-  kKVM,
-  kPtrace,
-};
-bool IsRunningOnGvisor();
-Platform GvisorPlatform();
+// Platform contains platform names.
+namespace Platform {
+constexpr char kNative[] = "native";
+constexpr char kPtrace[] = "ptrace";
+constexpr char kKVM[] = "kvm";
+}  // namespace Platform
 
+bool IsRunningOnGvisor();
+const std::string GvisorPlatform();
+bool IsRunningWithHostinet();
+
+#ifdef __linux__
 void SetupGvisorDeathTest();
+#endif
 
 struct KernelVersion {
   int major;
@@ -762,7 +764,14 @@ MATCHER_P2(EquivalentWithin, target, tolerance,
   return Equivalent(arg, target, tolerance);
 }
 
+// Returns the absolute path to the a data dependency. 'path' is the runfile
+// location relative to workspace root.
+#ifdef __linux__
+std::string RunfilePath(std::string path);
+#endif
+
 void TestInit(int* argc, char*** argv);
+int RunAllTests(void);
 
 }  // namespace testing
 }  // namespace gvisor

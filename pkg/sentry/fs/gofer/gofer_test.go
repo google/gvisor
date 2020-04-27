@@ -20,10 +20,10 @@ import (
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/p9/p9test"
-	"gvisor.dev/gvisor/pkg/sentry/context"
-	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
 
@@ -61,7 +61,7 @@ func rootTest(t *testing.T, name string, cp cachePolicy, fn func(context.Context
 		ctx := contexttest.Context(t)
 		sattr, rootInodeOperations := newInodeOperations(ctx, s, contextFile{
 			file: rootFile,
-		}, root.QID, p9.AttrMaskAll(), root.Attr, false /* socket */)
+		}, root.QID, p9.AttrMaskAll(), root.Attr)
 		m := fs.NewMountSource(ctx, s, &filesystem{}, fs.MountSourceFlags{})
 		rootInode := fs.NewInode(ctx, rootInodeOperations, m, sattr)
 

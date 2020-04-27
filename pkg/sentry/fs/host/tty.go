@@ -15,17 +15,18 @@
 package host
 
 import (
-	"sync"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
+
+// LINT.IfChange
 
 // TTYFileOperations implements fs.FileOperations for a host file descriptor
 // that wraps a TTY FD.
@@ -44,6 +45,7 @@ type TTYFileOperations struct {
 	// connected to this TTY.
 	fgProcessGroup *kernel.ProcessGroup
 
+	// termios contains the terminal attributes for this TTY.
 	termios linux.KernelTermios
 }
 
@@ -358,3 +360,5 @@ func (t *TTYFileOperations) checkChange(ctx context.Context, sig linux.Signal) e
 	_ = pg.SendSignal(kernel.SignalInfoPriv(sig))
 	return kernel.ERESTARTSYS
 }
+
+// LINT.ThenChange(../../fsimpl/host/tty.go)

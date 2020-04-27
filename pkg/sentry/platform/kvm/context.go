@@ -19,7 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/interrupt"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // context is an implementation of the platform context.
@@ -85,3 +85,6 @@ func (c *context) Switch(as platform.AddressSpace, ac arch.Context, _ int32) (*a
 func (c *context) Interrupt() {
 	c.interrupt.NotifyInterrupt()
 }
+
+// Release implements platform.Context.Release().
+func (c *context) Release() {}

@@ -1,5 +1,5 @@
+load("//tools:defs.bzl", "go_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
@@ -8,7 +8,7 @@ go_template_instance(
     out = "atomicptr_credentials_unsafe.go",
     package = "auth",
     suffix = "Credentials",
-    template = "//third_party/gvsync:generic_atomicptr",
+    template = "//pkg/sync:generic_atomicptr",
     types = {
         "Value": "Credentials",
     },
@@ -57,13 +57,13 @@ go_library(
         "id_map_set.go",
         "user_namespace.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/auth",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/bits",
+        "//pkg/context",
         "//pkg/log",
-        "//pkg/sentry/context",
+        "//pkg/sync",
         "//pkg/syserror",
     ],
 )

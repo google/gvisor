@@ -1,11 +1,10 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
 
 go_library(
     name = "device",
     srcs = ["device.go"],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/proc/device",
     visibility = ["//pkg/sentry:internal"],
     deps = ["//pkg/sentry/device"],
 )

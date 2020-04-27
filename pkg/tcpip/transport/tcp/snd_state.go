@@ -48,3 +48,13 @@ func (s *sender) loadRttMeasureTime(unix unixTime) {
 func (s *sender) afterLoad() {
 	s.resendTimer.init(&s.resendWaker)
 }
+
+// saveFirstRetransmittedSegXmitTime is invoked by stateify.
+func (s *sender) saveFirstRetransmittedSegXmitTime() unixTime {
+	return unixTime{s.firstRetransmittedSegXmitTime.Unix(), s.firstRetransmittedSegXmitTime.UnixNano()}
+}
+
+// loadFirstRetransmittedSegXmitTime is invoked by stateify.
+func (s *sender) loadFirstRetransmittedSegXmitTime(unix unixTime) {
+	s.firstRetransmittedSegXmitTime = time.Unix(unix.second, unix.nano)
+}

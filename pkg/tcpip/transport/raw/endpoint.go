@@ -26,12 +26,10 @@
 package raw
 
 import (
-	"sync"
-
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -42,10 +40,6 @@ type rawPacket struct {
 	// data holds the actual packet data, including any headers and
 	// payload.
 	data buffer.VectorisedView `state:".(buffer.VectorisedView)"`
-	// views is pre-allocated space to back data. As long as the packet is
-	// made up of fewer than 8 buffer.Views, no extra allocation is
-	// necessary to store packet data.
-	views [8]buffer.View `state:"nosave"`
 	// timestampNS is the unix time at which the packet was received.
 	timestampNS int64
 	// senderAddr is the network address of the sender.
@@ -86,6 +80,9 @@ type endpoint struct {
 	// Connect(), and is valid only when conneted is true.
 	route stack.Route                  `state:"manual"`
 	stats tcpip.TransportEndpointStats `state:"nosave"`
+
+	// owner is used to get uid and gid of the packet.
+	owner tcpip.PacketOwner
 }
 
 // NewEndpoint returns a raw  endpoint for the given protocols.
@@ -126,6 +123,11 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 	return e, nil
 }
 
+// Abort implements stack.TransportEndpoint.Abort.
+func (e *endpoint) Abort() {
+	e.Close()
+}
+
 // Close implements tcpip.Endpoint.Close.
 func (e *endpoint) Close() {
 	e.mu.Lock()
@@ -160,8 +162,12 @@ func (e *endpoint) Close() {
 // ModerateRecvBuf implements tcpip.Endpoint.ModerateRecvBuf.
 func (e *endpoint) ModerateRecvBuf(copied int) {}
 
+func (e *endpoint) SetOwner(owner tcpip.PacketOwner) {
+	e.owner = owner
+}
+
 // IPTables implements tcpip.Endpoint.IPTables.
-func (e *endpoint) IPTables() (iptables.IPTables, error) {
+func (e *endpoint) IPTables() (stack.IPTables, error) {
 	return e.stack.IPTables(), nil
 }
 
@@ -342,13 +348,20 @@ func (e *endpoint) finishWrite(payloadBytes []byte, route *stack.Route) (int64, 
 	switch e.NetProto {
 	case header.IPv4ProtocolNumber:
 		if !e.associated {
-			if err := route.WriteHeaderIncludedPacket(buffer.View(payloadBytes).ToVectorisedView()); err != nil {
+			if err := route.WriteHeaderIncludedPacket(stack.PacketBuffer{
+				Data: buffer.View(payloadBytes).ToVectorisedView(),
+			}); err != nil {
 				return 0, nil, err
 			}
 			break
 		}
+
 		hdr := buffer.NewPrependable(len(payloadBytes) + int(route.MaxHeaderLength()))
-		if err := route.WritePacket(nil /* gso */, hdr, buffer.View(payloadBytes).ToVectorisedView(), stack.NetworkHeaderParams{Protocol: e.TransProto, TTL: route.DefaultTTL(), TOS: stack.DefaultTOS}); err != nil {
+		if err := route.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: e.TransProto, TTL: route.DefaultTTL(), TOS: stack.DefaultTOS}, stack.PacketBuffer{
+			Header: hdr,
+			Data:   buffer.View(payloadBytes).ToVectorisedView(),
+			Owner:  e.owner,
+		}); err != nil {
 			return 0, nil, err
 		}
 
@@ -508,13 +521,40 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
 }
 
-// SetSockOptInt implements tcpip.Endpoint.SetSockOptInt.
-func (ep *endpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
+// SetSockOptBool implements tcpip.Endpoint.SetSockOptBool.
+func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
 }
 
+// SetSockOptInt implements tcpip.Endpoint.SetSockOptInt.
+func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
+	return tcpip.ErrUnknownProtocolOption
+}
+
+// GetSockOpt implements tcpip.Endpoint.GetSockOpt.
+func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
+	switch opt.(type) {
+	case tcpip.ErrorOption:
+		return nil
+
+	default:
+		return tcpip.ErrUnknownProtocolOption
+	}
+}
+
+// GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.
+func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
+	switch opt {
+	case tcpip.KeepaliveEnabledOption:
+		return false, nil
+
+	default:
+		return false, tcpip.ErrUnknownProtocolOption
+	}
+}
+
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
-func (e *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
+func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 	switch opt {
 	case tcpip.ReceiveQueueSizeOption:
 		v := 0
@@ -538,28 +578,13 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 		e.rcvMu.Unlock()
 		return v, nil
 
-	}
-
-	return -1, tcpip.ErrUnknownProtocolOption
-}
-
-// GetSockOpt implements tcpip.Endpoint.GetSockOpt.
-func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
-	switch o := opt.(type) {
-	case tcpip.ErrorOption:
-		return nil
-
-	case *tcpip.KeepaliveEnabledOption:
-		*o = 0
-		return nil
-
 	default:
-		return tcpip.ErrUnknownProtocolOption
+		return -1, tcpip.ErrUnknownProtocolOption
 	}
 }
 
 // HandlePacket implements stack.RawTransportEndpoint.HandlePacket.
-func (e *endpoint) HandlePacket(route *stack.Route, netHeader buffer.View, vv buffer.VectorisedView) {
+func (e *endpoint) HandlePacket(route *stack.Route, pkt stack.PacketBuffer) {
 	e.rcvMu.Lock()
 
 	// Drop the packet if our buffer is currently full.
@@ -600,20 +625,21 @@ func (e *endpoint) HandlePacket(route *stack.Route, netHeader buffer.View, vv bu
 	wasEmpty := e.rcvBufSize == 0
 
 	// Push new packet into receive list and increment the buffer size.
-	pkt := &rawPacket{
+	packet := &rawPacket{
 		senderAddr: tcpip.FullAddress{
 			NIC:  route.NICID(),
 			Addr: route.RemoteAddress,
 		},
 	}
 
-	combinedVV := netHeader.ToVectorisedView()
-	combinedVV.Append(vv)
-	pkt.data = combinedVV.Clone(pkt.views[:])
-	pkt.timestampNS = e.stack.NowNanoseconds()
+	networkHeader := append(buffer.View(nil), pkt.NetworkHeader...)
+	combinedVV := networkHeader.ToVectorisedView()
+	combinedVV.Append(pkt.Data)
+	packet.data = combinedVV
+	packet.timestampNS = e.stack.NowNanoseconds()
 
-	e.rcvList.PushBack(pkt)
-	e.rcvBufSize += pkt.data.Size()
+	e.rcvList.PushBack(packet)
+	e.rcvBufSize += packet.data.Size()
 
 	e.rcvMu.Unlock()
 	e.stats.PacketsReceived.Increment()
@@ -641,3 +667,6 @@ func (e *endpoint) Info() tcpip.EndpointInfo {
 func (e *endpoint) Stats() tcpip.EndpointStats {
 	return &e.stats
 }
+
+// Wait implements stack.TransportEndpoint.Wait.
+func (*endpoint) Wait() {}

@@ -17,12 +17,13 @@ package p9
 import (
 	"errors"
 	"fmt"
-	"sync"
 	"syscall"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/flipcall"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/pool"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
 )
 
@@ -74,10 +75,10 @@ type Client struct {
 	socket *unet.Socket
 
 	// tagPool is the collection of available tags.
-	tagPool pool
+	tagPool pool.Pool
 
 	// fidPool is the collection of available fids.
-	fidPool pool
+	fidPool pool.Pool
 
 	// messageSize is the maximum total size of a message.
 	messageSize uint32
@@ -155,8 +156,8 @@ func NewClient(socket *unet.Socket, messageSize uint32, version string) (*Client
 	}
 	c := &Client{
 		socket:      socket,
-		tagPool:     pool{start: 1, limit: uint64(NoTag)},
-		fidPool:     pool{start: 1, limit: uint64(NoFID)},
+		tagPool:     pool.Pool{Start: 1, Limit: uint64(NoTag)},
+		fidPool:     pool.Pool{Start: 1, Limit: uint64(NoFID)},
 		pending:     make(map[Tag]*response),
 		recvr:       make(chan bool, 1),
 		messageSize: messageSize,
@@ -173,7 +174,7 @@ func NewClient(socket *unet.Socket, messageSize uint32, version string) (*Client
 		// our sendRecv function to use that functionality.  Otherwise,
 		// we stick to sendRecvLegacy.
 		rversion := Rversion{}
-		err := c.sendRecvLegacy(&Tversion{
+		_, err := c.sendRecvLegacy(&Tversion{
 			Version: versionString(requested),
 			MSize:   messageSize,
 		}, &rversion)
@@ -218,11 +219,11 @@ func NewClient(socket *unet.Socket, messageSize uint32, version string) (*Client
 			c.sendRecv = c.sendRecvChannel
 		} else {
 			// Channel setup failed; fallback.
-			c.sendRecv = c.sendRecvLegacy
+			c.sendRecv = c.sendRecvLegacySyscallErr
 		}
 	} else {
 		// No channels available: use the legacy mechanism.
-		c.sendRecv = c.sendRecvLegacy
+		c.sendRecv = c.sendRecvLegacySyscallErr
 	}
 
 	// Ensure that the socket and channels are closed when the socket is shut
@@ -304,7 +305,7 @@ func (c *Client) openChannel(id int) error {
 	)
 
 	// Open the data channel.
-	if err := c.sendRecvLegacy(&Tchannel{
+	if _, err := c.sendRecvLegacy(&Tchannel{
 		ID:      uint32(id),
 		Control: 0,
 	}, &rchannel0); err != nil {
@@ -318,7 +319,7 @@ func (c *Client) openChannel(id int) error {
 	defer rchannel0.FilePayload().Close()
 
 	// Open the channel for file descriptors.
-	if err := c.sendRecvLegacy(&Tchannel{
+	if _, err := c.sendRecvLegacy(&Tchannel{
 		ID:      uint32(id),
 		Control: 1,
 	}, &rchannel1); err != nil {
@@ -430,13 +431,28 @@ func (c *Client) waitAndRecv(done chan error) error {
 	}
 }
 
+// sendRecvLegacySyscallErr is a wrapper for sendRecvLegacy that converts all
+// non-syscall errors to EIO.
+func (c *Client) sendRecvLegacySyscallErr(t message, r message) error {
+	received, err := c.sendRecvLegacy(t, r)
+	if !received {
+		log.Warningf("p9.Client.sendRecvChannel: %v", err)
+		return syscall.EIO
+	}
+	return err
+}
+
 // sendRecvLegacy performs a roundtrip message exchange.
 //
+// sendRecvLegacy returns true if a message was received. This allows us to
+// differentiate between failed receives and successful receives where the
+// response was an error message.
+//
 // This is called by internal functions.
-func (c *Client) sendRecvLegacy(t message, r message) error {
+func (c *Client) sendRecvLegacy(t message, r message) (bool, error) {
 	tag, ok := c.tagPool.Get()
 	if !ok {
-		return ErrOutOfTags
+		return false, ErrOutOfTags
 	}
 	defer c.tagPool.Put(tag)
 
@@ -456,12 +472,12 @@ func (c *Client) sendRecvLegacy(t message, r message) error {
 	err := send(c.socket, Tag(tag), t)
 	c.sendMu.Unlock()
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	// Co-ordinate with other receivers.
 	if err := c.waitAndRecv(resp.done); err != nil {
-		return err
+		return false, err
 	}
 
 	// Is it an error message?
@@ -469,14 +485,14 @@ func (c *Client) sendRecvLegacy(t message, r message) error {
 	// For convenience, we transform these directly
 	// into errors. Handlers need not handle this case.
 	if rlerr, ok := resp.r.(*Rlerror); ok {
-		return syscall.Errno(rlerr.Error)
+		return true, syscall.Errno(rlerr.Error)
 	}
 
 	// At this point, we know it matches.
 	//
 	// Per recv call above, we will only allow a type
 	// match (and give our r) or an instance of Rlerror.
-	return nil
+	return true, nil
 }
 
 // sendRecvChannel uses channels to send a message.
@@ -485,7 +501,7 @@ func (c *Client) sendRecvChannel(t message, r message) error {
 	c.channelsMu.Lock()
 	if len(c.availableChannels) == 0 {
 		c.channelsMu.Unlock()
-		return c.sendRecvLegacy(t, r)
+		return c.sendRecvLegacySyscallErr(t, r)
 	}
 	idx := len(c.availableChannels) - 1
 	ch := c.availableChannels[idx]
@@ -525,7 +541,11 @@ func (c *Client) sendRecvChannel(t message, r message) error {
 	}
 
 	// Parse the server's response.
-	_, retErr := ch.recv(r, rsz)
+	resp, retErr := ch.recv(r, rsz)
+	if resp == nil {
+		log.Warningf("p9.Client.sendRecvChannel: p9.channel.recv: %v", retErr)
+		retErr = syscall.EIO
+	}
 
 	// Release the channel.
 	c.channelsMu.Lock()

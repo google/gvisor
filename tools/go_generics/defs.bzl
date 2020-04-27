@@ -105,7 +105,6 @@ def _go_template_instance_impl(ctx):
         executable = ctx.executable._tool,
     )
 
-    # TODO: How can we get the dependencies out?
     return struct(
         files = depset([output]),
     )

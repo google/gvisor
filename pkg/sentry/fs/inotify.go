@@ -16,16 +16,16 @@ package fs
 
 import (
 	"io"
-	"sync"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -143,7 +143,10 @@ func (i *Inotify) Read(ctx context.Context, _ *File, dst usermem.IOSequence, _ i
 	}
 
 	var writeLen int64
-	for event := i.events.Front(); event != nil; event = event.Next() {
+	for it := i.events.Front(); it != nil; {
+		event := it
+		it = it.Next()
+
 		// Does the buffer have enough remaining space to hold the event we're
 		// about to write out?
 		if dst.NumBytes() < int64(event.sizeOf()) {

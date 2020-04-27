@@ -16,7 +16,6 @@ package ext
 
 import (
 	"fmt"
-	"io"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -42,12 +41,12 @@ type inode struct {
 	// refs is a reference count. refs is accessed using atomic memory operations.
 	refs int64
 
+	// fs is the containing filesystem.
+	fs *filesystem
+
 	// inodeNum is the inode number of this inode on disk. This is used to
 	// identify inodes within the ext filesystem.
 	inodeNum uint32
-
-	// dev represents the underlying device. Same as filesystem.dev.
-	dev io.ReaderAt
 
 	// blkSize is the fs data block size. Same as filesystem.sb.BlockSize().
 	blkSize uint64
@@ -81,10 +80,10 @@ func (in *inode) tryIncRef() bool {
 // decRef decrements the inode ref count and releases the inode resources if
 // the ref count hits 0.
 //
-// Precondition: Must have locked fs.mu.
-func (in *inode) decRef(fs *filesystem) {
+// Precondition: Must have locked filesystem.mu.
+func (in *inode) decRef() {
 	if refs := atomic.AddInt64(&in.refs, -1); refs == 0 {
-		delete(fs.inodeCache, in.inodeNum)
+		delete(in.fs.inodeCache, in.inodeNum)
 	} else if refs < 0 {
 		panic("ext.inode.decRef() called without holding a reference")
 	}
@@ -117,8 +116,8 @@ func newInode(fs *filesystem, inodeNum uint32) (*inode, error) {
 
 	// Build the inode based on its type.
 	inode := inode{
+		fs:        fs,
 		inodeNum:  inodeNum,
-		dev:       fs.dev,
 		blkSize:   blkSize,
 		diskInode: diskInode,
 	}
@@ -137,7 +136,7 @@ func newInode(fs *filesystem, inodeNum uint32) (*inode, error) {
 		}
 		return &f.inode, nil
 	case linux.ModeDirectory:
-		f, err := newDirectroy(inode, fs.sb.IncompatibleFeatures().DirentFileType)
+		f, err := newDirectory(inode, fs.sb.IncompatibleFeatures().DirentFileType)
 		if err != nil {
 			return nil, err
 		}
@@ -149,16 +148,18 @@ func newInode(fs *filesystem, inodeNum uint32) (*inode, error) {
 }
 
 // open creates and returns a file description for the dentry passed in.
-func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*vfs.FileDescription, error) {
-	ats := vfs.AccessTypesForOpenFlags(flags)
+func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+	ats := vfs.AccessTypesForOpenFlags(opts)
 	if err := in.checkPermissions(rp.Credentials(), ats); err != nil {
 		return nil, err
 	}
+	mnt := rp.Mount()
 	switch in.impl.(type) {
 	case *regularFile:
 		var fd regularFileFD
-		fd.flags = flags
-		fd.vfsfd.Init(&fd, rp.Mount(), vfsd)
+		if err := fd.vfsfd.Init(&fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+			return nil, err
+		}
 		return &fd.vfsfd, nil
 	case *directory:
 		// Can't open directories writably. This check is not necessary for a read
@@ -167,17 +168,17 @@ func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*v
 			return nil, syserror.EISDIR
 		}
 		var fd directoryFD
-		fd.vfsfd.Init(&fd, rp.Mount(), vfsd)
-		fd.flags = flags
+		if err := fd.vfsfd.Init(&fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+			return nil, err
+		}
 		return &fd.vfsfd, nil
 	case *symlink:
-		if flags&linux.O_PATH == 0 {
+		if opts.Flags&linux.O_PATH == 0 {
 			// Can't open symlinks without O_PATH.
 			return nil, syserror.ELOOP
 		}
 		var fd symlinkFD
-		fd.flags = flags
-		fd.vfsfd.Init(&fd, rp.Mount(), vfsd)
+		fd.vfsfd.Init(&fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{})
 		return &fd.vfsfd, nil
 	default:
 		panic(fmt.Sprintf("unknown inode type: %T", in.impl))
@@ -185,7 +186,7 @@ func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*v
 }
 
 func (in *inode) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) error {
-	return vfs.GenericCheckPermissions(creds, ats, in.isDir(), uint16(in.diskInode.Mode()), in.diskInode.UID(), in.diskInode.GID())
+	return vfs.GenericCheckPermissions(creds, ats, in.diskInode.Mode(), in.diskInode.UID(), in.diskInode.GID())
 }
 
 // statTo writes the statx fields to the output parameter.

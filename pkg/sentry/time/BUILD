@@ -1,5 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
@@ -9,7 +8,7 @@ go_template_instance(
     out = "seqatomic_parameters_unsafe.go",
     package = "time",
     suffix = "Parameters",
-    template = "//third_party/gvsync:generic_seqatomic",
+    template = "//pkg/sync:generic_seqatomic",
     types = {
         "Value": "Parameters",
     },
@@ -31,13 +30,12 @@ go_library(
         "tsc_amd64.s",
         "tsc_arm64.s",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/time",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",
         "//pkg/metric",
+        "//pkg/sync",
         "//pkg/syserror",
-        "//third_party/gvsync",
     ],
 )
 
@@ -48,5 +46,5 @@ go_test(
         "parameters_test.go",
         "sampler_test.go",
     ],
-    embed = [":time"],
+    library = ":time",
 )

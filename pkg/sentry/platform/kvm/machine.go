@@ -17,7 +17,6 @@ package kvm
 import (
 	"fmt"
 	"runtime"
-	"sync"
 	"sync/atomic"
 	"syscall"
 
@@ -26,7 +25,8 @@ import (
 	"gvisor.dev/gvisor/pkg/procid"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // machine contains state associated with the VM as a whole.
@@ -215,6 +215,17 @@ func newMachine(vm int) (*machine, error) {
 		return true // Keep iterating.
 	})
 
+	var physicalRegionsReadOnly []physicalRegion
+	var physicalRegionsAvailable []physicalRegion
+
+	physicalRegionsReadOnly = rdonlyRegionsForSetMem()
+	physicalRegionsAvailable = availableRegionsForSetMem()
+
+	// Map all read-only regions.
+	for _, r := range physicalRegionsReadOnly {
+		m.mapPhysical(r.physical, r.length, physicalRegionsReadOnly, _KVM_MEM_READONLY)
+	}
+
 	// Ensure that the currently mapped virtual regions are actually
 	// available in the VM. Note that this doesn't guarantee no future
 	// faults, however it should guarantee that everything is available to
@@ -223,6 +234,13 @@ func newMachine(vm int) (*machine, error) {
 		if excludeVirtualRegion(vr) {
 			return // skip region.
 		}
+
+		for _, r := range physicalRegionsReadOnly {
+			if vr.virtual == r.virtual {
+				return
+			}
+		}
+
 		for virtual := vr.virtual; virtual < vr.virtual+vr.length; {
 			physical, length, ok := translateToPhysical(virtual)
 			if !ok {
@@ -236,7 +254,7 @@ func newMachine(vm int) (*machine, error) {
 			}
 
 			// Ensure the physical range is mapped.
-			m.mapPhysical(physical, length)
+			m.mapPhysical(physical, length, physicalRegionsAvailable, _KVM_MEM_FLAGS_NONE)
 			virtual += length
 		}
 	})
@@ -256,9 +274,9 @@ func newMachine(vm int) (*machine, error) {
 // not available. This attempts to be efficient for calls in the hot path.
 //
 // This panics on error.
-func (m *machine) mapPhysical(physical, length uintptr) {
+func (m *machine) mapPhysical(physical, length uintptr, phyRegions []physicalRegion, flags uint32) {
 	for end := physical + length; physical < end; {
-		_, physicalStart, length, ok := calculateBluepillFault(physical)
+		_, physicalStart, length, ok := calculateBluepillFault(physical, phyRegions)
 		if !ok {
 			// Should never happen.
 			panic("mapPhysical on unknown physical address")
@@ -266,7 +284,7 @@ func (m *machine) mapPhysical(physical, length uintptr) {
 
 		if _, ok := m.mappingCache.LoadOrStore(physicalStart, true); !ok {
 			// Not present in the cache; requires setting the slot.
-			if _, ok := handleBluepillFault(m, physical); !ok {
+			if _, ok := handleBluepillFault(m, physical, phyRegions, flags); !ok {
 				panic("handleBluepillFault failed")
 			}
 		}
@@ -311,10 +329,12 @@ func (m *machine) Destroy() {
 }
 
 // Get gets an available vCPU.
+//
+// This will return with the OS thread locked.
 func (m *machine) Get() *vCPU {
+	m.mu.RLock()
 	runtime.LockOSThread()
 	tid := procid.Current()
-	m.mu.RLock()
 
 	// Check for an exact match.
 	if c := m.vCPUs[tid]; c != nil {
@@ -325,8 +345,22 @@ func (m *machine) Get() *vCPU {
 
 	// The happy path failed. We now proceed to acquire an exclusive lock
 	// (because the vCPU map may change), and scan all available vCPUs.
+	// In this case, we first unlock the OS thread. Otherwise, if mu is
+	// not available, the current system thread will be parked and a new
+	// system thread spawned. We avoid this situation by simply refreshing
+	// tid after relocking the system thread.
 	m.mu.RUnlock()
+	runtime.UnlockOSThread()
 	m.mu.Lock()
+	runtime.LockOSThread()
+	tid = procid.Current()
+
+	// Recheck for an exact match.
+	if c := m.vCPUs[tid]; c != nil {
+		c.lock()
+		m.mu.Unlock()
+		return c
+	}
 
 	for {
 		// Scan for an available vCPU.

@@ -1,5 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -9,8 +8,7 @@ go_library(
         "rx.go",
         "tx.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue",
-    visibility = ["//:sandbox"],
+    visibility = ["//visibility:public"],
     deps = [
         "//pkg/log",
         "//pkg/tcpip/link/sharedmem/pipe",
@@ -22,7 +20,7 @@ go_test(
     srcs = [
         "queue_test.go",
     ],
-    embed = [":queue"],
+    library = ":queue",
     deps = [
         "//pkg/tcpip/link/sharedmem/pipe",
     ],

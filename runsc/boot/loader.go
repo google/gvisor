@@ -20,7 +20,6 @@ import (
 	mrand "math/rand"
 	"os"
 	"runtime"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	gtime "time"
@@ -36,6 +35,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/host"
+	"gvisor.dev/gvisor/pkg/sentry/fs/user"
+	vfs2host "gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -43,11 +44,14 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/sighandling"
-	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
+	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux/vfs2"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -59,15 +63,19 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/runsc/boot/filter"
 	_ "gvisor.dev/gvisor/runsc/boot/platforms" // register all platforms.
+	"gvisor.dev/gvisor/runsc/boot/pprof"
 	"gvisor.dev/gvisor/runsc/specutils"
 
 	// Include supported socket providers.
 	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/route"
+	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/uevent"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/unix"
 )
+
+var syscallTable *kernel.SyscallTable
 
 // Loader keeps state needed to start the kernel and run the container..
 type Loader struct {
@@ -92,10 +100,6 @@ type Loader struct {
 
 	// spec is the base configuration for the root container.
 	spec *specs.Spec
-
-	// startSignalForwarding enables forwarding of signals to the sandboxed
-	// container. It should be called after the init process is loaded.
-	startSignalForwarding func() func()
 
 	// stopSignalForwarding disables forwarding of signals to the sandboxed
 	// container. It should be called when a sandbox is destroyed.
@@ -146,9 +150,6 @@ type execProcess struct {
 func init() {
 	// Initialize the random number generator.
 	mrand.Seed(gtime.Now().UnixNano())
-
-	// Register the global syscall table.
-	kernel.RegisterSyscallTable(slinux.AMD64)
 }
 
 // Args are the arguments for New().
@@ -159,13 +160,17 @@ type Args struct {
 	Spec *specs.Spec
 	// Conf is the system configuration.
 	Conf *Config
-	// ControllerFD is the FD to the URPC controller.
+	// ControllerFD is the FD to the URPC controller. The Loader takes ownership
+	// of this FD and may close it at any time.
 	ControllerFD int
-	// Device is an optional argument that is passed to the platform.
+	// Device is an optional argument that is passed to the platform. The Loader
+	// takes ownership of this file and may close it at any time.
 	Device *os.File
-	// GoferFDs is an array of FDs used to connect with the Gofer.
+	// GoferFDs is an array of FDs used to connect with the Gofer. The Loader
+	// takes ownership of these FDs and may close them at any time.
 	GoferFDs []int
-	// StdioFDs is the stdio for the application.
+	// StdioFDs is the stdio for the application. The Loader takes ownership of
+	// these FDs and may close them at any time.
 	StdioFDs []int
 	// Console is set to true if using TTY.
 	Console bool
@@ -177,6 +182,9 @@ type Args struct {
 	// UserLogFD is the file descriptor to write user logs to.
 	UserLogFD int
 }
+
+// make sure stdioFDs are always the same on initial start and on restore
+const startingStdioFD = 64
 
 // New initializes a new kernel loader configured by spec.
 // New also handles setting up a kernel for restoring a container.
@@ -190,6 +198,14 @@ func New(args Args) (*Loader, error) {
 	if err := usage.Init(); err != nil {
 		return nil, fmt.Errorf("setting up memory usage: %v", err)
 	}
+
+	// Patch the syscall table.
+	kernel.VFS2Enabled = args.Conf.VFS2
+	if kernel.VFS2Enabled {
+		vfs2.Override(syscallTable.Table)
+	}
+
+	kernel.RegisterSyscallTable(syscallTable)
 
 	// Create kernel and platform.
 	p, err := createPlatform(args.Conf, args.Device)
@@ -228,11 +244,8 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("enabling strace: %v", err)
 	}
 
-	// Create an empty network stack because the network namespace may be empty at
-	// this point. Netns is configured before Run() is called. Netstack is
-	// configured using a control uRPC message. Host network is configured inside
-	// Run().
-	networkStack, err := newEmptyNetworkStack(args.Conf, k)
+	// Create root network namespace/stack.
+	netns, err := newRootNetworkNamespace(args.Conf, k, k)
 	if err != nil {
 		return nil, fmt.Errorf("creating network: %v", err)
 	}
@@ -275,7 +288,7 @@ func New(args Args) (*Loader, error) {
 		FeatureSet:                  cpuid.HostFeatureSet(),
 		Timekeeper:                  tk,
 		RootUserNamespace:           creds.UserNamespace,
-		NetworkStack:                networkStack,
+		RootNetworkNamespace:        netns,
 		ApplicationCores:            uint(args.NumCPU),
 		Vdso:                        vdso,
 		RootUTSNamespace:            kernel.NewUTSNamespace(args.Spec.Hostname, args.Spec.Hostname, creds.UserNamespace),
@@ -300,7 +313,9 @@ func New(args Args) (*Loader, error) {
 	}
 
 	// Create a watchdog.
-	dog := watchdog.New(k, watchdog.DefaultTimeout, args.Conf.WatchdogAction)
+	dogOpts := watchdog.DefaultOpts
+	dogOpts.TaskTimeoutAction = args.Conf.WatchdogAction
+	dog := watchdog.New(k, dogOpts)
 
 	procArgs, err := newProcess(args.ID, args.Spec, creds, k, k.RootPIDNamespace())
 	if err != nil {
@@ -316,6 +331,35 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("creating pod mount hints: %v", err)
 	}
 
+	if kernel.VFS2Enabled {
+		// Set up host mount that will be used for imported fds.
+		hostFilesystem := vfs2host.NewFilesystem(k.VFS())
+		defer hostFilesystem.DecRef()
+		hostMount, err := k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create hostfs mount: %v", err)
+		}
+		k.SetHostMount(hostMount)
+	}
+
+	// Make host FDs stable between invocations. Host FDs must map to the exact
+	// same number when the sandbox is restored. Otherwise the wrong FD will be
+	// used.
+	var stdioFDs []int
+	newfd := startingStdioFD
+	for _, fd := range args.StdioFDs {
+		err := syscall.Dup3(fd, newfd, syscall.O_CLOEXEC)
+		if err != nil {
+			return nil, fmt.Errorf("dup3 of stdioFDs failed: %v", err)
+		}
+		stdioFDs = append(stdioFDs, newfd)
+		err = syscall.Close(fd)
+		if err != nil {
+			return nil, fmt.Errorf("close original stdioFDs failed: %v", err)
+		}
+		newfd++
+	}
+
 	eid := execID{cid: args.ID}
 	l := &Loader{
 		k:            k,
@@ -324,7 +368,7 @@ func New(args Args) (*Loader, error) {
 		watchdog:     dog,
 		spec:         args.Spec,
 		goferFDs:     args.GoferFDs,
-		stdioFDs:     args.StdioFDs,
+		stdioFDs:     stdioFDs,
 		rootProcArgs: procArgs,
 		sandboxID:    args.ID,
 		processes:    map[execID]*execProcess{eid: {}},
@@ -336,29 +380,6 @@ func New(args Args) (*Loader, error) {
 	if err := sighandling.IgnoreChildStop(); err != nil {
 		return nil, fmt.Errorf("ignore child stop signals failed: %v", err)
 	}
-
-	// Handle signals by forwarding them to the root container process
-	// (except for panic signal, which should cause a panic).
-	l.startSignalForwarding = sighandling.PrepareHandler(func(sig linux.Signal) {
-		// Panic signal should cause a panic.
-		if args.Conf.PanicSignal != -1 && sig == linux.Signal(args.Conf.PanicSignal) {
-			panic("Signal-induced panic")
-		}
-
-		// Otherwise forward to root container.
-		deliveryMode := DeliverToProcess
-		if args.Console {
-			// Since we are running with a console, we should
-			// forward the signal to the foreground process group
-			// so that job control signals like ^C can be handled
-			// properly.
-			deliveryMode = DeliverToForegroundProcessGroup
-		}
-		log.Infof("Received external signal %d, mode: %v", sig, deliveryMode)
-		if err := l.signal(args.ID, 0, int32(sig), deliveryMode); err != nil {
-			log.Warningf("error sending signal %v to container %q: %v", sig, args.ID, err)
-		}
-	})
 
 	// Create the control server using the provided FD.
 	//
@@ -387,11 +408,16 @@ func newProcess(id string, spec *specs.Spec, creds *auth.Credentials, k *kernel.
 		return kernel.CreateProcessArgs{}, fmt.Errorf("creating limits: %v", err)
 	}
 
+	wd := spec.Process.Cwd
+	if wd == "" {
+		wd = "/"
+	}
+
 	// Create the process arguments.
 	procArgs := kernel.CreateProcessArgs{
 		Argv:                    spec.Process.Args,
 		Envv:                    spec.Process.Env,
-		WorkingDirectory:        spec.Process.Cwd, // Defaults to '/' if empty.
+		WorkingDirectory:        wd,
 		Credentials:             creds,
 		Umask:                   0022,
 		Limits:                  ls,
@@ -485,7 +511,7 @@ func (l *Loader) run() error {
 		// Delay host network configuration to this point because network namespace
 		// is configured after the loader is created and before Run() is called.
 		log.Debugf("Configuring host network")
-		stack := l.k.NetworkStack().(*hostinet.Stack)
+		stack := l.k.RootNetworkNamespace().Stack().(*hostinet.Stack)
 		if err := stack.Configure(); err != nil {
 			return err
 		}
@@ -504,7 +530,7 @@ func (l *Loader) run() error {
 	// l.restore is set by the container manager when a restore call is made.
 	if !l.restore {
 		if l.conf.ProfileEnable {
-			initializePProf()
+			pprof.Initialize()
 		}
 
 		// Finally done with all configuration. Setup filters before user code
@@ -536,7 +562,15 @@ func (l *Loader) run() error {
 		}
 
 		// Add the HOME enviroment variable if it is not already set.
-		envv, err := maybeAddExecUserHome(ctx, l.rootProcArgs.MountNamespace, l.rootProcArgs.Credentials.RealKUID, l.rootProcArgs.Envv)
+		var envv []string
+		if kernel.VFS2Enabled {
+			envv, err = user.MaybeAddExecUserHomeVFS2(ctx, l.rootProcArgs.MountNamespaceVFS2,
+				l.rootProcArgs.Credentials.RealKUID, l.rootProcArgs.Envv)
+
+		} else {
+			envv, err = user.MaybeAddExecUserHome(ctx, l.rootProcArgs.MountNamespace,
+				l.rootProcArgs.Credentials.RealKUID, l.rootProcArgs.Envv)
+		}
 		if err != nil {
 			return err
 		}
@@ -567,8 +601,40 @@ func (l *Loader) run() error {
 		ep.tty.InitForegroundProcessGroup(ep.tg.ProcessGroup())
 	}
 
-	// Start signal forwarding only after an init process is created.
-	l.stopSignalForwarding = l.startSignalForwarding()
+	// Handle signals by forwarding them to the root container process
+	// (except for panic signal, which should cause a panic).
+	l.stopSignalForwarding = sighandling.StartSignalForwarding(func(sig linux.Signal) {
+		// Panic signal should cause a panic.
+		if l.conf.PanicSignal != -1 && sig == linux.Signal(l.conf.PanicSignal) {
+			panic("Signal-induced panic")
+		}
+
+		// Otherwise forward to root container.
+		deliveryMode := DeliverToProcess
+		if l.console {
+			// Since we are running with a console, we should forward the signal to
+			// the foreground process group so that job control signals like ^C can
+			// be handled properly.
+			deliveryMode = DeliverToForegroundProcessGroup
+		}
+		log.Infof("Received external signal %d, mode: %v", sig, deliveryMode)
+		if err := l.signal(l.sandboxID, 0, int32(sig), deliveryMode); err != nil {
+			log.Warningf("error sending signal %v to container %q: %v", sig, l.sandboxID, err)
+		}
+	})
+
+	// l.stdioFDs are derived from dup() in boot.New() and they are now dup()ed again
+	// either in createFDTable() during initial start or in descriptor.initAfterLoad()
+	// during restore, we can release l.stdioFDs now. VFS2 takes ownership of the
+	// passed FDs, so only close for VFS1.
+	if !kernel.VFS2Enabled {
+		for _, fd := range l.stdioFDs {
+			err := syscall.Close(fd)
+			if err != nil {
+				return fmt.Errorf("close dup()ed stdioFDs: %v", err)
+			}
+		}
+	}
 
 	log.Infof("Process should have started...")
 	l.watchdog.Start()
@@ -795,20 +861,23 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 		return 0, fmt.Errorf("container %q not started", args.ContainerID)
 	}
 
+	// TODO(gvisor.dev/issue/1623): Add VFS2 support
+
 	// Get the container MountNamespace from the Task.
 	tg.Leader().WithMuLocked(func(t *kernel.Task) {
-		// task.MountNamespace() does not take a ref, so we must do so
-		// ourselves.
+		// task.MountNamespace() does not take a ref, so we must do so ourselves.
 		args.MountNamespace = t.MountNamespace()
 		args.MountNamespace.IncRef()
 	})
-	defer args.MountNamespace.DecRef()
+	if args.MountNamespace != nil {
+		defer args.MountNamespace.DecRef()
+	}
 
-	// Add the HOME enviroment varible if it is not already set.
+	// Add the HOME environment variable if it is not already set.
 	root := args.MountNamespace.Root()
 	defer root.DecRef()
 	ctx := fs.WithRoot(l.k.SupervisorContext(), root)
-	envv, err := maybeAddExecUserHome(ctx, args.MountNamespace, args.KUID, args.Envv)
+	envv, err := user.MaybeAddExecUserHome(ctx, args.MountNamespace, args.KUID, args.Envv)
 	if err != nil {
 		return 0, err
 	}
@@ -905,47 +974,92 @@ func (l *Loader) WaitExit() kernel.ExitStatus {
 	return l.k.GlobalInit().ExitStatus()
 }
 
-func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
+func newRootNetworkNamespace(conf *Config, clock tcpip.Clock, uniqueID stack.UniqueID) (*inet.Namespace, error) {
+	// Create an empty network stack because the network namespace may be empty at
+	// this point. Netns is configured before Run() is called. Netstack is
+	// configured using a control uRPC message. Host network is configured inside
+	// Run().
 	switch conf.Network {
 	case NetworkHost:
-		return hostinet.NewStack(), nil
+		// No network namespacing support for hostinet yet, hence creator is nil.
+		return inet.NewRootNamespace(hostinet.NewStack(), nil), nil
 
 	case NetworkNone, NetworkSandbox:
-		// NetworkNone sets up loopback using netstack.
-		netProtos := []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol(), arp.NewProtocol()}
-		transProtos := []stack.TransportProtocol{tcp.NewProtocol(), udp.NewProtocol(), icmp.NewProtocol4()}
-		s := netstack.Stack{stack.New(stack.Options{
-			NetworkProtocols:   netProtos,
-			TransportProtocols: transProtos,
-			Clock:              clock,
-			Stats:              netstack.Metrics,
-			HandleLocal:        true,
-			// Enable raw sockets for users with sufficient
-			// privileges.
-			RawFactory: raw.EndpointFactory{},
-		})}
-
-		// Enable SACK Recovery.
-		if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SACKEnabled(true)); err != nil {
-			return nil, fmt.Errorf("failed to enable SACK: %v", err)
+		s, err := newEmptySandboxNetworkStack(clock, uniqueID)
+		if err != nil {
+			return nil, err
 		}
-
-		// Set default TTLs as required by socket/netstack.
-		s.Stack.SetNetworkProtocolOption(ipv4.ProtocolNumber, tcpip.DefaultTTLOption(netstack.DefaultTTL))
-		s.Stack.SetNetworkProtocolOption(ipv6.ProtocolNumber, tcpip.DefaultTTLOption(netstack.DefaultTTL))
-
-		// Enable Receive Buffer Auto-Tuning.
-		if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.ModerateReceiveBufferOption(true)); err != nil {
-			return nil, fmt.Errorf("SetTransportProtocolOption failed: %v", err)
+		creator := &sandboxNetstackCreator{
+			clock:    clock,
+			uniqueID: uniqueID,
 		}
-
-		s.FillDefaultIPTables()
-
-		return &s, nil
+		return inet.NewRootNamespace(s, creator), nil
 
 	default:
 		panic(fmt.Sprintf("invalid network configuration: %v", conf.Network))
 	}
+
+}
+
+func newEmptySandboxNetworkStack(clock tcpip.Clock, uniqueID stack.UniqueID) (inet.Stack, error) {
+	netProtos := []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol(), arp.NewProtocol()}
+	transProtos := []stack.TransportProtocol{tcp.NewProtocol(), udp.NewProtocol(), icmp.NewProtocol4()}
+	s := netstack.Stack{stack.New(stack.Options{
+		NetworkProtocols:   netProtos,
+		TransportProtocols: transProtos,
+		Clock:              clock,
+		Stats:              netstack.Metrics,
+		HandleLocal:        true,
+		// Enable raw sockets for users with sufficient
+		// privileges.
+		RawFactory: raw.EndpointFactory{},
+		UniqueID:   uniqueID,
+	})}
+
+	// Enable SACK Recovery.
+	if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SACKEnabled(true)); err != nil {
+		return nil, fmt.Errorf("failed to enable SACK: %v", err)
+	}
+
+	// Set default TTLs as required by socket/netstack.
+	s.Stack.SetNetworkProtocolOption(ipv4.ProtocolNumber, tcpip.DefaultTTLOption(netstack.DefaultTTL))
+	s.Stack.SetNetworkProtocolOption(ipv6.ProtocolNumber, tcpip.DefaultTTLOption(netstack.DefaultTTL))
+
+	// Enable Receive Buffer Auto-Tuning.
+	if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.ModerateReceiveBufferOption(true)); err != nil {
+		return nil, fmt.Errorf("SetTransportProtocolOption failed: %v", err)
+	}
+
+	s.FillDefaultIPTables()
+
+	return &s, nil
+}
+
+// sandboxNetstackCreator implements kernel.NetworkStackCreator.
+//
+// +stateify savable
+type sandboxNetstackCreator struct {
+	clock    tcpip.Clock
+	uniqueID stack.UniqueID
+}
+
+// CreateStack implements kernel.NetworkStackCreator.CreateStack.
+func (f *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
+	s, err := newEmptySandboxNetworkStack(f.clock, f.uniqueID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Setup loopback.
+	n := &Network{Stack: s.(*netstack.Stack).Stack}
+	nicID := tcpip.NICID(f.uniqueID.UniqueID())
+	link := DefaultLoopbackLink
+	linkEP := loopback.New()
+	if err := n.createNICWithAddrs(nicID, link.Name, linkEP, link.Addresses); err != nil {
+		return nil, err
+	}
+
+	return s, nil
 }
 
 // signal sends a signal to one or more processes in a container. If PID is 0,
@@ -993,7 +1107,7 @@ func (l *Loader) signalProcess(cid string, tgid kernel.ThreadID, signo int32) er
 	execTG, _, err := l.threadGroupFromID(execID{cid: cid, pid: tgid})
 	if err == nil {
 		// Send signal directly to the identified process.
-		return execTG.SendSignal(&arch.SignalInfo{Signo: signo})
+		return l.k.SendExternalSignalThreadGroup(execTG, &arch.SignalInfo{Signo: signo})
 	}
 
 	// The caller may be signaling a process not started directly via exec.
@@ -1010,7 +1124,7 @@ func (l *Loader) signalProcess(cid string, tgid kernel.ThreadID, signo int32) er
 	if tg.Leader().ContainerID() != cid {
 		return fmt.Errorf("process %d is part of a different container: %q", tgid, tg.Leader().ContainerID())
 	}
-	return tg.SendSignal(&arch.SignalInfo{Signo: signo})
+	return l.k.SendExternalSignalThreadGroup(tg, &arch.SignalInfo{Signo: signo})
 }
 
 func (l *Loader) signalForegrondProcessGroup(cid string, tgid kernel.ThreadID, signo int32) error {
@@ -1028,7 +1142,7 @@ func (l *Loader) signalForegrondProcessGroup(cid string, tgid kernel.ThreadID, s
 		// No foreground process group has been set. Signal the
 		// original thread group.
 		log.Warningf("No foreground process group for container %q and PID %d. Sending signal directly to PID %d.", cid, tgid, tgid)
-		return tg.SendSignal(&arch.SignalInfo{Signo: signo})
+		return l.k.SendExternalSignalThreadGroup(tg, &arch.SignalInfo{Signo: signo})
 	}
 	// Send the signal to all processes in the process group.
 	var lastErr error
@@ -1036,7 +1150,7 @@ func (l *Loader) signalForegrondProcessGroup(cid string, tgid kernel.ThreadID, s
 		if tg.ProcessGroup() != pg {
 			continue
 		}
-		if err := tg.SendSignal(&arch.SignalInfo{Signo: signo}); err != nil {
+		if err := l.k.SendExternalSignalThreadGroup(tg, &arch.SignalInfo{Signo: signo}); err != nil {
 			lastErr = err
 		}
 	}

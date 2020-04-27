@@ -1,6 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test", "proto_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
@@ -49,7 +47,7 @@ go_library(
         "state.go",
         "stats.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/state",
+    stateify = False,
     visibility = ["//:sandbox"],
     deps = [
         ":object_go_proto",
@@ -58,15 +56,8 @@ go_library(
 )
 
 proto_library(
-    name = "object_proto",
+    name = "object",
     srcs = ["object.proto"],
-    visibility = ["//:sandbox"],
-)
-
-go_proto_library(
-    name = "object_go_proto",
-    importpath = "gvisor.dev/gvisor/pkg/state/object_go_proto",
-    proto = ":object_proto",
     visibility = ["//:sandbox"],
 )
 
@@ -74,5 +65,5 @@ go_test(
     name = "state_test",
     timeout = "long",
     srcs = ["state_test.go"],
-    embed = [":state"],
+    library = ":state",
 )

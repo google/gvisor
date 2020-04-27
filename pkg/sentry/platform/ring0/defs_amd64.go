@@ -18,6 +18,18 @@ package ring0
 
 import (
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
+	"gvisor.dev/gvisor/pkg/usermem"
+)
+
+var (
+	// UserspaceSize is the total size of userspace.
+	UserspaceSize = uintptr(1) << (VirtualAddressBits() - 1)
+
+	// MaximumUserAddress is the largest possible user address.
+	MaximumUserAddress = (UserspaceSize - 1) & ^uintptr(usermem.PageSize-1)
+
+	// KernelStartAddress is the starting kernel address.
+	KernelStartAddress = ^uintptr(0) - (UserspaceSize - 1)
 )
 
 // Segment indices and Selectors.

@@ -78,8 +78,8 @@ TEST(SigIretTest, CheckRcxR11) {
       "1: pause; cmpl $0, %[gotvtalrm]; je 1b;"  // while (!gotvtalrm);
       "movq %%rcx, %[rcx];"                      // rcx = %rcx
       "movq %%r11, %[r11];"                      // r11 = %r11
-      : [ready] "=m"(ready), [rcx] "+m"(rcx), [r11] "+m"(r11)
-      : [gotvtalrm] "m"(gotvtalrm)
+      : [ ready ] "=m"(ready), [ rcx ] "+m"(rcx), [ r11 ] "+m"(r11)
+      : [ gotvtalrm ] "m"(gotvtalrm)
       : "cc", "memory", "rcx", "r11");
 
   // If sigreturn(2) returns via 'sysret' then %rcx and %r11 will be
@@ -132,6 +132,5 @@ int main(int argc, char** argv) {
   TEST_PCHECK(sigprocmask(SIG_BLOCK, &set, nullptr) == 0);
 
   gvisor::testing::TestInit(&argc, &argv);
-
-  return RUN_ALL_TESTS();
+  return gvisor::testing::RunAllTests();
 }

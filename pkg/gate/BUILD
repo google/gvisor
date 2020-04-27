@@ -1,5 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -8,7 +7,6 @@ go_library(
     srcs = [
         "gate.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/gate",
     visibility = ["//visibility:public"],
 )
 
@@ -19,5 +17,6 @@ go_test(
     ],
     deps = [
         ":gate",
+        "//pkg/sync",
     ],
 )

@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 const (
@@ -190,6 +191,9 @@ func (d *packetMMapDispatcher) dispatch() (bool, *tcpip.Error) {
 	}
 
 	pkt = pkt[d.e.hdrSize:]
-	d.e.dispatcher.DeliverNetworkPacket(d.e, remote, local, p, buffer.NewVectorisedView(len(pkt), []buffer.View{buffer.View(pkt)}), buffer.View(eth))
+	d.e.dispatcher.DeliverNetworkPacket(d.e, remote, local, p, stack.PacketBuffer{
+		Data:       buffer.View(pkt).ToVectorisedView(),
+		LinkHeader: buffer.View(eth),
+	})
 	return true, nil
 }

@@ -41,23 +41,22 @@ namespace gvisor {
 namespace testing {
 
 #define TEST_ON_GVISOR "TEST_ON_GVISOR"
+#define GVISOR_NETWORK "GVISOR_NETWORK"
 
 bool IsRunningOnGvisor() { return GvisorPlatform() != Platform::kNative; }
 
-Platform GvisorPlatform() {
+const std::string GvisorPlatform() {
   // Set by runner.go.
   char* env = getenv(TEST_ON_GVISOR);
   if (!env) {
     return Platform::kNative;
   }
-  if (strcmp(env, "ptrace") == 0) {
-    return Platform::kPtrace;
-  }
-  if (strcmp(env, "kvm") == 0) {
-    return Platform::kKVM;
-  }
-  std::cerr << "unknown platform " << env;
-  abort();
+  return std::string(env);
+}
+
+bool IsRunningWithHostinet() {
+  char* env = getenv(GVISOR_NETWORK);
+  return env && strcmp(env, "host") == 0;
 }
 
 // Inline cpuid instruction.  Preserve %ebx/%rbx register. In PIC compilations
@@ -70,7 +69,6 @@ Platform GvisorPlatform() {
       "xchg %%rdi, %%rbx\n"                \
       : "=a"(a), "=D"(b), "=c"(c), "=d"(d) \
       : "a"(a_inp), "2"(c_inp))
-#endif  // defined(__x86_64__)
 
 CPUVendor GetCPUVendor() {
   uint32_t eax, ebx, ecx, edx;
@@ -87,6 +85,7 @@ CPUVendor GetCPUVendor() {
   }
   return CPUVendor::kUnknownVendor;
 }
+#endif  // defined(__x86_64__)
 
 bool operator==(const KernelVersion& first, const KernelVersion& second) {
   return first.major == second.major && first.minor == second.minor &&
@@ -114,9 +113,6 @@ PosixErrorOr<KernelVersion> GetKernelVersion() {
   utsname buf;
   RETURN_ERROR_IF_SYSCALL_FAIL(uname(&buf));
   return ParseKernelVersion(buf.release);
-}
-
-void SetupGvisorDeathTest() {
 }
 
 std::string CPUSetToString(const cpu_set_t& set, size_t cpus) {
@@ -222,16 +218,6 @@ uint64_t Megabytes(uint64_t n) {
 bool Equivalent(uint64_t current, uint64_t target, double tolerance) {
   auto abs_diff = target > current ? target - current : current - target;
   return abs_diff <= static_cast<uint64_t>(tolerance * target);
-}
-
-void TestInit(int* argc, char*** argv) {
-  ::testing::InitGoogleTest(argc, *argv);
-  ::absl::ParseCommandLine(*argc, *argv);
-
-  // Always mask SIGPIPE as it's common and tests aren't expected to handle it.
-  struct sigaction sa = {};
-  sa.sa_handler = SIG_IGN;
-  TEST_CHECK(sigaction(SIGPIPE, &sa, nullptr) == 0);
 }
 
 }  // namespace testing

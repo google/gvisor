@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // +build go1.12
-// +build !go1.14
+// +build !go1.15
 
 // Check go:linkname function signatures when updating Go version.
 
@@ -23,6 +23,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"unsafe"
+
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
 //go:linkname throw runtime.throw
@@ -47,6 +49,13 @@ func bytePtr(addr uintptr) *byte {
 //go:nosplit
 func uintptrValue(addr *byte) uintptr {
 	return (uintptr)(unsafe.Pointer(addr))
+}
+
+// bluepillArchContext returns the UContext64.
+//
+//go:nosplit
+func bluepillArchContext(context unsafe.Pointer) *arch.SignalContext64 {
+	return &((*arch.UContext64)(context).MContext)
 }
 
 // bluepillHandler is called from the signal stub.
@@ -80,13 +89,17 @@ func bluepillHandler(context unsafe.Pointer) {
 			// interrupted KVM. Since we're in a signal handler
 			// currently, all signals are masked and the signal
 			// must have been delivered directly to this thread.
+			timeout := syscall.Timespec{}
 			sig, _, errno := syscall.RawSyscall6(
 				syscall.SYS_RT_SIGTIMEDWAIT,
 				uintptr(unsafe.Pointer(&bounceSignalMask)),
-				0, // siginfo.
-				0, // timeout.
-				8, // sigset size.
+				0,                                 // siginfo.
+				uintptr(unsafe.Pointer(&timeout)), // timeout.
+				8,                                 // sigset size.
 				0, 0)
+			if errno == syscall.EAGAIN {
+				continue
+			}
 			if errno != 0 {
 				throw("error waiting for pending signal")
 			}
@@ -162,7 +175,7 @@ func bluepillHandler(context unsafe.Pointer) {
 
 			// For MMIO, the physical address is the first data item.
 			physical := uintptr(c.runData.data[0])
-			virtual, ok := handleBluepillFault(c.machine, physical)
+			virtual, ok := handleBluepillFault(c.machine, physical, physicalRegions, _KVM_MEM_FLAGS_NONE)
 			if !ok {
 				c.die(bluepillArchContext(context), "invalid physical address")
 				return

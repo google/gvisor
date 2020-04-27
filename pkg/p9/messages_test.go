@@ -194,6 +194,21 @@ func TestEncodeDecode(t *testing.T) {
 			Flags:    3,
 		},
 		&Rxattrcreate{},
+		&Tgetxattr{
+			FID:  1,
+			Name: "abc",
+			Size: 2,
+		},
+		&Rgetxattr{
+			Value: "xyz",
+		},
+		&Tsetxattr{
+			FID:   1,
+			Name:  "abc",
+			Value: "xyz",
+			Flags: 2,
+		},
+		&Rsetxattr{},
 		&Treaddir{
 			Directory: 1,
 			Offset:    2,
@@ -201,7 +216,7 @@ func TestEncodeDecode(t *testing.T) {
 		},
 		&Rreaddir{
 			// Count must be sufficient to encode a dirent.
-			Count:   0x18,
+			Count:   0x1a,
 			Entries: []Dirent{{QID: QID{Type: 2}}},
 		},
 		&Tfsync{
@@ -367,7 +382,7 @@ func TestEncodeDecode(t *testing.T) {
 		// Encode the original.
 		data := make([]byte, initialBufferLength)
 		buf := buffer{data: data[:0]}
-		enc.Encode(&buf)
+		enc.encode(&buf)
 
 		// Create a new object, same as the first.
 		enc2 := reflect.New(reflect.ValueOf(enc).Elem().Type()).Interface().(encoder)
@@ -384,7 +399,7 @@ func TestEncodeDecode(t *testing.T) {
 		}
 
 		// Mark sure it was okay.
-		enc2.Decode(&buf2)
+		enc2.decode(&buf2)
 		if buf2.isOverrun() {
 			t.Errorf("object %#v->%#v got overrun on decode", enc, enc2)
 			continue

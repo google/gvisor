@@ -17,7 +17,6 @@ package stack
 import (
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -154,72 +153,57 @@ func (r *Route) IsResolutionRequired() bool {
 }
 
 // WritePacket writes the packet through the given route.
-func (r *Route) WritePacket(gso *GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params NetworkHeaderParams) *tcpip.Error {
+func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt PacketBuffer) *tcpip.Error {
 	if !r.ref.isValidForOutgoing() {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	err := r.ref.ep.WritePacket(r, gso, hdr, payload, params, r.Loop)
+	err := r.ref.ep.WritePacket(r, gso, params, pkt)
 	if err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 	} else {
 		r.ref.nic.stats.Tx.Packets.Increment()
-		r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(hdr.UsedLength() + payload.Size()))
+		r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(pkt.Header.UsedLength() + pkt.Data.Size()))
 	}
 	return err
 }
 
-// PacketDescriptor is a packet descriptor which contains a packet header and
-// offset and size of packet data in a payload view.
-type PacketDescriptor struct {
-	Hdr  buffer.Prependable
-	Off  int
-	Size int
-}
-
-// NewPacketDescriptors allocates a set of packet descriptors.
-func NewPacketDescriptors(n int, hdrSize int) []PacketDescriptor {
-	buf := make([]byte, n*hdrSize)
-	hdrs := make([]PacketDescriptor, n)
-	for i := range hdrs {
-		hdrs[i].Hdr = buffer.NewEmptyPrependableFromView(buf[i*hdrSize:][:hdrSize])
-	}
-	return hdrs
-}
-
-// WritePackets writes the set of packets through the given route.
-func (r *Route) WritePackets(gso *GSO, hdrs []PacketDescriptor, payload buffer.VectorisedView, params NetworkHeaderParams) (int, *tcpip.Error) {
+// WritePackets writes a list of n packets through the given route and returns
+// the number of packets written.
+func (r *Route) WritePackets(gso *GSO, pkts PacketBufferList, params NetworkHeaderParams) (int, *tcpip.Error) {
 	if !r.ref.isValidForOutgoing() {
 		return 0, tcpip.ErrInvalidEndpointState
 	}
 
-	n, err := r.ref.ep.WritePackets(r, gso, hdrs, payload, params, r.Loop)
+	n, err := r.ref.ep.WritePackets(r, gso, pkts, params)
 	if err != nil {
-		r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(len(hdrs) - n))
+		r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(pkts.Len() - n))
 	}
 	r.ref.nic.stats.Tx.Packets.IncrementBy(uint64(n))
-	payloadSize := 0
-	for i := 0; i < n; i++ {
-		r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(hdrs[i].Hdr.UsedLength()))
-		payloadSize += hdrs[i].Size
+
+	writtenBytes := 0
+	for i, pb := 0, pkts.Front(); i < n && pb != nil; i, pb = i+1, pb.Next() {
+		writtenBytes += pb.Header.UsedLength()
+		writtenBytes += pb.Data.Size()
 	}
-	r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(payloadSize))
+
+	r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(writtenBytes))
 	return n, err
 }
 
 // WriteHeaderIncludedPacket writes a packet already containing a network
 // header through the given route.
-func (r *Route) WriteHeaderIncludedPacket(payload buffer.VectorisedView) *tcpip.Error {
+func (r *Route) WriteHeaderIncludedPacket(pkt PacketBuffer) *tcpip.Error {
 	if !r.ref.isValidForOutgoing() {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	if err := r.ref.ep.WriteHeaderIncludedPacket(r, payload, r.Loop); err != nil {
+	if err := r.ref.ep.WriteHeaderIncludedPacket(r, pkt); err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 		return err
 	}
 	r.ref.nic.stats.Tx.Packets.Increment()
-	r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(payload.Size()))
+	r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(pkt.Data.Size()))
 	return nil
 }
 
@@ -244,7 +228,9 @@ func (r *Route) Release() {
 // Clone Clone a route such that the original one can be released and the new
 // one will remain valid.
 func (r *Route) Clone() Route {
-	r.ref.incRef()
+	if r.ref != nil {
+		r.ref.incRef()
+	}
 	return *r
 }
 

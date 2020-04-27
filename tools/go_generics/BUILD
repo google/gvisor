@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("//tools:defs.bzl", "go_binary")
 
 package(licenses = ["notice"])
 
@@ -9,7 +9,7 @@ go_binary(
         "imports.go",
         "remove.go",
     ],
-    visibility = ["//visibility:public"],
+    visibility = ["//:sandbox"],
     deps = ["//tools/go_generics/globals"],
 )
 

@@ -19,11 +19,11 @@
 #include <sys/stat.h>
 #include <syscall.h>
 #include <unistd.h>
+
 #include <string>
 #include <vector>
 
 #include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
@@ -162,12 +162,12 @@ TEST(ChrootTest, DotDotFromOpenFD) {
 
   // getdents on fd should not error.
   char buf[1024];
-  ASSERT_THAT(syscall(SYS_getdents, fd.get(), buf, sizeof(buf)),
+  ASSERT_THAT(syscall(SYS_getdents64, fd.get(), buf, sizeof(buf)),
               SyscallSucceeds());
 }
 
 // Test that link resolution in a chroot can escape the root by following an
-// open proc fd.
+// open proc fd. Regression test for b/32316719.
 TEST(ChrootTest, ProcFdLinkResolutionInChroot) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
 

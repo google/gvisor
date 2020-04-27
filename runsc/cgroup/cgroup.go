@@ -45,13 +45,13 @@ var controllers = map[string]controller{
 	"memory":   &memory{},
 	"net_cls":  &networkClass{},
 	"net_prio": &networkPrio{},
+	"pids":     &pids{},
 
 	// These controllers either don't have anything in the OCI spec or is
-	// irrevalant for a sandbox, e.g. pids.
+	// irrelevant for a sandbox.
 	"devices":    &noop{},
 	"freezer":    &noop{},
 	"perf_event": &noop{},
-	"pids":       &noop{},
 	"systemd":    &noop{},
 }
 
@@ -99,6 +99,14 @@ func getValue(path, name string) (string, error) {
 		return "", err
 	}
 	return string(out), nil
+}
+
+func getInt(path, name string) (int, error) {
+	s, err := getValue(path, name)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(s))
 }
 
 // fillFromAncestor sets the value of a cgroup file from the first ancestor
@@ -323,6 +331,22 @@ func (c *Cgroup) Join() (func(), error) {
 	return undo, nil
 }
 
+func (c *Cgroup) CPUQuota() (float64, error) {
+	path := c.makePath("cpu")
+	quota, err := getInt(path, "cpu.cfs_quota_us")
+	if err != nil {
+		return -1, err
+	}
+	period, err := getInt(path, "cpu.cfs_period_us")
+	if err != nil {
+		return -1, err
+	}
+	if quota <= 0 || period <= 0 {
+		return -1, err
+	}
+	return float64(quota) / float64(period), nil
+}
+
 // NumCPU returns the number of CPUs configured in 'cpuset/cpuset.cpus'.
 func (c *Cgroup) NumCPU() (int, error) {
 	path := c.makePath("cpuset")
@@ -500,4 +524,14 @@ func (*networkPrio) set(spec *specs.LinuxResources, path string) error {
 		}
 	}
 	return nil
+}
+
+type pids struct{}
+
+func (*pids) set(spec *specs.LinuxResources, path string) error {
+	if spec.Pids == nil {
+		return nil
+	}
+	val := strconv.FormatInt(spec.Pids.Limit, 10)
+	return setValue(path, "pids.max", val)
 }

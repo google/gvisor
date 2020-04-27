@@ -33,7 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	pb "gvisor.dev/gvisor/pkg/sentry/strace/strace_go_proto"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // DefaultLogMaximumSize is the default LogMaximumSize.
@@ -53,6 +53,14 @@ var ItimerTypes = abi.ValueSet{
 	linux.ITIMER_REAL:    "ITIMER_REAL",
 	linux.ITIMER_VIRTUAL: "ITIMER_VIRTUAL",
 	linux.ITIMER_PROF:    "ITIMER_PROF",
+}
+
+func hexNum(num uint64) string {
+	return "0x" + strconv.FormatUint(num, 16)
+}
+
+func hexArg(arg arch.SyscallArgument) string {
+	return hexNum(arg.Uint64())
 }
 
 func iovecs(t *kernel.Task, addr usermem.Addr, iovcnt int, printContent bool, maxBytes uint64) string {
@@ -133,6 +141,10 @@ func path(t *kernel.Task, addr usermem.Addr) string {
 }
 
 func fd(t *kernel.Task, fd int32) string {
+	if kernel.VFS2Enabled {
+		return fdVFS2(t, fd)
+	}
+
 	root := t.FSContext().RootDirectory()
 	if root != nil {
 		defer root.DecRef()
@@ -158,6 +170,30 @@ func fd(t *kernel.Task, fd int32) string {
 	defer file.DecRef()
 
 	name, _ := file.Dirent.FullName(root)
+	return fmt.Sprintf("%#x %s", fd, name)
+}
+
+func fdVFS2(t *kernel.Task, fd int32) string {
+	root := t.FSContext().RootDirectoryVFS2()
+	defer root.DecRef()
+
+	vfsObj := root.Mount().Filesystem().VirtualFilesystem()
+	if fd == linux.AT_FDCWD {
+		wd := t.FSContext().WorkingDirectoryVFS2()
+		defer wd.DecRef()
+
+		name, _ := vfsObj.PathnameWithDeleted(t, root, wd)
+		return fmt.Sprintf("AT_FDCWD %s", name)
+	}
+
+	file := t.GetFileVFS2(fd)
+	if file == nil {
+		// Cast FD to uint64 to avoid printing negative hex.
+		return fmt.Sprintf("%#x (bad FD)", uint64(fd))
+	}
+	defer file.DecRef()
+
+	name, _ := vfsObj.PathnameWithDeleted(t, root, file.VirtualDentry())
 	return fmt.Sprintf("%#x %s", fd, name)
 }
 
@@ -389,6 +425,12 @@ func (i *SyscallInfo) pre(t *kernel.Task, args arch.SyscallArguments, maximumBlo
 			output = append(output, path(t, args[arg].Pointer()))
 		case ExecveStringVector:
 			output = append(output, stringVector(t, args[arg].Pointer()))
+		case SetSockOptVal:
+			output = append(output, sockOptVal(t, args[arg-2].Uint64() /* level */, args[arg-1].Uint64() /* optName */, args[arg].Pointer() /* optVal */, args[arg+1].Uint64() /* optLen */, maximumBlobSize))
+		case SockOptLevel:
+			output = append(output, sockOptLevels.Parse(args[arg].Uint64()))
+		case SockOptName:
+			output = append(output, sockOptNames[args[arg-1].Uint64() /* level */].Parse(args[arg].Uint64()))
 		case SockAddr:
 			output = append(output, sockAddr(t, args[arg].Pointer(), uint32(args[arg+1].Uint64())))
 		case SockLen:
@@ -439,12 +481,20 @@ func (i *SyscallInfo) pre(t *kernel.Task, args arch.SyscallArguments, maximumBlo
 			output = append(output, capData(t, args[arg-1].Pointer(), args[arg].Pointer()))
 		case PollFDs:
 			output = append(output, pollFDs(t, args[arg].Pointer(), uint(args[arg+1].Uint()), false))
+		case EpollCtlOp:
+			output = append(output, epollCtlOps.Parse(uint64(args[arg].Int())))
+		case EpollEvent:
+			output = append(output, epollEvent(t, args[arg].Pointer()))
+		case EpollEvents:
+			output = append(output, epollEvents(t, args[arg].Pointer(), 0 /* numEvents */, uint64(maximumBlobSize)))
+		case SelectFDSet:
+			output = append(output, fdSet(t, int(args[0].Int()), args[arg].Pointer()))
 		case Oct:
 			output = append(output, "0o"+strconv.FormatUint(args[arg].Uint64(), 8))
 		case Hex:
 			fallthrough
 		default:
-			output = append(output, "0x"+strconv.FormatUint(args[arg].Uint64(), 16))
+			output = append(output, hexArg(args[arg]))
 		}
 	}
 
@@ -505,6 +555,14 @@ func (i *SyscallInfo) post(t *kernel.Task, args arch.SyscallArguments, rval uint
 			output[arg] = capData(t, args[arg-1].Pointer(), args[arg].Pointer())
 		case PollFDs:
 			output[arg] = pollFDs(t, args[arg].Pointer(), uint(args[arg+1].Uint()), true)
+		case EpollEvents:
+			output[arg] = epollEvents(t, args[arg].Pointer(), uint64(rval), uint64(maximumBlobSize))
+		case GetSockOptVal:
+			output[arg] = getSockOptVal(t, args[arg-2].Uint64() /* level */, args[arg-1].Uint64() /* optName */, args[arg].Pointer() /* optVal */, args[arg+1].Pointer() /* optLen */, maximumBlobSize, rval)
+		case SetSockOptVal:
+			// No need to print the value again. While it usually
+			// isn't, the string version of this arg can be long.
+			output[arg] = hexArg(args[arg])
 		}
 	}
 }
@@ -661,7 +719,7 @@ func (s SyscallMap) SyscallEnter(t *kernel.Task, sysno uintptr, args arch.Syscal
 // SyscallExit implements kernel.Stracer.SyscallExit. It logs the syscall
 // exit trace.
 func (s SyscallMap) SyscallExit(context interface{}, t *kernel.Task, sysno, rval uintptr, err error) {
-	errno := t.ExtractErrno(err, int(sysno))
+	errno := kernel.ExtractErrno(err, int(sysno))
 	c := context.(*syscallContext)
 
 	elapsed := time.Since(c.start)
@@ -720,9 +778,6 @@ func (s SyscallMap) Name(sysno uintptr) string {
 //
 // N.B. This is not in an init function because we can't be sure all syscall
 // tables are registered with the kernel when init runs.
-//
-// TODO(gvisor.dev/issue/155): remove kernel package dependencies from this
-// package and have the kernel package self-initialize all syscall tables.
 func Initialize() {
 	for _, table := range kernel.SyscallTables() {
 		// Is this known?

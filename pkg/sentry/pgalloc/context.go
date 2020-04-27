@@ -15,7 +15,7 @@
 package pgalloc
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 )
 
 // contextID is this package's type for context.Context.Value keys.

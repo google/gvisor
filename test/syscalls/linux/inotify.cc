@@ -977,7 +977,7 @@ TEST(Inotify, WatchOnRelativePath) {
       ASSERT_NO_ERRNO_AND_VALUE(Open(file1.path(), O_RDONLY));
 
   // Change working directory to root.
-  const char* old_working_dir = get_current_dir_name();
+  const FileDescriptor cwd = ASSERT_NO_ERRNO_AND_VALUE(Open(".", O_PATH));
   EXPECT_THAT(chdir(root.path().c_str()), SyscallSucceeds());
 
   // Add a watch on file1 with a relative path.
@@ -997,7 +997,7 @@ TEST(Inotify, WatchOnRelativePath) {
   // continue to hold a reference, random save/restore tests can fail if a save
   // is triggered after "root" is unlinked; we can't save deleted fs objects
   // with active references.
-  EXPECT_THAT(chdir(old_working_dir), SyscallSucceeds());
+  EXPECT_THAT(fchdir(cwd.get()), SyscallSucceeds());
 }
 
 TEST(Inotify, ZeroLengthReadWriteDoesNotGenerateEvent) {
@@ -1055,9 +1055,9 @@ TEST(Inotify, ChmodGeneratesAttribEvent_NoRandomSave) {
   const TempPath file1 =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(root.path()));
 
-  const FileDescriptor root_fd =
+  FileDescriptor root_fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(root.path(), O_RDONLY));
-  const FileDescriptor file1_fd =
+  FileDescriptor file1_fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file1.path(), O_RDWR));
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
 
@@ -1091,6 +1091,11 @@ TEST(Inotify, ChmodGeneratesAttribEvent_NoRandomSave) {
   ASSERT_THAT(fchmodat(root_fd.get(), file1_basename.c_str(), S_IWGRP, 0),
               SyscallSucceeds());
   verify_chmod_events();
+
+  // Make sure the chmod'ed file descriptors are destroyed before DisableSave
+  // is destructed.
+  root_fd.reset();
+  file1_fd.reset();
 }
 
 TEST(Inotify, TruncateGeneratesModifyEvent) {
@@ -1589,6 +1594,34 @@ TEST(Inotify, EpollNoDeadlock) {
     }
     sched_yield();
   }
+}
+
+TEST(Inotify, SpliceEvent) {
+  int pipes[2];
+  ASSERT_THAT(pipe2(pipes, O_NONBLOCK), SyscallSucceeds());
+
+  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const TempPath file1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      root.path(), "some content", TempPath::kDefaultFileMode));
+
+  const FileDescriptor file1_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file1.path(), O_RDONLY));
+  const int watcher = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), file1.path(), IN_ALL_EVENTS));
+
+  char buf;
+  EXPECT_THAT(read(file1_fd.get(), &buf, 1), SyscallSucceeds());
+
+  EXPECT_THAT(splice(fd.get(), nullptr, pipes[1], nullptr,
+                     sizeof(struct inotify_event) + 1, SPLICE_F_NONBLOCK),
+              SyscallSucceedsWithValue(sizeof(struct inotify_event)));
+
+  const FileDescriptor read_fd(pipes[0]);
+  const std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(read_fd.get()));
+  ASSERT_THAT(events, Are({Event(IN_ACCESS, watcher)}));
 }
 
 }  // namespace

@@ -1,11 +1,10 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
 go_library(
     name = "cgroup",
     srcs = ["cgroup.go"],
-    importpath = "gvisor.dev/gvisor/runsc/cgroup",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",
@@ -19,6 +18,6 @@ go_test(
     name = "cgroup_test",
     size = "small",
     srcs = ["cgroup_test.go"],
-    embed = [":cgroup"],
+    library = ":cgroup",
     tags = ["local"],
 )

@@ -149,21 +149,22 @@ func TestSackPermittedAccept(t *testing.T) {
 		{true, false, -1, 0xffff}, // When cookie is used window scaling is disabled.
 		{false, true, 5, 0x8000},  // 0x8000 * 2^5 = 1<<20 = 1MB window (the default).
 	}
-	savedSynCountThreshold := tcp.SynRcvdCountThreshold
-	defer func() {
-		tcp.SynRcvdCountThreshold = savedSynCountThreshold
-	}()
+
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("test: %#v", tc), func(t *testing.T) {
-			if tc.cookieEnabled {
-				tcp.SynRcvdCountThreshold = 0
-			} else {
-				tcp.SynRcvdCountThreshold = savedSynCountThreshold
-			}
 			for _, sackEnabled := range []bool{false, true} {
 				t.Run(fmt.Sprintf("test stack.sackEnabled: %v", sackEnabled), func(t *testing.T) {
 					c := context.New(t, defaultMTU)
 					defer c.Cleanup()
+
+					if tc.cookieEnabled {
+						// Set the SynRcvd threshold to
+						// zero to force a syn cookie
+						// based accept to happen.
+						if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPSynRcvdCountThresholdOption(0)); err != nil {
+							t.Fatalf("setting TCPSynRcvdCountThresholdOption to 0 failed: %s", err)
+						}
+					}
 					setStackSACKPermitted(t, c, sackEnabled)
 
 					rep := c.AcceptWithOptions(tc.wndScale, header.TCPSynOptions{MSS: defaultIPv4MSS, SACKPermitted: tc.sackPermitted})
@@ -222,21 +223,23 @@ func TestSackDisabledAccept(t *testing.T) {
 		{true, -1, 0xffff}, // When cookie is used window scaling is disabled.
 		{false, 5, 0x8000}, // 0x8000 * 2^5 = 1<<20 = 1MB window (the default).
 	}
-	savedSynCountThreshold := tcp.SynRcvdCountThreshold
-	defer func() {
-		tcp.SynRcvdCountThreshold = savedSynCountThreshold
-	}()
+
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("test: %#v", tc), func(t *testing.T) {
-			if tc.cookieEnabled {
-				tcp.SynRcvdCountThreshold = 0
-			} else {
-				tcp.SynRcvdCountThreshold = savedSynCountThreshold
-			}
 			for _, sackEnabled := range []bool{false, true} {
 				t.Run(fmt.Sprintf("test: sackEnabled: %v", sackEnabled), func(t *testing.T) {
 					c := context.New(t, defaultMTU)
 					defer c.Cleanup()
+
+					if tc.cookieEnabled {
+						// Set the SynRcvd threshold to
+						// zero to force a syn cookie
+						// based accept to happen.
+						if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPSynRcvdCountThresholdOption(0)); err != nil {
+							t.Fatalf("setting TCPSynRcvdCountThresholdOption to 0 failed: %s", err)
+						}
+					}
+
 					setStackSACKPermitted(t, c, sackEnabled)
 
 					rep := c.AcceptWithOptions(tc.wndScale, header.TCPSynOptions{MSS: defaultIPv4MSS})
@@ -387,7 +390,7 @@ func TestSACKRecovery(t *testing.T) {
 	setStackSACKPermitted(t, c, true)
 	createConnectedWithSACKAndTS(c)
 
-	const iterations = 7
+	const iterations = 3
 	data := buffer.NewView(2 * maxPayload * (tcp.InitialCwnd << (iterations + 1)))
 	for i := range data {
 		data[i] = byte(i)

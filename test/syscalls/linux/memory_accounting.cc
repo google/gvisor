@@ -13,9 +13,9 @@
 // limitations under the License.
 
 #include <sys/mman.h>
+
 #include <map>
 
-#include "gtest/gtest.h"
 #include "gtest/gtest.h"
 #include "absl/strings/match.h"
 #include "absl/strings/numbers.h"

@@ -20,8 +20,8 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // We unconditionally report a single NUMA node. This also means that our
@@ -162,10 +162,10 @@ func GetMempolicy(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 			if err != nil {
 				return 0, nil, err
 			}
-			policy = 0 // maxNodes == 1
+			policy = linux.MPOL_DEFAULT // maxNodes == 1
 		}
 		if mode != 0 {
-			if _, err := t.CopyOut(mode, policy); err != nil {
+			if _, err := policy.CopyOut(t, mode); err != nil {
 				return 0, nil, err
 			}
 		}
@@ -199,10 +199,10 @@ func GetMempolicy(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 		if policy&^linux.MPOL_MODE_FLAGS != linux.MPOL_INTERLEAVE {
 			return 0, nil, syserror.EINVAL
 		}
-		policy = 0 // maxNodes == 1
+		policy = linux.MPOL_DEFAULT // maxNodes == 1
 	}
 	if mode != 0 {
-		if _, err := t.CopyOut(mode, policy); err != nil {
+		if _, err := policy.CopyOut(t, mode); err != nil {
 			return 0, nil, err
 		}
 	}
@@ -216,7 +216,7 @@ func GetMempolicy(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 
 // SetMempolicy implements the syscall set_mempolicy(2).
 func SetMempolicy(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	modeWithFlags := args[0].Int()
+	modeWithFlags := linux.NumaPolicy(args[0].Int())
 	nodemask := args[1].Pointer()
 	maxnode := args[2].Uint()
 
@@ -233,7 +233,7 @@ func SetMempolicy(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 func Mbind(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	length := args[1].Uint64()
-	mode := args[2].Int()
+	mode := linux.NumaPolicy(args[2].Int())
 	nodemask := args[3].Pointer()
 	maxnode := args[4].Uint()
 	flags := args[5].Uint()
@@ -258,9 +258,9 @@ func Mbind(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	return 0, nil, err
 }
 
-func copyInMempolicyNodemask(t *kernel.Task, modeWithFlags int32, nodemask usermem.Addr, maxnode uint32) (int32, uint64, error) {
-	flags := modeWithFlags & linux.MPOL_MODE_FLAGS
-	mode := modeWithFlags &^ linux.MPOL_MODE_FLAGS
+func copyInMempolicyNodemask(t *kernel.Task, modeWithFlags linux.NumaPolicy, nodemask usermem.Addr, maxnode uint32) (linux.NumaPolicy, uint64, error) {
+	flags := linux.NumaPolicy(modeWithFlags & linux.MPOL_MODE_FLAGS)
+	mode := linux.NumaPolicy(modeWithFlags &^ linux.MPOL_MODE_FLAGS)
 	if flags == linux.MPOL_MODE_FLAGS {
 		// Can't specify both mode flags simultaneously.
 		return 0, 0, syserror.EINVAL

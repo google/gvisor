@@ -23,7 +23,7 @@ import (
 
 // Type1 is a test data type.
 //
-// +marshal
+// +marshal slice:Type1Slice
 type Type1 struct {
 	a    Type2
 	x, y int64 // Multiple field names.
@@ -75,6 +75,34 @@ type Type5 struct {
 	m int64
 }
 
+// Type6 is a test data type ends mid-word.
+//
+// +marshal
+type Type6 struct {
+	a int64
+	b int64
+	// If c isn't marked unaligned, analysis fails (as it should, since
+	// the unsafe API corrupts Type7).
+	c byte `marshal:"unaligned"`
+}
+
+// Type7 is a test data type that contains a child struct that ends
+// mid-word.
+// +marshal
+type Type7 struct {
+	x Type6
+	y int64
+}
+
+// Type8 is a test data type which contains an external non-packed field.
+//
+// +marshal slice:Type8Slice
+type Type8 struct {
+	a  int64
+	np ex.NotPacked
+	b  int64
+}
+
 // Timespec represents struct timespec in <time.h>.
 //
 // +marshal
@@ -85,7 +113,7 @@ type Timespec struct {
 
 // Stat represents struct stat.
 //
-// +marshal
+// +marshal slice:StatSlice
 type Stat struct {
 	Dev     uint64
 	Ino     uint64
@@ -102,4 +130,47 @@ type Stat struct {
 	MTime   Timespec
 	CTime   Timespec
 	_       [3]int64
+}
+
+// InetAddr is an example marshallable newtype on an array.
+//
+// +marshal
+type InetAddr [4]byte
+
+// SignalSet is an example marshallable newtype on a primitive.
+//
+// +marshal slice:SignalSetSlice:inner
+type SignalSet uint64
+
+// SignalSetAlias is an example newtype on another marshallable type.
+//
+// +marshal slice:SignalSetAliasSlice
+type SignalSetAlias SignalSet
+
+const sizeA = 64
+const sizeB = 8
+
+// TestArray is a test data structure on an array with a constant length.
+//
+// +marshal
+type TestArray [sizeA]int32
+
+// TestArray2 is a newtype on an array with a simple arithmetic expression of
+// constants for the array length.
+//
+// +marshal
+type TestArray2 [sizeA * sizeB]int32
+
+// TestArray2 is a newtype on an array with a simple arithmetic expression of
+// mixed constants and literals for the array length.
+//
+// +marshal
+type TestArray3 [sizeA*sizeB + 12]int32
+
+// Type9 is a test data type containing an array with a non-literal length.
+//
+// +marshal
+type Type9 struct {
+	x int64
+	y [sizeA]int32
 }

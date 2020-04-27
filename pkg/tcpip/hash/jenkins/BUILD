@@ -1,15 +1,11 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
 go_library(
     name = "jenkins",
     srcs = ["jenkins.go"],
-    importpath = "gvisor.dev/gvisor/pkg/tcpip/hash/jenkins",
-    visibility = [
-        "//visibility:public",
-    ],
+    visibility = ["//visibility:public"],
 )
 
 go_test(
@@ -18,5 +14,5 @@ go_test(
     srcs = [
         "jenkins_test.go",
     ],
-    embed = [":jenkins"],
+    library = ":jenkins",
 )

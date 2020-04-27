@@ -18,15 +18,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 func TestParseIteratorPartialPathnames(t *testing.T) {
-	path, err := Parse("/foo//bar///baz////")
-	if err != nil {
-		t.Fatalf("Parse failed: %v", err)
-	}
+	path := Parse("/foo//bar///baz////")
 	// Parse strips leading slashes, and records their presence as
 	// Path.Absolute.
 	if !path.Absolute {
@@ -71,6 +66,12 @@ func TestParse(t *testing.T) {
 	}
 	tests := []testCase{
 		{
+			pathname: "",
+			relpath:  []string{},
+			abs:      false,
+			dir:      false,
+		},
+		{
 			pathname: "/",
 			relpath:  []string{},
 			abs:      true,
@@ -113,10 +114,7 @@ func TestParse(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.pathname, func(t *testing.T) {
-			p, err := Parse(test.pathname)
-			if err != nil {
-				t.Fatalf("failed to parse pathname %q: %v", test.pathname, err)
-			}
+			p := Parse(test.pathname)
 			t.Logf("pathname %q => path %q", test.pathname, p)
 			if p.Absolute != test.abs {
 				t.Errorf("path absoluteness: got %v, wanted %v", p.Absolute, test.abs)
@@ -132,12 +130,5 @@ func TestParse(t *testing.T) {
 				t.Errorf("relative path: got %v, wanted %v", pcs, test.relpath)
 			}
 		})
-	}
-}
-
-func TestParseEmptyPathname(t *testing.T) {
-	p, err := Parse("")
-	if err != syserror.ENOENT {
-		t.Errorf("parsing empty pathname: got (%v, %v), wanted (<unspecified>, ENOENT)", p, err)
 	}
 }

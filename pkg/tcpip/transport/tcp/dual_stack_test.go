@@ -391,9 +391,8 @@ func testV4Accept(t *testing.T, c *context.Context) {
 	// Make sure we get the same error when calling the original ep and the
 	// new one. This validates that v4-mapped endpoints are still able to
 	// query the V6Only flag, whereas pure v4 endpoints are not.
-	var v tcpip.V6OnlyOption
-	expected := c.EP.GetSockOpt(&v)
-	if err := nep.GetSockOpt(&v); err != expected {
+	_, expected := c.EP.GetSockOptBool(tcpip.V6OnlyOption)
+	if _, err := nep.GetSockOptBool(tcpip.V6OnlyOption); err != expected {
 		t.Fatalf("GetSockOpt returned unexpected value: got %v, want %v", err, expected)
 	}
 
@@ -531,8 +530,7 @@ func TestV6AcceptOnV6(t *testing.T) {
 
 	// Make sure we can still query the v6 only status of the new endpoint,
 	// that is, that it is in fact a v6 socket.
-	var v tcpip.V6OnlyOption
-	if err := nep.GetSockOpt(&v); err != nil {
+	if _, err := nep.GetSockOptBool(tcpip.V6OnlyOption); err != nil {
 		t.Fatalf("GetSockOpt failed failed: %v", err)
 	}
 
@@ -570,11 +568,10 @@ func TestV4AcceptOnV4(t *testing.T) {
 func testV4ListenClose(t *testing.T, c *context.Context) {
 	// Set the SynRcvd threshold to zero to force a syn cookie based accept
 	// to happen.
-	saved := tcp.SynRcvdCountThreshold
-	defer func() {
-		tcp.SynRcvdCountThreshold = saved
-	}()
-	tcp.SynRcvdCountThreshold = 0
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPSynRcvdCountThresholdOption(0)); err != nil {
+		t.Fatalf("setting TCPSynRcvdCountThresholdOption failed: %s", err)
+	}
+
 	const n = uint16(32)
 
 	// Start listening.

@@ -47,10 +47,10 @@ func TestDescriptorRelease(t *testing.T) {
 
 			// FD ownership is transferred to the descritor.
 			queue := &waiter.Queue{}
-			d, err := newDescriptor(fd, false /* donated*/, tc.saveable, tc.wouldBlock, queue)
+			d, err := newDescriptor(fd, tc.saveable, tc.wouldBlock, queue)
 			if err != nil {
 				syscall.Close(fd)
-				t.Fatalf("newDescriptor(%d, %t, false, %t, queue) failed, err: %v", fd, tc.saveable, tc.wouldBlock, err)
+				t.Fatalf("newDescriptor(%d, %t, %t, queue) failed, err: %v", fd, tc.saveable, tc.wouldBlock, err)
 			}
 			if tc.saveable {
 				if d.origFD < 0 {

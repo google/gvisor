@@ -17,20 +17,32 @@ package gofer
 import (
 	"syscall"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/p9"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 )
 
 func utimes(ctx context.Context, file contextFile, ts fs.TimeSpec) error {
 	if ts.ATimeOmit && ts.MTimeOmit {
 		return nil
 	}
+
+	// Replace requests to use the "system time" with the current time to
+	// ensure that timestamps remain consistent with the remote
+	// filesystem.
+	now := ktime.NowFromContext(ctx)
+	if ts.ATimeSetSystemTime {
+		ts.ATime = now
+	}
+	if ts.MTimeSetSystemTime {
+		ts.MTime = now
+	}
 	mask := p9.SetAttrMask{
 		ATime:              !ts.ATimeOmit,
-		ATimeNotSystemTime: !ts.ATimeSetSystemTime,
+		ATimeNotSystemTime: true,
 		MTime:              !ts.MTimeOmit,
-		MTimeNotSystemTime: !ts.MTimeSetSystemTime,
+		MTimeNotSystemTime: true,
 	}
 	as, ans := ts.ATime.Unix()
 	ms, mns := ts.MTime.Unix()

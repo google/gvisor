@@ -22,7 +22,6 @@
 #include <string>
 
 #include "gtest/gtest.h"
-#include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
@@ -38,6 +37,7 @@ namespace testing {
 
 namespace {
 
+// Stress copy-on-write. Attempts to reproduce b/38430174.
 TEST(PreadvTest, MMConcurrencyStress) {
   // Fill a one-page file with zeroes (the contents don't really matter).
   const auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(

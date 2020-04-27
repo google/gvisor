@@ -17,24 +17,35 @@
 package netfilter
 
 import (
+	"errors"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/iptables"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // errorTargetName is used to mark targets as error targets. Error targets
 // shouldn't be reached - an error has occurred if we fall through to one.
 const errorTargetName = "ERROR"
 
-// metadata is opaque to netstack. It holds data that we need to translate
-// between Linux's and netstack's iptables representations.
+// redirectTargetName is used to mark targets as redirect targets. Redirect
+// targets should be reached for only NAT and Mangle tables. These targets will
+// change the destination port/destination IP for packets.
+const redirectTargetName = "REDIRECT"
+
+// Metadata is used to verify that we are correctly serializing and
+// deserializing iptables into structs consumable by the iptables tool. We save
+// a metadata struct when the tables are written, and when they are read out we
+// verify that certain fields are the same.
+//
+// metadata is used by this serialization/deserializing code, not netstack.
 type metadata struct {
 	HookEntry  [linux.NF_INET_NUMHOOKS]uint32
 	Underflow  [linux.NF_INET_NUMHOOKS]uint32
@@ -42,8 +53,15 @@ type metadata struct {
 	Size       uint32
 }
 
+// nflog logs messages related to the writing and reading of iptables.
+func nflog(format string, args ...interface{}) {
+	if log.IsLogging(log.Debug) {
+		log.Debugf("netfilter: "+format, args...)
+	}
+}
+
 // GetInfo returns information about iptables.
-func GetInfo(t *kernel.Task, ep tcpip.Endpoint, outPtr usermem.Addr) (linux.IPTGetinfo, *syserr.Error) {
+func GetInfo(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr) (linux.IPTGetinfo, *syserr.Error) {
 	// Read in the struct and table name.
 	var info linux.IPTGetinfo
 	if _, err := t.CopyIn(outPtr, &info); err != nil {
@@ -51,9 +69,10 @@ func GetInfo(t *kernel.Task, ep tcpip.Endpoint, outPtr usermem.Addr) (linux.IPTG
 	}
 
 	// Find the appropriate table.
-	table, err := findTable(ep, info.TableName())
+	table, err := findTable(stack, info.Name)
 	if err != nil {
-		return linux.IPTGetinfo{}, err
+		nflog("%v", err)
+		return linux.IPTGetinfo{}, syserr.ErrInvalidArgument
 	}
 
 	// Get the hooks that apply to this table.
@@ -70,52 +89,58 @@ func GetInfo(t *kernel.Task, ep tcpip.Endpoint, outPtr usermem.Addr) (linux.IPTG
 	info.NumEntries = metadata.NumEntries
 	info.Size = metadata.Size
 
+	nflog("returning info: %+v", info)
+
 	return info, nil
 }
 
 // GetEntries returns netstack's iptables rules encoded for the iptables tool.
-func GetEntries(t *kernel.Task, ep tcpip.Endpoint, outPtr usermem.Addr, outLen int) (linux.KernelIPTGetEntries, *syserr.Error) {
+func GetEntries(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, outLen int) (linux.KernelIPTGetEntries, *syserr.Error) {
 	// Read in the struct and table name.
 	var userEntries linux.IPTGetEntries
 	if _, err := t.CopyIn(outPtr, &userEntries); err != nil {
+		nflog("couldn't copy in entries %q", userEntries.Name)
 		return linux.KernelIPTGetEntries{}, syserr.FromError(err)
 	}
 
 	// Find the appropriate table.
-	table, err := findTable(ep, userEntries.TableName())
+	table, err := findTable(stack, userEntries.Name)
 	if err != nil {
-		return linux.KernelIPTGetEntries{}, err
+		nflog("%v", err)
+		return linux.KernelIPTGetEntries{}, syserr.ErrInvalidArgument
 	}
 
 	// Convert netstack's iptables rules to something that the iptables
 	// tool can understand.
-	entries, _, err := convertNetstackToBinary(userEntries.TableName(), table)
+	entries, meta, err := convertNetstackToBinary(userEntries.Name.String(), table)
 	if err != nil {
-		return linux.KernelIPTGetEntries{}, err
+		nflog("couldn't read entries: %v", err)
+		return linux.KernelIPTGetEntries{}, syserr.ErrInvalidArgument
+	}
+	if meta != table.Metadata().(metadata) {
+		panic(fmt.Sprintf("Table %q metadata changed between writing and reading. Was saved as %+v, but is now %+v", userEntries.Name.String(), table.Metadata().(metadata), meta))
 	}
 	if binary.Size(entries) > uintptr(outLen) {
+		nflog("insufficient GetEntries output size: %d", uintptr(outLen))
 		return linux.KernelIPTGetEntries{}, syserr.ErrInvalidArgument
 	}
 
 	return entries, nil
 }
 
-func findTable(ep tcpip.Endpoint, tableName string) (iptables.Table, *syserr.Error) {
-	ipt, err := ep.IPTables()
-	if err != nil {
-		return iptables.Table{}, syserr.FromError(err)
-	}
-	table, ok := ipt.Tables[tableName]
+func findTable(stk *stack.Stack, tablename linux.TableName) (stack.Table, error) {
+	ipt := stk.IPTables()
+	table, ok := ipt.Tables[tablename.String()]
 	if !ok {
-		return iptables.Table{}, syserr.ErrInvalidArgument
+		return stack.Table{}, fmt.Errorf("couldn't find table %q", tablename)
 	}
 	return table, nil
 }
 
 // FillDefaultIPTables sets stack's IPTables to the default tables and
 // populates them with metadata.
-func FillDefaultIPTables(stack *stack.Stack) {
-	ipt := iptables.DefaultTables()
+func FillDefaultIPTables(stk *stack.Stack) {
+	ipt := stack.DefaultTables()
 
 	// In order to fill in the metadata, we have to translate ipt from its
 	// netstack format to Linux's giant-binary-blob format.
@@ -128,159 +153,608 @@ func FillDefaultIPTables(stack *stack.Stack) {
 		ipt.Tables[name] = table
 	}
 
-	stack.SetIPTables(ipt)
+	stk.SetIPTables(ipt)
 }
 
 // convertNetstackToBinary converts the iptables as stored in netstack to the
 // format expected by the iptables tool. Linux stores each table as a binary
 // blob that can only be traversed by parsing a bit, reading some offsets,
 // jumping to those offsets, parsing again, etc.
-func convertNetstackToBinary(name string, table iptables.Table) (linux.KernelIPTGetEntries, metadata, *syserr.Error) {
+func convertNetstackToBinary(tablename string, table stack.Table) (linux.KernelIPTGetEntries, metadata, error) {
 	// Return values.
 	var entries linux.KernelIPTGetEntries
 	var meta metadata
 
 	// The table name has to fit in the struct.
-	if linux.XT_TABLE_MAXNAMELEN < len(name) {
-		return linux.KernelIPTGetEntries{}, metadata{}, syserr.ErrInvalidArgument
+	if linux.XT_TABLE_MAXNAMELEN < len(tablename) {
+		return linux.KernelIPTGetEntries{}, metadata{}, fmt.Errorf("table name %q too long.", tablename)
 	}
-	copy(entries.Name[:], name)
+	copy(entries.Name[:], tablename)
 
-	// Deal with the built in chains first (INPUT, OUTPUT, etc.). Each of
-	// these chains ends with an unconditional policy entry.
-	for hook := iptables.Prerouting; hook < iptables.NumHooks; hook++ {
-		chain, ok := table.BuiltinChains[hook]
-		if !ok {
-			// This table doesn't support this hook.
-			continue
-		}
+	for ruleIdx, rule := range table.Rules {
+		nflog("convert to binary: current offset: %d", entries.Size)
 
-		// Sanity check.
-		if len(chain.Rules) < 1 {
-			return linux.KernelIPTGetEntries{}, metadata{}, syserr.ErrInvalidArgument
-		}
-
-		for ruleIdx, rule := range chain.Rules {
-			// If this is the first rule of a builtin chain, set
-			// the metadata hook entry point.
-			if ruleIdx == 0 {
+		// Is this a chain entry point?
+		for hook, hookRuleIdx := range table.BuiltinChains {
+			if hookRuleIdx == ruleIdx {
+				nflog("convert to binary: found hook %d at offset %d", hook, entries.Size)
 				meta.HookEntry[hook] = entries.Size
 			}
-
-			// Each rule corresponds to an entry.
-			entry := linux.KernelIPTEntry{
-				IPTEntry: linux.IPTEntry{
-					NextOffset:   linux.SizeOfIPTEntry,
-					TargetOffset: linux.SizeOfIPTEntry,
-				},
+		}
+		// Is this a chain underflow point?
+		for underflow, underflowRuleIdx := range table.Underflows {
+			if underflowRuleIdx == ruleIdx {
+				nflog("convert to binary: found underflow %d at offset %d", underflow, entries.Size)
+				meta.Underflow[underflow] = entries.Size
 			}
-
-			for _, matcher := range rule.Matchers {
-				// Serialize the matcher and add it to the
-				// entry.
-				serialized := marshalMatcher(matcher)
-				entry.Elems = append(entry.Elems, serialized...)
-				entry.NextOffset += uint16(len(serialized))
-				entry.TargetOffset += uint16(len(serialized))
-			}
-
-			// Serialize and append the target.
-			serialized := marshalTarget(rule.Target)
-			entry.Elems = append(entry.Elems, serialized...)
-			entry.NextOffset += uint16(len(serialized))
-
-			// The underflow rule is the last rule in the chain,
-			// and is an unconditional rule (i.e. it matches any
-			// packet). This is enforced when saving iptables.
-			if ruleIdx == len(chain.Rules)-1 {
-				meta.Underflow[hook] = entries.Size
-			}
-
-			entries.Size += uint32(entry.NextOffset)
-			entries.Entrytable = append(entries.Entrytable, entry)
-			meta.NumEntries++
 		}
 
+		// Each rule corresponds to an entry.
+		entry := linux.KernelIPTEntry{
+			IPTEntry: linux.IPTEntry{
+				IP: linux.IPTIP{
+					Protocol: uint16(rule.Filter.Protocol),
+				},
+				NextOffset:   linux.SizeOfIPTEntry,
+				TargetOffset: linux.SizeOfIPTEntry,
+			},
+		}
+
+		for _, matcher := range rule.Matchers {
+			// Serialize the matcher and add it to the
+			// entry.
+			serialized := marshalMatcher(matcher)
+			nflog("convert to binary: matcher serialized as: %v", serialized)
+			if len(serialized)%8 != 0 {
+				panic(fmt.Sprintf("matcher %T is not 64-bit aligned", matcher))
+			}
+			entry.Elems = append(entry.Elems, serialized...)
+			entry.NextOffset += uint16(len(serialized))
+			entry.TargetOffset += uint16(len(serialized))
+		}
+
+		// Serialize and append the target.
+		serialized := marshalTarget(rule.Target)
+		if len(serialized)%8 != 0 {
+			panic(fmt.Sprintf("target %T is not 64-bit aligned", rule.Target))
+		}
+		entry.Elems = append(entry.Elems, serialized...)
+		entry.NextOffset += uint16(len(serialized))
+
+		nflog("convert to binary: adding entry: %+v", entry)
+
+		entries.Size += uint32(entry.NextOffset)
+		entries.Entrytable = append(entries.Entrytable, entry)
+		meta.NumEntries++
 	}
 
-	// TODO(gvisor.dev/issue/170): Deal with the user chains here. Each of
-	// these starts with an error node holding the chain's name and ends
-	// with an unconditional return.
-
-	// Lastly, each table ends with an unconditional error target rule as
-	// its final entry.
-	errorEntry := linux.KernelIPTEntry{
-		IPTEntry: linux.IPTEntry{
-			NextOffset:   linux.SizeOfIPTEntry,
-			TargetOffset: linux.SizeOfIPTEntry,
-		},
-	}
-	var errorTarget linux.XTErrorTarget
-	errorTarget.Target.TargetSize = linux.SizeOfXTErrorTarget
-	copy(errorTarget.ErrorName[:], errorTargetName)
-	copy(errorTarget.Target.Name[:], errorTargetName)
-
-	// Serialize and add it to the list of entries.
-	errorTargetBuf := make([]byte, 0, linux.SizeOfXTErrorTarget)
-	serializedErrorTarget := binary.Marshal(errorTargetBuf, usermem.ByteOrder, errorTarget)
-	errorEntry.Elems = append(errorEntry.Elems, serializedErrorTarget...)
-	errorEntry.NextOffset += uint16(len(serializedErrorTarget))
-
-	entries.Size += uint32(errorEntry.NextOffset)
-	entries.Entrytable = append(entries.Entrytable, errorEntry)
-	meta.NumEntries++
+	nflog("convert to binary: finished with an marshalled size of %d", meta.Size)
 	meta.Size = entries.Size
-
 	return entries, meta, nil
 }
 
-func marshalMatcher(matcher iptables.Matcher) []byte {
-	switch matcher.(type) {
-	default:
-		// TODO(gvisor.dev/issue/170): We don't support any matchers yet, so
-		// any call to marshalMatcher will panic.
-		panic(fmt.Errorf("unknown matcher of type %T", matcher))
-	}
-}
-
-func marshalTarget(target iptables.Target) []byte {
-	switch target.(type) {
-	case iptables.UnconditionalAcceptTarget:
-		return marshalUnconditionalAcceptTarget()
+func marshalTarget(target stack.Target) []byte {
+	switch tg := target.(type) {
+	case stack.AcceptTarget:
+		return marshalStandardTarget(stack.RuleAccept)
+	case stack.DropTarget:
+		return marshalStandardTarget(stack.RuleDrop)
+	case stack.ErrorTarget:
+		return marshalErrorTarget(errorTargetName)
+	case stack.UserChainTarget:
+		return marshalErrorTarget(tg.Name)
+	case stack.ReturnTarget:
+		return marshalStandardTarget(stack.RuleReturn)
+	case stack.RedirectTarget:
+		return marshalRedirectTarget()
+	case JumpTarget:
+		return marshalJumpTarget(tg)
 	default:
 		panic(fmt.Errorf("unknown target of type %T", target))
 	}
 }
 
-func marshalUnconditionalAcceptTarget() []byte {
+func marshalStandardTarget(verdict stack.RuleVerdict) []byte {
+	nflog("convert to binary: marshalling standard target")
+
 	// The target's name will be the empty string.
 	target := linux.XTStandardTarget{
 		Target: linux.XTEntryTarget{
 			TargetSize: linux.SizeOfXTStandardTarget,
 		},
-		Verdict: translateStandardVerdict(iptables.Accept),
+		Verdict: translateFromStandardVerdict(verdict),
 	}
 
 	ret := make([]byte, 0, linux.SizeOfXTStandardTarget)
 	return binary.Marshal(ret, usermem.ByteOrder, target)
 }
 
-// translateStandardVerdict translates verdicts the same way as the iptables
+func marshalErrorTarget(errorName string) []byte {
+	// This is an error target named error
+	target := linux.XTErrorTarget{
+		Target: linux.XTEntryTarget{
+			TargetSize: linux.SizeOfXTErrorTarget,
+		},
+	}
+	copy(target.Name[:], errorName)
+	copy(target.Target.Name[:], errorTargetName)
+
+	ret := make([]byte, 0, linux.SizeOfXTErrorTarget)
+	return binary.Marshal(ret, usermem.ByteOrder, target)
+}
+
+func marshalRedirectTarget() []byte {
+	// This is a redirect target named redirect
+	target := linux.XTRedirectTarget{
+		Target: linux.XTEntryTarget{
+			TargetSize: linux.SizeOfXTRedirectTarget,
+		},
+	}
+	copy(target.Target.Name[:], redirectTargetName)
+
+	ret := make([]byte, 0, linux.SizeOfXTRedirectTarget)
+	return binary.Marshal(ret, usermem.ByteOrder, target)
+}
+
+func marshalJumpTarget(jt JumpTarget) []byte {
+	nflog("convert to binary: marshalling jump target")
+
+	// The target's name will be the empty string.
+	target := linux.XTStandardTarget{
+		Target: linux.XTEntryTarget{
+			TargetSize: linux.SizeOfXTStandardTarget,
+		},
+		// Verdict is overloaded by the ABI. When positive, it holds
+		// the jump offset from the start of the table.
+		Verdict: int32(jt.Offset),
+	}
+
+	ret := make([]byte, 0, linux.SizeOfXTStandardTarget)
+	return binary.Marshal(ret, usermem.ByteOrder, target)
+}
+
+// translateFromStandardVerdict translates verdicts the same way as the iptables
 // tool.
-func translateStandardVerdict(verdict iptables.Verdict) int32 {
+func translateFromStandardVerdict(verdict stack.RuleVerdict) int32 {
 	switch verdict {
-	case iptables.Accept:
+	case stack.RuleAccept:
 		return -linux.NF_ACCEPT - 1
-	case iptables.Drop:
+	case stack.RuleDrop:
 		return -linux.NF_DROP - 1
-	case iptables.Queue:
-		return -linux.NF_QUEUE - 1
-	case iptables.Return:
+	case stack.RuleReturn:
 		return linux.NF_RETURN
-	case iptables.Jump:
-		// TODO(gvisor.dev/issue/170): Support Jump.
-		panic("Jump isn't supported yet")
 	default:
+		// TODO(gvisor.dev/issue/170): Support Jump.
 		panic(fmt.Sprintf("unknown standard verdict: %d", verdict))
 	}
+}
+
+// translateToStandardTarget translates from the value in a
+// linux.XTStandardTarget to an stack.Verdict.
+func translateToStandardTarget(val int32) (stack.Target, error) {
+	// TODO(gvisor.dev/issue/170): Support other verdicts.
+	switch val {
+	case -linux.NF_ACCEPT - 1:
+		return stack.AcceptTarget{}, nil
+	case -linux.NF_DROP - 1:
+		return stack.DropTarget{}, nil
+	case -linux.NF_QUEUE - 1:
+		return nil, errors.New("unsupported iptables verdict QUEUE")
+	case linux.NF_RETURN:
+		return stack.ReturnTarget{}, nil
+	default:
+		return nil, fmt.Errorf("unknown iptables verdict %d", val)
+	}
+}
+
+// SetEntries sets iptables rules for a single table. See
+// net/ipv4/netfilter/ip_tables.c:translate_table for reference.
+func SetEntries(stk *stack.Stack, optVal []byte) *syserr.Error {
+	// Get the basic rules data (struct ipt_replace).
+	if len(optVal) < linux.SizeOfIPTReplace {
+		nflog("optVal has insufficient size for replace %d", len(optVal))
+		return syserr.ErrInvalidArgument
+	}
+	var replace linux.IPTReplace
+	replaceBuf := optVal[:linux.SizeOfIPTReplace]
+	optVal = optVal[linux.SizeOfIPTReplace:]
+	binary.Unmarshal(replaceBuf, usermem.ByteOrder, &replace)
+
+	// TODO(gvisor.dev/issue/170): Support other tables.
+	var table stack.Table
+	switch replace.Name.String() {
+	case stack.TablenameFilter:
+		table = stack.EmptyFilterTable()
+	case stack.TablenameNat:
+		table = stack.EmptyNatTable()
+	default:
+		nflog("we don't yet support writing to the %q table (gvisor.dev/issue/170)", replace.Name.String())
+		return syserr.ErrInvalidArgument
+	}
+
+	nflog("set entries: setting entries in table %q", replace.Name.String())
+
+	// Convert input into a list of rules and their offsets.
+	var offset uint32
+	// offsets maps rule byte offsets to their position in table.Rules.
+	offsets := map[uint32]int{}
+	for entryIdx := uint32(0); entryIdx < replace.NumEntries; entryIdx++ {
+		nflog("set entries: processing entry at offset %d", offset)
+
+		// Get the struct ipt_entry.
+		if len(optVal) < linux.SizeOfIPTEntry {
+			nflog("optVal has insufficient size for entry %d", len(optVal))
+			return syserr.ErrInvalidArgument
+		}
+		var entry linux.IPTEntry
+		buf := optVal[:linux.SizeOfIPTEntry]
+		binary.Unmarshal(buf, usermem.ByteOrder, &entry)
+		initialOptValLen := len(optVal)
+		optVal = optVal[linux.SizeOfIPTEntry:]
+
+		if entry.TargetOffset < linux.SizeOfIPTEntry {
+			nflog("entry has too-small target offset %d", entry.TargetOffset)
+			return syserr.ErrInvalidArgument
+		}
+
+		// TODO(gvisor.dev/issue/170): We should support more IPTIP
+		// filtering fields.
+		filter, err := filterFromIPTIP(entry.IP)
+		if err != nil {
+			nflog("bad iptip: %v", err)
+			return syserr.ErrInvalidArgument
+		}
+
+		// TODO(gvisor.dev/issue/170): Matchers and targets can specify
+		// that they only work for certain protocols, hooks, tables.
+		// Get matchers.
+		matchersSize := entry.TargetOffset - linux.SizeOfIPTEntry
+		if len(optVal) < int(matchersSize) {
+			nflog("entry doesn't have enough room for its matchers (only %d bytes remain)", len(optVal))
+			return syserr.ErrInvalidArgument
+		}
+		matchers, err := parseMatchers(filter, optVal[:matchersSize])
+		if err != nil {
+			nflog("failed to parse matchers: %v", err)
+			return syserr.ErrInvalidArgument
+		}
+		optVal = optVal[matchersSize:]
+
+		// Get the target of the rule.
+		targetSize := entry.NextOffset - entry.TargetOffset
+		if len(optVal) < int(targetSize) {
+			nflog("entry doesn't have enough room for its target (only %d bytes remain)", len(optVal))
+			return syserr.ErrInvalidArgument
+		}
+		target, err := parseTarget(filter, optVal[:targetSize])
+		if err != nil {
+			nflog("failed to parse target: %v", err)
+			return syserr.ErrInvalidArgument
+		}
+		optVal = optVal[targetSize:]
+
+		table.Rules = append(table.Rules, stack.Rule{
+			Filter:   filter,
+			Target:   target,
+			Matchers: matchers,
+		})
+		offsets[offset] = int(entryIdx)
+		offset += uint32(entry.NextOffset)
+
+		if initialOptValLen-len(optVal) != int(entry.NextOffset) {
+			nflog("entry NextOffset is %d, but entry took up %d bytes", entry.NextOffset, initialOptValLen-len(optVal))
+			return syserr.ErrInvalidArgument
+		}
+	}
+
+	// Go through the list of supported hooks for this table and, for each
+	// one, set the rule it corresponds to.
+	for hook, _ := range replace.HookEntry {
+		if table.ValidHooks()&(1<<hook) != 0 {
+			hk := hookFromLinux(hook)
+			for offset, ruleIdx := range offsets {
+				if offset == replace.HookEntry[hook] {
+					table.BuiltinChains[hk] = ruleIdx
+				}
+				if offset == replace.Underflow[hook] {
+					if !validUnderflow(table.Rules[ruleIdx]) {
+						nflog("underflow for hook %d isn't an unconditional ACCEPT or DROP")
+						return syserr.ErrInvalidArgument
+					}
+					table.Underflows[hk] = ruleIdx
+				}
+			}
+			if ruleIdx := table.BuiltinChains[hk]; ruleIdx == stack.HookUnset {
+				nflog("hook %v is unset.", hk)
+				return syserr.ErrInvalidArgument
+			}
+			if ruleIdx := table.Underflows[hk]; ruleIdx == stack.HookUnset {
+				nflog("underflow %v is unset.", hk)
+				return syserr.ErrInvalidArgument
+			}
+		}
+	}
+
+	// Add the user chains.
+	for ruleIdx, rule := range table.Rules {
+		target, ok := rule.Target.(stack.UserChainTarget)
+		if !ok {
+			continue
+		}
+
+		// We found a user chain. Before inserting it into the table,
+		// check that:
+		// - There's some other rule after it.
+		// - There are no matchers.
+		if ruleIdx == len(table.Rules)-1 {
+			nflog("user chain must have a rule or default policy")
+			return syserr.ErrInvalidArgument
+		}
+		if len(table.Rules[ruleIdx].Matchers) != 0 {
+			nflog("user chain's first node must have no matchers")
+			return syserr.ErrInvalidArgument
+		}
+		table.UserChains[target.Name] = ruleIdx + 1
+	}
+
+	// Set each jump to point to the appropriate rule. Right now they hold byte
+	// offsets.
+	for ruleIdx, rule := range table.Rules {
+		jump, ok := rule.Target.(JumpTarget)
+		if !ok {
+			continue
+		}
+
+		// Find the rule corresponding to the jump rule offset.
+		jumpTo, ok := offsets[jump.Offset]
+		if !ok {
+			nflog("failed to find a rule to jump to")
+			return syserr.ErrInvalidArgument
+		}
+		jump.RuleNum = jumpTo
+		rule.Target = jump
+		table.Rules[ruleIdx] = rule
+	}
+
+	// TODO(gvisor.dev/issue/170): Support other chains.
+	// Since we only support modifying the INPUT, PREROUTING and OUTPUT chain right now,
+	// make sure all other chains point to ACCEPT rules.
+	for hook, ruleIdx := range table.BuiltinChains {
+		if hook == stack.Forward || hook == stack.Postrouting {
+			if _, ok := table.Rules[ruleIdx].Target.(stack.AcceptTarget); !ok {
+				nflog("hook %d is unsupported.", hook)
+				return syserr.ErrInvalidArgument
+			}
+		}
+	}
+
+	// TODO(gvisor.dev/issue/170): Check the following conditions:
+	// - There are no loops.
+	// - There are no chains without an unconditional final rule.
+	// - There are no chains without an unconditional underflow rule.
+
+	ipt := stk.IPTables()
+	table.SetMetadata(metadata{
+		HookEntry:  replace.HookEntry,
+		Underflow:  replace.Underflow,
+		NumEntries: replace.NumEntries,
+		Size:       replace.Size,
+	})
+	ipt.Tables[replace.Name.String()] = table
+	stk.SetIPTables(ipt)
+
+	return nil
+}
+
+// parseMatchers parses 0 or more matchers from optVal. optVal should contain
+// only the matchers.
+func parseMatchers(filter stack.IPHeaderFilter, optVal []byte) ([]stack.Matcher, error) {
+	nflog("set entries: parsing matchers of size %d", len(optVal))
+	var matchers []stack.Matcher
+	for len(optVal) > 0 {
+		nflog("set entries: optVal has len %d", len(optVal))
+
+		// Get the XTEntryMatch.
+		if len(optVal) < linux.SizeOfXTEntryMatch {
+			return nil, fmt.Errorf("optVal has insufficient size for entry match: %d", len(optVal))
+		}
+		var match linux.XTEntryMatch
+		buf := optVal[:linux.SizeOfXTEntryMatch]
+		binary.Unmarshal(buf, usermem.ByteOrder, &match)
+		nflog("set entries: parsed entry match %q: %+v", match.Name.String(), match)
+
+		// Check some invariants.
+		if match.MatchSize < linux.SizeOfXTEntryMatch {
+
+			return nil, fmt.Errorf("match size is too small, must be at least %d", linux.SizeOfXTEntryMatch)
+		}
+		if len(optVal) < int(match.MatchSize) {
+			return nil, fmt.Errorf("optVal has insufficient size for match: %d", len(optVal))
+		}
+
+		// Parse the specific matcher.
+		matcher, err := unmarshalMatcher(match, filter, optVal[linux.SizeOfXTEntryMatch:match.MatchSize])
+		if err != nil {
+			return nil, fmt.Errorf("failed to create matcher: %v", err)
+		}
+		matchers = append(matchers, matcher)
+
+		// TODO(gvisor.dev/issue/170): Check the revision field.
+		optVal = optVal[match.MatchSize:]
+	}
+
+	if len(optVal) != 0 {
+		return nil, errors.New("optVal should be exhausted after parsing matchers")
+	}
+
+	return matchers, nil
+}
+
+// parseTarget parses a target from optVal. optVal should contain only the
+// target.
+func parseTarget(filter stack.IPHeaderFilter, optVal []byte) (stack.Target, error) {
+	nflog("set entries: parsing target of size %d", len(optVal))
+	if len(optVal) < linux.SizeOfXTEntryTarget {
+		return nil, fmt.Errorf("optVal has insufficient size for entry target %d", len(optVal))
+	}
+	var target linux.XTEntryTarget
+	buf := optVal[:linux.SizeOfXTEntryTarget]
+	binary.Unmarshal(buf, usermem.ByteOrder, &target)
+	switch target.Name.String() {
+	case "":
+		// Standard target.
+		if len(optVal) != linux.SizeOfXTStandardTarget {
+			return nil, fmt.Errorf("optVal has wrong size for standard target %d", len(optVal))
+		}
+		var standardTarget linux.XTStandardTarget
+		buf = optVal[:linux.SizeOfXTStandardTarget]
+		binary.Unmarshal(buf, usermem.ByteOrder, &standardTarget)
+
+		if standardTarget.Verdict < 0 {
+			// A Verdict < 0 indicates a non-jump verdict.
+			return translateToStandardTarget(standardTarget.Verdict)
+		}
+		// A verdict >= 0 indicates a jump.
+		return JumpTarget{Offset: uint32(standardTarget.Verdict)}, nil
+
+	case errorTargetName:
+		// Error target.
+		if len(optVal) != linux.SizeOfXTErrorTarget {
+			return nil, fmt.Errorf("optVal has insufficient size for error target %d", len(optVal))
+		}
+		var errorTarget linux.XTErrorTarget
+		buf = optVal[:linux.SizeOfXTErrorTarget]
+		binary.Unmarshal(buf, usermem.ByteOrder, &errorTarget)
+
+		// Error targets are used in 2 cases:
+		// * An actual error case. These rules have an error
+		//   named errorTargetName. The last entry of the table
+		//   is usually an error case to catch any packets that
+		//   somehow fall through every rule.
+		// * To mark the start of a user defined chain. These
+		//   rules have an error with the name of the chain.
+		switch name := errorTarget.Name.String(); name {
+		case errorTargetName:
+			nflog("set entries: error target")
+			return stack.ErrorTarget{}, nil
+		default:
+			// User defined chain.
+			nflog("set entries: user-defined target %q", name)
+			return stack.UserChainTarget{Name: name}, nil
+		}
+
+	case redirectTargetName:
+		// Redirect target.
+		if len(optVal) < linux.SizeOfXTRedirectTarget {
+			return nil, fmt.Errorf("netfilter.SetEntries: optVal has insufficient size for redirect target %d", len(optVal))
+		}
+
+		if filter.Protocol != header.TCPProtocolNumber && filter.Protocol != header.UDPProtocolNumber {
+			return nil, fmt.Errorf("netfilter.SetEntries: invalid argument")
+		}
+
+		var redirectTarget linux.XTRedirectTarget
+		buf = optVal[:linux.SizeOfXTRedirectTarget]
+		binary.Unmarshal(buf, usermem.ByteOrder, &redirectTarget)
+
+		// Copy linux.XTRedirectTarget to stack.RedirectTarget.
+		var target stack.RedirectTarget
+		nfRange := redirectTarget.NfRange
+
+		// RangeSize should be 1.
+		if nfRange.RangeSize != 1 {
+			return nil, fmt.Errorf("netfilter.SetEntries: invalid argument")
+		}
+
+		// TODO(gvisor.dev/issue/170): Check if the flags are valid.
+		// Also check if we need to map ports or IP.
+		// For now, redirect target only supports destination port change.
+		// Port range and IP range are not supported yet.
+		if nfRange.RangeIPV4.Flags&linux.NF_NAT_RANGE_PROTO_SPECIFIED == 0 {
+			return nil, fmt.Errorf("netfilter.SetEntries: invalid argument")
+		}
+		target.RangeProtoSpecified = true
+
+		target.MinIP = tcpip.Address(nfRange.RangeIPV4.MinIP[:])
+		target.MaxIP = tcpip.Address(nfRange.RangeIPV4.MaxIP[:])
+
+		// TODO(gvisor.dev/issue/170): Port range is not supported yet.
+		if nfRange.RangeIPV4.MinPort != nfRange.RangeIPV4.MaxPort {
+			return nil, fmt.Errorf("netfilter.SetEntries: invalid argument")
+		}
+
+		// Convert port from big endian to little endian.
+		port := make([]byte, 2)
+		binary.BigEndian.PutUint16(port, nfRange.RangeIPV4.MinPort)
+		target.MinPort = binary.LittleEndian.Uint16(port)
+
+		binary.BigEndian.PutUint16(port, nfRange.RangeIPV4.MaxPort)
+		target.MaxPort = binary.LittleEndian.Uint16(port)
+		return target, nil
+	}
+
+	// Unknown target.
+	return nil, fmt.Errorf("unknown target %q doesn't exist or isn't supported yet.", target.Name.String())
+}
+
+func filterFromIPTIP(iptip linux.IPTIP) (stack.IPHeaderFilter, error) {
+	if containsUnsupportedFields(iptip) {
+		return stack.IPHeaderFilter{}, fmt.Errorf("unsupported fields in struct iptip: %+v", iptip)
+	}
+	if len(iptip.Dst) != header.IPv4AddressSize || len(iptip.DstMask) != header.IPv4AddressSize {
+		return stack.IPHeaderFilter{}, fmt.Errorf("incorrect length of destination (%d) and/or destination mask (%d) fields", len(iptip.Dst), len(iptip.DstMask))
+	}
+	return stack.IPHeaderFilter{
+		Protocol:  tcpip.TransportProtocolNumber(iptip.Protocol),
+		Dst:       tcpip.Address(iptip.Dst[:]),
+		DstMask:   tcpip.Address(iptip.DstMask[:]),
+		DstInvert: iptip.InverseFlags&linux.IPT_INV_DSTIP != 0,
+	}, nil
+}
+
+func containsUnsupportedFields(iptip linux.IPTIP) bool {
+	// The following features are supported:
+	// - Protocol
+	// - Dst and DstMask
+	// - The inverse destination IP check flag
+	var emptyInetAddr = linux.InetAddr{}
+	var emptyInterface = [linux.IFNAMSIZ]byte{}
+	// Disable any supported inverse flags.
+	inverseMask := uint8(linux.IPT_INV_DSTIP)
+	return iptip.Src != emptyInetAddr ||
+		iptip.SrcMask != emptyInetAddr ||
+		iptip.InputInterface != emptyInterface ||
+		iptip.OutputInterface != emptyInterface ||
+		iptip.InputInterfaceMask != emptyInterface ||
+		iptip.OutputInterfaceMask != emptyInterface ||
+		iptip.Flags != 0 ||
+		iptip.InverseFlags&^inverseMask != 0
+}
+
+func validUnderflow(rule stack.Rule) bool {
+	if len(rule.Matchers) != 0 {
+		return false
+	}
+	switch rule.Target.(type) {
+	case stack.AcceptTarget, stack.DropTarget:
+		return true
+	default:
+		return false
+	}
+}
+
+func hookFromLinux(hook int) stack.Hook {
+	switch hook {
+	case linux.NF_INET_PRE_ROUTING:
+		return stack.Prerouting
+	case linux.NF_INET_LOCAL_IN:
+		return stack.Input
+	case linux.NF_INET_FORWARD:
+		return stack.Forward
+	case linux.NF_INET_LOCAL_OUT:
+		return stack.Output
+	case linux.NF_INET_POST_ROUTING:
+		return stack.Postrouting
+	}
+	panic(fmt.Sprintf("Unknown hook %d does not correspond to a builtin chain", hook))
 }

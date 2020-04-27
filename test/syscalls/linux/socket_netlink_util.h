@@ -15,6 +15,8 @@
 #ifndef GVISOR_TEST_SYSCALLS_SOCKET_NETLINK_UTIL_H_
 #define GVISOR_TEST_SYSCALLS_SOCKET_NETLINK_UTIL_H_
 
+#include <sys/socket.h>
+// socket.h has to be included before if_arp.h.
 #include <linux/if_arp.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
@@ -25,17 +27,34 @@
 namespace gvisor {
 namespace testing {
 
-// Returns a bound NETLINK_ROUTE socket.
-PosixErrorOr<FileDescriptor> NetlinkBoundSocket();
+// Returns a bound netlink socket.
+PosixErrorOr<FileDescriptor> NetlinkBoundSocket(int protocol);
 
 // Returns the port ID of the passed socket.
 PosixErrorOr<uint32_t> NetlinkPortID(int fd);
 
-// Send the passed request and call fn will all response netlink messages.
+// Send the passed request and call fn on all response netlink messages.
+//
+// To be used on requests with NLM_F_MULTI reponses.
 PosixError NetlinkRequestResponse(
     const FileDescriptor& fd, void* request, size_t len,
     const std::function<void(const struct nlmsghdr* hdr)>& fn,
     bool expect_nlmsgerr);
+
+// Send the passed request and call fn on all response netlink messages.
+//
+// To be used on requests without NLM_F_MULTI reponses.
+PosixError NetlinkRequestResponseSingle(
+    const FileDescriptor& fd, void* request, size_t len,
+    const std::function<void(const struct nlmsghdr* hdr)>& fn);
+
+// Send the passed request then expect and return an ack or error.
+PosixError NetlinkRequestAckOrError(const FileDescriptor& fd, uint32_t seq,
+                                    void* request, size_t len);
+
+// Find rtnetlink attribute in message.
+const struct rtattr* FindRtAttr(const struct nlmsghdr* hdr,
+                                const struct ifinfomsg* msg, int16_t attr);
 
 }  // namespace testing
 }  // namespace gvisor

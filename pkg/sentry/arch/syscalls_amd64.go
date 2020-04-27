@@ -18,6 +18,13 @@ package arch
 
 const restartSyscallNr = uintptr(219)
 
+// SyscallSaveOrig save the value of the register which is clobbered in
+// syscall handler(doSyscall()).
+//
+// Noop on x86.
+func (c *context64) SyscallSaveOrig() {
+}
+
 // SyscallNo returns the syscall number according to the 64-bit convention.
 func (c *context64) SyscallNo() uintptr {
 	return uintptr(c.Regs.Orig_rax)

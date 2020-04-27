@@ -15,10 +15,10 @@
 package fs
 
 import (
-	"sync"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // Watch represent a particular inotify watch created by inotify_add_watch.

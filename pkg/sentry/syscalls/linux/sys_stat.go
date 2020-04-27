@@ -16,13 +16,14 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
+
+// LINT.IfChange
 
 // Stat implements linux syscall stat(2).
 func Stat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
@@ -113,7 +114,9 @@ func stat(t *kernel.Task, d *fs.Dirent, dirPath bool, statAddr usermem.Addr) err
 	if err != nil {
 		return err
 	}
-	return copyOutStat(t, statAddr, d.Inode.StableAttr, uattr)
+	s := statFromAttrs(t, d.Inode.StableAttr, uattr)
+	_, err = s.CopyOut(t, statAddr)
+	return err
 }
 
 // fstat implements fstat for the given *fs.File.
@@ -122,56 +125,8 @@ func fstat(t *kernel.Task, f *fs.File, statAddr usermem.Addr) error {
 	if err != nil {
 		return err
 	}
-	return copyOutStat(t, statAddr, f.Dirent.Inode.StableAttr, uattr)
-}
-
-// copyOutStat copies the attributes (sattr, uattr) to the struct stat at
-// address dst in t's address space. It encodes the stat struct to bytes
-// manually, as stat() is a very common syscall for many applications, and
-// t.CopyObjectOut has noticeable performance impact due to its many slice
-// allocations and use of reflection.
-func copyOutStat(t *kernel.Task, dst usermem.Addr, sattr fs.StableAttr, uattr fs.UnstableAttr) error {
-	b := t.CopyScratchBuffer(int(linux.SizeOfStat))[:0]
-
-	// Dev (uint64)
-	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(sattr.DeviceID))
-	// Ino (uint64)
-	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(sattr.InodeID))
-	// Nlink (uint64)
-	b = binary.AppendUint64(b, usermem.ByteOrder, uattr.Links)
-	// Mode (uint32)
-	b = binary.AppendUint32(b, usermem.ByteOrder, sattr.Type.LinuxType()|uint32(uattr.Perms.LinuxMode()))
-	// UID (uint32)
-	b = binary.AppendUint32(b, usermem.ByteOrder, uint32(uattr.Owner.UID.In(t.UserNamespace()).OrOverflow()))
-	// GID (uint32)
-	b = binary.AppendUint32(b, usermem.ByteOrder, uint32(uattr.Owner.GID.In(t.UserNamespace()).OrOverflow()))
-	// Padding (uint32)
-	b = binary.AppendUint32(b, usermem.ByteOrder, 0)
-	// Rdev (uint64)
-	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(linux.MakeDeviceID(sattr.DeviceFileMajor, sattr.DeviceFileMinor)))
-	// Size (uint64)
-	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(uattr.Size))
-	// Blksize (uint64)
-	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(sattr.BlockSize))
-	// Blocks (uint64)
-	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(uattr.Usage/512))
-
-	// ATime
-	atime := uattr.AccessTime.Timespec()
-	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(atime.Sec))
-	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(atime.Nsec))
-
-	// MTime
-	mtime := uattr.ModificationTime.Timespec()
-	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(mtime.Sec))
-	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(mtime.Nsec))
-
-	// CTime
-	ctime := uattr.StatusChangeTime.Timespec()
-	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(ctime.Sec))
-	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(ctime.Nsec))
-
-	_, err := t.CopyOutBytes(dst, b)
+	s := statFromAttrs(t, f.Dirent.Inode.StableAttr, uattr)
+	_, err = s.CopyOut(t, statAddr)
 	return err
 }
 
@@ -183,7 +138,10 @@ func Statx(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	mask := args[3].Uint()
 	statxAddr := args[4].Pointer()
 
-	if mask&linux.STATX__RESERVED > 0 {
+	if mask&linux.STATX__RESERVED != 0 {
+		return 0, nil, syserror.EINVAL
+	}
+	if flags&^(linux.AT_SYMLINK_NOFOLLOW|linux.AT_EMPTY_PATH|linux.AT_STATX_SYNC_TYPE) != 0 {
 		return 0, nil, syserror.EINVAL
 	}
 	if flags&linux.AT_STATX_SYNC_TYPE == linux.AT_STATX_SYNC_TYPE {
@@ -328,3 +286,5 @@ func statfsImpl(t *kernel.Task, d *fs.Dirent, addr usermem.Addr) error {
 	_, err = t.CopyOut(addr, &statfs)
 	return err
 }
+
+// LINT.ThenChange(vfs2/stat.go)

@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include "gtest/gtest.h"
-#include "gtest/gtest.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
@@ -107,7 +106,7 @@ PosixErrorOr<std::vector<UnixEntry>> ProcNetUnixEntries() {
   std::vector<UnixEntry> entries;
   std::vector<std::string> lines = absl::StrSplit(content, '\n');
   std::cerr << "<contents of /proc/net/unix>" << std::endl;
-  for (std::string line : lines) {
+  for (const std::string& line : lines) {
     // Emit the proc entry to the test output to provide context for the test
     // results.
     std::cerr << line << std::endl;
@@ -375,7 +374,7 @@ TEST(ProcNetUnix, DgramSocketStateDisconnectingOnBind) {
   // corresponding entries, as they don't have an address yet.
   if (IsRunningOnGvisor()) {
     ASSERT_EQ(entries.size(), 2);
-    for (auto e : entries) {
+    for (const auto& e : entries) {
       ASSERT_EQ(e.state, SS_DISCONNECTING);
     }
   }
@@ -404,7 +403,7 @@ TEST(ProcNetUnix, DgramSocketStateConnectingOnConnect) {
   // corresponding entries, as they don't have an address yet.
   if (IsRunningOnGvisor()) {
     ASSERT_EQ(entries.size(), 2);
-    for (auto e : entries) {
+    for (const auto& e : entries) {
       ASSERT_EQ(e.state, SS_DISCONNECTING);
     }
   }

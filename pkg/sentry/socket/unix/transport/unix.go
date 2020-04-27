@@ -16,11 +16,12 @@
 package transport
 
 import (
-	"sync"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -175,17 +176,25 @@ type Endpoint interface {
 	// types.
 	SetSockOpt(opt interface{}) *tcpip.Error
 
+	// SetSockOptBool sets a socket option for simple cases when a value has
+	// the int type.
+	SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error
+
 	// SetSockOptInt sets a socket option for simple cases when a value has
 	// the int type.
-	SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error
+	SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error
 
 	// GetSockOpt gets a socket option. opt should be a pointer to one of the
 	// tcpip.*Option types.
 	GetSockOpt(opt interface{}) *tcpip.Error
 
+	// GetSockOptBool gets a socket option for simple cases when a return
+	// value has the int type.
+	GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error)
+
 	// GetSockOptInt gets a socket option for simple cases when a return
 	// value has the int type.
-	GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error)
+	GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error)
 
 	// State returns the current state of the socket, as represented by Linux in
 	// procfs.
@@ -573,7 +582,7 @@ type ConnectedEndpoint interface {
 	//
 	// syserr.ErrWouldBlock can be returned along with a partial write if
 	// the caller should block to send the rest of the data.
-	Send(data [][]byte, controlMessages ControlMessages, from tcpip.FullAddress) (n int64, notify bool, err *syserr.Error)
+	Send(data [][]byte, c ControlMessages, from tcpip.FullAddress) (n int64, notify bool, err *syserr.Error)
 
 	// SendNotify notifies the ConnectedEndpoint of a successful Send. This
 	// must not be called while holding any endpoint locks.
@@ -645,35 +654,22 @@ func (e *connectedEndpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) 
 }
 
 // Send implements ConnectedEndpoint.Send.
-func (e *connectedEndpoint) Send(data [][]byte, controlMessages ControlMessages, from tcpip.FullAddress) (int64, bool, *syserr.Error) {
-	var l int64
-	for _, d := range data {
-		l += int64(len(d))
-	}
-
+func (e *connectedEndpoint) Send(data [][]byte, c ControlMessages, from tcpip.FullAddress) (int64, bool, *syserr.Error) {
+	discardEmpty := false
 	truncate := false
 	if e.endpoint.Type() == linux.SOCK_STREAM {
-		// Since stream sockets don't preserve message boundaries, we
-		// can write only as much of the message as fits in the queue.
-		truncate = true
-
 		// Discard empty stream packets. Since stream sockets don't
 		// preserve message boundaries, sending zero bytes is a no-op.
 		// In Linux, the receiver actually uses a zero-length receive
 		// as an indication that the stream was closed.
-		if l == 0 {
-			controlMessages.Release()
-			return 0, false, nil
-		}
+		discardEmpty = true
+
+		// Since stream sockets don't preserve message boundaries, we
+		// can write only as much of the message as fits in the queue.
+		truncate = true
 	}
 
-	v := make([]byte, 0, l)
-	for _, d := range data {
-		v = append(v, d...)
-	}
-
-	l, notify, err := e.writeQueue.Enqueue(&message{Data: buffer.View(v), Control: controlMessages, Address: from}, truncate)
-	return int64(l), notify, err
+	return e.writeQueue.Enqueue(data, c, from, discardEmpty, truncate)
 }
 
 // SendNotify implements ConnectedEndpoint.SendNotify.
@@ -843,19 +839,46 @@ func (e *baseEndpoint) SendMsg(ctx context.Context, data [][]byte, c ControlMess
 
 // SetSockOpt sets a socket option. Currently not supported.
 func (e *baseEndpoint) SetSockOpt(opt interface{}) *tcpip.Error {
-	switch v := opt.(type) {
+	return nil
+}
+
+func (e *baseEndpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
+	switch opt {
+	case tcpip.BroadcastOption:
 	case tcpip.PasscredOption:
-		e.setPasscred(v != 0)
-		return nil
+		e.setPasscred(v)
+	case tcpip.ReuseAddressOption:
+	default:
+		log.Warningf("Unsupported socket option: %d", opt)
 	}
 	return nil
 }
 
-func (e *baseEndpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
+func (e *baseEndpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
+	switch opt {
+	case tcpip.SendBufferSizeOption:
+	case tcpip.ReceiveBufferSizeOption:
+	default:
+		log.Warningf("Unsupported socket option: %d", opt)
+	}
 	return nil
 }
 
-func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
+func (e *baseEndpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
+	switch opt {
+	case tcpip.KeepaliveEnabledOption:
+		return false, nil
+
+	case tcpip.PasscredOption:
+		return e.Passcred(), nil
+
+	default:
+		log.Warningf("Unsupported socket option: %d", opt)
+		return false, tcpip.ErrUnknownProtocolOption
+	}
+}
+
+func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 	switch opt {
 	case tcpip.ReceiveQueueSizeOption:
 		v := 0
@@ -911,29 +934,19 @@ func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 		return int(v), nil
 
 	default:
+		log.Warningf("Unsupported socket option: %d", opt)
 		return -1, tcpip.ErrUnknownProtocolOption
 	}
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (e *baseEndpoint) GetSockOpt(opt interface{}) *tcpip.Error {
-	switch o := opt.(type) {
+	switch opt.(type) {
 	case tcpip.ErrorOption:
 		return nil
 
-	case *tcpip.PasscredOption:
-		if e.Passcred() {
-			*o = tcpip.PasscredOption(1)
-		} else {
-			*o = tcpip.PasscredOption(0)
-		}
-		return nil
-
-	case *tcpip.KeepaliveEnabledOption:
-		*o = 0
-		return nil
-
 	default:
+		log.Warningf("Unsupported socket option: %T", opt)
 		return tcpip.ErrUnknownProtocolOption
 	}
 }

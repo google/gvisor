@@ -12,15 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "test/syscalls/linux/socket_ipv4_tcp_unbound_external_networking.h"
+
 #include <vector>
 
 #include "test/syscalls/linux/ip_socket_test_util.h"
-#include "test/syscalls/linux/socket_ipv4_tcp_unbound_external_networking.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
 namespace testing {
+namespace {
 
 std::vector<SocketKind> GetSockets() {
   return ApplyVec<SocketKind>(
@@ -31,5 +33,7 @@ std::vector<SocketKind> GetSockets() {
 INSTANTIATE_TEST_SUITE_P(IPv4TCPUnboundSockets,
                          IPv4TCPUnboundExternalNetworkingSocketTest,
                          ::testing::ValuesIn(GetSockets()));
+
+}  // namespace
 }  // namespace testing
 }  // namespace gvisor

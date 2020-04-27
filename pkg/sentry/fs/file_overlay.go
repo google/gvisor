@@ -16,14 +16,14 @@ package fs
 
 import (
 	"io"
-	"sync"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -475,7 +475,7 @@ func readdirEntries(ctx context.Context, o *overlayEntry) (*SortedDentryMap, err
 			// Skip this name if it is a negative entry in the
 			// upper or there exists a whiteout for it.
 			if o.upper != nil {
-				if overlayHasWhiteout(o.upper, name) {
+				if overlayHasWhiteout(ctx, o.upper, name) {
 					continue
 				}
 			}

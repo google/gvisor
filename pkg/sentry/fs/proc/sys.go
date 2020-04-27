@@ -20,16 +20,17 @@ import (
 	"strconv"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/socket/rpcinet"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
+
+// LINT.IfChange
 
 // mmapMinAddrData backs /proc/sys/vm/mmap_min_addr.
 //
@@ -104,14 +105,8 @@ func (p *proc) newVMDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 func (p *proc) newSysDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	children := map[string]*fs.Inode{
 		"kernel": p.newKernelDir(ctx, msrc),
+		"net":    p.newSysNetDir(ctx, msrc),
 		"vm":     p.newVMDir(ctx, msrc),
-	}
-
-	// If we're using rpcinet we will let it manage /proc/sys/net.
-	if _, ok := p.k.NetworkStack().(*rpcinet.Stack); ok {
-		children["net"] = newRPCInetProcSysNet(ctx, msrc)
-	} else {
-		children["net"] = p.newSysNetDir(ctx, msrc)
 	}
 
 	d := ramfs.NewDir(ctx, children, fs.RootOwner, fs.FilePermsFromMode(0555))
@@ -160,3 +155,5 @@ func (hf *hostnameFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequ
 }
 
 var _ fs.FileOperations = (*hostnameFile)(nil)
+
+// LINT.ThenChange(../../fsimpl/proc/tasks_sys.go)
