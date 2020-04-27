@@ -93,10 +93,7 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt stack.PacketBuf
 }
 
 func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
-	v, ok := pkt.Data.PullUp(header.ARPSize)
-	if !ok {
-		return
-	}
+	v := pkt.Data.First()
 	h := header.ARP(v)
 	if !h.IsValid() {
 		return

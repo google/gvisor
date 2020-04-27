@@ -1203,12 +1203,12 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 		n.stack.stats.IP.PacketsReceived.Increment()
 	}
 
-	netHeader, ok := pkt.Data.PullUp(netProto.MinimumPacketSize())
-	if !ok {
+	if len(pkt.Data.First()) < netProto.MinimumPacketSize() {
 		n.stack.stats.MalformedRcvdPackets.Increment()
 		return
 	}
-	src, dst := netProto.ParseAddresses(netHeader)
+
+	src, dst := netProto.ParseAddresses(pkt.Data.First())
 
 	if n.stack.handleLocal && !n.isLoopback() && n.getRef(protocol, src) != nil {
 		// The source address is one of our own, so we never should have gotten a
@@ -1289,8 +1289,22 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 
 func (n *NIC) forwardPacket(r *Route, protocol tcpip.NetworkProtocolNumber, pkt PacketBuffer) {
 	// TODO(b/143425874) Decrease the TTL field in forwarded packets.
-	if linkHeaderLen := int(n.linkEP.MaxHeaderLength()); linkHeaderLen != 0 {
-		pkt.Header = buffer.NewPrependable(linkHeaderLen)
+
+	firstData := pkt.Data.First()
+	pkt.Data.RemoveFirst()
+
+	if linkHeaderLen := int(n.linkEP.MaxHeaderLength()); linkHeaderLen == 0 {
+		pkt.Header = buffer.NewPrependableFromView(firstData)
+	} else {
+		firstDataLen := len(firstData)
+
+		// pkt.Header should have enough capacity to hold n.linkEP's headers.
+		pkt.Header = buffer.NewPrependable(firstDataLen + linkHeaderLen)
+
+		// TODO(b/151227689): avoid copying the packet when forwarding
+		if n := copy(pkt.Header.Prepend(firstDataLen), firstData); n != firstDataLen {
+			panic(fmt.Sprintf("copied %d bytes, expected %d", n, firstDataLen))
+		}
 	}
 
 	if err := n.linkEP.WritePacket(r, nil /* gso */, protocol, pkt); err != nil {
@@ -1318,13 +1332,12 @@ func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolN
 	// validly formed.
 	n.stack.demux.deliverRawPacket(r, protocol, pkt)
 
-	transHeader, ok := pkt.Data.PullUp(transProto.MinimumPacketSize())
-	if !ok {
+	if len(pkt.Data.First()) < transProto.MinimumPacketSize() {
 		n.stack.stats.MalformedRcvdPackets.Increment()
 		return
 	}
 
-	srcPort, dstPort, err := transProto.ParsePorts(transHeader)
+	srcPort, dstPort, err := transProto.ParsePorts(pkt.Data.First())
 	if err != nil {
 		n.stack.stats.MalformedRcvdPackets.Increment()
 		return
@@ -1362,12 +1375,11 @@ func (n *NIC) DeliverTransportControlPacket(local, remote tcpip.Address, net tcp
 	// ICMPv4 only guarantees that 8 bytes of the transport protocol will
 	// be present in the payload. We know that the ports are within the
 	// first 8 bytes for all known transport protocols.
-	transHeader, ok := pkt.Data.PullUp(8)
-	if !ok {
+	if len(pkt.Data.First()) < 8 {
 		return
 	}
 
-	srcPort, dstPort, err := transProto.ParsePorts(transHeader)
+	srcPort, dstPort, err := transProto.ParsePorts(pkt.Data.First())
 	if err != nil {
 		return
 	}
