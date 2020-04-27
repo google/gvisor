@@ -104,6 +104,9 @@ func (ts *TaskSet) NewTask(cfg *TaskConfig) (*Task, error) {
 		cfg.TaskContext.release()
 		cfg.FSContext.DecRef()
 		cfg.FDTable.DecRef()
+		if cfg.MountNamespaceVFS2 != nil {
+			cfg.MountNamespaceVFS2.DecRef()
+		}
 		return nil, err
 	}
 	return t, nil
