@@ -17,7 +17,6 @@
 package host
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"syscall"
@@ -31,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	unixsocket "gvisor.dev/gvisor/pkg/sentry/socket/unix"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -156,7 +156,7 @@ type inode struct {
 
 // Note that these flags may become out of date, since they can be modified
 // on the host, e.g. with fcntl.
-func fileFlagsFromHostFD(fd int) (int, error) {
+func fileFlagsFromHostFD(fd int) (uint32, error) {
 	flags, err := unix.FcntlInt(uintptr(fd), syscall.F_GETFL, 0)
 	if err != nil {
 		log.Warningf("Failed to get file flags for donated FD %d: %v", fd, err)
@@ -164,7 +164,7 @@ func fileFlagsFromHostFD(fd int) (int, error) {
 	}
 	// TODO(gvisor.dev/issue/1672): implement behavior corresponding to these allowed flags.
 	flags &= syscall.O_ACCMODE | syscall.O_DIRECT | syscall.O_NONBLOCK | syscall.O_DSYNC | syscall.O_SYNC | syscall.O_APPEND
-	return flags, nil
+	return uint32(flags), nil
 }
 
 // CheckPermissions implements kernfs.Inode.
@@ -361,6 +361,10 @@ func (i *inode) Destroy() {
 
 // Open implements kernfs.Inode.
 func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	// Once created, we cannot re-open a socket fd through /proc/[pid]/fd/.
+	if i.Mode().FileType() == linux.S_IFSOCK {
+		return nil, syserror.ENXIO
+	}
 	return i.open(ctx, vfsd, rp.Mount())
 }
 
@@ -370,42 +374,45 @@ func (i *inode) open(ctx context.Context, d *vfs.Dentry, mnt *vfs.Mount) (*vfs.F
 		return nil, err
 	}
 	fileType := s.Mode & linux.FileTypeMask
-	if fileType == syscall.S_IFSOCK {
-		if i.isTTY {
-			return nil, errors.New("cannot use host socket as TTY")
-		}
-		// TODO(gvisor.dev/issue/1672): support importing sockets.
-		return nil, errors.New("importing host sockets not supported")
-	}
-
-	// TODO(gvisor.dev/issue/1672): Whitelist specific file types here, so that
-	// we don't allow importing arbitrary file types without proper support.
-	var (
-		vfsfd  *vfs.FileDescription
-		fdImpl vfs.FileDescriptionImpl
-	)
-	if i.isTTY {
-		fd := &ttyFD{
-			fileDescription: fileDescription{inode: i},
-			termios:         linux.DefaultSlaveTermios,
-		}
-		vfsfd = &fd.vfsfd
-		fdImpl = fd
-	} else {
-		// For simplicity, set offset to 0. Technically, we should
-		// only set to 0 on files that are not seekable (sockets, pipes, etc.),
-		// and use the offset from the host fd otherwise.
-		fd := &fileDescription{inode: i}
-		vfsfd = &fd.vfsfd
-		fdImpl = fd
-	}
-
 	flags, err := fileFlagsFromHostFD(i.hostFD)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := vfsfd.Init(fdImpl, uint32(flags), mnt, d, &vfs.FileDescriptionOptions{}); err != nil {
+	if fileType == syscall.S_IFSOCK {
+		if i.isTTY {
+			log.Warningf("cannot use host socket fd %d as TTY", i.hostFD)
+			return nil, syserror.ENOTTY
+		}
+
+		ep, err := newEndpoint(ctx, i.hostFD)
+		if err != nil {
+			return nil, err
+		}
+		// Currently, we only allow Unix sockets to be imported.
+		return unixsocket.NewFileDescription(ep, ep.Type(), flags, mnt, d)
+	}
+
+	// TODO(gvisor.dev/issue/1672): Whitelist specific file types here, so that
+	// we don't allow importing arbitrary file types without proper support.
+	if i.isTTY {
+		fd := &ttyFD{
+			fileDescription: fileDescription{inode: i},
+			termios:         linux.DefaultSlaveTermios,
+		}
+		vfsfd := &fd.vfsfd
+		if err := vfsfd.Init(fd, flags, mnt, d, &vfs.FileDescriptionOptions{}); err != nil {
+			return nil, err
+		}
+		return vfsfd, nil
+	}
+
+	// For simplicity, set offset to 0. Technically, we should
+	// only set to 0 on files that are not seekable (sockets, pipes, etc.),
+	// and use the offset from the host fd otherwise.
+	fd := &fileDescription{inode: i}
+	vfsfd := &fd.vfsfd
+	if err := vfsfd.Init(fd, flags, mnt, d, &vfs.FileDescriptionOptions{}); err != nil {
 		return nil, err
 	}
 	return vfsfd, nil

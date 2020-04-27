@@ -73,26 +73,14 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 	return nil, syserror.ENXIO
 }
 
-// InitSocket initializes a socket FileDescription, with a corresponding
-// Dentry in mnt.
-//
-// fd should be the FileDescription associated with socketImpl, i.e. its first
-// field. mnt should be the global socket mount, Kernel.socketMount.
-func InitSocket(socketImpl vfs.FileDescriptionImpl, fd *vfs.FileDescription, mnt *vfs.Mount, creds *auth.Credentials) error {
-	fsimpl := mnt.Filesystem().Impl()
-	fs := fsimpl.(*kernfs.Filesystem)
-
+// NewDentry constructs and returns a sockfs dentry.
+func NewDentry(creds *auth.Credentials, ino uint64) *vfs.Dentry {
 	// File mode matches net/socket.c:sock_alloc.
 	filemode := linux.FileMode(linux.S_IFSOCK | 0600)
 	i := &inode{}
-	i.Init(creds, fs.NextIno(), filemode)
+	i.Init(creds, ino, filemode)
 
 	d := &kernfs.Dentry{}
 	d.Init(i)
-
-	opts := &vfs.FileDescriptionOptions{UseDentryMetadata: true}
-	if err := fd.Init(socketImpl, linux.O_RDWR, mnt, d.VFSDentry(), opts); err != nil {
-		return err
-	}
-	return nil
+	return d.VFSDentry()
 }

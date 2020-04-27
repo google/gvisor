@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,8 +18,6 @@ import (
 	"syscall"
 	"unsafe"
 )
-
-// LINT.IfChange
 
 // fdReadVec receives from fd to bufs.
 //
@@ -101,5 +99,3 @@ func fdWriteVec(fd int, bufs [][]byte, maxlen int64, truncate bool) (int64, int6
 
 	return int64(n), length, err
 }
-
-// LINT.ThenChange(../../fsimpl/host/socket_unsafe.go)
