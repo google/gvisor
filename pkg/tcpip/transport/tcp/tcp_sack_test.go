@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
 // createConnectedWithSACKPermittedOption creates and connects c.ep with the
@@ -439,21 +440,28 @@ func TestSACKRecovery(t *testing.T) {
 	// Receive the retransmitted packet.
 	c.ReceiveAndCheckPacketWithOptions(data, rtxOffset, maxPayload, tsOptionSize)
 
-	tcpStats := c.Stack().Stats().TCP
-	stats := []struct {
-		stat *tcpip.StatCounter
-		name string
-		want uint64
-	}{
-		{tcpStats.FastRetransmit, "stats.TCP.FastRetransmit", 1},
-		{tcpStats.Retransmits, "stats.TCP.Retransmits", 1},
-		{tcpStats.SACKRecovery, "stats.TCP.SACKRecovery", 1},
-		{tcpStats.FastRecovery, "stats.TCP.FastRecovery", 0},
-	}
-	for _, s := range stats {
-		if got, want := s.stat.Value(), s.want; got != want {
-			t.Errorf("got %s.Value() = %v, want = %v", s.name, got, want)
+	metricPollFn := func() error {
+		tcpStats := c.Stack().Stats().TCP
+		stats := []struct {
+			stat *tcpip.StatCounter
+			name string
+			want uint64
+		}{
+			{tcpStats.FastRetransmit, "stats.TCP.FastRetransmit", 1},
+			{tcpStats.Retransmits, "stats.TCP.Retransmits", 1},
+			{tcpStats.SACKRecovery, "stats.TCP.SACKRecovery", 1},
+			{tcpStats.FastRecovery, "stats.TCP.FastRecovery", 0},
 		}
+		for _, s := range stats {
+			if got, want := s.stat.Value(), s.want; got != want {
+				return fmt.Errorf("got %s.Value() = %v, want = %v", s.name, got, want)
+			}
+		}
+		return nil
+	}
+
+	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
+		t.Error(err)
 	}
 
 	// Now send 7 mode duplicate ACKs. In SACK TCP dupAcks do not cause
@@ -517,22 +525,28 @@ func TestSACKRecovery(t *testing.T) {
 		bytesRead += maxPayload
 	}
 
-	// In SACK recovery only the first segment is fast retransmitted when
-	// entering recovery.
-	if got, want := c.Stack().Stats().TCP.FastRetransmit.Value(), uint64(1); got != want {
-		t.Errorf("got stats.TCP.FastRetransmit.Value = %v, want = %v", got, want)
-	}
+	metricPollFn = func() error {
+		// In SACK recovery only the first segment is fast retransmitted when
+		// entering recovery.
+		if got, want := c.Stack().Stats().TCP.FastRetransmit.Value(), uint64(1); got != want {
+			return fmt.Errorf("got stats.TCP.FastRetransmit.Value = %v, want = %v", got, want)
+		}
 
-	if got, want := c.EP.Stats().(*tcp.Stats).SendErrors.FastRetransmit.Value(), uint64(1); got != want {
-		t.Errorf("got EP stats SendErrors.FastRetransmit = %v, want = %v", got, want)
-	}
+		if got, want := c.EP.Stats().(*tcp.Stats).SendErrors.FastRetransmit.Value(), uint64(1); got != want {
+			return fmt.Errorf("got EP stats SendErrors.FastRetransmit = %v, want = %v", got, want)
+		}
 
-	if got, want := c.Stack().Stats().TCP.Retransmits.Value(), uint64(4); got != want {
-		t.Errorf("got stats.TCP.Retransmits.Value = %v, want = %v", got, want)
-	}
+		if got, want := c.Stack().Stats().TCP.Retransmits.Value(), uint64(4); got != want {
+			return fmt.Errorf("got stats.TCP.Retransmits.Value = %v, want = %v", got, want)
+		}
 
-	if got, want := c.EP.Stats().(*tcp.Stats).SendErrors.Retransmits.Value(), uint64(4); got != want {
-		t.Errorf("got EP stats Stats.SendErrors.Retransmits = %v, want = %v", got, want)
+		if got, want := c.EP.Stats().(*tcp.Stats).SendErrors.Retransmits.Value(), uint64(4); got != want {
+			return fmt.Errorf("got EP stats Stats.SendErrors.Retransmits = %v, want = %v", got, want)
+		}
+		return nil
+	}
+	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
+		t.Error(err)
 	}
 
 	c.CheckNoPacketTimeout("More packets received than expected during recovery after partial ack for this cwnd.", 50*time.Millisecond)
