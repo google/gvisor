@@ -19,6 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket/control"
@@ -42,30 +43,44 @@ type SocketVFS2 struct {
 	socketOpsCommon
 }
 
-// NewVFS2File creates and returns a new vfs.FileDescription for a unix socket.
-func NewVFS2File(t *kernel.Task, ep transport.Endpoint, stype linux.SockType) (*vfs.FileDescription, *syserr.Error) {
-	sock := NewFDImpl(ep, stype)
-	vfsfd := &sock.vfsfd
-	if err := sockfs.InitSocket(sock, vfsfd, t.Kernel().SocketMount(), t.Credentials()); err != nil {
+// NewSockfsFile creates a new socket file in the global sockfs mount and
+// returns a corresponding file description.
+func NewSockfsFile(t *kernel.Task, ep transport.Endpoint, stype linux.SockType) (*vfs.FileDescription, *syserr.Error) {
+	mnt := t.Kernel().SocketMount()
+	fs := mnt.Filesystem().Impl().(*kernfs.Filesystem)
+	d := sockfs.NewDentry(t.Credentials(), fs.NextIno())
+
+	fd, err := NewFileDescription(ep, stype, linux.O_RDWR, mnt, d)
+	if err != nil {
 		return nil, syserr.FromError(err)
 	}
-	return vfsfd, nil
+	return fd, nil
 }
 
-// NewFDImpl creates and returns a new SocketVFS2.
-func NewFDImpl(ep transport.Endpoint, stype linux.SockType) *SocketVFS2 {
+// NewFileDescription creates and returns a socket file description
+// corresponding to the given mount and dentry.
+func NewFileDescription(ep transport.Endpoint, stype linux.SockType, flags uint32, mnt *vfs.Mount, d *vfs.Dentry) (*vfs.FileDescription, error) {
 	// You can create AF_UNIX, SOCK_RAW sockets. They're the same as
 	// SOCK_DGRAM and don't require CAP_NET_RAW.
 	if stype == linux.SOCK_RAW {
 		stype = linux.SOCK_DGRAM
 	}
 
-	return &SocketVFS2{
+	sock := &SocketVFS2{
 		socketOpsCommon: socketOpsCommon{
 			ep:    ep,
 			stype: stype,
 		},
 	}
+	vfsfd := &sock.vfsfd
+	if err := vfsfd.Init(sock, flags, mnt, d, &vfs.FileDescriptionOptions{
+		DenyPRead:         true,
+		DenyPWrite:        true,
+		UseDentryMetadata: true,
+	}); err != nil {
+		return nil, err
+	}
+	return vfsfd, nil
 }
 
 // GetSockOpt implements the linux syscall getsockopt(2) for sockets backed by
@@ -112,8 +127,7 @@ func (s *SocketVFS2) Accept(t *kernel.Task, peerRequested bool, flags int, block
 		}
 	}
 
-	// We expect this to be a FileDescription here.
-	ns, err := NewVFS2File(t, ep, s.stype)
+	ns, err := NewSockfsFile(t, ep, s.stype)
 	if err != nil {
 		return 0, nil, 0, err
 	}
@@ -307,7 +321,7 @@ func (*providerVFS2) Socket(t *kernel.Task, stype linux.SockType, protocol int) 
 		return nil, syserr.ErrInvalidArgument
 	}
 
-	f, err := NewVFS2File(t, ep, stype)
+	f, err := NewSockfsFile(t, ep, stype)
 	if err != nil {
 		ep.Close()
 		return nil, err
@@ -331,13 +345,13 @@ func (*providerVFS2) Pair(t *kernel.Task, stype linux.SockType, protocol int) (*
 
 	// Create the endpoints and sockets.
 	ep1, ep2 := transport.NewPair(t, stype, t.Kernel())
-	s1, err := NewVFS2File(t, ep1, stype)
+	s1, err := NewSockfsFile(t, ep1, stype)
 	if err != nil {
 		ep1.Close()
 		ep2.Close()
 		return nil, nil, err
 	}
-	s2, err := NewVFS2File(t, ep2, stype)
+	s2, err := NewSockfsFile(t, ep2, stype)
 	if err != nil {
 		s1.DecRef()
 		ep2.Close()
