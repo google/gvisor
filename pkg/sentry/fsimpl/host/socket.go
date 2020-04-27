@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,13 +20,10 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/socket/control"
-	unixsocket "gvisor.dev/gvisor/pkg/sentry/socket/unix"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -37,29 +34,50 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// LINT.IfChange
+// Create a new host-backed endpoint from the given fd.
+func newEndpoint(ctx context.Context, hostFD int) (transport.Endpoint, error) {
+	// Set up an external transport.Endpoint using the host fd.
+	addr := fmt.Sprintf("hostfd:[%d]", hostFD)
+	var q waiter.Queue
+	e, err := NewConnectedEndpoint(ctx, hostFD, &q, addr, true /* saveable */)
+	if err != nil {
+		return nil, err.ToError()
+	}
+	e.Init()
+	ep := transport.NewExternal(ctx, e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
+	return ep, nil
+}
 
 // maxSendBufferSize is the maximum host send buffer size allowed for endpoint.
 //
 // N.B. 8MB is the default maximum on Linux (2 * sysctl_wmem_max).
 const maxSendBufferSize = 8 << 20
 
-// ConnectedEndpoint is a host FD backed implementation of
-// transport.ConnectedEndpoint and transport.Receiver.
+// ConnectedEndpoint is an implementation of transport.ConnectedEndpoint and
+// transport.Receiver. It is backed by a host fd that was imported at sentry
+// startup. This fd is shared with a hostfs inode, which retains ownership of
+// it.
+//
+// ConnectedEndpoint is saveable, since we expect that the host will provide
+// the same fd upon restore.
+//
+// As of this writing, we only allow Unix sockets to be imported.
 //
 // +stateify savable
 type ConnectedEndpoint struct {
-	// ref keeps track of references to a connectedEndpoint.
+	// ref keeps track of references to a ConnectedEndpoint.
 	ref refs.AtomicRefCount
 
+	// mu protects fd below.
+	mu sync.RWMutex `state:"nosave"`
+
+	// fd is the host fd backing this endpoint.
+	fd int
+
+	// addr is the address at which this endpoint is bound.
+	addr string
+
 	queue *waiter.Queue
-	path  string
-
-	// If srfd >= 0, it is the host FD that file was imported from.
-	srfd int `state:"wait"`
-
-	// stype is the type of Unix socket.
-	stype linux.SockType
 
 	// sndbuf is the size of the send buffer.
 	//
@@ -69,18 +87,14 @@ type ConnectedEndpoint struct {
 	// size on the host.
 	sndbuf int64 `state:"nosave"`
 
-	// mu protects the fields below.
-	mu sync.RWMutex `state:"nosave"`
-
-	// file is an *fd.FD containing the FD backing this endpoint. It must be
-	// set to nil if it has been closed.
-	file *fd.FD `state:"nosave"`
+	// stype is the type of Unix socket.
+	stype linux.SockType
 }
 
 // init performs initialization required for creating new ConnectedEndpoints and
 // for restoring them.
 func (c *ConnectedEndpoint) init() *syserr.Error {
-	family, err := syscall.GetsockoptInt(c.file.FD(), syscall.SOL_SOCKET, syscall.SO_DOMAIN)
+	family, err := syscall.GetsockoptInt(c.fd, syscall.SOL_SOCKET, syscall.SO_DOMAIN)
 	if err != nil {
 		return syserr.FromError(err)
 	}
@@ -90,16 +104,16 @@ func (c *ConnectedEndpoint) init() *syserr.Error {
 		return syserr.ErrInvalidEndpointState
 	}
 
-	stype, err := syscall.GetsockoptInt(c.file.FD(), syscall.SOL_SOCKET, syscall.SO_TYPE)
+	stype, err := syscall.GetsockoptInt(c.fd, syscall.SOL_SOCKET, syscall.SO_TYPE)
 	if err != nil {
 		return syserr.FromError(err)
 	}
 
-	if err := syscall.SetNonblock(c.file.FD(), true); err != nil {
+	if err := syscall.SetNonblock(c.fd, true); err != nil {
 		return syserr.FromError(err)
 	}
 
-	sndbuf, err := syscall.GetsockoptInt(c.file.FD(), syscall.SOL_SOCKET, syscall.SO_SNDBUF)
+	sndbuf, err := syscall.GetsockoptInt(c.fd, syscall.SOL_SOCKET, syscall.SO_SNDBUF)
 	if err != nil {
 		return syserr.FromError(err)
 	}
@@ -114,18 +128,17 @@ func (c *ConnectedEndpoint) init() *syserr.Error {
 	return nil
 }
 
-// NewConnectedEndpoint creates a new ConnectedEndpoint backed by a host FD
-// that will pretend to be bound at a given sentry path.
+// NewConnectedEndpoint creates a new ConnectedEndpoint backed by a host fd
+// imported at sentry startup,
 //
 // The caller is responsible for calling Init(). Additionaly, Release needs to
 // be called twice because ConnectedEndpoint is both a transport.Receiver and
 // transport.ConnectedEndpoint.
-func NewConnectedEndpoint(ctx context.Context, file *fd.FD, queue *waiter.Queue, path string) (*ConnectedEndpoint, *syserr.Error) {
+func NewConnectedEndpoint(ctx context.Context, hostFD int, queue *waiter.Queue, addr string, saveable bool) (*ConnectedEndpoint, *syserr.Error) {
 	e := ConnectedEndpoint{
-		path:  path,
+		fd:    hostFD,
+		addr:  addr,
 		queue: queue,
-		file:  file,
-		srfd:  -1,
 	}
 
 	if err := e.init(); err != nil {
@@ -134,73 +147,15 @@ func NewConnectedEndpoint(ctx context.Context, file *fd.FD, queue *waiter.Queue,
 
 	// AtomicRefCounters start off with a single reference. We need two.
 	e.ref.IncRef()
-
 	e.ref.EnableLeakCheck("host.ConnectedEndpoint")
-
 	return &e, nil
 }
 
-// Init will do initialization required without holding other locks.
+// Init will do the initialization required without holding other locks.
 func (c *ConnectedEndpoint) Init() {
-	if err := fdnotifier.AddFD(int32(c.file.FD()), c.queue); err != nil {
+	if err := fdnotifier.AddFD(int32(c.fd), c.queue); err != nil {
 		panic(err)
 	}
-}
-
-// NewSocketWithDirent allocates a new unix socket with host endpoint.
-//
-// This is currently only used by unsaveable Gofer nodes.
-//
-// NewSocketWithDirent takes ownership of f on success.
-func NewSocketWithDirent(ctx context.Context, d *fs.Dirent, f *fd.FD, flags fs.FileFlags) (*fs.File, error) {
-	f2 := fd.New(f.FD())
-	var q waiter.Queue
-	e, err := NewConnectedEndpoint(ctx, f2, &q, "" /* path */)
-	if err != nil {
-		f2.Release()
-		return nil, err.ToError()
-	}
-
-	// Take ownship of the FD.
-	f.Release()
-
-	e.Init()
-
-	ep := transport.NewExternal(ctx, e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
-
-	return unixsocket.NewWithDirent(ctx, d, ep, e.stype, flags), nil
-}
-
-// newSocket allocates a new unix socket with host endpoint.
-func newSocket(ctx context.Context, orgfd int, saveable bool) (*fs.File, error) {
-	ownedfd := orgfd
-	srfd := -1
-	if saveable {
-		var err error
-		ownedfd, err = syscall.Dup(orgfd)
-		if err != nil {
-			return nil, err
-		}
-		srfd = orgfd
-	}
-	f := fd.New(ownedfd)
-	var q waiter.Queue
-	e, err := NewConnectedEndpoint(ctx, f, &q, "" /* path */)
-	if err != nil {
-		if saveable {
-			f.Close()
-		} else {
-			f.Release()
-		}
-		return nil, err.ToError()
-	}
-
-	e.srfd = srfd
-	e.Init()
-
-	ep := transport.NewExternal(ctx, e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
-
-	return unixsocket.New(ctx, ep, e.stype), nil
 }
 
 // Send implements transport.ConnectedEndpoint.Send.
@@ -216,7 +171,7 @@ func (c *ConnectedEndpoint) Send(data [][]byte, controlMessages transport.Contro
 	// only as much of the message as fits in the send buffer.
 	truncate := c.stype == linux.SOCK_STREAM
 
-	n, totalLen, err := fdWriteVec(c.file.FD(), data, c.sndbuf, truncate)
+	n, totalLen, err := fdWriteVec(c.fd, data, c.sndbuf, truncate)
 	if n < totalLen && err == nil {
 		// The host only returns a short write if it would otherwise
 		// block (and only for stream sockets).
@@ -242,7 +197,7 @@ func (c *ConnectedEndpoint) CloseSend() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if err := syscall.Shutdown(c.file.FD(), syscall.SHUT_WR); err != nil {
+	if err := syscall.Shutdown(c.fd, syscall.SHUT_WR); err != nil {
 		// A well-formed UDS shutdown can't fail. See
 		// net/unix/af_unix.c:unix_shutdown.
 		panic(fmt.Sprintf("failed write shutdown on host socket %+v: %v", c, err))
@@ -257,7 +212,7 @@ func (c *ConnectedEndpoint) Writable() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return fdnotifier.NonBlockingPoll(int32(c.file.FD()), waiter.EventOut)&waiter.EventOut != 0
+	return fdnotifier.NonBlockingPoll(int32(c.fd), waiter.EventOut)&waiter.EventOut != 0
 }
 
 // Passcred implements transport.ConnectedEndpoint.Passcred.
@@ -268,15 +223,15 @@ func (c *ConnectedEndpoint) Passcred() bool {
 
 // GetLocalAddress implements transport.ConnectedEndpoint.GetLocalAddress.
 func (c *ConnectedEndpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) {
-	return tcpip.FullAddress{Addr: tcpip.Address(c.path)}, nil
+	return tcpip.FullAddress{Addr: tcpip.Address(c.addr)}, nil
 }
 
 // EventUpdate implements transport.ConnectedEndpoint.EventUpdate.
 func (c *ConnectedEndpoint) EventUpdate() {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if c.file.FD() != -1 {
-		fdnotifier.UpdateFD(int32(c.file.FD()))
+	if c.fd != -1 {
+		fdnotifier.UpdateFD(int32(c.fd))
 	}
 }
 
@@ -292,7 +247,7 @@ func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights int, peek 
 
 	// N.B. Unix sockets don't have a receive buffer, the send buffer
 	// serves both purposes.
-	rl, ml, cl, cTrunc, err := fdReadVec(c.file.FD(), data, []byte(cm), peek, c.sndbuf)
+	rl, ml, cl, cTrunc, err := fdReadVec(c.fd, data, []byte(cm), peek, c.sndbuf)
 	if rl > 0 && err != nil {
 		// We got some data, so all we need to do on error is return
 		// the data that we got. Short reads are fine, no need to
@@ -313,7 +268,7 @@ func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights int, peek 
 
 	// Avoid extra allocations in the case where there isn't any control data.
 	if len(cm) == 0 {
-		return rl, ml, transport.ControlMessages{}, cTrunc, tcpip.FullAddress{Addr: tcpip.Address(c.path)}, false, nil
+		return rl, ml, transport.ControlMessages{}, cTrunc, tcpip.FullAddress{Addr: tcpip.Address(c.addr)}, false, nil
 	}
 
 	fds, err := cm.ExtractFDs()
@@ -322,16 +277,9 @@ func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights int, peek 
 	}
 
 	if len(fds) == 0 {
-		return rl, ml, transport.ControlMessages{}, cTrunc, tcpip.FullAddress{Addr: tcpip.Address(c.path)}, false, nil
+		return rl, ml, transport.ControlMessages{}, cTrunc, tcpip.FullAddress{Addr: tcpip.Address(c.addr)}, false, nil
 	}
-	return rl, ml, control.New(nil, nil, newSCMRights(fds)), cTrunc, tcpip.FullAddress{Addr: tcpip.Address(c.path)}, false, nil
-}
-
-// close releases all resources related to the endpoint.
-func (c *ConnectedEndpoint) close() {
-	fdnotifier.RemoveFD(int32(c.file.FD()))
-	c.file.Close()
-	c.file = nil
+	return rl, ml, control.NewVFS2(nil, nil, newSCMRights(fds)), cTrunc, tcpip.FullAddress{Addr: tcpip.Address(c.addr)}, false, nil
 }
 
 // RecvNotify implements transport.Receiver.RecvNotify.
@@ -342,7 +290,7 @@ func (c *ConnectedEndpoint) CloseRecv() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if err := syscall.Shutdown(c.file.FD(), syscall.SHUT_RD); err != nil {
+	if err := syscall.Shutdown(c.fd, syscall.SHUT_RD); err != nil {
 		// A well-formed UDS shutdown can't fail. See
 		// net/unix/af_unix.c:unix_shutdown.
 		panic(fmt.Sprintf("failed read shutdown on host socket %+v: %v", c, err))
@@ -354,7 +302,7 @@ func (c *ConnectedEndpoint) Readable() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return fdnotifier.NonBlockingPoll(int32(c.file.FD()), waiter.EventIn)&waiter.EventIn != 0
+	return fdnotifier.NonBlockingPoll(int32(c.fd), waiter.EventIn)&waiter.EventIn != 0
 }
 
 // SendQueuedSize implements transport.Receiver.SendQueuedSize.
@@ -383,12 +331,67 @@ func (c *ConnectedEndpoint) RecvMaxQueueSize() int64 {
 	return int64(c.sndbuf)
 }
 
-// Release implements transport.ConnectedEndpoint.Release and transport.Receiver.Release.
+func (c *ConnectedEndpoint) destroyLocked() {
+	fdnotifier.RemoveFD(int32(c.fd))
+	c.fd = -1
+}
+
+// Release implements transport.ConnectedEndpoint.Release and
+// transport.Receiver.Release.
 func (c *ConnectedEndpoint) Release() {
-	c.ref.DecRefWithDestructor(c.close)
+	c.ref.DecRefWithDestructor(func() {
+		c.mu.Lock()
+		c.destroyLocked()
+		c.mu.Unlock()
+	})
 }
 
 // CloseUnread implements transport.ConnectedEndpoint.CloseUnread.
 func (c *ConnectedEndpoint) CloseUnread() {}
 
-// LINT.ThenChange(../../fsimpl/host/socket.go)
+// SCMConnectedEndpoint represents an endpoint backed by a host fd that was
+// passed through a gofer Unix socket. It is almost the same as
+// ConnectedEndpoint, with the following differences:
+// - SCMConnectedEndpoint is not saveable, because the host cannot guarantee
+// the same descriptor number across S/R.
+// - SCMConnectedEndpoint holds ownership of its fd and is responsible for
+// closing it.
+type SCMConnectedEndpoint struct {
+	ConnectedEndpoint
+}
+
+// Release implements transport.ConnectedEndpoint.Release and
+// transport.Receiver.Release.
+func (e *SCMConnectedEndpoint) Release() {
+	e.ref.DecRefWithDestructor(func() {
+		e.mu.Lock()
+		if err := syscall.Close(e.fd); err != nil {
+			log.Warningf("Failed to close host fd %d: %v", err)
+		}
+		e.destroyLocked()
+		e.mu.Unlock()
+	})
+}
+
+// NewSCMEndpoint creates a new SCMConnectedEndpoint backed by a host fd that
+// was passed through a Unix socket.
+//
+// The caller is responsible for calling Init(). Additionaly, Release needs to
+// be called twice because ConnectedEndpoint is both a transport.Receiver and
+// transport.ConnectedEndpoint.
+func NewSCMEndpoint(ctx context.Context, hostFD int, queue *waiter.Queue, addr string) (*SCMConnectedEndpoint, *syserr.Error) {
+	e := SCMConnectedEndpoint{ConnectedEndpoint{
+		fd:    hostFD,
+		addr:  addr,
+		queue: queue,
+	}}
+
+	if err := e.init(); err != nil {
+		return nil, err
+	}
+
+	// AtomicRefCounters start off with a single reference. We need two.
+	e.ref.IncRef()
+	e.ref.EnableLeakCheck("host.SCMConnectedEndpoint")
+	return &e, nil
+}
