@@ -22,9 +22,11 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Sync implements vfs.FilesystemImpl.Sync.
@@ -652,7 +654,12 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 				return err
 			}
 			ctx.Infof("Failed to create remote directory %q: %v; falling back to synthetic directory", name, err)
-			parent.createSyntheticDirectoryLocked(name, opts.Mode, creds.EffectiveKUID, creds.EffectiveKGID)
+			parent.createSyntheticChildLocked(&createSyntheticOpts{
+				name: name,
+				mode: linux.S_IFDIR | opts.Mode,
+				kuid: creds.EffectiveKUID,
+				kgid: creds.EffectiveKGID,
+			})
 		}
 		if fs.opts.interop != InteropModeShared {
 			parent.incLinks()
@@ -663,7 +670,12 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 			// Can't create non-synthetic files in synthetic directories.
 			return syserror.EPERM
 		}
-		parent.createSyntheticDirectoryLocked(name, opts.Mode, creds.EffectiveKUID, creds.EffectiveKGID)
+		parent.createSyntheticChildLocked(&createSyntheticOpts{
+			name: name,
+			mode: linux.S_IFDIR | opts.Mode,
+			kuid: creds.EffectiveKUID,
+			kgid: creds.EffectiveKGID,
+		})
 		parent.incLinks()
 		return nil
 	})
@@ -674,6 +686,28 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string) error {
 		creds := rp.Credentials()
 		_, err := parent.file.mknod(ctx, name, (p9.FileMode)(opts.Mode), opts.DevMajor, opts.DevMinor, (p9.UID)(creds.EffectiveKUID), (p9.GID)(creds.EffectiveKGID))
+		if err == syserror.EPERM {
+			switch opts.Mode.FileType() {
+			case linux.S_IFSOCK:
+				parent.createSyntheticChildLocked(&createSyntheticOpts{
+					name:     name,
+					mode:     opts.Mode,
+					kuid:     creds.EffectiveKUID,
+					kgid:     creds.EffectiveKGID,
+					endpoint: opts.Endpoint,
+				})
+				return nil
+			case linux.S_IFIFO:
+				parent.createSyntheticChildLocked(&createSyntheticOpts{
+					name: name,
+					mode: opts.Mode,
+					kuid: creds.EffectiveKUID,
+					kgid: creds.EffectiveKGID,
+					pipe: pipe.NewVFSPipe(true /* isNamed */, pipe.DefaultPipeSize, usermem.PageSize),
+				})
+				return nil
+			}
+		}
 		return err
 	}, nil)
 }
@@ -756,20 +790,21 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 		return nil, err
 	}
 	mnt := rp.Mount()
-	filetype := d.fileType()
-	switch {
-	case filetype == linux.S_IFREG && !d.fs.opts.regularFilesUseSpecialFileFD:
-		if err := d.ensureSharedHandle(ctx, ats&vfs.MayRead != 0, ats&vfs.MayWrite != 0, opts.Flags&linux.O_TRUNC != 0); err != nil {
-			return nil, err
+	switch d.fileType() {
+	case linux.S_IFREG:
+		if !d.fs.opts.regularFilesUseSpecialFileFD {
+			if err := d.ensureSharedHandle(ctx, ats&vfs.MayRead != 0, ats&vfs.MayWrite != 0, opts.Flags&linux.O_TRUNC != 0); err != nil {
+				return nil, err
+			}
+			fd := &regularFileFD{}
+			if err := fd.vfsfd.Init(fd, opts.Flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{
+				AllowDirectIO: true,
+			}); err != nil {
+				return nil, err
+			}
+			return &fd.vfsfd, nil
 		}
-		fd := &regularFileFD{}
-		if err := fd.vfsfd.Init(fd, opts.Flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{
-			AllowDirectIO: true,
-		}); err != nil {
-			return nil, err
-		}
-		return &fd.vfsfd, nil
-	case filetype == linux.S_IFDIR:
+	case linux.S_IFDIR:
 		// Can't open directories with O_CREAT.
 		if opts.Flags&linux.O_CREAT != 0 {
 			return nil, syserror.EISDIR
@@ -791,26 +826,40 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 			return nil, err
 		}
 		return &fd.vfsfd, nil
-	case filetype == linux.S_IFLNK:
+	case linux.S_IFLNK:
 		// Can't open symlinks without O_PATH (which is unimplemented).
 		return nil, syserror.ELOOP
-	default:
-		if opts.Flags&linux.O_DIRECT != 0 {
-			return nil, syserror.EINVAL
+	case linux.S_IFSOCK:
+		if d.isSynthetic() {
+			return nil, syserror.ENXIO
 		}
-		h, err := openHandle(ctx, d.file, ats&vfs.MayRead != 0, ats&vfs.MayWrite != 0, opts.Flags&linux.O_TRUNC != 0)
-		if err != nil {
-			return nil, err
+	case linux.S_IFIFO:
+		if d.isSynthetic() {
+			return d.pipe.Open(ctx, mnt, &d.vfsd, opts.Flags)
 		}
-		fd := &specialFileFD{
-			handle: h,
-		}
-		if err := fd.vfsfd.Init(fd, opts.Flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
-			h.close(ctx)
-			return nil, err
-		}
-		return &fd.vfsfd, nil
 	}
+	return d.openSpecialFileLocked(ctx, mnt, opts)
+}
+
+func (d *dentry) openSpecialFileLocked(ctx context.Context, mnt *vfs.Mount, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+	ats := vfs.AccessTypesForOpenFlags(opts)
+	// Treat as a special file. This is done for non-synthetic pipes as well as
+	// regular files when d.fs.opts.regularFilesUseSpecialFileFD is true.
+	if opts.Flags&linux.O_DIRECT != 0 {
+		return nil, syserror.EINVAL
+	}
+	h, err := openHandle(ctx, d.file, ats&vfs.MayRead != 0, ats&vfs.MayWrite != 0, opts.Flags&linux.O_TRUNC != 0)
+	if err != nil {
+		return nil, err
+	}
+	fd := &specialFileFD{
+		handle: h,
+	}
+	if err := fd.vfsfd.Init(fd, opts.Flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+		h.close(ctx)
+		return nil, err
+	}
+	return &fd.vfsfd, nil
 }
 
 // Preconditions: d.fs.renameMu must be locked. d.dirMu must be locked.
@@ -1196,15 +1245,28 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 }
 
 // BoundEndpointAt implements FilesystemImpl.BoundEndpointAt.
-func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath) (transport.BoundEndpoint, error) {
+func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.BoundEndpointOptions) (transport.BoundEndpoint, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckCaching(&ds)
-	_, err := fs.resolveLocked(ctx, rp, &ds)
+	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
 		return nil, err
 	}
-	// TODO(gvisor.dev/issue/1476): Implement BoundEndpointAt.
+	if err := d.checkPermissions(rp.Credentials(), vfs.MayWrite); err != nil {
+		return nil, err
+	}
+	if d.isSocket() {
+		if !d.isSynthetic() {
+			d.IncRef()
+			return &endpoint{
+				dentry: d,
+				file:   d.file.file,
+				path:   opts.Addr,
+			}, nil
+		}
+		return d.endpoint, nil
+	}
 	return nil, syserror.ECONNREFUSED
 }
 
