@@ -1,19 +1,24 @@
 """Bazel implementations of standard rules."""
 
+load("@bazel_gazelle//:def.bzl", _gazelle = "gazelle")
+load("@bazel_skylib//rules:build_test.bzl", _build_test = "build_test")
 load("@bazel_tools//tools/cpp:cc_flags_supplier.bzl", _cc_flags_supplier = "cc_flags_supplier")
-load("@io_bazel_rules_go//go:def.bzl", "GoLibrary", _go_binary = "go_binary", _go_context = "go_context", _go_embed_data = "go_embed_data", _go_library = "go_library", _go_test = "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "GoLibrary", _go_binary = "go_binary", _go_context = "go_context", _go_embed_data = "go_embed_data", _go_library = "go_library", _go_path = "go_path", _go_test = "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", _go_grpc_library = "go_grpc_library", _go_proto_library = "go_proto_library")
 load("@rules_cc//cc:defs.bzl", _cc_binary = "cc_binary", _cc_library = "cc_library", _cc_proto_library = "cc_proto_library", _cc_test = "cc_test")
 load("@rules_pkg//:pkg.bzl", _pkg_deb = "pkg_deb", _pkg_tar = "pkg_tar")
 load("@pydeps//:requirements.bzl", _py_requirement = "requirement")
 load("@com_github_grpc_grpc//bazel:cc_grpc_library.bzl", _cc_grpc_library = "cc_grpc_library")
 
+build_test = _build_test
 cc_library = _cc_library
 cc_flags_supplier = _cc_flags_supplier
 cc_proto_library = _cc_proto_library
 cc_test = _cc_test
 cc_toolchain = "@bazel_tools//tools/cpp:current_cc_toolchain"
+gazelle = _gazelle
 go_embed_data = _go_embed_data
+go_path = _go_path
 gtest = "@com_google_googletest//:gtest"
 grpcpp = "@com_github_grpc_grpc//:grpc++"
 gbenchmark = "@com_google_benchmark//:benchmark"
@@ -23,6 +28,8 @@ pkg_tar = _pkg_tar
 py_library = native.py_library
 py_binary = native.py_binary
 py_test = native.py_test
+rbe_platform = native.platform
+rbe_toolchain = native.toolchain
 
 def proto_library(name, has_services = None, **kwargs):
     native.proto_library(

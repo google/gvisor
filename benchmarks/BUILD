@@ -9,6 +9,7 @@ config_setting(
 
 py_binary(
     name = "benchmarks",
+    testonly = 1,
     srcs = ["run.py"],
     data = select({
         ":gcloud_rule": [],
