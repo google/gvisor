@@ -119,6 +119,32 @@ const (
 	// identifier (IID) is 64 bits and an IPv6 address is 128 bits, so
 	// 128 - 64 = 64.
 	validPrefixLenForAutoGen = 64
+
+	// defaultAutoGenTempGlobalAddresses is the default configuration for whether
+	// or not to generate temporary SLAAC addresses.
+	defaultAutoGenTempGlobalAddresses = true
+
+	// defaultMaxTempAddrValidLifetime is the default maximum valid lifetime
+	// for temporary SLAAC addresses generated as part of RFC 4941.
+	//
+	// Default = 7 days (from RFC 4941 section 5).
+	defaultMaxTempAddrValidLifetime = 7 * 24 * time.Hour
+
+	// defaultMaxTempAddrPreferredLifetime is the default preferred lifetime
+	// for temporary SLAAC addresses generated as part of RFC 4941.
+	//
+	// Default = 1 day (from RFC 4941 section 5).
+	defaultMaxTempAddrPreferredLifetime = 24 * time.Hour
+
+	// defaultRegenAdvanceDuration is the default duration before the deprecation
+	// of a temporary address when a new address will be generated.
+	//
+	// Default = 5s (from RFC 4941 section 5).
+	defaultRegenAdvanceDuration = 5 * time.Second
+
+	// minRegenAdvanceDuration is the minimum duration before the deprecation
+	// of a temporary address when a new address will be generated.
+	minRegenAdvanceDuration = time.Duration(0)
 )
 
 var (
@@ -131,6 +157,37 @@ var (
 	//
 	// Min = 2hrs.
 	MinPrefixInformationValidLifetimeForUpdate = 2 * time.Hour
+
+	// MaxDesyncFactor is the upper bound for the preferred lifetime's desync
+	// factor for temporary SLAAC addresses.
+	//
+	// This is exported as a variable (instead of a constant) so tests
+	// can update it to a smaller value.
+	//
+	// Must be greater than 0.
+	//
+	// Max = 10m (from RFC 4941 section 5).
+	MaxDesyncFactor = 10 * time.Minute
+
+	// MinMaxTempAddrPreferredLifetime is the minimum value allowed for the
+	// maximum preferred lifetime for temporary SLAAC addresses.
+	//
+	// This is exported as a variable (instead of a constant) so tests
+	// can update it to a smaller value.
+	//
+	// This value guarantees that a temporary address will be preferred for at
+	// least 1hr if the SLAAC prefix is valid for at least that time.
+	MinMaxTempAddrPreferredLifetime = defaultRegenAdvanceDuration + MaxDesyncFactor + time.Hour
+
+	// MinMaxTempAddrValidLifetime is the minimum value allowed for the
+	// maximum valid lifetime for temporary SLAAC addresses.
+	//
+	// This is exported as a variable (instead of a constant) so tests
+	// can update it to a smaller value.
+	//
+	// This value guarantees that a temporary address will be valid for at least
+	// 2hrs if the SLAAC prefix is valid for at least that time.
+	MinMaxTempAddrValidLifetime = 2 * time.Hour
 )
 
 // DHCPv6ConfigurationFromNDPRA is a configuration available via DHCPv6 that an
@@ -324,35 +381,49 @@ type NDPConfigurations struct {
 	// alternative addresses (e.g. IIDs based on the modified EUI64 of a NIC's
 	// MAC address), then no attempt will be made to resolve the conflict.
 	AutoGenAddressConflictRetries uint8
+
+	// AutoGenTempGlobalAddresses determines whether or not temporary SLAAC
+	// addresses will be generated for a NIC as part of SLAAC privacy extensions,
+	// RFC 4941.
+	//
+	// Ignored if AutoGenGlobalAddresses is false.
+	AutoGenTempGlobalAddresses bool
+
+	// MaxTempAddrValidLifetime is the maximum valid lifetime for temporary
+	// SLAAC addresses.
+	MaxTempAddrValidLifetime time.Duration
+
+	// MaxTempAddrPreferredLifetime is the maximum preferred lifetime for
+	// temporary SLAAC addresses.
+	MaxTempAddrPreferredLifetime time.Duration
+
+	// RegenAdvanceDuration is the duration before the deprecation of a temporary
+	// address when a new address will be generated.
+	RegenAdvanceDuration time.Duration
 }
 
 // DefaultNDPConfigurations returns an NDPConfigurations populated with
 // default values.
 func DefaultNDPConfigurations() NDPConfigurations {
 	return NDPConfigurations{
-		DupAddrDetectTransmits:  defaultDupAddrDetectTransmits,
-		RetransmitTimer:         defaultRetransmitTimer,
-		MaxRtrSolicitations:     defaultMaxRtrSolicitations,
-		RtrSolicitationInterval: defaultRtrSolicitationInterval,
-		MaxRtrSolicitationDelay: defaultMaxRtrSolicitationDelay,
-		HandleRAs:               defaultHandleRAs,
-		DiscoverDefaultRouters:  defaultDiscoverDefaultRouters,
-		DiscoverOnLinkPrefixes:  defaultDiscoverOnLinkPrefixes,
-		AutoGenGlobalAddresses:  defaultAutoGenGlobalAddresses,
+		DupAddrDetectTransmits:       defaultDupAddrDetectTransmits,
+		RetransmitTimer:              defaultRetransmitTimer,
+		MaxRtrSolicitations:          defaultMaxRtrSolicitations,
+		RtrSolicitationInterval:      defaultRtrSolicitationInterval,
+		MaxRtrSolicitationDelay:      defaultMaxRtrSolicitationDelay,
+		HandleRAs:                    defaultHandleRAs,
+		DiscoverDefaultRouters:       defaultDiscoverDefaultRouters,
+		DiscoverOnLinkPrefixes:       defaultDiscoverOnLinkPrefixes,
+		AutoGenGlobalAddresses:       defaultAutoGenGlobalAddresses,
+		AutoGenTempGlobalAddresses:   defaultAutoGenTempGlobalAddresses,
+		MaxTempAddrValidLifetime:     defaultMaxTempAddrValidLifetime,
+		MaxTempAddrPreferredLifetime: defaultMaxTempAddrPreferredLifetime,
+		RegenAdvanceDuration:         defaultRegenAdvanceDuration,
 	}
 }
 
 // validate modifies an NDPConfigurations with valid values. If invalid values
 // are present in c, the corresponding default values will be used instead.
-//
-// If RetransmitTimer is less than minimumRetransmitTimer, then a value of
-// defaultRetransmitTimer will be used.
-//
-// If RtrSolicitationInterval is less than minimumRtrSolicitationInterval, then
-// a value of defaultRtrSolicitationInterval will be used.
-//
-// If MaxRtrSolicitationDelay is less than minimumMaxRtrSolicitationDelay, then
-// a value of defaultMaxRtrSolicitationDelay will be used.
 func (c *NDPConfigurations) validate() {
 	if c.RetransmitTimer < minimumRetransmitTimer {
 		c.RetransmitTimer = defaultRetransmitTimer
@@ -364,6 +435,18 @@ func (c *NDPConfigurations) validate() {
 
 	if c.MaxRtrSolicitationDelay < minimumMaxRtrSolicitationDelay {
 		c.MaxRtrSolicitationDelay = defaultMaxRtrSolicitationDelay
+	}
+
+	if c.MaxTempAddrValidLifetime < MinMaxTempAddrValidLifetime {
+		c.MaxTempAddrValidLifetime = MinMaxTempAddrValidLifetime
+	}
+
+	if c.MaxTempAddrPreferredLifetime < MinMaxTempAddrPreferredLifetime || c.MaxTempAddrPreferredLifetime > c.MaxTempAddrValidLifetime {
+		c.MaxTempAddrPreferredLifetime = MinMaxTempAddrPreferredLifetime
+	}
+
+	if c.RegenAdvanceDuration < minRegenAdvanceDuration {
+		c.RegenAdvanceDuration = minRegenAdvanceDuration
 	}
 }
 
@@ -394,6 +477,14 @@ type ndpState struct {
 
 	// The last learned DHCPv6 configuration from an NDP RA.
 	dhcpv6Configuration DHCPv6ConfigurationFromNDPRA
+
+	// temporaryIIDHistory is the history value used to generate a new temporary
+	// IID.
+	temporaryIIDHistory [header.IIDSize]byte
+
+	// temporaryAddressDesyncFactor is the preferred lifetime's desync factor for
+	// temporary SLAAC addresses.
+	temporaryAddressDesyncFactor time.Duration
 }
 
 // dadState holds the Duplicate Address Detection timer and channel to signal
@@ -414,7 +505,7 @@ type dadState struct {
 type defaultRouterState struct {
 	// Timer to invalidate the default router.
 	//
-	// May not be nil.
+	// Must not be nil.
 	invalidationTimer *tcpip.CancellableTimer
 }
 
@@ -424,20 +515,48 @@ type defaultRouterState struct {
 type onLinkPrefixState struct {
 	// Timer to invalidate the on-link prefix.
 	//
-	// May not be nil.
+	// Must not be nil.
 	invalidationTimer *tcpip.CancellableTimer
+}
+
+// tempSLAACAddrState holds state associated with a temporary SLAAC address.
+type tempSLAACAddrState struct {
+	// Timer to deprecate the temporary SLAAC address.
+	//
+	// Must not be nil.
+	deprecationTimer *tcpip.CancellableTimer
+
+	// Timer to invalidate the temporary SLAAC address.
+	//
+	// Must not be nil.
+	invalidationTimer *tcpip.CancellableTimer
+
+	// Timer to regenerate the temporary SLAAC address.
+	//
+	// Must not be nil.
+	regenTimer *tcpip.CancellableTimer
+
+	createdAt time.Time
+
+	// The address's endpoint.
+	//
+	// Must not be nil.
+	ref *referencedNetworkEndpoint
+
+	// Has a new temporary SLAAC address already been regenerated?
+	regenerated bool
 }
 
 // slaacPrefixState holds state associated with a SLAAC prefix.
 type slaacPrefixState struct {
 	// Timer to deprecate the prefix.
 	//
-	// May not be nil.
+	// Must not be nil.
 	deprecationTimer *tcpip.CancellableTimer
 
 	// Timer to invalidate the prefix.
 	//
-	// May not be nil.
+	// Must not be nil.
 	invalidationTimer *tcpip.CancellableTimer
 
 	// Nonzero only when the address is not valid forever.
@@ -446,19 +565,27 @@ type slaacPrefixState struct {
 	// Nonzero only when the address is not preferred forever.
 	preferredUntil time.Time
 
-	// The prefix's permanent address endpoint.
+	// The endpoint for the stable address generated for a SLAAC prefix.
 	//
 	// May only be nil when a SLAAC address is being (re-)generated. Otherwise,
-	// must not be nil as all SLAAC prefixes must have a SLAAC address.
-	ref *referencedNetworkEndpoint
+	// must not be nil as all SLAAC prefixes must have a stable address.
+	stableAddrRef *referencedNetworkEndpoint
 
-	// The number of times a permanent address has been generated for the prefix.
+	// The temporary (short-lived) addresses generated for the SLAAC prefix.
+	tempAddrs map[tcpip.Address]tempSLAACAddrState
+
+	// The next two fields are used by both stable and temporary addresses
+	// generated for a SLAAC prefix. This is safe as only 1 address will be
+	// in the generation and DAD process at any time. That is, no two addresses
+	// will be generated at the same time for a given SLAAC prefix.
+
+	// The number of times an address has been generated.
 	//
 	// Addresses may be regenerated in reseponse to a DAD conflicts.
 	generationAttempts uint8
 
-	// The maximum number of times to attempt regeneration of a permanent SLAAC
-	// address in response to DAD conflicts.
+	// The maximum number of times to attempt regeneration of a SLAAC address
+	// in response to DAD conflicts.
 	maxGenerationAttempts uint8
 }
 
@@ -536,10 +663,10 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 		}
 
 		ndp.nic.mu.Lock()
+		defer ndp.nic.mu.Unlock()
 		if done {
 			// If we reach this point, it means that DAD was stopped after we released
 			// the NIC's read lock and before we obtained the write lock.
-			ndp.nic.mu.Unlock()
 			return
 		}
 
@@ -551,8 +678,6 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 			// schedule the next DAD timer.
 			remaining--
 			timer.Reset(ndp.nic.stack.ndpConfigs.RetransmitTimer)
-
-			ndp.nic.mu.Unlock()
 			return
 		}
 
@@ -560,14 +685,17 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 		// the last NDP NS. Either way, clean up addr's DAD state and let the
 		// integrator know DAD has completed.
 		delete(ndp.dad, addr)
-		ndp.nic.mu.Unlock()
-
-		if err != nil {
-			log.Printf("ndpdad: error occured during DAD iteration for addr (%s) on NIC(%d); err = %s", addr, ndp.nic.ID(), err)
-		}
 
 		if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
 			ndpDisp.OnDuplicateAddressDetectionStatus(ndp.nic.ID(), addr, dadDone, err)
+		}
+
+		// If DAD resolved for a stable SLAAC address, attempt generation of a
+		// temporary SLAAC address.
+		if dadDone && ref.configType == slaac {
+			// Reset the generation attempts counter as we are starting the generation
+			// of a new address for the SLAAC prefix.
+			ndp.regenerateTempSLAACAddr(ref.addrWithPrefix().Subnet(), true /* resetGenAttempts */)
 		}
 	})
 
@@ -953,9 +1081,10 @@ func (ndp *ndpState) handleAutonomousPrefixInformation(pi header.NDPPrefixInform
 	prefix := pi.Subnet()
 
 	// Check if we already maintain SLAAC state for prefix.
-	if _, ok := ndp.slaacPrefixes[prefix]; ok {
+	if state, ok := ndp.slaacPrefixes[prefix]; ok {
 		// As per RFC 4862 section 5.5.3.e, refresh prefix's SLAAC lifetimes.
-		ndp.refreshSLAACPrefixLifetimes(prefix, pl, vl)
+		ndp.refreshSLAACPrefixLifetimes(prefix, &state, pl, vl)
+		ndp.slaacPrefixes[prefix] = state
 		return
 	}
 
@@ -996,7 +1125,7 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 				panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for the deprecated SLAAC prefix %s", prefix))
 			}
 
-			ndp.deprecateSLAACAddress(state.ref)
+			ndp.deprecateSLAACAddress(state.stableAddrRef)
 		}),
 		invalidationTimer: tcpip.NewCancellableTimer(&ndp.nic.mu, func() {
 			state, ok := ndp.slaacPrefixes[prefix]
@@ -1006,6 +1135,7 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 
 			ndp.invalidateSLAACPrefix(prefix, state)
 		}),
+		tempAddrs:             make(map[tcpip.Address]tempSLAACAddrState),
 		maxGenerationAttempts: ndp.configs.AutoGenAddressConflictRetries + 1,
 	}
 
@@ -1035,7 +1165,47 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 		state.validUntil = now.Add(vl)
 	}
 
+	// If the address is assigned (DAD resolved), generate a temporary address.
+	if state.stableAddrRef.getKind() == permanent {
+		// Reset the generation attempts counter as we are starting the generation
+		// of a new address for the SLAAC prefix.
+		ndp.generateTempSLAACAddr(prefix, &state, true /* resetGenAttempts */)
+	}
+
 	ndp.slaacPrefixes[prefix] = state
+}
+
+// addSLAACAddr adds a SLAAC address to the NIC.
+//
+// The NIC that ndp belongs to MUST be locked.
+func (ndp *ndpState) addSLAACAddr(addr tcpip.AddressWithPrefix, configType networkEndpointConfigType, deprecated bool) *referencedNetworkEndpoint {
+	// If the nic already has this address, do nothing further.
+	if ndp.nic.hasPermanentAddrLocked(addr.Address) {
+		return nil
+	}
+
+	// Inform the integrator that we have a new SLAAC address.
+	ndpDisp := ndp.nic.stack.ndpDisp
+	if ndpDisp == nil {
+		return nil
+	}
+
+	if !ndpDisp.OnAutoGenAddress(ndp.nic.ID(), addr) {
+		// Informed by the integrator not to add the address.
+		return nil
+	}
+
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol:          header.IPv6ProtocolNumber,
+		AddressWithPrefix: addr,
+	}
+
+	ref, err := ndp.nic.addAddressLocked(protocolAddr, FirstPrimaryEndpoint, permanent, configType, deprecated)
+	if err != nil {
+		panic(fmt.Sprintf("ndp: error when adding SLAAC address %+v: %s", protocolAddr, err))
+	}
+
+	return ref
 }
 
 // generateSLAACAddr generates a SLAAC address for prefix.
@@ -1046,7 +1216,7 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 //
 // The NIC that ndp belongs to MUST be locked.
 func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixState) bool {
-	if r := state.ref; r != nil {
+	if r := state.stableAddrRef; r != nil {
 		panic(fmt.Sprintf("ndp: SLAAC prefix %s already has a permenant address %s", prefix, r.addrWithPrefix()))
 	}
 
@@ -1085,39 +1255,18 @@ func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixSt
 		return false
 	}
 
-	generatedAddr := tcpip.ProtocolAddress{
-		Protocol: header.IPv6ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(addrBytes),
-			PrefixLen: validPrefixLenForAutoGen,
-		},
+	generatedAddr := tcpip.AddressWithPrefix{
+		Address:   tcpip.Address(addrBytes),
+		PrefixLen: validPrefixLenForAutoGen,
 	}
 
-	// If the nic already has this address, do nothing further.
-	if ndp.nic.hasPermanentAddrLocked(generatedAddr.AddressWithPrefix.Address) {
-		return false
+	if ref := ndp.addSLAACAddr(generatedAddr, slaac, time.Since(state.preferredUntil) >= 0 /* deprecated */); ref != nil {
+		state.stableAddrRef = ref
+		state.generationAttempts++
+		return true
 	}
 
-	// Inform the integrator that we have a new SLAAC address.
-	ndpDisp := ndp.nic.stack.ndpDisp
-	if ndpDisp == nil {
-		return false
-	}
-
-	if !ndpDisp.OnAutoGenAddress(ndp.nic.ID(), generatedAddr.AddressWithPrefix) {
-		// Informed by the integrator not to add the address.
-		return false
-	}
-
-	deprecated := time.Since(state.preferredUntil) >= 0
-	ref, err := ndp.nic.addAddressLocked(generatedAddr, FirstPrimaryEndpoint, permanent, slaac, deprecated)
-	if err != nil {
-		panic(fmt.Sprintf("ndp: error when adding address %+v: %s", generatedAddr, err))
-	}
-
-	state.generationAttempts++
-	state.ref = ref
-	return true
+	return false
 }
 
 // regenerateSLAACAddr regenerates an address for a SLAAC prefix.
@@ -1143,24 +1292,167 @@ func (ndp *ndpState) regenerateSLAACAddr(prefix tcpip.Subnet) {
 	ndp.invalidateSLAACPrefix(prefix, state)
 }
 
+// generateTempSLAACAddr generates a new temporary SLAAC address.
+//
+// If resetGenAttempts is true, the prefix's generation counter will be reset.
+//
+// Returns true if a new address was generated.
+func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *slaacPrefixState, resetGenAttempts bool) bool {
+	// Are we configured to auto-generate new temporary global addresses for the
+	// prefix?
+	if !ndp.configs.AutoGenTempGlobalAddresses || prefix == header.IPv6LinkLocalPrefix.Subnet() {
+		return false
+	}
+
+	if resetGenAttempts {
+		prefixState.generationAttempts = 0
+		prefixState.maxGenerationAttempts = ndp.configs.AutoGenAddressConflictRetries + 1
+	}
+
+	// If we have already reached the maximum address generation attempts for the
+	// prefix, do not generate another address.
+	if prefixState.generationAttempts == prefixState.maxGenerationAttempts {
+		return false
+	}
+
+	stableAddr := prefixState.stableAddrRef.ep.ID().LocalAddress
+	now := time.Now()
+
+	// As per RFC 4941 section 3.3 step 4, the valid lifetime of a temporary
+	// address is the lower of the valid lifetime of the stable address or the
+	// maximum temporary address valid lifetime.
+	vl := ndp.configs.MaxTempAddrValidLifetime
+	if prefixState.validUntil != (time.Time{}) {
+		if prefixVL := prefixState.validUntil.Sub(now); vl > prefixVL {
+			vl = prefixVL
+		}
+	}
+
+	if vl <= 0 {
+		// Cannot create an address without a valid lifetime.
+		return false
+	}
+
+	// As per RFC 4941 section 3.3 step 4, the preferred lifetime of a temporary
+	// address is the lower of the preferred lifetime of the stable address or the
+	// maximum temporary address preferred lifetime - the temporary address desync
+	// factor.
+	pl := ndp.configs.MaxTempAddrPreferredLifetime - ndp.temporaryAddressDesyncFactor
+	if prefixState.preferredUntil != (time.Time{}) {
+		if prefixPL := prefixState.preferredUntil.Sub(now); pl > prefixPL {
+			// Respect the preferred lifetime of the prefix, as per RFC 4941 section
+			// 3.3 step 4.
+			pl = prefixPL
+		}
+	}
+
+	// As per RFC 4941 section 3.3 step 5, a temporary address is created only if
+	// the calculated preferred lifetime is greater than the advance regeneration
+	// duration. In particular, we MUST NOT create a temporary address with a zero
+	// Preferred Lifetime.
+	if pl <= ndp.configs.RegenAdvanceDuration {
+		return false
+	}
+
+	generatedAddr := header.GenerateTempIPv6SLAACAddr(ndp.temporaryIIDHistory[:], stableAddr)
+
+	// As per RFC RFC 4941 section 3.3 step 5, we MUST NOT create a temporary
+	// address with a zero preferred lifetime. The checks above ensure this
+	// so we know the address is not deprecated.
+	ref := ndp.addSLAACAddr(generatedAddr, slaacTemp, false /* deprecated */)
+	if ref == nil {
+		return false
+	}
+
+	state := tempSLAACAddrState{
+		deprecationTimer: tcpip.NewCancellableTimer(&ndp.nic.mu, func() {
+			prefixState, ok := ndp.slaacPrefixes[prefix]
+			if !ok {
+				panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for %s to deprecate temporary address %s", prefix, generatedAddr))
+			}
+
+			tempAddrState, ok := prefixState.tempAddrs[generatedAddr.Address]
+			if !ok {
+				panic(fmt.Sprintf("ndp: must have a tempAddr entry to deprecate temporary address %s", generatedAddr))
+			}
+
+			ndp.deprecateSLAACAddress(tempAddrState.ref)
+		}),
+		invalidationTimer: tcpip.NewCancellableTimer(&ndp.nic.mu, func() {
+			prefixState, ok := ndp.slaacPrefixes[prefix]
+			if !ok {
+				panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for %s to invalidate temporary address %s", prefix, generatedAddr))
+			}
+
+			tempAddrState, ok := prefixState.tempAddrs[generatedAddr.Address]
+			if !ok {
+				panic(fmt.Sprintf("ndp: must have a tempAddr entry to invalidate temporary address %s", generatedAddr))
+			}
+
+			ndp.invalidateTempSLAACAddr(prefixState.tempAddrs, generatedAddr.Address, tempAddrState)
+		}),
+		regenTimer: tcpip.NewCancellableTimer(&ndp.nic.mu, func() {
+			prefixState, ok := ndp.slaacPrefixes[prefix]
+			if !ok {
+				panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for %s to regenerate temporary address after %s", prefix, generatedAddr))
+			}
+
+			tempAddrState, ok := prefixState.tempAddrs[generatedAddr.Address]
+			if !ok {
+				panic(fmt.Sprintf("ndp: must have a tempAddr entry to regenerate temporary address after %s", generatedAddr))
+			}
+
+			// If an address has already been regenerated for this address, don't
+			// regenerate another address.
+			if tempAddrState.regenerated {
+				return
+			}
+
+			// Reset the generation attempts counter as we are starting the generation
+			// of a new address for the SLAAC prefix.
+			tempAddrState.regenerated = ndp.generateTempSLAACAddr(prefix, &prefixState, true /* resetGenAttempts */)
+			prefixState.tempAddrs[generatedAddr.Address] = tempAddrState
+			ndp.slaacPrefixes[prefix] = prefixState
+		}),
+		createdAt: now,
+		ref:       ref,
+	}
+
+	state.deprecationTimer.Reset(pl)
+	state.invalidationTimer.Reset(vl)
+	state.regenTimer.Reset(pl - ndp.configs.RegenAdvanceDuration)
+
+	prefixState.generationAttempts++
+	prefixState.tempAddrs[generatedAddr.Address] = state
+
+	return true
+}
+
+// regenerateTempSLAACAddr regenerates a temporary address for a SLAAC prefix.
+//
+// The NIC that ndp belongs to MUST be locked.
+func (ndp *ndpState) regenerateTempSLAACAddr(prefix tcpip.Subnet, resetGenAttempts bool) {
+	state, ok := ndp.slaacPrefixes[prefix]
+	if !ok {
+		panic(fmt.Sprintf("ndp: SLAAC prefix state not found to regenerate temporary address for %s", prefix))
+	}
+
+	ndp.generateTempSLAACAddr(prefix, &state, resetGenAttempts)
+	ndp.slaacPrefixes[prefix] = state
+}
+
 // refreshSLAACPrefixLifetimes refreshes the lifetimes of a SLAAC prefix.
 //
 // pl is the new preferred lifetime. vl is the new valid lifetime.
 //
 // The NIC that ndp belongs to MUST be locked.
-func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, pl, vl time.Duration) {
-	prefixState, ok := ndp.slaacPrefixes[prefix]
-	if !ok {
-		panic(fmt.Sprintf("ndp: SLAAC prefix state not found to refresh lifetimes for %s", prefix))
-	}
-	defer func() { ndp.slaacPrefixes[prefix] = prefixState }()
-
+func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, prefixState *slaacPrefixState, pl, vl time.Duration) {
 	// If the preferred lifetime is zero, then the prefix should be deprecated.
 	deprecated := pl == 0
 	if deprecated {
-		ndp.deprecateSLAACAddress(prefixState.ref)
+		ndp.deprecateSLAACAddress(prefixState.stableAddrRef)
 	} else {
-		prefixState.ref.deprecated = false
+		prefixState.stableAddrRef.deprecated = false
 	}
 
 	// If prefix was preferred for some finite lifetime before, stop the
@@ -1190,36 +1482,118 @@ func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, pl, vl tim
 	//
 	// 3) Otherwise, reset the valid lifetime of the prefix to 2 hours.
 
-	// Handle the infinite valid lifetime separately as we do not keep a timer in
-	// this case.
 	if vl >= header.NDPInfiniteLifetime {
+		// Handle the infinite valid lifetime separately as we do not keep a timer
+		// in this case.
 		prefixState.invalidationTimer.StopLocked()
 		prefixState.validUntil = time.Time{}
+	} else {
+		var effectiveVl time.Duration
+		var rl time.Duration
+
+		// If the prefix was originally set to be valid forever, assume the
+		// remaining time to be the maximum possible value.
+		if prefixState.validUntil == (time.Time{}) {
+			rl = header.NDPInfiniteLifetime
+		} else {
+			rl = time.Until(prefixState.validUntil)
+		}
+
+		if vl > MinPrefixInformationValidLifetimeForUpdate || vl > rl {
+			effectiveVl = vl
+		} else if rl > MinPrefixInformationValidLifetimeForUpdate {
+			effectiveVl = MinPrefixInformationValidLifetimeForUpdate
+		}
+
+		if effectiveVl != 0 {
+			prefixState.invalidationTimer.StopLocked()
+			prefixState.invalidationTimer.Reset(effectiveVl)
+			prefixState.validUntil = now.Add(effectiveVl)
+		}
+	}
+
+	// If DAD is not yet complete on the stable address, there is no need to do
+	// work with temporary addresses.
+	if prefixState.stableAddrRef.getKind() != permanent {
 		return
 	}
 
-	var effectiveVl time.Duration
-	var rl time.Duration
+	// Note, we do not need to update the entries in the temporary address map
+	// after updating the timers because the timers are held as pointers.
+	var regenForAddr tcpip.Address
+	allAddressesRegenerated := true
+	for tempAddr, tempAddrState := range prefixState.tempAddrs {
+		// As per RFC 4941 section 3.3 step 4, the valid lifetime of a temporary
+		// address is the lower of the valid lifetime of the stable address or the
+		// maximum temporary address valid lifetime. Note, the valid lifetime of a
+		// temporary address is relative to the address's creation time.
+		validUntil := tempAddrState.createdAt.Add(ndp.configs.MaxTempAddrValidLifetime)
+		if prefixState.validUntil != (time.Time{}) && validUntil.Sub(prefixState.validUntil) > 0 {
+			validUntil = prefixState.validUntil
+		}
 
-	// If the prefix was originally set to be valid forever, assume the remaining
-	// time to be the maximum possible value.
-	if prefixState.validUntil == (time.Time{}) {
-		rl = header.NDPInfiniteLifetime
-	} else {
-		rl = time.Until(prefixState.validUntil)
+		// If the address is no longer valid, invalidate it immediately. Otherwise,
+		// reset the invalidation timer.
+		newValidLifetime := validUntil.Sub(now)
+		if newValidLifetime <= 0 {
+			ndp.invalidateTempSLAACAddr(prefixState.tempAddrs, tempAddr, tempAddrState)
+			continue
+		}
+		tempAddrState.invalidationTimer.StopLocked()
+		tempAddrState.invalidationTimer.Reset(newValidLifetime)
+
+		// As per RFC 4941 section 3.3 step 4, the preferred lifetime of a temporary
+		// address is the lower of the preferred lifetime of the stable address or
+		// the maximum temporary address preferred lifetime - the temporary address
+		// desync factor. Note, the preferred lifetime of a temporary address is
+		// relative to the address's creation time.
+		preferredUntil := tempAddrState.createdAt.Add(ndp.configs.MaxTempAddrPreferredLifetime - ndp.temporaryAddressDesyncFactor)
+		if prefixState.preferredUntil != (time.Time{}) && preferredUntil.Sub(prefixState.preferredUntil) > 0 {
+			preferredUntil = prefixState.preferredUntil
+		}
+
+		// If the address is no longer preferred, deprecate it immediately.
+		// Otherwise, reset the deprecation timer.
+		newPreferredLifetime := preferredUntil.Sub(now)
+		tempAddrState.deprecationTimer.StopLocked()
+		if newPreferredLifetime <= 0 {
+			ndp.deprecateSLAACAddress(tempAddrState.ref)
+		} else {
+			tempAddrState.ref.deprecated = false
+			tempAddrState.deprecationTimer.Reset(newPreferredLifetime)
+		}
+
+		tempAddrState.regenTimer.StopLocked()
+		if tempAddrState.regenerated {
+		} else {
+			allAddressesRegenerated = false
+
+			if newPreferredLifetime <= ndp.configs.RegenAdvanceDuration {
+				// The new preferred lifetime is less than the advance regeneration
+				// duration so regenerate an address for this temporary address
+				// immediately after we finish iterating over the temporary addresses.
+				regenForAddr = tempAddr
+			} else {
+				tempAddrState.regenTimer.Reset(newPreferredLifetime - ndp.configs.RegenAdvanceDuration)
+			}
+		}
 	}
 
-	if vl > MinPrefixInformationValidLifetimeForUpdate || vl > rl {
-		effectiveVl = vl
-	} else if rl <= MinPrefixInformationValidLifetimeForUpdate {
-		return
-	} else {
-		effectiveVl = MinPrefixInformationValidLifetimeForUpdate
+	// Generate a new temporary address if all of the existing temporary addresses
+	// have been regenerated, or we need to immediately regenerate an address
+	// due to an update in preferred lifetime.
+	//
+	// If each temporay address has already been regenerated, no new temporary
+	// address will be generated. To ensure continuation of temporary SLAAC
+	// addresses, we manually try to regenerate an address here.
+	if len(regenForAddr) != 0 || allAddressesRegenerated {
+		// Reset the generation attempts counter as we are starting the generation
+		// of a new address for the SLAAC prefix.
+		if state, ok := prefixState.tempAddrs[regenForAddr]; ndp.generateTempSLAACAddr(prefix, prefixState, true /* resetGenAttempts */) && ok {
+			state.regenerated = true
+			prefixState.tempAddrs[regenForAddr] = state
+		}
 	}
-
-	prefixState.invalidationTimer.StopLocked()
-	prefixState.invalidationTimer.Reset(effectiveVl)
-	prefixState.validUntil = now.Add(effectiveVl)
 }
 
 // deprecateSLAACAddress marks ref as deprecated and notifies the stack's NDP
@@ -1243,11 +1617,11 @@ func (ndp *ndpState) deprecateSLAACAddress(ref *referencedNetworkEndpoint) {
 //
 // The NIC that ndp belongs to MUST be locked.
 func (ndp *ndpState) invalidateSLAACPrefix(prefix tcpip.Subnet, state slaacPrefixState) {
-	if r := state.ref; r != nil {
+	if r := state.stableAddrRef; r != nil {
 		// Since we are already invalidating the prefix, do not invalidate the
 		// prefix when removing the address.
-		if err := ndp.nic.removePermanentIPv6EndpointLocked(r, false /* allowSLAACPrefixInvalidation */); err != nil {
-			panic(fmt.Sprintf("ndp: removePermanentIPv6EndpointLocked(%s, false): %s", r.addrWithPrefix(), err))
+		if err := ndp.nic.removePermanentIPv6EndpointLocked(r, false /* allowSLAACInvalidation */); err != nil {
+			panic(fmt.Sprintf("ndp: error removing stable SLAAC address %s: %s", r.addrWithPrefix(), err))
 		}
 	}
 
@@ -1265,14 +1639,14 @@ func (ndp *ndpState) cleanupSLAACAddrResourcesAndNotify(addr tcpip.AddressWithPr
 
 	prefix := addr.Subnet()
 	state, ok := ndp.slaacPrefixes[prefix]
-	if !ok || state.ref == nil || addr.Address != state.ref.ep.ID().LocalAddress {
+	if !ok || state.stableAddrRef == nil || addr.Address != state.stableAddrRef.ep.ID().LocalAddress {
 		return
 	}
 
 	if !invalidatePrefix {
 		// If the prefix is not being invalidated, disassociate the address from the
 		// prefix and do nothing further.
-		state.ref = nil
+		state.stableAddrRef = nil
 		ndp.slaacPrefixes[prefix] = state
 		return
 	}
@@ -1286,9 +1660,66 @@ func (ndp *ndpState) cleanupSLAACAddrResourcesAndNotify(addr tcpip.AddressWithPr
 //
 // The NIC that ndp belongs to MUST be locked.
 func (ndp *ndpState) cleanupSLAACPrefixResources(prefix tcpip.Subnet, state slaacPrefixState) {
+	// Invalidate all temporary addresses.
+	for tempAddr, tempAddrState := range state.tempAddrs {
+		ndp.invalidateTempSLAACAddr(state.tempAddrs, tempAddr, tempAddrState)
+	}
+
+	state.stableAddrRef = nil
 	state.deprecationTimer.StopLocked()
 	state.invalidationTimer.StopLocked()
 	delete(ndp.slaacPrefixes, prefix)
+}
+
+// invalidateTempSLAACAddr invalidates a temporary SLAAC address.
+//
+// The NIC that ndp belongs to MUST be locked.
+func (ndp *ndpState) invalidateTempSLAACAddr(tempAddrs map[tcpip.Address]tempSLAACAddrState, tempAddr tcpip.Address, tempAddrState tempSLAACAddrState) {
+	// Since we are already invalidating the address, do not invalidate the
+	// address when removing the address.
+	if err := ndp.nic.removePermanentIPv6EndpointLocked(tempAddrState.ref, false /* allowSLAACInvalidation */); err != nil {
+		panic(fmt.Sprintf("error removing temporary SLAAC address %s: %s", tempAddrState.ref.addrWithPrefix(), err))
+	}
+
+	ndp.cleanupTempSLAACAddrResources(tempAddrs, tempAddr, tempAddrState)
+}
+
+// cleanupTempSLAACAddrResourcesAndNotify cleans up an invalidated temporary
+// SLAAC address's resources from ndp.
+//
+// The NIC that ndp belongs to MUST be locked.
+func (ndp *ndpState) cleanupTempSLAACAddrResourcesAndNotify(addr tcpip.AddressWithPrefix, invalidateAddr bool) {
+	if ndpDisp := ndp.nic.stack.ndpDisp; ndpDisp != nil {
+		ndpDisp.OnAutoGenAddressInvalidated(ndp.nic.ID(), addr)
+	}
+
+	if !invalidateAddr {
+		return
+	}
+
+	prefix := addr.Subnet()
+	state, ok := ndp.slaacPrefixes[prefix]
+	if !ok {
+		panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry to clean up temp addr %s resources", addr))
+	}
+
+	tempAddrState, ok := state.tempAddrs[addr.Address]
+	if !ok {
+		panic(fmt.Sprintf("ndp: must have a tempAddr entry to clean up temp addr %s resources", addr))
+	}
+
+	ndp.cleanupTempSLAACAddrResources(state.tempAddrs, addr.Address, tempAddrState)
+}
+
+// cleanupTempSLAACAddrResourcesAndNotify cleans up a temporary SLAAC address's
+// timers and entry.
+//
+// The NIC that ndp belongs to MUST be locked.
+func (ndp *ndpState) cleanupTempSLAACAddrResources(tempAddrs map[tcpip.Address]tempSLAACAddrState, tempAddr tcpip.Address, tempAddrState tempSLAACAddrState) {
+	tempAddrState.deprecationTimer.StopLocked()
+	tempAddrState.invalidationTimer.StopLocked()
+	tempAddrState.regenTimer.StopLocked()
+	delete(tempAddrs, tempAddr)
 }
 
 // cleanupState cleans up ndp's state.
@@ -1449,4 +1880,14 @@ func (ndp *ndpState) stopSolicitingRouters() {
 
 	ndp.rtrSolicitTimer.Stop()
 	ndp.rtrSolicitTimer = nil
+}
+
+// initializeTempAddrState initializes state related to temporary SLAAC
+// addresses.
+func (ndp *ndpState) initializeTempAddrState() {
+	header.InitialTempIID(ndp.temporaryIIDHistory[:], ndp.nic.stack.tempIIDSeed, ndp.nic.ID())
+
+	if MaxDesyncFactor != 0 {
+		ndp.temporaryAddressDesyncFactor = time.Duration(rand.Int63n(int64(MaxDesyncFactor)))
+	}
 }
