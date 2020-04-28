@@ -464,6 +464,10 @@ type Stack struct {
 	// (IIDs) as outlined by RFC 7217.
 	opaqueIIDOpts OpaqueInterfaceIdentifierOptions
 
+	// tempIIDSeed is used to seed the initial temporary interface identifier
+	// history value used to generate IIDs for temporary SLAAC addresses.
+	tempIIDSeed []byte
+
 	// forwarder holds the packets that wait for their link-address resolutions
 	// to complete, and forwards them when each resolution is done.
 	forwarder *forwardQueue
@@ -541,6 +545,21 @@ type Options struct {
 	//
 	// RandSource must be thread-safe.
 	RandSource mathrand.Source
+
+	// TempIIDSeed is used to seed the initial temporary interface identifier
+	// history value used to generate IIDs for temporary SLAAC addresses.
+	//
+	// Temporary SLAAC adresses are short-lived addresses which are unpredictable
+	// and random from the perspective of other nodes on the network. It is
+	// recommended that the seed be a random byte buffer of at least
+	// header.IIDSize bytes to make sure that temporary SLAAC addresses are
+	// sufficiently random. It should follow minimum randomness requirements for
+	// security as outlined by RFC 4086.
+	//
+	// Note: using a nil value, the same seed across netstack program runs, or a
+	// seed that is too small would reduce randomness and increase predictability,
+	// defeating the purpose of temporary SLAAC addresses.
+	TempIIDSeed []byte
 }
 
 // TransportEndpointInfo holds useful information about a transport endpoint
@@ -664,6 +683,7 @@ func New(opts Options) *Stack {
 		uniqueIDGenerator:    opts.UniqueID,
 		ndpDisp:              opts.NDPDisp,
 		opaqueIIDOpts:        opts.OpaqueIIDOpts,
+		tempIIDSeed:          opts.TempIIDSeed,
 		forwarder:            newForwardQueue(),
 		randomGenerator:      mathrand.New(randSrc),
 	}

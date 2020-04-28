@@ -17,6 +17,7 @@ package header
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -443,5 +444,56 @@ func ScopeForIPv6Address(addr tcpip.Address) (IPv6AddressScope, *tcpip.Error) {
 
 	default:
 		return GlobalScope, nil
+	}
+}
+
+// InitialTempIID generates the initial temporary IID history value to generate
+// temporary SLAAC addresses with.
+//
+// Panics if initialTempIIDHistory is not at least IIDSize bytes.
+func InitialTempIID(initialTempIIDHistory []byte, seed []byte, nicID tcpip.NICID) {
+	h := sha256.New()
+	// h.Write never returns an error.
+	h.Write(seed)
+	var nicIDBuf [4]byte
+	binary.BigEndian.PutUint32(nicIDBuf[:], uint32(nicID))
+	h.Write(nicIDBuf[:])
+
+	var sumBuf [sha256.Size]byte
+	sum := h.Sum(sumBuf[:0])
+
+	if n := copy(initialTempIIDHistory, sum[sha256.Size-IIDSize:]); n != IIDSize {
+		panic(fmt.Sprintf("copied %d bytes, expected %d bytes", n, IIDSize))
+	}
+}
+
+// GenerateTempIPv6SLAACAddr generates a temporary SLAAC IPv6 address for an
+// associated stable/permanent SLAAC address.
+//
+// GenerateTempIPv6SLAACAddr will update the temporary IID history value to be
+// used when generating a new temporary IID.
+//
+// Panics if tempIIDHistory is not at least IIDSize bytes.
+func GenerateTempIPv6SLAACAddr(tempIIDHistory []byte, stableAddr tcpip.Address) tcpip.AddressWithPrefix {
+	addrBytes := []byte(stableAddr)
+	h := sha256.New()
+	h.Write(tempIIDHistory)
+	h.Write(addrBytes[IIDOffsetInIPv6Address:])
+	var sumBuf [sha256.Size]byte
+	sum := h.Sum(sumBuf[:0])
+
+	// The rightmost 64 bits of sum are saved for the next iteration.
+	if n := copy(tempIIDHistory, sum[sha256.Size-IIDSize:]); n != IIDSize {
+		panic(fmt.Sprintf("copied %d bytes, expected %d bytes", n, IIDSize))
+	}
+
+	// The leftmost 64 bits of sum is used as the IID.
+	if n := copy(addrBytes[IIDOffsetInIPv6Address:], sum); n != IIDSize {
+		panic(fmt.Sprintf("copied %d IID bytes, expected %d bytes", n, IIDSize))
+	}
+
+	return tcpip.AddressWithPrefix{
+		Address:   tcpip.Address(addrBytes),
+		PrefixLen: IIDOffsetInIPv6Address * 8,
 	}
 }
