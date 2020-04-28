@@ -495,7 +495,7 @@ type FilesystemImpl interface {
 	// BoundEndpointAt returns the Unix socket endpoint bound at the path rp.
 	//
 	// - If a non-socket file exists at rp, then BoundEndpointAt returns ECONNREFUSED.
-	BoundEndpointAt(ctx context.Context, rp *ResolvingPath) (transport.BoundEndpoint, error)
+	BoundEndpointAt(ctx context.Context, rp *ResolvingPath, opts BoundEndpointOptions) (transport.BoundEndpoint, error)
 
 	// PrependPath prepends a path from vd to vd.Mount().Root() to b.
 	//

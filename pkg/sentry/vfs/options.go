@@ -151,6 +151,24 @@ type SetStatOptions struct {
 	Stat linux.Statx
 }
 
+// BoundEndpointOptions contains options to VirtualFilesystem.BoundEndpointAt()
+// and FilesystemImpl.BoundEndpointAt().
+type BoundEndpointOptions struct {
+	// Addr is the path of the file whose socket endpoint is being retrieved.
+	// It is generally irrelevant: most endpoints are stored at a dentry that
+	// was created through a bind syscall, so the path can be stored on creation.
+	// However, if the endpoint was created in FilesystemImpl.BoundEndpointAt(),
+	// then we may not know what the original bind address was.
+	//
+	// For example, if connect(2) is called with address "foo" which corresponds
+	// a remote named socket in goferfs, we need to generate an endpoint wrapping
+	// that file. In this case, we can use Addr to set the endpoint address to
+	// "foo". Note that Addr is only a best-effort attempt--we still do not know
+	// the exact address that was used on the remote fs to bind the socket (it
+	// may have been "foo", "./foo", etc.).
+	Addr string
+}
+
 // GetxattrOptions contains options to VirtualFilesystem.GetxattrAt(),
 // FilesystemImpl.GetxattrAt(), FileDescription.Getxattr(), and
 // FileDescriptionImpl.Getxattr().

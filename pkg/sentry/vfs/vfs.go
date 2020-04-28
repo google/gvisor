@@ -351,33 +351,6 @@ func (vfs *VirtualFilesystem) MknodAt(ctx context.Context, creds *auth.Credentia
 	}
 }
 
-// BoundEndpointAt gets the bound endpoint at the given path, if one exists.
-func (vfs *VirtualFilesystem) BoundEndpointAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) (transport.BoundEndpoint, error) {
-	if !pop.Path.Begin.Ok() {
-		if pop.Path.Absolute {
-			return nil, syserror.ECONNREFUSED
-		}
-		return nil, syserror.ENOENT
-	}
-	rp := vfs.getResolvingPath(creds, pop)
-	for {
-		bep, err := rp.mount.fs.impl.BoundEndpointAt(ctx, rp)
-		if err == nil {
-			vfs.putResolvingPath(rp)
-			return bep, nil
-		}
-		if checkInvariants {
-			if rp.canHandleError(err) && rp.Done() {
-				panic(fmt.Sprintf("%T.BoundEndpointAt() consumed all path components and returned %v", rp.mount.fs.impl, err))
-			}
-		}
-		if !rp.handleError(err) {
-			vfs.putResolvingPath(rp)
-			return nil, err
-		}
-	}
-}
-
 // OpenAt returns a FileDescription providing access to the file at the given
 // path. A reference is taken on the returned FileDescription.
 func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *OpenOptions) (*FileDescription, error) {
@@ -671,6 +644,33 @@ func (vfs *VirtualFilesystem) UnlinkAt(ctx context.Context, creds *auth.Credenti
 		if !rp.handleError(err) {
 			vfs.putResolvingPath(rp)
 			return err
+		}
+	}
+}
+
+// BoundEndpointAt gets the bound endpoint at the given path, if one exists.
+func (vfs *VirtualFilesystem) BoundEndpointAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *BoundEndpointOptions) (transport.BoundEndpoint, error) {
+	if !pop.Path.Begin.Ok() {
+		if pop.Path.Absolute {
+			return nil, syserror.ECONNREFUSED
+		}
+		return nil, syserror.ENOENT
+	}
+	rp := vfs.getResolvingPath(creds, pop)
+	for {
+		bep, err := rp.mount.fs.impl.BoundEndpointAt(ctx, rp, *opts)
+		if err == nil {
+			vfs.putResolvingPath(rp)
+			return bep, nil
+		}
+		if checkInvariants {
+			if rp.canHandleError(err) && rp.Done() {
+				panic(fmt.Sprintf("%T.BoundEndpointAt() consumed all path components and returned %v", rp.mount.fs.impl, err))
+			}
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return nil, err
 		}
 	}
 }
