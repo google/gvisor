@@ -631,11 +631,14 @@ INSTANTIATE_TEST_SUITE_P(
             "namednonblocking",
             [](int fds[2], bool* is_blocking, bool* is_namedpipe) {
               // Create a new file-based pipe (non-blocking).
-              auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
-              ASSERT_THAT(unlink(file.path().c_str()), SyscallSucceeds());
-              SKIP_IF(mkfifo(file.path().c_str(), 0644) != 0);
-              fds[0] = open(file.path().c_str(), O_NONBLOCK | O_RDONLY);
-              fds[1] = open(file.path().c_str(), O_NONBLOCK | O_WRONLY);
+              std::string path;
+              {
+                auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+                path = file.path();
+              }
+              SKIP_IF(mkfifo(path.c_str(), 0644) != 0);
+              fds[0] = open(path.c_str(), O_NONBLOCK | O_RDONLY);
+              fds[1] = open(path.c_str(), O_NONBLOCK | O_WRONLY);
               MaybeSave();
               *is_blocking = false;
               *is_namedpipe = true;
@@ -645,13 +648,15 @@ INSTANTIATE_TEST_SUITE_P(
             "namedblocking",
             [](int fds[2], bool* is_blocking, bool* is_namedpipe) {
               // Create a new file-based pipe (blocking).
-              auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
-              ASSERT_THAT(unlink(file.path().c_str()), SyscallSucceeds());
-              SKIP_IF(mkfifo(file.path().c_str(), 0644) != 0);
-              ScopedThread t([&file, &fds]() {
-                fds[1] = open(file.path().c_str(), O_WRONLY);
-              });
-              fds[0] = open(file.path().c_str(), O_RDONLY);
+              std::string path;
+              {
+                auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+                path = file.path();
+              }
+              SKIP_IF(mkfifo(path.c_str(), 0644) != 0);
+              ScopedThread t(
+                  [&path, &fds]() { fds[1] = open(path.c_str(), O_WRONLY); });
+              fds[0] = open(path.c_str(), O_RDONLY);
               t.Join();
               MaybeSave();
               *is_blocking = true;
