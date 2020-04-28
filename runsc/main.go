@@ -330,7 +330,7 @@ func main() {
 		log.Infof("Exiting with status: %v", ws)
 		if ws.Signaled() {
 			// No good way to return it, emulate what the shell does. Maybe raise
-			// signall to self?
+			// signal to self?
 			os.Exit(128 + int(ws.Signal()))
 		}
 		os.Exit(ws.ExitStatus())
