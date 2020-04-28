@@ -120,7 +120,7 @@ func (g *Generator) writeHeader() error {
 
 	// Emit build tags.
 	if t := tags.Aggregate(g.inputs); len(t) > 0 {
-		b.emit(strings.Join(t.Lines(), "\n"))
+		b.emit(strings.Join(t.AggregateLines(), "\n"))
 		b.emit("\n\n")
 	}
 

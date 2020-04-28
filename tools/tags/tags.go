@@ -44,6 +44,40 @@ func (and AndSet) Lines() (ls []string) {
 	return
 }
 
+// AggregateLines aggregates all tags from a set of files into one line, and remove duplicate tags.
+func (and AndSet) AggregateLines() (ls []string) {
+	var tags []string
+
+	// Aggregates all tags from a set of files, and remove duplicate tags.
+	for _, or := range and {
+		for i := 0; i < len(or); i++ {
+			dup := 0
+
+			for _, tag := range tags {
+				if tag == or[i] {
+					dup = 1
+					break
+				}
+			}
+
+			if dup == 0 {
+				tags = append(tags, or[i])
+			}
+		}
+	}
+
+	// Return one line.
+	line := "// +build"
+	for _, tag := range tags {
+		line += " "
+		line += tag
+	}
+
+	ls = append(ls, line)
+
+	return
+}
+
 // Join joins this AndSet with another.
 func (and AndSet) Join(other AndSet) AndSet {
 	return append(and, other...)

@@ -230,7 +230,7 @@ func main() {
 
 	// Emit build tags.
 	if t := tags.Aggregate(flag.Args()); len(t) > 0 {
-		fmt.Fprintf(outputFile, "%s\n\n", strings.Join(t.Lines(), "\n"))
+		fmt.Fprintf(outputFile, "%s\n\n", strings.Join(t.AggregateLines(), "\n"))
 	}
 
 	// Emit the package name.
