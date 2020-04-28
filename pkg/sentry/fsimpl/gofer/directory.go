@@ -15,6 +15,7 @@
 package gofer
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -22,6 +23,8 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -59,28 +62,52 @@ func (d *dentry) cacheNegativeLookupLocked(name string) {
 	d.children[name] = nil
 }
 
-// createSyntheticDirectory creates a synthetic directory with the given name
+type createSyntheticOpts struct {
+	name string
+	mode linux.FileMode
+	kuid auth.KUID
+	kgid auth.KGID
+
+	// The endpoint for a synthetic socket. endpoint should be nil if the file
+	// being created is not a socket.
+	endpoint transport.BoundEndpoint
+
+	// pipe should be nil if the file being created is not a pipe.
+	pipe *pipe.VFSPipe
+}
+
+// createSyntheticChildLocked creates a synthetic file with the given name
 // in d.
 //
 // Preconditions: d.dirMu must be locked. d.isDir(). d does not already contain
 // a child with the given name.
-func (d *dentry) createSyntheticDirectoryLocked(name string, mode linux.FileMode, kuid auth.KUID, kgid auth.KGID) {
+func (d *dentry) createSyntheticChildLocked(opts *createSyntheticOpts) {
 	d2 := &dentry{
 		refs:      1, // held by d
 		fs:        d.fs,
-		mode:      uint32(mode) | linux.S_IFDIR,
-		uid:       uint32(kuid),
-		gid:       uint32(kgid),
+		mode:      uint32(opts.mode),
+		uid:       uint32(opts.kuid),
+		gid:       uint32(opts.kgid),
 		blockSize: usermem.PageSize, // arbitrary
 		handle: handle{
 			fd: -1,
 		},
 		nlink: uint32(2),
 	}
+	switch opts.mode.FileType() {
+	case linux.S_IFDIR:
+		// Nothing else needs to be done.
+	case linux.S_IFSOCK:
+		d2.endpoint = opts.endpoint
+	case linux.S_IFIFO:
+		d2.pipe = opts.pipe
+	default:
+		panic(fmt.Sprintf("failed to create synthetic file of unrecognized type: %v", opts.mode.FileType()))
+	}
 	d2.pf.dentry = d2
 	d2.vfsd.Init(d2)
 
-	d.cacheNewChildLocked(d2, name)
+	d.cacheNewChildLocked(d2, opts.name)
 	d.syntheticChildren++
 }
 

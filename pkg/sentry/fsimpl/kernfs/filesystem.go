@@ -766,7 +766,7 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 }
 
 // BoundEndpointAt implements FilesystemImpl.BoundEndpointAt.
-func (fs *Filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath) (transport.BoundEndpoint, error) {
+func (fs *Filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.BoundEndpointOptions) (transport.BoundEndpoint, error) {
 	fs.mu.RLock()
 	_, _, err := fs.walkExistingLocked(ctx, rp)
 	fs.mu.RUnlock()
