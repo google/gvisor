@@ -274,7 +274,7 @@ const (
 func (s *State) PtraceGetRegSet(regset uintptr, dst io.Writer, maxlen int) (int, error) {
 	switch regset {
 	case _NT_PRSTATUS:
-		if maxlen < ptraceRegsSize {
+		if maxlen < registersSize {
 			return 0, syserror.EFAULT
 		}
 		return s.PtraceGetRegs(dst)
@@ -287,7 +287,7 @@ func (s *State) PtraceGetRegSet(regset uintptr, dst io.Writer, maxlen int) (int,
 func (s *State) PtraceSetRegSet(regset uintptr, src io.Reader, maxlen int) (int, error) {
 	switch regset {
 	case _NT_PRSTATUS:
-		if maxlen < ptraceRegsSize {
+		if maxlen < registersSize {
 			return 0, syserror.EFAULT
 		}
 		return s.PtraceSetRegs(src)
