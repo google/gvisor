@@ -8,6 +8,7 @@ package(
 doc(
     name = "index",
     src = "README.md",
+    category = "Project",
     permalink = "/docs/",
     weight = "0",
 )
@@ -18,13 +19,6 @@ doc(
     category = "Project",
     permalink = "/roadmap/",
     weight = "10",
-)
-
-doc(
-    name = "basics",
-    src = "basics.md",
-    category = "Project",
-    permalink = "/docs/basics/",
 )
 
 doc(
