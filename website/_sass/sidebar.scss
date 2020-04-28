@@ -7,6 +7,7 @@ $sidebar-hover-border-color: #66bb6a;
   ul.sidebar-nav {
     list-style-type: none;
     padding: 0;
+    transition: height 0.01s;
 
     li {
       &.sidebar-nav-heading {
