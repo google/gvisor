@@ -1,6 +1,0 @@
-_site
-node_modules
-content/docs/user_guide/compatibility/linux/
-content/.jekyll-cache/
-syscalls.json
-.sass-cache/

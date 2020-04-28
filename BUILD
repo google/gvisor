@@ -1,8 +1,47 @@
 load("//tools:defs.bzl", "build_test", "gazelle", "go_path")
+load("//website:defs.bzl", "doc")
 
 package(licenses = ["notice"])
 
 exports_files(["LICENSE"])
+
+doc(
+    name = "contributing",
+    src = "CONTRIBUTING.md",
+    category = "Project",
+    permalink = "/contributing/",
+    visibility = ["//website:__pkg__"],
+    weight = "20",
+)
+
+doc(
+    name = "security",
+    src = "SECURITY.md",
+    category = "Project",
+    permalink = "/security/",
+    visibility = ["//website:__pkg__"],
+    weight = "30",
+)
+
+doc(
+    name = "governance",
+    src = "GOVERNANCE.md",
+    category = "Project",
+    permalink = "/community/governance/",
+    subcategory = "Community",
+    visibility = ["//website:__pkg__"],
+    weight = "91",
+)
+
+doc(
+    name = "code_of_conduct",
+    src = "CODE_OF_CONDUCT.md",
+    category = "Project",
+    permalink = "/community/code_of_conduct/",
+    subcategory = "Community",
+    visibility = ["//website:__pkg__"],
+    weight = "99",
+)
 
 # The sandbox filegroup is used for sandbox-internal dependencies.
 package_group(

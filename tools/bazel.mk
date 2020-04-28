@@ -34,6 +34,14 @@ FULL_DOCKER_RUN_OPTIONS := $(DOCKER_RUN_OPTIONS)
 FULL_DOCKER_RUN_OPTIONS += -v "$(BAZEL_CACHE):$(BAZEL_CACHE)"
 FULL_DOCKER_RUN_OPTIONS += -v "$(GCLOUD_CONFIG):$(GCLOUD_CONFIG)"
 FULL_DOCKER_RUN_OPTIONS += -v "$(DOCKER_SOCKET):$(DOCKER_SOCKET)"
+DOCKER_GROUP := $(shell stat -c '%g' $(DOCKER_SOCKET))
+ifneq ($(GID),$(DOCKER_GROUP))
+USERADD_OPTIONS := --groups $(DOCKER_GROUP)
+DOCKER_GROUP_OPTIONS := --group-add $(DOCKER_GROUP)
+else
+USERADD_OPTIONS :=
+DOCKER_GROUP_OPTIONS :=
+endif
 
 ##
 ## Bazel helpers.
@@ -51,7 +59,7 @@ FULL_DOCKER_RUN_OPTIONS += -v "$(DOCKER_SOCKET):$(DOCKER_SOCKET)"
 bazel-server-start: load-default ## Starts the bazel server.
 	docker run -d --rm \
 	        --name $(DOCKER_NAME) \
-		--user 0:0 \
+		--user 0:0 $(DOCKER_GROUP_OPTIONS) \
 		-v "$(CURDIR):$(CURDIR)" \
 		--workdir "$(CURDIR)" \
 		--tmpfs /tmp:rw,exec \
@@ -59,7 +67,7 @@ bazel-server-start: load-default ## Starts the bazel server.
 		$(FULL_DOCKER_RUN_OPTIONS) \
 		gvisor.dev/images/default \
 		sh -c "groupadd --gid $(GID) --non-unique $(USER) && \
-		       useradd --uid $(UID) --non-unique --no-create-home --gid $(GID) -d $(HOME) $(USER) && \
+		       useradd --uid $(UID) --non-unique --no-create-home --gid $(GID) $(USERADD_OPTIONS) -d $(HOME) $(USER) && \
 	               bazel version && \
 		       while :; do sleep 3600; done"
 	@while :; do if docker logs $(DOCKER_NAME) 2>/dev/null | grep "Build label:" >/dev/null; then break; fi; sleep 1; done
