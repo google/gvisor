@@ -7,7 +7,8 @@ Today, gVisor requires Linux.
 ### What CPU architectures are supported? {#supported-cpus}
 
 gVisor currently supports [x86_64/AMD64](https://en.wikipedia.org/wiki/X86-64)
-compatible processors.
+compatible processors. Preliminary support is also available for
+[ARM64](https://en.wikipedia.org/wiki/ARM_architecture#AArch64).
 
 ### Do I need to modify my Linux application to use gVisor? {#modify-app}
 
@@ -17,8 +18,11 @@ No. gVisor is capable of running unmodified Linux binaries.
 
 gVisor supports Linux
 [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) binaries.
+
 Binaries run in gVisor should be built for the
-[AMD64](https://en.wikipedia.org/wiki/X86-64) CPU architecture.
+[AMD64](https://en.wikipedia.org/wiki/X86-64) or
+[AArch64](https://en.wikipedia.org/wiki/ARM_architecture#AArch64) CPU
+architectures.
 
 ### Can I run Docker images using gVisor? {#docker-images}
 
