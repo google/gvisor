@@ -373,7 +373,7 @@ func extractEndpoint(t *kernel.Task, sockaddr []byte) (transport.BoundEndpoint, 
 			Path:               p,
 			FollowFinalSymlink: true,
 		}
-		ep, e := t.Kernel().VFS().BoundEndpointAt(t, t.Credentials(), &pop)
+		ep, e := t.Kernel().VFS().BoundEndpointAt(t, t.Credentials(), &pop, &vfs.BoundEndpointOptions{path})
 		root.DecRef()
 		if relPath {
 			start.DecRef()
