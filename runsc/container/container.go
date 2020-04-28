@@ -22,7 +22,6 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
-	"os/signal"
 	"regexp"
 	"strconv"
 	"strings"
@@ -31,8 +30,10 @@ import (
 
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/sighandling"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/sandbox"
@@ -621,21 +622,15 @@ func (c *Container) SignalProcess(sig syscall.Signal, pid int32) error {
 // forwarding signals.
 func (c *Container) ForwardSignals(pid int32, fgProcess bool) func() {
 	log.Debugf("Forwarding all signals to container %q PID %d fgProcess=%t", c.ID, pid, fgProcess)
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh)
-	go func() {
-		for s := range sigCh {
-			log.Debugf("Forwarding signal %d to container %q PID %d fgProcess=%t", s, c.ID, pid, fgProcess)
-			if err := c.Sandbox.SignalProcess(c.ID, pid, s.(syscall.Signal), fgProcess); err != nil {
-				log.Warningf("error forwarding signal %d to container %q: %v", s, c.ID, err)
-			}
+	stop := sighandling.StartSignalForwarding(func(sig linux.Signal) {
+		log.Debugf("Forwarding signal %d to container %q PID %d fgProcess=%t", sig, c.ID, pid, fgProcess)
+		if err := c.Sandbox.SignalProcess(c.ID, pid, syscall.Signal(sig), fgProcess); err != nil {
+			log.Warningf("error forwarding signal %d to container %q: %v", sig, c.ID, err)
 		}
-		log.Debugf("Done forwarding signals to container %q PID %d fgProcess=%t", c.ID, pid, fgProcess)
-	}()
-
+	})
 	return func() {
-		signal.Stop(sigCh)
-		close(sigCh)
+		log.Debugf("Done forwarding signals to container %q PID %d fgProcess=%t", c.ID, pid, fgProcess)
+		stop()
 	}
 }
 

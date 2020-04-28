@@ -15,8 +15,10 @@ go_library(
         "//test:__subpackages__",
     ],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/log",
         "//pkg/sentry/control",
+        "//pkg/sentry/sighandling",
         "//pkg/sync",
         "//runsc/boot",
         "//runsc/cgroup",
