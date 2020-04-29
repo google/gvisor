@@ -1535,6 +1535,28 @@ func TestReadonlyMount(t *testing.T) {
 	}
 }
 
+func TestBindMountByOption(t *testing.T) {
+	for _, conf := range configs(t, overlay) {
+		t.Logf("Running test with conf: %+v", conf)
+
+		dir, err := ioutil.TempDir(testutil.TmpDir(), "bind-mount")
+		spec := testutil.NewSpecWithArgs("/bin/touch", path.Join(dir, "file"))
+		if err != nil {
+			t.Fatalf("ioutil.TempDir() failed: %v", err)
+		}
+		spec.Mounts = append(spec.Mounts, specs.Mount{
+			Destination: dir,
+			Source:      dir,
+			Type:        "none",
+			Options:     []string{"rw", "bind"},
+		})
+
+		if err := run(spec, conf); err != nil {
+			t.Fatalf("error running sandbox: %v", err)
+		}
+	}
+}
+
 // TestAbbreviatedIDs checks that runsc supports using abbreviated container
 // IDs in place of full IDs.
 func TestAbbreviatedIDs(t *testing.T) {
