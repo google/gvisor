@@ -15,9 +15,13 @@
 package vfs2
 
 import (
+	"time"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/socket"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -88,7 +92,12 @@ func Readv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 func read(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	n, err := file.Read(t, dst, opts)
-	if err != syserror.ErrWouldBlock || file.StatusFlags()&linux.O_NONBLOCK != 0 {
+	if err != syserror.ErrWouldBlock {
+		return n, err
+	}
+
+	allowBlock, deadline, hasDeadline := blockPolicy(t, file)
+	if !allowBlock {
 		return n, err
 	}
 
@@ -108,7 +117,12 @@ func read(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, opt
 		if err != syserror.ErrWouldBlock {
 			break
 		}
-		if err := t.Block(ch); err != nil {
+
+		// Wait for a notification that we should retry.
+		if err = t.BlockWithDeadline(ch, hasDeadline, deadline); err != nil {
+			if err == syserror.ETIMEDOUT {
+				err = syserror.ErrWouldBlock
+			}
 			break
 		}
 	}
@@ -233,7 +247,12 @@ func Preadv2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 func pread(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	n, err := file.PRead(t, dst, offset, opts)
-	if err != syserror.ErrWouldBlock || file.StatusFlags()&linux.O_NONBLOCK != 0 {
+	if err != syserror.ErrWouldBlock {
+		return n, err
+	}
+
+	allowBlock, deadline, hasDeadline := blockPolicy(t, file)
+	if !allowBlock {
 		return n, err
 	}
 
@@ -253,7 +272,12 @@ func pread(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, of
 		if err != syserror.ErrWouldBlock {
 			break
 		}
-		if err := t.Block(ch); err != nil {
+
+		// Wait for a notification that we should retry.
+		if err = t.BlockWithDeadline(ch, hasDeadline, deadline); err != nil {
+			if err == syserror.ETIMEDOUT {
+				err = syserror.ErrWouldBlock
+			}
 			break
 		}
 	}
@@ -320,7 +344,12 @@ func Writev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 func write(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	n, err := file.Write(t, src, opts)
-	if err != syserror.ErrWouldBlock || file.StatusFlags()&linux.O_NONBLOCK != 0 {
+	if err != syserror.ErrWouldBlock {
+		return n, err
+	}
+
+	allowBlock, deadline, hasDeadline := blockPolicy(t, file)
+	if !allowBlock {
 		return n, err
 	}
 
@@ -340,7 +369,12 @@ func write(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, op
 		if err != syserror.ErrWouldBlock {
 			break
 		}
-		if err := t.Block(ch); err != nil {
+
+		// Wait for a notification that we should retry.
+		if err = t.BlockWithDeadline(ch, hasDeadline, deadline); err != nil {
+			if err == syserror.ETIMEDOUT {
+				err = syserror.ErrWouldBlock
+			}
 			break
 		}
 	}
@@ -465,7 +499,12 @@ func Pwritev2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 func pwrite(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
 	n, err := file.PWrite(t, src, offset, opts)
-	if err != syserror.ErrWouldBlock || file.StatusFlags()&linux.O_NONBLOCK != 0 {
+	if err != syserror.ErrWouldBlock {
+		return n, err
+	}
+
+	allowBlock, deadline, hasDeadline := blockPolicy(t, file)
+	if !allowBlock {
 		return n, err
 	}
 
@@ -485,13 +524,35 @@ func pwrite(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, o
 		if err != syserror.ErrWouldBlock {
 			break
 		}
-		if err := t.Block(ch); err != nil {
+
+		// Wait for a notification that we should retry.
+		if err = t.BlockWithDeadline(ch, hasDeadline, deadline); err != nil {
+			if err == syserror.ETIMEDOUT {
+				err = syserror.ErrWouldBlock
+			}
 			break
 		}
 	}
 	file.EventUnregister(&w)
 
 	return total, err
+}
+
+func blockPolicy(t *kernel.Task, file *vfs.FileDescription) (allowBlock bool, deadline ktime.Time, hasDeadline bool) {
+	if file.StatusFlags()&linux.O_NONBLOCK != 0 {
+		return false, ktime.Time{}, false
+	}
+	// Sockets support read/write timeouts.
+	if s, ok := file.Impl().(socket.SocketVFS2); ok {
+		dl := s.RecvTimeout()
+		if dl < 0 {
+			return false, ktime.Time{}, false
+		}
+		if dl > 0 {
+			return true, t.Kernel().MonotonicClock().Now().Add(time.Duration(dl) * time.Nanosecond), true
+		}
+	}
+	return true, ktime.Time{}, false
 }
 
 // Lseek implements Linux syscall lseek(2).
