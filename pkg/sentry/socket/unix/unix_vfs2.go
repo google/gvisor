@@ -197,11 +197,13 @@ func (s *SocketVFS2) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 				Start: start,
 				Path:  path,
 			}
-			err := t.Kernel().VFS().MknodAt(t, t.Credentials(), &pop, &vfs.MknodOptions{
-				// TODO(gvisor.dev/issue/2324): The file permissions should be taken
-				// from s and t.FSContext().Umask() (see net/unix/af_unix.c:unix_bind),
-				// but VFS1 just always uses 0400. Resolve this inconsistency.
-				Mode:     linux.S_IFSOCK | 0400,
+			stat, err := s.vfsfd.Stat(t, vfs.StatOptions{Mask: linux.STATX_MODE})
+			if err != nil {
+				return syserr.FromError(err)
+			}
+			err = t.Kernel().VFS().MknodAt(t, t.Credentials(), &pop, &vfs.MknodOptions{
+				// File permissions correspond to net/unix/af_unix.c:unix_bind.
+				Mode:     linux.FileMode(linux.S_IFSOCK | uint(stat.Mode)&^t.FSContext().Umask()),
 				Endpoint: bep,
 			})
 			if err == syserror.EEXIST {
