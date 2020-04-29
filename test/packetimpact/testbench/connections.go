@@ -39,20 +39,28 @@ var remoteIPv6 = flag.String("remote_ipv6", "", "remote IPv6 address for test pa
 var localMAC = flag.String("local_mac", "", "local mac address for test packets")
 var remoteMAC = flag.String("remote_mac", "", "remote mac address for test packets")
 
-// pickPort makes a new socket and returns the socket FD and port. The domain
-// should be AF_INET or AF_INET6. The caller must close the FD when done with
+func portFromSockaddr(sa unix.Sockaddr) (uint16, error) {
+	switch sa := sa.(type) {
+	case *unix.SockaddrInet4:
+		return uint16(sa.Port), nil
+	case *unix.SockaddrInet6:
+		return uint16(sa.Port), nil
+	}
+	return 0, fmt.Errorf("sockaddr type %T does not contain port", sa)
+}
+
+// pickPort makes a new socket and returns the socket FD and port. The domain should be AF_INET or AF_INET6. The caller must close the FD when done with
 // the port if there is no error.
-func pickPort(domain, typ int) (fd int, port uint16, err error) {
+func pickPort(domain, typ int) (fd int, sa unix.Sockaddr, err error) {
 	fd, err = unix.Socket(domain, typ, 0)
 	if err != nil {
-		return -1, 0, err
+		return -1, nil, err
 	}
 	defer func() {
 		if err != nil {
 			err = multierr.Append(err, unix.Close(fd))
 		}
 	}()
-	var sa unix.Sockaddr
 	switch domain {
 	case unix.AF_INET:
 		var sa4 unix.SockaddrInet4
@@ -63,31 +71,16 @@ func pickPort(domain, typ int) (fd int, port uint16, err error) {
 		copy(sa6.Addr[:], net.ParseIP(*localIPv6).To16())
 		sa = &sa6
 	default:
-		return -1, 0, fmt.Errorf("invalid domain %d, it should be one of unix.AF_INET or unix.AF_INET6", domain)
+		return -1, nil, fmt.Errorf("invalid domain %d, it should be one of unix.AF_INET or unix.AF_INET6", domain)
 	}
 	if err = unix.Bind(fd, sa); err != nil {
-		return -1, 0, err
+		return -1, nil, err
 	}
-	newSockAddr, err := unix.Getsockname(fd)
+	sa, err = unix.Getsockname(fd)
 	if err != nil {
-		return -1, 0, err
+		return -1, nil, err
 	}
-	switch domain {
-	case unix.AF_INET:
-		newSockAddrInet4, ok := newSockAddr.(*unix.SockaddrInet4)
-		if !ok {
-			return -1, 0, fmt.Errorf("can't cast Getsockname result %T to SockaddrInet4", newSockAddr)
-		}
-		return fd, uint16(newSockAddrInet4.Port), nil
-	case unix.AF_INET6:
-		newSockAddrInet6, ok := newSockAddr.(*unix.SockaddrInet6)
-		if !ok {
-			return -1, 0, fmt.Errorf("can't cast Getsockname result %T to SockaddrInet6", newSockAddr)
-		}
-		return fd, uint16(newSockAddrInet6.Port), nil
-	default:
-		return -1, 0, fmt.Errorf("invalid domain %d, it should be one of unix.AF_INET or unix.AF_INET6", domain)
-	}
+	return fd, sa, nil
 }
 
 // layerState stores the state of a layer of a connection.
@@ -282,7 +275,11 @@ func SeqNumValue(v seqnum.Value) *seqnum.Value {
 
 // newTCPState creates a new TCPState.
 func newTCPState(domain int, out, in TCP) (*tcpState, error) {
-	portPickerFD, localPort, err := pickPort(domain, unix.SOCK_STREAM)
+	portPickerFD, localAddr, err := pickPort(domain, unix.SOCK_STREAM)
+	if err != nil {
+		return nil, err
+	}
+	localPort, err := portFromSockaddr(localAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -385,10 +382,14 @@ type udpState struct {
 var _ layerState = (*udpState)(nil)
 
 // newUDPState creates a new udpState.
-func newUDPState(domain int, out, in UDP) (*udpState, error) {
-	portPickerFD, localPort, err := pickPort(domain, unix.SOCK_DGRAM)
+func newUDPState(domain int, out, in UDP) (*udpState, unix.Sockaddr, error) {
+	portPickerFD, localAddr, err := pickPort(domain, unix.SOCK_DGRAM)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	localPort, err := portFromSockaddr(localAddr)
+	if err != nil {
+		return nil, nil, err
 	}
 	s := udpState{
 		out:          UDP{SrcPort: &localPort},
@@ -396,12 +397,12 @@ func newUDPState(domain int, out, in UDP) (*udpState, error) {
 		portPickerFD: portPickerFD,
 	}
 	if err := s.out.merge(&out); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := s.in.merge(&in); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return &s, nil
+	return &s, localAddr, nil
 }
 
 func (s *udpState) outgoing() Layer {
@@ -436,6 +437,7 @@ type Connection struct {
 	layerStates []layerState
 	injector    Injector
 	sniffer     Sniffer
+	localAddr   unix.Sockaddr
 	t           *testing.T
 }
 
@@ -499,7 +501,7 @@ func (conn *Connection) CreateFrame(layer Layer, additionalLayers ...Layer) Laye
 func (conn *Connection) SendFrame(frame Layers) {
 	outBytes, err := frame.ToBytes()
 	if err != nil {
-		conn.t.Fatalf("can't build outgoing TCP packet: %s", err)
+		conn.t.Fatalf("can't build outgoing packet: %s", err)
 	}
 	conn.injector.Send(outBytes)
 
@@ -545,8 +547,9 @@ func (e *layersError) Error() string {
 	return e.got.diff(e.want)
 }
 
-// Expect a frame with the final layerStates layer matching the provided Layer
-// within the timeout specified. If it doesn't arrive in time, it returns nil.
+// Expect expects a frame with the final layerStates layer matching the
+// provided Layer within the timeout specified. If it doesn't arrive in time,
+// an error is returned.
 func (conn *Connection) Expect(layer Layer, timeout time.Duration) (Layer, error) {
 	// Make a frame that will ignore all but the final layer.
 	layers := make([]Layer, len(conn.layerStates))
@@ -671,8 +674,8 @@ func (conn *TCPIPv4) Close() {
 	(*Connection)(conn).Close()
 }
 
-// Expect a frame with the TCP layer matching the provided TCP within the
-// timeout specified. If it doesn't arrive in time, it returns nil.
+// Expect expects a frame with the TCP layer matching the provided TCP within
+// the timeout specified. If it doesn't arrive in time, an error is returned.
 func (conn *TCPIPv4) Expect(tcp TCP, timeout time.Duration) (*TCP, error) {
 	layer, err := (*Connection)(conn).Expect(&tcp, timeout)
 	if layer == nil {
@@ -756,7 +759,7 @@ func (conn *IPv6Conn) Close() {
 }
 
 // ExpectFrame expects a frame that matches the provided Layers within the
-// timeout specified. If it doesn't arrive in time, it returns nil.
+// timeout specified. If it doesn't arrive in time, an error is returned.
 func (conn *IPv6Conn) ExpectFrame(frame Layers, timeout time.Duration) (Layers, error) {
 	return (*Connection)(conn).ExpectFrame(frame, timeout)
 }
@@ -780,7 +783,7 @@ func NewUDPIPv4(t *testing.T, outgoingUDP, incomingUDP UDP) UDPIPv4 {
 	if err != nil {
 		t.Fatalf("can't make ipv4State: %s", err)
 	}
-	tcpState, err := newUDPState(unix.AF_INET, outgoingUDP, incomingUDP)
+	udpState, localAddr, err := newUDPState(unix.AF_INET, outgoingUDP, incomingUDP)
 	if err != nil {
 		t.Fatalf("can't make udpState: %s", err)
 	}
@@ -794,11 +797,17 @@ func NewUDPIPv4(t *testing.T, outgoingUDP, incomingUDP UDP) UDPIPv4 {
 	}
 
 	return UDPIPv4{
-		layerStates: []layerState{etherState, ipv4State, tcpState},
+		layerStates: []layerState{etherState, ipv4State, udpState},
 		injector:    injector,
 		sniffer:     sniffer,
+		localAddr:   localAddr,
 		t:           t,
 	}
+}
+
+// LocalAddr gets the local socket address of this connection.
+func (conn *UDPIPv4) LocalAddr() unix.Sockaddr {
+	return conn.localAddr
 }
 
 // CreateFrame builds a frame for the connection with layer overriding defaults
@@ -807,9 +816,40 @@ func (conn *UDPIPv4) CreateFrame(layer Layer, additionalLayers ...Layer) Layers 
 	return (*Connection)(conn).CreateFrame(layer, additionalLayers...)
 }
 
+// Send a packet with reasonable defaults. Potentially override the UDP layer in
+// the connection with the provided layer and add additionLayers.
+func (conn *UDPIPv4) Send(udp UDP, additionalLayers ...Layer) {
+	(*Connection)(conn).Send(&udp, additionalLayers...)
+}
+
 // SendFrame sends a frame on the wire and updates the state of all layers.
 func (conn *UDPIPv4) SendFrame(frame Layers) {
 	(*Connection)(conn).SendFrame(frame)
+}
+
+// SendIP sends a packet with additionalLayers following the IP layer in the
+// connection.
+func (conn *UDPIPv4) SendIP(additionalLayers ...Layer) {
+	var layersToSend Layers
+	for _, s := range conn.layerStates[:len(conn.layerStates)-1] {
+		layersToSend = append(layersToSend, s.outgoing())
+	}
+	layersToSend = append(layersToSend, additionalLayers...)
+	conn.SendFrame(layersToSend)
+}
+
+// Expect expects a frame with the UDP layer matching the provided UDP within
+// the timeout specified. If it doesn't arrive in time, an error is returned.
+func (conn *UDPIPv4) Expect(udp UDP, timeout time.Duration) (*UDP, error) {
+	layer, err := (*Connection)(conn).Expect(&udp, timeout)
+	if layer == nil {
+		return nil, err
+	}
+	gotUDP, ok := layer.(*UDP)
+	if !ok {
+		conn.t.Fatalf("expected %s to be UDP", layer)
+	}
+	return gotUDP, err
 }
 
 // Close frees associated resources held by the UDPIPv4 connection.
