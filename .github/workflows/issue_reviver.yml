@@ -1,0 +1,16 @@
+name: "Issue Reviver"
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  revive:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+    - uses: Issue Reviver
+      run: |
+        echo "${{ secrets.GITHUB_TOKEN }}" > .github_token
+        make run TARGETS="//tools/issue_reviver" ARGS="-owner \"${{ github.repository_owner }}\" -path . -repo \"$(basename ${{ github.repository }})\" -oauth-token-file .github_token"
