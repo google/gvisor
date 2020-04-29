@@ -273,13 +273,6 @@ func (s *SocketVFS2) Write(ctx context.Context, src usermem.IOSequence, opts vfs
 	})
 }
 
-// Release implements vfs.FileDescriptionImpl.
-func (s *SocketVFS2) Release() {
-	// Release only decrements a reference on s because s may be referenced in
-	// the abstract socket namespace.
-	s.DecRef()
-}
-
 // Readiness implements waiter.Waitable.Readiness.
 func (s *SocketVFS2) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return s.socketOpsCommon.Readiness(mask)

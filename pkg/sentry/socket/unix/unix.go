@@ -103,7 +103,7 @@ func (s *socketOpsCommon) DecRef() {
 }
 
 // Release implemements fs.FileOperations.Release.
-func (s *SocketOperations) Release() {
+func (s *socketOpsCommon) Release() {
 	// Release only decrements a reference on s because s may be referenced in
 	// the abstract socket namespace.
 	s.DecRef()
