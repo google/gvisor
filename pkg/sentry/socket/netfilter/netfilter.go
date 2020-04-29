@@ -53,9 +53,14 @@ type metadata struct {
 	Size       uint32
 }
 
+// enableLogging controls whether to log the (de)serialization of netfilter
+// structs between userspace and netstack. These logs are useful when
+// developing iptables, but can pollute sentry logs otherwise.
+const enableLogging = false
+
 // nflog logs messages related to the writing and reading of iptables.
 func nflog(format string, args ...interface{}) {
-	if log.IsLogging(log.Debug) {
+	if enableLogging && log.IsLogging(log.Debug) {
 		log.Debugf("netfilter: "+format, args...)
 	}
 }
