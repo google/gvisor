@@ -58,7 +58,7 @@ type Layer interface {
 	next() Layer
 
 	// prev gets a pointer to the Layer encapsulating this one.
-	prev() Layer
+	Prev() Layer
 
 	// setNext sets the pointer to the encapsulated Layer.
 	setNext(Layer)
@@ -80,7 +80,8 @@ func (lb *LayerBase) next() Layer {
 	return lb.nextLayer
 }
 
-func (lb *LayerBase) prev() Layer {
+// Prev returns the previous layer.
+func (lb *LayerBase) Prev() Layer {
 	return lb.prevLayer
 }
 
@@ -340,6 +341,8 @@ func (l *IPv4) ToBytes() ([]byte, error) {
 			fields.Protocol = uint8(header.TCPProtocolNumber)
 		case *UDP:
 			fields.Protocol = uint8(header.UDPProtocolNumber)
+		case *ICMPv4:
+			fields.Protocol = uint8(header.ICMPv4ProtocolNumber)
 		default:
 			// TODO(b/150301488): Support more protocols as needed.
 			return nil, fmt.Errorf("ipv4 header's next layer is unrecognized: %#v", n)
@@ -403,6 +406,8 @@ func parseIPv4(b []byte) (Layer, layerParser) {
 		nextParser = parseTCP
 	case header.UDPProtocolNumber:
 		nextParser = parseUDP
+	case header.ICMPv4ProtocolNumber:
+		nextParser = parseICMPv4
 	default:
 		// Assume that the rest is a payload.
 		nextParser = parsePayload
@@ -562,7 +567,7 @@ func (l *ICMPv6) ToBytes() ([]byte, error) {
 	if l.Checksum != nil {
 		h.SetChecksum(*l.Checksum)
 	} else {
-		ipv6 := l.prev().(*IPv6)
+		ipv6 := l.Prev().(*IPv6)
 		h.SetChecksum(header.ICMPv6Checksum(h, *ipv6.SrcAddr, *ipv6.DstAddr, buffer.VectorisedView{}))
 	}
 	return h, nil
@@ -603,6 +608,72 @@ func (l *ICMPv6) length() int {
 // merge overrides the values in l with the values from other but only in fields
 // where the value is not nil.
 func (l *ICMPv6) merge(other Layer) error {
+	return mergeLayer(l, other)
+}
+
+// ICMPv4Type is a helper routine that allocates a new header.ICMPv4Type value
+// to store t and returns a pointer to it.
+func ICMPv4Type(t header.ICMPv4Type) *header.ICMPv4Type {
+	return &t
+}
+
+// ICMPv4 can construct and match an ICMPv4 encapsulation.
+type ICMPv4 struct {
+	LayerBase
+	Type     *header.ICMPv4Type
+	Code     *uint8
+	Checksum *uint16
+}
+
+func (l *ICMPv4) String() string {
+	return stringLayer(l)
+}
+
+// ToBytes implements Layer.ToBytes.
+func (l *ICMPv4) ToBytes() ([]byte, error) {
+	b := make([]byte, header.ICMPv4MinimumSize)
+	h := header.ICMPv4(b)
+	if l.Type != nil {
+		h.SetType(*l.Type)
+	}
+	if l.Code != nil {
+		h.SetCode(byte(*l.Code))
+	}
+	if l.Checksum != nil {
+		h.SetChecksum(*l.Checksum)
+		return h, nil
+	}
+	payload, err := payload(l)
+	if err != nil {
+		return nil, err
+	}
+	h.SetChecksum(header.ICMPv4Checksum(h, payload))
+	return h, nil
+}
+
+// parseICMPv4 parses the bytes as an ICMPv4 header, returning a Layer and a
+// parser for the encapsulated payload.
+func parseICMPv4(b []byte) (Layer, layerParser) {
+	h := header.ICMPv4(b)
+	icmpv4 := ICMPv4{
+		Type:     ICMPv4Type(h.Type()),
+		Code:     Uint8(h.Code()),
+		Checksum: Uint16(h.Checksum()),
+	}
+	return &icmpv4, parsePayload
+}
+
+func (l *ICMPv4) match(other Layer) bool {
+	return equalLayer(l, other)
+}
+
+func (l *ICMPv4) length() int {
+	return header.ICMPv4MinimumSize
+}
+
+// merge overrides the values in l with the values from other but only in fields
+// where the value is not nil.
+func (l *ICMPv4) merge(other Layer) error {
 	return mergeLayer(l, other)
 }
 
@@ -676,25 +747,34 @@ func totalLength(l Layer) int {
 	return totalLength
 }
 
+// payload returns a buffer.VectorisedView of l's payload.
+func payload(l Layer) (buffer.VectorisedView, error) {
+	var payloadBytes buffer.VectorisedView
+	for current := l.next(); current != nil; current = current.next() {
+		payload, err := current.ToBytes()
+		if err != nil {
+			return buffer.VectorisedView{}, fmt.Errorf("can't get bytes for next header: %s", payload)
+		}
+		payloadBytes.AppendView(payload)
+	}
+	return payloadBytes, nil
+}
+
 // layerChecksum calculates the checksum of the Layer header, including the
-// peusdeochecksum of the layer before it and all the bytes after it..
+// peusdeochecksum of the layer before it and all the bytes after it.
 func layerChecksum(l Layer, protoNumber tcpip.TransportProtocolNumber) (uint16, error) {
 	totalLength := uint16(totalLength(l))
 	var xsum uint16
-	switch s := l.prev().(type) {
+	switch s := l.Prev().(type) {
 	case *IPv4:
 		xsum = header.PseudoHeaderChecksum(protoNumber, *s.SrcAddr, *s.DstAddr, totalLength)
 	default:
 		// TODO(b/150301488): Support more protocols, like IPv6.
 		return 0, fmt.Errorf("can't get src and dst addr from previous layer: %#v", s)
 	}
-	var payloadBytes buffer.VectorisedView
-	for current := l.next(); current != nil; current = current.next() {
-		payload, err := current.ToBytes()
-		if err != nil {
-			return 0, fmt.Errorf("can't get bytes for next header: %s", payload)
-		}
-		payloadBytes.AppendView(payload)
+	payloadBytes, err := payload(l)
+	if err != nil {
+		return 0, err
 	}
 	xsum = header.ChecksumVV(payloadBytes, xsum)
 	return xsum, nil

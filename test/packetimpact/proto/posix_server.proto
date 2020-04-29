@@ -73,6 +73,16 @@ message CloseResponse {
   int32 errno_ = 2;  // "errno" may fail to compile in c++.
 }
 
+message ConnectRequest {
+  int32 sockfd = 1;
+  Sockaddr addr = 2;
+}
+
+message ConnectResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
+}
+
 message GetSockNameRequest {
   int32 sockfd = 1;
 }
@@ -81,6 +91,43 @@ message GetSockNameResponse {
   int32 ret = 1;
   int32 errno_ = 2;  // "errno" may fail to compile in c++.
   Sockaddr addr = 3;
+}
+
+message GetSockOptRequest {
+  int32 sockfd = 1;
+  int32 level = 2;
+  int32 optname = 3;
+  int32 optlen = 4;
+}
+
+message GetSockOptResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
+  bytes optval = 3;
+}
+
+message GetSockOptIntRequest {
+  int32 sockfd = 1;
+  int32 level = 2;
+  int32 optname = 3;
+}
+
+message GetSockOptIntResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
+  int32 intval = 3;
+}
+
+message GetSockOptTimevalRequest {
+  int32 sockfd = 1;
+  int32 level = 2;
+  int32 optname = 3;
+}
+
+message GetSockOptTimevalResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
+  Timeval timeval = 3;
 }
 
 message ListenRequest {
@@ -102,6 +149,18 @@ message SendRequest {
 message SendResponse {
   int32 ret = 1;
   int32 errno_ = 2;
+}
+
+message SendToRequest {
+  int32 sockfd = 1;
+  bytes buf = 2;
+  int32 flags = 3;
+  Sockaddr dest_addr = 4;
+}
+
+message SendToResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
 }
 
 message SetSockOptRequest {
@@ -170,12 +229,26 @@ service Posix {
   rpc Bind(BindRequest) returns (BindResponse);
   // Call close() on the DUT.
   rpc Close(CloseRequest) returns (CloseResponse);
+  // Call connect() on the DUT.
+  rpc Connect(ConnectRequest) returns (ConnectResponse);
   // Call getsockname() on the DUT.
   rpc GetSockName(GetSockNameRequest) returns (GetSockNameResponse);
+  // Call getsockopt() on the DUT.  You should prefer one of the other
+  // GetSockOpt* functions with a more structured optval or else you may get the
+  // encoding wrong, such as making a bad assumption about the server's word
+  // sizes or endianness.
+  rpc GetSockOpt(GetSockOptRequest) returns (GetSockOptResponse);
+  // Call getsockopt() on the DUT with an int optval.
+  rpc GetSockOptInt(GetSockOptIntRequest) returns (GetSockOptIntResponse);
+  // Call getsockopt() on the DUT with a Timeval optval.
+  rpc GetSockOptTimeval(GetSockOptTimevalRequest)
+      returns (GetSockOptTimevalResponse);
   // Call listen() on the DUT.
   rpc Listen(ListenRequest) returns (ListenResponse);
   // Call send() on the DUT.
   rpc Send(SendRequest) returns (SendResponse);
+  // Call sendto() on the DUT.
+  rpc SendTo(SendToRequest) returns (SendToResponse);
   // Call setsockopt() on the DUT.  You should prefer one of the other
   // SetSockOpt* functions with a more structured optval or else you may get the
   // encoding wrong, such as making a bad assumption about the server's word
