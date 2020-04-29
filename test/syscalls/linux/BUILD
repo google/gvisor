@@ -365,6 +365,7 @@ cc_binary(
         ":socket_test_util",
         "//test/util:file_descriptor",
         gtest,
+        "//test/util:temp_umask",
         "//test/util:test_main",
         "//test/util:test_util",
     ],

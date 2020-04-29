@@ -486,8 +486,11 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 
 // BoundEndpointAt implements FilesystemImpl.BoundEndpointAt.
 func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.BoundEndpointOptions) (transport.BoundEndpoint, error) {
-	_, _, err := fs.walk(rp, false)
+	_, inode, err := fs.walk(rp, false)
 	if err != nil {
+		return nil, err
+	}
+	if err := inode.checkPermissions(rp.Credentials(), vfs.MayWrite); err != nil {
 		return nil, err
 	}
 
