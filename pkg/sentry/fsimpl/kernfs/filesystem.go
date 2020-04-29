@@ -768,10 +768,13 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 // BoundEndpointAt implements FilesystemImpl.BoundEndpointAt.
 func (fs *Filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.BoundEndpointOptions) (transport.BoundEndpoint, error) {
 	fs.mu.RLock()
-	_, _, err := fs.walkExistingLocked(ctx, rp)
+	_, inode, err := fs.walkExistingLocked(ctx, rp)
 	fs.mu.RUnlock()
 	fs.processDeferredDecRefs()
 	if err != nil {
+		return nil, err
+	}
+	if err := inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite); err != nil {
 		return nil, err
 	}
 	return nil, syserror.ECONNREFUSED

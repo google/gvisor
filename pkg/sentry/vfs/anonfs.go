@@ -241,6 +241,9 @@ func (fs *anonFilesystem) BoundEndpointAt(ctx context.Context, rp *ResolvingPath
 	if !rp.Final() {
 		return nil, syserror.ENOTDIR
 	}
+	if err := GenericCheckPermissions(rp.Credentials(), MayWrite, anonFileMode, anonFileUID, anonFileGID); err != nil {
+		return nil, err
+	}
 	return nil, syserror.ECONNREFUSED
 }
 

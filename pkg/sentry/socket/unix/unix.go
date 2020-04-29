@@ -323,7 +323,10 @@ func (s *SocketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 
 			// Create the socket.
 			//
-			// TODO(gvisor.dev/issue/2324): Correctly set file permissions.
+			// Note that the file permissions here are not set correctly (see
+			// gvisor.dev/issue/2324). There is no convenient way to get permissions
+			// on the socket referred to by s, so we will leave this discrepancy
+			// unresolved until VFS2 replaces this code.
 			childDir, err := d.Bind(t, t.FSContext().RootDirectory(), name, bep, fs.FilePermissions{User: fs.PermMask{Read: true}})
 			if err != nil {
 				return syserr.ErrPortInUse
