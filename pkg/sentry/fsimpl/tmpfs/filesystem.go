@@ -704,6 +704,9 @@ func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 	if err != nil {
 		return nil, err
 	}
+	if err := d.inode.checkPermissions(rp.Credentials(), vfs.MayWrite); err != nil {
+		return nil, err
+	}
 	switch impl := d.inode.impl.(type) {
 	case *socketFile:
 		return impl.ep, nil
