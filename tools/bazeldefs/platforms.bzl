@@ -3,10 +3,7 @@
 # Platform to associated tags.
 platforms = {
     "ptrace": [],
-    "kvm": [
-        "manual",
-        "local",
-    ],
+    "kvm": [],
 }
 
 default_platform = "ptrace"
