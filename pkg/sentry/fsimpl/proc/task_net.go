@@ -511,6 +511,8 @@ func (d *netUDPData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	// degrade gracefully and retrieve what we can.
 	t := kernel.TaskFromContext(ctx)
 
+	buf.WriteString("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops             \n")
+
 	for _, se := range d.kernel.ListSockets() {
 		s := se.SockVFS2
 		if !s.TryIncRef() {

@@ -112,9 +112,7 @@ func newSysNetDir(root *auth.Credentials, inoGen InoGenerator, k *kernel.Kernel)
 		}
 	}
 
-	return kernfs.NewStaticDir(root, inoGen.NextIno(), 0555, map[string]*kernfs.Dentry{
-		"net": kernfs.NewStaticDir(root, inoGen.NextIno(), 0555, contents),
-	})
+	return kernfs.NewStaticDir(root, inoGen.NextIno(), 0555, contents)
 }
 
 // mmapMinAddrData implements vfs.DynamicBytesSource for
