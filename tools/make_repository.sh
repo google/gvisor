@@ -14,6 +14,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# We need to be sure that only a repo path is printed on stdout.
+exec 50<&1
+exec 1<&2
+
+echo_stdout() {
+  echo "$@" >&50
+}
+
 # Parse arguments. We require more than two arguments, which are the private
 # keyring, the e-mail associated with the signer, and the list of packages.
 if [ "$#" -le 3 ]; then
@@ -61,7 +69,7 @@ cleanup() {
   rm -f "${keyring}"
 }
 trap cleanup EXIT
-gpg --no-default-keyring --keyring "${keyring}" --import "${private_key}" >&2
+gpg --no-default-keyring --keyring "${keyring}" --import "${private_key}"
 
 # Copy the packages into the root.
 for pkg in "$@"; do
@@ -92,7 +100,7 @@ find "${root}"/pool -type f -exec chmod 0644 {} \;
 
 # Sign all packages.
 for file in "${root}"/pool/*/binary-*/*.deb; do
-  dpkg-sig -g "--no-default-keyring --keyring ${keyring}" --sign builder "${file}" >&2
+  dpkg-sig -g "--no-default-keyring --keyring ${keyring}" --sign builder "${file}"
 done
 
 # Build the package list.
@@ -124,8 +132,8 @@ rm "${tmpdir}"/apt.conf
 
 # Sign the release.
 declare -r digest_opts=("--digest-algo" "SHA512" "--cert-digest-algo" "SHA512")
-(cd "${tmpdir}" && gpg --no-default-keyring --keyring "${keyring}" --clearsign "${digest_opts[@]}" -o InRelease Release >&2)
-(cd "${tmpdir}" && gpg --no-default-keyring --keyring "${keyring}" -abs "${digest_opts[@]}" -o Release.gpg Release >&2)
+(cd "${tmpdir}" && gpg --no-default-keyring --keyring "${keyring}" --clearsign "${digest_opts[@]}" -o InRelease Release)
+(cd "${tmpdir}" && gpg --no-default-keyring --keyring "${keyring}" -abs "${digest_opts[@]}" -o Release.gpg Release)
 
 # Show the results.
-echo "${tmpdir}"
+echo_stdout "${tmpdir}"
