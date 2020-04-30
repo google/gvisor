@@ -44,6 +44,7 @@ import (
 	"syscall"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -428,7 +429,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 			}
 		}
 
-		vnetHdrBuf := vnetHdrToByteSlice(&vnetHdr)
+		vnetHdrBuf := binary.Marshal(make([]byte, 0, virtioNetHdrSize), binary.LittleEndian, vnetHdr)
 		return rawfile.NonBlockingWrite3(fd, vnetHdrBuf, pkt.Header.View(), pkt.Data.ToView())
 	}
 
@@ -439,19 +440,10 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 	return rawfile.NonBlockingWrite3(fd, pkt.Header.View(), pkt.Data.ToView(), nil)
 }
 
-// WritePackets writes outbound packets to the file descriptor. If it is not
-// currently writable, the packet is dropped.
-//
-// NOTE: This API uses sendmmsg to batch packets. As a result the underlying FD
-// picked to write the packet out has to be the same for all packets in the
-// list. In other words all packets in the batch should belong to the same
-// flow.
-func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
-	n := pkts.Len()
-
-	mmsgHdrs := make([]rawfile.MMsgHdr, n)
-	i := 0
-	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, *tcpip.Error) {
+	// Send a batch of packets through batchFD.
+	mmsgHdrs := make([]rawfile.MMsgHdr, 0, len(batch))
+	for _, pkt := range batch {
 		var ethHdrBuf []byte
 		iovLen := 0
 		if e.hdrSize > 0 {
@@ -459,13 +451,13 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 			ethHdrBuf = make([]byte, header.EthernetMinimumSize)
 			eth := header.Ethernet(ethHdrBuf)
 			ethHdr := &header.EthernetFields{
-				DstAddr: r.RemoteLinkAddress,
-				Type:    protocol,
+				DstAddr: pkt.EgressRoute.RemoteLinkAddress,
+				Type:    pkt.NetworkProtocolNumber,
 			}
 
 			// Preserve the src address if it's set in the route.
-			if r.LocalLinkAddress != "" {
-				ethHdr.SrcAddr = r.LocalLinkAddress
+			if pkt.EgressRoute.LocalLinkAddress != "" {
+				ethHdr.SrcAddr = pkt.EgressRoute.LocalLinkAddress
 			} else {
 				ethHdr.SrcAddr = e.addr
 			}
@@ -473,34 +465,34 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 			iovLen++
 		}
 
-		var vnetHdrBuf []byte
 		vnetHdr := virtioNetHdr{}
+		var vnetHdrBuf []byte
 		if e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
-			if gso != nil {
+			if pkt.GSOOptions != nil {
 				vnetHdr.hdrLen = uint16(pkt.Header.UsedLength())
-				if gso.NeedsCsum {
+				if pkt.GSOOptions.NeedsCsum {
 					vnetHdr.flags = _VIRTIO_NET_HDR_F_NEEDS_CSUM
-					vnetHdr.csumStart = header.EthernetMinimumSize + gso.L3HdrLen
-					vnetHdr.csumOffset = gso.CsumOffset
+					vnetHdr.csumStart = header.EthernetMinimumSize + pkt.GSOOptions.L3HdrLen
+					vnetHdr.csumOffset = pkt.GSOOptions.CsumOffset
 				}
-				if gso.Type != stack.GSONone && uint16(pkt.Data.Size()) > gso.MSS {
-					switch gso.Type {
+				if pkt.GSOOptions.Type != stack.GSONone && uint16(pkt.Data.Size()) > pkt.GSOOptions.MSS {
+					switch pkt.GSOOptions.Type {
 					case stack.GSOTCPv4:
 						vnetHdr.gsoType = _VIRTIO_NET_HDR_GSO_TCPV4
 					case stack.GSOTCPv6:
 						vnetHdr.gsoType = _VIRTIO_NET_HDR_GSO_TCPV6
 					default:
-						panic(fmt.Sprintf("Unknown gso type: %v", gso.Type))
+						panic(fmt.Sprintf("Unknown gso type: %v", pkt.GSOOptions.Type))
 					}
-					vnetHdr.gsoSize = gso.MSS
+					vnetHdr.gsoSize = pkt.GSOOptions.MSS
 				}
 			}
-			vnetHdrBuf = vnetHdrToByteSlice(&vnetHdr)
+			vnetHdrBuf = binary.Marshal(make([]byte, 0, virtioNetHdrSize), binary.LittleEndian, vnetHdr)
 			iovLen++
 		}
 
 		iovecs := make([]syscall.Iovec, iovLen+1+len(pkt.Data.Views()))
-		mmsgHdr := &mmsgHdrs[i]
+		var mmsgHdr rawfile.MMsgHdr
 		mmsgHdr.Msg.Iov = &iovecs[0]
 		iovecIdx := 0
 		if vnetHdrBuf != nil {
@@ -535,20 +527,66 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 			pktSize += vec.Len
 		}
 		mmsgHdr.Msg.Iovlen = uint64(iovecIdx)
-		i++
+		mmsgHdrs = append(mmsgHdrs, mmsgHdr)
 	}
 
 	packets := 0
-	for packets < n {
-		fd := e.fds[pkts.Front().Hash%uint32(len(e.fds))]
-		sent, err := rawfile.NonBlockingSendMMsg(fd, mmsgHdrs)
+	for len(mmsgHdrs) > 0 {
+		sent, err := rawfile.NonBlockingSendMMsg(batchFD, mmsgHdrs)
 		if err != nil {
 			return packets, err
 		}
 		packets += sent
 		mmsgHdrs = mmsgHdrs[sent:]
 	}
+
 	return packets, nil
+}
+
+// WritePackets writes outbound packets to the underlying file descriptors. If
+// one is not currently writable, the packet is dropped.
+//
+// Being a batch API, each packet in pkts should have the following
+// fields populated:
+//  - pkt.EgressRoute
+//  - pkt.GSOOptions
+//  - pkt.NetworkProtocolNumber
+func (e *endpoint) WritePackets(_ *stack.Route, _ *stack.GSO, pkts stack.PacketBufferList, _ tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+	// Preallocate to avoid repeated reallocation as we append to batch.
+	// batchSz is 47 because when SWGSO is in use then a single 65KB TCP
+	// segment can get split into 46 segments of 1420 bytes and a single 216
+	// byte segment.
+	const batchSz = 47
+	batch := make([]*stack.PacketBuffer, 0, batchSz)
+	batchFD := -1
+	sentPackets := 0
+	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+		if len(batch) == 0 {
+			batchFD = e.fds[pkt.Hash%uint32(len(e.fds))]
+		}
+		pktFD := e.fds[pkt.Hash%uint32(len(e.fds))]
+		if sendNow := pktFD != batchFD; !sendNow {
+			batch = append(batch, pkt)
+			continue
+		}
+		n, err := e.sendBatch(batchFD, batch)
+		sentPackets += n
+		if err != nil {
+			return sentPackets, err
+		}
+		batch = batch[:0]
+		batch = append(batch, pkt)
+		batchFD = pktFD
+	}
+
+	if len(batch) != 0 {
+		n, err := e.sendBatch(batchFD, batch)
+		sentPackets += n
+		if err != nil {
+			return sentPackets, err
+		}
+	}
+	return sentPackets, nil
 }
 
 // viewsEqual tests whether v1 and v2 refer to the same backing bytes.

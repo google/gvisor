@@ -17,17 +17,7 @@
 package fdbased
 
 import (
-	"reflect"
 	"unsafe"
 )
 
 const virtioNetHdrSize = int(unsafe.Sizeof(virtioNetHdr{}))
-
-func vnetHdrToByteSlice(hdr *virtioNetHdr) (slice []byte) {
-	*(*reflect.SliceHeader)(unsafe.Pointer(&slice)) = reflect.SliceHeader{
-		Data: uintptr((unsafe.Pointer(hdr))),
-		Len:  virtioNetHdrSize,
-		Cap:  virtioNetHdrSize,
-	}
-	return
-}
