@@ -217,6 +217,12 @@ func (r *Route) MTU() uint32 {
 	return r.ref.ep.MTU()
 }
 
+// NetworkProtocolNumber returns the NetworkProtocolNumber of the underlying
+// network endpoint.
+func (r *Route) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
+	return r.ref.ep.NetworkProtocolNumber()
+}
+
 // Release frees all resources associated with the route.
 func (r *Route) Release() {
 	if r.ref != nil {

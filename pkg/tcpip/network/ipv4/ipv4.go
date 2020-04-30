@@ -118,6 +118,11 @@ func (e *endpoint) GSOMaxSize() uint32 {
 	return 0
 }
 
+// NetworkProtocolNumber implements stack.NetworkEndpoint.NetworkProtocolNumber.
+func (e *endpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
+	return e.protocol.Number()
+}
+
 // writePacketFragments calls e.linkEP.WritePacket with each packet fragment to
 // write. It assumes that the IP header is entirely in pkt.Header but does not
 // assume that only the IP header is in pkt.Header. It assumes that the input

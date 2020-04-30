@@ -89,6 +89,10 @@ func (f *fwdTestNetworkEndpoint) Capabilities() LinkEndpointCapabilities {
 	return f.ep.Capabilities()
 }
 
+func (f *fwdTestNetworkEndpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
+	return f.proto.Number()
+}
+
 func (f *fwdTestNetworkEndpoint) WritePacket(r *Route, gso *GSO, params NetworkHeaderParams, pkt PacketBuffer) *tcpip.Error {
 	// Add the protocol's header to the packet and send it to the link
 	// endpoint.

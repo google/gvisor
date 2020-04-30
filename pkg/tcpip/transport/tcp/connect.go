@@ -801,6 +801,9 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso 
 		pkt.Header = buffer.NewPrependable(hdrSize)
 		pkt.Hash = tf.txHash
 		pkt.Owner = owner
+		pkt.EgressRoute = r
+		pkt.GSOOptions = gso
+		pkt.NetworkProtocolNumber = r.NetworkProtocolNumber()
 		data.ReadToVV(&pkt.Data, packetSize)
 		buildTCPHdr(r, tf, &pkt, gso)
 		tf.seq = tf.seq.Add(seqnum.Size(packetSize))
