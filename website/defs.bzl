@@ -130,7 +130,14 @@ layout: {layout}"""
             builder_content += [header.format(**args)]
             builder_content += ["---"]
             builder_content += ["EOF"]
-            builder_content += ["grep -v -E '^# ' %s >>$T/%s || true" % (f.path, f.short_path)]
+
+            # To generate the final page, we need to strip out the title (which
+            # was pulled above to generate the annotation in the frontmatter,
+            # and substitute the [TOC] tag with the {% toc %} plugin tag. Note
+            # that the pipeline here is almost important, as the grep will
+            # return non-zero if the file is empty, but we ignore that within
+            # the pipeline.
+            builder_content += ["grep -v -E '^# ' %s | sed -e 's|^\\[TOC\\]$|- TOC\\n{:toc}|' >>$T/%s" % (f.path, f.short_path)]
 
     builder_content += ["declare -r filename=$(readlink -m %s)" % tarball.path]
     builder_content += ["(cd $T && tar -zcf \"${filename}\" .)\n"]

@@ -1,5 +1,7 @@
 # Resource Model
 
+[TOC]
+
 The resource model for gVisor does not assume a fixed number of threads of
 execution (i.e. vCPUs) or amount of physical memory. Where possible, decisions
 about underlying physical resources are delegated to the host system, where

@@ -1,5 +1,7 @@
 # Networking
 
+[TOC]
+
 gVisor implements its own network stack called [netstack][netstack]. All aspects
 of the network stack are handled inside the Sentry — including TCP connection
 state, control messages, and packet assembly — keeping it isolated from the host

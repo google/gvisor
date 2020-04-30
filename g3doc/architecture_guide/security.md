@@ -1,5 +1,7 @@
 # Security Model
 
+[TOC]
+
 gVisor was created in order to provide additional defense against the
 exploitation of kernel bugs by untrusted userspace code. In order to understand
 how gVisor achieves this goal, it is first necessary to understand the basic

@@ -1,5 +1,7 @@
 # Performance Guide
 
+[TOC]
+
 gVisor is designed to provide a secure, virtualized environment while preserving
 key benefits of containerization, such as small fixed overheads and a dynamic
 resource footprint. For containerized infrastructure, this can provide a

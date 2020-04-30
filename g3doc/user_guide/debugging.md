@@ -1,5 +1,7 @@
 # Debugging
 
+[TOC]
+
 To enable debug and system call logging, add the `runtimeArgs` below to your
 [Docker](../quick_start/docker/) configuration (`/etc/docker/daemon.json`):
 
