@@ -7,5 +7,6 @@ RUN gem install \
 	jekyll-inline-svg:1.1.4 \
 	jekyll-paginate:1.1.0 \
 	kramdown-parser-gfm:1.1.0 \
-	jekyll-relative-links:0.6.1
+	jekyll-relative-links:0.6.1 \
+	jekyll-feed:0.13.0
 CMD ["/usr/gem/gems/jekyll-4.0.0/exe/jekyll", "build", "-t", "-s", "/input", "-d", "/output"]
