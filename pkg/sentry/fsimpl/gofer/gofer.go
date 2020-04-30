@@ -72,7 +72,8 @@ type filesystem struct {
 	mfp pgalloc.MemoryFileProvider
 
 	// Immutable options.
-	opts filesystemOptions
+	opts  filesystemOptions
+	iopts InternalFilesystemOptions
 
 	// client is the client used by this filesystem. client is immutable.
 	client *p9.Client
@@ -208,6 +209,16 @@ const (
 	// client is undefined.
 	InteropModeShared
 )
+
+// InternalFilesystemOptions may be passed as
+// vfs.GetFilesystemOptions.InternalData to FilesystemType.GetFilesystem.
+type InternalFilesystemOptions struct {
+	// If LeakConnection is true, do not close the connection to the server
+	// when the Filesystem is released. This is necessary for deployments in
+	// which servers can handle only a single client and report failure if that
+	// client disconnects.
+	LeakConnection bool
+}
 
 // Name implements vfs.FilesystemType.Name.
 func (FilesystemType) Name() string {
@@ -347,6 +358,14 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, syserror.EINVAL
 	}
 
+	// Handle internal options.
+	iopts, ok := opts.InternalData.(InternalFilesystemOptions)
+	if opts.InternalData != nil && !ok {
+		ctx.Warningf("gofer.FilesystemType.GetFilesystem: GetFilesystemOptions.InternalData has type %T, wanted gofer.InternalFilesystemOptions", opts.InternalData)
+		return nil, nil, syserror.EINVAL
+	}
+	// If !ok, iopts being the zero value is correct.
+
 	// Establish a connection with the server.
 	conn, err := unet.NewSocket(fsopts.fd)
 	if err != nil {
@@ -383,6 +402,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	fs := &filesystem{
 		mfp:              mfp,
 		opts:             fsopts,
+		iopts:            iopts,
 		uid:              creds.EffectiveKUID,
 		gid:              creds.EffectiveKGID,
 		client:           client,
@@ -440,8 +460,10 @@ func (fs *filesystem) Release() {
 	// fs.
 	fs.syncMu.Unlock()
 
-	// Close the connection to the server. This implicitly clunks all fids.
-	fs.client.Close()
+	if !fs.iopts.LeakConnection {
+		// Close the connection to the server. This implicitly clunks all fids.
+		fs.client.Close()
+	}
 }
 
 // dentry implements vfs.DentryImpl.
