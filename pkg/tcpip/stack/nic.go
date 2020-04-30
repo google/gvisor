@@ -452,7 +452,7 @@ type ipv6AddrCandidate struct {
 // primaryIPv6Endpoint returns an IPv6 endpoint following Source Address
 // Selection (RFC 6724 section 5).
 //
-// Note, only rules 1-3 are followed.
+// Note, only rules 1-3 and 7 are followed.
 //
 // remoteAddr must be a valid IPv6 address.
 func (n *NIC) primaryIPv6Endpoint(remoteAddr tcpip.Address) *referencedNetworkEndpoint {
@@ -521,6 +521,11 @@ func (n *NIC) primaryIPv6Endpoint(remoteAddr tcpip.Address) *referencedNetworkEn
 		if saDep, sbDep := sa.ref.deprecated, sb.ref.deprecated; saDep != sbDep {
 			// If sa is not deprecated, it is preferred over sb.
 			return sbDep
+		}
+
+		// Prefer temporary addresses as per RFC 6724 section 5 rule 7.
+		if saTemp, sbTemp := sa.ref.configType == slaacTemp, sb.ref.configType == slaacTemp; saTemp != sbTemp {
+			return saTemp
 		}
 
 		// sa and sb are equal, return the endpoint that is closest to the front of
