@@ -11,7 +11,10 @@ plugins:
   - jekyll-autoprefixer
   - jekyll-inline-svg
   - jekyll-relative-links
+  - jekyll-feed
 site_url: https://gvisor.dev
+feed:
+  path: blog/index.xml
 svg:
   optimize: true
 defaults:

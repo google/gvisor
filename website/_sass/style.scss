@@ -104,7 +104,13 @@ code {
 }
 
 .btn {
-  background-color: $primary;
+  color: $text-color;
+  background-color: $inverse-link-color;
+}
+
+.btn-inverse {
+  color: $text-color;
+  background-color: #ffffff;
 }
 
 .well {
