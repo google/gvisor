@@ -1,5 +1,7 @@
 # FAQ
 
+[TOC]
+
 ### What operating systems are supported? {#supported-os}
 
 Today, gVisor requires Linux.

@@ -1,5 +1,7 @@
 # Applications
 
+[TOC]
+
 gVisor implements a large portion of the Linux surface and while we strive to
 make it broadly compatible, there are (and always will be) unimplemented
 features and bugs. The only real way to know if it will work is to try. If you

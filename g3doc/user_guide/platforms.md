@@ -1,5 +1,7 @@
 # Platforms (KVM)
 
+[TOC]
+
 This document will help you set up your system to use a different gVisor
 platform.
 

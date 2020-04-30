@@ -1,5 +1,7 @@
 # Checkpoint/Restore
 
+[TOC]
+
 gVisor has the ability to checkpoint a process, save its current state in a
 state file, and restore into a new container using the state file.
 
