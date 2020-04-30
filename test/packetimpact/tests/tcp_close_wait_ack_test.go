@@ -28,7 +28,7 @@ import (
 func TestCloseWaitAck(t *testing.T) {
 	for _, tt := range []struct {
 		description    string
-		makeTestingTCP func(conn *tb.TCPIPv4, seqNumOffset seqnum.Size) tb.TCP
+		makeTestingTCP func(conn *tb.TCPIPv4, seqNumOffset seqnum.Size, windowSize seqnum.Size) tb.TCP
 		seqNumOffset   seqnum.Size
 		expectAck      bool
 	}{
@@ -52,12 +52,14 @@ func TestCloseWaitAck(t *testing.T) {
 
 			// Send a FIN to DUT to intiate the active close
 			conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck | header.TCPFlagFin)})
-			if _, err := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)}, time.Second); err != nil {
+			gotTCP, err := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)}, time.Second)
+			if err != nil {
 				t.Fatalf("expected an ACK for our fin and DUT should enter CLOSE_WAIT: %s", err)
 			}
+			windowSize := seqnum.Size(*gotTCP.WindowSize)
 
 			// Send a segment with OTW Seq / unacc ACK and expect an ACK back
-			conn.Send(tt.makeTestingTCP(&conn, tt.seqNumOffset), &tb.Payload{Bytes: []byte("Sample Data")})
+			conn.Send(tt.makeTestingTCP(&conn, tt.seqNumOffset, windowSize), &tb.Payload{Bytes: []byte("Sample Data")})
 			gotAck, err := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)}, time.Second)
 			if tt.expectAck && err != nil {
 				t.Fatalf("expected an ack but got none: %s", err)
@@ -85,9 +87,8 @@ func TestCloseWaitAck(t *testing.T) {
 // This generates an segment with seqnum = RCV.NXT + RCV.WND + seqNumOffset, the
 // generated segment is only acceptable when seqNumOffset is 0, otherwise an ACK
 // is expected from the receiver.
-func GenerateOTWSeqSegment(conn *tb.TCPIPv4, seqNumOffset seqnum.Size) tb.TCP {
-	windowSize := seqnum.Size(*conn.SynAck().WindowSize)
-	lastAcceptable := conn.LocalSeqNum().Add(windowSize - 1)
+func GenerateOTWSeqSegment(conn *tb.TCPIPv4, seqNumOffset seqnum.Size, windowSize seqnum.Size) tb.TCP {
+	lastAcceptable := conn.LocalSeqNum().Add(windowSize)
 	otwSeq := uint32(lastAcceptable.Add(seqNumOffset))
 	return tb.TCP{SeqNum: tb.Uint32(otwSeq), Flags: tb.Uint8(header.TCPFlagAck)}
 }
@@ -95,7 +96,7 @@ func GenerateOTWSeqSegment(conn *tb.TCPIPv4, seqNumOffset seqnum.Size) tb.TCP {
 // This generates an segment with acknum = SND.NXT + seqNumOffset, the generated
 // segment is only acceptable when seqNumOffset is 0, otherwise an ACK is
 // expected from the receiver.
-func GenerateUnaccACKSegment(conn *tb.TCPIPv4, seqNumOffset seqnum.Size) tb.TCP {
+func GenerateUnaccACKSegment(conn *tb.TCPIPv4, seqNumOffset seqnum.Size, windowSize seqnum.Size) tb.TCP {
 	lastAcceptable := conn.RemoteSeqNum()
 	unaccAck := uint32(lastAcceptable.Add(seqNumOffset))
 	return tb.TCP{AckNum: tb.Uint32(unaccAck), Flags: tb.Uint8(header.TCPFlagAck)}
