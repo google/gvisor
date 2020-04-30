@@ -187,6 +187,10 @@ type Config struct {
 	// SoftwareGSO indicates that software segmentation offload is enabled.
 	SoftwareGSO bool
 
+	// QDisc indicates the type of queuening discipline to use by default
+	// for non-loopback interfaces.
+	QDisc QueueingDiscipline
+
 	// LogPackets indicates that all network packets should be logged.
 	LogPackets bool
 
@@ -294,6 +298,7 @@ func (c *Config) ToFlags() []string {
 		"--gso=" + strconv.FormatBool(c.HardwareGSO),
 		"--software-gso=" + strconv.FormatBool(c.SoftwareGSO),
 		"--overlayfs-stale-read=" + strconv.FormatBool(c.OverlayfsStaleRead),
+		"--qdisc=" + c.QDisc.String(),
 	}
 	if c.CPUNumFromQuota {
 		f = append(f, "--cpu-num-from-quota")

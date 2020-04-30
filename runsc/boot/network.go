@@ -17,6 +17,7 @@ package boot
 import (
 	"fmt"
 	"net"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -24,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
+	"gvisor.dev/gvisor/pkg/tcpip/link/qdisc/fifo"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -75,6 +77,44 @@ type DefaultRoute struct {
 	Name  string
 }
 
+// QueueingDiscipline is used to specify the kind of Queueing Discipline to
+// apply for a give FDBasedLink.
+type QueueingDiscipline int
+
+const (
+	// QDiscNone disables any queueing for the underlying FD.
+	QDiscNone QueueingDiscipline = iota
+
+	// QDiscFIFO applies a simple fifo based queue to the underlying
+	// FD.
+	QDiscFIFO
+)
+
+// MakeQueueingDiscipline if possible the equivalent QueuingDiscipline for s
+// else returns an error.
+func MakeQueueingDiscipline(s string) (QueueingDiscipline, error) {
+	switch s {
+	case "none":
+		return QDiscNone, nil
+	case "fifo":
+		return QDiscFIFO, nil
+	default:
+		return 0, fmt.Errorf("unsupported qdisc specified: %q", s)
+	}
+}
+
+// String implements fmt.Stringer.
+func (q QueueingDiscipline) String() string {
+	switch q {
+	case QDiscNone:
+		return "none"
+	case QDiscFIFO:
+		return "fifo"
+	default:
+		panic(fmt.Sprintf("Invalid queueing discipline: %d", q))
+	}
+}
+
 // FDBasedLink configures an fd-based link.
 type FDBasedLink struct {
 	Name               string
@@ -84,6 +124,7 @@ type FDBasedLink struct {
 	GSOMaxSize         uint32
 	SoftwareGSOEnabled bool
 	LinkAddress        net.HardwareAddr
+	QDisc              QueueingDiscipline
 
 	// NumChannels controls how many underlying FD's are to be used to
 	// create this endpoint.
@@ -185,6 +226,8 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		}
 
 		mac := tcpip.LinkAddress(link.LinkAddress)
+		log.Infof("gso max size is: %d", link.GSOMaxSize)
+
 		linkEP, err := fdbased.New(&fdbased.Options{
 			FDs:                FDs,
 			MTU:                uint32(link.MTU),
@@ -197,6 +240,13 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		})
 		if err != nil {
 			return err
+		}
+
+		switch link.QDisc {
+		case QDiscNone:
+		case QDiscFIFO:
+			log.Infof("Enabling FIFO QDisc on %q", link.Name)
+			linkEP = fifo.New(linkEP, runtime.GOMAXPROCS(0), 1000)
 		}
 
 		log.Infof("Enabling interface %q with id %d on addresses %+v (%v) w/ %d channels", link.Name, nicID, link.Addresses, mac, link.NumChannels)

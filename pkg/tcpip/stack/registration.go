@@ -269,6 +269,10 @@ type NetworkEndpoint interface {
 
 	// Close is called when the endpoint is reomved from a stack.
 	Close()
+
+	// NetworkProtocolNumber returns the tcpip.NetworkProtocolNumber for
+	// this endpoint.
+	NetworkProtocolNumber() tcpip.NetworkProtocolNumber
 }
 
 // NetworkProtocol is the interface that needs to be implemented by network
