@@ -16,6 +16,7 @@
 package buffer
 
 import (
+	"bytes"
 	"reflect"
 	"testing"
 )
@@ -368,5 +369,117 @@ func TestVVRead(t *testing.T) {
 				t.Errorf("vv has incorrect data after Read got: %s, want: %s", got, want)
 			}
 		})
+	}
+}
+
+var pullUpTestCases = []struct {
+	comment string
+	in      VectorisedView
+	count   int
+	want    []byte
+	result  VectorisedView
+	ok      bool
+}{
+	{
+		comment: "simple case",
+		in:      vv(2, "12"),
+		count:   1,
+		want:    []byte("1"),
+		result:  vv(2, "12"),
+		ok:      true,
+	},
+	{
+		comment: "entire View",
+		in:      vv(2, "1", "2"),
+		count:   1,
+		want:    []byte("1"),
+		result:  vv(2, "1", "2"),
+		ok:      true,
+	},
+	{
+		comment: "spanning across two Views",
+		in:      vv(3, "1", "23"),
+		count:   2,
+		want:    []byte("12"),
+		result:  vv(3, "12", "3"),
+		ok:      true,
+	},
+	{
+		comment: "spanning across all Views",
+		in:      vv(5, "1", "23", "45"),
+		count:   5,
+		want:    []byte("12345"),
+		result:  vv(5, "12345"),
+		ok:      true,
+	},
+	{
+		comment: "count = 0",
+		in:      vv(1, "1"),
+		count:   0,
+		want:    []byte{},
+		result:  vv(1, "1"),
+		ok:      true,
+	},
+	{
+		comment: "count = size",
+		in:      vv(1, "1"),
+		count:   1,
+		want:    []byte("1"),
+		result:  vv(1, "1"),
+		ok:      true,
+	},
+	{
+		comment: "count too large",
+		in:      vv(3, "1", "23"),
+		count:   4,
+		want:    nil,
+		result:  vv(3, "1", "23"),
+		ok:      false,
+	},
+	{
+		comment: "empty vv",
+		in:      vv(0, ""),
+		count:   1,
+		want:    nil,
+		result:  vv(0, ""),
+		ok:      false,
+	},
+	{
+		comment: "empty vv, count = 0",
+		in:      vv(0, ""),
+		count:   0,
+		want:    nil,
+		result:  vv(0, ""),
+		ok:      true,
+	},
+	{
+		comment: "empty views",
+		in:      vv(3, "", "1", "", "23"),
+		count:   2,
+		want:    []byte("12"),
+		result:  vv(3, "12", "3"),
+		ok:      true,
+	},
+}
+
+func TestPullUp(t *testing.T) {
+	for _, c := range pullUpTestCases {
+		got, ok := c.in.PullUp(c.count)
+
+		// Is the return value right?
+		if ok != c.ok {
+			t.Errorf("Test %q failed when calling PullUp(%d) on %v. Got an ok of %t. Want %t",
+				c.comment, c.count, c.in, ok, c.ok)
+		}
+		if bytes.Compare(got, View(c.want)) != 0 {
+			t.Errorf("Test %q failed when calling PullUp(%d) on %v. Got %v. Want %v",
+				c.comment, c.count, c.in, got, c.want)
+		}
+
+		// Is the underlying structure right?
+		if !reflect.DeepEqual(c.in, c.result) {
+			t.Errorf("Test %q failed when calling PullUp(%d). Got vv with structure %v. Wanted %v",
+				c.comment, c.count, c.in, c.result)
+		}
 	}
 }

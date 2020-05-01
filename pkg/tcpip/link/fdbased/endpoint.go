@@ -436,6 +436,9 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 	if pkt.Data.Size() == 0 {
 		return rawfile.NonBlockingWrite(fd, pkt.Header.View())
 	}
+	if pkt.Header.UsedLength() == 0 {
+		return rawfile.NonBlockingWrite(fd, pkt.Data.ToView())
+	}
 
 	return rawfile.NonBlockingWrite3(fd, pkt.Header.View(), pkt.Data.ToView(), nil)
 }
