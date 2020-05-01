@@ -74,6 +74,11 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 }
 
 // NewDentry constructs and returns a sockfs dentry.
+//
+// TODO(gvisor.dev/issue/1476): Currently, we are using
+// sockfs.filesystem.NextIno() to get inode numbers. We should use
+// device-specific numbers, so that we are not using the same generator for
+// netstack, unix, etc.
 func NewDentry(creds *auth.Credentials, ino uint64) *vfs.Dentry {
 	// File mode matches net/socket.c:sock_alloc.
 	filemode := linux.FileMode(linux.S_IFSOCK | 0600)

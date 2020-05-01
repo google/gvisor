@@ -7,7 +7,9 @@ go_library(
     srcs = [
         "message.go",
         "provider.go",
+        "provider_vfs2.go",
         "socket.go",
+        "socket_vfs2.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
@@ -18,6 +20,8 @@ go_library(
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
+        "//pkg/sentry/fsimpl/kernfs",
+        "//pkg/sentry/fsimpl/sockfs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
@@ -25,6 +29,7 @@ go_library(
         "//pkg/sentry/socket/netlink/port",
         "//pkg/sentry/socket/unix",
         "//pkg/sentry/socket/unix/transport",
+        "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/syserr",
         "//pkg/syserror",

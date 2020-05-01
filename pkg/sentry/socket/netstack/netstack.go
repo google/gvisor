@@ -252,6 +252,8 @@ type commonEndpoint interface {
 	GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error)
 }
 
+// LINT.IfChange
+
 // SocketOperations encapsulates all the state needed to represent a network stack
 // endpoint in the kernel context.
 //
@@ -263,6 +265,14 @@ type SocketOperations struct {
 	fsutil.FileNoFsync              `state:"nosave"`
 	fsutil.FileNoMMap               `state:"nosave"`
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
+
+	socketOpsCommon
+}
+
+// socketOpsCommon contains the socket operations common to VFS1 and VFS2.
+//
+// +stateify savable
+type socketOpsCommon struct {
 	socket.SendReceiveTimeout
 	*waiter.Queue
 
@@ -314,11 +324,13 @@ func New(t *kernel.Task, family int, skType linux.SockType, protocol int, queue 
 	dirent := socket.NewDirent(t, netstackDevice)
 	defer dirent.DecRef()
 	return fs.NewFile(t, dirent, fs.FileFlags{Read: true, Write: true, NonSeekable: true}, &SocketOperations{
-		Queue:    queue,
-		family:   family,
-		Endpoint: endpoint,
-		skType:   skType,
-		protocol: protocol,
+		socketOpsCommon: socketOpsCommon{
+			Queue:    queue,
+			family:   family,
+			Endpoint: endpoint,
+			skType:   skType,
+			protocol: protocol,
+		},
 	}), nil
 }
 
@@ -417,7 +429,7 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 	}
 }
 
-func (s *SocketOperations) isPacketBased() bool {
+func (s *socketOpsCommon) isPacketBased() bool {
 	return s.skType == linux.SOCK_DGRAM || s.skType == linux.SOCK_SEQPACKET || s.skType == linux.SOCK_RDM || s.skType == linux.SOCK_RAW
 }
 
@@ -425,7 +437,7 @@ func (s *SocketOperations) isPacketBased() bool {
 // empty. It assumes that the socket is locked.
 //
 // Precondition: s.readMu must be held.
-func (s *SocketOperations) fetchReadView() *syserr.Error {
+func (s *socketOpsCommon) fetchReadView() *syserr.Error {
 	if len(s.readView) > 0 {
 		return nil
 	}
@@ -446,7 +458,7 @@ func (s *SocketOperations) fetchReadView() *syserr.Error {
 }
 
 // Release implements fs.FileOperations.Release.
-func (s *SocketOperations) Release() {
+func (s *socketOpsCommon) Release() {
 	s.Endpoint.Close()
 }
 
@@ -633,7 +645,7 @@ func (s *SocketOperations) ReadFrom(ctx context.Context, _ *fs.File, r io.Reader
 }
 
 // Readiness returns a mask of ready events for socket s.
-func (s *SocketOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
+func (s *socketOpsCommon) Readiness(mask waiter.EventMask) waiter.EventMask {
 	r := s.Endpoint.Readiness(mask)
 
 	// Check our cached value iff the caller asked for readability and the
@@ -647,7 +659,7 @@ func (s *SocketOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return r
 }
 
-func (s *SocketOperations) checkFamily(family uint16, exact bool) *syserr.Error {
+func (s *socketOpsCommon) checkFamily(family uint16, exact bool) *syserr.Error {
 	if family == uint16(s.family) {
 		return nil
 	}
@@ -670,7 +682,7 @@ func (s *SocketOperations) checkFamily(family uint16, exact bool) *syserr.Error 
 // represented by the empty string.
 //
 // TODO(gvisor.dev/issue/1556): remove this function.
-func (s *SocketOperations) mapFamily(addr tcpip.FullAddress, family uint16) tcpip.FullAddress {
+func (s *socketOpsCommon) mapFamily(addr tcpip.FullAddress, family uint16) tcpip.FullAddress {
 	if len(addr.Addr) == 0 && s.family == linux.AF_INET6 && family == linux.AF_INET {
 		addr.Addr = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\x00\x00\x00\x00"
 	}
@@ -679,7 +691,7 @@ func (s *SocketOperations) mapFamily(addr tcpip.FullAddress, family uint16) tcpi
 
 // Connect implements the linux syscall connect(2) for sockets backed by
 // tpcip.Endpoint.
-func (s *SocketOperations) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.Error {
+func (s *socketOpsCommon) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.Error {
 	addr, family, err := AddressAndFamily(sockaddr)
 	if err != nil {
 		return err
@@ -725,7 +737,7 @@ func (s *SocketOperations) Connect(t *kernel.Task, sockaddr []byte, blocking boo
 
 // Bind implements the linux syscall bind(2) for sockets backed by
 // tcpip.Endpoint.
-func (s *SocketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
+func (s *socketOpsCommon) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 	if len(sockaddr) < 2 {
 		return syserr.ErrInvalidArgument
 	}
@@ -771,13 +783,13 @@ func (s *SocketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 
 // Listen implements the linux syscall listen(2) for sockets backed by
 // tcpip.Endpoint.
-func (s *SocketOperations) Listen(t *kernel.Task, backlog int) *syserr.Error {
+func (s *socketOpsCommon) Listen(t *kernel.Task, backlog int) *syserr.Error {
 	return syserr.TranslateNetstackError(s.Endpoint.Listen(backlog))
 }
 
 // blockingAccept implements a blocking version of accept(2), that is, if no
 // connections are ready to be accept, it will block until one becomes ready.
-func (s *SocketOperations) blockingAccept(t *kernel.Task) (tcpip.Endpoint, *waiter.Queue, *syserr.Error) {
+func (s *socketOpsCommon) blockingAccept(t *kernel.Task) (tcpip.Endpoint, *waiter.Queue, *syserr.Error) {
 	// Register for notifications.
 	e, ch := waiter.NewChannelEntry(nil)
 	s.EventRegister(&e, waiter.EventIn)
@@ -863,7 +875,7 @@ func ConvertShutdown(how int) (tcpip.ShutdownFlags, *syserr.Error) {
 
 // Shutdown implements the linux syscall shutdown(2) for sockets backed by
 // tcpip.Endpoint.
-func (s *SocketOperations) Shutdown(t *kernel.Task, how int) *syserr.Error {
+func (s *socketOpsCommon) Shutdown(t *kernel.Task, how int) *syserr.Error {
 	f, err := ConvertShutdown(how)
 	if err != nil {
 		return err
@@ -2258,7 +2270,7 @@ func ConvertAddress(family int, addr tcpip.FullAddress) (linux.SockAddr, uint32)
 
 // GetSockName implements the linux syscall getsockname(2) for sockets backed by
 // tcpip.Endpoint.
-func (s *SocketOperations) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
+func (s *socketOpsCommon) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
 	addr, err := s.Endpoint.GetLocalAddress()
 	if err != nil {
 		return nil, 0, syserr.TranslateNetstackError(err)
@@ -2270,7 +2282,7 @@ func (s *SocketOperations) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, 
 
 // GetPeerName implements the linux syscall getpeername(2) for sockets backed by
 // tcpip.Endpoint.
-func (s *SocketOperations) GetPeerName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
+func (s *socketOpsCommon) GetPeerName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
 	addr, err := s.Endpoint.GetRemoteAddress()
 	if err != nil {
 		return nil, 0, syserr.TranslateNetstackError(err)
@@ -2285,7 +2297,7 @@ func (s *SocketOperations) GetPeerName(t *kernel.Task) (linux.SockAddr, uint32, 
 // caller.
 //
 // Precondition: s.readMu must be locked.
-func (s *SocketOperations) coalescingRead(ctx context.Context, dst usermem.IOSequence, discard bool) (int, *syserr.Error) {
+func (s *socketOpsCommon) coalescingRead(ctx context.Context, dst usermem.IOSequence, discard bool) (int, *syserr.Error) {
 	var err *syserr.Error
 	var copied int
 
@@ -2337,7 +2349,7 @@ func (s *SocketOperations) coalescingRead(ctx context.Context, dst usermem.IOSeq
 	return 0, err
 }
 
-func (s *SocketOperations) fillCmsgInq(cmsg *socket.ControlMessages) {
+func (s *socketOpsCommon) fillCmsgInq(cmsg *socket.ControlMessages) {
 	if !s.sockOptInq {
 		return
 	}
@@ -2352,7 +2364,7 @@ func (s *SocketOperations) fillCmsgInq(cmsg *socket.ControlMessages) {
 // nonBlockingRead issues a non-blocking read.
 //
 // TODO(b/78348848): Support timestamps for stream sockets.
-func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSequence, peek, trunc, senderRequested bool) (int, int, linux.SockAddr, uint32, socket.ControlMessages, *syserr.Error) {
+func (s *socketOpsCommon) nonBlockingRead(ctx context.Context, dst usermem.IOSequence, peek, trunc, senderRequested bool) (int, int, linux.SockAddr, uint32, socket.ControlMessages, *syserr.Error) {
 	isPacket := s.isPacketBased()
 
 	// Fast path for regular reads from stream (e.g., TCP) endpoints. Note
@@ -2461,7 +2473,7 @@ func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSe
 	return n, flags, addr, addrLen, cmsg, syserr.FromError(err)
 }
 
-func (s *SocketOperations) controlMessages() socket.ControlMessages {
+func (s *socketOpsCommon) controlMessages() socket.ControlMessages {
 	return socket.ControlMessages{
 		IP: tcpip.ControlMessages{
 			HasTimestamp:    s.readCM.HasTimestamp && s.sockOptTimestamp,
@@ -2480,7 +2492,7 @@ func (s *SocketOperations) controlMessages() socket.ControlMessages {
 // successfully writing packet data out to userspace.
 //
 // Precondition: s.readMu must be locked.
-func (s *SocketOperations) updateTimestamp() {
+func (s *socketOpsCommon) updateTimestamp() {
 	// Save the SIOCGSTAMP timestamp only if SO_TIMESTAMP is disabled.
 	if !s.sockOptTimestamp {
 		s.timestampValid = true
@@ -2490,7 +2502,7 @@ func (s *SocketOperations) updateTimestamp() {
 
 // RecvMsg implements the linux syscall recvmsg(2) for sockets backed by
 // tcpip.Endpoint.
-func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (n int, msgFlags int, senderAddr linux.SockAddr, senderAddrLen uint32, controlMessages socket.ControlMessages, err *syserr.Error) {
+func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (n int, msgFlags int, senderAddr linux.SockAddr, senderAddrLen uint32, controlMessages socket.ControlMessages, err *syserr.Error) {
 	trunc := flags&linux.MSG_TRUNC != 0
 	peek := flags&linux.MSG_PEEK != 0
 	dontWait := flags&linux.MSG_DONTWAIT != 0
@@ -2558,7 +2570,7 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 
 // SendMsg implements the linux syscall sendmsg(2) for sockets backed by
 // tcpip.Endpoint.
-func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, haveDeadline bool, deadline ktime.Time, controlMessages socket.ControlMessages) (int, *syserr.Error) {
+func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, haveDeadline bool, deadline ktime.Time, controlMessages socket.ControlMessages) (int, *syserr.Error) {
 	// Reject Unix control messages.
 	if !controlMessages.Unix.Empty() {
 		return 0, syserr.ErrInvalidArgument
@@ -2634,6 +2646,10 @@ func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 
 // Ioctl implements fs.FileOperations.Ioctl.
 func (s *SocketOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+	return s.socketOpsCommon.ioctl(ctx, io, args)
+}
+
+func (s *socketOpsCommon) ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	// SIOCGSTAMP is implemented by netstack rather than all commonEndpoint
 	// sockets.
 	// TODO(b/78348848): Add a commonEndpoint method to support SIOCGSTAMP.
@@ -2973,7 +2989,7 @@ func nicStateFlagsToLinux(f stack.NICStateFlags) uint32 {
 
 // State implements socket.Socket.State. State translates the internal state
 // returned by netstack to values defined by Linux.
-func (s *SocketOperations) State() uint32 {
+func (s *socketOpsCommon) State() uint32 {
 	if s.family != linux.AF_INET && s.family != linux.AF_INET6 {
 		// States not implemented for this socket's family.
 		return 0
@@ -3033,6 +3049,8 @@ func (s *SocketOperations) State() uint32 {
 }
 
 // Type implements socket.Socket.Type.
-func (s *SocketOperations) Type() (family int, skType linux.SockType, protocol int) {
+func (s *socketOpsCommon) Type() (family int, skType linux.SockType, protocol int) {
 	return s.family, s.skType, s.protocol
 }
+
+// LINT.ThenChange(./netstack_vfs2.go)
