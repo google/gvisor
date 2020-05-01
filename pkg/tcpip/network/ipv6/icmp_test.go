@@ -166,7 +166,8 @@ func TestICMPCounts(t *testing.T) {
 		},
 		{
 			typ:  header.ICMPv6NeighborSolicit,
-			size: header.ICMPv6NeighborSolicitMinimumSize},
+			size: header.ICMPv6NeighborSolicitMinimumSize,
+		},
 		{
 			typ:       header.ICMPv6NeighborAdvert,
 			size:      header.ICMPv6NeighborAdvertMinimumSize,

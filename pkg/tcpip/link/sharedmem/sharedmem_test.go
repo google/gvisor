@@ -674,7 +674,7 @@ func TestSimpleReceive(t *testing.T) {
 		// Wait for packet to be received, then check it.
 		c.waitForPackets(1, time.After(5*time.Second), "Timeout waiting for packet")
 		c.mu.Lock()
-		rcvd := []byte(c.packets[0].vv.First())
+		rcvd := []byte(c.packets[0].vv.ToView())
 		c.packets = c.packets[:0]
 		c.mu.Unlock()
 

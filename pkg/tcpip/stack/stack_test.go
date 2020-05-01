@@ -95,16 +95,18 @@ func (f *fakeNetworkEndpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffe
 	f.proto.packetCount[int(f.id.LocalAddress[0])%len(f.proto.packetCount)]++
 
 	// Consume the network header.
-	b := pkt.Data.First()
+	b, ok := pkt.Data.PullUp(fakeNetHeaderLen)
+	if !ok {
+		return
+	}
 	pkt.Data.TrimFront(fakeNetHeaderLen)
 
 	// Handle control packets.
 	if b[2] == uint8(fakeControlProtocol) {
-		nb := pkt.Data.First()
-		if len(nb) < fakeNetHeaderLen {
+		nb, ok := pkt.Data.PullUp(fakeNetHeaderLen)
+		if !ok {
 			return
 		}
-
 		pkt.Data.TrimFront(fakeNetHeaderLen)
 		f.dispatcher.DeliverTransportControlPacket(tcpip.Address(nb[1:2]), tcpip.Address(nb[0:1]), fakeNetNumber, tcpip.TransportProtocolNumber(nb[2]), stack.ControlPortUnreachable, 0, pkt)
 		return
