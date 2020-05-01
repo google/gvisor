@@ -66,6 +66,10 @@ type PacketBuffer struct {
 	EgressRoute           *Route
 	GSOOptions            *GSO
 	NetworkProtocolNumber tcpip.NetworkProtocolNumber
+
+	// NatDone indicates if the packet has been manipulated as per NAT
+	// iptables rule.
+	NatDone bool
 }
 
 // Clone makes a copy of pk. It clones the Data field, which creates a new

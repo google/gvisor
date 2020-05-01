@@ -120,13 +120,23 @@ func (tm *TCPMatcher) Match(hook stack.Hook, pkt stack.PacketBuffer, interfaceNa
 	if pkt.TransportHeader != nil {
 		tcpHeader = header.TCP(pkt.TransportHeader)
 	} else {
+		headerView := pkt.Data.First()
+		if hook == stack.Prerouting {
+			if len(pkt.Data.First()) < header.IPv4MinimumSize {
+				return false, true
+			}
+			h := header.IPv4(headerView)
+			pkt.NetworkHeader = headerView
+			headerView = headerView[h.HeaderLength():]
+		}
 		// The TCP header hasn't been parsed yet. We have to do it here.
-		if len(pkt.Data.First()) < header.TCPMinimumSize {
+		if len(headerView) < header.TCPMinimumSize {
 			// There's no valid TCP header here, so we hotdrop the
 			// packet.
 			return false, true
 		}
-		tcpHeader = header.TCP(pkt.Data.First())
+		headerView = headerView[:header.TCPMinimumSize]
+		tcpHeader = header.TCP(headerView)
 	}
 
 	// Check whether the source and destination ports are within the
