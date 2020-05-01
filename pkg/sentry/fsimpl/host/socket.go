@@ -34,17 +34,16 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// Create a new host-backed endpoint from the given fd.
-func newEndpoint(ctx context.Context, hostFD int) (transport.Endpoint, error) {
+// Create a new host-backed endpoint from the given fd and its corresponding
+// notification queue.
+func newEndpoint(ctx context.Context, hostFD int, queue *waiter.Queue) (transport.Endpoint, error) {
 	// Set up an external transport.Endpoint using the host fd.
 	addr := fmt.Sprintf("hostfd:[%d]", hostFD)
-	var q waiter.Queue
-	e, err := NewConnectedEndpoint(ctx, hostFD, &q, addr, true /* saveable */)
+	e, err := NewConnectedEndpoint(ctx, hostFD, addr, true /* saveable */)
 	if err != nil {
 		return nil, err.ToError()
 	}
-	e.Init()
-	ep := transport.NewExternal(ctx, e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
+	ep := transport.NewExternal(ctx, e.stype, uniqueid.GlobalProviderFromContext(ctx), queue, e, e)
 	return ep, nil
 }
 
@@ -76,8 +75,6 @@ type ConnectedEndpoint struct {
 
 	// addr is the address at which this endpoint is bound.
 	addr string
-
-	queue *waiter.Queue
 
 	// sndbuf is the size of the send buffer.
 	//
@@ -134,11 +131,10 @@ func (c *ConnectedEndpoint) init() *syserr.Error {
 // The caller is responsible for calling Init(). Additionaly, Release needs to
 // be called twice because ConnectedEndpoint is both a transport.Receiver and
 // transport.ConnectedEndpoint.
-func NewConnectedEndpoint(ctx context.Context, hostFD int, queue *waiter.Queue, addr string, saveable bool) (*ConnectedEndpoint, *syserr.Error) {
+func NewConnectedEndpoint(ctx context.Context, hostFD int, addr string, saveable bool) (*ConnectedEndpoint, *syserr.Error) {
 	e := ConnectedEndpoint{
-		fd:    hostFD,
-		addr:  addr,
-		queue: queue,
+		fd:   hostFD,
+		addr: addr,
 	}
 
 	if err := e.init(); err != nil {
@@ -149,13 +145,6 @@ func NewConnectedEndpoint(ctx context.Context, hostFD int, queue *waiter.Queue, 
 	e.ref.IncRef()
 	e.ref.EnableLeakCheck("host.ConnectedEndpoint")
 	return &e, nil
-}
-
-// Init will do the initialization required without holding other locks.
-func (c *ConnectedEndpoint) Init() {
-	if err := fdnotifier.AddFD(int32(c.fd), c.queue); err != nil {
-		panic(err)
-	}
 }
 
 // Send implements transport.ConnectedEndpoint.Send.
@@ -332,7 +321,6 @@ func (c *ConnectedEndpoint) RecvMaxQueueSize() int64 {
 }
 
 func (c *ConnectedEndpoint) destroyLocked() {
-	fdnotifier.RemoveFD(int32(c.fd))
 	c.fd = -1
 }
 
@@ -350,14 +338,20 @@ func (c *ConnectedEndpoint) Release() {
 func (c *ConnectedEndpoint) CloseUnread() {}
 
 // SCMConnectedEndpoint represents an endpoint backed by a host fd that was
-// passed through a gofer Unix socket. It is almost the same as
-// ConnectedEndpoint, with the following differences:
+// passed through a gofer Unix socket. It resembles ConnectedEndpoint, with the
+// following differences:
 // - SCMConnectedEndpoint is not saveable, because the host cannot guarantee
 // the same descriptor number across S/R.
-// - SCMConnectedEndpoint holds ownership of its fd and is responsible for
-// closing it.
+// - SCMConnectedEndpoint holds ownership of its fd and notification queue.
 type SCMConnectedEndpoint struct {
 	ConnectedEndpoint
+
+	queue *waiter.Queue
+}
+
+// Init will do the initialization required without holding other locks.
+func (e *SCMConnectedEndpoint) Init() error {
+	return fdnotifier.AddFD(int32(e.fd), e.queue)
 }
 
 // Release implements transport.ConnectedEndpoint.Release and
@@ -368,6 +362,7 @@ func (e *SCMConnectedEndpoint) Release() {
 		if err := syscall.Close(e.fd); err != nil {
 			log.Warningf("Failed to close host fd %d: %v", err)
 		}
+		fdnotifier.RemoveFD(int32(e.fd))
 		e.destroyLocked()
 		e.mu.Unlock()
 	})
@@ -380,11 +375,13 @@ func (e *SCMConnectedEndpoint) Release() {
 // be called twice because ConnectedEndpoint is both a transport.Receiver and
 // transport.ConnectedEndpoint.
 func NewSCMEndpoint(ctx context.Context, hostFD int, queue *waiter.Queue, addr string) (*SCMConnectedEndpoint, *syserr.Error) {
-	e := SCMConnectedEndpoint{ConnectedEndpoint{
-		fd:    hostFD,
-		addr:  addr,
+	e := SCMConnectedEndpoint{
+		ConnectedEndpoint: ConnectedEndpoint{
+			fd:   hostFD,
+			addr: addr,
+		},
 		queue: queue,
-	}}
+	}
 
 	if err := e.init(); err != nil {
 		return nil, err

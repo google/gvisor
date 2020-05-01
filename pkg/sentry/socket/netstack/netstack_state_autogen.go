@@ -9,6 +9,17 @@ import (
 func (x *SocketOperations) beforeSave() {}
 func (x *SocketOperations) save(m state.Map) {
 	x.beforeSave()
+	m.Save("socketOpsCommon", &x.socketOpsCommon)
+}
+
+func (x *SocketOperations) afterLoad() {}
+func (x *SocketOperations) load(m state.Map) {
+	m.Load("socketOpsCommon", &x.socketOpsCommon)
+}
+
+func (x *socketOpsCommon) beforeSave() {}
+func (x *socketOpsCommon) save(m state.Map) {
+	x.beforeSave()
 	m.Save("SendReceiveTimeout", &x.SendReceiveTimeout)
 	m.Save("Queue", &x.Queue)
 	m.Save("family", &x.family)
@@ -25,8 +36,8 @@ func (x *SocketOperations) save(m state.Map) {
 	m.Save("sockOptInq", &x.sockOptInq)
 }
 
-func (x *SocketOperations) afterLoad() {}
-func (x *SocketOperations) load(m state.Map) {
+func (x *socketOpsCommon) afterLoad() {}
+func (x *socketOpsCommon) load(m state.Map) {
 	m.Load("SendReceiveTimeout", &x.SendReceiveTimeout)
 	m.Load("Queue", &x.Queue)
 	m.Load("family", &x.family)
@@ -54,5 +65,6 @@ func (x *Stack) load(m state.Map) {
 
 func init() {
 	state.Register("pkg/sentry/socket/netstack.SocketOperations", (*SocketOperations)(nil), state.Fns{Save: (*SocketOperations).save, Load: (*SocketOperations).load})
+	state.Register("pkg/sentry/socket/netstack.socketOpsCommon", (*socketOpsCommon)(nil), state.Fns{Save: (*socketOpsCommon).save, Load: (*socketOpsCommon).load})
 	state.Register("pkg/sentry/socket/netstack.Stack", (*Stack)(nil), state.Fns{Save: (*Stack).save, Load: (*Stack).load})
 }

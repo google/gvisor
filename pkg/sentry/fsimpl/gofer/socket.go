@@ -87,7 +87,9 @@ func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.Connec
 
 	returnConnect(c, c)
 	ce.Unlock()
-	c.Init()
+	if err := c.Init(); err != nil {
+		return syserr.FromError(err)
+	}
 
 	return nil
 }
@@ -99,7 +101,10 @@ func (e *endpoint) UnidirectionalConnect(ctx context.Context) (transport.Connect
 	if err != nil {
 		return nil, err
 	}
-	c.Init()
+
+	if err := c.Init(); err != nil {
+		return nil, syserr.FromError(err)
+	}
 
 	// We don't need the receiver.
 	c.CloseRecv()

@@ -411,7 +411,7 @@ func (i *inode) open(ctx context.Context, d *vfs.Dentry, mnt *vfs.Mount) (*vfs.F
 			return nil, syserror.ENOTTY
 		}
 
-		ep, err := newEndpoint(ctx, i.hostFD)
+		ep, err := newEndpoint(ctx, i.hostFD, &i.queue)
 		if err != nil {
 			return nil, err
 		}

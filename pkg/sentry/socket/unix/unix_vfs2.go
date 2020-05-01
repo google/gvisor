@@ -229,7 +229,7 @@ func (s *SocketVFS2) PRead(ctx context.Context, dst usermem.IOSequence, offset i
 // Read implements vfs.FileDescriptionImpl.
 func (s *SocketVFS2) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	// All flags other than RWF_NOWAIT should be ignored.
-	// TODO(gvisor.dev/issue/1476): Support RWF_NOWAIT.
+	// TODO(gvisor.dev/issue/2601): Support RWF_NOWAIT.
 	if opts.Flags != 0 {
 		return 0, syserror.EOPNOTSUPP
 	}
@@ -254,7 +254,7 @@ func (s *SocketVFS2) PWrite(ctx context.Context, src usermem.IOSequence, offset 
 // Write implements vfs.FileDescriptionImpl.
 func (s *SocketVFS2) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	// All flags other than RWF_NOWAIT should be ignored.
-	// TODO(gvisor.dev/issue/1476): Support RWF_NOWAIT.
+	// TODO(gvisor.dev/issue/2601): Support RWF_NOWAIT.
 	if opts.Flags != 0 {
 		return 0, syserror.EOPNOTSUPP
 	}
