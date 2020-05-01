@@ -12,7 +12,6 @@ func (x *ConnectedEndpoint) save(m state.Map) {
 	m.Save("ref", &x.ref)
 	m.Save("fd", &x.fd)
 	m.Save("addr", &x.addr)
-	m.Save("queue", &x.queue)
 	m.Save("stype", &x.stype)
 }
 
@@ -21,7 +20,6 @@ func (x *ConnectedEndpoint) load(m state.Map) {
 	m.Load("ref", &x.ref)
 	m.Load("fd", &x.fd)
 	m.Load("addr", &x.addr)
-	m.Load("queue", &x.queue)
 	m.Load("stype", &x.stype)
 }
 

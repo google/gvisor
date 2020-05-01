@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,83 +15,27 @@
 package netstack
 
 import (
-	"syscall"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
-	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
-	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// LINT.IfChange
-
-// provider is an inet socket provider.
-type provider struct {
+// providerVFS2 is an inet socket provider.
+type providerVFS2 struct {
 	family   int
 	netProto tcpip.NetworkProtocolNumber
 }
 
-// getTransportProtocol figures out transport protocol. Currently only TCP,
-// UDP, and ICMP are supported. The bool return value is true when this socket
-// is associated with a transport protocol. This is only false for SOCK_RAW,
-// IPPROTO_IP sockets.
-func getTransportProtocol(ctx context.Context, stype linux.SockType, protocol int) (tcpip.TransportProtocolNumber, bool, *syserr.Error) {
-	switch stype {
-	case linux.SOCK_STREAM:
-		if protocol != 0 && protocol != syscall.IPPROTO_TCP {
-			return 0, true, syserr.ErrInvalidArgument
-		}
-		return tcp.ProtocolNumber, true, nil
-
-	case linux.SOCK_DGRAM:
-		switch protocol {
-		case 0, syscall.IPPROTO_UDP:
-			return udp.ProtocolNumber, true, nil
-		case syscall.IPPROTO_ICMP:
-			return header.ICMPv4ProtocolNumber, true, nil
-		case syscall.IPPROTO_ICMPV6:
-			return header.ICMPv6ProtocolNumber, true, nil
-		}
-
-	case linux.SOCK_RAW:
-		// Raw sockets require CAP_NET_RAW.
-		creds := auth.CredentialsFromContext(ctx)
-		if !creds.HasCapability(linux.CAP_NET_RAW) {
-			return 0, true, syserr.ErrNotPermitted
-		}
-
-		switch protocol {
-		case syscall.IPPROTO_ICMP:
-			return header.ICMPv4ProtocolNumber, true, nil
-		case syscall.IPPROTO_ICMPV6:
-			return header.ICMPv6ProtocolNumber, true, nil
-		case syscall.IPPROTO_UDP:
-			return header.UDPProtocolNumber, true, nil
-		case syscall.IPPROTO_TCP:
-			return header.TCPProtocolNumber, true, nil
-		// IPPROTO_RAW signifies that the raw socket isn't assigned to
-		// a transport protocol. Users will be able to write packets'
-		// IP headers and won't receive anything.
-		case syscall.IPPROTO_RAW:
-			return tcpip.TransportProtocolNumber(0), false, nil
-		}
-	}
-	return 0, true, syserr.ErrProtocolNotSupported
-}
-
 // Socket creates a new socket object for the AF_INET, AF_INET6, or AF_PACKET
 // family.
-func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*fs.File, *syserr.Error) {
+func (p *providerVFS2) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*vfs.FileDescription, *syserr.Error) {
 	// Fail right away if we don't have a stack.
 	stack := t.NetworkContext()
 	if stack == nil {
@@ -107,7 +51,7 @@ func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*
 	// Packet sockets are handled separately, since they are neither INET
 	// nor INET6 specific.
 	if p.family == linux.AF_PACKET {
-		return packetSocket(t, eps, stype, protocol)
+		return packetSocketVFS2(t, eps, stype, protocol)
 	}
 
 	// Figure out the transport protocol.
@@ -135,10 +79,10 @@ func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*
 		return nil, syserr.TranslateNetstackError(e)
 	}
 
-	return New(t, p.family, stype, int(transProto), wq, ep)
+	return NewVFS2(t, p.family, stype, int(transProto), wq, ep)
 }
 
-func packetSocket(t *kernel.Task, epStack *Stack, stype linux.SockType, protocol int) (*fs.File, *syserr.Error) {
+func packetSocketVFS2(t *kernel.Task, epStack *Stack, stype linux.SockType, protocol int) (*vfs.FileDescription, *syserr.Error) {
 	// Packet sockets require CAP_NET_RAW.
 	creds := auth.CredentialsFromContext(t)
 	if !creds.HasCapability(linux.CAP_NET_RAW) {
@@ -166,20 +110,18 @@ func packetSocket(t *kernel.Task, epStack *Stack, stype linux.SockType, protocol
 		return nil, syserr.TranslateNetstackError(err)
 	}
 
-	return New(t, linux.AF_PACKET, stype, protocol, wq, ep)
+	return NewVFS2(t, linux.AF_PACKET, stype, protocol, wq, ep)
 }
 
-// LINT.ThenChange(./provider_vfs2.go)
-
 // Pair just returns nil sockets (not supported).
-func (*provider) Pair(*kernel.Task, linux.SockType, int) (*fs.File, *fs.File, *syserr.Error) {
+func (*providerVFS2) Pair(*kernel.Task, linux.SockType, int) (*vfs.FileDescription, *vfs.FileDescription, *syserr.Error) {
 	return nil, nil, nil
 }
 
 // init registers socket providers for AF_INET, AF_INET6, and AF_PACKET.
 func init() {
 	// Providers backed by netstack.
-	p := []provider{
+	p := []providerVFS2{
 		{
 			family:   linux.AF_INET,
 			netProto: ipv4.ProtocolNumber,
@@ -194,6 +136,6 @@ func init() {
 	}
 
 	for i := range p {
-		socket.RegisterProvider(p[i].family, &p[i])
+		socket.RegisterProviderVFS2(p[i].family, &p[i])
 	}
 }

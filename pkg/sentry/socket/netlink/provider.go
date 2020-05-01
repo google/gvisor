@@ -67,6 +67,8 @@ func RegisterProvider(protocol int, provider Provider) {
 	protocols[protocol] = provider
 }
 
+// LINT.IfChange
+
 // socketProvider implements socket.Provider.
 type socketProvider struct {
 }
@@ -105,7 +107,10 @@ func (*socketProvider) Pair(*kernel.Task, linux.SockType, int) (*fs.File, *fs.Fi
 	return nil, nil, syserr.ErrNotSupported
 }
 
+// LINT.ThenChange(./provider_vfs2.go)
+
 // init registers the socket provider.
 func init() {
 	socket.RegisterProvider(linux.AF_NETLINK, &socketProvider{})
+	socket.RegisterProviderVFS2(linux.AF_NETLINK, &socketProviderVFS2{})
 }

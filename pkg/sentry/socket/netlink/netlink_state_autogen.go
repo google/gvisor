@@ -9,6 +9,17 @@ import (
 func (x *Socket) beforeSave() {}
 func (x *Socket) save(m state.Map) {
 	x.beforeSave()
+	m.Save("socketOpsCommon", &x.socketOpsCommon)
+}
+
+func (x *Socket) afterLoad() {}
+func (x *Socket) load(m state.Map) {
+	m.Load("socketOpsCommon", &x.socketOpsCommon)
+}
+
+func (x *socketOpsCommon) beforeSave() {}
+func (x *socketOpsCommon) save(m state.Map) {
+	x.beforeSave()
 	m.Save("SendReceiveTimeout", &x.SendReceiveTimeout)
 	m.Save("ports", &x.ports)
 	m.Save("protocol", &x.protocol)
@@ -22,8 +33,8 @@ func (x *Socket) save(m state.Map) {
 	m.Save("filter", &x.filter)
 }
 
-func (x *Socket) afterLoad() {}
-func (x *Socket) load(m state.Map) {
+func (x *socketOpsCommon) afterLoad() {}
+func (x *socketOpsCommon) load(m state.Map) {
 	m.Load("SendReceiveTimeout", &x.SendReceiveTimeout)
 	m.Load("ports", &x.ports)
 	m.Load("protocol", &x.protocol)
@@ -48,5 +59,6 @@ func (x *kernelSCM) load(m state.Map) {
 
 func init() {
 	state.Register("pkg/sentry/socket/netlink.Socket", (*Socket)(nil), state.Fns{Save: (*Socket).save, Load: (*Socket).load})
+	state.Register("pkg/sentry/socket/netlink.socketOpsCommon", (*socketOpsCommon)(nil), state.Fns{Save: (*socketOpsCommon).save, Load: (*socketOpsCommon).load})
 	state.Register("pkg/sentry/socket/netlink.kernelSCM", (*kernelSCM)(nil), state.Fns{Save: (*kernelSCM).save, Load: (*kernelSCM).load})
 }
