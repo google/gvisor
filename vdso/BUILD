@@ -33,7 +33,7 @@ genrule(
           # Some toolchains enable stack protector by default. Disable it, the
           # VDSO has no hooks to handle failures.
           "-fno-stack-protector " +
-          "-fuse-ld=gold " +
+          "-fuse-ld=lld " +
           select_arch(
               amd64 = "-m64 ",
               arm64 = "",
