@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <getopt.h>
 #include <netdb.h>
@@ -25,7 +26,6 @@
 #include <iostream>
 #include <unordered_map>
 
-#include "arpa/inet.h"
 #include "include/grpcpp/security/server_credentials.h"
 #include "include/grpcpp/server_builder.h"
 #include "test/packetimpact/proto/posix_server.grpc.pb.h"
