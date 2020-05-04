@@ -256,6 +256,8 @@ var (
 func configs(t *testing.T, opts ...configOption) map[string]*boot.Config {
 	// Always load the default config.
 	cs := make(map[string]*boot.Config)
+	cs["default"] = testutil.TestConfig(t)
+
 	for _, o := range opts {
 		switch o {
 		case overlay:
@@ -281,7 +283,7 @@ func configs(t *testing.T, opts ...configOption) map[string]*boot.Config {
 	return cs
 }
 
-func configsWithVFS2(t *testing.T, opts []configOption) map[string]*boot.Config {
+func configsWithVFS2(t *testing.T, opts ...configOption) map[string]*boot.Config {
 	vfs1 := configs(t, opts...)
 	vfs2 := configs(t, opts...)
 
@@ -302,7 +304,7 @@ func TestLifecycle(t *testing.T) {
 	childReaper.Start()
 	defer childReaper.Stop()
 
-	for name, conf := range configsWithVFS2(t, all) {
+	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			// The container will just sleep for a long time.  We will kill it before
 			// it finishes sleeping.
@@ -476,7 +478,7 @@ func TestExePath(t *testing.T) {
 		t.Fatalf("error making directory: %v", err)
 	}
 
-	for name, conf := range configsWithVFS2(t, []configOption{overlay}) {
+	for name, conf := range configsWithVFS2(t, overlay) {
 		t.Run(name, func(t *testing.T) {
 			for _, test := range []struct {
 				path    string
@@ -1297,7 +1299,7 @@ func TestCapabilities(t *testing.T) {
 // TestRunNonRoot checks that sandbox can be configured when running as
 // non-privileged user.
 func TestRunNonRoot(t *testing.T) {
-	for name, conf := range configs(t, noOverlay...) {
+	for name, conf := range configsWithVFS2(t, noOverlay...) {
 		t.Run(name, func(t *testing.T) {
 			spec := testutil.NewSpecWithArgs("/bin/true")
 
@@ -1341,7 +1343,7 @@ func TestRunNonRoot(t *testing.T) {
 // TestMountNewDir checks that runsc will create destination directory if it
 // doesn't exit.
 func TestMountNewDir(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, []configOption{overlay}) {
+	for name, conf := range configsWithVFS2(t, overlay) {
 		t.Run(name, func(t *testing.T) {
 			root, err := ioutil.TempDir(testutil.TmpDir(), "root")
 			if err != nil {
@@ -1370,7 +1372,7 @@ func TestMountNewDir(t *testing.T) {
 }
 
 func TestReadonlyRoot(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, []configOption{overlay}) {
+	for name, conf := range configsWithVFS2(t, overlay) {
 		t.Run(name, func(t *testing.T) {
 			spec := testutil.NewSpecWithArgs("/bin/touch", "/foo")
 			spec.Root.Readonly = true
@@ -1488,7 +1490,7 @@ func TestUIDMap(t *testing.T) {
 }
 
 func TestReadonlyMount(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, []configOption{overlay}) {
+	for name, conf := range configsWithVFS2(t, overlay) {
 		t.Run(name, func(t *testing.T) {
 			dir, err := ioutil.TempDir(testutil.TmpDir(), "ro-mount")
 			spec := testutil.NewSpecWithArgs("/bin/touch", path.Join(dir, "file"))
@@ -1764,7 +1766,7 @@ func TestUserLog(t *testing.T) {
 }
 
 func TestWaitOnExitedSandbox(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, all) {
+	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			// Run a shell that sleeps for 1 second and then exits with a
 			// non-zero code.
