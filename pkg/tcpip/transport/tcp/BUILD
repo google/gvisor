@@ -115,7 +115,7 @@ go_test(
     size = "small",
     srcs = ["rcv_test.go"],
     deps = [
-        ":tcp",
+        "//pkg/tcpip/header",
         "//pkg/tcpip/seqnum",
     ],
 )

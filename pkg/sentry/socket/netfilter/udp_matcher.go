@@ -119,14 +119,27 @@ func (um *UDPMatcher) Match(hook stack.Hook, pkt stack.PacketBuffer, interfaceNa
 	if pkt.TransportHeader != nil {
 		udpHeader = header.UDP(pkt.TransportHeader)
 	} else {
+		var length int
+		if hook == stack.Prerouting {
+			// The network header hasn't been parsed yet. We have to do it here.
+			hdr, ok := pkt.Data.PullUp(header.IPv4MinimumSize)
+			if !ok {
+				// There's no valid UDP header here, so we hotdrop the
+				// packet.
+				return false, true
+			}
+			h := header.IPv4(hdr)
+			pkt.NetworkHeader = hdr
+			length = int(h.HeaderLength())
+		}
 		// The UDP header hasn't been parsed yet. We have to do it here.
-		hdr, ok := pkt.Data.PullUp(header.UDPMinimumSize)
+		hdr, ok := pkt.Data.PullUp(length + header.UDPMinimumSize)
 		if !ok {
 			// There's no valid UDP header here, so we hotdrop the
 			// packet.
 			return false, true
 		}
-		udpHeader = header.UDP(hdr)
+		udpHeader = header.UDP(hdr[length:])
 	}
 
 	// Check whether the source and destination ports are within the

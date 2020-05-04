@@ -1885,3 +1885,22 @@ func generateRandInt64() int64 {
 	}
 	return v
 }
+
+// FindNetworkEndpoint returns the network endpoint for the given address.
+func (s *Stack) FindNetworkEndpoint(netProto tcpip.NetworkProtocolNumber, address tcpip.Address) (NetworkEndpoint, *tcpip.Error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, nic := range s.nics {
+		id := NetworkEndpointID{address}
+
+		if ref, ok := nic.mu.endpoints[id]; ok {
+			nic.mu.RLock()
+			defer nic.mu.RUnlock()
+
+			// An endpoint with this id exists, check if it can be used and return it.
+			return ref.ep, nil
+		}
+	}
+	return nil, tcpip.ErrBadAddress
+}

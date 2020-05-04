@@ -261,3 +261,16 @@ func (r *Route) MakeLoopedRoute() Route {
 func (r *Route) Stack() *Stack {
 	return r.ref.stack()
 }
+
+// ReverseRoute returns new route with given source and destination address.
+func (r *Route) ReverseRoute(src tcpip.Address, dst tcpip.Address) Route {
+	return Route{
+		NetProto:          r.NetProto,
+		LocalAddress:      dst,
+		LocalLinkAddress:  r.RemoteLinkAddress,
+		RemoteAddress:     src,
+		RemoteLinkAddress: r.LocalLinkAddress,
+		ref:               r.ref,
+		Loop:              r.Loop,
+	}
+}
