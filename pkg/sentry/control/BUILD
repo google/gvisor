@@ -20,9 +20,11 @@ go_library(
         "//pkg/fd",
         "//pkg/fspath",
         "//pkg/log",
+        "//pkg/sentry/fdimport",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/host",
         "//pkg/sentry/fsbridge",
+        "//pkg/sentry/fsimpl/host",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
@@ -36,6 +38,7 @@ go_library(
         "//pkg/syserror",
         "//pkg/tcpip/link/sniffer",
         "//pkg/urpc",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 

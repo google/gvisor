@@ -192,6 +192,7 @@ func (ep *EpollInstance) AddInterest(file *FileDescription, num int32, event lin
 		mask:     mask,
 		userData: event.Data,
 	}
+	epi.waiter.Callback = epi
 	ep.interest[key] = epi
 	wmask := waiter.EventMaskFromLinux(mask)
 	file.EventRegister(&epi.waiter, wmask)
