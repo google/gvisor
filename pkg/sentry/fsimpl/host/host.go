@@ -422,7 +422,7 @@ func (i *inode) open(ctx context.Context, d *vfs.Dentry, mnt *vfs.Mount) (*vfs.F
 	// TODO(gvisor.dev/issue/1672): Whitelist specific file types here, so that
 	// we don't allow importing arbitrary file types without proper support.
 	if i.isTTY {
-		fd := &ttyFD{
+		fd := &TTYFileDescription{
 			fileDescription: fileDescription{inode: i},
 			termios:         linux.DefaultSlaveTermios,
 		}
