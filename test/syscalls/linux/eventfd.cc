@@ -100,6 +100,22 @@ TEST(EventfdTest, SmallRead) {
   ASSERT_THAT(read(efd.get(), &l, 4), SyscallFailsWithErrno(EINVAL));
 }
 
+TEST(EventfdTest, PreadIllegalSeek) {
+  FileDescriptor efd =
+      ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_NONBLOCK | EFD_SEMAPHORE));
+
+  uint64_t l = 0;
+  ASSERT_THAT(pread(efd.get(), &l, 4, 0), SyscallFailsWithErrno(ESPIPE));
+}
+
+TEST(EventfdTest, PwriteIllegalSeek) {
+  FileDescriptor efd =
+      ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_NONBLOCK | EFD_SEMAPHORE));
+
+  uint64_t l = 0;
+  ASSERT_THAT(pwrite(efd.get(), &l, 4, 0), SyscallFailsWithErrno(ESPIPE));
+}
+
 TEST(EventfdTest, BigWrite) {
   FileDescriptor efd =
       ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_NONBLOCK | EFD_SEMAPHORE));

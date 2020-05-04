@@ -6,6 +6,7 @@ go_library(
     name = "vfs2",
     srcs = [
         "epoll.go",
+        "eventfd.go",
         "execve.go",
         "fd.go",
         "filesystem.go",
@@ -26,7 +27,7 @@ go_library(
         "stat_amd64.go",
         "stat_arm64.go",
         "sync.go",
-        "sys_timerfd.go",
+        "timerfd.go",
         "xattr.go",
     ],
     marshal = True,

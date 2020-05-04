@@ -25,6 +25,7 @@ go_library(
         "device.go",
         "epoll.go",
         "epoll_interest_list.go",
+        "eventfd.go",
         "file_description.go",
         "file_description_impl_util.go",
         "filesystem.go",
@@ -44,6 +45,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/fd",
+        "//pkg/fdnotifier",
         "//pkg/fspath",
         "//pkg/gohacks",
         "//pkg/log",
@@ -68,6 +70,7 @@ go_test(
     name = "vfs_test",
     size = "small",
     srcs = [
+        "eventfd_test.go",
         "file_description_impl_util_test.go",
         "mount_test.go",
     ],
@@ -79,5 +82,6 @@ go_test(
         "//pkg/sync",
         "//pkg/syserror",
         "//pkg/usermem",
+        "//pkg/waiter",
     ],
 )

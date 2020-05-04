@@ -141,14 +141,14 @@ func Override(table map[uintptr]kernel.Syscall) {
 	table[281] = syscalls.Supported("epoll_pwait", EpollPwait)
 	delete(table, 282) // signalfd
 	table[283] = syscalls.Supported("timerfd_create", TimerfdCreate)
-	delete(table, 284) // eventfd
+	table[284] = syscalls.Supported("eventfd", Eventfd)
 	delete(table, 285) // fallocate
 	table[286] = syscalls.Supported("timerfd_settime", TimerfdSettime)
 	table[287] = syscalls.Supported("timerfd_gettime", TimerfdGettime)
 	// TODO(gvisor.dev/issue/1485): Port all socket variants to VFS2.
 	table[288] = syscalls.PartiallySupported("accept4", Accept4, "In process of porting socket syscalls to VFS2.", nil)
 	delete(table, 289) // signalfd4
-	delete(table, 290) // eventfd2
+	table[290] = syscalls.Supported("eventfd2", Eventfd2)
 	table[291] = syscalls.Supported("epoll_create1", EpollCreate1)
 	table[292] = syscalls.Supported("dup3", Dup3)
 	table[293] = syscalls.Supported("pipe2", Pipe2)
