@@ -12,20 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package linux
+package vfs2
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/eventfd"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Eventfd2 implements linux syscall eventfd2(2).
 func Eventfd2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	initVal := args[0].Int()
+	initVal := uint64(args[0].Uint())
 	flags := uint(args[1].Uint())
 	allOps := uint(linux.EFD_SEMAPHORE | linux.EFD_NONBLOCK | linux.EFD_CLOEXEC)
 
@@ -33,13 +31,18 @@ func Eventfd2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		return 0, nil, syserror.EINVAL
 	}
 
-	event := eventfd.New(t, uint64(initVal), flags&linux.EFD_SEMAPHORE != 0)
-	event.SetFlags(fs.SettableFileFlags{
-		NonBlocking: flags&linux.EFD_NONBLOCK != 0,
-	})
-	defer event.DecRef()
+	fileFlags := uint32(linux.O_RDWR)
+	if flags&linux.EFD_NONBLOCK != 0 {
+		fileFlags |= linux.O_NONBLOCK
+	}
+	semMode := flags&linux.EFD_SEMAPHORE != 0
+	eventfd, err := t.Kernel().VFS().NewEventFD(initVal, semMode, fileFlags)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer eventfd.DecRef()
 
-	fd, err := t.NewFDFrom(0, event, kernel.FDFlags{
+	fd, err := t.NewFDFromVFS2(0, eventfd, kernel.FDFlags{
 		CloseOnExec: flags&linux.EFD_CLOEXEC != 0,
 	})
 	if err != nil {
