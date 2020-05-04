@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -36,13 +37,20 @@ import (
 // inode.
 //
 // Must be initialize with Init before first use.
+//
+// Lock ordering: mu => children.mu.
 type GenericDirectoryFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DirectoryFileDescriptionDefaultImpl
 
 	vfsfd    vfs.FileDescription
 	children *OrderedChildren
-	off      int64
+
+	// mu protects the fields below.
+	mu sync.Mutex
+
+	// off is the current directory offset. Protected by "mu".
+	off int64
 }
 
 // NewGenericDirectoryFD creates a new GenericDirectoryFD and returns its
@@ -115,17 +123,13 @@ func (fd *GenericDirectoryFD) inode() Inode {
 // IterDirents implements vfs.FileDecriptionImpl.IterDirents. IterDirents holds
 // o.mu when calling cb.
 func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback) error {
-	vfsFS := fd.filesystem()
-	fs := vfsFS.Impl().(*Filesystem)
-	vfsd := fd.vfsfd.VirtualDentry().Dentry()
-
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
 
 	opts := vfs.StatOptions{Mask: linux.STATX_INO}
 	// Handle ".".
 	if fd.off == 0 {
-		stat, err := fd.inode().Stat(vfsFS, opts)
+		stat, err := fd.inode().Stat(fd.filesystem(), opts)
 		if err != nil {
 			return err
 		}
@@ -143,8 +147,9 @@ func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirent
 
 	// Handle "..".
 	if fd.off == 1 {
+		vfsd := fd.vfsfd.VirtualDentry().Dentry()
 		parentInode := genericParentOrSelf(vfsd.Impl().(*Dentry)).inode
-		stat, err := parentInode.Stat(vfsFS, opts)
+		stat, err := parentInode.Stat(fd.filesystem(), opts)
 		if err != nil {
 			return err
 		}
@@ -168,7 +173,7 @@ func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirent
 	childIdx := fd.off - 2
 	for it := fd.children.nthLocked(childIdx); it != nil; it = it.Next() {
 		inode := it.Dentry.Impl().(*Dentry).inode
-		stat, err := inode.Stat(vfsFS, opts)
+		stat, err := inode.Stat(fd.filesystem(), opts)
 		if err != nil {
 			return err
 		}
@@ -192,9 +197,8 @@ func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirent
 
 // Seek implements vfs.FileDecriptionImpl.Seek.
 func (fd *GenericDirectoryFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
-	fs := fd.filesystem().Impl().(*Filesystem)
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
 
 	switch whence {
 	case linux.SEEK_SET:
