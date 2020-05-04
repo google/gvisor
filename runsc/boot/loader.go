@@ -27,16 +27,18 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/host"
 	"gvisor.dev/gvisor/pkg/sentry/fs/user"
-	vfs2host "gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
+	hostvfs2 "gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -142,6 +144,9 @@ type execProcess struct {
 
 	// tty will be nil if the process is not attached to a terminal.
 	tty *host.TTYFileOperations
+
+	// tty will be nil if the process is not attached to a terminal.
+	ttyVFS2 *hostvfs2.TTYFileDescription
 
 	// pidnsPath is the pid namespace path in spec
 	pidnsPath string
@@ -333,7 +338,7 @@ func New(args Args) (*Loader, error) {
 
 	if kernel.VFS2Enabled {
 		// Set up host mount that will be used for imported fds.
-		hostFilesystem := vfs2host.NewFilesystem(k.VFS())
+		hostFilesystem := hostvfs2.NewFilesystem(k.VFS())
 		defer hostFilesystem.DecRef()
 		hostMount, err := k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{})
 		if err != nil {
@@ -528,6 +533,8 @@ func (l *Loader) run() error {
 
 	// If we are restoring, we do not want to create a process.
 	// l.restore is set by the container manager when a restore call is made.
+	var ttyFile *host.TTYFileOperations
+	var ttyFileVFS2 *hostvfs2.TTYFileDescription
 	if !l.restore {
 		if l.conf.ProfileEnable {
 			pprof.Initialize()
@@ -542,13 +549,14 @@ func (l *Loader) run() error {
 		// Create the FD map, which will set stdin, stdout, and stderr.  If console
 		// is true, then ioctl calls will be passed through to the host fd.
 		ctx := l.rootProcArgs.NewContext(l.k)
-		fdTable, err := createFDTable(ctx, l.console, l.stdioFDs)
+		var err error
+
+		// CreateProcess takes a reference on FDMap if successful. We won't need
+		// ours either way.
+		l.rootProcArgs.FDTable, ttyFile, ttyFileVFS2, err = createFDTable(ctx, l.console, l.stdioFDs)
 		if err != nil {
 			return fmt.Errorf("importing fds: %v", err)
 		}
-		// CreateProcess takes a reference on FDMap if successful. We won't need
-		// ours either way.
-		l.rootProcArgs.FDTable = fdTable
 
 		// Setup the root container file system.
 		l.startGoferMonitor(l.sandboxID, l.goferFDs)
@@ -591,14 +599,16 @@ func (l *Loader) run() error {
 		ep.pidnsPath = ns.Path
 	}
 	if l.console {
-		ttyFile, _ := l.rootProcArgs.FDTable.Get(0)
-		defer ttyFile.DecRef()
-		ep.tty = ttyFile.FileOperations.(*host.TTYFileOperations)
-
-		// Set the foreground process group on the TTY to the global
-		// init process group, since that is what we are about to
-		// start running.
-		ep.tty.InitForegroundProcessGroup(ep.tg.ProcessGroup())
+		// Set the foreground process group on the TTY to the global init process
+		// group, since that is what we are about to start running.
+		switch {
+		case ttyFileVFS2 != nil:
+			ep.ttyVFS2 = ttyFileVFS2
+			ttyFileVFS2.InitForegroundProcessGroup(ep.tg.ProcessGroup())
+		case ttyFile != nil:
+			ep.tty = ttyFile
+			ttyFile.InitForegroundProcessGroup(ep.tg.ProcessGroup())
+		}
 	}
 
 	// Handle signals by forwarding them to the root container process
@@ -719,7 +729,7 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *Config, cid string, file
 
 	// Create the FD map, which will set stdin, stdout, and stderr.
 	ctx := procArgs.NewContext(l.k)
-	fdTable, err := createFDTable(ctx, false, stdioFDs)
+	fdTable, _, _, err := createFDTable(ctx, false, stdioFDs)
 	if err != nil {
 		return fmt.Errorf("importing fds: %v", err)
 	}
@@ -804,14 +814,14 @@ func (l *Loader) destroyContainer(cid string) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	_, _, started, err := l.threadGroupFromIDLocked(execID{cid: cid})
+	tg, err := l.tryThreadGroupFromIDLocked(execID{cid: cid})
 	if err != nil {
 		// Container doesn't exist.
 		return err
 	}
 
-	// The container exists, has it been started?
-	if started {
+	// The container exists, but has it been started?
+	if tg != nil {
 		if err := l.signalAllProcesses(cid, int32(linux.SIGKILL)); err != nil {
 			return fmt.Errorf("sending SIGKILL to all container processes: %v", err)
 		}
@@ -853,48 +863,65 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	tg, _, started, err := l.threadGroupFromIDLocked(execID{cid: args.ContainerID})
+	tg, err := l.tryThreadGroupFromIDLocked(execID{cid: args.ContainerID})
 	if err != nil {
 		return 0, err
 	}
-	if !started {
+	if tg == nil {
 		return 0, fmt.Errorf("container %q not started", args.ContainerID)
 	}
 
-	// TODO(gvisor.dev/issue/1623): Add VFS2 support
-
 	// Get the container MountNamespace from the Task.
-	tg.Leader().WithMuLocked(func(t *kernel.Task) {
+	if kernel.VFS2Enabled {
 		// task.MountNamespace() does not take a ref, so we must do so ourselves.
-		args.MountNamespace = t.MountNamespace()
-		args.MountNamespace.IncRef()
-	})
-	if args.MountNamespace != nil {
-		defer args.MountNamespace.DecRef()
+		args.MountNamespaceVFS2 = tg.Leader().MountNamespaceVFS2()
+		args.MountNamespaceVFS2.IncRef()
+	} else {
+		tg.Leader().WithMuLocked(func(t *kernel.Task) {
+			// task.MountNamespace() does not take a ref, so we must do so ourselves.
+			args.MountNamespace = t.MountNamespace()
+			args.MountNamespace.IncRef()
+		})
 	}
 
 	// Add the HOME environment variable if it is not already set.
-	root := args.MountNamespace.Root()
-	defer root.DecRef()
-	ctx := fs.WithRoot(l.k.SupervisorContext(), root)
-	envv, err := user.MaybeAddExecUserHome(ctx, args.MountNamespace, args.KUID, args.Envv)
-	if err != nil {
-		return 0, err
+	if kernel.VFS2Enabled {
+		defer args.MountNamespaceVFS2.DecRef()
+
+		root := args.MountNamespaceVFS2.Root()
+		defer root.DecRef()
+		ctx := vfs.WithRoot(l.k.SupervisorContext(), root)
+		envv, err := user.MaybeAddExecUserHomeVFS2(ctx, args.MountNamespaceVFS2, args.KUID, args.Envv)
+		if err != nil {
+			return 0, err
+		}
+		args.Envv = envv
+	} else {
+		defer args.MountNamespace.DecRef()
+
+		root := args.MountNamespace.Root()
+		defer root.DecRef()
+		ctx := fs.WithRoot(l.k.SupervisorContext(), root)
+		envv, err := user.MaybeAddExecUserHome(ctx, args.MountNamespace, args.KUID, args.Envv)
+		if err != nil {
+			return 0, err
+		}
+		args.Envv = envv
 	}
-	args.Envv = envv
 
 	// Start the process.
 	proc := control.Proc{Kernel: l.k}
 	args.PIDNamespace = tg.PIDNamespace()
-	newTG, tgid, ttyFile, err := control.ExecAsync(&proc, args)
+	newTG, tgid, ttyFile, ttyFileVFS2, err := control.ExecAsync(&proc, args)
 	if err != nil {
 		return 0, err
 	}
 
 	eid := execID{cid: args.ContainerID, pid: tgid}
 	l.processes[eid] = &execProcess{
-		tg:  newTG,
-		tty: ttyFile,
+		tg:      newTG,
+		tty:     ttyFile,
+		ttyVFS2: ttyFileVFS2,
 	}
 	log.Debugf("updated processes: %v", l.processes)
 
@@ -905,7 +932,7 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 	// Don't defer unlock, as doing so would make it impossible for
 	// multiple clients to wait on the same container.
-	tg, _, err := l.threadGroupFromID(execID{cid: cid})
+	tg, err := l.threadGroupFromID(execID{cid: cid})
 	if err != nil {
 		return fmt.Errorf("can't wait for container %q: %v", cid, err)
 	}
@@ -924,7 +951,7 @@ func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, waitStatus *uint32) e
 
 	// Try to find a process that was exec'd
 	eid := execID{cid: cid, pid: tgid}
-	execTG, _, err := l.threadGroupFromID(eid)
+	execTG, err := l.threadGroupFromID(eid)
 	if err == nil {
 		ws := l.wait(execTG)
 		*waitStatus = ws
@@ -938,7 +965,7 @@ func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, waitStatus *uint32) e
 
 	// The caller may be waiting on a process not started directly via exec.
 	// In this case, find the process in the container's PID namespace.
-	initTG, _, err := l.threadGroupFromID(execID{cid: cid})
+	initTG, err := l.threadGroupFromID(execID{cid: cid})
 	if err != nil {
 		return fmt.Errorf("waiting for PID %d: %v", tgid, err)
 	}
@@ -1089,8 +1116,7 @@ func (l *Loader) signal(cid string, pid, signo int32, mode SignalDeliveryMode) e
 			return fmt.Errorf("PID (%d) cannot be set when signaling all processes", pid)
 		}
 		// Check that the container has actually started before signaling it.
-		_, _, err := l.threadGroupFromID(execID{cid: cid})
-		if err != nil {
+		if _, err := l.threadGroupFromID(execID{cid: cid}); err != nil {
 			return err
 		}
 		if err := l.signalAllProcesses(cid, signo); err != nil {
@@ -1104,7 +1130,7 @@ func (l *Loader) signal(cid string, pid, signo int32, mode SignalDeliveryMode) e
 }
 
 func (l *Loader) signalProcess(cid string, tgid kernel.ThreadID, signo int32) error {
-	execTG, _, err := l.threadGroupFromID(execID{cid: cid, pid: tgid})
+	execTG, err := l.threadGroupFromID(execID{cid: cid, pid: tgid})
 	if err == nil {
 		// Send signal directly to the identified process.
 		return l.k.SendExternalSignalThreadGroup(execTG, &arch.SignalInfo{Signo: signo})
@@ -1113,7 +1139,7 @@ func (l *Loader) signalProcess(cid string, tgid kernel.ThreadID, signo int32) er
 	// The caller may be signaling a process not started directly via exec.
 	// In this case, find the process in the container's PID namespace and
 	// signal it.
-	initTG, _, err := l.threadGroupFromID(execID{cid: cid})
+	initTG, err := l.threadGroupFromID(execID{cid: cid})
 	if err != nil {
 		return fmt.Errorf("no thread group found: %v", err)
 	}
@@ -1127,17 +1153,35 @@ func (l *Loader) signalProcess(cid string, tgid kernel.ThreadID, signo int32) er
 	return l.k.SendExternalSignalThreadGroup(tg, &arch.SignalInfo{Signo: signo})
 }
 
+// signalForegrondProcessGroup looks up foreground process group from the TTY
+// for the given "tgid" inside container "cid", and send the signal to it.
 func (l *Loader) signalForegrondProcessGroup(cid string, tgid kernel.ThreadID, signo int32) error {
-	// Lookup foreground process group from the TTY for the given process,
-	// and send the signal to it.
-	tg, tty, err := l.threadGroupFromID(execID{cid: cid, pid: tgid})
+	l.mu.Lock()
+	tg, err := l.tryThreadGroupFromIDLocked(execID{cid: cid, pid: tgid})
+	if err != nil {
+		l.mu.Unlock()
+		return fmt.Errorf("no thread group found: %v", err)
+	}
+	if tg == nil {
+		l.mu.Unlock()
+		return fmt.Errorf("container %q not started", cid)
+	}
+
+	tty, ttyVFS2, err := l.ttyFromIDLocked(execID{cid: cid, pid: tgid})
+	l.mu.Unlock()
 	if err != nil {
 		return fmt.Errorf("no thread group found: %v", err)
 	}
-	if tty == nil {
+
+	var pg *kernel.ProcessGroup
+	switch {
+	case ttyVFS2 != nil:
+		pg = ttyVFS2.ForegroundProcessGroup()
+	case tty != nil:
+		pg = tty.ForegroundProcessGroup()
+	default:
 		return fmt.Errorf("no TTY attached")
 	}
-	pg := tty.ForegroundProcessGroup()
 	if pg == nil {
 		// No foreground process group has been set. Signal the
 		// original thread group.
@@ -1168,33 +1212,57 @@ func (l *Loader) signalAllProcesses(cid string, signo int32) error {
 	return l.k.SendContainerSignal(cid, &arch.SignalInfo{Signo: signo})
 }
 
-// threadGroupFromID same as threadGroupFromIDLocked except that it acquires
-// mutex before calling it.
-func (l *Loader) threadGroupFromID(key execID) (*kernel.ThreadGroup, *host.TTYFileOperations, error) {
+// threadGroupFromID is similar to tryThreadGroupFromIDLocked except that it
+// acquires mutex before calling it and fails in case container hasn't started
+// yet.
+func (l *Loader) threadGroupFromID(key execID) (*kernel.ThreadGroup, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	tg, tty, ok, err := l.threadGroupFromIDLocked(key)
+	tg, err := l.tryThreadGroupFromIDLocked(key)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	if !ok {
-		return nil, nil, fmt.Errorf("container %q not started", key.cid)
+	if tg == nil {
+		return nil, fmt.Errorf("container %q not started", key.cid)
 	}
-	return tg, tty, nil
+	return tg, nil
 }
 
-// threadGroupFromIDLocked returns the thread group and TTY for the given
-// execution ID. TTY may be nil if the process is not attached to a terminal.
-// Also returns a boolean indicating whether the container has already started.
-// Returns error if execution ID is invalid or if the container cannot be
-// found (maybe it has been deleted). Caller must hold 'mu'.
-func (l *Loader) threadGroupFromIDLocked(key execID) (*kernel.ThreadGroup, *host.TTYFileOperations, bool, error) {
+// tryThreadGroupFromIDLocked returns the thread group for the given execution
+// ID. It may return nil in case the container has not started yet. Returns
+// error if execution ID is invalid or if the container cannot be found (maybe
+// it has been deleted). Caller must hold 'mu'.
+func (l *Loader) tryThreadGroupFromIDLocked(key execID) (*kernel.ThreadGroup, error) {
 	ep := l.processes[key]
 	if ep == nil {
-		return nil, nil, false, fmt.Errorf("container %q not found", key.cid)
+		return nil, fmt.Errorf("container %q not found", key.cid)
 	}
-	if ep.tg == nil {
-		return nil, nil, false, nil
+	return ep.tg, nil
+}
+
+// ttyFromIDLocked returns the TTY files for the given execution ID. It may
+// return nil in case the container has not started yet. Returns error if
+// execution ID is invalid or if the container cannot be found (maybe it has
+// been deleted). Caller must hold 'mu'.
+func (l *Loader) ttyFromIDLocked(key execID) (*host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
+	ep := l.processes[key]
+	if ep == nil {
+		return nil, nil, fmt.Errorf("container %q not found", key.cid)
 	}
-	return ep.tg, ep.tty, true, nil
+	return ep.tty, ep.ttyVFS2, nil
+}
+
+func createFDTable(ctx context.Context, console bool, stdioFDs []int) (*kernel.FDTable, *host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
+	if len(stdioFDs) != 3 {
+		return nil, nil, nil, fmt.Errorf("stdioFDs should contain exactly 3 FDs (stdin, stdout, and stderr), but %d FDs received", len(stdioFDs))
+	}
+
+	k := kernel.KernelFromContext(ctx)
+	fdTable := k.NewFDTable()
+	ttyFile, ttyFileVFS2, err := fdimport.Import(ctx, fdTable, console, stdioFDs)
+	if err != nil {
+		fdTable.DecRef()
+		return nil, nil, nil, err
+	}
+	return fdTable, ttyFile, ttyFileVFS2, nil
 }
