@@ -438,7 +438,6 @@ func createMountTestcases(vfs2 bool) []*CreateMountTestcase {
 
 // Test that MountNamespace can be created with various specs.
 func TestCreateMountNamespace(t *testing.T) {
-
 	for _, tc := range createMountTestcases(false /* vfs2 */) {
 		t.Run(tc.name, func(t *testing.T) {
 			conf := testConfig()
@@ -476,7 +475,6 @@ func TestCreateMountNamespace(t *testing.T) {
 
 // Test that MountNamespace can be created with various specs.
 func TestCreateMountNamespaceVFS2(t *testing.T) {
-
 	for _, tc := range createMountTestcases(true /* vfs2 */) {
 		t.Run(tc.name, func(t *testing.T) {
 			defer resetSyscallTable()
@@ -485,6 +483,7 @@ func TestCreateMountNamespaceVFS2(t *testing.T) {
 			spec.Mounts = tc.spec.Mounts
 			spec.Root = tc.spec.Root
 
+			t.Logf("Using root: %q", spec.Root.Path)
 			l, loaderCleanup, err := createLoader(true /* VFS2 Enabled */, spec)
 			if err != nil {
 				t.Fatalf("failed to create loader: %v", err)
@@ -497,7 +496,7 @@ func TestCreateMountNamespaceVFS2(t *testing.T) {
 				t.Fatalf("failed process hints: %v", err)
 			}
 
-			ctx := l.rootProcArgs.NewContext(l.k)
+			ctx := l.k.SupervisorContext()
 			mns, err := mntr.setupVFS2(ctx, l.conf, &l.rootProcArgs)
 			if err != nil {
 				t.Fatalf("failed to setupVFS2: %v", err)
@@ -506,7 +505,6 @@ func TestCreateMountNamespaceVFS2(t *testing.T) {
 			root := mns.Root()
 			defer root.DecRef()
 			for _, p := range tc.expectedPaths {
-
 				target := &vfs.PathOperation{
 					Root:  root,
 					Start: root,
@@ -518,7 +516,6 @@ func TestCreateMountNamespaceVFS2(t *testing.T) {
 				} else {
 					d.DecRef()
 				}
-
 			}
 		})
 	}

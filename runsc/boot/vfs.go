@@ -166,30 +166,28 @@ func (c *containerMounter) setupVFS2(ctx context.Context, conf *Config, procArgs
 
 	// Create context with root credentials to mount the filesystem (the current
 	// user may not be privileged enough).
+	rootCreds := auth.NewRootCredentials(procArgs.Credentials.UserNamespace)
 	rootProcArgs := *procArgs
 	rootProcArgs.WorkingDirectory = "/"
-	rootProcArgs.Credentials = auth.NewRootCredentials(procArgs.Credentials.UserNamespace)
+	rootProcArgs.Credentials = rootCreds
 	rootProcArgs.Umask = 0022
 	rootProcArgs.MaxSymlinkTraversals = linux.MaxSymlinkTraversals
 	rootCtx := procArgs.NewContext(c.k)
 
-	creds := procArgs.Credentials
-	if err := registerFilesystems(rootCtx, c.k.VFS(), creds); err != nil {
+	if err := registerFilesystems(rootCtx, c.k.VFS(), rootCreds); err != nil {
 		return nil, fmt.Errorf("register filesystems: %w", err)
 	}
 
-	mns, err := c.createMountNamespaceVFS2(ctx, conf, creds)
+	mns, err := c.createMountNamespaceVFS2(rootCtx, conf, rootCreds)
 	if err != nil {
 		return nil, fmt.Errorf("creating mount namespace: %w", err)
 	}
-
 	rootProcArgs.MountNamespaceVFS2 = mns
 
 	// Mount submounts.
-	if err := c.mountSubmountsVFS2(rootCtx, conf, mns, creds); err != nil {
+	if err := c.mountSubmountsVFS2(rootCtx, conf, mns, rootCreds); err != nil {
 		return nil, fmt.Errorf("mounting submounts vfs2: %w", err)
 	}
-
 	return mns, nil
 }
 
@@ -318,7 +316,6 @@ func p9MountOptionsVFS2(fd int, fa FileAccessType) []string {
 }
 
 func (c *containerMounter) makeSyntheticMount(ctx context.Context, currentPath string, root vfs.VirtualDentry, creds *auth.Credentials) error {
-
 	target := &vfs.PathOperation{
 		Root:  root,
 		Start: root,
@@ -327,12 +324,10 @@ func (c *containerMounter) makeSyntheticMount(ctx context.Context, currentPath s
 
 	_, err := c.k.VFS().StatAt(ctx, creds, target, &vfs.StatOptions{})
 	switch {
-
 	case err == syserror.ENOENT:
 		if err := c.makeSyntheticMount(ctx, path.Dir(currentPath), root, creds); err != nil {
 			return err
 		}
-
 		mkdirOpts := &vfs.MkdirOptions{Mode: 0777, ForSyntheticMountpoint: true}
 		if err := c.k.VFS().MkdirAt(ctx, creds, target, mkdirOpts); err != nil {
 			return fmt.Errorf("failed to makedir for mount %+v: %w", target, err)
