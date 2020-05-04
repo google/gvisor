@@ -30,6 +30,7 @@ py_binary = native.py_binary
 py_test = native.py_test
 rbe_platform = native.platform
 rbe_toolchain = native.toolchain
+vdso_linker_option = "-fuse-ld=gold "
 
 def proto_library(name, has_services = None, **kwargs):
     native.proto_library(
