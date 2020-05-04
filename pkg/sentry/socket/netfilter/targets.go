@@ -15,6 +15,7 @@
 package netfilter
 
 import (
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -29,6 +30,6 @@ type JumpTarget struct {
 }
 
 // Action implements stack.Target.Action.
-func (jt JumpTarget) Action(stack.PacketBuffer) (stack.RuleVerdict, int) {
+func (jt JumpTarget) Action(*stack.PacketBuffer, *stack.ConnTrackTable, stack.Hook, *stack.GSO, *stack.Route, tcpip.Address) (stack.RuleVerdict, int) {
 	return stack.RuleJump, jt.RuleNum
 }
