@@ -49,3 +49,27 @@ func RootFromContext(ctx context.Context) VirtualDentry {
 	}
 	return VirtualDentry{}
 }
+
+type rootContext struct {
+	context.Context
+	root VirtualDentry
+}
+
+// WithRoot returns a copy of ctx with the given root.
+func WithRoot(ctx context.Context, root VirtualDentry) context.Context {
+	return &rootContext{
+		Context: ctx,
+		root:    root,
+	}
+}
+
+// Value implements Context.Value.
+func (rc rootContext) Value(key interface{}) interface{} {
+	switch key {
+	case CtxRoot:
+		rc.root.IncRef()
+		return rc.root
+	default:
+		return rc.Context.Value(key)
+	}
+}
