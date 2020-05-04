@@ -1939,43 +1939,66 @@ TEST(ProcSelfMounts, RequiredFieldsArePresent) {
 }
 
 void CheckDuplicatesRecursively(std::string path) {
-  errno = 0;
-  DIR* dir = opendir(path.c_str());
-  if (dir == nullptr) {
-    // Ignore any directories we can't read or missing directories as the
-    // directory could have been deleted/mutated from the time the parent
-    // directory contents were read.
-    return;
-  }
-  auto dir_closer = Cleanup([&dir]() { closedir(dir); });
-  std::unordered_set<std::string> children;
-  while (true) {
-    // Readdir(3): If the end of the directory stream is reached, NULL is
-    // returned and errno is not changed.  If an error occurs, NULL is returned
-    // and errno is set appropriately.  To distinguish end of stream and from an
-    // error, set errno to zero before calling readdir() and then check the
-    // value of errno if NULL is returned.
+  std::vector<std::string> child_dirs;
+
+  // There is the known issue of the linux procfs, that two consequent calls of
+  // readdir can return the same entry twice if between these calls one or more
+  // entries have been removed from this directory.
+  int max_attempts = 5;
+  for (int i = 0; i < max_attempts; i++) {
+    child_dirs.clear();
     errno = 0;
-    struct dirent* dp = readdir(dir);
-    if (dp == nullptr) {
-      ASSERT_EQ(errno, 0) << path;
-      break;  // We're done.
+    bool success = true;
+    DIR* dir = opendir(path.c_str());
+    if (dir == nullptr) {
+      // Ignore any directories we can't read or missing directories as the
+      // directory could have been deleted/mutated from the time the parent
+      // directory contents were read.
+      return;
     }
+    auto dir_closer = Cleanup([&dir]() { closedir(dir); });
+    std::unordered_set<std::string> children;
+    while (true) {
+      // Readdir(3): If the end of the directory stream is reached, NULL is
+      // returned and errno is not changed.  If an error occurs, NULL is
+      // returned and errno is set appropriately.  To distinguish end of stream
+      // and from an error, set errno to zero before calling readdir() and then
+      // check the value of errno if NULL is returned.
+      errno = 0;
+      struct dirent* dp = readdir(dir);
+      if (dp == nullptr) {
+        ASSERT_EQ(errno, 0) << path;
+        break;  // We're done.
+      }
 
-    if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0) {
-      continue;
+      if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0) {
+        continue;
+      }
+
+      // Ignore a duplicate entry if it isn't the last attempt.
+      if (i == max_attempts - 1) {
+        ASSERT_EQ(children.find(std::string(dp->d_name)), children.end())
+            << absl::StrCat(path, "/", dp->d_name);
+      } else if (children.find(std::string(dp->d_name)) != children.end()) {
+        std::cerr << "Duplicate entry: " << i << ":"
+                  << absl::StrCat(path, "/", dp->d_name) << std::endl;
+        success = false;
+        break;
+      }
+      children.insert(std::string(dp->d_name));
+
+      ASSERT_NE(dp->d_type, DT_UNKNOWN);
+
+      if (dp->d_type == DT_DIR) {
+        child_dirs.push_back(std::string(dp->d_name));
+      }
     }
-
-    ASSERT_EQ(children.find(std::string(dp->d_name)), children.end())
-        << dp->d_name;
-    children.insert(std::string(dp->d_name));
-
-    ASSERT_NE(dp->d_type, DT_UNKNOWN);
-
-    if (dp->d_type != DT_DIR) {
-      continue;
+    if (success) {
+      break;
     }
-    CheckDuplicatesRecursively(absl::StrCat(path, "/", dp->d_name));
+  }
+  for (auto dname = child_dirs.begin(); dname != child_dirs.end(); dname++) {
+    CheckDuplicatesRecursively(absl::StrCat(path, "/", *dname));
   }
 }
 
