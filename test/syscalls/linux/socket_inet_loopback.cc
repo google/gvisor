@@ -162,7 +162,7 @@ TEST_P(DualStackSocketTest, AddressOperations) {
         ASSERT_NO_ERRNO(SetAddrPort(
             addr.family(), const_cast<sockaddr_storage*>(&addr.addr), 1337));
 
-        EXPECT_THAT(connect(fd.get(), addr_in, addr.addr_len),
+        EXPECT_THAT(RetryEINTR(connect)(fd.get(), addr_in, addr.addr_len),
                     SyscallSucceeds())
             << GetAddrStr(addr_in);
         bound = true;
@@ -353,8 +353,9 @@ TEST_P(SocketInetLoopbackTest, TCPListenShutdownListen) {
   for (int i = 0; i < kBacklog; i++) {
     auto client = ASSERT_NO_ERRNO_AND_VALUE(
         Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
-    ASSERT_THAT(connect(client.get(), reinterpret_cast<sockaddr*>(&conn_addr),
-                        connector.addr_len),
+    ASSERT_THAT(RetryEINTR(connect)(client.get(),
+                                    reinterpret_cast<sockaddr*>(&conn_addr),
+                                    connector.addr_len),
                 SyscallSucceeds());
   }
   for (int i = 0; i < kBacklog; i++) {
@@ -397,8 +398,9 @@ TEST_P(SocketInetLoopbackTest, TCPListenShutdown) {
   for (int i = 0; i < kFDs; i++) {
     auto client = ASSERT_NO_ERRNO_AND_VALUE(
         Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
-    ASSERT_THAT(connect(client.get(), reinterpret_cast<sockaddr*>(&conn_addr),
-                        connector.addr_len),
+    ASSERT_THAT(RetryEINTR(connect)(client.get(),
+                                    reinterpret_cast<sockaddr*>(&conn_addr),
+                                    connector.addr_len),
                 SyscallSucceeds());
     ASSERT_THAT(accept(listen_fd.get(), nullptr, nullptr), SyscallSucceeds());
   }
@@ -425,8 +427,9 @@ TEST_P(SocketInetLoopbackTest, TCPListenShutdown) {
   for (int i = 0; i < kFDs; i++) {
     auto client = ASSERT_NO_ERRNO_AND_VALUE(
         Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
-    ASSERT_THAT(connect(client.get(), reinterpret_cast<sockaddr*>(&conn_addr),
-                        connector.addr_len),
+    ASSERT_THAT(RetryEINTR(connect)(client.get(),
+                                    reinterpret_cast<sockaddr*>(&conn_addr),
+                                    connector.addr_len),
                 SyscallFailsWithErrno(ECONNREFUSED));
   }
 }
@@ -1824,10 +1827,10 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V6EphemeralPortReserved) {
     // Connect to bind an ephemeral port.
     const FileDescriptor connected_fd =
         ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
-    ASSERT_THAT(
-        connect(connected_fd.get(), reinterpret_cast<sockaddr*>(&bound_addr),
-                bound_addr_len),
-        SyscallSucceeds());
+    ASSERT_THAT(RetryEINTR(connect)(connected_fd.get(),
+                                    reinterpret_cast<sockaddr*>(&bound_addr),
+                                    bound_addr_len),
+                SyscallSucceeds());
 
     // Get the ephemeral port.
     sockaddr_storage connected_addr = {};
@@ -1930,8 +1933,9 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V6EphemeralPortReservedReuseAddr) {
   ASSERT_THAT(setsockopt(connected_fd.get(), SOL_SOCKET, SO_REUSEADDR,
                          &kSockOptOn, sizeof(kSockOptOn)),
               SyscallSucceeds());
-  ASSERT_THAT(connect(connected_fd.get(),
-                      reinterpret_cast<sockaddr*>(&bound_addr), bound_addr_len),
+  ASSERT_THAT(RetryEINTR(connect)(connected_fd.get(),
+                                  reinterpret_cast<sockaddr*>(&bound_addr),
+                                  bound_addr_len),
               SyscallSucceeds());
 
   // Get the ephemeral port.
@@ -1991,10 +1995,10 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V4MappedEphemeralPortReserved) {
     // Connect to bind an ephemeral port.
     const FileDescriptor connected_fd =
         ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
-    ASSERT_THAT(
-        connect(connected_fd.get(), reinterpret_cast<sockaddr*>(&bound_addr),
-                bound_addr_len),
-        SyscallSucceeds());
+    ASSERT_THAT(RetryEINTR(connect)(connected_fd.get(),
+                                    reinterpret_cast<sockaddr*>(&bound_addr),
+                                    bound_addr_len),
+                SyscallSucceeds());
 
     // Get the ephemeral port.
     sockaddr_storage connected_addr = {};
@@ -2121,8 +2125,9 @@ TEST_P(SocketMultiProtocolInetLoopbackTest,
   ASSERT_THAT(setsockopt(connected_fd.get(), SOL_SOCKET, SO_REUSEADDR,
                          &kSockOptOn, sizeof(kSockOptOn)),
               SyscallSucceeds());
-  ASSERT_THAT(connect(connected_fd.get(),
-                      reinterpret_cast<sockaddr*>(&bound_addr), bound_addr_len),
+  ASSERT_THAT(RetryEINTR(connect)(connected_fd.get(),
+                                  reinterpret_cast<sockaddr*>(&bound_addr),
+                                  bound_addr_len),
               SyscallSucceeds());
 
   // Get the ephemeral port.
@@ -2182,10 +2187,10 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V4EphemeralPortReserved) {
     // Connect to bind an ephemeral port.
     const FileDescriptor connected_fd =
         ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
-    ASSERT_THAT(
-        connect(connected_fd.get(), reinterpret_cast<sockaddr*>(&bound_addr),
-                bound_addr_len),
-        SyscallSucceeds());
+    ASSERT_THAT(RetryEINTR(connect)(connected_fd.get(),
+                                    reinterpret_cast<sockaddr*>(&bound_addr),
+                                    bound_addr_len),
+                SyscallSucceeds());
 
     // Get the ephemeral port.
     sockaddr_storage connected_addr = {};
