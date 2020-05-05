@@ -41,18 +41,13 @@ func (filesystemType) Name() string {
 	return "sockfs"
 }
 
-// filesystem implements vfs.FilesystemImpl.
-type filesystem struct {
-	kernfs.Filesystem
-}
-
 // NewFilesystem sets up and returns a new sockfs filesystem.
 //
 // Note that there should only ever be one instance of sockfs.Filesystem,
 // backing a global socket mount.
 func NewFilesystem(vfsObj *vfs.VirtualFilesystem) *vfs.Filesystem {
-	fs := &filesystem{}
-	fs.Init(vfsObj, filesystemType{})
+	fs := &kernfs.Filesystem{}
+	fs.VFSFilesystem().Init(vfsObj, filesystemType{}, fs)
 	return fs.VFSFilesystem()
 }
 
