@@ -41,6 +41,10 @@ const (
 	// nDupAckThreshold is the number of duplicate ACK's required
 	// before fast-retransmit is entered.
 	nDupAckThreshold = 3
+
+	// MaxRetries is the maximum number of probe retries sender does
+	// before timing out the connection, Linux default TCP_RETR2.
+	MaxRetries = 15
 )
 
 // ccState indicates the current congestion control state for this sender.
@@ -137,6 +141,14 @@ type sender struct {
 	// firstRetransmittedSegXmitTime is the original transmit time of
 	// the first segment that was retransmitted due to RTO expiration.
 	firstRetransmittedSegXmitTime time.Time `state:".(unixTime)"`
+
+	// zeroWindowProbing is set if the sender is currently probing
+	// for zero receive window.
+	zeroWindowProbing bool `state:"nosave"`
+
+	// unackZeroWindowProbes is the number of unacknowledged zero
+	// window probes.
+	unackZeroWindowProbes uint32 `state:"nosave"`
 
 	closed      bool
 	writeNext   *segment
@@ -479,8 +491,22 @@ func (s *sender) retransmitTimerExpired() bool {
 		remaining = uto - elapsed
 	}
 
-	if remaining <= 0 || s.rto >= MaxRTO {
+	// Always honor the user-timeout irrespective of whether the zero
+	// window probes were acknowledged.
+	// net/ipv4/tcp_timer.c::tcp_probe_timer()
+	if remaining <= 0 || s.unackZeroWindowProbes >= MaxRetries {
 		return false
+	}
+
+	if s.rto >= MaxRTO {
+		// RFC 1122 section: 4.2.2.17
+		// A TCP MAY keep its offered receive window closed
+		// indefinitely.  As long as the receiving TCP continues to
+		// send acknowledgments in response to the probe segments, the
+		// sending TCP MUST allow the connection to stay open.
+		if !(s.zeroWindowProbing && s.unackZeroWindowProbes == 0) {
+			return false
+		}
 	}
 
 	// Set new timeout. The timer will be restarted by the call to sendData
@@ -533,6 +559,15 @@ func (s *sender) retransmitTimerExpired() bool {
 	// information is usable after an RTO.
 	s.ep.scoreboard.Reset()
 	s.writeNext = s.writeList.Front()
+
+	// RFC 1122 4.2.2.17: Start sending zero window probes when we still see a
+	// zero receive window after retransmission interval and we have data to
+	// send.
+	if s.zeroWindowProbing {
+		s.sendZeroWindowProbe()
+		return true
+	}
+
 	s.sendData()
 
 	return true
@@ -827,6 +862,34 @@ func (s *sender) handleSACKRecovery(limit int, end seqnum.Value) (dataSent bool)
 	return dataSent
 }
 
+func (s *sender) sendZeroWindowProbe() {
+	ack, win := s.ep.rcv.getSendParams()
+	s.unackZeroWindowProbes++
+	// Send a zero window probe with sequence number pointing to
+	// the last acknowledged byte.
+	s.ep.sendRaw(buffer.VectorisedView{}, header.TCPFlagAck, s.sndUna-1, ack, win)
+	// Rearm the timer to continue probing.
+	s.resendTimer.enable(s.rto)
+}
+
+func (s *sender) enableZeroWindowProbing() {
+	s.zeroWindowProbing = true
+	// We piggyback the probing on the retransmit timer with the
+	// current retranmission interval, as we may start probing while
+	// segment retransmissions.
+	if s.firstRetransmittedSegXmitTime.IsZero() {
+		s.firstRetransmittedSegXmitTime = time.Now()
+	}
+	s.resendTimer.enable(s.rto)
+}
+
+func (s *sender) disableZeroWindowProbing() {
+	s.zeroWindowProbing = false
+	s.unackZeroWindowProbes = 0
+	s.firstRetransmittedSegXmitTime = time.Time{}
+	s.resendTimer.disable()
+}
+
 // sendData sends new data segments. It is called when data becomes available or
 // when the send window opens up.
 func (s *sender) sendData() {
@@ -873,6 +936,13 @@ func (s *sender) sendData() {
 		// We sent data, so we should stop the keepalive timer to ensure
 		// that no keepalives are sent while there is pending data.
 		s.ep.disableKeepaliveTimer()
+	}
+
+	// If the sender has advertized zero receive window and we have
+	// data to be sent out, start zero window probing to query the
+	// the remote for it's receive window size.
+	if s.writeNext != nil && s.sndWnd == 0 {
+		s.enableZeroWindowProbing()
 	}
 
 	// Enable the timer if we have pending data and it's not enabled yet.
@@ -1122,8 +1192,26 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 	// Stash away the current window size.
 	s.sndWnd = seg.window
 
-	// Ignore ack if it doesn't acknowledge any new data.
 	ack := seg.ackNumber
+
+	// Disable zero window probing if remote advertizes a non-zero receive
+	// window. This can be with an ACK to the zero window probe (where the
+	// acknumber refers to the already acknowledged byte) OR to any previously
+	// unacknowledged segment.
+	if s.zeroWindowProbing && seg.window > 0 &&
+		(ack == s.sndUna || (ack-1).InRange(s.sndUna, s.sndNxt)) {
+		s.disableZeroWindowProbing()
+	}
+
+	// On receiving the ACK for the zero window probe, account for it and
+	// skip trying to send any segment as we are still probing for
+	// receive window to become non-zero.
+	if s.zeroWindowProbing && s.unackZeroWindowProbes > 0 && ack == s.sndUna {
+		s.unackZeroWindowProbes--
+		return
+	}
+
+	// Ignore ack if it doesn't acknowledge any new data.
 	if (ack - 1).InRange(s.sndUna, s.sndNxt) {
 		s.dupAckCount = 0
 
@@ -1143,7 +1231,7 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 		}
 
 		// When an ack is received we must rearm the timer.
-		// RFC 6298 5.2
+		// RFC 6298 5.3
 		s.resendTimer.enable(s.rto)
 
 		// Remove all acknowledged data from the write list.
