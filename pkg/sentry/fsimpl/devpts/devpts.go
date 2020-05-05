@@ -59,7 +59,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 // master inode. It returns the filesystem and root Dentry.
 func (fstype FilesystemType) newFilesystem(vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials) (*kernfs.Filesystem, *kernfs.Dentry) {
 	fs := &kernfs.Filesystem{}
-	fs.Init(vfsObj, fstype)
+	fs.VFSFilesystem().Init(vfsObj, fstype, fs)
 
 	// Construct the root directory. This is always inode id 1.
 	root := &rootInode{

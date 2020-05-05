@@ -132,13 +132,6 @@ func (fs *Filesystem) processDeferredDecRefsLocked() {
 	fs.droppedDentriesMu.Unlock()
 }
 
-// Init initializes a kernfs filesystem. This should be called from during
-// vfs.FilesystemType.NewFilesystem for the concrete filesystem embedding
-// kernfs.
-func (fs *Filesystem) Init(vfsObj *vfs.VirtualFilesystem, fsType vfs.FilesystemType) {
-	fs.vfsfs.Init(vfsObj, fsType, fs)
-}
-
 // VFSFilesystem returns the generic vfs filesystem object.
 func (fs *Filesystem) VFSFilesystem() *vfs.Filesystem {
 	return &fs.vfsfs
@@ -259,6 +252,11 @@ func (d *Dentry) insertChildLocked(name string, child *Dentry) {
 		d.children = make(map[string]*Dentry)
 	}
 	d.children[name] = child
+}
+
+// Inode returns the dentry's inode.
+func (d *Dentry) Inode() Inode {
+	return d.inode
 }
 
 // The Inode interface maps filesystem-level operations that operate on paths to

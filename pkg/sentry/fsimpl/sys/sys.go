@@ -47,7 +47,7 @@ func (FilesystemType) Name() string {
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	fs := &filesystem{}
-	fs.Filesystem.Init(vfsObj, &fsType)
+	fs.VFSFilesystem().Init(vfsObj, &fsType, fs)
 	k := kernel.KernelFromContext(ctx)
 	maxCPUCores := k.ApplicationCores()
 	defaultSysDirMode := linux.FileMode(0755)
