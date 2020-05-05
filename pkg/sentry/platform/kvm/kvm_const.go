@@ -26,11 +26,14 @@ const (
 	_KVM_RUN                    = 0xae80
 	_KVM_NMI                    = 0xae9a
 	_KVM_CHECK_EXTENSION        = 0xae03
+	_KVM_GET_TSC_KHZ            = 0xaea3
+	_KVM_SET_TSC_KHZ            = 0xaea2
 	_KVM_INTERRUPT              = 0x4004ae86
 	_KVM_SET_MSRS               = 0x4008ae89
 	_KVM_SET_USER_MEMORY_REGION = 0x4020ae46
 	_KVM_SET_REGS               = 0x4090ae82
 	_KVM_SET_SREGS              = 0x4138ae84
+	_KVM_GET_MSRS               = 0xc008ae88
 	_KVM_GET_REGS               = 0x8090ae81
 	_KVM_GET_SUPPORTED_CPUID    = 0xc008ae05
 	_KVM_SET_CPUID2             = 0x4008ae90

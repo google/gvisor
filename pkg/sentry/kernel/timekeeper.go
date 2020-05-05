@@ -16,7 +16,6 @@ package kernel
 
 import (
 	"fmt"
-	"sync/atomic"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/log"
@@ -48,9 +47,6 @@ type Timekeeper struct {
 	//
 	// It is set only once, by SetClocks.
 	monotonicOffset int64 `state:"nosave"`
-
-	// monotonicLowerBound is the lowerBound for monotonic time.
-	monotonicLowerBound int64 `state:"nosave"`
 
 	// restored, if non-nil, indicates that this Timekeeper was restored
 	// from a state file. The clocks are not set until restored is closed.
@@ -275,21 +271,6 @@ func (t *Timekeeper) GetTime(c sentrytime.ClockID) (int64, error) {
 	now, err := t.clocks.GetTime(c)
 	if err == nil && c == sentrytime.Monotonic {
 		now += t.monotonicOffset
-		for {
-			// It's possible that the clock is shaky. This may be due to
-			// platform issues, e.g. the KVM platform relies on the guest
-			// TSC and host TSC, which may not be perfectly in sync. To
-			// work around this issue, ensure that the monotonic time is
-			// always bounded by the last time read.
-			oldLowerBound := atomic.LoadInt64(&t.monotonicLowerBound)
-			if now < oldLowerBound {
-				now = oldLowerBound
-				break
-			}
-			if atomic.CompareAndSwapInt64(&t.monotonicLowerBound, oldLowerBound, now) {
-				break
-			}
-		}
 	}
 	return now, err
 }

@@ -18,12 +18,14 @@ package kvm
 
 import (
 	"fmt"
+	"math/big"
 	"sync/atomic"
 	"syscall"
 	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/time"
+	"gvisor.dev/gvisor/pkg/cpuid"
+	ktime "gvisor.dev/gvisor/pkg/sentry/time"
 )
 
 // loadSegments copies the current segments.
@@ -61,79 +63,153 @@ func (c *vCPU) setCPUID() error {
 	return nil
 }
 
-// setSystemTime sets the TSC for the vCPU.
+// bitsForScaling returns the bits available for storing the fraction component
+// of the TSC scaling ratio. This allows us to replicate the (bad) math done by
+// the kernel below in scaledTSC, and ensure we can compute an exact zero
+// offset in setSystemTime.
 //
-// This has to make the call many times in order to minimize the intrinsic
-// error in the offset. Unfortunately KVM does not expose a relative offset via
-// the API, so this is an approximation. We do this via an iterative algorithm.
-// This has the advantage that it can generally deal with highly variable
-// system call times and should converge on the correct offset.
+// These constants correspond to kvm_tsc_scaling_ratio_frac_bits.
+var bitsForScaling = func() int64 {
+	fs := cpuid.HostFeatureSet()
+	if fs.Intel() {
+		return 48 // See vmx.c (kvm sources).
+	} else if fs.AMD() {
+		return 32 // See svm.c (svm sources).
+	} else {
+		return 63 // Unknown: theoretical maximum.
+	}
+}()
+
+// scaledTSC returns the host TSC scaled by the given frequency.
+//
+// This assumes a current frequency of 1. We require only the unitless ratio of
+// rawFreq to some current frequency. See setSystemTime for context.
+//
+// The kernel math guarantees that all bits of the multiplication and division
+// will be correctly preserved and applied. However, it is not possible to
+// actually store the ratio correctly.  So we need to use the same schema in
+// order to calculate the scaled frequency and get the same result.
+//
+// We can assume that the current frequency is (1), so we are calculating a
+// strict inverse of this value. This simplifies this function considerably.
+//
+// Roughly, the returned value "scaledTSC" will have:
+// 	scaledTSC/hostTSC == 1/rawFreq
+//
+//go:nosplit
+func scaledTSC(rawFreq uintptr) int64 {
+	scale := int64(1 << bitsForScaling)
+	ratio := big.NewInt(scale / int64(rawFreq))
+	ratio.Mul(ratio, big.NewInt(int64(ktime.Rdtsc())))
+	ratio.Div(ratio, big.NewInt(scale))
+	return ratio.Int64()
+}
+
+// setSystemTime sets the vCPU to the system time.
 func (c *vCPU) setSystemTime() error {
-	const (
-		_MSR_IA32_TSC  = 0x00000010
-		calibrateTries = 10
-	)
+	const _MSR_IA32_TSC = 0x00000010
 	registers := modelControlRegisters{
 		nmsrs: 1,
 	}
-	registers.entries[0] = modelControlRegister{
-		index: _MSR_IA32_TSC,
+	registers.entries[0].index = _MSR_IA32_TSC
+
+	// First, scale down the clock frequency to the lowest value allowed by
+	// the API itself.  How low we can go depends on the underlying
+	// hardware, but it is typically ~1/2^48 for Intel, ~1/2^32 for AMD.
+	// Even the lower bound here will take a 4GHz frequency down to 1Hz,
+	// meaning that everything should be able to handle a Khz setting of 1
+	// with bits to spare.
+	//
+	// Note that reducing the clock does not typically require special
+	// capabilities as it is emulated in KVM. We don't actually use this
+	// capability, but it means that this method should be robust to
+	// different hardware configurations.
+	rawFreq, _, errno := syscall.RawSyscall(
+		syscall.SYS_IOCTL,
+		uintptr(c.fd),
+		_KVM_GET_TSC_KHZ,
+		0 /* ignored */)
+	if errno != 0 {
+		return fmt.Errorf("error getting tsc frequency: %v", errno)
 	}
-	target := uint64(^uint32(0))
-	for done := 0; done < calibrateTries; {
-		start := uint64(time.Rdtsc())
-		registers.entries[0].data = start + target
+	if _, _, errno := syscall.RawSyscall(
+		syscall.SYS_IOCTL,
+		uintptr(c.fd),
+		_KVM_SET_TSC_KHZ,
+		1 /* khz */); errno != 0 {
+		// This instance of KVM does not support TSC scaling.
+		// Unfortunately, the API does not allow us to control the
+		// offset directly. In order to minimize the drift from the
+		// host time, we loop 5+ times, then accept the first set that
+		// is within a tolerable threshold of the minimal set time.
+		//
+		// This will only be required on pre-Skylake machines.
+		const (
+			minLoopIterations = 5
+			maxLoopIterations = 25
+		)
+		minSetTime := ^uint64(0)
+		for i := 0; i < maxLoopIterations; i++ {
+			// Take the halfway point for the settime.
+			registers.entries[0].data = uint64(ktime.Rdtsc()) + minSetTime/2
+			if _, _, errno := syscall.RawSyscall(
+				syscall.SYS_IOCTL,
+				uintptr(c.fd),
+				_KVM_SET_MSRS,
+				uintptr(unsafe.Pointer(&registers))); errno != 0 {
+				return fmt.Errorf("error setting tsc: %v", errno)
+			}
+			// Did this set a new record?
+			lastSetTime := uint64(ktime.Rdtsc()) - registers.entries[0].data
+			if lastSetTime < minSetTime {
+				minSetTime = lastSetTime
+			}
+			// Were we within 10%? Call it a day.
+			if lastSetTime <= (minSetTime*11/10) && i >= minLoopIterations {
+				break
+			}
+		}
+		return nil
+	}
+	defer func() {
+		// Always restore the original frequency.
+		if _, _, errno := syscall.RawSyscall(
+			syscall.SYS_IOCTL,
+			uintptr(c.fd),
+			_KVM_SET_TSC_KHZ,
+			rawFreq); errno != 0 {
+			panic(fmt.Errorf("error restoring tsc khz: %v", errno))
+		}
+	}()
+
+	// Attempt to set the system time in this compressed world. The
+	// calculation for offset normally looks like:
+	//
+	//	offset = target_tsc - kvm_scale_tsc(vcpu, rdtsc());
+	//
+	// So as long as the kvm_scale_tsc component is constant before and
+	// after the call to set the TSC value (and it is passes as the
+	// target_tsc), we will compute an offset value of zero.
+	//
+	// This is effectively cheating to make our "setSystemTime" call so
+	// unbelievably, incredibly fast that we do it "instantly" and all the
+	// calculations result in an offset of zero.
+	lastTSC := scaledTSC(rawFreq)
+	for {
+		registers.entries[0].data = uint64(lastTSC)
 		if _, _, errno := syscall.RawSyscall(
 			syscall.SYS_IOCTL,
 			uintptr(c.fd),
 			_KVM_SET_MSRS,
 			uintptr(unsafe.Pointer(&registers))); errno != 0 {
-			return fmt.Errorf("error setting system time: %v", errno)
+			return fmt.Errorf("error setting tsc: %v", errno)
 		}
-		// See if this is our new minimum call time. Note that this
-		// serves two functions: one, we make sure that we are
-		// accurately predicting the offset we need to set. Second, we
-		// don't want to do the final set on a slow call, which could
-		// produce a really bad result. So we only count attempts
-		// within +/- 6.25% of our minimum as an attempt.
-		end := uint64(time.Rdtsc())
-		if end < start {
-			continue // Totally bogus.
+		nextTSC := scaledTSC(rawFreq)
+		if lastTSC == nextTSC {
+			return nil
 		}
-		half := (end - start) / 2
-		if half < target {
-			target = half
-		}
-		if (half - target) < target/8 {
-			done++
-		}
+		lastTSC = nextTSC // Try again.
 	}
-	return nil
-}
-
-// setSignalMask sets the vCPU signal mask.
-//
-// This must be called prior to running the vCPU.
-func (c *vCPU) setSignalMask() error {
-	// The layout of this structure implies that it will not necessarily be
-	// the same layout chosen by the Go compiler. It gets fudged here.
-	var data struct {
-		length uint32
-		mask1  uint32
-		mask2  uint32
-		_      uint32
-	}
-	data.length = 8 // Fixed sigset size.
-	data.mask1 = ^uint32(bounceSignalMask & 0xffffffff)
-	data.mask2 = ^uint32(bounceSignalMask >> 32)
-	if _, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
-		uintptr(c.fd),
-		_KVM_SET_SIGNAL_MASK,
-		uintptr(unsafe.Pointer(&data))); errno != 0 {
-		return fmt.Errorf("error setting signal mask: %v", errno)
-	}
-	return nil
 }
 
 // setUserRegisters sets user registers in the vCPU.

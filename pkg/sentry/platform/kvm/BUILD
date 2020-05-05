@@ -75,6 +75,7 @@ go_test(
         "//pkg/sentry/platform/kvm/testutil",
         "//pkg/sentry/platform/ring0",
         "//pkg/sentry/platform/ring0/pagetables",
+        "//pkg/sentry/time",
         "//pkg/usermem",
     ],
 )
