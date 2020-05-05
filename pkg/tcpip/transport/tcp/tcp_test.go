@@ -1900,7 +1900,7 @@ func TestZeroWindowSend(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 0, -1 /* epRcvBuf */)
+	c.CreateConnected(789 /* iss */, 0 /* rcvWnd */, -1 /* epRcvBuf */)
 
 	data := []byte{1, 2, 3}
 	view := buffer.NewView(len(data))
@@ -1911,8 +1911,17 @@ func TestZeroWindowSend(t *testing.T) {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	// Since the window is currently zero, check that no packet is received.
-	c.CheckNoPacket("Packet received when window is zero")
+	// Check if we got a zero-window probe.
+	b := c.GetPacket()
+	checker.IPv4(t, b,
+		checker.PayloadLen(header.TCPMinimumSize),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(c.IRS)),
+			checker.AckNum(790),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+		),
+	)
 
 	// Open up the window. Data should be received now.
 	c.SendPacket(nil, &context.Headers{
@@ -1925,7 +1934,7 @@ func TestZeroWindowSend(t *testing.T) {
 	})
 
 	// Check that data is received.
-	b := c.GetPacket()
+	b = c.GetPacket()
 	checker.IPv4(t, b,
 		checker.PayloadLen(len(data)+header.TCPMinimumSize),
 		checker.TCP(
