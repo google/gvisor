@@ -195,7 +195,7 @@ func (fsType) Name() string {
 
 func (fst fsType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opt vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	fs := &filesystem{}
-	fs.Init(vfsObj, &fst)
+	fs.VFSFilesystem().Init(vfsObj, &fst, fs)
 	root := fst.rootFn(creds, fs)
 	return fs.VFSFilesystem(), root.VFSDentry(), nil
 }

@@ -20,6 +20,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/fdnotifier",
+        "//pkg/fspath",
         "//pkg/log",
         "//pkg/refs",
         "//pkg/sentry/arch",
