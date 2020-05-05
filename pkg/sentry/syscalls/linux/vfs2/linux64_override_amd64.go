@@ -44,22 +44,21 @@ func Override(table map[uintptr]kernel.Syscall) {
 	table[32] = syscalls.Supported("dup", Dup)
 	table[33] = syscalls.Supported("dup2", Dup2)
 	delete(table, 40) // sendfile
-	// TODO(gvisor.dev/issue/1485): Port all socket variants to VFS2.
-	table[41] = syscalls.PartiallySupported("socket", Socket, "In process of porting socket syscalls to VFS2.", nil)
-	table[42] = syscalls.PartiallySupported("connect", Connect, "In process of porting socket syscalls to VFS2.", nil)
-	table[43] = syscalls.PartiallySupported("accept", Accept, "In process of porting socket syscalls to VFS2.", nil)
-	table[44] = syscalls.PartiallySupported("sendto", SendTo, "In process of porting socket syscalls to VFS2.", nil)
-	table[45] = syscalls.PartiallySupported("recvfrom", RecvFrom, "In process of porting socket syscalls to VFS2.", nil)
-	table[46] = syscalls.PartiallySupported("sendmsg", SendMsg, "In process of porting socket syscalls to VFS2.", nil)
-	table[47] = syscalls.PartiallySupported("recvmsg", RecvMsg, "In process of porting socket syscalls to VFS2.", nil)
-	table[48] = syscalls.PartiallySupported("shutdown", Shutdown, "In process of porting socket syscalls to VFS2.", nil)
-	table[49] = syscalls.PartiallySupported("bind", Bind, "In process of porting socket syscalls to VFS2.", nil)
-	table[50] = syscalls.PartiallySupported("listen", Listen, "In process of porting socket syscalls to VFS2.", nil)
-	table[51] = syscalls.PartiallySupported("getsockname", GetSockName, "In process of porting socket syscalls to VFS2.", nil)
-	table[52] = syscalls.PartiallySupported("getpeername", GetPeerName, "In process of porting socket syscalls to VFS2.", nil)
-	table[53] = syscalls.PartiallySupported("socketpair", SocketPair, "In process of porting socket syscalls to VFS2.", nil)
-	table[54] = syscalls.PartiallySupported("setsockopt", SetSockOpt, "In process of porting socket syscalls to VFS2.", nil)
-	table[55] = syscalls.PartiallySupported("getsockopt", GetSockOpt, "In process of porting socket syscalls to VFS2.", nil)
+	table[41] = syscalls.Supported("socket", Socket)
+	table[42] = syscalls.Supported("connect", Connect)
+	table[43] = syscalls.Supported("accept", Accept)
+	table[44] = syscalls.Supported("sendto", SendTo)
+	table[45] = syscalls.Supported("recvfrom", RecvFrom)
+	table[46] = syscalls.Supported("sendmsg", SendMsg)
+	table[47] = syscalls.Supported("recvmsg", RecvMsg)
+	table[48] = syscalls.Supported("shutdown", Shutdown)
+	table[49] = syscalls.Supported("bind", Bind)
+	table[50] = syscalls.Supported("listen", Listen)
+	table[51] = syscalls.Supported("getsockname", GetSockName)
+	table[52] = syscalls.Supported("getpeername", GetPeerName)
+	table[53] = syscalls.Supported("socketpair", SocketPair)
+	table[54] = syscalls.Supported("setsockopt", SetSockOpt)
+	table[55] = syscalls.Supported("getsockopt", GetSockOpt)
 	table[59] = syscalls.Supported("execve", Execve)
 	table[72] = syscalls.Supported("fcntl", Fcntl)
 	delete(table, 73) // flock
@@ -145,8 +144,7 @@ func Override(table map[uintptr]kernel.Syscall) {
 	delete(table, 285) // fallocate
 	table[286] = syscalls.Supported("timerfd_settime", TimerfdSettime)
 	table[287] = syscalls.Supported("timerfd_gettime", TimerfdGettime)
-	// TODO(gvisor.dev/issue/1485): Port all socket variants to VFS2.
-	table[288] = syscalls.PartiallySupported("accept4", Accept4, "In process of porting socket syscalls to VFS2.", nil)
+	table[288] = syscalls.Supported("accept4", Accept4)
 	delete(table, 289) // signalfd4
 	table[290] = syscalls.Supported("eventfd2", Eventfd2)
 	table[291] = syscalls.Supported("epoll_create1", EpollCreate1)
@@ -155,11 +153,9 @@ func Override(table map[uintptr]kernel.Syscall) {
 	delete(table, 294) // inotify_init1
 	table[295] = syscalls.Supported("preadv", Preadv)
 	table[296] = syscalls.Supported("pwritev", Pwritev)
-	// TODO(gvisor.dev/issue/1485): Port all socket variants to VFS2.
-	table[299] = syscalls.PartiallySupported("recvmmsg", RecvMMsg, "In process of porting socket syscalls to VFS2.", nil)
+	table[299] = syscalls.Supported("recvmmsg", RecvMMsg)
 	table[306] = syscalls.Supported("syncfs", Syncfs)
-	// TODO(gvisor.dev/issue/1485): Port all socket variants to VFS2.
-	table[307] = syscalls.PartiallySupported("sendmmsg", SendMMsg, "In process of porting socket syscalls to VFS2.", nil)
+	table[307] = syscalls.Supported("sendmmsg", SendMMsg)
 	table[316] = syscalls.Supported("renameat2", Renameat2)
 	delete(table, 319) // memfd_create
 	table[322] = syscalls.Supported("execveat", Execveat)

@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/control"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
@@ -42,6 +43,8 @@ type SocketVFS2 struct {
 
 	socketOpsCommon
 }
+
+var _ = socket.SocketVFS2(&SocketVFS2{})
 
 // NewSockfsFile creates a new socket file in the global sockfs mount and
 // returns a corresponding file description.

@@ -36,8 +36,11 @@ import (
 type socketVFS2 struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
-	// TODO(gvisor.dev/issue/1484): VFS1 stores internal metadata for hostinet.
-	// We should perhaps rely on the host, much like in hostfs.
+
+	// We store metadata for hostinet sockets internally. Technically, we should
+	// access metadata (e.g. through stat, chmod) on the host for correctness,
+	// but this is not very useful for inet socket fds, which do not belong to a
+	// concrete file anyway.
 	vfs.DentryMetadataFileDescriptionImpl
 
 	socketOpsCommon
