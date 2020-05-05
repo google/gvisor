@@ -75,10 +75,18 @@ func owner(mounter fs.FileOwner, valid p9.AttrMask, pattr p9.Attr) fs.FileOwner 
 	// task's EUID/EGID.
 	owner := mounter
 	if valid.UID {
-		owner.UID = auth.KUID(pattr.UID)
+		if pattr.UID.Ok() {
+			owner.UID = auth.KUID(pattr.UID)
+		} else {
+			owner.UID = auth.KUID(auth.OverflowUID)
+		}
 	}
 	if valid.GID {
-		owner.GID = auth.KGID(pattr.GID)
+		if pattr.GID.Ok() {
+			owner.GID = auth.KGID(pattr.GID)
+		} else {
+			owner.GID = auth.KGID(auth.OverflowGID)
+		}
 	}
 	return owner
 }
