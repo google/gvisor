@@ -686,6 +686,8 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string) error {
 		creds := rp.Credentials()
 		_, err := parent.file.mknod(ctx, name, (p9.FileMode)(opts.Mode), opts.DevMajor, opts.DevMinor, (p9.UID)(creds.EffectiveKUID), (p9.GID)(creds.EffectiveKGID))
+		// If the gofer does not allow creating a socket or pipe, create a
+		// synthetic one, i.e. one that is kept entirely in memory.
 		if err == syserror.EPERM {
 			switch opts.Mode.FileType() {
 			case linux.S_IFSOCK:

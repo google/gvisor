@@ -496,10 +496,8 @@ type dentry struct {
 	// file is the unopened p9.File that backs this dentry. file is immutable.
 	//
 	// If file.isNil(), this dentry represents a synthetic file, i.e. a file
-	// that does not exist on the remote filesystem. As of this writing, this
-	// is only possible for a directory created with
-	// MkdirOptions.ForSyntheticMountpoint == true.
-	// TODO(gvisor.dev/issue/1476): Support synthetic sockets (and pipes).
+	// that does not exist on the remote filesystem. As of this writing, the
+	// only files that can be synthetic are sockets, pipes, and directories.
 	file p9file
 
 	// If deleted is non-zero, the file represented by this dentry has been
