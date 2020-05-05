@@ -663,11 +663,11 @@ func (fs *filesystem) newDentry(ctx context.Context, file p9file, qid p9.QID, ma
 		},
 	}
 	d.pf.dentry = d
-	if mask.UID && attr.UID != auth.NoID {
-		d.uid = uint32(attr.UID)
+	if mask.UID {
+		d.uid = dentryUIDFromP9UID(attr.UID)
 	}
-	if mask.GID && attr.GID != auth.NoID {
-		d.gid = uint32(attr.GID)
+	if mask.GID {
+		d.gid = dentryGIDFromP9GID(attr.GID)
 	}
 	if mask.Size {
 		d.size = attr.Size
@@ -718,10 +718,10 @@ func (d *dentry) updateFromP9Attrs(mask p9.AttrMask, attr *p9.Attr) {
 		atomic.StoreUint32(&d.mode, uint32(attr.Mode))
 	}
 	if mask.UID {
-		atomic.StoreUint32(&d.uid, uint32(attr.UID))
+		atomic.StoreUint32(&d.uid, dentryUIDFromP9UID(attr.UID))
 	}
 	if mask.GID {
-		atomic.StoreUint32(&d.gid, uint32(attr.GID))
+		atomic.StoreUint32(&d.gid, dentryGIDFromP9GID(attr.GID))
 	}
 	// There is no P9_GETATTR_* bit for I/O block size.
 	if attr.BlockSize != 0 {
@@ -937,6 +937,20 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, stat *lin
 
 func (d *dentry) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) error {
 	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(atomic.LoadUint32(&d.mode)), auth.KUID(atomic.LoadUint32(&d.uid)), auth.KGID(atomic.LoadUint32(&d.gid)))
+}
+
+func dentryUIDFromP9UID(uid p9.UID) uint32 {
+	if !uid.Ok() {
+		return uint32(auth.OverflowUID)
+	}
+	return uint32(uid)
+}
+
+func dentryGIDFromP9GID(gid p9.GID) uint32 {
+	if !gid.Ok() {
+		return uint32(auth.OverflowGID)
+	}
+	return uint32(gid)
 }
 
 // IncRef implements vfs.DentryImpl.IncRef.
