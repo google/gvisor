@@ -40,25 +40,19 @@ func (filesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFile
 	panic("pipefs.filesystemType.GetFilesystem should never be called")
 }
 
-// filesystem implements vfs.FilesystemImpl.
-type filesystem struct {
-	kernfs.Filesystem
+// TODO(gvisor.dev/issue/1193):
+//
+// - kernfs does not provide a way to implement statfs, from which we
+// should indicate PIPEFS_MAGIC.
+//
+// - kernfs does not provide a way to override names for
+// vfs.FilesystemImpl.PrependPath(); pipefs inodes should use synthetic
+// name fmt.Sprintf("pipe:[%d]", inode.ino).
 
-	// TODO(gvisor.dev/issue/1193):
-	//
-	// - kernfs does not provide a way to implement statfs, from which we
-	// should indicate PIPEFS_MAGIC.
-	//
-	// - kernfs does not provide a way to override names for
-	// vfs.FilesystemImpl.PrependPath(); pipefs inodes should use synthetic
-	// name fmt.Sprintf("pipe:[%d]", inode.ino).
-}
-
-// NewFilesystem sets up and returns a new vfs.Filesystem implemented by
-// pipefs.
+// NewFilesystem sets up and returns a new vfs.Filesystem implemented by pipefs.
 func NewFilesystem(vfsObj *vfs.VirtualFilesystem) *vfs.Filesystem {
-	fs := &filesystem{}
-	fs.Init(vfsObj, filesystemType{})
+	fs := &kernfs.Filesystem{}
+	fs.VFSFilesystem().Init(vfsObj, filesystemType{}, fs)
 	return fs.VFSFilesystem()
 }
 

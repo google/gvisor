@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
@@ -39,37 +40,9 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// filesystemType implements vfs.FilesystemType.
-type filesystemType struct{}
-
-// GetFilesystem implements FilesystemType.GetFilesystem.
-func (filesystemType) GetFilesystem(context.Context, *vfs.VirtualFilesystem, *auth.Credentials, string, vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
-	panic("host.filesystemType.GetFilesystem should never be called")
-}
-
-// Name implements FilesystemType.Name.
-func (filesystemType) Name() string {
-	return "none"
-}
-
-// filesystem implements vfs.FilesystemImpl.
-type filesystem struct {
-	kernfs.Filesystem
-}
-
-// NewFilesystem sets up and returns a new hostfs filesystem.
-//
-// Note that there should only ever be one instance of host.filesystem,
-// a global mount for host fds.
-func NewFilesystem(vfsObj *vfs.VirtualFilesystem) *vfs.Filesystem {
-	fs := &filesystem{}
-	fs.Init(vfsObj, filesystemType{})
-	return fs.VFSFilesystem()
-}
-
 // ImportFD sets up and returns a vfs.FileDescription from a donated fd.
 func ImportFD(ctx context.Context, mnt *vfs.Mount, hostFD int, isTTY bool) (*vfs.FileDescription, error) {
-	fs, ok := mnt.Filesystem().Impl().(*kernfs.Filesystem)
+	fs, ok := mnt.Filesystem().Impl().(*filesystem)
 	if !ok {
 		return nil, fmt.Errorf("can't import host FDs into filesystems of type %T", mnt.Filesystem().Impl())
 	}
@@ -119,10 +92,45 @@ func ImportFD(ctx context.Context, mnt *vfs.Mount, hostFD int, isTTY bool) (*vfs
 
 	d := &kernfs.Dentry{}
 	d.Init(i)
+
 	// i.open will take a reference on d.
 	defer d.DecRef()
-
 	return i.open(ctx, d.VFSDentry(), mnt)
+}
+
+// filesystemType implements vfs.FilesystemType.
+type filesystemType struct{}
+
+// GetFilesystem implements FilesystemType.GetFilesystem.
+func (filesystemType) GetFilesystem(context.Context, *vfs.VirtualFilesystem, *auth.Credentials, string, vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
+	panic("host.filesystemType.GetFilesystem should never be called")
+}
+
+// Name implements FilesystemType.Name.
+func (filesystemType) Name() string {
+	return "none"
+}
+
+// NewFilesystem sets up and returns a new hostfs filesystem.
+//
+// Note that there should only ever be one instance of host.filesystem,
+// a global mount for host fds.
+func NewFilesystem(vfsObj *vfs.VirtualFilesystem) *vfs.Filesystem {
+	fs := &filesystem{}
+	fs.VFSFilesystem().Init(vfsObj, filesystemType{}, fs)
+	return fs.VFSFilesystem()
+}
+
+// filesystem implements vfs.FilesystemImpl.
+type filesystem struct {
+	kernfs.Filesystem
+}
+
+func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDentry, b *fspath.Builder) error {
+	d := vd.Dentry().Impl().(*kernfs.Dentry)
+	inode := d.Inode().(*inode)
+	b.PrependComponent(fmt.Sprintf("host:[%d]", inode.ino))
+	return vfs.PrependPathSyntheticError{}
 }
 
 // inode implements kernfs.Inode.
