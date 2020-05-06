@@ -29,7 +29,7 @@ import (
 //
 // The types below create fast lookup slices for all syscalls. This maximum
 // serves as a sanity check that we don't allocate huge slices for a very large
-// syscall.
+// syscall. This is checked during registration.
 const maxSyscallNum = 2000
 
 // SyscallSupportLevel is a syscall support levels.
@@ -266,6 +266,16 @@ type SyscallTable struct {
 	FeatureEnable SyscallFlagsTable
 }
 
+// MaxSysno returns the largest system call number.
+func (s *SyscallTable) MaxSysno() (max uintptr) {
+	for num := range s.Table {
+		if num > max {
+			max = num
+		}
+	}
+	return max
+}
+
 // allSyscallTables contains all known tables.
 var allSyscallTables []*SyscallTable
 
@@ -286,6 +296,20 @@ func LookupSyscallTable(os abi.OS, a arch.Arch) (*SyscallTable, bool) {
 
 // RegisterSyscallTable registers a new syscall table for use by a Kernel.
 func RegisterSyscallTable(s *SyscallTable) {
+	if max := s.MaxSysno(); max > maxSyscallNum {
+		panic(fmt.Sprintf("SyscallTable %+v contains too large syscall number %d", s, max))
+	}
+	if _, ok := LookupSyscallTable(s.OS, s.Arch); ok {
+		panic(fmt.Sprintf("Duplicate SyscallTable registered for OS %v Arch %v", s.OS, s.Arch))
+	}
+	allSyscallTables = append(allSyscallTables, s)
+	s.Init()
+}
+
+// Init initializes the system call table.
+//
+// This should normally be called only during registration.
+func (s *SyscallTable) Init() {
 	if s.Table == nil {
 		// Ensure non-nil lookup table.
 		s.Table = make(map[uintptr]Syscall)
@@ -295,42 +319,16 @@ func RegisterSyscallTable(s *SyscallTable) {
 		s.Emulate = make(map[usermem.Addr]uintptr)
 	}
 
-	var max uintptr
-	for num := range s.Table {
-		if num > max {
-			max = num
-		}
-	}
-
-	if max > maxSyscallNum {
-		panic(fmt.Sprintf("SyscallTable %+v contains too large syscall number %d", s, max))
-	}
-
-	s.lookup = make([]SyscallFn, max+1)
+	max := s.MaxSysno() // Checked during RegisterSyscallTable.
 
 	// Initialize the fast-lookup table.
+	s.lookup = make([]SyscallFn, max+1)
 	for num, sc := range s.Table {
 		s.lookup[num] = sc.Fn
 	}
 
+	// Initialize all features.
 	s.FeatureEnable.init(s.Table, max)
-
-	if _, ok := LookupSyscallTable(s.OS, s.Arch); ok {
-		panic(fmt.Sprintf("Duplicate SyscallTable registered for OS %v Arch %v", s.OS, s.Arch))
-	}
-
-	// Save a reference to this table.
-	//
-	// This is required for a Kernel to find the table and for save/restore
-	// operations below.
-	allSyscallTables = append(allSyscallTables, s)
-}
-
-// FlushSyscallTablesTestOnly flushes the syscall tables for tests. Used for
-// parameterized VFSv2 tests.
-// TODO(gvisor.dv/issue/1624): Remove when VFS1 is no longer supported.
-func FlushSyscallTablesTestOnly() {
-	allSyscallTables = nil
 }
 
 // Lookup returns the syscall implementation, if one exists.
