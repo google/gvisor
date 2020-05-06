@@ -77,8 +77,6 @@ import (
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/unix"
 )
 
-var syscallTable *kernel.SyscallTable
-
 // Loader keeps state needed to start the kernel and run the container..
 type Loader struct {
 	// k is the kernel.
@@ -204,13 +202,11 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("setting up memory usage: %v", err)
 	}
 
-	// Patch the syscall table.
-	kernel.VFS2Enabled = args.Conf.VFS2
-	if kernel.VFS2Enabled {
-		vfs2.Override(syscallTable.Table)
+	// Is this a VFSv2 kernel?
+	if args.Conf.VFS2 {
+		kernel.VFS2Enabled = true
+		vfs2.Override()
 	}
-
-	kernel.RegisterSyscallTable(syscallTable)
 
 	// Create kernel and platform.
 	p, err := createPlatform(args.Conf, args.Device)

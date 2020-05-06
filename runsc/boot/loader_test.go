@@ -31,7 +31,6 @@ import (
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
@@ -67,11 +66,6 @@ func testSpec() *specs.Spec {
 			Args: []string{"/bin/true"},
 		},
 	}
-}
-
-func resetSyscallTable() {
-	kernel.VFS2Enabled = false
-	kernel.FlushSyscallTablesTestOnly()
 }
 
 // startGofer starts a new gofer routine serving 'root' path. It returns the
@@ -150,13 +144,11 @@ func createLoader(vfsEnabled bool, spec *specs.Spec) (*Loader, func(), error) {
 
 // TestRun runs a simple application in a sandbox and checks that it succeeds.
 func TestRun(t *testing.T) {
-	defer resetSyscallTable()
 	doRun(t, false)
 }
 
 // TestRunVFS2 runs TestRun in VFSv2.
 func TestRunVFS2(t *testing.T) {
-	defer resetSyscallTable()
 	doRun(t, true)
 }
 
@@ -199,13 +191,11 @@ func doRun(t *testing.T, vfsEnabled bool) {
 // TestStartSignal tests that the controller Start message will cause
 // WaitForStartSignal to return.
 func TestStartSignal(t *testing.T) {
-	defer resetSyscallTable()
 	doStartSignal(t, false)
 }
 
 // TestStartSignalVFS2 does TestStartSignal with VFS2.
 func TestStartSignalVFS2(t *testing.T) {
-	defer resetSyscallTable()
 	doStartSignal(t, true)
 }
 
@@ -477,8 +467,6 @@ func TestCreateMountNamespace(t *testing.T) {
 func TestCreateMountNamespaceVFS2(t *testing.T) {
 	for _, tc := range createMountTestcases(true /* vfs2 */) {
 		t.Run(tc.name, func(t *testing.T) {
-			defer resetSyscallTable()
-
 			spec := testSpec()
 			spec.Mounts = tc.spec.Mounts
 			spec.Root = tc.spec.Root
