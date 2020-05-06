@@ -91,10 +91,6 @@ type FileDescriptionOptions struct {
 	// ESPIPE.
 	DenyPWrite bool
 
-	// if InvalidWrite is true, calls to FileDescription.Write() return
-	// EINVAL.
-	InvalidWrite bool
-
 	// If UseDentryMetadata is true, calls to FileDescription methods that
 	// interact with file and filesystem metadata (Stat, SetStat, StatFS,
 	// Listxattr, Getxattr, Setxattr, Removexattr) are implemented by calling
@@ -570,9 +566,6 @@ func (fd *FileDescription) PWrite(ctx context.Context, src usermem.IOSequence, o
 
 // Write is similar to PWrite, but does not specify an offset.
 func (fd *FileDescription) Write(ctx context.Context, src usermem.IOSequence, opts WriteOptions) (int64, error) {
-	if fd.opts.InvalidWrite {
-		return 0, syserror.EINVAL
-	}
 	if !fd.writable {
 		return 0, syserror.EBADF
 	}
