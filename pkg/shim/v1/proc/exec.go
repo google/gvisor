@@ -34,7 +34,7 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 
-	runsc "github.com/google/gvisor-containerd-shim/pkg/go-runsc"
+	"gvisor.dev/gvisor/pkg/shim/runsc"
 )
 
 type execProcess struct {

@@ -45,8 +45,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 
-	runsc "github.com/google/gvisor-containerd-shim/pkg/go-runsc"
-	"github.com/google/gvisor-containerd-shim/pkg/v1/shim"
+	"gvisor.dev/gvisor/pkg/shim/runsc"
+	"gvisor.dev/gvisor/pkg/shim/v1/shim"
 )
 
 var (
