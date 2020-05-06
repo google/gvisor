@@ -23,8 +23,6 @@ import (
 
 	"github.com/containerd/cri/pkg/annotations"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 )
 
 const volumeKeyPrefix = "dev.gvisor.spec.mount."
@@ -32,13 +30,13 @@ const volumeKeyPrefix = "dev.gvisor.spec.mount."
 var kubeletPodsDir = "/var/lib/kubelet/pods"
 
 // volumeName gets volume name from volume annotation key, example:
-// dev.gvisor.spec.mount.NAME.share
+//	dev.gvisor.spec.mount.NAME.share
 func volumeName(k string) string {
 	return strings.SplitN(strings.TrimPrefix(k, volumeKeyPrefix), ".", 2)[0]
 }
 
 // volumeFieldName gets volume field name from volume annotation key, example:
-// `type` is the field of dev.gvisor.spec.mount.NAME.type
+//	`type` is the field of dev.gvisor.spec.mount.NAME.type
 func volumeFieldName(k string) string {
 	parts := strings.Split(strings.TrimPrefix(k, volumeKeyPrefix), ".")
 	return parts[len(parts)-1]
@@ -48,16 +46,16 @@ func volumeFieldName(k string) string {
 func podUID(s *specs.Spec) (string, error) {
 	sandboxLogDir := s.Annotations[annotations.SandboxLogDir]
 	if sandboxLogDir == "" {
-		return "", errors.New("no sandbox log path annotation")
+		return "", fmt.Errorf("no sandbox log path annotation")
 	}
 	fields := strings.Split(filepath.Base(sandboxLogDir), "_")
 	switch len(fields) {
-	case 1: // This is the old CRI logging path
+	case 1: // This is the old CRI logging path.
 		return fields[0], nil
-	case 3: // This is the new CRI logging path
+	case 3: // This is the new CRI logging path.
 		return fields[2], nil
 	}
-	return "", errors.Errorf("unexpected sandbox log path %q", sandboxLogDir)
+	return "", fmt.Errorf("unexpected sandbox log path %q", sandboxLogDir)
 }
 
 // isVolumeKey checks whether an annotation key is for volume.
@@ -79,7 +77,7 @@ func volumePath(volume, uid string) (string, error) {
 		return "", err
 	}
 	if len(dirs) != 1 {
-		return "", errors.Errorf("unexpected matched volume list %v", dirs)
+		return "", fmt.Errorf("unexpected matched volume list %v", dirs)
 	}
 	return dirs[0], nil
 }
@@ -103,7 +101,7 @@ func UpdateVolumeAnnotations(bundle string, s *specs.Spec) error {
 		if err != nil {
 			// Skip if we can't get pod UID, because this doesn't work
 			// for containerd 1.1.
-			logrus.WithError(err).Error("Can't get pod uid")
+			fmt.Errorf("Can't get pod uid: %w", err)
 			return nil
 		}
 	}
@@ -117,22 +115,25 @@ func UpdateVolumeAnnotations(bundle string, s *specs.Spec) error {
 		}
 		volume := volumeName(k)
 		if uid != "" {
-			// This is a sandbox
+			// This is a sandbox.
 			path, err := volumePath(volume, uid)
 			if err != nil {
-				return errors.Wrapf(err, "get volume path for %q", volume)
+				return fmt.Errorf("get volume path for %q: %w", volume, err)
 			}
 			s.Annotations[volumeSourceKey(volume)] = path
 			updated = true
 		} else {
-			// This is a container
+			// This is a container.
 			for i := range s.Mounts {
-				// An error is returned for sandbox if source annotation
-				// is not successfully applied, so it is guaranteed that
-				// the source annotation for sandbox has already been
-				// successfully applied at this point.
-				// The volume name is unique inside a pod, so matching without
-				// podUID is fine here.
+				// An error is returned for sandbox if source
+				// annotation is not successfully applied, so
+				// it is guaranteed that the source annotation
+				// for sandbox has already been successfully
+				// applied at this point.
+				//
+				// The volume name is unique inside a pod, so
+				// matching without podUID is fine here.
+				//
 				// TODO: Pass podUID down to shim for containers to do
 				// more accurate matching.
 				if yes, _ := isVolumePath(volume, s.Mounts[i].Source); yes {
@@ -147,7 +148,7 @@ func UpdateVolumeAnnotations(bundle string, s *specs.Spec) error {
 	if !updated {
 		return nil
 	}
-	// Update bundle
+	// Update bundle.
 	b, err := json.Marshal(s)
 	if err != nil {
 		return err

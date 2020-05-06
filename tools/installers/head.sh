@@ -17,5 +17,11 @@
 # Install our runtime.
 $(find . -executable -type f -name runsc) install
 
+# Install all the shims.
+find . -executable -type f -executable -name containerd-shim-runsc-v1 -exec cp {} /usr/bin \;
+find . -executable -type f -executable -name gvisor-containerd-shim -exec cp {} /usr/bin \;
+
 # Restart docker.
-service docker restart || true
+if service docker status 2>/dev/null; then
+  service docker restart
+fi

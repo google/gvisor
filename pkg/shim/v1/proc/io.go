@@ -150,8 +150,9 @@ func (c *countingWriteCloser) Close() error {
 	return c.WriteCloser.Close()
 }
 
-// isFifo checks if a file is a fifo
-// if the file does not exist then it returns false
+// isFifo checks if a file is a fifo.
+//
+// If the file does not exist then it returns false.
 func isFifo(path string) (bool, error) {
 	stat, err := os.Stat(path)
 	if err != nil {

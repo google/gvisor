@@ -17,11 +17,11 @@ package proc
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/containerd/console"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/runtime/proc"
-	"github.com/pkg/errors"
 )
 
 type initState interface {
@@ -46,7 +46,7 @@ func (s *createdState) transition(name string) error {
 	case "deleted":
 		s.p.initState = &deletedState{}
 	default:
-		return errors.Errorf("invalid state transition %q to %q", stateName(s), name)
+		return fmt.Errorf("invalid state transition %q to %q", stateName(s), name)
 	}
 	return nil
 }
@@ -107,7 +107,7 @@ func (s *runningState) transition(name string) error {
 	case "stopped":
 		s.p.initState = &stoppedState{p: s.p}
 	default:
-		return errors.Errorf("invalid state transition %q to %q", stateName(s), name)
+		return fmt.Errorf("invalid state transition %q to %q", stateName(s), name)
 	}
 	return nil
 }
@@ -117,11 +117,11 @@ func (s *runningState) Resize(ws console.WinSize) error {
 }
 
 func (s *runningState) Start(ctx context.Context) error {
-	return errors.Errorf("cannot start a running process")
+	return fmt.Errorf("cannot start a running process")
 }
 
 func (s *runningState) Delete(ctx context.Context) error {
-	return errors.Errorf("cannot delete a running process")
+	return fmt.Errorf("cannot delete a running process")
 }
 
 func (s *runningState) Kill(ctx context.Context, sig uint32, all bool) error {
@@ -149,17 +149,17 @@ func (s *stoppedState) transition(name string) error {
 	case "deleted":
 		s.p.initState = &deletedState{}
 	default:
-		return errors.Errorf("invalid state transition %q to %q", stateName(s), name)
+		return fmt.Errorf("invalid state transition %q to %q", stateName(s), name)
 	}
 	return nil
 }
 
 func (s *stoppedState) Resize(ws console.WinSize) error {
-	return errors.Errorf("cannot resize a stopped container")
+	return fmt.Errorf("cannot resize a stopped container")
 }
 
 func (s *stoppedState) Start(ctx context.Context) error {
-	return errors.Errorf("cannot start a stopped process")
+	return fmt.Errorf("cannot start a stopped process")
 }
 
 func (s *stoppedState) Delete(ctx context.Context) error {
@@ -178,5 +178,5 @@ func (s *stoppedState) SetExited(status int) {
 }
 
 func (s *stoppedState) Exec(ctx context.Context, path string, r *ExecConfig) (proc.Process, error) {
-	return nil, errors.Errorf("cannot exec in a stopped state")
+	return nil, fmt.Errorf("cannot exec in a stopped state")
 }
