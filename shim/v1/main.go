@@ -18,7 +18,7 @@ package main
 import (
 	"github.com/containerd/containerd/runtime/v2/shim"
 
-	runsc "github.com/google/gvisor-containerd-shim/pkg/v2"
+	runsc "gvisor.dev/gvisor/pkg/shim/v2"
 )
 
 func main() {
