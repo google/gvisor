@@ -4888,7 +4888,12 @@ func TestDHCPv6ConfigurationFromNDPDA(t *testing.T) {
 		}
 	}
 
-	// The initial DHCPv6 configuration should be stack.DHCPv6NoConfiguration.
+	// Even if the first RA reports no DHCPv6 configurations are available, the
+	// dispatcher should get an event.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, false))
+	expectDHCPv6Event(stack.DHCPv6NoConfiguration)
+	// Receiving the same update again should not result in an event to the
+	// dispatcher.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, false))
 	expectNoDHCPv6Event()
 
@@ -4896,8 +4901,6 @@ func TestDHCPv6ConfigurationFromNDPDA(t *testing.T) {
 	// Configurations.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, true))
 	expectDHCPv6Event(stack.DHCPv6OtherConfigurations)
-	// Receiving the same update again should not result in an event to the
-	// NDPDispatcher.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, true))
 	expectNoDHCPv6Event()
 
@@ -4926,6 +4929,21 @@ func TestDHCPv6ConfigurationFromNDPDA(t *testing.T) {
 	expectNoDHCPv6Event()
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, true, true))
 	expectNoDHCPv6Event()
+
+	// Receive an RA that updates the DHCPv6 configuration to Other
+	// Configurations.
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, true))
+	expectDHCPv6Event(stack.DHCPv6OtherConfigurations)
+	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, true))
+	expectNoDHCPv6Event()
+
+	// Cycling the NIC should cause the last DHCPv6 configuration to be cleared.
+	if err := s.DisableNIC(nicID); err != nil {
+		t.Fatalf("s.DisableNIC(%d): %s", nicID, err)
+	}
+	if err := s.EnableNIC(nicID); err != nil {
+		t.Fatalf("s.EnableNIC(%d): %s", nicID, err)
+	}
 
 	// Receive an RA that updates the DHCPv6 configuration to Other
 	// Configurations.

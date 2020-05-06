@@ -199,9 +199,11 @@ var (
 type DHCPv6ConfigurationFromNDPRA int
 
 const (
+	_ DHCPv6ConfigurationFromNDPRA = iota
+
 	// DHCPv6NoConfiguration indicates that no configurations are available via
 	// DHCPv6.
-	DHCPv6NoConfiguration DHCPv6ConfigurationFromNDPRA = iota
+	DHCPv6NoConfiguration
 
 	// DHCPv6ManagedAddress indicates that addresses are available via DHCPv6.
 	//
@@ -314,9 +316,6 @@ type NDPDispatcher interface {
 
 	// OnDHCPv6Configuration will be called with an updated configuration that is
 	// available via DHCPv6 for a specified NIC.
-	//
-	// NDPDispatcher assumes that the initial configuration available by DHCPv6 is
-	// DHCPv6NoConfiguration.
 	//
 	// This function is not permitted to block indefinitely. It must not
 	// call functions on the stack itself.
@@ -1808,6 +1807,8 @@ func (ndp *ndpState) cleanupState(hostOnly bool) {
 	if got := len(ndp.defaultRouters); got != 0 {
 		panic(fmt.Sprintf("ndp: still have discovered default routers after cleaning up; found = %d", got))
 	}
+
+	ndp.dhcpv6Configuration = 0
 }
 
 // startSolicitingRouters starts soliciting routers, as per RFC 4861 section
