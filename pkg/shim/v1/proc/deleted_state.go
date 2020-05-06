@@ -17,33 +17,33 @@ package proc
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/containerd/console"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/runtime/proc"
-	"github.com/pkg/errors"
 )
 
 type deletedState struct{}
 
 func (*deletedState) Resize(ws console.WinSize) error {
-	return errors.Errorf("cannot resize a deleted process")
+	return fmt.Errorf("cannot resize a deleted process")
 }
 
 func (*deletedState) Start(ctx context.Context) error {
-	return errors.Errorf("cannot start a deleted process")
+	return fmt.Errorf("cannot start a deleted process")
 }
 
 func (*deletedState) Delete(ctx context.Context) error {
-	return errors.Wrap(errdefs.ErrNotFound, "cannot delete a deleted process")
+	return fmt.Errorf("cannot delete a deleted process: %w", errdefs.ErrNotFound)
 }
 
 func (*deletedState) Kill(ctx context.Context, sig uint32, all bool) error {
-	return errors.Wrap(errdefs.ErrNotFound, "cannot kill a deleted process")
+	return fmt.Errorf("cannot kill a deleted process: %w", errdefs.ErrNotFound)
 }
 
 func (*deletedState) SetExited(status int) {}
 
 func (*deletedState) Exec(ctx context.Context, path string, r *ExecConfig) (proc.Process, error) {
-	return nil, errors.Errorf("cannot exec in a deleted state")
+	return nil, fmt.Errorf("cannot exec in a deleted state")
 }

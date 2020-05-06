@@ -20,17 +20,15 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/containerd/containerd/events"
 	"github.com/containerd/containerd/namespaces"
@@ -41,8 +39,6 @@ import (
 	"github.com/containerd/typeurl"
 	ptypes "github.com/gogo/protobuf/types"
 	"github.com/opencontainers/runc/libcontainer/system"
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 
 	"gvisor.dev/gvisor/pkg/shim/runsc"
@@ -69,17 +65,22 @@ func init() {
 	flag.StringVar(&socketFlag, "socket", "", "abstract socket path to serve")
 	flag.StringVar(&addressFlag, "address", "", "grpc address back to main containerd")
 	flag.StringVar(&workdirFlag, "workdir", "", "path used to storge large temporary data")
-	// Containerd default to runc, unless another runtime is explicitly specified.
-	// We keep the same default to make the default behavior consistent.
+
+	// Containerd default to runc, unless another runtime is explicitly
+	// specified.  We keep the same default to make the default behavior
+	// consistent.
 	flag.StringVar(&runtimeRootFlag, "runtime-root", proc.RuncRoot, "root directory for the runtime")
-	// currently, the `containerd publish` utility is embedded in the daemon binary.
-	// The daemon invokes `containerd-shim -containerd-binary ...` with its own os.Executable() path.
+
+	// Currently, the `containerd publish` utility is embedded in the
+	// daemon binary.  The daemon invokes `containerd-shim
+	// -containerd-binary ...` with its own os.Executable() path.
 	flag.StringVar(&containerdBinaryFlag, "containerd-binary", "containerd", "path to containerd binary (used for `containerd publish`)")
 	flag.StringVar(&shimConfigFlag, "config", ShimConfigPath, "path to the shim configuration file")
-	flag.Parse()
 }
 
 func main() {
+	flag.Parse()
+
 	// This is a hack. Exec current process to run standard containerd-shim
 	// if runtime root is not `runsc`. We don't need this for shim v2 api.
 	if filepath.Base(runtimeRootFlag) != "runsc" {
@@ -87,23 +88,6 @@ func main() {
 			fmt.Fprintf(os.Stderr, "gvisor-containerd-shim: %s\n", err)
 			os.Exit(1)
 		}
-	}
-
-	debug.SetGCPercent(40)
-	go func() {
-		for range time.Tick(30 * time.Second) {
-			debug.FreeOSMemory()
-		}
-	}()
-
-	if debugFlag {
-		logrus.SetLevel(logrus.DebugLevel)
-	}
-
-	if os.Getenv("GOMAXPROCS") == "" {
-		// If GOMAXPROCS hasn't been set, we default to a value of 2 to reduce
-		// the number of Go stacks present in the shim.
-		runtime.GOMAXPROCS(2)
 	}
 
 	// Run regular shim if needed.
@@ -118,44 +102,41 @@ func main() {
 func executeRuncShim() error {
 	c, err := loadConfig(shimConfigFlag)
 	if err != nil && !os.IsNotExist(err) {
-		return errors.Wrap(err, "failed to load shim config")
+		return fmt.Errorf("failed to load shim config: %w", err)
 	}
 	shimPath := c.RuncShim
 	if shimPath == "" {
 		shimPath, err = exec.LookPath("containerd-shim")
 		if err != nil {
-			return errors.Wrapf(err, "lookup containerd-shim")
+			return fmt.Errorf("lookup containerd-shim failed: %w", err)
 		}
 	}
 
 	args := append([]string{shimPath}, os.Args[1:]...)
 	if err := syscall.Exec(shimPath, args, os.Environ()); err != nil {
-		return errors.Wrapf(err, "exec containerd-shim %q", shimPath)
+		return fmt.Errorf("exec containerd-shim @ %q failed: %w", shimPath, err)
 	}
 	return nil
 }
 
 func executeShim() error {
-	// start handling signals as soon as possible so that things are properly reaped
-	// or if runtime exits before we hit the handler
+	// start handling signals as soon as possible so that things are
+	// properly reaped or if runtime exits before we hit the handler.
 	signals, err := setupSignals()
 	if err != nil {
 		return err
 	}
-	dump := make(chan os.Signal, 32)
-	signal.Notify(dump, syscall.SIGUSR1)
-
 	path, err := os.Getwd()
 	if err != nil {
 		return err
 	}
 	server, err := ttrpc.NewServer(ttrpc.WithServerHandshaker(ttrpc.UnixSocketRequireSameUser()))
 	if err != nil {
-		return errors.Wrap(err, "failed creating server")
+		return fmt.Errorf("failed creating server: %w", err)
 	}
 	c, err := loadConfig(shimConfigFlag)
 	if err != nil && !os.IsNotExist(err) {
-		return errors.Wrap(err, "failed to load shim config")
+		return fmt.Errorf("failed to load shim config: %w", err)
 	}
 	sv, err := shim.NewService(
 		shim.Config{
@@ -170,28 +151,15 @@ func executeShim() error {
 	if err != nil {
 		return err
 	}
-	logrus.Debug("registering ttrpc server")
 	shimapi.RegisterShimService(server, sv)
-
-	socket := socketFlag
-	if err := serve(server, socket); err != nil {
+	if err := serve(server, socketFlag); err != nil {
 		return err
 	}
-	logger := logrus.WithFields(logrus.Fields{
-		"pid":       os.Getpid(),
-		"path":      path,
-		"namespace": namespaceFlag,
-	})
-	go func() {
-		for range dump {
-			dumpStacks(logger)
-		}
-	}()
-	return handleSignals(logger, signals, server, sv)
+	return handleSignals(signals, server, sv)
 }
 
-// serve serves the ttrpc API over a unix socket at the provided path
-// this function does not block
+// serve serves the ttrpc API over a unix socket at the provided path this
+// function does not block.
 func serve(server *ttrpc.Server, path string) error {
 	var (
 		l   net.Listener
@@ -202,41 +170,40 @@ func serve(server *ttrpc.Server, path string) error {
 		path = "[inherited from parent]"
 	} else {
 		if len(path) > 106 {
-			return errors.Errorf("%q: unix socket path too long (> 106)", path)
+			return fmt.Errorf("%q: unix socket path too long (> 106)", path)
 		}
 		l, err = net.Listen("unix", "\x00"+path)
 	}
 	if err != nil {
 		return err
 	}
-	logrus.WithField("socket", path).Debug("serving api on unix socket")
 	go func() {
 		defer l.Close()
-		if err := server.Serve(context.Background(), l); err != nil &&
-			!strings.Contains(err.Error(), "use of closed network connection") {
-			logrus.WithError(err).Fatal("gvisor-containerd-shim: ttrpc server failure")
+		err := server.Serve(context.Background(), l)
+		if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
+			log.Fatalf("ttrpc server failure: %v", err)
 		}
 	}()
 	return nil
 }
 
-// setupSignals creates a new signal handler for all signals and sets the shim as a
-// sub-reaper so that the container processes are reparented
+// setupSignals creates a new signal handler for all signals and sets the shim
+// as a sub-reaper so that the container processes are reparented.
 func setupSignals() (chan os.Signal, error) {
 	signals := make(chan os.Signal, 32)
 	signal.Notify(signals, unix.SIGTERM, unix.SIGINT, unix.SIGCHLD, unix.SIGPIPE)
-	// make sure runc is setup to use the monitor
-	// for waiting on processes
+	// make sure runc is setup to use the monitor for waiting on processes.
 	// TODO(random-liu): Move shim/reaper.go to a separate package.
 	runsc.Monitor = containerdshim.Default
-	// set the shim as the subreaper for all orphaned processes created by the container
+	// Set the shim as the subreaper for all orphaned processes created by
+	// the container.
 	if err := system.SetSubreaper(1); err != nil {
 		return nil, err
 	}
 	return signals, nil
 }
 
-func handleSignals(logger *logrus.Entry, signals chan os.Signal, server *ttrpc.Server, sv *shim.Service) error {
+func handleSignals(signals chan os.Signal, server *ttrpc.Server, sv *shim.Service) error {
 	var (
 		termOnce sync.Once
 		done     = make(chan struct{})
@@ -250,15 +217,15 @@ func handleSignals(logger *logrus.Entry, signals chan os.Signal, server *ttrpc.S
 			switch s {
 			case unix.SIGCHLD:
 				if err := containerdshim.Reap(); err != nil {
-					logger.WithError(err).Error("reap exit status")
+					log.Printf("reap exit status: %v")
 				}
 			case unix.SIGTERM, unix.SIGINT:
 				go termOnce.Do(func() {
 					ctx := context.TODO()
 					if err := server.Shutdown(ctx); err != nil {
-						logger.WithError(err).Error("failed to shutdown server")
+						log.Printf("failed to shutdown server: %v")
 					}
-					// Ensure our child is dead if any
+					// Ensure our child is dead if any.
 					sv.Kill(ctx, &shimapi.KillRequest{
 						Signal: uint32(syscall.SIGKILL),
 						All:    true,
@@ -270,21 +237,6 @@ func handleSignals(logger *logrus.Entry, signals chan os.Signal, server *ttrpc.S
 			}
 		}
 	}
-}
-
-func dumpStacks(logger *logrus.Entry) {
-	var (
-		buf       []byte
-		stackSize int
-	)
-	bufferLen := 16384
-	for stackSize == len(buf) {
-		buf = make([]byte, bufferLen)
-		stackSize = runtime.Stack(buf, true)
-		bufferLen *= 2
-	}
-	buf = buf[:stackSize]
-	logger.Infof("=== BEGIN goroutine stack dump ===\n%s\n=== END goroutine stack dump ===", buf)
 }
 
 type remoteEventsPublisher struct {
@@ -309,10 +261,10 @@ func (l *remoteEventsPublisher) Publish(ctx context.Context, topic string, event
 	}
 	status, err := containerdshim.Default.Wait(cmd, c)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to publish event: %w", err)
 	}
 	if status != 0 {
-		return errors.New("failed to publish event")
+		return fmt.Errorf("failed to publish event: status %d", status)
 	}
 	return nil
 }

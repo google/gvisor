@@ -63,10 +63,13 @@ go_binary(
 
 pkg_tar(
     name = "runsc-bin",
-    srcs = [":runsc"],
+    srcs = [
+        ":runsc",
+        "//shim/v1",
+        "//shim/v2",
+    ],
     mode = "0755",
     package_dir = "/usr/bin",
-    strip_prefix = "/runsc/linux_amd64_pure_stripped",
 )
 
 pkg_tar(

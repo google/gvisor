@@ -30,7 +30,10 @@ go_path(
     name = "gopath",
     mode = "link",
     deps = [
+        # Main binary.
         "//runsc",
+        "//shim/v1:containerd-shim-runsc-v1",
+        "//shim/v2:gvisor-containerd-shim",
 
         # Packages that are not dependencies of //runsc.
         "//pkg/sentry/kernel/memevent",

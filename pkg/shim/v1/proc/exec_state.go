@@ -17,9 +17,9 @@ package proc
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/containerd/console"
-	"github.com/pkg/errors"
 )
 
 type execState interface {
@@ -43,7 +43,7 @@ func (s *execCreatedState) transition(name string) error {
 	case "deleted":
 		s.p.execState = &deletedState{}
 	default:
-		return errors.Errorf("invalid state transition %q to %q", stateName(s), name)
+		return fmt.Errorf("invalid state transition %q to %q", stateName(s), name)
 	}
 	return nil
 }
@@ -87,7 +87,7 @@ func (s *execRunningState) transition(name string) error {
 	case "stopped":
 		s.p.execState = &execStoppedState{p: s.p}
 	default:
-		return errors.Errorf("invalid state transition %q to %q", stateName(s), name)
+		return fmt.Errorf("invalid state transition %q to %q", stateName(s), name)
 	}
 	return nil
 }
@@ -97,11 +97,11 @@ func (s *execRunningState) Resize(ws console.WinSize) error {
 }
 
 func (s *execRunningState) Start(ctx context.Context) error {
-	return errors.Errorf("cannot start a running process")
+	return fmt.Errorf("cannot start a running process")
 }
 
 func (s *execRunningState) Delete(ctx context.Context) error {
-	return errors.Errorf("cannot delete a running process")
+	return fmt.Errorf("cannot delete a running process")
 }
 
 func (s *execRunningState) Kill(ctx context.Context, sig uint32, all bool) error {
@@ -125,17 +125,17 @@ func (s *execStoppedState) transition(name string) error {
 	case "deleted":
 		s.p.execState = &deletedState{}
 	default:
-		return errors.Errorf("invalid state transition %q to %q", stateName(s), name)
+		return fmt.Errorf("invalid state transition %q to %q", stateName(s), name)
 	}
 	return nil
 }
 
 func (s *execStoppedState) Resize(ws console.WinSize) error {
-	return errors.Errorf("cannot resize a stopped container")
+	return fmt.Errorf("cannot resize a stopped container")
 }
 
 func (s *execStoppedState) Start(ctx context.Context) error {
-	return errors.Errorf("cannot start a stopped process")
+	return fmt.Errorf("cannot start a stopped process")
 }
 
 func (s *execStoppedState) Delete(ctx context.Context) error {

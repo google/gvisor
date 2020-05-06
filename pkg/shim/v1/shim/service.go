@@ -37,8 +37,6 @@ import (
 	shimapi "github.com/containerd/containerd/runtime/v1/shim/v1"
 	"github.com/containerd/typeurl"
 	ptypes "github.com/gogo/protobuf/types"
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -57,7 +55,7 @@ var (
 	}
 )
 
-// Config contains shim specific configuration
+// Config contains shim specific configuration.
 type Config struct {
 	Path        string
 	Namespace   string
@@ -66,17 +64,12 @@ type Config struct {
 	RunscConfig map[string]string
 }
 
-// NewService returns a new shim service that can be used via GRPC
+// NewService returns a new shim service that can be used via GRPC.
 func NewService(config Config, publisher events.Publisher) (*Service, error) {
 	if config.Namespace == "" {
 		return nil, fmt.Errorf("shim namespace cannot be empty")
 	}
 	ctx := namespaces.WithNamespace(context.Background(), config.Namespace)
-	ctx = log.WithLogger(ctx, logrus.WithFields(logrus.Fields{
-		"namespace": config.Namespace,
-		"path":      config.Path,
-		"pid":       os.Getpid(),
-	}))
 	s := &Service{
 		config:    config,
 		context:   ctx,
@@ -86,13 +79,13 @@ func NewService(config Config, publisher events.Publisher) (*Service, error) {
 	}
 	go s.processExits()
 	if err := s.initPlatform(); err != nil {
-		return nil, errors.Wrap(err, "failed to initialized platform behavior")
+		return nil, fmt.Errorf("failed to initialized platform behavior: %w", err)
 	}
 	go s.forward(publisher)
 	return s, nil
 }
 
-// Service is the shim implementation of a remote shim over GRPC
+// Service is the shim implementation of a remote shim over GRPC.
 type Service struct {
 	mu sync.Mutex
 
@@ -108,7 +101,7 @@ type Service struct {
 	bundle string
 }
 
-// Create a new initial process and container with the underlying OCI runtime
+// Create creates a new initial process and container with the underlying OCI runtime.
 func (s *Service) Create(ctx context.Context, r *shimapi.CreateTaskRequest) (_ *shimapi.CreateTaskResponse, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -153,7 +146,7 @@ func (s *Service) Create(ctx context.Context, r *shimapi.CreateTaskRequest) (_ *
 			Options: rm.Options,
 		}
 		if err := m.Mount(rootfs); err != nil {
-			return nil, errors.Wrapf(err, "failed to mount rootfs component %v", m)
+			return nil, fmt.Errorf("failed to mount rootfs component %v: %w", m, err)
 		}
 	}
 	process, err := newInit(
@@ -169,7 +162,8 @@ func (s *Service) Create(ctx context.Context, r *shimapi.CreateTaskRequest) (_ *
 	if err := process.Create(ctx, config); err != nil {
 		return nil, errdefs.ToGRPC(err)
 	}
-	// save the main task id and bundle to the shim for additional requests
+	// Save the main task id and bundle to the shim for additional
+	// requests.
 	s.id = r.ID
 	s.bundle = r.Bundle
 	pid := process.Pid()
@@ -179,7 +173,7 @@ func (s *Service) Create(ctx context.Context, r *shimapi.CreateTaskRequest) (_ *
 	}, nil
 }
 
-// Start a process
+// Start starts a process.
 func (s *Service) Start(ctx context.Context, r *shimapi.StartRequest) (*shimapi.StartResponse, error) {
 	p, err := s.getExecProcess(r.ID)
 	if err != nil {
@@ -194,7 +188,7 @@ func (s *Service) Start(ctx context.Context, r *shimapi.StartRequest) (*shimapi.
 	}, nil
 }
 
-// Delete the initial process and container
+// Delete deletes the initial process and container.
 func (s *Service) Delete(ctx context.Context, r *ptypes.Empty) (*shimapi.DeleteResponse, error) {
 	p, err := s.getInitProcess()
 	if err != nil {
@@ -214,7 +208,7 @@ func (s *Service) Delete(ctx context.Context, r *ptypes.Empty) (*shimapi.DeleteR
 	}, nil
 }
 
-// DeleteProcess deletes an exec'd process
+// DeleteProcess deletes an exec'd process.
 func (s *Service) DeleteProcess(ctx context.Context, r *shimapi.DeleteProcessRequest) (*shimapi.DeleteResponse, error) {
 	if r.ID == s.id {
 		return nil, status.Errorf(codes.InvalidArgument, "cannot delete init process with DeleteProcess")
@@ -236,7 +230,7 @@ func (s *Service) DeleteProcess(ctx context.Context, r *shimapi.DeleteProcessReq
 	}, nil
 }
 
-// Exec an additional process inside the container
+// Exec spawns an additional process inside the container.
 func (s *Service) Exec(ctx context.Context, r *shimapi.ExecProcessRequest) (*ptypes.Empty, error) {
 	s.mu.Lock()
 
@@ -268,7 +262,7 @@ func (s *Service) Exec(ctx context.Context, r *shimapi.ExecProcessRequest) (*pty
 	return empty, nil
 }
 
-// ResizePty of a process
+// ResizePty resises the terminal of a process.
 func (s *Service) ResizePty(ctx context.Context, r *shimapi.ResizePtyRequest) (*ptypes.Empty, error) {
 	if r.ID == "" {
 		return nil, errdefs.ToGRPCf(errdefs.ErrInvalidArgument, "id not provided")
@@ -287,7 +281,7 @@ func (s *Service) ResizePty(ctx context.Context, r *shimapi.ResizePtyRequest) (*
 	return empty, nil
 }
 
-// State returns runtime state information for a process
+// State returns runtime state information for a process.
 func (s *Service) State(ctx context.Context, r *shimapi.StateRequest) (*shimapi.StateResponse, error) {
 	p, err := s.getExecProcess(r.ID)
 	if err != nil {
@@ -321,17 +315,17 @@ func (s *Service) State(ctx context.Context, r *shimapi.StateRequest) (*shimapi.
 	}, nil
 }
 
-// Pause the container
+// Pause pauses the container.
 func (s *Service) Pause(ctx context.Context, r *ptypes.Empty) (*ptypes.Empty, error) {
 	return empty, errdefs.ToGRPC(errdefs.ErrNotImplemented)
 }
 
-// Resume the container
+// Resume resumes the container.
 func (s *Service) Resume(ctx context.Context, r *ptypes.Empty) (*ptypes.Empty, error) {
 	return empty, errdefs.ToGRPC(errdefs.ErrNotImplemented)
 }
 
-// Kill a process with the provided signal
+// Kill kills a process with the provided signal.
 func (s *Service) Kill(ctx context.Context, r *shimapi.KillRequest) (*ptypes.Empty, error) {
 	if r.ID == "" {
 		p, err := s.getInitProcess()
@@ -354,7 +348,7 @@ func (s *Service) Kill(ctx context.Context, r *shimapi.KillRequest) (*ptypes.Emp
 	return empty, nil
 }
 
-// ListPids returns all pids inside the container
+// ListPids returns all pids inside the container.
 func (s *Service) ListPids(ctx context.Context, r *shimapi.ListPidsRequest) (*shimapi.ListPidsResponse, error) {
 	pids, err := s.getContainerPids(ctx, r.ID)
 	if err != nil {
@@ -372,7 +366,7 @@ func (s *Service) ListPids(ctx context.Context, r *shimapi.ListPidsRequest) (*sh
 				}
 				a, err := typeurl.MarshalAny(d)
 				if err != nil {
-					return nil, errors.Wrapf(err, "failed to marshal process %d info", pid)
+					return nil, fmt.Errorf("failed to marshal process %d info: %w", pid, err)
 				}
 				pInfo.Info = a
 				break
@@ -385,7 +379,7 @@ func (s *Service) ListPids(ctx context.Context, r *shimapi.ListPidsRequest) (*sh
 	}, nil
 }
 
-// CloseIO of a process
+// CloseIO closes the I/O context of a process.
 func (s *Service) CloseIO(ctx context.Context, r *shimapi.CloseIORequest) (*ptypes.Empty, error) {
 	p, err := s.getExecProcess(r.ID)
 	if err != nil {
@@ -393,30 +387,30 @@ func (s *Service) CloseIO(ctx context.Context, r *shimapi.CloseIORequest) (*ptyp
 	}
 	if stdin := p.Stdin(); stdin != nil {
 		if err := stdin.Close(); err != nil {
-			return nil, errors.Wrap(err, "close stdin")
+			return nil, fmt.Errorf("close stdin: %w", err)
 		}
 	}
 	return empty, nil
 }
 
-// Checkpoint the container
+// Checkpoint checkpoints the container.
 func (s *Service) Checkpoint(ctx context.Context, r *shimapi.CheckpointTaskRequest) (*ptypes.Empty, error) {
 	return empty, errdefs.ToGRPC(errdefs.ErrNotImplemented)
 }
 
-// ShimInfo returns shim information such as the shim's pid
+// ShimInfo returns shim information such as the shim's pid.
 func (s *Service) ShimInfo(ctx context.Context, r *ptypes.Empty) (*shimapi.ShimInfoResponse, error) {
 	return &shimapi.ShimInfoResponse{
 		ShimPid: uint32(os.Getpid()),
 	}, nil
 }
 
-// Update a running container
+// Update updates a running container.
 func (s *Service) Update(ctx context.Context, r *shimapi.UpdateTaskRequest) (*ptypes.Empty, error) {
 	return empty, errdefs.ToGRPC(errdefs.ErrNotImplemented)
 }
 
-// Wait for a process to exit
+// Wait waits for a process to exit.
 func (s *Service) Wait(ctx context.Context, r *shimapi.WaitRequest) (*shimapi.WaitResponse, error) {
 	p, err := s.getExecProcess(r.ID)
 	if err != nil {
@@ -451,7 +445,7 @@ func (s *Service) checkProcesses(e proc.Exit) {
 	for _, p := range s.allProcesses() {
 		if p.ID() == e.ID {
 			if ip, ok := p.(*proc.Init); ok {
-				// Ensure all children are killed
+				// Ensure all children are killed.
 				if err := ip.KillAll(s.context); err != nil {
 					log.G(s.context).WithError(err).WithField("id", ip.ID()).
 						Error("failed to kill init's children")
@@ -495,7 +489,7 @@ func (s *Service) forward(publisher events.Publisher) {
 	}
 }
 
-// getInitProcess returns initial process
+// getInitProcess returns the init process.
 func (s *Service) getInitProcess() (rproc.Process, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -506,7 +500,7 @@ func (s *Service) getInitProcess() (rproc.Process, error) {
 	return p, nil
 }
 
-// getExecProcess returns exec process
+// getExecProcess returns the given exec process.
 func (s *Service) getExecProcess(id string) (rproc.Process, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -534,7 +528,7 @@ func getTopic(ctx context.Context, e interface{}) string {
 	case *eventstypes.TaskExecStarted:
 		return runtime.TaskExecStartedEventTopic
 	default:
-		logrus.Warnf("no topic for type %#v", e)
+		log.L.Printf("no topic for type %#v", e)
 	}
 	return runtime.TaskUnknownTopic
 }
@@ -551,10 +545,10 @@ func newInit(ctx context.Context, path, workDir, runtimeRoot, namespace string, 
 
 	spec, err := utils.ReadSpec(r.Bundle)
 	if err != nil {
-		return nil, errors.Wrap(err, "read oci spec")
+		return nil, fmt.Errorf("read oci spec: %w", err)
 	}
 	if err := utils.UpdateVolumeAnnotations(r.Bundle, spec); err != nil {
-		return nil, errors.Wrap(err, "update volume annotations")
+		return nil, fmt.Errorf("update volume annotations: %w", err)
 	}
 
 	runsc.FormatLogPath(r.ID, config)
