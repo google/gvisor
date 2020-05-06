@@ -42,6 +42,14 @@ message Timeval {
   int64 microseconds = 2;
 }
 
+message SockOptVal {
+  oneof val {
+    bytes bytesval = 1;
+    int32 intval = 2;
+    Timeval timeval = 3;
+  }
+}
+
 // Request and Response pairs for each Posix service RPC call, sorted.
 
 message AcceptRequest {
@@ -98,36 +106,19 @@ message GetSockOptRequest {
   int32 level = 2;
   int32 optname = 3;
   int32 optlen = 4;
+  enum SockOptType {
+    UNSPECIFIED = 0;
+    BYTES = 1;
+    INT = 2;
+    TIME = 3;
+  }
+  SockOptType type = 5;
 }
 
 message GetSockOptResponse {
   int32 ret = 1;
   int32 errno_ = 2;  // "errno" may fail to compile in c++.
-  bytes optval = 3;
-}
-
-message GetSockOptIntRequest {
-  int32 sockfd = 1;
-  int32 level = 2;
-  int32 optname = 3;
-}
-
-message GetSockOptIntResponse {
-  int32 ret = 1;
-  int32 errno_ = 2;  // "errno" may fail to compile in c++.
-  int32 intval = 3;
-}
-
-message GetSockOptTimevalRequest {
-  int32 sockfd = 1;
-  int32 level = 2;
-  int32 optname = 3;
-}
-
-message GetSockOptTimevalResponse {
-  int32 ret = 1;
-  int32 errno_ = 2;  // "errno" may fail to compile in c++.
-  Timeval timeval = 3;
+  SockOptVal optval = 3;
 }
 
 message ListenRequest {
@@ -167,34 +158,10 @@ message SetSockOptRequest {
   int32 sockfd = 1;
   int32 level = 2;
   int32 optname = 3;
-  bytes optval = 4;
+  SockOptVal optval = 4;
 }
 
 message SetSockOptResponse {
-  int32 ret = 1;
-  int32 errno_ = 2;  // "errno" may fail to compile in c++.
-}
-
-message SetSockOptIntRequest {
-  int32 sockfd = 1;
-  int32 level = 2;
-  int32 optname = 3;
-  int32 intval = 4;
-}
-
-message SetSockOptIntResponse {
-  int32 ret = 1;
-  int32 errno_ = 2;
-}
-
-message SetSockOptTimevalRequest {
-  int32 sockfd = 1;
-  int32 level = 2;
-  int32 optname = 3;
-  Timeval timeval = 4;
-}
-
-message SetSockOptTimevalResponse {
   int32 ret = 1;
   int32 errno_ = 2;  // "errno" may fail to compile in c++.
 }
@@ -233,32 +200,16 @@ service Posix {
   rpc Connect(ConnectRequest) returns (ConnectResponse);
   // Call getsockname() on the DUT.
   rpc GetSockName(GetSockNameRequest) returns (GetSockNameResponse);
-  // Call getsockopt() on the DUT.  You should prefer one of the other
-  // GetSockOpt* functions with a more structured optval or else you may get the
-  // encoding wrong, such as making a bad assumption about the server's word
-  // sizes or endianness.
+  // Call getsockopt() on the DUT.
   rpc GetSockOpt(GetSockOptRequest) returns (GetSockOptResponse);
-  // Call getsockopt() on the DUT with an int optval.
-  rpc GetSockOptInt(GetSockOptIntRequest) returns (GetSockOptIntResponse);
-  // Call getsockopt() on the DUT with a Timeval optval.
-  rpc GetSockOptTimeval(GetSockOptTimevalRequest)
-      returns (GetSockOptTimevalResponse);
   // Call listen() on the DUT.
   rpc Listen(ListenRequest) returns (ListenResponse);
   // Call send() on the DUT.
   rpc Send(SendRequest) returns (SendResponse);
   // Call sendto() on the DUT.
   rpc SendTo(SendToRequest) returns (SendToResponse);
-  // Call setsockopt() on the DUT.  You should prefer one of the other
-  // SetSockOpt* functions with a more structured optval or else you may get the
-  // encoding wrong, such as making a bad assumption about the server's word
-  // sizes or endianness.
+  // Call setsockopt() on the DUT.
   rpc SetSockOpt(SetSockOptRequest) returns (SetSockOptResponse);
-  // Call setsockopt() on the DUT with an int optval.
-  rpc SetSockOptInt(SetSockOptIntRequest) returns (SetSockOptIntResponse);
-  // Call setsockopt() on the DUT with a Timeval optval.
-  rpc SetSockOptTimeval(SetSockOptTimevalRequest)
-      returns (SetSockOptTimevalResponse);
   // Call socket() on the DUT.
   rpc Socket(SocketRequest) returns (SocketResponse);
   // Call recv() on the DUT.

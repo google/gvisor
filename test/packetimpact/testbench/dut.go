@@ -291,6 +291,26 @@ func (dut *DUT) GetSockNameWithErrno(ctx context.Context, sockfd int32) (int32, 
 	return resp.GetRet(), dut.protoToSockaddr(resp.GetAddr()), syscall.Errno(resp.GetErrno_())
 }
 
+func (dut *DUT) getSockOpt(ctx context.Context, sockfd, level, optname, optlen int32, typ pb.GetSockOptRequest_SockOptType) (int32, *pb.SockOptVal, error) {
+	dut.t.Helper()
+	req := pb.GetSockOptRequest{
+		Sockfd:  sockfd,
+		Level:   level,
+		Optname: optname,
+		Optlen:  optlen,
+		Type:    typ,
+	}
+	resp, err := dut.posixServer.GetSockOpt(ctx, &req)
+	if err != nil {
+		dut.t.Fatalf("failed to call GetSockOpt: %s", err)
+	}
+	optval := resp.GetOptval()
+	if optval == nil {
+		dut.t.Fatalf("GetSockOpt response does not contain a value")
+	}
+	return resp.GetRet(), optval, syscall.Errno(resp.GetErrno_())
+}
+
 // GetSockOpt calls getsockopt on the DUT and causes a fatal test failure if it
 // doesn't succeed. If more control over the timeout or error handling is
 // needed, use GetSockOptWithErrno. Because endianess and the width of values
@@ -312,17 +332,12 @@ func (dut *DUT) GetSockOpt(sockfd, level, optname, optlen int32) []byte {
 // prefer to use a more specific GetSockOptXxxWithErrno function.
 func (dut *DUT) GetSockOptWithErrno(ctx context.Context, sockfd, level, optname, optlen int32) (int32, []byte, error) {
 	dut.t.Helper()
-	req := pb.GetSockOptRequest{
-		Sockfd:  sockfd,
-		Level:   level,
-		Optname: optname,
-		Optlen:  optlen,
+	ret, optval, errno := dut.getSockOpt(ctx, sockfd, level, optname, optlen, pb.GetSockOptRequest_BYTES)
+	bytesval, ok := optval.Val.(*pb.SockOptVal_Bytesval)
+	if !ok {
+		dut.t.Fatalf("GetSockOpt got value type: %T, want bytes", optval)
 	}
-	resp, err := dut.posixServer.GetSockOpt(ctx, &req)
-	if err != nil {
-		dut.t.Fatalf("failed to call GetSockOpt: %s", err)
-	}
-	return resp.GetRet(), resp.GetOptval(), syscall.Errno(resp.GetErrno_())
+	return ret, bytesval.Bytesval, errno
 }
 
 // GetSockOptInt calls getsockopt on the DUT and causes a fatal test failure
@@ -342,16 +357,12 @@ func (dut *DUT) GetSockOptInt(sockfd, level, optname int32) int32 {
 // GetSockOptIntWithErrno calls getsockopt with an integer optval.
 func (dut *DUT) GetSockOptIntWithErrno(ctx context.Context, sockfd, level, optname int32) (int32, int32, error) {
 	dut.t.Helper()
-	req := pb.GetSockOptIntRequest{
-		Sockfd:  sockfd,
-		Level:   level,
-		Optname: optname,
+	ret, optval, errno := dut.getSockOpt(ctx, sockfd, level, optname, 0, pb.GetSockOptRequest_INT)
+	intval, ok := optval.Val.(*pb.SockOptVal_Intval)
+	if !ok {
+		dut.t.Fatalf("GetSockOpt got value type: %T, want int", optval)
 	}
-	resp, err := dut.posixServer.GetSockOptInt(ctx, &req)
-	if err != nil {
-		dut.t.Fatalf("failed to call GetSockOptInt: %s", err)
-	}
-	return resp.GetRet(), resp.GetIntval(), syscall.Errno(resp.GetErrno_())
+	return ret, intval.Intval, errno
 }
 
 // GetSockOptTimeval calls getsockopt on the DUT and causes a fatal test failure
@@ -371,20 +382,16 @@ func (dut *DUT) GetSockOptTimeval(sockfd, level, optname int32) unix.Timeval {
 // GetSockOptTimevalWithErrno calls getsockopt and returns a timeval.
 func (dut *DUT) GetSockOptTimevalWithErrno(ctx context.Context, sockfd, level, optname int32) (int32, unix.Timeval, error) {
 	dut.t.Helper()
-	req := pb.GetSockOptTimevalRequest{
-		Sockfd:  sockfd,
-		Level:   level,
-		Optname: optname,
-	}
-	resp, err := dut.posixServer.GetSockOptTimeval(ctx, &req)
-	if err != nil {
-		dut.t.Fatalf("failed to call GetSockOptTimeval: %s", err)
+	ret, optval, errno := dut.getSockOpt(ctx, sockfd, level, optname, 0, pb.GetSockOptRequest_TIME)
+	tv, ok := optval.Val.(*pb.SockOptVal_Timeval)
+	if !ok {
+		dut.t.Fatalf("GetSockOpt got value type: %T, want timeval", optval)
 	}
 	timeval := unix.Timeval{
-		Sec:  resp.GetTimeval().Seconds,
-		Usec: resp.GetTimeval().Microseconds,
+		Sec:  tv.Timeval.Seconds,
+		Usec: tv.Timeval.Microseconds,
 	}
-	return resp.GetRet(), timeval, syscall.Errno(resp.GetErrno_())
+	return ret, timeval, errno
 }
 
 // Listen calls listen on the DUT and causes a fatal test failure if it doesn't
@@ -473,6 +480,21 @@ func (dut *DUT) SendToWithErrno(ctx context.Context, sockfd int32, buf []byte, f
 	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
 }
 
+func (dut *DUT) setSockOpt(ctx context.Context, sockfd, level, optname int32, optval *pb.SockOptVal) (int32, error) {
+	dut.t.Helper()
+	req := pb.SetSockOptRequest{
+		Sockfd:  sockfd,
+		Level:   level,
+		Optname: optname,
+		Optval:  optval,
+	}
+	resp, err := dut.posixServer.SetSockOpt(ctx, &req)
+	if err != nil {
+		dut.t.Fatalf("failed to call SetSockOpt: %s", err)
+	}
+	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
+}
+
 // SetSockOpt calls setsockopt on the DUT and causes a fatal test failure if it
 // doesn't succeed. If more control over the timeout or error handling is
 // needed, use SetSockOptWithErrno. Because endianess and the width of values
@@ -493,17 +515,7 @@ func (dut *DUT) SetSockOpt(sockfd, level, optname int32, optval []byte) {
 // prefer to use a more specific SetSockOptXxxWithErrno function.
 func (dut *DUT) SetSockOptWithErrno(ctx context.Context, sockfd, level, optname int32, optval []byte) (int32, error) {
 	dut.t.Helper()
-	req := pb.SetSockOptRequest{
-		Sockfd:  sockfd,
-		Level:   level,
-		Optname: optname,
-		Optval:  optval,
-	}
-	resp, err := dut.posixServer.SetSockOpt(ctx, &req)
-	if err != nil {
-		dut.t.Fatalf("failed to call SetSockOpt: %s", err)
-	}
-	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
+	return dut.setSockOpt(ctx, sockfd, level, optname, &pb.SockOptVal{Val: &pb.SockOptVal_Bytesval{optval}})
 }
 
 // SetSockOptInt calls setsockopt on the DUT and causes a fatal test failure
@@ -522,17 +534,7 @@ func (dut *DUT) SetSockOptInt(sockfd, level, optname, optval int32) {
 // SetSockOptIntWithErrno calls setsockopt with an integer optval.
 func (dut *DUT) SetSockOptIntWithErrno(ctx context.Context, sockfd, level, optname, optval int32) (int32, error) {
 	dut.t.Helper()
-	req := pb.SetSockOptIntRequest{
-		Sockfd:  sockfd,
-		Level:   level,
-		Optname: optname,
-		Intval:  optval,
-	}
-	resp, err := dut.posixServer.SetSockOptInt(ctx, &req)
-	if err != nil {
-		dut.t.Fatalf("failed to call SetSockOptInt: %s", err)
-	}
-	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
+	return dut.setSockOpt(ctx, sockfd, level, optname, &pb.SockOptVal{Val: &pb.SockOptVal_Intval{optval}})
 }
 
 // SetSockOptTimeval calls setsockopt on the DUT and causes a fatal test failure
@@ -556,17 +558,7 @@ func (dut *DUT) SetSockOptTimevalWithErrno(ctx context.Context, sockfd, level, o
 		Seconds:      int64(tv.Sec),
 		Microseconds: int64(tv.Usec),
 	}
-	req := pb.SetSockOptTimevalRequest{
-		Sockfd:  sockfd,
-		Level:   level,
-		Optname: optname,
-		Timeval: &timeval,
-	}
-	resp, err := dut.posixServer.SetSockOptTimeval(ctx, &req)
-	if err != nil {
-		dut.t.Fatalf("failed to call SetSockOptTimeval: %s", err)
-	}
-	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
+	return dut.setSockOpt(ctx, sockfd, level, optname, &pb.SockOptVal{Val: &pb.SockOptVal_Timeval{&timeval}})
 }
 
 // Socket calls socket on the DUT and returns the file descriptor. If socket
