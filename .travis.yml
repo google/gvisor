@@ -12,8 +12,30 @@ jobs:
      arch: amd64
    - os: linux
      arch: arm64
+   - os: linux
+     arch: amd64
+     env: CONTAINERD_VERSION=1.1.8 SHIM_VERSION=v1
+   - os: linux
+     arch: amd64
+     env: CONTAINERD_VERSION=1.2.13 SHIM_VERSION=v1
+   - os: linux
+     arch: amd64
+     env: CONTAINERD_VERSION=1.2.13 SHIM_VERSION=v2
+   - os: linux
+     arch: amd64
+     env: CONTAINERD_VERSION=1.3.3 SHIM_VERSION=v1
+   - os: linux
+     arch: amd64
+     env: CONTAINERD_VERSION=1.3.3 SHIM_VERSION=v2
+   - os: linux
+     arch: amd64
+     env: CONTAINERD_VERSION=latest SHIM_VERSION=v1
+   - os: linux
+     arch: amd64
+     env: CONTAINERD_VERSION=latest SHIM_VERSION=v2
 script:
    - uname -a && make smoke-test
+   - if [[ -v CONTAINERD_VERSION ]]; then make containerd-test CONTAINERD_VERSION=$CONTAINERD_VERSION; fi
 branches:
   except:
   # Skip copybara branches.
