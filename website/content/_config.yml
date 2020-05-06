@@ -1,0 +1,20 @@
+destination: _site
+markdown: kramdown
+kramdown:
+  syntax_highlighter: rouge
+  toc_levels: "2,3"
+highlighter: rouge
+paginate: 10
+paginate_path: "/blog/page:num/"
+plugins:
+  - jekyll-paginate
+  - jekyll-autoprefixer
+  - jekyll-inline-svg
+site_url: https://gvisor.dev
+svg:
+  optimize: true
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
