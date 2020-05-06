@@ -18,6 +18,7 @@ package proc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
@@ -33,23 +34,22 @@ import (
 	"github.com/containerd/fifo"
 	runc "github.com/containerd/go-runc"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/pkg/errors"
 
 	"gvisor.dev/gvisor/pkg/shim/runsc"
 )
 
-// InitPidFile name of the file that contains the init pid
+// InitPidFile name of the file that contains the init pid.
 const InitPidFile = "init.pid"
 
-// Init represents an initial process for a container
+// Init represents an initial process for a container.
 type Init struct {
 	wg        sync.WaitGroup
 	initState initState
 
 	// mu is used to ensure that `Start()` and `Exited()` calls return in
-	// the right order when invoked in separate go routines.
-	// This is the case within the shim implementation as it makes use of
-	// the reaper interface.
+	// the right order when invoked in separate go routines.  This is the
+	// case within the shim implementation as it makes use of the reaper
+	// interface.
 	mu sync.Mutex
 
 	waitBlock chan struct{}
@@ -76,7 +76,7 @@ type Init struct {
 	Monitor  ProcessMonitor
 }
 
-// NewRunsc returns a new runsc instance for a process
+// NewRunsc returns a new runsc instance for a process.
 func NewRunsc(root, path, namespace, runtime string, config map[string]string) *runsc.Runsc {
 	if root == "" {
 		root = RunscRoot
@@ -91,7 +91,7 @@ func NewRunsc(root, path, namespace, runtime string, config map[string]string) *
 	}
 }
 
-// New returns a new init process
+// New returns a new init process.
 func New(id string, runtime *runsc.Runsc, stdio proc.Stdio) *Init {
 	p := &Init{
 		id:        id,
@@ -104,21 +104,21 @@ func New(id string, runtime *runsc.Runsc, stdio proc.Stdio) *Init {
 	return p
 }
 
-// Create the process with the provided config
+// Create the process with the provided config.
 func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
 	var socket *runc.Socket
 	if r.Terminal {
 		if socket, err = runc.NewTempConsoleSocket(); err != nil {
-			return errors.Wrap(err, "failed to create OCI runtime console socket")
+			return fmt.Errorf("failed to create OCI runtime console socket: %w", err)
 		}
 		defer socket.Close()
 	} else if hasNoIO(r) {
 		if p.io, err = runc.NewNullIO(); err != nil {
-			return errors.Wrap(err, "creating new NULL IO")
+			return fmt.Errorf("creating new NULL IO: %w", err)
 		}
 	} else {
 		if p.io, err = runc.NewPipeIO(p.IoUID, p.IoGID, withConditionalIO(p.stdio)); err != nil {
-			return errors.Wrap(err, "failed to create OCI runtime io pipes")
+			return fmt.Errorf("failed to create OCI runtime io pipes: %w", err)
 		}
 	}
 	pidFile := filepath.Join(p.Bundle, InitPidFile)
@@ -139,7 +139,7 @@ func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
 	if r.Stdin != "" {
 		sc, err := fifo.OpenFifo(context.Background(), r.Stdin, syscall.O_WRONLY|syscall.O_NONBLOCK, 0)
 		if err != nil {
-			return errors.Wrapf(err, "failed to open stdin fifo %s", r.Stdin)
+			return fmt.Errorf("failed to open stdin fifo %s: %w", r.Stdin, err)
 		}
 		p.stdin = sc
 		p.closers = append(p.closers, sc)
@@ -150,58 +150,58 @@ func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
 	if socket != nil {
 		console, err := socket.ReceiveMaster()
 		if err != nil {
-			return errors.Wrap(err, "failed to retrieve console master")
+			return fmt.Errorf("failed to retrieve console master: %w", err)
 		}
 		console, err = p.Platform.CopyConsole(ctx, console, r.Stdin, r.Stdout, r.Stderr, &p.wg, &copyWaitGroup)
 		if err != nil {
-			return errors.Wrap(err, "failed to start console copy")
+			return fmt.Errorf("failed to start console copy: %w", err)
 		}
 		p.console = console
 	} else if !hasNoIO(r) {
 		if err := copyPipes(ctx, p.io, r.Stdin, r.Stdout, r.Stderr, &p.wg, &copyWaitGroup); err != nil {
-			return errors.Wrap(err, "failed to start io pipe copy")
+			return fmt.Errorf("failed to start io pipe copy: %w", err)
 		}
 	}
 
 	copyWaitGroup.Wait()
 	pid, err := runc.ReadPidFile(pidFile)
 	if err != nil {
-		return errors.Wrap(err, "failed to retrieve OCI runtime container pid")
+		return fmt.Errorf("failed to retrieve OCI runtime container pid: %w", err)
 	}
 	p.pid = pid
 	return nil
 }
 
-// Wait for the process to exit
+// Wait waits for the process to exit.
 func (p *Init) Wait() {
 	<-p.waitBlock
 }
 
-// ID of the process
+// ID returns the ID of the process.
 func (p *Init) ID() string {
 	return p.id
 }
 
-// Pid of the process
+// Pid returns the PID of the process.
 func (p *Init) Pid() int {
 	return p.pid
 }
 
-// ExitStatus of the process
+// ExitStatus returns the exit status of the process.
 func (p *Init) ExitStatus() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.status
 }
 
-// ExitedAt at time when the process exited
+// ExitedAt returns the time when the process exited.
 func (p *Init) ExitedAt() time.Time {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.exited
 }
 
-// Status of the process
+// Status returns the status of the process.
 func (p *Init) Status(ctx context.Context) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -215,7 +215,7 @@ func (p *Init) Status(ctx context.Context) (string, error) {
 	return p.convertStatus(c.Status), nil
 }
 
-// Start the init process
+// Start starts the init process.
 func (p *Init) Start(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -250,7 +250,7 @@ func (p *Init) start(ctx context.Context) error {
 	return nil
 }
 
-// SetExited of the init process with the next status
+// SetExited set the exit stauts of the init process.
 func (p *Init) SetExited(status int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -265,7 +265,7 @@ func (p *Init) setExited(status int) {
 	close(p.waitBlock)
 }
 
-// Delete the init process
+// Delete deletes the init process.
 func (p *Init) Delete(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -298,13 +298,13 @@ func (p *Init) delete(ctx context.Context) error {
 	if err2 := mount.UnmountAll(p.Rootfs, 0); err2 != nil {
 		log.G(ctx).WithError(err2).Warn("failed to cleanup rootfs mount")
 		if err == nil {
-			err = errors.Wrap(err2, "failed rootfs umount")
+			err = fmt.Errorf("failed rootfs umount: %w", err2)
 		}
 	}
 	return err
 }
 
-// Resize the init processes console
+// Resize resizes the init processes console.
 func (p *Init) Resize(ws console.WinSize) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -322,7 +322,7 @@ func (p *Init) resize(ws console.WinSize) error {
 	return p.console.Resize(ws)
 }
 
-// Kill the init process
+// Kill kills the init process.
 func (p *Init) Kill(ctx context.Context, signal uint32, all bool) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -340,7 +340,7 @@ func (p *Init) kill(context context.Context, signal uint32, all bool) error {
 		c, err := p.runtime.State(context, p.id)
 		if err != nil {
 			if strings.Contains(err.Error(), "does not exist") {
-				return errors.Wrapf(errdefs.ErrNotFound, "no such process")
+				return fmt.Errorf("no such process: %w", errdefs.ErrNotFound)
 			}
 			return p.runtimeError(err, "OCI runtime state failed")
 		}
@@ -348,7 +348,7 @@ func (p *Init) kill(context context.Context, signal uint32, all bool) error {
 		// If the container is not in running state, directly return
 		// "no such process"
 		if p.convertStatus(c.Status) == "stopped" {
-			return errors.Wrapf(errdefs.ErrNotFound, "no such process")
+			return fmt.Errorf("no such process: %w", errdefs.ErrNotFound)
 		}
 		killErr = p.runtime.Kill(context, p.id, int(signal), &runsc.KillOpts{
 			All: all,
@@ -362,7 +362,7 @@ func (p *Init) kill(context context.Context, signal uint32, all bool) error {
 	return p.runtimeError(killErr, "kill timeout")
 }
 
-// KillAll processes belonging to the init process
+// KillAll kills all processes belonging to the init process.
 func (p *Init) KillAll(context context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -380,17 +380,17 @@ func (p *Init) killAll(context context.Context) error {
 	return nil
 }
 
-// Stdin of the process
+// Stdin returns the stdin of the process.
 func (p *Init) Stdin() io.Closer {
 	return p.stdin
 }
 
-// Runtime returns the OCI runtime configured for the init process
+// Runtime returns the OCI runtime configured for the init process.
 func (p *Init) Runtime() *runsc.Runsc {
 	return p.runtime
 }
 
-// Exec returns a new child process
+// Exec returns a new child process.
 func (p *Init) Exec(ctx context.Context, path string, r *ExecConfig) (proc.Process, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -398,7 +398,7 @@ func (p *Init) Exec(ctx context.Context, path string, r *ExecConfig) (proc.Proce
 	return p.initState.Exec(ctx, path, r)
 }
 
-// exec returns a new exec'd process
+// exec returns a new exec'd process.
 func (p *Init) exec(ctx context.Context, path string, r *ExecConfig) (proc.Process, error) {
 	// process exec request
 	var spec specs.Process
@@ -424,7 +424,7 @@ func (p *Init) exec(ctx context.Context, path string, r *ExecConfig) (proc.Proce
 	return e, nil
 }
 
-// Stdio of the process
+// Stdio returns the stdio of the process.
 func (p *Init) Stdio() proc.Stdio {
 	return p.stdio
 }
@@ -437,11 +437,11 @@ func (p *Init) runtimeError(rErr error, msg string) error {
 	rMsg, err := getLastRuntimeError(p.runtime)
 	switch {
 	case err != nil:
-		return errors.Wrapf(rErr, "%s: %s (%s)", msg, "unable to retrieve OCI runtime error", err.Error())
+		return fmt.Errorf("%s: %w (unable to retrieve OCI runtime error: %v)", msg, rErr, err)
 	case rMsg == "":
-		return errors.Wrap(rErr, msg)
+		return fmt.Errorf("%s: %w", msg, rErr)
 	default:
-		return errors.Errorf("%s: %s", msg, rMsg)
+		return fmt.Errorf("%s: %s", msg, rMsg)
 	}
 }
 

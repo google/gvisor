@@ -19,13 +19,13 @@ package v2
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"sync"
 	"syscall"
 
 	"github.com/containerd/console"
 	"github.com/containerd/fifo"
-	"github.com/pkg/errors"
 )
 
 type linuxPlatform struct {
@@ -34,7 +34,7 @@ type linuxPlatform struct {
 
 func (p *linuxPlatform) CopyConsole(ctx context.Context, console console.Console, stdin, stdout, stderr string, wg, cwg *sync.WaitGroup) (console.Console, error) {
 	if p.epoller == nil {
-		return nil, errors.New("uninitialized epoller")
+		return nil, fmt.Errorf("uninitialized epoller")
 	}
 
 	epollConsole, err := p.epoller.Add(console)
@@ -81,11 +81,11 @@ func (p *linuxPlatform) CopyConsole(ctx context.Context, console console.Console
 
 func (p *linuxPlatform) ShutdownConsole(ctx context.Context, cons console.Console) error {
 	if p.epoller == nil {
-		return errors.New("uninitialized epoller")
+		return fmt.Errorf("uninitialized epoller")
 	}
 	epollConsole, ok := cons.(*console.EpollConsole)
 	if !ok {
-		return errors.Errorf("expected EpollConsole, got %#v", cons)
+		return fmt.Errorf("expected EpollConsole, got %#v", cons)
 	}
 	return epollConsole.Shutdown(p.epoller.CloseConsole)
 }
@@ -102,7 +102,7 @@ func (s *service) initPlatform() error {
 	}
 	epoller, err := console.NewEpoller()
 	if err != nil {
-		return errors.Wrap(err, "failed to initialize epoller")
+		return fmt.Errorf("failed to initialize epoller: %w", err)
 	}
 	s.platform = &linuxPlatform{
 		epoller: epoller,

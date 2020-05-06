@@ -16,10 +16,10 @@
 package proc
 
 import (
-	"github.com/pkg/errors"
+	"fmt"
 )
 
-// RunscRoot is the path to the root runsc state directory
+// RunscRoot is the path to the root runsc state directory.
 const RunscRoot = "/run/containerd/runsc"
 
 func stateName(v interface{}) string {
@@ -33,5 +33,5 @@ func stateName(v interface{}) string {
 	case *stoppedState:
 		return "stopped"
 	}
-	panic(errors.Errorf("invalid state %v", v))
+	panic(fmt.Errorf("invalid state %v", v))
 }

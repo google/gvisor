@@ -51,8 +51,5 @@ vm_test(
     name = "root_vm_test",
     size = "large",
     shard_count = 1,
-    targets = [
-        "//tools/installers:shim",
-        ":root_test",
-    ],
+    targets = [":root_test"],
 )

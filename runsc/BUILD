@@ -62,18 +62,22 @@ go_binary(
 )
 
 pkg_tar(
-    name = "runsc-bin",
-    srcs = [":runsc"],
+    name = "debian-bin",
+    srcs = [
+        ":runsc",
+        "//shim/v1:gvisor-containerd-shim",
+        "//shim/v2:containerd-shim-runsc-v1",
+    ],
     mode = "0755",
     package_dir = "/usr/bin",
-    strip_prefix = "/runsc/linux_amd64_pure_stripped",
 )
 
 pkg_tar(
     name = "debian-data",
     extension = "tar.gz",
     deps = [
-        ":runsc-bin",
+        ":debian-bin",
+        "//shim:config",
     ],
 )
 

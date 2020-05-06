@@ -34,8 +34,6 @@ const (
 // inside the sandbox.
 var ExitCh = make(chan Exit, bufferSize)
 
-// TODO(random-liu): This can be a utility.
-
 // TODO(mlaventure): move to runc package?
 func getLastRuntimeError(r *runsc.Runsc) (string, error) {
 	if r.Log == "" {

@@ -31,7 +31,6 @@ import (
 	"github.com/containerd/fifo"
 	runc "github.com/containerd/go-runc"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 
 	"gvisor.dev/gvisor/pkg/shim/runsc"
@@ -151,9 +150,11 @@ func (e *execProcess) kill(ctx context.Context, sig uint32, _ bool) error {
 		if err := e.parent.runtime.Kill(ctx, e.parent.id, int(sig), &runsc.KillOpts{
 			Pid: internalPid,
 		}); err != nil {
-			// If this returns error, consider the process has already stopped.
+			// If this returns error, consider the process has
+			// already stopped.
+			//
 			// TODO: Fix after signal handling is fixed.
-			return errors.Wrapf(errdefs.ErrNotFound, err.Error())
+			return fmt.Errorf("%s: %w", err.Error(), errdefs.ErrNotFound)
 		}
 	}
 	return nil
@@ -182,16 +183,16 @@ func (e *execProcess) start(ctx context.Context) (err error) {
 	)
 	if e.stdio.Terminal {
 		if socket, err = runc.NewTempConsoleSocket(); err != nil {
-			return errors.Wrap(err, "failed to create runc console socket")
+			return fmt.Errorf("failed to create runc console socket: %w", err)
 		}
 		defer socket.Close()
 	} else if e.stdio.IsNull() {
 		if e.io, err = runc.NewNullIO(); err != nil {
-			return errors.Wrap(err, "creating new NULL IO")
+			return fmt.Errorf("creating new NULL IO: %w", err)
 		}
 	} else {
 		if e.io, err = runc.NewPipeIO(e.parent.IoUID, e.parent.IoGID, withConditionalIO(e.stdio)); err != nil {
-			return errors.Wrap(err, "failed to create runc io pipes")
+			return fmt.Errorf("failed to create runc io pipes: %w", err)
 		}
 	}
 	opts := &runsc.ExecOpts{
@@ -217,7 +218,7 @@ func (e *execProcess) start(ctx context.Context) (err error) {
 	if e.stdio.Stdin != "" {
 		sc, err := fifo.OpenFifo(context.Background(), e.stdio.Stdin, syscall.O_WRONLY|syscall.O_NONBLOCK, 0)
 		if err != nil {
-			return errors.Wrapf(err, "failed to open stdin fifo %s", e.stdio.Stdin)
+			return fmt.Errorf("failed to open stdin fifo %s: %w", e.stdio.Stdin, err)
 		}
 		e.closers = append(e.closers, sc)
 		e.stdin = sc
@@ -228,25 +229,25 @@ func (e *execProcess) start(ctx context.Context) (err error) {
 	if socket != nil {
 		console, err := socket.ReceiveMaster()
 		if err != nil {
-			return errors.Wrap(err, "failed to retrieve console master")
+			return fmt.Errorf("failed to retrieve console master: %w", err)
 		}
 		if e.console, err = e.parent.Platform.CopyConsole(ctx, console, e.stdio.Stdin, e.stdio.Stdout, e.stdio.Stderr, &e.wg, &copyWaitGroup); err != nil {
-			return errors.Wrap(err, "failed to start console copy")
+			return fmt.Errorf("failed to start console copy: %w", err)
 		}
 	} else if !e.stdio.IsNull() {
 		if err := copyPipes(ctx, e.io, e.stdio.Stdin, e.stdio.Stdout, e.stdio.Stderr, &e.wg, &copyWaitGroup); err != nil {
-			return errors.Wrap(err, "failed to start io pipe copy")
+			return fmt.Errorf("failed to start io pipe copy: %w", err)
 		}
 	}
 	copyWaitGroup.Wait()
 	pid, err := runc.ReadPidFile(opts.PidFile)
 	if err != nil {
-		return errors.Wrap(err, "failed to retrieve OCI runtime exec pid")
+		return fmt.Errorf("failed to retrieve OCI runtime exec pid: %w", err)
 	}
 	e.pid = pid
 	internalPid, err := runc.ReadPidFile(opts.InternalPidFile)
 	if err != nil {
-		return errors.Wrap(err, "failed to retrieve OCI runtime exec internal pid")
+		return fmt.Errorf("failed to retrieve OCI runtime exec internal pid: %w", err)
 	}
 	e.internalPid = internalPid
 	go func() {

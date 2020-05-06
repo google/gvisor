@@ -151,12 +151,15 @@ docs(
         "//g3doc/user_guide:install",
         "//g3doc/user_guide:networking",
         "//g3doc/user_guide:platforms",
+        "//g3doc/user_guide:runtimeclass",
         "//g3doc/user_guide/quick_start:docker",
         "//g3doc/user_guide/quick_start:kubernetes",
         "//g3doc/user_guide/quick_start:oci",
         "//g3doc/user_guide/tutorials:cni",
         "//g3doc/user_guide/tutorials:docker",
         "//g3doc/user_guide/tutorials:kubernetes",
+        "//shim/v1:doc",
+        "//shim/v2:doc",
     ],
 )
 

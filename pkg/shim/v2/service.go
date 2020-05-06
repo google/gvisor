@@ -16,6 +16,7 @@ package v2
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/containerd/cgroups"
+	metrics "github.com/containerd/cgroups/stats/v1"
 	"github.com/containerd/console"
 	eventstypes "github.com/containerd/containerd/api/events"
 	"github.com/containerd/containerd/api/types/task"
@@ -42,14 +44,13 @@ import (
 	runtimeoptions "github.com/containerd/cri/pkg/api/runtimeoptions/v1"
 	"github.com/containerd/typeurl"
 	ptypes "github.com/gogo/protobuf/types"
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 
 	"gvisor.dev/gvisor/pkg/shim/runsc"
 	"gvisor.dev/gvisor/pkg/shim/v1/proc"
 	"gvisor.dev/gvisor/pkg/shim/v1/utils"
 	"gvisor.dev/gvisor/pkg/shim/v2/options"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 var (
@@ -68,7 +69,7 @@ var _ = (taskAPI.TaskService)(&service{})
 // we assume that a config.toml should exist in the runtime root.
 const configFile = "config.toml"
 
-// New returns a new shim service that can be used via GRPC
+// New returns a new shim service that can be used via GRPC.
 func New(ctx context.Context, id string, publisher events.Publisher) (shim.Shim, error) {
 	ep, err := newOOMEpoller(publisher)
 	if err != nil {
@@ -89,13 +90,13 @@ func New(ctx context.Context, id string, publisher events.Publisher) (shim.Shim,
 	runsc.Monitor = shim.Default
 	if err := s.initPlatform(); err != nil {
 		cancel()
-		return nil, errors.Wrap(err, "failed to initialized platform behavior")
+		return nil, fmt.Errorf("failed to initialized platform behavior: %w", err)
 	}
 	go s.forward(publisher)
 	return s, nil
 }
 
-// service is the shim implementation of a remote shim over GRPC
+// service is the shim implementation of a remote shim over GRPC.
 type service struct {
 	mu sync.Mutex
 
@@ -179,7 +180,7 @@ func (s *service) StartShim(ctx context.Context, id, containerdBinary, container
 		return "", err
 	}
 	if err := shim.SetScore(cmd.Process.Pid); err != nil {
-		return "", errors.Wrap(err, "failed to set OOM Score on shim")
+		return "", fmt.Errorf("failed to set OOM Score on shim: %w", err)
 	}
 	return address, nil
 }
@@ -201,10 +202,10 @@ func (s *service) Cleanup(ctx context.Context) (*taskAPI.DeleteResponse, error) 
 	if err := r.Delete(ctx, s.id, &runsc.DeleteOpts{
 		Force: true,
 	}); err != nil {
-		logrus.WithError(err).Warn("failed to remove runc container")
+		log.L.Printf("failed to remove runc container: %v", err)
 	}
 	if err := mount.UnmountAll(filepath.Join(path, "rootfs"), 0); err != nil {
-		logrus.WithError(err).Warn("failed to cleanup rootfs mount")
+		log.L.Printf("failed to cleanup rootfs mount: %v", err)
 	}
 	return &taskAPI.DeleteResponse{
 		ExitedAt:   time.Now(),
@@ -224,14 +225,15 @@ func (s *service) writeRuntime(path, runtime string) error {
 	return ioutil.WriteFile(filepath.Join(path, "runtime"), []byte(runtime), 0600)
 }
 
-// Create a new initial process and container with the underlying OCI runtime
+// Create creates a new initial process and container with the underlying OCI
+// runtime.
 func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (_ *taskAPI.CreateTaskResponse, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	ns, err := namespaces.NamespaceRequired(ctx)
 	if err != nil {
-		return nil, errors.Wrap(err, "create namespace")
+		return nil, fmt.Errorf("create namespace: %w", err)
 	}
 
 	// Read from root for now.
@@ -258,7 +260,7 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (_ *
 			path = filepath.Join(root, configFile)
 			if _, err := os.Stat(path); err != nil {
 				if !os.IsNotExist(err) {
-					return nil, errors.Wrapf(err, "stat config file %q", path)
+					return nil, fmt.Errorf("stat config file %q: %w", path, err)
 				}
 				// A config file in runtime root is not required.
 				path = ""
@@ -268,15 +270,15 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (_ *
 				break
 			}
 			if o.TypeUrl != options.OptionType {
-				return nil, errors.Errorf("unsupported runtimeoptions %q", o.TypeUrl)
+				return nil, fmt.Errorf("unsupported runtimeoptions %q", o.TypeUrl)
 			}
 			path = o.ConfigPath
 		default:
-			return nil, errors.Errorf("unsupported option type %q", r.Options.TypeUrl)
+			return nil, fmt.Errorf("unsupported option type %q", r.Options.TypeUrl)
 		}
 		if path != "" {
 			if _, err = toml.DecodeFile(path, &opts); err != nil {
-				return nil, errors.Wrapf(err, "decode config file %q", path)
+				return nil, fmt.Errorf("decode config file %q: %w", path, err)
 			}
 		}
 	}
@@ -312,8 +314,8 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (_ *
 	}
 	defer func() {
 		if err != nil {
-			if err2 := mount.UnmountAll(rootfs, 0); err2 != nil {
-				logrus.WithError(err2).Warn("failed to cleanup rootfs mount")
+			if err := mount.UnmountAll(rootfs, 0); err != nil {
+				log.L.Printf("failed to cleanup rootfs mount: %v", err)
 			}
 		}
 	}()
@@ -324,7 +326,7 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (_ *
 			Options: rm.Options,
 		}
 		if err := m.Mount(rootfs); err != nil {
-			return nil, errors.Wrapf(err, "failed to mount rootfs component %v", m)
+			return nil, fmt.Errorf("failed to mount rootfs component %v: %w", m, err)
 		}
 	}
 	process, err := newInit(
@@ -343,20 +345,21 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (_ *
 	if err := process.Create(ctx, config); err != nil {
 		return nil, errdefs.ToGRPC(err)
 	}
-	// save the main task id and bundle to the shim for additional requests
+	// Save the main task id and bundle to the shim for additional
+	// requests.
 	s.id = r.ID
 	s.bundle = r.Bundle
 
-	// Set up OOM notification on the sandbox's cgroup. This is done on sandbox
-	// create since the sandbox process will be created here.
+	// Set up OOM notification on the sandbox's cgroup. This is done on
+	// sandbox create since the sandbox process will be created here.
 	pid := process.Pid()
 	if pid > 0 {
 		cg, err := cgroups.Load(cgroups.V1, cgroups.PidPath(pid))
 		if err != nil {
-			return nil, errors.Wrapf(err, "loading cgroup for %d", pid)
+			return nil, fmt.Errorf("loading cgroup for %d: %w", pid, err)
 		}
 		if err := s.oomPoller.add(s.id, cg); err != nil {
-			return nil, errors.Wrapf(err, "add cg to OOM monitor")
+			return nil, fmt.Errorf("add cg to OOM monitor: %w", err)
 		}
 	}
 	s.task = process
@@ -367,7 +370,7 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (_ *
 
 }
 
-// Start a process
+// Start starts a process.
 func (s *service) Start(ctx context.Context, r *taskAPI.StartRequest) (*taskAPI.StartResponse, error) {
 	p, err := s.getProcess(r.ExecID)
 	if err != nil {
@@ -383,7 +386,7 @@ func (s *service) Start(ctx context.Context, r *taskAPI.StartRequest) (*taskAPI.
 	}, nil
 }
 
-// Delete the initial process and container
+// Delete deletes the initial process and container.
 func (s *service) Delete(ctx context.Context, r *taskAPI.DeleteRequest) (*taskAPI.DeleteResponse, error) {
 	p, err := s.getProcess(r.ExecID)
 	if err != nil {
@@ -411,7 +414,7 @@ func (s *service) Delete(ctx context.Context, r *taskAPI.DeleteRequest) (*taskAP
 	}, nil
 }
 
-// Exec an additional process inside the container
+// Exec spawns an additional process inside the container.
 func (s *service) Exec(ctx context.Context, r *taskAPI.ExecProcessRequest) (*ptypes.Empty, error) {
 	s.mu.Lock()
 	p := s.processes[r.ExecID]
@@ -440,7 +443,7 @@ func (s *service) Exec(ctx context.Context, r *taskAPI.ExecProcessRequest) (*pty
 	return empty, nil
 }
 
-// ResizePty of a process
+// ResizePty resizes the terminal of a process.
 func (s *service) ResizePty(ctx context.Context, r *taskAPI.ResizePtyRequest) (*ptypes.Empty, error) {
 	p, err := s.getProcess(r.ExecID)
 	if err != nil {
@@ -456,7 +459,7 @@ func (s *service) ResizePty(ctx context.Context, r *taskAPI.ResizePtyRequest) (*
 	return empty, nil
 }
 
-// State returns runtime state information for a process
+// State returns runtime state information for a process.
 func (s *service) State(ctx context.Context, r *taskAPI.StateRequest) (*taskAPI.StateResponse, error) {
 	p, err := s.getProcess(r.ExecID)
 	if err != nil {
@@ -490,17 +493,17 @@ func (s *service) State(ctx context.Context, r *taskAPI.StateRequest) (*taskAPI.
 	}, nil
 }
 
-// Pause the container
+// Pause the container.
 func (s *service) Pause(ctx context.Context, r *taskAPI.PauseRequest) (*ptypes.Empty, error) {
 	return empty, errdefs.ToGRPC(errdefs.ErrNotImplemented)
 }
 
-// Resume the container
+// Resume the container.
 func (s *service) Resume(ctx context.Context, r *taskAPI.ResumeRequest) (*ptypes.Empty, error) {
 	return empty, errdefs.ToGRPC(errdefs.ErrNotImplemented)
 }
 
-// Kill a process with the provided signal
+// Kill a process with the provided signal.
 func (s *service) Kill(ctx context.Context, r *taskAPI.KillRequest) (*ptypes.Empty, error) {
 	p, err := s.getProcess(r.ExecID)
 	if err != nil {
@@ -515,7 +518,7 @@ func (s *service) Kill(ctx context.Context, r *taskAPI.KillRequest) (*ptypes.Emp
 	return empty, nil
 }
 
-// Pids returns all pids inside the container
+// Pids returns all pids inside the container.
 func (s *service) Pids(ctx context.Context, r *taskAPI.PidsRequest) (*taskAPI.PidsResponse, error) {
 	pids, err := s.getContainerPids(ctx, r.ID)
 	if err != nil {
@@ -533,7 +536,7 @@ func (s *service) Pids(ctx context.Context, r *taskAPI.PidsRequest) (*taskAPI.Pi
 				}
 				a, err := typeurl.MarshalAny(d)
 				if err != nil {
-					return nil, errors.Wrapf(err, "failed to marshal process %d info", pid)
+					return nil, fmt.Errorf("failed to marshal process %d info: %w", pid, err)
 				}
 				pInfo.Info = a
 				break
@@ -546,7 +549,7 @@ func (s *service) Pids(ctx context.Context, r *taskAPI.PidsRequest) (*taskAPI.Pi
 	}, nil
 }
 
-// CloseIO of a process
+// CloseIO closes the I/O context of a process.
 func (s *service) CloseIO(ctx context.Context, r *taskAPI.CloseIORequest) (*ptypes.Empty, error) {
 	p, err := s.getProcess(r.ExecID)
 	if err != nil {
@@ -554,18 +557,18 @@ func (s *service) CloseIO(ctx context.Context, r *taskAPI.CloseIORequest) (*ptyp
 	}
 	if stdin := p.Stdin(); stdin != nil {
 		if err := stdin.Close(); err != nil {
-			return nil, errors.Wrap(err, "close stdin")
+			return nil, fmt.Errorf("close stdin: %w", err)
 		}
 	}
 	return empty, nil
 }
 
-// Checkpoint the container
+// Checkpoint checkpoints the container.
 func (s *service) Checkpoint(ctx context.Context, r *taskAPI.CheckpointTaskRequest) (*ptypes.Empty, error) {
 	return empty, errdefs.ToGRPC(errdefs.ErrNotImplemented)
 }
 
-// Connect returns shim information such as the shim's pid
+// Connect returns shim information such as the shim's pid.
 func (s *service) Connect(ctx context.Context, r *taskAPI.ConnectRequest) (*taskAPI.ConnectResponse, error) {
 	var pid int
 	if s.task != nil {
@@ -605,52 +608,52 @@ func (s *service) Stats(ctx context.Context, r *taskAPI.StatsRequest) (*taskAPI.
 	// gvisor currently (as of 2020-03-03) only returns the total memory
 	// usage and current PID value[0]. However, we copy the common fields here
 	// so that future updates will propagate correct information.  We're
-	// using the cgroups.Metrics structure so we're returning the same type
+	// using the metrics.Metrics structure so we're returning the same type
 	// as runc.
 	//
 	// [0]: https://github.com/google/gvisor/blob/277a0d5a1fbe8272d4729c01ee4c6e374d047ebc/runsc/boot/events.go#L61-L81
-	data, err := typeurl.MarshalAny(&cgroups.Metrics{
-		CPU: &cgroups.CPUStat{
-			Usage: &cgroups.CPUUsage{
+	data, err := typeurl.MarshalAny(&metrics.Metrics{
+		CPU: &metrics.CPUStat{
+			Usage: &metrics.CPUUsage{
 				Total:  stats.Cpu.Usage.Total,
 				Kernel: stats.Cpu.Usage.Kernel,
 				User:   stats.Cpu.Usage.User,
 				PerCPU: stats.Cpu.Usage.Percpu,
 			},
-			Throttling: &cgroups.Throttle{
+			Throttling: &metrics.Throttle{
 				Periods:          stats.Cpu.Throttling.Periods,
 				ThrottledPeriods: stats.Cpu.Throttling.ThrottledPeriods,
 				ThrottledTime:    stats.Cpu.Throttling.ThrottledTime,
 			},
 		},
-		Memory: &cgroups.MemoryStat{
+		Memory: &metrics.MemoryStat{
 			Cache: stats.Memory.Cache,
-			Usage: &cgroups.MemoryEntry{
+			Usage: &metrics.MemoryEntry{
 				Limit:   stats.Memory.Usage.Limit,
 				Usage:   stats.Memory.Usage.Usage,
 				Max:     stats.Memory.Usage.Max,
 				Failcnt: stats.Memory.Usage.Failcnt,
 			},
-			Swap: &cgroups.MemoryEntry{
+			Swap: &metrics.MemoryEntry{
 				Limit:   stats.Memory.Swap.Limit,
 				Usage:   stats.Memory.Swap.Usage,
 				Max:     stats.Memory.Swap.Max,
 				Failcnt: stats.Memory.Swap.Failcnt,
 			},
-			Kernel: &cgroups.MemoryEntry{
+			Kernel: &metrics.MemoryEntry{
 				Limit:   stats.Memory.Kernel.Limit,
 				Usage:   stats.Memory.Kernel.Usage,
 				Max:     stats.Memory.Kernel.Max,
 				Failcnt: stats.Memory.Kernel.Failcnt,
 			},
-			KernelTCP: &cgroups.MemoryEntry{
+			KernelTCP: &metrics.MemoryEntry{
 				Limit:   stats.Memory.KernelTCP.Limit,
 				Usage:   stats.Memory.KernelTCP.Usage,
 				Max:     stats.Memory.KernelTCP.Max,
 				Failcnt: stats.Memory.KernelTCP.Failcnt,
 			},
 		},
-		Pids: &cgroups.PidsStat{
+		Pids: &metrics.PidsStat{
 			Current: stats.Pids.Current,
 			Limit:   stats.Pids.Limit,
 		},
@@ -663,12 +666,12 @@ func (s *service) Stats(ctx context.Context, r *taskAPI.StatsRequest) (*taskAPI.
 	}, nil
 }
 
-// Update a running container
+// Update updates a running container.
 func (s *service) Update(ctx context.Context, r *taskAPI.UpdateTaskRequest) (*ptypes.Empty, error) {
 	return empty, errdefs.ToGRPC(errdefs.ErrNotImplemented)
 }
 
-// Wait for a process to exit
+// Wait waits for a process to exit.
 func (s *service) Wait(ctx context.Context, r *taskAPI.WaitRequest) (*taskAPI.WaitResponse, error) {
 	p, err := s.getProcess(r.ExecID)
 	if err != nil {
@@ -697,7 +700,7 @@ func (s *service) checkProcesses(e proc.Exit) {
 	for _, p := range s.allProcesses() {
 		if p.ID() == e.ID {
 			if ip, ok := p.(*proc.Init); ok {
-				// Ensure all children are killed
+				// Ensure all children are killed.
 				if err := ip.KillAll(s.context); err != nil {
 					log.G(s.context).WithError(err).WithField("id", ip.ID()).
 						Error("failed to kill init's children")
@@ -733,7 +736,7 @@ func (s *service) getContainerPids(ctx context.Context, id string) ([]uint32, er
 	p := s.task
 	s.mu.Unlock()
 	if p == nil {
-		return nil, errors.Wrapf(errdefs.ErrFailedPrecondition, "container must be created")
+		return nil, fmt.Errorf("container must be created: %w", errdefs.ErrFailedPrecondition)
 	}
 	ps, err := p.(*proc.Init).Runtime().Ps(ctx, id)
 	if err != nil {
@@ -752,7 +755,7 @@ func (s *service) forward(publisher events.Publisher) {
 		err := publisher.Publish(ctx, getTopic(e), e)
 		cancel()
 		if err != nil {
-			logrus.WithError(err).Error("post event")
+			fmt.Errorf("post event: %w", err)
 		}
 	}
 }
@@ -787,7 +790,7 @@ func getTopic(e interface{}) string {
 	case *eventstypes.TaskExecStarted:
 		return runtime.TaskExecStartedEventTopic
 	default:
-		logrus.Warnf("no topic for type %#v", e)
+		log.L.Printf("no topic for type %#v", e)
 	}
 	return runtime.TaskUnknownTopic
 }
@@ -795,10 +798,10 @@ func getTopic(e interface{}) string {
 func newInit(ctx context.Context, path, workDir, namespace string, platform rproc.Platform, r *proc.CreateConfig, options *options.Options, rootfs string) (*proc.Init, error) {
 	spec, err := utils.ReadSpec(r.Bundle)
 	if err != nil {
-		return nil, errors.Wrap(err, "read oci spec")
+		return nil, fmt.Errorf("read oci spec: %w", err)
 	}
 	if err := utils.UpdateVolumeAnnotations(r.Bundle, spec); err != nil {
-		return nil, errors.Wrap(err, "update volume annotations")
+		return nil, fmt.Errorf("update volume annotations: %w", err)
 	}
 	runsc.FormatLogPath(r.ID, options.RunscConfig)
 	runtime := proc.NewRunsc(options.Root, path, namespace, options.BinaryName, options.RunscConfig)
@@ -814,7 +817,7 @@ func newInit(ctx context.Context, path, workDir, namespace string, platform rpro
 	p.WorkDir = workDir
 	p.IoUID = int(options.IoUid)
 	p.IoGID = int(options.IoGid)
-	p.Sandbox = utils.IsSandbox(spec)
+	p.Sandbox = specutils.SpecContainerType(spec) == specutils.ContainerTypeSandbox
 	p.UserLog = utils.UserLogPath(spec)
 	p.Monitor = shim.Default
 	return p, nil

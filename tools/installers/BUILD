@@ -7,7 +7,11 @@ package(
 
 filegroup(
     name = "runsc",
-    srcs = ["//runsc"],
+    srcs = [
+        "//runsc",
+        "//shim/v1:gvisor-containerd-shim",
+        "//shim/v2:containerd-shim-runsc-v1",
+    ],
 )
 
 sh_binary(
@@ -30,6 +34,6 @@ sh_binary(
 )
 
 sh_binary(
-    name = "shim",
-    srcs = ["shim.sh"],
+    name = "containerd",
+    srcs = ["containerd.sh"],
 )

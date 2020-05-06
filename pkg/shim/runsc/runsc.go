@@ -34,10 +34,10 @@ import (
 
 var Monitor runc.ProcessMonitor = runc.Monitor
 
-// DefaultCommand is the default command for Runsc
+// DefaultCommand is the default command for Runsc.
 const DefaultCommand = "runsc"
 
-// Runsc is the client to the runsc cli
+// Runsc is the client to the runsc cli.
 type Runsc struct {
 	Command      string
 	PdeathSignal syscall.Signal
@@ -48,7 +48,7 @@ type Runsc struct {
 	Config       map[string]string
 }
 
-// List returns all containers created inside the provided runsc root directory
+// List returns all containers created inside the provided runsc root directory.
 func (r *Runsc) List(context context.Context) ([]*runc.Container, error) {
 	data, err := cmdOutput(r.command(context, "list", "--format=json"), false)
 	if err != nil {
@@ -61,7 +61,7 @@ func (r *Runsc) List(context context.Context) ([]*runc.Container, error) {
 	return out, nil
 }
 
-// State returns the state for the container provided by id
+// State returns the state for the container provided by id.
 func (r *Runsc) State(context context.Context, id string) (*runc.Container, error) {
 	data, err := cmdOutput(r.command(context, "state", id), true)
 	if err != nil {
@@ -76,9 +76,11 @@ func (r *Runsc) State(context context.Context, id string) (*runc.Container, erro
 
 type CreateOpts struct {
 	runc.IO
-	// PidFile is a path to where a pid file should be created
-	PidFile       string
 	ConsoleSocket runc.ConsoleSocket
+
+	// PidFile is a path to where a pid file should be created.
+	PidFile string
+
 	// UserLog is a path to where runsc user log should be generated.
 	UserLog string
 }
@@ -100,7 +102,7 @@ func (o *CreateOpts) args() (out []string, err error) {
 	return out, nil
 }
 
-// Create creates a new container and returns its pid if it was created successfully
+// Create creates a new container and returns its pid if it was created successfully.
 func (r *Runsc) Create(context context.Context, id, bundle string, opts *CreateOpts) error {
 	args := []string{"create", "--bundle", bundle}
 	if opts != nil {
@@ -141,7 +143,7 @@ func (r *Runsc) Create(context context.Context, id, bundle string, opts *CreateO
 	return err
 }
 
-// Start will start an already created container
+// Start will start an already created container.
 func (r *Runsc) Start(context context.Context, id string, cio runc.IO) error {
 	cmd := r.command(context, "start", id)
 	if cio != nil {
@@ -181,6 +183,7 @@ type waitResult struct {
 }
 
 // Wait will wait for a running container, and return its exit status.
+//
 // TODO(random-liu): Add exec process support.
 func (r *Runsc) Wait(context context.Context, id string) (int, error) {
 	data, err := cmdOutput(r.command(context, "wait", id), true)
@@ -226,8 +229,8 @@ func (o *ExecOpts) args() (out []string, err error) {
 	return out, nil
 }
 
-// Exec executres and additional process inside the container based on a full
-// OCI Process specification
+// Exec executes an additional process inside the container based on a full OCI
+// Process specification.
 func (r *Runsc) Exec(context context.Context, id string, spec specs.Process, opts *ExecOpts) error {
 	f, err := ioutil.TempFile(os.Getenv("XDG_RUNTIME_DIR"), "runsc-process")
 	if err != nil {
@@ -276,8 +279,8 @@ func (r *Runsc) Exec(context context.Context, id string, spec specs.Process, opt
 	return err
 }
 
-// Run runs the create, start, delete lifecycle of the container
-// and returns its exit status after it has exited
+// Run runs the create, start, delete lifecycle of the container and returns
+// its exit status after it has exited.
 func (r *Runsc) Run(context context.Context, id, bundle string, opts *CreateOpts) (int, error) {
 	args := []string{"run", "--bundle", bundle}
 	if opts != nil {
@@ -309,7 +312,7 @@ func (o *DeleteOpts) args() (out []string) {
 	return out
 }
 
-// Delete deletes the container
+// Delete deletes the container.
 func (r *Runsc) Delete(context context.Context, id string, opts *DeleteOpts) error {
 	args := []string{"delete"}
 	if opts != nil {
@@ -318,7 +321,7 @@ func (r *Runsc) Delete(context context.Context, id string, opts *DeleteOpts) err
 	return r.runOrError(r.command(context, append(args, id)...))
 }
 
-// KillOpts specifies options for killing a container and its processes
+// KillOpts specifies options for killing a container and its processes.
 type KillOpts struct {
 	All bool
 	Pid int
@@ -334,7 +337,7 @@ func (o *KillOpts) args() (out []string) {
 	return out
 }
 
-// Kill sends the specified signal to the container
+// Kill sends the specified signal to the container.
 func (r *Runsc) Kill(context context.Context, id string, sig int, opts *KillOpts) error {
 	args := []string{
 		"kill",
@@ -345,7 +348,7 @@ func (r *Runsc) Kill(context context.Context, id string, sig int, opts *KillOpts
 	return r.runOrError(r.command(context, append(args, id, strconv.Itoa(sig))...))
 }
 
-// Stats return the stats for a container like cpu, memory, and io
+// Stats return the stats for a container like cpu, memory, and I/O.
 func (r *Runsc) Stats(context context.Context, id string) (*runc.Stats, error) {
 	cmd := r.command(context, "events", "--stats", id)
 	rd, err := cmd.StdoutPipe()
@@ -367,7 +370,7 @@ func (r *Runsc) Stats(context context.Context, id string) (*runc.Stats, error) {
 	return e.Stats, nil
 }
 
-// Events returns an event stream from runsc for a container with stats and OOM notifications
+// Events returns an event stream from runsc for a container with stats and OOM notifications.
 func (r *Runsc) Events(context context.Context, id string, interval time.Duration) (chan *runc.Event, error) {
 	cmd := r.command(context, "events", fmt.Sprintf("--interval=%ds", int(interval.Seconds())), id)
 	rd, err := cmd.StdoutPipe()
@@ -406,7 +409,7 @@ func (r *Runsc) Events(context context.Context, id string, interval time.Duratio
 	return c, nil
 }
 
-// Ps lists all the processes inside the container returning their pids
+// Ps lists all the processes inside the container returning their pids.
 func (r *Runsc) Ps(context context.Context, id string) ([]int, error) {
 	data, err := cmdOutput(r.command(context, "ps", "--format", "json", id), true)
 	if err != nil {
@@ -419,7 +422,7 @@ func (r *Runsc) Ps(context context.Context, id string) ([]int, error) {
 	return pids, nil
 }
 
-// Top lists all the processes inside the container returning the full ps data
+// Top lists all the processes inside the container returning the full ps data.
 func (r *Runsc) Top(context context.Context, id string) (*runc.TopResults, error) {
 	data, err := cmdOutput(r.command(context, "ps", "--format", "table", id), true)
 	if err != nil {
@@ -450,10 +453,10 @@ func (r *Runsc) args() []string {
 	return args
 }
 
-// runOrError will run the provided command.  If an error is
-// encountered and neither Stdout or Stderr was set the error and the
-// stderr of the command will be returned in the format of <error>:
-// <stderr>
+// runOrError will run the provided command.
+//
+// If an error is encountered and neither Stdout or Stderr was set the error
+// will be returned in the format of <error>: <stderr>.
 func (r *Runsc) runOrError(cmd *exec.Cmd) error {
 	if cmd.Stdout != nil || cmd.Stderr != nil {
 		ec, err := Monitor.Start(cmd)

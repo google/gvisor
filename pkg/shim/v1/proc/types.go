@@ -23,7 +23,7 @@ import (
 	runc "github.com/containerd/go-runc"
 )
 
-// Mount holds filesystem mount configuration
+// Mount holds filesystem mount configuration.
 type Mount struct {
 	Type    string
 	Source  string
@@ -31,7 +31,7 @@ type Mount struct {
 	Options []string
 }
 
-// CreateConfig hold task creation configuration
+// CreateConfig hold task creation configuration.
 type CreateConfig struct {
 	ID       string
 	Bundle   string
@@ -44,7 +44,7 @@ type CreateConfig struct {
 	Options  *google_protobuf.Any
 }
 
-// ExecConfig holds exec creation configuration
+// ExecConfig holds exec creation configuration.
 type ExecConfig struct {
 	ID       string
 	Terminal bool
@@ -54,14 +54,14 @@ type ExecConfig struct {
 	Spec     *google_protobuf.Any
 }
 
-// Exit is the type of exit events
+// Exit is the type of exit events.
 type Exit struct {
 	Timestamp time.Time
 	ID        string
 	Status    int
 }
 
-// ProcessMonitor monitors process exit changes
+// ProcessMonitor monitors process exit changes.
 type ProcessMonitor interface {
 	// Subscribe to process exit changes
 	Subscribe() chan runc.Exit
