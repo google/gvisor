@@ -46,7 +46,10 @@ func TimerfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	default:
 		return 0, nil, syserror.EINVAL
 	}
-	file, err := t.Kernel().VFS().NewTimerFD(clock, fileFlags)
+	// Timerfds aren't writable per se (their implementation of Write just
+	// returns EINVAL), but they are "opened for writing", which is necessary
+	// to actually reach said implementation of Write.
+	file, err := t.Kernel().VFS().NewTimerFD(clock, linux.O_RDWR|fileFlags)
 	if err != nil {
 		return 0, nil, err
 	}
