@@ -53,7 +53,6 @@ func (vfs *VirtualFilesystem) NewTimerFD(clock ktime.Clock, flags uint32) (*File
 		UseDentryMetadata: true,
 		DenyPRead:         true,
 		DenyPWrite:        true,
-		InvalidWrite:      true,
 	}); err != nil {
 		return nil, err
 	}
