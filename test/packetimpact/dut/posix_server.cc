@@ -174,41 +174,41 @@ class PosixImpl final : public posix_server::Posix::Service {
       grpc_impl::ServerContext *context,
       const ::posix_server::GetSockOptRequest *request,
       ::posix_server::GetSockOptResponse *response) override {
-    socklen_t optlen = request->optlen();
-    std::vector<char> buf(optlen);
-    response->set_ret(::getsockopt(request->sockfd(), request->level(),
-                                   request->optname(), buf.data(), &optlen));
-    response->set_errno_(errno);
-    if (optlen >= 0) {
-      response->set_optval(buf.data(), optlen);
+    switch (request->type()) {
+      case ::posix_server::GetSockOptRequest::BYTES: {
+        socklen_t optlen = request->optlen();
+        std::vector<char> buf(optlen);
+        response->set_ret(::getsockopt(request->sockfd(), request->level(),
+                                       request->optname(), buf.data(),
+                                       &optlen));
+        if (optlen >= 0) {
+          response->mutable_optval()->set_bytesval(buf.data(), optlen);
+        }
+        break;
+      }
+      case ::posix_server::GetSockOptRequest::INT: {
+        int intval = 0;
+        socklen_t optlen = sizeof(intval);
+        response->set_ret(::getsockopt(request->sockfd(), request->level(),
+                                       request->optname(), &intval, &optlen));
+        response->mutable_optval()->set_intval(intval);
+        break;
+      }
+      case ::posix_server::GetSockOptRequest::TIME: {
+        timeval tv;
+        socklen_t optlen = sizeof(tv);
+        response->set_ret(::getsockopt(request->sockfd(), request->level(),
+                                       request->optname(), &tv, &optlen));
+        response->mutable_optval()->mutable_timeval()->set_seconds(tv.tv_sec);
+        response->mutable_optval()->mutable_timeval()->set_microseconds(
+            tv.tv_usec);
+        break;
+      }
+      default:
+        return ::grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+                              "Unknown SockOpt Type");
     }
-    return ::grpc::Status::OK;
-  }
-
-  ::grpc::Status GetSockOptInt(
-      ::grpc::ServerContext *context,
-      const ::posix_server::GetSockOptIntRequest *request,
-      ::posix_server::GetSockOptIntResponse *response) override {
-    int opt = 0;
-    socklen_t optlen = sizeof(opt);
-    response->set_ret(::getsockopt(request->sockfd(), request->level(),
-                                   request->optname(), &opt, &optlen));
     response->set_errno_(errno);
-    response->set_intval(opt);
-    return ::grpc::Status::OK;
-  }
-
-  ::grpc::Status GetSockOptTimeval(
-      ::grpc::ServerContext *context,
-      const ::posix_server::GetSockOptTimevalRequest *request,
-      ::posix_server::GetSockOptTimevalResponse *response) override {
-    timeval tv;
-    socklen_t optlen = sizeof(tv);
-    response->set_ret(::getsockopt(request->sockfd(), request->level(),
-                                   request->optname(), &tv, &optlen));
-    response->set_errno_(errno);
-    response->mutable_timeval()->set_seconds(tv.tv_sec);
-    response->mutable_timeval()->set_microseconds(tv.tv_usec);
     return ::grpc::Status::OK;
   }
 
@@ -253,33 +253,32 @@ class PosixImpl final : public posix_server::Posix::Service {
       grpc_impl::ServerContext *context,
       const ::posix_server::SetSockOptRequest *request,
       ::posix_server::SetSockOptResponse *response) override {
-    response->set_ret(setsockopt(request->sockfd(), request->level(),
-                                 request->optname(), request->optval().c_str(),
-                                 request->optval().size()));
-    response->set_errno_(errno);
-    return ::grpc::Status::OK;
-  }
-
-  ::grpc::Status SetSockOptInt(
-      ::grpc::ServerContext *context,
-      const ::posix_server::SetSockOptIntRequest *request,
-      ::posix_server::SetSockOptIntResponse *response) override {
-    int opt = request->intval();
-    response->set_ret(::setsockopt(request->sockfd(), request->level(),
-                                   request->optname(), &opt, sizeof(opt)));
-    response->set_errno_(errno);
-    return ::grpc::Status::OK;
-  }
-
-  ::grpc::Status SetSockOptTimeval(
-      ::grpc::ServerContext *context,
-      const ::posix_server::SetSockOptTimevalRequest *request,
-      ::posix_server::SetSockOptTimevalResponse *response) override {
-    timeval tv = {.tv_sec = static_cast<__time_t>(request->timeval().seconds()),
-                  .tv_usec = static_cast<__suseconds_t>(
-                      request->timeval().microseconds())};
-    response->set_ret(setsockopt(request->sockfd(), request->level(),
-                                 request->optname(), &tv, sizeof(tv)));
+    switch (request->optval().val_case()) {
+      case ::posix_server::SockOptVal::kBytesval:
+        response->set_ret(setsockopt(request->sockfd(), request->level(),
+                                     request->optname(),
+                                     request->optval().bytesval().c_str(),
+                                     request->optval().bytesval().size()));
+        break;
+      case ::posix_server::SockOptVal::kIntval: {
+        int opt = request->optval().intval();
+        response->set_ret(::setsockopt(request->sockfd(), request->level(),
+                                       request->optname(), &opt, sizeof(opt)));
+        break;
+      }
+      case ::posix_server::SockOptVal::kTimeval: {
+        timeval tv = {.tv_sec = static_cast<__time_t>(
+                          request->optval().timeval().seconds()),
+                      .tv_usec = static_cast<__suseconds_t>(
+                          request->optval().timeval().microseconds())};
+        response->set_ret(setsockopt(request->sockfd(), request->level(),
+                                     request->optname(), &tv, sizeof(tv)));
+        break;
+      }
+      default:
+        return ::grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+                              "Unknown SockOpt Type");
+    }
     response->set_errno_(errno);
     return ::grpc::Status::OK;
   }
