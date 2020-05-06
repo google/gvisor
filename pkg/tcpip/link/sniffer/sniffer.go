@@ -391,7 +391,7 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, pkt *stack.P
 			break
 		}
 		udp := header.UDP(hdr)
-		if fragmentOffset == 0 && len(udp) >= header.UDPMinimumSize {
+		if fragmentOffset == 0 {
 			srcPort = udp.SourcePort()
 			dstPort = udp.DestinationPort()
 			details = fmt.Sprintf("xsum: 0x%x", udp.Checksum())
@@ -405,14 +405,14 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, pkt *stack.P
 			break
 		}
 		tcp := header.TCP(hdr)
-		if fragmentOffset == 0 && len(tcp) >= header.TCPMinimumSize {
+		if fragmentOffset == 0 {
 			offset := int(tcp.DataOffset())
 			if offset < header.TCPMinimumSize {
 				details += fmt.Sprintf("invalid packet: tcp data offset too small %d", offset)
 				break
 			}
-			if offset > len(tcp) && !moreFragments {
-				details += fmt.Sprintf("invalid packet: tcp data offset %d larger than packet buffer length %d", offset, len(tcp))
+			if offset > vv.Size() && !moreFragments {
+				details += fmt.Sprintf("invalid packet: tcp data offset %d larger than packet buffer length %d", offset, vv.Size())
 				break
 			}
 
