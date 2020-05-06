@@ -42,9 +42,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	runsc "github.com/google/gvisor-containerd-shim/pkg/go-runsc"
-	"github.com/google/gvisor-containerd-shim/pkg/v1/proc"
-	"github.com/google/gvisor-containerd-shim/pkg/v1/utils"
+	"gvisor.dev/gvisor/pkg/shim/runsc"
+	"gvisor.dev/gvisor/pkg/shim/v1/proc"
+	"gvisor.dev/gvisor/pkg/shim/v1/utils"
 )
 
 var (
