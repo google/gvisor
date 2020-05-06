@@ -1,0 +1,22 @@
+.jumbotron {
+  background-color: transparent;
+  background-image: url("/assets/images/background.jpg");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+
+  p {
+    color: #eeeeee;
+    margin-top: 0;
+    margin-bottom: 0;
+    font-weight: 300;
+  }
+  .btn {
+    color: $text-color;
+    background-color: $inverse-link-color;
+  }
+  .btn-inverse {
+    color: $text-color;
+    background-color: #ffffff;
+  }
+}
