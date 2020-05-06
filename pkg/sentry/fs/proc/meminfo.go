@@ -58,12 +58,16 @@ func (d *meminfoData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) 
 
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, "MemTotal:       %8d kB\n", totalSize/1024)
-	memFree := (totalSize - totalUsage) / 1024
+	memFree := totalSize - totalUsage
+	if memFree > totalSize {
+		// Underflow.
+		memFree = 0
+	}
 	// We use MemFree as MemAvailable because we don't swap.
 	// TODO(rahat): When reclaim is implemented the value of MemAvailable
 	// should change.
-	fmt.Fprintf(&buf, "MemFree:        %8d kB\n", memFree)
-	fmt.Fprintf(&buf, "MemAvailable:   %8d kB\n", memFree)
+	fmt.Fprintf(&buf, "MemFree:        %8d kB\n", memFree/1024)
+	fmt.Fprintf(&buf, "MemAvailable:   %8d kB\n", memFree/1024)
 	fmt.Fprintf(&buf, "Buffers:               0 kB\n") // memory usage by block devices
 	fmt.Fprintf(&buf, "Cached:         %8d kB\n", (file+snapshot.Tmpfs)/1024)
 	// Emulate a system with no swap, which disables inactivation of anon pages.
