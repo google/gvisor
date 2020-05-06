@@ -167,6 +167,30 @@ func TestFilterOutputOwnerFail(t *testing.T) {
 	singleTest(t, FilterOutputOwnerFail{})
 }
 
+func TestFilterOutputInterfaceAccept(t *testing.T) {
+	singleTest(t, FilterOutputInterfaceAccept{})
+}
+
+func TestFilterOutputInterfaceDrop(t *testing.T) {
+	singleTest(t, FilterOutputInterfaceDrop{})
+}
+
+func TestFilterOutputInterface(t *testing.T) {
+	singleTest(t, FilterOutputInterface{})
+}
+
+func TestFilterOutputInterfaceBeginsWith(t *testing.T) {
+	singleTest(t, FilterOutputInterfaceBeginsWith{})
+}
+
+func TestFilterOutputInterfaceInvertDrop(t *testing.T) {
+	singleTest(t, FilterOutputInterfaceInvertDrop{})
+}
+
+func TestFilterOutputInterfaceInvertAccept(t *testing.T) {
+	singleTest(t, FilterOutputInterfaceInvertAccept{})
+}
+
 func TestJumpSerialize(t *testing.T) {
 	singleTest(t, FilterInputSerializeJump{})
 }

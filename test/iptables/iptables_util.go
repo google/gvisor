@@ -169,3 +169,18 @@ func localAddrs() ([]string, error) {
 	}
 	return addrStrs, nil
 }
+
+// getInterfaceName returns the name of the interface other than loopback.
+func getInterfaceName() (string, bool) {
+	var ifname string
+	if interfaces, err := net.Interfaces(); err == nil {
+		for _, intf := range interfaces {
+			if intf.Name != "lo" {
+				ifname = intf.Name
+				break
+			}
+		}
+	}
+
+	return ifname, ifname != ""
+}
