@@ -180,6 +180,11 @@ type MemoryFileOpts struct {
 	// notifications to determine when eviction is necessary. This option has
 	// no effect unless DelayedEviction is DelayedEvictionEnabled.
 	UseHostMemcgPressure bool
+
+	// If ManualZeroing is true, MemoryFile must not assume that new pages
+	// obtained from the host are zero-filled, such that MemoryFile must manually
+	// zero newly-allocated pages.
+	ManualZeroing bool
 }
 
 // DelayedEvictionType is the type of MemoryFileOpts.DelayedEviction.
@@ -432,6 +437,15 @@ func (f *MemoryFile) Allocate(length uint64, kind usage.MemoryKind) (platform.Fi
 
 	// Mark selected pages as in use.
 	fr := platform.FileRange{start, end}
+	if f.opts.ManualZeroing {
+		if err := f.forEachMappingSlice(fr, func(bs []byte) {
+			for i := range bs {
+				bs[i] = 0
+			}
+		}); err != nil {
+			return platform.FileRange{}, err
+		}
+	}
 	if !f.usage.Add(fr, usageInfo{
 		kind: kind,
 		refs: 1,
