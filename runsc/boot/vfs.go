@@ -301,8 +301,8 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *Config, m specs.Moun
 }
 
 // p9MountOptions creates a slice of options for a p9 mount.
-// TODO(gvisor.dev/issue/1200): Remove this version in favor of the one in
-// fs.go when privateunixsocket lands.
+// TODO(gvisor.dev/issue/1624): Remove this version once privateunixsocket is
+// deleted, along with the rest of VFS1.
 func p9MountOptionsVFS2(fd int, fa FileAccessType) []string {
 	opts := []string{
 		"trans=fd",
