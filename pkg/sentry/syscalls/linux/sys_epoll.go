@@ -131,7 +131,7 @@ func EpollPwait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	maskSize := uint(args[5].Uint())
 
 	if maskAddr != 0 {
-		mask, err := copyInSigSet(t, maskAddr, maskSize)
+		mask, err := CopyInSigSet(t, maskAddr, maskSize)
 		if err != nil {
 			return 0, nil, err
 		}

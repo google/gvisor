@@ -443,7 +443,7 @@ func Ppoll(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	}
 
 	if maskAddr != 0 {
-		mask, err := copyInSigSet(t, maskAddr, maskSize)
+		mask, err := CopyInSigSet(t, maskAddr, maskSize)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -525,7 +525,7 @@ func Pselect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 		}
 
 		if maskAddr != 0 {
-			mask, err := copyInSigSet(t, maskAddr, size)
+			mask, err := CopyInSigSet(t, maskAddr, size)
 			if err != nil {
 				return 0, nil, err
 			}
