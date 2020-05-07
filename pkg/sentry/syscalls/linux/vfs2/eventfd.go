@@ -17,6 +17,7 @@ package vfs2
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/eventfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -31,12 +32,13 @@ func Eventfd2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		return 0, nil, syserror.EINVAL
 	}
 
+	vfsObj := t.Kernel().VFS()
 	fileFlags := uint32(linux.O_RDWR)
 	if flags&linux.EFD_NONBLOCK != 0 {
 		fileFlags |= linux.O_NONBLOCK
 	}
 	semMode := flags&linux.EFD_SEMAPHORE != 0
-	eventfd, err := t.Kernel().VFS().NewEventFD(initVal, semMode, fileFlags)
+	eventfd, err := eventfd.New(vfsObj, initVal, semMode, fileFlags)
 	if err != nil {
 		return 0, nil, err
 	}
