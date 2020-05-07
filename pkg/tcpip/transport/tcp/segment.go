@@ -96,6 +96,8 @@ func (s *segment) clone() *segment {
 		route:          s.route.Clone(),
 		viewToDeliver:  s.viewToDeliver,
 		rcvdTime:       s.rcvdTime,
+		xmitTime:       s.xmitTime,
+		xmitCount:      s.xmitCount,
 	}
 	t.data = s.data.Clone(t.views[:])
 	return t
