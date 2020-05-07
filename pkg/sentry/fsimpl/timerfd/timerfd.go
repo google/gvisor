@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package vfs
+// Package timerfd implements timer fds.
+package timerfd
 
 import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/context"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -27,9 +29,9 @@ import (
 // TimerFileDescription implements FileDescriptionImpl for timer fds. It also
 // implements ktime.TimerListener.
 type TimerFileDescription struct {
-	vfsfd FileDescription
-	FileDescriptionDefaultImpl
-	DentryMetadataFileDescriptionImpl
+	vfsfd vfs.FileDescription
+	vfs.FileDescriptionDefaultImpl
+	vfs.DentryMetadataFileDescriptionImpl
 
 	events waiter.Queue
 	timer  *ktime.Timer
@@ -40,16 +42,16 @@ type TimerFileDescription struct {
 	val uint64
 }
 
-var _ FileDescriptionImpl = (*TimerFileDescription)(nil)
+var _ vfs.FileDescriptionImpl = (*TimerFileDescription)(nil)
 var _ ktime.TimerListener = (*TimerFileDescription)(nil)
 
-// NewTimerFD returns a new timer fd.
-func (vfs *VirtualFilesystem) NewTimerFD(clock ktime.Clock, flags uint32) (*FileDescription, error) {
-	vd := vfs.NewAnonVirtualDentry("[timerfd]")
+// New returns a new timer fd.
+func New(vfsObj *vfs.VirtualFilesystem, clock ktime.Clock, flags uint32) (*vfs.FileDescription, error) {
+	vd := vfsObj.NewAnonVirtualDentry("[timerfd]")
 	defer vd.DecRef()
 	tfd := &TimerFileDescription{}
 	tfd.timer = ktime.NewTimer(clock, tfd)
-	if err := tfd.vfsfd.Init(tfd, flags, vd.Mount(), vd.Dentry(), &FileDescriptionOptions{
+	if err := tfd.vfsfd.Init(tfd, flags, vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 		DenyPRead:         true,
 		DenyPWrite:        true,
@@ -60,7 +62,7 @@ func (vfs *VirtualFilesystem) NewTimerFD(clock ktime.Clock, flags uint32) (*File
 }
 
 // Read implements FileDescriptionImpl.Read.
-func (tfd *TimerFileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts ReadOptions) (int64, error) {
+func (tfd *TimerFileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	const sizeofUint64 = 8
 	if dst.NumBytes() < sizeofUint64 {
 		return 0, syserror.EINVAL

@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package vfs
+package eventfd
 
 import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -34,15 +35,15 @@ func TestEventFD(t *testing.T) {
 
 	for _, initVal := range initVals {
 		ctx := contexttest.Context(t)
-		vfsObj := &VirtualFilesystem{}
+		vfsObj := &vfs.VirtualFilesystem{}
 		if err := vfsObj.Init(); err != nil {
 			t.Fatalf("VFS init: %v", err)
 		}
 
 		// Make a new eventfd that is writable.
-		eventfd, err := vfsObj.NewEventFD(initVal, false, linux.O_RDWR)
+		eventfd, err := New(vfsObj, initVal, false, linux.O_RDWR)
 		if err != nil {
-			t.Fatalf("NewEventFD failed: %v", err)
+			t.Fatalf("New() failed: %v", err)
 		}
 		defer eventfd.DecRef()
 
@@ -53,7 +54,7 @@ func TestEventFD(t *testing.T) {
 
 		data := []byte("00000124")
 		// Create and submit a write request.
-		n, err := eventfd.Write(ctx, usermem.BytesIOSequence(data), WriteOptions{})
+		n, err := eventfd.Write(ctx, usermem.BytesIOSequence(data), vfs.WriteOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -72,19 +73,19 @@ func TestEventFD(t *testing.T) {
 
 func TestEventFDStat(t *testing.T) {
 	ctx := contexttest.Context(t)
-	vfsObj := &VirtualFilesystem{}
+	vfsObj := &vfs.VirtualFilesystem{}
 	if err := vfsObj.Init(); err != nil {
 		t.Fatalf("VFS init: %v", err)
 	}
 
 	// Make a new eventfd that is writable.
-	eventfd, err := vfsObj.NewEventFD(0, false, linux.O_RDWR)
+	eventfd, err := New(vfsObj, 0, false, linux.O_RDWR)
 	if err != nil {
-		t.Fatalf("NewEventFD failed: %v", err)
+		t.Fatalf("New() failed: %v", err)
 	}
 	defer eventfd.DecRef()
 
-	statx, err := eventfd.Stat(ctx, StatOptions{
+	statx, err := eventfd.Stat(ctx, vfs.StatOptions{
 		Mask: linux.STATX_BASIC_STATS,
 	})
 	if err != nil {
