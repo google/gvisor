@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package vfs
+// Package eventfd implements event fds.
+package eventfd
 
 import (
 	"math"
@@ -23,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -32,9 +34,9 @@ import (
 // notification (eventfd). Eventfds are usually internal to the Sentry but in
 // certain situations they may be converted into a host-backed eventfd.
 type EventFileDescription struct {
-	vfsfd FileDescription
-	FileDescriptionDefaultImpl
-	DentryMetadataFileDescriptionImpl
+	vfsfd vfs.FileDescription
+	vfs.FileDescriptionDefaultImpl
+	vfs.DentryMetadataFileDescriptionImpl
 
 	// queue is used to notify interested parties when the event object
 	// becomes readable or writable.
@@ -53,18 +55,18 @@ type EventFileDescription struct {
 	hostfd int
 }
 
-var _ FileDescriptionImpl = (*EventFileDescription)(nil)
+var _ vfs.FileDescriptionImpl = (*EventFileDescription)(nil)
 
-// NewEventFD creates a new event fd.
-func (vfs *VirtualFilesystem) NewEventFD(initVal uint64, semMode bool, flags uint32) (*FileDescription, error) {
-	vd := vfs.NewAnonVirtualDentry("[eventfd]")
+// New creates a new event fd.
+func New(vfsObj *vfs.VirtualFilesystem, initVal uint64, semMode bool, flags uint32) (*vfs.FileDescription, error) {
+	vd := vfsObj.NewAnonVirtualDentry("[eventfd]")
 	defer vd.DecRef()
 	efd := &EventFileDescription{
 		val:     initVal,
 		semMode: semMode,
 		hostfd:  -1,
 	}
-	if err := efd.vfsfd.Init(efd, flags, vd.Mount(), vd.Dentry(), &FileDescriptionOptions{
+	if err := efd.vfsfd.Init(efd, flags, vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 		DenyPRead:         true,
 		DenyPWrite:        true,
@@ -117,7 +119,7 @@ func (efd *EventFileDescription) Release() {
 }
 
 // Read implements FileDescriptionImpl.Read.
-func (efd *EventFileDescription) Read(ctx context.Context, dst usermem.IOSequence, _ ReadOptions) (int64, error) {
+func (efd *EventFileDescription) Read(ctx context.Context, dst usermem.IOSequence, _ vfs.ReadOptions) (int64, error) {
 	if dst.NumBytes() < 8 {
 		return 0, syscall.EINVAL
 	}
@@ -128,7 +130,7 @@ func (efd *EventFileDescription) Read(ctx context.Context, dst usermem.IOSequenc
 }
 
 // Write implements FileDescriptionImpl.Write.
-func (efd *EventFileDescription) Write(ctx context.Context, src usermem.IOSequence, _ WriteOptions) (int64, error) {
+func (efd *EventFileDescription) Write(ctx context.Context, src usermem.IOSequence, _ vfs.WriteOptions) (int64, error) {
 	if src.NumBytes() < 8 {
 		return 0, syscall.EINVAL
 	}
