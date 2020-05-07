@@ -41,6 +41,12 @@ func (FilesystemType) Name() string {
 	return Name
 }
 
+type filesystem struct {
+	kernfs.Filesystem
+
+	devMinor uint32
+}
+
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	k := kernel.KernelFromContext(ctx)
@@ -51,8 +57,13 @@ func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualF
 	if pidns == nil {
 		return nil, nil, fmt.Errorf("procfs requires a PID namespace")
 	}
-
-	procfs := &kernfs.Filesystem{}
+	devMinor, err := vfsObj.GetAnonBlockDevMinor()
+	if err != nil {
+		return nil, nil, err
+	}
+	procfs := &filesystem{
+		devMinor: devMinor,
+	}
 	procfs.VFSFilesystem().Init(vfsObj, &ft, procfs)
 
 	var cgroups map[string]string
@@ -61,8 +72,14 @@ func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualF
 		cgroups = data.Cgroups
 	}
 
-	_, dentry := newTasksInode(procfs, k, pidns, cgroups)
+	_, dentry := procfs.newTasksInode(k, pidns, cgroups)
 	return procfs.VFSFilesystem(), dentry.VFSDentry(), nil
+}
+
+// Release implements vfs.FilesystemImpl.Release.
+func (fs *filesystem) Release() {
+	fs.Filesystem.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
+	fs.Filesystem.Release()
 }
 
 // dynamicInode is an overfitted interface for common Inodes with
@@ -71,11 +88,11 @@ type dynamicInode interface {
 	kernfs.Inode
 	vfs.DynamicBytesSource
 
-	Init(creds *auth.Credentials, ino uint64, data vfs.DynamicBytesSource, perm linux.FileMode)
+	Init(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, data vfs.DynamicBytesSource, perm linux.FileMode)
 }
 
-func newDentry(creds *auth.Credentials, ino uint64, perm linux.FileMode, inode dynamicInode) *kernfs.Dentry {
-	inode.Init(creds, ino, inode, perm)
+func (fs *filesystem) newDentry(creds *auth.Credentials, ino uint64, perm linux.FileMode, inode dynamicInode) *kernfs.Dentry {
+	inode.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, ino, inode, perm)
 
 	d := &kernfs.Dentry{}
 	d.Init(inode)

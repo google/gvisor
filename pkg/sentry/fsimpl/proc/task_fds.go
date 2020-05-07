@@ -53,8 +53,8 @@ func taskFDExists(t *kernel.Task, fd int32) bool {
 }
 
 type fdDir struct {
-	inoGen InoGenerator
-	task   *kernel.Task
+	fs   *filesystem
+	task *kernel.Task
 
 	// When produceSymlinks is set, dirents produces for the FDs are reported
 	// as symlink. Otherwise, they are reported as regular files.
@@ -85,7 +85,7 @@ func (i *fdDir) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback, abs
 		dirent := vfs.Dirent{
 			Name:    strconv.FormatUint(uint64(fd), 10),
 			Type:    typ,
-			Ino:     i.inoGen.NextIno(),
+			Ino:     i.fs.NextIno(),
 			NextOff: offset + 1,
 		}
 		if err := cb.Handle(dirent); err != nil {
@@ -110,15 +110,15 @@ type fdDirInode struct {
 
 var _ kernfs.Inode = (*fdDirInode)(nil)
 
-func newFDDirInode(task *kernel.Task, inoGen InoGenerator) *kernfs.Dentry {
+func (fs *filesystem) newFDDirInode(task *kernel.Task) *kernfs.Dentry {
 	inode := &fdDirInode{
 		fdDir: fdDir{
-			inoGen:         inoGen,
+			fs:             fs,
 			task:           task,
 			produceSymlink: true,
 		},
 	}
-	inode.InodeAttrs.Init(task.Credentials(), inoGen.NextIno(), linux.ModeDirectory|0555)
+	inode.InodeAttrs.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
 
 	dentry := &kernfs.Dentry{}
 	dentry.Init(inode)
@@ -137,7 +137,7 @@ func (i *fdDirInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, erro
 	if !taskFDExists(i.task, fd) {
 		return nil, syserror.ENOENT
 	}
-	taskDentry := newFDSymlink(i.task, fd, i.inoGen.NextIno())
+	taskDentry := i.fs.newFDSymlink(i.task, fd, i.fs.NextIno())
 	return taskDentry.VFSDentry(), nil
 }
 
@@ -186,12 +186,12 @@ type fdSymlink struct {
 
 var _ kernfs.Inode = (*fdSymlink)(nil)
 
-func newFDSymlink(task *kernel.Task, fd int32, ino uint64) *kernfs.Dentry {
+func (fs *filesystem) newFDSymlink(task *kernel.Task, fd int32, ino uint64) *kernfs.Dentry {
 	inode := &fdSymlink{
 		task: task,
 		fd:   fd,
 	}
-	inode.Init(task.Credentials(), ino, linux.ModeSymlink|0777)
+	inode.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
 
 	d := &kernfs.Dentry{}
 	d.Init(inode)
@@ -234,14 +234,14 @@ type fdInfoDirInode struct {
 
 var _ kernfs.Inode = (*fdInfoDirInode)(nil)
 
-func newFDInfoDirInode(task *kernel.Task, inoGen InoGenerator) *kernfs.Dentry {
+func (fs *filesystem) newFDInfoDirInode(task *kernel.Task) *kernfs.Dentry {
 	inode := &fdInfoDirInode{
 		fdDir: fdDir{
-			inoGen: inoGen,
-			task:   task,
+			fs:   fs,
+			task: task,
 		},
 	}
-	inode.InodeAttrs.Init(task.Credentials(), inoGen.NextIno(), linux.ModeDirectory|0555)
+	inode.InodeAttrs.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
 
 	dentry := &kernfs.Dentry{}
 	dentry.Init(inode)
@@ -264,7 +264,7 @@ func (i *fdInfoDirInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, 
 		task: i.task,
 		fd:   fd,
 	}
-	dentry := newTaskOwnedFile(i.task, i.inoGen.NextIno(), 0444, data)
+	dentry := i.fs.newTaskOwnedFile(i.task, i.fs.NextIno(), 0444, data)
 	return dentry.VFSDentry(), nil
 }
 

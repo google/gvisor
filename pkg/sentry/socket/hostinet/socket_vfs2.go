@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -50,8 +49,7 @@ var _ = socket.SocketVFS2(&socketVFS2{})
 
 func newVFS2Socket(t *kernel.Task, family int, stype linux.SockType, protocol int, fd int, flags uint32) (*vfs.FileDescription, *syserr.Error) {
 	mnt := t.Kernel().SocketMount()
-	fs := mnt.Filesystem().Impl().(*kernfs.Filesystem)
-	d := sockfs.NewDentry(t.Credentials(), fs.NextIno())
+	d := sockfs.NewDentry(t.Credentials(), mnt)
 
 	s := &socketVFS2{
 		socketOpsCommon: socketOpsCommon{

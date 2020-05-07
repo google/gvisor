@@ -202,7 +202,7 @@ func (fs *anonFilesystem) StatAt(ctx context.Context, rp *ResolvingPath, opts St
 		Ino:      1,
 		Size:     0,
 		Blocks:   0,
-		DevMajor: 0,
+		DevMajor: linux.UNNAMED_MAJOR,
 		DevMinor: fs.devMinor,
 	}, nil
 }

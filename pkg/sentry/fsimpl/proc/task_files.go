@@ -241,9 +241,9 @@ type commInode struct {
 	task *kernel.Task
 }
 
-func newComm(task *kernel.Task, ino uint64, perm linux.FileMode) *kernfs.Dentry {
+func (fs *filesystem) newComm(task *kernel.Task, ino uint64, perm linux.FileMode) *kernfs.Dentry {
 	inode := &commInode{task: task}
-	inode.DynamicBytesFile.Init(task.Credentials(), ino, &commData{task: task}, perm)
+	inode.DynamicBytesFile.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, &commData{task: task}, perm)
 
 	d := &kernfs.Dentry{}
 	d.Init(inode)
@@ -596,9 +596,9 @@ type exeSymlink struct {
 
 var _ kernfs.Inode = (*exeSymlink)(nil)
 
-func newExeSymlink(task *kernel.Task, ino uint64) *kernfs.Dentry {
+func (fs *filesystem) newExeSymlink(task *kernel.Task, ino uint64) *kernfs.Dentry {
 	inode := &exeSymlink{task: task}
-	inode.Init(task.Credentials(), ino, linux.ModeSymlink|0777)
+	inode.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
 
 	d := &kernfs.Dentry{}
 	d.Init(inode)
@@ -729,7 +729,7 @@ type namespaceSymlink struct {
 	task *kernel.Task
 }
 
-func newNamespaceSymlink(task *kernel.Task, ino uint64, ns string) *kernfs.Dentry {
+func (fs *filesystem) newNamespaceSymlink(task *kernel.Task, ino uint64, ns string) *kernfs.Dentry {
 	// Namespace symlinks should contain the namespace name and the inode number
 	// for the namespace instance, so for example user:[123456]. We currently fake
 	// the inode number by sticking the symlink inode in its place.
@@ -737,7 +737,7 @@ func newNamespaceSymlink(task *kernel.Task, ino uint64, ns string) *kernfs.Dentr
 
 	inode := &namespaceSymlink{task: task}
 	// Note: credentials are overridden by taskOwnedInode.
-	inode.Init(task.Credentials(), ino, target)
+	inode.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, target)
 
 	taskInode := &taskOwnedInode{Inode: inode, owner: task}
 	d := &kernfs.Dentry{}
@@ -780,11 +780,11 @@ type namespaceInode struct {
 var _ kernfs.Inode = (*namespaceInode)(nil)
 
 // Init initializes a namespace inode.
-func (i *namespaceInode) Init(creds *auth.Credentials, ino uint64, perm linux.FileMode) {
+func (i *namespaceInode) Init(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode) {
 	if perm&^linux.PermissionsMask != 0 {
 		panic(fmt.Sprintf("Only permission mask must be set: %x", perm&linux.PermissionsMask))
 	}
-	i.InodeAttrs.Init(creds, ino, linux.ModeRegular|perm)
+	i.InodeAttrs.Init(creds, devMajor, devMinor, ino, linux.ModeRegular|perm)
 }
 
 // Open implements Inode.Open.

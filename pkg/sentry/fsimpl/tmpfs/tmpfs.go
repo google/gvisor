@@ -63,6 +63,9 @@ type filesystem struct {
 	// clock is a realtime clock used to set timestamps in file operations.
 	clock time.Clock
 
+	// devMinor is the filesystem's minor device number. devMinor is immutable.
+	devMinor uint32
+
 	// mu serializes changes to the Dentry tree.
 	mu sync.RWMutex
 
@@ -96,11 +99,6 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	if memFileProvider == nil {
 		panic("MemoryFileProviderFromContext returned nil")
 	}
-	clock := time.RealtimeClockFromContext(ctx)
-	fs := filesystem{
-		memFile: memFileProvider.MemoryFile(),
-		clock:   clock,
-	}
 
 	rootFileType := uint16(linux.S_IFDIR)
 	newFSType := vfs.FilesystemType(&fstype)
@@ -114,6 +112,16 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}
 	}
 
+	devMinor, err := vfsObj.GetAnonBlockDevMinor()
+	if err != nil {
+		return nil, nil, err
+	}
+	clock := time.RealtimeClockFromContext(ctx)
+	fs := filesystem{
+		memFile:  memFileProvider.MemoryFile(),
+		clock:    clock,
+		devMinor: devMinor,
+	}
 	fs.vfsfs.Init(vfsObj, newFSType, &fs)
 
 	var root *dentry
@@ -125,6 +133,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	case linux.S_IFDIR:
 		root = &fs.newDirectory(creds, 01777).dentry
 	default:
+		fs.vfsfs.DecRef()
 		return nil, nil, fmt.Errorf("invalid tmpfs root file type: %#o", rootFileType)
 	}
 	return &fs.vfsfs, &root.vfsd, nil
@@ -132,6 +141,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 // Release implements vfs.FilesystemImpl.Release.
 func (fs *filesystem) Release() {
+	fs.vfsfs.VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
 }
 
 // dentry implements vfs.DentryImpl.
@@ -188,8 +198,8 @@ func (d *dentry) DecRef() {
 
 // inode represents a filesystem object.
 type inode struct {
-	// clock is a realtime clock used to set timestamps in file operations.
-	clock time.Clock
+	// fs is the owning filesystem. fs is immutable.
+	fs *filesystem
 
 	// refs is a reference count. refs is accessed using atomic memory
 	// operations.
@@ -232,7 +242,7 @@ func (i *inode) init(impl interface{}, fs *filesystem, creds *auth.Credentials, 
 	if mode.FileType() == 0 {
 		panic("file type is required in FileMode")
 	}
-	i.clock = fs.clock
+	i.fs = fs
 	i.refs = 1
 	i.mode = uint32(mode)
 	i.uid = uint32(creds.EffectiveKUID)
@@ -327,7 +337,8 @@ func (i *inode) statTo(stat *linux.Statx) {
 	stat.Atime = linux.NsecToStatxTimestamp(i.atime)
 	stat.Ctime = linux.NsecToStatxTimestamp(i.ctime)
 	stat.Mtime = linux.NsecToStatxTimestamp(i.mtime)
-	// TODO(gvisor.dev/issue/1197): Device number.
+	stat.DevMajor = linux.UNNAMED_MAJOR
+	stat.DevMinor = i.fs.devMinor
 	switch impl := i.impl.(type) {
 	case *regularFile:
 		stat.Mask |= linux.STATX_SIZE | linux.STATX_BLOCKS
@@ -401,7 +412,7 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, stat *linu
 			return syserror.EINVAL
 		}
 	}
-	now := i.clock.Now().Nanoseconds()
+	now := i.fs.clock.Now().Nanoseconds()
 	if mask&linux.STATX_ATIME != 0 {
 		if stat.Atime.Nsec == linux.UTIME_NOW {
 			atomic.StoreInt64(&i.atime, now)
@@ -518,7 +529,7 @@ func (i *inode) touchAtime(mnt *vfs.Mount) {
 	if err := mnt.CheckBeginWrite(); err != nil {
 		return
 	}
-	now := i.clock.Now().Nanoseconds()
+	now := i.fs.clock.Now().Nanoseconds()
 	i.mu.Lock()
 	atomic.StoreInt64(&i.atime, now)
 	i.mu.Unlock()
@@ -527,7 +538,7 @@ func (i *inode) touchAtime(mnt *vfs.Mount) {
 
 // Preconditions: The caller has called vfs.Mount.CheckBeginWrite().
 func (i *inode) touchCtime() {
-	now := i.clock.Now().Nanoseconds()
+	now := i.fs.clock.Now().Nanoseconds()
 	i.mu.Lock()
 	atomic.StoreInt64(&i.ctime, now)
 	i.mu.Unlock()
@@ -535,7 +546,7 @@ func (i *inode) touchCtime() {
 
 // Preconditions: The caller has called vfs.Mount.CheckBeginWrite().
 func (i *inode) touchCMtime() {
-	now := i.clock.Now().Nanoseconds()
+	now := i.fs.clock.Now().Nanoseconds()
 	i.mu.Lock()
 	atomic.StoreInt64(&i.mtime, now)
 	atomic.StoreInt64(&i.ctime, now)
@@ -545,7 +556,7 @@ func (i *inode) touchCMtime() {
 // Preconditions: The caller has called vfs.Mount.CheckBeginWrite() and holds
 // inode.mu.
 func (i *inode) touchCMtimeLocked() {
-	now := i.clock.Now().Nanoseconds()
+	now := i.fs.clock.Now().Nanoseconds()
 	atomic.StoreInt64(&i.mtime, now)
 	atomic.StoreInt64(&i.ctime, now)
 }

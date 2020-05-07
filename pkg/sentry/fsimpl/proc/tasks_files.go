@@ -41,9 +41,9 @@ type selfSymlink struct {
 
 var _ kernfs.Inode = (*selfSymlink)(nil)
 
-func newSelfSymlink(creds *auth.Credentials, ino uint64, pidns *kernel.PIDNamespace) *kernfs.Dentry {
+func (fs *filesystem) newSelfSymlink(creds *auth.Credentials, ino uint64, pidns *kernel.PIDNamespace) *kernfs.Dentry {
 	inode := &selfSymlink{pidns: pidns}
-	inode.Init(creds, ino, linux.ModeSymlink|0777)
+	inode.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
 
 	d := &kernfs.Dentry{}
 	d.Init(inode)
@@ -83,9 +83,9 @@ type threadSelfSymlink struct {
 
 var _ kernfs.Inode = (*threadSelfSymlink)(nil)
 
-func newThreadSelfSymlink(creds *auth.Credentials, ino uint64, pidns *kernel.PIDNamespace) *kernfs.Dentry {
+func (fs *filesystem) newThreadSelfSymlink(creds *auth.Credentials, ino uint64, pidns *kernel.PIDNamespace) *kernfs.Dentry {
 	inode := &threadSelfSymlink{pidns: pidns}
-	inode.Init(creds, ino, linux.ModeSymlink|0777)
+	inode.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
 
 	d := &kernfs.Dentry{}
 	d.Init(inode)

@@ -37,7 +37,7 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-func newTaskNetDir(task *kernel.Task, inoGen InoGenerator) *kernfs.Dentry {
+func (fs *filesystem) newTaskNetDir(task *kernel.Task) *kernfs.Dentry {
 	k := task.Kernel()
 	pidns := task.PIDNamespace()
 	root := auth.NewRootCredentials(pidns.UserNamespace())
@@ -57,37 +57,37 @@ func newTaskNetDir(task *kernel.Task, inoGen InoGenerator) *kernfs.Dentry {
 		// TODO(gvisor.dev/issue/1833): Make sure file contents reflect the task
 		// network namespace.
 		contents = map[string]*kernfs.Dentry{
-			"dev":  newDentry(root, inoGen.NextIno(), 0444, &netDevData{stack: stack}),
-			"snmp": newDentry(root, inoGen.NextIno(), 0444, &netSnmpData{stack: stack}),
+			"dev":  fs.newDentry(root, fs.NextIno(), 0444, &netDevData{stack: stack}),
+			"snmp": fs.newDentry(root, fs.NextIno(), 0444, &netSnmpData{stack: stack}),
 
 			// The following files are simple stubs until they are implemented in
 			// netstack, if the file contains a header the stub is just the header
 			// otherwise it is an empty file.
-			"arp":       newDentry(root, inoGen.NextIno(), 0444, newStaticFile(arp)),
-			"netlink":   newDentry(root, inoGen.NextIno(), 0444, newStaticFile(netlink)),
-			"netstat":   newDentry(root, inoGen.NextIno(), 0444, &netStatData{}),
-			"packet":    newDentry(root, inoGen.NextIno(), 0444, newStaticFile(packet)),
-			"protocols": newDentry(root, inoGen.NextIno(), 0444, newStaticFile(protocols)),
+			"arp":       fs.newDentry(root, fs.NextIno(), 0444, newStaticFile(arp)),
+			"netlink":   fs.newDentry(root, fs.NextIno(), 0444, newStaticFile(netlink)),
+			"netstat":   fs.newDentry(root, fs.NextIno(), 0444, &netStatData{}),
+			"packet":    fs.newDentry(root, fs.NextIno(), 0444, newStaticFile(packet)),
+			"protocols": fs.newDentry(root, fs.NextIno(), 0444, newStaticFile(protocols)),
 
 			// Linux sets psched values to: nsec per usec, psched tick in ns, 1000000,
 			// high res timer ticks per sec (ClockGetres returns 1ns resolution).
-			"psched": newDentry(root, inoGen.NextIno(), 0444, newStaticFile(psched)),
-			"ptype":  newDentry(root, inoGen.NextIno(), 0444, newStaticFile(ptype)),
-			"route":  newDentry(root, inoGen.NextIno(), 0444, &netRouteData{stack: stack}),
-			"tcp":    newDentry(root, inoGen.NextIno(), 0444, &netTCPData{kernel: k}),
-			"udp":    newDentry(root, inoGen.NextIno(), 0444, &netUDPData{kernel: k}),
-			"unix":   newDentry(root, inoGen.NextIno(), 0444, &netUnixData{kernel: k}),
+			"psched": fs.newDentry(root, fs.NextIno(), 0444, newStaticFile(psched)),
+			"ptype":  fs.newDentry(root, fs.NextIno(), 0444, newStaticFile(ptype)),
+			"route":  fs.newDentry(root, fs.NextIno(), 0444, &netRouteData{stack: stack}),
+			"tcp":    fs.newDentry(root, fs.NextIno(), 0444, &netTCPData{kernel: k}),
+			"udp":    fs.newDentry(root, fs.NextIno(), 0444, &netUDPData{kernel: k}),
+			"unix":   fs.newDentry(root, fs.NextIno(), 0444, &netUnixData{kernel: k}),
 		}
 
 		if stack.SupportsIPv6() {
-			contents["if_inet6"] = newDentry(root, inoGen.NextIno(), 0444, &ifinet6{stack: stack})
-			contents["ipv6_route"] = newDentry(root, inoGen.NextIno(), 0444, newStaticFile(""))
-			contents["tcp6"] = newDentry(root, inoGen.NextIno(), 0444, &netTCP6Data{kernel: k})
-			contents["udp6"] = newDentry(root, inoGen.NextIno(), 0444, newStaticFile(upd6))
+			contents["if_inet6"] = fs.newDentry(root, fs.NextIno(), 0444, &ifinet6{stack: stack})
+			contents["ipv6_route"] = fs.newDentry(root, fs.NextIno(), 0444, newStaticFile(""))
+			contents["tcp6"] = fs.newDentry(root, fs.NextIno(), 0444, &netTCP6Data{kernel: k})
+			contents["udp6"] = fs.newDentry(root, fs.NextIno(), 0444, newStaticFile(upd6))
 		}
 	}
 
-	return newTaskOwnedDir(task, inoGen.NextIno(), 0555, contents)
+	return fs.newTaskOwnedDir(task, fs.NextIno(), 0555, contents)
 }
 
 // ifinet6 implements vfs.DynamicBytesSource for /proc/net/if_inet6.

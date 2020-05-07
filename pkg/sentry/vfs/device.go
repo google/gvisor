@@ -103,7 +103,7 @@ func (vfs *VirtualFilesystem) OpenDeviceSpecialFile(ctx context.Context, mnt *Mo
 }
 
 // GetAnonBlockDevMinor allocates and returns an unused minor device number for
-// an "anonymous" block device with major number 0.
+// an "anonymous" block device with major number UNNAMED_MAJOR.
 func (vfs *VirtualFilesystem) GetAnonBlockDevMinor() (uint32, error) {
 	vfs.anonBlockDevMinorMu.Lock()
 	defer vfs.anonBlockDevMinorMu.Unlock()

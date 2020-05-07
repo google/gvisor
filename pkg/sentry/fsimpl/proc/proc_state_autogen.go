@@ -23,9 +23,9 @@ func (x *subtasksInode) save(m state.Map) {
 	m.Save("InodeAttrs", &x.InodeAttrs)
 	m.Save("OrderedChildren", &x.OrderedChildren)
 	m.Save("AlwaysValid", &x.AlwaysValid)
+	m.Save("fs", &x.fs)
 	m.Save("task", &x.task)
 	m.Save("pidns", &x.pidns)
-	m.Save("inoGen", &x.inoGen)
 	m.Save("cgroupControllers", &x.cgroupControllers)
 }
 
@@ -36,9 +36,9 @@ func (x *subtasksInode) load(m state.Map) {
 	m.Load("InodeAttrs", &x.InodeAttrs)
 	m.Load("OrderedChildren", &x.OrderedChildren)
 	m.Load("AlwaysValid", &x.AlwaysValid)
+	m.Load("fs", &x.fs)
 	m.Load("task", &x.task)
 	m.Load("pidns", &x.pidns)
-	m.Load("inoGen", &x.inoGen)
 	m.Load("cgroupControllers", &x.cgroupControllers)
 }
 
@@ -475,7 +475,7 @@ func (x *tasksInode) save(m state.Map) {
 	m.Save("InodeAttrs", &x.InodeAttrs)
 	m.Save("OrderedChildren", &x.OrderedChildren)
 	m.Save("AlwaysValid", &x.AlwaysValid)
-	m.Save("inoGen", &x.inoGen)
+	m.Save("fs", &x.fs)
 	m.Save("pidns", &x.pidns)
 	m.Save("selfSymlink", &x.selfSymlink)
 	m.Save("threadSelfSymlink", &x.threadSelfSymlink)
@@ -489,7 +489,7 @@ func (x *tasksInode) load(m state.Map) {
 	m.Load("InodeAttrs", &x.InodeAttrs)
 	m.Load("OrderedChildren", &x.OrderedChildren)
 	m.Load("AlwaysValid", &x.AlwaysValid)
-	m.Load("inoGen", &x.inoGen)
+	m.Load("fs", &x.fs)
 	m.Load("pidns", &x.pidns)
 	m.Load("selfSymlink", &x.selfSymlink)
 	m.Load("threadSelfSymlink", &x.threadSelfSymlink)
