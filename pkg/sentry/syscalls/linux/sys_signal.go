@@ -295,7 +295,7 @@ func RtSigprocmask(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	}
 	oldmask := t.SignalMask()
 	if setaddr != 0 {
-		mask, err := copyInSigSet(t, setaddr, sigsetsize)
+		mask, err := CopyInSigSet(t, setaddr, sigsetsize)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -366,7 +366,7 @@ func RtSigtimedwait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	timespec := args[2].Pointer()
 	sigsetsize := args[3].SizeT()
 
-	mask, err := copyInSigSet(t, sigset, sigsetsize)
+	mask, err := CopyInSigSet(t, sigset, sigsetsize)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -518,7 +518,7 @@ func RestartSyscall(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 // sharedSignalfd is shared between the two calls.
 func sharedSignalfd(t *kernel.Task, fd int32, sigset usermem.Addr, sigsetsize uint, flags int32) (uintptr, *kernel.SyscallControl, error) {
 	// Copy in the signal mask.
-	mask, err := copyInSigSet(t, sigset, sigsetsize)
+	mask, err := CopyInSigSet(t, sigset, sigsetsize)
 	if err != nil {
 		return 0, nil, err
 	}
