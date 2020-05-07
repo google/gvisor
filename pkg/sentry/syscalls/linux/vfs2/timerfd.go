@@ -17,9 +17,9 @@ package vfs2
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/timerfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
-	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -32,9 +32,12 @@ func TimerfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 		return 0, nil, syserror.EINVAL
 	}
 
-	var fileFlags uint32
+	// Timerfds aren't writable per se (their implementation of Write just
+	// returns EINVAL), but they are "opened for writing", which is necessary
+	// to actually reach said implementation of Write.
+	fileFlags := uint32(linux.O_RDWR)
 	if flags&linux.TFD_NONBLOCK != 0 {
-		fileFlags = linux.O_NONBLOCK
+		fileFlags |= linux.O_NONBLOCK
 	}
 
 	var clock ktime.Clock
@@ -46,10 +49,8 @@ func TimerfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	default:
 		return 0, nil, syserror.EINVAL
 	}
-	// Timerfds aren't writable per se (their implementation of Write just
-	// returns EINVAL), but they are "opened for writing", which is necessary
-	// to actually reach said implementation of Write.
-	file, err := t.Kernel().VFS().NewTimerFD(clock, linux.O_RDWR|fileFlags)
+	vfsObj := t.Kernel().VFS()
+	file, err := timerfd.New(vfsObj, clock, fileFlags)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -80,7 +81,7 @@ func TimerfdSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	}
 	defer file.DecRef()
 
-	tfd, ok := file.Impl().(*vfs.TimerFileDescription)
+	tfd, ok := file.Impl().(*timerfd.TimerFileDescription)
 	if !ok {
 		return 0, nil, syserror.EINVAL
 	}
@@ -114,7 +115,7 @@ func TimerfdGettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	}
 	defer file.DecRef()
 
-	tfd, ok := file.Impl().(*vfs.TimerFileDescription)
+	tfd, ok := file.Impl().(*timerfd.TimerFileDescription)
 	if !ok {
 		return 0, nil, syserror.EINVAL
 	}
