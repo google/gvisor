@@ -91,8 +91,6 @@ func (fs *anonFilesystem) Sync(ctx context.Context) error {
 }
 
 // AccessAt implements vfs.Filesystem.Impl.AccessAt.
-//
-// TODO(gvisor.dev/issue/1965): Implement access permissions.
 func (fs *anonFilesystem) AccessAt(ctx context.Context, rp *ResolvingPath, creds *auth.Credentials, ats AccessTypes) error {
 	if !rp.Done() {
 		return syserror.ENOTDIR
