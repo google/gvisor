@@ -20,6 +20,7 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -469,6 +470,255 @@ func TestInvalidFragments(t *testing.T) {
 			}
 			if got, want := s.Stats().IP.MalformedFragmentsReceived.Value(), tc.wantMalformedFragments; got != want {
 				t.Errorf("incorrect Stats.IP.MalformedFragmentsReceived, got: %d, want: %d", got, want)
+			}
+		})
+	}
+}
+
+// TestReceiveFragments feeds fragments in through the incoming packet path to
+// test reassembly
+func TestReceiveFragments(t *testing.T) {
+	const addr1 = "\x0c\xa8\x00\x01" // 192.168.0.1
+	const addr2 = "\x0c\xa8\x00\x02" // 192.168.0.2
+	const nicID = 1
+
+	// Build and return a UDP header containing payload.
+	udpGen := func(payloadLen int, multiplier uint8) buffer.View {
+		payload := buffer.NewView(payloadLen)
+		for i := 0; i < len(payload); i++ {
+			payload[i] = uint8(i) * multiplier
+		}
+
+		udpLength := header.UDPMinimumSize + len(payload)
+
+		hdr := buffer.NewPrependable(udpLength)
+		u := header.UDP(hdr.Prepend(udpLength))
+		u.Encode(&header.UDPFields{
+			SrcPort: 5555,
+			DstPort: 80,
+			Length:  uint16(udpLength),
+		})
+		copy(u.Payload(), payload)
+		sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, addr1, addr2, uint16(udpLength))
+		sum = header.Checksum(payload, sum)
+		u.SetChecksum(^u.CalculateChecksum(sum))
+		return hdr.View()
+	}
+
+	// UDP header plus a payload of 0..256
+	ipv4Payload1 := udpGen(256, 1)
+	udpPayload1 := ipv4Payload1[header.UDPMinimumSize:]
+	// UDP header plus a payload of 0..256 in increments of 2.
+	ipv4Payload2 := udpGen(128, 2)
+	udpPayload2 := ipv4Payload2[header.UDPMinimumSize:]
+
+	type fragmentData struct {
+		id             uint16
+		flags          uint8
+		fragmentOffset uint16
+		payload        buffer.View
+	}
+
+	tests := []struct {
+		name             string
+		fragments        []fragmentData
+		expectedPayloads [][]byte
+	}{
+		{
+			name: "No fragmentation",
+			fragments: []fragmentData{
+				{
+					id:             1,
+					flags:          0,
+					fragmentOffset: 0,
+					payload:        ipv4Payload1,
+				},
+			},
+			expectedPayloads: [][]byte{udpPayload1},
+		},
+		{
+			name: "More fragments without payload",
+			fragments: []fragmentData{
+				{
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload1,
+				},
+			},
+			expectedPayloads: nil,
+		},
+		{
+			name: "Non-zero fragment offset without payload",
+			fragments: []fragmentData{
+				{
+					id:             1,
+					flags:          0,
+					fragmentOffset: 8,
+					payload:        ipv4Payload1,
+				},
+			},
+			expectedPayloads: nil,
+		},
+		{
+			name: "Two fragments",
+			fragments: []fragmentData{
+				{
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload1[:64],
+				},
+				{
+					id:             1,
+					flags:          0,
+					fragmentOffset: 64,
+					payload:        ipv4Payload1[64:],
+				},
+			},
+			expectedPayloads: [][]byte{udpPayload1},
+		},
+		{
+			name: "Second fragment has MoreFlags set",
+			fragments: []fragmentData{
+				{
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload1[:64],
+				},
+				{
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 64,
+					payload:        ipv4Payload1[64:],
+				},
+			},
+			expectedPayloads: nil,
+		},
+		{
+			name: "Two fragments with different IDs",
+			fragments: []fragmentData{
+				{
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload1[:64],
+				},
+				{
+					id:             2,
+					flags:          0,
+					fragmentOffset: 64,
+					payload:        ipv4Payload1[64:],
+				},
+			},
+			expectedPayloads: nil,
+		},
+		{
+			name: "Two interleaved fragmented packets",
+			fragments: []fragmentData{
+				{
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload1[:64],
+				},
+				{
+					id:             2,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload2[:64],
+				},
+				{
+					id:             1,
+					flags:          0,
+					fragmentOffset: 64,
+					payload:        ipv4Payload1[64:],
+				},
+				{
+					id:             2,
+					flags:          0,
+					fragmentOffset: 64,
+					payload:        ipv4Payload2[64:],
+				},
+			},
+			expectedPayloads: [][]byte{udpPayload1, udpPayload2},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// Setup a stack and endpoint.
+			s := stack.New(stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
+				TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+			})
+			e := channel.New(0, 1280, tcpip.LinkAddress("\xf0\x00"))
+			if err := s.CreateNIC(nicID, e); err != nil {
+				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+			}
+			if err := s.AddAddress(nicID, header.IPv4ProtocolNumber, addr2); err != nil {
+				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv4ProtocolNumber, addr2, err)
+			}
+
+			wq := waiter.Queue{}
+			we, ch := waiter.NewChannelEntry(nil)
+			wq.EventRegister(&we, waiter.EventIn)
+			defer wq.EventUnregister(&we)
+			defer close(ch)
+			ep, err := s.NewEndpoint(udp.ProtocolNumber, header.IPv4ProtocolNumber, &wq)
+			if err != nil {
+				t.Fatalf("NewEndpoint(%d, %d, _): %s", udp.ProtocolNumber, header.IPv4ProtocolNumber, err)
+			}
+			defer ep.Close()
+
+			bindAddr := tcpip.FullAddress{Addr: addr2, Port: 80}
+			if err := ep.Bind(bindAddr); err != nil {
+				t.Fatalf("Bind(%+v): %s", bindAddr, err)
+			}
+
+			// Prepare and send the fragments.
+			for _, frag := range test.fragments {
+				hdr := buffer.NewPrependable(header.IPv4MinimumSize)
+
+				// Serialize IPv4 fixed header.
+				ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
+				ip.Encode(&header.IPv4Fields{
+					IHL:            header.IPv4MinimumSize,
+					TotalLength:    header.IPv4MinimumSize + uint16(len(frag.payload)),
+					ID:             frag.id,
+					Flags:          frag.flags,
+					FragmentOffset: frag.fragmentOffset,
+					TTL:            64,
+					Protocol:       uint8(header.UDPProtocolNumber),
+					SrcAddr:        addr1,
+					DstAddr:        addr2,
+				})
+
+				vv := hdr.View().ToVectorisedView()
+				vv.AppendView(frag.payload)
+
+				e.InjectInbound(header.IPv4ProtocolNumber, stack.PacketBuffer{
+					Data: vv,
+				})
+			}
+
+			if got, want := s.Stats().UDP.PacketsReceived.Value(), uint64(len(test.expectedPayloads)); got != want {
+				t.Errorf("got UDP Rx Packets = %d, want = %d", got, want)
+			}
+
+			for i, expectedPayload := range test.expectedPayloads {
+				gotPayload, _, err := ep.Read(nil)
+				if err != nil {
+					t.Fatalf("(i=%d) Read(nil): %s", i, err)
+				}
+				if diff := cmp.Diff(buffer.View(expectedPayload), gotPayload); diff != "" {
+					t.Errorf("(i=%d) got UDP payload mismatch (-want +got):\n%s", i, diff)
+				}
+			}
+
+			if gotPayload, _, err := ep.Read(nil); err != tcpip.ErrWouldBlock {
+				t.Fatalf("(last) got Read(nil) = (%x, _, %v), want = (_, _, %s)", gotPayload, err, tcpip.ErrWouldBlock)
 			}
 		})
 	}
