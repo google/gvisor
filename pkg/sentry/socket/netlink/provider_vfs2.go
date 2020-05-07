@@ -16,7 +16,6 @@ package netlink
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -52,8 +51,7 @@ func (*socketProviderVFS2) Socket(t *kernel.Task, stype linux.SockType, protocol
 
 	vfsfd := &s.vfsfd
 	mnt := t.Kernel().SocketMount()
-	fs := mnt.Filesystem().Impl().(*kernfs.Filesystem)
-	d := sockfs.NewDentry(t.Credentials(), fs.NextIno())
+	d := sockfs.NewDentry(t.Credentials(), mnt)
 	if err := vfsfd.Init(s, linux.O_RDWR, mnt, d, &vfs.FileDescriptionOptions{
 		DenyPRead:         true,
 		DenyPWrite:        true,

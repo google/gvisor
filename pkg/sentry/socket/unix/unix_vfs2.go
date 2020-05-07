@@ -19,7 +19,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
@@ -50,8 +49,7 @@ var _ = socket.SocketVFS2(&SocketVFS2{})
 // returns a corresponding file description.
 func NewSockfsFile(t *kernel.Task, ep transport.Endpoint, stype linux.SockType) (*vfs.FileDescription, *syserr.Error) {
 	mnt := t.Kernel().SocketMount()
-	fs := mnt.Filesystem().Impl().(*kernfs.Filesystem)
-	d := sockfs.NewDentry(t.Credentials(), fs.NextIno())
+	d := sockfs.NewDentry(t.Credentials(), mnt)
 
 	fd, err := NewFileDescription(ep, stype, linux.O_RDWR, mnt, d)
 	if err != nil {

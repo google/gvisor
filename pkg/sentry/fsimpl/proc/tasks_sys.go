@@ -30,89 +30,89 @@ import (
 )
 
 // newSysDir returns the dentry corresponding to /proc/sys directory.
-func newSysDir(root *auth.Credentials, inoGen InoGenerator, k *kernel.Kernel) *kernfs.Dentry {
-	return kernfs.NewStaticDir(root, inoGen.NextIno(), 0555, map[string]*kernfs.Dentry{
-		"kernel": kernfs.NewStaticDir(root, inoGen.NextIno(), 0555, map[string]*kernfs.Dentry{
-			"hostname": newDentry(root, inoGen.NextIno(), 0444, &hostnameData{}),
-			"shmall":   newDentry(root, inoGen.NextIno(), 0444, shmData(linux.SHMALL)),
-			"shmmax":   newDentry(root, inoGen.NextIno(), 0444, shmData(linux.SHMMAX)),
-			"shmmni":   newDentry(root, inoGen.NextIno(), 0444, shmData(linux.SHMMNI)),
+func (fs *filesystem) newSysDir(root *auth.Credentials, k *kernel.Kernel) *kernfs.Dentry {
+	return kernfs.NewStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
+		"kernel": kernfs.NewStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
+			"hostname": fs.newDentry(root, fs.NextIno(), 0444, &hostnameData{}),
+			"shmall":   fs.newDentry(root, fs.NextIno(), 0444, shmData(linux.SHMALL)),
+			"shmmax":   fs.newDentry(root, fs.NextIno(), 0444, shmData(linux.SHMMAX)),
+			"shmmni":   fs.newDentry(root, fs.NextIno(), 0444, shmData(linux.SHMMNI)),
 		}),
-		"vm": kernfs.NewStaticDir(root, inoGen.NextIno(), 0555, map[string]*kernfs.Dentry{
-			"mmap_min_addr":     newDentry(root, inoGen.NextIno(), 0444, &mmapMinAddrData{k: k}),
-			"overcommit_memory": newDentry(root, inoGen.NextIno(), 0444, newStaticFile("0\n")),
+		"vm": kernfs.NewStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
+			"mmap_min_addr":     fs.newDentry(root, fs.NextIno(), 0444, &mmapMinAddrData{k: k}),
+			"overcommit_memory": fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0\n")),
 		}),
-		"net": newSysNetDir(root, inoGen, k),
+		"net": fs.newSysNetDir(root, k),
 	})
 }
 
 // newSysNetDir returns the dentry corresponding to /proc/sys/net directory.
-func newSysNetDir(root *auth.Credentials, inoGen InoGenerator, k *kernel.Kernel) *kernfs.Dentry {
+func (fs *filesystem) newSysNetDir(root *auth.Credentials, k *kernel.Kernel) *kernfs.Dentry {
 	var contents map[string]*kernfs.Dentry
 
 	// TODO(gvisor.dev/issue/1833): Support for using the network stack in the
 	// network namespace of the calling process.
 	if stack := k.RootNetworkNamespace().Stack(); stack != nil {
 		contents = map[string]*kernfs.Dentry{
-			"ipv4": kernfs.NewStaticDir(root, inoGen.NextIno(), 0555, map[string]*kernfs.Dentry{
-				"tcp_sack": newDentry(root, inoGen.NextIno(), 0644, &tcpSackData{stack: stack}),
+			"ipv4": kernfs.NewStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
+				"tcp_sack": fs.newDentry(root, fs.NextIno(), 0644, &tcpSackData{stack: stack}),
 
 				// The following files are simple stubs until they are implemented in
 				// netstack, most of these files are configuration related. We use the
 				// value closest to the actual netstack behavior or any empty file, all
 				// of these files will have mode 0444 (read-only for all users).
-				"ip_local_port_range":     newDentry(root, inoGen.NextIno(), 0444, newStaticFile("16000   65535")),
-				"ip_local_reserved_ports": newDentry(root, inoGen.NextIno(), 0444, newStaticFile("")),
-				"ipfrag_time":             newDentry(root, inoGen.NextIno(), 0444, newStaticFile("30")),
-				"ip_nonlocal_bind":        newDentry(root, inoGen.NextIno(), 0444, newStaticFile("0")),
-				"ip_no_pmtu_disc":         newDentry(root, inoGen.NextIno(), 0444, newStaticFile("1")),
+				"ip_local_port_range":     fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("16000   65535")),
+				"ip_local_reserved_ports": fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("")),
+				"ipfrag_time":             fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("30")),
+				"ip_nonlocal_bind":        fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
+				"ip_no_pmtu_disc":         fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("1")),
 
 				// tcp_allowed_congestion_control tell the user what they are able to
 				// do as an unprivledged process so we leave it empty.
-				"tcp_allowed_congestion_control":   newDentry(root, inoGen.NextIno(), 0444, newStaticFile("")),
-				"tcp_available_congestion_control": newDentry(root, inoGen.NextIno(), 0444, newStaticFile("reno")),
-				"tcp_congestion_control":           newDentry(root, inoGen.NextIno(), 0444, newStaticFile("reno")),
+				"tcp_allowed_congestion_control":   fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("")),
+				"tcp_available_congestion_control": fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("reno")),
+				"tcp_congestion_control":           fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("reno")),
 
 				// Many of the following stub files are features netstack doesn't
 				// support. The unsupported features return "0" to indicate they are
 				// disabled.
-				"tcp_base_mss":              newDentry(root, inoGen.NextIno(), 0444, newStaticFile("1280")),
-				"tcp_dsack":                 newDentry(root, inoGen.NextIno(), 0444, newStaticFile("0")),
-				"tcp_early_retrans":         newDentry(root, inoGen.NextIno(), 0444, newStaticFile("0")),
-				"tcp_fack":                  newDentry(root, inoGen.NextIno(), 0444, newStaticFile("0")),
-				"tcp_fastopen":              newDentry(root, inoGen.NextIno(), 0444, newStaticFile("0")),
-				"tcp_fastopen_key":          newDentry(root, inoGen.NextIno(), 0444, newStaticFile("")),
-				"tcp_invalid_ratelimit":     newDentry(root, inoGen.NextIno(), 0444, newStaticFile("0")),
-				"tcp_keepalive_intvl":       newDentry(root, inoGen.NextIno(), 0444, newStaticFile("0")),
-				"tcp_keepalive_probes":      newDentry(root, inoGen.NextIno(), 0444, newStaticFile("0")),
-				"tcp_keepalive_time":        newDentry(root, inoGen.NextIno(), 0444, newStaticFile("7200")),
-				"tcp_mtu_probing":           newDentry(root, inoGen.NextIno(), 0444, newStaticFile("0")),
-				"tcp_no_metrics_save":       newDentry(root, inoGen.NextIno(), 0444, newStaticFile("1")),
-				"tcp_probe_interval":        newDentry(root, inoGen.NextIno(), 0444, newStaticFile("0")),
-				"tcp_probe_threshold":       newDentry(root, inoGen.NextIno(), 0444, newStaticFile("0")),
-				"tcp_retries1":              newDentry(root, inoGen.NextIno(), 0444, newStaticFile("3")),
-				"tcp_retries2":              newDentry(root, inoGen.NextIno(), 0444, newStaticFile("15")),
-				"tcp_rfc1337":               newDentry(root, inoGen.NextIno(), 0444, newStaticFile("1")),
-				"tcp_slow_start_after_idle": newDentry(root, inoGen.NextIno(), 0444, newStaticFile("1")),
-				"tcp_synack_retries":        newDentry(root, inoGen.NextIno(), 0444, newStaticFile("5")),
-				"tcp_syn_retries":           newDentry(root, inoGen.NextIno(), 0444, newStaticFile("3")),
-				"tcp_timestamps":            newDentry(root, inoGen.NextIno(), 0444, newStaticFile("1")),
+				"tcp_base_mss":              fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("1280")),
+				"tcp_dsack":                 fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
+				"tcp_early_retrans":         fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
+				"tcp_fack":                  fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
+				"tcp_fastopen":              fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
+				"tcp_fastopen_key":          fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("")),
+				"tcp_invalid_ratelimit":     fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
+				"tcp_keepalive_intvl":       fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
+				"tcp_keepalive_probes":      fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
+				"tcp_keepalive_time":        fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("7200")),
+				"tcp_mtu_probing":           fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
+				"tcp_no_metrics_save":       fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("1")),
+				"tcp_probe_interval":        fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
+				"tcp_probe_threshold":       fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
+				"tcp_retries1":              fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("3")),
+				"tcp_retries2":              fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("15")),
+				"tcp_rfc1337":               fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("1")),
+				"tcp_slow_start_after_idle": fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("1")),
+				"tcp_synack_retries":        fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("5")),
+				"tcp_syn_retries":           fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("3")),
+				"tcp_timestamps":            fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("1")),
 			}),
-			"core": kernfs.NewStaticDir(root, inoGen.NextIno(), 0555, map[string]*kernfs.Dentry{
-				"default_qdisc": newDentry(root, inoGen.NextIno(), 0444, newStaticFile("pfifo_fast")),
-				"message_burst": newDentry(root, inoGen.NextIno(), 0444, newStaticFile("10")),
-				"message_cost":  newDentry(root, inoGen.NextIno(), 0444, newStaticFile("5")),
-				"optmem_max":    newDentry(root, inoGen.NextIno(), 0444, newStaticFile("0")),
-				"rmem_default":  newDentry(root, inoGen.NextIno(), 0444, newStaticFile("212992")),
-				"rmem_max":      newDentry(root, inoGen.NextIno(), 0444, newStaticFile("212992")),
-				"somaxconn":     newDentry(root, inoGen.NextIno(), 0444, newStaticFile("128")),
-				"wmem_default":  newDentry(root, inoGen.NextIno(), 0444, newStaticFile("212992")),
-				"wmem_max":      newDentry(root, inoGen.NextIno(), 0444, newStaticFile("212992")),
+			"core": kernfs.NewStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
+				"default_qdisc": fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("pfifo_fast")),
+				"message_burst": fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("10")),
+				"message_cost":  fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("5")),
+				"optmem_max":    fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("0")),
+				"rmem_default":  fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("212992")),
+				"rmem_max":      fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("212992")),
+				"somaxconn":     fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("128")),
+				"wmem_default":  fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("212992")),
+				"wmem_max":      fs.newDentry(root, fs.NextIno(), 0444, newStaticFile("212992")),
 			}),
 		}
 	}
 
-	return kernfs.NewStaticDir(root, inoGen.NextIno(), 0555, contents)
+	return kernfs.NewStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, contents)
 }
 
 // mmapMinAddrData implements vfs.DynamicBytesSource for

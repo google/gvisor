@@ -20,7 +20,6 @@ go_library(
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
-        "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/fsimpl/sockfs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",

@@ -37,6 +37,8 @@ type FilesystemType struct{}
 // filesystem implements vfs.FilesystemImpl.
 type filesystem struct {
 	kernfs.Filesystem
+
+	devMinor uint32
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -46,7 +48,14 @@ func (FilesystemType) Name() string {
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
-	fs := &filesystem{}
+	devMinor, err := vfsObj.GetAnonBlockDevMinor()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	fs := &filesystem{
+		devMinor: devMinor,
+	}
 	fs.VFSFilesystem().Init(vfsObj, &fsType, fs)
 	k := kernel.KernelFromContext(ctx)
 	maxCPUCores := k.ApplicationCores()
@@ -77,6 +86,12 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	return fs.VFSFilesystem(), root.VFSDentry(), nil
 }
 
+// Release implements vfs.FilesystemImpl.Release.
+func (fs *filesystem) Release() {
+	fs.Filesystem.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
+	fs.Filesystem.Release()
+}
+
 // dir implements kernfs.Inode.
 type dir struct {
 	kernfs.InodeAttrs
@@ -90,7 +105,7 @@ type dir struct {
 
 func (fs *filesystem) newDir(creds *auth.Credentials, mode linux.FileMode, contents map[string]*kernfs.Dentry) *kernfs.Dentry {
 	d := &dir{}
-	d.InodeAttrs.Init(creds, fs.NextIno(), linux.ModeDirectory|0755)
+	d.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0755)
 	d.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	d.dentry.Init(d)
 
@@ -127,7 +142,7 @@ func (c *cpuFile) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 func (fs *filesystem) newCPUFile(creds *auth.Credentials, maxCores uint, mode linux.FileMode) *kernfs.Dentry {
 	c := &cpuFile{maxCores: maxCores}
-	c.DynamicBytesFile.Init(creds, fs.NextIno(), c, mode)
+	c.DynamicBytesFile.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), c, mode)
 	d := &kernfs.Dentry{}
 	d.Init(c)
 	return d

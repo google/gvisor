@@ -115,15 +115,28 @@ func (filesystemType) Name() string {
 //
 // Note that there should only ever be one instance of host.filesystem,
 // a global mount for host fds.
-func NewFilesystem(vfsObj *vfs.VirtualFilesystem) *vfs.Filesystem {
-	fs := &filesystem{}
+func NewFilesystem(vfsObj *vfs.VirtualFilesystem) (*vfs.Filesystem, error) {
+	devMinor, err := vfsObj.GetAnonBlockDevMinor()
+	if err != nil {
+		return nil, err
+	}
+	fs := &filesystem{
+		devMinor: devMinor,
+	}
 	fs.VFSFilesystem().Init(vfsObj, filesystemType{}, fs)
-	return fs.VFSFilesystem()
+	return fs.VFSFilesystem(), nil
 }
 
 // filesystem implements vfs.FilesystemImpl.
 type filesystem struct {
 	kernfs.Filesystem
+
+	devMinor uint32
+}
+
+func (fs *filesystem) Release() {
+	fs.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
+	fs.Filesystem.Release()
 }
 
 func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDentry, b *fspath.Builder) error {
@@ -219,7 +232,7 @@ func (i *inode) Mode() linux.FileMode {
 }
 
 // Stat implements kernfs.Inode.
-func (i *inode) Stat(_ *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
+func (i *inode) Stat(vfsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
 	if opts.Mask&linux.STATX__RESERVED != 0 {
 		return linux.Statx{}, syserror.EINVAL
 	}
@@ -227,71 +240,71 @@ func (i *inode) Stat(_ *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, erro
 		return linux.Statx{}, syserror.EINVAL
 	}
 
+	fs := vfsfs.Impl().(*filesystem)
+
 	// Limit our host call only to known flags.
 	mask := opts.Mask & linux.STATX_ALL
 	var s unix.Statx_t
 	err := unix.Statx(i.hostFD, "", int(unix.AT_EMPTY_PATH|opts.Sync), int(mask), &s)
-	// Fallback to fstat(2), if statx(2) is not supported on the host.
-	//
-	// TODO(b/151263641): Remove fallback.
 	if err == syserror.ENOSYS {
-		return i.fstat(opts)
-	} else if err != nil {
+		// Fallback to fstat(2), if statx(2) is not supported on the host.
+		//
+		// TODO(b/151263641): Remove fallback.
+		return i.fstat(fs)
+	}
+	if err != nil {
 		return linux.Statx{}, err
 	}
 
-	ls := linux.Statx{Mask: mask}
-	// Unconditionally fill blksize, attributes, and device numbers, as indicated
-	// by /include/uapi/linux/stat.h.
-	//
-	// RdevMajor/RdevMinor are left as zero, so as not to expose host device
-	// numbers.
-	//
-	// TODO(gvisor.dev/issue/1672): Use kernfs-specific, internally defined
-	// device numbers. If we use the device number from the host, it may collide
-	// with another sentry-internal device number. We handle device/inode
-	// numbers without relying on the host to prevent collisions.
-	ls.Blksize = s.Blksize
-	ls.Attributes = s.Attributes
-	ls.AttributesMask = s.Attributes_mask
+	// Unconditionally fill blksize, attributes, and device numbers, as
+	// indicated by /include/uapi/linux/stat.h. Inode number is always
+	// available, since we use our own rather than the host's.
+	ls := linux.Statx{
+		Mask:           linux.STATX_INO,
+		Blksize:        s.Blksize,
+		Attributes:     s.Attributes,
+		Ino:            i.ino,
+		AttributesMask: s.Attributes_mask,
+		DevMajor:       linux.UNNAMED_MAJOR,
+		DevMinor:       fs.devMinor,
+	}
 
-	if mask&linux.STATX_TYPE != 0 {
+	// Copy other fields that were returned by the host. RdevMajor/RdevMinor
+	// are never copied (and therefore left as zero), so as not to expose host
+	// device numbers.
+	ls.Mask |= s.Mask & linux.STATX_ALL
+	if s.Mask&linux.STATX_TYPE != 0 {
 		ls.Mode |= s.Mode & linux.S_IFMT
 	}
-	if mask&linux.STATX_MODE != 0 {
+	if s.Mask&linux.STATX_MODE != 0 {
 		ls.Mode |= s.Mode &^ linux.S_IFMT
 	}
-	if mask&linux.STATX_NLINK != 0 {
+	if s.Mask&linux.STATX_NLINK != 0 {
 		ls.Nlink = s.Nlink
 	}
-	if mask&linux.STATX_UID != 0 {
+	if s.Mask&linux.STATX_UID != 0 {
 		ls.UID = s.Uid
 	}
-	if mask&linux.STATX_GID != 0 {
+	if s.Mask&linux.STATX_GID != 0 {
 		ls.GID = s.Gid
 	}
-	if mask&linux.STATX_ATIME != 0 {
+	if s.Mask&linux.STATX_ATIME != 0 {
 		ls.Atime = unixToLinuxStatxTimestamp(s.Atime)
 	}
-	if mask&linux.STATX_BTIME != 0 {
+	if s.Mask&linux.STATX_BTIME != 0 {
 		ls.Btime = unixToLinuxStatxTimestamp(s.Btime)
 	}
-	if mask&linux.STATX_CTIME != 0 {
+	if s.Mask&linux.STATX_CTIME != 0 {
 		ls.Ctime = unixToLinuxStatxTimestamp(s.Ctime)
 	}
-	if mask&linux.STATX_MTIME != 0 {
+	if s.Mask&linux.STATX_MTIME != 0 {
 		ls.Mtime = unixToLinuxStatxTimestamp(s.Mtime)
 	}
-	if mask&linux.STATX_SIZE != 0 {
+	if s.Mask&linux.STATX_SIZE != 0 {
 		ls.Size = s.Size
 	}
-	if mask&linux.STATX_BLOCKS != 0 {
+	if s.Mask&linux.STATX_BLOCKS != 0 {
 		ls.Blocks = s.Blocks
-	}
-
-	// Use our own internal inode number.
-	if mask&linux.STATX_INO != 0 {
-		ls.Ino = i.ino
 	}
 
 	return ls, nil
@@ -305,36 +318,30 @@ func (i *inode) Stat(_ *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, erro
 // of a mask or sync flags. fstat(2) does not provide any metadata
 // equivalent to Statx.Attributes, Statx.AttributesMask, or Statx.Btime, so
 // those fields remain empty.
-func (i *inode) fstat(opts vfs.StatOptions) (linux.Statx, error) {
+func (i *inode) fstat(fs *filesystem) (linux.Statx, error) {
 	var s unix.Stat_t
 	if err := unix.Fstat(i.hostFD, &s); err != nil {
 		return linux.Statx{}, err
 	}
 
-	// Note that rdev numbers are left as 0; do not expose host device numbers.
-	ls := linux.Statx{
-		Mask:    linux.STATX_BASIC_STATS,
-		Blksize: uint32(s.Blksize),
-		Nlink:   uint32(s.Nlink),
-		UID:     s.Uid,
-		GID:     s.Gid,
-		Mode:    uint16(s.Mode),
-		Size:    uint64(s.Size),
-		Blocks:  uint64(s.Blocks),
-		Atime:   timespecToStatxTimestamp(s.Atim),
-		Ctime:   timespecToStatxTimestamp(s.Ctim),
-		Mtime:   timespecToStatxTimestamp(s.Mtim),
-	}
-
-	// Use our own internal inode number.
-	//
-	// TODO(gvisor.dev/issue/1672): Use a kernfs-specific device number as well.
-	// If we use the device number from the host, it may collide with another
-	// sentry-internal device number. We handle device/inode numbers without
-	// relying on the host to prevent collisions.
-	ls.Ino = i.ino
-
-	return ls, nil
+	// As with inode.Stat(), we always use internal device and inode numbers,
+	// and never expose the host's represented device numbers.
+	return linux.Statx{
+		Mask:     linux.STATX_BASIC_STATS,
+		Blksize:  uint32(s.Blksize),
+		Nlink:    uint32(s.Nlink),
+		UID:      s.Uid,
+		GID:      s.Gid,
+		Mode:     uint16(s.Mode),
+		Ino:      i.ino,
+		Size:     uint64(s.Size),
+		Blocks:   uint64(s.Blocks),
+		Atime:    timespecToStatxTimestamp(s.Atim),
+		Ctime:    timespecToStatxTimestamp(s.Ctim),
+		Mtime:    timespecToStatxTimestamp(s.Mtim),
+		DevMajor: linux.UNNAMED_MAJOR,
+		DevMinor: fs.devMinor,
+	}, nil
 }
 
 // SetStat implements kernfs.Inode.
@@ -453,8 +460,6 @@ func (i *inode) open(ctx context.Context, d *vfs.Dentry, mnt *vfs.Mount) (*vfs.F
 }
 
 // fileDescription is embedded by host fd implementations of FileDescriptionImpl.
-//
-// TODO(gvisor.dev/issue/1672): Implement Waitable interface.
 type fileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
@@ -471,12 +476,12 @@ type fileDescription struct {
 // SetStat implements vfs.FileDescriptionImpl.
 func (f *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 	creds := auth.CredentialsFromContext(ctx)
-	return f.inode.SetStat(ctx, nil, creds, opts)
+	return f.inode.SetStat(ctx, f.vfsfd.Mount().Filesystem(), creds, opts)
 }
 
 // Stat implements vfs.FileDescriptionImpl.
 func (f *fileDescription) Stat(_ context.Context, opts vfs.StatOptions) (linux.Statx, error) {
-	return f.inode.Stat(nil, opts)
+	return f.inode.Stat(f.vfsfd.Mount().Filesystem(), opts)
 }
 
 // Release implements vfs.FileDescriptionImpl.

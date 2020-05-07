@@ -64,6 +64,10 @@ type filesystem struct {
 	// bgs represents all the block group descriptors for the filesystem.
 	// Immutable after initialization.
 	bgs []disklayout.BlockGroup
+
+	// devMinor is this filesystem's device minor number. Immutable after
+	// initialization.
+	devMinor uint32
 }
 
 // Compiles only if filesystem implements vfs.FilesystemImpl.
@@ -366,7 +370,9 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 }
 
 // Release implements vfs.FilesystemImpl.Release.
-func (fs *filesystem) Release() {}
+func (fs *filesystem) Release() {
+	fs.vfsfs.VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
+}
 
 // Sync implements vfs.FilesystemImpl.Sync.
 func (fs *filesystem) Sync(ctx context.Context) error {

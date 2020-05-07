@@ -16,8 +16,11 @@
 package sockfs
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -41,19 +44,42 @@ func (filesystemType) Name() string {
 	return "sockfs"
 }
 
+type filesystem struct {
+	kernfs.Filesystem
+
+	devMinor uint32
+}
+
 // NewFilesystem sets up and returns a new sockfs filesystem.
 //
 // Note that there should only ever be one instance of sockfs.Filesystem,
 // backing a global socket mount.
-func NewFilesystem(vfsObj *vfs.VirtualFilesystem) *vfs.Filesystem {
-	fs := &kernfs.Filesystem{}
-	fs.VFSFilesystem().Init(vfsObj, filesystemType{}, fs)
-	return fs.VFSFilesystem()
+func NewFilesystem(vfsObj *vfs.VirtualFilesystem) (*vfs.Filesystem, error) {
+	devMinor, err := vfsObj.GetAnonBlockDevMinor()
+	if err != nil {
+		return nil, err
+	}
+	fs := &filesystem{
+		devMinor: devMinor,
+	}
+	fs.Filesystem.VFSFilesystem().Init(vfsObj, filesystemType{}, fs)
+	return fs.Filesystem.VFSFilesystem(), nil
+}
+
+// Release implements vfs.FilesystemImpl.Release.
+func (fs *filesystem) Release() {
+	fs.Filesystem.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
+	fs.Filesystem.Release()
+}
+
+// PrependPath implements vfs.FilesystemImpl.PrependPath.
+func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDentry, b *fspath.Builder) error {
+	inode := vd.Dentry().Impl().(*kernfs.Dentry).Inode().(*inode)
+	b.PrependComponent(fmt.Sprintf("socket:[%d]", inode.InodeAttrs.Ino()))
+	return vfs.PrependPathSyntheticError{}
 }
 
 // inode implements kernfs.Inode.
-//
-// TODO(gvisor.dev/issue/1193): Device numbers.
 type inode struct {
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
@@ -67,11 +93,15 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 }
 
 // NewDentry constructs and returns a sockfs dentry.
-func NewDentry(creds *auth.Credentials, ino uint64) *vfs.Dentry {
+//
+// Preconditions: mnt.Filesystem() must have been returned by NewFilesystem().
+func NewDentry(creds *auth.Credentials, mnt *vfs.Mount) *vfs.Dentry {
+	fs := mnt.Filesystem().Impl().(*filesystem)
+
 	// File mode matches net/socket.c:sock_alloc.
 	filemode := linux.FileMode(linux.S_IFSOCK | 0600)
 	i := &inode{}
-	i.Init(creds, ino, filemode)
+	i.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.Filesystem.NextIno(), filemode)
 
 	d := &kernfs.Dentry{}
 	d.Init(i)

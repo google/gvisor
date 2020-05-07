@@ -204,6 +204,8 @@ func (in *inode) statTo(stat *linux.Statx) {
 	stat.Atime = in.diskInode.AccessTime().StatxTimestamp()
 	stat.Ctime = in.diskInode.ChangeTime().StatxTimestamp()
 	stat.Mtime = in.diskInode.ModificationTime().StatxTimestamp()
+	stat.DevMajor = linux.UNNAMED_MAJOR
+	stat.DevMinor = in.fs.devMinor
 	// TODO(b/134676337): Set stat.Blocks which is the number of 512 byte blocks
 	// (including metadata blocks) required to represent this file.
 }

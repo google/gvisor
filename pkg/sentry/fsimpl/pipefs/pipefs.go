@@ -17,8 +17,11 @@
 package pipefs
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
@@ -40,20 +43,36 @@ func (filesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFile
 	panic("pipefs.filesystemType.GetFilesystem should never be called")
 }
 
-// TODO(gvisor.dev/issue/1193):
-//
-// - kernfs does not provide a way to implement statfs, from which we
-// should indicate PIPEFS_MAGIC.
-//
-// - kernfs does not provide a way to override names for
-// vfs.FilesystemImpl.PrependPath(); pipefs inodes should use synthetic
-// name fmt.Sprintf("pipe:[%d]", inode.ino).
+type filesystem struct {
+	kernfs.Filesystem
+
+	devMinor uint32
+}
 
 // NewFilesystem sets up and returns a new vfs.Filesystem implemented by pipefs.
-func NewFilesystem(vfsObj *vfs.VirtualFilesystem) *vfs.Filesystem {
-	fs := &kernfs.Filesystem{}
-	fs.VFSFilesystem().Init(vfsObj, filesystemType{}, fs)
-	return fs.VFSFilesystem()
+func NewFilesystem(vfsObj *vfs.VirtualFilesystem) (*vfs.Filesystem, error) {
+	devMinor, err := vfsObj.GetAnonBlockDevMinor()
+	if err != nil {
+		return nil, err
+	}
+	fs := &filesystem{
+		devMinor: devMinor,
+	}
+	fs.Filesystem.VFSFilesystem().Init(vfsObj, filesystemType{}, fs)
+	return fs.Filesystem.VFSFilesystem(), nil
+}
+
+// Release implements vfs.FilesystemImpl.Release.
+func (fs *filesystem) Release() {
+	fs.Filesystem.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
+	fs.Filesystem.Release()
+}
+
+// PrependPath implements vfs.FilesystemImpl.PrependPath.
+func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDentry, b *fspath.Builder) error {
+	inode := vd.Dentry().Impl().(*kernfs.Dentry).Inode().(*inode)
+	b.PrependComponent(fmt.Sprintf("pipe:[%d]", inode.ino))
+	return vfs.PrependPathSyntheticError{}
 }
 
 // inode implements kernfs.Inode.
@@ -71,11 +90,11 @@ type inode struct {
 	ctime ktime.Time
 }
 
-func newInode(ctx context.Context, fs *kernfs.Filesystem) *inode {
+func newInode(ctx context.Context, fs *filesystem) *inode {
 	creds := auth.CredentialsFromContext(ctx)
 	return &inode{
 		pipe:  pipe.NewVFSPipe(false /* isNamed */, pipe.DefaultPipeSize, usermem.PageSize),
-		ino:   fs.NextIno(),
+		ino:   fs.Filesystem.NextIno(),
 		uid:   creds.EffectiveKUID,
 		gid:   creds.EffectiveKGID,
 		ctime: ktime.NowFromContext(ctx),
@@ -98,19 +117,20 @@ func (i *inode) Mode() linux.FileMode {
 func (i *inode) Stat(vfsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
 	ts := linux.NsecToStatxTimestamp(i.ctime.Nanoseconds())
 	return linux.Statx{
-		Mask:    linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_NLINK | linux.STATX_UID | linux.STATX_GID | linux.STATX_ATIME | linux.STATX_MTIME | linux.STATX_CTIME | linux.STATX_INO | linux.STATX_SIZE | linux.STATX_BLOCKS,
-		Blksize: usermem.PageSize,
-		Nlink:   1,
-		UID:     uint32(i.uid),
-		GID:     uint32(i.gid),
-		Mode:    pipeMode,
-		Ino:     i.ino,
-		Size:    0,
-		Blocks:  0,
-		Atime:   ts,
-		Ctime:   ts,
-		Mtime:   ts,
-		// TODO(gvisor.dev/issue/1197): Device number.
+		Mask:     linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_NLINK | linux.STATX_UID | linux.STATX_GID | linux.STATX_ATIME | linux.STATX_MTIME | linux.STATX_CTIME | linux.STATX_INO | linux.STATX_SIZE | linux.STATX_BLOCKS,
+		Blksize:  usermem.PageSize,
+		Nlink:    1,
+		UID:      uint32(i.uid),
+		GID:      uint32(i.gid),
+		Mode:     pipeMode,
+		Ino:      i.ino,
+		Size:     0,
+		Blocks:   0,
+		Atime:    ts,
+		Ctime:    ts,
+		Mtime:    ts,
+		DevMajor: linux.UNNAMED_MAJOR,
+		DevMinor: vfsfs.Impl().(*filesystem).devMinor,
 	}, nil
 }
 
@@ -122,6 +142,9 @@ func (i *inode) SetStat(ctx context.Context, vfsfs *vfs.Filesystem, creds *auth.
 	return syserror.EPERM
 }
 
+// TODO(gvisor.dev/issue/1193): kernfs does not provide a way to implement
+// statfs, from which we should indicate PIPEFS_MAGIC.
+
 // Open implements kernfs.Inode.Open.
 func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	return i.pipe.Open(ctx, rp.Mount(), vfsd, opts.Flags)
@@ -132,7 +155,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 //
 // Preconditions: mnt.Filesystem() must have been returned by NewFilesystem().
 func NewConnectedPipeFDs(ctx context.Context, mnt *vfs.Mount, flags uint32) (*vfs.FileDescription, *vfs.FileDescription) {
-	fs := mnt.Filesystem().Impl().(*kernfs.Filesystem)
+	fs := mnt.Filesystem().Impl().(*filesystem)
 	inode := newInode(ctx, fs)
 	var d kernfs.Dentry
 	d.Init(inode)

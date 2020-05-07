@@ -334,7 +334,10 @@ func New(args Args) (*Loader, error) {
 
 	if kernel.VFS2Enabled {
 		// Set up host mount that will be used for imported fds.
-		hostFilesystem := hostvfs2.NewFilesystem(k.VFS())
+		hostFilesystem, err := hostvfs2.NewFilesystem(k.VFS())
+		if err != nil {
+			return nil, fmt.Errorf("failed to create hostfs filesystem: %v", err)
+		}
 		defer hostFilesystem.DecRef()
 		hostMount, err := k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{})
 		if err != nil {
