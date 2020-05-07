@@ -37,23 +37,23 @@ type subtasksInode struct {
 	kernfs.OrderedChildren
 	kernfs.AlwaysValid
 
+	fs                *filesystem
 	task              *kernel.Task
 	pidns             *kernel.PIDNamespace
-	inoGen            InoGenerator
 	cgroupControllers map[string]string
 }
 
 var _ kernfs.Inode = (*subtasksInode)(nil)
 
-func newSubtasks(task *kernel.Task, pidns *kernel.PIDNamespace, inoGen InoGenerator, cgroupControllers map[string]string) *kernfs.Dentry {
+func (fs *filesystem) newSubtasks(task *kernel.Task, pidns *kernel.PIDNamespace, cgroupControllers map[string]string) *kernfs.Dentry {
 	subInode := &subtasksInode{
+		fs:                fs,
 		task:              task,
 		pidns:             pidns,
-		inoGen:            inoGen,
 		cgroupControllers: cgroupControllers,
 	}
 	// Note: credentials are overridden by taskOwnedInode.
-	subInode.InodeAttrs.Init(task.Credentials(), inoGen.NextIno(), linux.ModeDirectory|0555)
+	subInode.InodeAttrs.Init(task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
 	subInode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 
 	inode := &taskOwnedInode{Inode: subInode, owner: task}
@@ -78,7 +78,7 @@ func (i *subtasksInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, e
 		return nil, syserror.ENOENT
 	}
 
-	subTaskDentry := newTaskInode(i.inoGen, subTask, i.pidns, false, i.cgroupControllers)
+	subTaskDentry := i.fs.newTaskInode(subTask, i.pidns, false, i.cgroupControllers)
 	return subTaskDentry.VFSDentry(), nil
 }
 
@@ -102,7 +102,7 @@ func (i *subtasksInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallb
 		dirent := vfs.Dirent{
 			Name:    strconv.FormatUint(uint64(tid), 10),
 			Type:    linux.DT_DIR,
-			Ino:     i.inoGen.NextIno(),
+			Ino:     i.fs.NextIno(),
 			NextOff: offset + 1,
 		}
 		if err := cb.Handle(dirent); err != nil {

@@ -373,7 +373,10 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 			return fmt.Errorf("failed to initialize VFS: %v", err)
 		}
 
-		pipeFilesystem := pipefs.NewFilesystem(&k.vfs)
+		pipeFilesystem, err := pipefs.NewFilesystem(&k.vfs)
+		if err != nil {
+			return fmt.Errorf("failed to create pipefs filesystem: %v", err)
+		}
 		defer pipeFilesystem.DecRef()
 		pipeMount, err := k.vfs.NewDisconnectedMount(pipeFilesystem, nil, &vfs.MountOptions{})
 		if err != nil {
@@ -381,7 +384,10 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 		}
 		k.pipeMount = pipeMount
 
-		socketFilesystem := sockfs.NewFilesystem(&k.vfs)
+		socketFilesystem, err := sockfs.NewFilesystem(&k.vfs)
+		if err != nil {
+			return fmt.Errorf("failed to create sockfs filesystem: %v", err)
+		}
 		defer socketFilesystem.DecRef()
 		socketMount, err := k.vfs.NewDisconnectedMount(socketFilesystem, nil, &vfs.MountOptions{})
 		if err != nil {

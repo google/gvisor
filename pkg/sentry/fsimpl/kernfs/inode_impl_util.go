@@ -192,15 +192,17 @@ func (InodeNotSymlink) Getlink(context.Context, *vfs.Mount) (vfs.VirtualDentry, 
 //
 // Must be initialized by Init prior to first use.
 type InodeAttrs struct {
-	ino   uint64
-	mode  uint32
-	uid   uint32
-	gid   uint32
-	nlink uint32
+	devMajor uint32
+	devMinor uint32
+	ino      uint64
+	mode     uint32
+	uid      uint32
+	gid      uint32
+	nlink    uint32
 }
 
 // Init initializes this InodeAttrs.
-func (a *InodeAttrs) Init(creds *auth.Credentials, ino uint64, mode linux.FileMode) {
+func (a *InodeAttrs) Init(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, mode linux.FileMode) {
 	if mode.FileType() == 0 {
 		panic(fmt.Sprintf("No file type specified in 'mode' for InodeAttrs.Init(): mode=0%o", mode))
 	}
@@ -209,11 +211,23 @@ func (a *InodeAttrs) Init(creds *auth.Credentials, ino uint64, mode linux.FileMo
 	if mode.FileType() == linux.ModeDirectory {
 		nlink = 2
 	}
+	a.devMajor = devMajor
+	a.devMinor = devMinor
 	atomic.StoreUint64(&a.ino, ino)
 	atomic.StoreUint32(&a.mode, uint32(mode))
 	atomic.StoreUint32(&a.uid, uint32(creds.EffectiveKUID))
 	atomic.StoreUint32(&a.gid, uint32(creds.EffectiveKGID))
 	atomic.StoreUint32(&a.nlink, nlink)
+}
+
+// DevMajor returns the device major number.
+func (a *InodeAttrs) DevMajor() uint32 {
+	return a.devMajor
+}
+
+// DevMinor returns the device minor number.
+func (a *InodeAttrs) DevMinor() uint32 {
+	return a.devMinor
 }
 
 // Ino returns the inode id.
@@ -232,6 +246,8 @@ func (a *InodeAttrs) Mode() linux.FileMode {
 func (a *InodeAttrs) Stat(*vfs.Filesystem, vfs.StatOptions) (linux.Statx, error) {
 	var stat linux.Statx
 	stat.Mask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_NLINK
+	stat.DevMajor = a.devMajor
+	stat.DevMinor = a.devMinor
 	stat.Ino = atomic.LoadUint64(&a.ino)
 	stat.Mode = uint16(a.Mode())
 	stat.UID = atomic.LoadUint32(&a.uid)
@@ -544,9 +560,9 @@ type StaticDirectory struct {
 var _ Inode = (*StaticDirectory)(nil)
 
 // NewStaticDir creates a new static directory and returns its dentry.
-func NewStaticDir(creds *auth.Credentials, ino uint64, perm linux.FileMode, children map[string]*Dentry) *Dentry {
+func NewStaticDir(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode, children map[string]*Dentry) *Dentry {
 	inode := &StaticDirectory{}
-	inode.Init(creds, ino, perm)
+	inode.Init(creds, devMajor, devMinor, ino, perm)
 
 	dentry := &Dentry{}
 	dentry.Init(inode)
@@ -559,11 +575,11 @@ func NewStaticDir(creds *auth.Credentials, ino uint64, perm linux.FileMode, chil
 }
 
 // Init initializes StaticDirectory.
-func (s *StaticDirectory) Init(creds *auth.Credentials, ino uint64, perm linux.FileMode) {
+func (s *StaticDirectory) Init(creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode) {
 	if perm&^linux.PermissionsMask != 0 {
 		panic(fmt.Sprintf("Only permission mask must be set: %x", perm&linux.PermissionsMask))
 	}
-	s.InodeAttrs.Init(creds, ino, linux.ModeDirectory|perm)
+	s.InodeAttrs.Init(creds, devMajor, devMinor, ino, linux.ModeDirectory|perm)
 }
 
 // Open implements kernfs.Inode.

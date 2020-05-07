@@ -33,11 +33,6 @@ const (
 	threadSelfName = "thread-self"
 )
 
-// InoGenerator generates unique inode numbers for a given filesystem.
-type InoGenerator interface {
-	NextIno() uint64
-}
-
 // tasksInode represents the inode for /proc/ directory.
 //
 // +stateify savable
@@ -48,8 +43,8 @@ type tasksInode struct {
 	kernfs.OrderedChildren
 	kernfs.AlwaysValid
 
-	inoGen InoGenerator
-	pidns  *kernel.PIDNamespace
+	fs    *filesystem
+	pidns *kernel.PIDNamespace
 
 	// '/proc/self' and '/proc/thread-self' have custom directory offsets in
 	// Linux. So handle them outside of OrderedChildren.
@@ -64,29 +59,29 @@ type tasksInode struct {
 
 var _ kernfs.Inode = (*tasksInode)(nil)
 
-func newTasksInode(inoGen InoGenerator, k *kernel.Kernel, pidns *kernel.PIDNamespace, cgroupControllers map[string]string) (*tasksInode, *kernfs.Dentry) {
+func (fs *filesystem) newTasksInode(k *kernel.Kernel, pidns *kernel.PIDNamespace, cgroupControllers map[string]string) (*tasksInode, *kernfs.Dentry) {
 	root := auth.NewRootCredentials(pidns.UserNamespace())
 	contents := map[string]*kernfs.Dentry{
-		"cpuinfo":     newDentry(root, inoGen.NextIno(), 0444, newStaticFileSetStat(cpuInfoData(k))),
-		"filesystems": newDentry(root, inoGen.NextIno(), 0444, &filesystemsData{}),
-		"loadavg":     newDentry(root, inoGen.NextIno(), 0444, &loadavgData{}),
-		"sys":         newSysDir(root, inoGen, k),
-		"meminfo":     newDentry(root, inoGen.NextIno(), 0444, &meminfoData{}),
-		"mounts":      kernfs.NewStaticSymlink(root, inoGen.NextIno(), "self/mounts"),
-		"net":         kernfs.NewStaticSymlink(root, inoGen.NextIno(), "self/net"),
-		"stat":        newDentry(root, inoGen.NextIno(), 0444, &statData{}),
-		"uptime":      newDentry(root, inoGen.NextIno(), 0444, &uptimeData{}),
-		"version":     newDentry(root, inoGen.NextIno(), 0444, &versionData{}),
+		"cpuinfo":     fs.newDentry(root, fs.NextIno(), 0444, newStaticFileSetStat(cpuInfoData(k))),
+		"filesystems": fs.newDentry(root, fs.NextIno(), 0444, &filesystemsData{}),
+		"loadavg":     fs.newDentry(root, fs.NextIno(), 0444, &loadavgData{}),
+		"sys":         fs.newSysDir(root, k),
+		"meminfo":     fs.newDentry(root, fs.NextIno(), 0444, &meminfoData{}),
+		"mounts":      kernfs.NewStaticSymlink(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), "self/mounts"),
+		"net":         kernfs.NewStaticSymlink(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), "self/net"),
+		"stat":        fs.newDentry(root, fs.NextIno(), 0444, &statData{}),
+		"uptime":      fs.newDentry(root, fs.NextIno(), 0444, &uptimeData{}),
+		"version":     fs.newDentry(root, fs.NextIno(), 0444, &versionData{}),
 	}
 
 	inode := &tasksInode{
 		pidns:             pidns,
-		inoGen:            inoGen,
-		selfSymlink:       newSelfSymlink(root, inoGen.NextIno(), pidns).VFSDentry(),
-		threadSelfSymlink: newThreadSelfSymlink(root, inoGen.NextIno(), pidns).VFSDentry(),
+		fs:                fs,
+		selfSymlink:       fs.newSelfSymlink(root, fs.NextIno(), pidns).VFSDentry(),
+		threadSelfSymlink: fs.newThreadSelfSymlink(root, fs.NextIno(), pidns).VFSDentry(),
 		cgroupControllers: cgroupControllers,
 	}
-	inode.InodeAttrs.Init(root, inoGen.NextIno(), linux.ModeDirectory|0555)
+	inode.InodeAttrs.Init(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
 
 	dentry := &kernfs.Dentry{}
 	dentry.Init(inode)
@@ -118,7 +113,7 @@ func (i *tasksInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, erro
 		return nil, syserror.ENOENT
 	}
 
-	taskDentry := newTaskInode(i.inoGen, task, i.pidns, true, i.cgroupControllers)
+	taskDentry := i.fs.newTaskInode(task, i.pidns, true, i.cgroupControllers)
 	return taskDentry.VFSDentry(), nil
 }
 
@@ -144,7 +139,7 @@ func (i *tasksInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback
 		dirent := vfs.Dirent{
 			Name:    selfName,
 			Type:    linux.DT_LNK,
-			Ino:     i.inoGen.NextIno(),
+			Ino:     i.fs.NextIno(),
 			NextOff: offset + 1,
 		}
 		if err := cb.Handle(dirent); err != nil {
@@ -156,7 +151,7 @@ func (i *tasksInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback
 		dirent := vfs.Dirent{
 			Name:    threadSelfName,
 			Type:    linux.DT_LNK,
-			Ino:     i.inoGen.NextIno(),
+			Ino:     i.fs.NextIno(),
 			NextOff: offset + 1,
 		}
 		if err := cb.Handle(dirent); err != nil {
@@ -189,7 +184,7 @@ func (i *tasksInode) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback
 		dirent := vfs.Dirent{
 			Name:    strconv.FormatUint(uint64(tid), 10),
 			Type:    linux.DT_DIR,
-			Ino:     i.inoGen.NextIno(),
+			Ino:     i.fs.NextIno(),
 			NextOff: FIRST_PROCESS_ENTRY + 2 + int64(tid) + 1,
 		}
 		if err := cb.Handle(dirent); err != nil {

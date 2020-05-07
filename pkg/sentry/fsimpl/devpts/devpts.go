@@ -51,21 +51,37 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, syserror.EINVAL
 	}
 
-	fs, root := fstype.newFilesystem(vfsObj, creds)
-	return fs.VFSFilesystem(), root.VFSDentry(), nil
+	fs, root, err := fstype.newFilesystem(vfsObj, creds)
+	if err != nil {
+		return nil, nil, err
+	}
+	return fs.Filesystem.VFSFilesystem(), root.VFSDentry(), nil
+}
+
+type filesystem struct {
+	kernfs.Filesystem
+
+	devMinor uint32
 }
 
 // newFilesystem creates a new devpts filesystem with root directory and ptmx
 // master inode. It returns the filesystem and root Dentry.
-func (fstype FilesystemType) newFilesystem(vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials) (*kernfs.Filesystem, *kernfs.Dentry) {
-	fs := &kernfs.Filesystem{}
-	fs.VFSFilesystem().Init(vfsObj, fstype, fs)
+func (fstype FilesystemType) newFilesystem(vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials) (*filesystem, *kernfs.Dentry, error) {
+	devMinor, err := vfsObj.GetAnonBlockDevMinor()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	fs := &filesystem{
+		devMinor: devMinor,
+	}
+	fs.Filesystem.VFSFilesystem().Init(vfsObj, fstype, fs)
 
 	// Construct the root directory. This is always inode id 1.
 	root := &rootInode{
 		slaves: make(map[uint32]*slaveInode),
 	}
-	root.InodeAttrs.Init(creds, 1, linux.ModeDirectory|0555)
+	root.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, devMinor, 1, linux.ModeDirectory|0555)
 	root.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	root.dentry.Init(root)
 
@@ -74,7 +90,7 @@ func (fstype FilesystemType) newFilesystem(vfsObj *vfs.VirtualFilesystem, creds 
 	master := &masterInode{
 		root: root,
 	}
-	master.InodeAttrs.Init(creds, 2, linux.ModeCharacterDevice|0666)
+	master.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, devMinor, 2, linux.ModeCharacterDevice|0666)
 	master.dentry.Init(master)
 
 	// Add the master as a child of the root.
@@ -83,7 +99,13 @@ func (fstype FilesystemType) newFilesystem(vfsObj *vfs.VirtualFilesystem, creds 
 	})
 	root.IncLinks(links)
 
-	return fs, &root.dentry
+	return fs, &root.dentry, nil
+}
+
+// Release implements vfs.FilesystemImpl.Release.
+func (fs *filesystem) Release() {
+	fs.Filesystem.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
+	fs.Filesystem.Release()
 }
 
 // rootInode is the root directory inode for the devpts mounts.
@@ -140,7 +162,7 @@ func (i *rootInode) allocateTerminal(creds *auth.Credentials) (*Terminal, error)
 	}
 	// Linux always uses pty index + 3 as the inode id. See
 	// fs/devpts/inode.c:devpts_pty_new().
-	slave.InodeAttrs.Init(creds, uint64(idx+3), linux.ModeCharacterDevice|0600)
+	slave.InodeAttrs.Init(creds, i.InodeAttrs.DevMajor(), i.InodeAttrs.DevMinor(), uint64(idx+3), linux.ModeCharacterDevice|0600)
 	slave.dentry.Init(slave)
 	i.slaves[idx] = slave
 

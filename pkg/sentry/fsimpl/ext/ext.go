@@ -105,36 +105,50 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	// EACCESS should be returned according to mount(2). Filesystem independent
 	// flags (like readonly) are currently not available in pkg/sentry/vfs.
 
+	devMinor, err := vfsObj.GetAnonBlockDevMinor()
+	if err != nil {
+		return nil, nil, err
+	}
+
 	dev, err := getDeviceFd(source, opts)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	fs := filesystem{dev: dev, inodeCache: make(map[uint32]*inode)}
+	fs := filesystem{
+		dev:        dev,
+		inodeCache: make(map[uint32]*inode),
+		devMinor:   devMinor,
+	}
 	fs.vfsfs.Init(vfsObj, &fsType, &fs)
 	fs.sb, err = readSuperBlock(dev)
 	if err != nil {
+		fs.vfsfs.DecRef()
 		return nil, nil, err
 	}
 
 	if fs.sb.Magic() != linux.EXT_SUPER_MAGIC {
 		// mount(2) specifies that EINVAL should be returned if the superblock is
 		// invalid.
+		fs.vfsfs.DecRef()
 		return nil, nil, syserror.EINVAL
 	}
 
 	// Refuse to mount if the filesystem is incompatible.
 	if !isCompatible(fs.sb) {
+		fs.vfsfs.DecRef()
 		return nil, nil, syserror.EINVAL
 	}
 
 	fs.bgs, err = readBlockGroups(dev, fs.sb)
 	if err != nil {
+		fs.vfsfs.DecRef()
 		return nil, nil, err
 	}
 
 	rootInode, err := fs.getOrCreateInodeLocked(disklayout.RootDirInode)
 	if err != nil {
+		fs.vfsfs.DecRef()
 		return nil, nil, err
 	}
 	rootInode.incRef()

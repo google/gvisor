@@ -75,7 +75,7 @@ type file struct {
 func (fs *filesystem) newFile(creds *auth.Credentials, content string) *kernfs.Dentry {
 	f := &file{}
 	f.content = content
-	f.DynamicBytesFile.Init(creds, fs.NextIno(), f, 0777)
+	f.DynamicBytesFile.Init(creds, 0 /* devMajor */, 0 /* devMinor */, fs.NextIno(), f, 0777)
 
 	d := &kernfs.Dentry{}
 	d.Init(f)
@@ -107,7 +107,7 @@ type readonlyDir struct {
 
 func (fs *filesystem) newReadonlyDir(creds *auth.Credentials, mode linux.FileMode, contents map[string]*kernfs.Dentry) *kernfs.Dentry {
 	dir := &readonlyDir{}
-	dir.attrs.Init(creds, fs.NextIno(), linux.ModeDirectory|mode)
+	dir.attrs.Init(creds, 0 /* devMajor */, 0 /* devMinor */, fs.NextIno(), linux.ModeDirectory|mode)
 	dir.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	dir.dentry.Init(dir)
 
@@ -137,7 +137,7 @@ type dir struct {
 func (fs *filesystem) newDir(creds *auth.Credentials, mode linux.FileMode, contents map[string]*kernfs.Dentry) *kernfs.Dentry {
 	dir := &dir{}
 	dir.fs = fs
-	dir.attrs.Init(creds, fs.NextIno(), linux.ModeDirectory|mode)
+	dir.attrs.Init(creds, 0 /* devMajor */, 0 /* devMinor */, fs.NextIno(), linux.ModeDirectory|mode)
 	dir.OrderedChildren.Init(kernfs.OrderedChildrenOptions{Writable: true})
 	dir.dentry.Init(dir)
 
