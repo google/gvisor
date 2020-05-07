@@ -139,14 +139,14 @@ func Override() {
 	s.Table[277] = syscalls.Supported("sync_file_range", SyncFileRange)
 	s.Table[280] = syscalls.Supported("utimensat", Utimensat)
 	s.Table[281] = syscalls.Supported("epoll_pwait", EpollPwait)
-	delete(s.Table, 282) // signalfd
+	s.Table[282] = syscalls.Supported("signalfd", Signalfd)
 	s.Table[283] = syscalls.Supported("timerfd_create", TimerfdCreate)
 	s.Table[284] = syscalls.Supported("eventfd", Eventfd)
 	delete(s.Table, 285) // fallocate
 	s.Table[286] = syscalls.Supported("timerfd_settime", TimerfdSettime)
 	s.Table[287] = syscalls.Supported("timerfd_gettime", TimerfdGettime)
 	s.Table[288] = syscalls.Supported("accept4", Accept4)
-	delete(s.Table, 289) // signalfd4
+	s.Table[289] = syscalls.Supported("signalfd4", Signalfd4)
 	s.Table[290] = syscalls.Supported("eventfd2", Eventfd2)
 	s.Table[291] = syscalls.Supported("epoll_create1", EpollCreate1)
 	s.Table[292] = syscalls.Supported("dup3", Dup3)
