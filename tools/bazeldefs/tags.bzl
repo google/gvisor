@@ -1,40 +1,56 @@
 """List of special Go suffixes."""
 
-go_suffixes = [
+def explode(tagset, suffixes):
+    """explode combines tagset and suffixes in all ways.
+
+    Args:
+      tagset: Original suffixes.
+      suffixes: Suffixes to combine before and after.
+
+    Returns:
+      The set of possible combinations.
+    """
+    result = [t for t in tagset]
+    result += [s for s in suffixes]
+    for t in tagset:
+        result += [t + s for s in suffixes]
+        result += [s + t for s in suffixes]
+    return result
+
+archs = [
     "_386",
-    "_386_unsafe",
     "_aarch64",
-    "_aarch64_unsafe",
     "_amd64",
-    "_amd64_unsafe",
     "_arm",
     "_arm64",
-    "_arm64_unsafe",
-    "_arm_unsafe",
-    "_impl",
-    "_impl_unsafe",
-    "_linux",
-    "_linux_unsafe",
     "_mips",
     "_mips64",
-    "_mips64_unsafe",
     "_mips64le",
-    "_mips64le_unsafe",
-    "_mips_unsafe",
     "_mipsle",
-    "_mipsle_unsafe",
-    "_opts",
-    "_opts_unsafe",
     "_ppc64",
-    "_ppc64_unsafe",
     "_ppc64le",
-    "_ppc64le_unsafe",
     "_riscv64",
-    "_riscv64_unsafe",
     "_s390x",
-    "_s390x_unsafe",
     "_sparc64",
-    "_sparc64_unsafe",
-    "_wasm",
-    "_wasm_unsafe",
+    "_x86",
 ]
+
+oses = [
+    "_linux",
+]
+
+generic = [
+    "_impl",
+    "_race",
+    "_norace",
+    "_unsafe",
+    "_opts",
+]
+
+# State explosion? Sure. This is approximately:
+#   len(archs) * (1 + 2 * len(oses) * (1 + 2 * len(generic))
+#
+# This evaluates to 495 at the time of writing. So it's a lot of different
+# combinations, but not so much that it will cause issues. We can probably add
+# quite a few more variants before this becomes a genuine problem.
+go_suffixes = explode(explode(archs, oses), generic)
