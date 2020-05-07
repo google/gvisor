@@ -2,6 +2,5 @@
 
 // +build !msan,!race
 // +build msan
-// +build race
 
 package filter

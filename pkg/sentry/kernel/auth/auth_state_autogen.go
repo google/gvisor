@@ -6,18 +6,6 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *AtomicPtrCredentials) beforeSave() {}
-func (x *AtomicPtrCredentials) save(m state.Map) {
-	x.beforeSave()
-	var ptr *Credentials = x.savePtr()
-	m.SaveValue("ptr", ptr)
-}
-
-func (x *AtomicPtrCredentials) afterLoad() {}
-func (x *AtomicPtrCredentials) load(m state.Map) {
-	m.LoadValue("ptr", new(*Credentials), func(y interface{}) { x.loadPtr(y.(*Credentials)) })
-}
-
 func (x *Credentials) beforeSave() {}
 func (x *Credentials) save(m state.Map) {
 	x.beforeSave()
@@ -153,7 +141,6 @@ func (x *UserNamespace) load(m state.Map) {
 }
 
 func init() {
-	state.Register("pkg/sentry/kernel/auth.AtomicPtrCredentials", (*AtomicPtrCredentials)(nil), state.Fns{Save: (*AtomicPtrCredentials).save, Load: (*AtomicPtrCredentials).load})
 	state.Register("pkg/sentry/kernel/auth.Credentials", (*Credentials)(nil), state.Fns{Save: (*Credentials).save, Load: (*Credentials).load})
 	state.Register("pkg/sentry/kernel/auth.IDMapEntry", (*IDMapEntry)(nil), state.Fns{Save: (*IDMapEntry).save, Load: (*IDMapEntry).load})
 	state.Register("pkg/sentry/kernel/auth.idMapRange", (*idMapRange)(nil), state.Fns{Save: (*idMapRange).save, Load: (*idMapRange).load})
