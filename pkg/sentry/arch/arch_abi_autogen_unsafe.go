@@ -1,7 +1,5 @@
 // Automatically generated marshal implementation. See tools/go_marshal.
 
-// +build amd64 386
-// +build amd64 386
 // +build 386 amd64 arm64
 
 package arch

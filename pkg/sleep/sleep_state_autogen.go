@@ -3,7 +3,5 @@
 // +build amd64 arm64
 // +build !race
 // +build !amd64,!arm64
-// +build go1.11
-// +build !go1.15
 
 package sleep
