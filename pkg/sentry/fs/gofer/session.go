@@ -190,9 +190,9 @@ type session struct {
 	// be socket/pipe files. This allows unix domain sockets and named pipes to
 	// be used with paths that belong to a gofer.
 	//
-	// TODO(gvisor.dev/issue/1200): there are few possible races with someone
-	// stat'ing the file and another deleting it concurrently, where the file
-	// will not be reported as socket file.
+	// There are a few possible races with someone stat'ing the file and another
+	// deleting it concurrently, where the file will not be reported as socket
+	// file.
 	overrides *overrideMaps `state:"wait"`
 }
 
