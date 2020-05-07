@@ -81,6 +81,9 @@ type filesystem struct {
 	// clock is a realtime clock used to set timestamps in file operations.
 	clock ktime.Clock
 
+	// devMinor is the filesystem's minor device number. devMinor is immutable.
+	devMinor uint32
+
 	// uid and gid are the effective KUID and KGID of the filesystem's creator,
 	// and are used as the owner and group for files that don't specify one.
 	// uid and gid are immutable.
@@ -399,14 +402,21 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 
 	// Construct the filesystem object.
+	devMinor, err := vfsObj.GetAnonBlockDevMinor()
+	if err != nil {
+		attachFile.close(ctx)
+		client.Close()
+		return nil, nil, err
+	}
 	fs := &filesystem{
 		mfp:              mfp,
 		opts:             fsopts,
 		iopts:            iopts,
-		uid:              creds.EffectiveKUID,
-		gid:              creds.EffectiveKGID,
 		client:           client,
 		clock:            ktime.RealtimeClockFromContext(ctx),
+		devMinor:         devMinor,
+		uid:              creds.EffectiveKUID,
+		gid:              creds.EffectiveKGID,
 		syncableDentries: make(map[*dentry]struct{}),
 		specialFileFDs:   make(map[*specialFileFD]struct{}),
 	}
@@ -464,6 +474,8 @@ func (fs *filesystem) Release() {
 		// Close the connection to the server. This implicitly clunks all fids.
 		fs.client.Close()
 	}
+
+	fs.vfsfs.VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
 }
 
 // dentry implements vfs.DentryImpl.
@@ -796,7 +808,8 @@ func (d *dentry) statTo(stat *linux.Statx) {
 	stat.Btime = statxTimestampFromDentry(atomic.LoadInt64(&d.btime))
 	stat.Ctime = statxTimestampFromDentry(atomic.LoadInt64(&d.ctime))
 	stat.Mtime = statxTimestampFromDentry(atomic.LoadInt64(&d.mtime))
-	// TODO(gvisor.dev/issue/1198): device number
+	stat.DevMajor = linux.UNNAMED_MAJOR
+	stat.DevMinor = d.fs.devMinor
 }
 
 func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, stat *linux.Statx, mnt *vfs.Mount) error {
