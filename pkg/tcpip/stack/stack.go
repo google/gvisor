@@ -1898,9 +1898,23 @@ func (s *Stack) FindNetworkEndpoint(netProto tcpip.NetworkProtocolNumber, addres
 			nic.mu.RLock()
 			defer nic.mu.RUnlock()
 
-			// An endpoint with this id exists, check if it can be used and return it.
+			// An endpoint with this id exists, check if it can be
+			// used and return it.
 			return ref.ep, nil
 		}
 	}
 	return nil, tcpip.ErrBadAddress
+}
+
+// FindNICNameFromID returns the name of the nic for the given NICID.
+func (s *Stack) FindNICNameFromID(id tcpip.NICID) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	nic, ok := s.nics[id]
+	if !ok {
+		return ""
+	}
+
+	return nic.Name()
 }

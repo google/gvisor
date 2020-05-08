@@ -29,6 +29,12 @@ func init() {
 	RegisterTestCase(FilterOutputAcceptUDPOwner{})
 	RegisterTestCase(FilterOutputDropUDPOwner{})
 	RegisterTestCase(FilterOutputOwnerFail{})
+	RegisterTestCase(FilterOutputInterfaceAccept{})
+	RegisterTestCase(FilterOutputInterfaceDrop{})
+	RegisterTestCase(FilterOutputInterface{})
+	RegisterTestCase(FilterOutputInterfaceBeginsWith{})
+	RegisterTestCase(FilterOutputInterfaceInvertDrop{})
+	RegisterTestCase(FilterOutputInterfaceInvertAccept{})
 }
 
 // FilterOutputDropTCPDestPort tests that connections are not accepted on
@@ -285,4 +291,168 @@ func (FilterOutputInvertDestination) ContainerAction(ip net.IP) error {
 // LocalAction implements TestCase.LocalAction.
 func (FilterOutputInvertDestination) LocalAction(ip net.IP) error {
 	return listenUDP(acceptPort, sendloopDuration)
+}
+
+// FilterOutputInterfaceAccept tests that packets are sent via interface
+// matching the iptables rule.
+type FilterOutputInterfaceAccept struct{}
+
+// Name implements TestCase.Name.
+func (FilterOutputInterfaceAccept) Name() string {
+	return "FilterOutputInterfaceAccept"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterOutputInterfaceAccept) ContainerAction(ip net.IP) error {
+	ifname, ok := getInterfaceName()
+	if !ok {
+		return fmt.Errorf("no interface is present, except loopback")
+	}
+	if err := filterTable("-A", "OUTPUT", "-p", "udp", "-o", ifname, "-j", "ACCEPT"); err != nil {
+		return err
+	}
+
+	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterOutputInterfaceAccept) LocalAction(ip net.IP) error {
+	return listenUDP(acceptPort, sendloopDuration)
+}
+
+// FilterOutputInterfaceDrop tests that packets are not sent via interface
+// matching the iptables rule.
+type FilterOutputInterfaceDrop struct{}
+
+// Name implements TestCase.Name.
+func (FilterOutputInterfaceDrop) Name() string {
+	return "FilterOutputInterfaceDrop"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterOutputInterfaceDrop) ContainerAction(ip net.IP) error {
+	ifname, ok := getInterfaceName()
+	if !ok {
+		return fmt.Errorf("no interface is present, except loopback")
+	}
+	if err := filterTable("-A", "OUTPUT", "-p", "udp", "-o", ifname, "-j", "DROP"); err != nil {
+		return err
+	}
+
+	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterOutputInterfaceDrop) LocalAction(ip net.IP) error {
+	if err := listenUDP(acceptPort, sendloopDuration); err == nil {
+		return fmt.Errorf("packets should not be received on port %v, but are received", acceptPort)
+	}
+
+	return nil
+}
+
+// FilterOutputInterface tests that packets are sent via interface which is
+// not matching the interface name in the iptables rule.
+type FilterOutputInterface struct{}
+
+// Name implements TestCase.Name.
+func (FilterOutputInterface) Name() string {
+	return "FilterOutputInterface"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterOutputInterface) ContainerAction(ip net.IP) error {
+	if err := filterTable("-A", "OUTPUT", "-p", "udp", "-o", "lo", "-j", "DROP"); err != nil {
+		return err
+	}
+
+	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterOutputInterface) LocalAction(ip net.IP) error {
+	return listenUDP(acceptPort, sendloopDuration)
+}
+
+// FilterOutputInterfaceBeginsWith tests that packets are not sent via an
+// interface which begins with the given interface name.
+type FilterOutputInterfaceBeginsWith struct{}
+
+// Name implements TestCase.Name.
+func (FilterOutputInterfaceBeginsWith) Name() string {
+	return "FilterOutputInterfaceBeginsWith"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterOutputInterfaceBeginsWith) ContainerAction(ip net.IP) error {
+	if err := filterTable("-A", "OUTPUT", "-p", "udp", "-o", "e+", "-j", "DROP"); err != nil {
+		return err
+	}
+
+	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterOutputInterfaceBeginsWith) LocalAction(ip net.IP) error {
+	if err := listenUDP(acceptPort, sendloopDuration); err == nil {
+		return fmt.Errorf("packets should not be received on port %v, but are received", acceptPort)
+	}
+
+	return nil
+}
+
+// FilterOutputInterfaceInvertDrop tests that we selectively do not send
+// packets via interface not matching the interface name.
+type FilterOutputInterfaceInvertDrop struct{}
+
+// Name implements TestCase.Name.
+func (FilterOutputInterfaceInvertDrop) Name() string {
+	return "FilterOutputInterfaceInvertDrop"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterOutputInterfaceInvertDrop) ContainerAction(ip net.IP) error {
+	if err := filterTable("-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "-j", "DROP"); err != nil {
+		return err
+	}
+
+	// Listen for TCP packets on accept port.
+	if err := listenTCP(acceptPort, sendloopDuration); err == nil {
+		return fmt.Errorf("connection on port %d should not be accepted, but got accepted", acceptPort)
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterOutputInterfaceInvertDrop) LocalAction(ip net.IP) error {
+	if err := connectTCP(ip, acceptPort, sendloopDuration); err == nil {
+		return fmt.Errorf("connection destined to port %d should not be accepted, but got accepted", acceptPort)
+	}
+
+	return nil
+}
+
+// FilterOutputInterfaceInvertAccept tests that we can selectively send packets
+// not matching the specific outgoing interface.
+type FilterOutputInterfaceInvertAccept struct{}
+
+// Name implements TestCase.Name.
+func (FilterOutputInterfaceInvertAccept) Name() string {
+	return "FilterOutputInterfaceInvertAccept"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterOutputInterfaceInvertAccept) ContainerAction(ip net.IP) error {
+	if err := filterTable("-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "-j", "ACCEPT"); err != nil {
+		return err
+	}
+
+	// Listen for TCP packets on accept port.
+	return listenTCP(acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterOutputInterfaceInvertAccept) LocalAction(ip net.IP) error {
+	return connectTCP(ip, acceptPort, sendloopDuration)
 }
