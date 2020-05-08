@@ -53,13 +53,19 @@ func ImportFD(ctx context.Context, mnt *vfs.Mount, hostFD int, isTTY bool) (*vfs
 		return nil, err
 	}
 
+	// Get flags for the imported FD.
+	flags, err := unix.FcntlInt(uintptr(hostFD), syscall.F_GETFL, 0)
+	if err != nil {
+		return nil, err
+	}
+
 	fileMode := linux.FileMode(s.Mode)
 	fileType := fileMode.FileType()
 
 	// Determine if hostFD is seekable. If not, this syscall will return ESPIPE
 	// (see fs/read_write.c:llseek), e.g. for pipes, sockets, and some character
 	// devices.
-	_, err := unix.Seek(hostFD, 0, linux.SEEK_CUR)
+	_, err = unix.Seek(hostFD, 0, linux.SEEK_CUR)
 	seekable := err != syserror.ESPIPE
 
 	i := &inode{
@@ -95,7 +101,7 @@ func ImportFD(ctx context.Context, mnt *vfs.Mount, hostFD int, isTTY bool) (*vfs
 
 	// i.open will take a reference on d.
 	defer d.DecRef()
-	return i.open(ctx, d.VFSDentry(), mnt)
+	return i.open(ctx, d.VFSDentry(), mnt, uint32(flags))
 }
 
 // filesystemType implements vfs.FilesystemType.
@@ -196,19 +202,6 @@ type inode struct {
 
 	// Event queue for blocking operations.
 	queue waiter.Queue
-}
-
-// Note that these flags may become out of date, since they can be modified
-// on the host, e.g. with fcntl.
-func fileFlagsFromHostFD(fd int) (uint32, error) {
-	flags, err := unix.FcntlInt(uintptr(fd), syscall.F_GETFL, 0)
-	if err != nil {
-		log.Warningf("Failed to get file flags for donated FD %d: %v", fd, err)
-		return 0, err
-	}
-	// TODO(gvisor.dev/issue/1672): implement behavior corresponding to these allowed flags.
-	flags &= syscall.O_ACCMODE | syscall.O_DIRECT | syscall.O_NONBLOCK | syscall.O_DSYNC | syscall.O_SYNC | syscall.O_APPEND
-	return uint32(flags), nil
 }
 
 // CheckPermissions implements kernfs.Inode.
@@ -406,19 +399,19 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 	if i.Mode().FileType() == linux.S_IFSOCK {
 		return nil, syserror.ENXIO
 	}
-	return i.open(ctx, vfsd, rp.Mount())
+	return i.open(ctx, vfsd, rp.Mount(), opts.Flags)
 }
 
-func (i *inode) open(ctx context.Context, d *vfs.Dentry, mnt *vfs.Mount) (*vfs.FileDescription, error) {
+func (i *inode) open(ctx context.Context, d *vfs.Dentry, mnt *vfs.Mount, flags uint32) (*vfs.FileDescription, error) {
 	var s syscall.Stat_t
 	if err := syscall.Fstat(i.hostFD, &s); err != nil {
 		return nil, err
 	}
 	fileType := s.Mode & linux.FileTypeMask
-	flags, err := fileFlagsFromHostFD(i.hostFD)
-	if err != nil {
-		return nil, err
-	}
+
+	// Constrain flags to a subset we can handle.
+	// TODO(gvisor.dev/issue/1672): implement behavior corresponding to these allowed flags.
+	flags &= syscall.O_ACCMODE | syscall.O_DIRECT | syscall.O_NONBLOCK | syscall.O_DSYNC | syscall.O_SYNC | syscall.O_APPEND
 
 	if fileType == syscall.S_IFSOCK {
 		if i.isTTY {
