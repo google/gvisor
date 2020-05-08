@@ -34,6 +34,7 @@ FULL_DOCKER_RUN_OPTIONS := $(DOCKER_RUN_OPTIONS)
 FULL_DOCKER_RUN_OPTIONS += -v "$(BAZEL_CACHE):$(BAZEL_CACHE)"
 FULL_DOCKER_RUN_OPTIONS += -v "$(GCLOUD_CONFIG):$(GCLOUD_CONFIG)"
 FULL_DOCKER_RUN_OPTIONS += -v "$(DOCKER_SOCKET):$(DOCKER_SOCKET)"
+SHELL=/bin/bash -o pipefail
 
 ##
 ## Bazel helpers.
@@ -78,7 +79,7 @@ bazel-server: ## Ensures that the server exists. Used as an internal target.
 	@docker exec $(DOCKER_NAME) true || $(MAKE) bazel-server-start
 .PHONY: bazel-server
 
-build_paths = docker exec --user $(UID):$(GID) -i $(DOCKER_NAME) sh -c 'bazel build $(OPTIONS) $(TARGETS) 2>&1 \
+build_paths = docker exec --user $(UID):$(GID) -i $(DOCKER_NAME) sh -o pipefail -c 'bazel build $(OPTIONS) $(TARGETS) 2>&1 \
 		| tee /dev/fd/2 \
 		| grep -E "^  bazel-bin/" \
 		| awk "{print $$1;}"' \
