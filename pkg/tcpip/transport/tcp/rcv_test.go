@@ -30,7 +30,7 @@ func TestAcceptable(t *testing.T) {
 	}{
 		// The segment is smaller than the window.
 		{105, 2, 100, 104, false},
-		{105, 2, 101, 105, false},
+		{105, 2, 101, 105, true},
 		{105, 2, 102, 106, true},
 		{105, 2, 103, 107, true},
 		{105, 2, 104, 108, true},
@@ -39,7 +39,7 @@ func TestAcceptable(t *testing.T) {
 		{105, 2, 107, 111, false},
 
 		// The segment is larger than the window.
-		{105, 4, 103, 105, false},
+		{105, 4, 103, 105, true},
 		{105, 4, 104, 106, true},
 		{105, 4, 105, 107, true},
 		{105, 4, 106, 108, true},
