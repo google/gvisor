@@ -249,10 +249,11 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 	ip := e.addIPHeader(r, &pkt.Header, pkt.Data.Size(), params)
 	pkt.NetworkHeader = buffer.View(ip)
 
+	nicName := e.stack.FindNICNameFromID(e.NICID())
 	// iptables filtering. All packets that reach here are locally
 	// generated.
 	ipt := e.stack.IPTables()
-	if ok := ipt.Check(stack.Output, &pkt, gso, r, ""); !ok {
+	if ok := ipt.Check(stack.Output, &pkt, gso, r, "", nicName); !ok {
 		// iptables is telling us to drop the packet.
 		return nil
 	}
@@ -319,10 +320,11 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 		pkt = pkt.Next()
 	}
 
+	nicName := e.stack.FindNICNameFromID(e.NICID())
 	// iptables filtering. All packets that reach here are locally
 	// generated.
 	ipt := e.stack.IPTables()
-	dropped, natPkts := ipt.CheckPackets(stack.Output, pkts, gso, r)
+	dropped, natPkts := ipt.CheckPackets(stack.Output, pkts, gso, r, nicName)
 	if len(dropped) == 0 && len(natPkts) == 0 {
 		// Fast path: If no packets are to be dropped then we can just invoke the
 		// faster WritePackets API directly.
@@ -445,7 +447,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
 	// iptables filtering. All packets that reach here are intended for
 	// this machine and will not be forwarded.
 	ipt := e.stack.IPTables()
-	if ok := ipt.Check(stack.Input, &pkt, nil, nil, ""); !ok {
+	if ok := ipt.Check(stack.Input, &pkt, nil, nil, "", ""); !ok {
 		// iptables is telling us to drop the packet.
 		return
 	}
