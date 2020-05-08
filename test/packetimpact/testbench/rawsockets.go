@@ -169,7 +169,7 @@ func NewInjector(t *testing.T) (Injector, error) {
 // Send a raw frame.
 func (i *Injector) Send(b []byte) {
 	if _, err := unix.Write(i.fd, b); err != nil {
-		i.t.Fatalf("can't write: %s", err)
+		i.t.Fatalf("can't write: %s of len %d", err, len(b))
 	}
 }
 

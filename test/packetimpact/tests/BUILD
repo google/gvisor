@@ -148,6 +148,15 @@ packetimpact_go_test(
     ],
 )
 
+packetimpact_go_test(
+    name = "udp_send_recv_dgram",
+    srcs = ["udp_send_recv_dgram_test.go"],
+    deps = [
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
 sh_binary(
     name = "test_runner",
     srcs = ["test_runner.sh"],

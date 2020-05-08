@@ -841,6 +841,7 @@ func (conn *UDPIPv4) SendIP(additionalLayers ...Layer) {
 // Expect expects a frame with the UDP layer matching the provided UDP within
 // the timeout specified. If it doesn't arrive in time, an error is returned.
 func (conn *UDPIPv4) Expect(udp UDP, timeout time.Duration) (*UDP, error) {
+	conn.t.Helper()
 	layer, err := (*Connection)(conn).Expect(&udp, timeout)
 	if layer == nil {
 		return nil, err
@@ -850,6 +851,18 @@ func (conn *UDPIPv4) Expect(udp UDP, timeout time.Duration) (*UDP, error) {
 		conn.t.Fatalf("expected %s to be UDP", layer)
 	}
 	return gotUDP, err
+}
+
+// ExpectData is a convenient method that expects a Layer and the Layer after
+// it. If it doens't arrive in time, it returns nil.
+func (conn *UDPIPv4) ExpectData(udp UDP, payload Payload, timeout time.Duration) (Layers, error) {
+	conn.t.Helper()
+	expected := make([]Layer, len(conn.layerStates))
+	expected[len(expected)-1] = &udp
+	if payload.length() != 0 {
+		expected = append(expected, &payload)
+	}
+	return (*Connection)(conn).ExpectFrame(expected, timeout)
 }
 
 // Close frees associated resources held by the UDPIPv4 connection.

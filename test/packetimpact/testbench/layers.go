@@ -898,10 +898,7 @@ func (l *UDP) match(other Layer) bool {
 }
 
 func (l *UDP) length() int {
-	if l.Length == nil {
-		return header.UDPMinimumSize
-	}
-	return int(*l.Length)
+	return header.UDPMinimumSize
 }
 
 // merge implements Layer.merge.
