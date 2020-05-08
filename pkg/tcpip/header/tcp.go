@@ -609,5 +609,8 @@ func Acceptable(segSeq seqnum.Value, segLen seqnum.Size, rcvNxt, rcvAcc seqnum.V
 	}
 	// Page 70 of RFC 793 allows packets that can be made "acceptable" by trimming
 	// the payload, so we'll accept any payload that overlaps the receieve window.
-	return rcvNxt.LessThan(segSeq.Add(segLen)) && segSeq.LessThan(rcvAcc)
+	// segSeq < rcvAcc is more correct according to RFC, however, Linux does it
+	// differently, it uses segSeq <= rcvAcc, we'd want to keep the same behavior
+	// as Linux.
+	return rcvNxt.LessThan(segSeq.Add(segLen)) && segSeq.LessThanEq(rcvAcc)
 }
