@@ -83,7 +83,8 @@ func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions
 		return 0, nil, tcpip.ErrNoRoute
 	}
 
-	hdr := buffer.NewPrependable(int(f.route.MaxHeaderLength()))
+	hdr := buffer.NewPrependable(int(f.route.MaxHeaderLength()) + fakeTransHeaderLen)
+	hdr.Prepend(fakeTransHeaderLen)
 	v, err := p.FullPayload()
 	if err != nil {
 		return 0, nil, err
@@ -323,6 +324,17 @@ func (*fakeTransportProtocol) Close() {}
 
 // Wait implements TransportProtocol.Wait.
 func (*fakeTransportProtocol) Wait() {}
+
+// Parse implements TransportProtocol.Parse.
+func (*fakeTransportProtocol) Parse(pkt *stack.PacketBuffer) bool {
+	hdr, ok := pkt.Data.PullUp(fakeTransHeaderLen)
+	if !ok {
+		return false
+	}
+	pkt.TransportHeader = hdr
+	pkt.Data.TrimFront(fakeTransHeaderLen)
+	return true
+}
 
 func fakeTransFactory() stack.TransportProtocol {
 	return &fakeTransportProtocol{}
@@ -642,11 +654,10 @@ func TestTransportForwarding(t *testing.T) {
 		t.Fatal("Response packet not forwarded")
 	}
 
-	hdrs := p.Pkt.Data.ToView()
-	if dst := hdrs[0]; dst != 3 {
+	if dst := p.Pkt.NetworkHeader[0]; dst != 3 {
 		t.Errorf("Response packet has incorrect destination addresss: got = %d, want = 3", dst)
 	}
-	if src := hdrs[1]; src != 1 {
+	if src := p.Pkt.NetworkHeader[1]; src != 1 {
 		t.Errorf("Response packet has incorrect source addresss: got = %d, want = 3", src)
 	}
 }

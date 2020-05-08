@@ -110,36 +110,10 @@ func (um *UDPMatcher) Match(hook stack.Hook, pkt stack.PacketBuffer, interfaceNa
 		return false, false
 	}
 
-	// Now we need the transport header. However, this may not have been set
-	// yet.
-	// TODO(gvisor.dev/issue/170): Parsing the transport header should
-	// ultimately be moved into the stack.Check codepath as matchers are
-	// added.
-	var udpHeader header.UDP
-	if pkt.TransportHeader != nil {
-		udpHeader = header.UDP(pkt.TransportHeader)
-	} else {
-		var length int
-		if hook == stack.Prerouting {
-			// The network header hasn't been parsed yet. We have to do it here.
-			hdr, ok := pkt.Data.PullUp(header.IPv4MinimumSize)
-			if !ok {
-				// There's no valid UDP header here, so we hotdrop the
-				// packet.
-				return false, true
-			}
-			h := header.IPv4(hdr)
-			pkt.NetworkHeader = hdr
-			length = int(h.HeaderLength())
-		}
-		// The UDP header hasn't been parsed yet. We have to do it here.
-		hdr, ok := pkt.Data.PullUp(length + header.UDPMinimumSize)
-		if !ok {
-			// There's no valid UDP header here, so we hotdrop the
-			// packet.
-			return false, true
-		}
-		udpHeader = header.UDP(hdr[length:])
+	udpHeader := header.UDP(pkt.TransportHeader)
+	if len(udpHeader) < header.UDPMinimumSize {
+		// There's no valid UDP header here, so we drop the packet immediately.
+		return false, true
 	}
 
 	// Check whether the source and destination ports are within the

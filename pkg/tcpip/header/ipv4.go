@@ -159,6 +159,11 @@ func (b IPv4) Flags() uint8 {
 	return uint8(binary.BigEndian.Uint16(b[flagsFO:]) >> 13)
 }
 
+// More returns whether the more fragments flag is set.
+func (b IPv4) More() bool {
+	return b.Flags()&IPv4FlagMoreFragments != 0
+}
+
 // TTL returns the "TTL" field of the ipv4 header.
 func (b IPv4) TTL() uint8 {
 	return b[ttl]

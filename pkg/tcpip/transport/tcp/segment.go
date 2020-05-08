@@ -35,6 +35,7 @@ type segment struct {
 	id     stack.TransportEndpointID `state:"manual"`
 	route  stack.Route               `state:"manual"`
 	data   buffer.VectorisedView     `state:".(buffer.VectorisedView)"`
+	hdr    header.TCP
 	// views is used as buffer for data when its length is large
 	// enough to store a VectorisedView.
 	views [8]buffer.View `state:"nosave"`
@@ -67,6 +68,7 @@ func newSegment(r *stack.Route, id stack.TransportEndpointID, pkt stack.PacketBu
 		route:  r.Clone(),
 	}
 	s.data = pkt.Data.Clone(s.views[:])
+	s.hdr = header.TCP(pkt.TransportHeader)
 	s.rcvdTime = time.Now()
 	return s
 }
@@ -146,12 +148,6 @@ func (s *segment) logicalLen() seqnum.Size {
 // TCP checksum and stores the checksum and result of checksum verification in
 // the csum and csumValid fields of the segment.
 func (s *segment) parse() bool {
-	h, ok := s.data.PullUp(header.TCPMinimumSize)
-	if !ok {
-		return false
-	}
-	hdr := header.TCP(h)
-
 	// h is the header followed by the payload. We check that the offset to
 	// the data respects the following constraints:
 	// 1. That it's at least the minimum header size; if we don't do this
@@ -162,16 +158,12 @@ func (s *segment) parse() bool {
 	// N.B. The segment has already been validated as having at least the
 	//      minimum TCP size before reaching here, so it's safe to read the
 	//      fields.
-	offset := int(hdr.DataOffset())
-	if offset < header.TCPMinimumSize {
-		return false
-	}
-	hdrWithOpts, ok := s.data.PullUp(offset)
-	if !ok {
+	offset := int(s.hdr.DataOffset())
+	if offset < header.TCPMinimumSize || offset > len(s.hdr) {
 		return false
 	}
 
-	s.options = []byte(hdrWithOpts[header.TCPMinimumSize:])
+	s.options = []byte(s.hdr[header.TCPMinimumSize:])
 	s.parsedOptions = header.ParseTCPOptions(s.options)
 
 	// Query the link capabilities to decide if checksum validation is
@@ -180,22 +172,19 @@ func (s *segment) parse() bool {
 	if s.route.Capabilities()&stack.CapabilityRXChecksumOffload != 0 {
 		s.csumValid = true
 		verifyChecksum = false
-		s.data.TrimFront(offset)
 	}
 	if verifyChecksum {
-		hdr = header.TCP(hdrWithOpts)
-		s.csum = hdr.Checksum()
-		xsum := s.route.PseudoHeaderChecksum(ProtocolNumber, uint16(s.data.Size()))
-		xsum = hdr.CalculateChecksum(xsum)
-		s.data.TrimFront(offset)
+		s.csum = s.hdr.Checksum()
+		xsum := s.route.PseudoHeaderChecksum(ProtocolNumber, uint16(s.data.Size()+len(s.hdr)))
+		xsum = s.hdr.CalculateChecksum(xsum)
 		xsum = header.ChecksumVV(s.data, xsum)
 		s.csumValid = xsum == 0xffff
 	}
 
-	s.sequenceNumber = seqnum.Value(hdr.SequenceNumber())
-	s.ackNumber = seqnum.Value(hdr.AckNumber())
-	s.flags = hdr.Flags()
-	s.window = seqnum.Size(hdr.WindowSize())
+	s.sequenceNumber = seqnum.Value(s.hdr.SequenceNumber())
+	s.ackNumber = seqnum.Value(s.hdr.AckNumber())
+	s.flags = s.hdr.Flags()
+	s.window = seqnum.Size(s.hdr.WindowSize())
 	return true
 }
 

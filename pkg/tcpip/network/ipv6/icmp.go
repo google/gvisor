@@ -70,17 +70,20 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt stack.
 	e.dispatcher.DeliverTransportControlPacket(e.id.LocalAddress, hdr.DestinationAddress(), ProtocolNumber, p, typ, extra, pkt)
 }
 
-func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.PacketBuffer, hasFragmentHeader bool) {
+func (e *endpoint) handleICMP(r *stack.Route, pkt stack.PacketBuffer, hasFragmentHeader bool) {
 	stats := r.Stats().ICMP
 	sent := stats.V6PacketsSent
 	received := stats.V6PacketsReceived
+	// TODO(gvisor.dev/issue/170): ICMP packets don't have their
+	// TransportHeader fields set. See icmp/protocol.go:protocol.Parse for a
+	// full explanation.
 	v, ok := pkt.Data.PullUp(header.ICMPv6HeaderSize)
 	if !ok {
 		received.Invalid.Increment()
 		return
 	}
 	h := header.ICMPv6(v)
-	iph := header.IPv6(netHeader)
+	iph := header.IPv6(pkt.NetworkHeader)
 
 	// Validate ICMPv6 checksum before processing the packet.
 	//

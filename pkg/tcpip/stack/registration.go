@@ -168,6 +168,11 @@ type TransportProtocol interface {
 
 	// Wait waits for any worker goroutines owned by the protocol to stop.
 	Wait()
+
+	// Parse sets pkt.TransportHeader and trims pkt.Data appropriately. It does
+	// neither and returns false if pkt.Data is too small, i.e. pkt.Data.Size() <
+	// MinimumPacketSize()
+	Parse(pkt *PacketBuffer) (ok bool)
 }
 
 // TransportDispatcher contains the methods used by the network stack to deliver
@@ -312,6 +317,14 @@ type NetworkProtocol interface {
 
 	// Wait waits for any worker goroutines owned by the protocol to stop.
 	Wait()
+
+	// Parse sets pkt.NetworkHeader and trims pkt.Data appropriately. It
+	// returns:
+	// - The encapsulated protocol, if present.
+	// - Whether there is an encapsulated transport protocol payload (e.g. ARP
+	//   does not encapsulate anything).
+	// - Whether pkt.Data was large enough to parse and set pkt.NetworkHeader.
+	Parse(pkt *PacketBuffer) (proto tcpip.TransportProtocolNumber, hasTransportHdr bool, ok bool)
 }
 
 // NetworkDispatcher contains the methods used by the network stack to deliver

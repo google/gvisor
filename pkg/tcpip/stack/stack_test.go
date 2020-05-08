@@ -52,6 +52,10 @@ const (
 	// where another value is explicitly used. It is chosen to match the MTU
 	// of loopback interfaces on linux systems.
 	defaultMTU = 65536
+
+	dstAddrOffset        = 0
+	srcAddrOffset        = 1
+	protocolNumberOffset = 2
 )
 
 // fakeNetworkEndpoint is a network-layer protocol endpoint. It counts sent and
@@ -94,26 +98,24 @@ func (f *fakeNetworkEndpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffe
 	// Increment the received packet count in the protocol descriptor.
 	f.proto.packetCount[int(f.id.LocalAddress[0])%len(f.proto.packetCount)]++
 
-	// Consume the network header.
-	b, ok := pkt.Data.PullUp(fakeNetHeaderLen)
-	if !ok {
-		return
-	}
-	pkt.Data.TrimFront(fakeNetHeaderLen)
-
 	// Handle control packets.
-	if b[2] == uint8(fakeControlProtocol) {
+	if pkt.NetworkHeader[protocolNumberOffset] == uint8(fakeControlProtocol) {
 		nb, ok := pkt.Data.PullUp(fakeNetHeaderLen)
 		if !ok {
 			return
 		}
 		pkt.Data.TrimFront(fakeNetHeaderLen)
-		f.dispatcher.DeliverTransportControlPacket(tcpip.Address(nb[1:2]), tcpip.Address(nb[0:1]), fakeNetNumber, tcpip.TransportProtocolNumber(nb[2]), stack.ControlPortUnreachable, 0, pkt)
+		f.dispatcher.DeliverTransportControlPacket(
+			tcpip.Address(nb[srcAddrOffset:srcAddrOffset+1]),
+			tcpip.Address(nb[dstAddrOffset:dstAddrOffset+1]),
+			fakeNetNumber,
+			tcpip.TransportProtocolNumber(nb[protocolNumberOffset]),
+			stack.ControlPortUnreachable, 0, pkt)
 		return
 	}
 
 	// Dispatch the packet to the transport protocol.
-	f.dispatcher.DeliverTransportPacket(r, tcpip.TransportProtocolNumber(b[2]), pkt)
+	f.dispatcher.DeliverTransportPacket(r, tcpip.TransportProtocolNumber(pkt.NetworkHeader[protocolNumberOffset]), pkt)
 }
 
 func (f *fakeNetworkEndpoint) MaxHeaderLength() uint16 {
@@ -138,18 +140,13 @@ func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, params
 
 	// Add the protocol's header to the packet and send it to the link
 	// endpoint.
-	b := pkt.Header.Prepend(fakeNetHeaderLen)
-	b[0] = r.RemoteAddress[0]
-	b[1] = f.id.LocalAddress[0]
-	b[2] = byte(params.Protocol)
+	pkt.NetworkHeader = pkt.Header.Prepend(fakeNetHeaderLen)
+	pkt.NetworkHeader[dstAddrOffset] = r.RemoteAddress[0]
+	pkt.NetworkHeader[srcAddrOffset] = f.id.LocalAddress[0]
+	pkt.NetworkHeader[protocolNumberOffset] = byte(params.Protocol)
 
 	if r.Loop&stack.PacketLoop != 0 {
-		views := make([]buffer.View, 1, 1+len(pkt.Data.Views()))
-		views[0] = pkt.Header.View()
-		views = append(views, pkt.Data.Views()...)
-		f.HandlePacket(r, stack.PacketBuffer{
-			Data: buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views),
-		})
+		f.HandlePacket(r, pkt)
 	}
 	if r.Loop&stack.PacketOut == 0 {
 		return nil
@@ -205,7 +202,7 @@ func (f *fakeNetworkProtocol) PacketCount(intfAddr byte) int {
 }
 
 func (*fakeNetworkProtocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
-	return tcpip.Address(v[1:2]), tcpip.Address(v[0:1])
+	return tcpip.Address(v[srcAddrOffset : srcAddrOffset+1]), tcpip.Address(v[dstAddrOffset : dstAddrOffset+1])
 }
 
 func (f *fakeNetworkProtocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, ep stack.LinkEndpoint, _ *stack.Stack) (stack.NetworkEndpoint, *tcpip.Error) {
@@ -246,6 +243,17 @@ func (*fakeNetworkProtocol) Close() {}
 
 // Wait implements TransportProtocol.Wait.
 func (*fakeNetworkProtocol) Wait() {}
+
+// Parse implements TransportProtocol.Parse.
+func (*fakeNetworkProtocol) Parse(pkt *stack.PacketBuffer) (tcpip.TransportProtocolNumber, bool, bool) {
+	hdr, ok := pkt.Data.PullUp(fakeNetHeaderLen)
+	if !ok {
+		return 0, false, false
+	}
+	pkt.NetworkHeader = hdr
+	pkt.Data.TrimFront(fakeNetHeaderLen)
+	return tcpip.TransportProtocolNumber(hdr[protocolNumberOffset]), true, true
+}
 
 func fakeNetFactory() stack.NetworkProtocol {
 	return &fakeNetworkProtocol{}
@@ -292,7 +300,7 @@ func TestNetworkReceive(t *testing.T) {
 	buf := buffer.NewView(30)
 
 	// Make sure packet with wrong address is not delivered.
-	buf[0] = 3
+	buf[dstAddrOffset] = 3
 	ep.InjectInbound(fakeNetNumber, stack.PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
@@ -304,7 +312,7 @@ func TestNetworkReceive(t *testing.T) {
 	}
 
 	// Make sure packet is delivered to first endpoint.
-	buf[0] = 1
+	buf[dstAddrOffset] = 1
 	ep.InjectInbound(fakeNetNumber, stack.PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
@@ -316,7 +324,7 @@ func TestNetworkReceive(t *testing.T) {
 	}
 
 	// Make sure packet is delivered to second endpoint.
-	buf[0] = 2
+	buf[dstAddrOffset] = 2
 	ep.InjectInbound(fakeNetNumber, stack.PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
@@ -982,7 +990,7 @@ func TestAddressRemoval(t *testing.T) {
 	buf := buffer.NewView(30)
 
 	// Send and receive packets, and verify they are received.
-	buf[0] = localAddrByte
+	buf[dstAddrOffset] = localAddrByte
 	testRecv(t, fakeNet, localAddrByte, ep, buf)
 	testSendTo(t, s, remoteAddr, ep, nil)
 
@@ -1032,7 +1040,7 @@ func TestAddressRemovalWithRouteHeld(t *testing.T) {
 	}
 
 	// Send and receive packets, and verify they are received.
-	buf[0] = localAddrByte
+	buf[dstAddrOffset] = localAddrByte
 	testRecv(t, fakeNet, localAddrByte, ep, buf)
 	testSend(t, r, ep, nil)
 	testSendTo(t, s, remoteAddr, ep, nil)
@@ -1114,7 +1122,7 @@ func TestEndpointExpiration(t *testing.T) {
 
 				fakeNet := s.NetworkProtocolInstance(fakeNetNumber).(*fakeNetworkProtocol)
 				buf := buffer.NewView(30)
-				buf[0] = localAddrByte
+				buf[dstAddrOffset] = localAddrByte
 
 				if promiscuous {
 					if err := s.SetPromiscuousMode(nicID, true); err != nil {
@@ -1277,7 +1285,7 @@ func TestPromiscuousMode(t *testing.T) {
 	// Write a packet, and check that it doesn't get delivered as we don't
 	// have a matching endpoint.
 	const localAddrByte byte = 0x01
-	buf[0] = localAddrByte
+	buf[dstAddrOffset] = localAddrByte
 	testFailingRecv(t, fakeNet, localAddrByte, ep, buf)
 
 	// Set promiscuous mode, then check that packet is delivered.
@@ -1658,7 +1666,7 @@ func TestAddressRangeAcceptsMatchingPacket(t *testing.T) {
 	buf := buffer.NewView(30)
 
 	const localAddrByte byte = 0x01
-	buf[0] = localAddrByte
+	buf[dstAddrOffset] = localAddrByte
 	subnet, err := tcpip.NewSubnet(tcpip.Address("\x00"), tcpip.AddressMask("\xF0"))
 	if err != nil {
 		t.Fatal("NewSubnet failed:", err)
@@ -1766,7 +1774,7 @@ func TestAddressRangeRejectsNonmatchingPacket(t *testing.T) {
 	buf := buffer.NewView(30)
 
 	const localAddrByte byte = 0x01
-	buf[0] = localAddrByte
+	buf[dstAddrOffset] = localAddrByte
 	subnet, err := tcpip.NewSubnet(tcpip.Address("\x10"), tcpip.AddressMask("\xF0"))
 	if err != nil {
 		t.Fatal("NewSubnet failed:", err)
@@ -2344,7 +2352,7 @@ func TestNICForwarding(t *testing.T) {
 
 			// Send a packet to dstAddr.
 			buf := buffer.NewView(30)
-			buf[0] = dstAddr[0]
+			buf[dstAddrOffset] = dstAddr[0]
 			ep1.InjectInbound(fakeNetNumber, stack.PacketBuffer{
 				Data: buf.ToVectorisedView(),
 			})

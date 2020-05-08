@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcpconntrack"
@@ -147,44 +146,6 @@ type ConnTrackTable struct {
 	Seed uint32
 }
 
-// parseHeaders sets headers in the packet.
-func parseHeaders(pkt *PacketBuffer) {
-	newPkt := pkt.Clone()
-
-	// Set network header.
-	hdr, ok := newPkt.Data.PullUp(header.IPv4MinimumSize)
-	if !ok {
-		return
-	}
-	netHeader := header.IPv4(hdr)
-	newPkt.NetworkHeader = hdr
-	length := int(netHeader.HeaderLength())
-
-	// TODO(gvisor.dev/issue/170): Need to support for other
-	// protocols as well.
-	// Set transport header.
-	switch protocol := netHeader.TransportProtocol(); protocol {
-	case header.UDPProtocolNumber:
-		if newPkt.TransportHeader == nil {
-			h, ok := newPkt.Data.PullUp(length + header.UDPMinimumSize)
-			if !ok {
-				return
-			}
-			newPkt.TransportHeader = buffer.View(header.UDP(h[length:]))
-		}
-	case header.TCPProtocolNumber:
-		if newPkt.TransportHeader == nil {
-			h, ok := newPkt.Data.PullUp(length + header.TCPMinimumSize)
-			if !ok {
-				return
-			}
-			newPkt.TransportHeader = buffer.View(header.TCP(h[length:]))
-		}
-	}
-	pkt.NetworkHeader = newPkt.NetworkHeader
-	pkt.TransportHeader = newPkt.TransportHeader
-}
-
 // packetToTuple converts packet to a tuple in original direction.
 func packetToTuple(pkt PacketBuffer, hook Hook) (connTrackTuple, *tcpip.Error) {
 	var tuple connTrackTuple
@@ -257,13 +218,6 @@ func (ct *ConnTrackTable) getTupleHash(tuple connTrackTuple) uint32 {
 // TODO(gvisor.dev/issue/170): Only TCP packets are supported. Need to support other
 // transport protocols.
 func (ct *ConnTrackTable) connTrackForPacket(pkt *PacketBuffer, hook Hook, createConn bool) (*connTrack, ctDirection) {
-	if hook == Prerouting {
-		// Headers will not be set in Prerouting.
-		// TODO(gvisor.dev/issue/170): Change this after parsing headers
-		// code is added.
-		parseHeaders(pkt)
-	}
-
 	var dir ctDirection
 	tuple, err := packetToTuple(*pkt, hook)
 	if err != nil {

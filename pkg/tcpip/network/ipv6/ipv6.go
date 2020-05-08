@@ -171,22 +171,20 @@ func (*endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt stack.PacketBuffe
 // HandlePacket is called by the link layer when new ipv6 packets arrive for
 // this endpoint.
 func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
-	headerView, ok := pkt.Data.PullUp(header.IPv6MinimumSize)
-	if !ok {
-		r.Stats().IP.MalformedPacketsReceived.Increment()
-		return
-	}
-	h := header.IPv6(headerView)
-	if !h.IsValid(pkt.Data.Size()) {
+	h := header.IPv6(pkt.NetworkHeader)
+	if !h.IsValid(pkt.Data.Size() + len(pkt.NetworkHeader) + len(pkt.TransportHeader)) {
 		r.Stats().IP.MalformedPacketsReceived.Increment()
 		return
 	}
 
-	pkt.NetworkHeader = headerView[:header.IPv6MinimumSize]
-	pkt.Data.TrimFront(header.IPv6MinimumSize)
-	pkt.Data.CapLength(int(h.PayloadLength()))
-
-	it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(h.NextHeader()), pkt.Data)
+	// vv consists of:
+	// - Any IPv6 header bytes after the first 40 (i.e. extensions).
+	// - The transport header, if present.
+	// - Any other payload data.
+	vv := pkt.NetworkHeader[header.IPv6MinimumSize:].ToVectorisedView()
+	vv.AppendView(pkt.TransportHeader)
+	vv.Append(pkt.Data)
+	it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(h.NextHeader()), vv)
 	hasFragmentHeader := false
 
 	for firstHeader := true; ; firstHeader = false {
@@ -262,9 +260,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
 		case header.IPv6FragmentExtHdr:
 			hasFragmentHeader = true
 
-			fragmentOffset := extHdr.FragmentOffset()
-			more := extHdr.More()
-			if !more && fragmentOffset == 0 {
+			if extHdr.IsAtomic() {
 				// This fragment extension header indicates that this packet is an
 				// atomic fragment. An atomic fragment is a fragment that contains
 				// all the data required to reassemble a full packet. As per RFC 6946,
@@ -277,9 +273,9 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
 			// Don't consume the iterator if we have the first fragment because we
 			// will use it to validate that the first fragment holds the upper layer
 			// header.
-			rawPayload := it.AsRawHeader(fragmentOffset != 0 /* consume */)
+			rawPayload := it.AsRawHeader(extHdr.FragmentOffset() != 0 /* consume */)
 
-			if fragmentOffset == 0 {
+			if extHdr.FragmentOffset() == 0 {
 				// Check that the iterator ends with a raw payload as the first fragment
 				// should include all headers up to and including any upper layer
 				// headers, as per RFC 8200 section 4.5; only upper layer data
@@ -332,7 +328,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
 			}
 
 			// The packet is a fragment, let's try to reassemble it.
-			start := fragmentOffset * header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit
+			start := extHdr.FragmentOffset() * header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit
 			last := start + uint16(fragmentPayloadLen) - 1
 
 			// Drop the packet if the fragmentOffset is incorrect. i.e the
@@ -345,7 +341,9 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
 			}
 
 			var ready bool
-			pkt.Data, ready, err = e.fragmentation.Process(hash.IPv6FragmentHash(h, extHdr.ID()), start, last, more, rawPayload.Buf)
+			// Note that pkt doesn't have its transport header set after reassembly,
+			// and won't until DeliverNetworkPacket sets it.
+			pkt.Data, ready, err = e.fragmentation.Process(hash.IPv6FragmentHash(h, extHdr.ID()), start, last, extHdr.More(), rawPayload.Buf)
 			if err != nil {
 				r.Stats().IP.MalformedPacketsReceived.Increment()
 				r.Stats().IP.MalformedFragmentsReceived.Increment()
@@ -394,10 +392,17 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
 		case header.IPv6RawPayloadHeader:
 			// If the last header in the payload isn't a known IPv6 extension header,
 			// handle it as if it is transport layer data.
+
+			// For unfragmented packets, extHdr still contains the transport header.
+			// Get rid of it.
+			//
+			// For reassembled fragments, pkt.TransportHeader is unset, so this is a
+			// no-op and pkt.Data begins with the transport header.
+			extHdr.Buf.TrimFront(len(pkt.TransportHeader))
 			pkt.Data = extHdr.Buf
 
 			if p := tcpip.TransportProtocolNumber(extHdr.Identifier); p == header.ICMPv6ProtocolNumber {
-				e.handleICMP(r, headerView, pkt, hasFragmentHeader)
+				e.handleICMP(r, pkt, hasFragmentHeader)
 			} else {
 				r.Stats().IP.PacketsDelivered.Increment()
 				// TODO(b/152019344): Send an ICMPv6 Parameter Problem, Code 1 error
@@ -504,6 +509,75 @@ func (*protocol) Close() {}
 
 // Wait implements stack.TransportProtocol.Wait.
 func (*protocol) Wait() {}
+
+// Parse implements stack.TransportProtocol.Parse.
+func (*protocol) Parse(pkt *stack.PacketBuffer) (tcpip.TransportProtocolNumber, bool, bool) {
+	hdr, ok := pkt.Data.PullUp(header.IPv6MinimumSize)
+	if !ok {
+		return 0, false, false
+	}
+	ipHdr := header.IPv6(hdr)
+
+	// dataClone consists of:
+	// - Any IPv6 header bytes after the first 40 (i.e. extensions).
+	// - The transport header, if present.
+	// - Any other payload data.
+	views := [8]buffer.View{}
+	dataClone := pkt.Data.Clone(views[:])
+	dataClone.TrimFront(header.IPv6MinimumSize)
+	it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(ipHdr.NextHeader()), dataClone)
+
+	// Iterate over the IPv6 extensions to find their length.
+	var nextHdr tcpip.TransportProtocolNumber
+	foundNext := true
+	extensionsSize := 0
+traverseExtensions:
+	for extHdr, done, err := it.Next(); ; extHdr, done, err = it.Next() {
+		if err != nil {
+			break
+		}
+		// If we exhaust the extension list, the entire packet is the IPv6 header
+		// and (possibly) extensions.
+		if done {
+			extensionsSize = dataClone.Size()
+			foundNext = false
+			break
+		}
+
+		switch extHdr := extHdr.(type) {
+		case header.IPv6FragmentExtHdr:
+			// If this is an atomic fragment, we don't have to treat it specially.
+			if !extHdr.More() && extHdr.FragmentOffset() == 0 {
+				continue
+			}
+			// This is a non-atomic fragment and has to be re-assembled before we can
+			// examine the payload for a transport header.
+			foundNext = false
+
+		case header.IPv6RawPayloadHeader:
+			// We've found the payload after any extensions.
+			extensionsSize = dataClone.Size() - extHdr.Buf.Size()
+			nextHdr = tcpip.TransportProtocolNumber(extHdr.Identifier)
+			break traverseExtensions
+
+		default:
+			// Any other extension is a no-op, keep looping until we find the payload.
+		}
+	}
+
+	// Put the IPv6 header with extensions in pkt.NetworkHeader.
+	hdr, ok = pkt.Data.PullUp(header.IPv6MinimumSize + extensionsSize)
+	if !ok {
+		panic(fmt.Sprintf("pkt.Data should have at least %d bytes, but only has %d.", header.IPv6MinimumSize+extensionsSize, pkt.Data.Size()))
+	}
+	ipHdr = header.IPv6(hdr)
+
+	pkt.NetworkHeader = hdr
+	pkt.Data.TrimFront(len(hdr))
+	pkt.Data.CapLength(int(ipHdr.PayloadLength()))
+
+	return nextHdr, foundNext, true
+}
 
 // calculateMTU calculates the network-layer payload MTU based on the link-layer
 // payload mtu.

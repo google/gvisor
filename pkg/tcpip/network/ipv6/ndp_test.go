@@ -551,25 +551,29 @@ func TestNDPValidation(t *testing.T) {
 		return s, ep, r
 	}
 
-	handleIPv6Payload := func(hdr buffer.Prependable, hopLimit uint8, atomicFragment bool, ep stack.NetworkEndpoint, r *stack.Route) {
+	handleIPv6Payload := func(payload buffer.View, hopLimit uint8, atomicFragment bool, ep stack.NetworkEndpoint, r *stack.Route) {
 		nextHdr := uint8(header.ICMPv6ProtocolNumber)
+		var extensions buffer.View
 		if atomicFragment {
-			bytes := hdr.Prepend(header.IPv6FragmentExtHdrLength)
-			bytes[0] = nextHdr
+			extensions = buffer.NewView(header.IPv6FragmentExtHdrLength)
+			extensions[0] = nextHdr
 			nextHdr = uint8(header.IPv6FragmentExtHdrIdentifier)
 		}
 
-		payloadLength := hdr.UsedLength()
-		ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+		ip := header.IPv6(buffer.NewView(header.IPv6MinimumSize + len(extensions)))
 		ip.Encode(&header.IPv6Fields{
-			PayloadLength: uint16(payloadLength),
+			PayloadLength: uint16(len(payload) + len(extensions)),
 			NextHeader:    nextHdr,
 			HopLimit:      hopLimit,
 			SrcAddr:       r.LocalAddress,
 			DstAddr:       r.RemoteAddress,
 		})
+		if n := copy(ip[header.IPv6MinimumSize:], extensions); n != len(extensions) {
+			t.Fatalf("expected to write %d bytes of extensions, but wrote %d", len(extensions), n)
+		}
 		ep.HandlePacket(r, stack.PacketBuffer{
-			Data: hdr.View().ToVectorisedView(),
+			NetworkHeader: buffer.View(ip),
+			Data:          payload.ToVectorisedView(),
 		})
 	}
 
@@ -676,14 +680,11 @@ func TestNDPValidation(t *testing.T) {
 					invalid := stats.Invalid
 					typStat := typ.statCounter(stats)
 
-					extraDataLen := len(typ.extraData)
-					hdr := buffer.NewPrependable(header.IPv6MinimumSize + typ.size + extraDataLen + header.IPv6FragmentExtHdrLength)
-					extraData := buffer.View(hdr.Prepend(extraDataLen))
-					copy(extraData, typ.extraData)
-					pkt := header.ICMPv6(hdr.Prepend(typ.size))
-					pkt.SetType(typ.typ)
-					pkt.SetCode(test.code)
-					pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, extraData.ToVectorisedView()))
+					icmp := header.ICMPv6(buffer.NewView(typ.size + len(typ.extraData)))
+					copy(icmp[typ.size:], typ.extraData)
+					icmp.SetType(typ.typ)
+					icmp.SetCode(test.code)
+					icmp.SetChecksum(header.ICMPv6Checksum(icmp[:typ.size], r.LocalAddress, r.RemoteAddress, buffer.View(typ.extraData).ToVectorisedView()))
 
 					// Rx count of the NDP message should initially be 0.
 					if got := typStat.Value(); got != 0 {
@@ -699,7 +700,7 @@ func TestNDPValidation(t *testing.T) {
 						t.FailNow()
 					}
 
-					handleIPv6Payload(hdr, test.hopLimit, test.atomicFragment, ep, &r)
+					handleIPv6Payload(buffer.View(icmp), test.hopLimit, test.atomicFragment, ep, &r)
 
 					// Rx count of the NDP packet should have increased.
 					if got := typStat.Value(); got != 1 {
