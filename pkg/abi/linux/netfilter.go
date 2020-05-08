@@ -146,7 +146,7 @@ type IPTIP struct {
 	// OutputInterface is the output network interface.
 	OutputInterface [IFNAMSIZ]byte
 
-	// InputInterfaceMask is the intput interface mask.
+	// InputInterfaceMask is the input interface mask.
 	InputInterfaceMask [IFNAMSIZ]byte
 
 	// OuputInterfaceMask is the output interface mask.

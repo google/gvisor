@@ -158,6 +158,19 @@ type IPHeaderFilter struct {
 	// true the filter will match packets that fail the destination
 	// comparison.
 	DstInvert bool
+
+	// OutputInterface matches the name of the outgoing interface for the
+	// packet.
+	OutputInterface string
+
+	// OutputInterfaceMask masks the characters of the interface name when
+	// comparing with OutputInterface.
+	OutputInterfaceMask string
+
+	// OutputInterfaceInvert inverts the meaning of outgoing interface check,
+	// i.e. when true the filter will match packets that fail the outgoing
+	// interface comparison.
+	OutputInterfaceInvert bool
 }
 
 // A Matcher is the interface for matching packets.

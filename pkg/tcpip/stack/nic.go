@@ -1233,7 +1233,7 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 		// iptables filtering.
 		ipt := n.stack.IPTables()
 		address := n.primaryAddress(protocol)
-		if ok := ipt.Check(Prerouting, &pkt, nil, nil, address.Address); !ok {
+		if ok := ipt.Check(Prerouting, &pkt, nil, nil, address.Address, ""); !ok {
 			// iptables is telling us to drop the packet.
 			return
 		}
