@@ -70,7 +70,16 @@ func newReceiver(ep *endpoint, irs seqnum.Value, rcvWnd seqnum.Size, rcvWndScale
 // acceptable checks if the segment sequence number range is acceptable
 // according to the table on page 26 of RFC 793.
 func (r *receiver) acceptable(segSeq seqnum.Value, segLen seqnum.Size) bool {
-	return header.Acceptable(segSeq, segLen, r.rcvNxt, r.rcvAcc)
+	// r.rcvWnd could be much larger than the window size we advertised in our
+	// outgoing packets, we should use what we have advertised for acceptability
+	// test.
+	scaledWindowSize := r.rcvWnd >> r.rcvWndScale
+	if scaledWindowSize > 0xffff {
+		// This is what we actually put in the Window field.
+		scaledWindowSize = 0xffff
+	}
+	advertisedWindowSize := scaledWindowSize << r.rcvWndScale
+	return header.Acceptable(segSeq, segLen, r.rcvNxt, r.rcvNxt.Add(advertisedWindowSize))
 }
 
 // getSendParams returns the parameters needed by the sender when building
@@ -259,7 +268,14 @@ func (r *receiver) handleRcvdSegmentClosing(s *segment, state EndpointState, clo
 	// If we are in one of the shutdown states then we need to do
 	// additional checks before we try and process the segment.
 	switch state {
-	case StateCloseWait, StateClosing, StateLastAck:
+	case StateCloseWait:
+		// If the ACK acks something not yet sent then we send an ACK.
+		if r.ep.snd.sndNxt.LessThan(s.ackNumber) {
+			r.ep.snd.sendAck()
+			return true, nil
+		}
+		fallthrough
+	case StateClosing, StateLastAck:
 		if !s.sequenceNumber.LessThanEq(r.rcvNxt) {
 			// Just drop the segment as we have
 			// already received a FIN and this
@@ -276,7 +292,7 @@ func (r *receiver) handleRcvdSegmentClosing(s *segment, state EndpointState, clo
 		// SHUT_RD) then any data past the rcvNxt should
 		// trigger a RST.
 		endDataSeq := s.sequenceNumber.Add(seqnum.Size(s.data.Size()))
-		if rcvClosed && r.rcvNxt.LessThan(endDataSeq) {
+		if state != StateCloseWait && rcvClosed && r.rcvNxt.LessThan(endDataSeq) {
 			return true, tcpip.ErrConnectionAborted
 		}
 		if state == StateFinWait1 {
@@ -329,13 +345,6 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err *tcpip.Error) {
 	state := r.ep.EndpointState()
 	closed := r.ep.closed
 
-	if state != StateEstablished {
-		drop, err := r.handleRcvdSegmentClosing(s, state, closed)
-		if drop || err != nil {
-			return drop, err
-		}
-	}
-
 	segLen := seqnum.Size(s.data.Size())
 	segSeq := s.sequenceNumber
 
@@ -345,6 +354,13 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err *tcpip.Error) {
 	if !r.acceptable(segSeq, segLen) {
 		r.ep.snd.sendAck()
 		return true, nil
+	}
+
+	if state != StateEstablished {
+		drop, err := r.handleRcvdSegmentClosing(s, state, closed)
+		if drop || err != nil {
+			return drop, err
+		}
 	}
 
 	// Store the time of the last ack.
