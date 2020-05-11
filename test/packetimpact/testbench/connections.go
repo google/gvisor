@@ -17,7 +17,6 @@
 package testbench
 
 import (
-	"flag"
 	"fmt"
 	"math/rand"
 	"net"
@@ -31,13 +30,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 )
-
-var localIPv4 = flag.String("local_ipv4", "", "local IPv4 address for test packets")
-var remoteIPv4 = flag.String("remote_ipv4", "", "remote IPv4 address for test packets")
-var localIPv6 = flag.String("local_ipv6", "", "local IPv6 address for test packets")
-var remoteIPv6 = flag.String("remote_ipv6", "", "remote IPv6 address for test packets")
-var localMAC = flag.String("local_mac", "", "local mac address for test packets")
-var remoteMAC = flag.String("remote_mac", "", "remote mac address for test packets")
 
 func portFromSockaddr(sa unix.Sockaddr) (uint16, error) {
 	switch sa := sa.(type) {
@@ -64,11 +56,11 @@ func pickPort(domain, typ int) (fd int, sa unix.Sockaddr, err error) {
 	switch domain {
 	case unix.AF_INET:
 		var sa4 unix.SockaddrInet4
-		copy(sa4.Addr[:], net.ParseIP(*localIPv4).To4())
+		copy(sa4.Addr[:], net.ParseIP(LocalIPv4).To4())
 		sa = &sa4
 	case unix.AF_INET6:
 		var sa6 unix.SockaddrInet6
-		copy(sa6.Addr[:], net.ParseIP(*localIPv6).To16())
+		copy(sa6.Addr[:], net.ParseIP(LocalIPv6).To16())
 		sa = &sa6
 	default:
 		return -1, nil, fmt.Errorf("invalid domain %d, it should be one of unix.AF_INET or unix.AF_INET6", domain)
@@ -120,12 +112,12 @@ var _ layerState = (*etherState)(nil)
 
 // newEtherState creates a new etherState.
 func newEtherState(out, in Ether) (*etherState, error) {
-	lMAC, err := tcpip.ParseMACAddress(*localMAC)
+	lMAC, err := tcpip.ParseMACAddress(LocalMAC)
 	if err != nil {
 		return nil, err
 	}
 
-	rMAC, err := tcpip.ParseMACAddress(*remoteMAC)
+	rMAC, err := tcpip.ParseMACAddress(RemoteMAC)
 	if err != nil {
 		return nil, err
 	}
@@ -172,8 +164,8 @@ var _ layerState = (*ipv4State)(nil)
 
 // newIPv4State creates a new ipv4State.
 func newIPv4State(out, in IPv4) (*ipv4State, error) {
-	lIP := tcpip.Address(net.ParseIP(*localIPv4).To4())
-	rIP := tcpip.Address(net.ParseIP(*remoteIPv4).To4())
+	lIP := tcpip.Address(net.ParseIP(LocalIPv4).To4())
+	rIP := tcpip.Address(net.ParseIP(RemoteIPv4).To4())
 	s := ipv4State{
 		out: IPv4{SrcAddr: &lIP, DstAddr: &rIP},
 		in:  IPv4{SrcAddr: &rIP, DstAddr: &lIP},
@@ -217,8 +209,8 @@ var _ layerState = (*ipv6State)(nil)
 
 // newIPv6State creates a new ipv6State.
 func newIPv6State(out, in IPv6) (*ipv6State, error) {
-	lIP := tcpip.Address(net.ParseIP(*localIPv6).To16())
-	rIP := tcpip.Address(net.ParseIP(*remoteIPv6).To16())
+	lIP := tcpip.Address(net.ParseIP(LocalIPv6).To16())
+	rIP := tcpip.Address(net.ParseIP(RemoteIPv6).To16())
 	s := ipv6State{
 		out: IPv6{SrcAddr: &lIP, DstAddr: &rIP},
 		in:  IPv6{SrcAddr: &rIP, DstAddr: &lIP},

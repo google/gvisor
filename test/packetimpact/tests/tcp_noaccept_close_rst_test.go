@@ -15,6 +15,7 @@
 package tcp_noaccept_close_rst_test
 
 import (
+	"flag"
 	"testing"
 	"time"
 
@@ -22,6 +23,10 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
 )
+
+func init() {
+	tb.RegisterFlags(flag.CommandLine)
+}
 
 func TestTcpNoAcceptCloseReset(t *testing.T) {
 	dut := tb.NewDUT(t)

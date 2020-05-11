@@ -15,6 +15,7 @@
 package tcp_zero_window_probe_test
 
 import (
+	"flag"
 	"testing"
 	"time"
 
@@ -22,6 +23,10 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
 )
+
+func init() {
+	tb.RegisterFlags(flag.CommandLine)
+}
 
 // TestZeroWindowProbe tests few cases of zero window probing over the
 // same connection.

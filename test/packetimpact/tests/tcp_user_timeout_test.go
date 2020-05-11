@@ -15,6 +15,7 @@
 package tcp_user_timeout_test
 
 import (
+	"flag"
 	"fmt"
 	"testing"
 	"time"
@@ -23,6 +24,10 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
 )
+
+func init() {
+	tb.RegisterFlags(flag.CommandLine)
+}
 
 func sendPayload(conn *tb.TCPIPv4, dut *tb.DUT, fd int32) error {
 	sampleData := make([]byte, 100)

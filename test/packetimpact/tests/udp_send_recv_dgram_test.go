@@ -15,6 +15,7 @@
 package udp_send_recv_dgram_test
 
 import (
+	"flag"
 	"math/rand"
 	"net"
 	"testing"
@@ -23,6 +24,10 @@ import (
 	"golang.org/x/sys/unix"
 	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
 )
+
+func init() {
+	tb.RegisterFlags(flag.CommandLine)
+}
 
 func generateRandomPayload(t *testing.T, n int) string {
 	t.Helper()

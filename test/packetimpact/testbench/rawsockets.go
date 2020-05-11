@@ -27,8 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-var device = flag.String("device", "", "local device for test packets")
-
 // Sniffer can sniff raw packets on the wire.
 type Sniffer struct {
 	t  *testing.T
@@ -139,7 +137,7 @@ type Injector struct {
 // NewInjector creates a new injector on *device.
 func NewInjector(t *testing.T) (Injector, error) {
 	flag.Parse()
-	ifInfo, err := net.InterfaceByName(*device)
+	ifInfo, err := net.InterfaceByName(Device)
 	if err != nil {
 		return Injector{}, err
 	}

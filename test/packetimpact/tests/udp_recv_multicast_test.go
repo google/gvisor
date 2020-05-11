@@ -15,6 +15,7 @@
 package udp_recv_multicast_test
 
 import (
+	"flag"
 	"net"
 	"testing"
 
@@ -22,6 +23,10 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
 )
+
+func init() {
+	tb.RegisterFlags(flag.CommandLine)
+}
 
 func TestUDPRecvMulticast(t *testing.T) {
 	dut := tb.NewDUT(t)
