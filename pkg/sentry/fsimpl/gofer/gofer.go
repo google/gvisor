@@ -221,6 +221,10 @@ type InternalFilesystemOptions struct {
 	// which servers can handle only a single client and report failure if that
 	// client disconnects.
 	LeakConnection bool
+
+	// If OpenSocketsByConnecting is true, silently translate attempts to open
+	// files identifying as sockets to connect RPCs.
+	OpenSocketsByConnecting bool
 }
 
 // Name implements vfs.FilesystemType.Name.
