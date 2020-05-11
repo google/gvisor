@@ -2620,6 +2620,7 @@ cc_binary(
         ":socket_bind_to_device_util",
         ":socket_test_util",
         "//test/util:capability_util",
+        "@com_google_absl//absl/container:node_hash_map",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
