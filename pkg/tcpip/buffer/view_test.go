@@ -483,3 +483,39 @@ func TestPullUp(t *testing.T) {
 		}
 	}
 }
+
+func TestToVectorisedView(t *testing.T) {
+	testCases := []struct {
+		in   View
+		want VectorisedView
+	}{
+		{nil, VectorisedView{}},
+		{View{}, VectorisedView{}},
+		{View{'a'}, VectorisedView{size: 1, views: []View{{'a'}}}},
+	}
+	for _, tc := range testCases {
+		if got, want := tc.in.ToVectorisedView(), tc.want; !reflect.DeepEqual(got, want) {
+			t.Errorf("(%v).ToVectorisedView failed got: %+v, want: %+v", tc.in, got, want)
+		}
+	}
+}
+
+func TestAppendView(t *testing.T) {
+	testCases := []struct {
+		vv   VectorisedView
+		in   View
+		want VectorisedView
+	}{
+		{VectorisedView{}, nil, VectorisedView{}},
+		{VectorisedView{}, View{}, VectorisedView{}},
+		{VectorisedView{[]View{{'a', 'b', 'c', 'd'}}, 4}, nil, VectorisedView{[]View{{'a', 'b', 'c', 'd'}}, 4}},
+		{VectorisedView{[]View{{'a', 'b', 'c', 'd'}}, 4}, View{}, VectorisedView{[]View{{'a', 'b', 'c', 'd'}}, 4}},
+		{VectorisedView{[]View{{'a', 'b', 'c', 'd'}}, 4}, View{'e'}, VectorisedView{[]View{{'a', 'b', 'c', 'd'}, {'e'}}, 5}},
+	}
+	for _, tc := range testCases {
+		tc.vv.AppendView(tc.in)
+		if got, want := tc.vv, tc.want; !reflect.DeepEqual(got, want) {
+			t.Errorf("(%v).ToVectorisedView failed got: %+v, want: %+v", tc.in, got, want)
+		}
+	}
+}
