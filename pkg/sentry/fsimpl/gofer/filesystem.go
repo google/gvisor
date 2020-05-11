@@ -21,6 +21,8 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/p9"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
@@ -835,6 +837,9 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 		if d.isSynthetic() {
 			return nil, syserror.ENXIO
 		}
+		if d.fs.iopts.OpenSocketsByConnecting {
+			return d.connectSocketLocked(ctx, opts)
+		}
 	case linux.S_IFIFO:
 		if d.isSynthetic() {
 			return d.pipe.Open(ctx, mnt, &d.vfsd, opts.Flags)
@@ -843,10 +848,28 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 	return d.openSpecialFileLocked(ctx, mnt, opts)
 }
 
+func (d *dentry) connectSocketLocked(ctx context.Context, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+	if opts.Flags&linux.O_DIRECT != 0 {
+		return nil, syserror.EINVAL
+	}
+	fdObj, err := d.file.connect(ctx, p9.AnonymousSocket)
+	if err != nil {
+		return nil, err
+	}
+	fd, err := host.NewFD(ctx, kernel.KernelFromContext(ctx).HostMount(), fdObj.FD(), &host.NewFDOptions{
+		HaveFlags: true,
+		Flags:     opts.Flags,
+	})
+	if err != nil {
+		fdObj.Close()
+		return nil, err
+	}
+	fdObj.Release()
+	return fd, nil
+}
+
 func (d *dentry) openSpecialFileLocked(ctx context.Context, mnt *vfs.Mount, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(opts)
-	// Treat as a special file. This is done for non-synthetic pipes as well as
-	// regular files when d.fs.opts.regularFilesUseSpecialFileFD is true.
 	if opts.Flags&linux.O_DIRECT != 0 {
 		return nil, syserror.EINVAL
 	}

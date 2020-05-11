@@ -40,8 +40,20 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// ImportFD sets up and returns a vfs.FileDescription from a donated fd.
-func ImportFD(ctx context.Context, mnt *vfs.Mount, hostFD int, isTTY bool) (*vfs.FileDescription, error) {
+// NewFDOptions contains options to NewFD.
+type NewFDOptions struct {
+	// If IsTTY is true, the file descriptor is a TTY.
+	IsTTY bool
+
+	// If HaveFlags is true, use Flags for the new file description. Otherwise,
+	// the new file description will inherit flags from hostFD.
+	HaveFlags bool
+	Flags     uint32
+}
+
+// NewFD returns a vfs.FileDescription representing the given host file
+// descriptor. mnt must be Kernel.HostMount().
+func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) (*vfs.FileDescription, error) {
 	fs, ok := mnt.Filesystem().Impl().(*filesystem)
 	if !ok {
 		return nil, fmt.Errorf("can't import host FDs into filesystems of type %T", mnt.Filesystem().Impl())
@@ -53,10 +65,14 @@ func ImportFD(ctx context.Context, mnt *vfs.Mount, hostFD int, isTTY bool) (*vfs
 		return nil, err
 	}
 
-	// Get flags for the imported FD.
-	flags, err := unix.FcntlInt(uintptr(hostFD), syscall.F_GETFL, 0)
-	if err != nil {
-		return nil, err
+	flags := opts.Flags
+	if !opts.HaveFlags {
+		// Get flags for the imported FD.
+		flagsInt, err := unix.FcntlInt(uintptr(hostFD), syscall.F_GETFL, 0)
+		if err != nil {
+			return nil, err
+		}
+		flags = uint32(flagsInt)
 	}
 
 	fileMode := linux.FileMode(s.Mode)
@@ -65,13 +81,13 @@ func ImportFD(ctx context.Context, mnt *vfs.Mount, hostFD int, isTTY bool) (*vfs
 	// Determine if hostFD is seekable. If not, this syscall will return ESPIPE
 	// (see fs/read_write.c:llseek), e.g. for pipes, sockets, and some character
 	// devices.
-	_, err = unix.Seek(hostFD, 0, linux.SEEK_CUR)
+	_, err := unix.Seek(hostFD, 0, linux.SEEK_CUR)
 	seekable := err != syserror.ESPIPE
 
 	i := &inode{
 		hostFD:     hostFD,
 		seekable:   seekable,
-		isTTY:      isTTY,
+		isTTY:      opts.IsTTY,
 		canMap:     canMap(uint32(fileType)),
 		wouldBlock: wouldBlock(uint32(fileType)),
 		ino:        fs.NextIno(),
@@ -101,7 +117,14 @@ func ImportFD(ctx context.Context, mnt *vfs.Mount, hostFD int, isTTY bool) (*vfs
 
 	// i.open will take a reference on d.
 	defer d.DecRef()
-	return i.open(ctx, d.VFSDentry(), mnt, uint32(flags))
+	return i.open(ctx, d.VFSDentry(), mnt, flags)
+}
+
+// ImportFD sets up and returns a vfs.FileDescription from a donated fd.
+func ImportFD(ctx context.Context, mnt *vfs.Mount, hostFD int, isTTY bool) (*vfs.FileDescription, error) {
+	return NewFD(ctx, mnt, hostFD, &NewFDOptions{
+		IsTTY: isTTY,
+	})
 }
 
 // filesystemType implements vfs.FilesystemType.
