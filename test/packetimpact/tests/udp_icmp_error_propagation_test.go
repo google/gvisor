@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -300,19 +301,22 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 					t.Fatalf("did not receive message from DUT: %s", err)
 				}
 
-				c := make(chan error)
-				go func(c chan error) {
+				var wg sync.WaitGroup
+				wg.Add(2)
+				go func() {
+					defer wg.Done()
+
 					if wantErrno != syscall.Errno(0) {
 						ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 						defer cancel()
 
 						ret, _, err := dut.RecvWithErrno(ctx, remoteFD, 100, 0)
 						if ret != -1 {
-							c <- fmt.Errorf("recv during ICMP error succeeded unexpectedly, expected (%[1]d) %[1]v", wantErrno)
+							t.Errorf("recv during ICMP error succeeded unexpectedly, expected (%[1]d) %[1]v", wantErrno)
 							return
 						}
 						if err != wantErrno {
-							c <- fmt.Errorf("recv during ICMP error resulted in error (%[1]d) %[1]v, expected (%[2]d) %[2]v", err, wantErrno)
+							t.Errorf("recv during ICMP error resulted in error (%[1]d) %[1]v, expected (%[2]d) %[2]v", err, wantErrno)
 							return
 						}
 					}
@@ -321,23 +325,20 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 					defer cancel()
 
 					if ret, _, err := dut.RecvWithErrno(ctx, remoteFD, 100, 0); ret == -1 {
-						c <- fmt.Errorf("recv after ICMP error failed with (%[1]d) %[1]", err)
-						return
+						t.Errorf("recv after ICMP error failed with (%[1]d) %[1]", err)
 					}
-					c <- nil
-				}(c)
+				}()
 
-				cleanChan := make(chan error)
-				go func(c chan error) {
+				go func() {
+					defer wg.Done()
+
 					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 					defer cancel()
 
 					if ret, _, err := dut.RecvWithErrno(ctx, cleanFD, 100, 0); ret == -1 {
-						c <- fmt.Errorf("recv on clean socket failed with (%[1]d) %[1]", err)
-						return
+						t.Errorf("recv on clean socket failed with (%[1]d) %[1]", err)
 					}
-					c <- nil
-				}(cleanChan)
+				}()
 
 				// TODO(b/155684889) This sleep is to allow time for the DUT to
 				// actually call recv since we want the ICMP error to arrive during the
@@ -351,14 +352,7 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 
 				conn.Send(tb.UDP{DstPort: &cleanPort})
 				conn.Send(tb.UDP{})
-
-				err, errClean := <-c, <-cleanChan
-				if errClean != nil {
-					t.Error(err)
-				}
-				if err != nil {
-					t.Fatal(err)
-				}
+				wg.Wait()
 			})
 		}
 	}
