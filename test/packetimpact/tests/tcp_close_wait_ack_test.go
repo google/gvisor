@@ -15,6 +15,7 @@
 package tcp_close_wait_ack_test
 
 import (
+	"flag"
 	"fmt"
 	"testing"
 	"time"
@@ -24,6 +25,10 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
 )
+
+func init() {
+	tb.RegisterFlags(flag.CommandLine)
+}
 
 func TestCloseWaitAck(t *testing.T) {
 	for _, tt := range []struct {

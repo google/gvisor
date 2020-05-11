@@ -16,12 +16,10 @@ package testbench
 
 import (
 	"context"
-	"flag"
 	"net"
 	"strconv"
 	"syscall"
 	"testing"
-	"time"
 
 	pb "gvisor.dev/gvisor/test/packetimpact/proto/posix_server_go_proto"
 
@@ -30,29 +28,21 @@ import (
 	"google.golang.org/grpc/keepalive"
 )
 
-var (
-	posixServerIP   = flag.String("posix_server_ip", "", "ip address to listen to for UDP commands")
-	posixServerPort = flag.Int("posix_server_port", 40000, "port to listen to for UDP commands")
-	rpcTimeout      = flag.Duration("rpc_timeout", 100*time.Millisecond, "gRPC timeout")
-	rpcKeepalive    = flag.Duration("rpc_keepalive", 10*time.Second, "gRPC keepalive")
-)
-
 // DUT communicates with the DUT to force it to make POSIX calls.
 type DUT struct {
 	t           *testing.T
 	conn        *grpc.ClientConn
-	posixServer PosixClient
+	posixServer POSIXClient
 }
 
 // NewDUT creates a new connection with the DUT over gRPC.
 func NewDUT(t *testing.T) DUT {
-	flag.Parse()
-	posixServerAddress := *posixServerIP + ":" + strconv.Itoa(*posixServerPort)
-	conn, err := grpc.Dial(posixServerAddress, grpc.WithInsecure(), grpc.WithKeepaliveParams(keepalive.ClientParameters{Timeout: *rpcKeepalive}))
+	posixServerAddress := POSIXServerIP + ":" + strconv.Itoa(POSIXServerPort)
+	conn, err := grpc.Dial(posixServerAddress, grpc.WithInsecure(), grpc.WithKeepaliveParams(keepalive.ClientParameters{Timeout: RPCKeepalive}))
 	if err != nil {
 		t.Fatalf("failed to grpc.Dial(%s): %s", posixServerAddress, err)
 	}
-	posixServer := NewPosixClient(conn)
+	posixServer := NewPOSIXClient(conn)
 	return DUT{
 		t:           t,
 		conn:        conn,
@@ -149,12 +139,12 @@ func (dut *DUT) CreateBoundSocket(typ, proto int32, addr net.IP) (int32, uint16)
 
 // CreateListener makes a new TCP connection. If it fails, the test ends.
 func (dut *DUT) CreateListener(typ, proto, backlog int32) (int32, uint16) {
-	fd, remotePort := dut.CreateBoundSocket(typ, proto, net.ParseIP(*remoteIPv4))
+	fd, remotePort := dut.CreateBoundSocket(typ, proto, net.ParseIP(RemoteIPv4))
 	dut.Listen(fd, backlog)
 	return fd, remotePort
 }
 
-// All the functions that make gRPC calls to the Posix service are below, sorted
+// All the functions that make gRPC calls to the POSIX service are below, sorted
 // alphabetically.
 
 // Accept calls accept on the DUT and causes a fatal test failure if it doesn't
@@ -162,7 +152,7 @@ func (dut *DUT) CreateListener(typ, proto, backlog int32) (int32, uint16) {
 // AcceptWithErrno.
 func (dut *DUT) Accept(sockfd int32) (int32, unix.Sockaddr) {
 	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
 	defer cancel()
 	fd, sa, err := dut.AcceptWithErrno(ctx, sockfd)
 	if fd < 0 {
@@ -189,7 +179,7 @@ func (dut *DUT) AcceptWithErrno(ctx context.Context, sockfd int32) (int32, unix.
 // needed, use BindWithErrno.
 func (dut *DUT) Bind(fd int32, sa unix.Sockaddr) {
 	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
 	defer cancel()
 	ret, err := dut.BindWithErrno(ctx, fd, sa)
 	if ret != 0 {
@@ -216,7 +206,7 @@ func (dut *DUT) BindWithErrno(ctx context.Context, fd int32, sa unix.Sockaddr) (
 // CloseWithErrno.
 func (dut *DUT) Close(fd int32) {
 	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
 	defer cancel()
 	ret, err := dut.CloseWithErrno(ctx, fd)
 	if ret != 0 {
@@ -242,7 +232,7 @@ func (dut *DUT) CloseWithErrno(ctx context.Context, fd int32) (int32, error) {
 // needed, use ConnectWithErrno.
 func (dut *DUT) Connect(fd int32, sa unix.Sockaddr) {
 	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
 	defer cancel()
 	ret, err := dut.ConnectWithErrno(ctx, fd, sa)
 	if ret != 0 {
@@ -269,7 +259,7 @@ func (dut *DUT) ConnectWithErrno(ctx context.Context, fd int32, sa unix.Sockaddr
 // needed, use GetSockNameWithErrno.
 func (dut *DUT) GetSockName(sockfd int32) unix.Sockaddr {
 	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
 	defer cancel()
 	ret, sa, err := dut.GetSockNameWithErrno(ctx, sockfd)
 	if ret != 0 {
@@ -318,7 +308,7 @@ func (dut *DUT) getSockOpt(ctx context.Context, sockfd, level, optname, optlen i
 // more specific GetSockOptXxx function.
 func (dut *DUT) GetSockOpt(sockfd, level, optname, optlen int32) []byte {
 	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
 	defer cancel()
 	ret, optval, err := dut.GetSockOptWithErrno(ctx, sockfd, level, optname, optlen)
 	if ret != 0 {
@@ -345,7 +335,7 @@ func (dut *DUT) GetSockOptWithErrno(ctx context.Context, sockfd, level, optname,
 // is needed, use GetSockOptIntWithErrno.
 func (dut *DUT) GetSockOptInt(sockfd, level, optname int32) int32 {
 	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
 	defer cancel()
 	ret, intval, err := dut.GetSockOptIntWithErrno(ctx, sockfd, level, optname)
 	if ret != 0 {
@@ -370,7 +360,7 @@ func (dut *DUT) GetSockOptIntWithErrno(ctx context.Context, sockfd, level, optna
 // needed, use GetSockOptTimevalWithErrno.
 func (dut *DUT) GetSockOptTimeval(sockfd, level, optname int32) unix.Timeval {
 	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
 	defer cancel()
 	ret, timeval, err := dut.GetSockOptTimevalWithErrno(ctx, sockfd, level, optname)
 	if ret != 0 {
@@ -399,7 +389,7 @@ func (dut *DUT) GetSockOptTimevalWithErrno(ctx context.Context, sockfd, level, o
 // ListenWithErrno.
 func (dut *DUT) Listen(sockfd, backlog int32) {
 	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
 	defer cancel()
 	ret, err := dut.ListenWithErrno(ctx, sockfd, backlog)
 	if ret != 0 {
@@ -426,7 +416,7 @@ func (dut *DUT) ListenWithErrno(ctx context.Context, sockfd, backlog int32) (int
 // SendWithErrno.
 func (dut *DUT) Send(sockfd int32, buf []byte, flags int32) int32 {
 	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
 	defer cancel()
 	ret, err := dut.SendWithErrno(ctx, sockfd, buf, flags)
 	if ret == -1 {
@@ -455,7 +445,7 @@ func (dut *DUT) SendWithErrno(ctx context.Context, sockfd int32, buf []byte, fla
 // SendToWithErrno.
 func (dut *DUT) SendTo(sockfd int32, buf []byte, flags int32, destAddr unix.Sockaddr) int32 {
 	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
 	defer cancel()
 	ret, err := dut.SendToWithErrno(ctx, sockfd, buf, flags, destAddr)
 	if ret == -1 {
@@ -502,7 +492,7 @@ func (dut *DUT) setSockOpt(ctx context.Context, sockfd, level, optname int32, op
 // more specific SetSockOptXxx function.
 func (dut *DUT) SetSockOpt(sockfd, level, optname int32, optval []byte) {
 	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
 	defer cancel()
 	ret, err := dut.SetSockOptWithErrno(ctx, sockfd, level, optname, optval)
 	if ret != 0 {
@@ -523,7 +513,7 @@ func (dut *DUT) SetSockOptWithErrno(ctx context.Context, sockfd, level, optname 
 // is needed, use SetSockOptIntWithErrno.
 func (dut *DUT) SetSockOptInt(sockfd, level, optname, optval int32) {
 	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
 	defer cancel()
 	ret, err := dut.SetSockOptIntWithErrno(ctx, sockfd, level, optname, optval)
 	if ret != 0 {
@@ -542,7 +532,7 @@ func (dut *DUT) SetSockOptIntWithErrno(ctx context.Context, sockfd, level, optna
 // needed, use SetSockOptTimevalWithErrno.
 func (dut *DUT) SetSockOptTimeval(sockfd, level, optname int32, tv *unix.Timeval) {
 	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
 	defer cancel()
 	ret, err := dut.SetSockOptTimevalWithErrno(ctx, sockfd, level, optname, tv)
 	if ret != 0 {
@@ -593,7 +583,7 @@ func (dut *DUT) SocketWithErrno(domain, typ, proto int32) (int32, error) {
 // RecvWithErrno.
 func (dut *DUT) Recv(sockfd, len, flags int32) []byte {
 	dut.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), *rpcTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
 	defer cancel()
 	ret, buf, err := dut.RecvWithErrno(ctx, sockfd, len, flags)
 	if ret == -1 {

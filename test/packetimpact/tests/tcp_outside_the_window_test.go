@@ -15,6 +15,7 @@
 package tcp_outside_the_window_test
 
 import (
+	"flag"
 	"fmt"
 	"testing"
 	"time"
@@ -24,6 +25,10 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
 )
+
+func init() {
+	tb.RegisterFlags(flag.CommandLine)
+}
 
 // TestTCPOutsideTheWindows tests the behavior of the DUT when packets arrive
 // that are inside or outside the TCP window. Packets that are outside the

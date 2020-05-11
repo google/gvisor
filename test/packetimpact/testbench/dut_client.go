@@ -20,9 +20,9 @@ import (
 )
 
 // PosixClient is a gRPC client for the Posix service.
-type PosixClient pb.PosixClient
+type POSIXClient pb.PosixClient
 
-// NewPosixClient makes a new gRPC client for the Posix service.
-func NewPosixClient(c grpc.ClientConnInterface) PosixClient {
+// NewPOSIXClient makes a new gRPC client for the POSIX service.
+func NewPOSIXClient(c grpc.ClientConnInterface) POSIXClient {
 	return pb.NewPosixClient(c)
 }

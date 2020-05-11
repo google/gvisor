@@ -16,6 +16,7 @@ package udp_icmp_error_propagation_test
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"net"
 	"sync"
@@ -27,6 +28,10 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
 )
+
+func init() {
+	tb.RegisterFlags(flag.CommandLine)
+}
 
 type connectionMode bool
 

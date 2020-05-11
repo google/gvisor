@@ -16,12 +16,17 @@ package icmpv6_param_problem_test
 
 import (
 	"encoding/binary"
+	"flag"
 	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
 )
+
+func init() {
+	tb.RegisterFlags(flag.CommandLine)
+}
 
 // TestICMPv6ParamProblemTest sends a packet with a bad next header. The DUT
 // should respond with an ICMPv6 Parameter Problem message.

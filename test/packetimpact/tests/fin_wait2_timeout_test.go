@@ -15,6 +15,7 @@
 package fin_wait2_timeout_test
 
 import (
+	"flag"
 	"testing"
 	"time"
 
@@ -22,6 +23,10 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
 )
+
+func init() {
+	tb.RegisterFlags(flag.CommandLine)
+}
 
 func TestFinWait2Timeout(t *testing.T) {
 	for _, tt := range []struct {

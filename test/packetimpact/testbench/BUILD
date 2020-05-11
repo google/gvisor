@@ -13,6 +13,7 @@ go_library(
         "dut_client.go",
         "layers.go",
         "rawsockets.go",
+        "testbench.go",
     ],
     deps = [
         "//pkg/tcpip",
