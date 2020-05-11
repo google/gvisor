@@ -835,10 +835,7 @@ cc_binary(
 cc_binary(
     name = "fpsig_fork_test",
     testonly = 1,
-    srcs = select_arch(
-        amd64 = ["fpsig_fork.cc"],
-        arm64 = [],
-    ),
+    srcs = ["fpsig_fork.cc"],
     linkstatic = 1,
     deps = [
         gtest,
