@@ -59,6 +59,9 @@ func (v *View) Reader() bytes.Reader {
 
 // ToVectorisedView returns a VectorisedView containing the receiver.
 func (v View) ToVectorisedView() VectorisedView {
+	if len(v) == 0 {
+		return VectorisedView{}
+	}
 	return NewVectorisedView(len(v), []View{v})
 }
 
@@ -229,6 +232,9 @@ func (vv *VectorisedView) Append(vv2 VectorisedView) {
 
 // AppendView appends the given view into this vectorised view.
 func (vv *VectorisedView) AppendView(v View) {
+	if len(v) == 0 {
+		return
+	}
 	vv.views = append(vv.views, v)
 	vv.size += len(v)
 }
