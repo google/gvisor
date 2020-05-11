@@ -34,24 +34,13 @@ func Preadv2(fd int32, dsts safemem.BlockSeq, offset int64, flags uint32) (uint6
 		n uintptr
 		e syscall.Errno
 	)
-	// Avoid preadv2(2) if possible, since it's relatively new and thus least
-	// likely to be supported by the host kernel.
-	if flags == 0 {
-		if dsts.NumBlocks() == 1 {
-			// Use read() or pread() to avoid iovec allocation and copying.
-			dst := dsts.Head()
-			if offset == -1 {
-				n, _, e = syscall.Syscall(unix.SYS_READ, uintptr(fd), dst.Addr(), uintptr(dst.Len()))
-			} else {
-				n, _, e = syscall.Syscall6(unix.SYS_PREAD64, uintptr(fd), dst.Addr(), uintptr(dst.Len()), uintptr(offset), 0 /* pos_h */, 0 /* unused */)
-			}
+	if flags == 0 && dsts.NumBlocks() == 1 {
+		// Use read() or pread() to avoid iovec allocation and copying.
+		dst := dsts.Head()
+		if offset == -1 {
+			n, _, e = syscall.Syscall(unix.SYS_READ, uintptr(fd), dst.Addr(), uintptr(dst.Len()))
 		} else {
-			iovs := safemem.IovecsFromBlockSeq(dsts)
-			if offset == -1 {
-				n, _, e = syscall.Syscall(unix.SYS_READV, uintptr(fd), uintptr((unsafe.Pointer)(&iovs[0])), uintptr(len(iovs)))
-			} else {
-				n, _, e = syscall.Syscall6(unix.SYS_PREADV, uintptr(fd), uintptr((unsafe.Pointer)(&iovs[0])), uintptr(len(iovs)), uintptr(offset), 0 /* pos_h */, 0 /* unused */)
-			}
+			n, _, e = syscall.Syscall6(unix.SYS_PREAD64, uintptr(fd), dst.Addr(), uintptr(dst.Len()), uintptr(offset), 0 /* pos_h */, 0 /* unused */)
 		}
 	} else {
 		iovs := safemem.IovecsFromBlockSeq(dsts)
@@ -77,24 +66,13 @@ func Pwritev2(fd int32, srcs safemem.BlockSeq, offset int64, flags uint32) (uint
 		n uintptr
 		e syscall.Errno
 	)
-	// Avoid pwritev2(2) if possible, since it's relatively new and thus least
-	// likely to be supported by the host kernel.
-	if flags == 0 {
-		if srcs.NumBlocks() == 1 {
-			// Use write() or pwrite() to avoid iovec allocation and copying.
-			src := srcs.Head()
-			if offset == -1 {
-				n, _, e = syscall.Syscall(unix.SYS_WRITE, uintptr(fd), src.Addr(), uintptr(src.Len()))
-			} else {
-				n, _, e = syscall.Syscall6(unix.SYS_PWRITE64, uintptr(fd), src.Addr(), uintptr(src.Len()), uintptr(offset), 0 /* pos_h */, 0 /* unused */)
-			}
+	if flags == 0 && srcs.NumBlocks() == 1 {
+		// Use write() or pwrite() to avoid iovec allocation and copying.
+		src := srcs.Head()
+		if offset == -1 {
+			n, _, e = syscall.Syscall(unix.SYS_WRITE, uintptr(fd), src.Addr(), uintptr(src.Len()))
 		} else {
-			iovs := safemem.IovecsFromBlockSeq(srcs)
-			if offset == -1 {
-				n, _, e = syscall.Syscall(unix.SYS_WRITEV, uintptr(fd), uintptr((unsafe.Pointer)(&iovs[0])), uintptr(len(iovs)))
-			} else {
-				n, _, e = syscall.Syscall6(unix.SYS_PWRITEV, uintptr(fd), uintptr((unsafe.Pointer)(&iovs[0])), uintptr(len(iovs)), uintptr(offset), 0 /* pos_h */, 0 /* unused */)
-			}
+			n, _, e = syscall.Syscall6(unix.SYS_PWRITE64, uintptr(fd), src.Addr(), uintptr(src.Len()), uintptr(offset), 0 /* pos_h */, 0 /* unused */)
 		}
 	} else {
 		iovs := safemem.IovecsFromBlockSeq(srcs)
