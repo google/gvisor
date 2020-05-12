@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/amutex"
 	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
@@ -553,11 +554,9 @@ func (s *SocketOperations) Write(ctx context.Context, _ *fs.File, src usermem.IO
 	}
 
 	if resCh != nil {
-		t := kernel.TaskFromContext(ctx)
-		if err := t.Block(resCh); err != nil {
-			return 0, syserr.FromError(err).ToError()
+		if err := amutex.Block(ctx, resCh); err != nil {
+			return 0, err
 		}
-
 		n, _, err = s.Endpoint.Write(f, tcpip.WriteOptions{})
 	}
 
@@ -626,11 +625,9 @@ func (s *SocketOperations) ReadFrom(ctx context.Context, _ *fs.File, r io.Reader
 	}
 
 	if resCh != nil {
-		t := kernel.TaskFromContext(ctx)
-		if err := t.Block(resCh); err != nil {
-			return 0, syserr.FromError(err).ToError()
+		if err := amutex.Block(ctx, resCh); err != nil {
+			return 0, err
 		}
-
 		n, _, err = s.Endpoint.Write(f, tcpip.WriteOptions{
 			Atomic: true, // See above.
 		})
