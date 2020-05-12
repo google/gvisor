@@ -1,0 +1,26 @@
+.navbar-inverse {
+  background-color: $primary;
+  border-bottom: 1px solid $primary;
+
+  .navbar-brand > a {
+    color: #fff;
+
+    &:focus,
+    &:hover {
+      color: #fff;
+    }
+  }
+
+  .navbar-nav > li > a {
+    color: $inverse-link-color;
+
+    &:focus,
+    &:hover {
+      color: $inverse-link-hover-color;
+    }
+  }
+
+  .navbar-nav .nav-icon {
+    font-size: 18px;
+  }
+}

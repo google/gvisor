@@ -22,7 +22,7 @@ BRANCH_NAME := $(shell (git branch --show-current 2>/dev/null || \
 # Bazel container configuration (see below).
 USER ?= gvisor
 DOCKER_NAME ?= gvisor-bazel-$(shell readlink -m $(CURDIR) | md5sum | cut -c1-8)
-DOCKER_RUN_OPTIONS ?= --privileged
+DOCKER_PRIVILEGED ?= --privileged
 BAZEL_CACHE := $(shell readlink -m ~/.cache/bazel/)
 GCLOUD_CONFIG := $(shell readlink -m ~/.config/gcloud/)
 DOCKER_SOCKET := /var/run/docker.sock
@@ -30,10 +30,19 @@ DOCKER_SOCKET := /var/run/docker.sock
 # Non-configurable.
 UID := $(shell id -u ${USER})
 GID := $(shell id -g ${USER})
+USERADD_OPTIONS :=
 FULL_DOCKER_RUN_OPTIONS := $(DOCKER_RUN_OPTIONS)
 FULL_DOCKER_RUN_OPTIONS += -v "$(BAZEL_CACHE):$(BAZEL_CACHE)"
 FULL_DOCKER_RUN_OPTIONS += -v "$(GCLOUD_CONFIG):$(GCLOUD_CONFIG)"
+FULL_DOCKER_RUN_OPTIONS += -v "/tmp:/tmp"
+ifneq ($(DOCKER_PRIVILEGED),)
 FULL_DOCKER_RUN_OPTIONS += -v "$(DOCKER_SOCKET):$(DOCKER_SOCKET)"
+DOCKER_GROUP := $(shell stat -c '%g' $(DOCKER_SOCKET))
+ifneq ($(GID),$(DOCKER_GROUP))
+USERADD_OPTIONS += --groups $(DOCKER_GROUP)
+FULL_DOCKER_RUN_OPTIONS += --group-add $(DOCKER_GROUP)
+endif
+endif
 SHELL=/bin/bash -o pipefail
 
 ##
@@ -53,15 +62,14 @@ bazel-server-start: load-default ## Starts the bazel server.
 	docker run -d --rm \
 		--init \
 	        --name $(DOCKER_NAME) \
-		--user 0:0 \
+		--user 0:0 $(DOCKER_GROUP_OPTIONS) \
 		-v "$(CURDIR):$(CURDIR)" \
 		--workdir "$(CURDIR)" \
-		--tmpfs /tmp:rw,exec \
 		--entrypoint "" \
 		$(FULL_DOCKER_RUN_OPTIONS) \
 		gvisor.dev/images/default \
 		sh -c "groupadd --gid $(GID) --non-unique $(USER) && \
-		       useradd --uid $(UID) --non-unique --no-create-home --gid $(GID) -d $(HOME) $(USER) && \
+		       useradd --uid $(UID) --non-unique --no-create-home --gid $(GID) $(USERADD_OPTIONS) -d $(HOME) $(USER) && \
 	               bazel version && \
 		       exec tail --pid=\$$(bazel info server_pid) -f /dev/null"
 	@while :; do if docker logs $(DOCKER_NAME) 2>/dev/null | grep "Build label:" >/dev/null; then break; fi; sleep 1; done

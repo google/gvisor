@@ -1,0 +1,18 @@
+By
+{% assign last_pos=include.authors.size | minus: 1 %}
+{% assign and_pos=include.authors.size | minus: 2 %}
+{% for i in (0..last_pos) %}
+  {% assign author_id=include.authors[i] %}
+  {% assign author=site.authors[author_id] %}
+  {% if author %}
+    <a href="mailto:{{ author.email }}">{{ author.name }}</a>
+  {% else %}
+    {{ author_id }}
+  {% endif %}
+  {% if i == and_pos %}
+    and
+  {% elsif i < and_pos %}
+    ,
+  {% endif %}
+{% endfor %}
+on <span class="text-muted">{{ include.date | date_to_long_string }}</span>
