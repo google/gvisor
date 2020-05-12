@@ -39,14 +39,13 @@ var fsInfo = fs.Info{
 
 // rename implements fs.InodeOperations.Rename for tmpfs nodes.
 func rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
-	op, ok := oldParent.InodeOperations.(*Dir)
-	if !ok {
+	// Don't allow renames across different mounts.
+	if newParent.MountSource != oldParent.MountSource {
 		return syserror.EXDEV
 	}
-	np, ok := newParent.InodeOperations.(*Dir)
-	if !ok {
-		return syserror.EXDEV
-	}
+
+	op := oldParent.InodeOperations.(*Dir)
+	np := newParent.InodeOperations.(*Dir)
 	return ramfs.Rename(ctx, op.ramfsDir, oldName, np.ramfsDir, newName, replacement)
 }
 

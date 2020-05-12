@@ -16,7 +16,6 @@ package gofer
 
 import (
 	"fmt"
-	"syscall"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
@@ -68,7 +67,7 @@ func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string
 	// Get a p9.File for name.
 	qids, newFile, mask, p9attr, err := i.fileState.file.walkGetAttr(ctx, []string{name})
 	if err != nil {
-		if err == syscall.ENOENT {
+		if err == syserror.ENOENT {
 			if cp.cacheNegativeDirents() {
 				// Return a negative Dirent. It will stay cached until something
 				// is created over it.
@@ -207,7 +206,7 @@ func (i *inodeOperations) CreateHardLink(ctx context.Context, inode *fs.Inode, t
 
 	targetOpts, ok := target.InodeOperations.(*inodeOperations)
 	if !ok {
-		return syscall.EXDEV
+		return syserror.EXDEV
 	}
 
 	if err := i.fileState.file.link(ctx, &targetOpts.fileState.file, newName); err != nil {
@@ -251,7 +250,7 @@ func (i *inodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, 
 	}
 
 	if i.session().overrides == nil {
-		return nil, syscall.EOPNOTSUPP
+		return nil, syserror.EOPNOTSUPP
 	}
 
 	// Stabilize the override map while creation is in progress.
@@ -280,7 +279,7 @@ func (i *inodeOperations) CreateFifo(ctx context.Context, dir *fs.Inode, name st
 
 	// N.B. FIFOs use major/minor numbers 0.
 	if _, err := i.fileState.file.mknod(ctx, name, mode, 0, 0, p9.UID(owner.UID), p9.GID(owner.GID)); err != nil {
-		if i.session().overrides == nil || err != syscall.EPERM {
+		if i.session().overrides == nil || err != syserror.EPERM {
 			return err
 		}
 		// If gofer doesn't support mknod, check if we can create an internal fifo.
@@ -427,17 +426,16 @@ func (i *inodeOperations) Rename(ctx context.Context, inode *fs.Inode, oldParent
 		return syserror.ENAMETOOLONG
 	}
 
-	// Unwrap the new parent to a *inodeOperations.
-	newParentInodeOperations, ok := newParent.InodeOperations.(*inodeOperations)
-	if !ok {
-		return syscall.EXDEV
+	// Don't allow renames across different mounts.
+	if newParent.MountSource != oldParent.MountSource {
+		return syserror.EXDEV
 	}
 
+	// Unwrap the new parent to a *inodeOperations.
+	newParentInodeOperations := newParent.InodeOperations.(*inodeOperations)
+
 	// Unwrap the old parent to a *inodeOperations.
-	oldParentInodeOperations, ok := oldParent.InodeOperations.(*inodeOperations)
-	if !ok {
-		return syscall.EXDEV
-	}
+	oldParentInodeOperations := oldParent.InodeOperations.(*inodeOperations)
 
 	// Do the rename.
 	if err := i.fileState.file.rename(ctx, newParentInodeOperations.fileState.file, newName); err != nil {
