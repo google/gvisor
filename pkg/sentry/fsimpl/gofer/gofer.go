@@ -143,9 +143,12 @@ type filesystemOptions struct {
 
 	// If overlayfsStaleRead is true, O_RDONLY host FDs provided by the remote
 	// filesystem may not be coherent with writable host FDs opened later, so
-	// mappings of the former must be replaced by mappings of the latter. This
-	// is usually only the case when the remote filesystem is an overlayfs
-	// mount on Linux < 4.19.
+	// all uses of the former must be replaced by uses of the latter. This is
+	// usually only the case when the remote filesystem is a Linux overlayfs
+	// mount. (Prior to Linux 4.18, patch series centered on commit
+	// d1d04ef8572b "ovl: stack file ops", both I/O and memory mappings were
+	// incoherent between pre-copy-up and post-copy-up FDs; after that patch
+	// series, only memory mappings are incoherent.)
 	overlayfsStaleRead bool
 
 	// If regularFilesUseSpecialFileFD is true, application FDs representing

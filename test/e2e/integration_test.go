@@ -361,6 +361,20 @@ func TestTmpFile(t *testing.T) {
 	}
 }
 
+// TestMemoryMappingsCoherentAfterHostOverlayfsCopyUp tests that the
+// --overlayfs-stale-read option is effective.
+func TestMemoryMappingsCoherentAfterHostOverlayfsCopyUp(t *testing.T) {
+	d := dockerutil.MakeDocker(t)
+	defer d.CleanUp()
+
+	if _, err := d.Run(dockerutil.RunOpts{
+		Image:   "hostoverlaytest",
+		WorkDir: "/root",
+	}, "./mmap_test"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+}
+
 func TestMain(m *testing.M) {
 	dockerutil.EnsureSupportedDockerVersion()
 	flag.Parse()
