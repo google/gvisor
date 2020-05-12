@@ -33,13 +33,14 @@ import (
 type specialFileFD struct {
 	fileDescription
 
-	// handle is immutable.
+	// handle is used for file I/O. handle is immutable.
 	handle handle
 
-	// off is the file offset. off is protected by mu. (POSIX 2.9.7 only
-	// requires operations using the file offset to be atomic for regular files
-	// and symlinks; however, since specialFileFD may be used for regular
-	// files, we apply this atomicity unconditionally.)
+	// seekable is true if this file description represents a file for which
+	// file offset is significant, i.e. a regular file. seekable is immutable.
+	seekable bool
+
+	// If seekable is true, off is the file offset. off is protected by mu.
 	mu  sync.Mutex
 	off int64
 }
@@ -63,7 +64,7 @@ func (fd *specialFileFD) OnClose(ctx context.Context) error {
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *specialFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
-	if offset < 0 {
+	if fd.seekable && offset < 0 {
 		return 0, syserror.EINVAL
 	}
 	if opts.Flags != 0 {
@@ -91,6 +92,10 @@ func (fd *specialFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 
 // Read implements vfs.FileDescriptionImpl.Read.
 func (fd *specialFileFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
+	if !fd.seekable {
+		return fd.PRead(ctx, dst, -1, opts)
+	}
+
 	fd.mu.Lock()
 	n, err := fd.PRead(ctx, dst, fd.off, opts)
 	fd.off += n
@@ -100,14 +105,14 @@ func (fd *specialFileFD) Read(ctx context.Context, dst usermem.IOSequence, opts 
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (fd *specialFileFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
-	if offset < 0 {
+	if fd.seekable && offset < 0 {
 		return 0, syserror.EINVAL
 	}
 	if opts.Flags != 0 {
 		return 0, syserror.EOPNOTSUPP
 	}
 
-	if fd.dentry().fileType() == linux.S_IFREG {
+	if fd.seekable {
 		limit, err := vfs.CheckLimit(ctx, offset, src.NumBytes())
 		if err != nil {
 			return 0, err
@@ -130,6 +135,10 @@ func (fd *specialFileFD) PWrite(ctx context.Context, src usermem.IOSequence, off
 
 // Write implements vfs.FileDescriptionImpl.Write.
 func (fd *specialFileFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
+	if !fd.seekable {
+		return fd.PWrite(ctx, src, -1, opts)
+	}
+
 	fd.mu.Lock()
 	n, err := fd.PWrite(ctx, src, fd.off, opts)
 	fd.off += n
@@ -139,6 +148,9 @@ func (fd *specialFileFD) Write(ctx context.Context, src usermem.IOSequence, opts
 
 // Seek implements vfs.FileDescriptionImpl.Seek.
 func (fd *specialFileFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
+	if !fd.seekable {
+		return 0, syserror.ESPIPE
+	}
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
 	switch whence {
