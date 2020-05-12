@@ -29,6 +29,11 @@ func init() {
 	RegisterTestCase(FilterOutputAcceptUDPOwner{})
 	RegisterTestCase(FilterOutputDropUDPOwner{})
 	RegisterTestCase(FilterOutputOwnerFail{})
+	RegisterTestCase(FilterOutputAcceptGIDOwner{})
+	RegisterTestCase(FilterOutputDropGIDOwner{})
+	RegisterTestCase(FilterOutputInvertGIDOwner{})
+	RegisterTestCase(FilterOutputInvertUIDOwner{})
+	RegisterTestCase(FilterOutputInvertUIDAndGIDOwner{})
 	RegisterTestCase(FilterOutputInterfaceAccept{})
 	RegisterTestCase(FilterOutputInterfaceDrop{})
 	RegisterTestCase(FilterOutputInterface{})
@@ -116,20 +121,12 @@ func (FilterOutputAcceptTCPOwner) ContainerAction(ip net.IP) error {
 	}
 
 	// Listen for TCP packets on accept port.
-	if err := listenTCP(acceptPort, sendloopDuration); err != nil {
-		return fmt.Errorf("connection on port %d should be accepted, but got dropped", acceptPort)
-	}
-
-	return nil
+	return listenTCP(acceptPort, sendloopDuration)
 }
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterOutputAcceptTCPOwner) LocalAction(ip net.IP) error {
-	if err := connectTCP(ip, acceptPort, sendloopDuration); err != nil {
-		return fmt.Errorf("connection destined to port %d should be accepted, but got dropped", acceptPort)
-	}
-
-	return nil
+	return connectTCP(ip, acceptPort, sendloopDuration)
 }
 
 // FilterOutputDropTCPOwner tests that TCP connections from uid owner are dropped.
@@ -236,6 +233,158 @@ func (FilterOutputOwnerFail) ContainerAction(ip net.IP) error {
 // LocalAction implements TestCase.LocalAction.
 func (FilterOutputOwnerFail) LocalAction(ip net.IP) error {
 	// no-op.
+	return nil
+}
+
+// FilterOutputAcceptGIDOwner tests that TCP connections from gid owner are accepted.
+type FilterOutputAcceptGIDOwner struct{}
+
+// Name implements TestCase.Name.
+func (FilterOutputAcceptGIDOwner) Name() string {
+	return "FilterOutputAcceptGIDOwner"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterOutputAcceptGIDOwner) ContainerAction(ip net.IP) error {
+	if err := filterTable("-A", "OUTPUT", "-p", "tcp", "-m", "owner", "--gid-owner", "root", "-j", "ACCEPT"); err != nil {
+		return err
+	}
+
+	// Listen for TCP packets on accept port.
+	return listenTCP(acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterOutputAcceptGIDOwner) LocalAction(ip net.IP) error {
+	return connectTCP(ip, acceptPort, sendloopDuration)
+}
+
+// FilterOutputDropGIDOwner tests that TCP connections from gid owner are dropped.
+type FilterOutputDropGIDOwner struct{}
+
+// Name implements TestCase.Name.
+func (FilterOutputDropGIDOwner) Name() string {
+	return "FilterOutputDropGIDOwner"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterOutputDropGIDOwner) ContainerAction(ip net.IP) error {
+	if err := filterTable("-A", "OUTPUT", "-p", "tcp", "-m", "owner", "--gid-owner", "root", "-j", "DROP"); err != nil {
+		return err
+	}
+
+	// Listen for TCP packets on accept port.
+	if err := listenTCP(acceptPort, sendloopDuration); err == nil {
+		return fmt.Errorf("connection on port %d should not be accepted, but got accepted", acceptPort)
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterOutputDropGIDOwner) LocalAction(ip net.IP) error {
+	if err := connectTCP(ip, acceptPort, sendloopDuration); err == nil {
+		return fmt.Errorf("connection destined to port %d should not be accepted, but got accepted", acceptPort)
+	}
+
+	return nil
+}
+
+// FilterOutputInvertGIDOwner tests that TCP connections from gid owner are dropped.
+type FilterOutputInvertGIDOwner struct{}
+
+// Name implements TestCase.Name.
+func (FilterOutputInvertGIDOwner) Name() string {
+	return "FilterOutputInvertGIDOwner"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterOutputInvertGIDOwner) ContainerAction(ip net.IP) error {
+	rules := [][]string{
+		{"-A", "OUTPUT", "-p", "tcp", "-m", "owner", "!", "--gid-owner", "root", "-j", "ACCEPT"},
+		{"-A", "OUTPUT", "-p", "tcp", "-j", "DROP"},
+	}
+	if err := filterTableRules(rules); err != nil {
+		return err
+	}
+
+	// Listen for TCP packets on accept port.
+	if err := listenTCP(acceptPort, sendloopDuration); err == nil {
+		return fmt.Errorf("connection on port %d should not be accepted, but got accepted", acceptPort)
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterOutputInvertGIDOwner) LocalAction(ip net.IP) error {
+	if err := connectTCP(ip, acceptPort, sendloopDuration); err == nil {
+		return fmt.Errorf("connection destined to port %d should not be accepted, but got accepted", acceptPort)
+	}
+
+	return nil
+}
+
+// FilterOutputInvertUIDOwner tests that TCP connections from gid owner are dropped.
+type FilterOutputInvertUIDOwner struct{}
+
+// Name implements TestCase.Name.
+func (FilterOutputInvertUIDOwner) Name() string {
+	return "FilterOutputInvertUIDOwner"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterOutputInvertUIDOwner) ContainerAction(ip net.IP) error {
+	rules := [][]string{
+		{"-A", "OUTPUT", "-p", "tcp", "-m", "owner", "!", "--uid-owner", "root", "-j", "DROP"},
+		{"-A", "OUTPUT", "-p", "tcp", "-j", "ACCEPT"},
+	}
+	if err := filterTableRules(rules); err != nil {
+		return err
+	}
+
+	// Listen for TCP packets on accept port.
+	return listenTCP(acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterOutputInvertUIDOwner) LocalAction(ip net.IP) error {
+	return connectTCP(ip, acceptPort, sendloopDuration)
+}
+
+// FilterOutputInvertUIDAndGIDOwner tests that TCP connections from uid and gid
+// owner are dropped.
+type FilterOutputInvertUIDAndGIDOwner struct{}
+
+// Name implements TestCase.Name.
+func (FilterOutputInvertUIDAndGIDOwner) Name() string {
+	return "FilterOutputInvertUIDAndGIDOwner"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterOutputInvertUIDAndGIDOwner) ContainerAction(ip net.IP) error {
+	rules := [][]string{
+		{"-A", "OUTPUT", "-p", "tcp", "-m", "owner", "!", "--uid-owner", "root", "!", "--gid-owner", "root", "-j", "ACCEPT"},
+		{"-A", "OUTPUT", "-p", "tcp", "-j", "DROP"},
+	}
+	if err := filterTableRules(rules); err != nil {
+		return err
+	}
+
+	// Listen for TCP packets on accept port.
+	if err := listenTCP(acceptPort, sendloopDuration); err == nil {
+		return fmt.Errorf("connection on port %d should not be accepted, but got accepted", acceptPort)
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterOutputInvertUIDAndGIDOwner) LocalAction(ip net.IP) error {
+	if err := connectTCP(ip, acceptPort, sendloopDuration); err == nil {
+		return fmt.Errorf("connection destined to port %d should not be accepted, but got accepted", acceptPort)
+	}
+
 	return nil
 }
 
