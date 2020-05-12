@@ -167,6 +167,26 @@ func TestFilterOutputOwnerFail(t *testing.T) {
 	singleTest(t, FilterOutputOwnerFail{})
 }
 
+func TestFilterOutputAcceptGIDOwner(t *testing.T) {
+	singleTest(t, FilterOutputAcceptGIDOwner{})
+}
+
+func TestFilterOutputDropGIDOwner(t *testing.T) {
+	singleTest(t, FilterOutputDropGIDOwner{})
+}
+
+func TestFilterOutputInvertGIDOwner(t *testing.T) {
+	singleTest(t, FilterOutputInvertGIDOwner{})
+}
+
+func TestFilterOutputInvertUIDOwner(t *testing.T) {
+	singleTest(t, FilterOutputInvertUIDOwner{})
+}
+
+func TestFilterOutputInvertUIDAndGIDOwner(t *testing.T) {
+	singleTest(t, FilterOutputInvertUIDAndGIDOwner{})
+}
+
 func TestFilterOutputInterfaceAccept(t *testing.T) {
 	singleTest(t, FilterOutputInterfaceAccept{})
 }
