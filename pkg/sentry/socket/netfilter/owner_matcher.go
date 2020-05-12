@@ -45,14 +45,18 @@ func (ownerMarshaler) marshal(mr stack.Matcher) []byte {
 		GID: matcher.gid,
 	}
 
-	// Support for UID match.
-	// TODO(gvisor.dev/issue/170): Need to support gid match.
+	// Support for UID and GID match.
 	if matcher.matchUID {
 		iptOwnerInfo.Match = linux.XT_OWNER_UID
-	} else if matcher.matchGID {
-		panic("GID match is not supported.")
-	} else {
-		panic("UID match is not set.")
+		if matcher.invertUID {
+			iptOwnerInfo.Invert = linux.XT_OWNER_UID
+		}
+	}
+	if matcher.matchGID {
+		iptOwnerInfo.Match |= linux.XT_OWNER_GID
+		if matcher.invertGID {
+			iptOwnerInfo.Invert |= linux.XT_OWNER_GID
+		}
 	}
 
 	buf := make([]byte, 0, linux.SizeOfIPTOwnerInfo)
@@ -71,31 +75,34 @@ func (ownerMarshaler) unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.
 	binary.Unmarshal(buf[:linux.SizeOfIPTOwnerInfo], usermem.ByteOrder, &matchData)
 	nflog("parseMatchers: parsed IPTOwnerInfo: %+v", matchData)
 
-	if matchData.Invert != 0 {
-		return nil, fmt.Errorf("invert flag is not supported for owner match")
-	}
-
-	// Support for UID match.
-	// TODO(gvisor.dev/issue/170): Need to support gid match.
-	if matchData.Match&linux.XT_OWNER_UID != linux.XT_OWNER_UID {
-		return nil, fmt.Errorf("owner match is only supported for uid")
-	}
-
-	// Check Flags.
 	var owner OwnerMatcher
 	owner.uid = matchData.UID
 	owner.gid = matchData.GID
-	owner.matchUID = true
+
+	// Check flags.
+	if matchData.Match&linux.XT_OWNER_UID != 0 {
+		owner.matchUID = true
+		if matchData.Invert&linux.XT_OWNER_UID != 0 {
+			owner.invertUID = true
+		}
+	}
+	if matchData.Match&linux.XT_OWNER_GID != 0 {
+		owner.matchGID = true
+		if matchData.Invert&linux.XT_OWNER_GID != 0 {
+			owner.invertGID = true
+		}
+	}
 
 	return &owner, nil
 }
 
 type OwnerMatcher struct {
-	uid      uint32
-	gid      uint32
-	matchUID bool
-	matchGID bool
-	invert   uint8
+	uid       uint32
+	gid       uint32
+	matchUID  bool
+	matchGID  bool
+	invertUID bool
+	invertGID bool
 }
 
 // Name implements Matcher.Name.
@@ -112,16 +119,30 @@ func (om *OwnerMatcher) Match(hook stack.Hook, pkt stack.PacketBuffer, interface
 	}
 
 	// If the packet owner is not set, drop the packet.
-	// Support for uid match.
-	// TODO(gvisor.dev/issue/170): Need to support gid match.
-	if pkt.Owner == nil || !om.matchUID {
+	if pkt.Owner == nil {
 		return false, true
 	}
 
-	// TODO(gvisor.dev/issue/170): Need to add tests to verify
-	// drop rule when packet UID does not match owner matcher UID.
-	if pkt.Owner.UID() != om.uid {
-		return false, false
+	var matches bool
+	// Check for UID match.
+	if om.matchUID {
+		if pkt.Owner.UID() == om.uid {
+			matches = true
+		}
+		if matches == om.invertUID {
+			return false, false
+		}
+	}
+
+	// Check for GID match.
+	if om.matchGID {
+		matches = false
+		if pkt.Owner.GID() == om.gid {
+			matches = true
+		}
+		if matches == om.invertGID {
+			return false, false
+		}
 	}
 
 	return true, false
