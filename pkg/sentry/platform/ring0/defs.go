@@ -95,6 +95,9 @@ type SwitchOpts struct {
 	// saved and restored.
 	FloatingPointState *byte
 
+	// TLS is the user TLS state.
+	Tls *uint64
+
 	// PageTables are the application page tables.
 	PageTables *pagetables.PageTables
 

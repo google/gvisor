@@ -58,7 +58,15 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 
 	regs.Pstate &= ^uint64(UserFlagsClear)
 	regs.Pstate |= UserFlagsSet
+
+	tls := switchOpts.Tls
+
+	SetTLS(*tls)
+
 	kernelExitToEl0()
+
+	*tls = GetTLS()
+
 	vector = c.vecCode
 
 	// Perform the switch.
