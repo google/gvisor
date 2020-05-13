@@ -241,8 +241,10 @@ type Config struct {
 	// ReferenceLeakMode sets reference leak check mode
 	ReferenceLeakMode refs.LeakMode
 
-	// OverlayfsStaleRead causes cached FDs to reopen after a file is opened for
-	// write to workaround overlayfs limitation on kernels before 4.19.
+	// OverlayfsStaleRead instructs the sandbox to assume that the root mount
+	// is on a Linux overlayfs mount, which does not necessarily preserve
+	// coherence between read-only and subsequent writable file descriptors
+	// representing the "same" file.
 	OverlayfsStaleRead bool
 
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
