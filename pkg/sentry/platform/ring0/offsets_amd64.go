@@ -21,6 +21,7 @@ import (
 	"io"
 	"reflect"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
@@ -65,7 +66,7 @@ func Emit(w io.Writer) {
 	fmt.Fprintf(w, "#define SyscallInt80               0x%02x\n", SyscallInt80)
 	fmt.Fprintf(w, "#define Syscall                    0x%02x\n", Syscall)
 
-	p := &arch.Registers{}
+	p := &linux.PtraceRegs{}
 	fmt.Fprintf(w, "\n// Ptrace registers.\n")
 	fmt.Fprintf(w, "#define PTRACE_R15      0x%02x\n", reflect.ValueOf(&p.R15).Pointer()-reflect.ValueOf(p).Pointer())
 	fmt.Fprintf(w, "#define PTRACE_R14      0x%02x\n", reflect.ValueOf(&p.R14).Pointer()-reflect.ValueOf(p).Pointer())

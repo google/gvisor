@@ -17,7 +17,7 @@
 package kvm
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 )
 
@@ -39,7 +39,7 @@ type userFpsimdState struct {
 }
 
 type userRegs struct {
-	Regs    arch.Registers
+	Regs    linux.PtraceRegs
 	sp_el1  uint64
 	elr_el1 uint64
 	spsr    [KVM_NR_SPSR]uint64

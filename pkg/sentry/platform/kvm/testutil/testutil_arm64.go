@@ -25,35 +25,35 @@ import (
 
 // SetTestTarget sets the rip appropriately.
 func SetTestTarget(regs *arch.Registers, fn func()) {
-	regs.Pc = uint64(reflect.ValueOf(fn).Pointer())
+	regs.PtraceRegs().Pc = uint64(reflect.ValueOf(fn).Pointer())
 }
 
 // SetTouchTarget sets rax appropriately.
 func SetTouchTarget(regs *arch.Registers, target *uintptr) {
 	if target != nil {
-		regs.Regs[8] = uint64(reflect.ValueOf(target).Pointer())
+		regs.PtraceRegs().Regs[8] = uint64(reflect.ValueOf(target).Pointer())
 	} else {
-		regs.Regs[8] = 0
+		regs.PtraceRegs().Regs[8] = 0
 	}
 }
 
 // RewindSyscall rewinds a syscall RIP.
 func RewindSyscall(regs *arch.Registers) {
-	regs.Pc -= 4
+	regs.PtraceRegs().Pc -= 4
 }
 
 // SetTestRegs initializes registers to known values.
 func SetTestRegs(regs *arch.Registers) {
 	for i := 0; i <= 30; i++ {
-		regs.Regs[i] = uint64(i) + 1
+		regs.PtraceRegs().Regs[i] = uint64(i) + 1
 	}
 }
 
 // CheckTestRegs checks that registers were twiddled per TwiddleRegs.
 func CheckTestRegs(regs *arch.Registers, full bool) (err error) {
 	for i := 0; i <= 30; i++ {
-		if need := ^uint64(i + 1); regs.Regs[i] != need {
-			err = addRegisterMismatch(err, fmt.Sprintf("R%d", i), regs.Regs[i], need)
+		if need := ^uint64(i + 1); regs.PtraceRegs().Regs[i] != need {
+			err = addRegisterMismatch(err, fmt.Sprintf("R%d", i), regs.PtraceRegs().Regs[i], need)
 		}
 	}
 	return

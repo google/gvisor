@@ -44,7 +44,7 @@ var (
 //go:nosplit
 func bluepillArchEnter(context *arch.SignalContext64) (c *vCPU) {
 	c = vCPUPtr(uintptr(context.Regs[8]))
-	regs := c.CPU.Registers()
+	regs := c.CPU.Registers().PtraceRegs()
 	regs.Regs = context.Regs
 	regs.Sp = context.Sp
 	regs.Pc = context.Pc
@@ -58,7 +58,7 @@ func bluepillArchEnter(context *arch.SignalContext64) (c *vCPU) {
 //
 //go:nosplit
 func bluepillArchExit(c *vCPU, context *arch.SignalContext64) {
-	regs := c.CPU.Registers()
+	regs := c.CPU.Registers().PtraceRegs()
 	context.Regs = regs.Regs
 	context.Sp = regs.Sp
 	context.Pc = regs.Pc
@@ -81,7 +81,7 @@ func bluepillArchExit(c *vCPU, context *arch.SignalContext64) {
 //
 //go:nosplit
 func (c *vCPU) KernelSyscall() {
-	regs := c.Registers()
+	regs := c.Registers().PtraceRegs()
 	if regs.Regs[8] != ^uint64(0) {
 		regs.Pc -= 4 // Rewind.
 	}
@@ -105,7 +105,7 @@ func (c *vCPU) KernelSyscall() {
 //
 //go:nosplit
 func (c *vCPU) KernelException(vector ring0.Vector) {
-	regs := c.Registers()
+	regs := c.Registers().PtraceRegs()
 	if vector == ring0.Vector(bounce) {
 		regs.Pc = 0
 	}

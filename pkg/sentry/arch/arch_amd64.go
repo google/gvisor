@@ -129,37 +129,37 @@ func (c *context64) Fork() Context {
 
 // Return returns the current syscall return value.
 func (c *context64) Return() uintptr {
-	return uintptr(c.Regs.Rax)
+	return uintptr(c.Regs.PtraceRegs().Rax)
 }
 
 // SetReturn sets the syscall return value.
 func (c *context64) SetReturn(value uintptr) {
-	c.Regs.Rax = uint64(value)
+	c.Regs.PtraceRegs().Rax = uint64(value)
 }
 
 // IP returns the current instruction pointer.
 func (c *context64) IP() uintptr {
-	return uintptr(c.Regs.Rip)
+	return uintptr(c.Regs.PtraceRegs().Rip)
 }
 
 // SetIP sets the current instruction pointer.
 func (c *context64) SetIP(value uintptr) {
-	c.Regs.Rip = uint64(value)
+	c.Regs.PtraceRegs().Rip = uint64(value)
 }
 
 // Stack returns the current stack pointer.
 func (c *context64) Stack() uintptr {
-	return uintptr(c.Regs.Rsp)
+	return uintptr(c.Regs.PtraceRegs().Rsp)
 }
 
 // SetStack sets the current stack pointer.
 func (c *context64) SetStack(value uintptr) {
-	c.Regs.Rsp = uint64(value)
+	c.Regs.PtraceRegs().Rsp = uint64(value)
 }
 
 // TLS returns the current TLS pointer.
 func (c *context64) TLS() uintptr {
-	return uintptr(c.Regs.Fs_base)
+	return uintptr(c.Regs.PtraceRegs().Fs_base)
 }
 
 // SetTLS sets the current TLS pointer. Returns false if value is invalid.
@@ -168,14 +168,14 @@ func (c *context64) SetTLS(value uintptr) bool {
 		return false
 	}
 
-	c.Regs.Fs = 0
-	c.Regs.Fs_base = uint64(value)
+	c.Regs.PtraceRegs().Fs = 0
+	c.Regs.PtraceRegs().Fs_base = uint64(value)
 	return true
 }
 
 // SetOldRSeqInterruptedIP implements Context.SetOldRSeqInterruptedIP.
 func (c *context64) SetOldRSeqInterruptedIP(value uintptr) {
-	c.Regs.R10 = uint64(value)
+	c.Regs.PtraceRegs().R10 = uint64(value)
 }
 
 // Native returns the native type for the given val.

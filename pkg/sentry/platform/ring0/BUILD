@@ -80,6 +80,7 @@ go_library(
         "//pkg/cpuid",
         "//pkg/safecopy",
         "//pkg/sentry/arch",
+        "//pkg/abi/linux",
         "//pkg/sentry/platform/ring0/pagetables",
         "//pkg/usermem",
     ],

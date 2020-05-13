@@ -79,15 +79,15 @@ func (c *CPU) init() {
 	c.tss.ioPerm = tssLimit + 1
 
 	// Permanently set the kernel segments.
-	c.registers.Cs = uint64(Kcode)
-	c.registers.Ds = uint64(Kdata)
-	c.registers.Es = uint64(Kdata)
-	c.registers.Ss = uint64(Kdata)
-	c.registers.Fs = uint64(Kdata)
-	c.registers.Gs = uint64(Kdata)
+	c.registers.PtraceRegs().Cs = uint64(Kcode)
+	c.registers.PtraceRegs().Ds = uint64(Kdata)
+	c.registers.PtraceRegs().Es = uint64(Kdata)
+	c.registers.PtraceRegs().Ss = uint64(Kdata)
+	c.registers.PtraceRegs().Fs = uint64(Kdata)
+	c.registers.PtraceRegs().Gs = uint64(Kdata)
 
 	// Set mandatory flags.
-	c.registers.Eflags = KernelFlagsSet
+	c.registers.PtraceRegs().Eflags = KernelFlagsSet
 }
 
 // StackTop returns the kernel's stack address.
@@ -187,16 +187,17 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 
 	// Sanitize registers.
 	regs := switchOpts.Registers
-	regs.Eflags &= ^uint64(UserFlagsClear)
-	regs.Eflags |= UserFlagsSet
-	regs.Cs = uint64(Ucode64) // Required for iret.
-	regs.Ss = uint64(Udata)   // Ditto.
+	ptRegs := regs.PtraceRegs()
+	ptRegs.Eflags &= ^uint64(UserFlagsClear)
+	ptRegs.Eflags |= UserFlagsSet
+	ptRegs.Cs = uint64(Ucode64) // Required for iret.
+	ptRegs.Ss = uint64(Udata)   // Ditto.
 
 	// Perform the switch.
 	swapgs()                                         // GS will be swapped on return.
-	WriteFS(uintptr(regs.Fs_base))                   // escapes: no. Set application FS.
-	WriteGS(uintptr(regs.Gs_base))                   // escapes: no. Set application GS.
-	LoadFloatingPoint(switchOpts.FloatingPointState) // escapes: no. Copy in floating point.
+	WriteFS(uintptr(ptRegs.Fs_base))                 // Set application FS.
+	WriteGS(uintptr(ptRegs.Gs_base))                 // Set application GS.
+	LoadFloatingPoint(switchOpts.FloatingPointState) // Copy in floating point.
 	jumpToKernel()                                   // Switch to upper half.
 	writeCR3(uintptr(userCR3))                       // Change to user address space.
 	if switchOpts.FullRestore {
@@ -204,10 +205,10 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	} else {
 		vector = sysret(c, regs)
 	}
-	writeCR3(uintptr(kernelCR3))                     // Return to kernel address space.
-	jumpToUser()                                     // Return to lower half.
-	SaveFloatingPoint(switchOpts.FloatingPointState) // escapes: no. Copy out floating point.
-	WriteFS(uintptr(c.registers.Fs_base))            // escapes: no. Restore kernel FS.
+	writeCR3(uintptr(kernelCR3))                       // Return to kernel address space.
+	jumpToUser()                                       // Return to lower half.
+	SaveFloatingPoint(switchOpts.FloatingPointState)   // Copy out floating point.
+	WriteFS(uintptr(c.registers.PtraceRegs().Fs_base)) // Restore kernel FS.
 	return
 }
 
@@ -220,7 +221,7 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 func start(c *CPU) {
 	// Save per-cpu & FS segment.
 	WriteGS(kernelAddr(c))
-	WriteFS(uintptr(c.registers.Fs_base))
+	WriteFS(uintptr(c.registers.PtraceRegs().Fs_base))
 
 	// Initialize floating point.
 	//

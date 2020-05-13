@@ -27,7 +27,7 @@ func (c *context64) SyscallSaveOrig() {
 
 // SyscallNo returns the syscall number according to the 64-bit convention.
 func (c *context64) SyscallNo() uintptr {
-	return uintptr(c.Regs.Orig_rax)
+	return uintptr(c.Regs.PtraceRegs().Orig_rax)
 }
 
 // SyscallArgs provides syscall arguments according to the 64-bit convention.
@@ -36,24 +36,25 @@ func (c *context64) SyscallNo() uintptr {
 // built in 64-bit mode. So we can just assume the syscall numbers that come
 // back match the expected host system call numbers.
 func (c *context64) SyscallArgs() SyscallArguments {
+	ptRegs := c.Regs.PtraceRegs()
 	return SyscallArguments{
-		SyscallArgument{Value: uintptr(c.Regs.Rdi)},
-		SyscallArgument{Value: uintptr(c.Regs.Rsi)},
-		SyscallArgument{Value: uintptr(c.Regs.Rdx)},
-		SyscallArgument{Value: uintptr(c.Regs.R10)},
-		SyscallArgument{Value: uintptr(c.Regs.R8)},
-		SyscallArgument{Value: uintptr(c.Regs.R9)},
+		SyscallArgument{Value: uintptr(ptRegs.Rdi)},
+		SyscallArgument{Value: uintptr(ptRegs.Rsi)},
+		SyscallArgument{Value: uintptr(ptRegs.Rdx)},
+		SyscallArgument{Value: uintptr(ptRegs.R10)},
+		SyscallArgument{Value: uintptr(ptRegs.R8)},
+		SyscallArgument{Value: uintptr(ptRegs.R9)},
 	}
 }
 
 // RestartSyscall implements Context.RestartSyscall.
 func (c *context64) RestartSyscall() {
-	c.Regs.Rip -= SyscallWidth
-	c.Regs.Rax = c.Regs.Orig_rax
+	c.Regs.PtraceRegs().Rip -= SyscallWidth
+	c.Regs.PtraceRegs().Rax = c.Regs.PtraceRegs().Orig_rax
 }
 
 // RestartSyscallWithRestartBlock implements Context.RestartSyscallWithRestartBlock.
 func (c *context64) RestartSyscallWithRestartBlock() {
-	c.Regs.Rip -= SyscallWidth
-	c.Regs.Rax = uint64(restartSyscallNr)
+	c.Regs.PtraceRegs().Rip -= SyscallWidth
+	c.Regs.PtraceRegs().Rax = uint64(restartSyscallNr)
 }

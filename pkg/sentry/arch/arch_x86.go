@@ -31,7 +31,13 @@ import (
 )
 
 // Registers represents the CPU registers for this architecture.
-type Registers = linux.PtraceRegs
+type Registers struct {
+	ptRegs linux.PtraceRegs
+}
+
+func (r *Registers) PtraceRegs() *linux.PtraceRegs {
+	return &r.ptRegs
+}
 
 // System-related constants for x86.
 const (
@@ -160,34 +166,35 @@ func NewFloatingPointData() *FloatingPointData {
 
 // Proto returns a protobuf representation of the system registers in State.
 func (s State) Proto() *rpb.Registers {
+	ptRegs := s.Regs.PtraceRegs()
 	regs := &rpb.AMD64Registers{
-		Rax:     s.Regs.Rax,
-		Rbx:     s.Regs.Rbx,
-		Rcx:     s.Regs.Rcx,
-		Rdx:     s.Regs.Rdx,
-		Rsi:     s.Regs.Rsi,
-		Rdi:     s.Regs.Rdi,
-		Rsp:     s.Regs.Rsp,
-		Rbp:     s.Regs.Rbp,
-		R8:      s.Regs.R8,
-		R9:      s.Regs.R9,
-		R10:     s.Regs.R10,
-		R11:     s.Regs.R11,
-		R12:     s.Regs.R12,
-		R13:     s.Regs.R13,
-		R14:     s.Regs.R14,
-		R15:     s.Regs.R15,
-		Rip:     s.Regs.Rip,
-		Rflags:  s.Regs.Eflags,
-		OrigRax: s.Regs.Orig_rax,
-		Cs:      s.Regs.Cs,
-		Ds:      s.Regs.Ds,
-		Es:      s.Regs.Es,
-		Fs:      s.Regs.Fs,
-		Gs:      s.Regs.Gs,
-		Ss:      s.Regs.Ss,
-		FsBase:  s.Regs.Fs_base,
-		GsBase:  s.Regs.Gs_base,
+		Rax:     ptRegs.Rax,
+		Rbx:     ptRegs.Rbx,
+		Rcx:     ptRegs.Rcx,
+		Rdx:     ptRegs.Rdx,
+		Rsi:     ptRegs.Rsi,
+		Rdi:     ptRegs.Rdi,
+		Rsp:     ptRegs.Rsp,
+		Rbp:     ptRegs.Rbp,
+		R8:      ptRegs.R8,
+		R9:      ptRegs.R9,
+		R10:     ptRegs.R10,
+		R11:     ptRegs.R11,
+		R12:     ptRegs.R12,
+		R13:     ptRegs.R13,
+		R14:     ptRegs.R14,
+		R15:     ptRegs.R15,
+		Rip:     ptRegs.Rip,
+		Rflags:  ptRegs.Eflags,
+		OrigRax: ptRegs.Orig_rax,
+		Cs:      ptRegs.Cs,
+		Ds:      ptRegs.Ds,
+		Es:      ptRegs.Es,
+		Fs:      ptRegs.Fs,
+		Gs:      ptRegs.Gs,
+		Ss:      ptRegs.Ss,
+		FsBase:  ptRegs.Fs_base,
+		GsBase:  ptRegs.Gs_base,
 	}
 	return &rpb.Registers{Arch: &rpb.Registers_Amd64{Amd64: regs}}
 }
@@ -208,63 +215,65 @@ func (s *State) StateData() *State {
 
 // CPUIDEmulate emulates a cpuid instruction.
 func (s *State) CPUIDEmulate(l log.Logger) {
-	argax := uint32(s.Regs.Rax)
-	argcx := uint32(s.Regs.Rcx)
+	ptRegs := s.Regs.PtraceRegs()
+	argax := uint32(ptRegs.Rax)
+	argcx := uint32(ptRegs.Rcx)
 	ax, bx, cx, dx := s.FeatureSet.EmulateID(argax, argcx)
-	s.Regs.Rax = uint64(ax)
-	s.Regs.Rbx = uint64(bx)
-	s.Regs.Rcx = uint64(cx)
-	s.Regs.Rdx = uint64(dx)
+	ptRegs.Rax = uint64(ax)
+	ptRegs.Rbx = uint64(bx)
+	ptRegs.Rcx = uint64(cx)
+	ptRegs.Rdx = uint64(dx)
 	l.Debugf("CPUID(%x,%x): %x %x %x %x", argax, argcx, ax, bx, cx, dx)
 }
 
 // SingleStep implements Context.SingleStep.
 func (s *State) SingleStep() bool {
-	return s.Regs.Eflags&X86TrapFlag != 0
+	return s.Regs.PtraceRegs().Eflags&X86TrapFlag != 0
 }
 
 // SetSingleStep enables single stepping.
 func (s *State) SetSingleStep() {
 	// Set the trap flag.
-	s.Regs.Eflags |= X86TrapFlag
+	s.Regs.PtraceRegs().Eflags |= X86TrapFlag
 }
 
 // ClearSingleStep enables single stepping.
 func (s *State) ClearSingleStep() {
 	// Clear the trap flag.
-	s.Regs.Eflags &= ^X86TrapFlag
+	s.Regs.PtraceRegs().Eflags &= ^X86TrapFlag
 }
 
 // RegisterMap returns a map of all registers.
 func (s *State) RegisterMap() (map[string]uintptr, error) {
+	ptRegs := s.Regs.PtraceRegs()
 	return map[string]uintptr{
-		"R15":      uintptr(s.Regs.R15),
-		"R14":      uintptr(s.Regs.R14),
-		"R13":      uintptr(s.Regs.R13),
-		"R12":      uintptr(s.Regs.R12),
-		"Rbp":      uintptr(s.Regs.Rbp),
-		"Rbx":      uintptr(s.Regs.Rbx),
-		"R11":      uintptr(s.Regs.R11),
-		"R10":      uintptr(s.Regs.R10),
-		"R9":       uintptr(s.Regs.R9),
-		"R8":       uintptr(s.Regs.R8),
-		"Rax":      uintptr(s.Regs.Rax),
-		"Rcx":      uintptr(s.Regs.Rcx),
-		"Rdx":      uintptr(s.Regs.Rdx),
-		"Rsi":      uintptr(s.Regs.Rsi),
-		"Rdi":      uintptr(s.Regs.Rdi),
-		"Orig_rax": uintptr(s.Regs.Orig_rax),
-		"Rip":      uintptr(s.Regs.Rip),
-		"Cs":       uintptr(s.Regs.Cs),
-		"Eflags":   uintptr(s.Regs.Eflags),
-		"Rsp":      uintptr(s.Regs.Rsp),
-		"Ss":       uintptr(s.Regs.Ss),
-		"Fs_base":  uintptr(s.Regs.Fs_base),
-		"Gs_base":  uintptr(s.Regs.Gs_base),
-		"Ds":       uintptr(s.Regs.Ds),
-		"Es":       uintptr(s.Regs.Es),
-		"Fs":       uintptr(s.Regs.Fs),
-		"Gs":       uintptr(s.Regs.Gs),
+		"R15":      uintptr(ptRegs.R15),
+		"R14":      uintptr(ptRegs.R14),
+		"R13":      uintptr(ptRegs.R13),
+		"R12":      uintptr(ptRegs.R12),
+		"Rbp":      uintptr(ptRegs.Rbp),
+		"Rbx":      uintptr(ptRegs.Rbx),
+		"R11":      uintptr(ptRegs.R11),
+		"R10":      uintptr(ptRegs.R10),
+		"R9":       uintptr(ptRegs.R9),
+		"R8":       uintptr(ptRegs.R8),
+		"Rax":      uintptr(ptRegs.Rax),
+		"Rcx":      uintptr(ptRegs.Rcx),
+		"Rdx":      uintptr(ptRegs.Rdx),
+		"Rsi":      uintptr(ptRegs.Rsi),
+		"Rdi":      uintptr(ptRegs.Rdi),
+		"Orig_rax": uintptr(ptRegs.Orig_rax),
+		"Rip":      uintptr(ptRegs.Rip),
+		"Cs":       uintptr(ptRegs.Cs),
+		"Eflags":   uintptr(ptRegs.Eflags),
+		"Rsp":      uintptr(ptRegs.Rsp),
+		"Ss":       uintptr(ptRegs.Ss),
+		"Fs_base":  uintptr(ptRegs.Fs_base),
+		"Gs_base":  uintptr(ptRegs.Gs_base),
+		"Ds":       uintptr(ptRegs.Ds),
+		"Es":       uintptr(ptRegs.Es),
+		"Fs":       uintptr(ptRegs.Fs),
+		"Gs":       uintptr(ptRegs.Gs),
 	}, nil
 }
 
@@ -275,8 +284,8 @@ func (s *State) PtraceGetRegs(dst io.Writer) (int, error) {
 	return int(n), err
 }
 
-func (s *State) ptraceGetRegs() Registers {
-	regs := s.Regs
+func (s *State) ptraceGetRegs() linux.PtraceRegs {
+	regs := s.Regs.PtraceRegs()
 	// These may not be initialized.
 	if regs.Cs == 0 || regs.Ss == 0 || regs.Eflags == 0 {
 		regs.Eflags = eflagsIF
@@ -308,14 +317,14 @@ func (s *State) ptraceGetRegs() Registers {
 	if regs.Gs == 0 && regs.Gs_base <= 0xffffffff {
 		regs.Gs = _GS_TLS_SEL
 	}
-	return regs
+	return *regs
 }
 
-var registersSize = (*Registers)(nil).SizeBytes()
+var registersSize = (*linux.PtraceRegs)(nil).SizeBytes()
 
 // PtraceSetRegs implements Context.PtraceSetRegs.
 func (s *State) PtraceSetRegs(src io.Reader) (int, error) {
-	var regs Registers
+	var regs linux.PtraceRegs
 	buf := make([]byte, registersSize)
 	if _, err := io.ReadFull(src, buf); err != nil {
 		return 0, err
@@ -355,13 +364,13 @@ func (s *State) PtraceSetRegs(src io.Reader) (int, error) {
 	}
 	// CS and SS are validated, but changes to them are otherwise silently
 	// ignored on amd64.
-	regs.Cs = s.Regs.Cs
-	regs.Ss = s.Regs.Ss
+	regs.Cs = s.Regs.PtraceRegs().Cs
+	regs.Ss = s.Regs.PtraceRegs().Ss
 	// fs_base/gs_base changes reset fs/gs via do_arch_prctl() on Linux.
-	if regs.Fs_base != s.Regs.Fs_base {
+	if regs.Fs_base != s.Regs.PtraceRegs().Fs_base {
 		regs.Fs = 0
 	}
-	if regs.Gs_base != s.Regs.Gs_base {
+	if regs.Gs_base != s.Regs.PtraceRegs().Gs_base {
 		regs.Gs = 0
 	}
 	// Ignore "stale" TLS segment selectors for FS and GS. See comment in
@@ -372,8 +381,8 @@ func (s *State) PtraceSetRegs(src io.Reader) (int, error) {
 	if regs.Gs == _GS_TLS_SEL && regs.Gs_base != 0 {
 		regs.Gs = 0
 	}
-	regs.Eflags = (s.Regs.Eflags &^ eflagsPtraceMutable) | (regs.Eflags & eflagsPtraceMutable)
-	s.Regs = regs
+	regs.Eflags = (s.Regs.PtraceRegs().Eflags &^ eflagsPtraceMutable) | (regs.Eflags & eflagsPtraceMutable)
+	s.Regs.ptRegs = regs
 	return registersSize, nil
 }
 
@@ -590,12 +599,12 @@ func (s *State) FullRestore() bool {
 	// * CS and SS are set to the standard selectors.
 	//
 	// That is, SYSRET results in the correct final state.
-	fastRestore := s.Regs.Rcx == s.Regs.Rip &&
-		s.Regs.Eflags == s.Regs.R11 &&
-		(s.Regs.Eflags&eflagsRF == 0) &&
-		(s.Regs.Eflags&eflagsVM == 0) &&
-		s.Regs.Cs == userCS &&
-		s.Regs.Ss == userDS
+	fastRestore := s.Regs.PtraceRegs().Rcx == s.Regs.PtraceRegs().Rip &&
+		s.Regs.PtraceRegs().Eflags == s.Regs.PtraceRegs().R11 &&
+		(s.Regs.PtraceRegs().Eflags&eflagsRF == 0) &&
+		(s.Regs.PtraceRegs().Eflags&eflagsVM == 0) &&
+		s.Regs.PtraceRegs().Cs == userCS &&
+		s.Regs.PtraceRegs().Ss == userDS
 	return !fastRestore
 }
 

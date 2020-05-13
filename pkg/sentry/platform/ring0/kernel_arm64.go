@@ -33,8 +33,7 @@ func (k *Kernel) init(opts KernelOpts) {
 // init initializes architecture-specific state.
 func (c *CPU) init() {
 	// Set the kernel stack pointer(virtual address).
-	c.registers.Sp = uint64(c.StackTop())
-
+	c.registers.PtraceRegs().Sp = uint64(c.StackTop())
 }
 
 // StackTop returns the kernel's stack address.
@@ -55,10 +54,19 @@ func IsCanonical(addr uint64) bool {
 func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	// Sanitize registers.
 	regs := switchOpts.Registers
+	ptRegs := regs.PtraceRegs()
 
-	regs.Pstate &= ^uint64(UserFlagsClear)
-	regs.Pstate |= UserFlagsSet
+	ptRegs.Pstate &= ^uint64(UserFlagsClear)
+	ptRegs.Pstate |= UserFlagsSet
+
+	tlsReg := regs.TlsRegs()
+
+	SetTLS(*tlsReg)
+
 	kernelExitToEl0()
+
+	*tlsReg = GetTLS()
+
 	vector = c.vecCode
 
 	// Perform the switch.

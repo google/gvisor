@@ -28,6 +28,7 @@ go_binary(
     deps = [
         "//pkg/cpuid",
         "//pkg/sentry/arch",
+        "//pkg/abi/linux",
         "//pkg/sentry/platform/ring0/pagetables",
         "//pkg/usermem",
     ],

@@ -25,5 +25,5 @@ func fpRegSet(_ bool) uintptr {
 }
 
 func stackPointer(r *arch.Registers) uintptr {
-	return uintptr(r.Sp)
+	return uintptr(r.PtraceRegs().Sp)
 }
