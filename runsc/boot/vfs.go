@@ -245,7 +245,6 @@ func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *Config, 
 	if err := c.makeSyntheticMount(ctx, submount.Destination, root, creds); err != nil {
 		return err
 	}
-	log.Debugf("directory exists or made directory for submount: %s", submount.Destination)
 
 	opts := &vfs.MountOptions{
 		GetFilesystemOptions: vfs.GetFilesystemOptions{
@@ -260,7 +259,7 @@ func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *Config, 
 	if err := c.k.VFS().MountAt(ctx, creds, "", target, fsName, opts); err != nil {
 		return fmt.Errorf("failed to mount %q (type: %s): %w, opts: %v", submount.Destination, submount.Type, err, opts)
 	}
-	log.Infof("Mounted %q to %q type: %s, internal-options: %q", submount.Source, submount.Destination, submount.Type, opts)
+	log.Infof("Mounted %q to %q type: %s, internal-options: %q", submount.Source, submount.Destination, submount.Type, opts.GetFilesystemOptions.Data)
 	return nil
 }
 
@@ -321,23 +320,23 @@ func (c *containerMounter) makeSyntheticMount(ctx context.Context, currentPath s
 		Start: root,
 		Path:  fspath.Parse(currentPath),
 	}
-
 	_, err := c.k.VFS().StatAt(ctx, creds, target, &vfs.StatOptions{})
-	switch {
-	case err == syserror.ENOENT:
-		if err := c.makeSyntheticMount(ctx, path.Dir(currentPath), root, creds); err != nil {
-			return err
-		}
-		mkdirOpts := &vfs.MkdirOptions{Mode: 0777, ForSyntheticMountpoint: true}
-		if err := c.k.VFS().MkdirAt(ctx, creds, target, mkdirOpts); err != nil {
-			return fmt.Errorf("failed to makedir for mount %+v: %w", target, err)
-		}
-		return nil
-
-	case err != nil:
-		return fmt.Errorf("stat failed for mount %+v: %w", target, err)
-
-	default:
+	if err == nil {
+		// Mount point exists, nothing else to do.
 		return nil
 	}
+	if err != syserror.ENOENT {
+		return fmt.Errorf("stat failed for %q during mount point creation: %w", currentPath, err)
+	}
+
+	// Recurse to ensure parent is created and then create the mount point.
+	if err := c.makeSyntheticMount(ctx, path.Dir(currentPath), root, creds); err != nil {
+		return err
+	}
+	log.Debugf("Creating dir %q for mount point", currentPath)
+	mkdirOpts := &vfs.MkdirOptions{Mode: 0777, ForSyntheticMountpoint: true}
+	if err := c.k.VFS().MkdirAt(ctx, creds, target, mkdirOpts); err != nil {
+		return fmt.Errorf("failed to create directory %q for mount: %w", currentPath, err)
+	}
+	return nil
 }
