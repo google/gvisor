@@ -148,6 +148,62 @@ func (m MountMode) String() string {
 	panic(fmt.Sprintf("invalid mode: %d", m))
 }
 
+// DockerNetwork contains the name of a docker network.
+type DockerNetwork struct {
+	logger     testutil.Logger
+	Name       string
+	Subnet     *net.IPNet
+	containers []*Docker
+}
+
+// NewDockerNetwork sets up the struct for a Docker network. Names of networks
+// will be unique.
+func NewDockerNetwork(logger testutil.Logger) *DockerNetwork {
+	return &DockerNetwork{
+		logger: logger,
+		Name:   testutil.RandomID(logger.Name()),
+	}
+}
+
+// Create calls 'docker network create'.
+func (n *DockerNetwork) Create(args ...string) error {
+	a := []string{"docker", "network", "create"}
+	if n.Subnet != nil {
+		a = append(a, fmt.Sprintf("--subnet=%s", n.Subnet))
+	}
+	a = append(a, args...)
+	a = append(a, n.Name)
+	return testutil.Command(n.logger, a...).Run()
+}
+
+// Connect calls 'docker network connect' with the arguments provided.
+func (n *DockerNetwork) Connect(container *Docker, args ...string) error {
+	a := []string{"docker", "network", "connect"}
+	a = append(a, args...)
+	a = append(a, n.Name, container.Name)
+	if err := testutil.Command(n.logger, a...).Run(); err != nil {
+		return err
+	}
+	n.containers = append(n.containers, container)
+	return nil
+}
+
+// Cleanup cleans up the docker network and all the containers attached to it.
+func (n *DockerNetwork) Cleanup() error {
+	for _, c := range n.containers {
+		// Don't propagate the error, it might be that the container
+		// was already cleaned up.
+		if err := c.Kill(); err != nil {
+			n.logger.Logf("unable to kill container during cleanup: %s", err)
+		}
+	}
+
+	if err := testutil.Command(n.logger, "docker", "network", "rm", n.Name).Run(); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Docker contains the name and the runtime of a docker container.
 type Docker struct {
 	logger   testutil.Logger
@@ -309,7 +365,9 @@ func (d *Docker) argsFor(r *RunOpts, command string, p []string) (rv []string) {
 		rv = append(rv, d.Name)
 	} else {
 		rv = append(rv, d.mounts...)
-		rv = append(rv, fmt.Sprintf("--runtime=%s", d.Runtime))
+		if len(d.Runtime) > 0 {
+			rv = append(rv, fmt.Sprintf("--runtime=%s", d.Runtime))
+		}
 		rv = append(rv, fmt.Sprintf("--name=%s", d.Name))
 		rv = append(rv, testutil.ImageByName(r.Image))
 	}
@@ -475,6 +533,56 @@ func (d *Docker) FindIP() (net.IP, error) {
 		return net.IP{}, fmt.Errorf("invalid IP: %q", string(out))
 	}
 	return ip, nil
+}
+
+// A NetworkInterface is container's network interface information.
+type NetworkInterface struct {
+	IPv4 net.IP
+	MAC  net.HardwareAddr
+}
+
+// ListNetworks returns the network interfaces of the container, keyed by
+// Docker network name.
+func (d *Docker) ListNetworks() (map[string]NetworkInterface, error) {
+	const format = `{{json .NetworkSettings.Networks}}`
+	out, err := testutil.Command(d.logger, "docker", "inspect", "-f", format, d.Name).CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("error network interfaces: %q: %w", string(out), err)
+	}
+
+	networks := map[string]map[string]string{}
+	if err := json.Unmarshal(out, &networks); err != nil {
+		return nil, fmt.Errorf("error decoding network interfaces: %w", err)
+	}
+
+	interfaces := map[string]NetworkInterface{}
+	for name, iface := range networks {
+		var netface NetworkInterface
+
+		rawIP := strings.TrimSpace(iface["IPAddress"])
+		if rawIP != "" {
+			ip := net.ParseIP(rawIP)
+			if ip == nil {
+				return nil, fmt.Errorf("invalid IP: %q", rawIP)
+			}
+			// Docker's IPAddress field is IPv4. The IPv6 address
+			// is stored in the GlobalIPv6Address field.
+			netface.IPv4 = ip
+		}
+
+		rawMAC := strings.TrimSpace(iface["MacAddress"])
+		if rawMAC != "" {
+			mac, err := net.ParseMAC(rawMAC)
+			if err != nil {
+				return nil, fmt.Errorf("invalid MAC: %q: %w", rawMAC, err)
+			}
+			netface.MAC = mac
+		}
+
+		interfaces[name] = netface
+	}
+
+	return interfaces, nil
 }
 
 // SandboxPid returns the PID to the sandbox process.

@@ -114,12 +114,12 @@ var _ layerState = (*etherState)(nil)
 func newEtherState(out, in Ether) (*etherState, error) {
 	lMAC, err := tcpip.ParseMACAddress(LocalMAC)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parsing local MAC: %q: %w", LocalMAC, err)
 	}
 
 	rMAC, err := tcpip.ParseMACAddress(RemoteMAC)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parsing remote MAC: %q: %w", RemoteMAC, err)
 	}
 	s := etherState{
 		out: Ether{SrcAddr: &lMAC, DstAddr: &rMAC},
