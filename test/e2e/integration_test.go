@@ -361,6 +361,21 @@ func TestTmpFile(t *testing.T) {
 	}
 }
 
+// TestHostOverlayfsCopyUp tests that the --overlayfs-stale-read option causes
+// runsc to hide the incoherence of FDs opened before and after overlayfs
+// copy-up on the host.
+func TestHostOverlayfsCopyUp(t *testing.T) {
+	d := dockerutil.MakeDocker(t)
+	defer d.CleanUp()
+
+	if _, err := d.Run(dockerutil.RunOpts{
+		Image:   "hostoverlaytest",
+		WorkDir: "/root",
+	}, "./test"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+}
+
 func TestMain(m *testing.M) {
 	dockerutil.EnsureSupportedDockerVersion()
 	flag.Parse()
