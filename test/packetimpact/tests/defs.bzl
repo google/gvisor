@@ -11,10 +11,12 @@ def _packetimpact_test_impl(ctx):
         # permission problems, because all runfiles may not be owned by the
         # current user, and no other users will be mapped in that namespace.
         # Make sure that everything is readable here.
-        "find . -type f -or -type d -exec chmod a+rx {} \\;",
-        "%s %s --testbench_binary %s $@\n" % (
+        "find . -type f -exec chmod a+rx {} \\;",
+        "find . -type d -exec chmod a+rx {} \\;",
+        "%s %s --posix_server_binary %s --testbench_binary %s $@\n" % (
             test_runner.short_path,
             " ".join(ctx.attr.flags),
+            ctx.files._posix_server_binary[0].short_path,
             ctx.files.testbench_binary[0].short_path,
         ),
     ])
@@ -36,7 +38,7 @@ _packetimpact_test = rule(
         "_test_runner": attr.label(
             executable = True,
             cfg = "target",
-            default = ":packetimpact_test",
+            default = ":test_runner",
         ),
         "_posix_server_binary": attr.label(
             cfg = "target",
