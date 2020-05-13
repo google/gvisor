@@ -37,6 +37,12 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/gofer"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devpts"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs"
+	gofervfs2 "gvisor.dev/gvisor/pkg/sentry/fsimpl/gofer"
+	procvfs2 "gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
+	sysvfs2 "gvisor.dev/gvisor/pkg/sentry/fsimpl/sys"
+	tmpfsvfs2 "gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -44,23 +50,15 @@ import (
 )
 
 const (
-	// Filesystem name for 9p gofer mounts.
-	rootFsName = "9p"
-
 	// Device name for root mount.
 	rootDevice = "9pfs-/"
 
 	// MountPrefix is the annotation prefix for mount hints.
 	MountPrefix = "dev.gvisor.spec.mount."
 
-	// Filesystems that runsc supports.
-	bind     = "bind"
-	devpts   = "devpts"
-	devtmpfs = "devtmpfs"
-	proc     = "proc"
-	sysfs    = "sysfs"
-	tmpfs    = "tmpfs"
-	nonefs   = "none"
+	// Supported filesystems that map to different internal filesystem.
+	bind   = "bind"
+	nonefs = "none"
 )
 
 // tmpfs has some extra supported options that we must pass through.
@@ -108,12 +106,12 @@ func compileMounts(spec *specs.Spec) []specs.Mount {
 
 	// Always mount /dev.
 	mounts = append(mounts, specs.Mount{
-		Type:        devtmpfs,
+		Type:        devtmpfs.Name,
 		Destination: "/dev",
 	})
 
 	mounts = append(mounts, specs.Mount{
-		Type:        devpts,
+		Type:        devpts.Name,
 		Destination: "/dev/pts",
 	})
 
@@ -137,13 +135,13 @@ func compileMounts(spec *specs.Spec) []specs.Mount {
 	var mandatoryMounts []specs.Mount
 	if !procMounted {
 		mandatoryMounts = append(mandatoryMounts, specs.Mount{
-			Type:        proc,
+			Type:        procvfs2.Name,
 			Destination: "/proc",
 		})
 	}
 	if !sysMounted {
 		mandatoryMounts = append(mandatoryMounts, specs.Mount{
-			Type:        sysfs,
+			Type:        sysvfs2.Name,
 			Destination: "/sys",
 		})
 	}
@@ -156,12 +154,16 @@ func compileMounts(spec *specs.Spec) []specs.Mount {
 }
 
 // p9MountOptions creates a slice of options for a p9 mount.
-func p9MountOptions(fd int, fa FileAccessType) []string {
+func p9MountOptions(fd int, fa FileAccessType, vfs2 bool) []string {
 	opts := []string{
 		"trans=fd",
 		"rfdno=" + strconv.Itoa(fd),
 		"wfdno=" + strconv.Itoa(fd),
-		"privateunixsocket=true",
+	}
+	if !vfs2 {
+		// privateunixsocket is always enabled in VFS2. VFS1 requires explicit
+		// enablement.
+		opts = append(opts, "privateunixsocket=true")
 	}
 	if fa == FileAccessShared {
 		opts = append(opts, "cache=remote_revalidating")
@@ -234,7 +236,7 @@ func isSupportedMountFlag(fstype, opt string) bool {
 	case "rw", "ro", "noatime", "noexec":
 		return true
 	}
-	if fstype == tmpfs {
+	if fstype == tmpfsvfs2.Name {
 		ok, err := parseMountOption(opt, tmpfsAllowedOptions...)
 		return ok && err == nil
 	}
@@ -444,7 +446,7 @@ func (m *mountHint) setOptions(val string) error {
 }
 
 func (m *mountHint) isSupported() bool {
-	return m.mount.Type == tmpfs && m.share == pod
+	return m.mount.Type == tmpfsvfs2.Name && m.share == pod
 }
 
 // checkCompatible verifies that shared mount is compatible with master.
@@ -586,7 +588,7 @@ func (c *containerMounter) processHints(conf *Config) error {
 	for _, hint := range c.hints.mounts {
 		// TODO(b/142076984): Only support tmpfs for now. Bind mounts require a
 		// common gofer to mount all shared volumes.
-		if hint.mount.Type != tmpfs {
+		if hint.mount.Type != tmpfsvfs2.Name {
 			continue
 		}
 		log.Infof("Mounting master of shared mount %q from %q type %q", hint.name, hint.mount.Source, hint.mount.Type)
@@ -723,7 +725,7 @@ func (c *containerMounter) createRootMount(ctx context.Context, conf *Config) (*
 	fd := c.fds.remove()
 	log.Infof("Mounting root over 9P, ioFD: %d", fd)
 	p9FS := mustFindFilesystem("9p")
-	opts := p9MountOptions(fd, conf.FileAccess)
+	opts := p9MountOptions(fd, conf.FileAccess, false /* vfs2 */)
 
 	if conf.OverlayfsStaleRead {
 		// We can't check for overlayfs here because sandbox is chroot'ed and gofer
@@ -779,11 +781,11 @@ func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (
 	}
 
 	switch m.Type {
-	case devpts, devtmpfs, proc, sysfs:
+	case devpts.Name, devtmpfs.Name, procvfs2.Name, sysvfs2.Name:
 		fsName = m.Type
 	case nonefs:
-		fsName = sysfs
-	case tmpfs:
+		fsName = sysvfs2.Name
+	case tmpfsvfs2.Name:
 		fsName = m.Type
 
 		var err error
@@ -794,8 +796,8 @@ func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (
 
 	case bind:
 		fd := c.fds.remove()
-		fsName = "9p"
-		opts = p9MountOptions(fd, c.getMountAccessType(m))
+		fsName = gofervfs2.Name
+		opts = p9MountOptions(fd, c.getMountAccessType(m), conf.VFS2)
 		// If configured, add overlay to all writable mounts.
 		useOverlay = conf.Overlay && !mountFlags(m.Options).ReadOnly
 
@@ -948,7 +950,7 @@ func (c *containerMounter) createRestoreEnvironment(conf *Config) (*fs.RestoreEn
 
 	// Add root mount.
 	fd := c.fds.remove()
-	opts := p9MountOptions(fd, conf.FileAccess)
+	opts := p9MountOptions(fd, conf.FileAccess, false /* vfs2 */)
 
 	mf := fs.MountSourceFlags{}
 	if c.root.Readonly || conf.Overlay {
@@ -960,7 +962,7 @@ func (c *containerMounter) createRestoreEnvironment(conf *Config) (*fs.RestoreEn
 		Flags:      mf,
 		DataString: strings.Join(opts, ","),
 	}
-	renv.MountSources[rootFsName] = append(renv.MountSources[rootFsName], rootMount)
+	renv.MountSources[gofervfs2.Name] = append(renv.MountSources[gofervfs2.Name], rootMount)
 
 	// Add submounts.
 	var tmpMounted bool
@@ -976,7 +978,7 @@ func (c *containerMounter) createRestoreEnvironment(conf *Config) (*fs.RestoreEn
 	// TODO(b/67958150): handle '/tmp' properly (see mountTmp()).
 	if !tmpMounted {
 		tmpMount := specs.Mount{
-			Type:        tmpfs,
+			Type:        tmpfsvfs2.Name,
 			Destination: "/tmp",
 		}
 		if err := c.addRestoreMount(conf, renv, tmpMount); err != nil {
@@ -1032,7 +1034,7 @@ func (c *containerMounter) mountTmp(ctx context.Context, conf *Config, mns *fs.M
 		// No '/tmp' found (or fallthrough from above). Safe to mount internal
 		// tmpfs.
 		tmpMount := specs.Mount{
-			Type:        tmpfs,
+			Type:        tmpfsvfs2.Name,
 			Destination: "/tmp",
 			// Sticky bit is added to prevent accidental deletion of files from
 			// another user. This is normally done for /tmp.
