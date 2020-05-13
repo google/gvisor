@@ -16,7 +16,12 @@ package testbench
 
 import (
 	"flag"
+	"fmt"
+	"net"
+	"os/exec"
 	"time"
+
+	"gvisor.dev/gvisor/test/packetimpact/netdevs"
 )
 
 var (
@@ -55,9 +60,31 @@ func RegisterFlags(fs *flag.FlagSet) {
 	fs.DurationVar(&RPCKeepalive, "rpc_keepalive", RPCKeepalive, "gRPC keepalive")
 	fs.StringVar(&LocalIPv4, "local_ipv4", LocalIPv4, "local IPv4 address for test packets")
 	fs.StringVar(&RemoteIPv4, "remote_ipv4", RemoteIPv4, "remote IPv4 address for test packets")
-	fs.StringVar(&LocalIPv6, "local_ipv6", LocalIPv6, "local IPv6 address for test packets")
 	fs.StringVar(&RemoteIPv6, "remote_ipv6", RemoteIPv6, "remote IPv6 address for test packets")
-	fs.StringVar(&LocalMAC, "local_mac", LocalMAC, "local mac address for test packets")
 	fs.StringVar(&RemoteMAC, "remote_mac", RemoteMAC, "remote mac address for test packets")
 	fs.StringVar(&Device, "device", Device, "local device for test packets")
+}
+
+// genPseudoFlags populates flag-like global config based on real flags.
+//
+// genPseudoFlags must only be called after flag.Parse.
+func genPseudoFlags() error {
+	out, err := exec.Command("ip", "addr", "show").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("listing devices: %q: %w", string(out), err)
+	}
+	devs, err := netdevs.ParseDevices(string(out))
+	if err != nil {
+		return fmt.Errorf("parsing devices: %w", err)
+	}
+
+	_, deviceInfo, err := netdevs.FindDeviceByIP(net.ParseIP(LocalIPv4), devs)
+	if err != nil {
+		return fmt.Errorf("can't find deviceInfo: %w", err)
+	}
+
+	LocalMAC = deviceInfo.MAC.String()
+	LocalIPv6 = deviceInfo.IPv6Addr.String()
+
+	return nil
 }
