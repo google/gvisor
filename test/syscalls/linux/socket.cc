@@ -61,7 +61,7 @@ TEST(SocketTest, ProtocolInet) {
   }
 }
 
-TEST(SocketTest, UnixSocketFileMode) {
+TEST(SocketTest, UnixSocketStat) {
   // TODO(gvisor.dev/issue/1624): Re-enable this test once VFS1 is deleted. It
   // should pass in VFS2.
   SKIP_IF(IsRunningOnGvisor());
@@ -83,7 +83,14 @@ TEST(SocketTest, UnixSocketFileMode) {
 
   struct stat statbuf = {};
   ASSERT_THAT(stat(addr.sun_path, &statbuf), SyscallSucceeds());
+
+  // Mode should be S_IFSOCK.
   EXPECT_EQ(statbuf.st_mode, S_IFSOCK | sock_perm & ~mask);
+
+  // Timestamps should be equal and non-zero.
+  EXPECT_NE(statbuf.st_atime, 0);
+  EXPECT_EQ(statbuf.st_atime, statbuf.st_mtime);
+  EXPECT_EQ(statbuf.st_atime, statbuf.st_ctime);
 }
 
 TEST(SocketTest, UnixConnectNeedsWritePerm) {
