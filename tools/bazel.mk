@@ -59,6 +59,8 @@ SHELL=/bin/bash -o pipefail
 ##     DOCKER_SOCKET      - The Docker socket (default: detected).
 ##
 bazel-server-start: load-default ## Starts the bazel server.
+	@mkdir -p $(BAZEL_CACHE)
+	@mkdir -p $(GCLOUD_CONFIG)
 	docker run -d --rm \
 		--init \
 	        --name $(DOCKER_NAME) \
