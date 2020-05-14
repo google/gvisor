@@ -16,6 +16,7 @@ package tmpfs
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -24,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Sync implements vfs.FilesystemImpl.Sync.
@@ -76,8 +78,8 @@ afterSymlink:
 		return nil, err
 	}
 	if symlink, ok := child.inode.impl.(*symlink); ok && rp.ShouldFollowSymlink() {
-		// TODO(gvisor.dev/issue/1197): Symlink traversals updates
-		// access time.
+		// Symlink traversal updates access time.
+		atomic.StoreInt64(&d.inode.atime, d.inode.fs.clock.Now().Nanoseconds())
 		if err := rp.HandleSymlink(symlink.target); err != nil {
 			return nil, err
 		}
@@ -361,8 +363,8 @@ afterTrailingSymlink:
 	}
 	// Do we need to resolve a trailing symlink?
 	if symlink, ok := child.inode.impl.(*symlink); ok && rp.ShouldFollowSymlink() {
-		// TODO(gvisor.dev/issue/1197): Symlink traversals updates
-		// access time.
+		// Symlink traversal updates access time.
+		atomic.StoreInt64(&child.inode.atime, child.inode.fs.clock.Now().Nanoseconds())
 		if err := rp.HandleSymlink(symlink.target); err != nil {
 			return nil, err
 		}
@@ -636,12 +638,19 @@ func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linux.Statfs, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	_, err := resolveLocked(rp)
-	if err != nil {
+	if _, err := resolveLocked(rp); err != nil {
 		return linux.Statfs{}, err
 	}
-	// TODO(gvisor.dev/issue/1197): Actually implement statfs.
-	return linux.Statfs{}, syserror.ENOSYS
+	statfs := linux.Statfs{
+		Type:         linux.TMPFS_MAGIC,
+		BlockSize:    usermem.PageSize,
+		FragmentSize: usermem.PageSize,
+		NameLength:   linux.NAME_MAX,
+		// TODO(b/29637826): Allow configuring a tmpfs size and enforce it.
+		Blocks:     0,
+		BlocksFree: 0,
+	}
+	return statfs, nil
 }
 
 // SymlinkAt implements vfs.FilesystemImpl.SymlinkAt.
