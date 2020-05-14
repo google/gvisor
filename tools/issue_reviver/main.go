@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 
 	"gvisor.dev/gvisor/tools/issue_reviver/github"
 	"gvisor.dev/gvisor/tools/issue_reviver/reviver"
@@ -35,14 +36,22 @@ var (
 
 // Keep the options simple for now. Supports only a single path and repo.
 func init() {
-	flag.StringVar(&owner, "owner", "google", "Github project org/owner to look for issues")
-	flag.StringVar(&repo, "repo", "gvisor", "Github repo to look for issues")
+	flag.StringVar(&owner, "owner", "", "Github project org/owner to look for issues")
+	flag.StringVar(&repo, "repo", "", "Github repo to look for issues")
 	flag.StringVar(&tokenFile, "oauth-token-file", "", "Path to file containing the OAUTH token to be used as credential to github")
-	flag.StringVar(&path, "path", "", "Path to scan for TODOs")
+	flag.StringVar(&path, "path", ".", "Path to scan for TODOs")
 	flag.BoolVar(&dryRun, "dry-run", false, "If set to true, no changes are made to issues")
 }
 
 func main() {
+	// Set defaults from the environment.
+	repository := os.Getenv("GITHUB_REPOSITORY")
+	if parts := strings.SplitN(repository, "/", 2); len(parts) == 2 {
+		owner = parts[0]
+		repo = parts[1]
+	}
+
+	// Parse flags.
 	flag.Parse()
 
 	// Check for mandatory parameters.
@@ -62,8 +71,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Token is passed as a file so it doesn't show up in command line arguments.
-	var token string
+	// The access token may be passed as a file so it doesn't show up in
+	// command line arguments. It also may be provided through the
+	// environment to faciliate use through GitHub's CI system.
+	token := os.Getenv("GITHUB_TOKEN")
 	if len(tokenFile) != 0 {
 		bytes, err := ioutil.ReadFile(tokenFile)
 		if err != nil {
