@@ -770,14 +770,8 @@ func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (
 		useOverlay bool
 	)
 
-	for _, opt := range m.Options {
-		// When options include either "bind" or "rbind", this behaves as
-		// bind mount even if the mount type is equal to a filesystem supported
-		// on runsc.
-		if opt == "bind" || opt == "rbind" {
-			m.Type = bind
-			break
-		}
+	if isBindMount(m) {
+		m.Type = bind
 	}
 
 	switch m.Type {
@@ -805,6 +799,18 @@ func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (
 		log.Warningf("ignoring unknown filesystem type %q", m.Type)
 	}
 	return fsName, opts, useOverlay, nil
+}
+
+func isBindMount(m specs.Mount) bool {
+	for _, opt := range m.Options {
+		// When options include either "bind" or "rbind", this behaves as
+		// bind mount even if the mount type is equal to a filesystem supported
+		// on runsc.
+		if opt == "bind" || opt == "rbind" {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *containerMounter) getMountAccessType(mount specs.Mount) FileAccessType {
