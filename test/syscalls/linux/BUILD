@@ -3288,6 +3288,7 @@ cc_binary(
         "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
+        "@com_google_absl//absl/time",
         gtest,
         "//test/util:temp_path",
         "//test/util:test_main",
