@@ -876,6 +876,51 @@ TEST_P(TCPSocketPairTest, SetTCPUserTimeoutAboveZero) {
   EXPECT_EQ(get, kAbove);
 }
 
+TEST_P(TCPSocketPairTest, SetTCPWindowClampBelowMinRcvBufConnectedSocket) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  // Discover minimum receive buf by setting a really low value
+  // for the receive buffer.
+  constexpr int kZero = 0;
+  EXPECT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVBUF, &kZero,
+                         sizeof(kZero)),
+              SyscallSucceeds());
+
+  // Now retrieve the minimum value for SO_RCVBUF as the set above should
+  // have caused SO_RCVBUF for the socket to be set to the minimum.
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVBUF, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  int min_so_rcvbuf = get;
+
+  {
+    // Setting TCP_WINDOW_CLAMP to zero for a connected socket is not permitted.
+    constexpr int kZero = 0;
+    EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_WINDOW_CLAMP,
+                           &kZero, sizeof(kZero)),
+                SyscallFailsWithErrno(EINVAL));
+
+    // Non-zero clamp values below MIN_SO_RCVBUF/2 should result in the clamp
+    // being set to MIN_SO_RCVBUF/2.
+    int below_half_min_so_rcvbuf = min_so_rcvbuf / 2 - 1;
+    EXPECT_THAT(
+        setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_WINDOW_CLAMP,
+                   &below_half_min_so_rcvbuf, sizeof(below_half_min_so_rcvbuf)),
+        SyscallSucceeds());
+
+    int get = -1;
+    socklen_t get_len = sizeof(get);
+
+    ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_WINDOW_CLAMP,
+                           &get, &get_len),
+                SyscallSucceedsWithValue(0));
+    EXPECT_EQ(get_len, sizeof(get));
+    EXPECT_EQ(min_so_rcvbuf / 2, get);
+  }
+}
+
 TEST_P(TCPSocketPairTest, TCPResetDuringClose_NoRandomSave) {
   DisableSave ds;  // Too many syscalls.
   constexpr int kThreadCount = 1000;

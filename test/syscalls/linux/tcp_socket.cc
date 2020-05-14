@@ -1313,7 +1313,7 @@ TEST_P(SimpleTcpSocketTest, SetTCPDeferAcceptNeg) {
   int get = -1;
   socklen_t get_len = sizeof(get);
   ASSERT_THAT(
-      getsockopt(s.get(), IPPROTO_TCP, TCP_USER_TIMEOUT, &get, &get_len),
+      getsockopt(s.get(), IPPROTO_TCP, TCP_DEFER_ACCEPT, &get, &get_len),
       SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
   EXPECT_EQ(get, 0);
@@ -1326,7 +1326,7 @@ TEST_P(SimpleTcpSocketTest, GetTCPDeferAcceptDefault) {
   int get = -1;
   socklen_t get_len = sizeof(get);
   ASSERT_THAT(
-      getsockopt(s.get(), IPPROTO_TCP, TCP_USER_TIMEOUT, &get, &get_len),
+      getsockopt(s.get(), IPPROTO_TCP, TCP_DEFER_ACCEPT, &get, &get_len),
       SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
   EXPECT_EQ(get, 0);
@@ -1376,6 +1376,187 @@ TEST_P(SimpleTcpSocketTest, TCPConnectSoRcvBufRace) {
   EXPECT_THAT(
       setsockopt(s.get(), SOL_SOCKET, SO_RCVBUF, &buf_sz, sizeof(buf_sz)),
       SyscallSucceedsWithValue(0));
+}
+
+TEST_P(SimpleTcpSocketTest, SetTCPSynCntLessThanOne) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(getsockopt(s.get(), IPPROTO_TCP, TCP_SYNCNT, &get, &get_len),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  int default_syn_cnt = get;
+
+  {
+    // TCP_SYNCNT less than 1 should be rejected with an EINVAL.
+    constexpr int kZero = 0;
+    EXPECT_THAT(
+        setsockopt(s.get(), IPPROTO_TCP, TCP_SYNCNT, &kZero, sizeof(kZero)),
+        SyscallFailsWithErrno(EINVAL));
+
+    // TCP_SYNCNT less than 1 should be rejected with an EINVAL.
+    constexpr int kNeg = -1;
+    EXPECT_THAT(
+        setsockopt(s.get(), IPPROTO_TCP, TCP_SYNCNT, &kNeg, sizeof(kNeg)),
+        SyscallFailsWithErrno(EINVAL));
+
+    int get = -1;
+    socklen_t get_len = sizeof(get);
+
+    ASSERT_THAT(getsockopt(s.get(), IPPROTO_TCP, TCP_SYNCNT, &get, &get_len),
+                SyscallSucceedsWithValue(0));
+    EXPECT_EQ(get_len, sizeof(get));
+    EXPECT_EQ(default_syn_cnt, get);
+  }
+}
+
+TEST_P(SimpleTcpSocketTest, GetTCPSynCntDefault) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  constexpr int kDefaultSynCnt = 6;
+
+  ASSERT_THAT(getsockopt(s.get(), IPPROTO_TCP, TCP_SYNCNT, &get, &get_len),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kDefaultSynCnt);
+}
+
+TEST_P(SimpleTcpSocketTest, SetTCPSynCntGreaterThanOne) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  constexpr int kTCPSynCnt = 20;
+  ASSERT_THAT(setsockopt(s.get(), IPPROTO_TCP, TCP_SYNCNT, &kTCPSynCnt,
+                         sizeof(kTCPSynCnt)),
+              SyscallSucceeds());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(getsockopt(s.get(), IPPROTO_TCP, TCP_SYNCNT, &get, &get_len),
+              SyscallSucceeds());
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kTCPSynCnt);
+}
+
+TEST_P(SimpleTcpSocketTest, SetTCPSynCntAboveMax) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(getsockopt(s.get(), IPPROTO_TCP, TCP_SYNCNT, &get, &get_len),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  int default_syn_cnt = get;
+  {
+    constexpr int kTCPSynCnt = 256;
+    ASSERT_THAT(setsockopt(s.get(), IPPROTO_TCP, TCP_SYNCNT, &kTCPSynCnt,
+                           sizeof(kTCPSynCnt)),
+                SyscallFailsWithErrno(EINVAL));
+
+    int get = -1;
+    socklen_t get_len = sizeof(get);
+    ASSERT_THAT(getsockopt(s.get(), IPPROTO_TCP, TCP_SYNCNT, &get, &get_len),
+                SyscallSucceeds());
+    EXPECT_EQ(get_len, sizeof(get));
+    EXPECT_EQ(get, default_syn_cnt);
+  }
+}
+
+TEST_P(SimpleTcpSocketTest, SetTCPWindowClampBelowMinRcvBuf) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  // Discover minimum receive buf by setting a really low value
+  // for the receive buffer.
+  constexpr int kZero = 0;
+  EXPECT_THAT(setsockopt(s.get(), SOL_SOCKET, SO_RCVBUF, &kZero, sizeof(kZero)),
+              SyscallSucceeds());
+
+  // Now retrieve the minimum value for SO_RCVBUF as the set above should
+  // have caused SO_RCVBUF for the socket to be set to the minimum.
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(getsockopt(s.get(), SOL_SOCKET, SO_RCVBUF, &get, &get_len),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  int min_so_rcvbuf = get;
+
+  {
+    // TCP_WINDOW_CLAMP less than min_so_rcvbuf/2 should be set to
+    // min_so_rcvbuf/2.
+    int below_half_min_rcvbuf = min_so_rcvbuf / 2 - 1;
+    EXPECT_THAT(
+        setsockopt(s.get(), IPPROTO_TCP, TCP_WINDOW_CLAMP,
+                   &below_half_min_rcvbuf, sizeof(below_half_min_rcvbuf)),
+        SyscallSucceeds());
+
+    int get = -1;
+    socklen_t get_len = sizeof(get);
+
+    ASSERT_THAT(
+        getsockopt(s.get(), IPPROTO_TCP, TCP_WINDOW_CLAMP, &get, &get_len),
+        SyscallSucceedsWithValue(0));
+    EXPECT_EQ(get_len, sizeof(get));
+    EXPECT_EQ(min_so_rcvbuf / 2, get);
+  }
+}
+
+TEST_P(SimpleTcpSocketTest, SetTCPWindowClampZeroClosedSocket) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  constexpr int kZero = 0;
+  ASSERT_THAT(
+      setsockopt(s.get(), IPPROTO_TCP, TCP_WINDOW_CLAMP, &kZero, sizeof(kZero)),
+      SyscallSucceeds());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(s.get(), IPPROTO_TCP, TCP_WINDOW_CLAMP, &get, &get_len),
+      SyscallSucceeds());
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kZero);
+}
+
+TEST_P(SimpleTcpSocketTest, SetTCPWindowClampAboveHalfMinRcvBuf) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  // Discover minimum receive buf by setting a really low value
+  // for the receive buffer.
+  constexpr int kZero = 0;
+  EXPECT_THAT(setsockopt(s.get(), SOL_SOCKET, SO_RCVBUF, &kZero, sizeof(kZero)),
+              SyscallSucceeds());
+
+  // Now retrieve the minimum value for SO_RCVBUF as the set above should
+  // have caused SO_RCVBUF for the socket to be set to the minimum.
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_THAT(getsockopt(s.get(), SOL_SOCKET, SO_RCVBUF, &get, &get_len),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  int min_so_rcvbuf = get;
+
+  {
+    int above_half_min_rcv_buf = min_so_rcvbuf / 2 + 1;
+    EXPECT_THAT(
+        setsockopt(s.get(), IPPROTO_TCP, TCP_WINDOW_CLAMP,
+                   &above_half_min_rcv_buf, sizeof(above_half_min_rcv_buf)),
+        SyscallSucceeds());
+
+    int get = -1;
+    socklen_t get_len = sizeof(get);
+
+    ASSERT_THAT(
+        getsockopt(s.get(), IPPROTO_TCP, TCP_WINDOW_CLAMP, &get, &get_len),
+        SyscallSucceedsWithValue(0));
+    EXPECT_EQ(get_len, sizeof(get));
+    EXPECT_EQ(above_half_min_rcv_buf, get);
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, SimpleTcpSocketTest,
