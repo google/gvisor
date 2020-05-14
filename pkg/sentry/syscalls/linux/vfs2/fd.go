@@ -17,6 +17,7 @@ package vfs2
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
@@ -157,6 +158,15 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			return 0, nil, syserror.EBADF
 		}
 		return uintptr(pipefile.PipeSize()), nil, nil
+	case linux.F_GET_SEALS:
+		val, err := tmpfs.GetSeals(file)
+		return uintptr(val), nil, err
+	case linux.F_ADD_SEALS:
+		if !file.IsWritable() {
+			return 0, nil, syserror.EPERM
+		}
+		err := tmpfs.AddSeals(file, args[2].Uint())
+		return 0, nil, err
 	default:
 		// TODO(gvisor.dev/issue/1623): Everything else is not yet supported.
 		return 0, nil, syserror.EINVAL

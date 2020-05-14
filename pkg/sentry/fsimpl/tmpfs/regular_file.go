@@ -88,6 +88,7 @@ type regularFile struct {
 func (fs *filesystem) newRegularFile(creds *auth.Credentials, mode linux.FileMode) *inode {
 	file := &regularFile{
 		memFile: fs.memFile,
+		seals:   linux.F_SEAL_SEAL,
 	}
 	file.inode.init(file, fs, creds, linux.S_IFREG|mode)
 	file.inode.nlink = 1 // from parent directory
@@ -576,4 +577,45 @@ exitLoop:
 	}
 
 	return done, retErr
+}
+
+// GetSeals returns the current set of seals on a memfd inode.
+func GetSeals(fd *vfs.FileDescription) (uint32, error) {
+	f, ok := fd.Impl().(*regularFileFD)
+	if !ok {
+		return 0, syserror.EINVAL
+	}
+	rf := f.inode().impl.(*regularFile)
+	rf.dataMu.RLock()
+	defer rf.dataMu.RUnlock()
+	return rf.seals, nil
+}
+
+// AddSeals adds new file seals to a memfd inode.
+func AddSeals(fd *vfs.FileDescription, val uint32) error {
+	f, ok := fd.Impl().(*regularFileFD)
+	if !ok {
+		return syserror.EINVAL
+	}
+	rf := f.inode().impl.(*regularFile)
+	rf.mapsMu.Lock()
+	defer rf.mapsMu.Unlock()
+	rf.dataMu.RLock()
+	defer rf.dataMu.RUnlock()
+
+	if rf.seals&linux.F_SEAL_SEAL != 0 {
+		// Seal applied which prevents addition of any new seals.
+		return syserror.EPERM
+	}
+
+	// F_SEAL_WRITE can only be added if there are no active writable maps.
+	if rf.seals&linux.F_SEAL_WRITE == 0 && val&linux.F_SEAL_WRITE != 0 {
+		if rf.writableMappingPages > 0 {
+			return syserror.EBUSY
+		}
+	}
+
+	// Seals can only be added, never removed.
+	rf.seals |= val
+	return nil
 }
