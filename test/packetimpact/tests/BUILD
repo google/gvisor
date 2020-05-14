@@ -31,8 +31,6 @@ packetimpact_go_test(
 packetimpact_go_test(
     name = "udp_icmp_error_propagation",
     srcs = ["udp_icmp_error_propagation_test.go"],
-    # TODO(b/153926291): Fix netstack then remove the line below.
-    expect_netstack_failure = True,
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/header",

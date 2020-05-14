@@ -292,16 +292,23 @@ class PosixImpl final : public posix_server::Posix::Service {
     return ::grpc::Status::OK;
   }
 
-  ::grpc::Status Recv(::grpc::ServerContext *context,
-                      const ::posix_server::RecvRequest *request,
-                      ::posix_server::RecvResponse *response) override {
+  ::grpc::Status Recv(
+      ::grpc::ServerContext *context,
+      const ::posix_server::RecvRequest *request,
+      ::grpc::ServerWriter<::posix_server::RecvResponse> *writer) {
+    ::posix_server::RecvResponse response;
+    ::grpc::WriteOptions options;
     std::vector<char> buf(request->len());
-    response->set_ret(
+
+    writer->Write(response, ::grpc::WriteOptions());
+
+    response.set_ret(
         recv(request->sockfd(), buf.data(), buf.size(), request->flags()));
-    if (response->ret() >= 0) {
-      response->set_buf(buf.data(), response->ret());
+    if (response.ret() >= 0) {
+      response.set_buf(buf.data(), response.ret());
     }
-    response->set_errno_(errno);
+    response.set_errno_(errno);
+    writer->Write(response, ::grpc::WriteOptions());
     return ::grpc::Status::OK;
   }
 };

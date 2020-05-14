@@ -19,7 +19,6 @@ import (
 	"flag"
 	"fmt"
 	"net"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -306,58 +305,52 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 					t.Fatalf("did not receive message from DUT: %s", err)
 				}
 
-				var wg sync.WaitGroup
-				wg.Add(2)
-				go func() {
-					defer wg.Done()
+				ctx, cancel2 := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel2()
+				client := dut.RecvWithClient(ctx, remoteFD, 100, 0)
+				if _, err := client.Recv(); err != nil {
+					t.Fatalf("failed to receive signal for entering recv: %s", err)
+				}
 
-					if wantErrno != syscall.Errno(0) {
-						ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-						defer cancel()
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				clientClean := dut.RecvWithClient(ctx, cleanFD, 100, 0)
+				if _, err := clientClean.Recv(); err != nil {
+					t.Fatalf("failed to receive signal for entering recv on clean socket: %s", err)
+				}
 
-						ret, _, err := dut.RecvWithErrno(ctx, remoteFD, 100, 0)
-						if ret != -1 {
-							t.Errorf("recv during ICMP error succeeded unexpectedly, expected (%[1]d) %[1]v", wantErrno)
-							return
-						}
-						if err != wantErrno {
-							t.Errorf("recv during ICMP error resulted in error (%[1]d) %[1]v, expected (%[2]d) %[2]v", err, wantErrno)
-							return
-						}
-					}
-
-					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-					defer cancel()
-
-					if ret, _, err := dut.RecvWithErrno(ctx, remoteFD, 100, 0); ret == -1 {
-						t.Errorf("recv after ICMP error failed with (%[1]d) %[1]", err)
-					}
-				}()
-
-				go func() {
-					defer wg.Done()
-
-					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-					defer cancel()
-
-					if ret, _, err := dut.RecvWithErrno(ctx, cleanFD, 100, 0); ret == -1 {
-						t.Errorf("recv on clean socket failed with (%[1]d) %[1]", err)
-					}
-				}()
-
-				// TODO(b/155684889) This sleep is to allow time for the DUT to
-				// actually call recv since we want the ICMP error to arrive during the
-				// blocking recv, and should be replaced when a better synchronization
-				// alternative is available.
-				time.Sleep(2 * time.Second)
-
+				// Send ICMP error after both sockets have entered the blocking recv.
 				if err := sendICMPError(&conn, icmpErr, udp); err != nil {
 					t.Fatal(err)
 				}
-
+				// Send packets for the sockets to receive.
 				conn.Send(tb.UDP{DstPort: &cleanPort})
 				conn.Send(tb.UDP{})
-				wg.Wait()
+
+				resp, err := client.Recv()
+				if err != nil {
+					t.Fatalf("failed to receive result of recv: %s", err)
+				}
+				gotErrno := syscall.Errno(0)
+				if resp.GetRet() == -1 {
+					gotErrno = syscall.Errno(resp.GetErrno_())
+				}
+				if wantErrno != gotErrno {
+					t.Fatalf("got recv errno (%[1]d) %[1]v, want (%[2]d) %[2]v", gotErrno, wantErrno)
+				}
+
+				// If the recv errored, call recv again to actually receive the sent packet.
+				if wantErrno != syscall.Errno(0) {
+					dut.Recv(remoteFD, 100, 0)
+				}
+
+				resp, err = clientClean.Recv()
+				if err != nil {
+					t.Fatalf("failed to receive result of recv on clean socket: %s", err)
+				}
+				if resp.GetRet() == -1 {
+					t.Fatalf("got clean socket recv errno (%[1]d) %[1]v, expected (0)", syscall.Errno(resp.GetErrno_()))
+				}
 			})
 		}
 	}

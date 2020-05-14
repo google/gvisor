@@ -314,7 +314,7 @@ func (e *endpoint) loadLastError(s string) {
 		return
 	}
 
-	e.lastError = loadError(s)
+	e.lastError = tcpip.StringToError(s)
 }
 
 // saveHardError is invoked by stateify.
@@ -332,71 +332,7 @@ func (e *EndpointInfo) loadHardError(s string) {
 		return
 	}
 
-	e.HardError = loadError(s)
-}
-
-var messageToError map[string]*tcpip.Error
-
-var populate sync.Once
-
-func loadError(s string) *tcpip.Error {
-	populate.Do(func() {
-		var errors = []*tcpip.Error{
-			tcpip.ErrUnknownProtocol,
-			tcpip.ErrUnknownNICID,
-			tcpip.ErrUnknownDevice,
-			tcpip.ErrUnknownProtocolOption,
-			tcpip.ErrDuplicateNICID,
-			tcpip.ErrDuplicateAddress,
-			tcpip.ErrNoRoute,
-			tcpip.ErrBadLinkEndpoint,
-			tcpip.ErrAlreadyBound,
-			tcpip.ErrInvalidEndpointState,
-			tcpip.ErrAlreadyConnecting,
-			tcpip.ErrAlreadyConnected,
-			tcpip.ErrNoPortAvailable,
-			tcpip.ErrPortInUse,
-			tcpip.ErrBadLocalAddress,
-			tcpip.ErrClosedForSend,
-			tcpip.ErrClosedForReceive,
-			tcpip.ErrWouldBlock,
-			tcpip.ErrConnectionRefused,
-			tcpip.ErrTimeout,
-			tcpip.ErrAborted,
-			tcpip.ErrConnectStarted,
-			tcpip.ErrDestinationRequired,
-			tcpip.ErrNotSupported,
-			tcpip.ErrQueueSizeNotSupported,
-			tcpip.ErrNotConnected,
-			tcpip.ErrConnectionReset,
-			tcpip.ErrConnectionAborted,
-			tcpip.ErrNoSuchFile,
-			tcpip.ErrInvalidOptionValue,
-			tcpip.ErrNoLinkAddress,
-			tcpip.ErrBadAddress,
-			tcpip.ErrNetworkUnreachable,
-			tcpip.ErrMessageTooLong,
-			tcpip.ErrNoBufferSpace,
-			tcpip.ErrBroadcastDisabled,
-			tcpip.ErrNotPermitted,
-			tcpip.ErrAddressFamilyNotSupported,
-		}
-
-		messageToError = make(map[string]*tcpip.Error)
-		for _, e := range errors {
-			if messageToError[e.String()] != nil {
-				panic("tcpip errors with duplicated message: " + e.String())
-			}
-			messageToError[e.String()] = e
-		}
-	})
-
-	e, ok := messageToError[s]
-	if !ok {
-		panic("unknown error message: " + s)
-	}
-
-	return e
+	e.HardError = tcpip.StringToError(s)
 }
 
 // saveMeasureTime is invoked by stateify.

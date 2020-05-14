@@ -212,6 +212,9 @@ service Posix {
   rpc SetSockOpt(SetSockOptRequest) returns (SetSockOptResponse);
   // Call socket() on the DUT.
   rpc Socket(SocketRequest) returns (SocketResponse);
-  // Call recv() on the DUT.
-  rpc Recv(RecvRequest) returns (RecvResponse);
+  // Call recv() on the DUT. Exactly two responses will be returned, the first
+  // indicates that the server is about to enter the blocking receive (the
+  // contents of this response should not be examined); and the second returns
+  // the result of the recv() call.
+  rpc Recv(RecvRequest) returns (stream RecvResponse);
 }

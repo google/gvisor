@@ -26,3 +26,6 @@ type POSIXClient pb.PosixClient
 func NewPOSIXClient(c grpc.ClientConnInterface) POSIXClient {
 	return pb.NewPosixClient(c)
 }
+
+// RecvClient is a client of the Recv server-streaming RPC.
+type RecvClient = pb.Posix_RecvClient

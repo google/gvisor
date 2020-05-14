@@ -595,14 +595,35 @@ func (dut *DUT) Recv(sockfd, len, flags int32) []byte {
 // RecvWithErrno calls recv on the DUT.
 func (dut *DUT) RecvWithErrno(ctx context.Context, sockfd, len, flags int32) (int32, []byte, error) {
 	dut.t.Helper()
+	client := dut.RecvWithClient(ctx, sockfd, len, flags)
+	_, err := client.Recv()
+	if err != nil {
+		dut.t.Fatalf("failed to receive indication of entering recv: %s", err)
+	}
+	resp, err := client.Recv()
+	if err != nil {
+		dut.t.Fatalf("failed to receive Recv result: %s", err)
+	}
+	return resp.GetRet(), resp.GetBuf(), syscall.Errno(resp.GetErrno_())
+}
+
+// RecvWithClient calls recv on the DUT and returns a client object which can
+// then be used to receive streamed responses.
+//
+// The first response indicates that the DUT is about to enter the recv
+// syscall, and is useful for synchronization purposes when tests need to wait
+// for the recv to block first. The second response contains the result of the
+// recv as usual.
+func (dut *DUT) RecvWithClient(ctx context.Context, sockfd, len, flags int32) RecvClient {
+	dut.t.Helper()
 	req := pb.RecvRequest{
 		Sockfd: sockfd,
 		Len:    len,
 		Flags:  flags,
 	}
-	resp, err := dut.posixServer.Recv(ctx, &req)
+	client, err := dut.posixServer.Recv(ctx, &req)
 	if err != nil {
 		dut.t.Fatalf("failed to call Recv: %s", err)
 	}
-	return resp.GetRet(), resp.GetBuf(), syscall.Errno(resp.GetErrno_())
+	return RecvClient(client)
 }
