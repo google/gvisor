@@ -109,6 +109,7 @@ type service struct {
 	processes map[string]rproc.Process
 	events    chan interface{}
 	platform  rproc.Platform
+	opts      options.Options
 	ec        chan proc.Exit
 	oomPoller *epoller
 
@@ -201,7 +202,7 @@ func (s *service) Cleanup(ctx context.Context) (*taskAPI.DeleteResponse, error) 
 	if err != nil {
 		return nil, err
 	}
-	r := proc.NewRunsc(proc.RunscRoot, path, ns, runtime, nil)
+	r := proc.NewRunsc(s.opts.Root, path, ns, runtime, nil)
 	if err := r.Delete(ctx, s.id, &runsc.DeleteOpts{
 		Force: true,
 	}); err != nil {
@@ -364,6 +365,7 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (_ *
 		}
 	}
 	s.task = process
+	s.opts = opts
 	return &taskAPI.CreateTaskResponse{
 		Pid: uint32(process.Pid()),
 	}, nil
@@ -599,7 +601,7 @@ func (s *service) Stats(ctx context.Context, r *taskAPI.StatsRequest) (*taskAPI.
 	if err != nil {
 		return nil, err
 	}
-	rs := proc.NewRunsc(proc.RunscRoot, path, ns, runtime, nil)
+	rs := proc.NewRunsc(s.opts.Root, path, ns, runtime, nil)
 	stats, err := rs.Stats(ctx, s.id)
 	if err != nil {
 		return nil, err
