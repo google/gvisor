@@ -94,7 +94,7 @@ type FilesystemOpts struct {
 }
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
-func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
+func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, _ string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	memFileProvider := pgalloc.MemoryFileProviderFromContext(ctx)
 	if memFileProvider == nil {
 		panic("MemoryFileProviderFromContext returned nil")
@@ -137,6 +137,11 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, fmt.Errorf("invalid tmpfs root file type: %#o", rootFileType)
 	}
 	return &fs.vfsfs, &root.vfsd, nil
+}
+
+// NewFilesystem returns a new tmpfs filesystem.
+func NewFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials) (*vfs.Filesystem, *vfs.Dentry, error) {
+	return FilesystemType{}.GetFilesystem(ctx, vfsObj, creds, "", vfs.GetFilesystemOptions{})
 }
 
 // Release implements vfs.FilesystemImpl.Release.
@@ -657,4 +662,35 @@ func (fd *fileDescription) Setxattr(ctx context.Context, opts vfs.SetxattrOption
 // Removexattr implements vfs.FileDescriptionImpl.Removexattr.
 func (fd *fileDescription) Removexattr(ctx context.Context, name string) error {
 	return fd.inode().removexattr(auth.CredentialsFromContext(ctx), name)
+}
+
+// NewMemfd creates a new tmpfs regular file and file description that can back
+// an anonymous fd created by memfd_create.
+func NewMemfd(mount *vfs.Mount, creds *auth.Credentials, allowSeals bool, name string) (*vfs.FileDescription, error) {
+	fs, ok := mount.Filesystem().Impl().(*filesystem)
+	if !ok {
+		panic("NewMemfd() called with non-tmpfs mount")
+	}
+
+	// Per Linux, mm/shmem.c:__shmem_file_setup(), memfd inodes are set up with
+	// S_IRWXUGO.
+	mode := linux.FileMode(0777)
+	inode := fs.newRegularFile(creds, mode)
+	rf := inode.impl.(*regularFile)
+	if allowSeals {
+		rf.seals = 0
+	}
+
+	d := fs.newDentry(inode)
+	defer d.DecRef()
+	d.name = name
+
+	// Per Linux, mm/shmem.c:__shmem_file_setup(), memfd files are set up with
+	// FMODE_READ | FMODE_WRITE.
+	var fd regularFileFD
+	flags := uint32(linux.O_RDWR)
+	if err := fd.vfsfd.Init(&fd, flags, mount, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+		return nil, err
+	}
+	return &fd.vfsfd, nil
 }

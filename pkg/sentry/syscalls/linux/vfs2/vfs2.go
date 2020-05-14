@@ -158,7 +158,7 @@ func Override() {
 	s.Table[306] = syscalls.Supported("syncfs", Syncfs)
 	s.Table[307] = syscalls.Supported("sendmmsg", SendMMsg)
 	s.Table[316] = syscalls.Supported("renameat2", Renameat2)
-	delete(s.Table, 319) // memfd_create
+	s.Table[319] = syscalls.Supported("memfd_create", MemfdCreate)
 	s.Table[322] = syscalls.Supported("execveat", Execveat)
 	s.Table[327] = syscalls.Supported("preadv2", Preadv2)
 	s.Table[328] = syscalls.Supported("pwritev2", Pwritev2)

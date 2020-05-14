@@ -173,6 +173,7 @@ go_library(
         "//pkg/sentry/fsimpl/pipefs",
         "//pkg/sentry/fsimpl/sockfs",
         "//pkg/sentry/fsimpl/timerfd",
+        "//pkg/sentry/fsimpl/tmpfs",
         "//pkg/sentry/hostcpu",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel/auth",

@@ -772,5 +772,24 @@ func (fs *filesystem) RemovexattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDentry, b *fspath.Builder) error {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	return genericPrependPath(vfsroot, vd.Mount(), vd.Dentry().Impl().(*dentry), b)
+	mnt := vd.Mount()
+	d := vd.Dentry().Impl().(*dentry)
+	for {
+		if mnt == vfsroot.Mount() && &d.vfsd == vfsroot.Dentry() {
+			return vfs.PrependPathAtVFSRootError{}
+		}
+		if &d.vfsd == mnt.Root() {
+			return nil
+		}
+		if d.parent == nil {
+			if d.name != "" {
+				// This must be an anonymous memfd file.
+				b.PrependComponent("/" + d.name)
+				return vfs.PrependPathSyntheticError{}
+			}
+			return vfs.PrependPathAtNonMountRootError{}
+		}
+		b.PrependComponent(d.name)
+		d = d.parent
+	}
 }
