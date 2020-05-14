@@ -27,9 +27,22 @@ namespace testing {
 
 namespace {
 
+#ifdef __x86_64__
 #define GET_XMM(__var, __xmm) \
   asm volatile("movq %%" #__xmm ", %0" : "=r"(__var))
 #define SET_XMM(__var, __xmm) asm volatile("movq %0, %%" #__xmm : : "r"(__var))
+#define GET_FP0(__var) GET_XMM(__var, xmm0)
+#define SET_FP0(__var) SET_XMM(__var, xmm0)
+#elif __aarch64__
+#define __stringify_1(x...) #x
+#define __stringify(x...) __stringify_1(x)
+#define GET_FPREG(var, regname) \
+  asm volatile("str "__stringify(regname) ", %0" : "=m"(var))
+#define SET_FPREG(var, regname) \
+  asm volatile("ldr "__stringify(regname) ", %0" : "=m"(var))
+#define GET_FP0(var) GET_FPREG(var, d0)
+#define SET_FP0(var) GET_FPREG(var, d0)
+#endif
 
 int parent, child;
 
@@ -40,7 +53,10 @@ void sigusr1(int s, siginfo_t* siginfo, void* _uc) {
   TEST_CHECK_MSG(child >= 0, "fork failed");
 
   uint64_t val = SIGUSR1;
-  SET_XMM(val, xmm0);
+  SET_FP0(val);
+  uint64_t got;
+  GET_FP0(got);
+  TEST_CHECK_MSG(val == got, "Basic FP check failed in sigusr1()");
 }
 
 TEST(FPSigTest, Fork) {
@@ -67,8 +83,9 @@ TEST(FPSigTest, Fork) {
   // be the one clobbered.
 
   uint64_t expected = 0xdeadbeeffacefeed;
-  SET_XMM(expected, xmm0);
+  SET_FP0(expected);
 
+#ifdef __x86_64__
   asm volatile(
       "movl %[killnr], %%eax;"
       "movl %[parent], %%edi;"
@@ -81,9 +98,18 @@ TEST(FPSigTest, Fork) {
       : "rax", "rdi", "rsi", "rdx",
         // Clobbered by syscall.
         "rcx", "r11");
+#elif __aarch64__
+  asm volatile(
+      "mov x8, %0\n"
+      "mov x0, %1\n"
+      "mov x1, %2\n"
+      "mov x2, %3\n"
+      "svc #0\n" ::"r"(__NR_tgkill),
+      "r"(parent), "r"(parent_tid), "r"(SIGUSR1));
+#endif
 
   uint64_t got;
-  GET_XMM(got, xmm0);
+  GET_FP0(got);
 
   if (getpid() == parent) {  // Parent.
     int status;
