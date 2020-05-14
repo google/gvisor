@@ -470,6 +470,17 @@ type endpoint struct {
 	// for this endpoint using the TCP_MAXSEG setsockopt.
 	userMSS uint16
 
+	// maxSynRetries is the maximum number of SYN retransmits that TCP should
+	// send before aborting the attempt to connect. It cannot exceed 255.
+	//
+	// NOTE: This is currently a no-op and does not change the SYN
+	// retransmissions.
+	maxSynRetries uint8
+
+	// windowClamp is used to bound the size of the advertised window to
+	// this value.
+	windowClamp uint32
+
 	// The following fields are used to manage the send buffer. When
 	// segments are ready to be sent, they are added to sndQueue and the
 	// protocol goroutine is signaled via sndWaker.
@@ -795,8 +806,10 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 			interval: 75 * time.Second,
 			count:    9,
 		},
-		uniqueID: s.UniqueID(),
-		txHash:   s.Rand().Uint32(),
+		uniqueID:      s.UniqueID(),
+		txHash:        s.Rand().Uint32(),
+		windowClamp:   DefaultReceiveBufferSize,
+		maxSynRetries: DefaultSynRetries,
 	}
 
 	var ss SendBufferSizeOption
@@ -827,6 +840,11 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 	var tcpLT tcpip.TCPLingerTimeoutOption
 	if err := s.TransportProtocolOption(ProtocolNumber, &tcpLT); err == nil {
 		e.tcpLingerTimeout = time.Duration(tcpLT)
+	}
+
+	var synRetries tcpip.TCPSynRetriesOption
+	if err := s.TransportProtocolOption(ProtocolNumber, &synRetries); err == nil {
+		e.maxSynRetries = uint8(synRetries)
 	}
 
 	if p := s.GetTCPProbe(); p != nil {
@@ -1603,6 +1621,36 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 		e.ttl = uint8(v)
 		e.UnlockUser()
 
+	case tcpip.TCPSynCountOption:
+		if v < 1 || v > 255 {
+			return tcpip.ErrInvalidOptionValue
+		}
+		e.LockUser()
+		e.maxSynRetries = uint8(v)
+		e.UnlockUser()
+
+	case tcpip.TCPWindowClampOption:
+		if v == 0 {
+			e.LockUser()
+			switch e.EndpointState() {
+			case StateClose, StateInitial:
+				e.windowClamp = 0
+				e.UnlockUser()
+				return nil
+			default:
+				e.UnlockUser()
+				return tcpip.ErrInvalidOptionValue
+			}
+		}
+		var rs ReceiveBufferSizeOption
+		if err := e.stack.TransportProtocolOption(ProtocolNumber, &rs); err == nil {
+			if v < rs.Min/2 {
+				v = rs.Min / 2
+			}
+		}
+		e.LockUser()
+		e.windowClamp = uint32(v)
+		e.UnlockUser()
 	}
 	return nil
 }
@@ -1823,6 +1871,18 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 	case tcpip.TTLOption:
 		e.LockUser()
 		v := int(e.ttl)
+		e.UnlockUser()
+		return v, nil
+
+	case tcpip.TCPSynCountOption:
+		e.LockUser()
+		v := int(e.maxSynRetries)
+		e.UnlockUser()
+		return v, nil
+
+	case tcpip.TCPWindowClampOption:
+		e.LockUser()
+		v := int(e.windowClamp)
 		e.UnlockUser()
 		return v, nil
 
