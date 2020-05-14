@@ -167,6 +167,8 @@ type protocol struct {
 	tcpLingerTimeout           time.Duration
 	tcpTimeWaitTimeout         time.Duration
 	minRTO                     time.Duration
+	maxRTO                     time.Duration
+	maxRetries                 uint32
 	synRcvdCount               synRcvdCounter
 	synRetries                 uint8
 	dispatcher                 *dispatcher
@@ -345,6 +347,21 @@ func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 		p.mu.Unlock()
 		return nil
 
+	case tcpip.TCPMaxRTOOption:
+		if v < 0 {
+			v = tcpip.TCPMaxRTOOption(MaxRTO)
+		}
+		p.mu.Lock()
+		p.maxRTO = time.Duration(v)
+		p.mu.Unlock()
+		return nil
+
+	case tcpip.TCPMaxRetriesOption:
+		p.mu.Lock()
+		p.maxRetries = uint32(v)
+		p.mu.Unlock()
+		return nil
+
 	case tcpip.TCPSynRcvdCountThresholdOption:
 		p.mu.Lock()
 		p.synRcvdCount.SetThreshold(uint64(v))
@@ -428,6 +445,18 @@ func (p *protocol) Option(option interface{}) *tcpip.Error {
 		p.mu.RUnlock()
 		return nil
 
+	case *tcpip.TCPMaxRTOOption:
+		p.mu.RLock()
+		*v = tcpip.TCPMaxRTOOption(p.maxRTO)
+		p.mu.RUnlock()
+		return nil
+
+	case *tcpip.TCPMaxRetriesOption:
+		p.mu.RLock()
+		*v = tcpip.TCPMaxRetriesOption(p.maxRetries)
+		p.mu.RUnlock()
+		return nil
+
 	case *tcpip.TCPSynRcvdCountThresholdOption:
 		p.mu.RLock()
 		*v = tcpip.TCPSynRcvdCountThresholdOption(p.synRcvdCount.Threshold())
@@ -474,5 +503,7 @@ func NewProtocol() stack.TransportProtocol {
 		dispatcher:                 newDispatcher(runtime.GOMAXPROCS(0)),
 		synRetries:                 DefaultSynRetries,
 		minRTO:                     MinRTO,
+		maxRTO:                     MaxRTO,
+		maxRetries:                 MaxRetries,
 	}
 }
