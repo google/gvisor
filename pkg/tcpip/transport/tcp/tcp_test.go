@@ -2994,6 +2994,101 @@ func TestSendOnResetConnection(t *testing.T) {
 	}
 }
 
+// TestMaxRetransmitsTimeout tests if the connection is timed out after
+// a segment has been retransmitted MaxRetries times.
+func TestMaxRetransmitsTimeout(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	const numRetries = 2
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPMaxRetriesOption(numRetries)); err != nil {
+		t.Fatalf("could not set protocol option MaxRetries.\n")
+	}
+
+	c.CreateConnected(789 /* iss */, 30000 /* rcvWnd */, -1 /* epRcvBuf */)
+
+	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
+	c.WQ.EventRegister(&waitEntry, waiter.EventHUp)
+	defer c.WQ.EventUnregister(&waitEntry)
+
+	_, _, err := c.EP.Write(tcpip.SlicePayload(buffer.NewView(1)), tcpip.WriteOptions{})
+	if err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	// Expect first transmit and MaxRetries retransmits.
+	for i := 0; i < numRetries+1; i++ {
+		checker.IPv4(t, c.GetPacket(),
+			checker.TCP(
+				checker.DstPort(context.TestPort),
+				checker.TCPFlags(header.TCPFlagAck|header.TCPFlagPsh),
+			),
+		)
+	}
+	// Wait for the connection to timeout after MaxRetries retransmits.
+	initRTO := 1 * time.Second
+	select {
+	case <-notifyCh:
+	case <-time.After((2 << numRetries) * initRTO):
+		t.Fatalf("connection still alive after maximum retransmits.\n")
+	}
+
+	// Send an ACK and expect a RST as the connection would have been closed.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+	})
+
+	checker.IPv4(t, c.GetPacket(),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.TCPFlags(header.TCPFlagRst),
+		),
+	)
+
+	if got := c.Stack().Stats().TCP.EstablishedTimedout.Value(); got != 1 {
+		t.Errorf("got c.Stack().Stats().TCP.EstablishedTimedout.Value() = %v, want = 1", got)
+	}
+}
+
+// TestMaxRTO tests if the retransmit interval caps to MaxRTO.
+func TestMaxRTO(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	rto := 1 * time.Second
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.TCPMaxRTOOption(rto)); err != nil {
+		t.Fatalf("c.stack.SetTransportProtocolOption(tcp, tcpip.TCPMaxRTO(%d) failed: %s", rto, err)
+	}
+
+	c.CreateConnected(789 /* iss */, 30000 /* rcvWnd */, -1 /* epRcvBuf */)
+
+	_, _, err := c.EP.Write(tcpip.SlicePayload(buffer.NewView(1)), tcpip.WriteOptions{})
+	if err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+	checker.IPv4(t, c.GetPacket(),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+		),
+	)
+	const numRetransmits = 2
+	for i := 0; i < numRetransmits; i++ {
+		start := time.Now()
+		checker.IPv4(t, c.GetPacket(),
+			checker.TCP(
+				checker.DstPort(context.TestPort),
+				checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			),
+		)
+		if time.Since(start).Round(time.Second).Seconds() != rto.Seconds() {
+			t.Errorf("Retransmit interval not capped to MaxRTO.\n")
+		}
+	}
+}
+
 func TestFinImmediately(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
@@ -6605,9 +6700,16 @@ func TestTCPUserTimeout(t *testing.T) {
 
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
+	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
+	c.WQ.EventRegister(&waitEntry, waiter.EventHUp)
+	defer c.WQ.EventUnregister(&waitEntry)
+
 	origEstablishedTimedout := c.Stack().Stats().TCP.EstablishedTimedout.Value()
 
-	userTimeout := 50 * time.Millisecond
+	// Ensure that on the next retransmit timer fire, the user timeout has
+	// expired.
+	initRTO := 1 * time.Second
+	userTimeout := initRTO / 2
 	c.EP.SetSockOpt(tcpip.TCPUserTimeoutOption(userTimeout))
 
 	// Send some data and wait before ACKing it.
@@ -6627,9 +6729,13 @@ func TestTCPUserTimeout(t *testing.T) {
 		),
 	)
 
-	// Wait for a little over the minimum retransmit timeout of 200ms for
-	// the retransmitTimer to fire and close the connection.
-	time.Sleep(tcp.MinRTO + 10*time.Millisecond)
+	// Wait for the retransmit timer to be fired and the user timeout to cause
+	// close of the connection.
+	select {
+	case <-notifyCh:
+	case <-time.After(2 * initRTO):
+		t.Fatalf("connection still alive after %s, should have been closed after :%s", 2*initRTO, userTimeout)
+	}
 
 	// No packet should be received as the connection should be silently
 	// closed due to timeout.

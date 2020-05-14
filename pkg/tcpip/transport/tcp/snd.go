@@ -43,7 +43,8 @@ const (
 	nDupAckThreshold = 3
 
 	// MaxRetries is the maximum number of probe retries sender does
-	// before timing out the connection, Linux default TCP_RETR2.
+	// before timing out the connection.
+	// Linux default TCP_RETR2, net.ipv4.tcp_retries2.
 	MaxRetries = 15
 )
 
@@ -165,6 +166,12 @@ type sender struct {
 	// minRTO is the minimum permitted value for sender.rto.
 	minRTO time.Duration
 
+	// maxRTO is the maximum permitted value for sender.rto.
+	maxRTO time.Duration
+
+	// maxRetries is the maximum permitted retransmissions.
+	maxRetries uint32
+
 	// maxPayloadSize is the maximum size of the payload of a given segment.
 	// It is initialized on demand.
 	maxPayloadSize int
@@ -276,12 +283,24 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 	// etc.
 	s.ep.scoreboard = NewSACKScoreboard(uint16(s.maxPayloadSize), iss)
 
-	// Get Stack wide minRTO.
-	var v tcpip.TCPMinRTOOption
-	if err := ep.stack.TransportProtocolOption(ProtocolNumber, &v); err != nil {
+	// Get Stack wide config.
+	var minRTO tcpip.TCPMinRTOOption
+	if err := ep.stack.TransportProtocolOption(ProtocolNumber, &minRTO); err != nil {
 		panic(fmt.Sprintf("unable to get minRTO from stack: %s", err))
 	}
-	s.minRTO = time.Duration(v)
+	s.minRTO = time.Duration(minRTO)
+
+	var maxRTO tcpip.TCPMaxRTOOption
+	if err := ep.stack.TransportProtocolOption(ProtocolNumber, &maxRTO); err != nil {
+		panic(fmt.Sprintf("unable to get maxRTO from stack: %s", err))
+	}
+	s.maxRTO = time.Duration(maxRTO)
+
+	var maxRetries tcpip.TCPMaxRetriesOption
+	if err := ep.stack.TransportProtocolOption(ProtocolNumber, &maxRetries); err != nil {
+		panic(fmt.Sprintf("unable to get maxRetries from stack: %s", err))
+	}
+	s.maxRetries = uint32(maxRetries)
 
 	return s
 }
@@ -485,7 +504,7 @@ func (s *sender) retransmitTimerExpired() bool {
 	}
 
 	elapsed := time.Since(s.firstRetransmittedSegXmitTime)
-	remaining := MaxRTO
+	remaining := s.maxRTO
 	if uto != 0 {
 		// Cap to the user specified timeout if one is specified.
 		remaining = uto - elapsed
@@ -494,24 +513,17 @@ func (s *sender) retransmitTimerExpired() bool {
 	// Always honor the user-timeout irrespective of whether the zero
 	// window probes were acknowledged.
 	// net/ipv4/tcp_timer.c::tcp_probe_timer()
-	if remaining <= 0 || s.unackZeroWindowProbes >= MaxRetries {
+	if remaining <= 0 || s.unackZeroWindowProbes >= s.maxRetries {
 		return false
-	}
-
-	if s.rto >= MaxRTO {
-		// RFC 1122 section: 4.2.2.17
-		// A TCP MAY keep its offered receive window closed
-		// indefinitely.  As long as the receiving TCP continues to
-		// send acknowledgments in response to the probe segments, the
-		// sending TCP MUST allow the connection to stay open.
-		if !(s.zeroWindowProbing && s.unackZeroWindowProbes == 0) {
-			return false
-		}
 	}
 
 	// Set new timeout. The timer will be restarted by the call to sendData
 	// below.
 	s.rto *= 2
+	// Cap the RTO as per RFC 1122 4.2.3.1, RFC 6298 5.5
+	if s.rto > s.maxRTO {
+		s.rto = s.maxRTO
+	}
 
 	// Cap RTO to remaining time.
 	if s.rto > remaining {
@@ -565,7 +577,18 @@ func (s *sender) retransmitTimerExpired() bool {
 	// send.
 	if s.zeroWindowProbing {
 		s.sendZeroWindowProbe()
+		// RFC 1122 4.2.2.17: A TCP MAY keep its offered receive window closed
+		// indefinitely.  As long as the receiving TCP continues to send
+		// acknowledgments in response to the probe segments, the sending TCP
+		// MUST allow the connection to stay open.
 		return true
+	}
+
+	seg := s.writeNext
+	// RFC 1122 4.2.3.5: Close the connection when the number of
+	// retransmissions for this segment is beyond a limit.
+	if seg != nil && seg.xmitCount > s.maxRetries {
+		return false
 	}
 
 	s.sendData()

@@ -82,6 +82,16 @@ packetimpact_go_test(
 )
 
 packetimpact_go_test(
+    name = "tcp_retransmits",
+    srcs = ["tcp_retransmits_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
     name = "tcp_outside_the_window",
     srcs = ["tcp_outside_the_window_test.go"],
     deps = [

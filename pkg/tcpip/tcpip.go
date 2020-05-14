@@ -698,6 +698,14 @@ type TCPDeferAcceptOption time.Duration
 // default MinRTO used by the Stack.
 type TCPMinRTOOption time.Duration
 
+// TCPMaxRTOOption is use by SetSockOpt/GetSockOpt to allow overriding
+// default MaxRTO used by the Stack.
+type TCPMaxRTOOption time.Duration
+
+// TCPMaxRetriesOption is used by SetSockOpt/GetSockOpt to set/get the
+// maximum number of retransmits after which we time out the connection.
+type TCPMaxRetriesOption uint64
+
 // TCPSynRcvdCountThresholdOption is used by SetSockOpt/GetSockOpt to specify
 // the number of endpoints that can be in SYN-RCVD state before the stack
 // switches to using SYN cookies.
