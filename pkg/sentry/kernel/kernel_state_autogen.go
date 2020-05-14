@@ -160,6 +160,7 @@ func (x *Kernel) save(m state.Map) {
 	m.Save("vfs", &x.vfs)
 	m.Save("hostMount", &x.hostMount)
 	m.Save("pipeMount", &x.pipeMount)
+	m.Save("shmMount", &x.shmMount)
 	m.Save("socketMount", &x.socketMount)
 	m.Save("SleepForAddressSpaceActivation", &x.SleepForAddressSpaceActivation)
 }
@@ -198,6 +199,7 @@ func (x *Kernel) load(m state.Map) {
 	m.Load("vfs", &x.vfs)
 	m.Load("hostMount", &x.hostMount)
 	m.Load("pipeMount", &x.pipeMount)
+	m.Load("shmMount", &x.shmMount)
 	m.Load("socketMount", &x.socketMount)
 	m.Load("SleepForAddressSpaceActivation", &x.SleepForAddressSpaceActivation)
 	m.LoadValue("danglingEndpoints", new([]tcpip.Endpoint), func(y interface{}) { x.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })

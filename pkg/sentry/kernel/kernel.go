@@ -53,6 +53,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/timerfd"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/hostcpu"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -259,6 +260,10 @@ type Kernel struct {
 	// syscalls (as opposed to named pipes created by mknod()).
 	pipeMount *vfs.Mount
 
+	// shmMount is the Mount used for anonymous files created by the
+	// memfd_create() syscalls. It is analagous to Linux's shm_mnt.
+	shmMount *vfs.Mount
+
 	// socketMount is the Mount used for sockets created by the socket() and
 	// socketpair() syscalls. There are several cases where a socket dentry will
 	// not be contained in socketMount:
@@ -330,6 +335,9 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	if args.Timekeeper == nil {
 		return fmt.Errorf("Timekeeper is nil")
 	}
+	if args.Timekeeper.clocks == nil {
+		return fmt.Errorf("Must call Timekeeper.SetClocks() before Kernel.Init()")
+	}
 	if args.RootUserNamespace == nil {
 		return fmt.Errorf("RootUserNamespace is nil")
 	}
@@ -383,6 +391,18 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 			return fmt.Errorf("failed to create pipefs mount: %v", err)
 		}
 		k.pipeMount = pipeMount
+
+		tmpfsFilesystem, tmpfsRoot, err := tmpfs.NewFilesystem(k.SupervisorContext(), &k.vfs, auth.NewRootCredentials(k.rootUserNamespace))
+		if err != nil {
+			return fmt.Errorf("failed to create tmpfs filesystem: %v", err)
+		}
+		defer tmpfsFilesystem.DecRef()
+		defer tmpfsRoot.DecRef()
+		shmMount, err := k.vfs.NewDisconnectedMount(tmpfsFilesystem, tmpfsRoot, &vfs.MountOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to create tmpfs mount: %v", err)
+		}
+		k.shmMount = shmMount
 
 		socketFilesystem, err := sockfs.NewFilesystem(&k.vfs)
 		if err != nil {
@@ -1654,6 +1674,11 @@ func (k *Kernel) HostMount() *vfs.Mount {
 // PipeMount returns the pipefs mount.
 func (k *Kernel) PipeMount() *vfs.Mount {
 	return k.pipeMount
+}
+
+// ShmMount returns the tmpfs mount.
+func (k *Kernel) ShmMount() *vfs.Mount {
+	return k.shmMount
 }
 
 // SocketMount returns the sockfs mount.
