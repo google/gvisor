@@ -53,3 +53,10 @@ func dieArchSetup(c *vCPU, context *arch.SignalContext64, guestRegs *userRegs) {
 	context.Rbx = uint64(uintptr(unsafe.Pointer(c)))
 	context.Rip = uint64(dieTrampolineAddr)
 }
+
+// getHypercallID returns hypercall ID.
+//
+//go:nosplit
+func getHypercallID(addr uintptr) int {
+	return _KVM_HYPERCALL_MAX
+}

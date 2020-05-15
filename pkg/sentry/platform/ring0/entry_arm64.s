@@ -362,9 +362,17 @@ mmio_exit:
 	MOVD R1, CPU_LAZY_VFP(RSV_REG)
 	VFP_DISABLE
 
-	// MMIO_EXIT.
-	MOVD $0, R9
-	MOVD R0, 0xffff000000001000(R9)
+	// Trigger MMIO_EXIT/_KVM_HYPERCALL_VMEXIT.
+	//
+	// To keep it simple, I used the address of exception table as the
+	// MMIO base address, so that I can trigger a MMIO-EXIT by forcibly writing
+	// a read-only space.
+	// Also, the length is engough to match a sufficient number of hypercall ID.
+	// Then, in host user space, I can calculate this address to find out
+	// which hypercall.
+	MRS VBAR_EL1, R9
+	MOVD R0, 0x0(R9)
+
 	RET
 
 // HaltAndResume halts execution and point the pointer to the resume function.

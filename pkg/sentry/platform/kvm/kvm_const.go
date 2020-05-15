@@ -71,3 +71,13 @@ const (
 	_KVM_MEM_READONLY        = uint32(1) << 1
 	_KVM_MEM_FLAGS_NONE      = 0
 )
+
+// KVM hypercall list.
+// Canonical list of hypercalls supported.
+const (
+	// On amd64, it uses 'HLT' to leave the guest.
+	// Unlike amd64, arm64 can only uses mmio_exit/psci to leave the guest.
+	// _KVM_HYPERCALL_VMEXIT is only used on Arm64 for now.
+	_KVM_HYPERCALL_VMEXIT int = iota
+	_KVM_HYPERCALL_MAX
+)
