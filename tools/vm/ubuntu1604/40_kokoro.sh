@@ -43,14 +43,14 @@ done
 # junitparser is used to merge junit xml files.
 pip install junitparser
 
-# We need a kbuilder user.
-if useradd -c "kbuilder user" -m -s /bin/bash kbuilder; then
-    # User was added successfully; we add the relevant SSH keys here.
-    mkdir -p ~kbuilder/.ssh
-    (IFS=$'\n'; echo "${ssh_public_keys[*]}") > ~kbuilder/.ssh/authorized_keys
-    chmod 0600 ~kbuilder/.ssh/authorized_keys
-    chown -R kbuilder ~kbuilder/.ssh
-fi
+# We need a kbuilder user, which may already exist.
+useradd -c "kbuilder user" -m -s /bin/bash kbuilder || true
+
+# We need to provision appropriate keys.
+mkdir -p ~kbuilder/.ssh
+(IFS=$'\n'; echo "${ssh_public_keys[*]}") > ~kbuilder/.ssh/authorized_keys
+chmod 0600 ~kbuilder/.ssh/authorized_keys
+chown -R kbuilder ~kbuilder/.ssh
 
 # Give passwordless sudo access.
 cat > /etc/sudoers.d/kokoro <<EOF

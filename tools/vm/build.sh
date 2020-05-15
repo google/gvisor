@@ -71,7 +71,7 @@ declare internal=""
 declare -r start=$(date +%s)
 declare -r end=$((${start}+${timeout}))
 while [[ "$(date +%s)" -lt "${end}" ]] && [[ "${success}" -lt 3 ]]; do
-  echo -n "."
+  echo -n "." >&2
   if gcloud compute ssh --zone "${ZONE}" "${USERNAME}"@"${INSTANCE_NAME}" -- true 2>/dev/null; then
     success=$((${success}+1))
   elif gcloud compute ssh --internal-ip --zone "${ZONE}" "${USERNAME}"@"${INSTANCE_NAME}" -- true 2>/dev/null; then
