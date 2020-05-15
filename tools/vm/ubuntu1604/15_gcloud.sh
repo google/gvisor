@@ -19,11 +19,9 @@ set -xeo pipefail
 # Install all essential build tools.
 while true; do
   if (apt-get update && apt-get install -y \
-      make \
-      git-core \
-      build-essential \
-      linux-headers-$(uname -r) \
-      pkg-config); then
+      apt-transport-https \
+      ca-certificates \
+      gnupg); then
     break
   fi
   result=$?
@@ -32,12 +30,21 @@ while true; do
   fi
 done
 
-# Install a recent go toolchain.
-if ! [[ -d /usr/local/go ]]; then
-    wget https://dl.google.com/go/go1.13.5.linux-amd64.tar.gz
-    tar -xvf go1.13.5.linux-amd64.tar.gz
-    mv go /usr/local
-fi
+# Add gcloud repositories.
+echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | \
+  tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
 
-# Link the Go binary from /usr/bin; replacing anything there.
-(cd /usr/bin && rm -f go && ln -fs /usr/local/go/bin/go go)
+# Add the appropriate key.
+curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | \
+  apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
+
+# Install the gcloud SDK.
+while true; do
+  if (apt-get update && apt-get install -y google-cloud-sdk); then
+    break
+  fi
+  result=$?
+  if [[ $result -ne 100 ]]; then
+    exit $result
+  fi
+done

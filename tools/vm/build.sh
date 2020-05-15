@@ -64,7 +64,7 @@ function cleanup {
 trap cleanup EXIT
 
 # Wait for the instance to become available (up to 5 minutes).
-echo -n "Waiting for ${INSTANCE_NAME}"
+echo -n "Waiting for ${INSTANCE_NAME}" >&2
 declare timeout=300
 declare success=0
 declare internal=""
@@ -81,10 +81,10 @@ while [[ "$(date +%s)" -lt "${end}" ]] && [[ "${success}" -lt 3 ]]; do
 done
 
 if [[ "${success}" -eq "0" ]]; then
-  echo "connect timed out after ${timeout} seconds."
+  echo "connect timed out after ${timeout} seconds." >&2
   exit 1
 else
-  echo "done."
+  echo "done." >&2
 fi
 
 # Run the install scripts provided.
