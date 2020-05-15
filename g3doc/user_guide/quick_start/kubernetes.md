@@ -1,4 +1,4 @@
-# Kubernetes
+# Kubernetes Quick Start
 
 gVisor can be used to run Kubernetes pods and has several integration points
 with Kubernetes.

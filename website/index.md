@@ -43,7 +43,7 @@
     The pluggable platform architecture of gVisor allows it to run anywhere,
     enabling consistent security policies across multiple environments without
     having to rearchitect your infrastructure.</p>
-    <a class="button" href="/docs/architecture_guide/platforms/">Read More &raquo;</a>
+    <a class="button" href="/docs/user_guide/quick_start/docker/">Get Started &raquo;</a>
   </div>
 </div>
 
