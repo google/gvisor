@@ -71,6 +71,9 @@ race detector. (The use of Go has its challenges too, and isn't free.)
 
 <a name="gofer"></a> <!-- For deep linking. -->
 
+Gofers mediate file system interactions, and are used to provide additional
+isolation. For more details, see the [Platform Guide](./platforms.md).
+
 [apparmor]: https://wiki.ubuntu.com/AppArmor
 [golang]: https://golang.org
 [kvm]: https://www.linux-kvm.org

@@ -1,4 +1,4 @@
-# Docker
+# Docker Quick Start
 
 > Note: This guide requires Docker version 17.09.0 or greater. Refer to the
 > [Docker documentation][docker] for how to install it.
