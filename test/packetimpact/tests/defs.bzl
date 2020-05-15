@@ -106,15 +106,15 @@ def packetimpact_netstack_test(
         **kwargs
     )
 
-def packetimpact_go_test(name, size = "small", pure = True, linux = True, netstack = True, **kwargs):
+def packetimpact_go_test(name, size = "small", pure = True, expect_linux_failure = False, expect_netstack_failure = False, **kwargs):
     """Add packetimpact tests written in go.
 
     Args:
         name: name of the test
         size: size of the test
         pure: make a static go binary
-        linux: generate a linux test
-        netstack: generate a netstack test
+        expect_linux_failure: expect the test to fail for Linux
+        expect_netstack_failure: expect the test to fail for Netstack
         **kwargs: all the other args, forwarded to go_test
     """
     testbench_binary = name + "_test"
@@ -127,11 +127,11 @@ def packetimpact_go_test(name, size = "small", pure = True, linux = True, netsta
     )
     packetimpact_linux_test(
         name = name,
-        expect_failure = not linux,
+        expect_failure = expect_linux_failure,
         testbench_binary = testbench_binary,
     )
     packetimpact_netstack_test(
         name = name,
-        expect_failure = not netstack,
+        expect_failure = expect_netstack_failure,
         testbench_binary = testbench_binary,
     )
