@@ -849,10 +849,7 @@ cc_binary(
 cc_binary(
     name = "fpsig_nested_test",
     testonly = 1,
-    srcs = select_arch(
-        amd64 = ["fpsig_nested.cc"],
-        arm64 = [],
-    ),
+    srcs = ["fpsig_nested.cc"],
     linkstatic = 1,
     deps = [
         gtest,
