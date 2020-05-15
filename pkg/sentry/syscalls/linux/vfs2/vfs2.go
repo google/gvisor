@@ -123,7 +123,7 @@ func Override() {
 	s.Table[258] = syscalls.Supported("mkdirat", Mkdirat)
 	s.Table[259] = syscalls.Supported("mknodat", Mknodat)
 	s.Table[260] = syscalls.Supported("fchownat", Fchownat)
-	s.Table[261] = syscalls.Supported("futimens", Futimens)
+	s.Table[261] = syscalls.Supported("futimesat", Futimesat)
 	s.Table[262] = syscalls.Supported("newfstatat", Newfstatat)
 	s.Table[263] = syscalls.Supported("unlinkat", Unlinkat)
 	s.Table[264] = syscalls.Supported("renameat", Renameat)

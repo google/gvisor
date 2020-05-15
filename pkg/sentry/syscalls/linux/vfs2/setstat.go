@@ -246,30 +246,66 @@ func Utimes(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		return 0, nil, err
 	}
 
-	opts := vfs.SetStatOptions{
-		Stat: linux.Statx{
-			Mask: linux.STATX_ATIME | linux.STATX_MTIME,
-		},
-	}
-	if timesAddr == 0 {
-		opts.Stat.Atime.Nsec = linux.UTIME_NOW
-		opts.Stat.Mtime.Nsec = linux.UTIME_NOW
-	} else {
-		var times [2]linux.Timeval
-		if _, err := t.CopyIn(timesAddr, &times); err != nil {
-			return 0, nil, err
-		}
-		opts.Stat.Atime = linux.StatxTimestamp{
-			Sec:  times[0].Sec,
-			Nsec: uint32(times[0].Usec * 1000),
-		}
-		opts.Stat.Mtime = linux.StatxTimestamp{
-			Sec:  times[1].Sec,
-			Nsec: uint32(times[1].Usec * 1000),
-		}
+	var opts vfs.SetStatOptions
+	if err := populateSetStatOptionsForUtimes(t, timesAddr, &opts); err != nil {
+		return 0, nil, err
 	}
 
 	return 0, nil, setstatat(t, linux.AT_FDCWD, path, disallowEmptyPath, followFinalSymlink, &opts)
+}
+
+// Futimesat implements Linux syscall futimesat(2).
+func Futimesat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	dirfd := args[0].Int()
+	pathAddr := args[1].Pointer()
+	timesAddr := args[2].Pointer()
+
+	// "If filename is NULL and dfd refers to an open file, then operate on the
+	// file. Otherwise look up filename, possibly using dfd as a starting
+	// point." - fs/utimes.c
+	var path fspath.Path
+	shouldAllowEmptyPath := allowEmptyPath
+	if dirfd == linux.AT_FDCWD || pathAddr != 0 {
+		var err error
+		path, err = copyInPath(t, pathAddr)
+		if err != nil {
+			return 0, nil, err
+		}
+		shouldAllowEmptyPath = disallowEmptyPath
+	}
+
+	var opts vfs.SetStatOptions
+	if err := populateSetStatOptionsForUtimes(t, timesAddr, &opts); err != nil {
+		return 0, nil, err
+	}
+
+	return 0, nil, setstatat(t, dirfd, path, shouldAllowEmptyPath, followFinalSymlink, &opts)
+}
+
+func populateSetStatOptionsForUtimes(t *kernel.Task, timesAddr usermem.Addr, opts *vfs.SetStatOptions) error {
+	if timesAddr == 0 {
+		opts.Stat.Mask = linux.STATX_ATIME | linux.STATX_MTIME
+		opts.Stat.Atime.Nsec = linux.UTIME_NOW
+		opts.Stat.Mtime.Nsec = linux.UTIME_NOW
+		return nil
+	}
+	var times [2]linux.Timeval
+	if _, err := t.CopyIn(timesAddr, &times); err != nil {
+		return err
+	}
+	if times[0].Usec < 0 || times[0].Usec > 999999 || times[1].Usec < 0 || times[1].Usec > 999999 {
+		return syserror.EINVAL
+	}
+	opts.Stat.Mask = linux.STATX_ATIME | linux.STATX_MTIME
+	opts.Stat.Atime = linux.StatxTimestamp{
+		Sec:  times[0].Sec,
+		Nsec: uint32(times[0].Usec * 1000),
+	}
+	opts.Stat.Mtime = linux.StatxTimestamp{
+		Sec:  times[1].Sec,
+		Nsec: uint32(times[1].Usec * 1000),
+	}
+	return nil
 }
 
 // Utimensat implements Linux syscall utimensat(2).
@@ -279,40 +315,35 @@ func Utimensat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	timesAddr := args[2].Pointer()
 	flags := args[3].Int()
 
+	// Linux requires that the UTIME_OMIT check occur before checking path or
+	// flags.
+	var opts vfs.SetStatOptions
+	if err := populateSetStatOptionsForUtimens(t, timesAddr, &opts); err != nil {
+		return 0, nil, err
+	}
+	if opts.Stat.Mask == 0 {
+		return 0, nil, nil
+	}
+
 	if flags&^linux.AT_SYMLINK_NOFOLLOW != 0 {
 		return 0, nil, syserror.EINVAL
 	}
 
-	path, err := copyInPath(t, pathAddr)
-	if err != nil {
-		return 0, nil, err
+	// "If filename is NULL and dfd refers to an open file, then operate on the
+	// file. Otherwise look up filename, possibly using dfd as a starting
+	// point." - fs/utimes.c
+	var path fspath.Path
+	shouldAllowEmptyPath := allowEmptyPath
+	if dirfd == linux.AT_FDCWD || pathAddr != 0 {
+		var err error
+		path, err = copyInPath(t, pathAddr)
+		if err != nil {
+			return 0, nil, err
+		}
+		shouldAllowEmptyPath = disallowEmptyPath
 	}
 
-	var opts vfs.SetStatOptions
-	if err := populateSetStatOptionsForUtimens(t, timesAddr, &opts); err != nil {
-		return 0, nil, err
-	}
-
-	return 0, nil, setstatat(t, dirfd, path, disallowEmptyPath, followFinalSymlink, &opts)
-}
-
-// Futimens implements Linux syscall futimens(2).
-func Futimens(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := args[0].Int()
-	timesAddr := args[1].Pointer()
-
-	file := t.GetFileVFS2(fd)
-	if file == nil {
-		return 0, nil, syserror.EBADF
-	}
-	defer file.DecRef()
-
-	var opts vfs.SetStatOptions
-	if err := populateSetStatOptionsForUtimens(t, timesAddr, &opts); err != nil {
-		return 0, nil, err
-	}
-
-	return 0, nil, file.SetStat(t, opts)
+	return 0, nil, setstatat(t, dirfd, path, shouldAllowEmptyPath, shouldFollowFinalSymlink(flags&linux.AT_SYMLINK_NOFOLLOW == 0), &opts)
 }
 
 func populateSetStatOptionsForUtimens(t *kernel.Task, timesAddr usermem.Addr, opts *vfs.SetStatOptions) error {
@@ -327,6 +358,9 @@ func populateSetStatOptionsForUtimens(t *kernel.Task, timesAddr usermem.Addr, op
 		return err
 	}
 	if times[0].Nsec != linux.UTIME_OMIT {
+		if times[0].Nsec != linux.UTIME_NOW && (times[0].Nsec < 0 || times[0].Nsec > 999999999) {
+			return syserror.EINVAL
+		}
 		opts.Stat.Mask |= linux.STATX_ATIME
 		opts.Stat.Atime = linux.StatxTimestamp{
 			Sec:  times[0].Sec,
@@ -334,6 +368,9 @@ func populateSetStatOptionsForUtimens(t *kernel.Task, timesAddr usermem.Addr, op
 		}
 	}
 	if times[1].Nsec != linux.UTIME_OMIT {
+		if times[1].Nsec != linux.UTIME_NOW && (times[1].Nsec < 0 || times[1].Nsec > 999999999) {
+			return syserror.EINVAL
+		}
 		opts.Stat.Mask |= linux.STATX_MTIME
 		opts.Stat.Mtime = linux.StatxTimestamp{
 			Sec:  times[1].Sec,

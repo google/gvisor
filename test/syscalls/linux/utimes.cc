@@ -48,12 +48,15 @@ void TimeBoxed(absl::Time* before, absl::Time* after,
     // filesystems set it to 1, so we don't do any truncation.
     struct timespec ts;
     EXPECT_THAT(clock_gettime(CLOCK_REALTIME_COARSE, &ts), SyscallSucceeds());
-    *before = absl::TimeFromTimespec(ts);
+    // FIXME(b/132819225): gVisor filesystem timestamps inconsistently use the
+    // internal or host clock, which may diverge slightly. Allow some slack on
+    // times to account for the difference.
+    *before = absl::TimeFromTimespec(ts) - absl::Seconds(1);
 
     fn();
 
     EXPECT_THAT(clock_gettime(CLOCK_REALTIME_COARSE, &ts), SyscallSucceeds());
-    *after = absl::TimeFromTimespec(ts);
+    *after = absl::TimeFromTimespec(ts) + absl::Seconds(1);
 
     if (*after < *before) {
       // Clock jumped backwards; retry.
@@ -68,11 +71,11 @@ void TimeBoxed(absl::Time* before, absl::Time* after,
 void TestUtimesOnPath(std::string const& path) {
   struct stat statbuf;
 
-  struct timeval times[2] = {{1, 0}, {2, 0}};
+  struct timeval times[2] = {{10, 0}, {20, 0}};
   EXPECT_THAT(utimes(path.c_str(), times), SyscallSucceeds());
   EXPECT_THAT(stat(path.c_str(), &statbuf), SyscallSucceeds());
-  EXPECT_EQ(1, statbuf.st_atime);
-  EXPECT_EQ(2, statbuf.st_mtime);
+  EXPECT_EQ(10, statbuf.st_atime);
+  EXPECT_EQ(20, statbuf.st_mtime);
 
   absl::Time before;
   absl::Time after;
@@ -103,18 +106,18 @@ TEST(UtimesTest, OnDir) {
 
 TEST(UtimesTest, MissingPath) {
   auto path = NewTempAbsPath();
-  struct timeval times[2] = {{1, 0}, {2, 0}};
+  struct timeval times[2] = {{10, 0}, {20, 0}};
   EXPECT_THAT(utimes(path.c_str(), times), SyscallFailsWithErrno(ENOENT));
 }
 
 void TestFutimesat(int dirFd, std::string const& path) {
   struct stat statbuf;
 
-  struct timeval times[2] = {{1, 0}, {2, 0}};
+  struct timeval times[2] = {{10, 0}, {20, 0}};
   EXPECT_THAT(futimesat(dirFd, path.c_str(), times), SyscallSucceeds());
   EXPECT_THAT(fstatat(dirFd, path.c_str(), &statbuf, 0), SyscallSucceeds());
-  EXPECT_EQ(1, statbuf.st_atime);
-  EXPECT_EQ(2, statbuf.st_mtime);
+  EXPECT_EQ(10, statbuf.st_atime);
+  EXPECT_EQ(20, statbuf.st_mtime);
 
   absl::Time before;
   absl::Time after;
@@ -175,11 +178,11 @@ TEST(FutimesatTest, InvalidNsec) {
 
 void TestUtimensat(int dirFd, std::string const& path) {
   struct stat statbuf;
-  const struct timespec times[2] = {{1, 0}, {2, 0}};
+  const struct timespec times[2] = {{10, 0}, {20, 0}};
   EXPECT_THAT(utimensat(dirFd, path.c_str(), times, 0), SyscallSucceeds());
   EXPECT_THAT(fstatat(dirFd, path.c_str(), &statbuf, 0), SyscallSucceeds());
-  EXPECT_EQ(1, statbuf.st_atime);
-  EXPECT_EQ(2, statbuf.st_mtime);
+  EXPECT_EQ(10, statbuf.st_atime);
+  EXPECT_EQ(20, statbuf.st_mtime);
 
   // Test setting with UTIME_NOW and UTIME_OMIT.
   struct stat statbuf2;
@@ -301,13 +304,13 @@ TEST(Utimensat, NullPath) {
   auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_RDWR));
   struct stat statbuf;
-  const struct timespec times[2] = {{1, 0}, {2, 0}};
+  const struct timespec times[2] = {{10, 0}, {20, 0}};
   // Call syscall directly.
   EXPECT_THAT(syscall(SYS_utimensat, fd.get(), NULL, times, 0),
               SyscallSucceeds());
   EXPECT_THAT(fstatat(0, f.path().c_str(), &statbuf, 0), SyscallSucceeds());
-  EXPECT_EQ(1, statbuf.st_atime);
-  EXPECT_EQ(2, statbuf.st_mtime);
+  EXPECT_EQ(10, statbuf.st_atime);
+  EXPECT_EQ(20, statbuf.st_mtime);
 }
 
 }  // namespace
