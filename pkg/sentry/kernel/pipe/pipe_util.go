@@ -144,7 +144,7 @@ func (p *Pipe) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArgume
 		if v > math.MaxInt32 {
 			v = math.MaxInt32 // Silently truncate.
 		}
-		// Copy result to user-space.
+		// Copy result to userspace.
 		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), int32(v), usermem.IOOpts{
 			AddressSpaceActive: true,
 		})

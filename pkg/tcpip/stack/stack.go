@@ -235,11 +235,11 @@ type RcvBufAutoTuneParams struct {
 	// was started.
 	MeasureTime time.Time
 
-	// CopiedBytes is the number of bytes copied to user space since
+	// CopiedBytes is the number of bytes copied to userspace since
 	// this measure began.
 	CopiedBytes int
 
-	// PrevCopiedBytes is the number of bytes copied to user space in
+	// PrevCopiedBytes is the number of bytes copied to userspace in
 	// the previous RTT period.
 	PrevCopiedBytes int
 

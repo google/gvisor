@@ -199,10 +199,10 @@ func (t *Task) doSyscall() taskRunState {
 	//
 	// On x86, register rax was shared by syscall number and return
 	// value, and at the entry of the syscall handler, the rax was
-	// saved to regs.orig_rax which was exposed to user space.
+	// saved to regs.orig_rax which was exposed to userspace.
 	// But on arm64, syscall number was passed through X8, and the X0
 	// was shared by the first syscall argument and return value. The
-	// X0 was saved to regs.orig_x0 which was not exposed to user space.
+	// X0 was saved to regs.orig_x0 which was not exposed to userspace.
 	// So we have to do the same operation here to save the X0 value
 	// into the task context.
 	t.Arch().SyscallSaveOrig()

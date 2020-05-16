@@ -1097,7 +1097,7 @@ func (e *endpoint) initialReceiveWindow() int {
 }
 
 // ModerateRecvBuf adjusts the receive buffer and the advertised window
-// based on the number of bytes copied to user space.
+// based on the number of bytes copied to userspace.
 func (e *endpoint) ModerateRecvBuf(copied int) {
 	e.LockUser()
 	defer e.UnlockUser()
