@@ -9,6 +9,10 @@ doc(
     name = "index",
     src = "README.md",
     category = "Project",
+    data = glob([
+        "*.png",
+        "*.svg",
+    ]),
     permalink = "/docs/",
     weight = "0",
 )

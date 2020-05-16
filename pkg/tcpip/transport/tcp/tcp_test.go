@@ -5869,7 +5869,7 @@ func TestReceiveBufferAutoTuning(t *testing.T) {
 		// Invoke the moderation API. This is required for auto-tuning
 		// to happen. This method is normally expected to be invoked
 		// from a higher layer than tcpip.Endpoint. So we simulate
-		// copying to user-space by invoking it explicitly here.
+		// copying to userspace by invoking it explicitly here.
 		c.EP.ModerateRecvBuf(totalCopied)
 
 		// Now send a keep-alive packet to trigger an ACK so that we can

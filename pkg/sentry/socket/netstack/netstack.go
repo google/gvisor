@@ -2718,7 +2718,7 @@ func (s *socketOpsCommon) ioctl(ctx context.Context, io usermem.IO, args arch.Sy
 			v = math.MaxInt32
 		}
 
-		// Copy result to user-space.
+		// Copy result to userspace.
 		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), int32(v), usermem.IOOpts{
 			AddressSpaceActive: true,
 		})
@@ -2787,7 +2787,7 @@ func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, args arch.Sysc
 		if v > math.MaxInt32 {
 			v = math.MaxInt32
 		}
-		// Copy result to user-space.
+		// Copy result to userspace.
 		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), int32(v), usermem.IOOpts{
 			AddressSpaceActive: true,
 		})
@@ -2803,7 +2803,7 @@ func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, args arch.Sysc
 			v = math.MaxInt32
 		}
 
-		// Copy result to user-space.
+		// Copy result to userspace.
 		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), int32(v), usermem.IOOpts{
 			AddressSpaceActive: true,
 		})

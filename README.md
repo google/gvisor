@@ -5,7 +5,7 @@
 
 ## What is gVisor?
 
-**gVisor** is a user-space kernel, written in Go, that implements a substantial
+**gVisor** is a application kernel, written in Go, that implements a substantial
 portion of the Linux system surface. It includes an
 [Open Container Initiative (OCI)][oci] runtime called `runsc` that provides an
 isolation boundary between the application and the host kernel. The `runsc`
@@ -15,16 +15,17 @@ containers.
 ## Why does gVisor exist?
 
 Containers are not a [**sandbox**][sandbox]. While containers have
-revolutionized how we develop, package, and deploy applications, running
-untrusted or potentially malicious code without additional isolation is not a
-good idea. The efficiency and performance gains from using a single, shared
-kernel also mean that container escape is possible with a single vulnerability.
+revolutionized how we develop, package, and deploy applications, using them to
+run untrusted or potentially malicious code without additional isolation is not
+a good idea. While using a single, shared kernel allows for efficiency and
+performance gains, it also means that container escape is possible with a single
+vulnerability.
 
-gVisor is a user-space kernel for containers. It limits the host kernel surface
-accessible to the application while still giving the application access to all
-the features it expects. Unlike most kernels, gVisor does not assume or require
-a fixed set of physical resources; instead, it leverages existing host kernel
-functionality and runs as a normal user-space process. In other words, gVisor
+gVisor is an application kernel for containers. It limits the host kernel
+surface accessible to the application while still giving the application access
+to all the features it expects. Unlike most kernels, gVisor does not assume or
+require a fixed set of physical resources; instead, it leverages existing host
+kernel functionality and runs as a normal process. In other words, gVisor
 implements Linux by way of Linux.
 
 gVisor should not be confused with technologies and tools to harden containers
@@ -39,32 +40,23 @@ be found at [gvisor.dev][gvisor-dev].
 
 ## Installing from source
 
-gVisor currently requires x86\_64 Linux to build, though support for other
-architectures may become available in the future.
+gVisor builds on x86_64 and ARM64. Other architectures may become available in
+the future.
+
+For the purposes of these instructions, [bazel][bazel] and other build
+dependencies are wrapped in a build container. It is possible to use
+[bazel][bazel] directly, or type `make help` for standard targets.
 
 ### Requirements
 
 Make sure the following dependencies are installed:
 
 *   Linux 4.14.77+ ([older linux][old-linux])
-*   [git][git]
-*   [Bazel][bazel] 1.2+
-*   [Python][python]
 *   [Docker version 17.09.0 or greater][docker]
-*   C++ toolchain supporting C++17 (GCC 7+, Clang 5+)
-*   Gold linker (e.g. `binutils-gold` package on Ubuntu)
 
 ### Building
 
 Build and install the `runsc` binary:
-
-```
-bazel build runsc
-sudo cp ./bazel-bin/runsc/linux_amd64_pure_stripped/runsc /usr/local/bin
-```
-
-If you don't want to install bazel on your system, you can build runsc in a
-Docker container:
 
 ```
 make runsc
@@ -73,40 +65,18 @@ sudo cp ./bazel-bin/runsc/linux_amd64_pure_stripped/runsc /usr/local/bin
 
 ### Testing
 
-The test suite can be run with Bazel:
-
-```
-bazel test //...
-```
-
-or in a Docker container:
+To run standard test suites, you can use:
 
 ```
 make unit-tests
 make tests
 ```
 
-### Using remote execution
-
-If you have a [Remote Build Execution][rbe] environment, you can use it to speed
-up build and test cycles.
-
-You must authenticate with the project first:
+To run specific tests, you can specify the target:
 
 ```
-gcloud auth application-default login --no-launch-browser
+make test TARGET="//runsc:version_test"
 ```
-
-Then invoke bazel with the following flags:
-
-```
---config=remote
---project_id=$PROJECT
---remote_instance_name=projects/$PROJECT/instances/default_instance
-```
-
-You can also add those flags to your local ~/.bazelrc to avoid needing to
-specify them each time on the command line.
 
 ### Using `go get`
 
@@ -128,7 +98,7 @@ development on this branch is not supported. Development should occur on the
 
 ## Community & Governance
 
-The governance model is documented in our [community][community] repository.
+See [GOVERNANCE.md](GOVERANCE.md) for project governance information.
 
 The [gvisor-users mailing list][gvisor-users-list] and
 [gvisor-dev mailing list][gvisor-dev-list] are good starting points for
@@ -145,12 +115,9 @@ See [Contributing.md](CONTRIBUTING.md).
 [bazel]: https://bazel.build
 [community]: https://gvisor.googlesource.com/community
 [docker]: https://www.docker.com
-[git]: https://git-scm.com
 [gvisor-users-list]: https://groups.google.com/forum/#!forum/gvisor-users
+[gvisor-dev]: https://gvisor.dev
 [gvisor-dev-list]: https://groups.google.com/forum/#!forum/gvisor-dev
 [oci]: https://www.opencontainers.org
 [old-linux]: https://gvisor.dev/docs/user_guide/networking/#gso
-[python]: https://python.org
-[rbe]: https://blog.bazel.build/2018/10/05/remote-build-execution.html
 [sandbox]: https://en.wikipedia.org/wiki/Sandbox_(computer_security)
-[gvisor-dev]: https://gvisor.dev

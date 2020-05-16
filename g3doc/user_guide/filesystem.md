@@ -4,8 +4,8 @@
 
 gVisor accesses the filesystem through a file proxy, called the Gofer. The gofer
 runs as a separate process, that is isolated from the sandbox. Gofer instances
-communicate with their respective sentry using the 9P protocol. For a more
-detailed explanation see [Overview > Gofer](../../architecture_guide/#gofer).
+communicate with their respective sentry using the 9P protocol. For another
+explanation see [What is gVisor?](../README.md).
 
 ## Sandbox overlay
 

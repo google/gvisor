@@ -6,30 +6,12 @@ package(
 )
 
 doc(
-    name = "index",
-    src = "README.md",
-    category = "Architecture Guide",
-    data = [
-        "Layers.png",
-        "Layers.svg",
-        "Machine-Virtualization.png",
-        "Machine-Virtualization.svg",
-        "Rule-Based-Execution.png",
-        "Rule-Based-Execution.svg",
-        "Sentry-Gofer.png",
-        "Sentry-Gofer.svg",
-    ],
-    permalink = "/docs/architecture_guide/",
-    weight = "0",
-)
-
-doc(
     name = "platforms",
     src = "platforms.md",
     category = "Architecture Guide",
     data = [
-        "Sentry-Gofer.png",
-        "Sentry-Gofer.svg",
+        "platforms.png",
+        "platforms.svg",
     ],
     permalink = "/docs/architecture_guide/platforms/",
     weight = "40",
@@ -39,6 +21,10 @@ doc(
     name = "resources",
     src = "resources.md",
     category = "Architecture Guide",
+    data = [
+        "resources.png",
+        "resources.svg",
+    ],
     permalink = "/docs/architecture_guide/resources/",
     weight = "30",
 )
@@ -48,8 +34,8 @@ doc(
     src = "security.md",
     category = "Architecture Guide",
     data = [
-        "Layers.png",
-        "Layers.svg",
+        "security.png",
+        "security.svg",
     ],
     permalink = "/docs/architecture_guide/security/",
     weight = "10",

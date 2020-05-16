@@ -69,13 +69,7 @@ a similar syscall). Moreover, because packets typically come from off-host (e.g.
 the internet), the Host OS's packet processing code has received a lot of
 scrutiny, hopefully resulting in a high degree of hardening.
 
---------------------------------------------------------------------------------
-
-![Figure 1](/assets/images/2020-04-02-networking-security-figure1.png)
-
-Figure 1: Netstack and gVisor
-
---------------------------------------------------------------------------------
+![Figure 1](/assets/images/2020-04-02-networking-security-figure1.png "Network and gVisor.")
 
 ## Writing a network stack
 

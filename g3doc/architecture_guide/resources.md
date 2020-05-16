@@ -10,9 +10,10 @@ sandbox to be highly dynamic in terms of resource usage: spanning a large number
 of cores and large amount of memory when busy, and yielding those resources back
 to the host when not.
 
-Some of the details here may depend on the [platform](../platforms/), but in
-general this page describes the resource model used by gVisor. If you're not
-familiar with the terms here, uou may want to start with the [Overview](../).
+In order words, the shape of the sandbox should closely track the shape of the
+sandboxed process:
+
+![Resource model](resources.png "Workloads of different shapes.")
 
 ## Processes
 
@@ -23,9 +24,9 @@ the sandbox (e.g. via a [Docker exec][exec]).
 
 ## Networking
 
-Similarly to processes, the sandbox attaches a network endpoint to the system,
-but runs it's own network stack. All network resources, other than packets in
-flight, exist only inside the sandbox, bound by relevant resource limits.
+The sandbox attaches a network endpoint to the system, but runs it's own network
+stack. All network resources, other than packets in flight on the host, exist
+only inside the sandbox, bound by relevant resource limits.
 
 You can interact with network endpoints exposed by the sandbox, just as you
 would any other container, but network introspection similarly requires entering
@@ -33,15 +34,14 @@ the sandbox.
 
 ## Files
 
-Files may be backed by different implementations. For host-native files (where a
-file descriptor is available), the Gofer may return a file descriptor to the
-Sentry via [SCM_RIGHTS][scmrights][^1].
+Files in the sandbox may be backed by different implementations. For host-native
+files (where a file descriptor is available), the Gofer may return a file
+descriptor to the Sentry via [SCM_RIGHTS][scmrights][^1].
 
 These files may be read from and written to through standard system calls, and
 also mapped into the associated application's address space. This allows the
 same host memory to be shared across multiple sandboxes, although this mechanism
-does not preclude the use of side-channels (see the
-[security model](../security/)).
+does not preclude the use of side-channels (see [Security Model](./security.md).
 
 Note that some file systems exist only within the context of the sandbox. For
 example, in many cases a `tmpfs` mount will be available at `/tmp` or
@@ -64,8 +64,9 @@ scheduling decisions about all application threads.
 ## Time
 
 Time in the sandbox is provided by the Sentry, through its own [vDSO][vdso] and
-timekeeping implementation. This is divorced from the host time, and no state is
-shared with the host, although the time will be initialized with the host clock.
+time-keeping implementation. This is distinct from the host time, and no state
+is shared with the host, although the time will be initialized with the host
+clock.
 
 The Sentry runs timers to note the passage of time, much like a kernel running
 on hardware (though the timers are software timers, in this case). These timers
