@@ -56,15 +56,9 @@ in combination: redundant walls, scattered draw bridges, small bottle-neck
 entrances, moats, etc.
 
 A simplified version of the design is below
-([more detailed version](/docs/architecture_guide/))[^2]:
+([more detailed version](/docs/))[^2]:
 
---------------------------------------------------------------------------------
-
-![Figure 1](/assets/images/2019-11-18-security-basics-figure1.png)
-
-Figure 1: Simplified design of gVisor.
-
---------------------------------------------------------------------------------
+![Figure 1](/assets/images/2019-11-18-security-basics-figure1.png "Simplified design of gVisor.")
 
 In order to discuss design principles, the following components are important to
 know:
@@ -134,13 +128,7 @@ minimum level of permission is required for it to perform its function.
 Specifically, the closer you are to the untrusted application, the less
 privilege you have.
 
---------------------------------------------------------------------------------
-
-![Figure 2](/assets/images/2019-11-18-security-basics-figure2.png)
-
-Figure 2: runsc components and their privileges.
-
---------------------------------------------------------------------------------
+![Figure 2](/assets/images/2019-11-18-security-basics-figure2.png "runsc components and their privileges.")
 
 This is evident in how runsc (the drop in gVisor binary for Docker/Kubernetes)
 constructs the sandbox. The Sentry has the least privilege possible (it can't
@@ -222,15 +210,7 @@ the host Linux syscalls. In other words, with gVisor, applications get the vast
 majority (and growing) functionality of Linux containers for only 68 possible
 syscalls to the Host OS. 350 syscalls to 68 is attack surface reduction.
 
---------------------------------------------------------------------------------
-
-![Figure 3](/assets/images/2019-11-18-security-basics-figure3.png)
-
-Figure 3: Reduction of Attack Surface of the Syscall Table. Note that the
-Senty's Syscall Emulation Layer keeps the Containerized Process from ever
-calling the Host OS.
-
---------------------------------------------------------------------------------
+![Figure 3](/assets/images/2019-11-18-security-basics-figure3.png "Reduction of Attack Surface of the Syscall Table. Note that the Senty's Syscall Emulation Layer keeps the Containerized Process from ever calling the Host OS.")
 
 ## Secure-by-default
 

@@ -3,10 +3,10 @@
     <div class="row">
       <div class="col-md-3"></div>
       <div class="col-md-6">
-        <p>gVisor is an <b>application kernel</b> and <b>container runtime</b> providing defense-in-depth for containers <em>anywhere</em>.</p>
+        <p>gVisor is an <b>application kernel</b> for <b>containers</b> that provides efficient defense-in-depth anywhere.</p>
         <p style="margin-top: 20px;">
+          <a class="btn" href="/docs/user_guide/quick_start/docker/">Quick start&nbsp;<i class="fas fa-arrow-alt-circle-right ml-2"></i></a>
           <a class="btn" href="/docs/">Learn More&nbsp;<i class="fas fa-arrow-alt-circle-right ml-2"></i></a>
-          <a class="btn btn-inverse" href="https://github.com/google/gvisor">GitHub&nbsp;<i class="fab fa-github ml-2"></i></a>
         </p>
       </div>
       <div class="col-md-3"></div>
@@ -19,8 +19,8 @@
 <div class="row">
   <div class="col-md-4">
     <h4 id="seamless-security">Container-native Security <i class="fas fa-lock"></i></h4>
-    <p>By providing each container with its own userspace kernel, gVisor limits
-    the attack surface of the host. This protection does not limit
+    <p>By providing each container with its own application kernel, gVisor
+    limits the attack surface of the host. This protection does not limit
     functionality: gVisor runs unmodified binaries and integrates with container
     orchestration systems, such as Docker and Kubernetes, and supports features
     such as volumes and sidecars.</p>
@@ -43,7 +43,7 @@
     The pluggable platform architecture of gVisor allows it to run anywhere,
     enabling consistent security policies across multiple environments without
     having to rearchitect your infrastructure.</p>
-    <a class="button" href="/docs/user_guide/quick_start/docker/">Get Started &raquo;</a>
+    <a class="button" href="/docs/architecture_guide/platforms/">Read More &raquo;</a>
   </div>
 </div>
 

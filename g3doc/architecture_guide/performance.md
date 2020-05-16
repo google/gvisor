@@ -13,12 +13,13 @@ forms: additional cycles and memory usage, which may manifest as increased
 latency, reduced throughput or density, or not at all. In general, these costs
 come from two different sources.
 
-First, the existence of the [Sentry](../) means that additional memory will be
-required, and application system calls must traverse additional layers of
-software. The design emphasizes [security](../security/) and therefore we chose
-to use a language for the Sentry that provides benefits in this domain but may
-not yet offer the raw performance of other choices. Costs imposed by these
-design choices are **structural costs**.
+First, the existence of the [Sentry](../README.md#sentry) means that additional
+memory will be required, and application system calls must traverse additional
+layers of software. The design emphasizes
+[security](/docs/architecture_guide/security/) and therefore we chose to use a
+language for the Sentry that provides benefits in this domain but may not yet
+offer the raw performance of other choices. Costs imposed by these design
+choices are **structural costs**.
 
 Second, as gVisor is an independent implementation of the system call surface,
 many of the subsystems or specific calls are not as optimized as more mature
@@ -50,7 +51,7 @@ Virtual Machines (VMs) with the following specifications:
 
 Through this document, `runsc` is used to indicate the runtime provided by
 gVisor. When relevant, we use the name `runsc-platform` to describe a specific
-[platform choice](../platforms/).
+[platform choice](/docs/architecture_guide/platforms/).
 
 **Except where specified, all tests below are conducted with the `ptrace`
 platform. The `ptrace` platform works everywhere and does not require hardware
@@ -131,11 +132,11 @@ full start-up and run time for the workload, which trains a model.
 ## System calls
 
 Some **structural costs** of gVisor are heavily influenced by the
-[platform choice](../platforms/), which implements system call interception.
-Today, gVisor supports a variety of platforms. These platforms present distinct
-performance, compatibility and security trade-offs. For example, the KVM
-platform has low overhead system call interception but runs poorly with nested
-virtualization.
+[platform choice](/docs/architecture_guide/platforms/), which implements system
+call interception. Today, gVisor supports a variety of platforms. These
+platforms present distinct performance, compatibility and security trade-offs.
+For example, the KVM platform has low overhead system call interception but runs
+poorly with nested virtualization.
 
 {% include graph.html id="syscall" url="/performance/syscall.csv" title="perf.py
 syscall --runtime=runc --runtime=runsc-ptrace --runtime=runsc-kvm" y_min="100"
@@ -163,7 +164,8 @@ overhead.
 
 Some of these costs above are **structural costs**, and `redis` is likely to
 remain a challenging performance scenario. However, optimizing the
-[platform](../platforms/) will also have a dramatic impact.
+[platform](/docs/architecture_guide/platforms/) will also have a dramatic
+impact.
 
 ## Start-up time
 
@@ -184,7 +186,7 @@ similarly loads a number of modules and binds an HTTP server.
 > Note: most of the time overhead above is associated Docker itself. This is
 > evident with the empty `runc` benchmark. To avoid these costs with `runsc`,
 > you may also consider using `runsc do` mode or invoking the
-> [OCI runtime](../../user_guide/quick_start/oci/) directly.
+> [OCI runtime](../user_guide/quick_start/oci.md) directly.
 
 ## Network
 
@@ -222,8 +224,9 @@ In terms of raw disk I/O, gVisor does not introduce significant fundamental
 overhead. For general file operations, gVisor introduces a small fixed overhead
 for data that transitions across the sandbox boundary. This manifests as
 **structural costs** in some cases, since these operations must be routed
-through the [Gofer](../) as a result of our [security model](../security/), but
-in most cases are dominated by **implementation costs**, due to an internal
+through the [Gofer](../README.md#gofer) as a result of our
+[Security Model](/docs/architecture_guide/security/), but in most cases are
+dominated by **implementation costs**, due to an internal
 [Virtual File System][vfs] (VFS) implementation that needs improvement.
 
 {% include graph.html id="fio-bw" url="/performance/fio.csv" title="perf.py fio

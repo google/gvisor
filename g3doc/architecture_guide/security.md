@@ -86,15 +86,17 @@ a substitute for a secure architecture*.
 
 ## Goals: Limiting Exposure
 
-gVisor’s primary design goal is to minimize the System API attack vector while
-still providing a process model. There are two primary security principles that
-inform this design. First, the application’s direct interactions with the host
-System API are intercepted by the Sentry, which implements the System API
-instead. Second, the System API accessible to the Sentry itself is minimized to
-a safer, restricted set. The first principle minimizes the possibility of direct
-exploitation of the host System API by applications, and the second principle
-minimizes indirect exploitability, which is the exploitation by an exploited or
-buggy Sentry (e.g. chaining an exploit).
+![Threat model](security.png "Threat model.")
+
+gVisor’s primary design goal is to minimize the System API attack vector through
+multiple layers of defense, while still providing a process model. There are two
+primary security principles that inform this design. First, the application’s
+direct interactions with the host System API are intercepted by the Sentry,
+which implements the System API instead. Second, the System API accessible to
+the Sentry itself is minimized to a safer, restricted set. The first principle
+minimizes the possibility of direct exploitation of the host System API by
+applications, and the second principle minimizes indirect exploitability, which
+is the exploitation by an exploited or buggy Sentry (e.g. chaining an exploit).
 
 The first principle is similar to the security basis for a Virtual Machine (VM).
 With a VM, an application’s interactions with the host are replaced by
@@ -210,9 +212,9 @@ crashes are recorded and triaged to similarly identify material issues.
 ### Is this more or less secure than a Virtual Machine?
 
 The security of a VM depends to a large extent on what is exposed from the host
-kernel and user space support code. For example, device emulation code in the
+kernel and userspace support code. For example, device emulation code in the
 host kernel (e.g. APIC) or optimizations (e.g. vhost) can be more complex than a
-simple system call, and exploits carry the same risks. Similarly, the user space
+simple system call, and exploits carry the same risks. Similarly, the userspace
 support code is frequently unsandboxed, and exploits, while rare, may allow
 unfettered access to the system.
 
@@ -245,8 +247,8 @@ In gVisor, the platforms that use ptrace operate differently. The stubs that are
 traced are never allowed to continue execution into the host kernel and complete
 a call directly. Instead, all system calls are interpreted and handled by the
 Sentry itself, who reflects resulting register state back into the tracee before
-continuing execution in user space. This is very similar to the mechanism used
-by User-Mode Linux (UML).
+continuing execution in userspace. This is very similar to the mechanism used by
+User-Mode Linux (UML).
 
 [dirtycow]: https://en.wikipedia.org/wiki/Dirty_COW
 [clang]: https://en.wikipedia.org/wiki/C_(programming_language)
