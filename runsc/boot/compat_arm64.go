@@ -23,8 +23,12 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/strace"
 )
 
-// reportLimit is the max number of events that should be reported per tracker.
-const reportLimit = 100
+const (
+	// reportLimit is the max number of events that should be reported per
+	// tracker.
+	reportLimit = 100
+	syscallLink = "https://gvisor.dev/c/linux/arm64"
+)
 
 // newRegs create a empty Registers instance.
 func newRegs() *rpb.Registers {
@@ -35,22 +39,22 @@ func newRegs() *rpb.Registers {
 	}
 }
 
-func argVal(argIdx int, regs *rpb.Registers) uint32 {
+func argVal(argIdx int, regs *rpb.Registers) uint64 {
 	arm64Regs := regs.GetArch().(*rpb.Registers_Arm64).Arm64
 
 	switch argIdx {
 	case 0:
-		return uint32(arm64Regs.R0)
+		return arm64Regs.R0
 	case 1:
-		return uint32(arm64Regs.R1)
+		return arm64Regs.R1
 	case 2:
-		return uint32(arm64Regs.R2)
+		return arm64Regs.R2
 	case 3:
-		return uint32(arm64Regs.R3)
+		return arm64Regs.R3
 	case 4:
-		return uint32(arm64Regs.R4)
+		return arm64Regs.R4
 	case 5:
-		return uint32(arm64Regs.R5)
+		return arm64Regs.R5
 	}
 	panic(fmt.Sprintf("invalid syscall argument index %d", argIdx))
 }

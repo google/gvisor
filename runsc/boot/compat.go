@@ -119,7 +119,13 @@ func (c *compatEmitter) emitUnimplementedSyscall(us *spb.UnimplementedSyscall) {
 	}
 
 	if tr.shouldReport(regs) {
-		c.sink.Infof("Unsupported syscall: %s, regs: %+v", c.nameMap.Name(uintptr(sysnr)), regs)
+		name := c.nameMap.Name(uintptr(sysnr))
+		c.sink.Infof("Unsupported syscall %s(%#x,%#x,%#x,%#x,%#x,%#x). It is "+
+			"likely that you can safely ignore this message and that this is not "+
+			"the cause of any error. Please, refer to %s/%s for more information.",
+			name, argVal(0, regs), argVal(1, regs), argVal(2, regs), argVal(3, regs),
+			argVal(4, regs), argVal(5, regs), syscallLink, name)
+
 		tr.onReported(regs)
 	}
 }
