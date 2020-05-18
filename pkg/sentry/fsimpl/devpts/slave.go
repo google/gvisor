@@ -26,8 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// LINT.IfChange
-
 // slaveInode is the inode for the slave end of the Terminal.
 type slaveInode struct {
 	kernfs.InodeAttrs
@@ -182,5 +180,3 @@ func (sfd *slaveFileDescription) Stat(ctx context.Context, opts vfs.StatOptions)
 	fs := sfd.vfsfd.VirtualDentry().Mount().Filesystem()
 	return sfd.inode.Stat(fs, opts)
 }
-
-// LINT.ThenChange(../../fs/tty/slave.go)

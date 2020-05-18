@@ -22,8 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// LINT.IfChanges
-
 // Terminal is a pseudoterminal.
 //
 // +stateify savable
@@ -120,5 +118,3 @@ func (tm *Terminal) tty(isMaster bool) *kernel.TTY {
 	}
 	return tm.slaveKTTY
 }
-
-// LINT.ThenChange(../../fs/tty/terminal.go)

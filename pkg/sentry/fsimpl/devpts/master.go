@@ -27,8 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// LINT.IfChange
-
 // masterInode is the inode for the master end of the Terminal.
 type masterInode struct {
 	kernfs.InodeAttrs
@@ -222,5 +220,3 @@ func maybeEmitUnimplementedEvent(ctx context.Context, cmd uint32) {
 		unimpl.EmitUnimplementedEvent(ctx)
 	}
 }
-
-// LINT.ThenChange(../../fs/tty/master.go)
