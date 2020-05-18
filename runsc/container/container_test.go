@@ -1760,7 +1760,7 @@ func TestUserLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error opening user log file %q: %v", userLog, err)
 	}
-	if want := "Unsupported syscall: sched_rr_get_interval"; !strings.Contains(string(out), want) {
+	if want := "Unsupported syscall sched_rr_get_interval("; !strings.Contains(string(out), want) {
 		t.Errorf("user log file doesn't contain %q, out: %s", want, string(out))
 	}
 }
