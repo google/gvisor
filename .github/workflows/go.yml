@@ -1,0 +1,63 @@
+name: "Go"
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+    - run: |
+        jq -nc '{"state": "pending", "context": "go tests"}' | \
+        curl -sL -X POST -d @- \
+            -H "Content-Type: application/json" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "${{ github.event.pull_request.statuses_url }}"
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+    - uses: actions/setup-go@v2
+      with:
+        go-version: 1.14
+    - uses: actions/cache@v1
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    - uses: actions/cache@v1
+      with:
+        path: ~/.cache/bazel
+        key: ${{ runner.os }}-bazel-${{ hashFiles('WORKSPACE') }}
+        restore-keys: |
+          ${{ runner.os }}-bazel-
+    - run: make build TARGETS="//:gopath"
+    - run: tools/go_branch.sh
+    - run: git checkout go && git clean -f
+    - run: go build ./...
+    - if: github.event_name == 'push'
+      run: |
+        # Required dedicated credentials for the Go branch, due to the way
+        # branch protection rules are configured.
+        git config --global credential.helper cache
+        echo -e "protocol=https\nhost=github.com\nusername=${{ secrets.GO_TOKEN }}\npassword=x-oauth-basic" | git credential approve
+        git remote add upstream "https://github.com/${{ github.repository }}"
+        git push upstream go:go
+    - if: ${{ success() }}
+      run: |
+        jq -nc '{"state": "success", "context": "go tests"}' | \
+        curl -sL  -X POST -d @- \
+            -H "Content-Type: application/json" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "${{ github.event.pull_request.statuses_url }}"
+    - if: ${{ failure() }}
+      run: |
+        jq -nc '{"state": "failure", "context": "go tests"}' | \
+        curl -sL  -X POST -d @- \
+            -H "Content-Type: application/json" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "${{ github.event.pull_request.statuses_url }}"
