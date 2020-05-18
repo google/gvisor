@@ -5,8 +5,8 @@
 
 ## What is gVisor?
 
-**gVisor** is a application kernel, written in Go, that implements a substantial
-portion of the Linux system surface. It includes an
+**gVisor** is an application kernel, written in Go, that implements a
+substantial portion of the Linux system surface. It includes an
 [Open Container Initiative (OCI)][oci] runtime called `runsc` that provides an
 isolation boundary between the application and the host kernel. The `runsc`
 runtime integrates with Docker and Kubernetes, making it simple to run sandboxed
