@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -eo pipefail
+set -xeo pipefail
 
 # Discovery the package name from the go.mod file.
 declare -r module=$(cat go.mod | grep -E "^module" | cut -d' ' -f2)
@@ -42,7 +42,8 @@ declare -r head=$(git describe --always)
 
 # We expect to have an existing go branch that we will use as the basis for
 # this commit. That branch may be empty, but it must exist.
-declare -r go_branch=$(git show-ref --hash origin/go)
+git fetch --all
+declare -r go_branch=$(git show-ref --hash go)
 
 # Clone the current repository to the temporary directory, and check out the
 # current go_branch directory. We move to the new repository for convenience.
