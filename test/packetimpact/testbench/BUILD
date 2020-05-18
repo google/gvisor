@@ -39,6 +39,7 @@ go_test(
     library = ":testbench",
     deps = [
         "//pkg/tcpip",
+        "//pkg/tcpip/header",
         "@com_github_mohae_deepcopy//:go_default_library",
     ],
 )
