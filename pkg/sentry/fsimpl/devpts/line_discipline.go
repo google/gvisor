@@ -27,8 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// LINT.IfChange
-
 const (
 	// canonMaxBytes is the number of bytes that fit into a single line of
 	// terminal input in canonical mode. This corresponds to N_TTY_BUF_SIZE
@@ -445,5 +443,3 @@ func (l *lineDiscipline) peek(b []byte) int {
 	}
 	return size
 }
-
-// LINT.ThenChange(../../fs/tty/line_discipline.go)
