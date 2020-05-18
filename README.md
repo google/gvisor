@@ -1,7 +1,6 @@
 ![gVisor](g3doc/logo.png)
 
-[![Status](https://storage.googleapis.com/gvisor-build-badges/build.svg)](https://storage.googleapis.com/gvisor-build-badges/build.html)
-[![gVisor chat](https://badges.gitter.im/gvisor/community.png)](https://gitter.im/gvisor/community)
+![](https://github.com/google/gvisor/workflows/Build/badge.svg)
 
 ## What is gVisor?
 
