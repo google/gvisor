@@ -122,11 +122,15 @@ type CachingInodeOperationsOptions struct {
 	// descriptor is available.
 	ForcePageCache bool
 
-	// If LimitHostFDTranslation is true, apply maxFillRange() constraints to
-	// host file descriptor mappings returned by
+	// If MaxHostFDTranslationBytes is non-zero, apply maxFillRange() with
+	// this maximum to host file descriptor mappings returned by
 	// CachingInodeOperations.Translate().
-	LimitHostFDTranslation bool
+	MaxHostFDTranslationBytes uint64
 }
+
+// maxGoferReadahead is the maximum size of mappings returned by
+// CachingInodeOperations.Translate for gofer files not backed by a host FD.
+const maxGoferReadahead = 64 << 10 // 64 KB, chosen arbitrarily
 
 // CachedFileObject is a file that may require caching.
 type CachedFileObject interface {
@@ -646,7 +650,7 @@ func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 					End:   fs.OffsetPageEnd(int64(gapMR.End)),
 				}
 				optMR := gap.Range()
-				err := rw.c.cache.Fill(rw.ctx, reqMR, maxFillRange(reqMR, optMR), mem, usage.PageCache, rw.c.backingFile.ReadToBlocksAt)
+				err := rw.c.cache.Fill(rw.ctx, reqMR, maxFillRange(maxGoferReadahead, reqMR, optMR), mem, usage.PageCache, rw.c.backingFile.ReadToBlocksAt)
 				mem.MarkEvictable(rw.c, pgalloc.EvictableRange{optMR.Start, optMR.End})
 				seg, gap = rw.c.cache.Find(uint64(rw.offset))
 				if !seg.Ok() {
@@ -844,8 +848,8 @@ func (c *CachingInodeOperations) Translate(ctx context.Context, required, option
 	// Hot path. Avoid defer.
 	if c.useHostPageCache() {
 		mr := optional
-		if c.opts.LimitHostFDTranslation {
-			mr = maxFillRange(required, optional)
+		if c.opts.MaxHostFDTranslationBytes > 0 {
+			mr = maxFillRange(c.opts.MaxHostFDTranslationBytes, required, optional)
 		}
 		return []memmap.Translation{
 			{
@@ -876,7 +880,7 @@ func (c *CachingInodeOperations) Translate(ctx context.Context, required, option
 	}
 
 	mf := c.mfp.MemoryFile()
-	cerr := c.cache.Fill(ctx, required, maxFillRange(required, optional), mf, usage.PageCache, c.backingFile.ReadToBlocksAt)
+	cerr := c.cache.Fill(ctx, required, maxFillRange(maxGoferReadahead, required, optional), mf, usage.PageCache, c.backingFile.ReadToBlocksAt)
 
 	var ts []memmap.Translation
 	var translatedEnd uint64
@@ -916,8 +920,7 @@ func (c *CachingInodeOperations) Translate(ctx context.Context, required, option
 	return ts, nil
 }
 
-func maxFillRange(required, optional memmap.MappableRange) memmap.MappableRange {
-	const maxReadahead = 64 << 10 // 64 KB, chosen arbitrarily
+func maxFillRange(maxReadahead uint64, required, optional memmap.MappableRange) memmap.MappableRange {
 	if required.Length() >= maxReadahead {
 		return required
 	}

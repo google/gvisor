@@ -164,10 +164,10 @@ type session struct {
 	// Flags provided to the mount.
 	superBlockFlags fs.MountSourceFlags `state:"wait"`
 
-	// limitHostFDTranslation is the value used for
-	// CachingInodeOperationsOptions.LimitHostFDTranslation for all
+	// maxHostFDTranslationBytes is the value used for
+	// CachingInodeOperationsOptions.MaxHostFDTranslationBytes for all
 	// CachingInodeOperations created by the session.
-	limitHostFDTranslation bool
+	maxHostFDTranslationBytes uint64
 
 	// overlayfsStaleRead when set causes the readonly handle to be invalidated
 	// after file is open for write.
@@ -276,8 +276,8 @@ func newInodeOperations(ctx context.Context, s *session, file contextFile, qid p
 	return sattr, &inodeOperations{
 		fileState: fileState,
 		cachingInodeOps: fsutil.NewCachingInodeOperations(ctx, fileState, uattr, fsutil.CachingInodeOperationsOptions{
-			ForcePageCache:         s.superBlockFlags.ForcePageCache,
-			LimitHostFDTranslation: s.limitHostFDTranslation,
+			ForcePageCache:            s.superBlockFlags.ForcePageCache,
+			MaxHostFDTranslationBytes: s.maxHostFDTranslationBytes,
 		}),
 	}
 }
@@ -301,15 +301,15 @@ func Root(ctx context.Context, dev string, filesystem fs.Filesystem, superBlockF
 
 	// Construct the session.
 	s := session{
-		connID:                 dev,
-		msize:                  o.msize,
-		version:                o.version,
-		cachePolicy:            o.policy,
-		aname:                  o.aname,
-		superBlockFlags:        superBlockFlags,
-		limitHostFDTranslation: o.limitHostFDTranslation,
-		overlayfsStaleRead:     o.overlayfsStaleRead,
-		mounter:                mounter,
+		connID:                    dev,
+		msize:                     o.msize,
+		version:                   o.version,
+		cachePolicy:               o.policy,
+		aname:                     o.aname,
+		superBlockFlags:           superBlockFlags,
+		maxHostFDTranslationBytes: o.maxHostFDTranslationBytes,
+		overlayfsStaleRead:        o.overlayfsStaleRead,
+		mounter:                   mounter,
 	}
 	s.EnableLeakCheck("gofer.session")
 

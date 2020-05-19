@@ -35,6 +35,10 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// maxGoferReadahead is the maximum size of mappings returned for gofer files
+// not backed by a host FD.
+const maxGoferReadahead = 64 << 10 // 64 KB, chosen arbitrarily
+
 func (d *dentry) isRegularFile() bool {
 	return d.fileType() == linux.S_IFREG
 }
@@ -311,7 +315,7 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 					End:   pageRoundUp(gapMR.End),
 				}
 				optMR := gap.Range()
-				err := rw.d.cache.Fill(rw.ctx, reqMR, maxFillRange(reqMR, optMR), mf, usage.PageCache, rw.d.handle.readToBlocksAt)
+				err := rw.d.cache.Fill(rw.ctx, reqMR, maxFillRange(maxGoferReadahead, reqMR, optMR), mf, usage.PageCache, rw.d.handle.readToBlocksAt)
 				mf.MarkEvictable(rw.d, pgalloc.EvictableRange{optMR.Start, optMR.End})
 				seg, gap = rw.d.cache.Find(rw.off)
 				if !seg.Ok() {
@@ -654,8 +658,8 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 	if d.handle.fd >= 0 && !d.fs.opts.forcePageCache {
 		d.handleMu.RUnlock()
 		mr := optional
-		if d.fs.opts.limitHostFDTranslation {
-			mr = maxFillRange(required, optional)
+		if d.fs.opts.maxHostFDTranslationBytes > 0 {
+			mr = maxFillRange(d.fs.opts.maxHostFDTranslationBytes, required, optional)
 		}
 		return []memmap.Translation{
 			{
@@ -687,7 +691,7 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 	}
 
 	mf := d.fs.mfp.MemoryFile()
-	cerr := d.cache.Fill(ctx, required, maxFillRange(required, optional), mf, usage.PageCache, d.handle.readToBlocksAt)
+	cerr := d.cache.Fill(ctx, required, maxFillRange(maxGoferReadahead, required, optional), mf, usage.PageCache, d.handle.readToBlocksAt)
 
 	var ts []memmap.Translation
 	var translatedEnd uint64
@@ -728,8 +732,7 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 	return ts, nil
 }
 
-func maxFillRange(required, optional memmap.MappableRange) memmap.MappableRange {
-	const maxReadahead = 64 << 10 // 64 KB, chosen arbitrarily
+func maxFillRange(maxReadahead uint64, required, optional memmap.MappableRange) memmap.MappableRange {
 	if required.Length() >= maxReadahead {
 		return required
 	}

@@ -59,6 +59,10 @@ const (
 	// true.
 	limitHostFDTranslationKey = "limit_host_fd_translation"
 
+	// Maximum size for host fd mappings. Only valid if
+	// limitHostFDTranslationKey is also set.
+	maxHostFDTranslationBytes = "max_host_fd_translation_bytes"
+
 	// overlayfsStaleRead if present closes cached readonly file after the first
 	// write. This is done to workaround a limitation of Linux overlayfs.
 	overlayfsStaleRead = "overlayfs_stale_read"
@@ -74,6 +78,10 @@ const defaultMSize = 1024 * 1024 // 1M
 // defaultVersion is the default 9p protocol version. Will negotiate downwards with
 // file server if needed.
 var defaultVersion = p9.HighestVersionString()
+
+// defaultMaxHostFDTranslationBytes is the maximum size for host FD mappings to
+// use when limiting host FD translations.
+const defaultMaxHostFDTranslationBytes = 64 * 1024 // 64K
 
 // Number of names of non-children to cache, preventing unneeded walks.  64 is
 // plenty for nodejs, which seems to stat about 4 children on every require().
@@ -142,14 +150,14 @@ func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSou
 
 // opts are parsed 9p mount options.
 type opts struct {
-	fd                     int
-	aname                  string
-	policy                 cachePolicy
-	msize                  uint32
-	version                string
-	privateunixsocket      bool
-	limitHostFDTranslation bool
-	overlayfsStaleRead     bool
+	fd                        int
+	aname                     string
+	policy                    cachePolicy
+	msize                     uint32
+	version                   string
+	privateunixsocket         bool
+	maxHostFDTranslationBytes uint64
+	overlayfsStaleRead        bool
 }
 
 // options parses mount(2) data into structured options.
@@ -248,8 +256,20 @@ func options(data string) (opts, error) {
 	}
 
 	if _, ok := options[limitHostFDTranslationKey]; ok {
-		o.limitHostFDTranslation = true
+		// Host FD mapping limits are in effect. Set limit to the
+		// default.
+		o.maxHostFDTranslationBytes = defaultMaxHostFDTranslationBytes
 		delete(options, limitHostFDTranslationKey)
+
+		// Was a different limit specified?
+		if m, ok := options[maxHostFDTranslationBytes]; ok {
+			i, err := strconv.ParseUint(m, 10, 64)
+			if err != nil {
+				return o, fmt.Errorf("invalid max host fd translation size: %q: %v", m, err)
+			}
+			o.maxHostFDTranslationBytes = i
+			delete(options, maxHostFDTranslationBytes)
+		}
 	}
 
 	if _, ok := options[overlayfsStaleRead]; ok {

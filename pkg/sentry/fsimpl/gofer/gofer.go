@@ -134,12 +134,13 @@ type filesystemOptions struct {
 	// own caching of regular file pages. This is primarily useful for testing.
 	forcePageCache bool
 
-	// If limitHostFDTranslation is true, apply maxFillRange() constraints to
-	// host FD mappings returned by dentry.(memmap.Mappable).Translate(). This
-	// makes memory accounting behavior more consistent between cases where
-	// host FDs are / are not available, but may increase the frequency of
-	// sentry-handled page faults on files for which a host FD is available.
-	limitHostFDTranslation bool
+	// If maxHostFDTranslationBytes is nonzero, apply maxFillRange()
+	// constraints with this maximum to host FD mappings returned by
+	// dentry.(memmap.Mappable).Translate(). This makes memory accounting
+	// behavior more consistent between cases where host FDs are / are not
+	// available, but may increase the frequency of sentry-handled page
+	// faults on files for which a host FD is available.
+	maxHostFDTranslationBytes uint64
 
 	// If overlayfsStaleRead is true, O_RDONLY host FDs provided by the remote
 	// filesystem may not be coherent with writable host FDs opened later, so
@@ -351,13 +352,27 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		delete(mopts, "force_page_cache")
 		fsopts.forcePageCache = true
 	}
-	if _, ok := mopts["limit_host_fd_translation"]; ok {
-		delete(mopts, "limit_host_fd_translation")
-		fsopts.limitHostFDTranslation = true
-	}
 	if _, ok := mopts["overlayfs_stale_read"]; ok {
 		delete(mopts, "overlayfs_stale_read")
 		fsopts.overlayfsStaleRead = true
+	}
+	if _, ok := mopts["limit_host_fd_translation"]; ok {
+		delete(mopts, "limit_host_fd_translation")
+
+		// Host FD mapping limits are in effect. Set limit to the
+		// 64 KB default, which was chosen arbitrarily.
+		fsopts.maxHostFDTranslationBytes = 64 * 1024
+
+		// Was a different limit specified?
+		if m, ok := mopts["max_host_fd_translation_bytes"]; ok {
+			delete(mopts, "max_host_fd_translation_bytes")
+			i, err := strconv.ParseUint(m, 10, 64)
+			if err != nil {
+				ctx.Warningf("invalid max host fd translation size: %q: %v", m, err)
+				return nil, nil, syserror.EINVAL
+			}
+			fsopts.maxHostFDTranslationBytes = i
+		}
 	}
 	// fsopts.regularFilesUseSpecialFileFD can only be enabled by specifying
 	// "cache=none".
