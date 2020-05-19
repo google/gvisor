@@ -11,6 +11,7 @@ go_library(
         "arch_amd64.go",
         "arch_amd64.s",
         "arch_arm64.go",
+        "arch_arm64.s",
         "arch_state_x86.go",
         "arch_x86.go",
         "arch_x86_impl.go",

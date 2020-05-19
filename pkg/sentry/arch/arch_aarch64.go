@@ -17,7 +17,6 @@
 package arch
 
 import (
-	"encoding/binary"
 	"fmt"
 	"io"
 
@@ -49,10 +48,7 @@ const ARMTrapFlag = uint64(1) << 21
 type aarch64FPState []byte
 
 // initAarch64FPState sets up initial state.
-func initAarch64FPState(data aarch64FPState) {
-	binary.LittleEndian.PutUint32(data, fpsimdMagic)
-	binary.LittleEndian.PutUint32(data[4:], fpsimdContextSize)
-}
+func initAarch64FPState(data *FloatingPointData)
 
 func newAarch64FPStateSlice() []byte {
 	return alignedBytes(4096, 16)[:fpsimdContextSize]
@@ -65,7 +61,7 @@ func newAarch64FPStateSlice() []byte {
 // FeatureSet.
 func newAarch64FPState() aarch64FPState {
 	f := aarch64FPState(newAarch64FPStateSlice())
-	initAarch64FPState(f)
+	initAarch64FPState(f.FloatingPointData())
 	return f
 }
 
