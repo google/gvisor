@@ -1,7 +1,7 @@
 FROM fedora:31
 # Install bazel.
 RUN dnf install -y dnf-plugins-core && dnf copr enable -y vbatts/bazel
-RUN dnf install -y git gcc make golang gcc-c++ glibc-devel python3 which python3-pip python3-devel libffi-devel openssl-devel pkg-config glibc-static libstdc++-static patch
+RUN dnf install -y git gcc make golang gcc-c++ glibc-devel python3 which python3-pip python3-devel libffi-devel openssl-devel pkg-config glibc-static libstdc++-static patch diffutils
 RUN pip install pycparser
 RUN dnf install -y bazel3
 # Install gcloud.
