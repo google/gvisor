@@ -17,6 +17,7 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -673,6 +674,11 @@ TEST_P(UdpSocketTest, ZerolengthWriteAllowed) {
   char buf[3];
   // Send zero length packet from s_ to t_.
   ASSERT_THAT(write(s_, buf, 0), SyscallSucceedsWithValue(0));
+
+  struct pollfd pfd = {t_, POLLIN, 0};
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, /*timeout=*/1000),
+              SyscallSucceedsWithValue(1));
+
   // Receive the packet.
   char received[3];
   EXPECT_THAT(read(t_, received, sizeof(received)),
@@ -698,6 +704,11 @@ TEST_P(UdpSocketTest, ZerolengthWriteAllowedNonBlockRead) {
   char buf[3];
   // Send zero length packet from s_ to t_.
   ASSERT_THAT(write(s_, buf, 0), SyscallSucceedsWithValue(0));
+
+  struct pollfd pfd = {t_, POLLIN, 0};
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, /*timeout=*/1000),
+              SyscallSucceedsWithValue(1));
+
   // Receive the packet.
   char received[3];
   EXPECT_THAT(read(t_, received, sizeof(received)),
@@ -858,6 +869,10 @@ TEST_P(UdpSocketTest, ReadShutdownNonblockPendingData) {
   ASSERT_NE(opts & O_NONBLOCK, 0);
 
   EXPECT_THAT(shutdown(s_, SHUT_RD), SyscallSucceeds());
+
+  struct pollfd pfd = {s_, POLLIN, 0};
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, /*timeout=*/1000),
+              SyscallSucceedsWithValue(1));
 
   // We should get the data even though read has been shutdown.
   EXPECT_THAT(recv(s_, received, 2, 0), SyscallSucceedsWithValue(2));
@@ -1112,6 +1127,10 @@ TEST_P(UdpSocketTest, FIONREADWriteShutdown) {
   ASSERT_THAT(send(s_, str, sizeof(str), 0),
               SyscallSucceedsWithValue(sizeof(str)));
 
+  struct pollfd pfd = {s_, POLLIN, 0};
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, /*timeout=*/1000),
+              SyscallSucceedsWithValue(1));
+
   n = -1;
   EXPECT_THAT(ioctl(s_, FIONREAD, &n), SyscallSucceedsWithValue(0));
   EXPECT_EQ(n, sizeof(str));
@@ -1123,7 +1142,7 @@ TEST_P(UdpSocketTest, FIONREADWriteShutdown) {
   EXPECT_EQ(n, sizeof(str));
 }
 
-TEST_P(UdpSocketTest, Fionread) {
+TEST_P(UdpSocketTest, FIONREAD) {
   // Bind s_ to loopback:TestPort.
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
 
@@ -1138,9 +1157,13 @@ TEST_P(UdpSocketTest, Fionread) {
   char buf[3 * psize];
   RandomizeBuffer(buf, sizeof(buf));
 
+  struct pollfd pfd = {s_, POLLIN, 0};
   for (int i = 0; i < 3; ++i) {
     ASSERT_THAT(sendto(t_, buf + i * psize, psize, 0, addr_[0], addrlen_),
                 SyscallSucceedsWithValue(psize));
+
+    ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, /*timeout=*/1000),
+                SyscallSucceedsWithValue(1));
 
     // Check that regardless of how many packets are in the queue, the size
     // reported is that of a single packet.
@@ -1165,9 +1188,17 @@ TEST_P(UdpSocketTest, FIONREADZeroLengthPacket) {
   char buf[3 * psize];
   RandomizeBuffer(buf, sizeof(buf));
 
+  struct pollfd pfd = {s_, POLLIN, 0};
   for (int i = 0; i < 3; ++i) {
     ASSERT_THAT(sendto(t_, buf + i * psize, 0, 0, addr_[0], addrlen_),
                 SyscallSucceedsWithValue(0));
+
+    // TODO(gvisor.dev/issue/2726): sending a zero-length message to a hostinet
+    // socket does not cause a poll event to be triggered.
+    if (!IsRunningWithHostinet()) {
+      ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, /*timeout=*/1000),
+                  SyscallSucceedsWithValue(1));
+    }
 
     // Check that regardless of how many packets are in the queue, the size
     // reported is that of a single packet.
@@ -1235,6 +1266,10 @@ TEST_P(UdpSocketTest, SoTimestamp) {
   // Send zero length packet from t_ to s_.
   ASSERT_THAT(RetryEINTR(write)(t_, buf, 0), SyscallSucceedsWithValue(0));
 
+  struct pollfd pfd = {s_, POLLIN, 0};
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, /*timeout=*/1000),
+              SyscallSucceedsWithValue(1));
+
   char cmsgbuf[CMSG_SPACE(sizeof(struct timeval))];
   msghdr msg;
   memset(&msg, 0, sizeof(msg));
@@ -1278,6 +1313,10 @@ TEST_P(UdpSocketTest, TimestampIoctl) {
   ASSERT_THAT(RetryEINTR(write)(t_, buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
 
+  struct pollfd pfd = {s_, POLLIN, 0};
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, /*timeout=*/1000),
+              SyscallSucceedsWithValue(1));
+
   // There should be no control messages.
   char recv_buf[sizeof(buf)];
   ASSERT_NO_FATAL_FAILURE(RecvNoCmsg(s_, recv_buf, sizeof(recv_buf)));
@@ -1315,6 +1354,10 @@ TEST_P(UdpSocketTest, TimestampIoctlPersistence) {
               SyscallSucceedsWithValue(sizeof(buf)));
   ASSERT_THAT(RetryEINTR(write)(t_, buf, 0), SyscallSucceedsWithValue(0));
 
+  struct pollfd pfd = {s_, POLLIN, 0};
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, /*timeout=*/1000),
+              SyscallSucceedsWithValue(1));
+
   // There should be no control messages.
   char recv_buf[sizeof(buf)];
   ASSERT_NO_FATAL_FAILURE(RecvNoCmsg(s_, recv_buf, sizeof(recv_buf)));
@@ -1329,6 +1372,9 @@ TEST_P(UdpSocketTest, TimestampIoctlPersistence) {
   EXPECT_THAT(setsockopt(s_, SOL_SOCKET, SO_TIMESTAMP, &v, sizeof(v)),
               SyscallSucceeds());
   ASSERT_THAT(RetryEINTR(write)(t_, buf, 0), SyscallSucceedsWithValue(0));
+
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, /*timeout=*/1000),
+              SyscallSucceedsWithValue(1));
 
   // There should be a message for SO_TIMESTAMP.
   char cmsgbuf[CMSG_SPACE(sizeof(struct timeval))];
