@@ -86,15 +86,16 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 
 	i := &inode{
 		hostFD:     hostFD,
-		seekable:   seekable,
-		isTTY:      opts.IsTTY,
-		canMap:     canMap(uint32(fileType)),
-		wouldBlock: wouldBlock(uint32(fileType)),
 		ino:        fs.NextIno(),
+		isTTY:      opts.IsTTY,
+		wouldBlock: wouldBlock(uint32(fileType)),
+		seekable:   seekable,
 		// For simplicity, set offset to 0. Technically, we should use the existing
 		// offset on the host if the file is seekable.
 		offset: 0,
+		canMap: canMap(uint32(fileType)),
 	}
+	i.pf.inode = i
 
 	// Non-seekable files can't be memory mapped, assert this.
 	if !i.seekable && i.canMap {
@@ -189,11 +190,15 @@ type inode struct {
 	// This field is initialized at creation time and is immutable.
 	hostFD int
 
-	// wouldBlock is true if the host FD would return EWOULDBLOCK for
-	// operations that would block.
+	// ino is an inode number unique within this filesystem.
 	//
 	// This field is initialized at creation time and is immutable.
-	wouldBlock bool
+	ino uint64
+
+	// isTTY is true if this file represents a TTY.
+	//
+	// This field is initialized at creation time and is immutable.
+	isTTY bool
 
 	// seekable is false if the host fd points to a file representing a stream,
 	// e.g. a socket or a pipe. Such files are not seekable and can return
@@ -202,29 +207,36 @@ type inode struct {
 	// This field is initialized at creation time and is immutable.
 	seekable bool
 
-	// isTTY is true if this file represents a TTY.
+	// offsetMu protects offset.
+	offsetMu sync.Mutex
+
+	// offset specifies the current file offset. It is only meaningful when
+	// seekable is true.
+	offset int64
+
+	// wouldBlock is true if the host FD would return EWOULDBLOCK for
+	// operations that would block.
 	//
 	// This field is initialized at creation time and is immutable.
-	isTTY bool
+	wouldBlock bool
+
+	// Event queue for blocking operations.
+	queue waiter.Queue
 
 	// canMap specifies whether we allow the file to be memory mapped.
 	//
 	// This field is initialized at creation time and is immutable.
 	canMap bool
 
-	// ino is an inode number unique within this filesystem.
-	//
-	// This field is initialized at creation time and is immutable.
-	ino uint64
+	// mapsMu protects mappings.
+	mapsMu sync.Mutex
 
-	// offsetMu protects offset.
-	offsetMu sync.Mutex
+	// If canMap is true, mappings tracks mappings of hostFD into
+	// memmap.MappingSpaces.
+	mappings memmap.MappingSet
 
-	// offset specifies the current file offset.
-	offset int64
-
-	// Event queue for blocking operations.
-	queue waiter.Queue
+	// pf implements platform.File for mappings of hostFD.
+	pf inodePlatformFile
 }
 
 // CheckPermissions implements kernfs.Inode.
@@ -387,6 +399,21 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	if m&linux.STATX_SIZE != 0 {
 		if err := syscall.Ftruncate(i.hostFD, int64(s.Size)); err != nil {
 			return err
+		}
+		oldSize := uint64(hostStat.Size)
+		if s.Size < oldSize {
+			oldpgend, _ := usermem.PageRoundUp(oldSize)
+			newpgend, _ := usermem.PageRoundUp(s.Size)
+			if oldpgend != newpgend {
+				i.mapsMu.Lock()
+				i.mappings.Invalidate(memmap.MappableRange{newpgend, oldpgend}, memmap.InvalidateOpts{
+					// Compare Linux's mm/truncate.c:truncate_setsize() =>
+					// truncate_pagecache() =>
+					// mm/memory.c:unmap_mapping_range(evencows=1).
+					InvalidatePrivate: true,
+				})
+				i.mapsMu.Unlock()
+			}
 		}
 	}
 	if m&(linux.STATX_ATIME|linux.STATX_MTIME) != 0 {
@@ -666,8 +693,9 @@ func (f *fileDescription) ConfigureMMap(_ context.Context, opts *memmap.MMapOpts
 	if !f.inode.canMap {
 		return syserror.ENODEV
 	}
-	// TODO(gvisor.dev/issue/1672): Implement ConfigureMMap and Mappable interface.
-	return syserror.ENODEV
+	i := f.inode
+	i.pf.fileMapperInitOnce.Do(i.pf.fileMapper.Init)
+	return vfs.GenericConfigureMMap(&f.vfsfd, i, opts)
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.

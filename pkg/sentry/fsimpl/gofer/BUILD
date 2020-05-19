@@ -36,7 +36,6 @@ go_library(
         "gofer.go",
         "handle.go",
         "p9file.go",
-        "pagemath.go",
         "regular_file.go",
         "socket.go",
         "special_file.go",

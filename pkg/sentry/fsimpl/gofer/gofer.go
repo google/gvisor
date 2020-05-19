@@ -928,8 +928,8 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, stat *lin
 		// so we can't race with Write or another truncate.)
 		d.dataMu.Unlock()
 		if d.size < oldSize {
-			oldpgend := pageRoundUp(oldSize)
-			newpgend := pageRoundUp(d.size)
+			oldpgend, _ := usermem.PageRoundUp(oldSize)
+			newpgend, _ := usermem.PageRoundUp(d.size)
 			if oldpgend != newpgend {
 				d.mapsMu.Lock()
 				d.mappings.Invalidate(memmap.MappableRange{newpgend, oldpgend}, memmap.InvalidateOpts{

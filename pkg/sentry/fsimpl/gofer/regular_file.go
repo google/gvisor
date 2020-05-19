@@ -148,9 +148,9 @@ func (fd *regularFileFD) PWrite(ctx context.Context, src usermem.IOSequence, off
 			return 0, err
 		}
 		// Remove touched pages from the cache.
-		pgstart := pageRoundDown(uint64(offset))
-		pgend := pageRoundUp(uint64(offset + src.NumBytes()))
-		if pgend < pgstart {
+		pgstart := usermem.PageRoundDown(uint64(offset))
+		pgend, ok := usermem.PageRoundUp(uint64(offset + src.NumBytes()))
+		if !ok {
 			return 0, syserror.EINVAL
 		}
 		mr := memmap.MappableRange{pgstart, pgend}
@@ -306,9 +306,10 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 			if fillCache {
 				// Read into the cache, then re-enter the loop to read from the
 				// cache.
+				gapEnd, _ := usermem.PageRoundUp(gapMR.End)
 				reqMR := memmap.MappableRange{
-					Start: pageRoundDown(gapMR.Start),
-					End:   pageRoundUp(gapMR.End),
+					Start: usermem.PageRoundDown(gapMR.Start),
+					End:   gapEnd,
 				}
 				optMR := gap.Range()
 				err := rw.d.cache.Fill(rw.ctx, reqMR, maxFillRange(reqMR, optMR), mf, usage.PageCache, rw.d.handle.readToBlocksAt)
@@ -671,7 +672,7 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 
 	// Constrain translations to d.size (rounded up) to prevent translation to
 	// pages that may be concurrently truncated.
-	pgend := pageRoundUp(d.size)
+	pgend, _ := usermem.PageRoundUp(d.size)
 	var beyondEOF bool
 	if required.End > pgend {
 		if required.Start >= pgend {
@@ -818,43 +819,15 @@ type dentryPlatformFile struct {
 // IncRef implements platform.File.IncRef.
 func (d *dentryPlatformFile) IncRef(fr platform.FileRange) {
 	d.dataMu.Lock()
-	seg, gap := d.fdRefs.Find(fr.Start)
-	for {
-		switch {
-		case seg.Ok() && seg.Start() < fr.End:
-			seg = d.fdRefs.Isolate(seg, fr)
-			seg.SetValue(seg.Value() + 1)
-			seg, gap = seg.NextNonEmpty()
-		case gap.Ok() && gap.Start() < fr.End:
-			newRange := gap.Range().Intersect(fr)
-			usage.MemoryAccounting.Inc(newRange.Length(), usage.Mapped)
-			seg, gap = d.fdRefs.InsertWithoutMerging(gap, newRange, 1).NextNonEmpty()
-		default:
-			d.fdRefs.MergeAdjacent(fr)
-			d.dataMu.Unlock()
-			return
-		}
-	}
+	d.fdRefs.IncRefAndAccount(fr)
+	d.dataMu.Unlock()
 }
 
 // DecRef implements platform.File.DecRef.
 func (d *dentryPlatformFile) DecRef(fr platform.FileRange) {
 	d.dataMu.Lock()
-	seg := d.fdRefs.FindSegment(fr.Start)
-
-	for seg.Ok() && seg.Start() < fr.End {
-		seg = d.fdRefs.Isolate(seg, fr)
-		if old := seg.Value(); old == 1 {
-			usage.MemoryAccounting.Dec(seg.Range().Length(), usage.Mapped)
-			seg = d.fdRefs.Remove(seg).NextSegment()
-		} else {
-			seg.SetValue(old - 1)
-			seg = seg.NextSegment()
-		}
-	}
-	d.fdRefs.MergeAdjacent(fr)
+	d.fdRefs.DecRefAndAccount(fr)
 	d.dataMu.Unlock()
-
 }
 
 // MapInternal implements platform.File.MapInternal.

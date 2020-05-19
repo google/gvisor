@@ -106,3 +106,20 @@ func (ar AddrRange) IsPageAligned() bool {
 func (ar AddrRange) String() string {
 	return fmt.Sprintf("[%#x, %#x)", ar.Start, ar.End)
 }
+
+// PageRoundDown/Up are equivalent to Addr.RoundDown/Up, but without the
+// potentially truncating conversion from uint64 to Addr. This is necessary
+// because there is no way to define generic "PageRoundDown/Up" functions in Go.
+
+// PageRoundDown returns x rounded down to the nearest page boundary.
+func PageRoundDown(x uint64) uint64 {
+	return x &^ (PageSize - 1)
+}
+
+// PageRoundUp returns x rounded up to the nearest page boundary.
+// ok is true iff rounding up did not wrap around.
+func PageRoundUp(x uint64) (addr uint64, ok bool) {
+	addr = PageRoundDown(x + PageSize - 1)
+	ok = addr >= x
+	return
+}
