@@ -421,6 +421,7 @@ func TestPipeHangup(t *testing.T) {
 			hangupSelf: true,
 		},
 	} {
+		test := test // re-create a local copy to avoid data race in the goroutine below
 		if test.flags.Read == test.flags.Write {
 			t.Errorf("%s: test requires a single reader or writer", test.desc)
 			continue
