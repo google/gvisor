@@ -17,13 +17,13 @@
 set -eo pipefail
 
 # Build the :gopath target.
-bazel build //:gopath
+make build TARGETS=":gopath"
 declare -r gopathdir="bazel-bin/gopath/src/gvisor.dev/gvisor/"
 
 # Copy go.mod and execute the command.
 cp -a go.mod go.sum "${gopathdir}"
-(cd "${gopathdir}" && go mod "$@")
+(cd "${gopathdir}" && go "$@")
 cp -a "${gopathdir}/go.mod" "${gopathdir}/go.sum" .
 
 # Cleanup the WORKSPACE file.
-bazel run //:gazelle -- update-repos -from_file=go.mod
+make run TARGETS=":gazelle" ARGS="update-repos -from_file=go.mod"
