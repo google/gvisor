@@ -38,6 +38,8 @@ import (
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
+const test = "foo"
+
 var (
 	// Although these flags are not part of the OCI spec, they are used by
 	// Docker, and thus should not be changed.
