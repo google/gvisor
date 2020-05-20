@@ -90,10 +90,7 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 		isTTY:      opts.IsTTY,
 		wouldBlock: wouldBlock(uint32(fileType)),
 		seekable:   seekable,
-		// For simplicity, set offset to 0. Technically, we should use the existing
-		// offset on the host if the file is seekable.
-		offset: 0,
-		canMap: canMap(uint32(fileType)),
+		canMap:     canMap(uint32(fileType)),
 	}
 	i.pf.inode = i
 
@@ -118,6 +115,10 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 
 	// i.open will take a reference on d.
 	defer d.DecRef()
+
+	// For simplicity, fileDescription.offset is set to 0. Technically, we
+	// should only set to 0 on files that are not seekable (sockets, pipes,
+	// etc.), and use the offset from the host fd otherwise when importing.
 	return i.open(ctx, d.VFSDentry(), mnt, flags)
 }
 
@@ -206,13 +207,6 @@ type inode struct {
 	//
 	// This field is initialized at creation time and is immutable.
 	seekable bool
-
-	// offsetMu protects offset.
-	offsetMu sync.Mutex
-
-	// offset specifies the current file offset. It is only meaningful when
-	// seekable is true.
-	offset int64
 
 	// wouldBlock is true if the host FD would return EWOULDBLOCK for
 	// operations that would block.
@@ -491,9 +485,6 @@ func (i *inode) open(ctx context.Context, d *vfs.Dentry, mnt *vfs.Mount, flags u
 		return vfsfd, nil
 	}
 
-	// For simplicity, set offset to 0. Technically, we should
-	// only set to 0 on files that are not seekable (sockets, pipes, etc.),
-	// and use the offset from the host fd otherwise.
 	fd := &fileDescription{inode: i}
 	vfsfd := &fd.vfsfd
 	if err := vfsfd.Init(fd, flags, mnt, d, &vfs.FileDescriptionOptions{}); err != nil {
@@ -514,6 +505,13 @@ type fileDescription struct {
 	//
 	// inode is immutable after fileDescription creation.
 	inode *inode
+
+	// offsetMu protects offset.
+	offsetMu sync.Mutex
+
+	// offset specifies the current file offset. It is only meaningful when
+	// inode.seekable is true.
+	offset int64
 }
 
 // SetStat implements vfs.FileDescriptionImpl.
@@ -559,10 +557,10 @@ func (f *fileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts
 		return n, err
 	}
 	// TODO(gvisor.dev/issue/1672): Cache pages, when forced to do so.
-	i.offsetMu.Lock()
-	n, err := readFromHostFD(ctx, i.hostFD, dst, i.offset, opts.Flags)
-	i.offset += n
-	i.offsetMu.Unlock()
+	f.offsetMu.Lock()
+	n, err := readFromHostFD(ctx, i.hostFD, dst, f.offset, opts.Flags)
+	f.offset += n
+	f.offsetMu.Unlock()
 	return n, err
 }
 
@@ -599,10 +597,10 @@ func (f *fileDescription) Write(ctx context.Context, src usermem.IOSequence, opt
 	}
 	// TODO(gvisor.dev/issue/1672): Cache pages, when forced to do so.
 	// TODO(gvisor.dev/issue/1672): Write to end of file and update offset if O_APPEND is set on this file.
-	i.offsetMu.Lock()
-	n, err := writeToHostFD(ctx, i.hostFD, src, i.offset, opts.Flags)
-	i.offset += n
-	i.offsetMu.Unlock()
+	f.offsetMu.Lock()
+	n, err := writeToHostFD(ctx, i.hostFD, src, f.offset, opts.Flags)
+	f.offset += n
+	f.offsetMu.Unlock()
 	return n, err
 }
 
@@ -627,41 +625,41 @@ func (f *fileDescription) Seek(_ context.Context, offset int64, whence int32) (i
 		return 0, syserror.ESPIPE
 	}
 
-	i.offsetMu.Lock()
-	defer i.offsetMu.Unlock()
+	f.offsetMu.Lock()
+	defer f.offsetMu.Unlock()
 
 	switch whence {
 	case linux.SEEK_SET:
 		if offset < 0 {
-			return i.offset, syserror.EINVAL
+			return f.offset, syserror.EINVAL
 		}
-		i.offset = offset
+		f.offset = offset
 
 	case linux.SEEK_CUR:
-		// Check for overflow. Note that underflow cannot occur, since i.offset >= 0.
-		if offset > math.MaxInt64-i.offset {
-			return i.offset, syserror.EOVERFLOW
+		// Check for overflow. Note that underflow cannot occur, since f.offset >= 0.
+		if offset > math.MaxInt64-f.offset {
+			return f.offset, syserror.EOVERFLOW
 		}
-		if i.offset+offset < 0 {
-			return i.offset, syserror.EINVAL
+		if f.offset+offset < 0 {
+			return f.offset, syserror.EINVAL
 		}
-		i.offset += offset
+		f.offset += offset
 
 	case linux.SEEK_END:
 		var s syscall.Stat_t
 		if err := syscall.Fstat(i.hostFD, &s); err != nil {
-			return i.offset, err
+			return f.offset, err
 		}
 		size := s.Size
 
 		// Check for overflow. Note that underflow cannot occur, since size >= 0.
 		if offset > math.MaxInt64-size {
-			return i.offset, syserror.EOVERFLOW
+			return f.offset, syserror.EOVERFLOW
 		}
 		if size+offset < 0 {
-			return i.offset, syserror.EINVAL
+			return f.offset, syserror.EINVAL
 		}
-		i.offset = size + offset
+		f.offset = size + offset
 
 	case linux.SEEK_DATA, linux.SEEK_HOLE:
 		// Modifying the offset in the host file table should not matter, since
@@ -670,16 +668,16 @@ func (f *fileDescription) Seek(_ context.Context, offset int64, whence int32) (i
 		// For reading and writing, we always rely on our internal offset.
 		n, err := unix.Seek(i.hostFD, offset, int(whence))
 		if err != nil {
-			return i.offset, err
+			return f.offset, err
 		}
-		i.offset = n
+		f.offset = n
 
 	default:
 		// Invalid whence.
-		return i.offset, syserror.EINVAL
+		return f.offset, syserror.EINVAL
 	}
 
-	return i.offset, nil
+	return f.offset, nil
 }
 
 // Sync implements FileDescriptionImpl.
