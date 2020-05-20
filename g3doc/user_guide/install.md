@@ -150,11 +150,8 @@ users, and ensure it is executable by all users**, since `runsc` executes itself
 as user `nobody` to avoid unnecessary privileges. The `/usr/local/bin` directory
 is a good place to put the `runsc` binary.
 
-After installation, the`runsc` binary comes with an `install` command that can
-optionally automatically configure Docker:
-
-```bash
-runsc install
-```
+After installation, try out `runsc` by following the
+[Docker Quick Start](./quick_start/docker.md) or
+[OCI Quick Start](./quick_start/oci.md).
 
 [releases]: https://github.com/google/gvisor/releases
