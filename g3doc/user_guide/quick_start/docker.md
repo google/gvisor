@@ -14,24 +14,28 @@ the next section and proceed straight to running a container.
 ## Configuring Docker
 
 First you will need to configure Docker to use `runsc` by adding a runtime entry
-to your Docker configuration (`/etc/docker/daemon.json`). You may have to create
-this file if it does not exist. Also, some Docker versions also require you to
-[specify the `storage-driver` field][storage-driver].
+to your Docker configuration (e.g. `/etc/docker/daemon.json`). The easiest way
+to this is via the `runsc install` command. This will install a docker runtime
+named "runsc" by default.
 
-In the end, the file should look something like:
-
-```json
-{
-    "runtimes": {
-        "runsc": {
-            "path": "/usr/local/bin/runsc"
-        }
-    }
-}
+```bash
+sudo runsc install
 ```
 
-You must restart the Docker daemon after making changes to this file, typically
-this is done via `systemd`:
+You may also wish to install a runtime entry for debugging. The `runsc install`
+command can accept options that will be passed to the runtime when it is invoked
+by Docker.
+
+```bash
+sudo runsc install --runtime runsc-debug -- \
+  --debug \
+  --debug-log=/tmp/runsc-debug.log \
+  --strace \
+  --log-packets
+```
+
+You must restart the Docker daemon after installing the runtime. Typically this
+is done via `systemd`:
 
 ```bash
 sudo systemctl restart docker
