@@ -16,7 +16,7 @@
 
 set -xeo pipefail
 
-declare -r BAZEL_VERSION=2.0.0
+declare -r BAZEL_VERSION=3.1.0
 
 # Install bazel dependencies.
 while true; do
