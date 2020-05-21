@@ -5,6 +5,8 @@ package(licenses = ["notice"])
 go_library(
     name = "linewriter",
     srcs = ["linewriter.go"],
+    marshal = False,
+    stateify = False,
     visibility = ["//visibility:public"],
     deps = ["//pkg/sync"],
 )
