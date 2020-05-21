@@ -220,6 +220,7 @@ constexpr char kKVM[] = "kvm";
 bool IsRunningOnGvisor();
 const std::string GvisorPlatform();
 bool IsRunningWithHostinet();
+bool IsRunningWithVFS1();
 
 #ifdef __linux__
 void SetupGvisorDeathTest();
