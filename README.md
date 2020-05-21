@@ -74,7 +74,7 @@ make tests
 To run specific tests, you can specify the target:
 
 ```
-make test TARGET="//runsc:version_test"
+make test TARGETS="//runsc:version_test"
 ```
 
 ### Using `go get`
