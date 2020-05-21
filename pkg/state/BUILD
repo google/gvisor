@@ -47,6 +47,7 @@ go_library(
         "state.go",
         "stats.go",
     ],
+    marshal = False,
     stateify = False,
     visibility = ["//:sandbox"],
     deps = [

@@ -39,6 +39,8 @@ go_library(
         "seqcount.go",
         "sync.go",
     ],
+    marshal = False,
+    stateify = False,
 )
 
 go_test(
