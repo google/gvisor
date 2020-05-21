@@ -223,7 +223,9 @@ func main() {
 		} else {
 			switch kind {
 			case globals.KindType, globals.KindVar, globals.KindConst, globals.KindFunction:
-				ident.Name = *prefix + ident.Name + *suffix
+				if ident.Name != "_" {
+					ident.Name = *prefix + ident.Name + *suffix
+				}
 			case globals.KindTag:
 				// Modify the state tag appropriately.
 				if m := stateTagRegexp.FindStringSubmatch(ident.Name); m != nil {

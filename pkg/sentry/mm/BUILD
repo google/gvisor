@@ -25,6 +25,7 @@ go_template_instance(
     out = "vma_set.go",
     consts = {
         "minDegree": "8",
+        "trackGaps": "1",
     },
     imports = {
         "usermem": "gvisor.dev/gvisor/pkg/usermem",
