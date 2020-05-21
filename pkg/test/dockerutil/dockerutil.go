@@ -162,9 +162,13 @@ type Docker struct {
 //
 // Names of containers will be unique.
 func MakeDocker(logger testutil.Logger) *Docker {
+	// Slashes are not allowed in container names.
+	name := testutil.RandomID(logger.Name())
+	name = strings.ReplaceAll(name, "/", "-")
+
 	return &Docker{
 		logger:  logger,
-		Name:    testutil.RandomID(logger.Name()),
+		Name:    name,
 		Runtime: *runtime,
 	}
 }
