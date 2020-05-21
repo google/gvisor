@@ -62,9 +62,7 @@ TEST(SocketTest, ProtocolInet) {
 }
 
 TEST(SocketTest, UnixSocketStat) {
-  // TODO(gvisor.dev/issue/1624): Re-enable this test once VFS1 is deleted. It
-  // should pass in VFS2.
-  SKIP_IF(IsRunningOnGvisor());
+  SKIP_IF(IsRunningWithVFS1());
 
   FileDescriptor bound =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));
@@ -94,9 +92,7 @@ TEST(SocketTest, UnixSocketStat) {
 }
 
 TEST(SocketTest, UnixConnectNeedsWritePerm) {
-  // TODO(gvisor.dev/issue/1624): Re-enable this test once VFS1 is deleted. It
-  // should succeed in VFS2.
-  SKIP_IF(IsRunningOnGvisor());
+  SKIP_IF(IsRunningWithVFS1());
 
   FileDescriptor bound =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));
@@ -128,10 +124,7 @@ using SocketOpenTest = ::testing::TestWithParam<int>;
 // UDS cannot be opened.
 TEST_P(SocketOpenTest, Unix) {
   // FIXME(b/142001530): Open incorrectly succeeds on gVisor.
-  //
-  // TODO(gvisor.dev/issue/1624): Re-enable this test once VFS1 is deleted. It
-  // should succeed in VFS2.
-  SKIP_IF(IsRunningOnGvisor());
+  SKIP_IF(IsRunningWithVFS1());
 
   FileDescriptor bound =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));
