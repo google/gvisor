@@ -31,6 +31,7 @@ DOCKER_SOCKET := /var/run/docker.sock
 UID := $(shell id -u ${USER})
 GID := $(shell id -g ${USER})
 USERADD_OPTIONS :=
+DOCKER_GROUPADD :=
 FULL_DOCKER_RUN_OPTIONS := $(DOCKER_RUN_OPTIONS)
 FULL_DOCKER_RUN_OPTIONS += -v "$(BAZEL_CACHE):$(BAZEL_CACHE)"
 FULL_DOCKER_RUN_OPTIONS += -v "$(GCLOUD_CONFIG):$(GCLOUD_CONFIG)"
@@ -40,6 +41,7 @@ FULL_DOCKER_RUN_OPTIONS += -v "$(DOCKER_SOCKET):$(DOCKER_SOCKET)"
 DOCKER_GROUP := $(shell stat -c '%g' $(DOCKER_SOCKET))
 ifneq ($(GID),$(DOCKER_GROUP))
 USERADD_OPTIONS += --groups $(DOCKER_GROUP)
+DOCKER_GROUPADD += groupadd --gid $(DOCKER_GROUP) --non-unique docker &&
 FULL_DOCKER_RUN_OPTIONS += --group-add $(DOCKER_GROUP)
 endif
 endif
@@ -70,7 +72,7 @@ bazel-server-start: load-default ## Starts the bazel server.
 		--entrypoint "" \
 		$(FULL_DOCKER_RUN_OPTIONS) \
 		gvisor.dev/images/default \
-		sh -c "groupadd --gid $(GID) --non-unique $(USER) && \
+		sh -c "groupadd --gid $(GID) --non-unique $(USER) && $(DOCKER_GROUPADD) \
 		       useradd --uid $(UID) --non-unique --no-create-home --gid $(GID) $(USERADD_OPTIONS) -d $(HOME) $(USER) && \
 	               bazel version && \
 		       exec tail --pid=\$$(bazel info server_pid) -f /dev/null"
