@@ -337,27 +337,53 @@ func TestJobControl(t *testing.T) {
 	}
 }
 
-// TestTmpFile checks that files inside '/tmp' are not overridden. In addition,
-// it checks that working dir is created if it doesn't exit.
+// TestWorkingDirCreation checks that working dir is created if it doesn't exit.
+func TestWorkingDirCreation(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		workingDir string
+	}{
+		{name: "root", workingDir: "/foo"},
+		{name: "tmp", workingDir: "/tmp/foo"},
+	} {
+		for _, readonly := range []bool{true, false} {
+			name := tc.name
+			if readonly {
+				name += "-readonly"
+			}
+			t.Run(name, func(t *testing.T) {
+				d := dockerutil.MakeDocker(t)
+				defer d.CleanUp()
+
+				opts := dockerutil.RunOpts{
+					Image:    "basic/alpine",
+					WorkDir:  tc.workingDir,
+					ReadOnly: readonly,
+				}
+				got, err := d.Run(opts, "sh", "-c", "echo ${PWD}")
+				if err != nil {
+					t.Fatalf("docker run failed: %v", err)
+				}
+				if want := tc.workingDir + "\n"; want != got {
+					t.Errorf("invalid working dir, want: %q, got: %q", want, got)
+				}
+			})
+		}
+	}
+}
+
+// TestTmpFile checks that files inside '/tmp' are not overridden.
 func TestTmpFile(t *testing.T) {
 	d := dockerutil.MakeDocker(t)
 	defer d.CleanUp()
 
-	// Should work without ReadOnly
-	if _, err := d.Run(dockerutil.RunOpts{
-		Image:   "basic/alpine",
-		WorkDir: "/tmp/foo/bar",
-	}, "touch", "/tmp/foo/bar/file"); err != nil {
+	opts := dockerutil.RunOpts{Image: "tmpfile"}
+	got, err := d.Run(opts, "cat", "/tmp/foo/file.txt")
+	if err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
-
-	// Expect failure.
-	if _, err := d.Run(dockerutil.RunOpts{
-		Image:    "basic/alpine",
-		WorkDir:  "/tmp/foo/bar",
-		ReadOnly: true,
-	}, "touch", "/tmp/foo/bar/file"); err == nil {
-		t.Fatalf("docker run expected failure, but succeeded")
+	if want := "123\n"; want != got {
+		t.Errorf("invalid file content, want: %q, got: %q", want, got)
 	}
 }
 
