@@ -36,22 +36,22 @@ const (
 // ARP is an ARP packet stored in a byte array as described in RFC 826.
 type ARP []byte
 
-func (a ARP) hardwareAddressSpace() uint16 { return uint16(a[0])<<8 | uint16(a[1]) }
-func (a ARP) protocolAddressSpace() uint16 { return uint16(a[2])<<8 | uint16(a[3]) }
-func (a ARP) hardwareAddressSize() int     { return int(a[4]) }
-func (a ARP) protocolAddressSize() int     { return int(a[5]) }
+func (a *ARP) hardwareAddressSpace() uint16 { return uint16(a[0])<<8 | uint16(a[1]) }
+func (a *ARP) protocolAddressSpace() uint16 { return uint16(a[2])<<8 | uint16(a[3]) }
+func (a *ARP) hardwareAddressSize() int     { return int(a[4]) }
+func (a *ARP) protocolAddressSize() int     { return int(a[5]) }
 
 // Op is the ARP opcode.
-func (a ARP) Op() ARPOp { return ARPOp(a[6])<<8 | ARPOp(a[7]) }
+func (a *ARP) Op() ARPOp { return ARPOp(a[6])<<8 | ARPOp(a[7]) }
 
 // SetOp sets the ARP opcode.
-func (a ARP) SetOp(op ARPOp) {
+func (a *ARP) SetOp(op ARPOp) {
 	a[6] = uint8(op >> 8)
 	a[7] = uint8(op)
 }
 
 // SetIPv4OverEthernet configures the ARP packet for IPv4-over-Ethernet.
-func (a ARP) SetIPv4OverEthernet() {
+func (a *ARP) SetIPv4OverEthernet() {
 	a[0], a[1] = 0, 1       // htypeEthernet
 	a[2], a[3] = 0x08, 0x00 // IPv4ProtocolNumber
 	a[4] = 6                // macSize
@@ -60,34 +60,34 @@ func (a ARP) SetIPv4OverEthernet() {
 
 // HardwareAddressSender is the link address of the sender.
 // It is a view on to the ARP packet so it can be used to set the value.
-func (a ARP) HardwareAddressSender() []byte {
+func (a *ARP) HardwareAddressSender() []byte {
 	const s = 8
 	return a[s : s+6]
 }
 
 // ProtocolAddressSender is the protocol address of the sender.
 // It is a view on to the ARP packet so it can be used to set the value.
-func (a ARP) ProtocolAddressSender() []byte {
+func (a *ARP) ProtocolAddressSender() []byte {
 	const s = 8 + 6
 	return a[s : s+4]
 }
 
 // HardwareAddressTarget is the link address of the target.
 // It is a view on to the ARP packet so it can be used to set the value.
-func (a ARP) HardwareAddressTarget() []byte {
+func (a *ARP) HardwareAddressTarget() []byte {
 	const s = 8 + 6 + 4
 	return a[s : s+6]
 }
 
 // ProtocolAddressTarget is the protocol address of the target.
 // It is a view on to the ARP packet so it can be used to set the value.
-func (a ARP) ProtocolAddressTarget() []byte {
+func (a *ARP) ProtocolAddressTarget() []byte {
 	const s = 8 + 6 + 4 + 6
 	return a[s : s+4]
 }
 
 // IsValid reports whether this is an ARP packet for IPv4 over Ethernet.
-func (a ARP) IsValid() bool {
+func (a *ARP) IsValid() bool {
 	if len(a) < ARPSize {
 		return false
 	}
