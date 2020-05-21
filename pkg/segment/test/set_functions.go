@@ -14,21 +14,16 @@
 
 package segment
 
-// Basic numeric constants that we define because the math package doesn't.
-// TODO(nlacasse): These should be Math.MaxInt64/MinInt64?
-const (
-	maxInt = int(^uint(0) >> 1)
-	minInt = -maxInt - 1
-)
-
 type setFunctions struct{}
 
-func (setFunctions) MinKey() int {
-	return minInt
+// MinKey returns the minimum key for the set.
+func (s setFunctions) MinKey() int {
+	return -s.MaxKey() - 1
 }
 
+// MaxKey returns the maximum key for the set.
 func (setFunctions) MaxKey() int {
-	return maxInt
+	return int(^uint(0) >> 1)
 }
 
 func (setFunctions) ClearValue(*int) {}
@@ -39,4 +34,21 @@ func (setFunctions) Merge(_ Range, val1 int, _ Range, _ int) (int, bool) {
 
 func (setFunctions) Split(_ Range, val int, _ int) (int, int) {
 	return val, val
+}
+
+type gapSetFunctions struct {
+	setFunctions
+}
+
+// MinKey is adjusted to make sure no add overflow would happen in test cases.
+// e.g. A gap with range {MinInt32, 2} would cause overflow in Range().Length().
+//
+// Normally Keys should be unsigned to avoid these issues.
+func (s gapSetFunctions) MinKey() int {
+	return s.setFunctions.MinKey() / 2
+}
+
+// MaxKey returns the maximum key for the set.
+func (s gapSetFunctions) MaxKey() int {
+	return s.setFunctions.MaxKey() / 2
 }
