@@ -1142,7 +1142,9 @@ TEST_P(UdpSocketTest, FIONREADWriteShutdown) {
   EXPECT_EQ(n, sizeof(str));
 }
 
-TEST_P(UdpSocketTest, FIONREAD) {
+// NOTE: Do not use `FIONREAD` as test name because it will be replaced by the
+// corresponding macro and become `0x541B`.
+TEST_P(UdpSocketTest, Fionread) {
   // Bind s_ to loopback:TestPort.
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
 
