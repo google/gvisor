@@ -88,6 +88,12 @@ EOF
 # because they may correspond to unused templates, etc.
 cp "${repo_orig}"/runsc/*.go runsc/
 
+# Normalize all permissions. The way bazel constructs the :gopath tree may leave
+# some strange permissions on files. We don't have anything in this tree that
+# should be execution, only the Go source files, README.md, and ${othersrc}.
+find . -type f -exec chmod 0644 {} \;
+find . -type d -exec chmod 0755 {} \;
+
 # Update the current working set and commit.
 git add . && git commit -m "Merge ${head} (automated)"
 
