@@ -421,7 +421,6 @@ func TestPipeHangup(t *testing.T) {
 			hangupSelf: true,
 		},
 	} {
-		test := test // re-create a local copy to avoid data race in the goroutine below
 		if test.flags.Read == test.flags.Write {
 			t.Errorf("%s: test requires a single reader or writer", test.desc)
 			continue
@@ -440,7 +439,7 @@ func TestPipeHangup(t *testing.T) {
 		// fd once we expect this partner routine to succeed, so we can manifest
 		// hangup events more directly.
 		fdchan := make(chan int, 1)
-		go func() {
+		go func(test interface{}) {
 			// Be explicit about the flags to protect the test from
 			// misconfiguration.
 			var flags int
@@ -454,7 +453,7 @@ func TestPipeHangup(t *testing.T) {
 				t.Logf("Open(%q, %o, 0666) partner failed: %v", name, flags, err)
 			}
 			fdchan <- fd
-		}()
+		}(test)
 
 		// Open our end in a blocking way to ensure that we coordinate.
 		opener := &hostOpener{name: name}
