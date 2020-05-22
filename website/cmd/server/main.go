@@ -31,6 +31,7 @@ var redirects = map[string]string{
 	"/issue":     "https://github.com/google/gvisor/issues",
 	"/issue/new": "https://github.com/google/gvisor/issues/new",
 	"/pr":        "https://github.com/google/gvisor/pulls",
+	"/images":    "https://github.com/google/gvisor/tree/master/images",
 
 	// For links.
 	"/faq": "/docs/user_guide/faq/",
@@ -57,6 +58,7 @@ var prefixHelpers = map[string]string{
 	"change": "https://github.com/google/gvisor/commit/%s",
 	"issue":  "https://github.com/google/gvisor/issues/%s",
 	"pr":     "https://github.com/google/gvisor/pull/%s",
+	"images": "https://github.com/google/gvisor/tree/master/images/%s",
 
 	// Redirects to compatibility docs.
 	"c/linux/amd64": "/docs/user_guide/compatibility/linux/amd64/#%s",
