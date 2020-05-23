@@ -52,7 +52,7 @@ func New(k *kernel.Kernel, period time.Duration) *MemoryEvents {
 	return &MemoryEvents{
 		k:      k,
 		period: period,
-		stop:   make(chan struct{}),
+		stop:   make(chan struct{}, 1),
 	}
 }
 
