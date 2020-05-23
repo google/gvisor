@@ -186,6 +186,7 @@ func (t *Timekeeper) startUpdater() {
 	timer := time.NewTicker(sentrytime.ApproxUpdateInterval)
 	t.wg.Add(1)
 	go func() { // S/R-SAFE: stopped during save.
+		defer t.wg.Done()
 		for {
 			// Start with an update immediately, so the clocks are
 			// ready ASAP.
@@ -220,7 +221,6 @@ func (t *Timekeeper) startUpdater() {
 			select {
 			case <-timer.C:
 			case <-t.stop:
-				t.wg.Done()
 				return
 			}
 		}
