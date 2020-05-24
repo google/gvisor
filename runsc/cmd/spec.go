@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -24,7 +25,8 @@ import (
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
-var specTemplate = []byte(`{
+func genSpec(cwd string) []byte {
+	var template = fmt.Sprintf(`{
 	"ociVersion": "1.0.0",
 	"process": {
 		"terminal": true,
@@ -39,7 +41,7 @@ var specTemplate = []byte(`{
 			"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 			"TERM=xterm"
 		],
-		"cwd": "/",
+		"cwd": "%s",
 		"capabilities": {
 			"bounding": [
 				"CAP_AUDIT_WRITE",
@@ -123,11 +125,15 @@ var specTemplate = []byte(`{
 			}
 		]
 	}
-}`)
+}`, cwd)
+
+	return []byte(template)
+}
 
 // Spec implements subcommands.Command for the "spec" command.
 type Spec struct {
 	bundle string
+	cwd    string
 }
 
 // Name implements subcommands.Command.Name.
@@ -165,6 +171,8 @@ EXAMPLE:
 // SetFlags implements subcommands.Command.SetFlags.
 func (s *Spec) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&s.bundle, "bundle", ".", "path to the root of the OCI bundle")
+	f.StringVar(&s.cwd, "cwd", "/", "working directory that will be set for the executable, "+
+		"this value MUST be an absolute path")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -174,7 +182,9 @@ func (s *Spec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		Fatalf("file %q already exists", confPath)
 	}
 
-	if err := ioutil.WriteFile(confPath, specTemplate, 0664); err != nil {
+	var spec = genSpec(s.cwd)
+
+	if err := ioutil.WriteFile(confPath, spec, 0664); err != nil {
 		Fatalf("writing to %q: %v", confPath, err)
 	}
 
