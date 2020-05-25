@@ -16,15 +16,18 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
-var specTemplate = []byte(`{
+var specTemplate = `{
 	"ociVersion": "1.0.0",
 	"process": {
 		"terminal": true,
@@ -33,13 +36,13 @@ var specTemplate = []byte(`{
 			"gid": 0
 		},
 		"args": [
-			"sh"
+			%s
 		],
 		"env": [
 			"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 			"TERM=xterm"
 		],
-		"cwd": "/",
+		"cwd": "%s",
 		"capabilities": {
 			"bounding": [
 				"CAP_AUDIT_WRITE",
@@ -123,11 +126,13 @@ var specTemplate = []byte(`{
 			}
 		]
 	}
-}`)
+}`
 
 // Spec implements subcommands.Command for the "spec" command.
 type Spec struct {
 	bundle string
+	cwd    string
+	cmd    string
 }
 
 // Name implements subcommands.Command.Name.
@@ -154,9 +159,8 @@ https://github.com/opencontainers/runtime-spec/
 EXAMPLE:
     $ mkdir -p bundle/rootfs
     $ cd bundle
-    $ runsc spec
+    $ runsc spec -cmd /hello or runsc spec -cmd "<cmd>" -cwd "<cwd>"
     $ docker export $(docker create hello-world) | tar -xf - -C rootfs
-    $ sed -i 's;"sh";"/hello";' config.json
     $ sudo runsc run hello
 
 `
@@ -165,6 +169,8 @@ EXAMPLE:
 // SetFlags implements subcommands.Command.SetFlags.
 func (s *Spec) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&s.bundle, "bundle", ".", "path to the root of the OCI bundle")
+	f.StringVar(&s.cwd, "cwd", "/", "working directory that will be set for the executable")
+	f.StringVar(&s.cmd, "cmd", "sh", "command to execute at container start")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -174,7 +180,17 @@ func (s *Spec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		Fatalf("file %q already exists", confPath)
 	}
 
-	if err := ioutil.WriteFile(confPath, specTemplate, 0664); err != nil {
+	// convert cmd string to comma seperated arg list
+	cargs := strings.Split(s.cmd, " ")
+	for i, arg := range cargs {
+		cargs[i] = strconv.Quote(arg)
+	}
+	cmdArgs := strings.Join(cargs, ",\n\t\t\t")
+
+	// substitute cmd and cwd variables in the template
+	specTemplate = fmt.Sprintf(specTemplate, cmdArgs, s.cwd)
+
+	if err := ioutil.WriteFile(confPath, []byte(specTemplate), 0664); err != nil {
 		Fatalf("writing to %q: %v", confPath, err)
 	}
 
