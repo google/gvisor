@@ -266,11 +266,11 @@ func (fs *Filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 		return nil, err
 	}
 
+	d := vfsd.Impl().(*Dentry)
+	if (opts.CheckIsDir || opts.CheckSearchable) && !d.isDir() {
+		return nil, syserror.ENOTDIR
+	}
 	if opts.CheckSearchable {
-		d := vfsd.Impl().(*Dentry)
-		if !d.isDir() {
-			return nil, syserror.ENOTDIR
-		}
 		if err := inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayExec); err != nil {
 			return nil, err
 		}

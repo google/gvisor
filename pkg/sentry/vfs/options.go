@@ -22,9 +22,12 @@ import (
 // GetDentryOptions contains options to VirtualFilesystem.GetDentryAt() and
 // FilesystemImpl.GetDentryAt().
 type GetDentryOptions struct {
+	// If CheckIsDir is true, FilesystemImpl.GetDentryAt() must check that the
+	// returned Dentry is a directory.
+	CheckIsDir bool
+
 	// If CheckSearchable is true, FilesystemImpl.GetDentryAt() must check that
-	// the returned Dentry is a directory for which creds has search
-	// permission.
+	// the returned Dentry is a directory for which creds has search permission.
 	CheckSearchable bool
 }
 

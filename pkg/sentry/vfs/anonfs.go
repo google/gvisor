@@ -103,7 +103,7 @@ func (fs *anonFilesystem) GetDentryAt(ctx context.Context, rp *ResolvingPath, op
 	if !rp.Done() {
 		return nil, syserror.ENOTDIR
 	}
-	if opts.CheckSearchable {
+	if opts.CheckIsDir || opts.CheckSearchable {
 		return nil, syserror.ENOTDIR
 	}
 	// anonDentry no-ops refcounting.

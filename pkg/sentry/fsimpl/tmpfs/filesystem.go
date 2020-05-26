@@ -200,10 +200,10 @@ func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 	if err != nil {
 		return nil, err
 	}
+	if (opts.CheckIsDir || opts.CheckSearchable) && !d.inode.isDir() {
+		return nil, syserror.ENOTDIR
+	}
 	if opts.CheckSearchable {
-		if !d.inode.isDir() {
-			return nil, syserror.ENOTDIR
-		}
 		if err := d.inode.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
 			return nil, err
 		}
