@@ -116,7 +116,7 @@ unit-tests: ## Runs all unit tests in pkg runsc and tools.
 .PHONY: unit-tests
 
 tests: ## Runs all local ptrace system call tests.
-	@$(MAKE) test OPTIONS="--test_tag_filter runsc_ptrace test/syscalls/..."
+	@$(MAKE) test OPTIONS="--test_tag_filters runsc_ptrace test/syscalls/..."
 .PHONY: tests
 
 ##
