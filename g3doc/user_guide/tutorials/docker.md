@@ -1,4 +1,4 @@
-# WorkPress with Docker
+# WordPress with Docker
 
 This page shows you how to deploy a sample [WordPress][wordpress] site using
 [Docker][docker].
