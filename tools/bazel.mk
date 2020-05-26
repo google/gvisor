@@ -21,7 +21,8 @@ BRANCH_NAME := $(shell (git branch --show-current 2>/dev/null || \
 
 # Bazel container configuration (see below).
 USER ?= gvisor
-DOCKER_NAME ?= gvisor-bazel-$(shell readlink -m $(CURDIR) | md5sum | cut -c1-8)
+HASH ?= $(shell readlink -m $(CURDIR) | md5sum | cut -c1-8)
+DOCKER_NAME ?= gvisor-bazel-$(HASH)
 DOCKER_PRIVILEGED ?= --privileged
 BAZEL_CACHE := $(shell readlink -m ~/.cache/bazel/)
 GCLOUD_CONFIG := $(shell readlink -m ~/.config/gcloud/)
@@ -40,6 +41,7 @@ FULL_DOCKER_RUN_OPTIONS += -v "$(DOCKER_SOCKET):$(DOCKER_SOCKET)"
 DOCKER_GROUP := $(shell stat -c '%g' $(DOCKER_SOCKET))
 ifneq ($(GID),$(DOCKER_GROUP))
 USERADD_OPTIONS += --groups $(DOCKER_GROUP)
+GROUPADD_DOCKER += groupadd --gid $(DOCKER_GROUP) --non-unique docker-$(HASH) &&
 FULL_DOCKER_RUN_OPTIONS += --group-add $(DOCKER_GROUP)
 endif
 endif
@@ -71,10 +73,12 @@ bazel-server-start: load-default ## Starts the bazel server.
 		$(FULL_DOCKER_RUN_OPTIONS) \
 		gvisor.dev/images/default \
 		sh -c "groupadd --gid $(GID) --non-unique $(USER) && \
+		       $(GROUPADD_DOCKER) \
 		       useradd --uid $(UID) --non-unique --no-create-home --gid $(GID) $(USERADD_OPTIONS) -d $(HOME) $(USER) && \
 	               bazel version && \
 		       exec tail --pid=\$$(bazel info server_pid) -f /dev/null"
-	@while :; do if docker logs $(DOCKER_NAME) 2>/dev/null | grep "Build label:" >/dev/null; then break; fi; sleep 1; done
+	@while :; do if docker logs $(DOCKER_NAME) 2>/dev/null | grep "Build label:" >/dev/null; then break; fi; \
+		if ! docker ps | grep $(DOCKER_NAME); then exit 1; else sleep 1; fi; done
 .PHONY: bazel-server-start
 
 bazel-shutdown: ## Shuts down a running bazel server.
