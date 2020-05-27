@@ -11,12 +11,10 @@ def _packetimpact_test_impl(ctx):
         # permission problems, because all runfiles may not be owned by the
         # current user, and no other users will be mapped in that namespace.
         # Make sure that everything is readable here.
-        "find . -type f -exec chmod a+rx {} \\;",
-        "find . -type d -exec chmod a+rx {} \\;",
-        "%s %s --posix_server_binary %s --testbench_binary %s $@\n" % (
+        "find . -type f -or -type d -exec chmod a+rx {} \\;",
+        "%s %s --testbench_binary %s $@\n" % (
             test_runner.short_path,
             " ".join(ctx.attr.flags),
-            ctx.files._posix_server_binary[0].short_path,
             ctx.files.testbench_binary[0].short_path,
         ),
     ])
@@ -38,7 +36,7 @@ _packetimpact_test = rule(
         "_test_runner": attr.label(
             executable = True,
             cfg = "target",
-            default = ":test_runner",
+            default = ":packetimpact_test",
         ),
         "_posix_server_binary": attr.label(
             cfg = "target",
@@ -69,6 +67,7 @@ def packetimpact_linux_test(
     Args:
         name: name of the test
         testbench_binary: the testbench binary
+        expect_failure: the test must fail
         **kwargs: all the other args, forwarded to _packetimpact_test
     """
     expect_failure_flag = ["--expect_failure"] if expect_failure else []
@@ -113,8 +112,8 @@ def packetimpact_go_test(name, size = "small", pure = True, expect_linux_failure
         name: name of the test
         size: size of the test
         pure: make a static go binary
-        expect_linux_failure: expect the test to fail for Linux
-        expect_netstack_failure: expect the test to fail for Netstack
+        expect_linux_failure: the test must fail for Linux
+        expect_netstack_failure: the test must fail for Netstack
         **kwargs: all the other args, forwarded to go_test
     """
     testbench_binary = name + "_test"

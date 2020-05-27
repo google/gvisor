@@ -16,7 +16,6 @@ package testbench
 
 import (
 	"encoding/binary"
-	"flag"
 	"fmt"
 	"math"
 	"net"
@@ -41,7 +40,6 @@ func htons(x uint16) uint16 {
 
 // NewSniffer creates a Sniffer connected to *device.
 func NewSniffer(t *testing.T) (Sniffer, error) {
-	flag.Parse()
 	snifferFd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, int(htons(unix.ETH_P_ALL)))
 	if err != nil {
 		return Sniffer{}, err
@@ -136,7 +134,6 @@ type Injector struct {
 
 // NewInjector creates a new injector on *device.
 func NewInjector(t *testing.T) (Injector, error) {
-	flag.Parse()
 	ifInfo, err := net.InterfaceByName(Device)
 	if err != nil {
 		return Injector{}, err
