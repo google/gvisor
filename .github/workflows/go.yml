@@ -19,6 +19,12 @@ jobs:
             "${{ github.event.pull_request.statuses_url }}"
       if: github.event_name == 'pull_request'
     - uses: actions/checkout@v2
+      if: github.event_name == 'push'
+      with:
+        fetch-depth: 0
+        token: '${{ secrets.GO_TOKEN }}'
+    - uses: actions/checkout@v2
+      if: github.event_name == 'pull_request'
       with:
         fetch-depth: 0
     - uses: actions/setup-go@v2
@@ -42,10 +48,6 @@ jobs:
     - run: go build ./...
     - if: github.event_name == 'push'
       run: |
-        # Required dedicated credentials for the Go branch, due to the way
-        # branch protection rules are configured.
-        git config --global credential.helper cache
-        echo -e "protocol=https\nhost=github.com\nusername=${{ secrets.GO_TOKEN }}\npassword=x-oauth-basic" | git credential approve
         git remote add upstream "https://github.com/${{ github.repository }}"
         git push upstream go:go
     - if: ${{ success() && github.event_name == 'pull_request' }}
