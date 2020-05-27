@@ -84,12 +84,6 @@ type filesystem struct {
 	// devMinor is the filesystem's minor device number. devMinor is immutable.
 	devMinor uint32
 
-	// uid and gid are the effective KUID and KGID of the filesystem's creator,
-	// and are used as the owner and group for files that don't specify one.
-	// uid and gid are immutable.
-	uid auth.KUID
-	gid auth.KGID
-
 	// renameMu serves two purposes:
 	//
 	// - It synchronizes path resolution with renaming initiated by this
@@ -122,6 +116,8 @@ type filesystemOptions struct {
 	fd      int
 	aname   string
 	interop InteropMode // derived from the "cache" mount option
+	dfltuid auth.KUID
+	dfltgid auth.KGID
 	msize   uint32
 	version string
 
@@ -230,6 +226,15 @@ type InternalFilesystemOptions struct {
 	OpenSocketsByConnecting bool
 }
 
+// _V9FS_DEFUID and _V9FS_DEFGID (from Linux's fs/9p/v9fs.h) are the default
+// UIDs and GIDs used for files that do not provide a specific owner or group
+// respectively.
+const (
+	// uint32(-2) doesn't work in Go.
+	_V9FS_DEFUID = auth.KUID(4294967294)
+	_V9FS_DEFGID = auth.KGID(4294967294)
+)
+
 // Name implements vfs.FilesystemType.Name.
 func (FilesystemType) Name() string {
 	return Name
@@ -313,6 +318,31 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid cache policy: cache=%s", cache)
 			return nil, nil, syserror.EINVAL
 		}
+	}
+
+	// Parse the default UID and GID.
+	fsopts.dfltuid = _V9FS_DEFUID
+	if dfltuidstr, ok := mopts["dfltuid"]; ok {
+		delete(mopts, "dfltuid")
+		dfltuid, err := strconv.ParseUint(dfltuidstr, 10, 32)
+		if err != nil {
+			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid default UID: dfltuid=%s", dfltuidstr)
+			return nil, nil, syserror.EINVAL
+		}
+		// In Linux, dfltuid is interpreted as a UID and is converted to a KUID
+		// in the caller's user namespace, but goferfs isn't
+		// application-mountable.
+		fsopts.dfltuid = auth.KUID(dfltuid)
+	}
+	fsopts.dfltgid = _V9FS_DEFGID
+	if dfltgidstr, ok := mopts["dfltgid"]; ok {
+		delete(mopts, "dfltgid")
+		dfltgid, err := strconv.ParseUint(dfltgidstr, 10, 32)
+		if err != nil {
+			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid default UID: dfltgid=%s", dfltgidstr)
+			return nil, nil, syserror.EINVAL
+		}
+		fsopts.dfltgid = auth.KGID(dfltgid)
 	}
 
 	// Parse the 9P message size.
@@ -422,8 +452,6 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		client:           client,
 		clock:            ktime.RealtimeClockFromContext(ctx),
 		devMinor:         devMinor,
-		uid:              creds.EffectiveKUID,
-		gid:              creds.EffectiveKGID,
 		syncableDentries: make(map[*dentry]struct{}),
 		specialFileFDs:   make(map[*specialFileFD]struct{}),
 	}
@@ -672,8 +700,8 @@ func (fs *filesystem) newDentry(ctx context.Context, file p9file, qid p9.QID, ma
 		file:      file,
 		ino:       qid.Path,
 		mode:      uint32(attr.Mode),
-		uid:       uint32(fs.uid),
-		gid:       uint32(fs.gid),
+		uid:       uint32(fs.opts.dfltuid),
+		gid:       uint32(fs.opts.dfltgid),
 		blockSize: usermem.PageSize,
 		handle: handle{
 			fd: -1,
