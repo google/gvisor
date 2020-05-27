@@ -106,6 +106,9 @@ type endpoint struct {
 	bindToDevice   tcpip.NICID
 	broadcast      bool
 
+	lastErrorMu sync.Mutex   `state:"nosave"`
+	lastError   *tcpip.Error `state:".(string)"`
+
 	// Values used to reserve a port or register a transport endpoint.
 	// (which ever happens first).
 	boundBindToDevice tcpip.NICID
@@ -188,6 +191,15 @@ func (e *endpoint) UniqueID() uint64 {
 	return e.uniqueID
 }
 
+func (e *endpoint) takeLastError() *tcpip.Error {
+	e.lastErrorMu.Lock()
+	defer e.lastErrorMu.Unlock()
+
+	err := e.lastError
+	e.lastError = nil
+	return err
+}
+
 // Abort implements stack.TransportEndpoint.Abort.
 func (e *endpoint) Abort() {
 	e.Close()
@@ -243,6 +255,10 @@ func (e *endpoint) IPTables() (stack.IPTables, error) {
 // Read reads data from the endpoint. This method does not block if
 // there is no data pending.
 func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
+	if err := e.takeLastError(); err != nil {
+		return buffer.View{}, tcpip.ControlMessages{}, err
+	}
+
 	e.rcvMu.Lock()
 
 	if e.rcvList.Empty() {
@@ -382,6 +398,10 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 }
 
 func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+	if err := e.takeLastError(); err != nil {
+		return 0, nil, err
+	}
+
 	// MSG_MORE is unimplemented. (This also means that MSG_EOR is a no-op.)
 	if opts.More {
 		return 0, nil, tcpip.ErrInvalidOptionValue
@@ -853,6 +873,7 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 	switch o := opt.(type) {
 	case tcpip.ErrorOption:
+		return e.takeLastError()
 	case *tcpip.MulticastInterfaceOption:
 		e.mu.Lock()
 		*o = tcpip.MulticastInterfaceOption{
@@ -1316,6 +1337,17 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 
 // HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
 func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, pkt stack.PacketBuffer) {
+	if typ == stack.ControlPortUnreachable {
+		e.mu.RLock()
+		defer e.mu.RUnlock()
+
+		if e.state == StateConnected {
+			e.lastErrorMu.Lock()
+			defer e.lastErrorMu.Unlock()
+
+			e.lastError = tcpip.ErrConnectionRefused
+		}
+	}
 }
 
 // State implements tcpip.Endpoint.State.

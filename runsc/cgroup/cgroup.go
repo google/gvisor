@@ -19,6 +19,7 @@ package cgroup
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -38,21 +39,23 @@ const (
 	cgroupRoot = "/sys/fs/cgroup"
 )
 
-var controllers = map[string]controller{
-	"blkio":    &blockIO{},
-	"cpu":      &cpu{},
-	"cpuset":   &cpuSet{},
-	"memory":   &memory{},
-	"net_cls":  &networkClass{},
-	"net_prio": &networkPrio{},
-	"pids":     &pids{},
+var controllers = map[string]config{
+	"blkio":    config{ctrlr: &blockIO{}},
+	"cpu":      config{ctrlr: &cpu{}},
+	"cpuset":   config{ctrlr: &cpuSet{}},
+	"memory":   config{ctrlr: &memory{}},
+	"net_cls":  config{ctrlr: &networkClass{}},
+	"net_prio": config{ctrlr: &networkPrio{}},
+	"pids":     config{ctrlr: &pids{}},
 
 	// These controllers either don't have anything in the OCI spec or is
 	// irrelevant for a sandbox.
-	"devices":    &noop{},
-	"freezer":    &noop{},
-	"perf_event": &noop{},
-	"systemd":    &noop{},
+	"devices":    config{ctrlr: &noop{}},
+	"freezer":    config{ctrlr: &noop{}},
+	"hugetlb":    config{ctrlr: &noop{}, optional: true},
+	"perf_event": config{ctrlr: &noop{}},
+	"rdma":       config{ctrlr: &noop{}, optional: true},
+	"systemd":    config{ctrlr: &noop{}},
 }
 
 func setOptionalValueInt(path, name string, val *int64) error {
@@ -196,8 +199,9 @@ func LoadPaths(pid string) (map[string]string, error) {
 	return paths, nil
 }
 
-// Cgroup represents a group inside all controllers. For example: Name='/foo/bar'
-// maps to /sys/fs/cgroup/<controller>/foo/bar on all controllers.
+// Cgroup represents a group inside all controllers. For example:
+//   Name='/foo/bar' maps to /sys/fs/cgroup/<controller>/foo/bar on
+//   all controllers.
 type Cgroup struct {
 	Name    string            `json:"name"`
 	Parents map[string]string `json:"parents"`
@@ -245,13 +249,17 @@ func (c *Cgroup) Install(res *specs.LinuxResources) error {
 	clean := specutils.MakeCleanup(func() { _ = c.Uninstall() })
 	defer clean.Clean()
 
-	for key, ctrl := range controllers {
+	for key, cfg := range controllers {
 		path := c.makePath(key)
 		if err := os.MkdirAll(path, 0755); err != nil {
+			if cfg.optional && errors.Is(err, syscall.EROFS) {
+				log.Infof("Skipping cgroup %q", key)
+				continue
+			}
 			return err
 		}
 		if res != nil {
-			if err := ctrl.set(res, path); err != nil {
+			if err := cfg.ctrlr.set(res, path); err != nil {
 				return err
 			}
 		}
@@ -321,10 +329,13 @@ func (c *Cgroup) Join() (func(), error) {
 	}
 
 	// Now join the cgroups.
-	for key := range controllers {
+	for key, cfg := range controllers {
 		path := c.makePath(key)
 		log.Debugf("Joining cgroup %q", path)
 		if err := setValue(path, "cgroup.procs", "0"); err != nil {
+			if cfg.optional && os.IsNotExist(err) {
+				continue
+			}
 			return undo, err
 		}
 	}
@@ -373,6 +384,11 @@ func (c *Cgroup) makePath(controllerName string) string {
 		path = filepath.Join(parent, c.Name)
 	}
 	return filepath.Join(cgroupRoot, controllerName, path)
+}
+
+type config struct {
+	ctrlr    controller
+	optional bool
 }
 
 type controller interface {

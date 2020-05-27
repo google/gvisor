@@ -555,7 +555,7 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 		if uint64(src.NumBytes()) != srcs.NumBytes() {
 			return 0, nil
 		}
-		if srcs.IsEmpty() {
+		if srcs.IsEmpty() && len(controlBuf) == 0 {
 			return 0, nil
 		}
 

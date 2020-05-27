@@ -33,6 +33,8 @@ func (x *endpoint) save(m state.Map) {
 	x.beforeSave()
 	var rcvBufSizeMax int = x.saveRcvBufSizeMax()
 	m.SaveValue("rcvBufSizeMax", rcvBufSizeMax)
+	var lastError string = x.saveLastError()
+	m.SaveValue("lastError", lastError)
 	m.Save("TransportEndpointInfo", &x.TransportEndpointInfo)
 	m.Save("waiterQueue", &x.waiterQueue)
 	m.Save("uniqueID", &x.uniqueID)
@@ -95,6 +97,7 @@ func (x *endpoint) load(m state.Map) {
 	m.Load("effectiveNetProtos", &x.effectiveNetProtos)
 	m.Load("owner", &x.owner)
 	m.LoadValue("rcvBufSizeMax", new(int), func(y interface{}) { x.loadRcvBufSizeMax(y.(int)) })
+	m.LoadValue("lastError", new(string), func(y interface{}) { x.loadLastError(y.(string)) })
 	m.AfterLoad(x.afterLoad)
 }
 
