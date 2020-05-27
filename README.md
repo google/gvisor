@@ -97,7 +97,7 @@ development on this branch is not supported. Development should occur on the
 
 ## Community & Governance
 
-See [GOVERNANCE.md](GOVERANCE.md) for project governance information.
+See [GOVERNANCE.md](GOVERNANCE.md) for project governance information.
 
 The [gvisor-users mailing list][gvisor-users-list] and
 [gvisor-dev mailing list][gvisor-dev-list] are good starting points for
