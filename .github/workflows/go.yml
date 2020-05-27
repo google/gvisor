@@ -17,6 +17,7 @@ jobs:
             -H "Content-Type: application/json" \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "${{ github.event.pull_request.statuses_url }}"
+      if: github.event_name == 'pull_request'
     - uses: actions/checkout@v2
       with:
         fetch-depth: 0
@@ -47,14 +48,14 @@ jobs:
         echo -e "protocol=https\nhost=github.com\nusername=${{ secrets.GO_TOKEN }}\npassword=x-oauth-basic" | git credential approve
         git remote add upstream "https://github.com/${{ github.repository }}"
         git push upstream go:go
-    - if: ${{ success() }}
+    - if: ${{ success() && github.event_name == 'pull_request' }}
       run: |
         jq -nc '{"state": "success", "context": "go tests"}' | \
         curl -sL  -X POST -d @- \
             -H "Content-Type: application/json" \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "${{ github.event.pull_request.statuses_url }}"
-    - if: ${{ failure() }}
+    - if: ${{ failure() && github.event_name == 'pull_request' }}
       run: |
         jq -nc '{"state": "failure", "context": "go tests"}' | \
         curl -sL  -X POST -d @- \
