@@ -210,6 +210,11 @@ func (fd *FileDescription) VirtualDentry() VirtualDentry {
 	return fd.vd
 }
 
+// Options returns the options passed to fd.Init().
+func (fd *FileDescription) Options() FileDescriptionOptions {
+	return fd.opts
+}
+
 // StatusFlags returns file description status flags, as for fcntl(F_GETFL).
 func (fd *FileDescription) StatusFlags() uint32 {
 	return atomic.LoadUint32(&fd.statusFlags)
