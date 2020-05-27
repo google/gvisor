@@ -438,7 +438,12 @@ TEST(ElfTest, MissingText) {
   ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0),
               SyscallSucceedsWithValue(child));
   // It runs off the end of the zeroes filling the end of the page.
+#if defined(__x86_64__)
   EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSEGV) << status;
+#elif defined(__aarch64__)
+  // 0 is an invalid instruction opcode on arm64.
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGILL) << status;
+#endif
 }
 
 // Typical ELF with a data + bss segment
