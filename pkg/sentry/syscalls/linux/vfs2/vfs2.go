@@ -134,8 +134,8 @@ func Override() {
 	s.Table[269] = syscalls.Supported("faccessat", Faccessat)
 	s.Table[270] = syscalls.Supported("pselect", Pselect)
 	s.Table[271] = syscalls.Supported("ppoll", Ppoll)
-	delete(s.Table, 275) // splice
-	delete(s.Table, 276) // tee
+	s.Table[275] = syscalls.Supported("splice", Splice)
+	s.Table[276] = syscalls.Supported("tee", Tee)
 	s.Table[277] = syscalls.Supported("sync_file_range", SyncFileRange)
 	s.Table[280] = syscalls.Supported("utimensat", Utimensat)
 	s.Table[281] = syscalls.Supported("epoll_pwait", EpollPwait)
