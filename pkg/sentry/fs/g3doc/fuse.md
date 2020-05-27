@@ -99,7 +99,7 @@ ops can be implemented in parallel.
 ## FUSE Protocol
 
 The FUSE protocol is a request-response protocol. All requests are initiated by
-the client. The wire-format for the protocol is raw c structs serialized to
+the client. The wire-format for the protocol is raw C structs serialized to
 memory.
 
 All FUSE requests begin with the following request header:
@@ -255,6 +255,7 @@ I/O syscalls like `read(2)`, `write(2)` and `mmap(2)`.
 
 # References
 
--   `fuse(4)` manpage.
--   Linux kernel FUSE documentation:
-    https://www.kernel.org/doc/html/latest/filesystems/fuse.html
+- [fuse(4)  Linux manual page](https://www.man7.org/linux/man-pages/man4/fuse.4.html)
+- [Linux kernel FUSE documentation](https://www.kernel.org/doc/html/latest/filesystems/fuse.html)
+- [The reference implementation of the Linux FUSE (Filesystem in Userspace) interface](https://github.com/libfuse/libfuse)
+- [The kernel interface of FUSE](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/include/uapi/linux/fuse.h)
