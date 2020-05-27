@@ -110,6 +110,71 @@ var (
 	ErrAddressFamilyNotSupported = &Error{msg: "address family not supported by protocol"}
 )
 
+var messageToError map[string]*Error
+
+var populate sync.Once
+
+// StringToError converts an error message to the error.
+func StringToError(s string) *Error {
+	populate.Do(func() {
+		var errors = []*Error{
+			ErrUnknownProtocol,
+			ErrUnknownNICID,
+			ErrUnknownDevice,
+			ErrUnknownProtocolOption,
+			ErrDuplicateNICID,
+			ErrDuplicateAddress,
+			ErrNoRoute,
+			ErrBadLinkEndpoint,
+			ErrAlreadyBound,
+			ErrInvalidEndpointState,
+			ErrAlreadyConnecting,
+			ErrAlreadyConnected,
+			ErrNoPortAvailable,
+			ErrPortInUse,
+			ErrBadLocalAddress,
+			ErrClosedForSend,
+			ErrClosedForReceive,
+			ErrWouldBlock,
+			ErrConnectionRefused,
+			ErrTimeout,
+			ErrAborted,
+			ErrConnectStarted,
+			ErrDestinationRequired,
+			ErrNotSupported,
+			ErrQueueSizeNotSupported,
+			ErrNotConnected,
+			ErrConnectionReset,
+			ErrConnectionAborted,
+			ErrNoSuchFile,
+			ErrInvalidOptionValue,
+			ErrNoLinkAddress,
+			ErrBadAddress,
+			ErrNetworkUnreachable,
+			ErrMessageTooLong,
+			ErrNoBufferSpace,
+			ErrBroadcastDisabled,
+			ErrNotPermitted,
+			ErrAddressFamilyNotSupported,
+		}
+
+		messageToError = make(map[string]*Error)
+		for _, e := range errors {
+			if messageToError[e.String()] != nil {
+				panic("tcpip errors with duplicated message: " + e.String())
+			}
+			messageToError[e.String()] = e
+		}
+	})
+
+	e, ok := messageToError[s]
+	if !ok {
+		panic("unknown error message: " + s)
+	}
+
+	return e
+}
+
 // Errors related to Subnet
 var (
 	errSubnetLengthMismatch = errors.New("subnet length of address and mask differ")

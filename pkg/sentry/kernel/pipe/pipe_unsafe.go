@@ -12,20 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package gofer
+package pipe
 
 import (
-	"gvisor.dev/gvisor/pkg/usermem"
+	"unsafe"
 )
 
-// This are equivalent to usermem.Addr.RoundDown/Up, but without the
-// potentially truncating conversion to usermem.Addr. This is necessary because
-// there is no way to define generic "PageRoundDown/Up" functions in Go.
-
-func pageRoundDown(x uint64) uint64 {
-	return x &^ (usermem.PageSize - 1)
-}
-
-func pageRoundUp(x uint64) uint64 {
-	return pageRoundDown(x + usermem.PageSize - 1)
+// lockTwoPipes locks both x.mu and y.mu in an order that is guaranteed to be
+// consistent for both lockTwoPipes(x, y) and lockTwoPipes(y, x), such that
+// concurrent calls cannot deadlock.
+//
+// Preconditions: x != y.
+func lockTwoPipes(x, y *Pipe) {
+	// Lock the two pipes in order of increasing address.
+	if uintptr(unsafe.Pointer(x)) < uintptr(unsafe.Pointer(y)) {
+		x.mu.Lock()
+		y.mu.Lock()
+	} else {
+		y.mu.Lock()
+		x.mu.Lock()
+	}
 }

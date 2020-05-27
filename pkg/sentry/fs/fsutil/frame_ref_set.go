@@ -18,6 +18,7 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
 // FrameRefSetFunctions implements segment.Functions for FrameRefSet.
@@ -48,4 +49,43 @@ func (FrameRefSetFunctions) Merge(_ platform.FileRange, val1 uint64, _ platform.
 // Split implements segment.Functions.Split.
 func (FrameRefSetFunctions) Split(_ platform.FileRange, val uint64, _ uint64) (uint64, uint64) {
 	return val, val
+}
+
+// IncRefAndAccount adds a reference on the range fr. All newly inserted segments
+// are accounted as host page cache memory mappings.
+func (refs *FrameRefSet) IncRefAndAccount(fr platform.FileRange) {
+	seg, gap := refs.Find(fr.Start)
+	for {
+		switch {
+		case seg.Ok() && seg.Start() < fr.End:
+			seg = refs.Isolate(seg, fr)
+			seg.SetValue(seg.Value() + 1)
+			seg, gap = seg.NextNonEmpty()
+		case gap.Ok() && gap.Start() < fr.End:
+			newRange := gap.Range().Intersect(fr)
+			usage.MemoryAccounting.Inc(newRange.Length(), usage.Mapped)
+			seg, gap = refs.InsertWithoutMerging(gap, newRange, 1).NextNonEmpty()
+		default:
+			refs.MergeAdjacent(fr)
+			return
+		}
+	}
+}
+
+// DecRefAndAccount removes a reference on the range fr and untracks segments
+// that are removed from memory accounting.
+func (refs *FrameRefSet) DecRefAndAccount(fr platform.FileRange) {
+	seg := refs.FindSegment(fr.Start)
+
+	for seg.Ok() && seg.Start() < fr.End {
+		seg = refs.Isolate(seg, fr)
+		if old := seg.Value(); old == 1 {
+			usage.MemoryAccounting.Dec(seg.Range().Length(), usage.Mapped)
+			seg = refs.Remove(seg).NextSegment()
+		} else {
+			seg.SetValue(old - 1)
+			seg = seg.NextSegment()
+		}
+	}
+	refs.MergeAdjacent(fr)
 }

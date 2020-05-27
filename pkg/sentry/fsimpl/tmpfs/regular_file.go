@@ -312,7 +312,7 @@ func (fd *regularFileFD) PWrite(ctx context.Context, src usermem.IOSequence, off
 	f := fd.inode().impl.(*regularFile)
 	if end := offset + srclen; end < offset {
 		// Overflow.
-		return 0, syserror.EFBIG
+		return 0, syserror.EINVAL
 	}
 
 	var err error

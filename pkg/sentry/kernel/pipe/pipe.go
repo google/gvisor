@@ -207,7 +207,10 @@ func (p *Pipe) read(ctx context.Context, ops readOps) (int64, error) {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	return p.readLocked(ctx, ops)
+}
 
+func (p *Pipe) readLocked(ctx context.Context, ops readOps) (int64, error) {
 	// Is the pipe empty?
 	if p.view.Size() == 0 {
 		if !p.HasWriters() {
@@ -246,7 +249,10 @@ type writeOps struct {
 func (p *Pipe) write(ctx context.Context, ops writeOps) (int64, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	return p.writeLocked(ctx, ops)
+}
 
+func (p *Pipe) writeLocked(ctx context.Context, ops writeOps) (int64, error) {
 	// Can't write to a pipe with no readers.
 	if !p.HasReaders() {
 		return 0, syscall.EPIPE

@@ -169,7 +169,7 @@ type recvMMsgDispatcher struct {
 
 	// iovecs is an array of array of iovec records where each iovec base
 	// pointer and length are initialzed to the corresponding view above,
-	// except when GSO is neabled then the first iovec in each array of
+	// except when GSO is enabled then the first iovec in each array of
 	// iovecs points to a buffer for the vnet header which is stripped
 	// before the views are passed up the stack for further processing.
 	iovecs [][]syscall.Iovec
