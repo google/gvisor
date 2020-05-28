@@ -642,7 +642,7 @@ func (e *InjectableEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 
 // InjectInbound injects an inbound packet.
 func (e *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
-	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, protocol, pkt)
+	e.dispatcher.DeliverNetworkPacket("" /* remote */, "" /* local */, protocol, pkt)
 }
 
 // NewInjectable creates a new fd-based InjectableEndpoint.

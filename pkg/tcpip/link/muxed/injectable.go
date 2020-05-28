@@ -81,7 +81,7 @@ func (m *InjectableEndpoint) IsAttached() bool {
 
 // InjectInbound implements stack.InjectableLinkEndpoint.
 func (m *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
-	m.dispatcher.DeliverNetworkPacket(m, "" /* remote */, "" /* local */, protocol, pkt)
+	m.dispatcher.DeliverNetworkPacket("" /* remote */, "" /* local */, protocol, pkt)
 }
 
 // WritePackets writes outbound packets to the appropriate
