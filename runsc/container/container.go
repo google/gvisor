@@ -31,6 +31,7 @@ import (
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/sighandling"
@@ -293,7 +294,7 @@ func New(conf *boot.Config, args Args) (*Container, error) {
 	}
 	// The Cleanup object cleans up partially created containers when an error
 	// occurs. Any errors occurring during cleanup itself are ignored.
-	cu := specutils.MakeCleanup(func() { _ = c.Destroy() })
+	cu := cleanup.Make(func() { _ = c.Destroy() })
 	defer cu.Clean()
 
 	// Lock the container metadata file to prevent concurrent creations of
@@ -402,7 +403,7 @@ func (c *Container) Start(conf *boot.Config) error {
 	if err := c.Saver.lock(); err != nil {
 		return err
 	}
-	unlock := specutils.MakeCleanup(func() { c.Saver.unlock() })
+	unlock := cleanup.Make(func() { c.Saver.unlock() })
 	defer unlock.Clean()
 
 	if err := c.requireStatus("start", Created); err != nil {
@@ -506,7 +507,7 @@ func Run(conf *boot.Config, args Args) (syscall.WaitStatus, error) {
 	}
 	// Clean up partially created container if an error occurs.
 	// Any errors returned by Destroy() itself are ignored.
-	cu := specutils.MakeCleanup(func() {
+	cu := cleanup.Make(func() {
 		c.Destroy()
 	})
 	defer cu.Clean()

@@ -33,11 +33,11 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 const (
@@ -439,7 +439,7 @@ func (l *localFile) Create(name string, mode p9.OpenFlags, perm p9.FileMode, uid
 	if err != nil {
 		return nil, nil, p9.QID{}, 0, extractErrno(err)
 	}
-	cu := specutils.MakeCleanup(func() {
+	cu := cleanup.Make(func() {
 		child.Close()
 		// Best effort attempt to remove the file in case of failure.
 		if err := syscall.Unlinkat(l.file.FD(), name); err != nil {
@@ -480,7 +480,7 @@ func (l *localFile) Mkdir(name string, perm p9.FileMode, uid p9.UID, gid p9.GID)
 	if err := syscall.Mkdirat(l.file.FD(), name, uint32(perm.Permissions())); err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
-	cu := specutils.MakeCleanup(func() {
+	cu := cleanup.Make(func() {
 		// Best effort attempt to remove the dir in case of failure.
 		if err := unix.Unlinkat(l.file.FD(), name, unix.AT_REMOVEDIR); err != nil {
 			log.Warningf("error unlinking dir %q after failure: %v", path.Join(l.hostPath, name), err)
@@ -864,7 +864,7 @@ func (l *localFile) Symlink(target, newName string, uid p9.UID, gid p9.GID) (p9.
 	if err := unix.Symlinkat(target, l.file.FD(), newName); err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
-	cu := specutils.MakeCleanup(func() {
+	cu := cleanup.Make(func() {
 		// Best effort attempt to remove the symlink in case of failure.
 		if err := syscall.Unlinkat(l.file.FD(), newName); err != nil {
 			log.Warningf("error unlinking file %q after failure: %v", path.Join(l.hostPath, newName), err)
