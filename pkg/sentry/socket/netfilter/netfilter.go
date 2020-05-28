@@ -64,6 +64,8 @@ const enableLogging = false
 var emptyFilter = stack.IPHeaderFilter{
 	Dst:     "\x00\x00\x00\x00",
 	DstMask: "\x00\x00\x00\x00",
+	Src:     "\x00\x00\x00\x00",
+	SrcMask: "\x00\x00\x00\x00",
 }
 
 // nflog logs messages related to the writing and reading of iptables.
@@ -214,10 +216,15 @@ func convertNetstackToBinary(tablename string, table stack.Table) (linux.KernelI
 		}
 		copy(entry.IPTEntry.IP.Dst[:], rule.Filter.Dst)
 		copy(entry.IPTEntry.IP.DstMask[:], rule.Filter.DstMask)
+		copy(entry.IPTEntry.IP.Src[:], rule.Filter.Src)
+		copy(entry.IPTEntry.IP.SrcMask[:], rule.Filter.SrcMask)
 		copy(entry.IPTEntry.IP.OutputInterface[:], rule.Filter.OutputInterface)
 		copy(entry.IPTEntry.IP.OutputInterfaceMask[:], rule.Filter.OutputInterfaceMask)
 		if rule.Filter.DstInvert {
 			entry.IPTEntry.IP.InverseFlags |= linux.IPT_INV_DSTIP
+		}
+		if rule.Filter.SrcInvert {
+			entry.IPTEntry.IP.InverseFlags |= linux.IPT_INV_SRCIP
 		}
 		if rule.Filter.OutputInterfaceInvert {
 			entry.IPTEntry.IP.InverseFlags |= linux.IPT_INV_VIA_OUT
@@ -737,6 +744,9 @@ func filterFromIPTIP(iptip linux.IPTIP) (stack.IPHeaderFilter, error) {
 	if len(iptip.Dst) != header.IPv4AddressSize || len(iptip.DstMask) != header.IPv4AddressSize {
 		return stack.IPHeaderFilter{}, fmt.Errorf("incorrect length of destination (%d) and/or destination mask (%d) fields", len(iptip.Dst), len(iptip.DstMask))
 	}
+	if len(iptip.Src) != header.IPv4AddressSize || len(iptip.SrcMask) != header.IPv4AddressSize {
+		return stack.IPHeaderFilter{}, fmt.Errorf("incorrect length of source (%d) and/or source mask (%d) fields", len(iptip.Src), len(iptip.SrcMask))
+	}
 
 	n := bytes.IndexByte([]byte(iptip.OutputInterface[:]), 0)
 	if n == -1 {
@@ -755,6 +765,9 @@ func filterFromIPTIP(iptip linux.IPTIP) (stack.IPHeaderFilter, error) {
 		Dst:                   tcpip.Address(iptip.Dst[:]),
 		DstMask:               tcpip.Address(iptip.DstMask[:]),
 		DstInvert:             iptip.InverseFlags&linux.IPT_INV_DSTIP != 0,
+		Src:                   tcpip.Address(iptip.Src[:]),
+		SrcMask:               tcpip.Address(iptip.SrcMask[:]),
+		SrcInvert:             iptip.InverseFlags&linux.IPT_INV_SRCIP != 0,
 		OutputInterface:       ifname,
 		OutputInterfaceMask:   ifnameMask,
 		OutputInterfaceInvert: iptip.InverseFlags&linux.IPT_INV_VIA_OUT != 0,
@@ -765,15 +778,13 @@ func containsUnsupportedFields(iptip linux.IPTIP) bool {
 	// The following features are supported:
 	// - Protocol
 	// - Dst and DstMask
+	// - Src and SrcMask
 	// - The inverse destination IP check flag
 	// - OutputInterface, OutputInterfaceMask and its inverse.
-	var emptyInetAddr = linux.InetAddr{}
 	var emptyInterface = [linux.IFNAMSIZ]byte{}
 	// Disable any supported inverse flags.
-	inverseMask := uint8(linux.IPT_INV_DSTIP) | uint8(linux.IPT_INV_VIA_OUT)
-	return iptip.Src != emptyInetAddr ||
-		iptip.SrcMask != emptyInetAddr ||
-		iptip.InputInterface != emptyInterface ||
+	inverseMask := uint8(linux.IPT_INV_DSTIP) | uint8(linux.IPT_INV_SRCIP) | uint8(linux.IPT_INV_VIA_OUT)
+	return iptip.InputInterface != emptyInterface ||
 		iptip.InputInterfaceMask != emptyInterface ||
 		iptip.Flags != 0 ||
 		iptip.InverseFlags&^inverseMask != 0

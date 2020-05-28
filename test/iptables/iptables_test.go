@@ -302,3 +302,11 @@ func TestNATPreRedirectInvert(t *testing.T) {
 func TestNATRedirectRequiresProtocol(t *testing.T) {
 	singleTest(t, NATRedirectRequiresProtocol{})
 }
+
+func TestInputSource(t *testing.T) {
+	singleTest(t, FilterInputSource{})
+}
+
+func TestInputInvertSource(t *testing.T) {
+	singleTest(t, FilterInputInvertSource{})
+}
