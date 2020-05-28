@@ -209,11 +209,9 @@ type inode struct {
 	// refs is a reference count. refs is accessed using atomic memory
 	// operations.
 	//
-	// A reference is held on all inodes that are reachable in the filesystem
-	// tree. For non-directories (which may have multiple hard links), this
-	// means that a reference is dropped when nlink reaches 0. For directories,
-	// nlink never reaches 0 due to the "." entry; instead,
-	// filesystem.RmdirAt() drops the reference.
+	// A reference is held on all inodes as long as they are reachable in the
+	// filesystem tree, i.e. nlink is nonzero. This reference is dropped when
+	// nlink reaches 0.
 	refs int64
 
 	// xattrs implements extended attributes.
@@ -276,14 +274,17 @@ func (i *inode) incLinksLocked() {
 	atomic.AddUint32(&i.nlink, 1)
 }
 
-// decLinksLocked decrements i's link count.
+// decLinksLocked decrements i's link count. If the link count reaches 0, we
+// remove a reference on i as well.
 //
 // Preconditions: filesystem.mu must be locked for writing. i.nlink != 0.
 func (i *inode) decLinksLocked() {
 	if i.nlink == 0 {
 		panic("tmpfs.inode.decLinksLocked() called with no existing links")
 	}
-	atomic.AddUint32(&i.nlink, ^uint32(0))
+	if atomic.AddUint32(&i.nlink, ^uint32(0)) == 0 {
+		i.decRef()
+	}
 }
 
 func (i *inode) incRef() {
