@@ -311,19 +311,7 @@ func capsFromNames(names []string, skipSet map[linux.Capability]struct{}) (auth.
 
 // Is9PMount returns true if the given mount can be mounted as an external gofer.
 func Is9PMount(m specs.Mount) bool {
-	var isBind bool
-	switch m.Type {
-	case "bind":
-		isBind = true
-	default:
-		for _, opt := range m.Options {
-			if opt == "bind" || opt == "rbind" {
-				isBind = true
-				break
-			}
-		}
-	}
-	return isBind && m.Source != "" && IsSupportedDevMount(m)
+	return m.Type == "bind" && m.Source != "" && IsSupportedDevMount(m)
 }
 
 // IsSupportedDevMount returns true if the mount is a supported /dev mount.
