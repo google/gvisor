@@ -1167,7 +1167,7 @@ func handlePacket(protocol tcpip.NetworkProtocolNumber, dst, src tcpip.Address, 
 // Note that the ownership of the slice backing vv is retained by the caller.
 // This rule applies only to the slice itself, not to the items of the slice;
 // the ownership of the items is not retained by the caller.
-func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt PacketBuffer) {
+func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt PacketBuffer) {
 	n.mu.RLock()
 	enabled := n.mu.enabled
 	// If the NIC is not yet enabled, don't receive any packets.
@@ -1240,7 +1240,7 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 	}
 
 	if ref := n.getRef(protocol, dst); ref != nil {
-		handlePacket(protocol, dst, src, linkEP.LinkAddress(), remote, ref, pkt)
+		handlePacket(protocol, dst, src, n.linkEP.LinkAddress(), remote, ref, pkt)
 		return
 	}
 

@@ -102,8 +102,8 @@ func (q *queueDispatcher) dispatchLoop() {
 }
 
 // DeliverNetworkPacket implements stack.NetworkDispatcher.DeliverNetworkPacket.
-func (e *endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
-	e.dispatcher.DeliverNetworkPacket(e, remote, local, protocol, pkt)
+func (e *endpoint) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
+	e.dispatcher.DeliverNetworkPacket(remote, local, protocol, pkt)
 }
 
 // Attach implements stack.LinkEndpoint.Attach.

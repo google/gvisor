@@ -145,7 +145,7 @@ func (d *readVDispatcher) dispatch() (bool, *tcpip.Error) {
 	}
 	pkt.Data.TrimFront(d.e.hdrSize)
 
-	d.e.dispatcher.DeliverNetworkPacket(d.e, remote, local, p, pkt)
+	d.e.dispatcher.DeliverNetworkPacket(remote, local, p, pkt)
 
 	// Prepare e.views for another packet: release used views.
 	for i := 0; i < used; i++ {
@@ -301,7 +301,7 @@ func (d *recvMMsgDispatcher) dispatch() (bool, *tcpip.Error) {
 			LinkHeader: buffer.View(eth),
 		}
 		pkt.Data.TrimFront(d.e.hdrSize)
-		d.e.dispatcher.DeliverNetworkPacket(d.e, remote, local, p, pkt)
+		d.e.dispatcher.DeliverNetworkPacket(remote, local, p, pkt)
 
 		// Prepare e.views for another packet: release used views.
 		for i := 0; i < used; i++ {
