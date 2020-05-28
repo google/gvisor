@@ -30,10 +30,10 @@ build:remote --auth_scope="https://www.googleapis.com/auth/cloud-source-tools"
 
 # Add a custom platform and toolchain that builds in a privileged docker
 # container, which is required by our syscall tests.
-build:remote --host_platform=//tools/bazeldefs:rbe_ubuntu1604
+build:remote --host_platform=//tools/bazeldefs:rbe_ubuntu1804
 build:remote --extra_toolchains=//tools/bazeldefs:cc-toolchain-clang-x86_64-default
-build:remote --extra_execution_platforms=//tools/bazeldefs:rbe_ubuntu1604
-build:remote --platforms=//tools/bazeldefs:rbe_ubuntu1604
+build:remote --extra_execution_platforms=//tools/bazeldefs:rbe_ubuntu1804
+build:remote --platforms=//tools/bazeldefs:rbe_ubuntu1804
 build:remote --crosstool_top=@rbe_default//cc:toolchain
 build:remote --jobs=50
 build:remote --remote_timeout=3600

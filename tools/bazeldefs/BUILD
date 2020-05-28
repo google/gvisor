@@ -15,7 +15,7 @@ genrule(
 # and dockerRunAsRoot options, they are required to run tests on the RBE
 # cluster in Kokoro.
 rbe_platform(
-    name = "rbe_ubuntu1604",
+    name = "rbe_ubuntu1804",
     constraint_values = [
         "@bazel_tools//platforms:x86_64",
         "@bazel_tools//platforms:linux",
@@ -26,7 +26,7 @@ rbe_platform(
     remote_execution_properties = """
         properties: {
           name: "container-image"
-          value:"docker://gcr.io/cloud-marketplace/google/rbe-ubuntu16-04@sha256:93f7e127196b9b653d39830c50f8b05d49ef6fd8739a9b5b8ab16e1df5399e50"
+          value:"docker://gcr.io/cloud-marketplace/google/rbe-ubuntu18-04@sha256:713beaae338cc3f81db4b266d0d924365344b92873b37769b41f8a2d6d36a613"
         }
         properties: {
           name: "dockerAddCapabilities"
