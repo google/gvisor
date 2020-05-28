@@ -31,8 +31,8 @@ import (
 
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 const (
@@ -246,7 +246,7 @@ func (c *Cgroup) Install(res *specs.LinuxResources) error {
 
 	// The Cleanup object cleans up partially created cgroups when an error occurs.
 	// Errors occuring during cleanup itself are ignored.
-	clean := specutils.MakeCleanup(func() { _ = c.Uninstall() })
+	clean := cleanup.Make(func() { _ = c.Uninstall() })
 	defer clean.Clean()
 
 	for key, cfg := range controllers {

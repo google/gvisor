@@ -16,6 +16,7 @@ go_library(
     ],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/cleanup",
         "//pkg/log",
         "//pkg/sentry/control",
         "//pkg/sentry/sighandling",
@@ -53,6 +54,7 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/bits",
+        "//pkg/cleanup",
         "//pkg/log",
         "//pkg/sentry/control",
         "//pkg/sentry/kernel",

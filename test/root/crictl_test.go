@@ -30,10 +30,10 @@ import (
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/test/criutil"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
-	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 // Tests for crictl have to be run as root (rather than in a user namespace)
@@ -272,27 +272,20 @@ disabled_plugins = ["restart"]
 // * Runs containerd and waits for it to reach a "ready" state for testing.
 // * Returns a cleanup function that should be called at the end of the test.
 func setup(t *testing.T) (*criutil.Crictl, func(), error) {
-	var cleanups []func()
-	cleanupFunc := func() {
-		for i := len(cleanups) - 1; i >= 0; i-- {
-			cleanups[i]()
-		}
-	}
-	cleanup := specutils.MakeCleanup(cleanupFunc)
-	defer cleanup.Clean()
-
 	// Create temporary containerd root and state directories, and a socket
 	// via which crictl and containerd communicate.
 	containerdRoot, err := ioutil.TempDir(testutil.TmpDir(), "containerd-root")
 	if err != nil {
 		t.Fatalf("failed to create containerd root: %v", err)
 	}
-	cleanups = append(cleanups, func() { os.RemoveAll(containerdRoot) })
+	cu := cleanup.Make(func() { os.RemoveAll(containerdRoot) })
+	defer cu.Clean()
+
 	containerdState, err := ioutil.TempDir(testutil.TmpDir(), "containerd-state")
 	if err != nil {
 		t.Fatalf("failed to create containerd state: %v", err)
 	}
-	cleanups = append(cleanups, func() { os.RemoveAll(containerdState) })
+	cu.Add(func() { os.RemoveAll(containerdState) })
 	sockAddr := filepath.Join(testutil.TmpDir(), "containerd-test.sock")
 
 	// We rewrite a configuration. This is based on the current docker
@@ -305,7 +298,7 @@ func setup(t *testing.T) (*criutil.Crictl, func(), error) {
 	if err != nil {
 		t.Fatalf("failed to write containerd config")
 	}
-	cleanups = append(cleanups, configCleanup)
+	cu.Add(configCleanup)
 
 	// Start containerd.
 	cmd := exec.Command(getContainerd(),
@@ -321,7 +314,8 @@ func setup(t *testing.T) (*criutil.Crictl, func(), error) {
 	stdout := &bytes.Buffer{}
 	cmd.Stderr = io.MultiWriter(startupW, stderr)
 	cmd.Stdout = io.MultiWriter(startupW, stdout)
-	cleanups = append(cleanups, func() {
+	cu.Add(func() {
+		// Log output in case of failure.
 		t.Logf("containerd stdout: %s", stdout.String())
 		t.Logf("containerd stderr: %s", stderr.String())
 	})
@@ -338,15 +332,14 @@ func setup(t *testing.T) (*criutil.Crictl, func(), error) {
 
 	// Kill must be the last cleanup (as it will be executed first).
 	cc := criutil.NewCrictl(t, sockAddr)
-	cleanups = append(cleanups, func() {
+	cu.Add(func() {
 		cc.CleanUp() // Remove tmp files, etc.
 		if err := testutil.KillCommand(cmd); err != nil {
 			log.Printf("error killing containerd: %v", err)
 		}
 	})
 
-	cleanup.Release()
-	return cc, cleanupFunc, nil
+	return cc, cu.Release(), nil
 }
 
 // httpGet GETs the contents of a file served from a pod on port 80.
