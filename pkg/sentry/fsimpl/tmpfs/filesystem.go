@@ -603,8 +603,10 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		return err
 	}
 	parentDir.removeChildLocked(child)
-	parentDir.inode.decLinksLocked() // from child's ".."
+	// Remove links for child, child/., and child/..
 	child.inode.decLinksLocked()
+	child.inode.decLinksLocked()
+	parentDir.inode.decLinksLocked()
 	vfsObj.CommitDeleteDentry(&child.vfsd)
 	parentDir.inode.touchCMtime()
 	return nil
