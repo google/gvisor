@@ -27,6 +27,7 @@ import (
 	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -64,29 +65,16 @@ func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*C
 		panic("conf.RootDir not set. Call testutil.SetupRootDir() to set.")
 	}
 
-	var (
-		containers []*Container
-		cleanups   []func()
-	)
-	cleanups = append(cleanups, func() {
-		for _, c := range containers {
-			c.Destroy()
-		}
-	})
-	cleanupAll := func() {
-		for _, c := range cleanups {
-			c()
-		}
-	}
-	localClean := specutils.MakeCleanup(cleanupAll)
-	defer localClean.Clean()
+	cu := cleanup.Cleanup{}
+	defer cu.Clean()
 
+	var containers []*Container
 	for i, spec := range specs {
 		bundleDir, cleanup, err := testutil.SetupBundleDir(spec)
 		if err != nil {
 			return nil, nil, fmt.Errorf("error setting up container: %v", err)
 		}
-		cleanups = append(cleanups, cleanup)
+		cu.Add(cleanup)
 
 		args := Args{
 			ID:        ids[i],
@@ -97,6 +85,7 @@ func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*C
 		if err != nil {
 			return nil, nil, fmt.Errorf("error creating container: %v", err)
 		}
+		cu.Add(func() { cont.Destroy() })
 		containers = append(containers, cont)
 
 		if err := cont.Start(conf); err != nil {
@@ -104,8 +93,7 @@ func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*C
 		}
 	}
 
-	localClean.Release()
-	return containers, cleanupAll, nil
+	return containers, cu.Release(), nil
 }
 
 type execDesc struct {

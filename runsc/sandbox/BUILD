@@ -13,6 +13,7 @@ go_library(
         "//runsc:__subpackages__",
     ],
     deps = [
+        "//pkg/cleanup",
         "//pkg/control/client",
         "//pkg/control/server",
         "//pkg/log",

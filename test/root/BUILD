@@ -33,6 +33,7 @@ go_test(
     ],
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/cleanup",
         "//pkg/test/criutil",
         "//pkg/test/dockerutil",
         "//pkg/test/testutil",

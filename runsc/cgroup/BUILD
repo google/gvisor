@@ -7,8 +7,8 @@ go_library(
     srcs = ["cgroup.go"],
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/cleanup",
         "//pkg/log",
-        "//runsc/specutils",
         "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
     ],
