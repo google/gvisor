@@ -1394,7 +1394,7 @@ func TestMultiContainerSharedMountUnsupportedOptions(t *testing.T) {
 		Destination: "/mydir/test",
 		Source:      "/some/dir",
 		Type:        "tmpfs",
-		Options:     []string{"rw", "relatime"},
+		Options:     []string{"rw", "rbind", "relatime"},
 	}
 	podSpec[0].Mounts = append(podSpec[0].Mounts, mnt0)
 

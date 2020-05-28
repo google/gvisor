@@ -221,9 +221,6 @@ func mountFlags(opts []string) fs.MountSourceFlags {
 			mf.NoAtime = true
 		case "noexec":
 			mf.NoExec = true
-		case "bind", "rbind":
-			// When options include either "bind" or "rbind",
-			// it's converted to a 9P mount.
 		default:
 			log.Warningf("ignoring unknown mount option %q", o)
 		}
@@ -770,10 +767,6 @@ func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (
 		useOverlay bool
 	)
 
-	if isBindMount(m) {
-		m.Type = bind
-	}
-
 	switch m.Type {
 	case devpts.Name, devtmpfs.Name, procvfs2.Name, sysvfs2.Name:
 		fsName = m.Type
@@ -799,18 +792,6 @@ func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (
 		log.Warningf("ignoring unknown filesystem type %q", m.Type)
 	}
 	return fsName, opts, useOverlay, nil
-}
-
-func isBindMount(m specs.Mount) bool {
-	for _, opt := range m.Options {
-		// When options include either "bind" or "rbind", this behaves as
-		// bind mount even if the mount type is equal to a filesystem supported
-		// on runsc.
-		if opt == "bind" || opt == "rbind" {
-			return true
-		}
-	}
-	return false
 }
 
 func (c *containerMounter) getMountAccessType(mount specs.Mount) FileAccessType {

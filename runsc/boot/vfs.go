@@ -235,7 +235,7 @@ func (c *containerMounter) prepareMountsVFS2() ([]mountAndFD, error) {
 		fd := -1
 		// Only bind mounts use host FDs; see
 		// containerMounter.getMountNameAndOptionsVFS2.
-		if m.Type == bind || isBindMount(m) {
+		if m.Type == bind {
 			fd = c.fds.remove()
 		}
 		mounts = append(mounts, mountAndFD{
@@ -304,10 +304,6 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *Config, m *mountAndF
 		opts       []string
 		useOverlay bool
 	)
-
-	if isBindMount(m.Mount) {
-		m.Type = bind
-	}
 
 	switch m.Type {
 	case devpts.Name, devtmpfs.Name, proc.Name, sys.Name:
