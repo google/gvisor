@@ -18,9 +18,12 @@ package packetimpact_test
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"net"
+	"os"
+	"os/exec"
 	"path"
 	"strings"
 	"testing"
@@ -117,10 +120,18 @@ func TestOne(t *testing.T) {
 		}(dn)
 	}
 
+	tmpDir, err := ioutil.TempDir("", "container-output")
+	if err != nil {
+		t.Fatal("creating temp dir:", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	const testOutputDir = "/tmp/testoutput"
+
 	runOpts := dockerutil.RunOpts{
 		Image:      "packetimpact",
 		CapAdd:     []string{"NET_ADMIN"},
-		Extra:      []string{"--sysctl", "net.ipv6.conf.all.disable_ipv6=0", "--rm"},
+		Extra:      []string{"--sysctl", "net.ipv6.conf.all.disable_ipv6=0", "--rm", "-v", tmpDir + ":" + testOutputDir},
 		Foreground: true,
 	}
 
@@ -187,7 +198,10 @@ func TestOne(t *testing.T) {
 	// Run tcpdump in the test bench unbuffered, without DNS resolution, just on
 	// the interface with the test packets.
 	snifferArgs := []string{
-		"tcpdump", "-S", "-vvv", "-U", "-n", "-i", testNetDev,
+		"tcpdump",
+		"-S", "-vvv", "-U", "-n",
+		"-i", testNetDev,
+		"-w", testOutputDir + "/dump.pcap",
 	}
 	snifferRegex := "tcpdump: listening.*\n"
 	if *tshark {
@@ -200,6 +214,12 @@ func TestOne(t *testing.T) {
 		}
 		snifferRegex = "Capturing on.*\n"
 	}
+
+	defer func() {
+		if err := exec.Command("/bin/cp", "-r", tmpDir, os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")).Run(); err != nil {
+			t.Error("unable to copy container output files:", err)
+		}
+	}()
 
 	if err := testbench.Create(runOpts, snifferArgs...); err != nil {
 		t.Fatalf("unable to create container %s: %s", testbench.Name, err)
