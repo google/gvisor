@@ -15,6 +15,7 @@
 #include "test/syscalls/linux/udp_socket_test_cases.h"
 
 #include <arpa/inet.h>
+#include <experimental/random>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <poll.h>
@@ -56,6 +57,8 @@ uint16_t* Port(struct sockaddr_storage* addr) {
 
 void UdpSocketTest::SetUp() {
   int type;
+  test_port_ = std::experimental::randint(30000, 60000);
+
   if (GetParam() == AddressFamily::kIpv4) {
     type = AF_INET;
     auto sin = reinterpret_cast<struct sockaddr_in*>(&anyaddr_storage_);
@@ -84,7 +87,7 @@ void UdpSocketTest::SetUp() {
 
   if (gvisor::testing::IsRunningOnGvisor()) {
     for (size_t i = 0; i < ABSL_ARRAYSIZE(ports_); ++i) {
-      ports_[i] = TestPort + i;
+      ports_[i] = test_port_ + i;
     }
   } else {
     // When not under gvisor, use utility function to pick port. Assert that
@@ -248,7 +251,7 @@ TEST_P(UdpSocketTest, BindInUse) {
 }
 
 TEST_P(UdpSocketTest, ReceiveAfterConnect) {
-  // Connect s_ to loopback:TestPort, and bind t_ to loopback:TestPort.
+  // Connect s_ to loopback:test_port_, and bind t_ to loopback:test_port_.
   ASSERT_THAT(connect(s_, addr_[0], addrlen_), SyscallSucceeds());
   ASSERT_THAT(bind(t_, addr_[0], addrlen_), SyscallSucceeds());
 
@@ -274,7 +277,7 @@ TEST_P(UdpSocketTest, ReceiveAfterConnect) {
 }
 
 TEST_P(UdpSocketTest, ReceiveAfterDisconnect) {
-  // Connect s_ to loopback:TestPort, and bind t_ to loopback:TestPort.
+  // Connect s_ to loopback:test_port_, and bind t_ to loopback:test_port_.
   ASSERT_THAT(connect(s_, addr_[0], addrlen_), SyscallSucceeds());
   ASSERT_THAT(bind(t_, addr_[0], addrlen_), SyscallSucceeds());
   ASSERT_THAT(connect(t_, addr_[1], addrlen_), SyscallSucceeds());
@@ -306,7 +309,7 @@ TEST_P(UdpSocketTest, ReceiveAfterDisconnect) {
     struct sockaddr addr = {};
     addr.sa_family = AF_UNSPEC;
     ASSERT_THAT(connect(s_, &addr, sizeof(addr.sa_family)), SyscallSucceeds());
-    // Connect s_ loopback:TestPort.
+    // Connect s_ loopback:test_port_.
     ASSERT_THAT(connect(s_, addr_[0], addrlen_), SyscallSucceeds());
   }
 }
@@ -664,11 +667,11 @@ TEST_P(UdpSocketTest, ZerolengthWriteAllowed) {
   // TODO(gvisor.dev/issue/1202): Hostinet does not support zero length writes.
   SKIP_IF(IsRunningWithHostinet());
 
-  // Bind s_ to loopback:TestPort, and connect to loopback:TestPort+1.
+  // Bind s_ to loopback:test_port_, and connect to loopback:test_port_+1.
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
   ASSERT_THAT(connect(s_, addr_[1], addrlen_), SyscallSucceeds());
 
-  // Bind t_ to loopback:TestPort+1.
+  // Bind t_ to loopback:test_port_+1.
   ASSERT_THAT(bind(t_, addr_[1], addrlen_), SyscallSucceeds());
 
   char buf[3];
@@ -689,11 +692,11 @@ TEST_P(UdpSocketTest, ZerolengthWriteAllowedNonBlockRead) {
   // TODO(gvisor.dev/issue/1202): Hostinet does not support zero length writes.
   SKIP_IF(IsRunningWithHostinet());
 
-  // Bind s_ to loopback:TestPort, and connect to loopback:TestPort+1.
+  // Bind s_ to loopback:test_port_, and connect to loopback:test_port_+1.
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
   ASSERT_THAT(connect(s_, addr_[1], addrlen_), SyscallSucceeds());
 
-  // Bind t_ to loopback:TestPort+1.
+  // Bind t_ to loopback:test_port_+1.
   ASSERT_THAT(bind(t_, addr_[1], addrlen_), SyscallSucceeds());
 
   // Set t_ to non-blocking.
@@ -736,11 +739,11 @@ TEST_P(UdpSocketTest, SendAndReceiveNotConnected) {
 }
 
 TEST_P(UdpSocketTest, SendAndReceiveConnected) {
-  // Bind s_ to loopback:TestPort, and connect to loopback:TestPort+1.
+  // Bind s_ to loopback:test_port_, and connect to loopback:test_port_+1.
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
   ASSERT_THAT(connect(s_, addr_[1], addrlen_), SyscallSucceeds());
 
-  // Bind t_ to loopback:TestPort+1.
+  // Bind t_ to loopback:test_port_+1.
   ASSERT_THAT(bind(t_, addr_[1], addrlen_), SyscallSucceeds());
 
   // Send some data from t_ to s_.
@@ -758,11 +761,11 @@ TEST_P(UdpSocketTest, SendAndReceiveConnected) {
 }
 
 TEST_P(UdpSocketTest, ReceiveFromNotConnected) {
-  // Bind s_ to loopback:TestPort, and connect to loopback:TestPort+1.
+  // Bind s_ to loopback:test_port_, and connect to loopback:test_port_+1.
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
   ASSERT_THAT(connect(s_, addr_[1], addrlen_), SyscallSucceeds());
 
-  // Bind t_ to loopback:TestPort+2.
+  // Bind t_ to loopback:test_port_+2.
   ASSERT_THAT(bind(t_, addr_[2], addrlen_), SyscallSucceeds());
 
   // Send some data from t_ to s_.
@@ -777,10 +780,10 @@ TEST_P(UdpSocketTest, ReceiveFromNotConnected) {
 }
 
 TEST_P(UdpSocketTest, ReceiveBeforeConnect) {
-  // Bind s_ to loopback:TestPort.
+  // Bind s_ to loopback:test_port_.
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
 
-  // Bind t_ to loopback:TestPort+2.
+  // Bind t_ to loopback:test_port_+2.
   ASSERT_THAT(bind(t_, addr_[2], addrlen_), SyscallSucceeds());
 
   // Send some data from t_ to s_.
@@ -790,7 +793,7 @@ TEST_P(UdpSocketTest, ReceiveBeforeConnect) {
   ASSERT_THAT(sendto(t_, buf, sizeof(buf), 0, addr_[0], addrlen_),
               SyscallSucceedsWithValue(sizeof(buf)));
 
-  // Connect to loopback:TestPort+1.
+  // Connect to loopback:test_port_+1.
   ASSERT_THAT(connect(s_, addr_[1], addrlen_), SyscallSucceeds());
 
   // Receive the data. It works because it was sent before the connect.
@@ -808,11 +811,11 @@ TEST_P(UdpSocketTest, ReceiveBeforeConnect) {
 }
 
 TEST_P(UdpSocketTest, ReceiveFrom) {
-  // Bind s_ to loopback:TestPort, and connect to loopback:TestPort+1.
+  // Bind s_ to loopback:test_port_, and connect to loopback:test_port_+1.
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
   ASSERT_THAT(connect(s_, addr_[1], addrlen_), SyscallSucceeds());
 
-  // Bind t_ to loopback:TestPort+1.
+  // Bind t_ to loopback:test_port_+1.
   ASSERT_THAT(bind(t_, addr_[1], addrlen_), SyscallSucceeds());
 
   // Send some data from t_ to s_.
@@ -847,7 +850,7 @@ TEST_P(UdpSocketTest, Accept) {
 TEST_P(UdpSocketTest, ReadShutdownNonblockPendingData) {
   char received[512];
 
-  // Bind t_ to loopback:TestPort+2.
+  // Bind t_ to loopback:test_port_+2.
   ASSERT_THAT(bind(t_, addr_[2], addrlen_), SyscallSucceeds());
   ASSERT_THAT(connect(t_, addr_[1], addrlen_), SyscallSucceeds());
 
@@ -988,7 +991,7 @@ TEST_P(UdpSocketTest, SynchronousReceive) {
 }
 
 TEST_P(UdpSocketTest, BoundaryPreserved_SendRecv) {
-  // Bind s_ to loopback:TestPort.
+  // Bind s_ to loopback:test_port_.
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
 
   // Send 3 packets from t_ to s_.
@@ -1011,7 +1014,7 @@ TEST_P(UdpSocketTest, BoundaryPreserved_SendRecv) {
 }
 
 TEST_P(UdpSocketTest, BoundaryPreserved_WritevReadv) {
-  // Bind s_ to loopback:TestPort.
+  // Bind s_ to loopback:test_port_.
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
 
   // Direct writes from t_ to s_.
@@ -1048,7 +1051,7 @@ TEST_P(UdpSocketTest, BoundaryPreserved_WritevReadv) {
 }
 
 TEST_P(UdpSocketTest, BoundaryPreserved_SendMsgRecvMsg) {
-  // Bind s_ to loopback:TestPort.
+  // Bind s_ to loopback:test_port_.
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
 
   // Send 2 packets from t_ to s_, where each packet's data consists of 2
@@ -1113,7 +1116,7 @@ TEST_P(UdpSocketTest, FIONREADWriteShutdown) {
   EXPECT_THAT(ioctl(s_, FIONREAD, &n), SyscallSucceedsWithValue(0));
   EXPECT_EQ(n, 0);
 
-  // Bind s_ to loopback:TestPort.
+  // Bind s_ to loopback:test_port_.
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
 
   // A UDP socket must be connected before it can be shutdown.
@@ -1145,7 +1148,7 @@ TEST_P(UdpSocketTest, FIONREADWriteShutdown) {
 // NOTE: Do not use `FIONREAD` as test name because it will be replaced by the
 // corresponding macro and become `0x541B`.
 TEST_P(UdpSocketTest, Fionread) {
-  // Bind s_ to loopback:TestPort.
+  // Bind s_ to loopback:test_port_.
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
 
   // Check that the bound socket with an empty buffer reports an empty first
@@ -1176,7 +1179,7 @@ TEST_P(UdpSocketTest, Fionread) {
 }
 
 TEST_P(UdpSocketTest, FIONREADZeroLengthPacket) {
-  // Bind s_ to loopback:TestPort.
+  // Bind s_ to loopback:test_port_.
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
 
   // Check that the bound socket with an empty buffer reports an empty first
@@ -1215,7 +1218,7 @@ TEST_P(UdpSocketTest, FIONREADZeroLengthWriteShutdown) {
   EXPECT_THAT(ioctl(s_, FIONREAD, &n), SyscallSucceedsWithValue(0));
   EXPECT_EQ(n, 0);
 
-  // Bind s_ to loopback:TestPort.
+  // Bind s_ to loopback:test_port_.
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
 
   // A UDP socket must be connected before it can be shutdown.

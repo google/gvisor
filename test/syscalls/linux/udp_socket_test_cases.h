@@ -21,9 +21,6 @@
 namespace gvisor {
 namespace testing {
 
-// The initial port to be be used on gvisor.
-constexpr int TestPort = 40000;
-
 // Fixture for tests parameterized by the address family to use (AF_INET and
 // AF_INET6) when creating sockets.
 class UdpSocketTest
@@ -42,6 +39,9 @@ class UdpSocketTest
     }
   }
 
+  // The port to be be used on gvisor.
+  int test_port_;
+
   // First UDP socket.
   int s_;
 
@@ -51,7 +51,7 @@ class UdpSocketTest
   // The length of the socket address.
   socklen_t addrlen_;
 
-  // Initialized address pointing to loopback and port TestPort+i.
+  // Initialized address pointing to loopback and port test_port_+i.
   struct sockaddr* addr_[3];
 
   // Initialize "any" address.
