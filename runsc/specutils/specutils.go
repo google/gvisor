@@ -444,36 +444,6 @@ func ContainsStr(strs []string, str string) bool {
 	return false
 }
 
-// Cleanup allows defers to be aborted when cleanup needs to happen
-// conditionally. Usage:
-// c := MakeCleanup(func() { f.Close() })
-// defer c.Clean() // any failure before release is called will close the file.
-// ...
-// c.Release() // on success, aborts closing the file and return it.
-// return f
-type Cleanup struct {
-	clean func()
-}
-
-// MakeCleanup creates a new Cleanup object.
-func MakeCleanup(f func()) Cleanup {
-	return Cleanup{clean: f}
-}
-
-// Clean calls the cleanup function.
-func (c *Cleanup) Clean() {
-	if c.clean != nil {
-		c.clean()
-		c.clean = nil
-	}
-}
-
-// Release releases the cleanup from its duties, i.e. cleanup function is not
-// called after this point.
-func (c *Cleanup) Release() {
-	c.clean = nil
-}
-
 // RetryEintr retries the function until an error different than EINTR is
 // returned.
 func RetryEintr(f func() (uintptr, uintptr, error)) (uintptr, uintptr, error) {

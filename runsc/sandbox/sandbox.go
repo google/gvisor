@@ -30,6 +30,7 @@ import (
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/syndtr/gocapability/capability"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/control/client"
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/log"
@@ -119,7 +120,7 @@ func New(conf *boot.Config, args *Args) (*Sandbox, error) {
 	s := &Sandbox{ID: args.ID, Cgroup: args.Cgroup}
 	// The Cleanup object cleans up partially created sandboxes when an error
 	// occurs. Any errors occurring during cleanup itself are ignored.
-	c := specutils.MakeCleanup(func() {
+	c := cleanup.Make(func() {
 		err := s.destroy()
 		log.Warningf("error destroying sandbox: %v", err)
 	})
