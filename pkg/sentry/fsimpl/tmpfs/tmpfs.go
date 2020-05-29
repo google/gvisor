@@ -163,6 +163,11 @@ type dentry struct {
 	// filesystem.mu.
 	name string
 
+	// unlinked indicates whether this dentry has been unlinked from its parent.
+	// It is only set to true on an unlink operation, and never set from true to
+	// false. unlinked is protected by filesystem.mu.
+	unlinked bool
+
 	// dentryEntry (ugh) links dentries into their parent directory.childList.
 	dentryEntry
 
@@ -202,7 +207,7 @@ func (d *dentry) DecRef() {
 }
 
 // InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
-func (d *dentry) InotifyWithParent(events uint32, cookie uint32) {
+func (d *dentry) InotifyWithParent(events uint32, cookie uint32, et vfs.EventType) {
 	if d.inode.isDir() {
 		events |= linux.IN_ISDIR
 	}
@@ -211,9 +216,9 @@ func (d *dentry) InotifyWithParent(events uint32, cookie uint32) {
 	if d.parent != nil {
 		// Note that d.parent or d.name may be stale if there is a concurrent
 		// rename operation. Inotify does not provide consistency guarantees.
-		d.parent.inode.watches.Notify(d.name, events, cookie)
+		d.parent.inode.watches.NotifyWithExclusions(d.name, events, cookie, et, d.unlinked)
 	}
-	d.inode.watches.Notify("", events, cookie)
+	d.inode.watches.Notify("", events, cookie, et)
 }
 
 // Watches implements vfs.DentryImpl.Watches.
@@ -676,9 +681,8 @@ func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions)
 		return err
 	}
 
-	// Generate inotify events.
 	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
-		d.InotifyWithParent(ev, 0)
+		d.InotifyWithParent(ev, 0, vfs.InodeEvent)
 	}
 	return nil
 }
@@ -701,7 +705,7 @@ func (fd *fileDescription) Setxattr(ctx context.Context, opts vfs.SetxattrOption
 	}
 
 	// Generate inotify events.
-	d.InotifyWithParent(linux.IN_ATTRIB, 0)
+	d.InotifyWithParent(linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	return nil
 }
 
@@ -713,7 +717,7 @@ func (fd *fileDescription) Removexattr(ctx context.Context, name string) error {
 	}
 
 	// Generate inotify events.
-	d.InotifyWithParent(linux.IN_ATTRIB, 0)
+	d.InotifyWithParent(linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	return nil
 }
 

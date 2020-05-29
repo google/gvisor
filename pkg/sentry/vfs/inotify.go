@@ -33,6 +33,19 @@ import (
 // must be a power 2 for rounding below.
 const inotifyEventBaseSize = 16
 
+// EventType defines different kinds of inotfiy events.
+//
+// The way events are labelled appears somewhat arbitrary, but they must match
+// Linux so that IN_EXCL_UNLINK behaves as it does in Linux.
+type EventType uint8
+
+// PathEvent and InodeEvent correspond to FSNOTIFY_EVENT_PATH and
+// FSNOTIFY_EVENT_INODE in Linux.
+const (
+	PathEvent  EventType = iota
+	InodeEvent EventType = iota
+)
+
 // Inotify represents an inotify instance created by inotify_init(2) or
 // inotify_init1(2). Inotify implements FileDescriptionImpl.
 //
@@ -419,13 +432,22 @@ func (w *Watches) Remove(id uint64) {
 }
 
 // Notify queues a new event with all watches in this set.
-func (w *Watches) Notify(name string, events, cookie uint32) {
+func (w *Watches) Notify(name string, events, cookie uint32, et EventType) {
+	w.NotifyWithExclusions(name, events, cookie, et, false)
+}
+
+// NotifyWithExclusions queues a new event with watches in this set. Watches
+// with IN_EXCL_UNLINK are skipped if the event is coming from a child that
+// has been unlinked.
+func (w *Watches) NotifyWithExclusions(name string, events, cookie uint32, et EventType, unlinked bool) {
 	// N.B. We don't defer the unlocks because Notify is in the hot path of
 	// all IO operations, and the defer costs too much for small IO
 	// operations.
 	w.mu.RLock()
 	for _, watch := range w.ws {
-		// TODO(gvisor.dev/issue/1479): Skip for IN_EXCL_UNLINK cases.
+		if unlinked && watch.ExcludeUnlinkedChildren() && et == PathEvent {
+			continue
+		}
 		watch.Notify(name, events, cookie)
 	}
 	w.mu.RUnlock()
@@ -434,7 +456,7 @@ func (w *Watches) Notify(name string, events, cookie uint32) {
 // HandleDeletion is called when the watch target is destroyed to emit
 // the appropriate events.
 func (w *Watches) HandleDeletion() {
-	w.Notify("", linux.IN_DELETE_SELF, 0)
+	w.Notify("", linux.IN_DELETE_SELF, 0, InodeEvent)
 
 	// TODO(gvisor.dev/issue/1479): This doesn't work because maps are not copied
 	// by value. Ideally, we wouldn't have this circular locking so we can just
@@ -655,8 +677,8 @@ func InotifyEventFromStatMask(mask uint32) uint32 {
 // InotifyRemoveChild sends the appriopriate notifications to the watch sets of
 // the child being removed and its parent.
 func InotifyRemoveChild(self, parent *Watches, name string) {
-	self.Notify("", linux.IN_ATTRIB, 0)
-	parent.Notify(name, linux.IN_DELETE, 0)
+	self.Notify("", linux.IN_ATTRIB, 0, InodeEvent)
+	parent.Notify(name, linux.IN_DELETE, 0, InodeEvent)
 	// TODO(gvisor.dev/issue/1479): implement IN_EXCL_UNLINK.
 }
 
@@ -668,8 +690,8 @@ func InotifyRename(ctx context.Context, renamed, oldParent, newParent *Watches, 
 		dirEv = linux.IN_ISDIR
 	}
 	cookie := uniqueid.InotifyCookie(ctx)
-	oldParent.Notify(oldName, dirEv|linux.IN_MOVED_FROM, cookie)
-	newParent.Notify(newName, dirEv|linux.IN_MOVED_TO, cookie)
+	oldParent.Notify(oldName, dirEv|linux.IN_MOVED_FROM, cookie, InodeEvent)
+	newParent.Notify(newName, dirEv|linux.IN_MOVED_TO, cookie, InodeEvent)
 	// Somewhat surprisingly, self move events do not have a cookie.
-	renamed.Notify("", linux.IN_MOVE_SELF, 0)
+	renamed.Notify("", linux.IN_MOVE_SELF, 0, InodeEvent)
 }
