@@ -22,22 +22,21 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/devices/memdev"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/user"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devpts"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/gofer"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sys"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
-	"gvisor.dev/gvisor/pkg/syserror"
-
-	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 func registerFilesystems(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials) error {
@@ -95,69 +94,14 @@ func setupContainerVFS2(ctx context.Context, conf *Config, mntr *containerMounte
 		return fmt.Errorf("failed to setupFS: %w", err)
 	}
 	procArgs.MountNamespaceVFS2 = mns
-	return setExecutablePathVFS2(ctx, procArgs)
-}
 
-func setExecutablePathVFS2(ctx context.Context, procArgs *kernel.CreateProcessArgs) error {
-	exe := procArgs.Argv[0]
-
-	// Absolute paths can be used directly.
-	if path.IsAbs(exe) {
-		procArgs.Filename = exe
-		return nil
+	// Resolve the executable path from working dir and environment.
+	f, err := user.ResolveExecutablePathVFS2(ctx, procArgs.Credentials, procArgs.MountNamespaceVFS2, procArgs.Envv, procArgs.WorkingDirectory, procArgs.Argv[0])
+	if err != nil {
+		return fmt.Errorf("searching for executable %q, cwd: %q, envv: %q: %v", procArgs.Argv[0], procArgs.WorkingDirectory, procArgs.Envv, err)
 	}
-
-	// Paths with '/' in them should be joined to the working directory, or
-	// to the root if working directory is not set.
-	if strings.IndexByte(exe, '/') > 0 {
-		if !path.IsAbs(procArgs.WorkingDirectory) {
-			return fmt.Errorf("working directory %q must be absolute", procArgs.WorkingDirectory)
-		}
-		procArgs.Filename = path.Join(procArgs.WorkingDirectory, exe)
-		return nil
-	}
-
-	// Paths with a '/' are relative to the CWD.
-	if strings.IndexByte(exe, '/') > 0 {
-		procArgs.Filename = path.Join(procArgs.WorkingDirectory, exe)
-		return nil
-	}
-
-	// Otherwise, We must lookup the name in the paths, starting from the
-	// root directory.
-	root := procArgs.MountNamespaceVFS2.Root()
-	defer root.DecRef()
-
-	paths := fs.GetPath(procArgs.Envv)
-	creds := procArgs.Credentials
-
-	for _, p := range paths {
-		binPath := path.Join(p, exe)
-		pop := &vfs.PathOperation{
-			Root:               root,
-			Start:              root,
-			Path:               fspath.Parse(binPath),
-			FollowFinalSymlink: true,
-		}
-		opts := &vfs.OpenOptions{
-			FileExec: true,
-			Flags:    linux.O_RDONLY,
-		}
-		dentry, err := root.Mount().Filesystem().VirtualFilesystem().OpenAt(ctx, creds, pop, opts)
-		if err == syserror.ENOENT || err == syserror.EACCES {
-			// Didn't find it here.
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		dentry.DecRef()
-
-		procArgs.Filename = binPath
-		return nil
-	}
-
-	return fmt.Errorf("executable %q not found in $PATH=%q", exe, strings.Join(paths, ":"))
+	procArgs.Filename = f
+	return nil
 }
 
 func (c *containerMounter) setupVFS2(ctx context.Context, conf *Config, procArgs *kernel.CreateProcessArgs) (*vfs.MountNamespace, error) {
