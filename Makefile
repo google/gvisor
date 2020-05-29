@@ -173,7 +173,8 @@ $(RELEASE_KEY):
 release: $(RELEASE_KEY) ## Builds a release.
 	@mkdir -p $(RELEASE_ROOT)
 	@T=$$(mktemp -d /tmp/release.XXXXXX); \
-	  $(MAKE) copy TARGETS="runsc runsc:runsc-debian" DESTINATION=$$T && \
+	  $(MAKE) copy TARGETS="runsc" DESTINATION=$$T && \
+	  $(MAKE) copy TARGETS="runsc:runsc-debian" DESTINATION=$$T && \
 	  NIGHTLY=$(RELEASE_NIGHTLY) tools/make_release.sh $(RELEASE_KEY) $(RELEASE_ROOT) $$T/*; \
 	rc=$$?; rm -rf $$T; exit $$rc
 .PHONY: release
