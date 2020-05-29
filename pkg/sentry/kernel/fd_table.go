@@ -152,7 +152,13 @@ func (f *FDTable) drop(file *fs.File) {
 // dropVFS2 drops the table reference.
 func (f *FDTable) dropVFS2(file *vfs.FileDescription) {
 	// TODO(gvisor.dev/issue/1480): Release locks.
-	// TODO(gvisor.dev/issue/1479): Send inotify events.
+
+	// Generate inotify events.
+	ev := uint32(linux.IN_CLOSE_NOWRITE)
+	if file.IsWritable() {
+		ev = linux.IN_CLOSE_WRITE
+	}
+	file.Dentry().InotifyWithParent(ev, 0)
 
 	// Drop the table reference.
 	file.DecRef()

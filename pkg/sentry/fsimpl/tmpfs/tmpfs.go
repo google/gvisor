@@ -201,6 +201,26 @@ func (d *dentry) DecRef() {
 	d.inode.decRef()
 }
 
+// InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
+func (d *dentry) InotifyWithParent(events uint32, cookie uint32) {
+	if d.inode.isDir() {
+		events |= linux.IN_ISDIR
+	}
+
+	// The ordering below is important, Linux always notifies the parent first.
+	if d.parent != nil {
+		// Note that d.parent or d.name may be stale if there is a concurrent
+		// rename operation. Inotify does not provide consistency guarantees.
+		d.parent.inode.watches.Notify(d.name, events, cookie)
+	}
+	d.inode.watches.Notify("", events, cookie)
+}
+
+// Watches implements vfs.DentryImpl.Watches.
+func (d *dentry) Watches() *vfs.Watches {
+	return &d.inode.watches
+}
+
 // inode represents a filesystem object.
 type inode struct {
 	// fs is the owning filesystem. fs is immutable.
@@ -236,6 +256,9 @@ type inode struct {
 	// Advisory file locks, which lock at the inode level.
 	locks lock.FileLocks
 
+	// Inotify watches for this inode.
+	watches vfs.Watches
+
 	impl interface{} // immutable
 }
 
@@ -257,6 +280,7 @@ func (i *inode) init(impl interface{}, fs *filesystem, creds *auth.Credentials, 
 	i.ctime = now
 	i.mtime = now
 	// i.nlink initialized by caller
+	i.watches = vfs.Watches{}
 	i.impl = impl
 }
 
@@ -307,6 +331,7 @@ func (i *inode) tryIncRef() bool {
 
 func (i *inode) decRef() {
 	if refs := atomic.AddInt64(&i.refs, -1); refs == 0 {
+		i.watches.HandleDeletion()
 		if regFile, ok := i.impl.(*regularFile); ok {
 			// Release memory used by regFile to store data. Since regFile is
 			// no longer usable, we don't need to grab any locks or update any
@@ -628,8 +653,12 @@ func (fd *fileDescription) filesystem() *filesystem {
 	return fd.vfsfd.Mount().Filesystem().Impl().(*filesystem)
 }
 
+func (fd *fileDescription) dentry() *dentry {
+	return fd.vfsfd.Dentry().Impl().(*dentry)
+}
+
 func (fd *fileDescription) inode() *inode {
-	return fd.vfsfd.Dentry().Impl().(*dentry).inode
+	return fd.dentry().inode
 }
 
 // Stat implements vfs.FileDescriptionImpl.Stat.
@@ -642,7 +671,16 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
 func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 	creds := auth.CredentialsFromContext(ctx)
-	return fd.inode().setStat(ctx, creds, &opts.Stat)
+	d := fd.dentry()
+	if err := d.inode.setStat(ctx, creds, &opts.Stat); err != nil {
+		return err
+	}
+
+	// Generate inotify events.
+	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
+		d.InotifyWithParent(ev, 0)
+	}
+	return nil
 }
 
 // Listxattr implements vfs.FileDescriptionImpl.Listxattr.
@@ -657,12 +695,26 @@ func (fd *fileDescription) Getxattr(ctx context.Context, opts vfs.GetxattrOption
 
 // Setxattr implements vfs.FileDescriptionImpl.Setxattr.
 func (fd *fileDescription) Setxattr(ctx context.Context, opts vfs.SetxattrOptions) error {
-	return fd.inode().setxattr(auth.CredentialsFromContext(ctx), &opts)
+	d := fd.dentry()
+	if err := d.inode.setxattr(auth.CredentialsFromContext(ctx), &opts); err != nil {
+		return err
+	}
+
+	// Generate inotify events.
+	d.InotifyWithParent(linux.IN_ATTRIB, 0)
+	return nil
 }
 
 // Removexattr implements vfs.FileDescriptionImpl.Removexattr.
 func (fd *fileDescription) Removexattr(ctx context.Context, name string) error {
-	return fd.inode().removexattr(auth.CredentialsFromContext(ctx), name)
+	d := fd.dentry()
+	if err := d.inode.removexattr(auth.CredentialsFromContext(ctx), name); err != nil {
+		return err
+	}
+
+	// Generate inotify events.
+	d.InotifyWithParent(linux.IN_ATTRIB, 0)
+	return nil
 }
 
 // NewMemfd creates a new tmpfs regular file and file description that can back
