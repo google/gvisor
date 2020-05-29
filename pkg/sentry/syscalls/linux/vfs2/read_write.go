@@ -94,7 +94,7 @@ func read(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, opt
 	n, err := file.Read(t, dst, opts)
 	if err != syserror.ErrWouldBlock {
 		if n > 0 {
-			file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0)
+			file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0, vfs.PathEvent)
 		}
 		return n, err
 	}
@@ -102,7 +102,7 @@ func read(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, opt
 	allowBlock, deadline, hasDeadline := blockPolicy(t, file)
 	if !allowBlock {
 		if n > 0 {
-			file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0)
+			file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0, vfs.PathEvent)
 		}
 		return n, err
 	}
@@ -135,7 +135,7 @@ func read(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, opt
 	file.EventUnregister(&w)
 
 	if total > 0 {
-		file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0)
+		file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0, vfs.PathEvent)
 	}
 	return total, err
 }
@@ -258,7 +258,7 @@ func pread(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, of
 	n, err := file.PRead(t, dst, offset, opts)
 	if err != syserror.ErrWouldBlock {
 		if n > 0 {
-			file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0)
+			file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0, vfs.PathEvent)
 		}
 		return n, err
 	}
@@ -266,7 +266,7 @@ func pread(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, of
 	allowBlock, deadline, hasDeadline := blockPolicy(t, file)
 	if !allowBlock {
 		if n > 0 {
-			file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0)
+			file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0, vfs.PathEvent)
 		}
 		return n, err
 	}
@@ -299,7 +299,7 @@ func pread(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, of
 	file.EventUnregister(&w)
 
 	if total > 0 {
-		file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0)
+		file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0, vfs.PathEvent)
 	}
 	return total, err
 }
@@ -364,7 +364,7 @@ func write(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, op
 	n, err := file.Write(t, src, opts)
 	if err != syserror.ErrWouldBlock {
 		if n > 0 {
-			file.Dentry().InotifyWithParent(linux.IN_MODIFY, 0)
+			file.Dentry().InotifyWithParent(linux.IN_MODIFY, 0, vfs.PathEvent)
 		}
 		return n, err
 	}
@@ -372,7 +372,7 @@ func write(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, op
 	allowBlock, deadline, hasDeadline := blockPolicy(t, file)
 	if !allowBlock {
 		if n > 0 {
-			file.Dentry().InotifyWithParent(linux.IN_MODIFY, 0)
+			file.Dentry().InotifyWithParent(linux.IN_MODIFY, 0, vfs.PathEvent)
 		}
 		return n, err
 	}
@@ -405,7 +405,7 @@ func write(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, op
 	file.EventUnregister(&w)
 
 	if total > 0 {
-		file.Dentry().InotifyWithParent(linux.IN_MODIFY, 0)
+		file.Dentry().InotifyWithParent(linux.IN_MODIFY, 0, vfs.PathEvent)
 	}
 	return total, err
 }
@@ -528,7 +528,7 @@ func pwrite(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, o
 	n, err := file.PWrite(t, src, offset, opts)
 	if err != syserror.ErrWouldBlock {
 		if n > 0 {
-			file.Dentry().InotifyWithParent(linux.IN_MODIFY, 0)
+			file.Dentry().InotifyWithParent(linux.IN_MODIFY, 0, vfs.PathEvent)
 		}
 		return n, err
 	}
@@ -536,7 +536,7 @@ func pwrite(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, o
 	allowBlock, deadline, hasDeadline := blockPolicy(t, file)
 	if !allowBlock {
 		if n > 0 {
-			file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0)
+			file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0, vfs.PathEvent)
 		}
 		return n, err
 	}
@@ -569,7 +569,7 @@ func pwrite(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, o
 	file.EventUnregister(&w)
 
 	if total > 0 {
-		file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0)
+		file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0, vfs.PathEvent)
 	}
 	return total, err
 }
