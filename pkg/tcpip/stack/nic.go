@@ -1304,13 +1304,16 @@ func (n *NIC) forwardPacket(r *Route, protocol tcpip.NetworkProtocolNumber, pkt 
 		pkt.Header = buffer.NewPrependable(linkHeaderLen)
 	}
 
+	// WritePacket takes ownership of pkt, calculate numBytes first.
+	numBytes := pkt.Header.UsedLength() + pkt.Data.Size()
+
 	if err := n.linkEP.WritePacket(r, nil /* gso */, protocol, pkt); err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 		return
 	}
 
 	n.stats.Tx.Packets.Increment()
-	n.stats.Tx.Bytes.IncrementBy(uint64(pkt.Header.UsedLength() + pkt.Data.Size()))
+	n.stats.Tx.Bytes.IncrementBy(uint64(numBytes))
 }
 
 // DeliverTransportPacket delivers the packets to the appropriate transport
