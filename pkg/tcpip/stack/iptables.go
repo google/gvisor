@@ -16,7 +16,6 @@ package stack
 
 import (
 	"fmt"
-	"strings"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -314,7 +313,7 @@ func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx
 	}
 
 	// Check whether the packet matches the IP header filter.
-	if !filterMatch(rule.Filter, header.IPv4(pkt.NetworkHeader), hook, nicName) {
+	if !rule.Filter.match(header.IPv4(pkt.NetworkHeader), hook, nicName) {
 		// Continue on to the next rule.
 		return RuleJump, ruleIdx + 1
 	}
@@ -334,48 +333,4 @@ func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx
 
 	// All the matchers matched, so run the target.
 	return rule.Target.Action(pkt, &it.connections, hook, gso, r, address)
-}
-
-func filterMatch(filter IPHeaderFilter, hdr header.IPv4, hook Hook, nicName string) bool {
-	// TODO(gvisor.dev/issue/170): Support other fields of the filter.
-	// Check the transport protocol.
-	if filter.Protocol != 0 && filter.Protocol != hdr.TransportProtocol() {
-		return false
-	}
-
-	// Check the destination IP.
-	dest := hdr.DestinationAddress()
-	matches := true
-	for i := range filter.Dst {
-		if dest[i]&filter.DstMask[i] != filter.Dst[i] {
-			matches = false
-			break
-		}
-	}
-	if matches == filter.DstInvert {
-		return false
-	}
-
-	// Check the output interface.
-	// TODO(gvisor.dev/issue/170): Add the check for FORWARD and POSTROUTING
-	// hooks after supported.
-	if hook == Output {
-		n := len(filter.OutputInterface)
-		if n == 0 {
-			return true
-		}
-
-		// If the interface name ends with '+', any interface which begins
-		// with the name should be matched.
-		ifName := filter.OutputInterface
-		matches = true
-		if strings.HasSuffix(ifName, "+") {
-			matches = strings.HasPrefix(nicName, ifName[:n-1])
-		} else {
-			matches = nicName == ifName
-		}
-		return filter.OutputInterfaceInvert != matches
-	}
-
-	return true
 }
