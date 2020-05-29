@@ -92,6 +92,16 @@ const (
 	IP_UNICAST_IF             = 50
 )
 
+// IP_MTU_DISCOVER values from uapi/linux/in.h
+const (
+	IP_PMTUDISC_DONT      = 0
+	IP_PMTUDISC_WANT      = 1
+	IP_PMTUDISC_DO        = 2
+	IP_PMTUDISC_PROBE     = 3
+	IP_PMTUDISC_INTERFACE = 4
+	IP_PMTUDISC_OMIT      = 5
+)
+
 // Socket options from uapi/linux/in6.h
 const (
 	IPV6_ADDRFORM         = 1
