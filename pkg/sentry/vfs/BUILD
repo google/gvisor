@@ -15,6 +15,18 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "event_list",
+    out = "event_list.go",
+    package = "vfs",
+    prefix = "event",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*Event",
+        "Linker": "*Event",
+    },
+)
+
 go_library(
     name = "vfs",
     srcs = [
@@ -25,11 +37,13 @@ go_library(
         "device.go",
         "epoll.go",
         "epoll_interest_list.go",
+        "event_list.go",
         "file_description.go",
         "file_description_impl_util.go",
         "filesystem.go",
         "filesystem_impl_util.go",
         "filesystem_type.go",
+        "inotify.go",
         "mount.go",
         "mount_unsafe.go",
         "options.go",
@@ -57,6 +71,7 @@ go_library(
         "//pkg/sentry/limits",
         "//pkg/sentry/memmap",
         "//pkg/sentry/socket/unix/transport",
+        "//pkg/sentry/uniqueid",
         "//pkg/sync",
         "//pkg/syserror",
         "//pkg/usermem",

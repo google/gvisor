@@ -60,3 +60,15 @@ func (d *dentry) DecRef() {
 	// inode.decRef().
 	d.inode.decRef()
 }
+
+// InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
+//
+// TODO(gvisor.dev/issue/1479): Implement inotify.
+func (d *dentry) InotifyWithParent(events uint32, cookie uint32) {}
+
+// Watches implements vfs.DentryImpl.Watches.
+//
+// TODO(gvisor.dev/issue/1479): Implement inotify.
+func (d *dentry) Watches() *vfs.Watches {
+	return nil
+}

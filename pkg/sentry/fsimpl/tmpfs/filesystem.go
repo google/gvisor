@@ -177,6 +177,12 @@ func (fs *filesystem) doCreateAt(rp *vfs.ResolvingPath, dir bool, create func(pa
 	if err := create(parentDir, name); err != nil {
 		return err
 	}
+
+	ev := linux.IN_CREATE
+	if dir {
+		ev |= linux.IN_ISDIR
+	}
+	parentDir.inode.watches.Notify(name, uint32(ev), 0)
 	parentDir.inode.touchCMtime()
 	return nil
 }
@@ -241,6 +247,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 			return syserror.EMLINK
 		}
 		d.inode.incLinksLocked()
+		d.inode.watches.Notify("", linux.IN_ATTRIB, 0)
 		parentDir.insertChildLocked(fs.newDentry(d.inode), name)
 		return nil
 	})
@@ -354,6 +361,7 @@ afterTrailingSymlink:
 		if err != nil {
 			return nil, err
 		}
+		parentDir.inode.watches.Notify(name, linux.IN_CREATE, 0)
 		parentDir.inode.touchCMtime()
 		return fd, nil
 	}
@@ -559,6 +567,8 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		newParentDir.inode.touchCMtime()
 	}
 	renamed.inode.touchCtime()
+
+	vfs.InotifyRename(ctx, &renamed.inode.watches, &oldParentDir.inode.watches, &newParentDir.inode.watches, oldName, newName, renamed.inode.isDir())
 	return nil
 }
 
@@ -603,6 +613,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		return err
 	}
 	parentDir.removeChildLocked(child)
+	parentDir.inode.watches.Notify(name, linux.IN_DELETE|linux.IN_ISDIR, 0)
 	// Remove links for child, child/., and child/..
 	child.inode.decLinksLocked()
 	child.inode.decLinksLocked()
@@ -620,7 +631,14 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 	if err != nil {
 		return err
 	}
-	return d.inode.setStat(ctx, rp.Credentials(), &opts.Stat)
+	if err := d.inode.setStat(ctx, rp.Credentials(), &opts.Stat); err != nil {
+		return err
+	}
+
+	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
+		d.InotifyWithParent(ev, 0)
+	}
+	return nil
 }
 
 // StatAt implements vfs.FilesystemImpl.StatAt.
@@ -700,6 +718,12 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	if err := vfsObj.PrepareDeleteDentry(mntns, &child.vfsd); err != nil {
 		return err
 	}
+
+	// Generate inotify events. Note that this must take place before the link
+	// count of the child is decremented, or else the watches may be dropped
+	// before these events are added.
+	vfs.InotifyRemoveChild(&child.inode.watches, &parentDir.inode.watches, name)
+
 	parentDir.removeChildLocked(child)
 	child.inode.decLinksLocked()
 	vfsObj.CommitDeleteDentry(&child.vfsd)
@@ -756,7 +780,12 @@ func (fs *filesystem) SetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 	if err != nil {
 		return err
 	}
-	return d.inode.setxattr(rp.Credentials(), &opts)
+	if err := d.inode.setxattr(rp.Credentials(), &opts); err != nil {
+		return err
+	}
+
+	d.InotifyWithParent(linux.IN_ATTRIB, 0)
+	return nil
 }
 
 // RemovexattrAt implements vfs.FilesystemImpl.RemovexattrAt.
@@ -767,7 +796,12 @@ func (fs *filesystem) RemovexattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 	if err != nil {
 		return err
 	}
-	return d.inode.removexattr(rp.Credentials(), name)
+	if err := d.inode.removexattr(rp.Credentials(), name); err != nil {
+		return err
+	}
+
+	d.InotifyWithParent(linux.IN_ATTRIB, 0)
+	return nil
 }
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.

@@ -1039,6 +1039,18 @@ func (d *dentry) decRefLocked() {
 	}
 }
 
+// InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
+//
+// TODO(gvisor.dev/issue/1479): Implement inotify.
+func (d *dentry) InotifyWithParent(events uint32, cookie uint32) {}
+
+// Watches implements vfs.DentryImpl.Watches.
+//
+// TODO(gvisor.dev/issue/1479): Implement inotify.
+func (d *dentry) Watches() *vfs.Watches {
+	return nil
+}
+
 // checkCachingLocked should be called after d's reference count becomes 0 or it
 // becomes disowned.
 //

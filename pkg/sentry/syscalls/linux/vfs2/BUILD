@@ -12,6 +12,7 @@ go_library(
         "filesystem.go",
         "fscontext.go",
         "getdents.go",
+        "inotify.go",
         "ioctl.go",
         "memfd.go",
         "mmap.go",

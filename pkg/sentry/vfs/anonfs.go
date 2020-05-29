@@ -297,3 +297,15 @@ func (d *anonDentry) TryIncRef() bool {
 func (d *anonDentry) DecRef() {
 	// no-op
 }
+
+// InotifyWithParent implements DentryImpl.InotifyWithParent.
+//
+// TODO(gvisor.dev/issue/1479): Implement inotify.
+func (d *anonDentry) InotifyWithParent(events uint32, cookie uint32) {}
+
+// Watches implements DentryImpl.Watches.
+//
+// TODO(gvisor.dev/issue/1479): Implement inotify.
+func (d *anonDentry) Watches() *Watches {
+	return nil
+}
