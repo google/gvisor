@@ -158,7 +158,7 @@ func (f *FDTable) dropVFS2(file *vfs.FileDescription) {
 	if file.IsWritable() {
 		ev = linux.IN_CLOSE_WRITE
 	}
-	file.Dentry().InotifyWithParent(ev, 0)
+	file.Dentry().InotifyWithParent(ev, 0, vfs.PathEvent)
 
 	// Drop the table reference.
 	file.DecRef()

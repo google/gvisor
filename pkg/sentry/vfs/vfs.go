@@ -422,7 +422,7 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 				}
 			}
 
-			fd.Dentry().InotifyWithParent(linux.IN_OPEN, 0)
+			fd.Dentry().InotifyWithParent(linux.IN_OPEN, 0, PathEvent)
 			return fd, nil
 		}
 		if !rp.handleError(err) {

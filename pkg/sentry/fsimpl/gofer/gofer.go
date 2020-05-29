@@ -1042,7 +1042,7 @@ func (d *dentry) decRefLocked() {
 // InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
 //
 // TODO(gvisor.dev/issue/1479): Implement inotify.
-func (d *dentry) InotifyWithParent(events uint32, cookie uint32) {}
+func (d *dentry) InotifyWithParent(events uint32, cookie uint32, et vfs.EventType) {}
 
 // Watches implements vfs.DentryImpl.Watches.
 //
