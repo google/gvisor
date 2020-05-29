@@ -240,16 +240,17 @@ type NetworkEndpoint interface {
 	MaxHeaderLength() uint16
 
 	// WritePacket writes a packet to the given destination address and
-	// protocol. It sets pkt.NetworkHeader. pkt.TransportHeader must have
-	// already been set.
+	// protocol. It takes ownership of pkt. pkt.TransportHeader must have already
+	// been set.
 	WritePacket(r *Route, gso *GSO, params NetworkHeaderParams, pkt PacketBuffer) *tcpip.Error
 
 	// WritePackets writes packets to the given destination address and
-	// protocol. pkts must not be zero length.
+	// protocol. pkts must not be zero length. It takes ownership of pkts and
+	// underlying packets.
 	WritePackets(r *Route, gso *GSO, pkts PacketBufferList, params NetworkHeaderParams) (int, *tcpip.Error)
 
 	// WriteHeaderIncludedPacket writes a packet that includes a network
-	// header to the given destination address.
+	// header to the given destination address. It takes ownership of pkt.
 	WriteHeaderIncludedPacket(r *Route, pkt PacketBuffer) *tcpip.Error
 
 	// ID returns the network protocol endpoint ID.
@@ -382,9 +383,8 @@ type LinkEndpoint interface {
 	LinkAddress() tcpip.LinkAddress
 
 	// WritePacket writes a packet with the given protocol through the
-	// given route. It sets pkt.LinkHeader if a link layer header exists.
-	// pkt.NetworkHeader and pkt.TransportHeader must have already been
-	// set.
+	// given route. It takes ownership of pkt. pkt.NetworkHeader and
+	// pkt.TransportHeader must have already been set.
 	//
 	// To participate in transparent bridging, a LinkEndpoint implementation
 	// should call eth.Encode with header.EthernetFields.SrcAddr set to
@@ -392,7 +392,8 @@ type LinkEndpoint interface {
 	WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt PacketBuffer) *tcpip.Error
 
 	// WritePackets writes packets with the given protocol through the
-	// given route. pkts must not be zero length.
+	// given route. pkts must not be zero length. It takes ownership of pkts and
+	// underlying packets.
 	//
 	// Right now, WritePackets is used only when the software segmentation
 	// offload is enabled. If it will be used for something else, it may
@@ -400,7 +401,7 @@ type LinkEndpoint interface {
 	WritePackets(r *Route, gso *GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error)
 
 	// WriteRawPacket writes a packet directly to the link. The packet
-	// should already have an ethernet header.
+	// should already have an ethernet header. It takes ownership of vv.
 	WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error
 
 	// Attach attaches the data link layer endpoint to the network-layer
