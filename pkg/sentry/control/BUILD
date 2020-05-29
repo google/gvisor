@@ -23,6 +23,7 @@ go_library(
         "//pkg/sentry/fdimport",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/host",
+        "//pkg/sentry/fs/user",
         "//pkg/sentry/fsbridge",
         "//pkg/sentry/fsimpl/host",
         "//pkg/sentry/kernel",

@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package user contains methods for resolving filesystem paths based on the
+// user and their environment.
 package user
 
 import (

@@ -17,13 +17,9 @@ package fs
 import (
 	"fmt"
 	"math"
-	"path"
-	"strings"
 	"syscall"
 
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -624,72 +620,4 @@ func (mns *MountNamespace) SyncAll(ctx context.Context) {
 	mns.mu.Lock()
 	defer mns.mu.Unlock()
 	mns.root.SyncAll(ctx)
-}
-
-// ResolveExecutablePath resolves the given executable name given a set of
-// paths that might contain it.
-func (mns *MountNamespace) ResolveExecutablePath(ctx context.Context, wd, name string, paths []string) (string, error) {
-	// Absolute paths can be used directly.
-	if path.IsAbs(name) {
-		return name, nil
-	}
-
-	// Paths with '/' in them should be joined to the working directory, or
-	// to the root if working directory is not set.
-	if strings.IndexByte(name, '/') > 0 {
-		if wd == "" {
-			wd = "/"
-		}
-		if !path.IsAbs(wd) {
-			return "", fmt.Errorf("working directory %q must be absolute", wd)
-		}
-		return path.Join(wd, name), nil
-	}
-
-	// Otherwise, We must lookup the name in the paths, starting from the
-	// calling context's root directory.
-	root := RootFromContext(ctx)
-	if root == nil {
-		// Caller has no root. Don't bother traversing anything.
-		return "", syserror.ENOENT
-	}
-	defer root.DecRef()
-	for _, p := range paths {
-		binPath := path.Join(p, name)
-		traversals := uint(linux.MaxSymlinkTraversals)
-		d, err := mns.FindInode(ctx, root, nil, binPath, &traversals)
-		if err == syserror.ENOENT || err == syserror.EACCES {
-			// Didn't find it here.
-			continue
-		}
-		if err != nil {
-			return "", err
-		}
-		defer d.DecRef()
-
-		// Check that it is a regular file.
-		if !IsRegular(d.Inode.StableAttr) {
-			continue
-		}
-
-		// Check whether we can read and execute the found file.
-		if err := d.Inode.CheckPermission(ctx, PermMask{Read: true, Execute: true}); err != nil {
-			log.Infof("Found executable at %q, but user cannot execute it: %v", binPath, err)
-			continue
-		}
-		return path.Join("/", p, name), nil
-	}
-	return "", syserror.ENOENT
-}
-
-// GetPath returns the PATH as a slice of strings given the environment
-// variables.
-func GetPath(env []string) []string {
-	const prefix = "PATH="
-	for _, e := range env {
-		if strings.HasPrefix(e, prefix) {
-			return strings.Split(strings.TrimPrefix(e, prefix), ":")
-		}
-	}
-	return nil
 }
