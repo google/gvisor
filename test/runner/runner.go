@@ -204,7 +204,7 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 			return
 		}
 		log.Warningf("%s: Got signal: %v", name, s)
-		done := make(chan bool)
+		done := make(chan bool, 1)
 		dArgs := append([]string{}, args...)
 		dArgs = append(dArgs, "-alsologtostderr=true", "debug", "--stacks", id)
 		go func(dArgs []string) {
