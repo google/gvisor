@@ -49,6 +49,8 @@ func init() {
 	RegisterTestCase(FilterInputJumpTwice{})
 	RegisterTestCase(FilterInputDestination{})
 	RegisterTestCase(FilterInputInvertDestination{})
+	RegisterTestCase(FilterInputSource{})
+	RegisterTestCase(FilterInputInvertSource{})
 }
 
 // FilterInputDropUDP tests that we can drop UDP traffic.
@@ -665,5 +667,63 @@ func (FilterInputInvertDestination) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputInvertDestination) LocalAction(ip net.IP) error {
+	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// FilterInputSource verifies that we can filter packets via `-d
+// <ipaddr>`.
+type FilterInputSource struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputSource) Name() string {
+	return "FilterInputSource"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputSource) ContainerAction(ip net.IP) error {
+	// Make INPUT's default action DROP, then ACCEPT all packets from this
+	// machine.
+	rules := [][]string{
+		{"-P", "INPUT", "DROP"},
+		{"-A", "INPUT", "-s", fmt.Sprintf("%v", ip), "-j", "ACCEPT"},
+	}
+	if err := filterTableRules(rules); err != nil {
+		return err
+	}
+
+	return listenUDP(acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputSource) LocalAction(ip net.IP) error {
+	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+}
+
+// FilterInputInvertSource verifies that we can filter packets via `! -d
+// <ipaddr>`.
+type FilterInputInvertSource struct{}
+
+// Name implements TestCase.Name.
+func (FilterInputInvertSource) Name() string {
+	return "FilterInputInvertSource"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (FilterInputInvertSource) ContainerAction(ip net.IP) error {
+	// Make INPUT's default action DROP, then ACCEPT all packets not bound
+	// for 127.0.0.1.
+	rules := [][]string{
+		{"-P", "INPUT", "DROP"},
+		{"-A", "INPUT", "!", "-s", localIP, "-j", "ACCEPT"},
+	}
+	if err := filterTableRules(rules); err != nil {
+		return err
+	}
+
+	return listenUDP(acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (FilterInputInvertSource) LocalAction(ip net.IP) error {
 	return sendUDPLoop(ip, acceptPort, sendloopDuration)
 }

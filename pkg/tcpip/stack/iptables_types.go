@@ -15,7 +15,10 @@
 package stack
 
 import (
+	"strings"
+
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 // A Hook specifies one of the hooks built into the network stack.
@@ -159,6 +162,16 @@ type IPHeaderFilter struct {
 	// comparison.
 	DstInvert bool
 
+	// Src matches the source IP address.
+	Src tcpip.Address
+
+	// SrcMask masks bits of the source IP address when comparing with Src.
+	SrcMask tcpip.Address
+
+	// SrcInvert inverts the meaning of the source IP check, i.e. when true the
+	// filter will match packets that fail the source comparison.
+	SrcInvert bool
+
 	// OutputInterface matches the name of the outgoing interface for the
 	// packet.
 	OutputInterface string
@@ -171,6 +184,55 @@ type IPHeaderFilter struct {
 	// i.e. when true the filter will match packets that fail the outgoing
 	// interface comparison.
 	OutputInterfaceInvert bool
+}
+
+// match returns whether hdr matches the filter.
+func (fl IPHeaderFilter) match(hdr header.IPv4, hook Hook, nicName string) bool {
+	// TODO(gvisor.dev/issue/170): Support other fields of the filter.
+	// Check the transport protocol.
+	if fl.Protocol != 0 && fl.Protocol != hdr.TransportProtocol() {
+		return false
+	}
+
+	// Check the source and destination IPs.
+	if !filterAddress(hdr.DestinationAddress(), fl.DstMask, fl.Dst, fl.DstInvert) || !filterAddress(hdr.SourceAddress(), fl.SrcMask, fl.Src, fl.SrcInvert) {
+		return false
+	}
+
+	// Check the output interface.
+	// TODO(gvisor.dev/issue/170): Add the check for FORWARD and POSTROUTING
+	// hooks after supported.
+	if hook == Output {
+		n := len(fl.OutputInterface)
+		if n == 0 {
+			return true
+		}
+
+		// If the interface name ends with '+', any interface which begins
+		// with the name should be matched.
+		ifName := fl.OutputInterface
+		matches := true
+		if strings.HasSuffix(ifName, "+") {
+			matches = strings.HasPrefix(nicName, ifName[:n-1])
+		} else {
+			matches = nicName == ifName
+		}
+		return fl.OutputInterfaceInvert != matches
+	}
+
+	return true
+}
+
+// filterAddress returns whether addr matches the filter.
+func filterAddress(addr, mask, filterAddr tcpip.Address, invert bool) bool {
+	matches := true
+	for i := range filterAddr {
+		if addr[i]&mask[i] != filterAddr[i] {
+			matches = false
+			break
+		}
+	}
+	return matches != invert
 }
 
 // A Matcher is the interface for matching packets.
