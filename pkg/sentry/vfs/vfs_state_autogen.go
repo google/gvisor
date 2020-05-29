@@ -152,6 +152,7 @@ func (x *VirtualFilesystem) save(m state.Map) {
 	x.beforeSave()
 	m.Save("mounts", &x.mounts)
 	m.Save("mountpoints", &x.mountpoints)
+	m.Save("lastMountID", &x.lastMountID)
 	m.Save("anonMount", &x.anonMount)
 	m.Save("devices", &x.devices)
 	m.Save("anonBlockDevMinorNext", &x.anonBlockDevMinorNext)
@@ -164,6 +165,7 @@ func (x *VirtualFilesystem) afterLoad() {}
 func (x *VirtualFilesystem) load(m state.Map) {
 	m.Load("mounts", &x.mounts)
 	m.Load("mountpoints", &x.mountpoints)
+	m.Load("lastMountID", &x.lastMountID)
 	m.Load("anonMount", &x.anonMount)
 	m.Load("devices", &x.devices)
 	m.Load("anonBlockDevMinorNext", &x.anonBlockDevMinorNext)
