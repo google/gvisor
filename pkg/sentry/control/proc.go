@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"path"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -28,10 +27,10 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/host"
+	"gvisor.dev/gvisor/pkg/sentry/fs/user"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	hostvfs2 "gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -190,17 +189,12 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 				// transferred to the new process.
 				initArgs.MountNamespaceVFS2 = proc.Kernel.GlobalInit().Leader().MountNamespaceVFS2()
 			}
-
-			paths := fs.GetPath(initArgs.Envv)
-			vfsObj := proc.Kernel.VFS()
-			file, err := ResolveExecutablePath(ctx, vfsObj, initArgs.WorkingDirectory, initArgs.Argv[0], paths)
+			file, err := getExecutableFD(ctx, creds, proc.Kernel.VFS(), initArgs.MountNamespaceVFS2, initArgs.Envv, initArgs.WorkingDirectory, initArgs.Argv[0])
 			if err != nil {
-				return nil, 0, nil, nil, fmt.Errorf("error finding executable %q in PATH %v: %v", initArgs.Argv[0], paths, err)
+				return nil, 0, nil, nil, fmt.Errorf("error finding executable %q in environment %v: %v", initArgs.Argv[0], initArgs.Envv, err)
 			}
 			initArgs.File = fsbridge.NewVFSFile(file)
 		} else {
-			// Get the full path to the filename from the PATH env variable.
-			paths := fs.GetPath(initArgs.Envv)
 			if initArgs.MountNamespace == nil {
 				// Set initArgs so that 'ctx' returns the namespace.
 				initArgs.MountNamespace = proc.Kernel.GlobalInit().Leader().MountNamespace()
@@ -209,9 +203,9 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 				// be donated to the new process in CreateProcess.
 				initArgs.MountNamespace.IncRef()
 			}
-			f, err := initArgs.MountNamespace.ResolveExecutablePath(ctx, initArgs.WorkingDirectory, initArgs.Argv[0], paths)
+			f, err := user.ResolveExecutablePath(ctx, creds, initArgs.MountNamespace, initArgs.Envv, initArgs.WorkingDirectory, initArgs.Argv[0])
 			if err != nil {
-				return nil, 0, nil, nil, fmt.Errorf("error finding executable %q in PATH %v: %v", initArgs.Argv[0], paths, err)
+				return nil, 0, nil, nil, fmt.Errorf("error finding executable %q in PATH %v: %v", initArgs.Argv[0], initArgs.Envv, err)
 			}
 			initArgs.Filename = f
 		}
@@ -429,53 +423,17 @@ func ttyName(tty *kernel.TTY) string {
 	return fmt.Sprintf("pts/%d", tty.Index)
 }
 
-// ResolveExecutablePath resolves the given executable name given a set of
-// paths that might contain it.
-func ResolveExecutablePath(ctx context.Context, vfsObj *vfs.VirtualFilesystem, wd, name string, paths []string) (*vfs.FileDescription, error) {
+// getExecutableFD resolves the given executable name and returns a
+// vfs.FileDescription for the executable file.
+func getExecutableFD(ctx context.Context, creds *auth.Credentials, vfsObj *vfs.VirtualFilesystem, mns *vfs.MountNamespace, envv []string, wd, name string) (*vfs.FileDescription, error) {
+	path, err := user.ResolveExecutablePathVFS2(ctx, creds, mns, envv, wd, name)
+	if err != nil {
+		return nil, err
+	}
+
 	root := vfs.RootFromContext(ctx)
 	defer root.DecRef()
-	creds := auth.CredentialsFromContext(ctx)
 
-	// Absolute paths can be used directly.
-	if path.IsAbs(name) {
-		return openExecutable(ctx, vfsObj, creds, root, name)
-	}
-
-	// Paths with '/' in them should be joined to the working directory, or
-	// to the root if working directory is not set.
-	if strings.IndexByte(name, '/') > 0 {
-		if len(wd) == 0 {
-			wd = "/"
-		}
-		if !path.IsAbs(wd) {
-			return nil, fmt.Errorf("working directory %q must be absolute", wd)
-		}
-		return openExecutable(ctx, vfsObj, creds, root, path.Join(wd, name))
-	}
-
-	// Otherwise, we must lookup the name in the paths, starting from the
-	// calling context's root directory.
-	for _, p := range paths {
-		if !path.IsAbs(p) {
-			// Relative paths aren't safe, no one should be using them.
-			log.Warningf("Skipping relative path %q in $PATH", p)
-			continue
-		}
-
-		binPath := path.Join(p, name)
-		f, err := openExecutable(ctx, vfsObj, creds, root, binPath)
-		if err != nil {
-			return nil, err
-		}
-		if f == nil {
-			continue // Not found/no access.
-		}
-		return f, nil
-	}
-	return nil, syserror.ENOENT
-}
-
-func openExecutable(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, root vfs.VirtualDentry, path string) (*vfs.FileDescription, error) {
 	pop := vfs.PathOperation{
 		Root:               root,
 		Start:              root, // binPath is absolute, Start can be anything.

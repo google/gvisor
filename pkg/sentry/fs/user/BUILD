@@ -4,15 +4,20 @@ package(licenses = ["notice"])
 
 go_library(
     name = "user",
-    srcs = ["user.go"],
+    srcs = [
+        "path.go",
+        "user.go",
+    ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/fspath",
+        "//pkg/log",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
+        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )
