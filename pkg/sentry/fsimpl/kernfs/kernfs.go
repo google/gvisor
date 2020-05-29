@@ -239,7 +239,7 @@ func (d *Dentry) Watches() *vfs.Watches {
 
 // InsertChild inserts child into the vfs dentry cache with the given name under
 // this dentry. This does not update the directory inode, so calling this on
-// it's own isn't sufficient to insert a child into a directory. InsertChild
+// its own isn't sufficient to insert a child into a directory. InsertChild
 // updates the link count on d if required.
 //
 // Precondition: d must represent a directory inode.
