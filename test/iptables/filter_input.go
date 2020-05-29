@@ -670,7 +670,7 @@ func (FilterInputInvertDestination) LocalAction(ip net.IP) error {
 	return sendUDPLoop(ip, acceptPort, sendloopDuration)
 }
 
-// FilterInputSource verifies that we can filter packets via `-d
+// FilterInputSource verifies that we can filter packets via `-s
 // <ipaddr>`.
 type FilterInputSource struct{}
 
@@ -699,7 +699,7 @@ func (FilterInputSource) LocalAction(ip net.IP) error {
 	return sendUDPLoop(ip, acceptPort, sendloopDuration)
 }
 
-// FilterInputInvertSource verifies that we can filter packets via `! -d
+// FilterInputInvertSource verifies that we can filter packets via `! -s
 // <ipaddr>`.
 type FilterInputInvertSource struct{}
 
