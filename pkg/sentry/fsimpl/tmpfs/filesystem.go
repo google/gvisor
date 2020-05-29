@@ -182,7 +182,7 @@ func (fs *filesystem) doCreateAt(rp *vfs.ResolvingPath, dir bool, create func(pa
 	if dir {
 		ev |= linux.IN_ISDIR
 	}
-	parentDir.inode.watches.Notify(name, uint32(ev), 0)
+	parentDir.inode.watches.Notify(name, uint32(ev), 0, vfs.InodeEvent)
 	parentDir.inode.touchCMtime()
 	return nil
 }
@@ -247,7 +247,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 			return syserror.EMLINK
 		}
 		d.inode.incLinksLocked()
-		d.inode.watches.Notify("", linux.IN_ATTRIB, 0)
+		d.inode.watches.Notify("", linux.IN_ATTRIB, 0, vfs.InodeEvent)
 		parentDir.insertChildLocked(fs.newDentry(d.inode), name)
 		return nil
 	})
@@ -361,7 +361,7 @@ afterTrailingSymlink:
 		if err != nil {
 			return nil, err
 		}
-		parentDir.inode.watches.Notify(name, linux.IN_CREATE, 0)
+		parentDir.inode.watches.Notify(name, linux.IN_CREATE, 0, vfs.PathEvent)
 		parentDir.inode.touchCMtime()
 		return fd, nil
 	}
@@ -613,7 +613,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		return err
 	}
 	parentDir.removeChildLocked(child)
-	parentDir.inode.watches.Notify(name, linux.IN_DELETE|linux.IN_ISDIR, 0)
+	parentDir.inode.watches.Notify(name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent)
 	// Remove links for child, child/., and child/..
 	child.inode.decLinksLocked()
 	child.inode.decLinksLocked()
@@ -636,7 +636,7 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 	}
 
 	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
-		d.InotifyWithParent(ev, 0)
+		d.InotifyWithParent(ev, 0, vfs.InodeEvent)
 	}
 	return nil
 }
@@ -784,7 +784,7 @@ func (fs *filesystem) SetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 		return err
 	}
 
-	d.InotifyWithParent(linux.IN_ATTRIB, 0)
+	d.InotifyWithParent(linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	return nil
 }
 
@@ -800,7 +800,7 @@ func (fs *filesystem) RemovexattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 		return err
 	}
 
-	d.InotifyWithParent(linux.IN_ATTRIB, 0)
+	d.InotifyWithParent(linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	return nil
 }
 

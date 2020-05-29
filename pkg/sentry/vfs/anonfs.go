@@ -301,7 +301,7 @@ func (d *anonDentry) DecRef() {
 // InotifyWithParent implements DentryImpl.InotifyWithParent.
 //
 // TODO(gvisor.dev/issue/1479): Implement inotify.
-func (d *anonDentry) InotifyWithParent(events uint32, cookie uint32) {}
+func (d *anonDentry) InotifyWithParent(events uint32, cookie uint32, et EventType) {}
 
 // Watches implements DentryImpl.Watches.
 //
