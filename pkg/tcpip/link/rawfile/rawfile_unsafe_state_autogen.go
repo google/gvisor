@@ -3,7 +3,7 @@
 // +build linux,!amd64,!arm64
 // +build linux,amd64 linux,arm64
 // +build go1.12
-// +build !go1.15
+// +build !go1.16
 // +build linux
 
 package rawfile
