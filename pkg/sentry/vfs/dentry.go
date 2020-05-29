@@ -103,6 +103,22 @@ type DentryImpl interface {
 
 	// DecRef decrements the Dentry's reference count.
 	DecRef()
+
+	// InotifyWithParent notifies all watches on the targets represented by this
+	// dentry and its parent. The parent's watches are notified first, followed
+	// by this dentry's.
+	//
+	// InotifyWithParent automatically adds the IN_ISDIR flag for dentries
+	// representing directories.
+	//
+	// Note that the events may not actually propagate up to the user, depending
+	// on the event masks.
+	InotifyWithParent(events uint32, cookie uint32)
+
+	// Watches returns the set of inotify watches for the file corresponding to
+	// the Dentry. Dentries that are hard links to the same underlying file
+	// share the same watches.
+	Watches() *Watches
 }
 
 // IncRef increments d's reference count.
@@ -131,6 +147,17 @@ func (d *Dentry) IsDead() bool {
 
 func (d *Dentry) isMounted() bool {
 	return atomic.LoadUint32(&d.mounts) != 0
+}
+
+// InotifyWithParent notifies all watches on the inodes for this dentry and
+// its parent of events.
+func (d *Dentry) InotifyWithParent(events uint32, cookie uint32) {
+	d.impl.InotifyWithParent(events, cookie)
+}
+
+// Watches returns the set of inotify watches associated with d.
+func (d *Dentry) Watches() *Watches {
+	return d.impl.Watches()
 }
 
 // The following functions are exported so that filesystem implementations can

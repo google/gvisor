@@ -112,6 +112,7 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 	dir.iterMu.Lock()
 	defer dir.iterMu.Unlock()
 
+	fd.dentry().InotifyWithParent(linux.IN_ACCESS, 0)
 	fd.inode().touchAtime(fd.vfsfd.Mount())
 
 	if fd.off == 0 {

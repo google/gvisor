@@ -951,6 +951,7 @@ cc_binary(
         "//test/util:epoll_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
+        "//test/util:posix_error",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
@@ -1382,7 +1383,7 @@ cc_binary(
     srcs = ["partial_bad_buffer.cc"],
     linkstatic = 1,
     deps = [
-        "//test/syscalls/linux:socket_test_util",
+        ":socket_test_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
         "@com_google_absl//absl/time",
@@ -3461,7 +3462,7 @@ cc_binary(
     deps = [
         ":socket_test_util",
         gtest,
-        "//test/syscalls/linux:socket_netlink_route_util",
+        ":socket_netlink_route_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
