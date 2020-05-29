@@ -14,22 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# We need to be sure that only a repo path is printed on stdout.
-exec 50<&1
-exec 1<&2
-
-echo_stdout() {
-  echo "$@" >&50
-}
-
-# Parse arguments. We require more than two arguments, which are the private
-# keyring, the e-mail associated with the signer, and the list of packages.
-if [ "$#" -le 3 ]; then
-  echo "usage: $0 <private-key> <signer-email> <root> <packages...>"
+if [[ "$#" -le 3 ]]; then
+  echo "usage: $0 <private-key> <suite> <root> <packages...>"
   exit 1
 fi
 declare -r private_key=$(readlink -e "$1"); shift
-declare -r signer="$1"; shift
+declare -r suite="$1"; shift
 declare -r root="$1"; shift
 
 # Ensure that we have the correct packages installed.
@@ -52,16 +42,16 @@ function apt_install() {
     esac
   done
 }
-dpkg-sig --help >/dev/null       || apt_install dpkg-sig
-apt-ftparchive --help >/dev/null || apt_install apt-utils
-xz --help >/dev/null             || apt_install xz-utils
+dpkg-sig --help >/dev/null 2>&1       || apt_install dpkg-sig
+apt-ftparchive --help >/dev/null 2>&1 || apt_install apt-utils
+xz --help >/dev/null 2>&1             || apt_install xz-utils
 
 # Verbose from this point.
 set -xeo pipefail
 
-# Create a temporary working directory. We don't remove this, as we ultimately
-# print this result and allow the caller to copy wherever they would like.
-declare -r tmpdir=$(mktemp -d /tmp/repoXXXXXX)
+# Create a directory for the release.
+declare -r release="${root}/dists/${suite}"
+mkdir -p "${release}"
 
 # Create a temporary keyring, and ensure it is cleaned up.
 declare -r keyring=$(mktemp /tmp/keyringXXXXXX.gpg)
@@ -69,12 +59,18 @@ cleanup() {
   rm -f "${keyring}"
 }
 trap cleanup EXIT
-gpg --no-default-keyring --keyring "${keyring}" --import "${private_key}"
+
+# We attempt the import twice because the first one will fail if the public key
+# is not found. This isn't actually a failure for us, because we don't require
+# the public (this may be stored separately). The second import will succeed
+# because, in reality, the first import succeeded and it's a no-op.
+gpg --no-default-keyring --keyring "${keyring}" --import "${private_key}" || \
+  gpg --no-default-keyring --keyring "${keyring}" --import "${private_key}"
 
 # Copy the packages into the root.
 for pkg in "$@"; do
-  name=$(basename "${pkg}" .deb)
-  name=$(basename "${name}" .changes)
+  ext=${pkg##*.}
+  name=$(basename "${pkg}" ".${ext}")
   arch=${name##*_}
   if [[ "${name}" == "${arch}" ]]; then
     continue # Not a regular package.
@@ -90,17 +86,22 @@ for pkg in "$@"; do
     echo "Unknown file type: ${pkg}"
     exit 1
   fi
+
+  # The package may already exist, in which case we leave it alone.
   version=${version// /} # Trim whitespace.
-  mkdir -p "${root}"/pool/"${version}"/binary-"${arch}"
-  cp -a "${pkg}" "${root}"/pool/"${version}"/binary-"${arch}"
-done
+  destdir="${root}/pool/${version}/binary-${arch}"
+  target="${destdir}/${name}.${ext}"
+  if [[ -f "${target}" ]]; then
+    continue
+  fi
 
-# Ensure all permissions are correct.
-find "${root}"/pool -type f -exec chmod 0644 {} \;
-
-# Sign all packages.
-for file in "${root}"/pool/*/binary-*/*.deb; do
-  dpkg-sig -g "--no-default-keyring --keyring ${keyring}" --sign builder "${file}"
+  # Copy & sign the package.
+  mkdir -p "${destdir}"
+  cp -a "${pkg}" "${target}"
+  chmod 0644 "${target}"
+  if [[ "${ext}" == "deb" ]]; then
+    dpkg-sig -g "--no-default-keyring --keyring ${keyring}" --sign builder "${target}"
+  fi
 done
 
 # Build the package list.
@@ -109,7 +110,7 @@ for dir in "${root}"/pool/*/binary-*; do
   name=$(basename "${dir}")
   arch=${name##binary-}
   arches+=("${arch}")
-  repo_packages="${tmpdir}"/main/"${name}"
+  repo_packages="${release}"/main/"${name}"
   mkdir -p "${repo_packages}"
   (cd "${root}" && apt-ftparchive --arch "${arch}" packages pool > "${repo_packages}"/Packages)
   (cd "${repo_packages}" && cat Packages | gzip > Packages.gz)
@@ -117,23 +118,22 @@ for dir in "${root}"/pool/*/binary-*; do
 done
 
 # Build the release list.
-cat > "${tmpdir}"/apt.conf <<EOF
+cat > "${release}"/apt.conf <<EOF
 APT {
   FTPArchive {
     Release {
       Architectures "${arches[@]}";
+      Suite "${suite}";
       Components "main";
     };
   };
 };
 EOF
-(cd "${tmpdir}" && apt-ftparchive -c=apt.conf release . > Release)
-rm "${tmpdir}"/apt.conf
+(cd "${release}" && apt-ftparchive -c=apt.conf release . > Release)
+rm "${release}"/apt.conf
 
 # Sign the release.
 declare -r digest_opts=("--digest-algo" "SHA512" "--cert-digest-algo" "SHA512")
-(cd "${tmpdir}" && gpg --no-default-keyring --keyring "${keyring}" --clearsign "${digest_opts[@]}" -o InRelease Release)
-(cd "${tmpdir}" && gpg --no-default-keyring --keyring "${keyring}" -abs "${digest_opts[@]}" -o Release.gpg Release)
-
-# Show the results.
-echo_stdout "${tmpdir}"
+(cd "${release}" && rm -f Release.gpg InRelease)
+(cd "${release}" && gpg --no-default-keyring --keyring "${keyring}" --clearsign "${digest_opts[@]}" -o InRelease Release)
+(cd "${release}" && gpg --no-default-keyring --keyring "${keyring}" -abs "${digest_opts[@]}" -o Release.gpg Release)
