@@ -1347,6 +1347,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 			e.setEndpointState(StateError)
 			e.HardError = err
 
+			e.workerCleanup = true
 			// Lock released below.
 			epilogue()
 			return err
