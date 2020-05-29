@@ -241,7 +241,9 @@ func (dut *DUT) Connect(fd int32, sa unix.Sockaddr) {
 	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
 	defer cancel()
 	ret, err := dut.ConnectWithErrno(ctx, fd, sa)
-	if ret != 0 {
+	// Ignore 'operation in progress' error that can be returned when the socket
+	// is non-blocking.
+	if err != syscall.Errno(unix.EINPROGRESS) && ret != 0 {
 		dut.t.Fatalf("failed to connect socket: %s", err)
 	}
 }
