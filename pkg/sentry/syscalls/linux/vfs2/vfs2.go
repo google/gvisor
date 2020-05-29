@@ -116,9 +116,9 @@ func Override() {
 	s.Table[232] = syscalls.Supported("epoll_wait", EpollWait)
 	s.Table[233] = syscalls.Supported("epoll_ctl", EpollCtl)
 	s.Table[235] = syscalls.Supported("utimes", Utimes)
-	delete(s.Table, 253) // inotify_init
-	delete(s.Table, 254) // inotify_add_watch
-	delete(s.Table, 255) // inotify_rm_watch
+	s.Table[253] = syscalls.PartiallySupported("inotify_init", InotifyInit, "inotify events are only available inside the sandbox.", nil)
+	s.Table[254] = syscalls.PartiallySupported("inotify_add_watch", InotifyAddWatch, "inotify events are only available inside the sandbox.", nil)
+	s.Table[255] = syscalls.PartiallySupported("inotify_rm_watch", InotifyRmWatch, "inotify events are only available inside the sandbox.", nil)
 	s.Table[257] = syscalls.Supported("openat", Openat)
 	s.Table[258] = syscalls.Supported("mkdirat", Mkdirat)
 	s.Table[259] = syscalls.Supported("mknodat", Mknodat)
@@ -151,7 +151,7 @@ func Override() {
 	s.Table[291] = syscalls.Supported("epoll_create1", EpollCreate1)
 	s.Table[292] = syscalls.Supported("dup3", Dup3)
 	s.Table[293] = syscalls.Supported("pipe2", Pipe2)
-	delete(s.Table, 294) // inotify_init1
+	s.Table[294] = syscalls.PartiallySupported("inotify_init1", InotifyInit1, "inotify events are only available inside the sandbox.", nil)
 	s.Table[295] = syscalls.Supported("preadv", Preadv)
 	s.Table[296] = syscalls.Supported("pwritev", Pwritev)
 	s.Table[299] = syscalls.Supported("recvmmsg", RecvMMsg)
