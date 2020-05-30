@@ -170,6 +170,18 @@ packetimpact_go_test(
 )
 
 packetimpact_go_test(
+    name = "tcp_queue_receive_in_syn_sent",
+    srcs = ["tcp_queue_receive_in_syn_sent_test.go"],
+    # TODO(b/157658105): Fix netstack then remove the line below.
+    expect_netstack_failure = True,
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
     name = "tcp_synsent_reset",
     srcs = ["tcp_synsent_reset_test.go"],
     deps = [

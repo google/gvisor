@@ -91,6 +91,17 @@ message ConnectResponse {
   int32 errno_ = 2;  // "errno" may fail to compile in c++.
 }
 
+message FcntlRequest {
+  int32 fd = 1;
+  int32 cmd = 2;
+  int32 arg = 3;
+}
+
+message FcntlResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;
+}
+
 message GetSockNameRequest {
   int32 sockfd = 1;
 }
@@ -198,6 +209,8 @@ service Posix {
   rpc Close(CloseRequest) returns (CloseResponse);
   // Call connect() on the DUT.
   rpc Connect(ConnectRequest) returns (ConnectResponse);
+  // Call fcntl() on the DUT.
+  rpc Fcntl(FcntlRequest) returns (FcntlResponse);
   // Call getsockname() on the DUT.
   rpc GetSockName(GetSockNameRequest) returns (GetSockNameResponse);
   // Call getsockopt() on the DUT.
