@@ -158,6 +158,14 @@ class PosixImpl final : public posix_server::Posix::Service {
     return ::grpc::Status::OK;
   }
 
+  ::grpc::Status Fcntl(grpc_impl::ServerContext *context,
+                       const ::posix_server::FcntlRequest *request,
+                       ::posix_server::FcntlResponse *response) override {
+    response->set_ret(::fcntl(request->fd(), request->cmd(), request->arg()));
+    response->set_errno_(errno);
+    return ::grpc::Status::OK;
+  }
+
   ::grpc::Status GetSockName(
       grpc_impl::ServerContext *context,
       const ::posix_server::GetSockNameRequest *request,

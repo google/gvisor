@@ -266,14 +266,14 @@ func SeqNumValue(v seqnum.Value) *seqnum.Value {
 }
 
 // newTCPState creates a new TCPState.
-func newTCPState(domain int, out, in TCP) (*tcpState, error) {
+func newTCPState(domain int, out, in TCP) (*tcpState, unix.Sockaddr, error) {
 	portPickerFD, localAddr, err := pickPort(domain, unix.SOCK_STREAM)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	localPort, err := portFromSockaddr(localAddr)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	s := tcpState{
 		out:          TCP{SrcPort: &localPort},
@@ -283,12 +283,12 @@ func newTCPState(domain int, out, in TCP) (*tcpState, error) {
 		finSent:      false,
 	}
 	if err := s.out.merge(&out); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := s.in.merge(&in); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return &s, nil
+	return &s, localAddr, nil
 }
 
 func (s *tcpState) outgoing() Layer {
@@ -606,7 +606,7 @@ func NewTCPIPv4(t *testing.T, outgoingTCP, incomingTCP TCP) TCPIPv4 {
 	if err != nil {
 		t.Fatalf("can't make ipv4State: %s", err)
 	}
-	tcpState, err := newTCPState(unix.AF_INET, outgoingTCP, incomingTCP)
+	tcpState, localAddr, err := newTCPState(unix.AF_INET, outgoingTCP, incomingTCP)
 	if err != nil {
 		t.Fatalf("can't make tcpState: %s", err)
 	}
@@ -623,6 +623,7 @@ func NewTCPIPv4(t *testing.T, outgoingTCP, incomingTCP TCP) TCPIPv4 {
 		layerStates: []layerState{etherState, ipv4State, tcpState},
 		injector:    injector,
 		sniffer:     sniffer,
+		localAddr:   localAddr,
 		t:           t,
 	}
 }
@@ -701,6 +702,11 @@ func (conn *TCPIPv4) LocalSeqNum() *seqnum.Value {
 // SynAck returns the SynAck that was part of the handshake.
 func (conn *TCPIPv4) SynAck() *TCP {
 	return conn.state().synAck
+}
+
+// LocalAddr gets the local socket address of this connection.
+func (conn *TCPIPv4) LocalAddr() unix.Sockaddr {
+	return conn.localAddr
 }
 
 // IPv6Conn maintains the state for all the layers in a IPv6 connection.

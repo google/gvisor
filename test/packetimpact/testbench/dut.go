@@ -262,6 +262,35 @@ func (dut *DUT) ConnectWithErrno(ctx context.Context, fd int32, sa unix.Sockaddr
 	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
 }
 
+// Fcntl calls fcntl on the DUT and causes a fatal test failure if it
+// doesn't succeed. If more control over the timeout or error handling is
+// needed, use FcntlWithErrno.
+func (dut *DUT) Fcntl(fd, cmd, arg int32) int32 {
+	dut.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
+	defer cancel()
+	ret, err := dut.FcntlWithErrno(ctx, fd, cmd, arg)
+	if ret == -1 {
+		dut.t.Fatalf("failed to Fcntl: ret=%d, errno=%s", ret, err)
+	}
+	return ret
+}
+
+// FcntlWithErrno calls fcntl on the DUT.
+func (dut *DUT) FcntlWithErrno(ctx context.Context, fd, cmd, arg int32) (int32, error) {
+	dut.t.Helper()
+	req := pb.FcntlRequest{
+		Fd:  fd,
+		Cmd: cmd,
+		Arg: arg,
+	}
+	resp, err := dut.posixServer.Fcntl(ctx, &req)
+	if err != nil {
+		dut.t.Fatalf("failed to call Fcntl: %s", err)
+	}
+	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
+}
+
 // GetSockName calls getsockname on the DUT and causes a fatal test failure if
 // it doesn't succeed. If more control over the timeout or error handling is
 // needed, use GetSockNameWithErrno.
@@ -476,6 +505,19 @@ func (dut *DUT) SendToWithErrno(ctx context.Context, sockfd int32, buf []byte, f
 		dut.t.Fatalf("faled to call SendTo: %s", err)
 	}
 	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
+}
+
+// SetNonBlocking will set O_NONBLOCK flag for fd if nonblocking
+// is true, otherwise it will clear the flag.
+func (dut *DUT) SetNonBlocking(fd int32, nonblocking bool) {
+	dut.t.Helper()
+	flags := dut.Fcntl(fd, unix.F_GETFL, 0)
+	if nonblocking {
+		flags |= unix.O_NONBLOCK
+	} else {
+		flags &= ^unix.O_NONBLOCK
+	}
+	dut.Fcntl(fd, unix.F_SETFL, flags)
 }
 
 func (dut *DUT) setSockOpt(ctx context.Context, sockfd, level, optname int32, optval *pb.SockOptVal) (int32, error) {
