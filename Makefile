@@ -158,10 +158,16 @@ website-deploy: website-push ## Deploy a new version of the website.
 ##     RELEASE_ROOT    - The repository root (default: "repo" directory).
 ##     RELEASE_KEY     - The repository GPG private key file (default: dummy key is created).
 ##     RELEASE_NIGHTLY - Set to true if a nightly release (default: false).
+##     RELEASE_COMMIT  - The commit or Change-Id for the release (needed for tag).
+##     RELEASE_NAME    - The name of the release in the proper format (needed for tag).
+##     RELEASE_NOTES   - The file containing release notes (needed for tag).
 ##
 RELEASE_ROOT    := $(CURDIR)/repo
 RELEASE_KEY     := repo.key
 RELEASE_NIGHTLY := false
+RELEASE_COMMIT  :=
+RELEASE_NAME    :=
+RELEASE_NOTES   :=
 
 $(RELEASE_KEY):
 	@echo "WARNING: Generating a key for testing ($@); don't use this."
@@ -178,6 +184,10 @@ release: $(RELEASE_KEY) ## Builds a release.
 	  NIGHTLY=$(RELEASE_NIGHTLY) tools/make_release.sh $(RELEASE_KEY) $(RELEASE_ROOT) $$T/*; \
 	rc=$$?; rm -rf $$T; exit $$rc
 .PHONY: release
+
+tag: ## Creates and pushes a release tag.
+	@tools/tag_release.sh "$(RELEASE_COMMIT)" "$(RELEASE_NAME)" "$(RELEASE_NOTES)"
+.PHONY: tag
 
 ##
 ## Development helpers and tooling.
