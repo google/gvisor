@@ -335,6 +335,11 @@ func (c *TCPConn) Read(b []byte) (int, error) {
 	deadline := c.readCancel()
 
 	numRead := 0
+	defer func() {
+		if numRead != 0 {
+			c.ep.ModerateRecvBuf(numRead)
+		}
+	}()
 	for numRead != len(b) {
 		if len(c.read) == 0 {
 			var err error
