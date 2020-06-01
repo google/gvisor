@@ -56,6 +56,7 @@ var (
 	mask               = flag.Int("mask", 8, "mask size for address")
 	iface              = flag.String("iface", "", "network interface name to bind for netstack")
 	sack               = flag.Bool("sack", false, "enable SACK support for netstack")
+	moderateRecvBuf    = flag.Bool("moderate_recv_buf", false, "enable TCP Receive Buffer Auto-tuning")
 	cubic              = flag.Bool("cubic", false, "enable use of CUBIC congestion control for netstack")
 	gso                = flag.Int("gso", 0, "GSO maximum size")
 	swgso              = flag.Bool("swgso", false, "software-level GSO")
@@ -229,6 +230,11 @@ func newNetstackImpl(mode string) (impl, error) {
 	// Set protocol options.
 	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SACKEnabled(*sack)); err != nil {
 		return nil, fmt.Errorf("SetTransportProtocolOption for SACKEnabled failed: %v", err)
+	}
+
+	// Enable Receive Buffer Auto-Tuning.
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.ModerateReceiveBufferOption(*moderateRecvBuf)); err != nil {
+		return nil, fmt.Errorf("SetTransportProtocolOption failed: %v", err)
 	}
 
 	// Set Congestion Control to cubic if requested.
