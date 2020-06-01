@@ -364,6 +364,12 @@ PosixErrorOr<size_t> PollAndReadFd(int fd, void* buf, size_t count,
     ssize_t n =
         ReadFd(fd, static_cast<char*>(buf) + completed, count - completed);
     if (n < 0) {
+      if (errno == EAGAIN) {
+        // Linux sometimes returns EAGAIN from this read, despite the fact that
+        // poll returned success. Let's just do what do as we are told and try
+        // again.
+        continue;
+      }
       return PosixError(errno, "read failed");
     }
     completed += n;
