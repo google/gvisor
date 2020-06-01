@@ -593,12 +593,12 @@ TEST(Inotify, SizeZeroReadWriteGeneratesNothing) {
 
 TEST(Inotify, FailedFileCreationGeneratesNoEvents) {
   const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string dir_path = dir.path();
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
-  ASSERT_NO_ERRNO_AND_VALUE(
-      InotifyAddWatch(fd.get(), dir.path(), IN_ALL_EVENTS));
+  ASSERT_NO_ERRNO_AND_VALUE(InotifyAddWatch(fd.get(), dir_path, IN_ALL_EVENTS));
 
-  const char* p = dir.path().c_str();
+  const char* p = dir_path.c_str();
   ASSERT_THAT(mkdir(p, 0777), SyscallFails());
   ASSERT_THAT(mknod(p, S_IFIFO, 0777), SyscallFails());
   ASSERT_THAT(symlink(p, p), SyscallFails());
