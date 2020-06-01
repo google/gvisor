@@ -136,7 +136,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	}
 
 	// Ensure that if there is a panic, all goroutine stacks are printed.
-	debug.SetTraceback("all")
+	debug.SetTraceback("system")
 
 	conf := args[0].(*boot.Config)
 
