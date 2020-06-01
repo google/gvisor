@@ -61,7 +61,7 @@
 }
 
 ::grpc::Status proto_to_sockaddr(const posix_server::Sockaddr &sockaddr_proto,
-                                 sockaddr_storage *addr) {
+                                 sockaddr_storage *addr, socklen_t *addr_len) {
   switch (sockaddr_proto.sockaddr_case()) {
     case posix_server::Sockaddr::SockaddrCase::kIn: {
       auto proto_in = sockaddr_proto.in();
@@ -74,6 +74,7 @@
       addr_in->sin_port = htons(proto_in.port());
       proto_in.addr().copy(reinterpret_cast<char *>(&addr_in->sin_addr.s_addr),
                            4);
+      *addr_len = sizeof(*addr_in);
       break;
     }
     case posix_server::Sockaddr::SockaddrCase::kIn6: {
@@ -89,6 +90,7 @@
       proto_in6.addr().copy(
           reinterpret_cast<char *>(&addr_in6->sin6_addr.s6_addr), 16);
       addr_in6->sin6_scope_id = htonl(proto_in6.scope_id());
+      *addr_len = sizeof(*addr_in6);
       break;
     }
     case posix_server::Sockaddr::SockaddrCase::SOCKADDR_NOT_SET:
@@ -120,13 +122,14 @@ class PosixImpl final : public posix_server::Posix::Service {
     }
 
     sockaddr_storage addr;
-    auto err = proto_to_sockaddr(request->addr(), &addr);
+    socklen_t addr_len;
+    auto err = proto_to_sockaddr(request->addr(), &addr, &addr_len);
     if (!err.ok()) {
       return err;
     }
 
-    response->set_ret(bind(request->sockfd(),
-                           reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+    response->set_ret(
+        bind(request->sockfd(), reinterpret_cast<sockaddr *>(&addr), addr_len));
     response->set_errno_(errno);
     return ::grpc::Status::OK;
   }
@@ -147,13 +150,14 @@ class PosixImpl final : public posix_server::Posix::Service {
                             "Missing address");
     }
     sockaddr_storage addr;
-    auto err = proto_to_sockaddr(request->addr(), &addr);
+    socklen_t addr_len;
+    auto err = proto_to_sockaddr(request->addr(), &addr, &addr_len);
     if (!err.ok()) {
       return err;
     }
 
-    response->set_ret(connect(
-        request->sockfd(), reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+    response->set_ret(connect(request->sockfd(),
+                              reinterpret_cast<sockaddr *>(&addr), addr_len));
     response->set_errno_(errno);
     return ::grpc::Status::OK;
   }
@@ -245,14 +249,15 @@ class PosixImpl final : public posix_server::Posix::Service {
                             "Missing address");
     }
     sockaddr_storage addr;
-    auto err = proto_to_sockaddr(request->dest_addr(), &addr);
+    socklen_t addr_len;
+    auto err = proto_to_sockaddr(request->dest_addr(), &addr, &addr_len);
     if (!err.ok()) {
       return err;
     }
 
-    response->set_ret(::sendto(
-        request->sockfd(), request->buf().data(), request->buf().size(),
-        request->flags(), reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+    response->set_ret(::sendto(request->sockfd(), request->buf().data(),
+                               request->buf().size(), request->flags(),
+                               reinterpret_cast<sockaddr *>(&addr), addr_len));
     response->set_errno_(errno);
     return ::grpc::Status::OK;
   }
