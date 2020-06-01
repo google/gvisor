@@ -19,17 +19,18 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// specialFileFD implements vfs.FileDescriptionImpl for files other than
-// regular files, directories, and symlinks: pipes, sockets, etc. It is also
-// used for regular files when filesystemOptions.specialRegularFiles is in
-// effect. specialFileFD differs from regularFileFD by using per-FD handles
-// instead of shared per-dentry handles, and never buffering I/O.
+// specialFileFD implements vfs.FileDescriptionImpl for pipes, sockets, device
+// special files, and (when filesystemOptions.specialRegularFiles is in effect)
+// regular files. specialFileFD differs from regularFileFD by using per-FD
+// handles instead of shared per-dentry handles, and never buffering I/O.
 type specialFileFD struct {
 	fileDescription
 
@@ -40,13 +41,47 @@ type specialFileFD struct {
 	// file offset is significant, i.e. a regular file. seekable is immutable.
 	seekable bool
 
+	// mayBlock is true if this file description represents a file for which
+	// queue may send I/O readiness events. mayBlock is immutable.
+	mayBlock bool
+	queue    waiter.Queue
+
 	// If seekable is true, off is the file offset. off is protected by mu.
 	mu  sync.Mutex
 	off int64
 }
 
+func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, flags uint32) (*specialFileFD, error) {
+	ftype := d.fileType()
+	seekable := ftype == linux.S_IFREG
+	mayBlock := ftype == linux.S_IFIFO || ftype == linux.S_IFSOCK
+	fd := &specialFileFD{
+		handle:   h,
+		seekable: seekable,
+		mayBlock: mayBlock,
+	}
+	if mayBlock && h.fd >= 0 {
+		if err := fdnotifier.AddFD(h.fd, &fd.queue); err != nil {
+			return nil, err
+		}
+	}
+	if err := fd.vfsfd.Init(fd, flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{
+		DenyPRead:  !seekable,
+		DenyPWrite: !seekable,
+	}); err != nil {
+		if mayBlock && h.fd >= 0 {
+			fdnotifier.RemoveFD(h.fd)
+		}
+		return nil, err
+	}
+	return fd, nil
+}
+
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *specialFileFD) Release() {
+	if fd.mayBlock && fd.handle.fd >= 0 {
+		fdnotifier.RemoveFD(fd.handle.fd)
+	}
 	fd.handle.close(context.Background())
 	fs := fd.vfsfd.Mount().Filesystem().Impl().(*filesystem)
 	fs.syncMu.Lock()
@@ -60,6 +95,32 @@ func (fd *specialFileFD) OnClose(ctx context.Context) error {
 		return nil
 	}
 	return fd.handle.file.flush(ctx)
+}
+
+// Readiness implements waiter.Waitable.Readiness.
+func (fd *specialFileFD) Readiness(mask waiter.EventMask) waiter.EventMask {
+	if fd.mayBlock {
+		return fdnotifier.NonBlockingPoll(fd.handle.fd, mask)
+	}
+	return fd.fileDescription.Readiness(mask)
+}
+
+// EventRegister implements waiter.Waitable.EventRegister.
+func (fd *specialFileFD) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
+	if fd.mayBlock {
+		fd.queue.EventRegister(e, mask)
+		return
+	}
+	fd.fileDescription.EventRegister(e, mask)
+}
+
+// EventUnregister implements waiter.Waitable.EventUnregister.
+func (fd *specialFileFD) EventUnregister(e *waiter.Entry) {
+	if fd.mayBlock {
+		fd.queue.EventUnregister(e)
+		return
+	}
+	fd.fileDescription.EventUnregister(e)
 }
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
@@ -81,6 +142,9 @@ func (fd *specialFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	}
 	buf := make([]byte, dst.NumBytes())
 	n, err := fd.handle.readToBlocksAt(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf)), uint64(offset))
+	if err == syserror.EAGAIN {
+		err = syserror.ErrWouldBlock
+	}
 	if n == 0 {
 		return 0, err
 	}
@@ -130,6 +194,9 @@ func (fd *specialFileFD) PWrite(ctx context.Context, src usermem.IOSequence, off
 		return 0, err
 	}
 	n, err := fd.handle.writeFromBlocksAt(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf)), uint64(offset))
+	if err == syserror.EAGAIN {
+		err = syserror.ErrWouldBlock
+	}
 	return int64(n), err
 }
 
