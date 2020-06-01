@@ -168,7 +168,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	// Start with root mount, then add any other additional mount as needed.
 	ats := make([]p9.Attacher, 0, len(spec.Mounts)+1)
 	ap, err := fsgofer.NewAttachPoint("/", fsgofer.Config{
-		ROMount:      spec.Root.Readonly,
+		ROMount:      spec.Root.Readonly || conf.Overlay,
 		PanicOnWrite: g.panicOnWrite,
 	})
 	if err != nil {
@@ -181,7 +181,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	for _, m := range spec.Mounts {
 		if specutils.Is9PMount(m) {
 			cfg := fsgofer.Config{
-				ROMount:      isReadonlyMount(m.Options),
+				ROMount:      isReadonlyMount(m.Options) || conf.Overlay,
 				PanicOnWrite: g.panicOnWrite,
 				HostUDS:      conf.FSGoferHostUDS,
 			}
