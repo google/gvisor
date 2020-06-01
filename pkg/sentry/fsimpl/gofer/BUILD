@@ -35,6 +35,7 @@ go_library(
         "fstree.go",
         "gofer.go",
         "handle.go",
+        "host_named_pipe.go",
         "p9file.go",
         "regular_file.go",
         "socket.go",
@@ -47,6 +48,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/fd",
+        "//pkg/fdnotifier",
         "//pkg/fspath",
         "//pkg/log",
         "//pkg/p9",
@@ -71,6 +73,7 @@ go_library(
         "//pkg/unet",
         "//pkg/usermem",
         "//pkg/waiter",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 

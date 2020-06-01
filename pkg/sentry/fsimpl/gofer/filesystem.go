@@ -873,19 +873,37 @@ func (d *dentry) openSpecialFileLocked(ctx context.Context, mnt *vfs.Mount, opts
 	if opts.Flags&linux.O_DIRECT != 0 {
 		return nil, syserror.EINVAL
 	}
-	h, err := openHandle(ctx, d.file, ats&vfs.MayRead != 0, ats&vfs.MayWrite != 0, opts.Flags&linux.O_TRUNC != 0)
+	// We assume that the server silently inserts O_NONBLOCK in the open flags
+	// for all named pipes (because all existing gofers do this).
+	//
+	// NOTE(b/133875563): This makes named pipe opens racy, because the
+	// mechanisms for translating nonblocking to blocking opens can only detect
+	// the instantaneous presence of a peer holding the other end of the pipe
+	// open, not whether the pipe was *previously* opened by a peer that has
+	// since closed its end.
+	isBlockingOpenOfNamedPipe := d.fileType() == linux.S_IFIFO && opts.Flags&linux.O_NONBLOCK == 0
+retry:
+	h, err := openHandle(ctx, d.file, ats.MayRead(), ats.MayWrite(), opts.Flags&linux.O_TRUNC != 0)
 	if err != nil {
+		if isBlockingOpenOfNamedPipe && ats == vfs.MayWrite && err == syserror.ENXIO {
+			// An attempt to open a named pipe with O_WRONLY|O_NONBLOCK fails
+			// with ENXIO if opening the same named pipe with O_WRONLY would
+			// block because there are no readers of the pipe.
+			if err := sleepBetweenNamedPipeOpenChecks(ctx); err != nil {
+				return nil, err
+			}
+			goto retry
+		}
 		return nil, err
 	}
-	seekable := d.fileType() == linux.S_IFREG
-	fd := &specialFileFD{
-		handle:   h,
-		seekable: seekable,
+	if isBlockingOpenOfNamedPipe && ats == vfs.MayRead && h.fd >= 0 {
+		if err := blockUntilNonblockingPipeHasWriter(ctx, h.fd); err != nil {
+			h.close(ctx)
+			return nil, err
+		}
 	}
-	if err := fd.vfsfd.Init(fd, opts.Flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{
-		DenyPRead:  !seekable,
-		DenyPWrite: !seekable,
-	}); err != nil {
+	fd, err := newSpecialFileFD(h, mnt, d, opts.Flags)
+	if err != nil {
 		h.close(ctx)
 		return nil, err
 	}
@@ -981,22 +999,16 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 		}
 		childVFSFD = &fd.vfsfd
 	} else {
-		seekable := child.fileType() == linux.S_IFREG
-		fd := &specialFileFD{
-			handle: handle{
-				file: openFile,
-				fd:   -1,
-			},
-			seekable: seekable,
+		h := handle{
+			file: openFile,
+			fd:   -1,
 		}
 		if fdobj != nil {
-			fd.handle.fd = int32(fdobj.Release())
+			h.fd = int32(fdobj.Release())
 		}
-		if err := fd.vfsfd.Init(fd, opts.Flags, mnt, &child.vfsd, &vfs.FileDescriptionOptions{
-			DenyPRead:  !seekable,
-			DenyPWrite: !seekable,
-		}); err != nil {
-			fd.handle.close(ctx)
+		fd, err := newSpecialFileFD(h, mnt, child, opts.Flags)
+		if err != nil {
+			h.close(ctx)
 			return nil, err
 		}
 		childVFSFD = &fd.vfsfd
