@@ -18,10 +18,10 @@
 # validate a provided release name, create a tag and push it. It must be
 # run manually when a release is created.
 
-set -xeu
+set -xeuo pipefail
 
 # Check arguments.
-if [ "$#" -ne 3 ]; then
+if [[ "$#" -ne 3 ]]; then
   echo "usage: $0 <commit|revid> <release.rc> <message-file>"
   exit 1
 fi
@@ -30,6 +30,12 @@ declare -r target_commit="$1"
 declare -r release="$2"
 declare -r message_file="$3"
 
+if [[ -z "${target_commit}" ]]; then
+  echo "error: <commit|revid> is empty."
+fi
+if [[ -z "${release}" ]]; then
+  echo "error: <release.rc> is empty."
+fi
 if ! [[ -r "${message_file}" ]]; then
   echo "error: message file '${message_file}' is not readable."
   exit 1
@@ -68,8 +74,9 @@ if ! [[ "${release}" =~ ^20[0-9]{6}\.[0-9]+$ ]]; then
   exit 1
 fi
 
-# Tag the given commit (annotated, to record the committer).
+# Tag the given commit (annotated, to record the committer). Note that the tag
+# here is applied as a force, in case the tag already exists and is the same.
+# The push will fail in this case (because it is not forced).
 declare -r tag="release-${release}"
-(git tag -F "${message_file}" -a "${tag}" "${commit}" && \
-  git push origin tag "${tag}") || \
-  (git tag -d "${tag}" && false)
+git tag -f -F "${message_file}" -a "${tag}" "${commit}" && \
+  git push origin tag "${tag}"
