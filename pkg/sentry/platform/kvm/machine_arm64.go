@@ -60,6 +60,12 @@ func rdonlyRegionsForSetMem() (phyRegions []physicalRegion) {
 		if !vr.accessType.Write && vr.accessType.Read {
 			rdonlyRegions = append(rdonlyRegions, vr.region)
 		}
+
+		// TODO(gvisor.dev/issue/2686): PROT_NONE should be specially treated.
+		// Workaround: treated as rdonly temporarily.
+		if !vr.accessType.Write && !vr.accessType.Read && !vr.accessType.Execute {
+			rdonlyRegions = append(rdonlyRegions, vr.region)
+		}
 	})
 
 	for _, r := range rdonlyRegions {
