@@ -60,7 +60,8 @@ def _syscall_test(
         network = "none",
         file_access = "exclusive",
         overlay = False,
-        add_uds_tree = False):
+        add_uds_tree = False,
+        vfs2 = False):
     # Prepend "runsc" to non-native platform names.
     full_platform = platform if platform == "native" else "runsc_" + platform
 
@@ -70,6 +71,8 @@ def _syscall_test(
         name += "_shared"
     if overlay:
         name += "_overlay"
+    if vfs2:
+        name += "_vfs2"
     if network != "none":
         name += "_" + network + "net"
 
@@ -102,6 +105,7 @@ def _syscall_test(
         "--file-access=" + file_access,
         "--overlay=" + str(overlay),
         "--add-uds-tree=" + str(add_uds_tree),
+        "--vfs2=" + str(vfs2),
     ]
 
     # Call the rule above.
@@ -123,6 +127,7 @@ def syscall_test(
         add_overlay = False,
         add_uds_tree = False,
         add_hostinet = False,
+        vfs2 = False,
         tags = None):
     """syscall_test is a macro that will create targets for all platforms.
 
@@ -160,6 +165,29 @@ def syscall_test(
             tags = platform_tags + tags,
         )
 
+    vfs2_tags = list(tags)
+    if vfs2:
+        # Add tag to easily run VFS2 tests with --test_tag_filters=vfs2
+        vfs2_tags.append("vfs2")
+
+    else:
+        # Don't automatically run tests tests not yet passing.
+        vfs2_tags.append("manual")
+        vfs2_tags.append("noguitar")
+        vfs2_tags.append("notap")
+
+    _syscall_test(
+        test = test,
+        shard_count = shard_count,
+        size = size,
+        platform = default_platform,
+        use_tmpfs = use_tmpfs,
+        add_uds_tree = add_uds_tree,
+        tags = platforms[default_platform] + vfs2_tags,
+        vfs2 = True,
+    )
+
+    # TODO(gvisor.dev/issue/1487): Enable VFS2 overlay tests.
     if add_overlay:
         _syscall_test(
             test = test,
@@ -170,6 +198,18 @@ def syscall_test(
             add_uds_tree = add_uds_tree,
             tags = platforms[default_platform] + tags,
             overlay = True,
+        )
+
+    if add_hostinet:
+        _syscall_test(
+            test = test,
+            shard_count = shard_count,
+            size = size,
+            platform = default_platform,
+            use_tmpfs = use_tmpfs,
+            network = "host",
+            add_uds_tree = add_uds_tree,
+            tags = platforms[default_platform] + tags,
         )
 
     if not use_tmpfs:
@@ -184,15 +224,14 @@ def syscall_test(
             tags = platforms[default_platform] + tags,
             file_access = "shared",
         )
-
-    if add_hostinet:
         _syscall_test(
             test = test,
             shard_count = shard_count,
             size = size,
             platform = default_platform,
             use_tmpfs = use_tmpfs,
-            network = "host",
             add_uds_tree = add_uds_tree,
-            tags = platforms[default_platform] + tags,
+            tags = platforms[default_platform] + vfs2_tags,
+            file_access = "shared",
+            vfs2 = True,
         )
