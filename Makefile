@@ -217,6 +217,7 @@ dev: ## Installs a set of local runtimes. Requires sudo.
 	@$(MAKE) configure RUNTIME="$(RUNTIME)" ARGS="--net-raw"
 	@$(MAKE) configure RUNTIME="$(RUNTIME)-d" ARGS="--net-raw --debug --strace --log-packets"
 	@$(MAKE) configure RUNTIME="$(RUNTIME)-p" ARGS="--net-raw --profile"
+	@$(MAKE) configure RUNTIME="$(RUNTIME)-vfs2-d" ARGS="--net-raw --debug --strace --log-packets --vfs2"
 	@sudo systemctl restart docker
 .PHONY: dev
 

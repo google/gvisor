@@ -256,8 +256,6 @@ var (
 func configs(t *testing.T, opts ...configOption) map[string]*boot.Config {
 	// Always load the default config.
 	cs := make(map[string]*boot.Config)
-	cs["default"] = testutil.TestConfig(t)
-
 	for _, o := range opts {
 		switch o {
 		case overlay:
@@ -285,9 +283,16 @@ func configs(t *testing.T, opts ...configOption) map[string]*boot.Config {
 
 func configsWithVFS2(t *testing.T, opts ...configOption) map[string]*boot.Config {
 	vfs1 := configs(t, opts...)
-	vfs2 := configs(t, opts...)
 
-	for key, value := range vfs2 {
+	var optsVFS2 []configOption
+	for _, opt := range opts {
+		// TODO(gvisor.dev/issue/1487): Enable overlay tests.
+		if opt != overlay {
+			optsVFS2 = append(optsVFS2, opt)
+		}
+	}
+
+	for key, value := range configs(t, optsVFS2...) {
 		value.VFS2 = true
 		vfs1[key+"VFS2"] = value
 	}
@@ -603,7 +608,7 @@ func doAppExitStatus(t *testing.T, vfs2 bool) {
 
 // TestExec verifies that a container can exec a new program.
 func TestExec(t *testing.T) {
-	for name, conf := range configs(t, overlay) {
+	for name, conf := range configsWithVFS2(t, overlay) {
 		t.Run(name, func(t *testing.T) {
 			const uid = 343
 			spec := testutil.NewSpecWithArgs("sleep", "100")
@@ -695,7 +700,7 @@ func TestExec(t *testing.T) {
 
 // TestKillPid verifies that we can signal individual exec'd processes.
 func TestKillPid(t *testing.T) {
-	for name, conf := range configs(t, overlay) {
+	for name, conf := range configsWithVFS2(t, overlay) {
 		t.Run(name, func(t *testing.T) {
 			app, err := testutil.FindFile("test/cmd/test_app/test_app")
 			if err != nil {
@@ -1211,7 +1216,7 @@ func TestCapabilities(t *testing.T) {
 	uid := auth.KUID(os.Getuid() + 1)
 	gid := auth.KGID(os.Getgid() + 1)
 
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			spec := testutil.NewSpecWithArgs("sleep", "100")
 			rootDir, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
@@ -1409,7 +1414,7 @@ func TestReadonlyRoot(t *testing.T) {
 }
 
 func TestUIDMap(t *testing.T) {
-	for name, conf := range configs(t, noOverlay...) {
+	for name, conf := range configsWithVFS2(t, noOverlay...) {
 		t.Run(name, func(t *testing.T) {
 			testDir, err := ioutil.TempDir(testutil.TmpDir(), "test-mount")
 			if err != nil {
@@ -1886,7 +1891,7 @@ func doDestroyStartingTest(t *testing.T, vfs2 bool) {
 }
 
 func TestCreateWorkingDir(t *testing.T) {
-	for name, conf := range configs(t, overlay) {
+	for name, conf := range configsWithVFS2(t, overlay) {
 		t.Run(name, func(t *testing.T) {
 			tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "cwd-create")
 			if err != nil {
@@ -2009,7 +2014,7 @@ func TestMountPropagation(t *testing.T) {
 }
 
 func TestMountSymlink(t *testing.T) {
-	for name, conf := range configs(t, overlay) {
+	for name, conf := range configsWithVFS2(t, overlay) {
 		t.Run(name, func(t *testing.T) {
 			dir, err := ioutil.TempDir(testutil.TmpDir(), "mount-symlink")
 			if err != nil {

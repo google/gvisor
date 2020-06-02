@@ -47,7 +47,7 @@ go_test(
         "//test/cmd/test_app",
     ],
     library = ":container",
-    shard_count = 5,
+    shard_count = 10,
     tags = [
         "requires-kvm",
     ],
