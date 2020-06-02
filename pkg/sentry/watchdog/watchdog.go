@@ -328,8 +328,8 @@ func (w *Watchdog) reportStuckWatchdog() {
 }
 
 // doAction will take the given action. If the action is LogWarning, the stack
-// is not always dumpped to the log to prevent log flooding. "forceStack"
-// guarantees that the stack will be dumped regarless.
+// is not always dumped to the log to prevent log flooding. "forceStack"
+// guarantees that the stack will be dumped regardless.
 func (w *Watchdog) doAction(action Action, forceStack bool, msg *bytes.Buffer) {
 	switch action {
 	case LogWarning:
