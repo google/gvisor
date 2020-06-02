@@ -760,7 +760,7 @@ afterTrailingSymlink:
 			parent.dirMu.Unlock()
 			return nil, syserror.EPERM
 		}
-		fd, err := parent.createAndOpenChildLocked(ctx, rp, &opts)
+		fd, err := parent.createAndOpenChildLocked(ctx, rp, &opts, &ds)
 		parent.dirMu.Unlock()
 		return fd, err
 	}
@@ -912,7 +912,7 @@ retry:
 
 // Preconditions: d.fs.renameMu must be locked. d.dirMu must be locked.
 // !d.isSynthetic().
-func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions, ds **[]*dentry) (*vfs.FileDescription, error) {
 	if err := d.checkPermissions(rp.Credentials(), vfs.MayWrite); err != nil {
 		return nil, err
 	}
@@ -965,6 +965,7 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 		}
 		return nil, err
 	}
+	*ds = appendDentry(*ds, child)
 	// Incorporate the fid that was opened by lcreate.
 	useRegularFileFD := child.fileType() == linux.S_IFREG && !d.fs.opts.regularFilesUseSpecialFileFD
 	if useRegularFileFD {
@@ -977,10 +978,6 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 		child.handleWritable = vfs.MayWriteFileWithOpenFlags(opts.Flags)
 		child.handleMu.Unlock()
 	}
-	// Take a reference on the new dentry to be held by the new file
-	// description. (This reference also means that the new dentry is not
-	// eligible for caching yet, so we don't need to append to a dentry slice.)
-	child.refs = 1
 	// Insert the dentry into the tree.
 	d.cacheNewChildLocked(child, name)
 	if d.cachedMetadataAuthoritative() {
