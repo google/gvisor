@@ -23,6 +23,7 @@ ARCH := $(shell uname -m)
 # tests are using locally-defined images (that are consistent and idempotent).
 REMOTE_IMAGE_PREFIX ?= gcr.io/gvisor-presubmit
 LOCAL_IMAGE_PREFIX ?= gvisor.dev/images
+ALL_ARCH ?= amd64 arm64
 ALL_IMAGES := $(subst /,_,$(subst ./,,$(shell find . -name Dockerfile -exec dirname {} \;)))
 ifneq ($(ARCH),$(shell uname -m))
 DOCKER_PLATFORM_ARGS := --platform=$(ARCH)
@@ -47,6 +48,8 @@ path = $(subst _,/,$(1))
 tag = $(shell find $(call path,$(1)) -type f -print | sort | xargs -n 1 sha256sum | sha256sum - | cut -c 1-16)
 remote_image = $(REMOTE_IMAGE_PREFIX)/$(subst _,/,$(1))_$(ARCH):$(call tag,$(1))
 local_image = $(LOCAL_IMAGE_PREFIX)/$(subst _,/,$(1))
+buildx_remote_image = $(REMOTE_IMAGE_PREFIX)/$(subst _,/,$(1))
+buildx_tag = $(call tag,$(1))
 
 # rebuild builds the image locally. Only the "remote" tag will be applied. Note
 # we need to explicitly repull the base layer in order to ensure that the
@@ -76,6 +79,55 @@ load-%:
 # already exists) or building manually.
 push-%: load-%
 	docker push $(call remote_image,$*)
+
+# buildx builds the multi-arch images.
+buildx-%: init-docker-buildx
+	if (ls $(call path,$*)/ | grep "Patch.arm64"); then \
+                $(MAKE) xcase2-$*; \
+        else \
+                $(MAKE) xcase1-$*; \
+        fi
+
+# xcase1 is used to handle the case of unified Dockerfile for each platform.
+xcase1-%:
+	T=$$(mktemp -d) && cp -a $(call path,$*)/* $$T && \
+		$(foreach ARCH,$(ALL_ARCH), \
+		DOCKER_CLI_EXPERIMENTAL=enabled docker buildx build \
+		--load --pull \
+		--platform linux/$(ARCH) \
+		--tag $(call buildx_remote_image,$*)-$(ARCH):$(buildx_tag) $$T;) \
+		rm -rf $$T
+
+# xcase2 is used to handle the special buildx cases: different Dockerfiles for amd64/arm64.
+xcase2-%:
+	T=$$(mktemp -d) && cp -a $(call path,$*)/* $$T && \
+                DOCKER_CLI_EXPERIMENTAL=enabled docker buildx build \
+                --load --pull \
+                --platform linux/amd64 \
+                --tag $(call buildx_remote_image,$*)-amd64:$(buildx_tag) $$T && \
+                cd $$T && \
+                sed -i '1 r Patch.arm64' Dockerfile && \
+                sed -i '1d' Dockerfile && \
+                docker buildx build --load --pull --platform=linux/arm64 \
+		--tag $(call buildx_remote_image,$*)-arm64:$(buildx_tag) .; cd - rm -rf $$T
+
+# pushx pushes the remote image with multi-arch manifest.
+pushx-%: buildx-%
+	$(foreach ARCH,$(ALL_ARCH), \
+		docker push $(call buildx_remote_image,$*)-$(ARCH):$(buildx_tag);)
+	docker manifest create --amend $(call buildx_remote_image,$*):$(buildx_tag) $(shell echo $(ALL_ARCH) | sed -e "s~[^ ]*~$(call buildx_remote_image,$*)\-&:$(buildx_tag)~g")
+	@for arch in $(ALL_ARCH); do docker manifest annotate --arch $${arch} ${call buildx_remote_image,$*}:${buildx_tag} ${call buildx_remote_image,$*}-$${arch}:${buildx_tag}; done
+	docker manifest push --purge ${call buildx_remote_image,$*}:$(buildx_tag)
+
+# init-docker-buildx ensures the buildx was enabled.
+.PHONY: init-docker-buildx
+init-docker-buildx:
+ifneq ($(shell docker buildx 2>&1 >/dev/null; echo $?),)
+	$(error "buildx not vailable. Docker 19.03 or higher is required")
+endif
+	docker run --rm --privileged multiarch/qemu-user-static --reset --persistent yes
+	docker buildx create --name gvisor-tests-builder --use || true
+	docker buildx inspect --bootstrap
 
 # register-cross registers the necessary qemu binaries for cross-compilation.
 # This may be used by any target that may execute containers that are not the

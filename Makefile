@@ -93,6 +93,10 @@ pull-...: ## Pull the given image. Also may use 'pull-all-images'.
 $(eval $(call images,push))
 load-...: ## Load (pull or rebuild) the given image. Also may use 'load-all-images'.
 $(eval $(call images,load))
+buildx-...: ## Build the given multi-arch images. Also may use 'buildx-all-images'.
+$(eval $(call images,buildx))
+pushx-...: ## Push the given multi-arch images. Also may use 'pushx-all-images'.
+$(eval $(call images,pushx))
 list-images: ## List all available images.
 	@$(MAKE) -C images $$@
 

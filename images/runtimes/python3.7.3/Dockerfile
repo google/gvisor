@@ -18,4 +18,4 @@ RUN tar -zxf cpython-${VERSION}.tar.gz
 
 WORKDIR /root/cpython-${VERSION}
 RUN ./configure --with-pydebug
-RUN make -s -j2
+RUN make -s -j`grep 'processor' /proc/cpuinfo | wc -l`

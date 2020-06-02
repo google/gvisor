@@ -13,7 +13,7 @@ RUN tar -zxf node-${VERSION}.tar.gz
 
 WORKDIR /root/node-${VERSION}
 RUN ./configure
-RUN make
+RUN make -j`grep 'processor' /proc/cpuinfo | wc -l`
 RUN make test-build
 
 # Including dumb-init emulates the Linux "init" process, preventing the failure

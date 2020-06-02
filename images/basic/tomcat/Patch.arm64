@@ -1,0 +1,1 @@
+FROM arm64v8/tomcat:8.0

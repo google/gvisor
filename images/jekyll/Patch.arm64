@@ -1,0 +1,1 @@
+FROM blafy/jekyll:latest-aarch64

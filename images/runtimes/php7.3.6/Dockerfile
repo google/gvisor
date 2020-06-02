@@ -16,4 +16,4 @@ RUN tar -zxf php-${VERSION}.tar.gz
 
 WORKDIR /root/php-${VERSION}
 RUN ./configure
-RUN make
+RUN make -j`grep 'processor' /proc/cpuinfo | wc -l`
