@@ -46,6 +46,7 @@ var (
 	useTmpfs   = flag.Bool("use-tmpfs", false, "mounts tmpfs for /tmp")
 	fileAccess = flag.String("file-access", "exclusive", "mounts root in exclusive or shared mode")
 	overlay    = flag.Bool("overlay", false, "wrap filesystem mounts with writable tmpfs overlay")
+	vfs2       = flag.Bool("vfs2", false, "enable VFS2")
 	parallel   = flag.Bool("parallel", false, "run tests in parallel")
 	runscPath  = flag.String("runsc", "", "path to runsc binary")
 
@@ -145,6 +146,9 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	}
 	if *overlay {
 		args = append(args, "-overlay")
+	}
+	if *vfs2 {
+		args = append(args, "-vfs2")
 	}
 	if *debug {
 		args = append(args, "-debug", "-log-packets=true")
