@@ -93,14 +93,16 @@ bazel-server: ## Ensures that the server exists. Used as an internal target.
 	@docker exec $(DOCKER_NAME) true || $(MAKE) bazel-server-start
 .PHONY: bazel-server
 
-build_paths = docker exec --user $(UID):$(GID) -i $(DOCKER_NAME) sh -o pipefail -c 'bazel build $(OPTIONS) $(TARGETS) 2>&1 \
-		| tee /dev/fd/2 \
+build_cmd = docker exec --user $(UID):$(GID) -i $(DOCKER_NAME) sh -o pipefail -c 'bazel $(STARTUP_OPTIONS) build $(OPTIONS) $(TARGETS)'
+
+build_paths = $(build_cmd) 2>&1 \
+		| tee /proc/self/fd/2 \
 		| grep -E "^  bazel-bin/" \
-		| awk "{print $$1;}"' \
+		| awk "{print $$1;}" \
 		| xargs -n 1 -I {} sh -c "$(1)"
 
 build: bazel-server
-	@$(call build_paths,echo {})
+	@$(call build_cmd)
 .PHONY: build
 
 copy: bazel-server
@@ -118,5 +120,5 @@ sudo: bazel-server
 .PHONY: sudo
 
 test: bazel-server
-	@docker exec --user $(UID):$(GID) -i $(DOCKER_NAME) bazel test $(OPTIONS) $(TARGETS)
+	@docker exec --user $(UID):$(GID) -i $(DOCKER_NAME) bazel $(STARTUP_OPTIONS) test $(OPTIONS) $(TARGETS)
 .PHONY: test

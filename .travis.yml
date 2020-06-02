@@ -13,7 +13,10 @@ jobs:
    - os: linux
      arch: arm64
 script:
-   - uname -a && make smoke-test
+   # On arm64, we need to create our own pipes for stderr and stdout,
+   # otherwise we will not be able to open /dev/stderr. This is probably
+   # due to AppArmor rules.
+   - uname -a && make smoke-test 2>&1 | cat
 branches:
   except:
   # Skip copybara branches.
