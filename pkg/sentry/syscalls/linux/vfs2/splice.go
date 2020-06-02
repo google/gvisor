@@ -187,6 +187,11 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if n == 0 {
 		return 0, nil, err
 	}
+
+	// On Linux, inotify behavior is not very consistent with splice(2). We try
+	// our best to emulate Linux for very basic calls to splice, where for some
+	// reason, events are generated for output files, but not input files.
+	outFile.Dentry().InotifyWithParent(linux.IN_MODIFY, 0, vfs.PathEvent)
 	return uintptr(n), nil, nil
 }
 
