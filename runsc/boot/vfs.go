@@ -136,7 +136,7 @@ func (c *containerMounter) setupVFS2(ctx context.Context, conf *Config, procArgs
 
 func (c *containerMounter) createMountNamespaceVFS2(ctx context.Context, conf *Config, creds *auth.Credentials) (*vfs.MountNamespace, error) {
 	fd := c.fds.remove()
-	opts := strings.Join(p9MountOptions(fd, conf.FileAccess, true /* vfs2 */), ",")
+	opts := strings.Join(p9MountData(fd, conf.FileAccess, true /* vfs2 */), ",")
 
 	log.Infof("Mounting root over 9P, ioFD: %d", fd)
 	mns, err := c.k.VFS().NewMountNamespace(ctx, creds, "", gofer.Name, &vfs.GetFilesystemOptions{Data: opts})
@@ -160,8 +160,9 @@ func (c *containerMounter) mountSubmountsVFS2(ctx context.Context, conf *Config,
 		}
 	}
 
-	// TODO(gvisor.dev/issue/1487): implement mountTmp from fs.go.
-
+	if err := c.mountTmpVFS2(ctx, conf, creds, mns); err != nil {
+		return fmt.Errorf(`mount submount "\tmp": %w`, err)
+	}
 	return nil
 }
 
@@ -199,8 +200,6 @@ func (c *containerMounter) prepareMountsVFS2() ([]mountAndFD, error) {
 	return mounts, nil
 }
 
-// TODO(gvisor.dev/issue/1487): Implement submount options similar to the VFS1
-// version.
 func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountAndFD) error {
 	root := mns.Root()
 	defer root.DecRef()
@@ -209,12 +208,11 @@ func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *Config, 
 		Start: root,
 		Path:  fspath.Parse(submount.Destination),
 	}
-
-	fsName, options, useOverlay, err := c.getMountNameAndOptionsVFS2(conf, submount)
+	fsName, opts, err := c.getMountNameAndOptionsVFS2(conf, submount)
 	if err != nil {
 		return fmt.Errorf("mountOptions failed: %w", err)
 	}
-	if fsName == "" {
+	if len(fsName) == 0 {
 		// Filesystem is not supported (e.g. cgroup), just skip it.
 		return nil
 	}
@@ -222,17 +220,6 @@ func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *Config, 
 	if err := c.makeSyntheticMount(ctx, submount.Destination, root, creds); err != nil {
 		return err
 	}
-
-	opts := &vfs.MountOptions{
-		GetFilesystemOptions: vfs.GetFilesystemOptions{
-			Data: strings.Join(options, ","),
-		},
-		InternalMount: true,
-	}
-
-	// All writes go to upper, be paranoid and make lower readonly.
-	opts.ReadOnly = useOverlay
-
 	if err := c.k.VFS().MountAt(ctx, creds, "", target, fsName, opts); err != nil {
 		return fmt.Errorf("failed to mount %q (type: %s): %w, opts: %v", submount.Destination, submount.Type, err, opts)
 	}
@@ -242,13 +229,13 @@ func (c *containerMounter) mountSubmountVFS2(ctx context.Context, conf *Config, 
 
 // getMountNameAndOptionsVFS2 retrieves the fsName, opts, and useOverlay values
 // used for mounts.
-func (c *containerMounter) getMountNameAndOptionsVFS2(conf *Config, m *mountAndFD) (string, []string, bool, error) {
+func (c *containerMounter) getMountNameAndOptionsVFS2(conf *Config, m *mountAndFD) (string, *vfs.MountOptions, error) {
 	var (
-		fsName     string
-		opts       []string
-		useOverlay bool
+		fsName string
+		data   []string
 	)
 
+	// Find filesystem name and FS specific data field.
 	switch m.Type {
 	case devpts.Name, devtmpfs.Name, proc.Name, sys.Name:
 		fsName = m.Type
@@ -258,21 +245,46 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *Config, m *mountAndF
 		fsName = m.Type
 
 		var err error
-		opts, err = parseAndFilterOptions(m.Options, tmpfsAllowedOptions...)
+		data, err = parseAndFilterOptions(m.Options, tmpfsAllowedData...)
 		if err != nil {
-			return "", nil, false, err
+			return "", nil, err
 		}
 
 	case bind:
 		fsName = gofer.Name
-		opts = p9MountOptions(m.fd, c.getMountAccessType(m.Mount), true /* vfs2 */)
-		// If configured, add overlay to all writable mounts.
-		useOverlay = conf.Overlay && !mountFlags(m.Options).ReadOnly
+		data = p9MountData(m.fd, c.getMountAccessType(m.Mount), true /* vfs2 */)
 
 	default:
 		log.Warningf("ignoring unknown filesystem type %q", m.Type)
 	}
-	return fsName, opts, useOverlay, nil
+
+	opts := &vfs.MountOptions{
+		GetFilesystemOptions: vfs.GetFilesystemOptions{
+			Data: strings.Join(data, ","),
+		},
+		InternalMount: true,
+	}
+
+	for _, o := range m.Options {
+		switch o {
+		case "rw":
+			opts.ReadOnly = false
+		case "ro":
+			opts.ReadOnly = true
+		case "noatime":
+			// TODO(gvisor.dev/issue/1193): Implement MS_NOATIME.
+		case "noexec":
+			opts.Flags.NoExec = true
+		default:
+			log.Warningf("ignoring unknown mount option %q", o)
+		}
+	}
+
+	if conf.Overlay {
+		// All writes go to upper, be paranoid and make lower readonly.
+		opts.ReadOnly = true
+	}
+	return fsName, opts, nil
 }
 
 func (c *containerMounter) makeSyntheticMount(ctx context.Context, currentPath string, root vfs.VirtualDentry, creds *auth.Credentials) error {
@@ -300,4 +312,64 @@ func (c *containerMounter) makeSyntheticMount(ctx context.Context, currentPath s
 		return fmt.Errorf("failed to create directory %q for mount: %w", currentPath, err)
 	}
 	return nil
+}
+
+// mountTmpVFS2 mounts an internal tmpfs at '/tmp' if it's safe to do so.
+// Technically we don't have to mount tmpfs at /tmp, as we could just rely on
+// the host /tmp, but this is a nice optimization, and fixes some apps that call
+// mknod in /tmp. It's unsafe to mount tmpfs if:
+//   1. /tmp is mounted explicitly: we should not override user's wish
+//   2. /tmp is not empty: mounting tmpfs would hide existing files in /tmp
+//
+// Note that when there are submounts inside of '/tmp', directories for the
+// mount points must be present, making '/tmp' not empty anymore.
+func (c *containerMounter) mountTmpVFS2(ctx context.Context, conf *Config, creds *auth.Credentials, mns *vfs.MountNamespace) error {
+	for _, m := range c.mounts {
+		// m.Destination has been cleaned, so it's to use equality here.
+		if m.Destination == "/tmp" {
+			log.Debugf(`Explict "/tmp" mount found, skipping internal tmpfs, mount: %+v`, m)
+			return nil
+		}
+	}
+
+	root := mns.Root()
+	defer root.DecRef()
+	pop := vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse("/tmp"),
+	}
+	// TODO(gvisor.dev/issue/2782): Use O_PATH when available.
+	statx, err := c.k.VFS().StatAt(ctx, creds, &pop, &vfs.StatOptions{})
+	switch err {
+	case nil:
+		// Found '/tmp' in filesystem, check if it's empty.
+		if linux.FileMode(statx.Mode).FileType() != linux.ModeDirectory {
+			// Not a dir?! Leave it be.
+			return nil
+		}
+		if statx.Nlink > 2 {
+			// If more than "." and ".." is found, skip internal tmpfs to prevent
+			// hiding existing files.
+			log.Infof(`Skipping internal tmpfs mount for "/tmp" because it's not empty`)
+			return nil
+		}
+		log.Infof(`Mounting internal tmpfs on top of empty "/tmp"`)
+		fallthrough
+
+	case syserror.ENOENT:
+		// No '/tmp' found (or fallthrough from above). It's safe to mount internal
+		// tmpfs.
+		tmpMount := specs.Mount{
+			Type:        tmpfs.Name,
+			Destination: "/tmp",
+			// Sticky bit is added to prevent accidental deletion of files from
+			// another user. This is normally done for /tmp.
+			Options: []string{"mode=01777"},
+		}
+		return c.mountSubmountVFS2(ctx, conf, mns, creds, &mountAndFD{Mount: tmpMount})
+
+	default:
+		return fmt.Errorf(`stating "/tmp" inside container: %w`, err)
+	}
 }

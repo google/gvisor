@@ -119,7 +119,7 @@ func receiveConsolePTY(srv *unet.ServerSocket) (*os.File, error) {
 
 // Test that an pty FD is sent over the console socket if one is provided.
 func TestConsoleSocket(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			spec := testutil.NewSpecWithArgs("true")
 			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)

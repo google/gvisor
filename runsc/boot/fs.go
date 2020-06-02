@@ -63,7 +63,7 @@ const (
 )
 
 // tmpfs has some extra supported options that we must pass through.
-var tmpfsAllowedOptions = []string{"mode", "uid", "gid"}
+var tmpfsAllowedData = []string{"mode", "uid", "gid"}
 
 func addOverlay(ctx context.Context, conf *Config, lower *fs.Inode, name string, lowerFlags fs.MountSourceFlags) (*fs.Inode, error) {
 	// Upper layer uses the same flags as lower, but it must be read-write.
@@ -154,8 +154,8 @@ func compileMounts(spec *specs.Spec) []specs.Mount {
 	return mounts
 }
 
-// p9MountOptions creates a slice of options for a p9 mount.
-func p9MountOptions(fd int, fa FileAccessType, vfs2 bool) []string {
+// p9MountData creates a slice of p9 mount data.
+func p9MountData(fd int, fa FileAccessType, vfs2 bool) []string {
 	opts := []string{
 		"trans=fd",
 		"rfdno=" + strconv.Itoa(fd),
@@ -235,7 +235,7 @@ func isSupportedMountFlag(fstype, opt string) bool {
 		return true
 	}
 	if fstype == tmpfsvfs2.Name {
-		ok, err := parseMountOption(opt, tmpfsAllowedOptions...)
+		ok, err := parseMountOption(opt, tmpfsAllowedData...)
 		return ok && err == nil
 	}
 	return false
@@ -716,7 +716,7 @@ func (c *containerMounter) createRootMount(ctx context.Context, conf *Config) (*
 	fd := c.fds.remove()
 	log.Infof("Mounting root over 9P, ioFD: %d", fd)
 	p9FS := mustFindFilesystem("9p")
-	opts := p9MountOptions(fd, conf.FileAccess, false /* vfs2 */)
+	opts := p9MountData(fd, conf.FileAccess, false /* vfs2 */)
 
 	if conf.OverlayfsStaleRead {
 		// We can't check for overlayfs here because sandbox is chroot'ed and gofer
@@ -770,7 +770,7 @@ func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (
 		fsName = m.Type
 
 		var err error
-		opts, err = parseAndFilterOptions(m.Options, tmpfsAllowedOptions...)
+		opts, err = parseAndFilterOptions(m.Options, tmpfsAllowedData...)
 		if err != nil {
 			return "", nil, false, err
 		}
@@ -778,7 +778,7 @@ func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (
 	case bind:
 		fd := c.fds.remove()
 		fsName = gofervfs2.Name
-		opts = p9MountOptions(fd, c.getMountAccessType(m), conf.VFS2)
+		opts = p9MountData(fd, c.getMountAccessType(m), conf.VFS2)
 		// If configured, add overlay to all writable mounts.
 		useOverlay = conf.Overlay && !mountFlags(m.Options).ReadOnly
 
@@ -931,7 +931,7 @@ func (c *containerMounter) createRestoreEnvironment(conf *Config) (*fs.RestoreEn
 
 	// Add root mount.
 	fd := c.fds.remove()
-	opts := p9MountOptions(fd, conf.FileAccess, false /* vfs2 */)
+	opts := p9MountData(fd, conf.FileAccess, false /* vfs2 */)
 
 	mf := fs.MountSourceFlags{}
 	if c.root.Readonly || conf.Overlay {
@@ -1019,7 +1019,7 @@ func (c *containerMounter) mountTmp(ctx context.Context, conf *Config, mns *fs.M
 			Destination: "/tmp",
 			// Sticky bit is added to prevent accidental deletion of files from
 			// another user. This is normally done for /tmp.
-			Options: []string{"mode=1777"},
+			Options: []string{"mode=01777"},
 		}
 		return c.mountSubmount(ctx, conf, mns, root, tmpMount)
 
