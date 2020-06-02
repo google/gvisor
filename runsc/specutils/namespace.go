@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"syscall"
@@ -261,7 +262,18 @@ func MaybeRunAsRoot() error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("re-executing self: %w", err)
+	}
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch)
+	go func() {
+		for {
+			// Forward all signals to child process.
+			cmd.Process.Signal(<-ch)
+		}
+	}()
+	if err := cmd.Wait(); err != nil {
 		if exit, ok := err.(*exec.ExitError); ok {
 			if ws, ok := exit.Sys().(syscall.WaitStatus); ok {
 				os.Exit(ws.ExitStatus())
@@ -269,7 +281,7 @@ func MaybeRunAsRoot() error {
 			log.Warningf("No wait status provided, exiting with -1: %v", err)
 			os.Exit(-1)
 		}
-		return fmt.Errorf("re-executing self: %v", err)
+		return err
 	}
 	// Child completed with success.
 	os.Exit(0)
