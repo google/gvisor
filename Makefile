@@ -16,6 +16,7 @@
 
 # Described below.
 OPTIONS :=
+STARTUP_OPTIONS :=
 TARGETS := //runsc
 ARGS    :=
 
@@ -24,7 +25,7 @@ default: runsc
 
 ## usage: make <target>
 ##         or
-##        make <build|test|copy|run|sudo> OPTIONS="..." TARGETS="..." ARGS="..."
+##        make <build|test|copy|run|sudo> STARTUP_OPTIONS="..." OPTIONS="..." TARGETS="..." ARGS="..."
 ##
 ## Basic targets.
 ##
@@ -33,6 +34,7 @@ default: runsc
 ##   requirements.
 ##
 ##   There are common arguments that may be passed to targets. These are:
+##     STARTUP_OPTIONS - Bazel startup options.
 ##     OPTIONS - Build or test options.
 ##     TARGETS - The bazel targets.
 ##     ARGS    - Arguments for run or sudo.
