@@ -5,6 +5,7 @@ licenses(["notice"])
 go_library(
     name = "flipcall",
     srcs = [
+        "channel.go",
         "ctrl_futex.go",
         "flipcall.go",
         "flipcall_unsafe.go",
