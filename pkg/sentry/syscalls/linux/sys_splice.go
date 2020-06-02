@@ -80,6 +80,12 @@ func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonB
 		}
 	}
 
+	if total > 0 {
+		// On Linux, inotify behavior is not very consistent with splice(2). We try
+		// our best to emulate Linux for very basic calls to splice, where for some
+		// reason, events are generated for output files, but not input files.
+		outFile.Dirent.InotifyEvent(linux.IN_MODIFY, 0)
+	}
 	return total, err
 }
 

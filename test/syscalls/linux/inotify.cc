@@ -19,6 +19,7 @@
 #include <sys/inotify.h>
 #include <sys/ioctl.h>
 #include <sys/time.h>
+#include <sys/xattr.h>
 
 #include <atomic>
 #include <list>
@@ -1655,9 +1656,44 @@ TEST(Inotify, EpollNoDeadlock) {
   }
 }
 
-TEST(Inotify, SpliceEvent) {
-  // TODO(gvisor.dev/issue/138): Implement splice in VFS2.
-  SKIP_IF(IsRunningOnGvisor() && !IsRunningWithVFS1());
+// On Linux, inotify behavior is not very consistent with splice(2). We try our
+// best to emulate Linux for very basic calls to splice.
+TEST(Inotify, SpliceOnWatchTarget) {
+  int pipes[2];
+  ASSERT_THAT(pipe2(pipes, O_NONBLOCK), SyscallSucceeds());
+
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const FileDescriptor inotify_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      dir.path(), "some content", TempPath::kDefaultFileMode));
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
+  const int dir_wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(inotify_fd.get(), dir.path(), IN_ALL_EVENTS));
+  const int file_wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(inotify_fd.get(), file.path(), IN_ALL_EVENTS));
+
+  EXPECT_THAT(splice(fd.get(), nullptr, pipes[1], nullptr, 1, /*flags=*/0),
+              SyscallSucceedsWithValue(1));
+
+  // Surprisingly, events are not generated in Linux if we read from a file.
+  std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  ASSERT_THAT(events, Are({}));
+
+  EXPECT_THAT(splice(pipes[0], nullptr, fd.get(), nullptr, 1, /*flags=*/0),
+              SyscallSucceedsWithValue(1));
+
+  events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  ASSERT_THAT(events, Are({
+                          Event(IN_MODIFY, dir_wd, Basename(file.path())),
+                          Event(IN_MODIFY, file_wd),
+                      }));
+}
+
+TEST(Inotify, SpliceOnInotifyFD) {
   int pipes[2];
   ASSERT_THAT(pipe2(pipes, O_NONBLOCK), SyscallSucceeds());
 
@@ -1717,6 +1753,58 @@ TEST(Inotify, LinkOnOtherParent) {
   const std::vector<Event> events =
       ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
   EXPECT_THAT(events, Are({}));
+}
+
+TEST(Inotify, Xattr) {
+  // TODO(gvisor.dev/issue/1636): Support extended attributes in runsc gofer.
+  SKIP_IF(IsRunningOnGvisor());
+
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const std::string path = file.path();
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path, O_RDWR));
+  const FileDescriptor inotify_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(inotify_fd.get(), path, IN_ALL_EVENTS));
+
+  const char* cpath = path.c_str();
+  const char* name = "user.test";
+  int val = 123;
+  ASSERT_THAT(setxattr(cpath, name, &val, sizeof(val), /*flags=*/0),
+              SyscallSucceeds());
+  std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({Event(IN_ATTRIB, wd)}));
+
+  ASSERT_THAT(getxattr(cpath, name, &val, sizeof(val)), SyscallSucceeds());
+  events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({}));
+
+  char list[100];
+  ASSERT_THAT(listxattr(cpath, list, sizeof(list)), SyscallSucceeds());
+  events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({}));
+
+  ASSERT_THAT(removexattr(cpath, name), SyscallSucceeds());
+  events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({Event(IN_ATTRIB, wd)}));
+
+  ASSERT_THAT(fsetxattr(fd.get(), name, &val, sizeof(val), /*flags=*/0),
+              SyscallSucceeds());
+  events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({Event(IN_ATTRIB, wd)}));
+
+  ASSERT_THAT(fgetxattr(fd.get(), name, &val, sizeof(val)), SyscallSucceeds());
+  events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({}));
+
+  ASSERT_THAT(flistxattr(fd.get(), list, sizeof(list)), SyscallSucceeds());
+  events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({}));
+
+  ASSERT_THAT(fremovexattr(fd.get(), name), SyscallSucceeds());
+  events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({Event(IN_ATTRIB, wd)}));
 }
 
 TEST(Inotify, Exec) {
