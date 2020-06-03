@@ -101,6 +101,12 @@ func (s *TestStack) RouteTable() []Route {
 	return s.RouteList
 }
 
+// AddRoute implements Stack.AddRoute.
+func (s *TestStack) AddRoute(route Route) error {
+	s.RouteList = append(s.RouteList, route)
+	return nil
+}
+
 // Resume implements Stack.Resume.
 func (s *TestStack) Resume() {}
 

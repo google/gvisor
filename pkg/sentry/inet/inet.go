@@ -62,6 +62,9 @@ type Stack interface {
 	// RouteTable returns the network stack's route table.
 	RouteTable() []Route
 
+	// AddRoute adds a new route to the network stack.
+	AddRoute(route Route) error
+
 	// Resume restarts the network stack after restore.
 	Resume()
 

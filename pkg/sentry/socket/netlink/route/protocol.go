@@ -17,15 +17,18 @@ package route
 
 import (
 	"bytes"
+	"reflect"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // commandKind describes the operational class of a message type.
@@ -444,6 +447,63 @@ func (p *Protocol) newAddr(ctx context.Context, msg *netlink.Message, ms *netlin
 	return nil
 }
 
+// newRoute handles RTM_NEWROUTE requests.
+func (p *Protocol) newRoute(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
+	stack := inet.StackFromContext(ctx)
+	if stack == nil {
+		// No network stack.
+		return syserr.ErrProtocolNotSupported
+	}
+	var rtm linux.RouteMessage
+	attrs, ok := msg.GetData(&rtm)
+	if !ok {
+		return syserr.ErrInvalidArgument
+	}
+	if msg.Header().Flags&linux.NLM_F_CREATE == linux.NLM_F_CREATE {
+		route := inet.Route{
+			Family:   rtm.Family,
+			DstLen:   rtm.DstLen,
+			SrcLen:   rtm.SrcLen,
+			TOS:      rtm.TOS,
+			Table:    rtm.Table,
+			Protocol: rtm.Protocol,
+			Scope:    rtm.Scope,
+			Type:     rtm.Type,
+			Flags:    rtm.Flags,
+		}
+
+		for !attrs.Empty() {
+			ahdr, value, rest, ok := attrs.ParseFirst()
+			if !ok {
+				return syserr.ErrInvalidArgument
+			}
+			attrs = rest
+
+			switch ahdr.Type {
+			case linux.RTA_UNSPEC:
+				continue
+			case linux.RTA_DST:
+				route.DstAddr = value
+			case linux.RTA_SRC:
+				route.SrcAddr = value
+			case linux.RTA_GATEWAY:
+				route.GatewayAddr = value
+			case linux.RTA_OIF:
+				if len(value) != int(reflect.TypeOf(route.OutputInterface).Size()) {
+					return syserr.ErrInvalidArgument
+				}
+				binary.Unmarshal(value, usermem.ByteOrder, &route.OutputInterface)
+			default:
+				return syserr.ErrNotSupported
+			}
+		}
+
+		return syserr.FromError(stack.AddRoute(route))
+	}
+
+	return syserr.ErrNotSupported
+}
+
 // ProcessMessage implements netlink.Protocol.ProcessMessage.
 func (p *Protocol) ProcessMessage(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
 	hdr := msg.Header()
@@ -485,6 +545,8 @@ func (p *Protocol) ProcessMessage(ctx context.Context, msg *netlink.Message, ms 
 			return p.dumpRoutes(ctx, msg, ms)
 		case linux.RTM_NEWADDR:
 			return p.newAddr(ctx, msg, ms)
+		case linux.RTM_NEWROUTE:
+			return p.newRoute(ctx, msg, ms)
 		default:
 			return syserr.ErrNotSupported
 		}

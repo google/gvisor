@@ -361,6 +361,25 @@ func (s *Stack) RouteTable() []inet.Route {
 	return routeTable
 }
 
+// AddRoute implements inet.Stack.AddRoute.
+func (s *Stack) AddRoute(route inet.Route) error {
+	dst, msk := tcpip.AddressWithPrefix{
+		Address:   bytesToIPAddress(route.DstAddr),
+		PrefixLen: int(route.DstLen),
+	}.SubnetAddressAndMask()
+	subnet, err := tcpip.NewSubnet(dst, msk)
+	if err != nil {
+		return syserr.ErrInvalidArgument.ToError()
+	}
+
+	s.Stack.AddRoute(tcpip.Route{
+		Destination: subnet,
+		Gateway:     bytesToIPAddress(route.GatewayAddr),
+		NIC:         tcpip.NICID(route.OutputInterface),
+	})
+	return nil
+}
+
 // IPTables returns the stack's iptables.
 func (s *Stack) IPTables() (stack.IPTables, error) {
 	return s.Stack.IPTables(), nil

@@ -1478,20 +1478,15 @@ func (a AddressWithPrefix) String() string {
 	return fmt.Sprintf("%s/%d", a.Address, a.PrefixLen)
 }
 
-// Subnet converts the address and prefix into a Subnet value and returns it.
-func (a AddressWithPrefix) Subnet() Subnet {
+// SubnetAddressAndMask returns the subnet address masked by PrefixLen and the
+// full bitmask that was applied.
+func (a AddressWithPrefix) SubnetAddressAndMask() (Address, AddressMask) {
 	addrLen := len(a.Address)
 	if a.PrefixLen <= 0 {
-		return Subnet{
-			address: Address(strings.Repeat("\x00", addrLen)),
-			mask:    AddressMask(strings.Repeat("\x00", addrLen)),
-		}
+		return Address(strings.Repeat("\x00", addrLen)), AddressMask(strings.Repeat("\x00", addrLen))
 	}
 	if a.PrefixLen >= addrLen*8 {
-		return Subnet{
-			address: a.Address,
-			mask:    AddressMask(strings.Repeat("\xff", addrLen)),
-		}
+		return a.Address, AddressMask(strings.Repeat("\xff", addrLen))
 	}
 
 	sa := make([]byte, addrLen)
@@ -1509,10 +1504,16 @@ func (a AddressWithPrefix) Subnet() Subnet {
 		n = 0
 	}
 
+	return Address(sa), AddressMask(sm)
+}
+
+// Subnet converts the address and prefix into a Subnet value and returns it.
+func (a AddressWithPrefix) Subnet() Subnet {
+	sa, sm := a.SubnetAddressAndMask()
 	// For extra caution, call NewSubnet rather than directly creating the Subnet
 	// value. If that fails it indicates a serious bug in this code, so panic is
 	// in order.
-	s, err := NewSubnet(Address(sa), AddressMask(sm))
+	s, err := NewSubnet(sa, sm)
 	if err != nil {
 		panic("invalid subnet: " + err.Error())
 	}

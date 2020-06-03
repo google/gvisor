@@ -516,6 +516,78 @@ TEST(NetlinkRouteTest, AddAddr) {
       PosixErrorIs(EEXIST, ::testing::_));
 }
 
+TEST(NetlinkRouteTest, AddRoute) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  uint32_t port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtmsg rt;
+    struct rtattr dst_addr_attr;
+    struct in_addr dst_addr;
+    struct rtattr gw_attr;
+    struct in_addr gw;
+    struct rtattr oif_attr;
+    uint32_t oif;
+    char pad[NLMSG_ALIGNTO + RTA_ALIGNTO];
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_type = RTM_NEWROUTE;
+  req.hdr.nlmsg_seq = kSeq;
+  req.rt.rtm_family = AF_INET;
+  req.rt.rtm_dst_len = 24;
+  req.rt.rtm_src_len = 0;
+  req.rt.rtm_flags = 0;
+  req.rt.rtm_protocol = RTN_UNSPEC;
+  req.rt.rtm_scope = RT_SCOPE_LINK;
+  req.rt.rtm_table = 0;
+  req.rt.rtm_tos = 0;
+  req.rt.rtm_type = RTN_UNICAST;
+
+  inet_pton(AF_INET, "10.1.0.0", &req.dst_addr);
+  req.dst_addr_attr.rta_type = RTA_DST;
+  req.dst_addr_attr.rta_len = RTA_LENGTH(sizeof(req.dst_addr));
+
+  inet_pton(AF_INET, "10.1.0.1", &req.gw);
+  req.gw_attr.rta_type = RTA_GATEWAY;
+  req.gw_attr.rta_len = RTA_LENGTH(sizeof(req.gw));
+
+  req.oif = loopback_link.index;
+  req.oif_attr.rta_type = RTA_OIF;
+  req.oif_attr.rta_len = RTA_LENGTH(sizeof(req.oif));
+
+  req.hdr.nlmsg_len =
+      NLMSG_LENGTH(sizeof(req.rt)) + NLMSG_ALIGN(req.dst_addr_attr.rta_len) +
+      NLMSG_ALIGN(req.gw_attr.rta_len) + NLMSG_ALIGN(req.oif_attr.rta_len);
+
+  // Create route should succeed.
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_ACK;
+  EXPECT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, req.hdr.nlmsg_seq, &req, req.hdr.nlmsg_len));
+
+  // Request the route back, it should succeed.
+  req.hdr.nlmsg_type = RTM_GETROUTE;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, &req, sizeof(req),
+      [&](const struct nlmsghdr* hdr) {
+        EXPECT_THAT(hdr->nlmsg_type, AnyOf(Eq(RTM_NEWROUTE), Eq(NLMSG_DONE)));
+
+        EXPECT_FALSE((hdr->nlmsg_flags & NLM_F_MULTI) == NLM_F_MULTI)
+            << std::hex << hdr->nlmsg_flags;
+
+        EXPECT_EQ(hdr->nlmsg_seq, kSeq);
+        EXPECT_EQ(hdr->nlmsg_pid, port);
+      },
+      false));
+}
+
 // GetRouteDump tests a RTM_GETROUTE + NLM_F_DUMP request.
 TEST(NetlinkRouteTest, GetRouteDump) {
   FileDescriptor fd =
