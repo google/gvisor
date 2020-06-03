@@ -127,7 +127,7 @@ func (c *testContext) sendV4Packet(payload []byte, h *headers, linkEpID tcpip.NI
 	u.SetChecksum(^u.CalculateChecksum(xsum))
 
 	// Inject packet.
-	c.linkEps[linkEpID].InjectInbound(ipv4.ProtocolNumber, stack.PacketBuffer{
+	c.linkEps[linkEpID].InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
 		Data:            buf.ToVectorisedView(),
 		NetworkHeader:   buffer.View(ip),
 		TransportHeader: buffer.View(u),
@@ -165,7 +165,7 @@ func (c *testContext) sendV6Packet(payload []byte, h *headers, linkEpID tcpip.NI
 	u.SetChecksum(^u.CalculateChecksum(xsum))
 
 	// Inject packet.
-	c.linkEps[linkEpID].InjectInbound(ipv6.ProtocolNumber, stack.PacketBuffer{
+	c.linkEps[linkEpID].InjectInbound(ipv6.ProtocolNumber, &stack.PacketBuffer{
 		Data:            buf.ToVectorisedView(),
 		NetworkHeader:   buffer.View(ip),
 		TransportHeader: buffer.View(u),

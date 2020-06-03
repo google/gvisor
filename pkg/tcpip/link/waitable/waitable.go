@@ -50,7 +50,7 @@ func New(lower stack.LinkEndpoint) *Endpoint {
 // It is called by the link-layer endpoint being wrapped when a packet arrives,
 // and only forwards to the actual dispatcher if Wait or WaitDispatch haven't
 // been called.
-func (e *Endpoint) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
+func (e *Endpoint) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	if !e.dispatchGate.Enter() {
 		return
 	}
@@ -99,7 +99,7 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 // WritePacket implements stack.LinkEndpoint.WritePacket. It is called by
 // higher-level protocols to write packets. It only forwards packets to the
 // lower endpoint if Wait or WaitWrite haven't been called.
-func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) *tcpip.Error {
+func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	if !e.writeGate.Enter() {
 		return nil
 	}

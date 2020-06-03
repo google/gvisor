@@ -114,7 +114,7 @@ func makeHdrAndPayload(hdrLength int, extraLength int, viewSizes []int) (buffer.
 
 // comparePayloads compared the contents of all the packets against the contents
 // of the source packet.
-func compareFragments(t *testing.T, packets []stack.PacketBuffer, sourcePacketInfo stack.PacketBuffer, mtu uint32) {
+func compareFragments(t *testing.T, packets []*stack.PacketBuffer, sourcePacketInfo *stack.PacketBuffer, mtu uint32) {
 	t.Helper()
 	// Make a complete array of the sourcePacketInfo packet.
 	source := header.IPv4(packets[0].Header.View()[:header.IPv4MinimumSize])
@@ -174,7 +174,7 @@ func compareFragments(t *testing.T, packets []stack.PacketBuffer, sourcePacketIn
 
 type errorChannel struct {
 	*channel.Endpoint
-	Ch                    chan stack.PacketBuffer
+	Ch                    chan *stack.PacketBuffer
 	packetCollectorErrors []*tcpip.Error
 }
 
@@ -184,7 +184,7 @@ type errorChannel struct {
 func newErrorChannel(size int, mtu uint32, linkAddr tcpip.LinkAddress, packetCollectorErrors []*tcpip.Error) *errorChannel {
 	return &errorChannel{
 		Endpoint:              channel.New(size, mtu, linkAddr),
-		Ch:                    make(chan stack.PacketBuffer, size),
+		Ch:                    make(chan *stack.PacketBuffer, size),
 		packetCollectorErrors: packetCollectorErrors,
 	}
 }
@@ -203,7 +203,7 @@ func (e *errorChannel) Drain() int {
 }
 
 // WritePacket stores outbound packets into the channel.
-func (e *errorChannel) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) *tcpip.Error {
+func (e *errorChannel) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	select {
 	case e.Ch <- pkt:
 	default:
@@ -282,13 +282,17 @@ func TestFragmentation(t *testing.T) {
 	for _, ft := range fragTests {
 		t.Run(ft.description, func(t *testing.T) {
 			hdr, payload := makeHdrAndPayload(ft.hdrLength, ft.extraLength, ft.payloadViewsSizes)
-			source := stack.PacketBuffer{
+			source := &stack.PacketBuffer{
 				Header: hdr,
 				// Save the source payload because WritePacket will modify it.
 				Data: payload.Clone(nil),
 			}
 			c := buildContext(t, nil, ft.mtu)
-			err := c.Route.WritePacket(ft.gso, stack.NetworkHeaderParams{Protocol: tcp.ProtocolNumber, TTL: 42, TOS: stack.DefaultTOS}, stack.PacketBuffer{
+			err := c.Route.WritePacket(ft.gso, stack.NetworkHeaderParams{
+				Protocol: tcp.ProtocolNumber,
+				TTL:      42,
+				TOS:      stack.DefaultTOS,
+			}, &stack.PacketBuffer{
 				Header: hdr,
 				Data:   payload,
 			})
@@ -296,7 +300,7 @@ func TestFragmentation(t *testing.T) {
 				t.Errorf("err got %v, want %v", err, nil)
 			}
 
-			var results []stack.PacketBuffer
+			var results []*stack.PacketBuffer
 		L:
 			for {
 				select {
@@ -338,7 +342,11 @@ func TestFragmentationErrors(t *testing.T) {
 		t.Run(ft.description, func(t *testing.T) {
 			hdr, payload := makeHdrAndPayload(ft.hdrLength, header.IPv4MinimumSize, ft.payloadViewsSizes)
 			c := buildContext(t, ft.packetCollectorErrors, ft.mtu)
-			err := c.Route.WritePacket(&stack.GSO{}, stack.NetworkHeaderParams{Protocol: tcp.ProtocolNumber, TTL: 42, TOS: stack.DefaultTOS}, stack.PacketBuffer{
+			err := c.Route.WritePacket(&stack.GSO{}, stack.NetworkHeaderParams{
+				Protocol: tcp.ProtocolNumber,
+				TTL:      42,
+				TOS:      stack.DefaultTOS,
+			}, &stack.PacketBuffer{
 				Header: hdr,
 				Data:   payload,
 			})
@@ -460,7 +468,7 @@ func TestInvalidFragments(t *testing.T) {
 			s.CreateNIC(nicID, sniffer.New(ep))
 
 			for _, pkt := range tc.packets {
-				ep.InjectLinkAddr(header.IPv4ProtocolNumber, remoteLinkAddr, stack.PacketBuffer{
+				ep.InjectLinkAddr(header.IPv4ProtocolNumber, remoteLinkAddr, &stack.PacketBuffer{
 					Data: buffer.NewVectorisedView(len(pkt), []buffer.View{pkt}),
 				})
 			}
@@ -698,7 +706,7 @@ func TestReceiveFragments(t *testing.T) {
 				vv := hdr.View().ToVectorisedView()
 				vv.AppendView(frag.payload)
 
-				e.InjectInbound(header.IPv4ProtocolNumber, stack.PacketBuffer{
+				e.InjectInbound(header.IPv4ProtocolNumber, &stack.PacketBuffer{
 					Data: vv,
 				})
 			}

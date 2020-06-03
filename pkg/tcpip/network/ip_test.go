@@ -96,7 +96,7 @@ func (t *testObject) checkValues(protocol tcpip.TransportProtocolNumber, vv buff
 // DeliverTransportPacket is called by network endpoints after parsing incoming
 // packets. This is used by the test object to verify that the results of the
 // parsing are expected.
-func (t *testObject) DeliverTransportPacket(r *stack.Route, protocol tcpip.TransportProtocolNumber, pkt stack.PacketBuffer) {
+func (t *testObject) DeliverTransportPacket(r *stack.Route, protocol tcpip.TransportProtocolNumber, pkt *stack.PacketBuffer) {
 	t.checkValues(protocol, pkt.Data, r.RemoteAddress, r.LocalAddress)
 	t.dataCalls++
 }
@@ -104,7 +104,7 @@ func (t *testObject) DeliverTransportPacket(r *stack.Route, protocol tcpip.Trans
 // DeliverTransportControlPacket is called by network endpoints after parsing
 // incoming control (ICMP) packets. This is used by the test object to verify
 // that the results of the parsing are expected.
-func (t *testObject) DeliverTransportControlPacket(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ stack.ControlType, extra uint32, pkt stack.PacketBuffer) {
+func (t *testObject) DeliverTransportControlPacket(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
 	t.checkValues(trans, pkt.Data, remote, local)
 	if typ != t.typ {
 		t.t.Errorf("typ = %v, want %v", typ, t.typ)
@@ -150,7 +150,7 @@ func (*testObject) Wait() {}
 // WritePacket is called by network endpoints after producing a packet and
 // writing it to the link endpoint. This is used by the test object to verify
 // that the produced packet is as expected.
-func (t *testObject) WritePacket(_ *stack.Route, _ *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) *tcpip.Error {
+func (t *testObject) WritePacket(_ *stack.Route, _ *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	var prot tcpip.TransportProtocolNumber
 	var srcAddr tcpip.Address
 	var dstAddr tcpip.Address
@@ -246,7 +246,11 @@ func TestIPv4Send(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
-	if err := ep.WritePacket(&r, nil /* gso */, stack.NetworkHeaderParams{Protocol: 123, TTL: 123, TOS: stack.DefaultTOS}, stack.PacketBuffer{
+	if err := ep.WritePacket(&r, nil /* gso */, stack.NetworkHeaderParams{
+		Protocol: 123,
+		TTL:      123,
+		TOS:      stack.DefaultTOS,
+	}, &stack.PacketBuffer{
 		Header: hdr,
 		Data:   payload.ToVectorisedView(),
 	}); err != nil {
@@ -289,7 +293,7 @@ func TestIPv4Receive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
-	ep.HandlePacket(&r, stack.PacketBuffer{
+	ep.HandlePacket(&r, &stack.PacketBuffer{
 		Data: view.ToVectorisedView(),
 	})
 	if o.dataCalls != 1 {
@@ -379,7 +383,7 @@ func TestIPv4ReceiveControl(t *testing.T) {
 			o.extra = c.expectedExtra
 
 			vv := view[:len(view)-c.trunc].ToVectorisedView()
-			ep.HandlePacket(&r, stack.PacketBuffer{
+			ep.HandlePacket(&r, &stack.PacketBuffer{
 				Data: vv,
 			})
 			if want := c.expectedCount; o.controlCalls != want {
@@ -444,7 +448,7 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 	}
 
 	// Send first segment.
-	ep.HandlePacket(&r, stack.PacketBuffer{
+	ep.HandlePacket(&r, &stack.PacketBuffer{
 		Data: frag1.ToVectorisedView(),
 	})
 	if o.dataCalls != 0 {
@@ -452,7 +456,7 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 	}
 
 	// Send second segment.
-	ep.HandlePacket(&r, stack.PacketBuffer{
+	ep.HandlePacket(&r, &stack.PacketBuffer{
 		Data: frag2.ToVectorisedView(),
 	})
 	if o.dataCalls != 1 {
@@ -487,7 +491,11 @@ func TestIPv6Send(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
-	if err := ep.WritePacket(&r, nil /* gso */, stack.NetworkHeaderParams{Protocol: 123, TTL: 123, TOS: stack.DefaultTOS}, stack.PacketBuffer{
+	if err := ep.WritePacket(&r, nil /* gso */, stack.NetworkHeaderParams{
+		Protocol: 123,
+		TTL:      123,
+		TOS:      stack.DefaultTOS,
+	}, &stack.PacketBuffer{
 		Header: hdr,
 		Data:   payload.ToVectorisedView(),
 	}); err != nil {
@@ -530,7 +538,7 @@ func TestIPv6Receive(t *testing.T) {
 		t.Fatalf("could not find route: %v", err)
 	}
 
-	ep.HandlePacket(&r, stack.PacketBuffer{
+	ep.HandlePacket(&r, &stack.PacketBuffer{
 		Data: view.ToVectorisedView(),
 	})
 	if o.dataCalls != 1 {
@@ -644,7 +652,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 			// Set ICMPv6 checksum.
 			icmp.SetChecksum(header.ICMPv6Checksum(icmp, outerSrcAddr, localIpv6Addr, buffer.VectorisedView{}))
 
-			ep.HandlePacket(&r, stack.PacketBuffer{
+			ep.HandlePacket(&r, &stack.PacketBuffer{
 				Data: view[:len(view)-c.trunc].ToVectorisedView(),
 			})
 			if want := c.expectedCount; o.controlCalls != want {

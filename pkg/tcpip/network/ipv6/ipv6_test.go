@@ -65,7 +65,7 @@ func testReceiveICMP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst
 		DstAddr:       dst,
 	})
 
-	e.InjectInbound(ProtocolNumber, stack.PacketBuffer{
+	e.InjectInbound(ProtocolNumber, &stack.PacketBuffer{
 		Data: hdr.View().ToVectorisedView(),
 	})
 
@@ -123,7 +123,7 @@ func testReceiveUDP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst 
 		DstAddr:       dst,
 	})
 
-	e.InjectInbound(ProtocolNumber, stack.PacketBuffer{
+	e.InjectInbound(ProtocolNumber, &stack.PacketBuffer{
 		Data: hdr.View().ToVectorisedView(),
 	})
 
@@ -637,7 +637,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				DstAddr:       addr2,
 			})
 
-			e.InjectInbound(ProtocolNumber, stack.PacketBuffer{
+			e.InjectInbound(ProtocolNumber, &stack.PacketBuffer{
 				Data: hdr.View().ToVectorisedView(),
 			})
 
@@ -1238,7 +1238,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 				vv := hdr.View().ToVectorisedView()
 				vv.Append(f.data)
 
-				e.InjectInbound(ProtocolNumber, stack.PacketBuffer{
+				e.InjectInbound(ProtocolNumber, &stack.PacketBuffer{
 					Data: vv,
 				})
 			}

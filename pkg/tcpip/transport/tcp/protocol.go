@@ -206,7 +206,7 @@ func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error) {
 // to a specific processing queue. Each queue is serviced by its own processor
 // goroutine which is responsible for dequeuing and doing full TCP dispatch of
 // the packet.
-func (p *protocol) QueuePacket(r *stack.Route, ep stack.TransportEndpoint, id stack.TransportEndpointID, pkt stack.PacketBuffer) {
+func (p *protocol) QueuePacket(r *stack.Route, ep stack.TransportEndpoint, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
 	p.dispatcher.queuePacket(r, ep, id, pkt)
 }
 
@@ -217,7 +217,7 @@ func (p *protocol) QueuePacket(r *stack.Route, ep stack.TransportEndpoint, id st
 // a reset is sent in response to any incoming segment except another reset. In
 // particular, SYNs addressed to a non-existent connection are rejected by this
 // means."
-func (*protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.TransportEndpointID, pkt stack.PacketBuffer) bool {
+func (*protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
 	s := newSegment(r, id, pkt)
 	defer s.decRef()
 

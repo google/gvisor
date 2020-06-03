@@ -136,7 +136,7 @@ func TestNeighorSolicitationWithSourceLinkLayerOption(t *testing.T) {
 				t.Fatalf("got invalid = %d, want = 0", got)
 			}
 
-			e.InjectInbound(ProtocolNumber, stack.PacketBuffer{
+			e.InjectInbound(ProtocolNumber, &stack.PacketBuffer{
 				Data: hdr.View().ToVectorisedView(),
 			})
 
@@ -380,7 +380,7 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 				t.Fatalf("got invalid = %d, want = 0", got)
 			}
 
-			e.InjectLinkAddr(ProtocolNumber, test.nsSrcLinkAddr, stack.PacketBuffer{
+			e.InjectLinkAddr(ProtocolNumber, test.nsSrcLinkAddr, &stack.PacketBuffer{
 				Data: hdr.View().ToVectorisedView(),
 			})
 
@@ -497,7 +497,7 @@ func TestNeighorAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 				t.Fatalf("got invalid = %d, want = 0", got)
 			}
 
-			e.InjectInbound(ProtocolNumber, stack.PacketBuffer{
+			e.InjectInbound(ProtocolNumber, &stack.PacketBuffer{
 				Data: hdr.View().ToVectorisedView(),
 			})
 
@@ -568,7 +568,7 @@ func TestNDPValidation(t *testing.T) {
 			SrcAddr:       r.LocalAddress,
 			DstAddr:       r.RemoteAddress,
 		})
-		ep.HandlePacket(r, stack.PacketBuffer{
+		ep.HandlePacket(r, &stack.PacketBuffer{
 			Data: hdr.View().ToVectorisedView(),
 		})
 	}
@@ -884,7 +884,7 @@ func TestRouterAdvertValidation(t *testing.T) {
 				t.Fatalf("got rxRA = %d, want = 0", got)
 			}
 
-			e.InjectInbound(header.IPv6ProtocolNumber, stack.PacketBuffer{
+			e.InjectInbound(header.IPv6ProtocolNumber, &stack.PacketBuffer{
 				Data: hdr.View().ToVectorisedView(),
 			})
 

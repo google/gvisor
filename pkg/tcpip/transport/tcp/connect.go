@@ -833,13 +833,13 @@ func sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stac
 		return sendTCPBatch(r, tf, data, gso, owner)
 	}
 
-	pkt := stack.PacketBuffer{
+	pkt := &stack.PacketBuffer{
 		Header: buffer.NewPrependable(header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen),
 		Data:   data,
 		Hash:   tf.txHash,
 		Owner:  owner,
 	}
-	buildTCPHdr(r, tf, &pkt, gso)
+	buildTCPHdr(r, tf, pkt, gso)
 
 	if tf.ttl == 0 {
 		tf.ttl = r.DefaultTTL()
