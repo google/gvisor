@@ -816,6 +816,25 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 			panic("Netstack queues FIN segments without data.")
 		}
 
+		segEnd = seg.sequenceNumber.Add(seqnum.Size(seg.data.Size()))
+		// If the entire segment cannot be accomodated in the receiver
+		// advertized window, skip splitting and sending of the segment.
+		// ref: net/ipv4/tcp_output.c::tcp_snd_wnd_test()
+		//
+		// Linux checks this for all segment transmits not triggered
+		// by a probe timer. On this condition, it defers the segment
+		// split and transmit to a short probe timer.
+		// ref: include/net/tcp.h::tcp_check_probe_timer()
+		// ref: net/ipv4/tcp_output.c::tcp_write_wakeup()
+		//
+		// Instead of defining a new transmit timer, we attempt to split the
+		// segment right here if there are no pending segments.
+		// If there are pending segments, segment transmits are deferred
+		// to the retransmit timer handler.
+		if s.sndUna != s.sndNxt && !segEnd.LessThan(end) {
+			return false
+		}
+
 		if !seg.sequenceNumber.LessThan(end) {
 			return false
 		}
