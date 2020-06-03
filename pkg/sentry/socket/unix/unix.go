@@ -417,7 +417,18 @@ func (s *socketOpsCommon) Connect(t *kernel.Task, sockaddr []byte, blocking bool
 	defer ep.Release()
 
 	// Connect the server endpoint.
-	return s.ep.Connect(t, ep)
+	err = s.ep.Connect(t, ep)
+
+	if err == syserr.ErrWrongProtocolForSocket {
+		// Linux for abstract sockets returns ErrConnectionRefused
+		// instead of ErrWrongProtocolForSocket.
+		path, _ := extractPath(sockaddr)
+		if len(path) > 0 && path[0] == 0 {
+			err = syserr.ErrConnectionRefused
+		}
+	}
+
+	return err
 }
 
 // Write implements fs.FileOperations.Write.
