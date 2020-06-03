@@ -348,7 +348,7 @@ func (e *endpoint) finishWrite(payloadBytes []byte, route *stack.Route) (int64, 
 	switch e.NetProto {
 	case header.IPv4ProtocolNumber:
 		if !e.associated {
-			if err := route.WriteHeaderIncludedPacket(stack.PacketBuffer{
+			if err := route.WriteHeaderIncludedPacket(&stack.PacketBuffer{
 				Data: buffer.View(payloadBytes).ToVectorisedView(),
 			}); err != nil {
 				return 0, nil, err
@@ -357,7 +357,7 @@ func (e *endpoint) finishWrite(payloadBytes []byte, route *stack.Route) (int64, 
 		}
 
 		hdr := buffer.NewPrependable(len(payloadBytes) + int(route.MaxHeaderLength()))
-		if err := route.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: e.TransProto, TTL: route.DefaultTTL(), TOS: stack.DefaultTOS}, stack.PacketBuffer{
+		if err := route.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: e.TransProto, TTL: route.DefaultTTL(), TOS: stack.DefaultTOS}, &stack.PacketBuffer{
 			Header: hdr,
 			Data:   buffer.View(payloadBytes).ToVectorisedView(),
 			Owner:  e.owner,
@@ -584,7 +584,7 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 }
 
 // HandlePacket implements stack.RawTransportEndpoint.HandlePacket.
-func (e *endpoint) HandlePacket(route *stack.Route, pkt stack.PacketBuffer) {
+func (e *endpoint) HandlePacket(route *stack.Route, pkt *stack.PacketBuffer) {
 	e.rcvMu.Lock()
 
 	// Drop the packet if our buffer is currently full.

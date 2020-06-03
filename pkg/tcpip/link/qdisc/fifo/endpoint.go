@@ -102,7 +102,7 @@ func (q *queueDispatcher) dispatchLoop() {
 }
 
 // DeliverNetworkPacket implements stack.NetworkDispatcher.DeliverNetworkPacket.
-func (e *endpoint) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
+func (e *endpoint) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	e.dispatcher.DeliverNetworkPacket(remote, local, protocol, pkt)
 }
 
@@ -146,7 +146,7 @@ func (e *endpoint) GSOMaxSize() uint32 {
 }
 
 // WritePacket implements stack.LinkEndpoint.WritePacket.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) *tcpip.Error {
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	// WritePacket caller's do not set the following fields in PacketBuffer
 	// so we populate them here.
 	newRoute := r.Clone()
@@ -154,7 +154,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 	pkt.GSOOptions = gso
 	pkt.NetworkProtocolNumber = protocol
 	d := e.dispatchers[int(pkt.Hash)%len(e.dispatchers)]
-	if !d.q.enqueue(&pkt) {
+	if !d.q.enqueue(pkt) {
 		return tcpip.ErrNoBufferSpace
 	}
 	d.newPacketWaker.Assert()

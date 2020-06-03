@@ -60,7 +60,7 @@ type segment struct {
 	xmitCount uint32
 }
 
-func newSegment(r *stack.Route, id stack.TransportEndpointID, pkt stack.PacketBuffer) *segment {
+func newSegment(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) *segment {
 	s := &segment{
 		refCnt: 1,
 		id:     id,

@@ -45,7 +45,7 @@ const (
 type packetInfo struct {
 	raddr    tcpip.LinkAddress
 	proto    tcpip.NetworkProtocolNumber
-	contents stack.PacketBuffer
+	contents *stack.PacketBuffer
 }
 
 type context struct {
@@ -103,7 +103,7 @@ func (c *context) cleanup() {
 	}
 }
 
-func (c *context) DeliverNetworkPacket(remote tcpip.LinkAddress, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
+func (c *context) DeliverNetworkPacket(remote tcpip.LinkAddress, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	c.ch <- packetInfo{remote, protocol, pkt}
 }
 
@@ -179,7 +179,7 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 			L3HdrLen:   header.IPv4MaximumHeaderSize,
 		}
 	}
-	if err := c.ep.WritePacket(r, gso, proto, stack.PacketBuffer{
+	if err := c.ep.WritePacket(r, gso, proto, &stack.PacketBuffer{
 		Header: hdr,
 		Data:   payload.ToVectorisedView(),
 		Hash:   hash,
@@ -295,7 +295,7 @@ func TestPreserveSrcAddress(t *testing.T) {
 	// WritePacket panics given a prependable with anything less than
 	// the minimum size of the ethernet header.
 	hdr := buffer.NewPrependable(header.EthernetMinimumSize)
-	if err := c.ep.WritePacket(r, nil /* gso */, proto, stack.PacketBuffer{
+	if err := c.ep.WritePacket(r, nil /* gso */, proto, &stack.PacketBuffer{
 		Header: hdr,
 		Data:   buffer.VectorisedView{},
 	}); err != nil {
@@ -358,7 +358,7 @@ func TestDeliverPacket(t *testing.T) {
 					want := packetInfo{
 						raddr: raddr,
 						proto: proto,
-						contents: stack.PacketBuffer{
+						contents: &stack.PacketBuffer{
 							Data:       buffer.View(b).ToVectorisedView(),
 							LinkHeader: buffer.View(hdr),
 						},

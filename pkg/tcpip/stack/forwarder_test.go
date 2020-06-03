@@ -68,7 +68,7 @@ func (f *fwdTestNetworkEndpoint) ID() *NetworkEndpointID {
 	return &f.id
 }
 
-func (f *fwdTestNetworkEndpoint) HandlePacket(r *Route, pkt PacketBuffer) {
+func (f *fwdTestNetworkEndpoint) HandlePacket(r *Route, pkt *PacketBuffer) {
 	// Consume the network header.
 	b, ok := pkt.Data.PullUp(fwdTestNetHeaderLen)
 	if !ok {
@@ -96,7 +96,7 @@ func (f *fwdTestNetworkEndpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNu
 	return f.proto.Number()
 }
 
-func (f *fwdTestNetworkEndpoint) WritePacket(r *Route, gso *GSO, params NetworkHeaderParams, pkt PacketBuffer) *tcpip.Error {
+func (f *fwdTestNetworkEndpoint) WritePacket(r *Route, gso *GSO, params NetworkHeaderParams, pkt *PacketBuffer) *tcpip.Error {
 	// Add the protocol's header to the packet and send it to the link
 	// endpoint.
 	b := pkt.Header.Prepend(fwdTestNetHeaderLen)
@@ -112,7 +112,7 @@ func (f *fwdTestNetworkEndpoint) WritePackets(r *Route, gso *GSO, pkts PacketBuf
 	panic("not implemented")
 }
 
-func (*fwdTestNetworkEndpoint) WriteHeaderIncludedPacket(r *Route, pkt PacketBuffer) *tcpip.Error {
+func (*fwdTestNetworkEndpoint) WriteHeaderIncludedPacket(r *Route, pkt *PacketBuffer) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }
 
@@ -190,7 +190,7 @@ func (f *fwdTestNetworkProtocol) LinkAddressProtocol() tcpip.NetworkProtocolNumb
 type fwdTestPacketInfo struct {
 	RemoteLinkAddress tcpip.LinkAddress
 	LocalLinkAddress  tcpip.LinkAddress
-	Pkt               PacketBuffer
+	Pkt               *PacketBuffer
 }
 
 type fwdTestLinkEndpoint struct {
@@ -203,12 +203,12 @@ type fwdTestLinkEndpoint struct {
 }
 
 // InjectInbound injects an inbound packet.
-func (e *fwdTestLinkEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt PacketBuffer) {
+func (e *fwdTestLinkEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
 	e.InjectLinkAddr(protocol, "", pkt)
 }
 
 // InjectLinkAddr injects an inbound packet with a remote link address.
-func (e *fwdTestLinkEndpoint) InjectLinkAddr(protocol tcpip.NetworkProtocolNumber, remote tcpip.LinkAddress, pkt PacketBuffer) {
+func (e *fwdTestLinkEndpoint) InjectLinkAddr(protocol tcpip.NetworkProtocolNumber, remote tcpip.LinkAddress, pkt *PacketBuffer) {
 	e.dispatcher.DeliverNetworkPacket(remote, "" /* local */, protocol, pkt)
 }
 
@@ -251,7 +251,7 @@ func (e *fwdTestLinkEndpoint) LinkAddress() tcpip.LinkAddress {
 	return e.linkAddr
 }
 
-func (e fwdTestLinkEndpoint) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt PacketBuffer) *tcpip.Error {
+func (e fwdTestLinkEndpoint) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) *tcpip.Error {
 	p := fwdTestPacketInfo{
 		RemoteLinkAddress: r.RemoteLinkAddress,
 		LocalLinkAddress:  r.LocalLinkAddress,
@@ -270,7 +270,7 @@ func (e fwdTestLinkEndpoint) WritePacket(r *Route, gso *GSO, protocol tcpip.Netw
 func (e *fwdTestLinkEndpoint) WritePackets(r *Route, gso *GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	n := 0
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
-		e.WritePacket(r, gso, protocol, *pkt)
+		e.WritePacket(r, gso, protocol, pkt)
 		n++
 	}
 
@@ -280,7 +280,7 @@ func (e *fwdTestLinkEndpoint) WritePackets(r *Route, gso *GSO, pkts PacketBuffer
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
 func (e *fwdTestLinkEndpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
 	p := fwdTestPacketInfo{
-		Pkt: PacketBuffer{Data: vv},
+		Pkt: &PacketBuffer{Data: vv},
 	}
 
 	select {
@@ -362,7 +362,7 @@ func TestForwardingWithStaticResolver(t *testing.T) {
 	// forwarded to NIC 2.
 	buf := buffer.NewView(30)
 	buf[0] = 3
-	ep1.InjectInbound(fwdTestNetNumber, PacketBuffer{
+	ep1.InjectInbound(fwdTestNetNumber, &PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
 
@@ -399,7 +399,7 @@ func TestForwardingWithFakeResolver(t *testing.T) {
 	// forwarded to NIC 2.
 	buf := buffer.NewView(30)
 	buf[0] = 3
-	ep1.InjectInbound(fwdTestNetNumber, PacketBuffer{
+	ep1.InjectInbound(fwdTestNetNumber, &PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
 
@@ -430,7 +430,7 @@ func TestForwardingWithNoResolver(t *testing.T) {
 	// forwarded to NIC 2.
 	buf := buffer.NewView(30)
 	buf[0] = 3
-	ep1.InjectInbound(fwdTestNetNumber, PacketBuffer{
+	ep1.InjectInbound(fwdTestNetNumber, &PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
 
@@ -460,7 +460,7 @@ func TestForwardingWithFakeResolverPartialTimeout(t *testing.T) {
 	// not be forwarded.
 	buf := buffer.NewView(30)
 	buf[0] = 4
-	ep1.InjectInbound(fwdTestNetNumber, PacketBuffer{
+	ep1.InjectInbound(fwdTestNetNumber, &PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
 
@@ -468,7 +468,7 @@ func TestForwardingWithFakeResolverPartialTimeout(t *testing.T) {
 	// forwarded to NIC 2.
 	buf = buffer.NewView(30)
 	buf[0] = 3
-	ep1.InjectInbound(fwdTestNetNumber, PacketBuffer{
+	ep1.InjectInbound(fwdTestNetNumber, &PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
 
@@ -510,7 +510,7 @@ func TestForwardingWithFakeResolverTwoPackets(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		buf := buffer.NewView(30)
 		buf[0] = 3
-		ep1.InjectInbound(fwdTestNetNumber, PacketBuffer{
+		ep1.InjectInbound(fwdTestNetNumber, &PacketBuffer{
 			Data: buf.ToVectorisedView(),
 		})
 	}
@@ -557,7 +557,7 @@ func TestForwardingWithFakeResolverManyPackets(t *testing.T) {
 		buf[0] = 3
 		// Set the packet sequence number.
 		binary.BigEndian.PutUint16(buf[fwdTestNetHeaderLen:], uint16(i))
-		ep1.InjectInbound(fwdTestNetNumber, PacketBuffer{
+		ep1.InjectInbound(fwdTestNetNumber, &PacketBuffer{
 			Data: buf.ToVectorisedView(),
 		})
 	}
@@ -610,7 +610,7 @@ func TestForwardingWithFakeResolverManyResolutions(t *testing.T) {
 		// maxPendingResolutions + 7).
 		buf := buffer.NewView(30)
 		buf[0] = byte(3 + i)
-		ep1.InjectInbound(fwdTestNetNumber, PacketBuffer{
+		ep1.InjectInbound(fwdTestNetNumber, &PacketBuffer{
 			Data: buf.ToVectorisedView(),
 		})
 	}

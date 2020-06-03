@@ -120,8 +120,8 @@ func NewWithWriter(lower stack.LinkEndpoint, writer io.Writer, snapLen uint32) (
 // DeliverNetworkPacket implements the stack.NetworkDispatcher interface. It is
 // called by the link-layer endpoint being wrapped when a packet arrives, and
 // logs the packet before forwarding to the actual dispatcher.
-func (e *endpoint) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
-	e.dumpPacket("recv", nil, protocol, &pkt)
+func (e *endpoint) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	e.dumpPacket("recv", nil, protocol, pkt)
 	e.dispatcher.DeliverNetworkPacket(remote, local, protocol, pkt)
 }
 
@@ -208,8 +208,8 @@ func (e *endpoint) dumpPacket(prefix string, gso *stack.GSO, protocol tcpip.Netw
 // WritePacket implements the stack.LinkEndpoint interface. It is called by
 // higher-level protocols to write packets; it just logs the packet and
 // forwards the request to the lower endpoint.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) *tcpip.Error {
-	e.dumpPacket("send", gso, protocol, &pkt)
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+	e.dumpPacket("send", gso, protocol, pkt)
 	return e.lower.WritePacket(r, gso, protocol, pkt)
 }
 

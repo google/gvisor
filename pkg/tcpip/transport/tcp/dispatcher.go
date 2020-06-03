@@ -186,7 +186,7 @@ func (d *dispatcher) wait() {
 	}
 }
 
-func (d *dispatcher) queuePacket(r *stack.Route, stackEP stack.TransportEndpoint, id stack.TransportEndpointID, pkt stack.PacketBuffer) {
+func (d *dispatcher) queuePacket(r *stack.Route, stackEP stack.TransportEndpoint, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
 	ep := stackEP.(*endpoint)
 	s := newSegment(r, id, pkt)
 	if !s.parse() {

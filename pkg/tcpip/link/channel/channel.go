@@ -181,12 +181,12 @@ func (e *Endpoint) NumQueued() int {
 }
 
 // InjectInbound injects an inbound packet.
-func (e *Endpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
+func (e *Endpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	e.InjectLinkAddr(protocol, "", pkt)
 }
 
 // InjectLinkAddr injects an inbound packet with a remote link address.
-func (e *Endpoint) InjectLinkAddr(protocol tcpip.NetworkProtocolNumber, remote tcpip.LinkAddress, pkt stack.PacketBuffer) {
+func (e *Endpoint) InjectLinkAddr(protocol tcpip.NetworkProtocolNumber, remote tcpip.LinkAddress, pkt *stack.PacketBuffer) {
 	e.dispatcher.DeliverNetworkPacket(remote, "" /* local */, protocol, pkt)
 }
 
@@ -229,13 +229,13 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 }
 
 // WritePacket stores outbound packets into the channel.
-func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) *tcpip.Error {
+func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	// Clone r then release its resource so we only get the relevant fields from
 	// stack.Route without holding a reference to a NIC's endpoint.
 	route := r.Clone()
 	route.Release()
 	p := PacketInfo{
-		Pkt:   &pkt,
+		Pkt:   pkt,
 		Proto: protocol,
 		GSO:   gso,
 		Route: route,

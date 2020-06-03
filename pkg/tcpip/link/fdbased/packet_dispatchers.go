@@ -139,7 +139,7 @@ func (d *readVDispatcher) dispatch() (bool, *tcpip.Error) {
 	}
 
 	used := d.capViews(n, BufConfig)
-	pkt := stack.PacketBuffer{
+	pkt := &stack.PacketBuffer{
 		Data:       buffer.NewVectorisedView(n, append([]buffer.View(nil), d.views[:used]...)),
 		LinkHeader: buffer.View(eth),
 	}
@@ -296,7 +296,7 @@ func (d *recvMMsgDispatcher) dispatch() (bool, *tcpip.Error) {
 		}
 
 		used := d.capViews(k, int(n), BufConfig)
-		pkt := stack.PacketBuffer{
+		pkt := &stack.PacketBuffer{
 			Data:       buffer.NewVectorisedView(int(n), append([]buffer.View(nil), d.views[k][:used]...)),
 			LinkHeader: buffer.View(eth),
 		}

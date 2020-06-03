@@ -213,7 +213,7 @@ func (d *Device) Write(data []byte) (int64, error) {
 		remote = tcpip.LinkAddress(zeroMAC[:])
 	}
 
-	pkt := stack.PacketBuffer{
+	pkt := &stack.PacketBuffer{
 		Data: buffer.View(data).ToVectorisedView(),
 	}
 	if ethHdr != nil {

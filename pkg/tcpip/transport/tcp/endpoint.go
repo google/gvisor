@@ -2462,7 +2462,7 @@ func (e *endpoint) GetRemoteAddress() (tcpip.FullAddress, *tcpip.Error) {
 	}, nil
 }
 
-func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt stack.PacketBuffer) {
+func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
 	// TCP HandlePacket is not required anymore as inbound packets first
 	// land at the Dispatcher which then can either delivery using the
 	// worker go routine or directly do the invoke the tcp processing inline
@@ -2481,7 +2481,7 @@ func (e *endpoint) enqueueSegment(s *segment) bool {
 }
 
 // HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
-func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, pkt stack.PacketBuffer) {
+func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
 	switch typ {
 	case stack.ControlPacketTooBig:
 		e.sndBufMu.Lock()

@@ -316,7 +316,7 @@ func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code uint8, p1, p2 []byt
 	copy(icmp[header.ICMPv4PayloadOffset:], p2)
 
 	// Inject packet.
-	c.linkEP.InjectInbound(ipv4.ProtocolNumber, stack.PacketBuffer{
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
 }
@@ -372,7 +372,7 @@ func (c *Context) BuildSegmentWithAddrs(payload []byte, h *Headers, src, dst tcp
 // SendSegment sends a TCP segment that has already been built and written to a
 // buffer.VectorisedView.
 func (c *Context) SendSegment(s buffer.VectorisedView) {
-	c.linkEP.InjectInbound(ipv4.ProtocolNumber, stack.PacketBuffer{
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
 		Data: s,
 	})
 }
@@ -380,7 +380,7 @@ func (c *Context) SendSegment(s buffer.VectorisedView) {
 // SendPacket builds and sends a TCP segment(with the provided payload & TCP
 // headers) in an IPv4 packet via the link layer endpoint.
 func (c *Context) SendPacket(payload []byte, h *Headers) {
-	c.linkEP.InjectInbound(ipv4.ProtocolNumber, stack.PacketBuffer{
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
 		Data: c.BuildSegment(payload, h),
 	})
 }
@@ -389,7 +389,7 @@ func (c *Context) SendPacket(payload []byte, h *Headers) {
 // & TCPheaders) in an IPv4 packet via the link layer endpoint using the
 // provided source and destination IPv4 addresses.
 func (c *Context) SendPacketWithAddrs(payload []byte, h *Headers, src, dst tcpip.Address) {
-	c.linkEP.InjectInbound(ipv4.ProtocolNumber, stack.PacketBuffer{
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
 		Data: c.BuildSegmentWithAddrs(payload, h, src, dst),
 	})
 }
@@ -564,7 +564,7 @@ func (c *Context) SendV6PacketWithAddrs(payload []byte, h *Headers, src, dst tcp
 	t.SetChecksum(^t.CalculateChecksum(xsum))
 
 	// Inject packet.
-	c.linkEP.InjectInbound(ipv6.ProtocolNumber, stack.PacketBuffer{
+	c.linkEP.InjectInbound(ipv6.ProtocolNumber, &stack.PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
 }

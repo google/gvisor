@@ -921,7 +921,11 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 	if useDefaultTTL {
 		ttl = r.DefaultTTL()
 	}
-	if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: ttl, TOS: tos}, stack.PacketBuffer{
+	if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{
+		Protocol: ProtocolNumber,
+		TTL:      ttl,
+		TOS:      tos,
+	}, &stack.PacketBuffer{
 		Header:          hdr,
 		Data:            data,
 		TransportHeader: buffer.View(udp),
@@ -1269,7 +1273,7 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
-func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt stack.PacketBuffer) {
+func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
 	// Get the header then trim it from the view.
 	hdr, ok := pkt.Data.PullUp(header.UDPMinimumSize)
 	if !ok || int(header.UDP(hdr).Length()) > pkt.Data.Size() {
@@ -1336,7 +1340,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 }
 
 // HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
-func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, pkt stack.PacketBuffer) {
+func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
 	if typ == stack.ControlPortUnreachable {
 		e.mu.RLock()
 		defer e.mu.RUnlock()

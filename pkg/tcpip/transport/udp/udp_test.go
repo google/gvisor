@@ -440,7 +440,7 @@ func (c *testContext) injectV6Packet(payload []byte, h *header4Tuple, valid bool
 	u.SetChecksum(^u.CalculateChecksum(xsum))
 
 	// Inject packet.
-	c.linkEP.InjectInbound(ipv6.ProtocolNumber, stack.PacketBuffer{
+	c.linkEP.InjectInbound(ipv6.ProtocolNumber, &stack.PacketBuffer{
 		Data:            buf.ToVectorisedView(),
 		NetworkHeader:   buffer.View(ip),
 		TransportHeader: buffer.View(u),
@@ -487,7 +487,7 @@ func (c *testContext) injectV4Packet(payload []byte, h *header4Tuple, valid bool
 
 	// Inject packet.
 
-	c.linkEP.InjectInbound(ipv4.ProtocolNumber, stack.PacketBuffer{
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
 		Data:            buf.ToVectorisedView(),
 		NetworkHeader:   buffer.View(ip),
 		TransportHeader: buffer.View(u),

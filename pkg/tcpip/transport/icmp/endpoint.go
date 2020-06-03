@@ -450,7 +450,7 @@ func send4(r *stack.Route, ident uint16, data buffer.View, ttl uint8, owner tcpi
 	if ttl == 0 {
 		ttl = r.DefaultTTL()
 	}
-	return r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv4ProtocolNumber, TTL: ttl, TOS: stack.DefaultTOS}, stack.PacketBuffer{
+	return r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv4ProtocolNumber, TTL: ttl, TOS: stack.DefaultTOS}, &stack.PacketBuffer{
 		Header:          hdr,
 		Data:            data.ToVectorisedView(),
 		TransportHeader: buffer.View(icmpv4),
@@ -481,7 +481,7 @@ func send6(r *stack.Route, ident uint16, data buffer.View, ttl uint8) *tcpip.Err
 	if ttl == 0 {
 		ttl = r.DefaultTTL()
 	}
-	return r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: ttl, TOS: stack.DefaultTOS}, stack.PacketBuffer{
+	return r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: ttl, TOS: stack.DefaultTOS}, &stack.PacketBuffer{
 		Header:          hdr,
 		Data:            dataVV,
 		TransportHeader: buffer.View(icmpv6),
@@ -743,7 +743,7 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
-func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt stack.PacketBuffer) {
+func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
 	// Only accept echo replies.
 	switch e.NetProto {
 	case header.IPv4ProtocolNumber:
@@ -805,7 +805,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 }
 
 // HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
-func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, pkt stack.PacketBuffer) {
+func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
 }
 
 // State implements tcpip.Endpoint.State. The ICMP endpoint currently doesn't
