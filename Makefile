@@ -171,12 +171,20 @@ RELEASE_COMMIT  :=
 RELEASE_NAME    :=
 RELEASE_NOTES   :=
 
+GPG_TEST_OPTIONS := $(shell if gpg --pinentry-mode loopback --version >/dev/null 2>&1; then echo --pinentry-mode loopback; fi)
 $(RELEASE_KEY):
 	@echo "WARNING: Generating a key for testing ($@); don't use this."
 	T=$$(mktemp /tmp/keyring.XXXXXX); \
-		gpg --no-default-keyring --keyring $$T --batch --passphrase "" --quick-generate-key $(shell whoami) && \
-		gpg --export-secret-keys --no-default-keyring --keyring $$T > $@; \
-	rc=$$?; rm -f $$T; exit $$rc
+	C=$$(mktemp /tmp/config.XXXXXX); \
+	echo Key-Type: DSA >> $$C && \
+	echo Key-Length: 1024 >> $$C && \
+	echo Name-Real: Test >> $$C && \
+	echo Name-Email: test@example.com >> $$C && \
+	echo Expire-Date: 0 >> $$C && \
+	echo %commit >> $$C && \
+	gpg --batch $(GPG_TEST_OPTIONS) --passphrase '' --no-default-keyring --keyring $$T --no-tty --gen-key $$C && \
+	gpg --batch $(GPG_TEST_OPTIONS) --export-secret-keys --no-default-keyring --keyring $$T --secret-keyring $$T > $@; \
+	rc=$$?; rm -f $$T $$C; exit $$rc
 
 release: $(RELEASE_KEY) ## Builds a release.
 	@mkdir -p $(RELEASE_ROOT)
