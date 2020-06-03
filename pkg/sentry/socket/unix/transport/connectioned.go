@@ -252,7 +252,7 @@ func (e *connectionedEndpoint) Close() {
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
 func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint)) *syserr.Error {
 	if ce.Type() != e.stype {
-		return syserr.ErrConnectionRefused
+		return syserr.ErrWrongProtocolForSocket
 	}
 
 	// Check if ce is e to avoid a deadlock.
