@@ -77,7 +77,10 @@ var DefaultOpts = Opts{
 // trigger it.
 const descheduleThreshold = 1 * time.Second
 
-var stuckTasks = metric.MustCreateNewUint64Metric("/watchdog/stuck_tasks_detected", true /* sync */, "Cumulative count of stuck tasks detected")
+var (
+	stuckStartup = metric.MustCreateNewUint64Metric("/watchdog/stuck_startup_detected", true /* sync */, "Incremented once on startup watchdog timeout")
+	stuckTasks   = metric.MustCreateNewUint64Metric("/watchdog/stuck_tasks_detected", true /* sync */, "Cumulative count of stuck tasks detected")
+)
 
 // Amount of time to wait before dumping the stack to the log again when the same task(s) remains stuck.
 var stackDumpSameTaskPeriod = time.Minute
@@ -220,6 +223,9 @@ func (w *Watchdog) waitForStart() {
 		// We are fine.
 		return
 	}
+
+	stuckStartup.Increment()
+
 	var buf bytes.Buffer
 	buf.WriteString(fmt.Sprintf("Watchdog.Start() not called within %s", w.StartupTimeout))
 	w.doAction(w.StartupTimeoutAction, false, &buf)
