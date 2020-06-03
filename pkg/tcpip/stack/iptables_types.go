@@ -245,7 +245,7 @@ type Matcher interface {
 	// used for suspicious packets.
 	//
 	// Precondition: packet.NetworkHeader is set.
-	Match(hook Hook, packet PacketBuffer, interfaceName string) (matches bool, hotdrop bool)
+	Match(hook Hook, packet *PacketBuffer, interfaceName string) (matches bool, hotdrop bool)
 }
 
 // A Target is the interface for taking an action for a packet.

@@ -43,7 +43,7 @@ func NewForwarder(s *stack.Stack, handler func(*ForwarderRequest)) *Forwarder {
 //
 // This function is expected to be passed as an argument to the
 // stack.SetTransportProtocolHandler function.
-func (f *Forwarder) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt stack.PacketBuffer) bool {
+func (f *Forwarder) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
 	f.handler(&ForwarderRequest{
 		stack: f.stack,
 		route: r,
@@ -61,7 +61,7 @@ type ForwarderRequest struct {
 	stack *stack.Stack
 	route *stack.Route
 	id    stack.TransportEndpointID
-	pkt   stack.PacketBuffer
+	pkt   *stack.PacketBuffer
 }
 
 // ID returns the 4-tuple (src address, src port, dst address, dst port) that

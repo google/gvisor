@@ -96,7 +96,7 @@ func (*TCPMatcher) Name() string {
 }
 
 // Match implements Matcher.Match.
-func (tm *TCPMatcher) Match(hook stack.Hook, pkt stack.PacketBuffer, interfaceName string) (bool, bool) {
+func (tm *TCPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, interfaceName string) (bool, bool) {
 	netHeader := header.IPv4(pkt.NetworkHeader)
 
 	if netHeader.TransportProtocol() != header.TCPProtocolNumber {

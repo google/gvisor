@@ -27,7 +27,7 @@ import (
 // the original packet that caused the ICMP one to be sent. This information is
 // used to find out which transport endpoint must be notified about the ICMP
 // packet.
-func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt stack.PacketBuffer) {
+func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
 	h, ok := pkt.Data.PullUp(header.IPv6MinimumSize)
 	if !ok {
 		return
@@ -70,7 +70,7 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt stack.
 	e.dispatcher.DeliverTransportControlPacket(e.id.LocalAddress, hdr.DestinationAddress(), ProtocolNumber, p, typ, extra, pkt)
 }
 
-func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.PacketBuffer, hasFragmentHeader bool) {
+func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 	stats := r.Stats().ICMP
 	sent := stats.V6PacketsSent
 	received := stats.V6PacketsReceived
@@ -288,7 +288,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.P
 		//
 		// The IP Hop Limit field has a value of 255, i.e., the packet
 		// could not possibly have been forwarded by a router.
-		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: header.NDPHopLimit, TOS: stack.DefaultTOS}, stack.PacketBuffer{
+		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: header.NDPHopLimit, TOS: stack.DefaultTOS}, &stack.PacketBuffer{
 			Header: hdr,
 		}); err != nil {
 			sent.Dropped.Increment()
@@ -390,7 +390,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, pkt stack.P
 		copy(packet, icmpHdr)
 		packet.SetType(header.ICMPv6EchoReply)
 		packet.SetChecksum(header.ICMPv6Checksum(packet, r.LocalAddress, r.RemoteAddress, pkt.Data))
-		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}, stack.PacketBuffer{
+		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}, &stack.PacketBuffer{
 			Header: hdr,
 			Data:   pkt.Data,
 		}); err != nil {
@@ -532,7 +532,7 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.
 	})
 
 	// TODO(stijlist): count this in ICMP stats.
-	return linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, stack.PacketBuffer{
+	return linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, &stack.PacketBuffer{
 		Header: hdr,
 	})
 }
