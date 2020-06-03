@@ -416,6 +416,29 @@ TEST_F(OpenTest, CanTruncateWriteOnlyNoReadPermission_NoRandomSave) {
   EXPECT_EQ(stat.st_size, 0);
 }
 
+TEST_F(OpenTest, CanTruncateWithStrangePermissions) {
+  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  const DisableSave ds;  // Permissions are dropped.
+  std::string path = NewTempAbsPath();
+  int fd;
+  // Create a file without user permissions.
+  EXPECT_THAT(  // SAVE_BELOW
+      fd = open(path.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 055),
+      SyscallSucceeds());
+  EXPECT_THAT(close(fd), SyscallSucceeds());
+
+  // Cannot open file because we are owner and have no permissions set.
+  EXPECT_THAT(open(path.c_str(), O_RDONLY), SyscallFailsWithErrno(EACCES));
+
+  // We *can* chmod the file, because we are the owner.
+  EXPECT_THAT(chmod(path.c_str(), 0755), SyscallSucceeds());
+
+  // Now we can open the file again.
+  EXPECT_THAT(fd = open(path.c_str(), O_RDWR), SyscallSucceeds());
+  EXPECT_THAT(close(fd), SyscallSucceeds());
+}
+
 }  // namespace
 
 }  // namespace testing
