@@ -76,7 +76,8 @@ ops can be implemented in parallel.
 
 #### Minimal client that can mount a trivial FUSE filesystem.
 
--   Implement `/dev/fuse`.
+-   Implement `/dev/fuse` - a character device used to establish an FD for
+    communication between the sentry and the server daemon.
 
 -   Implement basic FUSE ops like `FUSE_INIT`, `FUSE_DESTROY`.
 
