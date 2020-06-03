@@ -265,8 +265,8 @@ func (vfs *VirtualFilesystem) MountAt(ctx context.Context, creds *auth.Credentia
 	if err != nil {
 		return err
 	}
+	defer mnt.DecRef()
 	if err := vfs.ConnectMountAt(ctx, creds, mnt, target); err != nil {
-		mnt.DecRef()
 		return err
 	}
 	return nil
@@ -394,8 +394,15 @@ func (vfs *VirtualFilesystem) umountRecursiveLocked(mnt *Mount, opts *umountRecu
 // references held by vd.
 //
 // Preconditions: vfs.mountMu must be locked. vfs.mounts.seq must be in a
-// writer critical section. d.mu must be locked. mnt.parent() == nil.
+// writer critical section. d.mu must be locked. mnt.parent() == nil, i.e. mnt
+// must not already be connected.
 func (vfs *VirtualFilesystem) connectLocked(mnt *Mount, vd VirtualDentry, mntns *MountNamespace) {
+	if checkInvariants {
+		if mnt.parent() != nil {
+			panic("VFS.connectLocked called on connected mount")
+		}
+	}
+	mnt.IncRef() // dropped by callers of umountRecursiveLocked
 	mnt.storeKey(vd)
 	if vd.mount.children == nil {
 		vd.mount.children = make(map[*Mount]struct{})
@@ -420,6 +427,11 @@ func (vfs *VirtualFilesystem) connectLocked(mnt *Mount, vd VirtualDentry, mntns 
 // writer critical section. mnt.parent() != nil.
 func (vfs *VirtualFilesystem) disconnectLocked(mnt *Mount) VirtualDentry {
 	vd := mnt.loadKey()
+	if checkInvariants {
+		if vd.mount != nil {
+			panic("VFS.disconnectLocked called on disconnected mount")
+		}
+	}
 	mnt.storeKey(VirtualDentry{})
 	delete(vd.mount.children, mnt)
 	atomic.AddUint32(&vd.dentry.mounts, math.MaxUint32) // -1
