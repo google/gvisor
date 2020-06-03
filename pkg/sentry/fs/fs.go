@@ -42,9 +42,10 @@
 //     Dirent.dirMu
 //       Dirent.mu
 //         DirentCache.mu
-//         Locks in InodeOperations implementations or overlayEntry
 //         Inode.Watches.mu (see `Inotify` for other lock ordering)
 //         MountSource.mu
+//         Inode.appendMu
+//           Locks in InodeOperations implementations or overlayEntry
 //
 // If multiple Dirent or MountSource locks must be taken, locks in the parent must be
 // taken before locks in their children.

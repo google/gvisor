@@ -310,7 +310,6 @@ func (f *File) Writev(ctx context.Context, src usermem.IOSequence) (int64, error
 	if !f.mu.Lock(ctx) {
 		return 0, syserror.ErrInterrupted
 	}
-
 	unlockAppendMu := f.Dirent.Inode.lockAppendMu(f.Flags().Append)
 	// Handle append mode.
 	if f.Flags().Append {
@@ -355,7 +354,6 @@ func (f *File) Pwritev(ctx context.Context, src usermem.IOSequence, offset int64
 	// offset."
 	unlockAppendMu := f.Dirent.Inode.lockAppendMu(f.Flags().Append)
 	defer unlockAppendMu()
-
 	if f.Flags().Append {
 		if err := f.offsetForAppend(ctx, &offset); err != nil {
 			return 0, err
@@ -374,9 +372,10 @@ func (f *File) Pwritev(ctx context.Context, src usermem.IOSequence, offset int64
 	return f.FileOperations.Write(ctx, f, src, offset)
 }
 
-// offsetForAppend sets the given offset to the end of the file.
+// offsetForAppend atomically sets the given offset to the end of the file.
 //
-// Precondition: the file.Dirent.Inode.appendMu mutex should be held for writing.
+// Precondition: the file.Dirent.Inode.appendMu mutex should be held for
+// writing.
 func (f *File) offsetForAppend(ctx context.Context, offset *int64) error {
 	uattr, err := f.Dirent.Inode.UnstableAttr(ctx)
 	if err != nil {
@@ -386,7 +385,7 @@ func (f *File) offsetForAppend(ctx context.Context, offset *int64) error {
 	}
 
 	// Update the offset.
-	*offset = uattr.Size
+	atomic.StoreInt64(offset, uattr.Size)
 
 	return nil
 }
