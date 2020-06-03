@@ -124,7 +124,7 @@ func (s *Statx) UnmarshalBytes(src []byte) {
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
 func (s *Statx) Packed() bool {
-    return s.Mtime.Packed() && s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed()
+    return s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
@@ -138,7 +138,7 @@ func (s *Statx) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *Statx) UnmarshalUnsafe(src []byte) {
-    if s.Ctime.Packed() && s.Mtime.Packed() && s.Atime.Packed() && s.Btime.Packed() {
+    if s.Mtime.Packed() && s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() {
         safecopy.CopyOut(unsafe.Pointer(s), src)
     } else {
         s.UnmarshalBytes(src)
@@ -148,7 +148,7 @@ func (s *Statx) UnmarshalUnsafe(src []byte) {
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
 func (s *Statx) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {
-    if !s.Ctime.Packed() && s.Mtime.Packed() && s.Atime.Packed() && s.Btime.Packed() {
+    if !s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() && s.Atime.Packed() {
         // Type Statx doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := task.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
         s.MarshalBytes(buf) // escapes: fallback.
