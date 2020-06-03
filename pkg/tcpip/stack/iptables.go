@@ -321,7 +321,7 @@ func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx
 	// Go through each rule matcher. If they all match, run
 	// the rule target.
 	for _, matcher := range rule.Matchers {
-		matches, hotdrop := matcher.Match(hook, *pkt, "")
+		matches, hotdrop := matcher.Match(hook, pkt, "")
 		if hotdrop {
 			return RuleDrop, 0
 		}

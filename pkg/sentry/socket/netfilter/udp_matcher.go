@@ -93,7 +93,7 @@ func (*UDPMatcher) Name() string {
 }
 
 // Match implements Matcher.Match.
-func (um *UDPMatcher) Match(hook stack.Hook, pkt stack.PacketBuffer, interfaceName string) (bool, bool) {
+func (um *UDPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, interfaceName string) (bool, bool) {
 	netHeader := header.IPv4(pkt.NetworkHeader)
 
 	// TODO(gvisor.dev/issue/170): Proto checks should ultimately be moved

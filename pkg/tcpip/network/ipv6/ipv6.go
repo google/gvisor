@@ -116,7 +116,7 @@ func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadS
 }
 
 // WritePacket writes a packet to the given destination address and protocol.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, pkt stack.PacketBuffer) *tcpip.Error {
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, pkt *stack.PacketBuffer) *tcpip.Error {
 	ip := e.addIPHeader(r, &pkt.Header, pkt.Data.Size(), params)
 	pkt.NetworkHeader = buffer.View(ip)
 
@@ -128,7 +128,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 		views = append(views, pkt.Data.Views()...)
 		loopedR := r.MakeLoopedRoute()
 
-		e.HandlePacket(&loopedR, stack.PacketBuffer{
+		e.HandlePacket(&loopedR, &stack.PacketBuffer{
 			Data: buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views),
 		})
 
@@ -163,14 +163,14 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 
 // WriteHeaderIncludedPacker implements stack.NetworkEndpoint. It is not yet
 // supported by IPv6.
-func (*endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt stack.PacketBuffer) *tcpip.Error {
+func (*endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBuffer) *tcpip.Error {
 	// TODO(b/146666412): Support IPv6 header-included packets.
 	return tcpip.ErrNotSupported
 }
 
 // HandlePacket is called by the link layer when new ipv6 packets arrive for
 // this endpoint.
-func (e *endpoint) HandlePacket(r *stack.Route, pkt stack.PacketBuffer) {
+func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 	headerView, ok := pkt.Data.PullUp(header.IPv6MinimumSize)
 	if !ok {
 		r.Stats().IP.MalformedPacketsReceived.Increment()

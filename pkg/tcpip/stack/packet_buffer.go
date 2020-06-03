@@ -24,6 +24,8 @@ import (
 // multiple endpoints. Clone() should be called in such cases so that
 // modifications to the Data field do not affect other copies.
 type PacketBuffer struct {
+	_ noCopy
+
 	// PacketBufferEntry is used to build an intrusive list of
 	// PacketBuffers.
 	PacketBufferEntry
@@ -82,7 +84,32 @@ type PacketBuffer struct {
 // VectorisedView but does not deep copy the underlying bytes.
 //
 // Clone also does not deep copy any of its other fields.
-func (pk PacketBuffer) Clone() PacketBuffer {
-	pk.Data = pk.Data.Clone(nil)
-	return pk
+//
+// FIXME(b/153685824): Data gets copied but not other header references.
+func (pk *PacketBuffer) Clone() *PacketBuffer {
+	return &PacketBuffer{
+		PacketBufferEntry:     pk.PacketBufferEntry,
+		Data:                  pk.Data.Clone(nil),
+		Header:                pk.Header,
+		LinkHeader:            pk.LinkHeader,
+		NetworkHeader:         pk.NetworkHeader,
+		TransportHeader:       pk.TransportHeader,
+		Hash:                  pk.Hash,
+		Owner:                 pk.Owner,
+		EgressRoute:           pk.EgressRoute,
+		GSOOptions:            pk.GSOOptions,
+		NetworkProtocolNumber: pk.NetworkProtocolNumber,
+		NatDone:               pk.NatDone,
+	}
 }
+
+// noCopy may be embedded into structs which must not be copied
+// after the first use.
+//
+// See https://golang.org/issues/8005#issuecomment-190753527
+// for details.
+type noCopy struct{}
+
+// Lock is a no-op used by -copylocks checker from `go vet`.
+func (*noCopy) Lock()   {}
+func (*noCopy) Unlock() {}

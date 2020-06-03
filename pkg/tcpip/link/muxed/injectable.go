@@ -80,7 +80,7 @@ func (m *InjectableEndpoint) IsAttached() bool {
 }
 
 // InjectInbound implements stack.InjectableLinkEndpoint.
-func (m *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) {
+func (m *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	m.dispatcher.DeliverNetworkPacket("" /* remote */, "" /* local */, protocol, pkt)
 }
 
@@ -98,7 +98,7 @@ func (m *InjectableEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts s
 // WritePacket writes outbound packets to the appropriate LinkInjectableEndpoint
 // based on the RemoteAddress. HandleLocal only works if r.RemoteAddress has a
 // route registered in this endpoint.
-func (m *InjectableEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) *tcpip.Error {
+func (m *InjectableEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	if endpoint, ok := m.routes[r.RemoteAddress]; ok {
 		return endpoint.WritePacket(r, gso, protocol, pkt)
 	}

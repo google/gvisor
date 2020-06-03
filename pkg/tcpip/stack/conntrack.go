@@ -186,7 +186,7 @@ func parseHeaders(pkt *PacketBuffer) {
 }
 
 // packetToTuple converts packet to a tuple in original direction.
-func packetToTuple(pkt PacketBuffer, hook Hook) (connTrackTuple, *tcpip.Error) {
+func packetToTuple(pkt *PacketBuffer, hook Hook) (connTrackTuple, *tcpip.Error) {
 	var tuple connTrackTuple
 
 	netHeader := header.IPv4(pkt.NetworkHeader)
@@ -265,7 +265,7 @@ func (ct *ConnTrackTable) connTrackForPacket(pkt *PacketBuffer, hook Hook, creat
 	}
 
 	var dir ctDirection
-	tuple, err := packetToTuple(*pkt, hook)
+	tuple, err := packetToTuple(pkt, hook)
 	if err != nil {
 		return nil, dir
 	}

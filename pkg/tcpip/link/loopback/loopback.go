@@ -76,7 +76,7 @@ func (*endpoint) Wait() {}
 
 // WritePacket implements stack.LinkEndpoint.WritePacket. It delivers outbound
 // packets to the network-layer dispatcher.
-func (e *endpoint) WritePacket(_ *stack.Route, _ *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBuffer) *tcpip.Error {
+func (e *endpoint) WritePacket(_ *stack.Route, _ *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	views := make([]buffer.View, 1, 1+len(pkt.Data.Views()))
 	views[0] = pkt.Header.View()
 	views = append(views, pkt.Data.Views()...)
@@ -84,7 +84,7 @@ func (e *endpoint) WritePacket(_ *stack.Route, _ *stack.GSO, protocol tcpip.Netw
 	// Because we're immediately turning around and writing the packet back
 	// to the rx path, we intentionally don't preserve the remote and local
 	// link addresses from the stack.Route we're passed.
-	e.dispatcher.DeliverNetworkPacket("" /* remote */, "" /* local */, protocol, stack.PacketBuffer{
+	e.dispatcher.DeliverNetworkPacket("" /* remote */, "" /* local */, protocol, &stack.PacketBuffer{
 		Data: buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views),
 	})
 
@@ -106,7 +106,7 @@ func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
 	}
 	linkHeader := header.Ethernet(hdr)
 	vv.TrimFront(len(linkHeader))
-	e.dispatcher.DeliverNetworkPacket("" /* remote */, "" /* local */, linkHeader.Type(), stack.PacketBuffer{
+	e.dispatcher.DeliverNetworkPacket("" /* remote */, "" /* local */, linkHeader.Type(), &stack.PacketBuffer{
 		Data:       vv,
 		LinkHeader: buffer.View(linkHeader),
 	})
