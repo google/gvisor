@@ -28,10 +28,6 @@ namespace testing {
 namespace {
 
 TEST_P(DgramUnixSocketPairTest, WriteOneSideClosed) {
-  // FIXME(b/35925052): gVisor datagram sockets return EPIPE instead of
-  // ECONNREFUSED.
-  SKIP_IF(IsRunningOnGvisor());
-
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   ASSERT_THAT(close(sockets->release_first_fd()), SyscallSucceeds());
   constexpr char kStr[] = "abc";
