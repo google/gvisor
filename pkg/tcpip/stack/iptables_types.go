@@ -16,6 +16,7 @@ package stack
 
 import (
 	"strings"
+	"sync"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -78,13 +79,17 @@ const (
 
 // IPTables holds all the tables for a netstack.
 type IPTables struct {
-	// Tables maps table names to tables. User tables have arbitrary names.
-	Tables map[string]Table
+	// mu protects tables and priorities.
+	mu sync.RWMutex
 
-	// Priorities maps each hook to a list of table names. The order of the
+	// tables maps table names to tables. User tables have arbitrary names. mu
+	// needs to be locked for accessing.
+	tables map[string]Table
+
+	// priorities maps each hook to a list of table names. The order of the
 	// list is the order in which each table should be visited for that
-	// hook.
-	Priorities map[Hook][]string
+	// hook. mu needs to be locked for accessing.
+	priorities map[Hook][]string
 
 	connections ConnTrackTable
 }
