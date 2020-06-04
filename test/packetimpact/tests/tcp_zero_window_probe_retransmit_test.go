@@ -21,39 +21,39 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func init() {
-	tb.RegisterFlags(flag.CommandLine)
+	testbench.RegisterFlags(flag.CommandLine)
 }
 
 // TestZeroWindowProbeRetransmit tests retransmits of zero window probes
 // to be sent at exponentially inreasing time intervals.
 func TestZeroWindowProbeRetransmit(t *testing.T) {
-	dut := tb.NewDUT(t)
+	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
 	listenFd, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
 	defer dut.Close(listenFd)
-	conn := tb.NewTCPIPv4(t, tb.TCP{DstPort: &remotePort}, tb.TCP{SrcPort: &remotePort})
+	conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
 	defer conn.Close()
 
-	conn.Handshake()
+	conn.Connect()
 	acceptFd, _ := dut.Accept(listenFd)
 	defer dut.Close(acceptFd)
 
 	dut.SetSockOptInt(acceptFd, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
 
 	sampleData := []byte("Sample Data")
-	samplePayload := &tb.Payload{Bytes: sampleData}
+	samplePayload := &testbench.Payload{Bytes: sampleData}
 
 	// Send and receive sample data to the dut.
 	dut.Send(acceptFd, sampleData, 0)
-	if _, err := conn.ExpectData(&tb.TCP{}, samplePayload, time.Second); err != nil {
+	if _, err := conn.ExpectData(&testbench.TCP{}, samplePayload, time.Second); err != nil {
 		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
 	}
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
-	if _, err := conn.ExpectData(&tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)}, nil, time.Second); err != nil {
+	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
+	if _, err := conn.ExpectData(&testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, nil, time.Second); err != nil {
 		t.Fatalf("expected a packet with sequence number %s", err)
 	}
 
@@ -63,9 +63,9 @@ func TestZeroWindowProbeRetransmit(t *testing.T) {
 	// of the recorded first zero probe transmission duration.
 	//
 	// Advertize zero receive window again.
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck), WindowSize: tb.Uint16(0)})
-	probeSeq := tb.Uint32(uint32(*conn.RemoteSeqNum() - 1))
-	ackProbe := tb.Uint32(uint32(*conn.RemoteSeqNum()))
+	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
+	probeSeq := testbench.Uint32(uint32(*conn.RemoteSeqNum() - 1))
+	ackProbe := testbench.Uint32(uint32(*conn.RemoteSeqNum()))
 
 	startProbeDuration := time.Second
 	current := startProbeDuration
@@ -79,7 +79,7 @@ func TestZeroWindowProbeRetransmit(t *testing.T) {
 		// Expect zero-window probe with a timeout which is a function of the typical
 		// first retransmission time. The retransmission times is supposed to
 		// exponentially increase.
-		if _, err := conn.ExpectData(&tb.TCP{SeqNum: probeSeq}, nil, 2*current); err != nil {
+		if _, err := conn.ExpectData(&testbench.TCP{SeqNum: probeSeq}, nil, 2*current); err != nil {
 			t.Fatalf("expected a probe with sequence number %v: loop %d", probeSeq, i)
 		}
 		if i == 0 {
@@ -92,13 +92,14 @@ func TestZeroWindowProbeRetransmit(t *testing.T) {
 			t.Fatalf("zero probe came sooner interval %d probe %d\n", p, i)
 		}
 		// Acknowledge the zero-window probes from the dut.
-		conn.Send(tb.TCP{AckNum: ackProbe, Flags: tb.Uint8(header.TCPFlagAck), WindowSize: tb.Uint16(0)})
+		conn.Send(testbench.TCP{AckNum: ackProbe, Flags: testbench.Uint8(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
 		current *= 2
 	}
 	// Advertize non-zero window.
-	conn.Send(tb.TCP{AckNum: ackProbe, Flags: tb.Uint8(header.TCPFlagAck)})
+	conn.Send(testbench.TCP{AckNum: ackProbe, Flags: testbench.Uint8(header.TCPFlagAck)})
 	// Expect the dut to recover and transmit data.
-	if _, err := conn.ExpectData(&tb.TCP{SeqNum: ackProbe}, samplePayload, time.Second); err != nil {
+	if _, err := conn.ExpectData(&testbench.
+		TCP{SeqNum: ackProbe}, samplePayload, time.Second); err != nil {
 		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
 	}
 }

@@ -200,6 +200,26 @@ packetimpact_go_test(
 )
 
 packetimpact_go_test(
+    name = "tcp_splitseg_mss",
+    srcs = ["tcp_splitseg_mss_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
+    name = "tcp_cork_mss",
+    srcs = ["tcp_cork_mss_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
     name = "icmpv6_param_problem",
     srcs = ["icmpv6_param_problem_test.go"],
     # TODO(b/153485026): Fix netstack then remove the line below.

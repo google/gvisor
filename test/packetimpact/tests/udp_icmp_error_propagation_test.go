@@ -26,11 +26,11 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func init() {
-	tb.RegisterFlags(flag.CommandLine)
+	testbench.RegisterFlags(flag.CommandLine)
 }
 
 type connectionMode bool
@@ -59,12 +59,12 @@ func (e icmpError) String() string {
 	return "Unknown ICMP error"
 }
 
-func (e icmpError) ToICMPv4() *tb.ICMPv4 {
+func (e icmpError) ToICMPv4() *testbench.ICMPv4 {
 	switch e {
 	case portUnreachable:
-		return &tb.ICMPv4{Type: tb.ICMPv4Type(header.ICMPv4DstUnreachable), Code: tb.Uint8(header.ICMPv4PortUnreachable)}
+		return &testbench.ICMPv4{Type: testbench.ICMPv4Type(header.ICMPv4DstUnreachable), Code: testbench.Uint8(header.ICMPv4PortUnreachable)}
 	case timeToLiveExceeded:
-		return &tb.ICMPv4{Type: tb.ICMPv4Type(header.ICMPv4TimeExceeded), Code: tb.Uint8(header.ICMPv4TTLExceeded)}
+		return &testbench.ICMPv4{Type: testbench.ICMPv4Type(header.ICMPv4TimeExceeded), Code: testbench.Uint8(header.ICMPv4TTLExceeded)}
 	}
 	return nil
 }
@@ -76,8 +76,8 @@ type errorDetection struct {
 }
 
 type testData struct {
-	dut        *tb.DUT
-	conn       *tb.UDPIPv4
+	dut        *testbench.DUT
+	conn       *testbench.UDPIPv4
 	remoteFD   int32
 	remotePort uint16
 	cleanFD    int32
@@ -95,9 +95,9 @@ func wantErrno(c connectionMode, icmpErr icmpError) syscall.Errno {
 }
 
 // sendICMPError sends an ICMP error message in response to a UDP datagram.
-func sendICMPError(conn *tb.UDPIPv4, icmpErr icmpError, udp *tb.UDP) error {
+func sendICMPError(conn *testbench.UDPIPv4, icmpErr icmpError, udp *testbench.UDP) error {
 	if icmpErr == timeToLiveExceeded {
-		ip, ok := udp.Prev().(*tb.IPv4)
+		ip, ok := udp.Prev().(*testbench.IPv4)
 		if !ok {
 			return fmt.Errorf("expected %s to be IPv4", udp.Prev())
 		}
@@ -123,10 +123,10 @@ func sendICMPError(conn *tb.UDPIPv4, icmpErr icmpError, udp *tb.UDP) error {
 // first recv should succeed immediately.
 func testRecv(ctx context.Context, d testData) error {
 	// Check that receiving on the clean socket works.
-	d.conn.Send(tb.UDP{DstPort: &d.cleanPort})
+	d.conn.Send(testbench.UDP{DstPort: &d.cleanPort})
 	d.dut.Recv(d.cleanFD, 100, 0)
 
-	d.conn.Send(tb.UDP{})
+	d.conn.Send(testbench.UDP{})
 
 	if d.wantErrno != syscall.Errno(0) {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
@@ -151,7 +151,7 @@ func testRecv(ctx context.Context, d testData) error {
 func testSendTo(ctx context.Context, d testData) error {
 	// Check that sending on the clean socket works.
 	d.dut.SendTo(d.cleanFD, nil, 0, d.conn.LocalAddr())
-	if _, err := d.conn.Expect(tb.UDP{SrcPort: &d.cleanPort}, time.Second); err != nil {
+	if _, err := d.conn.Expect(testbench.UDP{SrcPort: &d.cleanPort}, time.Second); err != nil {
 		return fmt.Errorf("did not receive UDP packet from clean socket on DUT: %s", err)
 	}
 
@@ -169,7 +169,7 @@ func testSendTo(ctx context.Context, d testData) error {
 	}
 
 	d.dut.SendTo(d.remoteFD, nil, 0, d.conn.LocalAddr())
-	if _, err := d.conn.Expect(tb.UDP{}, time.Second); err != nil {
+	if _, err := d.conn.Expect(testbench.UDP{}, time.Second); err != nil {
 		return fmt.Errorf("did not receive UDP packet as expected: %s", err)
 	}
 	return nil
@@ -187,7 +187,7 @@ func testSockOpt(_ context.Context, d testData) error {
 
 	// Check that after clearing socket error, sending doesn't fail.
 	d.dut.SendTo(d.remoteFD, nil, 0, d.conn.LocalAddr())
-	if _, err := d.conn.Expect(tb.UDP{}, time.Second); err != nil {
+	if _, err := d.conn.Expect(testbench.UDP{}, time.Second); err != nil {
 		return fmt.Errorf("did not receive UDP packet as expected: %s", err)
 	}
 	return nil
@@ -223,7 +223,7 @@ func TestUDPICMPErrorPropagation(t *testing.T) {
 				errorDetection{"SockOpt", false, testSockOpt},
 			} {
 				t.Run(fmt.Sprintf("%s/%s/%s", connect, icmpErr, errDetect.name), func(t *testing.T) {
-					dut := tb.NewDUT(t)
+					dut := testbench.NewDUT(t)
 					defer dut.TearDown()
 
 					remoteFD, remotePort := dut.CreateBoundSocket(unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP("0.0.0.0"))
@@ -234,7 +234,7 @@ func TestUDPICMPErrorPropagation(t *testing.T) {
 					cleanFD, cleanPort := dut.CreateBoundSocket(unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP("0.0.0.0"))
 					defer dut.Close(cleanFD)
 
-					conn := tb.NewUDPIPv4(t, tb.UDP{DstPort: &remotePort}, tb.UDP{SrcPort: &remotePort})
+					conn := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
 					defer conn.Close()
 
 					if connect {
@@ -243,7 +243,7 @@ func TestUDPICMPErrorPropagation(t *testing.T) {
 					}
 
 					dut.SendTo(remoteFD, nil, 0, conn.LocalAddr())
-					udp, err := conn.Expect(tb.UDP{}, time.Second)
+					udp, err := conn.Expect(testbench.UDP{}, time.Second)
 					if err != nil {
 						t.Fatalf("did not receive message from DUT: %s", err)
 					}
@@ -258,7 +258,7 @@ func TestUDPICMPErrorPropagation(t *testing.T) {
 						// involved in the generation of the ICMP error. As such,
 						// interactions between it and the the DUT should be independent of
 						// the ICMP error at least at the port level.
-						connClean := tb.NewUDPIPv4(t, tb.UDP{DstPort: &remotePort}, tb.UDP{SrcPort: &remotePort})
+						connClean := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
 						defer connClean.Close()
 
 						errDetectConn = &connClean
@@ -281,7 +281,7 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 			wantErrno := wantErrno(connect, icmpErr)
 
 			t.Run(fmt.Sprintf("%s/%s", connect, icmpErr), func(t *testing.T) {
-				dut := tb.NewDUT(t)
+				dut := testbench.NewDUT(t)
 				defer dut.TearDown()
 
 				remoteFD, remotePort := dut.CreateBoundSocket(unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP("0.0.0.0"))
@@ -292,7 +292,7 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 				cleanFD, cleanPort := dut.CreateBoundSocket(unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP("0.0.0.0"))
 				defer dut.Close(cleanFD)
 
-				conn := tb.NewUDPIPv4(t, tb.UDP{DstPort: &remotePort}, tb.UDP{SrcPort: &remotePort})
+				conn := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
 				defer conn.Close()
 
 				if connect {
@@ -301,7 +301,7 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 				}
 
 				dut.SendTo(remoteFD, nil, 0, conn.LocalAddr())
-				udp, err := conn.Expect(tb.UDP{}, time.Second)
+				udp, err := conn.Expect(testbench.UDP{}, time.Second)
 				if err != nil {
 					t.Fatalf("did not receive message from DUT: %s", err)
 				}
@@ -355,8 +355,8 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				conn.Send(tb.UDP{DstPort: &cleanPort})
-				conn.Send(tb.UDP{})
+				conn.Send(testbench.UDP{DstPort: &cleanPort})
+				conn.Send(testbench.UDP{})
 				wg.Wait()
 			})
 		}

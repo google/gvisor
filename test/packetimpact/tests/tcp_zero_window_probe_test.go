@@ -21,41 +21,41 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func init() {
-	tb.RegisterFlags(flag.CommandLine)
+	testbench.RegisterFlags(flag.CommandLine)
 }
 
 // TestZeroWindowProbe tests few cases of zero window probing over the
 // same connection.
 func TestZeroWindowProbe(t *testing.T) {
-	dut := tb.NewDUT(t)
+	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
 	listenFd, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
 	defer dut.Close(listenFd)
-	conn := tb.NewTCPIPv4(t, tb.TCP{DstPort: &remotePort}, tb.TCP{SrcPort: &remotePort})
+	conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
 	defer conn.Close()
 
-	conn.Handshake()
+	conn.Connect()
 	acceptFd, _ := dut.Accept(listenFd)
 	defer dut.Close(acceptFd)
 
 	dut.SetSockOptInt(acceptFd, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
 
 	sampleData := []byte("Sample Data")
-	samplePayload := &tb.Payload{Bytes: sampleData}
+	samplePayload := &testbench.Payload{Bytes: sampleData}
 
 	start := time.Now()
 	// Send and receive sample data to the dut.
 	dut.Send(acceptFd, sampleData, 0)
-	if _, err := conn.ExpectData(&tb.TCP{}, samplePayload, time.Second); err != nil {
+	if _, err := conn.ExpectData(&testbench.TCP{}, samplePayload, time.Second); err != nil {
 		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
 	}
 	sendTime := time.Now().Sub(start)
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
-	if _, err := conn.ExpectData(&tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)}, nil, time.Second); err != nil {
+	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
+	if _, err := conn.ExpectData(&testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, nil, time.Second); err != nil {
 		t.Fatalf("expected a packet with sequence number %s", err)
 	}
 
@@ -63,16 +63,16 @@ func TestZeroWindowProbe(t *testing.T) {
 	//         probe to be sent.
 	//
 	// Advertize zero window to the dut.
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck), WindowSize: tb.Uint16(0)})
+	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
 
 	// Expected sequence number of the zero window probe.
-	probeSeq := tb.Uint32(uint32(*conn.RemoteSeqNum() - 1))
+	probeSeq := testbench.Uint32(uint32(*conn.RemoteSeqNum() - 1))
 	// Expected ack number of the ACK for the probe.
-	ackProbe := tb.Uint32(uint32(*conn.RemoteSeqNum()))
+	ackProbe := testbench.Uint32(uint32(*conn.RemoteSeqNum()))
 
 	// Expect there are no zero-window probes sent until there is data to be sent out
 	// from the dut.
-	if _, err := conn.ExpectData(&tb.TCP{SeqNum: probeSeq}, nil, 2*time.Second); err == nil {
+	if _, err := conn.ExpectData(&testbench.TCP{SeqNum: probeSeq}, nil, 2*time.Second); err == nil {
 		t.Fatalf("unexpected a packet with sequence number %v: %s", probeSeq, err)
 	}
 
@@ -80,7 +80,7 @@ func TestZeroWindowProbe(t *testing.T) {
 	// Ask the dut to send out data.
 	dut.Send(acceptFd, sampleData, 0)
 	// Expect zero-window probe from the dut.
-	if _, err := conn.ExpectData(&tb.TCP{SeqNum: probeSeq}, nil, time.Second); err != nil {
+	if _, err := conn.ExpectData(&testbench.TCP{SeqNum: probeSeq}, nil, time.Second); err != nil {
 		t.Fatalf("expected a packet with sequence number %v: %s", probeSeq, err)
 	}
 	// Expect the probe to be sent after some time. Compare against the previous
@@ -94,9 +94,9 @@ func TestZeroWindowProbe(t *testing.T) {
 	//         and sends out the sample payload after the send window opens.
 	//
 	// Advertize non-zero window to the dut and ack the zero window probe.
-	conn.Send(tb.TCP{AckNum: ackProbe, Flags: tb.Uint8(header.TCPFlagAck)})
+	conn.Send(testbench.TCP{AckNum: ackProbe, Flags: testbench.Uint8(header.TCPFlagAck)})
 	// Expect the dut to recover and transmit data.
-	if _, err := conn.ExpectData(&tb.TCP{SeqNum: ackProbe}, samplePayload, time.Second); err != nil {
+	if _, err := conn.ExpectData(&testbench.TCP{SeqNum: ackProbe}, samplePayload, time.Second); err != nil {
 		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
 	}
 
@@ -104,9 +104,9 @@ func TestZeroWindowProbe(t *testing.T) {
 	//         Check if the dut responds as we do for a similar probe sent to it.
 	//         Basically with sequence number to one byte behind the unacknowledged
 	//         sequence number.
-	p := tb.Uint32(uint32(*conn.LocalSeqNum()))
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck), SeqNum: tb.Uint32(uint32(*conn.LocalSeqNum() - 1))})
-	if _, err := conn.ExpectData(&tb.TCP{Flags: tb.Uint8(header.TCPFlagAck), AckNum: p}, nil, time.Second); err != nil {
+	p := testbench.Uint32(uint32(*conn.LocalSeqNum()))
+	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), SeqNum: testbench.Uint32(uint32(*conn.LocalSeqNum() - 1))})
+	if _, err := conn.ExpectData(&testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: p}, nil, time.Second); err != nil {
 		t.Fatalf("expected a packet with ack number: %d: %s", p, err)
 	}
 }

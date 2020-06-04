@@ -628,15 +628,36 @@ func NewTCPIPv4(t *testing.T, outgoingTCP, incomingTCP TCP) TCPIPv4 {
 	}
 }
 
-// Handshake performs a TCP 3-way handshake. The input Connection should have a
+// Connect performs a TCP 3-way handshake. The input Connection should have a
 // final TCP Layer.
-func (conn *TCPIPv4) Handshake() {
+func (conn *TCPIPv4) Connect() {
+	conn.t.Helper()
+
 	// Send the SYN.
 	conn.Send(TCP{Flags: Uint8(header.TCPFlagSyn)})
 
 	// Wait for the SYN-ACK.
 	synAck, err := conn.Expect(TCP{Flags: Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second)
-	if synAck == nil {
+	if err != nil {
+		conn.t.Fatalf("didn't get synack during handshake: %s", err)
+	}
+	conn.layerStates[len(conn.layerStates)-1].(*tcpState).synAck = synAck
+
+	// Send an ACK.
+	conn.Send(TCP{Flags: Uint8(header.TCPFlagAck)})
+}
+
+// ConnectWithOptions performs a TCP 3-way handshake with given TCP options.
+// The input Connection should have a final TCP Layer.
+func (conn *TCPIPv4) ConnectWithOptions(options []byte) {
+	conn.t.Helper()
+
+	// Send the SYN.
+	conn.Send(TCP{Flags: Uint8(header.TCPFlagSyn), Options: options})
+
+	// Wait for the SYN-ACK.
+	synAck, err := conn.Expect(TCP{Flags: Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second)
+	if err != nil {
 		conn.t.Fatalf("didn't get synack during handshake: %s", err)
 	}
 	conn.layerStates[len(conn.layerStates)-1].(*tcpState).synAck = synAck
@@ -654,6 +675,31 @@ func (conn *TCPIPv4) ExpectData(tcp *TCP, payload *Payload, timeout time.Duratio
 		expected = append(expected, payload)
 	}
 	return (*Connection)(conn).ExpectFrame(expected, timeout)
+}
+
+// ExpectNextData attempts to receive the next incoming segment for the
+// connection and expects that to match the given layers.
+//
+// It differs from ExpectData() in that here we are only interested in the next
+// received segment, while ExpectData() can receive multiple segments for the
+// connection until there is a match with given layers or a timeout.
+func (conn *TCPIPv4) ExpectNextData(tcp *TCP, payload *Payload, timeout time.Duration) (Layers, error) {
+	// Receive the first incoming TCP segment for this connection.
+	got, err := conn.ExpectData(&TCP{}, nil, timeout)
+	if err != nil {
+		return nil, err
+	}
+
+	expected := make([]Layer, len(conn.layerStates))
+	expected[len(expected)-1] = tcp
+	if payload != nil {
+		expected = append(expected, payload)
+		tcp.SeqNum = Uint32(uint32(*conn.RemoteSeqNum()) - uint32(payload.Length()))
+	}
+	if !(*Connection)(conn).match(expected, got) {
+		return nil, fmt.Errorf("next frame is not matching %s during %s: got %s", expected, timeout, got)
+	}
+	return got, nil
 }
 
 // Send a packet with reasonable defaults. Potentially override the TCP layer in

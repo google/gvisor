@@ -21,32 +21,32 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func init() {
-	tb.RegisterFlags(flag.CommandLine)
+	testbench.RegisterFlags(flag.CommandLine)
 }
 
 // TestTCPSynRcvdReset tests transition from SYN-RCVD to CLOSED.
 func TestTCPSynRcvdReset(t *testing.T) {
-	dut := tb.NewDUT(t)
+	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
 	listenFD, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
 	defer dut.Close(listenFD)
-	conn := tb.NewTCPIPv4(t, tb.TCP{DstPort: &remotePort}, tb.TCP{SrcPort: &remotePort})
+	conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
 	defer conn.Close()
 
 	// Expect dut connection to have transitioned to SYN-RCVD state.
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagSyn)})
-	if _, err := conn.ExpectData(&tb.TCP{Flags: tb.Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, nil, time.Second); err != nil {
+	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)})
+	if _, err := conn.ExpectData(&testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, nil, time.Second); err != nil {
 		t.Fatalf("expected SYN-ACK %s", err)
 	}
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)})
+	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)})
 	// Expect the connection to have transitioned SYN-RCVD to CLOSED.
 	// TODO(gvisor.dev/issue/478): Check for TCP_INFO on the dut side.
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
-	if _, err := conn.ExpectData(&tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)}, nil, time.Second); err != nil {
+	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
+	if _, err := conn.ExpectData(&testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)}, nil, time.Second); err != nil {
 		t.Fatalf("expected a TCP RST %s", err)
 	}
 }

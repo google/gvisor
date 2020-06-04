@@ -22,11 +22,11 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
-	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func init() {
-	tb.RegisterFlags(flag.CommandLine)
+	testbench.RegisterFlags(flag.CommandLine)
 }
 
 func generateRandomPayload(t *testing.T, n int) string {
@@ -39,11 +39,11 @@ func generateRandomPayload(t *testing.T, n int) string {
 }
 
 func TestUDPRecv(t *testing.T) {
-	dut := tb.NewDUT(t)
+	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
 	boundFD, remotePort := dut.CreateBoundSocket(unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP("0.0.0.0"))
 	defer dut.Close(boundFD)
-	conn := tb.NewUDPIPv4(t, tb.UDP{DstPort: &remotePort}, tb.UDP{SrcPort: &remotePort})
+	conn := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
 	defer conn.Close()
 
 	testCases := []struct {
@@ -59,7 +59,7 @@ func TestUDPRecv(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			frame := conn.CreateFrame(&tb.UDP{}, &tb.Payload{Bytes: []byte(tc.payload)})
+			frame := conn.CreateFrame(&testbench.UDP{}, &testbench.Payload{Bytes: []byte(tc.payload)})
 			conn.SendFrame(frame)
 			if got, want := string(dut.Recv(boundFD, int32(len(tc.payload)), 0)), tc.payload; got != want {
 				t.Fatalf("received payload does not match sent payload got: %s, want: %s", got, want)
@@ -69,11 +69,11 @@ func TestUDPRecv(t *testing.T) {
 }
 
 func TestUDPSend(t *testing.T) {
-	dut := tb.NewDUT(t)
+	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
 	boundFD, remotePort := dut.CreateBoundSocket(unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP("0.0.0.0"))
 	defer dut.Close(boundFD)
-	conn := tb.NewUDPIPv4(t, tb.UDP{DstPort: &remotePort}, tb.UDP{SrcPort: &remotePort})
+	conn := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
 	defer conn.Close()
 
 	testCases := []struct {
@@ -93,7 +93,7 @@ func TestUDPSend(t *testing.T) {
 			if got, want := int(dut.SendTo(boundFD, []byte(tc.payload), 0, conn.LocalAddr())), len(tc.payload); got != want {
 				t.Fatalf("short write got: %d, want: %d", got, want)
 			}
-			if _, err := conn.ExpectData(tb.UDP{SrcPort: &remotePort}, tb.Payload{Bytes: []byte(tc.payload)}, 1*time.Second); err != nil {
+			if _, err := conn.ExpectData(testbench.UDP{SrcPort: &remotePort}, testbench.Payload{Bytes: []byte(tc.payload)}, 1*time.Second); err != nil {
 				t.Fatal(err)
 			}
 		})
