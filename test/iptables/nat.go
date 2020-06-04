@@ -39,6 +39,7 @@ func init() {
 	RegisterTestCase(NATOutDontRedirectIP{})
 	RegisterTestCase(NATOutRedirectInvert{})
 	RegisterTestCase(NATRedirectRequiresProtocol{})
+	RegisterTestCase(NATLoopbackSkipsPrerouting{})
 }
 
 // NATPreRedirectUDPPort tests that packets are redirected to different port.
@@ -326,32 +327,6 @@ func (NATRedirectRequiresProtocol) LocalAction(ip net.IP) error {
 	return nil
 }
 
-// loopbackTests runs an iptables rule and ensures that packets sent to
-// dest:dropPort are received by localhost:acceptPort.
-func loopbackTest(dest net.IP, args ...string) error {
-	if err := natTable(args...); err != nil {
-		return err
-	}
-	sendCh := make(chan error)
-	listenCh := make(chan error)
-	go func() {
-		sendCh <- sendUDPLoop(dest, dropPort, sendloopDuration)
-	}()
-	go func() {
-		listenCh <- listenUDP(acceptPort, sendloopDuration)
-	}()
-	select {
-	case err := <-listenCh:
-		if err != nil {
-			return err
-		}
-	case <-time.After(sendloopDuration):
-		return errors.New("timed out")
-	}
-	// sendCh will always take the full sendloop time.
-	return <-sendCh
-}
-
 // NATOutRedirectTCPPort tests that connections are redirected on specified ports.
 type NATOutRedirectTCPPort struct{}
 
@@ -399,4 +374,66 @@ func (NATOutRedirectTCPPort) ContainerAction(ip net.IP) error {
 // LocalAction implements TestCase.LocalAction.
 func (NATOutRedirectTCPPort) LocalAction(ip net.IP) error {
 	return nil
+}
+
+// NATLoopbackSkipsPrerouting tests that packets sent via loopback aren't
+// affected by PREROUTING rules.
+type NATLoopbackSkipsPrerouting struct{}
+
+// Name implements TestCase.Name.
+func (NATLoopbackSkipsPrerouting) Name() string {
+	return "NATLoopbackSkipsPrerouting"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (NATLoopbackSkipsPrerouting) ContainerAction(ip net.IP) error {
+	// Redirect anything sent to localhost to an unused port.
+	dest := []byte{127, 0, 0, 1}
+	if err := natTable("-A", "PREROUTING", "-p", "tcp", "-j", "REDIRECT", "--to-port", fmt.Sprintf("%d", dropPort)); err != nil {
+		return err
+	}
+
+	// Establish a connection via localhost. If the PREROUTING rule did apply to
+	// loopback traffic, the connection would fail.
+	sendCh := make(chan error)
+	go func() {
+		sendCh <- connectTCP(dest, acceptPort, sendloopDuration)
+	}()
+
+	if err := listenTCP(acceptPort, sendloopDuration); err != nil {
+		return err
+	}
+	return <-sendCh
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (NATLoopbackSkipsPrerouting) LocalAction(ip net.IP) error {
+	// No-op.
+	return nil
+}
+
+// loopbackTests runs an iptables rule and ensures that packets sent to
+// dest:dropPort are received by localhost:acceptPort.
+func loopbackTest(dest net.IP, args ...string) error {
+	if err := natTable(args...); err != nil {
+		return err
+	}
+	sendCh := make(chan error)
+	listenCh := make(chan error)
+	go func() {
+		sendCh <- sendUDPLoop(dest, dropPort, sendloopDuration)
+	}()
+	go func() {
+		listenCh <- listenUDP(acceptPort, sendloopDuration)
+	}()
+	select {
+	case err := <-listenCh:
+		if err != nil {
+			return err
+		}
+	case <-time.After(sendloopDuration):
+		return errors.New("timed out")
+	}
+	// sendCh will always take the full sendloop time.
+	return <-sendCh
 }

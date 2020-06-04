@@ -258,38 +258,24 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 		return nil
 	}
 
+	// If the packet is manipulated as per NAT Ouput rules, handle packet
+	// based on destination address and do not send the packet to link layer.
+	// TODO(gvisor.dev/issue/170): We should do this for every packet, rather than
+	// only NATted packets, but removing this check short circuits broadcasts
+	// before they are sent out to other hosts.
 	if pkt.NatDone {
-		// If the packet is manipulated as per NAT Ouput rules, handle packet
-		// based on destination address and do not send the packet to link layer.
 		netHeader := header.IPv4(pkt.NetworkHeader)
 		ep, err := e.stack.FindNetworkEndpoint(header.IPv4ProtocolNumber, netHeader.DestinationAddress())
 		if err == nil {
-			src := netHeader.SourceAddress()
-			dst := netHeader.DestinationAddress()
-			route := r.ReverseRoute(src, dst)
-
-			views := make([]buffer.View, 1, 1+len(pkt.Data.Views()))
-			views[0] = pkt.Header.View()
-			views = append(views, pkt.Data.Views()...)
-			ep.HandlePacket(&route, &stack.PacketBuffer{
-				Data: buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views),
-			})
+			route := r.ReverseRoute(netHeader.SourceAddress(), netHeader.DestinationAddress())
+			handleLoopback(&route, pkt, ep)
 			return nil
 		}
 	}
 
 	if r.Loop&stack.PacketLoop != 0 {
-		// The inbound path expects the network header to still be in
-		// the PacketBuffer's Data field.
-		views := make([]buffer.View, 1, 1+len(pkt.Data.Views()))
-		views[0] = pkt.Header.View()
-		views = append(views, pkt.Data.Views()...)
 		loopedR := r.MakeLoopedRoute()
-
-		e.HandlePacket(&loopedR, &stack.PacketBuffer{
-			Data: buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views),
-		})
-
+		handleLoopback(&loopedR, pkt, e)
 		loopedR.Release()
 	}
 	if r.Loop&stack.PacketOut == 0 {
@@ -303,6 +289,17 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 	}
 	r.Stats().IP.PacketsSent.Increment()
 	return nil
+}
+
+func handleLoopback(route *stack.Route, pkt *stack.PacketBuffer, ep stack.NetworkEndpoint) {
+	// The inbound path expects the network header to still be in
+	// the PacketBuffer's Data field.
+	views := make([]buffer.View, 1, 1+len(pkt.Data.Views()))
+	views[0] = pkt.Header.View()
+	views = append(views, pkt.Data.Views()...)
+	ep.HandlePacket(route, &stack.PacketBuffer{
+		Data: buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views),
+	})
 }
 
 // WritePackets implements stack.NetworkEndpoint.WritePackets.
@@ -347,13 +344,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 				src := netHeader.SourceAddress()
 				dst := netHeader.DestinationAddress()
 				route := r.ReverseRoute(src, dst)
-
-				views := make([]buffer.View, 1, 1+len(pkt.Data.Views()))
-				views[0] = pkt.Header.View()
-				views = append(views, pkt.Data.Views()...)
-				ep.HandlePacket(&route, &stack.PacketBuffer{
-					Data: buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views),
-				})
+				handleLoopback(&route, pkt, ep)
 				n++
 				continue
 			}
