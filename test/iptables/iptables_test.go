@@ -303,6 +303,10 @@ func TestNATRedirectRequiresProtocol(t *testing.T) {
 	singleTest(t, NATRedirectRequiresProtocol{})
 }
 
+func TestNATLoopbackSkipsPrerouting(t *testing.T) {
+	singleTest(t, NATLoopbackSkipsPrerouting{})
+}
+
 func TestInputSource(t *testing.T) {
 	singleTest(t, FilterInputSource{})
 }
