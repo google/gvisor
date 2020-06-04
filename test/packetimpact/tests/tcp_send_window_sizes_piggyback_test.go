@@ -22,11 +22,11 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func init() {
-	tb.RegisterFlags(flag.CommandLine)
+	testbench.RegisterFlags(flag.CommandLine)
 }
 
 // TestSendWindowSizesPiggyback tests cases where segment sizes are close to
@@ -59,26 +59,26 @@ func TestSendWindowSizesPiggyback(t *testing.T) {
 		{"WindowGreaterThanSegment", segmentSize + 1, sampleData, sampleData, true /* enqueue */},
 	} {
 		t.Run(fmt.Sprintf("%s%d", tt.description, tt.windowSize), func(t *testing.T) {
-			dut := tb.NewDUT(t)
+			dut := testbench.NewDUT(t)
 			defer dut.TearDown()
 			listenFd, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
 			defer dut.Close(listenFd)
 
-			conn := tb.NewTCPIPv4(t, tb.TCP{DstPort: &remotePort, WindowSize: tb.Uint16(tt.windowSize)}, tb.TCP{SrcPort: &remotePort})
+			conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort, WindowSize: testbench.Uint16(tt.windowSize)}, testbench.TCP{SrcPort: &remotePort})
 			defer conn.Close()
 
-			conn.Handshake()
+			conn.Connect()
 			acceptFd, _ := dut.Accept(listenFd)
 			defer dut.Close(acceptFd)
 
 			dut.SetSockOptInt(acceptFd, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
 
-			expectedTCP := tb.TCP{Flags: tb.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}
+			expectedTCP := testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}
 
 			dut.Send(acceptFd, sampleData, 0)
-			expectedPayload := tb.Payload{Bytes: tt.expectedPayload1}
+			expectedPayload := testbench.Payload{Bytes: tt.expectedPayload1}
 			if _, err := conn.ExpectData(&expectedTCP, &expectedPayload, time.Second); err != nil {
-				t.Fatalf("Expected %s but didn't get one: %s", tb.Layers{&expectedTCP, &expectedPayload}, err)
+				t.Fatalf("expected payload was not received: %s", err)
 			}
 
 			// Expect any enqueued segment to be transmitted by the dut along with
@@ -92,13 +92,13 @@ func TestSendWindowSizesPiggyback(t *testing.T) {
 			// Send ACK for the previous segment along with data for the dut to
 			// receive and ACK back. Sending this ACK would make room for the dut
 			// to transmit any enqueued segment.
-			conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck | header.TCPFlagPsh), WindowSize: tb.Uint16(tt.windowSize)}, &tb.Payload{Bytes: sampleData})
+			conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh), WindowSize: testbench.Uint16(tt.windowSize)}, &testbench.Payload{Bytes: sampleData})
 
 			// Expect the dut to piggyback the ACK for received data along with
 			// the segment enqueued for transmit.
-			expectedPayload = tb.Payload{Bytes: tt.expectedPayload2}
+			expectedPayload = testbench.Payload{Bytes: tt.expectedPayload2}
 			if _, err := conn.ExpectData(&expectedTCP, &expectedPayload, time.Second); err != nil {
-				t.Fatalf("Expected %s but didn't get one: %s", tb.Layers{&expectedTCP, &expectedPayload}, err)
+				t.Fatalf("expected payload was not received: %s", err)
 			}
 		})
 	}

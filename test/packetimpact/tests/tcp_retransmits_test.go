@@ -21,53 +21,53 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func init() {
-	tb.RegisterFlags(flag.CommandLine)
+	testbench.RegisterFlags(flag.CommandLine)
 }
 
 // TestRetransmits tests retransmits occur at exponentially increasing
 // time intervals.
 func TestRetransmits(t *testing.T) {
-	dut := tb.NewDUT(t)
+	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
 	listenFd, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
 	defer dut.Close(listenFd)
-	conn := tb.NewTCPIPv4(t, tb.TCP{DstPort: &remotePort}, tb.TCP{SrcPort: &remotePort})
+	conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
 	defer conn.Close()
 
-	conn.Handshake()
+	conn.Connect()
 	acceptFd, _ := dut.Accept(listenFd)
 	defer dut.Close(acceptFd)
 
 	dut.SetSockOptInt(acceptFd, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
 
 	sampleData := []byte("Sample Data")
-	samplePayload := &tb.Payload{Bytes: sampleData}
+	samplePayload := &testbench.Payload{Bytes: sampleData}
 
 	dut.Send(acceptFd, sampleData, 0)
-	if _, err := conn.ExpectData(&tb.TCP{}, samplePayload, time.Second); err != nil {
+	if _, err := conn.ExpectData(&testbench.TCP{}, samplePayload, time.Second); err != nil {
 		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
 	}
 	// Give a chance for the dut to estimate RTO with RTT from the DATA-ACK.
 	// TODO(gvisor.dev/issue/2685) Estimate RTO during handshake, after which
 	// we can skip sending this ACK.
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
+	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
 
 	startRTO := time.Second
 	current := startRTO
 	first := time.Now()
 	dut.Send(acceptFd, sampleData, 0)
-	seq := tb.Uint32(uint32(*conn.RemoteSeqNum()))
-	if _, err := conn.ExpectData(&tb.TCP{SeqNum: seq}, samplePayload, startRTO); err != nil {
+	seq := testbench.Uint32(uint32(*conn.RemoteSeqNum()))
+	if _, err := conn.ExpectData(&testbench.TCP{SeqNum: seq}, samplePayload, startRTO); err != nil {
 		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
 	}
 	// Expect retransmits of the same segment.
 	for i := 0; i < 5; i++ {
 		start := time.Now()
-		if _, err := conn.ExpectData(&tb.TCP{SeqNum: seq}, samplePayload, 2*current); err != nil {
+		if _, err := conn.ExpectData(&testbench.TCP{SeqNum: seq}, samplePayload, 2*current); err != nil {
 			t.Fatalf("expected a packet with payload %v: %s loop %d", samplePayload, err, i)
 		}
 		if i == 0 {

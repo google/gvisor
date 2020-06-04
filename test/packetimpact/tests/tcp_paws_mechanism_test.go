@@ -22,25 +22,25 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func init() {
-	tb.RegisterFlags(flag.CommandLine)
+	testbench.RegisterFlags(flag.CommandLine)
 }
 
 func TestPAWSMechanism(t *testing.T) {
-	dut := tb.NewDUT(t)
+	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
 	listenFD, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
 	defer dut.Close(listenFD)
-	conn := tb.NewTCPIPv4(t, tb.TCP{DstPort: &remotePort}, tb.TCP{SrcPort: &remotePort})
+	conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
 	defer conn.Close()
 
 	options := make([]byte, header.TCPOptionTSLength)
 	header.EncodeTSOption(currentTS(), 0, options)
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagSyn), Options: options})
-	synAck, err := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second)
+	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn), Options: options})
+	synAck, err := conn.Expect(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second)
 	if err != nil {
 		t.Fatalf("didn't get synack during handshake: %s", err)
 	}
@@ -50,7 +50,7 @@ func TestPAWSMechanism(t *testing.T) {
 	}
 	tsecr := parsedSynOpts.TSVal
 	header.EncodeTSOption(currentTS(), tsecr, options)
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck), Options: options})
+	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), Options: options})
 	acceptFD, _ := dut.Accept(listenFD)
 	defer dut.Close(acceptFD)
 
@@ -61,9 +61,9 @@ func TestPAWSMechanism(t *testing.T) {
 	// every time we send one, it should not cause any flakiness because timestamps
 	// only need to be non-decreasing.
 	time.Sleep(3 * time.Millisecond)
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck), Options: options}, &tb.Payload{Bytes: sampleData})
+	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), Options: options}, &testbench.Payload{Bytes: sampleData})
 
-	gotTCP, err := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)}, time.Second)
+	gotTCP, err := conn.Expect(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, time.Second)
 	if err != nil {
 		t.Fatalf("expected an ACK but got none: %s", err)
 	}
@@ -86,9 +86,9 @@ func TestPAWSMechanism(t *testing.T) {
 	// 3ms here is chosen arbitrarily and this time.Sleep() should not cause flakiness
 	// due to the exact same reasoning discussed above.
 	time.Sleep(3 * time.Millisecond)
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck), Options: options}, &tb.Payload{Bytes: sampleData})
+	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), Options: options}, &testbench.Payload{Bytes: sampleData})
 
-	gotTCP, err = conn.Expect(tb.TCP{AckNum: lastAckNum, Flags: tb.Uint8(header.TCPFlagAck)}, time.Second)
+	gotTCP, err = conn.Expect(testbench.TCP{AckNum: lastAckNum, Flags: testbench.Uint8(header.TCPFlagAck)}, time.Second)
 	if err != nil {
 		t.Fatalf("expected segment with AckNum %d but got none: %s", lastAckNum, err)
 	}

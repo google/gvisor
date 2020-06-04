@@ -23,11 +23,11 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
-	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func init() {
-	tb.RegisterFlags(flag.CommandLine)
+	testbench.RegisterFlags(flag.CommandLine)
 }
 
 // TestTCPOutsideTheWindows tests the behavior of the DUT when packets arrive
@@ -38,7 +38,7 @@ func TestTCPOutsideTheWindow(t *testing.T) {
 	for _, tt := range []struct {
 		description  string
 		tcpFlags     uint8
-		payload      []tb.Layer
+		payload      []testbench.Layer
 		seqNumOffset seqnum.Size
 		expectACK    bool
 	}{
@@ -46,28 +46,28 @@ func TestTCPOutsideTheWindow(t *testing.T) {
 		{"SYNACK", header.TCPFlagSyn | header.TCPFlagAck, nil, 0, true},
 		{"ACK", header.TCPFlagAck, nil, 0, false},
 		{"FIN", header.TCPFlagFin, nil, 0, false},
-		{"Data", header.TCPFlagAck, []tb.Layer{&tb.Payload{Bytes: []byte("abc123")}}, 0, true},
+		{"Data", header.TCPFlagAck, []testbench.Layer{&testbench.Payload{Bytes: []byte("abc123")}}, 0, true},
 
 		{"SYN", header.TCPFlagSyn, nil, 1, true},
 		{"SYNACK", header.TCPFlagSyn | header.TCPFlagAck, nil, 1, true},
 		{"ACK", header.TCPFlagAck, nil, 1, true},
 		{"FIN", header.TCPFlagFin, nil, 1, false},
-		{"Data", header.TCPFlagAck, []tb.Layer{&tb.Payload{Bytes: []byte("abc123")}}, 1, true},
+		{"Data", header.TCPFlagAck, []testbench.Layer{&testbench.Payload{Bytes: []byte("abc123")}}, 1, true},
 
 		{"SYN", header.TCPFlagSyn, nil, 2, true},
 		{"SYNACK", header.TCPFlagSyn | header.TCPFlagAck, nil, 2, true},
 		{"ACK", header.TCPFlagAck, nil, 2, true},
 		{"FIN", header.TCPFlagFin, nil, 2, false},
-		{"Data", header.TCPFlagAck, []tb.Layer{&tb.Payload{Bytes: []byte("abc123")}}, 2, true},
+		{"Data", header.TCPFlagAck, []testbench.Layer{&testbench.Payload{Bytes: []byte("abc123")}}, 2, true},
 	} {
 		t.Run(fmt.Sprintf("%s%d", tt.description, tt.seqNumOffset), func(t *testing.T) {
-			dut := tb.NewDUT(t)
+			dut := testbench.NewDUT(t)
 			defer dut.TearDown()
 			listenFD, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
 			defer dut.Close(listenFD)
-			conn := tb.NewTCPIPv4(t, tb.TCP{DstPort: &remotePort}, tb.TCP{SrcPort: &remotePort})
+			conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
 			defer conn.Close()
-			conn.Handshake()
+			conn.Connect()
 			acceptFD, _ := dut.Accept(listenFD)
 			defer dut.Close(acceptFD)
 
@@ -75,13 +75,13 @@ func TestTCPOutsideTheWindow(t *testing.T) {
 			conn.Drain()
 			// Ignore whatever incrementing that this out-of-order packet might cause
 			// to the AckNum.
-			localSeqNum := tb.Uint32(uint32(*conn.LocalSeqNum()))
-			conn.Send(tb.TCP{
-				Flags:  tb.Uint8(tt.tcpFlags),
-				SeqNum: tb.Uint32(uint32(conn.LocalSeqNum().Add(windowSize))),
+			localSeqNum := testbench.Uint32(uint32(*conn.LocalSeqNum()))
+			conn.Send(testbench.TCP{
+				Flags:  testbench.Uint8(tt.tcpFlags),
+				SeqNum: testbench.Uint32(uint32(conn.LocalSeqNum().Add(windowSize))),
 			}, tt.payload...)
 			timeout := 3 * time.Second
-			gotACK, err := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck), AckNum: localSeqNum}, timeout)
+			gotACK, err := conn.Expect(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: localSeqNum}, timeout)
 			if tt.expectACK && err != nil {
 				t.Fatalf("expected an ACK packet within %s but got none: %s", timeout, err)
 			}

@@ -28,19 +28,19 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func init() {
-	tb.RegisterFlags(flag.CommandLine)
+	testbench.RegisterFlags(flag.CommandLine)
 }
 
 func TestQueueReceiveInSynSent(t *testing.T) {
-	dut := tb.NewDUT(t)
+	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
 
-	socket, remotePort := dut.CreateBoundSocket(unix.SOCK_STREAM, unix.IPPROTO_TCP, net.ParseIP(tb.RemoteIPv4))
-	conn := tb.NewTCPIPv4(t, tb.TCP{DstPort: &remotePort}, tb.TCP{SrcPort: &remotePort})
+	socket, remotePort := dut.CreateBoundSocket(unix.SOCK_STREAM, unix.IPPROTO_TCP, net.ParseIP(testbench.RemoteIPv4))
+	conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
 	defer conn.Close()
 
 	sampleData := []byte("Sample Data")
@@ -49,7 +49,7 @@ func TestQueueReceiveInSynSent(t *testing.T) {
 	if _, err := dut.ConnectWithErrno(context.Background(), socket, conn.LocalAddr()); !errors.Is(err, syscall.EINPROGRESS) {
 		t.Fatalf("failed to bring DUT to SYN-SENT, got: %s, want EINPROGRESS", err)
 	}
-	if _, err := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagSyn)}, time.Second); err != nil {
+	if _, err := conn.Expect(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)}, time.Second); err != nil {
 		t.Fatalf("expected a SYN from DUT, but got none: %s", err)
 	}
 
@@ -77,11 +77,11 @@ func TestQueueReceiveInSynSent(t *testing.T) {
 	time.Sleep(time.Second)
 
 	// Bring the connection to Established.
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagSyn | header.TCPFlagAck)})
-	if _, err := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)}, time.Second); err != nil {
+	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn | header.TCPFlagAck)})
+	if _, err := conn.Expect(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, time.Second); err != nil {
 		t.Fatalf("expected an ACK from DUT, but got none: %s", err)
 	}
 
 	// Send sample data to DUT.
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)}, &tb.Payload{Bytes: sampleData})
+	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, &testbench.Payload{Bytes: sampleData})
 }

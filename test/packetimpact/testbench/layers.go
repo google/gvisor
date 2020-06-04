@@ -939,6 +939,11 @@ func (l *Payload) ToBytes() ([]byte, error) {
 	return l.Bytes, nil
 }
 
+// Length returns payload byte length.
+func (l *Payload) Length() int {
+	return l.length()
+}
+
 func (l *Payload) match(other Layer) bool {
 	return equalLayer(l, other)
 }

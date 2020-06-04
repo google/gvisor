@@ -21,22 +21,22 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func init() {
-	tb.RegisterFlags(flag.CommandLine)
+	testbench.RegisterFlags(flag.CommandLine)
 }
 
 func TestUDPRecvMulticast(t *testing.T) {
-	dut := tb.NewDUT(t)
+	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
 	boundFD, remotePort := dut.CreateBoundSocket(unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP("0.0.0.0"))
 	defer dut.Close(boundFD)
-	conn := tb.NewUDPIPv4(t, tb.UDP{DstPort: &remotePort}, tb.UDP{SrcPort: &remotePort})
+	conn := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
 	defer conn.Close()
-	frame := conn.CreateFrame(&tb.UDP{}, &tb.Payload{Bytes: []byte("hello world")})
-	frame[1].(*tb.IPv4).DstAddr = tb.Address(tcpip.Address(net.ParseIP("224.0.0.1").To4()))
+	frame := conn.CreateFrame(&testbench.UDP{}, &testbench.Payload{Bytes: []byte("hello world")})
+	frame[1].(*testbench.IPv4).DstAddr = testbench.Address(tcpip.Address(net.ParseIP("224.0.0.1").To4()))
 	conn.SendFrame(frame)
 	dut.Recv(boundFD, 100, 0)
 }
