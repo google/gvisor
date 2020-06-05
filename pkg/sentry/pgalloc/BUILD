@@ -33,6 +33,7 @@ go_template_instance(
     out = "usage_set.go",
     consts = {
         "minDegree": "10",
+        "trackGaps": "1",
     },
     imports = {
         "platform": "gvisor.dev/gvisor/pkg/sentry/platform",
@@ -48,6 +49,26 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "reclaim_set",
+    out = "reclaim_set.go",
+    consts = {
+        "minDegree": "10",
+    },
+    imports = {
+        "platform": "gvisor.dev/gvisor/pkg/sentry/platform",
+    },
+    package = "pgalloc",
+    prefix = "reclaim",
+    template = "//pkg/segment:generic_set",
+    types = {
+        "Key": "uint64",
+        "Range": "platform.FileRange",
+        "Value": "reclaimSetValue",
+        "Functions": "reclaimSetFunctions",
+    },
+)
+
 go_library(
     name = "pgalloc",
     srcs = [
@@ -56,6 +77,7 @@ go_library(
         "evictable_range_set.go",
         "pgalloc.go",
         "pgalloc_unsafe.go",
+        "reclaim_set.go",
         "save_restore.go",
         "usage_set.go",
     ],
