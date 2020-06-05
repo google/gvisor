@@ -49,7 +49,8 @@ const (
 type manipType int
 
 const (
-	manipDstPrerouting manipType = iota
+	manipNone manipType = iota
+	manipDstPrerouting
 	manipDstOutput
 )
 
@@ -113,13 +114,11 @@ type conn struct {
 	// update the state of tcb. It is immutable.
 	tcbHook Hook
 
-	// mu protects tcb.
+	// mu protects all mutable state.
 	mu sync.Mutex `state:"nosave"`
-
 	// tcb is TCB control block. It is used to keep track of states
 	// of tcp connection and is protected by mu.
 	tcb tcpconntrack.TCB
-
 	// lastUsed is the last time the connection saw a relevant packet, and
 	// is updated by each packet on the connection. It is protected by mu.
 	lastUsed time.Time `state:".(unixTime)"`
@@ -141,8 +140,26 @@ func (cn *conn) timedOut(now time.Time) bool {
 	return now.Sub(cn.lastUsed) > defaultTimeout
 }
 
+// update the connection tracking state.
+//
+// Precondition: ct.mu must be held.
+func (ct *conn) updateLocked(tcpHeader header.TCP, hook Hook) {
+	// Update the state of tcb. tcb assumes it's always initialized on the
+	// client. However, we only need to know whether the connection is
+	// established or not, so the client/server distinction isn't important.
+	// TODO(gvisor.dev/issue/170): Add support in tcpconntrack to handle
+	// other tcp states.
+	if ct.tcb.IsEmpty() {
+		ct.tcb.Init(tcpHeader)
+	} else if hook == ct.tcbHook {
+		ct.tcb.UpdateStateOutbound(tcpHeader)
+	} else {
+		ct.tcb.UpdateStateInbound(tcpHeader)
+	}
+}
+
 // ConnTrack tracks all connections created for NAT rules. Most users are
-// expected to only call handlePacket and createConnFor.
+// expected to only call handlePacket, insertRedirectConn, and maybeInsertNoop.
 //
 // ConnTrack keeps all connections in a slice of buckets, each of which holds a
 // linked list of tuples. This gives us some desirable properties:
@@ -248,8 +265,7 @@ func (ct *ConnTrack) connFor(pkt *PacketBuffer) (*conn, direction) {
 	return nil, dirOriginal
 }
 
-// createConnFor creates a new conn for pkt.
-func (ct *ConnTrack) createConnFor(pkt *PacketBuffer, hook Hook, rt RedirectTarget) *conn {
+func (ct *ConnTrack) insertRedirectConn(pkt *PacketBuffer, hook Hook, rt RedirectTarget) *conn {
 	tid, err := packetToTupleID(pkt)
 	if err != nil {
 		return nil
@@ -272,10 +288,15 @@ func (ct *ConnTrack) createConnFor(pkt *PacketBuffer, hook Hook, rt RedirectTarg
 		manip = manipDstOutput
 	}
 	conn := newConn(tid, replyTID, manip, hook)
+	ct.insertConn(conn)
+	return conn
+}
 
+// insertConn inserts conn into the appropriate table bucket.
+func (ct *ConnTrack) insertConn(conn *conn) {
 	// Lock the buckets in the correct order.
-	tupleBucket := ct.bucket(tid)
-	replyBucket := ct.bucket(replyTID)
+	tupleBucket := ct.bucket(conn.original.tupleID)
+	replyBucket := ct.bucket(conn.reply.tupleID)
 	ct.mu.RLock()
 	defer ct.mu.RUnlock()
 	if tupleBucket < replyBucket {
@@ -289,22 +310,37 @@ func (ct *ConnTrack) createConnFor(pkt *PacketBuffer, hook Hook, rt RedirectTarg
 		ct.buckets[tupleBucket].mu.Lock()
 	}
 
-	// Add the tuple to the map.
-	ct.buckets[tupleBucket].tuples.PushFront(&conn.original)
-	ct.buckets[replyBucket].tuples.PushFront(&conn.reply)
+	// Now that we hold the locks, ensure the tuple hasn't been inserted by
+	// another thread.
+	alreadyInserted := false
+	for other := ct.buckets[tupleBucket].tuples.Front(); other != nil; other = other.Next() {
+		if other.tupleID == conn.original.tupleID {
+			alreadyInserted = true
+			break
+		}
+	}
+
+	if !alreadyInserted {
+		// Add the tuple to the map.
+		ct.buckets[tupleBucket].tuples.PushFront(&conn.original)
+		ct.buckets[replyBucket].tuples.PushFront(&conn.reply)
+	}
 
 	// Unlocking can happen in any order.
 	ct.buckets[tupleBucket].mu.Unlock()
 	if tupleBucket != replyBucket {
 		ct.buckets[replyBucket].mu.Unlock()
 	}
-
-	return conn
 }
 
 // handlePacketPrerouting manipulates ports for packets in Prerouting hook.
 // TODO(gvisor.dev/issue/170): Change address for Prerouting hook.
 func handlePacketPrerouting(pkt *PacketBuffer, conn *conn, dir direction) {
+	// If this is a noop entry, don't do anything.
+	if conn.manip == manipNone {
+		return
+	}
+
 	netHeader := header.IPv4(pkt.NetworkHeader)
 	tcpHeader := header.TCP(pkt.TransportHeader)
 
@@ -322,12 +358,22 @@ func handlePacketPrerouting(pkt *PacketBuffer, conn *conn, dir direction) {
 		netHeader.SetSourceAddress(conn.original.dstAddr)
 	}
 
+	// TODO(gvisor.dev/issue/170): TCP checksums aren't usually validated
+	// on inbound packets, so we don't recalculate them. However, we should
+	// support cases when they are validated, e.g. when we can't offload
+	// receive checksumming.
+
 	netHeader.SetChecksum(0)
 	netHeader.SetChecksum(^netHeader.CalculateChecksum())
 }
 
 // handlePacketOutput manipulates ports for packets in Output hook.
 func handlePacketOutput(pkt *PacketBuffer, conn *conn, gso *GSO, r *Route, dir direction) {
+	// If this is a noop entry, don't do anything.
+	if conn.manip == manipNone {
+		return
+	}
+
 	netHeader := header.IPv4(pkt.NetworkHeader)
 	tcpHeader := header.TCP(pkt.TransportHeader)
 
@@ -362,20 +408,31 @@ func handlePacketOutput(pkt *PacketBuffer, conn *conn, gso *GSO, r *Route, dir d
 }
 
 // handlePacket will manipulate the port and address of the packet if the
-// connection exists.
-func (ct *ConnTrack) handlePacket(pkt *PacketBuffer, hook Hook, gso *GSO, r *Route) {
+// connection exists. Returns whether, after the packet traverses the tables,
+// it should create a new entry in the table.
+func (ct *ConnTrack) handlePacket(pkt *PacketBuffer, hook Hook, gso *GSO, r *Route) bool {
 	if pkt.NatDone {
-		return
+		return false
 	}
 
 	if hook != Prerouting && hook != Output {
-		return
+		return false
+	}
+
+	// TODO(gvisor.dev/issue/170): Support other transport protocols.
+	if pkt.NetworkHeader == nil || header.IPv4(pkt.NetworkHeader).TransportProtocol() != header.TCPProtocolNumber {
+		return false
 	}
 
 	conn, dir := ct.connFor(pkt)
+	// Connection or Rule not found for the packet.
 	if conn == nil {
-		// Connection not found for the packet or the packet is invalid.
-		return
+		return true
+	}
+
+	tcpHeader := header.TCP(pkt.TransportHeader)
+	if tcpHeader == nil {
+		return false
 	}
 
 	switch hook {
@@ -395,14 +452,39 @@ func (ct *ConnTrack) handlePacket(pkt *PacketBuffer, hook Hook, gso *GSO, r *Rou
 	// Mark the connection as having been used recently so it isn't reaped.
 	conn.lastUsed = time.Now()
 	// Update connection state.
-	if tcpHeader := header.TCP(pkt.TransportHeader); conn.tcb.IsEmpty() {
-		conn.tcb.Init(tcpHeader)
-		conn.tcbHook = hook
-	} else if hook == conn.tcbHook {
-		conn.tcb.UpdateStateOutbound(tcpHeader)
-	} else {
-		conn.tcb.UpdateStateInbound(tcpHeader)
+	conn.updateLocked(header.TCP(pkt.TransportHeader), hook)
+
+	return false
+}
+
+// maybeInsertNoop tries to insert a no-op connection entry to keep connections
+// from getting clobbered when replies arrive. It only inserts if there isn't
+// already a connection for pkt.
+//
+// This should be called after traversing iptables rules only, to ensure that
+// pkt.NatDone is set correctly.
+func (ct *ConnTrack) maybeInsertNoop(pkt *PacketBuffer, hook Hook) {
+	// If there were a rule applying to this packet, it would be marked
+	// with NatDone.
+	if pkt.NatDone {
+		return
 	}
+
+	// We only track TCP connections.
+	if pkt.NetworkHeader == nil || header.IPv4(pkt.NetworkHeader).TransportProtocol() != header.TCPProtocolNumber {
+		return
+	}
+
+	// This is the first packet we're seeing for the TCP connection. Insert
+	// the noop entry (an identity mapping) so that the response doesn't
+	// get NATed, breaking the connection.
+	tid, err := packetToTupleID(pkt)
+	if err != nil {
+		return
+	}
+	conn := newConn(tid, tid.reply(), manipNone, hook)
+	conn.updateLocked(header.TCP(pkt.TransportHeader), hook)
+	ct.insertConn(conn)
 }
 
 // bucket gets the conntrack bucket for a tupleID.

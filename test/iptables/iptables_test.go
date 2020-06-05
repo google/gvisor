@@ -263,6 +263,13 @@ func TestNATPreRedirectTCPPort(t *testing.T) {
 	singleTest(t, NATPreRedirectTCPPort{})
 }
 
+func TestNATPreRedirectTCPOutgoing(t *testing.T) {
+	singleTest(t, NATPreRedirectTCPOutgoing{})
+}
+
+func TestNATOutRedirectTCPIncoming(t *testing.T) {
+	singleTest(t, NATOutRedirectTCPIncoming{})
+}
 func TestNATOutRedirectUDPPort(t *testing.T) {
 	singleTest(t, NATOutRedirectUDPPort{})
 }
