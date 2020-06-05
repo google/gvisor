@@ -673,6 +673,33 @@ TEST(ExecveatTest, SymlinkNoFollowWithRelativePath) {
   EXPECT_EQ(execve_errno, ELOOP);
 }
 
+TEST(ExecveatTest, UnshareFiles) {
+  TempPath tempFile = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "bar", 0755));
+  const FileDescriptor fd_closed_on_exec =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tempFile.path(), O_RDONLY | O_CLOEXEC));
+
+  pid_t child;
+  EXPECT_THAT(child = syscall(__NR_clone, SIGCHLD | CLONE_VFORK | CLONE_FILES,
+                              0, 0, 0, 0),
+              SyscallSucceeds());
+  if (child == 0) {
+    ExecveArray argv = {"test"};
+    ExecveArray envp;
+    ASSERT_THAT(
+        execve(RunfilePath(kBasicWorkload).c_str(), argv.get(), envp.get()),
+        SyscallSucceeds());
+    _exit(1);
+  }
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0), SyscallSucceeds());
+  EXPECT_EQ(status, 0);
+
+  struct stat st;
+  EXPECT_THAT(fstat(fd_closed_on_exec.get(), &st), SyscallSucceeds());
+}
+
 TEST(ExecveatTest, SymlinkNoFollowWithAbsolutePath) {
   std::string parent_dir = "/tmp";
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
