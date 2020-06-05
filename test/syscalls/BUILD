@@ -401,6 +401,14 @@ syscall_test(
 )
 
 syscall_test(
+    size = "medium",
+    # Takes too long under gotsan to run.
+    tags = ["nogotsan"],
+    test = "//test/syscalls/linux:ping_socket_test",
+    vfs2 = "True",
+)
+
+syscall_test(
     size = "large",
     add_overlay = True,
     shard_count = 5,
@@ -695,6 +703,14 @@ syscall_test(
     size = "large",
     shard_count = 50,
     test = "//test/syscalls/linux:socket_inet_loopback_test",
+)
+
+syscall_test(
+    size = "large",
+    shard_count = 50,
+    # Takes too long for TSAN. Creates a lot of TCP sockets.
+    tags = ["nogotsan"],
+    test = "//test/syscalls/linux:socket_inet_loopback_nogotsan_test",
 )
 
 syscall_test(

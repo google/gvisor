@@ -259,9 +259,9 @@ TEST_F(PollTest, Nfds) {
   TEST_PCHECK(getrlimit(RLIMIT_NOFILE, &rlim) == 0);
 
   // gVisor caps the number of FDs that epoll can use beyond RLIMIT_NOFILE.
-  constexpr rlim_t gVisorMax = 1048576;
-  if (rlim.rlim_cur > gVisorMax) {
-    rlim.rlim_cur = gVisorMax;
+  constexpr rlim_t maxFD = 4096;
+  if (rlim.rlim_cur > maxFD) {
+    rlim.rlim_cur = maxFD;
     TEST_PCHECK(setrlimit(RLIMIT_NOFILE, &rlim) == 0);
   }
 

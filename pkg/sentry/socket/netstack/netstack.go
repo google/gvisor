@@ -33,6 +33,7 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/amutex"
 	"gvisor.dev/gvisor/pkg/binary"
@@ -719,6 +720,14 @@ func (s *socketOpsCommon) Connect(t *kernel.Task, sockaddr []byte, blocking bool
 	defer s.EventUnregister(&e)
 
 	if err := s.Endpoint.Connect(addr); err != tcpip.ErrConnectStarted && err != tcpip.ErrAlreadyConnecting {
+		if (s.family == unix.AF_INET || s.family == unix.AF_INET6) && s.skType == linux.SOCK_STREAM {
+			// TCP unlike UDP returns EADDRNOTAVAIL when it can't
+			// find an available local ephemeral port.
+			if err == tcpip.ErrNoPortAvailable {
+				return syserr.ErrAddressNotAvailable
+			}
+		}
+
 		return syserr.TranslateNetstackError(err)
 	}
 
