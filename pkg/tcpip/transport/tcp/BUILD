@@ -86,10 +86,6 @@ go_test(
         "tcp_test.go",
         "tcp_timestamp_test.go",
     ],
-    # FIXME(b/68809571)
-    tags = [
-        "flaky",
-    ],
     deps = [
         ":tcp",
         "//pkg/sync",
