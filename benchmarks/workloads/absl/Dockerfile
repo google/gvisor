@@ -16,9 +16,10 @@ RUN wget https://github.com/bazelbuild/bazel/releases/download/0.27.0/bazel-0.27
 RUN chmod +x bazel-0.27.0-installer-linux-x86_64.sh
 RUN ./bazel-0.27.0-installer-linux-x86_64.sh
 
-RUN git clone https://github.com/abseil/abseil-cpp.git
+RUN mkdir abseil-cpp && cd abseil-cpp \
+    && git init && git remote add origin https://github.com/abseil/abseil-cpp.git \
+    && git fetch --depth 1 origin 43ef2148c0936ebf7cb4be6b19927a9d9d145b8f && git checkout FETCH_HEAD
 WORKDIR abseil-cpp
-RUN git checkout 43ef2148c0936ebf7cb4be6b19927a9d9d145b8f
 RUN bazel clean
 ENV path "absl/base/..."
 CMD bazel build ${path} 2>&1
