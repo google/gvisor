@@ -28,6 +28,8 @@ const (
 func init() {
 	RegisterTestCase(NATPreRedirectUDPPort{})
 	RegisterTestCase(NATPreRedirectTCPPort{})
+	RegisterTestCase(NATPreRedirectTCPOutgoing{})
+	RegisterTestCase(NATOutRedirectTCPIncoming{})
 	RegisterTestCase(NATOutRedirectUDPPort{})
 	RegisterTestCase(NATOutRedirectTCPPort{})
 	RegisterTestCase(NATDropUDP{})
@@ -89,6 +91,56 @@ func (NATPreRedirectTCPPort) ContainerAction(ip net.IP) error {
 // LocalAction implements TestCase.LocalAction.
 func (NATPreRedirectTCPPort) LocalAction(ip net.IP) error {
 	return connectTCP(ip, dropPort, sendloopDuration)
+}
+
+// NATPreRedirectTCPOutgoing verifies that outgoing TCP connections aren't
+// affected by PREROUTING connection tracking.
+type NATPreRedirectTCPOutgoing struct{}
+
+// Name implements TestCase.Name.
+func (NATPreRedirectTCPOutgoing) Name() string {
+	return "NATPreRedirectTCPOutgoing"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (NATPreRedirectTCPOutgoing) ContainerAction(ip net.IP) error {
+	// Redirect all incoming TCP traffic to a closed port.
+	if err := natTable("-A", "PREROUTING", "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", dropPort)); err != nil {
+		return err
+	}
+
+	// Establish a connection to the host process.
+	return connectTCP(ip, acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (NATPreRedirectTCPOutgoing) LocalAction(ip net.IP) error {
+	return listenTCP(acceptPort, sendloopDuration)
+}
+
+// NATOutRedirectTCPIncoming verifies that incoming TCP connections aren't
+// affected by OUTPUT connection tracking.
+type NATOutRedirectTCPIncoming struct{}
+
+// Name implements TestCase.Name.
+func (NATOutRedirectTCPIncoming) Name() string {
+	return "NATOutRedirectTCPIncoming"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (NATOutRedirectTCPIncoming) ContainerAction(ip net.IP) error {
+	// Redirect all outgoing TCP traffic to a closed port.
+	if err := natTable("-A", "OUTPUT", "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", dropPort)); err != nil {
+		return err
+	}
+
+	// Establish a connection to the host process.
+	return listenTCP(acceptPort, sendloopDuration)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (NATOutRedirectTCPIncoming) LocalAction(ip net.IP) error {
+	return connectTCP(ip, acceptPort, sendloopDuration)
 }
 
 // NATOutRedirectUDPPort tests that packets are redirected to different port.
