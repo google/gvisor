@@ -1056,7 +1056,7 @@ func newEmptySandboxNetworkStack(clock tcpip.Clock, uniqueID stack.UniqueID) (in
 		return nil, fmt.Errorf("SetTransportProtocolOption failed: %v", err)
 	}
 
-	s.FillDefaultIPTables()
+	s.FillIPTablesMetadata()
 
 	return &s, nil
 }
