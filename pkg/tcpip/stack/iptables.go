@@ -43,11 +43,11 @@ const HookUnset = -1
 
 // DefaultTables returns a default set of tables. Each chain is set to accept
 // all packets.
-func DefaultTables() IPTables {
+func DefaultTables() *IPTables {
 	// TODO(gvisor.dev/issue/170): We may be able to swap out some strings for
 	// iotas.
-	return IPTables{
-		Tables: map[string]Table{
+	return &IPTables{
+		tables: map[string]Table{
 			TablenameNat: Table{
 				Rules: []Rule{
 					Rule{Target: AcceptTarget{}},
@@ -106,7 +106,7 @@ func DefaultTables() IPTables {
 				UserChains: map[string]int{},
 			},
 		},
-		Priorities: map[Hook][]string{
+		priorities: map[Hook][]string{
 			Input:      []string{TablenameNat, TablenameFilter},
 			Prerouting: []string{TablenameMangle, TablenameNat},
 			Output:     []string{TablenameMangle, TablenameNat, TablenameFilter},
@@ -158,6 +158,36 @@ func EmptyNatTable() Table {
 	}
 }
 
+// GetTable returns table by name.
+func (it *IPTables) GetTable(name string) (Table, bool) {
+	it.mu.RLock()
+	defer it.mu.RUnlock()
+	t, ok := it.tables[name]
+	return t, ok
+}
+
+// ReplaceTable replaces or inserts table by name.
+func (it *IPTables) ReplaceTable(name string, table Table) {
+	it.mu.Lock()
+	defer it.mu.Unlock()
+	it.tables[name] = table
+}
+
+// ModifyTables acquires write-lock and calls fn with internal name-to-table
+// map. This function can be used to update multiple tables atomically.
+func (it *IPTables) ModifyTables(fn func(map[string]Table)) {
+	it.mu.Lock()
+	defer it.mu.Unlock()
+	fn(it.tables)
+}
+
+// GetPriorities returns slice of priorities associated with hook.
+func (it *IPTables) GetPriorities(hook Hook) []string {
+	it.mu.RLock()
+	defer it.mu.RUnlock()
+	return it.priorities[hook]
+}
+
 // A chainVerdict is what a table decides should be done with a packet.
 type chainVerdict int
 
@@ -184,8 +214,8 @@ func (it *IPTables) Check(hook Hook, pkt *PacketBuffer, gso *GSO, r *Route, addr
 	it.connections.HandlePacket(pkt, hook, gso, r)
 
 	// Go through each table containing the hook.
-	for _, tablename := range it.Priorities[hook] {
-		table := it.Tables[tablename]
+	for _, tablename := range it.GetPriorities(hook) {
+		table, _ := it.GetTable(tablename)
 		ruleIdx := table.BuiltinChains[hook]
 		switch verdict := it.checkChain(hook, pkt, table, ruleIdx, gso, r, address, nicName); verdict {
 		// If the table returns Accept, move on to the next table.

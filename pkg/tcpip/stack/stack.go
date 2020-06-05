@@ -424,12 +424,8 @@ type Stack struct {
 	// handleLocal allows non-loopback interfaces to loop packets.
 	handleLocal bool
 
-	// tablesMu protects iptables.
-	tablesMu sync.RWMutex
-
-	// tables are the iptables packet filtering and manipulation rules. The are
-	// protected by tablesMu.`
-	tables IPTables
+	// tables are the iptables packet filtering and manipulation rules.
+	tables *IPTables
 
 	// resumableEndpoints is a list of endpoints that need to be resumed if the
 	// stack is being restored.
@@ -676,6 +672,7 @@ func New(opts Options) *Stack {
 		clock:                clock,
 		stats:                opts.Stats.FillIn(),
 		handleLocal:          opts.HandleLocal,
+		tables:               DefaultTables(),
 		icmpRateLimiter:      NewICMPRateLimiter(),
 		seed:                 generateRandUint32(),
 		ndpConfigs:           opts.NDPConfigs,
@@ -1741,18 +1738,8 @@ func (s *Stack) IsInGroup(nicID tcpip.NICID, multicastAddr tcpip.Address) (bool,
 }
 
 // IPTables returns the stack's iptables.
-func (s *Stack) IPTables() IPTables {
-	s.tablesMu.RLock()
-	t := s.tables
-	s.tablesMu.RUnlock()
-	return t
-}
-
-// SetIPTables sets the stack's iptables.
-func (s *Stack) SetIPTables(ipt IPTables) {
-	s.tablesMu.Lock()
-	s.tables = ipt
-	s.tablesMu.Unlock()
+func (s *Stack) IPTables() *IPTables {
+	return s.tables
 }
 
 // ICMPLimit returns the maximum number of ICMP messages that can be sent

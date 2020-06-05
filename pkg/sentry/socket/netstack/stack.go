@@ -362,14 +362,13 @@ func (s *Stack) RouteTable() []inet.Route {
 }
 
 // IPTables returns the stack's iptables.
-func (s *Stack) IPTables() (stack.IPTables, error) {
+func (s *Stack) IPTables() (*stack.IPTables, error) {
 	return s.Stack.IPTables(), nil
 }
 
-// FillDefaultIPTables sets the stack's iptables to the default tables, which
-// allow and do not modify all traffic.
-func (s *Stack) FillDefaultIPTables() {
-	netfilter.FillDefaultIPTables(s.Stack)
+// FillIPTablesMetadata populates stack's IPTables with metadata.
+func (s *Stack) FillIPTablesMetadata() {
+	netfilter.FillIPTablesMetadata(s.Stack)
 }
 
 // Resume implements inet.Stack.Resume.

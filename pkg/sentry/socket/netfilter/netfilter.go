@@ -144,31 +144,27 @@ func GetEntries(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, outLen 
 }
 
 func findTable(stk *stack.Stack, tablename linux.TableName) (stack.Table, error) {
-	ipt := stk.IPTables()
-	table, ok := ipt.Tables[tablename.String()]
+	table, ok := stk.IPTables().GetTable(tablename.String())
 	if !ok {
 		return stack.Table{}, fmt.Errorf("couldn't find table %q", tablename)
 	}
 	return table, nil
 }
 
-// FillDefaultIPTables sets stack's IPTables to the default tables and
-// populates them with metadata.
-func FillDefaultIPTables(stk *stack.Stack) {
-	ipt := stack.DefaultTables()
-
-	// In order to fill in the metadata, we have to translate ipt from its
-	// netstack format to Linux's giant-binary-blob format.
-	for name, table := range ipt.Tables {
-		_, metadata, err := convertNetstackToBinary(name, table)
-		if err != nil {
-			panic(fmt.Errorf("Unable to set default IP tables: %v", err))
+// FillIPTablesMetadata populates stack's IPTables with metadata.
+func FillIPTablesMetadata(stk *stack.Stack) {
+	stk.IPTables().ModifyTables(func(tables map[string]stack.Table) {
+		// In order to fill in the metadata, we have to translate ipt from its
+		// netstack format to Linux's giant-binary-blob format.
+		for name, table := range tables {
+			_, metadata, err := convertNetstackToBinary(name, table)
+			if err != nil {
+				panic(fmt.Errorf("Unable to set default IP tables: %v", err))
+			}
+			table.SetMetadata(metadata)
+			tables[name] = table
 		}
-		table.SetMetadata(metadata)
-		ipt.Tables[name] = table
-	}
-
-	stk.SetIPTables(ipt)
+	})
 }
 
 // convertNetstackToBinary converts the iptables as stored in netstack to the
@@ -573,15 +569,13 @@ func SetEntries(stk *stack.Stack, optVal []byte) *syserr.Error {
 	// - There are no chains without an unconditional final rule.
 	// - There are no chains without an unconditional underflow rule.
 
-	ipt := stk.IPTables()
 	table.SetMetadata(metadata{
 		HookEntry:  replace.HookEntry,
 		Underflow:  replace.Underflow,
 		NumEntries: replace.NumEntries,
 		Size:       replace.Size,
 	})
-	ipt.Tables[replace.Name.String()] = table
-	stk.SetIPTables(ipt)
+	stk.IPTables().ReplaceTable(replace.Name.String(), table)
 
 	return nil
 }
