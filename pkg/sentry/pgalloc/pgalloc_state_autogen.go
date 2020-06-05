@@ -86,6 +86,58 @@ func (x *usageInfo) load(m state.Map) {
 	m.Load("refs", &x.refs)
 }
 
+func (x *reclaimSet) beforeSave() {}
+func (x *reclaimSet) save(m state.Map) {
+	x.beforeSave()
+	var root *reclaimSegmentDataSlices = x.saveRoot()
+	m.SaveValue("root", root)
+}
+
+func (x *reclaimSet) afterLoad() {}
+func (x *reclaimSet) load(m state.Map) {
+	m.LoadValue("root", new(*reclaimSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*reclaimSegmentDataSlices)) })
+}
+
+func (x *reclaimnode) beforeSave() {}
+func (x *reclaimnode) save(m state.Map) {
+	x.beforeSave()
+	m.Save("nrSegments", &x.nrSegments)
+	m.Save("parent", &x.parent)
+	m.Save("parentIndex", &x.parentIndex)
+	m.Save("hasChildren", &x.hasChildren)
+	m.Save("maxGap", &x.maxGap)
+	m.Save("keys", &x.keys)
+	m.Save("values", &x.values)
+	m.Save("children", &x.children)
+}
+
+func (x *reclaimnode) afterLoad() {}
+func (x *reclaimnode) load(m state.Map) {
+	m.Load("nrSegments", &x.nrSegments)
+	m.Load("parent", &x.parent)
+	m.Load("parentIndex", &x.parentIndex)
+	m.Load("hasChildren", &x.hasChildren)
+	m.Load("maxGap", &x.maxGap)
+	m.Load("keys", &x.keys)
+	m.Load("values", &x.values)
+	m.Load("children", &x.children)
+}
+
+func (x *reclaimSegmentDataSlices) beforeSave() {}
+func (x *reclaimSegmentDataSlices) save(m state.Map) {
+	x.beforeSave()
+	m.Save("Start", &x.Start)
+	m.Save("End", &x.End)
+	m.Save("Values", &x.Values)
+}
+
+func (x *reclaimSegmentDataSlices) afterLoad() {}
+func (x *reclaimSegmentDataSlices) load(m state.Map) {
+	m.Load("Start", &x.Start)
+	m.Load("End", &x.End)
+	m.Load("Values", &x.Values)
+}
+
 func (x *usageSet) beforeSave() {}
 func (x *usageSet) save(m state.Map) {
 	x.beforeSave()
@@ -144,6 +196,9 @@ func init() {
 	state.Register("pkg/sentry/pgalloc.evictableRangenode", (*evictableRangenode)(nil), state.Fns{Save: (*evictableRangenode).save, Load: (*evictableRangenode).load})
 	state.Register("pkg/sentry/pgalloc.evictableRangeSegmentDataSlices", (*evictableRangeSegmentDataSlices)(nil), state.Fns{Save: (*evictableRangeSegmentDataSlices).save, Load: (*evictableRangeSegmentDataSlices).load})
 	state.Register("pkg/sentry/pgalloc.usageInfo", (*usageInfo)(nil), state.Fns{Save: (*usageInfo).save, Load: (*usageInfo).load})
+	state.Register("pkg/sentry/pgalloc.reclaimSet", (*reclaimSet)(nil), state.Fns{Save: (*reclaimSet).save, Load: (*reclaimSet).load})
+	state.Register("pkg/sentry/pgalloc.reclaimnode", (*reclaimnode)(nil), state.Fns{Save: (*reclaimnode).save, Load: (*reclaimnode).load})
+	state.Register("pkg/sentry/pgalloc.reclaimSegmentDataSlices", (*reclaimSegmentDataSlices)(nil), state.Fns{Save: (*reclaimSegmentDataSlices).save, Load: (*reclaimSegmentDataSlices).load})
 	state.Register("pkg/sentry/pgalloc.usageSet", (*usageSet)(nil), state.Fns{Save: (*usageSet).save, Load: (*usageSet).load})
 	state.Register("pkg/sentry/pgalloc.usagenode", (*usagenode)(nil), state.Fns{Save: (*usagenode).save, Load: (*usagenode).load})
 	state.Register("pkg/sentry/pgalloc.usageSegmentDataSlices", (*usageSegmentDataSlices)(nil), state.Fns{Save: (*usageSegmentDataSlices).save, Load: (*usageSegmentDataSlices).load})
