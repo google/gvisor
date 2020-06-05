@@ -18,8 +18,9 @@ package arch
 
 import (
 	"bytes"
+	crand "crypto/rand"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/cpuid"
@@ -201,7 +202,10 @@ func (c *context64) FeatureSet() *cpuid.FeatureSet {
 
 // mmapRand returns a random adjustment for randomizing an mmap layout.
 func mmapRand(max uint64) usermem.Addr {
-	return usermem.Addr(rand.Int63n(int64(max))).RoundDown()
+	m := big.NewInt(0)
+	m.SetUint64(max)
+	rand, _ := crand.Int(crand.Reader, m)
+	return usermem.Addr(rand.Uint64()).RoundDown()
 }
 
 // NewMmapLayout implements Context.NewMmapLayout consistently with Linux.
