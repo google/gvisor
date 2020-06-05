@@ -93,6 +93,7 @@ def _syscall_test(
     # we figure out how to request ipv4 sockets on Guitar machines.
     if network == "host":
         tags.append("noguitar")
+        tags.append("block-network")
 
     # Disable off-host networking.
     tags.append("requires-net:loopback")
