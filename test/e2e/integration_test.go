@@ -239,7 +239,9 @@ func TestMemLimit(t *testing.T) {
 	d := dockerutil.MakeDocker(t)
 	defer d.CleanUp()
 
-	allocMemory := 500 * 1024
+	// N.B. Because the size of the memory file may grow in large chunks,
+	// there is a minimum threshold of 1GB for the MemTotal figure.
+	allocMemory := 1024 * 1024
 	out, err := d.Run(dockerutil.RunOpts{
 		Image:  "basic/alpine",
 		Memory: allocMemory, // In kB.
