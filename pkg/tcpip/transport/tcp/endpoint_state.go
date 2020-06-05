@@ -49,11 +49,10 @@ func (e *endpoint) beforeSave() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	switch e.EndpointState() {
-	case StateInitial, StateBound:
-		// TODO(b/138137272): this enumeration duplicates
-		// EndpointState.connected. remove it.
-	case StateEstablished, StateSynSent, StateSynRecv, StateFinWait1, StateFinWait2, StateTimeWait, StateCloseWait, StateLastAck, StateClosing:
+	epState := e.EndpointState()
+	switch {
+	case epState == StateInitial || epState == StateBound:
+	case epState.connected() || epState.handshake():
 		if e.route.Capabilities()&stack.CapabilitySaveRestore == 0 {
 			if e.route.Capabilities()&stack.CapabilityDisconnectOk == 0 {
 				panic(tcpip.ErrSaveRejection{fmt.Errorf("endpoint cannot be saved in connected state: local %v:%d, remote %v:%d", e.ID.LocalAddress, e.ID.LocalPort, e.ID.RemoteAddress, e.ID.RemotePort)})
@@ -69,15 +68,16 @@ func (e *endpoint) beforeSave() {
 			break
 		}
 		fallthrough
-	case StateListen, StateConnecting:
+	case epState == StateListen || epState == StateConnecting:
 		e.drainSegmentLocked()
-		if e.EndpointState() != StateClose && e.EndpointState() != StateError {
+		// Refresh epState, since drainSegmentLocked may have changed it.
+		epState = e.EndpointState()
+		if !epState.closed() {
 			if !e.workerRunning {
 				panic("endpoint has no worker running in listen, connecting, or connected state")
 			}
-			break
 		}
-	case StateError, StateClose:
+	case epState.closed():
 		for e.workerRunning {
 			e.mu.Unlock()
 			time.Sleep(100 * time.Millisecond)
@@ -148,23 +148,23 @@ var connectingLoading sync.WaitGroup
 // Bound endpoint loading happens last.
 
 // loadState is invoked by stateify.
-func (e *endpoint) loadState(state EndpointState) {
+func (e *endpoint) loadState(epState EndpointState) {
 	// This is to ensure that the loading wait groups include all applicable
 	// endpoints before any asynchronous calls to the Wait() methods.
 	// For restore purposes we treat TimeWait like a connected endpoint.
-	if state.connected() || state == StateTimeWait {
+	if epState.connected() || epState == StateTimeWait {
 		connectedLoading.Add(1)
 	}
-	switch state {
-	case StateListen:
+	switch {
+	case epState == StateListen:
 		listenLoading.Add(1)
-	case StateConnecting, StateSynSent, StateSynRecv:
+	case epState.connecting():
 		connectingLoading.Add(1)
 	}
 	// Directly update the state here rather than using e.setEndpointState
 	// as the endpoint is still being loaded and the stack reference is not
 	// yet initialized.
-	atomic.StoreUint32((*uint32)(&e.state), uint32(state))
+	atomic.StoreUint32((*uint32)(&e.state), uint32(epState))
 }
 
 // afterLoad is invoked by stateify.
@@ -183,8 +183,8 @@ func (e *endpoint) afterLoad() {
 func (e *endpoint) Resume(s *stack.Stack) {
 	e.stack = s
 	e.segmentQueue.setLimit(MaxUnprocessedSegments)
-	state := e.origEndpointState
-	switch state {
+	epState := e.origEndpointState
+	switch epState {
 	case StateInitial, StateBound, StateListen, StateConnecting, StateEstablished:
 		var ss SendBufferSizeOption
 		if err := e.stack.TransportProtocolOption(ProtocolNumber, &ss); err == nil {
@@ -208,8 +208,8 @@ func (e *endpoint) Resume(s *stack.Stack) {
 		}
 	}
 
-	switch state {
-	case StateEstablished, StateFinWait1, StateFinWait2, StateTimeWait, StateCloseWait, StateLastAck, StateClosing:
+	switch {
+	case epState.connected():
 		bind()
 		if len(e.connectingAddress) == 0 {
 			e.connectingAddress = e.ID.RemoteAddress
@@ -232,13 +232,13 @@ func (e *endpoint) Resume(s *stack.Stack) {
 		closed := e.closed
 		e.mu.Unlock()
 		e.notifyProtocolGoroutine(notifyTickleWorker)
-		if state == StateFinWait2 && closed {
+		if epState == StateFinWait2 && closed {
 			// If the endpoint has been closed then make sure we notify so
 			// that the FIN_WAIT2 timer is started after a restore.
 			e.notifyProtocolGoroutine(notifyClose)
 		}
 		connectedLoading.Done()
-	case StateListen:
+	case epState == StateListen:
 		tcpip.AsyncLoading.Add(1)
 		go func() {
 			connectedLoading.Wait()
@@ -255,7 +255,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 			listenLoading.Done()
 			tcpip.AsyncLoading.Done()
 		}()
-	case StateConnecting, StateSynSent, StateSynRecv:
+	case epState.connecting():
 		tcpip.AsyncLoading.Add(1)
 		go func() {
 			connectedLoading.Wait()
@@ -267,7 +267,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 			connectingLoading.Done()
 			tcpip.AsyncLoading.Done()
 		}()
-	case StateBound:
+	case epState == StateBound:
 		tcpip.AsyncLoading.Add(1)
 		go func() {
 			connectedLoading.Wait()
@@ -276,7 +276,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 			bind()
 			tcpip.AsyncLoading.Done()
 		}()
-	case StateClose:
+	case epState == StateClose:
 		if e.isPortReserved {
 			tcpip.AsyncLoading.Add(1)
 			go func() {
@@ -291,12 +291,11 @@ func (e *endpoint) Resume(s *stack.Stack) {
 		e.state = StateClose
 		e.stack.CompleteTransportEndpointCleanup(e)
 		tcpip.DeleteDanglingEndpoint(e)
-	case StateError:
+	case epState == StateError:
 		e.state = StateError
 		e.stack.CompleteTransportEndpointCleanup(e)
 		tcpip.DeleteDanglingEndpoint(e)
 	}
-
 }
 
 // saveLastError is invoked by stateify.
