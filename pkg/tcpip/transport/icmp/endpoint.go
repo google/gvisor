@@ -506,6 +506,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	nicID := addr.NIC
 	localPort := uint16(0)
 	switch e.state {
+	case stateInitial:
 	case stateBound, stateConnected:
 		localPort = e.ID.LocalPort
 		if e.BindNICID == 0 {
