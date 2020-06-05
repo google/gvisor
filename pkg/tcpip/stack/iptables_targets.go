@@ -150,11 +150,10 @@ func (rt RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrackTable, hook Hook
 			return RuleAccept, 0
 		}
 
-		// Set up conection for matching NAT rule.
-		// Only the first packet of the connection comes here.
-		// Other packets will be manipulated in connection tracking.
-		if conn, _ := ct.connTrackForPacket(pkt, hook, true); conn != nil {
-			ct.SetNatInfo(pkt, rt, hook)
+		// Set up conection for matching NAT rule. Only the first
+		// packet of the connection comes here. Other packets will be
+		// manipulated in connection tracking.
+		if conn := ct.createConnTrackForPacket(pkt, hook, rt); conn != nil {
 			ct.HandlePacket(pkt, hook, gso, r)
 		}
 	default:

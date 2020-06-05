@@ -16,6 +16,7 @@ package stack
 
 import (
 	"fmt"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -23,7 +24,7 @@ import (
 
 // Table names.
 const (
-	TablenameNat    = "nat"
+	TablenameNAT    = "nat"
 	TablenameMangle = "mangle"
 	TablenameFilter = "filter"
 )
@@ -46,9 +47,9 @@ const HookUnset = -1
 func DefaultTables() *IPTables {
 	// TODO(gvisor.dev/issue/170): We may be able to swap out some strings for
 	// iotas.
-	return &IPTables{
+	ipt := IPTables{
 		tables: map[string]Table{
-			TablenameNat: Table{
+			TablenameNAT: Table{
 				Rules: []Rule{
 					Rule{Target: AcceptTarget{}},
 					Rule{Target: AcceptTarget{}},
@@ -107,15 +108,31 @@ func DefaultTables() *IPTables {
 			},
 		},
 		priorities: map[Hook][]string{
-			Input:      []string{TablenameNat, TablenameFilter},
-			Prerouting: []string{TablenameMangle, TablenameNat},
-			Output:     []string{TablenameMangle, TablenameNat, TablenameFilter},
+			Input:      []string{TablenameNAT, TablenameFilter},
+			Prerouting: []string{TablenameMangle, TablenameNAT},
+			Output:     []string{TablenameMangle, TablenameNAT, TablenameFilter},
 		},
 		connections: ConnTrackTable{
-			CtMap: make(map[uint32]ConnTrackTupleHolder),
-			Seed:  generateRandUint32(),
+			ctMap: make(map[uint32]ConnTrackTupleHolder),
+			seed:  generateRandUint32(),
 		},
+		connectionReaperDone: make(chan struct{}),
 	}
+
+	// This goroutine wakes up periodically to reap any timed out
+	// connections.
+	go func() {
+		for {
+			select {
+			case <-ipt.connectionReaperDone:
+				return
+			case <-time.After(2 * time.Minute):
+				ipt.connections.reap()
+			}
+		}
+	}()
+
+	return &ipt
 }
 
 // EmptyFilterTable returns a Table with no rules and the filter table chains
@@ -137,9 +154,9 @@ func EmptyFilterTable() Table {
 	}
 }
 
-// EmptyNatTable returns a Table with no rules and the filter table chains
+// EmptyNATTable returns a Table with no rules and the filter table chains
 // mapped to HookUnset.
-func EmptyNatTable() Table {
+func EmptyNATTable() Table {
 	return Table{
 		Rules: []Rule{},
 		BuiltinChains: map[Hook]int{
@@ -203,6 +220,16 @@ const (
 	chainReturn
 )
 
+// StopReapingConntrack stops the goroutine that periodically reaps dead
+// connections. It can be called to prevent otherwise unused IPTables structs
+// (and the goroutine) from leaking. Subsequent calls to StopReapingConntrack
+// are no-ops.
+func (it *IPTables) StopReapingConntrack() {
+	it.once.Do(func() {
+		close(it.connectionReaperDone)
+	})
+}
+
 // Check runs pkt through the rules for hook. It returns true when the packet
 // should continue traversing the network stack and false when it should be
 // dropped.
@@ -211,10 +238,16 @@ const (
 func (it *IPTables) Check(hook Hook, pkt *PacketBuffer, gso *GSO, r *Route, address tcpip.Address, nicName string) bool {
 	// Packets are manipulated only if connection and matching
 	// NAT rule exists.
-	it.connections.HandlePacket(pkt, hook, gso, r)
+	shouldTrack := it.connections.HandlePacket(pkt, hook, gso, r)
 
 	// Go through each table containing the hook.
 	for _, tablename := range it.GetPriorities(hook) {
+		// If the packet was alreay NATed by an existing conntrack
+		// rule, we don't need to check the NAT table.
+		if tablename == TablenameNAT && pkt.NatDone {
+			continue
+		}
+
 		table, _ := it.GetTable(tablename)
 		ruleIdx := table.BuiltinChains[hook]
 		switch verdict := it.checkChain(hook, pkt, table, ruleIdx, gso, r, address, nicName); verdict {
@@ -242,6 +275,20 @@ func (it *IPTables) Check(hook Hook, pkt *PacketBuffer, gso *GSO, r *Route, addr
 		default:
 			panic(fmt.Sprintf("Unknown verdict %v.", verdict))
 		}
+	}
+
+	// If this connection should be tracked, try to add an entry for it. If
+	// traversing the nat table didn't end in adding an entry,
+	// MaybeInsertNoop will add a no-op entry for the connection. This is
+	// useful when establishing connections so that the SYN/ACK reply to an
+	// outgoing SYN is delivered to the correct endpoint rather than being
+	// redirected by a prerouting rule.
+	//
+	// From the iptables documentation: "If there is no rule, a `null'
+	// binding is created: this usually does not map the packet, but exists
+	// to ensure we don't map another stream over an existing one."
+	if shouldTrack {
+		it.connections.MaybeInsertNoop(pkt, hook)
 	}
 
 	// Every table returned Accept.
