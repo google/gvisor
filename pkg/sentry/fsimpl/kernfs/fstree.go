@@ -8,7 +8,7 @@ import (
 // IsAncestorDentry returns true if d is an ancestor of d2; that is, d is
 // either d2's parent or an ancestor of d2's parent.
 func genericIsAncestorDentry(d, d2 *Dentry) bool {
-	for {
+	for d2 != nil {
 		if d2.parent == d {
 			return true
 		}
@@ -17,6 +17,7 @@ func genericIsAncestorDentry(d, d2 *Dentry) bool {
 		}
 		d2 = d2.parent
 	}
+	return false
 }
 
 // ParentOrSelf returns d.parent. If d.parent is nil, ParentOrSelf returns d.

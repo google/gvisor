@@ -208,12 +208,12 @@ func (x *Mount) save(m state.Map) {
 	m.Save("fs", &x.fs)
 	m.Save("root", &x.root)
 	m.Save("ID", &x.ID)
+	m.Save("Flags", &x.Flags)
 	m.Save("key", &x.key)
 	m.Save("ns", &x.ns)
 	m.Save("refs", &x.refs)
 	m.Save("children", &x.children)
 	m.Save("umounted", &x.umounted)
-	m.Save("flags", &x.flags)
 	m.Save("writers", &x.writers)
 }
 
@@ -223,18 +223,19 @@ func (x *Mount) load(m state.Map) {
 	m.Load("fs", &x.fs)
 	m.Load("root", &x.root)
 	m.Load("ID", &x.ID)
+	m.Load("Flags", &x.Flags)
 	m.Load("key", &x.key)
 	m.Load("ns", &x.ns)
 	m.Load("refs", &x.refs)
 	m.Load("children", &x.children)
 	m.Load("umounted", &x.umounted)
-	m.Load("flags", &x.flags)
 	m.Load("writers", &x.writers)
 }
 
 func (x *MountNamespace) beforeSave() {}
 func (x *MountNamespace) save(m state.Map) {
 	x.beforeSave()
+	m.Save("Owner", &x.Owner)
 	m.Save("root", &x.root)
 	m.Save("refs", &x.refs)
 	m.Save("mountpoints", &x.mountpoints)
@@ -242,6 +243,7 @@ func (x *MountNamespace) save(m state.Map) {
 
 func (x *MountNamespace) afterLoad() {}
 func (x *MountNamespace) load(m state.Map) {
+	m.Load("Owner", &x.Owner)
 	m.Load("root", &x.root)
 	m.Load("refs", &x.refs)
 	m.Load("mountpoints", &x.mountpoints)
