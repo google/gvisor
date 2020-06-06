@@ -178,6 +178,8 @@ func IsCanonical(addr uint64) bool {
 //
 // Precondition: the Rip, Rsp, Fs and Gs registers must be canonical.
 //
+// +checkescape:all
+//
 //go:nosplit
 func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	userCR3 := switchOpts.PageTables.CR3(!switchOpts.Flush, switchOpts.UserPCID)
@@ -192,9 +194,9 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 
 	// Perform the switch.
 	swapgs()                                         // GS will be swapped on return.
-	WriteFS(uintptr(regs.Fs_base))                   // Set application FS.
-	WriteGS(uintptr(regs.Gs_base))                   // Set application GS.
-	LoadFloatingPoint(switchOpts.FloatingPointState) // Copy in floating point.
+	WriteFS(uintptr(regs.Fs_base))                   // escapes: no. Set application FS.
+	WriteGS(uintptr(regs.Gs_base))                   // escapes: no. Set application GS.
+	LoadFloatingPoint(switchOpts.FloatingPointState) // escapes: no. Copy in floating point.
 	jumpToKernel()                                   // Switch to upper half.
 	writeCR3(uintptr(userCR3))                       // Change to user address space.
 	if switchOpts.FullRestore {
@@ -204,8 +206,8 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	}
 	writeCR3(uintptr(kernelCR3))                     // Return to kernel address space.
 	jumpToUser()                                     // Return to lower half.
-	SaveFloatingPoint(switchOpts.FloatingPointState) // Copy out floating point.
-	WriteFS(uintptr(c.registers.Fs_base))            // Restore kernel FS.
+	SaveFloatingPoint(switchOpts.FloatingPointState) // escapes: no. Copy out floating point.
+	WriteFS(uintptr(c.registers.Fs_base))            // escapes: no. Restore kernel FS.
 	return
 }
 

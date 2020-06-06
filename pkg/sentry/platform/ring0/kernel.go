@@ -31,23 +31,39 @@ type defaultHooks struct{}
 
 // KernelSyscall implements Hooks.KernelSyscall.
 //
+// +checkescape:all
+//
 //go:nosplit
-func (defaultHooks) KernelSyscall() { Halt() }
+func (defaultHooks) KernelSyscall() {
+	Halt()
+}
 
 // KernelException implements Hooks.KernelException.
 //
+// +checkescape:all
+//
 //go:nosplit
-func (defaultHooks) KernelException(Vector) { Halt() }
+func (defaultHooks) KernelException(Vector) {
+	Halt()
+}
 
 // kernelSyscall is a trampoline.
 //
+// +checkescape:hard,stack
+//
 //go:nosplit
-func kernelSyscall(c *CPU) { c.hooks.KernelSyscall() }
+func kernelSyscall(c *CPU) {
+	c.hooks.KernelSyscall()
+}
 
 // kernelException is a trampoline.
 //
+// +checkescape:hard,stack
+//
 //go:nosplit
-func kernelException(c *CPU, vector Vector) { c.hooks.KernelException(vector) }
+func kernelException(c *CPU, vector Vector) {
+	c.hooks.KernelException(vector)
+}
 
 // Init initializes a new CPU.
 //

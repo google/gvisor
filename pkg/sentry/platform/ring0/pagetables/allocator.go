@@ -53,9 +53,14 @@ type RuntimeAllocator struct {
 
 // NewRuntimeAllocator returns an allocator that uses runtime allocation.
 func NewRuntimeAllocator() *RuntimeAllocator {
-	return &RuntimeAllocator{
-		used: make(map[*PTEs]struct{}),
-	}
+	r := new(RuntimeAllocator)
+	r.Init()
+	return r
+}
+
+// Init initializes a RuntimeAllocator.
+func (r *RuntimeAllocator) Init() {
+	r.used = make(map[*PTEs]struct{})
 }
 
 // Recycle returns freed pages to the pool.
