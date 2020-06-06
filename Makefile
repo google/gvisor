@@ -244,11 +244,26 @@ test-install: ## Installs the runtime for testing. Requires sudo.
 
 configure: ## Configures a single runtime. Requires sudo. Typically called from dev or test-install.
 	@sudo sudo "$(RUNTIME_BIN)" install --experimental=true --runtime="$(RUNTIME)" -- --debug-log "$(RUNTIME_LOGS)" $(ARGS)
-	@echo "Installed runtime \"$(RUNTIME)\" @ $(RUNTIME_BIN)"
-	@echo "Logs are in: $(RUNTIME_LOG_DIR)"
+	@echo "Installed runtime \"$(RUNTIME)\" @ $(RUNTIME_BIN)" >&2
+	@echo "Logs are in: $(RUNTIME_LOG_DIR)" >&2
 	@sudo rm -rf "$(RUNTIME_LOG_DIR)" && mkdir -p "$(RUNTIME_LOG_DIR)"
 .PHONY: configure
 
 test-runtime: ## A convenient wrapper around test that provides the runtime argument. Target must still be provided.
 	@$(MAKE) test OPTIONS="$(OPTIONS) --test_arg=--runtime=$(RUNTIME)"
 .PHONY: runtime-test
+
+##
+## Benchmarks runs standardized benchmarks.
+##
+##   The following variables control benchmarks run:
+##     BENCHMARK_SUITES    - The set of suites to run.
+##     BENCHMARK_OUTPUT    - The default output file.
+##     BENCHMARK_INSTALLER - Typically either head or master.
+BENCHMARK_SUITES    := (absl.build|http.nginx)
+BENCHMARK_OUTPUT    := benchmark.out
+BENCHMARK_INSTALLER := head
+benchmarks:
+	@$(MAKE) dev
+	@$(MAKE) run OPTIONS="--define gcloud=off" TARGETS="benchmarks" ARGS="run-local '$(BENCHMARK_SUITES)' --runtime=runsc --installers=$(BENCHMARK_INSTALLER)" | tee "$(BENCHMARK_OUTPUT)"
+.PHONY: benchmarks

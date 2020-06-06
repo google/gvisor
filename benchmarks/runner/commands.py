@@ -124,7 +124,7 @@ class GCPCommand(RunCommand):
     machine_type = click.core.Option(
         ("--machine_type",),
         help="Type to make all machines.",
-        default="n1-standard-4",
+        default="e2-standard-2",
     )
     self.params.extend([
         image_file,

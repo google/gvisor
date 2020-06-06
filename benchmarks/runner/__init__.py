@@ -126,8 +126,8 @@ def run_gcp(ctx, image_file: str, zone_file: str, internal: bool,
   """Runs all benchmarks on GCP instances."""
 
   # Resolve all files.
-  image = subprocess.check_output([image_file]).rstrip()
-  zone = subprocess.check_output([zone_file]).rstrip()
+  image = subprocess.check_output([image_file]).rstrip().decode("utf-8")
+  zone = subprocess.check_output([zone_file]).rstrip().decode("utf-8")
   key_file = harness.make_key()
 
   producer = gcloud_producer.GCloudProducer(
