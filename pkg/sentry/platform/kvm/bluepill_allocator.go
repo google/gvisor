@@ -21,56 +21,80 @@ import (
 )
 
 type allocator struct {
-	base *pagetables.RuntimeAllocator
+	base pagetables.RuntimeAllocator
+
+	// cpu must be set prior to any pagetable operation.
+	//
+	// Due to the way KVM's shadow paging implementation works,
+	// modifications to the page tables while in host mode may not be
+	// trapped, leading to the shadow pages being out of sync.  Therefore,
+	// we need to ensure that we are in guest mode for page table
+	// modifications. See the call to bluepill, below.
+	cpu *vCPU
 }
 
 // newAllocator is used to define the allocator.
-func newAllocator() allocator {
-	return allocator{
-		base: pagetables.NewRuntimeAllocator(),
-	}
+func newAllocator() *allocator {
+	a := new(allocator)
+	a.base.Init()
+	return a
 }
 
 // NewPTEs implements pagetables.Allocator.NewPTEs.
 //
+// +checkescape:all
+//
 //go:nosplit
-func (a allocator) NewPTEs() *pagetables.PTEs {
-	return a.base.NewPTEs()
+func (a *allocator) NewPTEs() *pagetables.PTEs {
+	ptes := a.base.NewPTEs() // escapes: bluepill below.
+	if a.cpu != nil {
+		bluepill(a.cpu)
+	}
+	return ptes
 }
 
 // PhysicalFor returns the physical address for a set of PTEs.
 //
+// +checkescape:all
+//
 //go:nosplit
-func (a allocator) PhysicalFor(ptes *pagetables.PTEs) uintptr {
+func (a *allocator) PhysicalFor(ptes *pagetables.PTEs) uintptr {
 	virtual := a.base.PhysicalFor(ptes)
 	physical, _, ok := translateToPhysical(virtual)
 	if !ok {
-		panic(fmt.Sprintf("PhysicalFor failed for %p", ptes))
+		panic(fmt.Sprintf("PhysicalFor failed for %p", ptes)) // escapes: panic.
 	}
 	return physical
 }
 
 // LookupPTEs implements pagetables.Allocator.LookupPTEs.
 //
+// +checkescape:all
+//
 //go:nosplit
-func (a allocator) LookupPTEs(physical uintptr) *pagetables.PTEs {
+func (a *allocator) LookupPTEs(physical uintptr) *pagetables.PTEs {
 	virtualStart, physicalStart, _, ok := calculateBluepillFault(physical, physicalRegions)
 	if !ok {
-		panic(fmt.Sprintf("LookupPTEs failed for 0x%x", physical))
+		panic(fmt.Sprintf("LookupPTEs failed for 0x%x", physical)) // escapes: panic.
 	}
 	return a.base.LookupPTEs(virtualStart + (physical - physicalStart))
 }
 
 // FreePTEs implements pagetables.Allocator.FreePTEs.
 //
+// +checkescape:all
+//
 //go:nosplit
-func (a allocator) FreePTEs(ptes *pagetables.PTEs) {
-	a.base.FreePTEs(ptes)
+func (a *allocator) FreePTEs(ptes *pagetables.PTEs) {
+	a.base.FreePTEs(ptes) // escapes: bluepill below.
+	if a.cpu != nil {
+		bluepill(a.cpu)
+	}
 }
 
 // Recycle implements pagetables.Allocator.Recycle.
 //
 //go:nosplit
-func (a allocator) Recycle() {
+func (a *allocator) Recycle() {
 	a.base.Recycle()
 }

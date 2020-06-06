@@ -86,6 +86,8 @@ func (*mapVisitor) requiresSplit() bool { return true }
 //
 // Precondition: addr & length must be page-aligned, their sum must not overflow.
 //
+// +checkescape:hard,stack
+//
 //go:nosplit
 func (p *PageTables) Map(addr usermem.Addr, length uintptr, opts MapOpts, physical uintptr) bool {
 	if !opts.AccessType.Any() {
@@ -128,6 +130,8 @@ func (v *unmapVisitor) visit(start uintptr, pte *PTE, align uintptr) {
 //
 // Precondition: addr & length must be page-aligned.
 //
+// +checkescape:hard,stack
+//
 //go:nosplit
 func (p *PageTables) Unmap(addr usermem.Addr, length uintptr) bool {
 	w := unmapWalker{
@@ -161,6 +165,8 @@ func (v *emptyVisitor) visit(start uintptr, pte *PTE, align uintptr) {
 // IsEmpty checks if the given range is empty.
 //
 // Precondition: addr & length must be page-aligned.
+//
+// +checkescape:hard,stack
 //
 //go:nosplit
 func (p *PageTables) IsEmpty(addr usermem.Addr, length uintptr) bool {
@@ -196,6 +202,8 @@ func (*lookupVisitor) requiresAlloc() bool { return false }
 func (*lookupVisitor) requiresSplit() bool { return false }
 
 // Lookup returns the physical address for the given virtual address.
+//
+// +checkescape:hard,stack
 //
 //go:nosplit
 func (p *PageTables) Lookup(addr usermem.Addr) (physical uintptr, opts MapOpts) {

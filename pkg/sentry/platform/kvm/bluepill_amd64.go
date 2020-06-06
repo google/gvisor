@@ -63,6 +63,8 @@ func bluepillArchEnter(context *arch.SignalContext64) *vCPU {
 
 // KernelSyscall handles kernel syscalls.
 //
+// +checkescape:all
+//
 //go:nosplit
 func (c *vCPU) KernelSyscall() {
 	regs := c.Registers()
@@ -72,12 +74,14 @@ func (c *vCPU) KernelSyscall() {
 	// We only trigger a bluepill entry in the bluepill function, and can
 	// therefore be guaranteed that there is no floating point state to be
 	// loaded on resuming from halt. We only worry about saving on exit.
-	ring0.SaveFloatingPoint((*byte)(c.floatingPointState))
+	ring0.SaveFloatingPoint((*byte)(c.floatingPointState)) // escapes: no.
 	ring0.Halt()
-	ring0.WriteFS(uintptr(regs.Fs_base)) // Reload host segment.
+	ring0.WriteFS(uintptr(regs.Fs_base)) // escapes: no, reload host segment.
 }
 
 // KernelException handles kernel exceptions.
+//
+// +checkescape:all
 //
 //go:nosplit
 func (c *vCPU) KernelException(vector ring0.Vector) {
@@ -89,9 +93,9 @@ func (c *vCPU) KernelException(vector ring0.Vector) {
 		regs.Rip = 0
 	}
 	// See above.
-	ring0.SaveFloatingPoint((*byte)(c.floatingPointState))
+	ring0.SaveFloatingPoint((*byte)(c.floatingPointState)) // escapes: no.
 	ring0.Halt()
-	ring0.WriteFS(uintptr(regs.Fs_base)) // Reload host segment.
+	ring0.WriteFS(uintptr(regs.Fs_base)) // escapes: no; reload host segment.
 }
 
 // bluepillArchExit is called during bluepillEnter.

@@ -64,6 +64,8 @@ func bluepillArchContext(context unsafe.Pointer) *arch.SignalContext64 {
 // signal stack. It should only execute raw system calls and functions that are
 // explicitly marked go:nosplit.
 //
+// +checkescape:all
+//
 //go:nosplit
 func bluepillHandler(context unsafe.Pointer) {
 	// Sanitize the registers; interrupts must always be disabled.
@@ -82,7 +84,8 @@ func bluepillHandler(context unsafe.Pointer) {
 	}
 
 	for {
-		switch _, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(c.fd), _KVM_RUN, 0); errno {
+		_, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(c.fd), _KVM_RUN, 0) // escapes: no.
+		switch errno {
 		case 0: // Expected case.
 		case syscall.EINTR:
 			// First, we process whatever pending signal
@@ -90,7 +93,7 @@ func bluepillHandler(context unsafe.Pointer) {
 			// currently, all signals are masked and the signal
 			// must have been delivered directly to this thread.
 			timeout := syscall.Timespec{}
-			sig, _, errno := syscall.RawSyscall6(
+			sig, _, errno := syscall.RawSyscall6( // escapes: no.
 				syscall.SYS_RT_SIGTIMEDWAIT,
 				uintptr(unsafe.Pointer(&bounceSignalMask)),
 				0,                                 // siginfo.
@@ -125,7 +128,7 @@ func bluepillHandler(context unsafe.Pointer) {
 			// MMIO exit we receive EFAULT from the run ioctl. We
 			// always inject an NMI here since we may be in kernel
 			// mode and have interrupts disabled.
-			if _, _, errno := syscall.RawSyscall(
+			if _, _, errno := syscall.RawSyscall( // escapes: no.
 				syscall.SYS_IOCTL,
 				uintptr(c.fd),
 				_KVM_NMI, 0); errno != 0 {

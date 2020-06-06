@@ -154,7 +154,7 @@ func (c *vCPU) setUserRegisters(uregs *userRegs) error {
 //
 //go:nosplit
 func (c *vCPU) getUserRegisters(uregs *userRegs) syscall.Errno {
-	if _, _, errno := syscall.RawSyscall(
+	if _, _, errno := syscall.RawSyscall( // escapes: no.
 		syscall.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_GET_REGS,

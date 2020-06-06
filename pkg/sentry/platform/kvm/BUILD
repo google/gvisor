@@ -6,8 +6,8 @@ go_library(
     name = "kvm",
     srcs = [
         "address_space.go",
-        "allocator.go",
         "bluepill.go",
+        "bluepill_allocator.go",
         "bluepill_amd64.go",
         "bluepill_amd64.s",
         "bluepill_amd64_unsafe.go",
