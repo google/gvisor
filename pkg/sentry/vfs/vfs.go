@@ -405,7 +405,7 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 			vfs.putResolvingPath(rp)
 
 			if opts.FileExec {
-				if fd.Mount().flags.NoExec {
+				if fd.Mount().Flags.NoExec {
 					fd.DecRef()
 					return nil, syserror.EACCES
 				}

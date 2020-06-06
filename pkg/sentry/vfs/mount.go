@@ -55,6 +55,10 @@ type Mount struct {
 	// ID is the immutable mount ID.
 	ID uint64
 
+	// Flags contains settings as specified for mount(2), e.g. MS_NOEXEC, except
+	// for MS_RDONLY which is tracked in "writers". Immutable.
+	Flags MountFlags
+
 	// key is protected by VirtualFilesystem.mountMu and
 	// VirtualFilesystem.mounts.seq, and may be nil. References are held on
 	// key.parent and key.point if they are not nil.
@@ -81,10 +85,6 @@ type Mount struct {
 	// umounted is true. umounted is protected by VirtualFilesystem.mountMu.
 	umounted bool
 
-	// flags contains settings as specified for mount(2), e.g. MS_NOEXEC, except
-	// for MS_RDONLY which is tracked in "writers".
-	flags MountFlags
-
 	// The lower 63 bits of writers is the number of calls to
 	// Mount.CheckBeginWrite() that have not yet been paired with a call to
 	// Mount.EndWrite(). The MSB of writers is set if MS_RDONLY is in effect.
@@ -95,10 +95,10 @@ type Mount struct {
 func newMount(vfs *VirtualFilesystem, fs *Filesystem, root *Dentry, mntns *MountNamespace, opts *MountOptions) *Mount {
 	mnt := &Mount{
 		ID:    atomic.AddUint64(&vfs.lastMountID, 1),
+		Flags: opts.Flags,
 		vfs:   vfs,
 		fs:    fs,
 		root:  root,
-		flags: opts.Flags,
 		ns:    mntns,
 		refs:  1,
 	}
@@ -113,13 +113,12 @@ func (mnt *Mount) Options() MountOptions {
 	mnt.vfs.mountMu.Lock()
 	defer mnt.vfs.mountMu.Unlock()
 	return MountOptions{
-		Flags:    mnt.flags,
+		Flags:    mnt.Flags,
 		ReadOnly: mnt.readOnly(),
 	}
 }
 
-// A MountNamespace is a collection of Mounts.
-//
+// A MountNamespace is a collection of Mounts.//
 // MountNamespaces are reference-counted. Unless otherwise specified, all
 // MountNamespace methods require that a reference is held.
 //
@@ -127,6 +126,9 @@ func (mnt *Mount) Options() MountOptions {
 //
 // +stateify savable
 type MountNamespace struct {
+	// Owner is the usernamespace that owns this mount namespace.
+	Owner *auth.UserNamespace
+
 	// root is the MountNamespace's root mount. root is immutable.
 	root *Mount
 
@@ -163,6 +165,7 @@ func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth
 		return nil, err
 	}
 	mntns := &MountNamespace{
+		Owner:       creds.UserNamespace,
 		refs:        1,
 		mountpoints: make(map[*Dentry]uint32),
 	}
@@ -279,6 +282,9 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 	}
 
 	// MNT_FORCE is currently unimplemented except for the permission check.
+	// Force unmounting specifically requires CAP_SYS_ADMIN in the root user
+	// namespace, and not in the owner user namespace for the target mount. See
+	// fs/namespace.c:SYSCALL_DEFINE2(umount, ...)
 	if opts.Flags&linux.MNT_FORCE != 0 && creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, creds.UserNamespace.Root()) {
 		return syserror.EPERM
 	}
@@ -753,7 +759,10 @@ func (vfs *VirtualFilesystem) GenerateProcMounts(ctx context.Context, taskRootDi
 		if mnt.readOnly() {
 			opts = "ro"
 		}
-		if mnt.flags.NoExec {
+		if mnt.Flags.NoATime {
+			opts = ",noatime"
+		}
+		if mnt.Flags.NoExec {
 			opts += ",noexec"
 		}
 
@@ -838,11 +847,12 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 		if mnt.readOnly() {
 			opts = "ro"
 		}
-		if mnt.flags.NoExec {
+		if mnt.Flags.NoATime {
+			opts = ",noatime"
+		}
+		if mnt.Flags.NoExec {
 			opts += ",noexec"
 		}
-		// TODO(gvisor.dev/issue/1193): Add "noatime" if MS_NOATIME is
-		// set.
 		fmt.Fprintf(buf, "%s ", opts)
 
 		// (7) Optional fields: zero or more fields of the form "tag[:value]".

@@ -75,6 +75,10 @@ type MknodOptions struct {
 type MountFlags struct {
 	// NoExec is equivalent to MS_NOEXEC.
 	NoExec bool
+
+	// NoATime is equivalent to MS_NOATIME and indicates that the
+	// filesystem should not update access time in-place.
+	NoATime bool
 }
 
 // MountOptions contains options to VirtualFilesystem.MountAt().
