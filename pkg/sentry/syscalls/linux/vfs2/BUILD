@@ -16,6 +16,7 @@ go_library(
         "ioctl.go",
         "memfd.go",
         "mmap.go",
+        "mount.go",
         "path.go",
         "pipe.go",
         "poll.go",

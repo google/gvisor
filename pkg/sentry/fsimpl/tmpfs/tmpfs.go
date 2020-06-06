@@ -30,6 +30,7 @@ package tmpfs
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"sync/atomic"
 
@@ -124,14 +125,45 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	fs.vfsfs.Init(vfsObj, newFSType, &fs)
 
+	mopts := vfs.GenericParseMountOptions(opts.Data)
+
+	defaultMode := linux.FileMode(0777)
+	if modeStr, ok := mopts["mode"]; ok {
+		mode, err := strconv.ParseUint(modeStr, 8, 32)
+		if err != nil {
+			return nil, nil, fmt.Errorf("Mount option \"mode='%v'\" not parsable: %v", modeStr, err)
+		}
+		defaultMode = linux.FileMode(mode)
+	}
+
+	defaultOwnerCreds := creds.Fork()
+	if uidStr, ok := mopts["uid"]; ok {
+		uid, err := strconv.ParseInt(uidStr, 10, 32)
+		if err != nil {
+			return nil, nil, fmt.Errorf("Mount option \"uid='%v'\" not parsable: %v", uidStr, err)
+		}
+		if err := defaultOwnerCreds.SetUID(auth.UID(uid)); err != nil {
+			return nil, nil, fmt.Errorf("Error using mount option \"uid='%v'\": %v", uidStr, err)
+		}
+	}
+	if gidStr, ok := mopts["gid"]; ok {
+		gid, err := strconv.ParseInt(gidStr, 10, 32)
+		if err != nil {
+			return nil, nil, fmt.Errorf("Mount option \"gid='%v'\" not parsable: %v", gidStr, err)
+		}
+		if err := defaultOwnerCreds.SetGID(auth.GID(gid)); err != nil {
+			return nil, nil, fmt.Errorf("Error using mount option \"gid='%v'\": %v", gidStr, err)
+		}
+	}
+
 	var root *dentry
 	switch rootFileType {
 	case linux.S_IFREG:
-		root = fs.newDentry(fs.newRegularFile(creds, 0777))
+		root = fs.newDentry(fs.newRegularFile(defaultOwnerCreds, defaultMode))
 	case linux.S_IFLNK:
-		root = fs.newDentry(fs.newSymlink(creds, tmpfsOpts.RootSymlinkTarget))
+		root = fs.newDentry(fs.newSymlink(defaultOwnerCreds, tmpfsOpts.RootSymlinkTarget))
 	case linux.S_IFDIR:
-		root = &fs.newDirectory(creds, 01777).dentry
+		root = &fs.newDirectory(defaultOwnerCreds, defaultMode).dentry
 	default:
 		fs.vfsfs.DecRef()
 		return nil, nil, fmt.Errorf("invalid tmpfs root file type: %#o", rootFileType)
@@ -562,6 +594,9 @@ func (i *inode) isDir() bool {
 }
 
 func (i *inode) touchAtime(mnt *vfs.Mount) {
+	if mnt.Flags.NoATime {
+		return
+	}
 	if err := mnt.CheckBeginWrite(); err != nil {
 		return
 	}

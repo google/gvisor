@@ -272,7 +272,7 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *Config, m *mountAndF
 		case "ro":
 			opts.ReadOnly = true
 		case "noatime":
-			// TODO(gvisor.dev/issue/1193): Implement MS_NOATIME.
+			opts.Flags.NoATime = true
 		case "noexec":
 			opts.Flags.NoExec = true
 		default:

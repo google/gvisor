@@ -38,6 +38,9 @@ func statxTimestampFromDentry(ns int64) linux.StatxTimestamp {
 
 // Preconditions: fs.interop != InteropModeShared.
 func (d *dentry) touchAtime(mnt *vfs.Mount) {
+	if mnt.Flags.NoATime {
+		return
+	}
 	if err := mnt.CheckBeginWrite(); err != nil {
 		return
 	}

@@ -232,3 +232,31 @@ func (c *Credentials) UseGID(gid GID) (KGID, error) {
 	}
 	return NoID, syserror.EPERM
 }
+
+// SetUID translates the provided uid to the root user namespace and updates c's
+// uids to it. This performs no permissions or capabilities checks, the caller
+// is responsible for ensuring the calling context is permitted to modify c.
+func (c *Credentials) SetUID(uid UID) error {
+	kuid := c.UserNamespace.MapToKUID(uid)
+	if !kuid.Ok() {
+		return syserror.EINVAL
+	}
+	c.RealKUID = kuid
+	c.EffectiveKUID = kuid
+	c.SavedKUID = kuid
+	return nil
+}
+
+// SetGID translates the provided gid to the root user namespace and updates c's
+// gids to it. This performs no permissions or capabilities checks, the caller
+// is responsible for ensuring the calling context is permitted to modify c.
+func (c *Credentials) SetGID(gid GID) error {
+	kgid := c.UserNamespace.MapToKGID(gid)
+	if !kgid.Ok() {
+		return syserror.EINVAL
+	}
+	c.RealKGID = kgid
+	c.EffectiveKGID = kgid
+	c.SavedKGID = kgid
+	return nil
+}
