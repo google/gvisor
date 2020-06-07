@@ -354,6 +354,13 @@ func (b IPv6FragmentExtHdr) ID() uint32 {
 	return binary.BigEndian.Uint32(b[ipv6FragmentExtHdrIdentificationOffset:])
 }
 
+// IsAtomic returns whether the fragment header indicates an atomic fragment. An
+// atomic fragment is a fragment that contains all the data required to
+// reassemble a full packet.
+func (b IPv6FragmentExtHdr) IsAtomic() bool {
+	return !b.More() && b.FragmentOffset() == 0
+}
+
 // IPv6PayloadIterator is an iterator over the contents of an IPv6 payload.
 //
 // The IPv6 payload may contain IPv6 extension headers before any upper layer

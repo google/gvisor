@@ -306,6 +306,7 @@ func (x *segment) save(m state.Map) {
 	m.SaveValue("xmitTime", xmitTime)
 	m.Save("segmentEntry", &x.segmentEntry)
 	m.Save("refCnt", &x.refCnt)
+	m.Save("hdr", &x.hdr)
 	m.Save("viewToDeliver", &x.viewToDeliver)
 	m.Save("sequenceNumber", &x.sequenceNumber)
 	m.Save("ackNumber", &x.ackNumber)
@@ -322,6 +323,7 @@ func (x *segment) afterLoad() {}
 func (x *segment) load(m state.Map) {
 	m.Load("segmentEntry", &x.segmentEntry)
 	m.Load("refCnt", &x.refCnt)
+	m.Load("hdr", &x.hdr)
 	m.Load("viewToDeliver", &x.viewToDeliver)
 	m.Load("sequenceNumber", &x.sequenceNumber)
 	m.Load("ackNumber", &x.ackNumber)
