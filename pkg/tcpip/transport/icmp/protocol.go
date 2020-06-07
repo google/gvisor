@@ -124,6 +124,16 @@ func (*protocol) Close() {}
 // Wait implements stack.TransportProtocol.Wait.
 func (*protocol) Wait() {}
 
+// Parse implements stack.TransportProtocol.Parse.
+func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
+	// TODO(gvisor.dev/issue/170): Implement parsing of ICMP.
+	//
+	// Right now, the Parse() method is tied to enabled protocols passed into
+	// stack.New. This works for UDP and TCP, but we handle ICMP traffic even
+	// when netstack users don't pass ICMP as a supported protocol.
+	return false
+}
+
 // NewProtocol4 returns an ICMPv4 transport protocol.
 func NewProtocol4() stack.TransportProtocol {
 	return &protocol{ProtocolNumber4}
