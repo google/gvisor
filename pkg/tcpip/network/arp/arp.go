@@ -99,11 +99,7 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 }
 
 func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
-	v, ok := pkt.Data.PullUp(header.ARPSize)
-	if !ok {
-		return
-	}
-	h := header.ARP(v)
+	h := header.ARP(pkt.NetworkHeader)
 	if !h.IsValid() {
 		return
 	}
@@ -208,6 +204,17 @@ func (*protocol) Close() {}
 
 // Wait implements stack.TransportProtocol.Wait.
 func (*protocol) Wait() {}
+
+// Parse implements stack.NetworkProtocol.Parse.
+func (*protocol) Parse(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNumber, hasTransportHdr bool, ok bool) {
+	hdr, ok := pkt.Data.PullUp(header.ARPSize)
+	if !ok {
+		return 0, false, false
+	}
+	pkt.NetworkHeader = hdr
+	pkt.Data.TrimFront(header.ARPSize)
+	return 0, false, true
+}
 
 var broadcastMAC = tcpip.LinkAddress([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
 
