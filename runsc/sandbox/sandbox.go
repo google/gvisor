@@ -22,6 +22,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -113,6 +114,8 @@ type Args struct {
 	// If the caller exits, the sandbox should exit too.
 	Attached bool
 }
+
+var inCoverGenerate bool
 
 // New creates the sandbox process. The caller must call Destroy() on the
 // sandbox.
@@ -352,6 +355,13 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 	binPath := specutils.ExePath
 	cmd := exec.Command(binPath, conf.ToFlags()...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{}
+	if conf.CoverageFilesDirectory != "" {
+		inCoverGenerate = true
+		if _, err := os.Stat(conf.CoverageFilesDirectory); err == nil {
+			sandboxCoverFile := filepath.Join(conf.CoverageFilesDirectory + "/sandbox_cover.out")
+			cmd.Args = append(cmd.Args, "-test.coverprofile="+sandboxCoverFile)
+		}
+	}
 
 	// Open the log files to pass to the sandbox as FDs.
 	//
@@ -812,6 +822,11 @@ func (s *Sandbox) destroy() error {
 	log.Debugf("Destroy sandbox %q", s.ID)
 	if s.Pid != 0 {
 		log.Debugf("Killing sandbox %q", s.ID)
+		if inCoverGenerate {
+			// Give gofer process 0.5s to write coverage file.
+			time.Sleep(500 * time.Millisecond)
+		}
+
 		if err := syscall.Kill(s.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
 			return fmt.Errorf("killing sandbox %q PID %q: %v", s.ID, s.Pid, err)
 		}

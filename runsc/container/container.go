@@ -22,6 +22,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -898,6 +899,13 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bund
 		goferEnds = append(goferEnds, debugLogFile)
 		args = append(args, "--debug-log-fd="+strconv.Itoa(nextFD))
 		nextFD++
+	}
+
+	if conf.CoverageFilesDirectory != "" {
+		if _, err := os.Stat(conf.CoverageFilesDirectory); err == nil {
+			goferCoverFile := filepath.Join(conf.CoverageFilesDirectory + "/gofer_cover.out")
+			args = append(args, "-test.coverprofile="+goferCoverFile)
+		}
 	}
 
 	args = append(args, "gofer", "--bundle", bundleDir)

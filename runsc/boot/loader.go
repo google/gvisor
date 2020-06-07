@@ -479,6 +479,9 @@ func createMemoryFile() (*pgalloc.MemoryFile, error) {
 }
 
 func (l *Loader) installSeccompFilters() error {
+	if l.conf.CoverageFilesDirectory != "" {
+		l.conf.DisableSeccomp = true
+	}
 	if l.conf.DisableSeccomp {
 		filter.Report("syscall filter is DISABLED. Running in less secure mode.")
 	} else {

@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_binary", "pkg_deb", "pkg_tar")
+load("//tools:defs.bzl", "go_binary", "go_test", "pkg_deb", "pkg_tar")
 
 package(licenses = ["notice"])
 
@@ -120,4 +120,28 @@ sh_test(
     args = ["$(location :runsc)"],
     data = [":runsc"],
     tags = ["noguitar"],
+)
+
+go_test(
+    name = "main_test",
+    srcs = [
+        "main_test.go",
+        "main.go",
+        "version.go",
+    ],
+    args = ["$(location :cmd)"],
+    data = [":cmd"],
+    deps = [
+        "//pkg/log",
+        "//pkg/refs",
+        "//pkg/sentry/platform",
+        "//runsc/boot",
+        "//runsc/cmd",
+        "//runsc/specutils",
+        "@com_github_google_subcommands//:go_default_library",
+    ],
+    gc_linkopts = [
+        "-extldflags",
+        "--coverage",
+    ],
 )

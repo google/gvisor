@@ -114,6 +114,9 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			Fatalf("Error setting up root FS: %v", err)
 		}
 	}
+	if conf.CoverageFilesDirectory != "" {
+		g.applyCaps = false
+	}
 	if g.applyCaps {
 		// Disable caps when calling myself again.
 		// Note: minimal argument handling for the default case to keep it simple.

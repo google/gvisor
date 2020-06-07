@@ -260,6 +260,12 @@ type Config struct {
 	// parameters to the runtime from docker.
 	TestOnlyTestNameEnv string
 
+	// Coverage files directory path.
+	// Since One 'Run' will generate 3 coverage files,
+	// wchich is by runsc, sandbox and gofer. So we can't specify
+	// three file paths in on option, but a directory path.
+	CoverageFilesDirectory string
+
 	// CPUNumFromQuota sets CPU number count to available CPU quota, using
 	// least integer value greater than or equal to quota.
 	//
@@ -300,6 +306,7 @@ func (c *Config) ToFlags() []string {
 		"--gso=" + strconv.FormatBool(c.HardwareGSO),
 		"--software-gso=" + strconv.FormatBool(c.SoftwareGSO),
 		"--overlayfs-stale-read=" + strconv.FormatBool(c.OverlayfsStaleRead),
+		"--coverage-files-directory=" + c.CoverageFilesDirectory,
 		"--qdisc=" + c.QDisc.String(),
 	}
 	if c.CPUNumFromQuota {
