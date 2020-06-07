@@ -98,11 +98,6 @@ func (rt RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrackTable, hook Hook
 		return RuleAccept, 0
 	}
 
-	// Set network header.
-	if hook == Prerouting {
-		parseHeaders(pkt)
-	}
-
 	// Drop the packet if network and transport header are not set.
 	if pkt.NetworkHeader == nil || pkt.TransportHeader == nil {
 		return RuleDrop, 0
