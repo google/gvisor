@@ -50,6 +50,8 @@ var (
 	parallel   = flag.Bool("parallel", false, "run tests in parallel")
 	runscPath  = flag.String("runsc", "", "path to runsc binary")
 
+	coverDirPath = flag.String("cover-dir", "", "path to coverage files directory")
+
 	addUDSTree = flag.Bool("add-uds-tree", false, "expose a tree of UDS utilities for use in tests")
 )
 
@@ -158,6 +160,12 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	}
 	if *addUDSTree {
 		args = append(args, "-fsgofer-host-uds")
+	}
+	if len(*coverDirPath) != 0 {
+		coverFilePath := filepath.Join(*coverDirPath, *testName)
+		os.Mkdir(coverFilePath, 0755)
+		coverFilePath = filepath.Join(coverFilePath, "/runsc_cover.out")
+		args = append(args, "-test.coverprofile="+coverFilePath)
 	}
 
 	if outDir, ok := syscall.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
