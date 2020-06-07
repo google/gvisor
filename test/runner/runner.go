@@ -163,7 +163,8 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	}
 	if len(*coverDirPath) != 0 {
 		coverFilePath := filepath.Join(*coverDirPath, *testName)
-		os.Mkdir(coverFilePath, 0755)
+		coverFilePath = filepath.Join(coverFilePath, name)
+		os.MkdirAll(coverFilePath, 0755)
 		coverFilePath = filepath.Join(coverFilePath, "/runsc_cover.out")
 		args = append(args, "-test.coverprofile="+coverFilePath)
 	}
@@ -244,6 +245,8 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 		cmd.Run()
 	}()
 
+	env := filterEnv(os.Environ(), []string{"TEST_SHARD_INDEX", "TEST_TOTAL_SHARDS", "GTEST_SHARD_INDEX", "GTEST_TOTAL_SHARDS"})
+	cmd.Env = env
 	err = cmd.Run()
 
 	signal.Stop(sig)
