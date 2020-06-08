@@ -21,7 +21,7 @@ go_test(
     size = "small",
     srcs = ["proctor_test.go"],
     library = ":proctor",
-    nocgo = 1,
+    pure = True,
     deps = [
         "//pkg/test/testutil",
     ],
