@@ -401,8 +401,8 @@ func SetEntries(stk *stack.Stack, optVal []byte) *syserr.Error {
 	switch replace.Name.String() {
 	case stack.TablenameFilter:
 		table = stack.EmptyFilterTable()
-	case stack.TablenameNat:
-		table = stack.EmptyNatTable()
+	case stack.TablenameNAT:
+		table = stack.EmptyNATTable()
 	default:
 		nflog("we don't yet support writing to the %q table (gvisor.dev/issue/170)", replace.Name.String())
 		return syserr.ErrInvalidArgument
