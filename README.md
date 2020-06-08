@@ -1,3 +1,5 @@
+[![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://github.com/google/gvisor)
+
 ![gVisor](g3doc/logo.png)
 
 ![](https://github.com/google/gvisor/workflows/Build/badge.svg)
