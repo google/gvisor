@@ -85,12 +85,12 @@ type regularFile struct {
 	size uint64
 }
 
-func (fs *filesystem) newRegularFile(creds *auth.Credentials, mode linux.FileMode) *inode {
+func (fs *filesystem) newRegularFile(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode) *inode {
 	file := &regularFile{
 		memFile: fs.memFile,
 		seals:   linux.F_SEAL_SEAL,
 	}
-	file.inode.init(file, fs, creds, linux.S_IFREG|mode)
+	file.inode.init(file, fs, kuid, kgid, linux.S_IFREG|mode)
 	file.inode.nlink = 1 // from parent directory
 	return &file.inode
 }

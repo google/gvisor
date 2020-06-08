@@ -29,7 +29,7 @@ type deviceFile struct {
 	minor uint32
 }
 
-func (fs *filesystem) newDeviceFile(creds *auth.Credentials, mode linux.FileMode, kind vfs.DeviceKind, major, minor uint32) *inode {
+func (fs *filesystem) newDeviceFile(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, kind vfs.DeviceKind, major, minor uint32) *inode {
 	file := &deviceFile{
 		kind:  kind,
 		major: major,
@@ -43,7 +43,7 @@ func (fs *filesystem) newDeviceFile(creds *auth.Credentials, mode linux.FileMode
 	default:
 		panic(fmt.Sprintf("invalid DeviceKind: %v", kind))
 	}
-	file.inode.init(file, fs, creds, mode)
+	file.inode.init(file, fs, kuid, kgid, mode)
 	file.inode.nlink = 1 // from parent directory
 	return &file.inode
 }
