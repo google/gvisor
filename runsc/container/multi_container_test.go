@@ -149,13 +149,13 @@ func TestMultiContainerSanity(t *testing.T) {
 
 			// Check via ps that multiple processes are running.
 			expectedPL := []*control.Process{
-				{PID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{1}},
+				newProcessBuilder().PID(1).PPID(0).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[0], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
 			}
 			expectedPL = []*control.Process{
-				{PID: 2, Cmd: "sleep", Threads: []kernel.ThreadID{2}},
+				newProcessBuilder().PID(2).PPID(0).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[1], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
@@ -195,13 +195,13 @@ func TestMultiPIDNS(t *testing.T) {
 
 			// Check via ps that multiple processes are running.
 			expectedPL := []*control.Process{
-				{PID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{1}},
+				newProcessBuilder().PID(1).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[0], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
 			}
 			expectedPL = []*control.Process{
-				{PID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{1}},
+				newProcessBuilder().PID(1).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[1], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
@@ -257,7 +257,7 @@ func TestMultiPIDNSPath(t *testing.T) {
 
 			// Check via ps that multiple processes are running.
 			expectedPL := []*control.Process{
-				{PID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{1}},
+				newProcessBuilder().PID(1).PPID(0).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[0], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
@@ -267,7 +267,7 @@ func TestMultiPIDNSPath(t *testing.T) {
 			}
 
 			expectedPL = []*control.Process{
-				{PID: 2, Cmd: "sleep", Threads: []kernel.ThreadID{2}},
+				newProcessBuilder().PID(2).PPID(0).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[1], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
@@ -300,7 +300,7 @@ func TestMultiContainerWait(t *testing.T) {
 
 	// Check via ps that multiple processes are running.
 	expectedPL := []*control.Process{
-		{PID: 2, Cmd: "sleep", Threads: []kernel.ThreadID{2}},
+		newProcessBuilder().PID(2).PPID(0).Cmd("sleep").Process(),
 	}
 	if err := waitForProcessList(containers[1], expectedPL); err != nil {
 		t.Errorf("failed to wait for sleep to start: %v", err)
@@ -345,7 +345,7 @@ func TestMultiContainerWait(t *testing.T) {
 	// After Wait returns, ensure that the root container is running and
 	// the child has finished.
 	expectedPL = []*control.Process{
-		{PID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{1}},
+		newProcessBuilder().Cmd("sleep").Process(),
 	}
 	if err := waitForProcessList(containers[0], expectedPL); err != nil {
 		t.Errorf("failed to wait for %q to start: %v", strings.Join(containers[0].Spec.Process.Args, " "), err)
@@ -377,7 +377,7 @@ func TestExecWait(t *testing.T) {
 
 	// Check via ps that process is running.
 	expectedPL := []*control.Process{
-		{PID: 2, Cmd: "sleep", Threads: []kernel.ThreadID{2}},
+		newProcessBuilder().Cmd("sleep").Process(),
 	}
 	if err := waitForProcessList(containers[1], expectedPL); err != nil {
 		t.Fatalf("failed to wait for sleep to start: %v", err)
@@ -412,7 +412,7 @@ func TestExecWait(t *testing.T) {
 
 	// Wait for the exec'd process to exit.
 	expectedPL = []*control.Process{
-		{PID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{1}},
+		newProcessBuilder().PID(1).Cmd("sleep").Process(),
 	}
 	if err := waitForProcessList(containers[0], expectedPL); err != nil {
 		t.Fatalf("failed to wait for second container to stop: %v", err)
@@ -498,9 +498,8 @@ func TestMultiContainerSignal(t *testing.T) {
 
 			// Check via ps that container 1 process is running.
 			expectedPL := []*control.Process{
-				{PID: 2, Cmd: "sleep", Threads: []kernel.ThreadID{2}},
+				newProcessBuilder().Cmd("sleep").Process(),
 			}
-
 			if err := waitForProcessList(containers[1], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
 			}
@@ -512,7 +511,7 @@ func TestMultiContainerSignal(t *testing.T) {
 
 			// Make sure process 1 is still running.
 			expectedPL = []*control.Process{
-				{PID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{1}},
+				newProcessBuilder().PID(1).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[0], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
@@ -626,8 +625,10 @@ func TestMultiContainerDestroy(t *testing.T) {
 			if err != nil {
 				t.Fatalf("error getting process data from sandbox: %v", err)
 			}
-			expectedPL := []*control.Process{{PID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{1}}}
-			if r, err := procListsEqual(pss, expectedPL); !r {
+			expectedPL := []*control.Process{
+				newProcessBuilder().PID(1).Cmd("sleep").Process(),
+			}
+			if !procListsEqual(pss, expectedPL) {
 				t.Errorf("container got process list: %s, want: %s: error: %v",
 					procListToString(pss), procListToString(expectedPL), err)
 			}
@@ -664,7 +665,7 @@ func TestMultiContainerProcesses(t *testing.T) {
 
 	// Check root's container process list doesn't include other containers.
 	expectedPL0 := []*control.Process{
-		{PID: 1, Cmd: "sleep", Threads: []kernel.ThreadID{1}},
+		newProcessBuilder().PID(1).Cmd("sleep").Process(),
 	}
 	if err := waitForProcessList(containers[0], expectedPL0); err != nil {
 		t.Errorf("failed to wait for process to start: %v", err)
@@ -672,8 +673,8 @@ func TestMultiContainerProcesses(t *testing.T) {
 
 	// Same for the other container.
 	expectedPL1 := []*control.Process{
-		{PID: 2, Cmd: "sh", Threads: []kernel.ThreadID{2}},
-		{PID: 3, PPID: 2, Cmd: "sleep", Threads: []kernel.ThreadID{3}},
+		newProcessBuilder().PID(2).Cmd("sh").Process(),
+		newProcessBuilder().PID(3).PPID(2).Cmd("sleep").Process(),
 	}
 	if err := waitForProcessList(containers[1], expectedPL1); err != nil {
 		t.Errorf("failed to wait for process to start: %v", err)
@@ -687,7 +688,7 @@ func TestMultiContainerProcesses(t *testing.T) {
 	if _, err := containers[1].Execute(args); err != nil {
 		t.Fatalf("error exec'ing: %v", err)
 	}
-	expectedPL1 = append(expectedPL1, &control.Process{PID: 4, Cmd: "sleep", Threads: []kernel.ThreadID{4}})
+	expectedPL1 = append(expectedPL1, newProcessBuilder().PID(4).Cmd("sleep").Process())
 	if err := waitForProcessList(containers[1], expectedPL1); err != nil {
 		t.Errorf("failed to wait for process to start: %v", err)
 	}
@@ -1505,7 +1506,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 	// Ensure container is running
 	c := containers[2]
 	expectedPL := []*control.Process{
-		{PID: 3, Cmd: "sleep", Threads: []kernel.ThreadID{3}},
+		newProcessBuilder().PID(3).Cmd("sleep").Process(),
 	}
 	if err := waitForProcessList(c, expectedPL); err != nil {
 		t.Errorf("failed to wait for sleep to start: %v", err)
@@ -1533,7 +1534,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 			continue // container[2] has been killed.
 		}
 		pl := []*control.Process{
-			{PID: kernel.ThreadID(i + 1), Cmd: "sleep", Threads: []kernel.ThreadID{kernel.ThreadID(i + 1)}},
+			newProcessBuilder().PID(kernel.ThreadID(i + 1)).Cmd("sleep").Process(),
 		}
 		if err := waitForProcessList(c, pl); err != nil {
 			t.Errorf("Container %q was affected by another container: %v", c.ID, err)
@@ -1553,7 +1554,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 	// Wait until sandbox stops. waitForProcessList will loop until sandbox exits
 	// and RPC errors out.
 	impossiblePL := []*control.Process{
-		{PID: 100, Cmd: "non-existent-process", Threads: []kernel.ThreadID{100}},
+		newProcessBuilder().Cmd("non-existent-process").Process(),
 	}
 	if err := waitForProcessList(c, impossiblePL); err == nil {
 		t.Fatalf("Sandbox was not killed after gofer death")

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -53,9 +54,8 @@ func waitForProcessList(cont *Container, want []*control.Process) error {
 			err = fmt.Errorf("error getting process data from container: %v", err)
 			return &backoff.PermanentError{Err: err}
 		}
-		if r, err := procListsEqual(got, want); !r {
-			return fmt.Errorf("container got process list: %s, want: %s: error: %v",
-				procListToString(got), procListToString(want), err)
+		if !procListsEqual(got, want) {
+			return fmt.Errorf("container got process list: %s, want: %s", procListToString(got), procListToString(want))
 		}
 		return nil
 	}
@@ -92,36 +92,72 @@ func blockUntilWaitable(pid int) error {
 	return err
 }
 
-// procListsEqual is used to check whether 2 Process lists are equal for all
-// implemented fields.
-func procListsEqual(got, want []*control.Process) (bool, error) {
-	if len(got) != len(want) {
-		return false, nil
+// procListsEqual is used to check whether 2 Process lists are equal. Fields
+// set to -1 in wants are ignored. Timestamp and threads fields are always
+// ignored.
+func procListsEqual(gots, wants []*control.Process) bool {
+	if len(gots) != len(wants) {
+		return false
 	}
-	for i := range got {
-		pd1 := got[i]
-		pd2 := want[i]
-		// Zero out timing dependant fields.
-		pd1.Time = ""
-		pd1.STime = ""
-		pd1.C = 0
-		// Ignore TTY field too, since it's not relevant in the cases
-		// where we use this method. Tests that care about the TTY
-		// field should check for it themselves.
-		pd1.TTY = ""
-		pd1Json, err := control.ProcessListToJSON([]*control.Process{pd1})
-		if err != nil {
-			return false, err
+	for i := range gots {
+		got := gots[i]
+		want := wants[i]
+
+		if want.UID != math.MaxUint32 && want.UID != got.UID {
+			return false
 		}
-		pd2Json, err := control.ProcessListToJSON([]*control.Process{pd2})
-		if err != nil {
-			return false, err
+		if want.PID != -1 && want.PID != got.PID {
+			return false
 		}
-		if pd1Json != pd2Json {
-			return false, nil
+		if want.PPID != -1 && want.PPID != got.PPID {
+			return false
+		}
+		if len(want.TTY) != 0 && want.TTY != got.TTY {
+			return false
+		}
+		if len(want.Cmd) != 0 && want.Cmd != got.Cmd {
+			return false
 		}
 	}
-	return true, nil
+	return true
+}
+
+type processBuilder struct {
+	process control.Process
+}
+
+func newProcessBuilder() *processBuilder {
+	return &processBuilder{
+		process: control.Process{
+			UID:  math.MaxUint32,
+			PID:  -1,
+			PPID: -1,
+		},
+	}
+}
+
+func (p *processBuilder) Cmd(cmd string) *processBuilder {
+	p.process.Cmd = cmd
+	return p
+}
+
+func (p *processBuilder) PID(pid kernel.ThreadID) *processBuilder {
+	p.process.PID = pid
+	return p
+}
+
+func (p *processBuilder) PPID(ppid kernel.ThreadID) *processBuilder {
+	p.process.PPID = ppid
+	return p
+}
+
+func (p *processBuilder) UID(uid auth.KUID) *processBuilder {
+	p.process.UID = uid
+	return p
+}
+
+func (p *processBuilder) Process() *control.Process {
+	return &p.process
 }
 
 func procListToString(pl []*control.Process) string {
@@ -323,14 +359,7 @@ func TestLifecycle(t *testing.T) {
 
 			// expectedPL lists the expected process state of the container.
 			expectedPL := []*control.Process{
-				{
-					UID:     0,
-					PID:     1,
-					PPID:    0,
-					C:       0,
-					Cmd:     "sleep",
-					Threads: []kernel.ThreadID{1},
-				},
+				newProcessBuilder().Cmd("sleep").Process(),
 			}
 			// Create the container.
 			args := Args{
@@ -608,7 +637,134 @@ func doAppExitStatus(t *testing.T, vfs2 bool) {
 
 // TestExec verifies that a container can exec a new program.
 func TestExec(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, overlay) {
+	for name, conf := range configsWithVFS2(t, all...) {
+		t.Run(name, func(t *testing.T) {
+			dir, err := ioutil.TempDir(testutil.TmpDir(), "exec-test")
+			if err != nil {
+				t.Fatalf("error creating temporary directory: %v", err)
+			}
+			cmd := fmt.Sprintf("ln -s /bin/true %q/symlink && sleep 100", dir)
+			spec := testutil.NewSpecWithArgs("sh", "-c", cmd)
+
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			// Create and start the container.
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			cont, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer cont.Destroy()
+			if err := cont.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			// Wait until sleep is running to ensure the symlink was created.
+			expectedPL := []*control.Process{
+				newProcessBuilder().Cmd("sh").Process(),
+				newProcessBuilder().Cmd("sleep").Process(),
+			}
+			if err := waitForProcessList(cont, expectedPL); err != nil {
+				t.Fatalf("waitForProcessList: %v", err)
+			}
+
+			for _, tc := range []struct {
+				name string
+				args control.ExecArgs
+			}{
+				{
+					name: "complete",
+					args: control.ExecArgs{
+						Filename: "/bin/true",
+						Argv:     []string{"/bin/true"},
+					},
+				},
+				{
+					name: "filename",
+					args: control.ExecArgs{
+						Filename: "/bin/true",
+					},
+				},
+				{
+					name: "argv",
+					args: control.ExecArgs{
+						Argv: []string{"/bin/true"},
+					},
+				},
+				{
+					name: "filename resolution",
+					args: control.ExecArgs{
+						Filename: "true",
+						Envv:     []string{"PATH=/bin"},
+					},
+				},
+				{
+					name: "argv resolution",
+					args: control.ExecArgs{
+						Argv: []string{"true"},
+						Envv: []string{"PATH=/bin"},
+					},
+				},
+				{
+					name: "argv symlink",
+					args: control.ExecArgs{
+						Argv: []string{filepath.Join(dir, "symlink")},
+					},
+				},
+				{
+					name: "working dir",
+					args: control.ExecArgs{
+						Argv:             []string{"/bin/sh", "-c", `if [[ "${PWD}" != "/tmp" ]]; then exit 1; fi`},
+						WorkingDirectory: "/tmp",
+					},
+				},
+				{
+					name: "user",
+					args: control.ExecArgs{
+						Argv: []string{"/bin/sh", "-c", `if [[ "$(id -u)" != "343" ]]; then exit 1; fi`},
+						KUID: 343,
+					},
+				},
+				{
+					name: "group",
+					args: control.ExecArgs{
+						Argv: []string{"/bin/sh", "-c", `if [[ "$(id -g)" != "343" ]]; then exit 1; fi`},
+						KGID: 343,
+					},
+				},
+				{
+					name: "env",
+					args: control.ExecArgs{
+						Argv: []string{"/bin/sh", "-c", `if [[ "${FOO}" != "123" ]]; then exit 1; fi`},
+						Envv: []string{"FOO=123"},
+					},
+				},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					// t.Parallel()
+					if ws, err := cont.executeSync(&tc.args); err != nil {
+						t.Fatalf("executeAsync(%+v): %v", tc.args, err)
+					} else if ws != 0 {
+						t.Fatalf("executeAsync(%+v) failed with exit: %v", tc.args, ws)
+					}
+				})
+			}
+		})
+	}
+}
+
+// TestExecProcList verifies that a container can exec a new program and it
+// shows correcly in the process list.
+func TestExecProcList(t *testing.T) {
+	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			const uid = 343
 			spec := testutil.NewSpecWithArgs("sleep", "100")
@@ -634,31 +790,6 @@ func TestExec(t *testing.T) {
 				t.Fatalf("error starting container: %v", err)
 			}
 
-			// expectedPL lists the expected process state of the container.
-			expectedPL := []*control.Process{
-				{
-					UID:     0,
-					PID:     1,
-					PPID:    0,
-					C:       0,
-					Cmd:     "sleep",
-					Threads: []kernel.ThreadID{1},
-				},
-				{
-					UID:     uid,
-					PID:     2,
-					PPID:    0,
-					C:       0,
-					Cmd:     "sleep",
-					Threads: []kernel.ThreadID{2},
-				},
-			}
-
-			// Verify that "sleep 100" is running.
-			if err := waitForProcessList(cont, expectedPL[:1]); err != nil {
-				t.Error(err)
-			}
-
 			execArgs := &control.ExecArgs{
 				Filename:         "/bin/sleep",
 				Argv:             []string{"/bin/sleep", "5"},
@@ -666,9 +797,8 @@ func TestExec(t *testing.T) {
 				KUID:             uid,
 			}
 
-			// Verify that "sleep 100" and "sleep 5" are running
-			// after exec.  First, start running exec (whick
-			// blocks).
+			// Verify that "sleep 100" and "sleep 5" are running after exec. First,
+			// start running exec (which blocks).
 			ch := make(chan error)
 			go func() {
 				exitStatus, err := cont.executeSync(execArgs)
@@ -681,6 +811,11 @@ func TestExec(t *testing.T) {
 				}
 			}()
 
+			// expectedPL lists the expected process state of the container.
+			expectedPL := []*control.Process{
+				newProcessBuilder().PID(1).PPID(0).Cmd("sleep").UID(0).Process(),
+				newProcessBuilder().PID(2).PPID(0).Cmd("sleep").UID(uid).Process(),
+			}
 			if err := waitForProcessList(cont, expectedPL); err != nil {
 				t.Fatalf("error waiting for processes: %v", err)
 			}
@@ -1242,24 +1377,9 @@ func TestCapabilities(t *testing.T) {
 
 			// expectedPL lists the expected process state of the container.
 			expectedPL := []*control.Process{
-				{
-					UID:     0,
-					PID:     1,
-					PPID:    0,
-					C:       0,
-					Cmd:     "sleep",
-					Threads: []kernel.ThreadID{1},
-				},
-				{
-					UID:     uid,
-					PID:     2,
-					PPID:    0,
-					C:       0,
-					Cmd:     "exe",
-					Threads: []kernel.ThreadID{2},
-				},
+				newProcessBuilder().Cmd("sleep").Process(),
 			}
-			if err := waitForProcessList(cont, expectedPL[:1]); err != nil {
+			if err := waitForProcessList(cont, expectedPL); err != nil {
 				t.Fatalf("Failed to wait for sleep to start, err: %v", err)
 			}
 
