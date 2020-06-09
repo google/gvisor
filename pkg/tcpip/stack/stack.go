@@ -1017,6 +1017,13 @@ func (s *Stack) RemoveNIC(id tcpip.NICID) *tcpip.Error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	return s.removeNICLocked(id)
+}
+
+// removeNICLocked removes NIC and all related routes from the network stack.
+//
+// s.mu must be locked.
+func (s *Stack) removeNICLocked(id tcpip.NICID) *tcpip.Error {
 	nic, ok := s.nics[id]
 	if !ok {
 		return tcpip.ErrUnknownNICID
