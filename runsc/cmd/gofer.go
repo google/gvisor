@@ -306,7 +306,7 @@ func setupRootFS(spec *specs.Spec, conf *boot.Config) error {
 	}
 
 	// Replace the current spec, with the clean spec with symlinks resolved.
-	if err := setupMounts(spec.Mounts, root); err != nil {
+	if err := setupMounts(conf, spec.Mounts, root); err != nil {
 		Fatalf("error setting up FS: %v", err)
 	}
 
@@ -322,7 +322,7 @@ func setupRootFS(spec *specs.Spec, conf *boot.Config) error {
 	}
 
 	// Check if root needs to be remounted as readonly.
-	if spec.Root.Readonly {
+	if spec.Root.Readonly || conf.Overlay {
 		// If root is a mount point but not read-only, we can change mount options
 		// to make it read-only for extra safety.
 		log.Infof("Remounting root as readonly: %q", root)
@@ -346,7 +346,7 @@ func setupRootFS(spec *specs.Spec, conf *boot.Config) error {
 // setupMounts binds mount all mounts specified in the spec in their correct
 // location inside root. It will resolve relative paths and symlinks. It also
 // creates directories as needed.
-func setupMounts(mounts []specs.Mount, root string) error {
+func setupMounts(conf *boot.Config, mounts []specs.Mount, root string) error {
 	for _, m := range mounts {
 		if m.Type != "bind" || !specutils.IsSupportedDevMount(m) {
 			continue
@@ -358,6 +358,11 @@ func setupMounts(mounts []specs.Mount, root string) error {
 		}
 
 		flags := specutils.OptionsToFlags(m.Options) | syscall.MS_BIND
+		if conf.Overlay {
+			// Force mount read-only if writes are not going to be sent to it.
+			flags |= syscall.MS_RDONLY
+		}
+
 		log.Infof("Mounting src: %q, dst: %q, flags: %#x", m.Source, dst, flags)
 		if err := specutils.Mount(m.Source, dst, m.Type, flags); err != nil {
 			return fmt.Errorf("mounting %v: %v", m, err)
