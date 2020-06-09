@@ -7,6 +7,7 @@ require (
 	github.com/gofrs/flock v0.6.1-0.20180915234121-886344bea079
 	github.com/golang/protobuf v1.3.1
 	github.com/google/btree v1.0.0
+	github.com/google/go-cmp v0.5.0
 	github.com/google/subcommands v0.0.0-20190508160503-636abe8753b8
 	github.com/kr/pretty v0.2.0 // indirect
 	github.com/kr/pty v1.1.1
