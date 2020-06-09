@@ -77,6 +77,10 @@ func registerFilesystems(k *kernel.Kernel) error {
 		AllowUserMount: true,
 		AllowUserList:  true,
 	})
+	vfsObj.MustRegisterFilesystemType(fuse.Name, &fuse.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
+		AllowUserMount: true,
+		AllowUserList:  true,
+	})
 
 	// Setup files in devtmpfs.
 	if err := memdev.Register(vfsObj); err != nil {
@@ -85,7 +89,6 @@ func registerFilesystems(k *kernel.Kernel) error {
 	if err := ttydev.Register(vfsObj); err != nil {
 		return fmt.Errorf("registering ttydev: %w", err)
 	}
-
 	if err := fuse.Register(vfsObj); err != nil {
 		return fmt.Errorf("registering fusedev: %w", err)
 	}
@@ -113,6 +116,7 @@ func registerFilesystems(k *kernel.Kernel) error {
 	if err := fuse.CreateDevtmpfsFile(ctx, a); err != nil {
 		return fmt.Errorf("creating fusedev devtmpfs files: %w", err)
 	}
+
 	return nil
 }
 
