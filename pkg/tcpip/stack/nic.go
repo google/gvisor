@@ -457,8 +457,20 @@ type ipv6AddrCandidate struct {
 // remoteAddr must be a valid IPv6 address.
 func (n *NIC) primaryIPv6Endpoint(remoteAddr tcpip.Address) *referencedNetworkEndpoint {
 	n.mu.RLock()
-	defer n.mu.RUnlock()
+	ref := n.primaryIPv6EndpointRLocked(remoteAddr)
+	n.mu.RUnlock()
+	return ref
+}
 
+// primaryIPv6EndpointLocked returns an IPv6 endpoint following Source Address
+// Selection (RFC 6724 section 5).
+//
+// Note, only rules 1-3 and 7 are followed.
+//
+// remoteAddr must be a valid IPv6 address.
+//
+// n.mu MUST be read locked.
+func (n *NIC) primaryIPv6EndpointRLocked(remoteAddr tcpip.Address) *referencedNetworkEndpoint {
 	primaryAddrs := n.mu.primary[header.IPv6ProtocolNumber]
 
 	if len(primaryAddrs) == 0 {
@@ -568,11 +580,6 @@ const (
 	// promiscuous indicates that the NIC's promiscuous flag should be observed
 	// when getting a NIC's referenced network endpoint.
 	promiscuous
-
-	// forceSpoofing indicates that the NIC should be assumed to be spoofing,
-	// regardless of what the NIC's spoofing flag is when getting a NIC's
-	// referenced network endpoint.
-	forceSpoofing
 )
 
 func (n *NIC) getRef(protocol tcpip.NetworkProtocolNumber, dst tcpip.Address) *referencedNetworkEndpoint {
@@ -591,8 +598,6 @@ func (n *NIC) findEndpoint(protocol tcpip.NetworkProtocolNumber, address tcpip.A
 // or spoofing. Promiscuous mode will only be checked if promiscuous is true.
 // Similarly, spoofing will only be checked if spoofing is true.
 func (n *NIC) getRefOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address tcpip.Address, peb PrimaryEndpointBehavior, tempRef getRefBehaviour) *referencedNetworkEndpoint {
-	id := NetworkEndpointID{address}
-
 	n.mu.RLock()
 
 	var spoofingOrPromiscuous bool
@@ -601,11 +606,9 @@ func (n *NIC) getRefOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address t
 		spoofingOrPromiscuous = n.mu.spoofing
 	case promiscuous:
 		spoofingOrPromiscuous = n.mu.promiscuous
-	case forceSpoofing:
-		spoofingOrPromiscuous = true
 	}
 
-	if ref, ok := n.mu.endpoints[id]; ok {
+	if ref, ok := n.mu.endpoints[NetworkEndpointID{address}]; ok {
 		// An endpoint with this id exists, check if it can be used and return it.
 		switch ref.getKind() {
 		case permanentExpired:
@@ -654,11 +657,18 @@ func (n *NIC) getRefOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address t
 	// endpoint, create a new "temporary" endpoint. It will only exist while
 	// there's a route through it.
 	n.mu.Lock()
-	if ref, ok := n.mu.endpoints[id]; ok {
+	ref := n.getRefOrCreateTempLocked(protocol, address, peb)
+	n.mu.Unlock()
+	return ref
+}
+
+/// getRefOrCreateTempLocked returns an existing endpoint for address or creates
+/// and returns a temporary endpoint.
+func (n *NIC) getRefOrCreateTempLocked(protocol tcpip.NetworkProtocolNumber, address tcpip.Address, peb PrimaryEndpointBehavior) *referencedNetworkEndpoint {
+	if ref, ok := n.mu.endpoints[NetworkEndpointID{address}]; ok {
 		// No need to check the type as we are ok with expired endpoints at this
 		// point.
 		if ref.tryIncRef() {
-			n.mu.Unlock()
 			return ref
 		}
 		// tryIncRef failing means the endpoint is scheduled to be removed once the
@@ -670,7 +680,6 @@ func (n *NIC) getRefOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address t
 	// Add a new temporary endpoint.
 	netProto, ok := n.stack.networkProtocols[protocol]
 	if !ok {
-		n.mu.Unlock()
 		return nil
 	}
 	ref, _ := n.addAddressLocked(tcpip.ProtocolAddress{
@@ -681,7 +690,6 @@ func (n *NIC) getRefOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address t
 		},
 	}, peb, temporary, static, false)
 
-	n.mu.Unlock()
 	return ref
 }
 

@@ -467,8 +467,17 @@ type ndpState struct {
 	// The default routers discovered through Router Advertisements.
 	defaultRouters map[tcpip.Address]defaultRouterState
 
-	// The timer used to send the next router solicitation message.
-	rtrSolicitTimer *time.Timer
+	rtrSolicit struct {
+		// The timer used to send the next router solicitation message.
+		timer *time.Timer
+
+		// Used to let the Router Solicitation timer know that it has been stopped.
+		//
+		// Must only be read from or written to while protected by the lock of
+		// the NIC this ndpState is associated with. MUST be set when the timer is
+		// set.
+		done *bool
+	}
 
 	// The on-link prefixes discovered through Router Advertisements' Prefix
 	// Information option.
@@ -648,13 +657,14 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 	// as starting a goroutine but we use a timer that fires immediately so we can
 	// reset it for the next DAD iteration.
 	timer = time.AfterFunc(0, func() {
-		ndp.nic.mu.RLock()
+		ndp.nic.mu.Lock()
+		defer ndp.nic.mu.Unlock()
+
 		if done {
 			// If we reach this point, it means that the DAD timer fired after
 			// another goroutine already obtained the NIC lock and stopped DAD
 			// before this function obtained the NIC lock. Simply return here and do
 			// nothing further.
-			ndp.nic.mu.RUnlock()
 			return
 		}
 
@@ -665,15 +675,23 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 		}
 
 		dadDone := remaining == 0
-		ndp.nic.mu.RUnlock()
 
 		var err *tcpip.Error
 		if !dadDone {
-			err = ndp.sendDADPacket(addr)
+			// Use the unspecified address as the source address when performing DAD.
+			ref := ndp.nic.getRefOrCreateTempLocked(header.IPv6ProtocolNumber, header.IPv6Any, NeverPrimaryEndpoint)
+
+			// Do not hold the lock when sending packets which may be a long running
+			// task or may block link address resolution. We know this is safe
+			// because immediately after obtaining the lock again, we check if DAD
+			// has been stopped before doing any work with the NIC. Note, DAD would be
+			// stopped if the NIC was disabled or removed, or if the address was
+			// removed.
+			ndp.nic.mu.Unlock()
+			err = ndp.sendDADPacket(addr, ref)
+			ndp.nic.mu.Lock()
 		}
 
-		ndp.nic.mu.Lock()
-		defer ndp.nic.mu.Unlock()
 		if done {
 			// If we reach this point, it means that DAD was stopped after we released
 			// the NIC's read lock and before we obtained the write lock.
@@ -721,17 +739,24 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 // addr.
 //
 // addr must be a tentative IPv6 address on ndp's NIC.
-func (ndp *ndpState) sendDADPacket(addr tcpip.Address) *tcpip.Error {
+//
+// The NIC ndp belongs to MUST NOT be locked.
+func (ndp *ndpState) sendDADPacket(addr tcpip.Address, ref *referencedNetworkEndpoint) *tcpip.Error {
 	snmc := header.SolicitedNodeAddr(addr)
 
-	// Use the unspecified address as the source address when performing DAD.
-	ref := ndp.nic.getRefOrCreateTemp(header.IPv6ProtocolNumber, header.IPv6Any, NeverPrimaryEndpoint, forceSpoofing)
-	r := makeRoute(header.IPv6ProtocolNumber, header.IPv6Any, snmc, ndp.nic.linkEP.LinkAddress(), ref, false, false)
+	r := makeRoute(header.IPv6ProtocolNumber, ref.ep.ID().LocalAddress, snmc, ndp.nic.linkEP.LinkAddress(), ref, false, false)
 	defer r.Release()
 
 	// Route should resolve immediately since snmc is a multicast address so a
 	// remote link address can be calculated without a resolution process.
 	if c, err := r.Resolve(nil); err != nil {
+		// Do not consider the NIC being unknown or disabled as a fatal error.
+		// Since this method is required to be called when the NIC is not locked,
+		// the NIC could have been disabled or removed by another goroutine.
+		if err == tcpip.ErrUnknownNICID || err != tcpip.ErrInvalidEndpointState {
+			return err
+		}
+
 		panic(fmt.Sprintf("ndp: error when resolving route to send NDP NS for DAD (%s -> %s on NIC(%d)): %s", header.IPv6Any, snmc, ndp.nic.ID(), err))
 	} else if c != nil {
 		panic(fmt.Sprintf("ndp: route resolution not immediate for route to send NDP NS for DAD (%s -> %s on NIC(%d))", header.IPv6Any, snmc, ndp.nic.ID()))
@@ -1816,7 +1841,7 @@ func (ndp *ndpState) cleanupState(hostOnly bool) {
 //
 // The NIC ndp belongs to MUST be locked.
 func (ndp *ndpState) startSolicitingRouters() {
-	if ndp.rtrSolicitTimer != nil {
+	if ndp.rtrSolicit.timer != nil {
 		// We are already soliciting routers.
 		return
 	}
@@ -1833,14 +1858,27 @@ func (ndp *ndpState) startSolicitingRouters() {
 		delay = time.Duration(rand.Int63n(int64(ndp.configs.MaxRtrSolicitationDelay)))
 	}
 
-	ndp.rtrSolicitTimer = time.AfterFunc(delay, func() {
+	var done bool
+	ndp.rtrSolicit.done = &done
+	ndp.rtrSolicit.timer = time.AfterFunc(delay, func() {
+		ndp.nic.mu.Lock()
+		if done {
+			// If we reach this point, it means that the RS timer fired after another
+			// goroutine already obtained the NIC lock and stopped solicitations.
+			// Simply return here and do nothing further.
+			ndp.nic.mu.Unlock()
+			return
+		}
+
 		// As per RFC 4861 section 4.1, the source of the RS is an address assigned
 		// to the sending interface, or the unspecified address if no address is
 		// assigned to the sending interface.
-		ref := ndp.nic.primaryIPv6Endpoint(header.IPv6AllRoutersMulticastAddress)
+		ref := ndp.nic.primaryIPv6EndpointRLocked(header.IPv6AllRoutersMulticastAddress)
 		if ref == nil {
-			ref = ndp.nic.getRefOrCreateTemp(header.IPv6ProtocolNumber, header.IPv6Any, NeverPrimaryEndpoint, forceSpoofing)
+			ref = ndp.nic.getRefOrCreateTempLocked(header.IPv6ProtocolNumber, header.IPv6Any, NeverPrimaryEndpoint)
 		}
+		ndp.nic.mu.Unlock()
+
 		localAddr := ref.ep.ID().LocalAddress
 		r := makeRoute(header.IPv6ProtocolNumber, localAddr, header.IPv6AllRoutersMulticastAddress, ndp.nic.linkEP.LinkAddress(), ref, false, false)
 		defer r.Release()
@@ -1849,6 +1887,13 @@ func (ndp *ndpState) startSolicitingRouters() {
 		// header.IPv6AllRoutersMulticastAddress is a multicast address so a
 		// remote link address can be calculated without a resolution process.
 		if c, err := r.Resolve(nil); err != nil {
+			// Do not consider the NIC being unknown or disabled as a fatal error.
+			// Since this method is required to be called when the NIC is not locked,
+			// the NIC could have been disabled or removed by another goroutine.
+			if err == tcpip.ErrUnknownNICID || err == tcpip.ErrInvalidEndpointState {
+				return
+			}
+
 			panic(fmt.Sprintf("ndp: error when resolving route to send NDP RS (%s -> %s on NIC(%d)): %s", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.nic.ID(), err))
 		} else if c != nil {
 			panic(fmt.Sprintf("ndp: route resolution not immediate for route to send NDP RS (%s -> %s on NIC(%d))", header.IPv6Any, header.IPv6AllRoutersMulticastAddress, ndp.nic.ID()))
@@ -1893,17 +1938,18 @@ func (ndp *ndpState) startSolicitingRouters() {
 		}
 
 		ndp.nic.mu.Lock()
-		defer ndp.nic.mu.Unlock()
-		if remaining == 0 {
-			ndp.rtrSolicitTimer = nil
-		} else if ndp.rtrSolicitTimer != nil {
+		if done || remaining == 0 {
+			ndp.rtrSolicit.timer = nil
+			ndp.rtrSolicit.done = nil
+		} else if ndp.rtrSolicit.timer != nil {
 			// Note, we need to explicitly check to make sure that
 			// the timer field is not nil because if it was nil but
 			// we still reached this point, then we know the NIC
 			// was requested to stop soliciting routers so we don't
 			// need to send the next Router Solicitation message.
-			ndp.rtrSolicitTimer.Reset(ndp.configs.RtrSolicitationInterval)
+			ndp.rtrSolicit.timer.Reset(ndp.configs.RtrSolicitationInterval)
 		}
+		ndp.nic.mu.Unlock()
 	})
 
 }
@@ -1913,13 +1959,15 @@ func (ndp *ndpState) startSolicitingRouters() {
 //
 // The NIC ndp belongs to MUST be locked.
 func (ndp *ndpState) stopSolicitingRouters() {
-	if ndp.rtrSolicitTimer == nil {
+	if ndp.rtrSolicit.timer == nil {
 		// Nothing to do.
 		return
 	}
 
-	ndp.rtrSolicitTimer.Stop()
-	ndp.rtrSolicitTimer = nil
+	*ndp.rtrSolicit.done = true
+	ndp.rtrSolicit.timer.Stop()
+	ndp.rtrSolicit.timer = nil
+	ndp.rtrSolicit.done = nil
 }
 
 // initializeTempAddrState initializes state related to temporary SLAAC
