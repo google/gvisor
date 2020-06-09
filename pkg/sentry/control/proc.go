@@ -25,13 +25,10 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/host"
 	"gvisor.dev/gvisor/pkg/sentry/fs/user"
-	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	hostvfs2 "gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -39,7 +36,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/urpc"
 )
 
@@ -107,6 +103,9 @@ type ExecArgs struct {
 
 // String prints the arguments as a string.
 func (args ExecArgs) String() string {
+	if len(args.Argv) == 0 {
+		return args.Filename
+	}
 	a := make([]string, len(args.Argv))
 	copy(a, args.Argv)
 	if args.Filename != "" {
@@ -179,37 +178,30 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 	}
 	ctx := initArgs.NewContext(proc.Kernel)
 
-	if initArgs.Filename == "" {
-		if kernel.VFS2Enabled {
-			// Get the full path to the filename from the PATH env variable.
-			if initArgs.MountNamespaceVFS2 == nil {
-				// Set initArgs so that 'ctx' returns the namespace.
-				//
-				// MountNamespaceVFS2 adds a reference to the namespace, which is
-				// transferred to the new process.
-				initArgs.MountNamespaceVFS2 = proc.Kernel.GlobalInit().Leader().MountNamespaceVFS2()
-			}
-			file, err := getExecutableFD(ctx, creds, proc.Kernel.VFS(), initArgs.MountNamespaceVFS2, initArgs.Envv, initArgs.WorkingDirectory, initArgs.Argv[0])
-			if err != nil {
-				return nil, 0, nil, nil, fmt.Errorf("error finding executable %q in environment %v: %v", initArgs.Argv[0], initArgs.Envv, err)
-			}
-			initArgs.File = fsbridge.NewVFSFile(file)
-		} else {
-			if initArgs.MountNamespace == nil {
-				// Set initArgs so that 'ctx' returns the namespace.
-				initArgs.MountNamespace = proc.Kernel.GlobalInit().Leader().MountNamespace()
+	if kernel.VFS2Enabled {
+		// Get the full path to the filename from the PATH env variable.
+		if initArgs.MountNamespaceVFS2 == nil {
+			// Set initArgs so that 'ctx' returns the namespace.
+			//
+			// MountNamespaceVFS2 adds a reference to the namespace, which is
+			// transferred to the new process.
+			initArgs.MountNamespaceVFS2 = proc.Kernel.GlobalInit().Leader().MountNamespaceVFS2()
+		}
+	} else {
+		if initArgs.MountNamespace == nil {
+			// Set initArgs so that 'ctx' returns the namespace.
+			initArgs.MountNamespace = proc.Kernel.GlobalInit().Leader().MountNamespace()
 
-				// initArgs must hold a reference on MountNamespace, which will
-				// be donated to the new process in CreateProcess.
-				initArgs.MountNamespace.IncRef()
-			}
-			f, err := user.ResolveExecutablePath(ctx, creds, initArgs.MountNamespace, initArgs.Envv, initArgs.WorkingDirectory, initArgs.Argv[0])
-			if err != nil {
-				return nil, 0, nil, nil, fmt.Errorf("error finding executable %q in PATH %v: %v", initArgs.Argv[0], initArgs.Envv, err)
-			}
-			initArgs.Filename = f
+			// initArgs must hold a reference on MountNamespace, which will
+			// be donated to the new process in CreateProcess.
+			initArgs.MountNamespace.IncRef()
 		}
 	}
+	resolved, err := user.ResolveExecutablePath(ctx, &initArgs)
+	if err != nil {
+		return nil, 0, nil, nil, err
+	}
+	initArgs.Filename = resolved
 
 	fds := make([]int, len(args.FilePayload.Files))
 	for i, file := range args.FilePayload.Files {
@@ -421,32 +413,4 @@ func ttyName(tty *kernel.TTY) string {
 		return "?"
 	}
 	return fmt.Sprintf("pts/%d", tty.Index)
-}
-
-// getExecutableFD resolves the given executable name and returns a
-// vfs.FileDescription for the executable file.
-func getExecutableFD(ctx context.Context, creds *auth.Credentials, vfsObj *vfs.VirtualFilesystem, mns *vfs.MountNamespace, envv []string, wd, name string) (*vfs.FileDescription, error) {
-	path, err := user.ResolveExecutablePathVFS2(ctx, creds, mns, envv, wd, name)
-	if err != nil {
-		return nil, err
-	}
-
-	root := vfs.RootFromContext(ctx)
-	defer root.DecRef()
-
-	pop := vfs.PathOperation{
-		Root:               root,
-		Start:              root, // binPath is absolute, Start can be anything.
-		Path:               fspath.Parse(path),
-		FollowFinalSymlink: true,
-	}
-	opts := &vfs.OpenOptions{
-		Flags:    linux.O_RDONLY,
-		FileExec: true,
-	}
-	f, err := vfsObj.OpenAt(ctx, creds, &pop, opts)
-	if err == syserror.ENOENT || err == syserror.EACCES {
-		return nil, nil
-	}
-	return f, err
 }
