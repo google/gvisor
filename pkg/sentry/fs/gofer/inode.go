@@ -640,7 +640,7 @@ func (i *inodeOperations) Allocate(ctx context.Context, inode *fs.Inode, offset,
 
 // WriteOut implements fs.InodeOperations.WriteOut.
 func (i *inodeOperations) WriteOut(ctx context.Context, inode *fs.Inode) error {
-	if !i.session().cachePolicy.cacheUAttrs(inode) {
+	if inode.MountSource.Flags.ReadOnly || !i.session().cachePolicy.cacheUAttrs(inode) {
 		return nil
 	}
 
