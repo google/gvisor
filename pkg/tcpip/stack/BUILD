@@ -110,5 +110,6 @@ go_test(
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
+        "//pkg/tcpip/header",
     ],
 )
