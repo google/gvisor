@@ -63,6 +63,10 @@ function run_as_root() {
   bazel run --run_under="sudo" "${binary}" -- "$@"
 }
 
+function query() {
+  QUERY_RESULT=$(bazel query "$@")
+}
+
 function collect_logs() {
   # Zip out everything into a convenient form.
   if [[ -v KOKORO_ARTIFACTS_DIR ]] && [[ -e bazel-testlogs ]]; then
