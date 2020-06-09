@@ -146,7 +146,27 @@ TEST(DevTest, WriteDevFull) {
   EXPECT_THAT(WriteFd(fd.get(), "a", 1), SyscallFailsWithErrno(ENOSPC));
 }
 
+TEST(DevTest, ReadDevFuse) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_RDONLY));
+  std::vector<char> buf(1);
+  EXPECT_THAT(ReadFd(fd.get(), buf.data(), sizeof(buf)), SyscallFailsWithErrno(ENOSYS));
+}
+
+TEST(DevTest, WriteDevFuse) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_WRONLY));
+  const char* testStr = "test";
+  EXPECT_THAT(WriteFd(fd.get(), testStr, sizeof(testStr)), SyscallFailsWithErrno(ENOSYS));
+}
+
 TEST(DevTest, TTYExists) {
+  SKIP_IF(!IsRunningWithVFS1());
+
   struct stat statbuf = {};
   ASSERT_THAT(stat("/dev/tty", &statbuf), SyscallSucceeds());
   // Check that it's a character device with rw-rw-rw- permissions.
