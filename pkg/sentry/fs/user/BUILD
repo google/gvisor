@@ -15,6 +15,7 @@ go_library(
         "//pkg/fspath",
         "//pkg/log",
         "//pkg/sentry/fs",
+        "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
         "//pkg/syserror",
