@@ -79,6 +79,15 @@ type MountFlags struct {
 	// NoATime is equivalent to MS_NOATIME and indicates that the
 	// filesystem should not update access time in-place.
 	NoATime bool
+
+	// NoDev is equivalent to MS_NODEV and indicates that the
+	// filesystem should not allow access to devices (special files).
+	NoDev bool
+
+	// NoSUID is equivalent to MS_NOSUID and indicates that the
+	// filesystem should not honor set-user-ID and set-group-ID bits or
+	// file capabilities when executing programs.
+	NoSUID bool
 }
 
 // MountOptions contains options to VirtualFilesystem.MountAt().
