@@ -19,4 +19,5 @@ source $(dirname $0)/common.sh
 make load-packetimpact
 
 install_runsc_for_test runsc-d
-test_runsc $(bazel query "attr(tags, packetimpact, tests(//test/packetimpact/...))")
+query "attr(tags, packetimpact, tests(//test/packetimpact/...))"
+test_runsc $QUERY_RESULT
