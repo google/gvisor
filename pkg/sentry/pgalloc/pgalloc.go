@@ -393,16 +393,17 @@ func (f *MemoryFile) Allocate(length uint64, kind usage.MemoryKind) (platform.Fi
 		return platform.FileRange{}, syserror.ENOMEM
 	}
 
-	// Expand the file if needed. Note that findAvailableRange will
-	// appropriately double the fileSize when required.
+	// Expand the file if needed.
 	if int64(fr.End) > f.fileSize {
-		if err := f.file.Truncate(int64(fr.End)); err != nil {
+		// Round the new file size up to be chunk-aligned.
+		newFileSize := (int64(fr.End) + chunkMask) &^ chunkMask
+		if err := f.file.Truncate(newFileSize); err != nil {
 			return platform.FileRange{}, err
 		}
-		f.fileSize = int64(fr.End)
+		f.fileSize = newFileSize
 		f.mappingsMu.Lock()
 		oldMappings := f.mappings.Load().([]uintptr)
-		newMappings := make([]uintptr, f.fileSize>>chunkShift)
+		newMappings := make([]uintptr, newFileSize>>chunkShift)
 		copy(newMappings, oldMappings)
 		f.mappings.Store(newMappings)
 		f.mappingsMu.Unlock()
