@@ -545,7 +545,7 @@ func (*networkPrio) set(spec *specs.LinuxResources, path string) error {
 type pids struct{}
 
 func (*pids) set(spec *specs.LinuxResources, path string) error {
-	if spec.Pids == nil {
+	if spec.Pids == nil || spec.Pids.Limit <= 0 {
 		return nil
 	}
 	val := strconv.FormatInt(spec.Pids.Limit, 10)
