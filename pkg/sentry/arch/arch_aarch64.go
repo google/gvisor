@@ -17,7 +17,6 @@
 package arch
 
 import (
-	"encoding/binary"
 	"fmt"
 	"io"
 
@@ -49,9 +48,14 @@ const ARMTrapFlag = uint64(1) << 21
 type aarch64FPState []byte
 
 // initAarch64FPState sets up initial state.
+//
+// Related code in Linux kernel: fpsimd_flush_thread().
+// FPCR = FPCR_RM_RN (0x0 << 22).
+//
+// Currently, aarch64FPState is only a space of 0x210 length for fpstate.
+// The fp head is useless in sentry/ptrace/kvm.
+//
 func initAarch64FPState(data aarch64FPState) {
-	binary.LittleEndian.PutUint32(data, fpsimdMagic)
-	binary.LittleEndian.PutUint32(data[4:], fpsimdContextSize)
 }
 
 func newAarch64FPStateSlice() []byte {
