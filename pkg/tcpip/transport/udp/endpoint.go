@@ -15,6 +15,7 @@
 package udp
 
 import (
+	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -425,24 +426,33 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	}
 
 	var route *stack.Route
+	var resolve func(waker *sleep.Waker) (ch <-chan struct{}, err *tcpip.Error)
 	var dstPort uint16
 	if to == nil {
 		route = &e.route
 		dstPort = e.dstPort
-
-		if route.IsResolutionRequired() {
-			// Promote lock to exclusive if using a shared route, given that it may need to
-			// change in Route.Resolve() call below.
+		resolve = func(waker *sleep.Waker) (ch <-chan struct{}, err *tcpip.Error) {
+			// Promote lock to exclusive if using a shared route, given that it may
+			// need to change in Route.Resolve() call below.
 			e.mu.RUnlock()
-			defer e.mu.RLock()
-
 			e.mu.Lock()
-			defer e.mu.Unlock()
 
 			// Recheck state after lock was re-acquired.
 			if e.state != StateConnected {
-				return 0, nil, tcpip.ErrInvalidEndpointState
+				err = tcpip.ErrInvalidEndpointState
 			}
+			if err == nil && route.IsResolutionRequired() {
+				ch, err = route.Resolve(waker)
+			}
+
+			e.mu.Unlock()
+			e.mu.RLock()
+
+			// Recheck state after lock was re-acquired.
+			if e.state != StateConnected {
+				err = tcpip.ErrInvalidEndpointState
+			}
+			return
 		}
 	} else {
 		// Reject destination address if it goes through a different
@@ -473,10 +483,11 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 
 		route = &r
 		dstPort = dst.Port
+		resolve = route.Resolve
 	}
 
 	if route.IsResolutionRequired() {
-		if ch, err := route.Resolve(nil); err != nil {
+		if ch, err := resolve(nil); err != nil {
 			if err == tcpip.ErrWouldBlock {
 				return 0, ch, tcpip.ErrNoLinkAddress
 			}

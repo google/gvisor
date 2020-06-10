@@ -398,5 +398,25 @@ TEST_F(TuntapTest, SendUdpTriggersArpResolution) {
   }
 }
 
+// Write hang bug found by syskaller: b/155928773
+// https://syzkaller.appspot.com/bug?id=065b893bd8d1d04a4e0a1d53c578537cde1efe99
+TEST_F(TuntapTest, WriteHangBug155928773) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTap(kTapName, "10.0.0.1"));
+
+  int sock = socket(AF_INET, SOCK_DGRAM, 0);
+  ASSERT_THAT(sock, SyscallSucceeds());
+
+  struct sockaddr_in remote = {};
+  remote.sin_family = AF_INET;
+  remote.sin_port = htons(42);
+  inet_pton(AF_INET, "10.0.0.1", &remote.sin_addr);
+  // Return values do not matter in this test.
+  connect(sock, reinterpret_cast<struct sockaddr*>(&remote), sizeof(remote));
+  write(sock, "hello", 5);
+}
+
 }  // namespace testing
 }  // namespace gvisor
