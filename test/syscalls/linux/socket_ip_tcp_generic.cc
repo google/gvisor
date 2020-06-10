@@ -524,6 +524,7 @@ TEST_P(TCPSocketPairTest, SetTCPKeepintvlZero) {
 // Copied from include/net/tcp.h.
 constexpr int MAX_TCP_KEEPIDLE = 32767;
 constexpr int MAX_TCP_KEEPINTVL = 32767;
+constexpr int MAX_TCP_KEEPCNT = 127;
 
 TEST_P(TCPSocketPairTest, SetTCPKeepidleAboveMax) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
@@ -573,6 +574,78 @@ TEST_P(TCPSocketPairTest, SetTCPKeepintvlToMax) {
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
   EXPECT_EQ(get, MAX_TCP_KEEPINTVL);
+}
+
+TEST_P(TCPSocketPairTest, TCPKeepcountDefault) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  EXPECT_THAT(
+      getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_KEEPCNT, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, 9);  // 9 keepalive probes.
+}
+
+TEST_P(TCPSocketPairTest, SetTCPKeepcountZero) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  constexpr int kZero = 0;
+  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_KEEPCNT, &kZero,
+                         sizeof(kZero)),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST_P(TCPSocketPairTest, SetTCPKeepcountAboveMax) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  constexpr int kAboveMax = MAX_TCP_KEEPCNT + 1;
+  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_KEEPCNT,
+                         &kAboveMax, sizeof(kAboveMax)),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST_P(TCPSocketPairTest, SetTCPKeepcountToMax) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_KEEPCNT,
+                         &MAX_TCP_KEEPCNT, sizeof(MAX_TCP_KEEPCNT)),
+              SyscallSucceedsWithValue(0));
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  EXPECT_THAT(
+      getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_KEEPCNT, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, MAX_TCP_KEEPCNT);
+}
+
+TEST_P(TCPSocketPairTest, SetTCPKeepcountToOne) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int keepaliveCount = 1;
+  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_KEEPCNT,
+                         &keepaliveCount, sizeof(keepaliveCount)),
+              SyscallSucceedsWithValue(0));
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  EXPECT_THAT(
+      getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_KEEPCNT, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, keepaliveCount);
+}
+
+TEST_P(TCPSocketPairTest, SetTCPKeepcountToNegative) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int keepaliveCount = -5;
+  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_KEEPCNT,
+                         &keepaliveCount, sizeof(keepaliveCount)),
+              SyscallFailsWithErrno(EINVAL));
 }
 
 TEST_P(TCPSocketPairTest, SetOOBInline) {
