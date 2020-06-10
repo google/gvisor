@@ -73,6 +73,8 @@ type FileDescription struct {
 	// writable is analogous to Linux's FMODE_WRITE.
 	writable bool
 
+	usedLockBSD uint32
+
 	// impl is the FileDescriptionImpl associated with this Filesystem. impl is
 	// immutable. This should be the last field in FileDescription.
 	impl FileDescriptionImpl
@@ -175,6 +177,12 @@ func (fd *FileDescription) DecRef() {
 			}
 			ep.interestMu.Unlock()
 		}
+
+		// If BSD locks were used, release any lock that it may have acquired.
+		if atomic.LoadUint32(&fd.usedLockBSD) != 0 {
+			fd.impl.UnlockBSD(context.Background(), fd)
+		}
+
 		// Release implementation resources.
 		fd.impl.Release()
 		if fd.writable {
@@ -420,13 +428,9 @@ type FileDescriptionImpl interface {
 	Removexattr(ctx context.Context, name string) error
 
 	// LockBSD tries to acquire a BSD-style advisory file lock.
-	//
-	// TODO(gvisor.dev/issue/1480): BSD-style file locking
 	LockBSD(ctx context.Context, uid lock.UniqueID, t lock.LockType, block lock.Blocker) error
 
-	// LockBSD releases a BSD-style advisory file lock.
-	//
-	// TODO(gvisor.dev/issue/1480): BSD-style file locking
+	// UnlockBSD releases a BSD-style advisory file lock.
 	UnlockBSD(ctx context.Context, uid lock.UniqueID) error
 
 	// LockPOSIX tries to acquire a POSIX-style advisory file lock.
@@ -735,4 +739,15 @@ func (fd *FileDescription) InodeID() uint64 {
 // Msync implements memmap.MappingIdentity.Msync.
 func (fd *FileDescription) Msync(ctx context.Context, mr memmap.MappableRange) error {
 	return fd.Sync(ctx)
+}
+
+// LockBSD tries to acquire a BSD-style advisory file lock.
+func (fd *FileDescription) LockBSD(ctx context.Context, lockType lock.LockType, blocker lock.Blocker) error {
+	atomic.StoreUint32(&fd.usedLockBSD, 1)
+	return fd.impl.LockBSD(ctx, fd, lockType, blocker)
+}
+
+// UnlockBSD releases a BSD-style advisory file lock.
+func (fd *FileDescription) UnlockBSD(ctx context.Context) error {
+	return fd.impl.UnlockBSD(ctx, fd)
 }

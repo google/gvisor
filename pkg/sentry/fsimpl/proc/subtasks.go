@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -36,6 +37,8 @@ type subtasksInode struct {
 	kernfs.InodeAttrs
 	kernfs.OrderedChildren
 	kernfs.AlwaysValid
+
+	locks lock.FileLocks
 
 	fs                *filesystem
 	task              *kernel.Task
@@ -153,7 +156,7 @@ func (fd *subtasksFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) erro
 // Open implements kernfs.Inode.
 func (i *subtasksInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fd := &subtasksFD{task: i.task}
-	if err := fd.Init(&i.OrderedChildren, &opts); err != nil {
+	if err := fd.Init(&i.OrderedChildren, &i.locks, &opts); err != nil {
 		return nil, err
 	}
 	if err := fd.VFSFileDescription().Init(fd, opts.Flags, rp.Mount(), vfsd, &vfs.FileDescriptionOptions{}); err != nil {

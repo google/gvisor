@@ -10,14 +10,12 @@ func (x *Lock) beforeSave() {}
 func (x *Lock) save(m state.Map) {
 	x.beforeSave()
 	m.Save("Readers", &x.Readers)
-	m.Save("HasWriter", &x.HasWriter)
 	m.Save("Writer", &x.Writer)
 }
 
 func (x *Lock) afterLoad() {}
 func (x *Lock) load(m state.Map) {
 	m.Load("Readers", &x.Readers)
-	m.Load("HasWriter", &x.HasWriter)
 	m.Load("Writer", &x.Writer)
 }
 

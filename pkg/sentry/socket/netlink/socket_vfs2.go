@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -40,6 +41,7 @@ type SocketVFS2 struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
+	vfs.LockFD
 
 	socketOpsCommon
 }
@@ -66,7 +68,7 @@ func NewVFS2(t *kernel.Task, skType linux.SockType, protocol Protocol) (*SocketV
 		return nil, err
 	}
 
-	return &SocketVFS2{
+	fd := &SocketVFS2{
 		socketOpsCommon: socketOpsCommon{
 			ports:          t.Kernel().NetlinkPorts(),
 			protocol:       protocol,
@@ -75,7 +77,9 @@ func NewVFS2(t *kernel.Task, skType linux.SockType, protocol Protocol) (*SocketV
 			connection:     connection,
 			sendBufferSize: defaultSendBufferSize,
 		},
-	}, nil
+	}
+	fd.LockFD.Init(&lock.FileLocks{})
+	return fd, nil
 }
 
 // Readiness implements waiter.Waitable.Readiness.

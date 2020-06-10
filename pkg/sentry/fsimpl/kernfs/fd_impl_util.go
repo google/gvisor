@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -42,6 +43,7 @@ import (
 type GenericDirectoryFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DirectoryFileDescriptionDefaultImpl
+	vfs.LockFD
 
 	vfsfd    vfs.FileDescription
 	children *OrderedChildren
@@ -55,9 +57,9 @@ type GenericDirectoryFD struct {
 
 // NewGenericDirectoryFD creates a new GenericDirectoryFD and returns its
 // dentry.
-func NewGenericDirectoryFD(m *vfs.Mount, d *vfs.Dentry, children *OrderedChildren, opts *vfs.OpenOptions) (*GenericDirectoryFD, error) {
+func NewGenericDirectoryFD(m *vfs.Mount, d *vfs.Dentry, children *OrderedChildren, locks *lock.FileLocks, opts *vfs.OpenOptions) (*GenericDirectoryFD, error) {
 	fd := &GenericDirectoryFD{}
-	if err := fd.Init(children, opts); err != nil {
+	if err := fd.Init(children, locks, opts); err != nil {
 		return nil, err
 	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, m, d, &vfs.FileDescriptionOptions{}); err != nil {
@@ -69,11 +71,12 @@ func NewGenericDirectoryFD(m *vfs.Mount, d *vfs.Dentry, children *OrderedChildre
 // Init initializes a GenericDirectoryFD. Use it when overriding
 // GenericDirectoryFD. Caller must call fd.VFSFileDescription.Init() with the
 // correct implementation.
-func (fd *GenericDirectoryFD) Init(children *OrderedChildren, opts *vfs.OpenOptions) error {
+func (fd *GenericDirectoryFD) Init(children *OrderedChildren, locks *lock.FileLocks, opts *vfs.OpenOptions) error {
 	if vfs.AccessTypesForOpenFlags(opts)&vfs.MayWrite != 0 {
 		// Can't open directories for writing.
 		return syserror.EISDIR
 	}
+	fd.LockFD.Init(locks)
 	fd.children = children
 	return nil
 }

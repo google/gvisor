@@ -146,7 +146,7 @@ func (f *File) DecRef() {
 	f.DecRefWithDestructor(func() {
 		// Drop BSD style locks.
 		lockRng := lock.LockRange{Start: 0, End: lock.LockEOF}
-		f.Dirent.Inode.LockCtx.BSD.UnlockRegion(lock.UniqueID(f.UniqueID), lockRng)
+		f.Dirent.Inode.LockCtx.BSD.UnlockRegion(f, lockRng)
 
 		// Release resources held by the FileOperations.
 		f.FileOperations.Release()
