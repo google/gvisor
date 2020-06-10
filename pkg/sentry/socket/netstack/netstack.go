@@ -1246,6 +1246,18 @@ func getSockOptTCP(t *kernel.Task, ep commonEndpoint, name, outLen int) (interfa
 
 		return int32(time.Duration(v) / time.Second), nil
 
+	case linux.TCP_KEEPCNT:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		v, err := ep.GetSockOptInt(tcpip.KeepaliveCountOption)
+		if err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		return int32(v), nil
+
 	case linux.TCP_USER_TIMEOUT:
 		if outLen < sizeOfInt32 {
 			return nil, syserr.ErrInvalidArgument
@@ -1786,6 +1798,17 @@ func setSockOptTCP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *
 		}
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.KeepaliveIntervalOption(time.Second * time.Duration(v))))
 
+	case linux.TCP_KEEPCNT:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+
+		v := usermem.ByteOrder.Uint32(optVal)
+		if v < 1 || v > linux.MAX_TCP_KEEPCNT {
+			return syserr.ErrInvalidArgument
+		}
+		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.KeepaliveCountOption, int(v)))
+
 	case linux.TCP_USER_TIMEOUT:
 		if len(optVal) < sizeOfInt32 {
 			return syserr.ErrInvalidArgument
@@ -2115,30 +2138,20 @@ func emitUnimplementedEventTCP(t *kernel.Task, name int) {
 	switch name {
 	case linux.TCP_CONGESTION,
 		linux.TCP_CORK,
-		linux.TCP_DEFER_ACCEPT,
 		linux.TCP_FASTOPEN,
 		linux.TCP_FASTOPEN_CONNECT,
 		linux.TCP_FASTOPEN_KEY,
 		linux.TCP_FASTOPEN_NO_COOKIE,
-		linux.TCP_KEEPCNT,
-		linux.TCP_KEEPIDLE,
-		linux.TCP_KEEPINTVL,
-		linux.TCP_LINGER2,
-		linux.TCP_MAXSEG,
 		linux.TCP_QUEUE_SEQ,
-		linux.TCP_QUICKACK,
 		linux.TCP_REPAIR,
 		linux.TCP_REPAIR_QUEUE,
 		linux.TCP_REPAIR_WINDOW,
 		linux.TCP_SAVED_SYN,
 		linux.TCP_SAVE_SYN,
-		linux.TCP_SYNCNT,
 		linux.TCP_THIN_DUPACK,
 		linux.TCP_THIN_LINEAR_TIMEOUTS,
 		linux.TCP_TIMESTAMP,
-		linux.TCP_ULP,
-		linux.TCP_USER_TIMEOUT,
-		linux.TCP_WINDOW_CLAMP:
+		linux.TCP_ULP:
 
 		t.Kernel().EmitUnimplementedEvent(t)
 	}
