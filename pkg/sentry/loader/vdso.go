@@ -75,7 +75,7 @@ var _ fs.FileOperations = (*byteReader)(nil)
 
 // newByteReaderFile creates a fake file to read data from.
 //
-// TODO(gvisor.dev/issue/1623): Convert to VFS2.
+// TODO(gvisor.dev/issue/2921): Convert to VFS2.
 func newByteReaderFile(ctx context.Context, data []byte) *fs.File {
 	// Create a fake inode.
 	inode := fs.NewInode(
