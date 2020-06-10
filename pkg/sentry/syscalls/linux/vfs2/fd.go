@@ -168,7 +168,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		err := tmpfs.AddSeals(file, args[2].Uint())
 		return 0, nil, err
 	default:
-		// TODO(gvisor.dev/issue/1623): Everything else is not yet supported.
+		// TODO(gvisor.dev/issue/2920): Everything else is not yet supported.
 		return 0, nil, syserror.EINVAL
 	}
 }
