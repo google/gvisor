@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -32,6 +33,8 @@ type slaveInode struct {
 	kernfs.InodeNoopRefCount
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
+
+	locks lock.FileLocks
 
 	// Keep a reference to this inode's dentry.
 	dentry kernfs.Dentry
@@ -51,6 +54,7 @@ func (si *slaveInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs
 	fd := &slaveFileDescription{
 		inode: si,
 	}
+	fd.LockFD.Init(&si.locks)
 	if err := fd.vfsfd.Init(fd, opts.Flags, rp.Mount(), vfsd, &vfs.FileDescriptionOptions{}); err != nil {
 		si.DecRef()
 		return nil, err
@@ -91,6 +95,7 @@ func (si *slaveInode) SetStat(ctx context.Context, vfsfs *vfs.Filesystem, creds 
 type slaveFileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
+	vfs.LockFD
 
 	inode *slaveInode
 }

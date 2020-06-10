@@ -26,6 +26,7 @@ import (
 type fileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
+	vfs.LockFD
 }
 
 func (fd *fileDescription) filesystem() *filesystem {

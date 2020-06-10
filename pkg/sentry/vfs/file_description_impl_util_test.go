@@ -33,6 +33,7 @@ import (
 type fileDescription struct {
 	vfsfd FileDescription
 	FileDescriptionDefaultImpl
+	NoLockFD
 }
 
 // genCount contains the number of times its DynamicBytesSource.Generate()

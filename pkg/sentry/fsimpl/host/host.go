@@ -34,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	unixsocket "gvisor.dev/gvisor/pkg/sentry/socket/unix"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -181,6 +182,8 @@ func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDe
 type inode struct {
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
+
+	locks lock.FileLocks
 
 	// When the reference count reaches zero, the host fd is closed.
 	refs.AtomicRefCount
@@ -468,7 +471,7 @@ func (i *inode) open(ctx context.Context, d *vfs.Dentry, mnt *vfs.Mount, flags u
 			return nil, err
 		}
 		// Currently, we only allow Unix sockets to be imported.
-		return unixsocket.NewFileDescription(ep, ep.Type(), flags, mnt, d)
+		return unixsocket.NewFileDescription(ep, ep.Type(), flags, mnt, d, &i.locks)
 	}
 
 	// TODO(gvisor.dev/issue/1672): Whitelist specific file types here, so that
@@ -478,6 +481,7 @@ func (i *inode) open(ctx context.Context, d *vfs.Dentry, mnt *vfs.Mount, flags u
 			fileDescription: fileDescription{inode: i},
 			termios:         linux.DefaultSlaveTermios,
 		}
+		fd.LockFD.Init(&i.locks)
 		vfsfd := &fd.vfsfd
 		if err := vfsfd.Init(fd, flags, mnt, d, &vfs.FileDescriptionOptions{}); err != nil {
 			return nil, err
@@ -486,6 +490,7 @@ func (i *inode) open(ctx context.Context, d *vfs.Dentry, mnt *vfs.Mount, flags u
 	}
 
 	fd := &fileDescription{inode: i}
+	fd.LockFD.Init(&i.locks)
 	vfsfd := &fd.vfsfd
 	if err := vfsfd.Init(fd, flags, mnt, d, &vfs.FileDescriptionOptions{}); err != nil {
 		return nil, err
@@ -497,6 +502,7 @@ func (i *inode) open(ctx context.Context, d *vfs.Dentry, mnt *vfs.Mount, flags u
 type fileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
+	vfs.LockFD
 
 	// inode is vfsfd.Dentry().Impl().(*kernfs.Dentry).Inode().(*inode), but
 	// cached to reduce indirections and casting. fileDescription does not hold

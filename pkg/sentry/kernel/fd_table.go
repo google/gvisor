@@ -80,9 +80,6 @@ type FDTable struct {
 	refs.AtomicRefCount
 	k *Kernel
 
-	// uid is a unique identifier.
-	uid uint64
-
 	// mu protects below.
 	mu sync.Mutex `state:"nosave"`
 
@@ -130,7 +127,7 @@ func (f *FDTable) loadDescriptorTable(m map[int32]descriptor) {
 // drop drops the table reference.
 func (f *FDTable) drop(file *fs.File) {
 	// Release locks.
-	file.Dirent.Inode.LockCtx.Posix.UnlockRegion(lock.UniqueID(f.uid), lock.LockRange{0, lock.LockEOF})
+	file.Dirent.Inode.LockCtx.Posix.UnlockRegion(f, lock.LockRange{0, lock.LockEOF})
 
 	// Send inotify events.
 	d := file.Dirent
@@ -164,17 +161,9 @@ func (f *FDTable) dropVFS2(file *vfs.FileDescription) {
 	file.DecRef()
 }
 
-// ID returns a unique identifier for this FDTable.
-func (f *FDTable) ID() uint64 {
-	return f.uid
-}
-
 // NewFDTable allocates a new FDTable that may be used by tasks in k.
 func (k *Kernel) NewFDTable() *FDTable {
-	f := &FDTable{
-		k:   k,
-		uid: atomic.AddUint64(&k.fdMapUids, 1),
-	}
+	f := &FDTable{k: k}
 	f.init()
 	return f
 }

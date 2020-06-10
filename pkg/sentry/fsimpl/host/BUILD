@@ -39,6 +39,7 @@ go_library(
         "//pkg/sentry/unimpl",
         "//pkg/sentry/uniqueid",
         "//pkg/sentry/vfs",
+        "//pkg/sentry/vfs/lock",
         "//pkg/sync",
         "//pkg/syserr",
         "//pkg/syserror",

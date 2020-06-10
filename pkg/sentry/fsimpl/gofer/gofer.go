@@ -45,6 +45,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -52,6 +53,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -662,6 +664,8 @@ type dentry struct {
 	// If this dentry represents a synthetic named pipe, pipe is the pipe
 	// endpoint bound to this file.
 	pipe *pipe.VFSPipe
+
+	locks lock.FileLocks
 }
 
 // dentryAttrMask returns a p9.AttrMask enabling all attributes used by the
@@ -1366,6 +1370,9 @@ func (d *dentry) decLinks() {
 type fileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
+	vfs.LockFD
+
+	lockLogging sync.Once
 }
 
 func (fd *fileDescription) filesystem() *filesystem {
@@ -1415,4 +1422,20 @@ func (fd *fileDescription) Setxattr(ctx context.Context, opts vfs.SetxattrOption
 // Removexattr implements vfs.FileDescriptionImpl.Removexattr.
 func (fd *fileDescription) Removexattr(ctx context.Context, name string) error {
 	return fd.dentry().removexattr(ctx, auth.CredentialsFromContext(ctx), name)
+}
+
+// LockBSD implements vfs.FileDescriptionImpl.LockBSD.
+func (fd *fileDescription) LockBSD(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, block fslock.Blocker) error {
+	fd.lockLogging.Do(func() {
+		log.Infof("File lock using gofer file handled internally.")
+	})
+	return fd.LockFD.LockBSD(ctx, uid, t, block)
+}
+
+// LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
+func (fd *fileDescription) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, rng fslock.LockRange, block fslock.Blocker) error {
+	fd.lockLogging.Do(func() {
+		log.Infof("Range lock using gofer file handled internally.")
+	})
+	return fd.LockFD.LockPOSIX(ctx, uid, t, rng, block)
 }

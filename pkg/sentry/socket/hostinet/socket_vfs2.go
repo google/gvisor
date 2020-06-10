@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -35,6 +36,7 @@ import (
 type socketVFS2 struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
+	vfs.LockFD
 
 	// We store metadata for hostinet sockets internally. Technically, we should
 	// access metadata (e.g. through stat, chmod) on the host for correctness,
@@ -59,6 +61,7 @@ func newVFS2Socket(t *kernel.Task, family int, stype linux.SockType, protocol in
 			fd:       fd,
 		},
 	}
+	s.LockFD.Init(&lock.FileLocks{})
 	if err := fdnotifier.AddFD(int32(fd), &s.queue); err != nil {
 		return nil, syserr.FromError(err)
 	}

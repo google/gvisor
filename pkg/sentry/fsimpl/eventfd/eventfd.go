@@ -37,6 +37,7 @@ type EventFileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
+	vfs.NoLockFD
 
 	// queue is used to notify interested parties when the event object
 	// becomes readable or writable.

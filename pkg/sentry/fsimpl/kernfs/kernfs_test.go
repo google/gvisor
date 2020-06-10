@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -100,8 +101,10 @@ type readonlyDir struct {
 	kernfs.InodeNotSymlink
 	kernfs.InodeNoDynamicLookup
 	kernfs.InodeDirectoryNoNewChildren
-
 	kernfs.OrderedChildren
+
+	locks lock.FileLocks
+
 	dentry kernfs.Dentry
 }
 
@@ -117,7 +120,7 @@ func (fs *filesystem) newReadonlyDir(creds *auth.Credentials, mode linux.FileMod
 }
 
 func (d *readonlyDir) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), vfsd, &d.OrderedChildren, &opts)
+	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), vfsd, &d.OrderedChildren, &d.locks, &opts)
 	if err != nil {
 		return nil, err
 	}
@@ -128,10 +131,12 @@ type dir struct {
 	attrs
 	kernfs.InodeNotSymlink
 	kernfs.InodeNoDynamicLookup
+	kernfs.OrderedChildren
+
+	locks lock.FileLocks
 
 	fs     *filesystem
 	dentry kernfs.Dentry
-	kernfs.OrderedChildren
 }
 
 func (fs *filesystem) newDir(creds *auth.Credentials, mode linux.FileMode, contents map[string]*kernfs.Dentry) *kernfs.Dentry {
@@ -147,7 +152,7 @@ func (fs *filesystem) newDir(creds *auth.Credentials, mode linux.FileMode, conte
 }
 
 func (d *dir) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), vfsd, &d.OrderedChildren, &opts)
+	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), vfsd, &d.OrderedChildren, &d.locks, &opts)
 	if err != nil {
 		return nil, err
 	}

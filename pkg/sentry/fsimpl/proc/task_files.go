@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -775,6 +776,8 @@ type namespaceInode struct {
 	kernfs.InodeNoopRefCount
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
+
+	locks lock.FileLocks
 }
 
 var _ kernfs.Inode = (*namespaceInode)(nil)
@@ -791,6 +794,7 @@ func (i *namespaceInode) Init(creds *auth.Credentials, devMajor, devMinor uint32
 func (i *namespaceInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fd := &namespaceFD{inode: i}
 	i.IncRef()
+	fd.LockFD.Init(&i.locks)
 	if err := fd.vfsfd.Init(fd, opts.Flags, rp.Mount(), vfsd, &vfs.FileDescriptionOptions{}); err != nil {
 		return nil, err
 	}
@@ -801,6 +805,7 @@ func (i *namespaceInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *
 // /proc/[pid]/ns/*.
 type namespaceFD struct {
 	vfs.FileDescriptionDefaultImpl
+	vfs.LockFD
 
 	vfsfd vfs.FileDescription
 	inode *namespaceInode
@@ -824,9 +829,4 @@ func (fd *namespaceFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) err
 // Release implements FileDescriptionImpl.
 func (fd *namespaceFD) Release() {
 	fd.inode.DecRef()
-}
-
-// OnClose implements FileDescriptionImpl.
-func (*namespaceFD) OnClose(context.Context) error {
-	return nil
 }

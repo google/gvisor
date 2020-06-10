@@ -27,6 +27,7 @@ go_library(
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/vfs",
+        "//pkg/sentry/vfs/lock",
         "//pkg/sync",
         "//pkg/syserror",
         "//pkg/usermem",

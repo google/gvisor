@@ -998,9 +998,6 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			return 0, nil, err
 		}
 
-		// The lock uid is that of the Task's FDTable.
-		lockUniqueID := lock.UniqueID(t.FDTable().ID())
-
 		// These locks don't block; execute the non-blocking operation using the inode's lock
 		// context directly.
 		switch flock.Type {
@@ -1010,12 +1007,12 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			}
 			if cmd == linux.F_SETLK {
 				// Non-blocking lock, provide a nil lock.Blocker.
-				if !file.Dirent.Inode.LockCtx.Posix.LockRegion(lockUniqueID, lock.ReadLock, rng, nil) {
+				if !file.Dirent.Inode.LockCtx.Posix.LockRegion(t.FDTable(), lock.ReadLock, rng, nil) {
 					return 0, nil, syserror.EAGAIN
 				}
 			} else {
 				// Blocking lock, pass in the task to satisfy the lock.Blocker interface.
-				if !file.Dirent.Inode.LockCtx.Posix.LockRegion(lockUniqueID, lock.ReadLock, rng, t) {
+				if !file.Dirent.Inode.LockCtx.Posix.LockRegion(t.FDTable(), lock.ReadLock, rng, t) {
 					return 0, nil, syserror.EINTR
 				}
 			}
@@ -1026,18 +1023,18 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			}
 			if cmd == linux.F_SETLK {
 				// Non-blocking lock, provide a nil lock.Blocker.
-				if !file.Dirent.Inode.LockCtx.Posix.LockRegion(lockUniqueID, lock.WriteLock, rng, nil) {
+				if !file.Dirent.Inode.LockCtx.Posix.LockRegion(t.FDTable(), lock.WriteLock, rng, nil) {
 					return 0, nil, syserror.EAGAIN
 				}
 			} else {
 				// Blocking lock, pass in the task to satisfy the lock.Blocker interface.
-				if !file.Dirent.Inode.LockCtx.Posix.LockRegion(lockUniqueID, lock.WriteLock, rng, t) {
+				if !file.Dirent.Inode.LockCtx.Posix.LockRegion(t.FDTable(), lock.WriteLock, rng, t) {
 					return 0, nil, syserror.EINTR
 				}
 			}
 			return 0, nil, nil
 		case linux.F_UNLCK:
-			file.Dirent.Inode.LockCtx.Posix.UnlockRegion(lockUniqueID, rng)
+			file.Dirent.Inode.LockCtx.Posix.UnlockRegion(t.FDTable(), rng)
 			return 0, nil, nil
 		default:
 			return 0, nil, syserror.EINVAL
@@ -2157,22 +2154,6 @@ func Flock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	nonblocking := operation&linux.LOCK_NB != 0
 	operation &^= linux.LOCK_NB
 
-	// flock(2):
-	// Locks created by flock() are associated with an open file table entry. This means that
-	// duplicate file descriptors (created by, for example, fork(2) or dup(2)) refer to the
-	// same lock, and this lock may be modified or released using any of these descriptors. Furthermore,
-	// the lock is released either by an explicit LOCK_UN operation on any of these duplicate
-	// descriptors, or when all such descriptors have been closed.
-	//
-	// If a process uses open(2) (or similar) to obtain more than one descriptor for the same file,
-	// these descriptors are treated independently by flock(). An attempt to lock the file using
-	// one of these file descriptors may be denied by a lock that the calling process has already placed via
-	// another descriptor.
-	//
-	// We use the File UniqueID as the lock UniqueID because it needs to reference the same lock across dup(2)
-	// and fork(2).
-	lockUniqueID := lock.UniqueID(file.UniqueID)
-
 	// A BSD style lock spans the entire file.
 	rng := lock.LockRange{
 		Start: 0,
@@ -2183,29 +2164,29 @@ func Flock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.LOCK_EX:
 		if nonblocking {
 			// Since we're nonblocking we pass a nil lock.Blocker implementation.
-			if !file.Dirent.Inode.LockCtx.BSD.LockRegion(lockUniqueID, lock.WriteLock, rng, nil) {
+			if !file.Dirent.Inode.LockCtx.BSD.LockRegion(file, lock.WriteLock, rng, nil) {
 				return 0, nil, syserror.EWOULDBLOCK
 			}
 		} else {
 			// Because we're blocking we will pass the task to satisfy the lock.Blocker interface.
-			if !file.Dirent.Inode.LockCtx.BSD.LockRegion(lockUniqueID, lock.WriteLock, rng, t) {
+			if !file.Dirent.Inode.LockCtx.BSD.LockRegion(file, lock.WriteLock, rng, t) {
 				return 0, nil, syserror.EINTR
 			}
 		}
 	case linux.LOCK_SH:
 		if nonblocking {
 			// Since we're nonblocking we pass a nil lock.Blocker implementation.
-			if !file.Dirent.Inode.LockCtx.BSD.LockRegion(lockUniqueID, lock.ReadLock, rng, nil) {
+			if !file.Dirent.Inode.LockCtx.BSD.LockRegion(file, lock.ReadLock, rng, nil) {
 				return 0, nil, syserror.EWOULDBLOCK
 			}
 		} else {
 			// Because we're blocking we will pass the task to satisfy the lock.Blocker interface.
-			if !file.Dirent.Inode.LockCtx.BSD.LockRegion(lockUniqueID, lock.ReadLock, rng, t) {
+			if !file.Dirent.Inode.LockCtx.BSD.LockRegion(file, lock.ReadLock, rng, t) {
 				return 0, nil, syserror.EINTR
 			}
 		}
 	case linux.LOCK_UN:
-		file.Dirent.Inode.LockCtx.BSD.UnlockRegion(lockUniqueID, rng)
+		file.Dirent.Inode.LockCtx.BSD.UnlockRegion(file, rng)
 	default:
 		// flock(2): EINVAL operation is invalid.
 		return 0, nil, syserror.EINVAL
