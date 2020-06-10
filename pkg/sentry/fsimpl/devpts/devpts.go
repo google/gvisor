@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -116,6 +117,8 @@ type rootInode struct {
 	kernfs.InodeNotSymlink
 	kernfs.OrderedChildren
 
+	locks lock.FileLocks
+
 	// Keep a reference to this inode's dentry.
 	dentry kernfs.Dentry
 
@@ -183,7 +186,7 @@ func (i *rootInode) masterClose(t *Terminal) {
 
 // Open implements kernfs.Inode.Open.
 func (i *rootInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), vfsd, &i.OrderedChildren, &opts)
+	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), vfsd, &i.OrderedChildren, &i.locks, &opts)
 	if err != nil {
 		return nil, err
 	}

@@ -70,7 +70,6 @@ func (x *FDTable) save(m state.Map) {
 	m.SaveValue("descriptorTable", descriptorTable)
 	m.Save("AtomicRefCount", &x.AtomicRefCount)
 	m.Save("k", &x.k)
-	m.Save("uid", &x.uid)
 	m.Save("next", &x.next)
 	m.Save("used", &x.used)
 }
@@ -79,7 +78,6 @@ func (x *FDTable) afterLoad() {}
 func (x *FDTable) load(m state.Map) {
 	m.Load("AtomicRefCount", &x.AtomicRefCount)
 	m.Load("k", &x.k)
-	m.Load("uid", &x.uid)
 	m.Load("next", &x.next)
 	m.Load("used", &x.used)
 	m.LoadValue("descriptorTable", new(map[int32]descriptor), func(y interface{}) { x.loadDescriptorTable(y.(map[int32]descriptor)) })
@@ -149,7 +147,6 @@ func (x *Kernel) save(m state.Map) {
 	m.Save("cpuClock", &x.cpuClock)
 	m.Save("cpuClockTickerDisabled", &x.cpuClockTickerDisabled)
 	m.Save("cpuClockTickerSetting", &x.cpuClockTickerSetting)
-	m.Save("fdMapUids", &x.fdMapUids)
 	m.Save("uniqueID", &x.uniqueID)
 	m.Save("nextInotifyCookie", &x.nextInotifyCookie)
 	m.Save("netlinkPorts", &x.netlinkPorts)
@@ -188,7 +185,6 @@ func (x *Kernel) load(m state.Map) {
 	m.Load("cpuClock", &x.cpuClock)
 	m.Load("cpuClockTickerDisabled", &x.cpuClockTickerDisabled)
 	m.Load("cpuClockTickerSetting", &x.cpuClockTickerSetting)
-	m.Load("fdMapUids", &x.fdMapUids)
 	m.Load("uniqueID", &x.uniqueID)
 	m.Load("nextInotifyCookie", &x.nextInotifyCookie)
 	m.Load("netlinkPorts", &x.netlinkPorts)

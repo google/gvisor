@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -38,7 +39,8 @@ type DynamicBytesFile struct {
 	InodeNotDirectory
 	InodeNotSymlink
 
-	data vfs.DynamicBytesSource
+	locks lock.FileLocks
+	data  vfs.DynamicBytesSource
 }
 
 var _ Inode = (*DynamicBytesFile)(nil)
@@ -55,7 +57,7 @@ func (f *DynamicBytesFile) Init(creds *auth.Credentials, devMajor, devMinor uint
 // Open implements Inode.Open.
 func (f *DynamicBytesFile) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fd := &DynamicBytesFD{}
-	if err := fd.Init(rp.Mount(), vfsd, f.data, opts.Flags); err != nil {
+	if err := fd.Init(rp.Mount(), vfsd, f.data, &f.locks, opts.Flags); err != nil {
 		return nil, err
 	}
 	return &fd.vfsfd, nil
@@ -77,13 +79,15 @@ func (*DynamicBytesFile) SetStat(context.Context, *vfs.Filesystem, *auth.Credent
 type DynamicBytesFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DynamicBytesFileDescriptionImpl
+	vfs.LockFD
 
 	vfsfd vfs.FileDescription
 	inode Inode
 }
 
 // Init initializes a DynamicBytesFD.
-func (fd *DynamicBytesFD) Init(m *vfs.Mount, d *vfs.Dentry, data vfs.DynamicBytesSource, flags uint32) error {
+func (fd *DynamicBytesFD) Init(m *vfs.Mount, d *vfs.Dentry, data vfs.DynamicBytesSource, locks *lock.FileLocks, flags uint32) error {
+	fd.LockFD.Init(locks)
 	if err := fd.vfsfd.Init(fd, flags, m, d, &vfs.FileDescriptionOptions{}); err != nil {
 		return err
 	}

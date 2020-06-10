@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -363,28 +362,6 @@ func (fd *regularFileFD) Seek(ctx context.Context, offset int64, whence int32) (
 
 // Sync implements vfs.FileDescriptionImpl.Sync.
 func (fd *regularFileFD) Sync(ctx context.Context) error {
-	return nil
-}
-
-// LockBSD implements vfs.FileDescriptionImpl.LockBSD.
-func (fd *regularFileFD) LockBSD(ctx context.Context, uid lock.UniqueID, t lock.LockType, block lock.Blocker) error {
-	return fd.inode().lockBSD(uid, t, block)
-}
-
-// UnlockBSD implements vfs.FileDescriptionImpl.UnlockBSD.
-func (fd *regularFileFD) UnlockBSD(ctx context.Context, uid lock.UniqueID) error {
-	fd.inode().unlockBSD(uid)
-	return nil
-}
-
-// LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
-func (fd *regularFileFD) LockPOSIX(ctx context.Context, uid lock.UniqueID, t lock.LockType, rng lock.LockRange, block lock.Blocker) error {
-	return fd.inode().lockPOSIX(uid, t, rng, block)
-}
-
-// UnlockPOSIX implements vfs.FileDescriptionImpl.UnlockPOSIX.
-func (fd *regularFileFD) UnlockPOSIX(ctx context.Context, uid lock.UniqueID, rng lock.LockRange) error {
-	fd.inode().unlockPOSIX(uid, rng)
 	return nil
 }
 

@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -555,6 +556,8 @@ type StaticDirectory struct {
 	InodeAttrs
 	InodeNoDynamicLookup
 	OrderedChildren
+
+	locks lock.FileLocks
 }
 
 var _ Inode = (*StaticDirectory)(nil)
@@ -584,7 +587,7 @@ func (s *StaticDirectory) Init(creds *auth.Credentials, devMajor, devMinor uint3
 
 // Open implements kernfs.Inode.
 func (s *StaticDirectory) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd, err := NewGenericDirectoryFD(rp.Mount(), vfsd, &s.OrderedChildren, &opts)
+	fd, err := NewGenericDirectoryFD(rp.Mount(), vfsd, &s.OrderedChildren, &s.locks, &opts)
 	if err != nil {
 		return nil, err
 	}

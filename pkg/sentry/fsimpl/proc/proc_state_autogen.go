@@ -23,6 +23,7 @@ func (x *subtasksInode) save(m state.Map) {
 	m.Save("InodeAttrs", &x.InodeAttrs)
 	m.Save("OrderedChildren", &x.OrderedChildren)
 	m.Save("AlwaysValid", &x.AlwaysValid)
+	m.Save("locks", &x.locks)
 	m.Save("fs", &x.fs)
 	m.Save("task", &x.task)
 	m.Save("pidns", &x.pidns)
@@ -36,6 +37,7 @@ func (x *subtasksInode) load(m state.Map) {
 	m.Load("InodeAttrs", &x.InodeAttrs)
 	m.Load("OrderedChildren", &x.OrderedChildren)
 	m.Load("AlwaysValid", &x.AlwaysValid)
+	m.Load("locks", &x.locks)
 	m.Load("fs", &x.fs)
 	m.Load("task", &x.task)
 	m.Load("pidns", &x.pidns)
@@ -50,6 +52,7 @@ func (x *taskInode) save(m state.Map) {
 	m.Save("InodeNoDynamicLookup", &x.InodeNoDynamicLookup)
 	m.Save("InodeAttrs", &x.InodeAttrs)
 	m.Save("OrderedChildren", &x.OrderedChildren)
+	m.Save("locks", &x.locks)
 	m.Save("task", &x.task)
 }
 
@@ -60,6 +63,7 @@ func (x *taskInode) load(m state.Map) {
 	m.Load("InodeNoDynamicLookup", &x.InodeNoDynamicLookup)
 	m.Load("InodeAttrs", &x.InodeAttrs)
 	m.Load("OrderedChildren", &x.OrderedChildren)
+	m.Load("locks", &x.locks)
 	m.Load("task", &x.task)
 }
 
@@ -475,6 +479,7 @@ func (x *tasksInode) save(m state.Map) {
 	m.Save("InodeAttrs", &x.InodeAttrs)
 	m.Save("OrderedChildren", &x.OrderedChildren)
 	m.Save("AlwaysValid", &x.AlwaysValid)
+	m.Save("locks", &x.locks)
 	m.Save("fs", &x.fs)
 	m.Save("pidns", &x.pidns)
 	m.Save("selfSymlink", &x.selfSymlink)
@@ -489,6 +494,7 @@ func (x *tasksInode) load(m state.Map) {
 	m.Load("InodeAttrs", &x.InodeAttrs)
 	m.Load("OrderedChildren", &x.OrderedChildren)
 	m.Load("AlwaysValid", &x.AlwaysValid)
+	m.Load("locks", &x.locks)
 	m.Load("fs", &x.fs)
 	m.Load("pidns", &x.pidns)
 	m.Load("selfSymlink", &x.selfSymlink)

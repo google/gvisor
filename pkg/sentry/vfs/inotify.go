@@ -57,6 +57,7 @@ type Inotify struct {
 	vfsfd FileDescription
 	FileDescriptionDefaultImpl
 	DentryMetadataFileDescriptionImpl
+	NoLockFD
 
 	// Unique identifier for this inotify instance. We don't just reuse the
 	// inotify fd because fds can be duped. These should not be exposed to the
