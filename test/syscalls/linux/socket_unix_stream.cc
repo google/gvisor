@@ -89,6 +89,20 @@ TEST_P(StreamUnixSocketPairTest, ReadOneSideClosedWithUnreadData) {
               SyscallFailsWithErrno(ECONNRESET));
 }
 
+TEST_P(StreamUnixSocketPairTest, Sendto) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  struct sockaddr_un addr = {};
+  addr.sun_family = AF_UNIX;
+  constexpr char kPath[] = "\0nonexistent";
+  memcpy(addr.sun_path, kPath, sizeof(kPath));
+
+  constexpr char kStr[] = "abc";
+  ASSERT_THAT(sendto(sockets->second_fd(), kStr, 3, 0, (struct sockaddr*)&addr,
+                     sizeof(addr)),
+              SyscallFailsWithErrno(EISCONN));
+}
+
 INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, StreamUnixSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(VecCat<SocketPairKind>(

@@ -43,6 +43,24 @@ TEST_P(SeqpacketUnixSocketPairTest, ReadOneSideClosed) {
               SyscallSucceedsWithValue(0));
 }
 
+TEST_P(SeqpacketUnixSocketPairTest, Sendto) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  struct sockaddr_un addr = {};
+  addr.sun_family = AF_UNIX;
+  constexpr char kPath[] = "\0nonexistent";
+  memcpy(addr.sun_path, kPath, sizeof(kPath));
+
+  constexpr char kStr[] = "abc";
+  ASSERT_THAT(sendto(sockets->second_fd(), kStr, 3, 0, (struct sockaddr*)&addr,
+                     sizeof(addr)),
+              SyscallSucceedsWithValue(3));
+
+  char data[10] = {};
+  ASSERT_THAT(read(sockets->first_fd(), data, sizeof(data)),
+              SyscallSucceedsWithValue(3));
+}
+
 }  // namespace
 
 }  // namespace testing
