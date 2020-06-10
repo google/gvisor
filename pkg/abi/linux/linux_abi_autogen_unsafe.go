@@ -124,7 +124,7 @@ func (s *Statx) UnmarshalBytes(src []byte) {
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
 func (s *Statx) Packed() bool {
-    return s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() && s.Atime.Packed()
+    return s.Ctime.Packed() && s.Mtime.Packed() && s.Atime.Packed() && s.Btime.Packed()
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
@@ -204,7 +204,7 @@ func (s *Statx) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (s *Statx) WriteTo(w io.Writer) (int64, error) {
-    if !s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() && s.Atime.Packed() {
+    if !s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() {
         // Type Statx doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, s.SizeBytes())
         s.MarshalBytes(buf)
