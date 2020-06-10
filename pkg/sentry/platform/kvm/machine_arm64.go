@@ -106,7 +106,7 @@ func (m *machine) dropPageTables(pt *pagetables.PageTables) {
 	defer m.mu.Unlock()
 
 	// Clear from all PCIDs.
-	for _, c := range m.vCPUs {
+	for _, c := range m.vCPUsByID {
 		if c.PCIDs != nil {
 			c.PCIDs.Drop(pt)
 		}
