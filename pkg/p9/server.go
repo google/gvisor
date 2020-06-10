@@ -482,10 +482,10 @@ func (cs *connState) handle(m message) (r message) {
 	defer func() {
 		if r == nil {
 			// Don't allow a panic to propagate.
-			recover()
+			err := recover()
 
 			// Include a useful log message.
-			log.Warningf("panic in handler: %s", debug.Stack())
+			log.Warningf("panic in handler: %v\n%s", err, debug.Stack())
 
 			// Wrap in an EFAULT error; we don't really have a
 			// better way to describe this kind of error. It will
