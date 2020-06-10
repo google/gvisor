@@ -21,6 +21,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/file_base.h"
+#include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -33,11 +34,6 @@ namespace testing {
 namespace {
 
 class FlockTest : public FileTest {};
-
-TEST_F(FlockTest, BadFD) {
-  // EBADF: fd is not an open file descriptor.
-  ASSERT_THAT(flock(-1, 0), SyscallFailsWithErrno(EBADF));
-}
 
 TEST_F(FlockTest, InvalidOpCombinations) {
   // The operation cannot be both exclusive and shared.
@@ -55,15 +51,6 @@ TEST_F(FlockTest, NoOperationSpecified) {
   // Not specifying an operation is invalid.
   ASSERT_THAT(flock(test_file_fd_.get(), LOCK_NB),
               SyscallFailsWithErrno(EINVAL));
-}
-
-TEST(FlockTestNoFixture, FlockSupportsPipes) {
-  int fds[2];
-  ASSERT_THAT(pipe(fds), SyscallSucceeds());
-
-  EXPECT_THAT(flock(fds[0], LOCK_EX | LOCK_NB), SyscallSucceeds());
-  EXPECT_THAT(close(fds[0]), SyscallSucceeds());
-  EXPECT_THAT(close(fds[1]), SyscallSucceeds());
 }
 
 TEST_F(FlockTest, TestSimpleExLock) {
@@ -581,6 +568,66 @@ TEST_F(FlockTest, BlockingLockFirstExclusiveSecondExclusive_NoRandomSave) {
   // Release the exclusive lock allowing the blocked thread to proceed.
   // We don't save to avoid wild discrepencies in timing.
   EXPECT_THAT(flock(test_file_fd_.get(), LOCK_UN), SyscallSucceeds());
+}
+
+TEST(FlockTestNoFixture, BadFD) {
+  // EBADF: fd is not an open file descriptor.
+  ASSERT_THAT(flock(-1, 0), SyscallFailsWithErrno(EBADF));
+}
+
+TEST(FlockTestNoFixture, FlockDir) {
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_RDONLY, 0000));
+  EXPECT_THAT(flock(fd.get(), LOCK_EX | LOCK_NB), SyscallSucceeds());
+}
+
+TEST(FlockTestNoFixture, FlockSymlink) {
+  // TODO(gvisor.dev/issue/2782): Replace with IsRunningWithVFS1() when O_PATH
+  // is supported.
+  SKIP_IF(IsRunningOnGvisor());
+
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto symlink = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateSymlinkTo(GetAbsoluteTestTmpdir(), file.path()));
+
+  auto fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(symlink.path(), O_RDONLY | O_PATH, 0000));
+  EXPECT_THAT(flock(fd.get(), LOCK_EX | LOCK_NB), SyscallFailsWithErrno(EBADF));
+}
+
+TEST(FlockTestNoFixture, FlockProc) {
+  auto fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/self/status", O_RDONLY, 0000));
+  EXPECT_THAT(flock(fd.get(), LOCK_EX | LOCK_NB), SyscallSucceeds());
+}
+
+TEST(FlockTestNoFixture, FlockPipe) {
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+
+  EXPECT_THAT(flock(fds[0], LOCK_EX | LOCK_NB), SyscallSucceeds());
+  // Check that the pipe was locked above.
+  EXPECT_THAT(flock(fds[1], LOCK_EX | LOCK_NB), SyscallFailsWithErrno(EAGAIN));
+
+  EXPECT_THAT(flock(fds[0], LOCK_UN), SyscallSucceeds());
+  EXPECT_THAT(flock(fds[1], LOCK_EX | LOCK_NB), SyscallSucceeds());
+
+  EXPECT_THAT(close(fds[0]), SyscallSucceeds());
+  EXPECT_THAT(close(fds[1]), SyscallSucceeds());
+}
+
+TEST(FlockTestNoFixture, FlockSocket) {
+  int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  ASSERT_THAT(sock, SyscallSucceeds());
+
+  struct sockaddr_un addr =
+      ASSERT_NO_ERRNO_AND_VALUE(UniqueUnixAddr(true /* abstract */, AF_UNIX));
+  ASSERT_THAT(
+      bind(sock, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
+      SyscallSucceeds());
+
+  EXPECT_THAT(flock(sock, LOCK_EX | LOCK_NB), SyscallSucceeds());
+  EXPECT_THAT(close(sock), SyscallSucceeds());
 }
 
 }  // namespace

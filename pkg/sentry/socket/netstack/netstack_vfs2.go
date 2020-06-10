@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -38,6 +39,7 @@ type SocketVFS2 struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
+	vfs.LockFD
 
 	socketOpsCommon
 }
@@ -64,6 +66,7 @@ func NewVFS2(t *kernel.Task, family int, skType linux.SockType, protocol int, qu
 			protocol: protocol,
 		},
 	}
+	s.LockFD.Init(&lock.FileLocks{})
 	vfsfd := &s.vfsfd
 	if err := vfsfd.Init(s, linux.O_RDWR, mnt, d, &vfs.FileDescriptionOptions{
 		DenyPRead:         true,

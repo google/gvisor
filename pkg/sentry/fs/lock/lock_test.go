@@ -42,9 +42,6 @@ func equals(e0, e1 []entry) bool {
 		if !reflect.DeepEqual(e0[i].LockRange, e1[i].LockRange) {
 			return false
 		}
-		if e0[i].Lock.HasWriter != e1[i].Lock.HasWriter {
-			return false
-		}
 		if e0[i].Lock.Writer != e1[i].Lock.Writer {
 			return false
 		}
@@ -105,7 +102,7 @@ func TestCanLock(t *testing.T) {
 			LockRange: LockRange{2048, 3072},
 		},
 		{
-			Lock:      Lock{HasWriter: true, Writer: 1},
+			Lock:      Lock{Writer: 1},
 			LockRange: LockRange{3072, 4096},
 		},
 	})
@@ -241,7 +238,7 @@ func TestSetLock(t *testing.T) {
 			// 0                                  max uint64
 			after: []entry{
 				{
-					Lock:      Lock{HasWriter: true, Writer: 0},
+					Lock:      Lock{Writer: 0},
 					LockRange: LockRange{0, LockEOF},
 				},
 			},
@@ -254,7 +251,7 @@ func TestSetLock(t *testing.T) {
 			// 0                                  max uint64
 			before: []entry{
 				{
-					Lock:      Lock{HasWriter: true, Writer: 0},
+					Lock:      Lock{Writer: 0},
 					LockRange: LockRange{0, LockEOF},
 				},
 			},
@@ -273,7 +270,7 @@ func TestSetLock(t *testing.T) {
 					LockRange: LockRange{0, 4096},
 				},
 				{
-					Lock:      Lock{HasWriter: true, Writer: 0},
+					Lock:      Lock{Writer: 0},
 					LockRange: LockRange{4096, LockEOF},
 				},
 			},
@@ -301,7 +298,7 @@ func TestSetLock(t *testing.T) {
 			// 0          4096                    max uint64
 			after: []entry{
 				{
-					Lock:      Lock{HasWriter: true, Writer: 0},
+					Lock:      Lock{Writer: 0},
 					LockRange: LockRange{0, 4096},
 				},
 				{
@@ -318,7 +315,7 @@ func TestSetLock(t *testing.T) {
 			// 0                                  max uint64
 			before: []entry{
 				{
-					Lock:      Lock{HasWriter: true, Writer: 0},
+					Lock:      Lock{Writer: 0},
 					LockRange: LockRange{0, LockEOF},
 				},
 			},
@@ -550,7 +547,7 @@ func TestSetLock(t *testing.T) {
 					LockRange: LockRange{0, 1024},
 				},
 				{
-					Lock:      Lock{HasWriter: true, Writer: 0},
+					Lock:      Lock{Writer: 0},
 					LockRange: LockRange{1024, 4096},
 				},
 				{
@@ -594,7 +591,7 @@ func TestSetLock(t *testing.T) {
 					LockRange: LockRange{0, 1024},
 				},
 				{
-					Lock:      Lock{HasWriter: true, Writer: 0},
+					Lock:      Lock{Writer: 0},
 					LockRange: LockRange{1024, 3072},
 				},
 				{
@@ -633,7 +630,7 @@ func TestSetLock(t *testing.T) {
 			// 0            1024        2048        4096   max uint64
 			before: []entry{
 				{
-					Lock:      Lock{HasWriter: true, Writer: 0},
+					Lock:      Lock{Writer: 0},
 					LockRange: LockRange{0, 1024},
 				},
 				{
@@ -663,11 +660,11 @@ func TestSetLock(t *testing.T) {
 			// 0            1024                     max uint64
 			after: []entry{
 				{
-					Lock:      Lock{HasWriter: true, Writer: 0},
+					Lock:      Lock{Writer: 0},
 					LockRange: LockRange{0, 1024},
 				},
 				{
-					Lock:      Lock{HasWriter: true, Writer: 0},
+					Lock:      Lock{Writer: 0},
 					LockRange: LockRange{1024, LockEOF},
 				},
 			},
@@ -675,28 +672,30 @@ func TestSetLock(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		l := fill(test.before)
+		t.Run(test.name, func(t *testing.T) {
+			l := fill(test.before)
 
-		r := LockRange{Start: test.start, End: test.end}
-		success := l.lock(test.uid, test.lockType, r)
-		var got []entry
-		for seg := l.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
-			got = append(got, entry{
-				Lock:      seg.Value(),
-				LockRange: seg.Range(),
-			})
-		}
-
-		if success != test.success {
-			t.Errorf("%s: setlock(%v, %+v, %d, %d) got success %v, want %v", test.name, test.before, r, test.uid, test.lockType, success, test.success)
-			continue
-		}
-
-		if success {
-			if !equals(got, test.after) {
-				t.Errorf("%s: got set %+v, want %+v", test.name, got, test.after)
+			r := LockRange{Start: test.start, End: test.end}
+			success := l.lock(test.uid, test.lockType, r)
+			var got []entry
+			for seg := l.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+				got = append(got, entry{
+					Lock:      seg.Value(),
+					LockRange: seg.Range(),
+				})
 			}
-		}
+
+			if success != test.success {
+				t.Errorf("setlock(%v, %+v, %d, %d) got success %v, want %v", test.before, r, test.uid, test.lockType, success, test.success)
+				return
+			}
+
+			if success {
+				if !equals(got, test.after) {
+					t.Errorf("got set %+v, want %+v", got, test.after)
+				}
+			}
+		})
 	}
 }
 
@@ -782,7 +781,7 @@ func TestUnlock(t *testing.T) {
 			// 0                                  max uint64
 			before: []entry{
 				{
-					Lock:      Lock{HasWriter: true, Writer: 0},
+					Lock:      Lock{Writer: 0},
 					LockRange: LockRange{0, LockEOF},
 				},
 			},
@@ -824,7 +823,7 @@ func TestUnlock(t *testing.T) {
 			// 0                                  max uint64
 			before: []entry{
 				{
-					Lock:      Lock{HasWriter: true, Writer: 0},
+					Lock:      Lock{Writer: 0},
 					LockRange: LockRange{0, LockEOF},
 				},
 			},
@@ -837,7 +836,7 @@ func TestUnlock(t *testing.T) {
 			// 0     4096                    max uint64
 			after: []entry{
 				{
-					Lock:      Lock{HasWriter: true, Writer: 0},
+					Lock:      Lock{Writer: 0},
 					LockRange: LockRange{4096, LockEOF},
 				},
 			},
@@ -876,7 +875,7 @@ func TestUnlock(t *testing.T) {
 			// 0                                  max uint64
 			before: []entry{
 				{
-					Lock:      Lock{HasWriter: true, Writer: 0},
+					Lock:      Lock{Writer: 0},
 					LockRange: LockRange{0, LockEOF},
 				},
 			},
@@ -889,7 +888,7 @@ func TestUnlock(t *testing.T) {
 			// 0                          4096
 			after: []entry{
 				{
-					Lock:      Lock{HasWriter: true, Writer: 0},
+					Lock:      Lock{Writer: 0},
 					LockRange: LockRange{0, 4096},
 				},
 			},
@@ -906,7 +905,7 @@ func TestUnlock(t *testing.T) {
 					LockRange: LockRange{0, 1024},
 				},
 				{
-					Lock:      Lock{HasWriter: true, Writer: 0},
+					Lock:      Lock{Writer: 0},
 					LockRange: LockRange{1024, 4096},
 				},
 				{
@@ -974,7 +973,7 @@ func TestUnlock(t *testing.T) {
 			// 0        1024    4096            max uint64
 			before: []entry{
 				{
-					Lock:      Lock{HasWriter: true, Writer: 0},
+					Lock:      Lock{Writer: 0},
 					LockRange: LockRange{0, 1024},
 				},
 				{
@@ -991,7 +990,7 @@ func TestUnlock(t *testing.T) {
 			// 0           8    4096            max uint64
 			after: []entry{
 				{
-					Lock:      Lock{HasWriter: true, Writer: 0},
+					Lock:      Lock{Writer: 0},
 					LockRange: LockRange{0, 8},
 				},
 				{
@@ -1008,7 +1007,7 @@ func TestUnlock(t *testing.T) {
 			// 0        1024    4096            max uint64
 			before: []entry{
 				{
-					Lock:      Lock{HasWriter: true, Writer: 0},
+					Lock:      Lock{Writer: 0},
 					LockRange: LockRange{0, 1024},
 				},
 				{
@@ -1025,7 +1024,7 @@ func TestUnlock(t *testing.T) {
 			// 0       1024     4096        8192      max uint64
 			after: []entry{
 				{
-					Lock:      Lock{HasWriter: true, Writer: 0},
+					Lock:      Lock{Writer: 0},
 					LockRange: LockRange{0, 1024},
 				},
 				{
@@ -1041,19 +1040,21 @@ func TestUnlock(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		l := fill(test.before)
+		t.Run(test.name, func(t *testing.T) {
+			l := fill(test.before)
 
-		r := LockRange{Start: test.start, End: test.end}
-		l.unlock(test.uid, r)
-		var got []entry
-		for seg := l.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
-			got = append(got, entry{
-				Lock:      seg.Value(),
-				LockRange: seg.Range(),
-			})
-		}
-		if !equals(got, test.after) {
-			t.Errorf("%s: got set %+v, want %+v", test.name, got, test.after)
-		}
+			r := LockRange{Start: test.start, End: test.end}
+			l.unlock(test.uid, r)
+			var got []entry
+			for seg := l.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+				got = append(got, entry{
+					Lock:      seg.Value(),
+					LockRange: seg.Range(),
+				})
+			}
+			if !equals(got, test.after) {
+				t.Errorf("got set %+v, want %+v", got, test.after)
+			}
+		})
 	}
 }

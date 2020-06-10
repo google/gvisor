@@ -31,6 +31,7 @@ type EpollInstance struct {
 	vfsfd FileDescription
 	FileDescriptionDefaultImpl
 	DentryMetadataFileDescriptionImpl
+	NoLockFD
 
 	// q holds waiters on this EpollInstance.
 	q waiter.Queue

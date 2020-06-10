@@ -802,10 +802,13 @@ cc_binary(
     ],
     linkstatic = 1,
     deps = [
+        ":socket_test_util",
         "//test/util:file_descriptor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
         gtest,
+        "//test/util:epoll_util",
+        "//test/util:eventfd_util",
         "//test/util:posix_error",
         "//test/util:temp_path",
         "//test/util:test_main",

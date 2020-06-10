@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -81,7 +82,8 @@ type inode struct {
 	kernfs.InodeNotSymlink
 	kernfs.InodeNoopRefCount
 
-	pipe *pipe.VFSPipe
+	locks lock.FileLocks
+	pipe  *pipe.VFSPipe
 
 	ino uint64
 	uid auth.KUID
@@ -147,7 +149,7 @@ func (i *inode) SetStat(ctx context.Context, vfsfs *vfs.Filesystem, creds *auth.
 
 // Open implements kernfs.Inode.Open.
 func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	return i.pipe.Open(ctx, rp.Mount(), vfsd, opts.Flags)
+	return i.pipe.Open(ctx, rp.Mount(), vfsd, opts.Flags, &i.locks)
 }
 
 // NewConnectedPipeFDs returns a pair of FileDescriptions representing the read

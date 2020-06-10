@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -53,6 +54,8 @@ type inode struct {
 
 	// diskInode gives us access to the inode struct on disk. Immutable.
 	diskInode disklayout.Inode
+
+	locks lock.FileLocks
 
 	// This is immutable. The first field of the implementations must have inode
 	// as the first field to ensure temporality.
@@ -157,6 +160,7 @@ func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts *vfs.OpenOpt
 	switch in.impl.(type) {
 	case *regularFile:
 		var fd regularFileFD
+		fd.LockFD.Init(&in.locks)
 		if err := fd.vfsfd.Init(&fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{}); err != nil {
 			return nil, err
 		}
@@ -168,6 +172,7 @@ func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts *vfs.OpenOpt
 			return nil, syserror.EISDIR
 		}
 		var fd directoryFD
+		fd.LockFD.Init(&in.locks)
 		if err := fd.vfsfd.Init(&fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{}); err != nil {
 			return nil, err
 		}
@@ -178,6 +183,7 @@ func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts *vfs.OpenOpt
 			return nil, syserror.ELOOP
 		}
 		var fd symlinkFD
+		fd.LockFD.Init(&in.locks)
 		fd.vfsfd.Init(&fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{})
 		return &fd.vfsfd, nil
 	default:

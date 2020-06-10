@@ -194,11 +194,6 @@ type Kernel struct {
 	// cpuClockTickerSetting is protected by runningTasksMu.
 	cpuClockTickerSetting ktime.Setting
 
-	// fdMapUids is an ever-increasing counter for generating FDTable uids.
-	//
-	// fdMapUids is mutable, and is accessed using atomic memory operations.
-	fdMapUids uint64
-
 	// uniqueID is used to generate unique identifiers.
 	//
 	// uniqueID is mutable, and is accessed using atomic memory operations.

@@ -62,7 +62,7 @@ func Override() {
 	s.Table[55] = syscalls.Supported("getsockopt", GetSockOpt)
 	s.Table[59] = syscalls.Supported("execve", Execve)
 	s.Table[72] = syscalls.Supported("fcntl", Fcntl)
-	delete(s.Table, 73) // flock
+	s.Table[73] = syscalls.Supported("fcntl", Flock)
 	s.Table[74] = syscalls.Supported("fsync", Fsync)
 	s.Table[75] = syscalls.Supported("fdatasync", Fdatasync)
 	s.Table[76] = syscalls.Supported("truncate", Truncate)

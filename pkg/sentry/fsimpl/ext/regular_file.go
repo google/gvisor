@@ -77,6 +77,7 @@ func (in *inode) isRegular() bool {
 // vfs.FileDescriptionImpl.
 type regularFileFD struct {
 	fileDescription
+	vfs.LockFD
 
 	// off is the file offset. off is accessed using atomic memory operations.
 	off int64

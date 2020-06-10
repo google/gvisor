@@ -34,6 +34,7 @@ go_library(
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/control",
         "//pkg/sentry/vfs",
+        "//pkg/sentry/vfs/lock",
         "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/tcpip/stack",

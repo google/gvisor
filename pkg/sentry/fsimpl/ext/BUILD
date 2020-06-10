@@ -60,6 +60,7 @@ go_library(
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/syscalls/linux",
         "//pkg/sentry/vfs",
+        "//pkg/sentry/vfs/lock",
         "//pkg/sync",
         "//pkg/syserror",
         "//pkg/usermem",
