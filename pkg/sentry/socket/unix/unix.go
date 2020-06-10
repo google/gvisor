@@ -459,15 +459,25 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 		To:       nil,
 	}
 	if len(to) > 0 {
-		ep, err := extractEndpoint(t, to)
-		if err != nil {
-			return 0, err
-		}
-		defer ep.Release()
-		w.To = ep
+		switch s.stype {
+		case linux.SOCK_SEQPACKET:
+			to = nil
+		case linux.SOCK_STREAM:
+			if s.State() == linux.SS_CONNECTED {
+				return 0, syserr.ErrAlreadyConnected
+			}
+			return 0, syserr.ErrNotSupported
+		default:
+			ep, err := extractEndpoint(t, to)
+			if err != nil {
+				return 0, err
+			}
+			defer ep.Release()
+			w.To = ep
 
-		if ep.Passcred() && w.Control.Credentials == nil {
-			w.Control.Credentials = control.MakeCreds(t)
+			if ep.Passcred() && w.Control.Credentials == nil {
+				w.Control.Credentials = control.MakeCreds(t)
+			}
 		}
 	}
 
