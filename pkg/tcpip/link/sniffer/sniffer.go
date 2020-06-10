@@ -47,13 +47,6 @@ var LogPackets uint32 = 1
 // LogPacketsToPCAP must be accessed atomically.
 var LogPacketsToPCAP uint32 = 1
 
-var transportProtocolMinSizes map[tcpip.TransportProtocolNumber]int = map[tcpip.TransportProtocolNumber]int{
-	header.ICMPv4ProtocolNumber: header.IPv4MinimumSize,
-	header.ICMPv6ProtocolNumber: header.IPv6MinimumSize,
-	header.UDPProtocolNumber:    header.UDPMinimumSize,
-	header.TCPProtocolNumber:    header.TCPMinimumSize,
-}
-
 type endpoint struct {
 	dispatcher stack.NetworkDispatcher
 	lower      stack.LinkEndpoint
@@ -296,13 +289,6 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, pkt *stack.P
 		return
 	default:
 		log.Infof("%s unknown network protocol", prefix)
-		return
-	}
-
-	// We aren't guaranteed to have a transport header - it's possible for
-	// writes via raw endpoints to contain only network headers.
-	if minSize, ok := transportProtocolMinSizes[tcpip.TransportProtocolNumber(transProto)]; ok && vv.Size() < minSize {
-		log.Infof("%s %v -> %v transport protocol: %d, but no transport header found (possible raw packet)", prefix, src, dst, transProto)
 		return
 	}
 
