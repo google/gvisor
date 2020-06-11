@@ -118,7 +118,7 @@ func newInode(fs *filesystem, inodeNum uint32) (*inode, error) {
 	}
 
 	// Build the inode based on its type.
-	inode := inode{
+	args := inodeArgs{
 		fs:        fs,
 		inodeNum:  inodeNum,
 		blkSize:   blkSize,
@@ -127,19 +127,19 @@ func newInode(fs *filesystem, inodeNum uint32) (*inode, error) {
 
 	switch diskInode.Mode().FileType() {
 	case linux.ModeSymlink:
-		f, err := newSymlink(inode)
+		f, err := newSymlink(args)
 		if err != nil {
 			return nil, err
 		}
 		return &f.inode, nil
 	case linux.ModeRegular:
-		f, err := newRegularFile(inode)
+		f, err := newRegularFile(args)
 		if err != nil {
 			return nil, err
 		}
 		return &f.inode, nil
 	case linux.ModeDirectory:
-		f, err := newDirectory(inode, fs.sb.IncompatibleFeatures().DirentFileType)
+		f, err := newDirectory(args, fs.sb.IncompatibleFeatures().DirentFileType)
 		if err != nil {
 			return nil, err
 		}
@@ -148,6 +148,21 @@ func newInode(fs *filesystem, inodeNum uint32) (*inode, error) {
 		// TODO(b/134676337): Return appropriate errors for sockets, pipes and devices.
 		return nil, syserror.EINVAL
 	}
+}
+
+type inodeArgs struct {
+	fs        *filesystem
+	inodeNum  uint32
+	blkSize   uint64
+	diskInode disklayout.Inode
+}
+
+func (in *inode) init(args inodeArgs, impl interface{}) {
+	in.fs = args.fs
+	in.inodeNum = args.inodeNum
+	in.blkSize = args.blkSize
+	in.diskInode = args.diskInode
+	in.impl = impl
 }
 
 // open creates and returns a file description for the dentry passed in.

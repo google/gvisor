@@ -54,16 +54,15 @@ type directory struct {
 }
 
 // newDirectory is the directory constructor.
-func newDirectory(inode inode, newDirent bool) (*directory, error) {
+func newDirectory(args inodeArgs, newDirent bool) (*directory, error) {
 	file := &directory{
-		inode:      inode,
 		childCache: make(map[string]*dentry),
 		childMap:   make(map[string]*dirent),
 	}
-	file.inode.impl = file
+	file.inode.init(args, file)
 
 	// Initialize childList by reading dirents from the underlying file.
-	if inode.diskInode.Flags().Index {
+	if args.diskInode.Flags().Index {
 		// TODO(b/134676337): Support hash tree directories. Currently only the '.'
 		// and '..' entries are read in.
 
@@ -74,7 +73,7 @@ func newDirectory(inode inode, newDirent bool) (*directory, error) {
 
 	// The dirents are organized in a linear array in the file data.
 	// Extract the file data and decode the dirents.
-	regFile, err := newRegularFile(inode)
+	regFile, err := newRegularFile(args)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +81,7 @@ func newDirectory(inode inode, newDirent bool) (*directory, error) {
 	// buf is used as scratch space for reading in dirents from disk and
 	// unmarshalling them into dirent structs.
 	buf := make([]byte, disklayout.DirentSize)
-	size := inode.diskInode.Size()
+	size := args.diskInode.Size()
 	for off, inc := uint64(0), uint64(0); off < size; off += inc {
 		toRead := size - off
 		if toRead > disklayout.DirentSize {

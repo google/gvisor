@@ -43,28 +43,19 @@ type regularFile struct {
 
 // newRegularFile is the regularFile constructor. It figures out what kind of
 // file this is and initializes the fileReader.
-func newRegularFile(inode inode) (*regularFile, error) {
-	regFile := regularFile{
-		inode: inode,
-	}
-
-	inodeFlags := inode.diskInode.Flags()
-
-	if inodeFlags.Extents {
-		file, err := newExtentFile(regFile)
+func newRegularFile(args inodeArgs) (*regularFile, error) {
+	if args.diskInode.Flags().Extents {
+		file, err := newExtentFile(args)
 		if err != nil {
 			return nil, err
 		}
-
-		file.regFile.inode.impl = &file.regFile
 		return &file.regFile, nil
 	}
 
-	file, err := newBlockMapFile(regFile)
+	file, err := newBlockMapFile(args)
 	if err != nil {
 		return nil, err
 	}
-	file.regFile.inode.impl = &file.regFile
 	return &file.regFile, nil
 }
 
