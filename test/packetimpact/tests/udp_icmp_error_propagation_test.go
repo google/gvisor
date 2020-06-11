@@ -96,24 +96,25 @@ func wantErrno(c connectionMode, icmpErr icmpError) syscall.Errno {
 
 // sendICMPError sends an ICMP error message in response to a UDP datagram.
 func sendICMPError(conn *testbench.UDPIPv4, icmpErr icmpError, udp *testbench.UDP) error {
+	layers := (*testbench.Connection)(conn).CreateFrame(nil)
+	layers = layers[:len(layers)-1]
+	ip, ok := udp.Prev().(*testbench.IPv4)
+	if !ok {
+		return fmt.Errorf("expected %s to be IPv4", udp.Prev())
+	}
 	if icmpErr == timeToLiveExceeded {
-		ip, ok := udp.Prev().(*testbench.IPv4)
-		if !ok {
-			return fmt.Errorf("expected %s to be IPv4", udp.Prev())
-		}
 		*ip.TTL = 1
 		// Let serialization recalculate the checksum since we set the TTL
 		// to 1.
 		ip.Checksum = nil
-
-		// Note that the ICMP payload is valid in this case because the UDP
-		// payload is empty. If the UDP payload were not empty, the packet
-		// length during serialization may not be calculated correctly,
-		// resulting in a mal-formed packet.
-		conn.SendIP(icmpErr.ToICMPv4(), ip, udp)
-	} else {
-		conn.SendIP(icmpErr.ToICMPv4(), udp.Prev(), udp)
 	}
+	// Note that the ICMP payload is valid in this case because the UDP
+	// payload is empty. If the UDP payload were not empty, the packet
+	// length during serialization may not be calculated correctly,
+	// resulting in a mal-formed packet.
+	layers = append(layers, icmpErr.ToICMPv4(), ip, udp)
+
+	(*testbench.Connection)(conn).SendFrameStateless(layers)
 	return nil
 }
 

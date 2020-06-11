@@ -35,8 +35,6 @@ func TestUDPRecvMulticast(t *testing.T) {
 	defer dut.Close(boundFD)
 	conn := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
 	defer conn.Close()
-	frame := conn.CreateFrame(&testbench.UDP{}, &testbench.Payload{Bytes: []byte("hello world")})
-	frame[1].(*testbench.IPv4).DstAddr = testbench.Address(tcpip.Address(net.ParseIP("224.0.0.1").To4()))
-	conn.SendFrame(frame)
+	conn.SendIP(testbench.IPv4{DstAddr: testbench.Address(tcpip.Address(net.ParseIP("224.0.0.1").To4()))}, testbench.UDP{})
 	dut.Recv(boundFD, 100, 0)
 }

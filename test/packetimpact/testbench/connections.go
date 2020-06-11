@@ -43,16 +43,17 @@ func portFromSockaddr(sa unix.Sockaddr) (uint16, error) {
 
 // pickPort makes a new socket and returns the socket FD and port. The domain should be AF_INET or AF_INET6. The caller must close the FD when done with
 // the port if there is no error.
-func pickPort(domain, typ int) (fd int, sa unix.Sockaddr, err error) {
-	fd, err = unix.Socket(domain, typ, 0)
+func pickPort(domain, typ int) (int, uint16, error) {
+	fd, err := unix.Socket(domain, typ, 0)
 	if err != nil {
-		return -1, nil, err
+		return -1, 0, err
 	}
 	defer func() {
 		if err != nil {
 			err = multierr.Append(err, unix.Close(fd))
 		}
 	}()
+	var sa unix.Sockaddr
 	switch domain {
 	case unix.AF_INET:
 		var sa4 unix.SockaddrInet4
@@ -63,16 +64,20 @@ func pickPort(domain, typ int) (fd int, sa unix.Sockaddr, err error) {
 		copy(sa6.Addr[:], net.ParseIP(LocalIPv6).To16())
 		sa = &sa6
 	default:
-		return -1, nil, fmt.Errorf("invalid domain %d, it should be one of unix.AF_INET or unix.AF_INET6", domain)
+		return -1, 0, fmt.Errorf("invalid domain %d, it should be one of unix.AF_INET or unix.AF_INET6", domain)
 	}
 	if err = unix.Bind(fd, sa); err != nil {
-		return -1, nil, err
+		return -1, 0, err
 	}
 	sa, err = unix.Getsockname(fd)
 	if err != nil {
-		return -1, nil, err
+		return -1, 0, err
 	}
-	return fd, sa, nil
+	port, err := portFromSockaddr(sa)
+	if err != nil {
+		return -1, 0, err
+	}
+	return fd, port, nil
 }
 
 // layerState stores the state of a layer of a connection.
@@ -266,14 +271,10 @@ func SeqNumValue(v seqnum.Value) *seqnum.Value {
 }
 
 // newTCPState creates a new TCPState.
-func newTCPState(domain int, out, in TCP) (*tcpState, unix.Sockaddr, error) {
-	portPickerFD, localAddr, err := pickPort(domain, unix.SOCK_STREAM)
+func newTCPState(domain int, out, in TCP) (*tcpState, error) {
+	portPickerFD, localPort, err := pickPort(domain, unix.SOCK_STREAM)
 	if err != nil {
-		return nil, nil, err
-	}
-	localPort, err := portFromSockaddr(localAddr)
-	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	s := tcpState{
 		out:          TCP{SrcPort: &localPort},
@@ -283,12 +284,12 @@ func newTCPState(domain int, out, in TCP) (*tcpState, unix.Sockaddr, error) {
 		finSent:      false,
 	}
 	if err := s.out.merge(&out); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if err := s.in.merge(&in); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return &s, localAddr, nil
+	return &s, nil
 }
 
 func (s *tcpState) outgoing() Layer {
@@ -374,14 +375,10 @@ type udpState struct {
 var _ layerState = (*udpState)(nil)
 
 // newUDPState creates a new udpState.
-func newUDPState(domain int, out, in UDP) (*udpState, unix.Sockaddr, error) {
-	portPickerFD, localAddr, err := pickPort(domain, unix.SOCK_DGRAM)
+func newUDPState(domain int, out, in UDP) (*udpState, error) {
+	portPickerFD, localPort, err := pickPort(domain, unix.SOCK_DGRAM)
 	if err != nil {
-		return nil, nil, err
-	}
-	localPort, err := portFromSockaddr(localAddr)
-	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	s := udpState{
 		out:          UDP{SrcPort: &localPort},
@@ -389,12 +386,12 @@ func newUDPState(domain int, out, in UDP) (*udpState, unix.Sockaddr, error) {
 		portPickerFD: portPickerFD,
 	}
 	if err := s.out.merge(&out); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if err := s.in.merge(&in); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return &s, localAddr, nil
+	return &s, nil
 }
 
 func (s *udpState) outgoing() Layer {
@@ -429,7 +426,6 @@ type Connection struct {
 	layerStates []layerState
 	injector    Injector
 	sniffer     Sniffer
-	localAddr   unix.Sockaddr
 	t           *testing.T
 }
 
@@ -475,18 +471,43 @@ func (conn *Connection) Close() {
 	}
 }
 
-// CreateFrame builds a frame for the connection with layer overriding defaults
-// of the innermost layer and additionalLayers added after it.
-func (conn *Connection) CreateFrame(layer Layer, additionalLayers ...Layer) Layers {
+// CreateFrame builds a frame for the connection with defaults overriden
+// from the innermost layer out, and additionalLayers added after it.
+//
+// Note that overrideLayers can have a length that is less than the number
+// of layers in this connection, and in such cases the innermost layers are
+// overriden first. As an example, valid values of overrideLayers for a TCP-
+// over-IPv4-over-Ethernet connection are: nil, [TCP], [IPv4, TCP], and
+// [Ethernet, IPv4, TCP].
+func (conn *Connection) CreateFrame(overrideLayers Layers, additionalLayers ...Layer) Layers {
 	var layersToSend Layers
-	for _, s := range conn.layerStates {
-		layersToSend = append(layersToSend, s.outgoing())
-	}
-	if err := layersToSend[len(layersToSend)-1].merge(layer); err != nil {
-		conn.t.Fatalf("can't merge %+v into %+v: %s", layer, layersToSend[len(layersToSend)-1], err)
+	for i, s := range conn.layerStates {
+		layer := s.outgoing()
+		// overrideLayers and conn.layerStates have their tails aligned, so
+		// to find the index we move backwards by the distance i is to the
+		// end.
+		if j := len(overrideLayers) - (len(conn.layerStates) - i); j >= 0 {
+			if err := layer.merge(overrideLayers[j]); err != nil {
+				conn.t.Fatalf("can't merge %+v into %+v: %s", layer, overrideLayers[j], err)
+			}
+		}
+		layersToSend = append(layersToSend, layer)
 	}
 	layersToSend = append(layersToSend, additionalLayers...)
 	return layersToSend
+}
+
+// SendFrameStateless sends a frame without updating any of the layer states.
+//
+// This method is useful for sending out-of-band control messages such as
+// ICMP packets, where it would not make sense to update the transport layer's
+// state using the ICMP header.
+func (conn *Connection) SendFrameStateless(frame Layers) {
+	outBytes, err := frame.ToBytes()
+	if err != nil {
+		conn.t.Fatalf("can't build outgoing packet: %s", err)
+	}
+	conn.injector.Send(outBytes)
 }
 
 // SendFrame sends a frame on the wire and updates the state of all layers.
@@ -509,10 +530,13 @@ func (conn *Connection) SendFrame(frame Layers) {
 	}
 }
 
-// Send a packet with reasonable defaults. Potentially override the final layer
-// in the connection with the provided layer and add additionLayers.
-func (conn *Connection) Send(layer Layer, additionalLayers ...Layer) {
-	conn.SendFrame(conn.CreateFrame(layer, additionalLayers...))
+// send sends a packet, possibly with layers of this connection overridden and
+// additional layers added.
+//
+// Types defined with Connection as the underlying type should expose
+// type-safe versions of this method.
+func (conn *Connection) send(overrideLayers Layers, additionalLayers ...Layer) {
+	conn.SendFrame(conn.CreateFrame(overrideLayers, additionalLayers...))
 }
 
 // recvFrame gets the next successfully parsed frame (of type Layers) within the
@@ -606,7 +630,7 @@ func NewTCPIPv4(t *testing.T, outgoingTCP, incomingTCP TCP) TCPIPv4 {
 	if err != nil {
 		t.Fatalf("can't make ipv4State: %s", err)
 	}
-	tcpState, localAddr, err := newTCPState(unix.AF_INET, outgoingTCP, incomingTCP)
+	tcpState, err := newTCPState(unix.AF_INET, outgoingTCP, incomingTCP)
 	if err != nil {
 		t.Fatalf("can't make tcpState: %s", err)
 	}
@@ -623,7 +647,6 @@ func NewTCPIPv4(t *testing.T, outgoingTCP, incomingTCP TCP) TCPIPv4 {
 		layerStates: []layerState{etherState, ipv4State, tcpState},
 		injector:    injector,
 		sniffer:     sniffer,
-		localAddr:   localAddr,
 		t:           t,
 	}
 }
@@ -705,7 +728,7 @@ func (conn *TCPIPv4) ExpectNextData(tcp *TCP, payload *Payload, timeout time.Dur
 // Send a packet with reasonable defaults. Potentially override the TCP layer in
 // the connection with the provided layer and add additionLayers.
 func (conn *TCPIPv4) Send(tcp TCP, additionalLayers ...Layer) {
-	(*Connection)(conn).Send(&tcp, additionalLayers...)
+	(*Connection)(conn).send(Layers{&tcp}, additionalLayers...)
 }
 
 // Close frees associated resources held by the TCPIPv4 connection.
@@ -727,32 +750,48 @@ func (conn *TCPIPv4) Expect(tcp TCP, timeout time.Duration) (*TCP, error) {
 	return gotTCP, err
 }
 
-func (conn *TCPIPv4) state() *tcpState {
-	state, ok := conn.layerStates[len(conn.layerStates)-1].(*tcpState)
+func (conn *TCPIPv4) tcpState() *tcpState {
+	state, ok := conn.layerStates[2].(*tcpState)
 	if !ok {
-		conn.t.Fatalf("expected final state of %v to be tcpState", conn.layerStates)
+		conn.t.Fatalf("got transport-layer state type=%T, expected tcpState", conn.layerStates[2])
+	}
+	return state
+}
+
+func (conn *TCPIPv4) ipv4State() *ipv4State {
+	state, ok := conn.layerStates[1].(*ipv4State)
+	if !ok {
+		conn.t.Fatalf("expected network-layer state type=%T, expected ipv4State", conn.layerStates[1])
 	}
 	return state
 }
 
 // RemoteSeqNum returns the next expected sequence number from the DUT.
 func (conn *TCPIPv4) RemoteSeqNum() *seqnum.Value {
-	return conn.state().remoteSeqNum
+	return conn.tcpState().remoteSeqNum
 }
 
 // LocalSeqNum returns the next sequence number to send from the testbench.
 func (conn *TCPIPv4) LocalSeqNum() *seqnum.Value {
-	return conn.state().localSeqNum
+	return conn.tcpState().localSeqNum
 }
 
 // SynAck returns the SynAck that was part of the handshake.
 func (conn *TCPIPv4) SynAck() *TCP {
-	return conn.state().synAck
+	return conn.tcpState().synAck
 }
 
 // LocalAddr gets the local socket address of this connection.
-func (conn *TCPIPv4) LocalAddr() unix.Sockaddr {
-	return conn.localAddr
+func (conn *TCPIPv4) LocalAddr() *unix.SockaddrInet4 {
+	sa := &unix.SockaddrInet4{Port: int(*conn.tcpState().out.SrcPort)}
+	copy(sa.Addr[:], *conn.ipv4State().out.SrcAddr)
+	return sa
+}
+
+// Drain drains the sniffer's receive buffer by receiving packets until there's
+// nothing else to receive.
+func (conn *TCPIPv4) Drain() {
+	conn.sniffer.Drain()
 }
 
 // IPv6Conn maintains the state for all the layers in a IPv6 connection.
@@ -786,15 +825,10 @@ func NewIPv6Conn(t *testing.T, outgoingIPv6, incomingIPv6 IPv6) IPv6Conn {
 	}
 }
 
-// SendFrame sends a frame on the wire and updates the state of all layers.
-func (conn *IPv6Conn) SendFrame(frame Layers) {
-	(*Connection)(conn).SendFrame(frame)
-}
-
-// CreateFrame builds a frame for the connection with ipv6 overriding the ipv6
-// layer defaults and additionalLayers added after it.
-func (conn *IPv6Conn) CreateFrame(ipv6 IPv6, additionalLayers ...Layer) Layers {
-	return (*Connection)(conn).CreateFrame(&ipv6, additionalLayers...)
+// Send sends a frame with ipv6 overriding the IPv6 layer defaults and
+// additionalLayers added after it.
+func (conn *IPv6Conn) Send(ipv6 IPv6, additionalLayers ...Layer) {
+	(*Connection)(conn).send(Layers{&ipv6}, additionalLayers...)
 }
 
 // Close to clean up any resources held.
@@ -806,12 +840,6 @@ func (conn *IPv6Conn) Close() {
 // timeout specified. If it doesn't arrive in time, an error is returned.
 func (conn *IPv6Conn) ExpectFrame(frame Layers, timeout time.Duration) (Layers, error) {
 	return (*Connection)(conn).ExpectFrame(frame, timeout)
-}
-
-// Drain drains the sniffer's receive buffer by receiving packets until there's
-// nothing else to receive.
-func (conn *TCPIPv4) Drain() {
-	conn.sniffer.Drain()
 }
 
 // UDPIPv4 maintains the state for all the layers in a UDP/IPv4 connection.
@@ -827,7 +855,7 @@ func NewUDPIPv4(t *testing.T, outgoingUDP, incomingUDP UDP) UDPIPv4 {
 	if err != nil {
 		t.Fatalf("can't make ipv4State: %s", err)
 	}
-	udpState, localAddr, err := newUDPState(unix.AF_INET, outgoingUDP, incomingUDP)
+	udpState, err := newUDPState(unix.AF_INET, outgoingUDP, incomingUDP)
 	if err != nil {
 		t.Fatalf("can't make udpState: %s", err)
 	}
@@ -844,42 +872,43 @@ func NewUDPIPv4(t *testing.T, outgoingUDP, incomingUDP UDP) UDPIPv4 {
 		layerStates: []layerState{etherState, ipv4State, udpState},
 		injector:    injector,
 		sniffer:     sniffer,
-		localAddr:   localAddr,
 		t:           t,
 	}
 }
 
-// LocalAddr gets the local socket address of this connection.
-func (conn *UDPIPv4) LocalAddr() unix.Sockaddr {
-	return conn.localAddr
-}
-
-// CreateFrame builds a frame for the connection with layer overriding defaults
-// of the innermost layer and additionalLayers added after it.
-func (conn *UDPIPv4) CreateFrame(layer Layer, additionalLayers ...Layer) Layers {
-	return (*Connection)(conn).CreateFrame(layer, additionalLayers...)
-}
-
-// Send a packet with reasonable defaults. Potentially override the UDP layer in
-// the connection with the provided layer and add additionLayers.
-func (conn *UDPIPv4) Send(udp UDP, additionalLayers ...Layer) {
-	(*Connection)(conn).Send(&udp, additionalLayers...)
-}
-
-// SendFrame sends a frame on the wire and updates the state of all layers.
-func (conn *UDPIPv4) SendFrame(frame Layers) {
-	(*Connection)(conn).SendFrame(frame)
-}
-
-// SendIP sends a packet with additionalLayers following the IP layer in the
-// connection.
-func (conn *UDPIPv4) SendIP(additionalLayers ...Layer) {
-	var layersToSend Layers
-	for _, s := range conn.layerStates[:len(conn.layerStates)-1] {
-		layersToSend = append(layersToSend, s.outgoing())
+func (conn *UDPIPv4) udpState() *udpState {
+	state, ok := conn.layerStates[2].(*udpState)
+	if !ok {
+		conn.t.Fatalf("got transport-layer state type=%T, expected udpState", conn.layerStates[2])
 	}
-	layersToSend = append(layersToSend, additionalLayers...)
-	conn.SendFrame(layersToSend)
+	return state
+}
+
+func (conn *UDPIPv4) ipv4State() *ipv4State {
+	state, ok := conn.layerStates[1].(*ipv4State)
+	if !ok {
+		conn.t.Fatalf("got network-layer state type=%T, expected ipv4State", conn.layerStates[1])
+	}
+	return state
+}
+
+// LocalAddr gets the local socket address of this connection.
+func (conn *UDPIPv4) LocalAddr() *unix.SockaddrInet4 {
+	sa := &unix.SockaddrInet4{Port: int(*conn.udpState().out.SrcPort)}
+	copy(sa.Addr[:], *conn.ipv4State().out.SrcAddr)
+	return sa
+}
+
+// Send sends a packet with reasonable defaults, potentially overriding the UDP
+// layer and adding additionLayers.
+func (conn *UDPIPv4) Send(udp UDP, additionalLayers ...Layer) {
+	(*Connection)(conn).send(Layers{&udp}, additionalLayers...)
+}
+
+// SendIP sends a packet with reasonable defaults, potentially overriding the
+// UDP and IPv4 headers and adding additionLayers.
+func (conn *UDPIPv4) SendIP(ip IPv4, udp UDP, additionalLayers ...Layer) {
+	(*Connection)(conn).send(Layers{&ip, &udp}, additionalLayers...)
 }
 
 // Expect expects a frame with the UDP layer matching the provided UDP within
