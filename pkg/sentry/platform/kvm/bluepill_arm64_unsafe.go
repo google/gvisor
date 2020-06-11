@@ -61,3 +61,16 @@ func dieArchSetup(c *vCPU, context *arch.SignalContext64, guestRegs *userRegs) {
 func bluepillArchFpContext(context unsafe.Pointer) *arch.FpsimdContext {
 	return &((*arch.SignalContext64)(context).Fpsimd64)
 }
+
+// getHypercallID returns hypercall ID.
+//
+// On Arm64, the MMIO address should be 64-bit aligned.
+//
+//go:nosplit
+func getHypercallID(addr uintptr) int {
+	if addr < arm64HypercallMMIOBase || addr >= (arm64HypercallMMIOBase+_AARCH64_HYPERCALL_MMIO_SIZE) {
+		return _KVM_HYPERCALL_MAX
+	} else {
+		return int(((addr) - arm64HypercallMMIOBase) >> 3)
+	}
+}
