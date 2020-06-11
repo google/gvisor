@@ -38,9 +38,10 @@ var _ io.ReaderAt = (*extentFile)(nil)
 // newExtentFile is the extent file constructor. It reads the entire extent
 // tree into memory.
 // TODO(b/134676337): Build extent tree on demand to reduce memory usage.
-func newExtentFile(regFile regularFile) (*extentFile, error) {
-	file := &extentFile{regFile: regFile}
+func newExtentFile(args inodeArgs) (*extentFile, error) {
+	file := &extentFile{}
 	file.regFile.impl = file
+	file.regFile.inode.init(args, &file.regFile)
 	err := file.buildExtTree()
 	if err != nil {
 		return nil, err
