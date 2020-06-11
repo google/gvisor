@@ -103,7 +103,7 @@ type endpoint struct {
 	multicastAddr  tcpip.Address
 	multicastNICID tcpip.NICID
 	multicastLoop  bool
-	reusePort      bool
+	portFlags      ports.Flags
 	bindToDevice   tcpip.NICID
 	broadcast      bool
 
@@ -214,7 +214,7 @@ func (e *endpoint) Close() {
 
 	switch e.state {
 	case StateBound, StateConnected:
-		e.stack.UnregisterTransportEndpoint(e.RegisterNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, e.boundBindToDevice)
+		e.stack.UnregisterTransportEndpoint(e.RegisterNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, e.boundPortFlags, e.boundBindToDevice)
 		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.ID.LocalAddress, e.ID.LocalPort, e.boundPortFlags, e.boundBindToDevice)
 		e.boundBindToDevice = 0
 		e.boundPortFlags = ports.Flags{}
@@ -558,10 +558,13 @@ func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 		e.mu.Unlock()
 
 	case tcpip.ReuseAddressOption:
+		e.mu.Lock()
+		e.portFlags.MostRecent = v
+		e.mu.Unlock()
 
 	case tcpip.ReusePortOption:
 		e.mu.Lock()
-		e.reusePort = v
+		e.portFlags.LoadBalanced = v
 		e.mu.Unlock()
 
 	case tcpip.V6OnlyOption:
@@ -795,11 +798,15 @@ func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 		return v, nil
 
 	case tcpip.ReuseAddressOption:
-		return false, nil
+		e.mu.RLock()
+		v := e.portFlags.MostRecent
+		e.mu.RUnlock()
+
+		return v, nil
 
 	case tcpip.ReusePortOption:
 		e.mu.RLock()
-		v := e.reusePort
+		v := e.portFlags.LoadBalanced
 		e.mu.RUnlock()
 
 		return v, nil
@@ -968,6 +975,11 @@ func (e *endpoint) Disconnect() *tcpip.Error {
 		id  stack.TransportEndpointID
 		btd tcpip.NICID
 	)
+
+	// We change this value below and we need the old value to unregister
+	// the endpoint.
+	boundPortFlags := e.boundPortFlags
+
 	// Exclude ephemerally bound endpoints.
 	if e.BindNICID != 0 || e.ID.LocalAddress == "" {
 		var err *tcpip.Error
@@ -980,16 +992,17 @@ func (e *endpoint) Disconnect() *tcpip.Error {
 			return err
 		}
 		e.state = StateBound
+		boundPortFlags = e.boundPortFlags
 	} else {
 		if e.ID.LocalPort != 0 {
 			// Release the ephemeral port.
-			e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.ID.LocalAddress, e.ID.LocalPort, e.boundPortFlags, e.boundBindToDevice)
+			e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.ID.LocalAddress, e.ID.LocalPort, boundPortFlags, e.boundBindToDevice)
 			e.boundPortFlags = ports.Flags{}
 		}
 		e.state = StateInitial
 	}
 
-	e.stack.UnregisterTransportEndpoint(e.RegisterNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, e.boundBindToDevice)
+	e.stack.UnregisterTransportEndpoint(e.RegisterNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, boundPortFlags, e.boundBindToDevice)
 	e.ID = id
 	e.boundBindToDevice = btd
 	e.route.Release()
@@ -1061,6 +1074,8 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 		}
 	}
 
+	oldPortFlags := e.boundPortFlags
+
 	id, btd, err := e.registerWithStack(nicID, netProtos, id)
 	if err != nil {
 		return err
@@ -1068,7 +1083,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 
 	// Remove the old registration.
 	if e.ID.LocalPort != 0 {
-		e.stack.UnregisterTransportEndpoint(e.RegisterNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, e.boundBindToDevice)
+		e.stack.UnregisterTransportEndpoint(e.RegisterNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, oldPortFlags, e.boundBindToDevice)
 	}
 
 	e.ID = id
@@ -1132,20 +1147,15 @@ func (*endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 
 func (e *endpoint) registerWithStack(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, id stack.TransportEndpointID) (stack.TransportEndpointID, tcpip.NICID, *tcpip.Error) {
 	if e.ID.LocalPort == 0 {
-		flags := ports.Flags{
-			LoadBalanced: e.reusePort,
-			// FIXME(b/129164367): Support SO_REUSEADDR.
-			MostRecent: false,
-		}
-		port, err := e.stack.ReservePort(netProtos, ProtocolNumber, id.LocalAddress, id.LocalPort, flags, e.bindToDevice)
+		port, err := e.stack.ReservePort(netProtos, ProtocolNumber, id.LocalAddress, id.LocalPort, e.portFlags, e.bindToDevice)
 		if err != nil {
 			return id, e.bindToDevice, err
 		}
-		e.boundPortFlags = flags
 		id.LocalPort = port
 	}
+	e.boundPortFlags = e.portFlags
 
-	err := e.stack.RegisterTransportEndpoint(nicID, netProtos, ProtocolNumber, id, e, e.reusePort, e.bindToDevice)
+	err := e.stack.RegisterTransportEndpoint(nicID, netProtos, ProtocolNumber, id, e, e.boundPortFlags, e.bindToDevice)
 	if err != nil {
 		e.stack.ReleasePort(netProtos, ProtocolNumber, id.LocalAddress, id.LocalPort, e.boundPortFlags, e.bindToDevice)
 		e.boundPortFlags = ports.Flags{}
