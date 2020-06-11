@@ -16,6 +16,9 @@
 package merkletree
 
 import (
+	"crypto/sha256"
+	"io"
+
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -68,4 +71,65 @@ func MakeSize(dataSize int64) Size {
 	}
 	size.levelStart = append(size.levelStart, offset)
 	return size
+}
+
+// Generate constructs a Merkle tree for the contents of data. The output is
+// written to treeWriter. The treeReader should be able to read the tree after
+// it has been written. That is, treeWriter and treeReader should point to the
+// same underlying data but have separate cursors.
+func Generate(data io.Reader, dataSize int64, treeReader io.Reader, treeWriter io.Writer) ([]byte, error) {
+	size := MakeSize(dataSize)
+
+	numBlocks := (dataSize + size.blockSize - 1) / size.blockSize
+
+	var root []byte
+	for level := 0; level < len(size.levelStart); level++ {
+		for i := int64(0); i < numBlocks; i++ {
+			buf := make([]byte, size.blockSize)
+			var (
+				n   int
+				err error
+			)
+			if level == 0 {
+				// Read data block from the target file since level 0 is directly above
+				// the raw data block.
+				n, err = data.Read(buf)
+			} else {
+				// Read data block from the tree file since levels higher than 0 are
+				// hashing the lower level hashes.
+				n, err = treeReader.Read(buf)
+			}
+
+			// err is populated as long as the bytes read is smaller than the buffer
+			// size. This could be the case if we are reading the last block, and
+			// break in that case. If this is the last block, the end of the block
+			// will be zero-padded.
+			if n == 0 && err == io.EOF {
+				break
+			} else if err != nil && err != io.EOF {
+				return nil, err
+			}
+			// Hash the bytes in buf.
+			digest := sha256.Sum256(buf)
+
+			if level == len(size.levelStart)-1 {
+				root = digest[:]
+			}
+
+			// Write the generated hash to the end of the tree file.
+			if _, err = treeWriter.Write(digest[:]); err != nil {
+				return nil, err
+			}
+		}
+		// If the genereated digests do not round up to a block, zero-padding the
+		// remaining of the last block. But no need to do so for root.
+		if level != len(size.levelStart)-1 && numBlocks%size.hashesPerBlock != 0 {
+			zeroBuf := make([]byte, size.blockSize-(numBlocks%size.hashesPerBlock)*size.digestSize)
+			if _, err := treeWriter.Write(zeroBuf[:]); err != nil {
+				return nil, err
+			}
+		}
+		numBlocks = (numBlocks + size.hashesPerBlock - 1) / size.hashesPerBlock
+	}
+	return root, nil
 }
