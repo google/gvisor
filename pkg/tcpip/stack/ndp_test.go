@@ -421,28 +421,52 @@ func TestDADResolve(t *testing.T) {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
 
+			// We add a default route so the call to FindRoute below will succeed
+			// once we have an assigned address.
+			s.SetRouteTable([]tcpip.Route{{
+				Destination: header.IPv6EmptySubnet,
+				Gateway:     addr3,
+				NIC:         nicID,
+			}})
+
 			if err := s.AddAddress(nicID, header.IPv6ProtocolNumber, addr1); err != nil {
 				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv6ProtocolNumber, addr1, err)
 			}
 
 			// Address should not be considered bound to the NIC yet (DAD ongoing).
-			addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
-			if err != nil {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
-			}
-			if want := (tcpip.AddressWithPrefix{}); addr != want {
+			if addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber); err != nil {
+				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %s), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
+			} else if want := (tcpip.AddressWithPrefix{}); addr != want {
 				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, addr, want)
 			}
 
 			// Make sure the address does not resolve before the resolution time has
 			// passed.
 			time.Sleep(test.expectedRetransmitTimer*time.Duration(test.dupAddrDetectTransmits) - defaultAsyncEventTimeout)
-			addr, err = s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
-			if err != nil {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
+			if addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber); err != nil {
+				t.Errorf("got stack.GetMainNICAddress(%d, %d) = (_, %s), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
+			} else if want := (tcpip.AddressWithPrefix{}); addr != want {
+				t.Errorf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, addr, want)
 			}
-			if want := (tcpip.AddressWithPrefix{}); addr != want {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, addr, want)
+			// Should not get a route even if we specify the local address as the
+			// tentative address.
+			{
+				r, err := s.FindRoute(nicID, "", addr2, header.IPv6ProtocolNumber, false)
+				if err != tcpip.ErrNoRoute {
+					t.Errorf("got FindRoute(%d, '', %s, %d, false) = (%+v, %v), want = (_, %s)", nicID, addr2, header.IPv6ProtocolNumber, r, err, tcpip.ErrNoRoute)
+				}
+				r.Release()
+			}
+			{
+				r, err := s.FindRoute(nicID, addr1, addr2, header.IPv6ProtocolNumber, false)
+				if err != tcpip.ErrNoRoute {
+					t.Errorf("got FindRoute(%d, %s, %s, %d, false) = (%+v, %v), want = (_, %s)", nicID, addr1, addr2, header.IPv6ProtocolNumber, r, err, tcpip.ErrNoRoute)
+				}
+				r.Release()
+			}
+
+			if t.Failed() {
+				t.FailNow()
 			}
 
 			// Wait for DAD to resolve.
@@ -454,12 +478,33 @@ func TestDADResolve(t *testing.T) {
 					t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 				}
 			}
-			addr, err = s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
-			if err != nil {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
+			if addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber); err != nil {
+				t.Errorf("got stack.GetMainNICAddress(%d, %d) = (_, %s), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
+			} else if addr.Address != addr1 {
+				t.Errorf("got stack.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, header.IPv6ProtocolNumber, addr, addr1)
 			}
-			if addr.Address != addr1 {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, header.IPv6ProtocolNumber, addr, addr1)
+			// Should get a route using the address now that it is resolved.
+			{
+				r, err := s.FindRoute(nicID, "", addr2, header.IPv6ProtocolNumber, false)
+				if err != nil {
+					t.Errorf("got FindRoute(%d, '', %s, %d, false): %s", nicID, addr2, header.IPv6ProtocolNumber, err)
+				} else if r.LocalAddress != addr1 {
+					t.Errorf("got r.LocalAddress = %s, want = %s", r.LocalAddress, addr1)
+				}
+				r.Release()
+			}
+			{
+				r, err := s.FindRoute(nicID, addr1, addr2, header.IPv6ProtocolNumber, false)
+				if err != nil {
+					t.Errorf("got FindRoute(%d, %s, %s, %d, false): %s", nicID, addr1, addr2, header.IPv6ProtocolNumber, err)
+				} else if r.LocalAddress != addr1 {
+					t.Errorf("got r.LocalAddress = %s, want = %s", r.LocalAddress, addr1)
+				}
+				r.Release()
+			}
+
+			if t.Failed() {
+				t.FailNow()
 			}
 
 			// Should not have sent any more NS messages.
