@@ -43,6 +43,7 @@ var controllers = map[string]config{
 	"blkio":    config{ctrlr: &blockIO{}},
 	"cpu":      config{ctrlr: &cpu{}},
 	"cpuset":   config{ctrlr: &cpuSet{}},
+	"hugetlb":  config{ctrlr: &hugeTLB{}, optional: true},
 	"memory":   config{ctrlr: &memory{}},
 	"net_cls":  config{ctrlr: &networkClass{}},
 	"net_prio": config{ctrlr: &networkPrio{}},
@@ -52,7 +53,6 @@ var controllers = map[string]config{
 	// irrelevant for a sandbox.
 	"devices":    config{ctrlr: &noop{}},
 	"freezer":    config{ctrlr: &noop{}},
-	"hugetlb":    config{ctrlr: &noop{}, optional: true},
 	"perf_event": config{ctrlr: &noop{}},
 	"rdma":       config{ctrlr: &noop{}, optional: true},
 	"systemd":    config{ctrlr: &noop{}},
@@ -125,7 +125,7 @@ func fillFromAncestor(path string) (string, error) {
 		return val, nil
 	}
 
-	// File is not set, recurse to parent and then  set here.
+	// File is not set, recurse to parent and then set here.
 	name := filepath.Base(path)
 	parent := filepath.Dir(filepath.Dir(path))
 	val, err = fillFromAncestor(filepath.Join(parent, name))
@@ -446,7 +446,13 @@ func (*cpu) set(spec *specs.LinuxResources, path string) error {
 	if err := setOptionalValueInt(path, "cpu.cfs_quota_us", spec.CPU.Quota); err != nil {
 		return err
 	}
-	return setOptionalValueUint(path, "cpu.cfs_period_us", spec.CPU.Period)
+	if err := setOptionalValueUint(path, "cpu.cfs_period_us", spec.CPU.Period); err != nil {
+		return err
+	}
+	if err := setOptionalValueUint(path, "cpu.rt_period_us", spec.CPU.RealtimePeriod); err != nil {
+		return err
+	}
+	return setOptionalValueInt(path, "cpu.rt_runtime_us", spec.CPU.RealtimeRuntime)
 }
 
 type cpuSet struct{}
@@ -487,13 +493,17 @@ func (*blockIO) set(spec *specs.LinuxResources, path string) error {
 	}
 
 	for _, dev := range spec.BlockIO.WeightDevice {
-		val := fmt.Sprintf("%d:%d %d", dev.Major, dev.Minor, dev.Weight)
-		if err := setValue(path, "blkio.weight_device", val); err != nil {
-			return err
+		if dev.Weight != nil {
+			val := fmt.Sprintf("%d:%d %d", dev.Major, dev.Minor, *dev.Weight)
+			if err := setValue(path, "blkio.weight_device", val); err != nil {
+				return err
+			}
 		}
-		val = fmt.Sprintf("%d:%d %d", dev.Major, dev.Minor, dev.LeafWeight)
-		if err := setValue(path, "blkio.leaf_weight_device", val); err != nil {
-			return err
+		if dev.LeafWeight != nil {
+			val := fmt.Sprintf("%d:%d %d", dev.Major, dev.Minor, *dev.LeafWeight)
+			if err := setValue(path, "blkio.leaf_weight_device", val); err != nil {
+				return err
+			}
 		}
 	}
 	if err := setThrottle(path, "blkio.throttle.read_bps_device", spec.BlockIO.ThrottleReadBpsDevice); err != nil {
@@ -550,4 +560,17 @@ func (*pids) set(spec *specs.LinuxResources, path string) error {
 	}
 	val := strconv.FormatInt(spec.Pids.Limit, 10)
 	return setValue(path, "pids.max", val)
+}
+
+type hugeTLB struct{}
+
+func (*hugeTLB) set(spec *specs.LinuxResources, path string) error {
+	for _, limit := range spec.HugepageLimits {
+		name := fmt.Sprintf("hugetlb.%s.limit_in_bytes", limit.Pagesize)
+		val := strconv.FormatUint(limit.Limit, 10)
+		if err := setValue(path, name, val); err != nil {
+			return err
+		}
+	}
+	return nil
 }
