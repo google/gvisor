@@ -131,3 +131,10 @@ const (
 	_ESR_SEGV_PEMERR_L2 = 0xe
 	_ESR_SEGV_PEMERR_L3 = 0xf
 )
+
+// Arm64: MMIO base address used to dispatch hypercalls.
+const (
+	// on Arm64, the MMIO address must be 64-bit aligned.
+	// Currently, we only need 1 hypercall: hypercall_vmexit.
+	_AARCH64_HYPERCALL_MMIO_SIZE = 1 << 3
+)
