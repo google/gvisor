@@ -59,8 +59,7 @@ func TestUDPRecv(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			frame := conn.CreateFrame(&testbench.UDP{}, &testbench.Payload{Bytes: []byte(tc.payload)})
-			conn.SendFrame(frame)
+			conn.Send(testbench.UDP{}, &testbench.Payload{Bytes: []byte(tc.payload)})
 			if got, want := string(dut.Recv(boundFD, int32(len(tc.payload)), 0)), tc.payload; got != want {
 				t.Fatalf("received payload does not match sent payload got: %s, want: %s", got, want)
 			}
