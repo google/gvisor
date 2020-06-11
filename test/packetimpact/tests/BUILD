@@ -29,6 +29,18 @@ packetimpact_go_test(
 )
 
 packetimpact_go_test(
+    name = "sendmsg_recvmsg",
+    srcs = ["sendmsg_recvmsg_test.go"],
+    # TODO(b/) Fix netstack then remove the line below.
+    expect_netstack_failure = True,
+    deps = [
+        "//pkg/tcpip",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
     name = "udp_recv_multicast",
     srcs = ["udp_recv_multicast_test.go"],
     # TODO(b/152813495): Fix netstack then remove the line below.

@@ -17,6 +17,7 @@ package testbench
 import (
 	"context"
 	"flag"
+	"fmt"
 	"net"
 	"strconv"
 	"syscall"
@@ -27,7 +28,186 @@ import (
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
+	"gvisor.dev/gvisor/pkg/tcpip"
 )
+
+// CMsg stores all data that can be found in control messages. For example, the
+// ttl field stores the integer value found in the IP_TTL control message.
+type CMsg struct {
+	ifIndex uint32
+	addr    *tcpip.Address
+
+	// IPv4-specific
+	specDst     *tcpip.Address
+	origDstAddr *unix.SockaddrInet4
+	tos         *uint8
+	ttl         *uint8
+
+	// IPv6-specific
+	hopLimit *uint8
+}
+
+// SetPacketInfo adds a IP_PKTINFO or IPV6_PKTINFO control message.
+//
+// If no local source address needs to be specified, the ANY address for IPv4
+// or IPv6 MUST be passed so that the IP version can be inferred. Note also
+// that even though the IP_PKTINFO control message has two address fields, only
+// one of them is relevant for sendmsg() and set via this method.
+func (cmsg *CMsg) SetPacketInfo(ifIndex uint32, localAddr *tcpip.Address) error {
+	cmsg.ifIndex = ifIndex
+	if len(*localAddr) == 4 {
+		cmsg.specDst = localAddr
+	} else if len(*localAddr) == 16 {
+		cmsg.addr = localAddr
+	} else {
+		return fmt.Errorf("localAddr=%v is not a valid IPv4 or IPv6 address", *localAddr)
+	}
+	return nil
+}
+
+// IPPktInfo gets the contents of a IP_PKTINFO control message, which includes:
+// 1. the local interface ID the packet was received through,
+// 2. the local address the packet was received through, and
+// 3. the destination address in the IPv4 header of the packet (usually but
+//    not necessarily equal to the local address).
+func (cmsg *CMsg) IPPktInfo() (uint32, *tcpip.Address, *tcpip.Address, error) {
+	if len(*cmsg.specDst) != 4 || len(*cmsg.addr) != 4 {
+		return 0, nil, nil, fmt.Errorf("failed to find IP_PKTINFO control message")
+	}
+	return cmsg.ifIndex, cmsg.specDst, cmsg.addr, nil
+}
+
+// IPv6PktInfo gets the contents of a IPV6_PKTINFO control message, which
+// includes:
+// 1. the local interface ID the packet was received through, and
+// 2. the destination address in the IPv6 header of the packet.
+func (cmsg *CMsg) IPv6PktInfo() (uint32, *tcpip.Address, error) {
+	if len(*cmsg.addr) != 16 {
+		return 0, nil, fmt.Errorf("failed to find IPV6_PKTINFO control message")
+	}
+	return cmsg.ifIndex, cmsg.addr, nil
+}
+
+// OrigDstAddr gets the original destination address in a IP_ORIGDSTADDR
+// control message.
+func (cmsg *CMsg) OrigDstAddr() (*unix.SockaddrInet4, error) {
+	if cmsg.origDstAddr == nil {
+		return nil, fmt.Errorf("failed to find IP_ORIGDSTADDR control message")
+	}
+	return cmsg.origDstAddr, nil
+}
+
+// SetTOS adds a IP_TOS control message.
+func (cmsg *CMsg) SetTOS(tos uint8) {
+	cmsg.tos = &tos
+}
+
+// TOS gets the TOS value in a IP_TOS control message.
+func (cmsg *CMsg) TOS() (uint8, error) {
+	if cmsg.tos == nil {
+		return 0, fmt.Errorf("failed to find TOS control message")
+	}
+	return *cmsg.tos, nil
+}
+
+// SetTTL adds a IP_TTL control message.
+func (cmsg *CMsg) SetTTL(ttl uint8) {
+	cmsg.ttl = &ttl
+}
+
+// TTL gets the TTL value in a IP_TTL control message.
+func (cmsg *CMsg) TTL() (uint8, error) {
+	if cmsg.ttl == nil {
+		return 0, fmt.Errorf("failed to find IP_TTL control message")
+	}
+	return *cmsg.ttl, nil
+}
+
+// SetHopLimit adds a IPV6_HOPLIMIT control message.
+func (cmsg *CMsg) SetHopLimit(hopLimit uint8) {
+	cmsg.hopLimit = &hopLimit
+}
+
+// HopLimit gets the hop limit from a IPV6_HOPLIMIT control message.
+func (cmsg *CMsg) HopLimit() (uint8, error) {
+	if cmsg.hopLimit == nil {
+		return 0, fmt.Errorf("failed to find Hop Limit control message")
+	}
+	return *cmsg.hopLimit, nil
+}
+
+func (cmsg *CMsg) toProto() ([]*pb.CMsg, error) {
+	var proto []*pb.CMsg
+
+	if cmsg.specDst != nil {
+		proto = append(proto, &pb.CMsg{
+			Cmsg: &pb.CMsg_IpPktinfo{
+				&pb.CMsg_InPktInfo{
+					Ifindex: cmsg.ifIndex,
+					SpecDst: []byte(*cmsg.specDst),
+				},
+			},
+		})
+	} else if cmsg.addr != nil {
+		proto = append(proto, &pb.CMsg{
+			Cmsg: &pb.CMsg_Ipv6Pktinfo{
+				&pb.CMsg_In6PktInfo{
+					Ifindex: cmsg.ifIndex,
+					Addr:    []byte(*cmsg.addr),
+				},
+			},
+		})
+	}
+
+	if cmsg.tos != nil {
+		proto = append(proto, &pb.CMsg{Cmsg: &pb.CMsg_IpTos{uint32(*cmsg.tos)}})
+	}
+
+	if cmsg.ttl != nil {
+		proto = append(proto, &pb.CMsg{Cmsg: &pb.CMsg_IpTtl{int32(*cmsg.ttl)}})
+	}
+
+	if cmsg.hopLimit != nil {
+		proto = append(proto, &pb.CMsg{Cmsg: &pb.CMsg_Ipv6Hoplimit{int32(*cmsg.hopLimit)}})
+	}
+
+	return proto, nil
+}
+
+func protoToCMsg(proto []*pb.CMsg) (*CMsg, error) {
+	var cmsg CMsg
+	for _, cmsgProto := range proto {
+		switch m := cmsgProto.Cmsg.(type) {
+		case *pb.CMsg_IpPktinfo:
+			cmsg.ifIndex = m.IpPktinfo.GetIfindex()
+			cmsg.specDst = Address(tcpip.Address(m.IpPktinfo.GetSpecDst()))
+			cmsg.addr = Address(tcpip.Address(m.IpPktinfo.GetAddr()))
+			if len(*cmsg.specDst) != 4 || len(*cmsg.addr) != 4 {
+				return nil, fmt.Errorf("invalid address in IP_PKTINFO message: specDst=%v, addr=%v", m.IpPktinfo.GetSpecDst(), m.IpPktinfo.GetAddr())
+			}
+		case *pb.CMsg_Ipv6Pktinfo:
+			cmsg.ifIndex = m.Ipv6Pktinfo.GetIfindex()
+			cmsg.addr = Address(tcpip.Address(m.Ipv6Pktinfo.GetAddr()))
+			if len(*cmsg.addr) != 16 {
+				return nil, fmt.Errorf("invalid address in IPV6_PKTINFO message: addr=%v", m.Ipv6Pktinfo.GetAddr())
+			}
+		case *pb.CMsg_IpOrigdstaddr:
+			cmsg.origDstAddr = &unix.SockaddrInet4{
+				Port: int(m.IpOrigdstaddr.GetPort()),
+			}
+			copy(cmsg.origDstAddr.Addr[:], m.IpOrigdstaddr.GetAddr())
+		case *pb.CMsg_IpTos:
+			cmsg.tos = Uint8(uint8(m.IpTos))
+		case *pb.CMsg_IpTtl:
+			cmsg.ttl = Uint8(uint8(m.IpTtl))
+		case *pb.CMsg_Ipv6Hoplimit:
+			cmsg.hopLimit = Uint8(uint8(m.Ipv6Hoplimit))
+		default:
+			return nil, fmt.Errorf("invalid control message type=%T", cmsgProto.Cmsg)
+		}
+	}
+	return &cmsg, nil
+}
 
 // DUT communicates with the DUT to force it to make POSIX calls.
 type DUT struct {
@@ -477,6 +657,43 @@ func (dut *DUT) SendWithErrno(ctx context.Context, sockfd int32, buf []byte, fla
 	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
 }
 
+// SendMsg calls sendmsg on the DUT and causes a fatal test failure if it
+// doesn't succeed. If more control over the timeout or error handling is
+// needed, use SendMsgWithErrno.
+func (dut *DUT) SendMsg(sockfd int32, destAddr unix.Sockaddr, iov [][]byte, control *CMsg, flags int32) int32 {
+	dut.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
+	defer cancel()
+	ret, err := dut.SendMsgWithErrno(ctx, sockfd, destAddr, iov, control, flags)
+	if ret == -1 {
+		dut.t.Fatalf("failed to sendmsg: %s", err)
+	}
+	return ret
+}
+
+// SendMsgWithErrno calls send on the DUT.
+func (dut *DUT) SendMsgWithErrno(ctx context.Context, sockfd int32, destAddr unix.Sockaddr, iov [][]byte, control *CMsg, flags int32) (int32, error) {
+	dut.t.Helper()
+	cmsgProto, err := control.toProto()
+	if err != nil {
+		dut.t.Fatalf("failed to convert cmsg to protobuf message: %s", err)
+	}
+	req := pb.SendMsgRequest{
+		Sockfd: sockfd,
+		Msg: &pb.MsgHdr{
+			Iov:     iov,
+			Control: cmsgProto,
+			Name:    dut.sockaddrToProto(destAddr),
+		},
+		Flags: flags,
+	}
+	resp, err := dut.posixServer.SendMsg(ctx, &req)
+	if err != nil {
+		dut.t.Fatalf("failed to call SendMsg: %s", err)
+	}
+	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
+}
+
 // SendTo calls sendto on the DUT and causes a fatal test failure if it doesn't
 // succeed. If more control over the timeout or error handling is needed, use
 // SendToWithErrno.
@@ -655,4 +872,38 @@ func (dut *DUT) RecvWithErrno(ctx context.Context, sockfd, len, flags int32) (in
 		dut.t.Fatalf("failed to call Recv: %s", err)
 	}
 	return resp.GetRet(), resp.GetBuf(), syscall.Errno(resp.GetErrno_())
+}
+
+// RecvMsg calls recvmsg on the DUT and causes a fatal test failure if it
+// doesn't succeed. If more control over the timeout or error handling is
+// needed, use RecvMsgWithErrno.
+func (dut *DUT) RecvMsg(sockfd int32, iovlen []int32, controllen, flags int32) (unix.Sockaddr, [][]byte, *CMsg, int32) {
+	dut.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
+	defer cancel()
+	ret, srcAddr, iov, control, msgFlags, err := dut.RecvMsgWithErrno(ctx, sockfd, iovlen, controllen, flags)
+	if ret == -1 {
+		dut.t.Fatalf("failed to recvmsg: %s", err)
+	}
+	return srcAddr, iov, control, msgFlags
+}
+
+// RecvWithErrno calls recv on the DUT.
+func (dut *DUT) RecvMsgWithErrno(ctx context.Context, sockfd int32, iovlen []int32, controllen, flags int32) (int32, unix.Sockaddr, [][]byte, *CMsg, int32, error) {
+	dut.t.Helper()
+	req := pb.RecvMsgRequest{
+		Sockfd:     sockfd,
+		Iovlen:     iovlen,
+		Controllen: controllen,
+		Flags:      flags,
+	}
+	resp, err := dut.posixServer.RecvMsg(ctx, &req)
+	if err != nil {
+		dut.t.Fatalf("failed to call RecvMsg: %s", err)
+	}
+	cmsg, err := protoToCMsg(resp.GetMsg().GetControl())
+	if err != nil {
+		dut.t.Fatalf("failed to convert protobuf cmsg: %s", err)
+	}
+	return resp.GetRet(), dut.protoToSockaddr(resp.GetMsg().GetName()), resp.GetMsg().GetIov(), cmsg, resp.GetMsg().GetFlags(), syscall.Errno(resp.GetErrno_())
 }

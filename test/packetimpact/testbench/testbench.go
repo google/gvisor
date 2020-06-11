@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/test/packetimpact/netdevs"
 )
 
@@ -87,4 +88,18 @@ func genPseudoFlags() error {
 	LocalIPv6 = deviceInfo.IPv6Addr.String()
 
 	return nil
+}
+
+// SockaddrEqual compares two unix.Sockaddr's, and returns true if they're both
+// V4 or V6 addresses that are equal.
+func SockaddrEqual(sa1, sa2 unix.Sockaddr) bool {
+	switch s := sa1.(type) {
+	case *unix.SockaddrInet4:
+		v4, ok := sa2.(*unix.SockaddrInet4)
+		return ok && *s == *v4
+	case *unix.SockaddrInet6:
+		v6, ok := sa2.(*unix.SockaddrInet6)
+		return ok && *s == *v6
+	}
+	return false
 }

@@ -50,6 +50,33 @@ message SockOptVal {
   }
 }
 
+message CMsg {
+  message InPktInfo {
+    uint32 ifindex = 1;
+    bytes spec_dst = 2;
+    bytes addr = 3;
+  }
+  message In6PktInfo {
+    uint32 ifindex = 1;
+    bytes addr = 2;
+  }
+  oneof cmsg {
+    SockaddrIn ip_origdstaddr = 1;
+    InPktInfo ip_pktinfo = 2;
+    uint32 ip_tos = 3;
+    int32 ip_ttl = 4;
+    int32 ipv6_hoplimit = 5;
+    In6PktInfo ipv6_pktinfo = 6;
+  }
+}
+
+message MsgHdr {
+  Sockaddr name = 1;
+  repeated bytes iov = 2;
+  repeated CMsg control = 3;
+  int32 flags = 4;
+}
+
 // Request and Response pairs for each Posix service RPC call, sorted.
 
 message AcceptRequest {
@@ -200,6 +227,32 @@ message RecvResponse {
   bytes buf = 3;
 }
 
+message RecvMsgRequest {
+  int32 sockfd = 1;
+  // The number of elements of iovlen prescribes the length of the iovec array,
+  // and each element is the size of that particular iovec.
+  repeated int32 iovlen = 2;
+  int32 controllen = 3;
+  int32 flags = 4;
+}
+
+message RecvMsgResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
+  MsgHdr msg = 3;
+}
+
+message SendMsgRequest {
+  int32 sockfd = 1;
+  MsgHdr msg = 2;
+  int32 flags = 3;
+}
+
+message SendMsgResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
+}
+
 service Posix {
   // Call accept() on the DUT.
   rpc Accept(AcceptRequest) returns (AcceptResponse);
@@ -219,6 +272,8 @@ service Posix {
   rpc Listen(ListenRequest) returns (ListenResponse);
   // Call send() on the DUT.
   rpc Send(SendRequest) returns (SendResponse);
+  // Call sendmsg() on the DUT.
+  rpc SendMsg(SendMsgRequest) returns (SendMsgResponse);
   // Call sendto() on the DUT.
   rpc SendTo(SendToRequest) returns (SendToResponse);
   // Call setsockopt() on the DUT.
@@ -227,4 +282,6 @@ service Posix {
   rpc Socket(SocketRequest) returns (SocketResponse);
   // Call recv() on the DUT.
   rpc Recv(RecvRequest) returns (RecvResponse);
+  // Call recvmsg() on the DUT.
+  rpc RecvMsg(RecvMsgRequest) returns (RecvMsgResponse);
 }

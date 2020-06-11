@@ -21,8 +21,10 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <iostream>
 #include <unordered_map>
 
@@ -98,6 +100,143 @@
       return ::grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
                             "Unknown Sockaddr");
   }
+  return ::grpc::Status::OK;
+}
+
+void cmsg_to_proto(struct msghdr &msg, posix_server::MsgHdr *proto) {
+  struct cmsghdr *cmsg;
+  for (cmsg = CMSG_FIRSTHDR(&msg); cmsg != NULL;
+       cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+    auto *cmsg_proto = proto->add_control();
+    switch (cmsg->cmsg_level) {
+      case IPPROTO_IP:
+        switch (cmsg->cmsg_type) {
+          case IP_ORIGDSTADDR: {
+            struct sockaddr_in addr;
+            memcpy(&addr, CMSG_DATA(cmsg), sizeof(addr));
+            cmsg_proto->mutable_ip_origdstaddr()->set_family(addr.sin_family);
+            cmsg_proto->mutable_ip_origdstaddr()->set_port(
+                ntohs(addr.sin_port));
+            cmsg_proto->mutable_ip_origdstaddr()->mutable_addr()->assign(
+                reinterpret_cast<const char *>(&addr.sin_addr.s_addr), 4);
+            break;
+          }
+          case IP_PKTINFO: {
+            struct in_pktinfo pkt_info;
+            memcpy(&pkt_info, CMSG_DATA(cmsg), sizeof(pkt_info));
+            auto *pkt_info_proto = cmsg_proto->mutable_ip_pktinfo();
+            pkt_info_proto->set_ifindex(pkt_info.ipi_ifindex);
+            pkt_info_proto->mutable_spec_dst()->assign(
+                reinterpret_cast<const char *>(&pkt_info.ipi_spec_dst.s_addr),
+                4);
+            pkt_info_proto->mutable_addr()->assign(
+                reinterpret_cast<const char *>(&pkt_info.ipi_addr.s_addr), 4);
+            break;
+          }
+          case IP_TOS: {
+            unsigned char tos = 0;
+            memcpy(&tos, CMSG_DATA(cmsg), sizeof(tos));
+            cmsg_proto->set_ip_tos(tos);
+            break;
+          }
+          case IP_TTL: {
+            int ttl = 0;
+            memcpy(&ttl, CMSG_DATA(cmsg), sizeof(ttl));
+            cmsg_proto->set_ip_ttl(ttl);
+            break;
+          }
+        }
+        break;
+      case IPPROTO_IPV6:
+        switch (cmsg->cmsg_type) {
+          case IPV6_PKTINFO:
+            struct in6_pktinfo pkt_info;
+            memcpy(&pkt_info, CMSG_DATA(cmsg), sizeof(pkt_info));
+            auto *pkt_info_proto = cmsg_proto->mutable_ipv6_pktinfo();
+            pkt_info_proto->set_ifindex(pkt_info.ipi6_ifindex);
+            pkt_info_proto->mutable_addr()->assign(
+                reinterpret_cast<const char *>(&pkt_info.ipi6_addr.s6_addr),
+                16);
+            break;
+        }
+        break;
+    }
+  }
+}
+
+::grpc::Status proto_to_cmsg(const posix_server::MsgHdr &proto,
+                             struct msghdr *msg) {
+  struct cmsghdr *cmsg = CMSG_FIRSTHDR(msg);
+  size_t control_len = 0;
+  for (auto it = proto.control().begin(); it != proto.control().end(); ++it) {
+    if (cmsg == NULL) {
+      return ::grpc::Status(grpc::StatusCode::INTERNAL,
+                            "not enough space in buffer to add cmsg");
+    }
+    switch (it->cmsg_case()) {
+      case ::posix_server::CMsg::kIpOrigdstaddr:
+        return ::grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+                              "sendmsg does not support IP_ORIGDSTADDR cmsg");
+      case ::posix_server::CMsg::kIpPktinfo: {
+        struct in_pktinfo pkt_info;
+        pkt_info.ipi_ifindex = it->ip_pktinfo().ifindex();
+        it->ip_pktinfo().spec_dst().copy(
+            reinterpret_cast<char *>(&pkt_info.ipi_spec_dst), 4);
+        it->ip_pktinfo().addr().copy(
+            reinterpret_cast<char *>(&pkt_info.ipi_addr), 4);
+        cmsg->cmsg_level = IPPROTO_IP;
+        cmsg->cmsg_type = IP_PKTINFO;
+        cmsg->cmsg_len = CMSG_LEN(sizeof(pkt_info));
+        memcpy(CMSG_DATA(cmsg), &pkt_info, sizeof(pkt_info));
+        control_len += CMSG_SPACE(sizeof(pkt_info));
+        break;
+      }
+      case ::posix_server::CMsg::kIpTos: {
+        char tos = it->ip_tos();
+        cmsg->cmsg_level = IPPROTO_IP;
+        cmsg->cmsg_type = IP_TOS;
+        cmsg->cmsg_len = CMSG_LEN(sizeof(tos));
+        memcpy(CMSG_DATA(cmsg), &tos, sizeof(tos));
+        control_len += CMSG_SPACE(sizeof(tos));
+        break;
+      }
+      case ::posix_server::CMsg::kIpTtl: {
+        int ttl = it->ip_ttl();
+        cmsg->cmsg_level = IPPROTO_IP;
+        cmsg->cmsg_type = IP_TTL;
+        cmsg->cmsg_len = CMSG_LEN(sizeof(ttl));
+        memcpy(CMSG_DATA(cmsg), &ttl, sizeof(ttl));
+        control_len += CMSG_SPACE(sizeof(ttl));
+        break;
+      }
+      case ::posix_server::CMsg::kIpv6Hoplimit: {
+        int hopLimit = it->ipv6_hoplimit();
+        cmsg->cmsg_level = IPPROTO_IPV6;
+        cmsg->cmsg_type = IPV6_HOPLIMIT;
+        cmsg->cmsg_len = CMSG_LEN(sizeof(hopLimit));
+        memcpy(CMSG_DATA(cmsg), &hopLimit, sizeof(hopLimit));
+        control_len += CMSG_SPACE(sizeof(hopLimit));
+        break;
+      }
+      case ::posix_server::CMsg::kIpv6Pktinfo: {
+        struct in6_pktinfo pkt_info;
+        pkt_info.ipi6_ifindex = it->ipv6_pktinfo().ifindex();
+        it->ip_pktinfo().addr().copy(
+            reinterpret_cast<char *>(&pkt_info.ipi6_addr), 16);
+        cmsg->cmsg_level = IPPROTO_IPV6;
+        cmsg->cmsg_type = IPV6_PKTINFO;
+        cmsg->cmsg_len = CMSG_LEN(sizeof(pkt_info));
+        memcpy(CMSG_DATA(cmsg), &pkt_info, sizeof(pkt_info));
+        control_len += CMSG_SPACE(sizeof(pkt_info));
+        break;
+      }
+      default:
+        return ::grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+                              "unknown or unset cmsg type");
+    }
+    cmsg = CMSG_NXTHDR(msg, cmsg);
+  }
+  msg->msg_controllen = control_len;
   return ::grpc::Status::OK;
 }
 
@@ -262,6 +401,47 @@ class PosixImpl final : public posix_server::Posix::Service {
     return ::grpc::Status::OK;
   }
 
+  ::grpc::Status SendMsg(::grpc::ServerContext *context,
+                         const ::posix_server::SendMsgRequest *request,
+                         ::posix_server::SendMsgResponse *response) override {
+    struct msghdr msg = {0};
+    sockaddr_storage addr;
+    if (request->msg().has_name()) {
+      auto status =
+          proto_to_sockaddr(request->msg().name(), &addr, &msg.msg_namelen);
+      if (!status.ok()) {
+        return status;
+      }
+      msg.msg_name = &addr;
+    }
+
+    std::vector<struct iovec> iov(request->msg().iov_size());
+    auto it_proto = request->msg().iov().begin();
+    for (auto it = iov.begin(); it != iov.end(); ++it, ++it_proto) {
+      it->iov_base = (char *)it_proto->data();
+      it->iov_len = it_proto->size();
+    }
+    msg.msg_iov = iov.data();
+    msg.msg_iovlen = iov.size();
+
+    union {
+      // 4kB is large enough to store one of every cmsg that exists.
+      char buf[4096];
+      struct cmsghdr align;
+    } u;
+    memset(u.buf, 0, sizeof(u.buf));
+    msg.msg_control = u.buf;
+    msg.msg_controllen = sizeof(u.buf);
+    auto status = proto_to_cmsg(request->msg(), &msg);
+    if (!status.ok()) {
+      return status;
+    }
+
+    response->set_ret(::sendmsg(request->sockfd(), &msg, request->flags()));
+    response->set_errno_(errno);
+    return ::grpc::Status::OK;
+  }
+
   ::grpc::Status SetSockOpt(
       grpc_impl::ServerContext *context,
       const ::posix_server::SetSockOptRequest *request,
@@ -316,6 +496,47 @@ class PosixImpl final : public posix_server::Posix::Service {
     }
     response->set_errno_(errno);
     return ::grpc::Status::OK;
+  }
+
+  ::grpc::Status RecvMsg(::grpc::ServerContext *context,
+                         const ::posix_server::RecvMsgRequest *request,
+                         ::posix_server::RecvMsgResponse *response) override {
+    sockaddr_storage addr;
+    std::vector<struct iovec> iov(request->iovlen_size());
+    std::vector<std::vector<char>> buffers(request->iovlen_size());
+    for (int i = 0; i < request->iovlen_size(); i++) {
+      buffers[i].resize(request->iovlen(i));
+      iov[i].iov_base = buffers[i].data();
+      iov[i].iov_len = buffers[i].size();
+    }
+    std::vector<char> control(request->controllen());
+    struct msghdr msg;
+    msg.msg_name = reinterpret_cast<sockaddr *>(&addr);
+    msg.msg_namelen = sizeof(addr);
+    msg.msg_iov = iov.data();
+    msg.msg_iovlen = iov.size();
+    msg.msg_control = control.data();
+    msg.msg_controllen = control.size();
+    msg.msg_flags = 0;
+
+    response->set_ret(::recvmsg(request->sockfd(), &msg, request->flags()));
+    response->set_errno_(errno);
+    int ret = response->ret();
+    if (ret >= 0) {
+      for (auto it = buffers.begin(); it != buffers.end(); ++it) {
+        response->mutable_msg()->add_iov(it->data(),
+                                         std::min((size_t)ret, it->size()));
+        if (ret > it->size()) {
+          ret -= it->size();
+        } else {
+          break;
+        }
+      }
+    }
+    cmsg_to_proto(msg, response->mutable_msg());
+    response->mutable_msg()->set_flags(msg.msg_flags);
+    return sockaddr_to_proto(addr, msg.msg_namelen,
+                             response->mutable_msg()->mutable_name());
   }
 };
 
