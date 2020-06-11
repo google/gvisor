@@ -132,7 +132,7 @@ func (x *multiPortEndpoint) save(m state.Map) {
 	m.Save("netProto", &x.netProto)
 	m.Save("transProto", &x.transProto)
 	m.Save("endpoints", &x.endpoints)
-	m.Save("reuse", &x.reuse)
+	m.Save("flags", &x.flags)
 }
 
 func (x *multiPortEndpoint) afterLoad() {}
@@ -141,7 +141,7 @@ func (x *multiPortEndpoint) load(m state.Map) {
 	m.Load("netProto", &x.netProto)
 	m.Load("transProto", &x.transProto)
 	m.Load("endpoints", &x.endpoints)
-	m.Load("reuse", &x.reuse)
+	m.Load("flags", &x.flags)
 }
 
 func init() {
