@@ -26,6 +26,9 @@ type kvmOneReg struct {
 	addr uint64
 }
 
+// arm64HypercallMMIOBase is MMIO base address used to dispatch hypercalls.
+var arm64HypercallMMIOBase uintptr
+
 const KVM_NR_SPSR = 5
 
 type userFpsimdState struct {

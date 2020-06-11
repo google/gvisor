@@ -159,6 +159,10 @@ func (c *vCPU) initArchState() error {
 		return err
 	}
 
+	// Use the address of the exception vector table as
+	// the MMIO address base.
+	arm64HypercallMMIOBase = toLocation
+
 	data = ring0.PsrDefaultSet | ring0.KernelFlagsSet
 	reg.id = _KVM_ARM64_REGS_PSTATE
 	if err := c.setOneRegister(&reg); err != nil {
