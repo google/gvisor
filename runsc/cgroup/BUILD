@@ -20,4 +20,8 @@ go_test(
     srcs = ["cgroup_test.go"],
     library = ":cgroup",
     tags = ["local"],
+    deps = [
+        "//pkg/test/testutil",
+        "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
+    ],
 )
