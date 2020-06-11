@@ -4,9 +4,7 @@ licenses(["notice"])
 
 go_library(
     name = "marshal",
-    srcs = [
-        "marshal.go",
-    ],
+    srcs = ["marshal.go"],
     visibility = [
         "//:sandbox",
     ],

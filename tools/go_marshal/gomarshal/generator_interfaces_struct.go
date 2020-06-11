@@ -73,6 +73,11 @@ func (g *interfaceGenerator) validateStruct(ts *ast.TypeSpec, st *ast.StructType
 }
 
 func (g *interfaceGenerator) isStructPacked(st *ast.StructType) bool {
+	// If the race detector is enabled, then some of the optimizations
+	// here confuse the race detector. Treat all structs as unpacked.
+	if raceEnabled {
+		return false
+	}
 	packed := true
 	forEachStructField(st, func(f *ast.Field) {
 		if f.Tag != nil {
@@ -249,7 +254,7 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.emit("}\n\n")
 
 	g.emit("// Packed implements marshal.Marshallable.Packed.\n")
-	g.emit("//go:nosplit\n")
+	g.nosplit()
 	g.emit("func (%s *%s) Packed() bool {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		expr, fieldsMaybePacked := g.areFieldsPackedExpression()
@@ -318,7 +323,7 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.emit("}\n\n")
 
 	g.emit("// CopyOutN implements marshal.Marshallable.CopyOutN.\n")
-	g.emit("//go:nosplit\n")
+	g.nosplit()
 	g.recordUsedImport("marshal")
 	g.recordUsedImport("usermem")
 	g.emit("func (%s *%s) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {\n", g.r, g.typeName())
@@ -351,7 +356,7 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.emit("}\n\n")
 
 	g.emit("// CopyOut implements marshal.Marshallable.CopyOut.\n")
-	g.emit("//go:nosplit\n")
+	g.nosplit()
 	g.recordUsedImport("marshal")
 	g.recordUsedImport("usermem")
 	g.emit("func (%s *%s) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
@@ -361,7 +366,7 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.emit("}\n\n")
 
 	g.emit("// CopyIn implements marshal.Marshallable.CopyIn.\n")
-	g.emit("//go:nosplit\n")
+	g.nosplit()
 	g.recordUsedImport("marshal")
 	g.recordUsedImport("usermem")
 	g.emit("func (%s *%s) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())

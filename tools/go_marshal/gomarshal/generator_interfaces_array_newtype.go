@@ -44,7 +44,7 @@ func (g *interfaceGenerator) emitMarshallableForArrayNewtype(n *ast.Ident, a *as
 	lenExpr := g.arrayLenExpr(a)
 
 	g.emit("// SizeBytes implements marshal.Marshallable.SizeBytes.\n")
-	g.emit("//go:nosplit\n")
+	g.nosplit()
 	g.emit("func (%s *%s) SizeBytes() int {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		if size, dynamic := g.scalarSize(elt); !dynamic {
@@ -78,7 +78,7 @@ func (g *interfaceGenerator) emitMarshallableForArrayNewtype(n *ast.Ident, a *as
 	g.emit("}\n\n")
 
 	g.emit("// Packed implements marshal.Marshallable.Packed.\n")
-	g.emit("//go:nosplit\n")
+	g.nosplit()
 	g.emit("func (%s *%s) Packed() bool {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emit("// Array newtypes are always packed.\n")
@@ -101,7 +101,7 @@ func (g *interfaceGenerator) emitMarshallableForArrayNewtype(n *ast.Ident, a *as
 	g.emit("}\n\n")
 
 	g.emit("// CopyOutN implements marshal.Marshallable.CopyOutN.\n")
-	g.emit("//go:nosplit\n")
+	g.nosplit()
 	g.emit("func (%s *%s) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emitCastToByteSlice(g.r, "buf", fmt.Sprintf("%s.SizeBytes()", g.r))
@@ -113,7 +113,7 @@ func (g *interfaceGenerator) emitMarshallableForArrayNewtype(n *ast.Ident, a *as
 	g.emit("}\n\n")
 
 	g.emit("// CopyOut implements marshal.Marshallable.CopyOut.\n")
-	g.emit("//go:nosplit\n")
+	g.nosplit()
 	g.emit("func (%s *%s) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emit("return %s.CopyOutN(task, addr, %s.SizeBytes())\n", g.r, g.r)
@@ -121,7 +121,7 @@ func (g *interfaceGenerator) emitMarshallableForArrayNewtype(n *ast.Ident, a *as
 	g.emit("}\n\n")
 
 	g.emit("// CopyIn implements marshal.Marshallable.CopyIn.\n")
-	g.emit("//go:nosplit\n")
+	g.nosplit()
 	g.emit("func (%s *%s) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emitCastToByteSlice(g.r, "buf", fmt.Sprintf("%s.SizeBytes()", g.r))

@@ -12,6 +12,8 @@ go_library(
         "generator_interfaces_struct.go",
         "generator_tests.go",
         "util.go",
+        "util_norace.go",
+        "util_race.go",
     ],
     stateify = False,
     visibility = [

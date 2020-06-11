@@ -234,6 +234,12 @@ func (b *sourceBuffer) emit(a ...interface{}) {
 	emit(&b.b, b.indent, a...)
 }
 
+func (b *sourceBuffer) nosplit() {
+	if !raceEnabled {
+		b.emitNoIndent("//go:nosplit\n")
+	}
+}
+
 func (b *sourceBuffer) emitNoIndent(a ...interface{}) {
 	emit(&b.b, 0 /*indent*/, a...)
 }
