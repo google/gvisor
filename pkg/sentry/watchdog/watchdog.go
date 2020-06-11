@@ -329,7 +329,7 @@ func (w *Watchdog) report(offenders map[*kernel.Task]*offender, newTaskFound boo
 
 func (w *Watchdog) reportStuckWatchdog() {
 	var buf bytes.Buffer
-	buf.WriteString("Watchdog goroutine is stuck:")
+	buf.WriteString("Watchdog goroutine is stuck")
 	w.doAction(w.TaskTimeoutAction, false, &buf)
 }
 
