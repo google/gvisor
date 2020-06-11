@@ -465,6 +465,10 @@ type endpoint struct {
 	// reusePort is set to true if SO_REUSEPORT is enabled.
 	reusePort bool
 
+	// registeredReusePort is set if the current endpoint registration was
+	// done with SO_REUSEPORT enabled.
+	registeredReusePort bool
+
 	// bindToDevice is set to the NIC on which to bind or disabled if 0.
 	bindToDevice tcpip.NICID
 
@@ -1021,8 +1025,9 @@ func (e *endpoint) closeNoShutdownLocked() {
 	// in Listen() when trying to register.
 	if e.EndpointState() == StateListen && e.isPortReserved {
 		if e.isRegistered {
-			e.stack.StartTransportEndpointCleanup(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, e.boundBindToDevice)
+			e.stack.StartTransportEndpointCleanup(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, ports.Flags{LoadBalanced: e.registeredReusePort}, e.boundBindToDevice)
 			e.isRegistered = false
+			e.registeredReusePort = false
 		}
 
 		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.ID.LocalAddress, e.ID.LocalPort, e.boundPortFlags, e.boundBindToDevice)
@@ -1086,8 +1091,9 @@ func (e *endpoint) cleanupLocked() {
 	e.workerCleanup = false
 
 	if e.isRegistered {
-		e.stack.StartTransportEndpointCleanup(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, e.boundBindToDevice)
+		e.stack.StartTransportEndpointCleanup(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, ports.Flags{LoadBalanced: e.registeredReusePort}, e.boundBindToDevice)
 		e.isRegistered = false
+		e.registeredReusePort = false
 	}
 
 	if e.isPortReserved {
@@ -2088,10 +2094,11 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) *tc
 
 	if e.ID.LocalPort != 0 {
 		// The endpoint is bound to a port, attempt to register it.
-		err := e.stack.RegisterTransportEndpoint(nicID, netProtos, ProtocolNumber, e.ID, e, e.reusePort, e.boundBindToDevice)
+		err := e.stack.RegisterTransportEndpoint(nicID, netProtos, ProtocolNumber, e.ID, e, ports.Flags{LoadBalanced: e.reusePort}, e.boundBindToDevice)
 		if err != nil {
 			return err
 		}
+		e.registeredReusePort = e.reusePort
 	} else {
 		// The endpoint doesn't have a local port yet, so try to get
 		// one. Make sure that it isn't one that will result in the same
@@ -2123,12 +2130,13 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) *tc
 
 			id := e.ID
 			id.LocalPort = p
-			switch e.stack.RegisterTransportEndpoint(nicID, netProtos, ProtocolNumber, id, e, e.reusePort, e.bindToDevice) {
+			switch e.stack.RegisterTransportEndpoint(nicID, netProtos, ProtocolNumber, id, e, ports.Flags{LoadBalanced: e.reusePort}, e.bindToDevice) {
 			case nil:
 				// Port picking successful. Save the details of
 				// the selected port.
 				e.ID = id
 				e.boundBindToDevice = e.bindToDevice
+				e.registeredReusePort = e.reusePort
 				return true, nil
 			case tcpip.ErrPortInUse:
 				return false, nil
@@ -2326,12 +2334,13 @@ func (e *endpoint) listen(backlog int) *tcpip.Error {
 	}
 
 	// Register the endpoint.
-	if err := e.stack.RegisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, e.reusePort, e.boundBindToDevice); err != nil {
+	if err := e.stack.RegisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, ports.Flags{LoadBalanced: e.reusePort}, e.boundBindToDevice); err != nil {
 		return err
 	}
 
 	e.isRegistered = true
 	e.setEndpointState(StateListen)
+	e.registeredReusePort = e.reusePort
 
 	// The channel may be non-nil when we're restoring the endpoint, and it
 	// may be pre-populated with some previously accepted (but not Accepted)

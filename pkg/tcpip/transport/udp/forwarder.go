@@ -73,7 +73,7 @@ func (r *ForwarderRequest) ID() stack.TransportEndpointID {
 // CreateEndpoint creates a connected UDP endpoint for the session request.
 func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
 	ep := newEndpoint(r.stack, r.route.NetProto, queue)
-	if err := r.stack.RegisterTransportEndpoint(r.route.NICID(), []tcpip.NetworkProtocolNumber{r.route.NetProto}, ProtocolNumber, r.id, ep, ep.reusePort, ep.bindToDevice); err != nil {
+	if err := r.stack.RegisterTransportEndpoint(r.route.NICID(), []tcpip.NetworkProtocolNumber{r.route.NetProto}, ProtocolNumber, r.id, ep, ep.portFlags, ep.bindToDevice); err != nil {
 		ep.Close()
 		return nil, err
 	}
@@ -82,6 +82,7 @@ func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, 
 	ep.route = r.route.Clone()
 	ep.dstPort = r.id.RemotePort
 	ep.RegisterNICID = r.route.NICID()
+	ep.boundPortFlags = ep.portFlags
 
 	ep.state = StateConnected
 

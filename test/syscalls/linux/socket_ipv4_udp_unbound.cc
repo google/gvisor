@@ -1672,10 +1672,10 @@ TEST_P(IPv4UDPUnboundSocketTest, TestBindToBcastThenSend) {
 }
 
 // Check that SO_REUSEADDR always delivers to the most recently bound socket.
-TEST_P(IPv4UDPUnboundSocketTest, ReuseAddrDistribution) {
-  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
-  SKIP_IF(IsRunningOnGvisor());
-
+//
+// FIXME(gvisor.dev/issue/873): Endpoint order is not restored correctly. Enable
+// random and co-op save (below) once that is fixed.
+TEST_P(IPv4UDPUnboundSocketTest, ReuseAddrDistribution_NoRandomSave) {
   std::vector<std::unique_ptr<FileDescriptor>> sockets;
   sockets.emplace_back(ASSERT_NO_ERRNO_AND_VALUE(NewSocket()));
 
@@ -1695,6 +1695,9 @@ TEST_P(IPv4UDPUnboundSocketTest, ReuseAddrDistribution) {
   EXPECT_EQ(addr_len, addr.addr_len);
 
   constexpr int kMessageSize = 200;
+
+  // FIXME(gvisor.dev/issue/873): Endpoint order is not restored correctly.
+  const DisableSave ds;
 
   for (int i = 0; i < 10; i++) {
     // Add a new receiver.
@@ -1836,9 +1839,6 @@ TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConvertibleToReusePort) {
 }
 
 TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConvertibleToReuseAddr) {
-  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
-  SKIP_IF(IsRunningOnGvisor());
-
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket3 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
@@ -1880,9 +1880,6 @@ TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConvertibleToReuseAddr) {
 }
 
 TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConversionReversable1) {
-  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
-  SKIP_IF(IsRunningOnGvisor());
-
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket3 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
@@ -1927,9 +1924,6 @@ TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConversionReversable1) {
 }
 
 TEST_P(IPv4UDPUnboundSocketTest, BindReuseAddrReusePortConversionReversable2) {
-  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
-  SKIP_IF(IsRunningOnGvisor());
-
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket3 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
@@ -2020,9 +2014,6 @@ TEST_P(IPv4UDPUnboundSocketTest, BindDoubleReuseAddrReusePortThenReusePort) {
 }
 
 TEST_P(IPv4UDPUnboundSocketTest, BindDoubleReuseAddrReusePortThenReuseAddr) {
-  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
-  SKIP_IF(IsRunningOnGvisor());
-
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket3 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
