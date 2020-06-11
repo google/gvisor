@@ -96,6 +96,7 @@ def go_imports(name, src, out):
         cmd = ("$(location @org_golang_x_tools//cmd/goimports:goimports) $(SRCS) > $@"),
     )
 
+# TODO(b/158696872): Enable nogo by default.
 def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = False, marshal_debug = False, nogo = False, **kwargs):
     """Wraps the standard go_library and does stateification and marshalling.
 
