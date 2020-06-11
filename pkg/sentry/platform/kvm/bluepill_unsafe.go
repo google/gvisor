@@ -58,6 +58,24 @@ func bluepillArchContext(context unsafe.Pointer) *arch.SignalContext64 {
 	return &((*arch.UContext64)(context).MContext)
 }
 
+// bluepillHandleHlt is reponsible for handling VM-Exit.
+//
+//go:nosplit
+func bluepillGuestExit(c *vCPU, context unsafe.Pointer) {
+	// Copy out registers.
+	bluepillArchExit(c, bluepillArchContext(context))
+
+	// Return to the vCPUReady state; notify any waiters.
+	user := atomic.LoadUint32(&c.state) & vCPUUser
+	switch atomic.SwapUint32(&c.state, user) {
+	case user | vCPUGuest: // Expected case.
+	case user | vCPUGuest | vCPUWaiter:
+		c.notify()
+	default:
+		throw("invalid state")
+	}
+}
+
 // bluepillHandler is called from the signal stub.
 //
 // The world may be stopped while this is executing, and it executes on the
@@ -159,25 +177,20 @@ func bluepillHandler(context unsafe.Pointer) {
 			c.die(bluepillArchContext(context), "debug")
 			return
 		case _KVM_EXIT_HLT:
-			// Copy out registers.
-			bluepillArchExit(c, bluepillArchContext(context))
-
-			// Return to the vCPUReady state; notify any waiters.
-			user := atomic.LoadUint32(&c.state) & vCPUUser
-			switch atomic.SwapUint32(&c.state, user) {
-			case user | vCPUGuest: // Expected case.
-			case user | vCPUGuest | vCPUWaiter:
-				c.notify()
-			default:
-				throw("invalid state")
-			}
+			bluepillGuestExit(c, context)
 			return
 		case _KVM_EXIT_MMIO:
+			physical := uintptr(c.runData.data[0])
+			if getHypercallID(physical) == _KVM_HYPERCALL_VMEXIT {
+				bluepillGuestExit(c, context)
+				return
+			}
+
 			// Increment the fault count.
 			atomic.AddUint32(&c.faults, 1)
 
 			// For MMIO, the physical address is the first data item.
-			physical := uintptr(c.runData.data[0])
+			physical = uintptr(c.runData.data[0])
 			virtual, ok := handleBluepillFault(c.machine, physical, physicalRegions, _KVM_MEM_FLAGS_NONE)
 			if !ok {
 				c.die(bluepillArchContext(context), "invalid physical address")
