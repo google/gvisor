@@ -89,6 +89,7 @@ go_test(
         "//pkg/tcpip/link/loopback",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",
+        "//pkg/tcpip/ports",
         "//pkg/tcpip/transport/icmp",
         "//pkg/tcpip/transport/udp",
         "//pkg/waiter",

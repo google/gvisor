@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -238,13 +239,14 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 	n.mu.Lock()
 
 	// Register new endpoint so that packets are routed to it.
-	if err := n.stack.RegisterTransportEndpoint(n.boundNICID, n.effectiveNetProtos, ProtocolNumber, n.ID, n, n.reusePort, n.boundBindToDevice); err != nil {
+	if err := n.stack.RegisterTransportEndpoint(n.boundNICID, n.effectiveNetProtos, ProtocolNumber, n.ID, n, ports.Flags{LoadBalanced: n.reusePort}, n.boundBindToDevice); err != nil {
 		n.mu.Unlock()
 		n.Close()
 		return nil, err
 	}
 
 	n.isRegistered = true
+	n.registeredReusePort = n.reusePort
 
 	return n, nil
 }

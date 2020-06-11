@@ -1900,9 +1900,6 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V6EphemeralPortReserved) {
 TEST_P(SocketMultiProtocolInetLoopbackTest, V6EphemeralPortReservedReuseAddr) {
   auto const& param = GetParam();
 
-  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
-  SKIP_IF(IsRunningOnGvisor() && param.type == SOCK_DGRAM);
-
   // Bind the v6 loopback on a dual stack socket.
   TestAddress const& test_addr = V6Loopback();
   sockaddr_storage bound_addr = test_addr.addr;
@@ -2090,9 +2087,6 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V4MappedEphemeralPortReserved) {
 TEST_P(SocketMultiProtocolInetLoopbackTest,
        V4MappedEphemeralPortReservedResueAddr) {
   auto const& param = GetParam();
-
-  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
-  SKIP_IF(IsRunningOnGvisor() && param.type == SOCK_DGRAM);
 
   // Bind the v4 loopback on a dual stack socket.
   TestAddress const& test_addr = V4MappedLoopback();
@@ -2282,9 +2276,6 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V4EphemeralPortReserved) {
 
 TEST_P(SocketMultiProtocolInetLoopbackTest, V4EphemeralPortReservedReuseAddr) {
   auto const& param = GetParam();
-
-  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
-  SKIP_IF(IsRunningOnGvisor() && param.type == SOCK_DGRAM);
 
   // Bind the v4 loopback on a v4 socket.
   TestAddress const& test_addr = V4Loopback();

@@ -225,9 +225,6 @@ TEST_P(UDPSocketPairTest, ReuseAddrDefault) {
 TEST_P(UDPSocketPairTest, SetReuseAddr) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
-  SKIP_IF(IsRunningOnGvisor());
-
   ASSERT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_REUSEADDR,
                          &kSockOptOn, sizeof(kSockOptOn)),
               SyscallSucceeds());
@@ -291,9 +288,6 @@ TEST_P(UDPSocketPairTest, SetReusePort) {
 
 TEST_P(UDPSocketPairTest, SetReuseAddrReusePort) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
-
-  // FIXME(b/129164367): Support SO_REUSEADDR on UDP sockets.
-  SKIP_IF(IsRunningOnGvisor());
 
   ASSERT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_REUSEADDR,
                          &kSockOptOn, sizeof(kSockOptOn)),
