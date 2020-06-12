@@ -37,7 +37,7 @@ func recvTCPSegment(conn *testbench.TCPIPv4, expect *testbench.TCP, expectPayloa
 		return 0, fmt.Errorf("failed to receive TCP segment: %s", err)
 	}
 	if len(layers) < 2 {
-		return 0, fmt.Errorf("got packet with layers: %v, expected to have at least 2 layers (link and network)", layers)
+		return 0, fmt.Errorf("got packet with layers: %s, expected to have at least 2 layers (link and network)", layers)
 	}
 	ipv4, ok := layers[1].(*testbench.IPv4)
 	if !ok {

@@ -49,7 +49,7 @@ func TestRetransmits(t *testing.T) {
 
 	dut.Send(acceptFd, sampleData, 0)
 	if _, err := conn.ExpectData(&testbench.TCP{}, samplePayload, time.Second); err != nil {
-		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
+		t.Fatalf("expected payload was not received: %s", err)
 	}
 	// Give a chance for the dut to estimate RTO with RTT from the DATA-ACK.
 	// TODO(gvisor.dev/issue/2685) Estimate RTO during handshake, after which
@@ -62,13 +62,13 @@ func TestRetransmits(t *testing.T) {
 	dut.Send(acceptFd, sampleData, 0)
 	seq := testbench.Uint32(uint32(*conn.RemoteSeqNum()))
 	if _, err := conn.ExpectData(&testbench.TCP{SeqNum: seq}, samplePayload, startRTO); err != nil {
-		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
+		t.Fatalf("expected payload was not received: %s", err)
 	}
 	// Expect retransmits of the same segment.
 	for i := 0; i < 5; i++ {
 		start := time.Now()
 		if _, err := conn.ExpectData(&testbench.TCP{SeqNum: seq}, samplePayload, 2*current); err != nil {
-			t.Fatalf("expected a packet with payload %v: %s loop %d", samplePayload, err, i)
+			t.Fatalf("expected payload was not received: %s loop %d", err, i)
 		}
 		if i == 0 {
 			startRTO = time.Now().Sub(first)
@@ -77,7 +77,7 @@ func TestRetransmits(t *testing.T) {
 		}
 		// Check if the probes came at exponentially increasing intervals.
 		if p := time.Since(start); p < current-startRTO {
-			t.Fatalf("retransmit came sooner interval %d probe %d\n", p, i)
+			t.Fatalf("retransmit came sooner interval %d probe %d", p, i)
 		}
 		current *= 2
 	}
