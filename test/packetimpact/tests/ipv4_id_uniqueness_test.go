@@ -37,7 +37,7 @@ func recvTCPSegment(conn *testbench.TCPIPv4, expect *testbench.TCP, expectPayloa
 		return 0, fmt.Errorf("failed to receive TCP segment: %s", err)
 	}
 	if len(layers) < 2 {
-		return 0, fmt.Errorf("got packet with layers: %s, expected to have at least 2 layers (link and network)", layers)
+		return 0, fmt.Errorf("got packet with layers: %v, expected to have at least 2 layers (link and network)", layers)
 	}
 	ipv4, ok := layers[1].(*testbench.IPv4)
 	if !ok {
@@ -56,56 +56,67 @@ func recvTCPSegment(conn *testbench.TCPIPv4, expect *testbench.TCP, expectPayloa
 // to force the DF bit to be 0, and checks that a retransmitted segment has a
 // different IPv4 Identification value than the original segment.
 func TestIPv4RetransmitIdentificationUniqueness(t *testing.T) {
-	dut := testbench.NewDUT(t)
-	defer dut.TearDown()
+	for _, tc := range []struct {
+		name    string
+		payload []byte
+	}{
+		{"SmallPayload", []byte("sample data")},
+		// 512 bytes is chosen because sending more than this in a single segment
+		// causes the retransmission to send less than the original amount.
+		{"512BytePayload", testbench.GenerateRandomPayload(t, 512)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dut := testbench.NewDUT(t)
+			defer dut.TearDown()
 
-	listenFD, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
-	defer dut.Close(listenFD)
+			listenFD, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+			defer dut.Close(listenFD)
 
-	conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
-	defer conn.Close()
+			conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
+			defer conn.Close()
 
-	conn.Connect()
-	remoteFD, _ := dut.Accept(listenFD)
-	defer dut.Close(remoteFD)
+			conn.Connect()
+			remoteFD, _ := dut.Accept(listenFD)
+			defer dut.Close(remoteFD)
 
-	dut.SetSockOptInt(remoteFD, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
+			dut.SetSockOptInt(remoteFD, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
 
-	// TODO(b/129291778) The following socket option clears the DF bit on
-	// IP packets sent over the socket, and is currently not supported by
-	// gVisor. gVisor by default sends packets with DF=0 anyway, so the
-	// socket option being not supported does not affect the operation of
-	// this test. Once the socket option is supported, the following call
-	// can be changed to simply assert success.
-	ret, errno := dut.SetSockOptIntWithErrno(context.Background(), remoteFD, unix.IPPROTO_IP, linux.IP_MTU_DISCOVER, linux.IP_PMTUDISC_DONT)
-	if ret == -1 && errno != unix.ENOTSUP {
-		t.Fatalf("failed to set IP_MTU_DISCOVER socket option to IP_PMTUDISC_DONT: %s", errno)
-	}
+			// TODO(b/129291778) The following socket option clears the DF bit on
+			// IP packets sent over the socket, and is currently not supported by
+			// gVisor. gVisor by default sends packets with DF=0 anyway, so the
+			// socket option being not supported does not affect the operation of
+			// this test. Once the socket option is supported, the following call
+			// can be changed to simply assert success.
+			ret, errno := dut.SetSockOptIntWithErrno(context.Background(), remoteFD, unix.IPPROTO_IP, linux.IP_MTU_DISCOVER, linux.IP_PMTUDISC_DONT)
+			if ret == -1 && errno != unix.ENOTSUP {
+				t.Fatalf("failed to set IP_MTU_DISCOVER socket option to IP_PMTUDISC_DONT: %s", errno)
+			}
 
-	sampleData := []byte("Sample Data")
-	samplePayload := &testbench.Payload{Bytes: sampleData}
+			samplePayload := &testbench.Payload{Bytes: tc.payload}
 
-	dut.Send(remoteFD, sampleData, 0)
-	if _, err := conn.ExpectData(&testbench.TCP{}, samplePayload, time.Second); err != nil {
-		t.Fatalf("failed to receive TCP segment sent for RTT calculation: %s", err)
-	}
-	// Let the DUT estimate RTO with RTT from the DATA-ACK.
-	// TODO(gvisor.dev/issue/2685) Estimate RTO during handshake, after which
-	// we can skip sending this ACK.
-	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
+			dut.Send(remoteFD, tc.payload, 0)
+			if _, err := conn.ExpectData(&testbench.TCP{}, samplePayload, time.Second); err != nil {
+				t.Fatalf("failed to receive TCP segment sent for RTT calculation: %s", err)
+			}
+			// Let the DUT estimate RTO with RTT from the DATA-ACK.
+			// TODO(gvisor.dev/issue/2685) Estimate RTO during handshake, after which
+			// we can skip sending this ACK.
+			conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
 
-	expectTCP := &testbench.TCP{SeqNum: testbench.Uint32(uint32(*conn.RemoteSeqNum()))}
-	dut.Send(remoteFD, sampleData, 0)
-	originalID, err := recvTCPSegment(&conn, expectTCP, samplePayload)
-	if err != nil {
-		t.Fatalf("failed to receive TCP segment: %s", err)
-	}
+			dut.Send(remoteFD, tc.payload, 0)
+			expectTCP := &testbench.TCP{SeqNum: testbench.Uint32(uint32(*conn.RemoteSeqNum()))}
+			originalID, err := recvTCPSegment(&conn, expectTCP, samplePayload)
+			if err != nil {
+				t.Fatalf("failed to receive TCP segment: %s", err)
+			}
 
-	retransmitID, err := recvTCPSegment(&conn, expectTCP, samplePayload)
-	if err != nil {
-		t.Fatalf("failed to receive retransmitted TCP segment: %s", err)
-	}
-	if originalID == retransmitID {
-		t.Fatalf("unexpectedly got retransmitted TCP segment with same IPv4 ID field=%d", originalID)
+			retransmitID, err := recvTCPSegment(&conn, expectTCP, samplePayload)
+			if err != nil {
+				t.Fatalf("failed to receive retransmitted TCP segment: %s", err)
+			}
+			if originalID == retransmitID {
+				t.Fatalf("unexpectedly got retransmitted TCP segment with same IPv4 ID field=%d", originalID)
+			}
+		})
 	}
 }

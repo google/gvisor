@@ -17,8 +17,10 @@ package testbench
 import (
 	"flag"
 	"fmt"
+	"math/rand"
 	"net"
 	"os/exec"
+	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/test/packetimpact/netdevs"
@@ -90,4 +92,15 @@ func genPseudoFlags() error {
 	LocalIPv6 = deviceInfo.IPv6Addr.String()
 
 	return nil
+}
+
+// GenerateRandomPayload generates a random byte slice of the specified length,
+// causing a fatal test failure if it is unable to do so.
+func GenerateRandomPayload(t *testing.T, n int) []byte {
+	t.Helper()
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err != nil {
+		t.Fatalf("rand.Read(buf) failed: %s", err)
+	}
+	return buf
 }
