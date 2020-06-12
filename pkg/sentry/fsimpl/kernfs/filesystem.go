@@ -35,7 +35,7 @@ import (
 // Preconditions: Filesystem.mu must be locked for at least reading. !rp.Done().
 //
 // Postcondition: Caller must call fs.processDeferredDecRefs*.
-func (fs *Filesystem) stepExistingLocked(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry) (*vfs.Dentry, error) {
+func (fs *Filesystem) stepExistingLocked(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, mayFollowSymlinks bool) (*vfs.Dentry, error) {
 	d := vfsd.Impl().(*Dentry)
 	if !d.isDir() {
 		return nil, syserror.ENOTDIR
@@ -81,7 +81,7 @@ afterSymlink:
 		return nil, err
 	}
 	// Resolve any symlink at current path component.
-	if rp.ShouldFollowSymlink() && next.isSymlink() {
+	if mayFollowSymlinks && rp.ShouldFollowSymlink() && next.isSymlink() {
 		targetVD, targetPathname, err := next.inode.Getlink(ctx, rp.Mount())
 		if err != nil {
 			return nil, err
@@ -152,7 +152,7 @@ func (fs *Filesystem) walkExistingLocked(ctx context.Context, rp *vfs.ResolvingP
 	vfsd := rp.Start()
 	for !rp.Done() {
 		var err error
-		vfsd, err = fs.stepExistingLocked(ctx, rp, vfsd)
+		vfsd, err = fs.stepExistingLocked(ctx, rp, vfsd, true /* mayFollowSymlinks */)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -178,7 +178,7 @@ func (fs *Filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.Resolving
 	vfsd := rp.Start()
 	for !rp.Final() {
 		var err error
-		vfsd, err = fs.stepExistingLocked(ctx, rp, vfsd)
+		vfsd, err = fs.stepExistingLocked(ctx, rp, vfsd, true /* mayFollowSymlinks */)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -449,7 +449,7 @@ afterTrailingSymlink:
 		return nil, syserror.ENAMETOOLONG
 	}
 	// Determine whether or not we need to create a file.
-	childVFSD, err := fs.stepExistingLocked(ctx, rp, parentVFSD)
+	childVFSD, err := fs.stepExistingLocked(ctx, rp, parentVFSD, false /* mayFollowSymlinks */)
 	if err == syserror.ENOENT {
 		// Already checked for searchability above; now check for writability.
 		if err := parentInode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite); err != nil {

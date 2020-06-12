@@ -118,7 +118,7 @@ func putDentrySlice(ds *[]*dentry) {
 // must be up to date.
 //
 // Postconditions: The returned dentry's cached metadata is up to date.
-func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, ds **[]*dentry) (*dentry, error) {
+func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, mayFollowSymlinks bool, ds **[]*dentry) (*dentry, error) {
 	if !d.isDir() {
 		return nil, syserror.ENOTDIR
 	}
@@ -168,7 +168,7 @@ afterSymlink:
 	if err := rp.CheckMount(&child.vfsd); err != nil {
 		return nil, err
 	}
-	if child.isSymlink() && rp.ShouldFollowSymlink() {
+	if child.isSymlink() && mayFollowSymlinks && rp.ShouldFollowSymlink() {
 		target, err := child.readlink(ctx, rp.Mount())
 		if err != nil {
 			return nil, err
@@ -275,7 +275,7 @@ func (fs *filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.Vir
 func (fs *filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, ds **[]*dentry) (*dentry, error) {
 	for !rp.Final() {
 		d.dirMu.Lock()
-		next, err := fs.stepLocked(ctx, rp, d, ds)
+		next, err := fs.stepLocked(ctx, rp, d, true /* mayFollowSymlinks */, ds)
 		d.dirMu.Unlock()
 		if err != nil {
 			return nil, err
@@ -301,7 +301,7 @@ func (fs *filesystem) resolveLocked(ctx context.Context, rp *vfs.ResolvingPath, 
 	}
 	for !rp.Done() {
 		d.dirMu.Lock()
-		next, err := fs.stepLocked(ctx, rp, d, ds)
+		next, err := fs.stepLocked(ctx, rp, d, true /* mayFollowSymlinks */, ds)
 		d.dirMu.Unlock()
 		if err != nil {
 			return nil, err
@@ -754,7 +754,7 @@ afterTrailingSymlink:
 	}
 	// Determine whether or not we need to create a file.
 	parent.dirMu.Lock()
-	child, err := fs.stepLocked(ctx, rp, parent, &ds)
+	child, err := fs.stepLocked(ctx, rp, parent, false /* mayFollowSymlinks */, &ds)
 	if err == syserror.ENOENT && mayCreate {
 		if parent.isSynthetic() {
 			parent.dirMu.Unlock()
@@ -939,7 +939,7 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 	// Filter file creation flags and O_LARGEFILE out; the create RPC already
 	// has the semantics of O_CREAT|O_EXCL, while some servers will choke on
 	// O_LARGEFILE.
-	createFlags := p9.OpenFlags(opts.Flags &^ (linux.O_CREAT | linux.O_EXCL | linux.O_NOCTTY | linux.O_TRUNC | linux.O_LARGEFILE))
+	createFlags := p9.OpenFlags(opts.Flags &^ (vfs.FileCreationFlags | linux.O_LARGEFILE))
 	fdobj, openFile, createQID, _, err := dirfile.create(ctx, name, createFlags, (p9.FileMode)(opts.Mode), (p9.UID)(creds.EffectiveKUID), (p9.GID)(creds.EffectiveKGID))
 	if err != nil {
 		dirfile.close(ctx)

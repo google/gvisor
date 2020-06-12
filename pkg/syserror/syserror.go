@@ -72,6 +72,7 @@ var (
 	EPERM        = error(syscall.EPERM)
 	EPIPE        = error(syscall.EPIPE)
 	ERANGE       = error(syscall.ERANGE)
+	EREMOTE      = error(syscall.EREMOTE)
 	EROFS        = error(syscall.EROFS)
 	ESPIPE       = error(syscall.ESPIPE)
 	ESRCH        = error(syscall.ESRCH)
