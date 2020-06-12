@@ -15,6 +15,8 @@
 package iptables
 
 import (
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"os/exec"
@@ -187,15 +189,43 @@ func filterAddrs(addrs []string, ipv6 bool) []string {
 
 // getInterfaceName returns the name of the interface other than loopback.
 func getInterfaceName() (string, bool) {
-	var ifname string
+	iface, ok := getNonLoopbackInterface()
+	if !ok {
+		return "", false
+	}
+	return iface.Name, true
+}
+
+func getInterfaceAddr() ([]byte, error) {
+	iface, ok := getNonLoopbackInterface()
+	if !ok {
+		return []byte{}, errors.New("no non-loopback interface found")
+	}
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return []byte{}, err
+	}
+	if len(addrs) != 1 {
+		return []byte{}, fmt.Errorf("wanted exactly 1 non-loopback interface, but found %d", len(addrs))
+	}
+	// Get the address as a string, cut off the mask, and make sure it's a
+	// 4-byte slice.
+	return net.ParseIP(strings.Split(addrs[0].String(), "/")[0]).To4(), nil
+}
+
+func getNonLoopbackInterface() (net.Interface, bool) {
 	if interfaces, err := net.Interfaces(); err == nil {
 		for _, intf := range interfaces {
 			if intf.Name != "lo" {
-				ifname = intf.Name
-				break
+				return intf, true
 			}
 		}
 	}
+	return net.Interface{}, false
+}
 
-	return ifname, ifname != ""
+func htons(x uint16) uint16 {
+	buf := make([]byte, 2)
+	binary.BigEndian.PutUint16(buf, x)
+	return binary.LittleEndian.Uint16(buf)
 }

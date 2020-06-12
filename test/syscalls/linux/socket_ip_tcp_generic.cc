@@ -1050,5 +1050,17 @@ TEST_P(TCPSocketPairTest, TCPResetDuringClose_NoRandomSave) {
   }
 }
 
+TEST_P(TCPSocketPairTest, OriginalDstErrors) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Sockets not affected by NAT should fail to find an original destination.
+  struct sockaddr_in *sin = {};
+  socklen_t addr_len = 0;
+  EXPECT_THAT(getsockopt(sockets->first_fd(), SOL_IP, SO_ORIGINAL_DST, &opt,
+                         &optLen), SyscallFailsWithErrno(EFAULT));
+  EXPECT_THAT(getsockopt(sockets->second_fd(), SOL_IP, SO_ORIGINAL_DST, &opt,
+                         &optLen), SyscallFailsWithErrno(EFAULT));
+}
+
 }  // namespace testing
 }  // namespace gvisor

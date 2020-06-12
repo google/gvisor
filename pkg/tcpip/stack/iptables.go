@@ -426,3 +426,9 @@ func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx
 	// All the matchers matched, so run the target.
 	return rule.Target.Action(pkt, &it.connections, hook, gso, r, address)
 }
+
+// OriginalDst returns the original destination of redirected connections. It
+// returns an error if the connection doesn't exist or isn't redirected.
+func (it *IPTables) OriginalDst(epID TransportEndpointID) (tcpip.Address, uint16, *tcpip.Error) {
+	return it.connections.originalDst(epID)
+}

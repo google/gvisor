@@ -604,3 +604,37 @@ func (ct *ConnTrack) reapTupleLocked(tuple *tuple, bucket int, now time.Time) bo
 
 	return true
 }
+
+func (ct *ConnTrack) originalDst(epID TransportEndpointID) (tcpip.Address, uint16, *tcpip.Error) {
+	// Using epID, lookup the connection in the conntrack table. The
+	// connection's reply tuple describes the original address.
+	tid := tupleID{
+		srcAddr:    epID.LocalAddress,
+		srcPort:    epID.LocalPort,
+		netProto:   header.IPv4ProtocolNumber,
+		dstAddr:    epID.RemoteAddress,
+		dstPort:    epID.RemotePort,
+		transProto: header.TCPProtocolNumber,
+	}
+	bucket := ct.bucket(tid)
+
+	ct.mu.RLock()
+	defer ct.mu.RUnlock()
+	ct.buckets[bucket].mu.Lock()
+	defer ct.buckets[bucket].mu.Unlock()
+
+	// Iterate over the tuples in a bucket.
+	for other := ct.buckets[bucket].tuples.Front(); other != nil; other = other.Next() {
+		if tid != other.tupleID {
+			continue
+		}
+		if other.conn.manip == manipNone {
+			// No manipulation occurred.
+			return "", 0, tcpip.ErrBadAddress
+		}
+		return other.conn.original.dstAddr, other.conn.original.dstPort, nil
+	}
+
+	// Not a tracked connection.
+	return "", 0, tcpip.ErrNotConnected
+}

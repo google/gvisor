@@ -350,3 +350,19 @@ func TestFilterAddrs(t *testing.T) {
 		}
 	}
 }
+
+func TestNATPreOriginalDst(t *testing.T) {
+	singleTest(t, NATPreOriginalDst{})
+}
+
+func TestNATOutOriginalDst(t *testing.T) {
+	singleTest(t, NATOutOriginalDst{})
+}
+
+// func TestNATPreOriginalDstUnchanged(t *testing.T) {
+// 	singleTest(t, NATPreOriginalDstUnchanged{})
+// }
+
+// func TestNATOutOriginalDstUnchanged(t *testing.T) {
+// 	singleTest(t, NATOutOriginalDstUnchanged{})
+// }
