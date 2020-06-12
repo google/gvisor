@@ -108,6 +108,10 @@ type FileDescriptionOptions struct {
 	UseDentryMetadata bool
 }
 
+// FileCreationFlags are the set of flags passed to FileDescription.Init() but
+// omitted from FileDescription.StatusFlags().
+const FileCreationFlags = linux.O_CREAT | linux.O_EXCL | linux.O_NOCTTY | linux.O_TRUNC
+
 // Init must be called before first use of fd. If it succeeds, it takes
 // references on mnt and d. flags is the initial file description flags, which
 // is usually the full set of flags passed to open(2).
@@ -122,8 +126,8 @@ func (fd *FileDescription) Init(impl FileDescriptionImpl, flags uint32, mnt *Mou
 	fd.refs = 1
 
 	// Remove "file creation flags" to mirror the behavior from file.f_flags in
-	// fs/open.c:do_dentry_open
-	fd.statusFlags = flags &^ (linux.O_CREAT | linux.O_EXCL | linux.O_NOCTTY | linux.O_TRUNC)
+	// fs/open.c:do_dentry_open.
+	fd.statusFlags = flags &^ FileCreationFlags
 	fd.vd = VirtualDentry{
 		mount:  mnt,
 		dentry: d,
@@ -469,6 +473,15 @@ type IterDirentsCallback interface {
 	// the error; the next call to FileDescriptionImpl.IterDirents should
 	// restart with the same Dirent.
 	Handle(dirent Dirent) error
+}
+
+// IterDirentsCallbackFunc implements IterDirentsCallback for a function with
+// the semantics of IterDirentsCallback.Handle.
+type IterDirentsCallbackFunc func(dirent Dirent) error
+
+// Handle implements IterDirentsCallback.Handle.
+func (f IterDirentsCallbackFunc) Handle(dirent Dirent) error {
+	return f(dirent)
 }
 
 // OnClose is called when a file descriptor representing the FileDescription is
