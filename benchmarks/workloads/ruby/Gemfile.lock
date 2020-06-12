@@ -29,7 +29,7 @@ GEM
     prawn (2.2.2)
       pdf-core (~> 0.7.0)
       ttfunk (~> 1.5)
-    puma (3.12.4)
+    puma (3.12.6)
     rack (2.2.2)
     rack-protection (2.0.5)
       rack
