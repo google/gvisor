@@ -134,10 +134,10 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return uintptr(flags.ToLinuxFDFlags()), nil, nil
 	case linux.F_SETFD:
 		flags := args[2].Uint()
-		t.FDTable().SetFlags(fd, kernel.FDFlags{
+		err := t.FDTable().SetFlagsVFS2(fd, kernel.FDFlags{
 			CloseOnExec: flags&linux.FD_CLOEXEC != 0,
 		})
-		return 0, nil, nil
+		return 0, nil, err
 	case linux.F_GETFL:
 		return uintptr(file.StatusFlags()), nil, nil
 	case linux.F_SETFL:
