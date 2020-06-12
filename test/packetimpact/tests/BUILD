@@ -53,6 +53,19 @@ packetimpact_go_test(
 )
 
 packetimpact_go_test(
+    name = "tcp_reordering",
+    srcs = ["tcp_reordering_test.go"],
+    # TODO(b/139368047): Fix netstack then remove the line below.
+    expect_netstack_failure = True,
+    deps = [
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/seqnum",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
     name = "tcp_window_shrink",
     srcs = ["tcp_window_shrink_test.go"],
     deps = [

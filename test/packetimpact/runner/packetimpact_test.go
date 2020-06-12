@@ -268,6 +268,7 @@ func TestOne(t *testing.T) {
 		"--remote_ipv6", remoteIPv6.String(),
 		"--remote_mac", remoteMAC.String(),
 		"--device", testNetDev,
+		"--dut_type", *dutPlatform,
 	)
 	_, err = testbench.Exec(dockerutil.RunOpts{}, testArgs...)
 	if !*expectFailure && err != nil {

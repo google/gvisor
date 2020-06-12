@@ -150,7 +150,7 @@ message SendRequest {
 
 message SendResponse {
   int32 ret = 1;
-  int32 errno_ = 2;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
 }
 
 message SendToRequest {
