@@ -160,8 +160,9 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 		args = append(args, "-fsgofer-host-uds")
 	}
 
-	if outDir, ok := syscall.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
-		tdir := filepath.Join(outDir, strings.Replace(name, "/", "_", -1))
+	undeclaredOutputsDir, ok := syscall.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
+	if ok {
+		tdir := filepath.Join(undeclaredOutputsDir, strings.Replace(name, "/", "_", -1))
 		if err := os.MkdirAll(tdir, 0755); err != nil {
 			return fmt.Errorf("could not create test dir: %v", err)
 		}
@@ -201,7 +202,9 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	sig := make(chan os.Signal, 1)
+	defer close(sig)
 	signal.Notify(sig, syscall.SIGTERM)
+	defer signal.Stop(sig)
 	go func() {
 		s, ok := <-sig
 		if !ok {
@@ -237,9 +240,11 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	}()
 
 	err = cmd.Run()
-
-	signal.Stop(sig)
-	close(sig)
+	if err == nil {
+		// If the test passed, then we erase the log directory. This speeds up
+		// uploading logs in continuous integration & saves on disk space.
+		os.RemoveAll(undeclaredOutputsDir)
+	}
 
 	return err
 }
