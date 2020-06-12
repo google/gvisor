@@ -51,7 +51,7 @@ var VerdictStrings = map[int32]string{
 	NF_RETURN:      "RETURN",
 }
 
-// Socket options. These correspond to values in
+// Socket options for SOL_SOCKET. These correspond to values in
 // include/uapi/linux/netfilter_ipv4/ip_tables.h.
 const (
 	IPT_BASE_CTL            = 64
@@ -64,6 +64,12 @@ const (
 	IPT_SO_GET_REVISION_MATCH  = IPT_BASE_CTL + 2
 	IPT_SO_GET_REVISION_TARGET = IPT_BASE_CTL + 3
 	IPT_SO_GET_MAX             = IPT_SO_GET_REVISION_TARGET
+)
+
+// Socket option for SOL_IP. This corresponds to the value in
+// include/uapi/linux/netfilter_ipv4.h.
+const (
+	SO_ORIGINAL_DST = 80
 )
 
 // Name lengths. These correspond to values in

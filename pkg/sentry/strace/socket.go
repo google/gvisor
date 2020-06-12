@@ -521,6 +521,7 @@ var sockOptNames = map[uint64]abi.ValueSet{
 		linux.IP_ROUTER_ALERT:           "IP_ROUTER_ALERT",
 		linux.IP_PKTOPTIONS:             "IP_PKTOPTIONS",
 		linux.IP_MTU:                    "IP_MTU",
+		linux.SO_ORIGINAL_DST:           "SO_ORIGINAL_DST",
 	},
 	linux.SOL_SOCKET: {
 		linux.SO_ERROR:        "SO_ERROR",

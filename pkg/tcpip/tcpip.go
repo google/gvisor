@@ -813,6 +813,12 @@ type OutOfBandInlineOption int
 // a default TTL.
 type DefaultTTLOption uint8
 
+// type OriginalDestinationOption struct {
+// 	Addr Address
+// 	Port uint16
+// }
+type OriginalDestinationOption FullAddress
+
 // IPPacketInfo is the message struture for IP_PKTINFO.
 //
 // +stateify savable

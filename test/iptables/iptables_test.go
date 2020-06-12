@@ -259,6 +259,13 @@ func TestNATPreRedirectTCPPort(t *testing.T) {
 	singleTest(t, NATPreRedirectTCPPort{})
 }
 
+func TestNATPreRedirectTCPOutgoing(t *testing.T) {
+	singleTest(t, NATPreRedirectTCPOutgoing{})
+}
+
+func TestNATOutRedirectTCPIncoming(t *testing.T) {
+	singleTest(t, NATOutRedirectTCPIncoming{})
+}
 func TestNATOutRedirectUDPPort(t *testing.T) {
 	singleTest(t, NATOutRedirectUDPPort{})
 }
@@ -314,3 +321,19 @@ func TestInputSource(t *testing.T) {
 func TestInputInvertSource(t *testing.T) {
 	singleTest(t, FilterInputInvertSource{})
 }
+
+func TestNATPreOriginalDst(t *testing.T) {
+	singleTest(t, NATPreOriginalDst{})
+}
+
+func TestNATOutOriginalDst(t *testing.T) {
+	singleTest(t, NATOutOriginalDst{})
+}
+
+// func TestNATPreOriginalDstUnchanged(t *testing.T) {
+// 	singleTest(t, NATPreOriginalDstUnchanged{})
+// }
+
+// func TestNATOutOriginalDstUnchanged(t *testing.T) {
+// 	singleTest(t, NATOutOriginalDstUnchanged{})
+// }
