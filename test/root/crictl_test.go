@@ -39,6 +39,29 @@ import (
 // Tests for crictl have to be run as root (rather than in a user namespace)
 // because crictl creates named network namespaces in /var/run/netns/.
 
+// Sandbox returns a JSON config for a simple sandbox. Sandbox names must be
+// unique so different names should be used when running tests on the same
+// containerd instance.
+func Sandbox(name string) string {
+	// Sandbox is a default JSON config for a sandbox.
+	s := map[string]interface{}{
+		"metadata": map[string]string{
+			"name":      name,
+			"namespace": "default",
+			"uid":       testutil.RandomID(""),
+		},
+		"linux":         map[string]string{},
+		"log_directory": "/tmp",
+	}
+
+	v, err := json.Marshal(s)
+	if err != nil {
+		// This shouldn't happen.
+		panic(err)
+	}
+	return string(v)
+}
+
 // SimpleSpec returns a JSON config for a simple container that runs the
 // specified command in the specified image.
 func SimpleSpec(name, image string, cmd []string, extra map[string]interface{}) string {
@@ -49,7 +72,9 @@ func SimpleSpec(name, image string, cmd []string, extra map[string]interface{}) 
 		"image": map[string]string{
 			"image": testutil.ImageByName(image),
 		},
-		"log_path": fmt.Sprintf("%s.log", name),
+		// Log files are not deleted after root tests are run. Log to random
+		// paths to ensure logs are fresh.
+		"log_path": fmt.Sprintf("%s.log", testutil.RandomID(name)),
 	}
 	if len(cmd) > 0 { // Omit if empty.
 		s["command"] = cmd
@@ -65,20 +90,6 @@ func SimpleSpec(name, image string, cmd []string, extra map[string]interface{}) 
 	return string(v)
 }
 
-// Sandbox is a default JSON config for a sandbox.
-var Sandbox = `{
-    "metadata": {
-        "name": "default-sandbox",
-        "namespace": "default",
-        "attempt": 1,
-        "uid": "hdishd83djaidwnduwk28bcsb"
-    },
-    "linux": {
-    },
-    "log_directory": "/tmp"
-}
-`
-
 // Httpd is a JSON config for an httpd container.
 var Httpd = SimpleSpec("httpd", "basic/httpd", nil, nil)
 
@@ -90,7 +101,7 @@ func TestCrictlSanity(t *testing.T) {
 		t.Fatalf("failed to setup crictl: %v", err)
 	}
 	defer cleanup()
-	podID, contID, err := crictl.StartPodAndContainer("basic/httpd", Sandbox, Httpd)
+	podID, contID, err := crictl.StartPodAndContainer("basic/httpd", Sandbox("default"), Httpd)
 	if err != nil {
 		t.Fatalf("start failed: %v", err)
 	}
@@ -142,7 +153,7 @@ func TestMountPaths(t *testing.T) {
 		t.Fatalf("failed to setup crictl: %v", err)
 	}
 	defer cleanup()
-	podID, contID, err := crictl.StartPodAndContainer("basic/httpd", Sandbox, HttpdMountPaths)
+	podID, contID, err := crictl.StartPodAndContainer("basic/httpd", Sandbox("default"), HttpdMountPaths)
 	if err != nil {
 		t.Fatalf("start failed: %v", err)
 	}
@@ -168,7 +179,7 @@ func TestMountOverSymlinks(t *testing.T) {
 	defer cleanup()
 
 	spec := SimpleSpec("busybox", "basic/resolv", []string{"sleep", "1000"}, nil)
-	podID, contID, err := crictl.StartPodAndContainer("basic/resolv", Sandbox, spec)
+	podID, contID, err := crictl.StartPodAndContainer("basic/resolv", Sandbox("default"), spec)
 	if err != nil {
 		t.Fatalf("start failed: %v", err)
 	}
@@ -200,7 +211,7 @@ func TestMountOverSymlinks(t *testing.T) {
 }
 
 // TestHomeDir tests that the HOME environment variable is set for
-// multi-containers.
+// Pod containers.
 func TestHomeDir(t *testing.T) {
 	// Setup containerd and crictl.
 	crictl, cleanup, err := setup(t)
@@ -208,48 +219,52 @@ func TestHomeDir(t *testing.T) {
 		t.Fatalf("failed to setup crictl: %v", err)
 	}
 	defer cleanup()
-	contSpec := SimpleSpec("root", "basic/busybox", []string{"sleep", "1000"}, nil)
-	podID, contID, err := crictl.StartPodAndContainer("basic/busybox", Sandbox, contSpec)
-	if err != nil {
-		t.Fatalf("start failed: %v", err)
-	}
 
-	t.Run("root container", func(t *testing.T) {
-		out, err := crictl.Exec(contID, "sh", "-c", "echo $HOME")
-		if err != nil {
-			t.Fatalf("exec failed: %v, out: %s", err, out)
-		}
-		if got, want := strings.TrimSpace(string(out)), "/root"; got != want {
-			t.Fatalf("Home directory invalid. Got %q, Want : %q", got, want)
-		}
-	})
-
+	// Note that container ID returned here is a sub-container. All Pod
+	// containers are sub-containers. The root container of the sandbox is the
+	// pause container.
 	t.Run("sub-container", func(t *testing.T) {
-		// Create a sub container in the same pod.
-		subContSpec := SimpleSpec("subcontainer", "basic/busybox", []string{"sleep", "1000"}, nil)
-		subContID, err := crictl.StartContainer(podID, "basic/busybox", Sandbox, subContSpec)
+		contSpec := SimpleSpec("subcontainer", "basic/busybox", []string{"sh", "-c", "echo $HOME"}, nil)
+		podID, contID, err := crictl.StartPodAndContainer("basic/busybox", Sandbox("subcont-sandbox"), contSpec)
 		if err != nil {
 			t.Fatalf("start failed: %v", err)
 		}
 
-		out, err := crictl.Exec(subContID, "sh", "-c", "echo $HOME")
+		out, err := crictl.Logs(contID)
 		if err != nil {
-			t.Fatalf("exec failed: %v, out: %s", err, out)
+			t.Fatalf("failed retrieving container logs: %v, out: %s", err, out)
 		}
 		if got, want := strings.TrimSpace(string(out)), "/root"; got != want {
-			t.Fatalf("Home directory invalid. Got %q, Want: %q", got, want)
+			t.Fatalf("Home directory invalid. Got %q, Want : %q", got, want)
 		}
 
-		if err := crictl.StopContainer(subContID); err != nil {
+		// Stop everything.
+		if err := crictl.StopPodAndContainer(podID, contID); err != nil {
 			t.Fatalf("stop failed: %v", err)
 		}
 	})
 
-	// Stop everything.
-	if err := crictl.StopPodAndContainer(podID, contID); err != nil {
-		t.Fatalf("stop failed: %v", err)
-	}
+	// Tests that HOME is set for the exec process.
+	t.Run("exec", func(t *testing.T) {
+		contSpec := SimpleSpec("exec", "basic/busybox", []string{"sleep", "1000"}, nil)
+		podID, contID, err := crictl.StartPodAndContainer("basic/busybox", Sandbox("exec-sandbox"), contSpec)
+		if err != nil {
+			t.Fatalf("start failed: %v", err)
+		}
 
+		out, err := crictl.Exec(contID, "sh", "-c", "echo $HOME")
+		if err != nil {
+			t.Fatalf("failed retrieving container logs: %v, out: %s", err, out)
+		}
+		if got, want := strings.TrimSpace(string(out)), "/root"; got != want {
+			t.Fatalf("Home directory invalid. Got %q, Want : %q", got, want)
+		}
+
+		// Stop everything.
+		if err := crictl.StopPodAndContainer(podID, contID); err != nil {
+			t.Fatalf("stop failed: %v", err)
+		}
+	})
 }
 
 // containerdConfigTemplate is a .toml config for containerd. It contains a

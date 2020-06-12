@@ -251,7 +251,10 @@ func RandomID(prefix string) string {
 	if _, err := rand.Read(b); err != nil {
 		panic("rand.Read failed: " + err.Error())
 	}
-	return fmt.Sprintf("%s-%s", prefix, base32.StdEncoding.EncodeToString(b))
+	if prefix != "" {
+		prefix = prefix + "-"
+	}
+	return fmt.Sprintf("%s%s", prefix, base32.StdEncoding.EncodeToString(b))
 }
 
 // RandomContainerID generates a random container id for each test.
