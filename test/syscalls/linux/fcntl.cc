@@ -115,6 +115,15 @@ PosixErrorOr<Cleanup> SubprocessLock(std::string const& path, bool for_write,
   return std::move(cleanup);
 }
 
+TEST(FcntlTest, SetCloExecBadFD) {
+  // Open an eventfd file descriptor with FD_CLOEXEC descriptor flag not set.
+  FileDescriptor f = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, 0));
+  auto fd = f.get();
+  f.reset();
+  ASSERT_THAT(fcntl(fd, F_GETFD), SyscallFailsWithErrno(EBADF));
+  ASSERT_THAT(fcntl(fd, F_SETFD, FD_CLOEXEC), SyscallFailsWithErrno(EBADF));
+}
+
 TEST(FcntlTest, SetCloExec) {
   // Open an eventfd file descriptor with FD_CLOEXEC descriptor flag not set.
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, 0));
