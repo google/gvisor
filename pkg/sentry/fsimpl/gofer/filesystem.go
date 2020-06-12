@@ -784,6 +784,18 @@ afterTrailingSymlink:
 		start = parent
 		goto afterTrailingSymlink
 	}
+
+	// If still not done, resolves rp to an existing file
+	for !rp.Done() {
+		child.dirMu.Lock()
+		next, err := fs.stepLocked(ctx, rp, child, true, &ds)
+		child.dirMu.Unlock()
+		if err != nil {
+			return nil, err
+		}
+		child = next
+	}
+
 	return child.openLocked(ctx, rp, &opts)
 }
 
