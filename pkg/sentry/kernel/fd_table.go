@@ -458,6 +458,29 @@ func (f *FDTable) SetFlags(fd int32, flags FDFlags) error {
 	return nil
 }
 
+// SetFlagsVFS2 sets the flags for the given file descriptor.
+//
+// True is returned iff flags were changed.
+func (f *FDTable) SetFlagsVFS2(fd int32, flags FDFlags) error {
+	if fd < 0 {
+		// Don't accept negative FDs.
+		return syscall.EBADF
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	file, _, _ := f.getVFS2(fd)
+	if file == nil {
+		// No file found.
+		return syscall.EBADF
+	}
+
+	// Update the flags.
+	f.setVFS2(fd, file, flags)
+	return nil
+}
+
 // Get returns a reference to the file and the flags for the FD or nil if no
 // file is defined for the given fd.
 //
