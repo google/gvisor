@@ -47,17 +47,17 @@ func TestWindowShrink(t *testing.T) {
 
 	dut.Send(acceptFd, sampleData, 0)
 	if _, err := conn.ExpectData(&testbench.TCP{}, samplePayload, time.Second); err != nil {
-		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
+		t.Fatalf("expected payload was not received: %s", err)
 	}
 	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
 
 	dut.Send(acceptFd, sampleData, 0)
 	dut.Send(acceptFd, sampleData, 0)
 	if _, err := conn.ExpectData(&testbench.TCP{}, samplePayload, time.Second); err != nil {
-		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
+		t.Fatalf("expected payload was not received: %s", err)
 	}
 	if _, err := conn.ExpectData(&testbench.TCP{}, samplePayload, time.Second); err != nil {
-		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
+		t.Fatalf("expected payload was not received: %s", err)
 	}
 	// We close our receiving window here
 	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
@@ -68,6 +68,6 @@ func TestWindowShrink(t *testing.T) {
 	// the following lines.
 	expectedRemoteSeqNum := *conn.RemoteSeqNum() - 1
 	if _, err := conn.ExpectData(&testbench.TCP{SeqNum: testbench.Uint32(uint32(expectedRemoteSeqNum))}, nil, time.Second); err != nil {
-		t.Fatalf("expected a packet with sequence number %v: %s", expectedRemoteSeqNum, err)
+		t.Fatalf("expected a packet with sequence number %d: %s", expectedRemoteSeqNum, err)
 	}
 }

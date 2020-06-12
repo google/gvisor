@@ -50,11 +50,11 @@ func TestZeroWindowProbeRetransmit(t *testing.T) {
 	// Send and receive sample data to the dut.
 	dut.Send(acceptFd, sampleData, 0)
 	if _, err := conn.ExpectData(&testbench.TCP{}, samplePayload, time.Second); err != nil {
-		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
+		t.Fatalf("expected payload was not received: %s", err)
 	}
 	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
 	if _, err := conn.ExpectData(&testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, nil, time.Second); err != nil {
-		t.Fatalf("expected a packet with sequence number %s", err)
+		t.Fatalf("expected packet was not received: %s", err)
 	}
 
 	// Check for the dut to keep the connection alive as long as the zero window
@@ -80,7 +80,7 @@ func TestZeroWindowProbeRetransmit(t *testing.T) {
 		// first retransmission time. The retransmission times is supposed to
 		// exponentially increase.
 		if _, err := conn.ExpectData(&testbench.TCP{SeqNum: probeSeq}, nil, 2*current); err != nil {
-			t.Fatalf("expected a probe with sequence number %v: loop %d", probeSeq, i)
+			t.Fatalf("expected a probe with sequence number %d: loop %d", probeSeq, i)
 		}
 		if i == 0 {
 			startProbeDuration = time.Now().Sub(first)
@@ -100,6 +100,6 @@ func TestZeroWindowProbeRetransmit(t *testing.T) {
 	// Expect the dut to recover and transmit data.
 	if _, err := conn.ExpectData(&testbench.
 		TCP{SeqNum: ackProbe}, samplePayload, time.Second); err != nil {
-		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
+		t.Fatalf("expected payload was not received: %s", err)
 	}
 }

@@ -51,12 +51,12 @@ func TestZeroWindowProbe(t *testing.T) {
 	// Send and receive sample data to the dut.
 	dut.Send(acceptFd, sampleData, 0)
 	if _, err := conn.ExpectData(&testbench.TCP{}, samplePayload, time.Second); err != nil {
-		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
+		t.Fatalf("expected payload was not received: %s", err)
 	}
 	sendTime := time.Now().Sub(start)
 	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
 	if _, err := conn.ExpectData(&testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, nil, time.Second); err != nil {
-		t.Fatalf("expected a packet with sequence number %s", err)
+		t.Fatalf("expected packet was not received: %s", err)
 	}
 
 	// Test 1: Check for receive of a zero window probe, record the duration for
@@ -73,7 +73,7 @@ func TestZeroWindowProbe(t *testing.T) {
 	// Expect there are no zero-window probes sent until there is data to be sent out
 	// from the dut.
 	if _, err := conn.ExpectData(&testbench.TCP{SeqNum: probeSeq}, nil, 2*time.Second); err == nil {
-		t.Fatalf("unexpected a packet with sequence number %v: %s", probeSeq, err)
+		t.Fatalf("unexpected packet with sequence number %d: %s", probeSeq, err)
 	}
 
 	start = time.Now()
@@ -81,13 +81,13 @@ func TestZeroWindowProbe(t *testing.T) {
 	dut.Send(acceptFd, sampleData, 0)
 	// Expect zero-window probe from the dut.
 	if _, err := conn.ExpectData(&testbench.TCP{SeqNum: probeSeq}, nil, time.Second); err != nil {
-		t.Fatalf("expected a packet with sequence number %v: %s", probeSeq, err)
+		t.Fatalf("expected a packet with sequence number %d: %s", probeSeq, err)
 	}
 	// Expect the probe to be sent after some time. Compare against the previous
 	// time recorded when the dut immediately sends out data on receiving the
 	// send command.
 	if startProbeDuration := time.Now().Sub(start); startProbeDuration <= sendTime {
-		t.Fatalf("expected the first probe to be sent out after retransmission interval, got %v want > %v\n", startProbeDuration, sendTime)
+		t.Fatalf("expected the first probe to be sent out after retransmission interval, got %s want > %s", startProbeDuration, sendTime)
 	}
 
 	// Test 2: Check if the dut recovers on advertizing non-zero receive window.
@@ -97,7 +97,7 @@ func TestZeroWindowProbe(t *testing.T) {
 	conn.Send(testbench.TCP{AckNum: ackProbe, Flags: testbench.Uint8(header.TCPFlagAck)})
 	// Expect the dut to recover and transmit data.
 	if _, err := conn.ExpectData(&testbench.TCP{SeqNum: ackProbe}, samplePayload, time.Second); err != nil {
-		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
+		t.Fatalf("expected payload was not received: %s", err)
 	}
 
 	// Test 3: Sanity check for dut's processing of a similar probe it sent.
