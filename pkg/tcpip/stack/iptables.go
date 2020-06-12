@@ -16,6 +16,7 @@ package stack
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -410,4 +411,35 @@ func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx
 
 	// All the matchers matched, so run the target.
 	return rule.Target.Action(pkt, &it.connections, hook, gso, r, address)
+}
+
+// OriginalDst returns the original destination of redirected connections. It
+// returns an error if the connection doesn't exist or isn't redirected.
+func (it *IPTables) OriginalDst(epID TransportEndpointID) (tcpip.Address, uint16, *tcpip.Error) {
+	// Using epID, lookup the connection in the conntrack table. The
+	// connection's reply tuple describes the original address.
+	var tuple connTrackTuple
+	tuple.src.addr = epID.LocalAddress
+	tuple.src.port = epID.LocalPort
+	tuple.src.protocol = header.IPv4ProtocolNumber
+	tuple.dst.addr = epID.RemoteAddress
+	tuple.dst.port = epID.RemotePort
+	tuple.dst.protocol = header.TCPProtocolNumber
+	tuple.dst.direction = dirReply
+	hash := it.connections.getTupleHash(tuple)
+
+	it.connections.connMu.Lock()
+	defer it.connections.connMu.Unlock()
+
+	holder, ok := it.connections.ctMap[hash]
+	if !ok {
+		log.Printf("not connected! tuple: %+v", tuple)
+		return "", 0, tcpip.ErrNotConnected
+	}
+
+	if holder.conn.manip == manipNone {
+		return "", 0, tcpip.ErrBadAddress
+	}
+
+	return holder.conn.originalTupleHolder.tuple.dst.addr, holder.conn.originalTupleHolder.tuple.dst.port, nil
 }

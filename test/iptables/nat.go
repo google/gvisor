@@ -17,12 +17,19 @@ package iptables
 import (
 	"errors"
 	"fmt"
+	"log"
 	"net"
+	"syscall"
 	"time"
+	"unsafe"
 )
 
 const (
-	redirectPort = 42
+	redirectPort    = 42
+	SO_ORIGINAL_DST = 80
+	// originalDstErrno is returned by SO_ORIGINAL_DST when packet's aren't
+	// NATed.
+	originalDstErrno = syscall.ENOENT
 )
 
 func init() {
@@ -42,6 +49,9 @@ func init() {
 	RegisterTestCase(NATOutRedirectInvert{})
 	RegisterTestCase(NATRedirectRequiresProtocol{})
 	RegisterTestCase(NATLoopbackSkipsPrerouting{})
+	RegisterTestCase(NATPreOriginalDst{})
+	RegisterTestCase(NATOutOriginalDst{})
+	// RegisterTestCase(NATPreOriginalDstUnchanged{})
 }
 
 // NATPreRedirectUDPPort tests that packets are redirected to different port.
@@ -461,6 +471,206 @@ func (NATLoopbackSkipsPrerouting) ContainerAction(ip net.IP) error {
 // LocalAction implements TestCase.LocalAction.
 func (NATLoopbackSkipsPrerouting) LocalAction(ip net.IP) error {
 	// No-op.
+	return nil
+}
+
+// tests that SO_ORIGINAL_DST returns the pre-NAT destination of PREROUTING
+// NATted packets.
+type NATPreOriginalDst struct{}
+
+// Name implements TestCase.Name.
+func (NATPreOriginalDst) Name() string {
+	return "NATPreOriginalDst"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (NATPreOriginalDst) ContainerAction(ip net.IP) error {
+	// Redirect incoming TCP connections to acceptPort.
+	if err := natTable("-A", "PREROUTING", "-p", "tcp", "-j", "REDIRECT", "--to-port", fmt.Sprintf("%d", acceptPort)); err != nil {
+		return fmt.Errorf("1")
+		return err
+	}
+
+	addr, err := getInterfaceAddr()
+	if err != nil {
+		return err
+	}
+	log.Printf("addr is %v", addr)
+	return listenForRedirectedConn(addr)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (NATPreOriginalDst) LocalAction(ip net.IP) error {
+	return connectTCP(ip, dropPort, sendloopDuration)
+}
+
+// tests that SO_ORIGINAL_DST returns the pre-NAT destination of OUTBOUND NATted
+// packets.
+type NATOutOriginalDst struct{}
+
+// Name implements TestCase.Name.
+func (NATOutOriginalDst) Name() string {
+	return "NATOutOriginalDst"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (NATOutOriginalDst) ContainerAction(ip net.IP) error {
+	// Redirect incoming TCP connections to acceptPort.
+	if err := natTable("-A", "OUTPUT", "-p", "tcp", "-j", "REDIRECT", "--to-port", fmt.Sprintf("%d", acceptPort)); err != nil {
+		return fmt.Errorf("1")
+		return err
+	}
+
+	connCh := make(chan error)
+	go func() {
+		connCh <- connectTCP(ip, dropPort, sendloopDuration)
+	}()
+
+	if err := listenForRedirectedConn(ip.To4()); err != nil {
+		return err
+	}
+	return <-connCh
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (NATOutOriginalDst) LocalAction(ip net.IP) error {
+	// No-op.
+	return nil
+}
+
+// // Tests that SO_ORIGINAL_DST fails on PREROUTING connections not affected by
+// // NAT.
+// type NATPreOriginalDstUnchanged struct{}
+
+// // Name implements TestCase.Name.
+// func (NATPreOriginalDstUnchanged) Name() string {
+// 	return "NATPreOriginalDstUnchanged"
+// }
+
+// // ContainerAction implements TestCase.ContainerAction.
+// func (NATPreOriginalDstUnchanged) ContainerAction(ip net.IP) error {
+// 	addr, err := getInterfaceAddr()
+// 	if err != nil {
+// 		return err
+// 	}
+// 	log.Printf("addr is %v", addr)
+// 	// TODO: Check error type.
+// 	err = listenForRedirectedConn(addr)
+// 	if err == nil {
+// 		return fmt.Errorf("expected SO_ORIGINAL_DST to fail with errno %d, but no error occurred", originalDstErrno)
+// 	}
+// 	if err, ok := err.(originalDstError); !ok {
+// 		return fmt.Errorf("expected SO_ORIGINAL_DST to fail with errno %d, but got error: %v", err)
+// 	} else if err.errno != originalDstErrno {
+// 		return fmt.Errorf("expected SO_ORIGINAL_DST to fail with errno %d, but got errno: %d", originalDstErrno, err.errno)
+// 	} else {
+// 		log.Printf("err.errno: %d", err.errno)
+// 	}
+// 	return nil
+// }
+
+// // LocalAction implements TestCase.LocalAction.
+// func (NATPreOriginalDstUnchanged) LocalAction(ip net.IP) error {
+// 	return connectTCP(ip, acceptPort, sendloopDuration)
+// }
+
+// // Tests that SO_ORIGINAL_DST fails on OUTPUT connections not affected by
+// // NAT.
+// type NATOutOriginalDstUnchanged struct{}
+
+// // Name implements TestCase.Name.
+// func (NATOutOriginalDstUnchanged) Name() string {
+// 	return "NATOutOriginalDstUnchanged"
+// }
+
+// // ContainerAction implements TestCase.ContainerAction.
+// func (NATOutOriginalDstUnchanged) ContainerAction(ip net.IP) error {
+// 	connCh := make(chan error)
+// 	go func() {
+// 		connCh <- connectTCP(ip, dropPort, sendloopDuration)
+// 	}()
+
+// 	err := listenForRedirectedConn(ip.To4())
+// 	if err == nil {
+// 		return fmt.Errorf("expected SO_ORIGINAL_DST to fail with errno %d, but no error occurred", syscall.EBADF)
+// 	}
+// 	if err, ok := err.(originalDstError); !ok {
+// 		return fmt.Errorf("expected SO_ORIGINAL_DST to fail with errno %d, but got error: %v", err)
+// 	} else if err.errno != syscall.EFAULT {
+// 		return fmt.Errorf("expected SO_ORIGINAL_DST to fail with errno %d, but got errno: %d", err.errno)
+// 	}
+// 	panic("yo")
+// 	return <-connCh
+// }
+
+// // LocalAction implements TestCase.LocalAction.
+// func (NATOutOriginalDstUnchanged) LocalAction(ip net.IP) error {
+// 	// No-op.
+// 	return nil
+// }
+
+type originalDstError struct {
+	errno syscall.Errno
+}
+
+func (e originalDstError) Error() string {
+	return fmt.Sprintf("errno (%d) when calling getsockopt(SOL_IP, SO_ORIGINAL_DST): %v", int(e.errno), e.errno.Error())
+}
+
+func listenForRedirectedConn(originalDst net.IP) error {
+	// The net package doesn't give guarantee access to the connection's
+	// underlying FD, and thus we cannot call getsockopt. We have to use
+	// traditional syscalls for SO_ORIGINAL_DST.
+
+	// Create the listening socket, bind, listen, and accept.
+	sockfd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 0)
+	if err != nil {
+		return err
+	}
+	defer syscall.Close(sockfd)
+
+	bindAddr := syscall.SockaddrInet4{
+		Port: acceptPort,
+		Addr: [4]byte{0, 0, 0, 0}, // INADDR_ANY
+	}
+	if err := syscall.Bind(sockfd, &bindAddr); err != nil {
+		return err
+	}
+
+	if err := syscall.Listen(sockfd, 1); err != nil {
+		return err
+	}
+
+	connfd, remoteAddr, err := syscall.Accept(sockfd)
+	if err != nil {
+		return err
+	}
+	defer syscall.Close(connfd)
+	log.Printf("Incoming connection from %+v", remoteAddr)
+
+	// Verify that, despite listening on acceptPort, SO_ORIGINAL_DST
+	// indicates the packet was sent to originalDst:dropPort.
+	var got syscall.RawSockaddrInet4
+	var addrLen uint32 = syscall.SizeofSockaddrInet4
+	_, _, errno := syscall.Syscall6(
+		syscall.SYS_GETSOCKOPT,
+		uintptr(connfd),
+		syscall.SOL_IP,
+		SO_ORIGINAL_DST,
+		uintptr(unsafe.Pointer(&got)),
+		uintptr(unsafe.Pointer(&addrLen)),
+		0)
+	if errno != 0 {
+		return originalDstError{errno}
+	}
+	want := syscall.RawSockaddrInet4{
+		Family: syscall.AF_INET,
+		Port:   htons(dropPort),
+	}
+	copy(want.Addr[:], originalDst.To4())
+	if got != want {
+		return fmt.Errorf("SO_ORIGINAL_DST returned %+v, but wanted %+v (note: port numbers are in network byte order)", got, want)
+	}
 	return nil
 }
 

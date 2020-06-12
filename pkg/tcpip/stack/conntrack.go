@@ -17,6 +17,7 @@ package stack
 import (
 	"encoding/binary"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -225,7 +226,6 @@ func getReplyTuple(tuple connTrackTuple) connTrackTuple {
 	replyTuple.dst.port = tuple.src.port
 	replyTuple.dst.protocol = tuple.dst.protocol
 	replyTuple.dst.direction = dirReply
-
 	return replyTuple
 }
 
@@ -263,7 +263,7 @@ func (ct *ConnTrackTable) getTupleHash(tuple connTrackTuple) uint32 {
 // TODO(gvisor.dev/issue/170): Only TCP packets are supported. Need to support other
 // transport protocols.
 func (ct *ConnTrackTable) connTrackForPacket(pkt *PacketBuffer, hook Hook) (*connTrack, ctDirection) {
-	tuple, err := packetToTuple(pkt, hook)
+	tuple, err := packetToTuple(pkt, hook) // TODO: Unused hook
 	if err != nil {
 		return nil, dirOriginal
 	}
@@ -320,6 +320,8 @@ func (ct *ConnTrackTable) createConnTrackForPacket(pkt *PacketBuffer, hook Hook,
 	// list.
 	ct.connMu.Lock()
 	defer ct.connMu.Unlock()
+	log.Printf("Inserting tuple for redirected conn: %+v", tuple)
+	log.Printf("Inserting tuple for redirected conn(reply): %+v", replyTuple)
 	ct.ctMap[hash] = conn.originalTupleHolder
 	ct.ctMap[replyHash] = conn.replyTupleHolder
 
@@ -345,6 +347,7 @@ func handlePacketPrerouting(pkt *PacketBuffer, conn *connTrack, dir ctDirection)
 		tcpHeader.SetDestinationPort(port)
 		netHeader.SetDestinationAddress(conn.replyTupleHolder.tuple.src.addr)
 	case dirReply:
+		panic("Can we even reach here?")
 		port := conn.originalTupleHolder.tuple.dst.port
 		tcpHeader.SetSourcePort(port)
 		netHeader.SetSourceAddress(conn.originalTupleHolder.tuple.dst.addr)
@@ -373,7 +376,7 @@ func handlePacketOutput(pkt *PacketBuffer, conn *connTrack, gso *GSO, r *Route, 
 	// have their destinations modified and replies have their sources
 	// modified. For prerouting redirection, we only reach this point
 	// when replying, so packet sources are modified.
-	if conn.manip == manipDstOutput && dir == dirOriginal {
+	if conn.manip == manipDstOutput && dir == dirOriginal { // TODO: Does each condition imply the other?
 		port := conn.replyTupleHolder.tuple.src.port
 		tcpHeader.SetDestinationPort(port)
 		netHeader.SetDestinationAddress(conn.replyTupleHolder.tuple.src.addr)
