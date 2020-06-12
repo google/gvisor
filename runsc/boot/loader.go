@@ -754,6 +754,21 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *Config, cid string, file
 		return err
 	}
 
+	// Add the HOME enviroment variable if it is not already set.
+	var envv []string
+	if kernel.VFS2Enabled {
+		envv, err = user.MaybeAddExecUserHomeVFS2(ctx, procArgs.MountNamespaceVFS2,
+			procArgs.Credentials.RealKUID, procArgs.Envv)
+
+	} else {
+		envv, err = user.MaybeAddExecUserHome(ctx, procArgs.MountNamespace,
+			procArgs.Credentials.RealKUID, procArgs.Envv)
+	}
+	if err != nil {
+		return err
+	}
+	procArgs.Envv = envv
+
 	// Create and start the new process.
 	tg, _, err := l.k.CreateProcess(procArgs)
 	if err != nil {
