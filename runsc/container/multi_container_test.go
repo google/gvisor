@@ -1698,3 +1698,83 @@ func TestMultiContainerRunNonRoot(t *testing.T) {
 		t.Fatalf("child container failed, waitStatus: %v", ws)
 	}
 }
+
+// TestMultiContainerHomeEnvDir tests that the HOME environment variable is set
+// for root containers, sub-containers, and execed processes.
+func TestMultiContainerHomeEnvDir(t *testing.T) {
+	// TODO(gvisor.dev/issue/1487): VFSv2 configs failing.
+	// NOTE: Don't use overlay since we need changes to persist to the temp dir
+	// outside the sandbox.
+	for testName, conf := range configs(t, noOverlay...) {
+		t.Run(testName, func(t *testing.T) {
+
+			rootDir, cleanup, err := testutil.SetupRootDir()
+			if err != nil {
+				t.Fatalf("error creating root dir: %v", err)
+			}
+			defer cleanup()
+			conf.RootDir = rootDir
+
+			// Create temp files we can write the value of $HOME to.
+			homeDirs := map[string]*os.File{}
+			for _, name := range []string{"root", "sub", "exec"} {
+				homeFile, err := ioutil.TempFile(testutil.TmpDir(), name)
+				if err != nil {
+					t.Fatalf("creating temp file: %v", err)
+				}
+				homeDirs[name] = homeFile
+			}
+
+			// We will sleep in the root container in order to ensure that
+			// the root container doesn't terminate before sub containers can be
+			// created.
+			rootCmd := []string{"/bin/sh", "-c", fmt.Sprintf("printf \"$HOME\" > %s; sleep 1000", homeDirs["root"].Name())}
+			subCmd := []string{"/bin/sh", "-c", fmt.Sprintf("printf \"$HOME\" > %s", homeDirs["sub"].Name())}
+			execCmd := []string{"/bin/sh", "-c", fmt.Sprintf("printf \"$HOME\" > %s", homeDirs["exec"].Name())}
+
+			// Setup the containers, a root container and sub container.
+			specConfig, ids := createSpecs(rootCmd, subCmd)
+			containers, cleanup, err := startContainers(conf, specConfig, ids)
+			if err != nil {
+				t.Fatalf("error starting containers: %v", err)
+			}
+			defer cleanup()
+
+			// Exec into the root container synchronously.
+			args := &control.ExecArgs{Argv: execCmd}
+			if _, err := containers[0].executeSync(args); err != nil {
+				t.Errorf("error executing %+v: %v", args, err)
+			}
+
+			// Wait for the subcontainer to finish.
+			_, err = containers[1].Wait()
+			if err != nil {
+				t.Errorf("wait on child container: %v", err)
+			}
+
+			// Wait for the root container to run.
+			expectedPL := []*control.Process{
+				newProcessBuilder().Cmd("sh").Process(),
+				newProcessBuilder().Cmd("sleep").Process(),
+			}
+			if err := waitForProcessList(containers[0], expectedPL); err != nil {
+				t.Errorf("failed to wait for sleep to start: %v", err)
+			}
+
+			// Check the written files.
+			for name, tmpFile := range homeDirs {
+				dirBytes, err := ioutil.ReadAll(tmpFile)
+				if err != nil {
+					t.Fatalf("reading %s temp file: %v", name, err)
+				}
+				got := string(dirBytes)
+
+				want := "/"
+				if got != want {
+					t.Errorf("%s $HOME incorrect: got: %q, want: %q", name, got, want)
+				}
+			}
+
+		})
+	}
+}
