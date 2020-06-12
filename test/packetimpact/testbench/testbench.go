@@ -25,6 +25,8 @@ import (
 )
 
 var (
+	// DUTType is the type of device under test.
+	DUTType = ""
 	// Device is the local device on the test network.
 	Device = ""
 	// LocalIPv4 is the local IPv4 address on the test network.
@@ -63,6 +65,7 @@ func RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&RemoteIPv6, "remote_ipv6", RemoteIPv6, "remote IPv6 address for test packets")
 	fs.StringVar(&RemoteMAC, "remote_mac", RemoteMAC, "remote mac address for test packets")
 	fs.StringVar(&Device, "device", Device, "local device for test packets")
+	fs.StringVar(&DUTType, "dut_type", DUTType, "type of device under test")
 }
 
 // genPseudoFlags populates flag-like global config based on real flags.
