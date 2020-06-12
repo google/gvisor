@@ -218,19 +218,16 @@ func (it *IPTables) Check(hook Hook, pkt *PacketBuffer, gso *GSO, r *Route, addr
 	// Many users never configure iptables. Spare them the cost of rule
 	// traversal if rules have never been set.
 	it.mu.RLock()
+	defer it.mu.RUnlock()
 	if !it.modified {
-		it.mu.RUnlock()
 		return true
 	}
-	it.mu.RUnlock()
 
 	// Packets are manipulated only if connection and matching
 	// NAT rule exists.
 	shouldTrack := it.connections.handlePacket(pkt, hook, gso, r)
 
 	// Go through each table containing the hook.
-	it.mu.RLock()
-	defer it.mu.RUnlock()
 	priorities := it.priorities[hook]
 	for _, tableID := range priorities {
 		// If handlePacket already NATed the packet, we don't need to
@@ -417,4 +414,10 @@ func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx
 
 	// All the matchers matched, so run the target.
 	return rule.Target.Action(pkt, &it.connections, hook, gso, r, address)
+}
+
+// OriginalDst returns the original destination of redirected connections. It
+// returns an error if the connection doesn't exist or isn't redirected.
+func (it *IPTables) OriginalDst(epID TransportEndpointID) (tcpip.Address, uint16, *tcpip.Error) {
+	return it.connections.originalDst(epID)
 }

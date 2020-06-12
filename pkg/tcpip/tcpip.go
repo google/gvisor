@@ -954,6 +954,10 @@ type DefaultTTLOption uint8
 // classic BPF filter on a given endpoint.
 type SocketDetachFilterOption int
 
+// OriginalDestinationOption is used to get the original destination address
+// and port of a redirected packet.
+type OriginalDestinationOption FullAddress
+
 // IPPacketInfo is the message structure for IP_PKTINFO.
 //
 // +stateify savable
