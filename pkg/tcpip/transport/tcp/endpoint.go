@@ -1855,6 +1855,9 @@ func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 
 		return v, nil
 
+	case tcpip.MulticastLoopOption:
+		return true, nil
+
 	default:
 		return false, tcpip.ErrUnknownProtocolOption
 	}
@@ -1921,6 +1924,9 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 		v := int(e.windowClamp)
 		e.UnlockUser()
 		return v, nil
+
+	case tcpip.MulticastTTLOption:
+		return 1, nil
 
 	default:
 		return -1, tcpip.ErrUnknownProtocolOption
