@@ -994,6 +994,30 @@ TEST_P(TCPSocketPairTest, SetTCPWindowClampBelowMinRcvBufConnectedSocket) {
   }
 }
 
+TEST_P(TCPSocketPairTest, IpMulticastTtlDefault) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  EXPECT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_TTL,
+                         &get, &get_len),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_GT(get, 0);
+}
+
+TEST_P(TCPSocketPairTest, IpMulticastLoopDefault) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  EXPECT_THAT(getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_LOOP,
+                         &get, &get_len),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, 1);
+}
+
 TEST_P(TCPSocketPairTest, TCPResetDuringClose_NoRandomSave) {
   DisableSave ds;  // Too many syscalls.
   constexpr int kThreadCount = 1000;
