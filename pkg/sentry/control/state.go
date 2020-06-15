@@ -16,6 +16,7 @@ package control
 
 import (
 	"errors"
+	"fmt"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -30,8 +31,24 @@ var ErrInvalidFiles = errors.New("exactly one file must be provided")
 
 // State includes state-related functions.
 type State struct {
-	Kernel   *kernel.Kernel
-	Watchdog *watchdog.Watchdog
+	Kernel       *kernel.Kernel
+	Watchdog     *watchdog.Watchdog
+	methodFilter map[string]interface{}
+}
+
+// NewState returns a new State object.
+func NewState(k *kernel.Kernel, w *watchdog.Watchdog, methodFilter map[string]interface{}) *State {
+	return &State{Kernel: k, Watchdog: w, methodFilter: methodFilter}
+}
+
+func (s *State) checkMethod(method string) error {
+	if s.methodFilter == nil {
+		return nil
+	}
+	if _, ok := s.methodFilter[method]; !ok {
+		return fmt.Errorf("command %v not allowed", method)
+	}
+	return nil
 }
 
 // SaveOpts contains options for the Save RPC call.
@@ -48,6 +65,9 @@ type SaveOpts struct {
 
 // Save saves the running system.
 func (s *State) Save(o *SaveOpts, _ *struct{}) error {
+	if err := s.checkMethod("Save"); err != nil {
+		return err
+	}
 	// Create an output stream.
 	if len(o.FilePayload.Files) != 1 {
 		return ErrInvalidFiles

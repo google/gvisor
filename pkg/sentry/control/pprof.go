@@ -16,6 +16,7 @@ package control
 
 import (
 	"errors"
+	"fmt"
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
@@ -60,11 +61,31 @@ type Profile struct {
 
 	// Kernel is the kernel under profile.
 	Kernel *kernel.Kernel
+
+	methodFilter map[string]interface{}
+}
+
+// NewProfile returns a new Profile object.
+func NewProfile(k *kernel.Kernel, methodFilter map[string]interface{}) *Profile {
+	return &Profile{Kernel: k, methodFilter: methodFilter}
+}
+
+func (p *Profile) checkMethod(method string) error {
+	if p.methodFilter == nil {
+		return nil
+	}
+	if _, ok := p.methodFilter[method]; !ok {
+		return fmt.Errorf("command %v not allowed", method)
+	}
+	return nil
 }
 
 // StartCPUProfile is an RPC stub which starts recording the CPU profile in a
 // file.
 func (p *Profile) StartCPUProfile(o *ProfileOpts, _ *struct{}) error {
+	if err := p.checkMethod("StartCPUProfile"); err != nil {
+		return err
+	}
 	if len(o.FilePayload.Files) < 1 {
 		return errNoOutput
 	}
@@ -90,6 +111,9 @@ func (p *Profile) StartCPUProfile(o *ProfileOpts, _ *struct{}) error {
 // StopCPUProfile is an RPC stub which stops the CPU profiling and flush out the
 // profile data. It takes no argument.
 func (p *Profile) StopCPUProfile(_, _ *struct{}) error {
+	if err := p.checkMethod("StopCPUProfile"); err != nil {
+		return err
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -105,6 +129,9 @@ func (p *Profile) StopCPUProfile(_, _ *struct{}) error {
 
 // HeapProfile generates a heap profile for the sentry.
 func (p *Profile) HeapProfile(o *ProfileOpts, _ *struct{}) error {
+	if err := p.checkMethod("HeapProfile"); err != nil {
+		return err
+	}
 	if len(o.FilePayload.Files) < 1 {
 		return errNoOutput
 	}
@@ -120,6 +147,9 @@ func (p *Profile) HeapProfile(o *ProfileOpts, _ *struct{}) error {
 // GoroutineProfile is an RPC stub which dumps out the stack trace for all
 // running goroutines.
 func (p *Profile) GoroutineProfile(o *ProfileOpts, _ *struct{}) error {
+	if err := p.checkMethod("GoroutineProfile"); err != nil {
+		return err
+	}
 	if len(o.FilePayload.Files) < 1 {
 		return errNoOutput
 	}
@@ -134,6 +164,9 @@ func (p *Profile) GoroutineProfile(o *ProfileOpts, _ *struct{}) error {
 // BlockProfile is an RPC stub which dumps out the stack trace that led to
 // blocking on synchronization primitives.
 func (p *Profile) BlockProfile(o *ProfileOpts, _ *struct{}) error {
+	if err := p.checkMethod("BlockProfile"); err != nil {
+		return err
+	}
 	if len(o.FilePayload.Files) < 1 {
 		return errNoOutput
 	}
@@ -148,6 +181,9 @@ func (p *Profile) BlockProfile(o *ProfileOpts, _ *struct{}) error {
 // MutexProfile is an RPC stub which dumps out the stack trace of holders of
 // contended mutexes.
 func (p *Profile) MutexProfile(o *ProfileOpts, _ *struct{}) error {
+	if err := p.checkMethod("MutexProfile"); err != nil {
+		return err
+	}
 	if len(o.FilePayload.Files) < 1 {
 		return errNoOutput
 	}
@@ -161,6 +197,9 @@ func (p *Profile) MutexProfile(o *ProfileOpts, _ *struct{}) error {
 
 // StartTrace is an RPC stub which starts collection of an execution trace.
 func (p *Profile) StartTrace(o *ProfileOpts, _ *struct{}) error {
+	if err := p.checkMethod("StartTrace"); err != nil {
+		return err
+	}
 	if len(o.FilePayload.Files) < 1 {
 		return errNoOutput
 	}
@@ -189,6 +228,9 @@ func (p *Profile) StartTrace(o *ProfileOpts, _ *struct{}) error {
 // StopTrace is an RPC stub which stops collection of an ongoing execution
 // trace and flushes the trace data. It takes no argument.
 func (p *Profile) StopTrace(_, _ *struct{}) error {
+	if err := p.checkMethod("StopTrace"); err != nil {
+		return err
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

@@ -43,7 +43,23 @@ import (
 //
 // At the moment, this is limited to exec support.
 type Proc struct {
-	Kernel *kernel.Kernel
+	Kernel       *kernel.Kernel
+	methodFilter map[string]interface{}
+}
+
+// NewProc returns a new Proc object
+func NewProc(k *kernel.Kernel, methodFilter map[string]interface{}) *Proc {
+	return &Proc{Kernel: k, methodFilter: methodFilter}
+}
+
+func (p *Proc) checkMethod(method string) error {
+	if p.methodFilter == nil {
+		return nil
+	}
+	if _, ok := p.methodFilter[method]; !ok {
+		return fmt.Errorf("command %v not allowed", method)
+	}
+	return nil
 }
 
 // ExecArgs is the set of arguments to exec.
@@ -116,6 +132,9 @@ func (args ExecArgs) String() string {
 
 // Exec runs a new task.
 func (proc *Proc) Exec(args *ExecArgs, waitStatus *uint32) error {
+	if err := proc.checkMethod("Exec"); err != nil {
+		return err
+	}
 	newTG, _, _, _, err := proc.execAsync(args)
 	if err != nil {
 		return err
@@ -130,6 +149,9 @@ func (proc *Proc) Exec(args *ExecArgs, waitStatus *uint32) error {
 // ExecAsync runs a new task, but doesn't wait for it to finish. It is defined
 // as a function rather than a method to avoid exposing execAsync as an RPC.
 func ExecAsync(proc *Proc, args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadID, *host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
+	if err := proc.checkMethod("ExecAsync"); err != nil {
+		return nil, 0, nil, nil, err
+	}
 	return proc.execAsync(args)
 }
 
@@ -254,6 +276,9 @@ type PsArgs struct {
 
 // Ps provides a process listing for the running kernel.
 func (proc *Proc) Ps(args *PsArgs, out *string) error {
+	if err := proc.checkMethod("Ps"); err != nil {
+		return err
+	}
 	var p []*Process
 	if e := Processes(proc.Kernel, "", &p); e != nil {
 		return e

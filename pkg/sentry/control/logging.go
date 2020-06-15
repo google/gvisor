@@ -67,7 +67,22 @@ type LoggingArgs struct {
 }
 
 // Logging provides functions related to logging.
-type Logging struct{}
+type Logging struct{ methodFilter map[string]interface{} }
+
+// NewLogging returns a new Logging object.
+func NewLogging(methodFilter map[string]interface{}) *Logging {
+	return &Logging{methodFilter}
+}
+
+func (l *Logging) checkMethod(method string) error {
+	if l.methodFilter == nil {
+		return nil
+	}
+	if _, ok := l.methodFilter[method]; !ok {
+		return fmt.Errorf("command %v not allowed", method)
+	}
+	return nil
+}
 
 // Change will change the log level and strace arguments. Although
 // this functions signature requires an error it never actually
@@ -76,6 +91,9 @@ type Logging struct{}
 // attached to an empty struct but this is also part of how
 // URPC dispatches.
 func (l *Logging) Change(args *LoggingArgs, code *int) error {
+	if err := l.checkMethod("Change"); err != nil {
+		return err
+	}
 	if args.SetLevel {
 		// Logging uses an atomic for the level so this is thread safe.
 		log.SetLevel(args.Level)
