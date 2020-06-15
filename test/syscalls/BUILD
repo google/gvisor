@@ -69,6 +69,11 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:socket_capability_test",
+    vfs2 = "True",
+)
+
+syscall_test(
     size = "large",
     shard_count = 50,
     # Takes too long for TSAN. Since this is kind of a stress test that doesn't

@@ -363,9 +363,24 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_test_util",
+        gtest,
+        "//test/util:file_descriptor",
+        "//test/util:temp_umask",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
+    name = "socket_capability_test",
+    testonly = 1,
+    srcs = ["socket_capability.cc"],
+    linkstatic = 1,
+    deps = [
+        ":socket_test_util",
+        "//test/util:capability_util",
         "//test/util:file_descriptor",
         gtest,
-        "//test/util:temp_umask",
         "//test/util:test_main",
         "//test/util:test_util",
     ],

@@ -86,37 +86,12 @@ TEST(SocketTest, UnixSocketStat) {
   EXPECT_EQ(statbuf.st_mode, S_IFSOCK | sock_perm & ~mask);
 
   // Timestamps should be equal and non-zero.
-  EXPECT_NE(statbuf.st_atime, 0);
-  EXPECT_EQ(statbuf.st_atime, statbuf.st_mtime);
-  EXPECT_EQ(statbuf.st_atime, statbuf.st_ctime);
-}
-
-TEST(SocketTest, UnixConnectNeedsWritePerm) {
-  SKIP_IF(IsRunningWithVFS1());
-
-  FileDescriptor bound =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));
-
-  struct sockaddr_un addr =
-      ASSERT_NO_ERRNO_AND_VALUE(UniqueUnixAddr(/*abstract=*/false, AF_UNIX));
-  ASSERT_THAT(bind(bound.get(), reinterpret_cast<struct sockaddr*>(&addr),
-                   sizeof(addr)),
-              SyscallSucceeds());
-  ASSERT_THAT(listen(bound.get(), 1), SyscallSucceeds());
-
-  // Connect should fail without write perms.
-  ASSERT_THAT(chmod(addr.sun_path, 0500), SyscallSucceeds());
-  FileDescriptor client =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));
-  EXPECT_THAT(connect(client.get(), reinterpret_cast<struct sockaddr*>(&addr),
-                      sizeof(addr)),
-              SyscallFailsWithErrno(EACCES));
-
-  // Connect should succeed with write perms.
-  ASSERT_THAT(chmod(addr.sun_path, 0200), SyscallSucceeds());
-  EXPECT_THAT(connect(client.get(), reinterpret_cast<struct sockaddr*>(&addr),
-                      sizeof(addr)),
-              SyscallSucceeds());
+  // TODO(b/158882152): Sockets currently don't implement timestamps.
+  if (!IsRunningOnGvisor()) {
+    EXPECT_NE(statbuf.st_atime, 0);
+    EXPECT_EQ(statbuf.st_atime, statbuf.st_mtime);
+    EXPECT_EQ(statbuf.st_atime, statbuf.st_ctime);
+  }
 }
 
 using SocketOpenTest = ::testing::TestWithParam<int>;
