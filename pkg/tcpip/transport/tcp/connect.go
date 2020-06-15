@@ -995,24 +995,22 @@ func (e *endpoint) completeWorkerLocked() {
 
 // transitionToStateEstablisedLocked transitions a given endpoint
 // to an established state using the handshake parameters provided.
-// It also initializes sender/receiver if required.
+// It also initializes sender/receiver.
 func (e *endpoint) transitionToStateEstablishedLocked(h *handshake) {
-	if e.snd == nil {
-		// Transfer handshake state to TCP connection. We disable
-		// receive window scaling if the peer doesn't support it
-		// (indicated by a negative send window scale).
-		e.snd = newSender(e, h.iss, h.ackNum-1, h.sndWnd, h.mss, h.sndWndScale)
-	}
-	if e.rcv == nil {
-		rcvBufSize := seqnum.Size(e.receiveBufferSize())
-		e.rcvListMu.Lock()
-		e.rcv = newReceiver(e, h.ackNum-1, h.rcvWnd, h.effectiveRcvWndScale(), rcvBufSize)
-		// Bootstrap the auto tuning algorithm. Starting at zero will
-		// result in a really large receive window after the first auto
-		// tuning adjustment.
-		e.rcvAutoParams.prevCopied = int(h.rcvWnd)
-		e.rcvListMu.Unlock()
-	}
+	// Transfer handshake state to TCP connection. We disable
+	// receive window scaling if the peer doesn't support it
+	// (indicated by a negative send window scale).
+	e.snd = newSender(e, h.iss, h.ackNum-1, h.sndWnd, h.mss, h.sndWndScale)
+
+	rcvBufSize := seqnum.Size(e.receiveBufferSize())
+	e.rcvListMu.Lock()
+	e.rcv = newReceiver(e, h.ackNum-1, h.rcvWnd, h.effectiveRcvWndScale(), rcvBufSize)
+	// Bootstrap the auto tuning algorithm. Starting at zero will
+	// result in a really large receive window after the first auto
+	// tuning adjustment.
+	e.rcvAutoParams.prevCopied = int(h.rcvWnd)
+	e.rcvListMu.Unlock()
+
 	e.setEndpointState(StateEstablished)
 }
 

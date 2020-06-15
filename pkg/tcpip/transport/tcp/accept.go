@@ -222,12 +222,6 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 
 	n.initGSO()
 
-	// Create sender and receiver.
-	//
-	// The receiver at least temporarily has a zero receive window scale,
-	// but the caller may change it (before starting the protocol loop).
-	n.snd = newSender(n, iss, irs, s.window, rcvdSynOpts.MSS, rcvdSynOpts.WS)
-	n.rcv = newReceiver(n, irs, seqnum.Size(n.initialReceiveWindow()), 0, seqnum.Size(n.receiveBufferSize()))
 	// Bootstrap the auto tuning algorithm. Starting at zero will result in
 	// a large step function on the first window adjustment causing the
 	// window to grow to a really large value.
@@ -295,7 +289,7 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 	}
 
 	// Perform the 3-way handshake.
-	h := newPassiveHandshake(ep, ep.rcv.rcvWnd, isn, irs, opts, deferAccept)
+	h := newPassiveHandshake(ep, seqnum.Size(ep.initialReceiveWindow()), isn, irs, opts, deferAccept)
 	if err := h.execute(); err != nil {
 		ep.mu.Unlock()
 		ep.Close()
@@ -536,6 +530,9 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			return
 		}
 
+		iss := s.ackNumber - 1
+		irs := s.sequenceNumber - 1
+
 		// Since SYN cookies are in use this is potentially an ACK to a
 		// SYN-ACK we sent but don't have a half open connection state
 		// as cookies are being used to protect against a potential SYN
@@ -546,7 +543,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		// when under a potential syn flood attack.
 		//
 		// Validate the cookie.
-		data, ok := ctx.isCookieValid(s.id, s.ackNumber-1, s.sequenceNumber-1)
+		data, ok := ctx.isCookieValid(s.id, iss, irs)
 		if !ok || int(data) >= len(mssTable) {
 			e.stack.Stats().TCP.ListenOverflowInvalidSynCookieRcvd.Increment()
 			e.stack.Stats().DroppedPackets.Increment()
@@ -571,7 +568,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			rcvdSynOptions.TSEcr = s.parsedOptions.TSEcr
 		}
 
-		n, err := ctx.createConnectingEndpoint(s, s.ackNumber-1, s.sequenceNumber-1, rcvdSynOptions, &waiter.Queue{})
+		n, err := ctx.createConnectingEndpoint(s, iss, irs, rcvdSynOptions, &waiter.Queue{})
 		if err != nil {
 			e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
 			e.stats.FailedConnectionAttempts.Increment()
@@ -589,10 +586,17 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		n.tsOffset = 0
 
 		// Switch state to connected.
-		// We do not use transitionToStateEstablishedLocked here as there is
-		// no handshake state available when doing a SYN cookie based accept.
 		n.isConnectNotified = true
-		n.setEndpointState(StateEstablished)
+		n.transitionToStateEstablishedLocked(&handshake{
+			ep:          n,
+			iss:         iss,
+			ackNum:      irs + 1,
+			rcvWnd:      seqnum.Size(n.initialReceiveWindow()),
+			sndWnd:      s.window,
+			rcvWndScale: e.rcvWndScaleForHandshake(),
+			sndWndScale: rcvdSynOptions.WS,
+			mss:         rcvdSynOptions.MSS,
+		})
 
 		// Do the delivery in a separate goroutine so
 		// that we don't block the listen loop in case
