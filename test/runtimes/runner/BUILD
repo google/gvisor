@@ -14,8 +14,8 @@ go_binary(
 )
 
 go_test(
-    name = "blacklist_test",
+    name = "exclude_test",
     size = "small",
-    srcs = ["blacklist_test.go"],
+    srcs = ["exclude_test.go"],
     library = ":runner",
 )

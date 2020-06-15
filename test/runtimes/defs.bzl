@@ -10,10 +10,10 @@ def _runtime_test_impl(ctx):
         "--image",
         ctx.attr.image,
     ]
-    if ctx.attr.blacklist_file:
+    if ctx.attr.exclude_file:
         args += [
-            "--blacklist_file",
-            ctx.files.blacklist_file[0].short_path,
+            "--exclude_file",
+            ctx.files.exclude_file[0].short_path,
         ]
 
     # Build a runner.
@@ -28,7 +28,7 @@ def _runtime_test_impl(ctx):
     return [DefaultInfo(
         executable = runner,
         runfiles = ctx.runfiles(
-            files = ctx.files._runner + ctx.files.blacklist_file + ctx.files._proctor,
+            files = ctx.files._runner + ctx.files.exclude_file + ctx.files._proctor,
             collect_default = True,
             collect_data = True,
         ),
@@ -43,7 +43,7 @@ _runtime_test = rule(
         "lang": attr.string(
             mandatory = True,
         ),
-        "blacklist_file": attr.label(
+        "exclude_file": attr.label(
             mandatory = False,
             allow_single_file = True,
         ),
@@ -68,12 +68,12 @@ def runtime_test(name, **kwargs):
         **kwargs
     )
 
-def blacklist_test(name, blacklist_file):
-    """Test that a blacklist parses correctly."""
+def exclude_test(name, exclude_file):
+    """Test that a exclude file parses correctly."""
     go_test(
-        name = name + "_blacklist_test",
+        name = name + "_exclude_test",
         library = ":runner",
-        srcs = ["blacklist_test.go"],
-        args = ["--blacklist_file", "test/runtimes/" + blacklist_file],
-        data = [blacklist_file],
+        srcs = ["exclude_test.go"],
+        args = ["--exclude_file", "test/runtimes/" + exclude_file],
+        data = [exclude_file],
     )
