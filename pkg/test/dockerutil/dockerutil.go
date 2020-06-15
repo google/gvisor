@@ -551,8 +551,12 @@ func (d *Docker) FindPort(sandboxPort int) (int, error) {
 }
 
 // FindIP returns the IP address of the container.
-func (d *Docker) FindIP() (net.IP, error) {
-	const format = `{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}`
+func (d *Docker) FindIP(ipv6 bool) (net.IP, error) {
+	selector := "IPAddress"
+	if ipv6 {
+		selector = "GlobalIPv6Address"
+	}
+	format := fmt.Sprintf(`{{range .NetworkSettings.Networks}}{{.%s}}{{end}}`, selector)
 	out, err := testutil.Command(d.logger, "docker", "inspect", "-f", format, d.Name).CombinedOutput()
 	if err != nil {
 		return net.IP{}, fmt.Errorf("error retrieving IP: %v", err)

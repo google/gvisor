@@ -33,6 +33,18 @@ import (
 // Container output is logged to $TEST_UNDECLARED_OUTPUTS_DIR if it exists, or
 // to stderr.
 func singleTest(t *testing.T, test TestCase) {
+	for _, tc := range []bool{false, true} {
+		subtest := "IPv4"
+		if tc {
+			subtest = "IPv6"
+		}
+		t.Run(subtest, func(t *testing.T) {
+			iptablesTest(t, test, tc)
+		})
+	}
+}
+
+func iptablesTest(t *testing.T, test TestCase, ipv6 bool) {
 	if _, ok := Tests[test.Name()]; !ok {
 		t.Fatalf("no test found with name %q. Has it been registered?", test.Name())
 	}
@@ -40,18 +52,27 @@ func singleTest(t *testing.T, test TestCase) {
 	d := dockerutil.MakeDocker(t)
 	defer d.CleanUp()
 
+	// TODO(givor.dev/issue/170): Skipping IPv6 gVisor tests.
+	if ipv6 && d.Runtime != "runc" {
+		t.Skip("gVisor ip6tables not yet implemented")
+	}
+
 	// Create and start the container.
 	opts := dockerutil.RunOpts{
 		Image:  "iptables",
 		CapAdd: []string{"NET_ADMIN"},
 	}
 	d.CopyFiles(&opts, "/runner", "test/iptables/runner/runner")
-	if err := d.Spawn(opts, "/runner/runner", "-name", test.Name()); err != nil {
+	args := []string{"/runner/runner", "-name", test.Name()}
+	if ipv6 {
+		args = append(args, "-ipv6")
+	}
+	if err := d.Spawn(opts, args...); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
 	// Get the container IP.
-	ip, err := d.FindIP()
+	ip, err := d.FindIP(ipv6)
 	if err != nil {
 		t.Fatalf("failed to get container IP: %v", err)
 	}
@@ -62,7 +83,7 @@ func singleTest(t *testing.T, test TestCase) {
 	}
 
 	// Run our side of the test.
-	if err := test.LocalAction(ip); err != nil {
+	if err := test.LocalAction(ip, ipv6); err != nil {
 		t.Fatalf("LocalAction failed: %v", err)
 	}
 
@@ -83,7 +104,7 @@ func sendIP(ip net.IP) error {
 	// The container may not be listening when we first connect, so retry
 	// upon error.
 	cb := func() error {
-		c, err := net.DialTCP("tcp4", nil, &contAddr)
+		c, err := net.DialTCP("tcp", nil, &contAddr)
 		conn = c
 		return err
 	}
