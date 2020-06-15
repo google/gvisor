@@ -25,13 +25,13 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// Test that the blacklist parses without error.
+// Test that the exclude file parses without error.
 func TestBlacklists(t *testing.T) {
-	bl, err := getBlacklist()
+	ex, err := getExcludes()
 	if err != nil {
-		t.Fatalf("error parsing blacklist: %v", err)
+		t.Fatalf("error parsing exclude file: %v", err)
 	}
-	if *blacklistFile != "" && len(bl) == 0 {
-		t.Errorf("got empty blacklist for file %q", *blacklistFile)
+	if *excludeFile != "" && len(ex) == 0 {
+		t.Errorf("got empty excludes for file %q", *excludeFile)
 	}
 }

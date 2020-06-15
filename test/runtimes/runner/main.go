@@ -31,9 +31,9 @@ import (
 )
 
 var (
-	lang          = flag.String("lang", "", "language runtime to test")
-	image         = flag.String("image", "", "docker image with runtime tests")
-	blacklistFile = flag.String("blacklist_file", "", "file containing blacklist of tests to exclude, in CSV format with fields: test name, bug id, comment")
+	lang        = flag.String("lang", "", "language runtime to test")
+	image       = flag.String("image", "", "docker image with runtime tests")
+	excludeFile = flag.String("exclude_file", "", "file containing list of tests to exclude, in CSV format with fields: test name, bug id, comment")
 )
 
 // Wait time for each test to run.
@@ -52,10 +52,10 @@ func main() {
 // defered functions before exiting. It returns an exit code that should be
 // passed to os.Exit.
 func runTests() int {
-	// Get tests to blacklist.
-	blacklist, err := getBlacklist()
+	// Get tests to exclude..
+	excludes, err := getExcludes()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting blacklist: %s\n", err.Error())
+		fmt.Fprintf(os.Stderr, "Error getting exclude list: %s\n", err.Error())
 		return 1
 	}
 
@@ -66,7 +66,7 @@ func runTests() int {
 	// Get a slice of tests to run. This will also start a single Docker
 	// container that will be used to run each test. The final test will
 	// stop the Docker container.
-	tests, err := getTests(d, blacklist)
+	tests, err := getTests(d, excludes)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
 		return 1
@@ -77,7 +77,7 @@ func runTests() int {
 }
 
 // getTests executes all tests as table tests.
-func getTests(d *dockerutil.Docker, blacklist map[string]struct{}) ([]testing.InternalTest, error) {
+func getTests(d *dockerutil.Docker, excludes map[string]struct{}) ([]testing.InternalTest, error) {
 	// Start the container.
 	d.CopyFiles("/proctor", "test/runtimes/proctor/proctor")
 	if err := d.Spawn(dockerutil.RunOpts{
@@ -108,9 +108,9 @@ func getTests(d *dockerutil.Docker, blacklist map[string]struct{}) ([]testing.In
 		itests = append(itests, testing.InternalTest{
 			Name: tc,
 			F: func(t *testing.T) {
-				// Is the test blacklisted?
-				if _, ok := blacklist[tc]; ok {
-					t.Skipf("SKIP: blacklisted test %q", tc)
+				// Is the test excluded?
+				if _, ok := excludes[tc]; ok {
+					t.Skipf("SKIP: excluded test %q", tc)
 				}
 
 				var (
@@ -143,14 +143,14 @@ func getTests(d *dockerutil.Docker, blacklist map[string]struct{}) ([]testing.In
 	return itests, nil
 }
 
-// getBlacklist reads the blacklist file and returns a set of test names to
+// getBlacklist reads the exclude file and returns a set of test names to
 // exclude.
-func getBlacklist() (map[string]struct{}, error) {
-	blacklist := make(map[string]struct{})
-	if *blacklistFile == "" {
-		return blacklist, nil
+func getExcludes() (map[string]struct{}, error) {
+	excludes := make(map[string]struct{})
+	if *excludeFile == "" {
+		return excludes, nil
 	}
-	f, err := os.Open(*blacklistFile)
+	f, err := os.Open(*excludeFile)
 	if err != nil {
 		return nil, err
 	}
@@ -171,9 +171,9 @@ func getBlacklist() (map[string]struct{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		blacklist[record[0]] = struct{}{}
+		excludes[record[0]] = struct{}{}
 	}
-	return blacklist, nil
+	return excludes, nil
 }
 
 // testDeps implements testing.testDeps (an unexported interface), and is
