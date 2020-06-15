@@ -20,6 +20,7 @@ go_library(
 
 go_test(
     name = "iptables_test",
+    size = "large",
     srcs = [
         "iptables_test.go",
     ],

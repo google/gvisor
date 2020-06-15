@@ -24,22 +24,23 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
-const iptablesBinary = "iptables"
-const localIP = "127.0.0.1"
-
-// filterTable calls `iptables -t filter` with the given args.
-func filterTable(args ...string) error {
-	return tableCmd("filter", args)
+// filterTable calls `ip{6}tables -t filter` with the given args.
+func filterTable(ipv6 bool, args ...string) error {
+	return tableCmd(ipv6, "filter", args)
 }
 
-// natTable calls `iptables -t nat` with the given args.
-func natTable(args ...string) error {
-	return tableCmd("nat", args)
+// natTable calls `ip{6}tables -t nat` with the given args.
+func natTable(ipv6 bool, args ...string) error {
+	return tableCmd(ipv6, "nat", args)
 }
 
-func tableCmd(table string, args []string) error {
+func tableCmd(ipv6 bool, table string, args []string) error {
 	args = append([]string{"-t", table}, args...)
-	cmd := exec.Command(iptablesBinary, args...)
+	binary := "iptables"
+	if ipv6 {
+		binary = "ip6tables"
+	}
+	cmd := exec.Command(binary, args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("error running iptables with args %v\nerror: %v\noutput: %s", args, err, string(out))
 	}
@@ -47,18 +48,18 @@ func tableCmd(table string, args []string) error {
 }
 
 // filterTableRules is like filterTable, but runs multiple iptables commands.
-func filterTableRules(argsList [][]string) error {
-	return tableRules("filter", argsList)
+func filterTableRules(ipv6 bool, argsList [][]string) error {
+	return tableRules(ipv6, "filter", argsList)
 }
 
 // natTableRules is like natTable, but runs multiple iptables commands.
-func natTableRules(argsList [][]string) error {
-	return tableRules("nat", argsList)
+func natTableRules(ipv6 bool, argsList [][]string) error {
+	return tableRules(ipv6, "nat", argsList)
 }
 
-func tableRules(table string, argsList [][]string) error {
+func tableRules(ipv6 bool, table string, argsList [][]string) error {
 	for _, args := range argsList {
-		if err := tableCmd(table, args); err != nil {
+		if err := tableCmd(ipv6, table, args); err != nil {
 			return err
 		}
 	}
@@ -71,7 +72,7 @@ func listenUDP(port int, timeout time.Duration) error {
 	localAddr := net.UDPAddr{
 		Port: port,
 	}
-	conn, err := net.ListenUDP(network, &localAddr)
+	conn, err := net.ListenUDP("udp", &localAddr)
 	if err != nil {
 		return err
 	}
@@ -112,7 +113,7 @@ func connectUDP(ip net.IP, port int) (net.Conn, error) {
 		IP:   ip,
 		Port: port,
 	}
-	conn, err := net.DialUDP(network, nil, &remote)
+	conn, err := net.DialUDP("udp", nil, &remote)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +144,7 @@ func listenTCP(port int, timeout time.Duration) error {
 	}
 
 	// Starts listening on port.
-	lConn, err := net.ListenTCP("tcp4", &localAddr)
+	lConn, err := net.ListenTCP("tcp", &localAddr)
 	if err != nil {
 		return err
 	}
@@ -191,7 +192,14 @@ func localAddrs(ipv6 bool) ([]string, error) {
 	}
 	addrStrs := make([]string, 0, len(addrs))
 	for _, addr := range addrs {
-		addrStrs = append(addrStrs, addr.String())
+		// Add only IPv4 or only IPv6 addresses.
+		parts := strings.Split(addr.String(), "/")
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("bad interface address: %q", addr.String())
+		}
+		if isIPv6 := net.ParseIP(parts[0]).To4() == nil; isIPv6 == ipv6 {
+			addrStrs = append(addrStrs, addr.String())
+		}
 	}
 	return filterAddrs(addrStrs, ipv6), nil
 }
@@ -221,4 +229,18 @@ func getInterfaceName() (string, bool) {
 	}
 
 	return ifname, ifname != ""
+}
+
+func localIP(ipv6 bool) string {
+	if ipv6 {
+		return "::1"
+	}
+	return "127.0.0.1"
+}
+
+func nowhereIP(ipv6 bool) string {
+	if ipv6 {
+		return "2001:db8::1"
+	}
+	return "192.0.2.1"
 }

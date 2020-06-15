@@ -40,10 +40,10 @@ type TestCase interface {
 
 	// ContainerAction runs inside the container. It receives the IP of the
 	// local process.
-	ContainerAction(ip net.IP) error
+	ContainerAction(ip net.IP, ipv6 bool) error
 
 	// LocalAction runs locally. It receives the IP of the container.
-	LocalAction(ip net.IP) error
+	LocalAction(ip net.IP, ipv6 bool) error
 }
 
 // Tests maps test names to TestCase.
