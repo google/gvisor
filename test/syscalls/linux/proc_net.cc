@@ -20,8 +20,13 @@
 #include <sys/syscall.h>
 #include <sys/types.h>
 
+#include <vector>
+
 #include "gtest/gtest.h"
+#include "absl/strings/numbers.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
+#include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/capability_util.h"
@@ -402,6 +407,69 @@ TEST(ProcNetSnmp, UdpIn_NoRandomSave) {
 
   EXPECT_EQ(oldOutDatagrams, newOutDatagrams - 1);
   EXPECT_EQ(oldInDatagrams, newInDatagrams - 1);
+}
+
+TEST(ProcNetSnmp, CheckNetStat) {
+  // TODO(b/155123175): SNMP and netstat don't work on gVisor.
+  SKIP_IF(IsRunningOnGvisor());
+
+  std::string contents =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/netstat"));
+
+  int name_count = 0;
+  int value_count = 0;
+  std::vector<absl::string_view> lines = absl::StrSplit(contents, '\n');
+  for (int i = 0; i + 1 < lines.size(); i += 2) {
+    std::vector<absl::string_view> names =
+        absl::StrSplit(lines[i], absl::ByAnyChar("\t "));
+    std::vector<absl::string_view> values =
+        absl::StrSplit(lines[i + 1], absl::ByAnyChar("\t "));
+    EXPECT_EQ(names.size(), values.size()) << " mismatch in lines '" << lines[i]
+                                           << "' and '" << lines[i + 1] << "'";
+    for (int j = 0; j < names.size() && j < values.size(); ++j) {
+      if (names[j] == "TCPOrigDataSent" || names[j] == "TCPSynRetrans" ||
+          names[j] == "TCPDSACKRecv" || names[j] == "TCPDSACKOfoRecv") {
+        ++name_count;
+        int64_t val;
+        if (absl::SimpleAtoi(values[j], &val)) {
+          ++value_count;
+        }
+      }
+    }
+  }
+  EXPECT_EQ(name_count, 4);
+  EXPECT_EQ(value_count, 4);
+}
+
+TEST(ProcNetSnmp, CheckSnmp) {
+  // TODO(b/155123175): SNMP and netstat don't work on gVisor.
+  SKIP_IF(IsRunningOnGvisor());
+
+  std::string contents =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/snmp"));
+
+  int name_count = 0;
+  int value_count = 0;
+  std::vector<absl::string_view> lines = absl::StrSplit(contents, '\n');
+  for (int i = 0; i + 1 < lines.size(); i += 2) {
+    std::vector<absl::string_view> names =
+        absl::StrSplit(lines[i], absl::ByAnyChar("\t "));
+    std::vector<absl::string_view> values =
+        absl::StrSplit(lines[i + 1], absl::ByAnyChar("\t "));
+    EXPECT_EQ(names.size(), values.size()) << " mismatch in lines '" << lines[i]
+                                           << "' and '" << lines[i + 1] << "'";
+    for (int j = 0; j < names.size() && j < values.size(); ++j) {
+      if (names[j] == "RetransSegs") {
+        ++name_count;
+        int64_t val;
+        if (absl::SimpleAtoi(values[j], &val)) {
+          ++value_count;
+        }
+      }
+    }
+  }
+  EXPECT_EQ(name_count, 1);
+  EXPECT_EQ(value_count, 1);
 }
 
 }  // namespace
