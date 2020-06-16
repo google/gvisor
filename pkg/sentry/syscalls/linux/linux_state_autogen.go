@@ -6,23 +6,6 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *ioEvent) beforeSave() {}
-func (x *ioEvent) save(m state.Map) {
-	x.beforeSave()
-	m.Save("Data", &x.Data)
-	m.Save("Obj", &x.Obj)
-	m.Save("Result", &x.Result)
-	m.Save("Result2", &x.Result2)
-}
-
-func (x *ioEvent) afterLoad() {}
-func (x *ioEvent) load(m state.Map) {
-	m.Load("Data", &x.Data)
-	m.Load("Obj", &x.Obj)
-	m.Load("Result", &x.Result)
-	m.Load("Result2", &x.Result2)
-}
-
 func (x *futexWaitRestartBlock) beforeSave() {}
 func (x *futexWaitRestartBlock) save(m state.Map) {
 	x.beforeSave()
@@ -73,7 +56,6 @@ func (x *clockNanosleepRestartBlock) load(m state.Map) {
 }
 
 func init() {
-	state.Register("pkg/sentry/syscalls/linux.ioEvent", (*ioEvent)(nil), state.Fns{Save: (*ioEvent).save, Load: (*ioEvent).load})
 	state.Register("pkg/sentry/syscalls/linux.futexWaitRestartBlock", (*futexWaitRestartBlock)(nil), state.Fns{Save: (*futexWaitRestartBlock).save, Load: (*futexWaitRestartBlock).load})
 	state.Register("pkg/sentry/syscalls/linux.pollRestartBlock", (*pollRestartBlock)(nil), state.Fns{Save: (*pollRestartBlock).save, Load: (*pollRestartBlock).load})
 	state.Register("pkg/sentry/syscalls/linux.clockNanosleepRestartBlock", (*clockNanosleepRestartBlock)(nil), state.Fns{Save: (*clockNanosleepRestartBlock).save, Load: (*clockNanosleepRestartBlock).load})

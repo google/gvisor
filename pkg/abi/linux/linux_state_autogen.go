@@ -6,6 +6,23 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *IOEvent) beforeSave() {}
+func (x *IOEvent) save(m state.Map) {
+	x.beforeSave()
+	m.Save("Data", &x.Data)
+	m.Save("Obj", &x.Obj)
+	m.Save("Result", &x.Result)
+	m.Save("Result2", &x.Result2)
+}
+
+func (x *IOEvent) afterLoad() {}
+func (x *IOEvent) load(m state.Map) {
+	m.Load("Data", &x.Data)
+	m.Load("Obj", &x.Obj)
+	m.Load("Result", &x.Result)
+	m.Load("Result2", &x.Result2)
+}
+
 func (x *BPFInstruction) beforeSave() {}
 func (x *BPFInstruction) save(m state.Map) {
 	x.beforeSave()
@@ -62,6 +79,7 @@ func (x *WindowSize) load(m state.Map) {
 }
 
 func init() {
+	state.Register("pkg/abi/linux.IOEvent", (*IOEvent)(nil), state.Fns{Save: (*IOEvent).save, Load: (*IOEvent).load})
 	state.Register("pkg/abi/linux.BPFInstruction", (*BPFInstruction)(nil), state.Fns{Save: (*BPFInstruction).save, Load: (*BPFInstruction).load})
 	state.Register("pkg/abi/linux.KernelTermios", (*KernelTermios)(nil), state.Fns{Save: (*KernelTermios).save, Load: (*KernelTermios).load})
 	state.Register("pkg/abi/linux.WindowSize", (*WindowSize)(nil), state.Fns{Save: (*WindowSize).save, Load: (*WindowSize).load})
