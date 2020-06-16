@@ -123,6 +123,8 @@ type FDBasedLink struct {
 	Routes             []Route
 	GSOMaxSize         uint32
 	SoftwareGSOEnabled bool
+	TXChecksumOffload  bool
+	RXChecksumOffload  bool
 	LinkAddress        net.HardwareAddr
 	QDisc              QueueingDiscipline
 
@@ -236,7 +238,8 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			PacketDispatchMode: fdbased.RecvMMsg,
 			GSOMaxSize:         link.GSOMaxSize,
 			SoftwareGSOEnabled: link.SoftwareGSOEnabled,
-			RXChecksumOffload:  true,
+			TXChecksumOffload:  link.TXChecksumOffload,
+			RXChecksumOffload:  link.RXChecksumOffload,
 		})
 		if err != nil {
 			return err
