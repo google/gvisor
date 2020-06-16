@@ -175,8 +175,6 @@ func (a *attachPoint) makeQID(stat syscall.Stat_t) p9.QID {
 		log.Warningf("first 8 bytes of host inode id %x will be truncated to construct virtual inode id", stat.Ino)
 	}
 	ino := uint64(dev)<<56 | maskedIno
-	log.Debugf("host inode %x on device %x mapped to virtual inode %x", stat.Ino, stat.Dev, ino)
-
 	return p9.QID{
 		Type: p9.FileMode(stat.Mode).QIDType(),
 		Path: ino,
