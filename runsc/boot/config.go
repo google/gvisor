@@ -187,6 +187,12 @@ type Config struct {
 	// SoftwareGSO indicates that software segmentation offload is enabled.
 	SoftwareGSO bool
 
+	// TXChecksumOffload indicates that TX Checksum Offload is enabled.
+	TXChecksumOffload bool
+
+	// RXChecksumOffload indicates that RX Checksum Offload is enabled.
+	RXChecksumOffload bool
+
 	// QDisc indicates the type of queuening discipline to use by default
 	// for non-loopback interfaces.
 	QDisc QueueingDiscipline
@@ -299,6 +305,8 @@ func (c *Config) ToFlags() []string {
 		"--ref-leak-mode=" + refsLeakModeToString(c.ReferenceLeakMode),
 		"--gso=" + strconv.FormatBool(c.HardwareGSO),
 		"--software-gso=" + strconv.FormatBool(c.SoftwareGSO),
+		"--rx-checksum-offload=" + strconv.FormatBool(c.RXChecksumOffload),
+		"--tx-checksum-offload=" + strconv.FormatBool(c.TXChecksumOffload),
 		"--overlayfs-stale-read=" + strconv.FormatBool(c.OverlayfsStaleRead),
 		"--qdisc=" + c.QDisc.String(),
 	}
