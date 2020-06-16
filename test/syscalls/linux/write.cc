@@ -133,6 +133,44 @@ TEST_F(WriteTest, WriteExceedsRLimit) {
   EXPECT_THAT(close(fd), SyscallSucceeds());
 }
 
+TEST_F(WriteTest, WriteInvalidBuffer) {
+  int fd;
+  const std::string pathname = NewTempAbsPath();
+  ASSERT_THAT(fd = open(pathname.c_str(), O_WRONLY | O_CREAT, S_IRWXU),
+              SyscallSucceeds());
+
+  EXPECT_THAT(WriteFd(fd, nullptr, 1), SyscallFailsWithErrno(EFAULT));
+  EXPECT_THAT(pwrite(fd, nullptr, 1, 1), SyscallFailsWithErrno(EFAULT));
+  EXPECT_THAT(pwrite64(fd, nullptr, 1, 1), SyscallFailsWithErrno(EFAULT));
+
+  EXPECT_THAT(close(fd), SyscallSucceeds());
+}
+
+TEST_F(WriteTest, WriteReadOnlyFd) {
+  int fd;
+  const std::string pathname = NewTempAbsPath();
+  ASSERT_THAT(fd = open(pathname.c_str(), O_RDONLY | O_CREAT, S_IRWXU),
+              SyscallSucceeds());
+  EXPECT_THAT(WriteBytes(fd, 1), SyscallFailsWithErrno(EBADF));
+
+  std::vector<char> buf(1);
+  std::fill(buf.begin(), buf.end(), 'a');
+  EXPECT_THAT(pwrite(fd, buf.data(), 1, 1), SyscallFailsWithErrno(EBADF));
+  EXPECT_THAT(pwrite64(fd, buf.data(), 1, 1), SyscallFailsWithErrno(EBADF));
+
+  EXPECT_THAT(close(fd), SyscallSucceeds());
+}
+
+TEST_F(WriteTest, WriteInvalidFd) {
+  int fd = -1;
+  EXPECT_THAT(WriteBytes(fd, 1), SyscallFailsWithErrno(EBADF));
+
+  std::vector<char> buf(1);
+  std::fill(buf.begin(), buf.end(), 'a');
+  EXPECT_THAT(pwrite(fd, buf.data(), 1, 1), SyscallFailsWithErrno(EBADF));
+  EXPECT_THAT(pwrite64(fd, buf.data(), 1, 1), SyscallFailsWithErrno(EBADF));
+}
+
 }  // namespace
 
 }  // namespace testing
