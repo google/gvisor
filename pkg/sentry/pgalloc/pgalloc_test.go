@@ -143,6 +143,14 @@ func TestFindUnallocatedRange(t *testing.T) {
 			start:     hugepage,
 		},
 		{
+			desc:      "Allocation doubles file size more than once if necessary",
+			usage:     &usageSegmentDataSlices{},
+			fileSize:  page,
+			length:    4 * page,
+			alignment: page,
+			start:     0,
+		},
+		{
 			desc: "Allocations are compact if possible",
 			usage: &usageSegmentDataSlices{
 				Start:  []uint64{page, 3 * page},

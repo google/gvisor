@@ -441,53 +441,61 @@ func (f *MemoryFile) Allocate(length uint64, kind usage.MemoryKind) (platform.Fi
 // Precondition: alignment must be a power of 2.
 func findAvailableRange(usage *usageSet, fileSize int64, length, alignment uint64) (platform.FileRange, bool) {
 	alignmentMask := alignment - 1
-	for gap := usage.UpperBoundGap(uint64(fileSize)); gap.Ok(); gap = gap.PrevLargeEnoughGap(length) {
-		// Start searching only at end of file.
+
+	// Search for space in existing gaps, starting at the current end of the
+	// file and working backward.
+	lastGap := usage.LastGap()
+	gap := lastGap
+	for {
 		end := gap.End()
 		if end > uint64(fileSize) {
 			end = uint64(fileSize)
 		}
 
-		// Start at the top and align downwards.
-		start := end - length
-		if start > end {
-			break // Underflow.
+		// Try to allocate from the end of this gap, with the start of the
+		// allocated range aligned down to alignment.
+		unalignedStart := end - length
+		if unalignedStart > end {
+			// Negative overflow: this and all preceding gaps are too small to
+			// accommodate length.
+			break
 		}
-		start &^= alignmentMask
-
-		// Is the gap still sufficient?
-		if start < gap.Start() {
-			continue
+		if start := unalignedStart &^ alignmentMask; start >= gap.Start() {
+			return platform.FileRange{start, start + length}, true
 		}
 
-		// Allocate in the given gap.
-		return platform.FileRange{start, start + length}, true
+		gap = gap.PrevLargeEnoughGap(length)
+		if !gap.Ok() {
+			break
+		}
 	}
 
 	// Check that it's possible to fit this allocation at the end of a file of any size.
-	min := usage.LastGap().Start()
+	min := lastGap.Start()
 	min = (min + alignmentMask) &^ alignmentMask
 	if min+length < min {
-		// Overflow.
+		// Overflow: allocation would exceed the range of uint64.
 		return platform.FileRange{}, false
 	}
 
 	// Determine the minimum file size required to fit this allocation at its end.
 	for {
-		if fileSize >= 2*fileSize {
-			// Is this because it's initially empty?
-			if fileSize == 0 {
-				fileSize += chunkSize
-			} else {
-				// fileSize overflow.
+		newFileSize := 2 * fileSize
+		if newFileSize <= fileSize {
+			if fileSize != 0 {
+				// Overflow: allocation would exceed the range of int64.
 				return platform.FileRange{}, false
 			}
-		} else {
-			// Double the current fileSize.
-			fileSize *= 2
+			newFileSize = chunkSize
 		}
-		start := (uint64(fileSize) - length) &^ alignmentMask
-		if start >= min {
+		fileSize = newFileSize
+
+		unalignedStart := uint64(fileSize) - length
+		if unalignedStart > uint64(fileSize) {
+			// Negative overflow: fileSize is still inadequate.
+			continue
+		}
+		if start := unalignedStart &^ alignmentMask; start >= min {
 			return platform.FileRange{start, start + length}, true
 		}
 	}
