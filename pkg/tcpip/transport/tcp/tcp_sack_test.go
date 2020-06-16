@@ -400,7 +400,7 @@ func TestSACKRecovery(t *testing.T) {
 	// Write all the data in one shot. Packets will only be written at the
 	// MTU size though.
 	if _, _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
-		t.Fatalf("Write failed: %v", err)
+		t.Fatalf("Write failed: %s", err)
 	}
 
 	// Do slow start for a few iterations.
@@ -454,7 +454,7 @@ func TestSACKRecovery(t *testing.T) {
 		}
 		for _, s := range stats {
 			if got, want := s.stat.Value(), s.want; got != want {
-				return fmt.Errorf("got %s.Value() = %v, want = %v", s.name, got, want)
+				return fmt.Errorf("got %s.Value() = %d, want = %d", s.name, got, want)
 			}
 		}
 		return nil
@@ -529,19 +529,19 @@ func TestSACKRecovery(t *testing.T) {
 		// In SACK recovery only the first segment is fast retransmitted when
 		// entering recovery.
 		if got, want := c.Stack().Stats().TCP.FastRetransmit.Value(), uint64(1); got != want {
-			return fmt.Errorf("got stats.TCP.FastRetransmit.Value = %v, want = %v", got, want)
+			return fmt.Errorf("got stats.TCP.FastRetransmit.Value = %d, want = %d", got, want)
 		}
 
 		if got, want := c.EP.Stats().(*tcp.Stats).SendErrors.FastRetransmit.Value(), uint64(1); got != want {
-			return fmt.Errorf("got EP stats SendErrors.FastRetransmit = %v, want = %v", got, want)
+			return fmt.Errorf("got EP stats SendErrors.FastRetransmit = %d, want = %d", got, want)
 		}
 
 		if got, want := c.Stack().Stats().TCP.Retransmits.Value(), uint64(4); got != want {
-			return fmt.Errorf("got stats.TCP.Retransmits.Value = %v, want = %v", got, want)
+			return fmt.Errorf("got stats.TCP.Retransmits.Value = %d, want = %d", got, want)
 		}
 
 		if got, want := c.EP.Stats().(*tcp.Stats).SendErrors.Retransmits.Value(), uint64(4); got != want {
-			return fmt.Errorf("got EP stats Stats.SendErrors.Retransmits = %v, want = %v", got, want)
+			return fmt.Errorf("got EP stats Stats.SendErrors.Retransmits = %d, want = %d", got, want)
 		}
 		return nil
 	}
