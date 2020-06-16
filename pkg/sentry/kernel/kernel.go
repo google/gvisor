@@ -452,9 +452,7 @@ func (k *Kernel) SaveTo(w io.Writer) error {
 		return err
 	}
 
-	// Ensure that all pending asynchronous work is complete:
-	//   - inode and mount release
-	//   - asynchronuous IO
+	// Ensure that all inode and mount release operations have completed.
 	fs.AsyncBarrier()
 
 	// Once all fs work has completed (flushed references have all been released),
@@ -1249,13 +1247,15 @@ func (k *Kernel) Kill(es ExitStatus) {
 }
 
 // Pause requests that all tasks in k temporarily stop executing, and blocks
-// until all tasks in k have stopped. Multiple calls to Pause nest and require
-// an equal number of calls to Unpause to resume execution.
+// until all tasks and asynchronous I/O operations in k have stopped. Multiple
+// calls to Pause nest and require an equal number of calls to Unpause to
+// resume execution.
 func (k *Kernel) Pause() {
 	k.extMu.Lock()
 	k.tasks.BeginExternalStop()
 	k.extMu.Unlock()
 	k.tasks.runningGoroutines.Wait()
+	k.tasks.aioGoroutines.Wait()
 }
 
 // Unpause ends the effect of a previous call to Pause. If Unpause is called

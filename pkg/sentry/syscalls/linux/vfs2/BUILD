@@ -5,6 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "vfs2",
     srcs = [
+        "aio.go",
         "epoll.go",
         "eventfd.go",
         "execve.go",
@@ -40,6 +41,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/binary",
         "//pkg/bits",
+        "//pkg/context",
         "//pkg/fspath",
         "//pkg/gohacks",
         "//pkg/sentry/arch",
@@ -57,6 +59,7 @@ go_library(
         "//pkg/sentry/limits",
         "//pkg/sentry/loader",
         "//pkg/sentry/memmap",
+        "//pkg/sentry/mm",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/control",
         "//pkg/sentry/socket/unix/transport",
