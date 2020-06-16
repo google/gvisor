@@ -105,11 +105,7 @@ func Override() {
 	s.Table[197] = syscalls.Supported("removexattr", Removexattr)
 	s.Table[198] = syscalls.Supported("lremovexattr", Lremovexattr)
 	s.Table[199] = syscalls.Supported("fremovexattr", Fremovexattr)
-	delete(s.Table, 206) // io_setup
-	delete(s.Table, 207) // io_destroy
-	delete(s.Table, 208) // io_getevents
-	delete(s.Table, 209) // io_submit
-	delete(s.Table, 210) // io_cancel
+	s.Table[209] = syscalls.PartiallySupported("io_submit", IoSubmit, "Generally supported with exceptions. User ring optimizations are not implemented.", []string{"gvisor.dev/issue/204"})
 	s.Table[213] = syscalls.Supported("epoll_create", EpollCreate)
 	s.Table[217] = syscalls.Supported("getdents64", Getdents64)
 	delete(s.Table, 221) // fdavise64

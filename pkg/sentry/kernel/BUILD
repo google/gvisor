@@ -85,6 +85,7 @@ go_library(
     name = "kernel",
     srcs = [
         "abstract_socket_namespace.go",
+        "aio.go",
         "context.go",
         "fd_table.go",
         "fd_table_unsafe.go",
