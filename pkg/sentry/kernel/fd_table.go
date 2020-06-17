@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // FDFlags define flags for an individual descriptor.
@@ -148,7 +149,12 @@ func (f *FDTable) drop(file *fs.File) {
 
 // dropVFS2 drops the table reference.
 func (f *FDTable) dropVFS2(file *vfs.FileDescription) {
-	// TODO(gvisor.dev/issue/1480): Release locks.
+	// Release any POSIX lock possibly held by the FDTable. Range {0, 0} means the
+	// entire file.
+	err := file.UnlockPOSIX(context.Background(), f, 0, 0, linux.SEEK_SET)
+	if err != nil && err != syserror.ENOLCK {
+		panic(fmt.Sprintf("UnlockPOSIX failed: %v", err))
+	}
 
 	// Generate inotify events.
 	ev := uint32(linux.IN_CLOSE_NOWRITE)
@@ -157,7 +163,7 @@ func (f *FDTable) dropVFS2(file *vfs.FileDescription) {
 	}
 	file.Dentry().InotifyWithParent(ev, 0, vfs.PathEvent)
 
-	// Drop the table reference.
+	// Drop the table's reference.
 	file.DecRef()
 }
 

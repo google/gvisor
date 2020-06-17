@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -39,7 +38,7 @@ type taskInode struct {
 	kernfs.InodeAttrs
 	kernfs.OrderedChildren
 
-	locks lock.FileLocks
+	locks vfs.FileLocks
 
 	task *kernel.Task
 }

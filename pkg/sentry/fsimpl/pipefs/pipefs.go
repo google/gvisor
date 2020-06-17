@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -82,7 +81,7 @@ type inode struct {
 	kernfs.InodeNotSymlink
 	kernfs.InodeNoopRefCount
 
-	locks lock.FileLocks
+	locks vfs.FileLocks
 	pipe  *pipe.VFSPipe
 
 	ino uint64

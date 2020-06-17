@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -54,7 +53,7 @@ func taskFDExists(t *kernel.Task, fd int32) bool {
 }
 
 type fdDir struct {
-	locks lock.FileLocks
+	locks vfs.FileLocks
 
 	fs   *filesystem
 	task *kernel.Task

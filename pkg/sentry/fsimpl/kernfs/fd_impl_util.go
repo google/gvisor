@@ -19,10 +19,10 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -57,7 +57,7 @@ type GenericDirectoryFD struct {
 
 // NewGenericDirectoryFD creates a new GenericDirectoryFD and returns its
 // dentry.
-func NewGenericDirectoryFD(m *vfs.Mount, d *vfs.Dentry, children *OrderedChildren, locks *lock.FileLocks, opts *vfs.OpenOptions) (*GenericDirectoryFD, error) {
+func NewGenericDirectoryFD(m *vfs.Mount, d *vfs.Dentry, children *OrderedChildren, locks *vfs.FileLocks, opts *vfs.OpenOptions) (*GenericDirectoryFD, error) {
 	fd := &GenericDirectoryFD{}
 	if err := fd.Init(children, locks, opts); err != nil {
 		return nil, err
@@ -71,7 +71,7 @@ func NewGenericDirectoryFD(m *vfs.Mount, d *vfs.Dentry, children *OrderedChildre
 // Init initializes a GenericDirectoryFD. Use it when overriding
 // GenericDirectoryFD. Caller must call fd.VFSFileDescription.Init() with the
 // correct implementation.
-func (fd *GenericDirectoryFD) Init(children *OrderedChildren, locks *lock.FileLocks, opts *vfs.OpenOptions) error {
+func (fd *GenericDirectoryFD) Init(children *OrderedChildren, locks *vfs.FileLocks, opts *vfs.OpenOptions) error {
 	if vfs.AccessTypesForOpenFlags(opts)&vfs.MayWrite != 0 {
 		// Can't open directories for writing.
 		return syserror.EISDIR
@@ -234,4 +234,14 @@ func (fd *GenericDirectoryFD) SetStat(ctx context.Context, opts vfs.SetStatOptio
 	creds := auth.CredentialsFromContext(ctx)
 	inode := fd.vfsfd.VirtualDentry().Dentry().Impl().(*Dentry).inode
 	return inode.SetStat(ctx, fd.filesystem(), creds, opts)
+}
+
+// LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
+func (fd *GenericDirectoryFD) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, start, length uint64, whence int16, block fslock.Blocker) error {
+	return fd.Locks().LockPOSIX(ctx, &fd.vfsfd, uid, t, start, length, whence, block)
+}
+
+// UnlockPOSIX implements vfs.FileDescriptionImpl.UnlockPOSIX.
+func (fd *GenericDirectoryFD) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, start, length uint64, whence int16) error {
+	return fd.Locks().UnlockPOSIX(ctx, &fd.vfsfd, uid, start, length, whence)
 }
