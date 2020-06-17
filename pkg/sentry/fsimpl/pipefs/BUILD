@@ -15,7 +15,6 @@ go_library(
         "//pkg/sentry/kernel/pipe",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/vfs",
-        "//pkg/sentry/vfs/lock",
         "//pkg/syserror",
         "//pkg/usermem",
     ],

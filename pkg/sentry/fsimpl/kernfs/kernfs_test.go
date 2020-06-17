@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -103,7 +102,7 @@ type readonlyDir struct {
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.OrderedChildren
 
-	locks lock.FileLocks
+	locks vfs.FileLocks
 
 	dentry kernfs.Dentry
 }
@@ -133,7 +132,7 @@ type dir struct {
 	kernfs.InodeNoDynamicLookup
 	kernfs.OrderedChildren
 
-	locks lock.FileLocks
+	locks vfs.FileLocks
 
 	fs     *filesystem
 	dentry kernfs.Dentry

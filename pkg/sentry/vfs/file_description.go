@@ -438,14 +438,10 @@ type FileDescriptionImpl interface {
 	UnlockBSD(ctx context.Context, uid lock.UniqueID) error
 
 	// LockPOSIX tries to acquire a POSIX-style advisory file lock.
-	//
-	// TODO(gvisor.dev/issue/1480): POSIX-style file locking
-	LockPOSIX(ctx context.Context, uid lock.UniqueID, t lock.LockType, rng lock.LockRange, block lock.Blocker) error
+	LockPOSIX(ctx context.Context, uid lock.UniqueID, t lock.LockType, start, length uint64, whence int16, block lock.Blocker) error
 
 	// UnlockPOSIX releases a POSIX-style advisory file lock.
-	//
-	// TODO(gvisor.dev/issue/1480): POSIX-style file locking
-	UnlockPOSIX(ctx context.Context, uid lock.UniqueID, rng lock.LockRange) error
+	UnlockPOSIX(ctx context.Context, uid lock.UniqueID, start, length uint64, whence int16) error
 }
 
 // Dirent holds the information contained in struct linux_dirent64.
@@ -763,4 +759,14 @@ func (fd *FileDescription) LockBSD(ctx context.Context, lockType lock.LockType, 
 // UnlockBSD releases a BSD-style advisory file lock.
 func (fd *FileDescription) UnlockBSD(ctx context.Context) error {
 	return fd.impl.UnlockBSD(ctx, fd)
+}
+
+// LockPOSIX locks a POSIX-style file range lock.
+func (fd *FileDescription) LockPOSIX(ctx context.Context, uid lock.UniqueID, t lock.LockType, start, end uint64, whence int16, block lock.Blocker) error {
+	return fd.impl.LockPOSIX(ctx, uid, t, start, end, whence, block)
+}
+
+// UnlockPOSIX unlocks a POSIX-style file range lock.
+func (fd *FileDescription) UnlockPOSIX(ctx context.Context, uid lock.UniqueID, start, end uint64, whence int16) error {
+	return fd.impl.UnlockPOSIX(ctx, uid, start, end, whence)
 }

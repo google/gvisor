@@ -69,7 +69,6 @@ go_library(
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
-        "//pkg/sentry/vfs/lock",
         "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/unet",

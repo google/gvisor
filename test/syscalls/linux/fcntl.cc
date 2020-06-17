@@ -191,45 +191,85 @@ TEST(FcntlTest, SetFlags) {
   EXPECT_EQ(rflags, expected);
 }
 
-TEST_F(FcntlLockTest, SetLockBadFd) {
+void TestLock(int fd, short lock_type = F_RDLCK) {  // NOLINT, type in flock
   struct flock fl;
-  fl.l_type = F_WRLCK;
+  fl.l_type = lock_type;
   fl.l_whence = SEEK_SET;
   fl.l_start = 0;
-  // len 0 has a special meaning: lock all bytes despite how
-  // large the file grows.
+  // len 0 locks all bytes despite how large the file grows.
   fl.l_len = 0;
-  EXPECT_THAT(fcntl(-1, F_SETLK, &fl), SyscallFailsWithErrno(EBADF));
+  EXPECT_THAT(fcntl(fd, F_SETLK, &fl), SyscallSucceeds());
+}
+
+void TestLockBadFD(int fd,
+                   short lock_type = F_RDLCK) {  // NOLINT, type in flock
+  struct flock fl;
+  fl.l_type = lock_type;
+  fl.l_whence = SEEK_SET;
+  fl.l_start = 0;
+  // len 0 locks all bytes despite how large the file grows.
+  fl.l_len = 0;
+  EXPECT_THAT(fcntl(fd, F_SETLK, &fl), SyscallFailsWithErrno(EBADF));
+}
+
+TEST_F(FcntlLockTest, SetLockBadFd) { TestLockBadFD(-1); }
+
+TEST_F(FcntlLockTest, SetLockDir) {
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_RDONLY, 0000));
+  TestLock(fd.get());
+}
+
+TEST_F(FcntlLockTest, SetLockSymlink) {
+  // TODO(gvisor.dev/issue/2782): Replace with IsRunningWithVFS1() when O_PATH
+  // is supported.
+  SKIP_IF(IsRunningOnGvisor());
+
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto symlink = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateSymlinkTo(GetAbsoluteTestTmpdir(), file.path()));
+
+  auto fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(symlink.path(), O_RDONLY | O_PATH, 0000));
+  TestLockBadFD(fd.get());
+}
+
+TEST_F(FcntlLockTest, SetLockProc) {
+  auto fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/self/status", O_RDONLY, 0000));
+  TestLock(fd.get());
 }
 
 TEST_F(FcntlLockTest, SetLockPipe) {
+  SKIP_IF(IsRunningWithVFS1());
+
   int fds[2];
   ASSERT_THAT(pipe(fds), SyscallSucceeds());
 
-  struct flock fl;
-  fl.l_type = F_WRLCK;
-  fl.l_whence = SEEK_SET;
-  fl.l_start = 0;
-  // Same as SetLockBadFd, but doesn't matter, we expect this to fail.
-  fl.l_len = 0;
-  EXPECT_THAT(fcntl(fds[0], F_SETLK, &fl), SyscallFailsWithErrno(EBADF));
+  TestLock(fds[0]);
+  TestLockBadFD(fds[0], F_WRLCK);
+
+  TestLock(fds[1], F_WRLCK);
+  TestLockBadFD(fds[1]);
+
   EXPECT_THAT(close(fds[0]), SyscallSucceeds());
   EXPECT_THAT(close(fds[1]), SyscallSucceeds());
 }
 
-TEST_F(FcntlLockTest, SetLockDir) {
-  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  FileDescriptor fd =
-      ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_RDONLY, 0666));
+TEST_F(FcntlLockTest, SetLockSocket) {
+  SKIP_IF(IsRunningWithVFS1());
 
-  struct flock fl;
-  fl.l_type = F_RDLCK;
-  fl.l_whence = SEEK_SET;
-  fl.l_start = 0;
-  // Same as SetLockBadFd.
-  fl.l_len = 0;
+  int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  ASSERT_THAT(sock, SyscallSucceeds());
 
-  EXPECT_THAT(fcntl(fd.get(), F_SETLK, &fl), SyscallSucceeds());
+  struct sockaddr_un addr =
+      ASSERT_NO_ERRNO_AND_VALUE(UniqueUnixAddr(true /* abstract */, AF_UNIX));
+  ASSERT_THAT(
+      bind(sock, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
+      SyscallSucceeds());
+
+  TestLock(sock);
+  EXPECT_THAT(close(sock), SyscallSucceeds());
 }
 
 TEST_F(FcntlLockTest, SetLockBadOpenFlagsWrite) {
@@ -241,8 +281,7 @@ TEST_F(FcntlLockTest, SetLockBadOpenFlagsWrite) {
   fl0.l_type = F_WRLCK;
   fl0.l_whence = SEEK_SET;
   fl0.l_start = 0;
-  // Same as SetLockBadFd.
-  fl0.l_len = 0;
+  fl0.l_len = 0;  // Lock all file
 
   // Expect that setting a write lock using a read only file descriptor
   // won't work.
@@ -704,7 +743,7 @@ TEST_F(FcntlLockTest, SetWriteLockThenBlockingWriteLock) {
       << "Exited with code: " << status;
 }
 
-// This test will veirfy that blocking works as expected when another process
+// This test will verify that blocking works as expected when another process
 // holds a read lock when obtaining a write lock. This test will hold the lock
 // for some amount of time and then wait for the second process to send over the
 // socket_fd the amount of time it was blocked for before the lock succeeded.
@@ -1109,8 +1148,7 @@ int main(int argc, char** argv) {
     fl.l_start = absl::GetFlag(FLAGS_child_setlock_start);
     fl.l_len = absl::GetFlag(FLAGS_child_setlock_len);
 
-    // Test the fcntl, no need to log, the error is unambiguously
-    // from fcntl at this point.
+    // Test the fcntl.
     int err = 0;
     int ret = 0;
 
@@ -1123,6 +1161,8 @@ int main(int argc, char** argv) {
 
     if (ret == -1 && errno != 0) {
       err = errno;
+      std::cerr << "CHILD lock " << setlock_on << " failed " << err
+                << std::endl;
     }
 
     // If there is a socket fd let's send back the time in microseconds it took

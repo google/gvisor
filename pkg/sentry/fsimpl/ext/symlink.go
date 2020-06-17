@@ -66,6 +66,7 @@ func (in *inode) isSymlink() bool {
 // O_PATH. For this reason most of the functions return EBADF.
 type symlinkFD struct {
 	fileDescription
+	vfs.NoLockFD
 }
 
 // Compiles only if symlinkFD implements vfs.FileDescriptionImpl.

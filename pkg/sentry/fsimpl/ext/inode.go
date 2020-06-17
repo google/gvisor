@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -55,7 +54,7 @@ type inode struct {
 	// diskInode gives us access to the inode struct on disk. Immutable.
 	diskInode disklayout.Inode
 
-	locks lock.FileLocks
+	locks vfs.FileLocks
 
 	// This is immutable. The first field of the implementations must have inode
 	// as the first field to ensure temporality.
