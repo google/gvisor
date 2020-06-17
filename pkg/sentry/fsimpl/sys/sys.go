@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -101,7 +100,7 @@ type dir struct {
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.OrderedChildren
 
-	locks lock.FileLocks
+	locks vfs.FileLocks
 
 	dentry kernfs.Dentry
 }

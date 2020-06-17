@@ -19,6 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
@@ -26,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -53,7 +53,7 @@ func NewSockfsFile(t *kernel.Task, ep transport.Endpoint, stype linux.SockType) 
 	mnt := t.Kernel().SocketMount()
 	d := sockfs.NewDentry(t.Credentials(), mnt)
 
-	fd, err := NewFileDescription(ep, stype, linux.O_RDWR, mnt, d, &lock.FileLocks{})
+	fd, err := NewFileDescription(ep, stype, linux.O_RDWR, mnt, d, &vfs.FileLocks{})
 	if err != nil {
 		return nil, syserr.FromError(err)
 	}
@@ -62,7 +62,7 @@ func NewSockfsFile(t *kernel.Task, ep transport.Endpoint, stype linux.SockType) 
 
 // NewFileDescription creates and returns a socket file description
 // corresponding to the given mount and dentry.
-func NewFileDescription(ep transport.Endpoint, stype linux.SockType, flags uint32, mnt *vfs.Mount, d *vfs.Dentry, locks *lock.FileLocks) (*vfs.FileDescription, error) {
+func NewFileDescription(ep transport.Endpoint, stype linux.SockType, flags uint32, mnt *vfs.Mount, d *vfs.Dentry, locks *vfs.FileLocks) (*vfs.FileDescription, error) {
 	// You can create AF_UNIX, SOCK_RAW sockets. They're the same as
 	// SOCK_DGRAM and don't require CAP_NET_RAW.
 	if stype == linux.SOCK_RAW {
@@ -298,6 +298,16 @@ func (s *SocketVFS2) EventUnregister(e *waiter.Entry) {
 // a transport.Endpoint.
 func (s *SocketVFS2) SetSockOpt(t *kernel.Task, level int, name int, optVal []byte) *syserr.Error {
 	return netstack.SetSockOpt(t, s, s.ep, level, name, optVal)
+}
+
+// LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
+func (s *SocketVFS2) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, start, length uint64, whence int16, block fslock.Blocker) error {
+	return s.Locks().LockPOSIX(ctx, &s.vfsfd, uid, t, start, length, whence, block)
+}
+
+// UnlockPOSIX implements vfs.FileDescriptionImpl.UnlockPOSIX.
+func (s *SocketVFS2) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, start, length uint64, whence int16) error {
+	return s.Locks().UnlockPOSIX(ctx, &s.vfsfd, uid, start, length, whence)
 }
 
 // providerVFS2 is a unix domain socket provider for VFS2.

@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -557,7 +556,7 @@ type StaticDirectory struct {
 	InodeNoDynamicLookup
 	OrderedChildren
 
-	locks lock.FileLocks
+	locks vfs.FileLocks
 }
 
 var _ Inode = (*StaticDirectory)(nil)
