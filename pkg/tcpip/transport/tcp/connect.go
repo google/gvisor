@@ -1516,6 +1516,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 	// Main loop. Handle segments until both send and receive ends of the
 	// connection have completed.
 	cleanupOnError := func(err *tcpip.Error) {
+		e.stack.Stats().TCP.CurrentConnected.Decrement()
 		e.workerCleanup = true
 		if err != nil {
 			e.resetConnectionLocked(err)
@@ -1568,10 +1569,13 @@ loop:
 		reuseTW = e.doTimeWait()
 	}
 
-	// Mark endpoint as closed.
-	if e.EndpointState() != StateError {
-		e.transitionToStateCloseLocked()
+	// Handle any StateError transition from StateTimeWait.
+	if e.EndpointState() == StateError {
+		cleanupOnError(nil)
+		return nil
 	}
+
+	e.transitionToStateCloseLocked()
 
 	// Lock released below.
 	epilogue()
