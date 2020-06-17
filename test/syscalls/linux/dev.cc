@@ -165,7 +165,8 @@ TEST(DevTest, WriteDevFuse) {
 }
 
 TEST(DevTest, TTYExists) {
-  SKIP_IF(!IsRunningWithVFS1());
+  // Run test if running on VFS1 or on Linux.
+  SKIP_IF(!IsRunningWithVFS1() && IsRunningOnGvisor());
 
   struct stat statbuf = {};
   ASSERT_THAT(stat("/dev/tty", &statbuf), SyscallSucceeds());
