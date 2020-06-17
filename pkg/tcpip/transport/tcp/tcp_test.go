@@ -2967,6 +2967,9 @@ loop:
 	if got := c.Stack().Stats().TCP.CurrentEstablished.Value(); got != 0 {
 		t.Errorf("got stats.TCP.CurrentEstablished.Value() = %d, want = 0", got)
 	}
+	if got := c.Stack().Stats().TCP.CurrentConnected.Value(); got != 0 {
+		t.Errorf("got stats.TCP.CurrentConnected.Value() = %d, want = 0", got)
+	}
 }
 
 func TestSendOnResetConnection(t *testing.T) {
@@ -3049,6 +3052,9 @@ func TestMaxRetransmitsTimeout(t *testing.T) {
 
 	if got := c.Stack().Stats().TCP.EstablishedTimedout.Value(); got != 1 {
 		t.Errorf("got c.Stack().Stats().TCP.EstablishedTimedout.Value() = %d, want = 1", got)
+	}
+	if got := c.Stack().Stats().TCP.CurrentConnected.Value(); got != 0 {
+		t.Errorf("got stats.TCP.CurrentConnected.Value() = %d, want = 0", got)
 	}
 }
 
@@ -4753,6 +4759,9 @@ func TestKeepalive(t *testing.T) {
 
 	if got := c.Stack().Stats().TCP.CurrentEstablished.Value(); got != 0 {
 		t.Errorf("got stats.TCP.CurrentEstablished.Value() = %d, want = 0", got)
+	}
+	if got := c.Stack().Stats().TCP.CurrentConnected.Value(); got != 0 {
+		t.Errorf("got stats.TCP.CurrentConnected.Value() = %d, want = 0", got)
 	}
 }
 
@@ -6771,6 +6780,9 @@ func TestTCPUserTimeout(t *testing.T) {
 	if got, want := c.Stack().Stats().TCP.EstablishedTimedout.Value(), origEstablishedTimedout+1; got != want {
 		t.Errorf("got c.Stack().Stats().TCP.EstablishedTimedout = %d, want = %d", got, want)
 	}
+	if got := c.Stack().Stats().TCP.CurrentConnected.Value(); got != 0 {
+		t.Errorf("got stats.TCP.CurrentConnected.Value() = %d, want = 0", got)
+	}
 }
 
 func TestKeepaliveWithUserTimeout(t *testing.T) {
@@ -6841,6 +6853,9 @@ func TestKeepaliveWithUserTimeout(t *testing.T) {
 	}
 	if got, want := c.Stack().Stats().TCP.EstablishedTimedout.Value(), origEstablishedTimedout+1; got != want {
 		t.Errorf("got c.Stack().Stats().TCP.EstablishedTimedout = %d, want = %d", got, want)
+	}
+	if got := c.Stack().Stats().TCP.CurrentConnected.Value(); got != 0 {
+		t.Errorf("got stats.TCP.CurrentConnected.Value() = %d, want = 0", got)
 	}
 }
 
