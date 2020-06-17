@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package miscdev
+package fuse
 
 import (
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -28,7 +30,7 @@ type fuseDevice struct{}
 
 // Open implements vfs.Device.Open.
 func (fuseDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	var fd FUSEDeviceFile
+	var fd DeviceFD
 	if err := fd.vfsfd.Init(&fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 	}); err != nil {
@@ -37,8 +39,8 @@ func (fuseDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, op
 	return &fd.vfsfd, nil
 }
 
-// FUSEDeviceFile implements vfs.FileDescriptionImpl for /dev/fuse.
-type FUSEDeviceFile struct {
+// DeviceFD implements vfs.FileDescriptionImpl for /dev/fuse.
+type DeviceFD struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
@@ -50,29 +52,49 @@ type FUSEDeviceFile struct {
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *FUSEDeviceFile) Release() {}
+func (fd *DeviceFD) Release() {}
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
-func (fd *FUSEDeviceFile) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
+func (fd *DeviceFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	return 0, syserror.ENOSYS
 }
 
 // Read implements vfs.FileDescriptionImpl.Read.
-func (fd *FUSEDeviceFile) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
+func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	return 0, syserror.ENOSYS
 }
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
-func (fd *FUSEDeviceFile) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
+func (fd *DeviceFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
 	return 0, syserror.ENOSYS
 }
 
 // Write implements vfs.FileDescriptionImpl.Write.
-func (fd *FUSEDeviceFile) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
+func (fd *DeviceFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	return 0, syserror.ENOSYS
 }
 
 // Seek implements vfs.FileDescriptionImpl.Seek.
-func (fd *FUSEDeviceFile) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
+func (fd *DeviceFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
 	return 0, syserror.ENOSYS
+}
+
+// Register registers the FUSE device with vfsObj.
+func Register(vfsObj *vfs.VirtualFilesystem) error {
+	if err := vfsObj.RegisterDevice(vfs.CharDevice, linux.MISC_MAJOR, fuseDevMinor, fuseDevice{}, &vfs.RegisterDeviceOptions{
+		GroupName: "misc",
+	}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// CreateDevtmpfsFile creates a device special file in devtmpfs.
+func CreateDevtmpfsFile(ctx context.Context, dev *devtmpfs.Accessor) error {
+	if err := dev.CreateDeviceFile(ctx, "fuse", vfs.CharDevice, linux.MISC_MAJOR, fuseDevMinor, 0666 /* mode */); err != nil {
+		return err
+	}
+
+	return nil
 }

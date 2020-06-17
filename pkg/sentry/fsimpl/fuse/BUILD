@@ -3,10 +3,9 @@ load("//tools:defs.bzl", "go_library")
 licenses(["notice"])
 
 go_library(
-    name = "miscdev",
+    name = "fuse",
     srcs = [
-        "fuse.go",
-        "miscdev.go",
+        "dev.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
