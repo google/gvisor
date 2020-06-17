@@ -15,7 +15,6 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
-        "//pkg/sentry/vfs/lock",
         "//pkg/syserror",
     ],
 )

@@ -28,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -117,7 +116,7 @@ type rootInode struct {
 	kernfs.InodeNotSymlink
 	kernfs.OrderedChildren
 
-	locks lock.FileLocks
+	locks vfs.FileLocks
 
 	// Keep a reference to this inode's dentry.
 	dentry kernfs.Dentry

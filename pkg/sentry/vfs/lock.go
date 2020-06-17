@@ -17,9 +17,11 @@
 //
 // The actual implementations can be found in the lock package under
 // sentry/fs/lock.
-package lock
+package vfs
 
 import (
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -56,7 +58,11 @@ func (fl *FileLocks) UnlockBSD(uid fslock.UniqueID) {
 }
 
 // LockPOSIX tries to acquire a POSIX-style lock on a file region.
-func (fl *FileLocks) LockPOSIX(uid fslock.UniqueID, t fslock.LockType, rng fslock.LockRange, block fslock.Blocker) error {
+func (fl *FileLocks) LockPOSIX(ctx context.Context, fd *FileDescription, uid fslock.UniqueID, t fslock.LockType, start, length uint64, whence int16, block fslock.Blocker) error {
+	rng, err := computeRange(ctx, fd, start, length, whence)
+	if err != nil {
+		return err
+	}
 	if fl.posix.LockRegion(uid, t, rng, block) {
 		return nil
 	}
@@ -67,6 +73,37 @@ func (fl *FileLocks) LockPOSIX(uid fslock.UniqueID, t fslock.LockType, rng fsloc
 //
 // This operation is always successful, even if there did not exist a lock on
 // the requested region held by uid in the first place.
-func (fl *FileLocks) UnlockPOSIX(uid fslock.UniqueID, rng fslock.LockRange) {
+func (fl *FileLocks) UnlockPOSIX(ctx context.Context, fd *FileDescription, uid fslock.UniqueID, start, length uint64, whence int16) error {
+	rng, err := computeRange(ctx, fd, start, length, whence)
+	if err != nil {
+		return err
+	}
 	fl.posix.UnlockRegion(uid, rng)
+	return nil
+}
+
+func computeRange(ctx context.Context, fd *FileDescription, start uint64, length uint64, whence int16) (fslock.LockRange, error) {
+	var off int64
+	switch whence {
+	case linux.SEEK_SET:
+		off = 0
+	case linux.SEEK_CUR:
+		// Note that Linux does not hold any mutexes while retrieving the file
+		// offset, see fs/locks.c:flock_to_posix_lock and fs/locks.c:fcntl_setlk.
+		curOff, err := fd.Seek(ctx, 0, linux.SEEK_CUR)
+		if err != nil {
+			return fslock.LockRange{}, err
+		}
+		off = curOff
+	case linux.SEEK_END:
+		stat, err := fd.Stat(ctx, StatOptions{Mask: linux.STATX_SIZE})
+		if err != nil {
+			return fslock.LockRange{}, err
+		}
+		off = int64(stat.Size)
+	default:
+		return fslock.LockRange{}, syserror.EINVAL
+	}
+
+	return fslock.ComputeRange(int64(start), int64(length), off)
 }

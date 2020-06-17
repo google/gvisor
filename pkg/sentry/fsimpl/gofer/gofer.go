@@ -53,7 +53,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -665,7 +664,7 @@ type dentry struct {
 	// endpoint bound to this file.
 	pipe *pipe.VFSPipe
 
-	locks lock.FileLocks
+	locks vfs.FileLocks
 }
 
 // dentryAttrMask returns a p9.AttrMask enabling all attributes used by the
@@ -1439,9 +1438,14 @@ func (fd *fileDescription) LockBSD(ctx context.Context, uid fslock.UniqueID, t f
 }
 
 // LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
-func (fd *fileDescription) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, rng fslock.LockRange, block fslock.Blocker) error {
+func (fd *fileDescription) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, start, length uint64, whence int16, block fslock.Blocker) error {
 	fd.lockLogging.Do(func() {
 		log.Infof("Range lock using gofer file handled internally.")
 	})
-	return fd.LockFD.LockPOSIX(ctx, uid, t, rng, block)
+	return fd.Locks().LockPOSIX(ctx, &fd.vfsfd, uid, t, start, length, whence, block)
+}
+
+// UnlockPOSIX implements vfs.FileDescriptionImpl.UnlockPOSIX.
+func (fd *fileDescription) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, start, length uint64, whence int16) error {
+	return fd.Locks().UnlockPOSIX(ctx, &fd.vfsfd, uid, start, length, whence)
 }

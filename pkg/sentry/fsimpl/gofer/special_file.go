@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -52,7 +51,7 @@ type specialFileFD struct {
 	off int64
 }
 
-func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, locks *lock.FileLocks, flags uint32) (*specialFileFD, error) {
+func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, locks *vfs.FileLocks, flags uint32) (*specialFileFD, error) {
 	ftype := d.fileType()
 	seekable := ftype == linux.S_IFREG
 	mayBlock := ftype == linux.S_IFIFO || ftype == linux.S_IFSOCK

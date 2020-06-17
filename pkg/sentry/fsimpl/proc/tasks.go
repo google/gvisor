@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sentry/vfs/lock"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -44,7 +43,7 @@ type tasksInode struct {
 	kernfs.OrderedChildren
 	kernfs.AlwaysValid
 
-	locks lock.FileLocks
+	locks vfs.FileLocks
 
 	fs    *filesystem
 	pidns *kernel.PIDNamespace

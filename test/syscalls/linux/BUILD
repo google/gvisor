@@ -791,6 +791,7 @@ cc_binary(
     deps = [
         ":socket_test_util",
         "//test/util:cleanup",
+        "//test/util:epoll_util",
         "//test/util:eventfd_util",
         "//test/util:fs_util",
         "@com_google_absl//absl/base:core_headers",
