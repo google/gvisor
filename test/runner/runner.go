@@ -391,12 +391,12 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 	}
 }
 
-// filterEnv returns an environment with the blacklisted variables removed.
-func filterEnv(env, blacklist []string) []string {
+// filterEnv returns an environment with the excluded variables removed.
+func filterEnv(env, exclude []string) []string {
 	var out []string
 	for _, kv := range env {
 		ok := true
-		for _, k := range blacklist {
+		for _, k := range exclude {
 			if strings.HasPrefix(kv, k+"=") {
 				ok = false
 				break

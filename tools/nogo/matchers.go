@@ -89,7 +89,7 @@ func (r resultExcluded) ShouldReport(d analysis.Diagnostic, _ *token.FileSet) bo
 			return false
 		}
 	}
-	return true // Not blacklisted.
+	return true // Not excluded.
 }
 
 // andMatcher is a composite matcher.
