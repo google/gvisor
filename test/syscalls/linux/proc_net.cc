@@ -441,6 +441,11 @@ TEST(ProcNetSnmp, CheckNetStat) {
   EXPECT_EQ(value_count, 4);
 }
 
+TEST(ProcNetSnmp, Stat) {
+  struct stat st = {};
+  ASSERT_THAT(stat("/proc/net/snmp", &st), SyscallSucceeds());
+}
+
 TEST(ProcNetSnmp, CheckSnmp) {
   // TODO(b/155123175): SNMP and netstat don't work on gVisor.
   SKIP_IF(IsRunningOnGvisor());
