@@ -99,6 +99,16 @@ func (vfs *VirtualFilesystem) getFilesystemType(name string) *registeredFilesyst
 	return vfs.fsTypes[name]
 }
 
+// GetFilesystemType is equivalent to getFIlesystemType but it's exported and it
+// returns the underlying FilesystemType directly.
+func (vfs *VirtualFilesystem) GetFilesystemType(name string) (FilesystemType, error) {
+	rft := vfs.getFilesystemType(name)
+	if rft == nil {
+		return nil, fmt.Errorf("Failed to find file system type: %s", name)
+	}
+	return rft.fsType, nil
+}
+
 // GenerateProcFilesystems emits the contents of /proc/filesystems for vfs to
 // buf.
 func (vfs *VirtualFilesystem) GenerateProcFilesystems(buf *bytes.Buffer) {
