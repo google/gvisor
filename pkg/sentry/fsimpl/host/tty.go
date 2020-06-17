@@ -326,9 +326,9 @@ func (t *TTYFileDescription) checkChange(ctx context.Context, sig linux.Signal) 
 	task := kernel.TaskFromContext(ctx)
 	if task == nil {
 		// No task? Linux does not have an analog for this case, but
-		// tty_check_change is more of a blacklist of cases than a
-		// whitelist, and is surprisingly permissive. Allowing the
-		// change seems most appropriate.
+		// tty_check_change only blocks specific cases and is
+		// surprisingly permissive. Allowing the change seems
+		// appropriate.
 		return nil
 	}
 
