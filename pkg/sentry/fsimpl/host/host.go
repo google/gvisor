@@ -91,7 +91,9 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 		isTTY:      opts.IsTTY,
 		wouldBlock: wouldBlock(uint32(fileType)),
 		seekable:   seekable,
-		canMap:     canMap(uint32(fileType)),
+		// NOTE(b/38213152): Technically, some obscure char devices can be memory
+		// mapped, but we only allow regular files.
+		canMap: fileType == linux.S_IFREG,
 	}
 	i.pf.inode = i
 
