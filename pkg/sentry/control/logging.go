@@ -70,8 +70,8 @@ type LoggingArgs struct {
 type Logging struct{}
 
 // Change will change the log level and strace arguments. Although
-// this functions signature requires an error it never acctually
-// return san error. It's required by the URPC interface.
+// this functions signature requires an error it never actually
+// returns an error. It's required by the URPC interface.
 // Additionally, it may look odd that this is the only method
 // attached to an empty struct but this is also part of how
 // URPC dispatches.
