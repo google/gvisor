@@ -1921,7 +1921,7 @@ TEST(ProcSelfMountinfo, RequiredFieldsArePresent) {
       AllOf(
           // Root mount.
           ContainsRegex(
-              R"([0-9]+ [0-9]+ [0-9]+:[0-9]+ / / (rw|ro).*- \S+ \S+ (rw|ro)\S*)"),
+              R"([0-9]+ [0-9]+ [0-9]+:[0-9]+ /\S* / (rw|ro).*- \S+ \S+ (rw|ro)\S*)"),
           // Proc mount - always rw.
           ContainsRegex(
               R"([0-9]+ [0-9]+ [0-9]+:[0-9]+ / /proc rw.*- \S+ \S+ rw\S*)")));
