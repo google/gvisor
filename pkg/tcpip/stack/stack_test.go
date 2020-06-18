@@ -3305,7 +3305,7 @@ func TestDoDADWhenNICEnabled(t *testing.T) {
 
 	// Wait for DAD to resolve.
 	select {
-	case <-time.After(dadTransmits*retransmitTimer + defaultAsyncEventTimeout):
+	case <-time.After(dadTransmits*retransmitTimer + defaultAsyncPositiveEventTimeout):
 		t.Fatal("timed out waiting for DAD resolution")
 	case e := <-ndpDisp.dadC:
 		if diff := checkDADEvent(e, nicID, addr.AddressWithPrefix.Address, true, nil); diff != "" {
