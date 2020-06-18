@@ -188,6 +188,9 @@ type MultiDevice struct {
 
 // String stringifies MultiDevice.
 func (m *MultiDevice) String() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	buf := bytes.NewBuffer(nil)
 	buf.WriteString("cache{")
 	for k, v := range m.cache {
