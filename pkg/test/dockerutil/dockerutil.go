@@ -210,7 +210,6 @@ type Docker struct {
 	Runtime  string
 	Name     string
 	copyErr  error
-	mounts   []string
 	cleanups []func()
 }
 
@@ -229,13 +228,8 @@ func MakeDocker(logger testutil.Logger) *Docker {
 	}
 }
 
-// Mount mounts the given source and makes it available in the container.
-func (d *Docker) Mount(target, source string, mode MountMode) {
-	d.mounts = append(d.mounts, fmt.Sprintf("-v=%s:%s:%v", source, target, mode))
-}
-
 // CopyFiles copies in and mounts the given files. They are always ReadOnly.
-func (d *Docker) CopyFiles(target string, sources ...string) {
+func (d *Docker) CopyFiles(opts *RunOpts, targetDir string, sources ...string) {
 	dir, err := ioutil.TempDir("", d.Name)
 	if err != nil {
 		d.copyErr = fmt.Errorf("ioutil.TempDir failed: %v", err)
@@ -259,12 +253,33 @@ func (d *Docker) CopyFiles(target string, sources ...string) {
 		}
 		d.logger.Logf("copy: %s -> %s", src, dst)
 	}
-	d.Mount(target, dir, ReadOnly)
+	opts.Mounts = append(opts.Mounts, Mount{
+		Source: dir,
+		Target: targetDir,
+		Mode:   ReadOnly,
+	})
 }
 
-// Link links the given target.
-func (d *Docker) Link(target string, source *Docker) {
-	d.mounts = append(d.mounts, fmt.Sprintf("--link=%s:%s", source.Name, target))
+// Mount describes a mount point inside the container.
+type Mount struct {
+	// Source is the path outside the container.
+	Source string
+
+	// Target is the path inside the container.
+	Target string
+
+	// Mode tells whether the mount inside the container should be readonly.
+	Mode MountMode
+}
+
+// Link informs dockers that a given container needs to be made accessible from
+// the container being configured.
+type Link struct {
+	// Source is the container to connect to.
+	Source *Docker
+
+	// Target is the alias for the container.
+	Target string
 }
 
 // RunOpts are options for running a container.
@@ -309,6 +324,12 @@ type RunOpts struct {
 	// foreground. If this is true, then the output will be available as a
 	// return value from the Run function.
 	Foreground bool
+
+	// Mounts is the list of directories/files to be mounted inside the container.
+	Mounts []Mount
+
+	// Links is the list of containers to be connected to the container.
+	Links []Link
 
 	// Extra are extra arguments that may be passed.
 	Extra []string
@@ -368,7 +389,13 @@ func (d *Docker) argsFor(r *RunOpts, command string, p []string) (rv []string) {
 	if isExec {
 		rv = append(rv, d.Name)
 	} else {
-		rv = append(rv, d.mounts...)
+		for _, m := range r.Mounts {
+			rv = append(rv, fmt.Sprintf("-v=%s:%s:%v", m.Source, m.Target, m.Mode))
+		}
+		for _, l := range r.Links {
+			rv = append(rv, fmt.Sprintf("--link=%s:%s", l.Source.Name, l.Target))
+		}
+
 		if len(d.Runtime) > 0 {
 			rv = append(rv, fmt.Sprintf("--runtime=%s", d.Runtime))
 		}
@@ -501,8 +528,6 @@ func (d *Docker) CleanUp() {
 	if err := d.Remove(); err != nil {
 		d.logger.Logf("error removing container %q: %v", d.Name, err)
 	}
-	// Forget all mounts.
-	d.mounts = nil
 	// Execute all cleanups.
 	for _, c := range d.cleanups {
 		c()

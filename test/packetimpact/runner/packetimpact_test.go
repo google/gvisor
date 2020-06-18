@@ -142,7 +142,7 @@ func TestOne(t *testing.T) {
 	}
 
 	const containerPosixServerBinary = "/packetimpact/posix_server"
-	dut.CopyFiles("/packetimpact", "/test/packetimpact/dut/posix_server")
+	dut.CopyFiles(&runOpts, "/packetimpact", "/test/packetimpact/dut/posix_server")
 
 	if err := dut.Create(runOpts, containerPosixServerBinary, "--ip=0.0.0.0", "--port="+ctrlPort); err != nil {
 		t.Fatalf("unable to create container %s: %s", dut.Name, err)
@@ -193,7 +193,13 @@ func TestOne(t *testing.T) {
 
 	tbb := path.Base(*testbenchBinary)
 	containerTestbenchBinary := "/packetimpact/" + tbb
-	testbench.CopyFiles("/packetimpact", "/test/packetimpact/tests/"+tbb)
+	runOpts = dockerutil.RunOpts{
+		Image:      "packetimpact",
+		CapAdd:     []string{"NET_ADMIN"},
+		Extra:      []string{"--sysctl", "net.ipv6.conf.all.disable_ipv6=0", "--rm", "-v", tmpDir + ":" + testOutputDir},
+		Foreground: true,
+	}
+	testbench.CopyFiles(&runOpts, "/packetimpact", "/test/packetimpact/tests/"+tbb)
 
 	// Run tcpdump in the test bench unbuffered, without DNS resolution, just on
 	// the interface with the test packets.

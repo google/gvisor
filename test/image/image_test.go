@@ -111,11 +111,12 @@ func TestHttpd(t *testing.T) {
 	defer d.CleanUp()
 
 	// Start the container.
-	d.CopyFiles("/usr/local/apache2/htdocs", "test/image/latin10k.txt")
-	if err := d.Spawn(dockerutil.RunOpts{
+	opts := dockerutil.RunOpts{
 		Image: "basic/httpd",
 		Ports: []int{80},
-	}); err != nil {
+	}
+	d.CopyFiles(&opts, "/usr/local/apache2/htdocs", "test/image/latin10k.txt")
+	if err := d.Spawn(opts); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
@@ -138,11 +139,12 @@ func TestNginx(t *testing.T) {
 	defer d.CleanUp()
 
 	// Start the container.
-	d.CopyFiles("/usr/share/nginx/html", "test/image/latin10k.txt")
-	if err := d.Spawn(dockerutil.RunOpts{
+	opts := dockerutil.RunOpts{
 		Image: "basic/nginx",
 		Ports: []int{80},
-	}); err != nil {
+	}
+	d.CopyFiles(&opts, "/usr/share/nginx/html", "test/image/latin10k.txt")
+	if err := d.Spawn(opts); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
@@ -183,11 +185,17 @@ func TestMysql(t *testing.T) {
 
 	// Tell mysql client to connect to the server and execute the file in
 	// verbose mode to verify the output.
-	client.CopyFiles("/sql", "test/image/mysql.sql")
-	client.Link("mysql", server)
-	if _, err := client.Run(dockerutil.RunOpts{
+	opts := dockerutil.RunOpts{
 		Image: "basic/mysql",
-	}, "mysql", "-hmysql", "-uroot", "-pfoobar123", "-v", "-e", "source /sql/mysql.sql"); err != nil {
+		Links: []dockerutil.Link{
+			{
+				Source: server,
+				Target: "mysql",
+			},
+		},
+	}
+	client.CopyFiles(&opts, "/sql", "test/image/mysql.sql")
+	if _, err := client.Run(opts, "mysql", "-hmysql", "-uroot", "-pfoobar123", "-v", "-e", "source /sql/mysql.sql"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
@@ -236,11 +244,12 @@ func TestRuby(t *testing.T) {
 	defer d.CleanUp()
 
 	// Execute the ruby workload.
-	d.CopyFiles("/src", "test/image/ruby.rb", "test/image/ruby.sh")
-	if err := d.Spawn(dockerutil.RunOpts{
+	opts := dockerutil.RunOpts{
 		Image: "basic/ruby",
 		Ports: []int{8080},
-	}, "/src/ruby.sh"); err != nil {
+	}
+	d.CopyFiles(&opts, "/src", "test/image/ruby.rb", "test/image/ruby.sh")
+	if err := d.Spawn(opts, "/src/ruby.sh"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
