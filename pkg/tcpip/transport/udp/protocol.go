@@ -21,6 +21,7 @@
 package udp
 
 import (
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -32,9 +33,27 @@ import (
 const (
 	// ProtocolNumber is the udp protocol number.
 	ProtocolNumber = header.UDPProtocolNumber
+
+	// MinBufferSize is the smallest size of a receive or send buffer.
+	MinBufferSize = 4 << 10 // 4KiB bytes.
+
+	// DefaultSendBufferSize is the default size of the send buffer for
+	// an endpoint.
+	DefaultSendBufferSize = 32 << 10 // 32KiB
+
+	// DefaultReceiveBufferSize is the default size of the receive buffer
+	// for an endpoint.
+	DefaultReceiveBufferSize = 32 << 10 // 32KiB
+
+	// MaxBufferSize is the largest size a receive/send buffer can grow to.
+	MaxBufferSize = 4 << 20 // 4MiB
 )
 
-type protocol struct{}
+type protocol struct {
+	mu             sync.RWMutex
+	sendBufferSize tcpip.StackSendBufferSizeOption
+	recvBufferSize tcpip.StackReceiveBufferSizeOption
+}
 
 // Number returns the udp protocol number.
 func (*protocol) Number() tcpip.TransportProtocolNumber {
@@ -183,13 +202,49 @@ func (p *protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.Trans
 }
 
 // SetOption implements stack.TransportProtocol.SetOption.
-func (*protocol) SetOption(option interface{}) *tcpip.Error {
-	return tcpip.ErrUnknownProtocolOption
+func (p *protocol) SetOption(option interface{}) *tcpip.Error {
+	switch v := option.(type) {
+	case tcpip.StackSendBufferSizeOption:
+		if v.Min <= 0 || v.Default < v.Min || v.Default > v.Max {
+			return tcpip.ErrInvalidOptionValue
+		}
+		p.mu.Lock()
+		p.sendBufferSize = v
+		p.mu.Unlock()
+		return nil
+
+	case tcpip.StackReceiveBufferSizeOption:
+		if v.Min <= 0 || v.Default < v.Min || v.Default > v.Max {
+			return tcpip.ErrInvalidOptionValue
+		}
+		p.mu.Lock()
+		p.recvBufferSize = v
+		p.mu.Unlock()
+		return nil
+
+	default:
+		return tcpip.ErrUnknownProtocolOption
+	}
 }
 
 // Option implements stack.TransportProtocol.Option.
-func (*protocol) Option(option interface{}) *tcpip.Error {
-	return tcpip.ErrUnknownProtocolOption
+func (p *protocol) Option(option interface{}) *tcpip.Error {
+	switch v := option.(type) {
+	case *tcpip.StackSendBufferSizeOption:
+		p.mu.RLock()
+		*v = p.sendBufferSize
+		p.mu.RUnlock()
+		return nil
+
+	case *tcpip.StackReceiveBufferSizeOption:
+		p.mu.RLock()
+		*v = p.recvBufferSize
+		p.mu.RUnlock()
+		return nil
+
+	default:
+		return tcpip.ErrUnknownProtocolOption
+	}
 }
 
 // Close implements stack.TransportProtocol.Close.
@@ -212,5 +267,8 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
 
 // NewProtocol returns a UDP transport protocol.
 func NewProtocol() stack.TransportProtocol {
-	return &protocol{}
+	return &protocol{
+		sendBufferSize: tcpip.StackSendBufferSizeOption{Min: MinBufferSize, Default: DefaultSendBufferSize, Max: MaxBufferSize},
+		recvBufferSize: tcpip.StackReceiveBufferSizeOption{Min: MinBufferSize, Default: DefaultReceiveBufferSize, Max: MaxBufferSize},
+	}
 }
