@@ -15,6 +15,8 @@
 package udp
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -94,6 +96,7 @@ type endpoint struct {
 	// The following fields are protected by the mu mutex.
 	mu             sync.RWMutex `state:"nosave"`
 	sndBufSize     int
+	sndBufSizeMax  int
 	state          EndpointState
 	route          stack.Route `state:"manual"`
 	dstPort        uint16
@@ -159,7 +162,7 @@ type multicastMembership struct {
 }
 
 func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) *endpoint {
-	return &endpoint{
+	e := &endpoint{
 		stack: s,
 		TransportEndpointInfo: stack.TransportEndpointInfo{
 			NetProto:   netProto,
@@ -181,10 +184,23 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 		multicastTTL:  1,
 		multicastLoop: true,
 		rcvBufSizeMax: 32 * 1024,
-		sndBufSize:    32 * 1024,
+		sndBufSizeMax: 32 * 1024,
 		state:         StateInitial,
 		uniqueID:      s.UniqueID(),
 	}
+
+	// Override with stack defaults.
+	var ss tcpip.StackSendBufferSizeOption
+	if err := s.TransportProtocolOption(ProtocolNumber, &ss); err == nil {
+		e.sndBufSizeMax = ss.Default
+	}
+
+	var rs tcpip.StackReceiveBufferSizeOption
+	if err := s.TransportProtocolOption(ProtocolNumber, &rs); err == nil {
+		e.rcvBufSizeMax = rs.Default
+	}
+
+	return e
 }
 
 // UniqueID implements stack.TransportEndpoint.UniqueID.
@@ -611,8 +627,43 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 		e.mu.Unlock()
 
 	case tcpip.ReceiveBufferSizeOption:
-	case tcpip.SendBufferSizeOption:
+		// Make sure the receive buffer size is within the min and max
+		// allowed.
+		var rs tcpip.StackReceiveBufferSizeOption
+		if err := e.stack.TransportProtocolOption(ProtocolNumber, &rs); err != nil {
+			panic(fmt.Sprintf("e.stack.TransportProtocolOption(%d, %+v) = %s", ProtocolNumber, rs, err))
+		}
 
+		if v < rs.Min {
+			v = rs.Min
+		}
+		if v > rs.Max {
+			v = rs.Max
+		}
+
+		e.mu.Lock()
+		e.rcvBufSizeMax = v
+		e.mu.Unlock()
+		return nil
+	case tcpip.SendBufferSizeOption:
+		// Make sure the send buffer size is within the min and max
+		// allowed.
+		var ss tcpip.StackSendBufferSizeOption
+		if err := e.stack.TransportProtocolOption(ProtocolNumber, &ss); err != nil {
+			panic(fmt.Sprintf("e.stack.TransportProtocolOption(%d, %+v) = %s", ProtocolNumber, ss, err))
+		}
+
+		if v < ss.Min {
+			v = ss.Min
+		}
+		if v > ss.Max {
+			v = ss.Max
+		}
+
+		e.mu.Lock()
+		e.sndBufSizeMax = v
+		e.mu.Unlock()
+		return nil
 	}
 
 	return nil
@@ -861,7 +912,7 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 
 	case tcpip.SendBufferSizeOption:
 		e.mu.Lock()
-		v := e.sndBufSize
+		v := e.sndBufSizeMax
 		e.mu.Unlock()
 		return v, nil
 
