@@ -24,10 +24,12 @@ package integration
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -385,6 +387,37 @@ func TestTmpFile(t *testing.T) {
 		t.Fatalf("docker run failed: %v", err)
 	}
 	if want := "123\n"; want != got {
+		t.Errorf("invalid file content, want: %q, got: %q", want, got)
+	}
+}
+
+// TestTmpMount checks that mounts inside '/tmp' are not overridden.
+func TestTmpMount(t *testing.T) {
+	dir, err := ioutil.TempDir(testutil.TmpDir(), "tmp-mount")
+	if err != nil {
+		t.Fatalf("TempDir(): %v", err)
+	}
+	want := "123"
+	if err := ioutil.WriteFile(filepath.Join(dir, "file.txt"), []byte("123"), 0666); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+	d := dockerutil.MakeDocker(t)
+	defer d.CleanUp()
+
+	opts := dockerutil.RunOpts{
+		Image: "basic/alpine",
+		Mounts: []dockerutil.Mount{
+			{
+				Source: dir,
+				Target: "/tmp/foo",
+			},
+		},
+	}
+	got, err := d.Run(opts, "cat", "/tmp/foo/file.txt")
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	if want != got {
 		t.Errorf("invalid file content, want: %q, got: %q", want, got)
 	}
 }
