@@ -778,3 +778,9 @@ func (fd *fileDescription) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t
 func (fd *fileDescription) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, start, length uint64, whence int16) error {
 	return fd.Locks().UnlockPOSIX(ctx, &fd.vfsfd, uid, start, length, whence)
 }
+
+// Sync implements vfs.FileDescriptionImpl.Sync. It does nothing because all
+// filesystem state is in-memory.
+func (*fileDescription) Sync(context.Context) error {
+	return nil
+}

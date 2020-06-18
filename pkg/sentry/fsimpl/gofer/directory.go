@@ -299,3 +299,8 @@ func (fd *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (in
 		return 0, syserror.EINVAL
 	}
 }
+
+// Sync implements vfs.FileDescriptionImpl.Sync.
+func (fd *directoryFD) Sync(ctx context.Context) error {
+	return fd.dentry().handle.sync(ctx)
+}

@@ -690,7 +690,8 @@ func (f *fileDescription) Seek(_ context.Context, offset int64, whence int32) (i
 
 // Sync implements FileDescriptionImpl.
 func (f *fileDescription) Sync(context.Context) error {
-	// TODO(gvisor.dev/issue/1672): Currently we do not support the SyncData optimization, so we always sync everything.
+	// TODO(gvisor.dev/issue/1672): Currently we do not support the SyncData
+	//  optimization, so we always sync everything.
 	return unix.Fsync(f.inode.hostFD)
 }
 
