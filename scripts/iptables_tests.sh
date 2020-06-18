@@ -18,6 +18,9 @@ source $(dirname $0)/common.sh
 
 make load-iptables
 
+# Needed by ip6tables.
+sudo modprobe ip6table_filter
+
 install_runsc_for_test iptables --net-raw
 test //test/iptables:iptables_test "--test_arg=--runtime=runc"
 test //test/iptables:iptables_test "--test_arg=--runtime=${RUNTIME}"
