@@ -476,8 +476,9 @@ func (i *inode) open(ctx context.Context, d *vfs.Dentry, mnt *vfs.Mount, flags u
 		return unixsocket.NewFileDescription(ep, ep.Type(), flags, mnt, d, &i.locks)
 	}
 
-	// TODO(gvisor.dev/issue/1672): Whitelist specific file types here, so that
-	// we don't allow importing arbitrary file types without proper support.
+	// TODO(gvisor.dev/issue/1672): Allow only specific file types here, so
+	// that we don't allow importing arbitrary file types without proper
+	// support.
 	if i.isTTY {
 		fd := &TTYFileDescription{
 			fileDescription: fileDescription{inode: i},
