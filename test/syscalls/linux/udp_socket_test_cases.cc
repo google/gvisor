@@ -1543,5 +1543,120 @@ TEST_P(UdpSocketTest, SendAndReceiveTOS) {
   memcpy(&received_tos, CMSG_DATA(cmsg), sizeof(received_tos));
   EXPECT_EQ(received_tos, sent_tos);
 }
+
+TEST_P(UdpSocketTest, RecvBufLimitsEmptyRcvBuf) {
+  // Discover minimum buffer size by setting it to zero.
+  constexpr int kRcvBufSz = 0;
+  ASSERT_THAT(
+      setsockopt(s_, SOL_SOCKET, SO_RCVBUF, &kRcvBufSz, sizeof(kRcvBufSz)),
+      SyscallSucceeds());
+
+  int min = 0;
+  socklen_t min_len = sizeof(min);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_RCVBUF, &min, &min_len),
+              SyscallSucceeds());
+
+  // Bind s_ to loopback.
+  ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
+
+  {
+    // Send data of size min and verify that it's received.
+    std::vector<char> buf(min);
+    RandomizeBuffer(buf.data(), buf.size());
+    ASSERT_THAT(sendto(t_, buf.data(), buf.size(), 0, addr_[0], addrlen_),
+                SyscallSucceedsWithValue(buf.size()));
+    std::vector<char> received(buf.size());
+    EXPECT_THAT(recv(s_, received.data(), received.size(), MSG_DONTWAIT),
+                SyscallSucceedsWithValue(received.size()));
+  }
+
+  {
+    // Send data of size min + 1 and verify that its received. Both linux and
+    // Netstack accept a dgram that exceeds rcvBuf limits if the receive buffer
+    // is currently empty.
+    std::vector<char> buf(min + 1);
+    RandomizeBuffer(buf.data(), buf.size());
+    ASSERT_THAT(sendto(t_, buf.data(), buf.size(), 0, addr_[0], addrlen_),
+                SyscallSucceedsWithValue(buf.size()));
+
+    std::vector<char> received(buf.size());
+    EXPECT_THAT(recv(s_, received.data(), received.size(), MSG_DONTWAIT),
+                SyscallSucceedsWithValue(received.size()));
+  }
+}
+
+// Test that receive buffer limits are enforced.
+TEST_P(UdpSocketTest, RecvBufLimits) {
+  // Bind s_ to loopback.
+  ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
+
+  int min = 0;
+  {
+    // Discover minimum buffer size by trying to set it to zero.
+    constexpr int kRcvBufSz = 0;
+    ASSERT_THAT(
+        setsockopt(s_, SOL_SOCKET, SO_RCVBUF, &kRcvBufSz, sizeof(kRcvBufSz)),
+        SyscallSucceeds());
+
+    socklen_t min_len = sizeof(min);
+    ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_RCVBUF, &min, &min_len),
+                SyscallSucceeds());
+  }
+
+  // Now set the limit to min * 4.
+  int new_rcv_buf_sz = min * 4;
+  if (!IsRunningOnGvisor() || IsRunningWithHostinet()) {
+    // Linux doubles the value specified so just set to min * 2.
+    new_rcv_buf_sz = min * 2;
+  }
+
+  ASSERT_THAT(setsockopt(s_, SOL_SOCKET, SO_RCVBUF, &new_rcv_buf_sz,
+                         sizeof(new_rcv_buf_sz)),
+              SyscallSucceeds());
+  int rcv_buf_sz = 0;
+  {
+    socklen_t rcv_buf_len = sizeof(rcv_buf_sz);
+    ASSERT_THAT(
+        getsockopt(s_, SOL_SOCKET, SO_RCVBUF, &rcv_buf_sz, &rcv_buf_len),
+        SyscallSucceeds());
+  }
+
+  {
+    std::vector<char> buf(min);
+    RandomizeBuffer(buf.data(), buf.size());
+
+    ASSERT_THAT(sendto(t_, buf.data(), buf.size(), 0, addr_[0], addrlen_),
+                SyscallSucceedsWithValue(buf.size()));
+    ASSERT_THAT(sendto(t_, buf.data(), buf.size(), 0, addr_[0], addrlen_),
+                SyscallSucceedsWithValue(buf.size()));
+    ASSERT_THAT(sendto(t_, buf.data(), buf.size(), 0, addr_[0], addrlen_),
+                SyscallSucceedsWithValue(buf.size()));
+    ASSERT_THAT(sendto(t_, buf.data(), buf.size(), 0, addr_[0], addrlen_),
+                SyscallSucceedsWithValue(buf.size()));
+    int sent = 4;
+    if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
+      // Linux seems to drop the 4th packet even though technically it should
+      // fit in the receive buffer.
+      ASSERT_THAT(sendto(t_, buf.data(), buf.size(), 0, addr_[0], addrlen_),
+                  SyscallSucceedsWithValue(buf.size()));
+      sent++;
+    }
+
+    for (int i = 0; i < sent - 1; i++) {
+      // Receive the data.
+      std::vector<char> received(buf.size());
+      EXPECT_THAT(recv(s_, received.data(), received.size(), MSG_DONTWAIT),
+                  SyscallSucceedsWithValue(received.size()));
+      EXPECT_EQ(memcmp(buf.data(), received.data(), buf.size()), 0);
+    }
+
+    // The last receive should fail with EAGAIN as the last packet should have
+    // been dropped due to lack of space in the receive buffer.
+    std::vector<char> received(buf.size());
+    EXPECT_THAT(recv(s_, received.data(), received.size(), MSG_DONTWAIT),
+                SyscallFailsWithErrno(EAGAIN));
+  }
+}
+
 }  // namespace testing
 }  // namespace gvisor
