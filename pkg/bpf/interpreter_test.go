@@ -767,7 +767,7 @@ func TestSimpleFilter(t *testing.T) {
 			expectedRet: 0,
 		},
 		{
-			desc:        "Whitelisted syscall is allowed",
+			desc:        "Allowed syscall is indeed allowed",
 			seccompData: seccompData{nr: 231 /* __NR_exit_group */, arch: 0xc000003e},
 			expectedRet: 0x7fff0000,
 		},

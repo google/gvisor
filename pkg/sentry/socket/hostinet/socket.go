@@ -324,7 +324,7 @@ func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, outPtr
 		return nil, syserr.ErrInvalidArgument
 	}
 
-	// Whitelist options and constrain option length.
+	// Only allow known and safe options.
 	optlen := getSockOptLen(t, level, name)
 	switch level {
 	case linux.SOL_IP:
@@ -369,7 +369,7 @@ func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, outPtr
 
 // SetSockOpt implements socket.Socket.SetSockOpt.
 func (s *socketOpsCommon) SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *syserr.Error {
-	// Whitelist options and constrain option length.
+	// Only allow known and safe options.
 	optlen := setSockOptLen(t, level, name)
 	switch level {
 	case linux.SOL_IP:
@@ -415,7 +415,7 @@ func (s *socketOpsCommon) SetSockOpt(t *kernel.Task, level int, name int, opt []
 
 // RecvMsg implements socket.Socket.RecvMsg.
 func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlLen uint64) (int, int, linux.SockAddr, uint32, socket.ControlMessages, *syserr.Error) {
-	// Whitelist flags.
+	// Only allow known and safe flags.
 	//
 	// FIXME(jamieliu): We can't support MSG_ERRQUEUE because it uses ancillary
 	// messages that gvisor/pkg/tcpip/transport/unix doesn't understand. Kill the
@@ -537,7 +537,7 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 
 // SendMsg implements socket.Socket.SendMsg.
 func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, haveDeadline bool, deadline ktime.Time, controlMessages socket.ControlMessages) (int, *syserr.Error) {
-	// Whitelist flags.
+	// Only allow known and safe flags.
 	if flags&^(syscall.MSG_DONTWAIT|syscall.MSG_EOR|syscall.MSG_FASTOPEN|syscall.MSG_MORE|syscall.MSG_NOSIGNAL) != 0 {
 		return 0, syserr.ErrInvalidArgument
 	}

@@ -169,8 +169,6 @@ This construction, which is essentially a type-safe analogue to Linux's
 
     -   binder, which is similarly far too incomplete to use.
 
-    -   whitelistfs, which we are already actively attempting to remove.
-
 -   Save/restore. For instance, it is unclear if the current implementation of
     the `state` package supports the inheritance pattern described above.
 

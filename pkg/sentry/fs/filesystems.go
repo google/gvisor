@@ -87,20 +87,6 @@ func RegisterFilesystem(f Filesystem) {
 	filesystems.registered[f.Name()] = f
 }
 
-// UnregisterFilesystem removes a file system from the global set. To keep the
-// file system set compatible with save/restore, UnregisterFilesystem must be
-// called before save/restore methods.
-//
-// For instance, packages may unregister their file system after it is mounted.
-// This makes sense for pseudo file systems that should not be visible or
-// mountable. See whitelistfs in fs/host/fs.go for one example.
-func UnregisterFilesystem(name string) {
-	filesystems.mu.Lock()
-	defer filesystems.mu.Unlock()
-
-	delete(filesystems.registered, name)
-}
-
 // FindFilesystem returns a Filesystem registered at name or (nil, false) if name
 // is not a file system type that can be found in /proc/filesystems.
 func FindFilesystem(name string) (Filesystem, bool) {

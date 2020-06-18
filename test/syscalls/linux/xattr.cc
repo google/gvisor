@@ -73,9 +73,10 @@ TEST_F(XattrTest, XattrLargeName) {
   std::string name = "user.";
   name += std::string(XATTR_NAME_MAX - name.length(), 'a');
 
-  // An xattr should be whitelisted before it can be accessed--do not allow
-  // arbitrary xattrs to be read/written in gVisor.
   if (!IsRunningOnGvisor()) {
+    // In gVisor, access to xattrs is controlled with an explicit list of
+    // allowed names. This name isn't going to be configured to allow access, so
+    // don't test it.
     EXPECT_THAT(setxattr(path, name.c_str(), nullptr, 0, /*flags=*/0),
                 SyscallSucceeds());
     EXPECT_THAT(getxattr(path, name.c_str(), nullptr, 0),

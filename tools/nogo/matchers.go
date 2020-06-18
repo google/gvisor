@@ -27,10 +27,15 @@ type matcher interface {
 	ShouldReport(d analysis.Diagnostic, fs *token.FileSet) bool
 }
 
-// pathRegexps excludes explicit paths.
+// pathRegexps filters explicit paths.
 type pathRegexps struct {
-	expr      []*regexp.Regexp
-	whitelist bool
+	expr []*regexp.Regexp
+
+	// include, if true, indicates that paths matching any regexp in expr
+	// match.
+	//
+	// If false, paths matching no regexps in expr match.
+	include bool
 }
 
 // buildRegexps builds a list of regular expressions.
@@ -49,33 +54,33 @@ func (p *pathRegexps) ShouldReport(d analysis.Diagnostic, fs *token.FileSet) boo
 	fullPos := fs.Position(d.Pos).String()
 	for _, path := range p.expr {
 		if path.MatchString(fullPos) {
-			return p.whitelist
+			return p.include
 		}
 	}
-	return !p.whitelist
+	return !p.include
 }
 
 // internalExcluded excludes specific internal paths.
 func internalExcluded(paths ...string) *pathRegexps {
 	return &pathRegexps{
-		expr:      buildRegexps(internalPrefix, paths...),
-		whitelist: false,
+		expr:    buildRegexps(internalPrefix, paths...),
+		include: false,
 	}
 }
 
 // excludedExcluded excludes specific external paths.
 func externalExcluded(paths ...string) *pathRegexps {
 	return &pathRegexps{
-		expr:      buildRegexps(externalPrefix, paths...),
-		whitelist: false,
+		expr:    buildRegexps(externalPrefix, paths...),
+		include: false,
 	}
 }
 
 // internalMatches returns a path matcher for internal packages.
 func internalMatches() *pathRegexps {
 	return &pathRegexps{
-		expr:      buildRegexps(internalPrefix, ".*"),
-		whitelist: true,
+		expr:    buildRegexps(internalPrefix, ".*"),
+		include: true,
 	}
 }
 
