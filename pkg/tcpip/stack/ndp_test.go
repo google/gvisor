@@ -36,15 +36,24 @@ import (
 )
 
 const (
-	addr1                    = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-	addr2                    = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-	addr3                    = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03")
-	linkAddr1                = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
-	linkAddr2                = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x07")
-	linkAddr3                = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x08")
-	linkAddr4                = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x09")
-	defaultTimeout           = 100 * time.Millisecond
-	defaultAsyncEventTimeout = time.Second
+	addr1     = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+	addr2     = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+	addr3     = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03")
+	linkAddr1 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
+	linkAddr2 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x07")
+	linkAddr3 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x08")
+	linkAddr4 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x09")
+
+	// Extra time to use when waiting for an async event to occur.
+	defaultAsyncPositiveEventTimeout = 10 * time.Second
+
+	// Extra time to use when waiting for an async event to not occur.
+	//
+	// Since a negative check is used to make sure an event did not happen, it is
+	// okay to use a smaller timeout compared to the positive case since execution
+	// stall in regards to the monotonic clock will not affect the expected
+	// outcome.
+	defaultAsyncNegativeEventTimeout = time.Second
 )
 
 var (
@@ -442,7 +451,7 @@ func TestDADResolve(t *testing.T) {
 
 			// Make sure the address does not resolve before the resolution time has
 			// passed.
-			time.Sleep(test.expectedRetransmitTimer*time.Duration(test.dupAddrDetectTransmits) - defaultAsyncEventTimeout)
+			time.Sleep(test.expectedRetransmitTimer*time.Duration(test.dupAddrDetectTransmits) - defaultAsyncNegativeEventTimeout)
 			if addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber); err != nil {
 				t.Errorf("got stack.GetMainNICAddress(%d, %d) = (_, %s), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
 			} else if want := (tcpip.AddressWithPrefix{}); addr != want {
@@ -471,7 +480,7 @@ func TestDADResolve(t *testing.T) {
 
 			// Wait for DAD to resolve.
 			select {
-			case <-time.After(2 * defaultAsyncEventTimeout):
+			case <-time.After(defaultAsyncPositiveEventTimeout):
 				t.Fatal("timed out waiting for DAD resolution")
 			case e := <-ndpDisp.dadC:
 				if diff := checkDADEvent(e, nicID, addr1, true, nil); diff != "" {
@@ -1169,7 +1178,7 @@ func TestRouterDiscoveryDispatcherNoRemember(t *testing.T) {
 	select {
 	case <-ndpDisp.routerC:
 		t.Fatal("should not have received any router events")
-	case <-time.After(lifetimeSeconds*time.Second + defaultTimeout):
+	case <-time.After(lifetimeSeconds*time.Second + defaultAsyncNegativeEventTimeout):
 	}
 }
 
@@ -1252,7 +1261,7 @@ func TestRouterDiscovery(t *testing.T) {
 	// Wait for the normal lifetime plus an extra bit for the
 	// router to get invalidated. If we don't get an invalidation
 	// event after this time, then something is wrong.
-	expectAsyncRouterInvalidationEvent(llAddr2, l2LifetimeSeconds*time.Second+defaultAsyncEventTimeout)
+	expectAsyncRouterInvalidationEvent(llAddr2, l2LifetimeSeconds*time.Second+defaultAsyncPositiveEventTimeout)
 
 	// Rx an RA from lladdr2 with huge lifetime.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBuf(llAddr2, 1000))
@@ -1269,7 +1278,7 @@ func TestRouterDiscovery(t *testing.T) {
 	// Wait for the normal lifetime plus an extra bit for the
 	// router to get invalidated. If we don't get an invalidation
 	// event after this time, then something is wrong.
-	expectAsyncRouterInvalidationEvent(llAddr3, l3LifetimeSeconds*time.Second+defaultAsyncEventTimeout)
+	expectAsyncRouterInvalidationEvent(llAddr3, l3LifetimeSeconds*time.Second+defaultAsyncPositiveEventTimeout)
 }
 
 // TestRouterDiscoveryMaxRouters tests that only
@@ -1418,7 +1427,7 @@ func TestPrefixDiscoveryDispatcherNoRemember(t *testing.T) {
 	select {
 	case <-ndpDisp.prefixC:
 		t.Fatal("should not have received any prefix events")
-	case <-time.After(lifetimeSeconds*time.Second + defaultTimeout):
+	case <-time.After(lifetimeSeconds*time.Second + defaultAsyncNegativeEventTimeout):
 	}
 }
 
@@ -1500,7 +1509,7 @@ func TestPrefixDiscovery(t *testing.T) {
 		if diff := checkPrefixEvent(e, subnet2, false); diff != "" {
 			t.Errorf("prefix event mismatch (-want +got):\n%s", diff)
 		}
-	case <-time.After(time.Duration(lifetime)*time.Second + defaultAsyncEventTimeout):
+	case <-time.After(time.Duration(lifetime)*time.Second + defaultAsyncPositiveEventTimeout):
 		t.Fatal("timed out waiting for prefix discovery event")
 	}
 
@@ -1565,7 +1574,7 @@ func TestPrefixDiscoveryWithInfiniteLifetime(t *testing.T) {
 	select {
 	case <-ndpDisp.prefixC:
 		t.Fatal("unexpectedly invalidated a prefix with infinite lifetime")
-	case <-time.After(testInfiniteLifetime + defaultTimeout):
+	case <-time.After(testInfiniteLifetime + defaultAsyncNegativeEventTimeout):
 	}
 
 	// Receive an RA with finite lifetime.
@@ -1590,7 +1599,7 @@ func TestPrefixDiscoveryWithInfiniteLifetime(t *testing.T) {
 	select {
 	case <-ndpDisp.prefixC:
 		t.Fatal("unexpectedly invalidated a prefix with infinite lifetime")
-	case <-time.After(testInfiniteLifetime + defaultTimeout):
+	case <-time.After(testInfiniteLifetime + defaultAsyncNegativeEventTimeout):
 	}
 
 	// Receive an RA with a prefix with a lifetime value greater than the
@@ -1599,7 +1608,7 @@ func TestPrefixDiscoveryWithInfiniteLifetime(t *testing.T) {
 	select {
 	case <-ndpDisp.prefixC:
 		t.Fatal("unexpectedly invalidated a prefix with infinite lifetime")
-	case <-time.After((testInfiniteLifetimeSeconds+1)*time.Second + defaultTimeout):
+	case <-time.After((testInfiniteLifetimeSeconds+1)*time.Second + defaultAsyncNegativeEventTimeout):
 	}
 
 	// Receive an RA with 0 lifetime.
@@ -1835,7 +1844,7 @@ func TestAutoGenAddr(t *testing.T) {
 		if diff := checkAutoGenAddrEvent(e, addr1, invalidatedAddr); diff != "" {
 			t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 		}
-	case <-time.After(newMinVLDuration + defaultAsyncEventTimeout):
+	case <-time.After(newMinVLDuration + defaultAsyncPositiveEventTimeout):
 		t.Fatal("timed out waiting for addr auto gen event")
 	}
 	if containsV6Addr(s.NICInfo()[1].ProtocolAddresses, addr1) {
@@ -1962,7 +1971,7 @@ func TestAutoGenTempAddr(t *testing.T) {
 						if diff := checkAutoGenAddrEvent(e, addr, eventType); diff != "" {
 							t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 						}
-					case <-time.After(defaultAsyncEventTimeout):
+					case <-time.After(defaultAsyncPositiveEventTimeout):
 						t.Fatal("timed out waiting for addr auto gen event")
 					}
 				}
@@ -1975,7 +1984,7 @@ func TestAutoGenTempAddr(t *testing.T) {
 						if diff := checkDADEvent(e, nicID, addr, true, nil); diff != "" {
 							t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 						}
-					case <-time.After(time.Duration(test.dupAddrTransmits)*test.retransmitTimer + defaultAsyncEventTimeout):
+					case <-time.After(time.Duration(test.dupAddrTransmits)*test.retransmitTimer + defaultAsyncPositiveEventTimeout):
 						t.Fatal("timed out waiting for DAD event")
 					}
 				}
@@ -2081,10 +2090,10 @@ func TestAutoGenTempAddr(t *testing.T) {
 						if diff := checkAutoGenAddrEvent(e, nextAddr, invalidatedAddr); diff != "" {
 							t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 						}
-					case <-time.After(defaultTimeout):
+					case <-time.After(defaultAsyncPositiveEventTimeout):
 						t.Fatal("timed out waiting for addr auto gen event")
 					}
-				case <-time.After(newMinVLDuration + defaultTimeout):
+				case <-time.After(newMinVLDuration + defaultAsyncPositiveEventTimeout):
 					t.Fatal("timed out waiting for addr auto gen event")
 				}
 				if mismatch := addressCheck(s.NICInfo()[nicID].ProtocolAddresses, []tcpip.AddressWithPrefix{addr2, tempAddr2}, []tcpip.AddressWithPrefix{addr1, tempAddr1}); mismatch != "" {
@@ -2180,7 +2189,7 @@ func TestNoAutoGenTempAddrForLinkLocal(t *testing.T) {
 					if diff := checkDADEvent(e, nicID, llAddr1, true, nil); diff != "" {
 						t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 					}
-				case <-time.After(time.Duration(test.dupAddrTransmits)*test.retransmitTimer + defaultAsyncEventTimeout):
+				case <-time.After(time.Duration(test.dupAddrTransmits)*test.retransmitTimer + defaultAsyncPositiveEventTimeout):
 					t.Fatal("timed out waiting for DAD event")
 				}
 
@@ -2188,7 +2197,7 @@ func TestNoAutoGenTempAddrForLinkLocal(t *testing.T) {
 				select {
 				case e := <-ndpDisp.autoGenAddrC:
 					t.Errorf("got unxpected auto gen addr event = %+v", e)
-				case <-time.After(defaultAsyncEventTimeout):
+				case <-time.After(defaultAsyncNegativeEventTimeout):
 				}
 			})
 		}
@@ -2265,7 +2274,7 @@ func TestNoAutoGenTempAddrWithoutStableAddr(t *testing.T) {
 		if diff := checkDADEvent(e, nicID, addr.Address, true, nil); diff != "" {
 			t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 		}
-	case <-time.After(dadTransmits*retransmitTimer + defaultAsyncEventTimeout):
+	case <-time.After(dadTransmits*retransmitTimer + defaultAsyncPositiveEventTimeout):
 		t.Fatal("timed out waiting for DAD event")
 	}
 	select {
@@ -2273,7 +2282,7 @@ func TestNoAutoGenTempAddrWithoutStableAddr(t *testing.T) {
 		if diff := checkAutoGenAddrEvent(e, tempAddr, newAddr); diff != "" {
 			t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 		}
-	case <-time.After(defaultAsyncEventTimeout):
+	case <-time.After(defaultAsyncPositiveEventTimeout):
 		t.Fatal("timed out waiting for addr auto gen event")
 	}
 }
@@ -2363,13 +2372,13 @@ func TestAutoGenTempAddrRegen(t *testing.T) {
 	}
 
 	// Wait for regeneration
-	expectAutoGenAddrEventAsync(tempAddr2, newAddr, regenAfter+defaultAsyncEventTimeout)
+	expectAutoGenAddrEventAsync(tempAddr2, newAddr, regenAfter+defaultAsyncPositiveEventTimeout)
 	if mismatch := addressCheck(s.NICInfo()[nicID].ProtocolAddresses, []tcpip.AddressWithPrefix{addr, tempAddr1, tempAddr2}, nil); mismatch != "" {
 		t.Fatal(mismatch)
 	}
 
 	// Wait for regeneration
-	expectAutoGenAddrEventAsync(tempAddr3, newAddr, regenAfter+defaultAsyncEventTimeout)
+	expectAutoGenAddrEventAsync(tempAddr3, newAddr, regenAfter+defaultAsyncPositiveEventTimeout)
 	if mismatch := addressCheck(s.NICInfo()[nicID].ProtocolAddresses, []tcpip.AddressWithPrefix{addr, tempAddr1, tempAddr2, tempAddr3}, nil); mismatch != "" {
 		t.Fatal(mismatch)
 	}
@@ -2398,7 +2407,7 @@ func TestAutoGenTempAddrRegen(t *testing.T) {
 					if diff := checkAutoGenAddrEvent(e, addr, invalidatedAddr); diff != "" {
 						t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 					}
-				case <-time.After(defaultAsyncEventTimeout):
+				case <-time.After(defaultAsyncPositiveEventTimeout):
 					t.Fatal("timed out waiting for addr auto gen event")
 				}
 			} else if diff := checkAutoGenAddrEvent(e, addr, invalidatedAddr); diff == "" {
@@ -2407,12 +2416,12 @@ func TestAutoGenTempAddrRegen(t *testing.T) {
 				select {
 				case e := <-ndpDisp.autoGenAddrC:
 					t.Fatalf("unexpectedly got an auto-generated event = %+v", e)
-				case <-time.After(defaultTimeout):
+				case <-time.After(defaultAsyncNegativeEventTimeout):
 				}
 			} else {
 				t.Fatalf("got unexpected auto-generated event = %+v", e)
 			}
-		case <-time.After(invalidateAfter + defaultAsyncEventTimeout):
+		case <-time.After(invalidateAfter + defaultAsyncPositiveEventTimeout):
 			t.Fatal("timed out waiting for addr auto gen event")
 		}
 
@@ -2517,7 +2526,7 @@ func TestAutoGenTempAddrRegenTimerUpdates(t *testing.T) {
 	select {
 	case e := <-ndpDisp.autoGenAddrC:
 		t.Fatalf("unexpected auto gen addr event = %+v", e)
-	case <-time.After(regenAfter + defaultAsyncEventTimeout):
+	case <-time.After(regenAfter + defaultAsyncNegativeEventTimeout):
 	}
 
 	// Prefer the prefix again.
@@ -2546,7 +2555,7 @@ func TestAutoGenTempAddrRegenTimerUpdates(t *testing.T) {
 	select {
 	case e := <-ndpDisp.autoGenAddrC:
 		t.Fatalf("unexpected auto gen addr event = %+v", e)
-	case <-time.After(regenAfter + defaultAsyncEventTimeout):
+	case <-time.After(regenAfter + defaultAsyncNegativeEventTimeout):
 	}
 
 	// Set the maximum lifetimes for temporary addresses such that on the next
@@ -2556,14 +2565,14 @@ func TestAutoGenTempAddrRegenTimerUpdates(t *testing.T) {
 	// addresses + the time that has already passed since the last address was
 	// generated so that the regeneration timer is needed to generate the next
 	// address.
-	newLifetimes := newMinVLDuration + regenAfter + defaultAsyncEventTimeout
+	newLifetimes := newMinVLDuration + regenAfter + defaultAsyncNegativeEventTimeout
 	ndpConfigs.MaxTempAddrValidLifetime = newLifetimes
 	ndpConfigs.MaxTempAddrPreferredLifetime = newLifetimes
 	if err := s.SetNDPConfigurations(nicID, ndpConfigs); err != nil {
 		t.Fatalf("s.SetNDPConfigurations(%d, _): %s", nicID, err)
 	}
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, true, 100, 100))
-	expectAutoGenAddrEventAsync(tempAddr3, newAddr, regenAfter+defaultAsyncEventTimeout)
+	expectAutoGenAddrEventAsync(tempAddr3, newAddr, regenAfter+defaultAsyncPositiveEventTimeout)
 }
 
 // TestMixedSLAACAddrConflictRegen tests SLAAC address regeneration in response
@@ -2711,7 +2720,7 @@ func TestMixedSLAACAddrConflictRegen(t *testing.T) {
 					if diff := checkAutoGenAddrEvent(e, addr, eventType); diff != "" {
 						t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 					}
-				case <-time.After(defaultAsyncEventTimeout):
+				case <-time.After(defaultAsyncPositiveEventTimeout):
 					t.Fatal("timed out waiting for addr auto gen event")
 				}
 			}
@@ -2724,7 +2733,7 @@ func TestMixedSLAACAddrConflictRegen(t *testing.T) {
 					if diff := checkDADEvent(e, nicID, addr, true, nil); diff != "" {
 						t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 					}
-				case <-time.After(dupAddrTransmits*retransmitTimer + defaultAsyncEventTimeout):
+				case <-time.After(dupAddrTransmits*retransmitTimer + defaultAsyncPositiveEventTimeout):
 					t.Fatal("timed out waiting for DAD event")
 				}
 			}
@@ -3070,7 +3079,7 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 	expectPrimaryAddr(addr1)
 
 	// Wait for addr of prefix1 to be deprecated.
-	expectAutoGenAddrEventAfter(addr1, deprecatedAddr, newMinVLDuration-time.Second+defaultAsyncEventTimeout)
+	expectAutoGenAddrEventAfter(addr1, deprecatedAddr, newMinVLDuration-time.Second+defaultAsyncPositiveEventTimeout)
 	if !containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
 		t.Fatalf("should not have %s in the list of addresses", addr1)
 	}
@@ -3110,7 +3119,7 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 	expectPrimaryAddr(addr1)
 
 	// Wait for addr of prefix1 to be deprecated.
-	expectAutoGenAddrEventAfter(addr1, deprecatedAddr, newMinVLDuration-time.Second+defaultAsyncEventTimeout)
+	expectAutoGenAddrEventAfter(addr1, deprecatedAddr, newMinVLDuration-time.Second+defaultAsyncPositiveEventTimeout)
 	if !containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
 		t.Fatalf("should not have %s in the list of addresses", addr1)
 	}
@@ -3124,7 +3133,7 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 	}
 
 	// Wait for addr of prefix1 to be invalidated.
-	expectAutoGenAddrEventAfter(addr1, invalidatedAddr, time.Second+defaultAsyncEventTimeout)
+	expectAutoGenAddrEventAfter(addr1, invalidatedAddr, time.Second+defaultAsyncPositiveEventTimeout)
 	if containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
 		t.Fatalf("should not have %s in the list of addresses", addr1)
 	}
@@ -3156,7 +3165,7 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 				if diff := checkAutoGenAddrEvent(e, addr2, invalidatedAddr); diff != "" {
 					t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 				}
-			case <-time.After(defaultAsyncEventTimeout):
+			case <-time.After(defaultAsyncPositiveEventTimeout):
 				t.Fatal("timed out waiting for addr auto gen event")
 			}
 		} else if diff := checkAutoGenAddrEvent(e, addr2, invalidatedAddr); diff == "" {
@@ -3165,12 +3174,12 @@ func TestAutoGenAddrTimerDeprecation(t *testing.T) {
 			select {
 			case <-ndpDisp.autoGenAddrC:
 				t.Fatal("unexpectedly got an auto-generated event")
-			case <-time.After(defaultTimeout):
+			case <-time.After(defaultAsyncNegativeEventTimeout):
 			}
 		} else {
 			t.Fatalf("got unexpected auto-generated event")
 		}
-	case <-time.After(newMinVLDuration + defaultAsyncEventTimeout):
+	case <-time.After(newMinVLDuration + defaultAsyncPositiveEventTimeout):
 		t.Fatal("timed out waiting for addr auto gen event")
 	}
 	if containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
@@ -3295,7 +3304,7 @@ func TestAutoGenAddrFiniteToInfiniteToFiniteVL(t *testing.T) {
 						t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 					}
 
-				case <-time.After(minVLSeconds*time.Second + defaultAsyncEventTimeout):
+				case <-time.After(minVLSeconds*time.Second + defaultAsyncPositiveEventTimeout):
 					t.Fatal("timeout waiting for addr auto gen event")
 				}
 			})
@@ -3439,7 +3448,7 @@ func TestAutoGenAddrValidLifetimeUpdates(t *testing.T) {
 				select {
 				case <-ndpDisp.autoGenAddrC:
 					t.Fatal("unexpectedly received an auto gen addr event")
-				case <-time.After(time.Duration(test.evl)*time.Second - defaultAsyncEventTimeout):
+				case <-time.After(time.Duration(test.evl)*time.Second - defaultAsyncNegativeEventTimeout):
 				}
 
 				// Wait for the invalidation event.
@@ -3448,7 +3457,7 @@ func TestAutoGenAddrValidLifetimeUpdates(t *testing.T) {
 					if diff := checkAutoGenAddrEvent(e, addr, invalidatedAddr); diff != "" {
 						t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 					}
-				case <-time.After(2 * defaultAsyncEventTimeout):
+				case <-time.After(defaultAsyncPositiveEventTimeout):
 					t.Fatal("timeout waiting for addr auto gen event")
 				}
 			})
@@ -3509,7 +3518,7 @@ func TestAutoGenAddrRemoval(t *testing.T) {
 	select {
 	case <-ndpDisp.autoGenAddrC:
 		t.Fatal("unexpectedly received an auto gen addr event")
-	case <-time.After(lifetimeSeconds*time.Second + defaultTimeout):
+	case <-time.After(lifetimeSeconds*time.Second + defaultAsyncNegativeEventTimeout):
 	}
 }
 
@@ -3672,7 +3681,7 @@ func TestAutoGenAddrStaticConflict(t *testing.T) {
 	select {
 	case <-ndpDisp.autoGenAddrC:
 		t.Fatal("unexpectedly received an auto gen addr event")
-	case <-time.After(lifetimeSeconds*time.Second + defaultTimeout):
+	case <-time.After(lifetimeSeconds*time.Second + defaultAsyncNegativeEventTimeout):
 	}
 	if !containsV6Addr(s.NICInfo()[1].ProtocolAddresses, addr) {
 		t.Fatalf("Should have %s in the list of addresses", addr1)
@@ -3770,7 +3779,7 @@ func TestAutoGenAddrWithOpaqueIID(t *testing.T) {
 		if diff := checkAutoGenAddrEvent(e, addr1, invalidatedAddr); diff != "" {
 			t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 		}
-	case <-time.After(validLifetimeSecondPrefix1*time.Second + defaultAsyncEventTimeout):
+	case <-time.After(validLifetimeSecondPrefix1*time.Second + defaultAsyncPositiveEventTimeout):
 		t.Fatal("timed out waiting for addr auto gen event")
 	}
 	if containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
@@ -3837,7 +3846,7 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 			if diff := checkAutoGenAddrEvent(e, addr, eventType); diff != "" {
 				t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 			}
-		case <-time.After(defaultAsyncEventTimeout):
+		case <-time.After(defaultAsyncPositiveEventTimeout):
 			t.Fatal("timed out waiting for addr auto gen event")
 		}
 	}
@@ -3863,7 +3872,7 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 			if diff := checkDADEvent(e, nicID, addr, resolved, nil); diff != "" {
 				t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 			}
-		case <-time.After(dadTransmits*retransmitTimer + defaultAsyncEventTimeout):
+		case <-time.After(dadTransmits*retransmitTimer + defaultAsyncPositiveEventTimeout):
 			t.Fatal("timed out waiting for DAD event")
 		}
 	}
@@ -4030,7 +4039,7 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 						select {
 						case e := <-ndpDisp.autoGenAddrC:
 							t.Fatalf("unexpectedly got an auto-generated address event = %+v", e)
-						case <-time.After(defaultAsyncEventTimeout):
+						case <-time.After(defaultAsyncNegativeEventTimeout):
 						}
 					})
 				}
@@ -4149,7 +4158,7 @@ func TestAutoGenAddrWithEUI64IIDNoDADRetries(t *testing.T) {
 			select {
 			case e := <-ndpDisp.autoGenAddrC:
 				t.Fatalf("unexpectedly got an auto-generated address event = %+v", e)
-			case <-time.After(defaultAsyncEventTimeout):
+			case <-time.After(defaultAsyncNegativeEventTimeout):
 			}
 		})
 	}
@@ -4251,7 +4260,7 @@ func TestAutoGenAddrContinuesLifetimesAfterRetry(t *testing.T) {
 		if diff := checkDADEvent(e, nicID, addr.Address, true, nil); diff != "" {
 			t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 		}
-	case <-time.After(dadTransmits*retransmitTimer + defaultAsyncEventTimeout):
+	case <-time.After(dadTransmits*retransmitTimer + defaultAsyncPositiveEventTimeout):
 		t.Fatal("timed out waiting for DAD event")
 	}
 
@@ -4277,7 +4286,7 @@ func TestAutoGenAddrContinuesLifetimesAfterRetry(t *testing.T) {
 				if diff := checkAutoGenAddrEvent(e, addr, invalidatedAddr); diff != "" {
 					t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 				}
-			case <-time.After(defaultAsyncEventTimeout):
+			case <-time.After(defaultAsyncPositiveEventTimeout):
 				t.Fatal("timed out waiting for invalidated auto gen addr event after deprecation")
 			}
 		} else {
@@ -4285,7 +4294,7 @@ func TestAutoGenAddrContinuesLifetimesAfterRetry(t *testing.T) {
 				t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 			}
 		}
-	case <-time.After(lifetimeSeconds*time.Second - failureTimer - dadTransmits*retransmitTimer + defaultAsyncEventTimeout):
+	case <-time.After(lifetimeSeconds*time.Second - failureTimer - dadTransmits*retransmitTimer + defaultAsyncPositiveEventTimeout):
 		t.Fatal("timed out waiting for auto gen addr event")
 	}
 }
@@ -4869,7 +4878,7 @@ func TestCleanupNDPState(t *testing.T) {
 
 			// Should not get any more events (invalidation timers should have been
 			// cancelled when the NDP state was cleaned up).
-			time.Sleep(lifetimeSeconds*time.Second + defaultTimeout)
+			time.Sleep(lifetimeSeconds*time.Second + defaultAsyncNegativeEventTimeout)
 			select {
 			case <-ndpDisp.routerC:
 				t.Error("unexpected router event")
@@ -5172,24 +5181,24 @@ func TestRouterSolicitation(t *testing.T) {
 				// Make sure each RS is sent at the right time.
 				remaining := test.maxRtrSolicit
 				if remaining > 0 {
-					waitForPkt(test.effectiveMaxRtrSolicitDelay + defaultAsyncEventTimeout)
+					waitForPkt(test.effectiveMaxRtrSolicitDelay + defaultAsyncPositiveEventTimeout)
 					remaining--
 				}
 
 				for ; remaining > 0; remaining-- {
-					if test.effectiveRtrSolicitInt > defaultAsyncEventTimeout {
-						waitForNothing(test.effectiveRtrSolicitInt - defaultAsyncEventTimeout)
-						waitForPkt(2 * defaultAsyncEventTimeout)
+					if test.effectiveRtrSolicitInt > defaultAsyncPositiveEventTimeout {
+						waitForNothing(test.effectiveRtrSolicitInt - defaultAsyncNegativeEventTimeout)
+						waitForPkt(defaultAsyncPositiveEventTimeout)
 					} else {
-						waitForPkt(test.effectiveRtrSolicitInt * defaultAsyncEventTimeout)
+						waitForPkt(test.effectiveRtrSolicitInt + defaultAsyncPositiveEventTimeout)
 					}
 				}
 
 				// Make sure no more RS.
 				if test.effectiveRtrSolicitInt > test.effectiveMaxRtrSolicitDelay {
-					waitForNothing(test.effectiveRtrSolicitInt + defaultAsyncEventTimeout)
+					waitForNothing(test.effectiveRtrSolicitInt + defaultAsyncNegativeEventTimeout)
 				} else {
-					waitForNothing(test.effectiveMaxRtrSolicitDelay + defaultAsyncEventTimeout)
+					waitForNothing(test.effectiveMaxRtrSolicitDelay + defaultAsyncNegativeEventTimeout)
 				}
 
 				// Make sure the counter got properly
@@ -5305,11 +5314,11 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 
 			// Stop soliciting routers.
 			test.stopFn(t, s, true /* first */)
-			ctx, cancel := context.WithTimeout(context.Background(), delay+defaultAsyncEventTimeout)
+			ctx, cancel := context.WithTimeout(context.Background(), delay+defaultAsyncNegativeEventTimeout)
 			defer cancel()
 			if _, ok := e.ReadContext(ctx); ok {
 				// A single RS may have been sent before solicitations were stopped.
-				ctx, cancel := context.WithTimeout(context.Background(), interval+defaultAsyncEventTimeout)
+				ctx, cancel := context.WithTimeout(context.Background(), interval+defaultAsyncNegativeEventTimeout)
 				defer cancel()
 				if _, ok = e.ReadContext(ctx); ok {
 					t.Fatal("should not have sent more than one RS message")
@@ -5319,7 +5328,7 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 			// Stopping router solicitations after it has already been stopped should
 			// do nothing.
 			test.stopFn(t, s, false /* first */)
-			ctx, cancel = context.WithTimeout(context.Background(), delay+defaultAsyncEventTimeout)
+			ctx, cancel = context.WithTimeout(context.Background(), delay+defaultAsyncNegativeEventTimeout)
 			defer cancel()
 			if _, ok := e.ReadContext(ctx); ok {
 				t.Fatal("unexpectedly got a packet after router solicitation has been stopepd")
@@ -5332,10 +5341,10 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 
 			// Start soliciting routers.
 			test.startFn(t, s)
-			waitForPkt(delay + defaultAsyncEventTimeout)
-			waitForPkt(interval + defaultAsyncEventTimeout)
-			waitForPkt(interval + defaultAsyncEventTimeout)
-			ctx, cancel = context.WithTimeout(context.Background(), interval+defaultAsyncEventTimeout)
+			waitForPkt(delay + defaultAsyncPositiveEventTimeout)
+			waitForPkt(interval + defaultAsyncPositiveEventTimeout)
+			waitForPkt(interval + defaultAsyncPositiveEventTimeout)
+			ctx, cancel = context.WithTimeout(context.Background(), interval+defaultAsyncNegativeEventTimeout)
 			defer cancel()
 			if _, ok := e.ReadContext(ctx); ok {
 				t.Fatal("unexpectedly got an extra packet after sending out the expected RSs")
@@ -5344,7 +5353,7 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 			// Starting router solicitations after it has already completed should do
 			// nothing.
 			test.startFn(t, s)
-			ctx, cancel = context.WithTimeout(context.Background(), delay+defaultAsyncEventTimeout)
+			ctx, cancel = context.WithTimeout(context.Background(), delay+defaultAsyncNegativeEventTimeout)
 			defer cancel()
 			if _, ok := e.ReadContext(ctx); ok {
 				t.Fatal("unexpectedly got a packet after finishing router solicitations")
