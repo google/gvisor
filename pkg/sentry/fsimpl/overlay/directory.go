@@ -263,3 +263,25 @@ func (fd *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (in
 		return 0, syserror.EINVAL
 	}
 }
+
+// Sync implements vfs.FileDescriptionImpl.Sync. Forwards sync to the upper
+// layer, if there is one. The lower layer doesn't need to sync because it
+// never changes.
+func (fd *directoryFD) Sync(ctx context.Context) error {
+	d := fd.dentry()
+	if !d.isCopiedUp() {
+		return nil
+	}
+	vfsObj := d.fs.vfsfs.VirtualFilesystem()
+	pop := vfs.PathOperation{
+		Root:  d.upperVD,
+		Start: d.upperVD,
+	}
+	upperFD, err := vfsObj.OpenAt(ctx, d.fs.creds, &pop, &vfs.OpenOptions{Flags: linux.O_RDONLY | linux.O_DIRECTORY})
+	if err != nil {
+		return err
+	}
+	err = upperFD.Sync(ctx)
+	upperFD.DecRef()
+	return err
+}

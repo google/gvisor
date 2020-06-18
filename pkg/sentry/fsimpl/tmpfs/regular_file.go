@@ -360,11 +360,6 @@ func (fd *regularFileFD) Seek(ctx context.Context, offset int64, whence int32) (
 	return offset, nil
 }
 
-// Sync implements vfs.FileDescriptionImpl.Sync.
-func (fd *regularFileFD) Sync(ctx context.Context) error {
-	return nil
-}
-
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
 func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	file := fd.inode().impl.(*regularFile)
