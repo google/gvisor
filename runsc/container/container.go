@@ -324,7 +324,7 @@ func New(conf *boot.Config, args Args) (*Container, error) {
 			}
 		}
 		if err := runInCgroup(cg, func() error {
-			ioFiles, specFile, err := c.createGoferProcess(args.Spec, conf, args.BundleDir)
+			ioFiles, specFile, err := c.createGoferProcess(args.Spec, conf, args.BundleDir, args.Attached)
 			if err != nil {
 				return err
 			}
@@ -427,7 +427,7 @@ func (c *Container) Start(conf *boot.Config) error {
 		// the start (and all their children processes).
 		if err := runInCgroup(c.Sandbox.Cgroup, func() error {
 			// Create the gofer process.
-			ioFiles, mountsFile, err := c.createGoferProcess(c.Spec, conf, c.BundleDir)
+			ioFiles, mountsFile, err := c.createGoferProcess(c.Spec, conf, c.BundleDir, false)
 			if err != nil {
 				return err
 			}
@@ -861,7 +861,7 @@ func (c *Container) waitForStopped() error {
 	return backoff.Retry(op, b)
 }
 
-func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundleDir string) ([]*os.File, *os.File, error) {
+func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundleDir string, attached bool) ([]*os.File, *os.File, error) {
 	// Start with the general config flags.
 	args := conf.ToFlags()
 
@@ -954,6 +954,14 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bund
 	cmd := exec.Command(binPath, args...)
 	cmd.ExtraFiles = goferEnds
 	cmd.Args[0] = "runsc-gofer"
+
+	if attached {
+		// The gofer is attached to the lifetime of this process, so it
+		// should synchronously die when this process dies.
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Pdeathsig: syscall.SIGKILL,
+		}
+	}
 
 	// Enter new namespaces to isolate from the rest of the system. Don't unshare
 	// cgroup because gofer is added to a cgroup in the caller's namespace.
