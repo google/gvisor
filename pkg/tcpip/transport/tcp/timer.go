@@ -85,6 +85,7 @@ func (t *timer) init(w *sleep.Waker) {
 // cleanup frees all resources associated with the timer.
 func (t *timer) cleanup() {
 	t.timer.Stop()
+	*t = timer{}
 }
 
 // checkExpiration checks if the given timer has actually expired, it should be

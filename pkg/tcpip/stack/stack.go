@@ -1033,14 +1033,14 @@ func (s *Stack) removeNICLocked(id tcpip.NICID) *tcpip.Error {
 	// Remove routes in-place. n tracks the number of routes written.
 	n := 0
 	for i, r := range s.routeTable {
+		s.routeTable[i] = tcpip.Route{}
 		if r.NIC != id {
 			// Keep this route.
-			if i > n {
-				s.routeTable[n] = r
-			}
+			s.routeTable[n] = r
 			n++
 		}
 	}
+
 	s.routeTable = s.routeTable[:n]
 
 	return nic.remove()
