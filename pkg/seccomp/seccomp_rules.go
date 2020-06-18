@@ -56,7 +56,7 @@ func (a AllowValue) String() (s string) {
 	return fmt.Sprintf("%#x ", uintptr(a))
 }
 
-// Rule stores the whitelist of syscall arguments.
+// Rule stores the allowed syscall arguments.
 //
 // For example:
 // rule := Rule {
@@ -82,7 +82,7 @@ func (r Rule) String() (s string) {
 	return
 }
 
-// SyscallRules stores a map of OR'ed whitelist rules indexed by the syscall number.
+// SyscallRules stores a map of OR'ed argument rules indexed by the syscall number.
 // If the 'Rules' is empty, we treat it as any argument is allowed.
 //
 // For example:
