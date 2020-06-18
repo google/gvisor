@@ -381,3 +381,13 @@ const (
 	FALLOC_FL_INSERT_RANGE   = 0x20
 	FALLOC_FL_UNSHARE_RANGE  = 0x40
 )
+
+// Constants related to fadvise64(2). Source: include/uapi/linux/fadvise.h
+const (
+	FADV_NORMAL     = 0
+	FADV_RANDOM     = 1
+	FADV_SEQUENTIAL = 2
+	FADV_WILLNEED   = 3
+	FADV_DONTNEED   = 4
+	FADV_NOREUSE    = 5
+)

@@ -210,3 +210,46 @@ func posixLock(t *kernel.Task, args arch.SyscallArguments, file *vfs.FileDescrip
 		return syserror.EINVAL
 	}
 }
+
+// Fadvise64 implements linux syscall fadvise64(2).
+// This implementation currently ignores the provided advice.
+func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
+	length := args[2].Int64()
+	advice := args[3].Int()
+
+	// Note: offset is allowed to be negative.
+	if length < 0 {
+		return 0, nil, syserror.EINVAL
+	}
+
+	file := t.GetFileVFS2(fd)
+	if file == nil {
+		return 0, nil, syserror.EBADF
+	}
+	defer file.DecRef()
+
+	stat, err := file.Stat(t, vfs.StatOptions{Mask: linux.STATX_TYPE})
+	if err != nil {
+		return 0, nil, err
+	}
+	if linux.FileMode(stat.Mode).FileType() == linux.ModeNamedPipe {
+		return 0, nil, syserror.ESPIPE
+	}
+
+	switch advice {
+	case linux.FADV_NORMAL:
+	case linux.FADV_RANDOM:
+	case linux.FADV_SEQUENTIAL:
+	case linux.FADV_WILLNEED:
+	case linux.FADV_DONTNEED:
+	case linux.FADV_NOREUSE:
+		// Accept all of the above.
+
+	default:
+		return 0, nil, syserror.EINVAL
+	}
+
+	// Sure, whatever.
+	return 0, nil, nil
+}
