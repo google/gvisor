@@ -33,6 +33,7 @@ syscall_test(
 syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:aio_test",
+    vfs2 = "True",
 )
 
 syscall_test(
@@ -106,6 +107,7 @@ syscall_test(
 syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:chroot_test",
+    vfs2 = "True",
 )
 
 syscall_test(
@@ -215,6 +217,7 @@ syscall_test(
     size = "medium",
     add_overlay = True,
     test = "//test/syscalls/linux:flock_test",
+    vfs2 = "True",
 )
 
 syscall_test(
@@ -350,6 +353,7 @@ syscall_test(
 syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:mount_test",
+    vfs2 = "True",
 )
 
 syscall_test(
@@ -900,6 +904,7 @@ syscall_test(
 syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:stat_test",
+    vfs2 = "True",
 )
 
 syscall_test(
@@ -916,6 +921,7 @@ syscall_test(
 syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:symlink_test",
+    vfs2 = "True",
 )
 
 syscall_test(
