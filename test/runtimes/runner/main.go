@@ -79,10 +79,11 @@ func runTests() int {
 // getTests executes all tests as table tests.
 func getTests(d *dockerutil.Docker, excludes map[string]struct{}) ([]testing.InternalTest, error) {
 	// Start the container.
-	d.CopyFiles("/proctor", "test/runtimes/proctor/proctor")
-	if err := d.Spawn(dockerutil.RunOpts{
+	opts := dockerutil.RunOpts{
 		Image: fmt.Sprintf("runtimes/%s", *image),
-	}, "/proctor/proctor", "--pause"); err != nil {
+	}
+	d.CopyFiles(&opts, "/proctor", "test/runtimes/proctor/proctor")
+	if err := d.Spawn(opts, "/proctor/proctor", "--pause"); err != nil {
 		return nil, fmt.Errorf("docker run failed: %v", err)
 	}
 

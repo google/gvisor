@@ -41,11 +41,12 @@ func singleTest(t *testing.T, test TestCase) {
 	defer d.CleanUp()
 
 	// Create and start the container.
-	d.CopyFiles("/runner", "test/iptables/runner/runner")
-	if err := d.Spawn(dockerutil.RunOpts{
+	opts := dockerutil.RunOpts{
 		Image:  "iptables",
 		CapAdd: []string{"NET_ADMIN"},
-	}, "/runner/runner", "-name", test.Name()); err != nil {
+	}
+	d.CopyFiles(&opts, "/runner", "test/iptables/runner/runner")
+	if err := d.Spawn(opts, "/runner/runner", "-name", test.Name()); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
