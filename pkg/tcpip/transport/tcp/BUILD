@@ -76,7 +76,7 @@ go_library(
 )
 
 go_test(
-    name = "tcp_test",
+    name = "tcp_x_test",
     size = "medium",
     srcs = [
         "dual_stack_test.go",
@@ -114,4 +114,12 @@ go_test(
         "//pkg/tcpip/header",
         "//pkg/tcpip/seqnum",
     ],
+)
+
+go_test(
+    name = "tcp_test",
+    size = "small",
+    srcs = ["timer_test.go"],
+    library = ":tcp",
+    deps = ["//pkg/sleep"],
 )
