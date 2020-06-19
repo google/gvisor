@@ -1111,17 +1111,6 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	}
 }
 
-// LINT.ThenChange(vfs2/fd.go)
-
-const (
-	_FADV_NORMAL     = 0
-	_FADV_RANDOM     = 1
-	_FADV_SEQUENTIAL = 2
-	_FADV_WILLNEED   = 3
-	_FADV_DONTNEED   = 4
-	_FADV_NOREUSE    = 5
-)
-
 // Fadvise64 implements linux syscall fadvise64(2).
 // This implementation currently ignores the provided advice.
 func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
@@ -1146,12 +1135,12 @@ func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	}
 
 	switch advice {
-	case _FADV_NORMAL:
-	case _FADV_RANDOM:
-	case _FADV_SEQUENTIAL:
-	case _FADV_WILLNEED:
-	case _FADV_DONTNEED:
-	case _FADV_NOREUSE:
+	case linux.POSIX_FADV_NORMAL:
+	case linux.POSIX_FADV_RANDOM:
+	case linux.POSIX_FADV_SEQUENTIAL:
+	case linux.POSIX_FADV_WILLNEED:
+	case linux.POSIX_FADV_DONTNEED:
+	case linux.POSIX_FADV_NOREUSE:
 	default:
 		return 0, nil, syserror.EINVAL
 	}
@@ -1159,8 +1148,6 @@ func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	// Sure, whatever.
 	return 0, nil, nil
 }
-
-// LINT.IfChange
 
 func mkdirAt(t *kernel.Task, dirFD int32, addr usermem.Addr, mode linux.FileMode) error {
 	path, _, err := copyInPath(t, addr, false /* allowEmpty */)
