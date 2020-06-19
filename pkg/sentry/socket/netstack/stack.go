@@ -313,7 +313,7 @@ func (s *Stack) Statistics(stat interface{}, arg string) error {
 			udp.PacketsSent.Value(),         // OutDatagrams.
 			udp.ReceiveBufferErrors.Value(), // RcvbufErrors.
 			0,                               // Udp/SndbufErrors.
-			0,                               // Udp/InCsumErrors.
+			udp.ChecksumErrors.Value(),      // Udp/InCsumErrors.
 			0,                               // Udp/IgnoredMulti.
 		}
 	default:
