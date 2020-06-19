@@ -173,14 +173,6 @@ func (it *IPTables) ReplaceTable(name string, table Table) {
 	it.tables[name] = table
 }
 
-// ModifyTables acquires write-lock and calls fn with internal name-to-table
-// map. This function can be used to update multiple tables atomically.
-func (it *IPTables) ModifyTables(fn func(map[string]Table)) {
-	it.mu.Lock()
-	defer it.mu.Unlock()
-	fn(it.tables)
-}
-
 // GetPriorities returns slice of priorities associated with hook.
 func (it *IPTables) GetPriorities(hook Hook) []string {
 	it.mu.RLock()
