@@ -305,6 +305,7 @@ syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:link_test",
     use_tmpfs = True,  # gofer needs CAP_DAC_READ_SEARCH to use AT_EMPTY_PATH with linkat(2)
+    vfs2 = "True",
 )
 
 syscall_test(

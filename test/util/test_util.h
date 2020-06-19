@@ -220,6 +220,7 @@ constexpr char kKVM[] = "kvm";
 bool IsRunningOnGvisor();
 const std::string GvisorPlatform();
 bool IsRunningWithHostinet();
+// TODO(gvisor.dev/issue/1624): Delete once VFS1 is gone.
 bool IsRunningWithVFS1();
 
 #ifdef __linux__
