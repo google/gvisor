@@ -79,17 +79,22 @@ const (
 
 // IPTables holds all the tables for a netstack.
 type IPTables struct {
-	// mu protects tables and priorities.
+	// mu protects tables, priorities, and modified.
 	mu sync.RWMutex
 
-	// tables maps table names to tables. User tables have arbitrary names. mu
-	// needs to be locked for accessing.
+	// tables maps table names to tables. User tables have arbitrary names.
+	// mu needs to be locked for accessing.
 	tables map[string]Table
 
 	// priorities maps each hook to a list of table names. The order of the
 	// list is the order in which each table should be visited for that
 	// hook. mu needs to be locked for accessing.
 	priorities map[Hook][]string
+
+	// modified is whether tables have been modified at least once. It is
+	// used to elide the iptables performance overhead for workloads that
+	// don't utilize iptables.
+	modified bool
 
 	connections ConnTrackTable
 }
