@@ -23,6 +23,7 @@ go_library(
         "errors.go",
         "eventfd.go",
         "exec.go",
+        "fadvise.go",
         "fcntl.go",
         "file.go",
         "file_amd64.go",
