@@ -572,6 +572,7 @@ syscall_test(
     size = "medium",
     add_overlay = True,
     test = "//test/syscalls/linux:rename_test",
+    vfs2 = "True",
 )
 
 syscall_test(
