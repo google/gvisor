@@ -237,18 +237,22 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 			return syserror.EXDEV
 		}
 		d := vd.Dentry().Impl().(*dentry)
-		if d.inode.isDir() {
+		i := d.inode
+		if i.isDir() {
 			return syserror.EPERM
 		}
-		if d.inode.nlink == 0 {
+		if err := vfs.MayLink(auth.CredentialsFromContext(ctx), linux.FileMode(atomic.LoadUint32(&i.mode)), auth.KUID(atomic.LoadUint32(&i.uid)), auth.KGID(atomic.LoadUint32(&i.gid))); err != nil {
+			return err
+		}
+		if i.nlink == 0 {
 			return syserror.ENOENT
 		}
-		if d.inode.nlink == maxLinks {
+		if i.nlink == maxLinks {
 			return syserror.EMLINK
 		}
-		d.inode.incLinksLocked()
-		d.inode.watches.Notify("", linux.IN_ATTRIB, 0, vfs.InodeEvent)
-		parentDir.insertChildLocked(fs.newDentry(d.inode), name)
+		i.incLinksLocked()
+		i.watches.Notify("", linux.IN_ATTRIB, 0, vfs.InodeEvent)
+		parentDir.insertChildLocked(fs.newDentry(i), name)
 		return nil
 	})
 }
