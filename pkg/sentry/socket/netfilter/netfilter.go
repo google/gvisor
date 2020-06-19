@@ -41,19 +41,6 @@ const errorTargetName = "ERROR"
 // change the destination port/destination IP for packets.
 const redirectTargetName = "REDIRECT"
 
-// Metadata is used to verify that we are correctly serializing and
-// deserializing iptables into structs consumable by the iptables tool. We save
-// a metadata struct when the tables are written, and when they are read out we
-// verify that certain fields are the same.
-//
-// metadata is used by this serialization/deserializing code, not netstack.
-type metadata struct {
-	HookEntry  [linux.NF_INET_NUMHOOKS]uint32
-	Underflow  [linux.NF_INET_NUMHOOKS]uint32
-	NumEntries uint32
-	Size       uint32
-}
-
 // enableLogging controls whether to log the (de)serialization of netfilter
 // structs between userspace and netstack. These logs are useful when
 // developing iptables, but can pollute sentry logs otherwise.
@@ -83,29 +70,13 @@ func GetInfo(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr) (linux.IPT
 		return linux.IPTGetinfo{}, syserr.FromError(err)
 	}
 
-	// Find the appropriate table.
-	table, err := findTable(stack, info.Name)
+	_, info, err := convertNetstackToBinary(stack, info.Name)
 	if err != nil {
-		nflog("%v", err)
+		nflog("couldn't convert iptables: %v", err)
 		return linux.IPTGetinfo{}, syserr.ErrInvalidArgument
 	}
 
-	// Get the hooks that apply to this table.
-	info.ValidHooks = table.ValidHooks()
-
-	// Grab the metadata struct, which is used to store information (e.g.
-	// the number of entries) that applies to the user's encoding of
-	// iptables, but not netstack's.
-	metadata := table.Metadata().(metadata)
-
-	// Set values from metadata.
-	info.HookEntry = metadata.HookEntry
-	info.Underflow = metadata.Underflow
-	info.NumEntries = metadata.NumEntries
-	info.Size = metadata.Size
-
 	nflog("returning info: %+v", info)
-
 	return info, nil
 }
 
@@ -118,22 +89,12 @@ func GetEntries(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, outLen 
 		return linux.KernelIPTGetEntries{}, syserr.FromError(err)
 	}
 
-	// Find the appropriate table.
-	table, err := findTable(stack, userEntries.Name)
-	if err != nil {
-		nflog("%v", err)
-		return linux.KernelIPTGetEntries{}, syserr.ErrInvalidArgument
-	}
-
 	// Convert netstack's iptables rules to something that the iptables
 	// tool can understand.
-	entries, meta, err := convertNetstackToBinary(userEntries.Name.String(), table)
+	entries, _, err := convertNetstackToBinary(stack, userEntries.Name)
 	if err != nil {
 		nflog("couldn't read entries: %v", err)
 		return linux.KernelIPTGetEntries{}, syserr.ErrInvalidArgument
-	}
-	if meta != table.Metadata().(metadata) {
-		panic(fmt.Sprintf("Table %q metadata changed between writing and reading. Was saved as %+v, but is now %+v", userEntries.Name.String(), table.Metadata().(metadata), meta))
 	}
 	if binary.Size(entries) > uintptr(outLen) {
 		nflog("insufficient GetEntries output size: %d", uintptr(outLen))
@@ -143,44 +104,26 @@ func GetEntries(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, outLen 
 	return entries, nil
 }
 
-func findTable(stk *stack.Stack, tablename linux.TableName) (stack.Table, error) {
-	table, ok := stk.IPTables().GetTable(tablename.String())
-	if !ok {
-		return stack.Table{}, fmt.Errorf("couldn't find table %q", tablename)
-	}
-	return table, nil
-}
-
-// FillIPTablesMetadata populates stack's IPTables with metadata.
-func FillIPTablesMetadata(stk *stack.Stack) {
-	stk.IPTables().ModifyTables(func(tables map[string]stack.Table) {
-		// In order to fill in the metadata, we have to translate ipt from its
-		// netstack format to Linux's giant-binary-blob format.
-		for name, table := range tables {
-			_, metadata, err := convertNetstackToBinary(name, table)
-			if err != nil {
-				panic(fmt.Errorf("Unable to set default IP tables: %v", err))
-			}
-			table.SetMetadata(metadata)
-			tables[name] = table
-		}
-	})
-}
-
 // convertNetstackToBinary converts the iptables as stored in netstack to the
 // format expected by the iptables tool. Linux stores each table as a binary
 // blob that can only be traversed by parsing a bit, reading some offsets,
 // jumping to those offsets, parsing again, etc.
-func convertNetstackToBinary(tablename string, table stack.Table) (linux.KernelIPTGetEntries, metadata, error) {
-	// Return values.
+func convertNetstackToBinary(stack *stack.Stack, tablename linux.TableName) (linux.KernelIPTGetEntries, linux.IPTGetinfo, error) {
+	table, ok := stack.IPTables().GetTable(tablename.String())
+	if !ok {
+		return linux.KernelIPTGetEntries{}, linux.IPTGetinfo{}, fmt.Errorf("couldn't find table %q", tablename)
+	}
+
 	var entries linux.KernelIPTGetEntries
-	var meta metadata
+	var info linux.IPTGetinfo
+	info.ValidHooks = table.ValidHooks()
 
 	// The table name has to fit in the struct.
 	if linux.XT_TABLE_MAXNAMELEN < len(tablename) {
-		return linux.KernelIPTGetEntries{}, metadata{}, fmt.Errorf("table name %q too long.", tablename)
+		return linux.KernelIPTGetEntries{}, linux.IPTGetinfo{}, fmt.Errorf("table name %q too long", tablename)
 	}
-	copy(entries.Name[:], tablename)
+	copy(info.Name[:], tablename[:])
+	copy(entries.Name[:], tablename[:])
 
 	for ruleIdx, rule := range table.Rules {
 		nflog("convert to binary: current offset: %d", entries.Size)
@@ -189,14 +132,14 @@ func convertNetstackToBinary(tablename string, table stack.Table) (linux.KernelI
 		for hook, hookRuleIdx := range table.BuiltinChains {
 			if hookRuleIdx == ruleIdx {
 				nflog("convert to binary: found hook %d at offset %d", hook, entries.Size)
-				meta.HookEntry[hook] = entries.Size
+				info.HookEntry[hook] = entries.Size
 			}
 		}
 		// Is this a chain underflow point?
 		for underflow, underflowRuleIdx := range table.Underflows {
 			if underflowRuleIdx == ruleIdx {
 				nflog("convert to binary: found underflow %d at offset %d", underflow, entries.Size)
-				meta.Underflow[underflow] = entries.Size
+				info.Underflow[underflow] = entries.Size
 			}
 		}
 
@@ -251,12 +194,12 @@ func convertNetstackToBinary(tablename string, table stack.Table) (linux.KernelI
 
 		entries.Size += uint32(entry.NextOffset)
 		entries.Entrytable = append(entries.Entrytable, entry)
-		meta.NumEntries++
+		info.NumEntries++
 	}
 
-	nflog("convert to binary: finished with an marshalled size of %d", meta.Size)
-	meta.Size = entries.Size
-	return entries, meta, nil
+	nflog("convert to binary: finished with an marshalled size of %d", info.Size)
+	info.Size = entries.Size
+	return entries, info, nil
 }
 
 func marshalTarget(target stack.Target) []byte {
@@ -569,12 +512,6 @@ func SetEntries(stk *stack.Stack, optVal []byte) *syserr.Error {
 	// - There are no chains without an unconditional final rule.
 	// - There are no chains without an unconditional underflow rule.
 
-	table.SetMetadata(metadata{
-		HookEntry:  replace.HookEntry,
-		Underflow:  replace.Underflow,
-		NumEntries: replace.NumEntries,
-		Size:       replace.Size,
-	})
 	stk.IPTables().ReplaceTable(replace.Name.String(), table)
 
 	return nil

@@ -95,7 +95,7 @@ type IPTables struct {
 }
 
 // A Table defines a set of chains and hooks into the network stack. It is
-// really just a list of rules with some metadata for entrypoints and such.
+// really just a list of rules.
 type Table struct {
 	// Rules holds the rules that make up the table.
 	Rules []Rule
@@ -110,10 +110,6 @@ type Table struct {
 	// UserChains holds user-defined chains for the keyed by name. Users
 	// can give their chains arbitrary names.
 	UserChains map[string]int
-
-	// Metadata holds information about the Table that is useful to users
-	// of IPTables, but not to the netstack IPTables code itself.
-	metadata interface{}
 }
 
 // ValidHooks returns a bitmap of the builtin hooks for the given table.
@@ -123,16 +119,6 @@ func (table *Table) ValidHooks() uint32 {
 		hooks |= 1 << hook
 	}
 	return hooks
-}
-
-// Metadata returns the metadata object stored in table.
-func (table *Table) Metadata() interface{} {
-	return table.metadata
-}
-
-// SetMetadata sets the metadata object stored in table.
-func (table *Table) SetMetadata(metadata interface{}) {
-	table.metadata = metadata
 }
 
 // A Rule is a packet processing rule. It consists of two pieces. First it
