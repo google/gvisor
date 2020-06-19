@@ -79,7 +79,7 @@ afterSymlink:
 	}
 	if symlink, ok := child.inode.impl.(*symlink); ok && rp.ShouldFollowSymlink() {
 		// Symlink traversal updates access time.
-		atomic.StoreInt64(&d.inode.atime, d.inode.fs.clock.Now().Nanoseconds())
+		child.inode.touchAtime(rp.Mount())
 		if err := rp.HandleSymlink(symlink.target); err != nil {
 			return nil, err
 		}
@@ -372,6 +372,9 @@ afterTrailingSymlink:
 		parentDir.inode.touchCMtime()
 		return fd, nil
 	}
+	if mustCreate {
+		return nil, syserror.EEXIST
+	}
 	// Is the file mounted over?
 	if err := rp.CheckMount(&child.vfsd); err != nil {
 		return nil, err
@@ -379,7 +382,7 @@ afterTrailingSymlink:
 	// Do we need to resolve a trailing symlink?
 	if symlink, ok := child.inode.impl.(*symlink); ok && rp.ShouldFollowSymlink() {
 		// Symlink traversal updates access time.
-		atomic.StoreInt64(&child.inode.atime, child.inode.fs.clock.Now().Nanoseconds())
+		child.inode.touchAtime(rp.Mount())
 		if err := rp.HandleSymlink(symlink.target); err != nil {
 			return nil, err
 		}

@@ -313,6 +313,9 @@ func symlinkat(t *kernel.Task, targetAddr usermem.Addr, newdirfd int32, linkpath
 	if err != nil {
 		return err
 	}
+	if len(target) == 0 {
+		return syserror.ENOENT
+	}
 	linkpath, err := copyInPath(t, linkpathAddr)
 	if err != nil {
 		return err
