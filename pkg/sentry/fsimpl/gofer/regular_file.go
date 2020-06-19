@@ -72,7 +72,9 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	if offset < 0 {
 		return 0, syserror.EINVAL
 	}
-	if opts.Flags != 0 {
+
+	// Check that flags are supported. Silently ignore RWF_HIPRI.
+	if opts.Flags&^linux.RWF_HIPRI != 0 {
 		return 0, syserror.EOPNOTSUPP
 	}
 
@@ -123,9 +125,12 @@ func (fd *regularFileFD) PWrite(ctx context.Context, src usermem.IOSequence, off
 	if offset < 0 {
 		return 0, syserror.EINVAL
 	}
-	if opts.Flags != 0 {
+
+	// Check that flags are supported. Silently ignore RWF_HIPRI.
+	if opts.Flags&^linux.RWF_HIPRI != 0 {
 		return 0, syserror.EOPNOTSUPP
 	}
+
 	limit, err := vfs.CheckLimit(ctx, offset, src.NumBytes())
 	if err != nil {
 		return 0, err
