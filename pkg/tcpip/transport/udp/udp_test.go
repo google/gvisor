@@ -292,15 +292,15 @@ func newDualTestContextWithOptions(t *testing.T, mtu uint32, options stack.Optio
 		wep = sniffer.New(ep)
 	}
 	if err := s.CreateNIC(1, wep); err != nil {
-		t.Fatalf("CreateNIC failed: %v", err)
+		t.Fatalf("CreateNIC failed: %s", err)
 	}
 
 	if err := s.AddAddress(1, ipv4.ProtocolNumber, stackAddr); err != nil {
-		t.Fatalf("AddAddress failed: %v", err)
+		t.Fatalf("AddAddress failed: %s", err)
 	}
 
 	if err := s.AddAddress(1, ipv6.ProtocolNumber, stackV6Addr); err != nil {
-		t.Fatalf("AddAddress failed: %v", err)
+		t.Fatalf("AddAddress failed: %s", err)
 	}
 
 	s.SetRouteTable([]tcpip.Route{
@@ -391,17 +391,21 @@ func (c *testContext) injectPacket(flow testFlow, payload []byte) {
 
 	h := flow.header4Tuple(incoming)
 	if flow.isV4() {
-		c.injectV4Packet(payload, &h, true /* valid */)
+		buf := c.buildV4Packet(payload, &h)
+		c.linkEP.InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
+			Data: buf.ToVectorisedView(),
+		})
 	} else {
-		c.injectV6Packet(payload, &h, true /* valid */)
+		buf := c.buildV6Packet(payload, &h)
+		c.linkEP.InjectInbound(ipv6.ProtocolNumber, &stack.PacketBuffer{
+			Data: buf.ToVectorisedView(),
+		})
 	}
 }
 
-// injectV6Packet creates a V6 test packet with the given payload and header
-// values, and injects it into the link endpoint. valid indicates if the
-// caller intends to inject a packet with a valid or an invalid UDP header.
-// We can invalidate the header by corrupting the UDP payload length.
-func (c *testContext) injectV6Packet(payload []byte, h *header4Tuple, valid bool) {
+// buildV6Packet creates a V6 test packet with the given payload and header
+// values in a buffer.
+func (c *testContext) buildV6Packet(payload []byte, h *header4Tuple) buffer.View {
 	// Allocate a buffer for data and headers.
 	buf := buffer.NewView(header.UDPMinimumSize + header.IPv6MinimumSize + len(payload))
 	payloadStart := len(buf) - len(payload)
@@ -420,16 +424,10 @@ func (c *testContext) injectV6Packet(payload []byte, h *header4Tuple, valid bool
 
 	// Initialize the UDP header.
 	u := header.UDP(buf[header.IPv6MinimumSize:])
-	l := uint16(header.UDPMinimumSize + len(payload))
-	if !valid {
-		// Change the UDP payload length to corrupt the header
-		// as requested by the caller.
-		l++
-	}
 	u.Encode(&header.UDPFields{
 		SrcPort: h.srcAddr.Port,
 		DstPort: h.dstAddr.Port,
-		Length:  l,
+		Length:  uint16(header.UDPMinimumSize + len(payload)),
 	})
 
 	// Calculate the UDP pseudo-header checksum.
@@ -439,17 +437,12 @@ func (c *testContext) injectV6Packet(payload []byte, h *header4Tuple, valid bool
 	xsum = header.Checksum(payload, xsum)
 	u.SetChecksum(^u.CalculateChecksum(xsum))
 
-	// Inject packet.
-	c.linkEP.InjectInbound(ipv6.ProtocolNumber, &stack.PacketBuffer{
-		Data: buf.ToVectorisedView(),
-	})
+	return buf
 }
 
-// injectV4Packet creates a V4 test packet with the given payload and header
-// values, and injects it into the link endpoint. valid indicates if the
-// caller intends to inject a packet with a valid or an invalid UDP header.
-// We can invalidate the header by corrupting the UDP payload length.
-func (c *testContext) injectV4Packet(payload []byte, h *header4Tuple, valid bool) {
+// buildV4Packet creates a V4 test packet with the given payload and header
+// values in a buffer.
+func (c *testContext) buildV4Packet(payload []byte, h *header4Tuple) buffer.View {
 	// Allocate a buffer for data and headers.
 	buf := buffer.NewView(header.UDPMinimumSize + header.IPv4MinimumSize + len(payload))
 	payloadStart := len(buf) - len(payload)
@@ -483,11 +476,7 @@ func (c *testContext) injectV4Packet(payload []byte, h *header4Tuple, valid bool
 	xsum = header.Checksum(payload, xsum)
 	u.SetChecksum(^u.CalculateChecksum(xsum))
 
-	// Inject packet.
-
-	c.linkEP.InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
-		Data: buf.ToVectorisedView(),
-	})
+	return buf
 }
 
 func newPayload() []byte {
@@ -509,7 +498,7 @@ func TestBindToDeviceOption(t *testing.T) {
 
 	ep, err := s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &waiter.Queue{})
 	if err != nil {
-		t.Fatalf("NewEndpoint failed; %v", err)
+		t.Fatalf("NewEndpoint failed; %s", err)
 	}
 	defer ep.Close()
 
@@ -643,7 +632,7 @@ func TestBindEphemeralPort(t *testing.T) {
 	c.createEndpoint(ipv6.ProtocolNumber)
 
 	if err := c.ep.Bind(tcpip.FullAddress{}); err != nil {
-		t.Fatalf("ep.Bind(...) failed: %v", err)
+		t.Fatalf("ep.Bind(...) failed: %s", err)
 	}
 }
 
@@ -654,19 +643,19 @@ func TestBindReservedPort(t *testing.T) {
 	c.createEndpoint(ipv6.ProtocolNumber)
 
 	if err := c.ep.Connect(tcpip.FullAddress{Addr: testV6Addr, Port: testPort}); err != nil {
-		c.t.Fatalf("Connect failed: %v", err)
+		c.t.Fatalf("Connect failed: %s", err)
 	}
 
 	addr, err := c.ep.GetLocalAddress()
 	if err != nil {
-		t.Fatalf("GetLocalAddress failed: %v", err)
+		t.Fatalf("GetLocalAddress failed: %s", err)
 	}
 
 	// We can't bind the address reserved by the connected endpoint above.
 	{
 		ep, err := c.s.NewEndpoint(udp.ProtocolNumber, ipv6.ProtocolNumber, &c.wq)
 		if err != nil {
-			t.Fatalf("NewEndpoint failed: %v", err)
+			t.Fatalf("NewEndpoint failed: %s", err)
 		}
 		defer ep.Close()
 		if got, want := ep.Bind(addr), tcpip.ErrPortInUse; got != want {
@@ -677,7 +666,7 @@ func TestBindReservedPort(t *testing.T) {
 	func() {
 		ep, err := c.s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &c.wq)
 		if err != nil {
-			t.Fatalf("NewEndpoint failed: %v", err)
+			t.Fatalf("NewEndpoint failed: %s", err)
 		}
 		defer ep.Close()
 		// We can't bind ipv4-any on the port reserved by the connected endpoint
@@ -687,7 +676,7 @@ func TestBindReservedPort(t *testing.T) {
 		}
 		// We can bind an ipv4 address on this port, though.
 		if err := ep.Bind(tcpip.FullAddress{Addr: stackAddr, Port: addr.Port}); err != nil {
-			t.Fatalf("ep.Bind(...) failed: %v", err)
+			t.Fatalf("ep.Bind(...) failed: %s", err)
 		}
 	}()
 
@@ -697,11 +686,11 @@ func TestBindReservedPort(t *testing.T) {
 	func() {
 		ep, err := c.s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &c.wq)
 		if err != nil {
-			t.Fatalf("NewEndpoint failed: %v", err)
+			t.Fatalf("NewEndpoint failed: %s", err)
 		}
 		defer ep.Close()
 		if err := ep.Bind(tcpip.FullAddress{Port: addr.Port}); err != nil {
-			t.Fatalf("ep.Bind(...) failed: %v", err)
+			t.Fatalf("ep.Bind(...) failed: %s", err)
 		}
 	}()
 }
@@ -714,7 +703,7 @@ func TestV4ReadOnV6(t *testing.T) {
 
 	// Bind to wildcard.
 	if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
-		c.t.Fatalf("Bind failed: %v", err)
+		c.t.Fatalf("Bind failed: %s", err)
 	}
 
 	// Test acceptance.
@@ -729,7 +718,7 @@ func TestV4ReadOnBoundToV4MappedWildcard(t *testing.T) {
 
 	// Bind to v4 mapped wildcard.
 	if err := c.ep.Bind(tcpip.FullAddress{Addr: v4MappedWildcardAddr, Port: stackPort}); err != nil {
-		c.t.Fatalf("Bind failed: %v", err)
+		c.t.Fatalf("Bind failed: %s", err)
 	}
 
 	// Test acceptance.
@@ -744,7 +733,7 @@ func TestV4ReadOnBoundToV4Mapped(t *testing.T) {
 
 	// Bind to local address.
 	if err := c.ep.Bind(tcpip.FullAddress{Addr: stackV4MappedAddr, Port: stackPort}); err != nil {
-		c.t.Fatalf("Bind failed: %v", err)
+		c.t.Fatalf("Bind failed: %s", err)
 	}
 
 	// Test acceptance.
@@ -759,7 +748,7 @@ func TestV6ReadOnV6(t *testing.T) {
 
 	// Bind to wildcard.
 	if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
-		c.t.Fatalf("Bind failed: %v", err)
+		c.t.Fatalf("Bind failed: %s", err)
 	}
 
 	// Test acceptance.
@@ -796,7 +785,10 @@ func TestV4ReadSelfSource(t *testing.T) {
 			h := unicastV4.header4Tuple(incoming)
 			h.srcAddr = h.dstAddr
 
-			c.injectV4Packet(payload, &h, true /* valid */)
+			buf := c.buildV4Packet(payload, &h)
+			c.linkEP.InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
+				Data: buf.ToVectorisedView(),
+			})
 
 			if got := c.s.Stats().IP.InvalidSourceAddressesReceived.Value(); got != tt.wantInvalidSource {
 				t.Errorf("c.s.Stats().IP.InvalidSourceAddressesReceived got %d, want %d", got, tt.wantInvalidSource)
@@ -817,7 +809,7 @@ func TestV4ReadOnV4(t *testing.T) {
 
 	// Bind to wildcard.
 	if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
-		c.t.Fatalf("Bind failed: %v", err)
+		c.t.Fatalf("Bind failed: %s", err)
 	}
 
 	// Test acceptance.
@@ -955,7 +947,7 @@ func testWriteInternal(c *testContext, flow testFlow, setDest bool, checkers ...
 	payload := buffer.View(newPayload())
 	n, _, err := c.ep.Write(tcpip.SlicePayload(payload), writeOpts)
 	if err != nil {
-		c.t.Fatalf("Write failed: %v", err)
+		c.t.Fatalf("Write failed: %s", err)
 	}
 	if n != int64(len(payload)) {
 		c.t.Fatalf("Bad number of bytes written: got %v, want %v", n, len(payload))
@@ -1005,7 +997,7 @@ func TestDualWriteBoundToWildcard(t *testing.T) {
 
 	// Bind to wildcard.
 	if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
-		c.t.Fatalf("Bind failed: %v", err)
+		c.t.Fatalf("Bind failed: %s", err)
 	}
 
 	p := testDualWrite(c)
@@ -1022,7 +1014,7 @@ func TestDualWriteConnectedToV6(t *testing.T) {
 
 	// Connect to v6 address.
 	if err := c.ep.Connect(tcpip.FullAddress{Addr: testV6Addr, Port: testPort}); err != nil {
-		c.t.Fatalf("Bind failed: %v", err)
+		c.t.Fatalf("Bind failed: %s", err)
 	}
 
 	testWrite(c, unicastV6)
@@ -1043,7 +1035,7 @@ func TestDualWriteConnectedToV4Mapped(t *testing.T) {
 
 	// Connect to v4 mapped address.
 	if err := c.ep.Connect(tcpip.FullAddress{Addr: testV4MappedAddr, Port: testPort}); err != nil {
-		c.t.Fatalf("Bind failed: %v", err)
+		c.t.Fatalf("Bind failed: %s", err)
 	}
 
 	testWrite(c, unicastV4in6)
@@ -1070,7 +1062,7 @@ func TestV6WriteOnBoundToV4Mapped(t *testing.T) {
 
 	// Bind to v4 mapped address.
 	if err := c.ep.Bind(tcpip.FullAddress{Addr: stackV4MappedAddr, Port: stackPort}); err != nil {
-		c.t.Fatalf("Bind failed: %v", err)
+		c.t.Fatalf("Bind failed: %s", err)
 	}
 
 	// Write to v6 address.
@@ -1085,7 +1077,7 @@ func TestV6WriteOnConnected(t *testing.T) {
 
 	// Connect to v6 address.
 	if err := c.ep.Connect(tcpip.FullAddress{Addr: testV6Addr, Port: testPort}); err != nil {
-		c.t.Fatalf("Connect failed: %v", err)
+		c.t.Fatalf("Connect failed: %s", err)
 	}
 
 	testWriteWithoutDestination(c, unicastV6)
@@ -1099,7 +1091,7 @@ func TestV4WriteOnConnected(t *testing.T) {
 
 	// Connect to v4 mapped address.
 	if err := c.ep.Connect(tcpip.FullAddress{Addr: testV4MappedAddr, Port: testPort}); err != nil {
-		c.t.Fatalf("Connect failed: %v", err)
+		c.t.Fatalf("Connect failed: %s", err)
 	}
 
 	testWriteWithoutDestination(c, unicastV4)
@@ -1234,7 +1226,7 @@ func TestReadIncrementsPacketsReceived(t *testing.T) {
 
 	// Bind to wildcard.
 	if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
-		c.t.Fatalf("Bind failed: %v", err)
+		c.t.Fatalf("Bind failed: %s", err)
 	}
 
 	testRead(c, unicastV4)
@@ -1506,12 +1498,12 @@ func TestMulticastInterfaceOption(t *testing.T) {
 									Port: stackPort,
 								}
 								if err := c.ep.Connect(addr); err != nil {
-									c.t.Fatalf("Connect failed: %v", err)
+									c.t.Fatalf("Connect failed: %s", err)
 								}
 							}
 
 							if err := c.ep.SetSockOpt(ifoptSet); err != nil {
-								c.t.Fatalf("SetSockOpt failed: %v", err)
+								c.t.Fatalf("SetSockOpt failed: %s", err)
 							}
 
 							// Verify multicast interface addr and NIC were set correctly.
@@ -1519,7 +1511,7 @@ func TestMulticastInterfaceOption(t *testing.T) {
 							ifoptWant := tcpip.MulticastInterfaceOption{NIC: 1, InterfaceAddr: ifoptSet.InterfaceAddr}
 							var ifoptGot tcpip.MulticastInterfaceOption
 							if err := c.ep.GetSockOpt(&ifoptGot); err != nil {
-								c.t.Fatalf("GetSockOpt failed: %v", err)
+								c.t.Fatalf("GetSockOpt failed: %s", err)
 							}
 							if ifoptGot != ifoptWant {
 								c.t.Errorf("got GetSockOpt() = %#v, want = %#v", ifoptGot, ifoptWant)
@@ -1691,7 +1683,7 @@ func TestV6UnknownDestination(t *testing.T) {
 }
 
 // TestIncrementMalformedPacketsReceived verifies if the malformed received
-// global and endpoint stats get incremented.
+// global and endpoint stats are incremented.
 func TestIncrementMalformedPacketsReceived(t *testing.T) {
 	c := newDualTestContext(t, defaultMTU)
 	defer c.cleanup()
@@ -1699,20 +1691,25 @@ func TestIncrementMalformedPacketsReceived(t *testing.T) {
 	c.createEndpoint(ipv6.ProtocolNumber)
 	// Bind to wildcard.
 	if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
-		c.t.Fatalf("Bind failed: %v", err)
+		c.t.Fatalf("Bind failed: %s", err)
 	}
 
 	payload := newPayload()
-	c.t.Helper()
 	h := unicastV6.header4Tuple(incoming)
-	c.injectV6Packet(payload, &h, false /* !valid */)
+	buf := c.buildV6Packet(payload, &h)
+	// Invalidate the packet length field in the UDP header by adding one.
+	u := header.UDP(buf[header.IPv6MinimumSize:])
+	u.SetLength(u.Length() + 1)
+	c.linkEP.InjectInbound(ipv6.ProtocolNumber, &stack.PacketBuffer{
+		Data: buf.ToVectorisedView(),
+	})
 
-	var want uint64 = 1
+	const want = 1
 	if got := c.s.Stats().UDP.MalformedPacketsReceived.Value(); got != want {
-		t.Errorf("got stats.UDP.MalformedPacketsReceived.Value() = %v, want = %v", got, want)
+		t.Errorf("got stats.UDP.MalformedPacketsReceived.Value() = %d, want = %d", got, want)
 	}
 	if got := c.ep.Stats().(*tcpip.TransportEndpointStats).ReceiveErrors.MalformedPacketsReceived.Value(); got != want {
-		t.Errorf("got EP Stats.ReceiveErrors.MalformedPacketsReceived stats = %v, want = %v", got, want)
+		t.Errorf("got EP Stats.ReceiveErrors.MalformedPacketsReceived stats = %d, want = %d", got, want)
 	}
 }
 
@@ -1728,7 +1725,6 @@ func TestShortHeader(t *testing.T) {
 		c.t.Fatalf("Bind failed: %s", err)
 	}
 
-	c.t.Helper()
 	h := unicastV6.header4Tuple(incoming)
 
 	// Allocate a buffer for an IPv6 and too-short UDP header.
@@ -1768,6 +1764,190 @@ func TestShortHeader(t *testing.T) {
 	}
 }
 
+// TestIncrementChecksumErrorsV4 verifies if a checksum error is detected,
+// global and endpoint stats are incremented.
+func TestIncrementChecksumErrorsV4(t *testing.T) {
+	c := newDualTestContext(t, defaultMTU)
+	defer c.cleanup()
+
+	c.createEndpoint(ipv4.ProtocolNumber)
+	// Bind to wildcard.
+	if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+		c.t.Fatalf("Bind failed: %s", err)
+	}
+
+	payload := newPayload()
+	h := unicastV4.header4Tuple(incoming)
+	buf := c.buildV4Packet(payload, &h)
+	// Invalidate the checksum field in the UDP header by adding one.
+	u := header.UDP(buf[header.IPv4MinimumSize:])
+	u.SetChecksum(u.Checksum() + 1)
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
+		Data: buf.ToVectorisedView(),
+	})
+
+	const want = 1
+	if got := c.s.Stats().UDP.ChecksumErrors.Value(); got != want {
+		t.Errorf("got stats.UDP.ChecksumErrors.Value() = %d, want = %d", got, want)
+	}
+	if got := c.ep.Stats().(*tcpip.TransportEndpointStats).ReceiveErrors.ChecksumErrors.Value(); got != want {
+		t.Errorf("got EP Stats.ReceiveErrors.ChecksumErrors stats = %d, want = %d", got, want)
+	}
+}
+
+// TestIncrementChecksumErrorsV6 verifies if a checksum error is detected,
+// global and endpoint stats are incremented.
+func TestIncrementChecksumErrorsV6(t *testing.T) {
+	c := newDualTestContext(t, defaultMTU)
+	defer c.cleanup()
+
+	c.createEndpoint(ipv6.ProtocolNumber)
+	// Bind to wildcard.
+	if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+		c.t.Fatalf("Bind failed: %s", err)
+	}
+
+	payload := newPayload()
+	h := unicastV6.header4Tuple(incoming)
+	buf := c.buildV6Packet(payload, &h)
+	// Invalidate the checksum field in the UDP header by adding one.
+	u := header.UDP(buf[header.IPv6MinimumSize:])
+	u.SetChecksum(u.Checksum() + 1)
+	c.linkEP.InjectInbound(ipv6.ProtocolNumber, &stack.PacketBuffer{
+		Data: buf.ToVectorisedView(),
+	})
+
+	const want = 1
+	if got := c.s.Stats().UDP.ChecksumErrors.Value(); got != want {
+		t.Errorf("got stats.UDP.ChecksumErrors.Value() = %d, want = %d", got, want)
+	}
+	if got := c.ep.Stats().(*tcpip.TransportEndpointStats).ReceiveErrors.ChecksumErrors.Value(); got != want {
+		t.Errorf("got EP Stats.ReceiveErrors.ChecksumErrors stats = %d, want = %d", got, want)
+	}
+}
+
+// TestPayloadModifiedV4 verifies if a checksum error is detected,
+// global and endpoint stats are incremented.
+func TestPayloadModifiedV4(t *testing.T) {
+	c := newDualTestContext(t, defaultMTU)
+	defer c.cleanup()
+
+	c.createEndpoint(ipv4.ProtocolNumber)
+	// Bind to wildcard.
+	if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+		c.t.Fatalf("Bind failed: %s", err)
+	}
+
+	payload := newPayload()
+	h := unicastV4.header4Tuple(incoming)
+	buf := c.buildV4Packet(payload, &h)
+	// Modify the payload so that the checksum value in the UDP header will be incorrect.
+	buf[len(buf)-1]++
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
+		Data: buf.ToVectorisedView(),
+	})
+
+	const want = 1
+	if got := c.s.Stats().UDP.ChecksumErrors.Value(); got != want {
+		t.Errorf("got stats.UDP.ChecksumErrors.Value() = %d, want = %d", got, want)
+	}
+	if got := c.ep.Stats().(*tcpip.TransportEndpointStats).ReceiveErrors.ChecksumErrors.Value(); got != want {
+		t.Errorf("got EP Stats.ReceiveErrors.ChecksumErrors stats = %d, want = %d", got, want)
+	}
+}
+
+// TestPayloadModifiedV6 verifies if a checksum error is detected,
+// global and endpoint stats are incremented.
+func TestPayloadModifiedV6(t *testing.T) {
+	c := newDualTestContext(t, defaultMTU)
+	defer c.cleanup()
+
+	c.createEndpoint(ipv6.ProtocolNumber)
+	// Bind to wildcard.
+	if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+		c.t.Fatalf("Bind failed: %s", err)
+	}
+
+	payload := newPayload()
+	h := unicastV6.header4Tuple(incoming)
+	buf := c.buildV6Packet(payload, &h)
+	// Modify the payload so that the checksum value in the UDP header will be incorrect.
+	buf[len(buf)-1]++
+	c.linkEP.InjectInbound(ipv6.ProtocolNumber, &stack.PacketBuffer{
+		Data: buf.ToVectorisedView(),
+	})
+
+	const want = 1
+	if got := c.s.Stats().UDP.ChecksumErrors.Value(); got != want {
+		t.Errorf("got stats.UDP.ChecksumErrors.Value() = %d, want = %d", got, want)
+	}
+	if got := c.ep.Stats().(*tcpip.TransportEndpointStats).ReceiveErrors.ChecksumErrors.Value(); got != want {
+		t.Errorf("got EP Stats.ReceiveErrors.ChecksumErrors stats = %d, want = %d", got, want)
+	}
+}
+
+// TestChecksumZeroV4 verifies if the checksum value is zero, global and
+// endpoint states are *not* incremented (UDP checksum is optional on IPv4).
+func TestChecksumZeroV4(t *testing.T) {
+	c := newDualTestContext(t, defaultMTU)
+	defer c.cleanup()
+
+	c.createEndpoint(ipv4.ProtocolNumber)
+	// Bind to wildcard.
+	if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+		c.t.Fatalf("Bind failed: %s", err)
+	}
+
+	payload := newPayload()
+	h := unicastV4.header4Tuple(incoming)
+	buf := c.buildV4Packet(payload, &h)
+	// Set the checksum field in the UDP header to zero.
+	u := header.UDP(buf[header.IPv4MinimumSize:])
+	u.SetChecksum(0)
+	c.linkEP.InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
+		Data: buf.ToVectorisedView(),
+	})
+
+	const want = 0
+	if got := c.s.Stats().UDP.ChecksumErrors.Value(); got != want {
+		t.Errorf("got stats.UDP.ChecksumErrors.Value() = %d, want = %d", got, want)
+	}
+	if got := c.ep.Stats().(*tcpip.TransportEndpointStats).ReceiveErrors.ChecksumErrors.Value(); got != want {
+		t.Errorf("got EP Stats.ReceiveErrors.ChecksumErrors stats = %d, want = %d", got, want)
+	}
+}
+
+// TestChecksumZeroV6 verifies if the checksum value is zero, global and
+// endpoint states are incremented (UDP checksum is *not* optional on IPv6).
+func TestChecksumZeroV6(t *testing.T) {
+	c := newDualTestContext(t, defaultMTU)
+	defer c.cleanup()
+
+	c.createEndpoint(ipv6.ProtocolNumber)
+	// Bind to wildcard.
+	if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+		c.t.Fatalf("Bind failed: %s", err)
+	}
+
+	payload := newPayload()
+	h := unicastV6.header4Tuple(incoming)
+	buf := c.buildV6Packet(payload, &h)
+	// Set the checksum field in the UDP header to zero.
+	u := header.UDP(buf[header.IPv6MinimumSize:])
+	u.SetChecksum(0)
+	c.linkEP.InjectInbound(ipv6.ProtocolNumber, &stack.PacketBuffer{
+		Data: buf.ToVectorisedView(),
+	})
+
+	const want = 1
+	if got := c.s.Stats().UDP.ChecksumErrors.Value(); got != want {
+		t.Errorf("got stats.UDP.ChecksumErrors.Value() = %d, want = %d", got, want)
+	}
+	if got := c.ep.Stats().(*tcpip.TransportEndpointStats).ReceiveErrors.ChecksumErrors.Value(); got != want {
+		t.Errorf("got EP Stats.ReceiveErrors.ChecksumErrors stats = %d, want = %d", got, want)
+	}
+}
+
 // TestShutdownRead verifies endpoint read shutdown and error
 // stats increment on packet receive.
 func TestShutdownRead(t *testing.T) {
@@ -1778,15 +1958,15 @@ func TestShutdownRead(t *testing.T) {
 
 	// Bind to wildcard.
 	if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
-		c.t.Fatalf("Bind failed: %v", err)
+		c.t.Fatalf("Bind failed: %s", err)
 	}
 
 	if err := c.ep.Connect(tcpip.FullAddress{Addr: testV6Addr, Port: testPort}); err != nil {
-		c.t.Fatalf("Connect failed: %v", err)
+		c.t.Fatalf("Connect failed: %s", err)
 	}
 
 	if err := c.ep.Shutdown(tcpip.ShutdownRead); err != nil {
-		t.Fatalf("Shutdown failed: %v", err)
+		t.Fatalf("Shutdown failed: %s", err)
 	}
 
 	testFailingRead(c, unicastV6, true /* expectReadError */)
@@ -1809,11 +1989,11 @@ func TestShutdownWrite(t *testing.T) {
 	c.createEndpoint(ipv6.ProtocolNumber)
 
 	if err := c.ep.Connect(tcpip.FullAddress{Addr: testV6Addr, Port: testPort}); err != nil {
-		c.t.Fatalf("Connect failed: %v", err)
+		c.t.Fatalf("Connect failed: %s", err)
 	}
 
 	if err := c.ep.Shutdown(tcpip.ShutdownWrite); err != nil {
-		t.Fatalf("Shutdown failed: %v", err)
+		t.Fatalf("Shutdown failed: %s", err)
 	}
 
 	testFailingWrite(c, unicastV6, tcpip.ErrClosedForSend)

@@ -1350,6 +1350,24 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 		return
 	}
 
+	// Verify checksum unless RX checksum offload is enabled.
+	// On IPv4, UDP checksum is optional, and a zero value means
+	// the transmitter omitted the checksum generation (RFC768).
+	// On IPv6, UDP checksum is not optional (RFC2460 Section 8.1).
+	if r.Capabilities()&stack.CapabilityRXChecksumOffload == 0 &&
+		(hdr.Checksum() != 0 || r.NetProto == header.IPv6ProtocolNumber) {
+		xsum := r.PseudoHeaderChecksum(ProtocolNumber, hdr.Length())
+		for _, v := range pkt.Data.Views() {
+			xsum = header.Checksum(v, xsum)
+		}
+		if hdr.CalculateChecksum(xsum) != 0xffff {
+			// Checksum Error.
+			e.stack.Stats().UDP.ChecksumErrors.Increment()
+			e.stats.ReceiveErrors.ChecksumErrors.Increment()
+			return
+		}
+	}
+
 	e.rcvMu.Lock()
 	e.stack.Stats().UDP.PacketsReceived.Increment()
 	e.stats.PacketsReceived.Increment()
