@@ -64,7 +64,7 @@ type fdDir struct {
 }
 
 // IterDirents implements kernfs.inodeDynamicLookup.
-func (i *fdDir) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback, absOffset, relOffset int64) (int64, error) {
+func (i *fdDir) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback, offset, relOffset int64) (int64, error) {
 	var fds []int32
 	i.task.WithMuLocked(func(t *kernel.Task) {
 		if fdTable := t.FDTable(); fdTable != nil {
@@ -72,7 +72,6 @@ func (i *fdDir) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback, abs
 		}
 	})
 
-	offset := absOffset + relOffset
 	typ := uint8(linux.DT_REG)
 	if i.produceSymlink {
 		typ = linux.DT_LNK

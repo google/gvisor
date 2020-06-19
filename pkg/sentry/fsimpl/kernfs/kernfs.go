@@ -425,10 +425,10 @@ type inodeDynamicLookup interface {
 	// IterDirents is used to iterate over dynamically created entries. It invokes
 	// cb on each entry in the directory represented by the FileDescription.
 	// 'offset' is the offset for the entire IterDirents call, which may include
-	// results from the caller. 'relOffset' is the offset inside the entries
-	// returned by this IterDirents invocation. In other words,
-	// 'offset+relOffset+1' is the value that should be set in vfs.Dirent.NextOff,
-	// while 'relOffset' is the place where iteration should start from.
+	// results from the caller (e.g. "." and ".."). 'relOffset' is the offset
+	// inside the entries returned by this IterDirents invocation. In other words,
+	// 'offset' should be used to calculate each vfs.Dirent.NextOff as well as
+	// the return value, while 'relOffset' is the place to start iteration.
 	IterDirents(ctx context.Context, callback vfs.IterDirentsCallback, offset, relOffset int64) (newOffset int64, err error)
 }
 
