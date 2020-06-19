@@ -77,14 +77,26 @@ TEST(LinkTest, CanCreateLinkFile) {
 TEST(LinkTest, PermissionDenied) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_FOWNER)));
 
-  // Make the file "unsafe" to link by making it only readable, but not
-  // writable.
-  const auto unwriteable_file =
-      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileMode(0400));
-  const std::string special_path = NewTempAbsPath();
-  ASSERT_THAT(mkfifo(special_path.c_str(), 0666), SyscallSucceeds());
-  const auto setuid_file =
-      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileMode(0666 | S_ISUID));
+  // We are going to switch to user 'nobody', which may not have permissions to
+  // navigate to the link directory. Create and open the directory now so we can
+  // make this work.
+  const std::string parent = NewTempAbsPath();
+  ASSERT_THAT(mkdir(parent.c_str(), 0777), SyscallSucceeds());
+  const FileDescriptor parent_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(parent, O_DIRECTORY | O_RDONLY));
+
+  // Create unwritable file, making it readable not but writable, and thus
+  // unsafe to link.
+  const std::string unwritable_base = "unwritable";
+  const std::string unwritable = JoinPath(parent, unwritable_base);
+  const FileDescriptor unwritable_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(unwritable, O_CREAT | O_RDWR, 0400));
+
+  // Create the same file with setuid bit. It should be linkable.
+  const std::string setuid_base = "setuid";
+  const std::string setuid = JoinPath(parent, setuid_base);
+  const FileDescriptor setuid_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(setuid, O_CREAT | O_RDWR, 0400));
 
   const std::string newname = NewTempAbsPath();
 
@@ -102,12 +114,13 @@ TEST(LinkTest, PermissionDenied) {
     EXPECT_THAT(syscall(SYS_setuid, absl::GetFlag(FLAGS_scratch_uid)),
                 SyscallSucceeds());
 
-    EXPECT_THAT(link(unwriteable_file.path().c_str(), newname.c_str()),
+    EXPECT_THAT(linkat(parent_fd.get(), unwritable_base.c_str(), AT_FDCWD,
+                       newname.c_str(), 0),
                 SyscallFailsWithErrno(EPERM));
-    EXPECT_THAT(link(special_path.c_str(), newname.c_str()),
-                SyscallFailsWithErrno(EPERM));
+
     if (!IsRunningWithVFS1()) {
-      EXPECT_THAT(link(setuid_file.path().c_str(), newname.c_str()),
+      EXPECT_THAT(linkat(parent_fd.get(), setuid_base.c_str(), AT_FDCWD,
+                         newname.c_str(), 0),
                   SyscallFailsWithErrno(EPERM));
     }
   });
