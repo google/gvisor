@@ -374,13 +374,16 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 		return nil
 	}
 	if fs.opts.interop == InteropModeShared {
-		// The existence of a dentry at name would be inconclusive because the
-		// file it represents may have been deleted from the remote filesystem,
-		// so we would need to make an RPC to revalidate the dentry. Just
-		// attempt the file creation RPC instead. If a file does exist, the RPC
-		// will fail with EEXIST like we would have. If the RPC succeeds, and a
-		// stale dentry exists, the dentry will fail revalidation next time
-		// it's used.
+		if child := parent.children[name]; child != nil && child.isSynthetic() {
+			return syserror.EEXIST
+		}
+		// The existence of a non-synthetic dentry at name would be inconclusive
+		// because the file it represents may have been deleted from the remote
+		// filesystem, so we would need to make an RPC to revalidate the dentry.
+		// Just attempt the file creation RPC instead. If a file does exist, the
+		// RPC will fail with EEXIST like we would have. If the RPC succeeds, and a
+		// stale dentry exists, the dentry will fail revalidation next time it's
+		// used.
 		return createInRemoteDir(parent, name)
 	}
 	if child := parent.children[name]; child != nil {
@@ -518,7 +521,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 		if child == nil {
 			return syserror.ENOENT
 		}
-	} else {
+	} else if child == nil || !child.isSynthetic() {
 		err = parent.file.unlinkAt(ctx, name, flags)
 		if err != nil {
 			if child != nil {

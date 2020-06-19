@@ -57,6 +57,7 @@ syscall_test(
     size = "large",
     add_overlay = True,
     test = "//test/syscalls/linux:bind_test",
+    vfs2 = "True",
 )
 
 syscall_test(
@@ -700,6 +701,7 @@ syscall_test(
     size = "medium",
     add_overlay = True,
     test = "//test/syscalls/linux:socket_filesystem_non_blocking_test",
+    vfs2 = "True",
 )
 
 syscall_test(
@@ -707,12 +709,14 @@ syscall_test(
     add_overlay = True,
     shard_count = 50,
     test = "//test/syscalls/linux:socket_filesystem_test",
+    vfs2 = "True",
 )
 
 syscall_test(
     size = "large",
     shard_count = 50,
     test = "//test/syscalls/linux:socket_inet_loopback_test",
+    vfs2 = "True",
 )
 
 syscall_test(
@@ -721,6 +725,7 @@ syscall_test(
     # Takes too long for TSAN. Creates a lot of TCP sockets.
     tags = ["nogotsan"],
     test = "//test/syscalls/linux:socket_inet_loopback_nogotsan_test",
+    vfs2 = "True",
 )
 
 syscall_test(
@@ -796,6 +801,7 @@ syscall_test(
 
 syscall_test(
     test = "//test/syscalls/linux:socket_blocking_local_test",
+    vfs2 = "True",
 )
 
 syscall_test(
@@ -805,6 +811,7 @@ syscall_test(
 
 syscall_test(
     test = "//test/syscalls/linux:socket_non_stream_blocking_local_test",
+    vfs2 = "True",
 )
 
 syscall_test(
@@ -815,6 +822,7 @@ syscall_test(
 syscall_test(
     size = "large",
     test = "//test/syscalls/linux:socket_stream_blocking_local_test",
+    vfs2 = "True",
 )
 
 syscall_test(
@@ -826,11 +834,13 @@ syscall_test(
 syscall_test(
     size = "medium",
     test = "//test/syscalls/linux:socket_stream_local_test",
+    vfs2 = "True",
 )
 
 syscall_test(
     size = "medium",
     test = "//test/syscalls/linux:socket_stream_nonblock_local_test",
+    vfs2 = "True",
 )
 
 syscall_test(
@@ -838,6 +848,7 @@ syscall_test(
     size = "enormous",
     shard_count = 5,
     test = "//test/syscalls/linux:socket_unix_dgram_local_test",
+    vfs2 = "True",
 )
 
 syscall_test(
@@ -859,11 +870,13 @@ syscall_test(
     size = "enormous",
     shard_count = 5,
     test = "//test/syscalls/linux:socket_unix_seqpacket_local_test",
+    vfs2 = "True",
 )
 
 syscall_test(
     size = "medium",
     test = "//test/syscalls/linux:socket_unix_stream_test",
+    vfs2 = "True",
 )
 
 syscall_test(
@@ -881,6 +894,7 @@ syscall_test(
 syscall_test(
     size = "medium",
     test = "//test/syscalls/linux:socket_unix_unbound_filesystem_test",
+    vfs2 = "True",
 )
 
 syscall_test(
@@ -894,6 +908,7 @@ syscall_test(
     size = "large",
     shard_count = 50,
     test = "//test/syscalls/linux:socket_unix_unbound_stream_test",
+    vfs2 = "True",
 )
 
 syscall_test(
