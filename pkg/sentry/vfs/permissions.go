@@ -94,6 +94,37 @@ func GenericCheckPermissions(creds *auth.Credentials, ats AccessTypes, mode linu
 	return syserror.EACCES
 }
 
+// MayLink determines whether creating a hard link to a file with the given
+// mode, kuid, and kgid is permitted.
+//
+// This corresponds to Linux's fs/namei.c:may_linkat.
+func MayLink(creds *auth.Credentials, mode linux.FileMode, kuid auth.KUID, kgid auth.KGID) error {
+	// Source inode owner can hardlink all they like; otherwise, it must be a
+	// safe source.
+	if CanActAsOwner(creds, kuid) {
+		return nil
+	}
+
+	// Only regular files can be hard linked.
+	if mode.FileType() != linux.S_IFREG {
+		return syserror.EPERM
+	}
+
+	// Setuid files should not get pinned to the filesystem.
+	if mode&linux.S_ISUID != 0 {
+		return syserror.EPERM
+	}
+
+	// Executable setgid files should not get pinned to the filesystem, but we
+	// don't support S_IXGRP anyway.
+
+	// Hardlinking to unreadable or unwritable sources is dangerous.
+	if err := GenericCheckPermissions(creds, MayRead|MayWrite, mode, kuid, kgid); err != nil {
+		return syserror.EPERM
+	}
+	return nil
+}
+
 // AccessTypesForOpenFlags returns the access types required to open a file
 // with the given OpenOptions.Flags. Note that this is NOT the same thing as
 // the set of accesses permitted for the opened file:
