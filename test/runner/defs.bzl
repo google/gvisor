@@ -195,7 +195,7 @@ def syscall_test(
             shard_count = shard_count,
             size = size,
             platform = default_platform,
-            use_tmpfs = False,  # overlay is adding a writable tmpfs on top of root.
+            use_tmpfs = use_tmpfs,
             add_uds_tree = add_uds_tree,
             tags = platforms[default_platform] + tags,
             overlay = True,
