@@ -476,6 +476,9 @@ func (e *connectionedEndpoint) Readiness(mask waiter.EventMask) waiter.EventMask
 
 // State implements socket.Socket.State.
 func (e *connectionedEndpoint) State() uint32 {
+	e.Lock()
+	defer e.Unlock()
+
 	if e.Connected() {
 		return linux.SS_CONNECTED
 	}
