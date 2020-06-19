@@ -221,21 +221,12 @@ func (fd *specialFileFD) Seek(ctx context.Context, offset int64, whence int32) (
 	}
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
-	switch whence {
-	case linux.SEEK_SET:
-		// Use offset as given.
-	case linux.SEEK_CUR:
-		offset += fd.off
-	default:
-		// SEEK_END, SEEK_DATA, and SEEK_HOLE aren't supported since it's not
-		// clear that file size is even meaningful for these files.
-		return 0, syserror.EINVAL
+	newOffset, err := regularFileSeekLocked(ctx, fd.dentry(), fd.off, offset, whence)
+	if err != nil {
+		return 0, err
 	}
-	if offset < 0 {
-		return 0, syserror.EINVAL
-	}
-	fd.off = offset
-	return offset, nil
+	fd.off = newOffset
+	return newOffset, nil
 }
 
 // Sync implements vfs.FileDescriptionImpl.Sync.
