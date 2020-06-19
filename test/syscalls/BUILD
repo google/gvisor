@@ -463,6 +463,7 @@ syscall_test(
 syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:preadv2_test",
+    vfs2 = "True",
 )
 
 syscall_test(
