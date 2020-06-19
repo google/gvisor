@@ -125,71 +125,59 @@ func nonCanonical(addr uint64, signal int32, info *arch.SignalInfo) (usermem.Acc
 	return usermem.NoAccess, platform.ErrContextSignal
 }
 
+// isInstructionAbort returns true if it is an instruction abort.
+//
+//go:nosplit
+func isInstructionAbort(code uint64) bool {
+	value := (code & _ESR_ELx_EC_MASK) >> _ESR_ELx_EC_SHIFT
+	return value == _ESR_ELx_EC_IABT_LOW
+}
+
+// isWriteFault returns whether it is a write fault.
+//
+//go:nosplit
+func isWriteFault(code uint64) bool {
+	if isInstructionAbort(code) {
+		return false
+	}
+
+	return (code & _ESR_ELx_WNR) != 0
+}
+
 // fault generates an appropriate fault return.
 //
 //go:nosplit
 func (c *vCPU) fault(signal int32, info *arch.SignalInfo) (usermem.AccessType, error) {
+	bluepill(c) // Probably no-op, but may not be.
 	faultAddr := c.GetFaultAddr()
 	code, user := c.ErrorCode()
+
+	if !user {
+		// The last fault serviced by this CPU was not a user
+		// fault, so we can't reliably trust the faultAddr or
+		// the code provided here. We need to re-execute.
+		return usermem.NoAccess, platform.ErrContextInterrupt
+	}
 
 	// Reset the pointed SignalInfo.
 	*info = arch.SignalInfo{Signo: signal}
 	info.SetAddr(uint64(faultAddr))
 
-	read := true
-	write := false
-	execute := true
-
 	ret := code & _ESR_ELx_FSC
 	switch ret {
 	case _ESR_SEGV_MAPERR_L0, _ESR_SEGV_MAPERR_L1, _ESR_SEGV_MAPERR_L2, _ESR_SEGV_MAPERR_L3:
 		info.Code = 1 //SEGV_MAPERR
-		read = false
-		write = true
-		execute = false
 	case _ESR_SEGV_ACCERR_L1, _ESR_SEGV_ACCERR_L2, _ESR_SEGV_ACCERR_L3, _ESR_SEGV_PEMERR_L1, _ESR_SEGV_PEMERR_L2, _ESR_SEGV_PEMERR_L3:
 		info.Code = 2 // SEGV_ACCERR.
-		read = true
-		write = false
-		execute = false
 	default:
 		info.Code = 2
 	}
 
-	if !user {
-		read = true
-		write = false
-		execute = true
-
-	}
 	accessType := usermem.AccessType{
-		Read:    read,
-		Write:   write,
-		Execute: execute,
+		Read:    !isWriteFault(uint64(code)),
+		Write:   isWriteFault(uint64(code)),
+		Execute: isInstructionAbort(uint64(code)),
 	}
 
 	return accessType, platform.ErrContextSignal
-}
-
-// retryInGuest runs the given function in guest mode.
-//
-// If the function does not complete in guest mode (due to execution of a
-// system call due to a GC stall, for example), then it will be retried. The
-// given function must be idempotent as a result of the retry mechanism.
-func (m *machine) retryInGuest(fn func()) {
-	c := m.Get()
-	defer m.Put(c)
-	for {
-		c.ClearErrorCode() // See below.
-		bluepill(c)        // Force guest mode.
-		fn()               // Execute the given function.
-		_, user := c.ErrorCode()
-		if user {
-			// If user is set, then we haven't bailed back to host
-			// mode via a kernel exception or system call. We
-			// consider the full function to have executed in guest
-			// mode and we can return.
-			break
-		}
-	}
 }
