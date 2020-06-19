@@ -108,7 +108,7 @@ func Override() {
 	s.Table[209] = syscalls.PartiallySupported("io_submit", IoSubmit, "Generally supported with exceptions. User ring optimizations are not implemented.", []string{"gvisor.dev/issue/204"})
 	s.Table[213] = syscalls.Supported("epoll_create", EpollCreate)
 	s.Table[217] = syscalls.Supported("getdents64", Getdents64)
-	delete(s.Table, 221) // fdavise64
+	s.Table[221] = syscalls.PartiallySupported("fadvise64", Fadvise64, "The syscall is 'supported', but ignores all provided advice.", nil)
 	s.Table[232] = syscalls.Supported("epoll_wait", EpollWait)
 	s.Table[233] = syscalls.Supported("epoll_ctl", EpollCtl)
 	s.Table[235] = syscalls.Supported("utimes", Utimes)
