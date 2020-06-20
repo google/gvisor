@@ -6,7 +6,7 @@ before_install:
     - git clone -q "https://github.com/${TRAVIS_REPO_SLUG}.git" "${TRAVIS_REPO_SLUG}" --depth 5
     - cd "${TRAVIS_REPO_SLUG}"
     - |
-      if [-n "${TRAVIS_PULL_REQUEST}"]; then
+      if [ -n "${TRAVIS_PULL_REQUEST}" ]; then
         # This is a PR build
         # Simulate fetching +refs/pull/{num}/merge
         git fetch origin "+refs/pull/${TRAVIS_PULL_REQUEST}/head" --depth 1
