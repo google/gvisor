@@ -6,16 +6,16 @@ before_install:
     - git clone -q "https://github.com/${TRAVIS_REPO_SLUG}.git" "${TRAVIS_REPO_SLUG}" --depth 5
     - cd "${TRAVIS_REPO_SLUG}"
     - |
-      if [ -n "${TRAVIS_PULL_REQUEST}" ]; then
-        # This is a PR build
-        # Simulate fetching +refs/pull/{num}/merge
-        git fetch origin "+refs/pull/${TRAVIS_PULL_REQUEST}/head" --depth 1
-        git cherry-pick --strategy=recursive -X theirs --keep-redundant-commits FETCH_HEAD
-      else
+      if [ "${TRAVIS_PULL_REQUEST}" = false ]; then
         # This is a push build
         # Fetch and checkout the commit being tested
         git fetch origin "${TRAVIS_COMMIT}"
         git checkout -qf "${TRAVIS_COMMIT}"
+      else
+        # This is a PR build
+        # Simulate fetching +refs/pull/{num}/merge
+        git fetch origin "+refs/pull/${TRAVIS_PULL_REQUEST}/head" --depth 1
+        git cherry-pick --strategy=recursive -X theirs --keep-redundant-commits FETCH_HEAD
       fi
 cache:
   directories:
