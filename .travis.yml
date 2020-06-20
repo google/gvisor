@@ -17,6 +17,7 @@ before_install:
         git config --global user.name "$(git log -1 FETCH_HEAD --pretty="%aN")"
         git cherry-pick --strategy=recursive -X theirs --keep-redundant-commits FETCH_HEAD
       fi
+
 cache:
   directories:
     - /home/travis/.cache/bazel/
