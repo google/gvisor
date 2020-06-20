@@ -7,16 +7,14 @@ before_install:
     - cd "${TRAVIS_REPO_SLUG}"
     - |
       if [ "${TRAVIS_PULL_REQUEST}" = false ]; then
-        # This is a push build
-        # Fetch and checkout the commit being tested
+        # This is not a PR build, fetch and checkout the commit being tested
         git fetch origin "${TRAVIS_COMMIT}"
         git checkout -qf "${TRAVIS_COMMIT}"
       else
-        # This is a PR build
-        # Simulate fetching +refs/pull/{num}/merge
+        # This is a PR build, simulate fetching +refs/pull/{num}/merge
         git fetch origin "+refs/pull/${TRAVIS_PULL_REQUEST}/head" --depth 1
-        export GIT_AUTHOR_EMAIL="$(git log -1 FETCH_HEAD --pretty="%cE")"
-        export GIT_AUTHOR_NAME="$(git log -1 FETCH_HEAD --pretty="%aN")"
+        git config --global user.email "$(git log -1 FETCH_HEAD --pretty="%cE")"
+        git config --global user.name "$(git log -1 FETCH_HEAD --pretty="%aN")"
         git cherry-pick --strategy=recursive -X theirs --keep-redundant-commits FETCH_HEAD
       fi
 cache:
