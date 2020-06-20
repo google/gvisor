@@ -240,6 +240,7 @@ syscall_test(
 syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:fsync_test",
+    vfs2 = "True",
 )
 
 syscall_test(
@@ -262,6 +263,7 @@ syscall_test(
 syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:getdents_test",
+    vfs2 = "True",
 )
 
 syscall_test(
@@ -1091,6 +1093,7 @@ syscall_test(
 
 syscall_test(
     test = "//test/syscalls/linux:proc_net_unix_test",
+    vfs2 = "True",
 )
 
 syscall_test(
