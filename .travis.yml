@@ -3,15 +3,19 @@ dist: xenial
 git:
   clone: false  # Clone manually in before_install
 before_install:
-    - git clone -q "https://github.com/${TRAVIS_REPO_SLUG}.git" "${TRAVIS_REPO_SLUG}" --depth 5
-    - cd "${TRAVIS_REPO_SLUG}"
     - |
       if [ "${TRAVIS_PULL_REQUEST}" = false ]; then
         # This is not a PR build, fetch and checkout the commit being tested
+        git clone -q  --depth 1 "https://github.com/${TRAVIS_REPO_SLUG}.git" "${TRAVIS_REPO_SLUG}"
+        cd "${TRAVIS_REPO_SLUG}"
         git fetch origin "${TRAVIS_COMMIT}"
         git checkout -qf "${TRAVIS_COMMIT}"
       else
-        # This is a PR build, simulate fetching +refs/pull/{num}/merge
+        # This is a PR build, simulate +refs/pull/{num}/merge.
+        # We can do that by fetching +refs/pull/{num}/head and cherry picking it
+        # onto the target branch.
+        git clone -q --single-branch --branch "${TRAVIS_BRANCH}" --depth 5 "https://github.com/${TRAVIS_REPO_SLUG}.git" "${TRAVIS_REPO_SLUG}"
+        cd "${TRAVIS_REPO_SLUG}"
         git fetch origin "+refs/pull/${TRAVIS_PULL_REQUEST}/head" --depth 1
         git config --global user.email "$(git log -1 FETCH_HEAD --pretty="%cE")"
         git config --global user.name "$(git log -1 FETCH_HEAD --pretty="%aN")"
