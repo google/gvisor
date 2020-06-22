@@ -1206,7 +1206,7 @@ func (d *dentry) setDeleted() {
 // We only support xattrs prefixed with "user." (see b/148380782). Currently,
 // there is no need to expose any other xattrs through a gofer.
 func (d *dentry) listxattr(ctx context.Context, creds *auth.Credentials, size uint64) ([]string, error) {
-	if d.file.isNil() {
+	if d.file.isNil() || !d.userXattrSupported() {
 		return nil, nil
 	}
 	xattrMap, err := d.file.listXattr(ctx, size)
@@ -1232,6 +1232,9 @@ func (d *dentry) getxattr(ctx context.Context, creds *auth.Credentials, opts *vf
 	if !strings.HasPrefix(opts.Name, linux.XATTR_USER_PREFIX) {
 		return "", syserror.EOPNOTSUPP
 	}
+	if !d.userXattrSupported() {
+		return "", syserror.ENODATA
+	}
 	return d.file.getXattr(ctx, opts.Name, opts.Size)
 }
 
@@ -1244,6 +1247,9 @@ func (d *dentry) setxattr(ctx context.Context, creds *auth.Credentials, opts *vf
 	}
 	if !strings.HasPrefix(opts.Name, linux.XATTR_USER_PREFIX) {
 		return syserror.EOPNOTSUPP
+	}
+	if !d.userXattrSupported() {
+		return syserror.EPERM
 	}
 	return d.file.setXattr(ctx, opts.Name, opts.Value, opts.Flags)
 }
@@ -1258,7 +1264,17 @@ func (d *dentry) removexattr(ctx context.Context, creds *auth.Credentials, name 
 	if !strings.HasPrefix(name, linux.XATTR_USER_PREFIX) {
 		return syserror.EOPNOTSUPP
 	}
+	if !d.userXattrSupported() {
+		return syserror.EPERM
+	}
 	return d.file.removeXattr(ctx, name)
+}
+
+// Extended attributes in the user.* namespace are only supported for regular
+// files and directories.
+func (d *dentry) userXattrSupported() bool {
+	filetype := linux.S_IFMT & atomic.LoadUint32(&d.mode)
+	return filetype == linux.S_IFREG || filetype == linux.S_IFDIR
 }
 
 // Preconditions: !d.isSynthetic(). d.isRegularFile() || d.isDirectory().
