@@ -181,6 +181,7 @@ syscall_test(
     size = "medium",
     add_overlay = True,
     test = "//test/syscalls/linux:exec_binary_test",
+    vfs2 = "True",
 )
 
 syscall_test(

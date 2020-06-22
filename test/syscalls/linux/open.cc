@@ -439,6 +439,12 @@ TEST_F(OpenTest, CanTruncateWithStrangePermissions) {
   EXPECT_THAT(close(fd), SyscallSucceeds());
 }
 
+TEST_F(OpenTest, OpenNonDirectoryWithTrailingSlash) {
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const std::string bad_path = file.path() + "/";
+  EXPECT_THAT(open(bad_path.c_str(), O_RDONLY), SyscallFailsWithErrno(ENOTDIR));
+}
+
 }  // namespace
 
 }  // namespace testing
