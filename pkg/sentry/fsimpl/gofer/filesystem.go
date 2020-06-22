@@ -767,15 +767,17 @@ afterTrailingSymlink:
 		parent.dirMu.Unlock()
 		return fd, err
 	}
+	parent.dirMu.Unlock()
 	if err != nil {
-		parent.dirMu.Unlock()
 		return nil, err
 	}
-	// Open existing child or follow symlink.
-	parent.dirMu.Unlock()
 	if mustCreate {
 		return nil, syserror.EEXIST
 	}
+	if !child.isDir() && rp.MustBeDir() {
+		return nil, syserror.ENOTDIR
+	}
+	// Open existing child or follow symlink.
 	if child.isSymlink() && rp.ShouldFollowSymlink() {
 		target, err := child.readlink(ctx, rp.Mount())
 		if err != nil {
