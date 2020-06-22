@@ -1967,6 +1967,17 @@ void CheckDuplicatesRecursively(std::string path) {
       errno = 0;
       struct dirent* dp = readdir(dir);
       if (dp == nullptr) {
+        // Linux will return EINVAL when calling getdents on a /proc/tid/net
+        // file corresponding to a zombie task.
+        // See fs/proc/proc_net.c:proc_tgid_net_readdir().
+        //
+        // We just ignore the directory in this case.
+        if (errno == EINVAL && absl::StartsWith(path, "/proc/") &&
+            absl::EndsWith(path, "/net")) {
+          break;
+        }
+
+        // Otherwise, no errors are allowed.
         ASSERT_EQ(errno, 0) << path;
         break;  // We're done.
       }
