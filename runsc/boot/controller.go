@@ -22,6 +22,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/control/server"
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -373,6 +374,9 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		// installing seccomp filters.
 		pprof.Initialize()
 	}
+
+	// Wait for pre-filter initialization.
+	cpuid.WaitForInit()
 
 	// Seccomp filters have to be applied before parsing the state file.
 	if err := cm.l.installSeccompFilters(); err != nil {

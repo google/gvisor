@@ -312,6 +312,10 @@ func HostFeatureSet() *FeatureSet {
 	}
 }
 
+// InitWait does nothing.
+func InitWait() {
+}
+
 // Reads bogomips from host /proc/cpuinfo. Must run before syscall filter
 // installation. This value is used to create the fake /proc/cpuinfo from a
 // FeatureSet.

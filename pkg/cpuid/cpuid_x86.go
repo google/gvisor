@@ -22,6 +22,7 @@ import (
 	"io/ioutil"
 	"strconv"
 	"strings"
+	"sync"
 
 	"gvisor.dev/gvisor/pkg/log"
 )
@@ -554,8 +555,6 @@ const (
 	XSAVEFeaturePKRU        = 1 << 9
 )
 
-var cpuFreqMHz float64
-
 // x86FeaturesFromString includes features from x86FeatureStrings and
 // x86FeatureParseOnlyStrings.
 var x86FeaturesFromString = make(map[string]Feature)
@@ -652,13 +651,13 @@ func (fs FeatureSet) WriteCPUInfoTo(cpu uint, b *bytes.Buffer) {
 	fmt.Fprintf(b, "model\t\t: %d\n", ((fs.ExtendedModel<<4)&0xff)|fs.Model)
 	fmt.Fprintf(b, "model name\t: %s\n", "unknown") // Unknown for now.
 	fmt.Fprintf(b, "stepping\t: %s\n", "unknown")   // Unknown for now.
-	fmt.Fprintf(b, "cpu MHz\t\t: %.3f\n", cpuFreqMHz)
+	fmt.Fprintf(b, "cpu MHz\t\t: %.3f\n", getCPUFreqMHz())
 	fmt.Fprintln(b, "fpu\t\t: yes")
 	fmt.Fprintln(b, "fpu_exception\t: yes")
 	fmt.Fprintf(b, "cpuid level\t: %d\n", uint32(xSaveInfo)) // Same as ax in vendorID.
 	fmt.Fprintln(b, "wp\t\t: yes")
 	fmt.Fprintf(b, "flags\t\t: %s\n", fs.FlagsString(true))
-	fmt.Fprintf(b, "bogomips\t: %.02f\n", cpuFreqMHz) // It's bogus anyway.
+	fmt.Fprintf(b, "bogomips\t: %.02f\n", getCPUFreqMHz()) // It's bogus anyway.
 	fmt.Fprintf(b, "clflush size\t: %d\n", fs.CacheLine)
 	fmt.Fprintf(b, "cache_alignment\t: %d\n", fs.CacheLine)
 	fmt.Fprintf(b, "address sizes\t: %d bits physical, %d bits virtual\n", 46, 48)
@@ -1057,43 +1056,59 @@ func HostFeatureSet() *FeatureSet {
 	}
 }
 
-// Reads max cpu frequency from host /proc/cpuinfo. Must run before syscall
-// filter installation. This value is used to create the fake /proc/cpuinfo
-// from a FeatureSet.
-func initCPUFreq() {
-	cpuinfob, err := ioutil.ReadFile("/proc/cpuinfo")
-	if err != nil {
-		// Leave it as 0... The standalone VDSO bails out in the same
-		// way.
-		log.Warningf("Could not read /proc/cpuinfo: %v", err)
-		return
-	}
-	cpuinfo := string(cpuinfob)
+var (
+	cpuFreqOnce sync.Once
+	cpuFreqMHz  float64
+)
 
-	// We get the value straight from host /proc/cpuinfo. On machines with
-	// frequency scaling enabled, this will only get the current value
-	// which will likely be inaccurate. This is fine on machines with
-	// frequency scaling disabled.
-	for _, line := range strings.Split(cpuinfo, "\n") {
-		if strings.Contains(line, "cpu MHz") {
-			splitMHz := strings.Split(line, ":")
-			if len(splitMHz) < 2 {
-				log.Warningf("Could not read /proc/cpuinfo: malformed cpu MHz line")
-				return
-			}
-
-			// If there was a problem, leave cpuFreqMHz as 0.
-			var err error
-			cpuFreqMHz, err = strconv.ParseFloat(strings.TrimSpace(splitMHz[1]), 64)
-			if err != nil {
-				log.Warningf("Could not parse cpu MHz value %v: %v", splitMHz[1], err)
-				cpuFreqMHz = 0
-				return
-			}
+// Returns max cpu frequency from host /proc/cpuinfo.
+//
+// First call must complete before syscall filter installation. Call InitWait
+// to wait for completion.
+func getCPUFreqMHz() float64 {
+	cpuFreqOnce.Do(func() {
+		// We get the value straight from host /proc/cpuinfo. On
+		// machines with frequency scaling enabled, this will only get
+		// the current value which will likely be inaccurate. This is
+		// fine on machines with frequency scaling disabled.
+		cpuinfob, err := ioutil.ReadFile("/proc/cpuinfo")
+		if err != nil {
+			// Leave it as 0... The standalone VDSO bails out in the same
+			// way.
+			log.Warningf("Could not read /proc/cpuinfo: %v", err)
 			return
 		}
-	}
-	log.Warningf("Could not parse /proc/cpuinfo, it is empty or does not contain cpu MHz")
+		cpuinfo := string(cpuinfob)
+
+		for _, line := range strings.Split(cpuinfo, "\n") {
+			if strings.Contains(line, "cpu MHz") {
+				splitMHz := strings.Split(line, ":")
+				if len(splitMHz) < 2 {
+					log.Warningf("Could not read /proc/cpuinfo: malformed cpu MHz line")
+					return
+				}
+
+				// If there was a problem, leave cpuFreqMHz as 0.
+				var err error
+				cpuFreqMHz, err = strconv.ParseFloat(strings.TrimSpace(splitMHz[1]), 64)
+				if err != nil {
+					log.Warningf("Could not parse cpu MHz value %v: %v", splitMHz[1], err)
+					cpuFreqMHz = 0
+					return
+				}
+				return
+			}
+		}
+		log.Warningf("Could not parse /proc/cpuinfo, it is empty or does not contain cpu MHz")
+	})
+	return cpuFreqMHz
+}
+
+// WaitForInit waits for completion of all initialization that requires file
+// access.
+func WaitForInit() {
+	// Ensure sync.Once completes.
+	getCPUFreqMHz()
 }
 
 func initFeaturesFromString() {
@@ -1106,6 +1121,12 @@ func initFeaturesFromString() {
 }
 
 func init() {
-	initCPUFreq()
+	// Asynchronously start reading /proc/cpuinfo, as it typically takes
+	// >10ms due to a sleep in open(/proc/cpuinfo) (see
+	// arch/x86/kernel/cpu/aperfmperf.c:arch_freq_prepare_all).
+	//
+	// Call WaitForInit to explicitly wait for this to complete.
+	go getCPUFreqMHz()
+
 	initFeaturesFromString()
 }
