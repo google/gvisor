@@ -46,6 +46,18 @@ type userRegs struct {
 	fpRegs  userFpsimdState
 }
 
+type exception struct {
+	sErrPending uint8
+	sErrHasEsr  uint8
+	pad         [6]uint8
+	sErrEsr     uint64
+}
+
+type kvmVcpuEvents struct {
+	exception
+	rsvd [12]uint32
+}
+
 // updateGlobalOnce does global initialization. It has to be called only once.
 func updateGlobalOnce(fd int) error {
 	physicalInit()
