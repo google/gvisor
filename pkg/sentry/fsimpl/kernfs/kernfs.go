@@ -228,7 +228,7 @@ func (d *Dentry) destroy() {
 // InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
 //
 // TODO(gvisor.dev/issue/1479): Implement inotify.
-func (d *Dentry) InotifyWithParent(events uint32, cookie uint32, et vfs.EventType) {}
+func (d *Dentry) InotifyWithParent(events, cookie uint32, et vfs.EventType) {}
 
 // Watches implements vfs.DentryImpl.Watches.
 //
@@ -236,6 +236,11 @@ func (d *Dentry) InotifyWithParent(events uint32, cookie uint32, et vfs.EventTyp
 func (d *Dentry) Watches() *vfs.Watches {
 	return nil
 }
+
+// OnZeroWatches implements vfs.Dentry.OnZeroWatches.
+//
+// TODO(gvisor.dev/issue/1479): Implement inotify.
+func (d *Dentry) OnZeroWatches() {}
 
 // InsertChild inserts child into the vfs dentry cache with the given name under
 // this dentry. This does not update the directory inode, so calling this on

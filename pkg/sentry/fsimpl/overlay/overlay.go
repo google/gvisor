@@ -528,6 +528,11 @@ func (d *dentry) Watches() *vfs.Watches {
 	return nil
 }
 
+// OnZeroWatches implements vfs.DentryImpl.OnZeroWatches.
+//
+// TODO(gvisor.dev/issue/1479): Implement inotify.
+func (d *dentry) OnZeroWatches() {}
+
 // iterLayers invokes yield on each layer comprising d, from top to bottom. If
 // any call to yield returns false, iterLayer stops iteration.
 func (d *dentry) iterLayers(yield func(vd vfs.VirtualDentry, isUpper bool) bool) {
