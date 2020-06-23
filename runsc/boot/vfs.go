@@ -80,9 +80,10 @@ func registerFilesystems(ctx context.Context, vfsObj *vfs.VirtualFilesystem, cre
 	}
 	if err := ttydev.Register(vfsObj); err != nil {
 		return fmt.Errorf("registering ttydev: %w", err)
+	}
 
 	if err := fuse.Register(vfsObj); err != nil {
-		return fmt.Errorf("registering /dev/fuse: %w", err)
+		return fmt.Errorf("registering fusedev: %w", err)
 	}
 	if err := tundev.Register(vfsObj); err != nil {
 		return fmt.Errorf("registering tundev: %v", err)
@@ -106,7 +107,7 @@ func registerFilesystems(ctx context.Context, vfsObj *vfs.VirtualFilesystem, cre
 		return fmt.Errorf("creating tundev devtmpfs files: %v", err)
 	}
 	if err := fuse.CreateDevtmpfsFile(ctx, a); err != nil {
-		return fmt.Errorf("creating devtmpfs fuse device file: %w", err)
+		return fmt.Errorf("creating fusedev devtmpfs files: %w", err)
 	}
 	return nil
 }
