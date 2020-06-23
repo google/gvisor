@@ -462,7 +462,8 @@ func (i *inode) open(ctx context.Context, d *vfs.Dentry, mnt *vfs.Mount, flags u
 	// TODO(gvisor.dev/issue/1672): implement behavior corresponding to these allowed flags.
 	flags &= syscall.O_ACCMODE | syscall.O_DIRECT | syscall.O_NONBLOCK | syscall.O_DSYNC | syscall.O_SYNC | syscall.O_APPEND
 
-	if fileType == syscall.S_IFSOCK {
+	switch fileType {
+	case syscall.S_IFSOCK:
 		if i.isTTY {
 			log.Warningf("cannot use host socket fd %d as TTY", i.hostFD)
 			return nil, syserror.ENOTTY
@@ -474,31 +475,33 @@ func (i *inode) open(ctx context.Context, d *vfs.Dentry, mnt *vfs.Mount, flags u
 		}
 		// Currently, we only allow Unix sockets to be imported.
 		return unixsocket.NewFileDescription(ep, ep.Type(), flags, mnt, d, &i.locks)
-	}
 
-	// TODO(gvisor.dev/issue/1672): Allow only specific file types here, so
-	// that we don't allow importing arbitrary file types without proper
-	// support.
-	if i.isTTY {
-		fd := &TTYFileDescription{
-			fileDescription: fileDescription{inode: i},
-			termios:         linux.DefaultSlaveTermios,
+	case syscall.S_IFREG, syscall.S_IFIFO, syscall.S_IFCHR:
+		if i.isTTY {
+			fd := &TTYFileDescription{
+				fileDescription: fileDescription{inode: i},
+				termios:         linux.DefaultSlaveTermios,
+			}
+			fd.LockFD.Init(&i.locks)
+			vfsfd := &fd.vfsfd
+			if err := vfsfd.Init(fd, flags, mnt, d, &vfs.FileDescriptionOptions{}); err != nil {
+				return nil, err
+			}
+			return vfsfd, nil
 		}
+
+		fd := &fileDescription{inode: i}
 		fd.LockFD.Init(&i.locks)
 		vfsfd := &fd.vfsfd
 		if err := vfsfd.Init(fd, flags, mnt, d, &vfs.FileDescriptionOptions{}); err != nil {
 			return nil, err
 		}
 		return vfsfd, nil
-	}
 
-	fd := &fileDescription{inode: i}
-	fd.LockFD.Init(&i.locks)
-	vfsfd := &fd.vfsfd
-	if err := vfsfd.Init(fd, flags, mnt, d, &vfs.FileDescriptionOptions{}); err != nil {
-		return nil, err
+	default:
+		log.Warningf("cannot import host fd %d with file type %o", i.hostFD, fileType)
+		return nil, syserror.EPERM
 	}
-	return vfsfd, nil
 }
 
 // fileDescription is embedded by host fd implementations of FileDescriptionImpl.
