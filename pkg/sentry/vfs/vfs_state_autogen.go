@@ -170,7 +170,7 @@ func (x *Watch) save(m state.Map) {
 	x.beforeSave()
 	m.Save("owner", &x.owner)
 	m.Save("wd", &x.wd)
-	m.Save("set", &x.set)
+	m.Save("target", &x.target)
 	m.Save("mask", &x.mask)
 }
 
@@ -178,7 +178,7 @@ func (x *Watch) afterLoad() {}
 func (x *Watch) load(m state.Map) {
 	m.Load("owner", &x.owner)
 	m.Load("wd", &x.wd)
-	m.Load("set", &x.set)
+	m.Load("target", &x.target)
 	m.Load("mask", &x.mask)
 }
 

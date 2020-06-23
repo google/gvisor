@@ -116,8 +116,11 @@ func InotifyAddWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kern
 	}
 	defer d.DecRef()
 
-	fd = ino.AddWatch(d.Dentry(), mask)
-	return uintptr(fd), nil, err
+	fd, err = ino.AddWatch(d.Dentry(), mask)
+	if err != nil {
+		return 0, nil, err
+	}
+	return uintptr(fd), nil, nil
 }
 
 // InotifyRmWatch implements the inotify_rm_watch() syscall.

@@ -138,6 +138,7 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 		fd.dirents = ds
 	}
 
+	d.InotifyWithParent(linux.IN_ACCESS, 0, vfs.PathEvent)
 	if d.cachedMetadataAuthoritative() {
 		d.touchAtime(fd.vfsfd.Mount())
 	}

@@ -638,14 +638,16 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 // SetStatAt implements vfs.FilesystemImpl.SetStatAt.
 func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetStatOptions) error {
 	fs.mu.RLock()
-	defer fs.mu.RUnlock()
 	d, err := resolveLocked(rp)
 	if err != nil {
+		fs.mu.RUnlock()
 		return err
 	}
 	if err := d.inode.setStat(ctx, rp.Credentials(), &opts.Stat); err != nil {
+		fs.mu.RUnlock()
 		return err
 	}
+	fs.mu.RUnlock()
 
 	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
 		d.InotifyWithParent(ev, 0, vfs.InodeEvent)
@@ -788,14 +790,16 @@ func (fs *filesystem) GetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 // SetxattrAt implements vfs.FilesystemImpl.SetxattrAt.
 func (fs *filesystem) SetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetxattrOptions) error {
 	fs.mu.RLock()
-	defer fs.mu.RUnlock()
 	d, err := resolveLocked(rp)
 	if err != nil {
+		fs.mu.RUnlock()
 		return err
 	}
 	if err := d.inode.setxattr(rp.Credentials(), &opts); err != nil {
+		fs.mu.RUnlock()
 		return err
 	}
+	fs.mu.RUnlock()
 
 	d.InotifyWithParent(linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	return nil
@@ -804,14 +808,16 @@ func (fs *filesystem) SetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 // RemovexattrAt implements vfs.FilesystemImpl.RemovexattrAt.
 func (fs *filesystem) RemovexattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) error {
 	fs.mu.RLock()
-	defer fs.mu.RUnlock()
 	d, err := resolveLocked(rp)
 	if err != nil {
+		fs.mu.RUnlock()
 		return err
 	}
 	if err := d.inode.removexattr(rp.Credentials(), name); err != nil {
+		fs.mu.RUnlock()
 		return err
 	}
+	fs.mu.RUnlock()
 
 	d.InotifyWithParent(linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	return nil
