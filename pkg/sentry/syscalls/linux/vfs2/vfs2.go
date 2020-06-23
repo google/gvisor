@@ -92,7 +92,7 @@ func Override() {
 	s.Table[162] = syscalls.Supported("sync", Sync)
 	s.Table[165] = syscalls.Supported("mount", Mount)
 	s.Table[166] = syscalls.Supported("umount2", Umount2)
-	delete(s.Table, 187) // readahead
+	s.Table[187] = syscalls.Supported("readahead", Readahead)
 	s.Table[188] = syscalls.Supported("setxattr", Setxattr)
 	s.Table[189] = syscalls.Supported("lsetxattr", Lsetxattr)
 	s.Table[190] = syscalls.Supported("fsetxattr", Fsetxattr)

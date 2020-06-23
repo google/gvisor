@@ -606,3 +606,36 @@ func Lseek(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	newoff, err := file.Seek(t, offset, whence)
 	return uintptr(newoff), nil, err
 }
+
+// Readahead implements readahead(2).
+func Readahead(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
+	offset := args[1].Int64()
+	size := args[2].SizeT()
+
+	file := t.GetFileVFS2(fd)
+	if file == nil {
+		return 0, nil, syserror.EBADF
+	}
+	defer file.DecRef()
+
+	// Check that the file is readable.
+	if !file.IsReadable() {
+		return 0, nil, syserror.EBADF
+	}
+
+	// Check that the size is valid.
+	if int(size) < 0 {
+		return 0, nil, syserror.EINVAL
+	}
+
+	// Check that the offset is legitimate and does not overflow.
+	if offset < 0 || offset+int64(size) < 0 {
+		return 0, nil, syserror.EINVAL
+	}
+
+	// Return EINVAL; if the underlying file type does not support readahead,
+	// then Linux will return EINVAL to indicate as much. In the future, we
+	// may extend this function to actually support readahead hints.
+	return 0, nil, syserror.EINVAL
+}
