@@ -133,12 +133,12 @@ func bluepillHandler(context unsafe.Pointer) {
 			// PIC, we can't inject an interrupt while they are
 			// masked. We need to request a window if it's not
 			// ready.
-			if c.runData.readyForInterruptInjection == 0 {
-				c.runData.requestInterruptWindow = 1
-				continue // Rerun vCPU.
-			} else {
+			if bluepillReadyStopGuest(c) {
 				// Force injection below; the vCPU is ready.
 				c.runData.exitReason = _KVM_EXIT_IRQ_WINDOW_OPEN
+			} else {
+				c.runData.requestInterruptWindow = 1
+				continue // Rerun vCPU.
 			}
 		case syscall.EFAULT:
 			// If a fault is not serviceable due to the host
@@ -217,17 +217,7 @@ func bluepillHandler(context unsafe.Pointer) {
 				}
 			}
 		case _KVM_EXIT_IRQ_WINDOW_OPEN:
-			// Interrupt: we must have requested an interrupt
-			// window; set the interrupt line.
-			if _, _, errno := syscall.RawSyscall(
-				syscall.SYS_IOCTL,
-				uintptr(c.fd),
-				_KVM_INTERRUPT,
-				uintptr(unsafe.Pointer(&bounce))); errno != 0 {
-				throw("interrupt injection failed")
-			}
-			// Clear previous injection request.
-			c.runData.requestInterruptWindow = 0
+			bluepillStopGuest(c)
 		case _KVM_EXIT_SHUTDOWN:
 			c.die(bluepillArchContext(context), "shutdown")
 			return

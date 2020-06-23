@@ -17,6 +17,7 @@
 package kvm
 
 import (
+	"syscall"
 	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -73,4 +74,24 @@ func getHypercallID(addr uintptr) int {
 	} else {
 		return int(((addr) - arm64HypercallMMIOBase) >> 3)
 	}
+}
+
+// bluepillStopGuest is reponsible for injecting sError.
+//
+//go:nosplit
+func bluepillStopGuest(c *vCPU) {
+	if _, _, errno := syscall.RawSyscall(
+		syscall.SYS_IOCTL,
+		uintptr(c.fd),
+		_KVM_SET_VCPU_EVENTS,
+		uintptr(unsafe.Pointer(&vcpuSErr))); errno != 0 {
+		throw("sErr injection failed")
+	}
+}
+
+// bluepillReadyStopGuest checks whether the current vCPU is ready for sError injection.
+//
+//go:nosplit
+func bluepillReadyStopGuest(c *vCPU) bool {
+	return true
 }
