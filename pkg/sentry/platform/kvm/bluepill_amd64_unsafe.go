@@ -17,6 +17,7 @@
 package kvm
 
 import (
+	"syscall"
 	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -59,4 +60,28 @@ func dieArchSetup(c *vCPU, context *arch.SignalContext64, guestRegs *userRegs) {
 //go:nosplit
 func getHypercallID(addr uintptr) int {
 	return _KVM_HYPERCALL_MAX
+}
+
+// bluepillStopGuest is reponsible for injecting interrupt.
+//
+//go:nosplit
+func bluepillStopGuest(c *vCPU) {
+	// Interrupt: we must have requested an interrupt
+	// window; set the interrupt line.
+	if _, _, errno := syscall.RawSyscall(
+		syscall.SYS_IOCTL,
+		uintptr(c.fd),
+		_KVM_INTERRUPT,
+		uintptr(unsafe.Pointer(&bounce))); errno != 0 {
+		throw("interrupt injection failed")
+	}
+	// Clear previous injection request.
+	c.runData.requestInterruptWindow = 0
+}
+
+// bluepillReadyStopGuest checks whether the current vCPU is ready for interrupt injection.
+//
+//go:nosplit
+func bluepillReadyStopGuest(c *vCPU) bool {
+	return c.runData.readyForInterruptInjection != 0
 }

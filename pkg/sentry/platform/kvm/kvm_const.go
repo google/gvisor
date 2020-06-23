@@ -35,6 +35,8 @@ const (
 	_KVM_GET_SUPPORTED_CPUID    = 0xc008ae05
 	_KVM_SET_CPUID2             = 0x4008ae90
 	_KVM_SET_SIGNAL_MASK        = 0x4004ae8b
+	_KVM_GET_VCPU_EVENTS        = 0x8040ae9f
+	_KVM_SET_VCPU_EVENTS        = 0x4040aea0
 )
 
 // KVM exit reasons.
@@ -54,8 +56,10 @@ const (
 
 // KVM capability options.
 const (
-	_KVM_CAP_MAX_VCPUS       = 0x42
-	_KVM_CAP_ARM_VM_IPA_SIZE = 0xa5
+	_KVM_CAP_MAX_VCPUS             = 0x42
+	_KVM_CAP_ARM_VM_IPA_SIZE       = 0xa5
+	_KVM_CAP_VCPU_EVENTS           = 0x29
+	_KVM_CAP_ARM_INJECT_SERROR_ESR = 0x9e
 )
 
 // KVM limits.
