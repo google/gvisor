@@ -1998,8 +1998,6 @@ void CheckDuplicatesRecursively(std::string path) {
       }
       children.insert(std::string(dp->d_name));
 
-      ASSERT_NE(dp->d_type, DT_UNKNOWN);
-
       if (dp->d_type == DT_DIR) {
         child_dirs.push_back(std::string(dp->d_name));
       }
