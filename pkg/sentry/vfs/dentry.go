@@ -113,12 +113,29 @@ type DentryImpl interface {
 	//
 	// Note that the events may not actually propagate up to the user, depending
 	// on the event masks.
-	InotifyWithParent(events uint32, cookie uint32, et EventType)
+	InotifyWithParent(events, cookie uint32, et EventType)
 
 	// Watches returns the set of inotify watches for the file corresponding to
 	// the Dentry. Dentries that are hard links to the same underlying file
 	// share the same watches.
+	//
+	// Watches may return nil if the dentry belongs to a FilesystemImpl that
+	// does not support inotify. If an implementation returns a non-nil watch
+	// set, it must always return a non-nil watch set. Likewise, if an
+	// implementation returns a nil watch set, it must always return a nil watch
+	// set.
+	//
+	// The caller does not need to hold a reference on the dentry.
 	Watches() *Watches
+
+	// OnZeroWatches is called whenever the number of watches on a dentry drops
+	// to zero. This is needed by some FilesystemImpls (e.g. gofer) to manage
+	// dentry lifetime.
+	//
+	// The caller does not need to hold a reference on the dentry. OnZeroWatches
+	// may acquire inotify locks, so to prevent deadlock, no inotify locks should
+	// be held by the caller.
+	OnZeroWatches()
 }
 
 // IncRef increments d's reference count.
@@ -149,15 +166,24 @@ func (d *Dentry) isMounted() bool {
 	return atomic.LoadUint32(&d.mounts) != 0
 }
 
-// InotifyWithParent notifies all watches on the inodes for this dentry and
+// InotifyWithParent notifies all watches on the targets represented by d and
 // its parent of events.
-func (d *Dentry) InotifyWithParent(events uint32, cookie uint32, et EventType) {
+func (d *Dentry) InotifyWithParent(events, cookie uint32, et EventType) {
 	d.impl.InotifyWithParent(events, cookie, et)
 }
 
 // Watches returns the set of inotify watches associated with d.
+//
+// Watches will return nil if d belongs to a FilesystemImpl that does not
+// support inotify.
 func (d *Dentry) Watches() *Watches {
 	return d.impl.Watches()
+}
+
+// OnZeroWatches performs cleanup tasks whenever the number of watches on a
+// dentry drops to zero.
+func (d *Dentry) OnZeroWatches() {
+	d.impl.OnZeroWatches()
 }
 
 // The following functions are exported so that filesystem implementations can

@@ -63,12 +63,17 @@ func (d *dentry) DecRef() {
 
 // InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
 //
-// TODO(gvisor.dev/issue/1479): Implement inotify.
-func (d *dentry) InotifyWithParent(events uint32, cookie uint32, et vfs.EventType) {}
+// TODO(b/134676337): Implement inotify.
+func (d *dentry) InotifyWithParent(events, cookie uint32, et vfs.EventType) {}
 
 // Watches implements vfs.DentryImpl.Watches.
 //
-// TODO(gvisor.dev/issue/1479): Implement inotify.
+// TODO(b/134676337): Implement inotify.
 func (d *dentry) Watches() *vfs.Watches {
 	return nil
 }
+
+// OnZeroWatches implements vfs.Dentry.OnZeroWatches.
+//
+// TODO(b/134676337): Implement inotify.
+func (d *dentry) OnZeroWatches() {}
