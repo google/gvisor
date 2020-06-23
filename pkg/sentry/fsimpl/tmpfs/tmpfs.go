@@ -215,11 +215,6 @@ type dentry struct {
 	// filesystem.mu.
 	name string
 
-	// unlinked indicates whether this dentry has been unlinked from its parent.
-	// It is only set to true on an unlink operation, and never set from true to
-	// false. unlinked is protected by filesystem.mu.
-	unlinked bool
-
 	// dentryEntry (ugh) links dentries into their parent directory.childList.
 	dentryEntry
 
@@ -259,24 +254,29 @@ func (d *dentry) DecRef() {
 }
 
 // InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
-func (d *dentry) InotifyWithParent(events uint32, cookie uint32, et vfs.EventType) {
+func (d *dentry) InotifyWithParent(events, cookie uint32, et vfs.EventType) {
 	if d.inode.isDir() {
 		events |= linux.IN_ISDIR
 	}
 
+	d.inode.fs.mu.RLock()
 	// The ordering below is important, Linux always notifies the parent first.
 	if d.parent != nil {
-		// Note that d.parent or d.name may be stale if there is a concurrent
-		// rename operation. Inotify does not provide consistency guarantees.
-		d.parent.inode.watches.NotifyWithExclusions(d.name, events, cookie, et, d.unlinked)
+		// tmpfs never calls VFS.InvalidateDentry(), so d.vfsd.IsDead() indicates
+		// that d was deleted.
+		d.parent.inode.watches.NotifyWithExclusions(d.name, events, cookie, et, d.vfsd.IsDead())
 	}
 	d.inode.watches.Notify("", events, cookie, et)
+	d.inode.fs.mu.RUnlock()
 }
 
 // Watches implements vfs.DentryImpl.Watches.
 func (d *dentry) Watches() *vfs.Watches {
 	return &d.inode.watches
 }
+
+// OnZeroWatches implements vfs.Dentry.OnZeroWatches.
+func (d *dentry) OnZeroWatches() {}
 
 // inode represents a filesystem object.
 type inode struct {
@@ -336,7 +336,6 @@ func (i *inode) init(impl interface{}, fs *filesystem, kuid auth.KUID, kgid auth
 	i.ctime = now
 	i.mtime = now
 	// i.nlink initialized by caller
-	i.watches = vfs.Watches{}
 	i.impl = impl
 }
 
