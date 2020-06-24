@@ -375,7 +375,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 		if dir {
 			ev |= linux.IN_ISDIR
 		}
-		parent.watches.Notify(name, uint32(ev), 0, vfs.InodeEvent)
+		parent.watches.Notify(name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
 		return nil
 	}
 	if fs.opts.interop == InteropModeShared {
@@ -409,7 +409,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	if dir {
 		ev |= linux.IN_ISDIR
 	}
-	parent.watches.Notify(name, uint32(ev), 0, vfs.InodeEvent)
+	parent.watches.Notify(name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
 	return nil
 }
 
@@ -543,7 +543,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 
 	// Generate inotify events for rmdir or unlink.
 	if dir {
-		parent.watches.Notify(name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent)
+		parent.watches.Notify(name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
 	} else {
 		var cw *vfs.Watches
 		if child != nil {
@@ -1040,7 +1040,7 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 		}
 		childVFSFD = &fd.vfsfd
 	}
-	d.watches.Notify(name, linux.IN_CREATE, 0, vfs.PathEvent)
+	d.watches.Notify(name, linux.IN_CREATE, 0, vfs.PathEvent, false /* unlinked */)
 	return childVFSFD, nil
 }
 

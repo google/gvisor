@@ -467,21 +467,16 @@ func (w *Watches) Remove(id uint64) {
 	delete(w.ws, id)
 }
 
-// Notify queues a new event with all watches in this set.
-func (w *Watches) Notify(name string, events, cookie uint32, et EventType) {
-	w.NotifyWithExclusions(name, events, cookie, et, false)
-}
-
-// NotifyWithExclusions queues a new event with watches in this set. Watches
-// with IN_EXCL_UNLINK are skipped if the event is coming from a child that
-// has been unlinked.
-func (w *Watches) NotifyWithExclusions(name string, events, cookie uint32, et EventType, unlinked bool) {
+// Notify queues a new event with watches in this set. Watches with
+// IN_EXCL_UNLINK are skipped if the event is coming from a child that has been
+// unlinked.
+func (w *Watches) Notify(name string, events, cookie uint32, et EventType, unlinked bool) {
 	// N.B. We don't defer the unlocks because Notify is in the hot path of
 	// all IO operations, and the defer costs too much for small IO
 	// operations.
 	w.mu.RLock()
 	for _, watch := range w.ws {
-		if unlinked && watch.ExcludeUnlinkedChildren() && et == PathEvent {
+		if unlinked && watch.ExcludeUnlinked() && et == PathEvent {
 			continue
 		}
 		watch.Notify(name, events, cookie)
@@ -492,7 +487,7 @@ func (w *Watches) NotifyWithExclusions(name string, events, cookie uint32, et Ev
 // HandleDeletion is called when the watch target is destroyed to emit
 // the appropriate events.
 func (w *Watches) HandleDeletion() {
-	w.Notify("", linux.IN_DELETE_SELF, 0, InodeEvent)
+	w.Notify("", linux.IN_DELETE_SELF, 0, InodeEvent, true /* unlinked */)
 
 	// We can't hold w.mu while calling watch.handleDeletion to preserve lock
 	// ordering w.r.t to the owner inotify instances. Instead, atomically move
@@ -539,14 +534,12 @@ func (w *Watch) OwnerID() uint64 {
 	return w.owner.id
 }
 
-// ExcludeUnlinkedChildren indicates whether the watched object should continue
-// to be notified of events of its children after they have been unlinked, e.g.
-// for an open file descriptor.
+// ExcludeUnlinked indicates whether the watched object should continue to be
+// notified of events originating from a path that has been unlinked.
 //
-// TODO(gvisor.dev/issue/1479): Implement IN_EXCL_UNLINK.
-// We can do this by keeping track of the set of unlinked children in Watches
-// to skip notification.
-func (w *Watch) ExcludeUnlinkedChildren() bool {
+// For example, if "foo/bar" is opened and then unlinked, operations on the
+// open fd may be ignored by watches on "foo" and "foo/bar" with IN_EXCL_UNLINK.
+func (w *Watch) ExcludeUnlinked() bool {
 	return atomic.LoadUint32(&w.mask)&linux.IN_EXCL_UNLINK != 0
 }
 
@@ -710,10 +703,10 @@ func InotifyEventFromStatMask(mask uint32) uint32 {
 // parent/child notifications, the child is notified first in this case.
 func InotifyRemoveChild(self, parent *Watches, name string) {
 	if self != nil {
-		self.Notify("", linux.IN_ATTRIB, 0, InodeEvent)
+		self.Notify("", linux.IN_ATTRIB, 0, InodeEvent, true /* unlinked */)
 	}
 	if parent != nil {
-		parent.Notify(name, linux.IN_DELETE, 0, InodeEvent)
+		parent.Notify(name, linux.IN_DELETE, 0, InodeEvent, true /* unlinked */)
 	}
 }
 
@@ -726,13 +719,13 @@ func InotifyRename(ctx context.Context, renamed, oldParent, newParent *Watches, 
 	}
 	cookie := uniqueid.InotifyCookie(ctx)
 	if oldParent != nil {
-		oldParent.Notify(oldName, dirEv|linux.IN_MOVED_FROM, cookie, InodeEvent)
+		oldParent.Notify(oldName, dirEv|linux.IN_MOVED_FROM, cookie, InodeEvent, false /* unlinked */)
 	}
 	if newParent != nil {
-		newParent.Notify(newName, dirEv|linux.IN_MOVED_TO, cookie, InodeEvent)
+		newParent.Notify(newName, dirEv|linux.IN_MOVED_TO, cookie, InodeEvent, false /* unlinked */)
 	}
 	// Somewhat surprisingly, self move events do not have a cookie.
 	if renamed != nil {
-		renamed.Notify("", linux.IN_MOVE_SELF, 0, InodeEvent)
+		renamed.Notify("", linux.IN_MOVE_SELF, 0, InodeEvent, false /* unlinked */)
 	}
 }
