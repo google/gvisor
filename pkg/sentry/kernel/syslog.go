@@ -15,10 +15,28 @@
 package kernel
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/waiter"
+)
+
+const (
+	// BufferEntryMax is the maximum number of entries retained by kmsg before new entries overwrite old ones.
+	BufferEntryMax = 512
+
+	// BufferMax is the maximum size of an individual entry, in bytes.
+	BufferMax = 1024
+
+	// format is the used to format message when syslog it's not initialized.
+	format = "<6>[%11.6f] %s\n"
 )
 
 // syslog represents a sentry-global kernel log.
@@ -30,20 +48,116 @@ type syslog struct {
 	// mu protects the below.
 	mu sync.Mutex `state:"nosave"`
 
-	// msg is the syslog message buffer. It is lazily initialized.
-	msg []byte
+	// msg is the syslog message buffer.
+	msg [BufferEntryMax]*buffer.View
+
+	// firstSequence and firstIndex are sequence number and index of the
+	// first valid record in buffer. Analogous to Linux's log_first_seq
+	// and log_first_index.
+	firstSequence uint64
+	firstIndex    uint32
+
+	// nextSequence and nextIndex are sequence number and index of the
+	// next record to store in buffer. Analogous to Linux's log_next_seq
+	// and log_next_index.
+	nextSequence uint64
+	nextIndex    uint32
+}
+
+func (s *syslog) DevKmsgRead(ctx context.Context, userSeq uint64, userIndex uint32, dst usermem.IOSequence, statusFlags uint32) (uint64, uint32, int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// When an entry gets overwritten in the circular buffer, next read()
+	// will return EPIPE and move readIndex to the next available record.
+	// See Documentation/ABI/testing/dev-kmsg in the Linux source for reference.
+	if userSeq < s.firstSequence {
+		return s.firstSequence, s.firstIndex, 0, syserror.EPIPE
+	}
+	if userSeq == s.nextSequence {
+		if statusFlags&^linux.O_NONBLOCK != 0 {
+			return userSeq, userIndex, 0, syserror.EAGAIN
+		}
+		return userSeq, userIndex, 0, syserror.ErrWouldBlock
+	}
+	if s.msg[userIndex].Size() > dst.NumBytes() {
+		return userSeq, userIndex, 0, syserror.EINVAL
+	}
+	bytesCopied, err := dst.CopyOutFrom(ctx, s.msg[userIndex])
+	userSeq++
+	userIndex++
+	if userIndex == BufferEntryMax {
+		userIndex = 0
+	}
+	return userSeq, userIndex, bytesCopied, err
+}
+
+func (s *syslog) DevKmsgWrite(ctx context.Context, src usermem.IOSequence) (int64, error) {
+	if src.NumBytes() > BufferMax {
+		return 0, syserror.EINVAL
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.msg[s.nextIndex] = new(buffer.View)
+	bytesCopied, err := src.CopyInTo(ctx, s.msg[s.nextIndex])
+	if s.firstIndex == s.nextIndex && s.nextSequence != 0 {
+		s.firstSequence++
+		s.firstIndex++
+		if s.firstIndex == BufferEntryMax {
+			s.firstIndex = 0
+		}
+	}
+	s.nextSequence++
+	s.nextIndex++
+	if s.nextIndex == BufferEntryMax {
+		s.nextIndex = 0
+	}
+	return bytesCopied, err
+}
+
+// Different from usual behavior, kmsg only support three type of seek:
+//	- SEEK_SET seek to the first entry in the buffer.
+//	- SEEK_END seek after the last entry in the buffer.
+//	- SEEK_DATA perform same action as SEEK_END since gvisor doesn't have syslog yet.
+func (s *syslog) DevKmsgSeek(ctx context.Context, whence int32) (uint64, uint32, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch whence {
+	case linux.SEEK_SET:
+		return s.firstSequence, s.firstIndex, nil
+	case linux.SEEK_END, linux.SEEK_DATA:
+		return s.nextSequence, s.nextIndex, nil
+	default:
+		return 0, 0, syserror.EINVAL
+	}
+}
+
+func (s *syslog) DevKmsgReadiness(userSeq uint64, mask waiter.EventMask) waiter.EventMask {
+	var ready waiter.EventMask
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if userSeq < s.nextSequence {
+		ready |= waiter.EventIn
+	}
+	return ready
+}
+
+func (s *syslog) FirstSequence() uint64 {
+	return s.firstSequence
+}
+
+func (s *syslog) FirstIndex() uint32 {
+	return s.firstIndex
 }
 
 // Log returns a copy of the syslog.
 func (s *syslog) Log() []byte {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	if s.msg != nil {
+	if s.nextSequence != 0 {
 		// Already initialized, just return a copy.
-		o := make([]byte, len(s.msg))
-		copy(o, s.msg)
-		return o
+		return s.flatten()
 	}
 
 	// Not initialized, create message.
@@ -88,21 +202,37 @@ func (s *syslog) Log() []byte {
 		return m
 	}
 
-	const format = "<6>[%11.6f] %s\n"
-
-	s.msg = append(s.msg, []byte(fmt.Sprintf(format, 0.0, "Starting gVisor..."))...)
+	s.storeLogs(0.0, "Starting gVisor...")
 
 	time := 0.1
-	for i := 0; i < 10; i++ {
+	for s.nextIndex < 11 {
 		time += rand.Float64() / 2
-		s.msg = append(s.msg, []byte(fmt.Sprintf(format, time, selectMessage()))...)
+		s.storeLogs(time, selectMessage())
 	}
 
 	time += rand.Float64() / 2
-	s.msg = append(s.msg, []byte(fmt.Sprintf(format, time, "Ready!"))...)
+	s.storeLogs(time, "Ready!")
 
 	// Return a copy.
-	o := make([]byte, len(s.msg))
-	copy(o, s.msg)
-	return o
+	return s.flatten()
+}
+
+func (s *syslog) flatten() []byte {
+	o := bytes.NewBuffer(make([]byte, 0, (s.nextSequence-s.firstSequence)*BufferMax))
+	index := s.firstIndex
+	for index != s.nextIndex {
+		s.msg[index].ReadToWriter(o, s.msg[index].Size())
+		index++
+		if index == BufferEntryMax {
+			index = 0
+		}
+	}
+	return o.Bytes()
+}
+
+func (s *syslog) storeLogs(time float64, log string) {
+	s.msg[s.nextIndex] = new(buffer.View)
+	s.msg[s.nextIndex].Append([]byte(fmt.Sprintf(format, time, log)))
+	s.nextIndex++
+	s.nextSequence++
 }

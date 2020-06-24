@@ -10,9 +10,12 @@ go_library(
         "null.go",
         "random.go",
         "zero.go",
+        "kmsg.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
+        "//pkg/sentry/kernel",
+        "//pkg/sentry/kernel/auth",
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/rand",
@@ -24,5 +27,6 @@ go_library(
         "//pkg/sentry/vfs",
         "//pkg/syserror",
         "//pkg/usermem",
+        "//pkg/waiter",
     ],
 )

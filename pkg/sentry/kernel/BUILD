@@ -149,6 +149,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         ":uncaught_signal_go_proto",
+        "//pkg/buffer",
         "//pkg/abi",
         "//pkg/abi/linux",
         "//pkg/amutex",

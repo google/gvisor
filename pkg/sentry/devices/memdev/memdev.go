@@ -31,6 +31,7 @@ func Register(vfsObj *vfs.VirtualFilesystem) error {
 		fullDevMinor:    fullDevice{},
 		randomDevMinor:  randomDevice{},
 		urandomDevMinor: randomDevice{},
+		kmsgDevMinor:    kmsgDevice{},
 	} {
 		if err := vfsObj.RegisterDevice(vfs.CharDevice, linux.MEM_MAJOR, minor, dev, &vfs.RegisterDeviceOptions{
 			GroupName: "mem",
@@ -50,6 +51,7 @@ func CreateDevtmpfsFiles(ctx context.Context, dev *devtmpfs.Accessor) error {
 		fullDevMinor:    "full",
 		randomDevMinor:  "random",
 		urandomDevMinor: "urandom",
+		kmsgDevMinor:    "kmsg",
 	} {
 		if err := dev.CreateDeviceFile(ctx, name, vfs.CharDevice, linux.MEM_MAJOR, minor, 0666 /* mode */); err != nil {
 			return err
