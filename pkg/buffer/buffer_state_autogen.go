@@ -6,65 +6,119 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *buffer) StateTypeName() string {
+	return "pkg/buffer.buffer"
+}
+
+func (x *buffer) StateFields() []string {
+	return []string{
+		"data",
+		"read",
+		"write",
+		"bufferEntry",
+	}
+}
+
 func (x *buffer) beforeSave() {}
-func (x *buffer) save(m state.Map) {
+
+func (x *buffer) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("data", &x.data)
-	m.Save("read", &x.read)
-	m.Save("write", &x.write)
-	m.Save("bufferEntry", &x.bufferEntry)
+	m.Save(0, &x.data)
+	m.Save(1, &x.read)
+	m.Save(2, &x.write)
+	m.Save(3, &x.bufferEntry)
 }
 
 func (x *buffer) afterLoad() {}
-func (x *buffer) load(m state.Map) {
-	m.Load("data", &x.data)
-	m.Load("read", &x.read)
-	m.Load("write", &x.write)
-	m.Load("bufferEntry", &x.bufferEntry)
+
+func (x *buffer) StateLoad(m state.Source) {
+	m.Load(0, &x.data)
+	m.Load(1, &x.read)
+	m.Load(2, &x.write)
+	m.Load(3, &x.bufferEntry)
+}
+
+func (x *bufferList) StateTypeName() string {
+	return "pkg/buffer.bufferList"
+}
+
+func (x *bufferList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
 }
 
 func (x *bufferList) beforeSave() {}
-func (x *bufferList) save(m state.Map) {
+
+func (x *bufferList) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("head", &x.head)
-	m.Save("tail", &x.tail)
+	m.Save(0, &x.head)
+	m.Save(1, &x.tail)
 }
 
 func (x *bufferList) afterLoad() {}
-func (x *bufferList) load(m state.Map) {
-	m.Load("head", &x.head)
-	m.Load("tail", &x.tail)
+
+func (x *bufferList) StateLoad(m state.Source) {
+	m.Load(0, &x.head)
+	m.Load(1, &x.tail)
+}
+
+func (x *bufferEntry) StateTypeName() string {
+	return "pkg/buffer.bufferEntry"
+}
+
+func (x *bufferEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
 }
 
 func (x *bufferEntry) beforeSave() {}
-func (x *bufferEntry) save(m state.Map) {
+
+func (x *bufferEntry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("next", &x.next)
-	m.Save("prev", &x.prev)
+	m.Save(0, &x.next)
+	m.Save(1, &x.prev)
 }
 
 func (x *bufferEntry) afterLoad() {}
-func (x *bufferEntry) load(m state.Map) {
-	m.Load("next", &x.next)
-	m.Load("prev", &x.prev)
+
+func (x *bufferEntry) StateLoad(m state.Source) {
+	m.Load(0, &x.next)
+	m.Load(1, &x.prev)
+}
+
+func (x *View) StateTypeName() string {
+	return "pkg/buffer.View"
+}
+
+func (x *View) StateFields() []string {
+	return []string{
+		"data",
+		"size",
+	}
 }
 
 func (x *View) beforeSave() {}
-func (x *View) save(m state.Map) {
+
+func (x *View) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("data", &x.data)
-	m.Save("size", &x.size)
+	m.Save(0, &x.data)
+	m.Save(1, &x.size)
 }
 
 func (x *View) afterLoad() {}
-func (x *View) load(m state.Map) {
-	m.Load("data", &x.data)
-	m.Load("size", &x.size)
+
+func (x *View) StateLoad(m state.Source) {
+	m.Load(0, &x.data)
+	m.Load(1, &x.size)
 }
 
 func init() {
-	state.Register("pkg/buffer.buffer", (*buffer)(nil), state.Fns{Save: (*buffer).save, Load: (*buffer).load})
-	state.Register("pkg/buffer.bufferList", (*bufferList)(nil), state.Fns{Save: (*bufferList).save, Load: (*bufferList).load})
-	state.Register("pkg/buffer.bufferEntry", (*bufferEntry)(nil), state.Fns{Save: (*bufferEntry).save, Load: (*bufferEntry).load})
-	state.Register("pkg/buffer.View", (*View)(nil), state.Fns{Save: (*View).save, Load: (*View).load})
+	state.Register((*buffer)(nil))
+	state.Register((*bufferList)(nil))
+	state.Register((*bufferEntry)(nil))
+	state.Register((*View)(nil))
 }

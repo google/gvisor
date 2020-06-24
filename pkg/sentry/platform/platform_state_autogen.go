@@ -6,19 +6,32 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *FileRange) StateTypeName() string {
+	return "pkg/sentry/platform.FileRange"
+}
+
+func (x *FileRange) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+	}
+}
+
 func (x *FileRange) beforeSave() {}
-func (x *FileRange) save(m state.Map) {
+
+func (x *FileRange) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Start", &x.Start)
-	m.Save("End", &x.End)
+	m.Save(0, &x.Start)
+	m.Save(1, &x.End)
 }
 
 func (x *FileRange) afterLoad() {}
-func (x *FileRange) load(m state.Map) {
-	m.Load("Start", &x.Start)
-	m.Load("End", &x.End)
+
+func (x *FileRange) StateLoad(m state.Source) {
+	m.Load(0, &x.Start)
+	m.Load(1, &x.End)
 }
 
 func init() {
-	state.Register("pkg/sentry/platform.FileRange", (*FileRange)(nil), state.Fns{Save: (*FileRange).save, Load: (*FileRange).load})
+	state.Register((*FileRange)(nil))
 }

@@ -6,37 +6,65 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *SACKBlock) StateTypeName() string {
+	return "pkg/tcpip/header.SACKBlock"
+}
+
+func (x *SACKBlock) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+	}
+}
+
 func (x *SACKBlock) beforeSave() {}
-func (x *SACKBlock) save(m state.Map) {
+
+func (x *SACKBlock) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Start", &x.Start)
-	m.Save("End", &x.End)
+	m.Save(0, &x.Start)
+	m.Save(1, &x.End)
 }
 
 func (x *SACKBlock) afterLoad() {}
-func (x *SACKBlock) load(m state.Map) {
-	m.Load("Start", &x.Start)
-	m.Load("End", &x.End)
+
+func (x *SACKBlock) StateLoad(m state.Source) {
+	m.Load(0, &x.Start)
+	m.Load(1, &x.End)
+}
+
+func (x *TCPOptions) StateTypeName() string {
+	return "pkg/tcpip/header.TCPOptions"
+}
+
+func (x *TCPOptions) StateFields() []string {
+	return []string{
+		"TS",
+		"TSVal",
+		"TSEcr",
+		"SACKBlocks",
+	}
 }
 
 func (x *TCPOptions) beforeSave() {}
-func (x *TCPOptions) save(m state.Map) {
+
+func (x *TCPOptions) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("TS", &x.TS)
-	m.Save("TSVal", &x.TSVal)
-	m.Save("TSEcr", &x.TSEcr)
-	m.Save("SACKBlocks", &x.SACKBlocks)
+	m.Save(0, &x.TS)
+	m.Save(1, &x.TSVal)
+	m.Save(2, &x.TSEcr)
+	m.Save(3, &x.SACKBlocks)
 }
 
 func (x *TCPOptions) afterLoad() {}
-func (x *TCPOptions) load(m state.Map) {
-	m.Load("TS", &x.TS)
-	m.Load("TSVal", &x.TSVal)
-	m.Load("TSEcr", &x.TSEcr)
-	m.Load("SACKBlocks", &x.SACKBlocks)
+
+func (x *TCPOptions) StateLoad(m state.Source) {
+	m.Load(0, &x.TS)
+	m.Load(1, &x.TSVal)
+	m.Load(2, &x.TSEcr)
+	m.Load(3, &x.SACKBlocks)
 }
 
 func init() {
-	state.Register("pkg/tcpip/header.SACKBlock", (*SACKBlock)(nil), state.Fns{Save: (*SACKBlock).save, Load: (*SACKBlock).load})
-	state.Register("pkg/tcpip/header.TCPOptions", (*TCPOptions)(nil), state.Fns{Save: (*TCPOptions).save, Load: (*TCPOptions).load})
+	state.Register((*SACKBlock)(nil))
+	state.Register((*TCPOptions)(nil))
 }

@@ -6,51 +6,92 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *Time) StateTypeName() string {
+	return "pkg/sentry/kernel/time.Time"
+}
+
+func (x *Time) StateFields() []string {
+	return []string{
+		"ns",
+	}
+}
+
 func (x *Time) beforeSave() {}
-func (x *Time) save(m state.Map) {
+
+func (x *Time) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("ns", &x.ns)
+	m.Save(0, &x.ns)
 }
 
 func (x *Time) afterLoad() {}
-func (x *Time) load(m state.Map) {
-	m.Load("ns", &x.ns)
+
+func (x *Time) StateLoad(m state.Source) {
+	m.Load(0, &x.ns)
+}
+
+func (x *Setting) StateTypeName() string {
+	return "pkg/sentry/kernel/time.Setting"
+}
+
+func (x *Setting) StateFields() []string {
+	return []string{
+		"Enabled",
+		"Next",
+		"Period",
+	}
 }
 
 func (x *Setting) beforeSave() {}
-func (x *Setting) save(m state.Map) {
+
+func (x *Setting) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Enabled", &x.Enabled)
-	m.Save("Next", &x.Next)
-	m.Save("Period", &x.Period)
+	m.Save(0, &x.Enabled)
+	m.Save(1, &x.Next)
+	m.Save(2, &x.Period)
 }
 
 func (x *Setting) afterLoad() {}
-func (x *Setting) load(m state.Map) {
-	m.Load("Enabled", &x.Enabled)
-	m.Load("Next", &x.Next)
-	m.Load("Period", &x.Period)
+
+func (x *Setting) StateLoad(m state.Source) {
+	m.Load(0, &x.Enabled)
+	m.Load(1, &x.Next)
+	m.Load(2, &x.Period)
+}
+
+func (x *Timer) StateTypeName() string {
+	return "pkg/sentry/kernel/time.Timer"
+}
+
+func (x *Timer) StateFields() []string {
+	return []string{
+		"clock",
+		"listener",
+		"setting",
+		"paused",
+	}
 }
 
 func (x *Timer) beforeSave() {}
-func (x *Timer) save(m state.Map) {
+
+func (x *Timer) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("clock", &x.clock)
-	m.Save("listener", &x.listener)
-	m.Save("setting", &x.setting)
-	m.Save("paused", &x.paused)
+	m.Save(0, &x.clock)
+	m.Save(1, &x.listener)
+	m.Save(2, &x.setting)
+	m.Save(3, &x.paused)
 }
 
 func (x *Timer) afterLoad() {}
-func (x *Timer) load(m state.Map) {
-	m.Load("clock", &x.clock)
-	m.Load("listener", &x.listener)
-	m.Load("setting", &x.setting)
-	m.Load("paused", &x.paused)
+
+func (x *Timer) StateLoad(m state.Source) {
+	m.Load(0, &x.clock)
+	m.Load(1, &x.listener)
+	m.Load(2, &x.setting)
+	m.Load(3, &x.paused)
 }
 
 func init() {
-	state.Register("pkg/sentry/kernel/time.Time", (*Time)(nil), state.Fns{Save: (*Time).save, Load: (*Time).load})
-	state.Register("pkg/sentry/kernel/time.Setting", (*Setting)(nil), state.Fns{Save: (*Setting).save, Load: (*Setting).load})
-	state.Register("pkg/sentry/kernel/time.Timer", (*Timer)(nil), state.Fns{Save: (*Timer).save, Load: (*Timer).load})
+	state.Register((*Time)(nil))
+	state.Register((*Setting)(nil))
+	state.Register((*Timer)(nil))
 }

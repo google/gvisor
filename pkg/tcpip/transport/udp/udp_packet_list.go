@@ -56,7 +56,7 @@ func (l *udpPacketList) Back() *udpPacket {
 //
 // NOTE: This is an O(n) operation.
 func (l *udpPacketList) Len() (count int) {
-	for e := l.Front(); e != nil; e = e.Next() {
+	for e := l.Front(); e != nil; e = (udpPacketElementMapper{}.linkerFor(e)).Next() {
 		count++
 	}
 	return count
@@ -148,13 +148,13 @@ func (l *udpPacketList) Remove(e *udpPacket) {
 
 	if prev != nil {
 		udpPacketElementMapper{}.linkerFor(prev).SetNext(next)
-	} else {
+	} else if l.head == e {
 		l.head = next
 	}
 
 	if next != nil {
 		udpPacketElementMapper{}.linkerFor(next).SetPrev(prev)
-	} else {
+	} else if l.tail == e {
 		l.tail = prev
 	}
 

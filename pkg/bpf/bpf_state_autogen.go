@@ -6,17 +6,29 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *Program) StateTypeName() string {
+	return "pkg/bpf.Program"
+}
+
+func (x *Program) StateFields() []string {
+	return []string{
+		"instructions",
+	}
+}
+
 func (x *Program) beforeSave() {}
-func (x *Program) save(m state.Map) {
+
+func (x *Program) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("instructions", &x.instructions)
+	m.Save(0, &x.instructions)
 }
 
 func (x *Program) afterLoad() {}
-func (x *Program) load(m state.Map) {
-	m.Load("instructions", &x.instructions)
+
+func (x *Program) StateLoad(m state.Source) {
+	m.Load(0, &x.instructions)
 }
 
 func init() {
-	state.Register("pkg/bpf.Program", (*Program)(nil), state.Fns{Save: (*Program).save, Load: (*Program).load})
+	state.Register((*Program)(nil))
 }

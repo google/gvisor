@@ -6,60 +6,105 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *MappingSet) StateTypeName() string {
+	return "pkg/sentry/memmap.MappingSet"
+}
+
+func (x *MappingSet) StateFields() []string {
+	return []string{
+		"root",
+	}
+}
+
 func (x *MappingSet) beforeSave() {}
-func (x *MappingSet) save(m state.Map) {
+
+func (x *MappingSet) StateSave(m state.Sink) {
 	x.beforeSave()
 	var root *MappingSegmentDataSlices = x.saveRoot()
-	m.SaveValue("root", root)
+	m.SaveValue(0, root)
 }
 
 func (x *MappingSet) afterLoad() {}
-func (x *MappingSet) load(m state.Map) {
-	m.LoadValue("root", new(*MappingSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*MappingSegmentDataSlices)) })
+
+func (x *MappingSet) StateLoad(m state.Source) {
+	m.LoadValue(0, new(*MappingSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*MappingSegmentDataSlices)) })
+}
+
+func (x *Mappingnode) StateTypeName() string {
+	return "pkg/sentry/memmap.Mappingnode"
+}
+
+func (x *Mappingnode) StateFields() []string {
+	return []string{
+		"nrSegments",
+		"parent",
+		"parentIndex",
+		"hasChildren",
+		"maxGap",
+		"keys",
+		"values",
+		"children",
+	}
 }
 
 func (x *Mappingnode) beforeSave() {}
-func (x *Mappingnode) save(m state.Map) {
+
+func (x *Mappingnode) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("nrSegments", &x.nrSegments)
-	m.Save("parent", &x.parent)
-	m.Save("parentIndex", &x.parentIndex)
-	m.Save("hasChildren", &x.hasChildren)
-	m.Save("maxGap", &x.maxGap)
-	m.Save("keys", &x.keys)
-	m.Save("values", &x.values)
-	m.Save("children", &x.children)
+	m.Save(0, &x.nrSegments)
+	m.Save(1, &x.parent)
+	m.Save(2, &x.parentIndex)
+	m.Save(3, &x.hasChildren)
+	m.Save(4, &x.maxGap)
+	m.Save(5, &x.keys)
+	m.Save(6, &x.values)
+	m.Save(7, &x.children)
 }
 
 func (x *Mappingnode) afterLoad() {}
-func (x *Mappingnode) load(m state.Map) {
-	m.Load("nrSegments", &x.nrSegments)
-	m.Load("parent", &x.parent)
-	m.Load("parentIndex", &x.parentIndex)
-	m.Load("hasChildren", &x.hasChildren)
-	m.Load("maxGap", &x.maxGap)
-	m.Load("keys", &x.keys)
-	m.Load("values", &x.values)
-	m.Load("children", &x.children)
+
+func (x *Mappingnode) StateLoad(m state.Source) {
+	m.Load(0, &x.nrSegments)
+	m.Load(1, &x.parent)
+	m.Load(2, &x.parentIndex)
+	m.Load(3, &x.hasChildren)
+	m.Load(4, &x.maxGap)
+	m.Load(5, &x.keys)
+	m.Load(6, &x.values)
+	m.Load(7, &x.children)
+}
+
+func (x *MappingSegmentDataSlices) StateTypeName() string {
+	return "pkg/sentry/memmap.MappingSegmentDataSlices"
+}
+
+func (x *MappingSegmentDataSlices) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+		"Values",
+	}
 }
 
 func (x *MappingSegmentDataSlices) beforeSave() {}
-func (x *MappingSegmentDataSlices) save(m state.Map) {
+
+func (x *MappingSegmentDataSlices) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Start", &x.Start)
-	m.Save("End", &x.End)
-	m.Save("Values", &x.Values)
+	m.Save(0, &x.Start)
+	m.Save(1, &x.End)
+	m.Save(2, &x.Values)
 }
 
 func (x *MappingSegmentDataSlices) afterLoad() {}
-func (x *MappingSegmentDataSlices) load(m state.Map) {
-	m.Load("Start", &x.Start)
-	m.Load("End", &x.End)
-	m.Load("Values", &x.Values)
+
+func (x *MappingSegmentDataSlices) StateLoad(m state.Source) {
+	m.Load(0, &x.Start)
+	m.Load(1, &x.End)
+	m.Load(2, &x.Values)
 }
 
 func init() {
-	state.Register("pkg/sentry/memmap.MappingSet", (*MappingSet)(nil), state.Fns{Save: (*MappingSet).save, Load: (*MappingSet).load})
-	state.Register("pkg/sentry/memmap.Mappingnode", (*Mappingnode)(nil), state.Fns{Save: (*Mappingnode).save, Load: (*Mappingnode).load})
-	state.Register("pkg/sentry/memmap.MappingSegmentDataSlices", (*MappingSegmentDataSlices)(nil), state.Fns{Save: (*MappingSegmentDataSlices).save, Load: (*MappingSegmentDataSlices).load})
+	state.Register((*MappingSet)(nil))
+	state.Register((*Mappingnode)(nil))
+	state.Register((*MappingSegmentDataSlices)(nil))
 }

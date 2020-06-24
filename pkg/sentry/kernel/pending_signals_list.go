@@ -56,7 +56,7 @@ func (l *pendingSignalList) Back() *pendingSignal {
 //
 // NOTE: This is an O(n) operation.
 func (l *pendingSignalList) Len() (count int) {
-	for e := l.Front(); e != nil; e = e.Next() {
+	for e := l.Front(); e != nil; e = (pendingSignalElementMapper{}.linkerFor(e)).Next() {
 		count++
 	}
 	return count
@@ -148,13 +148,13 @@ func (l *pendingSignalList) Remove(e *pendingSignal) {
 
 	if prev != nil {
 		pendingSignalElementMapper{}.linkerFor(prev).SetNext(next)
-	} else {
+	} else if l.head == e {
 		l.head = next
 	}
 
 	if next != nil {
 		pendingSignalElementMapper{}.linkerFor(next).SetPrev(prev)
-	} else {
+	} else if l.tail == e {
 		l.tail = prev
 	}
 

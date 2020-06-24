@@ -56,7 +56,7 @@ func (l *reassemblerList) Back() *reassembler {
 //
 // NOTE: This is an O(n) operation.
 func (l *reassemblerList) Len() (count int) {
-	for e := l.Front(); e != nil; e = e.Next() {
+	for e := l.Front(); e != nil; e = (reassemblerElementMapper{}.linkerFor(e)).Next() {
 		count++
 	}
 	return count
@@ -148,13 +148,13 @@ func (l *reassemblerList) Remove(e *reassembler) {
 
 	if prev != nil {
 		reassemblerElementMapper{}.linkerFor(prev).SetNext(next)
-	} else {
+	} else if l.head == e {
 		l.head = next
 	}
 
 	if next != nil {
 		reassemblerElementMapper{}.linkerFor(next).SetPrev(prev)
-	} else {
+	} else if l.tail == e {
 		l.tail = prev
 	}
 

@@ -6,29 +6,52 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *cpunum) StateTypeName() string {
+	return "pkg/sentry/fs/sys.cpunum"
+}
+
+func (x *cpunum) StateFields() []string {
+	return []string{
+		"InodeSimpleAttributes",
+		"InodeStaticFileGetter",
+	}
+}
+
 func (x *cpunum) beforeSave() {}
-func (x *cpunum) save(m state.Map) {
+
+func (x *cpunum) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("InodeSimpleAttributes", &x.InodeSimpleAttributes)
-	m.Save("InodeStaticFileGetter", &x.InodeStaticFileGetter)
+	m.Save(0, &x.InodeSimpleAttributes)
+	m.Save(1, &x.InodeStaticFileGetter)
 }
 
 func (x *cpunum) afterLoad() {}
-func (x *cpunum) load(m state.Map) {
-	m.Load("InodeSimpleAttributes", &x.InodeSimpleAttributes)
-	m.Load("InodeStaticFileGetter", &x.InodeStaticFileGetter)
+
+func (x *cpunum) StateLoad(m state.Source) {
+	m.Load(0, &x.InodeSimpleAttributes)
+	m.Load(1, &x.InodeStaticFileGetter)
+}
+
+func (x *filesystem) StateTypeName() string {
+	return "pkg/sentry/fs/sys.filesystem"
+}
+
+func (x *filesystem) StateFields() []string {
+	return []string{}
 }
 
 func (x *filesystem) beforeSave() {}
-func (x *filesystem) save(m state.Map) {
+
+func (x *filesystem) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *filesystem) afterLoad() {}
-func (x *filesystem) load(m state.Map) {
+
+func (x *filesystem) StateLoad(m state.Source) {
 }
 
 func init() {
-	state.Register("pkg/sentry/fs/sys.cpunum", (*cpunum)(nil), state.Fns{Save: (*cpunum).save, Load: (*cpunum).load})
-	state.Register("pkg/sentry/fs/sys.filesystem", (*filesystem)(nil), state.Fns{Save: (*filesystem).save, Load: (*filesystem).load})
+	state.Register((*cpunum)(nil))
+	state.Register((*filesystem)(nil))
 }

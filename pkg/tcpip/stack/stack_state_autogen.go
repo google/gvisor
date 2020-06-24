@@ -6,152 +6,269 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *linkAddrEntryList) StateTypeName() string {
+	return "pkg/tcpip/stack.linkAddrEntryList"
+}
+
+func (x *linkAddrEntryList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
+}
+
 func (x *linkAddrEntryList) beforeSave() {}
-func (x *linkAddrEntryList) save(m state.Map) {
+
+func (x *linkAddrEntryList) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("head", &x.head)
-	m.Save("tail", &x.tail)
+	m.Save(0, &x.head)
+	m.Save(1, &x.tail)
 }
 
 func (x *linkAddrEntryList) afterLoad() {}
-func (x *linkAddrEntryList) load(m state.Map) {
-	m.Load("head", &x.head)
-	m.Load("tail", &x.tail)
+
+func (x *linkAddrEntryList) StateLoad(m state.Source) {
+	m.Load(0, &x.head)
+	m.Load(1, &x.tail)
+}
+
+func (x *linkAddrEntryEntry) StateTypeName() string {
+	return "pkg/tcpip/stack.linkAddrEntryEntry"
+}
+
+func (x *linkAddrEntryEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
 }
 
 func (x *linkAddrEntryEntry) beforeSave() {}
-func (x *linkAddrEntryEntry) save(m state.Map) {
+
+func (x *linkAddrEntryEntry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("next", &x.next)
-	m.Save("prev", &x.prev)
+	m.Save(0, &x.next)
+	m.Save(1, &x.prev)
 }
 
 func (x *linkAddrEntryEntry) afterLoad() {}
-func (x *linkAddrEntryEntry) load(m state.Map) {
-	m.Load("next", &x.next)
-	m.Load("prev", &x.prev)
+
+func (x *linkAddrEntryEntry) StateLoad(m state.Source) {
+	m.Load(0, &x.next)
+	m.Load(1, &x.prev)
+}
+
+func (x *PacketBufferList) StateTypeName() string {
+	return "pkg/tcpip/stack.PacketBufferList"
+}
+
+func (x *PacketBufferList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
 }
 
 func (x *PacketBufferList) beforeSave() {}
-func (x *PacketBufferList) save(m state.Map) {
+
+func (x *PacketBufferList) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("head", &x.head)
-	m.Save("tail", &x.tail)
+	m.Save(0, &x.head)
+	m.Save(1, &x.tail)
 }
 
 func (x *PacketBufferList) afterLoad() {}
-func (x *PacketBufferList) load(m state.Map) {
-	m.Load("head", &x.head)
-	m.Load("tail", &x.tail)
+
+func (x *PacketBufferList) StateLoad(m state.Source) {
+	m.Load(0, &x.head)
+	m.Load(1, &x.tail)
+}
+
+func (x *PacketBufferEntry) StateTypeName() string {
+	return "pkg/tcpip/stack.PacketBufferEntry"
+}
+
+func (x *PacketBufferEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
 }
 
 func (x *PacketBufferEntry) beforeSave() {}
-func (x *PacketBufferEntry) save(m state.Map) {
+
+func (x *PacketBufferEntry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("next", &x.next)
-	m.Save("prev", &x.prev)
+	m.Save(0, &x.next)
+	m.Save(1, &x.prev)
 }
 
 func (x *PacketBufferEntry) afterLoad() {}
-func (x *PacketBufferEntry) load(m state.Map) {
-	m.Load("next", &x.next)
-	m.Load("prev", &x.prev)
+
+func (x *PacketBufferEntry) StateLoad(m state.Source) {
+	m.Load(0, &x.next)
+	m.Load(1, &x.prev)
+}
+
+func (x *TransportEndpointID) StateTypeName() string {
+	return "pkg/tcpip/stack.TransportEndpointID"
+}
+
+func (x *TransportEndpointID) StateFields() []string {
+	return []string{
+		"LocalPort",
+		"LocalAddress",
+		"RemotePort",
+		"RemoteAddress",
+	}
 }
 
 func (x *TransportEndpointID) beforeSave() {}
-func (x *TransportEndpointID) save(m state.Map) {
+
+func (x *TransportEndpointID) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("LocalPort", &x.LocalPort)
-	m.Save("LocalAddress", &x.LocalAddress)
-	m.Save("RemotePort", &x.RemotePort)
-	m.Save("RemoteAddress", &x.RemoteAddress)
+	m.Save(0, &x.LocalPort)
+	m.Save(1, &x.LocalAddress)
+	m.Save(2, &x.RemotePort)
+	m.Save(3, &x.RemoteAddress)
 }
 
 func (x *TransportEndpointID) afterLoad() {}
-func (x *TransportEndpointID) load(m state.Map) {
-	m.Load("LocalPort", &x.LocalPort)
-	m.Load("LocalAddress", &x.LocalAddress)
-	m.Load("RemotePort", &x.RemotePort)
-	m.Load("RemoteAddress", &x.RemoteAddress)
+
+func (x *TransportEndpointID) StateLoad(m state.Source) {
+	m.Load(0, &x.LocalPort)
+	m.Load(1, &x.LocalAddress)
+	m.Load(2, &x.RemotePort)
+	m.Load(3, &x.RemoteAddress)
 }
 
-func (x *GSOType) save(m state.Map) {
-	m.SaveValue("", (int)(*x))
+func (x *GSOType) StateTypeName() string {
+	return "pkg/tcpip/stack.GSOType"
 }
 
-func (x *GSOType) load(m state.Map) {
-	m.LoadValue("", new(int), func(y interface{}) { *x = (GSOType)(y.(int)) })
+func (x *GSOType) StateFields() []string {
+	return nil
+}
+
+func (x *GSO) StateTypeName() string {
+	return "pkg/tcpip/stack.GSO"
+}
+
+func (x *GSO) StateFields() []string {
+	return []string{
+		"Type",
+		"NeedsCsum",
+		"CsumOffset",
+		"MSS",
+		"L3HdrLen",
+		"MaxSize",
+	}
 }
 
 func (x *GSO) beforeSave() {}
-func (x *GSO) save(m state.Map) {
+
+func (x *GSO) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Type", &x.Type)
-	m.Save("NeedsCsum", &x.NeedsCsum)
-	m.Save("CsumOffset", &x.CsumOffset)
-	m.Save("MSS", &x.MSS)
-	m.Save("L3HdrLen", &x.L3HdrLen)
-	m.Save("MaxSize", &x.MaxSize)
+	m.Save(0, &x.Type)
+	m.Save(1, &x.NeedsCsum)
+	m.Save(2, &x.CsumOffset)
+	m.Save(3, &x.MSS)
+	m.Save(4, &x.L3HdrLen)
+	m.Save(5, &x.MaxSize)
 }
 
 func (x *GSO) afterLoad() {}
-func (x *GSO) load(m state.Map) {
-	m.Load("Type", &x.Type)
-	m.Load("NeedsCsum", &x.NeedsCsum)
-	m.Load("CsumOffset", &x.CsumOffset)
-	m.Load("MSS", &x.MSS)
-	m.Load("L3HdrLen", &x.L3HdrLen)
-	m.Load("MaxSize", &x.MaxSize)
+
+func (x *GSO) StateLoad(m state.Source) {
+	m.Load(0, &x.Type)
+	m.Load(1, &x.NeedsCsum)
+	m.Load(2, &x.CsumOffset)
+	m.Load(3, &x.MSS)
+	m.Load(4, &x.L3HdrLen)
+	m.Load(5, &x.MaxSize)
+}
+
+func (x *TransportEndpointInfo) StateTypeName() string {
+	return "pkg/tcpip/stack.TransportEndpointInfo"
+}
+
+func (x *TransportEndpointInfo) StateFields() []string {
+	return []string{
+		"NetProto",
+		"TransProto",
+		"ID",
+		"BindNICID",
+		"BindAddr",
+		"RegisterNICID",
+	}
 }
 
 func (x *TransportEndpointInfo) beforeSave() {}
-func (x *TransportEndpointInfo) save(m state.Map) {
+
+func (x *TransportEndpointInfo) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("NetProto", &x.NetProto)
-	m.Save("TransProto", &x.TransProto)
-	m.Save("ID", &x.ID)
-	m.Save("BindNICID", &x.BindNICID)
-	m.Save("BindAddr", &x.BindAddr)
-	m.Save("RegisterNICID", &x.RegisterNICID)
+	m.Save(0, &x.NetProto)
+	m.Save(1, &x.TransProto)
+	m.Save(2, &x.ID)
+	m.Save(3, &x.BindNICID)
+	m.Save(4, &x.BindAddr)
+	m.Save(5, &x.RegisterNICID)
 }
 
 func (x *TransportEndpointInfo) afterLoad() {}
-func (x *TransportEndpointInfo) load(m state.Map) {
-	m.Load("NetProto", &x.NetProto)
-	m.Load("TransProto", &x.TransProto)
-	m.Load("ID", &x.ID)
-	m.Load("BindNICID", &x.BindNICID)
-	m.Load("BindAddr", &x.BindAddr)
-	m.Load("RegisterNICID", &x.RegisterNICID)
+
+func (x *TransportEndpointInfo) StateLoad(m state.Source) {
+	m.Load(0, &x.NetProto)
+	m.Load(1, &x.TransProto)
+	m.Load(2, &x.ID)
+	m.Load(3, &x.BindNICID)
+	m.Load(4, &x.BindAddr)
+	m.Load(5, &x.RegisterNICID)
+}
+
+func (x *multiPortEndpoint) StateTypeName() string {
+	return "pkg/tcpip/stack.multiPortEndpoint"
+}
+
+func (x *multiPortEndpoint) StateFields() []string {
+	return []string{
+		"demux",
+		"netProto",
+		"transProto",
+		"endpoints",
+		"flags",
+	}
 }
 
 func (x *multiPortEndpoint) beforeSave() {}
-func (x *multiPortEndpoint) save(m state.Map) {
+
+func (x *multiPortEndpoint) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("demux", &x.demux)
-	m.Save("netProto", &x.netProto)
-	m.Save("transProto", &x.transProto)
-	m.Save("endpoints", &x.endpoints)
-	m.Save("flags", &x.flags)
+	m.Save(0, &x.demux)
+	m.Save(1, &x.netProto)
+	m.Save(2, &x.transProto)
+	m.Save(3, &x.endpoints)
+	m.Save(4, &x.flags)
 }
 
 func (x *multiPortEndpoint) afterLoad() {}
-func (x *multiPortEndpoint) load(m state.Map) {
-	m.Load("demux", &x.demux)
-	m.Load("netProto", &x.netProto)
-	m.Load("transProto", &x.transProto)
-	m.Load("endpoints", &x.endpoints)
-	m.Load("flags", &x.flags)
+
+func (x *multiPortEndpoint) StateLoad(m state.Source) {
+	m.Load(0, &x.demux)
+	m.Load(1, &x.netProto)
+	m.Load(2, &x.transProto)
+	m.Load(3, &x.endpoints)
+	m.Load(4, &x.flags)
 }
 
 func init() {
-	state.Register("pkg/tcpip/stack.linkAddrEntryList", (*linkAddrEntryList)(nil), state.Fns{Save: (*linkAddrEntryList).save, Load: (*linkAddrEntryList).load})
-	state.Register("pkg/tcpip/stack.linkAddrEntryEntry", (*linkAddrEntryEntry)(nil), state.Fns{Save: (*linkAddrEntryEntry).save, Load: (*linkAddrEntryEntry).load})
-	state.Register("pkg/tcpip/stack.PacketBufferList", (*PacketBufferList)(nil), state.Fns{Save: (*PacketBufferList).save, Load: (*PacketBufferList).load})
-	state.Register("pkg/tcpip/stack.PacketBufferEntry", (*PacketBufferEntry)(nil), state.Fns{Save: (*PacketBufferEntry).save, Load: (*PacketBufferEntry).load})
-	state.Register("pkg/tcpip/stack.TransportEndpointID", (*TransportEndpointID)(nil), state.Fns{Save: (*TransportEndpointID).save, Load: (*TransportEndpointID).load})
-	state.Register("pkg/tcpip/stack.GSOType", (*GSOType)(nil), state.Fns{Save: (*GSOType).save, Load: (*GSOType).load})
-	state.Register("pkg/tcpip/stack.GSO", (*GSO)(nil), state.Fns{Save: (*GSO).save, Load: (*GSO).load})
-	state.Register("pkg/tcpip/stack.TransportEndpointInfo", (*TransportEndpointInfo)(nil), state.Fns{Save: (*TransportEndpointInfo).save, Load: (*TransportEndpointInfo).load})
-	state.Register("pkg/tcpip/stack.multiPortEndpoint", (*multiPortEndpoint)(nil), state.Fns{Save: (*multiPortEndpoint).save, Load: (*multiPortEndpoint).load})
+	state.Register((*linkAddrEntryList)(nil))
+	state.Register((*linkAddrEntryEntry)(nil))
+	state.Register((*PacketBufferList)(nil))
+	state.Register((*PacketBufferEntry)(nil))
+	state.Register((*TransportEndpointID)(nil))
+	state.Register((*GSOType)(nil))
+	state.Register((*GSO)(nil))
+	state.Register((*TransportEndpointInfo)(nil))
+	state.Register((*multiPortEndpoint)(nil))
 }

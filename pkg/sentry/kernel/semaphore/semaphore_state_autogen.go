@@ -6,112 +6,200 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *Registry) StateTypeName() string {
+	return "pkg/sentry/kernel/semaphore.Registry"
+}
+
+func (x *Registry) StateFields() []string {
+	return []string{
+		"userNS",
+		"semaphores",
+		"lastIDUsed",
+	}
+}
+
 func (x *Registry) beforeSave() {}
-func (x *Registry) save(m state.Map) {
+
+func (x *Registry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("userNS", &x.userNS)
-	m.Save("semaphores", &x.semaphores)
-	m.Save("lastIDUsed", &x.lastIDUsed)
+	m.Save(0, &x.userNS)
+	m.Save(1, &x.semaphores)
+	m.Save(2, &x.lastIDUsed)
 }
 
 func (x *Registry) afterLoad() {}
-func (x *Registry) load(m state.Map) {
-	m.Load("userNS", &x.userNS)
-	m.Load("semaphores", &x.semaphores)
-	m.Load("lastIDUsed", &x.lastIDUsed)
+
+func (x *Registry) StateLoad(m state.Source) {
+	m.Load(0, &x.userNS)
+	m.Load(1, &x.semaphores)
+	m.Load(2, &x.lastIDUsed)
+}
+
+func (x *Set) StateTypeName() string {
+	return "pkg/sentry/kernel/semaphore.Set"
+}
+
+func (x *Set) StateFields() []string {
+	return []string{
+		"registry",
+		"ID",
+		"key",
+		"creator",
+		"owner",
+		"perms",
+		"opTime",
+		"changeTime",
+		"sems",
+		"dead",
+	}
 }
 
 func (x *Set) beforeSave() {}
-func (x *Set) save(m state.Map) {
+
+func (x *Set) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("registry", &x.registry)
-	m.Save("ID", &x.ID)
-	m.Save("key", &x.key)
-	m.Save("creator", &x.creator)
-	m.Save("owner", &x.owner)
-	m.Save("perms", &x.perms)
-	m.Save("opTime", &x.opTime)
-	m.Save("changeTime", &x.changeTime)
-	m.Save("sems", &x.sems)
-	m.Save("dead", &x.dead)
+	m.Save(0, &x.registry)
+	m.Save(1, &x.ID)
+	m.Save(2, &x.key)
+	m.Save(3, &x.creator)
+	m.Save(4, &x.owner)
+	m.Save(5, &x.perms)
+	m.Save(6, &x.opTime)
+	m.Save(7, &x.changeTime)
+	m.Save(8, &x.sems)
+	m.Save(9, &x.dead)
 }
 
 func (x *Set) afterLoad() {}
-func (x *Set) load(m state.Map) {
-	m.Load("registry", &x.registry)
-	m.Load("ID", &x.ID)
-	m.Load("key", &x.key)
-	m.Load("creator", &x.creator)
-	m.Load("owner", &x.owner)
-	m.Load("perms", &x.perms)
-	m.Load("opTime", &x.opTime)
-	m.Load("changeTime", &x.changeTime)
-	m.Load("sems", &x.sems)
-	m.Load("dead", &x.dead)
+
+func (x *Set) StateLoad(m state.Source) {
+	m.Load(0, &x.registry)
+	m.Load(1, &x.ID)
+	m.Load(2, &x.key)
+	m.Load(3, &x.creator)
+	m.Load(4, &x.owner)
+	m.Load(5, &x.perms)
+	m.Load(6, &x.opTime)
+	m.Load(7, &x.changeTime)
+	m.Load(8, &x.sems)
+	m.Load(9, &x.dead)
+}
+
+func (x *sem) StateTypeName() string {
+	return "pkg/sentry/kernel/semaphore.sem"
+}
+
+func (x *sem) StateFields() []string {
+	return []string{
+		"value",
+		"pid",
+	}
 }
 
 func (x *sem) beforeSave() {}
-func (x *sem) save(m state.Map) {
+
+func (x *sem) StateSave(m state.Sink) {
 	x.beforeSave()
 	if !state.IsZeroValue(&x.waiters) {
-		m.Failf("waiters is %#v, expected zero", &x.waiters)
+		state.Failf("waiters is %#v, expected zero", &x.waiters)
 	}
-	m.Save("value", &x.value)
-	m.Save("pid", &x.pid)
+	m.Save(0, &x.value)
+	m.Save(1, &x.pid)
 }
 
 func (x *sem) afterLoad() {}
-func (x *sem) load(m state.Map) {
-	m.Load("value", &x.value)
-	m.Load("pid", &x.pid)
+
+func (x *sem) StateLoad(m state.Source) {
+	m.Load(0, &x.value)
+	m.Load(1, &x.pid)
+}
+
+func (x *waiter) StateTypeName() string {
+	return "pkg/sentry/kernel/semaphore.waiter"
+}
+
+func (x *waiter) StateFields() []string {
+	return []string{
+		"waiterEntry",
+		"value",
+		"ch",
+	}
 }
 
 func (x *waiter) beforeSave() {}
-func (x *waiter) save(m state.Map) {
+
+func (x *waiter) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("waiterEntry", &x.waiterEntry)
-	m.Save("value", &x.value)
-	m.Save("ch", &x.ch)
+	m.Save(0, &x.waiterEntry)
+	m.Save(1, &x.value)
+	m.Save(2, &x.ch)
 }
 
 func (x *waiter) afterLoad() {}
-func (x *waiter) load(m state.Map) {
-	m.Load("waiterEntry", &x.waiterEntry)
-	m.Load("value", &x.value)
-	m.Load("ch", &x.ch)
+
+func (x *waiter) StateLoad(m state.Source) {
+	m.Load(0, &x.waiterEntry)
+	m.Load(1, &x.value)
+	m.Load(2, &x.ch)
+}
+
+func (x *waiterList) StateTypeName() string {
+	return "pkg/sentry/kernel/semaphore.waiterList"
+}
+
+func (x *waiterList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
 }
 
 func (x *waiterList) beforeSave() {}
-func (x *waiterList) save(m state.Map) {
+
+func (x *waiterList) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("head", &x.head)
-	m.Save("tail", &x.tail)
+	m.Save(0, &x.head)
+	m.Save(1, &x.tail)
 }
 
 func (x *waiterList) afterLoad() {}
-func (x *waiterList) load(m state.Map) {
-	m.Load("head", &x.head)
-	m.Load("tail", &x.tail)
+
+func (x *waiterList) StateLoad(m state.Source) {
+	m.Load(0, &x.head)
+	m.Load(1, &x.tail)
+}
+
+func (x *waiterEntry) StateTypeName() string {
+	return "pkg/sentry/kernel/semaphore.waiterEntry"
+}
+
+func (x *waiterEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
 }
 
 func (x *waiterEntry) beforeSave() {}
-func (x *waiterEntry) save(m state.Map) {
+
+func (x *waiterEntry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("next", &x.next)
-	m.Save("prev", &x.prev)
+	m.Save(0, &x.next)
+	m.Save(1, &x.prev)
 }
 
 func (x *waiterEntry) afterLoad() {}
-func (x *waiterEntry) load(m state.Map) {
-	m.Load("next", &x.next)
-	m.Load("prev", &x.prev)
+
+func (x *waiterEntry) StateLoad(m state.Source) {
+	m.Load(0, &x.next)
+	m.Load(1, &x.prev)
 }
 
 func init() {
-	state.Register("pkg/sentry/kernel/semaphore.Registry", (*Registry)(nil), state.Fns{Save: (*Registry).save, Load: (*Registry).load})
-	state.Register("pkg/sentry/kernel/semaphore.Set", (*Set)(nil), state.Fns{Save: (*Set).save, Load: (*Set).load})
-	state.Register("pkg/sentry/kernel/semaphore.sem", (*sem)(nil), state.Fns{Save: (*sem).save, Load: (*sem).load})
-	state.Register("pkg/sentry/kernel/semaphore.waiter", (*waiter)(nil), state.Fns{Save: (*waiter).save, Load: (*waiter).load})
-	state.Register("pkg/sentry/kernel/semaphore.waiterList", (*waiterList)(nil), state.Fns{Save: (*waiterList).save, Load: (*waiterList).load})
-	state.Register("pkg/sentry/kernel/semaphore.waiterEntry", (*waiterEntry)(nil), state.Fns{Save: (*waiterEntry).save, Load: (*waiterEntry).load})
+	state.Register((*Registry)(nil))
+	state.Register((*Set)(nil))
+	state.Register((*sem)(nil))
+	state.Register((*waiter)(nil))
+	state.Register((*waiterList)(nil))
+	state.Register((*waiterEntry)(nil))
 }

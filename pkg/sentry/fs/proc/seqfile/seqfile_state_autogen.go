@@ -6,53 +6,95 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *SeqData) StateTypeName() string {
+	return "pkg/sentry/fs/proc/seqfile.SeqData"
+}
+
+func (x *SeqData) StateFields() []string {
+	return []string{
+		"Buf",
+		"Handle",
+	}
+}
+
 func (x *SeqData) beforeSave() {}
-func (x *SeqData) save(m state.Map) {
+
+func (x *SeqData) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Buf", &x.Buf)
-	m.Save("Handle", &x.Handle)
+	m.Save(0, &x.Buf)
+	m.Save(1, &x.Handle)
 }
 
 func (x *SeqData) afterLoad() {}
-func (x *SeqData) load(m state.Map) {
-	m.Load("Buf", &x.Buf)
-	m.Load("Handle", &x.Handle)
+
+func (x *SeqData) StateLoad(m state.Source) {
+	m.Load(0, &x.Buf)
+	m.Load(1, &x.Handle)
+}
+
+func (x *SeqFile) StateTypeName() string {
+	return "pkg/sentry/fs/proc/seqfile.SeqFile"
+}
+
+func (x *SeqFile) StateFields() []string {
+	return []string{
+		"InodeSimpleExtendedAttributes",
+		"InodeSimpleAttributes",
+		"SeqSource",
+		"source",
+		"generation",
+		"lastRead",
+	}
 }
 
 func (x *SeqFile) beforeSave() {}
-func (x *SeqFile) save(m state.Map) {
+
+func (x *SeqFile) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("InodeSimpleExtendedAttributes", &x.InodeSimpleExtendedAttributes)
-	m.Save("InodeSimpleAttributes", &x.InodeSimpleAttributes)
-	m.Save("SeqSource", &x.SeqSource)
-	m.Save("source", &x.source)
-	m.Save("generation", &x.generation)
-	m.Save("lastRead", &x.lastRead)
+	m.Save(0, &x.InodeSimpleExtendedAttributes)
+	m.Save(1, &x.InodeSimpleAttributes)
+	m.Save(2, &x.SeqSource)
+	m.Save(3, &x.source)
+	m.Save(4, &x.generation)
+	m.Save(5, &x.lastRead)
 }
 
 func (x *SeqFile) afterLoad() {}
-func (x *SeqFile) load(m state.Map) {
-	m.Load("InodeSimpleExtendedAttributes", &x.InodeSimpleExtendedAttributes)
-	m.Load("InodeSimpleAttributes", &x.InodeSimpleAttributes)
-	m.Load("SeqSource", &x.SeqSource)
-	m.Load("source", &x.source)
-	m.Load("generation", &x.generation)
-	m.Load("lastRead", &x.lastRead)
+
+func (x *SeqFile) StateLoad(m state.Source) {
+	m.Load(0, &x.InodeSimpleExtendedAttributes)
+	m.Load(1, &x.InodeSimpleAttributes)
+	m.Load(2, &x.SeqSource)
+	m.Load(3, &x.source)
+	m.Load(4, &x.generation)
+	m.Load(5, &x.lastRead)
+}
+
+func (x *seqFileOperations) StateTypeName() string {
+	return "pkg/sentry/fs/proc/seqfile.seqFileOperations"
+}
+
+func (x *seqFileOperations) StateFields() []string {
+	return []string{
+		"seqFile",
+	}
 }
 
 func (x *seqFileOperations) beforeSave() {}
-func (x *seqFileOperations) save(m state.Map) {
+
+func (x *seqFileOperations) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("seqFile", &x.seqFile)
+	m.Save(0, &x.seqFile)
 }
 
 func (x *seqFileOperations) afterLoad() {}
-func (x *seqFileOperations) load(m state.Map) {
-	m.Load("seqFile", &x.seqFile)
+
+func (x *seqFileOperations) StateLoad(m state.Source) {
+	m.Load(0, &x.seqFile)
 }
 
 func init() {
-	state.Register("pkg/sentry/fs/proc/seqfile.SeqData", (*SeqData)(nil), state.Fns{Save: (*SeqData).save, Load: (*SeqData).load})
-	state.Register("pkg/sentry/fs/proc/seqfile.SeqFile", (*SeqFile)(nil), state.Fns{Save: (*SeqFile).save, Load: (*SeqFile).load})
-	state.Register("pkg/sentry/fs/proc/seqfile.seqFileOperations", (*seqFileOperations)(nil), state.Fns{Save: (*seqFileOperations).save, Load: (*seqFileOperations).load})
+	state.Register((*SeqData)(nil))
+	state.Register((*SeqFile)(nil))
+	state.Register((*seqFileOperations)(nil))
 }

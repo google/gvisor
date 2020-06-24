@@ -6,52 +6,87 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *VDSO) StateTypeName() string {
+	return "pkg/sentry/loader.VDSO"
+}
+
+func (x *VDSO) StateFields() []string {
+	return []string{
+		"ParamPage",
+		"vdso",
+		"os",
+		"arch",
+		"phdrs",
+	}
+}
+
 func (x *VDSO) beforeSave() {}
-func (x *VDSO) save(m state.Map) {
+
+func (x *VDSO) StateSave(m state.Sink) {
 	x.beforeSave()
 	var phdrs []elfProgHeader = x.savePhdrs()
-	m.SaveValue("phdrs", phdrs)
-	m.Save("ParamPage", &x.ParamPage)
-	m.Save("vdso", &x.vdso)
-	m.Save("os", &x.os)
-	m.Save("arch", &x.arch)
+	m.SaveValue(4, phdrs)
+	m.Save(0, &x.ParamPage)
+	m.Save(1, &x.vdso)
+	m.Save(2, &x.os)
+	m.Save(3, &x.arch)
 }
 
 func (x *VDSO) afterLoad() {}
-func (x *VDSO) load(m state.Map) {
-	m.Load("ParamPage", &x.ParamPage)
-	m.Load("vdso", &x.vdso)
-	m.Load("os", &x.os)
-	m.Load("arch", &x.arch)
-	m.LoadValue("phdrs", new([]elfProgHeader), func(y interface{}) { x.loadPhdrs(y.([]elfProgHeader)) })
+
+func (x *VDSO) StateLoad(m state.Source) {
+	m.Load(0, &x.ParamPage)
+	m.Load(1, &x.vdso)
+	m.Load(2, &x.os)
+	m.Load(3, &x.arch)
+	m.LoadValue(4, new([]elfProgHeader), func(y interface{}) { x.loadPhdrs(y.([]elfProgHeader)) })
+}
+
+func (x *elfProgHeader) StateTypeName() string {
+	return "pkg/sentry/loader.elfProgHeader"
+}
+
+func (x *elfProgHeader) StateFields() []string {
+	return []string{
+		"Type",
+		"Flags",
+		"Off",
+		"Vaddr",
+		"Paddr",
+		"Filesz",
+		"Memsz",
+		"Align",
+	}
 }
 
 func (x *elfProgHeader) beforeSave() {}
-func (x *elfProgHeader) save(m state.Map) {
+
+func (x *elfProgHeader) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Type", &x.Type)
-	m.Save("Flags", &x.Flags)
-	m.Save("Off", &x.Off)
-	m.Save("Vaddr", &x.Vaddr)
-	m.Save("Paddr", &x.Paddr)
-	m.Save("Filesz", &x.Filesz)
-	m.Save("Memsz", &x.Memsz)
-	m.Save("Align", &x.Align)
+	m.Save(0, &x.Type)
+	m.Save(1, &x.Flags)
+	m.Save(2, &x.Off)
+	m.Save(3, &x.Vaddr)
+	m.Save(4, &x.Paddr)
+	m.Save(5, &x.Filesz)
+	m.Save(6, &x.Memsz)
+	m.Save(7, &x.Align)
 }
 
 func (x *elfProgHeader) afterLoad() {}
-func (x *elfProgHeader) load(m state.Map) {
-	m.Load("Type", &x.Type)
-	m.Load("Flags", &x.Flags)
-	m.Load("Off", &x.Off)
-	m.Load("Vaddr", &x.Vaddr)
-	m.Load("Paddr", &x.Paddr)
-	m.Load("Filesz", &x.Filesz)
-	m.Load("Memsz", &x.Memsz)
-	m.Load("Align", &x.Align)
+
+func (x *elfProgHeader) StateLoad(m state.Source) {
+	m.Load(0, &x.Type)
+	m.Load(1, &x.Flags)
+	m.Load(2, &x.Off)
+	m.Load(3, &x.Vaddr)
+	m.Load(4, &x.Paddr)
+	m.Load(5, &x.Filesz)
+	m.Load(6, &x.Memsz)
+	m.Load(7, &x.Align)
 }
 
 func init() {
-	state.Register("pkg/sentry/loader.VDSO", (*VDSO)(nil), state.Fns{Save: (*VDSO).save, Load: (*VDSO).load})
-	state.Register("pkg/sentry/loader.elfProgHeader", (*elfProgHeader)(nil), state.Fns{Save: (*elfProgHeader).save, Load: (*elfProgHeader).load})
+	state.Register((*VDSO)(nil))
+	state.Register((*elfProgHeader)(nil))
 }

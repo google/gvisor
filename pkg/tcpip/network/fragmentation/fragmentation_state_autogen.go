@@ -6,33 +6,59 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *reassemblerList) StateTypeName() string {
+	return "pkg/tcpip/network/fragmentation.reassemblerList"
+}
+
+func (x *reassemblerList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
+}
+
 func (x *reassemblerList) beforeSave() {}
-func (x *reassemblerList) save(m state.Map) {
+
+func (x *reassemblerList) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("head", &x.head)
-	m.Save("tail", &x.tail)
+	m.Save(0, &x.head)
+	m.Save(1, &x.tail)
 }
 
 func (x *reassemblerList) afterLoad() {}
-func (x *reassemblerList) load(m state.Map) {
-	m.Load("head", &x.head)
-	m.Load("tail", &x.tail)
+
+func (x *reassemblerList) StateLoad(m state.Source) {
+	m.Load(0, &x.head)
+	m.Load(1, &x.tail)
+}
+
+func (x *reassemblerEntry) StateTypeName() string {
+	return "pkg/tcpip/network/fragmentation.reassemblerEntry"
+}
+
+func (x *reassemblerEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
 }
 
 func (x *reassemblerEntry) beforeSave() {}
-func (x *reassemblerEntry) save(m state.Map) {
+
+func (x *reassemblerEntry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("next", &x.next)
-	m.Save("prev", &x.prev)
+	m.Save(0, &x.next)
+	m.Save(1, &x.prev)
 }
 
 func (x *reassemblerEntry) afterLoad() {}
-func (x *reassemblerEntry) load(m state.Map) {
-	m.Load("next", &x.next)
-	m.Load("prev", &x.prev)
+
+func (x *reassemblerEntry) StateLoad(m state.Source) {
+	m.Load(0, &x.next)
+	m.Load(1, &x.prev)
 }
 
 func init() {
-	state.Register("pkg/tcpip/network/fragmentation.reassemblerList", (*reassemblerList)(nil), state.Fns{Save: (*reassemblerList).save, Load: (*reassemblerList).load})
-	state.Register("pkg/tcpip/network/fragmentation.reassemblerEntry", (*reassemblerEntry)(nil), state.Fns{Save: (*reassemblerEntry).save, Load: (*reassemblerEntry).load})
+	state.Register((*reassemblerList)(nil))
+	state.Register((*reassemblerEntry)(nil))
 }

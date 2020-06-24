@@ -6,23 +6,38 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *ConnectedEndpoint) StateTypeName() string {
+	return "pkg/sentry/fsimpl/host.ConnectedEndpoint"
+}
+
+func (x *ConnectedEndpoint) StateFields() []string {
+	return []string{
+		"ref",
+		"fd",
+		"addr",
+		"stype",
+	}
+}
+
 func (x *ConnectedEndpoint) beforeSave() {}
-func (x *ConnectedEndpoint) save(m state.Map) {
+
+func (x *ConnectedEndpoint) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("ref", &x.ref)
-	m.Save("fd", &x.fd)
-	m.Save("addr", &x.addr)
-	m.Save("stype", &x.stype)
+	m.Save(0, &x.ref)
+	m.Save(1, &x.fd)
+	m.Save(2, &x.addr)
+	m.Save(3, &x.stype)
 }
 
 func (x *ConnectedEndpoint) afterLoad() {}
-func (x *ConnectedEndpoint) load(m state.Map) {
-	m.Load("ref", &x.ref)
-	m.Load("fd", &x.fd)
-	m.Load("addr", &x.addr)
-	m.Load("stype", &x.stype)
+
+func (x *ConnectedEndpoint) StateLoad(m state.Source) {
+	m.Load(0, &x.ref)
+	m.Load(1, &x.fd)
+	m.Load(2, &x.addr)
+	m.Load(3, &x.stype)
 }
 
 func init() {
-	state.Register("pkg/sentry/fsimpl/host.ConnectedEndpoint", (*ConnectedEndpoint)(nil), state.Fns{Save: (*ConnectedEndpoint).save, Load: (*ConnectedEndpoint).load})
+	state.Register((*ConnectedEndpoint)(nil))
 }

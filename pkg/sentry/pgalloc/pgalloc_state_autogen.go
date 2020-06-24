@@ -6,200 +6,362 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *EvictableRange) StateTypeName() string {
+	return "pkg/sentry/pgalloc.EvictableRange"
+}
+
+func (x *EvictableRange) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+	}
+}
+
 func (x *EvictableRange) beforeSave() {}
-func (x *EvictableRange) save(m state.Map) {
+
+func (x *EvictableRange) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Start", &x.Start)
-	m.Save("End", &x.End)
+	m.Save(0, &x.Start)
+	m.Save(1, &x.End)
 }
 
 func (x *EvictableRange) afterLoad() {}
-func (x *EvictableRange) load(m state.Map) {
-	m.Load("Start", &x.Start)
-	m.Load("End", &x.End)
+
+func (x *EvictableRange) StateLoad(m state.Source) {
+	m.Load(0, &x.Start)
+	m.Load(1, &x.End)
+}
+
+func (x *evictableRangeSet) StateTypeName() string {
+	return "pkg/sentry/pgalloc.evictableRangeSet"
+}
+
+func (x *evictableRangeSet) StateFields() []string {
+	return []string{
+		"root",
+	}
 }
 
 func (x *evictableRangeSet) beforeSave() {}
-func (x *evictableRangeSet) save(m state.Map) {
+
+func (x *evictableRangeSet) StateSave(m state.Sink) {
 	x.beforeSave()
 	var root *evictableRangeSegmentDataSlices = x.saveRoot()
-	m.SaveValue("root", root)
+	m.SaveValue(0, root)
 }
 
 func (x *evictableRangeSet) afterLoad() {}
-func (x *evictableRangeSet) load(m state.Map) {
-	m.LoadValue("root", new(*evictableRangeSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*evictableRangeSegmentDataSlices)) })
+
+func (x *evictableRangeSet) StateLoad(m state.Source) {
+	m.LoadValue(0, new(*evictableRangeSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*evictableRangeSegmentDataSlices)) })
+}
+
+func (x *evictableRangenode) StateTypeName() string {
+	return "pkg/sentry/pgalloc.evictableRangenode"
+}
+
+func (x *evictableRangenode) StateFields() []string {
+	return []string{
+		"nrSegments",
+		"parent",
+		"parentIndex",
+		"hasChildren",
+		"maxGap",
+		"keys",
+		"values",
+		"children",
+	}
 }
 
 func (x *evictableRangenode) beforeSave() {}
-func (x *evictableRangenode) save(m state.Map) {
+
+func (x *evictableRangenode) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("nrSegments", &x.nrSegments)
-	m.Save("parent", &x.parent)
-	m.Save("parentIndex", &x.parentIndex)
-	m.Save("hasChildren", &x.hasChildren)
-	m.Save("maxGap", &x.maxGap)
-	m.Save("keys", &x.keys)
-	m.Save("values", &x.values)
-	m.Save("children", &x.children)
+	m.Save(0, &x.nrSegments)
+	m.Save(1, &x.parent)
+	m.Save(2, &x.parentIndex)
+	m.Save(3, &x.hasChildren)
+	m.Save(4, &x.maxGap)
+	m.Save(5, &x.keys)
+	m.Save(6, &x.values)
+	m.Save(7, &x.children)
 }
 
 func (x *evictableRangenode) afterLoad() {}
-func (x *evictableRangenode) load(m state.Map) {
-	m.Load("nrSegments", &x.nrSegments)
-	m.Load("parent", &x.parent)
-	m.Load("parentIndex", &x.parentIndex)
-	m.Load("hasChildren", &x.hasChildren)
-	m.Load("maxGap", &x.maxGap)
-	m.Load("keys", &x.keys)
-	m.Load("values", &x.values)
-	m.Load("children", &x.children)
+
+func (x *evictableRangenode) StateLoad(m state.Source) {
+	m.Load(0, &x.nrSegments)
+	m.Load(1, &x.parent)
+	m.Load(2, &x.parentIndex)
+	m.Load(3, &x.hasChildren)
+	m.Load(4, &x.maxGap)
+	m.Load(5, &x.keys)
+	m.Load(6, &x.values)
+	m.Load(7, &x.children)
+}
+
+func (x *evictableRangeSegmentDataSlices) StateTypeName() string {
+	return "pkg/sentry/pgalloc.evictableRangeSegmentDataSlices"
+}
+
+func (x *evictableRangeSegmentDataSlices) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+		"Values",
+	}
 }
 
 func (x *evictableRangeSegmentDataSlices) beforeSave() {}
-func (x *evictableRangeSegmentDataSlices) save(m state.Map) {
+
+func (x *evictableRangeSegmentDataSlices) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Start", &x.Start)
-	m.Save("End", &x.End)
-	m.Save("Values", &x.Values)
+	m.Save(0, &x.Start)
+	m.Save(1, &x.End)
+	m.Save(2, &x.Values)
 }
 
 func (x *evictableRangeSegmentDataSlices) afterLoad() {}
-func (x *evictableRangeSegmentDataSlices) load(m state.Map) {
-	m.Load("Start", &x.Start)
-	m.Load("End", &x.End)
-	m.Load("Values", &x.Values)
+
+func (x *evictableRangeSegmentDataSlices) StateLoad(m state.Source) {
+	m.Load(0, &x.Start)
+	m.Load(1, &x.End)
+	m.Load(2, &x.Values)
+}
+
+func (x *usageInfo) StateTypeName() string {
+	return "pkg/sentry/pgalloc.usageInfo"
+}
+
+func (x *usageInfo) StateFields() []string {
+	return []string{
+		"kind",
+		"knownCommitted",
+		"refs",
+	}
 }
 
 func (x *usageInfo) beforeSave() {}
-func (x *usageInfo) save(m state.Map) {
+
+func (x *usageInfo) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("kind", &x.kind)
-	m.Save("knownCommitted", &x.knownCommitted)
-	m.Save("refs", &x.refs)
+	m.Save(0, &x.kind)
+	m.Save(1, &x.knownCommitted)
+	m.Save(2, &x.refs)
 }
 
 func (x *usageInfo) afterLoad() {}
-func (x *usageInfo) load(m state.Map) {
-	m.Load("kind", &x.kind)
-	m.Load("knownCommitted", &x.knownCommitted)
-	m.Load("refs", &x.refs)
+
+func (x *usageInfo) StateLoad(m state.Source) {
+	m.Load(0, &x.kind)
+	m.Load(1, &x.knownCommitted)
+	m.Load(2, &x.refs)
+}
+
+func (x *reclaimSet) StateTypeName() string {
+	return "pkg/sentry/pgalloc.reclaimSet"
+}
+
+func (x *reclaimSet) StateFields() []string {
+	return []string{
+		"root",
+	}
 }
 
 func (x *reclaimSet) beforeSave() {}
-func (x *reclaimSet) save(m state.Map) {
+
+func (x *reclaimSet) StateSave(m state.Sink) {
 	x.beforeSave()
 	var root *reclaimSegmentDataSlices = x.saveRoot()
-	m.SaveValue("root", root)
+	m.SaveValue(0, root)
 }
 
 func (x *reclaimSet) afterLoad() {}
-func (x *reclaimSet) load(m state.Map) {
-	m.LoadValue("root", new(*reclaimSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*reclaimSegmentDataSlices)) })
+
+func (x *reclaimSet) StateLoad(m state.Source) {
+	m.LoadValue(0, new(*reclaimSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*reclaimSegmentDataSlices)) })
+}
+
+func (x *reclaimnode) StateTypeName() string {
+	return "pkg/sentry/pgalloc.reclaimnode"
+}
+
+func (x *reclaimnode) StateFields() []string {
+	return []string{
+		"nrSegments",
+		"parent",
+		"parentIndex",
+		"hasChildren",
+		"maxGap",
+		"keys",
+		"values",
+		"children",
+	}
 }
 
 func (x *reclaimnode) beforeSave() {}
-func (x *reclaimnode) save(m state.Map) {
+
+func (x *reclaimnode) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("nrSegments", &x.nrSegments)
-	m.Save("parent", &x.parent)
-	m.Save("parentIndex", &x.parentIndex)
-	m.Save("hasChildren", &x.hasChildren)
-	m.Save("maxGap", &x.maxGap)
-	m.Save("keys", &x.keys)
-	m.Save("values", &x.values)
-	m.Save("children", &x.children)
+	m.Save(0, &x.nrSegments)
+	m.Save(1, &x.parent)
+	m.Save(2, &x.parentIndex)
+	m.Save(3, &x.hasChildren)
+	m.Save(4, &x.maxGap)
+	m.Save(5, &x.keys)
+	m.Save(6, &x.values)
+	m.Save(7, &x.children)
 }
 
 func (x *reclaimnode) afterLoad() {}
-func (x *reclaimnode) load(m state.Map) {
-	m.Load("nrSegments", &x.nrSegments)
-	m.Load("parent", &x.parent)
-	m.Load("parentIndex", &x.parentIndex)
-	m.Load("hasChildren", &x.hasChildren)
-	m.Load("maxGap", &x.maxGap)
-	m.Load("keys", &x.keys)
-	m.Load("values", &x.values)
-	m.Load("children", &x.children)
+
+func (x *reclaimnode) StateLoad(m state.Source) {
+	m.Load(0, &x.nrSegments)
+	m.Load(1, &x.parent)
+	m.Load(2, &x.parentIndex)
+	m.Load(3, &x.hasChildren)
+	m.Load(4, &x.maxGap)
+	m.Load(5, &x.keys)
+	m.Load(6, &x.values)
+	m.Load(7, &x.children)
+}
+
+func (x *reclaimSegmentDataSlices) StateTypeName() string {
+	return "pkg/sentry/pgalloc.reclaimSegmentDataSlices"
+}
+
+func (x *reclaimSegmentDataSlices) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+		"Values",
+	}
 }
 
 func (x *reclaimSegmentDataSlices) beforeSave() {}
-func (x *reclaimSegmentDataSlices) save(m state.Map) {
+
+func (x *reclaimSegmentDataSlices) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Start", &x.Start)
-	m.Save("End", &x.End)
-	m.Save("Values", &x.Values)
+	m.Save(0, &x.Start)
+	m.Save(1, &x.End)
+	m.Save(2, &x.Values)
 }
 
 func (x *reclaimSegmentDataSlices) afterLoad() {}
-func (x *reclaimSegmentDataSlices) load(m state.Map) {
-	m.Load("Start", &x.Start)
-	m.Load("End", &x.End)
-	m.Load("Values", &x.Values)
+
+func (x *reclaimSegmentDataSlices) StateLoad(m state.Source) {
+	m.Load(0, &x.Start)
+	m.Load(1, &x.End)
+	m.Load(2, &x.Values)
+}
+
+func (x *usageSet) StateTypeName() string {
+	return "pkg/sentry/pgalloc.usageSet"
+}
+
+func (x *usageSet) StateFields() []string {
+	return []string{
+		"root",
+	}
 }
 
 func (x *usageSet) beforeSave() {}
-func (x *usageSet) save(m state.Map) {
+
+func (x *usageSet) StateSave(m state.Sink) {
 	x.beforeSave()
 	var root *usageSegmentDataSlices = x.saveRoot()
-	m.SaveValue("root", root)
+	m.SaveValue(0, root)
 }
 
 func (x *usageSet) afterLoad() {}
-func (x *usageSet) load(m state.Map) {
-	m.LoadValue("root", new(*usageSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*usageSegmentDataSlices)) })
+
+func (x *usageSet) StateLoad(m state.Source) {
+	m.LoadValue(0, new(*usageSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*usageSegmentDataSlices)) })
+}
+
+func (x *usagenode) StateTypeName() string {
+	return "pkg/sentry/pgalloc.usagenode"
+}
+
+func (x *usagenode) StateFields() []string {
+	return []string{
+		"nrSegments",
+		"parent",
+		"parentIndex",
+		"hasChildren",
+		"maxGap",
+		"keys",
+		"values",
+		"children",
+	}
 }
 
 func (x *usagenode) beforeSave() {}
-func (x *usagenode) save(m state.Map) {
+
+func (x *usagenode) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("nrSegments", &x.nrSegments)
-	m.Save("parent", &x.parent)
-	m.Save("parentIndex", &x.parentIndex)
-	m.Save("hasChildren", &x.hasChildren)
-	m.Save("maxGap", &x.maxGap)
-	m.Save("keys", &x.keys)
-	m.Save("values", &x.values)
-	m.Save("children", &x.children)
+	m.Save(0, &x.nrSegments)
+	m.Save(1, &x.parent)
+	m.Save(2, &x.parentIndex)
+	m.Save(3, &x.hasChildren)
+	m.Save(4, &x.maxGap)
+	m.Save(5, &x.keys)
+	m.Save(6, &x.values)
+	m.Save(7, &x.children)
 }
 
 func (x *usagenode) afterLoad() {}
-func (x *usagenode) load(m state.Map) {
-	m.Load("nrSegments", &x.nrSegments)
-	m.Load("parent", &x.parent)
-	m.Load("parentIndex", &x.parentIndex)
-	m.Load("hasChildren", &x.hasChildren)
-	m.Load("maxGap", &x.maxGap)
-	m.Load("keys", &x.keys)
-	m.Load("values", &x.values)
-	m.Load("children", &x.children)
+
+func (x *usagenode) StateLoad(m state.Source) {
+	m.Load(0, &x.nrSegments)
+	m.Load(1, &x.parent)
+	m.Load(2, &x.parentIndex)
+	m.Load(3, &x.hasChildren)
+	m.Load(4, &x.maxGap)
+	m.Load(5, &x.keys)
+	m.Load(6, &x.values)
+	m.Load(7, &x.children)
+}
+
+func (x *usageSegmentDataSlices) StateTypeName() string {
+	return "pkg/sentry/pgalloc.usageSegmentDataSlices"
+}
+
+func (x *usageSegmentDataSlices) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+		"Values",
+	}
 }
 
 func (x *usageSegmentDataSlices) beforeSave() {}
-func (x *usageSegmentDataSlices) save(m state.Map) {
+
+func (x *usageSegmentDataSlices) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Start", &x.Start)
-	m.Save("End", &x.End)
-	m.Save("Values", &x.Values)
+	m.Save(0, &x.Start)
+	m.Save(1, &x.End)
+	m.Save(2, &x.Values)
 }
 
 func (x *usageSegmentDataSlices) afterLoad() {}
-func (x *usageSegmentDataSlices) load(m state.Map) {
-	m.Load("Start", &x.Start)
-	m.Load("End", &x.End)
-	m.Load("Values", &x.Values)
+
+func (x *usageSegmentDataSlices) StateLoad(m state.Source) {
+	m.Load(0, &x.Start)
+	m.Load(1, &x.End)
+	m.Load(2, &x.Values)
 }
 
 func init() {
-	state.Register("pkg/sentry/pgalloc.EvictableRange", (*EvictableRange)(nil), state.Fns{Save: (*EvictableRange).save, Load: (*EvictableRange).load})
-	state.Register("pkg/sentry/pgalloc.evictableRangeSet", (*evictableRangeSet)(nil), state.Fns{Save: (*evictableRangeSet).save, Load: (*evictableRangeSet).load})
-	state.Register("pkg/sentry/pgalloc.evictableRangenode", (*evictableRangenode)(nil), state.Fns{Save: (*evictableRangenode).save, Load: (*evictableRangenode).load})
-	state.Register("pkg/sentry/pgalloc.evictableRangeSegmentDataSlices", (*evictableRangeSegmentDataSlices)(nil), state.Fns{Save: (*evictableRangeSegmentDataSlices).save, Load: (*evictableRangeSegmentDataSlices).load})
-	state.Register("pkg/sentry/pgalloc.usageInfo", (*usageInfo)(nil), state.Fns{Save: (*usageInfo).save, Load: (*usageInfo).load})
-	state.Register("pkg/sentry/pgalloc.reclaimSet", (*reclaimSet)(nil), state.Fns{Save: (*reclaimSet).save, Load: (*reclaimSet).load})
-	state.Register("pkg/sentry/pgalloc.reclaimnode", (*reclaimnode)(nil), state.Fns{Save: (*reclaimnode).save, Load: (*reclaimnode).load})
-	state.Register("pkg/sentry/pgalloc.reclaimSegmentDataSlices", (*reclaimSegmentDataSlices)(nil), state.Fns{Save: (*reclaimSegmentDataSlices).save, Load: (*reclaimSegmentDataSlices).load})
-	state.Register("pkg/sentry/pgalloc.usageSet", (*usageSet)(nil), state.Fns{Save: (*usageSet).save, Load: (*usageSet).load})
-	state.Register("pkg/sentry/pgalloc.usagenode", (*usagenode)(nil), state.Fns{Save: (*usagenode).save, Load: (*usagenode).load})
-	state.Register("pkg/sentry/pgalloc.usageSegmentDataSlices", (*usageSegmentDataSlices)(nil), state.Fns{Save: (*usageSegmentDataSlices).save, Load: (*usageSegmentDataSlices).load})
+	state.Register((*EvictableRange)(nil))
+	state.Register((*evictableRangeSet)(nil))
+	state.Register((*evictableRangenode)(nil))
+	state.Register((*evictableRangeSegmentDataSlices)(nil))
+	state.Register((*usageInfo)(nil))
+	state.Register((*reclaimSet)(nil))
+	state.Register((*reclaimnode)(nil))
+	state.Register((*reclaimSegmentDataSlices)(nil))
+	state.Register((*usageSet)(nil))
+	state.Register((*usagenode)(nil))
+	state.Register((*usageSegmentDataSlices)(nil))
 }

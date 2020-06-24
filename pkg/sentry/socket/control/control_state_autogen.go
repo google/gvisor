@@ -3,34 +3,47 @@
 package control
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *RightsFiles) save(m state.Map) {
-	m.SaveValue("", ([]*fs.File)(*x))
+func (x *RightsFiles) StateTypeName() string {
+	return "pkg/sentry/socket/control.RightsFiles"
 }
 
-func (x *RightsFiles) load(m state.Map) {
-	m.LoadValue("", new([]*fs.File), func(y interface{}) { *x = (RightsFiles)(y.([]*fs.File)) })
+func (x *RightsFiles) StateFields() []string {
+	return nil
+}
+
+func (x *scmCredentials) StateTypeName() string {
+	return "pkg/sentry/socket/control.scmCredentials"
+}
+
+func (x *scmCredentials) StateFields() []string {
+	return []string{
+		"t",
+		"kuid",
+		"kgid",
+	}
 }
 
 func (x *scmCredentials) beforeSave() {}
-func (x *scmCredentials) save(m state.Map) {
+
+func (x *scmCredentials) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("t", &x.t)
-	m.Save("kuid", &x.kuid)
-	m.Save("kgid", &x.kgid)
+	m.Save(0, &x.t)
+	m.Save(1, &x.kuid)
+	m.Save(2, &x.kgid)
 }
 
 func (x *scmCredentials) afterLoad() {}
-func (x *scmCredentials) load(m state.Map) {
-	m.Load("t", &x.t)
-	m.Load("kuid", &x.kuid)
-	m.Load("kgid", &x.kgid)
+
+func (x *scmCredentials) StateLoad(m state.Source) {
+	m.Load(0, &x.t)
+	m.Load(1, &x.kuid)
+	m.Load(2, &x.kgid)
 }
 
 func init() {
-	state.Register("pkg/sentry/socket/control.RightsFiles", (*RightsFiles)(nil), state.Fns{Save: (*RightsFiles).save, Load: (*RightsFiles).load})
-	state.Register("pkg/sentry/socket/control.scmCredentials", (*scmCredentials)(nil), state.Fns{Save: (*scmCredentials).save, Load: (*scmCredentials).load})
+	state.Register((*RightsFiles)(nil))
+	state.Register((*scmCredentials)(nil))
 }

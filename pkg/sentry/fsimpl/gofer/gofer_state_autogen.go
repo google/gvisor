@@ -6,33 +6,59 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *dentryList) StateTypeName() string {
+	return "pkg/sentry/fsimpl/gofer.dentryList"
+}
+
+func (x *dentryList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
+}
+
 func (x *dentryList) beforeSave() {}
-func (x *dentryList) save(m state.Map) {
+
+func (x *dentryList) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("head", &x.head)
-	m.Save("tail", &x.tail)
+	m.Save(0, &x.head)
+	m.Save(1, &x.tail)
 }
 
 func (x *dentryList) afterLoad() {}
-func (x *dentryList) load(m state.Map) {
-	m.Load("head", &x.head)
-	m.Load("tail", &x.tail)
+
+func (x *dentryList) StateLoad(m state.Source) {
+	m.Load(0, &x.head)
+	m.Load(1, &x.tail)
+}
+
+func (x *dentryEntry) StateTypeName() string {
+	return "pkg/sentry/fsimpl/gofer.dentryEntry"
+}
+
+func (x *dentryEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
 }
 
 func (x *dentryEntry) beforeSave() {}
-func (x *dentryEntry) save(m state.Map) {
+
+func (x *dentryEntry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("next", &x.next)
-	m.Save("prev", &x.prev)
+	m.Save(0, &x.next)
+	m.Save(1, &x.prev)
 }
 
 func (x *dentryEntry) afterLoad() {}
-func (x *dentryEntry) load(m state.Map) {
-	m.Load("next", &x.next)
-	m.Load("prev", &x.prev)
+
+func (x *dentryEntry) StateLoad(m state.Source) {
+	m.Load(0, &x.next)
+	m.Load(1, &x.prev)
 }
 
 func init() {
-	state.Register("pkg/sentry/fsimpl/gofer.dentryList", (*dentryList)(nil), state.Fns{Save: (*dentryList).save, Load: (*dentryList).load})
-	state.Register("pkg/sentry/fsimpl/gofer.dentryEntry", (*dentryEntry)(nil), state.Fns{Save: (*dentryEntry).save, Load: (*dentryEntry).load})
+	state.Register((*dentryList)(nil))
+	state.Register((*dentryEntry)(nil))
 }

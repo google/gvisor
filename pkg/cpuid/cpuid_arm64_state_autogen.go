@@ -8,27 +8,44 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *FeatureSet) StateTypeName() string {
+	return "pkg/cpuid.FeatureSet"
+}
+
+func (x *FeatureSet) StateFields() []string {
+	return []string{
+		"Set",
+		"CPUImplementer",
+		"CPUArchitecture",
+		"CPUVariant",
+		"CPUPartnum",
+		"CPURevision",
+	}
+}
+
 func (x *FeatureSet) beforeSave() {}
-func (x *FeatureSet) save(m state.Map) {
+
+func (x *FeatureSet) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Set", &x.Set)
-	m.Save("CPUImplementer", &x.CPUImplementer)
-	m.Save("CPUArchitecture", &x.CPUArchitecture)
-	m.Save("CPUVariant", &x.CPUVariant)
-	m.Save("CPUPartnum", &x.CPUPartnum)
-	m.Save("CPURevision", &x.CPURevision)
+	m.Save(0, &x.Set)
+	m.Save(1, &x.CPUImplementer)
+	m.Save(2, &x.CPUArchitecture)
+	m.Save(3, &x.CPUVariant)
+	m.Save(4, &x.CPUPartnum)
+	m.Save(5, &x.CPURevision)
 }
 
 func (x *FeatureSet) afterLoad() {}
-func (x *FeatureSet) load(m state.Map) {
-	m.Load("Set", &x.Set)
-	m.Load("CPUImplementer", &x.CPUImplementer)
-	m.Load("CPUArchitecture", &x.CPUArchitecture)
-	m.Load("CPUVariant", &x.CPUVariant)
-	m.Load("CPUPartnum", &x.CPUPartnum)
-	m.Load("CPURevision", &x.CPURevision)
+
+func (x *FeatureSet) StateLoad(m state.Source) {
+	m.Load(0, &x.Set)
+	m.Load(1, &x.CPUImplementer)
+	m.Load(2, &x.CPUArchitecture)
+	m.Load(3, &x.CPUVariant)
+	m.Load(4, &x.CPUPartnum)
+	m.Load(5, &x.CPURevision)
 }
 
 func init() {
-	state.Register("pkg/cpuid.FeatureSet", (*FeatureSet)(nil), state.Fns{Save: (*FeatureSet).save, Load: (*FeatureSet).load})
+	state.Register((*FeatureSet)(nil))
 }

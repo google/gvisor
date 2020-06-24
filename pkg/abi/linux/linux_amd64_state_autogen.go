@@ -11,69 +11,107 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *PtraceRegs) StateTypeName() string {
+	return "pkg/abi/linux.PtraceRegs"
+}
+
+func (x *PtraceRegs) StateFields() []string {
+	return []string{
+		"R15",
+		"R14",
+		"R13",
+		"R12",
+		"Rbp",
+		"Rbx",
+		"R11",
+		"R10",
+		"R9",
+		"R8",
+		"Rax",
+		"Rcx",
+		"Rdx",
+		"Rsi",
+		"Rdi",
+		"Orig_rax",
+		"Rip",
+		"Cs",
+		"Eflags",
+		"Rsp",
+		"Ss",
+		"Fs_base",
+		"Gs_base",
+		"Ds",
+		"Es",
+		"Fs",
+		"Gs",
+	}
+}
+
 func (x *PtraceRegs) beforeSave() {}
-func (x *PtraceRegs) save(m state.Map) {
+
+func (x *PtraceRegs) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("R15", &x.R15)
-	m.Save("R14", &x.R14)
-	m.Save("R13", &x.R13)
-	m.Save("R12", &x.R12)
-	m.Save("Rbp", &x.Rbp)
-	m.Save("Rbx", &x.Rbx)
-	m.Save("R11", &x.R11)
-	m.Save("R10", &x.R10)
-	m.Save("R9", &x.R9)
-	m.Save("R8", &x.R8)
-	m.Save("Rax", &x.Rax)
-	m.Save("Rcx", &x.Rcx)
-	m.Save("Rdx", &x.Rdx)
-	m.Save("Rsi", &x.Rsi)
-	m.Save("Rdi", &x.Rdi)
-	m.Save("Orig_rax", &x.Orig_rax)
-	m.Save("Rip", &x.Rip)
-	m.Save("Cs", &x.Cs)
-	m.Save("Eflags", &x.Eflags)
-	m.Save("Rsp", &x.Rsp)
-	m.Save("Ss", &x.Ss)
-	m.Save("Fs_base", &x.Fs_base)
-	m.Save("Gs_base", &x.Gs_base)
-	m.Save("Ds", &x.Ds)
-	m.Save("Es", &x.Es)
-	m.Save("Fs", &x.Fs)
-	m.Save("Gs", &x.Gs)
+	m.Save(0, &x.R15)
+	m.Save(1, &x.R14)
+	m.Save(2, &x.R13)
+	m.Save(3, &x.R12)
+	m.Save(4, &x.Rbp)
+	m.Save(5, &x.Rbx)
+	m.Save(6, &x.R11)
+	m.Save(7, &x.R10)
+	m.Save(8, &x.R9)
+	m.Save(9, &x.R8)
+	m.Save(10, &x.Rax)
+	m.Save(11, &x.Rcx)
+	m.Save(12, &x.Rdx)
+	m.Save(13, &x.Rsi)
+	m.Save(14, &x.Rdi)
+	m.Save(15, &x.Orig_rax)
+	m.Save(16, &x.Rip)
+	m.Save(17, &x.Cs)
+	m.Save(18, &x.Eflags)
+	m.Save(19, &x.Rsp)
+	m.Save(20, &x.Ss)
+	m.Save(21, &x.Fs_base)
+	m.Save(22, &x.Gs_base)
+	m.Save(23, &x.Ds)
+	m.Save(24, &x.Es)
+	m.Save(25, &x.Fs)
+	m.Save(26, &x.Gs)
 }
 
 func (x *PtraceRegs) afterLoad() {}
-func (x *PtraceRegs) load(m state.Map) {
-	m.Load("R15", &x.R15)
-	m.Load("R14", &x.R14)
-	m.Load("R13", &x.R13)
-	m.Load("R12", &x.R12)
-	m.Load("Rbp", &x.Rbp)
-	m.Load("Rbx", &x.Rbx)
-	m.Load("R11", &x.R11)
-	m.Load("R10", &x.R10)
-	m.Load("R9", &x.R9)
-	m.Load("R8", &x.R8)
-	m.Load("Rax", &x.Rax)
-	m.Load("Rcx", &x.Rcx)
-	m.Load("Rdx", &x.Rdx)
-	m.Load("Rsi", &x.Rsi)
-	m.Load("Rdi", &x.Rdi)
-	m.Load("Orig_rax", &x.Orig_rax)
-	m.Load("Rip", &x.Rip)
-	m.Load("Cs", &x.Cs)
-	m.Load("Eflags", &x.Eflags)
-	m.Load("Rsp", &x.Rsp)
-	m.Load("Ss", &x.Ss)
-	m.Load("Fs_base", &x.Fs_base)
-	m.Load("Gs_base", &x.Gs_base)
-	m.Load("Ds", &x.Ds)
-	m.Load("Es", &x.Es)
-	m.Load("Fs", &x.Fs)
-	m.Load("Gs", &x.Gs)
+
+func (x *PtraceRegs) StateLoad(m state.Source) {
+	m.Load(0, &x.R15)
+	m.Load(1, &x.R14)
+	m.Load(2, &x.R13)
+	m.Load(3, &x.R12)
+	m.Load(4, &x.Rbp)
+	m.Load(5, &x.Rbx)
+	m.Load(6, &x.R11)
+	m.Load(7, &x.R10)
+	m.Load(8, &x.R9)
+	m.Load(9, &x.R8)
+	m.Load(10, &x.Rax)
+	m.Load(11, &x.Rcx)
+	m.Load(12, &x.Rdx)
+	m.Load(13, &x.Rsi)
+	m.Load(14, &x.Rdi)
+	m.Load(15, &x.Orig_rax)
+	m.Load(16, &x.Rip)
+	m.Load(17, &x.Cs)
+	m.Load(18, &x.Eflags)
+	m.Load(19, &x.Rsp)
+	m.Load(20, &x.Ss)
+	m.Load(21, &x.Fs_base)
+	m.Load(22, &x.Gs_base)
+	m.Load(23, &x.Ds)
+	m.Load(24, &x.Es)
+	m.Load(25, &x.Fs)
+	m.Load(26, &x.Gs)
 }
 
 func init() {
-	state.Register("pkg/abi/linux.PtraceRegs", (*PtraceRegs)(nil), state.Fns{Save: (*PtraceRegs).save, Load: (*PtraceRegs).load})
+	state.Register((*PtraceRegs)(nil))
 }

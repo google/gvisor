@@ -56,7 +56,7 @@ func (l *icmpPacketList) Back() *icmpPacket {
 //
 // NOTE: This is an O(n) operation.
 func (l *icmpPacketList) Len() (count int) {
-	for e := l.Front(); e != nil; e = e.Next() {
+	for e := l.Front(); e != nil; e = (icmpPacketElementMapper{}.linkerFor(e)).Next() {
 		count++
 	}
 	return count
@@ -148,13 +148,13 @@ func (l *icmpPacketList) Remove(e *icmpPacket) {
 
 	if prev != nil {
 		icmpPacketElementMapper{}.linkerFor(prev).SetNext(next)
-	} else {
+	} else if l.head == e {
 		l.head = next
 	}
 
 	if next != nil {
 		icmpPacketElementMapper{}.linkerFor(next).SetPrev(prev)
-	} else {
+	} else if l.tail == e {
 		l.tail = prev
 	}
 

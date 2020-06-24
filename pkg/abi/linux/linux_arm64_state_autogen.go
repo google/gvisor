@@ -10,23 +10,38 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *PtraceRegs) StateTypeName() string {
+	return "pkg/abi/linux.PtraceRegs"
+}
+
+func (x *PtraceRegs) StateFields() []string {
+	return []string{
+		"Regs",
+		"Sp",
+		"Pc",
+		"Pstate",
+	}
+}
+
 func (x *PtraceRegs) beforeSave() {}
-func (x *PtraceRegs) save(m state.Map) {
+
+func (x *PtraceRegs) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Regs", &x.Regs)
-	m.Save("Sp", &x.Sp)
-	m.Save("Pc", &x.Pc)
-	m.Save("Pstate", &x.Pstate)
+	m.Save(0, &x.Regs)
+	m.Save(1, &x.Sp)
+	m.Save(2, &x.Pc)
+	m.Save(3, &x.Pstate)
 }
 
 func (x *PtraceRegs) afterLoad() {}
-func (x *PtraceRegs) load(m state.Map) {
-	m.Load("Regs", &x.Regs)
-	m.Load("Sp", &x.Sp)
-	m.Load("Pc", &x.Pc)
-	m.Load("Pstate", &x.Pstate)
+
+func (x *PtraceRegs) StateLoad(m state.Source) {
+	m.Load(0, &x.Regs)
+	m.Load(1, &x.Sp)
+	m.Load(2, &x.Pc)
+	m.Load(3, &x.Pstate)
 }
 
 func init() {
-	state.Register("pkg/abi/linux.PtraceRegs", (*PtraceRegs)(nil), state.Fns{Save: (*PtraceRegs).save, Load: (*PtraceRegs).load})
+	state.Register((*PtraceRegs)(nil))
 }

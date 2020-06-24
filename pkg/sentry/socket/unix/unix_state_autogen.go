@@ -6,35 +6,62 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *SocketOperations) StateTypeName() string {
+	return "pkg/sentry/socket/unix.SocketOperations"
+}
+
+func (x *SocketOperations) StateFields() []string {
+	return []string{
+		"socketOpsCommon",
+	}
+}
+
 func (x *SocketOperations) beforeSave() {}
-func (x *SocketOperations) save(m state.Map) {
+
+func (x *SocketOperations) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("socketOpsCommon", &x.socketOpsCommon)
+	m.Save(0, &x.socketOpsCommon)
 }
 
 func (x *SocketOperations) afterLoad() {}
-func (x *SocketOperations) load(m state.Map) {
-	m.Load("socketOpsCommon", &x.socketOpsCommon)
+
+func (x *SocketOperations) StateLoad(m state.Source) {
+	m.Load(0, &x.socketOpsCommon)
+}
+
+func (x *socketOpsCommon) StateTypeName() string {
+	return "pkg/sentry/socket/unix.socketOpsCommon"
+}
+
+func (x *socketOpsCommon) StateFields() []string {
+	return []string{
+		"AtomicRefCount",
+		"SendReceiveTimeout",
+		"ep",
+		"stype",
+	}
 }
 
 func (x *socketOpsCommon) beforeSave() {}
-func (x *socketOpsCommon) save(m state.Map) {
+
+func (x *socketOpsCommon) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("AtomicRefCount", &x.AtomicRefCount)
-	m.Save("SendReceiveTimeout", &x.SendReceiveTimeout)
-	m.Save("ep", &x.ep)
-	m.Save("stype", &x.stype)
+	m.Save(0, &x.AtomicRefCount)
+	m.Save(1, &x.SendReceiveTimeout)
+	m.Save(2, &x.ep)
+	m.Save(3, &x.stype)
 }
 
 func (x *socketOpsCommon) afterLoad() {}
-func (x *socketOpsCommon) load(m state.Map) {
-	m.Load("AtomicRefCount", &x.AtomicRefCount)
-	m.Load("SendReceiveTimeout", &x.SendReceiveTimeout)
-	m.Load("ep", &x.ep)
-	m.Load("stype", &x.stype)
+
+func (x *socketOpsCommon) StateLoad(m state.Source) {
+	m.Load(0, &x.AtomicRefCount)
+	m.Load(1, &x.SendReceiveTimeout)
+	m.Load(2, &x.ep)
+	m.Load(3, &x.stype)
 }
 
 func init() {
-	state.Register("pkg/sentry/socket/unix.SocketOperations", (*SocketOperations)(nil), state.Fns{Save: (*SocketOperations).save, Load: (*SocketOperations).load})
-	state.Register("pkg/sentry/socket/unix.socketOpsCommon", (*socketOpsCommon)(nil), state.Fns{Save: (*socketOpsCommon).save, Load: (*socketOpsCommon).load})
+	state.Register((*SocketOperations)(nil))
+	state.Register((*socketOpsCommon)(nil))
 }

@@ -6,17 +6,29 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *NotificationHandle) StateTypeName() string {
+	return "pkg/tcpip/link/channel.NotificationHandle"
+}
+
+func (x *NotificationHandle) StateFields() []string {
+	return []string{
+		"n",
+	}
+}
+
 func (x *NotificationHandle) beforeSave() {}
-func (x *NotificationHandle) save(m state.Map) {
+
+func (x *NotificationHandle) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("n", &x.n)
+	m.Save(0, &x.n)
 }
 
 func (x *NotificationHandle) afterLoad() {}
-func (x *NotificationHandle) load(m state.Map) {
-	m.Load("n", &x.n)
+
+func (x *NotificationHandle) StateLoad(m state.Source) {
+	m.Load(0, &x.n)
 }
 
 func init() {
-	state.Register("pkg/tcpip/link/channel.NotificationHandle", (*NotificationHandle)(nil), state.Fns{Save: (*NotificationHandle).save, Load: (*NotificationHandle).load})
+	state.Register((*NotificationHandle)(nil))
 }

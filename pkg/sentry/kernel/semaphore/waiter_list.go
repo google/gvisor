@@ -56,7 +56,7 @@ func (l *waiterList) Back() *waiter {
 //
 // NOTE: This is an O(n) operation.
 func (l *waiterList) Len() (count int) {
-	for e := l.Front(); e != nil; e = e.Next() {
+	for e := l.Front(); e != nil; e = (waiterElementMapper{}.linkerFor(e)).Next() {
 		count++
 	}
 	return count
@@ -148,13 +148,13 @@ func (l *waiterList) Remove(e *waiter) {
 
 	if prev != nil {
 		waiterElementMapper{}.linkerFor(prev).SetNext(next)
-	} else {
+	} else if l.head == e {
 		l.head = next
 	}
 
 	if next != nil {
 		waiterElementMapper{}.linkerFor(next).SetPrev(prev)
-	} else {
+	} else if l.tail == e {
 		l.tail = prev
 	}
 

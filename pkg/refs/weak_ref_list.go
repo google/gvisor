@@ -56,7 +56,7 @@ func (l *weakRefList) Back() *WeakRef {
 //
 // NOTE: This is an O(n) operation.
 func (l *weakRefList) Len() (count int) {
-	for e := l.Front(); e != nil; e = e.Next() {
+	for e := l.Front(); e != nil; e = (weakRefElementMapper{}.linkerFor(e)).Next() {
 		count++
 	}
 	return count
@@ -148,13 +148,13 @@ func (l *weakRefList) Remove(e *WeakRef) {
 
 	if prev != nil {
 		weakRefElementMapper{}.linkerFor(prev).SetNext(next)
-	} else {
+	} else if l.head == e {
 		l.head = next
 	}
 
 	if next != nil {
 		weakRefElementMapper{}.linkerFor(next).SetPrev(prev)
-	} else {
+	} else if l.tail == e {
 		l.tail = prev
 	}
 

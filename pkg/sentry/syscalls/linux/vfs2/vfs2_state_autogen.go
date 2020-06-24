@@ -6,21 +6,35 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *pollRestartBlock) StateTypeName() string {
+	return "pkg/sentry/syscalls/linux/vfs2.pollRestartBlock"
+}
+
+func (x *pollRestartBlock) StateFields() []string {
+	return []string{
+		"pfdAddr",
+		"nfds",
+		"timeout",
+	}
+}
+
 func (x *pollRestartBlock) beforeSave() {}
-func (x *pollRestartBlock) save(m state.Map) {
+
+func (x *pollRestartBlock) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("pfdAddr", &x.pfdAddr)
-	m.Save("nfds", &x.nfds)
-	m.Save("timeout", &x.timeout)
+	m.Save(0, &x.pfdAddr)
+	m.Save(1, &x.nfds)
+	m.Save(2, &x.timeout)
 }
 
 func (x *pollRestartBlock) afterLoad() {}
-func (x *pollRestartBlock) load(m state.Map) {
-	m.Load("pfdAddr", &x.pfdAddr)
-	m.Load("nfds", &x.nfds)
-	m.Load("timeout", &x.timeout)
+
+func (x *pollRestartBlock) StateLoad(m state.Source) {
+	m.Load(0, &x.pfdAddr)
+	m.Load(1, &x.nfds)
+	m.Load(2, &x.timeout)
 }
 
 func init() {
-	state.Register("pkg/sentry/syscalls/linux/vfs2.pollRestartBlock", (*pollRestartBlock)(nil), state.Fns{Save: (*pollRestartBlock).save, Load: (*pollRestartBlock).load})
+	state.Register((*pollRestartBlock)(nil))
 }

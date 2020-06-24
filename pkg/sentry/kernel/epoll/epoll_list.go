@@ -56,7 +56,7 @@ func (l *pollEntryList) Back() *pollEntry {
 //
 // NOTE: This is an O(n) operation.
 func (l *pollEntryList) Len() (count int) {
-	for e := l.Front(); e != nil; e = e.Next() {
+	for e := l.Front(); e != nil; e = (pollEntryElementMapper{}.linkerFor(e)).Next() {
 		count++
 	}
 	return count
@@ -148,13 +148,13 @@ func (l *pollEntryList) Remove(e *pollEntry) {
 
 	if prev != nil {
 		pollEntryElementMapper{}.linkerFor(prev).SetNext(next)
-	} else {
+	} else if l.head == e {
 		l.head = next
 	}
 
 	if next != nil {
 		pollEntryElementMapper{}.linkerFor(next).SetPrev(prev)
-	} else {
+	} else if l.tail == e {
 		l.tail = prev
 	}
 

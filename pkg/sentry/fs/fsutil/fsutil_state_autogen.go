@@ -6,199 +6,378 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *DirtyInfo) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.DirtyInfo"
+}
+
+func (x *DirtyInfo) StateFields() []string {
+	return []string{
+		"Keep",
+	}
+}
+
 func (x *DirtyInfo) beforeSave() {}
-func (x *DirtyInfo) save(m state.Map) {
+
+func (x *DirtyInfo) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Keep", &x.Keep)
+	m.Save(0, &x.Keep)
 }
 
 func (x *DirtyInfo) afterLoad() {}
-func (x *DirtyInfo) load(m state.Map) {
-	m.Load("Keep", &x.Keep)
+
+func (x *DirtyInfo) StateLoad(m state.Source) {
+	m.Load(0, &x.Keep)
+}
+
+func (x *StaticDirFileOperations) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.StaticDirFileOperations"
+}
+
+func (x *StaticDirFileOperations) StateFields() []string {
+	return []string{
+		"dentryMap",
+		"dirCursor",
+	}
 }
 
 func (x *StaticDirFileOperations) beforeSave() {}
-func (x *StaticDirFileOperations) save(m state.Map) {
+
+func (x *StaticDirFileOperations) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("dentryMap", &x.dentryMap)
-	m.Save("dirCursor", &x.dirCursor)
+	m.Save(0, &x.dentryMap)
+	m.Save(1, &x.dirCursor)
 }
 
 func (x *StaticDirFileOperations) afterLoad() {}
-func (x *StaticDirFileOperations) load(m state.Map) {
-	m.Load("dentryMap", &x.dentryMap)
-	m.Load("dirCursor", &x.dirCursor)
+
+func (x *StaticDirFileOperations) StateLoad(m state.Source) {
+	m.Load(0, &x.dentryMap)
+	m.Load(1, &x.dirCursor)
+}
+
+func (x *NoReadWriteFile) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.NoReadWriteFile"
+}
+
+func (x *NoReadWriteFile) StateFields() []string {
+	return []string{}
 }
 
 func (x *NoReadWriteFile) beforeSave() {}
-func (x *NoReadWriteFile) save(m state.Map) {
+
+func (x *NoReadWriteFile) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *NoReadWriteFile) afterLoad() {}
-func (x *NoReadWriteFile) load(m state.Map) {
+
+func (x *NoReadWriteFile) StateLoad(m state.Source) {
+}
+
+func (x *FileStaticContentReader) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.FileStaticContentReader"
+}
+
+func (x *FileStaticContentReader) StateFields() []string {
+	return []string{
+		"content",
+	}
 }
 
 func (x *FileStaticContentReader) beforeSave() {}
-func (x *FileStaticContentReader) save(m state.Map) {
+
+func (x *FileStaticContentReader) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("content", &x.content)
+	m.Save(0, &x.content)
 }
 
 func (x *FileStaticContentReader) afterLoad() {}
-func (x *FileStaticContentReader) load(m state.Map) {
-	m.Load("content", &x.content)
+
+func (x *FileStaticContentReader) StateLoad(m state.Source) {
+	m.Load(0, &x.content)
+}
+
+func (x *HostFileMapper) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.HostFileMapper"
+}
+
+func (x *HostFileMapper) StateFields() []string {
+	return []string{
+		"refs",
+	}
 }
 
 func (x *HostFileMapper) beforeSave() {}
-func (x *HostFileMapper) save(m state.Map) {
+
+func (x *HostFileMapper) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("refs", &x.refs)
+	m.Save(0, &x.refs)
 }
 
-func (x *HostFileMapper) load(m state.Map) {
-	m.Load("refs", &x.refs)
+func (x *HostFileMapper) StateLoad(m state.Source) {
+	m.Load(0, &x.refs)
 	m.AfterLoad(x.afterLoad)
 }
 
+func (x *HostMappable) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.HostMappable"
+}
+
+func (x *HostMappable) StateFields() []string {
+	return []string{
+		"hostFileMapper",
+		"backingFile",
+		"mappings",
+	}
+}
+
 func (x *HostMappable) beforeSave() {}
-func (x *HostMappable) save(m state.Map) {
+
+func (x *HostMappable) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("hostFileMapper", &x.hostFileMapper)
-	m.Save("backingFile", &x.backingFile)
-	m.Save("mappings", &x.mappings)
+	m.Save(0, &x.hostFileMapper)
+	m.Save(1, &x.backingFile)
+	m.Save(2, &x.mappings)
 }
 
 func (x *HostMappable) afterLoad() {}
-func (x *HostMappable) load(m state.Map) {
-	m.Load("hostFileMapper", &x.hostFileMapper)
-	m.Load("backingFile", &x.backingFile)
-	m.Load("mappings", &x.mappings)
+
+func (x *HostMappable) StateLoad(m state.Source) {
+	m.Load(0, &x.hostFileMapper)
+	m.Load(1, &x.backingFile)
+	m.Load(2, &x.mappings)
+}
+
+func (x *SimpleFileInode) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.SimpleFileInode"
+}
+
+func (x *SimpleFileInode) StateFields() []string {
+	return []string{
+		"InodeSimpleAttributes",
+	}
 }
 
 func (x *SimpleFileInode) beforeSave() {}
-func (x *SimpleFileInode) save(m state.Map) {
+
+func (x *SimpleFileInode) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("InodeSimpleAttributes", &x.InodeSimpleAttributes)
+	m.Save(0, &x.InodeSimpleAttributes)
 }
 
 func (x *SimpleFileInode) afterLoad() {}
-func (x *SimpleFileInode) load(m state.Map) {
-	m.Load("InodeSimpleAttributes", &x.InodeSimpleAttributes)
+
+func (x *SimpleFileInode) StateLoad(m state.Source) {
+	m.Load(0, &x.InodeSimpleAttributes)
+}
+
+func (x *NoReadWriteFileInode) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.NoReadWriteFileInode"
+}
+
+func (x *NoReadWriteFileInode) StateFields() []string {
+	return []string{
+		"InodeSimpleAttributes",
+	}
 }
 
 func (x *NoReadWriteFileInode) beforeSave() {}
-func (x *NoReadWriteFileInode) save(m state.Map) {
+
+func (x *NoReadWriteFileInode) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("InodeSimpleAttributes", &x.InodeSimpleAttributes)
+	m.Save(0, &x.InodeSimpleAttributes)
 }
 
 func (x *NoReadWriteFileInode) afterLoad() {}
-func (x *NoReadWriteFileInode) load(m state.Map) {
-	m.Load("InodeSimpleAttributes", &x.InodeSimpleAttributes)
+
+func (x *NoReadWriteFileInode) StateLoad(m state.Source) {
+	m.Load(0, &x.InodeSimpleAttributes)
+}
+
+func (x *InodeSimpleAttributes) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.InodeSimpleAttributes"
+}
+
+func (x *InodeSimpleAttributes) StateFields() []string {
+	return []string{
+		"fsType",
+		"unstable",
+	}
 }
 
 func (x *InodeSimpleAttributes) beforeSave() {}
-func (x *InodeSimpleAttributes) save(m state.Map) {
+
+func (x *InodeSimpleAttributes) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("fsType", &x.fsType)
-	m.Save("unstable", &x.unstable)
+	m.Save(0, &x.fsType)
+	m.Save(1, &x.unstable)
 }
 
 func (x *InodeSimpleAttributes) afterLoad() {}
-func (x *InodeSimpleAttributes) load(m state.Map) {
-	m.Load("fsType", &x.fsType)
-	m.Load("unstable", &x.unstable)
+
+func (x *InodeSimpleAttributes) StateLoad(m state.Source) {
+	m.Load(0, &x.fsType)
+	m.Load(1, &x.unstable)
+}
+
+func (x *InodeSimpleExtendedAttributes) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.InodeSimpleExtendedAttributes"
+}
+
+func (x *InodeSimpleExtendedAttributes) StateFields() []string {
+	return []string{
+		"xattrs",
+	}
 }
 
 func (x *InodeSimpleExtendedAttributes) beforeSave() {}
-func (x *InodeSimpleExtendedAttributes) save(m state.Map) {
+
+func (x *InodeSimpleExtendedAttributes) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("xattrs", &x.xattrs)
+	m.Save(0, &x.xattrs)
 }
 
 func (x *InodeSimpleExtendedAttributes) afterLoad() {}
-func (x *InodeSimpleExtendedAttributes) load(m state.Map) {
-	m.Load("xattrs", &x.xattrs)
+
+func (x *InodeSimpleExtendedAttributes) StateLoad(m state.Source) {
+	m.Load(0, &x.xattrs)
+}
+
+func (x *staticFile) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.staticFile"
+}
+
+func (x *staticFile) StateFields() []string {
+	return []string{
+		"FileStaticContentReader",
+	}
 }
 
 func (x *staticFile) beforeSave() {}
-func (x *staticFile) save(m state.Map) {
+
+func (x *staticFile) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("FileStaticContentReader", &x.FileStaticContentReader)
+	m.Save(0, &x.FileStaticContentReader)
 }
 
 func (x *staticFile) afterLoad() {}
-func (x *staticFile) load(m state.Map) {
-	m.Load("FileStaticContentReader", &x.FileStaticContentReader)
+
+func (x *staticFile) StateLoad(m state.Source) {
+	m.Load(0, &x.FileStaticContentReader)
+}
+
+func (x *InodeStaticFileGetter) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.InodeStaticFileGetter"
+}
+
+func (x *InodeStaticFileGetter) StateFields() []string {
+	return []string{
+		"Contents",
+	}
 }
 
 func (x *InodeStaticFileGetter) beforeSave() {}
-func (x *InodeStaticFileGetter) save(m state.Map) {
+
+func (x *InodeStaticFileGetter) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Contents", &x.Contents)
+	m.Save(0, &x.Contents)
 }
 
 func (x *InodeStaticFileGetter) afterLoad() {}
-func (x *InodeStaticFileGetter) load(m state.Map) {
-	m.Load("Contents", &x.Contents)
+
+func (x *InodeStaticFileGetter) StateLoad(m state.Source) {
+	m.Load(0, &x.Contents)
+}
+
+func (x *CachingInodeOperations) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.CachingInodeOperations"
+}
+
+func (x *CachingInodeOperations) StateFields() []string {
+	return []string{
+		"backingFile",
+		"mfp",
+		"opts",
+		"attr",
+		"dirtyAttr",
+		"mappings",
+		"cache",
+		"dirty",
+		"hostFileMapper",
+		"refs",
+	}
 }
 
 func (x *CachingInodeOperations) beforeSave() {}
-func (x *CachingInodeOperations) save(m state.Map) {
+
+func (x *CachingInodeOperations) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("backingFile", &x.backingFile)
-	m.Save("mfp", &x.mfp)
-	m.Save("opts", &x.opts)
-	m.Save("attr", &x.attr)
-	m.Save("dirtyAttr", &x.dirtyAttr)
-	m.Save("mappings", &x.mappings)
-	m.Save("cache", &x.cache)
-	m.Save("dirty", &x.dirty)
-	m.Save("hostFileMapper", &x.hostFileMapper)
-	m.Save("refs", &x.refs)
+	m.Save(0, &x.backingFile)
+	m.Save(1, &x.mfp)
+	m.Save(2, &x.opts)
+	m.Save(3, &x.attr)
+	m.Save(4, &x.dirtyAttr)
+	m.Save(5, &x.mappings)
+	m.Save(6, &x.cache)
+	m.Save(7, &x.dirty)
+	m.Save(8, &x.hostFileMapper)
+	m.Save(9, &x.refs)
 }
 
 func (x *CachingInodeOperations) afterLoad() {}
-func (x *CachingInodeOperations) load(m state.Map) {
-	m.Load("backingFile", &x.backingFile)
-	m.Load("mfp", &x.mfp)
-	m.Load("opts", &x.opts)
-	m.Load("attr", &x.attr)
-	m.Load("dirtyAttr", &x.dirtyAttr)
-	m.Load("mappings", &x.mappings)
-	m.Load("cache", &x.cache)
-	m.Load("dirty", &x.dirty)
-	m.Load("hostFileMapper", &x.hostFileMapper)
-	m.Load("refs", &x.refs)
+
+func (x *CachingInodeOperations) StateLoad(m state.Source) {
+	m.Load(0, &x.backingFile)
+	m.Load(1, &x.mfp)
+	m.Load(2, &x.opts)
+	m.Load(3, &x.attr)
+	m.Load(4, &x.dirtyAttr)
+	m.Load(5, &x.mappings)
+	m.Load(6, &x.cache)
+	m.Load(7, &x.dirty)
+	m.Load(8, &x.hostFileMapper)
+	m.Load(9, &x.refs)
+}
+
+func (x *CachingInodeOperationsOptions) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.CachingInodeOperationsOptions"
+}
+
+func (x *CachingInodeOperationsOptions) StateFields() []string {
+	return []string{
+		"ForcePageCache",
+		"LimitHostFDTranslation",
+	}
 }
 
 func (x *CachingInodeOperationsOptions) beforeSave() {}
-func (x *CachingInodeOperationsOptions) save(m state.Map) {
+
+func (x *CachingInodeOperationsOptions) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("ForcePageCache", &x.ForcePageCache)
-	m.Save("LimitHostFDTranslation", &x.LimitHostFDTranslation)
+	m.Save(0, &x.ForcePageCache)
+	m.Save(1, &x.LimitHostFDTranslation)
 }
 
 func (x *CachingInodeOperationsOptions) afterLoad() {}
-func (x *CachingInodeOperationsOptions) load(m state.Map) {
-	m.Load("ForcePageCache", &x.ForcePageCache)
-	m.Load("LimitHostFDTranslation", &x.LimitHostFDTranslation)
+
+func (x *CachingInodeOperationsOptions) StateLoad(m state.Source) {
+	m.Load(0, &x.ForcePageCache)
+	m.Load(1, &x.LimitHostFDTranslation)
 }
 
 func init() {
-	state.Register("pkg/sentry/fs/fsutil.DirtyInfo", (*DirtyInfo)(nil), state.Fns{Save: (*DirtyInfo).save, Load: (*DirtyInfo).load})
-	state.Register("pkg/sentry/fs/fsutil.StaticDirFileOperations", (*StaticDirFileOperations)(nil), state.Fns{Save: (*StaticDirFileOperations).save, Load: (*StaticDirFileOperations).load})
-	state.Register("pkg/sentry/fs/fsutil.NoReadWriteFile", (*NoReadWriteFile)(nil), state.Fns{Save: (*NoReadWriteFile).save, Load: (*NoReadWriteFile).load})
-	state.Register("pkg/sentry/fs/fsutil.FileStaticContentReader", (*FileStaticContentReader)(nil), state.Fns{Save: (*FileStaticContentReader).save, Load: (*FileStaticContentReader).load})
-	state.Register("pkg/sentry/fs/fsutil.HostFileMapper", (*HostFileMapper)(nil), state.Fns{Save: (*HostFileMapper).save, Load: (*HostFileMapper).load})
-	state.Register("pkg/sentry/fs/fsutil.HostMappable", (*HostMappable)(nil), state.Fns{Save: (*HostMappable).save, Load: (*HostMappable).load})
-	state.Register("pkg/sentry/fs/fsutil.SimpleFileInode", (*SimpleFileInode)(nil), state.Fns{Save: (*SimpleFileInode).save, Load: (*SimpleFileInode).load})
-	state.Register("pkg/sentry/fs/fsutil.NoReadWriteFileInode", (*NoReadWriteFileInode)(nil), state.Fns{Save: (*NoReadWriteFileInode).save, Load: (*NoReadWriteFileInode).load})
-	state.Register("pkg/sentry/fs/fsutil.InodeSimpleAttributes", (*InodeSimpleAttributes)(nil), state.Fns{Save: (*InodeSimpleAttributes).save, Load: (*InodeSimpleAttributes).load})
-	state.Register("pkg/sentry/fs/fsutil.InodeSimpleExtendedAttributes", (*InodeSimpleExtendedAttributes)(nil), state.Fns{Save: (*InodeSimpleExtendedAttributes).save, Load: (*InodeSimpleExtendedAttributes).load})
-	state.Register("pkg/sentry/fs/fsutil.staticFile", (*staticFile)(nil), state.Fns{Save: (*staticFile).save, Load: (*staticFile).load})
-	state.Register("pkg/sentry/fs/fsutil.InodeStaticFileGetter", (*InodeStaticFileGetter)(nil), state.Fns{Save: (*InodeStaticFileGetter).save, Load: (*InodeStaticFileGetter).load})
-	state.Register("pkg/sentry/fs/fsutil.CachingInodeOperations", (*CachingInodeOperations)(nil), state.Fns{Save: (*CachingInodeOperations).save, Load: (*CachingInodeOperations).load})
-	state.Register("pkg/sentry/fs/fsutil.CachingInodeOperationsOptions", (*CachingInodeOperationsOptions)(nil), state.Fns{Save: (*CachingInodeOperationsOptions).save, Load: (*CachingInodeOperationsOptions).load})
+	state.Register((*DirtyInfo)(nil))
+	state.Register((*StaticDirFileOperations)(nil))
+	state.Register((*NoReadWriteFile)(nil))
+	state.Register((*FileStaticContentReader)(nil))
+	state.Register((*HostFileMapper)(nil))
+	state.Register((*HostMappable)(nil))
+	state.Register((*SimpleFileInode)(nil))
+	state.Register((*NoReadWriteFileInode)(nil))
+	state.Register((*InodeSimpleAttributes)(nil))
+	state.Register((*InodeSimpleExtendedAttributes)(nil))
+	state.Register((*staticFile)(nil))
+	state.Register((*InodeStaticFileGetter)(nil))
+	state.Register((*CachingInodeOperations)(nil))
+	state.Register((*CachingInodeOperationsOptions)(nil))
 }

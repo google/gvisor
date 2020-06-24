@@ -7,88 +7,151 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
+func (x *icmpPacket) StateTypeName() string {
+	return "pkg/tcpip/transport/icmp.icmpPacket"
+}
+
+func (x *icmpPacket) StateFields() []string {
+	return []string{
+		"icmpPacketEntry",
+		"senderAddress",
+		"data",
+		"timestamp",
+	}
+}
+
 func (x *icmpPacket) beforeSave() {}
-func (x *icmpPacket) save(m state.Map) {
+
+func (x *icmpPacket) StateSave(m state.Sink) {
 	x.beforeSave()
 	var data buffer.VectorisedView = x.saveData()
-	m.SaveValue("data", data)
-	m.Save("icmpPacketEntry", &x.icmpPacketEntry)
-	m.Save("senderAddress", &x.senderAddress)
-	m.Save("timestamp", &x.timestamp)
+	m.SaveValue(2, data)
+	m.Save(0, &x.icmpPacketEntry)
+	m.Save(1, &x.senderAddress)
+	m.Save(3, &x.timestamp)
 }
 
 func (x *icmpPacket) afterLoad() {}
-func (x *icmpPacket) load(m state.Map) {
-	m.Load("icmpPacketEntry", &x.icmpPacketEntry)
-	m.Load("senderAddress", &x.senderAddress)
-	m.Load("timestamp", &x.timestamp)
-	m.LoadValue("data", new(buffer.VectorisedView), func(y interface{}) { x.loadData(y.(buffer.VectorisedView)) })
+
+func (x *icmpPacket) StateLoad(m state.Source) {
+	m.Load(0, &x.icmpPacketEntry)
+	m.Load(1, &x.senderAddress)
+	m.Load(3, &x.timestamp)
+	m.LoadValue(2, new(buffer.VectorisedView), func(y interface{}) { x.loadData(y.(buffer.VectorisedView)) })
 }
 
-func (x *endpoint) save(m state.Map) {
+func (x *endpoint) StateTypeName() string {
+	return "pkg/tcpip/transport/icmp.endpoint"
+}
+
+func (x *endpoint) StateFields() []string {
+	return []string{
+		"TransportEndpointInfo",
+		"waiterQueue",
+		"uniqueID",
+		"rcvReady",
+		"rcvList",
+		"rcvBufSizeMax",
+		"rcvBufSize",
+		"rcvClosed",
+		"sndBufSize",
+		"shutdownFlags",
+		"state",
+		"ttl",
+		"owner",
+	}
+}
+
+func (x *endpoint) StateSave(m state.Sink) {
 	x.beforeSave()
 	var rcvBufSizeMax int = x.saveRcvBufSizeMax()
-	m.SaveValue("rcvBufSizeMax", rcvBufSizeMax)
-	m.Save("TransportEndpointInfo", &x.TransportEndpointInfo)
-	m.Save("waiterQueue", &x.waiterQueue)
-	m.Save("uniqueID", &x.uniqueID)
-	m.Save("rcvReady", &x.rcvReady)
-	m.Save("rcvList", &x.rcvList)
-	m.Save("rcvBufSize", &x.rcvBufSize)
-	m.Save("rcvClosed", &x.rcvClosed)
-	m.Save("sndBufSize", &x.sndBufSize)
-	m.Save("shutdownFlags", &x.shutdownFlags)
-	m.Save("state", &x.state)
-	m.Save("ttl", &x.ttl)
-	m.Save("owner", &x.owner)
+	m.SaveValue(5, rcvBufSizeMax)
+	m.Save(0, &x.TransportEndpointInfo)
+	m.Save(1, &x.waiterQueue)
+	m.Save(2, &x.uniqueID)
+	m.Save(3, &x.rcvReady)
+	m.Save(4, &x.rcvList)
+	m.Save(6, &x.rcvBufSize)
+	m.Save(7, &x.rcvClosed)
+	m.Save(8, &x.sndBufSize)
+	m.Save(9, &x.shutdownFlags)
+	m.Save(10, &x.state)
+	m.Save(11, &x.ttl)
+	m.Save(12, &x.owner)
 }
 
-func (x *endpoint) load(m state.Map) {
-	m.Load("TransportEndpointInfo", &x.TransportEndpointInfo)
-	m.Load("waiterQueue", &x.waiterQueue)
-	m.Load("uniqueID", &x.uniqueID)
-	m.Load("rcvReady", &x.rcvReady)
-	m.Load("rcvList", &x.rcvList)
-	m.Load("rcvBufSize", &x.rcvBufSize)
-	m.Load("rcvClosed", &x.rcvClosed)
-	m.Load("sndBufSize", &x.sndBufSize)
-	m.Load("shutdownFlags", &x.shutdownFlags)
-	m.Load("state", &x.state)
-	m.Load("ttl", &x.ttl)
-	m.Load("owner", &x.owner)
-	m.LoadValue("rcvBufSizeMax", new(int), func(y interface{}) { x.loadRcvBufSizeMax(y.(int)) })
+func (x *endpoint) StateLoad(m state.Source) {
+	m.Load(0, &x.TransportEndpointInfo)
+	m.Load(1, &x.waiterQueue)
+	m.Load(2, &x.uniqueID)
+	m.Load(3, &x.rcvReady)
+	m.Load(4, &x.rcvList)
+	m.Load(6, &x.rcvBufSize)
+	m.Load(7, &x.rcvClosed)
+	m.Load(8, &x.sndBufSize)
+	m.Load(9, &x.shutdownFlags)
+	m.Load(10, &x.state)
+	m.Load(11, &x.ttl)
+	m.Load(12, &x.owner)
+	m.LoadValue(5, new(int), func(y interface{}) { x.loadRcvBufSizeMax(y.(int)) })
 	m.AfterLoad(x.afterLoad)
 }
 
+func (x *icmpPacketList) StateTypeName() string {
+	return "pkg/tcpip/transport/icmp.icmpPacketList"
+}
+
+func (x *icmpPacketList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
+}
+
 func (x *icmpPacketList) beforeSave() {}
-func (x *icmpPacketList) save(m state.Map) {
+
+func (x *icmpPacketList) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("head", &x.head)
-	m.Save("tail", &x.tail)
+	m.Save(0, &x.head)
+	m.Save(1, &x.tail)
 }
 
 func (x *icmpPacketList) afterLoad() {}
-func (x *icmpPacketList) load(m state.Map) {
-	m.Load("head", &x.head)
-	m.Load("tail", &x.tail)
+
+func (x *icmpPacketList) StateLoad(m state.Source) {
+	m.Load(0, &x.head)
+	m.Load(1, &x.tail)
+}
+
+func (x *icmpPacketEntry) StateTypeName() string {
+	return "pkg/tcpip/transport/icmp.icmpPacketEntry"
+}
+
+func (x *icmpPacketEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
 }
 
 func (x *icmpPacketEntry) beforeSave() {}
-func (x *icmpPacketEntry) save(m state.Map) {
+
+func (x *icmpPacketEntry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("next", &x.next)
-	m.Save("prev", &x.prev)
+	m.Save(0, &x.next)
+	m.Save(1, &x.prev)
 }
 
 func (x *icmpPacketEntry) afterLoad() {}
-func (x *icmpPacketEntry) load(m state.Map) {
-	m.Load("next", &x.next)
-	m.Load("prev", &x.prev)
+
+func (x *icmpPacketEntry) StateLoad(m state.Source) {
+	m.Load(0, &x.next)
+	m.Load(1, &x.prev)
 }
 
 func init() {
-	state.Register("pkg/tcpip/transport/icmp.icmpPacket", (*icmpPacket)(nil), state.Fns{Save: (*icmpPacket).save, Load: (*icmpPacket).load})
-	state.Register("pkg/tcpip/transport/icmp.endpoint", (*endpoint)(nil), state.Fns{Save: (*endpoint).save, Load: (*endpoint).load})
-	state.Register("pkg/tcpip/transport/icmp.icmpPacketList", (*icmpPacketList)(nil), state.Fns{Save: (*icmpPacketList).save, Load: (*icmpPacketList).load})
-	state.Register("pkg/tcpip/transport/icmp.icmpPacketEntry", (*icmpPacketEntry)(nil), state.Fns{Save: (*icmpPacketEntry).save, Load: (*icmpPacketEntry).load})
+	state.Register((*icmpPacket)(nil))
+	state.Register((*endpoint)(nil))
+	state.Register((*icmpPacketList)(nil))
+	state.Register((*icmpPacketEntry)(nil))
 }

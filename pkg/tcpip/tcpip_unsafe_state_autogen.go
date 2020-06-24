@@ -9,15 +9,25 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *StdClock) StateTypeName() string {
+	return "pkg/tcpip.StdClock"
+}
+
+func (x *StdClock) StateFields() []string {
+	return []string{}
+}
+
 func (x *StdClock) beforeSave() {}
-func (x *StdClock) save(m state.Map) {
+
+func (x *StdClock) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *StdClock) afterLoad() {}
-func (x *StdClock) load(m state.Map) {
+
+func (x *StdClock) StateLoad(m state.Source) {
 }
 
 func init() {
-	state.Register("pkg/tcpip.StdClock", (*StdClock)(nil), state.Fns{Save: (*StdClock).save, Load: (*StdClock).load})
+	state.Register((*StdClock)(nil))
 }

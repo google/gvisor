@@ -6,65 +6,111 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *SocketOperations) StateTypeName() string {
+	return "pkg/sentry/socket/netstack.SocketOperations"
+}
+
+func (x *SocketOperations) StateFields() []string {
+	return []string{
+		"socketOpsCommon",
+	}
+}
+
 func (x *SocketOperations) beforeSave() {}
-func (x *SocketOperations) save(m state.Map) {
+
+func (x *SocketOperations) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("socketOpsCommon", &x.socketOpsCommon)
+	m.Save(0, &x.socketOpsCommon)
 }
 
 func (x *SocketOperations) afterLoad() {}
-func (x *SocketOperations) load(m state.Map) {
-	m.Load("socketOpsCommon", &x.socketOpsCommon)
+
+func (x *SocketOperations) StateLoad(m state.Source) {
+	m.Load(0, &x.socketOpsCommon)
+}
+
+func (x *socketOpsCommon) StateTypeName() string {
+	return "pkg/sentry/socket/netstack.socketOpsCommon"
+}
+
+func (x *socketOpsCommon) StateFields() []string {
+	return []string{
+		"SendReceiveTimeout",
+		"Queue",
+		"family",
+		"Endpoint",
+		"skType",
+		"protocol",
+		"readViewHasData",
+		"readView",
+		"readCM",
+		"sender",
+		"sockOptTimestamp",
+		"timestampValid",
+		"timestampNS",
+		"sockOptInq",
+	}
 }
 
 func (x *socketOpsCommon) beforeSave() {}
-func (x *socketOpsCommon) save(m state.Map) {
+
+func (x *socketOpsCommon) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("SendReceiveTimeout", &x.SendReceiveTimeout)
-	m.Save("Queue", &x.Queue)
-	m.Save("family", &x.family)
-	m.Save("Endpoint", &x.Endpoint)
-	m.Save("skType", &x.skType)
-	m.Save("protocol", &x.protocol)
-	m.Save("readViewHasData", &x.readViewHasData)
-	m.Save("readView", &x.readView)
-	m.Save("readCM", &x.readCM)
-	m.Save("sender", &x.sender)
-	m.Save("sockOptTimestamp", &x.sockOptTimestamp)
-	m.Save("timestampValid", &x.timestampValid)
-	m.Save("timestampNS", &x.timestampNS)
-	m.Save("sockOptInq", &x.sockOptInq)
+	m.Save(0, &x.SendReceiveTimeout)
+	m.Save(1, &x.Queue)
+	m.Save(2, &x.family)
+	m.Save(3, &x.Endpoint)
+	m.Save(4, &x.skType)
+	m.Save(5, &x.protocol)
+	m.Save(6, &x.readViewHasData)
+	m.Save(7, &x.readView)
+	m.Save(8, &x.readCM)
+	m.Save(9, &x.sender)
+	m.Save(10, &x.sockOptTimestamp)
+	m.Save(11, &x.timestampValid)
+	m.Save(12, &x.timestampNS)
+	m.Save(13, &x.sockOptInq)
 }
 
 func (x *socketOpsCommon) afterLoad() {}
-func (x *socketOpsCommon) load(m state.Map) {
-	m.Load("SendReceiveTimeout", &x.SendReceiveTimeout)
-	m.Load("Queue", &x.Queue)
-	m.Load("family", &x.family)
-	m.Load("Endpoint", &x.Endpoint)
-	m.Load("skType", &x.skType)
-	m.Load("protocol", &x.protocol)
-	m.Load("readViewHasData", &x.readViewHasData)
-	m.Load("readView", &x.readView)
-	m.Load("readCM", &x.readCM)
-	m.Load("sender", &x.sender)
-	m.Load("sockOptTimestamp", &x.sockOptTimestamp)
-	m.Load("timestampValid", &x.timestampValid)
-	m.Load("timestampNS", &x.timestampNS)
-	m.Load("sockOptInq", &x.sockOptInq)
+
+func (x *socketOpsCommon) StateLoad(m state.Source) {
+	m.Load(0, &x.SendReceiveTimeout)
+	m.Load(1, &x.Queue)
+	m.Load(2, &x.family)
+	m.Load(3, &x.Endpoint)
+	m.Load(4, &x.skType)
+	m.Load(5, &x.protocol)
+	m.Load(6, &x.readViewHasData)
+	m.Load(7, &x.readView)
+	m.Load(8, &x.readCM)
+	m.Load(9, &x.sender)
+	m.Load(10, &x.sockOptTimestamp)
+	m.Load(11, &x.timestampValid)
+	m.Load(12, &x.timestampNS)
+	m.Load(13, &x.sockOptInq)
+}
+
+func (x *Stack) StateTypeName() string {
+	return "pkg/sentry/socket/netstack.Stack"
+}
+
+func (x *Stack) StateFields() []string {
+	return []string{}
 }
 
 func (x *Stack) beforeSave() {}
-func (x *Stack) save(m state.Map) {
+
+func (x *Stack) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
-func (x *Stack) load(m state.Map) {
+func (x *Stack) StateLoad(m state.Source) {
 	m.AfterLoad(x.afterLoad)
 }
 
 func init() {
-	state.Register("pkg/sentry/socket/netstack.SocketOperations", (*SocketOperations)(nil), state.Fns{Save: (*SocketOperations).save, Load: (*SocketOperations).load})
-	state.Register("pkg/sentry/socket/netstack.socketOpsCommon", (*socketOpsCommon)(nil), state.Fns{Save: (*socketOpsCommon).save, Load: (*socketOpsCommon).load})
-	state.Register("pkg/sentry/socket/netstack.Stack", (*Stack)(nil), state.Fns{Save: (*Stack).save, Load: (*Stack).load})
+	state.Register((*SocketOperations)(nil))
+	state.Register((*socketOpsCommon)(nil))
+	state.Register((*Stack)(nil))
 }

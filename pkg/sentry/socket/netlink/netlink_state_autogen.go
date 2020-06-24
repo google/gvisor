@@ -6,59 +6,103 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *Socket) StateTypeName() string {
+	return "pkg/sentry/socket/netlink.Socket"
+}
+
+func (x *Socket) StateFields() []string {
+	return []string{
+		"socketOpsCommon",
+	}
+}
+
 func (x *Socket) beforeSave() {}
-func (x *Socket) save(m state.Map) {
+
+func (x *Socket) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("socketOpsCommon", &x.socketOpsCommon)
+	m.Save(0, &x.socketOpsCommon)
 }
 
 func (x *Socket) afterLoad() {}
-func (x *Socket) load(m state.Map) {
-	m.Load("socketOpsCommon", &x.socketOpsCommon)
+
+func (x *Socket) StateLoad(m state.Source) {
+	m.Load(0, &x.socketOpsCommon)
+}
+
+func (x *socketOpsCommon) StateTypeName() string {
+	return "pkg/sentry/socket/netlink.socketOpsCommon"
+}
+
+func (x *socketOpsCommon) StateFields() []string {
+	return []string{
+		"SendReceiveTimeout",
+		"ports",
+		"protocol",
+		"skType",
+		"ep",
+		"connection",
+		"bound",
+		"portID",
+		"sendBufferSize",
+		"passcred",
+		"filter",
+	}
 }
 
 func (x *socketOpsCommon) beforeSave() {}
-func (x *socketOpsCommon) save(m state.Map) {
+
+func (x *socketOpsCommon) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("SendReceiveTimeout", &x.SendReceiveTimeout)
-	m.Save("ports", &x.ports)
-	m.Save("protocol", &x.protocol)
-	m.Save("skType", &x.skType)
-	m.Save("ep", &x.ep)
-	m.Save("connection", &x.connection)
-	m.Save("bound", &x.bound)
-	m.Save("portID", &x.portID)
-	m.Save("sendBufferSize", &x.sendBufferSize)
-	m.Save("passcred", &x.passcred)
-	m.Save("filter", &x.filter)
+	m.Save(0, &x.SendReceiveTimeout)
+	m.Save(1, &x.ports)
+	m.Save(2, &x.protocol)
+	m.Save(3, &x.skType)
+	m.Save(4, &x.ep)
+	m.Save(5, &x.connection)
+	m.Save(6, &x.bound)
+	m.Save(7, &x.portID)
+	m.Save(8, &x.sendBufferSize)
+	m.Save(9, &x.passcred)
+	m.Save(10, &x.filter)
 }
 
 func (x *socketOpsCommon) afterLoad() {}
-func (x *socketOpsCommon) load(m state.Map) {
-	m.Load("SendReceiveTimeout", &x.SendReceiveTimeout)
-	m.Load("ports", &x.ports)
-	m.Load("protocol", &x.protocol)
-	m.Load("skType", &x.skType)
-	m.Load("ep", &x.ep)
-	m.Load("connection", &x.connection)
-	m.Load("bound", &x.bound)
-	m.Load("portID", &x.portID)
-	m.Load("sendBufferSize", &x.sendBufferSize)
-	m.Load("passcred", &x.passcred)
-	m.Load("filter", &x.filter)
+
+func (x *socketOpsCommon) StateLoad(m state.Source) {
+	m.Load(0, &x.SendReceiveTimeout)
+	m.Load(1, &x.ports)
+	m.Load(2, &x.protocol)
+	m.Load(3, &x.skType)
+	m.Load(4, &x.ep)
+	m.Load(5, &x.connection)
+	m.Load(6, &x.bound)
+	m.Load(7, &x.portID)
+	m.Load(8, &x.sendBufferSize)
+	m.Load(9, &x.passcred)
+	m.Load(10, &x.filter)
+}
+
+func (x *kernelSCM) StateTypeName() string {
+	return "pkg/sentry/socket/netlink.kernelSCM"
+}
+
+func (x *kernelSCM) StateFields() []string {
+	return []string{}
 }
 
 func (x *kernelSCM) beforeSave() {}
-func (x *kernelSCM) save(m state.Map) {
+
+func (x *kernelSCM) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *kernelSCM) afterLoad() {}
-func (x *kernelSCM) load(m state.Map) {
+
+func (x *kernelSCM) StateLoad(m state.Source) {
 }
 
 func init() {
-	state.Register("pkg/sentry/socket/netlink.Socket", (*Socket)(nil), state.Fns{Save: (*Socket).save, Load: (*Socket).load})
-	state.Register("pkg/sentry/socket/netlink.socketOpsCommon", (*socketOpsCommon)(nil), state.Fns{Save: (*socketOpsCommon).save, Load: (*socketOpsCommon).load})
-	state.Register("pkg/sentry/socket/netlink.kernelSCM", (*kernelSCM)(nil), state.Fns{Save: (*kernelSCM).save, Load: (*kernelSCM).load})
+	state.Register((*Socket)(nil))
+	state.Register((*socketOpsCommon)(nil))
+	state.Register((*kernelSCM)(nil))
 }

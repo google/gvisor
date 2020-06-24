@@ -8,63 +8,104 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *Cache) StateTypeName() string {
+	return "pkg/cpuid.Cache"
+}
+
+func (x *Cache) StateFields() []string {
+	return []string{
+		"Level",
+		"Type",
+		"FullyAssociative",
+		"Partitions",
+		"Ways",
+		"Sets",
+		"InvalidateHierarchical",
+		"Inclusive",
+		"DirectMapped",
+	}
+}
+
 func (x *Cache) beforeSave() {}
-func (x *Cache) save(m state.Map) {
+
+func (x *Cache) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Level", &x.Level)
-	m.Save("Type", &x.Type)
-	m.Save("FullyAssociative", &x.FullyAssociative)
-	m.Save("Partitions", &x.Partitions)
-	m.Save("Ways", &x.Ways)
-	m.Save("Sets", &x.Sets)
-	m.Save("InvalidateHierarchical", &x.InvalidateHierarchical)
-	m.Save("Inclusive", &x.Inclusive)
-	m.Save("DirectMapped", &x.DirectMapped)
+	m.Save(0, &x.Level)
+	m.Save(1, &x.Type)
+	m.Save(2, &x.FullyAssociative)
+	m.Save(3, &x.Partitions)
+	m.Save(4, &x.Ways)
+	m.Save(5, &x.Sets)
+	m.Save(6, &x.InvalidateHierarchical)
+	m.Save(7, &x.Inclusive)
+	m.Save(8, &x.DirectMapped)
 }
 
 func (x *Cache) afterLoad() {}
-func (x *Cache) load(m state.Map) {
-	m.Load("Level", &x.Level)
-	m.Load("Type", &x.Type)
-	m.Load("FullyAssociative", &x.FullyAssociative)
-	m.Load("Partitions", &x.Partitions)
-	m.Load("Ways", &x.Ways)
-	m.Load("Sets", &x.Sets)
-	m.Load("InvalidateHierarchical", &x.InvalidateHierarchical)
-	m.Load("Inclusive", &x.Inclusive)
-	m.Load("DirectMapped", &x.DirectMapped)
+
+func (x *Cache) StateLoad(m state.Source) {
+	m.Load(0, &x.Level)
+	m.Load(1, &x.Type)
+	m.Load(2, &x.FullyAssociative)
+	m.Load(3, &x.Partitions)
+	m.Load(4, &x.Ways)
+	m.Load(5, &x.Sets)
+	m.Load(6, &x.InvalidateHierarchical)
+	m.Load(7, &x.Inclusive)
+	m.Load(8, &x.DirectMapped)
+}
+
+func (x *FeatureSet) StateTypeName() string {
+	return "pkg/cpuid.FeatureSet"
+}
+
+func (x *FeatureSet) StateFields() []string {
+	return []string{
+		"Set",
+		"VendorID",
+		"ExtendedFamily",
+		"ExtendedModel",
+		"ProcessorType",
+		"Family",
+		"Model",
+		"SteppingID",
+		"Caches",
+		"CacheLine",
+	}
 }
 
 func (x *FeatureSet) beforeSave() {}
-func (x *FeatureSet) save(m state.Map) {
+
+func (x *FeatureSet) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Set", &x.Set)
-	m.Save("VendorID", &x.VendorID)
-	m.Save("ExtendedFamily", &x.ExtendedFamily)
-	m.Save("ExtendedModel", &x.ExtendedModel)
-	m.Save("ProcessorType", &x.ProcessorType)
-	m.Save("Family", &x.Family)
-	m.Save("Model", &x.Model)
-	m.Save("SteppingID", &x.SteppingID)
-	m.Save("Caches", &x.Caches)
-	m.Save("CacheLine", &x.CacheLine)
+	m.Save(0, &x.Set)
+	m.Save(1, &x.VendorID)
+	m.Save(2, &x.ExtendedFamily)
+	m.Save(3, &x.ExtendedModel)
+	m.Save(4, &x.ProcessorType)
+	m.Save(5, &x.Family)
+	m.Save(6, &x.Model)
+	m.Save(7, &x.SteppingID)
+	m.Save(8, &x.Caches)
+	m.Save(9, &x.CacheLine)
 }
 
 func (x *FeatureSet) afterLoad() {}
-func (x *FeatureSet) load(m state.Map) {
-	m.Load("Set", &x.Set)
-	m.Load("VendorID", &x.VendorID)
-	m.Load("ExtendedFamily", &x.ExtendedFamily)
-	m.Load("ExtendedModel", &x.ExtendedModel)
-	m.Load("ProcessorType", &x.ProcessorType)
-	m.Load("Family", &x.Family)
-	m.Load("Model", &x.Model)
-	m.Load("SteppingID", &x.SteppingID)
-	m.Load("Caches", &x.Caches)
-	m.Load("CacheLine", &x.CacheLine)
+
+func (x *FeatureSet) StateLoad(m state.Source) {
+	m.Load(0, &x.Set)
+	m.Load(1, &x.VendorID)
+	m.Load(2, &x.ExtendedFamily)
+	m.Load(3, &x.ExtendedModel)
+	m.Load(4, &x.ProcessorType)
+	m.Load(5, &x.Family)
+	m.Load(6, &x.Model)
+	m.Load(7, &x.SteppingID)
+	m.Load(8, &x.Caches)
+	m.Load(9, &x.CacheLine)
 }
 
 func init() {
-	state.Register("pkg/cpuid.Cache", (*Cache)(nil), state.Fns{Save: (*Cache).save, Load: (*Cache).load})
-	state.Register("pkg/cpuid.FeatureSet", (*FeatureSet)(nil), state.Fns{Save: (*FeatureSet).save, Load: (*FeatureSet).load})
+	state.Register((*Cache)(nil))
+	state.Register((*FeatureSet)(nil))
 }
