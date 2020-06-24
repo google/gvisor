@@ -136,6 +136,8 @@ func (a *Accessor) pathOperationAt(pathname string) *vfs.PathOperation {
 // CreateDeviceFile creates a device special file at the given pathname in the
 // devtmpfs instance accessed by the Accessor.
 func (a *Accessor) CreateDeviceFile(ctx context.Context, pathname string, kind vfs.DeviceKind, major, minor uint32, perms uint16) error {
+	actx := a.wrapContext(ctx)
+
 	mode := (linux.FileMode)(perms)
 	switch kind {
 	case vfs.BlockDevice:
@@ -145,12 +147,24 @@ func (a *Accessor) CreateDeviceFile(ctx context.Context, pathname string, kind v
 	default:
 		panic(fmt.Sprintf("invalid vfs.DeviceKind: %v", kind))
 	}
+
+	// Create any parent directories. See
+	// devtmpfs.c:handle_create()=>path_create().
+	for it := fspath.Parse(pathname).Begin; it.NextOk(); it = it.Next() {
+		pop := a.pathOperationAt(it.String())
+		if err := a.vfsObj.MkdirAt(actx, a.creds, pop, &vfs.MkdirOptions{
+			Mode: 0755,
+		}); err != nil {
+			return fmt.Errorf("failed to create directory %q: %v", it.String(), err)
+		}
+	}
+
 	// NOTE: Linux's devtmpfs refuses to automatically delete files it didn't
 	// create, which it recognizes by storing a pointer to the kdevtmpfs struct
 	// thread in struct inode::i_private. Accessor doesn't yet support deletion
 	// of files at all, and probably won't as long as we don't need to support
 	// kernel modules, so this is moot for now.
-	return a.vfsObj.MknodAt(a.wrapContext(ctx), a.creds, a.pathOperationAt(pathname), &vfs.MknodOptions{
+	return a.vfsObj.MknodAt(actx, a.creds, a.pathOperationAt(pathname), &vfs.MknodOptions{
 		Mode:     mode,
 		DevMajor: major,
 		DevMinor: minor,
