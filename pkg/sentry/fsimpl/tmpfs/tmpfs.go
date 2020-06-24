@@ -259,14 +259,16 @@ func (d *dentry) InotifyWithParent(events, cookie uint32, et vfs.EventType) {
 		events |= linux.IN_ISDIR
 	}
 
+	// tmpfs never calls VFS.InvalidateDentry(), so d.vfsd.IsDead() indicates
+	// that d was deleted.
+	deleted := d.vfsd.IsDead()
+
 	d.inode.fs.mu.RLock()
 	// The ordering below is important, Linux always notifies the parent first.
 	if d.parent != nil {
-		// tmpfs never calls VFS.InvalidateDentry(), so d.vfsd.IsDead() indicates
-		// that d was deleted.
-		d.parent.inode.watches.NotifyWithExclusions(d.name, events, cookie, et, d.vfsd.IsDead())
+		d.parent.inode.watches.Notify(d.name, events, cookie, et, deleted)
 	}
-	d.inode.watches.Notify("", events, cookie, et)
+	d.inode.watches.Notify("", events, cookie, et, deleted)
 	d.inode.fs.mu.RUnlock()
 }
 

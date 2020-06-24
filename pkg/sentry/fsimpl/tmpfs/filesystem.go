@@ -182,7 +182,7 @@ func (fs *filesystem) doCreateAt(rp *vfs.ResolvingPath, dir bool, create func(pa
 	if dir {
 		ev |= linux.IN_ISDIR
 	}
-	parentDir.inode.watches.Notify(name, uint32(ev), 0, vfs.InodeEvent)
+	parentDir.inode.watches.Notify(name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
 	parentDir.inode.touchCMtime()
 	return nil
 }
@@ -251,7 +251,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 			return syserror.EMLINK
 		}
 		i.incLinksLocked()
-		i.watches.Notify("", linux.IN_ATTRIB, 0, vfs.InodeEvent)
+		i.watches.Notify("", linux.IN_ATTRIB, 0, vfs.InodeEvent, false /* unlinked */)
 		parentDir.insertChildLocked(fs.newDentry(i), name)
 		return nil
 	})
@@ -368,7 +368,7 @@ afterTrailingSymlink:
 		if err != nil {
 			return nil, err
 		}
-		parentDir.inode.watches.Notify(name, linux.IN_CREATE, 0, vfs.PathEvent)
+		parentDir.inode.watches.Notify(name, linux.IN_CREATE, 0, vfs.PathEvent, false /* unlinked */)
 		parentDir.inode.touchCMtime()
 		return fd, nil
 	}
@@ -625,7 +625,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		return err
 	}
 	parentDir.removeChildLocked(child)
-	parentDir.inode.watches.Notify(name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent)
+	parentDir.inode.watches.Notify(name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
 	// Remove links for child, child/., and child/..
 	child.inode.decLinksLocked()
 	child.inode.decLinksLocked()
