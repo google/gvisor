@@ -41,7 +41,7 @@ func fpsimdPtr(addr *byte) *arch.FpsimdContext {
 func dieArchSetup(c *vCPU, context *arch.SignalContext64, guestRegs *userRegs) {
 	// If the vCPU is in user mode, we set the stack to the stored stack
 	// value in the vCPU itself. We don't want to unwind the user stack.
-	if guestRegs.Regs.Pstate&ring0.PSR_MODE_MASK == ring0.PSR_MODE_EL0t {
+	if guestRegs.Regs.Pstate&ring0.PsrModeMask == ring0.UserFlagsSet {
 		regs := c.CPU.Registers()
 		context.Regs[0] = regs.Regs[0]
 		context.Sp = regs.Sp

@@ -298,12 +298,6 @@
 	ISB $15; \
 	DSB $15;
 
-#define IRQ_ENABLE \
-	MSR $2, DAIFSet;
-
-#define IRQ_DISABLE \
-	MSR $2, DAIFClr;
-
 #define VFP_ENABLE \
 	MOVD $FPEN_ENABLE, R0; \
 	WORD $0xd5181040; \ //MSR R0, CPACR_EL1
@@ -495,7 +489,6 @@ TEXT ·kernelExitToEl1(SB),NOSPLIT,$0
 
 // Start is the CPU entrypoint.
 TEXT ·Start(SB),NOSPLIT,$0
-	IRQ_DISABLE
 	MOVD R8, RSV_REG
 	ORR $0xffff000000000000, RSV_REG, RSV_REG
 	WORD $0xd518d092        //MSR R18, TPIDR_EL1

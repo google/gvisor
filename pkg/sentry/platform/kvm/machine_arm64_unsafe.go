@@ -163,12 +163,6 @@ func (c *vCPU) initArchState() error {
 	// the MMIO address base.
 	arm64HypercallMMIOBase = toLocation
 
-	data = ring0.PsrDefaultSet | ring0.KernelFlagsSet
-	reg.id = _KVM_ARM64_REGS_PSTATE
-	if err := c.setOneRegister(&reg); err != nil {
-		return err
-	}
-
 	c.floatingPointState = arch.NewFloatingPointData()
 	return nil
 }
