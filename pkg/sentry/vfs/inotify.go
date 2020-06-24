@@ -120,6 +120,7 @@ func NewInotifyFD(ctx context.Context, vfsObj *VirtualFilesystem, flags uint32) 
 // watches and frees all resources for an inotify instance.
 func (i *Inotify) Release() {
 	var ds []*Dentry
+
 	// We need to hold i.mu to avoid a race with concurrent calls to
 	// Inotify.handleDeletion from Watches. There's no risk of Watches
 	// accessing this Inotify after the destructor ends, because we remove all
@@ -307,19 +308,6 @@ func (i *Inotify) nextWatchIDLocked() int32 {
 	return i.nextWatchMinusOne
 }
 
-// handleDeletion handles the deletion of the target of watch w. It removes w
-// from i.watches and a watch removal event is generated.
-func (i *Inotify) handleDeletion(w *Watch) {
-	i.mu.Lock()
-	_, found := i.watches[w.wd]
-	delete(i.watches, w.wd)
-	i.mu.Unlock()
-
-	if found {
-		i.queueEvent(newEvent(w.wd, "", linux.IN_IGNORED, 0))
-	}
-}
-
 // AddWatch constructs a new inotify watch and adds it to the target. It
 // returns the watch descriptor returned by inotify_add_watch(2).
 //
@@ -484,8 +472,9 @@ func (w *Watches) Notify(name string, events, cookie uint32, et EventType, unlin
 	w.mu.RUnlock()
 }
 
-// HandleDeletion is called when the watch target is destroyed to emit
-// the appropriate events.
+// HandleDeletion is called when the watch target is destroyed. Clear the
+// watch set, detach watches from the inotify instances they belong to, and
+// generate the appropriate events.
 func (w *Watches) HandleDeletion() {
 	w.Notify("", linux.IN_DELETE_SELF, 0, InodeEvent, true /* unlinked */)
 
@@ -505,9 +494,23 @@ func (w *Watches) HandleDeletion() {
 	w.ws = nil
 	w.mu.Unlock()
 
+	// Remove each watch from its owner's watch set, and generate a corresponding
+	// watch removal event.
 	for _, watch := range ws {
-		// TODO(gvisor.dev/issue/1479): consider refactoring this.
-		watch.handleDeletion()
+		i := watch.owner
+		i.mu.Lock()
+		_, found := i.watches[watch.wd]
+		delete(i.watches, watch.wd)
+
+		// Release mutex before notifying waiters because we don't control what
+		// they can do.
+		i.mu.Unlock()
+
+		// If watch was not found, it was removed from the inotify instance before
+		// we could get to it, in which case we should not generate an event.
+		if found {
+			i.queueEvent(newEvent(watch.wd, "", linux.IN_IGNORED, 0))
+		}
 	}
 }
 
@@ -557,11 +560,6 @@ func (w *Watch) Notify(name string, events uint32, cookie uint32) {
 	effectiveMask := unmaskableBits | mask
 	matchedEvents := effectiveMask & events
 	w.owner.queueEvent(newEvent(w.wd, name, matchedEvents, cookie))
-}
-
-// handleDeletion handles the deletion of w's target.
-func (w *Watch) handleDeletion() {
-	w.owner.handleDeletion(w)
 }
 
 // Event represents a struct inotify_event from linux.
