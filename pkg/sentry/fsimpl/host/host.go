@@ -459,8 +459,9 @@ func (i *inode) open(ctx context.Context, d *vfs.Dentry, mnt *vfs.Mount, flags u
 	fileType := s.Mode & linux.FileTypeMask
 
 	// Constrain flags to a subset we can handle.
-	// TODO(gvisor.dev/issue/1672): implement behavior corresponding to these allowed flags.
-	flags &= syscall.O_ACCMODE | syscall.O_DIRECT | syscall.O_NONBLOCK | syscall.O_DSYNC | syscall.O_SYNC | syscall.O_APPEND
+	//
+	// TODO(gvisor.dev/issue/2601): Support O_NONBLOCK by adding RWF_NOWAIT to pread/pwrite calls.
+	flags &= syscall.O_ACCMODE | syscall.O_NONBLOCK | syscall.O_DSYNC | syscall.O_SYNC | syscall.O_APPEND
 
 	switch fileType {
 	case syscall.S_IFSOCK:
@@ -568,7 +569,7 @@ func (f *fileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts
 		}
 		return n, err
 	}
-	// TODO(gvisor.dev/issue/1672): Cache pages, when forced to do so.
+
 	f.offsetMu.Lock()
 	n, err := readFromHostFD(ctx, i.hostFD, dst, f.offset, opts.Flags)
 	f.offset += n
@@ -577,7 +578,7 @@ func (f *fileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts
 }
 
 func readFromHostFD(ctx context.Context, hostFD int, dst usermem.IOSequence, offset int64, flags uint32) (int64, error) {
-	// TODO(gvisor.dev/issue/1672): Support select preadv2 flags.
+	// TODO(gvisor.dev/issue/2601): Support select preadv2 flags.
 	if flags != 0 {
 		return 0, syserror.EOPNOTSUPP
 	}
@@ -589,41 +590,58 @@ func readFromHostFD(ctx context.Context, hostFD int, dst usermem.IOSequence, off
 
 // PWrite implements FileDescriptionImpl.
 func (f *fileDescription) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
-	i := f.inode
-	if !i.seekable {
+	if !f.inode.seekable {
 		return 0, syserror.ESPIPE
 	}
 
-	return writeToHostFD(ctx, i.hostFD, src, offset, opts.Flags)
+	return f.writeToHostFD(ctx, src, offset, opts.Flags)
 }
 
 // Write implements FileDescriptionImpl.
 func (f *fileDescription) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	i := f.inode
 	if !i.seekable {
-		n, err := writeToHostFD(ctx, i.hostFD, src, -1, opts.Flags)
+		n, err := f.writeToHostFD(ctx, src, -1, opts.Flags)
 		if isBlockError(err) {
 			err = syserror.ErrWouldBlock
 		}
 		return n, err
 	}
-	// TODO(gvisor.dev/issue/1672): Cache pages, when forced to do so.
-	// TODO(gvisor.dev/issue/1672): Write to end of file and update offset if O_APPEND is set on this file.
+
 	f.offsetMu.Lock()
-	n, err := writeToHostFD(ctx, i.hostFD, src, f.offset, opts.Flags)
+	// NOTE(gvisor.dev/issue/2983): O_APPEND may cause memory corruption if
+	// another process modifies the host file between retrieving the file size
+	// and writing to the host fd. This is an unavoidable race condition because
+	// we cannot enforce synchronization on the host.
+	if f.vfsfd.StatusFlags()&linux.O_APPEND != 0 {
+		var s syscall.Stat_t
+		if err := syscall.Fstat(i.hostFD, &s); err != nil {
+			f.offsetMu.Unlock()
+			return 0, err
+		}
+		f.offset = s.Size
+	}
+	n, err := f.writeToHostFD(ctx, src, f.offset, opts.Flags)
 	f.offset += n
 	f.offsetMu.Unlock()
 	return n, err
 }
 
-func writeToHostFD(ctx context.Context, hostFD int, src usermem.IOSequence, offset int64, flags uint32) (int64, error) {
-	// TODO(gvisor.dev/issue/1672): Support select pwritev2 flags.
+func (f *fileDescription) writeToHostFD(ctx context.Context, src usermem.IOSequence, offset int64, flags uint32) (int64, error) {
+	hostFD := f.inode.hostFD
+	// TODO(gvisor.dev/issue/2601): Support select pwritev2 flags.
 	if flags != 0 {
 		return 0, syserror.EOPNOTSUPP
 	}
 	writer := hostfd.GetReadWriterAt(int32(hostFD), offset, flags)
 	n, err := src.CopyInTo(ctx, writer)
 	hostfd.PutReadWriterAt(writer)
+	// NOTE(gvisor.dev/issue/2979): We always sync everything, even for O_DSYNC.
+	if n > 0 && f.vfsfd.StatusFlags()&(linux.O_DSYNC|linux.O_SYNC) != 0 {
+		if syncErr := unix.Fsync(hostFD); syncErr != nil {
+			return int64(n), syncErr
+		}
+	}
 	return int64(n), err
 }
 
@@ -694,8 +712,7 @@ func (f *fileDescription) Seek(_ context.Context, offset int64, whence int32) (i
 
 // Sync implements FileDescriptionImpl.
 func (f *fileDescription) Sync(context.Context) error {
-	// TODO(gvisor.dev/issue/1672): Currently we do not support the SyncData
-	//  optimization, so we always sync everything.
+	// TODO(gvisor.dev/issue/1897): Currently, we always sync everything.
 	return unix.Fsync(f.inode.hostFD)
 }
 
