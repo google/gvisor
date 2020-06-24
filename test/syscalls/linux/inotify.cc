@@ -1840,9 +1840,7 @@ TEST(Inotify, IncludeUnlinkedFile_NoRandomSave) {
   const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateFileWith(dir.path(), "123", TempPath::kDefaultFileMode));
-
-  const FileDescriptor fd =
-      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
 
   const FileDescriptor inotify_fd =
       ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
@@ -1855,7 +1853,7 @@ TEST(Inotify, IncludeUnlinkedFile_NoRandomSave) {
   int val = 0;
   ASSERT_THAT(read(fd.get(), &val, sizeof(val)), SyscallSucceeds());
   ASSERT_THAT(write(fd.get(), &val, sizeof(val)), SyscallSucceeds());
-  const std::vector<Event> events =
+  std::vector<Event> events =
       ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
   EXPECT_THAT(events, Are({
                           Event(IN_ATTRIB, file_wd),
@@ -1864,6 +1862,15 @@ TEST(Inotify, IncludeUnlinkedFile_NoRandomSave) {
                           Event(IN_ACCESS, file_wd),
                           Event(IN_MODIFY, dir_wd, Basename(file.path())),
                           Event(IN_MODIFY, file_wd),
+                      }));
+
+  fd.reset();
+  events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({
+                          Event(IN_CLOSE_WRITE, dir_wd, Basename(file.path())),
+                          Event(IN_CLOSE_WRITE, file_wd),
+                          Event(IN_DELETE_SELF, file_wd),
+                          Event(IN_IGNORED, file_wd),
                       }));
 }
 
@@ -1881,13 +1888,14 @@ TEST(Inotify, ExcludeUnlink_NoRandomSave) {
   const TempPath file =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
 
-  const FileDescriptor fd =
-      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
 
   const FileDescriptor inotify_fd =
       ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
-  const int wd = ASSERT_NO_ERRNO_AND_VALUE(InotifyAddWatch(
+  const int dir_wd = ASSERT_NO_ERRNO_AND_VALUE(InotifyAddWatch(
       inotify_fd.get(), dir.path(), IN_ALL_EVENTS | IN_EXCL_UNLINK));
+  const int file_wd = ASSERT_NO_ERRNO_AND_VALUE(InotifyAddWatch(
+      inotify_fd.get(), file.path(), IN_ALL_EVENTS | IN_EXCL_UNLINK));
 
   // Unlink the child, which should cause further operations on the open file
   // descriptor to be ignored.
@@ -1895,14 +1903,28 @@ TEST(Inotify, ExcludeUnlink_NoRandomSave) {
   int val = 0;
   ASSERT_THAT(write(fd.get(), &val, sizeof(val)), SyscallSucceeds());
   ASSERT_THAT(read(fd.get(), &val, sizeof(val)), SyscallSucceeds());
-  const std::vector<Event> events =
+  std::vector<Event> events =
       ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
-  EXPECT_THAT(events, Are({Event(IN_DELETE, wd, Basename(file.path()))}));
+  EXPECT_THAT(events, Are({
+                          Event(IN_ATTRIB, file_wd),
+                          Event(IN_DELETE, dir_wd, Basename(file.path())),
+                      }));
+
+  fd.reset();
+  events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  ASSERT_THAT(events, Are({
+                          Event(IN_DELETE_SELF, file_wd),
+                          Event(IN_IGNORED, file_wd),
+                      }));
 }
 
 // We need to disable S/R because there are filesystems where we cannot re-open
 // fds to an unlinked file across S/R, e.g. gofer-backed filesytems.
 TEST(Inotify, ExcludeUnlinkDirectory_NoRandomSave) {
+  // TODO(gvisor.dev/issue/1624): This test fails on VFS1. Remove once VFS1 is
+  // deleted.
+  SKIP_IF(IsRunningWithVFS1());
+
   const DisableSave ds;
 
   const TempPath parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
@@ -1912,20 +1934,29 @@ TEST(Inotify, ExcludeUnlinkDirectory_NoRandomSave) {
   const FileDescriptor inotify_fd =
       ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
 
-  const FileDescriptor fd =
+  FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(dirPath.c_str(), O_RDONLY | O_DIRECTORY));
-  const int wd = ASSERT_NO_ERRNO_AND_VALUE(InotifyAddWatch(
+  const int parent_wd = ASSERT_NO_ERRNO_AND_VALUE(InotifyAddWatch(
       inotify_fd.get(), parent.path(), IN_ALL_EVENTS | IN_EXCL_UNLINK));
+  const int self_wd = ASSERT_NO_ERRNO_AND_VALUE(InotifyAddWatch(
+      inotify_fd.get(), dir.path(), IN_ALL_EVENTS | IN_EXCL_UNLINK));
 
   // Unlink the dir, and then close the open fd.
   ASSERT_THAT(rmdir(dirPath.c_str()), SyscallSucceeds());
   dir.reset();
 
-  const std::vector<Event> events =
+  std::vector<Event> events =
       ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
   // No close event should appear.
   ASSERT_THAT(events,
-              Are({Event(IN_DELETE | IN_ISDIR, wd, Basename(dirPath))}));
+              Are({Event(IN_DELETE | IN_ISDIR, parent_wd, Basename(dirPath))}));
+
+  fd.reset();
+  events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  ASSERT_THAT(events, Are({
+                          Event(IN_DELETE_SELF, self_wd),
+                          Event(IN_IGNORED, self_wd),
+                      }));
 }
 
 // If "dir/child" and "dir/child2" are links to the same file, and "dir/child"
@@ -1989,10 +2020,6 @@ TEST(Inotify, ExcludeUnlinkInodeEvents_NoRandomSave) {
 
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path().c_str(), O_RDWR));
-  const FileDescriptor inotify_fd =
-      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
-  const int wd = ASSERT_NO_ERRNO_AND_VALUE(InotifyAddWatch(
-      inotify_fd.get(), dir.path(), IN_ALL_EVENTS | IN_EXCL_UNLINK));
 
   // NOTE(b/157163751): Create another link before unlinking. This is needed for
   // the gofer filesystem in gVisor, where open fds will not work once the link
@@ -2006,6 +2033,13 @@ TEST(Inotify, ExcludeUnlinkInodeEvents_NoRandomSave) {
     ASSERT_THAT(rc, SyscallSucceeds());
   }
 
+  const FileDescriptor inotify_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int dir_wd = ASSERT_NO_ERRNO_AND_VALUE(InotifyAddWatch(
+      inotify_fd.get(), dir.path(), IN_ALL_EVENTS | IN_EXCL_UNLINK));
+  const int file_wd = ASSERT_NO_ERRNO_AND_VALUE(InotifyAddWatch(
+      inotify_fd.get(), file.path(), IN_ALL_EVENTS | IN_EXCL_UNLINK));
+
   // Even after unlinking, inode-level operations will trigger events regardless
   // of IN_EXCL_UNLINK.
   ASSERT_THAT(unlink(file.path().c_str()), SyscallSucceeds());
@@ -2015,20 +2049,28 @@ TEST(Inotify, ExcludeUnlinkInodeEvents_NoRandomSave) {
   std::vector<Event> events =
       ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
   EXPECT_THAT(events, Are({
-                          Event(IN_DELETE, wd, Basename(file.path())),
-                          Event(IN_MODIFY, wd, Basename(file.path())),
+                          Event(IN_ATTRIB, file_wd),
+                          Event(IN_DELETE, dir_wd, Basename(file.path())),
+                          Event(IN_MODIFY, dir_wd, Basename(file.path())),
+                          Event(IN_MODIFY, file_wd),
                       }));
 
   const struct timeval times[2] = {{1, 0}, {2, 0}};
   ASSERT_THAT(futimes(fd.get(), times), SyscallSucceeds());
   events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
-  EXPECT_THAT(events, Are({Event(IN_ATTRIB, wd, Basename(file.path()))}));
+  EXPECT_THAT(events, Are({
+                          Event(IN_ATTRIB, dir_wd, Basename(file.path())),
+                          Event(IN_ATTRIB, file_wd),
+                      }));
 
   // S/R is disabled on this entire test due to behavior with unlink; it must
   // also be disabled after this point because of fchmod.
   ASSERT_THAT(fchmod(fd.get(), 0777), SyscallSucceeds());
   events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
-  EXPECT_THAT(events, Are({Event(IN_ATTRIB, wd, Basename(file.path()))}));
+  EXPECT_THAT(events, Are({
+                          Event(IN_ATTRIB, dir_wd, Basename(file.path())),
+                          Event(IN_ATTRIB, file_wd),
+                      }));
 }
 
 // This test helps verify that the lock order of filesystem and inotify locks
