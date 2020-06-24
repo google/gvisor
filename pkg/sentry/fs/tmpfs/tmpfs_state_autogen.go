@@ -6,103 +6,192 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *regularFileOperations) StateTypeName() string {
+	return "pkg/sentry/fs/tmpfs.regularFileOperations"
+}
+
+func (x *regularFileOperations) StateFields() []string {
+	return []string{
+		"iops",
+	}
+}
+
 func (x *regularFileOperations) beforeSave() {}
-func (x *regularFileOperations) save(m state.Map) {
+
+func (x *regularFileOperations) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("iops", &x.iops)
+	m.Save(0, &x.iops)
 }
 
 func (x *regularFileOperations) afterLoad() {}
-func (x *regularFileOperations) load(m state.Map) {
-	m.Load("iops", &x.iops)
+
+func (x *regularFileOperations) StateLoad(m state.Source) {
+	m.Load(0, &x.iops)
+}
+
+func (x *Filesystem) StateTypeName() string {
+	return "pkg/sentry/fs/tmpfs.Filesystem"
+}
+
+func (x *Filesystem) StateFields() []string {
+	return []string{}
 }
 
 func (x *Filesystem) beforeSave() {}
-func (x *Filesystem) save(m state.Map) {
+
+func (x *Filesystem) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *Filesystem) afterLoad() {}
-func (x *Filesystem) load(m state.Map) {
+
+func (x *Filesystem) StateLoad(m state.Source) {
+}
+
+func (x *fileInodeOperations) StateTypeName() string {
+	return "pkg/sentry/fs/tmpfs.fileInodeOperations"
+}
+
+func (x *fileInodeOperations) StateFields() []string {
+	return []string{
+		"InodeSimpleExtendedAttributes",
+		"kernel",
+		"memUsage",
+		"attr",
+		"mappings",
+		"writableMappingPages",
+		"data",
+		"seals",
+	}
 }
 
 func (x *fileInodeOperations) beforeSave() {}
-func (x *fileInodeOperations) save(m state.Map) {
+
+func (x *fileInodeOperations) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("InodeSimpleExtendedAttributes", &x.InodeSimpleExtendedAttributes)
-	m.Save("kernel", &x.kernel)
-	m.Save("memUsage", &x.memUsage)
-	m.Save("attr", &x.attr)
-	m.Save("mappings", &x.mappings)
-	m.Save("writableMappingPages", &x.writableMappingPages)
-	m.Save("data", &x.data)
-	m.Save("seals", &x.seals)
+	m.Save(0, &x.InodeSimpleExtendedAttributes)
+	m.Save(1, &x.kernel)
+	m.Save(2, &x.memUsage)
+	m.Save(3, &x.attr)
+	m.Save(4, &x.mappings)
+	m.Save(5, &x.writableMappingPages)
+	m.Save(6, &x.data)
+	m.Save(7, &x.seals)
 }
 
 func (x *fileInodeOperations) afterLoad() {}
-func (x *fileInodeOperations) load(m state.Map) {
-	m.Load("InodeSimpleExtendedAttributes", &x.InodeSimpleExtendedAttributes)
-	m.Load("kernel", &x.kernel)
-	m.Load("memUsage", &x.memUsage)
-	m.Load("attr", &x.attr)
-	m.Load("mappings", &x.mappings)
-	m.Load("writableMappingPages", &x.writableMappingPages)
-	m.Load("data", &x.data)
-	m.Load("seals", &x.seals)
+
+func (x *fileInodeOperations) StateLoad(m state.Source) {
+	m.Load(0, &x.InodeSimpleExtendedAttributes)
+	m.Load(1, &x.kernel)
+	m.Load(2, &x.memUsage)
+	m.Load(3, &x.attr)
+	m.Load(4, &x.mappings)
+	m.Load(5, &x.writableMappingPages)
+	m.Load(6, &x.data)
+	m.Load(7, &x.seals)
+}
+
+func (x *Dir) StateTypeName() string {
+	return "pkg/sentry/fs/tmpfs.Dir"
+}
+
+func (x *Dir) StateFields() []string {
+	return []string{
+		"ramfsDir",
+		"kernel",
+	}
 }
 
 func (x *Dir) beforeSave() {}
-func (x *Dir) save(m state.Map) {
+
+func (x *Dir) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("ramfsDir", &x.ramfsDir)
-	m.Save("kernel", &x.kernel)
+	m.Save(0, &x.ramfsDir)
+	m.Save(1, &x.kernel)
 }
 
-func (x *Dir) load(m state.Map) {
-	m.Load("ramfsDir", &x.ramfsDir)
-	m.Load("kernel", &x.kernel)
+func (x *Dir) StateLoad(m state.Source) {
+	m.Load(0, &x.ramfsDir)
+	m.Load(1, &x.kernel)
 	m.AfterLoad(x.afterLoad)
 }
 
+func (x *Symlink) StateTypeName() string {
+	return "pkg/sentry/fs/tmpfs.Symlink"
+}
+
+func (x *Symlink) StateFields() []string {
+	return []string{
+		"Symlink",
+	}
+}
+
 func (x *Symlink) beforeSave() {}
-func (x *Symlink) save(m state.Map) {
+
+func (x *Symlink) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Symlink", &x.Symlink)
+	m.Save(0, &x.Symlink)
 }
 
 func (x *Symlink) afterLoad() {}
-func (x *Symlink) load(m state.Map) {
-	m.Load("Symlink", &x.Symlink)
+
+func (x *Symlink) StateLoad(m state.Source) {
+	m.Load(0, &x.Symlink)
+}
+
+func (x *Socket) StateTypeName() string {
+	return "pkg/sentry/fs/tmpfs.Socket"
+}
+
+func (x *Socket) StateFields() []string {
+	return []string{
+		"Socket",
+	}
 }
 
 func (x *Socket) beforeSave() {}
-func (x *Socket) save(m state.Map) {
+
+func (x *Socket) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Socket", &x.Socket)
+	m.Save(0, &x.Socket)
 }
 
 func (x *Socket) afterLoad() {}
-func (x *Socket) load(m state.Map) {
-	m.Load("Socket", &x.Socket)
+
+func (x *Socket) StateLoad(m state.Source) {
+	m.Load(0, &x.Socket)
+}
+
+func (x *Fifo) StateTypeName() string {
+	return "pkg/sentry/fs/tmpfs.Fifo"
+}
+
+func (x *Fifo) StateFields() []string {
+	return []string{
+		"InodeOperations",
+	}
 }
 
 func (x *Fifo) beforeSave() {}
-func (x *Fifo) save(m state.Map) {
+
+func (x *Fifo) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("InodeOperations", &x.InodeOperations)
+	m.Save(0, &x.InodeOperations)
 }
 
 func (x *Fifo) afterLoad() {}
-func (x *Fifo) load(m state.Map) {
-	m.Load("InodeOperations", &x.InodeOperations)
+
+func (x *Fifo) StateLoad(m state.Source) {
+	m.Load(0, &x.InodeOperations)
 }
 
 func init() {
-	state.Register("pkg/sentry/fs/tmpfs.regularFileOperations", (*regularFileOperations)(nil), state.Fns{Save: (*regularFileOperations).save, Load: (*regularFileOperations).load})
-	state.Register("pkg/sentry/fs/tmpfs.Filesystem", (*Filesystem)(nil), state.Fns{Save: (*Filesystem).save, Load: (*Filesystem).load})
-	state.Register("pkg/sentry/fs/tmpfs.fileInodeOperations", (*fileInodeOperations)(nil), state.Fns{Save: (*fileInodeOperations).save, Load: (*fileInodeOperations).load})
-	state.Register("pkg/sentry/fs/tmpfs.Dir", (*Dir)(nil), state.Fns{Save: (*Dir).save, Load: (*Dir).load})
-	state.Register("pkg/sentry/fs/tmpfs.Symlink", (*Symlink)(nil), state.Fns{Save: (*Symlink).save, Load: (*Symlink).load})
-	state.Register("pkg/sentry/fs/tmpfs.Socket", (*Socket)(nil), state.Fns{Save: (*Socket).save, Load: (*Socket).load})
-	state.Register("pkg/sentry/fs/tmpfs.Fifo", (*Fifo)(nil), state.Fns{Save: (*Fifo).save, Load: (*Fifo).load})
+	state.Register((*regularFileOperations)(nil))
+	state.Register((*Filesystem)(nil))
+	state.Register((*fileInodeOperations)(nil))
+	state.Register((*Dir)(nil))
+	state.Register((*Symlink)(nil))
+	state.Register((*Socket)(nil))
+	state.Register((*Fifo)(nil))
 }

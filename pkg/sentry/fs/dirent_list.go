@@ -56,7 +56,7 @@ func (l *direntList) Back() *Dirent {
 //
 // NOTE: This is an O(n) operation.
 func (l *direntList) Len() (count int) {
-	for e := l.Front(); e != nil; e = e.Next() {
+	for e := l.Front(); e != nil; e = (direntElementMapper{}.linkerFor(e)).Next() {
 		count++
 	}
 	return count
@@ -148,13 +148,13 @@ func (l *direntList) Remove(e *Dirent) {
 
 	if prev != nil {
 		direntElementMapper{}.linkerFor(prev).SetNext(next)
-	} else {
+	} else if l.head == e {
 		l.head = next
 	}
 
 	if next != nil {
 		direntElementMapper{}.linkerFor(next).SetPrev(prev)
-	} else {
+	} else if l.tail == e {
 		l.tail = prev
 	}
 

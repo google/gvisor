@@ -6,35 +6,61 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *TCPBufferSize) StateTypeName() string {
+	return "pkg/sentry/inet.TCPBufferSize"
+}
+
+func (x *TCPBufferSize) StateFields() []string {
+	return []string{
+		"Min",
+		"Default",
+		"Max",
+	}
+}
+
 func (x *TCPBufferSize) beforeSave() {}
-func (x *TCPBufferSize) save(m state.Map) {
+
+func (x *TCPBufferSize) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Min", &x.Min)
-	m.Save("Default", &x.Default)
-	m.Save("Max", &x.Max)
+	m.Save(0, &x.Min)
+	m.Save(1, &x.Default)
+	m.Save(2, &x.Max)
 }
 
 func (x *TCPBufferSize) afterLoad() {}
-func (x *TCPBufferSize) load(m state.Map) {
-	m.Load("Min", &x.Min)
-	m.Load("Default", &x.Default)
-	m.Load("Max", &x.Max)
+
+func (x *TCPBufferSize) StateLoad(m state.Source) {
+	m.Load(0, &x.Min)
+	m.Load(1, &x.Default)
+	m.Load(2, &x.Max)
+}
+
+func (x *Namespace) StateTypeName() string {
+	return "pkg/sentry/inet.Namespace"
+}
+
+func (x *Namespace) StateFields() []string {
+	return []string{
+		"creator",
+		"isRoot",
+	}
 }
 
 func (x *Namespace) beforeSave() {}
-func (x *Namespace) save(m state.Map) {
+
+func (x *Namespace) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("creator", &x.creator)
-	m.Save("isRoot", &x.isRoot)
+	m.Save(0, &x.creator)
+	m.Save(1, &x.isRoot)
 }
 
-func (x *Namespace) load(m state.Map) {
-	m.LoadWait("creator", &x.creator)
-	m.Load("isRoot", &x.isRoot)
+func (x *Namespace) StateLoad(m state.Source) {
+	m.LoadWait(0, &x.creator)
+	m.Load(1, &x.isRoot)
 	m.AfterLoad(x.afterLoad)
 }
 
 func init() {
-	state.Register("pkg/sentry/inet.TCPBufferSize", (*TCPBufferSize)(nil), state.Fns{Save: (*TCPBufferSize).save, Load: (*TCPBufferSize).load})
-	state.Register("pkg/sentry/inet.Namespace", (*Namespace)(nil), state.Fns{Save: (*Namespace).save, Load: (*Namespace).load})
+	state.Register((*TCPBufferSize)(nil))
+	state.Register((*Namespace)(nil))
 }

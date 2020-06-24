@@ -56,7 +56,7 @@ func (l *processGroupList) Back() *ProcessGroup {
 //
 // NOTE: This is an O(n) operation.
 func (l *processGroupList) Len() (count int) {
-	for e := l.Front(); e != nil; e = e.Next() {
+	for e := l.Front(); e != nil; e = (processGroupElementMapper{}.linkerFor(e)).Next() {
 		count++
 	}
 	return count
@@ -148,13 +148,13 @@ func (l *processGroupList) Remove(e *ProcessGroup) {
 
 	if prev != nil {
 		processGroupElementMapper{}.linkerFor(prev).SetNext(next)
-	} else {
+	} else if l.head == e {
 		l.head = next
 	}
 
 	if next != nil {
 		processGroupElementMapper{}.linkerFor(next).SetPrev(prev)
-	} else {
+	} else if l.tail == e {
 		l.tail = prev
 	}
 

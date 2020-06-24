@@ -6,170 +6,305 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *DirtySet) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.DirtySet"
+}
+
+func (x *DirtySet) StateFields() []string {
+	return []string{
+		"root",
+	}
+}
+
 func (x *DirtySet) beforeSave() {}
-func (x *DirtySet) save(m state.Map) {
+
+func (x *DirtySet) StateSave(m state.Sink) {
 	x.beforeSave()
 	var root *DirtySegmentDataSlices = x.saveRoot()
-	m.SaveValue("root", root)
+	m.SaveValue(0, root)
 }
 
 func (x *DirtySet) afterLoad() {}
-func (x *DirtySet) load(m state.Map) {
-	m.LoadValue("root", new(*DirtySegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*DirtySegmentDataSlices)) })
+
+func (x *DirtySet) StateLoad(m state.Source) {
+	m.LoadValue(0, new(*DirtySegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*DirtySegmentDataSlices)) })
+}
+
+func (x *Dirtynode) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.Dirtynode"
+}
+
+func (x *Dirtynode) StateFields() []string {
+	return []string{
+		"nrSegments",
+		"parent",
+		"parentIndex",
+		"hasChildren",
+		"maxGap",
+		"keys",
+		"values",
+		"children",
+	}
 }
 
 func (x *Dirtynode) beforeSave() {}
-func (x *Dirtynode) save(m state.Map) {
+
+func (x *Dirtynode) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("nrSegments", &x.nrSegments)
-	m.Save("parent", &x.parent)
-	m.Save("parentIndex", &x.parentIndex)
-	m.Save("hasChildren", &x.hasChildren)
-	m.Save("maxGap", &x.maxGap)
-	m.Save("keys", &x.keys)
-	m.Save("values", &x.values)
-	m.Save("children", &x.children)
+	m.Save(0, &x.nrSegments)
+	m.Save(1, &x.parent)
+	m.Save(2, &x.parentIndex)
+	m.Save(3, &x.hasChildren)
+	m.Save(4, &x.maxGap)
+	m.Save(5, &x.keys)
+	m.Save(6, &x.values)
+	m.Save(7, &x.children)
 }
 
 func (x *Dirtynode) afterLoad() {}
-func (x *Dirtynode) load(m state.Map) {
-	m.Load("nrSegments", &x.nrSegments)
-	m.Load("parent", &x.parent)
-	m.Load("parentIndex", &x.parentIndex)
-	m.Load("hasChildren", &x.hasChildren)
-	m.Load("maxGap", &x.maxGap)
-	m.Load("keys", &x.keys)
-	m.Load("values", &x.values)
-	m.Load("children", &x.children)
+
+func (x *Dirtynode) StateLoad(m state.Source) {
+	m.Load(0, &x.nrSegments)
+	m.Load(1, &x.parent)
+	m.Load(2, &x.parentIndex)
+	m.Load(3, &x.hasChildren)
+	m.Load(4, &x.maxGap)
+	m.Load(5, &x.keys)
+	m.Load(6, &x.values)
+	m.Load(7, &x.children)
+}
+
+func (x *DirtySegmentDataSlices) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.DirtySegmentDataSlices"
+}
+
+func (x *DirtySegmentDataSlices) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+		"Values",
+	}
 }
 
 func (x *DirtySegmentDataSlices) beforeSave() {}
-func (x *DirtySegmentDataSlices) save(m state.Map) {
+
+func (x *DirtySegmentDataSlices) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Start", &x.Start)
-	m.Save("End", &x.End)
-	m.Save("Values", &x.Values)
+	m.Save(0, &x.Start)
+	m.Save(1, &x.End)
+	m.Save(2, &x.Values)
 }
 
 func (x *DirtySegmentDataSlices) afterLoad() {}
-func (x *DirtySegmentDataSlices) load(m state.Map) {
-	m.Load("Start", &x.Start)
-	m.Load("End", &x.End)
-	m.Load("Values", &x.Values)
+
+func (x *DirtySegmentDataSlices) StateLoad(m state.Source) {
+	m.Load(0, &x.Start)
+	m.Load(1, &x.End)
+	m.Load(2, &x.Values)
+}
+
+func (x *FileRangeSet) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.FileRangeSet"
+}
+
+func (x *FileRangeSet) StateFields() []string {
+	return []string{
+		"root",
+	}
 }
 
 func (x *FileRangeSet) beforeSave() {}
-func (x *FileRangeSet) save(m state.Map) {
+
+func (x *FileRangeSet) StateSave(m state.Sink) {
 	x.beforeSave()
 	var root *FileRangeSegmentDataSlices = x.saveRoot()
-	m.SaveValue("root", root)
+	m.SaveValue(0, root)
 }
 
 func (x *FileRangeSet) afterLoad() {}
-func (x *FileRangeSet) load(m state.Map) {
-	m.LoadValue("root", new(*FileRangeSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*FileRangeSegmentDataSlices)) })
+
+func (x *FileRangeSet) StateLoad(m state.Source) {
+	m.LoadValue(0, new(*FileRangeSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*FileRangeSegmentDataSlices)) })
+}
+
+func (x *FileRangenode) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.FileRangenode"
+}
+
+func (x *FileRangenode) StateFields() []string {
+	return []string{
+		"nrSegments",
+		"parent",
+		"parentIndex",
+		"hasChildren",
+		"maxGap",
+		"keys",
+		"values",
+		"children",
+	}
 }
 
 func (x *FileRangenode) beforeSave() {}
-func (x *FileRangenode) save(m state.Map) {
+
+func (x *FileRangenode) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("nrSegments", &x.nrSegments)
-	m.Save("parent", &x.parent)
-	m.Save("parentIndex", &x.parentIndex)
-	m.Save("hasChildren", &x.hasChildren)
-	m.Save("maxGap", &x.maxGap)
-	m.Save("keys", &x.keys)
-	m.Save("values", &x.values)
-	m.Save("children", &x.children)
+	m.Save(0, &x.nrSegments)
+	m.Save(1, &x.parent)
+	m.Save(2, &x.parentIndex)
+	m.Save(3, &x.hasChildren)
+	m.Save(4, &x.maxGap)
+	m.Save(5, &x.keys)
+	m.Save(6, &x.values)
+	m.Save(7, &x.children)
 }
 
 func (x *FileRangenode) afterLoad() {}
-func (x *FileRangenode) load(m state.Map) {
-	m.Load("nrSegments", &x.nrSegments)
-	m.Load("parent", &x.parent)
-	m.Load("parentIndex", &x.parentIndex)
-	m.Load("hasChildren", &x.hasChildren)
-	m.Load("maxGap", &x.maxGap)
-	m.Load("keys", &x.keys)
-	m.Load("values", &x.values)
-	m.Load("children", &x.children)
+
+func (x *FileRangenode) StateLoad(m state.Source) {
+	m.Load(0, &x.nrSegments)
+	m.Load(1, &x.parent)
+	m.Load(2, &x.parentIndex)
+	m.Load(3, &x.hasChildren)
+	m.Load(4, &x.maxGap)
+	m.Load(5, &x.keys)
+	m.Load(6, &x.values)
+	m.Load(7, &x.children)
+}
+
+func (x *FileRangeSegmentDataSlices) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.FileRangeSegmentDataSlices"
+}
+
+func (x *FileRangeSegmentDataSlices) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+		"Values",
+	}
 }
 
 func (x *FileRangeSegmentDataSlices) beforeSave() {}
-func (x *FileRangeSegmentDataSlices) save(m state.Map) {
+
+func (x *FileRangeSegmentDataSlices) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Start", &x.Start)
-	m.Save("End", &x.End)
-	m.Save("Values", &x.Values)
+	m.Save(0, &x.Start)
+	m.Save(1, &x.End)
+	m.Save(2, &x.Values)
 }
 
 func (x *FileRangeSegmentDataSlices) afterLoad() {}
-func (x *FileRangeSegmentDataSlices) load(m state.Map) {
-	m.Load("Start", &x.Start)
-	m.Load("End", &x.End)
-	m.Load("Values", &x.Values)
+
+func (x *FileRangeSegmentDataSlices) StateLoad(m state.Source) {
+	m.Load(0, &x.Start)
+	m.Load(1, &x.End)
+	m.Load(2, &x.Values)
+}
+
+func (x *FrameRefSet) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.FrameRefSet"
+}
+
+func (x *FrameRefSet) StateFields() []string {
+	return []string{
+		"root",
+	}
 }
 
 func (x *FrameRefSet) beforeSave() {}
-func (x *FrameRefSet) save(m state.Map) {
+
+func (x *FrameRefSet) StateSave(m state.Sink) {
 	x.beforeSave()
 	var root *FrameRefSegmentDataSlices = x.saveRoot()
-	m.SaveValue("root", root)
+	m.SaveValue(0, root)
 }
 
 func (x *FrameRefSet) afterLoad() {}
-func (x *FrameRefSet) load(m state.Map) {
-	m.LoadValue("root", new(*FrameRefSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*FrameRefSegmentDataSlices)) })
+
+func (x *FrameRefSet) StateLoad(m state.Source) {
+	m.LoadValue(0, new(*FrameRefSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*FrameRefSegmentDataSlices)) })
+}
+
+func (x *FrameRefnode) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.FrameRefnode"
+}
+
+func (x *FrameRefnode) StateFields() []string {
+	return []string{
+		"nrSegments",
+		"parent",
+		"parentIndex",
+		"hasChildren",
+		"maxGap",
+		"keys",
+		"values",
+		"children",
+	}
 }
 
 func (x *FrameRefnode) beforeSave() {}
-func (x *FrameRefnode) save(m state.Map) {
+
+func (x *FrameRefnode) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("nrSegments", &x.nrSegments)
-	m.Save("parent", &x.parent)
-	m.Save("parentIndex", &x.parentIndex)
-	m.Save("hasChildren", &x.hasChildren)
-	m.Save("maxGap", &x.maxGap)
-	m.Save("keys", &x.keys)
-	m.Save("values", &x.values)
-	m.Save("children", &x.children)
+	m.Save(0, &x.nrSegments)
+	m.Save(1, &x.parent)
+	m.Save(2, &x.parentIndex)
+	m.Save(3, &x.hasChildren)
+	m.Save(4, &x.maxGap)
+	m.Save(5, &x.keys)
+	m.Save(6, &x.values)
+	m.Save(7, &x.children)
 }
 
 func (x *FrameRefnode) afterLoad() {}
-func (x *FrameRefnode) load(m state.Map) {
-	m.Load("nrSegments", &x.nrSegments)
-	m.Load("parent", &x.parent)
-	m.Load("parentIndex", &x.parentIndex)
-	m.Load("hasChildren", &x.hasChildren)
-	m.Load("maxGap", &x.maxGap)
-	m.Load("keys", &x.keys)
-	m.Load("values", &x.values)
-	m.Load("children", &x.children)
+
+func (x *FrameRefnode) StateLoad(m state.Source) {
+	m.Load(0, &x.nrSegments)
+	m.Load(1, &x.parent)
+	m.Load(2, &x.parentIndex)
+	m.Load(3, &x.hasChildren)
+	m.Load(4, &x.maxGap)
+	m.Load(5, &x.keys)
+	m.Load(6, &x.values)
+	m.Load(7, &x.children)
+}
+
+func (x *FrameRefSegmentDataSlices) StateTypeName() string {
+	return "pkg/sentry/fs/fsutil.FrameRefSegmentDataSlices"
+}
+
+func (x *FrameRefSegmentDataSlices) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+		"Values",
+	}
 }
 
 func (x *FrameRefSegmentDataSlices) beforeSave() {}
-func (x *FrameRefSegmentDataSlices) save(m state.Map) {
+
+func (x *FrameRefSegmentDataSlices) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Start", &x.Start)
-	m.Save("End", &x.End)
-	m.Save("Values", &x.Values)
+	m.Save(0, &x.Start)
+	m.Save(1, &x.End)
+	m.Save(2, &x.Values)
 }
 
 func (x *FrameRefSegmentDataSlices) afterLoad() {}
-func (x *FrameRefSegmentDataSlices) load(m state.Map) {
-	m.Load("Start", &x.Start)
-	m.Load("End", &x.End)
-	m.Load("Values", &x.Values)
+
+func (x *FrameRefSegmentDataSlices) StateLoad(m state.Source) {
+	m.Load(0, &x.Start)
+	m.Load(1, &x.End)
+	m.Load(2, &x.Values)
 }
 
 func init() {
-	state.Register("pkg/sentry/fs/fsutil.DirtySet", (*DirtySet)(nil), state.Fns{Save: (*DirtySet).save, Load: (*DirtySet).load})
-	state.Register("pkg/sentry/fs/fsutil.Dirtynode", (*Dirtynode)(nil), state.Fns{Save: (*Dirtynode).save, Load: (*Dirtynode).load})
-	state.Register("pkg/sentry/fs/fsutil.DirtySegmentDataSlices", (*DirtySegmentDataSlices)(nil), state.Fns{Save: (*DirtySegmentDataSlices).save, Load: (*DirtySegmentDataSlices).load})
-	state.Register("pkg/sentry/fs/fsutil.FileRangeSet", (*FileRangeSet)(nil), state.Fns{Save: (*FileRangeSet).save, Load: (*FileRangeSet).load})
-	state.Register("pkg/sentry/fs/fsutil.FileRangenode", (*FileRangenode)(nil), state.Fns{Save: (*FileRangenode).save, Load: (*FileRangenode).load})
-	state.Register("pkg/sentry/fs/fsutil.FileRangeSegmentDataSlices", (*FileRangeSegmentDataSlices)(nil), state.Fns{Save: (*FileRangeSegmentDataSlices).save, Load: (*FileRangeSegmentDataSlices).load})
-	state.Register("pkg/sentry/fs/fsutil.FrameRefSet", (*FrameRefSet)(nil), state.Fns{Save: (*FrameRefSet).save, Load: (*FrameRefSet).load})
-	state.Register("pkg/sentry/fs/fsutil.FrameRefnode", (*FrameRefnode)(nil), state.Fns{Save: (*FrameRefnode).save, Load: (*FrameRefnode).load})
-	state.Register("pkg/sentry/fs/fsutil.FrameRefSegmentDataSlices", (*FrameRefSegmentDataSlices)(nil), state.Fns{Save: (*FrameRefSegmentDataSlices).save, Load: (*FrameRefSegmentDataSlices).load})
+	state.Register((*DirtySet)(nil))
+	state.Register((*Dirtynode)(nil))
+	state.Register((*DirtySegmentDataSlices)(nil))
+	state.Register((*FileRangeSet)(nil))
+	state.Register((*FileRangenode)(nil))
+	state.Register((*FileRangeSegmentDataSlices)(nil))
+	state.Register((*FrameRefSet)(nil))
+	state.Register((*FrameRefnode)(nil))
+	state.Register((*FrameRefSegmentDataSlices)(nil))
 }

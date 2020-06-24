@@ -6,140 +6,250 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *fifo) StateTypeName() string {
+	return "pkg/sentry/fs/gofer.fifo"
+}
+
+func (x *fifo) StateFields() []string {
+	return []string{
+		"InodeOperations",
+		"fileIops",
+	}
+}
+
 func (x *fifo) beforeSave() {}
-func (x *fifo) save(m state.Map) {
+
+func (x *fifo) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("InodeOperations", &x.InodeOperations)
-	m.Save("fileIops", &x.fileIops)
+	m.Save(0, &x.InodeOperations)
+	m.Save(1, &x.fileIops)
 }
 
 func (x *fifo) afterLoad() {}
-func (x *fifo) load(m state.Map) {
-	m.Load("InodeOperations", &x.InodeOperations)
-	m.Load("fileIops", &x.fileIops)
+
+func (x *fifo) StateLoad(m state.Source) {
+	m.Load(0, &x.InodeOperations)
+	m.Load(1, &x.fileIops)
+}
+
+func (x *fileOperations) StateTypeName() string {
+	return "pkg/sentry/fs/gofer.fileOperations"
+}
+
+func (x *fileOperations) StateFields() []string {
+	return []string{
+		"inodeOperations",
+		"dirCursor",
+		"flags",
+	}
 }
 
 func (x *fileOperations) beforeSave() {}
-func (x *fileOperations) save(m state.Map) {
+
+func (x *fileOperations) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("inodeOperations", &x.inodeOperations)
-	m.Save("dirCursor", &x.dirCursor)
-	m.Save("flags", &x.flags)
+	m.Save(0, &x.inodeOperations)
+	m.Save(1, &x.dirCursor)
+	m.Save(2, &x.flags)
 }
 
-func (x *fileOperations) load(m state.Map) {
-	m.LoadWait("inodeOperations", &x.inodeOperations)
-	m.Load("dirCursor", &x.dirCursor)
-	m.LoadWait("flags", &x.flags)
+func (x *fileOperations) StateLoad(m state.Source) {
+	m.LoadWait(0, &x.inodeOperations)
+	m.Load(1, &x.dirCursor)
+	m.LoadWait(2, &x.flags)
 	m.AfterLoad(x.afterLoad)
 }
 
+func (x *filesystem) StateTypeName() string {
+	return "pkg/sentry/fs/gofer.filesystem"
+}
+
+func (x *filesystem) StateFields() []string {
+	return []string{}
+}
+
 func (x *filesystem) beforeSave() {}
-func (x *filesystem) save(m state.Map) {
+
+func (x *filesystem) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *filesystem) afterLoad() {}
-func (x *filesystem) load(m state.Map) {
+
+func (x *filesystem) StateLoad(m state.Source) {
+}
+
+func (x *inodeOperations) StateTypeName() string {
+	return "pkg/sentry/fs/gofer.inodeOperations"
+}
+
+func (x *inodeOperations) StateFields() []string {
+	return []string{
+		"fileState",
+		"cachingInodeOps",
+	}
 }
 
 func (x *inodeOperations) beforeSave() {}
-func (x *inodeOperations) save(m state.Map) {
+
+func (x *inodeOperations) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("fileState", &x.fileState)
-	m.Save("cachingInodeOps", &x.cachingInodeOps)
+	m.Save(0, &x.fileState)
+	m.Save(1, &x.cachingInodeOps)
 }
 
 func (x *inodeOperations) afterLoad() {}
-func (x *inodeOperations) load(m state.Map) {
-	m.LoadWait("fileState", &x.fileState)
-	m.Load("cachingInodeOps", &x.cachingInodeOps)
+
+func (x *inodeOperations) StateLoad(m state.Source) {
+	m.LoadWait(0, &x.fileState)
+	m.Load(1, &x.cachingInodeOps)
 }
 
-func (x *inodeFileState) save(m state.Map) {
+func (x *inodeFileState) StateTypeName() string {
+	return "pkg/sentry/fs/gofer.inodeFileState"
+}
+
+func (x *inodeFileState) StateFields() []string {
+	return []string{
+		"s",
+		"sattr",
+		"loading",
+		"savedUAttr",
+		"hostMappable",
+	}
+}
+
+func (x *inodeFileState) StateSave(m state.Sink) {
 	x.beforeSave()
 	var loading struct{} = x.saveLoading()
-	m.SaveValue("loading", loading)
-	m.Save("s", &x.s)
-	m.Save("sattr", &x.sattr)
-	m.Save("savedUAttr", &x.savedUAttr)
-	m.Save("hostMappable", &x.hostMappable)
+	m.SaveValue(2, loading)
+	m.Save(0, &x.s)
+	m.Save(1, &x.sattr)
+	m.Save(3, &x.savedUAttr)
+	m.Save(4, &x.hostMappable)
 }
 
-func (x *inodeFileState) load(m state.Map) {
-	m.LoadWait("s", &x.s)
-	m.LoadWait("sattr", &x.sattr)
-	m.Load("savedUAttr", &x.savedUAttr)
-	m.Load("hostMappable", &x.hostMappable)
-	m.LoadValue("loading", new(struct{}), func(y interface{}) { x.loadLoading(y.(struct{})) })
+func (x *inodeFileState) StateLoad(m state.Source) {
+	m.LoadWait(0, &x.s)
+	m.LoadWait(1, &x.sattr)
+	m.Load(3, &x.savedUAttr)
+	m.Load(4, &x.hostMappable)
+	m.LoadValue(2, new(struct{}), func(y interface{}) { x.loadLoading(y.(struct{})) })
 	m.AfterLoad(x.afterLoad)
 }
 
+func (x *overrideInfo) StateTypeName() string {
+	return "pkg/sentry/fs/gofer.overrideInfo"
+}
+
+func (x *overrideInfo) StateFields() []string {
+	return []string{
+		"dirent",
+		"endpoint",
+		"inode",
+	}
+}
+
 func (x *overrideInfo) beforeSave() {}
-func (x *overrideInfo) save(m state.Map) {
+
+func (x *overrideInfo) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("dirent", &x.dirent)
-	m.Save("endpoint", &x.endpoint)
-	m.Save("inode", &x.inode)
+	m.Save(0, &x.dirent)
+	m.Save(1, &x.endpoint)
+	m.Save(2, &x.inode)
 }
 
 func (x *overrideInfo) afterLoad() {}
-func (x *overrideInfo) load(m state.Map) {
-	m.Load("dirent", &x.dirent)
-	m.Load("endpoint", &x.endpoint)
-	m.Load("inode", &x.inode)
+
+func (x *overrideInfo) StateLoad(m state.Source) {
+	m.Load(0, &x.dirent)
+	m.Load(1, &x.endpoint)
+	m.Load(2, &x.inode)
+}
+
+func (x *overrideMaps) StateTypeName() string {
+	return "pkg/sentry/fs/gofer.overrideMaps"
+}
+
+func (x *overrideMaps) StateFields() []string {
+	return []string{
+		"pathMap",
+	}
 }
 
 func (x *overrideMaps) beforeSave() {}
-func (x *overrideMaps) save(m state.Map) {
+
+func (x *overrideMaps) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("pathMap", &x.pathMap)
+	m.Save(0, &x.pathMap)
 }
 
 func (x *overrideMaps) afterLoad() {}
-func (x *overrideMaps) load(m state.Map) {
-	m.Load("pathMap", &x.pathMap)
+
+func (x *overrideMaps) StateLoad(m state.Source) {
+	m.Load(0, &x.pathMap)
 }
 
-func (x *session) save(m state.Map) {
+func (x *session) StateTypeName() string {
+	return "pkg/sentry/fs/gofer.session"
+}
+
+func (x *session) StateFields() []string {
+	return []string{
+		"AtomicRefCount",
+		"msize",
+		"version",
+		"cachePolicy",
+		"aname",
+		"superBlockFlags",
+		"limitHostFDTranslation",
+		"overlayfsStaleRead",
+		"connID",
+		"inodeMappings",
+		"mounter",
+		"overrides",
+	}
+}
+
+func (x *session) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("AtomicRefCount", &x.AtomicRefCount)
-	m.Save("msize", &x.msize)
-	m.Save("version", &x.version)
-	m.Save("cachePolicy", &x.cachePolicy)
-	m.Save("aname", &x.aname)
-	m.Save("superBlockFlags", &x.superBlockFlags)
-	m.Save("limitHostFDTranslation", &x.limitHostFDTranslation)
-	m.Save("overlayfsStaleRead", &x.overlayfsStaleRead)
-	m.Save("connID", &x.connID)
-	m.Save("inodeMappings", &x.inodeMappings)
-	m.Save("mounter", &x.mounter)
-	m.Save("overrides", &x.overrides)
+	m.Save(0, &x.AtomicRefCount)
+	m.Save(1, &x.msize)
+	m.Save(2, &x.version)
+	m.Save(3, &x.cachePolicy)
+	m.Save(4, &x.aname)
+	m.Save(5, &x.superBlockFlags)
+	m.Save(6, &x.limitHostFDTranslation)
+	m.Save(7, &x.overlayfsStaleRead)
+	m.Save(8, &x.connID)
+	m.Save(9, &x.inodeMappings)
+	m.Save(10, &x.mounter)
+	m.Save(11, &x.overrides)
 }
 
-func (x *session) load(m state.Map) {
-	m.Load("AtomicRefCount", &x.AtomicRefCount)
-	m.LoadWait("msize", &x.msize)
-	m.LoadWait("version", &x.version)
-	m.LoadWait("cachePolicy", &x.cachePolicy)
-	m.LoadWait("aname", &x.aname)
-	m.LoadWait("superBlockFlags", &x.superBlockFlags)
-	m.Load("limitHostFDTranslation", &x.limitHostFDTranslation)
-	m.Load("overlayfsStaleRead", &x.overlayfsStaleRead)
-	m.LoadWait("connID", &x.connID)
-	m.LoadWait("inodeMappings", &x.inodeMappings)
-	m.LoadWait("mounter", &x.mounter)
-	m.LoadWait("overrides", &x.overrides)
+func (x *session) StateLoad(m state.Source) {
+	m.Load(0, &x.AtomicRefCount)
+	m.LoadWait(1, &x.msize)
+	m.LoadWait(2, &x.version)
+	m.LoadWait(3, &x.cachePolicy)
+	m.LoadWait(4, &x.aname)
+	m.LoadWait(5, &x.superBlockFlags)
+	m.Load(6, &x.limitHostFDTranslation)
+	m.Load(7, &x.overlayfsStaleRead)
+	m.LoadWait(8, &x.connID)
+	m.LoadWait(9, &x.inodeMappings)
+	m.LoadWait(10, &x.mounter)
+	m.LoadWait(11, &x.overrides)
 	m.AfterLoad(x.afterLoad)
 }
 
 func init() {
-	state.Register("pkg/sentry/fs/gofer.fifo", (*fifo)(nil), state.Fns{Save: (*fifo).save, Load: (*fifo).load})
-	state.Register("pkg/sentry/fs/gofer.fileOperations", (*fileOperations)(nil), state.Fns{Save: (*fileOperations).save, Load: (*fileOperations).load})
-	state.Register("pkg/sentry/fs/gofer.filesystem", (*filesystem)(nil), state.Fns{Save: (*filesystem).save, Load: (*filesystem).load})
-	state.Register("pkg/sentry/fs/gofer.inodeOperations", (*inodeOperations)(nil), state.Fns{Save: (*inodeOperations).save, Load: (*inodeOperations).load})
-	state.Register("pkg/sentry/fs/gofer.inodeFileState", (*inodeFileState)(nil), state.Fns{Save: (*inodeFileState).save, Load: (*inodeFileState).load})
-	state.Register("pkg/sentry/fs/gofer.overrideInfo", (*overrideInfo)(nil), state.Fns{Save: (*overrideInfo).save, Load: (*overrideInfo).load})
-	state.Register("pkg/sentry/fs/gofer.overrideMaps", (*overrideMaps)(nil), state.Fns{Save: (*overrideMaps).save, Load: (*overrideMaps).load})
-	state.Register("pkg/sentry/fs/gofer.session", (*session)(nil), state.Fns{Save: (*session).save, Load: (*session).load})
+	state.Register((*fifo)(nil))
+	state.Register((*fileOperations)(nil))
+	state.Register((*filesystem)(nil))
+	state.Register((*inodeOperations)(nil))
+	state.Register((*inodeFileState)(nil))
+	state.Register((*overrideInfo)(nil))
+	state.Register((*overrideMaps)(nil))
+	state.Register((*session)(nil))
 }

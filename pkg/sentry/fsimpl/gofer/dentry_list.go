@@ -56,7 +56,7 @@ func (l *dentryList) Back() *dentry {
 //
 // NOTE: This is an O(n) operation.
 func (l *dentryList) Len() (count int) {
-	for e := l.Front(); e != nil; e = e.Next() {
+	for e := l.Front(); e != nil; e = (dentryElementMapper{}.linkerFor(e)).Next() {
 		count++
 	}
 	return count
@@ -148,13 +148,13 @@ func (l *dentryList) Remove(e *dentry) {
 
 	if prev != nil {
 		dentryElementMapper{}.linkerFor(prev).SetNext(next)
-	} else {
+	} else if l.head == e {
 		l.head = next
 	}
 
 	if next != nil {
 		dentryElementMapper{}.linkerFor(next).SetPrev(prev)
-	} else {
+	} else if l.tail == e {
 		l.tail = prev
 	}
 

@@ -6,33 +6,59 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *List) StateTypeName() string {
+	return "pkg/ilist.List"
+}
+
+func (x *List) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
+}
+
 func (x *List) beforeSave() {}
-func (x *List) save(m state.Map) {
+
+func (x *List) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("head", &x.head)
-	m.Save("tail", &x.tail)
+	m.Save(0, &x.head)
+	m.Save(1, &x.tail)
 }
 
 func (x *List) afterLoad() {}
-func (x *List) load(m state.Map) {
-	m.Load("head", &x.head)
-	m.Load("tail", &x.tail)
+
+func (x *List) StateLoad(m state.Source) {
+	m.Load(0, &x.head)
+	m.Load(1, &x.tail)
+}
+
+func (x *Entry) StateTypeName() string {
+	return "pkg/ilist.Entry"
+}
+
+func (x *Entry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
 }
 
 func (x *Entry) beforeSave() {}
-func (x *Entry) save(m state.Map) {
+
+func (x *Entry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("next", &x.next)
-	m.Save("prev", &x.prev)
+	m.Save(0, &x.next)
+	m.Save(1, &x.prev)
 }
 
 func (x *Entry) afterLoad() {}
-func (x *Entry) load(m state.Map) {
-	m.Load("next", &x.next)
-	m.Load("prev", &x.prev)
+
+func (x *Entry) StateLoad(m state.Source) {
+	m.Load(0, &x.next)
+	m.Load(1, &x.prev)
 }
 
 func init() {
-	state.Register("pkg/ilist.List", (*List)(nil), state.Fns{Save: (*List).save, Load: (*List).load})
-	state.Register("pkg/ilist.Entry", (*Entry)(nil), state.Fns{Save: (*Entry).save, Load: (*Entry).load})
+	state.Register((*List)(nil))
+	state.Register((*Entry)(nil))
 }

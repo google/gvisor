@@ -8,21 +8,34 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *State) beforeSave() {}
-func (x *State) save(m state.Map) {
-	x.beforeSave()
-	m.Save("Regs", &x.Regs)
-	m.Save("x86FPState", &x.x86FPState)
-	m.Save("FeatureSet", &x.FeatureSet)
+func (x *State) StateTypeName() string {
+	return "pkg/sentry/arch.State"
 }
 
-func (x *State) load(m state.Map) {
-	m.Load("Regs", &x.Regs)
-	m.LoadWait("x86FPState", &x.x86FPState)
-	m.Load("FeatureSet", &x.FeatureSet)
+func (x *State) StateFields() []string {
+	return []string{
+		"Regs",
+		"x86FPState",
+		"FeatureSet",
+	}
+}
+
+func (x *State) beforeSave() {}
+
+func (x *State) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.Regs)
+	m.Save(1, &x.x86FPState)
+	m.Save(2, &x.FeatureSet)
+}
+
+func (x *State) StateLoad(m state.Source) {
+	m.Load(0, &x.Regs)
+	m.LoadWait(1, &x.x86FPState)
+	m.Load(2, &x.FeatureSet)
 	m.AfterLoad(x.afterLoad)
 }
 
 func init() {
-	state.Register("pkg/sentry/arch.State", (*State)(nil), state.Fns{Save: (*State).save, Load: (*State).load})
+	state.Register((*State)(nil))
 }

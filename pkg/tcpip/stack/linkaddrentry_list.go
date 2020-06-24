@@ -56,7 +56,7 @@ func (l *linkAddrEntryList) Back() *linkAddrEntry {
 //
 // NOTE: This is an O(n) operation.
 func (l *linkAddrEntryList) Len() (count int) {
-	for e := l.Front(); e != nil; e = e.Next() {
+	for e := l.Front(); e != nil; e = (linkAddrEntryElementMapper{}.linkerFor(e)).Next() {
 		count++
 	}
 	return count
@@ -148,13 +148,13 @@ func (l *linkAddrEntryList) Remove(e *linkAddrEntry) {
 
 	if prev != nil {
 		linkAddrEntryElementMapper{}.linkerFor(prev).SetNext(next)
-	} else {
+	} else if l.head == e {
 		l.head = next
 	}
 
 	if next != nil {
 		linkAddrEntryElementMapper{}.linkerFor(next).SetPrev(prev)
-	} else {
+	} else if l.tail == e {
 		l.tail = prev
 	}
 

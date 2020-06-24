@@ -6,81 +6,143 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *IOEvent) StateTypeName() string {
+	return "pkg/abi/linux.IOEvent"
+}
+
+func (x *IOEvent) StateFields() []string {
+	return []string{
+		"Data",
+		"Obj",
+		"Result",
+		"Result2",
+	}
+}
+
 func (x *IOEvent) beforeSave() {}
-func (x *IOEvent) save(m state.Map) {
+
+func (x *IOEvent) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Data", &x.Data)
-	m.Save("Obj", &x.Obj)
-	m.Save("Result", &x.Result)
-	m.Save("Result2", &x.Result2)
+	m.Save(0, &x.Data)
+	m.Save(1, &x.Obj)
+	m.Save(2, &x.Result)
+	m.Save(3, &x.Result2)
 }
 
 func (x *IOEvent) afterLoad() {}
-func (x *IOEvent) load(m state.Map) {
-	m.Load("Data", &x.Data)
-	m.Load("Obj", &x.Obj)
-	m.Load("Result", &x.Result)
-	m.Load("Result2", &x.Result2)
+
+func (x *IOEvent) StateLoad(m state.Source) {
+	m.Load(0, &x.Data)
+	m.Load(1, &x.Obj)
+	m.Load(2, &x.Result)
+	m.Load(3, &x.Result2)
+}
+
+func (x *BPFInstruction) StateTypeName() string {
+	return "pkg/abi/linux.BPFInstruction"
+}
+
+func (x *BPFInstruction) StateFields() []string {
+	return []string{
+		"OpCode",
+		"JumpIfTrue",
+		"JumpIfFalse",
+		"K",
+	}
 }
 
 func (x *BPFInstruction) beforeSave() {}
-func (x *BPFInstruction) save(m state.Map) {
+
+func (x *BPFInstruction) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("OpCode", &x.OpCode)
-	m.Save("JumpIfTrue", &x.JumpIfTrue)
-	m.Save("JumpIfFalse", &x.JumpIfFalse)
-	m.Save("K", &x.K)
+	m.Save(0, &x.OpCode)
+	m.Save(1, &x.JumpIfTrue)
+	m.Save(2, &x.JumpIfFalse)
+	m.Save(3, &x.K)
 }
 
 func (x *BPFInstruction) afterLoad() {}
-func (x *BPFInstruction) load(m state.Map) {
-	m.Load("OpCode", &x.OpCode)
-	m.Load("JumpIfTrue", &x.JumpIfTrue)
-	m.Load("JumpIfFalse", &x.JumpIfFalse)
-	m.Load("K", &x.K)
+
+func (x *BPFInstruction) StateLoad(m state.Source) {
+	m.Load(0, &x.OpCode)
+	m.Load(1, &x.JumpIfTrue)
+	m.Load(2, &x.JumpIfFalse)
+	m.Load(3, &x.K)
+}
+
+func (x *KernelTermios) StateTypeName() string {
+	return "pkg/abi/linux.KernelTermios"
+}
+
+func (x *KernelTermios) StateFields() []string {
+	return []string{
+		"InputFlags",
+		"OutputFlags",
+		"ControlFlags",
+		"LocalFlags",
+		"LineDiscipline",
+		"ControlCharacters",
+		"InputSpeed",
+		"OutputSpeed",
+	}
 }
 
 func (x *KernelTermios) beforeSave() {}
-func (x *KernelTermios) save(m state.Map) {
+
+func (x *KernelTermios) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("InputFlags", &x.InputFlags)
-	m.Save("OutputFlags", &x.OutputFlags)
-	m.Save("ControlFlags", &x.ControlFlags)
-	m.Save("LocalFlags", &x.LocalFlags)
-	m.Save("LineDiscipline", &x.LineDiscipline)
-	m.Save("ControlCharacters", &x.ControlCharacters)
-	m.Save("InputSpeed", &x.InputSpeed)
-	m.Save("OutputSpeed", &x.OutputSpeed)
+	m.Save(0, &x.InputFlags)
+	m.Save(1, &x.OutputFlags)
+	m.Save(2, &x.ControlFlags)
+	m.Save(3, &x.LocalFlags)
+	m.Save(4, &x.LineDiscipline)
+	m.Save(5, &x.ControlCharacters)
+	m.Save(6, &x.InputSpeed)
+	m.Save(7, &x.OutputSpeed)
 }
 
 func (x *KernelTermios) afterLoad() {}
-func (x *KernelTermios) load(m state.Map) {
-	m.Load("InputFlags", &x.InputFlags)
-	m.Load("OutputFlags", &x.OutputFlags)
-	m.Load("ControlFlags", &x.ControlFlags)
-	m.Load("LocalFlags", &x.LocalFlags)
-	m.Load("LineDiscipline", &x.LineDiscipline)
-	m.Load("ControlCharacters", &x.ControlCharacters)
-	m.Load("InputSpeed", &x.InputSpeed)
-	m.Load("OutputSpeed", &x.OutputSpeed)
+
+func (x *KernelTermios) StateLoad(m state.Source) {
+	m.Load(0, &x.InputFlags)
+	m.Load(1, &x.OutputFlags)
+	m.Load(2, &x.ControlFlags)
+	m.Load(3, &x.LocalFlags)
+	m.Load(4, &x.LineDiscipline)
+	m.Load(5, &x.ControlCharacters)
+	m.Load(6, &x.InputSpeed)
+	m.Load(7, &x.OutputSpeed)
+}
+
+func (x *WindowSize) StateTypeName() string {
+	return "pkg/abi/linux.WindowSize"
+}
+
+func (x *WindowSize) StateFields() []string {
+	return []string{
+		"Rows",
+		"Cols",
+	}
 }
 
 func (x *WindowSize) beforeSave() {}
-func (x *WindowSize) save(m state.Map) {
+
+func (x *WindowSize) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Rows", &x.Rows)
-	m.Save("Cols", &x.Cols)
+	m.Save(0, &x.Rows)
+	m.Save(1, &x.Cols)
 }
 
 func (x *WindowSize) afterLoad() {}
-func (x *WindowSize) load(m state.Map) {
-	m.Load("Rows", &x.Rows)
-	m.Load("Cols", &x.Cols)
+
+func (x *WindowSize) StateLoad(m state.Source) {
+	m.Load(0, &x.Rows)
+	m.Load(1, &x.Cols)
 }
 
 func init() {
-	state.Register("pkg/abi/linux.IOEvent", (*IOEvent)(nil), state.Fns{Save: (*IOEvent).save, Load: (*IOEvent).load})
-	state.Register("pkg/abi/linux.BPFInstruction", (*BPFInstruction)(nil), state.Fns{Save: (*BPFInstruction).save, Load: (*BPFInstruction).load})
-	state.Register("pkg/abi/linux.KernelTermios", (*KernelTermios)(nil), state.Fns{Save: (*KernelTermios).save, Load: (*KernelTermios).load})
-	state.Register("pkg/abi/linux.WindowSize", (*WindowSize)(nil), state.Fns{Save: (*WindowSize).save, Load: (*WindowSize).load})
+	state.Register((*IOEvent)(nil))
+	state.Register((*BPFInstruction)(nil))
+	state.Register((*KernelTermios)(nil))
+	state.Register((*WindowSize)(nil))
 }

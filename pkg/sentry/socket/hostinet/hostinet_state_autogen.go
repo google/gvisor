@@ -6,27 +6,44 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *socketOpsCommon) StateTypeName() string {
+	return "pkg/sentry/socket/hostinet.socketOpsCommon"
+}
+
+func (x *socketOpsCommon) StateFields() []string {
+	return []string{
+		"SendReceiveTimeout",
+		"family",
+		"stype",
+		"protocol",
+		"queue",
+		"fd",
+	}
+}
+
 func (x *socketOpsCommon) beforeSave() {}
-func (x *socketOpsCommon) save(m state.Map) {
+
+func (x *socketOpsCommon) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("SendReceiveTimeout", &x.SendReceiveTimeout)
-	m.Save("family", &x.family)
-	m.Save("stype", &x.stype)
-	m.Save("protocol", &x.protocol)
-	m.Save("queue", &x.queue)
-	m.Save("fd", &x.fd)
+	m.Save(0, &x.SendReceiveTimeout)
+	m.Save(1, &x.family)
+	m.Save(2, &x.stype)
+	m.Save(3, &x.protocol)
+	m.Save(4, &x.queue)
+	m.Save(5, &x.fd)
 }
 
 func (x *socketOpsCommon) afterLoad() {}
-func (x *socketOpsCommon) load(m state.Map) {
-	m.Load("SendReceiveTimeout", &x.SendReceiveTimeout)
-	m.Load("family", &x.family)
-	m.Load("stype", &x.stype)
-	m.Load("protocol", &x.protocol)
-	m.Load("queue", &x.queue)
-	m.Load("fd", &x.fd)
+
+func (x *socketOpsCommon) StateLoad(m state.Source) {
+	m.Load(0, &x.SendReceiveTimeout)
+	m.Load(1, &x.family)
+	m.Load(2, &x.stype)
+	m.Load(3, &x.protocol)
+	m.Load(4, &x.queue)
+	m.Load(5, &x.fd)
 }
 
 func init() {
-	state.Register("pkg/sentry/socket/hostinet.socketOpsCommon", (*socketOpsCommon)(nil), state.Fns{Save: (*socketOpsCommon).save, Load: (*socketOpsCommon).load})
+	state.Register((*socketOpsCommon)(nil))
 }

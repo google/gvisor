@@ -9,1229 +9,2210 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
+func (x *abstractEndpoint) StateTypeName() string {
+	return "pkg/sentry/kernel.abstractEndpoint"
+}
+
+func (x *abstractEndpoint) StateFields() []string {
+	return []string{
+		"ep",
+		"wr",
+		"name",
+		"ns",
+	}
+}
+
 func (x *abstractEndpoint) beforeSave() {}
-func (x *abstractEndpoint) save(m state.Map) {
+
+func (x *abstractEndpoint) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("ep", &x.ep)
-	m.Save("wr", &x.wr)
-	m.Save("name", &x.name)
-	m.Save("ns", &x.ns)
+	m.Save(0, &x.ep)
+	m.Save(1, &x.wr)
+	m.Save(2, &x.name)
+	m.Save(3, &x.ns)
 }
 
 func (x *abstractEndpoint) afterLoad() {}
-func (x *abstractEndpoint) load(m state.Map) {
-	m.Load("ep", &x.ep)
-	m.Load("wr", &x.wr)
-	m.Load("name", &x.name)
-	m.Load("ns", &x.ns)
+
+func (x *abstractEndpoint) StateLoad(m state.Source) {
+	m.Load(0, &x.ep)
+	m.Load(1, &x.wr)
+	m.Load(2, &x.name)
+	m.Load(3, &x.ns)
+}
+
+func (x *AbstractSocketNamespace) StateTypeName() string {
+	return "pkg/sentry/kernel.AbstractSocketNamespace"
+}
+
+func (x *AbstractSocketNamespace) StateFields() []string {
+	return []string{
+		"endpoints",
+	}
 }
 
 func (x *AbstractSocketNamespace) beforeSave() {}
-func (x *AbstractSocketNamespace) save(m state.Map) {
+
+func (x *AbstractSocketNamespace) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("endpoints", &x.endpoints)
+	m.Save(0, &x.endpoints)
 }
 
 func (x *AbstractSocketNamespace) afterLoad() {}
-func (x *AbstractSocketNamespace) load(m state.Map) {
-	m.Load("endpoints", &x.endpoints)
+
+func (x *AbstractSocketNamespace) StateLoad(m state.Source) {
+	m.Load(0, &x.endpoints)
+}
+
+func (x *FDFlags) StateTypeName() string {
+	return "pkg/sentry/kernel.FDFlags"
+}
+
+func (x *FDFlags) StateFields() []string {
+	return []string{
+		"CloseOnExec",
+	}
 }
 
 func (x *FDFlags) beforeSave() {}
-func (x *FDFlags) save(m state.Map) {
+
+func (x *FDFlags) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("CloseOnExec", &x.CloseOnExec)
+	m.Save(0, &x.CloseOnExec)
 }
 
 func (x *FDFlags) afterLoad() {}
-func (x *FDFlags) load(m state.Map) {
-	m.Load("CloseOnExec", &x.CloseOnExec)
+
+func (x *FDFlags) StateLoad(m state.Source) {
+	m.Load(0, &x.CloseOnExec)
+}
+
+func (x *descriptor) StateTypeName() string {
+	return "pkg/sentry/kernel.descriptor"
+}
+
+func (x *descriptor) StateFields() []string {
+	return []string{
+		"file",
+		"fileVFS2",
+		"flags",
+	}
 }
 
 func (x *descriptor) beforeSave() {}
-func (x *descriptor) save(m state.Map) {
+
+func (x *descriptor) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("file", &x.file)
-	m.Save("fileVFS2", &x.fileVFS2)
-	m.Save("flags", &x.flags)
+	m.Save(0, &x.file)
+	m.Save(1, &x.fileVFS2)
+	m.Save(2, &x.flags)
 }
 
 func (x *descriptor) afterLoad() {}
-func (x *descriptor) load(m state.Map) {
-	m.Load("file", &x.file)
-	m.Load("fileVFS2", &x.fileVFS2)
-	m.Load("flags", &x.flags)
+
+func (x *descriptor) StateLoad(m state.Source) {
+	m.Load(0, &x.file)
+	m.Load(1, &x.fileVFS2)
+	m.Load(2, &x.flags)
+}
+
+func (x *FDTable) StateTypeName() string {
+	return "pkg/sentry/kernel.FDTable"
+}
+
+func (x *FDTable) StateFields() []string {
+	return []string{
+		"AtomicRefCount",
+		"k",
+		"next",
+		"used",
+		"descriptorTable",
+	}
 }
 
 func (x *FDTable) beforeSave() {}
-func (x *FDTable) save(m state.Map) {
+
+func (x *FDTable) StateSave(m state.Sink) {
 	x.beforeSave()
 	var descriptorTable map[int32]descriptor = x.saveDescriptorTable()
-	m.SaveValue("descriptorTable", descriptorTable)
-	m.Save("AtomicRefCount", &x.AtomicRefCount)
-	m.Save("k", &x.k)
-	m.Save("next", &x.next)
-	m.Save("used", &x.used)
+	m.SaveValue(4, descriptorTable)
+	m.Save(0, &x.AtomicRefCount)
+	m.Save(1, &x.k)
+	m.Save(2, &x.next)
+	m.Save(3, &x.used)
 }
 
 func (x *FDTable) afterLoad() {}
-func (x *FDTable) load(m state.Map) {
-	m.Load("AtomicRefCount", &x.AtomicRefCount)
-	m.Load("k", &x.k)
-	m.Load("next", &x.next)
-	m.Load("used", &x.used)
-	m.LoadValue("descriptorTable", new(map[int32]descriptor), func(y interface{}) { x.loadDescriptorTable(y.(map[int32]descriptor)) })
+
+func (x *FDTable) StateLoad(m state.Source) {
+	m.Load(0, &x.AtomicRefCount)
+	m.Load(1, &x.k)
+	m.Load(2, &x.next)
+	m.Load(3, &x.used)
+	m.LoadValue(4, new(map[int32]descriptor), func(y interface{}) { x.loadDescriptorTable(y.(map[int32]descriptor)) })
+}
+
+func (x *FSContext) StateTypeName() string {
+	return "pkg/sentry/kernel.FSContext"
+}
+
+func (x *FSContext) StateFields() []string {
+	return []string{
+		"AtomicRefCount",
+		"root",
+		"rootVFS2",
+		"cwd",
+		"cwdVFS2",
+		"umask",
+	}
 }
 
 func (x *FSContext) beforeSave() {}
-func (x *FSContext) save(m state.Map) {
+
+func (x *FSContext) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("AtomicRefCount", &x.AtomicRefCount)
-	m.Save("root", &x.root)
-	m.Save("rootVFS2", &x.rootVFS2)
-	m.Save("cwd", &x.cwd)
-	m.Save("cwdVFS2", &x.cwdVFS2)
-	m.Save("umask", &x.umask)
+	m.Save(0, &x.AtomicRefCount)
+	m.Save(1, &x.root)
+	m.Save(2, &x.rootVFS2)
+	m.Save(3, &x.cwd)
+	m.Save(4, &x.cwdVFS2)
+	m.Save(5, &x.umask)
 }
 
 func (x *FSContext) afterLoad() {}
-func (x *FSContext) load(m state.Map) {
-	m.Load("AtomicRefCount", &x.AtomicRefCount)
-	m.Load("root", &x.root)
-	m.Load("rootVFS2", &x.rootVFS2)
-	m.Load("cwd", &x.cwd)
-	m.Load("cwdVFS2", &x.cwdVFS2)
-	m.Load("umask", &x.umask)
+
+func (x *FSContext) StateLoad(m state.Source) {
+	m.Load(0, &x.AtomicRefCount)
+	m.Load(1, &x.root)
+	m.Load(2, &x.rootVFS2)
+	m.Load(3, &x.cwd)
+	m.Load(4, &x.cwdVFS2)
+	m.Load(5, &x.umask)
+}
+
+func (x *IPCNamespace) StateTypeName() string {
+	return "pkg/sentry/kernel.IPCNamespace"
+}
+
+func (x *IPCNamespace) StateFields() []string {
+	return []string{
+		"userNS",
+		"semaphores",
+		"shms",
+	}
 }
 
 func (x *IPCNamespace) beforeSave() {}
-func (x *IPCNamespace) save(m state.Map) {
+
+func (x *IPCNamespace) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("userNS", &x.userNS)
-	m.Save("semaphores", &x.semaphores)
-	m.Save("shms", &x.shms)
+	m.Save(0, &x.userNS)
+	m.Save(1, &x.semaphores)
+	m.Save(2, &x.shms)
 }
 
 func (x *IPCNamespace) afterLoad() {}
-func (x *IPCNamespace) load(m state.Map) {
-	m.Load("userNS", &x.userNS)
-	m.Load("semaphores", &x.semaphores)
-	m.Load("shms", &x.shms)
+
+func (x *IPCNamespace) StateLoad(m state.Source) {
+	m.Load(0, &x.userNS)
+	m.Load(1, &x.semaphores)
+	m.Load(2, &x.shms)
+}
+
+func (x *Kernel) StateTypeName() string {
+	return "pkg/sentry/kernel.Kernel"
+}
+
+func (x *Kernel) StateFields() []string {
+	return []string{
+		"featureSet",
+		"timekeeper",
+		"tasks",
+		"rootUserNamespace",
+		"rootNetworkNamespace",
+		"applicationCores",
+		"useHostCores",
+		"extraAuxv",
+		"vdso",
+		"rootUTSNamespace",
+		"rootIPCNamespace",
+		"rootAbstractSocketNamespace",
+		"futexes",
+		"globalInit",
+		"realtimeClock",
+		"monotonicClock",
+		"syslog",
+		"runningTasks",
+		"cpuClock",
+		"cpuClockTickerDisabled",
+		"cpuClockTickerSetting",
+		"uniqueID",
+		"nextInotifyCookie",
+		"netlinkPorts",
+		"danglingEndpoints",
+		"sockets",
+		"nextSocketEntry",
+		"deviceRegistry",
+		"DirentCacheLimiter",
+		"SpecialOpts",
+		"vfs",
+		"hostMount",
+		"pipeMount",
+		"shmMount",
+		"socketMount",
+		"SleepForAddressSpaceActivation",
+	}
 }
 
 func (x *Kernel) beforeSave() {}
-func (x *Kernel) save(m state.Map) {
+
+func (x *Kernel) StateSave(m state.Sink) {
 	x.beforeSave()
 	var danglingEndpoints []tcpip.Endpoint = x.saveDanglingEndpoints()
-	m.SaveValue("danglingEndpoints", danglingEndpoints)
+	m.SaveValue(24, danglingEndpoints)
 	var deviceRegistry *device.Registry = x.saveDeviceRegistry()
-	m.SaveValue("deviceRegistry", deviceRegistry)
-	m.Save("featureSet", &x.featureSet)
-	m.Save("timekeeper", &x.timekeeper)
-	m.Save("tasks", &x.tasks)
-	m.Save("rootUserNamespace", &x.rootUserNamespace)
-	m.Save("rootNetworkNamespace", &x.rootNetworkNamespace)
-	m.Save("applicationCores", &x.applicationCores)
-	m.Save("useHostCores", &x.useHostCores)
-	m.Save("extraAuxv", &x.extraAuxv)
-	m.Save("vdso", &x.vdso)
-	m.Save("rootUTSNamespace", &x.rootUTSNamespace)
-	m.Save("rootIPCNamespace", &x.rootIPCNamespace)
-	m.Save("rootAbstractSocketNamespace", &x.rootAbstractSocketNamespace)
-	m.Save("futexes", &x.futexes)
-	m.Save("globalInit", &x.globalInit)
-	m.Save("realtimeClock", &x.realtimeClock)
-	m.Save("monotonicClock", &x.monotonicClock)
-	m.Save("syslog", &x.syslog)
-	m.Save("runningTasks", &x.runningTasks)
-	m.Save("cpuClock", &x.cpuClock)
-	m.Save("cpuClockTickerDisabled", &x.cpuClockTickerDisabled)
-	m.Save("cpuClockTickerSetting", &x.cpuClockTickerSetting)
-	m.Save("uniqueID", &x.uniqueID)
-	m.Save("nextInotifyCookie", &x.nextInotifyCookie)
-	m.Save("netlinkPorts", &x.netlinkPorts)
-	m.Save("sockets", &x.sockets)
-	m.Save("nextSocketEntry", &x.nextSocketEntry)
-	m.Save("DirentCacheLimiter", &x.DirentCacheLimiter)
-	m.Save("SpecialOpts", &x.SpecialOpts)
-	m.Save("vfs", &x.vfs)
-	m.Save("hostMount", &x.hostMount)
-	m.Save("pipeMount", &x.pipeMount)
-	m.Save("shmMount", &x.shmMount)
-	m.Save("socketMount", &x.socketMount)
-	m.Save("SleepForAddressSpaceActivation", &x.SleepForAddressSpaceActivation)
+	m.SaveValue(27, deviceRegistry)
+	m.Save(0, &x.featureSet)
+	m.Save(1, &x.timekeeper)
+	m.Save(2, &x.tasks)
+	m.Save(3, &x.rootUserNamespace)
+	m.Save(4, &x.rootNetworkNamespace)
+	m.Save(5, &x.applicationCores)
+	m.Save(6, &x.useHostCores)
+	m.Save(7, &x.extraAuxv)
+	m.Save(8, &x.vdso)
+	m.Save(9, &x.rootUTSNamespace)
+	m.Save(10, &x.rootIPCNamespace)
+	m.Save(11, &x.rootAbstractSocketNamespace)
+	m.Save(12, &x.futexes)
+	m.Save(13, &x.globalInit)
+	m.Save(14, &x.realtimeClock)
+	m.Save(15, &x.monotonicClock)
+	m.Save(16, &x.syslog)
+	m.Save(17, &x.runningTasks)
+	m.Save(18, &x.cpuClock)
+	m.Save(19, &x.cpuClockTickerDisabled)
+	m.Save(20, &x.cpuClockTickerSetting)
+	m.Save(21, &x.uniqueID)
+	m.Save(22, &x.nextInotifyCookie)
+	m.Save(23, &x.netlinkPorts)
+	m.Save(25, &x.sockets)
+	m.Save(26, &x.nextSocketEntry)
+	m.Save(28, &x.DirentCacheLimiter)
+	m.Save(29, &x.SpecialOpts)
+	m.Save(30, &x.vfs)
+	m.Save(31, &x.hostMount)
+	m.Save(32, &x.pipeMount)
+	m.Save(33, &x.shmMount)
+	m.Save(34, &x.socketMount)
+	m.Save(35, &x.SleepForAddressSpaceActivation)
 }
 
 func (x *Kernel) afterLoad() {}
-func (x *Kernel) load(m state.Map) {
-	m.Load("featureSet", &x.featureSet)
-	m.Load("timekeeper", &x.timekeeper)
-	m.Load("tasks", &x.tasks)
-	m.Load("rootUserNamespace", &x.rootUserNamespace)
-	m.Load("rootNetworkNamespace", &x.rootNetworkNamespace)
-	m.Load("applicationCores", &x.applicationCores)
-	m.Load("useHostCores", &x.useHostCores)
-	m.Load("extraAuxv", &x.extraAuxv)
-	m.Load("vdso", &x.vdso)
-	m.Load("rootUTSNamespace", &x.rootUTSNamespace)
-	m.Load("rootIPCNamespace", &x.rootIPCNamespace)
-	m.Load("rootAbstractSocketNamespace", &x.rootAbstractSocketNamespace)
-	m.Load("futexes", &x.futexes)
-	m.Load("globalInit", &x.globalInit)
-	m.Load("realtimeClock", &x.realtimeClock)
-	m.Load("monotonicClock", &x.monotonicClock)
-	m.Load("syslog", &x.syslog)
-	m.Load("runningTasks", &x.runningTasks)
-	m.Load("cpuClock", &x.cpuClock)
-	m.Load("cpuClockTickerDisabled", &x.cpuClockTickerDisabled)
-	m.Load("cpuClockTickerSetting", &x.cpuClockTickerSetting)
-	m.Load("uniqueID", &x.uniqueID)
-	m.Load("nextInotifyCookie", &x.nextInotifyCookie)
-	m.Load("netlinkPorts", &x.netlinkPorts)
-	m.Load("sockets", &x.sockets)
-	m.Load("nextSocketEntry", &x.nextSocketEntry)
-	m.Load("DirentCacheLimiter", &x.DirentCacheLimiter)
-	m.Load("SpecialOpts", &x.SpecialOpts)
-	m.Load("vfs", &x.vfs)
-	m.Load("hostMount", &x.hostMount)
-	m.Load("pipeMount", &x.pipeMount)
-	m.Load("shmMount", &x.shmMount)
-	m.Load("socketMount", &x.socketMount)
-	m.Load("SleepForAddressSpaceActivation", &x.SleepForAddressSpaceActivation)
-	m.LoadValue("danglingEndpoints", new([]tcpip.Endpoint), func(y interface{}) { x.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
-	m.LoadValue("deviceRegistry", new(*device.Registry), func(y interface{}) { x.loadDeviceRegistry(y.(*device.Registry)) })
+
+func (x *Kernel) StateLoad(m state.Source) {
+	m.Load(0, &x.featureSet)
+	m.Load(1, &x.timekeeper)
+	m.Load(2, &x.tasks)
+	m.Load(3, &x.rootUserNamespace)
+	m.Load(4, &x.rootNetworkNamespace)
+	m.Load(5, &x.applicationCores)
+	m.Load(6, &x.useHostCores)
+	m.Load(7, &x.extraAuxv)
+	m.Load(8, &x.vdso)
+	m.Load(9, &x.rootUTSNamespace)
+	m.Load(10, &x.rootIPCNamespace)
+	m.Load(11, &x.rootAbstractSocketNamespace)
+	m.Load(12, &x.futexes)
+	m.Load(13, &x.globalInit)
+	m.Load(14, &x.realtimeClock)
+	m.Load(15, &x.monotonicClock)
+	m.Load(16, &x.syslog)
+	m.Load(17, &x.runningTasks)
+	m.Load(18, &x.cpuClock)
+	m.Load(19, &x.cpuClockTickerDisabled)
+	m.Load(20, &x.cpuClockTickerSetting)
+	m.Load(21, &x.uniqueID)
+	m.Load(22, &x.nextInotifyCookie)
+	m.Load(23, &x.netlinkPorts)
+	m.Load(25, &x.sockets)
+	m.Load(26, &x.nextSocketEntry)
+	m.Load(28, &x.DirentCacheLimiter)
+	m.Load(29, &x.SpecialOpts)
+	m.Load(30, &x.vfs)
+	m.Load(31, &x.hostMount)
+	m.Load(32, &x.pipeMount)
+	m.Load(33, &x.shmMount)
+	m.Load(34, &x.socketMount)
+	m.Load(35, &x.SleepForAddressSpaceActivation)
+	m.LoadValue(24, new([]tcpip.Endpoint), func(y interface{}) { x.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
+	m.LoadValue(27, new(*device.Registry), func(y interface{}) { x.loadDeviceRegistry(y.(*device.Registry)) })
+}
+
+func (x *SocketEntry) StateTypeName() string {
+	return "pkg/sentry/kernel.SocketEntry"
+}
+
+func (x *SocketEntry) StateFields() []string {
+	return []string{
+		"socketEntry",
+		"k",
+		"Sock",
+		"SockVFS2",
+		"ID",
+	}
 }
 
 func (x *SocketEntry) beforeSave() {}
-func (x *SocketEntry) save(m state.Map) {
+
+func (x *SocketEntry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("socketEntry", &x.socketEntry)
-	m.Save("k", &x.k)
-	m.Save("Sock", &x.Sock)
-	m.Save("SockVFS2", &x.SockVFS2)
-	m.Save("ID", &x.ID)
+	m.Save(0, &x.socketEntry)
+	m.Save(1, &x.k)
+	m.Save(2, &x.Sock)
+	m.Save(3, &x.SockVFS2)
+	m.Save(4, &x.ID)
 }
 
 func (x *SocketEntry) afterLoad() {}
-func (x *SocketEntry) load(m state.Map) {
-	m.Load("socketEntry", &x.socketEntry)
-	m.Load("k", &x.k)
-	m.Load("Sock", &x.Sock)
-	m.Load("SockVFS2", &x.SockVFS2)
-	m.Load("ID", &x.ID)
+
+func (x *SocketEntry) StateLoad(m state.Source) {
+	m.Load(0, &x.socketEntry)
+	m.Load(1, &x.k)
+	m.Load(2, &x.Sock)
+	m.Load(3, &x.SockVFS2)
+	m.Load(4, &x.ID)
+}
+
+func (x *pendingSignals) StateTypeName() string {
+	return "pkg/sentry/kernel.pendingSignals"
+}
+
+func (x *pendingSignals) StateFields() []string {
+	return []string{
+		"signals",
+	}
 }
 
 func (x *pendingSignals) beforeSave() {}
-func (x *pendingSignals) save(m state.Map) {
+
+func (x *pendingSignals) StateSave(m state.Sink) {
 	x.beforeSave()
 	var signals []savedPendingSignal = x.saveSignals()
-	m.SaveValue("signals", signals)
+	m.SaveValue(0, signals)
 }
 
 func (x *pendingSignals) afterLoad() {}
-func (x *pendingSignals) load(m state.Map) {
-	m.LoadValue("signals", new([]savedPendingSignal), func(y interface{}) { x.loadSignals(y.([]savedPendingSignal)) })
+
+func (x *pendingSignals) StateLoad(m state.Source) {
+	m.LoadValue(0, new([]savedPendingSignal), func(y interface{}) { x.loadSignals(y.([]savedPendingSignal)) })
+}
+
+func (x *pendingSignalQueue) StateTypeName() string {
+	return "pkg/sentry/kernel.pendingSignalQueue"
+}
+
+func (x *pendingSignalQueue) StateFields() []string {
+	return []string{
+		"pendingSignalList",
+		"length",
+	}
 }
 
 func (x *pendingSignalQueue) beforeSave() {}
-func (x *pendingSignalQueue) save(m state.Map) {
+
+func (x *pendingSignalQueue) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("pendingSignalList", &x.pendingSignalList)
-	m.Save("length", &x.length)
+	m.Save(0, &x.pendingSignalList)
+	m.Save(1, &x.length)
 }
 
 func (x *pendingSignalQueue) afterLoad() {}
-func (x *pendingSignalQueue) load(m state.Map) {
-	m.Load("pendingSignalList", &x.pendingSignalList)
-	m.Load("length", &x.length)
+
+func (x *pendingSignalQueue) StateLoad(m state.Source) {
+	m.Load(0, &x.pendingSignalList)
+	m.Load(1, &x.length)
+}
+
+func (x *pendingSignal) StateTypeName() string {
+	return "pkg/sentry/kernel.pendingSignal"
+}
+
+func (x *pendingSignal) StateFields() []string {
+	return []string{
+		"pendingSignalEntry",
+		"SignalInfo",
+		"timer",
+	}
 }
 
 func (x *pendingSignal) beforeSave() {}
-func (x *pendingSignal) save(m state.Map) {
+
+func (x *pendingSignal) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("pendingSignalEntry", &x.pendingSignalEntry)
-	m.Save("SignalInfo", &x.SignalInfo)
-	m.Save("timer", &x.timer)
+	m.Save(0, &x.pendingSignalEntry)
+	m.Save(1, &x.SignalInfo)
+	m.Save(2, &x.timer)
 }
 
 func (x *pendingSignal) afterLoad() {}
-func (x *pendingSignal) load(m state.Map) {
-	m.Load("pendingSignalEntry", &x.pendingSignalEntry)
-	m.Load("SignalInfo", &x.SignalInfo)
-	m.Load("timer", &x.timer)
+
+func (x *pendingSignal) StateLoad(m state.Source) {
+	m.Load(0, &x.pendingSignalEntry)
+	m.Load(1, &x.SignalInfo)
+	m.Load(2, &x.timer)
+}
+
+func (x *pendingSignalList) StateTypeName() string {
+	return "pkg/sentry/kernel.pendingSignalList"
+}
+
+func (x *pendingSignalList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
 }
 
 func (x *pendingSignalList) beforeSave() {}
-func (x *pendingSignalList) save(m state.Map) {
+
+func (x *pendingSignalList) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("head", &x.head)
-	m.Save("tail", &x.tail)
+	m.Save(0, &x.head)
+	m.Save(1, &x.tail)
 }
 
 func (x *pendingSignalList) afterLoad() {}
-func (x *pendingSignalList) load(m state.Map) {
-	m.Load("head", &x.head)
-	m.Load("tail", &x.tail)
+
+func (x *pendingSignalList) StateLoad(m state.Source) {
+	m.Load(0, &x.head)
+	m.Load(1, &x.tail)
+}
+
+func (x *pendingSignalEntry) StateTypeName() string {
+	return "pkg/sentry/kernel.pendingSignalEntry"
+}
+
+func (x *pendingSignalEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
 }
 
 func (x *pendingSignalEntry) beforeSave() {}
-func (x *pendingSignalEntry) save(m state.Map) {
+
+func (x *pendingSignalEntry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("next", &x.next)
-	m.Save("prev", &x.prev)
+	m.Save(0, &x.next)
+	m.Save(1, &x.prev)
 }
 
 func (x *pendingSignalEntry) afterLoad() {}
-func (x *pendingSignalEntry) load(m state.Map) {
-	m.Load("next", &x.next)
-	m.Load("prev", &x.prev)
+
+func (x *pendingSignalEntry) StateLoad(m state.Source) {
+	m.Load(0, &x.next)
+	m.Load(1, &x.prev)
+}
+
+func (x *savedPendingSignal) StateTypeName() string {
+	return "pkg/sentry/kernel.savedPendingSignal"
+}
+
+func (x *savedPendingSignal) StateFields() []string {
+	return []string{
+		"si",
+		"timer",
+	}
 }
 
 func (x *savedPendingSignal) beforeSave() {}
-func (x *savedPendingSignal) save(m state.Map) {
+
+func (x *savedPendingSignal) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("si", &x.si)
-	m.Save("timer", &x.timer)
+	m.Save(0, &x.si)
+	m.Save(1, &x.timer)
 }
 
 func (x *savedPendingSignal) afterLoad() {}
-func (x *savedPendingSignal) load(m state.Map) {
-	m.Load("si", &x.si)
-	m.Load("timer", &x.timer)
+
+func (x *savedPendingSignal) StateLoad(m state.Source) {
+	m.Load(0, &x.si)
+	m.Load(1, &x.timer)
+}
+
+func (x *IntervalTimer) StateTypeName() string {
+	return "pkg/sentry/kernel.IntervalTimer"
+}
+
+func (x *IntervalTimer) StateFields() []string {
+	return []string{
+		"timer",
+		"target",
+		"signo",
+		"id",
+		"sigval",
+		"group",
+		"sigpending",
+		"sigorphan",
+		"overrunCur",
+		"overrunLast",
+	}
 }
 
 func (x *IntervalTimer) beforeSave() {}
-func (x *IntervalTimer) save(m state.Map) {
+
+func (x *IntervalTimer) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("timer", &x.timer)
-	m.Save("target", &x.target)
-	m.Save("signo", &x.signo)
-	m.Save("id", &x.id)
-	m.Save("sigval", &x.sigval)
-	m.Save("group", &x.group)
-	m.Save("sigpending", &x.sigpending)
-	m.Save("sigorphan", &x.sigorphan)
-	m.Save("overrunCur", &x.overrunCur)
-	m.Save("overrunLast", &x.overrunLast)
+	m.Save(0, &x.timer)
+	m.Save(1, &x.target)
+	m.Save(2, &x.signo)
+	m.Save(3, &x.id)
+	m.Save(4, &x.sigval)
+	m.Save(5, &x.group)
+	m.Save(6, &x.sigpending)
+	m.Save(7, &x.sigorphan)
+	m.Save(8, &x.overrunCur)
+	m.Save(9, &x.overrunLast)
 }
 
 func (x *IntervalTimer) afterLoad() {}
-func (x *IntervalTimer) load(m state.Map) {
-	m.Load("timer", &x.timer)
-	m.Load("target", &x.target)
-	m.Load("signo", &x.signo)
-	m.Load("id", &x.id)
-	m.Load("sigval", &x.sigval)
-	m.Load("group", &x.group)
-	m.Load("sigpending", &x.sigpending)
-	m.Load("sigorphan", &x.sigorphan)
-	m.Load("overrunCur", &x.overrunCur)
-	m.Load("overrunLast", &x.overrunLast)
+
+func (x *IntervalTimer) StateLoad(m state.Source) {
+	m.Load(0, &x.timer)
+	m.Load(1, &x.target)
+	m.Load(2, &x.signo)
+	m.Load(3, &x.id)
+	m.Load(4, &x.sigval)
+	m.Load(5, &x.group)
+	m.Load(6, &x.sigpending)
+	m.Load(7, &x.sigorphan)
+	m.Load(8, &x.overrunCur)
+	m.Load(9, &x.overrunLast)
+}
+
+func (x *processGroupList) StateTypeName() string {
+	return "pkg/sentry/kernel.processGroupList"
+}
+
+func (x *processGroupList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
 }
 
 func (x *processGroupList) beforeSave() {}
-func (x *processGroupList) save(m state.Map) {
+
+func (x *processGroupList) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("head", &x.head)
-	m.Save("tail", &x.tail)
+	m.Save(0, &x.head)
+	m.Save(1, &x.tail)
 }
 
 func (x *processGroupList) afterLoad() {}
-func (x *processGroupList) load(m state.Map) {
-	m.Load("head", &x.head)
-	m.Load("tail", &x.tail)
+
+func (x *processGroupList) StateLoad(m state.Source) {
+	m.Load(0, &x.head)
+	m.Load(1, &x.tail)
+}
+
+func (x *processGroupEntry) StateTypeName() string {
+	return "pkg/sentry/kernel.processGroupEntry"
+}
+
+func (x *processGroupEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
 }
 
 func (x *processGroupEntry) beforeSave() {}
-func (x *processGroupEntry) save(m state.Map) {
+
+func (x *processGroupEntry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("next", &x.next)
-	m.Save("prev", &x.prev)
+	m.Save(0, &x.next)
+	m.Save(1, &x.prev)
 }
 
 func (x *processGroupEntry) afterLoad() {}
-func (x *processGroupEntry) load(m state.Map) {
-	m.Load("next", &x.next)
-	m.Load("prev", &x.prev)
+
+func (x *processGroupEntry) StateLoad(m state.Source) {
+	m.Load(0, &x.next)
+	m.Load(1, &x.prev)
+}
+
+func (x *ptraceOptions) StateTypeName() string {
+	return "pkg/sentry/kernel.ptraceOptions"
+}
+
+func (x *ptraceOptions) StateFields() []string {
+	return []string{
+		"ExitKill",
+		"SysGood",
+		"TraceClone",
+		"TraceExec",
+		"TraceExit",
+		"TraceFork",
+		"TraceSeccomp",
+		"TraceVfork",
+		"TraceVforkDone",
+	}
 }
 
 func (x *ptraceOptions) beforeSave() {}
-func (x *ptraceOptions) save(m state.Map) {
+
+func (x *ptraceOptions) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("ExitKill", &x.ExitKill)
-	m.Save("SysGood", &x.SysGood)
-	m.Save("TraceClone", &x.TraceClone)
-	m.Save("TraceExec", &x.TraceExec)
-	m.Save("TraceExit", &x.TraceExit)
-	m.Save("TraceFork", &x.TraceFork)
-	m.Save("TraceSeccomp", &x.TraceSeccomp)
-	m.Save("TraceVfork", &x.TraceVfork)
-	m.Save("TraceVforkDone", &x.TraceVforkDone)
+	m.Save(0, &x.ExitKill)
+	m.Save(1, &x.SysGood)
+	m.Save(2, &x.TraceClone)
+	m.Save(3, &x.TraceExec)
+	m.Save(4, &x.TraceExit)
+	m.Save(5, &x.TraceFork)
+	m.Save(6, &x.TraceSeccomp)
+	m.Save(7, &x.TraceVfork)
+	m.Save(8, &x.TraceVforkDone)
 }
 
 func (x *ptraceOptions) afterLoad() {}
-func (x *ptraceOptions) load(m state.Map) {
-	m.Load("ExitKill", &x.ExitKill)
-	m.Load("SysGood", &x.SysGood)
-	m.Load("TraceClone", &x.TraceClone)
-	m.Load("TraceExec", &x.TraceExec)
-	m.Load("TraceExit", &x.TraceExit)
-	m.Load("TraceFork", &x.TraceFork)
-	m.Load("TraceSeccomp", &x.TraceSeccomp)
-	m.Load("TraceVfork", &x.TraceVfork)
-	m.Load("TraceVforkDone", &x.TraceVforkDone)
+
+func (x *ptraceOptions) StateLoad(m state.Source) {
+	m.Load(0, &x.ExitKill)
+	m.Load(1, &x.SysGood)
+	m.Load(2, &x.TraceClone)
+	m.Load(3, &x.TraceExec)
+	m.Load(4, &x.TraceExit)
+	m.Load(5, &x.TraceFork)
+	m.Load(6, &x.TraceSeccomp)
+	m.Load(7, &x.TraceVfork)
+	m.Load(8, &x.TraceVforkDone)
+}
+
+func (x *ptraceStop) StateTypeName() string {
+	return "pkg/sentry/kernel.ptraceStop"
+}
+
+func (x *ptraceStop) StateFields() []string {
+	return []string{
+		"frozen",
+		"listen",
+	}
 }
 
 func (x *ptraceStop) beforeSave() {}
-func (x *ptraceStop) save(m state.Map) {
+
+func (x *ptraceStop) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("frozen", &x.frozen)
-	m.Save("listen", &x.listen)
+	m.Save(0, &x.frozen)
+	m.Save(1, &x.listen)
 }
 
 func (x *ptraceStop) afterLoad() {}
-func (x *ptraceStop) load(m state.Map) {
-	m.Load("frozen", &x.frozen)
-	m.Load("listen", &x.listen)
+
+func (x *ptraceStop) StateLoad(m state.Source) {
+	m.Load(0, &x.frozen)
+	m.Load(1, &x.listen)
+}
+
+func (x *OldRSeqCriticalRegion) StateTypeName() string {
+	return "pkg/sentry/kernel.OldRSeqCriticalRegion"
+}
+
+func (x *OldRSeqCriticalRegion) StateFields() []string {
+	return []string{
+		"CriticalSection",
+		"Restart",
+	}
 }
 
 func (x *OldRSeqCriticalRegion) beforeSave() {}
-func (x *OldRSeqCriticalRegion) save(m state.Map) {
+
+func (x *OldRSeqCriticalRegion) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("CriticalSection", &x.CriticalSection)
-	m.Save("Restart", &x.Restart)
+	m.Save(0, &x.CriticalSection)
+	m.Save(1, &x.Restart)
 }
 
 func (x *OldRSeqCriticalRegion) afterLoad() {}
-func (x *OldRSeqCriticalRegion) load(m state.Map) {
-	m.Load("CriticalSection", &x.CriticalSection)
-	m.Load("Restart", &x.Restart)
+
+func (x *OldRSeqCriticalRegion) StateLoad(m state.Source) {
+	m.Load(0, &x.CriticalSection)
+	m.Load(1, &x.Restart)
+}
+
+func (x *sessionList) StateTypeName() string {
+	return "pkg/sentry/kernel.sessionList"
+}
+
+func (x *sessionList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
 }
 
 func (x *sessionList) beforeSave() {}
-func (x *sessionList) save(m state.Map) {
+
+func (x *sessionList) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("head", &x.head)
-	m.Save("tail", &x.tail)
+	m.Save(0, &x.head)
+	m.Save(1, &x.tail)
 }
 
 func (x *sessionList) afterLoad() {}
-func (x *sessionList) load(m state.Map) {
-	m.Load("head", &x.head)
-	m.Load("tail", &x.tail)
+
+func (x *sessionList) StateLoad(m state.Source) {
+	m.Load(0, &x.head)
+	m.Load(1, &x.tail)
+}
+
+func (x *sessionEntry) StateTypeName() string {
+	return "pkg/sentry/kernel.sessionEntry"
+}
+
+func (x *sessionEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
 }
 
 func (x *sessionEntry) beforeSave() {}
-func (x *sessionEntry) save(m state.Map) {
+
+func (x *sessionEntry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("next", &x.next)
-	m.Save("prev", &x.prev)
+	m.Save(0, &x.next)
+	m.Save(1, &x.prev)
 }
 
 func (x *sessionEntry) afterLoad() {}
-func (x *sessionEntry) load(m state.Map) {
-	m.Load("next", &x.next)
-	m.Load("prev", &x.prev)
+
+func (x *sessionEntry) StateLoad(m state.Source) {
+	m.Load(0, &x.next)
+	m.Load(1, &x.prev)
+}
+
+func (x *Session) StateTypeName() string {
+	return "pkg/sentry/kernel.Session"
+}
+
+func (x *Session) StateFields() []string {
+	return []string{
+		"refs",
+		"leader",
+		"id",
+		"foreground",
+		"processGroups",
+		"sessionEntry",
+	}
 }
 
 func (x *Session) beforeSave() {}
-func (x *Session) save(m state.Map) {
+
+func (x *Session) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("refs", &x.refs)
-	m.Save("leader", &x.leader)
-	m.Save("id", &x.id)
-	m.Save("foreground", &x.foreground)
-	m.Save("processGroups", &x.processGroups)
-	m.Save("sessionEntry", &x.sessionEntry)
+	m.Save(0, &x.refs)
+	m.Save(1, &x.leader)
+	m.Save(2, &x.id)
+	m.Save(3, &x.foreground)
+	m.Save(4, &x.processGroups)
+	m.Save(5, &x.sessionEntry)
 }
 
 func (x *Session) afterLoad() {}
-func (x *Session) load(m state.Map) {
-	m.Load("refs", &x.refs)
-	m.Load("leader", &x.leader)
-	m.Load("id", &x.id)
-	m.Load("foreground", &x.foreground)
-	m.Load("processGroups", &x.processGroups)
-	m.Load("sessionEntry", &x.sessionEntry)
+
+func (x *Session) StateLoad(m state.Source) {
+	m.Load(0, &x.refs)
+	m.Load(1, &x.leader)
+	m.Load(2, &x.id)
+	m.Load(3, &x.foreground)
+	m.Load(4, &x.processGroups)
+	m.Load(5, &x.sessionEntry)
+}
+
+func (x *ProcessGroup) StateTypeName() string {
+	return "pkg/sentry/kernel.ProcessGroup"
+}
+
+func (x *ProcessGroup) StateFields() []string {
+	return []string{
+		"refs",
+		"originator",
+		"id",
+		"session",
+		"ancestors",
+		"processGroupEntry",
+	}
 }
 
 func (x *ProcessGroup) beforeSave() {}
-func (x *ProcessGroup) save(m state.Map) {
+
+func (x *ProcessGroup) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("refs", &x.refs)
-	m.Save("originator", &x.originator)
-	m.Save("id", &x.id)
-	m.Save("session", &x.session)
-	m.Save("ancestors", &x.ancestors)
-	m.Save("processGroupEntry", &x.processGroupEntry)
+	m.Save(0, &x.refs)
+	m.Save(1, &x.originator)
+	m.Save(2, &x.id)
+	m.Save(3, &x.session)
+	m.Save(4, &x.ancestors)
+	m.Save(5, &x.processGroupEntry)
 }
 
 func (x *ProcessGroup) afterLoad() {}
-func (x *ProcessGroup) load(m state.Map) {
-	m.Load("refs", &x.refs)
-	m.Load("originator", &x.originator)
-	m.Load("id", &x.id)
-	m.Load("session", &x.session)
-	m.Load("ancestors", &x.ancestors)
-	m.Load("processGroupEntry", &x.processGroupEntry)
+
+func (x *ProcessGroup) StateLoad(m state.Source) {
+	m.Load(0, &x.refs)
+	m.Load(1, &x.originator)
+	m.Load(2, &x.id)
+	m.Load(3, &x.session)
+	m.Load(4, &x.ancestors)
+	m.Load(5, &x.processGroupEntry)
+}
+
+func (x *SignalHandlers) StateTypeName() string {
+	return "pkg/sentry/kernel.SignalHandlers"
+}
+
+func (x *SignalHandlers) StateFields() []string {
+	return []string{
+		"actions",
+	}
 }
 
 func (x *SignalHandlers) beforeSave() {}
-func (x *SignalHandlers) save(m state.Map) {
+
+func (x *SignalHandlers) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("actions", &x.actions)
+	m.Save(0, &x.actions)
 }
 
 func (x *SignalHandlers) afterLoad() {}
-func (x *SignalHandlers) load(m state.Map) {
-	m.Load("actions", &x.actions)
+
+func (x *SignalHandlers) StateLoad(m state.Source) {
+	m.Load(0, &x.actions)
+}
+
+func (x *socketList) StateTypeName() string {
+	return "pkg/sentry/kernel.socketList"
+}
+
+func (x *socketList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
 }
 
 func (x *socketList) beforeSave() {}
-func (x *socketList) save(m state.Map) {
+
+func (x *socketList) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("head", &x.head)
-	m.Save("tail", &x.tail)
+	m.Save(0, &x.head)
+	m.Save(1, &x.tail)
 }
 
 func (x *socketList) afterLoad() {}
-func (x *socketList) load(m state.Map) {
-	m.Load("head", &x.head)
-	m.Load("tail", &x.tail)
+
+func (x *socketList) StateLoad(m state.Source) {
+	m.Load(0, &x.head)
+	m.Load(1, &x.tail)
+}
+
+func (x *socketEntry) StateTypeName() string {
+	return "pkg/sentry/kernel.socketEntry"
+}
+
+func (x *socketEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
 }
 
 func (x *socketEntry) beforeSave() {}
-func (x *socketEntry) save(m state.Map) {
+
+func (x *socketEntry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("next", &x.next)
-	m.Save("prev", &x.prev)
+	m.Save(0, &x.next)
+	m.Save(1, &x.prev)
 }
 
 func (x *socketEntry) afterLoad() {}
-func (x *socketEntry) load(m state.Map) {
-	m.Load("next", &x.next)
-	m.Load("prev", &x.prev)
+
+func (x *socketEntry) StateLoad(m state.Source) {
+	m.Load(0, &x.next)
+	m.Load(1, &x.prev)
+}
+
+func (x *syscallTableInfo) StateTypeName() string {
+	return "pkg/sentry/kernel.syscallTableInfo"
+}
+
+func (x *syscallTableInfo) StateFields() []string {
+	return []string{
+		"OS",
+		"Arch",
+	}
 }
 
 func (x *syscallTableInfo) beforeSave() {}
-func (x *syscallTableInfo) save(m state.Map) {
+
+func (x *syscallTableInfo) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("OS", &x.OS)
-	m.Save("Arch", &x.Arch)
+	m.Save(0, &x.OS)
+	m.Save(1, &x.Arch)
 }
 
 func (x *syscallTableInfo) afterLoad() {}
-func (x *syscallTableInfo) load(m state.Map) {
-	m.Load("OS", &x.OS)
-	m.Load("Arch", &x.Arch)
+
+func (x *syscallTableInfo) StateLoad(m state.Source) {
+	m.Load(0, &x.OS)
+	m.Load(1, &x.Arch)
+}
+
+func (x *syslog) StateTypeName() string {
+	return "pkg/sentry/kernel.syslog"
+}
+
+func (x *syslog) StateFields() []string {
+	return []string{
+		"msg",
+	}
 }
 
 func (x *syslog) beforeSave() {}
-func (x *syslog) save(m state.Map) {
+
+func (x *syslog) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("msg", &x.msg)
+	m.Save(0, &x.msg)
 }
 
 func (x *syslog) afterLoad() {}
-func (x *syslog) load(m state.Map) {
-	m.Load("msg", &x.msg)
+
+func (x *syslog) StateLoad(m state.Source) {
+	m.Load(0, &x.msg)
+}
+
+func (x *Task) StateTypeName() string {
+	return "pkg/sentry/kernel.Task"
+}
+
+func (x *Task) StateFields() []string {
+	return []string{
+		"taskNode",
+		"runState",
+		"haveSyscallReturn",
+		"gosched",
+		"yieldCount",
+		"pendingSignals",
+		"signalMask",
+		"realSignalMask",
+		"haveSavedSignalMask",
+		"savedSignalMask",
+		"signalStack",
+		"groupStopPending",
+		"groupStopAcknowledged",
+		"trapStopPending",
+		"trapNotifyPending",
+		"stop",
+		"exitStatus",
+		"syscallRestartBlock",
+		"k",
+		"containerID",
+		"tc",
+		"fsContext",
+		"fdTable",
+		"vforkParent",
+		"exitState",
+		"exitTracerNotified",
+		"exitTracerAcked",
+		"exitParentNotified",
+		"exitParentAcked",
+		"ptraceTracer",
+		"ptraceTracees",
+		"ptraceSeized",
+		"ptraceOpts",
+		"ptraceSyscallMode",
+		"ptraceSinglestep",
+		"ptraceCode",
+		"ptraceSiginfo",
+		"ptraceEventMsg",
+		"ioUsage",
+		"creds",
+		"utsns",
+		"ipcns",
+		"abstractSockets",
+		"mountNamespaceVFS2",
+		"parentDeathSignal",
+		"syscallFilters",
+		"cleartid",
+		"allowedCPUMask",
+		"cpu",
+		"niceness",
+		"numaPolicy",
+		"numaNodeMask",
+		"netns",
+		"rseqCPU",
+		"oldRSeqCPUAddr",
+		"rseqAddr",
+		"rseqSignature",
+		"startTime",
+	}
 }
 
 func (x *Task) beforeSave() {}
-func (x *Task) save(m state.Map) {
+
+func (x *Task) StateSave(m state.Sink) {
 	x.beforeSave()
 	if !state.IsZeroValue(&x.signalQueue) {
-		m.Failf("signalQueue is %#v, expected zero", &x.signalQueue)
+		state.Failf("signalQueue is %#v, expected zero", &x.signalQueue)
 	}
 	var ptraceTracer *Task = x.savePtraceTracer()
-	m.SaveValue("ptraceTracer", ptraceTracer)
+	m.SaveValue(29, ptraceTracer)
 	var syscallFilters []bpf.Program = x.saveSyscallFilters()
-	m.SaveValue("syscallFilters", syscallFilters)
-	m.Save("taskNode", &x.taskNode)
-	m.Save("runState", &x.runState)
-	m.Save("haveSyscallReturn", &x.haveSyscallReturn)
-	m.Save("gosched", &x.gosched)
-	m.Save("yieldCount", &x.yieldCount)
-	m.Save("pendingSignals", &x.pendingSignals)
-	m.Save("signalMask", &x.signalMask)
-	m.Save("realSignalMask", &x.realSignalMask)
-	m.Save("haveSavedSignalMask", &x.haveSavedSignalMask)
-	m.Save("savedSignalMask", &x.savedSignalMask)
-	m.Save("signalStack", &x.signalStack)
-	m.Save("groupStopPending", &x.groupStopPending)
-	m.Save("groupStopAcknowledged", &x.groupStopAcknowledged)
-	m.Save("trapStopPending", &x.trapStopPending)
-	m.Save("trapNotifyPending", &x.trapNotifyPending)
-	m.Save("stop", &x.stop)
-	m.Save("exitStatus", &x.exitStatus)
-	m.Save("syscallRestartBlock", &x.syscallRestartBlock)
-	m.Save("k", &x.k)
-	m.Save("containerID", &x.containerID)
-	m.Save("tc", &x.tc)
-	m.Save("fsContext", &x.fsContext)
-	m.Save("fdTable", &x.fdTable)
-	m.Save("vforkParent", &x.vforkParent)
-	m.Save("exitState", &x.exitState)
-	m.Save("exitTracerNotified", &x.exitTracerNotified)
-	m.Save("exitTracerAcked", &x.exitTracerAcked)
-	m.Save("exitParentNotified", &x.exitParentNotified)
-	m.Save("exitParentAcked", &x.exitParentAcked)
-	m.Save("ptraceTracees", &x.ptraceTracees)
-	m.Save("ptraceSeized", &x.ptraceSeized)
-	m.Save("ptraceOpts", &x.ptraceOpts)
-	m.Save("ptraceSyscallMode", &x.ptraceSyscallMode)
-	m.Save("ptraceSinglestep", &x.ptraceSinglestep)
-	m.Save("ptraceCode", &x.ptraceCode)
-	m.Save("ptraceSiginfo", &x.ptraceSiginfo)
-	m.Save("ptraceEventMsg", &x.ptraceEventMsg)
-	m.Save("ioUsage", &x.ioUsage)
-	m.Save("creds", &x.creds)
-	m.Save("utsns", &x.utsns)
-	m.Save("ipcns", &x.ipcns)
-	m.Save("abstractSockets", &x.abstractSockets)
-	m.Save("mountNamespaceVFS2", &x.mountNamespaceVFS2)
-	m.Save("parentDeathSignal", &x.parentDeathSignal)
-	m.Save("cleartid", &x.cleartid)
-	m.Save("allowedCPUMask", &x.allowedCPUMask)
-	m.Save("cpu", &x.cpu)
-	m.Save("niceness", &x.niceness)
-	m.Save("numaPolicy", &x.numaPolicy)
-	m.Save("numaNodeMask", &x.numaNodeMask)
-	m.Save("netns", &x.netns)
-	m.Save("rseqCPU", &x.rseqCPU)
-	m.Save("oldRSeqCPUAddr", &x.oldRSeqCPUAddr)
-	m.Save("rseqAddr", &x.rseqAddr)
-	m.Save("rseqSignature", &x.rseqSignature)
-	m.Save("startTime", &x.startTime)
+	m.SaveValue(45, syscallFilters)
+	m.Save(0, &x.taskNode)
+	m.Save(1, &x.runState)
+	m.Save(2, &x.haveSyscallReturn)
+	m.Save(3, &x.gosched)
+	m.Save(4, &x.yieldCount)
+	m.Save(5, &x.pendingSignals)
+	m.Save(6, &x.signalMask)
+	m.Save(7, &x.realSignalMask)
+	m.Save(8, &x.haveSavedSignalMask)
+	m.Save(9, &x.savedSignalMask)
+	m.Save(10, &x.signalStack)
+	m.Save(11, &x.groupStopPending)
+	m.Save(12, &x.groupStopAcknowledged)
+	m.Save(13, &x.trapStopPending)
+	m.Save(14, &x.trapNotifyPending)
+	m.Save(15, &x.stop)
+	m.Save(16, &x.exitStatus)
+	m.Save(17, &x.syscallRestartBlock)
+	m.Save(18, &x.k)
+	m.Save(19, &x.containerID)
+	m.Save(20, &x.tc)
+	m.Save(21, &x.fsContext)
+	m.Save(22, &x.fdTable)
+	m.Save(23, &x.vforkParent)
+	m.Save(24, &x.exitState)
+	m.Save(25, &x.exitTracerNotified)
+	m.Save(26, &x.exitTracerAcked)
+	m.Save(27, &x.exitParentNotified)
+	m.Save(28, &x.exitParentAcked)
+	m.Save(30, &x.ptraceTracees)
+	m.Save(31, &x.ptraceSeized)
+	m.Save(32, &x.ptraceOpts)
+	m.Save(33, &x.ptraceSyscallMode)
+	m.Save(34, &x.ptraceSinglestep)
+	m.Save(35, &x.ptraceCode)
+	m.Save(36, &x.ptraceSiginfo)
+	m.Save(37, &x.ptraceEventMsg)
+	m.Save(38, &x.ioUsage)
+	m.Save(39, &x.creds)
+	m.Save(40, &x.utsns)
+	m.Save(41, &x.ipcns)
+	m.Save(42, &x.abstractSockets)
+	m.Save(43, &x.mountNamespaceVFS2)
+	m.Save(44, &x.parentDeathSignal)
+	m.Save(46, &x.cleartid)
+	m.Save(47, &x.allowedCPUMask)
+	m.Save(48, &x.cpu)
+	m.Save(49, &x.niceness)
+	m.Save(50, &x.numaPolicy)
+	m.Save(51, &x.numaNodeMask)
+	m.Save(52, &x.netns)
+	m.Save(53, &x.rseqCPU)
+	m.Save(54, &x.oldRSeqCPUAddr)
+	m.Save(55, &x.rseqAddr)
+	m.Save(56, &x.rseqSignature)
+	m.Save(57, &x.startTime)
 }
 
-func (x *Task) load(m state.Map) {
-	m.Load("taskNode", &x.taskNode)
-	m.Load("runState", &x.runState)
-	m.Load("haveSyscallReturn", &x.haveSyscallReturn)
-	m.Load("gosched", &x.gosched)
-	m.Load("yieldCount", &x.yieldCount)
-	m.Load("pendingSignals", &x.pendingSignals)
-	m.Load("signalMask", &x.signalMask)
-	m.Load("realSignalMask", &x.realSignalMask)
-	m.Load("haveSavedSignalMask", &x.haveSavedSignalMask)
-	m.Load("savedSignalMask", &x.savedSignalMask)
-	m.Load("signalStack", &x.signalStack)
-	m.Load("groupStopPending", &x.groupStopPending)
-	m.Load("groupStopAcknowledged", &x.groupStopAcknowledged)
-	m.Load("trapStopPending", &x.trapStopPending)
-	m.Load("trapNotifyPending", &x.trapNotifyPending)
-	m.Load("stop", &x.stop)
-	m.Load("exitStatus", &x.exitStatus)
-	m.Load("syscallRestartBlock", &x.syscallRestartBlock)
-	m.Load("k", &x.k)
-	m.Load("containerID", &x.containerID)
-	m.Load("tc", &x.tc)
-	m.Load("fsContext", &x.fsContext)
-	m.Load("fdTable", &x.fdTable)
-	m.Load("vforkParent", &x.vforkParent)
-	m.Load("exitState", &x.exitState)
-	m.Load("exitTracerNotified", &x.exitTracerNotified)
-	m.Load("exitTracerAcked", &x.exitTracerAcked)
-	m.Load("exitParentNotified", &x.exitParentNotified)
-	m.Load("exitParentAcked", &x.exitParentAcked)
-	m.Load("ptraceTracees", &x.ptraceTracees)
-	m.Load("ptraceSeized", &x.ptraceSeized)
-	m.Load("ptraceOpts", &x.ptraceOpts)
-	m.Load("ptraceSyscallMode", &x.ptraceSyscallMode)
-	m.Load("ptraceSinglestep", &x.ptraceSinglestep)
-	m.Load("ptraceCode", &x.ptraceCode)
-	m.Load("ptraceSiginfo", &x.ptraceSiginfo)
-	m.Load("ptraceEventMsg", &x.ptraceEventMsg)
-	m.Load("ioUsage", &x.ioUsage)
-	m.Load("creds", &x.creds)
-	m.Load("utsns", &x.utsns)
-	m.Load("ipcns", &x.ipcns)
-	m.Load("abstractSockets", &x.abstractSockets)
-	m.Load("mountNamespaceVFS2", &x.mountNamespaceVFS2)
-	m.Load("parentDeathSignal", &x.parentDeathSignal)
-	m.Load("cleartid", &x.cleartid)
-	m.Load("allowedCPUMask", &x.allowedCPUMask)
-	m.Load("cpu", &x.cpu)
-	m.Load("niceness", &x.niceness)
-	m.Load("numaPolicy", &x.numaPolicy)
-	m.Load("numaNodeMask", &x.numaNodeMask)
-	m.Load("netns", &x.netns)
-	m.Load("rseqCPU", &x.rseqCPU)
-	m.Load("oldRSeqCPUAddr", &x.oldRSeqCPUAddr)
-	m.Load("rseqAddr", &x.rseqAddr)
-	m.Load("rseqSignature", &x.rseqSignature)
-	m.Load("startTime", &x.startTime)
-	m.LoadValue("ptraceTracer", new(*Task), func(y interface{}) { x.loadPtraceTracer(y.(*Task)) })
-	m.LoadValue("syscallFilters", new([]bpf.Program), func(y interface{}) { x.loadSyscallFilters(y.([]bpf.Program)) })
+func (x *Task) StateLoad(m state.Source) {
+	m.Load(0, &x.taskNode)
+	m.Load(1, &x.runState)
+	m.Load(2, &x.haveSyscallReturn)
+	m.Load(3, &x.gosched)
+	m.Load(4, &x.yieldCount)
+	m.Load(5, &x.pendingSignals)
+	m.Load(6, &x.signalMask)
+	m.Load(7, &x.realSignalMask)
+	m.Load(8, &x.haveSavedSignalMask)
+	m.Load(9, &x.savedSignalMask)
+	m.Load(10, &x.signalStack)
+	m.Load(11, &x.groupStopPending)
+	m.Load(12, &x.groupStopAcknowledged)
+	m.Load(13, &x.trapStopPending)
+	m.Load(14, &x.trapNotifyPending)
+	m.Load(15, &x.stop)
+	m.Load(16, &x.exitStatus)
+	m.Load(17, &x.syscallRestartBlock)
+	m.Load(18, &x.k)
+	m.Load(19, &x.containerID)
+	m.Load(20, &x.tc)
+	m.Load(21, &x.fsContext)
+	m.Load(22, &x.fdTable)
+	m.Load(23, &x.vforkParent)
+	m.Load(24, &x.exitState)
+	m.Load(25, &x.exitTracerNotified)
+	m.Load(26, &x.exitTracerAcked)
+	m.Load(27, &x.exitParentNotified)
+	m.Load(28, &x.exitParentAcked)
+	m.Load(30, &x.ptraceTracees)
+	m.Load(31, &x.ptraceSeized)
+	m.Load(32, &x.ptraceOpts)
+	m.Load(33, &x.ptraceSyscallMode)
+	m.Load(34, &x.ptraceSinglestep)
+	m.Load(35, &x.ptraceCode)
+	m.Load(36, &x.ptraceSiginfo)
+	m.Load(37, &x.ptraceEventMsg)
+	m.Load(38, &x.ioUsage)
+	m.Load(39, &x.creds)
+	m.Load(40, &x.utsns)
+	m.Load(41, &x.ipcns)
+	m.Load(42, &x.abstractSockets)
+	m.Load(43, &x.mountNamespaceVFS2)
+	m.Load(44, &x.parentDeathSignal)
+	m.Load(46, &x.cleartid)
+	m.Load(47, &x.allowedCPUMask)
+	m.Load(48, &x.cpu)
+	m.Load(49, &x.niceness)
+	m.Load(50, &x.numaPolicy)
+	m.Load(51, &x.numaNodeMask)
+	m.Load(52, &x.netns)
+	m.Load(53, &x.rseqCPU)
+	m.Load(54, &x.oldRSeqCPUAddr)
+	m.Load(55, &x.rseqAddr)
+	m.Load(56, &x.rseqSignature)
+	m.Load(57, &x.startTime)
+	m.LoadValue(29, new(*Task), func(y interface{}) { x.loadPtraceTracer(y.(*Task)) })
+	m.LoadValue(45, new([]bpf.Program), func(y interface{}) { x.loadSyscallFilters(y.([]bpf.Program)) })
 	m.AfterLoad(x.afterLoad)
 }
 
+func (x *runSyscallAfterPtraceEventClone) StateTypeName() string {
+	return "pkg/sentry/kernel.runSyscallAfterPtraceEventClone"
+}
+
+func (x *runSyscallAfterPtraceEventClone) StateFields() []string {
+	return []string{
+		"vforkChild",
+		"vforkChildTID",
+	}
+}
+
 func (x *runSyscallAfterPtraceEventClone) beforeSave() {}
-func (x *runSyscallAfterPtraceEventClone) save(m state.Map) {
+
+func (x *runSyscallAfterPtraceEventClone) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("vforkChild", &x.vforkChild)
-	m.Save("vforkChildTID", &x.vforkChildTID)
+	m.Save(0, &x.vforkChild)
+	m.Save(1, &x.vforkChildTID)
 }
 
 func (x *runSyscallAfterPtraceEventClone) afterLoad() {}
-func (x *runSyscallAfterPtraceEventClone) load(m state.Map) {
-	m.Load("vforkChild", &x.vforkChild)
-	m.Load("vforkChildTID", &x.vforkChildTID)
+
+func (x *runSyscallAfterPtraceEventClone) StateLoad(m state.Source) {
+	m.Load(0, &x.vforkChild)
+	m.Load(1, &x.vforkChildTID)
+}
+
+func (x *runSyscallAfterVforkStop) StateTypeName() string {
+	return "pkg/sentry/kernel.runSyscallAfterVforkStop"
+}
+
+func (x *runSyscallAfterVforkStop) StateFields() []string {
+	return []string{
+		"childTID",
+	}
 }
 
 func (x *runSyscallAfterVforkStop) beforeSave() {}
-func (x *runSyscallAfterVforkStop) save(m state.Map) {
+
+func (x *runSyscallAfterVforkStop) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("childTID", &x.childTID)
+	m.Save(0, &x.childTID)
 }
 
 func (x *runSyscallAfterVforkStop) afterLoad() {}
-func (x *runSyscallAfterVforkStop) load(m state.Map) {
-	m.Load("childTID", &x.childTID)
+
+func (x *runSyscallAfterVforkStop) StateLoad(m state.Source) {
+	m.Load(0, &x.childTID)
+}
+
+func (x *vforkStop) StateTypeName() string {
+	return "pkg/sentry/kernel.vforkStop"
+}
+
+func (x *vforkStop) StateFields() []string {
+	return []string{}
 }
 
 func (x *vforkStop) beforeSave() {}
-func (x *vforkStop) save(m state.Map) {
+
+func (x *vforkStop) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *vforkStop) afterLoad() {}
-func (x *vforkStop) load(m state.Map) {
+
+func (x *vforkStop) StateLoad(m state.Source) {
+}
+
+func (x *TaskContext) StateTypeName() string {
+	return "pkg/sentry/kernel.TaskContext"
+}
+
+func (x *TaskContext) StateFields() []string {
+	return []string{
+		"Name",
+		"Arch",
+		"MemoryManager",
+		"fu",
+		"st",
+	}
 }
 
 func (x *TaskContext) beforeSave() {}
-func (x *TaskContext) save(m state.Map) {
+
+func (x *TaskContext) StateSave(m state.Sink) {
 	x.beforeSave()
 	var st syscallTableInfo = x.saveSt()
-	m.SaveValue("st", st)
-	m.Save("Name", &x.Name)
-	m.Save("Arch", &x.Arch)
-	m.Save("MemoryManager", &x.MemoryManager)
-	m.Save("fu", &x.fu)
+	m.SaveValue(4, st)
+	m.Save(0, &x.Name)
+	m.Save(1, &x.Arch)
+	m.Save(2, &x.MemoryManager)
+	m.Save(3, &x.fu)
 }
 
 func (x *TaskContext) afterLoad() {}
-func (x *TaskContext) load(m state.Map) {
-	m.Load("Name", &x.Name)
-	m.Load("Arch", &x.Arch)
-	m.Load("MemoryManager", &x.MemoryManager)
-	m.Load("fu", &x.fu)
-	m.LoadValue("st", new(syscallTableInfo), func(y interface{}) { x.loadSt(y.(syscallTableInfo)) })
+
+func (x *TaskContext) StateLoad(m state.Source) {
+	m.Load(0, &x.Name)
+	m.Load(1, &x.Arch)
+	m.Load(2, &x.MemoryManager)
+	m.Load(3, &x.fu)
+	m.LoadValue(4, new(syscallTableInfo), func(y interface{}) { x.loadSt(y.(syscallTableInfo)) })
+}
+
+func (x *execStop) StateTypeName() string {
+	return "pkg/sentry/kernel.execStop"
+}
+
+func (x *execStop) StateFields() []string {
+	return []string{}
 }
 
 func (x *execStop) beforeSave() {}
-func (x *execStop) save(m state.Map) {
+
+func (x *execStop) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *execStop) afterLoad() {}
-func (x *execStop) load(m state.Map) {
+
+func (x *execStop) StateLoad(m state.Source) {
+}
+
+func (x *runSyscallAfterExecStop) StateTypeName() string {
+	return "pkg/sentry/kernel.runSyscallAfterExecStop"
+}
+
+func (x *runSyscallAfterExecStop) StateFields() []string {
+	return []string{
+		"tc",
+	}
 }
 
 func (x *runSyscallAfterExecStop) beforeSave() {}
-func (x *runSyscallAfterExecStop) save(m state.Map) {
+
+func (x *runSyscallAfterExecStop) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("tc", &x.tc)
+	m.Save(0, &x.tc)
 }
 
 func (x *runSyscallAfterExecStop) afterLoad() {}
-func (x *runSyscallAfterExecStop) load(m state.Map) {
-	m.Load("tc", &x.tc)
+
+func (x *runSyscallAfterExecStop) StateLoad(m state.Source) {
+	m.Load(0, &x.tc)
+}
+
+func (x *ExitStatus) StateTypeName() string {
+	return "pkg/sentry/kernel.ExitStatus"
+}
+
+func (x *ExitStatus) StateFields() []string {
+	return []string{
+		"Code",
+		"Signo",
+	}
 }
 
 func (x *ExitStatus) beforeSave() {}
-func (x *ExitStatus) save(m state.Map) {
+
+func (x *ExitStatus) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Code", &x.Code)
-	m.Save("Signo", &x.Signo)
+	m.Save(0, &x.Code)
+	m.Save(1, &x.Signo)
 }
 
 func (x *ExitStatus) afterLoad() {}
-func (x *ExitStatus) load(m state.Map) {
-	m.Load("Code", &x.Code)
-	m.Load("Signo", &x.Signo)
+
+func (x *ExitStatus) StateLoad(m state.Source) {
+	m.Load(0, &x.Code)
+	m.Load(1, &x.Signo)
+}
+
+func (x *runExit) StateTypeName() string {
+	return "pkg/sentry/kernel.runExit"
+}
+
+func (x *runExit) StateFields() []string {
+	return []string{}
 }
 
 func (x *runExit) beforeSave() {}
-func (x *runExit) save(m state.Map) {
+
+func (x *runExit) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *runExit) afterLoad() {}
-func (x *runExit) load(m state.Map) {
+
+func (x *runExit) StateLoad(m state.Source) {
+}
+
+func (x *runExitMain) StateTypeName() string {
+	return "pkg/sentry/kernel.runExitMain"
+}
+
+func (x *runExitMain) StateFields() []string {
+	return []string{}
 }
 
 func (x *runExitMain) beforeSave() {}
-func (x *runExitMain) save(m state.Map) {
+
+func (x *runExitMain) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *runExitMain) afterLoad() {}
-func (x *runExitMain) load(m state.Map) {
+
+func (x *runExitMain) StateLoad(m state.Source) {
+}
+
+func (x *runExitNotify) StateTypeName() string {
+	return "pkg/sentry/kernel.runExitNotify"
+}
+
+func (x *runExitNotify) StateFields() []string {
+	return []string{}
 }
 
 func (x *runExitNotify) beforeSave() {}
-func (x *runExitNotify) save(m state.Map) {
+
+func (x *runExitNotify) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *runExitNotify) afterLoad() {}
-func (x *runExitNotify) load(m state.Map) {
+
+func (x *runExitNotify) StateLoad(m state.Source) {
+}
+
+func (x *taskList) StateTypeName() string {
+	return "pkg/sentry/kernel.taskList"
+}
+
+func (x *taskList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
 }
 
 func (x *taskList) beforeSave() {}
-func (x *taskList) save(m state.Map) {
+
+func (x *taskList) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("head", &x.head)
-	m.Save("tail", &x.tail)
+	m.Save(0, &x.head)
+	m.Save(1, &x.tail)
 }
 
 func (x *taskList) afterLoad() {}
-func (x *taskList) load(m state.Map) {
-	m.Load("head", &x.head)
-	m.Load("tail", &x.tail)
+
+func (x *taskList) StateLoad(m state.Source) {
+	m.Load(0, &x.head)
+	m.Load(1, &x.tail)
+}
+
+func (x *taskEntry) StateTypeName() string {
+	return "pkg/sentry/kernel.taskEntry"
+}
+
+func (x *taskEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
 }
 
 func (x *taskEntry) beforeSave() {}
-func (x *taskEntry) save(m state.Map) {
+
+func (x *taskEntry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("next", &x.next)
-	m.Save("prev", &x.prev)
+	m.Save(0, &x.next)
+	m.Save(1, &x.prev)
 }
 
 func (x *taskEntry) afterLoad() {}
-func (x *taskEntry) load(m state.Map) {
-	m.Load("next", &x.next)
-	m.Load("prev", &x.prev)
+
+func (x *taskEntry) StateLoad(m state.Source) {
+	m.Load(0, &x.next)
+	m.Load(1, &x.prev)
+}
+
+func (x *runApp) StateTypeName() string {
+	return "pkg/sentry/kernel.runApp"
+}
+
+func (x *runApp) StateFields() []string {
+	return []string{}
 }
 
 func (x *runApp) beforeSave() {}
-func (x *runApp) save(m state.Map) {
+
+func (x *runApp) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *runApp) afterLoad() {}
-func (x *runApp) load(m state.Map) {
+
+func (x *runApp) StateLoad(m state.Source) {
+}
+
+func (x *TaskGoroutineSchedInfo) StateTypeName() string {
+	return "pkg/sentry/kernel.TaskGoroutineSchedInfo"
+}
+
+func (x *TaskGoroutineSchedInfo) StateFields() []string {
+	return []string{
+		"Timestamp",
+		"State",
+		"UserTicks",
+		"SysTicks",
+	}
 }
 
 func (x *TaskGoroutineSchedInfo) beforeSave() {}
-func (x *TaskGoroutineSchedInfo) save(m state.Map) {
+
+func (x *TaskGoroutineSchedInfo) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Timestamp", &x.Timestamp)
-	m.Save("State", &x.State)
-	m.Save("UserTicks", &x.UserTicks)
-	m.Save("SysTicks", &x.SysTicks)
+	m.Save(0, &x.Timestamp)
+	m.Save(1, &x.State)
+	m.Save(2, &x.UserTicks)
+	m.Save(3, &x.SysTicks)
 }
 
 func (x *TaskGoroutineSchedInfo) afterLoad() {}
-func (x *TaskGoroutineSchedInfo) load(m state.Map) {
-	m.Load("Timestamp", &x.Timestamp)
-	m.Load("State", &x.State)
-	m.Load("UserTicks", &x.UserTicks)
-	m.Load("SysTicks", &x.SysTicks)
+
+func (x *TaskGoroutineSchedInfo) StateLoad(m state.Source) {
+	m.Load(0, &x.Timestamp)
+	m.Load(1, &x.State)
+	m.Load(2, &x.UserTicks)
+	m.Load(3, &x.SysTicks)
+}
+
+func (x *taskClock) StateTypeName() string {
+	return "pkg/sentry/kernel.taskClock"
+}
+
+func (x *taskClock) StateFields() []string {
+	return []string{
+		"t",
+		"includeSys",
+	}
 }
 
 func (x *taskClock) beforeSave() {}
-func (x *taskClock) save(m state.Map) {
+
+func (x *taskClock) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("t", &x.t)
-	m.Save("includeSys", &x.includeSys)
+	m.Save(0, &x.t)
+	m.Save(1, &x.includeSys)
 }
 
 func (x *taskClock) afterLoad() {}
-func (x *taskClock) load(m state.Map) {
-	m.Load("t", &x.t)
-	m.Load("includeSys", &x.includeSys)
+
+func (x *taskClock) StateLoad(m state.Source) {
+	m.Load(0, &x.t)
+	m.Load(1, &x.includeSys)
+}
+
+func (x *tgClock) StateTypeName() string {
+	return "pkg/sentry/kernel.tgClock"
+}
+
+func (x *tgClock) StateFields() []string {
+	return []string{
+		"tg",
+		"includeSys",
+	}
 }
 
 func (x *tgClock) beforeSave() {}
-func (x *tgClock) save(m state.Map) {
+
+func (x *tgClock) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("tg", &x.tg)
-	m.Save("includeSys", &x.includeSys)
+	m.Save(0, &x.tg)
+	m.Save(1, &x.includeSys)
 }
 
 func (x *tgClock) afterLoad() {}
-func (x *tgClock) load(m state.Map) {
-	m.Load("tg", &x.tg)
-	m.Load("includeSys", &x.includeSys)
+
+func (x *tgClock) StateLoad(m state.Source) {
+	m.Load(0, &x.tg)
+	m.Load(1, &x.includeSys)
+}
+
+func (x *groupStop) StateTypeName() string {
+	return "pkg/sentry/kernel.groupStop"
+}
+
+func (x *groupStop) StateFields() []string {
+	return []string{}
 }
 
 func (x *groupStop) beforeSave() {}
-func (x *groupStop) save(m state.Map) {
+
+func (x *groupStop) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *groupStop) afterLoad() {}
-func (x *groupStop) load(m state.Map) {
+
+func (x *groupStop) StateLoad(m state.Source) {
+}
+
+func (x *runInterrupt) StateTypeName() string {
+	return "pkg/sentry/kernel.runInterrupt"
+}
+
+func (x *runInterrupt) StateFields() []string {
+	return []string{}
 }
 
 func (x *runInterrupt) beforeSave() {}
-func (x *runInterrupt) save(m state.Map) {
+
+func (x *runInterrupt) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *runInterrupt) afterLoad() {}
-func (x *runInterrupt) load(m state.Map) {
+
+func (x *runInterrupt) StateLoad(m state.Source) {
+}
+
+func (x *runInterruptAfterSignalDeliveryStop) StateTypeName() string {
+	return "pkg/sentry/kernel.runInterruptAfterSignalDeliveryStop"
+}
+
+func (x *runInterruptAfterSignalDeliveryStop) StateFields() []string {
+	return []string{}
 }
 
 func (x *runInterruptAfterSignalDeliveryStop) beforeSave() {}
-func (x *runInterruptAfterSignalDeliveryStop) save(m state.Map) {
+
+func (x *runInterruptAfterSignalDeliveryStop) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *runInterruptAfterSignalDeliveryStop) afterLoad() {}
-func (x *runInterruptAfterSignalDeliveryStop) load(m state.Map) {
+
+func (x *runInterruptAfterSignalDeliveryStop) StateLoad(m state.Source) {
+}
+
+func (x *runSyscallAfterSyscallEnterStop) StateTypeName() string {
+	return "pkg/sentry/kernel.runSyscallAfterSyscallEnterStop"
+}
+
+func (x *runSyscallAfterSyscallEnterStop) StateFields() []string {
+	return []string{}
 }
 
 func (x *runSyscallAfterSyscallEnterStop) beforeSave() {}
-func (x *runSyscallAfterSyscallEnterStop) save(m state.Map) {
+
+func (x *runSyscallAfterSyscallEnterStop) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *runSyscallAfterSyscallEnterStop) afterLoad() {}
-func (x *runSyscallAfterSyscallEnterStop) load(m state.Map) {
+
+func (x *runSyscallAfterSyscallEnterStop) StateLoad(m state.Source) {
+}
+
+func (x *runSyscallAfterSysemuStop) StateTypeName() string {
+	return "pkg/sentry/kernel.runSyscallAfterSysemuStop"
+}
+
+func (x *runSyscallAfterSysemuStop) StateFields() []string {
+	return []string{}
 }
 
 func (x *runSyscallAfterSysemuStop) beforeSave() {}
-func (x *runSyscallAfterSysemuStop) save(m state.Map) {
+
+func (x *runSyscallAfterSysemuStop) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *runSyscallAfterSysemuStop) afterLoad() {}
-func (x *runSyscallAfterSysemuStop) load(m state.Map) {
+
+func (x *runSyscallAfterSysemuStop) StateLoad(m state.Source) {
+}
+
+func (x *runSyscallReinvoke) StateTypeName() string {
+	return "pkg/sentry/kernel.runSyscallReinvoke"
+}
+
+func (x *runSyscallReinvoke) StateFields() []string {
+	return []string{}
 }
 
 func (x *runSyscallReinvoke) beforeSave() {}
-func (x *runSyscallReinvoke) save(m state.Map) {
+
+func (x *runSyscallReinvoke) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *runSyscallReinvoke) afterLoad() {}
-func (x *runSyscallReinvoke) load(m state.Map) {
+
+func (x *runSyscallReinvoke) StateLoad(m state.Source) {
+}
+
+func (x *runSyscallExit) StateTypeName() string {
+	return "pkg/sentry/kernel.runSyscallExit"
+}
+
+func (x *runSyscallExit) StateFields() []string {
+	return []string{}
 }
 
 func (x *runSyscallExit) beforeSave() {}
-func (x *runSyscallExit) save(m state.Map) {
+
+func (x *runSyscallExit) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *runSyscallExit) afterLoad() {}
-func (x *runSyscallExit) load(m state.Map) {
+
+func (x *runSyscallExit) StateLoad(m state.Source) {
+}
+
+func (x *ThreadGroup) StateTypeName() string {
+	return "pkg/sentry/kernel.ThreadGroup"
+}
+
+func (x *ThreadGroup) StateFields() []string {
+	return []string{
+		"threadGroupNode",
+		"signalHandlers",
+		"pendingSignals",
+		"groupStopDequeued",
+		"groupStopSignal",
+		"groupStopPendingCount",
+		"groupStopComplete",
+		"groupStopWaitable",
+		"groupContNotify",
+		"groupContInterrupted",
+		"groupContWaitable",
+		"exiting",
+		"exitStatus",
+		"terminationSignal",
+		"itimerRealTimer",
+		"itimerVirtSetting",
+		"itimerProfSetting",
+		"rlimitCPUSoftSetting",
+		"cpuTimersEnabled",
+		"timers",
+		"nextTimerID",
+		"exitedCPUStats",
+		"childCPUStats",
+		"ioUsage",
+		"maxRSS",
+		"childMaxRSS",
+		"limits",
+		"processGroup",
+		"execed",
+		"oldRSeqCritical",
+		"mounts",
+		"tty",
+		"oomScoreAdj",
+	}
 }
 
 func (x *ThreadGroup) beforeSave() {}
-func (x *ThreadGroup) save(m state.Map) {
+
+func (x *ThreadGroup) StateSave(m state.Sink) {
 	x.beforeSave()
 	var oldRSeqCritical *OldRSeqCriticalRegion = x.saveOldRSeqCritical()
-	m.SaveValue("oldRSeqCritical", oldRSeqCritical)
-	m.Save("threadGroupNode", &x.threadGroupNode)
-	m.Save("signalHandlers", &x.signalHandlers)
-	m.Save("pendingSignals", &x.pendingSignals)
-	m.Save("groupStopDequeued", &x.groupStopDequeued)
-	m.Save("groupStopSignal", &x.groupStopSignal)
-	m.Save("groupStopPendingCount", &x.groupStopPendingCount)
-	m.Save("groupStopComplete", &x.groupStopComplete)
-	m.Save("groupStopWaitable", &x.groupStopWaitable)
-	m.Save("groupContNotify", &x.groupContNotify)
-	m.Save("groupContInterrupted", &x.groupContInterrupted)
-	m.Save("groupContWaitable", &x.groupContWaitable)
-	m.Save("exiting", &x.exiting)
-	m.Save("exitStatus", &x.exitStatus)
-	m.Save("terminationSignal", &x.terminationSignal)
-	m.Save("itimerRealTimer", &x.itimerRealTimer)
-	m.Save("itimerVirtSetting", &x.itimerVirtSetting)
-	m.Save("itimerProfSetting", &x.itimerProfSetting)
-	m.Save("rlimitCPUSoftSetting", &x.rlimitCPUSoftSetting)
-	m.Save("cpuTimersEnabled", &x.cpuTimersEnabled)
-	m.Save("timers", &x.timers)
-	m.Save("nextTimerID", &x.nextTimerID)
-	m.Save("exitedCPUStats", &x.exitedCPUStats)
-	m.Save("childCPUStats", &x.childCPUStats)
-	m.Save("ioUsage", &x.ioUsage)
-	m.Save("maxRSS", &x.maxRSS)
-	m.Save("childMaxRSS", &x.childMaxRSS)
-	m.Save("limits", &x.limits)
-	m.Save("processGroup", &x.processGroup)
-	m.Save("execed", &x.execed)
-	m.Save("mounts", &x.mounts)
-	m.Save("tty", &x.tty)
-	m.Save("oomScoreAdj", &x.oomScoreAdj)
+	m.SaveValue(29, oldRSeqCritical)
+	m.Save(0, &x.threadGroupNode)
+	m.Save(1, &x.signalHandlers)
+	m.Save(2, &x.pendingSignals)
+	m.Save(3, &x.groupStopDequeued)
+	m.Save(4, &x.groupStopSignal)
+	m.Save(5, &x.groupStopPendingCount)
+	m.Save(6, &x.groupStopComplete)
+	m.Save(7, &x.groupStopWaitable)
+	m.Save(8, &x.groupContNotify)
+	m.Save(9, &x.groupContInterrupted)
+	m.Save(10, &x.groupContWaitable)
+	m.Save(11, &x.exiting)
+	m.Save(12, &x.exitStatus)
+	m.Save(13, &x.terminationSignal)
+	m.Save(14, &x.itimerRealTimer)
+	m.Save(15, &x.itimerVirtSetting)
+	m.Save(16, &x.itimerProfSetting)
+	m.Save(17, &x.rlimitCPUSoftSetting)
+	m.Save(18, &x.cpuTimersEnabled)
+	m.Save(19, &x.timers)
+	m.Save(20, &x.nextTimerID)
+	m.Save(21, &x.exitedCPUStats)
+	m.Save(22, &x.childCPUStats)
+	m.Save(23, &x.ioUsage)
+	m.Save(24, &x.maxRSS)
+	m.Save(25, &x.childMaxRSS)
+	m.Save(26, &x.limits)
+	m.Save(27, &x.processGroup)
+	m.Save(28, &x.execed)
+	m.Save(30, &x.mounts)
+	m.Save(31, &x.tty)
+	m.Save(32, &x.oomScoreAdj)
 }
 
 func (x *ThreadGroup) afterLoad() {}
-func (x *ThreadGroup) load(m state.Map) {
-	m.Load("threadGroupNode", &x.threadGroupNode)
-	m.Load("signalHandlers", &x.signalHandlers)
-	m.Load("pendingSignals", &x.pendingSignals)
-	m.Load("groupStopDequeued", &x.groupStopDequeued)
-	m.Load("groupStopSignal", &x.groupStopSignal)
-	m.Load("groupStopPendingCount", &x.groupStopPendingCount)
-	m.Load("groupStopComplete", &x.groupStopComplete)
-	m.Load("groupStopWaitable", &x.groupStopWaitable)
-	m.Load("groupContNotify", &x.groupContNotify)
-	m.Load("groupContInterrupted", &x.groupContInterrupted)
-	m.Load("groupContWaitable", &x.groupContWaitable)
-	m.Load("exiting", &x.exiting)
-	m.Load("exitStatus", &x.exitStatus)
-	m.Load("terminationSignal", &x.terminationSignal)
-	m.Load("itimerRealTimer", &x.itimerRealTimer)
-	m.Load("itimerVirtSetting", &x.itimerVirtSetting)
-	m.Load("itimerProfSetting", &x.itimerProfSetting)
-	m.Load("rlimitCPUSoftSetting", &x.rlimitCPUSoftSetting)
-	m.Load("cpuTimersEnabled", &x.cpuTimersEnabled)
-	m.Load("timers", &x.timers)
-	m.Load("nextTimerID", &x.nextTimerID)
-	m.Load("exitedCPUStats", &x.exitedCPUStats)
-	m.Load("childCPUStats", &x.childCPUStats)
-	m.Load("ioUsage", &x.ioUsage)
-	m.Load("maxRSS", &x.maxRSS)
-	m.Load("childMaxRSS", &x.childMaxRSS)
-	m.Load("limits", &x.limits)
-	m.Load("processGroup", &x.processGroup)
-	m.Load("execed", &x.execed)
-	m.Load("mounts", &x.mounts)
-	m.Load("tty", &x.tty)
-	m.Load("oomScoreAdj", &x.oomScoreAdj)
-	m.LoadValue("oldRSeqCritical", new(*OldRSeqCriticalRegion), func(y interface{}) { x.loadOldRSeqCritical(y.(*OldRSeqCriticalRegion)) })
+
+func (x *ThreadGroup) StateLoad(m state.Source) {
+	m.Load(0, &x.threadGroupNode)
+	m.Load(1, &x.signalHandlers)
+	m.Load(2, &x.pendingSignals)
+	m.Load(3, &x.groupStopDequeued)
+	m.Load(4, &x.groupStopSignal)
+	m.Load(5, &x.groupStopPendingCount)
+	m.Load(6, &x.groupStopComplete)
+	m.Load(7, &x.groupStopWaitable)
+	m.Load(8, &x.groupContNotify)
+	m.Load(9, &x.groupContInterrupted)
+	m.Load(10, &x.groupContWaitable)
+	m.Load(11, &x.exiting)
+	m.Load(12, &x.exitStatus)
+	m.Load(13, &x.terminationSignal)
+	m.Load(14, &x.itimerRealTimer)
+	m.Load(15, &x.itimerVirtSetting)
+	m.Load(16, &x.itimerProfSetting)
+	m.Load(17, &x.rlimitCPUSoftSetting)
+	m.Load(18, &x.cpuTimersEnabled)
+	m.Load(19, &x.timers)
+	m.Load(20, &x.nextTimerID)
+	m.Load(21, &x.exitedCPUStats)
+	m.Load(22, &x.childCPUStats)
+	m.Load(23, &x.ioUsage)
+	m.Load(24, &x.maxRSS)
+	m.Load(25, &x.childMaxRSS)
+	m.Load(26, &x.limits)
+	m.Load(27, &x.processGroup)
+	m.Load(28, &x.execed)
+	m.Load(30, &x.mounts)
+	m.Load(31, &x.tty)
+	m.Load(32, &x.oomScoreAdj)
+	m.LoadValue(29, new(*OldRSeqCriticalRegion), func(y interface{}) { x.loadOldRSeqCritical(y.(*OldRSeqCriticalRegion)) })
+}
+
+func (x *itimerRealListener) StateTypeName() string {
+	return "pkg/sentry/kernel.itimerRealListener"
+}
+
+func (x *itimerRealListener) StateFields() []string {
+	return []string{
+		"tg",
+	}
 }
 
 func (x *itimerRealListener) beforeSave() {}
-func (x *itimerRealListener) save(m state.Map) {
+
+func (x *itimerRealListener) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("tg", &x.tg)
+	m.Save(0, &x.tg)
 }
 
 func (x *itimerRealListener) afterLoad() {}
-func (x *itimerRealListener) load(m state.Map) {
-	m.Load("tg", &x.tg)
+
+func (x *itimerRealListener) StateLoad(m state.Source) {
+	m.Load(0, &x.tg)
+}
+
+func (x *TaskSet) StateTypeName() string {
+	return "pkg/sentry/kernel.TaskSet"
+}
+
+func (x *TaskSet) StateFields() []string {
+	return []string{
+		"Root",
+		"sessions",
+	}
 }
 
 func (x *TaskSet) beforeSave() {}
-func (x *TaskSet) save(m state.Map) {
+
+func (x *TaskSet) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Root", &x.Root)
-	m.Save("sessions", &x.sessions)
+	m.Save(0, &x.Root)
+	m.Save(1, &x.sessions)
 }
 
 func (x *TaskSet) afterLoad() {}
-func (x *TaskSet) load(m state.Map) {
-	m.Load("Root", &x.Root)
-	m.Load("sessions", &x.sessions)
+
+func (x *TaskSet) StateLoad(m state.Source) {
+	m.Load(0, &x.Root)
+	m.Load(1, &x.sessions)
+}
+
+func (x *PIDNamespace) StateTypeName() string {
+	return "pkg/sentry/kernel.PIDNamespace"
+}
+
+func (x *PIDNamespace) StateFields() []string {
+	return []string{
+		"owner",
+		"parent",
+		"userns",
+		"last",
+		"tasks",
+		"tids",
+		"tgids",
+		"sessions",
+		"sids",
+		"processGroups",
+		"pgids",
+		"exiting",
+	}
 }
 
 func (x *PIDNamespace) beforeSave() {}
-func (x *PIDNamespace) save(m state.Map) {
+
+func (x *PIDNamespace) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("owner", &x.owner)
-	m.Save("parent", &x.parent)
-	m.Save("userns", &x.userns)
-	m.Save("last", &x.last)
-	m.Save("tasks", &x.tasks)
-	m.Save("tids", &x.tids)
-	m.Save("tgids", &x.tgids)
-	m.Save("sessions", &x.sessions)
-	m.Save("sids", &x.sids)
-	m.Save("processGroups", &x.processGroups)
-	m.Save("pgids", &x.pgids)
-	m.Save("exiting", &x.exiting)
+	m.Save(0, &x.owner)
+	m.Save(1, &x.parent)
+	m.Save(2, &x.userns)
+	m.Save(3, &x.last)
+	m.Save(4, &x.tasks)
+	m.Save(5, &x.tids)
+	m.Save(6, &x.tgids)
+	m.Save(7, &x.sessions)
+	m.Save(8, &x.sids)
+	m.Save(9, &x.processGroups)
+	m.Save(10, &x.pgids)
+	m.Save(11, &x.exiting)
 }
 
 func (x *PIDNamespace) afterLoad() {}
-func (x *PIDNamespace) load(m state.Map) {
-	m.Load("owner", &x.owner)
-	m.Load("parent", &x.parent)
-	m.Load("userns", &x.userns)
-	m.Load("last", &x.last)
-	m.Load("tasks", &x.tasks)
-	m.Load("tids", &x.tids)
-	m.Load("tgids", &x.tgids)
-	m.Load("sessions", &x.sessions)
-	m.Load("sids", &x.sids)
-	m.Load("processGroups", &x.processGroups)
-	m.Load("pgids", &x.pgids)
-	m.Load("exiting", &x.exiting)
+
+func (x *PIDNamespace) StateLoad(m state.Source) {
+	m.Load(0, &x.owner)
+	m.Load(1, &x.parent)
+	m.Load(2, &x.userns)
+	m.Load(3, &x.last)
+	m.Load(4, &x.tasks)
+	m.Load(5, &x.tids)
+	m.Load(6, &x.tgids)
+	m.Load(7, &x.sessions)
+	m.Load(8, &x.sids)
+	m.Load(9, &x.processGroups)
+	m.Load(10, &x.pgids)
+	m.Load(11, &x.exiting)
+}
+
+func (x *threadGroupNode) StateTypeName() string {
+	return "pkg/sentry/kernel.threadGroupNode"
+}
+
+func (x *threadGroupNode) StateFields() []string {
+	return []string{
+		"pidns",
+		"leader",
+		"execing",
+		"tasks",
+		"tasksCount",
+		"liveTasks",
+		"activeTasks",
+	}
 }
 
 func (x *threadGroupNode) beforeSave() {}
-func (x *threadGroupNode) save(m state.Map) {
+
+func (x *threadGroupNode) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("pidns", &x.pidns)
-	m.Save("leader", &x.leader)
-	m.Save("execing", &x.execing)
-	m.Save("tasks", &x.tasks)
-	m.Save("tasksCount", &x.tasksCount)
-	m.Save("liveTasks", &x.liveTasks)
-	m.Save("activeTasks", &x.activeTasks)
+	m.Save(0, &x.pidns)
+	m.Save(1, &x.leader)
+	m.Save(2, &x.execing)
+	m.Save(3, &x.tasks)
+	m.Save(4, &x.tasksCount)
+	m.Save(5, &x.liveTasks)
+	m.Save(6, &x.activeTasks)
 }
 
 func (x *threadGroupNode) afterLoad() {}
-func (x *threadGroupNode) load(m state.Map) {
-	m.Load("pidns", &x.pidns)
-	m.Load("leader", &x.leader)
-	m.Load("execing", &x.execing)
-	m.Load("tasks", &x.tasks)
-	m.Load("tasksCount", &x.tasksCount)
-	m.Load("liveTasks", &x.liveTasks)
-	m.Load("activeTasks", &x.activeTasks)
+
+func (x *threadGroupNode) StateLoad(m state.Source) {
+	m.Load(0, &x.pidns)
+	m.Load(1, &x.leader)
+	m.Load(2, &x.execing)
+	m.Load(3, &x.tasks)
+	m.Load(4, &x.tasksCount)
+	m.Load(5, &x.liveTasks)
+	m.Load(6, &x.activeTasks)
+}
+
+func (x *taskNode) StateTypeName() string {
+	return "pkg/sentry/kernel.taskNode"
+}
+
+func (x *taskNode) StateFields() []string {
+	return []string{
+		"tg",
+		"taskEntry",
+		"parent",
+		"children",
+		"childPIDNamespace",
+	}
 }
 
 func (x *taskNode) beforeSave() {}
-func (x *taskNode) save(m state.Map) {
+
+func (x *taskNode) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("tg", &x.tg)
-	m.Save("taskEntry", &x.taskEntry)
-	m.Save("parent", &x.parent)
-	m.Save("children", &x.children)
-	m.Save("childPIDNamespace", &x.childPIDNamespace)
+	m.Save(0, &x.tg)
+	m.Save(1, &x.taskEntry)
+	m.Save(2, &x.parent)
+	m.Save(3, &x.children)
+	m.Save(4, &x.childPIDNamespace)
 }
 
 func (x *taskNode) afterLoad() {}
-func (x *taskNode) load(m state.Map) {
-	m.LoadWait("tg", &x.tg)
-	m.Load("taskEntry", &x.taskEntry)
-	m.Load("parent", &x.parent)
-	m.Load("children", &x.children)
-	m.Load("childPIDNamespace", &x.childPIDNamespace)
+
+func (x *taskNode) StateLoad(m state.Source) {
+	m.LoadWait(0, &x.tg)
+	m.Load(1, &x.taskEntry)
+	m.Load(2, &x.parent)
+	m.Load(3, &x.children)
+	m.Load(4, &x.childPIDNamespace)
 }
 
-func (x *Timekeeper) save(m state.Map) {
+func (x *Timekeeper) StateTypeName() string {
+	return "pkg/sentry/kernel.Timekeeper"
+}
+
+func (x *Timekeeper) StateFields() []string {
+	return []string{
+		"bootTime",
+		"saveMonotonic",
+		"saveRealtime",
+		"params",
+	}
+}
+
+func (x *Timekeeper) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("bootTime", &x.bootTime)
-	m.Save("saveMonotonic", &x.saveMonotonic)
-	m.Save("saveRealtime", &x.saveRealtime)
-	m.Save("params", &x.params)
+	m.Save(0, &x.bootTime)
+	m.Save(1, &x.saveMonotonic)
+	m.Save(2, &x.saveRealtime)
+	m.Save(3, &x.params)
 }
 
-func (x *Timekeeper) load(m state.Map) {
-	m.Load("bootTime", &x.bootTime)
-	m.Load("saveMonotonic", &x.saveMonotonic)
-	m.Load("saveRealtime", &x.saveRealtime)
-	m.Load("params", &x.params)
+func (x *Timekeeper) StateLoad(m state.Source) {
+	m.Load(0, &x.bootTime)
+	m.Load(1, &x.saveMonotonic)
+	m.Load(2, &x.saveRealtime)
+	m.Load(3, &x.params)
 	m.AfterLoad(x.afterLoad)
 }
 
+func (x *timekeeperClock) StateTypeName() string {
+	return "pkg/sentry/kernel.timekeeperClock"
+}
+
+func (x *timekeeperClock) StateFields() []string {
+	return []string{
+		"tk",
+		"c",
+	}
+}
+
 func (x *timekeeperClock) beforeSave() {}
-func (x *timekeeperClock) save(m state.Map) {
+
+func (x *timekeeperClock) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("tk", &x.tk)
-	m.Save("c", &x.c)
+	m.Save(0, &x.tk)
+	m.Save(1, &x.c)
 }
 
 func (x *timekeeperClock) afterLoad() {}
-func (x *timekeeperClock) load(m state.Map) {
-	m.Load("tk", &x.tk)
-	m.Load("c", &x.c)
+
+func (x *timekeeperClock) StateLoad(m state.Source) {
+	m.Load(0, &x.tk)
+	m.Load(1, &x.c)
+}
+
+func (x *TTY) StateTypeName() string {
+	return "pkg/sentry/kernel.TTY"
+}
+
+func (x *TTY) StateFields() []string {
+	return []string{
+		"Index",
+		"tg",
+	}
 }
 
 func (x *TTY) beforeSave() {}
-func (x *TTY) save(m state.Map) {
+
+func (x *TTY) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Index", &x.Index)
-	m.Save("tg", &x.tg)
+	m.Save(0, &x.Index)
+	m.Save(1, &x.tg)
 }
 
 func (x *TTY) afterLoad() {}
-func (x *TTY) load(m state.Map) {
-	m.Load("Index", &x.Index)
-	m.Load("tg", &x.tg)
+
+func (x *TTY) StateLoad(m state.Source) {
+	m.Load(0, &x.Index)
+	m.Load(1, &x.tg)
+}
+
+func (x *UTSNamespace) StateTypeName() string {
+	return "pkg/sentry/kernel.UTSNamespace"
+}
+
+func (x *UTSNamespace) StateFields() []string {
+	return []string{
+		"hostName",
+		"domainName",
+		"userns",
+	}
 }
 
 func (x *UTSNamespace) beforeSave() {}
-func (x *UTSNamespace) save(m state.Map) {
+
+func (x *UTSNamespace) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("hostName", &x.hostName)
-	m.Save("domainName", &x.domainName)
-	m.Save("userns", &x.userns)
+	m.Save(0, &x.hostName)
+	m.Save(1, &x.domainName)
+	m.Save(2, &x.userns)
 }
 
 func (x *UTSNamespace) afterLoad() {}
-func (x *UTSNamespace) load(m state.Map) {
-	m.Load("hostName", &x.hostName)
-	m.Load("domainName", &x.domainName)
-	m.Load("userns", &x.userns)
+
+func (x *UTSNamespace) StateLoad(m state.Source) {
+	m.Load(0, &x.hostName)
+	m.Load(1, &x.domainName)
+	m.Load(2, &x.userns)
+}
+
+func (x *VDSOParamPage) StateTypeName() string {
+	return "pkg/sentry/kernel.VDSOParamPage"
+}
+
+func (x *VDSOParamPage) StateFields() []string {
+	return []string{
+		"mfp",
+		"fr",
+		"seq",
+	}
 }
 
 func (x *VDSOParamPage) beforeSave() {}
-func (x *VDSOParamPage) save(m state.Map) {
+
+func (x *VDSOParamPage) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("mfp", &x.mfp)
-	m.Save("fr", &x.fr)
-	m.Save("seq", &x.seq)
+	m.Save(0, &x.mfp)
+	m.Save(1, &x.fr)
+	m.Save(2, &x.seq)
 }
 
 func (x *VDSOParamPage) afterLoad() {}
-func (x *VDSOParamPage) load(m state.Map) {
-	m.Load("mfp", &x.mfp)
-	m.Load("fr", &x.fr)
-	m.Load("seq", &x.seq)
+
+func (x *VDSOParamPage) StateLoad(m state.Source) {
+	m.Load(0, &x.mfp)
+	m.Load(1, &x.fr)
+	m.Load(2, &x.seq)
 }
 
 func init() {
-	state.Register("pkg/sentry/kernel.abstractEndpoint", (*abstractEndpoint)(nil), state.Fns{Save: (*abstractEndpoint).save, Load: (*abstractEndpoint).load})
-	state.Register("pkg/sentry/kernel.AbstractSocketNamespace", (*AbstractSocketNamespace)(nil), state.Fns{Save: (*AbstractSocketNamespace).save, Load: (*AbstractSocketNamespace).load})
-	state.Register("pkg/sentry/kernel.FDFlags", (*FDFlags)(nil), state.Fns{Save: (*FDFlags).save, Load: (*FDFlags).load})
-	state.Register("pkg/sentry/kernel.descriptor", (*descriptor)(nil), state.Fns{Save: (*descriptor).save, Load: (*descriptor).load})
-	state.Register("pkg/sentry/kernel.FDTable", (*FDTable)(nil), state.Fns{Save: (*FDTable).save, Load: (*FDTable).load})
-	state.Register("pkg/sentry/kernel.FSContext", (*FSContext)(nil), state.Fns{Save: (*FSContext).save, Load: (*FSContext).load})
-	state.Register("pkg/sentry/kernel.IPCNamespace", (*IPCNamespace)(nil), state.Fns{Save: (*IPCNamespace).save, Load: (*IPCNamespace).load})
-	state.Register("pkg/sentry/kernel.Kernel", (*Kernel)(nil), state.Fns{Save: (*Kernel).save, Load: (*Kernel).load})
-	state.Register("pkg/sentry/kernel.SocketEntry", (*SocketEntry)(nil), state.Fns{Save: (*SocketEntry).save, Load: (*SocketEntry).load})
-	state.Register("pkg/sentry/kernel.pendingSignals", (*pendingSignals)(nil), state.Fns{Save: (*pendingSignals).save, Load: (*pendingSignals).load})
-	state.Register("pkg/sentry/kernel.pendingSignalQueue", (*pendingSignalQueue)(nil), state.Fns{Save: (*pendingSignalQueue).save, Load: (*pendingSignalQueue).load})
-	state.Register("pkg/sentry/kernel.pendingSignal", (*pendingSignal)(nil), state.Fns{Save: (*pendingSignal).save, Load: (*pendingSignal).load})
-	state.Register("pkg/sentry/kernel.pendingSignalList", (*pendingSignalList)(nil), state.Fns{Save: (*pendingSignalList).save, Load: (*pendingSignalList).load})
-	state.Register("pkg/sentry/kernel.pendingSignalEntry", (*pendingSignalEntry)(nil), state.Fns{Save: (*pendingSignalEntry).save, Load: (*pendingSignalEntry).load})
-	state.Register("pkg/sentry/kernel.savedPendingSignal", (*savedPendingSignal)(nil), state.Fns{Save: (*savedPendingSignal).save, Load: (*savedPendingSignal).load})
-	state.Register("pkg/sentry/kernel.IntervalTimer", (*IntervalTimer)(nil), state.Fns{Save: (*IntervalTimer).save, Load: (*IntervalTimer).load})
-	state.Register("pkg/sentry/kernel.processGroupList", (*processGroupList)(nil), state.Fns{Save: (*processGroupList).save, Load: (*processGroupList).load})
-	state.Register("pkg/sentry/kernel.processGroupEntry", (*processGroupEntry)(nil), state.Fns{Save: (*processGroupEntry).save, Load: (*processGroupEntry).load})
-	state.Register("pkg/sentry/kernel.ptraceOptions", (*ptraceOptions)(nil), state.Fns{Save: (*ptraceOptions).save, Load: (*ptraceOptions).load})
-	state.Register("pkg/sentry/kernel.ptraceStop", (*ptraceStop)(nil), state.Fns{Save: (*ptraceStop).save, Load: (*ptraceStop).load})
-	state.Register("pkg/sentry/kernel.OldRSeqCriticalRegion", (*OldRSeqCriticalRegion)(nil), state.Fns{Save: (*OldRSeqCriticalRegion).save, Load: (*OldRSeqCriticalRegion).load})
-	state.Register("pkg/sentry/kernel.sessionList", (*sessionList)(nil), state.Fns{Save: (*sessionList).save, Load: (*sessionList).load})
-	state.Register("pkg/sentry/kernel.sessionEntry", (*sessionEntry)(nil), state.Fns{Save: (*sessionEntry).save, Load: (*sessionEntry).load})
-	state.Register("pkg/sentry/kernel.Session", (*Session)(nil), state.Fns{Save: (*Session).save, Load: (*Session).load})
-	state.Register("pkg/sentry/kernel.ProcessGroup", (*ProcessGroup)(nil), state.Fns{Save: (*ProcessGroup).save, Load: (*ProcessGroup).load})
-	state.Register("pkg/sentry/kernel.SignalHandlers", (*SignalHandlers)(nil), state.Fns{Save: (*SignalHandlers).save, Load: (*SignalHandlers).load})
-	state.Register("pkg/sentry/kernel.socketList", (*socketList)(nil), state.Fns{Save: (*socketList).save, Load: (*socketList).load})
-	state.Register("pkg/sentry/kernel.socketEntry", (*socketEntry)(nil), state.Fns{Save: (*socketEntry).save, Load: (*socketEntry).load})
-	state.Register("pkg/sentry/kernel.syscallTableInfo", (*syscallTableInfo)(nil), state.Fns{Save: (*syscallTableInfo).save, Load: (*syscallTableInfo).load})
-	state.Register("pkg/sentry/kernel.syslog", (*syslog)(nil), state.Fns{Save: (*syslog).save, Load: (*syslog).load})
-	state.Register("pkg/sentry/kernel.Task", (*Task)(nil), state.Fns{Save: (*Task).save, Load: (*Task).load})
-	state.Register("pkg/sentry/kernel.runSyscallAfterPtraceEventClone", (*runSyscallAfterPtraceEventClone)(nil), state.Fns{Save: (*runSyscallAfterPtraceEventClone).save, Load: (*runSyscallAfterPtraceEventClone).load})
-	state.Register("pkg/sentry/kernel.runSyscallAfterVforkStop", (*runSyscallAfterVforkStop)(nil), state.Fns{Save: (*runSyscallAfterVforkStop).save, Load: (*runSyscallAfterVforkStop).load})
-	state.Register("pkg/sentry/kernel.vforkStop", (*vforkStop)(nil), state.Fns{Save: (*vforkStop).save, Load: (*vforkStop).load})
-	state.Register("pkg/sentry/kernel.TaskContext", (*TaskContext)(nil), state.Fns{Save: (*TaskContext).save, Load: (*TaskContext).load})
-	state.Register("pkg/sentry/kernel.execStop", (*execStop)(nil), state.Fns{Save: (*execStop).save, Load: (*execStop).load})
-	state.Register("pkg/sentry/kernel.runSyscallAfterExecStop", (*runSyscallAfterExecStop)(nil), state.Fns{Save: (*runSyscallAfterExecStop).save, Load: (*runSyscallAfterExecStop).load})
-	state.Register("pkg/sentry/kernel.ExitStatus", (*ExitStatus)(nil), state.Fns{Save: (*ExitStatus).save, Load: (*ExitStatus).load})
-	state.Register("pkg/sentry/kernel.runExit", (*runExit)(nil), state.Fns{Save: (*runExit).save, Load: (*runExit).load})
-	state.Register("pkg/sentry/kernel.runExitMain", (*runExitMain)(nil), state.Fns{Save: (*runExitMain).save, Load: (*runExitMain).load})
-	state.Register("pkg/sentry/kernel.runExitNotify", (*runExitNotify)(nil), state.Fns{Save: (*runExitNotify).save, Load: (*runExitNotify).load})
-	state.Register("pkg/sentry/kernel.taskList", (*taskList)(nil), state.Fns{Save: (*taskList).save, Load: (*taskList).load})
-	state.Register("pkg/sentry/kernel.taskEntry", (*taskEntry)(nil), state.Fns{Save: (*taskEntry).save, Load: (*taskEntry).load})
-	state.Register("pkg/sentry/kernel.runApp", (*runApp)(nil), state.Fns{Save: (*runApp).save, Load: (*runApp).load})
-	state.Register("pkg/sentry/kernel.TaskGoroutineSchedInfo", (*TaskGoroutineSchedInfo)(nil), state.Fns{Save: (*TaskGoroutineSchedInfo).save, Load: (*TaskGoroutineSchedInfo).load})
-	state.Register("pkg/sentry/kernel.taskClock", (*taskClock)(nil), state.Fns{Save: (*taskClock).save, Load: (*taskClock).load})
-	state.Register("pkg/sentry/kernel.tgClock", (*tgClock)(nil), state.Fns{Save: (*tgClock).save, Load: (*tgClock).load})
-	state.Register("pkg/sentry/kernel.groupStop", (*groupStop)(nil), state.Fns{Save: (*groupStop).save, Load: (*groupStop).load})
-	state.Register("pkg/sentry/kernel.runInterrupt", (*runInterrupt)(nil), state.Fns{Save: (*runInterrupt).save, Load: (*runInterrupt).load})
-	state.Register("pkg/sentry/kernel.runInterruptAfterSignalDeliveryStop", (*runInterruptAfterSignalDeliveryStop)(nil), state.Fns{Save: (*runInterruptAfterSignalDeliveryStop).save, Load: (*runInterruptAfterSignalDeliveryStop).load})
-	state.Register("pkg/sentry/kernel.runSyscallAfterSyscallEnterStop", (*runSyscallAfterSyscallEnterStop)(nil), state.Fns{Save: (*runSyscallAfterSyscallEnterStop).save, Load: (*runSyscallAfterSyscallEnterStop).load})
-	state.Register("pkg/sentry/kernel.runSyscallAfterSysemuStop", (*runSyscallAfterSysemuStop)(nil), state.Fns{Save: (*runSyscallAfterSysemuStop).save, Load: (*runSyscallAfterSysemuStop).load})
-	state.Register("pkg/sentry/kernel.runSyscallReinvoke", (*runSyscallReinvoke)(nil), state.Fns{Save: (*runSyscallReinvoke).save, Load: (*runSyscallReinvoke).load})
-	state.Register("pkg/sentry/kernel.runSyscallExit", (*runSyscallExit)(nil), state.Fns{Save: (*runSyscallExit).save, Load: (*runSyscallExit).load})
-	state.Register("pkg/sentry/kernel.ThreadGroup", (*ThreadGroup)(nil), state.Fns{Save: (*ThreadGroup).save, Load: (*ThreadGroup).load})
-	state.Register("pkg/sentry/kernel.itimerRealListener", (*itimerRealListener)(nil), state.Fns{Save: (*itimerRealListener).save, Load: (*itimerRealListener).load})
-	state.Register("pkg/sentry/kernel.TaskSet", (*TaskSet)(nil), state.Fns{Save: (*TaskSet).save, Load: (*TaskSet).load})
-	state.Register("pkg/sentry/kernel.PIDNamespace", (*PIDNamespace)(nil), state.Fns{Save: (*PIDNamespace).save, Load: (*PIDNamespace).load})
-	state.Register("pkg/sentry/kernel.threadGroupNode", (*threadGroupNode)(nil), state.Fns{Save: (*threadGroupNode).save, Load: (*threadGroupNode).load})
-	state.Register("pkg/sentry/kernel.taskNode", (*taskNode)(nil), state.Fns{Save: (*taskNode).save, Load: (*taskNode).load})
-	state.Register("pkg/sentry/kernel.Timekeeper", (*Timekeeper)(nil), state.Fns{Save: (*Timekeeper).save, Load: (*Timekeeper).load})
-	state.Register("pkg/sentry/kernel.timekeeperClock", (*timekeeperClock)(nil), state.Fns{Save: (*timekeeperClock).save, Load: (*timekeeperClock).load})
-	state.Register("pkg/sentry/kernel.TTY", (*TTY)(nil), state.Fns{Save: (*TTY).save, Load: (*TTY).load})
-	state.Register("pkg/sentry/kernel.UTSNamespace", (*UTSNamespace)(nil), state.Fns{Save: (*UTSNamespace).save, Load: (*UTSNamespace).load})
-	state.Register("pkg/sentry/kernel.VDSOParamPage", (*VDSOParamPage)(nil), state.Fns{Save: (*VDSOParamPage).save, Load: (*VDSOParamPage).load})
+	state.Register((*abstractEndpoint)(nil))
+	state.Register((*AbstractSocketNamespace)(nil))
+	state.Register((*FDFlags)(nil))
+	state.Register((*descriptor)(nil))
+	state.Register((*FDTable)(nil))
+	state.Register((*FSContext)(nil))
+	state.Register((*IPCNamespace)(nil))
+	state.Register((*Kernel)(nil))
+	state.Register((*SocketEntry)(nil))
+	state.Register((*pendingSignals)(nil))
+	state.Register((*pendingSignalQueue)(nil))
+	state.Register((*pendingSignal)(nil))
+	state.Register((*pendingSignalList)(nil))
+	state.Register((*pendingSignalEntry)(nil))
+	state.Register((*savedPendingSignal)(nil))
+	state.Register((*IntervalTimer)(nil))
+	state.Register((*processGroupList)(nil))
+	state.Register((*processGroupEntry)(nil))
+	state.Register((*ptraceOptions)(nil))
+	state.Register((*ptraceStop)(nil))
+	state.Register((*OldRSeqCriticalRegion)(nil))
+	state.Register((*sessionList)(nil))
+	state.Register((*sessionEntry)(nil))
+	state.Register((*Session)(nil))
+	state.Register((*ProcessGroup)(nil))
+	state.Register((*SignalHandlers)(nil))
+	state.Register((*socketList)(nil))
+	state.Register((*socketEntry)(nil))
+	state.Register((*syscallTableInfo)(nil))
+	state.Register((*syslog)(nil))
+	state.Register((*Task)(nil))
+	state.Register((*runSyscallAfterPtraceEventClone)(nil))
+	state.Register((*runSyscallAfterVforkStop)(nil))
+	state.Register((*vforkStop)(nil))
+	state.Register((*TaskContext)(nil))
+	state.Register((*execStop)(nil))
+	state.Register((*runSyscallAfterExecStop)(nil))
+	state.Register((*ExitStatus)(nil))
+	state.Register((*runExit)(nil))
+	state.Register((*runExitMain)(nil))
+	state.Register((*runExitNotify)(nil))
+	state.Register((*taskList)(nil))
+	state.Register((*taskEntry)(nil))
+	state.Register((*runApp)(nil))
+	state.Register((*TaskGoroutineSchedInfo)(nil))
+	state.Register((*taskClock)(nil))
+	state.Register((*tgClock)(nil))
+	state.Register((*groupStop)(nil))
+	state.Register((*runInterrupt)(nil))
+	state.Register((*runInterruptAfterSignalDeliveryStop)(nil))
+	state.Register((*runSyscallAfterSyscallEnterStop)(nil))
+	state.Register((*runSyscallAfterSysemuStop)(nil))
+	state.Register((*runSyscallReinvoke)(nil))
+	state.Register((*runSyscallExit)(nil))
+	state.Register((*ThreadGroup)(nil))
+	state.Register((*itimerRealListener)(nil))
+	state.Register((*TaskSet)(nil))
+	state.Register((*PIDNamespace)(nil))
+	state.Register((*threadGroupNode)(nil))
+	state.Register((*taskNode)(nil))
+	state.Register((*Timekeeper)(nil))
+	state.Register((*timekeeperClock)(nil))
+	state.Register((*TTY)(nil))
+	state.Register((*UTSNamespace)(nil))
+	state.Register((*VDSOParamPage)(nil))
 }

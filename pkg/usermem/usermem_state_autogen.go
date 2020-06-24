@@ -6,44 +6,71 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *AccessType) StateTypeName() string {
+	return "pkg/usermem.AccessType"
+}
+
+func (x *AccessType) StateFields() []string {
+	return []string{
+		"Read",
+		"Write",
+		"Execute",
+	}
+}
+
 func (x *AccessType) beforeSave() {}
-func (x *AccessType) save(m state.Map) {
+
+func (x *AccessType) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Read", &x.Read)
-	m.Save("Write", &x.Write)
-	m.Save("Execute", &x.Execute)
+	m.Save(0, &x.Read)
+	m.Save(1, &x.Write)
+	m.Save(2, &x.Execute)
 }
 
 func (x *AccessType) afterLoad() {}
-func (x *AccessType) load(m state.Map) {
-	m.Load("Read", &x.Read)
-	m.Load("Write", &x.Write)
-	m.Load("Execute", &x.Execute)
+
+func (x *AccessType) StateLoad(m state.Source) {
+	m.Load(0, &x.Read)
+	m.Load(1, &x.Write)
+	m.Load(2, &x.Execute)
 }
 
-func (x *Addr) save(m state.Map) {
-	m.SaveValue("", (uintptr)(*x))
+func (x *Addr) StateTypeName() string {
+	return "pkg/usermem.Addr"
 }
 
-func (x *Addr) load(m state.Map) {
-	m.LoadValue("", new(uintptr), func(y interface{}) { *x = (Addr)(y.(uintptr)) })
+func (x *Addr) StateFields() []string {
+	return nil
+}
+
+func (x *AddrRange) StateTypeName() string {
+	return "pkg/usermem.AddrRange"
+}
+
+func (x *AddrRange) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+	}
 }
 
 func (x *AddrRange) beforeSave() {}
-func (x *AddrRange) save(m state.Map) {
+
+func (x *AddrRange) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Start", &x.Start)
-	m.Save("End", &x.End)
+	m.Save(0, &x.Start)
+	m.Save(1, &x.End)
 }
 
 func (x *AddrRange) afterLoad() {}
-func (x *AddrRange) load(m state.Map) {
-	m.Load("Start", &x.Start)
-	m.Load("End", &x.End)
+
+func (x *AddrRange) StateLoad(m state.Source) {
+	m.Load(0, &x.Start)
+	m.Load(1, &x.End)
 }
 
 func init() {
-	state.Register("pkg/usermem.AccessType", (*AccessType)(nil), state.Fns{Save: (*AccessType).save, Load: (*AccessType).load})
-	state.Register("pkg/usermem.Addr", (*Addr)(nil), state.Fns{Save: (*Addr).save, Load: (*Addr).load})
-	state.Register("pkg/usermem.AddrRange", (*AddrRange)(nil), state.Fns{Save: (*AddrRange).save, Load: (*AddrRange).load})
+	state.Register((*AccessType)(nil))
+	state.Register((*Addr)(nil))
+	state.Register((*AddrRange)(nil))
 }

@@ -6,27 +6,44 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *FileAsync) StateTypeName() string {
+	return "pkg/sentry/kernel/fasync.FileAsync"
+}
+
+func (x *FileAsync) StateFields() []string {
+	return []string{
+		"e",
+		"requester",
+		"registered",
+		"recipientPG",
+		"recipientTG",
+		"recipientT",
+	}
+}
+
 func (x *FileAsync) beforeSave() {}
-func (x *FileAsync) save(m state.Map) {
+
+func (x *FileAsync) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("e", &x.e)
-	m.Save("requester", &x.requester)
-	m.Save("registered", &x.registered)
-	m.Save("recipientPG", &x.recipientPG)
-	m.Save("recipientTG", &x.recipientTG)
-	m.Save("recipientT", &x.recipientT)
+	m.Save(0, &x.e)
+	m.Save(1, &x.requester)
+	m.Save(2, &x.registered)
+	m.Save(3, &x.recipientPG)
+	m.Save(4, &x.recipientTG)
+	m.Save(5, &x.recipientT)
 }
 
 func (x *FileAsync) afterLoad() {}
-func (x *FileAsync) load(m state.Map) {
-	m.Load("e", &x.e)
-	m.Load("requester", &x.requester)
-	m.Load("registered", &x.registered)
-	m.Load("recipientPG", &x.recipientPG)
-	m.Load("recipientTG", &x.recipientTG)
-	m.Load("recipientT", &x.recipientT)
+
+func (x *FileAsync) StateLoad(m state.Source) {
+	m.Load(0, &x.e)
+	m.Load(1, &x.requester)
+	m.Load(2, &x.registered)
+	m.Load(3, &x.recipientPG)
+	m.Load(4, &x.recipientTG)
+	m.Load(5, &x.recipientT)
 }
 
 func init() {
-	state.Register("pkg/sentry/kernel/fasync.FileAsync", (*FileAsync)(nil), state.Fns{Save: (*FileAsync).save, Load: (*FileAsync).load})
+	state.Register((*FileAsync)(nil))
 }

@@ -6,61 +6,109 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *bucket) StateTypeName() string {
+	return "pkg/sentry/kernel/futex.bucket"
+}
+
+func (x *bucket) StateFields() []string {
+	return []string{}
+}
+
 func (x *bucket) beforeSave() {}
-func (x *bucket) save(m state.Map) {
+
+func (x *bucket) StateSave(m state.Sink) {
 	x.beforeSave()
 	if !state.IsZeroValue(&x.waiters) {
-		m.Failf("waiters is %#v, expected zero", &x.waiters)
+		state.Failf("waiters is %#v, expected zero", &x.waiters)
 	}
 }
 
 func (x *bucket) afterLoad() {}
-func (x *bucket) load(m state.Map) {
+
+func (x *bucket) StateLoad(m state.Source) {
+}
+
+func (x *Manager) StateTypeName() string {
+	return "pkg/sentry/kernel/futex.Manager"
+}
+
+func (x *Manager) StateFields() []string {
+	return []string{
+		"sharedBucket",
+	}
 }
 
 func (x *Manager) beforeSave() {}
-func (x *Manager) save(m state.Map) {
+
+func (x *Manager) StateSave(m state.Sink) {
 	x.beforeSave()
 	if !state.IsZeroValue(&x.privateBuckets) {
-		m.Failf("privateBuckets is %#v, expected zero", &x.privateBuckets)
+		state.Failf("privateBuckets is %#v, expected zero", &x.privateBuckets)
 	}
-	m.Save("sharedBucket", &x.sharedBucket)
+	m.Save(0, &x.sharedBucket)
 }
 
 func (x *Manager) afterLoad() {}
-func (x *Manager) load(m state.Map) {
-	m.Load("sharedBucket", &x.sharedBucket)
+
+func (x *Manager) StateLoad(m state.Source) {
+	m.Load(0, &x.sharedBucket)
+}
+
+func (x *waiterList) StateTypeName() string {
+	return "pkg/sentry/kernel/futex.waiterList"
+}
+
+func (x *waiterList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
 }
 
 func (x *waiterList) beforeSave() {}
-func (x *waiterList) save(m state.Map) {
+
+func (x *waiterList) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("head", &x.head)
-	m.Save("tail", &x.tail)
+	m.Save(0, &x.head)
+	m.Save(1, &x.tail)
 }
 
 func (x *waiterList) afterLoad() {}
-func (x *waiterList) load(m state.Map) {
-	m.Load("head", &x.head)
-	m.Load("tail", &x.tail)
+
+func (x *waiterList) StateLoad(m state.Source) {
+	m.Load(0, &x.head)
+	m.Load(1, &x.tail)
+}
+
+func (x *waiterEntry) StateTypeName() string {
+	return "pkg/sentry/kernel/futex.waiterEntry"
+}
+
+func (x *waiterEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
 }
 
 func (x *waiterEntry) beforeSave() {}
-func (x *waiterEntry) save(m state.Map) {
+
+func (x *waiterEntry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("next", &x.next)
-	m.Save("prev", &x.prev)
+	m.Save(0, &x.next)
+	m.Save(1, &x.prev)
 }
 
 func (x *waiterEntry) afterLoad() {}
-func (x *waiterEntry) load(m state.Map) {
-	m.Load("next", &x.next)
-	m.Load("prev", &x.prev)
+
+func (x *waiterEntry) StateLoad(m state.Source) {
+	m.Load(0, &x.next)
+	m.Load(1, &x.prev)
 }
 
 func init() {
-	state.Register("pkg/sentry/kernel/futex.bucket", (*bucket)(nil), state.Fns{Save: (*bucket).save, Load: (*bucket).load})
-	state.Register("pkg/sentry/kernel/futex.Manager", (*Manager)(nil), state.Fns{Save: (*Manager).save, Load: (*Manager).load})
-	state.Register("pkg/sentry/kernel/futex.waiterList", (*waiterList)(nil), state.Fns{Save: (*waiterList).save, Load: (*waiterList).load})
-	state.Register("pkg/sentry/kernel/futex.waiterEntry", (*waiterEntry)(nil), state.Fns{Save: (*waiterEntry).save, Load: (*waiterEntry).load})
+	state.Register((*bucket)(nil))
+	state.Register((*Manager)(nil))
+	state.Register((*waiterList)(nil))
+	state.Register((*waiterEntry)(nil))
 }

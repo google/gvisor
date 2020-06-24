@@ -56,7 +56,7 @@ func (l *bufferList) Back() *buffer {
 //
 // NOTE: This is an O(n) operation.
 func (l *bufferList) Len() (count int) {
-	for e := l.Front(); e != nil; e = e.Next() {
+	for e := l.Front(); e != nil; e = (bufferElementMapper{}.linkerFor(e)).Next() {
 		count++
 	}
 	return count
@@ -148,13 +148,13 @@ func (l *bufferList) Remove(e *buffer) {
 
 	if prev != nil {
 		bufferElementMapper{}.linkerFor(prev).SetNext(next)
-	} else {
+	} else if l.head == e {
 		l.head = next
 	}
 
 	if next != nil {
 		bufferElementMapper{}.linkerFor(next).SetPrev(prev)
-	} else {
+	} else if l.tail == e {
 		l.tail = prev
 	}
 

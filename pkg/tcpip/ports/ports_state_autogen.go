@@ -6,21 +6,35 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *Flags) StateTypeName() string {
+	return "pkg/tcpip/ports.Flags"
+}
+
+func (x *Flags) StateFields() []string {
+	return []string{
+		"MostRecent",
+		"LoadBalanced",
+		"TupleOnly",
+	}
+}
+
 func (x *Flags) beforeSave() {}
-func (x *Flags) save(m state.Map) {
+
+func (x *Flags) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("MostRecent", &x.MostRecent)
-	m.Save("LoadBalanced", &x.LoadBalanced)
-	m.Save("TupleOnly", &x.TupleOnly)
+	m.Save(0, &x.MostRecent)
+	m.Save(1, &x.LoadBalanced)
+	m.Save(2, &x.TupleOnly)
 }
 
 func (x *Flags) afterLoad() {}
-func (x *Flags) load(m state.Map) {
-	m.Load("MostRecent", &x.MostRecent)
-	m.Load("LoadBalanced", &x.LoadBalanced)
-	m.Load("TupleOnly", &x.TupleOnly)
+
+func (x *Flags) StateLoad(m state.Source) {
+	m.Load(0, &x.MostRecent)
+	m.Load(1, &x.LoadBalanced)
+	m.Load(2, &x.TupleOnly)
 }
 
 func init() {
-	state.Register("pkg/tcpip/ports.Flags", (*Flags)(nil), state.Fns{Save: (*Flags).save, Load: (*Flags).load})
+	state.Register((*Flags)(nil))
 }

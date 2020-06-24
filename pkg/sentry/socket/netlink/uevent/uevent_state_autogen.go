@@ -6,15 +6,25 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *Protocol) StateTypeName() string {
+	return "pkg/sentry/socket/netlink/uevent.Protocol"
+}
+
+func (x *Protocol) StateFields() []string {
+	return []string{}
+}
+
 func (x *Protocol) beforeSave() {}
-func (x *Protocol) save(m state.Map) {
+
+func (x *Protocol) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *Protocol) afterLoad() {}
-func (x *Protocol) load(m state.Map) {
+
+func (x *Protocol) StateLoad(m state.Source) {
 }
 
 func init() {
-	state.Register("pkg/sentry/socket/netlink/uevent.Protocol", (*Protocol)(nil), state.Fns{Save: (*Protocol).save, Load: (*Protocol).load})
+	state.Register((*Protocol)(nil))
 }

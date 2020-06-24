@@ -6,35 +6,62 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *MappableRange) StateTypeName() string {
+	return "pkg/sentry/memmap.MappableRange"
+}
+
+func (x *MappableRange) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+	}
+}
+
 func (x *MappableRange) beforeSave() {}
-func (x *MappableRange) save(m state.Map) {
+
+func (x *MappableRange) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Start", &x.Start)
-	m.Save("End", &x.End)
+	m.Save(0, &x.Start)
+	m.Save(1, &x.End)
 }
 
 func (x *MappableRange) afterLoad() {}
-func (x *MappableRange) load(m state.Map) {
-	m.Load("Start", &x.Start)
-	m.Load("End", &x.End)
+
+func (x *MappableRange) StateLoad(m state.Source) {
+	m.Load(0, &x.Start)
+	m.Load(1, &x.End)
+}
+
+func (x *MappingOfRange) StateTypeName() string {
+	return "pkg/sentry/memmap.MappingOfRange"
+}
+
+func (x *MappingOfRange) StateFields() []string {
+	return []string{
+		"MappingSpace",
+		"AddrRange",
+		"Writable",
+	}
 }
 
 func (x *MappingOfRange) beforeSave() {}
-func (x *MappingOfRange) save(m state.Map) {
+
+func (x *MappingOfRange) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("MappingSpace", &x.MappingSpace)
-	m.Save("AddrRange", &x.AddrRange)
-	m.Save("Writable", &x.Writable)
+	m.Save(0, &x.MappingSpace)
+	m.Save(1, &x.AddrRange)
+	m.Save(2, &x.Writable)
 }
 
 func (x *MappingOfRange) afterLoad() {}
-func (x *MappingOfRange) load(m state.Map) {
-	m.Load("MappingSpace", &x.MappingSpace)
-	m.Load("AddrRange", &x.AddrRange)
-	m.Load("Writable", &x.Writable)
+
+func (x *MappingOfRange) StateLoad(m state.Source) {
+	m.Load(0, &x.MappingSpace)
+	m.Load(1, &x.AddrRange)
+	m.Load(2, &x.Writable)
 }
 
 func init() {
-	state.Register("pkg/sentry/memmap.MappableRange", (*MappableRange)(nil), state.Fns{Save: (*MappableRange).save, Load: (*MappableRange).load})
-	state.Register("pkg/sentry/memmap.MappingOfRange", (*MappingOfRange)(nil), state.Fns{Save: (*MappingOfRange).save, Load: (*MappingOfRange).load})
+	state.Register((*MappableRange)(nil))
+	state.Register((*MappingOfRange)(nil))
 }

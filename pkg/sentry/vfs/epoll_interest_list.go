@@ -56,7 +56,7 @@ func (l *epollInterestList) Back() *epollInterest {
 //
 // NOTE: This is an O(n) operation.
 func (l *epollInterestList) Len() (count int) {
-	for e := l.Front(); e != nil; e = e.Next() {
+	for e := l.Front(); e != nil; e = (epollInterestElementMapper{}.linkerFor(e)).Next() {
 		count++
 	}
 	return count
@@ -148,13 +148,13 @@ func (l *epollInterestList) Remove(e *epollInterest) {
 
 	if prev != nil {
 		epollInterestElementMapper{}.linkerFor(prev).SetNext(next)
-	} else {
+	} else if l.head == e {
 		l.head = next
 	}
 
 	if next != nil {
 		epollInterestElementMapper{}.linkerFor(next).SetPrev(prev)
-	} else {
+	} else if l.tail == e {
 		l.tail = prev
 	}
 

@@ -6,69 +6,113 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *Registry) StateTypeName() string {
+	return "pkg/sentry/kernel/shm.Registry"
+}
+
+func (x *Registry) StateFields() []string {
+	return []string{
+		"userNS",
+		"shms",
+		"keysToShms",
+		"totalPages",
+		"lastIDUsed",
+	}
+}
+
 func (x *Registry) beforeSave() {}
-func (x *Registry) save(m state.Map) {
+
+func (x *Registry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("userNS", &x.userNS)
-	m.Save("shms", &x.shms)
-	m.Save("keysToShms", &x.keysToShms)
-	m.Save("totalPages", &x.totalPages)
-	m.Save("lastIDUsed", &x.lastIDUsed)
+	m.Save(0, &x.userNS)
+	m.Save(1, &x.shms)
+	m.Save(2, &x.keysToShms)
+	m.Save(3, &x.totalPages)
+	m.Save(4, &x.lastIDUsed)
 }
 
 func (x *Registry) afterLoad() {}
-func (x *Registry) load(m state.Map) {
-	m.Load("userNS", &x.userNS)
-	m.Load("shms", &x.shms)
-	m.Load("keysToShms", &x.keysToShms)
-	m.Load("totalPages", &x.totalPages)
-	m.Load("lastIDUsed", &x.lastIDUsed)
+
+func (x *Registry) StateLoad(m state.Source) {
+	m.Load(0, &x.userNS)
+	m.Load(1, &x.shms)
+	m.Load(2, &x.keysToShms)
+	m.Load(3, &x.totalPages)
+	m.Load(4, &x.lastIDUsed)
+}
+
+func (x *Shm) StateTypeName() string {
+	return "pkg/sentry/kernel/shm.Shm"
+}
+
+func (x *Shm) StateFields() []string {
+	return []string{
+		"AtomicRefCount",
+		"mfp",
+		"registry",
+		"ID",
+		"creator",
+		"size",
+		"effectiveSize",
+		"fr",
+		"key",
+		"perms",
+		"owner",
+		"attachTime",
+		"detachTime",
+		"changeTime",
+		"creatorPID",
+		"lastAttachDetachPID",
+		"pendingDestruction",
+	}
 }
 
 func (x *Shm) beforeSave() {}
-func (x *Shm) save(m state.Map) {
+
+func (x *Shm) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("AtomicRefCount", &x.AtomicRefCount)
-	m.Save("mfp", &x.mfp)
-	m.Save("registry", &x.registry)
-	m.Save("ID", &x.ID)
-	m.Save("creator", &x.creator)
-	m.Save("size", &x.size)
-	m.Save("effectiveSize", &x.effectiveSize)
-	m.Save("fr", &x.fr)
-	m.Save("key", &x.key)
-	m.Save("perms", &x.perms)
-	m.Save("owner", &x.owner)
-	m.Save("attachTime", &x.attachTime)
-	m.Save("detachTime", &x.detachTime)
-	m.Save("changeTime", &x.changeTime)
-	m.Save("creatorPID", &x.creatorPID)
-	m.Save("lastAttachDetachPID", &x.lastAttachDetachPID)
-	m.Save("pendingDestruction", &x.pendingDestruction)
+	m.Save(0, &x.AtomicRefCount)
+	m.Save(1, &x.mfp)
+	m.Save(2, &x.registry)
+	m.Save(3, &x.ID)
+	m.Save(4, &x.creator)
+	m.Save(5, &x.size)
+	m.Save(6, &x.effectiveSize)
+	m.Save(7, &x.fr)
+	m.Save(8, &x.key)
+	m.Save(9, &x.perms)
+	m.Save(10, &x.owner)
+	m.Save(11, &x.attachTime)
+	m.Save(12, &x.detachTime)
+	m.Save(13, &x.changeTime)
+	m.Save(14, &x.creatorPID)
+	m.Save(15, &x.lastAttachDetachPID)
+	m.Save(16, &x.pendingDestruction)
 }
 
 func (x *Shm) afterLoad() {}
-func (x *Shm) load(m state.Map) {
-	m.Load("AtomicRefCount", &x.AtomicRefCount)
-	m.Load("mfp", &x.mfp)
-	m.Load("registry", &x.registry)
-	m.Load("ID", &x.ID)
-	m.Load("creator", &x.creator)
-	m.Load("size", &x.size)
-	m.Load("effectiveSize", &x.effectiveSize)
-	m.Load("fr", &x.fr)
-	m.Load("key", &x.key)
-	m.Load("perms", &x.perms)
-	m.Load("owner", &x.owner)
-	m.Load("attachTime", &x.attachTime)
-	m.Load("detachTime", &x.detachTime)
-	m.Load("changeTime", &x.changeTime)
-	m.Load("creatorPID", &x.creatorPID)
-	m.Load("lastAttachDetachPID", &x.lastAttachDetachPID)
-	m.Load("pendingDestruction", &x.pendingDestruction)
+
+func (x *Shm) StateLoad(m state.Source) {
+	m.Load(0, &x.AtomicRefCount)
+	m.Load(1, &x.mfp)
+	m.Load(2, &x.registry)
+	m.Load(3, &x.ID)
+	m.Load(4, &x.creator)
+	m.Load(5, &x.size)
+	m.Load(6, &x.effectiveSize)
+	m.Load(7, &x.fr)
+	m.Load(8, &x.key)
+	m.Load(9, &x.perms)
+	m.Load(10, &x.owner)
+	m.Load(11, &x.attachTime)
+	m.Load(12, &x.detachTime)
+	m.Load(13, &x.changeTime)
+	m.Load(14, &x.creatorPID)
+	m.Load(15, &x.lastAttachDetachPID)
+	m.Load(16, &x.pendingDestruction)
 }
 
 func init() {
-	state.Register("pkg/sentry/kernel/shm.Registry", (*Registry)(nil), state.Fns{Save: (*Registry).save, Load: (*Registry).load})
-	state.Register("pkg/sentry/kernel/shm.Shm", (*Shm)(nil), state.Fns{Save: (*Shm).save, Load: (*Shm).load})
+	state.Register((*Registry)(nil))
+	state.Register((*Shm)(nil))
 }

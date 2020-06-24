@@ -6,22 +6,35 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *TimerOperations) StateTypeName() string {
+	return "pkg/sentry/fs/timerfd.TimerOperations"
+}
+
+func (x *TimerOperations) StateFields() []string {
+	return []string{
+		"timer",
+		"val",
+	}
+}
+
 func (x *TimerOperations) beforeSave() {}
-func (x *TimerOperations) save(m state.Map) {
+
+func (x *TimerOperations) StateSave(m state.Sink) {
 	x.beforeSave()
 	if !state.IsZeroValue(&x.events) {
-		m.Failf("events is %#v, expected zero", &x.events)
+		state.Failf("events is %#v, expected zero", &x.events)
 	}
-	m.Save("timer", &x.timer)
-	m.Save("val", &x.val)
+	m.Save(0, &x.timer)
+	m.Save(1, &x.val)
 }
 
 func (x *TimerOperations) afterLoad() {}
-func (x *TimerOperations) load(m state.Map) {
-	m.Load("timer", &x.timer)
-	m.Load("val", &x.val)
+
+func (x *TimerOperations) StateLoad(m state.Source) {
+	m.Load(0, &x.timer)
+	m.Load(1, &x.val)
 }
 
 func init() {
-	state.Register("pkg/sentry/fs/timerfd.TimerOperations", (*TimerOperations)(nil), state.Fns{Save: (*TimerOperations).save, Load: (*TimerOperations).load})
+	state.Register((*TimerOperations)(nil))
 }

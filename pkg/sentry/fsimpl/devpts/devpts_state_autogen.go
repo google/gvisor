@@ -6,89 +6,156 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *lineDiscipline) StateTypeName() string {
+	return "pkg/sentry/fsimpl/devpts.lineDiscipline"
+}
+
+func (x *lineDiscipline) StateFields() []string {
+	return []string{
+		"size",
+		"inQueue",
+		"outQueue",
+		"termios",
+		"column",
+	}
+}
+
 func (x *lineDiscipline) beforeSave() {}
-func (x *lineDiscipline) save(m state.Map) {
+
+func (x *lineDiscipline) StateSave(m state.Sink) {
 	x.beforeSave()
 	if !state.IsZeroValue(&x.masterWaiter) {
-		m.Failf("masterWaiter is %#v, expected zero", &x.masterWaiter)
+		state.Failf("masterWaiter is %#v, expected zero", &x.masterWaiter)
 	}
 	if !state.IsZeroValue(&x.slaveWaiter) {
-		m.Failf("slaveWaiter is %#v, expected zero", &x.slaveWaiter)
+		state.Failf("slaveWaiter is %#v, expected zero", &x.slaveWaiter)
 	}
-	m.Save("size", &x.size)
-	m.Save("inQueue", &x.inQueue)
-	m.Save("outQueue", &x.outQueue)
-	m.Save("termios", &x.termios)
-	m.Save("column", &x.column)
+	m.Save(0, &x.size)
+	m.Save(1, &x.inQueue)
+	m.Save(2, &x.outQueue)
+	m.Save(3, &x.termios)
+	m.Save(4, &x.column)
 }
 
 func (x *lineDiscipline) afterLoad() {}
-func (x *lineDiscipline) load(m state.Map) {
-	m.Load("size", &x.size)
-	m.Load("inQueue", &x.inQueue)
-	m.Load("outQueue", &x.outQueue)
-	m.Load("termios", &x.termios)
-	m.Load("column", &x.column)
+
+func (x *lineDiscipline) StateLoad(m state.Source) {
+	m.Load(0, &x.size)
+	m.Load(1, &x.inQueue)
+	m.Load(2, &x.outQueue)
+	m.Load(3, &x.termios)
+	m.Load(4, &x.column)
+}
+
+func (x *outputQueueTransformer) StateTypeName() string {
+	return "pkg/sentry/fsimpl/devpts.outputQueueTransformer"
+}
+
+func (x *outputQueueTransformer) StateFields() []string {
+	return []string{}
 }
 
 func (x *outputQueueTransformer) beforeSave() {}
-func (x *outputQueueTransformer) save(m state.Map) {
+
+func (x *outputQueueTransformer) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *outputQueueTransformer) afterLoad() {}
-func (x *outputQueueTransformer) load(m state.Map) {
+
+func (x *outputQueueTransformer) StateLoad(m state.Source) {
+}
+
+func (x *inputQueueTransformer) StateTypeName() string {
+	return "pkg/sentry/fsimpl/devpts.inputQueueTransformer"
+}
+
+func (x *inputQueueTransformer) StateFields() []string {
+	return []string{}
 }
 
 func (x *inputQueueTransformer) beforeSave() {}
-func (x *inputQueueTransformer) save(m state.Map) {
+
+func (x *inputQueueTransformer) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *inputQueueTransformer) afterLoad() {}
-func (x *inputQueueTransformer) load(m state.Map) {
+
+func (x *inputQueueTransformer) StateLoad(m state.Source) {
+}
+
+func (x *queue) StateTypeName() string {
+	return "pkg/sentry/fsimpl/devpts.queue"
+}
+
+func (x *queue) StateFields() []string {
+	return []string{
+		"readBuf",
+		"waitBuf",
+		"waitBufLen",
+		"readable",
+		"transformer",
+	}
 }
 
 func (x *queue) beforeSave() {}
-func (x *queue) save(m state.Map) {
+
+func (x *queue) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("readBuf", &x.readBuf)
-	m.Save("waitBuf", &x.waitBuf)
-	m.Save("waitBufLen", &x.waitBufLen)
-	m.Save("readable", &x.readable)
-	m.Save("transformer", &x.transformer)
+	m.Save(0, &x.readBuf)
+	m.Save(1, &x.waitBuf)
+	m.Save(2, &x.waitBufLen)
+	m.Save(3, &x.readable)
+	m.Save(4, &x.transformer)
 }
 
 func (x *queue) afterLoad() {}
-func (x *queue) load(m state.Map) {
-	m.Load("readBuf", &x.readBuf)
-	m.Load("waitBuf", &x.waitBuf)
-	m.Load("waitBufLen", &x.waitBufLen)
-	m.Load("readable", &x.readable)
-	m.Load("transformer", &x.transformer)
+
+func (x *queue) StateLoad(m state.Source) {
+	m.Load(0, &x.readBuf)
+	m.Load(1, &x.waitBuf)
+	m.Load(2, &x.waitBufLen)
+	m.Load(3, &x.readable)
+	m.Load(4, &x.transformer)
+}
+
+func (x *Terminal) StateTypeName() string {
+	return "pkg/sentry/fsimpl/devpts.Terminal"
+}
+
+func (x *Terminal) StateFields() []string {
+	return []string{
+		"n",
+		"ld",
+		"masterKTTY",
+		"slaveKTTY",
+	}
 }
 
 func (x *Terminal) beforeSave() {}
-func (x *Terminal) save(m state.Map) {
+
+func (x *Terminal) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("n", &x.n)
-	m.Save("ld", &x.ld)
-	m.Save("masterKTTY", &x.masterKTTY)
-	m.Save("slaveKTTY", &x.slaveKTTY)
+	m.Save(0, &x.n)
+	m.Save(1, &x.ld)
+	m.Save(2, &x.masterKTTY)
+	m.Save(3, &x.slaveKTTY)
 }
 
 func (x *Terminal) afterLoad() {}
-func (x *Terminal) load(m state.Map) {
-	m.Load("n", &x.n)
-	m.Load("ld", &x.ld)
-	m.Load("masterKTTY", &x.masterKTTY)
-	m.Load("slaveKTTY", &x.slaveKTTY)
+
+func (x *Terminal) StateLoad(m state.Source) {
+	m.Load(0, &x.n)
+	m.Load(1, &x.ld)
+	m.Load(2, &x.masterKTTY)
+	m.Load(3, &x.slaveKTTY)
 }
 
 func init() {
-	state.Register("pkg/sentry/fsimpl/devpts.lineDiscipline", (*lineDiscipline)(nil), state.Fns{Save: (*lineDiscipline).save, Load: (*lineDiscipline).load})
-	state.Register("pkg/sentry/fsimpl/devpts.outputQueueTransformer", (*outputQueueTransformer)(nil), state.Fns{Save: (*outputQueueTransformer).save, Load: (*outputQueueTransformer).load})
-	state.Register("pkg/sentry/fsimpl/devpts.inputQueueTransformer", (*inputQueueTransformer)(nil), state.Fns{Save: (*inputQueueTransformer).save, Load: (*inputQueueTransformer).load})
-	state.Register("pkg/sentry/fsimpl/devpts.queue", (*queue)(nil), state.Fns{Save: (*queue).save, Load: (*queue).load})
-	state.Register("pkg/sentry/fsimpl/devpts.Terminal", (*Terminal)(nil), state.Fns{Save: (*Terminal).save, Load: (*Terminal).load})
+	state.Register((*lineDiscipline)(nil))
+	state.Register((*outputQueueTransformer)(nil))
+	state.Register((*inputQueueTransformer)(nil))
+	state.Register((*queue)(nil))
+	state.Register((*Terminal)(nil))
 }

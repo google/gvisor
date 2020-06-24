@@ -6,31 +6,56 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *Limit) StateTypeName() string {
+	return "pkg/sentry/limits.Limit"
+}
+
+func (x *Limit) StateFields() []string {
+	return []string{
+		"Cur",
+		"Max",
+	}
+}
+
 func (x *Limit) beforeSave() {}
-func (x *Limit) save(m state.Map) {
+
+func (x *Limit) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Cur", &x.Cur)
-	m.Save("Max", &x.Max)
+	m.Save(0, &x.Cur)
+	m.Save(1, &x.Max)
 }
 
 func (x *Limit) afterLoad() {}
-func (x *Limit) load(m state.Map) {
-	m.Load("Cur", &x.Cur)
-	m.Load("Max", &x.Max)
+
+func (x *Limit) StateLoad(m state.Source) {
+	m.Load(0, &x.Cur)
+	m.Load(1, &x.Max)
+}
+
+func (x *LimitSet) StateTypeName() string {
+	return "pkg/sentry/limits.LimitSet"
+}
+
+func (x *LimitSet) StateFields() []string {
+	return []string{
+		"data",
+	}
 }
 
 func (x *LimitSet) beforeSave() {}
-func (x *LimitSet) save(m state.Map) {
+
+func (x *LimitSet) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("data", &x.data)
+	m.Save(0, &x.data)
 }
 
 func (x *LimitSet) afterLoad() {}
-func (x *LimitSet) load(m state.Map) {
-	m.Load("data", &x.data)
+
+func (x *LimitSet) StateLoad(m state.Source) {
+	m.Load(0, &x.data)
 }
 
 func init() {
-	state.Register("pkg/sentry/limits.Limit", (*Limit)(nil), state.Fns{Save: (*Limit).save, Load: (*Limit).load})
-	state.Register("pkg/sentry/limits.LimitSet", (*LimitSet)(nil), state.Fns{Save: (*LimitSet).save, Load: (*LimitSet).load})
+	state.Register((*Limit)(nil))
+	state.Register((*LimitSet)(nil))
 }

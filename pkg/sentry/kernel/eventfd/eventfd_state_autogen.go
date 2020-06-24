@@ -6,24 +6,38 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *EventOperations) StateTypeName() string {
+	return "pkg/sentry/kernel/eventfd.EventOperations"
+}
+
+func (x *EventOperations) StateFields() []string {
+	return []string{
+		"val",
+		"semMode",
+		"hostfd",
+	}
+}
+
 func (x *EventOperations) beforeSave() {}
-func (x *EventOperations) save(m state.Map) {
+
+func (x *EventOperations) StateSave(m state.Sink) {
 	x.beforeSave()
 	if !state.IsZeroValue(&x.wq) {
-		m.Failf("wq is %#v, expected zero", &x.wq)
+		state.Failf("wq is %#v, expected zero", &x.wq)
 	}
-	m.Save("val", &x.val)
-	m.Save("semMode", &x.semMode)
-	m.Save("hostfd", &x.hostfd)
+	m.Save(0, &x.val)
+	m.Save(1, &x.semMode)
+	m.Save(2, &x.hostfd)
 }
 
 func (x *EventOperations) afterLoad() {}
-func (x *EventOperations) load(m state.Map) {
-	m.Load("val", &x.val)
-	m.Load("semMode", &x.semMode)
-	m.Load("hostfd", &x.hostfd)
+
+func (x *EventOperations) StateLoad(m state.Source) {
+	m.Load(0, &x.val)
+	m.Load(1, &x.semMode)
+	m.Load(2, &x.hostfd)
 }
 
 func init() {
-	state.Register("pkg/sentry/kernel/eventfd.EventOperations", (*EventOperations)(nil), state.Fns{Save: (*EventOperations).save, Load: (*EventOperations).load})
+	state.Register((*EventOperations)(nil))
 }

@@ -6,89 +6,165 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *Dir) StateTypeName() string {
+	return "pkg/sentry/fs/ramfs.Dir"
+}
+
+func (x *Dir) StateFields() []string {
+	return []string{
+		"InodeSimpleAttributes",
+		"InodeSimpleExtendedAttributes",
+		"children",
+		"dentryMap",
+	}
+}
+
 func (x *Dir) beforeSave() {}
-func (x *Dir) save(m state.Map) {
+
+func (x *Dir) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("InodeSimpleAttributes", &x.InodeSimpleAttributes)
-	m.Save("InodeSimpleExtendedAttributes", &x.InodeSimpleExtendedAttributes)
-	m.Save("children", &x.children)
-	m.Save("dentryMap", &x.dentryMap)
+	m.Save(0, &x.InodeSimpleAttributes)
+	m.Save(1, &x.InodeSimpleExtendedAttributes)
+	m.Save(2, &x.children)
+	m.Save(3, &x.dentryMap)
 }
 
 func (x *Dir) afterLoad() {}
-func (x *Dir) load(m state.Map) {
-	m.Load("InodeSimpleAttributes", &x.InodeSimpleAttributes)
-	m.Load("InodeSimpleExtendedAttributes", &x.InodeSimpleExtendedAttributes)
-	m.Load("children", &x.children)
-	m.Load("dentryMap", &x.dentryMap)
+
+func (x *Dir) StateLoad(m state.Source) {
+	m.Load(0, &x.InodeSimpleAttributes)
+	m.Load(1, &x.InodeSimpleExtendedAttributes)
+	m.Load(2, &x.children)
+	m.Load(3, &x.dentryMap)
+}
+
+func (x *dirFileOperations) StateTypeName() string {
+	return "pkg/sentry/fs/ramfs.dirFileOperations"
+}
+
+func (x *dirFileOperations) StateFields() []string {
+	return []string{
+		"dirCursor",
+		"dir",
+	}
 }
 
 func (x *dirFileOperations) beforeSave() {}
-func (x *dirFileOperations) save(m state.Map) {
+
+func (x *dirFileOperations) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("dirCursor", &x.dirCursor)
-	m.Save("dir", &x.dir)
+	m.Save(0, &x.dirCursor)
+	m.Save(1, &x.dir)
 }
 
 func (x *dirFileOperations) afterLoad() {}
-func (x *dirFileOperations) load(m state.Map) {
-	m.Load("dirCursor", &x.dirCursor)
-	m.Load("dir", &x.dir)
+
+func (x *dirFileOperations) StateLoad(m state.Source) {
+	m.Load(0, &x.dirCursor)
+	m.Load(1, &x.dir)
+}
+
+func (x *Socket) StateTypeName() string {
+	return "pkg/sentry/fs/ramfs.Socket"
+}
+
+func (x *Socket) StateFields() []string {
+	return []string{
+		"InodeSimpleAttributes",
+		"InodeSimpleExtendedAttributes",
+		"ep",
+	}
 }
 
 func (x *Socket) beforeSave() {}
-func (x *Socket) save(m state.Map) {
+
+func (x *Socket) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("InodeSimpleAttributes", &x.InodeSimpleAttributes)
-	m.Save("InodeSimpleExtendedAttributes", &x.InodeSimpleExtendedAttributes)
-	m.Save("ep", &x.ep)
+	m.Save(0, &x.InodeSimpleAttributes)
+	m.Save(1, &x.InodeSimpleExtendedAttributes)
+	m.Save(2, &x.ep)
 }
 
 func (x *Socket) afterLoad() {}
-func (x *Socket) load(m state.Map) {
-	m.Load("InodeSimpleAttributes", &x.InodeSimpleAttributes)
-	m.Load("InodeSimpleExtendedAttributes", &x.InodeSimpleExtendedAttributes)
-	m.Load("ep", &x.ep)
+
+func (x *Socket) StateLoad(m state.Source) {
+	m.Load(0, &x.InodeSimpleAttributes)
+	m.Load(1, &x.InodeSimpleExtendedAttributes)
+	m.Load(2, &x.ep)
+}
+
+func (x *socketFileOperations) StateTypeName() string {
+	return "pkg/sentry/fs/ramfs.socketFileOperations"
+}
+
+func (x *socketFileOperations) StateFields() []string {
+	return []string{}
 }
 
 func (x *socketFileOperations) beforeSave() {}
-func (x *socketFileOperations) save(m state.Map) {
+
+func (x *socketFileOperations) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *socketFileOperations) afterLoad() {}
-func (x *socketFileOperations) load(m state.Map) {
+
+func (x *socketFileOperations) StateLoad(m state.Source) {
+}
+
+func (x *Symlink) StateTypeName() string {
+	return "pkg/sentry/fs/ramfs.Symlink"
+}
+
+func (x *Symlink) StateFields() []string {
+	return []string{
+		"InodeSimpleAttributes",
+		"InodeSimpleExtendedAttributes",
+		"Target",
+	}
 }
 
 func (x *Symlink) beforeSave() {}
-func (x *Symlink) save(m state.Map) {
+
+func (x *Symlink) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("InodeSimpleAttributes", &x.InodeSimpleAttributes)
-	m.Save("InodeSimpleExtendedAttributes", &x.InodeSimpleExtendedAttributes)
-	m.Save("Target", &x.Target)
+	m.Save(0, &x.InodeSimpleAttributes)
+	m.Save(1, &x.InodeSimpleExtendedAttributes)
+	m.Save(2, &x.Target)
 }
 
 func (x *Symlink) afterLoad() {}
-func (x *Symlink) load(m state.Map) {
-	m.Load("InodeSimpleAttributes", &x.InodeSimpleAttributes)
-	m.Load("InodeSimpleExtendedAttributes", &x.InodeSimpleExtendedAttributes)
-	m.Load("Target", &x.Target)
+
+func (x *Symlink) StateLoad(m state.Source) {
+	m.Load(0, &x.InodeSimpleAttributes)
+	m.Load(1, &x.InodeSimpleExtendedAttributes)
+	m.Load(2, &x.Target)
+}
+
+func (x *symlinkFileOperations) StateTypeName() string {
+	return "pkg/sentry/fs/ramfs.symlinkFileOperations"
+}
+
+func (x *symlinkFileOperations) StateFields() []string {
+	return []string{}
 }
 
 func (x *symlinkFileOperations) beforeSave() {}
-func (x *symlinkFileOperations) save(m state.Map) {
+
+func (x *symlinkFileOperations) StateSave(m state.Sink) {
 	x.beforeSave()
 }
 
 func (x *symlinkFileOperations) afterLoad() {}
-func (x *symlinkFileOperations) load(m state.Map) {
+
+func (x *symlinkFileOperations) StateLoad(m state.Source) {
 }
 
 func init() {
-	state.Register("pkg/sentry/fs/ramfs.Dir", (*Dir)(nil), state.Fns{Save: (*Dir).save, Load: (*Dir).load})
-	state.Register("pkg/sentry/fs/ramfs.dirFileOperations", (*dirFileOperations)(nil), state.Fns{Save: (*dirFileOperations).save, Load: (*dirFileOperations).load})
-	state.Register("pkg/sentry/fs/ramfs.Socket", (*Socket)(nil), state.Fns{Save: (*Socket).save, Load: (*Socket).load})
-	state.Register("pkg/sentry/fs/ramfs.socketFileOperations", (*socketFileOperations)(nil), state.Fns{Save: (*socketFileOperations).save, Load: (*socketFileOperations).load})
-	state.Register("pkg/sentry/fs/ramfs.Symlink", (*Symlink)(nil), state.Fns{Save: (*Symlink).save, Load: (*Symlink).load})
-	state.Register("pkg/sentry/fs/ramfs.symlinkFileOperations", (*symlinkFileOperations)(nil), state.Fns{Save: (*symlinkFileOperations).save, Load: (*symlinkFileOperations).load})
+	state.Register((*Dir)(nil))
+	state.Register((*dirFileOperations)(nil))
+	state.Register((*Socket)(nil))
+	state.Register((*socketFileOperations)(nil))
+	state.Register((*Symlink)(nil))
+	state.Register((*symlinkFileOperations)(nil))
 }

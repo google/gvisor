@@ -6,64 +6,115 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *Entry) StateTypeName() string {
+	return "pkg/waiter.Entry"
+}
+
+func (x *Entry) StateFields() []string {
+	return []string{
+		"Context",
+		"Callback",
+		"mask",
+		"waiterEntry",
+	}
+}
+
 func (x *Entry) beforeSave() {}
-func (x *Entry) save(m state.Map) {
+
+func (x *Entry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Context", &x.Context)
-	m.Save("Callback", &x.Callback)
-	m.Save("mask", &x.mask)
-	m.Save("waiterEntry", &x.waiterEntry)
+	m.Save(0, &x.Context)
+	m.Save(1, &x.Callback)
+	m.Save(2, &x.mask)
+	m.Save(3, &x.waiterEntry)
 }
 
 func (x *Entry) afterLoad() {}
-func (x *Entry) load(m state.Map) {
-	m.Load("Context", &x.Context)
-	m.Load("Callback", &x.Callback)
-	m.Load("mask", &x.mask)
-	m.Load("waiterEntry", &x.waiterEntry)
+
+func (x *Entry) StateLoad(m state.Source) {
+	m.Load(0, &x.Context)
+	m.Load(1, &x.Callback)
+	m.Load(2, &x.mask)
+	m.Load(3, &x.waiterEntry)
+}
+
+func (x *Queue) StateTypeName() string {
+	return "pkg/waiter.Queue"
+}
+
+func (x *Queue) StateFields() []string {
+	return []string{}
 }
 
 func (x *Queue) beforeSave() {}
-func (x *Queue) save(m state.Map) {
+
+func (x *Queue) StateSave(m state.Sink) {
 	x.beforeSave()
 	if !state.IsZeroValue(&x.list) {
-		m.Failf("list is %#v, expected zero", &x.list)
+		state.Failf("list is %#v, expected zero", &x.list)
 	}
 }
 
 func (x *Queue) afterLoad() {}
-func (x *Queue) load(m state.Map) {
+
+func (x *Queue) StateLoad(m state.Source) {
+}
+
+func (x *waiterList) StateTypeName() string {
+	return "pkg/waiter.waiterList"
+}
+
+func (x *waiterList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
 }
 
 func (x *waiterList) beforeSave() {}
-func (x *waiterList) save(m state.Map) {
+
+func (x *waiterList) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("head", &x.head)
-	m.Save("tail", &x.tail)
+	m.Save(0, &x.head)
+	m.Save(1, &x.tail)
 }
 
 func (x *waiterList) afterLoad() {}
-func (x *waiterList) load(m state.Map) {
-	m.Load("head", &x.head)
-	m.Load("tail", &x.tail)
+
+func (x *waiterList) StateLoad(m state.Source) {
+	m.Load(0, &x.head)
+	m.Load(1, &x.tail)
+}
+
+func (x *waiterEntry) StateTypeName() string {
+	return "pkg/waiter.waiterEntry"
+}
+
+func (x *waiterEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
 }
 
 func (x *waiterEntry) beforeSave() {}
-func (x *waiterEntry) save(m state.Map) {
+
+func (x *waiterEntry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("next", &x.next)
-	m.Save("prev", &x.prev)
+	m.Save(0, &x.next)
+	m.Save(1, &x.prev)
 }
 
 func (x *waiterEntry) afterLoad() {}
-func (x *waiterEntry) load(m state.Map) {
-	m.Load("next", &x.next)
-	m.Load("prev", &x.prev)
+
+func (x *waiterEntry) StateLoad(m state.Source) {
+	m.Load(0, &x.next)
+	m.Load(1, &x.prev)
 }
 
 func init() {
-	state.Register("pkg/waiter.Entry", (*Entry)(nil), state.Fns{Save: (*Entry).save, Load: (*Entry).load})
-	state.Register("pkg/waiter.Queue", (*Queue)(nil), state.Fns{Save: (*Queue).save, Load: (*Queue).load})
-	state.Register("pkg/waiter.waiterList", (*waiterList)(nil), state.Fns{Save: (*waiterList).save, Load: (*waiterList).load})
-	state.Register("pkg/waiter.waiterEntry", (*waiterEntry)(nil), state.Fns{Save: (*waiterEntry).save, Load: (*waiterEntry).load})
+	state.Register((*Entry)(nil))
+	state.Register((*Queue)(nil))
+	state.Register((*waiterList)(nil))
+	state.Register((*waiterEntry)(nil))
 }

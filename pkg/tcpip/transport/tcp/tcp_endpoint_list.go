@@ -56,7 +56,7 @@ func (l *endpointList) Back() *endpoint {
 //
 // NOTE: This is an O(n) operation.
 func (l *endpointList) Len() (count int) {
-	for e := l.Front(); e != nil; e = e.Next() {
+	for e := l.Front(); e != nil; e = (endpointElementMapper{}.linkerFor(e)).Next() {
 		count++
 	}
 	return count
@@ -148,13 +148,13 @@ func (l *endpointList) Remove(e *endpoint) {
 
 	if prev != nil {
 		endpointElementMapper{}.linkerFor(prev).SetNext(next)
-	} else {
+	} else if l.head == e {
 		l.head = next
 	}
 
 	if next != nil {
 		endpointElementMapper{}.linkerFor(next).SetPrev(prev)
-	} else {
+	} else if l.tail == e {
 		l.tail = prev
 	}
 

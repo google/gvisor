@@ -6,307 +6,560 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *Dentry) StateTypeName() string {
+	return "pkg/sentry/vfs.Dentry"
+}
+
+func (x *Dentry) StateFields() []string {
+	return []string{
+		"dead",
+		"mounts",
+		"impl",
+	}
+}
+
 func (x *Dentry) beforeSave() {}
-func (x *Dentry) save(m state.Map) {
+
+func (x *Dentry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("dead", &x.dead)
-	m.Save("mounts", &x.mounts)
-	m.Save("impl", &x.impl)
+	m.Save(0, &x.dead)
+	m.Save(1, &x.mounts)
+	m.Save(2, &x.impl)
 }
 
 func (x *Dentry) afterLoad() {}
-func (x *Dentry) load(m state.Map) {
-	m.Load("dead", &x.dead)
-	m.Load("mounts", &x.mounts)
-	m.Load("impl", &x.impl)
+
+func (x *Dentry) StateLoad(m state.Source) {
+	m.Load(0, &x.dead)
+	m.Load(1, &x.mounts)
+	m.Load(2, &x.impl)
+}
+
+func (x *registeredDevice) StateTypeName() string {
+	return "pkg/sentry/vfs.registeredDevice"
+}
+
+func (x *registeredDevice) StateFields() []string {
+	return []string{
+		"dev",
+		"opts",
+	}
 }
 
 func (x *registeredDevice) beforeSave() {}
-func (x *registeredDevice) save(m state.Map) {
+
+func (x *registeredDevice) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("dev", &x.dev)
-	m.Save("opts", &x.opts)
+	m.Save(0, &x.dev)
+	m.Save(1, &x.opts)
 }
 
 func (x *registeredDevice) afterLoad() {}
-func (x *registeredDevice) load(m state.Map) {
-	m.Load("dev", &x.dev)
-	m.Load("opts", &x.opts)
+
+func (x *registeredDevice) StateLoad(m state.Source) {
+	m.Load(0, &x.dev)
+	m.Load(1, &x.opts)
+}
+
+func (x *RegisterDeviceOptions) StateTypeName() string {
+	return "pkg/sentry/vfs.RegisterDeviceOptions"
+}
+
+func (x *RegisterDeviceOptions) StateFields() []string {
+	return []string{
+		"GroupName",
+	}
 }
 
 func (x *RegisterDeviceOptions) beforeSave() {}
-func (x *RegisterDeviceOptions) save(m state.Map) {
+
+func (x *RegisterDeviceOptions) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("GroupName", &x.GroupName)
+	m.Save(0, &x.GroupName)
 }
 
 func (x *RegisterDeviceOptions) afterLoad() {}
-func (x *RegisterDeviceOptions) load(m state.Map) {
-	m.Load("GroupName", &x.GroupName)
+
+func (x *RegisterDeviceOptions) StateLoad(m state.Source) {
+	m.Load(0, &x.GroupName)
+}
+
+func (x *epollInterestList) StateTypeName() string {
+	return "pkg/sentry/vfs.epollInterestList"
+}
+
+func (x *epollInterestList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
 }
 
 func (x *epollInterestList) beforeSave() {}
-func (x *epollInterestList) save(m state.Map) {
+
+func (x *epollInterestList) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("head", &x.head)
-	m.Save("tail", &x.tail)
+	m.Save(0, &x.head)
+	m.Save(1, &x.tail)
 }
 
 func (x *epollInterestList) afterLoad() {}
-func (x *epollInterestList) load(m state.Map) {
-	m.Load("head", &x.head)
-	m.Load("tail", &x.tail)
+
+func (x *epollInterestList) StateLoad(m state.Source) {
+	m.Load(0, &x.head)
+	m.Load(1, &x.tail)
+}
+
+func (x *epollInterestEntry) StateTypeName() string {
+	return "pkg/sentry/vfs.epollInterestEntry"
+}
+
+func (x *epollInterestEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
 }
 
 func (x *epollInterestEntry) beforeSave() {}
-func (x *epollInterestEntry) save(m state.Map) {
+
+func (x *epollInterestEntry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("next", &x.next)
-	m.Save("prev", &x.prev)
+	m.Save(0, &x.next)
+	m.Save(1, &x.prev)
 }
 
 func (x *epollInterestEntry) afterLoad() {}
-func (x *epollInterestEntry) load(m state.Map) {
-	m.Load("next", &x.next)
-	m.Load("prev", &x.prev)
+
+func (x *epollInterestEntry) StateLoad(m state.Source) {
+	m.Load(0, &x.next)
+	m.Load(1, &x.prev)
+}
+
+func (x *eventList) StateTypeName() string {
+	return "pkg/sentry/vfs.eventList"
+}
+
+func (x *eventList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
 }
 
 func (x *eventList) beforeSave() {}
-func (x *eventList) save(m state.Map) {
+
+func (x *eventList) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("head", &x.head)
-	m.Save("tail", &x.tail)
+	m.Save(0, &x.head)
+	m.Save(1, &x.tail)
 }
 
 func (x *eventList) afterLoad() {}
-func (x *eventList) load(m state.Map) {
-	m.Load("head", &x.head)
-	m.Load("tail", &x.tail)
+
+func (x *eventList) StateLoad(m state.Source) {
+	m.Load(0, &x.head)
+	m.Load(1, &x.tail)
+}
+
+func (x *eventEntry) StateTypeName() string {
+	return "pkg/sentry/vfs.eventEntry"
+}
+
+func (x *eventEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
 }
 
 func (x *eventEntry) beforeSave() {}
-func (x *eventEntry) save(m state.Map) {
+
+func (x *eventEntry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("next", &x.next)
-	m.Save("prev", &x.prev)
+	m.Save(0, &x.next)
+	m.Save(1, &x.prev)
 }
 
 func (x *eventEntry) afterLoad() {}
-func (x *eventEntry) load(m state.Map) {
-	m.Load("next", &x.next)
-	m.Load("prev", &x.prev)
+
+func (x *eventEntry) StateLoad(m state.Source) {
+	m.Load(0, &x.next)
+	m.Load(1, &x.prev)
+}
+
+func (x *Filesystem) StateTypeName() string {
+	return "pkg/sentry/vfs.Filesystem"
+}
+
+func (x *Filesystem) StateFields() []string {
+	return []string{
+		"refs",
+		"vfs",
+		"fsType",
+		"impl",
+	}
 }
 
 func (x *Filesystem) beforeSave() {}
-func (x *Filesystem) save(m state.Map) {
+
+func (x *Filesystem) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("refs", &x.refs)
-	m.Save("vfs", &x.vfs)
-	m.Save("fsType", &x.fsType)
-	m.Save("impl", &x.impl)
+	m.Save(0, &x.refs)
+	m.Save(1, &x.vfs)
+	m.Save(2, &x.fsType)
+	m.Save(3, &x.impl)
 }
 
 func (x *Filesystem) afterLoad() {}
-func (x *Filesystem) load(m state.Map) {
-	m.Load("refs", &x.refs)
-	m.Load("vfs", &x.vfs)
-	m.Load("fsType", &x.fsType)
-	m.Load("impl", &x.impl)
+
+func (x *Filesystem) StateLoad(m state.Source) {
+	m.Load(0, &x.refs)
+	m.Load(1, &x.vfs)
+	m.Load(2, &x.fsType)
+	m.Load(3, &x.impl)
+}
+
+func (x *registeredFilesystemType) StateTypeName() string {
+	return "pkg/sentry/vfs.registeredFilesystemType"
+}
+
+func (x *registeredFilesystemType) StateFields() []string {
+	return []string{
+		"fsType",
+		"opts",
+	}
 }
 
 func (x *registeredFilesystemType) beforeSave() {}
-func (x *registeredFilesystemType) save(m state.Map) {
+
+func (x *registeredFilesystemType) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("fsType", &x.fsType)
-	m.Save("opts", &x.opts)
+	m.Save(0, &x.fsType)
+	m.Save(1, &x.opts)
 }
 
 func (x *registeredFilesystemType) afterLoad() {}
-func (x *registeredFilesystemType) load(m state.Map) {
-	m.Load("fsType", &x.fsType)
-	m.Load("opts", &x.opts)
+
+func (x *registeredFilesystemType) StateLoad(m state.Source) {
+	m.Load(0, &x.fsType)
+	m.Load(1, &x.opts)
+}
+
+func (x *Inotify) StateTypeName() string {
+	return "pkg/sentry/vfs.Inotify"
+}
+
+func (x *Inotify) StateFields() []string {
+	return []string{
+		"vfsfd",
+		"FileDescriptionDefaultImpl",
+		"DentryMetadataFileDescriptionImpl",
+		"NoLockFD",
+		"id",
+		"events",
+		"scratch",
+		"nextWatchMinusOne",
+		"watches",
+	}
 }
 
 func (x *Inotify) beforeSave() {}
-func (x *Inotify) save(m state.Map) {
+
+func (x *Inotify) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("vfsfd", &x.vfsfd)
-	m.Save("FileDescriptionDefaultImpl", &x.FileDescriptionDefaultImpl)
-	m.Save("DentryMetadataFileDescriptionImpl", &x.DentryMetadataFileDescriptionImpl)
-	m.Save("NoLockFD", &x.NoLockFD)
-	m.Save("id", &x.id)
-	m.Save("events", &x.events)
-	m.Save("scratch", &x.scratch)
-	m.Save("nextWatchMinusOne", &x.nextWatchMinusOne)
-	m.Save("watches", &x.watches)
+	m.Save(0, &x.vfsfd)
+	m.Save(1, &x.FileDescriptionDefaultImpl)
+	m.Save(2, &x.DentryMetadataFileDescriptionImpl)
+	m.Save(3, &x.NoLockFD)
+	m.Save(4, &x.id)
+	m.Save(5, &x.events)
+	m.Save(6, &x.scratch)
+	m.Save(7, &x.nextWatchMinusOne)
+	m.Save(8, &x.watches)
 }
 
 func (x *Inotify) afterLoad() {}
-func (x *Inotify) load(m state.Map) {
-	m.Load("vfsfd", &x.vfsfd)
-	m.Load("FileDescriptionDefaultImpl", &x.FileDescriptionDefaultImpl)
-	m.Load("DentryMetadataFileDescriptionImpl", &x.DentryMetadataFileDescriptionImpl)
-	m.Load("NoLockFD", &x.NoLockFD)
-	m.Load("id", &x.id)
-	m.Load("events", &x.events)
-	m.Load("scratch", &x.scratch)
-	m.Load("nextWatchMinusOne", &x.nextWatchMinusOne)
-	m.Load("watches", &x.watches)
+
+func (x *Inotify) StateLoad(m state.Source) {
+	m.Load(0, &x.vfsfd)
+	m.Load(1, &x.FileDescriptionDefaultImpl)
+	m.Load(2, &x.DentryMetadataFileDescriptionImpl)
+	m.Load(3, &x.NoLockFD)
+	m.Load(4, &x.id)
+	m.Load(5, &x.events)
+	m.Load(6, &x.scratch)
+	m.Load(7, &x.nextWatchMinusOne)
+	m.Load(8, &x.watches)
+}
+
+func (x *Watches) StateTypeName() string {
+	return "pkg/sentry/vfs.Watches"
+}
+
+func (x *Watches) StateFields() []string {
+	return []string{
+		"ws",
+	}
 }
 
 func (x *Watches) beforeSave() {}
-func (x *Watches) save(m state.Map) {
+
+func (x *Watches) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("ws", &x.ws)
+	m.Save(0, &x.ws)
 }
 
 func (x *Watches) afterLoad() {}
-func (x *Watches) load(m state.Map) {
-	m.Load("ws", &x.ws)
+
+func (x *Watches) StateLoad(m state.Source) {
+	m.Load(0, &x.ws)
+}
+
+func (x *Watch) StateTypeName() string {
+	return "pkg/sentry/vfs.Watch"
+}
+
+func (x *Watch) StateFields() []string {
+	return []string{
+		"owner",
+		"wd",
+		"target",
+		"mask",
+	}
 }
 
 func (x *Watch) beforeSave() {}
-func (x *Watch) save(m state.Map) {
+
+func (x *Watch) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("owner", &x.owner)
-	m.Save("wd", &x.wd)
-	m.Save("target", &x.target)
-	m.Save("mask", &x.mask)
+	m.Save(0, &x.owner)
+	m.Save(1, &x.wd)
+	m.Save(2, &x.target)
+	m.Save(3, &x.mask)
 }
 
 func (x *Watch) afterLoad() {}
-func (x *Watch) load(m state.Map) {
-	m.Load("owner", &x.owner)
-	m.Load("wd", &x.wd)
-	m.Load("target", &x.target)
-	m.Load("mask", &x.mask)
+
+func (x *Watch) StateLoad(m state.Source) {
+	m.Load(0, &x.owner)
+	m.Load(1, &x.wd)
+	m.Load(2, &x.target)
+	m.Load(3, &x.mask)
+}
+
+func (x *Event) StateTypeName() string {
+	return "pkg/sentry/vfs.Event"
+}
+
+func (x *Event) StateFields() []string {
+	return []string{
+		"eventEntry",
+		"wd",
+		"mask",
+		"cookie",
+		"len",
+		"name",
+	}
 }
 
 func (x *Event) beforeSave() {}
-func (x *Event) save(m state.Map) {
+
+func (x *Event) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("eventEntry", &x.eventEntry)
-	m.Save("wd", &x.wd)
-	m.Save("mask", &x.mask)
-	m.Save("cookie", &x.cookie)
-	m.Save("len", &x.len)
-	m.Save("name", &x.name)
+	m.Save(0, &x.eventEntry)
+	m.Save(1, &x.wd)
+	m.Save(2, &x.mask)
+	m.Save(3, &x.cookie)
+	m.Save(4, &x.len)
+	m.Save(5, &x.name)
 }
 
 func (x *Event) afterLoad() {}
-func (x *Event) load(m state.Map) {
-	m.Load("eventEntry", &x.eventEntry)
-	m.Load("wd", &x.wd)
-	m.Load("mask", &x.mask)
-	m.Load("cookie", &x.cookie)
-	m.Load("len", &x.len)
-	m.Load("name", &x.name)
+
+func (x *Event) StateLoad(m state.Source) {
+	m.Load(0, &x.eventEntry)
+	m.Load(1, &x.wd)
+	m.Load(2, &x.mask)
+	m.Load(3, &x.cookie)
+	m.Load(4, &x.len)
+	m.Load(5, &x.name)
+}
+
+func (x *Mount) StateTypeName() string {
+	return "pkg/sentry/vfs.Mount"
+}
+
+func (x *Mount) StateFields() []string {
+	return []string{
+		"vfs",
+		"fs",
+		"root",
+		"ID",
+		"Flags",
+		"key",
+		"ns",
+		"refs",
+		"children",
+		"umounted",
+		"writers",
+	}
 }
 
 func (x *Mount) beforeSave() {}
-func (x *Mount) save(m state.Map) {
+
+func (x *Mount) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("vfs", &x.vfs)
-	m.Save("fs", &x.fs)
-	m.Save("root", &x.root)
-	m.Save("ID", &x.ID)
-	m.Save("Flags", &x.Flags)
-	m.Save("key", &x.key)
-	m.Save("ns", &x.ns)
-	m.Save("refs", &x.refs)
-	m.Save("children", &x.children)
-	m.Save("umounted", &x.umounted)
-	m.Save("writers", &x.writers)
+	m.Save(0, &x.vfs)
+	m.Save(1, &x.fs)
+	m.Save(2, &x.root)
+	m.Save(3, &x.ID)
+	m.Save(4, &x.Flags)
+	m.Save(5, &x.key)
+	m.Save(6, &x.ns)
+	m.Save(7, &x.refs)
+	m.Save(8, &x.children)
+	m.Save(9, &x.umounted)
+	m.Save(10, &x.writers)
 }
 
 func (x *Mount) afterLoad() {}
-func (x *Mount) load(m state.Map) {
-	m.Load("vfs", &x.vfs)
-	m.Load("fs", &x.fs)
-	m.Load("root", &x.root)
-	m.Load("ID", &x.ID)
-	m.Load("Flags", &x.Flags)
-	m.Load("key", &x.key)
-	m.Load("ns", &x.ns)
-	m.Load("refs", &x.refs)
-	m.Load("children", &x.children)
-	m.Load("umounted", &x.umounted)
-	m.Load("writers", &x.writers)
+
+func (x *Mount) StateLoad(m state.Source) {
+	m.Load(0, &x.vfs)
+	m.Load(1, &x.fs)
+	m.Load(2, &x.root)
+	m.Load(3, &x.ID)
+	m.Load(4, &x.Flags)
+	m.Load(5, &x.key)
+	m.Load(6, &x.ns)
+	m.Load(7, &x.refs)
+	m.Load(8, &x.children)
+	m.Load(9, &x.umounted)
+	m.Load(10, &x.writers)
+}
+
+func (x *MountNamespace) StateTypeName() string {
+	return "pkg/sentry/vfs.MountNamespace"
+}
+
+func (x *MountNamespace) StateFields() []string {
+	return []string{
+		"Owner",
+		"root",
+		"refs",
+		"mountpoints",
+	}
 }
 
 func (x *MountNamespace) beforeSave() {}
-func (x *MountNamespace) save(m state.Map) {
+
+func (x *MountNamespace) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Owner", &x.Owner)
-	m.Save("root", &x.root)
-	m.Save("refs", &x.refs)
-	m.Save("mountpoints", &x.mountpoints)
+	m.Save(0, &x.Owner)
+	m.Save(1, &x.root)
+	m.Save(2, &x.refs)
+	m.Save(3, &x.mountpoints)
 }
 
 func (x *MountNamespace) afterLoad() {}
-func (x *MountNamespace) load(m state.Map) {
-	m.Load("Owner", &x.Owner)
-	m.Load("root", &x.root)
-	m.Load("refs", &x.refs)
-	m.Load("mountpoints", &x.mountpoints)
+
+func (x *MountNamespace) StateLoad(m state.Source) {
+	m.Load(0, &x.Owner)
+	m.Load(1, &x.root)
+	m.Load(2, &x.refs)
+	m.Load(3, &x.mountpoints)
+}
+
+func (x *VirtualFilesystem) StateTypeName() string {
+	return "pkg/sentry/vfs.VirtualFilesystem"
+}
+
+func (x *VirtualFilesystem) StateFields() []string {
+	return []string{
+		"mounts",
+		"mountpoints",
+		"lastMountID",
+		"anonMount",
+		"devices",
+		"anonBlockDevMinorNext",
+		"anonBlockDevMinor",
+		"fsTypes",
+		"filesystems",
+	}
 }
 
 func (x *VirtualFilesystem) beforeSave() {}
-func (x *VirtualFilesystem) save(m state.Map) {
+
+func (x *VirtualFilesystem) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("mounts", &x.mounts)
-	m.Save("mountpoints", &x.mountpoints)
-	m.Save("lastMountID", &x.lastMountID)
-	m.Save("anonMount", &x.anonMount)
-	m.Save("devices", &x.devices)
-	m.Save("anonBlockDevMinorNext", &x.anonBlockDevMinorNext)
-	m.Save("anonBlockDevMinor", &x.anonBlockDevMinor)
-	m.Save("fsTypes", &x.fsTypes)
-	m.Save("filesystems", &x.filesystems)
+	m.Save(0, &x.mounts)
+	m.Save(1, &x.mountpoints)
+	m.Save(2, &x.lastMountID)
+	m.Save(3, &x.anonMount)
+	m.Save(4, &x.devices)
+	m.Save(5, &x.anonBlockDevMinorNext)
+	m.Save(6, &x.anonBlockDevMinor)
+	m.Save(7, &x.fsTypes)
+	m.Save(8, &x.filesystems)
 }
 
 func (x *VirtualFilesystem) afterLoad() {}
-func (x *VirtualFilesystem) load(m state.Map) {
-	m.Load("mounts", &x.mounts)
-	m.Load("mountpoints", &x.mountpoints)
-	m.Load("lastMountID", &x.lastMountID)
-	m.Load("anonMount", &x.anonMount)
-	m.Load("devices", &x.devices)
-	m.Load("anonBlockDevMinorNext", &x.anonBlockDevMinorNext)
-	m.Load("anonBlockDevMinor", &x.anonBlockDevMinor)
-	m.Load("fsTypes", &x.fsTypes)
-	m.Load("filesystems", &x.filesystems)
+
+func (x *VirtualFilesystem) StateLoad(m state.Source) {
+	m.Load(0, &x.mounts)
+	m.Load(1, &x.mountpoints)
+	m.Load(2, &x.lastMountID)
+	m.Load(3, &x.anonMount)
+	m.Load(4, &x.devices)
+	m.Load(5, &x.anonBlockDevMinorNext)
+	m.Load(6, &x.anonBlockDevMinor)
+	m.Load(7, &x.fsTypes)
+	m.Load(8, &x.filesystems)
+}
+
+func (x *VirtualDentry) StateTypeName() string {
+	return "pkg/sentry/vfs.VirtualDentry"
+}
+
+func (x *VirtualDentry) StateFields() []string {
+	return []string{
+		"mount",
+		"dentry",
+	}
 }
 
 func (x *VirtualDentry) beforeSave() {}
-func (x *VirtualDentry) save(m state.Map) {
+
+func (x *VirtualDentry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("mount", &x.mount)
-	m.Save("dentry", &x.dentry)
+	m.Save(0, &x.mount)
+	m.Save(1, &x.dentry)
 }
 
 func (x *VirtualDentry) afterLoad() {}
-func (x *VirtualDentry) load(m state.Map) {
-	m.Load("mount", &x.mount)
-	m.Load("dentry", &x.dentry)
+
+func (x *VirtualDentry) StateLoad(m state.Source) {
+	m.Load(0, &x.mount)
+	m.Load(1, &x.dentry)
 }
 
 func init() {
-	state.Register("pkg/sentry/vfs.Dentry", (*Dentry)(nil), state.Fns{Save: (*Dentry).save, Load: (*Dentry).load})
-	state.Register("pkg/sentry/vfs.registeredDevice", (*registeredDevice)(nil), state.Fns{Save: (*registeredDevice).save, Load: (*registeredDevice).load})
-	state.Register("pkg/sentry/vfs.RegisterDeviceOptions", (*RegisterDeviceOptions)(nil), state.Fns{Save: (*RegisterDeviceOptions).save, Load: (*RegisterDeviceOptions).load})
-	state.Register("pkg/sentry/vfs.epollInterestList", (*epollInterestList)(nil), state.Fns{Save: (*epollInterestList).save, Load: (*epollInterestList).load})
-	state.Register("pkg/sentry/vfs.epollInterestEntry", (*epollInterestEntry)(nil), state.Fns{Save: (*epollInterestEntry).save, Load: (*epollInterestEntry).load})
-	state.Register("pkg/sentry/vfs.eventList", (*eventList)(nil), state.Fns{Save: (*eventList).save, Load: (*eventList).load})
-	state.Register("pkg/sentry/vfs.eventEntry", (*eventEntry)(nil), state.Fns{Save: (*eventEntry).save, Load: (*eventEntry).load})
-	state.Register("pkg/sentry/vfs.Filesystem", (*Filesystem)(nil), state.Fns{Save: (*Filesystem).save, Load: (*Filesystem).load})
-	state.Register("pkg/sentry/vfs.registeredFilesystemType", (*registeredFilesystemType)(nil), state.Fns{Save: (*registeredFilesystemType).save, Load: (*registeredFilesystemType).load})
-	state.Register("pkg/sentry/vfs.Inotify", (*Inotify)(nil), state.Fns{Save: (*Inotify).save, Load: (*Inotify).load})
-	state.Register("pkg/sentry/vfs.Watches", (*Watches)(nil), state.Fns{Save: (*Watches).save, Load: (*Watches).load})
-	state.Register("pkg/sentry/vfs.Watch", (*Watch)(nil), state.Fns{Save: (*Watch).save, Load: (*Watch).load})
-	state.Register("pkg/sentry/vfs.Event", (*Event)(nil), state.Fns{Save: (*Event).save, Load: (*Event).load})
-	state.Register("pkg/sentry/vfs.Mount", (*Mount)(nil), state.Fns{Save: (*Mount).save, Load: (*Mount).load})
-	state.Register("pkg/sentry/vfs.MountNamespace", (*MountNamespace)(nil), state.Fns{Save: (*MountNamespace).save, Load: (*MountNamespace).load})
-	state.Register("pkg/sentry/vfs.VirtualFilesystem", (*VirtualFilesystem)(nil), state.Fns{Save: (*VirtualFilesystem).save, Load: (*VirtualFilesystem).load})
-	state.Register("pkg/sentry/vfs.VirtualDentry", (*VirtualDentry)(nil), state.Fns{Save: (*VirtualDentry).save, Load: (*VirtualDentry).load})
+	state.Register((*Dentry)(nil))
+	state.Register((*registeredDevice)(nil))
+	state.Register((*RegisterDeviceOptions)(nil))
+	state.Register((*epollInterestList)(nil))
+	state.Register((*epollInterestEntry)(nil))
+	state.Register((*eventList)(nil))
+	state.Register((*eventEntry)(nil))
+	state.Register((*Filesystem)(nil))
+	state.Register((*registeredFilesystemType)(nil))
+	state.Register((*Inotify)(nil))
+	state.Register((*Watches)(nil))
+	state.Register((*Watch)(nil))
+	state.Register((*Event)(nil))
+	state.Register((*Mount)(nil))
+	state.Register((*MountNamespace)(nil))
+	state.Register((*VirtualFilesystem)(nil))
+	state.Register((*VirtualDentry)(nil))
 }

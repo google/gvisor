@@ -6,103 +6,186 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *Lock) StateTypeName() string {
+	return "pkg/sentry/fs/lock.Lock"
+}
+
+func (x *Lock) StateFields() []string {
+	return []string{
+		"Readers",
+		"Writer",
+	}
+}
+
 func (x *Lock) beforeSave() {}
-func (x *Lock) save(m state.Map) {
+
+func (x *Lock) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Readers", &x.Readers)
-	m.Save("Writer", &x.Writer)
+	m.Save(0, &x.Readers)
+	m.Save(1, &x.Writer)
 }
 
 func (x *Lock) afterLoad() {}
-func (x *Lock) load(m state.Map) {
-	m.Load("Readers", &x.Readers)
-	m.Load("Writer", &x.Writer)
+
+func (x *Lock) StateLoad(m state.Source) {
+	m.Load(0, &x.Readers)
+	m.Load(1, &x.Writer)
+}
+
+func (x *Locks) StateTypeName() string {
+	return "pkg/sentry/fs/lock.Locks"
+}
+
+func (x *Locks) StateFields() []string {
+	return []string{
+		"locks",
+	}
 }
 
 func (x *Locks) beforeSave() {}
-func (x *Locks) save(m state.Map) {
+
+func (x *Locks) StateSave(m state.Sink) {
 	x.beforeSave()
 	if !state.IsZeroValue(&x.blockedQueue) {
-		m.Failf("blockedQueue is %#v, expected zero", &x.blockedQueue)
+		state.Failf("blockedQueue is %#v, expected zero", &x.blockedQueue)
 	}
-	m.Save("locks", &x.locks)
+	m.Save(0, &x.locks)
 }
 
 func (x *Locks) afterLoad() {}
-func (x *Locks) load(m state.Map) {
-	m.Load("locks", &x.locks)
+
+func (x *Locks) StateLoad(m state.Source) {
+	m.Load(0, &x.locks)
+}
+
+func (x *LockRange) StateTypeName() string {
+	return "pkg/sentry/fs/lock.LockRange"
+}
+
+func (x *LockRange) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+	}
 }
 
 func (x *LockRange) beforeSave() {}
-func (x *LockRange) save(m state.Map) {
+
+func (x *LockRange) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Start", &x.Start)
-	m.Save("End", &x.End)
+	m.Save(0, &x.Start)
+	m.Save(1, &x.End)
 }
 
 func (x *LockRange) afterLoad() {}
-func (x *LockRange) load(m state.Map) {
-	m.Load("Start", &x.Start)
-	m.Load("End", &x.End)
+
+func (x *LockRange) StateLoad(m state.Source) {
+	m.Load(0, &x.Start)
+	m.Load(1, &x.End)
+}
+
+func (x *LockSet) StateTypeName() string {
+	return "pkg/sentry/fs/lock.LockSet"
+}
+
+func (x *LockSet) StateFields() []string {
+	return []string{
+		"root",
+	}
 }
 
 func (x *LockSet) beforeSave() {}
-func (x *LockSet) save(m state.Map) {
+
+func (x *LockSet) StateSave(m state.Sink) {
 	x.beforeSave()
 	var root *LockSegmentDataSlices = x.saveRoot()
-	m.SaveValue("root", root)
+	m.SaveValue(0, root)
 }
 
 func (x *LockSet) afterLoad() {}
-func (x *LockSet) load(m state.Map) {
-	m.LoadValue("root", new(*LockSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*LockSegmentDataSlices)) })
+
+func (x *LockSet) StateLoad(m state.Source) {
+	m.LoadValue(0, new(*LockSegmentDataSlices), func(y interface{}) { x.loadRoot(y.(*LockSegmentDataSlices)) })
+}
+
+func (x *Locknode) StateTypeName() string {
+	return "pkg/sentry/fs/lock.Locknode"
+}
+
+func (x *Locknode) StateFields() []string {
+	return []string{
+		"nrSegments",
+		"parent",
+		"parentIndex",
+		"hasChildren",
+		"maxGap",
+		"keys",
+		"values",
+		"children",
+	}
 }
 
 func (x *Locknode) beforeSave() {}
-func (x *Locknode) save(m state.Map) {
+
+func (x *Locknode) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("nrSegments", &x.nrSegments)
-	m.Save("parent", &x.parent)
-	m.Save("parentIndex", &x.parentIndex)
-	m.Save("hasChildren", &x.hasChildren)
-	m.Save("maxGap", &x.maxGap)
-	m.Save("keys", &x.keys)
-	m.Save("values", &x.values)
-	m.Save("children", &x.children)
+	m.Save(0, &x.nrSegments)
+	m.Save(1, &x.parent)
+	m.Save(2, &x.parentIndex)
+	m.Save(3, &x.hasChildren)
+	m.Save(4, &x.maxGap)
+	m.Save(5, &x.keys)
+	m.Save(6, &x.values)
+	m.Save(7, &x.children)
 }
 
 func (x *Locknode) afterLoad() {}
-func (x *Locknode) load(m state.Map) {
-	m.Load("nrSegments", &x.nrSegments)
-	m.Load("parent", &x.parent)
-	m.Load("parentIndex", &x.parentIndex)
-	m.Load("hasChildren", &x.hasChildren)
-	m.Load("maxGap", &x.maxGap)
-	m.Load("keys", &x.keys)
-	m.Load("values", &x.values)
-	m.Load("children", &x.children)
+
+func (x *Locknode) StateLoad(m state.Source) {
+	m.Load(0, &x.nrSegments)
+	m.Load(1, &x.parent)
+	m.Load(2, &x.parentIndex)
+	m.Load(3, &x.hasChildren)
+	m.Load(4, &x.maxGap)
+	m.Load(5, &x.keys)
+	m.Load(6, &x.values)
+	m.Load(7, &x.children)
+}
+
+func (x *LockSegmentDataSlices) StateTypeName() string {
+	return "pkg/sentry/fs/lock.LockSegmentDataSlices"
+}
+
+func (x *LockSegmentDataSlices) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+		"Values",
+	}
 }
 
 func (x *LockSegmentDataSlices) beforeSave() {}
-func (x *LockSegmentDataSlices) save(m state.Map) {
+
+func (x *LockSegmentDataSlices) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Start", &x.Start)
-	m.Save("End", &x.End)
-	m.Save("Values", &x.Values)
+	m.Save(0, &x.Start)
+	m.Save(1, &x.End)
+	m.Save(2, &x.Values)
 }
 
 func (x *LockSegmentDataSlices) afterLoad() {}
-func (x *LockSegmentDataSlices) load(m state.Map) {
-	m.Load("Start", &x.Start)
-	m.Load("End", &x.End)
-	m.Load("Values", &x.Values)
+
+func (x *LockSegmentDataSlices) StateLoad(m state.Source) {
+	m.Load(0, &x.Start)
+	m.Load(1, &x.End)
+	m.Load(2, &x.Values)
 }
 
 func init() {
-	state.Register("pkg/sentry/fs/lock.Lock", (*Lock)(nil), state.Fns{Save: (*Lock).save, Load: (*Lock).load})
-	state.Register("pkg/sentry/fs/lock.Locks", (*Locks)(nil), state.Fns{Save: (*Locks).save, Load: (*Locks).load})
-	state.Register("pkg/sentry/fs/lock.LockRange", (*LockRange)(nil), state.Fns{Save: (*LockRange).save, Load: (*LockRange).load})
-	state.Register("pkg/sentry/fs/lock.LockSet", (*LockSet)(nil), state.Fns{Save: (*LockSet).save, Load: (*LockSet).load})
-	state.Register("pkg/sentry/fs/lock.Locknode", (*Locknode)(nil), state.Fns{Save: (*Locknode).save, Load: (*Locknode).load})
-	state.Register("pkg/sentry/fs/lock.LockSegmentDataSlices", (*LockSegmentDataSlices)(nil), state.Fns{Save: (*LockSegmentDataSlices).save, Load: (*LockSegmentDataSlices).load})
+	state.Register((*Lock)(nil))
+	state.Register((*Locks)(nil))
+	state.Register((*LockRange)(nil))
+	state.Register((*LockSet)(nil))
+	state.Register((*Locknode)(nil))
+	state.Register((*LockSegmentDataSlices)(nil))
 }

@@ -57,6 +57,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/compressio"
+	"gvisor.dev/gvisor/pkg/state/wire"
 )
 
 // keySize is the AES-256 key length.
@@ -83,10 +84,16 @@ var ErrInvalidMetadataLength = fmt.Errorf("metadata length invalid, maximum size
 // ErrMetadataInvalid is returned if passed metadata is invalid.
 var ErrMetadataInvalid = fmt.Errorf("metadata invalid, can't start with _")
 
+// WriteCloser is an io.Closer and wire.Writer.
+type WriteCloser interface {
+	wire.Writer
+	io.Closer
+}
+
 // NewWriter returns a state data writer for a statefile.
 //
 // Note that the returned WriteCloser must be closed.
-func NewWriter(w io.Writer, key []byte, metadata map[string]string) (io.WriteCloser, error) {
+func NewWriter(w io.Writer, key []byte, metadata map[string]string) (WriteCloser, error) {
 	if metadata == nil {
 		metadata = make(map[string]string)
 	}
@@ -215,7 +222,7 @@ func metadata(r io.Reader, h hash.Hash) (map[string]string, error) {
 }
 
 // NewReader returns a reader for a statefile.
-func NewReader(r io.Reader, key []byte) (io.Reader, map[string]string, error) {
+func NewReader(r io.Reader, key []byte) (wire.Reader, map[string]string, error) {
 	// Read the metadata with the hash.
 	h := hmac.New(sha256.New, key)
 	metadata, err := metadata(r, h)
@@ -224,9 +231,9 @@ func NewReader(r io.Reader, key []byte) (io.Reader, map[string]string, error) {
 	}
 
 	// Wrap in compression.
-	rc, err := compressio.NewReader(r, key)
+	cr, err := compressio.NewReader(r, key)
 	if err != nil {
 		return nil, nil, err
 	}
-	return rc, metadata, nil
+	return cr, metadata, nil
 }

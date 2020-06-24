@@ -6,67 +6,116 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *FullAddress) StateTypeName() string {
+	return "pkg/tcpip.FullAddress"
+}
+
+func (x *FullAddress) StateFields() []string {
+	return []string{
+		"NIC",
+		"Addr",
+		"Port",
+	}
+}
+
 func (x *FullAddress) beforeSave() {}
-func (x *FullAddress) save(m state.Map) {
+
+func (x *FullAddress) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("NIC", &x.NIC)
-	m.Save("Addr", &x.Addr)
-	m.Save("Port", &x.Port)
+	m.Save(0, &x.NIC)
+	m.Save(1, &x.Addr)
+	m.Save(2, &x.Port)
 }
 
 func (x *FullAddress) afterLoad() {}
-func (x *FullAddress) load(m state.Map) {
-	m.Load("NIC", &x.NIC)
-	m.Load("Addr", &x.Addr)
-	m.Load("Port", &x.Port)
+
+func (x *FullAddress) StateLoad(m state.Source) {
+	m.Load(0, &x.NIC)
+	m.Load(1, &x.Addr)
+	m.Load(2, &x.Port)
+}
+
+func (x *ControlMessages) StateTypeName() string {
+	return "pkg/tcpip.ControlMessages"
+}
+
+func (x *ControlMessages) StateFields() []string {
+	return []string{
+		"HasTimestamp",
+		"Timestamp",
+		"HasInq",
+		"Inq",
+		"HasTOS",
+		"TOS",
+		"HasTClass",
+		"TClass",
+		"HasIPPacketInfo",
+		"PacketInfo",
+	}
 }
 
 func (x *ControlMessages) beforeSave() {}
-func (x *ControlMessages) save(m state.Map) {
+
+func (x *ControlMessages) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("HasTimestamp", &x.HasTimestamp)
-	m.Save("Timestamp", &x.Timestamp)
-	m.Save("HasInq", &x.HasInq)
-	m.Save("Inq", &x.Inq)
-	m.Save("HasTOS", &x.HasTOS)
-	m.Save("TOS", &x.TOS)
-	m.Save("HasTClass", &x.HasTClass)
-	m.Save("TClass", &x.TClass)
-	m.Save("HasIPPacketInfo", &x.HasIPPacketInfo)
-	m.Save("PacketInfo", &x.PacketInfo)
+	m.Save(0, &x.HasTimestamp)
+	m.Save(1, &x.Timestamp)
+	m.Save(2, &x.HasInq)
+	m.Save(3, &x.Inq)
+	m.Save(4, &x.HasTOS)
+	m.Save(5, &x.TOS)
+	m.Save(6, &x.HasTClass)
+	m.Save(7, &x.TClass)
+	m.Save(8, &x.HasIPPacketInfo)
+	m.Save(9, &x.PacketInfo)
 }
 
 func (x *ControlMessages) afterLoad() {}
-func (x *ControlMessages) load(m state.Map) {
-	m.Load("HasTimestamp", &x.HasTimestamp)
-	m.Load("Timestamp", &x.Timestamp)
-	m.Load("HasInq", &x.HasInq)
-	m.Load("Inq", &x.Inq)
-	m.Load("HasTOS", &x.HasTOS)
-	m.Load("TOS", &x.TOS)
-	m.Load("HasTClass", &x.HasTClass)
-	m.Load("TClass", &x.TClass)
-	m.Load("HasIPPacketInfo", &x.HasIPPacketInfo)
-	m.Load("PacketInfo", &x.PacketInfo)
+
+func (x *ControlMessages) StateLoad(m state.Source) {
+	m.Load(0, &x.HasTimestamp)
+	m.Load(1, &x.Timestamp)
+	m.Load(2, &x.HasInq)
+	m.Load(3, &x.Inq)
+	m.Load(4, &x.HasTOS)
+	m.Load(5, &x.TOS)
+	m.Load(6, &x.HasTClass)
+	m.Load(7, &x.TClass)
+	m.Load(8, &x.HasIPPacketInfo)
+	m.Load(9, &x.PacketInfo)
+}
+
+func (x *IPPacketInfo) StateTypeName() string {
+	return "pkg/tcpip.IPPacketInfo"
+}
+
+func (x *IPPacketInfo) StateFields() []string {
+	return []string{
+		"NIC",
+		"LocalAddr",
+		"DestinationAddr",
+	}
 }
 
 func (x *IPPacketInfo) beforeSave() {}
-func (x *IPPacketInfo) save(m state.Map) {
+
+func (x *IPPacketInfo) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("NIC", &x.NIC)
-	m.Save("LocalAddr", &x.LocalAddr)
-	m.Save("DestinationAddr", &x.DestinationAddr)
+	m.Save(0, &x.NIC)
+	m.Save(1, &x.LocalAddr)
+	m.Save(2, &x.DestinationAddr)
 }
 
 func (x *IPPacketInfo) afterLoad() {}
-func (x *IPPacketInfo) load(m state.Map) {
-	m.Load("NIC", &x.NIC)
-	m.Load("LocalAddr", &x.LocalAddr)
-	m.Load("DestinationAddr", &x.DestinationAddr)
+
+func (x *IPPacketInfo) StateLoad(m state.Source) {
+	m.Load(0, &x.NIC)
+	m.Load(1, &x.LocalAddr)
+	m.Load(2, &x.DestinationAddr)
 }
 
 func init() {
-	state.Register("pkg/tcpip.FullAddress", (*FullAddress)(nil), state.Fns{Save: (*FullAddress).save, Load: (*FullAddress).load})
-	state.Register("pkg/tcpip.ControlMessages", (*ControlMessages)(nil), state.Fns{Save: (*ControlMessages).save, Load: (*ControlMessages).load})
-	state.Register("pkg/tcpip.IPPacketInfo", (*IPPacketInfo)(nil), state.Fns{Save: (*IPPacketInfo).save, Load: (*IPPacketInfo).load})
+	state.Register((*FullAddress)(nil))
+	state.Register((*ControlMessages)(nil))
+	state.Register((*IPPacketInfo)(nil))
 }

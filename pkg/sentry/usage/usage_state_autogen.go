@@ -6,45 +6,77 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *CPUStats) StateTypeName() string {
+	return "pkg/sentry/usage.CPUStats"
+}
+
+func (x *CPUStats) StateFields() []string {
+	return []string{
+		"UserTime",
+		"SysTime",
+		"VoluntarySwitches",
+	}
+}
+
 func (x *CPUStats) beforeSave() {}
-func (x *CPUStats) save(m state.Map) {
+
+func (x *CPUStats) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("UserTime", &x.UserTime)
-	m.Save("SysTime", &x.SysTime)
-	m.Save("VoluntarySwitches", &x.VoluntarySwitches)
+	m.Save(0, &x.UserTime)
+	m.Save(1, &x.SysTime)
+	m.Save(2, &x.VoluntarySwitches)
 }
 
 func (x *CPUStats) afterLoad() {}
-func (x *CPUStats) load(m state.Map) {
-	m.Load("UserTime", &x.UserTime)
-	m.Load("SysTime", &x.SysTime)
-	m.Load("VoluntarySwitches", &x.VoluntarySwitches)
+
+func (x *CPUStats) StateLoad(m state.Source) {
+	m.Load(0, &x.UserTime)
+	m.Load(1, &x.SysTime)
+	m.Load(2, &x.VoluntarySwitches)
+}
+
+func (x *IO) StateTypeName() string {
+	return "pkg/sentry/usage.IO"
+}
+
+func (x *IO) StateFields() []string {
+	return []string{
+		"CharsRead",
+		"CharsWritten",
+		"ReadSyscalls",
+		"WriteSyscalls",
+		"BytesRead",
+		"BytesWritten",
+		"BytesWriteCancelled",
+	}
 }
 
 func (x *IO) beforeSave() {}
-func (x *IO) save(m state.Map) {
+
+func (x *IO) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("CharsRead", &x.CharsRead)
-	m.Save("CharsWritten", &x.CharsWritten)
-	m.Save("ReadSyscalls", &x.ReadSyscalls)
-	m.Save("WriteSyscalls", &x.WriteSyscalls)
-	m.Save("BytesRead", &x.BytesRead)
-	m.Save("BytesWritten", &x.BytesWritten)
-	m.Save("BytesWriteCancelled", &x.BytesWriteCancelled)
+	m.Save(0, &x.CharsRead)
+	m.Save(1, &x.CharsWritten)
+	m.Save(2, &x.ReadSyscalls)
+	m.Save(3, &x.WriteSyscalls)
+	m.Save(4, &x.BytesRead)
+	m.Save(5, &x.BytesWritten)
+	m.Save(6, &x.BytesWriteCancelled)
 }
 
 func (x *IO) afterLoad() {}
-func (x *IO) load(m state.Map) {
-	m.Load("CharsRead", &x.CharsRead)
-	m.Load("CharsWritten", &x.CharsWritten)
-	m.Load("ReadSyscalls", &x.ReadSyscalls)
-	m.Load("WriteSyscalls", &x.WriteSyscalls)
-	m.Load("BytesRead", &x.BytesRead)
-	m.Load("BytesWritten", &x.BytesWritten)
-	m.Load("BytesWriteCancelled", &x.BytesWriteCancelled)
+
+func (x *IO) StateLoad(m state.Source) {
+	m.Load(0, &x.CharsRead)
+	m.Load(1, &x.CharsWritten)
+	m.Load(2, &x.ReadSyscalls)
+	m.Load(3, &x.WriteSyscalls)
+	m.Load(4, &x.BytesRead)
+	m.Load(5, &x.BytesWritten)
+	m.Load(6, &x.BytesWriteCancelled)
 }
 
 func init() {
-	state.Register("pkg/sentry/usage.CPUStats", (*CPUStats)(nil), state.Fns{Save: (*CPUStats).save, Load: (*CPUStats).load})
-	state.Register("pkg/sentry/usage.IO", (*IO)(nil), state.Fns{Save: (*IO).save, Load: (*IO).load})
+	state.Register((*CPUStats)(nil))
+	state.Register((*IO)(nil))
 }

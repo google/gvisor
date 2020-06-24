@@ -6,47 +6,86 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *Registry) StateTypeName() string {
+	return "pkg/sentry/device.Registry"
+}
+
+func (x *Registry) StateFields() []string {
+	return []string{
+		"lastAnonDeviceMinor",
+		"devices",
+	}
+}
+
 func (x *Registry) beforeSave() {}
-func (x *Registry) save(m state.Map) {
+
+func (x *Registry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("lastAnonDeviceMinor", &x.lastAnonDeviceMinor)
-	m.Save("devices", &x.devices)
+	m.Save(0, &x.lastAnonDeviceMinor)
+	m.Save(1, &x.devices)
 }
 
 func (x *Registry) afterLoad() {}
-func (x *Registry) load(m state.Map) {
-	m.Load("lastAnonDeviceMinor", &x.lastAnonDeviceMinor)
-	m.Load("devices", &x.devices)
+
+func (x *Registry) StateLoad(m state.Source) {
+	m.Load(0, &x.lastAnonDeviceMinor)
+	m.Load(1, &x.devices)
+}
+
+func (x *ID) StateTypeName() string {
+	return "pkg/sentry/device.ID"
+}
+
+func (x *ID) StateFields() []string {
+	return []string{
+		"Major",
+		"Minor",
+	}
 }
 
 func (x *ID) beforeSave() {}
-func (x *ID) save(m state.Map) {
+
+func (x *ID) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Major", &x.Major)
-	m.Save("Minor", &x.Minor)
+	m.Save(0, &x.Major)
+	m.Save(1, &x.Minor)
 }
 
 func (x *ID) afterLoad() {}
-func (x *ID) load(m state.Map) {
-	m.Load("Major", &x.Major)
-	m.Load("Minor", &x.Minor)
+
+func (x *ID) StateLoad(m state.Source) {
+	m.Load(0, &x.Major)
+	m.Load(1, &x.Minor)
+}
+
+func (x *Device) StateTypeName() string {
+	return "pkg/sentry/device.Device"
+}
+
+func (x *Device) StateFields() []string {
+	return []string{
+		"ID",
+		"last",
+	}
 }
 
 func (x *Device) beforeSave() {}
-func (x *Device) save(m state.Map) {
+
+func (x *Device) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("ID", &x.ID)
-	m.Save("last", &x.last)
+	m.Save(0, &x.ID)
+	m.Save(1, &x.last)
 }
 
 func (x *Device) afterLoad() {}
-func (x *Device) load(m state.Map) {
-	m.Load("ID", &x.ID)
-	m.Load("last", &x.last)
+
+func (x *Device) StateLoad(m state.Source) {
+	m.Load(0, &x.ID)
+	m.Load(1, &x.last)
 }
 
 func init() {
-	state.Register("pkg/sentry/device.Registry", (*Registry)(nil), state.Fns{Save: (*Registry).save, Load: (*Registry).load})
-	state.Register("pkg/sentry/device.ID", (*ID)(nil), state.Fns{Save: (*ID).save, Load: (*ID).load})
-	state.Register("pkg/sentry/device.Device", (*Device)(nil), state.Fns{Save: (*Device).save, Load: (*Device).load})
+	state.Register((*Registry)(nil))
+	state.Register((*ID)(nil))
+	state.Register((*Device)(nil))
 }

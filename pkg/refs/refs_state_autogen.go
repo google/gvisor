@@ -6,76 +6,141 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *WeakRef) StateTypeName() string {
+	return "pkg/refs.WeakRef"
+}
+
+func (x *WeakRef) StateFields() []string {
+	return []string{
+		"obj",
+		"user",
+	}
+}
+
 func (x *WeakRef) beforeSave() {}
-func (x *WeakRef) save(m state.Map) {
+
+func (x *WeakRef) StateSave(m state.Sink) {
 	x.beforeSave()
 	var obj savedReference = x.saveObj()
-	m.SaveValue("obj", obj)
-	m.Save("user", &x.user)
+	m.SaveValue(0, obj)
+	m.Save(1, &x.user)
 }
 
 func (x *WeakRef) afterLoad() {}
-func (x *WeakRef) load(m state.Map) {
-	m.Load("user", &x.user)
-	m.LoadValue("obj", new(savedReference), func(y interface{}) { x.loadObj(y.(savedReference)) })
+
+func (x *WeakRef) StateLoad(m state.Source) {
+	m.Load(1, &x.user)
+	m.LoadValue(0, new(savedReference), func(y interface{}) { x.loadObj(y.(savedReference)) })
+}
+
+func (x *AtomicRefCount) StateTypeName() string {
+	return "pkg/refs.AtomicRefCount"
+}
+
+func (x *AtomicRefCount) StateFields() []string {
+	return []string{
+		"refCount",
+		"name",
+		"stack",
+	}
 }
 
 func (x *AtomicRefCount) beforeSave() {}
-func (x *AtomicRefCount) save(m state.Map) {
+
+func (x *AtomicRefCount) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("refCount", &x.refCount)
-	m.Save("name", &x.name)
-	m.Save("stack", &x.stack)
+	m.Save(0, &x.refCount)
+	m.Save(1, &x.name)
+	m.Save(2, &x.stack)
 }
 
 func (x *AtomicRefCount) afterLoad() {}
-func (x *AtomicRefCount) load(m state.Map) {
-	m.Load("refCount", &x.refCount)
-	m.Load("name", &x.name)
-	m.Load("stack", &x.stack)
+
+func (x *AtomicRefCount) StateLoad(m state.Source) {
+	m.Load(0, &x.refCount)
+	m.Load(1, &x.name)
+	m.Load(2, &x.stack)
+}
+
+func (x *savedReference) StateTypeName() string {
+	return "pkg/refs.savedReference"
+}
+
+func (x *savedReference) StateFields() []string {
+	return []string{
+		"obj",
+	}
 }
 
 func (x *savedReference) beforeSave() {}
-func (x *savedReference) save(m state.Map) {
+
+func (x *savedReference) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("obj", &x.obj)
+	m.Save(0, &x.obj)
 }
 
 func (x *savedReference) afterLoad() {}
-func (x *savedReference) load(m state.Map) {
-	m.Load("obj", &x.obj)
+
+func (x *savedReference) StateLoad(m state.Source) {
+	m.Load(0, &x.obj)
+}
+
+func (x *weakRefList) StateTypeName() string {
+	return "pkg/refs.weakRefList"
+}
+
+func (x *weakRefList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
 }
 
 func (x *weakRefList) beforeSave() {}
-func (x *weakRefList) save(m state.Map) {
+
+func (x *weakRefList) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("head", &x.head)
-	m.Save("tail", &x.tail)
+	m.Save(0, &x.head)
+	m.Save(1, &x.tail)
 }
 
 func (x *weakRefList) afterLoad() {}
-func (x *weakRefList) load(m state.Map) {
-	m.Load("head", &x.head)
-	m.Load("tail", &x.tail)
+
+func (x *weakRefList) StateLoad(m state.Source) {
+	m.Load(0, &x.head)
+	m.Load(1, &x.tail)
+}
+
+func (x *weakRefEntry) StateTypeName() string {
+	return "pkg/refs.weakRefEntry"
+}
+
+func (x *weakRefEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
 }
 
 func (x *weakRefEntry) beforeSave() {}
-func (x *weakRefEntry) save(m state.Map) {
+
+func (x *weakRefEntry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("next", &x.next)
-	m.Save("prev", &x.prev)
+	m.Save(0, &x.next)
+	m.Save(1, &x.prev)
 }
 
 func (x *weakRefEntry) afterLoad() {}
-func (x *weakRefEntry) load(m state.Map) {
-	m.Load("next", &x.next)
-	m.Load("prev", &x.prev)
+
+func (x *weakRefEntry) StateLoad(m state.Source) {
+	m.Load(0, &x.next)
+	m.Load(1, &x.prev)
 }
 
 func init() {
-	state.Register("pkg/refs.WeakRef", (*WeakRef)(nil), state.Fns{Save: (*WeakRef).save, Load: (*WeakRef).load})
-	state.Register("pkg/refs.AtomicRefCount", (*AtomicRefCount)(nil), state.Fns{Save: (*AtomicRefCount).save, Load: (*AtomicRefCount).load})
-	state.Register("pkg/refs.savedReference", (*savedReference)(nil), state.Fns{Save: (*savedReference).save, Load: (*savedReference).load})
-	state.Register("pkg/refs.weakRefList", (*weakRefList)(nil), state.Fns{Save: (*weakRefList).save, Load: (*weakRefList).load})
-	state.Register("pkg/refs.weakRefEntry", (*weakRefEntry)(nil), state.Fns{Save: (*weakRefEntry).save, Load: (*weakRefEntry).load})
+	state.Register((*WeakRef)(nil))
+	state.Register((*AtomicRefCount)(nil))
+	state.Register((*savedReference)(nil))
+	state.Register((*weakRefList)(nil))
+	state.Register((*weakRefEntry)(nil))
 }

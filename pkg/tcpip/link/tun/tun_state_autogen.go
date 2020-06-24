@@ -6,22 +6,36 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (x *Device) save(m state.Map) {
+func (x *Device) StateTypeName() string {
+	return "pkg/tcpip/link/tun.Device"
+}
+
+func (x *Device) StateFields() []string {
+	return []string{
+		"Queue",
+		"endpoint",
+		"notifyHandle",
+		"flags",
+	}
+}
+
+func (x *Device) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save("Queue", &x.Queue)
-	m.Save("endpoint", &x.endpoint)
-	m.Save("notifyHandle", &x.notifyHandle)
-	m.Save("flags", &x.flags)
+	m.Save(0, &x.Queue)
+	m.Save(1, &x.endpoint)
+	m.Save(2, &x.notifyHandle)
+	m.Save(3, &x.flags)
 }
 
 func (x *Device) afterLoad() {}
-func (x *Device) load(m state.Map) {
-	m.Load("Queue", &x.Queue)
-	m.Load("endpoint", &x.endpoint)
-	m.Load("notifyHandle", &x.notifyHandle)
-	m.Load("flags", &x.flags)
+
+func (x *Device) StateLoad(m state.Source) {
+	m.Load(0, &x.Queue)
+	m.Load(1, &x.endpoint)
+	m.Load(2, &x.notifyHandle)
+	m.Load(3, &x.flags)
 }
 
 func init() {
-	state.Register("pkg/tcpip/link/tun.Device", (*Device)(nil), state.Fns{Save: (*Device).save, Load: (*Device).load})
+	state.Register((*Device)(nil))
 }
