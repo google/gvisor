@@ -221,6 +221,18 @@ func (epsByNIC *endpointsByNIC) registerEndpoint(d *transportDemuxer, netProto t
 	return multiPortEp.singleRegisterEndpoint(t, flags)
 }
 
+func (epsByNIC *endpointsByNIC) checkEndpoint(d *transportDemuxer, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, flags ports.Flags, bindToDevice tcpip.NICID) *tcpip.Error {
+	epsByNIC.mu.RLock()
+	defer epsByNIC.mu.RUnlock()
+
+	multiPortEp, ok := epsByNIC.endpoints[bindToDevice]
+	if !ok {
+		return nil
+	}
+
+	return multiPortEp.singleCheckEndpoint(flags)
+}
+
 // unregisterEndpoint returns true if endpointsByNIC has to be unregistered.
 func (epsByNIC *endpointsByNIC) unregisterEndpoint(bindToDevice tcpip.NICID, t TransportEndpoint, flags ports.Flags) bool {
 	epsByNIC.mu.Lock()
@@ -282,6 +294,17 @@ func (d *transportDemuxer) registerEndpoint(netProtos []tcpip.NetworkProtocolNum
 	for i, n := range netProtos {
 		if err := d.singleRegisterEndpoint(n, protocol, id, ep, flags, bindToDevice); err != nil {
 			d.unregisterEndpoint(netProtos[:i], protocol, id, ep, flags, bindToDevice)
+			return err
+		}
+	}
+
+	return nil
+}
+
+// checkEndpoint checks if an endpoint can be registered with the dispatcher.
+func (d *transportDemuxer) checkEndpoint(netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, flags ports.Flags, bindToDevice tcpip.NICID) *tcpip.Error {
+	for _, n := range netProtos {
+		if err := d.singleCheckEndpoint(n, protocol, id, flags, bindToDevice); err != nil {
 			return err
 		}
 	}
@@ -380,7 +403,7 @@ func (ep *multiPortEndpoint) singleRegisterEndpoint(t TransportEndpoint, flags p
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 
-	bits := flags.Bits()
+	bits := flags.Bits() & ports.MultiBindFlagMask
 
 	if len(ep.endpoints) != 0 {
 		// If it was previously bound, we need to check if we can bind again.
@@ -391,6 +414,22 @@ func (ep *multiPortEndpoint) singleRegisterEndpoint(t TransportEndpoint, flags p
 
 	ep.endpoints = append(ep.endpoints, t)
 	ep.flags.AddRef(bits)
+
+	return nil
+}
+
+func (ep *multiPortEndpoint) singleCheckEndpoint(flags ports.Flags) *tcpip.Error {
+	ep.mu.RLock()
+	defer ep.mu.RUnlock()
+
+	bits := flags.Bits() & ports.MultiBindFlagMask
+
+	if len(ep.endpoints) != 0 {
+		// If it was previously bound, we need to check if we can bind again.
+		if ep.flags.TotalRefs() > 0 && bits&ep.flags.IntersectionRefs() == 0 {
+			return tcpip.ErrPortInUse
+		}
+	}
 
 	return nil
 }
@@ -406,7 +445,7 @@ func (ep *multiPortEndpoint) unregisterEndpoint(t TransportEndpoint, flags ports
 			ep.endpoints[len(ep.endpoints)-1] = nil
 			ep.endpoints = ep.endpoints[:len(ep.endpoints)-1]
 
-			ep.flags.DropRef(flags.Bits())
+			ep.flags.DropRef(flags.Bits() & ports.MultiBindFlagMask)
 			break
 		}
 	}
@@ -437,6 +476,28 @@ func (d *transportDemuxer) singleRegisterEndpoint(netProto tcpip.NetworkProtocol
 	}
 
 	return epsByNIC.registerEndpoint(d, netProto, protocol, ep, flags, bindToDevice)
+}
+
+func (d *transportDemuxer) singleCheckEndpoint(netProto tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, flags ports.Flags, bindToDevice tcpip.NICID) *tcpip.Error {
+	if id.RemotePort != 0 {
+		// SO_REUSEPORT only applies to bound/listening endpoints.
+		flags.LoadBalanced = false
+	}
+
+	eps, ok := d.protocol[protocolIDs{netProto, protocol}]
+	if !ok {
+		return tcpip.ErrUnknownProtocol
+	}
+
+	eps.mu.RLock()
+	defer eps.mu.RUnlock()
+
+	epsByNIC, ok := eps.endpoints[id]
+	if !ok {
+		return nil
+	}
+
+	return epsByNIC.checkEndpoint(d, netProto, protocol, flags, bindToDevice)
 }
 
 // unregisterEndpoint unregisters the endpoint with the given id such that it

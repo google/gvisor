@@ -11,12 +11,14 @@ func (x *Flags) save(m state.Map) {
 	x.beforeSave()
 	m.Save("MostRecent", &x.MostRecent)
 	m.Save("LoadBalanced", &x.LoadBalanced)
+	m.Save("TupleOnly", &x.TupleOnly)
 }
 
 func (x *Flags) afterLoad() {}
 func (x *Flags) load(m state.Map) {
 	m.Load("MostRecent", &x.MostRecent)
 	m.Load("LoadBalanced", &x.LoadBalanced)
+	m.Load("TupleOnly", &x.TupleOnly)
 }
 
 func init() {
