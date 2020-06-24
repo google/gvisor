@@ -1982,24 +1982,26 @@ void CheckDuplicatesRecursively(std::string path) {
         break;  // We're done.
       }
 
-      if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0) {
+      const std::string name = dp->d_name;
+
+      if (name == "." || name == "..") {
         continue;
       }
 
       // Ignore a duplicate entry if it isn't the last attempt.
       if (i == max_attempts - 1) {
-        ASSERT_EQ(children.find(std::string(dp->d_name)), children.end())
-            << absl::StrCat(path, "/", dp->d_name);
-      } else if (children.find(std::string(dp->d_name)) != children.end()) {
+        ASSERT_EQ(children.find(name), children.end())
+            << absl::StrCat(path, "/", name);
+      } else if (children.find(name) != children.end()) {
         std::cerr << "Duplicate entry: " << i << ":"
-                  << absl::StrCat(path, "/", dp->d_name) << std::endl;
+                  << absl::StrCat(path, "/", name) << std::endl;
         success = false;
         break;
       }
-      children.insert(std::string(dp->d_name));
+      children.insert(name);
 
       if (dp->d_type == DT_DIR) {
-        child_dirs.push_back(std::string(dp->d_name));
+        child_dirs.push_back(name);
       }
     }
     if (success) {
