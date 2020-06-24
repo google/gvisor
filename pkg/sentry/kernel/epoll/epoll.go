@@ -271,11 +271,13 @@ func (e *EventPoll) ReadEvents(max int) []linux.EpollEvent {
 
 // readyCallback is called when one of the files we're polling becomes ready. It
 // moves said file to the readyList if it's currently in the waiting list.
-type readyCallback struct{}
+type readyCallback struct {
+	context *pollEntry
+}
 
 // Callback implements waiter.EntryCallback.Callback.
-func (*readyCallback) Callback(w *waiter.Entry) {
-	entry := w.Context.(*pollEntry)
+func (r *readyCallback) Callback(*waiter.Entry) {
+	entry := r.context
 	e := entry.epoll
 
 	e.listsMu.Lock()
@@ -310,7 +312,7 @@ func (e *EventPoll) initEntryReadiness(entry *pollEntry) {
 	// Check if the file happens to already be in a ready state.
 	ready := f.Readiness(entry.mask) & entry.mask
 	if ready != 0 {
-		(*readyCallback).Callback(nil, &entry.waiter)
+		(&readyCallback{context: entry}).Callback(&entry.waiter)
 	}
 }
 
@@ -380,10 +382,9 @@ func (e *EventPoll) AddEntry(id FileIdentifier, flags EntryFlags, mask waiter.Ev
 		userData: data,
 		epoll:    e,
 		flags:    flags,
-		waiter:   waiter.Entry{Callback: &readyCallback{}},
 		mask:     mask,
 	}
-	entry.waiter.Context = entry
+	entry.waiter.Callback = &readyCallback{context: entry}
 	e.files[id] = entry
 	entry.file = refs.NewWeakRef(id.File, entry)
 
