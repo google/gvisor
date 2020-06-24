@@ -182,13 +182,17 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	epState := e.origEndpointState
 	switch epState {
 	case StateInitial, StateBound, StateListen, StateConnecting, StateEstablished:
-		var ss tcpip.StackSendBufferSizeOption
+		var ss SendBufferSizeOption
 		if err := e.stack.TransportProtocolOption(ProtocolNumber, &ss); err == nil {
 			if e.sndBufSize < ss.Min || e.sndBufSize > ss.Max {
 				panic(fmt.Sprintf("endpoint.sndBufSize %d is outside the min and max allowed [%d, %d]", e.sndBufSize, ss.Min, ss.Max))
 			}
-			if e.rcvBufSize < ss.Min || e.rcvBufSize > ss.Max {
-				panic(fmt.Sprintf("endpoint.rcvBufSize %d is outside the min and max allowed [%d, %d]", e.rcvBufSize, ss.Min, ss.Max))
+		}
+
+		var rs ReceiveBufferSizeOption
+		if err := e.stack.TransportProtocolOption(ProtocolNumber, &rs); err == nil {
+			if e.rcvBufSize < rs.Min || e.rcvBufSize > rs.Max {
+				panic(fmt.Sprintf("endpoint.rcvBufSize %d is outside the min and max allowed [%d, %d]", e.rcvBufSize, rs.Min, rs.Max))
 			}
 		}
 	}

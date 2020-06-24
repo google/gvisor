@@ -847,12 +847,12 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 		maxSynRetries: DefaultSynRetries,
 	}
 
-	var ss tcpip.StackSendBufferSizeOption
+	var ss SendBufferSizeOption
 	if err := s.TransportProtocolOption(ProtocolNumber, &ss); err == nil {
 		e.sndBufSize = ss.Default
 	}
 
-	var rs tcpip.StackReceiveBufferSizeOption
+	var rs ReceiveBufferSizeOption
 	if err := s.TransportProtocolOption(ProtocolNumber, &rs); err == nil {
 		e.rcvBufSize = rs.Default
 	}
@@ -867,7 +867,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 		e.rcvAutoParams.disabled = !bool(mrb)
 	}
 
-	var de tcpip.StackDelayEnabled
+	var de DelayEnabled
 	if err := s.TransportProtocolOption(ProtocolNumber, &de); err == nil && de {
 		e.SetSockOptBool(tcpip.DelayOption, true)
 	}
@@ -1584,7 +1584,7 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	case tcpip.ReceiveBufferSizeOption:
 		// Make sure the receive buffer size is within the min and max
 		// allowed.
-		var rs tcpip.StackReceiveBufferSizeOption
+		var rs ReceiveBufferSizeOption
 		if err := e.stack.TransportProtocolOption(ProtocolNumber, &rs); err == nil {
 			if v < rs.Min {
 				v = rs.Min
@@ -1634,7 +1634,7 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	case tcpip.SendBufferSizeOption:
 		// Make sure the send buffer size is within the min and max
 		// allowed.
-		var ss tcpip.StackSendBufferSizeOption
+		var ss SendBufferSizeOption
 		if err := e.stack.TransportProtocolOption(ProtocolNumber, &ss); err == nil {
 			if v < ss.Min {
 				v = ss.Min
@@ -1674,7 +1674,7 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 				return tcpip.ErrInvalidOptionValue
 			}
 		}
-		var rs tcpip.StackReceiveBufferSizeOption
+		var rs ReceiveBufferSizeOption
 		if err := e.stack.TransportProtocolOption(ProtocolNumber, &rs); err == nil {
 			if v < rs.Min/2 {
 				v = rs.Min / 2
@@ -2595,7 +2595,7 @@ func (e *endpoint) receiveBufferSize() int {
 }
 
 func (e *endpoint) maxReceiveBufferSize() int {
-	var rs tcpip.StackReceiveBufferSizeOption
+	var rs ReceiveBufferSizeOption
 	if err := e.stack.TransportProtocolOption(ProtocolNumber, &rs); err != nil {
 		// As a fallback return the hardcoded max buffer size.
 		return MaxBufferSize
@@ -2676,7 +2676,7 @@ func timeStampOffset() uint32 {
 // if the SYN options indicate that the SACK option was negotiated and the TCP
 // stack is configured to enable TCP SACK option.
 func (e *endpoint) maybeEnableSACKPermitted(synOpts *header.TCPSynOptions) {
-	var v tcpip.StackSACKEnabled
+	var v SACKEnabled
 	if err := e.stack.TransportProtocolOption(ProtocolNumber, &v); err != nil {
 		// Stack doesn't support SACK. So just return.
 		return
