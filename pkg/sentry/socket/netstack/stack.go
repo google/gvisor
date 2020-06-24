@@ -143,7 +143,7 @@ func (s *Stack) AddInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
 
 // TCPReceiveBufferSize implements inet.Stack.TCPReceiveBufferSize.
 func (s *Stack) TCPReceiveBufferSize() (inet.TCPBufferSize, error) {
-	var rs tcpip.StackReceiveBufferSizeOption
+	var rs tcp.ReceiveBufferSizeOption
 	err := s.Stack.TransportProtocolOption(tcp.ProtocolNumber, &rs)
 	return inet.TCPBufferSize{
 		Min:     rs.Min,
@@ -154,7 +154,7 @@ func (s *Stack) TCPReceiveBufferSize() (inet.TCPBufferSize, error) {
 
 // SetTCPReceiveBufferSize implements inet.Stack.SetTCPReceiveBufferSize.
 func (s *Stack) SetTCPReceiveBufferSize(size inet.TCPBufferSize) error {
-	rs := tcpip.StackReceiveBufferSizeOption{
+	rs := tcp.ReceiveBufferSizeOption{
 		Min:     size.Min,
 		Default: size.Default,
 		Max:     size.Max,
@@ -164,7 +164,7 @@ func (s *Stack) SetTCPReceiveBufferSize(size inet.TCPBufferSize) error {
 
 // TCPSendBufferSize implements inet.Stack.TCPSendBufferSize.
 func (s *Stack) TCPSendBufferSize() (inet.TCPBufferSize, error) {
-	var ss tcpip.StackSendBufferSizeOption
+	var ss tcp.SendBufferSizeOption
 	err := s.Stack.TransportProtocolOption(tcp.ProtocolNumber, &ss)
 	return inet.TCPBufferSize{
 		Min:     ss.Min,
@@ -175,7 +175,7 @@ func (s *Stack) TCPSendBufferSize() (inet.TCPBufferSize, error) {
 
 // SetTCPSendBufferSize implements inet.Stack.SetTCPSendBufferSize.
 func (s *Stack) SetTCPSendBufferSize(size inet.TCPBufferSize) error {
-	ss := tcpip.StackSendBufferSizeOption{
+	ss := tcp.SendBufferSizeOption{
 		Min:     size.Min,
 		Default: size.Default,
 		Max:     size.Max,
@@ -185,14 +185,14 @@ func (s *Stack) SetTCPSendBufferSize(size inet.TCPBufferSize) error {
 
 // TCPSACKEnabled implements inet.Stack.TCPSACKEnabled.
 func (s *Stack) TCPSACKEnabled() (bool, error) {
-	var sack tcpip.StackSACKEnabled
+	var sack tcp.SACKEnabled
 	err := s.Stack.TransportProtocolOption(tcp.ProtocolNumber, &sack)
 	return bool(sack), syserr.TranslateNetstackError(err).ToError()
 }
 
 // SetTCPSACKEnabled implements inet.Stack.SetTCPSACKEnabled.
 func (s *Stack) SetTCPSACKEnabled(enabled bool) error {
-	return syserr.TranslateNetstackError(s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.StackSACKEnabled(enabled))).ToError()
+	return syserr.TranslateNetstackError(s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SACKEnabled(enabled))).ToError()
 }
 
 // Statistics implements inet.Stack.Statistics.

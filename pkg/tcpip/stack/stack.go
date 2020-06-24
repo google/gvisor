@@ -471,6 +471,14 @@ type Stack struct {
 	// randomGenerator is an injectable pseudo random generator that can be
 	// used when a random number is required.
 	randomGenerator *mathrand.Rand
+
+	// sendBufferSize holds the min/default/max send buffer sizes for
+	// endpoints other than TCP.
+	sendBufferSize SendBufferSizeOption
+
+	// receiveBufferSize holds the min/default/max receive buffer sizes for
+	// endpoints other than TCP.
+	receiveBufferSize ReceiveBufferSizeOption
 }
 
 // UniqueID is an abstract generator of unique identifiers.
@@ -683,6 +691,16 @@ func New(opts Options) *Stack {
 		tempIIDSeed:          opts.TempIIDSeed,
 		forwarder:            newForwardQueue(),
 		randomGenerator:      mathrand.New(randSrc),
+		sendBufferSize: SendBufferSizeOption{
+			Min:     MinBufferSize,
+			Default: DefaultBufferSize,
+			Max:     DefaultMaxBufferSize,
+		},
+		receiveBufferSize: ReceiveBufferSizeOption{
+			Min:     MinBufferSize,
+			Default: DefaultBufferSize,
+			Max:     DefaultMaxBufferSize,
+		},
 	}
 
 	// Add specified network protocols.

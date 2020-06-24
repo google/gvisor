@@ -21,7 +21,6 @@
 package udp
 
 import (
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -50,9 +49,6 @@ const (
 )
 
 type protocol struct {
-	mu             sync.RWMutex
-	sendBufferSize tcpip.StackSendBufferSizeOption
-	recvBufferSize tcpip.StackReceiveBufferSizeOption
 }
 
 // Number returns the udp protocol number.
@@ -203,48 +199,12 @@ func (p *protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.Trans
 
 // SetOption implements stack.TransportProtocol.SetOption.
 func (p *protocol) SetOption(option interface{}) *tcpip.Error {
-	switch v := option.(type) {
-	case tcpip.StackSendBufferSizeOption:
-		if v.Min <= 0 || v.Default < v.Min || v.Default > v.Max {
-			return tcpip.ErrInvalidOptionValue
-		}
-		p.mu.Lock()
-		p.sendBufferSize = v
-		p.mu.Unlock()
-		return nil
-
-	case tcpip.StackReceiveBufferSizeOption:
-		if v.Min <= 0 || v.Default < v.Min || v.Default > v.Max {
-			return tcpip.ErrInvalidOptionValue
-		}
-		p.mu.Lock()
-		p.recvBufferSize = v
-		p.mu.Unlock()
-		return nil
-
-	default:
-		return tcpip.ErrUnknownProtocolOption
-	}
+	return tcpip.ErrUnknownProtocolOption
 }
 
 // Option implements stack.TransportProtocol.Option.
 func (p *protocol) Option(option interface{}) *tcpip.Error {
-	switch v := option.(type) {
-	case *tcpip.StackSendBufferSizeOption:
-		p.mu.RLock()
-		*v = p.sendBufferSize
-		p.mu.RUnlock()
-		return nil
-
-	case *tcpip.StackReceiveBufferSizeOption:
-		p.mu.RLock()
-		*v = p.recvBufferSize
-		p.mu.RUnlock()
-		return nil
-
-	default:
-		return tcpip.ErrUnknownProtocolOption
-	}
+	return tcpip.ErrUnknownProtocolOption
 }
 
 // Close implements stack.TransportProtocol.Close.
@@ -267,8 +227,5 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
 
 // NewProtocol returns a UDP transport protocol.
 func NewProtocol() stack.TransportProtocol {
-	return &protocol{
-		sendBufferSize: tcpip.StackSendBufferSizeOption{Min: MinBufferSize, Default: DefaultSendBufferSize, Max: MaxBufferSize},
-		recvBufferSize: tcpip.StackReceiveBufferSizeOption{Min: MinBufferSize, Default: DefaultReceiveBufferSize, Max: MaxBufferSize},
-	}
+	return &protocol{}
 }

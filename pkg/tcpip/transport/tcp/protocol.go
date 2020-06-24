@@ -76,6 +76,31 @@ const (
 	ccCubic = "cubic"
 )
 
+// SACKEnabled is used by stack.(*Stack).TransportProtocolOption to
+// enable/disable SACK support in TCP. See: https://tools.ietf.org/html/rfc2018.
+type SACKEnabled bool
+
+// DelayEnabled is used by stack.(Stack*).TransportProtocolOption to
+// enable/disable Nagle's algorithm in TCP.
+type DelayEnabled bool
+
+// SendBufferSizeOption is used by stack.(Stack*).TransportProtocolOption
+// to get/set the default, min and max TCP send buffer sizes.
+type SendBufferSizeOption struct {
+	Min     int
+	Default int
+	Max     int
+}
+
+// ReceiveBufferSizeOption is used by
+// stack.(Stack*).TransportProtocolOption to get/set the default, min and max
+// TCP receive buffer sizes.
+type ReceiveBufferSizeOption struct {
+	Min     int
+	Default int
+	Max     int
+}
+
 // syncRcvdCounter tracks the number of endpoints in the SYN-RCVD state. The
 // value is protected by a mutex so that we can increment only when it's
 // guaranteed not to go above a threshold.
@@ -137,8 +162,8 @@ type protocol struct {
 	mu                         sync.RWMutex
 	sackEnabled                bool
 	delayEnabled               bool
-	sendBufferSize             tcpip.StackSendBufferSizeOption
-	recvBufferSize             tcpip.StackReceiveBufferSizeOption
+	sendBufferSize             SendBufferSizeOption
+	recvBufferSize             ReceiveBufferSizeOption
 	congestionControl          string
 	availableCongestionControl []string
 	moderateReceiveBuffer      bool
@@ -249,19 +274,19 @@ func replyWithReset(s *segment, tos, ttl uint8) {
 // SetOption implements stack.TransportProtocol.SetOption.
 func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 	switch v := option.(type) {
-	case tcpip.StackSACKEnabled:
+	case SACKEnabled:
 		p.mu.Lock()
 		p.sackEnabled = bool(v)
 		p.mu.Unlock()
 		return nil
 
-	case tcpip.StackDelayEnabled:
+	case DelayEnabled:
 		p.mu.Lock()
 		p.delayEnabled = bool(v)
 		p.mu.Unlock()
 		return nil
 
-	case tcpip.StackSendBufferSizeOption:
+	case SendBufferSizeOption:
 		if v.Min <= 0 || v.Default < v.Min || v.Default > v.Max {
 			return tcpip.ErrInvalidOptionValue
 		}
@@ -270,7 +295,7 @@ func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 		p.mu.Unlock()
 		return nil
 
-	case tcpip.StackReceiveBufferSizeOption:
+	case ReceiveBufferSizeOption:
 		if v.Min <= 0 || v.Default < v.Min || v.Default > v.Max {
 			return tcpip.ErrInvalidOptionValue
 		}
@@ -363,25 +388,25 @@ func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 // Option implements stack.TransportProtocol.Option.
 func (p *protocol) Option(option interface{}) *tcpip.Error {
 	switch v := option.(type) {
-	case *tcpip.StackSACKEnabled:
+	case *SACKEnabled:
 		p.mu.RLock()
-		*v = tcpip.StackSACKEnabled(p.sackEnabled)
+		*v = SACKEnabled(p.sackEnabled)
 		p.mu.RUnlock()
 		return nil
 
-	case *tcpip.StackDelayEnabled:
+	case *DelayEnabled:
 		p.mu.RLock()
-		*v = tcpip.StackDelayEnabled(p.delayEnabled)
+		*v = DelayEnabled(p.delayEnabled)
 		p.mu.RUnlock()
 		return nil
 
-	case *tcpip.StackSendBufferSizeOption:
+	case *SendBufferSizeOption:
 		p.mu.RLock()
 		*v = p.sendBufferSize
 		p.mu.RUnlock()
 		return nil
 
-	case *tcpip.StackReceiveBufferSizeOption:
+	case *ReceiveBufferSizeOption:
 		p.mu.RLock()
 		*v = p.recvBufferSize
 		p.mu.RUnlock()
@@ -491,12 +516,12 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
 // NewProtocol returns a TCP transport protocol.
 func NewProtocol() stack.TransportProtocol {
 	return &protocol{
-		sendBufferSize: tcpip.StackSendBufferSizeOption{
+		sendBufferSize: SendBufferSizeOption{
 			Min:     MinBufferSize,
 			Default: DefaultSendBufferSize,
 			Max:     MaxBufferSize,
 		},
-		recvBufferSize: tcpip.StackReceiveBufferSizeOption{
+		recvBufferSize: ReceiveBufferSizeOption{
 			Min:     MinBufferSize,
 			Default: DefaultReceiveBufferSize,
 			Max:     MaxBufferSize,
