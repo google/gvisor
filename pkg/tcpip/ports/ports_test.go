@@ -36,6 +36,7 @@ type portReserveTestAction struct {
 	flags   Flags
 	release bool
 	device  tcpip.NICID
+	dest    tcpip.FullAddress
 }
 
 func TestPortReservation(t *testing.T) {
@@ -272,6 +273,54 @@ func TestPortReservation(t *testing.T) {
 				{port: 24, ip: fakeIPAddress, flags: Flags{MostRecent: true, LoadBalanced: true}, want: nil},
 				{port: 24, ip: fakeIPAddress, flags: Flags{MostRecent: true}, want: tcpip.ErrPortInUse},
 			},
+		}, {
+			tname: "bind tuple with reuseaddr, and then wildcard with reuseaddr",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: tcpip.FullAddress{Addr: fakeIPAddress, Port: 24}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: tcpip.FullAddress{}, want: nil},
+			},
+		}, {
+			tname: "bind tuple with reuseaddr, and then wildcard",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: tcpip.FullAddress{Addr: fakeIPAddress, Port: 24}, want: nil},
+				{port: 24, ip: fakeIPAddress, want: tcpip.ErrPortInUse},
+			},
+		}, {
+			tname: "bind wildcard with reuseaddr, and then tuple with reuseaddr",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: tcpip.FullAddress{}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: tcpip.FullAddress{Addr: fakeIPAddress, Port: 24}, want: nil},
+			},
+		}, {
+			tname: "bind tuple with reuseaddr, and then wildcard",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: tcpip.FullAddress{Addr: fakeIPAddress, Port: 24}, want: tcpip.ErrPortInUse},
+			},
+		}, {
+			tname: "bind two tuples with reuseaddr",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: tcpip.FullAddress{Addr: fakeIPAddress, Port: 24}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: tcpip.FullAddress{Addr: fakeIPAddress, Port: 25}, want: nil},
+			},
+		}, {
+			tname: "bind two tuples",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, dest: tcpip.FullAddress{Addr: fakeIPAddress, Port: 24}, want: nil},
+				{port: 24, ip: fakeIPAddress, dest: tcpip.FullAddress{Addr: fakeIPAddress, Port: 25}, want: nil},
+			},
+		}, {
+			tname: "bind wildcard, and then tuple with reuseaddr",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, dest: tcpip.FullAddress{}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: tcpip.FullAddress{Addr: fakeIPAddress, Port: 24}, want: tcpip.ErrPortInUse},
+			},
+		}, {
+			tname: "bind wildcard twice with reuseaddr",
+			actions: []portReserveTestAction{
+				{port: 24, ip: anyIPAddress, flags: Flags{TupleOnly: true}, want: nil},
+				{port: 24, ip: anyIPAddress, flags: Flags{TupleOnly: true}, want: nil},
+			},
 		},
 	} {
 		t.Run(test.tname, func(t *testing.T) {
@@ -280,19 +329,18 @@ func TestPortReservation(t *testing.T) {
 
 			for _, test := range test.actions {
 				if test.release {
-					pm.ReleasePort(net, fakeTransNumber, test.ip, test.port, test.flags, test.device)
+					pm.ReleasePort(net, fakeTransNumber, test.ip, test.port, test.flags, test.device, test.dest)
 					continue
 				}
-				gotPort, err := pm.ReservePort(net, fakeTransNumber, test.ip, test.port, test.flags, test.device)
+				gotPort, err := pm.ReservePort(net, fakeTransNumber, test.ip, test.port, test.flags, test.device, test.dest)
 				if err != test.want {
-					t.Fatalf("ReservePort(.., .., %s, %d, %+v, %d) = %v, want %v", test.ip, test.port, test.flags, test.device, err, test.want)
+					t.Fatalf("ReservePort(.., .., %s, %d, %+v, %d, %v) = %v, want %v", test.ip, test.port, test.flags, test.device, test.dest, err, test.want)
 				}
 				if test.port == 0 && (gotPort == 0 || gotPort < FirstEphemeral) {
-					t.Fatalf("ReservePort(.., .., .., 0) = %d, want port number >= %d to be picked", gotPort, FirstEphemeral)
+					t.Fatalf("ReservePort(.., .., .., 0, ..) = %d, want port number >= %d to be picked", gotPort, FirstEphemeral)
 				}
 			}
 		})
-
 	}
 }
 

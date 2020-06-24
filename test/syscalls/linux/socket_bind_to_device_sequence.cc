@@ -363,10 +363,6 @@ TEST_P(BindToDeviceSequenceTest, BindTwiceWithReuseOnce) {
 }
 
 TEST_P(BindToDeviceSequenceTest, BindWithReuseAddr) {
-  // FIXME(b/158253835): Support SO_REUSEADDR on TCP sockets.
-  SKIP_IF(IsRunningOnGvisor() &&
-          (GetParam().type & SOCK_STREAM) == SOCK_STREAM);
-
   ASSERT_NO_FATAL_FAILURE(
       BindSocket(/* reusePort */ false, /* reuse_addr */ true));
   ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ false,
@@ -406,10 +402,6 @@ TEST_P(BindToDeviceSequenceTest, BindReuseAddrReusePortThenReusePort) {
 }
 
 TEST_P(BindToDeviceSequenceTest, BindReuseAddrReusePortThenReuseAddr) {
-  // FIXME(b/158253835): Support SO_REUSEADDR on TCP sockets.
-  SKIP_IF(IsRunningOnGvisor() &&
-          (GetParam().type & SOCK_STREAM) == SOCK_STREAM);
-
   ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
                                      /* reuse_addr */ true,
                                      /* bind_to_device */ 0));
@@ -436,10 +428,6 @@ TEST_P(BindToDeviceSequenceTest, BindDoubleReuseAddrReusePortThenReusePort) {
 }
 
 TEST_P(BindToDeviceSequenceTest, BindDoubleReuseAddrReusePortThenReuseAddr) {
-  // FIXME(b/158253835): Support SO_REUSEADDR on TCP sockets.
-  SKIP_IF(IsRunningOnGvisor() &&
-          (GetParam().type & SOCK_STREAM) == SOCK_STREAM);
-
   ASSERT_NO_FATAL_FAILURE(BindSocket(
       /* reuse_port */ true, /* reuse_addr */ true, /* bind_to_device */ 0));
   ASSERT_NO_FATAL_FAILURE(BindSocket(/* reuse_port */ true,
