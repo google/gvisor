@@ -12,22 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package state
+package tests
 
-import (
-	"reflect"
-	"unsafe"
-)
+// +stateify savable
+type benchStruct struct {
+	B *benchStruct // Must be exported for gob.
+}
 
-// arrayFromSlice constructs a new pointer to the slice data.
-//
-// It would be similar to the following:
-//
-//	x := make([]Foo, l, c)
-//	a := ([l]Foo*)(unsafe.Pointer(x[0]))
-//
-func arrayFromSlice(obj reflect.Value) reflect.Value {
-	return reflect.NewAt(
-		reflect.ArrayOf(obj.Cap(), obj.Type().Elem()),
-		unsafe.Pointer(obj.Pointer()))
+func (b *benchStruct) afterLoad() {
+	// Do nothing, just force scheduling.
 }

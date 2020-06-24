@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,22 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build race
+
 package state
 
-import (
-	"reflect"
-	"unsafe"
-)
-
-// arrayFromSlice constructs a new pointer to the slice data.
-//
-// It would be similar to the following:
-//
-//	x := make([]Foo, l, c)
-//	a := ([l]Foo*)(unsafe.Pointer(x[0]))
-//
-func arrayFromSlice(obj reflect.Value) reflect.Value {
-	return reflect.NewAt(
-		reflect.ArrayOf(obj.Cap(), obj.Type().Elem()),
-		unsafe.Pointer(obj.Pointer()))
-}
+var raceEnabled = true

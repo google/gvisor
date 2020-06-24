@@ -88,7 +88,7 @@ const (
 	testMagic = "// +mustescape:"
 
 	// exempt is the exemption annotation.
-	exempt = "// escapes:"
+	exempt = "// escapes"
 )
 
 // escapingBuiltins are builtins known to escape.
@@ -546,7 +546,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		for _, cg := range f.Comments {
 			for _, c := range cg.List {
 				p := pass.Fset.Position(c.Slash)
-				if strings.HasPrefix(c.Text, exempt) {
+				if strings.HasPrefix(strings.ToLower(c.Text), exempt) {
 					exemptions[LinePosition{
 						Filename: filepath.Base(p.Filename),
 						Line:     p.Line,

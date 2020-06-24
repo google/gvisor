@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,15 +19,9 @@ import (
 	"unsafe"
 )
 
-// arrayFromSlice constructs a new pointer to the slice data.
-//
-// It would be similar to the following:
-//
-//	x := make([]Foo, l, c)
-//	a := ([l]Foo*)(unsafe.Pointer(x[0]))
-//
-func arrayFromSlice(obj reflect.Value) reflect.Value {
-	return reflect.NewAt(
-		reflect.ArrayOf(obj.Cap(), obj.Type().Elem()),
-		unsafe.Pointer(obj.Pointer()))
+// unsafePointerTo is logically equivalent to reflect.Value.Addr, but works on
+// values representing unexported fields. This bypasses visibility, but not
+// type safety.
+func unsafePointerTo(obj reflect.Value) reflect.Value {
+	return reflect.NewAt(obj.Type(), unsafe.Pointer(obj.UnsafeAddr()))
 }

@@ -12,22 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package state
+package tests
 
-import (
-	"reflect"
-	"unsafe"
-)
+// +stateify savable
+type arrayContainer struct {
+	v [1]interface{}
+}
 
-// arrayFromSlice constructs a new pointer to the slice data.
-//
-// It would be similar to the following:
-//
-//	x := make([]Foo, l, c)
-//	a := ([l]Foo*)(unsafe.Pointer(x[0]))
-//
-func arrayFromSlice(obj reflect.Value) reflect.Value {
-	return reflect.NewAt(
-		reflect.ArrayOf(obj.Cap(), obj.Type().Elem()),
-		unsafe.Pointer(obj.Pointer()))
+// +stateify savable
+type arrayPtrContainer struct {
+	v *[1]interface{}
+}
+
+// +stateify savable
+type sliceContainer struct {
+	v []interface{}
+}
+
+// +stateify savable
+type slicePtrContainer struct {
+	v *[]interface{}
 }

@@ -92,6 +92,7 @@ go_library(
         "//pkg/sentry/platform",
         "//pkg/sentry/usage",
         "//pkg/state",
+        "//pkg/state/wire",
         "//pkg/sync",
         "//pkg/syserror",
         "//pkg/usermem",
