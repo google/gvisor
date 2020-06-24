@@ -12,7 +12,6 @@ func (x *Entry) StateTypeName() string {
 
 func (x *Entry) StateFields() []string {
 	return []string{
-		"Context",
 		"Callback",
 		"mask",
 		"waiterEntry",
@@ -23,19 +22,17 @@ func (x *Entry) beforeSave() {}
 
 func (x *Entry) StateSave(m state.Sink) {
 	x.beforeSave()
-	m.Save(0, &x.Context)
-	m.Save(1, &x.Callback)
-	m.Save(2, &x.mask)
-	m.Save(3, &x.waiterEntry)
+	m.Save(0, &x.Callback)
+	m.Save(1, &x.mask)
+	m.Save(2, &x.waiterEntry)
 }
 
 func (x *Entry) afterLoad() {}
 
 func (x *Entry) StateLoad(m state.Source) {
-	m.Load(0, &x.Context)
-	m.Load(1, &x.Callback)
-	m.Load(2, &x.mask)
-	m.Load(3, &x.waiterEntry)
+	m.Load(0, &x.Callback)
+	m.Load(1, &x.mask)
+	m.Load(2, &x.waiterEntry)
 }
 
 func (x *Queue) StateTypeName() string {
