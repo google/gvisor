@@ -12,22 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package state
+package tests
 
 import (
-	"reflect"
-	"unsafe"
+	"testing"
 )
 
-// arrayFromSlice constructs a new pointer to the slice data.
-//
-// It would be similar to the following:
-//
-//	x := make([]Foo, l, c)
-//	a := ([l]Foo*)(unsafe.Pointer(x[0]))
-//
-func arrayFromSlice(obj reflect.Value) reflect.Value {
-	return reflect.NewAt(
-		reflect.ArrayOf(obj.Cap(), obj.Type().Elem()),
-		unsafe.Pointer(obj.Pointer()))
+const nonEmptyString = "hello world"
+
+var allStrings = []string{
+	"",
+	nonEmptyString,
+	"\\0",
+}
+
+func TestString(t *testing.T) {
+	runTestCases(t, false, "plain", flatten(allStrings))
+	runTestCases(t, false, "pointers", pointersTo(flatten(allStrings)))
+	runTestCases(t, false, "interfaces", interfacesTo(flatten(allStrings)))
+	runTestCases(t, false, "interfacesToPointers", interfacesTo(pointersTo(flatten(allStrings))))
 }

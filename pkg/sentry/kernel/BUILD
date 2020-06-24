@@ -200,6 +200,7 @@ go_library(
         "//pkg/sentry/vfs",
         "//pkg/state",
         "//pkg/state/statefile",
+        "//pkg/state/wire",
         "//pkg/sync",
         "//pkg/syserr",
         "//pkg/syserror",
