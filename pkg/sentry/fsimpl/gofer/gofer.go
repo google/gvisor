@@ -1066,9 +1066,9 @@ func (d *dentry) InotifyWithParent(events, cookie uint32, et vfs.EventType) {
 	d.fs.renameMu.RLock()
 	// The ordering below is important, Linux always notifies the parent first.
 	if d.parent != nil {
-		d.parent.watches.NotifyWithExclusions(d.name, events, cookie, et, d.isDeleted())
+		d.parent.watches.Notify(d.name, events, cookie, et, d.isDeleted())
 	}
-	d.watches.Notify("", events, cookie, et)
+	d.watches.Notify("", events, cookie, et, d.isDeleted())
 	d.fs.renameMu.RUnlock()
 }
 
