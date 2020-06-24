@@ -228,7 +228,7 @@ func newNetstackImpl(mode string) (impl, error) {
 	})
 
 	// Set protocol options.
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.StackSACKEnabled(*sack)); err != nil {
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SACKEnabled(*sack)); err != nil {
 		return nil, fmt.Errorf("SetTransportProtocolOption for SACKEnabled failed: %s", err)
 	}
 

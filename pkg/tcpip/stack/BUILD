@@ -48,6 +48,7 @@ go_library(
         "route.go",
         "stack.go",
         "stack_global_state.go",
+        "stack_options.go",
         "transport_demuxer.go",
     ],
     visibility = ["//visibility:public"],
