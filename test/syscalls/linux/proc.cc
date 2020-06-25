@@ -754,8 +754,53 @@ TEST(ProcCpuinfo, RequiredFieldsArePresent) {
   }
 }
 
-TEST(ProcCpuinfo, DeniesWrite) {
-  EXPECT_THAT(open("/proc/cpuinfo", O_WRONLY), SyscallFailsWithErrno(EACCES));
+TEST(ProcCpuinfo, DeniesWriteNonRoot) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_FOWNER)));
+
+  // Do setuid in a separate thread so that after finishing this test, the
+  // process can still open files the test harness created before starting this
+  // test. Otherwise, the files are created by root (UID before the test), but
+  // cannot be opened by the `uid` set below after the test. After calling
+  // setuid(non-zero-UID), there is no way to get root privileges back.
+  ScopedThread([&] {
+    // Use syscall instead of glibc setuid wrapper because we want this setuid
+    // call to only apply to this task. POSIX threads, however, require that all
+    // threads have the same UIDs, so using the setuid wrapper sets all threads'
+    // real UID.
+    // Also drops capabilities.
+    constexpr int kNobody = 65534;
+    EXPECT_THAT(syscall(SYS_setuid, kNobody), SyscallSucceeds());
+    EXPECT_THAT(open("/proc/cpuinfo", O_WRONLY), SyscallFailsWithErrno(EACCES));
+    // TODO(gvisor.dev/issue/1193): Properly support setting size attributes in
+    // kernfs.
+    if (!IsRunningOnGvisor() || IsRunningWithVFS1()) {
+      EXPECT_THAT(truncate("/proc/cpuinfo", 123),
+                  SyscallFailsWithErrno(EACCES));
+    }
+  });
+}
+
+// With root privileges, it is possible to open /proc/cpuinfo with write mode,
+// but all write operations will return EIO.
+TEST(ProcCpuinfo, DeniesWriteRoot) {
+  // VFS1 does not behave differently for root/non-root.
+  SKIP_IF(IsRunningWithVFS1());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_FOWNER)));
+
+  int fd;
+  EXPECT_THAT(fd = open("/proc/cpuinfo", O_WRONLY), SyscallSucceeds());
+  if (fd > 0) {
+    EXPECT_THAT(write(fd, "x", 1), SyscallFailsWithErrno(EIO));
+    EXPECT_THAT(pwrite(fd, "x", 1, 123), SyscallFailsWithErrno(EIO));
+  }
+  // TODO(gvisor.dev/issue/1193): Properly support setting size attributes in
+  // kernfs.
+  if (!IsRunningOnGvisor() || IsRunningWithVFS1()) {
+    if (fd > 0) {
+      EXPECT_THAT(ftruncate(fd, 123), SyscallFailsWithErrno(EIO));
+    }
+    EXPECT_THAT(truncate("/proc/cpuinfo", 123), SyscallFailsWithErrno(EIO));
+  }
 }
 
 // Sanity checks that uptime is present.
