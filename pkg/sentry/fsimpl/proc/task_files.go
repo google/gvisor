@@ -35,6 +35,10 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// "There is an (arbitrary) limit on the number of lines in the file. As at
+// Linux 3.18, the limit is five lines." - user_namespaces(7)
+const maxIDMapLines = 5
+
 // mm gets the kernel task's MemoryManager. No additional reference is taken on
 // mm here. This is safe because MemoryManager.destroy is required to leave the
 // MemoryManager in a state where it's still usable as a DynamicBytesSource.
@@ -283,7 +287,8 @@ func (d *commData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	return nil
 }
 
-// idMapData implements vfs.DynamicBytesSource for /proc/[pid]/{gid_map|uid_map}.
+// idMapData implements vfs.WritableDynamicBytesSource for
+// /proc/[pid]/{gid_map|uid_map}.
 //
 // +stateify savable
 type idMapData struct {
@@ -307,6 +312,59 @@ func (d *idMapData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		fmt.Fprintf(buf, "%10d %10d %10d\n", e.FirstID, e.FirstParentID, e.Length)
 	}
 	return nil
+}
+
+func (d *idMapData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+	// "In addition, the number of bytes written to the file must be less than
+	// the system page size, and the write must be performed at the start of
+	// the file ..." - user_namespaces(7)
+	srclen := src.NumBytes()
+	if srclen >= usermem.PageSize || offset != 0 {
+		return 0, syserror.EINVAL
+	}
+	b := make([]byte, srclen)
+	if _, err := src.CopyIn(ctx, b); err != nil {
+		return 0, err
+	}
+
+	// Truncate from the first NULL byte.
+	var nul int64
+	nul = int64(bytes.IndexByte(b, 0))
+	if nul == -1 {
+		nul = srclen
+	}
+	b = b[:nul]
+	// Remove the last \n.
+	if nul >= 1 && b[nul-1] == '\n' {
+		b = b[:nul-1]
+	}
+	lines := bytes.SplitN(b, []byte("\n"), maxIDMapLines+1)
+	if len(lines) > maxIDMapLines {
+		return 0, syserror.EINVAL
+	}
+
+	entries := make([]auth.IDMapEntry, len(lines))
+	for i, l := range lines {
+		var e auth.IDMapEntry
+		_, err := fmt.Sscan(string(l), &e.FirstID, &e.FirstParentID, &e.Length)
+		if err != nil {
+			return 0, syserror.EINVAL
+		}
+		entries[i] = e
+	}
+	var err error
+	if d.gids {
+		err = d.task.UserNamespace().SetGIDMap(ctx, entries)
+	} else {
+		err = d.task.UserNamespace().SetUIDMap(ctx, entries)
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	// On success, Linux's kernel/user_namespace.c:map_write() always returns
+	// count, even if fewer bytes were used.
+	return int64(srclen), nil
 }
 
 // mapsData implements vfs.DynamicBytesSource for /proc/[pid]/maps.

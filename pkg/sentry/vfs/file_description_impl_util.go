@@ -327,7 +327,7 @@ func (fd *DynamicBytesFileDescriptionImpl) pwriteLocked(ctx context.Context, src
 
 	writable, ok := fd.data.(WritableDynamicBytesSource)
 	if !ok {
-		return 0, syserror.EINVAL
+		return 0, syserror.EIO
 	}
 	n, err := writable.Write(ctx, src, offset)
 	if err != nil {
