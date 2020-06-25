@@ -180,7 +180,7 @@ class BindToDeviceSequenceTest : public ::testing::TestWithParam<SocketKind> {
  private:
   SocketKind socket_factory_;
   // devices maps from the device id in the test case to the name of the device.
-  std::unordered_map<int, string> devices_;
+  absl::node_hash_map<int, string> devices_;
   // These are the tunnels that were created for the test and will be destroyed
   // by the destructor.
   vector<std::unique_ptr<Tunnel>> tunnels_;
