@@ -113,7 +113,6 @@ See [SECURITY.md](SECURITY.md).
 See [Contributing.md](CONTRIBUTING.md).
 
 [bazel]: https://bazel.build
-[community]: https://gvisor.googlesource.com/community
 [docker]: https://www.docker.com
 [gvisor-users-list]: https://groups.google.com/forum/#!forum/gvisor-users
 [gvisor-dev]: https://gvisor.dev
