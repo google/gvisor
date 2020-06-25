@@ -155,11 +155,11 @@ func TestGenCountFD(t *testing.T) {
 	}
 
 	// Write and PWrite fails.
-	if _, err := fd.Write(ctx, ioseq, WriteOptions{}); err != syserror.EINVAL {
-		t.Errorf("Write: got err %v, wanted %v", err, syserror.EINVAL)
+	if _, err := fd.Write(ctx, ioseq, WriteOptions{}); err != syserror.EIO {
+		t.Errorf("Write: got err %v, wanted %v", err, syserror.EIO)
 	}
-	if _, err := fd.PWrite(ctx, ioseq, 0, WriteOptions{}); err != syserror.EINVAL {
-		t.Errorf("Write: got err %v, wanted %v", err, syserror.EINVAL)
+	if _, err := fd.PWrite(ctx, ioseq, 0, WriteOptions{}); err != syserror.EIO {
+		t.Errorf("Write: got err %v, wanted %v", err, syserror.EIO)
 	}
 }
 

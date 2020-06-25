@@ -293,6 +293,8 @@ func (a *InodeAttrs) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *aut
 	// inode numbers are immutable after node creation.
 
 	// TODO(gvisor.dev/issue/1193): Implement other stat fields like timestamps.
+	// Also, STATX_SIZE will need some special handling, because read-only static
+	// files should return EIO for truncate operations.
 
 	return nil
 }
