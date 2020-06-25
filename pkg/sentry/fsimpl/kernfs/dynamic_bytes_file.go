@@ -101,12 +101,12 @@ func (fd *DynamicBytesFD) Seek(ctx context.Context, offset int64, whence int32) 
 	return fd.DynamicBytesFileDescriptionImpl.Seek(ctx, offset, whence)
 }
 
-// Read implmenets vfs.FileDescriptionImpl.Read.
+// Read implements vfs.FileDescriptionImpl.Read.
 func (fd *DynamicBytesFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	return fd.DynamicBytesFileDescriptionImpl.Read(ctx, dst, opts)
 }
 
-// PRead implmenets vfs.FileDescriptionImpl.PRead.
+// PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *DynamicBytesFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	return fd.DynamicBytesFileDescriptionImpl.PRead(ctx, dst, offset, opts)
 }
