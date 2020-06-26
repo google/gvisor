@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/user"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devpts"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/fuse"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/gofer"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/overlay"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
@@ -80,6 +81,10 @@ func registerFilesystems(ctx context.Context, vfsObj *vfs.VirtualFilesystem, cre
 	if err := ttydev.Register(vfsObj); err != nil {
 		return fmt.Errorf("registering ttydev: %w", err)
 	}
+
+	if err := fuse.Register(vfsObj); err != nil {
+		return fmt.Errorf("registering fusedev: %w", err)
+	}
 	if err := tundev.Register(vfsObj); err != nil {
 		return fmt.Errorf("registering tundev: %v", err)
 	}
@@ -100,6 +105,9 @@ func registerFilesystems(ctx context.Context, vfsObj *vfs.VirtualFilesystem, cre
 	}
 	if err := tundev.CreateDevtmpfsFiles(ctx, a); err != nil {
 		return fmt.Errorf("creating tundev devtmpfs files: %v", err)
+	}
+	if err := fuse.CreateDevtmpfsFile(ctx, a); err != nil {
+		return fmt.Errorf("creating fusedev devtmpfs files: %w", err)
 	}
 	return nil
 }

@@ -153,6 +153,14 @@ TEST(DevTest, TTYExists) {
   EXPECT_EQ(statbuf.st_mode, S_IFCHR | 0666);
 }
 
+TEST(DevTest, OpenDevFuse) {
+  // Note(gvisor.dev/issue/3076) This won't work in the sentry until the new
+  // device registration is complete.
+  SKIP_IF(IsRunningWithVFS1() || IsRunningOnGvisor());
+
+  ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_RDONLY));
+}
+
 }  // namespace
 }  // namespace testing
 

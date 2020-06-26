@@ -55,6 +55,7 @@ go_library(
         "//pkg/sentry/fs/user",
         "//pkg/sentry/fsimpl/devpts",
         "//pkg/sentry/fsimpl/devtmpfs",
+        "//pkg/sentry/fsimpl/fuse",
         "//pkg/sentry/fsimpl/gofer",
         "//pkg/sentry/fsimpl/host",
         "//pkg/sentry/fsimpl/overlay",
