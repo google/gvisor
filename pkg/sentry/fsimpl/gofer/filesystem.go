@@ -389,7 +389,15 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 		// RPC will fail with EEXIST like we would have. If the RPC succeeds, and a
 		// stale dentry exists, the dentry will fail revalidation next time it's
 		// used.
-		return createInRemoteDir(parent, name)
+		if err := createInRemoteDir(parent, name); err != nil {
+			return err
+		}
+		ev := linux.IN_CREATE
+		if dir {
+			ev |= linux.IN_ISDIR
+		}
+		parent.watches.Notify(name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
+		return nil
 	}
 	if child := parent.children[name]; child != nil {
 		return syserror.EEXIST

@@ -1485,20 +1485,26 @@ TEST(Inotify, DuplicateWatchReturnsSameWatchDescriptor) {
 
 TEST(Inotify, UnmatchedEventsAreDiscarded) {
   const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  const TempPath file1 =
+  TempPath file1 =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(root.path()));
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
 
-  ASSERT_NO_ERRNO_AND_VALUE(InotifyAddWatch(fd.get(), file1.path(), IN_ACCESS));
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), file1.path(), IN_ACCESS));
 
-  const FileDescriptor file1_fd =
+  FileDescriptor file1_fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file1.path(), O_WRONLY));
 
-  const std::vector<Event> events =
-      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
+  std::vector<Event> events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
   // We only asked for access events, the open event should be discarded.
   ASSERT_THAT(events, Are({}));
+
+  // IN_IGNORED events are always generated, regardless of the mask.
+  file1_fd.reset();
+  file1.reset();
+  events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
+  ASSERT_THAT(events, Are({Event(IN_IGNORED, wd)}));
 }
 
 TEST(Inotify, AddWatchWithInvalidEventMaskFails) {
@@ -2071,6 +2077,38 @@ TEST(Inotify, ExcludeUnlinkInodeEvents_NoRandomSave) {
                           Event(IN_ATTRIB, dir_wd, Basename(file.path())),
                           Event(IN_ATTRIB, file_wd),
                       }));
+}
+
+TEST(Inotify, OneShot) {
+  // TODO(gvisor.dev/issue/1624): IN_ONESHOT not supported in VFS1.
+  SKIP_IF(IsRunningWithVFS1());
+
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor inotify_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(inotify_fd.get(), file.path(), IN_MODIFY | IN_ONESHOT));
+
+  // Open an fd, write to it, and then close it.
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_WRONLY));
+  ASSERT_THAT(write(fd.get(), "x", 1), SyscallSucceedsWithValue(1));
+  fd.reset();
+
+  // We should get a single event followed by IN_IGNORED indicating removal
+  // of the one-shot watch. Prior activity (i.e. open) that is not in the mask
+  // should not trigger removal, and activity after removal (i.e. close) should
+  // not generate events.
+  std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({
+                          Event(IN_MODIFY, wd),
+                          Event(IN_IGNORED, wd),
+                      }));
+
+  // The watch should already have been removed.
+  EXPECT_THAT(inotify_rm_watch(inotify_fd.get(), wd),
+              SyscallFailsWithErrno(EINVAL));
 }
 
 // This test helps verify that the lock order of filesystem and inotify locks
