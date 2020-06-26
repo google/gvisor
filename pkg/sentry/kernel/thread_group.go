@@ -366,7 +366,8 @@ func (tg *ThreadGroup) SetControllingTTY(tty *TTY, arg int32) error {
 	// terminal is stolen, and all processes that had it as controlling
 	// terminal lose it." - tty_ioctl(4)
 	if tty.tg != nil && tg.processGroup.session != tty.tg.processGroup.session {
-		if !auth.CredentialsFromContext(tg.leader).HasCapability(linux.CAP_SYS_ADMIN) || arg != 1 {
+		// Stealing requires CAP_SYS_ADMIN in the root user namespace.
+		if creds := auth.CredentialsFromContext(tg.leader); !creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, creds.UserNamespace.Root()) || arg != 1 {
 			return syserror.EPERM
 		}
 		// Steal the TTY away. Unlike TIOCNOTTY, don't send signals.
