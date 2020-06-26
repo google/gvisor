@@ -111,9 +111,8 @@ func DefaultTables() *IPTables {
 			Prerouting: []string{TablenameMangle, TablenameNat},
 			Output:     []string{TablenameMangle, TablenameNat, TablenameFilter},
 		},
-		connections: ConnTrackTable{
-			CtMap: make(map[uint32]ConnTrackTupleHolder),
-			Seed:  generateRandUint32(),
+		connections: ConnTrack{
+			conns: make(map[tupleID]tuple),
 		},
 	}
 }
@@ -213,7 +212,7 @@ func (it *IPTables) Check(hook Hook, pkt *PacketBuffer, gso *GSO, r *Route, addr
 
 	// Packets are manipulated only if connection and matching
 	// NAT rule exists.
-	it.connections.HandlePacket(pkt, hook, gso, r)
+	it.connections.handlePacket(pkt, hook, gso, r)
 
 	// Go through each table containing the hook.
 	for _, tablename := range it.GetPriorities(hook) {

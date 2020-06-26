@@ -24,7 +24,7 @@ import (
 type AcceptTarget struct{}
 
 // Action implements Target.Action.
-func (AcceptTarget) Action(*PacketBuffer, *ConnTrackTable, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
+func (AcceptTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
 	return RuleAccept, 0
 }
 
@@ -32,7 +32,7 @@ func (AcceptTarget) Action(*PacketBuffer, *ConnTrackTable, Hook, *GSO, *Route, t
 type DropTarget struct{}
 
 // Action implements Target.Action.
-func (DropTarget) Action(*PacketBuffer, *ConnTrackTable, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
+func (DropTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
 	return RuleDrop, 0
 }
 
@@ -41,7 +41,7 @@ func (DropTarget) Action(*PacketBuffer, *ConnTrackTable, Hook, *GSO, *Route, tcp
 type ErrorTarget struct{}
 
 // Action implements Target.Action.
-func (ErrorTarget) Action(*PacketBuffer, *ConnTrackTable, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
+func (ErrorTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
 	log.Debugf("ErrorTarget triggered.")
 	return RuleDrop, 0
 }
@@ -52,7 +52,7 @@ type UserChainTarget struct {
 }
 
 // Action implements Target.Action.
-func (UserChainTarget) Action(*PacketBuffer, *ConnTrackTable, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
+func (UserChainTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
 	panic("UserChainTarget should never be called.")
 }
 
@@ -61,7 +61,7 @@ func (UserChainTarget) Action(*PacketBuffer, *ConnTrackTable, Hook, *GSO, *Route
 type ReturnTarget struct{}
 
 // Action implements Target.Action.
-func (ReturnTarget) Action(*PacketBuffer, *ConnTrackTable, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
+func (ReturnTarget) Action(*PacketBuffer, *ConnTrack, Hook, *GSO, *Route, tcpip.Address) (RuleVerdict, int) {
 	return RuleReturn, 0
 }
 
@@ -92,7 +92,7 @@ type RedirectTarget struct {
 // TODO(gvisor.dev/issue/170): Parse headers without copying. The current
 // implementation only works for PREROUTING and calls pkt.Clone(), neither
 // of which should be the case.
-func (rt RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrackTable, hook Hook, gso *GSO, r *Route, address tcpip.Address) (RuleVerdict, int) {
+func (rt RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, gso *GSO, r *Route, address tcpip.Address) (RuleVerdict, int) {
 	// Packet is already manipulated.
 	if pkt.NatDone {
 		return RuleAccept, 0
@@ -150,12 +150,11 @@ func (rt RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrackTable, hook Hook
 			return RuleAccept, 0
 		}
 
-		// Set up conection for matching NAT rule.
-		// Only the first packet of the connection comes here.
-		// Other packets will be manipulated in connection tracking.
-		if conn, _ := ct.connTrackForPacket(pkt, hook, true); conn != nil {
-			ct.SetNatInfo(pkt, rt, hook)
-			ct.HandlePacket(pkt, hook, gso, r)
+		// Set up conection for matching NAT rule. Only the first
+		// packet of the connection comes here. Other packets will be
+		// manipulated in connection tracking.
+		if conn := ct.createConnFor(pkt, hook, rt); conn != nil {
+			ct.handlePacket(pkt, hook, gso, r)
 		}
 	default:
 		return RuleDrop, 0
