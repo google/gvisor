@@ -447,29 +447,51 @@ func (w *Watches) Remove(id uint64) {
 		return
 	}
 
-	if _, ok := w.ws[id]; !ok {
-		// While there's technically no problem with silently ignoring a missing
-		// watch, this is almost certainly a bug.
-		panic(fmt.Sprintf("Attempt to remove a watch, but no watch found with provided id %+v.", id))
+	// It is possible for w.Remove() to be called for the same watch multiple
+	// times. See the treatment of one-shot watches in Watches.Notify().
+	if _, ok := w.ws[id]; ok {
+		delete(w.ws, id)
 	}
-	delete(w.ws, id)
 }
 
 // Notify queues a new event with watches in this set. Watches with
 // IN_EXCL_UNLINK are skipped if the event is coming from a child that has been
 // unlinked.
 func (w *Watches) Notify(name string, events, cookie uint32, et EventType, unlinked bool) {
-	// N.B. We don't defer the unlocks because Notify is in the hot path of
-	// all IO operations, and the defer costs too much for small IO
-	// operations.
+	var hasExpired bool
 	w.mu.RLock()
 	for _, watch := range w.ws {
 		if unlinked && watch.ExcludeUnlinked() && et == PathEvent {
 			continue
 		}
-		watch.Notify(name, events, cookie)
+		if watch.Notify(name, events, cookie) {
+			hasExpired = true
+		}
 	}
 	w.mu.RUnlock()
+
+	if hasExpired {
+		w.cleanupExpiredWatches()
+	}
+}
+
+// This function is relatively expensive and should only be called where there
+// are expired watches.
+func (w *Watches) cleanupExpiredWatches() {
+	// Because of lock ordering, we cannot acquire Inotify.mu for each watch
+	// owner while holding w.mu. As a result, store expired watches locally
+	// before removing.
+	var toRemove []*Watch
+	w.mu.RLock()
+	for _, watch := range w.ws {
+		if atomic.LoadInt32(&watch.expired) == 1 {
+			toRemove = append(toRemove, watch)
+		}
+	}
+	w.mu.RUnlock()
+	for _, watch := range toRemove {
+		watch.owner.RmWatch(watch.wd)
+	}
 }
 
 // HandleDeletion is called when the watch target is destroyed. Clear the
@@ -478,16 +500,10 @@ func (w *Watches) Notify(name string, events, cookie uint32, et EventType, unlin
 func (w *Watches) HandleDeletion() {
 	w.Notify("", linux.IN_DELETE_SELF, 0, InodeEvent, true /* unlinked */)
 
-	// We can't hold w.mu while calling watch.handleDeletion to preserve lock
-	// ordering w.r.t to the owner inotify instances. Instead, atomically move
-	// the watches map into a local variable so we can iterate over it safely.
-	//
-	// Because of this however, it is possible for the watches' owners to reach
-	// this inode while the inode has no refs. This is still safe because the
-	// owners can only reach the inode until this function finishes calling
-	// watch.handleDeletion below and the inode is guaranteed to exist in the
-	// meantime. But we still have to be very careful not to rely on inode state
-	// that may have been already destroyed.
+	// As in Watches.Notify, we can't hold w.mu while acquiring Inotify.mu for
+	// the owner of each watch being deleted. Instead, atomically store the
+	// watches map in a local variable and set it to nil so we can iterate over
+	// it with the assurance that there will be no concurrent accesses.
 	var ws map[uint64]*Watch
 	w.mu.Lock()
 	ws = w.ws
@@ -519,17 +535,28 @@ func (w *Watches) HandleDeletion() {
 // +stateify savable
 type Watch struct {
 	// Inotify instance which owns this watch.
+	//
+	// This field is immutable after creation.
 	owner *Inotify
 
 	// Descriptor for this watch. This is unique across an inotify instance.
+	//
+	// This field is immutable after creation.
 	wd int32
 
 	// target is a dentry representing the watch target. Its watch set contains this watch.
+	//
+	// This field is immutable after creation.
 	target *Dentry
 
 	// Events being monitored via this watch. Must be accessed with atomic
 	// memory operations.
 	mask uint32
+
+	// expired is set to 1 to indicate that this watch is a one-shot that has
+	// already sent a notification and therefore can be removed. Must be accessed
+	// with atomic memory operations.
+	expired int32
 }
 
 // OwnerID returns the id of the inotify instance that owns this watch.
@@ -546,12 +573,20 @@ func (w *Watch) ExcludeUnlinked() bool {
 	return atomic.LoadUint32(&w.mask)&linux.IN_EXCL_UNLINK != 0
 }
 
-// Notify queues a new event on this watch.
-func (w *Watch) Notify(name string, events uint32, cookie uint32) {
+// Notify queues a new event on this watch. Returns true if this is a one-shot
+// watch that should be deleted, after this event was successfully queued.
+func (w *Watch) Notify(name string, events uint32, cookie uint32) bool {
+	if atomic.LoadInt32(&w.expired) == 1 {
+		// This is a one-shot watch that is already in the process of being
+		// removed. This may happen if a second event reaches the watch target
+		// before this watch has been removed.
+		return false
+	}
+
 	mask := atomic.LoadUint32(&w.mask)
 	if mask&events == 0 {
 		// We weren't watching for this event.
-		return
+		return false
 	}
 
 	// Event mask should include bits matched from the watch plus all control
@@ -560,6 +595,11 @@ func (w *Watch) Notify(name string, events uint32, cookie uint32) {
 	effectiveMask := unmaskableBits | mask
 	matchedEvents := effectiveMask & events
 	w.owner.queueEvent(newEvent(w.wd, name, matchedEvents, cookie))
+	if mask&linux.IN_ONESHOT != 0 {
+		atomic.StoreInt32(&w.expired, 1)
+		return true
+	}
+	return false
 }
 
 // Event represents a struct inotify_event from linux.
