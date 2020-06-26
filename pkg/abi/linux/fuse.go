@@ -14,6 +14,58 @@
 
 package linux
 
+// +marshal
+type FUSEOpcode uint32
+
+// +marshal
+type FUSEOpID uint64
+
+// Opcodes for FUSE operations. Analogous to the opcodes in include/linux/fuse.h.
+const (
+	FUSE_LOOKUP FUSEOpcode = iota + 1
+	FUSE_FORGET            /* no reply */
+	FUSE_GETATTR
+	FUSE_SETATTR
+	FUSE_READLINK
+	FUSE_SYMLINK
+	_
+	FUSE_MKNOD
+	FUSE_MKDIR
+	FUSE_UNLINK
+	FUSE_RMDIR
+	FUSE_RENAME
+	FUSE_LINK
+	FUSE_OPEN
+	FUSE_READ
+	FUSE_WRITE
+	FUSE_STATFS
+	FUSE_RELEASE
+	_
+	FUSE_FSYNC
+	FUSE_SETXATTR
+	FUSE_GETXATTR
+	FUSE_LISTXATTR
+	FUSE_REMOVEXATTR
+	FUSE_FLUSH
+	FUSE_INIT
+	FUSE_OPENDIR
+	FUSE_READDIR
+	FUSE_RELEASEDIR
+	FUSE_FSYNCDIR
+	FUSE_GETLK
+	FUSE_SETLK
+	FUSE_SETLKW
+	FUSE_ACCESS
+	FUSE_CREATE
+	FUSE_INTERRUPT
+	FUSE_BMAP
+	FUSE_DESTROY
+	FUSE_IOCTL
+	FUSE_POLL
+	FUSE_NOTIFY_REPLY
+	FUSE_BATCH_FORGET
+)
+
 // FUSEHeaderIn is the header read by the daemon with each request.
 //
 // +marshal
@@ -22,10 +74,10 @@ type FUSEHeaderIn struct {
 	Len uint32
 
 	// Opcode specifies the kind of operation of the request.
-	Opcode uint32
+	Opcode FUSEOpcode
 
 	// Unique specifies the unique identifier for this request.
-	Unique uint32
+	Unique FUSEOpID
 
 	// NodeID is the ID of the filesystem object being operated on.
 	NodeID uint64
@@ -37,7 +89,7 @@ type FUSEHeaderIn struct {
 	GID uint32
 
 	// PID is the PID of the requesting process.
-	PID     uint32
+	PID uint32
 
 	padding uint32
 }
@@ -55,5 +107,5 @@ type FUSEHeaderOut struct {
 	Error int32
 
 	// Unique specifies the unique identifier of the corresponding request.
-	Unique uint32
+	Unique FUSEOpID
 }

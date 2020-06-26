@@ -57,9 +57,9 @@ type filesystem struct {
 	kernfs.Filesystem
 	devMinor uint32
 
-	// fuseFD is the FD returned when opening /dev/fuse. It is used for communication
-	// between the FUSE server daemon and the sentry fusefs.
-	fuseFD *DeviceFD
+	// fuseConn is used for communication between the FUSE server
+	// daemon and the sentry fusefs.
+	fuseConn *Connection
 
 	// opts is the options the fusefs is initialized with.
 	opts filesystemOptions
@@ -91,13 +91,11 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, err
 	}
 
-	taskCtxKey := kernel.CtxTask
-	taskCtxValue := ctx.Value(taskCtxKey)
-	if taskCtxValue == nil {
+	kernelTask := kernel.TaskFromContext(ctx)
+	if kernelTask == nil {
 		log.Warningf("fusefs.FilesystemType.GetFilesystem: couldn't get kernel task from context")
 		return nil, nil, syserror.EINVAL
 	}
-	kernelTask := taskCtxValue.(*kernel.Task)
 	fuseFd := kernelTask.GetFileVFS2(int32(deviceDescriptor))
 
 	// Parse and set all the other supported FUSE mount options.
@@ -128,7 +126,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		delete(mopts, "rootmode")
 		mode, err := strconv.ParseUint(modeStr, 8, 32)
 		if err != nil {
-			ctx.Warningf("fusefs.FilesystemType.GetFilesystem: invalid mode: %q", modeStr)
+			log.Warningf("fusefs.FilesystemType.GetFilesystem: invalid mode: %q", modeStr)
 			return nil, nil, syserror.EINVAL
 		}
 		rootMode = linux.FileMode(mode & 07777)
@@ -141,15 +139,13 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, syserror.EINVAL
 	}
 
-	// Mark the device as ready so it can be used. /dev/fuse can only be used if the FD was used to
-	// mount a FUSE filesystem.
-	fuseFD := fuseFd.Impl().(*DeviceFD)
-	fuseFD.mounted = true
+	// Create a new FUSE connection.
+	fuseConn := NewFUSEConnection(ctx, fuseFd)
 
 	fs := &filesystem{
 		devMinor: devMinor,
-		fuseFD:   fuseFD,
-		opts: fsopts,
+		fuseConn: fuseConn,
+		opts:     fsopts,
 	}
 
 	fs.VFSFilesystem().Init(vfsObj, &fsType, fs)
@@ -201,4 +197,3 @@ func (i *Inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 	}
 	return fd.VFSFileDescription(), nil
 }
-
