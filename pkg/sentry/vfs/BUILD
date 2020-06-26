@@ -87,12 +87,15 @@ go_test(
     srcs = [
         "file_description_impl_util_test.go",
         "mount_test.go",
+        "resolving_path_test.go",
     ],
     library = ":vfs",
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/fspath",
         "//pkg/sentry/contexttest",
+        "//pkg/sentry/kernel/auth",
         "//pkg/sync",
         "//pkg/syserror",
         "//pkg/usermem",

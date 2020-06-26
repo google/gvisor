@@ -464,3 +464,29 @@ func (rp *ResolvingPath) canHandleError(err error) bool {
 func (rp *ResolvingPath) MustBeDir() bool {
 	return rp.mustBeDir
 }
+
+// PrefixFilename adds prefix to filename, which is the last component in the
+// path represented by rp. This also restarts rp to the initial state on entry
+// into the current FilesystemImpl method.
+func (rp *ResolvingPath) PrefixFilename(prefix string) {
+	rp.Restart()
+	if rp.Done() {
+		return
+	}
+	// Trace the whole file path in origPath.
+	var origPath string
+	for !rp.Final() {
+		origPath += rp.Component() + "/"
+		rp.Advance()
+	}
+	// Add prefix the the filename.
+	origPath += prefix + rp.Component()
+
+	// Reset rp to the prefixed path.
+	prefixedPath := fspath.Parse(origPath)
+	rp.parts[0] = prefixedPath.Begin
+	rp.origParts[0] = prefixedPath.Begin
+	rp.pit = prefixedPath.Begin
+	rp.curPart = 0
+	rp.numOrigParts = 1
+}
