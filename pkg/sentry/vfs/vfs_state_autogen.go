@@ -326,6 +326,7 @@ func (x *Watch) StateFields() []string {
 		"wd",
 		"target",
 		"mask",
+		"expired",
 	}
 }
 
@@ -337,6 +338,7 @@ func (x *Watch) StateSave(m state.Sink) {
 	m.Save(1, &x.wd)
 	m.Save(2, &x.target)
 	m.Save(3, &x.mask)
+	m.Save(4, &x.expired)
 }
 
 func (x *Watch) afterLoad() {}
@@ -346,6 +348,7 @@ func (x *Watch) StateLoad(m state.Source) {
 	m.Load(1, &x.wd)
 	m.Load(2, &x.target)
 	m.Load(3, &x.mask)
+	m.Load(4, &x.expired)
 }
 
 func (x *Event) StateTypeName() string {
