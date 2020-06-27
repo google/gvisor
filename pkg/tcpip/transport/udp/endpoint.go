@@ -109,6 +109,7 @@ type endpoint struct {
 	portFlags      ports.Flags
 	bindToDevice   tcpip.NICID
 	broadcast      bool
+	noChecksum     bool
 
 	lastErrorMu sync.Mutex   `state:"nosave"`
 	lastError   *tcpip.Error `state:".(string)"`
@@ -529,7 +530,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		useDefaultTTL = false
 	}
 
-	if err := sendUDP(route, buffer.View(v).ToVectorisedView(), e.ID.LocalPort, dstPort, ttl, useDefaultTTL, e.sendTOS, e.owner); err != nil {
+	if err := sendUDP(route, buffer.View(v).ToVectorisedView(), e.ID.LocalPort, dstPort, ttl, useDefaultTTL, e.sendTOS, e.owner, e.noChecksum); err != nil {
 		return 0, nil, err
 	}
 	return int64(len(v)), nil, nil
@@ -551,6 +552,11 @@ func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 	case tcpip.MulticastLoopOption:
 		e.mu.Lock()
 		e.multicastLoop = v
+		e.mu.Unlock()
+
+	case tcpip.NoChecksumOption:
+		e.mu.Lock()
+		e.noChecksum = v
 		e.mu.Unlock()
 
 	case tcpip.ReceiveTOSOption:
@@ -825,6 +831,12 @@ func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 		e.mu.RUnlock()
 		return v, nil
 
+	case tcpip.NoChecksumOption:
+		e.mu.RLock()
+		v := e.noChecksum
+		e.mu.RUnlock()
+		return v, nil
+
 	case tcpip.ReceiveTOSOption:
 		e.mu.RLock()
 		v := e.receiveTOS
@@ -959,7 +971,7 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 
 // sendUDP sends a UDP segment via the provided network endpoint and under the
 // provided identity.
-func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort uint16, ttl uint8, useDefaultTTL bool, tos uint8, owner tcpip.PacketOwner) *tcpip.Error {
+func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort uint16, ttl uint8, useDefaultTTL bool, tos uint8, owner tcpip.PacketOwner, noChecksum bool) *tcpip.Error {
 	// Allocate a buffer for the UDP header.
 	hdr := buffer.NewPrependable(header.UDPMinimumSize + int(r.MaxHeaderLength()))
 
@@ -973,8 +985,12 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 		Length:  length,
 	})
 
-	// Only calculate the checksum if offloading isn't supported.
-	if r.Capabilities()&stack.CapabilityTXChecksumOffload == 0 {
+	// Set the checksum field unless TX checksum offload is enabled.
+	// On IPv4, UDP checksum is optional, and a zero value indicates the
+	// transmitter skipped the checksum generation (RFC768).
+	// On IPv6, UDP checksum is not optional (RFC2460 Section 8.1).
+	if r.Capabilities()&stack.CapabilityTXChecksumOffload == 0 &&
+		(!noChecksum || r.NetProto == header.IPv6ProtocolNumber) {
 		xsum := r.PseudoHeaderChecksum(ProtocolNumber, length)
 		for _, v := range data.Views() {
 			xsum = header.Checksum(v, xsum)

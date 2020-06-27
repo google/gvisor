@@ -585,59 +585,68 @@ type WriteOptions struct {
 type SockOptBool int
 
 const (
-	// BroadcastOption is used by SetSockOpt/GetSockOpt to specify whether
-	// datagram sockets are allowed to send packets to a broadcast address.
+	// BroadcastOption is used by SetSockOptBool/GetSockOptBool to specify
+	// whether datagram sockets are allowed to send packets to a broadcast
+	// address.
 	BroadcastOption SockOptBool = iota
 
-	// CorkOption is used by SetSockOpt/GetSockOpt to specify if data should be
-	// held until segments are full by the TCP transport protocol.
+	// CorkOption is used by SetSockOptBool/GetSockOptBool to specify if
+	// data should be held until segments are full by the TCP transport
+	// protocol.
 	CorkOption
 
-	// DelayOption is used by SetSockOpt/GetSockOpt to specify if data
-	// should be sent out immediately by the transport protocol. For TCP,
-	// it determines if the Nagle algorithm is on or off.
+	// DelayOption is used by SetSockOptBool/GetSockOptBool to specify if
+	// data should be sent out immediately by the transport protocol. For
+	// TCP, it determines if the Nagle algorithm is on or off.
 	DelayOption
 
-	// KeepaliveEnabledOption is used by SetSockOpt/GetSockOpt to specify whether
-	// TCP keepalive is enabled for this socket.
+	// KeepaliveEnabledOption is used by SetSockOptBool/GetSockOptBool to
+	// specify whether TCP keepalive is enabled for this socket.
 	KeepaliveEnabledOption
 
-	// MulticastLoopOption is used by SetSockOpt/GetSockOpt to specify whether
-	// multicast packets sent over a non-loopback interface will be looped back.
+	// MulticastLoopOption is used by SetSockOptBool/GetSockOptBool to
+	// specify whether multicast packets sent over a non-loopback interface
+	// will be looped back.
 	MulticastLoopOption
 
-	// PasscredOption is used by SetSockOpt/GetSockOpt to specify whether
-	// SCM_CREDENTIALS socket control messages are enabled.
+	// NoChecksumOption is used by SetSockOptBool/GetSockOptBool to specify
+	// whether UDP checksum is disabled for this socket.
+	NoChecksumOption
+
+	// PasscredOption is used by SetSockOptBool/GetSockOptBool to specify
+	// whether SCM_CREDENTIALS socket control messages are enabled.
 	//
 	// Only supported on Unix sockets.
 	PasscredOption
 
-	// QuickAckOption is stubbed out in SetSockOpt/GetSockOpt.
+	// QuickAckOption is stubbed out in SetSockOptBool/GetSockOptBool.
 	QuickAckOption
 
-	// ReceiveTClassOption is used by SetSockOpt/GetSockOpt to specify if the
-	// IPV6_TCLASS ancillary message is passed with incoming packets.
+	// ReceiveTClassOption is used by SetSockOptBool/GetSockOptBool to
+	// specify if the IPV6_TCLASS ancillary message is passed with incoming
+	// packets.
 	ReceiveTClassOption
 
-	// ReceiveTOSOption is used by SetSockOpt/GetSockOpt to specify if the TOS
-	// ancillary message is passed with incoming packets.
+	// ReceiveTOSOption is used by SetSockOptBool/GetSockOptBool to specify
+	// if the TOS ancillary message is passed with incoming packets.
 	ReceiveTOSOption
 
-	// ReceiveIPPacketInfoOption is used by {G,S}etSockOptBool to specify
-	// if more inforamtion is provided with incoming packets such
-	// as interface index and address.
+	// ReceiveIPPacketInfoOption is used by SetSockOptBool/GetSockOptBool to
+	// specify if more inforamtion is provided with incoming packets such as
+	// interface index and address.
 	ReceiveIPPacketInfoOption
 
-	// ReuseAddressOption is used by SetSockOpt/GetSockOpt to specify whether Bind()
-	// should allow reuse of local address.
+	// ReuseAddressOption is used by SetSockOptBool/GetSockOptBool to
+	// specify whether Bind() should allow reuse of local address.
 	ReuseAddressOption
 
-	// ReusePortOption is used by SetSockOpt/GetSockOpt to permit multiple sockets
-	// to be bound to an identical socket address.
+	// ReusePortOption is used by SetSockOptBool/GetSockOptBool to permit
+	// multiple sockets to be bound to an identical socket address.
 	ReusePortOption
 
-	// V6OnlyOption is used by {G,S}etSockOptBool to specify whether an IPv6
-	// socket is to be restricted to sending and receiving IPv6 packets only.
+	// V6OnlyOption is used by SetSockOptBool/GetSockOptBool to specify
+	// whether an IPv6 socket is to be restricted to sending and receiving
+	// IPv6 packets only.
 	V6OnlyOption
 )
 
@@ -645,25 +654,27 @@ const (
 type SockOptInt int
 
 const (
-	// KeepaliveCountOption is used by SetSockOpt/GetSockOpt to specify the number
-	// of un-ACKed TCP keepalives that will be sent before the connection is
-	// closed.
+	// KeepaliveCountOption is used by SetSockOptInt/GetSockOptInt to
+	// specify the number of un-ACKed TCP keepalives that will be sent
+	// before the connection is closed.
 	KeepaliveCountOption SockOptInt = iota
 
-	// IPv4TOSOption is used by SetSockOpt/GetSockOpt to specify TOS
+	// IPv4TOSOption is used by SetSockOptInt/GetSockOptInt to specify TOS
 	// for all subsequent outgoing IPv4 packets from the endpoint.
 	IPv4TOSOption
 
-	// IPv6TrafficClassOption is used by SetSockOpt/GetSockOpt to specify TOS
-	// for all subsequent outgoing IPv6 packets from the endpoint.
+	// IPv6TrafficClassOption is used by SetSockOptInt/GetSockOptInt to
+	// specify TOS for all subsequent outgoing IPv6 packets from the
+	// endpoint.
 	IPv6TrafficClassOption
 
-	// MaxSegOption is used by SetSockOpt/GetSockOpt to set/get the current
-	// Maximum Segment Size(MSS) value as specified using the TCP_MAXSEG option.
+	// MaxSegOption is used by SetSockOptInt/GetSockOptInt to set/get the
+	// current Maximum Segment Size(MSS) value as specified using the
+	// TCP_MAXSEG option.
 	MaxSegOption
 
-	// MulticastTTLOption is used by SetSockOpt/GetSockOpt to control the default
-	// TTL value for multicast messages. The default is 1.
+	// MulticastTTLOption is used by SetSockOptInt/GetSockOptInt to control
+	// the default TTL value for multicast messages. The default is 1.
 	MulticastTTLOption
 
 	// ReceiveQueueSizeOption is used in GetSockOptInt to specify that the
@@ -682,21 +693,22 @@ const (
 	// number of unread bytes in the output buffer should be returned.
 	SendQueueSizeOption
 
-	// TTLOption is used by SetSockOpt/GetSockOpt to control the default TTL/hop
-	// limit value for unicast messages. The default is protocol specific.
+	// TTLOption is used by SetSockOptInt/GetSockOptInt to control the
+	// default TTL/hop limit value for unicast messages. The default is
+	// protocol specific.
 	//
 	// A zero value indicates the default.
 	TTLOption
 
-	// TCPSynCountOption is used by SetSockOpt/GetSockOpt to specify the number of
-	// SYN retransmits that TCP should send before aborting the attempt to
-	// connect. It cannot exceed 255.
+	// TCPSynCountOption is used by SetSockOptInt/GetSockOptInt to specify
+	// the number of SYN retransmits that TCP should send before aborting
+	// the attempt to connect. It cannot exceed 255.
 	//
 	// NOTE: This option is currently only stubbed out and is no-op.
 	TCPSynCountOption
 
-	// TCPWindowClampOption is used by SetSockOpt/GetSockOpt to bound the size
-	// of the advertised window to this value.
+	// TCPWindowClampOption is used by SetSockOptInt/GetSockOptInt to bound
+	// the size of the advertised window to this value.
 	//
 	// NOTE: This option is currently only stubed out and is a no-op
 	TCPWindowClampOption
