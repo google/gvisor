@@ -21,6 +21,7 @@ go_library(
         "connection.go",
         "dev.go",
         "fusefs.go",
+        "init.go",
         "register.go",
         "request_list.go",
     ],
@@ -44,14 +45,13 @@ go_library(
 )
 
 go_test(
-    name = "dev_test",
+    name = "fuse_test",
     size = "small",
     srcs = ["dev_test.go"],
     library = ":fuse",
     deps = [
         "//pkg/abi/linux",
         "//pkg/sentry/fsimpl/testutil",
-        "//pkg/sentry/fsimpl/tmpfs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
