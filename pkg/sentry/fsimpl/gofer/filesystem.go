@@ -16,6 +16,7 @@ package gofer
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -464,21 +465,61 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 	defer mntns.DecRef()
 	parent.dirMu.Lock()
 	defer parent.dirMu.Unlock()
+
 	child, ok := parent.children[name]
 	if ok && child == nil {
 		return syserror.ENOENT
 	}
-	// We only need a dentry representing the file at name if it can be a mount
-	// point. If child is nil, then it can't be a mount point. If child is
-	// non-nil but stale, the actual file can't be a mount point either; we
-	// detect this case by just speculatively calling PrepareDeleteDentry and
-	// only revalidating the dentry if that fails (indicating that the existing
-	// dentry is a mount point).
+
+	sticky := atomic.LoadUint32(&parent.mode)&linux.ModeSticky != 0
+	if sticky {
+		if !ok {
+			// If the sticky bit is set, we need to retrieve the child to determine
+			// whether removing it is allowed.
+			child, err = fs.stepLocked(ctx, rp, parent, false /* mayFollowSymlinks */, &ds)
+			if err != nil {
+				return err
+			}
+		} else if child != nil && !child.cachedMetadataAuthoritative() {
+			// Make sure the dentry representing the file at name is up to date
+			// before examining its metadata.
+			child, err = fs.revalidateChildLocked(ctx, vfsObj, parent, name, child, &ds)
+			if err != nil {
+				return err
+			}
+		}
+		if err := parent.mayDelete(rp.Credentials(), child); err != nil {
+			return err
+		}
+	}
+
+	// If a child dentry exists, prepare to delete it. This should fail if it is
+	// a mount point. We detect mount points by speculatively calling
+	// PrepareDeleteDentry, which fails if child is a mount point. However, we
+	// may need to revalidate the file in this case to make sure that it has not
+	// been deleted or replaced on the remote fs, in which case the mount point
+	// will have disappeared. If calling PrepareDeleteDentry fails again on the
+	// up-to-date dentry, we can be sure that it is a mount point.
+	//
+	// Also note that if child is nil, then it can't be a mount point.
 	if child != nil {
+		// Hold child.dirMu so we can check child.children and
+		// child.syntheticChildren. We don't access these fields until a bit later,
+		// but locking child.dirMu after calling vfs.PrepareDeleteDentry() would
+		// create an inconsistent lock ordering between dentry.dirMu and
+		// vfs.Dentry.mu (in the VFS lock order, it would make dentry.dirMu both "a
+		// FilesystemImpl lock" and "a lock acquired by a FilesystemImpl between
+		// PrepareDeleteDentry and CommitDeleteDentry). To avoid this, lock
+		// child.dirMu before calling PrepareDeleteDentry.
 		child.dirMu.Lock()
 		defer child.dirMu.Unlock()
 		if err := vfsObj.PrepareDeleteDentry(mntns, &child.vfsd); err != nil {
-			if parent.cachedMetadataAuthoritative() {
+			// We can skip revalidation in several cases:
+			// - We are not in InteropModeShared
+			// - The parent directory is synthetic, in which case the child must also
+			//   be synthetic
+			// - We already updated the child during the sticky bit check above
+			if parent.cachedMetadataAuthoritative() || sticky {
 				return err
 			}
 			child, err = fs.revalidateChildLocked(ctx, vfsObj, parent, name, child, &ds)
@@ -1100,7 +1141,8 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			return err
 		}
 	}
-	if err := oldParent.checkPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
+	creds := rp.Credentials()
+	if err := oldParent.checkPermissions(creds, vfs.MayWrite|vfs.MayExec); err != nil {
 		return err
 	}
 	vfsObj := rp.VirtualFilesystem()
@@ -1115,12 +1157,15 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	if renamed == nil {
 		return syserror.ENOENT
 	}
+	if err := oldParent.mayDelete(creds, renamed); err != nil {
+		return err
+	}
 	if renamed.isDir() {
 		if renamed == newParent || genericIsAncestorDentry(renamed, newParent) {
 			return syserror.EINVAL
 		}
 		if oldParent != newParent {
-			if err := renamed.checkPermissions(rp.Credentials(), vfs.MayWrite); err != nil {
+			if err := renamed.checkPermissions(creds, vfs.MayWrite); err != nil {
 				return err
 			}
 		}
@@ -1131,7 +1176,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 
 	if oldParent != newParent {
-		if err := newParent.checkPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
+		if err := newParent.checkPermissions(creds, vfs.MayWrite|vfs.MayExec); err != nil {
 			return err
 		}
 		newParent.dirMu.Lock()
