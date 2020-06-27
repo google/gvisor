@@ -1800,9 +1800,9 @@ cc_binary(
 )
 
 cc_binary(
-    name = "raw_socket_ipv4_test",
+    name = "raw_socket_test",
     testonly = 1,
-    srcs = ["raw_socket_ipv4.cc"],
+    srcs = ["raw_socket.cc"],
     linkstatic = 1,
     deps = [
         ":socket_test_util",
