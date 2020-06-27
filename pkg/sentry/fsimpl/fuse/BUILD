@@ -21,6 +21,7 @@ go_library(
         "connection.go",
         "dev.go",
         "fusefs.go",
+        "init.go",
         "register.go",
         "request_list.go",
     ],
