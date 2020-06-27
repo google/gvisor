@@ -16,6 +16,8 @@ package fuse
 
 import (
 	"fmt"
+	"sync"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -54,24 +56,238 @@ type FutureResponse struct {
 // Connection is the struct by which the sentry communicates with the FUSE server daemon.
 type Connection struct {
 	fd *DeviceFD
+
+	// MaxRead size in bytes
+	MaxRead uint32
+
+	// MaxWrite size in bytes
+	MaxWrite uint32
+
+	// MaxPages is the maximum number of pages for a single request to use
+	MaxPages uint16
+
+	// MaxBackground is the maximum number of outstanding background requests
+	MaxBackground uint16
+
+	// CongestionThreshold for number of background requests
+	CongestionThreshold uint16
+
+	// NumberBackground requests currently
+	NumBackground uint16
+
+	// ActiveBackground requests number currently queued for userspace
+	ActiveBackground uint16
+
+	// TODO: BgQuque
+	// some queue for background queued requests
+
+	// BgLock protects:
+	// MaxBackground, CongestionThreshold, NumBackground,
+	// ActiveBackground, BgQueue, Blocked
+	BgLock sync.Mutex
+
+	// Initialized if INIT reply has been received.
+	// Until it's set, FUSE request allocation will be suspended
+	Initialized bool
+
+	// Blocked when:
+	// before the INIT reply is received,
+	// and if there are too many outstading backgrounds requests
+	Blocked bool
+
+	// Connected if connection established.
+	// Unset when umount, connection abort and device release
+	Connected bool
+
+	// Aborted via sysfs
+	Aborted bool
+
+	// ConnError if connection failed (version mismatch).
+	// Only set in INIT,
+	// before any other request,
+	// never unset.
+	// Cannot race with other flags.
+	ConnError bool
+
+	// ConnInit if connection successful.
+	// Only set in INIT.
+	ConnInit bool
+
+	// AsyncRead if read pages asynchronously.
+	// Only set in INIT.
+	AsyncRead bool
+
+	// AbortErr is true when FUSE will return an unique read error after abort.
+	// Only set in INIT.
+	AbortErr bool
+
+	// AtomicOTrunc is true when FUSE does not send a separate SETATTR request
+	// before open with O_TRUNC flag.
+	AtomicOTrunc bool
+
+	// ExportSupport is true if Filesystem supports NFS exporting.
+	// Only set in INIT.
+	ExportSupport bool
+
+	// WritebackCache is true if using write-back cache policy,
+	// false if using write-through policy>
+	WritebackCache bool
+
+	// ParallelDirops is true if allowing lookup and readdir in parallel,
+	// false if serialized.
+	ParallelDirops bool
+
+	// HandleKillpriv if fs handls killing suid/sgid/cap on write/chown/trunc.
+	HandleKillpriv bool
+
+	// CacheSymlinks if cache READLINK responses in page cache.
+	CacheSymlinks bool
+
+	/* Setting races on the following optimization-purpose flags are safe */
+
+	// NoOpen if open/release not implemented by fs
+	NoOpen bool
+
+	// NoOpendir if opendir/releasedir not implemented by fs
+	NoOpendir bool
+
+	// NoFsync if fsync not implemented by fs
+	NoFsync bool
+
+	// NoFsyncdir if fsyncdir not implemented by fs
+	NoFsyncdir bool
+
+	// NoFlush if flush not implemented by fs
+	NoFlush bool
+
+	// NoSetxattr if setxattr not implemented by fs
+	NoSetxattr bool
+
+	// NoGetxattr if getxattr not implemented by fs
+	NoGetxattr bool
+
+	// NoListxattr if listxattr not implemented by fs
+	NoListxattr bool
+
+	// NoRemovexattr if removexattr not implemented by fs
+	NoRemovexattr bool
+
+	// NoLock if posix file locking primitives not implemented by fs
+	NoLock bool
+
+	// NoAccess if access not implemented by fs
+	NoAccess bool
+
+	// NoCreate if create not implemented by fs
+	NoCreate bool
+
+	// NoInterrupt if interrupt not implemented by fs
+	NoInterrupt bool
+
+	// NoBmap if bmap not implemented by fs
+	NoBmap bool
+
+	// NoPoll if poll not implemented by fs
+	NoPoll bool
+
+	// BigWrites if doing multi-page cached writes
+	BigWrites bool
+
+	// DontMask don't apply umask to creation modes
+	DontMask bool
+
+	// NoFLock if BSD file locking primitives not implemented by fs
+	NoFLock bool
+
+	// NoFallocate if fallocate not implemented by fs
+	NoFallocate bool
+
+	// NoRename2 if rename with flags not implemented by fs
+	NoRename2 bool
+
+	// AutoInvalData use enhanced/automatic page cache invalidation.
+	AutoInvalData bool
+
+	// ExplicitInvalData Filesystem is fully reponsible for page cache invalidation.
+	ExplicitInvalData bool
+
+	// DoReaddirplus if the filesystem supports readdirplus
+	DoReaddirplus bool
+
+	// ReaddirplusAuto if the filesystem wants adaptive readdirplus
+	ReaddirplusAuto bool
+
+	// AsyncDio if the filesystem supports asynchronous direct-IO submission
+	AsyncDio bool
+
+	// NoLseek if lseek() not implemented by fs
+	NoLseek bool
+
+	// PosixAcl if the filesystem supports posix acls
+	PosixAcl bool
+
+	// DefaultPermissions if to check permissions based on the file mode
+	DefaultPermissions bool
+
+	// AllowOther user who is not the mounter to access the filesystem
+	AllowOther bool
+
+	// NoCopyFileRange if the filesystem not supports copy_file_range
+	NoCopyFileRange bool
+
+	// Destroy request will be sent
+	Destroy bool
+
+	// DeleteStable dentries
+	DeleteStable bool
+
+	// NoControl if not create entry in fusectl fs
+	NonControl bool
+
+	// NoForceUmount if not allow MNT_FORCE umount
+	NoForceUmount bool
+
+	// NoMountOptions if not show mount options
+	NoMountOptions bool
+
+	// NumWating requests waiting for completion
+	NumWaiting uint32
+
+	// Minor version negotiated
+	Minor uint32
 }
 
 // NewFUSEConnection creates a FUSE connection to fd
 func NewFUSEConnection(ctx context.Context, fd *vfs.FileDescription) *Connection {
+	conn := &Connection{}
+
 	// Mark the device as ready so it can be used. /dev/fuse can only be used if the FD was used to
 	// mount a FUSE filesystem.
-	fuseFD := fd.Impl().(*DeviceFD)
-	fuseFD.mounted = true
+	conn.fd = fd.Impl().(*DeviceFD)
+	conn.fd.mounted = true
 
 	// Create the writeBuf for the header to be stored in.
 	hdrLen := uint32((*linux.FUSEHeaderOut)(nil).SizeBytes())
-	fuseFD.writeBuf = make([]byte, hdrLen)
-	fuseFD.completions = make(map[linux.FUSEOpID]*FutureResponse)
-	fuseFD.waitCh = make(chan struct{}, MaxInFlightRequests)
-	fuseFD.writeCursor = 0
-	fuseFD.readCursor = 0
+	conn.fd.writeBuf = make([]byte, hdrLen)
+	conn.fd.completions = make(map[linux.FUSEOpID]*FutureResponse)
+	conn.fd.waitCh = make(chan struct{}, MaxInFlightRequests)
+	conn.fd.writeCursor = 0
+	conn.fd.readCursor = 0
 
-	return &Connection{fd: fuseFD}
+	// initialize other member fields
+
+	atomic.StoreUint32(&conn.NumWaiting, 0)
+
+	conn.MaxBackground = FUSE_DEFAULT_MAX_BACKGROUND
+	conn.CongestionThreshold = FUSE_DEFAULT_CONGESTION_THRESHOLD
+
+	conn.Blocked = false
+	conn.Initialized = false
+	conn.Connected = true
+
+	conn.MaxPages = FUSE_DEFAULT_MAX_PAGES_PER_REQ
+
+	return conn
 }
 
 // NewRequest creates a new request that can be sent to the FUSE server.
