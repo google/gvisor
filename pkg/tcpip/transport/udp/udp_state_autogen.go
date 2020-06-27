@@ -73,6 +73,7 @@ func (x *endpoint) StateFields() []string {
 		"portFlags",
 		"bindToDevice",
 		"broadcast",
+		"noChecksum",
 		"lastError",
 		"boundBindToDevice",
 		"boundPortFlags",
@@ -92,7 +93,7 @@ func (x *endpoint) StateSave(m state.Sink) {
 	var rcvBufSizeMax int = x.saveRcvBufSizeMax()
 	m.SaveValue(5, rcvBufSizeMax)
 	var lastError string = x.saveLastError()
-	m.SaveValue(21, lastError)
+	m.SaveValue(22, lastError)
 	m.Save(0, &x.TransportEndpointInfo)
 	m.Save(1, &x.waiterQueue)
 	m.Save(2, &x.uniqueID)
@@ -113,16 +114,17 @@ func (x *endpoint) StateSave(m state.Sink) {
 	m.Save(18, &x.portFlags)
 	m.Save(19, &x.bindToDevice)
 	m.Save(20, &x.broadcast)
-	m.Save(22, &x.boundBindToDevice)
-	m.Save(23, &x.boundPortFlags)
-	m.Save(24, &x.sendTOS)
-	m.Save(25, &x.receiveTOS)
-	m.Save(26, &x.receiveTClass)
-	m.Save(27, &x.receiveIPPacketInfo)
-	m.Save(28, &x.shutdownFlags)
-	m.Save(29, &x.multicastMemberships)
-	m.Save(30, &x.effectiveNetProtos)
-	m.Save(31, &x.owner)
+	m.Save(21, &x.noChecksum)
+	m.Save(23, &x.boundBindToDevice)
+	m.Save(24, &x.boundPortFlags)
+	m.Save(25, &x.sendTOS)
+	m.Save(26, &x.receiveTOS)
+	m.Save(27, &x.receiveTClass)
+	m.Save(28, &x.receiveIPPacketInfo)
+	m.Save(29, &x.shutdownFlags)
+	m.Save(30, &x.multicastMemberships)
+	m.Save(31, &x.effectiveNetProtos)
+	m.Save(32, &x.owner)
 }
 
 func (x *endpoint) StateLoad(m state.Source) {
@@ -146,18 +148,19 @@ func (x *endpoint) StateLoad(m state.Source) {
 	m.Load(18, &x.portFlags)
 	m.Load(19, &x.bindToDevice)
 	m.Load(20, &x.broadcast)
-	m.Load(22, &x.boundBindToDevice)
-	m.Load(23, &x.boundPortFlags)
-	m.Load(24, &x.sendTOS)
-	m.Load(25, &x.receiveTOS)
-	m.Load(26, &x.receiveTClass)
-	m.Load(27, &x.receiveIPPacketInfo)
-	m.Load(28, &x.shutdownFlags)
-	m.Load(29, &x.multicastMemberships)
-	m.Load(30, &x.effectiveNetProtos)
-	m.Load(31, &x.owner)
+	m.Load(21, &x.noChecksum)
+	m.Load(23, &x.boundBindToDevice)
+	m.Load(24, &x.boundPortFlags)
+	m.Load(25, &x.sendTOS)
+	m.Load(26, &x.receiveTOS)
+	m.Load(27, &x.receiveTClass)
+	m.Load(28, &x.receiveIPPacketInfo)
+	m.Load(29, &x.shutdownFlags)
+	m.Load(30, &x.multicastMemberships)
+	m.Load(31, &x.effectiveNetProtos)
+	m.Load(32, &x.owner)
 	m.LoadValue(5, new(int), func(y interface{}) { x.loadRcvBufSizeMax(y.(int)) })
-	m.LoadValue(21, new(string), func(y interface{}) { x.loadLastError(y.(string)) })
+	m.LoadValue(22, new(string), func(y interface{}) { x.loadLastError(y.(string)) })
 	m.AfterLoad(x.afterLoad)
 }
 
