@@ -204,16 +204,33 @@ TEST_P(TimerfdTest, SetAbsoluteTime) {
   EXPECT_EQ(1, val);
 }
 
-TEST_P(TimerfdTest, IllegalReadWrite) {
+TEST_P(TimerfdTest, IllegalSeek) {
+  auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), 0));
+  if (!IsRunningWithVFS1()) {
+    EXPECT_THAT(lseek(tfd.get(), 0, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
+  }
+}
+
+TEST_P(TimerfdTest, IllegalPread) {
+  auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), 0));
+  int val;
+  EXPECT_THAT(pread(tfd.get(), &val, sizeof(val), 0),
+              SyscallFailsWithErrno(ESPIPE));
+}
+
+TEST_P(TimerfdTest, IllegalPwrite) {
+  auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), 0));
+  EXPECT_THAT(pwrite(tfd.get(), "x", 1, 0), SyscallFailsWithErrno(ESPIPE));
+  if (!IsRunningWithVFS1()) {
+  }
+}
+
+TEST_P(TimerfdTest, IllegalWrite) {
   auto const tfd =
       ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), TFD_NONBLOCK));
   uint64_t val = 0;
-  EXPECT_THAT(PreadFd(tfd.get(), &val, sizeof(val), 0),
-              SyscallFailsWithErrno(ESPIPE));
-  EXPECT_THAT(WriteFd(tfd.get(), &val, sizeof(val)),
+  EXPECT_THAT(write(tfd.get(), &val, sizeof(val)),
               SyscallFailsWithErrno(EINVAL));
-  EXPECT_THAT(PwriteFd(tfd.get(), &val, sizeof(val), 0),
-              SyscallFailsWithErrno(ESPIPE));
 }
 
 std::string PrintClockId(::testing::TestParamInfo<int> info) {
