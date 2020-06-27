@@ -1251,6 +1251,30 @@ func TestWriteIncrementsPacketsSent(t *testing.T) {
 	}
 }
 
+func TestNoChecksum(t *testing.T) {
+	for _, flow := range []testFlow{unicastV4, unicastV6} {
+		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
+			c := newDualTestContext(t, defaultMTU)
+			defer c.cleanup()
+
+			c.createEndpointForFlow(flow)
+
+			// Disable the checksum generation.
+			if err := c.ep.SetSockOptBool(tcpip.NoChecksumOption, true); err != nil {
+				t.Fatalf("SetSockOptBool failed: %s", err)
+			}
+			// This option is effective on IPv4 only.
+			testWrite(c, flow, checker.UDP(checker.NoChecksum(flow.isV4())))
+
+			// Enable the checksum generation.
+			if err := c.ep.SetSockOptBool(tcpip.NoChecksumOption, false); err != nil {
+				t.Fatalf("SetSockOptBool failed: %s", err)
+			}
+			testWrite(c, flow, checker.UDP(checker.NoChecksum(false)))
+		})
+	}
+}
+
 func TestTTL(t *testing.T) {
 	for _, flow := range []testFlow{unicastV4, unicastV4in6, unicastV6, unicastV6Only, multicastV4, multicastV4in6, multicastV6, broadcast, broadcastIn6} {
 		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {

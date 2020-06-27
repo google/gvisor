@@ -1239,6 +1239,44 @@ TEST_P(UdpSocketTest, FIONREADZeroLengthWriteShutdown) {
   EXPECT_EQ(n, 0);
 }
 
+TEST_P(UdpSocketTest, SoNoCheckOffByDefault) {
+  // TODO(gvisor.dev/issue/1202): SO_NO_CHECK socket option not supported by
+  // hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
+  int v = -1;
+  socklen_t optlen = sizeof(v);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_NO_CHECK, &v, &optlen),
+              SyscallSucceeds());
+  ASSERT_EQ(v, kSockOptOff);
+  ASSERT_EQ(optlen, sizeof(v));
+}
+
+TEST_P(UdpSocketTest, SoNoCheck) {
+  // TODO(gvisor.dev/issue/1202): SO_NO_CHECK socket option not supported by
+  // hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
+  int v = kSockOptOn;
+  socklen_t optlen = sizeof(v);
+  ASSERT_THAT(setsockopt(s_, SOL_SOCKET, SO_NO_CHECK, &v, optlen),
+              SyscallSucceeds());
+  v = -1;
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_NO_CHECK, &v, &optlen),
+              SyscallSucceeds());
+  ASSERT_EQ(v, kSockOptOn);
+  ASSERT_EQ(optlen, sizeof(v));
+
+  v = kSockOptOff;
+  ASSERT_THAT(setsockopt(s_, SOL_SOCKET, SO_NO_CHECK, &v, optlen),
+              SyscallSucceeds());
+  v = -1;
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_NO_CHECK, &v, &optlen),
+              SyscallSucceeds());
+  ASSERT_EQ(v, kSockOptOff);
+  ASSERT_EQ(optlen, sizeof(v));
+}
+
 TEST_P(UdpSocketTest, SoTimestampOffByDefault) {
   // TODO(gvisor.dev/issue/1202): SO_TIMESTAMP socket option not supported by
   // hostinet.
