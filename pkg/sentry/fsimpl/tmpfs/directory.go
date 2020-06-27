@@ -81,6 +81,10 @@ func (dir *directory) removeChildLocked(child *dentry) {
 	dir.iterMu.Unlock()
 }
 
+func (dir *directory) mayDelete(creds *auth.Credentials, child *dentry) error {
+	return vfs.CheckDeleteSticky(creds, linux.FileMode(atomic.LoadUint32(&dir.inode.mode)), auth.KUID(atomic.LoadUint32(&child.inode.uid)))
+}
+
 type directoryFD struct {
 	fileDescription
 	vfs.DirectoryFileDescriptionDefaultImpl
