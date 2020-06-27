@@ -333,9 +333,27 @@ PosixErrorOr<int> InotifyAddWatch(int fd, const std::string& path,
   return wd;
 }
 
-TEST(Inotify, InotifyFdNotWritable) {
+TEST(Inotify, IllegalSeek) {
   const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(0));
-  EXPECT_THAT(write(fd.get(), "x", 1), SyscallFailsWithErrno(EBADF));
+  EXPECT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
+}
+
+TEST(Inotify, IllegalPread) {
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(0));
+  int val;
+  EXPECT_THAT(pread(fd.get(), &val, sizeof(val), 0),
+              SyscallFailsWithErrno(ESPIPE));
+}
+
+TEST(Inotify, IllegalPwrite) {
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(0));
+  EXPECT_THAT(pwrite(fd.get(), "x", 1, 0), SyscallFailsWithErrno(ESPIPE));
+}
+
+TEST(Inotify, IllegalWrite) {
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(0));
+  int val = 0;
+  EXPECT_THAT(write(fd.get(), &val, sizeof(val)), SyscallFailsWithErrno(EBADF));
 }
 
 TEST(Inotify, InitFlags) {
