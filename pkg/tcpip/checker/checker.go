@@ -320,6 +320,22 @@ func DstPort(port uint16) TransportChecker {
 	}
 }
 
+// NoChecksum creates a checker that checks if the checksum is zero.
+func NoChecksum(noChecksum bool) TransportChecker {
+	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+
+		udp, ok := h.(header.UDP)
+		if !ok {
+			return
+		}
+
+		if b := udp.Checksum() == 0; b != noChecksum {
+			t.Errorf("bad checksum state, got %t, want %t", b, noChecksum)
+		}
+	}
+}
+
 // SeqNum creates a checker that checks the sequence number.
 func SeqNum(seq uint32) TransportChecker {
 	return func(t *testing.T, h header.Transport) {

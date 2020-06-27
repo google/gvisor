@@ -407,7 +407,6 @@ func emitUnimplementedEvent(t *kernel.Task, name int) {
 		linux.SO_MARK,
 		linux.SO_MAX_PACING_RATE,
 		linux.SO_NOFCS,
-		linux.SO_NO_CHECK,
 		linux.SO_OOBINLINE,
 		linux.SO_PASSCRED,
 		linux.SO_PASSSEC,

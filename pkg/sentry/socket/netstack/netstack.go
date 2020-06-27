@@ -1169,6 +1169,17 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 
 		return int32(v), nil
 
+	case linux.SO_NO_CHECK:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		v, err := ep.GetSockOptBool(tcpip.NoChecksumOption)
+		if err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+		return boolToInt32(v), nil
+
 	default:
 		socket.GetSockOptEmitUnimplementedEvent(t, name)
 	}
@@ -1719,6 +1730,14 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.OutOfBandInlineOption(v)))
+
+	case linux.SO_NO_CHECK:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+
+		v := usermem.ByteOrder.Uint32(optVal)
+		return syserr.TranslateNetstackError(ep.SetSockOptBool(tcpip.NoChecksumOption, v != 0))
 
 	case linux.SO_LINGER:
 		if len(optVal) < linux.SizeOfLinger {
