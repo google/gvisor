@@ -492,6 +492,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	if !ok {
 		return syserror.ENOENT
 	}
+	if err := oldParentDir.mayDelete(rp.Credentials(), renamed); err != nil {
+		return err
+	}
 	// Note that we don't need to call rp.CheckMount(), since if renamed is a
 	// mount point then we want to rename the mount point, not anything in the
 	// mounted filesystem.
@@ -606,6 +609,9 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	if !ok {
 		return syserror.ENOENT
 	}
+	if err := parentDir.mayDelete(rp.Credentials(), child); err != nil {
+		return err
+	}
 	childDir, ok := child.inode.impl.(*directory)
 	if !ok {
 		return syserror.ENOTDIR
@@ -715,6 +721,9 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	child, ok := parentDir.childMap[name]
 	if !ok {
 		return syserror.ENOENT
+	}
+	if err := parentDir.mayDelete(rp.Credentials(), child); err != nil {
+		return err
 	}
 	if child.inode.isDir() {
 		return syserror.EISDIR
