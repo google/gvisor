@@ -61,6 +61,7 @@ var (
 	ENOMEM       = error(syscall.ENOMEM)
 	ENOSPC       = error(syscall.ENOSPC)
 	ENOSYS       = error(syscall.ENOSYS)
+	ENOTCONN     = error(syscall.ENOTCONN)
 	ENOTDIR      = error(syscall.ENOTDIR)
 	ENOTEMPTY    = error(syscall.ENOTEMPTY)
 	ENOTSOCK     = error(syscall.ENOTSOCK)
