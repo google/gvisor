@@ -23,6 +23,7 @@ go_library(
         "fusefs.go",
         "register.go",
         "request_list.go",
+        "init.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
