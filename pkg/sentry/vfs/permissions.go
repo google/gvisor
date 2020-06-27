@@ -230,6 +230,20 @@ func CheckSetStat(ctx context.Context, creds *auth.Credentials, stat *linux.Stat
 	return nil
 }
 
+// CheckDeleteSticky checks whether the sticky bit is set on a directory with
+// the given file mode, and if so, checks whether creds has permission to
+// remove a file owned by childKUID from a directory with the given mode.
+// CheckDeleteSticky is consistent with fs/linux.h:check_sticky().
+func CheckDeleteSticky(creds *auth.Credentials, parentMode linux.FileMode, childKUID auth.KUID) error {
+	if parentMode&linux.ModeSticky == 0 {
+		return nil
+	}
+	if CanActAsOwner(creds, childKUID) {
+		return nil
+	}
+	return syserror.EPERM
+}
+
 // CanActAsOwner returns true if creds can act as the owner of a file with the
 // given owning UID, consistent with Linux's
 // fs/inode.c:inode_owner_or_capable().

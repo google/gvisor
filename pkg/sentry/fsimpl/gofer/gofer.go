@@ -1003,6 +1003,10 @@ func (d *dentry) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) 
 	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(atomic.LoadUint32(&d.mode)), auth.KUID(atomic.LoadUint32(&d.uid)), auth.KGID(atomic.LoadUint32(&d.gid)))
 }
 
+func (d *dentry) mayDelete(creds *auth.Credentials, child *dentry) error {
+	return vfs.CheckDeleteSticky(creds, linux.FileMode(atomic.LoadUint32(&d.mode)), auth.KUID(atomic.LoadUint32(&child.uid)))
+}
+
 func dentryUIDFromP9UID(uid p9.UID) uint32 {
 	if !uid.Ok() {
 		return uint32(auth.OverflowUID)
