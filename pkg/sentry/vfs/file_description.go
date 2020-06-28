@@ -42,10 +42,19 @@ type FileDescription struct {
 	// operations.
 	refs int64
 
+	// flagsMu protects statusFlags and asyncHandler below.
+	flagsMu sync.Mutex
+
 	// statusFlags contains status flags, "initialized by open(2) and possibly
-	// modified by fcntl()" - fcntl(2). statusFlags is accessed using atomic
-	// memory operations.
+	// modified by fcntl()" - fcntl(2). statusFlags can be read using atomic
+	// memory operations when it does not need to be synchronized with an
+	// access to asyncHandler.
 	statusFlags uint32
+
+	// asyncHandler handles O_ASYNC signal generation. It is set with the
+	// F_SETOWN or F_SETOWN_EX fcntls. For asyncHandler to be used, O_ASYNC must
+	// also be set by fcntl(2).
+	asyncHandler FileAsync
 
 	// epolls is the set of epollInterests registered for this FileDescription.
 	// epolls is protected by epollMu.
@@ -193,6 +202,13 @@ func (fd *FileDescription) DecRef() {
 			fd.vd.mount.EndWrite()
 		}
 		fd.vd.DecRef()
+		fd.flagsMu.Lock()
+		// TODO(gvisor.dev/issue/1663): We may need to unregister during save, as we do in VFS1.
+		if fd.statusFlags&linux.O_ASYNC != 0 && fd.asyncHandler != nil {
+			fd.asyncHandler.Unregister(fd)
+		}
+		fd.asyncHandler = nil
+		fd.flagsMu.Unlock()
 	} else if refs < 0 {
 		panic("FileDescription.DecRef() called without holding a reference")
 	}
@@ -276,7 +292,18 @@ func (fd *FileDescription) SetStatusFlags(ctx context.Context, creds *auth.Crede
 	}
 	// TODO(jamieliu): FileDescriptionImpl.SetOAsync()?
 	const settableFlags = linux.O_APPEND | linux.O_ASYNC | linux.O_DIRECT | linux.O_NOATIME | linux.O_NONBLOCK
-	atomic.StoreUint32(&fd.statusFlags, (oldFlags&^settableFlags)|(flags&settableFlags))
+	fd.flagsMu.Lock()
+	if fd.asyncHandler != nil {
+		// Use fd.statusFlags instead of oldFlags, which may have become outdated,
+		// to avoid double registering/unregistering.
+		if fd.statusFlags&linux.O_ASYNC == 0 && flags&linux.O_ASYNC != 0 {
+			fd.asyncHandler.Register(fd)
+		} else if fd.statusFlags&linux.O_ASYNC != 0 && flags&linux.O_ASYNC == 0 {
+			fd.asyncHandler.Unregister(fd)
+		}
+	}
+	fd.statusFlags = (oldFlags &^ settableFlags) | (flags & settableFlags)
+	fd.flagsMu.Unlock()
 	return nil
 }
 
@@ -533,17 +560,23 @@ func (fd *FileDescription) StatFS(ctx context.Context) (linux.Statfs, error) {
 	return fd.impl.StatFS(ctx)
 }
 
-// Readiness returns fd's I/O readiness.
+// Readiness implements waiter.Waitable.Readiness.
+//
+// It returns fd's I/O readiness.
 func (fd *FileDescription) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return fd.impl.Readiness(mask)
 }
 
-// EventRegister registers e for I/O readiness events in mask.
+// EventRegister implements waiter.Waitable.EventRegister.
+//
+// It registers e for I/O readiness events in mask.
 func (fd *FileDescription) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
 	fd.impl.EventRegister(e, mask)
 }
 
-// EventUnregister unregisters e for I/O readiness events.
+// EventUnregister implements waiter.Waitable.EventUnregister.
+//
+// It unregisters e for I/O readiness events.
 func (fd *FileDescription) EventUnregister(e *waiter.Entry) {
 	fd.impl.EventUnregister(e)
 }
@@ -769,4 +802,33 @@ func (fd *FileDescription) LockPOSIX(ctx context.Context, uid lock.UniqueID, t l
 // UnlockPOSIX unlocks a POSIX-style file range lock.
 func (fd *FileDescription) UnlockPOSIX(ctx context.Context, uid lock.UniqueID, start, end uint64, whence int16) error {
 	return fd.impl.UnlockPOSIX(ctx, uid, start, end, whence)
+}
+
+// A FileAsync sends signals to its owner when w is ready for IO. This is only
+// implemented by pkg/sentry/fasync:FileAsync, but we unfortunately need this
+// interface to avoid circular dependencies.
+type FileAsync interface {
+	Register(w waiter.Waitable)
+	Unregister(w waiter.Waitable)
+}
+
+// AsyncHandler returns the FileAsync for fd.
+func (fd *FileDescription) AsyncHandler() FileAsync {
+	fd.flagsMu.Lock()
+	defer fd.flagsMu.Unlock()
+	return fd.asyncHandler
+}
+
+// SetAsyncHandler sets fd.asyncHandler if it has not been set before and
+// returns it.
+func (fd *FileDescription) SetAsyncHandler(newHandler func() FileAsync) FileAsync {
+	fd.flagsMu.Lock()
+	defer fd.flagsMu.Unlock()
+	if fd.asyncHandler == nil {
+		fd.asyncHandler = newHandler()
+		if fd.statusFlags&linux.O_ASYNC != 0 {
+			fd.asyncHandler.Register(fd)
+		}
+	}
+	return fd.asyncHandler
 }

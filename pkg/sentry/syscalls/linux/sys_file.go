@@ -900,14 +900,20 @@ func fGetOwn(t *kernel.Task, file *fs.File) int32 {
 //
 // If who is positive, it represents a PID. If negative, it represents a PGID.
 // If the PID or PGID is invalid, the owner is silently unset.
-func fSetOwn(t *kernel.Task, file *fs.File, who int32) {
+func fSetOwn(t *kernel.Task, file *fs.File, who int32) error {
 	a := file.Async(fasync.New).(*fasync.FileAsync)
 	if who < 0 {
+		// Check for overflow before flipping the sign.
+		if who-1 > who {
+			return syserror.EINVAL
+		}
 		pg := t.PIDNamespace().ProcessGroupWithID(kernel.ProcessGroupID(-who))
 		a.SetOwnerProcessGroup(t, pg)
+	} else {
+		tg := t.PIDNamespace().ThreadGroupWithID(kernel.ThreadID(who))
+		a.SetOwnerThreadGroup(t, tg)
 	}
-	tg := t.PIDNamespace().ThreadGroupWithID(kernel.ThreadID(who))
-	a.SetOwnerThreadGroup(t, tg)
+	return nil
 }
 
 // Fcntl implements linux syscall fcntl(2).
@@ -1042,8 +1048,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.F_GETOWN:
 		return uintptr(fGetOwn(t, file)), nil, nil
 	case linux.F_SETOWN:
-		fSetOwn(t, file, args[2].Int())
-		return 0, nil, nil
+		return 0, nil, fSetOwn(t, file, args[2].Int())
 	case linux.F_GETOWN_EX:
 		addr := args[2].Pointer()
 		owner := fGetOwnEx(t, file)

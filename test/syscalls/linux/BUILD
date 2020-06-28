@@ -805,6 +805,7 @@ cc_binary(
         "//test/util:save_util",
         "//test/util:temp_path",
         "//test/util:test_util",
+        "//test/util:thread_util",
         "//test/util:timer_util",
     ],
 )
