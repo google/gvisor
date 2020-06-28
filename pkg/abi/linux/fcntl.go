@@ -55,7 +55,7 @@ type Flock struct {
 	_      [4]byte
 }
 
-// Flags for F_SETOWN_EX and F_GETOWN_EX.
+// Owner types for F_SETOWN_EX and F_GETOWN_EX.
 const (
 	F_OWNER_TID  = 0
 	F_OWNER_PID  = 1

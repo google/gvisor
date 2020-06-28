@@ -20,12 +20,18 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// New creates a new FileAsync.
+// New creates a new fs.FileAsync.
 func New() fs.FileAsync {
+	return &FileAsync{}
+}
+
+// NewVFS2 creates a new vfs.FileAsync.
+func NewVFS2() vfs.FileAsync {
 	return &FileAsync{}
 }
 
