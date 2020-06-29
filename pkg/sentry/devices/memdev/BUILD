@@ -6,6 +6,7 @@ go_library(
     name = "memdev",
     srcs = [
         "full.go",
+        "kmsg.go",
         "memdev.go",
         "null.go",
         "random.go",
@@ -14,6 +15,7 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/buffer",
         "//pkg/context",
         "//pkg/rand",
         "//pkg/safemem",
@@ -24,5 +26,6 @@ go_library(
         "//pkg/sentry/vfs",
         "//pkg/syserror",
         "//pkg/usermem",
+        "//pkg/waiter",
     ],
 )
