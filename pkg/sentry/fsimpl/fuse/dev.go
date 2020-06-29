@@ -73,6 +73,9 @@ type DeviceFD struct {
 
 	// mu
 	mu sync.Mutex
+
+	// cond
+	cond sync.Cond
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
