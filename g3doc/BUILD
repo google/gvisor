@@ -33,3 +33,12 @@ doc(
     subcategory = "Community",
     weight = "95",
 )
+
+doc(
+    name = "style",
+    src = "style.md",
+    category = "Project",
+    permalink = "/community/style_guide/",
+    subcategory = "Community",
+    weight = "10",
+)
