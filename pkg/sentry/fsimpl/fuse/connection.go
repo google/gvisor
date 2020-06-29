@@ -15,6 +15,7 @@
 package fuse
 
 import (
+	"fmt"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -49,7 +50,7 @@ type FutureResponse struct {
 // Connection is the interface by which the sentry communicates with the FUSE server daemon.
 type Connection interface {
 	// NewRequest creates a new request that can be sent to the FUSE server.
-	NewRequest(creds auth.Credentials, pid uint32, ino uint64, opcode linux.FUSEOpcode, payload marshal.Marshallable) (Request, error)
+	NewRequest(creds *auth.Credentials, pid uint32, ino uint64, opcode linux.FUSEOpcode, payload marshal.Marshallable) (*Request, error)
 
 	// Call makes a request to the server and blocks until a server responds with a response.
     Call(t *kernel.Task, r *Request) (*Response, error)
@@ -69,12 +70,13 @@ func NewFUSEConnection(ctx context.Context,  fd *vfs.FileDescription) Connection
 	// Create the writeBuf for the header to be stored in.
 	hdrLen := uint32((*linux.FUSEHeaderOut)(nil).SizeBytes())
 	fuseFD.writeBuf = make([]byte, hdrLen)
+	fuseFD.completions = make(map[linux.FUSEOpID]*FutureResponse)
 
 	return fuseFD
 }
 
 // NewRequest implements fuse.Connection.NewRequest.
-func (fd *DeviceFD) NewRequest(creds auth.Credentials, pid uint32, ino uint64, opcode linux.FUSEOpcode, payload marshal.Marshallable) (Request, error) {
+func (fd *DeviceFD) NewRequest(creds *auth.Credentials, pid uint32, ino uint64, opcode linux.FUSEOpcode, payload marshal.Marshallable) (*Request, error) {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
 
@@ -94,7 +96,7 @@ func (fd *DeviceFD) NewRequest(creds auth.Credentials, pid uint32, ino uint64, o
 	hdr.MarshalUnsafe(buf[:hdrLen])
 	payload.MarshalUnsafe(buf[hdrLen:])
 
-	return Request{
+	return &Request{
 		id:   hdr.Unique,
 		hdr:  &hdr,
 		data: buf,
@@ -156,14 +158,15 @@ func (r *Response) Error() error {
 	return nil
 }
 
-func (r *Response) UnmarshalPayload(m marshal.Marshallable) {
+func (r *Response) UnmarshalPayload(m marshal.Marshallable) error {
 	hdrLen := r.hdr.SizeBytes()
 	haveDataLen := r.hdr.Len - uint32(hdrLen)
 	wantDataLen := uint32(m.SizeBytes())
 
 	if haveDataLen < wantDataLen {
-		// Somehow return an error.
+		return fmt.Errorf("payload too small. Wanted data lenth %d, have data length %d", wantDataLen, haveDataLen)
 	}
 
 	m.UnmarshalUnsafe(r.data[hdrLen:])
+	return nil
 }
