@@ -47,7 +47,7 @@ TEST_P(UdpSocketTest, ErrorQueue) {
   msg.msg_controllen = sizeof(cmsgbuf);
 
   // recv*(MSG_ERRQUEUE) never blocks, even without MSG_DONTWAIT.
-  EXPECT_THAT(RetryEINTR(recvmsg)(s_, &msg, MSG_ERRQUEUE),
+  EXPECT_THAT(RetryEINTR(recvmsg)(bind_.get(), &msg, MSG_ERRQUEUE),
               SyscallFailsWithErrno(EAGAIN));
 }
 
