@@ -595,7 +595,7 @@ TEST(NetlinkRouteTest, GetRouteRequest) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
   uint32_t port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
 
-  struct __attribute__((__packed__)) request {
+  struct request {
     struct nlmsghdr hdr;
     struct rtmsg rtm;
     struct nlattr nla;
