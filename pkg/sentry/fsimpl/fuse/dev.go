@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -105,10 +106,17 @@ func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts
 		return 0, syserror.EPERM
 	}
 
+	taskCtxKey := kernel.CtxTask
+	taskCtxValue := ctx.Value(taskCtxKey)
+	if taskCtxValue == nil {
+		log.Warningf("fusefs.DeviceFD.Read: couldn't get kernel task from context")
+		return 0, syserror.EINVAL
+	}
+
 	if fd.queue.Empty() {
 		// TODO: Nothing to send, probably block the read until something becomes
 		// available?
-		log.Warningf("fusefs.DeviceFS.Read: No requests to read")
+		log.Warningf("fusefs.DeviceFD.Read: No requests to read")
 		return 0, syserror.EAGAIN
 	}
 
