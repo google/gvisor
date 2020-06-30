@@ -59,7 +59,7 @@ type filesystem struct {
 
 	// fuseConn is used for communication between the FUSE server
 	// daemon and the sentry fusefs.
-	fuseConn Connection
+	fuseConn *Connection
 
 	// opts is the options the fusefs is initialized with.
 	opts filesystemOptions

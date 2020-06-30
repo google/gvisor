@@ -47,21 +47,13 @@ type FutureResponse struct {
 	data []byte
 }
 
-// Connection is the interface by which the sentry communicates with the FUSE server daemon.
-type Connection interface {
-	// NewRequest creates a new request that can be sent to the FUSE server.
-	NewRequest(creds *auth.Credentials, pid uint32, ino uint64, opcode linux.FUSEOpcode, payload marshal.Marshallable) (*Request, error)
-
-	// Call makes a request to the server and blocks until a server responds with a response.
-    Call(t *kernel.Task, r *Request) (*Response, error)
-
-	// CallFuture makes a request to the server and returns a future response. Call Resolve()
-	// when the response needs to be fulfilled.
-	CallFuture(t *kernel.Task, r *Request) (*FutureResponse, error)
+// Connection is the struct by which the sentry communicates with the FUSE server daemon.
+type Connection struct {
+	fd *DeviceFD
 }
 
-func NewFUSEConnection(ctx context.Context,  fd *vfs.FileDescription) Connection {
-
+// NewFUSEConnection creats a FUSE connection to fd
+func NewFUSEConnection(ctx context.Context,  fd *vfs.FileDescription) *Connection {
 	// Mark the device as ready so it can be used. /dev/fuse can only be used if the FD was used to
 	// mount a FUSE filesystem.
 	fuseFD := fd.Impl().(*DeviceFD)
@@ -72,25 +64,25 @@ func NewFUSEConnection(ctx context.Context,  fd *vfs.FileDescription) Connection
 	fuseFD.writeBuf = make([]byte, hdrLen)
 	fuseFD.completions = make(map[linux.FUSEOpID]*FutureResponse)
 
-	return fuseFD
+	return &Connection{fd: fuseFD}
 }
 
-// NewRequest implements fuse.Connection.NewRequest.
-func (fd *DeviceFD) NewRequest(creds *auth.Credentials, pid uint32, ino uint64, opcode linux.FUSEOpcode, payload marshal.Marshallable) (*Request, error) {
-	fd.mu.Lock()
-	defer fd.mu.Unlock()
+// NewRequest creates a new request that can be sent to the FUSE server.
+func (conn *Connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint64, opcode linux.FUSEOpcode, payload marshal.Marshallable) (*Request, error) {
+	conn.fd.mu.Lock()
+	defer conn.fd.mu.Unlock()
 
 	hdrLen := (*linux.FUSEHeaderIn)(nil).SizeBytes()
 	hdr := linux.FUSEHeaderIn{
 		Len:    uint32(hdrLen + payload.SizeBytes()),
 		Opcode: opcode,
-		Unique: fd.nextOpID,
+		Unique: conn.fd.nextOpID,
 		NodeID: ino,
 		UID:    uint32(creds.EffectiveKUID),
 		GID:    uint32(creds.EffectiveKGID),
 		PID:    pid,
 	}
-	fd.nextOpID++
+	conn.fd.nextOpID++
 
 	buf := make([]byte, hdr.Len)
 	hdr.MarshalUnsafe(buf[:hdrLen])
@@ -103,9 +95,9 @@ func (fd *DeviceFD) NewRequest(creds *auth.Credentials, pid uint32, ino uint64, 
 	}, nil
 }
 
-// Call implements fuse.Connection.Call.
-func (fd *DeviceFD) Call(t *kernel.Task, r *Request) (*Response, error) {
-	fut, err := fd.CallFuture(t, r)
+// Call makes a request to the server and blocks until a server responds with a response.
+func (conn *Connection) Call(t *kernel.Task, r *Request) (*Response, error) {
+	fut, err := conn.CallFuture(t, r)
 	if err != nil {
 		return nil, err
 	}
@@ -113,13 +105,15 @@ func (fd *DeviceFD) Call(t *kernel.Task, r *Request) (*Response, error) {
 	return fut.Resolve(t)
 }
 
-func (fd *DeviceFD) CallFuture(t *kernel.Task, r *Request) (*FutureResponse, error) {
-	fd.mu.Lock()
-	defer fd.mu.Unlock()
+// CallFuture makes a request to the server and returns a future response. Call Resolve()
+// when the response needs to be fulfilled.
+func (conn *Connection) CallFuture(t *kernel.Task, r *Request) (*FutureResponse, error) {
+	conn.fd.mu.Lock()
+	defer conn.fd.mu.Unlock()
 
-	fd.queue.PushBack(r)
+	conn.fd.queue.PushBack(r)
 	fut := newFutureResponse()
-	fd.completions[r.id] = fut
+	conn.fd.completions[r.id] = fut
 	return fut, nil
 }
 
