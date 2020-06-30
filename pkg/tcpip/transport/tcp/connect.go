@@ -509,9 +509,7 @@ func (h *handshake) execute() *tcpip.Error {
 	// Initialize the resend timer.
 	resendWaker := sleep.Waker{}
 	timeOut := time.Duration(time.Second)
-	rt := time.AfterFunc(timeOut, func() {
-		resendWaker.Assert()
-	})
+	rt := time.AfterFunc(timeOut, resendWaker.Assert)
 	defer rt.Stop()
 
 	// Set up the wakers.
@@ -1050,8 +1048,8 @@ func (e *endpoint) tryDeliverSegmentFromClosedEndpoint(s *segment) {
 		panic("current endpoint not removed from demuxer, enqueing segments to itself")
 	}
 
-	if ep.(*endpoint).enqueueSegment(s) {
-		ep.(*endpoint).newSegmentWaker.Assert()
+	if ep := ep.(*endpoint); ep.enqueueSegment(s) {
+		ep.newSegmentWaker.Assert()
 	}
 }
 
@@ -1120,7 +1118,7 @@ func (e *endpoint) handleReset(s *segment) (ok bool, err *tcpip.Error) {
 func (e *endpoint) handleSegments(fastPath bool) *tcpip.Error {
 	checkRequeue := true
 	for i := 0; i < maxSegmentsPerWake; i++ {
-		if e.EndpointState() == StateClose || e.EndpointState() == StateError {
+		if e.EndpointState().closed() {
 			return nil
 		}
 		s := e.segmentQueue.dequeue()
@@ -1440,9 +1438,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 					if e.EndpointState() == StateFinWait2 && e.closed {
 						// The socket has been closed and we are in FIN_WAIT2
 						// so start the FIN_WAIT2 timer.
-						closeTimer = time.AfterFunc(e.tcpLingerTimeout, func() {
-							closeWaker.Assert()
-						})
+						closeTimer = time.AfterFunc(e.tcpLingerTimeout, closeWaker.Assert)
 						e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
 					}
 				}
@@ -1460,7 +1456,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 							return err
 						}
 					}
-					if e.EndpointState() != StateClose && e.EndpointState() != StateError {
+					if !e.EndpointState().closed() {
 						// Only block the worker if the endpoint
 						// is not in closed state or error state.
 						close(e.drainDone)
@@ -1526,7 +1522,12 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 	}
 
 loop:
-	for e.EndpointState() != StateTimeWait && e.EndpointState() != StateClose && e.EndpointState() != StateError {
+	for {
+		switch e.EndpointState() {
+		case StateTimeWait, StateClose, StateError:
+			break loop
+		}
+
 		e.mu.Unlock()
 		v, _ := s.Fetch(true)
 		e.mu.Lock()
