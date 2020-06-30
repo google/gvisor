@@ -18,7 +18,10 @@
 #include <syscall.h>
 #include <unistd.h>
 
+#include <iostream>
+#include <list>
 #include <string>
+#include <vector>
 
 #include "gtest/gtest.h"
 #include "absl/base/macros.h"
