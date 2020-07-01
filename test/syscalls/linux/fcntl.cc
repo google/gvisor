@@ -1031,6 +1031,30 @@ TEST(FcntlTest, SetOwnPgrp) {
   MaybeSave();
 }
 
+TEST(FcntlTest, SetOwnUnset) {
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  // Set and unset pid.
+  pid_t pid;
+  EXPECT_THAT(pid = getpid(), SyscallSucceeds());
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, pid), SyscallSucceeds());
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, 0), SyscallSucceeds());
+
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
+              SyscallSucceedsWithValue(0));
+
+  // Set and unset pgid.
+  pid_t pgid;
+  EXPECT_THAT(pgid = getpgrp(), SyscallSucceeds());
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, -pgid), SyscallSucceeds());
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, 0), SyscallSucceeds());
+
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
+              SyscallSucceedsWithValue(0));
+  MaybeSave();
+}
+
 // F_SETOWN flips the sign of negative values, an operation that is guarded
 // against overflow.
 TEST(FcntlTest, SetOwnOverflow) {
@@ -1138,6 +1162,39 @@ TEST(FcntlTest, SetOwnExPgrp) {
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(got_owner.type, set_owner.type);
   EXPECT_EQ(got_owner.pid, set_owner.pid);
+  MaybeSave();
+}
+
+TEST(FcntlTest, SetOwnExUnset) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+
+  // Set and unset pid.
+  f_owner_ex owner = {};
+  owner.type = F_OWNER_PID;
+  EXPECT_THAT(owner.pid = getpid(), SyscallSucceeds());
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
+              SyscallSucceeds());
+  owner.pid = 0;
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
+              SyscallSucceeds());
+
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
+              SyscallSucceedsWithValue(0));
+
+  // Set and unset pgid.
+  owner.type = F_OWNER_PGRP;
+  EXPECT_THAT(owner.pid = getpgrp(), SyscallSucceeds());
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
+              SyscallSucceeds());
+  owner.pid = 0;
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
+              SyscallSucceeds());
+
+  EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
+              SyscallSucceedsWithValue(0));
   MaybeSave();
 }
 
