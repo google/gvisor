@@ -148,6 +148,11 @@ func (i *Inotify) Release() {
 	}
 }
 
+// Allocate implements FileDescription.Allocate.
+func (i *Inotify) Allocate(ctx context.Context, mode, offset, length uint64) error {
+	panic("Allocate should not be called on read-only inotify fds")
+}
+
 // EventRegister implements waiter.Waitable.
 func (i *Inotify) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
 	i.queue.EventRegister(e, mask)

@@ -56,6 +56,12 @@ func (FileDescriptionDefaultImpl) StatFS(ctx context.Context) (linux.Statfs, err
 	return linux.Statfs{}, syserror.ENOSYS
 }
 
+// Allocate implements FileDescriptionImpl.Allocate analogously to
+// fallocate called on regular file, directory or FIFO in Linux.
+func (FileDescriptionDefaultImpl) Allocate(ctx context.Context, mode, offset, length uint64) error {
+	return syserror.ENODEV
+}
+
 // Readiness implements waiter.Waitable.Readiness analogously to
 // file_operations::poll == NULL in Linux.
 func (FileDescriptionDefaultImpl) Readiness(mask waiter.EventMask) waiter.EventMask {
@@ -157,6 +163,11 @@ func (FileDescriptionDefaultImpl) Removexattr(ctx context.Context, name string) 
 // FileDescriptionImpl that always represent directories to obtain
 // implementations of non-directory I/O methods that return EISDIR.
 type DirectoryFileDescriptionDefaultImpl struct{}
+
+// Allocate implements DirectoryFileDescriptionDefaultImpl.Allocate.
+func (DirectoryFileDescriptionDefaultImpl) Allocate(ctx context.Context, mode, offset, length uint64) error {
+	return syserror.EISDIR
+}
 
 // PRead implements FileDescriptionImpl.PRead.
 func (DirectoryFileDescriptionDefaultImpl) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts ReadOptions) (int64, error) {

@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -65,6 +66,34 @@ func (fd *regularFileFD) OnClose(ctx context.Context) error {
 	d.handleMu.RLock()
 	defer d.handleMu.RUnlock()
 	return d.handle.file.flush(ctx)
+}
+
+// Allocate implements vfs.FileDescriptionImpl.Allocate.
+func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint64) error {
+
+	d := fd.dentry()
+	d.metadataMu.Lock()
+	defer d.metadataMu.Unlock()
+
+	size := offset + length
+
+	// Allocating a smaller size is a noop.
+	if size <= d.size {
+		return nil
+	}
+
+	d.handleMu.Lock()
+	defer d.handleMu.Unlock()
+
+	err := d.handle.file.allocate(ctx, p9.ToAllocateMode(mode), offset, length)
+	if err != nil {
+		return err
+	}
+	d.size = size
+	if !d.cachedMetadataAuthoritative() {
+		d.touchCMtimeLocked()
+	}
+	return nil
 }
 
 // PRead implements vfs.FileDescriptionImpl.PRead.

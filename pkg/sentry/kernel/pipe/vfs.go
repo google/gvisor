@@ -200,6 +200,11 @@ func (fd *VFSPipeFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 	}
 }
 
+// Allocate implements vfs.FileDescriptionImpl.Allocate.
+func (fd *VFSPipeFD) Allocate(ctx context.Context, mode, offset, length uint64) error {
+	return syserror.ESPIPE
+}
+
 // EventRegister implements waiter.Waitable.EventRegister.
 func (fd *VFSPipeFD) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
 	fd.pipe.EventRegister(e, mask)
