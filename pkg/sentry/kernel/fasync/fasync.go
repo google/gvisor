@@ -176,3 +176,13 @@ func (a *FileAsync) SetOwnerProcessGroup(requester *kernel.Task, recipient *kern
 	a.recipientTG = nil
 	a.recipientPG = recipient
 }
+
+// ClearOwner unsets the current signal recipient.
+func (a *FileAsync) ClearOwner() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.requester = nil
+	a.recipientT = nil
+	a.recipientTG = nil
+	a.recipientPG = nil
+}

@@ -156,11 +156,10 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		}
 		return uintptr(n), nil, nil
 	case linux.F_GETOWN:
-		a := file.AsyncHandler()
-		if a == nil {
+		owner, hasOwner := getAsyncOwner(t, file)
+		if !hasOwner {
 			return 0, nil, nil
 		}
-		owner := getAsyncOwner(t, a.(*fasync.FileAsync))
 		if owner.Type == linux.F_OWNER_PGRP {
 			return uintptr(-owner.PID), nil, nil
 		}
@@ -176,26 +175,21 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			ownerType = linux.F_OWNER_PGRP
 			who = -who
 		}
-		a := file.SetAsyncHandler(fasync.NewVFS2).(*fasync.FileAsync)
-		return 0, nil, setAsyncOwner(t, a, ownerType, who)
+		return 0, nil, setAsyncOwner(t, file, ownerType, who)
 	case linux.F_GETOWN_EX:
-		a := file.AsyncHandler()
-		if a == nil {
+		owner, hasOwner := getAsyncOwner(t, file)
+		if !hasOwner {
 			return 0, nil, nil
 		}
-		addr := args[2].Pointer()
-		owner := getAsyncOwner(t, a.(*fasync.FileAsync))
-		_, err := t.CopyOut(addr, &owner)
+		_, err := t.CopyOut(args[2].Pointer(), &owner)
 		return 0, nil, err
 	case linux.F_SETOWN_EX:
-		addr := args[2].Pointer()
 		var owner linux.FOwnerEx
-		n, err := t.CopyIn(addr, &owner)
+		n, err := t.CopyIn(args[2].Pointer(), &owner)
 		if err != nil {
 			return 0, nil, err
 		}
-		a := file.SetAsyncHandler(fasync.NewVFS2).(*fasync.FileAsync)
-		return uintptr(n), nil, setAsyncOwner(t, a, owner.Type, owner.PID)
+		return uintptr(n), nil, setAsyncOwner(t, file, owner.Type, owner.PID)
 	case linux.F_GETPIPE_SZ:
 		pipefile, ok := file.Impl().(*pipe.VFSPipeFD)
 		if !ok {
@@ -219,30 +213,48 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	}
 }
 
-func getAsyncOwner(t *kernel.Task, a *fasync.FileAsync) linux.FOwnerEx {
-	ot, otg, opg := a.Owner()
+func getAsyncOwner(t *kernel.Task, fd *vfs.FileDescription) (ownerEx linux.FOwnerEx, hasOwner bool) {
+	a := fd.AsyncHandler()
+	if a == nil {
+		return linux.FOwnerEx{}, false
+	}
+
+	ot, otg, opg := a.(*fasync.FileAsync).Owner()
 	switch {
 	case ot != nil:
 		return linux.FOwnerEx{
 			Type: linux.F_OWNER_TID,
 			PID:  int32(t.PIDNamespace().IDOfTask(ot)),
-		}
+		}, true
 	case otg != nil:
 		return linux.FOwnerEx{
 			Type: linux.F_OWNER_PID,
 			PID:  int32(t.PIDNamespace().IDOfThreadGroup(otg)),
-		}
+		}, true
 	case opg != nil:
 		return linux.FOwnerEx{
 			Type: linux.F_OWNER_PGRP,
 			PID:  int32(t.PIDNamespace().IDOfProcessGroup(opg)),
-		}
+		}, true
 	default:
-		return linux.FOwnerEx{}
+		return linux.FOwnerEx{}, true
 	}
 }
 
-func setAsyncOwner(t *kernel.Task, a *fasync.FileAsync, ownerType, pid int32) error {
+func setAsyncOwner(t *kernel.Task, fd *vfs.FileDescription, ownerType, pid int32) error {
+	switch ownerType {
+	case linux.F_OWNER_TID, linux.F_OWNER_PID, linux.F_OWNER_PGRP:
+		// Acceptable type.
+	default:
+		return syserror.EINVAL
+	}
+
+	a := fd.SetAsyncHandler(fasync.NewVFS2).(*fasync.FileAsync)
+	if pid == 0 {
+		a.ClearOwner()
+		return nil
+	}
+
 	switch ownerType {
 	case linux.F_OWNER_TID:
 		task := t.PIDNamespace().TaskWithID(kernel.ThreadID(pid))
