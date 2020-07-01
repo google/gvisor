@@ -354,6 +354,10 @@ type FileDescriptionImpl interface {
 	// represented by the FileDescription.
 	StatFS(ctx context.Context) (linux.Statfs, error)
 
+	// Allocate grows file represented by FileDescription to offset + length bytes.
+	// Only mode == 0 is supported currently.
+	Allocate(ctx context.Context, mode, offset, length uint64) error
+
 	// waiter.Waitable methods may be used to poll for I/O events.
 	waiter.Waitable
 
