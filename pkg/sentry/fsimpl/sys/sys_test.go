@@ -51,7 +51,7 @@ func TestReadCPUFile(t *testing.T) {
 	k := kernel.KernelFromContext(s.Ctx)
 	maxCPUCores := k.ApplicationCores()
 
-	expected := fmt.Sprintf("0-%d", maxCPUCores-1)
+	expected := fmt.Sprintf("0-%d\n", maxCPUCores-1)
 
 	for _, fname := range []string{"online", "possible", "present"} {
 		pop := s.PathOpAtRoot(fmt.Sprintf("devices/system/cpu/%s", fname))
