@@ -288,6 +288,7 @@ syscall_test(
     size = "medium",
     add_overlay = True,
     test = "//test/syscalls/linux:ioctl_test",
+    vfs2 = "True",
 )
 
 syscall_test(
