@@ -57,6 +57,49 @@ func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			flags &^= linux.O_NONBLOCK
 		}
 		return 0, nil, file.SetStatusFlags(t, t.Credentials(), flags)
+
+	case linux.FIOASYNC:
+		var set int32
+		if _, err := t.CopyIn(args[2].Pointer(), &set); err != nil {
+			return 0, nil, err
+		}
+		flags := file.StatusFlags()
+		if set != 0 {
+			flags |= linux.O_ASYNC
+		} else {
+			flags &^= linux.O_ASYNC
+		}
+		file.SetStatusFlags(t, t.Credentials(), flags)
+		return 0, nil, nil
+
+	case linux.FIOGETOWN, linux.SIOCGPGRP:
+		var who int32
+		owner, hasOwner := getAsyncOwner(t, file)
+		if hasOwner {
+			if owner.Type == linux.F_OWNER_PGRP {
+				who = -owner.PID
+			} else {
+				who = owner.PID
+			}
+		}
+		_, err := t.CopyOut(args[2].Pointer(), &who)
+		return 0, nil, err
+
+	case linux.FIOSETOWN, linux.SIOCSPGRP:
+		var who int32
+		if _, err := t.CopyIn(args[2].Pointer(), &who); err != nil {
+			return 0, nil, err
+		}
+		ownerType := int32(linux.F_OWNER_PID)
+		if who < 0 {
+			// Check for overflow before flipping the sign.
+			if who-1 > who {
+				return 0, nil, syserror.EINVAL
+			}
+			ownerType = linux.F_OWNER_PGRP
+			who = -who
+		}
+		return 0, nil, setAsyncOwner(t, file, ownerType, who)
 	}
 
 	ret, err := file.Ioctl(t, t.MemoryManager(), args)
