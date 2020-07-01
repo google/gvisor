@@ -33,7 +33,7 @@ doc(
     name = "FAQ",
     src = "FAQ.md",
     category = "User Guide",
-    permalink = "/docs/user_guide/FAQ/",
+    permalink = "/docs/user_guide/faq/",
     weight = "90",
 )
 
