@@ -833,25 +833,6 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 			panic("Netstack queues FIN segments without data.")
 		}
 
-		segEnd = seg.sequenceNumber.Add(seqnum.Size(seg.data.Size()))
-		// If the entire segment cannot be accomodated in the receiver
-		// advertized window, skip splitting and sending of the segment.
-		// ref: net/ipv4/tcp_output.c::tcp_snd_wnd_test()
-		//
-		// Linux checks this for all segment transmits not triggered
-		// by a probe timer. On this condition, it defers the segment
-		// split and transmit to a short probe timer.
-		// ref: include/net/tcp.h::tcp_check_probe_timer()
-		// ref: net/ipv4/tcp_output.c::tcp_write_wakeup()
-		//
-		// Instead of defining a new transmit timer, we attempt to split the
-		// segment right here if there are no pending segments.
-		// If there are pending segments, segment transmits are deferred
-		// to the retransmit timer handler.
-		if s.sndUna != s.sndNxt && !segEnd.LessThan(end) {
-			return false
-		}
-
 		if !seg.sequenceNumber.LessThan(end) {
 			return false
 		}
@@ -861,14 +842,48 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 			return false
 		}
 
-		// The segment size limit is computed as a function of sender congestion
-		// window and MSS. When sender congestion window is > 1, this limit can
-		// be larger than MSS. Ensure that the currently available send space
-		// is not greater than minimum of this limit and MSS.
+		// If the whole segment or at least 1MSS sized segment cannot
+		// be accomodated in the receiver advertized window, skip
+		// splitting and sending of the segment. ref:
+		// net/ipv4/tcp_output.c::tcp_snd_wnd_test()
+		//
+		// Linux checks this for all segment transmits not triggered by
+		// a probe timer. On this condition, it defers the segment split
+		// and transmit to a short probe timer.
+		//
+		// ref: include/net/tcp.h::tcp_check_probe_timer()
+		// ref: net/ipv4/tcp_output.c::tcp_write_wakeup()
+		//
+		// Instead of defining a new transmit timer, we attempt to split
+		// the segment right here if there are no pending segments. If
+		// there are pending segments, segment transmits are deferred to
+		// the retransmit timer handler.
+		if s.sndUna != s.sndNxt {
+			switch {
+			case available >= seg.data.Size():
+				// OK to send, the whole segments fits in the
+				// receiver's advertised window.
+			case available >= s.maxPayloadSize:
+				// OK to send, at least 1 MSS sized segment fits
+				// in the receiver's advertised window.
+			default:
+				return false
+			}
+		}
+
+		// The segment size limit is computed as a function of sender
+		// congestion window and MSS. When sender congestion window is >
+		// 1, this limit can be larger than MSS. Ensure that the
+		// currently available send space is not greater than minimum of
+		// this limit and MSS.
 		if available > limit {
 			available = limit
 		}
-		if available > s.maxPayloadSize {
+
+		// If GSO is not in use then cap available to
+		// maxPayloadSize. When GSO is in use the gVisor GSO logic or
+		// the host GSO logic will cap the segment to the correct size.
+		if s.ep.gso == nil && available > s.maxPayloadSize {
 			available = s.maxPayloadSize
 		}
 
