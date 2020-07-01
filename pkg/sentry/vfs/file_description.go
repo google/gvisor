@@ -91,8 +91,7 @@ type FileDescription struct {
 
 // FileDescriptionOptions contains options to FileDescription.Init().
 type FileDescriptionOptions struct {
-	// If AllowDirectIO is true, allow O_DIRECT to be set on the file. This is
-	// usually only the case if O_DIRECT would actually have an effect.
+	// If AllowDirectIO is true, allow O_DIRECT to be set on the file.
 	AllowDirectIO bool
 
 	// If DenyPRead is true, calls to FileDescription.PRead() return ESPIPE.
