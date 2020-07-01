@@ -242,7 +242,13 @@ func TestOne(t *testing.T) {
 	}
 
 	// Kill so that it will flush output.
-	defer testbench.Exec(dockerutil.RunOpts{}, "killall", snifferArgs[0])
+	defer func() {
+		// Wait 1 second before killing tcpdump to give it time to flush
+		// any packets.  On linux tests killing it immediately can
+		// sometimes result in partial pcaps.
+		time.Sleep(1 * time.Second)
+		testbench.Exec(dockerutil.RunOpts{}, "killall", snifferArgs[0])
+	}()
 
 	if _, err := testbench.WaitForOutput(snifferRegex, 60*time.Second); err != nil {
 		t.Fatalf("sniffer on %s never listened: %s", dut.Name, err)
