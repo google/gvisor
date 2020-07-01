@@ -138,7 +138,7 @@ type cpuFile struct {
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (c *cpuFile) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	fmt.Fprintf(buf, "0-%d", c.maxCores-1)
+	fmt.Fprintf(buf, "0-%d\n", c.maxCores-1)
 	return nil
 }
 
