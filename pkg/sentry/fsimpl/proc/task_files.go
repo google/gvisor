@@ -231,8 +231,9 @@ func (d *cmdlineData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 		// Linux will return envp up to and including the first NULL character,
 		// so find it.
-		if end := bytes.IndexByte(buf.Bytes()[ar.Length():], 0); end != -1 {
-			buf.Truncate(end)
+		envStart := int(ar.Length())
+		if nullIdx := bytes.IndexByte(buf.Bytes()[envStart:], 0); nullIdx != -1 {
+			buf.Truncate(envStart + nullIdx)
 		}
 	}
 
@@ -300,7 +301,7 @@ type idMapData struct {
 
 var _ dynamicInode = (*idMapData)(nil)
 
-// Generate implements vfs.DynamicBytesSource.Generate.
+// Generate implements vfs.WritableDynamicBytesSource.Generate.
 func (d *idMapData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	var entries []auth.IDMapEntry
 	if d.gids {
@@ -314,6 +315,7 @@ func (d *idMapData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	return nil
 }
 
+// Write implements vfs.WritableDynamicBytesSource.Write.
 func (d *idMapData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
 	// "In addition, the number of bytes written to the file must be less than
 	// the system page size, and the write must be performed at the start of
