@@ -274,6 +274,21 @@ func (fd *regularFileFD) Release() {
 	// noop
 }
 
+// Allocate implements vfs.FileDescriptionImpl.Allocate.
+func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint64) error {
+	f := fd.inode().impl.(*regularFile)
+
+	f.inode.mu.Lock()
+	defer f.inode.mu.Unlock()
+	oldSize := f.size
+	size := offset + length
+	if oldSize >= size {
+		return nil
+	}
+	_, err := f.truncateLocked(size)
+	return err
+}
+
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	if offset < 0 {

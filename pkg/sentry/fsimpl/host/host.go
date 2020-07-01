@@ -543,6 +543,16 @@ func (f *fileDescription) Release() {
 	// noop
 }
 
+// Allocate implements vfs.FileDescriptionImpl.
+func (f *fileDescription) Allocate(ctx context.Context, mode, offset, length uint64) error {
+	if !f.inode.seekable {
+		return syserror.ESPIPE
+	}
+
+	// TODO(gvisor.dev/issue/2923): Implement Allocate for non-pipe hostfds.
+	return syserror.EOPNOTSUPP
+}
+
 // PRead implements FileDescriptionImpl.
 func (f *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	i := f.inode

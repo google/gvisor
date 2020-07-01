@@ -236,6 +236,11 @@ func (fd *GenericDirectoryFD) SetStat(ctx context.Context, opts vfs.SetStatOptio
 	return inode.SetStat(ctx, fd.filesystem(), creds, opts)
 }
 
+// Allocate implements vfs.FileDescriptionImpl.Allocate.
+func (fd *GenericDirectoryFD) Allocate(ctx context.Context, mode, offset, length uint64) error {
+	return fd.DirectoryFileDescriptionDefaultImpl.Allocate(ctx, mode, offset, length)
+}
+
 // LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
 func (fd *GenericDirectoryFD) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, start, length uint64, whence int16, block fslock.Blocker) error {
 	return fd.Locks().LockPOSIX(ctx, &fd.vfsfd, uid, t, start, length, whence, block)
