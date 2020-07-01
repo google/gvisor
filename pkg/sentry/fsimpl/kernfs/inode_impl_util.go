@@ -471,8 +471,6 @@ func (o *OrderedChildren) Unlink(ctx context.Context, name string, child *vfs.De
 	if err := o.checkExistingLocked(name, child); err != nil {
 		return err
 	}
-
-	// TODO(gvisor.dev/issue/3027): Check sticky bit before removing.
 	o.removeLocked(name)
 	return nil
 }
@@ -520,8 +518,6 @@ func (o *OrderedChildren) Rename(ctx context.Context, oldname, newname string, c
 	if err := o.checkExistingLocked(oldname, child); err != nil {
 		return nil, err
 	}
-
-	// TODO(gvisor.dev/issue/3027): Check sticky bit before removing.
 	replaced := dst.replaceChildLocked(newname, child)
 	return replaced, nil
 }
