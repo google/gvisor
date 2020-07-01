@@ -9,5 +9,6 @@ pkg_tar(
     name = "tar",
     srcs = [
         "Dockerfile",
+        "apache2-tmpdir.conf",
     ],
 )
