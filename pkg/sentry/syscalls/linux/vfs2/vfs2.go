@@ -138,7 +138,7 @@ func Override() {
 	s.Table[282] = syscalls.Supported("signalfd", Signalfd)
 	s.Table[283] = syscalls.Supported("timerfd_create", TimerfdCreate)
 	s.Table[284] = syscalls.Supported("eventfd", Eventfd)
-	delete(s.Table, 285) // fallocate
+	s.Table[285] = syscalls.PartiallySupported("fallocate", Fallocate, "Not all options are supported.", nil)
 	s.Table[286] = syscalls.Supported("timerfd_settime", TimerfdSettime)
 	s.Table[287] = syscalls.Supported("timerfd_gettime", TimerfdGettime)
 	s.Table[288] = syscalls.Supported("accept4", Accept4)
