@@ -40,15 +40,14 @@
 namespace gvisor {
 namespace testing {
 
-#define TEST_ON_GVISOR "TEST_ON_GVISOR"
-#define GVISOR_NETWORK "GVISOR_NETWORK"
-#define GVISOR_VFS "GVISOR_VFS"
+constexpr char kGvisorNetwork[] = "GVISOR_NETWORK";
+constexpr char kGvisorVfs[] = "GVISOR_VFS";
 
 bool IsRunningOnGvisor() { return GvisorPlatform() != Platform::kNative; }
 
 const std::string GvisorPlatform() {
   // Set by runner.go.
-  const char* env = getenv(TEST_ON_GVISOR);
+  const char* env = getenv(kTestOnGvisor);
   if (!env) {
     return Platform::kNative;
   }
@@ -56,12 +55,12 @@ const std::string GvisorPlatform() {
 }
 
 bool IsRunningWithHostinet() {
-  const char* env = getenv(GVISOR_NETWORK);
+  const char* env = getenv(kGvisorNetwork);
   return env && strcmp(env, "host") == 0;
 }
 
 bool IsRunningWithVFS1() {
-  const char* env = getenv(GVISOR_VFS);
+  const char* env = getenv(kGvisorVfs);
   if (env == nullptr) {
     // If not set, it's running on Linux.
     return false;
