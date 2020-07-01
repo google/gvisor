@@ -35,6 +35,10 @@ var redirects = map[string]string{
 	// For links.
 	"/faq": "/docs/user_guide/faq/",
 
+	// From 2020-05-12 to 2020-06-30, the FAQ URL was uppercase. Redirect that
+	// back to maintain any links.
+	"/docs/user_guide/FAQ/": "/docs/user_guide/faq/",
+
 	// Redirects to compatibility docs.
 	"/c":             "/docs/user_guide/compatibility/",
 	"/c/linux/amd64": "/docs/user_guide/compatibility/linux/amd64/",
