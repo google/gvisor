@@ -195,6 +195,8 @@
 namespace gvisor {
 namespace testing {
 
+constexpr char kTestOnGvisor[] = "TEST_ON_GVISOR";
+
 // TestInit must be called prior to RUN_ALL_TESTS.
 //
 // This parses all arguments and adjusts argc and argv appropriately.
@@ -215,6 +217,7 @@ namespace Platform {
 constexpr char kNative[] = "native";
 constexpr char kPtrace[] = "ptrace";
 constexpr char kKVM[] = "kvm";
+constexpr char kFuchsia[] = "fuchsia";
 }  // namespace Platform
 
 bool IsRunningOnGvisor();
