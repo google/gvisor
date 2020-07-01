@@ -1212,6 +1212,16 @@ func (e *endpoint) SetOwner(owner tcpip.PacketOwner) {
 // Read reads data from the endpoint.
 func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
 	e.LockUser()
+	defer e.UnlockUser()
+
+	// When in SYN-SENT state, let the caller block on the receive.
+	// An application can initiate a non-blocking connect and then block
+	// on a receive. It can expect to read any data after the handshake
+	// is complete. RFC793, section 3.9, p58.
+	if e.EndpointState() == StateSynSent {
+		return buffer.View{}, tcpip.ControlMessages{}, tcpip.ErrWouldBlock
+	}
+
 	// The endpoint can be read if it's connected, or if it's already closed
 	// but has some pending unread data. Also note that a RST being received
 	// would cause the state to become StateError so we should allow the
@@ -1221,7 +1231,6 @@ func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages,
 	if s := e.EndpointState(); !s.connected() && s != StateClose && bufUsed == 0 {
 		e.rcvListMu.Unlock()
 		he := e.HardError
-		e.UnlockUser()
 		if s == StateError {
 			return buffer.View{}, tcpip.ControlMessages{}, he
 		}
@@ -1231,7 +1240,6 @@ func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages,
 
 	v, err := e.readLocked()
 	e.rcvListMu.Unlock()
-	e.UnlockUser()
 
 	if err == tcpip.ErrClosedForReceive {
 		e.stats.ReadErrors.ReadClosed.Increment()
