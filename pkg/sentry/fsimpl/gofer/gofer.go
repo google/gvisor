@@ -900,6 +900,12 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, stat *lin
 	}
 	d.metadataMu.Lock()
 	defer d.metadataMu.Unlock()
+	if stat.Mask&linux.STATX_SIZE != 0 {
+		// The size needs to be changed even when
+		// !d.cachedMetadataAuthoritative() because d.mappings has to be
+		// updated.
+		d.updateFileSizeLocked(stat.Size)
+	}
 	if !d.isSynthetic() {
 		if stat.Mask != 0 {
 			if err := d.file.setAttr(ctx, p9.SetAttrMask{
@@ -961,9 +967,6 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, stat *lin
 		stat.Mask |= linux.STATX_MTIME
 	}
 	atomic.StoreInt64(&d.ctime, now)
-	if stat.Mask&linux.STATX_SIZE != 0 {
-		d.updateFileSizeLocked(stat.Size)
-	}
 	return nil
 }
 
