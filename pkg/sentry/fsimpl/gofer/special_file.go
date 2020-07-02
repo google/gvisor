@@ -235,8 +235,5 @@ func (fd *specialFileFD) Seek(ctx context.Context, offset int64, whence int32) (
 
 // Sync implements vfs.FileDescriptionImpl.Sync.
 func (fd *specialFileFD) Sync(ctx context.Context) error {
-	if !fd.vfsfd.IsWritable() {
-		return nil
-	}
-	return fd.handle.sync(ctx)
+	return fd.dentry().syncSharedHandle(ctx)
 }
