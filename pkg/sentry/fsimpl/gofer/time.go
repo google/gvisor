@@ -36,7 +36,7 @@ func statxTimestampFromDentry(ns int64) linux.StatxTimestamp {
 	}
 }
 
-// Preconditions: fs.interop != InteropModeShared.
+// Preconditions: d.cachedMetadataAuthoritative() == true.
 func (d *dentry) touchAtime(mnt *vfs.Mount) {
 	if mnt.Flags.NoATime {
 		return
@@ -51,8 +51,8 @@ func (d *dentry) touchAtime(mnt *vfs.Mount) {
 	mnt.EndWrite()
 }
 
-// Preconditions: fs.interop != InteropModeShared. The caller has successfully
-// called vfs.Mount.CheckBeginWrite().
+// Preconditions: d.cachedMetadataAuthoritative() == true. The caller has
+// successfully called vfs.Mount.CheckBeginWrite().
 func (d *dentry) touchCtime() {
 	now := d.fs.clock.Now().Nanoseconds()
 	d.metadataMu.Lock()
@@ -60,8 +60,8 @@ func (d *dentry) touchCtime() {
 	d.metadataMu.Unlock()
 }
 
-// Preconditions: fs.interop != InteropModeShared. The caller has successfully
-// called vfs.Mount.CheckBeginWrite().
+// Preconditions: d.cachedMetadataAuthoritative() == true. The caller has
+// successfully called vfs.Mount.CheckBeginWrite().
 func (d *dentry) touchCMtime() {
 	now := d.fs.clock.Now().Nanoseconds()
 	d.metadataMu.Lock()
@@ -70,6 +70,8 @@ func (d *dentry) touchCMtime() {
 	d.metadataMu.Unlock()
 }
 
+// Preconditions: d.cachedMetadataAuthoritative() == true. The caller has
+// locked d.metadataMu.
 func (d *dentry) touchCMtimeLocked() {
 	now := d.fs.clock.Now().Nanoseconds()
 	atomic.StoreInt64(&d.mtime, now)
