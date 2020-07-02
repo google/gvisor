@@ -191,8 +191,9 @@ var DirentType = abi.ValueSet{
 
 // Values for preadv2/pwritev2.
 const (
-	// Note: gVisor does not implement the RWF_HIPRI feature, but the flag is
-	// accepted as a valid flag argument for preadv2/pwritev2.
+	// NOTE(b/120162627): gVisor does not implement the RWF_HIPRI feature, but
+	// the flag is accepted as a valid flag argument for preadv2/pwritev2 and
+	// silently ignored.
 	RWF_HIPRI = 0x00000001
 	RWF_DSYNC = 0x00000002
 	RWF_SYNC  = 0x00000004
