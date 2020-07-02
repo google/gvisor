@@ -47,11 +47,6 @@ func newEndpoint(ctx context.Context, hostFD int, queue *waiter.Queue) (transpor
 	return ep, nil
 }
 
-// maxSendBufferSize is the maximum host send buffer size allowed for endpoint.
-//
-// N.B. 8MB is the default maximum on Linux (2 * sysctl_wmem_max).
-const maxSendBufferSize = 8 << 20
-
 // ConnectedEndpoint is an implementation of transport.ConnectedEndpoint and
 // transport.Receiver. It is backed by a host fd that was imported at sentry
 // startup. This fd is shared with a hostfs inode, which retains ownership of
@@ -113,10 +108,6 @@ func (c *ConnectedEndpoint) init() *syserr.Error {
 	sndbuf, err := syscall.GetsockoptInt(c.fd, syscall.SOL_SOCKET, syscall.SO_SNDBUF)
 	if err != nil {
 		return syserr.FromError(err)
-	}
-	if sndbuf > maxSendBufferSize {
-		log.Warningf("Socket send buffer too large: %d", sndbuf)
-		return syserr.ErrInvalidEndpointState
 	}
 
 	c.stype = linux.SockType(stype)
