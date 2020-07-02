@@ -531,6 +531,7 @@ syscall_test(
 syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:pwritev2_test",
+    vfs2 = "True",
 )
 
 syscall_test(
