@@ -869,11 +869,22 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 	if err := d.checkPermissions(rp.Credentials(), ats); err != nil {
 		return nil, err
 	}
+
+	trunc := opts.Flags&linux.O_TRUNC != 0 && d.fileType() == linux.S_IFREG
+	if trunc {
+		// Lock metadataMu *while* we open a regular file with O_TRUNC because
+		// open(2) will change the file size on server.
+		d.metadataMu.Lock()
+		defer d.metadataMu.Unlock()
+	}
+
+	var vfd *vfs.FileDescription
+	var err error
 	mnt := rp.Mount()
 	switch d.fileType() {
 	case linux.S_IFREG:
 		if !d.fs.opts.regularFilesUseSpecialFileFD {
-			if err := d.ensureSharedHandle(ctx, ats&vfs.MayRead != 0, ats&vfs.MayWrite != 0, opts.Flags&linux.O_TRUNC != 0); err != nil {
+			if err := d.ensureSharedHandle(ctx, ats&vfs.MayRead != 0, ats&vfs.MayWrite != 0, trunc); err != nil {
 				return nil, err
 			}
 			fd := &regularFileFD{}
@@ -883,7 +894,7 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 			}); err != nil {
 				return nil, err
 			}
-			return &fd.vfsfd, nil
+			vfd = &fd.vfsfd
 		}
 	case linux.S_IFDIR:
 		// Can't open directories with O_CREAT.
@@ -923,7 +934,25 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 			return d.pipe.Open(ctx, mnt, &d.vfsd, opts.Flags, &d.locks)
 		}
 	}
-	return d.openSpecialFileLocked(ctx, mnt, opts)
+
+	if vfd == nil {
+		if vfd, err = d.openSpecialFileLocked(ctx, mnt, opts); err != nil {
+			return nil, err
+		}
+	}
+
+	if trunc {
+		// If no errors occured so far then update file size in memory. This
+		// step is required even if !d.cachedMetadataAuthoritative() because
+		// d.mappings has to be updated.
+		// d.metadataMu has already been acquired if trunc == true.
+		d.updateFileSizeLocked(0)
+
+		if d.cachedMetadataAuthoritative() {
+			d.touchCMtimeLocked()
+		}
+	}
+	return vfd, err
 }
 
 func (d *dentry) connectSocketLocked(ctx context.Context, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
