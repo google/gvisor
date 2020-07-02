@@ -588,8 +588,10 @@ func (f *fileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts
 }
 
 func readFromHostFD(ctx context.Context, hostFD int, dst usermem.IOSequence, offset int64, flags uint32) (int64, error) {
+	// Check that flags are supported.
+	//
 	// TODO(gvisor.dev/issue/2601): Support select preadv2 flags.
-	if flags != 0 {
+	if flags&^linux.RWF_HIPRI != 0 {
 		return 0, syserror.EOPNOTSUPP
 	}
 	reader := hostfd.GetReadWriterAt(int32(hostFD), offset, flags)
