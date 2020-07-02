@@ -357,6 +357,7 @@ syscall_test(
     size = "medium",
     shard_count = 5,
     test = "//test/syscalls/linux:mmap_test",
+    vfs2 = "True",
 )
 
 syscall_test(
