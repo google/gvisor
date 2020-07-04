@@ -88,8 +88,8 @@ func TestZeroWindowProbeRetransmit(t *testing.T) {
 			continue
 		}
 		// Check if the probes came at exponentially increasing intervals.
-		if p := time.Since(start); p < current-startProbeDuration {
-			t.Fatalf("zero probe came sooner interval %d probe %d\n", p, i)
+		if got, want := time.Since(start), current-startProbeDuration; got < want {
+			t.Errorf("got zero probe %d after %s, want >= %s", i, got, want)
 		}
 		// Acknowledge the zero-window probes from the dut.
 		conn.Send(testbench.TCP{AckNum: ackProbe, Flags: testbench.Uint8(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
