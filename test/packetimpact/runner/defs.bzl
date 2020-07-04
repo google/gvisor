@@ -20,12 +20,12 @@ def _packetimpact_test_impl(ctx):
     ])
     ctx.actions.write(bench, bench_content, is_executable = True)
 
-    transitive_files = depset()
+    transitive_files = []
     if hasattr(ctx.attr._test_runner, "data_runfiles"):
-        transitive_files = depset(ctx.attr._test_runner.data_runfiles.files)
+        transitive_files.append(ctx.attr._test_runner.data_runfiles.files)
     runfiles = ctx.runfiles(
         files = [test_runner] + ctx.files.testbench_binary + ctx.files._posix_server_binary,
-        transitive_files = transitive_files,
+        transitive_files = depset(transitive = transitive_files),
         collect_default = True,
         collect_data = True,
     )
