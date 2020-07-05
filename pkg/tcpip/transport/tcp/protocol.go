@@ -174,7 +174,7 @@ type protocol struct {
 	maxRetries                 uint32
 	synRcvdCount               synRcvdCounter
 	synRetries                 uint8
-	dispatcher                 *dispatcher
+	dispatcher                 dispatcher
 }
 
 // Number returns the tcp protocol number.
@@ -515,7 +515,7 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
 
 // NewProtocol returns a TCP transport protocol.
 func NewProtocol() stack.TransportProtocol {
-	return &protocol{
+	p := protocol{
 		sendBufferSize: SendBufferSizeOption{
 			Min:     MinBufferSize,
 			Default: DefaultSendBufferSize,
@@ -531,10 +531,11 @@ func NewProtocol() stack.TransportProtocol {
 		tcpLingerTimeout:           DefaultTCPLingerTimeout,
 		tcpTimeWaitTimeout:         DefaultTCPTimeWaitTimeout,
 		synRcvdCount:               synRcvdCounter{threshold: SynRcvdCountThreshold},
-		dispatcher:                 newDispatcher(runtime.GOMAXPROCS(0)),
 		synRetries:                 DefaultSynRetries,
 		minRTO:                     MinRTO,
 		maxRTO:                     MaxRTO,
 		maxRetries:                 MaxRetries,
 	}
+	p.dispatcher.init(runtime.GOMAXPROCS(0))
+	return &p
 }
