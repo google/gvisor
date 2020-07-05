@@ -72,11 +72,15 @@ type DeviceFD struct {
 	// writeCursorFR current FR being copied from server
 	writeCursorFR *FutureResponse
 
-	// mu
+	// mu protects the communication data structures.
 	mu sync.Mutex
 
-	// cond
-	cond sync.Cond
+	// waitCh is a channel used to synchronize the readers with the writers.
+	// Readers (FUSE daemon server) block if no requests are available. Writers
+	// (inbound requests to the filesystem) block if there are too many unprocessed
+	// in-flight requests.
+	waitCh chan struct{}
+
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
@@ -94,13 +98,6 @@ func (fd *DeviceFD) PRead(ctx context.Context, dst usermem.IOSequence, offset in
 
 // Read implements vfs.FileDescriptionImpl.Read.
 func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
-	fd.mu.Lock()
-	defer fd.mu.Unlock()
-	return fd.readLocked(ctx, dst, opts)
-}
-
-// readLocked
-func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
 	if !fd.mounted {
 		return 0, syserror.EPERM
@@ -113,10 +110,23 @@ func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts
 		return 0, syserror.EINVAL
 	}
 
+	// Wait for a request to be made available.
+	kernelTask := taskCtxValue.(*kernel.Task)
+	//if err := kernelTask.Block(fd.waitCh); err != nil {
+	//	log.Warningf("fusefs.DeviceFD.Read: couldn't wait on request queue")
+	//	return 0, syserror.EBUSY
+	//}
+	_ = kernelTask
+
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	return fd.readLocked(ctx, dst, opts)
+}
+
+// readLocked
+func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	if fd.queue.Empty() {
-		// TODO: Nothing to send, probably block the read until something becomes
-		// available?
-		log.Warningf("fusefs.DeviceFD.Read: No requests to read")
+		log.Warningf("fusefs.DeviceFD.Read: No requests to read but still signalled")
 		return 0, syserror.EAGAIN
 	}
 

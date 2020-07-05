@@ -24,6 +24,9 @@ import (
 	"gvisor.dev/gvisor/tools/go_marshal/marshal"
 )
 
+// TODO: configure this properly.
+const MaxInFlightRequests = 1000
+
 // Request represents a FUSE operation request that hasn't been sent to the
 // server yet.
 //
@@ -52,7 +55,7 @@ type Connection struct {
 	fd *DeviceFD
 }
 
-// NewFUSEConnection creats a FUSE connection to fd
+// NewFUSEConnection creates a FUSE connection to fd
 func NewFUSEConnection(ctx context.Context,  fd *vfs.FileDescription) *Connection {
 	// Mark the device as ready so it can be used. /dev/fuse can only be used if the FD was used to
 	// mount a FUSE filesystem.
@@ -63,6 +66,7 @@ func NewFUSEConnection(ctx context.Context,  fd *vfs.FileDescription) *Connectio
 	hdrLen := uint32((*linux.FUSEHeaderOut)(nil).SizeBytes())
 	fuseFD.writeBuf = make([]byte, hdrLen)
 	fuseFD.completions = make(map[linux.FUSEOpID]*FutureResponse)
+	fuseFD.waitCh = make(chan struct{}, MaxInFlightRequests)
 
 	return &Connection{fd: fuseFD}
 }
@@ -111,9 +115,16 @@ func (conn *Connection) CallFuture(t *kernel.Task, r *Request) (*FutureResponse,
 	conn.fd.mu.Lock()
 	defer conn.fd.mu.Unlock()
 
+	// Signal readers that a request is ready. This might block if
+	// the number of in flight requests exceed MaxInFlightRequests.
+	conn.fd.waitCh <- struct{}{}
+
+	// After signalling readers, we insert the request in the queue
+	// before releasing the lock and allowing them to read it.
 	conn.fd.queue.PushBack(r)
 	fut := newFutureResponse()
 	conn.fd.completions[r.id] = fut
+
 	return fut, nil
 }
 

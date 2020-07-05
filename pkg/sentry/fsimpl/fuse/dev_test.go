@@ -17,7 +17,6 @@ package fuse
 import (
 	"fmt"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -110,21 +109,31 @@ func setup(t *testing.T) *testutil.System {
 
 // newTestConnection creates a fuse connection that the sentry can communicate with
 // and the FD for the server to communicate with.
-func newTestConnection(ctx context.Context) (Connection, *vfs.FileDescription, error) {
+func newTestConnection(system *testutil.System, k *kernel.Kernel) (*testutil.System, *Connection, *vfs.FileDescription, error) {
 	vfsObj := &vfs.VirtualFilesystem{}
 	fuseDev := &DeviceFD{}
 
 	if err := vfsObj.Init(); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	vd := vfsObj.NewAnonVirtualDentry("genCountFD")
 	defer vd.DecRef()
 	if err := fuseDev.vfsfd.Init(fuseDev, 0, vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{}); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	return NewFUSEConnection(ctx, &fuseDev.vfsfd), &fuseDev.vfsfd, nil
+	tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
+	task, err := testutil.CreateTask(system.Ctx, fmt.Sprintf("fuse-task"), tc, system.MntNs, system.Root, system.Root)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	task.Start(k.TaskSet().Root.IDOfTask(task))
+
+	// Use the task as the context.
+	taskSystem := system.WithTemporaryContext(task)
+
+	return taskSystem, NewFUSEConnection(taskSystem.Ctx, &fuseDev.vfsfd), &fuseDev.vfsfd, nil
 }
 
 // TestEmptyQueue exercises the behaviour when no requests are queued up.
@@ -132,7 +141,8 @@ func TestEmptyQueue(t *testing.T) {
 	s := setup(t)
 	defer s.Destroy()
 
-	_, fd, err := newTestConnection(s.Ctx)
+	k := kernel.KernelFromContext(s.Ctx)
+	s, _, fd, err := newTestConnection(s, k)
 	if err != nil {
 		t.Fatalf("newTestConnection: %v", err)
 	}
@@ -152,13 +162,7 @@ func TestCallAndResolve(t *testing.T) {
 	k := kernel.KernelFromContext(s.Ctx)
 	creds := auth.CredentialsFromContext(s.Ctx)
 
-	tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
-	task, err := testutil.CreateTask(s.Ctx, fmt.Sprintf("fuse-task"), tc, s.MntNs, s.Root, s.Root)
-	if err != nil {
-		t.Fatalf("CreateTask faield: %v", err)
-	}
-
-	fuseConn, fd, err := newTestConnection(s.Ctx)
+	s, fuseConn, fd, err := newTestConnection(s, k)
 	if err != nil {
 		t.Fatalf("newTestConnection: %v", err)
 	}
@@ -173,6 +177,13 @@ func TestCallAndResolve(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRequest creation failed: %v", err)
 	}
+
+	taskCtxKey := kernel.CtxTask
+	taskCtxValue := s.Ctx.Value(taskCtxKey)
+	if taskCtxValue == nil {
+		t.Fatalf("Task not found: %v", err)
+	}
+	task := taskCtxValue.(*kernel.Task)
 
 	respFuture, err := fuseConn.CallFuture(task, req)
 	if err != nil {
