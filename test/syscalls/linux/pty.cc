@@ -634,6 +634,11 @@ TEST_F(PtyTest, TermiosAffectsSlave) {
 // Verify this by setting ICRNL (which rewrites input \r to \n) and verify that
 // it has no effect on the master.
 TEST_F(PtyTest, MasterTermiosUnchangable) {
+  struct kernel_termios master_termios = {};
+  EXPECT_THAT(ioctl(master_.get(), TCGETS, &master_termios), SyscallSucceeds());
+  master_termios.c_lflag |= ICRNL;
+  EXPECT_THAT(ioctl(master_.get(), TCSETS, &master_termios), SyscallSucceeds());
+
   char c = '\r';
   ASSERT_THAT(WriteFd(slave_.get(), &c, 1), SyscallSucceedsWithValue(1));
 
