@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/tools/go_marshal/marshal"
+	"syscall"
 )
 
 // TODO: configure this properly.
@@ -181,8 +182,13 @@ type Response struct {
 }
 
 func (r *Response) Error() error {
-	// TODO: Map r.hdr.Error to some error in the syserror package.
-	return nil
+	errno := r.hdr.Error
+	if errno >= 0 {
+		return nil
+	}
+
+	sysErrNo := syscall.Errno(-errno)
+	return error(sysErrNo)
 }
 
 func (r *Response) UnmarshalPayload(m marshal.Marshallable) error {
