@@ -86,6 +86,7 @@ go_test(
         "tcp_test.go",
         "tcp_timestamp_test.go",
     ],
+    shard_count = 10,
     deps = [
         ":tcp",
         "//pkg/sync",
