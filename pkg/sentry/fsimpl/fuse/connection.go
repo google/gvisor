@@ -16,6 +16,7 @@ package fuse
 
 import (
 	"fmt"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -56,7 +57,7 @@ type Connection struct {
 }
 
 // NewFUSEConnection creates a FUSE connection to fd
-func NewFUSEConnection(ctx context.Context,  fd *vfs.FileDescription) *Connection {
+func NewFUSEConnection(ctx context.Context, fd *vfs.FileDescription) *Connection {
 	// Mark the device as ready so it can be used. /dev/fuse can only be used if the FD was used to
 	// mount a FUSE filesystem.
 	fuseFD := fd.Impl().(*DeviceFD)
@@ -67,6 +68,8 @@ func NewFUSEConnection(ctx context.Context,  fd *vfs.FileDescription) *Connectio
 	fuseFD.writeBuf = make([]byte, hdrLen)
 	fuseFD.completions = make(map[linux.FUSEOpID]*FutureResponse)
 	fuseFD.waitCh = make(chan struct{}, MaxInFlightRequests)
+	fuseFD.writeCursor = 0
+	fuseFD.readCursor = 0
 
 	return &Connection{fd: fuseFD}
 }

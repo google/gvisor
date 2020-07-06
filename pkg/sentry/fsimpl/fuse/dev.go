@@ -112,11 +112,10 @@ func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.R
 
 	// Wait for a request to be made available.
 	kernelTask := taskCtxValue.(*kernel.Task)
-	//if err := kernelTask.Block(fd.waitCh); err != nil {
-	//	log.Warningf("fusefs.DeviceFD.Read: couldn't wait on request queue")
-	//	return 0, syserror.EBUSY
-	//}
-	_ = kernelTask
+	if err := kernelTask.Block(fd.waitCh); err != nil {
+		log.Warningf("fusefs.DeviceFD.Read: couldn't wait on request queue: %v", err)
+		return 0, syserror.EBUSY
+	}
 
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
@@ -176,7 +175,6 @@ func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opt
 	}
 
 	var cn, n int64
-	var err error
 	hdrLen := uint32((*linux.FUSEHeaderOut)(nil).SizeBytes())
 
 	for src.NumBytes() > 0 {
@@ -191,8 +189,10 @@ func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opt
 
 			bytesCopied, err := src.CopyIn(ctx, fd.writeCursorFR.data[fd.writeCursor:wantBytes])
 			if err != nil {
-				break
+				return 0, err
 			}
+			src = src.DropFirst(bytesCopied)
+
 			cn = int64(bytesCopied)
 			n += cn
 			fd.writeCursor += uint32(cn)
@@ -202,6 +202,7 @@ func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opt
 				close(fd.writeCursorFR.ch)
 				fd.writeCursorFR = nil
 				fd.writeCursor = 0
+				return n, nil
 			}
 
 			// Check if we have more data in src.
@@ -217,8 +218,10 @@ func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opt
 		wantBytes := hdrLen - fd.writeCursor
 		bytesCopied, err := src.CopyIn(ctx, fd.writeBuf[fd.writeCursor:wantBytes])
 		if err != nil {
-			break
+			return 0, err
 		}
+		src = src.DropFirst(bytesCopied)
+
 		cn = int64(bytesCopied)
 		n += cn
 		fd.writeCursor += uint32(cn)
@@ -249,7 +252,7 @@ func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opt
 		}
 	}
 
-	return n, err
+	return n, nil
 }
 
 func (fd *DeviceFD) Readiness(mask waiter.EventMask) waiter.EventMask {
