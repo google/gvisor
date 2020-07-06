@@ -79,6 +79,7 @@ go_test(
         "transport_demuxer_test.go",
         "transport_test.go",
     ],
+    shard_count = 20,
     deps = [
         ":stack",
         "//pkg/rand",
