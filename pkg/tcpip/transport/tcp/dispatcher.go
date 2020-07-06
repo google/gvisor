@@ -15,7 +15,8 @@
 package tcp
 
 import (
-	"gvisor.dev/gvisor/pkg/binary"
+	"encoding/binary"
+
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
