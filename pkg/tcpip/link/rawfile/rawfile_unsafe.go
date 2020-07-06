@@ -69,13 +69,12 @@ func NonBlockingWrite(fd int, buf []byte) *tcpip.Error {
 // NonBlockingWrite3 writes up to three byte slices to a file descriptor in a
 // single syscall. It fails if partial data is written.
 func NonBlockingWrite3(fd int, b1, b2, b3 []byte) *tcpip.Error {
-	// If the is no second buffer, issue a regular write.
-	if len(b2) == 0 {
+	// If there is no second and third buffer, issue a regular write.
+	if len(b2) == 0 && len(b3) == 0 {
 		return NonBlockingWrite(fd, b1)
 	}
 
-	// We have two buffers. Build the iovec that represents them and issue
-	// a writev syscall.
+	// Build the iovec that represents them and issue a writev syscall.
 	iovec := [3]syscall.Iovec{
 		{
 			Base: &b1[0],
