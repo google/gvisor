@@ -103,15 +103,13 @@ func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.R
 		return 0, syserror.EPERM
 	}
 
-	taskCtxKey := kernel.CtxTask
-	taskCtxValue := ctx.Value(taskCtxKey)
-	if taskCtxValue == nil {
+	kernelTask := kernel.TaskFromContext(ctx)
+	if kernelTask == nil {
 		log.Warningf("fusefs.DeviceFD.Read: couldn't get kernel task from context")
 		return 0, syserror.EINVAL
 	}
 
 	// Wait for a request to be made available.
-	kernelTask := taskCtxValue.(*kernel.Task)
 	if err := kernelTask.Block(fd.waitCh); err != nil {
 		log.Warningf("fusefs.DeviceFD.Read: couldn't wait on request queue: %v", err)
 		return 0, syserror.EBUSY
@@ -199,10 +197,7 @@ func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opt
 			if fd.writeCursor == wantBytes {
 				// Done reading this full response. Clean up and unblock the
 				// initiator.
-				close(fd.writeCursorFR.ch)
-				fd.writeCursorFR = nil
-				fd.writeCursor = 0
-				return n, nil
+				break
 			}
 
 			// Check if we have more data in src.
@@ -248,8 +243,14 @@ func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opt
 			fd.writeCursorFR = fut
 
 			// Next iteration will now try read the complete request, if src has
-			// any data remaining.
+			// any data remaining. Otherwise we're done.
 		}
+	}
+
+	if fd.writeCursorFR != nil {
+		close(fd.writeCursorFR.ch)
+		fd.writeCursorFR = nil
+		fd.writeCursor = 0
 	}
 
 	return n, nil

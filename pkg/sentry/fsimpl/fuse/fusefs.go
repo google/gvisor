@@ -91,13 +91,11 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, err
 	}
 
-	taskCtxKey := kernel.CtxTask
-	taskCtxValue := ctx.Value(taskCtxKey)
-	if taskCtxValue == nil {
+	kernelTask := kernel.TaskFromContext(ctx)
+	if kernelTask == nil {
 		log.Warningf("fusefs.FilesystemType.GetFilesystem: couldn't get kernel task from context")
 		return nil, nil, syserror.EINVAL
 	}
-	kernelTask := taskCtxValue.(*kernel.Task)
 	fuseFd := kernelTask.GetFileVFS2(int32(deviceDescriptor))
 
 	// Parse and set all the other supported FUSE mount options.

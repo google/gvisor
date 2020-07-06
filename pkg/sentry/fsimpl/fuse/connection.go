@@ -102,19 +102,39 @@ func (conn *Connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint
 	}, nil
 }
 
-// Call makes a request to the server and blocks until a server responds with a response.
+// Call makes a request to the server and blocks the invoking task until a
+// server responds with a response.
 func (conn *Connection) Call(t *kernel.Task, r *Request) (*Response, error) {
-	fut, err := conn.CallFuture(t, r)
+	fut, err := conn.callFuture(r)
 	if err != nil {
 		return nil, err
 	}
 
-	return fut.Resolve(t)
+	return fut.resolve(t)
 }
 
-// CallFuture makes a request to the server and returns a future response. Call Resolve()
-// when the response needs to be fulfilled.
-func (conn *Connection) CallFuture(t *kernel.Task, r *Request) (*FutureResponse, error) {
+// Call makes a request to the server and blocks the invoking goroutine until a
+// server responds with a response. Doesn't block a kernel.Task.
+func (conn *Connection) CallTaskNonBlock(r *Request) (*Response, error) {
+	fut, err := conn.callFuture(r)
+	if err != nil {
+		return nil, err
+	}
+
+	select {
+	case <-fut.ch:
+	}
+
+	// A response is ready. Resolve and return it.
+	return &Response{
+		hdr:  *fut.hdr,
+		data: fut.data,
+	}, nil
+}
+
+// callFuture makes a request to the server and returns a future response.
+// Call resolve() when the response needs to be fulfilled.
+func (conn *Connection) callFuture(r *Request) (*FutureResponse, error) {
 	conn.fd.mu.Lock()
 	defer conn.fd.mu.Unlock()
 
@@ -138,10 +158,9 @@ func newFutureResponse() *FutureResponse {
 	}
 }
 
-// Resolve blocks until the server responds to its corresponding request, then
-// returns a resolved response.
-func (r *FutureResponse) Resolve(t *kernel.Task) (*Response, error) {
-	// TODO: Consider blocking with a timeout.
+// resolve blocks the task until the server responds to its corresponding request,
+// then returns a resolved response.
+func (r *FutureResponse) resolve(t *kernel.Task) (*Response, error) {
 	if err := t.Block(r.ch); err != nil {
 		return nil, err
 	}
