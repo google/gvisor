@@ -110,6 +110,26 @@ type filesystem struct {
 	syncMu           sync.Mutex
 	syncableDentries map[*dentry]struct{}
 	specialFileFDs   map[*specialFileFD]struct{}
+
+	// syntheticSeq stores a counter to used to generate unique inodeNumber for
+	// synthetic dentries.
+	syntheticSeq uint64
+}
+
+// inodeNumber represents inode number reported in Dirent.Ino. For regular
+// dentries, it comes from QID.Path from the 9P server. Synthetic dentries
+// have have their inodeNumber generated sequentially, with the MSB reserved to
+// prevent conflicts with regular dentries.
+type inodeNumber uint64
+
+// Reserve MSB for synthetic mounts.
+const syntheticInoMask = uint64(1) << 63
+
+func inoFromPath(path uint64) inodeNumber {
+	if path&syntheticInoMask != 0 {
+		log.Warningf("Dropping MSB from ino, collision is possible. Original: %d, new: %d", path, path&^syntheticInoMask)
+	}
+	return inodeNumber(path &^ syntheticInoMask)
 }
 
 type filesystemOptions struct {
@@ -585,11 +605,11 @@ type dentry struct {
 	// Cached metadata; protected by metadataMu and accessed using atomic
 	// memory operations unless otherwise specified.
 	metadataMu sync.Mutex
-	ino        uint64 // immutable
-	mode       uint32 // type is immutable, perms are mutable
-	uid        uint32 // auth.KUID, but stored as raw uint32 for sync/atomic
-	gid        uint32 // auth.KGID, but ...
-	blockSize  uint32 // 0 if unknown
+	ino        inodeNumber // immutable
+	mode       uint32      // type is immutable, perms are mutable
+	uid        uint32      // auth.KUID, but stored as raw uint32 for sync/atomic
+	gid        uint32      // auth.KGID, but ...
+	blockSize  uint32      // 0 if unknown
 	// Timestamps, all nsecs from the Unix epoch.
 	atime int64
 	mtime int64
@@ -704,7 +724,7 @@ func (fs *filesystem) newDentry(ctx context.Context, file p9file, qid p9.QID, ma
 	d := &dentry{
 		fs:        fs,
 		file:      file,
-		ino:       qid.Path,
+		ino:       inoFromPath(qid.Path),
 		mode:      uint32(attr.Mode),
 		uid:       uint32(fs.opts.dfltuid),
 		gid:       uint32(fs.opts.dfltgid),
@@ -846,7 +866,7 @@ func (d *dentry) statTo(stat *linux.Statx) {
 	stat.UID = atomic.LoadUint32(&d.uid)
 	stat.GID = atomic.LoadUint32(&d.gid)
 	stat.Mode = uint16(atomic.LoadUint32(&d.mode))
-	stat.Ino = d.ino
+	stat.Ino = uint64(d.ino)
 	stat.Size = atomic.LoadUint64(&d.size)
 	// This is consistent with regularFileFD.Seek(), which treats regular files
 	// as having no holes.

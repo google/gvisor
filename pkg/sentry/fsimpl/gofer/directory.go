@@ -85,6 +85,7 @@ func (d *dentry) createSyntheticChildLocked(opts *createSyntheticOpts) {
 	d2 := &dentry{
 		refs:      1, // held by d
 		fs:        d.fs,
+		ino:       d.fs.nextSyntheticIno(),
 		mode:      uint32(opts.mode),
 		uid:       uint32(opts.kuid),
 		gid:       uint32(opts.kgid),
@@ -184,13 +185,13 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 		{
 			Name:    ".",
 			Type:    linux.DT_DIR,
-			Ino:     d.ino,
+			Ino:     uint64(d.ino),
 			NextOff: 1,
 		},
 		{
 			Name:    "..",
 			Type:    uint8(atomic.LoadUint32(&parent.mode) >> 12),
-			Ino:     parent.ino,
+			Ino:     uint64(parent.ino),
 			NextOff: 2,
 		},
 	}
@@ -226,7 +227,7 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 				}
 				dirent := vfs.Dirent{
 					Name:    p9d.Name,
-					Ino:     p9d.QID.Path,
+					Ino:     uint64(inoFromPath(p9d.QID.Path)),
 					NextOff: int64(len(dirents) + 1),
 				}
 				// p9 does not expose 9P2000.U's DMDEVICE, DMNAMEDPIPE, or
@@ -259,7 +260,7 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 			dirents = append(dirents, vfs.Dirent{
 				Name:    child.name,
 				Type:    uint8(atomic.LoadUint32(&child.mode) >> 12),
-				Ino:     child.ino,
+				Ino:     uint64(child.ino),
 				NextOff: int64(len(dirents) + 1),
 			})
 		}
