@@ -139,7 +139,7 @@ func (a *attachPoint) Attach() (p9.File, error) {
 		return nil, fmt.Errorf("unable to open %q: %v", a.prefix, err)
 	}
 
-	stat, err := stat(f.FD())
+	stat, err := fstat(f.FD())
 	if err != nil {
 		return nil, fmt.Errorf("unable to stat %q: %v", a.prefix, err)
 	}
@@ -352,9 +352,17 @@ func newFDMaybe(file *fd.FD) *fd.FD {
 	return dup
 }
 
-func stat(fd int) (syscall.Stat_t, error) {
+func fstat(fd int) (syscall.Stat_t, error) {
 	var stat syscall.Stat_t
 	if err := syscall.Fstat(fd, &stat); err != nil {
+		return syscall.Stat_t{}, err
+	}
+	return stat, nil
+}
+
+func stat(path string) (syscall.Stat_t, error) {
+	var stat syscall.Stat_t
+	if err := syscall.Stat(path, &stat); err != nil {
 		return syscall.Stat_t{}, err
 	}
 	return stat, nil
@@ -388,7 +396,7 @@ func (l *localFile) Open(flags p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 		}
 	}
 
-	stat, err := stat(newFile.FD())
+	stat, err := fstat(newFile.FD())
 	if err != nil {
 		if newFile != l.file {
 			newFile.Close()
@@ -449,7 +457,7 @@ func (l *localFile) Create(name string, mode p9.OpenFlags, perm p9.FileMode, uid
 	if err := fchown(child.FD(), uid, gid); err != nil {
 		return nil, nil, p9.QID{}, 0, extractErrno(err)
 	}
-	stat, err := stat(child.FD())
+	stat, err := fstat(child.FD())
 	if err != nil {
 		return nil, nil, p9.QID{}, 0, extractErrno(err)
 	}
@@ -497,7 +505,7 @@ func (l *localFile) Mkdir(name string, perm p9.FileMode, uid p9.UID, gid p9.GID)
 	if err := fchown(f.FD(), uid, gid); err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
-	stat, err := stat(f.FD())
+	stat, err := fstat(f.FD())
 	if err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
@@ -517,7 +525,7 @@ func (l *localFile) Walk(names []string) ([]p9.QID, p9.File, error) {
 			return nil, nil, extractErrno(err)
 		}
 
-		stat, err := stat(newFile.FD())
+		stat, err := fstat(newFile.FD())
 		if err != nil {
 			newFile.Close()
 			return nil, nil, extractErrno(err)
@@ -542,7 +550,7 @@ func (l *localFile) Walk(names []string) ([]p9.QID, p9.File, error) {
 		if err != nil {
 			return nil, nil, extractErrno(err)
 		}
-		stat, err := stat(f.FD())
+		stat, err := fstat(f.FD())
 		if err != nil {
 			f.Close()
 			return nil, nil, extractErrno(err)
@@ -592,7 +600,7 @@ func (l *localFile) FSync() error {
 
 // GetAttr implements p9.File.
 func (l *localFile) GetAttr(_ p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
-	stat, err := stat(l.file.FD())
+	stat, err := fstat(l.file.FD())
 	if err != nil {
 		return p9.QID{}, p9.AttrMask{}, p9.Attr{}, extractErrno(err)
 	}
@@ -880,7 +888,7 @@ func (l *localFile) Symlink(target, newName string, uid p9.UID, gid p9.GID) (p9.
 	if err := fchown(f.FD(), uid, gid); err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
-	stat, err := stat(f.FD())
+	stat, err := fstat(f.FD())
 	if err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
@@ -907,13 +915,39 @@ func (l *localFile) Link(target p9.File, newName string) error {
 }
 
 // Mknod implements p9.File.
-//
-// Not implemented.
-func (*localFile) Mknod(_ string, _ p9.FileMode, _ uint32, _ uint32, _ p9.UID, _ p9.GID) (p9.QID, error) {
+func (l *localFile) Mknod(name string, mode p9.FileMode, _ uint32, _ uint32, uid p9.UID, gid p9.GID) (p9.QID, error) {
+	conf := l.attachPoint.conf
+	if conf.ROMount {
+		if conf.PanicOnWrite {
+			panic("attempt to write to RO mount")
+		}
+		return p9.QID{}, syscall.EROFS
+	}
+
+	hostPath := path.Join(l.hostPath, name)
+
+	// Return EEXIST if the file already exists.
+	if _, err := stat(hostPath); err == nil {
+		return p9.QID{}, syscall.EEXIST
+	}
+
 	// From mknod(2) man page:
 	// "EPERM: [...] if the filesystem containing pathname does not support
 	// the type of node requested."
-	return p9.QID{}, syscall.EPERM
+	if mode.FileType() != p9.ModeRegular {
+		return p9.QID{}, syscall.EPERM
+	}
+
+	// Allow Mknod to create regular files.
+	if err := syscall.Mknod(hostPath, uint32(mode), 0); err != nil {
+		return p9.QID{}, err
+	}
+
+	stat, err := stat(hostPath)
+	if err != nil {
+		return p9.QID{}, extractErrno(err)
+	}
+	return l.attachPoint.makeQID(stat), nil
 }
 
 // UnlinkAt implements p9.File.
