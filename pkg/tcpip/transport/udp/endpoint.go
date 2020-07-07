@@ -612,6 +612,13 @@ func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 // SetSockOptInt implements tcpip.Endpoint.SetSockOptInt.
 func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	switch opt {
+	case tcpip.MTUDiscoverOption:
+		// Return not supported if the value is not disabling path
+		// MTU discovery.
+		if v != tcpip.PMTUDiscoveryDont {
+			return tcpip.ErrNotSupported
+		}
+
 	case tcpip.MulticastTTLOption:
 		e.mu.Lock()
 		e.multicastTTL = uint8(v)
@@ -905,6 +912,10 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 		v := int(e.sendTOS)
 		e.mu.RUnlock()
 		return v, nil
+
+	case tcpip.MTUDiscoverOption:
+		// The only supported setting is path MTU discovery disabled.
+		return tcpip.PMTUDiscoveryDont, nil
 
 	case tcpip.MulticastTTLOption:
 		e.mu.Lock()
