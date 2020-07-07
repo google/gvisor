@@ -25,6 +25,8 @@
 package packet
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -71,11 +73,12 @@ type endpoint struct {
 	rcvClosed     bool
 
 	// The following fields are protected by mu.
-	mu         sync.RWMutex `state:"nosave"`
-	sndBufSize int
-	closed     bool
-	stats      tcpip.TransportEndpointStats `state:"nosave"`
-	bound      bool
+	mu            sync.RWMutex `state:"nosave"`
+	sndBufSize    int
+	sndBufSizeMax int
+	closed        bool
+	stats         tcpip.TransportEndpointStats `state:"nosave"`
+	bound         bool
 }
 
 // NewEndpoint returns a new packet endpoint.
@@ -90,6 +93,17 @@ func NewEndpoint(s *stack.Stack, cooked bool, netProto tcpip.NetworkProtocolNumb
 		waiterQueue:   waiterQueue,
 		rcvBufSizeMax: 32 * 1024,
 		sndBufSize:    32 * 1024,
+	}
+
+	// Override with stack defaults.
+	var ss stack.SendBufferSizeOption
+	if err := s.Option(&ss); err == nil {
+		ep.sndBufSizeMax = ss.Default
+	}
+
+	var rs stack.ReceiveBufferSizeOption
+	if err := s.Option(&rs); err == nil {
+		ep.rcvBufSizeMax = rs.Default
 	}
 
 	if err := s.RegisterPacketEndpoint(0, netProto, ep); err != nil {
@@ -274,7 +288,46 @@ func (ep *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
 
 // SetSockOptInt implements tcpip.Endpoint.SetSockOptInt.
 func (ep *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
-	return tcpip.ErrUnknownProtocolOption
+	switch opt {
+	case tcpip.SendBufferSizeOption:
+		// Make sure the send buffer size is within the min and max
+		// allowed.
+		var ss stack.SendBufferSizeOption
+		if err := ep.stack.Option(&ss); err != nil {
+			panic(fmt.Sprintf("s.Option(%#v) = %s", ss, err))
+		}
+		if v > ss.Max {
+			v = ss.Max
+		}
+		if v < ss.Min {
+			v = ss.Min
+		}
+		ep.mu.Lock()
+		ep.sndBufSizeMax = v
+		ep.mu.Unlock()
+		return nil
+
+	case tcpip.ReceiveBufferSizeOption:
+		// Make sure the receive buffer size is within the min and max
+		// allowed.
+		var rs stack.ReceiveBufferSizeOption
+		if err := ep.stack.Option(&rs); err != nil {
+			panic(fmt.Sprintf("s.Option(%#v) = %s", rs, err))
+		}
+		if v > rs.Max {
+			v = rs.Max
+		}
+		if v < rs.Min {
+			v = rs.Min
+		}
+		ep.rcvMu.Lock()
+		ep.rcvBufSizeMax = v
+		ep.rcvMu.Unlock()
+		return nil
+
+	default:
+		return tcpip.ErrUnknownProtocolOption
+	}
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
@@ -289,7 +342,32 @@ func (ep *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
 func (ep *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
-	return 0, tcpip.ErrNotSupported
+	switch opt {
+	case tcpip.ReceiveQueueSizeOption:
+		v := 0
+		ep.rcvMu.Lock()
+		if !ep.rcvList.Empty() {
+			p := ep.rcvList.Front()
+			v = p.data.Size()
+		}
+		ep.rcvMu.Unlock()
+		return v, nil
+
+	case tcpip.SendBufferSizeOption:
+		ep.mu.Lock()
+		v := ep.sndBufSizeMax
+		ep.mu.Unlock()
+		return v, nil
+
+	case tcpip.ReceiveBufferSizeOption:
+		ep.rcvMu.Lock()
+		v := ep.rcvBufSizeMax
+		ep.rcvMu.Unlock()
+		return v, nil
+
+	default:
+		return -1, tcpip.ErrUnknownProtocolOption
+	}
 }
 
 // HandlePacket implements stack.PacketEndpoint.HandlePacket.
