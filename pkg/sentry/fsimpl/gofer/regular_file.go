@@ -582,20 +582,19 @@ func (fd *regularFileFD) Sync(ctx context.Context) error {
 
 func (d *dentry) syncSharedHandle(ctx context.Context) error {
 	d.handleMu.RLock()
-	if !d.handleWritable {
-		d.handleMu.RUnlock()
-		return nil
+	defer d.handleMu.RUnlock()
+
+	if d.handleWritable {
+		d.dataMu.Lock()
+		// Write dirty cached data to the remote file.
+		err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size, d.fs.mfp.MemoryFile(), d.handle.writeFromBlocksAt)
+		d.dataMu.Unlock()
+		if err != nil {
+			return err
+		}
 	}
-	d.dataMu.Lock()
-	// Write dirty cached data to the remote file.
-	err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size, d.fs.mfp.MemoryFile(), d.handle.writeFromBlocksAt)
-	d.dataMu.Unlock()
-	if err == nil {
-		// Sync the remote file.
-		err = d.handle.sync(ctx)
-	}
-	d.handleMu.RUnlock()
-	return err
+	// Sync the remote file.
+	return d.handle.sync(ctx)
 }
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
