@@ -126,11 +126,16 @@ func (h *handle) writeFromBlocksAt(ctx context.Context, srcs safemem.BlockSeq, o
 }
 
 func (h *handle) sync(ctx context.Context) error {
+	// Handle most common case first.
 	if h.fd >= 0 {
 		ctx.UninterruptibleSleepStart(false)
 		err := syscall.Fsync(int(h.fd))
 		ctx.UninterruptibleSleepFinish(false)
 		return err
+	}
+	if h.file.isNil() {
+		// File hasn't been touched, there is nothing to sync.
+		return nil
 	}
 	return h.file.fsync(ctx)
 }
