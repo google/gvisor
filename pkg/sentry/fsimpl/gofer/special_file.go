@@ -41,10 +41,10 @@ type specialFileFD struct {
 	// file offset is significant, i.e. a regular file. seekable is immutable.
 	seekable bool
 
-	// mayBlock is true if this file description represents a file for which
-	// queue may send I/O readiness events. mayBlock is immutable.
-	mayBlock bool
-	queue    waiter.Queue
+	// haveQueue is true if this file description represents a file for which
+	// queue may send I/O readiness events. haveQueue is immutable.
+	haveQueue bool
+	queue     waiter.Queue
 
 	// If seekable is true, off is the file offset. off is protected by mu.
 	mu  sync.Mutex
@@ -54,14 +54,14 @@ type specialFileFD struct {
 func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, locks *vfs.FileLocks, flags uint32) (*specialFileFD, error) {
 	ftype := d.fileType()
 	seekable := ftype == linux.S_IFREG
-	mayBlock := ftype == linux.S_IFIFO || ftype == linux.S_IFSOCK
+	haveQueue := (ftype == linux.S_IFIFO || ftype == linux.S_IFSOCK) && h.fd >= 0
 	fd := &specialFileFD{
-		handle:   h,
-		seekable: seekable,
-		mayBlock: mayBlock,
+		handle:    h,
+		seekable:  seekable,
+		haveQueue: haveQueue,
 	}
 	fd.LockFD.Init(locks)
-	if mayBlock && h.fd >= 0 {
+	if haveQueue {
 		if err := fdnotifier.AddFD(h.fd, &fd.queue); err != nil {
 			return nil, err
 		}
@@ -70,7 +70,7 @@ func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, locks *vfs.FileLocks,
 		DenyPRead:  !seekable,
 		DenyPWrite: !seekable,
 	}); err != nil {
-		if mayBlock && h.fd >= 0 {
+		if haveQueue {
 			fdnotifier.RemoveFD(h.fd)
 		}
 		return nil, err
@@ -80,7 +80,7 @@ func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, locks *vfs.FileLocks,
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *specialFileFD) Release() {
-	if fd.mayBlock && fd.handle.fd >= 0 {
+	if fd.haveQueue {
 		fdnotifier.RemoveFD(fd.handle.fd)
 	}
 	fd.handle.close(context.Background())
@@ -100,7 +100,7 @@ func (fd *specialFileFD) OnClose(ctx context.Context) error {
 
 // Readiness implements waiter.Waitable.Readiness.
 func (fd *specialFileFD) Readiness(mask waiter.EventMask) waiter.EventMask {
-	if fd.mayBlock {
+	if fd.haveQueue {
 		return fdnotifier.NonBlockingPoll(fd.handle.fd, mask)
 	}
 	return fd.fileDescription.Readiness(mask)
@@ -108,8 +108,9 @@ func (fd *specialFileFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // EventRegister implements waiter.Waitable.EventRegister.
 func (fd *specialFileFD) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	if fd.mayBlock {
+	if fd.haveQueue {
 		fd.queue.EventRegister(e, mask)
+		fdnotifier.UpdateFD(fd.handle.fd)
 		return
 	}
 	fd.fileDescription.EventRegister(e, mask)
@@ -117,8 +118,9 @@ func (fd *specialFileFD) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
 func (fd *specialFileFD) EventUnregister(e *waiter.Entry) {
-	if fd.mayBlock {
+	if fd.haveQueue {
 		fd.queue.EventUnregister(e)
+		fdnotifier.UpdateFD(fd.handle.fd)
 		return
 	}
 	fd.fileDescription.EventUnregister(e)
