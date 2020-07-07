@@ -673,6 +673,13 @@ const (
 	// TCP_MAXSEG option.
 	MaxSegOption
 
+	// MTUDiscoverOption is used to set/get the path MTU discovery setting.
+	//
+	// NOTE: Setting this option to any other value than PMTUDiscoveryDont
+	// is not supported and will fail as such, and getting this option will
+	// always return PMTUDiscoveryDont.
+	MTUDiscoverOption
+
 	// MulticastTTLOption is used by SetSockOptInt/GetSockOptInt to control
 	// the default TTL value for multicast messages. The default is 1.
 	MulticastTTLOption
@@ -712,6 +719,24 @@ const (
 	//
 	// NOTE: This option is currently only stubed out and is a no-op
 	TCPWindowClampOption
+)
+
+const (
+	// PMTUDiscoveryWant is a setting of the MTUDiscoverOption to use
+	// per-route settings.
+	PMTUDiscoveryWant int = iota
+
+	// PMTUDiscoveryDont is a setting of the MTUDiscoverOption to disable
+	// path MTU discovery.
+	PMTUDiscoveryDont
+
+	// PMTUDiscoveryDo is a setting of the MTUDiscoverOption to always do
+	// path MTU discovery.
+	PMTUDiscoveryDo
+
+	// PMTUDiscoveryProbe is a setting of the MTUDiscoverOption to set DF
+	// but ignore path MTU.
+	PMTUDiscoveryProbe
 )
 
 // ErrorOption is used in GetSockOpt to specify that the last error reported by

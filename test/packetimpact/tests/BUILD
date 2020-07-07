@@ -18,8 +18,6 @@ packetimpact_go_test(
 packetimpact_go_test(
     name = "ipv4_id_uniqueness",
     srcs = ["ipv4_id_uniqueness_test.go"],
-    # TODO(b/157506701) Fix netstack then remove the line below.
-    expect_netstack_failure = True,
     deps = [
         "//pkg/abi/linux",
         "//pkg/tcpip/header",

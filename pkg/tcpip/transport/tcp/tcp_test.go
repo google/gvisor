@@ -3095,6 +3095,63 @@ func TestMaxRTO(t *testing.T) {
 	}
 }
 
+// TestRetransmitIPv4IDUniqueness tests that the IPv4 Identification field is
+// unique on retransmits.
+func TestRetransmitIPv4IDUniqueness(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		size int
+	}{
+		{"1Byte", 1},
+		{"512Bytes", 512},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := context.New(t, defaultMTU)
+			defer c.Cleanup()
+
+			c.CreateConnected(789 /* iss */, 30000 /* rcvWnd */, -1 /* epRcvBuf */)
+
+			// Disabling PMTU discovery causes all packets sent from this socket to
+			// have DF=0. This needs to be done because the IPv4 ID uniqueness
+			// applies only to non-atomic IPv4 datagrams as defined in RFC 6864
+			// Section 4, and datagrams with DF=0 are non-atomic.
+			if err := c.EP.SetSockOptInt(tcpip.MTUDiscoverOption, tcpip.PMTUDiscoveryDont); err != nil {
+				t.Fatalf("disabling PMTU discovery via sockopt to force DF=0 failed: %s", err)
+			}
+
+			if _, _, err := c.EP.Write(tcpip.SlicePayload(buffer.NewView(tc.size)), tcpip.WriteOptions{}); err != nil {
+				t.Fatalf("Write failed: %s", err)
+			}
+			pkt := c.GetPacket()
+			checker.IPv4(t, pkt,
+				checker.FragmentFlags(0),
+				checker.TCP(
+					checker.DstPort(context.TestPort),
+					checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+				),
+			)
+			idSet := map[uint16]struct{}{header.IPv4(pkt).ID(): struct{}{}}
+			// Expect two retransmitted packets, and that all packets received have
+			// unique IPv4 ID values.
+			for i := 0; i <= 2; i++ {
+				pkt := c.GetPacket()
+				checker.IPv4(t, pkt,
+					checker.FragmentFlags(0),
+					checker.TCP(
+						checker.DstPort(context.TestPort),
+						checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+					),
+				)
+				id := header.IPv4(pkt).ID()
+				if _, exists := idSet[id]; exists {
+					t.Fatalf("duplicate IPv4 ID=%d found in retransmitted packet", id)
+				}
+				idSet[id] = struct{}{}
+			}
+		})
+	}
+}
+
 func TestFinImmediately(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()

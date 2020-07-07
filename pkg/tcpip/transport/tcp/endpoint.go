@@ -1589,6 +1589,13 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 		e.UnlockUser()
 		e.notifyProtocolGoroutine(notifyMSSChanged)
 
+	case tcpip.MTUDiscoverOption:
+		// Return not supported if attempting to set this option to
+		// anything other than path MTU discovery disabled.
+		if v != tcpip.PMTUDiscoveryDont {
+			return tcpip.ErrNotSupported
+		}
+
 	case tcpip.ReceiveBufferSizeOption:
 		// Make sure the receive buffer size is within the min and max
 		// allowed.
@@ -1895,6 +1902,11 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 		// always for now.
 		v := header.TCPDefaultMSS
 		return v, nil
+
+	case tcpip.MTUDiscoverOption:
+		// Always return the path MTU discovery disabled setting since
+		// it's the only one supported.
+		return tcpip.PMTUDiscoveryDont, nil
 
 	case tcpip.ReceiveQueueSizeOption:
 		return e.readyReceiveSize()
