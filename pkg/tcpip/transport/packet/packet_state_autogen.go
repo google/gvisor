@@ -55,6 +55,7 @@ func (x *endpoint) StateFields() []string {
 		"rcvBufSize",
 		"rcvClosed",
 		"sndBufSize",
+		"sndBufSizeMax",
 		"closed",
 		"bound",
 	}
@@ -72,8 +73,9 @@ func (x *endpoint) StateSave(m state.Sink) {
 	m.Save(6, &x.rcvBufSize)
 	m.Save(7, &x.rcvClosed)
 	m.Save(8, &x.sndBufSize)
-	m.Save(9, &x.closed)
-	m.Save(10, &x.bound)
+	m.Save(9, &x.sndBufSizeMax)
+	m.Save(10, &x.closed)
+	m.Save(11, &x.bound)
 }
 
 func (x *endpoint) StateLoad(m state.Source) {
@@ -85,8 +87,9 @@ func (x *endpoint) StateLoad(m state.Source) {
 	m.Load(6, &x.rcvBufSize)
 	m.Load(7, &x.rcvClosed)
 	m.Load(8, &x.sndBufSize)
-	m.Load(9, &x.closed)
-	m.Load(10, &x.bound)
+	m.Load(9, &x.sndBufSizeMax)
+	m.Load(10, &x.closed)
+	m.Load(11, &x.bound)
 	m.LoadValue(5, new(int), func(y interface{}) { x.loadRcvBufSizeMax(y.(int)) })
 	m.AfterLoad(x.afterLoad)
 }
