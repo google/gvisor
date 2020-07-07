@@ -1358,16 +1358,19 @@ func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolN
 	// TransportHeader is nil only when pkt is an ICMP packet or was reassembled
 	// from fragments.
 	if pkt.TransportHeader == nil {
-		// TODO(gvisor.dev/issue/170): ICMP packets don't have their
-		// TransportHeader fields set. See icmp/protocol.go:protocol.Parse for a
+		// TODO(gvisor.dev/issue/170): ICMP packets don't have their TransportHeader
+		// fields set yet, parse it here. See icmp/protocol.go:protocol.Parse for a
 		// full explanation.
 		if protocol == header.ICMPv4ProtocolNumber || protocol == header.ICMPv6ProtocolNumber {
+			// ICMP packets may be longer, but until icmp.Parse is implemented, here
+			// we parse it using the minimum size.
 			transHeader, ok := pkt.Data.PullUp(transProto.MinimumPacketSize())
 			if !ok {
 				n.stack.stats.MalformedRcvdPackets.Increment()
 				return
 			}
 			pkt.TransportHeader = transHeader
+			pkt.Data.TrimFront(len(pkt.TransportHeader))
 		} else {
 			// This is either a bad packet or was re-assembled from fragments.
 			transProto.Parse(pkt)

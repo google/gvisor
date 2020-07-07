@@ -744,15 +744,15 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 	// Only accept echo replies.
 	switch e.NetProto {
 	case header.IPv4ProtocolNumber:
-		h, ok := pkt.Data.PullUp(header.ICMPv4MinimumSize)
-		if !ok || header.ICMPv4(h).Type() != header.ICMPv4EchoReply {
+		h := header.ICMPv4(pkt.TransportHeader)
+		if len(h) < header.ICMPv4MinimumSize || h.Type() != header.ICMPv4EchoReply {
 			e.stack.Stats().DroppedPackets.Increment()
 			e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
 			return
 		}
 	case header.IPv6ProtocolNumber:
-		h, ok := pkt.Data.PullUp(header.ICMPv6MinimumSize)
-		if !ok || header.ICMPv6(h).Type() != header.ICMPv6EchoReply {
+		h := header.ICMPv6(pkt.TransportHeader)
+		if len(h) < header.ICMPv6MinimumSize || h.Type() != header.ICMPv6EchoReply {
 			e.stack.Stats().DroppedPackets.Increment()
 			e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
 			return
@@ -786,7 +786,9 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 		},
 	}
 
-	packet.data = pkt.Data
+	// ICMP socket's data includes ICMP header.
+	packet.data = pkt.TransportHeader.ToVectorisedView()
+	packet.data.Append(pkt.Data)
 
 	e.rcvList.PushBack(packet)
 	e.rcvBufSize += packet.data.Size()
