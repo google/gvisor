@@ -26,10 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/fs/anon"
-	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -37,7 +33,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
-	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 const vdsoPrelink = 0xffffffffff700000
@@ -55,52 +50,11 @@ func (f *fileContext) Value(key interface{}) interface{} {
 	}
 }
 
-// byteReader implements fs.FileOperations for reading from a []byte source.
-type byteReader struct {
-	fsutil.FileNoFsync              `state:"nosave"`
-	fsutil.FileNoIoctl              `state:"nosave"`
-	fsutil.FileNoMMap               `state:"nosave"`
-	fsutil.FileNoSplice             `state:"nosave"`
-	fsutil.FileNoopFlush            `state:"nosave"`
-	fsutil.FileNoopRelease          `state:"nosave"`
-	fsutil.FileNotDirReaddir        `state:"nosave"`
-	fsutil.FilePipeSeek             `state:"nosave"`
-	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
-	waiter.AlwaysReady              `state:"nosave"`
-
+type byteFullReader struct {
 	data []byte
 }
 
-var _ fs.FileOperations = (*byteReader)(nil)
-
-// newByteReaderFile creates a fake file to read data from.
-//
-// TODO(gvisor.dev/issue/2921): Convert to VFS2.
-func newByteReaderFile(ctx context.Context, data []byte) *fs.File {
-	// Create a fake inode.
-	inode := fs.NewInode(
-		ctx,
-		&fsutil.SimpleFileInode{},
-		fs.NewPseudoMountSource(ctx),
-		fs.StableAttr{
-			Type:      fs.Anonymous,
-			DeviceID:  anon.PseudoDevice.DeviceID(),
-			InodeID:   anon.PseudoDevice.NextIno(),
-			BlockSize: usermem.PageSize,
-		})
-
-	// Use the fake inode to create a fake dirent.
-	dirent := fs.NewTransientDirent(inode)
-	defer dirent.DecRef()
-
-	// Use the fake dirent to make a fake file.
-	flags := fs.FileFlags{Read: true, Pread: true}
-	return fs.NewFile(&fileContext{Context: context.Background()}, dirent, flags, &byteReader{
-		data: data,
-	})
-}
-
-func (b *byteReader) Read(ctx context.Context, file *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
+func (b *byteFullReader) ReadFull(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error) {
 	if offset < 0 {
 		return 0, syserror.EINVAL
 	}
@@ -109,10 +63,6 @@ func (b *byteReader) Read(ctx context.Context, file *fs.File, dst usermem.IOSequ
 	}
 	n, err := dst.CopyOut(ctx, b.data[offset:])
 	return int64(n), err
-}
-
-func (b *byteReader) Write(ctx context.Context, file *fs.File, src usermem.IOSequence, offset int64) (int64, error) {
-	panic("Write not supported")
 }
 
 // validateVDSO checks that the VDSO can be loaded by loadVDSO.
@@ -130,7 +80,7 @@ func (b *byteReader) Write(ctx context.Context, file *fs.File, src usermem.IOSeq
 // * PT_LOAD segments don't extend beyond the end of the file.
 //
 // ctx may be nil if f does not need it.
-func validateVDSO(ctx context.Context, f fsbridge.File, size uint64) (elfInfo, error) {
+func validateVDSO(ctx context.Context, f fullReader, size uint64) (elfInfo, error) {
 	info, err := parseHeader(ctx, f)
 	if err != nil {
 		log.Infof("Unable to parse VDSO header: %v", err)
@@ -248,13 +198,12 @@ func getSymbolValueFromVDSO(symbol string) (uint64, error) {
 
 // PrepareVDSO validates the system VDSO and returns a VDSO, containing the
 // param page for updating by the kernel.
-func PrepareVDSO(ctx context.Context, mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
-	vdsoFile := fsbridge.NewFSFile(newByteReaderFile(ctx, vdsoBin))
+func PrepareVDSO(mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
+	vdsoFile := &byteFullReader{data: vdsoBin}
 
 	// First make sure the VDSO is valid. vdsoFile does not use ctx, so a
 	// nil context can be passed.
 	info, err := validateVDSO(nil, vdsoFile, uint64(len(vdsoBin)))
-	vdsoFile.DecRef()
 	if err != nil {
 		return nil, err
 	}

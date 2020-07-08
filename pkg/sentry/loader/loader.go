@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
@@ -78,22 +77,6 @@ type LoadArgs struct {
 
 	// Features specifies the CPU feature set for the executable.
 	Features *cpuid.FeatureSet
-}
-
-// readFull behaves like io.ReadFull for an *fs.File.
-func readFull(ctx context.Context, f *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
-	var total int64
-	for dst.NumBytes() > 0 {
-		n, err := f.Preadv(ctx, dst, offset+total)
-		total += n
-		if err == io.EOF && total != 0 {
-			return total, io.ErrUnexpectedEOF
-		} else if err != nil {
-			return total, err
-		}
-		dst = dst.DropFirst64(n)
-	}
-	return total, nil
 }
 
 // openPath opens args.Filename and checks that it is valid for loading.
