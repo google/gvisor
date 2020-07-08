@@ -73,7 +73,7 @@ func Boot() (*kernel.Kernel, error) {
 	k.SetMemoryFile(mf)
 
 	// Pass k as the platform since it is savable, unlike the actual platform.
-	vdso, err := loader.PrepareVDSO(nil, k)
+	vdso, err := loader.PrepareVDSO(k)
 	if err != nil {
 		return nil, fmt.Errorf("creating vdso: %v", err)
 	}
