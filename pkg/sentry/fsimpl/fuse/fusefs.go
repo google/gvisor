@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -51,6 +51,11 @@ type filesystemOptions struct {
 
 	// rootMode specifies the the file mode of the filesystem's root.
 	rootMode linux.FileMode
+
+	// maxInflightRequests specifies the maximum number of unread requests that can be
+	// queued in the device at any time. Any further requests will block when trying to
+	// Call the server.
+	maxInflightRequests uint64
 }
 
 // filesystem implements vfs.FilesystemImpl.
@@ -58,12 +63,12 @@ type filesystem struct {
 	kernfs.Filesystem
 	devMinor uint32
 
-	// fuseFD is the FD returned when opening /dev/fuse. It is used for communication
-	// between the FUSE server daemon and the sentry fusefs.
-	fuseFD *DeviceFD
+	// conn is used for communication between the FUSE server
+	// daemon and the sentry fusefs.
+	conn *Connection
 
 	// opts is the options the fusefs is initialized with.
-	opts filesystemOptions
+	opts *filesystemOptions
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -100,7 +105,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	fuseFd := kernelTask.GetFileVFS2(int32(deviceDescriptor))
 
 	// Parse and set all the other supported FUSE mount options.
-	// TODO: Expand the supported mount options.
+	// TODO(gVisor.dev/issue/3229): Expand the supported mount options.
 	if userIDStr, ok := mopts["user_id"]; ok {
 		delete(mopts, "user_id")
 		userID, err := strconv.ParseUint(userIDStr, 10, 32)
@@ -134,21 +139,20 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	fsopts.rootMode = rootMode
 
+	// Set the maxInFlightRequests option.
+	fsopts.maxInflightRequests = MaxInFlightRequestsDefault
+
 	// Check for unparsed options.
 	if len(mopts) != 0 {
 		log.Warningf("%s.GetFilesystem: unknown options: %v", fsType.Name(), mopts)
 		return nil, nil, syserror.EINVAL
 	}
 
-	// Mark the device as ready so it can be used. /dev/fuse can only be used if the FD was used to
-	// mount a FUSE filesystem.
-	fuseFD := fuseFd.Impl().(*DeviceFD)
-	fuseFD.mounted = true
-
-	fs := &filesystem{
-		devMinor: devMinor,
-		fuseFD:   fuseFD,
-		opts:     fsopts,
+	// Create a new FUSE filesystem.
+	fs, err := NewFUSEFilesystem(ctx, devMinor, &fsopts, fuseFd)
+	if err != nil {
+		log.Warningf("%s.NewFUSEFilesystem: failed with error: %v", fsType.Name(), err)
+		return nil, nil, err
 	}
 
 	fs.VFSFilesystem().Init(vfsObj, &fsType, fs)
@@ -161,6 +165,26 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	root := fs.newInode(creds, defaultFusefsDirMode)
 
 	return fs.VFSFilesystem(), root.VFSDentry(), nil
+}
+
+// NewFUSEFilesystem creates a new FUSE filesystem.
+func NewFUSEFilesystem(ctx context.Context, devMinor uint32, opts *filesystemOptions, device *vfs.FileDescription) (*filesystem, error) {
+	fs := &filesystem{
+		devMinor: devMinor,
+		opts:     opts,
+	}
+
+	conn, err := NewFUSEConnection(ctx, device, opts.maxInflightRequests)
+	if err != nil {
+		log.Warningf("fuse.NewFUSEFilesystem: NewFUSEConnection failed with error: %v", err)
+		return nil, syserror.EINVAL
+	}
+
+	fs.conn = conn
+	fuseFD := device.Impl().(*DeviceFD)
+	fuseFD.fs = fs
+
+	return fs, nil
 }
 
 // Release implements vfs.FilesystemImpl.Release.
