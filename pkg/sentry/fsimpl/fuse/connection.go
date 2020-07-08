@@ -28,6 +28,12 @@ import (
 // TODO: configure this properly.
 const MaxInFlightRequests = 1000
 
+var (
+	// Ordinary requests have even IDs, while interrupts IDs are odd.
+	FUSE_INIT_REQ_BIT uint64 = 1
+	FUSE_REQ_ID_STEP  uint64 = 2
+)
+
 // Request represents a FUSE operation request that hasn't been sent to the
 // server yet.
 //
@@ -78,6 +84,7 @@ func NewFUSEConnection(ctx context.Context, fd *vfs.FileDescription) *Connection
 func (conn *Connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint64, opcode linux.FUSEOpcode, payload marshal.Marshallable) (*Request, error) {
 	conn.fd.mu.Lock()
 	defer conn.fd.mu.Unlock()
+	conn.fd.nextOpID += linux.FUSEOpID(FUSE_REQ_ID_STEP)
 
 	hdrLen := (*linux.FUSEHeaderIn)(nil).SizeBytes()
 	hdr := linux.FUSEHeaderIn{
@@ -89,7 +96,6 @@ func (conn *Connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint
 		GID:    uint32(creds.EffectiveKGID),
 		PID:    pid,
 	}
-	conn.fd.nextOpID++
 
 	buf := make([]byte, hdr.Len)
 	hdr.MarshalUnsafe(buf[:hdrLen])

@@ -73,6 +73,10 @@ func TestCallAndResolve(t *testing.T) {
 			t.Fatalf("CallTaskNonBlock failed: %v", err)
 		}
 
+		if err = resp.Error(); err != nil {
+			t.Fatalf("Server responded with an error: %v", err)
+		}
+
 		var newTestObject testObject
 		if err := resp.UnmarshalPayload(&newTestObject); err != nil {
 			t.Fatalf("Unmarshalling payload error: %v", err)
