@@ -134,7 +134,6 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareG
 		return err
 	}
 	if isRoot {
-
 		return fmt.Errorf("cannot run with network enabled in root network namespace")
 	}
 
