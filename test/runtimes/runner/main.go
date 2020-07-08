@@ -16,6 +16,7 @@
 package main
 
 import (
+	"context"
 	"encoding/csv"
 	"flag"
 	"fmt"
@@ -60,8 +61,9 @@ func runTests() int {
 	}
 
 	// Construct the shared docker instance.
-	d := dockerutil.MakeDocker(testutil.DefaultLogger(*lang))
-	defer d.CleanUp()
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, testutil.DefaultLogger(*lang))
+	defer d.CleanUp(ctx)
 
 	if err := testutil.TouchShardStatusFile(); err != nil {
 		fmt.Fprintf(os.Stderr, "error touching status shard file: %v\n", err)
@@ -71,7 +73,7 @@ func runTests() int {
 	// Get a slice of tests to run. This will also start a single Docker
 	// container that will be used to run each test. The final test will
 	// stop the Docker container.
-	tests, err := getTests(d, excludes)
+	tests, err := getTests(ctx, d, excludes)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
 		return 1
@@ -82,18 +84,18 @@ func runTests() int {
 }
 
 // getTests executes all tests as table tests.
-func getTests(d *dockerutil.Docker, excludes map[string]struct{}) ([]testing.InternalTest, error) {
+func getTests(ctx context.Context, d *dockerutil.Container, excludes map[string]struct{}) ([]testing.InternalTest, error) {
 	// Start the container.
 	opts := dockerutil.RunOpts{
 		Image: fmt.Sprintf("runtimes/%s", *image),
 	}
 	d.CopyFiles(&opts, "/proctor", "test/runtimes/proctor/proctor")
-	if err := d.Spawn(opts, "/proctor/proctor", "--pause"); err != nil {
+	if err := d.Spawn(ctx, opts, "/proctor/proctor", "--pause"); err != nil {
 		return nil, fmt.Errorf("docker run failed: %v", err)
 	}
 
 	// Get a list of all tests in the image.
-	list, err := d.Exec(dockerutil.RunOpts{}, "/proctor/proctor", "--runtime", *lang, "--list")
+	list, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/proctor/proctor", "--runtime", *lang, "--list")
 	if err != nil {
 		return nil, fmt.Errorf("docker exec failed: %v", err)
 	}
@@ -128,7 +130,7 @@ func getTests(d *dockerutil.Docker, excludes map[string]struct{}) ([]testing.Int
 
 				go func() {
 					fmt.Printf("RUNNING %s...\n", tc)
-					output, err = d.Exec(dockerutil.RunOpts{}, "/proctor/proctor", "--runtime", *lang, "--test", tc)
+					output, err = d.Exec(ctx, dockerutil.ExecOpts{}, "/proctor/proctor", "--runtime", *lang, "--test", tc)
 					close(done)
 				}()
 

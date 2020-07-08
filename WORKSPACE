@@ -370,6 +370,112 @@ go_repository(
     version = "v1.5.0",
 )
 
+# Docker API dependencies.
+go_repository(
+    name = "com_github_docker_docker",
+    importpath = "github.com/docker/docker",
+    sum = "h1:iWPIG7pWIsCwT6ZtHnTUpoVMnete7O/pzd9HFE3+tn8=",
+    version = "v17.12.0-ce-rc1.0.20200618181300-9dc6525e6118+incompatible",
+)
+
+go_repository(
+    name = "com_github_docker_go_connections",
+    importpath = "github.com/docker/go-connections",
+    sum = "h1:El9xVISelRB7BuFusrZozjnkIM5YnzCViNKohAFqRJQ=",
+    version = "v0.4.0",
+)
+
+go_repository(
+    name = "com_github_pkg_errors",
+    importpath = "github.com/pkg/errors",
+    sum = "h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=",
+    version = "v0.9.1",
+)
+
+go_repository(
+    name = "com_github_docker_go_units",
+    importpath = "github.com/docker/go-units",
+    sum = "h1:3uh0PgVws3nIA0Q+MwDC8yjEPf9zjRfZZWXZYDct3Tw=",
+    version = "v0.4.0",
+)
+
+go_repository(
+    name = "com_github_opencontainers_go_digest",
+    importpath = "github.com/opencontainers/go-digest",
+    sum = "h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=",
+    version = "v1.0.0",
+)
+
+go_repository(
+    name = "com_github_docker_distribution",
+    importpath = "github.com/docker/distribution",
+    sum = "h1:a5mlkVzth6W5A4fOsS3D2EO5BUmsJpcB+cRlLU7cSug=",
+    version = "v2.7.1+incompatible",
+)
+
+go_repository(
+    name = "com_github_davecgh_go_spew",
+    importpath = "github.com/davecgh/go-spew",
+    sum = "h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=",
+    version = "v1.1.1",
+)
+
+go_repository(
+    name = "com_github_konsorten_go_windows_terminal_sequences",
+    importpath = "github.com/konsorten/go-windows-terminal-sequences",
+    sum = "h1:CE8S1cTafDpPvMhIxNJKvHsGVBgn1xWYf1NbHQhywc8=",
+    version = "v2.7.1+incompatible",
+)
+
+go_repository(
+    name = "com_github_pmezard_go_difflib",
+    importpath = "github.com/pmezard/go-difflib",
+    sum = "h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=",
+    version = "v1.0.0",
+)
+
+go_repository(
+    name = "com_github_sirupsen_logrus",
+    importpath = "github.com/sirupsen/logrus",
+    sum = "h1:UBcNElsrwanuuMsnGSlYmtmgbb23qDR5dG+6X6Oo89I=",
+    version = "v1.6.0",
+)
+
+go_repository(
+    name = "com_github_stretchr_testify",
+    importpath = "github.com/stretchr/testify",
+    sum = "h1:bSDNvY7ZPG5RlJ8otE/7V6gMiyenm9RtJ7IUVIAoJ1w=",
+    version = "v1.2.2",
+)
+
+go_repository(
+    name = "com_github_opencontainers_image_spec",
+    importpath = "github.com/opencontainers/image-spec",
+    sum = "h1:JMemWkRwHx4Zj+fVxWoMCFm/8sYGGrUVojFA6h/TRcI=",
+    version = "v1.0.1",
+)
+
+go_repository(
+    name = "com_github_containerd_containerd",
+    importpath = "github.com/containerd/containerd",
+    sum = "h1:3o0smo5SKY7H6AJCmJhsnCjR2/V2T8VmiHt7seN2/kI=",
+    version = "v1.3.4",
+)
+
+go_repository(
+    name = "com_github_microsoft_go_winio",
+    importpath = "github.com/Microsoft/go-winio",
+    sum = "h1:+hMXMk01us9KgxGb7ftKQt2Xpf5hH/yky+TDA+qxleU=",
+    version = "v0.4.14",
+)
+
+go_repository(
+    name = "com_github_stretchr_objx",
+    importpath = "github.com/stretchr/objx",
+    sum = "h1:2vfRuCMp5sSVIDSqO8oNnWJq7mPa6KVP3iPIwFBuy8A=",
+    version = "v0.1.1",
+)
+
 go_repository(
     name = "org_golang_google_api",
     importpath = "google.golang.org/api",
@@ -450,3 +556,4 @@ http_archive(
         "https://github.com/google/benchmark/archive/v1.5.0.tar.gz",
     ],
 )
+
