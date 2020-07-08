@@ -146,6 +146,7 @@ syscall_test(
 )
 
 syscall_test(
+    fuse = "True",
     test = "//test/syscalls/linux:dev_test",
     vfs2 = "True",
 )
