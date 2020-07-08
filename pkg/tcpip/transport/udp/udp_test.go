@@ -1721,9 +1721,11 @@ func TestIncrementMalformedPacketsReceived(t *testing.T) {
 	payload := newPayload()
 	h := unicastV6.header4Tuple(incoming)
 	buf := c.buildV6Packet(payload, &h)
-	// Invalidate the packet length field in the UDP header by adding one.
+
+	// Invalidate the UDP header length field.
 	u := header.UDP(buf[header.IPv6MinimumSize:])
 	u.SetLength(u.Length() + 1)
+
 	c.linkEP.InjectInbound(ipv6.ProtocolNumber, &stack.PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
@@ -1803,9 +1805,16 @@ func TestIncrementChecksumErrorsV4(t *testing.T) {
 	payload := newPayload()
 	h := unicastV4.header4Tuple(incoming)
 	buf := c.buildV4Packet(payload, &h)
-	// Invalidate the checksum field in the UDP header by adding one.
-	u := header.UDP(buf[header.IPv4MinimumSize:])
-	u.SetChecksum(u.Checksum() + 1)
+
+	// Invalidate the UDP header checksum field, taking care to avoid
+	// overflow to zero, which would disable checksum validation.
+	for u := header.UDP(buf[header.IPv4MinimumSize:]); ; {
+		u.SetChecksum(u.Checksum() + 1)
+		if u.Checksum() != 0 {
+			break
+		}
+	}
+
 	c.linkEP.InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
@@ -1834,9 +1843,11 @@ func TestIncrementChecksumErrorsV6(t *testing.T) {
 	payload := newPayload()
 	h := unicastV6.header4Tuple(incoming)
 	buf := c.buildV6Packet(payload, &h)
-	// Invalidate the checksum field in the UDP header by adding one.
+
+	// Invalidate the UDP header checksum field.
 	u := header.UDP(buf[header.IPv6MinimumSize:])
 	u.SetChecksum(u.Checksum() + 1)
+
 	c.linkEP.InjectInbound(ipv6.ProtocolNumber, &stack.PacketBuffer{
 		Data: buf.ToVectorisedView(),
 	})
