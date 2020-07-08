@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"reflect"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
@@ -316,4 +317,29 @@ func TestInputSource(t *testing.T) {
 
 func TestInputInvertSource(t *testing.T) {
 	singleTest(t, FilterInputInvertSource{})
+}
+
+func TestFilterAddrs(t *testing.T) {
+	tcs := []struct {
+		ipv6  bool
+		addrs []string
+		want  []string
+	}{
+		{
+			ipv6:  false,
+			addrs: []string{"192.168.0.1", "192.168.0.2/24", "::1", "::2/128"},
+			want:  []string{"192.168.0.1", "192.168.0.2"},
+		},
+		{
+			ipv6:  true,
+			addrs: []string{"192.168.0.1", "192.168.0.2/24", "::1", "::2/128"},
+			want:  []string{"::1", "::2"},
+		},
+	}
+
+	for _, tc := range tcs {
+		if got := filterAddrs(tc.addrs, tc.ipv6); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%v with IPv6 %t: got %v, but wanted %v", tc.addrs, tc.ipv6, got, tc.want)
+		}
+	}
 }
