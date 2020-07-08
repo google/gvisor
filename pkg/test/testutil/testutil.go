@@ -482,6 +482,21 @@ func IsStatic(filename string) (bool, error) {
 	return true, nil
 }
 
+// TouchShardStatusFile indicates to Bazel that the test runner supports
+// sharding by creating or updating the last modified date of the file
+// specified by TEST_SHARD_STATUS_FILE.
+//
+// See https://docs.bazel.build/versions/master/test-encyclopedia.html#role-of-the-test-runner.
+func TouchShardStatusFile() error {
+	if statusFile := os.Getenv("TEST_SHARD_STATUS_FILE"); statusFile != "" {
+		cmd := exec.Command("touch", statusFile)
+		if b, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("touch %q failed:\n output: %s\n error: %s", statusFile, string(b), err.Error())
+		}
+	}
+	return nil
+}
+
 // TestIndicesForShard returns indices for this test shard based on the
 // TEST_SHARD_INDEX and TEST_TOTAL_SHARDS environment vars.
 //

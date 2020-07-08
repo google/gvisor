@@ -63,6 +63,11 @@ func runTests() int {
 	d := dockerutil.MakeDocker(testutil.DefaultLogger(*lang))
 	defer d.CleanUp()
 
+	if err := testutil.TouchShardStatusFile(); err != nil {
+		fmt.Fprintf(os.Stderr, "error touching status shard file: %v\n", err)
+		return 1
+	}
+
 	// Get a slice of tests to run. This will also start a single Docker
 	// container that will be used to run each test. The final test will
 	// stop the Docker container.
