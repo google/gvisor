@@ -29,6 +29,7 @@ go_library(
         "file_amd64.go",
         "file_arm64.go",
         "fs.go",
+        "fuse.go",
         "futex.go",
         "inotify.go",
         "ioctl.go",
