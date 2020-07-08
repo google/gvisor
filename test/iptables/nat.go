@@ -241,7 +241,7 @@ func (NATPreRedirectIP) Name() string {
 
 // ContainerAction implements TestCase.ContainerAction.
 func (NATPreRedirectIP) ContainerAction(ip net.IP) error {
-	addrs, err := localAddrs()
+	addrs, err := localAddrs(false)
 	if err != nil {
 		return err
 	}
