@@ -44,8 +44,13 @@ PosixErrorOr<std::string> GetCWD();
 // can't be determined.
 PosixErrorOr<bool> Exists(absl::string_view path);
 
-// Returns a stat structure for the given path or an error.
+// Returns a stat structure for the given path or an error. If the path
+// represents a symlink, it will be traversed.
 PosixErrorOr<struct stat> Stat(absl::string_view path);
+
+// Returns a stat structure for the given path or an error. If the path
+// represents a symlink, it will not be traversed.
+PosixErrorOr<struct stat> Lstat(absl::string_view path);
 
 // Returns a stat struct for the given fd.
 PosixErrorOr<struct stat> Fstat(int fd);

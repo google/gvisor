@@ -125,12 +125,12 @@ PosixErrorOr<struct stat> Fstat(int fd) {
 
 PosixErrorOr<bool> Exists(absl::string_view path) {
   struct stat stat_buf;
-  int res = stat(std::string(path).c_str(), &stat_buf);
+  int res = lstat(std::string(path).c_str(), &stat_buf);
   if (res < 0) {
     if (errno == ENOENT) {
       return false;
     }
-    return PosixError(errno, absl::StrCat("stat ", path));
+    return PosixError(errno, absl::StrCat("lstat ", path));
   }
   return true;
 }
