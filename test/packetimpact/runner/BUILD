@@ -16,5 +16,6 @@ go_test(
     deps = [
         "//pkg/test/dockerutil",
         "//test/packetimpact/netdevs",
+        "@com_github_docker_docker//api/types/mount:go_default_library",
     ],
 )

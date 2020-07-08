@@ -22,20 +22,20 @@
 package integration
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
+	"github.com/docker/docker/api/types/mount"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
@@ -56,22 +56,23 @@ func httpRequestSucceeds(client http.Client, server string, port int) error {
 
 // TestLifeCycle tests a basic Create/Start/Stop docker container life cycle.
 func TestLifeCycle(t *testing.T) {
-	d := dockerutil.MakeDocker(t)
-	defer d.CleanUp()
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
 
 	// Start the container.
-	if err := d.Create(dockerutil.RunOpts{
+	if err := d.Create(ctx, dockerutil.RunOpts{
 		Image: "basic/nginx",
 		Ports: []int{80},
 	}); err != nil {
 		t.Fatalf("docker create failed: %v", err)
 	}
-	if err := d.Start(); err != nil {
+	if err := d.Start(ctx); err != nil {
 		t.Fatalf("docker start failed: %v", err)
 	}
 
 	// Test that container is working.
-	port, err := d.FindPort(80)
+	port, err := d.FindPort(ctx, 80)
 	if err != nil {
 		t.Fatalf("docker.FindPort(80) failed: %v", err)
 	}
@@ -83,10 +84,10 @@ func TestLifeCycle(t *testing.T) {
 		t.Errorf("http request failed: %v", err)
 	}
 
-	if err := d.Stop(); err != nil {
+	if err := d.Stop(ctx); err != nil {
 		t.Fatalf("docker stop failed: %v", err)
 	}
-	if err := d.Remove(); err != nil {
+	if err := d.Remove(ctx); err != nil {
 		t.Fatalf("docker rm failed: %v", err)
 	}
 }
@@ -96,11 +97,12 @@ func TestPauseResume(t *testing.T) {
 		t.Skip("Checkpoint is not supported.")
 	}
 
-	d := dockerutil.MakeDocker(t)
-	defer d.CleanUp()
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
 
 	// Start the container.
-	if err := d.Spawn(dockerutil.RunOpts{
+	if err := d.Spawn(ctx, dockerutil.RunOpts{
 		Image: "basic/python",
 		Ports: []int{8080}, // See Dockerfile.
 	}); err != nil {
@@ -108,7 +110,7 @@ func TestPauseResume(t *testing.T) {
 	}
 
 	// Find where port 8080 is mapped to.
-	port, err := d.FindPort(8080)
+	port, err := d.FindPort(ctx, 8080)
 	if err != nil {
 		t.Fatalf("docker.FindPort(8080) failed: %v", err)
 	}
@@ -124,7 +126,7 @@ func TestPauseResume(t *testing.T) {
 		t.Error("http request failed:", err)
 	}
 
-	if err := d.Pause(); err != nil {
+	if err := d.Pause(ctx); err != nil {
 		t.Fatalf("docker pause failed: %v", err)
 	}
 
@@ -140,7 +142,7 @@ func TestPauseResume(t *testing.T) {
 		t.Errorf("http req got unexpected error %v", v)
 	}
 
-	if err := d.Unpause(); err != nil {
+	if err := d.Unpause(ctx); err != nil {
 		t.Fatalf("docker unpause failed: %v", err)
 	}
 
@@ -160,11 +162,12 @@ func TestCheckpointRestore(t *testing.T) {
 		t.Skip("Pause/resume is not supported.")
 	}
 
-	d := dockerutil.MakeDocker(t)
-	defer d.CleanUp()
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
 
 	// Start the container.
-	if err := d.Spawn(dockerutil.RunOpts{
+	if err := d.Spawn(ctx, dockerutil.RunOpts{
 		Image: "basic/python",
 		Ports: []int{8080}, // See Dockerfile.
 	}); err != nil {
@@ -172,20 +175,20 @@ func TestCheckpointRestore(t *testing.T) {
 	}
 
 	// Create a snapshot.
-	if err := d.Checkpoint("test"); err != nil {
+	if err := d.Checkpoint(ctx, "test"); err != nil {
 		t.Fatalf("docker checkpoint failed: %v", err)
 	}
-	if _, err := d.Wait(30 * time.Second); err != nil {
+	if err := d.WaitTimeout(ctx, 30*time.Second); err != nil {
 		t.Fatalf("wait failed: %v", err)
 	}
 
 	// TODO(b/143498576): Remove Poll after github.com/moby/moby/issues/38963 is fixed.
-	if err := testutil.Poll(func() error { return d.Restore("test") }, 15*time.Second); err != nil {
+	if err := testutil.Poll(func() error { return d.Restore(ctx, "test") }, 15*time.Second); err != nil {
 		t.Fatalf("docker restore failed: %v", err)
 	}
 
 	// Find where port 8080 is mapped to.
-	port, err := d.FindPort(8080)
+	port, err := d.FindPort(ctx, 8080)
 	if err != nil {
 		t.Fatalf("docker.FindPort(8080) failed: %v", err)
 	}
@@ -204,26 +207,27 @@ func TestCheckpointRestore(t *testing.T) {
 
 // Create client and server that talk to each other using the local IP.
 func TestConnectToSelf(t *testing.T) {
-	d := dockerutil.MakeDocker(t)
-	defer d.CleanUp()
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
 
 	// Creates server that replies "server" and exists. Sleeps at the end because
 	// 'docker exec' gets killed if the init process exists before it can finish.
-	if err := d.Spawn(dockerutil.RunOpts{
+	if err := d.Spawn(ctx, dockerutil.RunOpts{
 		Image: "basic/ubuntu",
 	}, "/bin/sh", "-c", "echo server | nc -l -p 8080 && sleep 1"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
 	// Finds IP address for host.
-	ip, err := d.Exec(dockerutil.RunOpts{}, "/bin/sh", "-c", "cat /etc/hosts | grep ${HOSTNAME} | awk '{print $1}'")
+	ip, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", "cat /etc/hosts | grep ${HOSTNAME} | awk '{print $1}'")
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
 	}
 	ip = strings.TrimRight(ip, "\n")
 
 	// Runs client that sends "client" to the server and exits.
-	reply, err := d.Exec(dockerutil.RunOpts{}, "/bin/sh", "-c", fmt.Sprintf("echo client | nc %s 8080", ip))
+	reply, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", fmt.Sprintf("echo client | nc %s 8080", ip))
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
 	}
@@ -232,21 +236,22 @@ func TestConnectToSelf(t *testing.T) {
 	if want := "server\n"; reply != want {
 		t.Errorf("Error on server, want: %q, got: %q", want, reply)
 	}
-	if _, err := d.WaitForOutput("^client\n$", 1*time.Second); err != nil {
+	if _, err := d.WaitForOutput(ctx, "^client\n$", 1*time.Second); err != nil {
 		t.Fatalf("docker.WaitForOutput(client) timeout: %v", err)
 	}
 }
 
 func TestMemLimit(t *testing.T) {
-	d := dockerutil.MakeDocker(t)
-	defer d.CleanUp()
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
 
 	// N.B. Because the size of the memory file may grow in large chunks,
 	// there is a minimum threshold of 1GB for the MemTotal figure.
-	allocMemory := 1024 * 1024
-	out, err := d.Run(dockerutil.RunOpts{
+	allocMemory := 1024 * 1024 // In kb.
+	out, err := d.Run(ctx, dockerutil.RunOpts{
 		Image:  "basic/alpine",
-		Memory: allocMemory, // In kB.
+		Memory: allocMemory * 1024, // In bytes.
 	}, "sh", "-c", "cat /proc/meminfo | grep MemTotal: | awk '{print $2}'")
 	if err != nil {
 		t.Fatalf("docker run failed: %v", err)
@@ -272,13 +277,14 @@ func TestMemLimit(t *testing.T) {
 }
 
 func TestNumCPU(t *testing.T) {
-	d := dockerutil.MakeDocker(t)
-	defer d.CleanUp()
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
 
 	// Read how many cores are in the container.
-	out, err := d.Run(dockerutil.RunOpts{
-		Image: "basic/alpine",
-		Extra: []string{"--cpuset-cpus=0"},
+	out, err := d.Run(ctx, dockerutil.RunOpts{
+		Image:      "basic/alpine",
+		CpusetCpus: "0",
 	}, "sh", "-c", "cat /proc/cpuinfo | grep 'processor.*:' | wc -l")
 	if err != nil {
 		t.Fatalf("docker run failed: %v", err)
@@ -296,48 +302,34 @@ func TestNumCPU(t *testing.T) {
 
 // TestJobControl tests that job control characters are handled properly.
 func TestJobControl(t *testing.T) {
-	d := dockerutil.MakeDocker(t)
-	defer d.CleanUp()
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
 
 	// Start the container with an attached PTY.
-	if _, err := d.Run(dockerutil.RunOpts{
+	p, err := d.SpawnProcess(ctx, dockerutil.RunOpts{
 		Image: "basic/alpine",
-		Pty: func(_ *exec.Cmd, ptmx *os.File) {
-			// Call "sleep 100" in the shell.
-			if _, err := ptmx.Write([]byte("sleep 100\n")); err != nil {
-				t.Fatalf("error writing to pty: %v", err)
-			}
-
-			// Give shell a few seconds to start executing the sleep.
-			time.Sleep(2 * time.Second)
-
-			// Send a ^C to the pty, which should kill sleep, but
-			// not the shell.  \x03 is ASCII "end of text", which
-			// is the same as ^C.
-			if _, err := ptmx.Write([]byte{'\x03'}); err != nil {
-				t.Fatalf("error writing to pty: %v", err)
-			}
-
-			// The shell should still be alive at this point. Sleep
-			// should have exited with code 2+128=130. We'll exit
-			// with 10 plus that number, so that we can be sure
-			// that the shell did not get signalled.
-			if _, err := ptmx.Write([]byte("exit $(expr $? + 10)\n")); err != nil {
-				t.Fatalf("error writing to pty: %v", err)
-			}
-		},
-	}, "sh"); err != nil {
+	}, "sh", "-c", "sleep 100 | cat")
+	if err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
+	// Give shell a few seconds to start executing the sleep.
+	time.Sleep(2 * time.Second)
 
-	// Wait for the container to exit.
-	got, err := d.Wait(5 * time.Second)
-	if err != nil {
-		t.Fatalf("error getting exit code: %v", err)
+	if _, err := p.Write(time.Second, []byte{0x03}); err != nil {
+		t.Fatalf("error exit: %v", err)
 	}
-	// Container should exit with code 10+130=140.
-	if want := syscall.WaitStatus(140); got != want {
-		t.Errorf("container exited with code %d want %d", got, want)
+
+	if err := d.WaitTimeout(ctx, 3*time.Second); err != nil {
+		t.Fatalf("WaitTimeout failed: %v", err)
+	}
+
+	want := 130
+	got, err := p.WaitExitStatus(ctx)
+	if err != nil {
+		t.Fatalf("wait for exit failed with: %v", err)
+	} else if got != want {
+		t.Fatalf("got: %d want: %d", got, want)
 	}
 }
 
@@ -356,15 +348,16 @@ func TestWorkingDirCreation(t *testing.T) {
 				name += "-readonly"
 			}
 			t.Run(name, func(t *testing.T) {
-				d := dockerutil.MakeDocker(t)
-				defer d.CleanUp()
+				ctx := context.Background()
+				d := dockerutil.MakeContainer(ctx, t)
+				defer d.CleanUp(ctx)
 
 				opts := dockerutil.RunOpts{
 					Image:    "basic/alpine",
 					WorkDir:  tc.workingDir,
 					ReadOnly: readonly,
 				}
-				got, err := d.Run(opts, "sh", "-c", "echo ${PWD}")
+				got, err := d.Run(ctx, opts, "sh", "-c", "echo ${PWD}")
 				if err != nil {
 					t.Fatalf("docker run failed: %v", err)
 				}
@@ -378,11 +371,12 @@ func TestWorkingDirCreation(t *testing.T) {
 
 // TestTmpFile checks that files inside '/tmp' are not overridden.
 func TestTmpFile(t *testing.T) {
-	d := dockerutil.MakeDocker(t)
-	defer d.CleanUp()
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
 
 	opts := dockerutil.RunOpts{Image: "tmpfile"}
-	got, err := d.Run(opts, "cat", "/tmp/foo/file.txt")
+	got, err := d.Run(ctx, opts, "cat", "/tmp/foo/file.txt")
 	if err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
@@ -393,6 +387,7 @@ func TestTmpFile(t *testing.T) {
 
 // TestTmpMount checks that mounts inside '/tmp' are not overridden.
 func TestTmpMount(t *testing.T) {
+	ctx := context.Background()
 	dir, err := ioutil.TempDir(testutil.TmpDir(), "tmp-mount")
 	if err != nil {
 		t.Fatalf("TempDir(): %v", err)
@@ -401,19 +396,20 @@ func TestTmpMount(t *testing.T) {
 	if err := ioutil.WriteFile(filepath.Join(dir, "file.txt"), []byte("123"), 0666); err != nil {
 		t.Fatalf("WriteFile(): %v", err)
 	}
-	d := dockerutil.MakeDocker(t)
-	defer d.CleanUp()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
 
 	opts := dockerutil.RunOpts{
 		Image: "basic/alpine",
-		Mounts: []dockerutil.Mount{
+		Mounts: []mount.Mount{
 			{
+				Type:   mount.TypeBind,
 				Source: dir,
 				Target: "/tmp/foo",
 			},
 		},
 	}
-	got, err := d.Run(opts, "cat", "/tmp/foo/file.txt")
+	got, err := d.Run(ctx, opts, "cat", "/tmp/foo/file.txt")
 	if err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
@@ -426,10 +422,11 @@ func TestTmpMount(t *testing.T) {
 // runsc to hide the incoherence of FDs opened before and after overlayfs
 // copy-up on the host.
 func TestHostOverlayfsCopyUp(t *testing.T) {
-	d := dockerutil.MakeDocker(t)
-	defer d.CleanUp()
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
 
-	if _, err := d.Run(dockerutil.RunOpts{
+	if _, err := d.Run(ctx, dockerutil.RunOpts{
 		Image:   "hostoverlaytest",
 		WorkDir: "/root",
 	}, "./test"); err != nil {
