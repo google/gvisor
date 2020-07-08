@@ -227,9 +227,7 @@ func New(args Args) (*Loader, error) {
 	// Create VDSO.
 	//
 	// Pass k as the platform since it is savable, unlike the actual platform.
-	//
-	// FIXME(b/109889800): Use non-nil context.
-	vdso, err := loader.PrepareVDSO(nil, k)
+	vdso, err := loader.PrepareVDSO(k)
 	if err != nil {
 		return nil, fmt.Errorf("creating vdso: %v", err)
 	}
