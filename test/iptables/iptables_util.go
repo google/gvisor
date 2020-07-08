@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"os/exec"
+	"strings"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -157,8 +158,10 @@ func connectTCP(ip net.IP, port int, timeout time.Duration) error {
 	return nil
 }
 
-// localAddrs returns a list of local network interface addresses.
-func localAddrs() ([]string, error) {
+// localAddrs returns a list of local network interface addresses. When ipv6 is
+// true, only IPv6 addresses are returned. Otherwise only IPv4 addresses are
+// returned.
+func localAddrs(ipv6 bool) ([]string, error) {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
 		return nil, err
@@ -167,7 +170,19 @@ func localAddrs() ([]string, error) {
 	for _, addr := range addrs {
 		addrStrs = append(addrStrs, addr.String())
 	}
-	return addrStrs, nil
+	return filterAddrs(addrStrs, ipv6), nil
+}
+
+func filterAddrs(addrs []string, ipv6 bool) []string {
+	addrStrs := make([]string, 0, len(addrs))
+	for _, addr := range addrs {
+		// Add only IPv4 or only IPv6 addresses.
+		parts := strings.Split(addr, "/")
+		if isIPv6 := net.ParseIP(parts[0]).To4() == nil; isIPv6 == ipv6 {
+			addrStrs = append(addrStrs, parts[0])
+		}
+	}
+	return addrStrs
 }
 
 // getInterfaceName returns the name of the interface other than loopback.
