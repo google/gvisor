@@ -56,7 +56,7 @@ void TryDeleteRecursively(std::string const& path) {
     if (undeleted_dirs || undeleted_files || !status.ok()) {
       std::cerr << path << ": failed to delete " << undeleted_dirs
                 << " directories and " << undeleted_files
-                << " files: " << status;
+                << " files: " << status << std::endl;
     }
   }
 }
