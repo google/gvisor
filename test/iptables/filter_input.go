@@ -618,7 +618,7 @@ func (FilterInputDestination) Name() string {
 
 // ContainerAction implements TestCase.ContainerAction.
 func (FilterInputDestination) ContainerAction(ip net.IP) error {
-	addrs, err := localAddrs()
+	addrs, err := localAddrs(false)
 	if err != nil {
 		return err
 	}
