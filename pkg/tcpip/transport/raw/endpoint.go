@@ -63,6 +63,7 @@ type endpoint struct {
 	stack       *stack.Stack `state:"manual"`
 	waiterQueue *waiter.Queue
 	associated  bool
+	hdrIncluded bool
 
 	// The following fields are used to manage the receive queue and are
 	// protected by rcvMu.
@@ -108,6 +109,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 		rcvBufSizeMax: 32 * 1024,
 		sndBufSizeMax: 32 * 1024,
 		associated:    associated,
+		hdrIncluded:   !associated,
 	}
 
 	// Override with stack defaults.
@@ -182,10 +184,6 @@ func (e *endpoint) SetOwner(owner tcpip.PacketOwner) {
 
 // Read implements tcpip.Endpoint.Read.
 func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
-	if !e.associated {
-		return buffer.View{}, tcpip.ControlMessages{}, tcpip.ErrInvalidOptionValue
-	}
-
 	e.rcvMu.Lock()
 
 	// If there's no data to read, return that read would block or that the
@@ -263,7 +261,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 
 	// If this is an unassociated socket and callee provided a nonzero
 	// destination address, route using that address.
-	if !e.associated {
+	if e.hdrIncluded {
 		ip := header.IPv4(payloadBytes)
 		if !ip.IsValid(len(payloadBytes)) {
 			e.mu.RUnlock()
@@ -353,7 +351,7 @@ func (e *endpoint) finishWrite(payloadBytes []byte, route *stack.Route) (int64, 
 		}
 	}
 
-	if !e.associated {
+	if e.hdrIncluded {
 		if err := route.WriteHeaderIncludedPacket(&stack.PacketBuffer{
 			Data: buffer.View(payloadBytes).ToVectorisedView(),
 		}); err != nil {
@@ -513,6 +511,13 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 
 // SetSockOptBool implements tcpip.Endpoint.SetSockOptBool.
 func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
+	switch opt {
+	case tcpip.IPHdrIncludedOption:
+		e.mu.Lock()
+		e.hdrIncluded = v
+		e.mu.Unlock()
+		return nil
+	}
 	return tcpip.ErrUnknownProtocolOption
 }
 
@@ -577,6 +582,12 @@ func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
 	case tcpip.KeepaliveEnabledOption:
 		return false, nil
 
+	case tcpip.IPHdrIncludedOption:
+		e.mu.Lock()
+		v := e.hdrIncluded
+		e.mu.Unlock()
+		return v, nil
+
 	default:
 		return false, tcpip.ErrUnknownProtocolOption
 	}
@@ -616,8 +627,15 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 func (e *endpoint) HandlePacket(route *stack.Route, pkt *stack.PacketBuffer) {
 	e.rcvMu.Lock()
 
-	// Drop the packet if our buffer is currently full.
-	if e.rcvClosed {
+	// Drop the packet if our buffer is currently full or if this is an unassociated
+	// endpoint (i.e endpoint created  w/ IPPROTO_RAW). Such endpoints are send only
+	// See: https://man7.org/linux/man-pages/man7/raw.7.html
+	//
+	//    An IPPROTO_RAW socket is send only.  If you really want to receive
+	//    all IP packets, use a packet(7) socket with the ETH_P_IP protocol.
+	//    Note that packet sockets don't reassemble IP fragments, unlike raw
+	//    sockets.
+	if e.rcvClosed || !e.associated {
 		e.rcvMu.Unlock()
 		e.stack.Stats().DroppedPackets.Increment()
 		e.stats.ReceiveErrors.ClosedReceiver.Increment()
