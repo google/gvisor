@@ -648,6 +648,11 @@ const (
 	// whether an IPv6 socket is to be restricted to sending and receiving
 	// IPv6 packets only.
 	V6OnlyOption
+
+	// IPHdrIncludedOption is used by SetSockOpt to indicate for a raw
+	// endpoint that all packets being written have an IP header and the
+	// endpoint should not attach an IP header.
+	IPHdrIncludedOption
 )
 
 // SockOptInt represents socket options which values have the int type.
