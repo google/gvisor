@@ -16,7 +16,7 @@
 
 # ARCH is the architecture used for the build. This may be overriden at the
 # command line in order to perform a cross-build (in a limited capacity).
-ARCH := $(shell uname -m)
+ARCH := aarch64
 
 # Note that the image prefixes used here must match the image mangling in
 # runsc/testutil.MangleImage. Names are mangled in this way to ensure that all
