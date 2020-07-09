@@ -298,6 +298,12 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("initializing kernel: %v", err)
 	}
 
+	if kernel.VFS2Enabled {
+		if err := registerFilesystems(k); err != nil {
+			return nil, fmt.Errorf("registering filesystems: %w", err)
+		}
+	}
+
 	if err := adjustDirentCache(k); err != nil {
 		return nil, err
 	}
@@ -559,7 +565,7 @@ func (l *Loader) run() error {
 		l.startGoferMonitor(l.sandboxID, l.goferFDs)
 
 		mntr := newContainerMounter(l.spec, l.goferFDs, l.k, l.mountHints)
-		if err := mntr.processHints(l.conf); err != nil {
+		if err := mntr.processHints(l.conf, l.rootProcArgs.Credentials); err != nil {
 			return err
 		}
 		if err := setupContainerFS(ctx, l.conf, mntr, &l.rootProcArgs); err != nil {
