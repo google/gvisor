@@ -29,6 +29,7 @@ import (
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/sys"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/tmpfs"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/tty"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -390,6 +391,10 @@ type mountHint struct {
 	// root is the inode where the volume is mounted. For mounts with 'pod' share
 	// the volume is mounted once and then bind mounted inside the containers.
 	root *fs.Inode
+
+	// vfsMount is the master mount for the volume. For mounts with 'pod' share
+	// the master volume is bind mounted inside the containers.
+	vfsMount *vfs.Mount
 }
 
 func (m *mountHint) setField(key, val string) error {
@@ -571,9 +576,9 @@ func newContainerMounter(spec *specs.Spec, goferFDs []int, k *kernel.Kernel, hin
 // processHints processes annotations that container hints about how volumes
 // should be mounted (e.g. a volume shared between containers). It must be
 // called for the root container only.
-func (c *containerMounter) processHints(conf *Config) error {
+func (c *containerMounter) processHints(conf *Config, creds *auth.Credentials) error {
 	if conf.VFS2 {
-		return nil
+		return c.processHintsVFS2(conf, creds)
 	}
 	ctx := c.k.SupervisorContext()
 	for _, hint := range c.hints.mounts {

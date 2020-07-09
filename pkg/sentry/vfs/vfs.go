@@ -123,6 +123,9 @@ type VirtualFilesystem struct {
 
 // Init initializes a new VirtualFilesystem with no mounts or FilesystemTypes.
 func (vfs *VirtualFilesystem) Init() error {
+	if vfs.mountpoints != nil {
+		panic("VFS already initialized")
+	}
 	vfs.mountpoints = make(map[*Dentry]map[*Mount]struct{})
 	vfs.devices = make(map[devTuple]*registeredDevice)
 	vfs.anonBlockDevMinorNext = 1
