@@ -49,6 +49,7 @@ func (x *endpoint) StateFields() []string {
 		"TransportEndpointInfo",
 		"waiterQueue",
 		"associated",
+		"hdrIncluded",
 		"rcvList",
 		"rcvBufSize",
 		"rcvBufSizeMax",
@@ -65,35 +66,37 @@ func (x *endpoint) StateFields() []string {
 func (x *endpoint) StateSave(m state.Sink) {
 	x.beforeSave()
 	var rcvBufSizeMax int = x.saveRcvBufSizeMax()
-	m.SaveValue(5, rcvBufSizeMax)
+	m.SaveValue(6, rcvBufSizeMax)
 	m.Save(0, &x.TransportEndpointInfo)
 	m.Save(1, &x.waiterQueue)
 	m.Save(2, &x.associated)
-	m.Save(3, &x.rcvList)
-	m.Save(4, &x.rcvBufSize)
-	m.Save(6, &x.rcvClosed)
-	m.Save(7, &x.sndBufSize)
-	m.Save(8, &x.sndBufSizeMax)
-	m.Save(9, &x.closed)
-	m.Save(10, &x.connected)
-	m.Save(11, &x.bound)
-	m.Save(12, &x.owner)
+	m.Save(3, &x.hdrIncluded)
+	m.Save(4, &x.rcvList)
+	m.Save(5, &x.rcvBufSize)
+	m.Save(7, &x.rcvClosed)
+	m.Save(8, &x.sndBufSize)
+	m.Save(9, &x.sndBufSizeMax)
+	m.Save(10, &x.closed)
+	m.Save(11, &x.connected)
+	m.Save(12, &x.bound)
+	m.Save(13, &x.owner)
 }
 
 func (x *endpoint) StateLoad(m state.Source) {
 	m.Load(0, &x.TransportEndpointInfo)
 	m.Load(1, &x.waiterQueue)
 	m.Load(2, &x.associated)
-	m.Load(3, &x.rcvList)
-	m.Load(4, &x.rcvBufSize)
-	m.Load(6, &x.rcvClosed)
-	m.Load(7, &x.sndBufSize)
-	m.Load(8, &x.sndBufSizeMax)
-	m.Load(9, &x.closed)
-	m.Load(10, &x.connected)
-	m.Load(11, &x.bound)
-	m.Load(12, &x.owner)
-	m.LoadValue(5, new(int), func(y interface{}) { x.loadRcvBufSizeMax(y.(int)) })
+	m.Load(3, &x.hdrIncluded)
+	m.Load(4, &x.rcvList)
+	m.Load(5, &x.rcvBufSize)
+	m.Load(7, &x.rcvClosed)
+	m.Load(8, &x.sndBufSize)
+	m.Load(9, &x.sndBufSizeMax)
+	m.Load(10, &x.closed)
+	m.Load(11, &x.connected)
+	m.Load(12, &x.bound)
+	m.Load(13, &x.owner)
+	m.LoadValue(6, new(int), func(y interface{}) { x.loadRcvBufSizeMax(y.(int)) })
 	m.AfterLoad(x.afterLoad)
 }
 
