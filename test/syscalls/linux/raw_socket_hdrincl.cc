@@ -167,7 +167,7 @@ TEST_F(RawHDRINCL, NotReadable) {
   // nothing to be read.
   char buf[117];
   ASSERT_THAT(RetryEINTR(recv)(socket_, buf, sizeof(buf), MSG_DONTWAIT),
-              SyscallFailsWithErrno(EINVAL));
+              SyscallFailsWithErrno(EAGAIN));
 }
 
 // Test that we can connect() to a valid IP (loopback).
@@ -330,6 +330,74 @@ TEST_F(RawHDRINCL, SendAndReceiveDifferentAddress) {
   // The destination address should be localhost, not the bad IP we set
   // initially.
   EXPECT_EQ(absl::gbswap_32(recv_iphdr.daddr), INADDR_LOOPBACK);
+}
+
+// Send and receive a packet w/ the IP_HDRINCL option set.
+TEST_F(RawHDRINCL, SendAndReceiveIPHdrIncl) {
+  int port = 40000;
+  if (!IsRunningOnGvisor()) {
+    port = static_cast<short>(ASSERT_NO_ERRNO_AND_VALUE(
+        PortAvailable(0, AddressFamily::kIpv4, SocketType::kUdp, false)));
+  }
+
+  FileDescriptor recv_sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_RAW, IPPROTO_UDP));
+
+  FileDescriptor send_sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_RAW, IPPROTO_UDP));
+
+  // Enable IP_HDRINCL option so that we can build and send w/ an IP
+  // header.
+  constexpr int kSockOptOn = 1;
+  ASSERT_THAT(setsockopt(send_sock.get(), SOL_IP, IP_HDRINCL, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  // This is not strictly required but we do it to make sure that setting
+  // IP_HDRINCL on a non IPPROTO_RAW socket does not prevent it from receiving
+  // packets.
+  ASSERT_THAT(setsockopt(recv_sock.get(), SOL_IP, IP_HDRINCL, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  // Construct a packet with an IP header, UDP header, and payload.
+  constexpr char kPayload[] = "toto";
+  char packet[sizeof(struct iphdr) + sizeof(struct udphdr) + sizeof(kPayload)];
+  ASSERT_TRUE(
+      FillPacket(packet, sizeof(packet), port, kPayload, sizeof(kPayload)));
+
+  socklen_t addrlen = sizeof(addr_);
+  ASSERT_NO_FATAL_FAILURE(sendto(send_sock.get(), &packet, sizeof(packet), 0,
+                                 reinterpret_cast<struct sockaddr*>(&addr_),
+                                 addrlen));
+
+  // Receive the payload.
+  char recv_buf[sizeof(packet)];
+  struct sockaddr_in src;
+  socklen_t src_size = sizeof(src);
+  ASSERT_THAT(recvfrom(recv_sock.get(), recv_buf, sizeof(recv_buf), 0,
+                       reinterpret_cast<struct sockaddr*>(&src), &src_size),
+              SyscallSucceedsWithValue(sizeof(packet)));
+  EXPECT_EQ(
+      memcmp(kPayload, recv_buf + sizeof(struct iphdr) + sizeof(struct udphdr),
+             sizeof(kPayload)),
+      0);
+  // The network stack should have set the source address.
+  EXPECT_EQ(src.sin_family, AF_INET);
+  EXPECT_EQ(absl::gbswap_32(src.sin_addr.s_addr), INADDR_LOOPBACK);
+  struct iphdr iphdr = {};
+  memcpy(&iphdr, recv_buf, sizeof(iphdr));
+  EXPECT_NE(iphdr.id, 0);
+
+  // Also verify that the packet we just sent was not delivered to the
+  // IPPROTO_RAW socket.
+  {
+    char recv_buf[sizeof(packet)];
+    struct sockaddr_in src;
+    socklen_t src_size = sizeof(src);
+    ASSERT_THAT(recvfrom(socket_, recv_buf, sizeof(recv_buf), MSG_DONTWAIT,
+                         reinterpret_cast<struct sockaddr*>(&src), &src_size),
+                SyscallFailsWithErrno(EAGAIN));
+  }
 }
 
 }  // namespace

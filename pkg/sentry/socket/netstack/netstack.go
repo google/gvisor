@@ -2112,13 +2112,22 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		}
 		return syserr.TranslateNetstackError(ep.SetSockOptBool(tcpip.ReceiveIPPacketInfoOption, v != 0))
 
+	case linux.IP_HDRINCL:
+		if len(optVal) == 0 {
+			return nil
+		}
+		v, err := parseIntOrChar(optVal)
+		if err != nil {
+			return err
+		}
+		return syserr.TranslateNetstackError(ep.SetSockOptBool(tcpip.IPHdrIncludedOption, v != 0))
+
 	case linux.IP_ADD_SOURCE_MEMBERSHIP,
 		linux.IP_BIND_ADDRESS_NO_PORT,
 		linux.IP_BLOCK_SOURCE,
 		linux.IP_CHECKSUM,
 		linux.IP_DROP_SOURCE_MEMBERSHIP,
 		linux.IP_FREEBIND,
-		linux.IP_HDRINCL,
 		linux.IP_IPSEC_POLICY,
 		linux.IP_MINTTL,
 		linux.IP_MSFILTER,
