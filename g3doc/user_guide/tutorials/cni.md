@@ -128,12 +128,14 @@ sudo mkdir -p rootfs/var/www/html
 sudo sh -c 'echo "Hello World!" > rootfs/var/www/html/index.html'
 ```
 
-Next create the `config.json` specifying the network namespace. `sudo
-/usr/local/bin/runsc spec sudo sed -i 's;"sh";"python", "-m", "http.server";'
-config.json sudo sed -i "s;\"cwd\": \"/\";\"cwd\": \"/var/www/html\";"
-config.json sudo sed -i "s;\"type\": \"network\";\"type\":
-\"network\",\n\t\t\t\t\"path\": \"/var/run/netns/${CNI_CONTAINERID}\";"
-config.json`
+Next create the `config.json` specifying the network namespace.
+
+```
+sudo /usr/local/bin/runsc spec \
+    --cwd /var/www/html \
+    --netns /var/run/netns/${CNI_CONTAINERID} \
+    -- python -m http.server
+```
 
 ## Run the Container
 
