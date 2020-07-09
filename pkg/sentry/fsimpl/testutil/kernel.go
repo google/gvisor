@@ -62,6 +62,7 @@ func Boot() (*kernel.Kernel, error) {
 		return nil, fmt.Errorf("creating platform: %v", err)
 	}
 
+	kernel.VFS2Enabled = true
 	k := &kernel.Kernel{
 		Platform: plat,
 	}
@@ -103,11 +104,6 @@ func Boot() (*kernel.Kernel, error) {
 		return nil, fmt.Errorf("initializing kernel: %v", err)
 	}
 
-	kernel.VFS2Enabled = true
-
-	if err := k.VFS().Init(); err != nil {
-		return nil, fmt.Errorf("VFS init: %v", err)
-	}
 	k.VFS().MustRegisterFilesystemType(tmpfs.Name, &tmpfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 		AllowUserList:  true,

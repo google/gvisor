@@ -480,7 +480,7 @@ func TestCreateMountNamespaceVFS2(t *testing.T) {
 			defer loaderCleanup()
 
 			mntr := newContainerMounter(l.spec, l.goferFDs, l.k, l.mountHints)
-			if err := mntr.processHints(l.conf); err != nil {
+			if err := mntr.processHints(l.conf, l.rootProcArgs.Credentials); err != nil {
 				t.Fatalf("failed process hints: %v", err)
 			}
 
