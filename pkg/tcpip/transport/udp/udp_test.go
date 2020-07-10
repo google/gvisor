@@ -83,16 +83,18 @@ type header4Tuple struct {
 type testFlow int
 
 const (
-	unicastV4       testFlow = iota // V4 unicast on a V4 socket
-	unicastV4in6                    // V4-mapped unicast on a V6-dual socket
-	unicastV6                       // V6 unicast on a V6 socket
-	unicastV6Only                   // V6 unicast on a V6-only socket
-	multicastV4                     // V4 multicast on a V4 socket
-	multicastV4in6                  // V4-mapped multicast on a V6-dual socket
-	multicastV6                     // V6 multicast on a V6 socket
-	multicastV6Only                 // V6 multicast on a V6-only socket
-	broadcast                       // V4 broadcast on a V4 socket
-	broadcastIn6                    // V4-mapped broadcast on a V6-dual socket
+	unicastV4         testFlow = iota // V4 unicast on a V4 socket
+	unicastV4in6                      // V4-mapped unicast on a V6-dual socket
+	unicastV6                         // V6 unicast on a V6 socket
+	unicastV6Only                     // V6 unicast on a V6-only socket
+	multicastV4                       // V4 multicast on a V4 socket
+	multicastV4in6                    // V4-mapped multicast on a V6-dual socket
+	multicastV6                       // V6 multicast on a V6 socket
+	multicastV6Only                   // V6 multicast on a V6-only socket
+	broadcast                         // V4 broadcast on a V4 socket
+	broadcastIn6                      // V4-mapped broadcast on a V6-dual socket
+	reverseMulticast4                 // V4 multicast src. Must fail.
+	reverseMulticast6                 // V6 multicast src. Must fail.
 )
 
 func (flow testFlow) String() string {
@@ -117,6 +119,10 @@ func (flow testFlow) String() string {
 		return "broadcast"
 	case broadcastIn6:
 		return "broadcastIn6"
+	case reverseMulticast4:
+		return "reverseMulticast4"
+	case reverseMulticast6:
+		return "reverseMulticast6"
 	default:
 		return "unknown"
 	}
@@ -168,6 +174,9 @@ func (flow testFlow) header4Tuple(d packetDirection) header4Tuple {
 			h.dstAddr.Addr = multicastV6Addr
 		}
 	}
+	if flow.isReverseMulticast() {
+		h.srcAddr.Addr = flow.getMcastAddr()
+	}
 	return h
 }
 
@@ -199,9 +208,9 @@ func (flow testFlow) netProto() tcpip.NetworkProtocolNumber {
 // endpoint for this flow.
 func (flow testFlow) sockProto() tcpip.NetworkProtocolNumber {
 	switch flow {
-	case unicastV4in6, unicastV6, unicastV6Only, multicastV4in6, multicastV6, multicastV6Only, broadcastIn6:
+	case unicastV4in6, unicastV6, unicastV6Only, multicastV4in6, multicastV6, multicastV6Only, broadcastIn6, reverseMulticast6:
 		return ipv6.ProtocolNumber
-	case unicastV4, multicastV4, broadcast:
+	case unicastV4, multicastV4, broadcast, reverseMulticast4:
 		return ipv4.ProtocolNumber
 	default:
 		panic(fmt.Sprintf("invalid testFlow given: %d", flow))
@@ -224,7 +233,7 @@ func (flow testFlow) isV6Only() bool {
 	switch flow {
 	case unicastV6Only, multicastV6Only:
 		return true
-	case unicastV4, unicastV4in6, unicastV6, multicastV4, multicastV4in6, multicastV6, broadcast, broadcastIn6:
+	case unicastV4, unicastV4in6, unicastV6, multicastV4, multicastV4in6, multicastV6, broadcast, broadcastIn6, reverseMulticast4, reverseMulticast6:
 		return false
 	default:
 		panic(fmt.Sprintf("invalid testFlow given: %d", flow))
@@ -235,7 +244,7 @@ func (flow testFlow) isMulticast() bool {
 	switch flow {
 	case multicastV4, multicastV4in6, multicastV6, multicastV6Only:
 		return true
-	case unicastV4, unicastV4in6, unicastV6, unicastV6Only, broadcast, broadcastIn6:
+	case unicastV4, unicastV4in6, unicastV6, unicastV6Only, broadcast, broadcastIn6, reverseMulticast4, reverseMulticast6:
 		return false
 	default:
 		panic(fmt.Sprintf("invalid testFlow given: %d", flow))
@@ -246,7 +255,7 @@ func (flow testFlow) isBroadcast() bool {
 	switch flow {
 	case broadcast, broadcastIn6:
 		return true
-	case unicastV4, unicastV4in6, unicastV6, unicastV6Only, multicastV4, multicastV4in6, multicastV6, multicastV6Only:
+	case unicastV4, unicastV4in6, unicastV6, unicastV6Only, multicastV4, multicastV4in6, multicastV6, multicastV6Only, reverseMulticast4, reverseMulticast6:
 		return false
 	default:
 		panic(fmt.Sprintf("invalid testFlow given: %d", flow))
@@ -257,10 +266,19 @@ func (flow testFlow) isMapped() bool {
 	switch flow {
 	case unicastV4in6, multicastV4in6, broadcastIn6:
 		return true
-	case unicastV4, unicastV6, unicastV6Only, multicastV4, multicastV6, multicastV6Only, broadcast:
+	case unicastV4, unicastV6, unicastV6Only, multicastV4, multicastV6, multicastV6Only, broadcast, reverseMulticast4, reverseMulticast6:
 		return false
 	default:
 		panic(fmt.Sprintf("invalid testFlow given: %d", flow))
+	}
+}
+
+func (flow testFlow) isReverseMulticast() bool {
+	switch flow {
+	case reverseMulticast4, reverseMulticast6:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -868,6 +886,60 @@ func TestV4ReadOnBoundToBroadcast(t *testing.T) {
 			// Check that we receive broadcast packets but not unicast ones.
 			testRead(c, flow)
 			testFailingRead(c, unicastV4, false /* expectReadError */)
+		})
+	}
+}
+
+// TestReadFromMulticast checks that an endpoint will NOT receive a packet
+// that was sent with multicast SOURCE address.
+func TestReadFromMulticast(t *testing.T) {
+	for _, flow := range []testFlow{reverseMulticast4, reverseMulticast6} {
+		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
+			c := newDualTestContext(t, defaultMTU)
+			defer c.cleanup()
+
+			c.createEndpointForFlow(flow)
+
+			if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+				t.Fatalf("Bind failed: %s", err)
+			}
+			testFailingRead(c, flow, false /* expectReadError */)
+		})
+	}
+}
+
+// TestReadFromMulticaststats checks that a discarded packet
+// that that was sent with multicast SOURCE address increments
+// the correct counters and that a regular packet does not.
+func TestReadFromMulticastStats(t *testing.T) {
+	t.Helper()
+	for _, flow := range []testFlow{reverseMulticast4, reverseMulticast6, unicastV4} {
+		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
+			c := newDualTestContext(t, defaultMTU)
+			defer c.cleanup()
+
+			c.createEndpointForFlow(flow)
+
+			if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+				t.Fatalf("Bind failed: %s", err)
+			}
+
+			payload := newPayload()
+			c.injectPacket(flow, payload)
+
+			var want uint64 = 0
+			if flow.isReverseMulticast() {
+				want = 1
+			}
+			if got := c.s.Stats().IP.InvalidSourceAddressesReceived.Value(); got != want {
+				t.Errorf("got stats.IP.InvalidSourceAddressesReceived.Value() = %d, want = %d", got, want)
+			}
+			if got := c.s.Stats().UDP.InvalidSourceAddress.Value(); got != want {
+				t.Errorf("got stats.UDP.InvalidSourceAddress.Value() = %d, want = %d", got, want)
+			}
+			if got := c.ep.Stats().(*tcpip.TransportEndpointStats).ReceiveErrors.MalformedPacketsReceived.Value(); got != want {
+				t.Errorf("got EP Stats.ReceiveErrors.MalformedPacketsReceived stats = %d, want = %d", got, want)
+			}
 		})
 	}
 }
