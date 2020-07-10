@@ -805,7 +805,11 @@ func (l *ICMPv6) ToBytes() ([]byte, error) {
 		// We need to search forward to find the IPv6 header.
 		for prev := l.Prev(); prev != nil; prev = prev.Prev() {
 			if ipv6, ok := prev.(*IPv6); ok {
-				h.SetChecksum(header.ICMPv6Checksum(h, *ipv6.SrcAddr, *ipv6.DstAddr, buffer.VectorisedView{}))
+				payload, err := payload(l)
+				if err != nil {
+					return nil, err
+				}
+				h.SetChecksum(header.ICMPv6Checksum(h, *ipv6.SrcAddr, *ipv6.DstAddr, payload))
 				break
 			}
 		}
