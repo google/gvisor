@@ -782,7 +782,7 @@ type CongestionControlOption string
 // control algorithms.
 type AvailableCongestionControlOption string
 
-// buffer moderation.
+// ModerateReceiveBufferOption is used by buffer moderation.
 type ModerateReceiveBufferOption bool
 
 // TCPLingerTimeoutOption is used by SetSockOpt/GetSockOpt to set/get the
@@ -1244,6 +1244,9 @@ type UDPStats struct {
 
 	// ChecksumErrors is the number of datagrams dropped due to bad checksums.
 	ChecksumErrors *StatCounter
+
+	// InvalidSourceAddress is the number of invalid sourced datagrams dropped.
+	InvalidSourceAddress *StatCounter
 }
 
 // Stats holds statistics about the networking stack.

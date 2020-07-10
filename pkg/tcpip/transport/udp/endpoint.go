@@ -1377,6 +1377,15 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 		return
 	}
 
+	// Never receive from a multicast address.
+	if header.IsV4MulticastAddress(id.RemoteAddress) ||
+		header.IsV6MulticastAddress(id.RemoteAddress) {
+		e.stack.Stats().UDP.InvalidSourceAddress.Increment()
+		e.stack.Stats().IP.InvalidSourceAddressesReceived.Increment()
+		e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
+		return
+	}
+
 	// Verify checksum unless RX checksum offload is enabled.
 	// On IPv4, UDP checksum is optional, and a zero value means
 	// the transmitter omitted the checksum generation (RFC768).
@@ -1395,10 +1404,10 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 		}
 	}
 
-	e.rcvMu.Lock()
 	e.stack.Stats().UDP.PacketsReceived.Increment()
 	e.stats.PacketsReceived.Increment()
 
+	e.rcvMu.Lock()
 	// Drop the packet if our buffer is currently full.
 	if !e.rcvReady || e.rcvClosed {
 		e.rcvMu.Unlock()
