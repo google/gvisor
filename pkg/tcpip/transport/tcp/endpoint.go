@@ -1792,6 +1792,9 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.deferAccept = time.Duration(v)
 		e.UnlockUser()
 
+	case tcpip.SocketDetachFilterOption:
+		return nil
+
 	default:
 		return nil
 	}

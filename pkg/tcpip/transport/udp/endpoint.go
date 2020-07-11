@@ -816,6 +816,9 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.mu.Lock()
 		e.bindToDevice = id
 		e.mu.Unlock()
+
+	case tcpip.SocketDetachFilterOption:
+		return nil
 	}
 	return nil
 }
