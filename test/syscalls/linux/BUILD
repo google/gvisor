@@ -1330,6 +1330,7 @@ cc_binary(
     name = "packet_socket_raw_test",
     testonly = 1,
     srcs = ["packet_socket_raw.cc"],
+    defines = select_system(),
     linkstatic = 1,
     deps = [
         ":socket_test_util",
@@ -1809,6 +1810,7 @@ cc_binary(
     name = "raw_socket_test",
     testonly = 1,
     srcs = ["raw_socket.cc"],
+    defines = select_system(),
     linkstatic = 1,
     deps = [
         ":socket_test_util",
@@ -3407,6 +3409,7 @@ cc_binary(
     name = "tcp_socket_test",
     testonly = 1,
     srcs = ["tcp_socket.cc"],
+    defines = select_system(),
     linkstatic = 1,
     deps = [
         ":socket_test_util",
