@@ -344,6 +344,10 @@ func (e *endpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
 
 // SetSockOpt sets a socket option.
 func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
+	switch opt.(type) {
+	case tcpip.SocketDetachFilterOption:
+		return nil
+	}
 	return nil
 }
 

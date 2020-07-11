@@ -14,6 +14,9 @@
 
 #include <arpa/inet.h>
 #include <linux/capability.h>
+#ifndef __fuchsia__
+#include <linux/filter.h>
+#endif  // __fuchsia__
 #include <linux/if_arp.h>
 #include <linux/if_packet.h>
 #include <net/ethernet.h>
@@ -555,6 +558,37 @@ TEST_P(RawPacketTest, SetSocketSendBuf) {
 
   ASSERT_EQ(quarter_sz, val);
 }
+
+#ifndef __fuchsia__
+
+TEST_P(RawPacketTest, SetSocketDetachFilterNoInstalledFilter) {
+  // TODO(gvisor.dev/2746): Support SO_ATTACH_FILTER/SO_DETACH_FILTER.
+  //
+  // gVisor returns no error on SO_DETACH_FILTER even if there is no filter
+  // attached unlike linux which does return ENOENT in such cases. This is
+  // because gVisor doesn't support SO_ATTACH_FILTER and just silently returns
+  // success.
+  if (IsRunningOnGvisor()) {
+    constexpr int val = 0;
+    ASSERT_THAT(setsockopt(s_, SOL_SOCKET, SO_DETACH_FILTER, &val, sizeof(val)),
+                SyscallSucceeds());
+    return;
+  }
+  constexpr int val = 0;
+  ASSERT_THAT(setsockopt(s_, SOL_SOCKET, SO_DETACH_FILTER, &val, sizeof(val)),
+              SyscallFailsWithErrno(ENOENT));
+}
+
+TEST_P(RawPacketTest, GetSocketDetachFilter) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_DETACH_FILTER, &val, &val_len),
+              SyscallFailsWithErrno(ENOPROTOOPT));
+}
+
+#endif  // __fuchsia__
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, RawPacketTest,
                          ::testing::Values(ETH_P_IP, ETH_P_ALL));

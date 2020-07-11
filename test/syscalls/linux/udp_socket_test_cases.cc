@@ -16,6 +16,9 @@
 
 #include <arpa/inet.h>
 #include <fcntl.h>
+#ifndef __fuchsia__
+#include <linux/filter.h>
+#endif  // __fuchsia__
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/ioctl.h>
@@ -1722,6 +1725,57 @@ TEST_P(UdpSocketTest, RecvBufLimits) {
         SyscallFailsWithErrno(EAGAIN));
   }
 }
+
+#ifndef __fuchsia__
+
+// TODO(gvisor.dev/2746): Support SO_ATTACH_FILTER/SO_DETACH_FILTER.
+// gVisor currently silently ignores attaching a filter.
+TEST_P(UdpSocketTest, SetSocketDetachFilter) {
+  // Program generated using sudo tcpdump -i lo udp and port 1234 -dd
+  struct sock_filter code[] = {
+      {0x28, 0, 0, 0x0000000c},  {0x15, 0, 6, 0x000086dd},
+      {0x30, 0, 0, 0x00000014},  {0x15, 0, 15, 0x00000011},
+      {0x28, 0, 0, 0x00000036},  {0x15, 12, 0, 0x000004d2},
+      {0x28, 0, 0, 0x00000038},  {0x15, 10, 11, 0x000004d2},
+      {0x15, 0, 10, 0x00000800}, {0x30, 0, 0, 0x00000017},
+      {0x15, 0, 8, 0x00000011},  {0x28, 0, 0, 0x00000014},
+      {0x45, 6, 0, 0x00001fff},  {0xb1, 0, 0, 0x0000000e},
+      {0x48, 0, 0, 0x0000000e},  {0x15, 2, 0, 0x000004d2},
+      {0x48, 0, 0, 0x00000010},  {0x15, 0, 1, 0x000004d2},
+      {0x6, 0, 0, 0x00040000},   {0x6, 0, 0, 0x00000000},
+  };
+  struct sock_fprog bpf = {
+      .len = ABSL_ARRAYSIZE(code),
+      .filter = code,
+  };
+  ASSERT_THAT(
+      setsockopt(sock_.get(), SOL_SOCKET, SO_ATTACH_FILTER, &bpf, sizeof(bpf)),
+      SyscallSucceeds());
+
+  constexpr int val = 0;
+  ASSERT_THAT(
+      setsockopt(sock_.get(), SOL_SOCKET, SO_DETACH_FILTER, &val, sizeof(val)),
+      SyscallSucceeds());
+}
+
+TEST_P(UdpSocketTest, SetSocketDetachFilterNoInstalledFilter) {
+  // TODO(gvisor.dev/2746): Support SO_ATTACH_FILTER/SO_DETACH_FILTER.
+  SKIP_IF(IsRunningOnGvisor());
+  constexpr int val = 0;
+  ASSERT_THAT(
+      setsockopt(sock_.get(), SOL_SOCKET, SO_DETACH_FILTER, &val, sizeof(val)),
+      SyscallFailsWithErrno(ENOENT));
+}
+
+TEST_P(UdpSocketTest, GetSocketDetachFilter) {
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(
+      getsockopt(sock_.get(), SOL_SOCKET, SO_DETACH_FILTER, &val, &val_len),
+      SyscallFailsWithErrno(ENOPROTOOPT));
+}
+
+#endif  // __fuchsia__
 
 }  // namespace testing
 }  // namespace gvisor

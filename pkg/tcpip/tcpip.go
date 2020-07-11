@@ -855,7 +855,10 @@ type OutOfBandInlineOption int
 // a default TTL.
 type DefaultTTLOption uint8
 
-//
+// SocketDetachFilterOption is used by SetSockOpt to detach a previously attached
+// classic BPF filter on a given endpoint.
+type SocketDetachFilterOption int
+
 // IPPacketInfo is the message structure for IP_PKTINFO.
 //
 // +stateify savable

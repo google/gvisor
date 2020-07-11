@@ -1754,6 +1754,11 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 
 		return nil
 
+	case linux.SO_DETACH_FILTER:
+		// optval is ignored.
+		var v tcpip.SocketDetachFilterOption
+		return syserr.TranslateNetstackError(ep.SetSockOpt(v))
+
 	default:
 		socket.SetSockOptEmitUnimplementedEvent(t, name)
 	}
