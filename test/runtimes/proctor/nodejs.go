@@ -39,8 +39,8 @@ func (nodejsRunner) ListTests() ([]string, error) {
 	return testSlice, nil
 }
 
-// TestCmd implements TestRunner.TestCmd.
-func (nodejsRunner) TestCmd(test string) *exec.Cmd {
-	args := []string{filepath.Join("tools", "test.py"), test}
-	return exec.Command("/usr/bin/python", args...)
+// TestCmds implements TestRunner.TestCmds.
+func (nodejsRunner) TestCmds(tests []string) []*exec.Cmd {
+	args := append([]string{filepath.Join("tools", "test.py")}, tests...)
+	return []*exec.Cmd{exec.Command("/usr/bin/python", args...)}
 }

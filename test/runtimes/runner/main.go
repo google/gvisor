@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
@@ -35,10 +36,11 @@ var (
 	lang        = flag.String("lang", "", "language runtime to test")
 	image       = flag.String("image", "", "docker image with runtime tests")
 	excludeFile = flag.String("exclude_file", "", "file containing list of tests to exclude, in CSV format with fields: test name, bug id, comment")
+	batchSize   = flag.Int("batch", 50, "number of test cases run in one command")
 )
 
 // Wait time for each test to run.
-const timeout = 5 * time.Minute
+const timeout = 45 * time.Minute
 
 func main() {
 	flag.Parse()
@@ -110,17 +112,23 @@ func getTests(ctx context.Context, d *dockerutil.Container, excludes map[string]
 	}
 
 	var itests []testing.InternalTest
-	for _, tci := range indices {
-		// Capture tc in this scope.
-		tc := tests[tci]
+	for i := 0; i < len(indices); i += *batchSize {
+		var tcs []string
+		end := i + *batchSize
+		if end > len(indices) {
+			end = len(indices)
+		}
+		for _, tc := range indices[i:end] {
+			// Add test if not excluded.
+			if _, ok := excludes[tests[tc]]; ok {
+				log.Infof("Skipping test case %s\n", tests[tc])
+				continue
+			}
+			tcs = append(tcs, tests[tc])
+		}
 		itests = append(itests, testing.InternalTest{
-			Name: tc,
+			Name: strings.Join(tcs, ", "),
 			F: func(t *testing.T) {
-				// Is the test excluded?
-				if _, ok := excludes[tc]; ok {
-					t.Skipf("SKIP: excluded test %q", tc)
-				}
-
 				var (
 					now    = time.Now()
 					done   = make(chan struct{})
@@ -129,20 +137,20 @@ func getTests(ctx context.Context, d *dockerutil.Container, excludes map[string]
 				)
 
 				go func() {
-					fmt.Printf("RUNNING %s...\n", tc)
-					output, err = d.Exec(ctx, dockerutil.ExecOpts{}, "/proctor/proctor", "--runtime", *lang, "--test", tc)
+					fmt.Printf("RUNNING the following in a batch\n%s\n", strings.Join(tcs, "\n"))
+					output, err = d.Exec(ctx, dockerutil.ExecOpts{}, "/proctor/proctor", "--runtime", *lang, "--tests", strings.Join(tcs, ","))
 					close(done)
 				}()
 
 				select {
 				case <-done:
 					if err == nil {
-						fmt.Printf("PASS: %s (%v)\n\n", tc, time.Since(now))
+						fmt.Printf("PASS: (%v)\n\n", time.Since(now))
 						return
 					}
-					t.Errorf("FAIL: %s (%v):\n%s\n", tc, time.Since(now), output)
+					t.Errorf("FAIL: (%v):\n%s\n", time.Since(now), output)
 				case <-time.After(timeout):
-					t.Errorf("TIMEOUT: %s (%v):\n%s\n", tc, time.Since(now), output)
+					t.Errorf("TIMEOUT: (%v):\n%s\n", time.Since(now), output)
 				}
 			},
 		})

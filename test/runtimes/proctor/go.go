@@ -74,17 +74,26 @@ func (goRunner) ListTests() ([]string, error) {
 	return append(toolSlice, diskFiltered...), nil
 }
 
-// TestCmd implements TestRunner.TestCmd.
-func (goRunner) TestCmd(test string) *exec.Cmd {
-	// Check if test exists on disk by searching for file of the same name.
-	// This will determine whether or not it is a Go test on disk.
-	if strings.HasSuffix(test, ".go") {
-		// Test has suffix ".go" which indicates a disk test, run it as such.
-		cmd := exec.Command("go", "run", "run.go", "-v", "--", test)
-		cmd.Dir = goTestDir
-		return cmd
+// TestCmds implements TestRunner.TestCmds.
+func (goRunner) TestCmds(tests []string) []*exec.Cmd {
+	var toolTests, onDiskTests []string
+	for _, test := range tests {
+		if strings.HasSuffix(test, ".go") {
+			onDiskTests = append(onDiskTests, test)
+		} else {
+			toolTests = append(toolTests, test)
+		}
 	}
 
-	// No ".go" suffix, run as a tool test.
-	return exec.Command("go", "tool", "dist", "test", "-run", test)
+	var cmds []*exec.Cmd
+	if len(toolTests) > 0 {
+		cmds = append(cmds, exec.Command("go", "tool", "dist", "test", "-run", strings.Join(toolTests, "\\|")))
+	}
+	if len(onDiskTests) > 0 {
+		cmd := exec.Command("go", append([]string{"run", "run.go", "-v", "--"}, onDiskTests...)...)
+		cmd.Dir = goTestDir
+		cmds = append(cmds, cmd)
+	}
+
+	return cmds
 }

@@ -17,6 +17,7 @@ package main
 import (
 	"os/exec"
 	"regexp"
+	"strings"
 )
 
 var phpTestRegEx = regexp.MustCompile(`^.+\.phpt$`)
@@ -35,8 +36,8 @@ func (phpRunner) ListTests() ([]string, error) {
 	return testSlice, nil
 }
 
-// TestCmd implements TestRunner.TestCmd.
-func (phpRunner) TestCmd(test string) *exec.Cmd {
-	args := []string{"test", "TESTS=" + test}
-	return exec.Command("make", args...)
+// TestCmds implements TestRunner.TestCmds.
+func (phpRunner) TestCmds(tests []string) []*exec.Cmd {
+	args := []string{"test", "TESTS=" + strings.Join(tests, " ")}
+	return []*exec.Cmd{exec.Command("make", args...)}
 }
