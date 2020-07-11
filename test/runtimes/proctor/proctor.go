@@ -25,6 +25,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"syscall"
 )
 
@@ -34,15 +35,18 @@ type TestRunner interface {
 	// ListTests returns a string slice of tests available to run.
 	ListTests() ([]string, error)
 
-	// TestCmd returns an *exec.Cmd that will run the given test.
-	TestCmd(test string) *exec.Cmd
+	// TestCmds returns a slice of *exec.Cmd that will run the given tests.
+	// There is no correlation between the number of exec.Cmds returned and the
+	// number of tests. It could return one command to run all tests or a few
+	// commands that collectively run all.
+	TestCmds(tests []string) []*exec.Cmd
 }
 
 var (
-	runtime  = flag.String("runtime", "", "name of runtime")
-	list     = flag.Bool("list", false, "list all available tests")
-	testName = flag.String("test", "", "run a single test from the list of available tests")
-	pause    = flag.Bool("pause", false, "cause container to pause indefinitely, reaping any zombie children")
+	runtime   = flag.String("runtime", "", "name of runtime")
+	list      = flag.Bool("list", false, "list all available tests")
+	testNames = flag.String("tests", "", "run a subset of the available tests")
+	pause     = flag.Bool("pause", false, "cause container to pause indefinitely, reaping any zombie children")
 )
 
 func main() {
@@ -75,18 +79,20 @@ func main() {
 	}
 
 	var tests []string
-	if *testName == "" {
+	if *testNames == "" {
 		// Run every test.
 		tests, err = tr.ListTests()
 		if err != nil {
 			log.Fatalf("failed to get all tests: %v", err)
 		}
 	} else {
-		// Run a single test.
-		tests = []string{*testName}
+		// Run subset of test.
+		tests = strings.Split(*testNames, ",")
 	}
-	for _, test := range tests {
-		cmd := tr.TestCmd(test)
+
+	// Run tests.
+	cmds := tr.TestCmds(tests)
+	for _, cmd := range cmds {
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 		if err := cmd.Run(); err != nil {
 			log.Fatalf("FAIL: %v", err)

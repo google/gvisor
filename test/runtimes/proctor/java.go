@@ -60,12 +60,14 @@ func (javaRunner) ListTests() ([]string, error) {
 	return testSlice, nil
 }
 
-// TestCmd implements TestRunner.TestCmd.
-func (javaRunner) TestCmd(test string) *exec.Cmd {
-	args := []string{
-		"-noreport",
-		"-dir:" + javaTestDir,
-		test,
-	}
-	return exec.Command("jtreg", args...)
+// TestCmds implements TestRunner.TestCmds.
+func (javaRunner) TestCmds(tests []string) []*exec.Cmd {
+	args := append(
+		[]string{
+			"-noreport",
+			"-dir:" + javaTestDir,
+		},
+		tests...,
+	)
+	return []*exec.Cmd{exec.Command("jtreg", args...)}
 }

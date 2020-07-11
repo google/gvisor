@@ -42,8 +42,8 @@ func (pythonRunner) ListTests() ([]string, error) {
 	return toolSlice, nil
 }
 
-// TestCmd implements TestRunner.TestCmd.
-func (pythonRunner) TestCmd(test string) *exec.Cmd {
-	args := []string{"-m", "test", test}
-	return exec.Command("./python", args...)
+// TestCmds implements TestRunner.TestCmds.
+func (pythonRunner) TestCmds(tests []string) []*exec.Cmd {
+	args := append([]string{"-m", "test"}, tests...)
+	return []*exec.Cmd{exec.Command("./python", args...)}
 }
