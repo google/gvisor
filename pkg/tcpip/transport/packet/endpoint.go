@@ -278,7 +278,13 @@ func (ep *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 // used with SetSockOpt, and this function always returns
 // tcpip.ErrNotSupported.
 func (ep *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
-	return tcpip.ErrUnknownProtocolOption
+	switch opt.(type) {
+	case tcpip.SocketDetachFilterOption:
+		return nil
+
+	default:
+		return tcpip.ErrUnknownProtocolOption
+	}
 }
 
 // SetSockOptBool implements tcpip.Endpoint.SetSockOptBool.
