@@ -89,7 +89,9 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 	if err != nil {
 		return err
 	}
-	d.size = size
+	d.dataMu.Lock()
+	atomic.StoreUint64(&d.size, size)
+	d.dataMu.Unlock()
 	if !d.cachedMetadataAuthoritative() {
 		d.touchCMtimeLocked()
 	}
