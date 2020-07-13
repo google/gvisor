@@ -602,8 +602,14 @@ type dentry struct {
 	// returned by the server. dirents is protected by dirMu.
 	dirents []vfs.Dirent
 
-	// Cached metadata; protected by metadataMu and accessed using atomic
-	// memory operations unless otherwise specified.
+	// Cached metadata; protected by metadataMu.
+	// To access:
+	//   - In situations where consistency is not required (like stat), these
+	//     can be accessed using atomic operations only (without locking).
+	//   - Lock metadataMu and can access without atomic operations.
+	// To mutate:
+	//   - Lock metadataMu and use atomic operations to update because we might
+	//     have atomic readers that don't hold the lock.
 	metadataMu sync.Mutex
 	ino        inodeNumber // immutable
 	mode       uint32      // type is immutable, perms are mutable
@@ -616,7 +622,7 @@ type dentry struct {
 	ctime int64
 	btime int64
 	// File size, protected by both metadataMu and dataMu (i.e. both must be
-	// locked to mutate it).
+	// locked to mutate it; locking either is sufficient to access it).
 	size uint64
 
 	// nlink counts the number of hard links to this dentry. It's updated and
@@ -904,14 +910,14 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, stat *lin
 
 		// Prepare for truncate.
 		if stat.Mask&linux.STATX_SIZE != 0 {
-			switch d.mode & linux.S_IFMT {
-			case linux.S_IFREG:
+			switch mode.FileType() {
+			case linux.ModeRegular:
 				if !setLocalMtime {
 					// Truncate updates mtime.
 					setLocalMtime = true
 					stat.Mtime.Nsec = linux.UTIME_NOW
 				}
-			case linux.S_IFDIR:
+			case linux.ModeDirectory:
 				return syserror.EISDIR
 			default:
 				return syserror.EINVAL
@@ -994,7 +1000,7 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, stat *lin
 func (d *dentry) updateFileSizeLocked(newSize uint64) {
 	d.dataMu.Lock()
 	oldSize := d.size
-	d.size = newSize
+	atomic.StoreUint64(&d.size, newSize)
 	// d.dataMu must be unlocked to lock d.mapsMu and invalidate mappings
 	// below. This allows concurrent calls to Read/Translate/etc. These
 	// functions synchronize with truncation by refusing to use cache
@@ -1340,8 +1346,8 @@ func (d *dentry) removexattr(ctx context.Context, creds *auth.Credentials, name 
 // Extended attributes in the user.* namespace are only supported for regular
 // files and directories.
 func (d *dentry) userXattrSupported() bool {
-	filetype := linux.S_IFMT & atomic.LoadUint32(&d.mode)
-	return filetype == linux.S_IFREG || filetype == linux.S_IFDIR
+	filetype := linux.FileMode(atomic.LoadUint32(&d.mode)).FileType()
+	return filetype == linux.ModeRegular || filetype == linux.ModeDirectory
 }
 
 // Preconditions: !d.isSynthetic(). d.isRegularFile() || d.isDir().
