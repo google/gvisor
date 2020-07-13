@@ -119,3 +119,8 @@ func Save(logger testutil.Logger, image string, w io.Writer) error {
 	cmd.Stdout = w // Send directly to the writer.
 	return cmd.Run()
 }
+
+// Runtime returns the value of the flag runtime.
+func Runtime() string {
+	return *runtime
+}
