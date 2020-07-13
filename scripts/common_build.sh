@@ -64,7 +64,7 @@ function run_as_root() {
 }
 
 function query() {
-  QUERY_RESULT=$(bazel query "$@")
+ bazel query "$@"
 }
 
 function collect_logs() {

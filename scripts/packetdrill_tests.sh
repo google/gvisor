@@ -19,5 +19,5 @@ source $(dirname $0)/common.sh
 make load-packetdrill
 
 install_runsc_for_test runsc-d
-query "attr(tags, manual, tests(//test/packetdrill/...))"
+QUERY_RESULT=$(query "attr(tags, manual, tests(//test/packetdrill/...))")
 test_runsc $QUERY_RESULT
