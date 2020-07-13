@@ -104,3 +104,9 @@ TEXT ·TwiddleRegsSyscall(SB),NOSPLIT,$0
 	TWIDDLE_REGS()
 	SVC
 	RET // never reached
+
+TEXT ·TwiddleRegsFault(SB),NOSPLIT,$0
+        TWIDDLE_REGS()
+        // Branch to Register branches unconditionally to an address in <Rn>.
+        JMP (R4) // <=> br x4, must fault
+        RET // never reached
