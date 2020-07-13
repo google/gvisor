@@ -10,7 +10,6 @@ pkg_tar(
     srcs = [
         "//tools/installers:head",
         "//tools/installers:master",
-        "//tools/installers:runsc",
     ],
     mode = "0755",
 )
