@@ -15,8 +15,9 @@
 package tcpip
 
 import (
-	"sync"
 	"time"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // cancellableTimerInstance is a specific instance of CancellableTimer.
@@ -92,6 +93,8 @@ func (t *cancellableTimerInstance) stop() {
 // Note, it is not safe to copy a CancellableTimer as its timer instance creates
 // a closure over the address of the CancellableTimer.
 type CancellableTimer struct {
+	_ sync.NoCopy
+
 	// The active instance of a cancellable timer.
 	instance cancellableTimerInstance
 
@@ -156,22 +159,6 @@ func (t *CancellableTimer) Reset(d time.Duration) {
 		earlyReturn: &earlyReturn,
 	}
 }
-
-// Lock is a no-op used by the copylocks checker from go vet.
-//
-// See CancellableTimer for details about why it shouldn't be copied.
-//
-// See https://github.com/golang/go/issues/8005#issuecomment-190753527 for more
-// details about the copylocks checker.
-func (*CancellableTimer) Lock() {}
-
-// Unlock is a no-op used by the copylocks checker from go vet.
-//
-// See CancellableTimer for details about why it shouldn't be copied.
-//
-// See https://github.com/golang/go/issues/8005#issuecomment-190753527 for more
-// details about the copylocks checker.
-func (*CancellableTimer) Unlock() {}
 
 // NewCancellableTimer returns an unscheduled CancellableTimer with the given
 // locker and fn.
