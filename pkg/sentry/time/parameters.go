@@ -228,11 +228,15 @@ func errorAdjust(prevParams Parameters, newParams Parameters, now TSCValue) (Par
 //
 // The log level is determined by the error severity.
 func logErrorAdjustment(clock ClockID, errorNS ReferenceNS, orig, adjusted Parameters) {
-	fn := log.Debugf
-	if int64(errorNS.Magnitude()) > time.Millisecond.Nanoseconds() {
+	magNS := int64(errorNS.Magnitude())
+	if magNS <= 10*time.Microsecond.Nanoseconds() {
+		// Don't log small errors.
+		return
+	}
+	fn := log.Infof
+	if magNS > time.Millisecond.Nanoseconds() {
+		// Upgrade large errors to warning.
 		fn = log.Warningf
-	} else if int64(errorNS.Magnitude()) > 10*time.Microsecond.Nanoseconds() {
-		fn = log.Infof
 	}
 
 	fn("Clock(%v): error: %v ns, adjusted frequency from %v Hz to %v Hz", clock, errorNS, orig.Frequency, adjusted.Frequency)

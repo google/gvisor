@@ -210,9 +210,6 @@ func (t *Timekeeper) startUpdater() {
 					p.realtimeBaseRef = int64(realtimeParams.BaseRef)
 					p.realtimeFrequency = realtimeParams.Frequency
 				}
-
-				log.Debugf("Updating VDSO parameters: %+v", p)
-
 				return p
 			}); err != nil {
 				log.Warningf("Unable to update VDSO parameter page: %v", err)
