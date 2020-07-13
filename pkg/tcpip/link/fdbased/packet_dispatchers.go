@@ -278,7 +278,7 @@ func (d *recvMMsgDispatcher) dispatch() (bool, *tcpip.Error) {
 			eth           header.Ethernet
 		)
 		if d.e.hdrSize > 0 {
-			eth = header.Ethernet(d.views[k][0])
+			eth = header.Ethernet(d.views[k][0][:header.EthernetMinimumSize])
 			p = eth.Type()
 			remote = eth.SourceAddress()
 			local = eth.DestinationAddress()
