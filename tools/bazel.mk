@@ -70,6 +70,7 @@ bazel-server-start: load-default ## Starts the bazel server.
 		-v "$(CURDIR):$(CURDIR)" \
 		--workdir "$(CURDIR)" \
 		--entrypoint "" \
+		--network=host \
 		$(FULL_DOCKER_RUN_OPTIONS) \
 		gvisor.dev/images/default \
 		sh -c "groupadd --gid $(GID) --non-unique $(USER) && \
