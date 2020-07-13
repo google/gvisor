@@ -78,19 +78,6 @@ func (c *vCPU) initArchState() error {
 		return err
 	}
 
-	// sctlr_el1
-	regGet.id = _KVM_ARM64_REGS_SCTLR_EL1
-	if err := c.getOneRegister(&regGet); err != nil {
-		return err
-	}
-
-	dataGet |= (_SCTLR_M | _SCTLR_C | _SCTLR_I)
-	data = dataGet
-	reg.id = _KVM_ARM64_REGS_SCTLR_EL1
-	if err := c.setOneRegister(&reg); err != nil {
-		return err
-	}
-
 	// tcr_el1
 	data = _TCR_TXSZ_VA48 | _TCR_CACHE_FLAGS | _TCR_SHARED | _TCR_TG_FLAGS | _TCR_ASID16 | _TCR_IPS_40BITS
 	reg.id = _KVM_ARM64_REGS_TCR_EL1

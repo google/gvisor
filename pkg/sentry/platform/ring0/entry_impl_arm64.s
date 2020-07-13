@@ -104,6 +104,14 @@
 
 #define FPEN_ENABLE (FPEN_NOTRAP << FPEN_SHIFT)
 
+// sctlr_el1: system control register el1.
+#define SCTLR_M         1 << 0
+#define SCTLR_C         1 << 2
+#define SCTLR_I         1 << 12
+#define SCTLR_UCT       1 << 15
+
+#define SCTLR_EL1_DEFAULT       (SCTLR_M | SCTLR_C | SCTLR_I | SCTLR_UCT)
+
 // Saves a register set.
 //
 // This is a macro because it may need to executed in contents where a stack is
@@ -560,6 +568,11 @@ TEXT ·kernelExitToEl1(SB),NOSPLIT,$0
 // Start is the CPU entrypoint.
 TEXT ·Start(SB),NOSPLIT,$0
 	IRQ_DISABLE
+
+	// Init.
+	MOVD $SCTLR_EL1_DEFAULT, R1
+	MSR R1, SCTLR_EL1
+
 	MOVD R8, RSV_REG
 	ORR $0xffff000000000000, RSV_REG, RSV_REG
 	WORD $0xd518d092        //MSR R18, TPIDR_EL1
