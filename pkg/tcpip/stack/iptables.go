@@ -16,6 +16,7 @@ package stack
 
 import (
 	"fmt"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -40,6 +41,9 @@ const (
 // HookUnset indicates that there is no hook set for an entrypoint or
 // underflow.
 const HookUnset = -1
+
+// reaperDelay is how long to wait before starting to reap connections.
+const reaperDelay = 5 * time.Second
 
 // DefaultTables returns a default set of tables. Each chain is set to accept
 // all packets.
@@ -112,8 +116,9 @@ func DefaultTables() *IPTables {
 			Output:     []string{TablenameMangle, TablenameNat, TablenameFilter},
 		},
 		connections: ConnTrack{
-			conns: make(map[tupleID]tuple),
+			seed: generateRandUint32(),
 		},
+		reaperDone: make(chan struct{}, 1),
 	}
 }
 
@@ -169,6 +174,12 @@ func (it *IPTables) GetTable(name string) (Table, bool) {
 func (it *IPTables) ReplaceTable(name string, table Table) {
 	it.mu.Lock()
 	defer it.mu.Unlock()
+	// If iptables is being enabled, initialize the conntrack table and
+	// reaper.
+	if !it.modified {
+		it.connections.buckets = make([]bucket, numBuckets)
+		it.startReaper(reaperDelay)
+	}
 	it.modified = true
 	it.tables[name] = table
 }
@@ -247,6 +258,35 @@ func (it *IPTables) Check(hook Hook, pkt *PacketBuffer, gso *GSO, r *Route, addr
 
 	// Every table returned Accept.
 	return true
+}
+
+// beforeSave is invoked by stateify.
+func (it *IPTables) beforeSave() {
+	// Ensure the reaper exits cleanly.
+	it.reaperDone <- struct{}{}
+	// Prevent others from modifying the connection table.
+	it.connections.mu.Lock()
+}
+
+// afterLoad is invoked by stateify.
+func (it *IPTables) afterLoad() {
+	it.startReaper(reaperDelay)
+}
+
+// startReaper starts a goroutine that wakes up periodically to reap timed out
+// connections.
+func (it *IPTables) startReaper(interval time.Duration) {
+	go func() { // S/R-SAFE: reaperDone is signalled when iptables is saved.
+		bucket := 0
+		for {
+			select {
+			case <-it.reaperDone:
+				return
+			case <-time.After(interval):
+				bucket, interval = it.connections.reapUnused(bucket, interval)
+			}
+		}
+	}()
 }
 
 // CheckPackets runs pkts through the rules for hook and returns a map of packets that
