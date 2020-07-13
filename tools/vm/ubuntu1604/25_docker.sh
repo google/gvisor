@@ -60,6 +60,3 @@ cat > /etc/docker/daemon.json <<EOF
     "ipv6": true
 }
 EOF
-# Docker's IPv6 support is lacking and does not work the same way as IPv4. We
-# can use NAT so containers can reach the outside world.
-ip6tables -t nat -A POSTROUTING -s 2001:db8:1::/64 ! -o docker0 -j MASQUERADE
