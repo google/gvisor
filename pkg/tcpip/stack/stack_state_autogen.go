@@ -6,6 +6,334 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *tuple) StateTypeName() string {
+	return "pkg/tcpip/stack.tuple"
+}
+
+func (x *tuple) StateFields() []string {
+	return []string{
+		"tupleEntry",
+		"tupleID",
+		"conn",
+		"direction",
+	}
+}
+
+func (x *tuple) beforeSave() {}
+
+func (x *tuple) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.tupleEntry)
+	m.Save(1, &x.tupleID)
+	m.Save(2, &x.conn)
+	m.Save(3, &x.direction)
+}
+
+func (x *tuple) afterLoad() {}
+
+func (x *tuple) StateLoad(m state.Source) {
+	m.Load(0, &x.tupleEntry)
+	m.Load(1, &x.tupleID)
+	m.Load(2, &x.conn)
+	m.Load(3, &x.direction)
+}
+
+func (x *tupleID) StateTypeName() string {
+	return "pkg/tcpip/stack.tupleID"
+}
+
+func (x *tupleID) StateFields() []string {
+	return []string{
+		"srcAddr",
+		"srcPort",
+		"dstAddr",
+		"dstPort",
+		"transProto",
+		"netProto",
+	}
+}
+
+func (x *tupleID) beforeSave() {}
+
+func (x *tupleID) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.srcAddr)
+	m.Save(1, &x.srcPort)
+	m.Save(2, &x.dstAddr)
+	m.Save(3, &x.dstPort)
+	m.Save(4, &x.transProto)
+	m.Save(5, &x.netProto)
+}
+
+func (x *tupleID) afterLoad() {}
+
+func (x *tupleID) StateLoad(m state.Source) {
+	m.Load(0, &x.srcAddr)
+	m.Load(1, &x.srcPort)
+	m.Load(2, &x.dstAddr)
+	m.Load(3, &x.dstPort)
+	m.Load(4, &x.transProto)
+	m.Load(5, &x.netProto)
+}
+
+func (x *conn) StateTypeName() string {
+	return "pkg/tcpip/stack.conn"
+}
+
+func (x *conn) StateFields() []string {
+	return []string{
+		"original",
+		"reply",
+		"manip",
+		"tcbHook",
+		"tcb",
+		"lastUsed",
+	}
+}
+
+func (x *conn) beforeSave() {}
+
+func (x *conn) StateSave(m state.Sink) {
+	x.beforeSave()
+	var lastUsed unixTime = x.saveLastUsed()
+	m.SaveValue(5, lastUsed)
+	m.Save(0, &x.original)
+	m.Save(1, &x.reply)
+	m.Save(2, &x.manip)
+	m.Save(3, &x.tcbHook)
+	m.Save(4, &x.tcb)
+}
+
+func (x *conn) afterLoad() {}
+
+func (x *conn) StateLoad(m state.Source) {
+	m.Load(0, &x.original)
+	m.Load(1, &x.reply)
+	m.Load(2, &x.manip)
+	m.Load(3, &x.tcbHook)
+	m.Load(4, &x.tcb)
+	m.LoadValue(5, new(unixTime), func(y interface{}) { x.loadLastUsed(y.(unixTime)) })
+}
+
+func (x *ConnTrack) StateTypeName() string {
+	return "pkg/tcpip/stack.ConnTrack"
+}
+
+func (x *ConnTrack) StateFields() []string {
+	return []string{
+		"seed",
+		"buckets",
+	}
+}
+
+func (x *ConnTrack) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.seed)
+	m.Save(1, &x.buckets)
+}
+
+func (x *ConnTrack) afterLoad() {}
+
+func (x *ConnTrack) StateLoad(m state.Source) {
+	m.Load(0, &x.seed)
+	m.Load(1, &x.buckets)
+}
+
+func (x *bucket) StateTypeName() string {
+	return "pkg/tcpip/stack.bucket"
+}
+
+func (x *bucket) StateFields() []string {
+	return []string{
+		"tuples",
+	}
+}
+
+func (x *bucket) beforeSave() {}
+
+func (x *bucket) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.tuples)
+}
+
+func (x *bucket) afterLoad() {}
+
+func (x *bucket) StateLoad(m state.Source) {
+	m.Load(0, &x.tuples)
+}
+
+func (x *unixTime) StateTypeName() string {
+	return "pkg/tcpip/stack.unixTime"
+}
+
+func (x *unixTime) StateFields() []string {
+	return []string{
+		"second",
+		"nano",
+	}
+}
+
+func (x *unixTime) beforeSave() {}
+
+func (x *unixTime) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.second)
+	m.Save(1, &x.nano)
+}
+
+func (x *unixTime) afterLoad() {}
+
+func (x *unixTime) StateLoad(m state.Source) {
+	m.Load(0, &x.second)
+	m.Load(1, &x.nano)
+}
+
+func (x *IPTables) StateTypeName() string {
+	return "pkg/tcpip/stack.IPTables"
+}
+
+func (x *IPTables) StateFields() []string {
+	return []string{
+		"mu",
+		"tables",
+		"priorities",
+		"modified",
+		"connections",
+		"reaperDone",
+	}
+}
+
+func (x *IPTables) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.mu)
+	m.Save(1, &x.tables)
+	m.Save(2, &x.priorities)
+	m.Save(3, &x.modified)
+	m.Save(4, &x.connections)
+	m.Save(5, &x.reaperDone)
+}
+
+func (x *IPTables) StateLoad(m state.Source) {
+	m.Load(0, &x.mu)
+	m.Load(1, &x.tables)
+	m.Load(2, &x.priorities)
+	m.Load(3, &x.modified)
+	m.Load(4, &x.connections)
+	m.Load(5, &x.reaperDone)
+	m.AfterLoad(x.afterLoad)
+}
+
+func (x *Table) StateTypeName() string {
+	return "pkg/tcpip/stack.Table"
+}
+
+func (x *Table) StateFields() []string {
+	return []string{
+		"Rules",
+		"BuiltinChains",
+		"Underflows",
+		"UserChains",
+	}
+}
+
+func (x *Table) beforeSave() {}
+
+func (x *Table) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.Rules)
+	m.Save(1, &x.BuiltinChains)
+	m.Save(2, &x.Underflows)
+	m.Save(3, &x.UserChains)
+}
+
+func (x *Table) afterLoad() {}
+
+func (x *Table) StateLoad(m state.Source) {
+	m.Load(0, &x.Rules)
+	m.Load(1, &x.BuiltinChains)
+	m.Load(2, &x.Underflows)
+	m.Load(3, &x.UserChains)
+}
+
+func (x *Rule) StateTypeName() string {
+	return "pkg/tcpip/stack.Rule"
+}
+
+func (x *Rule) StateFields() []string {
+	return []string{
+		"Filter",
+		"Matchers",
+		"Target",
+	}
+}
+
+func (x *Rule) beforeSave() {}
+
+func (x *Rule) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.Filter)
+	m.Save(1, &x.Matchers)
+	m.Save(2, &x.Target)
+}
+
+func (x *Rule) afterLoad() {}
+
+func (x *Rule) StateLoad(m state.Source) {
+	m.Load(0, &x.Filter)
+	m.Load(1, &x.Matchers)
+	m.Load(2, &x.Target)
+}
+
+func (x *IPHeaderFilter) StateTypeName() string {
+	return "pkg/tcpip/stack.IPHeaderFilter"
+}
+
+func (x *IPHeaderFilter) StateFields() []string {
+	return []string{
+		"Protocol",
+		"Dst",
+		"DstMask",
+		"DstInvert",
+		"Src",
+		"SrcMask",
+		"SrcInvert",
+		"OutputInterface",
+		"OutputInterfaceMask",
+		"OutputInterfaceInvert",
+	}
+}
+
+func (x *IPHeaderFilter) beforeSave() {}
+
+func (x *IPHeaderFilter) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.Protocol)
+	m.Save(1, &x.Dst)
+	m.Save(2, &x.DstMask)
+	m.Save(3, &x.DstInvert)
+	m.Save(4, &x.Src)
+	m.Save(5, &x.SrcMask)
+	m.Save(6, &x.SrcInvert)
+	m.Save(7, &x.OutputInterface)
+	m.Save(8, &x.OutputInterfaceMask)
+	m.Save(9, &x.OutputInterfaceInvert)
+}
+
+func (x *IPHeaderFilter) afterLoad() {}
+
+func (x *IPHeaderFilter) StateLoad(m state.Source) {
+	m.Load(0, &x.Protocol)
+	m.Load(1, &x.Dst)
+	m.Load(2, &x.DstMask)
+	m.Load(3, &x.DstInvert)
+	m.Load(4, &x.Src)
+	m.Load(5, &x.SrcMask)
+	m.Load(6, &x.SrcInvert)
+	m.Load(7, &x.OutputInterface)
+	m.Load(8, &x.OutputInterfaceMask)
+	m.Load(9, &x.OutputInterfaceInvert)
+}
+
 func (x *linkAddrEntryList) StateTypeName() string {
 	return "pkg/tcpip/stack.linkAddrEntryList"
 }
@@ -261,7 +589,69 @@ func (x *multiPortEndpoint) StateLoad(m state.Source) {
 	m.Load(4, &x.flags)
 }
 
+func (x *tupleList) StateTypeName() string {
+	return "pkg/tcpip/stack.tupleList"
+}
+
+func (x *tupleList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
+}
+
+func (x *tupleList) beforeSave() {}
+
+func (x *tupleList) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.head)
+	m.Save(1, &x.tail)
+}
+
+func (x *tupleList) afterLoad() {}
+
+func (x *tupleList) StateLoad(m state.Source) {
+	m.Load(0, &x.head)
+	m.Load(1, &x.tail)
+}
+
+func (x *tupleEntry) StateTypeName() string {
+	return "pkg/tcpip/stack.tupleEntry"
+}
+
+func (x *tupleEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
+}
+
+func (x *tupleEntry) beforeSave() {}
+
+func (x *tupleEntry) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.next)
+	m.Save(1, &x.prev)
+}
+
+func (x *tupleEntry) afterLoad() {}
+
+func (x *tupleEntry) StateLoad(m state.Source) {
+	m.Load(0, &x.next)
+	m.Load(1, &x.prev)
+}
+
 func init() {
+	state.Register((*tuple)(nil))
+	state.Register((*tupleID)(nil))
+	state.Register((*conn)(nil))
+	state.Register((*ConnTrack)(nil))
+	state.Register((*bucket)(nil))
+	state.Register((*unixTime)(nil))
+	state.Register((*IPTables)(nil))
+	state.Register((*Table)(nil))
+	state.Register((*Rule)(nil))
+	state.Register((*IPHeaderFilter)(nil))
 	state.Register((*linkAddrEntryList)(nil))
 	state.Register((*linkAddrEntryEntry)(nil))
 	state.Register((*PacketBufferList)(nil))
@@ -271,4 +661,6 @@ func init() {
 	state.Register((*GSO)(nil))
 	state.Register((*TransportEndpointInfo)(nil))
 	state.Register((*multiPortEndpoint)(nil))
+	state.Register((*tupleList)(nil))
+	state.Register((*tupleEntry)(nil))
 }
