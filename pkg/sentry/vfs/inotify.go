@@ -179,12 +179,12 @@ func (i *Inotify) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return mask & ready
 }
 
-// PRead implements FileDescriptionImpl.
+// PRead implements FileDescriptionImpl.PRead.
 func (*Inotify) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts ReadOptions) (int64, error) {
 	return 0, syserror.ESPIPE
 }
 
-// PWrite implements FileDescriptionImpl.
+// PWrite implements FileDescriptionImpl.PWrite.
 func (*Inotify) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts WriteOptions) (int64, error) {
 	return 0, syserror.ESPIPE
 }
@@ -243,7 +243,7 @@ func (i *Inotify) Read(ctx context.Context, dst usermem.IOSequence, opts ReadOpt
 	return writeLen, nil
 }
 
-// Ioctl implements fs.FileOperations.Ioctl.
+// Ioctl implements FileDescriptionImpl.Ioctl.
 func (i *Inotify) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	switch args[1].Int() {
 	case linux.FIONREAD:
