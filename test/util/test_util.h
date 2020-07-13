@@ -567,6 +567,25 @@ ssize_t ApplyFileIoSyscall(F const& f, size_t const count) {
 
 }  // namespace internal
 
+inline PosixErrorOr<std::string> ReadAllFd(int fd) {
+  std::string all;
+  all.reserve(128 * 1024);  // arbitrary.
+
+  std::vector<char> buffer(16 * 1024);
+  for (;;) {
+    auto const bytes = RetryEINTR(read)(fd, buffer.data(), buffer.size());
+    if (bytes < 0) {
+      return PosixError(errno, "file read");
+    }
+    if (bytes == 0) {
+      return std::move(all);
+    }
+    if (bytes > 0) {
+      all.append(buffer.data(), bytes);
+    }
+  }
+}
+
 inline ssize_t ReadFd(int fd, void* buf, size_t count) {
   return internal::ApplyFileIoSyscall(
       [&](size_t completed) {
