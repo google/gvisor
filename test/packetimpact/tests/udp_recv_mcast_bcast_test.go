@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package udp_recv_multicast_test
+package udp_recv_mcast_bcast_test
 
 import (
 	"flag"
@@ -28,13 +28,36 @@ func init() {
 	testbench.RegisterFlags(flag.CommandLine)
 }
 
-func TestUDPRecvMulticast(t *testing.T) {
+func TestUDPRecvMulticastBroadcast(t *testing.T) {
 	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
-	boundFD, remotePort := dut.CreateBoundSocket(unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP("0.0.0.0"))
+	boundFD, remotePort := dut.CreateBoundSocket(unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.IPv4(0, 0, 0, 0))
 	defer dut.Close(boundFD)
 	conn := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
 	defer conn.Close()
-	conn.SendIP(testbench.IPv4{DstAddr: testbench.Address(tcpip.Address(net.ParseIP("224.0.0.1").To4()))}, testbench.UDP{})
-	dut.Recv(boundFD, 100, 0)
+
+	for _, bcastAddr := range []net.IP{
+		broadcastAddr(net.ParseIP(testbench.RemoteIPv4), net.CIDRMask(testbench.IPv4PrefixLength, 32)),
+		net.IPv4(255, 255, 255, 255),
+		net.IPv4(224, 0, 0, 1),
+	} {
+		payload := testbench.GenerateRandomPayload(t, 1<<10)
+		conn.SendIP(
+			testbench.IPv4{DstAddr: testbench.Address(tcpip.Address(bcastAddr.To4()))},
+			testbench.UDP{},
+			&testbench.Payload{Bytes: payload},
+		)
+		t.Logf("Receiving packet sent to address: %s", bcastAddr)
+		if got, want := string(dut.Recv(boundFD, int32(len(payload)), 0)), string(payload); got != want {
+			t.Errorf("received payload does not match sent payload got: %s, want: %s", got, want)
+		}
+	}
+}
+
+func broadcastAddr(ip net.IP, mask net.IPMask) net.IP {
+	ip4 := ip.To4()
+	for i := range ip4 {
+		ip4[i] |= ^mask[i]
+	}
+	return ip4
 }
