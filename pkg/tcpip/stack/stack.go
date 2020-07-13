@@ -425,6 +425,7 @@ type Stack struct {
 	handleLocal bool
 
 	// tables are the iptables packet filtering and manipulation rules.
+	// TODO(gvisor.dev/issue/170): S/R this field.
 	tables *IPTables
 
 	// resumableEndpoints is a list of endpoints that need to be resumed if the
