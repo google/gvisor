@@ -42,12 +42,14 @@ const (
 //
 // This should be called prior to calling sysemu.
 func (t *thread) resetSysemuRegs(regs *arch.Registers) {
-	regs.Cs = t.initRegs.Cs
-	regs.Ss = t.initRegs.Ss
-	regs.Ds = t.initRegs.Ds
-	regs.Es = t.initRegs.Es
-	regs.Fs = t.initRegs.Fs
-	regs.Gs = t.initRegs.Gs
+	ptRegs := regs.PtraceRegs()
+	initRegs := t.initRegs.PtraceRegs()
+	ptRegs.Cs = initRegs.Cs
+	ptRegs.Ss = initRegs.Ss
+	ptRegs.Ds = initRegs.Ds
+	ptRegs.Es = initRegs.Es
+	ptRegs.Fs = initRegs.Fs
+	ptRegs.Gs = initRegs.Gs
 }
 
 // createSyscallRegs sets up syscall registers.
@@ -56,26 +58,27 @@ func (t *thread) resetSysemuRegs(regs *arch.Registers) {
 func createSyscallRegs(initRegs *arch.Registers, sysno uintptr, args ...arch.SyscallArgument) arch.Registers {
 	// Copy initial registers.
 	regs := *initRegs
+	ptRegs := regs.PtraceRegs()
 
 	// Set our syscall number.
-	regs.Rax = uint64(sysno)
+	ptRegs.Rax = uint64(sysno)
 	if len(args) >= 1 {
-		regs.Rdi = args[0].Uint64()
+		ptRegs.Rdi = args[0].Uint64()
 	}
 	if len(args) >= 2 {
-		regs.Rsi = args[1].Uint64()
+		ptRegs.Rsi = args[1].Uint64()
 	}
 	if len(args) >= 3 {
-		regs.Rdx = args[2].Uint64()
+		ptRegs.Rdx = args[2].Uint64()
 	}
 	if len(args) >= 4 {
-		regs.R10 = args[3].Uint64()
+		ptRegs.R10 = args[3].Uint64()
 	}
 	if len(args) >= 5 {
-		regs.R8 = args[4].Uint64()
+		ptRegs.R8 = args[4].Uint64()
 	}
 	if len(args) >= 6 {
-		regs.R9 = args[5].Uint64()
+		ptRegs.R9 = args[5].Uint64()
 	}
 
 	return regs
@@ -83,18 +86,18 @@ func createSyscallRegs(initRegs *arch.Registers, sysno uintptr, args ...arch.Sys
 
 // isSingleStepping determines if the registers indicate single-stepping.
 func isSingleStepping(regs *arch.Registers) bool {
-	return (regs.Eflags & arch.X86TrapFlag) != 0
+	return (regs.PtraceRegs().Eflags & arch.X86TrapFlag) != 0
 }
 
 // updateSyscallRegs updates registers after finishing sysemu.
 func updateSyscallRegs(regs *arch.Registers) {
 	// Ptrace puts -ENOSYS in rax on syscall-enter-stop.
-	regs.Rax = regs.Orig_rax
+	regs.PtraceRegs().Rax = regs.PtraceRegs().Orig_rax
 }
 
 // syscallReturnValue extracts a sensible return from registers.
 func syscallReturnValue(regs *arch.Registers) (uintptr, error) {
-	rval := int64(regs.Rax)
+	rval := int64(regs.PtraceRegs().Rax)
 	if rval < 0 {
 		return 0, syscall.Errno(-rval)
 	}
@@ -104,34 +107,35 @@ func syscallReturnValue(regs *arch.Registers) (uintptr, error) {
 func dumpRegs(regs *arch.Registers) string {
 	var m strings.Builder
 
+	ptRegs := regs.PtraceRegs()
 	fmt.Fprintf(&m, "Registers:\n")
-	fmt.Fprintf(&m, "\tR15\t = %016x\n", regs.R15)
-	fmt.Fprintf(&m, "\tR14\t = %016x\n", regs.R14)
-	fmt.Fprintf(&m, "\tR13\t = %016x\n", regs.R13)
-	fmt.Fprintf(&m, "\tR12\t = %016x\n", regs.R12)
-	fmt.Fprintf(&m, "\tRbp\t = %016x\n", regs.Rbp)
-	fmt.Fprintf(&m, "\tRbx\t = %016x\n", regs.Rbx)
-	fmt.Fprintf(&m, "\tR11\t = %016x\n", regs.R11)
-	fmt.Fprintf(&m, "\tR10\t = %016x\n", regs.R10)
-	fmt.Fprintf(&m, "\tR9\t = %016x\n", regs.R9)
-	fmt.Fprintf(&m, "\tR8\t = %016x\n", regs.R8)
-	fmt.Fprintf(&m, "\tRax\t = %016x\n", regs.Rax)
-	fmt.Fprintf(&m, "\tRcx\t = %016x\n", regs.Rcx)
-	fmt.Fprintf(&m, "\tRdx\t = %016x\n", regs.Rdx)
-	fmt.Fprintf(&m, "\tRsi\t = %016x\n", regs.Rsi)
-	fmt.Fprintf(&m, "\tRdi\t = %016x\n", regs.Rdi)
-	fmt.Fprintf(&m, "\tOrig_rax = %016x\n", regs.Orig_rax)
-	fmt.Fprintf(&m, "\tRip\t = %016x\n", regs.Rip)
-	fmt.Fprintf(&m, "\tCs\t = %016x\n", regs.Cs)
-	fmt.Fprintf(&m, "\tEflags\t = %016x\n", regs.Eflags)
-	fmt.Fprintf(&m, "\tRsp\t = %016x\n", regs.Rsp)
-	fmt.Fprintf(&m, "\tSs\t = %016x\n", regs.Ss)
-	fmt.Fprintf(&m, "\tFs_base\t = %016x\n", regs.Fs_base)
-	fmt.Fprintf(&m, "\tGs_base\t = %016x\n", regs.Gs_base)
-	fmt.Fprintf(&m, "\tDs\t = %016x\n", regs.Ds)
-	fmt.Fprintf(&m, "\tEs\t = %016x\n", regs.Es)
-	fmt.Fprintf(&m, "\tFs\t = %016x\n", regs.Fs)
-	fmt.Fprintf(&m, "\tGs\t = %016x\n", regs.Gs)
+	fmt.Fprintf(&m, "\tR15\t = %016x\n", ptRegs.R15)
+	fmt.Fprintf(&m, "\tR14\t = %016x\n", ptRegs.R14)
+	fmt.Fprintf(&m, "\tR13\t = %016x\n", ptRegs.R13)
+	fmt.Fprintf(&m, "\tR12\t = %016x\n", ptRegs.R12)
+	fmt.Fprintf(&m, "\tRbp\t = %016x\n", ptRegs.Rbp)
+	fmt.Fprintf(&m, "\tRbx\t = %016x\n", ptRegs.Rbx)
+	fmt.Fprintf(&m, "\tR11\t = %016x\n", ptRegs.R11)
+	fmt.Fprintf(&m, "\tR10\t = %016x\n", ptRegs.R10)
+	fmt.Fprintf(&m, "\tR9\t = %016x\n", ptRegs.R9)
+	fmt.Fprintf(&m, "\tR8\t = %016x\n", ptRegs.R8)
+	fmt.Fprintf(&m, "\tRax\t = %016x\n", ptRegs.Rax)
+	fmt.Fprintf(&m, "\tRcx\t = %016x\n", ptRegs.Rcx)
+	fmt.Fprintf(&m, "\tRdx\t = %016x\n", ptRegs.Rdx)
+	fmt.Fprintf(&m, "\tRsi\t = %016x\n", ptRegs.Rsi)
+	fmt.Fprintf(&m, "\tRdi\t = %016x\n", ptRegs.Rdi)
+	fmt.Fprintf(&m, "\tOrig_rax = %016x\n", ptRegs.Orig_rax)
+	fmt.Fprintf(&m, "\tRip\t = %016x\n", ptRegs.Rip)
+	fmt.Fprintf(&m, "\tCs\t = %016x\n", ptRegs.Cs)
+	fmt.Fprintf(&m, "\tEflags\t = %016x\n", ptRegs.Eflags)
+	fmt.Fprintf(&m, "\tRsp\t = %016x\n", ptRegs.Rsp)
+	fmt.Fprintf(&m, "\tSs\t = %016x\n", ptRegs.Ss)
+	fmt.Fprintf(&m, "\tFs_base\t = %016x\n", ptRegs.Fs_base)
+	fmt.Fprintf(&m, "\tGs_base\t = %016x\n", ptRegs.Gs_base)
+	fmt.Fprintf(&m, "\tDs\t = %016x\n", ptRegs.Ds)
+	fmt.Fprintf(&m, "\tEs\t = %016x\n", ptRegs.Es)
+	fmt.Fprintf(&m, "\tFs\t = %016x\n", ptRegs.Fs)
+	fmt.Fprintf(&m, "\tGs\t = %016x\n", ptRegs.Gs)
 
 	return m.String()
 }
@@ -139,14 +143,14 @@ func dumpRegs(regs *arch.Registers) string {
 // adjustInitregsRip adjust the current register RIP value to
 // be just before the system call instruction excution
 func (t *thread) adjustInitRegsRip() {
-	t.initRegs.Rip -= initRegsRipAdjustment
+	t.initRegs.PtraceRegs().Rip -= initRegsRipAdjustment
 }
 
 // Pass the expected PPID to the child via R15 when creating stub process.
 func initChildProcessPPID(initregs *arch.Registers, ppid int32) {
-	initregs.R15 = uint64(ppid)
+	initregs.PtraceRegs().R15 = uint64(ppid)
 	// Rbx has to be set to 1 when creating stub process.
-	initregs.Rbx = 1
+	initregs.PtraceRegs().Rbx = 1
 }
 
 // patchSignalInfo patches the signal info to account for hitting the seccomp
@@ -165,8 +169,8 @@ func patchSignalInfo(regs *arch.Registers, signalInfo *arch.SignalInfo) {
 		// aligns with the si_addr field for a SIGSEGV, so we don't need to touch
 		// anything there. We do need to unwind emulation however, so we set the
 		// instruction pointer to the faulting value, and "unpop" the stack.
-		regs.Rip = signalInfo.Addr()
-		regs.Rsp -= 8
+		regs.PtraceRegs().Rip = signalInfo.Addr()
+		regs.PtraceRegs().Rsp -= 8
 	}
 }
 

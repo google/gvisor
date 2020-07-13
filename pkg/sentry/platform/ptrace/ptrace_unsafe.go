@@ -25,9 +25,10 @@ import (
 
 // getRegs gets the general purpose register set.
 func (t *thread) getRegs(regs *arch.Registers) error {
+	ptRegs := regs.PtraceRegs()
 	iovec := syscall.Iovec{
-		Base: (*byte)(unsafe.Pointer(regs)),
-		Len:  uint64(unsafe.Sizeof(*regs)),
+		Base: (*byte)(unsafe.Pointer(ptRegs)),
+		Len:  uint64(unsafe.Sizeof(*ptRegs)),
 	}
 	_, _, errno := syscall.RawSyscall6(
 		syscall.SYS_PTRACE,
@@ -44,9 +45,10 @@ func (t *thread) getRegs(regs *arch.Registers) error {
 
 // setRegs sets the general purpose register set.
 func (t *thread) setRegs(regs *arch.Registers) error {
+	ptRegs := regs.PtraceRegs()
 	iovec := syscall.Iovec{
-		Base: (*byte)(unsafe.Pointer(regs)),
-		Len:  uint64(unsafe.Sizeof(*regs)),
+		Base: (*byte)(unsafe.Pointer(ptRegs)),
+		Len:  uint64(unsafe.Sizeof(*ptRegs)),
 	}
 	_, _, errno := syscall.RawSyscall6(
 		syscall.SYS_PTRACE,

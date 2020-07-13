@@ -228,7 +228,7 @@ func (c *vCPU) setSignalMask() error {
 // SwitchToUser unpacks architectural-details.
 func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) (usermem.AccessType, error) {
 	// Check for canonical addresses.
-	if regs := switchOpts.Registers; !ring0.IsCanonical(regs.Pc) {
+	if regs := switchOpts.Registers.PtraceRegs(); !ring0.IsCanonical(regs.Pc) {
 		return nonCanonical(regs.Pc, int32(syscall.SIGSEGV), info)
 	} else if !ring0.IsCanonical(regs.Sp) {
 		return nonCanonical(regs.Sp, int32(syscall.SIGBUS), info)

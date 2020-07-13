@@ -210,7 +210,7 @@ func (c *vCPU) fault(signal int32, info *arch.SignalInfo) (usermem.AccessType, e
 // SwitchToUser unpacks architectural-details.
 func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) (usermem.AccessType, error) {
 	// Check for canonical addresses.
-	if regs := switchOpts.Registers; !ring0.IsCanonical(regs.Rip) {
+	if regs := switchOpts.Registers.PtraceRegs(); !ring0.IsCanonical(regs.Rip) {
 		return nonCanonical(regs.Rip, int32(syscall.SIGSEGV), info)
 	} else if !ring0.IsCanonical(regs.Rsp) {
 		return nonCanonical(regs.Rsp, int32(syscall.SIGBUS), info)
@@ -253,7 +253,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 			Signo: int32(syscall.SIGTRAP),
 			Code:  1, // TRAP_BRKPT (breakpoint).
 		}
-		info.SetAddr(switchOpts.Registers.Rip) // Include address.
+		info.SetAddr(switchOpts.Registers.PtraceRegs().Rip) // Include address.
 		return usermem.AccessType{}, platform.ErrContextSignal
 
 	case ring0.GeneralProtectionFault,
@@ -265,7 +265,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 			Signo: int32(syscall.SIGSEGV),
 			Code:  arch.SignalInfoKernel,
 		}
-		info.SetAddr(switchOpts.Registers.Rip) // Include address.
+		info.SetAddr(switchOpts.Registers.PtraceRegs().Rip) // Include address.
 		if vector == ring0.GeneralProtectionFault {
 			// When CPUID faulting is enabled, we will generate a #GP(0) when
 			// userspace executes a CPUID instruction. This is handled above,
@@ -279,7 +279,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 			Signo: int32(syscall.SIGILL),
 			Code:  1, // ILL_ILLOPC (illegal opcode).
 		}
-		info.SetAddr(switchOpts.Registers.Rip) // Include address.
+		info.SetAddr(switchOpts.Registers.PtraceRegs().Rip) // Include address.
 		return usermem.AccessType{}, platform.ErrContextSignal
 
 	case ring0.DivideByZero:
@@ -287,7 +287,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 			Signo: int32(syscall.SIGFPE),
 			Code:  1, // FPE_INTDIV (divide by zero).
 		}
-		info.SetAddr(switchOpts.Registers.Rip) // Include address.
+		info.SetAddr(switchOpts.Registers.PtraceRegs().Rip) // Include address.
 		return usermem.AccessType{}, platform.ErrContextSignal
 
 	case ring0.Overflow:
@@ -295,7 +295,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 			Signo: int32(syscall.SIGFPE),
 			Code:  2, // FPE_INTOVF (integer overflow).
 		}
-		info.SetAddr(switchOpts.Registers.Rip) // Include address.
+		info.SetAddr(switchOpts.Registers.PtraceRegs().Rip) // Include address.
 		return usermem.AccessType{}, platform.ErrContextSignal
 
 	case ring0.X87FloatingPointException,
@@ -304,7 +304,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 			Signo: int32(syscall.SIGFPE),
 			Code:  7, // FPE_FLTINV (invalid operation).
 		}
-		info.SetAddr(switchOpts.Registers.Rip) // Include address.
+		info.SetAddr(switchOpts.Registers.PtraceRegs().Rip) // Include address.
 		return usermem.AccessType{}, platform.ErrContextSignal
 
 	case ring0.Vector(bounce): // ring0.VirtualizationException

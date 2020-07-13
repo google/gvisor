@@ -28,7 +28,7 @@ func fpRegSet(useXsave bool) uintptr {
 }
 
 func stackPointer(r *arch.Registers) uintptr {
-	return uintptr(r.Rsp)
+	return uintptr(r.PtraceRegs().Rsp)
 }
 
 // x86 use the fs_base register to store the TLS pointer which can be

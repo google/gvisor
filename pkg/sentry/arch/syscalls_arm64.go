@@ -26,12 +26,12 @@ const restartSyscallNr = uintptr(128)
 // was not accessible to the userspace application, so we have to do the same
 // operation in the sentry code to save the R0 value into the App context.
 func (c *context64) SyscallSaveOrig() {
-	c.OrigR0 = c.Regs.Regs[0]
+	c.OrigR0 = c.Regs.PtraceRegs().Regs[0]
 }
 
 // SyscallNo returns the syscall number according to the 64-bit convention.
 func (c *context64) SyscallNo() uintptr {
-	return uintptr(c.Regs.Regs[8])
+	return uintptr(c.Regs.PtraceRegs().Regs[8])
 }
 
 // SyscallArgs provides syscall arguments according to the 64-bit convention.
@@ -50,13 +50,14 @@ func (c *context64) SyscallNo() uintptr {
 // R29: the frame pointer.
 // R30: the link register.
 func (c *context64) SyscallArgs() SyscallArguments {
+	ptRegs := c.Regs.PtraceRegs()
 	return SyscallArguments{
 		SyscallArgument{Value: uintptr(c.OrigR0)},
-		SyscallArgument{Value: uintptr(c.Regs.Regs[1])},
-		SyscallArgument{Value: uintptr(c.Regs.Regs[2])},
-		SyscallArgument{Value: uintptr(c.Regs.Regs[3])},
-		SyscallArgument{Value: uintptr(c.Regs.Regs[4])},
-		SyscallArgument{Value: uintptr(c.Regs.Regs[5])},
+		SyscallArgument{Value: uintptr(ptRegs.Regs[1])},
+		SyscallArgument{Value: uintptr(ptRegs.Regs[2])},
+		SyscallArgument{Value: uintptr(ptRegs.Regs[3])},
+		SyscallArgument{Value: uintptr(ptRegs.Regs[4])},
+		SyscallArgument{Value: uintptr(ptRegs.Regs[5])},
 	}
 }
 
@@ -65,17 +66,17 @@ func (c *context64) SyscallArgs() SyscallArguments {
 // Please see the linux code as reference:
 // arch/arm64/kernel/signal.c:do_signal()
 func (c *context64) RestartSyscall() {
-	c.Regs.Pc -= SyscallWidth
+	c.Regs.PtraceRegs().Pc -= SyscallWidth
 	// R0 will be backed up into OrigR0 when entering doSyscall().
 	// Please see the linux code as reference:
 	// arch/arm64/kernel/syscall.c:el0_svc_common().
 	// Here we restore it back.
-	c.Regs.Regs[0] = uint64(c.OrigR0)
+	c.Regs.PtraceRegs().Regs[0] = uint64(c.OrigR0)
 }
 
 // RestartSyscallWithRestartBlock implements Context.RestartSyscallWithRestartBlock.
 func (c *context64) RestartSyscallWithRestartBlock() {
-	c.Regs.Pc -= SyscallWidth
-	c.Regs.Regs[0] = uint64(c.OrigR0)
-	c.Regs.Regs[8] = uint64(restartSyscallNr)
+	c.Regs.PtraceRegs().Pc -= SyscallWidth
+	c.Regs.PtraceRegs().Regs[0] = uint64(c.OrigR0)
+	c.Regs.PtraceRegs().Regs[8] = uint64(restartSyscallNr)
 }

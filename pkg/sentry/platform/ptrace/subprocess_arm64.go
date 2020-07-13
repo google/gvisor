@@ -50,28 +50,29 @@ func (t *thread) resetSysemuRegs(regs *arch.Registers) {
 func createSyscallRegs(initRegs *arch.Registers, sysno uintptr, args ...arch.SyscallArgument) arch.Registers {
 	// Copy initial registers (Pc, Sp, etc.).
 	regs := *initRegs
+	ptRegs := regs.PtraceRegs()
 
 	// Set our syscall number.
 	// r8 for the syscall number.
 	// r0-r6 is used to store the parameters.
-	regs.Regs[8] = uint64(sysno)
+	ptRegs.Regs[8] = uint64(sysno)
 	if len(args) >= 1 {
-		regs.Regs[0] = args[0].Uint64()
+		ptRegs.Regs[0] = args[0].Uint64()
 	}
 	if len(args) >= 2 {
-		regs.Regs[1] = args[1].Uint64()
+		ptRegs.Regs[1] = args[1].Uint64()
 	}
 	if len(args) >= 3 {
-		regs.Regs[2] = args[2].Uint64()
+		ptRegs.Regs[2] = args[2].Uint64()
 	}
 	if len(args) >= 4 {
-		regs.Regs[3] = args[3].Uint64()
+		ptRegs.Regs[3] = args[3].Uint64()
 	}
 	if len(args) >= 5 {
-		regs.Regs[4] = args[4].Uint64()
+		ptRegs.Regs[4] = args[4].Uint64()
 	}
 	if len(args) >= 6 {
-		regs.Regs[5] = args[5].Uint64()
+		ptRegs.Regs[5] = args[5].Uint64()
 	}
 
 	return regs
@@ -85,7 +86,7 @@ func isSingleStepping(regs *arch.Registers) bool {
 	// Since the host Linux kernel will set MDSCR_EL1.SS on our behalf
 	// when we call a single-step ptrace command, we only need to check
 	// the Pstate.SS bit here.
-	return (regs.Pstate & arch.ARMTrapFlag) != 0
+	return (regs.PtraceRegs().Pstate & arch.ARMTrapFlag) != 0
 }
 
 // updateSyscallRegs updates registers after finishing sysemu.
@@ -96,7 +97,7 @@ func updateSyscallRegs(regs *arch.Registers) {
 
 // syscallReturnValue extracts a sensible return from registers.
 func syscallReturnValue(regs *arch.Registers) (uintptr, error) {
-	rval := int64(regs.Regs[0])
+	rval := int64(regs.PtraceRegs().Regs[0])
 	if rval < 0 {
 		return 0, syscall.Errno(-rval)
 	}
@@ -105,15 +106,16 @@ func syscallReturnValue(regs *arch.Registers) (uintptr, error) {
 
 func dumpRegs(regs *arch.Registers) string {
 	var m strings.Builder
+	ptRegs := regs.PtraceRegs()
 
 	fmt.Fprintf(&m, "Registers:\n")
 
 	for i := 0; i < 31; i++ {
-		fmt.Fprintf(&m, "\tRegs[%d]\t = %016x\n", i, regs.Regs[i])
+		fmt.Fprintf(&m, "\tRegs[%d]\t = %016x\n", i, ptRegs.Regs[i])
 	}
-	fmt.Fprintf(&m, "\tSp\t = %016x\n", regs.Sp)
-	fmt.Fprintf(&m, "\tPc\t = %016x\n", regs.Pc)
-	fmt.Fprintf(&m, "\tPstate\t = %016x\n", regs.Pstate)
+	fmt.Fprintf(&m, "\tSp\t = %016x\n", ptRegs.Sp)
+	fmt.Fprintf(&m, "\tPc\t = %016x\n", ptRegs.Pc)
+	fmt.Fprintf(&m, "\tPstate\t = %016x\n", ptRegs.Pstate)
 
 	return m.String()
 }
@@ -121,14 +123,14 @@ func dumpRegs(regs *arch.Registers) string {
 // adjustInitregsRip adjust the current register RIP value to
 // be just before the system call instruction excution
 func (t *thread) adjustInitRegsRip() {
-	t.initRegs.Pc -= initRegsRipAdjustment
+	t.initRegs.PtraceRegs().Pc -= initRegsRipAdjustment
 }
 
 // Pass the expected PPID to the child via X7 when creating stub process
 func initChildProcessPPID(initregs *arch.Registers, ppid int32) {
-	initregs.Regs[7] = uint64(ppid)
+	initregs.PtraceRegs().Regs[7] = uint64(ppid)
 	// R9 has to be set to 1 when creating stub process.
-	initregs.Regs[9] = 1
+	initregs.PtraceRegs().Regs[9] = 1
 }
 
 // patchSignalInfo patches the signal info to account for hitting the seccomp
@@ -147,8 +149,8 @@ func patchSignalInfo(regs *arch.Registers, signalInfo *arch.SignalInfo) {
 		// aligns with the si_addr field for a SIGSEGV, so we don't need to touch
 		// anything there. We do need to unwind emulation however, so we set the
 		// instruction pointer to the faulting value, and "unpop" the stack.
-		regs.Pc = signalInfo.Addr()
-		regs.Sp -= 8
+		regs.PtraceRegs().Pc = signalInfo.Addr()
+		regs.PtraceRegs().Sp -= 8
 	}
 }
 

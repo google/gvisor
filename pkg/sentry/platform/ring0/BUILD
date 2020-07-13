@@ -77,6 +77,7 @@ go_library(
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/cpuid",
         "//pkg/safecopy",
         "//pkg/sentry/arch",

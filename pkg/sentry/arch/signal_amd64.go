@@ -130,6 +130,7 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 	fpSize, _ := c.fpuFrameSize()
 	sp = (sp - usermem.Addr(fpSize)) & ^usermem.Addr(63)
 
+	ptRegs := c.Regs.PtraceRegs()
 	// Construct the UContext64 now since we need its size.
 	uc := &UContext64{
 		// No _UC_FP_XSTATE: see Fpstate above.
@@ -137,26 +138,26 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 		Flags: _UC_SIGCONTEXT_SS,
 		Stack: *alt,
 		MContext: SignalContext64{
-			R8:      c.Regs.R8,
-			R9:      c.Regs.R9,
-			R10:     c.Regs.R10,
-			R11:     c.Regs.R11,
-			R12:     c.Regs.R12,
-			R13:     c.Regs.R13,
-			R14:     c.Regs.R14,
-			R15:     c.Regs.R15,
-			Rdi:     c.Regs.Rdi,
-			Rsi:     c.Regs.Rsi,
-			Rbp:     c.Regs.Rbp,
-			Rbx:     c.Regs.Rbx,
-			Rdx:     c.Regs.Rdx,
-			Rax:     c.Regs.Rax,
-			Rcx:     c.Regs.Rcx,
-			Rsp:     c.Regs.Rsp,
-			Rip:     c.Regs.Rip,
-			Eflags:  c.Regs.Eflags,
-			Cs:      uint16(c.Regs.Cs),
-			Ss:      uint16(c.Regs.Ss),
+			R8:      ptRegs.R8,
+			R9:      ptRegs.R9,
+			R10:     ptRegs.R10,
+			R11:     ptRegs.R11,
+			R12:     ptRegs.R12,
+			R13:     ptRegs.R13,
+			R14:     ptRegs.R14,
+			R15:     ptRegs.R15,
+			Rdi:     ptRegs.Rdi,
+			Rsi:     ptRegs.Rsi,
+			Rbp:     ptRegs.Rbp,
+			Rbx:     ptRegs.Rbx,
+			Rdx:     ptRegs.Rdx,
+			Rax:     ptRegs.Rax,
+			Rcx:     ptRegs.Rcx,
+			Rsp:     ptRegs.Rsp,
+			Rip:     ptRegs.Rip,
+			Eflags:  ptRegs.Eflags,
+			Cs:      uint16(ptRegs.Cs),
+			Ss:      uint16(ptRegs.Ss),
 			Oldmask: sigset,
 		},
 		Sigset: sigset,
@@ -215,16 +216,16 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 	}
 
 	// Set up registers.
-	c.Regs.Rip = act.Handler
-	c.Regs.Rsp = uint64(st.Bottom)
-	c.Regs.Rdi = uint64(info.Signo)
-	c.Regs.Rsi = uint64(infoAddr)
-	c.Regs.Rdx = uint64(ucAddr)
-	c.Regs.Rax = 0
-	c.Regs.Ds = userDS
-	c.Regs.Es = userDS
-	c.Regs.Cs = userCS
-	c.Regs.Ss = userDS
+	ptRegs.Rip = act.Handler
+	ptRegs.Rsp = uint64(st.Bottom)
+	ptRegs.Rdi = uint64(info.Signo)
+	ptRegs.Rsi = uint64(infoAddr)
+	ptRegs.Rdx = uint64(ucAddr)
+	ptRegs.Rax = 0
+	ptRegs.Ds = userDS
+	ptRegs.Es = userDS
+	ptRegs.Cs = userCS
+	ptRegs.Ss = userDS
 
 	// Save the thread's floating point state.
 	c.sigFPState = append(c.sigFPState, c.x86FPState)
@@ -248,28 +249,29 @@ func (c *context64) SignalRestore(st *Stack, rt bool) (linux.SignalSet, SignalSt
 		return 0, SignalStack{}, err
 	}
 
+	ptRegs := c.Regs.PtraceRegs()
 	// Restore registers.
-	c.Regs.R8 = uc.MContext.R8
-	c.Regs.R9 = uc.MContext.R9
-	c.Regs.R10 = uc.MContext.R10
-	c.Regs.R11 = uc.MContext.R11
-	c.Regs.R12 = uc.MContext.R12
-	c.Regs.R13 = uc.MContext.R13
-	c.Regs.R14 = uc.MContext.R14
-	c.Regs.R15 = uc.MContext.R15
-	c.Regs.Rdi = uc.MContext.Rdi
-	c.Regs.Rsi = uc.MContext.Rsi
-	c.Regs.Rbp = uc.MContext.Rbp
-	c.Regs.Rbx = uc.MContext.Rbx
-	c.Regs.Rdx = uc.MContext.Rdx
-	c.Regs.Rax = uc.MContext.Rax
-	c.Regs.Rcx = uc.MContext.Rcx
-	c.Regs.Rsp = uc.MContext.Rsp
-	c.Regs.Rip = uc.MContext.Rip
-	c.Regs.Eflags = (c.Regs.Eflags & ^eflagsRestorable) | (uc.MContext.Eflags & eflagsRestorable)
-	c.Regs.Cs = uint64(uc.MContext.Cs) | 3
+	ptRegs.R8 = uc.MContext.R8
+	ptRegs.R9 = uc.MContext.R9
+	ptRegs.R10 = uc.MContext.R10
+	ptRegs.R11 = uc.MContext.R11
+	ptRegs.R12 = uc.MContext.R12
+	ptRegs.R13 = uc.MContext.R13
+	ptRegs.R14 = uc.MContext.R14
+	ptRegs.R15 = uc.MContext.R15
+	ptRegs.Rdi = uc.MContext.Rdi
+	ptRegs.Rsi = uc.MContext.Rsi
+	ptRegs.Rbp = uc.MContext.Rbp
+	ptRegs.Rbx = uc.MContext.Rbx
+	ptRegs.Rdx = uc.MContext.Rdx
+	ptRegs.Rax = uc.MContext.Rax
+	ptRegs.Rcx = uc.MContext.Rcx
+	ptRegs.Rsp = uc.MContext.Rsp
+	ptRegs.Rip = uc.MContext.Rip
+	ptRegs.Eflags = (ptRegs.Eflags & ^eflagsRestorable) | (uc.MContext.Eflags & eflagsRestorable)
+	ptRegs.Cs = uint64(uc.MContext.Cs) | 3
 	// N.B. _UC_STRICT_RESTORE_SS not supported.
-	c.Regs.Orig_rax = math.MaxUint64
+	ptRegs.Orig_rax = math.MaxUint64
 
 	// Restore floating point state.
 	l := len(c.sigFPState)

@@ -28,7 +28,18 @@ import (
 )
 
 // Registers represents the CPU registers for this architecture.
-type Registers = linux.PtraceRegs
+type Registers struct {
+	ptRegs    linux.PtraceRegs
+	TPIDR_EL0 uint64
+}
+
+func (r *Registers) PtraceRegs() *linux.PtraceRegs {
+	return &r.ptRegs
+}
+
+func (r *Registers) TlsRegs() *uint64 {
+	return &r.TPIDR_EL0
+}
 
 const (
 	// SyscallWidth is the width of insturctions.
@@ -101,9 +112,6 @@ type State struct {
 	// Our floating point state.
 	aarch64FPState `state:"wait"`
 
-	// TLS pointer
-	TPValue uint64
-
 	// FeatureSet is a pointer to the currently active feature set.
 	FeatureSet *cpuid.FeatureSet
 
@@ -113,41 +121,42 @@ type State struct {
 
 // Proto returns a protobuf representation of the system registers in State.
 func (s State) Proto() *rpb.Registers {
+	ptRegs := s.Regs.PtraceRegs()
 	regs := &rpb.ARM64Registers{
-		R0:     s.Regs.Regs[0],
-		R1:     s.Regs.Regs[1],
-		R2:     s.Regs.Regs[2],
-		R3:     s.Regs.Regs[3],
-		R4:     s.Regs.Regs[4],
-		R5:     s.Regs.Regs[5],
-		R6:     s.Regs.Regs[6],
-		R7:     s.Regs.Regs[7],
-		R8:     s.Regs.Regs[8],
-		R9:     s.Regs.Regs[9],
-		R10:    s.Regs.Regs[10],
-		R11:    s.Regs.Regs[11],
-		R12:    s.Regs.Regs[12],
-		R13:    s.Regs.Regs[13],
-		R14:    s.Regs.Regs[14],
-		R15:    s.Regs.Regs[15],
-		R16:    s.Regs.Regs[16],
-		R17:    s.Regs.Regs[17],
-		R18:    s.Regs.Regs[18],
-		R19:    s.Regs.Regs[19],
-		R20:    s.Regs.Regs[20],
-		R21:    s.Regs.Regs[21],
-		R22:    s.Regs.Regs[22],
-		R23:    s.Regs.Regs[23],
-		R24:    s.Regs.Regs[24],
-		R25:    s.Regs.Regs[25],
-		R26:    s.Regs.Regs[26],
-		R27:    s.Regs.Regs[27],
-		R28:    s.Regs.Regs[28],
-		R29:    s.Regs.Regs[29],
-		R30:    s.Regs.Regs[30],
-		Sp:     s.Regs.Sp,
-		Pc:     s.Regs.Pc,
-		Pstate: s.Regs.Pstate,
+		R0:     ptRegs.Regs[0],
+		R1:     ptRegs.Regs[1],
+		R2:     ptRegs.Regs[2],
+		R3:     ptRegs.Regs[3],
+		R4:     ptRegs.Regs[4],
+		R5:     ptRegs.Regs[5],
+		R6:     ptRegs.Regs[6],
+		R7:     ptRegs.Regs[7],
+		R8:     ptRegs.Regs[8],
+		R9:     ptRegs.Regs[9],
+		R10:    ptRegs.Regs[10],
+		R11:    ptRegs.Regs[11],
+		R12:    ptRegs.Regs[12],
+		R13:    ptRegs.Regs[13],
+		R14:    ptRegs.Regs[14],
+		R15:    ptRegs.Regs[15],
+		R16:    ptRegs.Regs[16],
+		R17:    ptRegs.Regs[17],
+		R18:    ptRegs.Regs[18],
+		R19:    ptRegs.Regs[19],
+		R20:    ptRegs.Regs[20],
+		R21:    ptRegs.Regs[21],
+		R22:    ptRegs.Regs[22],
+		R23:    ptRegs.Regs[23],
+		R24:    ptRegs.Regs[24],
+		R25:    ptRegs.Regs[25],
+		R26:    ptRegs.Regs[26],
+		R27:    ptRegs.Regs[27],
+		R28:    ptRegs.Regs[28],
+		R29:    ptRegs.Regs[29],
+		R30:    ptRegs.Regs[30],
+		Sp:     ptRegs.Sp,
+		Pc:     ptRegs.Pc,
+		Pstate: ptRegs.Pstate,
 	}
 	return &rpb.Registers{Arch: &rpb.Registers_Arm64{Arm64: regs}}
 }
@@ -157,7 +166,6 @@ func (s *State) Fork() State {
 	return State{
 		Regs:           s.Regs,
 		aarch64FPState: s.aarch64FPState.fork(),
-		TPValue:        s.TPValue,
 		FeatureSet:     s.FeatureSet,
 		OrigR0:         s.OrigR0,
 	}
@@ -192,41 +200,42 @@ func (s *State) ClearSingleStep() {
 
 // RegisterMap returns a map of all registers.
 func (s *State) RegisterMap() (map[string]uintptr, error) {
+	ptRegs := s.Regs.PtraceRegs()
 	return map[string]uintptr{
-		"R0":     uintptr(s.Regs.Regs[0]),
-		"R1":     uintptr(s.Regs.Regs[1]),
-		"R2":     uintptr(s.Regs.Regs[2]),
-		"R3":     uintptr(s.Regs.Regs[3]),
-		"R4":     uintptr(s.Regs.Regs[4]),
-		"R5":     uintptr(s.Regs.Regs[5]),
-		"R6":     uintptr(s.Regs.Regs[6]),
-		"R7":     uintptr(s.Regs.Regs[7]),
-		"R8":     uintptr(s.Regs.Regs[8]),
-		"R9":     uintptr(s.Regs.Regs[9]),
-		"R10":    uintptr(s.Regs.Regs[10]),
-		"R11":    uintptr(s.Regs.Regs[11]),
-		"R12":    uintptr(s.Regs.Regs[12]),
-		"R13":    uintptr(s.Regs.Regs[13]),
-		"R14":    uintptr(s.Regs.Regs[14]),
-		"R15":    uintptr(s.Regs.Regs[15]),
-		"R16":    uintptr(s.Regs.Regs[16]),
-		"R17":    uintptr(s.Regs.Regs[17]),
-		"R18":    uintptr(s.Regs.Regs[18]),
-		"R19":    uintptr(s.Regs.Regs[19]),
-		"R20":    uintptr(s.Regs.Regs[20]),
-		"R21":    uintptr(s.Regs.Regs[21]),
-		"R22":    uintptr(s.Regs.Regs[22]),
-		"R23":    uintptr(s.Regs.Regs[23]),
-		"R24":    uintptr(s.Regs.Regs[24]),
-		"R25":    uintptr(s.Regs.Regs[25]),
-		"R26":    uintptr(s.Regs.Regs[26]),
-		"R27":    uintptr(s.Regs.Regs[27]),
-		"R28":    uintptr(s.Regs.Regs[28]),
-		"R29":    uintptr(s.Regs.Regs[29]),
-		"R30":    uintptr(s.Regs.Regs[30]),
-		"Sp":     uintptr(s.Regs.Sp),
-		"Pc":     uintptr(s.Regs.Pc),
-		"Pstate": uintptr(s.Regs.Pstate),
+		"R0":     uintptr(ptRegs.Regs[0]),
+		"R1":     uintptr(ptRegs.Regs[1]),
+		"R2":     uintptr(ptRegs.Regs[2]),
+		"R3":     uintptr(ptRegs.Regs[3]),
+		"R4":     uintptr(ptRegs.Regs[4]),
+		"R5":     uintptr(ptRegs.Regs[5]),
+		"R6":     uintptr(ptRegs.Regs[6]),
+		"R7":     uintptr(ptRegs.Regs[7]),
+		"R8":     uintptr(ptRegs.Regs[8]),
+		"R9":     uintptr(ptRegs.Regs[9]),
+		"R10":    uintptr(ptRegs.Regs[10]),
+		"R11":    uintptr(ptRegs.Regs[11]),
+		"R12":    uintptr(ptRegs.Regs[12]),
+		"R13":    uintptr(ptRegs.Regs[13]),
+		"R14":    uintptr(ptRegs.Regs[14]),
+		"R15":    uintptr(ptRegs.Regs[15]),
+		"R16":    uintptr(ptRegs.Regs[16]),
+		"R17":    uintptr(ptRegs.Regs[17]),
+		"R18":    uintptr(ptRegs.Regs[18]),
+		"R19":    uintptr(ptRegs.Regs[19]),
+		"R20":    uintptr(ptRegs.Regs[20]),
+		"R21":    uintptr(ptRegs.Regs[21]),
+		"R22":    uintptr(ptRegs.Regs[22]),
+		"R23":    uintptr(ptRegs.Regs[23]),
+		"R24":    uintptr(ptRegs.Regs[24]),
+		"R25":    uintptr(ptRegs.Regs[25]),
+		"R26":    uintptr(ptRegs.Regs[26]),
+		"R27":    uintptr(ptRegs.Regs[27]),
+		"R28":    uintptr(ptRegs.Regs[28]),
+		"R29":    uintptr(ptRegs.Regs[29]),
+		"R30":    uintptr(ptRegs.Regs[30]),
+		"Sp":     uintptr(ptRegs.Sp),
+		"Pc":     uintptr(ptRegs.Pc),
+		"Pstate": uintptr(ptRegs.Pstate),
 	}, nil
 }
 
@@ -237,21 +246,22 @@ func (s *State) PtraceGetRegs(dst io.Writer) (int, error) {
 	return int(n), err
 }
 
-func (s *State) ptraceGetRegs() Registers {
-	return s.Regs
+func (s *State) ptraceGetRegs() linux.PtraceRegs {
+	regs := s.Regs.PtraceRegs()
+	return *regs
 }
 
-var registersSize = (*Registers)(nil).SizeBytes()
+var registersSize = (*linux.PtraceRegs)(nil).SizeBytes()
 
 // PtraceSetRegs implements Context.PtraceSetRegs.
 func (s *State) PtraceSetRegs(src io.Reader) (int, error) {
-	var regs Registers
+	var regs linux.PtraceRegs
 	buf := make([]byte, registersSize)
 	if _, err := io.ReadFull(src, buf); err != nil {
 		return 0, err
 	}
 	regs.UnmarshalUnsafe(buf)
-	s.Regs = regs
+	s.Regs.ptRegs = regs
 	return registersSize, nil
 }
 

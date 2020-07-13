@@ -82,15 +82,17 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 		sp -= 128
 	}
 
+	ptRegs := c.Regs.PtraceRegs()
+
 	// Construct the UContext64 now since we need its size.
 	uc := &UContext64{
 		Flags: 0,
 		Stack: *alt,
 		MContext: SignalContext64{
-			Regs:   c.Regs.Regs,
-			Sp:     c.Regs.Sp,
-			Pc:     c.Regs.Pc,
-			Pstate: c.Regs.Pstate,
+			Regs:   ptRegs.Regs,
+			Sp:     ptRegs.Sp,
+			Pc:     ptRegs.Pc,
+			Pstate: ptRegs.Pstate,
 		},
 		Sigset: sigset,
 	}
@@ -129,12 +131,12 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 	}
 
 	// Set up registers.
-	c.Regs.Sp = uint64(st.Bottom)
-	c.Regs.Pc = act.Handler
-	c.Regs.Regs[0] = uint64(info.Signo)
-	c.Regs.Regs[1] = uint64(infoAddr)
-	c.Regs.Regs[2] = uint64(ucAddr)
-	c.Regs.Regs[30] = uint64(act.Restorer)
+	ptRegs.Sp = uint64(st.Bottom)
+	ptRegs.Pc = act.Handler
+	ptRegs.Regs[0] = uint64(info.Signo)
+	ptRegs.Regs[1] = uint64(infoAddr)
+	ptRegs.Regs[2] = uint64(ucAddr)
+	ptRegs.Regs[30] = uint64(act.Restorer)
 
 	// Save the thread's floating point state.
 	c.sigFPState = append(c.sigFPState, c.aarch64FPState)
@@ -155,11 +157,12 @@ func (c *context64) SignalRestore(st *Stack, rt bool) (linux.SignalSet, SignalSt
 		return 0, SignalStack{}, err
 	}
 
+	ptRegs := c.Regs.PtraceRegs()
 	// Restore registers.
-	c.Regs.Regs = uc.MContext.Regs
-	c.Regs.Pc = uc.MContext.Pc
-	c.Regs.Sp = uc.MContext.Sp
-	c.Regs.Pstate = uc.MContext.Pstate
+	ptRegs.Regs = uc.MContext.Regs
+	ptRegs.Pc = uc.MContext.Pc
+	ptRegs.Sp = uc.MContext.Sp
+	ptRegs.Pstate = uc.MContext.Pstate
 
 	// Restore floating point state.
 	l := len(c.sigFPState)
