@@ -23,4 +23,4 @@ if [ ! -v RUNTIME_TEST_NAME ]; then
 fi
 
 install_runsc_for_test runtimes
-test_runsc "//test/runtimes:${RUNTIME_TEST_NAME}_test"
+test_runsc "//test/runtimes:${RUNTIME_TEST_NAME}"
