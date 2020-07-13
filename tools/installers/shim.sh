@@ -14,11 +14,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Reinstall the latest containerd shim.
-declare -r base="https://storage.googleapis.com/cri-containerd-staging/gvisor-containerd-shim"
-declare -r latest=$(mktemp --tmpdir gvisor-containerd-shim-latest.XXXXXX)
-declare -r shim_path=$(mktemp --tmpdir gvisor-containerd-shim.XXXXXX)
-wget --no-verbose "${base}"/latest -O ${latest}
-wget --no-verbose "${base}"/gvisor-containerd-shim-$(cat ${latest}) -O ${shim_path}
-chmod +x ${shim_path}
-mv ${shim_path} /usr/local/bin/gvisor-containerd-shim
+# Install all the shims.
+#
+# Note that containerd looks at the current executable directory
+# in order to find the shim binary. So we need to check in order
+# of preference. The local containerd installer will install to
+# /usr/local, so we use that first.
+if [[ -x /usr/local/bin/containerd ]]; then
+  containerd_install_dir=/usr/local/bin
+else
+  containerd_install_dir=/usr/bin
+fi
+runfiles=.
+if [[ -d "$0.runfiles" ]]; then
+  runfiles="$0.runfiles"
+fi
+find -L "${runfiles}" -executable -type f -name containerd-shim-runsc-v1 -exec cp -L {} "${containerd_install_dir}" \;
+find -L "${runfiles}" -executable -type f -name gvisor-containerd-shim -exec cp -L {} "${containerd_install_dir}" \;

@@ -18,7 +18,7 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_mohae_deepcopy//:go_default_library",
-        "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@com_github_syndtr_gocapability//capability:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
@@ -29,5 +29,5 @@ go_test(
     size = "small",
     srcs = ["specutils_test.go"],
     library = ":specutils",
-    deps = ["@com_github_opencontainers_runtime-spec//specs-go:go_default_library"],
+    deps = ["@com_github_opencontainers_runtime_spec//specs-go:go_default_library"],
 )

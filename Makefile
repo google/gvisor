@@ -121,6 +121,22 @@ tests: ## Runs all local ptrace system call tests.
 	@$(MAKE) test OPTIONS="--test_tag_filters runsc_ptrace test/syscalls/..."
 .PHONY: tests
 
+# Specific containerd version tests.
+containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-basic_resolv load-basic_httpd install-test-runtime
+	@CONTAINERD_VERSION=$* $(MAKE) sudo TARGETS="tools/installers:containerd"
+	@$(MAKE) sudo TARGETS="tools/installers:shim"
+	@$(MAKE) sudo TARGETS="test/root:root_test" ARGS="-test.v"
+
+# Note that we can't run containerd-test-1.1.8 tests here.
+#
+# Containerd 1.1.8 should work, but because of a bug in loading images locally
+# (https://github.com/kubernetes-sigs/cri-tools/issues/421), we are unable to
+# actually drive the tests. The v1 API is tested exclusively through 1.2.13.
+containerd-tests: ## Runs all supported containerd version tests.
+containerd-tests: containerd-test-1.2.13
+containerd-tests: containerd-test-1.3.4
+containerd-tests: containerd-test-1.4.0-beta.0
+
 ##
 ## Website & documentation helpers.
 ##
@@ -233,14 +249,15 @@ dev: ## Installs a set of local runtimes. Requires sudo.
 
 refresh: ## Refreshes the runtime binary (for development only). Must have called 'dev' or 'test-install' first.
 	@mkdir -p "$(RUNTIME_DIR)"
-	@$(MAKE) copy TARGETS=runsc DESTINATION="$(RUNTIME_BIN)" && chmod 0755 "$(RUNTIME_BIN)"
+	@$(MAKE) copy TARGETS=runsc DESTINATION="$(RUNTIME_BIN)"
 .PHONY: install
 
-test-install: ## Installs the runtime for testing. Requires sudo.
+install-test-runtime: ## Installs the runtime for testing. Requires sudo.
 	@$(MAKE) refresh ARGS="--net-raw --TESTONLY-test-name-env=RUNSC_TEST_NAME --debug --strace --log-packets $(ARGS)"
+	@$(MAKE) configure RUNTIME=runsc
 	@$(MAKE) configure
 	@sudo systemctl restart docker
-.PHONY: install-test
+.PHONY: install-test-runtime
 
 configure: ## Configures a single runtime. Requires sudo. Typically called from dev or test-install.
 	@sudo sudo "$(RUNTIME_BIN)" install --experimental=true --runtime="$(RUNTIME)" -- --debug-log "$(RUNTIME_LOGS)" $(ARGS)

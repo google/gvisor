@@ -68,3 +68,12 @@ doc(
     permalink = "/docs/user_guide/platforms/",
     weight = "30",
 )
+
+doc(
+    name = "runtimeclass",
+    src = "runtimeclass.md",
+    category = "User Guide",
+    permalink = "/docs/user_guide/runtimeclass/",
+    subcategory = "Advanced",
+    weight = "91",
+)

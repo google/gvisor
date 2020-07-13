@@ -34,6 +34,6 @@ go_test(
         "//pkg/tcpip/transport/tcp",
         "//pkg/tcpip/transport/udp",
         "//pkg/waiter",
-        "@com_github_google_go-cmp//cmp:go_default_library",
+        "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )

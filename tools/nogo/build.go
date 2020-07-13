@@ -32,5 +32,9 @@ var (
 
 // findStdPkg needs to find the bundled standard library packages.
 func findStdPkg(path, GOOS, GOARCH string) (io.ReadCloser, error) {
+	if path == "C" {
+		// Cgo builds cannot be analyzed. Skip.
+		return nil, ErrSkip
+	}
 	return os.Open(fmt.Sprintf("external/go_sdk/pkg/%s_%s/%s.a", GOOS, GOARCH, path))
 }

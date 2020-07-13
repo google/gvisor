@@ -70,6 +70,6 @@ go_test(
         "//pkg/sentry/vfs",
         "//pkg/syserror",
         "//pkg/usermem",
-        "@com_github_google_go-cmp//cmp:go_default_library",
+        "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )

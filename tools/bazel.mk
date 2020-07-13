@@ -109,7 +109,7 @@ copy: bazel-server
 ifeq (,$(DESTINATION))
 	$(error Destination not provided.)
 endif
-	@$(call build_paths,cp -a {} $(DESTINATION))
+	@$(call build_paths,cp -fa {} $(DESTINATION))
 
 run: bazel-server
 	@$(call build_paths,{} $(ARGS))

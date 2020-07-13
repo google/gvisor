@@ -39,6 +39,6 @@ go_test(
         "//pkg/usermem",
         "//tools/go_marshal/analysis",
         "//tools/go_marshal/marshal",
-        "@com_github_google_go-cmp//cmp:go_default_library",
+        "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )
