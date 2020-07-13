@@ -1,5 +1,7 @@
 # gVisor Security Basics - Part 1
 
+> Edit: This post was updated on July 13, 2020 to use more inclusive language.
+
 This blog is a space for engineers and community members to share perspectives
 and deep dives on technology and design within the gVisor project. Though our
 logo suggests we're in the business of space exploration (or perhaps fighting
@@ -188,9 +190,9 @@ for direct access to some files. And most files will be remotely accessed
 through the Gofers, in which case no FDs are donated to the Sentry.
 
 The Sentry itself is only allowed access to specific
-[whitelisted syscalls](https://github.com/google/gvisor/blob/master/runsc/boot/config.go).
+[allowed syscalls](https://github.com/google/gvisor/blob/master/runsc/boot/config.go).
 Without networking, the Sentry needs 53 host syscalls in order to function, and
-with networking, it uses an additional 15[^8]. By limiting the whitelist to only
+with networking, it uses an additional 15[^8]. By limiting the list to only
 these needed syscalls, we radically reduce the amount of host OS attack surface.
 If any attempts are made to call something outside the whitelist, it is
 immediately blocked and the sandbox is killed by the Host OS.

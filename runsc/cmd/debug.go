@@ -247,7 +247,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			log.Infof("Enabling strace for syscalls: %s", d.strace)
 			args.SetStrace = true
 			args.EnableStrace = true
-			args.StraceWhitelist = strings.Split(d.strace, ",")
+			args.StraceSyscalls = strings.Split(d.strace, ",")
 		}
 
 		if len(d.logLevel) != 0 {
