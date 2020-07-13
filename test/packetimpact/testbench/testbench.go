@@ -31,23 +31,30 @@ var (
 	DUTType = ""
 	// Device is the local device on the test network.
 	Device = ""
+
 	// LocalIPv4 is the local IPv4 address on the test network.
 	LocalIPv4 = ""
+	// RemoteIPv4 is the DUT's IPv4 address on the test network.
+	RemoteIPv4 = ""
+	// IPv4PrefixLength is the network prefix length of the IPv4 test network.
+	IPv4PrefixLength = 0
+
 	// LocalIPv6 is the local IPv6 address on the test network.
 	LocalIPv6 = ""
+	// RemoteIPv6 is the DUT's IPv6 address on the test network.
+	RemoteIPv6 = ""
+
 	// LocalMAC is the local MAC address on the test network.
 	LocalMAC = ""
+	// RemoteMAC is the DUT's MAC address on the test network.
+	RemoteMAC = ""
+
 	// POSIXServerIP is the POSIX server's IP address on the control network.
 	POSIXServerIP = ""
 	// POSIXServerPort is the UDP port the POSIX server is bound to on the
 	// control network.
 	POSIXServerPort = 40000
-	// RemoteIPv4 is the DUT's IPv4 address on the test network.
-	RemoteIPv4 = ""
-	// RemoteIPv6 is the DUT's IPv6 address on the test network.
-	RemoteIPv6 = ""
-	// RemoteMAC is the DUT's MAC address on the test network.
-	RemoteMAC = ""
+
 	// RPCKeepalive is the gRPC keepalive.
 	RPCKeepalive = 10 * time.Second
 	// RPCTimeout is the gRPC timeout.
@@ -90,6 +97,12 @@ func genPseudoFlags() error {
 
 	LocalMAC = deviceInfo.MAC.String()
 	LocalIPv6 = deviceInfo.IPv6Addr.String()
+
+	if deviceInfo.IPv4Net != nil {
+		IPv4PrefixLength, _ = deviceInfo.IPv4Net.Mask.Size()
+	} else {
+		IPv4PrefixLength, _ = net.ParseIP(LocalIPv4).DefaultMask().Size()
+	}
 
 	return nil
 }
