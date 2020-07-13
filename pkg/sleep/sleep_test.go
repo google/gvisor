@@ -379,10 +379,7 @@ func TestRace(t *testing.T) {
 // TestRaceInOrder tests that multiple wakers can continuously send wake requests to
 // the sleeper and that the wakers are retrieved in the order asserted.
 func TestRaceInOrder(t *testing.T) {
-	const wakers = 100
-	const wakeRequests = 10000
-
-	w := make([]Waker, wakers)
+	w := make([]Waker, 10000)
 	s := Sleeper{}
 
 	// Associate each waker and start goroutines that will assert them.
@@ -390,19 +387,16 @@ func TestRaceInOrder(t *testing.T) {
 		s.AddWaker(&w[i], i)
 	}
 	go func() {
-		n := 0
-		for n < wakeRequests {
-			wk := w[n%len(w)]
-			wk.Assert()
-			n++
+		for i := range w {
+			w[i].Assert()
 		}
 	}()
 
 	// Wait for all wake up notifications from all wakers.
-	for i := 0; i < wakeRequests; i++ {
-		v, _ := s.Fetch(true)
-		if got, want := v, i%wakers; got != want {
-			t.Fatalf("got  %d want %d", got, want)
+	for want := range w {
+		got, _ := s.Fetch(true)
+		if got != want {
+			t.Fatalf("got %d want %d", got, want)
 		}
 	}
 }

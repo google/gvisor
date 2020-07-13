@@ -75,6 +75,8 @@ package sleep
 import (
 	"sync/atomic"
 	"unsafe"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 const (
@@ -323,7 +325,12 @@ func (s *Sleeper) enqueueAssertedWaker(w *Waker) {
 //
 // This struct is thread-safe, that is, its methods can be called concurrently
 // by multiple goroutines.
+//
+// Note, it is not safe to copy a Waker as its fields are modified by value
+// (the pointer fields are individually modified with atomic operations).
 type Waker struct {
+	_ sync.NoCopy
+
 	// s is the sleeper that this waker can wake up. Only one sleeper at a
 	// time is allowed. This field can have three classes of values:
 	// nil -- the waker is not asserted: it either is not associated with

@@ -33,6 +33,7 @@ go_library(
         "aliases.go",
         "memmove_unsafe.go",
         "mutex_unsafe.go",
+        "nocopy.go",
         "norace_unsafe.go",
         "race_unsafe.go",
         "rwmutex_unsafe.go",
