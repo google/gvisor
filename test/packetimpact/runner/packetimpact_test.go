@@ -283,8 +283,8 @@ func TestOne(t *testing.T) {
 	// will issue a RST. To prevent this IPtables can be used to filter out all
 	// incoming packets. The raw socket that packetimpact tests use will still see
 	// everything.
-	if _, err := testbench.Exec(ctx, dockerutil.ExecOpts{}, "iptables", "-A", "INPUT", "-i", testNetDev, "-j", "DROP"); err != nil {
-		t.Fatalf("unable to Exec iptables on container %s: %s", testbench.Name, err)
+	if logs, err := testbench.Exec(ctx, dockerutil.ExecOpts{}, "iptables", "-A", "INPUT", "-i", testNetDev, "-j", "DROP"); err != nil {
+		t.Fatalf("unable to Exec iptables on container %s: %s, logs from testbench:\n%s", testbench.Name, err, logs)
 	}
 
 	// FIXME(b/156449515): Some piece of the system has a race. The old
@@ -307,12 +307,12 @@ func TestOne(t *testing.T) {
 		"--device", testNetDev,
 		"--dut_type", *dutPlatform,
 	)
-	_, err = testbench.Exec(ctx, dockerutil.ExecOpts{}, testArgs...)
+	logs, err := testbench.Exec(ctx, dockerutil.ExecOpts{}, testArgs...)
 	if !*expectFailure && err != nil {
-		t.Fatal("test failed:", err)
+		t.Fatalf("test failed: %v, logs from testbench:\n%s", err, logs)
 	}
 	if *expectFailure && err == nil {
-		t.Fatal("test failure expected but the test succeeded, enable the test and mark the corresponding bug as fixed")
+		t.Fatalf("test failure expected but the test succeeded, enable the test and mark the corresponding bug as fixed, logs from testbench:\n%s", logs)
 	}
 }
 
