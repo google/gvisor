@@ -621,7 +621,7 @@ func (conn *Connection) Drain() {
 type TCPIPv4 Connection
 
 // NewTCPIPv4 creates a new TCPIPv4 connection with reasonable defaults.
-func NewTCPIPv4(t *testing.T, outgoingTCP, incomingTCP TCP) TCPIPv4 {
+func NewTCPIPv4(t *testing.T, outgoingTCP, incomingTCP TCP) *TCPIPv4 {
 	etherState, err := newEtherState(Ether{}, Ether{})
 	if err != nil {
 		t.Fatalf("can't make etherState: %s", err)
@@ -643,7 +643,7 @@ func NewTCPIPv4(t *testing.T, outgoingTCP, incomingTCP TCP) TCPIPv4 {
 		t.Fatalf("can't make sniffer: %s", err)
 	}
 
-	return TCPIPv4{
+	return &TCPIPv4{
 		layerStates: []layerState{etherState, ipv4State, tcpState},
 		injector:    injector,
 		sniffer:     sniffer,
@@ -798,7 +798,7 @@ func (conn *TCPIPv4) Drain() {
 type IPv6Conn Connection
 
 // NewIPv6Conn creates a new IPv6Conn connection with reasonable defaults.
-func NewIPv6Conn(t *testing.T, outgoingIPv6, incomingIPv6 IPv6) IPv6Conn {
+func NewIPv6Conn(t *testing.T, outgoingIPv6, incomingIPv6 IPv6) *IPv6Conn {
 	etherState, err := newEtherState(Ether{}, Ether{})
 	if err != nil {
 		t.Fatalf("can't make EtherState: %s", err)
@@ -817,7 +817,7 @@ func NewIPv6Conn(t *testing.T, outgoingIPv6, incomingIPv6 IPv6) IPv6Conn {
 		t.Fatalf("can't make sniffer: %s", err)
 	}
 
-	return IPv6Conn{
+	return &IPv6Conn{
 		layerStates: []layerState{etherState, ipv6State},
 		injector:    injector,
 		sniffer:     sniffer,
@@ -846,7 +846,7 @@ func (conn *IPv6Conn) ExpectFrame(frame Layers, timeout time.Duration) (Layers, 
 type UDPIPv4 Connection
 
 // NewUDPIPv4 creates a new UDPIPv4 connection with reasonable defaults.
-func NewUDPIPv4(t *testing.T, outgoingUDP, incomingUDP UDP) UDPIPv4 {
+func NewUDPIPv4(t *testing.T, outgoingUDP, incomingUDP UDP) *UDPIPv4 {
 	etherState, err := newEtherState(Ether{}, Ether{})
 	if err != nil {
 		t.Fatalf("can't make etherState: %s", err)
@@ -868,7 +868,7 @@ func NewUDPIPv4(t *testing.T, outgoingUDP, incomingUDP UDP) UDPIPv4 {
 		t.Fatalf("can't make sniffer: %s", err)
 	}
 
-	return UDPIPv4{
+	return &UDPIPv4{
 		layerStates: []layerState{etherState, ipv4State, udpState},
 		injector:    injector,
 		sniffer:     sniffer,

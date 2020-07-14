@@ -143,7 +143,7 @@ func TestIPv6UnknownOptionAction(t *testing.T) {
 			dut := tb.NewDUT(t)
 			defer dut.TearDown()
 			ipv6Conn := tb.NewIPv6Conn(t, tb.IPv6{}, tb.IPv6{})
-			conn := (*tb.Connection)(&ipv6Conn)
+			conn := (*tb.Connection)(ipv6Conn)
 			defer ipv6Conn.Close()
 
 			outgoingOverride := tb.Layers{}

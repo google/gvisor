@@ -105,12 +105,12 @@ func TestIPv4RetransmitIdentificationUniqueness(t *testing.T) {
 
 			dut.Send(remoteFD, tc.payload, 0)
 			expectTCP := &testbench.TCP{SeqNum: testbench.Uint32(uint32(*conn.RemoteSeqNum()))}
-			originalID, err := recvTCPSegment(&conn, expectTCP, samplePayload)
+			originalID, err := recvTCPSegment(conn, expectTCP, samplePayload)
 			if err != nil {
 				t.Fatalf("failed to receive TCP segment: %s", err)
 			}
 
-			retransmitID, err := recvTCPSegment(&conn, expectTCP, samplePayload)
+			retransmitID, err := recvTCPSegment(conn, expectTCP, samplePayload)
 			if err != nil {
 				t.Fatalf("failed to receive retransmitted TCP segment: %s", err)
 			}

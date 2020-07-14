@@ -64,7 +64,7 @@ func TestCloseWaitAck(t *testing.T) {
 			windowSize := seqnum.Size(*gotTCP.WindowSize)
 
 			// Send a segment with OTW Seq / unacc ACK and expect an ACK back
-			conn.Send(tt.makeTestingTCP(&conn, tt.seqNumOffset, windowSize), &testbench.Payload{Bytes: []byte("Sample Data")})
+			conn.Send(tt.makeTestingTCP(conn, tt.seqNumOffset, windowSize), &testbench.Payload{Bytes: []byte("Sample Data")})
 			gotAck, err := conn.Expect(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, time.Second)
 			if tt.expectAck && err != nil {
 				t.Fatalf("expected an ack but got none: %s", err)

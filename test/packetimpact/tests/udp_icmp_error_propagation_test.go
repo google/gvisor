@@ -249,11 +249,11 @@ func TestUDPICMPErrorPropagation(t *testing.T) {
 						t.Fatalf("did not receive message from DUT: %s", err)
 					}
 
-					if err := sendICMPError(&conn, icmpErr, udp); err != nil {
+					if err := sendICMPError(conn, icmpErr, udp); err != nil {
 						t.Fatal(err)
 					}
 
-					errDetectConn := &conn
+					errDetectConn := conn
 					if errDetect.useValidConn {
 						// connClean is a UDP socket on the test runner that was not
 						// involved in the generation of the ICMP error. As such,
@@ -262,10 +262,10 @@ func TestUDPICMPErrorPropagation(t *testing.T) {
 						connClean := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
 						defer connClean.Close()
 
-						errDetectConn = &connClean
+						errDetectConn = connClean
 					}
 
-					if err := errDetect.f(context.Background(), testData{&dut, errDetectConn, remoteFD, remotePort, cleanFD, cleanPort, wantErrno}); err != nil {
+					if err := errDetect.f(context.Background(), testData{dut, errDetectConn, remoteFD, remotePort, cleanFD, cleanPort, wantErrno}); err != nil {
 						t.Fatal(err)
 					}
 				})
@@ -352,7 +352,7 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 				// alternative is available.
 				time.Sleep(2 * time.Second)
 
-				if err := sendICMPError(&conn, icmpErr, udp); err != nil {
+				if err := sendICMPError(conn, icmpErr, udp); err != nil {
 					t.Fatal(err)
 				}
 

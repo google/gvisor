@@ -37,7 +37,7 @@ type DUT struct {
 }
 
 // NewDUT creates a new connection with the DUT over gRPC.
-func NewDUT(t *testing.T) DUT {
+func NewDUT(t *testing.T) *DUT {
 	flag.Parse()
 	if err := genPseudoFlags(); err != nil {
 		t.Fatal("generating psuedo flags:", err)
@@ -49,7 +49,7 @@ func NewDUT(t *testing.T) DUT {
 		t.Fatalf("failed to grpc.Dial(%s): %s", posixServerAddress, err)
 	}
 	posixServer := NewPOSIXClient(conn)
-	return DUT{
+	return &DUT{
 		t:           t,
 		conn:        conn,
 		posixServer: posixServer,

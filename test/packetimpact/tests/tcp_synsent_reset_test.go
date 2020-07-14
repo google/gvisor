@@ -45,7 +45,7 @@ func dutSynSentState(t *testing.T) (*tb.DUT, *tb.TCPIPv4, uint16, uint16) {
 		t.Fatalf("expected SYN\n")
 	}
 
-	return &dut, &conn, port, clientPort
+	return dut, conn, port, clientPort
 }
 
 // TestTCPSynSentReset tests RFC793, p67: SYN-SENT to CLOSED transition.

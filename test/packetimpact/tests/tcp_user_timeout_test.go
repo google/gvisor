@@ -79,7 +79,7 @@ func TestTCPUserTimeout(t *testing.T) {
 					dut.SetSockOptInt(acceptFD, unix.SOL_TCP, unix.TCP_USER_TIMEOUT, int32(tt.userTimeout.Milliseconds()))
 				}
 
-				if err := ttf.f(&conn, &dut, acceptFD); err != nil {
+				if err := ttf.f(conn, dut, acceptFD); err != nil {
 					t.Fatal(err)
 				}
 
