@@ -53,9 +53,11 @@ while true; do
   fi
 done
 
+# Enable experimental features, for cross-building aarch64 images.
 # Enable Docker IPv6.
 cat > /etc/docker/daemon.json <<EOF
 {
+    "experimental": true,
     "fixed-cidr-v6": "2001:db8:1::/64",
     "ipv6": true
 }
