@@ -479,13 +479,13 @@ func TestCreateMountNamespaceVFS2(t *testing.T) {
 			defer l.Destroy()
 			defer loaderCleanup()
 
-			mntr := newContainerMounter(l.spec, l.goferFDs, l.k, l.mountHints)
-			if err := mntr.processHints(l.conf, l.rootProcArgs.Credentials); err != nil {
+			mntr := newContainerMounter(l.root.spec, l.root.goferFDs, l.k, l.mountHints)
+			if err := mntr.processHints(l.root.conf, l.root.procArgs.Credentials); err != nil {
 				t.Fatalf("failed process hints: %v", err)
 			}
 
 			ctx := l.k.SupervisorContext()
-			mns, err := mntr.setupVFS2(ctx, l.conf, &l.rootProcArgs)
+			mns, err := mntr.setupVFS2(ctx, l.root.conf, &l.root.procArgs)
 			if err != nil {
 				t.Fatalf("failed to setupVFS2: %v", err)
 			}
@@ -499,7 +499,7 @@ func TestCreateMountNamespaceVFS2(t *testing.T) {
 					Path:  fspath.Parse(p),
 				}
 
-				if d, err := l.k.VFS().GetDentryAt(ctx, l.rootProcArgs.Credentials, target, &vfs.GetDentryOptions{}); err != nil {
+				if d, err := l.k.VFS().GetDentryAt(ctx, l.root.procArgs.Credentials, target, &vfs.GetDentryOptions{}); err != nil {
 					t.Errorf("expected path %v to exist with spec %v, but got error %v", p, tc.spec, err)
 				} else {
 					d.DecRef()
