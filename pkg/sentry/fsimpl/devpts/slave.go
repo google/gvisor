@@ -73,8 +73,8 @@ func (si *slaveInode) Valid(context.Context) bool {
 }
 
 // Stat implements kernfs.Inode.Stat.
-func (si *slaveInode) Stat(vfsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
-	statx, err := si.InodeAttrs.Stat(vfsfs, opts)
+func (si *slaveInode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
+	statx, err := si.InodeAttrs.Stat(ctx, vfsfs, opts)
 	if err != nil {
 		return linux.Statx{}, err
 	}
@@ -183,7 +183,7 @@ func (sfd *slaveFileDescription) SetStat(ctx context.Context, opts vfs.SetStatOp
 // Stat implements vfs.FileDescriptionImpl.Stat.
 func (sfd *slaveFileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
 	fs := sfd.vfsfd.VirtualDentry().Mount().Filesystem()
-	return sfd.inode.Stat(fs, opts)
+	return sfd.inode.Stat(ctx, fs, opts)
 }
 
 // LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
