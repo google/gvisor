@@ -171,9 +171,9 @@ func TestIPv6UnknownOptionAction(t *testing.T) {
 				&tb.Ether{},
 				&tb.IPv6{},
 				&tb.ICMPv6{
-					Type:       tb.ICMPv6Type(header.ICMPv6ParamProblem),
-					Code:       tb.Byte(2),
-					NDPPayload: icmpv6Payload,
+					Type:    tb.ICMPv6Type(header.ICMPv6ParamProblem),
+					Code:    tb.Byte(2),
+					Payload: icmpv6Payload,
 				},
 			}, time.Second)
 			if tt.wantICMPv6 && err != nil {
