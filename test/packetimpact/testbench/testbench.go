@@ -44,6 +44,13 @@ var (
 	// RemoteIPv6 is the DUT's IPv6 address on the test network.
 	RemoteIPv6 = ""
 
+	// LocalInterfaceID is the ID of the local interface on the test network.
+	LocalInterfaceID uint32
+	// RemoteInterfaceID is the ID of the remote interface on the test network.
+	//
+	// Not using uint32 because package flag does not support uint32.
+	RemoteInterfaceID uint64
+
 	// LocalMAC is the local MAC address on the test network.
 	LocalMAC = ""
 	// RemoteMAC is the DUT's MAC address on the test network.
@@ -75,6 +82,7 @@ func RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&RemoteMAC, "remote_mac", RemoteMAC, "remote mac address for test packets")
 	fs.StringVar(&Device, "device", Device, "local device for test packets")
 	fs.StringVar(&DUTType, "dut_type", DUTType, "type of device under test")
+	fs.Uint64Var(&RemoteInterfaceID, "remote_interface_id", RemoteInterfaceID, "remote interface ID for test packets")
 }
 
 // genPseudoFlags populates flag-like global config based on real flags.
@@ -97,6 +105,7 @@ func genPseudoFlags() error {
 
 	LocalMAC = deviceInfo.MAC.String()
 	LocalIPv6 = deviceInfo.IPv6Addr.String()
+	LocalInterfaceID = deviceInfo.ID
 
 	if deviceInfo.IPv4Net != nil {
 		IPv4PrefixLength, _ = deviceInfo.IPv4Net.Mask.Size()

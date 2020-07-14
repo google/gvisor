@@ -87,7 +87,7 @@ func (dut *DUT) sockaddrToProto(sa unix.Sockaddr) *pb.Sockaddr {
 			},
 		}
 	}
-	dut.t.Fatalf("can't parse Sockaddr: %+v", sa)
+	dut.t.Fatalf("can't parse Sockaddr struct: %+v", sa)
 	return nil
 }
 
@@ -106,8 +106,9 @@ func (dut *DUT) protoToSockaddr(sa *pb.Sockaddr) unix.Sockaddr {
 			ZoneId: s.In6.GetScopeId(),
 		}
 		copy(ret.Addr[:], s.In6.GetAddr())
+		return &ret
 	}
-	dut.t.Fatalf("can't parse Sockaddr: %+v", sa)
+	dut.t.Fatalf("can't parse Sockaddr proto: %+v", sa)
 	return nil
 }
 
@@ -126,6 +127,7 @@ func (dut *DUT) CreateBoundSocket(typ, proto int32, addr net.IP) (int32, uint16)
 		fd = dut.Socket(unix.AF_INET6, typ, proto)
 		sa := unix.SockaddrInet6{}
 		copy(sa.Addr[:], addr.To16())
+		sa.ZoneId = uint32(RemoteInterfaceID)
 		dut.Bind(fd, &sa)
 	} else {
 		dut.t.Fatalf("unknown ip addr type for remoteIP")

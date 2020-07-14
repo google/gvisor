@@ -43,14 +43,16 @@ func portFromSockaddr(sa unix.Sockaddr) (uint16, error) {
 
 // pickPort makes a new socket and returns the socket FD and port. The domain should be AF_INET or AF_INET6. The caller must close the FD when done with
 // the port if there is no error.
-func pickPort(domain, typ int) (int, uint16, error) {
-	fd, err := unix.Socket(domain, typ, 0)
+func pickPort(domain, typ int) (fd int, port uint16, err error) {
+	fd, err = unix.Socket(domain, typ, 0)
 	if err != nil {
-		return -1, 0, err
+		return -1, 0, fmt.Errorf("creating socket: %w", err)
 	}
 	defer func() {
 		if err != nil {
-			err = multierr.Append(err, unix.Close(fd))
+			if cerr := unix.Close(fd); cerr != nil {
+				err = multierr.Append(err, fmt.Errorf("failed to close socket %d: %w", fd, cerr))
+			}
 		}
 	}()
 	var sa unix.Sockaddr
@@ -60,22 +62,22 @@ func pickPort(domain, typ int) (int, uint16, error) {
 		copy(sa4.Addr[:], net.ParseIP(LocalIPv4).To4())
 		sa = &sa4
 	case unix.AF_INET6:
-		var sa6 unix.SockaddrInet6
+		sa6 := unix.SockaddrInet6{ZoneId: uint32(LocalInterfaceID)}
 		copy(sa6.Addr[:], net.ParseIP(LocalIPv6).To16())
 		sa = &sa6
 	default:
 		return -1, 0, fmt.Errorf("invalid domain %d, it should be one of unix.AF_INET or unix.AF_INET6", domain)
 	}
 	if err = unix.Bind(fd, sa); err != nil {
-		return -1, 0, err
+		return -1, 0, fmt.Errorf("binding to %+v: %w", sa, err)
 	}
 	sa, err = unix.Getsockname(fd)
 	if err != nil {
-		return -1, 0, err
+		return -1, 0, fmt.Errorf("Getsocketname(%d): %w", fd, err)
 	}
-	port, err := portFromSockaddr(sa)
+	port, err = portFromSockaddr(sa)
 	if err != nil {
-		return -1, 0, err
+		return -1, 0, fmt.Errorf("extracting port from socket address %+v: %w", sa, err)
 	}
 	return fd, port, nil
 }
@@ -378,7 +380,7 @@ var _ layerState = (*udpState)(nil)
 func newUDPState(domain int, out, in UDP) (*udpState, error) {
 	portPickerFD, localPort, err := pickPort(domain, unix.SOCK_DGRAM)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("picking port: %w", err)
 	}
 	s := udpState{
 		out:          UDP{SrcPort: &localPort},
@@ -916,14 +918,14 @@ func (conn *UDPIPv4) SendIP(ip IPv4, udp UDP, additionalLayers ...Layer) {
 func (conn *UDPIPv4) Expect(udp UDP, timeout time.Duration) (*UDP, error) {
 	conn.t.Helper()
 	layer, err := (*Connection)(conn).Expect(&udp, timeout)
-	if layer == nil {
+	if err != nil {
 		return nil, err
 	}
 	gotUDP, ok := layer.(*UDP)
 	if !ok {
 		conn.t.Fatalf("expected %s to be UDP", layer)
 	}
-	return gotUDP, err
+	return gotUDP, nil
 }
 
 // ExpectData is a convenient method that expects a Layer and the Layer after
@@ -946,5 +948,116 @@ func (conn *UDPIPv4) Close() {
 // Drain drains the sniffer's receive buffer by receiving packets until there's
 // nothing else to receive.
 func (conn *UDPIPv4) Drain() {
+	conn.sniffer.Drain()
+}
+
+// UDPIPv6 maintains the state for all the layers in a UDP/IPv6 connection.
+type UDPIPv6 Connection
+
+// NewUDPIPv6 creates a new UDPIPv6 connection with reasonable defaults.
+func NewUDPIPv6(t *testing.T, outgoingUDP, incomingUDP UDP) UDPIPv6 {
+	etherState, err := newEtherState(Ether{}, Ether{})
+	if err != nil {
+		t.Fatalf("can't make etherState: %s", err)
+	}
+	ipv6State, err := newIPv6State(IPv6{}, IPv6{})
+	if err != nil {
+		t.Fatalf("can't make IPv6State: %s", err)
+	}
+	udpState, err := newUDPState(unix.AF_INET6, outgoingUDP, incomingUDP)
+	if err != nil {
+		t.Fatalf("can't make udpState: %s", err)
+	}
+	injector, err := NewInjector(t)
+	if err != nil {
+		t.Fatalf("can't make injector: %s", err)
+	}
+	sniffer, err := NewSniffer(t)
+	if err != nil {
+		t.Fatalf("can't make sniffer: %s", err)
+	}
+	return UDPIPv6{
+		layerStates: []layerState{etherState, ipv6State, udpState},
+		injector:    injector,
+		sniffer:     sniffer,
+		t:           t,
+	}
+}
+
+func (conn *UDPIPv6) udpState() *udpState {
+	state, ok := conn.layerStates[2].(*udpState)
+	if !ok {
+		conn.t.Fatalf("got transport-layer state type=%T, expected udpState", conn.layerStates[2])
+	}
+	return state
+}
+
+func (conn *UDPIPv6) ipv6State() *ipv6State {
+	state, ok := conn.layerStates[1].(*ipv6State)
+	if !ok {
+		conn.t.Fatalf("got network-layer state type=%T, expected ipv6State", conn.layerStates[1])
+	}
+	return state
+}
+
+// LocalAddr gets the local socket address of this connection.
+func (conn *UDPIPv6) LocalAddr() *unix.SockaddrInet6 {
+	sa := &unix.SockaddrInet6{
+		Port: int(*conn.udpState().out.SrcPort),
+		// Local address is in perspective to the remote host, so it's scoped to the
+		// ID of the remote interface.
+		ZoneId: uint32(RemoteInterfaceID),
+	}
+	copy(sa.Addr[:], *conn.ipv6State().out.SrcAddr)
+	return sa
+}
+
+// Send sends a packet with reasonable defaults, potentially overriding the UDP
+// layer and adding additionLayers.
+func (conn *UDPIPv6) Send(udp UDP, additionalLayers ...Layer) {
+	(*Connection)(conn).send(Layers{&udp}, additionalLayers...)
+}
+
+// SendIPv6 sends a packet with reasonable defaults, potentially overriding the
+// UDP and IPv6 headers and adding additionLayers.
+func (conn *UDPIPv6) SendIPv6(ip IPv6, udp UDP, additionalLayers ...Layer) {
+	(*Connection)(conn).send(Layers{&ip, &udp}, additionalLayers...)
+}
+
+// Expect expects a frame with the UDP layer matching the provided UDP within
+// the timeout specified. If it doesn't arrive in time, an error is returned.
+func (conn *UDPIPv6) Expect(udp UDP, timeout time.Duration) (*UDP, error) {
+	conn.t.Helper()
+	layer, err := (*Connection)(conn).Expect(&udp, timeout)
+	if err != nil {
+		return nil, err
+	}
+	gotUDP, ok := layer.(*UDP)
+	if !ok {
+		conn.t.Fatalf("expected %s to be UDP", layer)
+	}
+	return gotUDP, nil
+}
+
+// ExpectData is a convenient method that expects a Layer and the Layer after
+// it. If it doens't arrive in time, it returns nil.
+func (conn *UDPIPv6) ExpectData(udp UDP, payload Payload, timeout time.Duration) (Layers, error) {
+	conn.t.Helper()
+	expected := make([]Layer, len(conn.layerStates))
+	expected[len(expected)-1] = &udp
+	if payload.length() != 0 {
+		expected = append(expected, &payload)
+	}
+	return (*Connection)(conn).ExpectFrame(expected, timeout)
+}
+
+// Close frees associated resources held by the UDPIPv6 connection.
+func (conn *UDPIPv6) Close() {
+	(*Connection)(conn).Close()
+}
+
+// Drain drains the sniffer's receive buffer by receiving packets until there's
+// nothing else to receive.
+func (conn *UDPIPv6) Drain() {
 	conn.sniffer.Drain()
 }

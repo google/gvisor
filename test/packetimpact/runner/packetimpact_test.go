@@ -304,6 +304,7 @@ func TestOne(t *testing.T) {
 		"--local_ipv4", addressInSubnet(testbenchAddr, *testNet.Subnet).String(),
 		"--remote_ipv6", remoteIPv6.String(),
 		"--remote_mac", remoteMAC.String(),
+		"--remote_interface_id", fmt.Sprintf("%d", dutDeviceInfo.ID),
 		"--device", testNetDev,
 		"--dut_type", *dutPlatform,
 	)

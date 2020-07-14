@@ -53,7 +53,10 @@
       response_in6->set_flowinfo(ntohl(addr_in6->sin6_flowinfo));
       response_in6->mutable_addr()->assign(
           reinterpret_cast<const char *>(&addr_in6->sin6_addr.s6_addr), 16);
-      response_in6->set_scope_id(ntohl(addr_in6->sin6_scope_id));
+      // sin6_scope_id is stored in host byte order.
+      //
+      // https://www.gnu.org/software/libc/manual/html_node/Internet-Address-Formats.html
+      response_in6->set_scope_id(addr_in6->sin6_scope_id);
       return ::grpc::Status::OK;
     }
   }
@@ -89,7 +92,10 @@
       addr_in6->sin6_flowinfo = htonl(proto_in6.flowinfo());
       proto_in6.addr().copy(
           reinterpret_cast<char *>(&addr_in6->sin6_addr.s6_addr), 16);
-      addr_in6->sin6_scope_id = htonl(proto_in6.scope_id());
+      // sin6_scope_id is stored in host byte order.
+      //
+      // https://www.gnu.org/software/libc/manual/html_node/Internet-Address-Formats.html
+      addr_in6->sin6_scope_id = proto_in6.scope_id();
       *addr_len = sizeof(*addr_in6);
       break;
     }
