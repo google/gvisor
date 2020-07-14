@@ -122,6 +122,7 @@ func TestConsoleSocket(t *testing.T) {
 	for name, conf := range configsWithVFS2(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			spec := testutil.NewSpecWithArgs("true")
+			spec.Process.Terminal = true
 			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 			if err != nil {
 				t.Fatalf("error setting up container: %v", err)
