@@ -41,8 +41,8 @@ func TestICMPv6ParamProblemTest(t *testing.T) {
 		NextHeader: testbench.Uint8(254),
 	}
 	icmpv6 := testbench.ICMPv6{
-		Type:       testbench.ICMPv6Type(header.ICMPv6EchoRequest),
-		NDPPayload: []byte("hello world"),
+		Type:    testbench.ICMPv6Type(header.ICMPv6EchoRequest),
+		Payload: []byte("hello world"),
 	}
 
 	toSend := (*testbench.Connection)(&conn).CreateFrame(testbench.Layers{&ipv6}, &icmpv6)
@@ -62,8 +62,8 @@ func TestICMPv6ParamProblemTest(t *testing.T) {
 	binary.BigEndian.PutUint32(b, header.IPv6NextHeaderOffset)
 	expectedPayload = append(b, expectedPayload...)
 	expectedICMPv6 := testbench.ICMPv6{
-		Type:       testbench.ICMPv6Type(header.ICMPv6ParamProblem),
-		NDPPayload: expectedPayload,
+		Type:    testbench.ICMPv6Type(header.ICMPv6ParamProblem),
+		Payload: expectedPayload,
 	}
 
 	paramProblem := testbench.Layers{

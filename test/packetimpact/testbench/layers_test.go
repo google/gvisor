@@ -593,10 +593,107 @@ func TestIPv6ExtHdrOptions(t *testing.T) {
 					Options:    []byte{0x05, 0x02, 0x00, 0x00, 0x01, 0x00},
 				},
 				&ICMPv6{
-					Type:       ICMPv6Type(header.ICMPv6ParamProblem),
-					Code:       Byte(0),
-					Checksum:   Uint16(0x5f98),
-					NDPPayload: []byte{0x00, 0x00, 0x00, 0x06},
+					Type:     ICMPv6Type(header.ICMPv6ParamProblem),
+					Code:     Byte(0),
+					Checksum: Uint16(0x5f98),
+					Payload:  []byte{0x00, 0x00, 0x00, 0x06},
+				},
+			},
+		},
+		{
+			description: "IPv6/HopByHop/Fragment",
+			wantBytes: []byte{
+				// IPv6 Header
+				0x60, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x40, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x01, 0xfe, 0x80, 0x00, 0x00, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xde, 0xad, 0xbe, 0xef,
+				// HopByHop Options
+				0x2c, 0x00, 0x05, 0x02, 0x00, 0x00, 0x01, 0x00,
+				// Fragment ExtHdr
+				0x3b, 0x00, 0x03, 0x20, 0x00, 0x00, 0x00, 0x2a,
+			},
+			wantLayers: []Layer{
+				&IPv6{
+					SrcAddr: Address(tcpip.Address(net.ParseIP("::1"))),
+					DstAddr: Address(tcpip.Address(net.ParseIP("fe80::dead:beef"))),
+				},
+				&IPv6HopByHopOptionsExtHdr{
+					NextHeader: IPv6ExtHdrIdent(header.IPv6FragmentExtHdrIdentifier),
+					Options:    []byte{0x05, 0x02, 0x00, 0x00, 0x01, 0x00},
+				},
+				&IPv6FragmentExtHdr{
+					NextHeader:     IPv6ExtHdrIdent(header.IPv6NoNextHeaderIdentifier),
+					FragmentOffset: Uint16(100),
+					MoreFragments:  Bool(false),
+					Identification: Uint32(42),
+				},
+				&Payload{
+					Bytes: nil,
+				},
+			},
+		},
+		{
+			description: "IPv6/DestOpt/Fragment/Payload",
+			wantBytes: []byte{
+				// IPv6 Header
+				0x60, 0x00, 0x00, 0x00, 0x00, 0x1b, 0x3c, 0x40, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x01, 0xfe, 0x80, 0x00, 0x00, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xde, 0xad, 0xbe, 0xef,
+				// Destination Options
+				0x2c, 0x00, 0x05, 0x02, 0x00, 0x00, 0x01, 0x00,
+				// Fragment ExtHdr
+				0x3b, 0x00, 0x03, 0x21, 0x00, 0x00, 0x00, 0x2a,
+				// Sample Data
+				0x53, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x20, 0x44, 0x61, 0x74, 0x61,
+			},
+			wantLayers: []Layer{
+				&IPv6{
+					SrcAddr: Address(tcpip.Address(net.ParseIP("::1"))),
+					DstAddr: Address(tcpip.Address(net.ParseIP("fe80::dead:beef"))),
+				},
+				&IPv6DestinationOptionsExtHdr{
+					NextHeader: IPv6ExtHdrIdent(header.IPv6FragmentExtHdrIdentifier),
+					Options:    []byte{0x05, 0x02, 0x00, 0x00, 0x01, 0x00},
+				},
+				&IPv6FragmentExtHdr{
+					NextHeader:     IPv6ExtHdrIdent(header.IPv6NoNextHeaderIdentifier),
+					FragmentOffset: Uint16(100),
+					MoreFragments:  Bool(true),
+					Identification: Uint32(42),
+				},
+				&Payload{
+					Bytes: []byte("Sample Data"),
+				},
+			},
+		},
+		{
+			description: "IPv6/Fragment/Payload",
+			wantBytes: []byte{
+				// IPv6 Header
+				0x60, 0x00, 0x00, 0x00, 0x00, 0x13, 0x2c, 0x40, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x01, 0xfe, 0x80, 0x00, 0x00, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xde, 0xad, 0xbe, 0xef,
+				// Fragment ExtHdr
+				0x3b, 0x00, 0x03, 0x21, 0x00, 0x00, 0x00, 0x2a,
+				// Sample Data
+				0x53, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x20, 0x44, 0x61, 0x74, 0x61,
+			},
+			wantLayers: []Layer{
+				&IPv6{
+					SrcAddr: Address(tcpip.Address(net.ParseIP("::1"))),
+					DstAddr: Address(tcpip.Address(net.ParseIP("fe80::dead:beef"))),
+				},
+				&IPv6FragmentExtHdr{
+					NextHeader:     IPv6ExtHdrIdent(header.IPv6NoNextHeaderIdentifier),
+					FragmentOffset: Uint16(100),
+					MoreFragments:  Bool(true),
+					Identification: Uint32(42),
+				},
+				&Payload{
+					Bytes: []byte("Sample Data"),
 				},
 			},
 		},
@@ -605,6 +702,19 @@ func TestIPv6ExtHdrOptions(t *testing.T) {
 			layers := parse(parseIPv6, tt.wantBytes)
 			if !layers.match(tt.wantLayers) {
 				t.Fatalf("match failed with diff: %s", layers.diff(tt.wantLayers))
+			}
+			// Make sure we can generate correct next header values and checksums
+			for _, layer := range layers {
+				switch layer := layer.(type) {
+				case *IPv6HopByHopOptionsExtHdr:
+					layer.NextHeader = nil
+				case *IPv6DestinationOptionsExtHdr:
+					layer.NextHeader = nil
+				case *IPv6FragmentExtHdr:
+					layer.NextHeader = nil
+				case *ICMPv6:
+					layer.Checksum = nil
+				}
 			}
 			gotBytes, err := layers.ToBytes()
 			if err != nil {
