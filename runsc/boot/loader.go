@@ -77,6 +77,22 @@ import (
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/unix"
 )
 
+type containerInfo struct {
+	conf *Config
+
+	// spec is the base configuration for the root container.
+	spec *specs.Spec
+
+	// procArgs refers to the container's init task.
+	procArgs kernel.CreateProcessArgs
+
+	// stdioFDs contains stdin, stdout, and stderr.
+	stdioFDs []int
+
+	// goferFDs are the FDs that attach the sandbox to the gofers.
+	goferFDs []int
+}
+
 // Loader keeps state needed to start the kernel and run the container..
 type Loader struct {
 	// k is the kernel.
@@ -85,21 +101,10 @@ type Loader struct {
 	// ctrl is the control server.
 	ctrl *controller
 
-	conf *Config
-
-	// console is set to true if terminal is enabled.
-	console bool
+	// root contains information about the root container in the sandbox.
+	root containerInfo
 
 	watchdog *watchdog.Watchdog
-
-	// stdioFDs contains stdin, stdout, and stderr.
-	stdioFDs []int
-
-	// goferFDs are the FDs that attach the sandbox to the gofers.
-	goferFDs []int
-
-	// spec is the base configuration for the root container.
-	spec *specs.Spec
 
 	// stopSignalForwarding disables forwarding of signals to the sandboxed
 	// container. It should be called when a sandbox is destroyed.
@@ -107,9 +112,6 @@ type Loader struct {
 
 	// restore is set to true if we are restoring a container.
 	restore bool
-
-	// rootProcArgs refers to the root sandbox init task.
-	rootProcArgs kernel.CreateProcessArgs
 
 	// sandboxID is the ID for the whole sandbox.
 	sandboxID string
@@ -175,8 +177,6 @@ type Args struct {
 	// StdioFDs is the stdio for the application. The Loader takes ownership of
 	// these FDs and may close them at any time.
 	StdioFDs []int
-	// Console is set to true if using TTY.
-	Console bool
 	// NumCPU is the number of CPUs to create inside the sandbox.
 	NumCPU int
 	// TotalMem is the initial amount of total memory to report back to the
@@ -322,7 +322,7 @@ func New(args Args) (*Loader, error) {
 	dogOpts.TaskTimeoutAction = args.Conf.WatchdogAction
 	dog := watchdog.New(k, dogOpts)
 
-	procArgs, err := newProcess(args.ID, args.Spec, creds, k, k.RootPIDNamespace())
+	procArgs, err := createProcessArgs(args.ID, args.Spec, creds, k, k.RootPIDNamespace())
 	if err != nil {
 		return nil, fmt.Errorf("creating init process for root container: %v", err)
 	}
@@ -370,17 +370,18 @@ func New(args Args) (*Loader, error) {
 
 	eid := execID{cid: args.ID}
 	l := &Loader{
-		k:            k,
-		conf:         args.Conf,
-		console:      args.Console,
-		watchdog:     dog,
-		spec:         args.Spec,
-		goferFDs:     args.GoferFDs,
-		stdioFDs:     stdioFDs,
-		rootProcArgs: procArgs,
-		sandboxID:    args.ID,
-		processes:    map[execID]*execProcess{eid: {}},
-		mountHints:   mountHints,
+		k:          k,
+		watchdog:   dog,
+		sandboxID:  args.ID,
+		processes:  map[execID]*execProcess{eid: {}},
+		mountHints: mountHints,
+		root: containerInfo{
+			conf:     args.Conf,
+			stdioFDs: stdioFDs,
+			goferFDs: args.GoferFDs,
+			spec:     args.Spec,
+			procArgs: procArgs,
+		},
 	}
 
 	// We don't care about child signals; some platforms can generate a
@@ -408,8 +409,8 @@ func New(args Args) (*Loader, error) {
 	return l, nil
 }
 
-// newProcess creates a process that can be run with kernel.CreateProcess.
-func newProcess(id string, spec *specs.Spec, creds *auth.Credentials, k *kernel.Kernel, pidns *kernel.PIDNamespace) (kernel.CreateProcessArgs, error) {
+// createProcessArgs creates args that can be used with kernel.CreateProcess.
+func createProcessArgs(id string, spec *specs.Spec, creds *auth.Credentials, k *kernel.Kernel, pidns *kernel.PIDNamespace) (kernel.CreateProcessArgs, error) {
 	// Create initial limits.
 	ls, err := createLimitSet(spec)
 	if err != nil {
@@ -483,13 +484,13 @@ func createMemoryFile() (*pgalloc.MemoryFile, error) {
 }
 
 func (l *Loader) installSeccompFilters() error {
-	if l.conf.DisableSeccomp {
+	if l.root.conf.DisableSeccomp {
 		filter.Report("syscall filter is DISABLED. Running in less secure mode.")
 	} else {
 		opts := filter.Options{
 			Platform:      l.k.Platform,
-			HostNetwork:   l.conf.Network == NetworkHost,
-			ProfileEnable: l.conf.ProfileEnable,
+			HostNetwork:   l.root.conf.Network == NetworkHost,
+			ProfileEnable: l.root.conf.ProfileEnable,
 			ControllerFD:  l.ctrl.srv.FD(),
 		}
 		if err := filter.Install(opts); err != nil {
@@ -515,7 +516,7 @@ func (l *Loader) Run() error {
 }
 
 func (l *Loader) run() error {
-	if l.conf.Network == NetworkHost {
+	if l.root.conf.Network == NetworkHost {
 		// Delay host network configuration to this point because network namespace
 		// is configured after the loader is created and before Run() is called.
 		log.Debugf("Configuring host network")
@@ -536,10 +537,8 @@ func (l *Loader) run() error {
 
 	// If we are restoring, we do not want to create a process.
 	// l.restore is set by the container manager when a restore call is made.
-	var ttyFile *host.TTYFileOperations
-	var ttyFileVFS2 *hostvfs2.TTYFileDescription
 	if !l.restore {
-		if l.conf.ProfileEnable {
+		if l.root.conf.ProfileEnable {
 			pprof.Initialize()
 		}
 
@@ -549,82 +548,29 @@ func (l *Loader) run() error {
 			return err
 		}
 
-		// Create the FD map, which will set stdin, stdout, and stderr.  If console
-		// is true, then ioctl calls will be passed through to the host fd.
-		ctx := l.rootProcArgs.NewContext(l.k)
-		var err error
-
-		// CreateProcess takes a reference on FDMap if successful. We won't need
-		// ours either way.
-		l.rootProcArgs.FDTable, ttyFile, ttyFileVFS2, err = createFDTable(ctx, l.console, l.stdioFDs)
-		if err != nil {
-			return fmt.Errorf("importing fds: %v", err)
-		}
-
-		// Setup the root container file system.
-		l.startGoferMonitor(l.sandboxID, l.goferFDs)
-
-		mntr := newContainerMounter(l.spec, l.goferFDs, l.k, l.mountHints)
-		if err := mntr.processHints(l.conf, l.rootProcArgs.Credentials); err != nil {
-			return err
-		}
-		if err := setupContainerFS(ctx, l.conf, mntr, &l.rootProcArgs); err != nil {
-			return err
-		}
-
-		// Add the HOME enviroment variable if it is not already set.
-		var envv []string
-		if kernel.VFS2Enabled {
-			envv, err = user.MaybeAddExecUserHomeVFS2(ctx, l.rootProcArgs.MountNamespaceVFS2,
-				l.rootProcArgs.Credentials.RealKUID, l.rootProcArgs.Envv)
-
-		} else {
-			envv, err = user.MaybeAddExecUserHome(ctx, l.rootProcArgs.MountNamespace,
-				l.rootProcArgs.Credentials.RealKUID, l.rootProcArgs.Envv)
-		}
-		if err != nil {
-			return err
-		}
-		l.rootProcArgs.Envv = envv
-
 		// Create the root container init task. It will begin running
 		// when the kernel is started.
-		if _, _, err := l.k.CreateProcess(l.rootProcArgs); err != nil {
-			return fmt.Errorf("creating init process: %v", err)
+		if _, err := l.createContainerProcess(true, l.sandboxID, &l.root, ep); err != nil {
+			return err
 		}
-
-		// CreateProcess takes a reference on FDTable if successful.
-		l.rootProcArgs.FDTable.DecRef()
 	}
 
 	ep.tg = l.k.GlobalInit()
-	if ns, ok := specutils.GetNS(specs.PIDNamespace, l.spec); ok {
+	if ns, ok := specutils.GetNS(specs.PIDNamespace, l.root.spec); ok {
 		ep.pidnsPath = ns.Path
-	}
-	if l.console {
-		// Set the foreground process group on the TTY to the global init process
-		// group, since that is what we are about to start running.
-		switch {
-		case ttyFileVFS2 != nil:
-			ep.ttyVFS2 = ttyFileVFS2
-			ttyFileVFS2.InitForegroundProcessGroup(ep.tg.ProcessGroup())
-		case ttyFile != nil:
-			ep.tty = ttyFile
-			ttyFile.InitForegroundProcessGroup(ep.tg.ProcessGroup())
-		}
 	}
 
 	// Handle signals by forwarding them to the root container process
 	// (except for panic signal, which should cause a panic).
 	l.stopSignalForwarding = sighandling.StartSignalForwarding(func(sig linux.Signal) {
 		// Panic signal should cause a panic.
-		if l.conf.PanicSignal != -1 && sig == linux.Signal(l.conf.PanicSignal) {
+		if l.root.conf.PanicSignal != -1 && sig == linux.Signal(l.root.conf.PanicSignal) {
 			panic("Signal-induced panic")
 		}
 
 		// Otherwise forward to root container.
 		deliveryMode := DeliverToProcess
-		if l.console {
+		if l.root.spec.Process.Terminal {
 			// Since we are running with a console, we should forward the signal to
 			// the foreground process group so that job control signals like ^C can
 			// be handled properly.
@@ -641,7 +587,7 @@ func (l *Loader) run() error {
 	// during restore, we can release l.stdioFDs now. VFS2 takes ownership of the
 	// passed FDs, so only close for VFS1.
 	if !kernel.VFS2Enabled {
-		for _, fd := range l.stdioFDs {
+		for _, fd := range l.root.stdioFDs {
 			err := syscall.Close(fd)
 			if err != nil {
 				return fmt.Errorf("close dup()ed stdioFDs: %v", err)
@@ -680,8 +626,8 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *Config, cid string, file
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	eid := execID{cid: cid}
-	if _, ok := l.processes[eid]; !ok {
+	ep := l.processes[execID{cid: cid}]
+	if ep == nil {
 		return fmt.Errorf("trying to start a deleted container %q", cid)
 	}
 
@@ -715,76 +661,112 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *Config, cid string, file
 		if pidns == nil {
 			pidns = l.k.RootPIDNamespace().NewChild(l.k.RootUserNamespace())
 		}
-		l.processes[eid].pidnsPath = ns.Path
+		ep.pidnsPath = ns.Path
 	} else {
 		pidns = l.k.RootPIDNamespace()
 	}
-	procArgs, err := newProcess(cid, spec, creds, l.k, pidns)
+
+	info := &containerInfo{
+		conf: conf,
+		spec: spec,
+	}
+	info.procArgs, err = createProcessArgs(cid, spec, creds, l.k, pidns)
 	if err != nil {
 		return fmt.Errorf("creating new process: %v", err)
 	}
 
 	// setupContainerFS() dups stdioFDs, so we don't need to dup them here.
-	var stdioFDs []int
 	for _, f := range files[:3] {
-		stdioFDs = append(stdioFDs, int(f.Fd()))
+		info.stdioFDs = append(info.stdioFDs, int(f.Fd()))
 	}
-
-	// Create the FD map, which will set stdin, stdout, and stderr.
-	ctx := procArgs.NewContext(l.k)
-	fdTable, _, _, err := createFDTable(ctx, false, stdioFDs)
-	if err != nil {
-		return fmt.Errorf("importing fds: %v", err)
-	}
-	// CreateProcess takes a reference on fdTable if successful. We won't
-	// need ours either way.
-	procArgs.FDTable = fdTable
 
 	// Can't take ownership away from os.File. dup them to get a new FDs.
-	var goferFDs []int
 	for _, f := range files[3:] {
 		fd, err := syscall.Dup(int(f.Fd()))
 		if err != nil {
 			return fmt.Errorf("failed to dup file: %v", err)
 		}
-		goferFDs = append(goferFDs, fd)
+		info.goferFDs = append(info.goferFDs, fd)
 	}
 
-	// Setup the child container file system.
-	l.startGoferMonitor(cid, goferFDs)
-
-	mntr := newContainerMounter(spec, goferFDs, l.k, l.mountHints)
-	if err := setupContainerFS(ctx, conf, mntr, &procArgs); err != nil {
+	tg, err := l.createContainerProcess(false, cid, info, ep)
+	if err != nil {
 		return err
+	}
+
+	// Success!
+	l.k.StartProcess(tg)
+	ep.tg = tg
+	return nil
+}
+
+func (l *Loader) createContainerProcess(root bool, cid string, info *containerInfo, ep *execProcess) (*kernel.ThreadGroup, error) {
+	console := false
+	if root {
+		// Only root container supports terminal for now.
+		console = info.spec.Process.Terminal
+	}
+
+	// Create the FD map, which will set stdin, stdout, and stderr.
+	ctx := info.procArgs.NewContext(l.k)
+	fdTable, ttyFile, ttyFileVFS2, err := createFDTable(ctx, console, info.stdioFDs)
+	if err != nil {
+		return nil, fmt.Errorf("importing fds: %v", err)
+	}
+	// CreateProcess takes a reference on fdTable if successful. We won't need
+	// ours either way.
+	info.procArgs.FDTable = fdTable
+
+	// Setup the child container file system.
+	l.startGoferMonitor(cid, info.goferFDs)
+
+	mntr := newContainerMounter(info.spec, info.goferFDs, l.k, l.mountHints)
+	if root {
+		if err := mntr.processHints(info.conf, info.procArgs.Credentials); err != nil {
+			return nil, err
+		}
+	}
+	if err := setupContainerFS(ctx, info.conf, mntr, &info.procArgs); err != nil {
+		return nil, err
 	}
 
 	// Add the HOME enviroment variable if it is not already set.
 	var envv []string
 	if kernel.VFS2Enabled {
-		envv, err = user.MaybeAddExecUserHomeVFS2(ctx, procArgs.MountNamespaceVFS2,
-			procArgs.Credentials.RealKUID, procArgs.Envv)
+		envv, err = user.MaybeAddExecUserHomeVFS2(ctx, info.procArgs.MountNamespaceVFS2,
+			info.procArgs.Credentials.RealKUID, info.procArgs.Envv)
 
 	} else {
-		envv, err = user.MaybeAddExecUserHome(ctx, procArgs.MountNamespace,
-			procArgs.Credentials.RealKUID, procArgs.Envv)
+		envv, err = user.MaybeAddExecUserHome(ctx, info.procArgs.MountNamespace,
+			info.procArgs.Credentials.RealKUID, info.procArgs.Envv)
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
-	procArgs.Envv = envv
+	info.procArgs.Envv = envv
 
 	// Create and start the new process.
-	tg, _, err := l.k.CreateProcess(procArgs)
+	tg, _, err := l.k.CreateProcess(info.procArgs)
 	if err != nil {
-		return fmt.Errorf("creating process: %v", err)
+		return nil, fmt.Errorf("creating process: %v", err)
 	}
-	l.k.StartProcess(tg)
-
 	// CreateProcess takes a reference on FDTable if successful.
-	procArgs.FDTable.DecRef()
+	info.procArgs.FDTable.DecRef()
 
-	l.processes[eid].tg = tg
-	return nil
+	// Set the foreground process group on the TTY to the global init process
+	// group, since that is what we are about to start running.
+	if root {
+		switch {
+		case ttyFileVFS2 != nil:
+			ep.ttyVFS2 = ttyFileVFS2
+			ttyFileVFS2.InitForegroundProcessGroup(tg.ProcessGroup())
+		case ttyFile != nil:
+			ep.tty = ttyFile
+			ttyFile.InitForegroundProcessGroup(tg.ProcessGroup())
+		}
+	}
+
+	return tg, nil
 }
 
 // startGoferMonitor runs a goroutine to monitor gofer's health. It polls on

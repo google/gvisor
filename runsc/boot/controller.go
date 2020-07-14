@@ -155,7 +155,7 @@ func newController(fd int, l *Loader) (*controller, error) {
 
 	srv.Register(&debug{})
 	srv.Register(&control.Logging{})
-	if l.conf.ProfileEnable {
+	if l.root.conf.ProfileEnable {
 		srv.Register(&control.Profile{
 			Kernel: l.k,
 		})
@@ -333,7 +333,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	// Pause the kernel while we build a new one.
 	cm.l.k.Pause()
 
-	p, err := createPlatform(cm.l.conf, deviceFile)
+	p, err := createPlatform(cm.l.root.conf, deviceFile)
 	if err != nil {
 		return fmt.Errorf("creating platform: %v", err)
 	}
@@ -349,8 +349,8 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	cm.l.k = k
 
 	// Set up the restore environment.
-	mntr := newContainerMounter(cm.l.spec, cm.l.goferFDs, cm.l.k, cm.l.mountHints)
-	renv, err := mntr.createRestoreEnvironment(cm.l.conf)
+	mntr := newContainerMounter(cm.l.root.spec, cm.l.root.goferFDs, cm.l.k, cm.l.mountHints)
+	renv, err := mntr.createRestoreEnvironment(cm.l.root.conf)
 	if err != nil {
 		return fmt.Errorf("creating RestoreEnvironment: %v", err)
 	}
@@ -368,7 +368,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return fmt.Errorf("file cannot be empty")
 	}
 
-	if cm.l.conf.ProfileEnable {
+	if cm.l.root.conf.ProfileEnable {
 		// pprof.Initialize opens /proc/self/maps, so has to be called before
 		// installing seccomp filters.
 		pprof.Initialize()
@@ -387,13 +387,13 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 
 	// Since we have a new kernel we also must make a new watchdog.
 	dogOpts := watchdog.DefaultOpts
-	dogOpts.TaskTimeoutAction = cm.l.conf.WatchdogAction
+	dogOpts.TaskTimeoutAction = cm.l.root.conf.WatchdogAction
 	dog := watchdog.New(k, dogOpts)
 
 	// Change the loader fields to reflect the changes made when restoring.
 	cm.l.k = k
 	cm.l.watchdog = dog
-	cm.l.rootProcArgs = kernel.CreateProcessArgs{}
+	cm.l.root.procArgs = kernel.CreateProcessArgs{}
 	cm.l.restore = true
 
 	// Reinitialize the sandbox ID and processes map. Note that it doesn't
