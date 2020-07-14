@@ -132,7 +132,7 @@ func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirent
 	opts := vfs.StatOptions{Mask: linux.STATX_INO}
 	// Handle ".".
 	if fd.off == 0 {
-		stat, err := fd.inode().Stat(fd.filesystem(), opts)
+		stat, err := fd.inode().Stat(ctx, fd.filesystem(), opts)
 		if err != nil {
 			return err
 		}
@@ -152,7 +152,7 @@ func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirent
 	if fd.off == 1 {
 		vfsd := fd.vfsfd.VirtualDentry().Dentry()
 		parentInode := genericParentOrSelf(vfsd.Impl().(*Dentry)).inode
-		stat, err := parentInode.Stat(fd.filesystem(), opts)
+		stat, err := parentInode.Stat(ctx, fd.filesystem(), opts)
 		if err != nil {
 			return err
 		}
@@ -176,7 +176,7 @@ func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirent
 	childIdx := fd.off - 2
 	for it := fd.children.nthLocked(childIdx); it != nil; it = it.Next() {
 		inode := it.Dentry.Impl().(*Dentry).inode
-		stat, err := inode.Stat(fd.filesystem(), opts)
+		stat, err := inode.Stat(ctx, fd.filesystem(), opts)
 		if err != nil {
 			return err
 		}
@@ -226,7 +226,7 @@ func (fd *GenericDirectoryFD) Seek(ctx context.Context, offset int64, whence int
 func (fd *GenericDirectoryFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
 	fs := fd.filesystem()
 	inode := fd.inode()
-	return inode.Stat(fs, opts)
+	return inode.Stat(ctx, fs, opts)
 }
 
 // SetStat implements vfs.FileDescriptionImpl.SetStat.

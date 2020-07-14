@@ -206,8 +206,8 @@ func (i *tasksInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.
 	return fd.VFSFileDescription(), nil
 }
 
-func (i *tasksInode) Stat(vsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
-	stat, err := i.InodeAttrs.Stat(vsfs, opts)
+func (i *tasksInode) Stat(ctx context.Context, vsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
+	stat, err := i.InodeAttrs.Stat(ctx, vsfs, opts)
 	if err != nil {
 		return linux.Statx{}, err
 	}
