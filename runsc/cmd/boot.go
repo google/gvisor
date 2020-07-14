@@ -54,10 +54,6 @@ type Boot struct {
 	// provided in that order.
 	stdioFDs intFlags
 
-	// console is set to true if the sandbox should allow terminal ioctl(2)
-	// syscalls.
-	console bool
-
 	// applyCaps determines if capabilities defined in the spec should be applied
 	// to the process.
 	applyCaps bool
@@ -115,7 +111,6 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.deviceFD, "device-fd", -1, "FD for the platform device file")
 	f.Var(&b.ioFDs, "io-fds", "list of FDs to connect 9P clients. They must follow this order: root first, then mounts as defined in the spec")
 	f.Var(&b.stdioFDs, "stdio-fds", "list of FDs containing sandbox stdin, stdout, and stderr in that order")
-	f.BoolVar(&b.console, "console", false, "set to true if the sandbox should allow terminal ioctl(2) syscalls")
 	f.BoolVar(&b.applyCaps, "apply-caps", false, "if true, apply capabilities defined in the spec to the process")
 	f.BoolVar(&b.setUpRoot, "setup-root", false, "if true, set up an empty root for the process")
 	f.BoolVar(&b.pidns, "pidns", false, "if true, the sandbox is in its own PID namespace")
@@ -229,7 +224,6 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		Device:       os.NewFile(uintptr(b.deviceFD), "platform device"),
 		GoferFDs:     b.ioFDs.GetArray(),
 		StdioFDs:     b.stdioFDs.GetArray(),
-		Console:      b.console,
 		NumCPU:       b.cpuNum,
 		TotalMem:     b.totalMem,
 		UserLogFD:    b.userLogFD,

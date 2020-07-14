@@ -478,9 +478,7 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 
 	// If the console control socket file is provided, then create a new
 	// pty master/slave pair and set the TTY on the sandbox process.
-	if args.ConsoleSocket != "" {
-		cmd.Args = append(cmd.Args, "--console=true")
-
+	if args.Spec.Process.Terminal && args.ConsoleSocket != "" {
 		// console.NewWithSocket will send the master on the given
 		// socket, and return the slave.
 		tty, err := console.NewWithSocket(args.ConsoleSocket)
