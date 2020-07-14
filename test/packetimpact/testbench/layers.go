@@ -904,12 +904,14 @@ func payload(l Layer) (buffer.VectorisedView, error) {
 func layerChecksum(l Layer, protoNumber tcpip.TransportProtocolNumber) (uint16, error) {
 	totalLength := uint16(totalLength(l))
 	var xsum uint16
-	switch s := l.Prev().(type) {
+	switch p := l.Prev().(type) {
 	case *IPv4:
-		xsum = header.PseudoHeaderChecksum(protoNumber, *s.SrcAddr, *s.DstAddr, totalLength)
+		xsum = header.PseudoHeaderChecksum(protoNumber, *p.SrcAddr, *p.DstAddr, totalLength)
+	case *IPv6:
+		xsum = header.PseudoHeaderChecksum(protoNumber, *p.SrcAddr, *p.DstAddr, totalLength)
 	default:
-		// TODO(b/150301488): Support more protocols, like IPv6.
-		return 0, fmt.Errorf("can't get src and dst addr from previous layer: %#v", s)
+		// TODO(b/161246171): Support more protocols.
+		return 0, fmt.Errorf("checksum for protocol %d is not supported when previous layer is %T", protoNumber, p)
 	}
 	payloadBytes, err := payload(l)
 	if err != nil {

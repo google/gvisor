@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -27,6 +28,7 @@ import (
 
 // A DeviceInfo represents a network device.
 type DeviceInfo struct {
+	ID       uint32
 	MAC      net.HardwareAddr
 	IPv4Addr net.IP
 	IPv4Net  *net.IPNet
@@ -35,7 +37,7 @@ type DeviceInfo struct {
 }
 
 var (
-	deviceLine = regexp.MustCompile(`^\s*\d+: (\w+)`)
+	deviceLine = regexp.MustCompile(`^\s*(\d+): (\w+)`)
 	linkLine   = regexp.MustCompile(`^\s*link/\w+ ([0-9a-fA-F:]+)`)
 	inetLine   = regexp.MustCompile(`^\s*inet ([0-9./]+)`)
 	inet6Line  = regexp.MustCompile(`^\s*inet6 ([0-9a-fA-Z:/]+)`)
@@ -43,6 +45,11 @@ var (
 
 // ParseDevices parses the output from `ip addr show` into a map from device
 // name to information about the device.
+//
+// Note: if multiple IPv6 addresses are assigned to a device, the last address
+// displayed by `ip addr show` will be used. This is fine for packetimpact
+// because we will always only have at most one IPv6 address assigned to each
+// device.
 func ParseDevices(cmdOutput string) (map[string]DeviceInfo, error) {
 	var currentDevice string
 	var currentInfo DeviceInfo
@@ -52,8 +59,12 @@ func ParseDevices(cmdOutput string) (map[string]DeviceInfo, error) {
 			if currentDevice != "" {
 				deviceInfos[currentDevice] = currentInfo
 			}
-			currentInfo = DeviceInfo{}
-			currentDevice = m[1]
+			id, err := strconv.ParseUint(m[1], 10, 32)
+			if err != nil {
+				return nil, fmt.Errorf("parsing device ID %s: %w", m[1], err)
+			}
+			currentInfo = DeviceInfo{ID: uint32(id)}
+			currentDevice = m[2]
 		} else if m := linkLine.FindStringSubmatch(line); m != nil {
 			mac, err := net.ParseMAC(m[1])
 			if err != nil {
