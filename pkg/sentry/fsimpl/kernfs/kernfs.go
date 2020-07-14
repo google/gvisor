@@ -346,7 +346,7 @@ type inodeMetadata interface {
 
 	// Stat returns the metadata for this inode. This corresponds to
 	// vfs.FilesystemImpl.StatAt.
-	Stat(fs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error)
+	Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error)
 
 	// SetStat updates the metadata for this inode. This corresponds to
 	// vfs.FilesystemImpl.SetStatAt. Implementations are responsible for checking

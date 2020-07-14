@@ -259,7 +259,7 @@ func (i *inode) Mode() linux.FileMode {
 }
 
 // Stat implements kernfs.Inode.
-func (i *inode) Stat(vfsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
+func (i *inode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
 	if opts.Mask&linux.STATX__RESERVED != 0 {
 		return linux.Statx{}, syserror.EINVAL
 	}
@@ -534,8 +534,8 @@ func (f *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) 
 }
 
 // Stat implements vfs.FileDescriptionImpl.
-func (f *fileDescription) Stat(_ context.Context, opts vfs.StatOptions) (linux.Statx, error) {
-	return f.inode.Stat(f.vfsfd.Mount().Filesystem(), opts)
+func (f *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
+	return f.inode.Stat(ctx, f.vfsfd.Mount().Filesystem(), opts)
 }
 
 // Release implements vfs.FileDescriptionImpl.
