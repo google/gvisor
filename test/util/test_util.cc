@@ -42,6 +42,7 @@ namespace testing {
 
 constexpr char kGvisorNetwork[] = "GVISOR_NETWORK";
 constexpr char kGvisorVfs[] = "GVISOR_VFS";
+constexpr char kFuseEnabled[] = "FUSE_ENABLED";
 
 bool IsRunningOnGvisor() { return GvisorPlatform() != Platform::kNative; }
 
@@ -66,6 +67,11 @@ bool IsRunningWithVFS1() {
     return false;
   }
   return strcmp(env, "VFS1") == 0;
+}
+
+bool IsFUSEEnabled() {
+  const char* env = getenv(kFuseEnabled);
+  return env && strcmp(env, "TRUE") == 0;
 }
 
 // Inline cpuid instruction.  Preserve %ebx/%rbx register. In PIC compilations

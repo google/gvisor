@@ -205,6 +205,10 @@ func New(args Args) (*Loader, error) {
 	// Is this a VFSv2 kernel?
 	if args.Conf.VFS2 {
 		kernel.VFS2Enabled = true
+		if args.Conf.FUSE {
+			kernel.FUSEEnabled = true
+		}
+
 		vfs2.Override()
 	}
 
