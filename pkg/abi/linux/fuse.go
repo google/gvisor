@@ -392,6 +392,36 @@ type FUSEOpenOut struct {
 
 	// OpenFlag for the opened file.
 	OpenFlag uint32
+}
+
+// FUSE_READ flags, consist with the ones in include/uapi/linux/fuse.h.
+const (
+	FUSE_READ_LOCKOWNER = 1 << 1
+)
+
+// FUSEReadIn is the request sent by the kernel to the daemon
+// for FUSE_READ.
+//
+// +marshal
+type FUSEReadIn struct {
+	// Fh is the file handle in userspace.
+	Fh uint64
+
+	// Offset is the read offset.
+	Offset uint64
+
+	// Size is the number of bytes to read.
+	Size uint32
+
+	// ReadFlags for this FUSE_READ request.
+	// Currently only contains FUSE_READ_LOCKOWNER.
+	ReadFlags uint32
+
+	// LockOwner is the id of the lock owner if there is one.
+	LockOwner uint64
+
+	// Flags for the underling file.
+	Flags uint32
 
 	_ uint32
 }
