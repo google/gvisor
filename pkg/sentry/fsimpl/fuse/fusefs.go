@@ -17,6 +17,7 @@ package fuse
 
 import (
 	"strconv"
+	"sync"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -24,8 +25,10 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Name is the default filesystem name.
@@ -207,23 +210,164 @@ type Inode struct {
 
 	locks vfs.FileLocks
 
-	dentry kernfs.Dentry
+	*dentry
+
+	// conn is used for communication between the FUSE server
+	// daemon and the sentry fusefs.
+	conn *Connection
+
+	// attributeVersion is the version of last change in attribute.
+	attributeVersion uint64
+
+	// attributeTime represents the time until the file attributes are valid.
+	attributeTime uint64
+
+	// version is the version of this inode.
+	version uint64
+
+	// imutex serializes changes to a inode.
+	imutex sync.Mutex
 }
 
-func (fs *filesystem) newInode(creds *auth.Credentials, mode linux.FileMode) *kernfs.Dentry {
-	i := &Inode{}
+func (fs *filesystem) newInode(creds *auth.Credentials, mode linux.FileMode) *dentry {
+	i := &Inode{
+		conn: fs.conn,
+	}
 	i.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0755)
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
-	i.dentry.Init(i)
+	i.dentry = fs.newDentry(i)
 
-	return &i.dentry
+	return i.dentry
 }
 
 // Open implements kernfs.Inode.Open.
 func (i *Inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), vfsd, &i.OrderedChildren, &i.locks, &opts)
-	if err != nil {
+	if opts.Flags&linux.O_TRUNC != 0 && i.conn.AtomicOTrunc && i.conn.WritebackCache {
+		i.imutex.Lock()
+		defer i.imutex.Unlock()
+	}
+
+	if opts.Flags&linux.O_LARGEFILE == 0 && i.size > linux.MAX_NON_LFS {
+		return nil, syserror.EOVERFLOW
+	}
+
+	fd := fileDescription{}
+	out := linux.FUSEOpenOut{}
+	if !i.conn.NoOpen || opts.Mode.IsDir() {
+		kernelTask := kernel.TaskFromContext(ctx)
+		if kernelTask == nil {
+			log.Warningf("fusefs.DeviceFD.Read: couldn't get kernel task from context")
+			return nil, syserror.EINVAL
+		}
+
+		var opcode linux.FUSEOpcode
+		if opts.Mode.IsDir() {
+			opcode = linux.FUSE_OPENDIR
+		} else {
+			opcode = linux.FUSE_OPEN
+		}
+		in := linux.FUSEOpenIn{Flags: opts.Flags & ^uint32(linux.O_CREAT|linux.O_EXCL|linux.O_NOCTTY)}
+		if !i.conn.AtomicOTrunc {
+			in.Flags &= ^uint32(linux.O_TRUNC)
+		}
+		req, err := i.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.Ino(), opcode, &in)
+		if err != nil {
+			return nil, err
+		}
+
+		res, err := i.conn.Call(kernelTask, req)
+		if err == syserror.ENOSYS && !opts.Mode.IsDir() {
+			i.conn.NoOpen = true
+		} else if err != nil {
+			return nil, err
+		}
+		if err := res.UnmarshalPayload(&out); err != nil {
+			return nil, err
+		}
+	}
+	if opts.Mode.IsDir() {
+		out.OpenFlag &= ^uint32(linux.FOPEN_DIRECT_IO)
+	}
+	fd.vfsfd.IncRef()
+	fd.Fh = out.Fh
+
+	// TODO(gvisor.dev/issue/3234): invalidate mmap after mmap had been implemented for FUSE Inode
+	fd.directIO = out.OpenFlag&linux.FOPEN_DIRECT_IO != 0
+	fdOptions := &vfs.FileDescriptionOptions{}
+	if out.OpenFlag&linux.FOPEN_NONSEEKABLE != 0 {
+		fdOptions.DenyPRead = true
+		fdOptions.DenyPWrite = true
+		fd.Nonseekable = true
+	}
+	if i.conn.AtomicOTrunc && out.OpenFlag&linux.O_TRUNC != 0 {
+		i.conn.Lock.Lock()
+		i.conn.AttributeVersion++
+		i.attributeVersion = i.conn.AttributeVersion
+		i.size = 0
+		i.conn.Lock.Unlock()
+		i.attributeTime = 0
+		if i.conn.WritebackCache {
+			i.ctime = ktime.NowFromContext(ctx)
+			i.mtime = ktime.NowFromContext(ctx)
+			i.version++
+		}
+	}
+
+	if err := fd.vfsfd.Init(&fd, out.OpenFlag, rp.Mount(), vfsd, fdOptions); err != nil {
 		return nil, err
 	}
-	return fd.VFSFileDescription(), nil
+	return &fd.vfsfd, nil
+}
+
+// fileDescription implements vfs.FileDescriptionImpl for fuse.
+type fileDescription struct {
+	vfsfd vfs.FileDescription
+	vfs.FileDescriptionDefaultImpl
+	vfs.DentryMetadataFileDescriptionImpl
+	vfs.NoLockFD
+
+	// the file handle used in userspace.
+	Fh uint64
+
+	// Nonseekable is indicate cannot perform seek on a file.
+	Nonseekable bool
+
+	// directIO suggest fuse to use direct io operation.
+	directIO bool
+}
+
+func (fd *fileDescription) dentry() *dentry {
+	return fd.vfsfd.Dentry().Impl().(*dentry)
+}
+
+func (fd *fileDescription) inode() *Inode {
+	return fd.dentry().inode
+}
+
+// Release implements vfs.FileDescriptionImpl.Release.
+func (fd *fileDescription) Release() {}
+
+// PRead implements vfs.FileDescriptionImpl.PRead.
+func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
+	return 0, nil
+}
+
+// Read implements vfs.FileDescriptionImpl.Read.
+func (fd *fileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
+	return 0, nil
+}
+
+// PWrite implements vfs.FileDescriptionImpl.PWrite.
+func (fd *fileDescription) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
+	return 0, nil
+}
+
+// Write implements vfs.FileDescriptionImpl.Write.
+func (fd *fileDescription) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
+	return 0, nil
+}
+
+// Seek implements vfs.FileDescriptionImpl.Seek.
+func (fd *fileDescription) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
+	return 0, nil
 }

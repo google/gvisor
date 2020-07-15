@@ -77,6 +77,12 @@ type futureResponse struct {
 type Connection struct {
 	fd *DeviceFD
 
+	// Lock protect access to struct memeber
+	Lock sync.Mutex
+
+	// AttributeVersion is the version of last change in attribute
+	AttributeVersion uint64
+
 	// Initialized after receiving FUSE_INIT reply.
 	// Until it's set, suspend sending FUSE requests.
 	Initialized bool
@@ -229,6 +235,9 @@ type Connection struct {
 	// DefaultPermissions if the filesystem needs to check permissions based on the file mode.
 	// Negotiated in INIT.
 	DefaultPermissions bool
+
+	// NoOpen if the filesystem doesn't implement open
+	NoOpen bool
 }
 
 // NewFUSEConnection creates a FUSE connection to fd
