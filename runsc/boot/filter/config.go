@@ -310,19 +310,12 @@ var allowedSyscalls = seccomp.SyscallRules{
 		},
 	},
 	syscall.SYS_WRITE: {},
-	// The only user in rawfile.NonBlockingWrite3 always passes iovcnt with
-	// values 2 or 3. Three iovec-s are passed, when the PACKET_VNET_HDR
-	// option is enabled for a packet socket.
+	// For rawfile.NonBlockingWriteIovec.
 	syscall.SYS_WRITEV: []seccomp.Rule{
 		{
 			seccomp.AllowAny{},
 			seccomp.AllowAny{},
-			seccomp.AllowValue(2),
-		},
-		{
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowValue(3),
+			seccomp.GreaterThan(0),
 		},
 	},
 }
