@@ -15,6 +15,8 @@
 package netstack
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -40,19 +42,29 @@ func (s *Stack) SupportsIPv6() bool {
 	return s.Stack.CheckNetworkProtocol(ipv6.ProtocolNumber)
 }
 
+// Converts Netstack's ARPHardwareType to equivalent linux constants.
+func toLinuxARPHardwareType(t header.ARPHardwareType) uint16 {
+	switch t {
+	case header.ARPHardwareNone:
+		return linux.ARPHRD_NONE
+	case header.ARPHardwareLoopback:
+		return linux.ARPHRD_LOOPBACK
+	case header.ARPHardwareEther:
+		return linux.ARPHRD_ETHER
+	default:
+		panic(fmt.Sprintf("unknown ARPHRD type: %d", t))
+	}
+}
+
 // Interfaces implements inet.Stack.Interfaces.
 func (s *Stack) Interfaces() map[int32]inet.Interface {
 	is := make(map[int32]inet.Interface)
 	for id, ni := range s.Stack.NICInfo() {
-		var devType uint16
-		if ni.Flags.Loopback {
-			devType = linux.ARPHRD_LOOPBACK
-		}
 		is[int32(id)] = inet.Interface{
 			Name:       ni.Name,
 			Addr:       []byte(ni.LinkAddress),
 			Flags:      uint32(nicStateFlagsToLinux(ni.Flags)),
-			DeviceType: devType,
+			DeviceType: toLinuxARPHardwareType(ni.ARPHardwareType),
 			MTU:        ni.MTU,
 		}
 	}
