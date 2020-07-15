@@ -274,6 +274,9 @@ type Config struct {
 
 	// Enables VFS2 (not plumbled through yet).
 	VFS2 bool
+
+	// Enables FUSE usage (not plumbled through yet).
+	FUSE bool
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.
@@ -323,6 +326,10 @@ func (c *Config) ToFlags() []string {
 
 	if c.VFS2 {
 		f = append(f, "--vfs2=true")
+	}
+
+	if c.FUSE {
+		f = append(f, "--fuse=true")
 	}
 
 	return f
