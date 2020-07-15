@@ -161,6 +161,7 @@ type connection struct {
 	bgLock sync.Mutex
 
 	// maxRead is the maximum size of a read buffer in in bytes.
+	// Initialized from a fuse fs parameter.
 	maxRead uint32
 
 	// maxWrite is the maximum size of a write buffer in bytes.
@@ -206,7 +207,7 @@ type connection struct {
 }
 
 // newFUSEConnection creates a FUSE connection to fd.
-func newFUSEConnection(_ context.Context, fd *vfs.FileDescription, maxInFlightRequests uint64) (*connection, error) {
+func newFUSEConnection(_ context.Context, fd *vfs.FileDescription, opts *filesystemOptions) (*connection, error) {
 	// Mark the device as ready so it can be used. /dev/fuse can only be used if the FD was used to
 	// mount a FUSE filesystem.
 	fuseFD := fd.Impl().(*DeviceFD)
@@ -216,13 +217,14 @@ func newFUSEConnection(_ context.Context, fd *vfs.FileDescription, maxInFlightRe
 	hdrLen := uint32((*linux.FUSEHeaderOut)(nil).SizeBytes())
 	fuseFD.writeBuf = make([]byte, hdrLen)
 	fuseFD.completions = make(map[linux.FUSEOpID]*futureResponse)
-	fuseFD.fullQueueCh = make(chan struct{}, maxInFlightRequests)
+	fuseFD.fullQueueCh = make(chan struct{}, opts.maxActiveRequests)
 	fuseFD.writeCursor = 0
 
 	return &connection{
 		fd:                  fuseFD,
 		maxBackground:       fuseDefaultMaxBackground,
 		congestionThreshold: fuseDefaultCongestionThreshold,
+		maxRead:             opts.maxRead,
 		maxPages:            fuseDefaultMaxPagesPerReq,
 		initializedChan:     make(chan struct{}),
 		connected:           true,
