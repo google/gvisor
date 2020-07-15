@@ -223,6 +223,7 @@ func (fs *filesystem) Release(ctx context.Context) {
 // inode implements kernfs.Inode.
 type inode struct {
 	kernfs.InodeAttrs
+	// TODO(gvisor.dev/issue/3231): Need to impelemnt Valid and IterDirents methods.
 	kernfs.InodeNoDynamicLookup
 	kernfs.InodeNotSymlink
 	kernfs.InodeDirectoryNoNewChildren
@@ -446,6 +447,44 @@ func fromFUSEAttr(attr linux.FUSEAttr, mask, devMinor uint32) linux.Statx {
 	return stat
 }
 
+func (i *inode) Lookup(ctx context.Context, name string) (*vfs.Dentry, error) {
+	fusefs := i.fs
+	task, creds := kernel.TaskFromContext(ctx), auth.CredentialsFromContext(ctx)
+
+	in := linux.FUSELookupIn{Name: name}
+	req, err := fusefs.conn.NewRequest(creds, uint32(task.ThreadID()), i.NodeID, linux.FUSE_LOOKUP, &in)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := fusefs.conn.Call(task, req)
+	if err != nil {
+		return nil, err
+	}
+	if err := res.Error(); err != nil {
+		return nil, err
+	}
+
+	var out linux.FUSEEntryOut
+	if err := res.UnmarshalPayload(&out); err != nil {
+		return nil, err
+	}
+
+	child := fusefs.newInode(out.NodeID, out.Generation, out.Attr)
+	i.dentry.InsertChildLocked(name, child)
+	return child.VFSDentry(), nil
+}
+
+// IterDirents implements Inode.IterDirents.
+func (i *inode) IterDirents(ctx context.Context, callback vfs.IterDirentsCallback, offset, relOffset int64) (int64, error) {
+	return offset, nil
+}
+
+// Valid implements Inode.Valid.
+func (i *inode) Valid(ctx context.Context) bool {
+	return true
+}
+
 // Stat implements kernfs.Inode.Stat.
 func (i *inode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
 	conn := fs.Impl().(*filesystem).conn
@@ -460,7 +499,7 @@ func (i *inode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptio
 	// finally be translated into vfs.FilesystemImpl.StatAt() (see
 	// pkg/sentry/syscalls/linux/vfs2/stat.go), resulting in the same flow
 	// as stat(2). Thus GetAttrFlags and Fh variable will never be used in VFS2.
-	req, err := conn.NewRequest(creds, uint32(task.ThreadID()), i.Ino(), linux.FUSE_GETATTR, &in)
+	req, err := conn.NewRequest(creds, uint32(task.ThreadID()), i.NodeID, linux.FUSE_GETATTR, &in)
 	if err != nil {
 		return linux.Statx{}, err
 	}
