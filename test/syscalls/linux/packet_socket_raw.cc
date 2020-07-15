@@ -559,6 +559,64 @@ TEST_P(RawPacketTest, SetSocketSendBuf) {
   ASSERT_EQ(quarter_sz, val);
 }
 
+TEST_P(RawPacketTest, GetSocketError) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_ERROR, &val, &val_len),
+              SyscallSucceeds());
+  ASSERT_EQ(val, 0);
+}
+
+TEST_P(RawPacketTest, GetSocketErrorBind) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  {
+    // Bind to the loopback device.
+    struct sockaddr_ll bind_addr = {};
+    bind_addr.sll_family = AF_PACKET;
+    bind_addr.sll_protocol = htons(GetParam());
+    bind_addr.sll_ifindex = GetLoopbackIndex();
+
+    ASSERT_THAT(bind(s_, reinterpret_cast<struct sockaddr*>(&bind_addr),
+                     sizeof(bind_addr)),
+                SyscallSucceeds());
+
+    // SO_ERROR should return no errors.
+    int val = 0;
+    socklen_t val_len = sizeof(val);
+    ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_ERROR, &val, &val_len),
+                SyscallSucceeds());
+    ASSERT_EQ(val, 0);
+  }
+
+  {
+    // Now try binding to an invalid interface.
+    struct sockaddr_ll bind_addr = {};
+    bind_addr.sll_family = AF_PACKET;
+    bind_addr.sll_protocol = htons(GetParam());
+    bind_addr.sll_ifindex = 0xffff;  // Just pick a really large number.
+
+    // Binding should fail with EINVAL
+    ASSERT_THAT(bind(s_, reinterpret_cast<struct sockaddr*>(&bind_addr),
+                     sizeof(bind_addr)),
+                SyscallFailsWithErrno(ENODEV));
+
+    // SO_ERROR does not return error when the device is invalid.
+    // On Linux there is just one odd ball condition where this can return
+    // an error where the device was valid and then removed or disabled
+    // between the first check for index and the actual registration of
+    // the packet endpoint. On Netstack this is not possible as the stack
+    // global mutex is held during registration and check.
+    int val = 0;
+    socklen_t val_len = sizeof(val);
+    ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_ERROR, &val, &val_len),
+                SyscallSucceeds());
+    ASSERT_EQ(val, 0);
+  }
+}
+
 #ifndef __fuchsia__
 
 TEST_P(RawPacketTest, SetSocketDetachFilterNoInstalledFilter) {
