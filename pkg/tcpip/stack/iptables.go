@@ -292,10 +292,9 @@ func (it *IPTables) startReaper(interval time.Duration) {
 // CheckPackets runs pkts through the rules for hook and returns a map of packets that
 // should not go forward.
 //
-// Precondition: pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
-//
-// TODO(gvisor.dev/issue/170): pk.NetworkHeader will always be set as a
-// precondition.
+// Preconditions:
+// - pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
+// - pkt.NetworkHeader is not nil.
 //
 // NOTE: unlike the Check API the returned map contains packets that should be
 // dropped.
@@ -319,9 +318,9 @@ func (it *IPTables) CheckPackets(hook Hook, pkts PacketBufferList, gso *GSO, r *
 	return drop, natPkts
 }
 
-// Precondition: pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
-// TODO(gvisor.dev/issue/170): pkt.NetworkHeader will always be set as a
-// precondition.
+// Preconditions:
+// - pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
+// - pkt.NetworkHeader is not nil.
 func (it *IPTables) checkChain(hook Hook, pkt *PacketBuffer, table Table, ruleIdx int, gso *GSO, r *Route, address tcpip.Address, nicName string) chainVerdict {
 	// Start from ruleIdx and walk the list of rules until a rule gives us
 	// a verdict.
@@ -366,22 +365,11 @@ func (it *IPTables) checkChain(hook Hook, pkt *PacketBuffer, table Table, ruleId
 	return chainDrop
 }
 
-// Precondition: pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
-// TODO(gvisor.dev/issue/170): pkt.NetworkHeader will always be set as a
-// precondition.
+// Preconditions:
+// - pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
+// - pkt.NetworkHeader is not nil.
 func (it *IPTables) checkRule(hook Hook, pkt *PacketBuffer, table Table, ruleIdx int, gso *GSO, r *Route, address tcpip.Address, nicName string) (RuleVerdict, int) {
 	rule := table.Rules[ruleIdx]
-
-	// If pkt.NetworkHeader hasn't been set yet, it will be contained in
-	// pkt.Data.
-	if pkt.NetworkHeader == nil {
-		var ok bool
-		pkt.NetworkHeader, ok = pkt.Data.PullUp(header.IPv4MinimumSize)
-		if !ok {
-			// Precondition has been violated.
-			panic(fmt.Sprintf("iptables checks require IPv4 headers of at least %d bytes", header.IPv4MinimumSize))
-		}
-	}
 
 	// Check whether the packet matches the IP header filter.
 	if !rule.Filter.match(header.IPv4(pkt.NetworkHeader), hook, nicName) {
