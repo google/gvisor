@@ -11,3 +11,9 @@ syscall_test(
     fuse = "True",
     test = "//test/fuse/linux:open_test",
 )
+
+syscall_test(
+    fuse = "True",
+    test = "//test/fuse/linux:read_test",
+    vfs2 = "True",
+)

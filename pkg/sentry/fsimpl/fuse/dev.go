@@ -387,10 +387,12 @@ func (fd *DeviceFD) sendError(ctx context.Context, errno int32, req *Request) er
 // receiver is going to be waiting on the future channel. This is to be used by:
 // FUSE_INIT.
 func (fd *DeviceFD) noReceiverAction(ctx context.Context, r *Response) error {
-	if r.opcode == linux.FUSE_INIT {
+	switch r.opcode {
+	case linux.FUSE_INIT:
 		creds := auth.CredentialsFromContext(ctx)
 		rootUserNs := kernel.KernelFromContext(ctx).RootUserNamespace()
 		return fd.fs.conn.InitRecv(r, creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, rootUserNs))
+		// TODO(gvisor/dev/issue/3247): support async read: correctly process the response using information from r.options.
 	}
 
 	return nil
