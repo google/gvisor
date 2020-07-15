@@ -1095,6 +1095,11 @@ type NICInfo struct {
 	// Context is user-supplied data optionally supplied in CreateNICWithOptions.
 	// See type NICOptions for more details.
 	Context NICContext
+
+	// ARPHardwareType holds the ARP Hardware type of the NIC. This is the
+	// value sent in haType field of an ARP Request sent by this NIC and the
+	// value expected in the haType field of an ARP response.
+	ARPHardwareType header.ARPHardwareType
 }
 
 // HasNIC returns true if the NICID is defined in the stack.
@@ -1126,6 +1131,7 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 			MTU:               nic.linkEP.MTU(),
 			Stats:             nic.stats,
 			Context:           nic.context,
+			ARPHardwareType:   nic.linkEP.ARPHardwareType(),
 		}
 	}
 	return nics

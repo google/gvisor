@@ -30,6 +30,7 @@ go_library(
         "//pkg/context",
         "//pkg/fd",
         "//pkg/fdnotifier",
+        "//pkg/iovec",
         "//pkg/log",
         "//pkg/refs",
         "//pkg/safemem",

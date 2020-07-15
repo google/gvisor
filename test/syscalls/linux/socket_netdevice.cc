@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <linux/ethtool.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/sockios.h>
@@ -49,6 +50,7 @@ TEST(NetdeviceTest, Loopback) {
 
   // Check that the loopback is zero hardware address.
   ASSERT_THAT(ioctl(sock.get(), SIOCGIFHWADDR, &ifr), SyscallSucceeds());
+  EXPECT_EQ(ifr.ifr_hwaddr.sa_family, ARPHRD_LOOPBACK);
   EXPECT_EQ(ifr.ifr_hwaddr.sa_data[0], 0);
   EXPECT_EQ(ifr.ifr_hwaddr.sa_data[1], 0);
   EXPECT_EQ(ifr.ifr_hwaddr.sa_data[2], 0);
@@ -176,6 +178,27 @@ TEST(NetdeviceTest, InterfaceMTU) {
   // Check that SIOCGIFMTU returns a nonzero MTU.
   ASSERT_THAT(ioctl(sock.get(), SIOCGIFMTU, &ifr), SyscallSucceeds());
   EXPECT_GT(ifr.ifr_mtu, 0);
+}
+
+TEST(NetdeviceTest, EthtoolGetTSInfo) {
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+
+  struct ethtool_ts_info tsi = {};
+  tsi.cmd = ETHTOOL_GET_TS_INFO;  // Get NIC's Timestamping capabilities.
+
+  // Prepare the request.
+  struct ifreq ifr = {};
+  snprintf(ifr.ifr_name, IFNAMSIZ, "lo");
+  ifr.ifr_data = (void*)&tsi;
+
+  // Check that SIOCGIFMTU returns a nonzero MTU.
+  if (IsRunningOnGvisor()) {
+    ASSERT_THAT(ioctl(sock.get(), SIOCETHTOOL, &ifr),
+                SyscallFailsWithErrno(EOPNOTSUPP));
+    return;
+  }
+  ASSERT_THAT(ioctl(sock.get(), SIOCETHTOOL, &ifr), SyscallSucceeds());
 }
 
 }  // namespace

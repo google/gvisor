@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -79,6 +80,11 @@ func (e *countedEndpoint) WritePackets(r *stack.Route, _ *stack.GSO, pkts stack.
 func (e *countedEndpoint) WriteRawPacket(buffer.VectorisedView) *tcpip.Error {
 	e.writeCount++
 	return nil
+}
+
+// ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
+func (*countedEndpoint) ARPHardwareType() header.ARPHardwareType {
+	panic("unimplemented")
 }
 
 // Wait implements stack.LinkEndpoint.Wait.

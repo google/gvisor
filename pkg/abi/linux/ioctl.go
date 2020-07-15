@@ -67,10 +67,29 @@ const (
 
 // ioctl(2) requests provided by uapi/linux/sockios.h
 const (
-	SIOCGIFMEM    = 0x891f
-	SIOCGIFPFLAGS = 0x8935
-	SIOCGMIIPHY   = 0x8947
-	SIOCGMIIREG   = 0x8948
+	SIOCGIFNAME    = 0x8910
+	SIOCGIFCONF    = 0x8912
+	SIOCGIFFLAGS   = 0x8913
+	SIOCGIFADDR    = 0x8915
+	SIOCGIFDSTADDR = 0x8917
+	SIOCGIFBRDADDR = 0x8919
+	SIOCGIFNETMASK = 0x891b
+	SIOCGIFMETRIC  = 0x891d
+	SIOCGIFMTU     = 0x8921
+	SIOCGIFMEM     = 0x891f
+	SIOCGIFHWADDR  = 0x8927
+	SIOCGIFINDEX   = 0x8933
+	SIOCGIFPFLAGS  = 0x8935
+	SIOCGIFTXQLEN  = 0x8942
+	SIOCETHTOOL    = 0x8946
+	SIOCGMIIPHY    = 0x8947
+	SIOCGMIIREG    = 0x8948
+	SIOCGIFMAP     = 0x8970
+)
+
+// ioctl(2) requests provided by uapi/asm-generic/sockios.h
+const (
+	SIOCGSTAMP = 0x8906
 )
 
 // ioctl(2) directions. Used to calculate requests number.

@@ -187,6 +187,8 @@ const (
 
 // Device types, from uapi/linux/if_arp.h.
 const (
+	ARPHRD_NONE     = 65534
+	ARPHRD_ETHER    = 1
 	ARPHRD_LOOPBACK = 772
 )
 

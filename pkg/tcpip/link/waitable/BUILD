@@ -12,6 +12,7 @@ go_library(
         "//pkg/gate",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
+        "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
     ],
 )
@@ -25,6 +26,7 @@ go_test(
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
+        "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
     ],
 )

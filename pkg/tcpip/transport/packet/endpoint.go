@@ -79,6 +79,11 @@ type endpoint struct {
 	closed        bool
 	stats         tcpip.TransportEndpointStats `state:"nosave"`
 	bound         bool
+	boundNIC      tcpip.NICID
+
+	// lastErrorMu protects lastError.
+	lastErrorMu sync.Mutex   `state:"nosave"`
+	lastError   *tcpip.Error `state:".(string)"`
 }
 
 // NewEndpoint returns a new packet endpoint.
@@ -229,12 +234,14 @@ func (ep *endpoint) Bind(addr tcpip.FullAddress) *tcpip.Error {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 
-	if ep.bound {
-		return tcpip.ErrAlreadyBound
+	if ep.bound && ep.boundNIC == addr.NIC {
+		// If the NIC being bound is the same then just return success.
+		return nil
 	}
 
 	// Unregister endpoint with all the nics.
 	ep.stack.UnregisterPacketEndpoint(0, ep.netProto, ep)
+	ep.bound = false
 
 	// Bind endpoint to receive packets from specific interface.
 	if err := ep.stack.RegisterPacketEndpoint(addr.NIC, ep.netProto, ep); err != nil {
@@ -242,6 +249,7 @@ func (ep *endpoint) Bind(addr tcpip.FullAddress) *tcpip.Error {
 	}
 
 	ep.bound = true
+	ep.boundNIC = addr.NIC
 
 	return nil
 }
@@ -336,8 +344,21 @@ func (ep *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	}
 }
 
+func (ep *endpoint) takeLastError() *tcpip.Error {
+	ep.lastErrorMu.Lock()
+	defer ep.lastErrorMu.Unlock()
+
+	err := ep.lastError
+	ep.lastError = nil
+	return err
+}
+
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (ep *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
+	switch opt.(type) {
+	case tcpip.ErrorOption:
+		return ep.takeLastError()
+	}
 	return tcpip.ErrNotSupported
 }
 

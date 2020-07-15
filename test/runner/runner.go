@@ -47,6 +47,7 @@ var (
 	fileAccess = flag.String("file-access", "exclusive", "mounts root in exclusive or shared mode")
 	overlay    = flag.Bool("overlay", false, "wrap filesystem mounts with writable tmpfs overlay")
 	vfs2       = flag.Bool("vfs2", false, "enable VFS2")
+	fuse       = flag.Bool("fuse", false, "enable FUSE")
 	parallel   = flag.Bool("parallel", false, "run tests in parallel")
 	runscPath  = flag.String("runsc", "", "path to runsc binary")
 
@@ -149,6 +150,9 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	}
 	if *vfs2 {
 		args = append(args, "-vfs2")
+		if *fuse {
+			args = append(args, "-fuse")
+		}
 	}
 	if *debug {
 		args = append(args, "-debug", "-log-packets=true")
@@ -358,6 +362,12 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 	vfsVar := "GVISOR_VFS"
 	if *vfs2 {
 		env = append(env, vfsVar+"=VFS2")
+		fuseVar := "FUSE_ENABLED"
+		if *fuse {
+			env = append(env, fuseVar+"=TRUE")
+		} else {
+			env = append(env, fuseVar+"=FALSE")
+		}
 	} else {
 		env = append(env, vfsVar+"=VFS1")
 	}

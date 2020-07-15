@@ -17,12 +17,9 @@ package host
 import (
 	"syscall"
 
-	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/iovec"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
-
-// maxIovs is the maximum number of iovecs to pass to the host.
-var maxIovs = linux.UIO_MAXIOV
 
 // copyToMulti copies as many bytes from src to dst as possible.
 func copyToMulti(dst [][]byte, src []byte) {
@@ -74,7 +71,7 @@ func buildIovec(bufs [][]byte, maxlen int64, truncate bool) (length int64, iovec
 		}
 	}
 
-	if iovsRequired > maxIovs {
+	if iovsRequired > iovec.MaxIovs {
 		// The kernel will reject our call if we pass this many iovs.
 		// Use a single intermediate buffer instead.
 		b := make([]byte, stopLen)

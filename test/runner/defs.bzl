@@ -61,7 +61,8 @@ def _syscall_test(
         file_access = "exclusive",
         overlay = False,
         add_uds_tree = False,
-        vfs2 = False):
+        vfs2 = False,
+        fuse = False):
     # Prepend "runsc" to non-native platform names.
     full_platform = platform if platform == "native" else "runsc_" + platform
 
@@ -73,6 +74,8 @@ def _syscall_test(
         name += "_overlay"
     if vfs2:
         name += "_vfs2"
+        if fuse:
+            name += "_fuse"
     if network != "none":
         name += "_" + network + "net"
 
@@ -107,6 +110,7 @@ def _syscall_test(
         "--overlay=" + str(overlay),
         "--add-uds-tree=" + str(add_uds_tree),
         "--vfs2=" + str(vfs2),
+        "--fuse=" + str(fuse),
     ]
 
     # Call the rule above.
@@ -129,6 +133,7 @@ def syscall_test(
         add_uds_tree = False,
         add_hostinet = False,
         vfs2 = False,
+        fuse = False,
         tags = None):
     """syscall_test is a macro that will create targets for all platforms.
 
@@ -187,6 +192,19 @@ def syscall_test(
         tags = platforms[default_platform] + vfs2_tags,
         vfs2 = True,
     )
+
+    if vfs2 and fuse:
+        _syscall_test(
+            test = test,
+            shard_count = shard_count,
+            size = size,
+            platform = default_platform,
+            use_tmpfs = use_tmpfs,
+            add_uds_tree = add_uds_tree,
+            tags = platforms[default_platform] + vfs2_tags,
+            vfs2 = True,
+            fuse = True,
+        )
 
     # TODO(gvisor.dev/issue/1487): Enable VFS2 overlay tests.
     if add_overlay:

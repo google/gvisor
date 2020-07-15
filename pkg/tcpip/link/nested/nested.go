@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -128,4 +129,9 @@ func (e *Endpoint) GSOMaxSize() uint32 {
 		return e.GSOMaxSize()
 	}
 	return 0
+}
+
+// ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType
+func (e *Endpoint) ARPHardwareType() header.ARPHardwareType {
+	return e.child.ARPHardwareType()
 }

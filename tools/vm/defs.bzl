@@ -60,11 +60,12 @@ def _vm_image_impl(ctx):
     # Run the builder to generate our output.
     echo = ctx.actions.declare_file(ctx.label.name)
     resolved_inputs, argv, runfiles_manifests = ctx.resolve_command(
-        command = "echo -ne \"#!/bin/bash\\nset -e\\nimage=$(%s)\\necho ${image}\\n\" > %s && chmod 0755 %s" % (
-            ctx.files.builder[0].path,
-            echo.path,
-            echo.path,
-        ),
+        command = "\n".join([
+            "set -e",
+            "image=$(%s)" % ctx.files.builder[0].path,
+            "echo -ne \"#!/bin/bash\\necho ${image}\\n\" > %s" % echo.path,
+            "chmod 0755 %s" % echo.path,
+        ]),
         tools = [ctx.attr.builder],
     )
     ctx.actions.run_shell(

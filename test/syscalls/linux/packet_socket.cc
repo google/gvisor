@@ -343,7 +343,7 @@ TEST_P(CookedPacketTest, BindReceive) {
 }
 
 // Double Bind socket.
-TEST_P(CookedPacketTest, DoubleBind) {
+TEST_P(CookedPacketTest, DoubleBindSucceeds) {
   struct sockaddr_ll bind_addr = {};
   bind_addr.sll_family = AF_PACKET;
   bind_addr.sll_protocol = htons(GetParam());
@@ -354,12 +354,11 @@ TEST_P(CookedPacketTest, DoubleBind) {
               SyscallSucceeds());
 
   // Binding socket again should fail.
-  ASSERT_THAT(
-      bind(socket_, reinterpret_cast<struct sockaddr*>(&bind_addr),
-           sizeof(bind_addr)),
-      // Linux 4.09 returns EINVAL here, but some time before 4.19 it switched
-      // to EADDRINUSE.
-      AnyOf(SyscallFailsWithErrno(EADDRINUSE), SyscallFailsWithErrno(EINVAL)));
+  ASSERT_THAT(bind(socket_, reinterpret_cast<struct sockaddr*>(&bind_addr),
+                   sizeof(bind_addr)),
+              // Linux 4.09 returns EINVAL here, but some time before 4.19 it
+              // switched to EADDRINUSE.
+              SyscallSucceeds());
 }
 
 // Bind and verify we do not receive data on interface which is not bound

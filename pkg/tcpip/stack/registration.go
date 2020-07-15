@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -436,6 +437,12 @@ type LinkEndpoint interface {
 	// Wait will not block if the endpoint hasn't started any goroutines
 	// yet, even if it might later.
 	Wait()
+
+	// ARPHardwareType returns the ARPHRD_TYPE of the link endpoint.
+	//
+	// See:
+	// https://github.com/torvalds/linux/blob/aa0c9086b40c17a7ad94425b3b70dd1fdd7497bf/include/uapi/linux/if_arp.h#L30
+	ARPHardwareType() header.ARPHardwareType
 }
 
 // InjectableLinkEndpoint is a LinkEndpoint where inbound packets are

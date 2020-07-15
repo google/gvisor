@@ -45,6 +45,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/iovec"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -406,6 +407,8 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 		eth.Encode(ethHdr)
 	}
 
+	var builder iovec.Builder
+
 	fd := e.fds[pkt.Hash%uint32(len(e.fds))]
 	if e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
 		vnetHdr := virtioNetHdr{}
@@ -430,29 +433,25 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 		}
 
 		vnetHdrBuf := binary.Marshal(make([]byte, 0, virtioNetHdrSize), binary.LittleEndian, vnetHdr)
-		return rawfile.NonBlockingWrite3(fd, vnetHdrBuf, pkt.Header.View(), pkt.Data.ToView())
+		builder.Add(vnetHdrBuf)
 	}
 
-	if pkt.Data.Size() == 0 {
-		return rawfile.NonBlockingWrite(fd, pkt.Header.View())
-	}
-	if pkt.Header.UsedLength() == 0 {
-		return rawfile.NonBlockingWrite(fd, pkt.Data.ToView())
+	builder.Add(pkt.Header.View())
+	for _, v := range pkt.Data.Views() {
+		builder.Add(v)
 	}
 
-	return rawfile.NonBlockingWrite3(fd, pkt.Header.View(), pkt.Data.ToView(), nil)
+	return rawfile.NonBlockingWriteIovec(fd, builder.Build())
 }
 
 func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, *tcpip.Error) {
 	// Send a batch of packets through batchFD.
 	mmsgHdrs := make([]rawfile.MMsgHdr, 0, len(batch))
 	for _, pkt := range batch {
-		var ethHdrBuf []byte
-		iovLen := 0
+		var eth header.Ethernet
 		if e.hdrSize > 0 {
 			// Add ethernet header if needed.
-			ethHdrBuf = make([]byte, header.EthernetMinimumSize)
-			eth := header.Ethernet(ethHdrBuf)
+			eth = make(header.Ethernet, header.EthernetMinimumSize)
 			ethHdr := &header.EthernetFields{
 				DstAddr: pkt.EgressRoute.RemoteLinkAddress,
 				Type:    pkt.NetworkProtocolNumber,
@@ -465,12 +464,11 @@ func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, *tc
 				ethHdr.SrcAddr = e.addr
 			}
 			eth.Encode(ethHdr)
-			iovLen++
 		}
 
-		vnetHdr := virtioNetHdr{}
 		var vnetHdrBuf []byte
 		if e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
+			vnetHdr := virtioNetHdr{}
 			if pkt.GSOOptions != nil {
 				vnetHdr.hdrLen = uint16(pkt.Header.UsedLength())
 				if pkt.GSOOptions.NeedsCsum {
@@ -491,45 +489,20 @@ func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, *tc
 				}
 			}
 			vnetHdrBuf = binary.Marshal(make([]byte, 0, virtioNetHdrSize), binary.LittleEndian, vnetHdr)
-			iovLen++
 		}
 
-		iovecs := make([]syscall.Iovec, iovLen+1+len(pkt.Data.Views()))
+		var builder iovec.Builder
+		builder.Add(vnetHdrBuf)
+		builder.Add(eth)
+		builder.Add(pkt.Header.View())
+		for _, v := range pkt.Data.Views() {
+			builder.Add(v)
+		}
+		iovecs := builder.Build()
+
 		var mmsgHdr rawfile.MMsgHdr
 		mmsgHdr.Msg.Iov = &iovecs[0]
-		iovecIdx := 0
-		if vnetHdrBuf != nil {
-			v := &iovecs[iovecIdx]
-			v.Base = &vnetHdrBuf[0]
-			v.Len = uint64(len(vnetHdrBuf))
-			iovecIdx++
-		}
-		if ethHdrBuf != nil {
-			v := &iovecs[iovecIdx]
-			v.Base = &ethHdrBuf[0]
-			v.Len = uint64(len(ethHdrBuf))
-			iovecIdx++
-		}
-		pktSize := uint64(0)
-		// Encode L3 Header
-		v := &iovecs[iovecIdx]
-		hdr := &pkt.Header
-		hdrView := hdr.View()
-		v.Base = &hdrView[0]
-		v.Len = uint64(len(hdrView))
-		pktSize += v.Len
-		iovecIdx++
-
-		// Now encode the Transport Payload.
-		pktViews := pkt.Data.Views()
-		for i := range pktViews {
-			vec := &iovecs[iovecIdx]
-			iovecIdx++
-			vec.Base = &pktViews[i][0]
-			vec.Len = uint64(len(pktViews[i]))
-			pktSize += vec.Len
-		}
-		mmsgHdr.Msg.Iovlen = uint64(iovecIdx)
+		mmsgHdr.Msg.Iovlen = uint64(len(iovecs))
 		mmsgHdrs = append(mmsgHdrs, mmsgHdr)
 	}
 
@@ -624,6 +597,14 @@ func (e *endpoint) dispatchLoop(inboundDispatcher linkDispatcher) *tcpip.Error {
 // GSOMaxSize returns the maximum GSO packet size.
 func (e *endpoint) GSOMaxSize() uint32 {
 	return e.gsoMaxSize
+}
+
+// ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
+func (e *endpoint) ARPHardwareType() header.ARPHardwareType {
+	if e.hdrSize > 0 {
+		return header.ARPHardwareEther
+	}
+	return header.ARPHardwareNone
 }
 
 // InjectableEndpoint is an injectable fd-based endpoint. The endpoint writes

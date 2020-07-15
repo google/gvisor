@@ -139,6 +139,7 @@ func attachOrCreateNIC(s *stack.Stack, name, prefix string, linkCaps stack.LinkE
 			stack:    s,
 			nicID:    id,
 			name:     name,
+			isTap:    prefix == "tap",
 		}
 		endpoint.Endpoint.LinkEPCapabilities = linkCaps
 		if endpoint.name == "" {
@@ -348,6 +349,7 @@ type tunEndpoint struct {
 	stack *stack.Stack
 	nicID tcpip.NICID
 	name  string
+	isTap bool
 }
 
 // DecRef decrements refcount of e, removes NIC if refcount goes to 0.
@@ -355,4 +357,12 @@ func (e *tunEndpoint) DecRef() {
 	e.DecRefWithDestructor(func() {
 		e.stack.RemoveNIC(e.nicID)
 	})
+}
+
+// ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
+func (e *tunEndpoint) ARPHardwareType() header.ARPHardwareType {
+	if e.isTap {
+		return header.ARPHardwareEther
+	}
+	return header.ARPHardwareNone
 }
