@@ -58,6 +58,8 @@ func (x *endpoint) StateFields() []string {
 		"sndBufSizeMax",
 		"closed",
 		"bound",
+		"boundNIC",
+		"lastError",
 	}
 }
 
@@ -65,6 +67,8 @@ func (x *endpoint) StateSave(m state.Sink) {
 	x.beforeSave()
 	var rcvBufSizeMax int = x.saveRcvBufSizeMax()
 	m.SaveValue(5, rcvBufSizeMax)
+	var lastError string = x.saveLastError()
+	m.SaveValue(13, lastError)
 	m.Save(0, &x.TransportEndpointInfo)
 	m.Save(1, &x.netProto)
 	m.Save(2, &x.waiterQueue)
@@ -76,6 +80,7 @@ func (x *endpoint) StateSave(m state.Sink) {
 	m.Save(9, &x.sndBufSizeMax)
 	m.Save(10, &x.closed)
 	m.Save(11, &x.bound)
+	m.Save(12, &x.boundNIC)
 }
 
 func (x *endpoint) StateLoad(m state.Source) {
@@ -90,7 +95,9 @@ func (x *endpoint) StateLoad(m state.Source) {
 	m.Load(9, &x.sndBufSizeMax)
 	m.Load(10, &x.closed)
 	m.Load(11, &x.bound)
+	m.Load(12, &x.boundNIC)
 	m.LoadValue(5, new(int), func(y interface{}) { x.loadRcvBufSizeMax(y.(int)) })
+	m.LoadValue(13, new(string), func(y interface{}) { x.loadLastError(y.(string)) })
 	m.AfterLoad(x.afterLoad)
 }
 
