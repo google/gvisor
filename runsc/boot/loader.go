@@ -546,6 +546,9 @@ func (l *Loader) run() error {
 			pprof.Initialize()
 		}
 
+		// Wait for pre-filter initialization.
+		cpuid.WaitForInit()
+
 		// Finally done with all configuration. Setup filters before user code
 		// is loaded.
 		if err := l.installSeccompFilters(); err != nil {
