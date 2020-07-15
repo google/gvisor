@@ -28,9 +28,9 @@ import (
 )
 
 // specialFileFD implements vfs.FileDescriptionImpl for pipes, sockets, device
-// special files, and (when filesystemOptions.specialRegularFiles is in effect)
-// regular files. specialFileFD differs from regularFileFD by using per-FD
-// handles instead of shared per-dentry handles, and never buffering I/O.
+// special files, and (when filesystemOptions.regularFilesUseSpecialFileFD is
+// in effect) regular files. specialFileFD differs from regularFileFD by using
+// per-FD handles instead of shared per-dentry handles, and never buffering I/O.
 type specialFileFD struct {
 	fileDescription
 
