@@ -287,3 +287,8 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 
 	e.completed.Done()
 }
+
+// ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType
+func (*endpoint) ARPHardwareType() header.ARPHardwareType {
+	return header.ARPHardwareEther
+}
