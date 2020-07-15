@@ -16,6 +16,7 @@
 package fuse
 
 import (
+	"math"
 	"strconv"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -57,6 +58,10 @@ type filesystemOptions struct {
 	// exist at any time. Any further requests will block when trying to
 	// Call the server.
 	maxActiveRequests uint64
+
+	// maxRead is the max number of bytes to read.
+	// specified as "max_read" in fs parameters.
+	maxRead uint32
 }
 
 // filesystem implements vfs.FilesystemImpl.
@@ -143,6 +148,18 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	// Set the maxInFlightRequests option.
 	fsopts.maxActiveRequests = maxActiveRequestsDefault
 
+	if maxReadStr, ok := mopts["max_read"]; ok {
+		delete(mopts, "max_read")
+		maxRead, err := strconv.ParseUint(maxReadStr, 10, 32)
+		if err != nil {
+			log.Warningf("%s.GetFilesystem: invalid max_read: max_read=%s", fsType.Name(), maxReadStr)
+			return nil, nil, syserror.EINVAL
+		}
+		fsopts.maxRead = uint32(maxRead)
+	} else {
+		fsopts.maxRead = math.MaxUint32
+	}
+
 	// Check for unparsed options.
 	if len(mopts) != 0 {
 		log.Warningf("%s.GetFilesystem: unknown options: %v", fsType.Name(), mopts)
@@ -178,7 +195,7 @@ func NewFUSEFilesystem(ctx context.Context, devMinor uint32, opts *filesystemOpt
 		opts:     opts,
 	}
 
-	conn, err := newFUSEConnection(ctx, device, opts.maxActiveRequests)
+	conn, err := newFUSEConnection(ctx, device, opts)
 	if err != nil {
 		log.Warningf("fuse.NewFUSEFilesystem: NewFUSEConnection failed with error: %v", err)
 		return nil, syserror.EINVAL
@@ -268,10 +285,13 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 		fd = &(directoryFD.fileDescription)
 		fdImpl = directoryFD
 	} else {
-		// FOPEN_KEEP_CACHE is the defualt flag for noOpen.
-		fd = &fileDescription{OpenFlag: linux.FOPEN_KEEP_CACHE}
-		fdImpl = fd
+		regularFd := &regularFileFD{}
+		fd = &(regularFd.fileDescription)
+		fdImpl = regularFd
 	}
+	// FOPEN_KEEP_CACHE is the defualt flag for noOpen.
+	fd.OpenFlag = linux.FOPEN_KEEP_CACHE
+
 	// Only send open request when FUSE server support open or is opening a directory.
 	if !i.fs.conn.noOpen || isDir {
 		kernelTask := kernel.TaskFromContext(ctx)
@@ -280,21 +300,25 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 			return nil, syserror.EINVAL
 		}
 
+		// Build the request.
 		var opcode linux.FUSEOpcode
 		if isDir {
 			opcode = linux.FUSE_OPENDIR
 		} else {
 			opcode = linux.FUSE_OPEN
 		}
+
 		in := linux.FUSEOpenIn{Flags: opts.Flags & ^uint32(linux.O_CREAT|linux.O_EXCL|linux.O_NOCTTY)}
 		if !i.fs.conn.atomicOTrunc {
 			in.Flags &= ^uint32(linux.O_TRUNC)
 		}
+
 		req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.NodeID, opcode, &in)
 		if err != nil {
 			return nil, err
 		}
 
+		// Send the request and receive the reply.
 		res, err := i.fs.conn.Call(kernelTask, req)
 		if err != nil {
 			return nil, err
@@ -308,13 +332,15 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 			if err := res.UnmarshalPayload(&out); err != nil {
 				return nil, err
 			}
+
+			// Process the reply.
 			fd.OpenFlag = out.OpenFlag
+			if isDir {
+				fd.OpenFlag &= ^uint32(linux.FOPEN_DIRECT_IO)
+			}
+
 			fd.Fh = out.Fh
 		}
-	}
-
-	if isDir {
-		fd.OpenFlag &= ^uint32(linux.FOPEN_DIRECT_IO)
 	}
 
 	// TODO(gvisor.dev/issue/3234): invalidate mmap after implemented it for FUSE Inode
