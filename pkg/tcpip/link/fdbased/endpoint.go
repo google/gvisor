@@ -626,6 +626,14 @@ func (e *endpoint) GSOMaxSize() uint32 {
 	return e.gsoMaxSize
 }
 
+// ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
+func (e *endpoint) ARPHardwareType() header.ARPHardwareType {
+	if e.hdrSize > 0 {
+		return header.ARPHardwareEther
+	}
+	return header.ARPHardwareNone
+}
+
 // InjectableEndpoint is an injectable fd-based endpoint. The endpoint writes
 // to the FD, but does not read from it. All reads come from injected packets.
 type InjectableEndpoint struct {

@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -295,4 +296,9 @@ func (e *Endpoint) AddNotify(notify Notification) *NotificationHandle {
 // RemoveNotify removes handle from the list of notification targets.
 func (e *Endpoint) RemoveNotify(handle *NotificationHandle) {
 	e.q.RemoveNotify(handle)
+}
+
+// ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
+func (*Endpoint) ARPHardwareType() header.ARPHardwareType {
+	return header.ARPHardwareNone
 }

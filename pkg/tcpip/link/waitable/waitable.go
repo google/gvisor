@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/gate"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -147,3 +148,8 @@ func (e *Endpoint) WaitDispatch() {
 
 // Wait implements stack.LinkEndpoint.Wait.
 func (e *Endpoint) Wait() {}
+
+// ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
+func (e *Endpoint) ARPHardwareType() header.ARPHardwareType {
+	return e.lower.ARPHardwareType()
+}
