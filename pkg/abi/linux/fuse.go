@@ -184,6 +184,13 @@ const (
 	FUSE_KERNEL_MINOR_VERSION = 31
 )
 
+// Constants relevant to FUSE operations.
+const (
+	FUSE_NAME_MAX     = 1024
+	FUSE_PAGE_SIZE    = 4096
+	FUSE_DIRENT_ALIGN = 8
+)
+
 // FUSEInitIn is the request sent by the kernel to the daemon,
 // to negotiate the version and flags.
 //
@@ -392,6 +399,36 @@ type FUSEOpenOut struct {
 
 	// OpenFlag for the opened file.
 	OpenFlag uint32
+}
+
+// FUSE_READ flags, consistent with the ones in include/uapi/linux/fuse.h.
+const (
+	FUSE_READ_LOCKOWNER = 1 << 1
+)
+
+// FUSEReadIn is the request sent by the kernel to the daemon
+// for FUSE_READ.
+//
+// +marshal
+type FUSEReadIn struct {
+	// Fh is the file handle in userspace.
+	Fh uint64
+
+	// Offset is the read offset.
+	Offset uint64
+
+	// Size is the number of bytes to read.
+	Size uint32
+
+	// ReadFlags for this FUSE_READ request.
+	// Currently only contains FUSE_READ_LOCKOWNER.
+	ReadFlags uint32
+
+	// LockOwner is the id of the lock owner if there is one.
+	LockOwner uint64
+
+	// Flags for the underlying file.
+	Flags uint32
 
 	_ uint32
 }

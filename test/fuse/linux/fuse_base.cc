@@ -129,13 +129,17 @@ void FuseTest::SkipServerActualRequest() {
 
 // Sends the `kSetInodeLookup` command, expected mode, and the path of the
 // inode to create under the mount point.
-void FuseTest::SetServerInodeLookup(const std::string& path, mode_t mode) {
+void FuseTest::SetServerInodeLookup(const std::string& path, mode_t mode,
+                                    uint64_t size) {
   uint32_t cmd = static_cast<uint32_t>(FuseTestCmd::kSetInodeLookup);
   EXPECT_THAT(RetryEINTR(write)(sock_[0], &cmd, sizeof(cmd)),
               SyscallSucceedsWithValue(sizeof(cmd)));
 
   EXPECT_THAT(RetryEINTR(write)(sock_[0], &mode, sizeof(mode)),
               SyscallSucceedsWithValue(sizeof(mode)));
+
+  EXPECT_THAT(RetryEINTR(write)(sock_[0], &size, sizeof(size)),
+              SyscallSucceedsWithValue(sizeof(size)));
 
   // Pad 1 byte for null-terminate c-string.
   EXPECT_THAT(RetryEINTR(write)(sock_[0], path.c_str(), path.size() + 1),
@@ -144,10 +148,10 @@ void FuseTest::SetServerInodeLookup(const std::string& path, mode_t mode) {
   WaitServerComplete();
 }
 
-void FuseTest::MountFuse() {
+void FuseTest::MountFuse(const char* mountOpts) {
   EXPECT_THAT(dev_fd_ = open("/dev/fuse", O_RDWR), SyscallSucceeds());
 
-  std::string mount_opts = absl::StrFormat("fd=%d,%s", dev_fd_, kMountOpts);
+  std::string mount_opts = absl::StrFormat("fd=%d,%s", dev_fd_, mountOpts);
   mount_point_ = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   EXPECT_THAT(mount("fuse", mount_point_.path().c_str(), "fuse",
                     MS_NODEV | MS_NOSUID, mount_opts.c_str()),
@@ -311,10 +315,14 @@ void FuseTest::ServerHandleCommand() {
 // request with this specific path comes in.
 void FuseTest::ServerReceiveInodeLookup() {
   mode_t mode;
+  uint64_t size;
   std::vector<char> buf(FUSE_MIN_READ_BUFFER);
 
   EXPECT_THAT(RetryEINTR(read)(sock_[1], &mode, sizeof(mode)),
               SyscallSucceedsWithValue(sizeof(mode)));
+
+  EXPECT_THAT(RetryEINTR(read)(sock_[1], &size, sizeof(size)),
+              SyscallSucceedsWithValue(sizeof(size)));
 
   EXPECT_THAT(RetryEINTR(read)(sock_[1], buf.data(), buf.size()),
               SyscallSucceeds());
@@ -331,6 +339,9 @@ void FuseTest::ServerReceiveInodeLookup() {
   // Since this is only used in test, nodeid_ is simply increased by 1 to
   // comply with the unqiueness of different path.
   ++nodeid_;
+
+  // Set the size.
+  out_payload.attr.size = size;
 
   memcpy(buf.data(), &out_header, sizeof(out_header));
   memcpy(buf.data() + sizeof(out_header), &out_payload, sizeof(out_payload));
