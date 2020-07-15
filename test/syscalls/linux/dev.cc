@@ -61,6 +61,17 @@ TEST(DevTest, LseekDevFull) {
   EXPECT_THAT(lseek(fd.get(), 123, SEEK_END), SyscallSucceedsWithValue(0));
 }
 
+TEST(DevTest, LseekDevKmsg) {
+  SKIP_IF(IsRunningWithVFS1());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/kmsg", O_RDONLY));
+  EXPECT_THAT(lseek(fd.get(), 0, SEEK_CUR), SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(lseek(fd.get(), 1, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
+  EXPECT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceedsWithValue(0));
+  EXPECT_THAT(lseek(fd.get(), 0, SEEK_END), SyscallSucceedsWithValue(0));
+  EXPECT_THAT(lseek(fd.get(), 0, SEEK_DATA), SyscallSucceedsWithValue(0));
+}
+
 TEST(DevTest, LseekDevNullFreshFile) {
   // Seeks to /dev/null always return 0.
   const FileDescriptor fd1 =
@@ -85,6 +96,9 @@ TEST(DevTest, OpenTruncate) {
       Open("/dev/zero", O_CREAT | O_TRUNC | O_WRONLY, 0644));
   ASSERT_NO_ERRNO_AND_VALUE(
       Open("/dev/full", O_CREAT | O_TRUNC | O_WRONLY, 0644));
+  SKIP_IF(IsRunningWithVFS1());
+  ASSERT_NO_ERRNO_AND_VALUE(
+      Open("/dev/kmsg", O_CREAT | O_TRUNC | O_WRONLY, 0644));
 }
 
 TEST(DevTest, Pread64DevNull) {
@@ -144,6 +158,71 @@ TEST(DevTest, WriteDevFull) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/full", O_WRONLY));
   EXPECT_THAT(WriteFd(fd.get(), "a", 1), SyscallFailsWithErrno(ENOSPC));
+}
+
+TEST(DevTest, ReadWriteDevKmsg) {
+  SKIP_IF(IsRunningWithVFS1());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/kmsg", O_RDWR));
+
+  constexpr int bufferSize = 1024;
+  std::vector<char> oversizeBuffer(bufferSize * 2);
+  EXPECT_THAT(WriteFd(fd.get(), oversizeBuffer.data(), bufferSize * 2),
+              SyscallFailsWithErrno(EINVAL));
+  std::vector<char> writeBuffer(bufferSize);
+  RandomizeBuffer(writeBuffer.data(), writeBuffer.size());
+  EXPECT_THAT(WriteFd(fd.get(), writeBuffer.data(), bufferSize),
+              SyscallSucceedsWithValue(bufferSize));
+
+  std::vector<char> readBuffer(bufferSize);
+  EXPECT_THAT(ReadFd(fd.get(), readBuffer.data(), bufferSize / 2),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(ReadFd(fd.get(), readBuffer.data(), bufferSize),
+              SyscallSucceedsWithValue(bufferSize));
+  EXPECT_EQ(writeBuffer, readBuffer);
+  EXPECT_THAT(ReadFd(fd.get(), readBuffer.data(), bufferSize),
+              SyscallFailsWithErrno(EAGAIN));
+}
+
+TEST(DevTest, OverwriteDevKmsgBuffer) {
+  SKIP_IF(IsRunningWithVFS1());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/kmsg", O_RDWR));
+
+  constexpr int overwriteAmount = 10;
+  constexpr int bufferEntryMax = 512;
+  for (int i = 0; i < bufferEntryMax + overwriteAmount; i++) {
+    EXPECT_THAT(WriteFd(fd.get(), &i, 1), SyscallSucceedsWithValue(1));
+  }
+  std::vector<int> buf(1);
+  EXPECT_THAT(ReadFd(fd.get(), buf.data(), 1), SyscallFailsWithErrno(EPIPE));
+  EXPECT_THAT(ReadFd(fd.get(), buf.data(), 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(overwriteAmount, buf.front());
+}
+
+TEST(DevTest, MultipleOpenAccessKmsg) {
+  SKIP_IF(IsRunningWithVFS1());
+  FileDescriptor writeFd = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/kmsg", O_RDWR));
+  constexpr int bufferSize = 1024;
+  std::vector<char> writeBuffer(bufferSize);
+  RandomizeBuffer(writeBuffer.data(), writeBuffer.size());
+  EXPECT_THAT(WriteFd(writeFd.get(), writeBuffer.data(), bufferSize),
+              SyscallSucceedsWithValue(bufferSize));
+  EXPECT_THAT(close(writeFd.release()), SyscallSucceeds());
+
+  FileDescriptor readFd = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/kmsg", O_RDWR));
+  std::vector<char> readBuffer(bufferSize);
+  EXPECT_THAT(ReadFd(readFd.get(), readBuffer.data(), bufferSize),
+              SyscallSucceedsWithValue(bufferSize));
+  EXPECT_EQ(writeBuffer, readBuffer);
+}
+
+TEST(DevTest, NonblockReadDevKmsg) {
+  SKIP_IF(IsRunningWithVFS1());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/kmsg", O_RDWR & O_NONBLOCK));
+  std::vector<char> buf(1);
+  EXPECT_THAT(ReadFd(fd.get(), buf.data(), 1), SyscallFailsWithErrno(EAGAIN));
 }
 
 TEST(DevTest, TTYExists) {

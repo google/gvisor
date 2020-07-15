@@ -155,6 +155,7 @@ go_library(
         "//pkg/binary",
         "//pkg/bits",
         "//pkg/bpf",
+        "//pkg/buffer",
         "//pkg/context",
         "//pkg/cpuid",
         "//pkg/eventchannel",

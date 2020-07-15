@@ -6,6 +6,7 @@ go_library(
     name = "memdev",
     srcs = [
         "full.go",
+        "kmsg.go",
         "memdev.go",
         "null.go",
         "random.go",
@@ -18,11 +19,14 @@ go_library(
         "//pkg/rand",
         "//pkg/safemem",
         "//pkg/sentry/fsimpl/devtmpfs",
+        "//pkg/sentry/kernel",
+        "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
         "//pkg/sentry/mm",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/vfs",
         "//pkg/syserror",
         "//pkg/usermem",
+        "//pkg/waiter",
     ],
 )
