@@ -15,6 +15,7 @@
 package packet
 
 import (
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -69,4 +70,22 @@ func (ep *endpoint) afterLoad() {
 	if err := ep.stack.RegisterPacketEndpoint(0, ep.netProto, ep); err != nil {
 		panic(*err)
 	}
+}
+
+// saveLastError is invoked by stateify.
+func (ep *endpoint) saveLastError() string {
+	if ep.lastError == nil {
+		return ""
+	}
+
+	return ep.lastError.String()
+}
+
+// loadLastError is invoked by stateify.
+func (ep *endpoint) loadLastError(s string) {
+	if s == "" {
+		return
+	}
+
+	ep.lastError = tcpip.StringToError(s)
 }
