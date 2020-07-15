@@ -71,6 +71,7 @@ func newVFS2Socket(t *kernel.Task, family int, stype linux.SockType, protocol in
 		DenyPWrite:        true,
 		UseDentryMetadata: true,
 	}); err != nil {
+		fdnotifier.RemoveFD(int32(s.fd))
 		return nil, syserr.FromError(err)
 	}
 	return vfsfd, nil
