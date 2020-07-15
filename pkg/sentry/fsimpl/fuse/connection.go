@@ -287,8 +287,15 @@ func (conn *Connection) isInitialized() bool {
 	return conn.Initialized
 }
 
+// Marshallable defines the Marshallable interface for serialize/deserializing
+// FUSE packets.
+type Marshallable interface {
+	MarshalUnsafe([]byte)
+	SizeBytes() int
+}
+
 // NewRequest creates a new request that can be sent to the FUSE server.
-func (conn *Connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint64, opcode linux.FUSEOpcode, payload marshal.Marshallable) (*Request, error) {
+func (conn *Connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint64, opcode linux.FUSEOpcode, payload Marshallable) (*Request, error) {
 	conn.fd.mu.Lock()
 	defer conn.fd.mu.Unlock()
 	conn.fd.nextOpID += linux.FUSEOpID(ReqIDStep)

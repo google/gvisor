@@ -271,3 +271,37 @@ type FUSEGetAttrOut struct {
 	// Attr contains the metadata returned from the FUSE server
 	Attr FUSEAttr
 }
+
+// FUSELookupIn is the request sent by the kernel to the daemon
+// to look up a file name.
+//
+// Dynamically-sized objects cannot be marshalled.
+type FUSELookupIn struct {
+	// Name is a file name to be looked up.
+	Name string
+}
+
+// MarshalUnsafe serializes r.name to the dst buffer.
+func (r *FUSELookupIn) MarshalUnsafe(buf []byte) {
+	copy(buf, []byte(r.Name))
+}
+
+// SizeBytes is the size of the memory representation of FUSELookupIn.
+func (r *FUSELookupIn) SizeBytes() int {
+	return len(r.Name)
+}
+
+// FUSEEntryOut is the reply sent by the daemon to the kernel for the
+// FUSE_LOOKUP command.
+//
+// +marshal
+type FUSEEntryOut struct {
+	// NodeID is the ID of the filesystem object being operated on.
+	NodeID         uint64
+	Generation     uint64
+	EntryValid     uint64
+	AttrValid      uint64
+	EntryValidNSec uint32
+	AttrValidNSec  uint32
+	Attr           FUSEAttr
+}
