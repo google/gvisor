@@ -19,6 +19,7 @@ go_library(
     name = "fuse",
     srcs = [
         "connection.go",
+        "dentry.go",
         "dev.go",
         "fusefs.go",
         "init.go",
@@ -30,6 +31,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/log",
+        "//pkg/refs",
         "//pkg/sentry/fsimpl/devtmpfs",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/kernel",

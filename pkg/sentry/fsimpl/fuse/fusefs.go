@@ -201,16 +201,16 @@ type Inode struct {
 
 	locks vfs.FileLocks
 
-	dentry kernfs.Dentry
+	*dentry
 }
 
-func (fs *filesystem) newInode(creds *auth.Credentials, mode linux.FileMode) *kernfs.Dentry {
+func (fs *filesystem) newInode(creds *auth.Credentials, mode linux.FileMode) *dentry {
 	i := &Inode{}
 	i.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0755)
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
-	i.dentry.Init(i)
+	i.dentry = fs.newDentry(i)
 
-	return &i.dentry
+	return i.dentry
 }
 
 // Open implements kernfs.Inode.Open.
@@ -228,6 +228,14 @@ type fileDescription struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.LockFD
+}
+
+func (fd *fileDescription) dentry() *dentry {
+	return fd.vfsfd.Dentry().Impl().(*dentry)
+}
+
+func (fd *fileDescription) inode() *Inode {
+	return fd.dentry().inode
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
