@@ -53,6 +53,10 @@ const (
 	// (all bits set to 0).
 	unspecifiedEthernetAddress = tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00")
 
+	// EthernetBroadcastAddress is an ethernet address that addresses every node
+	// on a local link.
+	EthernetBroadcastAddress = tcpip.LinkAddress("\xff\xff\xff\xff\xff\xff")
+
 	// unicastMulticastFlagMask is the mask of the least significant bit in
 	// the first octet (in network byte order) of an ethernet address that
 	// determines whether the ethernet address is a unicast or multicast. If

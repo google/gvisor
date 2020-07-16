@@ -494,8 +494,6 @@ const (
 	icmpV6LengthOffset = 25
 )
 
-var broadcastMAC = tcpip.LinkAddress([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
-
 var _ stack.LinkAddressResolver = (*protocol)(nil)
 
 // LinkAddressProtocol implements stack.LinkAddressResolver.

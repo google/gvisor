@@ -162,7 +162,7 @@ func (*protocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 // LinkAddressRequest implements stack.LinkAddressResolver.LinkAddressRequest.
 func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.LinkEndpoint) *tcpip.Error {
 	r := &stack.Route{
-		RemoteLinkAddress: broadcastMAC,
+		RemoteLinkAddress: header.EthernetBroadcastAddress,
 	}
 
 	hdr := buffer.NewPrependable(int(linkEP.MaxHeaderLength()) + header.ARPSize)
@@ -181,7 +181,7 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.
 // ResolveStaticAddress implements stack.LinkAddressResolver.ResolveStaticAddress.
 func (*protocol) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bool) {
 	if addr == header.IPv4Broadcast {
-		return broadcastMAC, true
+		return header.EthernetBroadcastAddress, true
 	}
 	if header.IsV4MulticastAddress(addr) {
 		return header.EthernetAddressFromMulticastIPv4Address(addr), true
@@ -215,8 +215,6 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNu
 	pkt.Data.TrimFront(header.ARPSize)
 	return 0, false, true
 }
-
-var broadcastMAC = tcpip.LinkAddress([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
 
 // NewProtocol returns an ARP network protocol.
 func NewProtocol() stack.NetworkProtocol {
