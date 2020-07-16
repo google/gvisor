@@ -11,7 +11,10 @@ go_library(
 go_test(
     name = "network_test",
     size = "large",
-    srcs = ["iperf_test.go"],
+    srcs = [
+        "httpd_test.go",
+        "iperf_test.go",
+    ],
     library = ":network",
     tags = [
         # Requires docker and runsc to be configured before test runs.

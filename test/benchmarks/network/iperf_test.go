@@ -35,11 +35,13 @@ func BenchmarkIperf(b *testing.B) {
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
 	}
+	defer clientMachine.CleanUp()
 
 	serverMachine, err := h.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
 	}
+	defer serverMachine.CleanUp()
 
 	for _, bm := range []struct {
 		name          string
@@ -111,7 +113,7 @@ func BenchmarkIperf(b *testing.B) {
 				if err != nil {
 					b.Fatalf("failed to parse bandwitdth from %s: %v", out, err)
 				}
-				b.ReportMetric(bW, "KBytes/sec")
+				b.ReportMetric(bW*1024, "bandwidth") // Convert from Kb/s to b/s.
 				b.StartTimer()
 			}
 		})
