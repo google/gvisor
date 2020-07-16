@@ -876,7 +876,7 @@ var _ vfs.FileDescriptionImpl = (*namespaceFD)(nil)
 // Stat implements FileDescriptionImpl.
 func (fd *namespaceFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
 	vfs := fd.vfsfd.VirtualDentry().Mount().Filesystem()
-	return fd.inode.Stat(vfs, opts)
+	return fd.inode.Stat(ctx, vfs, opts)
 }
 
 // SetStat implements FileDescriptionImpl.
