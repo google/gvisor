@@ -32,6 +32,7 @@ func BenchmarkABSL(b *testing.B) {
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
 	}
+	defer machine.CleanUp()
 
 	// Dimensions here are clean/dirty cache (do or don't drop caches)
 	// and if the mount on which we are compiling is a tmpfs/bind mount.

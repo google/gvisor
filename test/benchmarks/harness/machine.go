@@ -33,6 +33,9 @@ type Machine interface {
 
 	// Returns IP Address for the machine.
 	IPAddress() (net.IP, error)
+
+	// CleanUp cleans up this machine.
+	CleanUp()
 }
 
 // localMachine describes this machine.
@@ -61,4 +64,8 @@ func (l *localMachine) IPAddress() (net.IP, error) {
 
 	addr := conn.LocalAddr().(*net.UDPAddr)
 	return addr.IP, nil
+}
+
+// CleanUp implements Machine.CleanUp and does nothing for localMachine.
+func (*localMachine) CleanUp() {
 }
