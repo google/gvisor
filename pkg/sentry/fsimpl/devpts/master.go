@@ -67,8 +67,8 @@ func (mi *masterInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vf
 }
 
 // Stat implements kernfs.Inode.Stat.
-func (mi *masterInode) Stat(vfsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
-	statx, err := mi.InodeAttrs.Stat(vfsfs, opts)
+func (mi *masterInode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
+	statx, err := mi.InodeAttrs.Stat(ctx, vfsfs, opts)
 	if err != nil {
 		return linux.Statx{}, err
 	}
@@ -186,7 +186,7 @@ func (mfd *masterFileDescription) SetStat(ctx context.Context, opts vfs.SetStatO
 // Stat implements vfs.FileDescriptionImpl.Stat.
 func (mfd *masterFileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
 	fs := mfd.vfsfd.VirtualDentry().Mount().Filesystem()
-	return mfd.inode.Stat(fs, opts)
+	return mfd.inode.Stat(ctx, fs, opts)
 }
 
 // LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
