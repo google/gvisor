@@ -26,7 +26,7 @@ func TestMain(m *testing.M) {
 }
 
 // Test that the exclude file parses without error.
-func TestExcludelist(t *testing.T) {
+func TestExcludeList(t *testing.T) {
 	ex, err := getExcludes()
 	if err != nil {
 		t.Fatalf("error parsing exclude file: %v", err)
