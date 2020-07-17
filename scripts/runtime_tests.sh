@@ -22,5 +22,8 @@ if [ ! -v RUNTIME_TEST_NAME ]; then
   exit 1
 fi
 
+# Download language runtime image.
+make -C images/ "load-runtimes_${RUNTIME_TEST_NAME}"
+
 install_runsc_for_test runtimes
 test_runsc "//test/runtimes:${RUNTIME_TEST_NAME}"
