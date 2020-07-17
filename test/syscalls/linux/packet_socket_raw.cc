@@ -200,6 +200,7 @@ TEST_P(RawPacketTest, Receive) {
   EXPECT_EQ(src.sll_family, AF_PACKET);
   EXPECT_EQ(src.sll_ifindex, GetLoopbackIndex());
   EXPECT_EQ(src.sll_halen, ETH_ALEN);
+  EXPECT_EQ(ntohs(src.sll_protocol), ETH_P_IP);
   // This came from the loopback device, so the address is all 0s.
   for (int i = 0; i < src.sll_halen; i++) {
     EXPECT_EQ(src.sll_addr[i], 0);
