@@ -103,14 +103,14 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 					primitiveSize += size
 				} else {
 					g.recordUsedMarshallable(t.Name)
-					dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("(*%s)(nil).SizeBytes()", t.Name))
+					dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("%s.%s.SizeBytes()", g.r, n.Name))
 				}
 			},
 			selector: func(n, tX, tSel *ast.Ident) {
 				tName := fmt.Sprintf("%s.%s", tX.Name, tSel.Name)
 				g.recordUsedImport(tX.Name)
 				g.recordUsedMarshallable(tName)
-				dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("(*%s)(nil).SizeBytes()", tName))
+				dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("%s.%s.SizeBytes()", g.r, n.Name))
 			},
 			array: func(n *ast.Ident, a *ast.ArrayType, t *ast.Ident) {
 				lenExpr := g.arrayLenExpr(a)
