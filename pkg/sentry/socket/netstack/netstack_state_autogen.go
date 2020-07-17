@@ -45,6 +45,7 @@ func (x *socketOpsCommon) StateFields() []string {
 		"readView",
 		"readCM",
 		"sender",
+		"linkPacketInfo",
 		"sockOptTimestamp",
 		"timestampValid",
 		"timestampNS",
@@ -66,10 +67,11 @@ func (x *socketOpsCommon) StateSave(m state.Sink) {
 	m.Save(7, &x.readView)
 	m.Save(8, &x.readCM)
 	m.Save(9, &x.sender)
-	m.Save(10, &x.sockOptTimestamp)
-	m.Save(11, &x.timestampValid)
-	m.Save(12, &x.timestampNS)
-	m.Save(13, &x.sockOptInq)
+	m.Save(10, &x.linkPacketInfo)
+	m.Save(11, &x.sockOptTimestamp)
+	m.Save(12, &x.timestampValid)
+	m.Save(13, &x.timestampNS)
+	m.Save(14, &x.sockOptInq)
 }
 
 func (x *socketOpsCommon) afterLoad() {}
@@ -85,10 +87,11 @@ func (x *socketOpsCommon) StateLoad(m state.Source) {
 	m.Load(7, &x.readView)
 	m.Load(8, &x.readCM)
 	m.Load(9, &x.sender)
-	m.Load(10, &x.sockOptTimestamp)
-	m.Load(11, &x.timestampValid)
-	m.Load(12, &x.timestampNS)
-	m.Load(13, &x.sockOptInq)
+	m.Load(10, &x.linkPacketInfo)
+	m.Load(11, &x.sockOptTimestamp)
+	m.Load(12, &x.timestampValid)
+	m.Load(13, &x.timestampNS)
+	m.Load(14, &x.sockOptInq)
 }
 
 func (x *Stack) StateTypeName() string {

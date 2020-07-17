@@ -297,8 +297,9 @@ type socketOpsCommon struct {
 	readView buffer.View
 	// readCM holds control message information for the last packet read
 	// from Endpoint.
-	readCM tcpip.ControlMessages
-	sender tcpip.FullAddress
+	readCM         tcpip.ControlMessages
+	sender         tcpip.FullAddress
+	linkPacketInfo tcpip.LinkPacketInfo
 
 	// sockOptTimestamp corresponds to SO_TIMESTAMP. When true, timestamps
 	// of returned messages can be returned via control messages. When
@@ -447,8 +448,21 @@ func (s *socketOpsCommon) fetchReadView() *syserr.Error {
 	}
 	s.readView = nil
 	s.sender = tcpip.FullAddress{}
+	s.linkPacketInfo = tcpip.LinkPacketInfo{}
 
-	v, cms, err := s.Endpoint.Read(&s.sender)
+	var v buffer.View
+	var cms tcpip.ControlMessages
+	var err *tcpip.Error
+
+	switch e := s.Endpoint.(type) {
+	// The ordering of these interfaces matters. The most specific
+	// interfaces must be specified before the more generic Endpoint
+	// interface.
+	case tcpip.PacketEndpoint:
+		v, cms, err = e.ReadPacket(&s.sender, &s.linkPacketInfo)
+	case tcpip.Endpoint:
+		v, cms, err = e.Read(&s.sender)
+	}
 	if err != nil {
 		atomic.StoreUint32(&s.readViewHasData, 0)
 		return syserr.TranslateNetstackError(err)
@@ -2509,6 +2523,10 @@ func (s *socketOpsCommon) nonBlockingRead(ctx context.Context, dst usermem.IOSeq
 	var addrLen uint32
 	if isPacket && senderRequested {
 		addr, addrLen = ConvertAddress(s.family, s.sender)
+		switch v := addr.(type) {
+		case *linux.SockAddrLink:
+			v.Protocol = htons(uint16(s.linkPacketInfo.Protocol))
+		}
 	}
 
 	if peek {
