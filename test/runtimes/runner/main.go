@@ -99,7 +99,7 @@ func getTests(ctx context.Context, d *dockerutil.Container, excludes map[string]
 	// Get a list of all tests in the image.
 	list, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/proctor/proctor", "--runtime", *lang, "--list")
 	if err != nil {
-		return nil, fmt.Errorf("docker exec failed: %v\nlogs: %s", err, list)
+		return nil, fmt.Errorf("docker exec failed: %v", err)
 	}
 
 	// Calculate a subset of tests to run corresponding to the current
@@ -166,11 +166,7 @@ func getExcludes() (map[string]struct{}, error) {
 	if *excludeFile == "" {
 		return excludes, nil
 	}
-	path, err := testutil.FindFile(*excludeFile)
-	if err != nil {
-		return nil, err
-	}
-	f, err := os.Open(path)
+	f, err := os.Open(*excludeFile)
 	if err != nil {
 		return nil, err
 	}
