@@ -308,12 +308,29 @@ func TestOne(t *testing.T) {
 		"--device", testNetDev,
 		"--dut_type", *dutPlatform,
 	)
-	logs, err := testbench.Exec(ctx, dockerutil.ExecOpts{}, testArgs...)
-	if !*expectFailure && err != nil {
-		t.Fatalf("test failed: %v, logs from testbench:\n%s", err, logs)
-	}
-	if *expectFailure && err == nil {
-		t.Fatalf("test failure expected but the test succeeded, enable the test and mark the corresponding bug as fixed, logs from testbench:\n%s", logs)
+	testbenchLogs, err := testbench.Exec(ctx, dockerutil.ExecOpts{}, testArgs...)
+	if (err != nil) != *expectFailure {
+		var dutLogs string
+		if logs, err := dut.Logs(ctx); err != nil {
+			dutLogs = fmt.Sprintf("failed to fetch DUT logs: %s", err)
+		} else {
+			dutLogs = logs
+		}
+
+		t.Errorf(`test error: %v, expect failure: %t
+
+====== Begin of DUT Logs ======
+
+%s
+
+====== End of DUT Logs ======
+
+====== Begin of Testbench Logs ======
+
+%s
+
+====== End of Testbench Logs ======`,
+			err, *expectFailure, dutLogs, testbenchLogs)
 	}
 }
 
