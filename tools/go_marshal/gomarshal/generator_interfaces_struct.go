@@ -325,9 +325,9 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.inIndent(func() {
 		fallback := func() {
 			g.emit("// Type %s doesn't have a packed layout in memory, fall back to MarshalBytes.\n", g.typeName())
-			g.emit("buf := task.CopyScratchBuffer(%s.SizeBytes()) // escapes: okay.\n", g.r)
+			g.emit("buf := task.CopyScratchBuffer(limit) // escapes: okay.\n")
 			g.emit("%s.MarshalBytes(buf) // escapes: fallback.\n", g.r)
-			g.emit("return task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.\n")
+			g.emit("return task.CopyOutBytes(addr, buf) // escapes: okay.\n")
 		}
 		if thisPacked {
 			g.recordUsedImport("reflect")
