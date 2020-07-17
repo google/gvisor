@@ -14,3 +14,18 @@
 
 // Package network holds benchmarks around raw network performance.
 package network
+
+import (
+	"os"
+	"testing"
+
+	"gvisor.dev/gvisor/test/benchmarks/harness"
+)
+
+var h harness.Harness
+
+// TestMain is the main method for package network.
+func TestMain(m *testing.M) {
+	h.Init()
+	os.Exit(m.Run())
+}

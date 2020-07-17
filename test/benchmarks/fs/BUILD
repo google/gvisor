@@ -4,7 +4,9 @@ package(licenses = ["notice"])
 
 go_library(
     name = "fs",
+    testonly = 1,
     srcs = ["fs.go"],
+    deps = ["//test/benchmarks/harness"],
 )
 
 go_test(
@@ -17,8 +19,5 @@ go_test(
         "local",
         "manual",
     ],
-    deps = [
-        "//pkg/test/dockerutil",
-        "//test/benchmarks/harness",
-    ],
+    deps = ["//pkg/test/dockerutil"],
 )
