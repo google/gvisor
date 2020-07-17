@@ -85,6 +85,29 @@ func (x *ControlMessages) StateLoad(m state.Source) {
 	m.Load(9, &x.PacketInfo)
 }
 
+func (x *LinkPacketInfo) StateTypeName() string {
+	return "pkg/tcpip.LinkPacketInfo"
+}
+
+func (x *LinkPacketInfo) StateFields() []string {
+	return []string{
+		"Protocol",
+	}
+}
+
+func (x *LinkPacketInfo) beforeSave() {}
+
+func (x *LinkPacketInfo) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.Protocol)
+}
+
+func (x *LinkPacketInfo) afterLoad() {}
+
+func (x *LinkPacketInfo) StateLoad(m state.Source) {
+	m.Load(0, &x.Protocol)
+}
+
 func (x *IPPacketInfo) StateTypeName() string {
 	return "pkg/tcpip.IPPacketInfo"
 }
@@ -117,5 +140,6 @@ func (x *IPPacketInfo) StateLoad(m state.Source) {
 func init() {
 	state.Register((*FullAddress)(nil))
 	state.Register((*ControlMessages)(nil))
+	state.Register((*LinkPacketInfo)(nil))
 	state.Register((*IPPacketInfo)(nil))
 }

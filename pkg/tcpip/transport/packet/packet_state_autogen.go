@@ -17,6 +17,7 @@ func (x *packet) StateFields() []string {
 		"data",
 		"timestampNS",
 		"senderAddr",
+		"packetInfo",
 	}
 }
 
@@ -29,6 +30,7 @@ func (x *packet) StateSave(m state.Sink) {
 	m.Save(0, &x.packetEntry)
 	m.Save(2, &x.timestampNS)
 	m.Save(3, &x.senderAddr)
+	m.Save(4, &x.packetInfo)
 }
 
 func (x *packet) afterLoad() {}
@@ -37,6 +39,7 @@ func (x *packet) StateLoad(m state.Source) {
 	m.Load(0, &x.packetEntry)
 	m.Load(2, &x.timestampNS)
 	m.Load(3, &x.senderAddr)
+	m.Load(4, &x.packetInfo)
 	m.LoadValue(1, new(buffer.VectorisedView), func(y interface{}) { x.loadData(y.(buffer.VectorisedView)) })
 }
 

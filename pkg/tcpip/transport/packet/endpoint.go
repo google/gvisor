@@ -45,6 +45,9 @@ type packet struct {
 	timestampNS int64
 	// senderAddr is the network address of the sender.
 	senderAddr tcpip.FullAddress
+	// packetInfo holds additional information like the protocol
+	// of the packet etc.
+	packetInfo tcpip.LinkPacketInfo
 }
 
 // endpoint is the packet socket implementation of tcpip.Endpoint. It is legal
@@ -151,8 +154,8 @@ func (ep *endpoint) Close() {
 // ModerateRecvBuf implements tcpip.Endpoint.ModerateRecvBuf.
 func (ep *endpoint) ModerateRecvBuf(copied int) {}
 
-// Read implements tcpip.Endpoint.Read.
-func (ep *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
+// Read implements tcpip.PacketEndpoint.ReadPacket.
+func (ep *endpoint) ReadPacket(addr *tcpip.FullAddress, info *tcpip.LinkPacketInfo) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
 	ep.rcvMu.Lock()
 
 	// If there's no data to read, return that read would block or that the
@@ -177,7 +180,16 @@ func (ep *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMes
 		*addr = packet.senderAddr
 	}
 
+	if info != nil {
+		*info = packet.packetInfo
+	}
+
 	return packet.data.ToView(), tcpip.ControlMessages{HasTimestamp: true, Timestamp: packet.timestampNS}, nil
+}
+
+// Read implements tcpip.Endpoint.Read.
+func (ep *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
+	return ep.ReadPacket(addr, nil)
 }
 
 func (ep *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
@@ -428,12 +440,14 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 			NIC:  nicID,
 			Addr: tcpip.Address(hdr.SourceAddress()),
 		}
+		packet.packetInfo.Protocol = netProto
 	} else {
 		// Guess the would-be ethernet header.
 		packet.senderAddr = tcpip.FullAddress{
 			NIC:  nicID,
 			Addr: tcpip.Address(localAddr),
 		}
+		packet.packetInfo.Protocol = netProto
 	}
 
 	if ep.cooked {
