@@ -14,3 +14,18 @@
 
 // Package fs holds benchmarks around filesystem performance.
 package fs
+
+import (
+	"os"
+	"testing"
+
+	"gvisor.dev/gvisor/test/benchmarks/harness"
+)
+
+var h harness.Harness
+
+// TestMain is the main method for package fs.
+func TestMain(m *testing.M) {
+	h.Init()
+	os.Exit(m.Run())
+}

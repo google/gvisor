@@ -15,15 +15,11 @@ package fs
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
-	"gvisor.dev/gvisor/test/benchmarks/harness"
 )
-
-var h harness.Harness
 
 // Note: CleanCache versions of this test require running with root permissions.
 func BenchmarkABSL(b *testing.B) {
@@ -96,9 +92,4 @@ func BenchmarkABSL(b *testing.B) {
 			}
 		})
 	}
-}
-
-func TestMain(m *testing.M) {
-	h.Init()
-	os.Exit(m.Run())
 }

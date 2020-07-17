@@ -16,7 +16,6 @@ package network
 import (
 	"context"
 	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -25,8 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 )
-
-var h harness.Harness
 
 func BenchmarkIperf(b *testing.B) {
 
@@ -144,10 +141,4 @@ TCP window size: 45.0 KByte (default)
 	if err != nil || bandwidth != 45900 {
 		t.Fatalf("failed with: %v and %f", err, bandwidth)
 	}
-
-}
-
-func TestMain(m *testing.M) {
-	h.Init()
-	os.Exit(m.Run())
 }

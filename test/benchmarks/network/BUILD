@@ -6,6 +6,7 @@ go_library(
     name = "network",
     testonly = 1,
     srcs = ["network.go"],
+    deps = ["//test/benchmarks/harness"],
 )
 
 go_test(
