@@ -32,6 +32,9 @@ rbe_platform = native.platform
 rbe_toolchain = native.toolchain
 vdso_linker_option = "-fuse-ld=gold "
 
+def short_path(path):
+    return path
+
 def proto_library(name, has_services = None, **kwargs):
     native.proto_library(
         name = name,

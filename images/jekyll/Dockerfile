@@ -10,4 +10,5 @@ RUN gem install \
         jekyll-relative-links:0.6.1 \
         jekyll-feed:0.13.0 \
         jekyll-sitemap:1.4.0
+COPY checks.rb /checks.rb
 CMD ["/usr/gem/gems/jekyll-4.0.0/exe/jekyll", "build", "-t", "-s", "/input", "-d", "/output"]

@@ -1,5 +1,7 @@
 """Wrappers for website documentation."""
 
+load("//tools:defs.bzl", "short_path")
+
 # DocInfo is a provider which simple adds sufficient metadata to the source
 # files (and additional data files) so that a jeyll header can be constructed
 # dynamically. This is done the via BUILD system so that the plain
@@ -29,7 +31,7 @@ def _doc_impl(ctx):
             category = ctx.attr.category,
             subcategory = ctx.attr.subcategory,
             weight = ctx.attr.weight,
-            editpath = ctx.files.src[0].short_path,
+            editpath = short_path(ctx.files.src[0].short_path),
             authors = ctx.attr.authors,
         ),
     ]
