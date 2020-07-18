@@ -55,9 +55,7 @@ genrule(
           "docker run -i --user $$(id -u):$$(id -g) " +
           "-v $$(readlink -m $$T/output/_site):/output " +
           "gvisor.dev/images/jekyll " +
-          "/usr/gem/bin/htmlproofer " +
-          "--disable-external " +
-          "--check-html " +
+          "ruby /checks.rb " +
           "/output && " +
           "cp $(location //website/cmd/server) $$T/output/server && " +
           "tar -zcf $@ -C $$T/output . && " +

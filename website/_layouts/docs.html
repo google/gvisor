@@ -47,8 +47,8 @@ categories:
       <h1>{{ page.title }}</h1>
       {% if page.editpath %}
         <p>
-        <a href="https://github.com/google/gvisor/edit/master/{{page.editpath}}" target="_blank"><i class="fa fa-edit fa-fw"></i> Edit this page</a>
-        <a href="https://github.com/google/gvisor/issues/new?title={{page.title | url_encode}}" target="_blank"><i class="fab fa-github fa-fw"></i> Create issue</a>
+        <a href="https://github.com/google/gvisor/edit/master/{{page.editpath}}" target="_blank" rel="noopener"><i class="fa fa-edit fa-fw"></i> Edit this page</a>
+        <a href="https://github.com/google/gvisor/issues/new?title={{page.title | url_encode}}" target="_blank" rel="noopener"><i class="fab fa-github fa-fw"></i> Create issue</a>
         </p>
       {% endif %}
       <div class="docs-content">
