@@ -50,17 +50,14 @@ go_test(
     library = ":fuse",
     deps = [
         "//pkg/abi/linux",
-        "//pkg/context",
-        "//pkg/log",
         "//pkg/sentry/fsimpl/testutil",
         "//pkg/sentry/fsimpl/tmpfs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
-        "//pkg/sync",
         "//pkg/syserror",
         "//pkg/usermem",
+        "//pkg/waiter",
         "//tools/go_marshal/marshal",
-        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

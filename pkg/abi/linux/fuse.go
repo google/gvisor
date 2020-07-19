@@ -66,6 +66,12 @@ const (
 	FUSE_BATCH_FORGET = 42
 )
 
+const (
+	// FUSE_MIN_READ_BUFFER is the minimum size the read can be for any FUSE filesystem.
+	// This is the minimum size Linux supports. See linux.fuse.h.
+	FUSE_MIN_READ_BUFFER uint32 = 8192
+)
+
 // FUSEHeaderIn is the header read by the daemon with each request.
 //
 // +marshal
@@ -91,7 +97,7 @@ type FUSEHeaderIn struct {
 	// PID is the PID of the requesting process.
 	PID uint32
 
-	padding uint32
+	_ uint32
 }
 
 // FUSEHeaderOut is the header written by the daemon when it processes
@@ -108,4 +114,30 @@ type FUSEHeaderOut struct {
 
 	// Unique specifies the unique identifier of the corresponding request.
 	Unique FUSEOpID
+}
+
+// FUSEWriteIn is the header written by a daemon when it makes a
+// write request to the FUSE filesystem.
+//
+// +marshal
+type FUSEWriteIn struct {
+	// Fh specifies the file handle that is being written to.
+	Fh uint64
+
+	// Offset is the offset of the write.
+	Offset uint64
+
+	// Size is the size of data being written.
+	Size uint32
+
+	// WriteFlags is the flags used during the write.
+	WriteFlags uint32
+
+	// LockOwner is the ID of the lock owner.
+	LockOwner uint64
+
+	// Flags is the flags for the request.
+	Flags uint32
+
+	_ uint32
 }

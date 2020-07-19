@@ -15,6 +15,8 @@
 package fuse
 
 import (
+	"syscall"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
@@ -62,19 +64,14 @@ type DeviceFD struct {
 	// queue is the list of requests that need to be processed by the FUSE server.
 	queue requestList
 
-	// numInFlightRequests is the number of in flight requests in the queue that
-	// needs to be processed.
-	numInFlightRequests uint64
+	// numActiveRequests is the number of requests made by the Sentry that has
+	// yet to be responded to.
+	numActiveRequests uint64
 
 	// completions is used to map a request to its response. A Writer will use this
 	// to notify the caller of a completed response.
 	completions map[linux.FUSEOpID]*futureResponse
 
-	// requestKind is a map to quickly identify the kind of operation based on the
-	// opID.
-	requestKind map[linux.FUSEOpID]linux.FUSEOpcode
-
-	readCursor  uint32
 	writeCursor uint32
 
 	// writeBuf is the memory buffer used to copy in the FUSE out header from
@@ -87,9 +84,9 @@ type DeviceFD struct {
 	// mu protects all the queues, maps, buffers and cursors and nextOpID.
 	mu sync.Mutex
 
-	// emptyQueueCh is a channel used to synchronize the readers with the writers.
-	// Readers (FUSE daemon server) block if no requests are available.
-	emptyQueueCh chan struct{}
+	// waitQueue is used to notify interested parties when the device becomes
+	// readable or writable.
+	waitQueue waiter.Queue
 
 	// fullQueueCh is a channel used to synchronize the readers with the writers.
 	// Writers (inbound requests to the filesystem) block if there are too many
@@ -120,16 +117,21 @@ func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.R
 		return 0, syserror.EPERM
 	}
 
-	kernelTask := kernel.TaskFromContext(ctx)
-	if kernelTask == nil {
-		log.Warningf("fusefs.DeviceFD.Read: couldn't get kernel task from context")
-		return 0, syserror.EINVAL
+	// We require that any Read done on this filesystem have a sane minimum
+	// read buffer. It must have the capacity for the fixed parts of any request
+	// header (Linux uses the request header and the FUSEWriteIn header for this
+	// calculation) + the negotiated MaxWrite room for the data.
+	minBuffSize := linux.FUSE_MIN_READ_BUFFER
+	inHdrLen := uint32((*linux.FUSEHeaderIn)(nil).SizeBytes())
+	writeHdrLen := uint32((*linux.FUSEWriteIn)(nil).SizeBytes())
+	negotiatedMinBuffSize := inHdrLen + writeHdrLen + fd.fs.conn.MaxWrite
+	if minBuffSize < negotiatedMinBuffSize {
+		minBuffSize = negotiatedMinBuffSize
 	}
 
-	// Wait for a request to be made available.
-	if err := kernelTask.Block(fd.emptyQueueCh); err != nil {
-		log.Warningf("fusefs.DeviceFD.Read: couldn't wait on request queue: %v", err)
-		return 0, syserror.EBUSY
+	// If the read buffer is too small, error out.
+	if dst.NumBytes() < int64(minBuffSize) {
+		return 0, syserror.EINVAL
 	}
 
 	fd.mu.Lock()
@@ -140,53 +142,50 @@ func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.R
 // readLocked implements the reading of the fuse device while locked with DeviceFD.mu.
 func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	if fd.queue.Empty() {
-		log.Warningf("fusefs.DeviceFD.Read: No requests to read but still signalled")
-		return 0, syserror.EAGAIN
+		return 0, syserror.ErrWouldBlock
 	}
 
-	req := fd.queue.Front()
-	if fd.readCursor >= req.hdr.Len {
-		// Cursor points past end of current request payload? Reset the cursor,
-		// remove the front request and try again.
-		fd.readCursor = 0
-		fd.queue.Remove(req)
-		fd.numInFlightRequests -= 1
+	var readCursor uint32
+	var bytesRead int64
+	for {
+		req := fd.queue.Front()
+		if dst.NumBytes() < int64(req.hdr.Len) {
+			// The request is too large. Cannot process it. All requests must be smaller than the
+			// negotiated size as specified by Connection.MaxWrite set as part of the FUSE_INIT
+			// handshake.
+			errno := -int32(syscall.EIO)
+			if req.hdr.Opcode == linux.FUSE_SETXATTR {
+				errno = -int32(syscall.E2BIG)
+			}
 
-		// Signal that the queue is no longer full.
-		select {
-		case fd.fullQueueCh <- struct{}{}:
-		default:
-			log.Warningf("fuse.DeviceFD.Read: blocking when signalling the fullQueueCh")
+			// Return the error to the calling task.
+			if err := fd.sendError(ctx, errno, req); err != nil {
+				return 0, err
+			}
+
+			// We're done with this request.
+			fd.queue.Remove(req)
+
+			// Restart the read as this request was invalid.
+			log.Warningf("fuse.DeviceFD.Read: request found was too large. Restarting read.")
+			return fd.readLocked(ctx, dst, opts)
 		}
-		return fd.readLocked(ctx, dst, opts)
-	}
 
-	n, err := dst.CopyOut(ctx, req.data[fd.readCursor:])
-	fd.readCursor += uint32(n)
-
-	if fd.readCursor >= req.hdr.Len {
-		// Fully done with this req, remove it from the queue.
-		fd.queue.Remove(req)
-		fd.numInFlightRequests -= 1
-		fd.readCursor = 0
-
-		// Signal that the queue is no longer full.
-		select {
-		case fd.fullQueueCh <- struct{}{}:
-		default:
-			log.Warningf("fuse.DeviceFD.Read: blocking when signalling the fullQueueCh")
+		n, err := dst.CopyOut(ctx, req.data[readCursor:])
+		if err != nil {
+			return 0, err
 		}
-	} else {
-		// This read didn't dequeue a request yet and so shouldn't block
-		// the next read as the queue is not empty yet.
-		select {
-		case fd.emptyQueueCh <- struct{}{}:
-		default:
-			log.Warningf("fuse.DeviceFD.Read: blocking when signalling the emptyQueueCh")
+		readCursor += uint32(n)
+		bytesRead += int64(n)
+
+		if readCursor >= req.hdr.Len {
+			// Fully done with this req, remove it from the queue.
+			fd.queue.Remove(req)
+			break
 		}
 	}
 
-	return int64(n), err
+	return bytesRead, nil
 }
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
@@ -291,14 +290,11 @@ func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opt
 	}
 
 	if fd.writeCursorFR != nil {
-		// See if the running task need to perform some action before returning.
-		// Since we just finished writing the future, we can be sure that
-		// getResponse generates a populated response.
-		if err := fd.noReceiverAction(ctx, fd.writeCursorFR.getResponse()); err != nil {
+		if err := fd.sendResponse(ctx, fd.writeCursorFR); err != nil {
 			return 0, err
 		}
 
-		close(fd.writeCursorFR.ch)
+		// Ready the device for the next request.
 		fd.writeCursorFR = nil
 		fd.writeCursor = 0
 	}
@@ -318,6 +314,16 @@ func (fd *DeviceFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return ready & mask
 }
 
+// EventRegister implements waiter.Waitable.EventRegister.
+func (fd *DeviceFD) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
+	fd.waitQueue.EventRegister(e, mask)
+}
+
+// EventUnregister implements waiter.Waitable.EventUnregister.
+func (fd *DeviceFD) EventUnregister(e *waiter.Entry) {
+	fd.waitQueue.EventUnregister(e)
+}
+
 // Seek implements vfs.FileDescriptionImpl.Seek.
 func (fd *DeviceFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
 	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
@@ -328,18 +334,53 @@ func (fd *DeviceFD) Seek(ctx context.Context, offset int64, whence int32) (int64
 	return 0, syserror.ENOSYS
 }
 
+// sendResponse sends a response to the waiting task (if any).
+func (fd *DeviceFD) sendResponse(ctx context.Context, fut *futureResponse) error {
+	// See if the running task need to perform some action before returning.
+	// Since we just finished writing the future, we can be sure that
+	// getResponse generates a populated response.
+	if err := fd.noReceiverAction(ctx, fut.getResponse()); err != nil {
+		return err
+	}
+
+	// Signal that the queue is no longer full.
+	select {
+	case fd.fullQueueCh <- struct{}{}:
+	default:
+	}
+	fd.numActiveRequests -= 1
+
+	// Signal the task waiting on a response.
+	close(fut.ch)
+	return nil
+}
+
+// sendError sends an error response to the waiting task (if any).
+func (fd *DeviceFD) sendError(ctx context.Context, errno int32, req *Request) error {
+	// Return the error to the calling task.
+	outHdrLen := uint32((*linux.FUSEHeaderOut)(nil).SizeBytes())
+	respHdr := linux.FUSEHeaderOut{
+		Len:    outHdrLen,
+		Error:  errno,
+		Unique: req.hdr.Unique,
+	}
+
+	fut, ok := fd.completions[respHdr.Unique]
+	if !ok {
+		// Server sent us a response for a request we never sent?
+		return syserror.EINVAL
+	}
+	delete(fd.completions, respHdr.Unique)
+
+	fut.hdr = &respHdr
+	return fd.sendResponse(ctx, fut)
+}
+
 // noReceiverAction has the calling kernel.Task do some action if its known that no
 // receiver is going to be waiting on the future channel. This is to be used by:
 // FUSE_INIT.
 func (fd *DeviceFD) noReceiverAction(ctx context.Context, r *Response) error {
-	opCode, ok := fd.requestKind[r.hdr.Unique]
-	if !ok {
-		// Server sent us a response for a request we don't know about.
-		return syserror.EINVAL
-	}
-	delete(fd.requestKind, r.hdr.Unique)
-
-	if opCode == linux.FUSE_INIT {
+	if r.opcode == linux.FUSE_INIT {
 		// TODO: process init response here.
 		// Maybe get the creds from the context?
 		// creds := auth.CredentialsFromContext(ctx)

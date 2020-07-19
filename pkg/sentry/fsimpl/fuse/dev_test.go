@@ -26,17 +26,15 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/waiter"
 	"gvisor.dev/gvisor/tools/go_marshal/marshal"
 )
 
 // echoTestOpcode is the Opcode used during testing. The server used in tests
 // will simply echo the payload back with the appropriate headers.
 const echoTestOpcode linux.FUSEOpcode = 1000
-
-var testReadMu sync.Mutex
-var testCallMu sync.Mutex
 
 type testPayload struct {
 	data uint32
@@ -53,58 +51,52 @@ func TestFUSECommunication(t *testing.T) {
 
 	// Create test cases with different number of concurrent clients and servers.
 	testCases := []struct {
-		Name                string
-		NumClients          int
-		NumServers          int
-		MaxInflightRequests uint64
+		Name              string
+		NumClients        int
+		NumServers        int
+		MaxActiveRequests uint64
 	}{
 		{
-			Name:                "SingleClientSingleServer",
-			NumClients:          1,
-			NumServers:          1,
-			MaxInflightRequests: MaxInFlightRequestsDefault,
+			Name:              "SingleClientSingleServer",
+			NumClients:        1,
+			NumServers:        1,
+			MaxActiveRequests: MaxActiveRequestsDefault,
 		},
 		{
-			Name:                "SingleClientMultipleServers",
-			NumClients:          1,
-			NumServers:          10,
-			MaxInflightRequests: MaxInFlightRequestsDefault,
+			Name:              "SingleClientMultipleServers",
+			NumClients:        1,
+			NumServers:        10,
+			MaxActiveRequests: MaxActiveRequestsDefault,
 		},
 		{
-			Name:                "MultipleClientsSingleServer",
-			NumClients:          10,
-			NumServers:          1,
-			MaxInflightRequests: MaxInFlightRequestsDefault,
+			Name:              "MultipleClientsSingleServer",
+			NumClients:        10,
+			NumServers:        1,
+			MaxActiveRequests: MaxActiveRequestsDefault,
 		},
 		{
-			Name:                "MultipleClientsMultipleServers",
-			NumClients:          10,
-			NumServers:          10,
-			MaxInflightRequests: MaxInFlightRequestsDefault,
+			Name:              "MultipleClientsMultipleServers",
+			NumClients:        10,
+			NumServers:        10,
+			MaxActiveRequests: MaxActiveRequestsDefault,
 		},
 		{
-			Name:                "DelayServerStart",
-			NumClients:          10,
-			NumServers:          10,
-			MaxInflightRequests: MaxInFlightRequestsDefault,
+			Name:              "RequestCapacityFull",
+			NumClients:        10,
+			NumServers:        1,
+			MaxActiveRequests: 1,
 		},
 		{
-			Name:                "RequestQueueFull",
-			NumClients:          10,
-			NumServers:          1,
-			MaxInflightRequests: 1,
-		},
-		{
-			Name:                "RequestQueueReallyFull",
-			NumClients:          100,
-			NumServers:          2,
-			MaxInflightRequests: 2,
+			Name:              "RequestCapacityContinuouslyFull",
+			NumClients:        100,
+			NumServers:        2,
+			MaxActiveRequests: 2,
 		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.Name, func(t *testing.T) {
-			conn, fd, err := newTestConnection(s, k, testCase.MaxInflightRequests)
+			conn, fd, err := newTestConnection(s, k, testCase.MaxActiveRequests)
 			if err != nil {
 				t.Fatalf("newTestConnection: %v", err)
 			}
@@ -153,32 +145,27 @@ func TestFUSECommunication(t *testing.T) {
 // CallTest makes a request to the server and blocks the invoking
 // goroutine until a server responds with a response. Doesn't block
 // a kernel.Task. Analogous to Connection.Call but used for testing.
-func CallTest(conn *Connection, t *kernel.Task, r *Request) (*Response, error) {
-	// A lock is needed so to make sure that there is no interrupt in between
-	// receiving a signal, putting it back and the callFuture call blocking on
-	// it. This way we can guarantee that callFuture doesn't block.
-	testCallMu.Lock()
+func CallTest(conn *Connection, t *kernel.Task, r *Request, i uint32) (*Response, error) {
+	conn.fd.mu.Lock()
 
-	// This request needs to block until we know the queue is no longer full.
-	dev := conn.fd
-
-	// Emulate the blocking for when no requests are available. We can't really
-	// block a task during test and so this way we guarantee the fast path of
-	// task.Block() (when no wait is required) is hit.
-	waitChan := dev.fullQueueCh
-	select {
-	case <-waitChan:
-		// Make sure there is something for Read to find.
-		waitChan <- struct{}{}
+	// Wait until we're certain that a new request can be processed.
+	for conn.fd.numActiveRequests == conn.fd.fs.opts.maxActiveRequests {
+		conn.fd.mu.Unlock()
+		select {
+		case <-conn.fd.fullQueueCh:
+		}
+		conn.fd.mu.Lock()
 	}
 
-	fut, err := conn.callFuture(t, r) // No task given.
-	testCallMu.Unlock()
+	fut, err := conn.callFutureLocked(t, r) // No task given.
+	conn.fd.mu.Unlock()
 
 	if err != nil {
 		return nil, err
 	}
 
+	// Resolve the response.
+	//
 	// Block without a task.
 	select {
 	case <-fut.ch:
@@ -193,33 +180,35 @@ func CallTest(conn *Connection, t *kernel.Task, r *Request) (*Response, error) {
 // instead just waits on a channel. The behaviour is essentially the same as
 // DeviceFD.Read except it guarantees that the task is not blocked.
 func ReadTest(serverTask *kernel.Task, fd *vfs.FileDescription, inIOseq usermem.IOSequence, killServer chan struct{}) (int64, bool, error) {
-
-	// A lock is needed to guarantee that if a server is woken up (a request is
-	// available), then that server will process the request. We can't have another
-	// server running in parallel barge in and serve the request as that would cause
-	// the serverTask to block when Read is called below. This is needed only during
-	// testing - when actually running FUSE in gVisor, we don't need to avoid
-	// blocking the task.
-	testReadMu.Lock()
-	defer testReadMu.Unlock()
+	var err error
+	var n, total int64
 
 	dev := fd.Impl().(*DeviceFD)
-	// Emulate the blocking for when no requests are available. We can't really
-	// block a task during test and so this way we guarantee the fast path of
-	// task.Block() (when no wait is required) is hit.
-	waitChan := dev.emptyQueueCh
-	select {
-	case <-waitChan:
-		// Make sure there is something for Read to find.
-		waitChan <- struct{}{}
-	case <-killServer:
-		// Server killed by the main program.
-		return 0, true, nil
+
+	// Register for notifications.
+	w, ch := waiter.NewChannelEntry(nil)
+	dev.EventRegister(&w, waiter.EventIn)
+	for {
+		// Issue the request and break out if it completes with anything other than
+		// "would block".
+		n, err = dev.Read(serverTask, inIOseq, vfs.ReadOptions{})
+		total += n
+		if err != syserror.ErrWouldBlock {
+			break
+		}
+
+		// Wait for a notification that we should retry.
+		// Emulate the blocking for when no requests are available
+		select {
+		case <-ch:
+		case <-killServer:
+			// Server killed by the main program.
+			return 0, true, nil
+		}
 	}
 
-	// Perform a non blocking read.
-	n, err := fd.Read(serverTask, inIOseq, vfs.ReadOptions{})
-	return n, false, err
+	dev.EventUnregister(&w)
+	return total, false, err
 }
 
 // fuseClientRun emulates all the actions of a normal FUSE request. It creates
@@ -244,7 +233,7 @@ func fuseClientRun(t *testing.T, s *testutil.System, k *kernel.Kernel, conn *Con
 
 	// Queue up a request.
 	// Analogous to Call except it doesn't block on the task.
-	resp, err := CallTest(conn, clientTask, req)
+	resp, err := CallTest(conn, clientTask, req, pid)
 	if err != nil {
 		t.Fatalf("CallTaskNonBlock failed: %v", err)
 	}
@@ -288,7 +277,13 @@ func fuseServerRun(t *testing.T, s *testutil.System, k *kernel.Kernel, fd *vfs.F
 	for {
 		inHdrLen := uint32((*linux.FUSEHeaderIn)(nil).SizeBytes())
 		payloadLen := uint32(readPayload.SizeBytes())
-		inBuf := make([]byte, inHdrLen+payloadLen)
+
+		// The raed buffer must meet some certain size criteria.
+		buffSize := inHdrLen + payloadLen
+		if buffSize < linux.FUSE_MIN_READ_BUFFER {
+			buffSize = linux.FUSE_MIN_READ_BUFFER
+		}
+		inBuf := make([]byte, buffSize)
 		inIOseq := usermem.BytesIOSequence(inBuf)
 
 		n, serverKilled, err := ReadTest(serverTask, fd, inIOseq, killServer)
@@ -307,7 +302,7 @@ func fuseServerRun(t *testing.T, s *testutil.System, k *kernel.Kernel, fd *vfs.F
 
 		var readFUSEHeaderIn linux.FUSEHeaderIn
 		readFUSEHeaderIn.UnmarshalUnsafe(inBuf[:inHdrLen])
-		readPayload.UnmarshalUnsafe(inBuf[inHdrLen:])
+		readPayload.UnmarshalUnsafe(inBuf[inHdrLen : inHdrLen+payloadLen])
 
 		if readFUSEHeaderIn.Opcode != echoTestOpcode {
 			t.Fatalf("read incorrect data. Header: %v, Payload: %v", readFUSEHeaderIn, readPayload)
@@ -358,7 +353,7 @@ func setup(t *testing.T) *testutil.System {
 
 // newTestConnection creates a fuse connection that the sentry can communicate with
 // and the FD for the server to communicate with.
-func newTestConnection(system *testutil.System, k *kernel.Kernel, maxInFlightRequests uint64) (*Connection, *vfs.FileDescription, error) {
+func newTestConnection(system *testutil.System, k *kernel.Kernel, maxActiveRequests uint64) (*Connection, *vfs.FileDescription, error) {
 	vfsObj := &vfs.VirtualFilesystem{}
 	fuseDev := &DeviceFD{}
 
@@ -373,7 +368,7 @@ func newTestConnection(system *testutil.System, k *kernel.Kernel, maxInFlightReq
 	}
 
 	fsopts := filesystemOptions{
-		maxInflightRequests: maxInFlightRequests,
+		maxActiveRequests: maxActiveRequests,
 	}
 	fs, err := NewFUSEFilesystem(system.Ctx, 0, &fsopts, &fuseDev.vfsfd)
 	if err != nil {

@@ -52,10 +52,10 @@ type filesystemOptions struct {
 	// rootMode specifies the the file mode of the filesystem's root.
 	rootMode linux.FileMode
 
-	// maxInflightRequests specifies the maximum number of unread requests that can be
-	// queued in the device at any time. Any further requests will block when trying to
+	// maxActiveRequests specifies the maximum number of active requests that can
+	// exist at any time. Any further requests will block when trying to
 	// Call the server.
-	maxInflightRequests uint64
+	maxActiveRequests uint64
 }
 
 // filesystem implements vfs.FilesystemImpl.
@@ -140,7 +140,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	fsopts.rootMode = rootMode
 
 	// Set the maxInFlightRequests option.
-	fsopts.maxInflightRequests = MaxInFlightRequestsDefault
+	fsopts.maxActiveRequests = MaxActiveRequestsDefault
 
 	// Check for unparsed options.
 	if len(mopts) != 0 {
@@ -173,7 +173,7 @@ func NewFUSEFilesystem(ctx context.Context, devMinor uint32, opts *filesystemOpt
 		opts:     opts,
 	}
 
-	conn, err := NewFUSEConnection(ctx, device, opts.maxInflightRequests)
+	conn, err := NewFUSEConnection(ctx, device, opts.maxActiveRequests)
 	if err != nil {
 		log.Warningf("fuse.NewFUSEFilesystem: NewFUSEConnection failed with error: %v", err)
 		return nil, syserror.EINVAL
