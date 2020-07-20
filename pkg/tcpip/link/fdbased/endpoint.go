@@ -470,7 +470,7 @@ func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, *tc
 		if e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
 			vnetHdr := virtioNetHdr{}
 			if pkt.GSOOptions != nil {
-				vnetHdr.hdrLen = uint16(pkt.Header.UsedLength())
+				vnetHdr.hdrLen = uint16(pkt.Header.UsedLength() + len(eth))
 				if pkt.GSOOptions.NeedsCsum {
 					vnetHdr.flags = _VIRTIO_NET_HDR_F_NEEDS_CSUM
 					vnetHdr.csumStart = header.EthernetMinimumSize + pkt.GSOOptions.L3HdrLen
