@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -130,7 +130,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			log.Warningf("%s.GetFilesystem: invalid mode: %q", fsType.Name(), modeStr)
 			return nil, nil, syserror.EINVAL
 		}
-		rootMode = linux.FileMode(mode & 07777)
+		rootMode = linux.FileMode(mode)
 	}
 	fsopts.rootMode = rootMode
 
@@ -157,8 +157,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	//  returning. Mount will not block on this dispatched request.
 
 	// root is the fusefs root directory.
-	defaultFusefsDirMode := linux.FileMode(0755)
-	root := fs.newInode(creds, defaultFusefsDirMode)
+	root := fs.newInode(creds, fsopts.rootMode)
 
 	return fs.VFSFilesystem(), root.VFSDentry(), nil
 }
