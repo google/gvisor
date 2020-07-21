@@ -2506,7 +2506,7 @@ type msgFactory struct {
 var msgRegistry registry
 
 type registry struct {
-	factories [math.MaxUint8]msgFactory
+	factories [math.MaxUint8 + 1]msgFactory
 
 	// largestFixedSize is computed so that given some message size M, you can
 	// compute the maximum payload size (e.g. for Twrite, Rread) with
