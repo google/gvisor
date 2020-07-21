@@ -40,9 +40,9 @@ type Crictl struct {
 	cleanup  []func()
 }
 
-// resolvePath attempts to find binary paths. It may set the path to invalid,
+// ResolvePath attempts to find binary paths. It may set the path to invalid,
 // which will cause the execution to fail with a sensible error.
-func resolvePath(executable string) string {
+func ResolvePath(executable string) string {
 	runtime, err := dockerutil.RuntimePath()
 	if err == nil {
 		// Check first the directory of the runtime itself.
@@ -230,7 +230,7 @@ func (cc *Crictl) Import(image string) error {
 	// be pushing a lot of bytes in order to import the image. The connect
 	// timeout stays the same and is inherited from the Crictl instance.
 	cmd := testutil.Command(cc.logger,
-		resolvePath("ctr"),
+		ResolvePath("ctr"),
 		fmt.Sprintf("--connect-timeout=%s", 30*time.Second),
 		fmt.Sprintf("--address=%s", cc.endpoint),
 		"-n", "k8s.io", "images", "import", "-")
@@ -358,7 +358,7 @@ func (cc *Crictl) StopPodAndContainer(podID, contID string) error {
 // run runs crictl with the given args.
 func (cc *Crictl) run(args ...string) (string, error) {
 	defaultArgs := []string{
-		resolvePath("crictl"),
+		ResolvePath("crictl"),
 		"--image-endpoint", fmt.Sprintf("unix://%s", cc.endpoint),
 		"--runtime-endpoint", fmt.Sprintf("unix://%s", cc.endpoint),
 	}

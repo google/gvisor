@@ -34,8 +34,15 @@ list-all-images:
 	@for image in $(ALL_IMAGES); do echo $${image}; done
 .PHONY: list-build-images
 
+# Handy wrapper to allow load-all-images, push-all-images, etc.
 %-all-images:
 	@$(MAKE) $(patsubst %,$*-%,$(ALL_IMAGES))
+load-all-images:
+	@$(MAKE) $(patsubst %,load-%,$(ALL_IMAGES))
+
+# Handy wrapper to load specified "groups", e.g. load-basic-images, etc.
+load-%-images:
+	@$(MAKE) $(patsubst %,load-%,$(subst /,_,$(subst ./,,$(shell find ./$* -name Dockerfile -exec dirname {} \;))))
 
 # tag is a function that returns the tag name, given an image.
 #

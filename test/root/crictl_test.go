@@ -405,11 +405,8 @@ func setup(t *testing.T, version string) (*criutil.Crictl, func(), error) {
 		}
 
 		// We provide the shim, followed by the runtime, and then a
-		// temporary root directory.  Note that we can safely assume
-		// that the shim has been installed in the same directory as
-		// the runtime (for test installs and for normal installs).
-		// Since this is v1, the binary name will be fixed.
-		config = fmt.Sprintf(v1Template, path.Join(runtimeDir, "gvisor-containerd-shim"), runtime, runtimeDir)
+		// temporary root directory.
+		config = fmt.Sprintf(v1Template, criutil.ResolvePath("gvisor-containerd-shim"), runtime, containerdRoot)
 	case v2:
 		// This is only supported past 1.2.
 		if major < 1 || (major == 1 && minor <= 1) {

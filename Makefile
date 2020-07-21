@@ -14,6 +14,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Helpful pretty-printer.
+MAKEBANNER := \033[1;34mmake\033[0m
+submake = echo -e '$(MAKEBANNER) $1' >&2; sh -c '$(MAKE) $1'
+
 # Described below.
 OPTIONS :=
 STARTUP_OPTIONS :=
@@ -85,7 +89,7 @@ endif
 ##
 define images
 $(1)-%: ## Image tool: $(1) a given image (also may use 'all-images').
-	@$(MAKE) -C images $$@
+	@$(call submake,-C images $$@)
 endef
 rebuild-...: ## Rebuild the given image. Also may use 'rebuild-all-images'.
 $(eval $(call images,rebuild))
@@ -96,7 +100,7 @@ $(eval $(call images,push))
 load-...: ## Load (pull or rebuild) the given image. Also may use 'load-all-images'.
 $(eval $(call images,load))
 list-images: ## List all available images.
-	@$(MAKE) -C images $$@
+	@$(call submake, -C images $$@)
 
 ##
 ## Canonical build and test targets.
@@ -106,20 +110,112 @@ list-images: ## List all available images.
 ##   new subsystem or workflow, consider adding a new target here.
 ##
 runsc: ## Builds the runsc binary.
-	@$(MAKE) build TARGETS="//runsc"
+	@$(call submake,build OPTIONS="-c opt" TARGETS="//runsc")
 .PHONY: runsc
 
+debian: ## Builds the debian packages.
+	@$(call submake,build OPTIONS="-c opt" TARGETS="//runsc:runsc-debian")
+.PHONY: debian
+
 smoke-test: ## Runs a simple smoke test after build runsc.
-	@$(MAKE) run DOCKER_PRIVILEGED="" ARGS="--alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true"
+	@$(call submake,run DOCKER_PRIVILEGED="" ARGS="--alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true")
 .PHONY: smoke-tests
 
-unit-tests: ## Runs all unit tests in pkg runsc and tools.
-	@$(MAKE) test OPTIONS="pkg/... runsc/... tools/..."
-.PHONY: unit-tests
+unit-tests: ## Local package unit tests in pkg/..., runsc/, tools/.., etc.
+	@$(call submake,test TARGETS="pkg/... runsc/... tools/... benchmarks/... benchmarks/runner:runner_test")
 
-tests: ## Runs all local ptrace system call tests.
-	@$(MAKE) test OPTIONS="--test_tag_filters runsc_ptrace test/syscalls/..."
+tests: ## Runs all unit tests and syscall tests.
+tests: unit-tests
+	@$(call submake,test TARGETS="test/syscalls/...")
 .PHONY: tests
+
+
+integration-tests: ## Run all standard integration tests.
+integration-tests: docker-tests overlay-tests hostnet-tests swgso-tests
+integration-tests: do-tests kvm-tests root-tests containerd-tests
+.PHONY: integration-tests
+
+network-tests: ## Run all networking integration tests.
+network-tests: iptables-tests packetdrill-tests packetimpact-tests
+.PHONY: network-tests
+
+# Standard integration targets.
+INTEGRATION_TARGETS := //test/image:image_test //test/e2e:integration_test
+
+syscall-%-tests:
+	@$(call submake,test OPTIONS="--test_tag_filters runsc_$* test/syscalls/...")
+
+syscall-native-tests:
+	@$(call submake,test OPTIONS="--test_tag_filters native test/syscalls/...")
+.PHONY: syscall-native-tests
+
+syscall-tests: ## Run all system call tests.
+syscall-tests: syscall-ptrace-tests syscall-kvm-tests syscall-native-tests
+.PHONY: syscall-tests
+
+%-runtime-tests: load-runtimes_%
+	@$(call submake,install-test-runtime)
+	@$(call submake,test-runtime TARGETS="//test/runtimes:$*")
+
+do-tests: runsc
+	@$(call submake,run TARGETS="//runsc" ARGS="--rootless do true")
+	@$(call submake,run TARGETS="//runsc" ARGS="--rootless -network=none do true")
+	@$(call submake,sudo TARGETS="//runsc" ARGS="do true")
+.PHONY: do-tests
+
+simple-tests: unit-tests # Compatibility target.
+.PHONY: simple-tests
+
+docker-tests: load-basic-images
+	@$(call submake,install-test-runtime RUNTIME="vfs1")
+	@$(call submake,test-runtime RUNTIME="vfs1" TARGETS="$(INTEGRATION_TARGETS)")
+	@$(call submake,install-test-runtime RUNTIME="vfs2" ARGS="--vfs2")
+	@$(call submake,test-runtime RUNTIME="vfs2" OPTIONS="--test_filter=.*TestHelloWorld" TARGETS="$(INTEGRATION_TARGETS)")
+.PHONY: docker-tests
+
+overlay-tests: load-basic-images
+	@$(call submake,install-test-runtime RUNTIME="overlay" ARGS="--overlay")
+	@$(call submake,test-runtime RUNTIME="overlay" TARGETS="$(INTEGRATION_TARGETS)")
+.PHONY: overlay-tests
+
+swgso-tests: load-basic-images
+	@$(call submake,install-test-runtime RUNTIME="swgso" ARGS="--software-gso=true --gso=false")
+	@$(call submake,test-runtime RUNTIME="swgso" TARGETS="$(INTEGRATION_TARGETS)")
+.PHONY: swgso-tests
+
+hostnet-tests: load-basic-images
+	@$(call submake,install-test-runtime RUNTIME="hostnet" ARGS="--network=host")
+	@$(call submake,test-runtime RUNTIME="hostnet" OPTIONS="--test_arg=-checkpoint=false" TARGETS="$(INTEGRATION_TARGETS)")
+.PHONY: hostnet-tests
+
+kvm-tests: load-basic-images
+	@(lsmod | grep -E '^(kvm_intel|kvm_amd)') || sudo modprobe kvm
+	@if ! [[ -w /dev/kvm ]]; then sudo chmod a+rw /dev/kvm; fi
+	@$(call submake,test TARGETS="//pkg/sentry/platform/kvm:kvm_test")
+	@$(call submake,install-test-runtime RUNTIME="kvm" ARGS="--platform=kvm")
+	@$(call submake,test-runtime RUNTIME="kvm" TARGETS="$(INTEGRATION_TARGETS)")
+.PHONY: kvm-tests
+
+iptables-tests: load-iptables
+	@$(call submake,test-runtime RUNTIME="runc" TARGETS="//test/iptables:iptables_test")
+	@$(call submake,install-test-runtime RUNTIME="iptables" ARGS="--net-raw")
+	@$(call submake,test-runtime RUNTIME="iptables" TARGETS="//test/iptables:iptables_test")
+.PHONY: iptables-tests
+
+packetdrill-tests: load-packetdrill
+	@$(call submake,install-test-runtime RUNTIME="packetdrill")
+	@$(call submake,test-runtime RUNTIME="packetdrill" TARGETS="$(shell $(MAKE) query TARGETS='attr(tags, packetdrill, tests(//...))')")
+.PHONY: packetdrill-tests
+
+packetimpact-tests: load-packetimpact
+	@$(call submake,install-test-runtime RUNTIME="packetimpact")
+	@$(call submake,test-runtime RUNTIME="packetimpact" TARGETS="$(shell $(MAKE) query TARGETS='attr(tags, packetimpact, tests(//...))')")
+.PHONY: packetimpact-tests
+
+root-tests: load-basic-images
+	@$(call submake,install-test-runtime)
+	@$(call submake,sudo TARGETS="//test/root:root_test" ARGS="-test.v")
+.PHONY: test-root
 
 # Specific containerd version tests.
 containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-basic_resolv load-basic_httpd install-test-runtime
@@ -154,7 +250,7 @@ WEBSITE_PROJECT := gvisordev
 WEBSITE_REGION  := us-central1
 
 website-build: load-jekyll ## Build the site image locally.
-	@$(MAKE) run TARGETS="//website:website"
+	@$(call submake,run TARGETS="//website:website")
 .PHONY: website-build
 
 website-server: website-build ## Run a local server for development.
@@ -205,8 +301,8 @@ $(RELEASE_KEY):
 release: $(RELEASE_KEY) ## Builds a release.
 	@mkdir -p $(RELEASE_ROOT)
 	@T=$$(mktemp -d /tmp/release.XXXXXX); \
-	  $(MAKE) copy TARGETS="runsc" DESTINATION=$$T && \
-	  $(MAKE) copy TARGETS="runsc:runsc-debian" DESTINATION=$$T && \
+	  $(call submake,copy TARGETS="runsc" DESTINATION=$$T) && \
+	  $(call submake,copy TARGETS="runsc:runsc-debian" DESTINATION=$$T) && \
 	  NIGHTLY=$(RELEASE_NIGHTLY) tools/make_release.sh $(RELEASE_KEY) $(RELEASE_ROOT) $$T/*; \
 	rc=$$?; rm -rf $$T; exit $$rc
 .PHONY: release
@@ -229,43 +325,47 @@ tag: ## Creates and pushes a release tag.
 ##
 ifeq (,$(BRANCH_NAME))
 RUNTIME     := runsc
-RUNTIME_DIR := $(shell dirname $(shell mktemp -u))/runsc
+RUNTIME_DIR := $(shell dirname $(shell mktemp -u))/$(RUNTIME)
 else
 RUNTIME     := $(BRANCH_NAME)
-RUNTIME_DIR := $(shell dirname $(shell mktemp -u))/$(BRANCH_NAME)
+RUNTIME_DIR := $(shell dirname $(shell mktemp -u))/$(RUNTIME)
 endif
 RUNTIME_BIN     := $(RUNTIME_DIR)/runsc
 RUNTIME_LOG_DIR := $(RUNTIME_DIR)/logs
 RUNTIME_LOGS    := $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
 
 dev: ## Installs a set of local runtimes. Requires sudo.
-	@$(MAKE) refresh ARGS="--net-raw"
-	@$(MAKE) configure RUNTIME="$(RUNTIME)" ARGS="--net-raw"
-	@$(MAKE) configure RUNTIME="$(RUNTIME)-d" ARGS="--net-raw --debug --strace --log-packets"
-	@$(MAKE) configure RUNTIME="$(RUNTIME)-p" ARGS="--net-raw --profile"
-	@$(MAKE) configure RUNTIME="$(RUNTIME)-vfs2-d" ARGS="--net-raw --debug --strace --log-packets --vfs2"
+	@$(call submake,refresh ARGS="--net-raw")
+	@$(call submake,configure RUNTIME="$(RUNTIME)" ARGS="--net-raw")
+	@$(call submake,configure RUNTIME="$(RUNTIME)-d" ARGS="--net-raw --debug --strace --log-packets")
+	@$(call submake,configure RUNTIME="$(RUNTIME)-p" ARGS="--net-raw --profile")
+	@$(call submake,configure RUNTIME="$(RUNTIME)-vfs2-d" ARGS="--net-raw --debug --strace --log-packets --vfs2")
 	@sudo systemctl restart docker
 .PHONY: dev
 
-refresh: ## Refreshes the runtime binary (for development only). Must have called 'dev' or 'test-install' first.
+refresh: ## Refreshes the runtime binary (for development only). Must have called 'dev' or 'install-test-runtime' first.
 	@mkdir -p "$(RUNTIME_DIR)"
-	@$(MAKE) copy TARGETS=runsc DESTINATION="$(RUNTIME_BIN)"
+	@$(call submake,copy TARGETS=runsc DESTINATION="$(RUNTIME_BIN)")
 .PHONY: install
 
 install-test-runtime: ## Installs the runtime for testing. Requires sudo.
-	@$(MAKE) refresh ARGS="--net-raw --TESTONLY-test-name-env=RUNSC_TEST_NAME --debug --strace --log-packets $(ARGS)"
-	@$(MAKE) configure RUNTIME=runsc
-	@$(MAKE) configure
+	@$(call submake,refresh ARGS="--net-raw --TESTONLY-test-name-env=RUNSC_TEST_NAME --debug --strace --log-packets $(ARGS)")
+	@$(call submake,configure RUNTIME=runsc)
+	@$(call submake,configure)
 	@sudo systemctl restart docker
+	@if [[ -f /etc/docker/daemon.json ]]; then \
+		sudo chmod 0755 /etc/docker && \
+		sudo chmod 0644 /etc/docker/daemon.json; \
+	fi
 .PHONY: install-test-runtime
 
-configure: ## Configures a single runtime. Requires sudo. Typically called from dev or test-install.
+configure: ## Configures a single runtime. Requires sudo. Typically called from dev or install-test-runtime.
 	@sudo sudo "$(RUNTIME_BIN)" install --experimental=true --runtime="$(RUNTIME)" -- --debug-log "$(RUNTIME_LOGS)" $(ARGS)
-	@echo "Installed runtime \"$(RUNTIME)\" @ $(RUNTIME_BIN)"
-	@echo "Logs are in: $(RUNTIME_LOG_DIR)"
+	@echo -e "$(INFO) Installed runtime \"$(RUNTIME)\" @ $(RUNTIME_BIN)"
+	@echo -e "$(INFO) Logs are in: $(RUNTIME_LOG_DIR)"
 	@sudo rm -rf "$(RUNTIME_LOG_DIR)" && mkdir -p "$(RUNTIME_LOG_DIR)"
 .PHONY: configure
 
 test-runtime: ## A convenient wrapper around test that provides the runtime argument. Target must still be provided.
-	@$(MAKE) test OPTIONS="$(OPTIONS) --test_arg=--runtime=$(RUNTIME)"
-.PHONY: runtime-test
+	@$(call submake,test OPTIONS="$(OPTIONS) --test_output=streamed --test_arg=--runtime=$(RUNTIME)")
+.PHONY: test-runtime
