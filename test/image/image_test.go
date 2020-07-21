@@ -37,6 +37,13 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
+// defaultWait defines how long to wait for progress.
+//
+// See BUILD: This is at least a "large" test, so allow up to 1 minute for any
+// given "wait" step. Note that all tests are run in parallel, which may cause
+// individual slow-downs (but a huge speed-up in aggregate).
+const defaultWait = time.Minute
+
 func TestHelloWorld(t *testing.T) {
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
@@ -130,7 +137,7 @@ func TestHttpd(t *testing.T) {
 	}
 
 	// Wait until it's up and running.
-	if err := testutil.WaitForHTTP(port, 30*time.Second); err != nil {
+	if err := testutil.WaitForHTTP(port, defaultWait); err != nil {
 		t.Errorf("WaitForHTTP() timeout: %v", err)
 	}
 
@@ -159,7 +166,7 @@ func TestNginx(t *testing.T) {
 	}
 
 	// Wait until it's up and running.
-	if err := testutil.WaitForHTTP(port, 30*time.Second); err != nil {
+	if err := testutil.WaitForHTTP(port, defaultWait); err != nil {
 		t.Errorf("WaitForHTTP() timeout: %v", err)
 	}
 
@@ -180,7 +187,7 @@ func TestMysql(t *testing.T) {
 	}
 
 	// Wait until it's up and running.
-	if _, err := server.WaitForOutput(ctx, "port: 3306  MySQL Community Server", 3*time.Minute); err != nil {
+	if _, err := server.WaitForOutput(ctx, "port: 3306  MySQL Community Server", defaultWait); err != nil {
 		t.Fatalf("WaitForOutput() timeout: %v", err)
 	}
 
@@ -200,7 +207,7 @@ func TestMysql(t *testing.T) {
 	}
 
 	// Ensure file executed to the end and shutdown mysql.
-	if _, err := server.WaitForOutput(ctx, "mysqld: Shutdown complete", 30*time.Second); err != nil {
+	if _, err := server.WaitForOutput(ctx, "mysqld: Shutdown complete", defaultWait); err != nil {
 		t.Fatalf("WaitForOutput() timeout: %v", err)
 	}
 }
@@ -225,7 +232,7 @@ func TestTomcat(t *testing.T) {
 	}
 
 	// Wait until it's up and running.
-	if err := testutil.WaitForHTTP(port, 30*time.Second); err != nil {
+	if err := testutil.WaitForHTTP(port, defaultWait); err != nil {
 		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 
@@ -262,7 +269,7 @@ func TestRuby(t *testing.T) {
 	}
 
 	// Wait until it's up and running, 'gem install' can take some time.
-	if err := testutil.WaitForHTTP(port, 1*time.Minute); err != nil {
+	if err := testutil.WaitForHTTP(port, time.Minute); err != nil {
 		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 
@@ -299,7 +306,7 @@ func TestStdio(t *testing.T) {
 	}
 
 	for _, want := range []string{wantStdout, wantStderr} {
-		if _, err := d.WaitForOutput(ctx, want, 5*time.Second); err != nil {
+		if _, err := d.WaitForOutput(ctx, want, defaultWait); err != nil {
 			t.Fatalf("docker didn't get output %q : %v", want, err)
 		}
 	}

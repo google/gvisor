@@ -26,7 +26,7 @@ def _packetdrill_test_impl(ctx):
 
     transitive_files = depset()
     if hasattr(ctx.attr._test_runner, "data_runfiles"):
-        transitive_files = depset(ctx.attr._test_runner.data_runfiles.files)
+        transitive_files = ctx.attr._test_runner.data_runfiles.files
     runfiles = ctx.runfiles(
         files = [test_runner] + ctx.files._init_script + ctx.files.scripts,
         transitive_files = transitive_files,
@@ -60,11 +60,15 @@ _packetdrill_test = rule(
     implementation = _packetdrill_test_impl,
 )
 
-_PACKETDRILL_TAGS = ["local", "manual"]
+PACKETDRILL_TAGS = [
+    "local",
+    "manual",
+    "packetdrill",
+]
 
 def packetdrill_linux_test(name, **kwargs):
     if "tags" not in kwargs:
-        kwargs["tags"] = _PACKETDRILL_TAGS
+        kwargs["tags"] = PACKETDRILL_TAGS
     _packetdrill_test(
         name = name,
         flags = ["--dut_platform", "linux"],
@@ -73,7 +77,7 @@ def packetdrill_linux_test(name, **kwargs):
 
 def packetdrill_netstack_test(name, **kwargs):
     if "tags" not in kwargs:
-        kwargs["tags"] = _PACKETDRILL_TAGS
+        kwargs["tags"] = PACKETDRILL_TAGS
     _packetdrill_test(
         name = name,
         # This is the default runtime unless
