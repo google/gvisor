@@ -201,17 +201,25 @@ func (fs *filesystem) Release() {
 type Inode struct {
 	kernfs.InodeAttrs
 	kernfs.InodeNoDynamicLookup
-	kernfs.InodeNotSymlink
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.OrderedChildren
 
 	locks vfs.FileLocks
 
 	dentry kernfs.Dentry
+
+	// the owning filesystem. fs is immutable.
+	fs *filesystem
+
+	// link is result of follow a symbolic link
+	link string
+
+	// attributeTime represents the time until the file attributes are valid.
+	attributeTime uint64
 }
 
 func (fs *filesystem) newInode(creds *auth.Credentials, mode linux.FileMode) *kernfs.Dentry {
-	i := &Inode{}
+	i := &Inode{fs: fs}
 	i.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0755)
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	i.dentry.Init(i)
@@ -226,4 +234,35 @@ func (i *Inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 		return nil, err
 	}
 	return fd.VFSFileDescription(), nil
+}
+
+// Readlink implements Inode.Readlink.
+func (i *Inode) Readlink(ctx context.Context) (string, error) {
+	// TODO: need to return error if is not a symbolic link !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	kernelTask := kernel.TaskFromContext(ctx)
+	if kernelTask == nil {
+		log.Warningf("fusefs.DeviceFD.Read: couldn't get kernel task from context")
+		return "", syserror.EINVAL
+	}
+	if i.link == "" {
+		req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.Ino(), linux.FUSE_READLINK, nil)
+		if err != nil {
+			return "", err
+		}
+		res, err := i.fs.conn.Call(kernelTask, req)
+		if err != nil {
+			return "", err
+		}
+		i.link = string(res.data)
+		// only set if is not readonly !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+		i.attributeTime = 0
+		// only set if is not readonly !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+	}
+	return i.link, nil
+}
+
+// Getlink implements Inode.Getlink.
+func (i *Inode) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualDentry, string, error) {
+	return vfs.VirtualDentry{}, "", syserror.EINVAL
 }
