@@ -22,21 +22,29 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-// Table names.
+// tableID is an index into IPTables.tables.
+type tableID int
+
 const (
-	TablenameNat    = "nat"
-	TablenameMangle = "mangle"
-	TablenameFilter = "filter"
+	natID tableID = iota
+	mangleID
+	filterID
+	numTables
 )
 
-// Chain names as defined by net/ipv4/netfilter/ip_tables.c.
+// Table names.
 const (
-	ChainNamePrerouting  = "PREROUTING"
-	ChainNameInput       = "INPUT"
-	ChainNameForward     = "FORWARD"
-	ChainNameOutput      = "OUTPUT"
-	ChainNamePostrouting = "POSTROUTING"
+	NATTable    = "nat"
+	MangleTable = "mangle"
+	FilterTable = "filter"
 )
+
+// nameToID is immutable.
+var nameToID = map[string]tableID{
+	NATTable:    natID,
+	MangleTable: mangleID,
+	FilterTable: filterID,
+}
 
 // HookUnset indicates that there is no hook set for an entrypoint or
 // underflow.
@@ -48,11 +56,10 @@ const reaperDelay = 5 * time.Second
 // DefaultTables returns a default set of tables. Each chain is set to accept
 // all packets.
 func DefaultTables() *IPTables {
-	// TODO(gvisor.dev/issue/170): We may be able to swap out some strings for
-	// iotas.
 	return &IPTables{
-		tables: map[string]Table{
-			TablenameNat: Table{
+		tables: [numTables]Table{
+			// NAT table.
+			Table{
 				Rules: []Rule{
 					Rule{Target: AcceptTarget{}},
 					Rule{Target: AcceptTarget{}},
@@ -60,60 +67,70 @@ func DefaultTables() *IPTables {
 					Rule{Target: AcceptTarget{}},
 					Rule{Target: ErrorTarget{}},
 				},
-				BuiltinChains: map[Hook]int{
-					Prerouting:  0,
-					Input:       1,
-					Output:      2,
-					Postrouting: 3,
+				BuiltinChains: [NumHooks]int{
+					0,         // Prerouting.
+					1,         // Input.
+					HookUnset, // Forward.
+					2,         // Output.
+					3,         // Postrouting.
 				},
-				Underflows: map[Hook]int{
-					Prerouting:  0,
-					Input:       1,
-					Output:      2,
-					Postrouting: 3,
+				Underflows: [NumHooks]int{
+					0,         // Prerouting.
+					1,         // Input.
+					HookUnset, // Forward.
+					2,         // Output.
+					3,         // Postrouting.
 				},
-				UserChains: map[string]int{},
 			},
-			TablenameMangle: Table{
+			// Mangle table.
+			Table{
 				Rules: []Rule{
 					Rule{Target: AcceptTarget{}},
 					Rule{Target: AcceptTarget{}},
 					Rule{Target: ErrorTarget{}},
 				},
-				BuiltinChains: map[Hook]int{
+				BuiltinChains: [NumHooks]int{
 					Prerouting: 0,
 					Output:     1,
 				},
-				Underflows: map[Hook]int{
-					Prerouting: 0,
-					Output:     1,
+				Underflows: [NumHooks]int{
+					0,         // Prerouting.
+					HookUnset, // Input.
+					HookUnset, // Forward.
+					1,         // Output.
+					HookUnset, // Postrouting.
 				},
-				UserChains: map[string]int{},
 			},
-			TablenameFilter: Table{
+			// Filter table.
+			Table{
 				Rules: []Rule{
 					Rule{Target: AcceptTarget{}},
 					Rule{Target: AcceptTarget{}},
 					Rule{Target: AcceptTarget{}},
 					Rule{Target: ErrorTarget{}},
 				},
-				BuiltinChains: map[Hook]int{
-					Input:   0,
-					Forward: 1,
-					Output:  2,
+				BuiltinChains: [NumHooks]int{
+					HookUnset, // Prerouting.
+					Input:     0, // Input.
+					Forward:   1, // Forward.
+					Output:    2, // Output.
+					HookUnset, // Postrouting.
 				},
-				Underflows: map[Hook]int{
-					Input:   0,
-					Forward: 1,
-					Output:  2,
+				Underflows: [NumHooks]int{
+					HookUnset, // Prerouting.
+					0,         // Input.
+					1,         // Forward.
+					2,         // Output.
+					HookUnset, // Postrouting.
 				},
-				UserChains: map[string]int{},
 			},
 		},
-		priorities: map[Hook][]string{
-			Input:      []string{TablenameNat, TablenameFilter},
-			Prerouting: []string{TablenameMangle, TablenameNat},
-			Output:     []string{TablenameMangle, TablenameNat, TablenameFilter},
+		priorities: [NumHooks][]tableID{
+			[]tableID{mangleID, natID},           // Prerouting.
+			[]tableID{natID, filterID},           // Input.
+			[]tableID{},                          // Forward.
+			[]tableID{mangleID, natID, filterID}, // Output.
+			[]tableID{},                          // Postrouting.
 		},
 		connections: ConnTrack{
 			seed: generateRandUint32(),
@@ -127,51 +144,62 @@ func DefaultTables() *IPTables {
 func EmptyFilterTable() Table {
 	return Table{
 		Rules: []Rule{},
-		BuiltinChains: map[Hook]int{
-			Input:   HookUnset,
-			Forward: HookUnset,
-			Output:  HookUnset,
+		BuiltinChains: [NumHooks]int{
+			HookUnset,
+			0,
+			0,
+			0,
+			HookUnset,
 		},
-		Underflows: map[Hook]int{
-			Input:   HookUnset,
-			Forward: HookUnset,
-			Output:  HookUnset,
+		Underflows: [NumHooks]int{
+			HookUnset,
+			0,
+			0,
+			0,
+			HookUnset,
 		},
-		UserChains: map[string]int{},
 	}
 }
 
-// EmptyNatTable returns a Table with no rules and the filter table chains
+// EmptyNATTable returns a Table with no rules and the filter table chains
 // mapped to HookUnset.
-func EmptyNatTable() Table {
+func EmptyNATTable() Table {
 	return Table{
 		Rules: []Rule{},
-		BuiltinChains: map[Hook]int{
-			Prerouting:  HookUnset,
-			Input:       HookUnset,
-			Output:      HookUnset,
-			Postrouting: HookUnset,
+		BuiltinChains: [NumHooks]int{
+			0,
+			0,
+			HookUnset,
+			0,
+			0,
 		},
-		Underflows: map[Hook]int{
-			Prerouting:  HookUnset,
-			Input:       HookUnset,
-			Output:      HookUnset,
-			Postrouting: HookUnset,
+		Underflows: [NumHooks]int{
+			0,
+			0,
+			HookUnset,
+			0,
+			0,
 		},
-		UserChains: map[string]int{},
 	}
 }
 
-// GetTable returns table by name.
+// GetTable returns a table by name.
 func (it *IPTables) GetTable(name string) (Table, bool) {
+	id, ok := nameToID[name]
+	if !ok {
+		return Table{}, false
+	}
 	it.mu.RLock()
 	defer it.mu.RUnlock()
-	t, ok := it.tables[name]
-	return t, ok
+	return it.tables[id], true
 }
 
 // ReplaceTable replaces or inserts table by name.
-func (it *IPTables) ReplaceTable(name string, table Table) {
+func (it *IPTables) ReplaceTable(name string, table Table) *tcpip.Error {
+	id, ok := nameToID[name]
+	if !ok {
+		return tcpip.ErrInvalidOptionValue
+	}
 	it.mu.Lock()
 	defer it.mu.Unlock()
 	// If iptables is being enabled, initialize the conntrack table and
@@ -181,14 +209,8 @@ func (it *IPTables) ReplaceTable(name string, table Table) {
 		it.startReaper(reaperDelay)
 	}
 	it.modified = true
-	it.tables[name] = table
-}
-
-// GetPriorities returns slice of priorities associated with hook.
-func (it *IPTables) GetPriorities(hook Hook) []string {
-	it.mu.RLock()
-	defer it.mu.RUnlock()
-	return it.priorities[hook]
+	it.tables[id] = table
+	return nil
 }
 
 // A chainVerdict is what a table decides should be done with a packet.
@@ -226,8 +248,11 @@ func (it *IPTables) Check(hook Hook, pkt *PacketBuffer, gso *GSO, r *Route, addr
 	it.connections.handlePacket(pkt, hook, gso, r)
 
 	// Go through each table containing the hook.
-	for _, tablename := range it.GetPriorities(hook) {
-		table, _ := it.GetTable(tablename)
+	it.mu.RLock()
+	defer it.mu.RUnlock()
+	priorities := it.priorities[hook]
+	for _, tableID := range priorities {
+		table := it.tables[tableID]
 		ruleIdx := table.BuiltinChains[hook]
 		switch verdict := it.checkChain(hook, pkt, table, ruleIdx, gso, r, address, nicName); verdict {
 		// If the table returns Accept, move on to the next table.
