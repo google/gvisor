@@ -68,6 +68,7 @@ SHELL=/bin/bash -o pipefail
 ##     GCLOUD_CONFIG      - The gcloud config directory (detect: detected).
 ##     DOCKER_SOCKET      - The Docker socket (default: detected).
 ##
+##
 bazel-server-start: load-default ## Starts the bazel server.
 	@mkdir -p $(BAZEL_CACHE)
 	@mkdir -p $(GCLOUD_CONFIG)
@@ -87,7 +88,7 @@ bazel-server-start: load-default ## Starts the bazel server.
 	               $(BAZEL) version && \
 		       exec tail --pid=\$$($(BAZEL) info server_pid) -f /dev/null"
 	@while :; do if docker logs $(DOCKER_NAME) 2>/dev/null | grep "Build label:" >/dev/null; then break; fi; \
-		if ! docker ps | grep $(DOCKER_NAME); then docker logs $(DOCKER_NAME); exit 1; else sleep 1; fi; done
+		if ! docker ps | grep $(DOCKER_NAME); then { docker logs $(DOCKER_NAME); exit 1; } else sleep 1; fi; done
 .PHONY: bazel-server-start
 
 bazel-shutdown: ## Shuts down a running bazel server.
