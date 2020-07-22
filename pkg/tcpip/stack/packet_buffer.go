@@ -79,6 +79,10 @@ type PacketBuffer struct {
 	// NatDone indicates if the packet has been manipulated as per NAT
 	// iptables rule.
 	NatDone bool
+
+	// PktType indicates the SockAddrLink.PacketType of the packet as defined in
+	// https://www.man7.org/linux/man-pages/man7/packet.7.html.
+	PktType tcpip.PacketType
 }
 
 // Clone makes a copy of pk. It clones the Data field, which creates a new

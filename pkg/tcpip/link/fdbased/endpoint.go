@@ -386,25 +386,32 @@ const (
 	_VIRTIO_NET_HDR_GSO_TCPV6 = 4
 )
 
-// WritePacket writes outbound packets to the file descriptor. If it is not
-// currently writable, the packet is dropped.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+// AddHeader implements stack.LinkEndpoint.AddHeader.
+func (e *endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	if e.hdrSize > 0 {
 		// Add ethernet header if needed.
 		eth := header.Ethernet(pkt.Header.Prepend(header.EthernetMinimumSize))
 		pkt.LinkHeader = buffer.View(eth)
 		ethHdr := &header.EthernetFields{
-			DstAddr: r.RemoteLinkAddress,
+			DstAddr: remote,
 			Type:    protocol,
 		}
 
 		// Preserve the src address if it's set in the route.
-		if r.LocalLinkAddress != "" {
-			ethHdr.SrcAddr = r.LocalLinkAddress
+		if local != "" {
+			ethHdr.SrcAddr = local
 		} else {
 			ethHdr.SrcAddr = e.addr
 		}
 		eth.Encode(ethHdr)
+	}
+}
+
+// WritePacket writes outbound packets to the file descriptor. If it is not
+// currently writable, the packet is dropped.
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+	if e.hdrSize > 0 {
+		e.AddHeader(r.LocalLinkAddress, r.RemoteLinkAddress, protocol, pkt)
 	}
 
 	var builder iovec.Builder
@@ -448,22 +455,8 @@ func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, *tc
 	// Send a batch of packets through batchFD.
 	mmsgHdrs := make([]rawfile.MMsgHdr, 0, len(batch))
 	for _, pkt := range batch {
-		var eth header.Ethernet
 		if e.hdrSize > 0 {
-			// Add ethernet header if needed.
-			eth = make(header.Ethernet, header.EthernetMinimumSize)
-			ethHdr := &header.EthernetFields{
-				DstAddr: pkt.EgressRoute.RemoteLinkAddress,
-				Type:    pkt.NetworkProtocolNumber,
-			}
-
-			// Preserve the src address if it's set in the route.
-			if pkt.EgressRoute.LocalLinkAddress != "" {
-				ethHdr.SrcAddr = pkt.EgressRoute.LocalLinkAddress
-			} else {
-				ethHdr.SrcAddr = e.addr
-			}
-			eth.Encode(ethHdr)
+			e.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
 		}
 
 		var vnetHdrBuf []byte
@@ -493,7 +486,6 @@ func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, *tc
 
 		var builder iovec.Builder
 		builder.Add(vnetHdrBuf)
-		builder.Add(eth)
 		builder.Add(pkt.Header.View())
 		for _, v := range pkt.Data.Views() {
 			builder.Add(v)
