@@ -155,26 +155,53 @@ func (fd *regularFileFD) Read(ctx context.Context, dst usermem.IOSequence, opts 
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (fd *regularFileFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
+	n, _, err := fd.pwrite(ctx, src, offset, opts)
+	return n, err
+}
+
+// pwrite returns the number of bytes written, final offset, error. The final
+// offset should be ignored by PWrite.
+func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (written, finalOff int64, err error) {
 	if offset < 0 {
-		return 0, syserror.EINVAL
+		return 0, offset, syserror.EINVAL
 	}
 
 	// Check that flags are supported.
 	//
 	// TODO(gvisor.dev/issue/2601): Support select pwritev2 flags.
 	if opts.Flags&^linux.RWF_HIPRI != 0 {
-		return 0, syserror.EOPNOTSUPP
+		return 0, offset, syserror.EOPNOTSUPP
 	}
-
-	limit, err := vfs.CheckLimit(ctx, offset, src.NumBytes())
-	if err != nil {
-		return 0, err
-	}
-	src = src.TakeFirst64(limit)
 
 	d := fd.dentry()
+	// If the fd was opened with O_APPEND, make sure the file size is updated.
+	// There is a possible race here if size is modified externally after
+	// metadata cache is updated.
+	if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 && !d.cachedMetadataAuthoritative() {
+		if err := d.updateFromGetattr(ctx); err != nil {
+			return 0, offset, err
+		}
+	}
+
 	d.metadataMu.Lock()
 	defer d.metadataMu.Unlock()
+	// Set offset to file size if the fd was opened with O_APPEND.
+	if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 {
+		// Holding d.metadataMu is sufficient for reading d.size.
+		offset = int64(d.size)
+	}
+	limit, err := vfs.CheckLimit(ctx, offset, src.NumBytes())
+	if err != nil {
+		return 0, offset, err
+	}
+	src = src.TakeFirst64(limit)
+	n, err := fd.pwriteLocked(ctx, src, offset, opts)
+	return n, offset + n, err
+}
+
+// Preconditions: fd.dentry().metatdataMu must be locked.
+func (fd *regularFileFD) pwriteLocked(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
+	d := fd.dentry()
 	if d.fs.opts.interop != InteropModeShared {
 		// Compare Linux's mm/filemap.c:__generic_file_write_iter() =>
 		// file_update_time(). This is d.touchCMtime(), but without locking
@@ -237,8 +264,8 @@ func (fd *regularFileFD) PWrite(ctx context.Context, src usermem.IOSequence, off
 // Write implements vfs.FileDescriptionImpl.Write.
 func (fd *regularFileFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	fd.mu.Lock()
-	n, err := fd.PWrite(ctx, src, fd.off, opts)
-	fd.off += n
+	n, off, err := fd.pwrite(ctx, src, fd.off, opts)
+	fd.off = off
 	fd.mu.Unlock()
 	return n, err
 }

@@ -235,7 +235,7 @@ TEST_F(OpenTest, AppendOnly) {
       ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_RDWR | O_APPEND));
   EXPECT_THAT(lseek(fd2.get(), 0, SEEK_CUR), SyscallSucceedsWithValue(0));
 
-  // Then try to write to the first file and make sure the bytes are appended.
+  // Then try to write to the first fd and make sure the bytes are appended.
   EXPECT_THAT(WriteFd(fd1.get(), buf.data(), buf.size()),
               SyscallSucceedsWithValue(buf.size()));
 
@@ -247,7 +247,7 @@ TEST_F(OpenTest, AppendOnly) {
   EXPECT_THAT(lseek(fd1.get(), 0, SEEK_CUR),
               SyscallSucceedsWithValue(kBufSize * 2));
 
-  // Then try to write to the second file and make sure the bytes are appended.
+  // Then try to write to the second fd and make sure the bytes are appended.
   EXPECT_THAT(WriteFd(fd2.get(), buf.data(), buf.size()),
               SyscallSucceedsWithValue(buf.size()));
 
