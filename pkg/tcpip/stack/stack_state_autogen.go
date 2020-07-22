@@ -232,7 +232,6 @@ func (x *Table) StateFields() []string {
 		"Rules",
 		"BuiltinChains",
 		"Underflows",
-		"UserChains",
 	}
 }
 
@@ -243,7 +242,6 @@ func (x *Table) StateSave(m state.Sink) {
 	m.Save(0, &x.Rules)
 	m.Save(1, &x.BuiltinChains)
 	m.Save(2, &x.Underflows)
-	m.Save(3, &x.UserChains)
 }
 
 func (x *Table) afterLoad() {}
@@ -252,7 +250,6 @@ func (x *Table) StateLoad(m state.Source) {
 	m.Load(0, &x.Rules)
 	m.Load(1, &x.BuiltinChains)
 	m.Load(2, &x.Underflows)
-	m.Load(3, &x.UserChains)
 }
 
 func (x *Rule) StateTypeName() string {
