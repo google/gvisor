@@ -16,6 +16,7 @@ package gofer
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -144,7 +145,7 @@ func (fd *specialFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	// mmap due to lock ordering; MM locks precede dentry.dataMu. That doesn't
 	// hold here since specialFileFD doesn't client-cache data. Just buffer the
 	// read instead.
-	if d := fd.dentry(); d.fs.opts.interop != InteropModeShared {
+	if d := fd.dentry(); d.cachedMetadataAuthoritative() {
 		d.touchAtime(fd.vfsfd.Mount())
 	}
 	buf := make([]byte, dst.NumBytes())
@@ -176,39 +177,76 @@ func (fd *specialFileFD) Read(ctx context.Context, dst usermem.IOSequence, opts 
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (fd *specialFileFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
+	n, _, err := fd.pwrite(ctx, src, offset, opts)
+	return n, err
+}
+
+// pwrite returns the number of bytes written, final offset, error. The final
+// offset should be ignored by PWrite.
+func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (written, finalOff int64, err error) {
 	if fd.seekable && offset < 0 {
-		return 0, syserror.EINVAL
+		return 0, offset, syserror.EINVAL
 	}
 
 	// Check that flags are supported.
 	//
 	// TODO(gvisor.dev/issue/2601): Support select pwritev2 flags.
 	if opts.Flags&^linux.RWF_HIPRI != 0 {
-		return 0, syserror.EOPNOTSUPP
+		return 0, offset, syserror.EOPNOTSUPP
+	}
+
+	d := fd.dentry()
+	// If the regular file fd was opened with O_APPEND, make sure the file size
+	// is updated. There is a possible race here if size is modified externally
+	// after metadata cache is updated.
+	if fd.seekable && fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 && !d.cachedMetadataAuthoritative() {
+		if err := d.updateFromGetattr(ctx); err != nil {
+			return 0, offset, err
+		}
 	}
 
 	if fd.seekable {
+		// We need to hold the metadataMu *while* writing to a regular file.
+		d.metadataMu.Lock()
+		defer d.metadataMu.Unlock()
+
+		// Set offset to file size if the regular file was opened with O_APPEND.
+		if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 {
+			// Holding d.metadataMu is sufficient for reading d.size.
+			offset = int64(d.size)
+		}
 		limit, err := vfs.CheckLimit(ctx, offset, src.NumBytes())
 		if err != nil {
-			return 0, err
+			return 0, offset, err
 		}
 		src = src.TakeFirst64(limit)
 	}
 
 	// Do a buffered write. See rationale in PRead.
-	if d := fd.dentry(); d.fs.opts.interop != InteropModeShared {
+	if d.cachedMetadataAuthoritative() {
 		d.touchCMtime()
 	}
 	buf := make([]byte, src.NumBytes())
 	// Don't do partial writes if we get a partial read from src.
 	if _, err := src.CopyIn(ctx, buf); err != nil {
-		return 0, err
+		return 0, offset, err
 	}
 	n, err := fd.handle.writeFromBlocksAt(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf)), uint64(offset))
 	if err == syserror.EAGAIN {
 		err = syserror.ErrWouldBlock
 	}
-	return int64(n), err
+	finalOff = offset
+	// Update file size for regular files.
+	if fd.seekable {
+		finalOff += int64(n)
+		// d.metadataMu is already locked at this point.
+		if uint64(finalOff) > d.size {
+			d.dataMu.Lock()
+			defer d.dataMu.Unlock()
+			atomic.StoreUint64(&d.size, uint64(finalOff))
+		}
+	}
+	return int64(n), finalOff, err
 }
 
 // Write implements vfs.FileDescriptionImpl.Write.
@@ -218,8 +256,8 @@ func (fd *specialFileFD) Write(ctx context.Context, src usermem.IOSequence, opts
 	}
 
 	fd.mu.Lock()
-	n, err := fd.PWrite(ctx, src, fd.off, opts)
-	fd.off += n
+	n, off, err := fd.pwrite(ctx, src, fd.off, opts)
+	fd.off = off
 	fd.mu.Unlock()
 	return n, err
 }
