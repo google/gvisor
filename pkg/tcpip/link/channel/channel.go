@@ -302,3 +302,7 @@ func (e *Endpoint) RemoveNotify(handle *NotificationHandle) {
 func (*Endpoint) ARPHardwareType() header.ARPHardwareType {
 	return header.ARPHardwareNone
 }
+
+// AddHeader implements stack.LinkEndpoint.AddHeader.
+func (e *Endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+}

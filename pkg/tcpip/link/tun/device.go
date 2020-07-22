@@ -272,21 +272,9 @@ func (d *Device) encodePkt(info *channel.PacketInfo) (buffer.View, bool) {
 	if d.hasFlags(linux.IFF_TAP) {
 		// Add ethernet header if not provided.
 		if info.Pkt.LinkHeader == nil {
-			hdr := &header.EthernetFields{
-				SrcAddr: info.Route.LocalLinkAddress,
-				DstAddr: info.Route.RemoteLinkAddress,
-				Type:    info.Proto,
-			}
-			if hdr.SrcAddr == "" {
-				hdr.SrcAddr = d.endpoint.LinkAddress()
-			}
-
-			eth := make(header.Ethernet, header.EthernetMinimumSize)
-			eth.Encode(hdr)
-			vv.AppendView(buffer.View(eth))
-		} else {
-			vv.AppendView(info.Pkt.LinkHeader)
+			d.endpoint.AddHeader(info.Route.LocalLinkAddress, info.Route.RemoteLinkAddress, info.Proto, info.Pkt)
 		}
+		vv.AppendView(info.Pkt.LinkHeader)
 	}
 
 	// Append upper headers.
@@ -365,4 +353,31 @@ func (e *tunEndpoint) ARPHardwareType() header.ARPHardwareType {
 		return header.ARPHardwareEther
 	}
 	return header.ARPHardwareNone
+}
+
+// AddHeader implements stack.LinkEndpoint.AddHeader.
+func (e *tunEndpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	if !e.isTap {
+		return
+	}
+	eth := header.Ethernet(pkt.Header.Prepend(header.EthernetMinimumSize))
+	pkt.LinkHeader = buffer.View(eth)
+	hdr := &header.EthernetFields{
+		SrcAddr: local,
+		DstAddr: remote,
+		Type:    protocol,
+	}
+	if hdr.SrcAddr == "" {
+		hdr.SrcAddr = e.LinkAddress()
+	}
+
+	eth.Encode(hdr)
+}
+
+// MaxHeaderLength returns the maximum size of the link layer header.
+func (e *tunEndpoint) MaxHeaderLength() uint16 {
+	if e.isTap {
+		return header.EthernetMinimumSize
+	}
+	return 0
 }

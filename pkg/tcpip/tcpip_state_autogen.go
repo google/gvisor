@@ -92,6 +92,7 @@ func (x *LinkPacketInfo) StateTypeName() string {
 func (x *LinkPacketInfo) StateFields() []string {
 	return []string{
 		"Protocol",
+		"PktType",
 	}
 }
 
@@ -100,12 +101,14 @@ func (x *LinkPacketInfo) beforeSave() {}
 func (x *LinkPacketInfo) StateSave(m state.Sink) {
 	x.beforeSave()
 	m.Save(0, &x.Protocol)
+	m.Save(1, &x.PktType)
 }
 
 func (x *LinkPacketInfo) afterLoad() {}
 
 func (x *LinkPacketInfo) StateLoad(m state.Source) {
 	m.Load(0, &x.Protocol)
+	m.Load(1, &x.PktType)
 }
 
 func (x *IPPacketInfo) StateTypeName() string {

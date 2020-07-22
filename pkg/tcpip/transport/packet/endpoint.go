@@ -441,6 +441,7 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 			Addr: tcpip.Address(hdr.SourceAddress()),
 		}
 		packet.packetInfo.Protocol = netProto
+		packet.packetInfo.PktType = pkt.PktType
 	} else {
 		// Guess the would-be ethernet header.
 		packet.senderAddr = tcpip.FullAddress{
@@ -448,30 +449,53 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 			Addr: tcpip.Address(localAddr),
 		}
 		packet.packetInfo.Protocol = netProto
+		packet.packetInfo.PktType = pkt.PktType
 	}
 
 	if ep.cooked {
 		// Cooked packets can simply be queued.
-		packet.data = pkt.Data
+		switch pkt.PktType {
+		case tcpip.PacketHost:
+			packet.data = pkt.Data
+		case tcpip.PacketOutgoing:
+			// Strip Link Header from the Header.
+			pkt.Header = buffer.NewPrependableFromView(pkt.Header.View()[len(pkt.LinkHeader):])
+			combinedVV := pkt.Header.View().ToVectorisedView()
+			combinedVV.Append(pkt.Data)
+			packet.data = combinedVV
+		default:
+			panic(fmt.Sprintf("unexpected PktType in pkt: %+v", pkt))
+		}
+
 	} else {
 		// Raw packets need their ethernet headers prepended before
 		// queueing.
 		var linkHeader buffer.View
-		if len(pkt.LinkHeader) == 0 {
-			// We weren't provided with an actual ethernet header,
-			// so fake one.
-			ethFields := header.EthernetFields{
-				SrcAddr: tcpip.LinkAddress([]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00}),
-				DstAddr: localAddr,
-				Type:    netProto,
+		var combinedVV buffer.VectorisedView
+		if pkt.PktType != tcpip.PacketOutgoing {
+			if len(pkt.LinkHeader) == 0 {
+				// We weren't provided with an actual ethernet header,
+				// so fake one.
+				ethFields := header.EthernetFields{
+					SrcAddr: tcpip.LinkAddress([]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00}),
+					DstAddr: localAddr,
+					Type:    netProto,
+				}
+				fakeHeader := make(header.Ethernet, header.EthernetMinimumSize)
+				fakeHeader.Encode(&ethFields)
+				linkHeader = buffer.View(fakeHeader)
+			} else {
+				linkHeader = append(buffer.View(nil), pkt.LinkHeader...)
 			}
-			fakeHeader := make(header.Ethernet, header.EthernetMinimumSize)
-			fakeHeader.Encode(&ethFields)
-			linkHeader = buffer.View(fakeHeader)
-		} else {
-			linkHeader = append(buffer.View(nil), pkt.LinkHeader...)
+			combinedVV = linkHeader.ToVectorisedView()
 		}
-		combinedVV := linkHeader.ToVectorisedView()
+		if pkt.PktType == tcpip.PacketOutgoing {
+			// For outgoing packets the Link, Network and Transport
+			// headers are in the pkt.Header fields normally unless
+			// a Raw socket is in use in which case pkt.Header could
+			// be nil.
+			combinedVV.AppendView(pkt.Header.View())
+		}
 		combinedVV.Append(pkt.Data)
 		packet.data = combinedVV
 	}

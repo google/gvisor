@@ -61,6 +61,16 @@ func (e *Endpoint) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protoco
 	}
 }
 
+// DeliverOutboundPacket implements stack.NetworkDispatcher.DeliverOutboundPacket.
+func (e *Endpoint) DeliverOutboundPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	e.mu.RLock()
+	d := e.dispatcher
+	e.mu.RUnlock()
+	if d != nil {
+		d.DeliverOutboundPacket(remote, local, protocol, pkt)
+	}
+}
+
 // Attach implements stack.LinkEndpoint.
 func (e *Endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	e.mu.Lock()
@@ -134,4 +144,9 @@ func (e *Endpoint) GSOMaxSize() uint32 {
 // ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType
 func (e *Endpoint) ARPHardwareType() header.ARPHardwareType {
 	return e.child.ARPHardwareType()
+}
+
+// AddHeader implements stack.LinkEndpoint.AddHeader.
+func (e *Endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	e.child.AddHeader(local, remote, protocol, pkt)
 }

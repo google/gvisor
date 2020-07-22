@@ -134,6 +134,15 @@ const (
 	SHUT_RDWR = 2
 )
 
+// Packet types from <linux/if_packet.h>
+const (
+	PACKET_HOST      = 0 // To us
+	PACKET_BROADCAST = 1 // To all
+	PACKET_MULTICAST = 2 // To group
+	PACKET_OTHERHOST = 3 // To someone else
+	PACKET_OUTGOING  = 4 // Outgoing of any type
+)
+
 // Socket options from socket.h.
 const (
 	SO_DEBUG                 = 1

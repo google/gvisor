@@ -316,6 +316,28 @@ const (
 	ShutdownWrite
 )
 
+// PacketType is used to indicate the destination of the packet.
+type PacketType uint8
+
+const (
+	// PacketHost indicates a packet addressed to the local host.
+	PacketHost PacketType = iota
+
+	// PacketOtherHost indicates an outgoing packet addressed to
+	// another host caught by a NIC in promiscuous mode.
+	PacketOtherHost
+
+	// PacketOutgoing for a packet originating from the local host
+	// that is looped back to a packet socket.
+	PacketOutgoing
+
+	// PacketBroadcast indicates a link layer broadcast packet.
+	PacketBroadcast
+
+	// PacketMulticast indicates a link layer multicast packet.
+	PacketMulticast
+)
+
 // FullAddress represents a full transport node address, as required by the
 // Connect() and Bind() methods.
 //
@@ -555,6 +577,9 @@ type Endpoint interface {
 type LinkPacketInfo struct {
 	// Protocol is the NetworkProtocolNumber for the packet.
 	Protocol NetworkProtocolNumber
+
+	// PktType is used to indicate the destination of the packet.
+	PktType PacketType
 }
 
 // PacketEndpoint are additional methods that are only implemented by Packet
