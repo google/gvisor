@@ -84,14 +84,14 @@ type IPTables struct {
 	// mu protects tables, priorities, and modified.
 	mu sync.RWMutex
 
-	// tables maps table names to tables. User tables have arbitrary names.
-	// mu needs to be locked for accessing.
-	tables map[string]Table
+	// tables maps tableIDs to tables. Holds builtin tables only, not user
+	// tables. mu must be locked for accessing.
+	tables [numTables]Table
 
 	// priorities maps each hook to a list of table names. The order of the
 	// list is the order in which each table should be visited for that
 	// hook. mu needs to be locked for accessing.
-	priorities map[Hook][]string
+	priorities [NumHooks][]tableID
 
 	// modified is whether tables have been modified at least once. It is
 	// used to elide the iptables performance overhead for workloads that
@@ -113,22 +113,20 @@ type Table struct {
 	Rules []Rule
 
 	// BuiltinChains maps builtin chains to their entrypoint rule in Rules.
-	BuiltinChains map[Hook]int
+	BuiltinChains [NumHooks]int
 
 	// Underflows maps builtin chains to their underflow rule in Rules
 	// (i.e. the rule to execute if the chain returns without a verdict).
-	Underflows map[Hook]int
-
-	// UserChains holds user-defined chains for the keyed by name. Users
-	// can give their chains arbitrary names.
-	UserChains map[string]int
+	Underflows [NumHooks]int
 }
 
 // ValidHooks returns a bitmap of the builtin hooks for the given table.
 func (table *Table) ValidHooks() uint32 {
 	hooks := uint32(0)
-	for hook := range table.BuiltinChains {
-		hooks |= 1 << hook
+	for hook, ruleIdx := range table.BuiltinChains {
+		if ruleIdx != HookUnset {
+			hooks |= 1 << hook
+		}
 	}
 	return hooks
 }
