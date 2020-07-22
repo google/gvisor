@@ -342,10 +342,10 @@ func SetEntries(stk *stack.Stack, optVal []byte) *syserr.Error {
 	// TODO(gvisor.dev/issue/170): Support other tables.
 	var table stack.Table
 	switch replace.Name.String() {
-	case stack.TablenameFilter:
+	case stack.FilterTable:
 		table = stack.EmptyFilterTable()
-	case stack.TablenameNat:
-		table = stack.EmptyNatTable()
+	case stack.NATTable:
+		table = stack.EmptyNATTable()
 	default:
 		nflog("we don't yet support writing to the %q table (gvisor.dev/issue/170)", replace.Name.String())
 		return syserr.ErrInvalidArgument
@@ -431,6 +431,8 @@ func SetEntries(stk *stack.Stack, optVal []byte) *syserr.Error {
 	for hook, _ := range replace.HookEntry {
 		if table.ValidHooks()&(1<<hook) != 0 {
 			hk := hookFromLinux(hook)
+			table.BuiltinChains[hk] = stack.HookUnset
+			table.Underflows[hk] = stack.HookUnset
 			for offset, ruleIdx := range offsets {
 				if offset == replace.HookEntry[hook] {
 					table.BuiltinChains[hk] = ruleIdx
@@ -456,8 +458,7 @@ func SetEntries(stk *stack.Stack, optVal []byte) *syserr.Error {
 
 	// Add the user chains.
 	for ruleIdx, rule := range table.Rules {
-		target, ok := rule.Target.(stack.UserChainTarget)
-		if !ok {
+		if _, ok := rule.Target.(stack.UserChainTarget); !ok {
 			continue
 		}
 
@@ -473,7 +474,6 @@ func SetEntries(stk *stack.Stack, optVal []byte) *syserr.Error {
 			nflog("user chain's first node must have no matchers")
 			return syserr.ErrInvalidArgument
 		}
-		table.UserChains[target.Name] = ruleIdx + 1
 	}
 
 	// Set each jump to point to the appropriate rule. Right now they hold byte
@@ -499,7 +499,10 @@ func SetEntries(stk *stack.Stack, optVal []byte) *syserr.Error {
 	// Since we only support modifying the INPUT, PREROUTING and OUTPUT chain right now,
 	// make sure all other chains point to ACCEPT rules.
 	for hook, ruleIdx := range table.BuiltinChains {
-		if hook == stack.Forward || hook == stack.Postrouting {
+		if hook := stack.Hook(hook); hook == stack.Forward || hook == stack.Postrouting {
+			if ruleIdx == stack.HookUnset {
+				continue
+			}
 			if !isUnconditionalAccept(table.Rules[ruleIdx]) {
 				nflog("hook %d is unsupported.", hook)
 				return syserr.ErrInvalidArgument
@@ -512,9 +515,7 @@ func SetEntries(stk *stack.Stack, optVal []byte) *syserr.Error {
 	// - There are no chains without an unconditional final rule.
 	// - There are no chains without an unconditional underflow rule.
 
-	stk.IPTables().ReplaceTable(replace.Name.String(), table)
-
-	return nil
+	return syserr.TranslateNetstackError(stk.IPTables().ReplaceTable(replace.Name.String(), table))
 }
 
 // parseMatchers parses 0 or more matchers from optVal. optVal should contain
