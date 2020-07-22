@@ -26,6 +26,7 @@ package netstack
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"math"
 	"reflect"
@@ -2468,6 +2469,23 @@ func (s *socketOpsCommon) fillCmsgInq(cmsg *socket.ControlMessages) {
 	cmsg.IP.Inq = int32(len(s.readView) + rcvBufUsed)
 }
 
+func toLinuxPacketType(pktType tcpip.PacketType) uint8 {
+	switch pktType {
+	case tcpip.PacketHost:
+		return linux.PACKET_HOST
+	case tcpip.PacketOtherHost:
+		return linux.PACKET_OTHERHOST
+	case tcpip.PacketOutgoing:
+		return linux.PACKET_OUTGOING
+	case tcpip.PacketBroadcast:
+		return linux.PACKET_BROADCAST
+	case tcpip.PacketMulticast:
+		return linux.PACKET_MULTICAST
+	default:
+		panic(fmt.Sprintf("unknown packet type: %d", pktType))
+	}
+}
+
 // nonBlockingRead issues a non-blocking read.
 //
 // TODO(b/78348848): Support timestamps for stream sockets.
@@ -2526,6 +2544,7 @@ func (s *socketOpsCommon) nonBlockingRead(ctx context.Context, dst usermem.IOSeq
 		switch v := addr.(type) {
 		case *linux.SockAddrLink:
 			v.Protocol = htons(uint16(s.linkPacketInfo.Protocol))
+			v.PacketType = toLinuxPacketType(s.linkPacketInfo.PktType)
 		}
 	}
 

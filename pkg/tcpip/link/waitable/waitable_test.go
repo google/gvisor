@@ -40,6 +40,10 @@ func (e *countedEndpoint) DeliverNetworkPacket(remote, local tcpip.LinkAddress, 
 	e.dispatchCount++
 }
 
+func (e *countedEndpoint) DeliverOutboundPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	panic("unimplemented")
+}
+
 func (e *countedEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	e.attachCount++
 	e.dispatcher = dispatcher
@@ -89,6 +93,11 @@ func (*countedEndpoint) ARPHardwareType() header.ARPHardwareType {
 
 // Wait implements stack.LinkEndpoint.Wait.
 func (*countedEndpoint) Wait() {}
+
+// AddHeader implements stack.LinkEndpoint.AddHeader.
+func (e *countedEndpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	panic("unimplemented")
+}
 
 func TestWaitWrite(t *testing.T) {
 	ep := &countedEndpoint{}

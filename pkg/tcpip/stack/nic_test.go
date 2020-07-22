@@ -89,6 +89,11 @@ func (*testLinkEndpoint) ARPHardwareType() header.ARPHardwareType {
 	panic("not implemented")
 }
 
+// AddHeader implements stack.LinkEndpoint.AddHeader.
+func (e *testLinkEndpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
+	panic("not implemented")
+}
+
 var _ NetworkEndpoint = (*testIPv6Endpoint)(nil)
 
 // An IPv6 NetworkEndpoint that throws away outgoing packets.

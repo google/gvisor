@@ -143,6 +143,10 @@ func (c *testContext) DeliverNetworkPacket(remoteLinkAddr, localLinkAddr tcpip.L
 	c.packetCh <- struct{}{}
 }
 
+func (c *testContext) DeliverOutboundPacket(remoteLinkAddr, localLinkAddr tcpip.LinkAddress, proto tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	panic("unimplemented")
+}
+
 func (c *testContext) cleanup() {
 	c.ep.Close()
 	closeFDs(&c.txCfg)

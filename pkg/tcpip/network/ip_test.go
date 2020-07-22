@@ -185,6 +185,11 @@ func (*testObject) ARPHardwareType() header.ARPHardwareType {
 	panic("not implemented")
 }
 
+// AddHeader implements stack.LinkEndpoint.AddHeader.
+func (*testObject) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	panic("not implemented")
+}
+
 func buildIPv4Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},

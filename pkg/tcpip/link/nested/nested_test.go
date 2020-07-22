@@ -55,6 +55,10 @@ func (d *counterDispatcher) DeliverNetworkPacket(tcpip.LinkAddress, tcpip.LinkAd
 	d.count++
 }
 
+func (d *counterDispatcher) DeliverOutboundPacket(tcpip.LinkAddress, tcpip.LinkAddress, tcpip.NetworkProtocolNumber, *stack.PacketBuffer) {
+	panic("unimplemented")
+}
+
 func TestNestedLinkEndpoint(t *testing.T) {
 	const emptyAddress = tcpip.LinkAddress("")
 

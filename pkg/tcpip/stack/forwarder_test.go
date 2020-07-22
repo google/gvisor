@@ -307,6 +307,11 @@ func (*fwdTestLinkEndpoint) ARPHardwareType() header.ARPHardwareType {
 	panic("not implemented")
 }
 
+// AddHeader implements stack.LinkEndpoint.AddHeader.
+func (e *fwdTestLinkEndpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
+	panic("not implemented")
+}
+
 func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol) (ep1, ep2 *fwdTestLinkEndpoint) {
 	// Create a stack with the network protocol and two NICs.
 	s := New(Options{
