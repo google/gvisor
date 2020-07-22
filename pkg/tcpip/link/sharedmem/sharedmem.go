@@ -183,22 +183,29 @@ func (e *endpoint) LinkAddress() tcpip.LinkAddress {
 	return e.addr
 }
 
-// WritePacket writes outbound packets to the file descriptor. If it is not
-// currently writable, the packet is dropped.
-func (e *endpoint) WritePacket(r *stack.Route, _ *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
-	// Add the ethernet header here.
+// AddHeader implements stack.LinkEndpoint.AddHeader.
+func (e *endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	// Add ethernet header if needed.
 	eth := header.Ethernet(pkt.Header.Prepend(header.EthernetMinimumSize))
 	pkt.LinkHeader = buffer.View(eth)
 	ethHdr := &header.EthernetFields{
-		DstAddr: r.RemoteLinkAddress,
+		DstAddr: remote,
 		Type:    protocol,
 	}
-	if r.LocalLinkAddress != "" {
-		ethHdr.SrcAddr = r.LocalLinkAddress
+
+	// Preserve the src address if it's set in the route.
+	if local != "" {
+		ethHdr.SrcAddr = local
 	} else {
 		ethHdr.SrcAddr = e.addr
 	}
 	eth.Encode(ethHdr)
+}
+
+// WritePacket writes outbound packets to the file descriptor. If it is not
+// currently writable, the packet is dropped.
+func (e *endpoint) WritePacket(r *stack.Route, _ *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+	e.AddHeader(r.LocalLinkAddress, r.RemoteLinkAddress, protocol, pkt)
 
 	v := pkt.Data.ToView()
 	// Transmit the packet.

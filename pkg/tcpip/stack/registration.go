@@ -330,8 +330,7 @@ type NetworkProtocol interface {
 }
 
 // NetworkDispatcher contains the methods used by the network stack to deliver
-// packets to the appropriate network endpoint after it has been handled by
-// the data link layer.
+// inbound/outbound packets to the appropriate network/packet(if any) endpoints.
 type NetworkDispatcher interface {
 	// DeliverNetworkPacket finds the appropriate network protocol endpoint
 	// and hands the packet over for further processing.
@@ -342,6 +341,16 @@ type NetworkDispatcher interface {
 	//
 	// DeliverNetworkPacket takes ownership of pkt.
 	DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
+
+	// DeliverOutboundPacket is called by link layer when a packet is being
+	// sent out.
+	//
+	// pkt.LinkHeader may or may not be set before calling
+	// DeliverOutboundPacket. Some packets do not have link headers (e.g.
+	// packets sent via loopback), and won't have the field set.
+	//
+	// DeliverOutboundPacket takes ownership of pkt.
+	DeliverOutboundPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
 }
 
 // LinkEndpointCapabilities is the type associated with the capabilities
@@ -443,6 +452,9 @@ type LinkEndpoint interface {
 	// See:
 	// https://github.com/torvalds/linux/blob/aa0c9086b40c17a7ad94425b3b70dd1fdd7497bf/include/uapi/linux/if_arp.h#L30
 	ARPHardwareType() header.ARPHardwareType
+
+	// AddHeader adds a link layer header to pkt if required.
+	AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
 }
 
 // InjectableLinkEndpoint is a LinkEndpoint where inbound packets are

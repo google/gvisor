@@ -1200,15 +1200,13 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 
 	// Are any packet sockets listening for this network protocol?
 	packetEPs := n.mu.packetEPs[protocol]
-	// Check whether there are packet sockets listening for every protocol.
-	// If we received a packet with protocol EthernetProtocolAll, then the
-	// previous for loop will have handled it.
-	if protocol != header.EthernetProtocolAll {
-		packetEPs = append(packetEPs, n.mu.packetEPs[header.EthernetProtocolAll]...)
-	}
+	// Add any other packet sockets that maybe listening for all protocols.
+	packetEPs = append(packetEPs, n.mu.packetEPs[header.EthernetProtocolAll]...)
 	n.mu.RUnlock()
 	for _, ep := range packetEPs {
-		ep.HandlePacket(n.id, local, protocol, pkt.Clone())
+		p := pkt.Clone()
+		p.PktType = tcpip.PacketHost
+		ep.HandlePacket(n.id, local, protocol, p)
 	}
 
 	if netProto.Number() == header.IPv4ProtocolNumber || netProto.Number() == header.IPv6ProtocolNumber {
@@ -1308,6 +1306,24 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 	// If a packet socket handled the packet, don't treat it as invalid.
 	if len(packetEPs) == 0 {
 		n.stack.stats.IP.InvalidDestinationAddressesReceived.Increment()
+	}
+}
+
+// DeliverOutboundPacket implements NetworkDispatcher.DeliverOutboundPacket.
+func (n *NIC) DeliverOutboundPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
+	n.mu.RLock()
+	// We do not deliver to protocol specific packet endpoints as on Linux
+	// only ETH_P_ALL endpoints get outbound packets.
+	// Add any other packet sockets that maybe listening for all protocols.
+	packetEPs := n.mu.packetEPs[header.EthernetProtocolAll]
+	n.mu.RUnlock()
+	for _, ep := range packetEPs {
+		p := pkt.Clone()
+		p.PktType = tcpip.PacketOutgoing
+		// Add the link layer header as outgoing packets are intercepted
+		// before the link layer header is created.
+		n.linkEP.AddHeader(local, remote, protocol, p)
+		ep.HandlePacket(n.id, local, protocol, p)
 	}
 }
 
