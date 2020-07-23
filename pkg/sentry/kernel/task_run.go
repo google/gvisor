@@ -167,7 +167,22 @@ func (app *runApp) execute(t *Task) taskRunState {
 		return (*runInterrupt)(nil)
 	}
 
-	// We're about to switch to the application again. If there's still a
+	// Execute any task work callbacks before returning to user space.
+	if atomic.LoadInt32(&t.taskWorkCount) > 0 {
+		t.taskWorkMu.Lock()
+		queue := t.taskWork
+		t.taskWork = nil
+		atomic.StoreInt32(&t.taskWorkCount, 0)
+		t.taskWorkMu.Unlock()
+
+		// Do not hold taskWorkMu while executing task work, which may register
+		// more work.
+		for _, work := range queue {
+			work.TaskWork(t)
+		}
+	}
+
+	// We're about to switch to the application again. If there's still an
 	// unhandled SyscallRestartErrno that wasn't translated to an EINTR,
 	// restart the syscall that was interrupted. If there's a saved signal
 	// mask, restore it. (Note that restoring the saved signal mask may unblock

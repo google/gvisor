@@ -68,6 +68,21 @@ type Task struct {
 	// runState is exclusive to the task goroutine.
 	runState taskRunState
 
+	// taskWorkCount represents the current size of the task work queue. It is
+	// used to avoid acquiring taskWorkMu when the queue is empty.
+	//
+	// Must accessed with atomic memory operations.
+	taskWorkCount int32
+
+	// taskWorkMu protects taskWork.
+	taskWorkMu sync.Mutex `state:"nosave"`
+
+	// taskWork is a queue of work to be executed before resuming user execution.
+	// It is similar to the task_work mechanism in Linux.
+	//
+	// taskWork is exclusive to the task goroutine.
+	taskWork []TaskWorker
+
 	// haveSyscallReturn is true if tc.Arch().Return() represents a value
 	// returned by a syscall (or set by ptrace after a syscall).
 	//
