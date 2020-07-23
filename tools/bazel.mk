@@ -30,9 +30,6 @@ DOCKER_SOCKET := /var/run/docker.sock
 
 # Bazel flags.
 OPTIONS += --test_output=errors --keep_going --verbose_failures=true
-ifneq ($(AUTH_CREDENTIALS),)
-OPTIONS += --auth_credentials=${AUTH_CREDENTIALS} --config=remote
-endif
 BAZEL := bazel $(STARTUP_OPTIONS)
 
 # Non-configurable.
@@ -71,7 +68,7 @@ SHELL=/bin/bash -o pipefail
 bazel-server-start: load-default ## Starts the bazel server.
 	@mkdir -p $(BAZEL_CACHE)
 	@mkdir -p $(GCLOUD_CONFIG)
-	@if docker ps --all | grep $(DOCKER_NAME); then docker rm $(DOCKER_NAME); fi
+	@if docker ps --all | grep $(DOCKER_NAME); then docker rm -f $(DOCKER_NAME); fi
 	docker run -d --rm \
 		--init \
 	        --name $(DOCKER_NAME) \
@@ -102,7 +99,7 @@ bazel-server: ## Ensures that the server exists. Used as an internal target.
 	@docker exec $(DOCKER_NAME) true || $(MAKE) bazel-server-start
 .PHONY: bazel-server
 
-build_cmd = docker exec --user $(UID):$(GID) -i $(DOCKER_NAME) sh -o pipefail -c '$(BAZEL) $(STARTUP_OPTIONS) build $(OPTIONS) $(TARGETS)'
+build_cmd = docker exec --user $(UID):$(GID) -i $(DOCKER_NAME) sh -o pipefail -c '$(BAZEL) build $(OPTIONS) $(TARGETS)'
 
 build_paths = $(build_cmd) 2>&1 \
 		| tee /proc/self/fd/2 \
