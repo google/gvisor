@@ -9,11 +9,9 @@ automatically generating code to marshal go data structures to memory.
 `binary.Marshal` by moving the go runtime reflection necessary to marshal a
 struct to compile-time.
 
-`go_marshal` automatically generates implementations for `abi.Marshallable` and
-`safemem.{Reader,Writer}`. Call-sites for serialization (typically syscall
-implementations) can directly invoke `safemem.Reader.ReadToBlocks` and
-`safemem.Writer.WriteFromBlocks`. Data structures that require custom
-serialization will have manual implementations for these interfaces.
+`go_marshal` automatically generates implementations for `marshal.Marshallable`
+and `safemem.{Reader,Writer}`. Data structures that require custom serialization
+will have manual implementations for these interfaces.
 
 Data structures can be flagged for code generation by adding a struct-level
 comment `// +marshal`.

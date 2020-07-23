@@ -35,5 +35,6 @@ go_library(
         "//pkg/tcpip",
         "//pkg/usermem",
         "//pkg/waiter",
+        "//tools/go_marshal/marshal",
     ],
 )

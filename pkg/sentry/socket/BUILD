@@ -20,5 +20,6 @@ go_library(
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/usermem",
+        "//tools/go_marshal/marshal",
     ],
 )

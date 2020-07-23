@@ -72,5 +72,7 @@ go_library(
         "//pkg/syserror",
         "//pkg/usermem",
         "//pkg/waiter",
+        "//tools/go_marshal/marshal",
+        "//tools/go_marshal/primitive",
     ],
 )
