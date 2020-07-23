@@ -150,11 +150,9 @@ afterSymlink:
 			return nil, err
 		}
 		if d != d.parent && !d.cachedMetadataAuthoritative() {
-			_, attrMask, attr, err := d.parent.file.getAttr(ctx, dentryAttrMask())
-			if err != nil {
+			if err := d.parent.updateFromGetattr(ctx); err != nil {
 				return nil, err
 			}
-			d.parent.updateFromP9Attrs(attrMask, &attr)
 		}
 		rp.Advance()
 		return d.parent, nil
@@ -209,17 +207,28 @@ func (fs *filesystem) getChildLocked(ctx context.Context, vfsObj *vfs.VirtualFil
 
 // Preconditions: As for getChildLocked. !parent.isSynthetic().
 func (fs *filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.VirtualFilesystem, parent *dentry, name string, child *dentry, ds **[]*dentry) (*dentry, error) {
+	if child != nil {
+		// Need to lock child.metadataMu because we might be updating child
+		// metadata. We need to hold the lock *before* getting metadata from the
+		// server and release it after updating local metadata.
+		child.metadataMu.Lock()
+	}
 	qid, file, attrMask, attr, err := parent.file.walkGetAttrOne(ctx, name)
 	if err != nil && err != syserror.ENOENT {
+		if child != nil {
+			child.metadataMu.Unlock()
+		}
 		return nil, err
 	}
 	if child != nil {
 		if !file.isNil() && inoFromPath(qid.Path) == child.ino {
 			// The file at this path hasn't changed. Just update cached metadata.
 			file.close(ctx)
-			child.updateFromP9Attrs(attrMask, &attr)
+			child.updateFromP9AttrsLocked(attrMask, &attr)
+			child.metadataMu.Unlock()
 			return child, nil
 		}
+		child.metadataMu.Unlock()
 		if file.isNil() && child.isSynthetic() {
 			// We have a synthetic file, and no remote file has arisen to
 			// replace it.
