@@ -785,8 +785,8 @@ func (d *dentry) cachedMetadataAuthoritative() bool {
 
 // updateFromP9Attrs is called to update d's metadata after an update from the
 // remote filesystem.
-func (d *dentry) updateFromP9Attrs(mask p9.AttrMask, attr *p9.Attr) {
-	d.metadataMu.Lock()
+// Precondition: d.metadataMu must be locked.
+func (d *dentry) updateFromP9AttrsLocked(mask p9.AttrMask, attr *p9.Attr) {
 	if mask.Mode {
 		if got, want := uint32(attr.Mode.FileType()), d.fileType(); got != want {
 			d.metadataMu.Unlock()
@@ -822,7 +822,6 @@ func (d *dentry) updateFromP9Attrs(mask p9.AttrMask, attr *p9.Attr) {
 	if mask.Size {
 		d.updateFileSizeLocked(attr.Size)
 	}
-	d.metadataMu.Unlock()
 }
 
 // Preconditions: !d.isSynthetic()
@@ -834,6 +833,10 @@ func (d *dentry) updateFromGetattr(ctx context.Context) error {
 		file            p9file
 		handleMuRLocked bool
 	)
+	// d.metadataMu must be locked *before* we getAttr so that we do not end up
+	// updating stale attributes in d.updateFromP9AttrsLocked().
+	d.metadataMu.Lock()
+	defer d.metadataMu.Unlock()
 	d.handleMu.RLock()
 	if !d.handle.file.isNil() {
 		file = d.handle.file
@@ -849,7 +852,7 @@ func (d *dentry) updateFromGetattr(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	d.updateFromP9Attrs(attrMask, &attr)
+	d.updateFromP9AttrsLocked(attrMask, &attr)
 	return nil
 }
 
