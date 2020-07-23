@@ -129,6 +129,9 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer) {
 
 		pkt.Data.TrimFront(header.ICMPv4MinimumSize)
 		switch h.Code() {
+		case header.ICMPv4HostUnreachable:
+			e.handleControl(stack.ControlNoRoute, 0, pkt)
+
 		case header.ICMPv4PortUnreachable:
 			e.handleControl(stack.ControlPortUnreachable, 0, pkt)
 

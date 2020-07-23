@@ -110,9 +110,16 @@ const (
 	ICMPv6RedirectMsg     ICMPv6Type = 137
 )
 
-// Values for ICMP code as defined in RFC 4443.
+// Values for ICMP destination unreachable code as defined in RFC 4443 section
+// 3.1.
 const (
-	ICMPv6PortUnreachable = 4
+	ICMPv6NetworkUnreachable = 0
+	ICMPv6Prohibited         = 1
+	ICMPv6BeyondScope        = 2
+	ICMPv6AddressUnreachable = 3
+	ICMPv6PortUnreachable    = 4
+	ICMPv6Policy             = 5
+	ICMPv6RejectRoute        = 6
 )
 
 // Type is the ICMP type field.

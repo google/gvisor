@@ -490,6 +490,9 @@ func (h *handshake) resolveRoute() *tcpip.Error {
 				<-h.ep.undrain
 				h.ep.mu.Lock()
 			}
+			if n&notifyError != 0 {
+				return h.ep.takeLastError()
+			}
 		}
 
 		// Wait for notification.
@@ -615,6 +618,9 @@ func (h *handshake) execute() *tcpip.Error {
 				h.ep.mu.Unlock()
 				<-h.ep.undrain
 				h.ep.mu.Lock()
+			}
+			if n&notifyError != 0 {
+				return h.ep.takeLastError()
 			}
 
 		case wakerForNewSegment:
