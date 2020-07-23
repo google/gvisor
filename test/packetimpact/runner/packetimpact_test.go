@@ -280,11 +280,13 @@ func TestOne(t *testing.T) {
 	}
 
 	// Because the Linux kernel receives the SYN-ACK but didn't send the SYN it
-	// will issue a RST. To prevent this IPtables can be used to filter out all
+	// will issue an RST. To prevent this IPtables can be used to filter out all
 	// incoming packets. The raw socket that packetimpact tests use will still see
 	// everything.
-	if logs, err := testbench.Exec(ctx, dockerutil.ExecOpts{}, "iptables", "-A", "INPUT", "-i", testNetDev, "-j", "DROP"); err != nil {
-		t.Fatalf("unable to Exec iptables on container %s: %s, logs from testbench:\n%s", testbench.Name, err, logs)
+	for _, bin := range []string{"iptables", "ip6tables"} {
+		if logs, err := testbench.Exec(ctx, dockerutil.ExecOpts{}, bin, "-A", "INPUT", "-i", testNetDev, "-p", "tcp", "-j", "DROP"); err != nil {
+			t.Fatalf("unable to Exec %s on container %s: %s, logs from testbench:\n%s", bin, testbench.Name, err, logs)
+		}
 	}
 
 	// FIXME(b/156449515): Some piece of the system has a race. The old

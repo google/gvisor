@@ -41,7 +41,8 @@ func portFromSockaddr(sa unix.Sockaddr) (uint16, error) {
 	return 0, fmt.Errorf("sockaddr type %T does not contain port", sa)
 }
 
-// pickPort makes a new socket and returns the socket FD and port. The domain should be AF_INET or AF_INET6. The caller must close the FD when done with
+// pickPort makes a new socket and returns the socket FD and port. The domain
+// should be AF_INET or AF_INET6. The caller must close the FD when done with
 // the port if there is no error.
 func pickPort(domain, typ int) (fd int, port uint16, err error) {
 	fd, err = unix.Socket(domain, typ, 0)
@@ -1060,4 +1061,59 @@ func (conn *UDPIPv6) Close() {
 // nothing else to receive.
 func (conn *UDPIPv6) Drain() {
 	conn.sniffer.Drain()
+}
+
+// TCPIPv6 maintains the state for all the layers in a TCP/IPv6 connection.
+type TCPIPv6 Connection
+
+// NewTCPIPv6 creates a new TCPIPv6 connection with reasonable defaults.
+func NewTCPIPv6(t *testing.T, outgoingTCP, incomingTCP TCP) TCPIPv6 {
+	etherState, err := newEtherState(Ether{}, Ether{})
+	if err != nil {
+		t.Fatalf("can't make etherState: %s", err)
+	}
+	ipv6State, err := newIPv6State(IPv6{}, IPv6{})
+	if err != nil {
+		t.Fatalf("can't make ipv6State: %s", err)
+	}
+	tcpState, err := newTCPState(unix.AF_INET6, outgoingTCP, incomingTCP)
+	if err != nil {
+		t.Fatalf("can't make tcpState: %s", err)
+	}
+	injector, err := NewInjector(t)
+	if err != nil {
+		t.Fatalf("can't make injector: %s", err)
+	}
+	sniffer, err := NewSniffer(t)
+	if err != nil {
+		t.Fatalf("can't make sniffer: %s", err)
+	}
+
+	return TCPIPv6{
+		layerStates: []layerState{etherState, ipv6State, tcpState},
+		injector:    injector,
+		sniffer:     sniffer,
+		t:           t,
+	}
+}
+
+func (conn *TCPIPv6) SrcPort() uint16 {
+	state := conn.layerStates[2].(*tcpState)
+	return *state.out.SrcPort
+}
+
+// ExpectData is a convenient method that expects a Layer and the Layer after
+// it. If it doens't arrive in time, it returns nil.
+func (conn *TCPIPv6) ExpectData(tcp *TCP, payload *Payload, timeout time.Duration) (Layers, error) {
+	expected := make([]Layer, len(conn.layerStates))
+	expected[len(expected)-1] = tcp
+	if payload != nil {
+		expected = append(expected, payload)
+	}
+	return (*Connection)(conn).ExpectFrame(expected, timeout)
+}
+
+// Close frees associated resources held by the TCPIPv6 connection.
+func (conn *TCPIPv6) Close() {
+	(*Connection)(conn).Close()
 }

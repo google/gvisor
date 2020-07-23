@@ -128,6 +128,8 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		}
 		pkt.Data.TrimFront(header.ICMPv6DstUnreachableMinimumSize)
 		switch header.ICMPv6(hdr).Code() {
+		case header.ICMPv6NetworkUnreachable:
+			e.handleControl(stack.ControlNetworkUnreachable, 0, pkt)
 		case header.ICMPv6PortUnreachable:
 			e.handleControl(stack.ControlPortUnreachable, 0, pkt)
 		}
