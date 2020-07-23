@@ -300,7 +300,7 @@ func (c *context64) PtracePeekUser(addr uintptr) (interface{}, error) {
 	// PTRACE_PEEKUSER and PTRACE_POKEUSER are only effective on regs and
 	// u_debugreg, returning 0 or silently no-oping for other fields
 	// respectively.
-	if addr < uintptr(registersSize) {
+	if addr < uintptr(ptraceRegistersSize) {
 		regs := c.ptraceGetRegs()
 		buf := make([]byte, regs.SizeBytes())
 		regs.MarshalUnsafe(buf)
@@ -315,7 +315,7 @@ func (c *context64) PtracePokeUser(addr, data uintptr) error {
 	if addr&7 != 0 || addr >= userStructSize {
 		return syscall.EIO
 	}
-	if addr < uintptr(registersSize) {
+	if addr < uintptr(ptraceRegistersSize) {
 		regs := c.ptraceGetRegs()
 		buf := make([]byte, regs.SizeBytes())
 		regs.MarshalUnsafe(buf)

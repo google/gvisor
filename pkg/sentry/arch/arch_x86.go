@@ -31,7 +31,11 @@ import (
 )
 
 // Registers represents the CPU registers for this architecture.
-type Registers = linux.PtraceRegs
+//
+// +stateify savable
+type Registers struct {
+	linux.PtraceRegs
+}
 
 // System-related constants for x86.
 const (
@@ -311,12 +315,12 @@ func (s *State) ptraceGetRegs() Registers {
 	return regs
 }
 
-var registersSize = (*Registers)(nil).SizeBytes()
+var ptraceRegistersSize = (*linux.PtraceRegs)(nil).SizeBytes()
 
 // PtraceSetRegs implements Context.PtraceSetRegs.
 func (s *State) PtraceSetRegs(src io.Reader) (int, error) {
 	var regs Registers
-	buf := make([]byte, registersSize)
+	buf := make([]byte, ptraceRegistersSize)
 	if _, err := io.ReadFull(src, buf); err != nil {
 		return 0, err
 	}
@@ -374,7 +378,7 @@ func (s *State) PtraceSetRegs(src io.Reader) (int, error) {
 	}
 	regs.Eflags = (s.Regs.Eflags &^ eflagsPtraceMutable) | (regs.Eflags & eflagsPtraceMutable)
 	s.Regs = regs
-	return registersSize, nil
+	return ptraceRegistersSize, nil
 }
 
 // isUserSegmentSelector returns true if the given segment selector specifies a
@@ -543,7 +547,7 @@ const (
 func (s *State) PtraceGetRegSet(regset uintptr, dst io.Writer, maxlen int) (int, error) {
 	switch regset {
 	case _NT_PRSTATUS:
-		if maxlen < registersSize {
+		if maxlen < ptraceRegistersSize {
 			return 0, syserror.EFAULT
 		}
 		return s.PtraceGetRegs(dst)
@@ -563,7 +567,7 @@ func (s *State) PtraceGetRegSet(regset uintptr, dst io.Writer, maxlen int) (int,
 func (s *State) PtraceSetRegSet(regset uintptr, src io.Reader, maxlen int) (int, error) {
 	switch regset {
 	case _NT_PRSTATUS:
-		if maxlen < registersSize {
+		if maxlen < ptraceRegistersSize {
 			return 0, syserror.EFAULT
 		}
 		return s.PtraceSetRegs(src)
