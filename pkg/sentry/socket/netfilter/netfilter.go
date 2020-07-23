@@ -145,7 +145,7 @@ func convertNetstackToBinary(stack *stack.Stack, tablename linux.TableName) (lin
 
 		// Each rule corresponds to an entry.
 		entry := linux.KernelIPTEntry{
-			IPTEntry: linux.IPTEntry{
+			Entry: linux.IPTEntry{
 				IP: linux.IPTIP{
 					Protocol: uint16(rule.Filter.Protocol),
 				},
@@ -153,20 +153,20 @@ func convertNetstackToBinary(stack *stack.Stack, tablename linux.TableName) (lin
 				TargetOffset: linux.SizeOfIPTEntry,
 			},
 		}
-		copy(entry.IPTEntry.IP.Dst[:], rule.Filter.Dst)
-		copy(entry.IPTEntry.IP.DstMask[:], rule.Filter.DstMask)
-		copy(entry.IPTEntry.IP.Src[:], rule.Filter.Src)
-		copy(entry.IPTEntry.IP.SrcMask[:], rule.Filter.SrcMask)
-		copy(entry.IPTEntry.IP.OutputInterface[:], rule.Filter.OutputInterface)
-		copy(entry.IPTEntry.IP.OutputInterfaceMask[:], rule.Filter.OutputInterfaceMask)
+		copy(entry.Entry.IP.Dst[:], rule.Filter.Dst)
+		copy(entry.Entry.IP.DstMask[:], rule.Filter.DstMask)
+		copy(entry.Entry.IP.Src[:], rule.Filter.Src)
+		copy(entry.Entry.IP.SrcMask[:], rule.Filter.SrcMask)
+		copy(entry.Entry.IP.OutputInterface[:], rule.Filter.OutputInterface)
+		copy(entry.Entry.IP.OutputInterfaceMask[:], rule.Filter.OutputInterfaceMask)
 		if rule.Filter.DstInvert {
-			entry.IPTEntry.IP.InverseFlags |= linux.IPT_INV_DSTIP
+			entry.Entry.IP.InverseFlags |= linux.IPT_INV_DSTIP
 		}
 		if rule.Filter.SrcInvert {
-			entry.IPTEntry.IP.InverseFlags |= linux.IPT_INV_SRCIP
+			entry.Entry.IP.InverseFlags |= linux.IPT_INV_SRCIP
 		}
 		if rule.Filter.OutputInterfaceInvert {
-			entry.IPTEntry.IP.InverseFlags |= linux.IPT_INV_VIA_OUT
+			entry.Entry.IP.InverseFlags |= linux.IPT_INV_VIA_OUT
 		}
 
 		for _, matcher := range rule.Matchers {
@@ -178,8 +178,8 @@ func convertNetstackToBinary(stack *stack.Stack, tablename linux.TableName) (lin
 				panic(fmt.Sprintf("matcher %T is not 64-bit aligned", matcher))
 			}
 			entry.Elems = append(entry.Elems, serialized...)
-			entry.NextOffset += uint16(len(serialized))
-			entry.TargetOffset += uint16(len(serialized))
+			entry.Entry.NextOffset += uint16(len(serialized))
+			entry.Entry.TargetOffset += uint16(len(serialized))
 		}
 
 		// Serialize and append the target.
@@ -188,11 +188,11 @@ func convertNetstackToBinary(stack *stack.Stack, tablename linux.TableName) (lin
 			panic(fmt.Sprintf("target %T is not 64-bit aligned", rule.Target))
 		}
 		entry.Elems = append(entry.Elems, serialized...)
-		entry.NextOffset += uint16(len(serialized))
+		entry.Entry.NextOffset += uint16(len(serialized))
 
 		nflog("convert to binary: adding entry: %+v", entry)
 
-		entries.Size += uint32(entry.NextOffset)
+		entries.Size += uint32(entry.Entry.NextOffset)
 		entries.Entrytable = append(entries.Entrytable, entry)
 		info.NumEntries++
 	}
