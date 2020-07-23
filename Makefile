@@ -16,7 +16,7 @@
 
 # Helpful pretty-printer.
 MAKEBANNER := \033[1;34mmake\033[0m
-submake = echo -e '$(MAKEBANNER) $1' >&2; sh -c '$(MAKE) $1'
+submake = echo -e '$(MAKEBANNER) $1' >&2; $(MAKE) $1
 
 # Described below.
 OPTIONS :=
