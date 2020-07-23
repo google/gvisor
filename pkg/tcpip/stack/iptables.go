@@ -245,13 +245,18 @@ func (it *IPTables) Check(hook Hook, pkt *PacketBuffer, gso *GSO, r *Route, addr
 
 	// Packets are manipulated only if connection and matching
 	// NAT rule exists.
-	it.connections.handlePacket(pkt, hook, gso, r)
+	shouldTrack := it.connections.handlePacket(pkt, hook, gso, r)
 
 	// Go through each table containing the hook.
 	it.mu.RLock()
 	defer it.mu.RUnlock()
 	priorities := it.priorities[hook]
 	for _, tableID := range priorities {
+		// If handlePacket already NATed the packet, we don't need to
+		// check the NAT table.
+		if tableID == natID && pkt.NatDone {
+			continue
+		}
 		table := it.tables[tableID]
 		ruleIdx := table.BuiltinChains[hook]
 		switch verdict := it.checkChain(hook, pkt, table, ruleIdx, gso, r, address, nicName); verdict {
@@ -279,6 +284,20 @@ func (it *IPTables) Check(hook Hook, pkt *PacketBuffer, gso *GSO, r *Route, addr
 		default:
 			panic(fmt.Sprintf("Unknown verdict %v.", verdict))
 		}
+	}
+
+	// If this connection should be tracked, try to add an entry for it. If
+	// traversing the nat table didn't end in adding an entry,
+	// maybeInsertNoop will add a no-op entry for the connection. This is
+	// needeed when establishing connections so that the SYN/ACK reply to an
+	// outgoing SYN is delivered to the correct endpoint rather than being
+	// redirected by a prerouting rule.
+	//
+	// From the iptables documentation: "If there is no rule, a `null'
+	// binding is created: this usually does not map the packet, but exists
+	// to ensure we don't map another stream over an existing one."
+	if shouldTrack {
+		it.connections.maybeInsertNoop(pkt, hook)
 	}
 
 	// Every table returned Accept.
