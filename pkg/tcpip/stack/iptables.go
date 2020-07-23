@@ -58,8 +58,7 @@ const reaperDelay = 5 * time.Second
 func DefaultTables() *IPTables {
 	return &IPTables{
 		tables: [numTables]Table{
-			// NAT table.
-			Table{
+			natID: Table{
 				Rules: []Rule{
 					Rule{Target: AcceptTarget{}},
 					Rule{Target: AcceptTarget{}},
@@ -68,22 +67,21 @@ func DefaultTables() *IPTables {
 					Rule{Target: ErrorTarget{}},
 				},
 				BuiltinChains: [NumHooks]int{
-					0,         // Prerouting.
-					1,         // Input.
-					HookUnset, // Forward.
-					2,         // Output.
-					3,         // Postrouting.
+					Prerouting:  0,
+					Input:       1,
+					Forward:     HookUnset,
+					Output:      2,
+					Postrouting: 3,
 				},
 				Underflows: [NumHooks]int{
-					0,         // Prerouting.
-					1,         // Input.
-					HookUnset, // Forward.
-					2,         // Output.
-					3,         // Postrouting.
+					Prerouting:  0,
+					Input:       1,
+					Forward:     HookUnset,
+					Output:      2,
+					Postrouting: 3,
 				},
 			},
-			// Mangle table.
-			Table{
+			mangleID: Table{
 				Rules: []Rule{
 					Rule{Target: AcceptTarget{}},
 					Rule{Target: AcceptTarget{}},
@@ -94,15 +92,14 @@ func DefaultTables() *IPTables {
 					Output:     1,
 				},
 				Underflows: [NumHooks]int{
-					0,         // Prerouting.
-					HookUnset, // Input.
-					HookUnset, // Forward.
-					1,         // Output.
-					HookUnset, // Postrouting.
+					Prerouting:  0,
+					Input:       HookUnset,
+					Forward:     HookUnset,
+					Output:      1,
+					Postrouting: HookUnset,
 				},
 			},
-			// Filter table.
-			Table{
+			filterID: Table{
 				Rules: []Rule{
 					Rule{Target: AcceptTarget{}},
 					Rule{Target: AcceptTarget{}},
@@ -110,27 +107,25 @@ func DefaultTables() *IPTables {
 					Rule{Target: ErrorTarget{}},
 				},
 				BuiltinChains: [NumHooks]int{
-					HookUnset, // Prerouting.
-					Input:     0, // Input.
-					Forward:   1, // Forward.
-					Output:    2, // Output.
-					HookUnset, // Postrouting.
+					Prerouting:  HookUnset,
+					Input:       0,
+					Forward:     1,
+					Output:      2,
+					Postrouting: HookUnset,
 				},
 				Underflows: [NumHooks]int{
-					HookUnset, // Prerouting.
-					0,         // Input.
-					1,         // Forward.
-					2,         // Output.
-					HookUnset, // Postrouting.
+					Prerouting:  HookUnset,
+					Input:       0,
+					Forward:     1,
+					Output:      2,
+					Postrouting: HookUnset,
 				},
 			},
 		},
 		priorities: [NumHooks][]tableID{
-			[]tableID{mangleID, natID},           // Prerouting.
-			[]tableID{natID, filterID},           // Input.
-			[]tableID{},                          // Forward.
-			[]tableID{mangleID, natID, filterID}, // Output.
-			[]tableID{},                          // Postrouting.
+			Prerouting: []tableID{mangleID, natID},
+			Input:      []tableID{natID, filterID},
+			Output:     []tableID{mangleID, natID, filterID},
 		},
 		connections: ConnTrack{
 			seed: generateRandUint32(),
@@ -145,18 +140,12 @@ func EmptyFilterTable() Table {
 	return Table{
 		Rules: []Rule{},
 		BuiltinChains: [NumHooks]int{
-			HookUnset,
-			0,
-			0,
-			0,
-			HookUnset,
+			Prerouting:  HookUnset,
+			Postrouting: HookUnset,
 		},
 		Underflows: [NumHooks]int{
-			HookUnset,
-			0,
-			0,
-			0,
-			HookUnset,
+			Prerouting:  HookUnset,
+			Postrouting: HookUnset,
 		},
 	}
 }
@@ -167,18 +156,10 @@ func EmptyNATTable() Table {
 	return Table{
 		Rules: []Rule{},
 		BuiltinChains: [NumHooks]int{
-			0,
-			0,
-			HookUnset,
-			0,
-			0,
+			Forward: HookUnset,
 		},
 		Underflows: [NumHooks]int{
-			0,
-			0,
-			HookUnset,
-			0,
-			0,
+			Forward: HookUnset,
 		},
 	}
 }
