@@ -30,6 +30,8 @@ import (
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/tools/go_marshal/marshal"
+	"gvisor.dev/gvisor/tools/go_marshal/primitive"
 )
 
 // minListenBacklog is the minimum reasonable backlog for listening sockets.
@@ -477,7 +479,7 @@ func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	}
 
 	if v != nil {
-		if _, err := t.CopyOut(optValAddr, v); err != nil {
+		if _, err := v.CopyOut(t, optValAddr); err != nil {
 			return 0, nil, err
 		}
 	}
@@ -487,7 +489,7 @@ func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 
 // getSockOpt tries to handle common socket options, or dispatches to a specific
 // socket implementation.
-func getSockOpt(t *kernel.Task, s socket.SocketVFS2, level, name int, optValAddr usermem.Addr, len int) (interface{}, *syserr.Error) {
+func getSockOpt(t *kernel.Task, s socket.SocketVFS2, level, name int, optValAddr usermem.Addr, len int) (marshal.Marshallable, *syserr.Error) {
 	if level == linux.SOL_SOCKET {
 		switch name {
 		case linux.SO_TYPE, linux.SO_DOMAIN, linux.SO_PROTOCOL:
@@ -499,13 +501,16 @@ func getSockOpt(t *kernel.Task, s socket.SocketVFS2, level, name int, optValAddr
 		switch name {
 		case linux.SO_TYPE:
 			_, skType, _ := s.Type()
-			return int32(skType), nil
+			v := primitive.Int32(skType)
+			return &v, nil
 		case linux.SO_DOMAIN:
 			family, _, _ := s.Type()
-			return int32(family), nil
+			v := primitive.Int32(family)
+			return &v, nil
 		case linux.SO_PROTOCOL:
 			_, _, protocol := s.Type()
-			return int32(protocol), nil
+			v := primitive.Int32(protocol)
+			return &v, nil
 		}
 	}
 
@@ -542,7 +547,7 @@ func SetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 		return 0, nil, syserror.EINVAL
 	}
 	buf := t.CopyScratchBuffer(int(optLen))
-	if _, err := t.CopyIn(optValAddr, &buf); err != nil {
+	if _, err := t.CopyInBytes(optValAddr, buf); err != nil {
 		return 0, nil, err
 	}
 
