@@ -153,7 +153,7 @@ func (rt RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, gso
 		// Set up conection for matching NAT rule. Only the first
 		// packet of the connection comes here. Other packets will be
 		// manipulated in connection tracking.
-		if conn := ct.createConnFor(pkt, hook, rt); conn != nil {
+		if conn := ct.insertRedirectConn(pkt, hook, rt); conn != nil {
 			ct.handlePacket(pkt, hook, gso, r)
 		}
 	default:
