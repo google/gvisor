@@ -3,3 +3,37 @@
 // +build arm64
 
 package arch
+
+import (
+	"gvisor.dev/gvisor/pkg/state"
+)
+
+func (x *Registers) StateTypeName() string {
+	return "pkg/sentry/arch.Registers"
+}
+
+func (x *Registers) StateFields() []string {
+	return []string{
+		"PtraceRegs",
+		"TPIDR_EL0",
+	}
+}
+
+func (x *Registers) beforeSave() {}
+
+func (x *Registers) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.PtraceRegs)
+	m.Save(1, &x.TPIDR_EL0)
+}
+
+func (x *Registers) afterLoad() {}
+
+func (x *Registers) StateLoad(m state.Source) {
+	m.Load(0, &x.PtraceRegs)
+	m.Load(1, &x.TPIDR_EL0)
+}
+
+func init() {
+	state.Register((*Registers)(nil))
+}
