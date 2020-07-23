@@ -262,6 +262,27 @@ TEST_P(RawSocketTest, SendWithoutConnectFails) {
               SyscallFailsWithErrno(EDESTADDRREQ));
 }
 
+// Wildcard Bind.
+TEST_P(RawSocketTest, BindToWildcard) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  struct sockaddr_storage addr;
+  addr = {};
+
+  // We don't set ports because raw sockets don't have a notion of ports.
+  if (Family() == AF_INET) {
+    struct sockaddr_in* sin = reinterpret_cast<struct sockaddr_in*>(&addr);
+    sin->sin_family = AF_INET;
+    sin->sin_addr.s_addr = htonl(INADDR_ANY);
+  } else {
+    struct sockaddr_in6* sin6 = reinterpret_cast<struct sockaddr_in6*>(&addr);
+    sin6->sin6_family = AF_INET6;
+    sin6->sin6_addr = in6addr_any;
+  }
+
+  ASSERT_THAT(bind(s_, reinterpret_cast<struct sockaddr*>(&addr_), AddrLen()),
+              SyscallSucceeds());
+}
+
 // Bind to localhost.
 TEST_P(RawSocketTest, BindToLocalhost) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));

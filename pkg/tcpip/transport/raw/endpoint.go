@@ -456,7 +456,7 @@ func (e *endpoint) Bind(addr tcpip.FullAddress) *tcpip.Error {
 	defer e.mu.Unlock()
 
 	// If a local address was specified, verify that it's valid.
-	if e.stack.CheckLocalAddress(addr.NIC, e.NetProto, addr.Addr) == 0 {
+	if len(addr.Addr) != 0 && e.stack.CheckLocalAddress(addr.NIC, e.NetProto, addr.Addr) == 0 {
 		return tcpip.ErrBadLocalAddress
 	}
 
