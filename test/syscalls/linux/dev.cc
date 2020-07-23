@@ -161,6 +161,19 @@ TEST(DevTest, OpenDevFuse) {
   ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_RDONLY));
 }
 
+TEST(DevTest, ReadDevFuseWithoutMount) {
+  // Note(gvisor.dev/issue/3076) This won't work in the sentry until the new
+  // device registration is complete.
+  SKIP_IF(IsRunningWithVFS1() || IsRunningOnGvisor());
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_RDONLY));
+
+  std::vector<char> buf(1);
+  EXPECT_THAT(ReadFd(fd.get(), buf.data(), sizeof(buf)),
+              SyscallFailsWithErrno(EPERM));
+}
+
 }  // namespace
 }  // namespace testing
 
