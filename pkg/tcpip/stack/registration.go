@@ -52,8 +52,11 @@ type TransportEndpointID struct {
 type ControlType int
 
 // The following are the allowed values for ControlType values.
+// TODO(http://gvisor.dev/issue/3210): Support time exceeded messages.
 const (
-	ControlPacketTooBig ControlType = iota
+	ControlNetworkUnreachable ControlType = iota
+	ControlNoRoute
+	ControlPacketTooBig
 	ControlPortUnreachable
 	ControlUnknown
 )

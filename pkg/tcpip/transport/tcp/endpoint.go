@@ -1209,6 +1209,14 @@ func (e *endpoint) SetOwner(owner tcpip.PacketOwner) {
 	e.owner = owner
 }
 
+func (e *endpoint) takeLastError() *tcpip.Error {
+	e.lastErrorMu.Lock()
+	defer e.lastErrorMu.Unlock()
+	err := e.lastError
+	e.lastError = nil
+	return err
+}
+
 // Read reads data from the endpoint.
 func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
 	e.LockUser()
@@ -1956,11 +1964,7 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 	switch o := opt.(type) {
 	case tcpip.ErrorOption:
-		e.lastErrorMu.Lock()
-		err := e.lastError
-		e.lastError = nil
-		e.lastErrorMu.Unlock()
-		return err
+		return e.takeLastError()
 
 	case *tcpip.BindToDeviceOption:
 		e.LockUser()
@@ -2546,6 +2550,18 @@ func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.C
 		e.sndBufMu.Unlock()
 
 		e.notifyProtocolGoroutine(notifyMTUChanged)
+
+	case stack.ControlNoRoute:
+		e.lastErrorMu.Lock()
+		e.lastError = tcpip.ErrNoRoute
+		e.lastErrorMu.Unlock()
+		e.notifyProtocolGoroutine(notifyError)
+
+	case stack.ControlNetworkUnreachable:
+		e.lastErrorMu.Lock()
+		e.lastError = tcpip.ErrNetworkUnreachable
+		e.lastErrorMu.Unlock()
+		e.notifyProtocolGoroutine(notifyError)
 	}
 }
 
