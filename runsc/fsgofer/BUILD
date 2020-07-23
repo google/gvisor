@@ -31,5 +31,6 @@ go_test(
     deps = [
         "//pkg/log",
         "//pkg/p9",
+        "//pkg/test/testutil",
     ],
 )
