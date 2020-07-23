@@ -132,6 +132,7 @@ go_library(
         "task_stop.go",
         "task_syscall.go",
         "task_usermem.go",
+        "task_work.go",
         "thread_group.go",
         "threads.go",
         "timekeeper.go",
