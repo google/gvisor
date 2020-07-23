@@ -44,7 +44,7 @@ func Override() {
 	s.Table[23] = syscalls.Supported("select", Select)
 	s.Table[32] = syscalls.Supported("dup", Dup)
 	s.Table[33] = syscalls.Supported("dup2", Dup2)
-	delete(s.Table, 40) // sendfile
+	s.Table[40] = syscalls.Supported("sendfile", Sendfile)
 	s.Table[41] = syscalls.Supported("socket", Socket)
 	s.Table[42] = syscalls.Supported("connect", Connect)
 	s.Table[43] = syscalls.Supported("accept", Accept)
