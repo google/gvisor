@@ -26,6 +26,19 @@ import (
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
+	"gvisor.dev/gvisor/pkg/test/testutil"
+)
+
+var allOpenFlags = []p9.OpenFlags{p9.ReadOnly, p9.WriteOnly, p9.ReadWrite}
+
+var (
+	allTypes = []fileType{regular, directory, symlink}
+
+	// allConfs is set in init().
+	allConfs []Config
+
+	rwConfs = []Config{{ROMount: false}}
+	roConfs = []Config{{ROMount: true}}
 )
 
 func init() {
@@ -37,6 +50,13 @@ func init() {
 	if err := OpenProcSelfFD(); err != nil {
 		panic(err)
 	}
+}
+
+func configTestName(config *Config) string {
+	if config.ROMount {
+		return "ROMount"
+	}
+	return "RWMount"
 }
 
 func assertPanic(t *testing.T, f func()) {
@@ -88,18 +108,6 @@ func testReadWrite(f p9.File, flags p9.OpenFlags, content []byte) error {
 	return nil
 }
 
-var allOpenFlags = []p9.OpenFlags{p9.ReadOnly, p9.WriteOnly, p9.ReadWrite}
-
-var (
-	allTypes = []fileType{regular, directory, symlink}
-
-	// allConfs is set in init() above.
-	allConfs []Config
-
-	rwConfs = []Config{{ROMount: false}}
-	roConfs = []Config{{ROMount: true}}
-)
-
 type state struct {
 	root *localFile
 	file *localFile
@@ -117,42 +125,46 @@ func runAll(t *testing.T, test func(*testing.T, state)) {
 
 func runCustom(t *testing.T, types []fileType, confs []Config, test func(*testing.T, state)) {
 	for _, c := range confs {
-		t.Logf("Config: %+v", c)
-
 		for _, ft := range types {
-			t.Logf("File type: %v", ft)
+			name := fmt.Sprintf("%s/%v", configTestName(&c), ft)
+			t.Run(name, func(t *testing.T) {
+				path, name, err := setup(ft)
+				if err != nil {
+					t.Fatalf("%v", err)
+				}
+				defer os.RemoveAll(path)
 
-			path, name, err := setup(ft)
-			if err != nil {
-				t.Fatalf("%v", err)
-			}
-			defer os.RemoveAll(path)
+				a, err := NewAttachPoint(path, c)
+				if err != nil {
+					t.Fatalf("NewAttachPoint failed: %v", err)
+				}
+				root, err := a.Attach()
+				if err != nil {
+					t.Fatalf("Attach failed, err: %v", err)
+				}
 
-			a, err := NewAttachPoint(path, c)
-			if err != nil {
-				t.Fatalf("NewAttachPoint failed: %v", err)
-			}
-			root, err := a.Attach()
-			if err != nil {
-				t.Fatalf("Attach failed, err: %v", err)
-			}
+				_, file, err := root.Walk([]string{name})
+				if err != nil {
+					root.Close()
+					t.Fatalf("root.Walk({%q}) failed, err: %v", "symlink", err)
+				}
 
-			_, file, err := root.Walk([]string{name})
-			if err != nil {
+				st := state{
+					root: root.(*localFile),
+					file: file.(*localFile),
+					conf: c,
+					ft:   ft,
+				}
+				test(t, st)
+				file.Close()
 				root.Close()
-				t.Fatalf("root.Walk({%q}) failed, err: %v", "symlink", err)
-			}
-
-			st := state{root: root.(*localFile), file: file.(*localFile), conf: c, ft: ft}
-			test(t, st)
-			file.Close()
-			root.Close()
+			})
 		}
 	}
 }
 
 func setup(ft fileType) (string, string, error) {
-	path, err := ioutil.TempDir("", "root-")
+	path, err := ioutil.TempDir(testutil.TmpDir(), "root-")
 	if err != nil {
 		return "", "", fmt.Errorf("ioutil.TempDir() failed, err: %v", err)
 	}
@@ -304,6 +316,32 @@ func TestUnopened(t *testing.T) {
 		}
 		if err := s.file.FSync(); err != syscall.EBADF {
 			t.Errorf("%v: FSync() should have failed, got: %v, expected: syscall.EBADF", s, err)
+		}
+	})
+}
+
+// TestOpenOPath is a regression test to ensure that a file that cannot be open
+// for read is allowed to be open. This was happening because the control file
+// was open with O_PATH, but Open() was not checking for it and allowing the
+// control file to be reused.
+func TestOpenOPath(t *testing.T) {
+	runCustom(t, []fileType{regular}, rwConfs, func(t *testing.T, s state) {
+		// Fist remove all permissions on the file.
+		if err := s.file.SetAttr(p9.SetAttrMask{Permissions: true}, p9.SetAttr{Permissions: p9.FileMode(0)}); err != nil {
+			t.Fatalf("SetAttr(): %v", err)
+		}
+		// Then walk to the file again to open a new control file.
+		filename := filepath.Base(s.file.hostPath)
+		_, newFile, err := s.root.Walk([]string{filename})
+		if err != nil {
+			t.Fatalf("root.Walk(%q): %v", filename, err)
+		}
+
+		if newFile.(*localFile).controlReadable {
+			t.Fatalf("control file didn't open with O_PATH: %+v", newFile)
+		}
+		if _, _, _, err := newFile.Open(p9.ReadOnly); err != syscall.EACCES {
+			t.Fatalf("Open() should have failed, got: %v, wanted: EACCES", err)
 		}
 	})
 }
