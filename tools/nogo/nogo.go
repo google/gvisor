@@ -55,6 +55,7 @@ type pkgConfig struct {
 	FactMap    map[string]string
 	FactOutput string
 	Objdump    string
+	StdZip     string
 }
 
 // loadFacts finds and loads facts per FactMap.
@@ -111,7 +112,7 @@ func (i *importer) Import(path string) (*types.Package, error) {
 	if !ok {
 		// Not found in the import path. Attempt to find the package
 		// via the standard library.
-		rc, err = findStdPkg(path, i.GOOS, i.GOARCH)
+		rc, err = i.findStdPkg(path)
 	} else {
 		// Open the file.
 		rc, err = os.Open(realPath)

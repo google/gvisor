@@ -28,8 +28,10 @@ def _nogo_aspect_impl(target, ctx):
     else:
         return [NogoInfo()]
 
-    # Construct the Go environment from the go_context.env dictionary.
-    env_prefix = " ".join(["%s=%s" % (key, value) for (key, value) in go_context(ctx).env.items()])
+    go_ctx = go_context(ctx)
+
+    # Construct the Go environment from the go_ctx.env dictionary.
+    env_prefix = " ".join(["%s=%s" % (key, value) for (key, value) in go_ctx.env.items()])
 
     # Start with all target files and srcs as input.
     inputs = target.files.to_list() + srcs
@@ -45,7 +47,7 @@ def _nogo_aspect_impl(target, ctx):
         "#!/bin/bash",
         "%s %s tool objdump %s > %s\n" % (
             env_prefix,
-            go_context(ctx).go.path,
+            go_ctx.go.path,
             [f.path for f in binaries if f.path.endswith(".a")][0],
             disasm_file.path,
         ),
@@ -53,7 +55,7 @@ def _nogo_aspect_impl(target, ctx):
     ctx.actions.run(
         inputs = binaries,
         outputs = [disasm_file],
-        tools = go_context(ctx).runfiles,
+        tools = go_ctx.runfiles,
         mnemonic = "GoObjdump",
         progress_message = "Objdump %s" % target.label,
         executable = dumper,
@@ -70,9 +72,11 @@ def _nogo_aspect_impl(target, ctx):
         ImportPath = importpath,
         GoFiles = [src.path for src in srcs if src.path.endswith(".go")],
         NonGoFiles = [src.path for src in srcs if not src.path.endswith(".go")],
-        GOOS = go_context(ctx).goos,
-        GOARCH = go_context(ctx).goarch,
-        Tags = go_context(ctx).tags,
+        # Google's internal build system needs a bit more help to find std.
+        StdZip = go_ctx.std_zip.short_path if hasattr(go_ctx, "std_zip") else "",
+        GOOS = go_ctx.goos,
+        GOARCH = go_ctx.goarch,
+        Tags = go_ctx.tags,
         FactMap = {},  # Constructed below.
         ImportMap = {},  # Constructed below.
         FactOutput = facts.path,
@@ -110,7 +114,7 @@ def _nogo_aspect_impl(target, ctx):
     ctx.actions.run(
         inputs = inputs,
         outputs = [facts],
-        tools = go_context(ctx).runfiles,
+        tools = go_ctx.runfiles,
         executable = ctx.files._nogo[0],
         mnemonic = "GoStaticAnalysis",
         progress_message = "Analyzing %s" % target.label,
