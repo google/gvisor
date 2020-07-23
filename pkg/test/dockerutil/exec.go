@@ -87,7 +87,6 @@ func (c *Container) doExec(ctx context.Context, r ExecOpts, args []string) (Proc
 		execid:    resp.ID,
 		conn:      hijack,
 	}, nil
-
 }
 
 func (c *Container) execConfig(r ExecOpts, cmd []string) types.ExecConfig {
