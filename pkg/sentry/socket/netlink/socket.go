@@ -38,6 +38,8 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/tools/go_marshal/marshal"
+	"gvisor.dev/gvisor/tools/go_marshal/primitive"
 )
 
 const sizeOfInt32 int = 4
@@ -330,7 +332,7 @@ func (s *socketOpsCommon) Shutdown(t *kernel.Task, how int) *syserr.Error {
 }
 
 // GetSockOpt implements socket.Socket.GetSockOpt.
-func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, outPtr usermem.Addr, outLen int) (interface{}, *syserr.Error) {
+func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, outPtr usermem.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
 	switch level {
 	case linux.SOL_SOCKET:
 		switch name {
@@ -340,24 +342,26 @@ func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, outPtr
 			}
 			s.mu.Lock()
 			defer s.mu.Unlock()
-			return int32(s.sendBufferSize), nil
+			sendBufferSizeP := primitive.Int32(s.sendBufferSize)
+			return &sendBufferSizeP, nil
 
 		case linux.SO_RCVBUF:
 			if outLen < sizeOfInt32 {
 				return nil, syserr.ErrInvalidArgument
 			}
 			// We don't have limit on receiving size.
-			return int32(math.MaxInt32), nil
+			recvBufferSizeP := primitive.Int32(math.MaxInt32)
+			return &recvBufferSizeP, nil
 
 		case linux.SO_PASSCRED:
 			if outLen < sizeOfInt32 {
 				return nil, syserr.ErrInvalidArgument
 			}
-			var passcred int32
+			var passcred primitive.Int32
 			if s.Passcred() {
 				passcred = 1
 			}
-			return passcred, nil
+			return &passcred, nil
 
 		default:
 			socket.GetSockOptEmitUnimplementedEvent(t, name)
