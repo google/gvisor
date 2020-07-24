@@ -23,6 +23,7 @@ var _ marshal.Marshallable = (*InetAddr)(nil)
 var _ marshal.Marshallable = (*Linger)(nil)
 var _ marshal.Marshallable = (*NumaPolicy)(nil)
 var _ marshal.Marshallable = (*RSeqCriticalSection)(nil)
+var _ marshal.Marshallable = (*RobustListHead)(nil)
 var _ marshal.Marshallable = (*SignalSet)(nil)
 var _ marshal.Marshallable = (*Statfs)(nil)
 var _ marshal.Marshallable = (*Statx)(nil)
@@ -139,7 +140,7 @@ func (s *Statx) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *Statx) MarshalUnsafe(dst []byte) {
-    if s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() {
+    if s.Ctime.Packed() && s.Mtime.Packed() && s.Atime.Packed() && s.Btime.Packed() {
         safecopy.CopyIn(dst, unsafe.Pointer(s))
     } else {
         s.MarshalBytes(dst)
@@ -214,7 +215,7 @@ func (s *Statx) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (s *Statx) WriteTo(w io.Writer) (int64, error) {
-    if !s.Mtime.Packed() && s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() {
+    if !s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() {
         // Type Statx doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, s.SizeBytes())
         s.MarshalBytes(buf)
@@ -376,6 +377,103 @@ func (s *Statfs) WriteTo(w io.Writer) (int64, error) {
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
     runtime.KeepAlive(s)
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (r *RobustListHead) SizeBytes() int {
+    return 24
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (r *RobustListHead) MarshalBytes(dst []byte) {
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(r.List))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(r.FutexOffset))
+    dst = dst[8:]
+    usermem.ByteOrder.PutUint64(dst[:8], uint64(r.ListOpPending))
+    dst = dst[8:]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (r *RobustListHead) UnmarshalBytes(src []byte) {
+    r.List = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    r.FutexOffset = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    r.ListOpPending = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (r *RobustListHead) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (r *RobustListHead) MarshalUnsafe(dst []byte) {
+    safecopy.CopyIn(dst, unsafe.Pointer(r))
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (r *RobustListHead) UnmarshalUnsafe(src []byte) {
+    safecopy.CopyOut(unsafe.Pointer(r), src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (r *RobustListHead) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(r)))
+    hdr.Len = r.SizeBytes()
+    hdr.Cap = r.SizeBytes()
+
+    length, err := task.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that r
+    // must live until the use above.
+    runtime.KeepAlive(r)
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (r *RobustListHead) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
+    return r.CopyOutN(task, addr, r.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (r *RobustListHead) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(r)))
+    hdr.Len = r.SizeBytes()
+    hdr.Cap = r.SizeBytes()
+
+    length, err := task.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that r
+    // must live until the use above.
+    runtime.KeepAlive(r)
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (r *RobustListHead) WriteTo(w io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(r)))
+    hdr.Len = r.SizeBytes()
+    hdr.Cap = r.SizeBytes()
+
+    length, err := w.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that r
+    // must live until the use above.
+    runtime.KeepAlive(r)
     return int64(length), err
 }
 
@@ -701,7 +799,7 @@ func (i *IPTIP) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *IPTIP) MarshalUnsafe(dst []byte) {
-    if i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() && i.Src.Packed() {
+    if i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() {
         safecopy.CopyIn(dst, unsafe.Pointer(i))
     } else {
         i.MarshalBytes(dst)
@@ -710,7 +808,7 @@ func (i *IPTIP) MarshalUnsafe(dst []byte) {
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *IPTIP) UnmarshalUnsafe(src []byte) {
-    if i.DstMask.Packed() && i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() {
+    if i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() {
         safecopy.CopyOut(unsafe.Pointer(i), src)
     } else {
         i.UnmarshalBytes(src)
@@ -720,7 +818,7 @@ func (i *IPTIP) UnmarshalUnsafe(src []byte) {
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
 func (i *IPTIP) CopyOutN(task marshal.Task, addr usermem.Addr, limit int) (int, error) {
-    if !i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() && i.Src.Packed() {
+    if !i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() {
         // Type IPTIP doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := task.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
         i.MarshalBytes(buf) // escapes: fallback.
@@ -750,7 +848,7 @@ func (i *IPTIP) CopyOut(task marshal.Task, addr usermem.Addr) (int, error) {
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
 func (i *IPTIP) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
-    if !i.SrcMask.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.Dst.Packed() {
+    if !i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() {
         // Type IPTIP doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := task.CopyScratchBuffer(i.SizeBytes()) // escapes: okay.
         length, err := task.CopyInBytes(addr, buf) // escapes: okay.
@@ -776,7 +874,7 @@ func (i *IPTIP) CopyIn(task marshal.Task, addr usermem.Addr) (int, error) {
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (i *IPTIP) WriteTo(w io.Writer) (int64, error) {
-    if !i.Dst.Packed() && i.SrcMask.Packed() && i.DstMask.Packed() && i.Src.Packed() {
+    if !i.DstMask.Packed() && i.Src.Packed() && i.Dst.Packed() && i.SrcMask.Packed() {
         // Type IPTIP doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, i.SizeBytes())
         i.MarshalBytes(buf)

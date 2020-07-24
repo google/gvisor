@@ -1059,6 +1059,7 @@ func (x *Task) StateFields() []string {
 		"oldRSeqCPUAddr",
 		"rseqAddr",
 		"rseqSignature",
+		"robustList",
 		"startTime",
 	}
 }
@@ -1131,7 +1132,8 @@ func (x *Task) StateSave(m state.Sink) {
 	m.Save(56, &x.oldRSeqCPUAddr)
 	m.Save(57, &x.rseqAddr)
 	m.Save(58, &x.rseqSignature)
-	m.Save(59, &x.startTime)
+	m.Save(59, &x.robustList)
+	m.Save(60, &x.startTime)
 }
 
 func (x *Task) StateLoad(m state.Source) {
@@ -1192,7 +1194,8 @@ func (x *Task) StateLoad(m state.Source) {
 	m.Load(56, &x.oldRSeqCPUAddr)
 	m.Load(57, &x.rseqAddr)
 	m.Load(58, &x.rseqSignature)
-	m.Load(59, &x.startTime)
+	m.Load(59, &x.robustList)
+	m.Load(60, &x.startTime)
 	m.LoadValue(31, new(*Task), func(y interface{}) { x.loadPtraceTracer(y.(*Task)) })
 	m.LoadValue(47, new([]bpf.Program), func(y interface{}) { x.loadSyscallFilters(y.([]bpf.Program)) })
 	m.AfterLoad(x.afterLoad)
