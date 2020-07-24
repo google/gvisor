@@ -316,6 +316,11 @@ func Copy(src, dst string) error {
 func Poll(cb func() error, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	return PollContext(ctx, cb)
+}
+
+// PollContext is like Poll, but takes a context instead of a timeout.
+func PollContext(ctx context.Context, cb func() error) error {
 	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
 	return backoff.Retry(cb, b)
 }
