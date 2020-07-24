@@ -100,20 +100,21 @@ def _go_template_instance_impl(ctx):
 
     # Build the argument list.
     args = ["-i=%s" % template.file.path, "-o=%s" % output.path]
-    args += ["-p=%s" % ctx.attr.package]
+    if ctx.attr.package:
+        args.append("-p=%s" % ctx.attr.package)
 
     if len(ctx.attr.prefix) > 0:
-        args += ["-prefix=%s" % ctx.attr.prefix]
+        args.append("-prefix=%s" % ctx.attr.prefix)
 
     if len(ctx.attr.suffix) > 0:
-        args += ["-suffix=%s" % ctx.attr.suffix]
+        args.append("-suffix=%s" % ctx.attr.suffix)
 
     args += [("-t=%s=%s" % (p[0], p[1])) for p in ctx.attr.types.items()]
     args += [("-c=%s=%s" % (p[0], p[1])) for p in ctx.attr.consts.items()]
     args += [("-import=%s=%s" % (p[0], p[1])) for p in ctx.attr.imports.items()]
 
     if ctx.attr.anon:
-        args += ["-anon"]
+        args.append("-anon")
 
     ctx.actions.run(
         inputs = [template.file],
@@ -151,7 +152,7 @@ go_template_instance = rule(
         "consts": attr.string_dict(),
         "imports": attr.string_dict(),
         "anon": attr.bool(mandatory = False, default = False),
-        "package": attr.string(mandatory = True),
+        "package": attr.string(mandatory = False),
         "out": attr.output(mandatory = True),
         "_tool": attr.label(executable = True, cfg = "host", default = Label("//tools/go_generics")),
     },
