@@ -268,6 +268,10 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.emit("// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.\n")
 	g.emit("func (%s *%s) MarshalUnsafe(dst []byte) {\n", g.r, g.typeName())
 	g.inIndent(func() {
+		fallback := func() {
+			g.emit("// Type %s doesn't have a packed layout in memory, fallback to MarshalBytes.\n", g.typeName())
+			g.emit("%s.MarshalBytes(dst)\n", g.r)
+		}
 		if thisPacked {
 			g.recordUsedImport("safecopy")
 			g.recordUsedImport("unsafe")
@@ -277,16 +281,13 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 					g.emit("safecopy.CopyIn(dst, unsafe.Pointer(%s))\n", g.r)
 				})
 				g.emit("} else {\n")
-				g.inIndent(func() {
-					g.emit("%s.MarshalBytes(dst)\n", g.r)
-				})
+				g.inIndent(fallback)
 				g.emit("}\n")
 			} else {
 				g.emit("safecopy.CopyIn(dst, unsafe.Pointer(%s))\n", g.r)
 			}
 		} else {
-			g.emit("// Type %s doesn't have a packed layout in memory, fallback to MarshalBytes.\n", g.typeName())
-			g.emit("%s.MarshalBytes(dst)\n", g.r)
+			fallback()
 		}
 	})
 	g.emit("}\n\n")
@@ -294,6 +295,10 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.emit("// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.\n")
 	g.emit("func (%s *%s) UnmarshalUnsafe(src []byte) {\n", g.r, g.typeName())
 	g.inIndent(func() {
+		fallback := func() {
+			g.emit("// Type %s doesn't have a packed layout in memory, fallback to UnmarshalBytes.\n", g.typeName())
+			g.emit("%s.UnmarshalBytes(src)\n", g.r)
+		}
 		if thisPacked {
 			g.recordUsedImport("safecopy")
 			g.recordUsedImport("unsafe")
@@ -303,16 +308,13 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 					g.emit("safecopy.CopyOut(unsafe.Pointer(%s), src)\n", g.r)
 				})
 				g.emit("} else {\n")
-				g.inIndent(func() {
-					g.emit("%s.UnmarshalBytes(src)\n", g.r)
-				})
+				g.inIndent(fallback)
 				g.emit("}\n")
 			} else {
 				g.emit("safecopy.CopyOut(unsafe.Pointer(%s), src)\n", g.r)
 			}
 		} else {
-			g.emit("// Type %s doesn't have a packed layout in memory, fall back to UnmarshalBytes.\n", g.typeName())
-			g.emit("%s.UnmarshalBytes(src)\n", g.r)
+			fallback()
 		}
 	})
 	g.emit("}\n\n")
@@ -463,8 +465,10 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 			})
 			g.emit("}\n\n")
 
-			g.emit("// Handle any final partial object.\n")
-			g.emit("if length < size*count && length%size != 0 {\n")
+			g.emit("// Handle any final partial object. buf is guaranteed to be long enough for the\n")
+			g.emit("// final element, but may not contain valid data for the entire range. This may\n")
+			g.emit("// result in unmarshalling zero values for some parts of the object.\n")
+			g.emit("if length%size != 0 {\n")
 			g.inIndent(func() {
 				g.emit("idx := limit\n")
 				g.emit("dst[idx].UnmarshalBytes(buf[size*idx:size*(idx+1)])\n")

@@ -413,13 +413,13 @@ func (g *Generator) Run() error {
 		for _, t := range g.collectMarshallableTypes(a, fsets[i]) {
 			impl := g.generateOne(t, fsets[i])
 			// Collect Marshallable types referenced by the generated code.
-			for ref, _ := range impl.ms {
+			for ref := range impl.ms {
 				ms[ref] = struct{}{}
 			}
 			impls = append(impls, impl)
 			// Collect imports referenced by the generated code and add them to
 			// the list of imports we need to copy to the generated code.
-			for name, _ := range impl.is {
+			for name := range impl.is {
 				if !g.imports.markUsed(name) {
 					panic(fmt.Sprintf("Generated code for '%s' referenced a non-existent import with local name '%s'. Either go-marshal needs to add an import to the generated file, or a package in an input source file has a package name differ from the final component of its path, which go-marshal doesn't know how to detect; use an import alias to work around this limitation.", impl.typeName(), name))
 				}
