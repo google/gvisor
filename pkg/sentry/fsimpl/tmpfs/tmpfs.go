@@ -452,7 +452,8 @@ func (i *inode) statTo(stat *linux.Statx) {
 	}
 }
 
-func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, stat *linux.Statx) error {
+func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.SetStatOptions) error {
+	stat := &opts.Stat
 	if stat.Mask == 0 {
 		return nil
 	}
@@ -460,7 +461,7 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, stat *linu
 		return syserror.EPERM
 	}
 	mode := linux.FileMode(atomic.LoadUint32(&i.mode))
-	if err := vfs.CheckSetStat(ctx, creds, stat, mode, auth.KUID(atomic.LoadUint32(&i.uid)), auth.KGID(atomic.LoadUint32(&i.gid))); err != nil {
+	if err := vfs.CheckSetStat(ctx, creds, opts, mode, auth.KUID(atomic.LoadUint32(&i.uid)), auth.KGID(atomic.LoadUint32(&i.gid))); err != nil {
 		return err
 	}
 	i.mu.Lock()
@@ -695,7 +696,7 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 	creds := auth.CredentialsFromContext(ctx)
 	d := fd.dentry()
-	if err := d.inode.setStat(ctx, creds, &opts.Stat); err != nil {
+	if err := d.inode.setStat(ctx, creds, &opts); err != nil {
 		return err
 	}
 
