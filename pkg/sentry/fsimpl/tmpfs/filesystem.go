@@ -649,7 +649,7 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 		fs.mu.RUnlock()
 		return err
 	}
-	if err := d.inode.setStat(ctx, rp.Credentials(), &opts.Stat); err != nil {
+	if err := d.inode.setStat(ctx, rp.Credentials(), &opts); err != nil {
 		fs.mu.RUnlock()
 		return err
 	}

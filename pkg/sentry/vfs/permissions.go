@@ -183,7 +183,8 @@ func MayWriteFileWithOpenFlags(flags uint32) bool {
 // CheckSetStat checks that creds has permission to change the metadata of a
 // file with the given permissions, UID, and GID as specified by stat, subject
 // to the rules of Linux's fs/attr.c:setattr_prepare().
-func CheckSetStat(ctx context.Context, creds *auth.Credentials, stat *linux.Statx, mode linux.FileMode, kuid auth.KUID, kgid auth.KGID) error {
+func CheckSetStat(ctx context.Context, creds *auth.Credentials, opts *SetStatOptions, mode linux.FileMode, kuid auth.KUID, kgid auth.KGID) error {
+	stat := &opts.Stat
 	if stat.Mask&linux.STATX_SIZE != 0 {
 		limit, err := CheckLimit(ctx, 0, int64(stat.Size))
 		if err != nil {
@@ -213,6 +214,11 @@ func CheckSetStat(ctx context.Context, creds *auth.Credentials, stat *linux.Stat
 		if !((creds.EffectiveKUID == kuid && creds.InGroup(auth.KGID(stat.GID))) ||
 			HasCapabilityOnFile(creds, linux.CAP_CHOWN, kuid, kgid)) {
 			return syserror.EPERM
+		}
+	}
+	if opts.NeedWritePerm && !creds.HasCapability(linux.CAP_DAC_OVERRIDE) {
+		if err := GenericCheckPermissions(creds, MayWrite, mode, kuid, kgid); err != nil {
+			return err
 		}
 	}
 	if stat.Mask&(linux.STATX_ATIME|linux.STATX_MTIME|linux.STATX_CTIME) != 0 {

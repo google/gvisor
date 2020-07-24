@@ -164,6 +164,12 @@ type SetStatOptions struct {
 	// == UTIME_OMIT (VFS users must unset the corresponding bit in Stat.Mask
 	// instead).
 	Stat linux.Statx
+
+	// NeedWritePerm indicates that write permission on the file is needed for
+	// this operation. This is needed for truncate(2) (note that ftruncate(2)
+	// does not require the same check--instead, it checks that the fd is
+	// writable).
+	NeedWritePerm bool
 }
 
 // BoundEndpointOptions contains options to VirtualFilesystem.BoundEndpointAt()

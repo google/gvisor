@@ -373,7 +373,7 @@ func (i *inode) fstat(fs *filesystem) (linux.Statx, error) {
 
 // SetStat implements kernfs.Inode.
 func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
-	s := opts.Stat
+	s := &opts.Stat
 
 	m := s.Mask
 	if m == 0 {
@@ -386,7 +386,7 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	if err := syscall.Fstat(i.hostFD, &hostStat); err != nil {
 		return err
 	}
-	if err := vfs.CheckSetStat(ctx, creds, &s, linux.FileMode(hostStat.Mode&linux.PermissionsMask), auth.KUID(hostStat.Uid), auth.KGID(hostStat.Gid)); err != nil {
+	if err := vfs.CheckSetStat(ctx, creds, &opts, linux.FileMode(hostStat.Mode), auth.KUID(hostStat.Uid), auth.KGID(hostStat.Gid)); err != nil {
 		return err
 	}
 
@@ -396,6 +396,9 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 		}
 	}
 	if m&linux.STATX_SIZE != 0 {
+		if hostStat.Mode&linux.S_IFMT != linux.S_IFREG {
+			return syserror.EINVAL
+		}
 		if err := syscall.Ftruncate(i.hostFD, int64(s.Size)); err != nil {
 			return err
 		}
