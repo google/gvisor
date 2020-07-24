@@ -198,7 +198,7 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		switch cmd {
 		case linux.FUTEX_WAIT:
 			// WAIT uses a relative timeout.
-			mask = ^uint32(0)
+			mask = linux.FUTEX_BITSET_MATCH_ANY
 			var timeoutDur time.Duration
 			if !forever {
 				timeoutDur = time.Duration(timespec.ToNsecCapped()) * time.Nanosecond
@@ -285,4 +285,50 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		// We don't even know about this command.
 		return 0, nil, syserror.ENOSYS
 	}
+}
+
+// SetRobustList implements linux syscall set_robust_list(2).
+func SetRobustList(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	// Despite the syscall using the name 'pid' for this variable, it is
+	// very much a tid.
+	head := args[0].Pointer()
+	length := args[1].SizeT()
+
+	if length != uint(linux.SizeOfRobustListHead) {
+		return 0, nil, syserror.EINVAL
+	}
+	t.SetRobustList(head)
+	return 0, nil, nil
+}
+
+// GetRobustList implements linux syscall get_robust_list(2).
+func GetRobustList(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	// Despite the syscall using the name 'pid' for this variable, it is
+	// very much a tid.
+	tid := args[0].Int()
+	head := args[1].Pointer()
+	size := args[2].Pointer()
+
+	if tid < 0 {
+		return 0, nil, syserror.EINVAL
+	}
+
+	ot := t
+	if tid != 0 {
+		if ot = t.PIDNamespace().TaskWithID(kernel.ThreadID(tid)); ot == nil {
+			return 0, nil, syserror.ESRCH
+		}
+	}
+
+	// Copy out head pointer.
+	if _, err := t.CopyOut(head, uint64(ot.GetRobustList())); err != nil {
+		return 0, nil, err
+	}
+
+	// Copy out size, which is a constant.
+	if _, err := t.CopyOut(size, uint64(linux.SizeOfRobustListHead)); err != nil {
+		return 0, nil, err
+	}
+
+	return 0, nil, nil
 }
