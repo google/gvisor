@@ -66,7 +66,7 @@ func nflog(format string, args ...interface{}) {
 func GetInfo(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr) (linux.IPTGetinfo, *syserr.Error) {
 	// Read in the struct and table name.
 	var info linux.IPTGetinfo
-	if _, err := t.CopyIn(outPtr, &info); err != nil {
+	if _, err := info.CopyIn(t, outPtr); err != nil {
 		return linux.IPTGetinfo{}, syserr.FromError(err)
 	}
 
@@ -84,7 +84,7 @@ func GetInfo(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr) (linux.IPT
 func GetEntries(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, outLen int) (linux.KernelIPTGetEntries, *syserr.Error) {
 	// Read in the struct and table name.
 	var userEntries linux.IPTGetEntries
-	if _, err := t.CopyIn(outPtr, &userEntries); err != nil {
+	if _, err := userEntries.CopyIn(t, outPtr); err != nil {
 		nflog("couldn't copy in entries %q", userEntries.Name)
 		return linux.KernelIPTGetEntries{}, syserr.FromError(err)
 	}

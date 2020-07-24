@@ -160,6 +160,7 @@ type FileOperations interface {
 	// refer.
 	//
 	// Preconditions: The AddressSpace (if any) that io refers to is activated.
+	// Must only be called from a task goroutine.
 	Ioctl(ctx context.Context, file *File, io usermem.IO, args arch.SyscallArguments) (uintptr, error)
 }
 
