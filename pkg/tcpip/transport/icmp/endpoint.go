@@ -797,7 +797,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 	e.rcvList.PushBack(packet)
 	e.rcvBufSize += packet.data.Size()
 
-	packet.timestamp = e.stack.NowNanoseconds()
+	packet.timestamp = e.stack.Clock().NowNanoseconds()
 
 	e.rcvMu.Unlock()
 	e.stats.PacketsReceived.Increment()

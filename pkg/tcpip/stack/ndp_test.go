@@ -1254,7 +1254,7 @@ func TestRouterDiscovery(t *testing.T) {
 	default:
 	}
 
-	// Wait for lladdr2's router invalidation timer to fire. The lifetime
+	// Wait for lladdr2's router invalidation job to execute. The lifetime
 	// of the router should have been updated to the most recent (smaller)
 	// lifetime.
 	//
@@ -1271,7 +1271,7 @@ func TestRouterDiscovery(t *testing.T) {
 	e.InjectInbound(header.IPv6ProtocolNumber, raBuf(llAddr2, 0))
 	expectRouterEvent(llAddr2, false)
 
-	// Wait for lladdr3's router invalidation timer to fire. The lifetime
+	// Wait for lladdr3's router invalidation job to execute. The lifetime
 	// of the router should have been updated to the most recent (smaller)
 	// lifetime.
 	//
@@ -1502,7 +1502,7 @@ func TestPrefixDiscovery(t *testing.T) {
 	default:
 	}
 
-	// Wait for prefix2's most recent invalidation timer plus some buffer to
+	// Wait for prefix2's most recent invalidation job plus some buffer to
 	// expire.
 	select {
 	case e := <-ndpDisp.prefixC:
@@ -2395,7 +2395,7 @@ func TestAutoGenTempAddrRegen(t *testing.T) {
 	for _, addr := range tempAddrs {
 		// Wait for a deprecation then invalidation event, or just an invalidation
 		// event. We need to cover both cases but cannot deterministically hit both
-		// cases because the deprecation and invalidation timers could fire in any
+		// cases because the deprecation and invalidation jobs could execute in any
 		// order.
 		select {
 		case e := <-ndpDisp.autoGenAddrC:
@@ -2432,9 +2432,9 @@ func TestAutoGenTempAddrRegen(t *testing.T) {
 	}
 }
 
-// TestAutoGenTempAddrRegenTimerUpdates tests that a temporary address's
-// regeneration timer gets updated when refreshing the address's lifetimes.
-func TestAutoGenTempAddrRegenTimerUpdates(t *testing.T) {
+// TestAutoGenTempAddrRegenJobUpdates tests that a temporary address's
+// regeneration job gets updated when refreshing the address's lifetimes.
+func TestAutoGenTempAddrRegenJobUpdates(t *testing.T) {
 	const (
 		nicID            = 1
 		regenAfter       = 2 * time.Second
@@ -2533,7 +2533,7 @@ func TestAutoGenTempAddrRegenTimerUpdates(t *testing.T) {
 	//
 	// A new temporary address should immediately be generated since the
 	// regeneration time has already passed since the last address was generated
-	// - this regeneration does not depend on a timer.
+	// - this regeneration does not depend on a job.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, true, 100, 100))
 	expectAutoGenAddrEvent(tempAddr2, newAddr)
 
@@ -2559,11 +2559,11 @@ func TestAutoGenTempAddrRegenTimerUpdates(t *testing.T) {
 	}
 
 	// Set the maximum lifetimes for temporary addresses such that on the next
-	// RA, the regeneration timer gets reset.
+	// RA, the regeneration job gets scheduled again.
 	//
 	// The maximum lifetime is the sum of the minimum lifetimes for temporary
 	// addresses + the time that has already passed since the last address was
-	// generated so that the regeneration timer is needed to generate the next
+	// generated so that the regeneration job is needed to generate the next
 	// address.
 	newLifetimes := newMinVLDuration + regenAfter + defaultAsyncNegativeEventTimeout
 	ndpConfigs.MaxTempAddrValidLifetime = newLifetimes
@@ -2993,9 +2993,9 @@ func TestAutoGenAddrDeprecateFromPI(t *testing.T) {
 	expectPrimaryAddr(addr2)
 }
 
-// TestAutoGenAddrTimerDeprecation tests that an address is properly deprecated
+// TestAutoGenAddrJobDeprecation tests that an address is properly deprecated
 // when its preferred lifetime expires.
-func TestAutoGenAddrTimerDeprecation(t *testing.T) {
+func TestAutoGenAddrJobDeprecation(t *testing.T) {
 	const nicID = 1
 	const newMinVL = 2
 	newMinVLDuration := newMinVL * time.Second
@@ -3513,8 +3513,8 @@ func TestAutoGenAddrRemoval(t *testing.T) {
 	}
 	expectAutoGenAddrEvent(addr, invalidatedAddr)
 
-	// Wait for the original valid lifetime to make sure the original timer
-	// got stopped/cleaned up.
+	// Wait for the original valid lifetime to make sure the original job got
+	// cancelled/cleaned up.
 	select {
 	case <-ndpDisp.autoGenAddrC:
 		t.Fatal("unexpectedly received an auto gen addr event")

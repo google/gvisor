@@ -1451,7 +1451,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 		packet.tos, _ = header.IPv6(pkt.NetworkHeader).TOS()
 	}
 
-	packet.timestamp = e.stack.NowNanoseconds()
+	packet.timestamp = e.stack.Clock().NowNanoseconds()
 
 	e.rcvMu.Unlock()
 
