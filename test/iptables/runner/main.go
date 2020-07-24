@@ -16,6 +16,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -46,7 +47,9 @@ func main() {
 	}
 
 	// Run the test.
-	if err := test.ContainerAction(ip, *ipv6); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := test.ContainerAction(ctx, ip, *ipv6); err != nil {
 		log.Fatalf("Failed running test %q: %v", *name, err)
 	}
 
