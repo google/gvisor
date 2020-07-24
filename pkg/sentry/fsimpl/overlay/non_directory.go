@@ -176,7 +176,7 @@ func (fd *nonDirectoryFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) 
 	return nil
 }
 
-// StatFS implements vfs.FileDesciptionImpl.StatFS.
+// StatFS implements vfs.FileDescriptionImpl.StatFS.
 func (fd *nonDirectoryFD) StatFS(ctx context.Context) (linux.Statfs, error) {
 	return fd.filesystem().statFS(ctx)
 }

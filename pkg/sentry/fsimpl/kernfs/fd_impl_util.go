@@ -112,7 +112,7 @@ func (fd *GenericDirectoryFD) PWrite(ctx context.Context, src usermem.IOSequence
 	return fd.DirectoryFileDescriptionDefaultImpl.PWrite(ctx, src, offset, opts)
 }
 
-// Release implements vfs.FileDecriptionImpl.Release.
+// Release implements vfs.FileDescriptionImpl.Release.
 func (fd *GenericDirectoryFD) Release() {}
 
 func (fd *GenericDirectoryFD) filesystem() *vfs.Filesystem {
@@ -123,7 +123,7 @@ func (fd *GenericDirectoryFD) inode() Inode {
 	return fd.vfsfd.VirtualDentry().Dentry().Impl().(*Dentry).inode
 }
 
-// IterDirents implements vfs.FileDecriptionImpl.IterDirents. IterDirents holds
+// IterDirents implements vfs.FileDescriptionImpl.IterDirents. IterDirents holds
 // o.mu when calling cb.
 func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback) error {
 	fd.mu.Lock()
@@ -198,7 +198,7 @@ func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirent
 	return err
 }
 
-// Seek implements vfs.FileDecriptionImpl.Seek.
+// Seek implements vfs.FileDescriptionImpl.Seek.
 func (fd *GenericDirectoryFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()

@@ -128,7 +128,7 @@ func (fd *subtasksFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallbac
 	return fd.GenericDirectoryFD.IterDirents(ctx, cb)
 }
 
-// Seek implements vfs.FileDecriptionImpl.Seek.
+// Seek implements vfs.FileDescriptionImpl.Seek.
 func (fd *subtasksFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
 	if fd.task.ExitState() >= kernel.TaskExitZombie {
 		return 0, syserror.ENOENT
