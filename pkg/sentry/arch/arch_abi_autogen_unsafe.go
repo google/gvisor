@@ -63,6 +63,7 @@ func (s *SignalAct) MarshalUnsafe(dst []byte) {
     if s.Mask.Packed() {
         safecopy.CopyIn(dst, unsafe.Pointer(s))
     } else {
+        // Type SignalAct doesn't have a packed layout in memory, fallback to MarshalBytes.
         s.MarshalBytes(dst)
     }
 }
@@ -72,6 +73,7 @@ func (s *SignalAct) UnmarshalUnsafe(src []byte) {
     if s.Mask.Packed() {
         safecopy.CopyOut(unsafe.Pointer(s), src)
     } else {
+        // Type SignalAct doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         s.UnmarshalBytes(src)
     }
 }
