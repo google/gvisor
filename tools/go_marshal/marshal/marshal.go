@@ -58,18 +58,12 @@ type Marshallable interface {
 	// likely make use of the type of these fields).
 	SizeBytes() int
 
-	// MarshalBytes serializes a copy of a type to dst. dst may be smaller than
-	// SizeBytes(), which results in a part of the struct being marshalled. Note
-	// that this may have unexpected results for non-packed types, as implicit
-	// padding needs to be taken into account when reasoning about how much of
-	// the type is serialized.
+	// MarshalBytes serializes a copy of a type to dst.
+	// Precondition: dst must be at least SizeBytes() in length.
 	MarshalBytes(dst []byte)
 
-	// UnmarshalBytes deserializes a type from src. src may be smaller than
-	// SizeBytes(), which results in a partially deserialized struct. Note that
-	// this may have unexpected results for non-packed types, as implicit
-	// padding needs to be taken into account when reasoning about how much of
-	// the type is deserialized.
+	// UnmarshalBytes deserializes a type from src.
+	// Precondition: src must be at least SizeBytes() in length.
 	UnmarshalBytes(src []byte)
 
 	// Packed returns true if the marshalled size of the type is the same as the
@@ -89,8 +83,8 @@ type Marshallable interface {
 	// representation to the dst buffer. This is only safe to do when the type
 	// has no implicit padding, see Marshallable.Packed. When Packed would
 	// return false, MarshalUnsafe should fall back to the safer but slower
-	// MarshalBytes. dst may be smaller than SizeBytes(), see comment for
-	// MarshalBytes for implications.
+	// MarshalBytes.
+	// Precondition: dst must be at least SizeBytes() in length.
 	MarshalUnsafe(dst []byte)
 
 	// UnmarshalUnsafe deserializes a type by directly copying to the underlying
@@ -99,8 +93,8 @@ type Marshallable interface {
 	// This allows much faster unmarshalling of types which have no implicit
 	// padding, see Marshallable.Packed. When Packed would return false,
 	// UnmarshalUnsafe should fall back to the safer but slower unmarshal
-	// mechanism implemented in UnmarshalBytes. src may be smaller than
-	// SizeBytes(), see comment for UnmarshalBytes for implications.
+	// mechanism implemented in UnmarshalBytes.
+	// Precondition: src must be at least SizeBytes() in length.
 	UnmarshalUnsafe(src []byte)
 
 	// CopyIn deserializes a Marshallable type from a task's memory. This may
@@ -149,14 +143,16 @@ type Marshallable interface {
 //
 // Generates four additional functions for marshalling slices of Foos like this:
 //
-// // MarshalUnsafeFooSlice is like Foo.MarshalUnsafe, buf for a []Foo. It's
-// // more efficient that repeatedly calling calling Foo.MarshalUnsafe over a
-// // []Foo in a loop.
+// // MarshalUnsafeFooSlice is like Foo.MarshalUnsafe, buf for a []Foo. It
+// // might be more efficient that repeatedly calling Foo.MarshalUnsafe
+// // over a []Foo in a loop if the type is Packed.
+// // Preconditions: dst must be at least len(src)*Foo.SizeBytes() in length.
 // func MarshalUnsafeFooSlice(src []Foo, dst []byte) (int, error) { ... }
 //
-// // UnmarshalUnsafeFooSlice is like Foo.UnmarshalUnsafe, buf for a []Foo. It's
-// // more efficient that repeatedly calling calling Foo.UnmarshalUnsafe over a
-// // []Foo in a loop.
+// // UnmarshalUnsafeFooSlice is like Foo.UnmarshalUnsafe, buf for a []Foo. It
+// // might be more efficient that repeatedly calling Foo.UnmarshalUnsafe
+// // over a []Foo in a loop if the type is Packed.
+// // Preconditions: src must be at least len(dst)*Foo.SizeBytes() in length.
 // func UnmarshalUnsafeFooSlice(dst []Foo, src []byte) (int, error) { ... }
 //
 // // CopyFooSliceIn copies in a slice of Foo objects from the task's memory.
