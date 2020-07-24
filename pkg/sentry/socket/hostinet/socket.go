@@ -711,6 +711,6 @@ func (p *socketProvider) Pair(t *kernel.Task, stype linux.SockType, protocol int
 func init() {
 	for _, family := range []int{syscall.AF_INET, syscall.AF_INET6} {
 		socket.RegisterProvider(family, &socketProvider{family})
-		socket.RegisterProviderVFS2(family, &socketProviderVFS2{})
+		socket.RegisterProviderVFS2(family, &socketProviderVFS2{family})
 	}
 }
