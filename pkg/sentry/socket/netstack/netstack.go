@@ -2835,6 +2835,11 @@ func (s *SocketOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO,
 }
 
 func (s *socketOpsCommon) ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+	t := kernel.TaskFromContext(ctx)
+	if t == nil {
+		panic("ioctl(2) may only be called from a task goroutine")
+	}
+
 	// SIOCGSTAMP is implemented by netstack rather than all commonEndpoint
 	// sockets.
 	// TODO(b/78348848): Add a commonEndpoint method to support SIOCGSTAMP.
@@ -2847,9 +2852,7 @@ func (s *socketOpsCommon) ioctl(ctx context.Context, io usermem.IO, args arch.Sy
 		}
 
 		tv := linux.NsecToTimeval(s.timestampNS)
-		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), &tv, usermem.IOOpts{
-			AddressSpaceActive: true,
-		})
+		_, err := tv.CopyOut(t, args[2].Pointer())
 		return 0, err
 
 	case linux.TIOCINQ:
@@ -2868,9 +2871,8 @@ func (s *socketOpsCommon) ioctl(ctx context.Context, io usermem.IO, args arch.Sy
 		}
 
 		// Copy result to userspace.
-		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), int32(v), usermem.IOOpts{
-			AddressSpaceActive: true,
-		})
+		vP := primitive.Int32(v)
+		_, err := vP.CopyOut(t, args[2].Pointer())
 		return 0, err
 	}
 
@@ -2879,6 +2881,11 @@ func (s *socketOpsCommon) ioctl(ctx context.Context, io usermem.IO, args arch.Sy
 
 // Ioctl performs a socket ioctl.
 func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+	t := kernel.TaskFromContext(ctx)
+	if t == nil {
+		panic("ioctl(2) may only be called from a task goroutine")
+	}
+
 	switch arg := int(args[1].Int()); arg {
 	case linux.SIOCGIFFLAGS,
 		linux.SIOCGIFADDR,
@@ -2895,37 +2902,28 @@ func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, args arch.Sysc
 		linux.SIOCETHTOOL:
 
 		var ifr linux.IFReq
-		if _, err := usermem.CopyObjectIn(ctx, io, args[2].Pointer(), &ifr, usermem.IOOpts{
-			AddressSpaceActive: true,
-		}); err != nil {
+		if _, err := ifr.CopyIn(t, args[2].Pointer()); err != nil {
 			return 0, err
 		}
 		if err := interfaceIoctl(ctx, io, arg, &ifr); err != nil {
 			return 0, err.ToError()
 		}
-		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), &ifr, usermem.IOOpts{
-			AddressSpaceActive: true,
-		})
+		_, err := ifr.CopyOut(t, args[2].Pointer())
 		return 0, err
 
 	case linux.SIOCGIFCONF:
 		// Return a list of interface addresses or the buffer size
 		// necessary to hold the list.
 		var ifc linux.IFConf
-		if _, err := usermem.CopyObjectIn(ctx, io, args[2].Pointer(), &ifc, usermem.IOOpts{
-			AddressSpaceActive: true,
-		}); err != nil {
+		if _, err := ifc.CopyIn(t, args[2].Pointer()); err != nil {
 			return 0, err
 		}
 
-		if err := ifconfIoctl(ctx, io, &ifc); err != nil {
+		if err := ifconfIoctl(ctx, t, io, &ifc); err != nil {
 			return 0, err
 		}
 
-		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), ifc, usermem.IOOpts{
-			AddressSpaceActive: true,
-		})
-
+		_, err := ifc.CopyOut(t, args[2].Pointer())
 		return 0, err
 
 	case linux.TIOCINQ:
@@ -2938,9 +2936,8 @@ func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, args arch.Sysc
 			v = math.MaxInt32
 		}
 		// Copy result to userspace.
-		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), int32(v), usermem.IOOpts{
-			AddressSpaceActive: true,
-		})
+		vP := primitive.Int32(v)
+		_, err := vP.CopyOut(t, args[2].Pointer())
 		return 0, err
 
 	case linux.TIOCOUTQ:
@@ -2954,9 +2951,8 @@ func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, args arch.Sysc
 		}
 
 		// Copy result to userspace.
-		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), int32(v), usermem.IOOpts{
-			AddressSpaceActive: true,
-		})
+		vP := primitive.Int32(v)
+		_, err := vP.CopyOut(t, args[2].Pointer())
 		return 0, err
 
 	case linux.SIOCGIFMEM, linux.SIOCGIFPFLAGS, linux.SIOCGMIIPHY, linux.SIOCGMIIREG:
@@ -3105,7 +3101,7 @@ func interfaceIoctl(ctx context.Context, io usermem.IO, arg int, ifr *linux.IFRe
 }
 
 // ifconfIoctl populates a struct ifconf for the SIOCGIFCONF ioctl.
-func ifconfIoctl(ctx context.Context, io usermem.IO, ifc *linux.IFConf) error {
+func ifconfIoctl(ctx context.Context, t *kernel.Task, io usermem.IO, ifc *linux.IFConf) error {
 	// If Ptr is NULL, return the necessary buffer size via Len.
 	// Otherwise, write up to Len bytes starting at Ptr containing ifreq
 	// structs.
@@ -3142,9 +3138,7 @@ func ifconfIoctl(ctx context.Context, io usermem.IO, ifc *linux.IFConf) error {
 			// Copy the ifr to userspace.
 			dst := uintptr(ifc.Ptr) + uintptr(ifc.Len)
 			ifc.Len += int32(linux.SizeOfIFReq)
-			if _, err := usermem.CopyObjectOut(ctx, io, usermem.Addr(dst), ifr, usermem.IOOpts{
-				AddressSpaceActive: true,
-			}); err != nil {
+			if _, err := ifr.CopyOut(t, usermem.Addr(dst)); err != nil {
 				return err
 			}
 		}
