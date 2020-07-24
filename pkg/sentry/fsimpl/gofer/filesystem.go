@@ -1334,7 +1334,7 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 		fs.renameMuRUnlockAndCheckCaching(&ds)
 		return err
 	}
-	if err := d.setStat(ctx, rp.Credentials(), &opts.Stat, rp.Mount()); err != nil {
+	if err := d.setStat(ctx, rp.Credentials(), &opts, rp.Mount()); err != nil {
 		fs.renameMuRUnlockAndCheckCaching(&ds)
 		return err
 	}

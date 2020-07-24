@@ -888,7 +888,8 @@ func (d *dentry) statTo(stat *linux.Statx) {
 	stat.DevMinor = d.fs.devMinor
 }
 
-func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, stat *linux.Statx, mnt *vfs.Mount) error {
+func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.SetStatOptions, mnt *vfs.Mount) error {
+	stat := &opts.Stat
 	if stat.Mask == 0 {
 		return nil
 	}
@@ -896,7 +897,7 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, stat *lin
 		return syserror.EPERM
 	}
 	mode := linux.FileMode(atomic.LoadUint32(&d.mode))
-	if err := vfs.CheckSetStat(ctx, creds, stat, mode, auth.KUID(atomic.LoadUint32(&d.uid)), auth.KGID(atomic.LoadUint32(&d.gid))); err != nil {
+	if err := vfs.CheckSetStat(ctx, creds, opts, mode, auth.KUID(atomic.LoadUint32(&d.uid)), auth.KGID(atomic.LoadUint32(&d.gid))); err != nil {
 		return err
 	}
 	if err := mnt.CheckBeginWrite(); err != nil {
@@ -937,6 +938,17 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, stat *lin
 	}
 	if !d.isSynthetic() {
 		if stat.Mask != 0 {
+			if stat.Mask&linux.STATX_SIZE != 0 {
+				// Check whether to allow a truncate request to be made.
+				switch d.mode & linux.S_IFMT {
+				case linux.S_IFREG:
+					// Allow.
+				case linux.S_IFDIR:
+					return syserror.EISDIR
+				default:
+					return syserror.EINVAL
+				}
+			}
 			if err := d.file.setAttr(ctx, p9.SetAttrMask{
 				Permissions:        stat.Mask&linux.STATX_MODE != 0,
 				UID:                stat.Mask&linux.STATX_UID != 0,
@@ -1498,7 +1510,7 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
 func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
-	if err := fd.dentry().setStat(ctx, auth.CredentialsFromContext(ctx), &opts.Stat, fd.vfsfd.Mount()); err != nil {
+	if err := fd.dentry().setStat(ctx, auth.CredentialsFromContext(ctx), &opts, fd.vfsfd.Mount()); err != nil {
 		return err
 	}
 	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
