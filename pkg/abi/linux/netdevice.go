@@ -22,6 +22,8 @@ const (
 )
 
 // IFReq is an interface request.
+//
+// +marshal
 type IFReq struct {
 	// IFName is an encoded name, normally null-terminated. This should be
 	// accessed via the Name and SetName functions.
@@ -79,6 +81,8 @@ type IFMap struct {
 
 // IFConf is used to return a list of interfaces and their addresses. See
 // netdevice(7) and struct ifconf for more detail on its use.
+//
+// +marshal
 type IFConf struct {
 	Len int32
 	_   [4]byte // Pad to sizeof(struct ifconf).
