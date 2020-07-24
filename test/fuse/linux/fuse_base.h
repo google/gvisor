@@ -55,12 +55,16 @@ class FuseTest : public ::testing::Test {
   // complains if the FUSE server responds failure during tests.
   void WaitCompleted();
 
+ protected:
+  // ConsumeFuseInit is only used during FUSE server setup.
+  virtual PosixError ConsumeFuseInit();
+
+  int dev_fd_;
+  std::vector<char> buf_;
+
  private:
   void MountFuse();
   void UnmountFuse();
-
-  // ConsumeFuseInit is only used during FUSE server setup.
-  PosixError ConsumeFuseInit();
 
   // ReceiveExpected is the FUSE server side's corresponding code of
   // `SetExpected()`. Save the request-response pair into its memory.
@@ -80,11 +84,9 @@ class FuseTest : public ::testing::Test {
   // specific FUSE operation struct.
   size_t GetPayloadSize(uint32_t opcode, bool in);
 
-  int dev_fd_;
   int set_expected_[2];
   int done_[2];
 
-  std::vector<char> buf_;
   std::vector<char> mem_in_;
   std::vector<char> mem_out_;
   ssize_t len_in_;

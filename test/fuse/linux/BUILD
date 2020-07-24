@@ -19,3 +19,16 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
     ],
 )
+
+cc_test(
+    name = "init_test",
+    srcs = [
+        "fuse_base.h",
+        "init_test.cc",
+    ],
+    deps = [
+        ":fuse_base",
+        "//test/util:test_util",
+        "//test/util:test_main",
+    ],
+)
