@@ -728,6 +728,11 @@ func New(opts Options) *Stack {
 	return s
 }
 
+// newJob returns a tcpip.Job using the Stack clock.
+func (s *Stack) newJob(l sync.Locker, f func()) *tcpip.Job {
+	return tcpip.NewJob(s.clock, l, f)
+}
+
 // UniqueID returns a unique identifier.
 func (s *Stack) UniqueID() uint64 {
 	return s.uniqueIDGenerator.UniqueID()
@@ -801,9 +806,10 @@ func (s *Stack) SetTransportProtocolHandler(p tcpip.TransportProtocolNumber, h f
 	}
 }
 
-// NowNanoseconds implements tcpip.Clock.NowNanoseconds.
-func (s *Stack) NowNanoseconds() int64 {
-	return s.clock.NowNanoseconds()
+// Clock returns the Stack's clock for retrieving the current time and
+// scheduling work.
+func (s *Stack) Clock() tcpip.Clock {
+	return s.clock
 }
 
 // Stats returns a mutable copy of the current stats.

@@ -1469,6 +1469,11 @@ func (k *Kernel) NowMonotonic() int64 {
 	return now
 }
 
+// AfterFunc implements tcpip.Clock.AfterFunc.
+func (k *Kernel) AfterFunc(d time.Duration, f func()) tcpip.Timer {
+	return ktime.TcpipAfterFunc(k.realtimeClock, d, f)
+}
+
 // SetMemoryFile sets Kernel.mf. SetMemoryFile must be called before Init or
 // LoadFrom.
 func (k *Kernel) SetMemoryFile(mf *pgalloc.MemoryFile) {
