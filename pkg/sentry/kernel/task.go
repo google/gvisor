@@ -565,6 +565,10 @@ type Task struct {
 	// futexWaiter is exclusive to the task goroutine.
 	futexWaiter *futex.Waiter `state:"nosave"`
 
+	// robustList is a pointer to the head of the tasks's robust futex
+	// list.
+	robustList usermem.Addr
+
 	// startTime is the real time at which the task started. It is set when
 	// a Task is created or invokes execve(2).
 	//
