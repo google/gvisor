@@ -253,6 +253,9 @@ func (*runExitMain) execute(t *Task) taskRunState {
 		}
 	}
 
+	// Handle the robust futex list.
+	t.exitRobustList()
+
 	// Deactivate the address space and update max RSS before releasing the
 	// task's MM.
 	t.Deactivate()
