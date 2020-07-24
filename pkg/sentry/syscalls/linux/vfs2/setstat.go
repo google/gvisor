@@ -178,6 +178,7 @@ func Truncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 			Mask: linux.STATX_SIZE,
 			Size: uint64(length),
 		},
+		NeedWritePerm: true,
 	})
 	return 0, nil, handleSetSizeError(t, err)
 }
@@ -196,6 +197,10 @@ func Ftruncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		return 0, nil, syserror.EBADF
 	}
 	defer file.DecRef()
+
+	if !file.IsWritable() {
+		return 0, nil, syserror.EINVAL
+	}
 
 	err := file.SetStat(t, vfs.SetStatOptions{
 		Stat: linux.Statx{
