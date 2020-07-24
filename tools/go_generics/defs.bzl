@@ -100,7 +100,8 @@ def _go_template_instance_impl(ctx):
 
     # Build the argument list.
     args = ["-i=%s" % template.file.path, "-o=%s" % output.path]
-    args += ["-p=%s" % ctx.attr.package]
+    if ctx.attr.package:
+        args += ["-p=%s" % ctx.attr.package]
 
     if len(ctx.attr.prefix) > 0:
         args += ["-prefix=%s" % ctx.attr.prefix]
@@ -151,7 +152,7 @@ go_template_instance = rule(
         "consts": attr.string_dict(),
         "imports": attr.string_dict(),
         "anon": attr.bool(mandatory = False, default = False),
-        "package": attr.string(mandatory = True),
+        "package": attr.string(mandatory = False),
         "out": attr.output(mandatory = True),
         "_tool": attr.label(executable = True, cfg = "host", default = Label("//tools/go_generics")),
     },

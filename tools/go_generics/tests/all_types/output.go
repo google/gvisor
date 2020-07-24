@@ -14,7 +14,9 @@
 
 package main
 
-import "./lib"
+import (
+	"./lib"
+)
 
 type newType struct {
 	a Q

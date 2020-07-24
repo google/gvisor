@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2018 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,31 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package tests
 
-type FooNew struct {
-	Q
-	Bar map[string]Q `json:"bar,omitempty"`
-}
+import (
+	"./lib"
+)
 
-type BazNew struct {
-	T someTypeNotT
-}
+type T int
 
-func (f FooNew) GetBar(name string) Q {
-	b, ok := f.Bar[name]
-	if ok {
-		b = f.Apply(b)
-	} else {
-		b = f.Q
+type newType struct {
+	a T
+	b lib.T
+	c *T
+	d (T)
+	e chan T
+	f <-chan T
+	g chan<- T
+	h []T
+	i [10]T
+	j map[T]T
+	k func(T, T) (T, T)
+	l interface {
+		f(T)
 	}
-	return b
+	m struct {
+		T
+		a T
+	}
 }
 
-func foobarNew() {
-	a := BazNew{}
-	a.Q = 0 // should not be renamed, this is a limitation
-
-	b := otherpkg.UnrelatedType{}
-	b.Q = 0 // should not be renamed, this is a limitation
+func f(...T) {
 }

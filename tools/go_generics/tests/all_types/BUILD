@@ -1,0 +1,10 @@
+load("//tools/go_generics/tests:defs.bzl", "go_generics_test")
+
+go_generics_test(
+    name = "all_types",
+    inputs = ["input.go"],
+    output = "output.go",
+    types = {
+        "T": "Q",
+    },
+)
