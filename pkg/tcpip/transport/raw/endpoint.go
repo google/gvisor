@@ -700,7 +700,7 @@ func (e *endpoint) HandlePacket(route *stack.Route, pkt *stack.PacketBuffer) {
 	}
 	combinedVV.Append(pkt.Data)
 	packet.data = combinedVV
-	packet.timestampNS = e.stack.NowNanoseconds()
+	packet.timestampNS = e.stack.Clock().NowNanoseconds()
 
 	e.rcvList.PushBack(packet)
 	e.rcvBufSize += packet.data.Size()

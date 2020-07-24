@@ -499,7 +499,7 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 		combinedVV.Append(pkt.Data)
 		packet.data = combinedVV
 	}
-	packet.timestampNS = ep.stack.NowNanoseconds()
+	packet.timestampNS = ep.stack.Clock().NowNanoseconds()
 
 	ep.rcvList.PushBack(&packet)
 	ep.rcvBufSize += packet.data.Size()
