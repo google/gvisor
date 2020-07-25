@@ -30,6 +30,7 @@ import (
 	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/syndtr/gocapability/capability"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -105,6 +106,13 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 	cmd.Env = env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
+	if specutils.HasCapabilities(capability.CAP_NET_ADMIN) {
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Cloneflags: syscall.CLONE_NEWNET,
+		}
+	}
+
 	if err := cmd.Run(); err != nil {
 		ws := err.(*exec.ExitError).Sys().(syscall.WaitStatus)
 		t.Errorf("test %q exited with status %d, want 0", tc.FullName(), ws.ExitStatus())
