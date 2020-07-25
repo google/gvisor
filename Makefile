@@ -336,10 +336,10 @@ RUNTIME_LOGS    := $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
 
 dev: ## Installs a set of local runtimes. Requires sudo.
 	@$(call submake,refresh ARGS="--net-raw")
-	@$(call submake,configure RUNTIME="$(RUNTIME)" ARGS="--net-raw")
-	@$(call submake,configure RUNTIME="$(RUNTIME)-d" ARGS="--net-raw --debug --strace --log-packets")
-	@$(call submake,configure RUNTIME="$(RUNTIME)-p" ARGS="--net-raw --profile")
-	@$(call submake,configure RUNTIME="$(RUNTIME)-vfs2-d" ARGS="--net-raw --debug --strace --log-packets --vfs2")
+	@$(call submake,configure RUNTIME_NAME="$(RUNTIME)" ARGS="--net-raw")
+	@$(call submake,configure RUNTIME_NAME="$(RUNTIME)-d" ARGS="--net-raw --debug --strace --log-packets")
+	@$(call submake,configure RUNTIME_NAME="$(RUNTIME)-p" ARGS="--net-raw --profile")
+	@$(call submake,configure RUNTIME_NAME="$(RUNTIME)-vfs2-d" ARGS="--net-raw --debug --strace --log-packets --vfs2")
 	@sudo systemctl restart docker
 .PHONY: dev
 
@@ -350,8 +350,8 @@ refresh: ## Refreshes the runtime binary (for development only). Must have calle
 
 install-test-runtime: ## Installs the runtime for testing. Requires sudo.
 	@$(call submake,refresh ARGS="--net-raw --TESTONLY-test-name-env=RUNSC_TEST_NAME --debug --strace --log-packets $(ARGS)")
-	@$(call submake,configure RUNTIME=runsc)
-	@$(call submake,configure)
+	@$(call submake,configure RUNTIME_NAME=runsc)
+	@$(call submake,configure RUNTIME_NAME="$(RUNTIME)")
 	@sudo systemctl restart docker
 	@if [[ -f /etc/docker/daemon.json ]]; then \
 		sudo chmod 0755 /etc/docker && \
@@ -360,7 +360,7 @@ install-test-runtime: ## Installs the runtime for testing. Requires sudo.
 .PHONY: install-test-runtime
 
 configure: ## Configures a single runtime. Requires sudo. Typically called from dev or install-test-runtime.
-	@sudo sudo "$(RUNTIME_BIN)" install --experimental=true --runtime="$(RUNTIME)" -- --debug-log "$(RUNTIME_LOGS)" $(ARGS)
+	@sudo sudo "$(RUNTIME_BIN)" install --experimental=true --runtime="$(RUNTIME_NAME)" -- --debug-log "$(RUNTIME_LOGS)" $(ARGS)
 	@echo -e "$(INFO) Installed runtime \"$(RUNTIME)\" @ $(RUNTIME_BIN)"
 	@echo -e "$(INFO) Logs are in: $(RUNTIME_LOG_DIR)"
 	@sudo rm -rf "$(RUNTIME_LOG_DIR)" && mkdir -p "$(RUNTIME_LOG_DIR)"
