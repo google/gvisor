@@ -30,8 +30,10 @@ services:
   - docker
 jobs:
   include:
-   - os: linux
-     arch: amd64
+   # AMD64 builds are tested on kokoro, so don't run them in travis to save
+   # capacity for arm64 builds.
+   # - os: linux
+   #   arch: amd64
    - os: linux
      arch: arm64
 script:
