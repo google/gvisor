@@ -48,36 +48,6 @@ const (
 	openFlags = syscall.O_NOFOLLOW | syscall.O_CLOEXEC
 )
 
-type fileType int
-
-const (
-	regular fileType = iota
-	directory
-	symlink
-	socket
-	unknown
-)
-
-// String implements fmt.Stringer.
-func (f fileType) String() string {
-	switch f {
-	case regular:
-		return "regular"
-	case directory:
-		return "directory"
-	case symlink:
-		return "symlink"
-	case socket:
-		return "socket"
-	}
-	return "unknown"
-}
-
-// ControlSocketAddr generates an abstract unix socket name for the given id.
-func ControlSocketAddr(id string) string {
-	return fmt.Sprintf("\x00runsc-gofer.%s", id)
-}
-
 // Config sets configuration options for each attach point.
 type Config struct {
 	// ROMount is set to true if this is a readonly mount.
@@ -199,8 +169,6 @@ func (a *attachPoint) makeQID(stat syscall.Stat_t) p9.QID {
 // entire file up when it's opened in write mode, and would perform badly when
 // multiple files are only being opened for read (esp. startup).
 type localFile struct {
-	p9.DefaultWalkGetAttr
-
 	// attachPoint is the attachPoint that serves this localFile.
 	attachPoint *attachPoint
 
@@ -220,8 +188,11 @@ type localFile struct {
 	// if localFile isn't opened.
 	mode p9.OpenFlags
 
-	// ft is the fileType for this file.
-	ft fileType
+	// fileType for this file. It is equivalent to:
+	// syscall.Stat_t.Mode & syscall.S_IFMT
+	fileType uint32
+
+	qid p9.QID
 
 	// readDirMu protects against concurrent Readdir calls.
 	readDirMu sync.Mutex
@@ -308,29 +279,24 @@ func openAnyFile(path string, fn func(mode int) (*fd.FD, error)) (*fd.FD, bool, 
 	return nil, false, extractErrno(err)
 }
 
-func getSupportedFileType(stat syscall.Stat_t, permitSocket bool) (fileType, error) {
-	var ft fileType
+func checkSupportedFileType(stat syscall.Stat_t, permitSocket bool) error {
 	switch stat.Mode & syscall.S_IFMT {
-	case syscall.S_IFREG:
-		ft = regular
-	case syscall.S_IFDIR:
-		ft = directory
-	case syscall.S_IFLNK:
-		ft = symlink
+	case syscall.S_IFREG, syscall.S_IFDIR, syscall.S_IFLNK:
+		return nil
+
 	case syscall.S_IFSOCK:
 		if !permitSocket {
-			return unknown, syscall.EPERM
+			return syscall.EPERM
 		}
-		ft = socket
+		return nil
+
 	default:
-		return unknown, syscall.EPERM
+		return syscall.EPERM
 	}
-	return ft, nil
 }
 
 func newLocalFile(a *attachPoint, file *fd.FD, path string, readable bool, stat syscall.Stat_t) (*localFile, error) {
-	ft, err := getSupportedFileType(stat, a.conf.HostUDS)
-	if err != nil {
+	if err := checkSupportedFileType(stat, a.conf.HostUDS); err != nil {
 		return nil, err
 	}
 
@@ -339,7 +305,8 @@ func newLocalFile(a *attachPoint, file *fd.FD, path string, readable bool, stat 
 		hostPath:        path,
 		file:            file,
 		mode:            invalidMode,
-		ft:              ft,
+		fileType:        stat.Mode & syscall.S_IFMT,
+		qid:             a.makeQID(stat),
 		controlReadable: readable,
 	}, nil
 }
@@ -359,7 +326,7 @@ func newFDMaybe(file *fd.FD) *fd.FD {
 
 	// fd is blocking; non-blocking is required.
 	if err := syscall.SetNonblock(dup.FD(), true); err != nil {
-		dup.Close()
+		_ = dup.Close()
 		return nil
 	}
 	return dup
@@ -409,16 +376,8 @@ func (l *localFile) Open(flags p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 		}
 	}
 
-	stat, err := fstat(newFile.FD())
-	if err != nil {
-		if newFile != l.file {
-			newFile.Close()
-		}
-		return nil, p9.QID{}, 0, extractErrno(err)
-	}
-
 	var fd *fd.FD
-	if stat.Mode&syscall.S_IFMT == syscall.S_IFREG {
+	if l.fileType == syscall.S_IFREG {
 		// Donate FD for regular files only.
 		fd = newFDMaybe(newFile)
 	}
@@ -431,7 +390,7 @@ func (l *localFile) Open(flags p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 		l.file = newFile
 	}
 	l.mode = flags & p9.OpenFlagsModeMask
-	return fd, l.attachPoint.makeQID(stat), 0, nil
+	return fd, l.qid, 0, nil
 }
 
 // Create implements p9.File.
@@ -459,7 +418,7 @@ func (l *localFile) Create(name string, mode p9.OpenFlags, perm p9.FileMode, uid
 		return nil, nil, p9.QID{}, 0, extractErrno(err)
 	}
 	cu := cleanup.Make(func() {
-		child.Close()
+		_ = child.Close()
 		// Best effort attempt to remove the file in case of failure.
 		if err := syscall.Unlinkat(l.file.FD(), name); err != nil {
 			log.Warningf("error unlinking file %q after failure: %v", path.Join(l.hostPath, name), err)
@@ -480,10 +439,12 @@ func (l *localFile) Create(name string, mode p9.OpenFlags, perm p9.FileMode, uid
 		hostPath:    path.Join(l.hostPath, name),
 		file:        child,
 		mode:        mode,
+		fileType:    syscall.S_IFREG,
+		qid:         l.attachPoint.makeQID(stat),
 	}
 
 	cu.Release()
-	return newFDMaybe(c.file), c, l.attachPoint.makeQID(stat), 0, nil
+	return newFDMaybe(c.file), c, c.qid, 0, nil
 }
 
 // Mkdir implements p9.File.
@@ -529,19 +490,34 @@ func (l *localFile) Mkdir(name string, perm p9.FileMode, uid p9.UID, gid p9.GID)
 
 // Walk implements p9.File.
 func (l *localFile) Walk(names []string) ([]p9.QID, p9.File, error) {
+	qids, file, _, err := l.walk(names)
+	return qids, file, err
+}
+
+// WalkGetAttr implements p9.File.
+func (l *localFile) WalkGetAttr(names []string) ([]p9.QID, p9.File, p9.AttrMask, p9.Attr, error) {
+	qids, file, stat, err := l.walk(names)
+	if err != nil {
+		return nil, nil, p9.AttrMask{}, p9.Attr{}, err
+	}
+	mask, attr := l.fillAttr(stat)
+	return qids, file, mask, attr, nil
+}
+
+func (l *localFile) walk(names []string) ([]p9.QID, p9.File, syscall.Stat_t, error) {
 	// Duplicate current file if 'names' is empty.
 	if len(names) == 0 {
 		newFile, readable, err := openAnyFile(l.hostPath, func(mode int) (*fd.FD, error) {
 			return reopenProcFd(l.file, openFlags|mode)
 		})
 		if err != nil {
-			return nil, nil, extractErrno(err)
+			return nil, nil, syscall.Stat_t{}, extractErrno(err)
 		}
 
 		stat, err := fstat(newFile.FD())
 		if err != nil {
-			newFile.Close()
-			return nil, nil, extractErrno(err)
+			_ = newFile.Close()
+			return nil, nil, syscall.Stat_t{}, extractErrno(err)
 		}
 
 		c := &localFile{
@@ -549,36 +525,39 @@ func (l *localFile) Walk(names []string) ([]p9.QID, p9.File, error) {
 			hostPath:        l.hostPath,
 			file:            newFile,
 			mode:            invalidMode,
+			fileType:        l.fileType,
+			qid:             l.attachPoint.makeQID(stat),
 			controlReadable: readable,
 		}
-		return []p9.QID{l.attachPoint.makeQID(stat)}, c, nil
+		return []p9.QID{c.qid}, c, stat, nil
 	}
 
 	var qids []p9.QID
+	var lastStat syscall.Stat_t
 	last := l
 	for _, name := range names {
 		f, path, readable, err := openAnyFileFromParent(last, name)
 		if last != l {
-			last.Close()
+			_ = last.Close()
 		}
 		if err != nil {
-			return nil, nil, extractErrno(err)
+			return nil, nil, syscall.Stat_t{}, extractErrno(err)
 		}
-		stat, err := fstat(f.FD())
+		lastStat, err = fstat(f.FD())
 		if err != nil {
-			f.Close()
-			return nil, nil, extractErrno(err)
+			_ = f.Close()
+			return nil, nil, syscall.Stat_t{}, extractErrno(err)
 		}
-		c, err := newLocalFile(last.attachPoint, f, path, readable, stat)
+		c, err := newLocalFile(last.attachPoint, f, path, readable, lastStat)
 		if err != nil {
-			f.Close()
-			return nil, nil, extractErrno(err)
+			_ = f.Close()
+			return nil, nil, syscall.Stat_t{}, extractErrno(err)
 		}
 
-		qids = append(qids, l.attachPoint.makeQID(stat))
+		qids = append(qids, c.qid)
 		last = c
 	}
-	return qids, last, nil
+	return qids, last, lastStat, nil
 }
 
 // StatFS implements p9.File.
@@ -618,12 +597,16 @@ func (l *localFile) GetAttr(_ p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error)
 	if err != nil {
 		return p9.QID{}, p9.AttrMask{}, p9.Attr{}, extractErrno(err)
 	}
+	mask, attr := l.fillAttr(stat)
+	return l.qid, mask, attr, nil
+}
 
+func (l *localFile) fillAttr(stat syscall.Stat_t) (p9.AttrMask, p9.Attr) {
 	attr := p9.Attr{
 		Mode:             p9.FileMode(stat.Mode),
 		UID:              p9.UID(stat.Uid),
 		GID:              p9.GID(stat.Gid),
-		NLink:            uint64(stat.Nlink),
+		NLink:            stat.Nlink,
 		RDev:             stat.Rdev,
 		Size:             uint64(stat.Size),
 		BlockSize:        uint64(stat.Blksize),
@@ -647,8 +630,7 @@ func (l *localFile) GetAttr(_ p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error)
 		MTime:  true,
 		CTime:  true,
 	}
-
-	return l.attachPoint.makeQID(stat), valid, attr, nil
+	return valid, attr
 }
 
 // SetAttr implements p9.File. Due to mismatch in file API, options
@@ -689,7 +671,7 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	// Check if it's possible to use cached file, or if another one needs to be
 	// opened for write.
 	f := l.file
-	if l.ft == regular && l.mode != p9.WriteOnly && l.mode != p9.ReadWrite {
+	if l.fileType == syscall.S_IFREG && l.mode != p9.WriteOnly && l.mode != p9.ReadWrite {
 		var err error
 		f, err = reopenProcFd(l.file, openFlags|os.O_WRONLY)
 		if err != nil {
@@ -745,7 +727,7 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 			}
 		}
 
-		if l.ft == symlink {
+		if l.fileType == syscall.S_IFLNK {
 			// utimensat operates different that other syscalls. To operate on a
 			// symlink it *requires* AT_SYMLINK_NOFOLLOW with dirFD and a non-empty
 			// name.
@@ -929,7 +911,7 @@ func (l *localFile) Link(target p9.File, newName string) error {
 }
 
 // Mknod implements p9.File.
-func (l *localFile) Mknod(name string, mode p9.FileMode, _ uint32, _ uint32, uid p9.UID, gid p9.GID) (p9.QID, error) {
+func (l *localFile) Mknod(name string, mode p9.FileMode, _ uint32, _ uint32, _ p9.UID, _ p9.GID) (p9.QID, error) {
 	conf := l.attachPoint.conf
 	if conf.ROMount {
 		if conf.PanicOnWrite {
@@ -1127,13 +1109,13 @@ func (l *localFile) Connect(flags p9.ConnectFlags) (*fd.FD, error) {
 	}
 
 	if err := syscall.SetNonblock(f, true); err != nil {
-		syscall.Close(f)
+		_ = syscall.Close(f)
 		return nil, err
 	}
 
 	sa := syscall.SockaddrUnix{Name: l.hostPath}
 	if err := syscall.Connect(f, &sa); err != nil {
-		syscall.Close(f)
+		_ = syscall.Close(f)
 		return nil, err
 	}
 
