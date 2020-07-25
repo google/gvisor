@@ -17,6 +17,7 @@ go_binary(
         "//test/runner/gtest",
         "//test/uds",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+        "@com_github_syndtr_gocapability//capability:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
