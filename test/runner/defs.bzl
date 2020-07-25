@@ -157,7 +157,7 @@ def syscall_test(
         platform = "native",
         use_tmpfs = False,
         add_uds_tree = add_uds_tree,
-        tags = tags,
+        tags = list(tags),
     )
 
     for (platform, platform_tags) in platforms.items():
