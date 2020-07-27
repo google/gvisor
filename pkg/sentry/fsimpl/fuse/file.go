@@ -42,6 +42,9 @@ type fileDescription struct {
 
 	// OpenFlag is the flag returned by open.
 	OpenFlag uint32
+
+	// off is the file offset.
+	off int64
 }
 
 func (fd *fileDescription) dentry() *kernfs.Dentry {
@@ -118,5 +121,6 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 
 // SetStat implements FileDescriptionImpl.SetStat.
 func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
-	return nil
+	creds := auth.CredentialsFromContext(ctx)
+	return fd.inode().SetStat(ctx, fd.inode().fs.VFSFilesystem(), creds, opts)
 }
