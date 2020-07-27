@@ -22,7 +22,8 @@ import (
 )
 
 var (
-	runDataSize int
+	runDataSize  int
+	hasGuestPCID bool
 )
 
 func updateSystemValues(fd int) error {
@@ -33,6 +34,7 @@ func updateSystemValues(fd int) error {
 	}
 	// Save the data.
 	runDataSize = int(sz)
+	hasGuestPCID = true
 
 	// Success.
 	return nil
