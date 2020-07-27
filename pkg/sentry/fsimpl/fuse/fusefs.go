@@ -72,29 +72,6 @@ type filesystem struct {
 	opts *filesystemOptions
 }
 
-// fileDescription implements vfs.FileDescriptionImpl for fuse.
-type fileDescription struct {
-	vfsfd vfs.FileDescription
-	vfs.FileDescriptionDefaultImpl
-	vfs.DentryMetadataFileDescriptionImpl
-	vfs.NoLockFD
-
-	// the file handle used in userspace.
-	Fh uint64
-
-	// Nonseekable is indicate cannot perform seek on a file.
-	Nonseekable bool
-
-	// DirectIO suggest fuse to use direct io operation.
-	DirectIO bool
-
-	// OpenFlag is the flag returned by open.
-	OpenFlag uint32
-}
-
-// Release implements vfs.FileDescriptionImpl.Release.
-func (fd *fileDescription) Release(ctx context.Context) {}
-
 // Name implements vfs.FilesystemType.Name.
 func (FilesystemType) Name() string {
 	return Name
@@ -326,7 +303,18 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 		return nil, syserror.EOVERFLOW
 	}
 
-	fd := fileDescription{}
+	var fd *fileDescription
+	var fdImpl vfs.FileDescriptionImpl
+	if isDir {
+		dirFd := &dirFileFD{}
+		fd = &(dirFd.fileDescription)
+		fdImpl = fd
+	} else {
+		regularFd := &regularFileFD{}
+		fd = &(regularFd.fileDescription)
+		fdImpl = regularFd
+	}
+
 	// Only send open request when FUSE server support open or is opening a directory.
 	if !i.fs.conn.noOpen || isDir {
 		kernelTask := kernel.TaskFromContext(ctx)
@@ -364,6 +352,15 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 			return nil, err
 		}
 		fd.OpenFlag = out.OpenFlag
+
+		// Process the reply.
+		if isDir {
+			fd.OpenFlag = out.OpenFlag
+			fd.OpenFlag &= ^uint32(linux.FOPEN_DIRECT_IO)
+		} else {
+			fd.OpenFlag = out.OpenFlag
+		}
+
 		fd.Fh = out.Fh
 	}
 
@@ -372,7 +369,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 	}
 
 	// TODO(gvisor.dev/issue/3234): invalidate mmap after implemented it for FUSE Inode
-	fd.DirectIO = fd.OpenFlag&linux.FOPEN_DIRECT_IO != 0
+	fd.directIO = fd.OpenFlag&linux.FOPEN_DIRECT_IO != 0
 	fdOptions := &vfs.FileDescriptionOptions{}
 	if fd.OpenFlag&linux.FOPEN_NONSEEKABLE != 0 {
 		fdOptions.DenyPRead = true
@@ -388,7 +385,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 		i.attributeTime = 0
 	}
 
-	if err := fd.vfsfd.Init(&fd, opts.Flags, rp.Mount(), vfsd, fdOptions); err != nil {
+	if err := fd.vfsfd.Init(fdImpl, opts.Flags, rp.Mount(), vfsd, fdOptions); err != nil {
 		return nil, err
 	}
 	return &fd.vfsfd, nil
