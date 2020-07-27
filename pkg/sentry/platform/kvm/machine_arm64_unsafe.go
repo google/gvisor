@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
+	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -156,6 +157,14 @@ func (c *vCPU) initArchState() error {
 		return err
 	}
 
+	// Initialize the PCID database.
+	if hasGuestPCID {
+		// Note that NewPCIDs may return a nil table here, in which
+		// case we simply don't use PCID support (see below). In
+		// practice, this should not happen, however.
+		c.PCIDs = pagetables.NewPCIDs(fixedKernelPCID+1, poolPCIDs)
+	}
+
 	c.floatingPointState = arch.NewFloatingPointData()
 	return nil
 }
@@ -232,6 +241,13 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 		return nonCanonical(regs.Pc, int32(syscall.SIGSEGV), info)
 	} else if !ring0.IsCanonical(regs.Sp) {
 		return nonCanonical(regs.Sp, int32(syscall.SIGBUS), info)
+	}
+
+	// Assign PCIDs.
+	if c.PCIDs != nil {
+		var requireFlushPCID bool // Force a flush?
+		switchOpts.UserASID, requireFlushPCID = c.PCIDs.Assign(switchOpts.PageTables)
+		switchOpts.Flush = switchOpts.Flush || requireFlushPCID
 	}
 
 	var vector ring0.Vector
