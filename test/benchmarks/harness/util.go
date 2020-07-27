@@ -36,3 +36,11 @@ func WaitUntilServing(ctx context.Context, machine Machine, server net.IP, port 
 	}, "sh", "-c", cmd)
 	return err
 }
+
+// DropCaches drops caches on the provided machine. Requires root.
+func DropCaches(machine Machine) error {
+	if out, err := machine.RunCommand("/bin/sh", "-c", "sync | sysctl vm.drop_caches=3"); err != nil {
+		return fmt.Errorf("failed to drop caches: %v logs: %s", err, out)
+	}
+	return nil
+}
