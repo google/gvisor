@@ -34,6 +34,9 @@ const (
 	linkAddr0 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
 	linkAddr1 = tcpip.LinkAddress("\x0a\x0b\x0c\x0d\x0e\x0e")
 	linkAddr2 = tcpip.LinkAddress("\x0a\x0b\x0c\x0d\x0e\x0f")
+
+	defaultChannelSize = 1
+	defaultMTU         = 65536
 )
 
 var (
@@ -257,8 +260,7 @@ func newTestContext(t *testing.T) *testContext {
 		}),
 	}
 
-	const defaultMTU = 65536
-	c.linkEP0 = channel.New(256, defaultMTU, linkAddr0)
+	c.linkEP0 = channel.New(defaultChannelSize, defaultMTU, linkAddr0)
 
 	wrappedEP0 := stack.LinkEndpoint(endpointWithResolutionCapability{LinkEndpoint: c.linkEP0})
 	if testing.Verbose() {
@@ -271,7 +273,7 @@ func newTestContext(t *testing.T) *testContext {
 		t.Fatalf("AddAddress lladdr0: %v", err)
 	}
 
-	c.linkEP1 = channel.New(256, defaultMTU, linkAddr1)
+	c.linkEP1 = channel.New(defaultChannelSize, defaultMTU, linkAddr1)
 	wrappedEP1 := stack.LinkEndpoint(endpointWithResolutionCapability{LinkEndpoint: c.linkEP1})
 	if err := c.s1.CreateNIC(1, wrappedEP1); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
@@ -949,5 +951,49 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 				t.Fatalf("got invalid = %d, want = 1", got)
 			}
 		})
+	}
+}
+
+func TestLinkAddressRequest(t *testing.T) {
+	snaddr := header.SolicitedNodeAddr(lladdr0)
+	mcaddr := header.EthernetAddressFromMulticastIPv6Address(snaddr)
+
+	tests := []struct {
+		name           string
+		remoteLinkAddr tcpip.LinkAddress
+		expectLinkAddr tcpip.LinkAddress
+	}{
+		{
+			name:           "Unicast",
+			remoteLinkAddr: linkAddr1,
+			expectLinkAddr: linkAddr1,
+		},
+		{
+			name:           "Multicast",
+			remoteLinkAddr: "",
+			expectLinkAddr: mcaddr,
+		},
+	}
+
+	for _, test := range tests {
+		p := NewProtocol()
+		linkRes, ok := p.(stack.LinkAddressResolver)
+		if !ok {
+			t.Fatalf("expected IPv6 protocol to implement stack.LinkAddressResolver")
+		}
+
+		linkEP := channel.New(defaultChannelSize, defaultMTU, linkAddr0)
+		if err := linkRes.LinkAddressRequest(lladdr0, lladdr1, test.remoteLinkAddr, linkEP); err != nil {
+			t.Errorf("got p.LinkAddressRequest(%s, %s, %s, _) = %s", lladdr0, lladdr1, test.remoteLinkAddr, err)
+		}
+
+		pkt, ok := linkEP.Read()
+		if !ok {
+			t.Fatal("expected to send a link address request")
+		}
+
+		if got, want := pkt.Route.RemoteLinkAddress, test.expectLinkAddr; got != want {
+			t.Errorf("got pkt.Route.RemoteLinkAddress = %s, want = %s", got, want)
+		}
 	}
 }

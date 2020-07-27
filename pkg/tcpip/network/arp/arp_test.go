@@ -32,10 +32,14 @@ import (
 )
 
 const (
-	stackLinkAddr = tcpip.LinkAddress("\x0a\x0a\x0b\x0b\x0c\x0c")
-	stackAddr1    = tcpip.Address("\x0a\x00\x00\x01")
-	stackAddr2    = tcpip.Address("\x0a\x00\x00\x02")
-	stackAddrBad  = tcpip.Address("\x0a\x00\x00\x03")
+	stackLinkAddr1 = tcpip.LinkAddress("\x0a\x0a\x0b\x0b\x0c\x0c")
+	stackLinkAddr2 = tcpip.LinkAddress("\x0b\x0b\x0c\x0c\x0d\x0d")
+	stackAddr1     = tcpip.Address("\x0a\x00\x00\x01")
+	stackAddr2     = tcpip.Address("\x0a\x00\x00\x02")
+	stackAddrBad   = tcpip.Address("\x0a\x00\x00\x03")
+
+	defaultChannelSize = 1
+	defaultMTU         = 65536
 )
 
 type testContext struct {
@@ -50,8 +54,7 @@ func newTestContext(t *testing.T) *testContext {
 		TransportProtocols: []stack.TransportProtocol{icmp.NewProtocol4()},
 	})
 
-	const defaultMTU = 65536
-	ep := channel.New(256, defaultMTU, stackLinkAddr)
+	ep := channel.New(defaultChannelSize, defaultMTU, stackLinkAddr1)
 	wep := stack.LinkEndpoint(ep)
 
 	if testing.Verbose() {
@@ -119,7 +122,7 @@ func TestDirectRequest(t *testing.T) {
 			if !rep.IsValid() {
 				t.Fatalf("invalid ARP response pi.Pkt.Header.UsedLength()=%d", pi.Pkt.Header.UsedLength())
 			}
-			if got, want := tcpip.LinkAddress(rep.HardwareAddressSender()), stackLinkAddr; got != want {
+			if got, want := tcpip.LinkAddress(rep.HardwareAddressSender()), stackLinkAddr1; got != want {
 				t.Errorf("got HardwareAddressSender = %s, want = %s", got, want)
 			}
 			if got, want := tcpip.Address(rep.ProtocolAddressSender()), tcpip.Address(h.ProtocolAddressTarget()); got != want {
@@ -142,5 +145,46 @@ func TestDirectRequest(t *testing.T) {
 	defer cancel()
 	if pkt, ok := c.linkEP.ReadContext(ctx); ok {
 		t.Errorf("stackAddrBad: unexpected packet sent, Proto=%v", pkt.Proto)
+	}
+}
+
+func TestLinkAddressRequest(t *testing.T) {
+	tests := []struct {
+		name           string
+		remoteLinkAddr tcpip.LinkAddress
+		expectLinkAddr tcpip.LinkAddress
+	}{
+		{
+			name:           "Unicast",
+			remoteLinkAddr: stackLinkAddr2,
+			expectLinkAddr: stackLinkAddr2,
+		},
+		{
+			name:           "Multicast",
+			remoteLinkAddr: "",
+			expectLinkAddr: header.EthernetBroadcastAddress,
+		},
+	}
+
+	for _, test := range tests {
+		p := arp.NewProtocol()
+		linkRes, ok := p.(stack.LinkAddressResolver)
+		if !ok {
+			t.Fatal("expected ARP protocol to implement stack.LinkAddressResolver")
+		}
+
+		linkEP := channel.New(defaultChannelSize, defaultMTU, stackLinkAddr1)
+		if err := linkRes.LinkAddressRequest(stackAddr1, stackAddr2, test.remoteLinkAddr, linkEP); err != nil {
+			t.Errorf("got p.LinkAddressRequest(%s, %s, %s, _) = %s", stackAddr1, stackAddr2, test.remoteLinkAddr, err)
+		}
+
+		pkt, ok := linkEP.Read()
+		if !ok {
+			t.Fatal("expected to send a link address request")
+		}
+
+		if got, want := pkt.Route.RemoteLinkAddress, test.expectLinkAddr; got != want {
+			t.Errorf("got pkt.Route.RemoteLinkAddress = %s, want = %s", got, want)
+		}
 	}
 }
