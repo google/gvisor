@@ -643,7 +643,9 @@ func TestExec(t *testing.T) {
 			if err != nil {
 				t.Fatalf("error creating temporary directory: %v", err)
 			}
-			cmd := fmt.Sprintf("ln -s /bin/true %q/symlink && sleep 100", dir)
+			// Note that some shells may exec the final command in a sequence as
+			// an optimization. We avoid this here by adding the exit 0.
+			cmd := fmt.Sprintf("ln -s /bin/true %q/symlink && sleep 100 && exit 0", dir)
 			spec := testutil.NewSpecWithArgs("sh", "-c", cmd)
 
 			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
