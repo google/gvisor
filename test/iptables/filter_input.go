@@ -81,7 +81,7 @@ func (FilterInputDropUDP) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputDropUDP) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, dropPort, sendloopDuration)
+	return spawnUDPLoop(ip, dropPort, sendloopDuration)
 }
 
 // FilterInputDropOnlyUDP tests that "-p udp -j DROP" only affects UDP traffic.
@@ -141,7 +141,7 @@ func (FilterInputDropUDPPort) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputDropUDPPort) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, dropPort, sendloopDuration)
+	return spawnUDPLoop(ip, dropPort, sendloopDuration)
 }
 
 // FilterInputDropDifferentUDPPort tests that dropping traffic for a single UDP port
@@ -169,7 +169,7 @@ func (FilterInputDropDifferentUDPPort) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputDropDifferentUDPPort) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
 }
 
 // FilterInputDropTCPDestPort tests that connections are not accepted on specified source ports.
@@ -269,7 +269,7 @@ func (FilterInputDropAll) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputDropAll) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, dropPort, sendloopDuration)
+	return spawnUDPLoop(ip, dropPort, sendloopDuration)
 }
 
 // FilterInputMultiUDPRules verifies that multiple UDP rules are applied
@@ -365,7 +365,7 @@ func (FilterInputDefaultPolicyAccept) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputDefaultPolicyAccept) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
 }
 
 // FilterInputDefaultPolicyDrop tests the default DROP policy.
@@ -396,7 +396,7 @@ func (FilterInputDefaultPolicyDrop) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputDefaultPolicyDrop) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
 }
 
 // FilterInputReturnUnderflow tests that -j RETURN in a built-in chain causes
@@ -428,7 +428,7 @@ func (FilterInputReturnUnderflow) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputReturnUnderflow) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
 }
 
 // FilterInputSerializeJump verifies that we can serialize jumps.
@@ -482,7 +482,7 @@ func (FilterInputJumpBasic) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputJumpBasic) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
 }
 
 // FilterInputJumpReturn jumps, returns, and executes a rule.
@@ -512,7 +512,7 @@ func (FilterInputJumpReturn) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputJumpReturn) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
 }
 
 // FilterInputJumpReturnDrop jumps to a chain, returns, and DROPs packets.
@@ -549,7 +549,7 @@ func (FilterInputJumpReturnDrop) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputJumpReturnDrop) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, dropPort, sendloopDuration)
+	return spawnUDPLoop(ip, dropPort, sendloopDuration)
 }
 
 // FilterInputJumpBuiltin verifies that jumping to a top-levl chain is illegal.
@@ -604,7 +604,7 @@ func (FilterInputJumpTwice) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputJumpTwice) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
 }
 
 // FilterInputDestination verifies that we can filter packets via `-d
@@ -638,7 +638,7 @@ func (FilterInputDestination) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputDestination) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
 }
 
 // FilterInputInvertDestination verifies that we can filter packets via `! -d
@@ -667,7 +667,7 @@ func (FilterInputInvertDestination) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputInvertDestination) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
 }
 
 // FilterInputSource verifies that we can filter packets via `-s
@@ -696,7 +696,7 @@ func (FilterInputSource) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputSource) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
 }
 
 // FilterInputInvertSource verifies that we can filter packets via `! -s
@@ -725,5 +725,5 @@ func (FilterInputInvertSource) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (FilterInputInvertSource) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
 }

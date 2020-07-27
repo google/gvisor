@@ -84,17 +84,42 @@ func listenUDP(port int, timeout time.Duration) error {
 // sendUDPLoop sends 1 byte UDP packets repeatedly to the IP and port specified
 // over a duration.
 func sendUDPLoop(ip net.IP, port int, duration time.Duration) error {
-	// Send packets for a few seconds.
+	conn, err := connectUDP(ip, port)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	loopUDP(conn, duration)
+	return nil
+}
+
+// spawnUDPLoop works like sendUDPLoop, but returns immediately and sends
+// packets in another goroutine.
+func spawnUDPLoop(ip net.IP, port int, duration time.Duration) error {
+	conn, err := connectUDP(ip, port)
+	if err != nil {
+		return err
+	}
+	go func() {
+		defer conn.Close()
+		loopUDP(conn, duration)
+	}()
+	return nil
+}
+
+func connectUDP(ip net.IP, port int) (net.Conn, error) {
 	remote := net.UDPAddr{
 		IP:   ip,
 		Port: port,
 	}
 	conn, err := net.DialUDP(network, nil, &remote)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer conn.Close()
+	return conn, nil
+}
 
+func loopUDP(conn net.Conn, duration time.Duration) {
 	to := time.After(duration)
 	for timedOut := false; !timedOut; {
 		// This may return an error (connection refused) if the remote
@@ -109,8 +134,6 @@ func sendUDPLoop(ip net.IP, port int, duration time.Duration) error {
 			time.Sleep(200 * time.Millisecond)
 		}
 	}
-
-	return nil
 }
 
 // listenTCP listens for connections on a TCP port.
