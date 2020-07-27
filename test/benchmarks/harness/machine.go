@@ -25,8 +25,13 @@ import (
 
 // Machine describes a real machine for use in benchmarks.
 type Machine interface {
-	// GetContainer gets a container from the machine,
+	// GetContainer gets a container from the machine. The container uses the
+	// runtime under test and is profiled if requested by flags.
 	GetContainer(ctx context.Context, log testutil.Logger) *dockerutil.Container
+
+	// GetNativeContainer gets a native container from the machine. Native containers
+	// use runc by default and are not profiled.
+	GetNativeContainer(ctx context.Context, log testutil.Logger) *dockerutil.Container
 
 	// RunCommand runs cmd on this machine.
 	RunCommand(cmd string, args ...string) (string, error)
@@ -45,6 +50,11 @@ type localMachine struct {
 // GetContainer implements Machine.GetContainer for localMachine.
 func (l *localMachine) GetContainer(ctx context.Context, logger testutil.Logger) *dockerutil.Container {
 	return dockerutil.MakeContainer(ctx, logger)
+}
+
+// GetContainer implements Machine.GetContainer for localMachine.
+func (l *localMachine) GetNativeContainer(ctx context.Context, logger testutil.Logger) *dockerutil.Container {
+	return dockerutil.MakeNativeContainer(ctx, logger)
 }
 
 // RunCommand implements Machine.RunCommand for localMachine.

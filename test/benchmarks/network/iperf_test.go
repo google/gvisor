@@ -22,12 +22,13 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 )
 
 func BenchmarkIperf(b *testing.B) {
+	const time = 10 // time in seconds to run the client.
 
-	// Get two machines
 	clientMachine, err := h.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
@@ -39,30 +40,32 @@ func BenchmarkIperf(b *testing.B) {
 		b.Fatalf("failed to get machine: %v", err)
 	}
 	defer serverMachine.CleanUp()
-
+	ctx := context.Background()
 	for _, bm := range []struct {
-		name          string
-		clientRuntime string
-		serverRuntime string
+		name       string
+		clientFunc func(context.Context, testutil.Logger) *dockerutil.Container
+		serverFunc func(context.Context, testutil.Logger) *dockerutil.Container
 	}{
 		// We are either measuring the server or the client. The other should be
 		// runc. e.g. Upload sees how fast the runtime under test uploads to a native
 		// server.
-		{name: "Upload", clientRuntime: dockerutil.Runtime(), serverRuntime: "runc"},
-		{name: "Download", clientRuntime: "runc", serverRuntime: dockerutil.Runtime()},
+		{
+			name:       "Upload",
+			clientFunc: clientMachine.GetContainer,
+			serverFunc: serverMachine.GetNativeContainer,
+		},
+		{
+			name:       "Download",
+			clientFunc: clientMachine.GetNativeContainer,
+			serverFunc: serverMachine.GetContainer,
+		},
 	} {
 		b.Run(bm.name, func(b *testing.B) {
-
-			// Get a container from the server and set its runtime.
-			ctx := context.Background()
-			server := serverMachine.GetContainer(ctx, b)
+			// Set up the containers.
+			server := bm.serverFunc(ctx, b)
 			defer server.CleanUp(ctx)
-			server.Runtime = bm.serverRuntime
-
-			// Get a container from the client and set its runtime.
-			client := clientMachine.GetContainer(ctx, b)
+			client := bm.clientFunc(ctx, b)
 			defer client.CleanUp(ctx)
-			client.Runtime = bm.clientRuntime
 
 			// iperf serves on port 5001 by default.
 			port := 5001
@@ -91,11 +94,14 @@ func BenchmarkIperf(b *testing.B) {
 			}
 
 			// iperf report in Kb realtime
-			cmd := fmt.Sprintf("iperf -f K --realtime -c %s -p %d", ip.String(), servingPort)
+			cmd := fmt.Sprintf("iperf -f K --realtime --time %d -c %s -p %d", time, ip.String(), servingPort)
 
 			// Run the client.
 			b.ResetTimer()
 
+			// Restart the server profiles. If the server isn't being profiled
+			// this does nothing.
+			server.RestartProfiles()
 			for i := 0; i < b.N; i++ {
 				out, err := client.Run(ctx, dockerutil.RunOpts{
 					Image: "benchmarks/iperf",

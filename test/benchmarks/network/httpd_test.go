@@ -52,12 +52,12 @@ func BenchmarkHttpdConcurrency(b *testing.B) {
 	defer serverMachine.CleanUp()
 
 	// The test iterates over client concurrency, so set other parameters.
-	requests := 1000
+	requests := 10000
 	concurrency := []int{1, 5, 10, 25}
 	doc := docs["10Kb"]
 
 	for _, c := range concurrency {
-		b.Run(fmt.Sprintf("%dConcurrency", c), func(b *testing.B) {
+		b.Run(fmt.Sprintf("%d", c), func(b *testing.B) {
 			runHttpd(b, clientMachine, serverMachine, doc, requests, c)
 		})
 	}
@@ -78,7 +78,7 @@ func BenchmarkHttpdDocSize(b *testing.B) {
 	}
 	defer serverMachine.CleanUp()
 
-	requests := 1000
+	requests := 10000
 	concurrency := 1
 
 	for name, filename := range docs {
@@ -129,7 +129,7 @@ func runHttpd(b *testing.B, clientMachine, serverMachine harness.Machine, doc st
 	harness.WaitUntilServing(ctx, clientMachine, ip, servingPort)
 
 	// Grab a client.
-	client := clientMachine.GetContainer(ctx, b)
+	client := clientMachine.GetNativeContainer(ctx, b)
 	defer client.CleanUp(ctx)
 
 	path := fmt.Sprintf("http://%s:%d/%s", ip, servingPort, doc)
@@ -137,6 +137,7 @@ func runHttpd(b *testing.B, clientMachine, serverMachine harness.Machine, doc st
 	cmd = fmt.Sprintf("ab -n %d -c %d %s", requests, concurrency, path)
 
 	b.ResetTimer()
+	server.RestartProfiles()
 	for i := 0; i < b.N; i++ {
 		out, err := client.Run(ctx, dockerutil.RunOpts{
 			Image: "benchmarks/ab",

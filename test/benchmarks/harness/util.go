@@ -27,7 +27,7 @@ import (
 // IP:port.
 func WaitUntilServing(ctx context.Context, machine Machine, server net.IP, port int) error {
 	var logger testutil.DefaultLogger = "netcat"
-	netcat := machine.GetContainer(ctx, logger)
+	netcat := machine.GetNativeContainer(ctx, logger)
 	defer netcat.CleanUp(ctx)
 
 	cmd := fmt.Sprintf("while ! nc -zv %s %d; do true; done", server.String(), port)

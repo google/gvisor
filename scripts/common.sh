@@ -42,15 +42,6 @@ function test_runsc() {
   test --test_arg=--runtime=${RUNTIME} "$@"
 }
 
-function benchmark_runsc() {
-  test_runsc -c opt \
-    --nocache_test_results \
-    --test_arg=-test.bench=. \
-    --test_arg=-test.benchmem \
-    --jobs=1 \
-    "$@"
-}
-
 function install_runsc_for_test() {
   local -r test_name=$1
   shift
@@ -69,24 +60,6 @@ function install_runsc_for_test() {
       --debug \
       --strace \
       --log-packets \
-      "$@"
-}
-
-function install_runsc_for_benchmarks() {
-  local -r test_name=$1
-  shift
-  if [[ -z "${test_name}" ]]; then
-    echo "Missing mandatory test name"
-    exit 1
-  fi
-
-  # Add test to the name, so it doesn't conflict with other runtimes.
-  set_runtime $(find_branch_name)_"${test_name}"
-
-  # ${RUNSC_TEST_NAME} is set by tests (see dockerutil) to pass the test name
-  # down to the runtime.
-  install_runsc "${RUNTIME}" \
-      --TESTONLY-test-name-env=RUNSC_TEST_NAME \
       "$@"
 }
 
