@@ -48,6 +48,12 @@
 
 #define SCTLR_EL1_DEFAULT       (SCTLR_M | SCTLR_C | SCTLR_I | SCTLR_UCT)
 
+// cntkctl_el1: counter-timer kernel control register el1.
+#define CNTKCTL_EL0PCTEN 	1 << 0
+#define CNTKCTL_EL0VCTEN 	1 << 1
+
+#define CNTKCTL_EL1_DEFAULT 	(CNTKCTL_EL0PCTEN | CNTKCTL_EL0VCTEN)
+
 // Saves a register set.
 //
 // This is a macro because it may need to executed in contents where a stack is
@@ -508,6 +514,9 @@ TEXT ·Start(SB),NOSPLIT,$0
 	// Init.
 	MOVD $SCTLR_EL1_DEFAULT, R1
 	MSR R1, SCTLR_EL1
+
+	MOVD $CNTKCTL_EL1_DEFAULT, R1
+	MSR R1, CNTKCTL_EL1
 
 	MOVD R8, RSV_REG
 	ORR $0xffff000000000000, RSV_REG, RSV_REG
