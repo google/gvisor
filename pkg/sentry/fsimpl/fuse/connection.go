@@ -21,6 +21,8 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"gvisor.dev/gvisor/tools/go_marshal/marshal"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
@@ -29,7 +31,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
-	"gvisor.dev/gvisor/tools/go_marshal/marshal"
 )
 
 // maxActiveRequestsDefault is the default setting controlling the upper bound
@@ -350,6 +351,12 @@ func (r *Response) UnmarshalPayload(m marshal.Marshallable) error {
 
 	if haveDataLen < wantDataLen {
 		return fmt.Errorf("payload too small. Minimum data lenth required: %d,  but got data length %d", wantDataLen, haveDataLen)
+	}
+
+	// The response data is empty unless there is some payload. And so, doesn't
+	// need to be unmarshalled.
+	if r.data == nil {
+		return nil
 	}
 
 	m.UnmarshalUnsafe(r.data[hdrLen:])

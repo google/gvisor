@@ -112,6 +112,20 @@ cc_binary(
     ],
 )
 
+cc_binary(
+    name = "readdir_test",
+    testonly = 1,
+    srcs = ["readdir_test.cc"],
+    deps = [
+        gtest,
+        ":fuse_base",
+        "//test/util:fs_util",
+        "//test/util:fuse_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
 cc_library(
     name = "fuse_base",
     testonly = 1,

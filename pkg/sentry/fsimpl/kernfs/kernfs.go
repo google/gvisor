@@ -425,7 +425,7 @@ type inodeDynamicLookup interface {
 	Valid(ctx context.Context) bool
 
 	// IterDirents is used to iterate over dynamically created entries. It invokes
-	// cb on each entry in the directory represented by the FileDescription.
+	// cb on each entry in the directory represented by the Inode.
 	// 'offset' is the offset for the entire IterDirents call, which may include
 	// results from the caller (e.g. "." and ".."). 'relOffset' is the offset
 	// inside the entries returned by this IterDirents invocation. In other words,
