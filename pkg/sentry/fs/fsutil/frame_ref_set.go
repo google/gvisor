@@ -17,7 +17,7 @@ package fsutil
 import (
 	"math"
 
-	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
@@ -39,7 +39,7 @@ func (FrameRefSetFunctions) ClearValue(val *uint64) {
 }
 
 // Merge implements segment.Functions.Merge.
-func (FrameRefSetFunctions) Merge(_ platform.FileRange, val1 uint64, _ platform.FileRange, val2 uint64) (uint64, bool) {
+func (FrameRefSetFunctions) Merge(_ memmap.FileRange, val1 uint64, _ memmap.FileRange, val2 uint64) (uint64, bool) {
 	if val1 != val2 {
 		return 0, false
 	}
@@ -47,13 +47,13 @@ func (FrameRefSetFunctions) Merge(_ platform.FileRange, val1 uint64, _ platform.
 }
 
 // Split implements segment.Functions.Split.
-func (FrameRefSetFunctions) Split(_ platform.FileRange, val uint64, _ uint64) (uint64, uint64) {
+func (FrameRefSetFunctions) Split(_ memmap.FileRange, val uint64, _ uint64) (uint64, uint64) {
 	return val, val
 }
 
 // IncRefAndAccount adds a reference on the range fr. All newly inserted segments
 // are accounted as host page cache memory mappings.
-func (refs *FrameRefSet) IncRefAndAccount(fr platform.FileRange) {
+func (refs *FrameRefSet) IncRefAndAccount(fr memmap.FileRange) {
 	seg, gap := refs.Find(fr.Start)
 	for {
 		switch {
@@ -74,7 +74,7 @@ func (refs *FrameRefSet) IncRefAndAccount(fr platform.FileRange) {
 
 // DecRefAndAccount removes a reference on the range fr and untracks segments
 // that are removed from memory accounting.
-func (refs *FrameRefSet) DecRefAndAccount(fr platform.FileRange) {
+func (refs *FrameRefSet) DecRefAndAccount(fr memmap.FileRange) {
 	seg := refs.FindSegment(fr.Start)
 
 	for seg.Ok() && seg.Start() < fr.End {

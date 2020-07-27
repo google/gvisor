@@ -20,7 +20,6 @@ go_library(
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",
-        "//pkg/sentry/platform",
         "//pkg/sentry/usage",
         "//pkg/sync",
         "//pkg/syserror",

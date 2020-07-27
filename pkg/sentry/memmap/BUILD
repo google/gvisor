@@ -28,9 +28,21 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "file_range",
+    out = "file_range.go",
+    package = "memmap",
+    prefix = "File",
+    template = "//pkg/segment:generic_range",
+    types = {
+        "T": "uint64",
+    },
+)
+
 go_library(
     name = "memmap",
     srcs = [
+        "file_range.go",
         "mappable_range.go",
         "mapping_set.go",
         "mapping_set_impl.go",
@@ -40,7 +52,7 @@ go_library(
     deps = [
         "//pkg/context",
         "//pkg/log",
-        "//pkg/sentry/platform",
+        "//pkg/safemem",
         "//pkg/syserror",
         "//pkg/usermem",
     ],

@@ -25,7 +25,7 @@
 //           Locks taken by memmap.Mappable.Translate
 //             mm.privateRefs.mu
 //               platform.AddressSpace locks
-//                 platform.File locks
+//                 memmap.File locks
 //         mm.aioManager.mu
 //           mm.AIOContext.mu
 //
@@ -396,7 +396,7 @@ type pma struct {
 	// file is the file mapped by this pma. Only pmas for which file ==
 	// MemoryManager.mfp.MemoryFile() may be saved. pmas hold a reference to
 	// the corresponding file range while they exist.
-	file platform.File `state:"nosave"`
+	file memmap.File `state:"nosave"`
 
 	// off is the offset into file at which this pma begins.
 	//
@@ -436,7 +436,7 @@ type pma struct {
 	private bool
 
 	// If internalMappings is not empty, it is the cached return value of
-	// file.MapInternal for the platform.FileRange mapped by this pma.
+	// file.MapInternal for the memmap.FileRange mapped by this pma.
 	internalMappings safemem.BlockSeq `state:"nosave"`
 }
 
@@ -469,10 +469,10 @@ func (fileRefcountSetFunctions) MaxKey() uint64 {
 func (fileRefcountSetFunctions) ClearValue(_ *int32) {
 }
 
-func (fileRefcountSetFunctions) Merge(_ platform.FileRange, rc1 int32, _ platform.FileRange, rc2 int32) (int32, bool) {
+func (fileRefcountSetFunctions) Merge(_ memmap.FileRange, rc1 int32, _ memmap.FileRange, rc2 int32) (int32, bool) {
 	return rc1, rc1 == rc2
 }
 
-func (fileRefcountSetFunctions) Split(_ platform.FileRange, rc int32, _ uint64) (int32, int32) {
+func (fileRefcountSetFunctions) Split(_ memmap.FileRange, rc int32, _ uint64) (int32, int32) {
 	return rc, rc
 }

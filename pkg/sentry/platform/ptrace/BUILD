@@ -30,6 +30,7 @@ go_library(
         "//pkg/seccomp",
         "//pkg/sentry/arch",
         "//pkg/sentry/hostcpu",
+        "//pkg/sentry/memmap",
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/interrupt",
         "//pkg/sync",
