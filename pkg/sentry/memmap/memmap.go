@@ -19,12 +19,12 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Mappable represents a memory-mappable object, a mutable mapping from uint64
-// offsets to (platform.File, uint64 File offset) pairs.
+// offsets to (File, uint64 File offset) pairs.
 //
 // See mm/mm.go for Mappable's place in the lock order.
 //
@@ -74,7 +74,7 @@ type Mappable interface {
 	// Translations are valid until invalidated by a callback to
 	// MappingSpace.Invalidate or until the caller removes its mapping of the
 	// translated range. Mappable implementations must ensure that at least one
-	// reference is held on all pages in a platform.File that may be the result
+	// reference is held on all pages in a File that may be the result
 	// of a valid Translation.
 	//
 	// Preconditions: required.Length() > 0. optional.IsSupersetOf(required).
@@ -100,7 +100,7 @@ type Translation struct {
 	Source MappableRange
 
 	// File is the mapped file.
-	File platform.File
+	File File
 
 	// Offset is the offset into File at which this Translation begins.
 	Offset uint64
@@ -110,9 +110,9 @@ type Translation struct {
 	Perms usermem.AccessType
 }
 
-// FileRange returns the platform.FileRange represented by t.
-func (t Translation) FileRange() platform.FileRange {
-	return platform.FileRange{t.Offset, t.Offset + t.Source.Length()}
+// FileRange returns the FileRange represented by t.
+func (t Translation) FileRange() FileRange {
+	return FileRange{t.Offset, t.Offset + t.Source.Length()}
 }
 
 // CheckTranslateResult returns an error if (ts, terr) does not satisfy all
@@ -360,4 +360,50 @@ type MMapOpts struct {
 	//
 	// TODO(jamieliu): Replace entirely with MappingIdentity?
 	Hint string
+}
+
+// File represents a host file that may be mapped into an platform.AddressSpace.
+type File interface {
+	// All pages in a File are reference-counted.
+
+	// IncRef increments the reference count on all pages in fr.
+	//
+	// Preconditions: fr.Start and fr.End must be page-aligned. fr.Length() >
+	// 0. At least one reference must be held on all pages in fr. (The File
+	// interface does not provide a way to acquire an initial reference;
+	// implementors may define mechanisms for doing so.)
+	IncRef(fr FileRange)
+
+	// DecRef decrements the reference count on all pages in fr.
+	//
+	// Preconditions: fr.Start and fr.End must be page-aligned. fr.Length() >
+	// 0. At least one reference must be held on all pages in fr.
+	DecRef(fr FileRange)
+
+	// MapInternal returns a mapping of the given file offsets in the invoking
+	// process' address space for reading and writing.
+	//
+	// Note that fr.Start and fr.End need not be page-aligned.
+	//
+	// Preconditions: fr.Length() > 0. At least one reference must be held on
+	// all pages in fr.
+	//
+	// Postconditions: The returned mapping is valid as long as at least one
+	// reference is held on the mapped pages.
+	MapInternal(fr FileRange, at usermem.AccessType) (safemem.BlockSeq, error)
+
+	// FD returns the file descriptor represented by the File.
+	//
+	// The only permitted operation on the returned file descriptor is to map
+	// pages from it consistent with the requirements of AddressSpace.MapFile.
+	FD() int
+}
+
+// FileRange represents a range of uint64 offsets into a File.
+//
+// type FileRange <generated using go_generics>
+
+// String implements fmt.Stringer.String.
+func (fr FileRange) String() string {
+	return fmt.Sprintf("[%#x, %#x)", fr.Start, fr.End)
 }

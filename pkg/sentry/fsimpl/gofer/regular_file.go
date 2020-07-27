@@ -29,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -221,12 +220,12 @@ func (fd *regularFileFD) pwriteLocked(ctx context.Context, src usermem.IOSequenc
 			return 0, syserror.EINVAL
 		}
 		mr := memmap.MappableRange{pgstart, pgend}
-		var freed []platform.FileRange
+		var freed []memmap.FileRange
 		d.dataMu.Lock()
 		cseg := d.cache.LowerBoundSegment(mr.Start)
 		for cseg.Ok() && cseg.Start() < mr.End {
 			cseg = d.cache.Isolate(cseg, mr)
-			freed = append(freed, platform.FileRange{cseg.Value(), cseg.Value() + cseg.Range().Length()})
+			freed = append(freed, memmap.FileRange{cseg.Value(), cseg.Value() + cseg.Range().Length()})
 			cseg = d.cache.Remove(cseg).NextSegment()
 		}
 		d.dataMu.Unlock()
@@ -821,7 +820,7 @@ func maxFillRange(required, optional memmap.MappableRange) memmap.MappableRange 
 
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
 func (d *dentry) InvalidateUnsavable(ctx context.Context) error {
-	// Whether we have a host fd (and consequently what platform.File is
+	// Whether we have a host fd (and consequently what memmap.File is
 	// mapped) can change across save/restore, so invalidate all translations
 	// unconditionally.
 	d.mapsMu.Lock()
@@ -869,8 +868,8 @@ func (d *dentry) Evict(ctx context.Context, er pgalloc.EvictableRange) {
 	}
 }
 
-// dentryPlatformFile implements platform.File. It exists solely because dentry
-// cannot implement both vfs.DentryImpl.IncRef and platform.File.IncRef.
+// dentryPlatformFile implements memmap.File. It exists solely because dentry
+// cannot implement both vfs.DentryImpl.IncRef and memmap.File.IncRef.
 //
 // dentryPlatformFile is only used when a host FD representing the remote file
 // is available (i.e. dentry.handle.fd >= 0), and that FD is used for
@@ -878,7 +877,7 @@ func (d *dentry) Evict(ctx context.Context, er pgalloc.EvictableRange) {
 type dentryPlatformFile struct {
 	*dentry
 
-	// fdRefs counts references on platform.File offsets. fdRefs is protected
+	// fdRefs counts references on memmap.File offsets. fdRefs is protected
 	// by dentry.dataMu.
 	fdRefs fsutil.FrameRefSet
 
@@ -890,29 +889,29 @@ type dentryPlatformFile struct {
 	hostFileMapperInitOnce sync.Once
 }
 
-// IncRef implements platform.File.IncRef.
-func (d *dentryPlatformFile) IncRef(fr platform.FileRange) {
+// IncRef implements memmap.File.IncRef.
+func (d *dentryPlatformFile) IncRef(fr memmap.FileRange) {
 	d.dataMu.Lock()
 	d.fdRefs.IncRefAndAccount(fr)
 	d.dataMu.Unlock()
 }
 
-// DecRef implements platform.File.DecRef.
-func (d *dentryPlatformFile) DecRef(fr platform.FileRange) {
+// DecRef implements memmap.File.DecRef.
+func (d *dentryPlatformFile) DecRef(fr memmap.FileRange) {
 	d.dataMu.Lock()
 	d.fdRefs.DecRefAndAccount(fr)
 	d.dataMu.Unlock()
 }
 
-// MapInternal implements platform.File.MapInternal.
-func (d *dentryPlatformFile) MapInternal(fr platform.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
+// MapInternal implements memmap.File.MapInternal.
+func (d *dentryPlatformFile) MapInternal(fr memmap.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
 	d.handleMu.RLock()
 	bs, err := d.hostFileMapper.MapInternal(fr, int(d.handle.fd), at.Write)
 	d.handleMu.RUnlock()
 	return bs, err
 }
 
-// FD implements platform.File.FD.
+// FD implements memmap.File.FD.
 func (d *dentryPlatformFile) FD() int {
 	d.handleMu.RLock()
 	fd := d.handle.fd

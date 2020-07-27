@@ -19,13 +19,12 @@ import (
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// inodePlatformFile implements platform.File. It exists solely because inode
-// cannot implement both kernfs.Inode.IncRef and platform.File.IncRef.
+// inodePlatformFile implements memmap.File. It exists solely because inode
+// cannot implement both kernfs.Inode.IncRef and memmap.File.IncRef.
 //
 // inodePlatformFile should only be used if inode.canMap is true.
 type inodePlatformFile struct {
@@ -34,7 +33,7 @@ type inodePlatformFile struct {
 	// fdRefsMu protects fdRefs.
 	fdRefsMu sync.Mutex
 
-	// fdRefs counts references on platform.File offsets. It is used solely for
+	// fdRefs counts references on memmap.File offsets. It is used solely for
 	// memory accounting.
 	fdRefs fsutil.FrameRefSet
 
@@ -45,32 +44,32 @@ type inodePlatformFile struct {
 	fileMapperInitOnce sync.Once
 }
 
-// IncRef implements platform.File.IncRef.
+// IncRef implements memmap.File.IncRef.
 //
 // Precondition: i.inode.canMap must be true.
-func (i *inodePlatformFile) IncRef(fr platform.FileRange) {
+func (i *inodePlatformFile) IncRef(fr memmap.FileRange) {
 	i.fdRefsMu.Lock()
 	i.fdRefs.IncRefAndAccount(fr)
 	i.fdRefsMu.Unlock()
 }
 
-// DecRef implements platform.File.DecRef.
+// DecRef implements memmap.File.DecRef.
 //
 // Precondition: i.inode.canMap must be true.
-func (i *inodePlatformFile) DecRef(fr platform.FileRange) {
+func (i *inodePlatformFile) DecRef(fr memmap.FileRange) {
 	i.fdRefsMu.Lock()
 	i.fdRefs.DecRefAndAccount(fr)
 	i.fdRefsMu.Unlock()
 }
 
-// MapInternal implements platform.File.MapInternal.
+// MapInternal implements memmap.File.MapInternal.
 //
 // Precondition: i.inode.canMap must be true.
-func (i *inodePlatformFile) MapInternal(fr platform.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
+func (i *inodePlatformFile) MapInternal(fr memmap.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
 	return i.fileMapper.MapInternal(fr, i.hostFD, at.Write)
 }
 
-// FD implements platform.File.FD.
+// FD implements memmap.File.FD.
 func (i *inodePlatformFile) FD() int {
 	return i.hostFD
 }

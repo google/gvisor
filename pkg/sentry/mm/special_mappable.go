@@ -19,7 +19,6 @@ import (
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -35,7 +34,7 @@ type SpecialMappable struct {
 	refs.AtomicRefCount
 
 	mfp  pgalloc.MemoryFileProvider
-	fr   platform.FileRange
+	fr   memmap.FileRange
 	name string
 }
 
@@ -44,7 +43,7 @@ type SpecialMappable struct {
 // SpecialMappable will use the given name in /proc/[pid]/maps.
 //
 // Preconditions: fr.Length() != 0.
-func NewSpecialMappable(name string, mfp pgalloc.MemoryFileProvider, fr platform.FileRange) *SpecialMappable {
+func NewSpecialMappable(name string, mfp pgalloc.MemoryFileProvider, fr memmap.FileRange) *SpecialMappable {
 	m := SpecialMappable{mfp: mfp, fr: fr, name: name}
 	m.EnableLeakCheck("mm.SpecialMappable")
 	return &m
@@ -126,7 +125,7 @@ func (m *SpecialMappable) MemoryFileProvider() pgalloc.MemoryFileProvider {
 
 // FileRange returns the offsets into MemoryFileProvider().MemoryFile() that
 // store the SpecialMappable's contents.
-func (m *SpecialMappable) FileRange() platform.FileRange {
+func (m *SpecialMappable) FileRange() memmap.FileRange {
 	return m.fr
 }
 
