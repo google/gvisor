@@ -67,7 +67,7 @@ func (NATPreRedirectUDPPort) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (NATPreRedirectUDPPort) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
 }
 
 // NATPreRedirectTCPPort tests that connections are redirected on specified ports.
@@ -187,7 +187,7 @@ func (NATDropUDP) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (NATDropUDP) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
 }
 
 // NATAcceptAll tests that all UDP packets are accepted.
@@ -213,7 +213,7 @@ func (NATAcceptAll) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (NATAcceptAll) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
 }
 
 // NATOutRedirectIP uses iptables to select packets based on destination IP and
@@ -310,7 +310,7 @@ func (NATPreRedirectIP) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (NATPreRedirectIP) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, dropPort, sendloopDuration)
+	return spawnUDPLoop(ip, dropPort, sendloopDuration)
 }
 
 // NATPreDontRedirectIP tests that iptables matching with "-d" does not match
@@ -332,7 +332,7 @@ func (NATPreDontRedirectIP) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (NATPreDontRedirectIP) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, acceptPort, sendloopDuration)
+	return spawnUDPLoop(ip, acceptPort, sendloopDuration)
 }
 
 // NATPreRedirectInvert tests that iptables can match with "! -d".
@@ -353,7 +353,7 @@ func (NATPreRedirectInvert) ContainerAction(ip net.IP) error {
 
 // LocalAction implements TestCase.LocalAction.
 func (NATPreRedirectInvert) LocalAction(ip net.IP) error {
-	return sendUDPLoop(ip, dropPort, sendloopDuration)
+	return spawnUDPLoop(ip, dropPort, sendloopDuration)
 }
 
 // NATRedirectRequiresProtocol tests that use of the --to-ports flag requires a
