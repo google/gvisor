@@ -74,6 +74,11 @@ FULL_DOCKER_RUN_OPTIONS += --group-add $(KVM_GROUP)
 endif
 endif
 
+# Load the appropriate config.
+ifneq (,$(BAZEL_CONFIG))
+OPTIONS += --config=$(BAZEL_CONFIG)
+endif
+
 bazel-image: load-default
 	@if docker ps --all | grep $(BUILDER_NAME); then docker rm -f $(BUILDER_NAME); fi
 	docker run --user 0:0 --entrypoint "" --name $(BUILDER_NAME) \
