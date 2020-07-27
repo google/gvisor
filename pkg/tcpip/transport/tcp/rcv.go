@@ -372,7 +372,7 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err *tcpip.Error) {
 			// We only store the segment if it's within our buffer
 			// size limit.
 			if r.pendingBufUsed < r.pendingBufSize {
-				r.pendingBufUsed += s.logicalLen()
+				r.pendingBufUsed += seqnum.Size(s.segMemSize())
 				s.incRef()
 				heap.Push(&r.pendingRcvdSegments, s)
 				UpdateSACKBlocks(&r.ep.sack, segSeq, segSeq.Add(segLen), r.rcvNxt)
@@ -406,7 +406,7 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err *tcpip.Error) {
 		}
 
 		heap.Pop(&r.pendingRcvdSegments)
-		r.pendingBufUsed -= s.logicalLen()
+		r.pendingBufUsed -= seqnum.Size(s.segMemSize())
 		s.decRef()
 	}
 	return false, nil
