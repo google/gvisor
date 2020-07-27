@@ -33,14 +33,14 @@ func init() {
 func TestTCPHandshakeWindowSize(t *testing.T) {
 	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
-	listenFD, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
-	defer dut.Close(listenFD)
+	listenFD, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+	defer dut.Close(t, listenFD)
 	conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
-	defer conn.Close()
+	defer conn.Close(t)
 
 	// Start handshake with zero window size.
-	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn), WindowSize: testbench.Uint16(uint16(0))})
-	if _, err := conn.ExpectData(&testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, nil, time.Second); err != nil {
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn), WindowSize: testbench.Uint16(uint16(0))})
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, nil, time.Second); err != nil {
 		t.Fatalf("expected SYN-ACK: %s", err)
 	}
 	// Update the advertised window size to a non-zero value with the ACK that
@@ -48,10 +48,10 @@ func TestTCPHandshakeWindowSize(t *testing.T) {
 	//
 	// Set the window size with MSB set and expect the dut to treat it as
 	// an unsigned value.
-	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), WindowSize: testbench.Uint16(uint16(1 << 15))})
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), WindowSize: testbench.Uint16(uint16(1 << 15))})
 
-	acceptFd, _ := dut.Accept(listenFD)
-	defer dut.Close(acceptFd)
+	acceptFd, _ := dut.Accept(t, listenFD)
+	defer dut.Close(t, acceptFd)
 
 	sampleData := []byte("Sample Data")
 	samplePayload := &testbench.Payload{Bytes: sampleData}
@@ -59,8 +59,8 @@ func TestTCPHandshakeWindowSize(t *testing.T) {
 	// Since we advertised a zero window followed by a non-zero window,
 	// expect the dut to honor the recently advertised non-zero window
 	// and actually send out the data instead of probing for zero window.
-	dut.Send(acceptFd, sampleData, 0)
-	if _, err := conn.ExpectNextData(&testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload, time.Second); err != nil {
+	dut.Send(t, acceptFd, sampleData, 0)
+	if _, err := conn.ExpectNextData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload, time.Second); err != nil {
 		t.Fatalf("expected payload was not received: %s", err)
 	}
 }

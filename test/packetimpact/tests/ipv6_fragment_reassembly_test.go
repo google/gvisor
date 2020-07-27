@@ -48,7 +48,7 @@ func TestIPv6FragmentReassembly(t *testing.T) {
 	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
 	conn := testbench.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
-	defer conn.Close()
+	defer conn.Close(t)
 
 	firstPayloadToSend := make([]byte, firstPayloadLength)
 	for i := range firstPayloadToSend {
@@ -81,7 +81,7 @@ func TestIPv6FragmentReassembly(t *testing.T) {
 		buffer.NewVectorisedView(len(secondPayloadToSend), []buffer.View{secondPayloadToSend}),
 	)
 
-	conn.Send(testbench.IPv6{},
+	conn.Send(t, testbench.IPv6{},
 		&testbench.IPv6FragmentExtHdr{
 			FragmentOffset: testbench.Uint16(0),
 			MoreFragments:  testbench.Bool(true),
@@ -96,7 +96,7 @@ func TestIPv6FragmentReassembly(t *testing.T) {
 
 	icmpv6ProtoNum := header.IPv6ExtensionHeaderIdentifier(header.ICMPv6ProtocolNumber)
 
-	conn.Send(testbench.IPv6{},
+	conn.Send(t, testbench.IPv6{},
 		&testbench.IPv6FragmentExtHdr{
 			NextHeader:     &icmpv6ProtoNum,
 			FragmentOffset: testbench.Uint16((firstPayloadLength + header.ICMPv6EchoMinimumSize) / 8),
@@ -107,7 +107,7 @@ func TestIPv6FragmentReassembly(t *testing.T) {
 			Bytes: secondPayloadToSend,
 		})
 
-	gotEchoReplyFirstPart, err := conn.ExpectFrame(testbench.Layers{
+	gotEchoReplyFirstPart, err := conn.ExpectFrame(t, testbench.Layers{
 		&testbench.Ether{},
 		&testbench.IPv6{},
 		&testbench.IPv6FragmentExtHdr{
@@ -142,7 +142,7 @@ func TestIPv6FragmentReassembly(t *testing.T) {
 			hex.Dump(wantFirstPayload))
 	}
 
-	gotEchoReplySecondPart, err := conn.ExpectFrame(testbench.Layers{
+	gotEchoReplySecondPart, err := conn.ExpectFrame(t, testbench.Layers{
 		&testbench.Ether{},
 		&testbench.IPv6{},
 		&testbench.IPv6FragmentExtHdr{

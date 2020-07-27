@@ -32,21 +32,21 @@ func init() {
 func TestTCPSynRcvdReset(t *testing.T) {
 	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
-	listenFD, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
-	defer dut.Close(listenFD)
+	listenFD, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+	defer dut.Close(t, listenFD)
 	conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
-	defer conn.Close()
+	defer conn.Close(t)
 
 	// Expect dut connection to have transitioned to SYN-RCVD state.
-	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)})
-	if _, err := conn.ExpectData(&testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, nil, time.Second); err != nil {
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)})
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, nil, time.Second); err != nil {
 		t.Fatalf("expected SYN-ACK %s", err)
 	}
-	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)})
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)})
 	// Expect the connection to have transitioned SYN-RCVD to CLOSED.
 	// TODO(gvisor.dev/issue/478): Check for TCP_INFO on the dut side.
-	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
-	if _, err := conn.ExpectData(&testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)}, nil, time.Second); err != nil {
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)}, nil, time.Second); err != nil {
 		t.Fatalf("expected a TCP RST %s", err)
 	}
 }

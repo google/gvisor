@@ -34,7 +34,7 @@ func TestICMPv6ParamProblemTest(t *testing.T) {
 	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
 	conn := testbench.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
-	defer conn.Close()
+	defer conn.Close(t)
 	ipv6 := testbench.IPv6{
 		// 254 is reserved and used for experimentation and testing. This should
 		// cause an error.
@@ -45,8 +45,8 @@ func TestICMPv6ParamProblemTest(t *testing.T) {
 		Payload: []byte("hello world"),
 	}
 
-	toSend := (*testbench.Connection)(&conn).CreateFrame(testbench.Layers{&ipv6}, &icmpv6)
-	(*testbench.Connection)(&conn).SendFrame(toSend)
+	toSend := (*testbench.Connection)(&conn).CreateFrame(t, testbench.Layers{&ipv6}, &icmpv6)
+	(*testbench.Connection)(&conn).SendFrame(t, toSend)
 
 	// Build the expected ICMPv6 payload, which includes an index to the
 	// problematic byte and also the problematic packet as described in
@@ -72,7 +72,7 @@ func TestICMPv6ParamProblemTest(t *testing.T) {
 		&expectedICMPv6,
 	}
 	timeout := time.Second
-	if _, err := conn.ExpectFrame(paramProblem, timeout); err != nil {
+	if _, err := conn.ExpectFrame(t, paramProblem, timeout); err != nil {
 		t.Errorf("expected %s within %s but got none: %s", paramProblem, timeout, err)
 	}
 }

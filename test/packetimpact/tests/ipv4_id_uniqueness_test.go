@@ -31,8 +31,8 @@ func init() {
 	testbench.RegisterFlags(flag.CommandLine)
 }
 
-func recvTCPSegment(conn *testbench.TCPIPv4, expect *testbench.TCP, expectPayload *testbench.Payload) (uint16, error) {
-	layers, err := conn.ExpectData(expect, expectPayload, time.Second)
+func recvTCPSegment(t *testing.T, conn *testbench.TCPIPv4, expect *testbench.TCP, expectPayload *testbench.Payload) (uint16, error) {
+	layers, err := conn.ExpectData(t, expect, expectPayload, time.Second)
 	if err != nil {
 		return 0, fmt.Errorf("failed to receive TCP segment: %s", err)
 	}
@@ -69,17 +69,17 @@ func TestIPv4RetransmitIdentificationUniqueness(t *testing.T) {
 			dut := testbench.NewDUT(t)
 			defer dut.TearDown()
 
-			listenFD, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
-			defer dut.Close(listenFD)
+			listenFD, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+			defer dut.Close(t, listenFD)
 
 			conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
-			defer conn.Close()
+			defer conn.Close(t)
 
-			conn.Connect()
-			remoteFD, _ := dut.Accept(listenFD)
-			defer dut.Close(remoteFD)
+			conn.Connect(t)
+			remoteFD, _ := dut.Accept(t, listenFD)
+			defer dut.Close(t, remoteFD)
 
-			dut.SetSockOptInt(remoteFD, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
+			dut.SetSockOptInt(t, remoteFD, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
 
 			// TODO(b/129291778) The following socket option clears the DF bit on
 			// IP packets sent over the socket, and is currently not supported by
@@ -87,30 +87,30 @@ func TestIPv4RetransmitIdentificationUniqueness(t *testing.T) {
 			// socket option being not supported does not affect the operation of
 			// this test. Once the socket option is supported, the following call
 			// can be changed to simply assert success.
-			ret, errno := dut.SetSockOptIntWithErrno(context.Background(), remoteFD, unix.IPPROTO_IP, linux.IP_MTU_DISCOVER, linux.IP_PMTUDISC_DONT)
+			ret, errno := dut.SetSockOptIntWithErrno(context.Background(), t, remoteFD, unix.IPPROTO_IP, linux.IP_MTU_DISCOVER, linux.IP_PMTUDISC_DONT)
 			if ret == -1 && errno != unix.ENOTSUP {
 				t.Fatalf("failed to set IP_MTU_DISCOVER socket option to IP_PMTUDISC_DONT: %s", errno)
 			}
 
 			samplePayload := &testbench.Payload{Bytes: tc.payload}
 
-			dut.Send(remoteFD, tc.payload, 0)
-			if _, err := conn.ExpectData(&testbench.TCP{}, samplePayload, time.Second); err != nil {
+			dut.Send(t, remoteFD, tc.payload, 0)
+			if _, err := conn.ExpectData(t, &testbench.TCP{}, samplePayload, time.Second); err != nil {
 				t.Fatalf("failed to receive TCP segment sent for RTT calculation: %s", err)
 			}
 			// Let the DUT estimate RTO with RTT from the DATA-ACK.
 			// TODO(gvisor.dev/issue/2685) Estimate RTO during handshake, after which
 			// we can skip sending this ACK.
-			conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
+			conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
 
-			dut.Send(remoteFD, tc.payload, 0)
-			expectTCP := &testbench.TCP{SeqNum: testbench.Uint32(uint32(*conn.RemoteSeqNum()))}
-			originalID, err := recvTCPSegment(&conn, expectTCP, samplePayload)
+			dut.Send(t, remoteFD, tc.payload, 0)
+			expectTCP := &testbench.TCP{SeqNum: testbench.Uint32(uint32(*conn.RemoteSeqNum(t)))}
+			originalID, err := recvTCPSegment(t, &conn, expectTCP, samplePayload)
 			if err != nil {
 				t.Fatalf("failed to receive TCP segment: %s", err)
 			}
 
-			retransmitID, err := recvTCPSegment(&conn, expectTCP, samplePayload)
+			retransmitID, err := recvTCPSegment(t, &conn, expectTCP, samplePayload)
 			if err != nil {
 				t.Fatalf("failed to receive retransmitted TCP segment: %s", err)
 			}
