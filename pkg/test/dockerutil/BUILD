@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -10,6 +10,7 @@ go_library(
         "dockerutil.go",
         "exec.go",
         "network.go",
+        "profile.go",
     ],
     visibility = ["//:sandbox"],
     deps = [
@@ -22,4 +23,20 @@ go_library(
         "@com_github_docker_docker//pkg/stdcopy:go_default_library",
         "@com_github_docker_go_connections//nat:go_default_library",
     ],
+)
+
+go_test(
+    name = "profile_test",
+    size = "large",
+    srcs = [
+        "profile_test.go",
+    ],
+    library = ":dockerutil",
+    tags = [
+        # Requires docker and runsc to be configured before test runs.
+        # Also requires the test to be run as root.
+        "manual",
+        "local",
+    ],
+    visibility = ["//:sandbox"],
 )

@@ -15,6 +15,7 @@ package fs
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -51,10 +52,10 @@ func BenchmarkABSL(b *testing.B) {
 
 			workdir := "/abseil-cpp"
 
-			// Start a container.
+			// Start a container and sleep by an order of b.N.
 			if err := container.Spawn(ctx, dockerutil.RunOpts{
 				Image: "benchmarks/absl",
-			}, "sleep", "1000"); err != nil {
+			}, "sleep", fmt.Sprintf("%d", 1000000)); err != nil {
 				b.Fatalf("run failed with: %v", err)
 			}
 
@@ -67,15 +68,21 @@ func BenchmarkABSL(b *testing.B) {
 				workdir = "/tmp" + workdir
 			}
 
-			// Drop Caches.
-			if bm.clearCache {
-				if out, err := machine.RunCommand("/bin/sh -c sync; echo 3 > /proc/sys/vm/drop_caches"); err != nil {
-					b.Fatalf("failed to drop caches: %v %s", err, out)
-				}
-			}
-
+			// Restart profiles after the copy.
+			container.RestartProfiles()
 			b.ResetTimer()
+			// Drop Caches and bazel clean should happen inside the loop as we may use
+			// time options with b.N. (e.g. Run for an hour.)
 			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				// Drop Caches for clear cache runs.
+				if bm.clearCache {
+					if out, err := machine.RunCommand("/bin/sh", "-c", "sync && sysctl vm.drop_caches=3"); err != nil {
+						b.Skipf("failed to drop caches: %v %s. You probably need root.", err, out)
+					}
+				}
+				b.StartTimer()
+
 				got, err := container.Exec(ctx, dockerutil.ExecOpts{
 					WorkDir: workdir,
 				}, "bazel", "build", "-c", "opt", "absl/base/...")
@@ -87,6 +94,13 @@ func BenchmarkABSL(b *testing.B) {
 				want := "Build completed successfully"
 				if !strings.Contains(got, want) {
 					b.Fatalf("string %s not in: %s", want, got)
+				}
+				// Clean bazel in case we use b.N.
+				_, err = container.Exec(ctx, dockerutil.ExecOpts{
+					WorkDir: workdir,
+				}, "bazel", "clean")
+				if err != nil {
+					b.Fatalf("build failed with: %v", err)
 				}
 				b.StartTimer()
 			}

@@ -142,7 +142,7 @@ func TestOne(t *testing.T) {
 	// Create the Docker container for the DUT.
 	dut := dockerutil.MakeContainer(ctx, logger("dut"))
 	if *dutPlatform == "linux" {
-		dut.Runtime = ""
+		dut = dockerutil.MakeNativeContainer(ctx, logger("dut"))
 	}
 
 	runOpts := dockerutil.RunOpts{
@@ -208,8 +208,7 @@ func TestOne(t *testing.T) {
 	}
 
 	// Create the Docker container for the testbench.
-	testbench := dockerutil.MakeContainer(ctx, logger("testbench"))
-	testbench.Runtime = "" // The testbench always runs on Linux.
+	testbench := dockerutil.MakeNativeContainer(ctx, logger("testbench"))
 
 	tbb := path.Base(*testbenchBinary)
 	containerTestbenchBinary := "/packetimpact/" + tbb
