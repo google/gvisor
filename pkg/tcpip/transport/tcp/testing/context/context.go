@@ -143,12 +143,14 @@ func New(t *testing.T, mtu uint32) *Context {
 		TransportProtocols: []stack.TransportProtocol{tcp.NewProtocol()},
 	})
 
+	const sendBufferSize = 1 << 20 // 1 MiB
+	const recvBufferSize = 1 << 20 // 1 MiB
 	// Allow minimum send/receive buffer sizes to be 1 during tests.
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SendBufferSizeOption{Min: 1, Default: tcp.DefaultSendBufferSize, Max: 10 * tcp.DefaultSendBufferSize}); err != nil {
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SendBufferSizeOption{Min: 1, Default: sendBufferSize, Max: 10 * sendBufferSize}); err != nil {
 		t.Fatalf("SetTransportProtocolOption failed: %s", err)
 	}
 
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.ReceiveBufferSizeOption{Min: 1, Default: tcp.DefaultReceiveBufferSize, Max: 10 * tcp.DefaultReceiveBufferSize}); err != nil {
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.ReceiveBufferSizeOption{Min: 1, Default: recvBufferSize, Max: 10 * recvBufferSize}); err != nil {
 		t.Fatalf("SetTransportProtocolOption failed: %s", err)
 	}
 
@@ -202,7 +204,7 @@ func New(t *testing.T, mtu uint32) *Context {
 		t:           t,
 		s:           s,
 		linkEP:      ep,
-		WindowScale: uint8(tcp.FindWndScale(tcp.DefaultReceiveBufferSize)),
+		WindowScale: uint8(tcp.FindWndScale(recvBufferSize)),
 	}
 }
 
