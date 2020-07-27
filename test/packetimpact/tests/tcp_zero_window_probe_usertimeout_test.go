@@ -33,27 +33,27 @@ func init() {
 func TestZeroWindowProbeUserTimeout(t *testing.T) {
 	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
-	listenFd, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
-	defer dut.Close(listenFd)
+	listenFd, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+	defer dut.Close(t, listenFd)
 	conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
-	defer conn.Close()
+	defer conn.Close(t)
 
-	conn.Connect()
-	acceptFd, _ := dut.Accept(listenFd)
-	defer dut.Close(acceptFd)
+	conn.Connect(t)
+	acceptFd, _ := dut.Accept(t, listenFd)
+	defer dut.Close(t, acceptFd)
 
-	dut.SetSockOptInt(acceptFd, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
+	dut.SetSockOptInt(t, acceptFd, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
 
 	sampleData := []byte("Sample Data")
 	samplePayload := &testbench.Payload{Bytes: sampleData}
 
 	// Send and receive sample data to the dut.
-	dut.Send(acceptFd, sampleData, 0)
-	if _, err := conn.ExpectData(&testbench.TCP{}, samplePayload, time.Second); err != nil {
+	dut.Send(t, acceptFd, sampleData, 0)
+	if _, err := conn.ExpectData(t, &testbench.TCP{}, samplePayload, time.Second); err != nil {
 		t.Fatalf("expected payload was not received: %s", err)
 	}
-	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
-	if _, err := conn.ExpectData(&testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, nil, time.Second); err != nil {
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, nil, time.Second); err != nil {
 		t.Fatalf("expected packet was not received: %s", err)
 	}
 
@@ -61,15 +61,15 @@ func TestZeroWindowProbeUserTimeout(t *testing.T) {
 	//         probe to be sent.
 	//
 	// Advertize zero window to the dut.
-	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
 
 	// Expected sequence number of the zero window probe.
-	probeSeq := testbench.Uint32(uint32(*conn.RemoteSeqNum() - 1))
+	probeSeq := testbench.Uint32(uint32(*conn.RemoteSeqNum(t) - 1))
 	start := time.Now()
 	// Ask the dut to send out data.
-	dut.Send(acceptFd, sampleData, 0)
+	dut.Send(t, acceptFd, sampleData, 0)
 	// Expect zero-window probe from the dut.
-	if _, err := conn.ExpectData(&testbench.TCP{SeqNum: probeSeq}, nil, time.Second); err != nil {
+	if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: probeSeq}, nil, time.Second); err != nil {
 		t.Fatalf("expected a packet with sequence number %d: %s", probeSeq, err)
 	}
 	// Record the duration for first probe, the dut sends the zero window probe after
@@ -80,19 +80,19 @@ func TestZeroWindowProbeUserTimeout(t *testing.T) {
 	//         when the dut is sending zero-window probes.
 	//
 	// Reduce the retransmit timeout.
-	dut.SetSockOptInt(acceptFd, unix.IPPROTO_TCP, unix.TCP_USER_TIMEOUT, int32(startProbeDuration.Milliseconds()))
+	dut.SetSockOptInt(t, acceptFd, unix.IPPROTO_TCP, unix.TCP_USER_TIMEOUT, int32(startProbeDuration.Milliseconds()))
 	// Advertize zero window again.
-	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
 	// Ask the dut to send out data that would trigger zero window probe retransmissions.
-	dut.Send(acceptFd, sampleData, 0)
+	dut.Send(t, acceptFd, sampleData, 0)
 
 	// Wait for the connection to timeout after multiple zero-window probe retransmissions.
 	time.Sleep(8 * startProbeDuration)
 
 	// Expect the connection to have timed out and closed which would cause the dut
 	// to reply with a RST to the ACK we send.
-	conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
-	if _, err := conn.ExpectData(&testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)}, nil, time.Second); err != nil {
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)}, nil, time.Second); err != nil {
 		t.Fatalf("expected a TCP RST")
 	}
 }

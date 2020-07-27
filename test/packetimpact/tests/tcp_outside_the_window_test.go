@@ -63,25 +63,25 @@ func TestTCPOutsideTheWindow(t *testing.T) {
 		t.Run(fmt.Sprintf("%s%d", tt.description, tt.seqNumOffset), func(t *testing.T) {
 			dut := testbench.NewDUT(t)
 			defer dut.TearDown()
-			listenFD, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
-			defer dut.Close(listenFD)
+			listenFD, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+			defer dut.Close(t, listenFD)
 			conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
-			defer conn.Close()
-			conn.Connect()
-			acceptFD, _ := dut.Accept(listenFD)
-			defer dut.Close(acceptFD)
+			defer conn.Close(t)
+			conn.Connect(t)
+			acceptFD, _ := dut.Accept(t, listenFD)
+			defer dut.Close(t, acceptFD)
 
-			windowSize := seqnum.Size(*conn.SynAck().WindowSize) + tt.seqNumOffset
-			conn.Drain()
+			windowSize := seqnum.Size(*conn.SynAck(t).WindowSize) + tt.seqNumOffset
+			conn.Drain(t)
 			// Ignore whatever incrementing that this out-of-order packet might cause
 			// to the AckNum.
-			localSeqNum := testbench.Uint32(uint32(*conn.LocalSeqNum()))
-			conn.Send(testbench.TCP{
+			localSeqNum := testbench.Uint32(uint32(*conn.LocalSeqNum(t)))
+			conn.Send(t, testbench.TCP{
 				Flags:  testbench.Uint8(tt.tcpFlags),
-				SeqNum: testbench.Uint32(uint32(conn.LocalSeqNum().Add(windowSize))),
+				SeqNum: testbench.Uint32(uint32(conn.LocalSeqNum(t).Add(windowSize))),
 			}, tt.payload...)
 			timeout := 3 * time.Second
-			gotACK, err := conn.Expect(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: localSeqNum}, timeout)
+			gotACK, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: localSeqNum}, timeout)
 			if tt.expectACK && err != nil {
 				t.Fatalf("expected an ACK packet within %s but got none: %s", timeout, err)
 			}

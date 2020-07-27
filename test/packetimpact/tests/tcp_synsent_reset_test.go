@@ -31,17 +31,19 @@ func init() {
 
 // dutSynSentState sets up the dut connection in SYN-SENT state.
 func dutSynSentState(t *testing.T) (*tb.DUT, *tb.TCPIPv4, uint16, uint16) {
+	t.Helper()
+
 	dut := tb.NewDUT(t)
 
-	clientFD, clientPort := dut.CreateBoundSocket(unix.SOCK_STREAM|unix.SOCK_NONBLOCK, unix.IPPROTO_TCP, net.ParseIP(tb.RemoteIPv4))
+	clientFD, clientPort := dut.CreateBoundSocket(t, unix.SOCK_STREAM|unix.SOCK_NONBLOCK, unix.IPPROTO_TCP, net.ParseIP(tb.RemoteIPv4))
 	port := uint16(9001)
 	conn := tb.NewTCPIPv4(t, tb.TCP{SrcPort: &port, DstPort: &clientPort}, tb.TCP{SrcPort: &clientPort, DstPort: &port})
 
 	sa := unix.SockaddrInet4{Port: int(port)}
 	copy(sa.Addr[:], net.IP(net.ParseIP(tb.LocalIPv4)).To4())
 	// Bring the dut to SYN-SENT state with a non-blocking connect.
-	dut.Connect(clientFD, &sa)
-	if _, err := conn.ExpectData(&tb.TCP{Flags: tb.Uint8(header.TCPFlagSyn)}, nil, time.Second); err != nil {
+	dut.Connect(t, clientFD, &sa)
+	if _, err := conn.ExpectData(t, &tb.TCP{Flags: tb.Uint8(header.TCPFlagSyn)}, nil, time.Second); err != nil {
 		t.Fatalf("expected SYN\n")
 	}
 
@@ -51,13 +53,13 @@ func dutSynSentState(t *testing.T) (*tb.DUT, *tb.TCPIPv4, uint16, uint16) {
 // TestTCPSynSentReset tests RFC793, p67: SYN-SENT to CLOSED transition.
 func TestTCPSynSentReset(t *testing.T) {
 	dut, conn, _, _ := dutSynSentState(t)
-	defer conn.Close()
+	defer conn.Close(t)
 	defer dut.TearDown()
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagRst | header.TCPFlagAck)})
+	conn.Send(t, tb.TCP{Flags: tb.Uint8(header.TCPFlagRst | header.TCPFlagAck)})
 	// Expect the connection to have closed.
 	// TODO(gvisor.dev/issue/478): Check for TCP_INFO on the dut side.
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
-	if _, err := conn.ExpectData(&tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)}, nil, time.Second); err != nil {
+	conn.Send(t, tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
+	if _, err := conn.ExpectData(t, &tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)}, nil, time.Second); err != nil {
 		t.Fatalf("expected a TCP RST")
 	}
 }
@@ -67,22 +69,22 @@ func TestTCPSynSentReset(t *testing.T) {
 func TestTCPSynSentRcvdReset(t *testing.T) {
 	dut, c, remotePort, clientPort := dutSynSentState(t)
 	defer dut.TearDown()
-	defer c.Close()
+	defer c.Close(t)
 
 	conn := tb.NewTCPIPv4(t, tb.TCP{SrcPort: &remotePort, DstPort: &clientPort}, tb.TCP{SrcPort: &clientPort, DstPort: &remotePort})
-	defer conn.Close()
+	defer conn.Close(t)
 	// Initiate new SYN connection with the same port pair
 	// (simultaneous open case), expect the dut connection to move to
 	// SYN-RCVD state
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagSyn)})
-	if _, err := conn.ExpectData(&tb.TCP{Flags: tb.Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, nil, time.Second); err != nil {
+	conn.Send(t, tb.TCP{Flags: tb.Uint8(header.TCPFlagSyn)})
+	if _, err := conn.ExpectData(t, &tb.TCP{Flags: tb.Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, nil, time.Second); err != nil {
 		t.Fatalf("expected SYN-ACK %s\n", err)
 	}
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)})
+	conn.Send(t, tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)})
 	// Expect the connection to have transitioned SYN-RCVD to CLOSED.
 	// TODO(gvisor.dev/issue/478): Check for TCP_INFO on the dut side.
-	conn.Send(tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
-	if _, err := conn.ExpectData(&tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)}, nil, time.Second); err != nil {
+	conn.Send(t, tb.TCP{Flags: tb.Uint8(header.TCPFlagAck)})
+	if _, err := conn.ExpectData(t, &tb.TCP{Flags: tb.Uint8(header.TCPFlagRst)}, nil, time.Second); err != nil {
 		t.Fatalf("expected a TCP RST")
 	}
 }

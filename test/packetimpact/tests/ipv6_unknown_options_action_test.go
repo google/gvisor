@@ -23,21 +23,21 @@ import (
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	tb "gvisor.dev/gvisor/test/packetimpact/testbench"
+	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
 func init() {
-	tb.RegisterFlags(flag.CommandLine)
+	testbench.RegisterFlags(flag.CommandLine)
 }
 
-func mkHopByHopOptionsExtHdr(optType byte) tb.Layer {
-	return &tb.IPv6HopByHopOptionsExtHdr{
+func mkHopByHopOptionsExtHdr(optType byte) testbench.Layer {
+	return &testbench.IPv6HopByHopOptionsExtHdr{
 		Options: []byte{optType, 0x04, 0x00, 0x00, 0x00, 0x00},
 	}
 }
 
-func mkDestinationOptionsExtHdr(optType byte) tb.Layer {
-	return &tb.IPv6DestinationOptionsExtHdr{
+func mkDestinationOptionsExtHdr(optType byte) testbench.Layer {
+	return &testbench.IPv6DestinationOptionsExtHdr{
 		Options: []byte{optType, 0x04, 0x00, 0x00, 0x00, 0x00},
 	}
 }
@@ -49,7 +49,7 @@ func optionTypeFromAction(action header.IPv6OptionUnknownAction) byte {
 func TestIPv6UnknownOptionAction(t *testing.T) {
 	for _, tt := range []struct {
 		description  string
-		mkExtHdr     func(optType byte) tb.Layer
+		mkExtHdr     func(optType byte) testbench.Layer
 		action       header.IPv6OptionUnknownAction
 		multicastDst bool
 		wantICMPv6   bool
@@ -140,21 +140,21 @@ func TestIPv6UnknownOptionAction(t *testing.T) {
 		},
 	} {
 		t.Run(tt.description, func(t *testing.T) {
-			dut := tb.NewDUT(t)
+			dut := testbench.NewDUT(t)
 			defer dut.TearDown()
-			ipv6Conn := tb.NewIPv6Conn(t, tb.IPv6{}, tb.IPv6{})
-			conn := (*tb.Connection)(&ipv6Conn)
-			defer ipv6Conn.Close()
+			ipv6Conn := testbench.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
+			conn := (*testbench.Connection)(&ipv6Conn)
+			defer ipv6Conn.Close(t)
 
-			outgoingOverride := tb.Layers{}
+			outgoingOverride := testbench.Layers{}
 			if tt.multicastDst {
-				outgoingOverride = tb.Layers{&tb.IPv6{
-					DstAddr: tb.Address(tcpip.Address(net.ParseIP("ff02::1"))),
+				outgoingOverride = testbench.Layers{&testbench.IPv6{
+					DstAddr: testbench.Address(tcpip.Address(net.ParseIP("ff02::1"))),
 				}}
 			}
 
-			outgoing := conn.CreateFrame(outgoingOverride, tt.mkExtHdr(optionTypeFromAction(tt.action)))
-			conn.SendFrame(outgoing)
+			outgoing := conn.CreateFrame(t, outgoingOverride, tt.mkExtHdr(optionTypeFromAction(tt.action)))
+			conn.SendFrame(t, outgoing)
 			ipv6Sent := outgoing[1:]
 			invokingPacket, err := ipv6Sent.ToBytes()
 			if err != nil {
@@ -167,12 +167,12 @@ func TestIPv6UnknownOptionAction(t *testing.T) {
 			// after the IPv6 header (after NextHeader and ExtHdrLen).
 			binary.BigEndian.PutUint32(icmpv6Payload, header.IPv6MinimumSize+2)
 			icmpv6Payload = append(icmpv6Payload, invokingPacket...)
-			gotICMPv6, err := ipv6Conn.ExpectFrame(tb.Layers{
-				&tb.Ether{},
-				&tb.IPv6{},
-				&tb.ICMPv6{
-					Type:    tb.ICMPv6Type(header.ICMPv6ParamProblem),
-					Code:    tb.Byte(2),
+			gotICMPv6, err := ipv6Conn.ExpectFrame(t, testbench.Layers{
+				&testbench.Ether{},
+				&testbench.IPv6{},
+				&testbench.ICMPv6{
+					Type:    testbench.ICMPv6Type(header.ICMPv6ParamProblem),
+					Code:    testbench.Byte(2),
 					Payload: icmpv6Payload,
 				},
 			}, time.Second)

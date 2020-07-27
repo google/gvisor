@@ -29,10 +29,10 @@ func init() {
 }
 
 type udpConn interface {
-	Send(testbench.UDP, ...testbench.Layer)
-	ExpectData(testbench.UDP, testbench.Payload, time.Duration) (testbench.Layers, error)
-	Drain()
-	Close()
+	Send(*testing.T, testbench.UDP, ...testbench.Layer)
+	ExpectData(*testing.T, testbench.UDP, testbench.Payload, time.Duration) (testbench.Layers, error)
+	Drain(*testing.T)
+	Close(*testing.T)
 }
 
 func TestUDP(t *testing.T) {
@@ -51,21 +51,21 @@ func TestUDP(t *testing.T) {
 			} else {
 				addr = testbench.RemoteIPv6
 			}
-			boundFD, remotePort := dut.CreateBoundSocket(unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP(addr))
-			defer dut.Close(boundFD)
+			boundFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP(addr))
+			defer dut.Close(t, boundFD)
 
 			var conn udpConn
 			var localAddr unix.Sockaddr
 			if isIPv4 {
 				v4Conn := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
-				localAddr = v4Conn.LocalAddr()
+				localAddr = v4Conn.LocalAddr(t)
 				conn = &v4Conn
 			} else {
 				v6Conn := testbench.NewUDPIPv6(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
-				localAddr = v6Conn.LocalAddr()
+				localAddr = v6Conn.LocalAddr(t)
 				conn = &v6Conn
 			}
-			defer conn.Close()
+			defer conn.Close(t)
 
 			testCases := []struct {
 				name    string
@@ -81,17 +81,17 @@ func TestUDP(t *testing.T) {
 			for _, tc := range testCases {
 				t.Run(tc.name, func(t *testing.T) {
 					t.Run("Send", func(t *testing.T) {
-						conn.Send(testbench.UDP{}, &testbench.Payload{Bytes: tc.payload})
-						if got, want := string(dut.Recv(boundFD, int32(len(tc.payload)), 0)), string(tc.payload); got != want {
+						conn.Send(t, testbench.UDP{}, &testbench.Payload{Bytes: tc.payload})
+						if got, want := string(dut.Recv(t, boundFD, int32(len(tc.payload)), 0)), string(tc.payload); got != want {
 							t.Fatalf("received payload does not match sent payload got: %s, want: %s", got, want)
 						}
 					})
 					t.Run("Recv", func(t *testing.T) {
-						conn.Drain()
-						if got, want := int(dut.SendTo(boundFD, tc.payload, 0, localAddr)), len(tc.payload); got != want {
+						conn.Drain(t)
+						if got, want := int(dut.SendTo(t, boundFD, tc.payload, 0, localAddr)), len(tc.payload); got != want {
 							t.Fatalf("short write got: %d, want: %d", got, want)
 						}
-						if _, err := conn.ExpectData(testbench.UDP{SrcPort: &remotePort}, testbench.Payload{Bytes: tc.payload}, time.Second); err != nil {
+						if _, err := conn.ExpectData(t, testbench.UDP{SrcPort: &remotePort}, testbench.Payload{Bytes: tc.payload}, time.Second); err != nil {
 							t.Fatal(err)
 						}
 					})

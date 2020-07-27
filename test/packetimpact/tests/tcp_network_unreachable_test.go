@@ -38,29 +38,29 @@ func TestTCPSynSentUnreachable(t *testing.T) {
 	// Create the DUT and connection.
 	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
-	clientFD, clientPort := dut.CreateBoundSocket(unix.SOCK_STREAM|unix.SOCK_NONBLOCK, unix.IPPROTO_TCP, net.ParseIP(testbench.RemoteIPv4))
+	clientFD, clientPort := dut.CreateBoundSocket(t, unix.SOCK_STREAM|unix.SOCK_NONBLOCK, unix.IPPROTO_TCP, net.ParseIP(testbench.RemoteIPv4))
 	port := uint16(9001)
 	conn := testbench.NewTCPIPv4(t, testbench.TCP{SrcPort: &port, DstPort: &clientPort}, testbench.TCP{SrcPort: &clientPort, DstPort: &port})
-	defer conn.Close()
+	defer conn.Close(t)
 
 	// Bring the DUT to SYN-SENT state with a non-blocking connect.
 	ctx, cancel := context.WithTimeout(context.Background(), testbench.RPCTimeout)
 	defer cancel()
 	sa := unix.SockaddrInet4{Port: int(port)}
 	copy(sa.Addr[:], net.IP(net.ParseIP(testbench.LocalIPv4)).To4())
-	if _, err := dut.ConnectWithErrno(ctx, clientFD, &sa); err != syscall.Errno(unix.EINPROGRESS) {
+	if _, err := dut.ConnectWithErrno(ctx, t, clientFD, &sa); err != syscall.Errno(unix.EINPROGRESS) {
 		t.Errorf("expected connect to fail with EINPROGRESS, but got %v", err)
 	}
 
 	// Get the SYN.
-	tcpLayers, err := conn.ExpectData(&testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)}, nil, time.Second)
+	tcpLayers, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)}, nil, time.Second)
 	if err != nil {
 		t.Fatalf("expected SYN: %s", err)
 	}
 
 	// Send a host unreachable message.
 	rawConn := (*testbench.Connection)(&conn)
-	layers := rawConn.CreateFrame(nil)
+	layers := rawConn.CreateFrame(t, nil)
 	layers = layers[:len(layers)-1]
 	const ipLayer = 1
 	const tcpLayer = ipLayer + 1
@@ -74,9 +74,9 @@ func TestTCPSynSentUnreachable(t *testing.T) {
 	}
 	var icmpv4 testbench.ICMPv4 = testbench.ICMPv4{Type: testbench.ICMPv4Type(header.ICMPv4DstUnreachable), Code: testbench.Uint8(header.ICMPv4HostUnreachable)}
 	layers = append(layers, &icmpv4, ip, tcp)
-	rawConn.SendFrameStateless(layers)
+	rawConn.SendFrameStateless(t, layers)
 
-	if _, err = dut.ConnectWithErrno(ctx, clientFD, &sa); err != syscall.Errno(unix.EHOSTUNREACH) {
+	if _, err = dut.ConnectWithErrno(ctx, t, clientFD, &sa); err != syscall.Errno(unix.EHOSTUNREACH) {
 		t.Errorf("expected connect to fail with EHOSTUNREACH, but got %v", err)
 	}
 }
@@ -88,9 +88,9 @@ func TestTCPSynSentUnreachable6(t *testing.T) {
 	// Create the DUT and connection.
 	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
-	clientFD, clientPort := dut.CreateBoundSocket(unix.SOCK_STREAM|unix.SOCK_NONBLOCK, unix.IPPROTO_TCP, net.ParseIP(testbench.RemoteIPv6))
+	clientFD, clientPort := dut.CreateBoundSocket(t, unix.SOCK_STREAM|unix.SOCK_NONBLOCK, unix.IPPROTO_TCP, net.ParseIP(testbench.RemoteIPv6))
 	conn := testbench.NewTCPIPv6(t, testbench.TCP{DstPort: &clientPort}, testbench.TCP{SrcPort: &clientPort})
-	defer conn.Close()
+	defer conn.Close(t)
 
 	// Bring the DUT to SYN-SENT state with a non-blocking connect.
 	ctx, cancel := context.WithTimeout(context.Background(), testbench.RPCTimeout)
@@ -100,19 +100,19 @@ func TestTCPSynSentUnreachable6(t *testing.T) {
 		ZoneId: uint32(testbench.RemoteInterfaceID),
 	}
 	copy(sa.Addr[:], net.IP(net.ParseIP(testbench.LocalIPv6)).To16())
-	if _, err := dut.ConnectWithErrno(ctx, clientFD, &sa); err != syscall.Errno(unix.EINPROGRESS) {
+	if _, err := dut.ConnectWithErrno(ctx, t, clientFD, &sa); err != syscall.Errno(unix.EINPROGRESS) {
 		t.Errorf("expected connect to fail with EINPROGRESS, but got %v", err)
 	}
 
 	// Get the SYN.
-	tcpLayers, err := conn.ExpectData(&testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)}, nil, time.Second)
+	tcpLayers, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)}, nil, time.Second)
 	if err != nil {
 		t.Fatalf("expected SYN: %s", err)
 	}
 
 	// Send a host unreachable message.
 	rawConn := (*testbench.Connection)(&conn)
-	layers := rawConn.CreateFrame(nil)
+	layers := rawConn.CreateFrame(t, nil)
 	layers = layers[:len(layers)-1]
 	const ipLayer = 1
 	const tcpLayer = ipLayer + 1
@@ -131,9 +131,9 @@ func TestTCPSynSentUnreachable6(t *testing.T) {
 		Payload: []byte{0, 0, 0, 0},
 	}
 	layers = append(layers, &icmpv6, ip, tcp)
-	rawConn.SendFrameStateless(layers)
+	rawConn.SendFrameStateless(t, layers)
 
-	if _, err = dut.ConnectWithErrno(ctx, clientFD, &sa); err != syscall.Errno(unix.ENETUNREACH) {
+	if _, err = dut.ConnectWithErrno(ctx, t, clientFD, &sa); err != syscall.Errno(unix.ENETUNREACH) {
 		t.Errorf("expected connect to fail with ENETUNREACH, but got %v", err)
 	}
 }

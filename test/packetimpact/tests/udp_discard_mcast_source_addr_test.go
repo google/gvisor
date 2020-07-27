@@ -36,11 +36,11 @@ func init() {
 func TestDiscardsUDPPacketsWithMcastSourceAddressV4(t *testing.T) {
 	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
-	remoteFD, remotePort := dut.CreateBoundSocket(unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP(testbench.RemoteIPv4))
-	defer dut.Close(remoteFD)
-	dut.SetSockOptTimeval(remoteFD, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &oneSecond)
+	remoteFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP(testbench.RemoteIPv4))
+	defer dut.Close(t, remoteFD)
+	dut.SetSockOptTimeval(t, remoteFD, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &oneSecond)
 	conn := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
-	defer conn.Close()
+	defer conn.Close(t)
 
 	for _, mcastAddr := range []net.IP{
 		net.IPv4allsys,
@@ -50,11 +50,12 @@ func TestDiscardsUDPPacketsWithMcastSourceAddressV4(t *testing.T) {
 	} {
 		t.Run(fmt.Sprintf("srcaddr=%s", mcastAddr), func(t *testing.T) {
 			conn.SendIP(
+				t,
 				testbench.IPv4{SrcAddr: testbench.Address(tcpip.Address(mcastAddr.To4()))},
 				testbench.UDP{},
 			)
 
-			ret, payload, errno := dut.RecvWithErrno(context.Background(), remoteFD, 100, 0)
+			ret, payload, errno := dut.RecvWithErrno(context.Background(), t, remoteFD, 100, 0)
 			if errno != syscall.EAGAIN || errno != syscall.EWOULDBLOCK {
 				t.Errorf("Recv got unexpected result, ret=%d, payload=%q, errno=%s", ret, payload, errno)
 			}
@@ -65,11 +66,11 @@ func TestDiscardsUDPPacketsWithMcastSourceAddressV4(t *testing.T) {
 func TestDiscardsUDPPacketsWithMcastSourceAddressV6(t *testing.T) {
 	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
-	remoteFD, remotePort := dut.CreateBoundSocket(unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP(testbench.RemoteIPv6))
-	defer dut.Close(remoteFD)
-	dut.SetSockOptTimeval(remoteFD, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &oneSecond)
+	remoteFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP(testbench.RemoteIPv6))
+	defer dut.Close(t, remoteFD)
+	dut.SetSockOptTimeval(t, remoteFD, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &oneSecond)
 	conn := testbench.NewUDPIPv6(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
-	defer conn.Close()
+	defer conn.Close(t)
 
 	for _, mcastAddr := range []net.IP{
 		net.IPv6interfacelocalallnodes,
@@ -80,10 +81,11 @@ func TestDiscardsUDPPacketsWithMcastSourceAddressV6(t *testing.T) {
 	} {
 		t.Run(fmt.Sprintf("srcaddr=%s", mcastAddr), func(t *testing.T) {
 			conn.SendIPv6(
+				t,
 				testbench.IPv6{SrcAddr: testbench.Address(tcpip.Address(mcastAddr.To16()))},
 				testbench.UDP{},
 			)
-			ret, payload, errno := dut.RecvWithErrno(context.Background(), remoteFD, 100, 0)
+			ret, payload, errno := dut.RecvWithErrno(context.Background(), t, remoteFD, 100, 0)
 			if errno != syscall.EAGAIN || errno != syscall.EWOULDBLOCK {
 				t.Errorf("Recv got unexpected result, ret=%d, payload=%q, errno=%s", ret, payload, errno)
 			}

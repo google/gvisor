@@ -31,10 +31,10 @@ func init() {
 func TestUDPRecvMulticastBroadcast(t *testing.T) {
 	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
-	boundFD, remotePort := dut.CreateBoundSocket(unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.IPv4(0, 0, 0, 0))
-	defer dut.Close(boundFD)
+	boundFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.IPv4(0, 0, 0, 0))
+	defer dut.Close(t, boundFD)
 	conn := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
-	defer conn.Close()
+	defer conn.Close(t)
 
 	for _, bcastAddr := range []net.IP{
 		broadcastAddr(net.ParseIP(testbench.RemoteIPv4), net.CIDRMask(testbench.IPv4PrefixLength, 32)),
@@ -43,12 +43,13 @@ func TestUDPRecvMulticastBroadcast(t *testing.T) {
 	} {
 		payload := testbench.GenerateRandomPayload(t, 1<<10)
 		conn.SendIP(
+			t,
 			testbench.IPv4{DstAddr: testbench.Address(tcpip.Address(bcastAddr.To4()))},
 			testbench.UDP{},
 			&testbench.Payload{Bytes: payload},
 		)
 		t.Logf("Receiving packet sent to address: %s", bcastAddr)
-		if got, want := string(dut.Recv(boundFD, int32(len(payload)), 0)), string(payload); got != want {
+		if got, want := string(dut.Recv(t, boundFD, int32(len(payload)), 0)), string(payload); got != want {
 			t.Errorf("received payload does not match sent payload got: %s, want: %s", got, want)
 		}
 	}

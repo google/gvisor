@@ -61,23 +61,23 @@ func TestSendWindowSizesPiggyback(t *testing.T) {
 		t.Run(fmt.Sprintf("%s%d", tt.description, tt.windowSize), func(t *testing.T) {
 			dut := testbench.NewDUT(t)
 			defer dut.TearDown()
-			listenFd, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
-			defer dut.Close(listenFd)
+			listenFd, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+			defer dut.Close(t, listenFd)
 
 			conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort, WindowSize: testbench.Uint16(tt.windowSize)}, testbench.TCP{SrcPort: &remotePort})
-			defer conn.Close()
+			defer conn.Close(t)
 
-			conn.Connect()
-			acceptFd, _ := dut.Accept(listenFd)
-			defer dut.Close(acceptFd)
+			conn.Connect(t)
+			acceptFd, _ := dut.Accept(t, listenFd)
+			defer dut.Close(t, acceptFd)
 
-			dut.SetSockOptInt(acceptFd, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
+			dut.SetSockOptInt(t, acceptFd, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
 
 			expectedTCP := testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}
 
-			dut.Send(acceptFd, sampleData, 0)
+			dut.Send(t, acceptFd, sampleData, 0)
 			expectedPayload := testbench.Payload{Bytes: tt.expectedPayload1}
-			if _, err := conn.ExpectData(&expectedTCP, &expectedPayload, time.Second); err != nil {
+			if _, err := conn.ExpectData(t, &expectedTCP, &expectedPayload, time.Second); err != nil {
 				t.Fatalf("expected payload was not received: %s", err)
 			}
 
@@ -86,18 +86,18 @@ func TestSendWindowSizesPiggyback(t *testing.T) {
 
 			if tt.enqueue {
 				// Enqueue a segment for the dut to transmit.
-				dut.Send(acceptFd, sampleData, 0)
+				dut.Send(t, acceptFd, sampleData, 0)
 			}
 
 			// Send ACK for the previous segment along with data for the dut to
 			// receive and ACK back. Sending this ACK would make room for the dut
 			// to transmit any enqueued segment.
-			conn.Send(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh), WindowSize: testbench.Uint16(tt.windowSize)}, &testbench.Payload{Bytes: sampleData})
+			conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh), WindowSize: testbench.Uint16(tt.windowSize)}, &testbench.Payload{Bytes: sampleData})
 
 			// Expect the dut to piggyback the ACK for received data along with
 			// the segment enqueued for transmit.
 			expectedPayload = testbench.Payload{Bytes: tt.expectedPayload2}
-			if _, err := conn.ExpectData(&expectedTCP, &expectedPayload, time.Second); err != nil {
+			if _, err := conn.ExpectData(t, &expectedTCP, &expectedPayload, time.Second); err != nil {
 				t.Fatalf("expected payload was not received: %s", err)
 			}
 		})

@@ -31,12 +31,12 @@ func init() {
 func TestTcpNoAcceptCloseReset(t *testing.T) {
 	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
-	listenFd, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+	listenFd, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
 	conn := testbench.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
-	conn.Connect()
-	defer conn.Close()
-	dut.Close(listenFd)
-	if _, err := conn.Expect(testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst | header.TCPFlagAck)}, 1*time.Second); err != nil {
+	conn.Connect(t)
+	defer conn.Close(t)
+	dut.Close(t, listenFd)
+	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst | header.TCPFlagAck)}, 1*time.Second); err != nil {
 		t.Fatalf("expected a RST-ACK packet but got none: %s", err)
 	}
 }
