@@ -26,3 +26,9 @@ syscall_test(
     fuse = "True",
     test = "//test/fuse/linux:mkdir_test",
 )
+
+syscall_test(
+    test = "//test/fuse/linux:readdir_test",
+    vfs2 = "True",
+    fuse = "True",
+)

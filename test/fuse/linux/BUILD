@@ -70,6 +70,20 @@ cc_binary(
     ],
 )
 
+cc_test(
+    name = "readdir_test",
+    srcs = [
+        "fuse_base.h",
+        "readdir_test.cc",
+    ],
+    deps = [
+        ":fuse_base",
+        "//test/util:fuse_util",
+        "//test/util:test_util",
+        "//test/util:test_main",
+    ],
+)
+
 cc_library(
     name = "fuse_base",
     testonly = 1,

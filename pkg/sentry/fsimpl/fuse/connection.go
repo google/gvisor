@@ -17,6 +17,7 @@ package fuse
 import (
 	"errors"
 	"fmt"
+	"gvisor.dev/gvisor/tools/go_marshal/marshal"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -29,7 +30,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
-	"gvisor.dev/gvisor/tools/go_marshal/marshal"
 )
 
 // maxActiveRequestsDefault is the default setting controlling the upper bound
@@ -51,6 +51,14 @@ const (
 	// fuseDefaultMaxPagesPerReq is the default value for MaxPagesPerReq.
 	fuseDefaultMaxPagesPerReq = 32
 )
+
+// Marshallable defines the Marshallable interface for serialize/deserializing
+// FUSE packets.
+type Marshallable interface {
+	MarshalUnsafe([]byte)
+	UnmarshalUnsafe([]byte)
+	SizeBytes() int
+}
 
 // Request represents a FUSE operation request that hasn't been sent to the
 // server yet.
@@ -341,13 +349,19 @@ func (r *Response) Error() error {
 }
 
 // UnmarshalPayload unmarshals the response data into m.
-func (r *Response) UnmarshalPayload(m marshal.Marshallable) error {
+func (r *Response) UnmarshalPayload(m Marshallable) error {
 	hdrLen := r.hdr.SizeBytes()
 	haveDataLen := r.hdr.Len - uint32(hdrLen)
 	wantDataLen := uint32(m.SizeBytes())
 
 	if haveDataLen < wantDataLen {
 		return fmt.Errorf("payload too small. Minimum data lenth required: %d,  but got data length %d", wantDataLen, haveDataLen)
+	}
+
+	// The response data is empty unless there is some payload. And so, doesn't
+	// need to be unmarshalled.
+	if r.data == nil {
+		return nil
 	}
 
 	m.UnmarshalUnsafe(r.data[hdrLen:])

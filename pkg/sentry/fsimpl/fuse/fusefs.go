@@ -262,9 +262,11 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 		fdImpl = directoryFD
 	} else {
 		// FOPEN_KEEP_CACHE is the defualt flag for noOpen.
-		fd = &fileDescription{OpenFlag: linux.FOPEN_KEEP_CACHE}
-		fdImpl = fd
+		regularFd := &regularFileFD{}
+		fd = &(regularFd.fileDescription)
+		fdImpl = regularFd
 	}
+
 	// Only send open request when FUSE server support open or is opening a directory.
 	if !i.fs.conn.noOpen || isDir {
 		kernelTask := kernel.TaskFromContext(ctx)
@@ -311,7 +313,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 	}
 
 	// TODO(gvisor.dev/issue/3234): invalidate mmap after implemented it for FUSE Inode
-	fd.DirectIO = fd.OpenFlag&linux.FOPEN_DIRECT_IO != 0
+	fd.directIO = fd.OpenFlag&linux.FOPEN_DIRECT_IO != 0
 	fdOptions := &vfs.FileDescriptionOptions{}
 	if fd.OpenFlag&linux.FOPEN_NONSEEKABLE != 0 {
 		fdOptions.DenyPRead = true
@@ -522,57 +524,3 @@ func (i *inode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptio
 	return statFromFUSEAttr(out.Attr, opts.Mask, fusefs.devMinor), nil
 }
 
-// fileDescription implements vfs.FileDescriptionImpl for fuse.
-type fileDescription struct {
-	vfsfd vfs.FileDescription
-	vfs.FileDescriptionDefaultImpl
-	vfs.DentryMetadataFileDescriptionImpl
-	vfs.NoLockFD
-
-	// the file handle used in userspace.
-	Fh uint64
-
-	// Nonseekable is indicate cannot perform seek on a file.
-	Nonseekable bool
-
-	// DirectIO suggest fuse to use direct io operation.
-	DirectIO bool
-
-	// OpenFlag is the flag returned by open.
-	OpenFlag uint32
-}
-
-func (fd *fileDescription) dentry() *kernfs.Dentry {
-	return fd.vfsfd.Dentry().Impl().(*kernfs.Dentry)
-}
-
-func (fd *fileDescription) inode() *inode {
-	return fd.dentry().Inode().(*inode)
-}
-
-func (fd *fileDescription) statusFlags() uint32 {
-	return fd.vfsfd.StatusFlags()
-}
-
-// Release implements vfs.FileDescriptionImpl.Release.
-func (fd *fileDescription) Release(ctx context.Context) {
-	in := linux.FUSEReleaseIn{
-		Fh:    fd.Fh,
-		Flags: fd.statusFlags(),
-	}
-	// TODO(gvisor.dev/issue/3245): add logic when we support file lock owner.
-	var opcode linux.FUSEOpcode
-	if fd.inode().Mode().IsDir() {
-		opcode = linux.FUSE_RELEASEDIR
-	} else {
-		opcode = linux.FUSE_RELEASE
-	}
-	conn := fd.inode().fs.conn
-	if !conn.noOpen {
-		kernelTask := kernel.TaskFromContext(ctx)
-		// ignoring error is analogous to Linux's behavior.
-		req, _ := conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), fd.inode().NodeID, opcode, &in)
-		// FUSE server doesn't reply to this call.
-		conn.CallAsync(kernelTask, req)
-	}
-}
