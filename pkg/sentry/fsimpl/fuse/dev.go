@@ -373,7 +373,11 @@ func (fd *DeviceFD) sendError(ctx context.Context, errno int32, req *Request) er
 	delete(fd.completions, respHdr.Unique)
 
 	fut.hdr = &respHdr
-	return fd.sendResponse(ctx, fut)
+	if err := fd.sendResponse(ctx, fut); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // noReceiverAction has the calling kernel.Task do some action if its known that no

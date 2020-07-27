@@ -7,14 +7,14 @@ go_template_instance(
     name = "file_refcount_set",
     out = "file_refcount_set.go",
     imports = {
-        "platform": "gvisor.dev/gvisor/pkg/sentry/platform",
+        "memmap": "gvisor.dev/gvisor/pkg/sentry/memmap",
     },
     package = "mm",
     prefix = "fileRefcount",
     template = "//pkg/segment:generic_set",
     types = {
         "Key": "uint64",
-        "Range": "platform.FileRange",
+        "Range": "memmap.FileRange",
         "Value": "int32",
         "Functions": "fileRefcountSetFunctions",
     },

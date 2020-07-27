@@ -323,10 +323,7 @@ TEST(MountTest, RenameRemoveMountPoint) {
 
 TEST(MountTest, MountFuseFilesystemNoDevice) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
-
-  // Note(gvisor.dev/issue/3076) This won't work in the sentry until the new
-  // device registration is complete.
-  SKIP_IF(IsRunningWithVFS1() || IsRunningOnGvisor());
+  SKIP_IF(IsRunningOnGvisor() && !IsFUSEEnabled());
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   EXPECT_THAT(mount("", dir.path().c_str(), "fuse", 0, ""),
@@ -335,10 +332,7 @@ TEST(MountTest, MountFuseFilesystemNoDevice) {
 
 TEST(MountTest, MountFuseFilesystem) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
-
-  // Note(gvisor.dev/issue/3076) This won't work in the sentry until the new
-  // device registration is complete.
-  SKIP_IF(IsRunningWithVFS1() || IsRunningOnGvisor());
+  SKIP_IF(IsRunningOnGvisor() && !IsFUSEEnabled());
 
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_WRONLY));

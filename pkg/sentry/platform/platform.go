@@ -22,9 +22,9 @@ import (
 	"os"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -207,7 +207,7 @@ type AddressSpace interface {
 	// Preconditions: addr and fr must be page-aligned. fr.Length() > 0.
 	// at.Any() == true. At least one reference must be held on all pages in
 	// fr, and must continue to be held as long as pages are mapped.
-	MapFile(addr usermem.Addr, f File, fr FileRange, at usermem.AccessType, precommit bool) error
+	MapFile(addr usermem.Addr, f memmap.File, fr memmap.FileRange, at usermem.AccessType, precommit bool) error
 
 	// Unmap unmaps the given range.
 	//
@@ -308,52 +308,6 @@ type SegmentationFault struct {
 // Error implements error.Error.
 func (f SegmentationFault) Error() string {
 	return fmt.Sprintf("segmentation fault at %#x", f.Addr)
-}
-
-// File represents a host file that may be mapped into an AddressSpace.
-type File interface {
-	// All pages in a File are reference-counted.
-
-	// IncRef increments the reference count on all pages in fr.
-	//
-	// Preconditions: fr.Start and fr.End must be page-aligned. fr.Length() >
-	// 0. At least one reference must be held on all pages in fr. (The File
-	// interface does not provide a way to acquire an initial reference;
-	// implementors may define mechanisms for doing so.)
-	IncRef(fr FileRange)
-
-	// DecRef decrements the reference count on all pages in fr.
-	//
-	// Preconditions: fr.Start and fr.End must be page-aligned. fr.Length() >
-	// 0. At least one reference must be held on all pages in fr.
-	DecRef(fr FileRange)
-
-	// MapInternal returns a mapping of the given file offsets in the invoking
-	// process' address space for reading and writing.
-	//
-	// Note that fr.Start and fr.End need not be page-aligned.
-	//
-	// Preconditions: fr.Length() > 0. At least one reference must be held on
-	// all pages in fr.
-	//
-	// Postconditions: The returned mapping is valid as long as at least one
-	// reference is held on the mapped pages.
-	MapInternal(fr FileRange, at usermem.AccessType) (safemem.BlockSeq, error)
-
-	// FD returns the file descriptor represented by the File.
-	//
-	// The only permitted operation on the returned file descriptor is to map
-	// pages from it consistent with the requirements of AddressSpace.MapFile.
-	FD() int
-}
-
-// FileRange represents a range of uint64 offsets into a File.
-//
-// type FileRange <generated using go_generics>
-
-// String implements fmt.Stringer.String.
-func (fr FileRange) String() string {
-	return fmt.Sprintf("[%#x, %#x)", fr.Start, fr.End)
 }
 
 // Requirements is used to specify platform specific requirements.

@@ -8,7 +8,6 @@ go_template_instance(
     out = "dirty_set_impl.go",
     imports = {
         "memmap": "gvisor.dev/gvisor/pkg/sentry/memmap",
-        "platform": "gvisor.dev/gvisor/pkg/sentry/platform",
     },
     package = "fsutil",
     prefix = "Dirty",
@@ -25,14 +24,14 @@ go_template_instance(
     name = "frame_ref_set_impl",
     out = "frame_ref_set_impl.go",
     imports = {
-        "platform": "gvisor.dev/gvisor/pkg/sentry/platform",
+        "memmap": "gvisor.dev/gvisor/pkg/sentry/memmap",
     },
     package = "fsutil",
     prefix = "FrameRef",
     template = "//pkg/segment:generic_set",
     types = {
         "Key": "uint64",
-        "Range": "platform.FileRange",
+        "Range": "memmap.FileRange",
         "Value": "uint64",
         "Functions": "FrameRefSetFunctions",
     },
@@ -43,7 +42,6 @@ go_template_instance(
     out = "file_range_set_impl.go",
     imports = {
         "memmap": "gvisor.dev/gvisor/pkg/sentry/memmap",
-        "platform": "gvisor.dev/gvisor/pkg/sentry/platform",
     },
     package = "fsutil",
     prefix = "FileRange",
@@ -86,7 +84,6 @@ go_library(
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",
-        "//pkg/sentry/platform",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usage",
         "//pkg/state",

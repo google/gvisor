@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -604,7 +603,7 @@ func (mm *MemoryManager) invalidateLocked(ar usermem.AddrRange, invalidatePrivat
 	}
 }
 
-// Pin returns the platform.File ranges currently mapped by addresses in ar in
+// Pin returns the memmap.File ranges currently mapped by addresses in ar in
 // mm, acquiring a reference on the returned ranges which the caller must
 // release by calling Unpin. If not all addresses are mapped, Pin returns a
 // non-nil error. Note that Pin may return both a non-empty slice of
@@ -674,15 +673,15 @@ type PinnedRange struct {
 	Source usermem.AddrRange
 
 	// File is the mapped file.
-	File platform.File
+	File memmap.File
 
 	// Offset is the offset into File at which this PinnedRange begins.
 	Offset uint64
 }
 
-// FileRange returns the platform.File offsets mapped by pr.
-func (pr PinnedRange) FileRange() platform.FileRange {
-	return platform.FileRange{pr.Offset, pr.Offset + uint64(pr.Source.Length())}
+// FileRange returns the memmap.File offsets mapped by pr.
+func (pr PinnedRange) FileRange() memmap.FileRange {
+	return memmap.FileRange{pr.Offset, pr.Offset + uint64(pr.Source.Length())}
 }
 
 // Unpin releases the reference held by prs.
@@ -857,7 +856,7 @@ func (mm *MemoryManager) vecInternalMappingsLocked(ars usermem.AddrRangeSeq) saf
 }
 
 // incPrivateRef acquires a reference on private pages in fr.
-func (mm *MemoryManager) incPrivateRef(fr platform.FileRange) {
+func (mm *MemoryManager) incPrivateRef(fr memmap.FileRange) {
 	mm.privateRefs.mu.Lock()
 	defer mm.privateRefs.mu.Unlock()
 	refSet := &mm.privateRefs.refs
@@ -878,8 +877,8 @@ func (mm *MemoryManager) incPrivateRef(fr platform.FileRange) {
 }
 
 // decPrivateRef releases a reference on private pages in fr.
-func (mm *MemoryManager) decPrivateRef(fr platform.FileRange) {
-	var freed []platform.FileRange
+func (mm *MemoryManager) decPrivateRef(fr memmap.FileRange) {
+	var freed []memmap.FileRange
 
 	mm.privateRefs.mu.Lock()
 	refSet := &mm.privateRefs.refs
@@ -951,7 +950,7 @@ func (pmaSetFunctions) Merge(ar1 usermem.AddrRange, pma1 pma, ar2 usermem.AddrRa
 
 	// Discard internal mappings instead of trying to merge them, since merging
 	// them requires an allocation and getting them again from the
-	// platform.File might not.
+	// memmap.File might not.
 	pma1.internalMappings = safemem.BlockSeq{}
 	return pma1, true
 }
@@ -1012,12 +1011,12 @@ func (pseg pmaIterator) getInternalMappingsLocked() error {
 	return nil
 }
 
-func (pseg pmaIterator) fileRange() platform.FileRange {
+func (pseg pmaIterator) fileRange() memmap.FileRange {
 	return pseg.fileRangeOf(pseg.Range())
 }
 
 // Preconditions: pseg.Range().IsSupersetOf(ar). ar.Length != 0.
-func (pseg pmaIterator) fileRangeOf(ar usermem.AddrRange) platform.FileRange {
+func (pseg pmaIterator) fileRangeOf(ar usermem.AddrRange) memmap.FileRange {
 	if checkInvariants {
 		if !pseg.Ok() {
 			panic("terminal pma iterator")
@@ -1032,5 +1031,5 @@ func (pseg pmaIterator) fileRangeOf(ar usermem.AddrRange) platform.FileRange {
 
 	pma := pseg.ValuePtr()
 	pstart := pseg.Start()
-	return platform.FileRange{pma.off + uint64(ar.Start-pstart), pma.off + uint64(ar.End-pstart)}
+	return memmap.FileRange{pma.off + uint64(ar.Start-pstart), pma.off + uint64(ar.End-pstart)}
 }
