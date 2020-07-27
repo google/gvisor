@@ -21,18 +21,17 @@ import (
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// HostMappable implements memmap.Mappable and platform.File over a
+// HostMappable implements memmap.Mappable and memmap.File over a
 // CachedFileObject.
 //
 // Lock order (compare the lock order model in mm/mm.go):
 //   truncateMu ("fs locks")
 //     mu ("memmap.Mappable locks not taken by Translate")
-//       ("platform.File locks")
+//       ("memmap.File locks")
 //   	     backingFile ("CachedFileObject locks")
 //
 // +stateify savable
@@ -124,24 +123,24 @@ func (h *HostMappable) NotifyChangeFD() error {
 	return nil
 }
 
-// MapInternal implements platform.File.MapInternal.
-func (h *HostMappable) MapInternal(fr platform.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
+// MapInternal implements memmap.File.MapInternal.
+func (h *HostMappable) MapInternal(fr memmap.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
 	return h.hostFileMapper.MapInternal(fr, h.backingFile.FD(), at.Write)
 }
 
-// FD implements platform.File.FD.
+// FD implements memmap.File.FD.
 func (h *HostMappable) FD() int {
 	return h.backingFile.FD()
 }
 
-// IncRef implements platform.File.IncRef.
-func (h *HostMappable) IncRef(fr platform.FileRange) {
+// IncRef implements memmap.File.IncRef.
+func (h *HostMappable) IncRef(fr memmap.FileRange) {
 	mr := memmap.MappableRange{Start: fr.Start, End: fr.End}
 	h.hostFileMapper.IncRefOn(mr)
 }
 
-// DecRef implements platform.File.DecRef.
-func (h *HostMappable) DecRef(fr platform.FileRange) {
+// DecRef implements memmap.File.DecRef.
+func (h *HostMappable) DecRef(fr memmap.FileRange) {
 	mr := memmap.MappableRange{Start: fr.Start, End: fr.End}
 	h.hostFileMapper.DecRefOn(mr)
 }

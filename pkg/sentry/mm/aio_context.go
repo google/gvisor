@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -243,7 +242,7 @@ type aioMappable struct {
 	refs.AtomicRefCount
 
 	mfp pgalloc.MemoryFileProvider
-	fr  platform.FileRange
+	fr  memmap.FileRange
 }
 
 var aioRingBufferSize = uint64(usermem.Addr(linux.AIORingSize).MustRoundUp())

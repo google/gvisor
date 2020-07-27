@@ -47,6 +47,7 @@ go_library(
         "//pkg/safecopy",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
+        "//pkg/sentry/memmap",
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/interrupt",
         "//pkg/sentry/platform/ring0",
