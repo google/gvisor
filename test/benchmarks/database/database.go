@@ -12,27 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package harness
+// Package database holds benchmarks around database applications.
+package database
 
 import (
-	"context"
-	"fmt"
-	"net"
+	"os"
+	"testing"
 
-	"gvisor.dev/gvisor/pkg/test/dockerutil"
-	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/test/benchmarks/harness"
 )
 
-// WaitUntilServing grabs a container from `machine` and waits for a server at
-// IP:port.
-func WaitUntilServing(ctx context.Context, machine Machine, server net.IP, port int) error {
-	var logger testutil.DefaultLogger = "netcat"
-	netcat := machine.GetNativeContainer(ctx, logger)
-	defer netcat.CleanUp(ctx)
+var h harness.Harness
 
-	cmd := fmt.Sprintf("while ! nc -zv %s %d; do true; done", server, port)
-	_, err := netcat.Run(ctx, dockerutil.RunOpts{
-		Image: "packetdrill",
-	}, "sh", "-c", cmd)
-	return err
+// TestMain is the main method for package database.
+func TestMain(m *testing.M) {
+	h.Init()
+	os.Exit(m.Run())
 }
