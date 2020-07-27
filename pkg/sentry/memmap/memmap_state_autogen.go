@@ -6,6 +6,32 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *FileRange) StateTypeName() string {
+	return "pkg/sentry/memmap.FileRange"
+}
+
+func (x *FileRange) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+	}
+}
+
+func (x *FileRange) beforeSave() {}
+
+func (x *FileRange) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.Start)
+	m.Save(1, &x.End)
+}
+
+func (x *FileRange) afterLoad() {}
+
+func (x *FileRange) StateLoad(m state.Source) {
+	m.Load(0, &x.Start)
+	m.Load(1, &x.End)
+}
+
 func (x *MappableRange) StateTypeName() string {
 	return "pkg/sentry/memmap.MappableRange"
 }
@@ -62,6 +88,7 @@ func (x *MappingOfRange) StateLoad(m state.Source) {
 }
 
 func init() {
+	state.Register((*FileRange)(nil))
 	state.Register((*MappableRange)(nil))
 	state.Register((*MappingOfRange)(nil))
 }

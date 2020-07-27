@@ -45,7 +45,6 @@ import (
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -370,7 +369,7 @@ type Shm struct {
 
 	// fr is the offset into mfp.MemoryFile() that backs this contents of this
 	// segment. Immutable.
-	fr platform.FileRange
+	fr memmap.FileRange
 
 	// mu protects all fields below.
 	mu sync.Mutex `state:"nosave"`
