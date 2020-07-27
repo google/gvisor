@@ -138,6 +138,12 @@ func (s *segment) logicalLen() seqnum.Size {
 	return l
 }
 
+// segMemSize is the amount of memory used to hold the segment data and
+// the associated metadata.
+func (s *segment) segMemSize() int {
+	return segSize + s.data.Size()
+}
+
 // parse populates the sequence & ack numbers, flags, and window fields of the
 // segment from the TCP header stored in the data. It then updates the view to
 // skip the header.

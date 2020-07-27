@@ -49,6 +49,7 @@ go_library(
         "segment_heap.go",
         "segment_queue.go",
         "segment_state.go",
+        "segment_unsafe.go",
         "snd.go",
         "snd_state.go",
         "tcp_endpoint_list.go",
