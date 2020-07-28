@@ -13,14 +13,14 @@ runtime_test(
     name = "java11",
     exclude_file = "exclude_java11.csv",
     lang = "java",
-    shard_count = 10,
+    shard_count = 20,
 )
 
 runtime_test(
     name = "nodejs12.4.0",
     exclude_file = "exclude_nodejs12.4.0.csv",
     lang = "nodejs",
-    shard_count = 5,
+    shard_count = 10,
 )
 
 runtime_test(
