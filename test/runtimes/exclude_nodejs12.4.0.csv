@@ -47,4 +47,5 @@ pseudo-tty/test-tty-window-size.js,,
 pseudo-tty/test-tty-wrap.js,,
 pummel/test-net-pingpong.js,,
 pummel/test-vm-memleak.js,,
+sequential/test-net-bytes-per-incoming-chunk-overhead.js,,flaky - timeout
 tick-processor/test-tick-processor-builtin.js,,
