@@ -79,13 +79,18 @@ ifneq (,$(BAZEL_CONFIG))
 OPTIONS += --config=$(BAZEL_CONFIG)
 endif
 
+# NOTE: we pass -l to useradd below because otherwise you can hit a bug
+# best described here:
+#  https://github.com/moby/moby/issues/5419#issuecomment-193876183
+# TLDR; trying to add to /var/log/lastlog (sparse file) runs the machine out
+# out of disk space.
 bazel-image: load-default
 	@if docker ps --all | grep $(BUILDER_NAME); then docker rm -f $(BUILDER_NAME); fi
 	docker run --user 0:0 --entrypoint "" --name $(BUILDER_NAME) \
 		$(BUILDER_BASE) \
 		sh -c "groupadd --gid $(GID) --non-unique $(USER) && \
 		       $(GROUPADD_DOCKER) \
-		       useradd --uid $(UID) --non-unique --no-create-home \
+		       useradd -l --uid $(UID) --non-unique --no-create-home \
 		               --gid $(GID) $(USERADD_OPTIONS) -d $(HOME) $(USER) && \
 		       if [[ -e /dev/kvm ]]; then chmod a+rw /dev/kvm; fi"
 	docker commit $(BUILDER_NAME) $(BUILDER_IMAGE)
