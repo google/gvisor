@@ -23,10 +23,16 @@ build --stamp --workspace_status_command tools/workspace_status.sh
 
 # Enable remote execution so actions are performed on the remote systems.
 build:remote --remote_executor=grpcs://remotebuildexecution.googleapis.com
+build:remote --bes_backend=buildeventservice.googleapis.com
+build:remote --bes_results_url="https://source.cloud.google.com/results/invocations"
+build:remote --bes_timeout=600s
 build:remote --project_id=gvisor-rbe
 build:remote --remote_instance_name=projects/gvisor-rbe/instances/default_instance
 build:remote3 --remote_executor=grpcs://remotebuildexecution.googleapis.com
 build:remote3 --project_id=gvisor-rbe
+build:remote3 --bes_backend=buildeventservice.googleapis.com
+build:remote3 --bes_results_url="https://source.cloud.google.com/results/invocations"
+build:remote3 --bes_timeout=600s
 build:remote3 --remote_instance_name=projects/gvisor-rbe/instances/default_instance
 
 # Enable authentication. This will pick up application default credentials by

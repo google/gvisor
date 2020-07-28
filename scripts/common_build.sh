@@ -31,9 +31,9 @@ declare -a BAZEL_FLAGS=(
   "--keep_going"
   "--verbose_failures=true"
 )
-if [[ -v KOKORO_BAZEL_AUTH_CREDENTIAL ]]; then
+# If running via kokoro, use the remote config.
+if [[ -v KOKORO_ARTIFACTS_DIR ]]; then
   BAZEL_FLAGS+=(
-    "--auth_credentials=${KOKORO_BAZEL_AUTH_CREDENTIAL}"
     "--config=remote"
   )
 fi
