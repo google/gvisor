@@ -17,6 +17,8 @@ package fuse
 import (
 	"errors"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -37,6 +39,18 @@ var (
 	// Ordinary requests have even IDs, while interrupts IDs are odd.
 	InitReqBit uint64 = 1
 	ReqIDStep  uint64 = 2
+)
+
+const (
+	// fuseDefaultMaxBackground is the default value for MaxBackground.
+	fuseDefaultMaxBackground = 12
+
+	// fuseDefaultCongestionThreshold is the default value for CongestionThreshold,
+	// and is 75% of the default maximum of MaxGround.
+	fuseDefaultCongestionThreshold = (fuseDefaultMaxBackground * 3 / 4)
+
+	// fuseDefaultMaxPagesPerReq is the default value for MaxPagesPerReq.
+	fuseDefaultMaxPagesPerReq = 32
 )
 
 // Request represents a FUSE operation request that hasn't been sent to the
@@ -65,9 +79,160 @@ type Response struct {
 type Connection struct {
 	fd *DeviceFD
 
-	// MaxWrite is the daemon's maximum size of a write buffer.
-	// This is negotiated during FUSE_INIT.
-	MaxWrite uint32
+	// initialized after receiving FUSE_INIT reply.
+	// Until it's set, suspend sending FUSE requests.
+	// Use SetInitialized() and IsInitialized() for atomic access.
+	initialized int32
+
+	// initializedChan is used to block requests before initialization.
+	initializedChan chan struct{}
+
+	// blocked when:
+	//   before the INIT reply is received (Initialized == false),
+	//   if there are too many outstading backgrounds requests (NumBackground == MaxBackground).
+	// TODO(gvisor.dev/issue/3185): use a channel to block.
+	blocked bool
+
+	// connected (connection established) when a new FUSE file system is created.
+	// Set to false when:
+	//   umount,
+	//   connection abort,
+	//   device release.
+	connected bool
+
+	// aborted via sysfs.
+	// TODO(gvisor.dev/issue/3185): abort all queued requests.
+	aborted bool
+
+	// connInitError if FUSE_INIT encountered error (major version mismatch).
+	// Only set in INIT.
+	connInitError bool
+
+	// connInitSuccess if FUSE_INIT is successful.
+	// Only set in INIT.
+	connInitSuccess bool
+
+	// TODO(gvisor.dev/issue/3185): All the queue logic are working in progress.
+
+	// NumberBackground is the number of requests in the background.
+	numBackground uint16
+
+	// congestionThreshold for NumBackground.
+	// Negotiated in FUSE_INIT.
+	congestionThreshold uint16
+
+	// maxBackground is the maximum number of NumBackground.
+	// Block connection when it is reached.
+	// Negotiated in FUSE_INIT.
+	maxBackground uint16
+
+	// numActiveBackground is the number of requests in background and has being marked as active.
+	numActiveBackground uint16
+
+	// numWating is the number of requests waiting for completion.
+	numWaiting uint32
+
+	// TODO(gvisor.dev/issue/3185): BgQueue
+	// some queue for background queued requests.
+
+	// bgLock protects:
+	// MaxBackground, CongestionThreshold, NumBackground,
+	// NumActiveBackground, BgQueue, Blocked.
+	bgLock sync.Mutex
+
+	// maxRead is the maximum size of a read buffer in in bytes.
+	maxRead uint32
+
+	// maxWrite is the maximum size of a write buffer in bytes.
+	// Negotiated in FUSE_INIT.
+	maxWrite uint32
+
+	// maxPages is the maximum number of pages for a single request to use.
+	// Negotiated in FUSE_INIT.
+	maxPages uint16
+
+	// minor version of the FUSE protocol.
+	// Negotiated and only set in INIT.
+	minor uint32
+
+	// asyncRead if read pages asynchronously.
+	// Negotiated and only set in INIT.
+	asyncRead bool
+
+	// abortErr is true if kernel need to return an unique read error after abort.
+	// Negotiated and only set in INIT.
+	abortErr bool
+
+	// atomicOTrunc is true when FUSE does not send a separate SETATTR request
+	// before open with O_TRUNC flag.
+	// Negotiated and only set in INIT.
+	atomicOTrunc bool
+
+	// exportSupport is true if the daemon filesystem supports NFS exporting.
+	// Negotiated and only set in INIT.
+	exportSupport bool
+
+	// writebackCache is true for write-back cache policy,
+	// false for write-through policy.
+	// Negotiated and only set in INIT.
+	writebackCache bool
+
+	// parallelDirops is true if allowing lookup and readdir in parallel,
+	// false if serialized.
+	// Negotiated and only set in INIT.
+	parallelDirops bool
+
+	// handleKillpriv if the filesystem handles killing suid/sgid/cap on write/chown/trunc.
+	// Negotiated and only set in INIT.
+	handleKillpriv bool
+
+	// cacheSymlinks if filesystem needs to cache READLINK responses in page cache.
+	// Negotiated and only set in INIT.
+	cacheSymlinks bool
+
+	// noLock if posix file locking primitives not implemented.
+	// Negotiated and only set in INIT.
+	noLock bool
+
+	// bigWrites if doing multi-page cached writes.
+	// Negotiated and only set in INIT.
+	bigWrites bool
+
+	// dontMask if filestestem does not apply umask to creation modes.
+	// Negotiated in INIT.
+	dontMask bool
+
+	// noFLock if BSD file locking primitives not implemented.
+	// Negotiated and only set in INIT.
+	noFLock bool
+
+	// autoInvalData if filesystem uses enhanced/automatic page cache invalidation.
+	// Negotiated and only set in INIT.
+	autoInvalData bool
+
+	// explicitInvalData if filesystem is in charge of page cache invalidation.
+	// Negotiated and only set in INIT.
+	explicitInvalData bool
+
+	// doReaddirplus if the filesystem supports readdirplus.
+	// Negotiated and only set in INIT.
+	doReaddirplus bool
+
+	// readdirplusAuto if the filesystem wants adaptive readdirplus.
+	// Negotiated and only set in INIT.
+	readdirplusAuto bool
+
+	// asyncDio if the filesystem supports asynchronous direct-IO submission.
+	// Negotiated and only set in INIT.
+	asyncDio bool
+
+	// posixACL if the filesystem supports posix ACL.
+	// Negotiated and only set in INIT.
+	posixACL bool
+
+	// defaultPermissions if the filesystem needs to check permissions based on the file mode.
+	// Negotiated in INIT.
+	defaultPermissions bool
 }
 
 // NewFUSEConnection creates a FUSE connection to fd
@@ -85,8 +250,30 @@ func NewFUSEConnection(_ context.Context, fd *vfs.FileDescription, maxInFlightRe
 	fuseFD.writeCursor = 0
 
 	return &Connection{
-		fd: fuseFD,
+		fd:                  fuseFD,
+		maxBackground:       fuseDefaultMaxBackground,
+		congestionThreshold: fuseDefaultCongestionThreshold,
+		maxPages:            fuseDefaultMaxPagesPerReq,
+		initializedChan:     make(chan struct{}),
+		connected:           true,
 	}, nil
+}
+
+// SetInitialized atomically sets the connection as initialized.
+func (conn *Connection) SetInitialized() {
+	// Unblock the requests sent before INIT.
+	// Close the channel first to ensure the
+	// tasks that raced before the initialized is
+	// set will also not block.
+	close(conn.initializedChan)
+
+	atomic.StoreInt32(&(conn.initialized), int32(1))
+}
+
+// IsInitialized atomically check if the connection is initialized.
+// pairs with setInitialized().
+func (conn *Connection) IsInitialized() bool {
+	return atomic.LoadInt32(&(conn.initialized)) != 0
 }
 
 // NewRequest creates a new request that can be sent to the FUSE server.
@@ -118,13 +305,38 @@ func (conn *Connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint
 }
 
 // Call makes a request to the server and blocks the invoking task until a
-// server responds with a response.
-// NOTE: If no task is provided then the Call will simply enqueue the request
-// and return a nil response. No blocking will happen in this case. Instead,
-// this is used to signify that the processing of this request will happen by
-// the kernel.Task that writes the response. See FUSE_INIT for such an
-// invocation.
+// server responds with a response. Task should never be nil.
+// For async tasks, use CallAsync().
 func (conn *Connection) Call(t *kernel.Task, r *Request) (*Response, error) {
+	// Block requests sent before connection is initalized.
+	if !conn.IsInitialized() {
+		if err := t.Block(conn.initializedChan); err != nil {
+			return nil, err
+		}
+	}
+
+	return conn.callDo(t, r)
+}
+
+// CallAsync makes an async (aka background) request.
+// Those requests either do not expect a response (e.g. release) or
+// the response should be handled by others (e.g. init).
+// Return immediately unless the connection is blocked.
+// Async call example: init, release, forget, aio, interrupt.
+func (conn *Connection) CallAsync(t *kernel.Task, r *Request) error {
+	// Block requests sent before connection is initalized.
+	if !conn.IsInitialized() && r.hdr.Opcode != linux.FUSE_INIT {
+		if err := t.Block(conn.initializedChan); err != nil {
+			return err
+		}
+	}
+
+	_, err := conn.callDo(nil, r)
+	return err
+}
+
+// callDo makes a call without checks.
+func (conn *Connection) callDo(t *kernel.Task, r *Request) (*Response, error) {
 	fut, err := conn.callFuture(t, r)
 	if err != nil {
 		return nil, err
