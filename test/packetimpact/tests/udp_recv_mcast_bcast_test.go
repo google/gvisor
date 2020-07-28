@@ -15,8 +15,11 @@
 package udp_recv_mcast_bcast_test
 
 import (
+	"context"
 	"flag"
+	"fmt"
 	"net"
+	"syscall"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -28,30 +31,71 @@ func init() {
 	testbench.RegisterFlags(flag.CommandLine)
 }
 
-func TestUDPRecvMulticastBroadcast(t *testing.T) {
+func TestUDPRecvMcastBcast(t *testing.T) {
+	subnetBcastAddr := broadcastAddr(net.ParseIP(testbench.RemoteIPv4), net.CIDRMask(testbench.IPv4PrefixLength, 32))
+
+	for _, v := range []struct {
+		bound, to net.IP
+	}{
+		{bound: net.IPv4(0, 0, 0, 0), to: subnetBcastAddr},
+		{bound: net.IPv4(0, 0, 0, 0), to: net.IPv4bcast},
+		{bound: net.IPv4(0, 0, 0, 0), to: net.IPv4allsys},
+
+		{bound: subnetBcastAddr, to: subnetBcastAddr},
+		{bound: subnetBcastAddr, to: net.IPv4bcast},
+
+		{bound: net.IPv4bcast, to: net.IPv4bcast},
+		{bound: net.IPv4allsys, to: net.IPv4allsys},
+	} {
+		t.Run(fmt.Sprintf("bound=%s,to=%s", v.bound, v.to), func(t *testing.T) {
+			dut := testbench.NewDUT(t)
+			defer dut.TearDown()
+			boundFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, v.bound)
+			defer dut.Close(t, boundFD)
+			conn := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
+			defer conn.Close(t)
+
+			payload := testbench.GenerateRandomPayload(t, 1<<10)
+			conn.SendIP(
+				t,
+				testbench.IPv4{DstAddr: testbench.Address(tcpip.Address(v.to.To4()))},
+				testbench.UDP{},
+				&testbench.Payload{Bytes: payload},
+			)
+			if got, want := string(dut.Recv(t, boundFD, int32(len(payload)), 0)), string(payload); got != want {
+				t.Errorf("received payload does not match sent payload got: %s, want: %s", got, want)
+			}
+		})
+	}
+}
+
+func TestUDPDoesntRecvMcastBcastOnUnicastAddr(t *testing.T) {
 	dut := testbench.NewDUT(t)
 	defer dut.TearDown()
-	boundFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.IPv4(0, 0, 0, 0))
+	boundFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP(testbench.RemoteIPv4))
+	dut.SetSockOptTimeval(t, boundFD, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &unix.Timeval{Sec: 1, Usec: 0})
 	defer dut.Close(t, boundFD)
 	conn := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
 	defer conn.Close(t)
 
-	for _, bcastAddr := range []net.IP{
+	for _, to := range []net.IP{
 		broadcastAddr(net.ParseIP(testbench.RemoteIPv4), net.CIDRMask(testbench.IPv4PrefixLength, 32)),
 		net.IPv4(255, 255, 255, 255),
 		net.IPv4(224, 0, 0, 1),
 	} {
-		payload := testbench.GenerateRandomPayload(t, 1<<10)
-		conn.SendIP(
-			t,
-			testbench.IPv4{DstAddr: testbench.Address(tcpip.Address(bcastAddr.To4()))},
-			testbench.UDP{},
-			&testbench.Payload{Bytes: payload},
-		)
-		t.Logf("Receiving packet sent to address: %s", bcastAddr)
-		if got, want := string(dut.Recv(t, boundFD, int32(len(payload)), 0)), string(payload); got != want {
-			t.Errorf("received payload does not match sent payload got: %s, want: %s", got, want)
-		}
+		t.Run(fmt.Sprint("to=%s", to), func(t *testing.T) {
+			payload := testbench.GenerateRandomPayload(t, 1<<10)
+			conn.SendIP(
+				t,
+				testbench.IPv4{DstAddr: testbench.Address(tcpip.Address(to.To4()))},
+				testbench.UDP{},
+				&testbench.Payload{Bytes: payload},
+			)
+			ret, payload, errno := dut.RecvWithErrno(context.Background(), t, boundFD, 100, 0)
+			if errno != syscall.EAGAIN || errno != syscall.EWOULDBLOCK {
+				t.Errorf("Recv got unexpected result, ret=%d, payload=%q, errno=%s", ret, payload, errno)
+			}
+		})
 	}
 }
 
