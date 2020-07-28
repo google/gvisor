@@ -14,16 +14,6 @@
 
 package fuse
 
-import (
-	"sync"
-)
-
 type regularFileFD struct {
 	fileDescription
-
-	// off is the file offset.
-	off int64
-
-	// offMu protects off.
-	offMu sync.Mutex
 }

@@ -107,7 +107,7 @@ func (FileDescriptionDefaultImpl) Write(ctx context.Context, src usermem.IOSeque
 // file_operations::iterate == file_operations::iterate_shared == NULL in
 // Linux.
 func (FileDescriptionDefaultImpl) IterDirents(ctx context.Context, cb IterDirentsCallback) error {
-	return syserror.ENOTDIR
+	return syserror.ENOSYS
 }
 
 // Seek implements FileDescriptionImpl.Seek analogously to

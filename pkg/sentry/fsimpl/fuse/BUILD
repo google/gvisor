@@ -20,6 +20,7 @@ go_library(
     srcs = [
         "connection.go",
         "dev.go",
+        "dir_file.go",
         "file.go",
         "fusefs.go",
         "init.go",

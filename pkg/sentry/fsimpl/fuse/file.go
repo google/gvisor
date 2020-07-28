@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -26,7 +27,6 @@ import (
 type fileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
-	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 
 	// the file handle used in userspace.
@@ -40,11 +40,9 @@ type fileDescription struct {
 
 	// OpenFlag is the flag returned by open.
 	OpenFlag uint32
-}
 
-type dirFileFD struct {
-	fileDescription
-	kernfs.GenericDirectoryFD
+	// off is the file offset.
+	off int64
 }
 
 func (fd *fileDescription) inode() *inode {
@@ -88,3 +86,8 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 	return fd.inode().Stat(ctx, fd.inode().fs.VFSFilesystem(), opts)
 }
 
+// SetStat implements FileDescriptionImpl.SetStat.
+func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
+	creds := auth.CredentialsFromContext(ctx)
+	return fd.inode().SetStat(ctx, fd.inode().fs.VFSFilesystem(), creds, opts)
+}
