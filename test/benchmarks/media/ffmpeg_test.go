@@ -33,6 +33,7 @@ func BenchmarkFfmpeg(b *testing.B) {
 
 	ctx := context.Background()
 	container := machine.GetContainer(ctx, b)
+	defer container.CleanUp(ctx)
 	cmd := strings.Split("ffmpeg -i video.mp4 -c:v libx264 -preset veryslow output.mp4", " ")
 
 	b.ResetTimer()
