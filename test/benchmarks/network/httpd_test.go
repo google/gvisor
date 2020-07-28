@@ -26,13 +26,13 @@ import (
 
 // see Dockerfile '//images/benchmarks/httpd'.
 var docs = map[string]string{
-	"notfound": "notfound",
-	"1Kb":      "latin1k.txt",
-	"10Kb":     "latin10k.txt",
-	"100Kb":    "latin100k.txt",
-	"1000Kb":   "latin1000k.txt",
-	"1Mb":      "latin1024k.txt",
-	"10Mb":     "latin10240k.txt",
+	"notfound": "/notfound",
+	"1Kb":      "/latin1k.txt",
+	"10Kb":     "/latin10k.txt",
+	"100Kb":    "/latin100k.txt",
+	"1000Kb":   "/latin1000k.txt",
+	"1Mb":      "/latin1024k.txt",
+	"10Mb":     "/latin10240k.txt",
 }
 
 // BenchmarkHttpdConcurrency iterates the concurrency argument and tests
@@ -98,7 +98,7 @@ func runHttpd(b *testing.B, clientMachine, serverMachine harness.Machine, doc st
 	defer server.CleanUp(ctx)
 
 	// Copy the docs to /tmp and serve from there.
-	cmd := "mkdir -p /tmp/html; cp -r /local /tmp/html/.; apache2 -X"
+	cmd := "mkdir -p /tmp/html; cp -r /local/* /tmp/html/.; apache2 -X"
 	port := 80
 
 	// Start the server.
