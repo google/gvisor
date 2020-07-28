@@ -50,10 +50,10 @@ func epollEvents(t *kernel.Task, eventsAddr usermem.Addr, numEvents, maxBytes ui
 			sb.WriteString("...")
 			break
 		}
-		if _, ok := addr.AddLength(uint64(linux.SizeOfEpollEvent)); !ok {
-			fmt.Fprintf(&sb, "{error reading event at %#x: EFAULT}", addr)
-			continue
-		}
+		// Allowing addr to overflow is consistent with Linux, and harmless; if
+		// this isn't the last iteration of the loop, the next call to CopyIn
+		// will just fail with EFAULT.
+		addr, _ = addr.AddLength(uint64(linux.SizeOfEpollEvent))
 	}
 	sb.WriteString("}")
 	return sb.String()
@@ -75,7 +75,7 @@ var epollEventEvents = abi.FlagSet{
 	{Flag: linux.EPOLLPRI, Name: "EPOLLPRI"},
 	{Flag: linux.EPOLLOUT, Name: "EPOLLOUT"},
 	{Flag: linux.EPOLLERR, Name: "EPOLLERR"},
-	{Flag: linux.EPOLLHUP, Name: "EPULLHUP"},
+	{Flag: linux.EPOLLHUP, Name: "EPOLLHUP"},
 	{Flag: linux.EPOLLRDNORM, Name: "EPOLLRDNORM"},
 	{Flag: linux.EPOLLRDBAND, Name: "EPOLLRDBAND"},
 	{Flag: linux.EPOLLWRNORM, Name: "EPOLLWRNORM"},
