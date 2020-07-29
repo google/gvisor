@@ -12,12 +12,19 @@ go_library(
 go_test(
     name = "fs_test",
     size = "large",
-    srcs = ["bazel_test.go"],
+    srcs = [
+        "bazel_test.go",
+        "fio_test.go",
+    ],
     library = ":fs",
     tags = [
         # Requires docker and runsc to be configured before test runs.
         "local",
         "manual",
     ],
-    deps = ["//pkg/test/dockerutil"],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//test/benchmarks/harness",
+        "@com_github_docker_docker//api/types/mount:go_default_library",
+    ],
 )
