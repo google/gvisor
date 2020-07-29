@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/test/benchmarks/harness"
 )
 
 // Note: CleanCache versions of this test require running with root permissions.
@@ -77,8 +78,8 @@ func BenchmarkABSL(b *testing.B) {
 				b.StopTimer()
 				// Drop Caches for clear cache runs.
 				if bm.clearCache {
-					if out, err := machine.RunCommand("/bin/sh", "-c", "sync && sysctl vm.drop_caches=3"); err != nil {
-						b.Skipf("failed to drop caches: %v %s. You probably need root.", err, out)
+					if err := harness.DropCaches(machine); err != nil {
+						b.Skipf("failed to drop caches: %v. You probably need root.", err)
 					}
 				}
 				b.StartTimer()
