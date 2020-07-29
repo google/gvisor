@@ -360,13 +360,18 @@ func (c *Container) SandboxPid(ctx context.Context) (int, error) {
 }
 
 // FindIP returns the IP address of the container.
-func (c *Container) FindIP(ctx context.Context) (net.IP, error) {
+func (c *Container) FindIP(ctx context.Context, ipv6 bool) (net.IP, error) {
 	resp, err := c.client.ContainerInspect(ctx, c.id)
 	if err != nil {
 		return nil, err
 	}
 
-	ip := net.ParseIP(resp.NetworkSettings.DefaultNetworkSettings.IPAddress)
+	var ip net.IP
+	if ipv6 {
+		ip = net.ParseIP(resp.NetworkSettings.DefaultNetworkSettings.GlobalIPv6Address)
+	} else {
+		ip = net.ParseIP(resp.NetworkSettings.DefaultNetworkSettings.IPAddress)
+	}
 	if ip == nil {
 		return net.IP{}, fmt.Errorf("invalid IP: %q", ip)
 	}
