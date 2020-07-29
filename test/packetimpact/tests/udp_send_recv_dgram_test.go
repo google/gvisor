@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
@@ -82,8 +83,9 @@ func TestUDP(t *testing.T) {
 				t.Run(tc.name, func(t *testing.T) {
 					t.Run("Send", func(t *testing.T) {
 						conn.Send(t, testbench.UDP{}, &testbench.Payload{Bytes: tc.payload})
-						if got, want := string(dut.Recv(t, boundFD, int32(len(tc.payload)), 0)), string(tc.payload); got != want {
-							t.Fatalf("received payload does not match sent payload got: %s, want: %s", got, want)
+						got, want := dut.Recv(t, boundFD, int32(len(tc.payload)+1), 0), tc.payload
+						if diff := cmp.Diff(want, got); diff != "" {
+							t.Fatalf("received payload does not match sent payload, diff (-want, +got):\n%s", diff)
 						}
 					})
 					t.Run("Recv", func(t *testing.T) {

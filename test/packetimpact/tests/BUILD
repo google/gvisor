@@ -46,6 +46,18 @@ packetimpact_go_test(
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
+        "@com_github_google_go_cmp//cmp:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_go_test(
+    name = "udp_any_addr_recv_unicast",
+    srcs = ["udp_any_addr_recv_unicast_test.go"],
+    deps = [
+        "//pkg/tcpip",
+        "//test/packetimpact/testbench",
+        "@com_github_google_go_cmp//cmp:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
@@ -294,6 +306,7 @@ packetimpact_go_test(
     srcs = ["udp_send_recv_dgram_test.go"],
     deps = [
         "//test/packetimpact/testbench",
+        "@com_github_google_go_cmp//cmp:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

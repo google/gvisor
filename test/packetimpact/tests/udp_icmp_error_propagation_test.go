@@ -227,12 +227,12 @@ func TestUDPICMPErrorPropagation(t *testing.T) {
 					dut := testbench.NewDUT(t)
 					defer dut.TearDown()
 
-					remoteFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP("0.0.0.0"))
+					remoteFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.IPv4zero)
 					defer dut.Close(t, remoteFD)
 
 					// Create a second, clean socket on the DUT to ensure that the ICMP
 					// error messages only affect the sockets they are intended for.
-					cleanFD, cleanPort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP("0.0.0.0"))
+					cleanFD, cleanPort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.IPv4zero)
 					defer dut.Close(t, cleanFD)
 
 					conn := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
@@ -281,12 +281,12 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 				dut := testbench.NewDUT(t)
 				defer dut.TearDown()
 
-				remoteFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP("0.0.0.0"))
+				remoteFD, remotePort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.IPv4zero)
 				defer dut.Close(t, remoteFD)
 
 				// Create a second, clean socket on the DUT to ensure that the ICMP
 				// error messages only affect the sockets they are intended for.
-				cleanFD, cleanPort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.ParseIP("0.0.0.0"))
+				cleanFD, cleanPort := dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, net.IPv4zero)
 				defer dut.Close(t, cleanFD)
 
 				conn := testbench.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
