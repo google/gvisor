@@ -37,6 +37,7 @@ const (
 //
 // +stateify savable
 type tasksInode struct {
+	implStatFS
 	kernfs.InodeNotSymlink
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeAttrs

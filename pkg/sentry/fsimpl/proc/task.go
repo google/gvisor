@@ -32,6 +32,7 @@ import (
 //
 // +stateify savable
 type taskInode struct {
+	implStatFS
 	kernfs.InodeNotSymlink
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeNoDynamicLookup

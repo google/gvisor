@@ -81,15 +81,20 @@ func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDe
 
 // inode implements kernfs.Inode.
 type inode struct {
-	kernfs.InodeNotDirectory
-	kernfs.InodeNotSymlink
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
+	kernfs.InodeNotDirectory
+	kernfs.InodeNotSymlink
 }
 
 // Open implements kernfs.Inode.Open.
 func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	return nil, syserror.ENXIO
+}
+
+// StatFS implements kernfs.Inode.StatFS.
+func (i *inode) StatFS(ctx context.Context, fs *vfs.Filesystem) (linux.Statfs, error) {
+	return vfs.GenericStatFS(linux.SOCKFS_MAGIC), nil
 }
 
 // NewDentry constructs and returns a sockfs dentry.

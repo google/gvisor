@@ -206,8 +206,11 @@ func checkCreateLocked(ctx context.Context, rp *vfs.ResolvingPath, parentVFSD *v
 	if len(pc) > linux.NAME_MAX {
 		return "", syserror.ENAMETOOLONG
 	}
-	// FIXME(gvisor.dev/issue/1193): Data race due to not holding dirMu.
-	if _, ok := parentVFSD.Impl().(*Dentry).children[pc]; ok {
+	parentD := parentVFSD.Impl().(*Dentry)
+	parentD.dirMu.Lock()
+	_, found := parentD.children[pc]
+	parentD.dirMu.Unlock()
+	if found {
 		return "", syserror.EEXIST
 	}
 	if parentVFSD.IsDead() {
@@ -690,14 +693,14 @@ func (fs *Filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 // StatFSAt implements vfs.FilesystemImpl.StatFSAt.
 func (fs *Filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linux.Statfs, error) {
 	fs.mu.RLock()
-	_, _, err := fs.walkExistingLocked(ctx, rp)
+	_, inode, err := fs.walkExistingLocked(ctx, rp)
 	fs.mu.RUnlock()
 	fs.processDeferredDecRefs()
 	if err != nil {
 		return linux.Statfs{}, err
 	}
-	// TODO(gvisor.dev/issue/1193): actually implement statfs.
-	return linux.Statfs{}, syserror.ENOSYS
+	// TODO(gvisor.dev/issue/3411): actually implement statfs.
+	return inode.StatFS(ctx, fs.VFSFilesystem())
 }
 
 // SymlinkAt implements vfs.FilesystemImpl.SymlinkAt.

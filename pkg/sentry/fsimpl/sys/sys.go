@@ -130,6 +130,11 @@ func (d *dir) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry,
 	return fd.VFSFileDescription(), nil
 }
 
+// StatFS implements kernfs.Inode.StatFS.
+func (d *dir) StatFS(ctx context.Context, fs *vfs.Filesystem) (linux.Statfs, error) {
+	return vfs.GenericStatFS(linux.SYSFS_MAGIC), nil
+}
+
 // cpuFile implements kernfs.Inode.
 type cpuFile struct {
 	kernfs.DynamicBytesFile
@@ -148,4 +153,9 @@ func (fs *filesystem) newCPUFile(creds *auth.Credentials, maxCores uint, mode li
 	d := &kernfs.Dentry{}
 	d.Init(c)
 	return d
+}
+
+// StatFS implements kernfs.Inode.StatFS.
+func (c *cpuFile) StatFS(ctx context.Context, fs *vfs.Filesystem) (linux.Statfs, error) {
+	return vfs.GenericStatFS(linux.SYSFS_MAGIC), nil
 }

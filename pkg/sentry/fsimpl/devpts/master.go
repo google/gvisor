@@ -30,6 +30,7 @@ import (
 
 // masterInode is the inode for the master end of the Terminal.
 type masterInode struct {
+	implStatFS
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
 	kernfs.InodeNotDirectory

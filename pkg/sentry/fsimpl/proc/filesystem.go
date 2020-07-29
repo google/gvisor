@@ -115,3 +115,10 @@ func newStaticFile(data string) *staticFile {
 type InternalData struct {
 	Cgroups map[string]string
 }
+
+type implStatFS struct{}
+
+// StatFS implements kernfs.Inode.StatFS.
+func (*implStatFS) StatFS(context.Context, *vfs.Filesystem) (linux.Statfs, error) {
+	return vfs.GenericStatFS(linux.PROC_SUPER_MAGIC), nil
+}

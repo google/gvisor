@@ -16,6 +16,9 @@ package vfs
 
 import (
 	"strings"
+
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // GenericParseMountOptions parses a comma-separated list of options of the
@@ -40,4 +43,14 @@ func GenericParseMountOptions(str string) map[string]string {
 		}
 	}
 	return m
+}
+
+// GenericStatFS returns a statfs struct filled with the common fields for a
+// general filesystem. This is analogous to Linux's fs/libfs.cs:simple_statfs().
+func GenericStatFS(fsMagic uint64) linux.Statfs {
+	return linux.Statfs{
+		Type:       fsMagic,
+		BlockSize:  usermem.PageSize,
+		NameLength: linux.NAME_MAX,
+	}
 }

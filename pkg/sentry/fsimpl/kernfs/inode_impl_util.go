@@ -556,10 +556,11 @@ func (InodeSymlink) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.D
 //
 // +stateify savable
 type StaticDirectory struct {
-	InodeNotSymlink
-	InodeDirectoryNoNewChildren
 	InodeAttrs
+	InodeDirectoryNoNewChildren
 	InodeNoDynamicLookup
+	InodeNoStatFS
+	InodeNotSymlink
 	OrderedChildren
 
 	locks vfs.FileLocks
@@ -610,4 +611,13 @@ type AlwaysValid struct{}
 // Valid implements kernfs.inodeDynamicLookup.
 func (*AlwaysValid) Valid(context.Context) bool {
 	return true
+}
+
+// InodeNoStatFS partially implements the Inode interface, where the client
+// filesystem doesn't support statfs(2).
+type InodeNoStatFS struct{}
+
+// StatFS implements Inode.StatFS.
+func (*InodeNoStatFS) StatFS(context.Context, *vfs.Filesystem) (linux.Statfs, error) {
+	return linux.Statfs{}, syserror.ENOSYS
 }
