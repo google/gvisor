@@ -15,6 +15,7 @@ go_test(
     srcs = [
         "httpd_test.go",
         "iperf_test.go",
+        "node_test.go",
     ],
     library = ":network",
     tags = [
