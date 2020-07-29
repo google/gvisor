@@ -79,9 +79,13 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}),
 		"firmware": fs.newDir(creds, defaultSysDirMode, nil),
 		"fs":       fs.newDir(creds, defaultSysDirMode, nil),
-		"kernel":   fs.newDir(creds, defaultSysDirMode, nil),
-		"module":   fs.newDir(creds, defaultSysDirMode, nil),
-		"power":    fs.newDir(creds, defaultSysDirMode, nil),
+		"kernel": fs.newDir(creds, defaultSysDirMode, map[string]*kernfs.Dentry{
+			"debug": fs.newDir(creds, linux.FileMode(0700), map[string]*kernfs.Dentry{
+				"kcov": fs.newKcovFile(ctx, creds),
+			}),
+		}),
+		"module": fs.newDir(creds, defaultSysDirMode, nil),
+		"power":  fs.newDir(creds, defaultSysDirMode, nil),
 	})
 	return fs.VFSFilesystem(), root.VFSDentry(), nil
 }

@@ -91,6 +91,8 @@ go_library(
         "fd_table_unsafe.go",
         "fs_context.go",
         "ipc_namespace.go",
+        "kcov.go",
+        "kcov_unsafe.go",
         "kernel.go",
         "kernel_opts.go",
         "kernel_state.go",
@@ -210,6 +212,7 @@ go_library(
         "//pkg/usermem",
         "//pkg/waiter",
         "//tools/go_marshal/marshal",
+        "@io_bazel_rules_go//go/tools/coverdata",
     ],
 )
 

@@ -117,3 +117,24 @@ const (
 func IOC(dir, typ, nr, size uint32) uint32 {
 	return uint32(dir)<<_IOC_DIRSHIFT | typ<<_IOC_TYPESHIFT | nr<<_IOC_NRSHIFT | size<<_IOC_SIZESHIFT
 }
+
+// Kcov ioctls from kernel/kcov.h.
+var (
+	KCOV_INIT_TRACE = IOC(_IOC_READ, 'c', 1, 8)
+	KCOV_ENABLE     = IOC(_IOC_NONE, 'c', 100, 0)
+	KCOV_DISABLE    = IOC(_IOC_NONE, 'c', 101, 0)
+)
+
+// Kcov trace types from kernel/kcov.h.
+const (
+	KCOV_TRACE_PC  = 0
+	KCOV_TRACE_CMP = 1
+)
+
+// Kcov state constants from kernel/kcov.h.
+const (
+	KCOV_MODE_DISABLED  = 0
+	KCOV_MODE_INIT      = 1
+	KCOV_MODE_TRACE_PC  = 2
+	KCOV_MODE_TRACE_CMP = 3
+)

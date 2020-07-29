@@ -5,17 +5,22 @@ licenses(["notice"])
 go_library(
     name = "sys",
     srcs = [
+        "kcov.go",
         "sys.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/sentry/arch",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/memmap",
+        "//pkg/sentry/pgalloc",
         "//pkg/sentry/vfs",
         "//pkg/syserror",
+        "//pkg/usermem",
     ],
 )
 
