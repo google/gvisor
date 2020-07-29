@@ -186,7 +186,7 @@ func (ep *EpollInstance) AddInterest(file *FileDescription, num int32, event lin
 	}
 
 	// Register interest in file.
-	mask := event.Events | linux.EPOLLERR | linux.EPOLLRDHUP
+	mask := event.Events | linux.EPOLLERR | linux.EPOLLHUP
 	epi := &epollInterest{
 		epoll:    ep,
 		key:      key,
@@ -257,7 +257,7 @@ func (ep *EpollInstance) ModifyInterest(file *FileDescription, num int32, event 
 	}
 
 	// Update epi for the next call to ep.ReadEvents().
-	mask := event.Events | linux.EPOLLERR | linux.EPOLLRDHUP
+	mask := event.Events | linux.EPOLLERR | linux.EPOLLHUP
 	ep.mu.Lock()
 	epi.mask = mask
 	epi.userData = event.Data
