@@ -188,7 +188,7 @@ void ReceiveMessage(int sock, int ifindex) {
   // sizeof(sockaddr_ll).
   ASSERT_THAT(src_len, AnyOf(Eq(sizeof(src)), Eq(sizeof(src) - 2)));
 
-  // TODO(b/129292371): Verify protocol once we return it.
+  // TODO(gvisor.dev/issue/173): Verify protocol once we return it.
   // Verify the source address.
   EXPECT_EQ(src.sll_family, AF_PACKET);
   EXPECT_EQ(src.sll_ifindex, ifindex);
@@ -234,7 +234,7 @@ TEST_P(CookedPacketTest, Receive) {
 
 // Send via a packet socket.
 TEST_P(CookedPacketTest, Send) {
-  // TODO(b/129292371): Remove once we support packet socket writing.
+  // TODO(gvisor.dev/issue/173): Remove once we support packet socket writing.
   SKIP_IF(IsRunningOnGvisor());
 
   // Let's send a UDP packet and receive it using a regular UDP socket.

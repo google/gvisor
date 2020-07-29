@@ -181,7 +181,7 @@ func (n *NIC) disableLocked() *tcpip.Error {
 		return nil
 	}
 
-	// TODO(b/147015577): Should Routes that are currently bound to n be
+	// TODO(gvisor.dev/issue/1491): Should Routes that are currently bound to n be
 	// invalidated? Currently, Routes will continue to work when a NIC is enabled
 	// again, and applications may not know that the underlying NIC was ever
 	// disabled.
