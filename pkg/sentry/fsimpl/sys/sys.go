@@ -22,10 +22,10 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
+  "gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Name is the default filesystem name.
@@ -79,9 +79,13 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}),
 		"firmware": fs.newDir(creds, defaultSysDirMode, nil),
 		"fs":       fs.newDir(creds, defaultSysDirMode, nil),
-		"kernel":   fs.newDir(creds, defaultSysDirMode, nil),
-		"module":   fs.newDir(creds, defaultSysDirMode, nil),
-		"power":    fs.newDir(creds, defaultSysDirMode, nil),
+		"kernel": fs.newDir(creds, defaultSysDirMode, map[string]*kernfs.Dentry{
+			"debug": fs.newDir(creds, linux.FileMode(0700), map[string]*kernfs.Dentry{
+				"kcov": fs.newKcovFile(ctx, creds),
+			}),
+		}),
+		"module": fs.newDir(creds, defaultSysDirMode, nil),
+		"power":  fs.newDir(creds, defaultSysDirMode, nil),
 	})
 	return fs.VFSFilesystem(), root.VFSDentry(), nil
 }

@@ -1050,6 +1050,19 @@ cc_binary(
 )
 
 cc_binary(
+    name = "kcov_test",
+    testonly = 1,
+    srcs = ["kcov.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:file_descriptor",
+        gtest,
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "kill_test",
     testonly = 1,
     srcs = ["kill.cc"],

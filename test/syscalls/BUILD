@@ -307,6 +307,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:kcov_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:kill_test",
     vfs2 = "True",
 )
@@ -400,7 +404,6 @@ syscall_test(
 syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:open_test",
-    vfs2 = "True",
 )
 
 syscall_test(
