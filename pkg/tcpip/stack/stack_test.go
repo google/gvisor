@@ -867,9 +867,9 @@ func TestRouteWithDownNIC(t *testing.T) {
 					// Writes with Routes that use NIC1 after being brought up should
 					// succeed.
 					//
-					// TODO(b/147015577): Should we instead completely invalidate all
-					// Routes that were bound to a NIC that was brought down at some
-					// point?
+					// TODO(gvisor.dev/issue/1491): Should we instead completely
+					// invalidate all Routes that were bound to a NIC that was brought
+					// down at some point?
 					if err := upFn(s, nicID1); err != nil {
 						t.Fatalf("test.upFn(_, %d): %s", nicID1, err)
 					}
