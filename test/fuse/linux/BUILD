@@ -5,6 +5,19 @@ package(
     licenses = ["notice"],
 )
 
+cc_test(
+    name = "stat_test",
+    srcs = [
+        "fuse_base.h",
+        "stat_test.cc",
+    ],
+    deps = [
+        ":fuse_base",
+        "//test/util:test_util",
+        "//test/util:test_main",
+    ],
+)
+
 cc_library(
     name = "fuse_base",
     testonly = 1,
