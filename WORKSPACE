@@ -1089,3 +1089,10 @@ go_repository(
     sum = "h1:iVjPR7a6H0tWELX5NxNe7bYopibicUzc7uPribsnS6o=",
     version = "v1.0.0",
 )
+
+go_repository(
+    name = "com_github_dpjacques_clockwork",
+    importpath = "github.com/dpjacques/clockwork",
+    sum = "h1:7krODee+eIlZYoLiEDmP1kLFNCvd0bQ0eEXOympdN6U=",
+    version = "v0.1.1-0.20190114191937-d864eecc357b",
+)

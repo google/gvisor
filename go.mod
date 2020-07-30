@@ -22,6 +22,7 @@ require (
 	github.com/docker/go-connections v0.3.0 // indirect
 	github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c // indirect
 	github.com/docker/go-units v0.4.0 // indirect
+	github.com/dpjacques/clockwork v0.1.1-0.20190114191937-d864eecc357b // indirect
 	github.com/godbus/dbus v0.0.0-20190422162347-ade71ed3457e // indirect
 	github.com/gofrs/flock v0.6.1-0.20180915234121-886344bea079 // indirect
 	github.com/gogo/googleapis v1.4.0 // indirect
@@ -43,7 +44,6 @@ require (
 	github.com/vishvananda/netns v0.0.0-20200520041808-52d707b772fe // indirect
 	go.uber.org/atomic v1.6.0 // indirect
 	go.uber.org/multierr v1.2.0 // indirect
-	golang.org/x/sys v0.0.0-20200302150141-5c8b2ff67527 // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
 	golang.org/x/tools v0.0.0-20200707200213-416e8f4faf8a // indirect
 	google.golang.org/grpc v1.29.0 // indirect
