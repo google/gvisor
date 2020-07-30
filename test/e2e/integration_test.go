@@ -431,11 +431,13 @@ func TestHostOverlayfsCopyUp(t *testing.T) {
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
 
-	if _, err := d.Run(ctx, dockerutil.RunOpts{
+	if got, err := d.Run(ctx, dockerutil.RunOpts{
 		Image:   "basic/hostoverlaytest",
 		WorkDir: "/root",
 	}, "./test"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
+	} else if got != "" {
+		t.Errorf("test failed:\n%s", got)
 	}
 }
 
