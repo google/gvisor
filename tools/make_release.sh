@@ -43,8 +43,7 @@ install_raw() {
     # Copy the raw file & generate a sha512sum.
     name=$(basename "${binary}")
     cp -f "${binary}" "${root}/$1"
-    sha512sum "${root}/$1/${name}" | \
-        awk "{print $$1 \"  ${name}\"}" > "${root}/$1/${name}.sha512"
+    (cd "${root}/$1" && sha512sum "${name}" > "${name}.sha512")
   done
 }
 
