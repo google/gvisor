@@ -15,7 +15,6 @@
 package fuse
 
 import (
-	"gvisor.dev/gvisor/pkg/log"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -69,7 +68,7 @@ func (dir *dirFileFD) IterDirents(ctx context.Context, callback vfs.IterDirentsC
 			Ino:     fuseDirent.Meta.Ino,
 			NextOff: nextOff,
 		}
-		log.Infof("fusefs.DirFile.IterDirents: %v file found", dirent.Name)
+
 		if err := callback.Handle(dirent); err != nil {
 			return err
 		}

@@ -475,7 +475,7 @@ func (r *FUSELookupIn) MarshalUnsafe(buf []byte) {
 
 // SizeBytes is the size of the memory representation of FUSELookupIn.
 func (r *FUSELookupIn) SizeBytes() int {
-	return len(r.Name)
+	return len(r.Name) + 1
 }
 
 // UnmarshalUnsafe deserializes r.name from the src buffer.
@@ -546,7 +546,8 @@ func (r *FUSEDirents) UnmarshalUnsafe(src []byte) {
 			break
 		}
 
-		// There is a dirent to read.
+		// Its unclear how many dirents there are in src. Each dirent is dynamically
+		// sized and so we can't make assumptions about how many dirents we can allocate.
 		if r.Dirents == nil {
 			r.Dirents = make([]*FUSEDirent, 0)
 		}
