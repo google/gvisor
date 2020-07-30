@@ -519,6 +519,11 @@ func TestReceiveFragments(t *testing.T) {
 	// UDP header plus a payload of 0..256 in increments of 2.
 	ipv4Payload2 := udpGen(128, 2)
 	udpPayload2 := ipv4Payload2[header.UDPMinimumSize:]
+	// UDP header plus a payload of 0..256 in increments of 3.
+	// Used to test cases where the fragment blocks are not a multiple of
+	// the fragment block size of 8 (RFC 791 section 3.1 page 14).
+	ipv4Payload3 := udpGen(127, 3)
+	udpPayload3 := ipv4Payload3[header.UDPMinimumSize:]
 
 	type fragmentData struct {
 		id             uint16
@@ -543,6 +548,18 @@ func TestReceiveFragments(t *testing.T) {
 				},
 			},
 			expectedPayloads: [][]byte{udpPayload1},
+		},
+		{
+			name: "No fragmentation with size not a multiple of fragment block size",
+			fragments: []fragmentData{
+				{
+					id:             1,
+					flags:          0,
+					fragmentOffset: 0,
+					payload:        ipv4Payload3,
+				},
+			},
+			expectedPayloads: [][]byte{udpPayload3},
 		},
 		{
 			name: "More fragments without payload",
@@ -585,6 +602,42 @@ func TestReceiveFragments(t *testing.T) {
 				},
 			},
 			expectedPayloads: [][]byte{udpPayload1},
+		},
+		{
+			name: "Two fragments with last fragment size not a multiple of fragment block size",
+			fragments: []fragmentData{
+				{
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload3[:64],
+				},
+				{
+					id:             1,
+					flags:          0,
+					fragmentOffset: 64,
+					payload:        ipv4Payload3[64:],
+				},
+			},
+			expectedPayloads: [][]byte{udpPayload3},
+		},
+		{
+			name: "Two fragments with first fragment size not a multiple of fragment block size",
+			fragments: []fragmentData{
+				{
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload3[:63],
+				},
+				{
+					id:             1,
+					flags:          0,
+					fragmentOffset: 63,
+					payload:        ipv4Payload3[63:],
+				},
+			},
+			expectedPayloads: nil,
 		},
 		{
 			name: "Second fragment has MoreFlags set",
