@@ -48,7 +48,10 @@ FULL_DOCKER_RUN_OPTIONS += -v "$(BAZEL_CACHE):$(BAZEL_CACHE)"
 FULL_DOCKER_RUN_OPTIONS += -v "$(GCLOUD_CONFIG):$(GCLOUD_CONFIG)"
 FULL_DOCKER_RUN_OPTIONS += -v "/tmp:/tmp"
 FULL_DOCKER_EXEC_OPTIONS := --user $(UID):$(GID)
-FULL_DOCKER_EXEC_OPTIONS += -i
+FULL_DOCKER_EXEC_OPTIONS += --interactive
+ifeq (true,$(shell [[ -t 0 ]] && echo true))
+FULL_DOCKER_EXEC_OPTIONS += --tty
+endif
 
 # Add docker passthrough options.
 ifneq ($(DOCKER_PRIVILEGED),)
