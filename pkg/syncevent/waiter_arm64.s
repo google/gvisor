@@ -16,11 +16,11 @@
 
 // See waiter_noasm_unsafe.go for a description of waiterUnlock.
 //
-// func waiterUnlock(g unsafe.Pointer, wg *unsafe.Pointer) bool
+// func waiterUnlock(ptr unsafe.Pointer, wg *unsafe.Pointer) bool
 TEXT ·waiterUnlock(SB),NOSPLIT,$0-24
 	MOVD wg+8(FP), R0
 	MOVD $·preparingG(SB), R1
-	MOVD g+0(FP), R2
+	MOVD ptr+0(FP), R2
 again:
 	LDAXR (R0), R3
 	CMP R1, R3

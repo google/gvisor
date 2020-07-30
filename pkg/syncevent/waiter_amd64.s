@@ -16,9 +16,9 @@
 
 // See waiter_noasm_unsafe.go for a description of waiterUnlock.
 //
-// func waiterUnlock(g unsafe.Pointer, wg *unsafe.Pointer) bool
+// func waiterUnlock(ptr unsafe.Pointer, wg *unsafe.Pointer) bool
 TEXT ·waiterUnlock(SB),NOSPLIT,$0-24
-	MOVQ g+0(FP), DI
+	MOVQ ptr+0(FP), DI
 	MOVQ wg+8(FP), SI
 
 	MOVQ $·preparingG(SB), AX
