@@ -434,7 +434,33 @@ func TestHostOverlayfsCopyUp(t *testing.T) {
 	if got, err := d.Run(ctx, dockerutil.RunOpts{
 		Image:   "basic/hostoverlaytest",
 		WorkDir: "/root",
-	}, "./test"); err != nil {
+	}, "./test_copy_up"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	} else if got != "" {
+		t.Errorf("test failed:\n%s", got)
+	}
+}
+
+// TestHostOverlayfsRewindDir tests that rewinddir() "causes the directory
+// stream to refer to the current state of the corresponding directory, as a
+// call to opendir() would have done" as required by POSIX, when the directory
+// in question is host overlayfs.
+//
+// This test specifically targets host overlayfs because, per POSIX, "if a file
+// is removed from or added to the directory after the most recent call to
+// opendir() or rewinddir(), whether a subsequent call to readdir() returns an
+// entry for that file is unspecified"; the host filesystems used by other
+// automated tests yield newly-added files from readdir() even if the fsgofer
+// does not explicitly rewinddir(), but overlayfs does not.
+func TestHostOverlayfsRewindDir(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	if got, err := d.Run(ctx, dockerutil.RunOpts{
+		Image:   "basic/hostoverlaytest",
+		WorkDir: "/root",
+	}, "./test_rewinddir"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	} else if got != "" {
 		t.Errorf("test failed:\n%s", got)
