@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -3414,6 +3415,228 @@ func TestStackSendBufferSizeOption(t *testing.T) {
 				if got, want := ss, tc.ss; got != want {
 					t.Fatalf("s.Option(..) returned unexpected value got: %#v, want: %#v", got, want)
 				}
+			}
+		})
+	}
+}
+
+func TestOutgoingSubnetBroadcast(t *testing.T) {
+	const (
+		unspecifiedNICID = 0
+		nicID1           = 1
+	)
+
+	defaultAddr := tcpip.AddressWithPrefix{
+		Address:   header.IPv4Any,
+		PrefixLen: 0,
+	}
+	defaultSubnet := defaultAddr.Subnet()
+	ipv4Addr := tcpip.AddressWithPrefix{
+		Address:   "\xc0\xa8\x01\x3a",
+		PrefixLen: 24,
+	}
+	ipv4Subnet := ipv4Addr.Subnet()
+	ipv4SubnetBcast := ipv4Subnet.Broadcast()
+	ipv4Gateway := tcpip.Address("\xc0\xa8\x01\x01")
+	ipv4AddrPrefix31 := tcpip.AddressWithPrefix{
+		Address:   "\xc0\xa8\x01\x3a",
+		PrefixLen: 31,
+	}
+	ipv4Subnet31 := ipv4AddrPrefix31.Subnet()
+	ipv4Subnet31Bcast := ipv4Subnet31.Broadcast()
+	ipv4AddrPrefix32 := tcpip.AddressWithPrefix{
+		Address:   "\xc0\xa8\x01\x3a",
+		PrefixLen: 32,
+	}
+	ipv4Subnet32 := ipv4AddrPrefix32.Subnet()
+	ipv4Subnet32Bcast := ipv4Subnet32.Broadcast()
+	ipv6Addr := tcpip.AddressWithPrefix{
+		Address:   "\x20\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+		PrefixLen: 64,
+	}
+	ipv6Subnet := ipv6Addr.Subnet()
+	ipv6SubnetBcast := ipv6Subnet.Broadcast()
+	remNetAddr := tcpip.AddressWithPrefix{
+		Address:   "\x64\x0a\x7b\x18",
+		PrefixLen: 24,
+	}
+	remNetSubnet := remNetAddr.Subnet()
+	remNetSubnetBcast := remNetSubnet.Broadcast()
+
+	tests := []struct {
+		name          string
+		nicAddr       tcpip.ProtocolAddress
+		routes        []tcpip.Route
+		remoteAddr    tcpip.Address
+		expectedRoute stack.Route
+	}{
+		// Broadcast to a locally attached subnet populates the broadcast MAC.
+		{
+			name: "IPv4 Broadcast to local subnet",
+			nicAddr: tcpip.ProtocolAddress{
+				Protocol:          header.IPv4ProtocolNumber,
+				AddressWithPrefix: ipv4Addr,
+			},
+			routes: []tcpip.Route{
+				{
+					Destination: ipv4Subnet,
+					NIC:         nicID1,
+				},
+			},
+			remoteAddr: ipv4SubnetBcast,
+			expectedRoute: stack.Route{
+				LocalAddress:      ipv4Addr.Address,
+				RemoteAddress:     ipv4SubnetBcast,
+				RemoteLinkAddress: header.EthernetBroadcastAddress,
+				NetProto:          header.IPv4ProtocolNumber,
+				Loop:              stack.PacketOut,
+			},
+		},
+		// Broadcast to a locally attached /31 subnet does not populate the
+		// broadcast MAC.
+		{
+			name: "IPv4 Broadcast to local /31 subnet",
+			nicAddr: tcpip.ProtocolAddress{
+				Protocol:          header.IPv4ProtocolNumber,
+				AddressWithPrefix: ipv4AddrPrefix31,
+			},
+			routes: []tcpip.Route{
+				{
+					Destination: ipv4Subnet31,
+					NIC:         nicID1,
+				},
+			},
+			remoteAddr: ipv4Subnet31Bcast,
+			expectedRoute: stack.Route{
+				LocalAddress:  ipv4AddrPrefix31.Address,
+				RemoteAddress: ipv4Subnet31Bcast,
+				NetProto:      header.IPv4ProtocolNumber,
+				Loop:          stack.PacketOut,
+			},
+		},
+		// Broadcast to a locally attached /32 subnet does not populate the
+		// broadcast MAC.
+		{
+			name: "IPv4 Broadcast to local /32 subnet",
+			nicAddr: tcpip.ProtocolAddress{
+				Protocol:          header.IPv4ProtocolNumber,
+				AddressWithPrefix: ipv4AddrPrefix32,
+			},
+			routes: []tcpip.Route{
+				{
+					Destination: ipv4Subnet32,
+					NIC:         nicID1,
+				},
+			},
+			remoteAddr: ipv4Subnet32Bcast,
+			expectedRoute: stack.Route{
+				LocalAddress:  ipv4AddrPrefix32.Address,
+				RemoteAddress: ipv4Subnet32Bcast,
+				NetProto:      header.IPv4ProtocolNumber,
+				Loop:          stack.PacketOut,
+			},
+		},
+		// IPv6 has no notion of a broadcast.
+		{
+			name: "IPv6 'Broadcast' to local subnet",
+			nicAddr: tcpip.ProtocolAddress{
+				Protocol:          header.IPv6ProtocolNumber,
+				AddressWithPrefix: ipv6Addr,
+			},
+			routes: []tcpip.Route{
+				{
+					Destination: ipv6Subnet,
+					NIC:         nicID1,
+				},
+			},
+			remoteAddr: ipv6SubnetBcast,
+			expectedRoute: stack.Route{
+				LocalAddress:  ipv6Addr.Address,
+				RemoteAddress: ipv6SubnetBcast,
+				NetProto:      header.IPv6ProtocolNumber,
+				Loop:          stack.PacketOut,
+			},
+		},
+		// Broadcast to a remote subnet in the route table is send to the next-hop
+		// gateway.
+		{
+			name: "IPv4 Broadcast to remote subnet",
+			nicAddr: tcpip.ProtocolAddress{
+				Protocol:          header.IPv4ProtocolNumber,
+				AddressWithPrefix: ipv4Addr,
+			},
+			routes: []tcpip.Route{
+				{
+					Destination: remNetSubnet,
+					Gateway:     ipv4Gateway,
+					NIC:         nicID1,
+				},
+			},
+			remoteAddr: remNetSubnetBcast,
+			expectedRoute: stack.Route{
+				LocalAddress:  ipv4Addr.Address,
+				RemoteAddress: remNetSubnetBcast,
+				NextHop:       ipv4Gateway,
+				NetProto:      header.IPv4ProtocolNumber,
+				Loop:          stack.PacketOut,
+			},
+		},
+		// Broadcast to an unknown subnet follows the default route. Note that this
+		// is essentially just routing an unknown destination IP, because w/o any
+		// subnet prefix information a subnet broadcast address is just a normal IP.
+		{
+			name: "IPv4 Broadcast to unknown subnet",
+			nicAddr: tcpip.ProtocolAddress{
+				Protocol:          header.IPv4ProtocolNumber,
+				AddressWithPrefix: ipv4Addr,
+			},
+			routes: []tcpip.Route{
+				{
+					Destination: defaultSubnet,
+					Gateway:     ipv4Gateway,
+					NIC:         nicID1,
+				},
+			},
+			remoteAddr: remNetSubnetBcast,
+			expectedRoute: stack.Route{
+				LocalAddress:  ipv4Addr.Address,
+				RemoteAddress: remNetSubnetBcast,
+				NextHop:       ipv4Gateway,
+				NetProto:      header.IPv4ProtocolNumber,
+				Loop:          stack.PacketOut,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
+			})
+			ep := channel.New(0, defaultMTU, "")
+			if err := s.CreateNIC(nicID1, ep); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", nicID1, err)
+			}
+			if err := s.AddProtocolAddress(nicID1, test.nicAddr); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v): %s", nicID1, test.nicAddr, err)
+			}
+
+			s.SetRouteTable(test.routes)
+
+			var netProto tcpip.NetworkProtocolNumber
+			switch l := len(test.remoteAddr); l {
+			case header.IPv4AddressSize:
+				netProto = header.IPv4ProtocolNumber
+			case header.IPv6AddressSize:
+				netProto = header.IPv6ProtocolNumber
+			default:
+				t.Fatalf("got unexpected address length = %d bytes", l)
+			}
+
+			if r, err := s.FindRoute(unspecifiedNICID, "" /* localAddr */, test.remoteAddr, netProto, false /* multicastLoop */); err != nil {
+				t.Fatalf("FindRoute(%d, '', %s, %d): %s", unspecifiedNICID, test.remoteAddr, netProto, err)
+			} else if diff := cmp.Diff(r, test.expectedRoute, cmpopts.IgnoreUnexported(r)); diff != "" {
+				t.Errorf("route mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

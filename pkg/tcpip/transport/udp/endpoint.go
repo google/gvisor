@@ -483,10 +483,6 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 			nicID = e.BindNICID
 		}
 
-		if to.Addr == header.IPv4Broadcast && !e.broadcast {
-			return 0, nil, tcpip.ErrBroadcastDisabled
-		}
-
 		dst, netProto, err := e.checkV4MappedLocked(*to)
 		if err != nil {
 			return 0, nil, err
@@ -501,6 +497,10 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		route = &r
 		dstPort = dst.Port
 		resolve = route.Resolve
+	}
+
+	if !e.broadcast && route.IsBroadcast() {
+		return 0, nil, tcpip.ErrBroadcastDisabled
 	}
 
 	if route.IsResolutionRequired() {
