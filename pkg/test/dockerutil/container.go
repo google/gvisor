@@ -454,15 +454,19 @@ func (c *Container) Wait(ctx context.Context) error {
 
 // WaitTimeout waits for the container to exit with a timeout.
 func (c *Container) WaitTimeout(ctx context.Context, timeout time.Duration) error {
-	timeoutChan := time.After(timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	statusChan, errChan := c.client.ContainerWait(ctx, c.id, container.WaitConditionNotRunning)
 	select {
+	case <-ctx.Done():
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("container %s timed out after %v seconds", c.Name, timeout.Seconds())
+		}
+		return nil
 	case err := <-errChan:
 		return err
 	case <-statusChan:
 		return nil
-	case <-timeoutChan:
-		return fmt.Errorf("container %s timed out after %v seconds", c.Name, timeout.Seconds())
 	}
 }
 
@@ -487,6 +491,12 @@ func (c *Container) WaitForOutputSubmatch(ctx context.Context, pattern string, t
 	}
 
 	for exp := time.Now().Add(timeout); time.Now().Before(exp); {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
 		c.streams.Conn.SetDeadline(time.Now().Add(50 * time.Millisecond))
 		_, err := stdcopy.StdCopy(&c.streamBuf, &c.streamBuf, c.streams.Reader)
 
