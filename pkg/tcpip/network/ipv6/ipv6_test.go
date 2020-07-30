@@ -678,13 +678,18 @@ type fragmentData struct {
 }
 
 func TestReceiveIPv6Fragments(t *testing.T) {
-	const nicID = 1
-	const udpPayload1Length = 256
-	const udpPayload2Length = 128
-	const fragmentExtHdrLen = 8
-	// Note, not all routing extension headers will be 8 bytes but this test
-	// uses 8 byte routing extension headers for most sub tests.
-	const routingExtHdrLen = 8
+	const (
+		nicID             = 1
+		udpPayload1Length = 256
+		udpPayload2Length = 128
+		// Used to test cases where the fragment blocks are not a multiple of
+		// the fragment block size of 8 (RFC 8200 section 4.5).
+		udpPayload3Length = 127
+		fragmentExtHdrLen = 8
+		// Note, not all routing extension headers will be 8 bytes but this test
+		// uses 8 byte routing extension headers for most sub tests.
+		routingExtHdrLen = 8
+	)
 
 	udpGen := func(payload []byte, multiplier uint8) buffer.View {
 		payloadLen := len(payload)
@@ -715,6 +720,10 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 	var udpPayload2Buf [udpPayload2Length]byte
 	udpPayload2 := udpPayload2Buf[:]
 	ipv6Payload2 := udpGen(udpPayload2, 2)
+
+	var udpPayload3Buf [udpPayload3Length]byte
+	udpPayload3 := udpPayload3Buf[:]
+	ipv6Payload3 := udpGen(udpPayload3, 3)
 
 	tests := []struct {
 		name             string
@@ -751,6 +760,24 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 			expectedPayloads: [][]byte{udpPayload1},
 		},
 		{
+			name: "Atomic fragment with size not a multiple of fragment block size",
+			fragments: []fragmentData{
+				{
+					nextHdr: fragmentExtHdrID,
+					data: buffer.NewVectorisedView(
+						fragmentExtHdrLen+len(ipv6Payload3),
+						[]buffer.View{
+							// Fragment extension header.
+							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 0, 0, 0, 0, 0}),
+
+							ipv6Payload3,
+						},
+					),
+				},
+			},
+			expectedPayloads: [][]byte{udpPayload3},
+		},
+		{
 			name: "Two fragments",
 			fragments: []fragmentData{
 				{
@@ -783,6 +810,74 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 				},
 			},
 			expectedPayloads: [][]byte{udpPayload1},
+		},
+		{
+			name: "Two fragments with last fragment size not a multiple of fragment block size",
+			fragments: []fragmentData{
+				{
+					nextHdr: fragmentExtHdrID,
+					data: buffer.NewVectorisedView(
+						fragmentExtHdrLen+64,
+						[]buffer.View{
+							// Fragment extension header.
+							//
+							// Fragment offset = 0, More = true, ID = 1
+							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1}),
+
+							ipv6Payload3[:64],
+						},
+					),
+				},
+				{
+					nextHdr: fragmentExtHdrID,
+					data: buffer.NewVectorisedView(
+						fragmentExtHdrLen+len(ipv6Payload3)-64,
+						[]buffer.View{
+							// Fragment extension header.
+							//
+							// Fragment offset = 8, More = false, ID = 1
+							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 1}),
+
+							ipv6Payload3[64:],
+						},
+					),
+				},
+			},
+			expectedPayloads: [][]byte{udpPayload3},
+		},
+		{
+			name: "Two fragments with first fragment size not a multiple of fragment block size",
+			fragments: []fragmentData{
+				{
+					nextHdr: fragmentExtHdrID,
+					data: buffer.NewVectorisedView(
+						fragmentExtHdrLen+63,
+						[]buffer.View{
+							// Fragment extension header.
+							//
+							// Fragment offset = 0, More = true, ID = 1
+							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1}),
+
+							ipv6Payload3[:63],
+						},
+					),
+				},
+				{
+					nextHdr: fragmentExtHdrID,
+					data: buffer.NewVectorisedView(
+						fragmentExtHdrLen+len(ipv6Payload3)-63,
+						[]buffer.View{
+							// Fragment extension header.
+							//
+							// Fragment offset = 8, More = false, ID = 1
+							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 1}),
+
+							ipv6Payload3[63:],
+						},
+					),
+				},
+			},
+			expectedPayloads: nil,
 		},
 		{
 			name: "Two fragments with different IDs",

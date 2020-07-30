@@ -45,6 +45,10 @@ const (
 
 	// buckets is the number of identifier buckets.
 	buckets = 2048
+
+	// The size of a fragment block, in bytes, as per RFC 791 section 3.1,
+	// page 14.
+	fragmentblockSize = 8
 )
 
 type endpoint struct {
@@ -66,7 +70,7 @@ func (p *protocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWi
 		prefixLen:     addrWithPrefix.PrefixLen,
 		linkEP:        linkEP,
 		dispatcher:    dispatcher,
-		fragmentation: fragmentation.NewFragmentation(fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, fragmentation.DefaultReassembleTimeout),
+		fragmentation: fragmentation.NewFragmentation(fragmentblockSize, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, fragmentation.DefaultReassembleTimeout),
 		protocol:      p,
 		stack:         st,
 	}

@@ -15,6 +15,7 @@
 package fragmentation
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -81,7 +82,7 @@ var processTestCases = []struct {
 func TestFragmentationProcess(t *testing.T) {
 	for _, c := range processTestCases {
 		t.Run(c.comment, func(t *testing.T) {
-			f := NewFragmentation(1024, 512, DefaultReassembleTimeout)
+			f := NewFragmentation(minBlockSize, 1024, 512, DefaultReassembleTimeout)
 			for i, in := range c.in {
 				vv, done, err := f.Process(in.id, in.first, in.last, in.more, in.vv)
 				if err != nil {
@@ -110,7 +111,7 @@ func TestFragmentationProcess(t *testing.T) {
 
 func TestReassemblingTimeout(t *testing.T) {
 	timeout := time.Millisecond
-	f := NewFragmentation(1024, 512, timeout)
+	f := NewFragmentation(minBlockSize, 1024, 512, timeout)
 	// Send first fragment with id = 0, first = 0, last = 0, and more = true.
 	f.Process(0, 0, 0, true, vv(1, "0"))
 	// Sleep more than the timeout.
@@ -127,7 +128,7 @@ func TestReassemblingTimeout(t *testing.T) {
 }
 
 func TestMemoryLimits(t *testing.T) {
-	f := NewFragmentation(3, 1, DefaultReassembleTimeout)
+	f := NewFragmentation(minBlockSize, 3, 1, DefaultReassembleTimeout)
 	// Send first fragment with id = 0.
 	f.Process(0, 0, 0, true, vv(1, "0"))
 	// Send first fragment with id = 1.
@@ -151,7 +152,7 @@ func TestMemoryLimits(t *testing.T) {
 }
 
 func TestMemoryLimitsIgnoresDuplicates(t *testing.T) {
-	f := NewFragmentation(1, 0, DefaultReassembleTimeout)
+	f := NewFragmentation(minBlockSize, 1, 0, DefaultReassembleTimeout)
 	// Send first fragment with id = 0.
 	f.Process(0, 0, 0, true, vv(1, "0"))
 	// Send the same packet again.
@@ -161,5 +162,101 @@ func TestMemoryLimitsIgnoresDuplicates(t *testing.T) {
 	want := 1
 	if got != want {
 		t.Errorf("Wrong size, duplicates are not handled correctly: got=%d, want=%d.", got, want)
+	}
+}
+
+func TestErrors(t *testing.T) {
+	const fragID = 5
+
+	tests := []struct {
+		name      string
+		blockSize uint16
+		first     uint16
+		last      uint16
+		more      bool
+		data      string
+		err       error
+	}{
+		{
+			name:      "exact block size without more",
+			blockSize: 2,
+			first:     2,
+			last:      3,
+			more:      false,
+			data:      "01",
+		},
+		{
+			name:      "exact block size with more",
+			blockSize: 2,
+			first:     2,
+			last:      3,
+			more:      true,
+			data:      "01",
+		},
+		{
+			name:      "exact block size with more and extra data",
+			blockSize: 2,
+			first:     2,
+			last:      3,
+			more:      true,
+			data:      "012",
+		},
+		{
+			name:      "exact block size with more and too little data",
+			blockSize: 2,
+			first:     2,
+			last:      3,
+			more:      true,
+			data:      "0",
+			err:       ErrInvalidArgs,
+		},
+		{
+			name:      "not exact block size with more",
+			blockSize: 2,
+			first:     2,
+			last:      2,
+			more:      true,
+			data:      "0",
+			err:       ErrInvalidArgs,
+		},
+		{
+			name:      "not exact block size without more",
+			blockSize: 2,
+			first:     2,
+			last:      2,
+			more:      false,
+			data:      "0",
+		},
+		{
+			name:      "first not a multiple of block size",
+			blockSize: 2,
+			first:     3,
+			last:      4,
+			more:      true,
+			data:      "01",
+			err:       ErrInvalidArgs,
+		},
+		{
+			name:      "first more than last",
+			blockSize: 2,
+			first:     4,
+			last:      3,
+			more:      true,
+			data:      "01",
+			err:       ErrInvalidArgs,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			f := NewFragmentation(test.blockSize, HighFragThreshold, LowFragThreshold, DefaultReassembleTimeout)
+			_, done, err := f.Process(fragID, test.first, test.last, test.more, vv(len(test.data), test.data))
+			if !errors.Is(err, test.err) {
+				t.Errorf("got Proceess(%d, %d, %d, %t, %q) = (_, _, %v), want = (_, _, %v)", fragID, test.first, test.last, test.more, test.data, err, test.err)
+			}
+			if done {
+				t.Errorf("got Proceess(%d, %d, %d, %t, %q) = (_, true, _), want = (_, false, _)", fragID, test.first, test.last, test.more, test.data)
+			}
+		})
 	}
 }
