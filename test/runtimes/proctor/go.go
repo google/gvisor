@@ -81,13 +81,13 @@ func (goRunner) TestCmds(tests []string) []*exec.Cmd {
 		if strings.HasSuffix(test, ".go") {
 			onDiskTests = append(onDiskTests, test)
 		} else {
-			toolTests = append(toolTests, test)
+			toolTests = append(toolTests, "^"+test+"$")
 		}
 	}
 
 	var cmds []*exec.Cmd
 	if len(toolTests) > 0 {
-		cmds = append(cmds, exec.Command("go", "tool", "dist", "test", "-run", strings.Join(toolTests, "\\|")))
+		cmds = append(cmds, exec.Command("go", "tool", "dist", "test", "-v", "-no-rebuild", "-run", strings.Join(toolTests, "\\|")))
 	}
 	if len(onDiskTests) > 0 {
 		cmd := exec.Command("go", append([]string{"run", "run.go", "-v", "--"}, onDiskTests...)...)
