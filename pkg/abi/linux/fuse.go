@@ -141,3 +141,108 @@ type FUSEWriteIn struct {
 
 	_ uint32
 }
+
+// FUSE_INIT flags, consistent with the ones in include/uapi/linux/fuse.h.
+const (
+	FUSE_ASYNC_READ          = 1 << 0
+	FUSE_POSIX_LOCKS         = 1 << 1
+	FUSE_FILE_OPS            = 1 << 2
+	FUSE_ATOMIC_O_TRUNC      = 1 << 3
+	FUSE_EXPORT_SUPPORT      = 1 << 4
+	FUSE_BIG_WRITES          = 1 << 5
+	FUSE_DONT_MASK           = 1 << 6
+	FUSE_SPLICE_WRITE        = 1 << 7
+	FUSE_SPLICE_MOVE         = 1 << 8
+	FUSE_SPLICE_READ         = 1 << 9
+	FUSE_FLOCK_LOCKS         = 1 << 10
+	FUSE_HAS_IOCTL_DIR       = 1 << 11
+	FUSE_AUTO_INVAL_DATA     = 1 << 12
+	FUSE_DO_READDIRPLUS      = 1 << 13
+	FUSE_READDIRPLUS_AUTO    = 1 << 14
+	FUSE_ASYNC_DIO           = 1 << 15
+	FUSE_WRITEBACK_CACHE     = 1 << 16
+	FUSE_NO_OPEN_SUPPORT     = 1 << 17
+	FUSE_PARALLEL_DIROPS     = 1 << 18
+	FUSE_HANDLE_KILLPRIV     = 1 << 19
+	FUSE_POSIX_ACL           = 1 << 20
+	FUSE_ABORT_ERROR         = 1 << 21
+	FUSE_MAX_PAGES           = 1 << 22
+	FUSE_CACHE_SYMLINKS      = 1 << 23
+	FUSE_NO_OPENDIR_SUPPORT  = 1 << 24
+	FUSE_EXPLICIT_INVAL_DATA = 1 << 25
+	FUSE_MAP_ALIGNMENT       = 1 << 26
+)
+
+// currently supported FUSE protocol version numbers.
+const (
+	FUSE_KERNEL_VERSION       = 7
+	FUSE_KERNEL_MINOR_VERSION = 31
+)
+
+// FUSEInitIn is the request sent by the kernel to the daemon,
+// to negotiate the version and flags.
+//
+// +marshal
+type FUSEInitIn struct {
+	// Major version supported by kernel.
+	Major uint32
+
+	// Minor version supported by the kernel.
+	Minor uint32
+
+	// MaxReadahead is the maximum number of bytes to read-ahead
+	// decided by the kernel.
+	MaxReadahead uint32
+
+	// Flags of this init request.
+	Flags uint32
+}
+
+// FUSEInitOut is the reply sent by the daemon to the kernel
+// for FUSEInitIn.
+//
+// +marshal
+type FUSEInitOut struct {
+	// Major version supported by daemon.
+	Major uint32
+
+	// Minor version supported by daemon.
+	Minor uint32
+
+	// MaxReadahead is the maximum number of bytes to read-ahead.
+	// Decided by the daemon, after receiving the value from kernel.
+	MaxReadahead uint32
+
+	// Flags of this init reply.
+	Flags uint32
+
+	// MaxBackground is the maximum number of pending background requests
+	// that the daemon wants.
+	MaxBackground uint16
+
+	// CongestionThreshold is the daemon-decided threshold for
+	// the number of the pending background requests.
+	CongestionThreshold uint16
+
+	// MaxWrite is the daemon's maximum size of a write buffer.
+	// Kernel adjusts it to the minimum (fuse/init.go:fuseMinMaxWrite).
+	// if the value from daemon is too small.
+	MaxWrite uint32
+
+	// TimeGran is the daemon's time granularity for mtime and ctime metadata.
+	// The unit is nanosecond.
+	// Value should be power of 10.
+	// 1 indicates full nanosecond granularity support.
+	TimeGran uint32
+
+	// MaxPages is the daemon's maximum number of pages for one write operation.
+	// Kernel adjusts it to the maximum (fuse/init.go:FUSE_MAX_MAX_PAGES).
+	// if the value from daemon is too large.
+	MaxPages uint16
+
+	// MapAlignment is an unknown field and not used by this package at this moment.
+	// Use as a placeholder to be consistent with the FUSE protocol.
+	MapAlignment uint16
+
+	_ [8]uint32
+}
