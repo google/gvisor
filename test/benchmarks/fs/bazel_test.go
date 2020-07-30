@@ -24,7 +24,18 @@ import (
 )
 
 // Note: CleanCache versions of this test require running with root permissions.
-func BenchmarkABSL(b *testing.B) {
+func BenchmarkBuildABSL(b *testing.B) {
+	runBuildBenchmark(b, "benchmarks/absl", "/abseil-cpp", "absl/base/...")
+}
+
+// Note: CleanCache versions of this test require running with root permissions.
+// Note: This test takes on the order of 10m per permutation for runsc on kvm.
+func BenchmarkBuildRunsc(b *testing.B) {
+	runBuildBenchmark(b, "benchmarks/runsc", "/gvisor", "runsc:runsc")
+}
+
+func runBuildBenchmark(b *testing.B, image, workdir, target string) {
+	b.Helper()
 	// Get a machine from the Harness on which to run.
 	machine, err := h.GetMachine()
 	if err != nil {
@@ -51,20 +62,18 @@ func BenchmarkABSL(b *testing.B) {
 			container := machine.GetContainer(ctx, b)
 			defer container.CleanUp(ctx)
 
-			workdir := "/abseil-cpp"
-
 			// Start a container and sleep by an order of b.N.
 			if err := container.Spawn(ctx, dockerutil.RunOpts{
-				Image: "benchmarks/absl",
+				Image: image,
 			}, "sleep", fmt.Sprintf("%d", 1000000)); err != nil {
 				b.Fatalf("run failed with: %v", err)
 			}
 
 			// If we are running on a tmpfs, copy to /tmp which is a tmpfs.
 			if bm.tmpfs {
-				if _, err := container.Exec(ctx, dockerutil.ExecOpts{},
-					"cp", "-r", "/abseil-cpp", "/tmp/."); err != nil {
-					b.Fatal("failed to copy directory: %v", err)
+				if out, err := container.Exec(ctx, dockerutil.ExecOpts{},
+					"cp", "-r", workdir, "/tmp/."); err != nil {
+					b.Fatal("failed to copy directory: %v %s", err, out)
 				}
 				workdir = "/tmp" + workdir
 			}
@@ -86,7 +95,7 @@ func BenchmarkABSL(b *testing.B) {
 
 				got, err := container.Exec(ctx, dockerutil.ExecOpts{
 					WorkDir: workdir,
-				}, "bazel", "build", "-c", "opt", "absl/base/...")
+				}, "bazel", "build", "-c", "opt", target)
 				if err != nil {
 					b.Fatalf("build failed with: %v", err)
 				}
