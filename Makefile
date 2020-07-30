@@ -155,7 +155,7 @@ syscall-tests: syscall-ptrace-tests syscall-kvm-tests syscall-native-tests
 
 %-runtime-tests: load-runtimes_%
 	@$(call submake,install-test-runtime)
-	@$(call submake,test-runtime TARGETS="//test/runtimes:$*")
+	@$(call submake,test-runtime OPTIONS="--test_timeout=10800" TARGETS="//test/runtimes:$*")
 
 do-tests: runsc
 	@$(call submake,run TARGETS="//runsc" ARGS="--rootless do true")
@@ -370,5 +370,5 @@ configure: ## Configures a single runtime. Requires sudo. Typically called from 
 .PHONY: configure
 
 test-runtime: ## A convenient wrapper around test that provides the runtime argument. Target must still be provided.
-	@$(call submake,test OPTIONS="$(OPTIONS) --test_output=streamed --test_arg=--runtime=$(RUNTIME)")
+	@$(call submake,test OPTIONS="$(OPTIONS) --test_arg=--runtime=$(RUNTIME)")
 .PHONY: test-runtime
