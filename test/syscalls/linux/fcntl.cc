@@ -1004,7 +1004,8 @@ TEST(FcntlTest, SetOwnPid) {
   pid_t pid;
   EXPECT_THAT(pid = getpid(), SyscallSucceeds());
 
-  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, pid), SyscallSucceeds());
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, pid),
+              SyscallSucceedsWithValue(0));
 
   EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
               SyscallSucceedsWithValue(pid));
@@ -1018,7 +1019,8 @@ TEST(FcntlTest, SetOwnPgrp) {
   pid_t pgid;
   EXPECT_THAT(pgid = getpgrp(), SyscallSucceeds());
 
-  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, -pgid), SyscallSucceeds());
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, -pgid),
+              SyscallSucceedsWithValue(0));
 
   // Verify with F_GETOWN_EX; using F_GETOWN on Linux may incorrectly treat the
   // negative return value as an error, converting the return value to -1 and
@@ -1038,8 +1040,10 @@ TEST(FcntlTest, SetOwnUnset) {
   // Set and unset pid.
   pid_t pid;
   EXPECT_THAT(pid = getpid(), SyscallSucceeds());
-  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, pid), SyscallSucceeds());
-  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, 0), SyscallSucceeds());
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, pid),
+              SyscallSucceedsWithValue(0));
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, 0),
+              SyscallSucceedsWithValue(0));
 
   EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
               SyscallSucceedsWithValue(0));
@@ -1047,8 +1051,10 @@ TEST(FcntlTest, SetOwnUnset) {
   // Set and unset pgid.
   pid_t pgid;
   EXPECT_THAT(pgid = getpgrp(), SyscallSucceeds());
-  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, -pgid), SyscallSucceeds());
-  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, 0), SyscallSucceeds());
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, -pgid),
+              SyscallSucceedsWithValue(0));
+  ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN, 0),
+              SyscallSucceedsWithValue(0));
 
   EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
               SyscallSucceedsWithValue(0));
@@ -1120,7 +1126,7 @@ TEST(FcntlTest, SetOwnExTid) {
   EXPECT_THAT(owner.pid = syscall(__NR_gettid), SyscallSucceeds());
 
   ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
-              SyscallSucceeds());
+              SyscallSucceedsWithValue(0));
 
   EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
               SyscallSucceedsWithValue(owner.pid));
@@ -1136,7 +1142,7 @@ TEST(FcntlTest, SetOwnExPid) {
   EXPECT_THAT(owner.pid = getpid(), SyscallSucceeds());
 
   ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
-              SyscallSucceeds());
+              SyscallSucceedsWithValue(0));
 
   EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
               SyscallSucceedsWithValue(owner.pid));
@@ -1152,7 +1158,7 @@ TEST(FcntlTest, SetOwnExPgrp) {
   EXPECT_THAT(set_owner.pid = getpgrp(), SyscallSucceeds());
 
   ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &set_owner),
-              SyscallSucceeds());
+              SyscallSucceedsWithValue(0));
 
   // Verify with F_GETOWN_EX; using F_GETOWN on Linux may incorrectly treat the
   // negative return value as an error, converting the return value to -1 and
@@ -1176,10 +1182,10 @@ TEST(FcntlTest, SetOwnExUnset) {
   owner.type = F_OWNER_PID;
   EXPECT_THAT(owner.pid = getpid(), SyscallSucceeds());
   ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
-              SyscallSucceeds());
+              SyscallSucceedsWithValue(0));
   owner.pid = 0;
   ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
-              SyscallSucceeds());
+              SyscallSucceedsWithValue(0));
 
   EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
               SyscallSucceedsWithValue(0));
@@ -1188,10 +1194,10 @@ TEST(FcntlTest, SetOwnExUnset) {
   owner.type = F_OWNER_PGRP;
   EXPECT_THAT(owner.pid = getpgrp(), SyscallSucceeds());
   ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
-              SyscallSucceeds());
+              SyscallSucceedsWithValue(0));
   owner.pid = 0;
   ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &owner),
-              SyscallSucceeds());
+              SyscallSucceedsWithValue(0));
 
   EXPECT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN),
               SyscallSucceedsWithValue(0));
@@ -1207,7 +1213,7 @@ TEST(FcntlTest, GetOwnExTid) {
   EXPECT_THAT(set_owner.pid = syscall(__NR_gettid), SyscallSucceeds());
 
   ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &set_owner),
-              SyscallSucceeds());
+              SyscallSucceedsWithValue(0));
 
   f_owner_ex got_owner = {};
   ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN_EX, &got_owner),
@@ -1225,7 +1231,7 @@ TEST(FcntlTest, GetOwnExPid) {
   EXPECT_THAT(set_owner.pid = getpid(), SyscallSucceeds());
 
   ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &set_owner),
-              SyscallSucceeds());
+              SyscallSucceedsWithValue(0));
 
   f_owner_ex got_owner = {};
   ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN_EX, &got_owner),
@@ -1243,7 +1249,7 @@ TEST(FcntlTest, GetOwnExPgrp) {
   EXPECT_THAT(set_owner.pid = getpgrp(), SyscallSucceeds());
 
   ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_SETOWN_EX, &set_owner),
-              SyscallSucceeds());
+              SyscallSucceedsWithValue(0));
 
   f_owner_ex got_owner = {};
   ASSERT_THAT(syscall(__NR_fcntl, s.get(), F_GETOWN_EX, &got_owner),
