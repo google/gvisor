@@ -50,14 +50,14 @@ build:remote --extra_toolchains=//tools/bazeldefs:cc-toolchain-clang-x86_64-defa
 build:remote --extra_execution_platforms=//tools/bazeldefs:rbe_ubuntu1604
 build:remote --platforms=//tools/bazeldefs:rbe_ubuntu1604
 build:remote --crosstool_top=@rbe_default//cc:toolchain
-build:remote --jobs=50
+build:remote --jobs=100
 build:remote --remote_timeout=3600
 build:remote3 --host_platform=//tools/bazeldefs:rbe_ubuntu1604_bazel3
 build:remote3 --extra_toolchains=//tools/bazeldefs:cc-toolchain-clang-x86_64-default_bazel3
 build:remote3 --extra_execution_platforms=//tools/bazeldefs:rbe_ubuntu1604_bazel3
 build:remote3 --platforms=//tools/bazeldefs:rbe_ubuntu1604_bazel3
 build:remote3 --crosstool_top=@rbe_default//cc:toolchain
-build:remote3 --jobs=50
+build:remote3 --jobs=100
 build:remote3 --remote_timeout=3600
 
 # Set flags for uploading to BES in order to view results in the Bazel Build
