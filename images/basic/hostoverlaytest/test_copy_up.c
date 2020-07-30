@@ -6,7 +6,7 @@
 #include <unistd.h>
 
 int main(int argc, char** argv) {
-  const char kTestFilePath[] = "testfile.txt";
+  const char kTestFilePath[] = "copy_up_testfile.txt";
   const char kOldFileData[] = "old data\n";
   const char kNewFileData[] = "new data\n";
   const size_t kPageSize = sysconf(_SC_PAGE_SIZE);
