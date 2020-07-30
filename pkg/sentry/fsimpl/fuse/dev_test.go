@@ -22,7 +22,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -60,25 +59,25 @@ func TestFUSECommunication(t *testing.T) {
 			Name:              "SingleClientSingleServer",
 			NumClients:        1,
 			NumServers:        1,
-			MaxActiveRequests: MaxActiveRequestsDefault,
+			MaxActiveRequests: maxActiveRequestsDefault,
 		},
 		{
 			Name:              "SingleClientMultipleServers",
 			NumClients:        1,
 			NumServers:        10,
-			MaxActiveRequests: MaxActiveRequestsDefault,
+			MaxActiveRequests: maxActiveRequestsDefault,
 		},
 		{
 			Name:              "MultipleClientsSingleServer",
 			NumClients:        10,
 			NumServers:        1,
-			MaxActiveRequests: MaxActiveRequestsDefault,
+			MaxActiveRequests: maxActiveRequestsDefault,
 		},
 		{
 			Name:              "MultipleClientsMultipleServers",
 			NumClients:        10,
 			NumServers:        10,
-			MaxActiveRequests: MaxActiveRequestsDefault,
+			MaxActiveRequests: maxActiveRequestsDefault,
 		},
 		{
 			Name:              "RequestCapacityFull",
@@ -145,7 +144,7 @@ func TestFUSECommunication(t *testing.T) {
 // CallTest makes a request to the server and blocks the invoking
 // goroutine until a server responds with a response. Doesn't block
 // a kernel.Task. Analogous to Connection.Call but used for testing.
-func CallTest(conn *Connection, t *kernel.Task, r *Request, i uint32) (*Response, error) {
+func CallTest(conn *connection, t *kernel.Task, r *Request, i uint32) (*Response, error) {
 	conn.fd.mu.Lock()
 
 	// Wait until we're certain that a new request can be processed.
@@ -214,7 +213,7 @@ func ReadTest(serverTask *kernel.Task, fd *vfs.FileDescription, inIOseq usermem.
 // fuseClientRun emulates all the actions of a normal FUSE request. It creates
 // a header, a payload, calls the server, waits for the response, and processes
 // the response.
-func fuseClientRun(t *testing.T, s *testutil.System, k *kernel.Kernel, conn *Connection, creds *auth.Credentials, pid uint32, inode uint64, clientDone chan struct{}) {
+func fuseClientRun(t *testing.T, s *testutil.System, k *kernel.Kernel, conn *connection, creds *auth.Credentials, pid uint32, inode uint64, clientDone chan struct{}) {
 	defer func() { clientDone <- struct{}{} }()
 
 	tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
@@ -343,7 +342,7 @@ func setup(t *testing.T) *testutil.System {
 		AllowUserMount: true,
 	})
 
-	mntns, err := k.VFS().NewMountNamespace(ctx, creds, "", tmpfs.Name, &vfs.GetFilesystemOptions{})
+	mntns, err := k.VFS().NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.GetFilesystemOptions{})
 	if err != nil {
 		t.Fatalf("NewMountNamespace(): %v", err)
 	}
@@ -353,7 +352,7 @@ func setup(t *testing.T) *testutil.System {
 
 // newTestConnection creates a fuse connection that the sentry can communicate with
 // and the FD for the server to communicate with.
-func newTestConnection(system *testutil.System, k *kernel.Kernel, maxActiveRequests uint64) (*Connection, *vfs.FileDescription, error) {
+func newTestConnection(system *testutil.System, k *kernel.Kernel, maxActiveRequests uint64) (*connection, *vfs.FileDescription, error) {
 	vfsObj := &vfs.VirtualFilesystem{}
 	fuseDev := &DeviceFD{}
 
