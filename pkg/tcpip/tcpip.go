@@ -43,6 +43,9 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// Using header.IPv4AddressSize would cause an import cycle.
+const ipv4AddressSize = 4
+
 // Error represents an error in the netstack error space. Using a special type
 // ensures that errors outside of this space are not accidentally introduced.
 //
@@ -318,6 +321,29 @@ func (s *Subnet) Broadcast() Address {
 		addr[i] |= ^s.mask[i]
 	}
 	return Address(addr)
+}
+
+// IsBroadcast returns true if the address is considered a broadcast address.
+func (s *Subnet) IsBroadcast(address Address) bool {
+	// Only IPv4 supports the notion of a broadcast address.
+	if len(address) != ipv4AddressSize {
+		return false
+	}
+
+	// Normally, we would just compare address with the subnet's broadcast
+	// address but there is an exception where a simple comparison is not
+	// correct. This exception is for /31 and /32 IPv4 subnets where all
+	// addresses are considered valid host addresses.
+	//
+	// For /31 subnets, the case is easy. RFC 3021 Section 2.1 states that
+	// both addresses in a /31 subnet "MUST be interpreted as host addresses."
+	//
+	// For /32, the case is a bit more vague. RFC 3021 makes no mention of /32
+	// subnets. However, the same reasoning applies - if an exception is not
+	// made, then there do not exist any host addresses in a /32 subnet. RFC
+	// 4632 Section 3.1 also vaguely implies this interpretation by referring
+	// to addresses in /32 subnets as "host routes."
+	return s.Prefix() <= 30 && s.Broadcast() == address
 }
 
 // Equal returns true if s equals o.
