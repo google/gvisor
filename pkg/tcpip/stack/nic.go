@@ -16,6 +16,7 @@ package stack
 
 import (
 	"fmt"
+	"math/rand"
 	"reflect"
 	"sort"
 	"strings"
@@ -45,6 +46,7 @@ type NIC struct {
 	context NICContext
 
 	stats NICStats
+	neigh *neighborCache
 
 	mu struct {
 		sync.RWMutex
@@ -139,6 +141,16 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 	}
 	for _, netProto := range stack.networkProtocols {
 		nic.mu.packetEPs[netProto.Number()] = []PacketEndpoint{}
+	}
+
+	// Check for Neighbor Unreachability Detection support.
+	if ep.Capabilities()&CapabilityResolutionRequired != 0 && len(stack.linkAddrResolvers) != 0 {
+		rng := rand.New(rand.NewSource(stack.clock.NowNanoseconds()))
+		nic.neigh = &neighborCache{
+			nic:   nic,
+			state: NewNUDState(stack.nudConfigs, rng),
+			cache: make(map[tcpip.Address]*neighborEntry, neighborCacheSize),
+		}
 	}
 
 	nic.linkEP.Attach(nic)
@@ -1538,6 +1550,27 @@ func (n *NIC) setNDPConfigs(c NDPConfigurations) {
 	n.mu.Lock()
 	n.mu.ndp.configs = c
 	n.mu.Unlock()
+}
+
+// NUDConfigs gets the NUD configurations for n.
+func (n *NIC) NUDConfigs() (NUDConfigurations, *tcpip.Error) {
+	if n.neigh == nil {
+		return NUDConfigurations{}, tcpip.ErrNotSupported
+	}
+	return n.neigh.config(), nil
+}
+
+// setNUDConfigs sets the NUD configurations for n.
+//
+// Note, if c contains invalid NUD configuration values, it will be fixed to
+// use default values for the erroneous values.
+func (n *NIC) setNUDConfigs(c NUDConfigurations) *tcpip.Error {
+	if n.neigh == nil {
+		return tcpip.ErrNotSupported
+	}
+	c.resetInvalidFields()
+	n.neigh.setConfig(c)
+	return nil
 }
 
 // handleNDPRA handles an NDP Router Advertisement message that arrived on n.
