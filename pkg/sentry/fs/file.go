@@ -124,6 +124,27 @@ type File struct {
 	offset int64
 }
 
+type globalFileMap struct {
+	mu      sync.Mutex
+	files map[*File]struct{}
+}
+
+func (g *globalFileMap) add(f *File) {
+	g.mu.Lock()
+	g.files[f] = struct{}{}
+	g.mu.Unlock()
+}
+
+func (g *globalFileMap) remove(f *File) {
+	g.mu.Lock()
+	delete(g.files, f)
+	g.mu.Unlock()
+}
+
+var allFiles = globalFileMap{
+	files: map[*File]struct{}{},
+}
+
 // NewFile returns a File. It takes a reference on the Dirent and owns the
 // lifetime of the FileOperations. Files that do not support reading and
 // writing at an arbitrary offset should set flags.Pread and flags.Pwrite
@@ -138,6 +159,7 @@ func NewFile(ctx context.Context, dirent *Dirent, flags FileFlags, fops FileOper
 	}
 	f.mu.Init()
 	f.EnableLeakCheck("fs.File")
+	allFiles.add(&f)
 	return &f
 }
 
@@ -164,6 +186,8 @@ func (f *File) DecRef(ctx context.Context) {
 		}
 		f.async = nil
 		f.flagsMu.Unlock()
+
+		allFiles.remove(f)
 	})
 }
 

@@ -16,8 +16,11 @@ package fs
 
 import (
 	"fmt"
+	"sync/atomic"
 	"syscall"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 )
 
@@ -74,4 +77,58 @@ func SaveFileFsyncError(err error) error {
 		// We failed in some way that indicates potential data loss.
 		return fmt.Errorf("failed to sync: %v, data loss may occur", err)
 	}
+}
+
+func RecreateDeletedFiles(ctx context.Context) error {
+	for f := range allFiles.files {
+		d := f.Dirent
+
+		if d.Inode.IsVirtual() || atomic.LoadInt32(&d.deleted) == 0 {
+			continue
+		}
+
+		var flags FileFlags
+		flags.Write = true
+
+		// XXX the newly created file is universally accessible
+		dst, err := d.parent.Inode.Create(ctx, d.parent, d.name, flags, FilePermsFromMode(linux.ModeUserAll | linux.ModeGroupAll | linux.ModeOtherAll))
+		if err != nil {
+			return fmt.Errorf("Create %s failed: %v", d.name, err)
+		}
+
+		unstableAttr, err := f.UnstableAttr(ctx); if err != nil {
+			return fmt.Errorf("get size for %s failed: %v", d.name, err)
+		}
+		size := unstableAttr.Size
+		log.Infof("%v size=%v", d.name, size)
+
+		var opts SpliceOpts
+		opts.SrcOffset = true
+		opts.DstOffset = true
+		opts.SrcStart = 0
+		opts.DstStart = 0
+		opts.Length = size
+		if n, err := Splice(ctx, dst, f, opts); err != nil || n != size {
+			return fmt.Errorf("splice failed. n=%v, err=%v", n, err)
+		}
+		log.Infof("%s recreated", d.name)
+	}
+	return nil
+}
+
+func RemoveRecreatedFiles(ctx context.Context) error {
+	for d, _ := range allDirents.dirents {
+		if d.Inode.IsVirtual() || atomic.LoadInt32(&d.deleted) == 0 {
+			continue
+		}
+
+		log.Infof("Remove recreated file: %s", d.name)
+		err := d.parent.Inode.Remove(ctx, d.parent, d)
+		if err != nil {
+			log.Warningf("Remove %v failed: %v", d.name, err)
+			return fmt.Errorf("Remove %v failed: %v", d.name, err)
+		}
+		log.Infof("%s removed", d.name)
+	}
+	return nil
 }

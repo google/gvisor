@@ -460,6 +460,14 @@ func (k *Kernel) SaveTo(w wire.Writer) error {
 	// Ensure that all inode and mount release operations have completed.
 	fs.AsyncBarrier()
 
+	// Recreate mapped-but-deleted file so that on restore, we can re-open it.
+	// This has to be done before k.invalidateUnsavableMappings() because
+	// the elevated reference on this file will be relased by munmap() and there
+	// is no way of getting the file's content anymore later.
+	if err := fs.RecreateDeletedFiles(ctx); err != nil {
+		return err
+	}
+
 	// Once all fs work has completed (flushed references have all been released),
 	// reset mount mappings. This allows individual mounts to save how inodes map
 	// to filesystem resources. Without this, fs.Inodes cannot be restored.
@@ -689,6 +697,11 @@ func (k *Kernel) LoadFrom(r wire.Reader, net inet.Stack, clocks sentrytime.Clock
 	//   - namedpipe opening
 	//   - inode file opening
 	if err := fs.AsyncErrorBarrier(); err != nil {
+		return err
+	}
+
+	// Has to do this after AsyncErrorBarrier() where the recreated files are opened
+	if err := fs.RemoveRecreatedFiles(k.SupervisorContext()); err != nil {
 		return err
 	}
 

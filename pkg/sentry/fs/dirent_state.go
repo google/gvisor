@@ -15,10 +15,10 @@
 package fs
 
 import (
-	"fmt"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 )
 
@@ -39,7 +39,7 @@ func (d *Dirent) beforeSave() {
 	// execution, it may become allowed to save again.
 	if !d.Inode.IsVirtual() && atomic.LoadInt32(&d.deleted) != 0 {
 		n, _ := d.FullName(nil /* root */)
-		panic(ErrSaveRejection{fmt.Errorf("deleted file %q still has open fds", n)})
+		log.Warningf("Dirent.beforeSave: deleted file %q still has open fds", n)
 	}
 }
 

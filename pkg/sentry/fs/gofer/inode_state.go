@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/log"
 )
 
 // Some fs implementations may not support atime, ctime, or mtime in getattr.
@@ -124,6 +125,13 @@ func (i *inodeFileState) afterLoad() {
 			return fmt.Errorf("failed to find path for inode number %d. Device %s contains %s", i.sattr.InodeID, i.s.connID, fs.InodeMappings(i.s.inodeMappings))
 		}
 		ctx := &dummyClockContext{context.Background()}
+
+		toRemove := strings.Contains(name, "(deleted)")
+		if toRemove {
+			newname := strings.Replace(name, " (deleted)", "", 1)
+			log.Infof("inodeFileState.afterLoad: replacing %q -> %q", name, newname)
+			name = newname
+		}
 
 		_, i.file, err = i.s.attach.walk(ctx, splitAbsolutePath(name))
 		if err != nil {
