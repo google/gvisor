@@ -18,6 +18,7 @@ jobs:
         else
            echo ::set-output has_token=false
         fi
+    - run: |
         jq -nc '{"state": "pending", "context": "go tests"}' | \
         curl -sL -X POST -d @- \
             -H "Content-Type: application/json" \
