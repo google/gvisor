@@ -73,7 +73,7 @@ func runNode(b *testing.B, requests, concurrency int) {
 	if out, err := redis.WaitForOutput(ctx, "Ready to accept connections", 3*time.Second); err != nil {
 		b.Fatalf("failed to start redis server: %v %s", err, out)
 	}
-	redisIP, err := redis.FindIP(ctx)
+	redisIP, err := redis.FindIP(ctx, false)
 	if err != nil {
 		b.Fatalf("failed to get IP from redis instance: %v", err)
 	}
