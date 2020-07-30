@@ -82,8 +82,11 @@ using SocketInetLoopbackTest = ::testing::TestWithParam<TestParam>;
 
 // This test verifies that connect returns EADDRNOTAVAIL if all local ephemeral
 // ports are already in use for a given destination ip/port.
+//
 // We disable S/R because this test creates a large number of sockets.
-TEST_P(SocketInetLoopbackTest, TestTCPPortExhaustion_NoRandomSave) {
+//
+// FIXME(b/162475855): This test is failing reliably.
+TEST_P(SocketInetLoopbackTest, DISABLED_TestTCPPortExhaustion_NoRandomSave) {
   auto const& param = GetParam();
   TestAddress const& listener = param.listener;
   TestAddress const& connector = param.connector;
