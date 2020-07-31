@@ -117,7 +117,7 @@ debian: ## Builds the debian packages.
 	@$(call submake,build OPTIONS="-c opt" TARGETS="//runsc:runsc-debian")
 .PHONY: debian
 
-smoke-test: ## Runs a simple smoke test after build runsc.
+smoke-tests: ## Runs a simple smoke test after build runsc.
 	@$(call submake,run DOCKER_PRIVILEGED="" ARGS="--alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true")
 .PHONY: smoke-tests
 
@@ -218,7 +218,7 @@ packetimpact-tests: load-packetimpact
 root-tests: load-basic-images
 	@$(call submake,install-test-runtime)
 	@$(call submake,sudo TARGETS="//test/root:root_test" ARGS="-test.v")
-.PHONY: test-root
+.PHONY: root-tests
 
 # Specific containerd version tests.
 containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-basic_resolv load-basic_httpd install-test-runtime
@@ -266,7 +266,7 @@ website-push: website-build ## Push a new image and update the service.
 
 website-deploy: website-push ## Deploy a new version of the website.
 	@gcloud run deploy $(WEBSITE_SERVICE) --platform=managed --region=$(WEBSITE_REGION) --project=$(WEBSITE_PROJECT) --image=$(WEBSITE_IMAGE)
-.PHONY: website-push
+.PHONY: website-deploy
 
 ##
 ## Repository builders.
@@ -349,7 +349,7 @@ dev: ## Installs a set of local runtimes. Requires sudo.
 refresh: ## Refreshes the runtime binary (for development only). Must have called 'dev' or 'install-test-runtime' first.
 	@mkdir -p "$(RUNTIME_DIR)"
 	@$(call submake,copy TARGETS=runsc DESTINATION="$(RUNTIME_BIN)")
-.PHONY: install
+.PHONY: refresh
 
 install-test-runtime: ## Installs the runtime for testing. Requires sudo.
 	@$(call submake,refresh ARGS="--net-raw --TESTONLY-test-name-env=RUNSC_TEST_NAME --debug --strace --log-packets $(ARGS)")
