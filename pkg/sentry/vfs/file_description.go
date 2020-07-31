@@ -354,7 +354,7 @@ type FileDescriptionImpl interface {
 	// represented by the FileDescription.
 	StatFS(ctx context.Context) (linux.Statfs, error)
 
-	// Allocate grows file represented by FileDescription to offset + length bytes.
+	// Allocate grows the file to offset + length bytes.
 	// Only mode == 0 is supported currently.
 	Allocate(ctx context.Context, mode, offset, length uint64) error
 
@@ -561,6 +561,11 @@ func (fd *FileDescription) StatFS(ctx context.Context) (linux.Statfs, error) {
 		return statfs, err
 	}
 	return fd.impl.StatFS(ctx)
+}
+
+// Allocate grows file represented by FileDescription to offset + length bytes.
+func (fd *FileDescription) Allocate(ctx context.Context, mode, offset, length uint64) error {
+	return fd.impl.Allocate(ctx, mode, offset, length)
 }
 
 // Readiness implements waiter.Waitable.Readiness.
