@@ -15,10 +15,9 @@ java/lang/Character/CheckScript.java,,Fails in Docker
 java/lang/Character/CheckUnicode.java,,Fails in Docker
 java/lang/Class/GetPackageBootLoaderChildLayer.java,,
 java/lang/ClassLoader/nativeLibrary/NativeLibraryTest.java,,Fails in Docker
+java/lang/module/ModuleDescriptorTest.java,,
 java/lang/String/nativeEncoding/StringPlatformChars.java,,
-java/net/DatagramSocket/ReuseAddressTest.java,,
-java/net/DatagramSocket/SendDatagramToBadAddress.java,b/78473345,
-java/net/Inet4Address/PingThis.java,,
+java/net/CookieHandler/B6791927.java,,java.lang.RuntimeException: Expiration date shouldn't be 0
 java/net/InterfaceAddress/NetworkPrefixLength.java,b/78507103,
 java/net/MulticastSocket/MulticastTTL.java,,
 java/net/MulticastSocket/Promiscuous.java,,
@@ -29,23 +28,16 @@ java/net/MulticastSocket/TestDefaults.java,,
 java/net/MulticastSocket/TimeToLive.java,,
 java/net/NetworkInterface/NetworkInterfaceStreamTest.java,,
 java/net/Socket/SetSoLinger.java,b/78527327,SO_LINGER is not yet supported
-java/net/Socket/TrafficClass.java,b/78527818,Not supported on gVisor
 java/net/Socket/UrgentDataTest.java,b/111515323,
-java/net/Socket/setReuseAddress/Basic.java,b/78519214,SO_REUSEADDR enabled by default
 java/net/SocketOption/OptionsTest.java,,Fails in Docker
-java/net/SocketOption/TcpKeepAliveTest.java,,
 java/net/SocketPermission/SocketPermissionTest.java,,
 java/net/URLConnection/6212146/TestDriver.java,,Fails in Docker
 java/net/httpclient/RequestBuilderTest.java,,Fails in Docker
-java/net/httpclient/ShortResponseBody.java,,
-java/net/httpclient/ShortResponseBodyWithRetry.java,,
-java/nio/channels/AsyncCloseAndInterrupt.java,,
-java/nio/channels/AsynchronousServerSocketChannel/Basic.java,,
-java/nio/channels/AsynchronousSocketChannel/Basic.java,b/77921528,SO_KEEPALIVE is not settable
 java/nio/channels/DatagramChannel/BasicMulticastTests.java,,
-java/nio/channels/DatagramChannel/SocketOptionTests.java,,Fails in Docker
+java/nio/channels/DatagramChannel/SocketOptionTests.java,,java.net.SocketException: Invalid argument
 java/nio/channels/DatagramChannel/UseDGWithIPv6.java,,
 java/nio/channels/FileChannel/directio/DirectIOTest.java,,Fails in Docker
+java/nio/channels/FileChannel/directio/PwriteDirect.java,,java.io.IOException: Invalid argument
 java/nio/channels/Selector/OutOfBand.java,,
 java/nio/channels/Selector/SelectWithConsumer.java,,Flaky
 java/nio/channels/ServerSocketChannel/SocketOptionTests.java,,
@@ -59,15 +51,89 @@ java/text/Format/NumberFormat/CurrencyFormat.java,,Fails in Docker
 java/util/Calendar/JapaneseEraNameTest.java,,
 java/util/Currency/CurrencyTest.java,,Fails in Docker
 java/util/Currency/ValidateISO4217.java,,Fails in Docker
+java/util/EnumSet/BogusEnumSet.java,,"java.io.InvalidClassException: java.util.EnumSet; local class incompatible: stream classdesc serialVersionUID = -2409567991088730183, local class serialVersionUID = 1009687484059888093"
+java/util/Locale/Bug8040211.java,,java.lang.RuntimeException: Failed.
 java/util/Locale/LSRDataTest.java,,
+java/util/Properties/CompatibilityTest.java,,"java.lang.RuntimeException: jdk.internal.org.xml.sax.SAXParseException; Internal DTD subset is not allowed. The Properties XML document must have the following DOCTYPE declaration: <!DOCTYPE properties SYSTEM ""http://java.sun.com/dtd/properties.dtd"">"
+java/util/ResourceBundle/Control/XMLResourceBundleTest.java,,java.util.MissingResourceException: Can't find bundle for base name XmlRB locale
+java/util/ResourceBundle/modules/xmlformat/xmlformat.sh,,Timeout reached: 60000. Process is not alive!
+java/util/TimeZone/TimeZoneTest.java,,Uncaught exception thrown in test method TestShortZoneIDs
 java/util/concurrent/locks/Lock/TimedAcquireLeak.java,,
 java/util/jar/JarFile/mrjar/MultiReleaseJarAPI.java,,Fails in Docker
 java/util/logging/LogManager/Configuration/updateConfiguration/SimpleUpdateConfigWithInputStreamTest.java,,
 java/util/logging/TestLoggerWeakRefLeak.java,,
+java/util/spi/ResourceBundleControlProvider/UserDefaultControlTest.java,,java.util.MissingResourceException: Can't find bundle for base name com.foo.XmlRB locale
 javax/imageio/AppletResourceTest.java,,
+javax/imageio/plugins/jpeg/JPEGsNotAcceleratedTest.java,,java.awt.HeadlessException: No X11 DISPLAY variable was set but this program performed an operation which requires it.
 javax/management/security/HashedPasswordFileTest.java,,
+javax/net/ssl/DTLS/DTLSBufferOverflowUnderflowTest.java,,Compilation failed
+javax/net/ssl/DTLS/DTLSDataExchangeTest.java,,Compilation failed
+javax/net/ssl/DTLS/DTLSEnginesClosureTest.java,,Compilation failed
+javax/net/ssl/DTLS/DTLSHandshakeTest.java,,Compilation failed
+javax/net/ssl/DTLS/DTLSHandshakeWithReplicatedPacketsTest.java,,Compilation failed
+javax/net/ssl/DTLS/DTLSIncorrectAppDataTest.java,,Compilation failed
+javax/net/ssl/DTLS/DTLSMFLNTest.java,,Compilation failed
+javax/net/ssl/DTLS/DTLSNotEnabledRC4Test.java,,Compilation failed
+javax/net/ssl/DTLS/DTLSRehandshakeTest.java,,Compilation failed
+javax/net/ssl/DTLS/DTLSRehandshakeWithCipherChangeTest.java,,Compilation failed
+javax/net/ssl/DTLS/DTLSRehandshakeWithDataExTest.java,,Compilation failed
+javax/net/ssl/DTLS/DTLSSequenceNumberTest.java,,Compilation failed
+javax/net/ssl/DTLS/DTLSUnsupportedCiphersTest.java,,Compilation failed
+javax/net/ssl/DTLSv10/DTLSv10BufferOverflowUnderflowTest.java,,Compilation failed
+javax/net/ssl/DTLSv10/DTLSv10DataExchangeTest.java,,Compilation failed
+javax/net/ssl/DTLSv10/DTLSv10EnginesClosureTest.java,,Compilation failed
+javax/net/ssl/DTLSv10/DTLSv10HandshakeTest.java,,Compilation failed
+javax/net/ssl/DTLSv10/DTLSv10HandshakeWithReplicatedPacketsTest.java,,Compilation failed
+javax/net/ssl/DTLSv10/DTLSv10IncorrectAppDataTest.java,,Compilation failed
+javax/net/ssl/DTLSv10/DTLSv10MFLNTest.java,,Compilation failed
+javax/net/ssl/DTLSv10/DTLSv10NotEnabledRC4Test.java,,Compilation failed
+javax/net/ssl/DTLSv10/DTLSv10RehandshakeTest.java,,Compilation failed
+javax/net/ssl/DTLSv10/DTLSv10RehandshakeWithCipherChangeTest.java,,Compilation failed
+javax/net/ssl/DTLSv10/DTLSv10RehandshakeWithDataExTest.java,,Compilation failed
+javax/net/ssl/DTLSv10/DTLSv10SequenceNumberTest.java,,Compilation failed
+javax/net/ssl/DTLSv10/DTLSv10UnsupportedCiphersTest.java,,Compilation failed
 javax/net/ssl/SSLSession/JSSERenegotiate.java,,Fails in Docker
+javax/net/ssl/TLS/TLSDataExchangeTest.java,,Compilation failed
+javax/net/ssl/TLS/TLSEnginesClosureTest.java,,Compilation failed
+javax/net/ssl/TLS/TLSHandshakeTest.java,,Compilation failed
+javax/net/ssl/TLS/TLSMFLNTest.java,,Compilation failed
+javax/net/ssl/TLS/TLSNotEnabledRC4Test.java,,Compilation failed
+javax/net/ssl/TLS/TLSRehandshakeTest.java,,Compilation failed
+javax/net/ssl/TLS/TLSRehandshakeWithCipherChangeTest.java,,Compilation failed
+javax/net/ssl/TLS/TLSRehandshakeWithDataExTest.java,,Compilation failed
+javax/net/ssl/TLS/TLSUnsupportedCiphersTest.java,,Compilation failed
+javax/net/ssl/TLSv1/TLSDataExchangeTest.java,,Compilation failed
+javax/net/ssl/TLSv1/TLSEnginesClosureTest.java,,Compilation failed
+javax/net/ssl/TLSv1/TLSHandshakeTest.java,,Compilation failed
+javax/net/ssl/TLSv1/TLSMFLNTest.java,,Compilation failed
+javax/net/ssl/TLSv1/TLSNotEnabledRC4Test.java,,Compilation failed
+javax/net/ssl/TLSv1/TLSRehandshakeTest.java,,Compilation failed
+javax/net/ssl/TLSv1/TLSRehandshakeWithCipherChangeTest.java,,Compilation failed
+javax/net/ssl/TLSv1/TLSRehandshakeWithDataExTest.java,,Compilation failed
+javax/net/ssl/TLSv1/TLSUnsupportedCiphersTest.java,,Compilation failed
+javax/net/ssl/TLSv11/TLSDataExchangeTest.java,,Compilation failed
+javax/net/ssl/TLSv11/TLSEnginesClosureTest.java,,Compilation failed
+javax/net/ssl/TLSv11/TLSHandshakeTest.java,,Compilation failed
+javax/net/ssl/TLSv11/TLSMFLNTest.java,,Compilation failed
+javax/net/ssl/TLSv11/TLSNotEnabledRC4Test.java,,Compilation failed
+javax/net/ssl/TLSv11/TLSRehandshakeTest.java,,Compilation failed
+javax/net/ssl/TLSv11/TLSRehandshakeWithCipherChangeTest.java,,Compilation failed
+javax/net/ssl/TLSv11/TLSRehandshakeWithDataExTest.java,,Compilation failed
+javax/net/ssl/TLSv11/TLSUnsupportedCiphersTest.java,,Compilation failed
+javax/net/ssl/TLSv12/TLSEnginesClosureTest.java,,Compilation failed
 javax/sound/sampled/AudioInputStream/FrameLengthAfterConversion.java,,
+jdk/jfr/cmd/TestHelp.java,,java.lang.RuntimeException: 'Available commands are:' missing from stdout/stderr
+jdk/jfr/cmd/TestPrint.java,,Missing file' missing from stdout/stderr
+jdk/jfr/cmd/TestPrintDefault.java,,java.lang.RuntimeException: 'JVMInformation' missing from stdout/stderr
+jdk/jfr/cmd/TestPrintJSON.java,,javax.script.ScriptException: <eval>:1:17 Expected an operand but found eof var jsonObject = ^ in <eval> at line number 1 at column number 17
+jdk/jfr/cmd/TestPrintXML.java,,org.xml.sax.SAXParseException; lineNumber: 1; columnNumber: 1; Premature end of file.
+jdk/jfr/cmd/TestReconstruct.java,,java.lang.RuntimeException: 'Too few arguments' missing from stdout/stderr
+jdk/jfr/cmd/TestSplit.java,,java.lang.RuntimeException: 'Missing file' missing from stdout/stderr
+jdk/jfr/cmd/TestSummary.java,,java.lang.RuntimeException: 'Missing file' missing from stdout/stderr
+jdk/jfr/event/compiler/TestCompilerStats.java,,java.lang.RuntimeException: Field nmetodsSize not in event
+jdk/jfr/event/metadata/TestDefaultConfigurations.java,,Setting 'threshold' in event 'jdk.SecurityPropertyModification' was not configured in the configuration 'default'
+jdk/jfr/event/runtime/TestActiveSettingEvent.java,,java.lang.Exception: Could not find setting with name jdk.X509Validation#threshold
+jdk/jfr/event/runtime/TestModuleEvents.java,,java.lang.RuntimeException: assertEquals: expected jdk.proxy1 to equal java.base
 jdk/jfr/event/runtime/TestNetworkUtilizationEvent.java,,
 jdk/jfr/event/runtime/TestThreadParkEvent.java,,
 jdk/jfr/event/sampling/TestNative.java,,
@@ -86,6 +152,7 @@ jdk/jfr/jcmd/TestJcmdStartStopDefault.java,,
 jdk/jfr/jcmd/TestJcmdStartWithOptions.java,,
 jdk/jfr/jcmd/TestJcmdStartWithSettings.java,,
 jdk/jfr/jcmd/TestJcmdStopInvalidFile.java,,
+jdk/jfr/jvm/TestGetAllEventClasses.java,,Compilation failed
 jdk/jfr/jvm/TestJfrJavaBase.java,,
 jdk/jfr/startupargs/TestStartRecording.java,,
 jdk/modules/incubator/ImageModules.java,,
@@ -123,4 +190,6 @@ tools/jlink/JLinkTest.java,,
 tools/jlink/plugins/IncludeLocalesPluginTest.java,,
 tools/jmod/hashes/HashesTest.java,,
 tools/launcher/BigJar.java,b/111611473,
+tools/launcher/HelpFlagsTest.java,,java.lang.AssertionError: HelpFlagsTest failed: Tool jfr not covered by this test. Add specification to jdkTools array!
+tools/launcher/VersionCheck.java,,java.lang.AssertionError: VersionCheck failed: testToolVersion: [jfr];
 tools/launcher/modules/patch/systemmodules/PatchSystemModules.java,,
