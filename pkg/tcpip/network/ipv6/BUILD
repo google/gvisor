@@ -14,7 +14,6 @@ go_library(
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/network/fragmentation",
-        "//pkg/tcpip/network/hash",
         "//pkg/tcpip/stack",
     ],
 )
