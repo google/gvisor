@@ -1,16 +1,20 @@
 # gVisor FUSE Test Suite
 
-This is an integration test suite for fuse(4) filesystem. It runs under both
-gVisor and Linux, and ensures compatibility between the two. This test suite is
-based on system calls test.
+This is an integration test suite for fuse(4) filesystem. It runs under gVisor
+sandbox container with VFS2 and FUSE function enabled.
 
-This document describes the framework of fuse integration test and the
-guidelines that should be followed when adding new fuse tests.
+This document describes the framework of FUSE integration test and the
+guidelines that should be followed when adding new FUSE tests.
 
 ## Integration Test Framework
 
-Please refer to the figure below. `>` is entering the function, `<` is leaving
-the function, and `=` indicates sequentially entering and leaving.
+By inheriting the `FuseTest` class defined in `linux/fuse_base.h`, every test
+fixture can runs in an environment with `kMountPoint` mounted by a fake FUSE
+server. Below diagram describes how a testing thread communicates with the
+FUSE server to achieve integration test.
+
+For the following diagram, `>` is entering the function, `<` is leaving the
+function, and `=` indicates sequentially entering and leaving.
 
 ```
  |  Client (Test Main Process)         |  Server (FUSE Daemon)
@@ -19,38 +23,69 @@ the function, and `=` indicates sequentially entering and leaving.
  |    >SetUp()                         |
  |      =MountFuse()                   |
  |      >SetUpFuseServer()             |
- |        [create communication pipes] |
- |        =fork()                      |        =fork()
- |        >WaitCompleted()             |
- |          [wait for MarkDone()]      |
- |                                     |        =ConsumeFuseInit()
- |                                     |        =MarkDone()
- |        <WaitCompleted()             |
+ |        [create communication socket]|
+ |        =fork()                      |      =fork()
+ |        [wait server complete]       |
+ |                                     |      =ServerConsumeFuseInit()
+ |                                     |      =ServerCompleteWith()
  |      <SetUpFuseServer()             |
  |    <SetUp()                         |
- |    >SetExpected()                   |
- |      [construct expected reaction]  |
- |                                     |        >FuseLoop()
- |                                     |          >ReceiveExpected()
- |                                     |            [wait data from pipe]
- |      [write data to pipe]           |
- |      [wait for MarkDone()]          |
+ |    [Testing main]                   |
+ |                                     |      >ServerFuseLoop()
+ |                                     |        [poll on socket and fd]
+ |    >SetServerResponse()             |
+ |      [write data to socket]         |
+ |      [wait server complete]         |
+ |                                     |        [socket event arrive]
+ |                                     |        >ServerHandleCommand()
+ |                                     |          >ServerReceiveResponse()
+ |                                     |            [read data from socket]
  |                                     |            [save data to memory]
- |                                     |            =MarkDone()
- |    <SetExpected()                   |
- |                                     |          <ReceiveExpected()
- |                                     |          >read()
- |                                     |            [wait for fs operation]
+ |                                     |          <ServerReceiveResponse()
+ |                                     |          =ServerCompleteWith()
+ |                                     |        <ServerHandleCommand()
+ |    <SetServerResponse()             |
  |    >[Do fs operation]               |
  |      [wait for fs response]         |
- |                                     |          <read()
- |                                     |          =CompareRequest()
- |                                     |          =write() [write fs response]
+ |                                     |        [fd event arrive]
+ |                                     |        >ServerProcessFUSERequest()
+ |                                     |          =[read fs request]
+ |                                     |          =[save fs request to memory]
+ |                                     |          =[write fs response]
  |    <[Do fs operation]               |
+ |                                     |        <ServerProcessFUSERequest()
+ |                                     |
  |    =[Test fs operation result]      |
- |    =[wait for MarkDone()]           |
- |                                     |          =MarkDone()
+ |                                     |
+ |    >GetServerActualRequest()        |
+ |      [write data to socket]         |
+ |      [wait server complete]         |
+ |                                     |        [socket event arrive]
+ |                                     |        >ServerHandleCommand()
+ |                                     |          >ServerSendReceivedRequest()
+ |                                     |            [write data to socket]
+ |                                     |          <ServerSendReceivedRequest()
+ |                                     |          =ServerCompleteWith()
+ |      [read data from socket]        |
+ |                                     |        <ServerHandleCommand()
+ |    <GetServerActualRequest()        |
+ |                                     |
+ |    =[Test actual request]           |
+ |                                     |
  |    >TearDown()                      |
+ |      >EnsureServerSuccess()         |
+ |        [write data to socket]       |
+ |        [wait server complete]       |
+ |                                     |        [socket event arrive]
+ |                                     |        >ServerHandleCommand()
+ |                                     |          >ServerSendSuccess()
+ |                                     |            [write data to socket]
+ |                                     |          <ServerSendSuccess()
+ |                                     |          =ServerCompleteWith()
+ |        [read data from socket]      |
+ |        [test if all succeeded]      |
+ |      <EnsureServerSuccess()         |
+ |                                     |        <ServerHandleCommand()
  |      =UnmountFuse()                 |
  |    <TearDown()                      |
  |  <TEST_F()                          |
@@ -75,19 +110,18 @@ $ bazel test --test_tag_filters=fuse //test/fuse/...
 
 ## Writing a new FUSE test
 
-1.  Add test targets in `BUILD` and `linux/BUILD`.
-2.  Inherit your test from `FuseTest` base class. It allows you to:
-    -   Run a fake FUSE server in background during each test setup.
-    -   Create pipes for communication and provide utility functions.
-    -   Stop FUSE server after test completes.
-3.  Customize your comparison function for request assessment in FUSE server.
-4.  Add the mapping of the size of structs if you are working on new FUSE
-    opcode.
-    -   Please update `FuseTest::GetPayloadSize()` for each new FUSE opcode.
-5.  Build the expected request-response pair of your FUSE operation.
-6.  Call `SetExpected()` function to inject the expected reaction.
-7.  Check the response and/or errors.
-8.  Finally call `WaitCompleted()` to ensure the FUSE server acts correctly.
+1. Add test targets in `BUILD` and `linux/BUILD`.
+2. Inherit your test from `FuseTest` base class. It allows you to:
+  - Run a fake FUSE server in background during each test setup.
+  - Create pipes for communication and provide utility functions.
+  - Stop FUSE server after test completes.
+3. Customize your comparison function for request assessment in FUSE server.
+4. Add the mapping of the size of structs if you are working on new FUSE opcode.
+  - Please update `FuseTest::GetPayloadSize()` for each new FUSE opcode.
+5. Build the expected request-response pair of your FUSE operation.
+6. Call `SetExpected()` function to inject the expected reaction.
+7. Check the response and/or errors.
+8. Finally call `WaitServerComplete()` to ensure the FUSE server acts correctly.
 
 A few customized matchers used in syscalls test are encouraged to test the
 outcome of filesystem operations. Such as:
