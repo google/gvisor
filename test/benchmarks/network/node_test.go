@@ -16,14 +16,12 @@ package network
 import (
 	"context"
 	"fmt"
-	"regexp"
-	"strconv"
-	"strings"
 	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
+	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
 
 // BenchmarkNode runs 10K requests using 'hey' against a Node server run on
@@ -36,13 +34,17 @@ func BenchmarkNode(b *testing.B) {
 
 	for _, c := range concurrency {
 		b.Run(fmt.Sprintf("Concurrency%d", c), func(b *testing.B) {
-			runNode(b, requests, c)
+			hey := &tools.Hey{
+				Requests:    requests,
+				Concurrency: c,
+			}
+			runNode(b, hey)
 		})
 	}
 }
 
 // runNode runs the test for a given # of requests and concurrency.
-func runNode(b *testing.B, requests, concurrency int) {
+func runNode(b *testing.B, hey *tools.Hey) {
 	b.Helper()
 
 	// The machine to hold Redis and the Node Server.
@@ -106,7 +108,7 @@ func runNode(b *testing.B, requests, concurrency int) {
 	// Wait until the Client sees the server as up.
 	harness.WaitUntilServing(ctx, clientMachine, servingIP, servingPort)
 
-	heyCmd := strings.Split(fmt.Sprintf("hey -n %d -c %d http://%s:%d/", requests, concurrency, servingIP, servingPort), " ")
+	heyCmd := hey.MakeCmd(servingIP, servingPort)
 
 	nodeApp.RestartProfiles()
 	b.ResetTimer()
@@ -123,139 +125,7 @@ func runNode(b *testing.B, requests, concurrency int) {
 
 		// Stop the timer to parse the data and report stats.
 		b.StopTimer()
-		requests, err := parseHeyRequestsPerSecond(out)
-		if err != nil {
-			b.Fatalf("failed to parse requests per second: %v", err)
-		}
-		b.ReportMetric(requests, "requests_per_second")
-
-		bw, err := parseHeyBandwidth(out)
-		if err != nil {
-			b.Fatalf("failed to parse bandwidth: %v", err)
-		}
-		b.ReportMetric(bw, "bandwidth")
-
-		ave, err := parseHeyAverageLatency(out)
-		if err != nil {
-			b.Fatalf("failed to parse average latency: %v", err)
-		}
-		b.ReportMetric(ave, "average_latency")
+		hey.Report(b, out)
 		b.StartTimer()
 	}
-}
-
-var heyReqPerSecondRE = regexp.MustCompile(`Requests/sec:\s*(\d+\.?\d+?)\s+`)
-
-// parseHeyRequestsPerSecond finds requests per second from hey output.
-func parseHeyRequestsPerSecond(data string) (float64, error) {
-	match := heyReqPerSecondRE.FindStringSubmatch(data)
-	if len(match) < 2 {
-		return 0, fmt.Errorf("failed get bandwidth: %s", data)
-	}
-	return strconv.ParseFloat(match[1], 64)
-}
-
-var heyAverageLatencyRE = regexp.MustCompile(`Average:\s*(\d+\.?\d+?)\s+secs`)
-
-// parseHeyAverageLatency finds Average Latency in seconds form hey output.
-func parseHeyAverageLatency(data string) (float64, error) {
-	match := heyAverageLatencyRE.FindStringSubmatch(data)
-	if len(match) < 2 {
-		return 0, fmt.Errorf("failed get average latency match%d : %s", len(match), data)
-	}
-	return strconv.ParseFloat(match[1], 64)
-}
-
-var heySizePerRequestRE = regexp.MustCompile(`Size/request:\s*(\d+\.?\d+?)\s+bytes`)
-
-// parseHeyBandwidth computes bandwidth from request/sec * bytes/request
-// and reports in bytes/second.
-func parseHeyBandwidth(data string) (float64, error) {
-	match := heyReqPerSecondRE.FindStringSubmatch(data)
-	if len(match) < 2 {
-		return 0, fmt.Errorf("failed get requests per second: %s", data)
-	}
-	reqPerSecond, err := strconv.ParseFloat(match[1], 64)
-	if err != nil {
-		return 0, fmt.Errorf("failed to convert %s to float", match[1])
-	}
-
-	match = heySizePerRequestRE.FindStringSubmatch(data)
-	if len(match) < 2 {
-		return 0, fmt.Errorf("failed get average latency: %s", data)
-	}
-	requestSize, err := strconv.ParseFloat(match[1], 64)
-	return requestSize * reqPerSecond, err
-}
-
-// TestHeyParsers tests that the parsers work with sample output.
-func TestHeyParsers(t *testing.T) {
-	sampleData := `
-	Summary:
-          Total:	2.2391 secs
-          Slowest:	1.6292 secs
-          Fastest:	0.0066 secs
-          Average:	0.5351 secs
-          Requests/sec:	89.3202
-
-          Total data:	841200 bytes
-          Size/request:	4206 bytes
-
-        Response time histogram:
-          0.007 [1]	|
-          0.169 [0]	|
-          0.331 [149]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-          0.493 [0]	|
-          0.656 [0]	|
-          0.818 [0]	|
-          0.980 [0]	|
-          1.142 [0]	|
-          1.305 [0]	|
-          1.467 [49]	|■■■■■■■■■■■■■
-          1.629 [1]	|
-
-
-        Latency distribution:
-          10% in 0.2149 secs
-          25% in 0.2449 secs
-          50% in 0.2703 secs
-          75% in 1.3315 secs
-          90% in 1.4045 secs
-          95% in 1.4232 secs
-          99% in 1.4362 secs
-
-        Details (average, fastest, slowest):
-          DNS+dialup:	0.0002 secs, 0.0066 secs, 1.6292 secs
-          DNS-lookup:	0.0000 secs, 0.0000 secs, 0.0000 secs
-          req write:	0.0000 secs, 0.0000 secs, 0.0012 secs
-          resp wait:	0.5225 secs, 0.0064 secs, 1.4346 secs
-          resp read:	0.0122 secs, 0.0001 secs, 0.2006 secs
-
-        Status code distribution:
-          [200]	200 responses
-	`
-	want := 89.3202
-	got, err := parseHeyRequestsPerSecond(sampleData)
-	if err != nil {
-		t.Fatalf("failed to parse request per second with: %v", err)
-	} else if got != want {
-		t.Fatalf("got: %f, want: %f", got, want)
-	}
-
-	want = 89.3202 * 4206
-	got, err = parseHeyBandwidth(sampleData)
-	if err != nil {
-		t.Fatalf("failed to parse bandwidth with: %v", err)
-	} else if got != want {
-		t.Fatalf("got: %f, want: %f", got, want)
-	}
-
-	want = 0.5351
-	got, err = parseHeyAverageLatency(sampleData)
-	if err != nil {
-		t.Fatalf("failed to parse average latency with: %v", err)
-	} else if got != want {
-		t.Fatalf("got: %f, want: %f", got, want)
-	}
-
 }

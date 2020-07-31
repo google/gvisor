@@ -23,20 +23,10 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
 
-// see Dockerfile '//images/benchmarks/httpd'.
-var docs = map[string]string{
-	"notfound": "notfound",
-	"1Kb":      "latin1k.txt",
-	"10Kb":     "latin10k.txt",
-	"100Kb":    "latin100k.txt",
-	"1000Kb":   "latin1000k.txt",
-	"1Mb":      "latin1024k.txt",
-	"10Mb":     "latin10240k.txt",
-}
-
-// BenchmarkHttpdConcurrency iterates the concurrency argument and tests
+// BenchmarkNginxConcurrency iterates the concurrency argument and tests
 // how well the runtime under test handles requests in parallel.
-func BenchmarkHttpdConcurrency(b *testing.B) {
+// TODO(zkoopmans): Update with different doc sizes like Httpd.
+func BenchmarkNginxConcurrency(b *testing.B) {
 	// Grab a machine for the client and server.
 	clientMachine, err := h.GetMachine()
 	if err != nil {
@@ -50,50 +40,20 @@ func BenchmarkHttpdConcurrency(b *testing.B) {
 	}
 	defer serverMachine.CleanUp()
 
-	// The test iterates over client concurrency, so set other parameters.
 	concurrency := []int{1, 5, 10, 25}
-
 	for _, c := range concurrency {
 		b.Run(fmt.Sprintf("%d", c), func(b *testing.B) {
 			hey := &tools.Hey{
 				Requests:    10000,
 				Concurrency: c,
-				Doc:         docs["10Kb"],
 			}
-			runHttpd(b, clientMachine, serverMachine, hey)
-		})
-	}
-}
-
-// BenchmarkHttpdDocSize iterates over different sized payloads, testing how
-// well the runtime handles different payload sizes.
-func BenchmarkHttpdDocSize(b *testing.B) {
-	clientMachine, err := h.GetMachine()
-	if err != nil {
-		b.Fatalf("failed to get machine: %v", err)
-	}
-	defer clientMachine.CleanUp()
-
-	serverMachine, err := h.GetMachine()
-	if err != nil {
-		b.Fatalf("failed to get machine: %v", err)
-	}
-	defer serverMachine.CleanUp()
-
-	for name, filename := range docs {
-		b.Run(name, func(b *testing.B) {
-			hey := &tools.Hey{
-				Requests:    10000,
-				Concurrency: 1,
-				Doc:         filename,
-			}
-			runHttpd(b, clientMachine, serverMachine, hey)
+			runNginx(b, clientMachine, serverMachine, hey)
 		})
 	}
 }
 
 // runHttpd runs a single test run.
-func runHttpd(b *testing.B, clientMachine, serverMachine harness.Machine, hey *tools.Hey) {
+func runNginx(b *testing.B, clientMachine, serverMachine harness.Machine, hey *tools.Hey) {
 	b.Helper()
 
 	// Grab a container from the server.
@@ -101,24 +61,14 @@ func runHttpd(b *testing.B, clientMachine, serverMachine harness.Machine, hey *t
 	server := serverMachine.GetContainer(ctx, b)
 	defer server.CleanUp(ctx)
 
-	// Copy the docs to /tmp and serve from there.
-	cmd := "mkdir -p /tmp/html; cp -r /local/* /tmp/html/.; apache2 -X"
 	port := 80
-
 	// Start the server.
-	if err := server.Spawn(ctx, dockerutil.RunOpts{
-		Image: "benchmarks/httpd",
-		Ports: []int{port},
-		Env: []string{
-			// Standard environmental variables for httpd.
-			"APACHE_RUN_DIR=/tmp",
-			"APACHE_RUN_USER=nobody",
-			"APACHE_RUN_GROUP=nogroup",
-			"APACHE_LOG_DIR=/tmp",
-			"APACHE_PID_FILE=/tmp/apache.pid",
-		},
-	}, "sh", "-c", cmd); err != nil {
-		b.Fatalf("failed to start server: %v")
+	if err := server.Spawn(ctx,
+		dockerutil.RunOpts{
+			Image: "benchmarks/nginx",
+			Ports: []int{port},
+		}); err != nil {
+		b.Fatalf("server failed to start: %v", err)
 	}
 
 	ip, err := serverMachine.IPAddress()
@@ -147,7 +97,6 @@ func runHttpd(b *testing.B, clientMachine, serverMachine harness.Machine, hey *t
 		if err != nil {
 			b.Fatalf("run failed with: %v", err)
 		}
-
 		b.StopTimer()
 		hey.Report(b, out)
 		b.StartTimer()
