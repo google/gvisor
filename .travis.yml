@@ -40,7 +40,7 @@ script:
    # On arm64, we need to create our own pipes for stderr and stdout,
    # otherwise we will not be able to open /dev/stderr. This is probably
    # due to AppArmor rules.
-   - bash -xeo pipefail -c 'uname -a && make smoke-test 2>&1 | cat'
+   - bash -xeo pipefail -c 'uname -a && make smoke-tests 2>&1 | cat'
 branches:
   except:
   # Skip copybara branches.
