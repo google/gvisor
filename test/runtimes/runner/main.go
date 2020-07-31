@@ -40,7 +40,7 @@ var (
 )
 
 // Wait time for each test to run.
-const timeout = 45 * time.Minute
+const timeout = 90 * time.Minute
 
 func main() {
 	flag.Parse()

@@ -9,6 +9,8 @@ def _runtime_test_impl(ctx):
         ctx.attr.lang,
         "--image",
         ctx.attr.image,
+        "--batch",
+        str(ctx.attr.batch),
     ]
     if ctx.attr.exclude_file:
         args += [
@@ -46,6 +48,10 @@ _runtime_test = rule(
         "exclude_file": attr.label(
             mandatory = False,
             allow_single_file = True,
+        ),
+        "batch": attr.int(
+            default = 50,
+            mandatory = False,
         ),
         "_runner": attr.label(
             default = "//test/runtimes/runner:runner",
