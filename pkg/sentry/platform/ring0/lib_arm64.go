@@ -38,6 +38,12 @@ func SaveVRegs(*byte)
 // LoadVRegs loads V0-V31 registers.
 func LoadVRegs(*byte)
 
+// LoadFloatingPoint loads floating point state.
+func LoadFloatingPoint(*byte)
+
+// SaveFloatingPoint saves floating point state.
+func SaveFloatingPoint(*byte)
+
 // GetTLS returns the value of TPIDR_EL0 register.
 func GetTLS() (value uint64)
 
