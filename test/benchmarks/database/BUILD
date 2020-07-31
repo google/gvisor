@@ -24,5 +24,6 @@ go_test(
     deps = [
         "//pkg/test/dockerutil",
         "//test/benchmarks/harness",
+        "//test/benchmarks/tools",
     ],
 )

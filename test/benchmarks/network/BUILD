@@ -15,6 +15,7 @@ go_test(
     srcs = [
         "httpd_test.go",
         "iperf_test.go",
+        "nginx_test.go",
         "node_test.go",
     ],
     library = ":network",
@@ -27,5 +28,6 @@ go_test(
         "//pkg/test/dockerutil",
         "//pkg/test/testutil",
         "//test/benchmarks/harness",
+        "//test/benchmarks/tools",
     ],
 )
