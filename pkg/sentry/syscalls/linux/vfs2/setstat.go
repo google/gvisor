@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -209,6 +210,55 @@ func Ftruncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		},
 	})
 	return 0, nil, handleSetSizeError(t, err)
+}
+
+// Fallocate implements linux system call fallocate(2).
+func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
+	mode := args[1].Uint64()
+	offset := args[2].Int64()
+	length := args[3].Int64()
+
+	file := t.GetFileVFS2(fd)
+
+	if file == nil {
+		return 0, nil, syserror.EBADF
+	}
+	defer file.DecRef()
+
+	if !file.IsWritable() {
+		return 0, nil, syserror.EBADF
+	}
+
+	if mode != 0 {
+		return 0, nil, syserror.ENOTSUP
+	}
+
+	if offset < 0 || length <= 0 {
+		return 0, nil, syserror.EINVAL
+	}
+
+	size := offset + length
+
+	if size < 0 {
+		return 0, nil, syserror.EFBIG
+	}
+
+	limit := limits.FromContext(t).Get(limits.FileSize).Cur
+
+	if uint64(size) >= limit {
+		t.SendSignal(&arch.SignalInfo{
+			Signo: int32(linux.SIGXFSZ),
+			Code:  arch.SignalInfoUser,
+		})
+		return 0, nil, syserror.EFBIG
+	}
+
+	return 0, nil, file.Allocate(t, mode, uint64(offset), uint64(length))
+
+	// File length modified, generate notification.
+	// TODO(gvisor.dev/issue/1479): Reenable when Inotify is ported.
+	// file.Dirent.InotifyEvent(linux.IN_MODIFY, 0)
 }
 
 // Utime implements Linux syscall utime(2).
