@@ -486,12 +486,16 @@ func TestInvalidFragments(t *testing.T) {
 // TestReceiveFragments feeds fragments in through the incoming packet path to
 // test reassembly
 func TestReceiveFragments(t *testing.T) {
-	const addr1 = "\x0c\xa8\x00\x01" // 192.168.0.1
-	const addr2 = "\x0c\xa8\x00\x02" // 192.168.0.2
-	const nicID = 1
+	const (
+		nicID = 1
+
+		addr1 = "\x0c\xa8\x00\x01" // 192.168.0.1
+		addr2 = "\x0c\xa8\x00\x02" // 192.168.0.2
+		addr3 = "\x0c\xa8\x00\x03" // 192.168.0.3
+	)
 
 	// Build and return a UDP header containing payload.
-	udpGen := func(payloadLen int, multiplier uint8) buffer.View {
+	udpGen := func(payloadLen int, multiplier uint8, src, dst tcpip.Address) buffer.View {
 		payload := buffer.NewView(payloadLen)
 		for i := 0; i < len(payload); i++ {
 			payload[i] = uint8(i) * multiplier
@@ -507,25 +511,29 @@ func TestReceiveFragments(t *testing.T) {
 			Length:  uint16(udpLength),
 		})
 		copy(u.Payload(), payload)
-		sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, addr1, addr2, uint16(udpLength))
+		sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, src, dst, uint16(udpLength))
 		sum = header.Checksum(payload, sum)
 		u.SetChecksum(^u.CalculateChecksum(sum))
 		return hdr.View()
 	}
 
 	// UDP header plus a payload of 0..256
-	ipv4Payload1 := udpGen(256, 1)
-	udpPayload1 := ipv4Payload1[header.UDPMinimumSize:]
+	ipv4Payload1Addr1ToAddr2 := udpGen(256, 1, addr1, addr2)
+	udpPayload1Addr1ToAddr2 := ipv4Payload1Addr1ToAddr2[header.UDPMinimumSize:]
+	ipv4Payload1Addr3ToAddr2 := udpGen(256, 1, addr3, addr2)
+	udpPayload1Addr3ToAddr2 := ipv4Payload1Addr3ToAddr2[header.UDPMinimumSize:]
 	// UDP header plus a payload of 0..256 in increments of 2.
-	ipv4Payload2 := udpGen(128, 2)
-	udpPayload2 := ipv4Payload2[header.UDPMinimumSize:]
+	ipv4Payload2Addr1ToAddr2 := udpGen(128, 2, addr1, addr2)
+	udpPayload2Addr1ToAddr2 := ipv4Payload2Addr1ToAddr2[header.UDPMinimumSize:]
 	// UDP header plus a payload of 0..256 in increments of 3.
 	// Used to test cases where the fragment blocks are not a multiple of
 	// the fragment block size of 8 (RFC 791 section 3.1 page 14).
-	ipv4Payload3 := udpGen(127, 3)
-	udpPayload3 := ipv4Payload3[header.UDPMinimumSize:]
+	ipv4Payload3Addr1ToAddr2 := udpGen(127, 3, addr1, addr2)
+	udpPayload3Addr1ToAddr2 := ipv4Payload3Addr1ToAddr2[header.UDPMinimumSize:]
 
 	type fragmentData struct {
+		srcAddr        tcpip.Address
+		dstAddr        tcpip.Address
 		id             uint16
 		flags          uint8
 		fragmentOffset uint16
@@ -541,34 +549,40 @@ func TestReceiveFragments(t *testing.T) {
 			name: "No fragmentation",
 			fragments: []fragmentData{
 				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
 					id:             1,
 					flags:          0,
 					fragmentOffset: 0,
-					payload:        ipv4Payload1,
+					payload:        ipv4Payload1Addr1ToAddr2,
 				},
 			},
-			expectedPayloads: [][]byte{udpPayload1},
+			expectedPayloads: [][]byte{udpPayload1Addr1ToAddr2},
 		},
 		{
 			name: "No fragmentation with size not a multiple of fragment block size",
 			fragments: []fragmentData{
 				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
 					id:             1,
 					flags:          0,
 					fragmentOffset: 0,
-					payload:        ipv4Payload3,
+					payload:        ipv4Payload3Addr1ToAddr2,
 				},
 			},
-			expectedPayloads: [][]byte{udpPayload3},
+			expectedPayloads: [][]byte{udpPayload3Addr1ToAddr2},
 		},
 		{
 			name: "More fragments without payload",
 			fragments: []fragmentData{
 				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
 					id:             1,
 					flags:          header.IPv4FlagMoreFragments,
 					fragmentOffset: 0,
-					payload:        ipv4Payload1,
+					payload:        ipv4Payload1Addr1ToAddr2,
 				},
 			},
 			expectedPayloads: nil,
@@ -577,10 +591,12 @@ func TestReceiveFragments(t *testing.T) {
 			name: "Non-zero fragment offset without payload",
 			fragments: []fragmentData{
 				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
 					id:             1,
 					flags:          0,
 					fragmentOffset: 8,
-					payload:        ipv4Payload1,
+					payload:        ipv4Payload1Addr1ToAddr2,
 				},
 			},
 			expectedPayloads: nil,
@@ -589,52 +605,64 @@ func TestReceiveFragments(t *testing.T) {
 			name: "Two fragments",
 			fragments: []fragmentData{
 				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
 					id:             1,
 					flags:          header.IPv4FlagMoreFragments,
 					fragmentOffset: 0,
-					payload:        ipv4Payload1[:64],
+					payload:        ipv4Payload1Addr1ToAddr2[:64],
 				},
 				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
 					id:             1,
 					flags:          0,
 					fragmentOffset: 64,
-					payload:        ipv4Payload1[64:],
+					payload:        ipv4Payload1Addr1ToAddr2[64:],
 				},
 			},
-			expectedPayloads: [][]byte{udpPayload1},
+			expectedPayloads: [][]byte{udpPayload1Addr1ToAddr2},
 		},
 		{
 			name: "Two fragments with last fragment size not a multiple of fragment block size",
 			fragments: []fragmentData{
 				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
 					id:             1,
 					flags:          header.IPv4FlagMoreFragments,
 					fragmentOffset: 0,
-					payload:        ipv4Payload3[:64],
+					payload:        ipv4Payload3Addr1ToAddr2[:64],
 				},
 				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
 					id:             1,
 					flags:          0,
 					fragmentOffset: 64,
-					payload:        ipv4Payload3[64:],
+					payload:        ipv4Payload3Addr1ToAddr2[64:],
 				},
 			},
-			expectedPayloads: [][]byte{udpPayload3},
+			expectedPayloads: [][]byte{udpPayload3Addr1ToAddr2},
 		},
 		{
 			name: "Two fragments with first fragment size not a multiple of fragment block size",
 			fragments: []fragmentData{
 				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
 					id:             1,
 					flags:          header.IPv4FlagMoreFragments,
 					fragmentOffset: 0,
-					payload:        ipv4Payload3[:63],
+					payload:        ipv4Payload3Addr1ToAddr2[:63],
 				},
 				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
 					id:             1,
 					flags:          0,
 					fragmentOffset: 63,
-					payload:        ipv4Payload3[63:],
+					payload:        ipv4Payload3Addr1ToAddr2[63:],
 				},
 			},
 			expectedPayloads: nil,
@@ -643,16 +671,20 @@ func TestReceiveFragments(t *testing.T) {
 			name: "Second fragment has MoreFlags set",
 			fragments: []fragmentData{
 				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
 					id:             1,
 					flags:          header.IPv4FlagMoreFragments,
 					fragmentOffset: 0,
-					payload:        ipv4Payload1[:64],
+					payload:        ipv4Payload1Addr1ToAddr2[:64],
 				},
 				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
 					id:             1,
 					flags:          header.IPv4FlagMoreFragments,
 					fragmentOffset: 64,
-					payload:        ipv4Payload1[64:],
+					payload:        ipv4Payload1Addr1ToAddr2[64:],
 				},
 			},
 			expectedPayloads: nil,
@@ -661,16 +693,20 @@ func TestReceiveFragments(t *testing.T) {
 			name: "Two fragments with different IDs",
 			fragments: []fragmentData{
 				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
 					id:             1,
 					flags:          header.IPv4FlagMoreFragments,
 					fragmentOffset: 0,
-					payload:        ipv4Payload1[:64],
+					payload:        ipv4Payload1Addr1ToAddr2[:64],
 				},
 				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
 					id:             2,
 					flags:          0,
 					fragmentOffset: 64,
-					payload:        ipv4Payload1[64:],
+					payload:        ipv4Payload1Addr1ToAddr2[64:],
 				},
 			},
 			expectedPayloads: nil,
@@ -679,40 +715,88 @@ func TestReceiveFragments(t *testing.T) {
 			name: "Two interleaved fragmented packets",
 			fragments: []fragmentData{
 				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
 					id:             1,
 					flags:          header.IPv4FlagMoreFragments,
 					fragmentOffset: 0,
-					payload:        ipv4Payload1[:64],
+					payload:        ipv4Payload1Addr1ToAddr2[:64],
 				},
 				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
 					id:             2,
 					flags:          header.IPv4FlagMoreFragments,
 					fragmentOffset: 0,
-					payload:        ipv4Payload2[:64],
+					payload:        ipv4Payload2Addr1ToAddr2[:64],
 				},
 				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
 					id:             1,
 					flags:          0,
 					fragmentOffset: 64,
-					payload:        ipv4Payload1[64:],
+					payload:        ipv4Payload1Addr1ToAddr2[64:],
 				},
 				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
 					id:             2,
 					flags:          0,
 					fragmentOffset: 64,
-					payload:        ipv4Payload2[64:],
+					payload:        ipv4Payload2Addr1ToAddr2[64:],
 				},
 			},
-			expectedPayloads: [][]byte{udpPayload1, udpPayload2},
+			expectedPayloads: [][]byte{udpPayload1Addr1ToAddr2, udpPayload2Addr1ToAddr2},
+		},
+		{
+			name: "Two interleaved fragmented packets from different sources but with same ID",
+			fragments: []fragmentData{
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload1Addr1ToAddr2[:64],
+				},
+				{
+					srcAddr:        addr3,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          header.IPv4FlagMoreFragments,
+					fragmentOffset: 0,
+					payload:        ipv4Payload1Addr3ToAddr2[:32],
+				},
+				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          0,
+					fragmentOffset: 64,
+					payload:        ipv4Payload1Addr1ToAddr2[64:],
+				},
+				{
+					srcAddr:        addr3,
+					dstAddr:        addr2,
+					id:             1,
+					flags:          0,
+					fragmentOffset: 32,
+					payload:        ipv4Payload1Addr3ToAddr2[32:],
+				},
+			},
+			expectedPayloads: [][]byte{udpPayload1Addr1ToAddr2, udpPayload1Addr3ToAddr2},
 		},
 		{
 			name: "Fragment without followup",
 			fragments: []fragmentData{
 				{
+					srcAddr:        addr1,
+					dstAddr:        addr2,
 					id:             1,
 					flags:          header.IPv4FlagMoreFragments,
 					fragmentOffset: 0,
-					payload:        ipv4Payload1[:64],
+					payload:        ipv4Payload1Addr1ToAddr2[:64],
 				},
 			},
 			expectedPayloads: nil,
@@ -764,8 +848,8 @@ func TestReceiveFragments(t *testing.T) {
 					FragmentOffset: frag.fragmentOffset,
 					TTL:            64,
 					Protocol:       uint8(header.UDPProtocolNumber),
-					SrcAddr:        addr1,
-					DstAddr:        addr2,
+					SrcAddr:        frag.srcAddr,
+					DstAddr:        frag.dstAddr,
 				})
 
 				vv := hdr.View().ToVectorisedView()

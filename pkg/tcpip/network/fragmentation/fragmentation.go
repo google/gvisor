@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
@@ -52,13 +53,30 @@ var (
 	ErrInvalidArgs = errors.New("invalid args")
 )
 
+// FragmentID is the identifier for a fragment.
+type FragmentID struct {
+	// Source is the source address of the fragment.
+	Source tcpip.Address
+
+	// Destination is the destination address of the fragment.
+	Destination tcpip.Address
+
+	// ID is the identification value of the fragment.
+	//
+	// This is a uint32 because IPv6 uses a 32-bit identification value.
+	ID uint32
+
+	// The protocol for the packet.
+	Protocol uint8
+}
+
 // Fragmentation is the main structure that other modules
 // of the stack should use to implement IP Fragmentation.
 type Fragmentation struct {
 	mu           sync.Mutex
 	highLimit    int
 	lowLimit     int
-	reassemblers map[uint32]*reassembler
+	reassemblers map[FragmentID]*reassembler
 	rList        reassemblerList
 	size         int
 	timeout      time.Duration
@@ -93,7 +111,7 @@ func NewFragmentation(blockSize uint16, highMemoryLimit, lowMemoryLimit int, rea
 	}
 
 	return &Fragmentation{
-		reassemblers: make(map[uint32]*reassembler),
+		reassemblers: make(map[FragmentID]*reassembler),
 		highLimit:    highMemoryLimit,
 		lowLimit:     lowMemoryLimit,
 		timeout:      reassemblingTimeout,
@@ -109,7 +127,7 @@ func NewFragmentation(blockSize uint16, highMemoryLimit, lowMemoryLimit int, rea
 // first must be a multiple of the block size f is configured with. The size
 // of the fragment data must be a multiple of the block size, unless there are
 // no fragments following this fragment (more set to false).
-func (f *Fragmentation) Process(id uint32, first, last uint16, more bool, vv buffer.VectorisedView) (buffer.VectorisedView, bool, error) {
+func (f *Fragmentation) Process(id FragmentID, first, last uint16, more bool, vv buffer.VectorisedView) (buffer.VectorisedView, bool, error) {
 	if first > last {
 		return buffer.VectorisedView{}, false, fmt.Errorf("first=%d is greater than last=%d: %w", first, last, ErrInvalidArgs)
 	}

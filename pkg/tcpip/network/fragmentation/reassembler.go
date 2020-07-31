@@ -32,7 +32,7 @@ type hole struct {
 
 type reassembler struct {
 	reassemblerEntry
-	id           uint32
+	id           FragmentID
 	size         int
 	mu           sync.Mutex
 	holes        []hole
@@ -42,7 +42,7 @@ type reassembler struct {
 	creationTime time.Time
 }
 
-func newReassembler(id uint32) *reassembler {
+func newReassembler(id FragmentID) *reassembler {
 	r := &reassembler{
 		id:           id,
 		holes:        make([]hole, 0, 16),
