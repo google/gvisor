@@ -178,7 +178,7 @@ TEST_F(RawHDRINCL, ConnectToLoopback) {
 }
 
 TEST_F(RawHDRINCL, SendWithoutConnectSucceeds) {
-  // FIXME(github.dev/issue/3159): Test currently flaky.
+  // FIXME(gvisor.dev/issue/3159): Test currently flaky.
   SKIP_IF(true);
 
   struct iphdr hdr = LoopbackHeader();
@@ -284,7 +284,7 @@ TEST_F(RawHDRINCL, SendAndReceive) {
 // Send and receive a packet where the sendto address is not the same as the
 // provided destination.
 TEST_F(RawHDRINCL, SendAndReceiveDifferentAddress) {
-  // FIXME(github.dev/issue/3160): Test currently flaky.
+  // FIXME(gvisor.dev/issue/3160): Test currently flaky.
   SKIP_IF(true);
 
   int port = 40000;
