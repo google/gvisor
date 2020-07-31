@@ -49,7 +49,7 @@ const (
 
 	// DefaultReceiveBufferSize is the default size of the receive buffer
 	// for an endpoint.
-	DefaultReceiveBufferSize = 32 << 10 // 32KB
+	DefaultReceiveBufferSize = 1 << 20 // 1MB
 
 	// MaxBufferSize is the largest size a receive/send buffer can grow to.
 	MaxBufferSize = 4 << 20 // 4MB

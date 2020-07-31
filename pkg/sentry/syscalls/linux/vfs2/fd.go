@@ -185,11 +185,11 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, err
 	case linux.F_SETOWN_EX:
 		var owner linux.FOwnerEx
-		n, err := t.CopyIn(args[2].Pointer(), &owner)
+		_, err := t.CopyIn(args[2].Pointer(), &owner)
 		if err != nil {
 			return 0, nil, err
 		}
-		return uintptr(n), nil, setAsyncOwner(t, file, owner.Type, owner.PID)
+		return 0, nil, setAsyncOwner(t, file, owner.Type, owner.PID)
 	case linux.F_GETPIPE_SZ:
 		pipefile, ok := file.Impl().(*pipe.VFSPipeFD)
 		if !ok {

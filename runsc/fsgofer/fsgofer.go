@@ -979,9 +979,12 @@ func (l *localFile) Readdir(offset uint64, count uint32) ([]p9.Dirent, error) {
 
 	skip := uint64(0)
 
-	// Check if the file is at the correct position already. If not, seek to the
-	// beginning and read the entire directory again.
-	if l.lastDirentOffset != offset {
+	// Check if the file is at the correct position already. If not, seek to
+	// the beginning and read the entire directory again. We always seek if
+	// offset is 0, since this is side-effectual (equivalent to rewinddir(3),
+	// which causes the directory stream to resynchronize with the directory's
+	// current contents).
+	if l.lastDirentOffset != offset || offset == 0 {
 		if _, err := syscall.Seek(l.file.FD(), 0, 0); err != nil {
 			return nil, extractErrno(err)
 		}

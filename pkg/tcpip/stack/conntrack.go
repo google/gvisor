@@ -240,7 +240,10 @@ func (ct *ConnTrack) connFor(pkt *PacketBuffer) (*conn, direction) {
 	if err != nil {
 		return nil, dirOriginal
 	}
+	return ct.connForTID(tid)
+}
 
+func (ct *ConnTrack) connForTID(tid tupleID) (*conn, direction) {
 	bucket := ct.bucket(tid)
 	now := time.Now()
 
@@ -603,4 +606,27 @@ func (ct *ConnTrack) reapTupleLocked(tuple *tuple, bucket int, now time.Time) bo
 	}
 
 	return true
+}
+
+func (ct *ConnTrack) originalDst(epID TransportEndpointID) (tcpip.Address, uint16, *tcpip.Error) {
+	// Lookup the connection. The reply's original destination
+	// describes the original address.
+	tid := tupleID{
+		srcAddr:    epID.LocalAddress,
+		srcPort:    epID.LocalPort,
+		dstAddr:    epID.RemoteAddress,
+		dstPort:    epID.RemotePort,
+		transProto: header.TCPProtocolNumber,
+		netProto:   header.IPv4ProtocolNumber,
+	}
+	conn, _ := ct.connForTID(tid)
+	if conn == nil {
+		// Not a tracked connection.
+		return "", 0, tcpip.ErrNotConnected
+	} else if conn.manip == manipNone {
+		// Unmanipulated connection.
+		return "", 0, tcpip.ErrInvalidOptionValue
+	}
+
+	return conn.original.dstAddr, conn.original.dstPort, nil
 }

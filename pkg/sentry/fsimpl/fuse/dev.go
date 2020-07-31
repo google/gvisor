@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -98,7 +99,9 @@ type DeviceFD struct {
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *DeviceFD) Release() {}
+func (fd *DeviceFD) Release() {
+	fd.fs.conn.connected = false
+}
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *DeviceFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
@@ -124,7 +127,7 @@ func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.R
 	minBuffSize := linux.FUSE_MIN_READ_BUFFER
 	inHdrLen := uint32((*linux.FUSEHeaderIn)(nil).SizeBytes())
 	writeHdrLen := uint32((*linux.FUSEWriteIn)(nil).SizeBytes())
-	negotiatedMinBuffSize := inHdrLen + writeHdrLen + fd.fs.conn.MaxWrite
+	negotiatedMinBuffSize := inHdrLen + writeHdrLen + fd.fs.conn.maxWrite
 	if minBuffSize < negotiatedMinBuffSize {
 		minBuffSize = negotiatedMinBuffSize
 	}
@@ -385,9 +388,9 @@ func (fd *DeviceFD) sendError(ctx context.Context, errno int32, req *Request) er
 // FUSE_INIT.
 func (fd *DeviceFD) noReceiverAction(ctx context.Context, r *Response) error {
 	if r.opcode == linux.FUSE_INIT {
-		// TODO: process init response here.
-		// Maybe get the creds from the context?
-		// creds := auth.CredentialsFromContext(ctx)
+		creds := auth.CredentialsFromContext(ctx)
+		rootUserNs := kernel.KernelFromContext(ctx).RootUserNamespace()
+		return fd.fs.conn.InitRecv(r, creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, rootUserNs))
 	}
 
 	return nil

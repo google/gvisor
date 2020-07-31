@@ -92,7 +92,17 @@ func setOptionalValueUint16(path, name string, val *uint16) error {
 
 func setValue(path, name, data string) error {
 	fullpath := filepath.Join(path, name)
-	return ioutil.WriteFile(fullpath, []byte(data), 0700)
+
+	// Retry writes on EINTR; see:
+	//    https://github.com/golang/go/issues/38033
+	for {
+		err := ioutil.WriteFile(fullpath, []byte(data), 0700)
+		if err == nil {
+			return nil
+		} else if !errors.Is(err, syscall.EINTR) {
+			return err
+		}
+	}
 }
 
 func getValue(path, name string) (string, error) {
@@ -132,8 +142,16 @@ func fillFromAncestor(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := ioutil.WriteFile(path, []byte(val), 0700); err != nil {
-		return "", err
+
+	// Retry writes on EINTR; see:
+	//    https://github.com/golang/go/issues/38033
+	for {
+		err := ioutil.WriteFile(path, []byte(val), 0700)
+		if err == nil {
+			break
+		} else if !errors.Is(err, syscall.EINTR) {
+			return "", err
+		}
 	}
 	return val, nil
 }

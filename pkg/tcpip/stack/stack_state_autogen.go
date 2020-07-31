@@ -383,6 +383,58 @@ func (x *linkAddrEntryEntry) StateLoad(m state.Source) {
 	m.Load(1, &x.prev)
 }
 
+func (x *neighborEntryList) StateTypeName() string {
+	return "pkg/tcpip/stack.neighborEntryList"
+}
+
+func (x *neighborEntryList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
+}
+
+func (x *neighborEntryList) beforeSave() {}
+
+func (x *neighborEntryList) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.head)
+	m.Save(1, &x.tail)
+}
+
+func (x *neighborEntryList) afterLoad() {}
+
+func (x *neighborEntryList) StateLoad(m state.Source) {
+	m.Load(0, &x.head)
+	m.Load(1, &x.tail)
+}
+
+func (x *neighborEntryEntry) StateTypeName() string {
+	return "pkg/tcpip/stack.neighborEntryEntry"
+}
+
+func (x *neighborEntryEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
+}
+
+func (x *neighborEntryEntry) beforeSave() {}
+
+func (x *neighborEntryEntry) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.next)
+	m.Save(1, &x.prev)
+}
+
+func (x *neighborEntryEntry) afterLoad() {}
+
+func (x *neighborEntryEntry) StateLoad(m state.Source) {
+	m.Load(0, &x.next)
+	m.Load(1, &x.prev)
+}
+
 func (x *PacketBufferList) StateTypeName() string {
 	return "pkg/tcpip/stack.PacketBufferList"
 }
@@ -651,6 +703,8 @@ func init() {
 	state.Register((*IPHeaderFilter)(nil))
 	state.Register((*linkAddrEntryList)(nil))
 	state.Register((*linkAddrEntryEntry)(nil))
+	state.Register((*neighborEntryList)(nil))
+	state.Register((*neighborEntryEntry)(nil))
 	state.Register((*PacketBufferList)(nil))
 	state.Register((*PacketBufferEntry)(nil))
 	state.Register((*TransportEndpointID)(nil))

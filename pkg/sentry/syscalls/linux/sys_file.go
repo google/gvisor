@@ -1057,7 +1057,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.F_SETOWN_EX:
 		addr := args[2].Pointer()
 		var owner linux.FOwnerEx
-		n, err := t.CopyIn(addr, &owner)
+		_, err := t.CopyIn(addr, &owner)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -1069,21 +1069,21 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 				return 0, nil, syserror.ESRCH
 			}
 			a.SetOwnerTask(t, task)
-			return uintptr(n), nil, nil
+			return 0, nil, nil
 		case linux.F_OWNER_PID:
 			tg := t.PIDNamespace().ThreadGroupWithID(kernel.ThreadID(owner.PID))
 			if tg == nil {
 				return 0, nil, syserror.ESRCH
 			}
 			a.SetOwnerThreadGroup(t, tg)
-			return uintptr(n), nil, nil
+			return 0, nil, nil
 		case linux.F_OWNER_PGRP:
 			pg := t.PIDNamespace().ProcessGroupWithID(kernel.ProcessGroupID(owner.PID))
 			if pg == nil {
 				return 0, nil, syserror.ESRCH
 			}
 			a.SetOwnerProcessGroup(t, pg)
-			return uintptr(n), nil, nil
+			return 0, nil, nil
 		default:
 			return 0, nil, syserror.EINVAL
 		}

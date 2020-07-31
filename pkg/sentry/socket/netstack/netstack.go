@@ -423,7 +423,7 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
 
-		// TODO(b/129292371): Return protocol too.
+		// TODO(gvisor.dev/issue/173): Return protocol too.
 		return tcpip.FullAddress{
 			NIC:  tcpip.NICID(a.InterfaceIndex),
 			Addr: tcpip.Address(a.HardwareAddr[:header.EthernetAddressSize]),
@@ -1490,6 +1490,10 @@ func getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name, outLen int) (marsha
 		vP := primitive.Int32(boolToInt32(v))
 		return &vP, nil
 
+	case linux.SO_ORIGINAL_DST:
+		// TODO(gvisor.dev/issue/170): ip6tables.
+		return nil, syserr.ErrInvalidArgument
+
 	default:
 		emitUnimplementedEventIPv6(t, name)
 	}
@@ -1599,6 +1603,19 @@ func getSockOptIP(t *kernel.Task, ep commonEndpoint, name, outLen int, family in
 
 		vP := primitive.Int32(boolToInt32(v))
 		return &vP, nil
+
+	case linux.SO_ORIGINAL_DST:
+		if outLen < int(binary.Size(linux.SockAddrInet{})) {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		var v tcpip.OriginalDestinationOption
+		if err := ep.GetSockOpt(&v); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		a, _ := ConvertAddress(linux.AF_INET, tcpip.FullAddress(v))
+		return a.(*linux.SockAddrInet), nil
 
 	default:
 		emitUnimplementedEventIP(t, name)
@@ -2418,7 +2435,7 @@ func ConvertAddress(family int, addr tcpip.FullAddress) (linux.SockAddr, uint32)
 		return &out, uint32(sockAddrInet6Size)
 
 	case linux.AF_PACKET:
-		// TODO(b/129292371): Return protocol too.
+		// TODO(gvisor.dev/issue/173): Return protocol too.
 		var out linux.SockAddrLink
 		out.Family = linux.AF_PACKET
 		out.InterfaceIndex = int32(addr.NIC)
