@@ -14,9 +14,9 @@ jobs:
     - id: setup
       run: |
         if ! [[ -z "${{ secrets.GO_TOKEN }}" ]]; then
-           echo ::set-output has_token=true
+          echo ::set-output name=has_token::true
         else
-           echo ::set-output has_token=false
+          echo ::set-output name=has_token::false
         fi
     - run: |
         jq -nc '{"state": "pending", "context": "go tests"}' | \
