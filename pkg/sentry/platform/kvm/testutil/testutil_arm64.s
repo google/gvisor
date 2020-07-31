@@ -52,6 +52,8 @@ start:
 
 TEXT ·FloatingPointWorks(SB),NOSPLIT,$0-8
 	NO_LOCAL_POINTERS
+	// gc will touch fpsimd, so we should test it.
+	// such as in <runtime.deductSweepCredit>.
 	FMOVD $(9.9), F0
 	MOVD $SYS_GETPID, R8 // getpid
 	SVC
@@ -102,11 +104,15 @@ isNaN:
 
 TEXT ·TwiddleRegsSyscall(SB),NOSPLIT,$0
 	TWIDDLE_REGS()
+	MSR R10, TPIDR_EL0
+	// Trapped in el0_svc.
 	SVC
 	RET // never reached
 
 TEXT ·TwiddleRegsFault(SB),NOSPLIT,$0
-        TWIDDLE_REGS()
-        // Branch to Register branches unconditionally to an address in <Rn>.
-        JMP (R4) // <=> br x4, must fault
-        RET // never reached
+	TWIDDLE_REGS()
+	MSR R10, TPIDR_EL0
+	// Trapped in el0_ia.
+	// Branch to Register branches unconditionally to an address in <Rn>.
+	JMP (R6) // <=> br x6, must fault
+	RET // never reached
