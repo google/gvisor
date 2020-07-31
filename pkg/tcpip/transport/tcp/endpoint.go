@@ -2017,6 +2017,17 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		*o = tcpip.TCPDeferAcceptOption(e.deferAccept)
 		e.UnlockUser()
 
+	case *tcpip.OriginalDestinationOption:
+		ipt := e.stack.IPTables()
+		addr, port, err := ipt.OriginalDst(e.ID)
+		if err != nil {
+			return err
+		}
+		*o = tcpip.OriginalDestinationOption{
+			Addr: addr,
+			Port: port,
+		}
+
 	default:
 		return tcpip.ErrUnknownProtocolOption
 	}

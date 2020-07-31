@@ -9,6 +9,7 @@ go_library(
         "filter_input.go",
         "filter_output.go",
         "iptables.go",
+        "iptables_unsafe.go",
         "iptables_util.go",
         "nat.go",
     ],

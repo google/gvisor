@@ -1490,6 +1490,10 @@ func getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name, outLen int) (marsha
 		vP := primitive.Int32(boolToInt32(v))
 		return &vP, nil
 
+	case linux.SO_ORIGINAL_DST:
+		// TODO(gvisor.dev/issue/170): ip6tables.
+		return nil, syserr.ErrInvalidArgument
+
 	default:
 		emitUnimplementedEventIPv6(t, name)
 	}
@@ -1599,6 +1603,19 @@ func getSockOptIP(t *kernel.Task, ep commonEndpoint, name, outLen int, family in
 
 		vP := primitive.Int32(boolToInt32(v))
 		return &vP, nil
+
+	case linux.SO_ORIGINAL_DST:
+		if outLen < int(binary.Size(linux.SockAddrInet{})) {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		var v tcpip.OriginalDestinationOption
+		if err := ep.GetSockOpt(&v); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		a, _ := ConvertAddress(linux.AF_INET, tcpip.FullAddress(v))
+		return a.(*linux.SockAddrInet), nil
 
 	default:
 		emitUnimplementedEventIP(t, name)

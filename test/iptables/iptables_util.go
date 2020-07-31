@@ -15,6 +15,8 @@
 package iptables
 
 import (
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"os/exec"
@@ -218,17 +220,58 @@ func filterAddrs(addrs []string, ipv6 bool) []string {
 
 // getInterfaceName returns the name of the interface other than loopback.
 func getInterfaceName() (string, bool) {
-	var ifname string
+	iface, ok := getNonLoopbackInterface()
+	if !ok {
+		return "", false
+	}
+	return iface.Name, true
+}
+
+func getInterfaceAddrs(ipv6 bool) ([]net.IP, error) {
+	iface, ok := getNonLoopbackInterface()
+	if !ok {
+		return nil, errors.New("no non-loopback interface found")
+	}
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return nil, err
+	}
+
+	// Get only IPv4 or IPv6 addresses.
+	ips := make([]net.IP, 0, len(addrs))
+	for _, addr := range addrs {
+		parts := strings.Split(addr.String(), "/")
+		var ip net.IP
+		// To16() returns IPv4 addresses as IPv4-mapped IPv6 addresses.
+		// So we check whether To4() returns nil to test whether the
+		// address is v4 or v6.
+		if v4 := net.ParseIP(parts[0]).To4(); ipv6 && v4 == nil {
+			ip = net.ParseIP(parts[0]).To16()
+		} else {
+			ip = v4
+		}
+		if ip != nil {
+			ips = append(ips, ip)
+		}
+	}
+	return ips, nil
+}
+
+func getNonLoopbackInterface() (net.Interface, bool) {
 	if interfaces, err := net.Interfaces(); err == nil {
 		for _, intf := range interfaces {
 			if intf.Name != "lo" {
-				ifname = intf.Name
-				break
+				return intf, true
 			}
 		}
 	}
+	return net.Interface{}, false
+}
 
-	return ifname, ifname != ""
+func htons(x uint16) uint16 {
+	buf := make([]byte, 2)
+	binary.BigEndian.PutUint16(buf, x)
+	return binary.LittleEndian.Uint16(buf)
 }
 
 func localIP(ipv6 bool) string {
