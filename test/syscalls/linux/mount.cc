@@ -326,6 +326,14 @@ TEST(MountTest, MountFuseFilesystemNoDevice) {
   SKIP_IF(IsRunningOnGvisor() && !IsFUSEEnabled());
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  // Before kernel version 4.16-rc6, FUSE mount is protected by
+  // capable(CAP_SYS_ADMIN). After this version, it uses
+  // ns_capable(CAP_SYS_ADMIN) to protect. Before the 4.16 kernel, it was not
+  // allowed to mount fuse file systems without the global CAP_SYS_ADMIN.
+  int res = mount("", dir.path().c_str(), "fuse", 0, "");
+  SKIP_IF(!IsRunningOnGvisor() && res == -1 && errno == EPERM);
+
   EXPECT_THAT(mount("", dir.path().c_str(), "fuse", 0, ""),
               SyscallFailsWithErrno(EINVAL));
 }
@@ -339,6 +347,12 @@ TEST(MountTest, MountFuseFilesystem) {
   std::string mopts = "fd=" + std::to_string(fd.get());
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  // See comments in MountFuseFilesystemNoDevice for the reason why we skip
+  // EPERM when running on Linux.
+  int res = mount("", dir.path().c_str(), "fuse", 0, "");
+  SKIP_IF(!IsRunningOnGvisor() && res == -1 && errno == EPERM);
+
   auto const mount =
       ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), "fuse", 0, mopts, 0));
 }
