@@ -28,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/network/fragmentation"
-	"gvisor.dev/gvisor/pkg/tcpip/network/hash"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -343,7 +342,19 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 			var ready bool
 			// Note that pkt doesn't have its transport header set after reassembly,
 			// and won't until DeliverNetworkPacket sets it.
-			pkt.Data, ready, err = e.fragmentation.Process(hash.IPv6FragmentHash(h, extHdr.ID()), start, last, extHdr.More(), rawPayload.Buf)
+			pkt.Data, ready, err = e.fragmentation.Process(
+				// IPv6 ignores the Protocol field since the ID only needs to be unique
+				// across source-destination pairs, as per RFC 8200 section 4.5.
+				fragmentation.FragmentID{
+					Source:      h.SourceAddress(),
+					Destination: h.DestinationAddress(),
+					ID:          extHdr.ID(),
+				},
+				start,
+				last,
+				extHdr.More(),
+				rawPayload.Buf,
+			)
 			if err != nil {
 				r.Stats().IP.MalformedPacketsReceived.Increment()
 				r.Stats().IP.MalformedFragmentsReceived.Increment()
@@ -467,7 +478,7 @@ func (p *protocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWi
 		linkEP:        linkEP,
 		linkAddrCache: linkAddrCache,
 		dispatcher:    dispatcher,
-		fragmentation: fragmentation.NewFragmentation(fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, fragmentation.DefaultReassembleTimeout),
+		fragmentation: fragmentation.NewFragmentation(header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, fragmentation.DefaultReassembleTimeout),
 		protocol:      p,
 	}, nil
 }

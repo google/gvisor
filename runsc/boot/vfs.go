@@ -171,10 +171,19 @@ func (c *containerMounter) setupVFS2(ctx context.Context, conf *Config, procArgs
 
 func (c *containerMounter) createMountNamespaceVFS2(ctx context.Context, conf *Config, creds *auth.Credentials) (*vfs.MountNamespace, error) {
 	fd := c.fds.remove()
-	opts := strings.Join(p9MountData(fd, conf.FileAccess, true /* vfs2 */), ",")
+	opts := p9MountData(fd, conf.FileAccess, true /* vfs2 */)
+
+	if conf.OverlayfsStaleRead {
+		// We can't check for overlayfs here because sandbox is chroot'ed and gofer
+		// can only send mount options for specs.Mounts (specs.Root is missing
+		// Options field). So assume root is always on top of overlayfs.
+		opts = append(opts, "overlayfs_stale_read")
+	}
 
 	log.Infof("Mounting root over 9P, ioFD: %d", fd)
-	mns, err := c.k.VFS().NewMountNamespace(ctx, creds, "", gofer.Name, &vfs.GetFilesystemOptions{Data: opts})
+	mns, err := c.k.VFS().NewMountNamespace(ctx, creds, "", gofer.Name, &vfs.GetFilesystemOptions{
+		Data: strings.Join(opts, ","),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("setting up mount namespace: %w", err)
 	}

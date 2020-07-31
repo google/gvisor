@@ -33,12 +33,6 @@ const (
 	// Default = 1 (from RFC 4862 section 5.1)
 	defaultDupAddrDetectTransmits = 1
 
-	// defaultRetransmitTimer is the default amount of time to wait between
-	// sending NDP Neighbor solicitation messages.
-	//
-	// Default = 1s (from RFC 4861 section 10).
-	defaultRetransmitTimer = time.Second
-
 	// defaultMaxRtrSolicitations is the default number of Router
 	// Solicitation messages to send when a NIC becomes enabled.
 	//
@@ -78,16 +72,6 @@ const (
 	//
 	// Default = true.
 	defaultAutoGenGlobalAddresses = true
-
-	// minimumRetransmitTimer is the minimum amount of time to wait between
-	// sending NDP Neighbor solicitation messages. Note, RFC 4861 does
-	// not impose a minimum Retransmit Timer, but we do here to make sure
-	// the messages are not sent all at once. We also come to this value
-	// because in the RetransmitTimer field of a Router Advertisement, a
-	// value of 0 means unspecified, so the smallest valid value is 1.
-	// Note, the unit of the RetransmitTimer field in the Router
-	// Advertisement is milliseconds.
-	minimumRetransmitTimer = time.Millisecond
 
 	// minimumRtrSolicitationInterval is the minimum amount of time to wait
 	// between sending Router Solicitation messages. This limit is imposed

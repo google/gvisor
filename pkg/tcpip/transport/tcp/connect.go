@@ -1024,14 +1024,19 @@ func (e *endpoint) transitionToStateEstablishedLocked(h *handshake) {
 // delivered to this endpoint from the demuxer when the endpoint
 // is transitioned to StateClose.
 func (e *endpoint) transitionToStateCloseLocked() {
-	if e.EndpointState() == StateClose {
+	s := e.EndpointState()
+	if s == StateClose {
 		return
 	}
+
+	if s.connected() {
+		e.stack.Stats().TCP.CurrentConnected.Decrement()
+		e.stack.Stats().TCP.EstablishedClosed.Increment()
+	}
+
 	// Mark the endpoint as fully closed for reads/writes.
 	e.cleanupLocked()
 	e.setEndpointState(StateClose)
-	e.stack.Stats().TCP.CurrentConnected.Decrement()
-	e.stack.Stats().TCP.EstablishedClosed.Increment()
 }
 
 // tryDeliverSegmentFromClosedEndpoint attempts to deliver the parsed

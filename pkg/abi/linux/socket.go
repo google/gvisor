@@ -239,11 +239,13 @@ const SockAddrMax = 128
 type InetAddr [4]byte
 
 // SockAddrInet is struct sockaddr_in, from uapi/linux/in.h.
+//
+// +marshal
 type SockAddrInet struct {
 	Family uint16
 	Port   uint16
 	Addr   InetAddr
-	Zero   [8]uint8 // pad to sizeof(struct sockaddr).
+	_      [8]uint8 // pad to sizeof(struct sockaddr).
 }
 
 // InetMulticastRequest is struct ip_mreq, from uapi/linux/in.h.

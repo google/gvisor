@@ -193,7 +193,7 @@ func (ep *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMes
 }
 
 func (ep *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
-	// TODO(b/129292371): Implement.
+	// TODO(gvisor.dev/issue/173): Implement.
 	return 0, nil, tcpip.ErrInvalidOptionValue
 }
 
@@ -432,7 +432,7 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 
 	// Push new packet into receive list and increment the buffer size.
 	var packet packet
-	// TODO(b/129292371): Return network protocol.
+	// TODO(gvisor.dev/issue/173): Return network protocol.
 	if len(pkt.LinkHeader) > 0 {
 		// Get info directly from the ethernet header.
 		hdr := header.Ethernet(pkt.LinkHeader)
