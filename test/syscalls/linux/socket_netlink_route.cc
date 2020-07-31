@@ -577,7 +577,10 @@ TEST(NetlinkRouteTest, GetRouteDump) {
 
         std::cout << std::endl;
 
-        if (msg->rtm_table == RT_TABLE_MAIN) {
+        // If the test is running in a new network namespace, it will have only
+        // the local route table.
+        if (msg->rtm_table == RT_TABLE_MAIN ||
+            (!IsRunningOnGvisor() && msg->rtm_table == RT_TABLE_LOCAL)) {
           routeFound = true;
           dstFound = rtDstFound && dstFound;
         }
