@@ -29,7 +29,7 @@ import (
 // redis instance and returns the data in its reponse. The test loops through
 // increasing amounts of concurency for requests.
 func BenchmarkNode(b *testing.B) {
-	requests := 10000
+	requests := 1000
 	concurrency := []int{1, 5, 10, 25}
 
 	for _, c := range concurrency {
@@ -95,20 +95,15 @@ func runNode(b *testing.B, hey *tools.Hey) {
 	}
 	defer nodeApp.CleanUp(ctx)
 
-	servingIP, err := serverMachine.IPAddress()
+	servingIP, err := nodeApp.FindIP(ctx, false /* ipv6 */)
 	if err != nil {
 		b.Fatalf("failed to get ip from server: %v", err)
 	}
 
-	servingPort, err := nodeApp.FindPort(ctx, port)
-	if err != nil {
-		b.Fatalf("failed to port from node instance: %v", err)
-	}
-
 	// Wait until the Client sees the server as up.
-	harness.WaitUntilServing(ctx, clientMachine, servingIP, servingPort)
+	harness.WaitUntilServing(ctx, clientMachine, servingIP, port)
 
-	heyCmd := hey.MakeCmd(servingIP, servingPort)
+	heyCmd := hey.MakeCmd(servingIP, port)
 
 	nodeApp.RestartProfiles()
 	b.ResetTimer()

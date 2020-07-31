@@ -44,7 +44,7 @@ func BenchmarkNginxConcurrency(b *testing.B) {
 	for _, c := range concurrency {
 		b.Run(fmt.Sprintf("%d", c), func(b *testing.B) {
 			hey := &tools.Hey{
-				Requests:    10000,
+				Requests:    1000,
 				Concurrency: c,
 			}
 			runNginx(b, clientMachine, serverMachine, hey)
@@ -71,18 +71,13 @@ func runNginx(b *testing.B, clientMachine, serverMachine harness.Machine, hey *t
 		b.Fatalf("server failed to start: %v", err)
 	}
 
-	ip, err := serverMachine.IPAddress()
+	ip, err := server.FindIP(ctx, false /* ipv6 */)
 	if err != nil {
 		b.Fatalf("failed to find server ip: %v", err)
 	}
 
-	servingPort, err := server.FindPort(ctx, port)
-	if err != nil {
-		b.Fatalf("failed to find server port %d: %v", port, err)
-	}
-
 	// Check the server is serving.
-	harness.WaitUntilServing(ctx, clientMachine, ip, servingPort)
+	harness.WaitUntilServing(ctx, clientMachine, ip, port)
 
 	// Grab a client.
 	client := clientMachine.GetNativeContainer(ctx, b)
@@ -93,7 +88,7 @@ func runNginx(b *testing.B, clientMachine, serverMachine harness.Machine, hey *t
 	for i := 0; i < b.N; i++ {
 		out, err := client.Run(ctx, dockerutil.RunOpts{
 			Image: "benchmarks/hey",
-		}, hey.MakeCmd(ip, servingPort)...)
+		}, hey.MakeCmd(ip, port)...)
 		if err != nil {
 			b.Fatalf("run failed with: %v", err)
 		}

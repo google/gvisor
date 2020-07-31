@@ -77,18 +77,13 @@ func BenchmarkIperf(b *testing.B) {
 				b.Fatalf("failed to start server with: %v", err)
 			}
 
-			ip, err := serverMachine.IPAddress()
+			ip, err := server.FindIP(ctx, false /* ipv6 */)
 			if err != nil {
 				b.Fatalf("failed to find server ip: %v", err)
 			}
 
-			servingPort, err := server.FindPort(ctx, port)
-			if err != nil {
-				b.Fatalf("failed to find port %d: %v", port, err)
-			}
-
 			// Make sure the server is up and serving before we run.
-			if err := harness.WaitUntilServing(ctx, clientMachine, ip, servingPort); err != nil {
+			if err := harness.WaitUntilServing(ctx, clientMachine, ip, port); err != nil {
 				b.Fatalf("failed to wait for server: %v", err)
 			}
 			// Run the client.
@@ -100,7 +95,7 @@ func BenchmarkIperf(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				out, err := client.Run(ctx, dockerutil.RunOpts{
 					Image: "benchmarks/iperf",
-				}, iperf.MakeCmd(ip, servingPort)...)
+				}, iperf.MakeCmd(ip, port)...)
 				if err != nil {
 					b.Fatalf("failed to run client: %v", err)
 				}
