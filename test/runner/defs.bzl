@@ -201,7 +201,7 @@ def syscall_test(
             platform = default_platform,
             use_tmpfs = use_tmpfs,
             add_uds_tree = add_uds_tree,
-            tags = platforms[default_platform] + vfs2_tags,
+            tags = platforms[default_platform] + vfs2_tags + ["fuse"],
             vfs2 = True,
             fuse = True,
         )
