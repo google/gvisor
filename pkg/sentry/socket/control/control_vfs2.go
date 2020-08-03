@@ -46,7 +46,7 @@ func NewSCMRightsVFS2(t *kernel.Task, fds []int32) (SCMRightsVFS2, error) {
 	for _, fd := range fds {
 		file := t.GetFileVFS2(fd)
 		if file == nil {
-			files.Release()
+			files.Release(t)
 			return nil, syserror.EBADF
 		}
 		files = append(files, file)
@@ -78,9 +78,9 @@ func (fs *RightsFilesVFS2) Clone() transport.RightsControlMessage {
 }
 
 // Release implements transport.RightsControlMessage.Release.
-func (fs *RightsFilesVFS2) Release() {
+func (fs *RightsFilesVFS2) Release(ctx context.Context) {
 	for _, f := range *fs {
-		f.DecRef()
+		f.DecRef(ctx)
 	}
 	*fs = nil
 }
@@ -93,7 +93,7 @@ func rightsFDsVFS2(t *kernel.Task, rights SCMRightsVFS2, cloexec bool, max int) 
 		fd, err := t.NewFDFromVFS2(0, files[0], kernel.FDFlags{
 			CloseOnExec: cloexec,
 		})
-		files[0].DecRef()
+		files[0].DecRef(t)
 		files = files[1:]
 		if err != nil {
 			t.Warningf("Error inserting FD: %v", err)

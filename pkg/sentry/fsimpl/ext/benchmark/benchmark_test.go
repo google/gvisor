@@ -53,7 +53,7 @@ func setUp(b *testing.B, imagePath string) (context.Context, *vfs.VirtualFilesys
 
 	// Create VFS.
 	vfsObj := &vfs.VirtualFilesystem{}
-	if err := vfsObj.Init(); err != nil {
+	if err := vfsObj.Init(ctx); err != nil {
 		return nil, nil, nil, nil, err
 	}
 	vfsObj.MustRegisterFilesystemType("extfs", ext.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
@@ -68,7 +68,7 @@ func setUp(b *testing.B, imagePath string) (context.Context, *vfs.VirtualFilesys
 	root := mntns.Root()
 
 	tearDown := func() {
-		root.DecRef()
+		root.DecRef(ctx)
 
 		if err := f.Close(); err != nil {
 			b.Fatalf("tearDown failed: %v", err)
@@ -169,7 +169,7 @@ func BenchmarkVFS2ExtfsMountStat(b *testing.B) {
 			if err != nil {
 				b.Fatalf("failed to walk to mount point: %v", err)
 			}
-			defer mountPoint.DecRef()
+			defer mountPoint.DecRef(ctx)
 
 			// Create extfs submount.
 			mountTearDown := mount(b, fmt.Sprintf("/tmp/image-%d.ext4", depth), vfsfs, &pop)

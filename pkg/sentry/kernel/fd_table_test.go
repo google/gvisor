@@ -154,7 +154,7 @@ func TestFDTable(t *testing.T) {
 		if ref == nil {
 			t.Fatalf("fdTable.Remove(1) for an existing FD: failed, want success")
 		}
-		ref.DecRef()
+		ref.DecRef(ctx)
 
 		if ref, _ := fdTable.Remove(1); ref != nil {
 			t.Fatalf("r.Remove(1) for a removed FD: got success, want failure")
@@ -191,7 +191,7 @@ func BenchmarkFDLookupAndDecRef(b *testing.B) {
 		b.StartTimer() // Benchmark.
 		for i := 0; i < b.N; i++ {
 			tf, _ := fdTable.Get(fds[i%len(fds)])
-			tf.DecRef()
+			tf.DecRef(ctx)
 		}
 	})
 }
@@ -219,7 +219,7 @@ func BenchmarkFDLookupAndDecRefConcurrent(b *testing.B) {
 				defer wg.Done()
 				for i := 0; i < each; i++ {
 					tf, _ := fdTable.Get(fds[i%len(fds)])
-					tf.DecRef()
+					tf.DecRef(ctx)
 				}
 			}()
 		}

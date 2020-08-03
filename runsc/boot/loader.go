@@ -346,7 +346,7 @@ func New(args Args) (*Loader, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to create hostfs filesystem: %v", err)
 		}
-		defer hostFilesystem.DecRef()
+		defer hostFilesystem.DecRef(k.SupervisorContext())
 		hostMount, err := k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create hostfs mount: %v", err)
@@ -755,7 +755,7 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 		return nil, fmt.Errorf("creating process: %v", err)
 	}
 	// CreateProcess takes a reference on FDTable if successful.
-	info.procArgs.FDTable.DecRef()
+	info.procArgs.FDTable.DecRef(ctx)
 
 	// Set the foreground process group on the TTY to the global init process
 	// group, since that is what we are about to start running.
@@ -890,22 +890,20 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 
 	// Add the HOME environment variable if it is not already set.
 	if kernel.VFS2Enabled {
-		defer args.MountNamespaceVFS2.DecRef()
-
 		root := args.MountNamespaceVFS2.Root()
-		defer root.DecRef()
 		ctx := vfs.WithRoot(l.k.SupervisorContext(), root)
+		defer args.MountNamespaceVFS2.DecRef(ctx)
+		defer root.DecRef(ctx)
 		envv, err := user.MaybeAddExecUserHomeVFS2(ctx, args.MountNamespaceVFS2, args.KUID, args.Envv)
 		if err != nil {
 			return 0, err
 		}
 		args.Envv = envv
 	} else {
-		defer args.MountNamespace.DecRef()
-
 		root := args.MountNamespace.Root()
-		defer root.DecRef()
 		ctx := fs.WithRoot(l.k.SupervisorContext(), root)
+		defer args.MountNamespace.DecRef(ctx)
+		defer root.DecRef(ctx)
 		envv, err := user.MaybeAddExecUserHome(ctx, args.MountNamespace, args.KUID, args.Envv)
 		if err != nil {
 			return 0, err
@@ -1263,7 +1261,7 @@ func createFDTable(ctx context.Context, console bool, stdioFDs []int) (*kernel.F
 	fdTable := k.NewFDTable()
 	ttyFile, ttyFileVFS2, err := fdimport.Import(ctx, fdTable, console, stdioFDs)
 	if err != nil {
-		fdTable.DecRef()
+		fdTable.DecRef(ctx)
 		return nil, nil, nil, err
 	}
 	return fdTable, ttyFile, ttyFileVFS2, nil

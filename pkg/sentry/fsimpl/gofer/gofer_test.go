@@ -50,7 +50,7 @@ func TestDestroyIdempotent(t *testing.T) {
 	}
 	parent.cacheNewChildLocked(child, "child")
 
-	child.checkCachingLocked()
+	child.checkCachingLocked(ctx)
 	if got := atomic.LoadInt64(&child.refs); got != -1 {
 		t.Fatalf("child.refs=%d, want: -1", got)
 	}
@@ -58,6 +58,6 @@ func TestDestroyIdempotent(t *testing.T) {
 	if got := atomic.LoadInt64(&parent.refs); got != -1 {
 		t.Fatalf("parent.refs=%d, want: -1", got)
 	}
-	child.checkCachingLocked()
-	child.checkCachingLocked()
+	child.checkCachingLocked(ctx)
+	child.checkCachingLocked(ctx)
 }

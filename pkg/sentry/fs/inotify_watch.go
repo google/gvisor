@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -105,12 +106,12 @@ func (w *Watch) Pin(d *Dirent) {
 // Unpin drops any extra refs held on dirent due to a previous Pin
 // call. Calling Unpin multiple times for the same dirent, or on a dirent
 // without a corresponding Pin call is a no-op.
-func (w *Watch) Unpin(d *Dirent) {
+func (w *Watch) Unpin(ctx context.Context, d *Dirent) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.pins[d] {
 		delete(w.pins, d)
-		d.DecRef()
+		d.DecRef(ctx)
 	}
 }
 
@@ -125,11 +126,11 @@ func (w *Watch) TargetDestroyed() {
 // this watch. Destroy does not cause any new events to be generated. The caller
 // is responsible for ensuring there are no outstanding references to this
 // watch.
-func (w *Watch) destroy() {
+func (w *Watch) destroy(ctx context.Context) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	for d := range w.pins {
-		d.DecRef()
+		d.DecRef(ctx)
 	}
 	w.pins = nil
 }

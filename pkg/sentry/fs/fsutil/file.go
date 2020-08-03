@@ -31,7 +31,7 @@ import (
 type FileNoopRelease struct{}
 
 // Release is a no-op.
-func (FileNoopRelease) Release() {}
+func (FileNoopRelease) Release(context.Context) {}
 
 // SeekWithDirCursor is used to implement fs.FileOperations.Seek.  If dirCursor
 // is not nil and the seek was on a directory, the cursor will be updated.
@@ -296,7 +296,7 @@ func (sdfo *StaticDirFileOperations) IterateDir(ctx context.Context, d *fs.Diren
 func (sdfo *StaticDirFileOperations) Readdir(ctx context.Context, file *fs.File, serializer fs.DentrySerializer) (int64, error) {
 	root := fs.RootFromContext(ctx)
 	if root != nil {
-		defer root.DecRef()
+		defer root.DecRef(ctx)
 	}
 	dirCtx := &fs.DirCtx{
 		Serializer: serializer,

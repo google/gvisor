@@ -108,7 +108,7 @@ func (e *endpoint) UnidirectionalConnect(ctx context.Context) (transport.Connect
 
 	// We don't need the receiver.
 	c.CloseRecv()
-	c.Release()
+	c.Release(ctx)
 
 	return c, nil
 }
@@ -136,8 +136,8 @@ func (e *endpoint) newConnectedEndpoint(ctx context.Context, flags p9.ConnectFla
 }
 
 // Release implements transport.BoundEndpoint.Release.
-func (e *endpoint) Release() {
-	e.dentry.DecRef()
+func (e *endpoint) Release(ctx context.Context) {
+	e.dentry.DecRef(ctx)
 }
 
 // Passcred implements transport.BoundEndpoint.Passcred.

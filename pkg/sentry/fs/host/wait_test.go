@@ -39,7 +39,7 @@ func TestWait(t *testing.T) {
 		t.Fatalf("NewFile failed: %v", err)
 	}
 
-	defer file.DecRef()
+	defer file.DecRef(ctx)
 
 	r := file.Readiness(waiter.EventIn)
 	if r != 0 {

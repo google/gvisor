@@ -67,12 +67,12 @@ func (t *TTYFileDescription) ForegroundProcessGroup() *kernel.ProcessGroup {
 }
 
 // Release implements fs.FileOperations.Release.
-func (t *TTYFileDescription) Release() {
+func (t *TTYFileDescription) Release(ctx context.Context) {
 	t.mu.Lock()
 	t.fgProcessGroup = nil
 	t.mu.Unlock()
 
-	t.fileDescription.Release()
+	t.fileDescription.Release(ctx)
 }
 
 // PRead implements vfs.FileDescriptionImpl.

@@ -115,7 +115,7 @@ func (p *pipeOperations) Readiness(mask waiter.EventMask) (eventMask waiter.Even
 }
 
 // Release implements fs.FileOperations.Release.
-func (p *pipeOperations) Release() {
+func (p *pipeOperations) Release(context.Context) {
 	fdnotifier.RemoveFD(int32(p.file.FD()))
 	p.file.Close()
 	p.file = nil

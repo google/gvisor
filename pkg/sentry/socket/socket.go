@@ -46,8 +46,8 @@ type ControlMessages struct {
 }
 
 // Release releases Unix domain socket credentials and rights.
-func (c *ControlMessages) Release() {
-	c.Unix.Release()
+func (c *ControlMessages) Release(ctx context.Context) {
+	c.Unix.Release(ctx)
 }
 
 // Socket is an interface combining fs.FileOperations and SocketOps,

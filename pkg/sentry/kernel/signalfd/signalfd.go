@@ -76,7 +76,7 @@ func New(ctx context.Context, mask linux.SignalSet) (*fs.File, error) {
 }
 
 // Release implements fs.FileOperations.Release.
-func (s *SignalOperations) Release() {}
+func (s *SignalOperations) Release(context.Context) {}
 
 // Mask returns the signal mask.
 func (s *SignalOperations) Mask() linux.SignalSet {

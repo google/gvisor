@@ -81,11 +81,11 @@ func (fd *nonDirectoryFD) currentFDLocked(ctx context.Context) (*vfs.FileDescrip
 		oldOff, oldOffErr := fd.cachedFD.Seek(ctx, 0, linux.SEEK_CUR)
 		if oldOffErr == nil {
 			if _, err := upperFD.Seek(ctx, oldOff, linux.SEEK_SET); err != nil {
-				upperFD.DecRef()
+				upperFD.DecRef(ctx)
 				return nil, err
 			}
 		}
-		fd.cachedFD.DecRef()
+		fd.cachedFD.DecRef(ctx)
 		fd.copiedUp = true
 		fd.cachedFD = upperFD
 		fd.cachedFlags = statusFlags
@@ -99,8 +99,8 @@ func (fd *nonDirectoryFD) currentFDLocked(ctx context.Context) (*vfs.FileDescrip
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *nonDirectoryFD) Release() {
-	fd.cachedFD.DecRef()
+func (fd *nonDirectoryFD) Release(ctx context.Context) {
+	fd.cachedFD.DecRef(ctx)
 	fd.cachedFD = nil
 }
 
@@ -138,7 +138,7 @@ func (fd *nonDirectoryFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux
 			Mask: layerMask,
 			Sync: opts.Sync,
 		})
-		wrappedFD.DecRef()
+		wrappedFD.DecRef(ctx)
 		if err != nil {
 			return linux.Statx{}, err
 		}
@@ -187,7 +187,7 @@ func (fd *nonDirectoryFD) PRead(ctx context.Context, dst usermem.IOSequence, off
 	if err != nil {
 		return 0, err
 	}
-	defer wrappedFD.DecRef()
+	defer wrappedFD.DecRef(ctx)
 	return wrappedFD.PRead(ctx, dst, offset, opts)
 }
 
@@ -209,7 +209,7 @@ func (fd *nonDirectoryFD) PWrite(ctx context.Context, src usermem.IOSequence, of
 	if err != nil {
 		return 0, err
 	}
-	defer wrappedFD.DecRef()
+	defer wrappedFD.DecRef(ctx)
 	return wrappedFD.PWrite(ctx, src, offset, opts)
 }
 
@@ -250,7 +250,7 @@ func (fd *nonDirectoryFD) Sync(ctx context.Context) error {
 		return err
 	}
 	wrappedFD.IncRef()
-	defer wrappedFD.DecRef()
+	defer wrappedFD.DecRef(ctx)
 	fd.mu.Unlock()
 	return wrappedFD.Sync(ctx)
 }
@@ -261,6 +261,6 @@ func (fd *nonDirectoryFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOp
 	if err != nil {
 		return err
 	}
-	defer wrappedFD.DecRef()
+	defer wrappedFD.DecRef(ctx)
 	return wrappedFD.ConfigureMMap(ctx, opts)
 }

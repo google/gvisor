@@ -247,7 +247,7 @@ func getAIOCallback(t *kernel.Task, file *fs.File, cbAddr usermem.Addr, cb *linu
 			ev.Result = -int64(kernel.ExtractErrno(err, 0))
 		}
 
-		file.DecRef()
+		file.DecRef(ctx)
 
 		// Queue the result for delivery.
 		actx.FinishRequest(ev)
@@ -257,7 +257,7 @@ func getAIOCallback(t *kernel.Task, file *fs.File, cbAddr usermem.Addr, cb *linu
 		// wake up.
 		if eventFile != nil {
 			eventFile.FileOperations.(*eventfd.EventOperations).Signal(1)
-			eventFile.DecRef()
+			eventFile.DecRef(ctx)
 		}
 	}
 }
@@ -269,7 +269,7 @@ func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr user
 		// File not found.
 		return syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Was there an eventFD? Extract it.
 	var eventFile *fs.File
@@ -279,7 +279,7 @@ func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr user
 			// Bad FD.
 			return syserror.EBADF
 		}
-		defer eventFile.DecRef()
+		defer eventFile.DecRef(t)
 
 		// Check that it is an eventfd.
 		if _, ok := eventFile.FileOperations.(*eventfd.EventOperations); !ok {

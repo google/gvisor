@@ -51,6 +51,7 @@ go_test(
     srcs = ["futex_test.go"],
     library = ":futex",
     deps = [
+        "//pkg/context",
         "//pkg/sync",
         "//pkg/usermem",
     ],

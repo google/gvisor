@@ -450,13 +450,13 @@ func TestCreateMountNamespace(t *testing.T) {
 			}
 
 			root := mns.Root()
-			defer root.DecRef()
+			defer root.DecRef(ctx)
 			for _, p := range tc.expectedPaths {
 				maxTraversals := uint(0)
 				if d, err := mns.FindInode(ctx, root, root, p, &maxTraversals); err != nil {
 					t.Errorf("expected path %v to exist with spec %v, but got error %v", p, tc.spec, err)
 				} else {
-					d.DecRef()
+					d.DecRef(ctx)
 				}
 			}
 		})
@@ -491,7 +491,7 @@ func TestCreateMountNamespaceVFS2(t *testing.T) {
 			}
 
 			root := mns.Root()
-			defer root.DecRef()
+			defer root.DecRef(ctx)
 			for _, p := range tc.expectedPaths {
 				target := &vfs.PathOperation{
 					Root:  root,
@@ -502,7 +502,7 @@ func TestCreateMountNamespaceVFS2(t *testing.T) {
 				if d, err := l.k.VFS().GetDentryAt(ctx, l.root.procArgs.Credentials, target, &vfs.GetDentryOptions{}); err != nil {
 					t.Errorf("expected path %v to exist with spec %v, but got error %v", p, tc.spec, err)
 				} else {
-					d.DecRef()
+					d.DecRef(ctx)
 				}
 			}
 		})

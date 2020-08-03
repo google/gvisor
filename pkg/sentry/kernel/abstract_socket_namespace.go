@@ -17,6 +17,7 @@ package kernel
 import (
 	"syscall"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -31,7 +32,7 @@ type abstractEndpoint struct {
 }
 
 // WeakRefGone implements refs.WeakRefUser.WeakRefGone.
-func (e *abstractEndpoint) WeakRefGone() {
+func (e *abstractEndpoint) WeakRefGone(context.Context) {
 	e.ns.mu.Lock()
 	if e.ns.endpoints[e.name].ep == e.ep {
 		delete(e.ns.endpoints, e.name)
@@ -64,9 +65,9 @@ type boundEndpoint struct {
 }
 
 // Release implements transport.BoundEndpoint.Release.
-func (e *boundEndpoint) Release() {
-	e.rc.DecRef()
-	e.BoundEndpoint.Release()
+func (e *boundEndpoint) Release(ctx context.Context) {
+	e.rc.DecRef(ctx)
+	e.BoundEndpoint.Release(ctx)
 }
 
 // BoundEndpoint retrieves the endpoint bound to the given name. The return
@@ -93,13 +94,13 @@ func (a *AbstractSocketNamespace) BoundEndpoint(name string) transport.BoundEndp
 //
 // When the last reference managed by rc is dropped, ep may be removed from the
 // namespace.
-func (a *AbstractSocketNamespace) Bind(name string, ep transport.BoundEndpoint, rc refs.RefCounter) error {
+func (a *AbstractSocketNamespace) Bind(ctx context.Context, name string, ep transport.BoundEndpoint, rc refs.RefCounter) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	if ep, ok := a.endpoints[name]; ok {
 		if rc := ep.wr.Get(); rc != nil {
-			rc.DecRef()
+			rc.DecRef(ctx)
 			return syscall.EADDRINUSE
 		}
 	}

@@ -80,9 +80,9 @@ type testFD struct {
 	data DynamicBytesSource
 }
 
-func newTestFD(vfsObj *VirtualFilesystem, statusFlags uint32, data DynamicBytesSource) *FileDescription {
+func newTestFD(ctx context.Context, vfsObj *VirtualFilesystem, statusFlags uint32, data DynamicBytesSource) *FileDescription {
 	vd := vfsObj.NewAnonVirtualDentry("genCountFD")
-	defer vd.DecRef()
+	defer vd.DecRef(ctx)
 	var fd testFD
 	fd.vfsfd.Init(&fd, statusFlags, vd.Mount(), vd.Dentry(), &FileDescriptionOptions{})
 	fd.DynamicBytesFileDescriptionImpl.SetDataSource(data)
@@ -90,7 +90,7 @@ func newTestFD(vfsObj *VirtualFilesystem, statusFlags uint32, data DynamicBytesS
 }
 
 // Release implements FileDescriptionImpl.Release.
-func (fd *testFD) Release() {
+func (fd *testFD) Release(context.Context) {
 }
 
 // SetStatusFlags implements FileDescriptionImpl.SetStatusFlags.
@@ -109,11 +109,11 @@ func TestGenCountFD(t *testing.T) {
 	ctx := contexttest.Context(t)
 
 	vfsObj := &VirtualFilesystem{}
-	if err := vfsObj.Init(); err != nil {
+	if err := vfsObj.Init(ctx); err != nil {
 		t.Fatalf("VFS init: %v", err)
 	}
-	fd := newTestFD(vfsObj, linux.O_RDWR, &genCount{})
-	defer fd.DecRef()
+	fd := newTestFD(ctx, vfsObj, linux.O_RDWR, &genCount{})
+	defer fd.DecRef(ctx)
 
 	// The first read causes Generate to be called to fill the FD's buffer.
 	buf := make([]byte, 2)
@@ -167,11 +167,11 @@ func TestWritable(t *testing.T) {
 	ctx := contexttest.Context(t)
 
 	vfsObj := &VirtualFilesystem{}
-	if err := vfsObj.Init(); err != nil {
+	if err := vfsObj.Init(ctx); err != nil {
 		t.Fatalf("VFS init: %v", err)
 	}
-	fd := newTestFD(vfsObj, linux.O_RDWR, &storeData{data: "init"})
-	defer fd.DecRef()
+	fd := newTestFD(ctx, vfsObj, linux.O_RDWR, &storeData{data: "init"})
+	defer fd.DecRef(ctx)
 
 	buf := make([]byte, 10)
 	ioseq := usermem.BytesIOSequence(buf)

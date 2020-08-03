@@ -185,7 +185,7 @@ func (f *subtasksFile) Readdir(ctx context.Context, file *fs.File, ser fs.Dentry
 		// Serialize "." and "..".
 		root := fs.RootFromContext(ctx)
 		if root != nil {
-			defer root.DecRef()
+			defer root.DecRef(ctx)
 		}
 		dot, dotdot := file.Dirent.GetDotAttrs(root)
 		if err := dirCtx.DirEmit(".", dot); err != nil {
@@ -295,7 +295,7 @@ func (e *exe) Readlink(ctx context.Context, inode *fs.Inode) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer exec.DecRef()
+	defer exec.DecRef(ctx)
 
 	return exec.PathnameWithDeleted(ctx), nil
 }

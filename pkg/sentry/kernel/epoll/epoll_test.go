@@ -26,7 +26,8 @@ func TestFileDestroyed(t *testing.T) {
 	f := filetest.NewTestFile(t)
 	id := FileIdentifier{f, 12}
 
-	efile := NewEventPoll(contexttest.Context(t))
+	ctx := contexttest.Context(t)
+	efile := NewEventPoll(ctx)
 	e := efile.FileOperations.(*EventPoll)
 	if err := e.AddEntry(id, 0, waiter.EventIn, [2]int32{}); err != nil {
 		t.Fatalf("addEntry failed: %v", err)
@@ -44,7 +45,7 @@ func TestFileDestroyed(t *testing.T) {
 	}
 
 	// Destroy the file. Check that we get no more events.
-	f.DecRef()
+	f.DecRef(ctx)
 
 	evt = e.ReadEvents(1)
 	if len(evt) != 0 {

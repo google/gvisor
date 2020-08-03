@@ -640,7 +640,7 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *Confi
 
 func (c *containerMounter) mountSubmounts(ctx context.Context, conf *Config, mns *fs.MountNamespace) error {
 	root := mns.Root()
-	defer root.DecRef()
+	defer root.DecRef(ctx)
 
 	for _, m := range c.mounts {
 		log.Debugf("Mounting %q to %q, type: %s, options: %s", m.Source, m.Destination, m.Type, m.Options)
@@ -868,7 +868,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, conf *Config, mns 
 	if err != nil {
 		return fmt.Errorf("can't find mount destination %q: %v", m.Destination, err)
 	}
-	defer dirent.DecRef()
+	defer dirent.DecRef(ctx)
 	if err := mns.Mount(ctx, dirent, inode); err != nil {
 		return fmt.Errorf("mount %q error: %v", m.Destination, err)
 	}
@@ -889,12 +889,12 @@ func (c *containerMounter) mountSharedSubmount(ctx context.Context, mns *fs.Moun
 	if err != nil {
 		return fmt.Errorf("can't find mount destination %q: %v", mount.Destination, err)
 	}
-	defer target.DecRef()
+	defer target.DecRef(ctx)
 
 	// Take a ref on the inode that is about to be (re)-mounted.
 	source.root.IncRef()
 	if err := mns.Mount(ctx, target, source.root); err != nil {
-		source.root.DecRef()
+		source.root.DecRef(ctx)
 		return fmt.Errorf("bind mount %q error: %v", mount.Destination, err)
 	}
 
@@ -997,12 +997,12 @@ func (c *containerMounter) mountTmp(ctx context.Context, conf *Config, mns *fs.M
 	switch err {
 	case nil:
 		// Found '/tmp' in filesystem, check if it's empty.
-		defer tmp.DecRef()
+		defer tmp.DecRef(ctx)
 		f, err := tmp.Inode.GetFile(ctx, tmp, fs.FileFlags{Read: true, Directory: true})
 		if err != nil {
 			return err
 		}
-		defer f.DecRef()
+		defer f.DecRef(ctx)
 		serializer := &fs.CollectEntriesSerializer{}
 		if err := f.Readdir(ctx, serializer); err != nil {
 			return err

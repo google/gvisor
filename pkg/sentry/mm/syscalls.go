@@ -101,7 +101,7 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (userme
 			if err != nil {
 				return 0, err
 			}
-			defer m.DecRef()
+			defer m.DecRef(ctx)
 			opts.MappingIdentity = m
 			opts.Mappable = m
 		}
@@ -1191,7 +1191,7 @@ func (mm *MemoryManager) MSync(ctx context.Context, addr usermem.Addr, length ui
 			mr := vseg.mappableRangeOf(vseg.Range().Intersect(ar))
 			mm.mappingMu.RUnlock()
 			err := id.Msync(ctx, mr)
-			id.DecRef()
+			id.DecRef(ctx)
 			if err != nil {
 				return err
 			}

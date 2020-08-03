@@ -108,8 +108,8 @@ func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArg
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *tunFD) Release() {
-	fd.device.Release()
+func (fd *tunFD) Release(ctx context.Context) {
+	fd.device.Release(ctx)
 }
 
 // PRead implements vfs.FileDescriptionImpl.PRead.

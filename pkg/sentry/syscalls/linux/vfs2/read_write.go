@@ -44,7 +44,7 @@ func Read(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the size is legitimate.
 	si := int(size)
@@ -75,7 +75,7 @@ func Readv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Get the destination of the read.
 	dst, err := t.IovecsIOSequence(addr, iovcnt, usermem.IOOpts{
@@ -94,7 +94,7 @@ func read(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, opt
 	n, err := file.Read(t, dst, opts)
 	if err != syserror.ErrWouldBlock {
 		if n > 0 {
-			file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0, vfs.PathEvent)
+			file.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
 		}
 		return n, err
 	}
@@ -102,7 +102,7 @@ func read(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, opt
 	allowBlock, deadline, hasDeadline := blockPolicy(t, file)
 	if !allowBlock {
 		if n > 0 {
-			file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0, vfs.PathEvent)
+			file.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
 		}
 		return n, err
 	}
@@ -135,7 +135,7 @@ func read(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, opt
 	file.EventUnregister(&w)
 
 	if total > 0 {
-		file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0, vfs.PathEvent)
+		file.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
 	}
 	return total, err
 }
@@ -151,7 +151,7 @@ func Pread64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the offset is legitimate and does not overflow.
 	if offset < 0 || offset+int64(size) < 0 {
@@ -188,7 +188,7 @@ func Preadv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the offset is legitimate.
 	if offset < 0 {
@@ -226,7 +226,7 @@ func Preadv2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the offset is legitimate.
 	if offset < -1 {
@@ -258,7 +258,7 @@ func pread(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, of
 	n, err := file.PRead(t, dst, offset, opts)
 	if err != syserror.ErrWouldBlock {
 		if n > 0 {
-			file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0, vfs.PathEvent)
+			file.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
 		}
 		return n, err
 	}
@@ -266,7 +266,7 @@ func pread(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, of
 	allowBlock, deadline, hasDeadline := blockPolicy(t, file)
 	if !allowBlock {
 		if n > 0 {
-			file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0, vfs.PathEvent)
+			file.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
 		}
 		return n, err
 	}
@@ -299,7 +299,7 @@ func pread(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, of
 	file.EventUnregister(&w)
 
 	if total > 0 {
-		file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0, vfs.PathEvent)
+		file.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
 	}
 	return total, err
 }
@@ -314,7 +314,7 @@ func Write(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the size is legitimate.
 	si := int(size)
@@ -345,7 +345,7 @@ func Writev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Get the source of the write.
 	src, err := t.IovecsIOSequence(addr, iovcnt, usermem.IOOpts{
@@ -364,7 +364,7 @@ func write(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, op
 	n, err := file.Write(t, src, opts)
 	if err != syserror.ErrWouldBlock {
 		if n > 0 {
-			file.Dentry().InotifyWithParent(linux.IN_MODIFY, 0, vfs.PathEvent)
+			file.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
 		}
 		return n, err
 	}
@@ -372,7 +372,7 @@ func write(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, op
 	allowBlock, deadline, hasDeadline := blockPolicy(t, file)
 	if !allowBlock {
 		if n > 0 {
-			file.Dentry().InotifyWithParent(linux.IN_MODIFY, 0, vfs.PathEvent)
+			file.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
 		}
 		return n, err
 	}
@@ -405,7 +405,7 @@ func write(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, op
 	file.EventUnregister(&w)
 
 	if total > 0 {
-		file.Dentry().InotifyWithParent(linux.IN_MODIFY, 0, vfs.PathEvent)
+		file.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
 	}
 	return total, err
 }
@@ -421,7 +421,7 @@ func Pwrite64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the offset is legitimate and does not overflow.
 	if offset < 0 || offset+int64(size) < 0 {
@@ -458,7 +458,7 @@ func Pwritev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the offset is legitimate.
 	if offset < 0 {
@@ -496,7 +496,7 @@ func Pwritev2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the offset is legitimate.
 	if offset < -1 {
@@ -528,7 +528,7 @@ func pwrite(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, o
 	n, err := file.PWrite(t, src, offset, opts)
 	if err != syserror.ErrWouldBlock {
 		if n > 0 {
-			file.Dentry().InotifyWithParent(linux.IN_MODIFY, 0, vfs.PathEvent)
+			file.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
 		}
 		return n, err
 	}
@@ -536,7 +536,7 @@ func pwrite(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, o
 	allowBlock, deadline, hasDeadline := blockPolicy(t, file)
 	if !allowBlock {
 		if n > 0 {
-			file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0, vfs.PathEvent)
+			file.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
 		}
 		return n, err
 	}
@@ -569,7 +569,7 @@ func pwrite(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, o
 	file.EventUnregister(&w)
 
 	if total > 0 {
-		file.Dentry().InotifyWithParent(linux.IN_ACCESS, 0, vfs.PathEvent)
+		file.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
 	}
 	return total, err
 }
@@ -601,7 +601,7 @@ func Lseek(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	newoff, err := file.Seek(t, offset, whence)
 	return uintptr(newoff), nil, err
@@ -617,7 +617,7 @@ func Readahead(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Check that the file is readable.
 	if !file.IsReadable() {

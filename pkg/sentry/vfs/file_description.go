@@ -171,7 +171,7 @@ func (fd *FileDescription) TryIncRef() bool {
 }
 
 // DecRef decrements fd's reference count.
-func (fd *FileDescription) DecRef() {
+func (fd *FileDescription) DecRef(ctx context.Context) {
 	if refs := atomic.AddInt64(&fd.refs, -1); refs == 0 {
 		// Unregister fd from all epoll instances.
 		fd.epollMu.Lock()
@@ -196,11 +196,11 @@ func (fd *FileDescription) DecRef() {
 		}
 
 		// Release implementation resources.
-		fd.impl.Release()
+		fd.impl.Release(ctx)
 		if fd.writable {
 			fd.vd.mount.EndWrite()
 		}
-		fd.vd.DecRef()
+		fd.vd.DecRef(ctx)
 		fd.flagsMu.Lock()
 		// TODO(gvisor.dev/issue/1663): We may need to unregister during save, as we do in VFS1.
 		if fd.statusFlags&linux.O_ASYNC != 0 && fd.asyncHandler != nil {
@@ -335,7 +335,7 @@ func (fd *FileDescription) Impl() FileDescriptionImpl {
 type FileDescriptionImpl interface {
 	// Release is called when the associated FileDescription reaches zero
 	// references.
-	Release()
+	Release(ctx context.Context)
 
 	// OnClose is called when a file descriptor representing the
 	// FileDescription is closed. Note that returning a non-nil error does not
@@ -526,7 +526,7 @@ func (fd *FileDescription) Stat(ctx context.Context, opts StatOptions) (linux.St
 			Start: fd.vd,
 		})
 		stat, err := fd.vd.mount.fs.impl.StatAt(ctx, rp, opts)
-		vfsObj.putResolvingPath(rp)
+		vfsObj.putResolvingPath(ctx, rp)
 		return stat, err
 	}
 	return fd.impl.Stat(ctx, opts)
@@ -541,7 +541,7 @@ func (fd *FileDescription) SetStat(ctx context.Context, opts SetStatOptions) err
 			Start: fd.vd,
 		})
 		err := fd.vd.mount.fs.impl.SetStatAt(ctx, rp, opts)
-		vfsObj.putResolvingPath(rp)
+		vfsObj.putResolvingPath(ctx, rp)
 		return err
 	}
 	return fd.impl.SetStat(ctx, opts)
@@ -557,7 +557,7 @@ func (fd *FileDescription) StatFS(ctx context.Context) (linux.Statfs, error) {
 			Start: fd.vd,
 		})
 		statfs, err := fd.vd.mount.fs.impl.StatFSAt(ctx, rp)
-		vfsObj.putResolvingPath(rp)
+		vfsObj.putResolvingPath(ctx, rp)
 		return statfs, err
 	}
 	return fd.impl.StatFS(ctx)
@@ -674,7 +674,7 @@ func (fd *FileDescription) Listxattr(ctx context.Context, size uint64) ([]string
 			Start: fd.vd,
 		})
 		names, err := fd.vd.mount.fs.impl.ListxattrAt(ctx, rp, size)
-		vfsObj.putResolvingPath(rp)
+		vfsObj.putResolvingPath(ctx, rp)
 		return names, err
 	}
 	names, err := fd.impl.Listxattr(ctx, size)
@@ -703,7 +703,7 @@ func (fd *FileDescription) Getxattr(ctx context.Context, opts *GetxattrOptions) 
 			Start: fd.vd,
 		})
 		val, err := fd.vd.mount.fs.impl.GetxattrAt(ctx, rp, *opts)
-		vfsObj.putResolvingPath(rp)
+		vfsObj.putResolvingPath(ctx, rp)
 		return val, err
 	}
 	return fd.impl.Getxattr(ctx, *opts)
@@ -719,7 +719,7 @@ func (fd *FileDescription) Setxattr(ctx context.Context, opts *SetxattrOptions) 
 			Start: fd.vd,
 		})
 		err := fd.vd.mount.fs.impl.SetxattrAt(ctx, rp, *opts)
-		vfsObj.putResolvingPath(rp)
+		vfsObj.putResolvingPath(ctx, rp)
 		return err
 	}
 	return fd.impl.Setxattr(ctx, *opts)
@@ -735,7 +735,7 @@ func (fd *FileDescription) Removexattr(ctx context.Context, name string) error {
 			Start: fd.vd,
 		})
 		err := fd.vd.mount.fs.impl.RemovexattrAt(ctx, rp, name)
-		vfsObj.putResolvingPath(rp)
+		vfsObj.putResolvingPath(ctx, rp)
 		return err
 	}
 	return fd.impl.Removexattr(ctx, name)
@@ -752,7 +752,7 @@ func (fd *FileDescription) MappedName(ctx context.Context) string {
 	vfsroot := RootFromContext(ctx)
 	s, _ := fd.vd.mount.vfs.PathnameWithDeleted(ctx, vfsroot, fd.vd)
 	if vfsroot.Ok() {
-		vfsroot.DecRef()
+		vfsroot.DecRef(ctx)
 	}
 	return s
 }

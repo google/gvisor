@@ -15,6 +15,7 @@
 package ext
 
 import (
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -55,7 +56,7 @@ func (d *dentry) TryIncRef() bool {
 }
 
 // DecRef implements vfs.DentryImpl.DecRef.
-func (d *dentry) DecRef() {
+func (d *dentry) DecRef(ctx context.Context) {
 	// FIXME(b/134676337): filesystem.mu may not be locked as required by
 	// inode.decRef().
 	d.inode.decRef()
@@ -64,7 +65,7 @@ func (d *dentry) DecRef() {
 // InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
 //
 // TODO(b/134676337): Implement inotify.
-func (d *dentry) InotifyWithParent(events, cookie uint32, et vfs.EventType) {}
+func (d *dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, et vfs.EventType) {}
 
 // Watches implements vfs.DentryImpl.Watches.
 //
@@ -76,4 +77,4 @@ func (d *dentry) Watches() *vfs.Watches {
 // OnZeroWatches implements vfs.Dentry.OnZeroWatches.
 //
 // TODO(b/134676337): Implement inotify.
-func (d *dentry) OnZeroWatches() {}
+func (d *dentry) OnZeroWatches(context.Context) {}

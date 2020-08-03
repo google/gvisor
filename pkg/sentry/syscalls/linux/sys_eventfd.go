@@ -37,7 +37,7 @@ func Eventfd2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	event.SetFlags(fs.SettableFileFlags{
 		NonBlocking: flags&linux.EFD_NONBLOCK != 0,
 	})
-	defer event.DecRef()
+	defer event.DecRef(t)
 
 	fd, err := t.NewFDFrom(0, event, kernel.FDFlags{
 		CloseOnExec: flags&linux.EFD_CLOEXEC != 0,

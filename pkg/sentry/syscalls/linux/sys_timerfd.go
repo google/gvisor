@@ -43,7 +43,7 @@ func TimerfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 		return 0, nil, syserror.EINVAL
 	}
 	f := timerfd.NewFile(t, c)
-	defer f.DecRef()
+	defer f.DecRef(t)
 	f.SetFlags(fs.SettableFileFlags{
 		NonBlocking: flags&linux.TFD_NONBLOCK != 0,
 	})
@@ -73,7 +73,7 @@ func TimerfdSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	if f == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer f.DecRef()
+	defer f.DecRef(t)
 
 	tf, ok := f.FileOperations.(*timerfd.TimerOperations)
 	if !ok {
@@ -107,7 +107,7 @@ func TimerfdGettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	if f == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer f.DecRef()
+	defer f.DecRef(t)
 
 	tf, ok := f.FileOperations.(*timerfd.TimerOperations)
 	if !ok {

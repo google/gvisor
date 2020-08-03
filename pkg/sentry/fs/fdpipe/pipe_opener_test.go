@@ -182,7 +182,7 @@ func TestTryOpen(t *testing.T) {
 				// Cleanup the state of the pipe, and remove the fd from the
 				// fdnotifier.  Sadly this needed to maintain the correctness
 				// of other tests because the fdnotifier is global.
-				pipeOps.Release()
+				pipeOps.Release(ctx)
 			}
 			continue
 		}
@@ -191,7 +191,7 @@ func TestTryOpen(t *testing.T) {
 		}
 		if pipeOps != nil {
 			// Same as above.
-			pipeOps.Release()
+			pipeOps.Release(ctx)
 		}
 	}
 }
@@ -279,7 +279,7 @@ func TestPipeOpenUnblocksEventually(t *testing.T) {
 		pipeOps, err := Open(ctx, opener, flags)
 		if pipeOps != nil {
 			// Same as TestTryOpen.
-			pipeOps.Release()
+			pipeOps.Release(ctx)
 		}
 
 		// Check that the partner opened the file successfully.
@@ -325,7 +325,7 @@ func TestCopiedReadAheadBuffer(t *testing.T) {
 	ctx := contexttest.Context(t)
 	pipeOps, err := pipeOpenState.TryOpen(ctx, opener, fs.FileFlags{Read: true})
 	if pipeOps != nil {
-		pipeOps.Release()
+		pipeOps.Release(ctx)
 		t.Fatalf("open(%s, %o) got file, want nil", name, syscall.O_RDONLY)
 	}
 	if err != syserror.ErrWouldBlock {
@@ -351,7 +351,7 @@ func TestCopiedReadAheadBuffer(t *testing.T) {
 	if pipeOps == nil {
 		t.Fatalf("open(%s, %o) got nil file, want not nil", name, syscall.O_RDONLY)
 	}
-	defer pipeOps.Release()
+	defer pipeOps.Release(ctx)
 
 	if err != nil {
 		t.Fatalf("open(%s, %o) got error %v, want nil", name, syscall.O_RDONLY, err)
@@ -471,14 +471,14 @@ func TestPipeHangup(t *testing.T) {
 		f := <-fdchan
 		if f < 0 {
 			t.Errorf("%s: partner routine got fd %d, want > 0", test.desc, f)
-			pipeOps.Release()
+			pipeOps.Release(ctx)
 			continue
 		}
 
 		if test.hangupSelf {
 			// Hangup self and assert that our partner got the expected hangup
 			// error.
-			pipeOps.Release()
+			pipeOps.Release(ctx)
 
 			if test.flags.Read {
 				// Partner is writer.
@@ -490,7 +490,7 @@ func TestPipeHangup(t *testing.T) {
 		} else {
 			// Hangup our partner and expect us to get the hangup error.
 			syscall.Close(f)
-			defer pipeOps.Release()
+			defer pipeOps.Release(ctx)
 
 			if test.flags.Read {
 				assertReaderHungup(t, test.desc, pipeOps.(*pipeOperations).file)

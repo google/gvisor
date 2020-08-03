@@ -35,7 +35,7 @@ func InotifyInit1(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	if err != nil {
 		return 0, nil, err
 	}
-	defer ino.DecRef()
+	defer ino.DecRef(t)
 
 	fd, err := t.NewFDFromVFS2(0, ino, kernel.FDFlags{
 		CloseOnExec: flags&linux.IN_CLOEXEC != 0,
@@ -66,7 +66,7 @@ func fdToInotify(t *kernel.Task, fd int32) (*vfs.Inotify, *vfs.FileDescription, 
 	ino, ok := f.Impl().(*vfs.Inotify)
 	if !ok {
 		// Not an inotify fd.
-		f.DecRef()
+		f.DecRef(t)
 		return nil, nil, syserror.EINVAL
 	}
 
@@ -96,7 +96,7 @@ func InotifyAddWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kern
 	if err != nil {
 		return 0, nil, err
 	}
-	defer f.DecRef()
+	defer f.DecRef(t)
 
 	path, err := copyInPath(t, addr)
 	if err != nil {
@@ -109,12 +109,12 @@ func InotifyAddWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kern
 	if err != nil {
 		return 0, nil, err
 	}
-	defer tpop.Release()
+	defer tpop.Release(t)
 	d, err := t.Kernel().VFS().GetDentryAt(t, t.Credentials(), &tpop.pop, &vfs.GetDentryOptions{})
 	if err != nil {
 		return 0, nil, err
 	}
-	defer d.DecRef()
+	defer d.DecRef(t)
 
 	fd, err = ino.AddWatch(d.Dentry(), mask)
 	if err != nil {
@@ -132,6 +132,6 @@ func InotifyRmWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	if err != nil {
 		return 0, nil, err
 	}
-	defer f.DecRef()
-	return 0, nil, ino.RmWatch(wd)
+	defer f.DecRef(t)
+	return 0, nil, ino.RmWatch(t, wd)
 }

@@ -71,7 +71,7 @@ func newSlaveInode(ctx context.Context, d *dirInodeOperations, t *Terminal, owne
 
 // Release implements fs.InodeOperations.Release.
 func (si *slaveInodeOperations) Release(ctx context.Context) {
-	si.t.DecRef()
+	si.t.DecRef(ctx)
 }
 
 // Truncate implements fs.InodeOperations.Truncate.
@@ -106,7 +106,7 @@ type slaveFileOperations struct {
 var _ fs.FileOperations = (*slaveFileOperations)(nil)
 
 // Release implements fs.FileOperations.Release.
-func (sf *slaveFileOperations) Release() {
+func (sf *slaveFileOperations) Release(context.Context) {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.

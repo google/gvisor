@@ -43,7 +43,7 @@ func NewVFSFile(file *vfs.FileDescription) File {
 // PathnameWithDeleted implements File.
 func (f *VFSFile) PathnameWithDeleted(ctx context.Context) string {
 	root := vfs.RootFromContext(ctx)
-	defer root.DecRef()
+	defer root.DecRef(ctx)
 
 	vfsObj := f.file.VirtualDentry().Mount().Filesystem().VirtualFilesystem()
 	name, _ := vfsObj.PathnameWithDeleted(ctx, root, f.file.VirtualDentry())
@@ -86,8 +86,8 @@ func (f *VFSFile) IncRef() {
 }
 
 // DecRef implements File.
-func (f *VFSFile) DecRef() {
-	f.file.DecRef()
+func (f *VFSFile) DecRef(ctx context.Context) {
+	f.file.DecRef(ctx)
 }
 
 // FileDescription returns the FileDescription represented by f. It does not

@@ -63,9 +63,9 @@ func NewFilesystem(vfsObj *vfs.VirtualFilesystem) (*vfs.Filesystem, error) {
 }
 
 // Release implements vfs.FilesystemImpl.Release.
-func (fs *filesystem) Release() {
+func (fs *filesystem) Release(ctx context.Context) {
 	fs.Filesystem.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
-	fs.Filesystem.Release()
+	fs.Filesystem.Release(ctx)
 }
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.
@@ -160,6 +160,6 @@ func NewConnectedPipeFDs(ctx context.Context, mnt *vfs.Mount, flags uint32) (*vf
 	inode := newInode(ctx, fs)
 	var d kernfs.Dentry
 	d.Init(inode)
-	defer d.DecRef()
+	defer d.DecRef(ctx)
 	return inode.pipe.ReaderWriterPair(mnt, d.VFSDentry(), flags)
 }

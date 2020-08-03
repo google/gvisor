@@ -482,7 +482,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	root, err := fs.newDentry(ctx, attachFile, qid, attrMask, &attr)
 	if err != nil {
 		attachFile.close(ctx)
-		fs.vfsfs.DecRef()
+		fs.vfsfs.DecRef(ctx)
 		return nil, nil, err
 	}
 	// Set the root's reference count to 2. One reference is returned to the
@@ -495,8 +495,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 }
 
 // Release implements vfs.FilesystemImpl.Release.
-func (fs *filesystem) Release() {
-	ctx := context.Background()
+func (fs *filesystem) Release(ctx context.Context) {
 	mf := fs.mfp.MemoryFile()
 
 	fs.syncMu.Lock()
@@ -1089,10 +1088,10 @@ func (d *dentry) TryIncRef() bool {
 }
 
 // DecRef implements vfs.DentryImpl.DecRef.
-func (d *dentry) DecRef() {
+func (d *dentry) DecRef(ctx context.Context) {
 	if refs := atomic.AddInt64(&d.refs, -1); refs == 0 {
 		d.fs.renameMu.Lock()
-		d.checkCachingLocked()
+		d.checkCachingLocked(ctx)
 		d.fs.renameMu.Unlock()
 	} else if refs < 0 {
 		panic("gofer.dentry.DecRef() called without holding a reference")
@@ -1109,7 +1108,7 @@ func (d *dentry) decRefLocked() {
 }
 
 // InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
-func (d *dentry) InotifyWithParent(events, cookie uint32, et vfs.EventType) {
+func (d *dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, et vfs.EventType) {
 	if d.isDir() {
 		events |= linux.IN_ISDIR
 	}
@@ -1117,9 +1116,9 @@ func (d *dentry) InotifyWithParent(events, cookie uint32, et vfs.EventType) {
 	d.fs.renameMu.RLock()
 	// The ordering below is important, Linux always notifies the parent first.
 	if d.parent != nil {
-		d.parent.watches.Notify(d.name, events, cookie, et, d.isDeleted())
+		d.parent.watches.Notify(ctx, d.name, events, cookie, et, d.isDeleted())
 	}
-	d.watches.Notify("", events, cookie, et, d.isDeleted())
+	d.watches.Notify(ctx, "", events, cookie, et, d.isDeleted())
 	d.fs.renameMu.RUnlock()
 }
 
@@ -1131,10 +1130,10 @@ func (d *dentry) Watches() *vfs.Watches {
 // OnZeroWatches implements vfs.DentryImpl.OnZeroWatches.
 //
 // If no watches are left on this dentry and it has no references, cache it.
-func (d *dentry) OnZeroWatches() {
+func (d *dentry) OnZeroWatches(ctx context.Context) {
 	if atomic.LoadInt64(&d.refs) == 0 {
 		d.fs.renameMu.Lock()
-		d.checkCachingLocked()
+		d.checkCachingLocked(ctx)
 		d.fs.renameMu.Unlock()
 	}
 }
@@ -1149,7 +1148,7 @@ func (d *dentry) OnZeroWatches() {
 // do nothing.
 //
 // Preconditions: d.fs.renameMu must be locked for writing.
-func (d *dentry) checkCachingLocked() {
+func (d *dentry) checkCachingLocked(ctx context.Context) {
 	// Dentries with a non-zero reference count must be retained. (The only way
 	// to obtain a reference on a dentry with zero references is via path
 	// resolution, which requires renameMu, so if d.refs is zero then it will
@@ -1171,14 +1170,14 @@ func (d *dentry) checkCachingLocked() {
 	// reachable by path resolution and should be dropped immediately.
 	if d.vfsd.IsDead() {
 		if d.isDeleted() {
-			d.watches.HandleDeletion()
+			d.watches.HandleDeletion(ctx)
 		}
 		if d.cached {
 			d.fs.cachedDentries.Remove(d)
 			d.fs.cachedDentriesLen--
 			d.cached = false
 		}
-		d.destroyLocked()
+		d.destroyLocked(ctx)
 		return
 	}
 	// If d still has inotify watches and it is not deleted or invalidated, we
@@ -1213,7 +1212,7 @@ func (d *dentry) checkCachingLocked() {
 				if !victim.vfsd.IsDead() {
 					// Note that victim can't be a mount point (in any mount
 					// namespace), since VFS holds references on mount points.
-					d.fs.vfsfs.VirtualFilesystem().InvalidateDentry(&victim.vfsd)
+					d.fs.vfsfs.VirtualFilesystem().InvalidateDentry(ctx, &victim.vfsd)
 					delete(victim.parent.children, victim.name)
 					// We're only deleting the dentry, not the file it
 					// represents, so we don't need to update
@@ -1221,7 +1220,7 @@ func (d *dentry) checkCachingLocked() {
 				}
 				victim.parent.dirMu.Unlock()
 			}
-			victim.destroyLocked()
+			victim.destroyLocked(ctx)
 		}
 		// Whether or not victim was destroyed, we brought fs.cachedDentriesLen
 		// back down to fs.opts.maxCachedDentries, so we don't loop.
@@ -1233,7 +1232,7 @@ func (d *dentry) checkCachingLocked() {
 //
 // Preconditions: d.fs.renameMu must be locked for writing. d.refs == 0. d is
 // not a child dentry.
-func (d *dentry) destroyLocked() {
+func (d *dentry) destroyLocked(ctx context.Context) {
 	switch atomic.LoadInt64(&d.refs) {
 	case 0:
 		// Mark the dentry destroyed.
@@ -1244,7 +1243,6 @@ func (d *dentry) destroyLocked() {
 		panic("dentry.destroyLocked() called with references on the dentry")
 	}
 
-	ctx := context.Background()
 	d.handleMu.Lock()
 	if !d.handle.file.isNil() {
 		mf := d.fs.mfp.MemoryFile()
@@ -1276,7 +1274,7 @@ func (d *dentry) destroyLocked() {
 	// d.fs.renameMu.
 	if d.parent != nil {
 		if refs := atomic.AddInt64(&d.parent.refs, -1); refs == 0 {
-			d.parent.checkCachingLocked()
+			d.parent.checkCachingLocked(ctx)
 		} else if refs < 0 {
 			panic("gofer.dentry.DecRef() called without holding a reference")
 		}
@@ -1514,7 +1512,7 @@ func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions)
 		return err
 	}
 	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
-		fd.dentry().InotifyWithParent(ev, 0, vfs.InodeEvent)
+		fd.dentry().InotifyWithParent(ctx, ev, 0, vfs.InodeEvent)
 	}
 	return nil
 }
@@ -1535,7 +1533,7 @@ func (fd *fileDescription) Setxattr(ctx context.Context, opts vfs.SetxattrOption
 	if err := d.setxattr(ctx, auth.CredentialsFromContext(ctx), &opts); err != nil {
 		return err
 	}
-	d.InotifyWithParent(linux.IN_ATTRIB, 0, vfs.InodeEvent)
+	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	return nil
 }
 
@@ -1545,7 +1543,7 @@ func (fd *fileDescription) Removexattr(ctx context.Context, name string) error {
 	if err := d.removexattr(ctx, auth.CredentialsFromContext(ctx), name); err != nil {
 		return err
 	}
-	d.InotifyWithParent(linux.IN_ATTRIB, 0, vfs.InodeEvent)
+	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	return nil
 }
 

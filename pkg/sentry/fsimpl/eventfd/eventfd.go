@@ -59,9 +59,9 @@ type EventFileDescription struct {
 var _ vfs.FileDescriptionImpl = (*EventFileDescription)(nil)
 
 // New creates a new event fd.
-func New(vfsObj *vfs.VirtualFilesystem, initVal uint64, semMode bool, flags uint32) (*vfs.FileDescription, error) {
+func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, initVal uint64, semMode bool, flags uint32) (*vfs.FileDescription, error) {
 	vd := vfsObj.NewAnonVirtualDentry("[eventfd]")
-	defer vd.DecRef()
+	defer vd.DecRef(ctx)
 	efd := &EventFileDescription{
 		val:     initVal,
 		semMode: semMode,
@@ -107,7 +107,7 @@ func (efd *EventFileDescription) HostFD() (int, error) {
 }
 
 // Release implements FileDescriptionImpl.Release()
-func (efd *EventFileDescription) Release() {
+func (efd *EventFileDescription) Release(context.Context) {
 	efd.mu.Lock()
 	defer efd.mu.Unlock()
 	if efd.hostfd >= 0 {

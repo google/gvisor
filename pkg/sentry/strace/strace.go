@@ -147,14 +147,14 @@ func fd(t *kernel.Task, fd int32) string {
 
 	root := t.FSContext().RootDirectory()
 	if root != nil {
-		defer root.DecRef()
+		defer root.DecRef(t)
 	}
 
 	if fd == linux.AT_FDCWD {
 		wd := t.FSContext().WorkingDirectory()
 		var name string
 		if wd != nil {
-			defer wd.DecRef()
+			defer wd.DecRef(t)
 			name, _ = wd.FullName(root)
 		} else {
 			name = "(unknown cwd)"
@@ -167,7 +167,7 @@ func fd(t *kernel.Task, fd int32) string {
 		// Cast FD to uint64 to avoid printing negative hex.
 		return fmt.Sprintf("%#x (bad FD)", uint64(fd))
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	name, _ := file.Dirent.FullName(root)
 	return fmt.Sprintf("%#x %s", fd, name)
@@ -175,12 +175,12 @@ func fd(t *kernel.Task, fd int32) string {
 
 func fdVFS2(t *kernel.Task, fd int32) string {
 	root := t.FSContext().RootDirectoryVFS2()
-	defer root.DecRef()
+	defer root.DecRef(t)
 
 	vfsObj := root.Mount().Filesystem().VirtualFilesystem()
 	if fd == linux.AT_FDCWD {
 		wd := t.FSContext().WorkingDirectoryVFS2()
-		defer wd.DecRef()
+		defer wd.DecRef(t)
 
 		name, _ := vfsObj.PathnameWithDeleted(t, root, wd)
 		return fmt.Sprintf("AT_FDCWD %s", name)
@@ -191,7 +191,7 @@ func fdVFS2(t *kernel.Task, fd int32) string {
 		// Cast FD to uint64 to avoid printing negative hex.
 		return fmt.Sprintf("%#x (bad FD)", uint64(fd))
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	name, _ := vfsObj.PathnameWithDeleted(t, root, file.VirtualDentry())
 	return fmt.Sprintf("%#x %s", fd, name)

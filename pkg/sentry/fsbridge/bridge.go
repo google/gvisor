@@ -44,7 +44,7 @@ type File interface {
 	IncRef()
 
 	// DecRef decrements reference.
-	DecRef()
+	DecRef(ctx context.Context)
 }
 
 // Lookup provides a common interface to open files.

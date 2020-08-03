@@ -73,7 +73,7 @@ type symlinkFD struct {
 var _ vfs.FileDescriptionImpl = (*symlinkFD)(nil)
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *symlinkFD) Release() {}
+func (fd *symlinkFD) Release(context.Context) {}
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *symlinkFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {

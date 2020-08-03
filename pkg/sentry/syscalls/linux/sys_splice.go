@@ -101,7 +101,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if inFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer inFile.DecRef()
+	defer inFile.DecRef(t)
 
 	if !inFile.Flags().Read {
 		return 0, nil, syserror.EBADF
@@ -111,7 +111,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if outFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer outFile.DecRef()
+	defer outFile.DecRef(t)
 
 	if !outFile.Flags().Write {
 		return 0, nil, syserror.EBADF
@@ -192,13 +192,13 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if outFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer outFile.DecRef()
+	defer outFile.DecRef(t)
 
 	inFile := t.GetFile(inFD)
 	if inFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer inFile.DecRef()
+	defer inFile.DecRef(t)
 
 	// The operation is non-blocking if anything is non-blocking.
 	//
@@ -300,13 +300,13 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	if outFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer outFile.DecRef()
+	defer outFile.DecRef(t)
 
 	inFile := t.GetFile(inFD)
 	if inFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer inFile.DecRef()
+	defer inFile.DecRef(t)
 
 	// All files must be pipes.
 	if !fs.IsPipe(inFile.Dirent.Inode.StableAttr) || !fs.IsPipe(outFile.Dirent.Inode.StableAttr) {

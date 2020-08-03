@@ -42,8 +42,8 @@ func pipe2(t *kernel.Task, addr usermem.Addr, flags int32) error {
 		return syserror.EINVAL
 	}
 	r, w := pipefs.NewConnectedPipeFDs(t, t.Kernel().PipeMount(), uint32(flags&linux.O_NONBLOCK))
-	defer r.DecRef()
-	defer w.DecRef()
+	defer r.DecRef(t)
+	defer w.DecRef(t)
 
 	fds, err := t.NewFDsVFS2(0, []*vfs.FileDescription{r, w}, kernel.FDFlags{
 		CloseOnExec: flags&linux.O_CLOEXEC != 0,
@@ -54,7 +54,7 @@ func pipe2(t *kernel.Task, addr usermem.Addr, flags int32) error {
 	if _, err := t.CopyOut(addr, fds); err != nil {
 		for _, fd := range fds {
 			if _, file := t.FDTable().Remove(fd); file != nil {
-				file.DecRef()
+				file.DecRef(t)
 			}
 		}
 		return err

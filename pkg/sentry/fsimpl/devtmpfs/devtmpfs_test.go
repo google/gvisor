@@ -30,7 +30,7 @@ func TestDevtmpfs(t *testing.T) {
 	creds := auth.CredentialsFromContext(ctx)
 
 	vfsObj := &vfs.VirtualFilesystem{}
-	if err := vfsObj.Init(); err != nil {
+	if err := vfsObj.Init(ctx); err != nil {
 		t.Fatalf("VFS init: %v", err)
 	}
 	// Register tmpfs just so that we can have a root filesystem that isn't
@@ -48,9 +48,9 @@ func TestDevtmpfs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create tmpfs root mount: %v", err)
 	}
-	defer mntns.DecRef()
+	defer mntns.DecRef(ctx)
 	root := mntns.Root()
-	defer root.DecRef()
+	defer root.DecRef(ctx)
 	devpop := vfs.PathOperation{
 		Root:  root,
 		Start: root,
@@ -69,7 +69,7 @@ func TestDevtmpfs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create devtmpfs.Accessor: %v", err)
 	}
-	defer a.Release()
+	defer a.Release(ctx)
 
 	// Create "userspace-initialized" files using a devtmpfs.Accessor.
 	if err := a.UserspaceInit(ctx); err != nil {

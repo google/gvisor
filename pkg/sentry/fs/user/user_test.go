@@ -39,7 +39,7 @@ func createEtcPasswd(ctx context.Context, root *fs.Dirent, contents string, mode
 	if err != nil {
 		return err
 	}
-	defer etc.DecRef()
+	defer etc.DecRef(ctx)
 	switch mode.FileType() {
 	case 0:
 		// Don't create anything.
@@ -49,7 +49,7 @@ func createEtcPasswd(ctx context.Context, root *fs.Dirent, contents string, mode
 		if err != nil {
 			return err
 		}
-		defer passwd.DecRef()
+		defer passwd.DecRef(ctx)
 		if _, err := passwd.Writev(ctx, usermem.BytesIOSequence([]byte(contents))); err != nil {
 			return err
 		}
@@ -110,9 +110,9 @@ func TestGetExecUserHome(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewMountNamespace failed: %v", err)
 			}
-			defer mns.DecRef()
+			defer mns.DecRef(ctx)
 			root := mns.Root()
-			defer root.DecRef()
+			defer root.DecRef(ctx)
 			ctx = fs.WithRoot(ctx, root)
 
 			if err := createEtcPasswd(ctx, root, tc.passwdContents, tc.passwdMode); err != nil {

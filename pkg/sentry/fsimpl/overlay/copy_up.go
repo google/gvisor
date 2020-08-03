@@ -98,7 +98,7 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		defer oldFD.DecRef()
+		defer oldFD.DecRef(ctx)
 		newFD, err := vfsObj.OpenAt(ctx, d.fs.creds, &newpop, &vfs.OpenOptions{
 			Flags: linux.O_WRONLY | linux.O_CREAT | linux.O_EXCL,
 			Mode:  linux.FileMode(d.mode &^ linux.S_IFMT),
@@ -106,7 +106,7 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		defer newFD.DecRef()
+		defer newFD.DecRef(ctx)
 		bufIOSeq := usermem.BytesIOSequence(make([]byte, 32*1024)) // arbitrary buffer size
 		for {
 			readN, readErr := oldFD.Read(ctx, bufIOSeq, vfs.ReadOptions{})
@@ -241,13 +241,13 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 			Mask: linux.STATX_INO,
 		})
 		if err != nil {
-			d.upperVD.DecRef()
+			d.upperVD.DecRef(ctx)
 			d.upperVD = vfs.VirtualDentry{}
 			cleanupUndoCopyUp()
 			return err
 		}
 		if upperStat.Mask&linux.STATX_INO == 0 {
-			d.upperVD.DecRef()
+			d.upperVD.DecRef(ctx)
 			d.upperVD = vfs.VirtualDentry{}
 			cleanupUndoCopyUp()
 			return syserror.EREMOTE
