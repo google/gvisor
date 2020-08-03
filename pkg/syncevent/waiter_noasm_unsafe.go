@@ -32,8 +32,8 @@ import (
 // should be aborted.
 //
 //go:nosplit
-func waiterUnlock(g unsafe.Pointer, wg *unsafe.Pointer) bool {
+func waiterUnlock(ptr unsafe.Pointer, wg *unsafe.Pointer) bool {
 	// The only way this CAS can fail is if a call to Waiter.NotifyPending()
 	// has replaced *wg with nil, in which case we should not sleep.
-	return atomic.CompareAndSwapPointer(wg, (unsafe.Pointer)(&preparingG), g)
+	return atomic.CompareAndSwapPointer(wg, (unsafe.Pointer)(&preparingG), ptr)
 }
