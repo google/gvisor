@@ -51,7 +51,7 @@ func BenchmarkHttpdConcurrency(b *testing.B) {
 	defer serverMachine.CleanUp()
 
 	// The test iterates over client concurrency, so set other parameters.
-	concurrency := []int{1, 5, 10, 25}
+	concurrency := []int{1, 25, 50, 100, 1000}
 
 	for _, c := range concurrency {
 		b.Run(fmt.Sprintf("%d", c), func(b *testing.B) {
@@ -60,14 +60,26 @@ func BenchmarkHttpdConcurrency(b *testing.B) {
 				Concurrency: c,
 				Doc:         docs["10Kb"],
 			}
-			runHttpd(b, clientMachine, serverMachine, hey)
+			runHttpd(b, clientMachine, serverMachine, hey, false /* reverse */)
 		})
 	}
 }
 
 // BenchmarkHttpdDocSize iterates over different sized payloads, testing how
-// well the runtime handles different payload sizes.
+// well the runtime handles sending different payload sizes.
 func BenchmarkHttpdDocSize(b *testing.B) {
+	benchmarkHttpDocSize(b, false /* reverse */)
+}
+
+// BenchmarkReverseHttpdDocSize iterates over different sized payloads, testing
+// how well the runtime handles receiving different payload sizes.
+func BenchmarkReverseHttpdDocSize(b *testing.B) {
+	benchmarkHttpDocSize(b, true /* reverse */)
+}
+
+func benchmarkHttpdDocSize(b *testing.B, reverse bool) {
+	b.Helper()
+
 	clientMachine, err := h.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
@@ -81,24 +93,33 @@ func BenchmarkHttpdDocSize(b *testing.B) {
 	defer serverMachine.CleanUp()
 
 	for name, filename := range docs {
-		b.Run(name, func(b *testing.B) {
-			hey := &tools.Hey{
-				Requests:    10000,
-				Concurrency: 1,
-				Doc:         filename,
-			}
-			runHttpd(b, clientMachine, serverMachine, hey)
-		})
+		concurrency := []int{1, 25, 50, 100, 1000}
+		for _, c := range concurrency {
+			b.Run(fmt.Sprintf("%s_%d", name, c), func(b *testing.B) {
+				hey := &tools.Hey{
+					Requests:    10000,
+					Concurrency: c,
+					Doc:         filename,
+				}
+				runHttpd(b, clientMachine, serverMachine, hey, reverse)
+			})
+		}
 	}
 }
 
 // runHttpd runs a single test run.
-func runHttpd(b *testing.B, clientMachine, serverMachine harness.Machine, hey *tools.Hey) {
+func runHttpd(b *testing.B, clientMachine, serverMachine harness.Machine, hey *tools.Hey, reverse bool) {
 	b.Helper()
 
 	// Grab a container from the server.
 	ctx := context.Background()
-	server := serverMachine.GetContainer(ctx, b)
+	var server *dockerutil.Container
+	if reverse {
+		server = serverMachine.GetNativeContainer(ctx, b)
+	} else {
+		server = serverMachine.GetContainer(ctx, b)
+	}
+
 	defer server.CleanUp(ctx)
 
 	// Copy the docs to /tmp and serve from there.
@@ -118,7 +139,7 @@ func runHttpd(b *testing.B, clientMachine, serverMachine harness.Machine, hey *t
 			"APACHE_PID_FILE=/tmp/apache.pid",
 		},
 	}, "sh", "-c", cmd); err != nil {
-		b.Fatalf("failed to start server: %v")
+		b.Fatalf("failed to start server: %v", err)
 	}
 
 	ip, err := serverMachine.IPAddress()
@@ -134,8 +155,13 @@ func runHttpd(b *testing.B, clientMachine, serverMachine harness.Machine, hey *t
 	// Check the server is serving.
 	harness.WaitUntilServing(ctx, clientMachine, ip, servingPort)
 
+	var client *dockerutil.Container
 	// Grab a client.
-	client := clientMachine.GetNativeContainer(ctx, b)
+	if reverse {
+		client = clientMachine.GetContainer(ctx, b)
+	} else {
+		client = clientMachine.GetNativeContainer(ctx, b)
+	}
 	defer client.CleanUp(ctx)
 
 	b.ResetTimer()
