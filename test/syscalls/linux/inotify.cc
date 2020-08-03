@@ -18,6 +18,7 @@
 #include <sys/epoll.h>
 #include <sys/inotify.h>
 #include <sys/ioctl.h>
+#include <sys/sendfile.h>
 #include <sys/time.h>
 #include <sys/xattr.h>
 
@@ -1679,6 +1680,60 @@ TEST(Inotify, EpollNoDeadlock) {
     }
     sched_yield();
   }
+}
+
+TEST(Inotify, Fallocate) {
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
+
+  const FileDescriptor inotify_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(inotify_fd.get(), file.path(), IN_ALL_EVENTS));
+
+  // Do an arbitrary modification with fallocate.
+  ASSERT_THAT(fallocate(fd.get(), 0, 0, 123), SyscallSucceeds());
+  std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({Event(IN_MODIFY, wd)}));
+}
+
+TEST(Inotify, Sendfile) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(root.path(), "x", 0644));
+  const TempPath out_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor in =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
+  const FileDescriptor out =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(out_file.path(), O_WRONLY));
+
+  // Create separate inotify instances for the in and out fds. If both watches
+  // were on the same instance, we would have discrepancies between Linux and
+  // gVisor (order of events, duplicate events), which is not that important
+  // since inotify is asynchronous anyway.
+  const FileDescriptor in_inotify =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const FileDescriptor out_inotify =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int in_wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(in_inotify.get(), in_file.path(), IN_ALL_EVENTS));
+  const int out_wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(out_inotify.get(), out_file.path(), IN_ALL_EVENTS));
+
+  ASSERT_THAT(sendfile(out.get(), in.get(), /*offset=*/nullptr, 1),
+              SyscallSucceeds());
+
+  // Expect a single access event and a single modify event.
+  std::vector<Event> in_events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(in_inotify.get()));
+  std::vector<Event> out_events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(out_inotify.get()));
+  EXPECT_THAT(in_events, Are({Event(IN_ACCESS, in_wd)}));
+  EXPECT_THAT(out_events, Are({Event(IN_MODIFY, out_wd)}));
 }
 
 // On Linux, inotify behavior is not very consistent with splice(2). We try our

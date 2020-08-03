@@ -254,11 +254,12 @@ func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		return 0, nil, syserror.EFBIG
 	}
 
-	return 0, nil, file.Allocate(t, mode, uint64(offset), uint64(length))
+	if err := file.Allocate(t, mode, uint64(offset), uint64(length)); err != nil {
+		return 0, nil, err
+	}
 
-	// File length modified, generate notification.
-	// TODO(gvisor.dev/issue/1479): Reenable when Inotify is ported.
-	// file.Dirent.InotifyEvent(linux.IN_MODIFY, 0)
+	file.Dentry().InotifyWithParent(linux.IN_MODIFY, 0, vfs.PathEvent)
+	return 0, nil, nil
 }
 
 // Utime implements Linux syscall utime(2).
