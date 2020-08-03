@@ -235,8 +235,15 @@ func (conn *connection) Initialized() bool {
 	return atomic.LoadInt32(&(conn.initialized)) != 0
 }
 
+// Marshallable defines the Marshallable interface for serialize/deserializing
+// FUSE packets.
+type Marshallable interface {
+	MarshalUnsafe([]byte)
+	SizeBytes() int
+}
+
 // NewRequest creates a new request that can be sent to the FUSE server.
-func (conn *connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint64, opcode linux.FUSEOpcode, payload marshal.Marshallable) (*Request, error) {
+func (conn *Connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint64, opcode linux.FUSEOpcode, payload Marshallable) (*Request, error) {
 	conn.fd.mu.Lock()
 	defer conn.fd.mu.Unlock()
 	conn.fd.nextOpID += linux.FUSEOpID(reqIDStep)
@@ -335,7 +342,6 @@ func (r *Response) UnmarshalPayload(m marshal.Marshallable) error {
 	if haveDataLen < wantDataLen {
 		return fmt.Errorf("payload too small. Minimum data lenth required: %d,  but got data length %d", wantDataLen, haveDataLen)
 	}
-
 	m.UnmarshalUnsafe(r.data[hdrLen:])
 	return nil
 }

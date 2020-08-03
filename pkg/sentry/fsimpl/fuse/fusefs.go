@@ -165,7 +165,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 
 	// root is the fusefs root directory.
-	root := fs.newInode(creds, fsopts.rootMode)
+	root := fs.newRootInode(creds, fsopts.rootMode)
 
 	return fs.VFSFilesystem(), root.VFSDentry(), nil
 }
@@ -204,14 +204,72 @@ type inode struct {
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.OrderedChildren
 
-	locks vfs.FileLocks
-
+	NodeID uint64
+	locks  vfs.FileLocks
 	dentry kernfs.Dentry
+
+	// the owning filesystem. fs is immutable.
+	fs *filesystem
 }
 
-func (fs *filesystem) newInode(creds *auth.Credentials, mode linux.FileMode) *kernfs.Dentry {
-	i := &inode{}
-	i.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0755)
+// NewNode implements kernfs.Inode.NewNode.
+func (i *Inode) NewNode(ctx context.Context, name string, opts vfs.MknodOptions) (*vfs.Dentry, error) {
+	kernelTask := kernel.TaskFromContext(ctx)
+	if kernelTask == nil {
+		log.Warningf("fusefs.Inode.NewNode: couldn't get kernel task from context", i.NodeID)
+		return nil, syserror.EINVAL
+	}
+	in := linux.FUSEMknodReq{
+		MknodIn: linux.FUSEMknodIn{
+			Mode:  uint32(opts.Mode),
+			Rdev:  (opts.DevMinor & 0xff) | (opts.DevMajor << 8) | (opts.DevMinor & ^uint32((0xff)) << 12),
+			Umask: uint32(kernelTask.FSContext().Umask()),
+		},
+		Name: name,
+	}
+	req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.NodeID, linux.FUSE_MKNOD, &in)
+	if err != nil {
+		return nil, err
+	}
+	return i.newEntry(kernelTask, req, name, opts.Mode.FileType())
+}
+
+// newEntry call FUSE server for entry creation and allocate corresponding entry according to response.
+// Shared by FUSE_MKNOD, FUSE_MKDIR, FUSE_SYMLINK and FUSE_LINK.
+func (i *Inode) newEntry(kernelTask *kernel.Task, req *Request, name string, fileType linux.FileMode) (*vfs.Dentry, error) {
+	res, err := i.fs.conn.Call(kernelTask, req)
+	if err != nil {
+		return nil, err
+	}
+	if err := res.Error(); err != nil {
+		return nil, err
+	}
+	out := linux.FUSEEntryOut{}
+	if err := res.UnmarshalPayload(&out); err != nil {
+		return nil, err
+	}
+	if out.NodeID == 0 || out.NodeID == linux.FUSE_ROOT_ID || (out.Attr.Mode&linux.S_IFMT)^uint32(fileType) != 0 {
+		return nil, syserror.EIO
+	}
+	child := i.fs.newInode(out.NodeID, out.Generation, out.Attr)
+	i.dentry.InsertChildLocked(name, child)
+	return child.VFSDentry(), nil
+}
+
+func (fs *filesystem) newRootInode(creds *auth.Credentials, mode linux.FileMode) *kernfs.Dentry {
+	i := &Inode{fs: fs}
+	i.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, 1, linux.ModeDirectory|0755)
+	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
+	i.dentry.Init(i)
+	i.NodeID = linux.FUSE_ROOT_ID
+
+	return &i.dentry
+}
+
+func (fs *filesystem) newInode(nodeID uint64, generation uint64, attr linux.FUSEAttr) *kernfs.Dentry {
+	i := &Inode{fs: fs, NodeID: nodeID}
+	creds := auth.Credentials{EffectiveKGID: auth.KGID(attr.UID), EffectiveKUID: auth.KUID(attr.UID)}
+	i.InodeAttrs.Init(&creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.FileMode(attr.Mode))
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	i.dentry.Init(i)
 

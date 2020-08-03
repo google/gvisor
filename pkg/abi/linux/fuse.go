@@ -20,6 +20,9 @@ type FUSEOpcode uint32
 // +marshal
 type FUSEOpID uint64
 
+// FUSE_ROOT_ID is the id of root inode.
+const FUSE_ROOT_ID = 1
+
 // Opcodes for FUSE operations. Analogous to the opcodes in include/linux/fuse.h.
 const (
 	FUSE_LOOKUP   FUSEOpcode = 1
@@ -263,7 +266,7 @@ type FUSEGetAttrIn struct {
 	Fh uint64
 }
 
-// FUSEAttr is the struct used in the reponse FUSEGetAttrOut
+// FUSEAttr is the struct include inode attributes.
 //
 // +marshal
 type FUSEAttr struct {
@@ -300,4 +303,73 @@ type FUSEGetAttrOut struct {
 
 	// Attr contains the metadata returned from the FUSE server
 	Attr FUSEAttr
+}
+
+// FUSEEntryOut is the reply sent by the daemon to the kernel
+// for FUSE_MKNOD, FUSE_MKDIR, FUSE_SYMLINK and FUSE_LINK.
+//
+// +marshal
+type FUSEEntryOut struct {
+	// NodeID is the ID for current inode.
+	NodeID uint64
+
+	// Generation is the generation number of inode.
+	// Used to identify an inode that have different ID at different time.
+	Generation uint64
+
+	// EntryValid indicates timeout for an entry.
+	EntryValid uint64
+
+	// AttrValid indicates timeout for an entry's attributes.
+	AttrValid uint64
+
+	// EntryValidNsec indicates timeout for an entry in nanosecond.
+	EntryValidNSec uint32
+
+	// AttrValidNsec indicates timeout for an entry's attributes in nanosecond.
+	AttrValidNSec uint32
+
+	// Attr contains the attributes of an entry.
+	Attr FUSEAttr
+}
+
+// FUSEMknodIn contains first argument in request sent by the
+// kernel to the daemon to create a new file node.
+// This behavior is analogous to Linux's behavior of sending
+// two argument with FUSE_MKNOD request.
+//
+// +marshal
+type FUSEMknodIn struct {
+	// Mode of the inode to create.
+	Mode uint32
+
+	// Rdev encodes device major and minor information.
+	Rdev uint32
+
+	// Umask is the current file mode creation mask.
+	Umask uint32
+
+	_ uint32
+}
+
+// FUSEMknodReq contains all the arguments sent by the kernel
+// to the daemon in FUSE_MKNOD operation.
+type FUSEMknodReq struct {
+	// MknodIn contains mode, rdev and umash field for FUSE_MKNODS.
+	MknodIn FUSEMknodIn
+
+	// Name is the name of the node to create.
+	Name string
+}
+
+// MarshalUnsafe serializes r.MknodIn and r.Name to the dst buffer.
+func (r *FUSEMknodReq) MarshalUnsafe(buf []byte) {
+	r.MknodIn.MarshalUnsafe(buf[:r.MknodIn.SizeBytes()])
+	copy(buf[r.MknodIn.SizeBytes():], r.Name)
+}
+
+// SizeBytes is the size of the memory representation of FUSEMknodReq.
+// 1 extra byte for null-terminated string.
+func (r *FUSEMknodReq) SizeBytes() int {
+	return r.MknodIn.SizeBytes() + len(r.Name) + 1
 }

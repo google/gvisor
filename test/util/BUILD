@@ -356,3 +356,9 @@ cc_library(
     testonly = 1,
     hdrs = ["temp_umask.h"],
 )
+
+cc_library(
+    name = "fuse_util",
+    srcs = ["fuse_util.cc"],
+    hdrs = ["fuse_util.h"],
+)

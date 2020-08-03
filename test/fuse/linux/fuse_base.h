@@ -193,6 +193,16 @@ class FuseTest : public ::testing::Test {
     iov[1].iov_base = &payload;                             \
   } while (0)
 
+#define SET_IOVEC_WITH_HEADER_PAYLOAD_NAME(iov, header, payload, name) \
+  do {                                                                 \
+    iov[0].iov_len = sizeof(header);                                   \
+    iov[0].iov_base = &header;                                         \
+    iov[1].iov_len = sizeof(payload);                                  \
+    iov[1].iov_base = &payload;                                        \
+    iov[2].iov_len = name.size();                                      \
+    iov[2].iov_base = name.data();                                     \
+  } while (0)
+
 #define SET_IOVEC_WITH_HEADER(iov, header) \
   do {                                     \
     iov[0].iov_len = sizeof(header);       \

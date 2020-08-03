@@ -7,3 +7,9 @@ syscall_test(
     vfs2 = "True",
     fuse = "True",
 )
+
+syscall_test(
+    test = "//test/fuse/linux:mknod_test",
+    vfs2 = "True",
+    fuse = "True",
+)

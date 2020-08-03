@@ -13,6 +13,21 @@ cc_test(
     ],
     deps = [
         ":fuse_base",
+        "//test/util:fuse_util",
+        "//test/util:test_util",
+        "//test/util:test_main",
+    ],
+)
+
+cc_test(
+    name = "mknod_test",
+    srcs = [
+        "fuse_base.h",
+        "mknod_test.cc",
+    ],
+    deps = [
+        ":fuse_base",
+        "//test/util:fuse_util",
         "//test/util:test_util",
         "//test/util:test_main",
     ],

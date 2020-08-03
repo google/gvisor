@@ -249,7 +249,6 @@ void FuseTest::ServerHandleCommand() {
       FAIL() << "Unknown FuseTestCmd " << cmd;
       break;
   }
-
   ServerCompleteWith(!HasFailure());
 }
 
