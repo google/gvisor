@@ -169,7 +169,7 @@ func (s *SocketVFS2) Accept(t *kernel.Task, peerRequested bool, flags int, block
 	if err != nil {
 		return 0, nil, 0, err
 	}
-	defer ns.DecRef()
+	defer ns.DecRef(t)
 
 	if err := ns.SetStatusFlags(t, t.Credentials(), uint32(flags&linux.SOCK_NONBLOCK)); err != nil {
 		return 0, nil, 0, syserr.FromError(err)

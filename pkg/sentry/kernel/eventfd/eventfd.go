@@ -70,7 +70,7 @@ func New(ctx context.Context, initVal uint64, semMode bool) *fs.File {
 	// name matches fs/eventfd.c:eventfd_file_create.
 	dirent := fs.NewDirent(ctx, anon.NewInode(ctx), "anon_inode:[eventfd]")
 	// Release the initial dirent reference after NewFile takes a reference.
-	defer dirent.DecRef()
+	defer dirent.DecRef(ctx)
 	return fs.NewFile(ctx, dirent, fs.FileFlags{Read: true, Write: true}, &EventOperations{
 		val:     initVal,
 		semMode: semMode,
@@ -106,7 +106,7 @@ func (e *EventOperations) HostFD() (int, error) {
 }
 
 // Release implements fs.FileOperations.Release.
-func (e *EventOperations) Release() {
+func (e *EventOperations) Release(context.Context) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.hostfd >= 0 {

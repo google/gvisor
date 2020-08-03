@@ -46,7 +46,7 @@ func newFile(ctx context.Context) *fs.File {
 func TestGrow(t *testing.T) {
 	ctx := contexttest.Context(t)
 	f := newFile(ctx)
-	defer f.DecRef()
+	defer f.DecRef(ctx)
 
 	abuf := bytes.Repeat([]byte{'a'}, 68)
 	n, err := f.Pwritev(ctx, usermem.BytesIOSequence(abuf), 0)

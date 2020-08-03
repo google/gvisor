@@ -196,7 +196,7 @@ func Socket(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if e != nil {
 		return 0, nil, e.ToError()
 	}
-	defer s.DecRef()
+	defer s.DecRef(t)
 
 	if err := s.SetStatusFlags(t, t.Credentials(), uint32(stype&linux.SOCK_NONBLOCK)); err != nil {
 		return 0, nil, err
@@ -230,8 +230,8 @@ func SocketPair(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 		return 0, nil, e.ToError()
 	}
 	// Adding to the FD table will cause an extra reference to be acquired.
-	defer s1.DecRef()
-	defer s2.DecRef()
+	defer s1.DecRef(t)
+	defer s2.DecRef(t)
 
 	nonblocking := uint32(stype & linux.SOCK_NONBLOCK)
 	if err := s1.SetStatusFlags(t, t.Credentials(), nonblocking); err != nil {
@@ -253,7 +253,7 @@ func SocketPair(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	if _, err := t.CopyOut(addr, fds); err != nil {
 		for _, fd := range fds {
 			if _, file := t.FDTable().Remove(fd); file != nil {
-				file.DecRef()
+				file.DecRef(t)
 			}
 		}
 		return 0, nil, err
@@ -273,7 +273,7 @@ func Connect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
@@ -304,7 +304,7 @@ func accept(t *kernel.Task, fd int32, addr usermem.Addr, addrLen usermem.Addr, f
 	if file == nil {
 		return 0, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
@@ -363,7 +363,7 @@ func Bind(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
@@ -390,7 +390,7 @@ func Listen(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
@@ -419,7 +419,7 @@ func Shutdown(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
@@ -450,7 +450,7 @@ func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
@@ -532,7 +532,7 @@ func SetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
@@ -570,7 +570,7 @@ func GetSockName(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
@@ -598,7 +598,7 @@ func GetPeerName(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
@@ -631,7 +631,7 @@ func RecvMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
@@ -684,7 +684,7 @@ func RecvMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
@@ -778,7 +778,7 @@ func recvSingleMsg(t *kernel.Task, s socket.SocketVFS2, msgPtr usermem.Addr, fla
 		}
 		if !cms.Unix.Empty() {
 			mflags |= linux.MSG_CTRUNC
-			cms.Release()
+			cms.Release(t)
 		}
 
 		if int(msg.Flags) != mflags {
@@ -798,7 +798,7 @@ func recvSingleMsg(t *kernel.Task, s socket.SocketVFS2, msgPtr usermem.Addr, fla
 	if e != nil {
 		return 0, syserror.ConvertIntr(e.ToError(), kernel.ERESTARTSYS)
 	}
-	defer cms.Release()
+	defer cms.Release(t)
 
 	controlData := make([]byte, 0, msg.ControlLen)
 	controlData = control.PackControlMessages(t, cms, controlData)
@@ -854,7 +854,7 @@ func recvFrom(t *kernel.Task, fd int32, bufPtr usermem.Addr, bufLen uint64, flag
 	if file == nil {
 		return 0, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
@@ -883,7 +883,7 @@ func recvFrom(t *kernel.Task, fd int32, bufPtr usermem.Addr, bufLen uint64, flag
 	}
 
 	n, _, sender, senderLen, cm, e := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, nameLenPtr != 0, 0)
-	cm.Release()
+	cm.Release(t)
 	if e != nil {
 		return 0, syserror.ConvertIntr(e.ToError(), kernel.ERESTARTSYS)
 	}
@@ -927,7 +927,7 @@ func SendMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
@@ -965,7 +965,7 @@ func SendMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
@@ -1069,7 +1069,7 @@ func sendSingleMsg(t *kernel.Task, s socket.SocketVFS2, file *vfs.FileDescriptio
 	n, e := s.SendMsg(t, src, to, int(flags), haveDeadline, deadline, controlMessages)
 	err = slinux.HandleIOErrorVFS2(t, n != 0, e.ToError(), kernel.ERESTARTSYS, "sendmsg", file)
 	if err != nil {
-		controlMessages.Release()
+		controlMessages.Release(t)
 	}
 	return uintptr(n), err
 }
@@ -1087,7 +1087,7 @@ func sendTo(t *kernel.Task, fd int32, bufPtr usermem.Addr, bufLen uint64, flags 
 	if file == nil {
 		return 0, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)

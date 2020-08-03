@@ -140,14 +140,14 @@ func NewSocket(t *kernel.Task, skType linux.SockType, protocol Protocol) (*Socke
 	// Bind the endpoint for good measure so we can connect to it. The
 	// bound address will never be exposed.
 	if err := ep.Bind(tcpip.FullAddress{Addr: "dummy"}, nil); err != nil {
-		ep.Close()
+		ep.Close(t)
 		return nil, err
 	}
 
 	// Create a connection from which the kernel can write messages.
 	connection, err := ep.(transport.BoundEndpoint).UnidirectionalConnect(t)
 	if err != nil {
-		ep.Close()
+		ep.Close(t)
 		return nil, err
 	}
 
@@ -164,9 +164,9 @@ func NewSocket(t *kernel.Task, skType linux.SockType, protocol Protocol) (*Socke
 }
 
 // Release implements fs.FileOperations.Release.
-func (s *socketOpsCommon) Release() {
-	s.connection.Release()
-	s.ep.Close()
+func (s *socketOpsCommon) Release(ctx context.Context) {
+	s.connection.Release(ctx)
+	s.ep.Close(ctx)
 
 	if s.bound {
 		s.ports.Release(s.protocol.Protocol(), s.portID)
@@ -621,7 +621,7 @@ func (s *socketOpsCommon) sendResponse(ctx context.Context, ms *MessageSet) *sys
 	if len(bufs) > 0 {
 		// RecvMsg never receives the address, so we don't need to send
 		// one.
-		_, notify, err := s.connection.Send(bufs, cms, tcpip.FullAddress{})
+		_, notify, err := s.connection.Send(ctx, bufs, cms, tcpip.FullAddress{})
 		// If the buffer is full, we simply drop messages, just like
 		// Linux.
 		if err != nil && err != syserr.ErrWouldBlock {
@@ -648,7 +648,7 @@ func (s *socketOpsCommon) sendResponse(ctx context.Context, ms *MessageSet) *sys
 		// Add the dump_done_errno payload.
 		m.Put(int64(0))
 
-		_, notify, err := s.connection.Send([][]byte{m.Finalize()}, cms, tcpip.FullAddress{})
+		_, notify, err := s.connection.Send(ctx, [][]byte{m.Finalize()}, cms, tcpip.FullAddress{})
 		if err != nil && err != syserr.ErrWouldBlock {
 			return err
 		}

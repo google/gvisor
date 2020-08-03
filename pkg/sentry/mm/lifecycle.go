@@ -258,7 +258,7 @@ func (mm *MemoryManager) DecUsers(ctx context.Context) {
 	mm.executable = nil
 	mm.metadataMu.Unlock()
 	if exe != nil {
-		exe.DecRef()
+		exe.DecRef(ctx)
 	}
 
 	mm.activeMu.Lock()

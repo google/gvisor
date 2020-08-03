@@ -59,7 +59,7 @@ func TestReadCPUFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("OpenAt(pop:%+v) = %+v failed: %v", pop, fd, err)
 		}
-		defer fd.DecRef()
+		defer fd.DecRef(s.Ctx)
 		content, err := s.ReadToEnd(fd)
 		if err != nil {
 			t.Fatalf("Read failed: %v", err)

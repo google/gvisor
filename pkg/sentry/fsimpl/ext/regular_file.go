@@ -79,7 +79,7 @@ type regularFileFD struct {
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *regularFileFD) Release() {}
+func (fd *regularFileFD) Release(context.Context) {}
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {

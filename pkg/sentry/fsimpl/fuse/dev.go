@@ -99,7 +99,7 @@ type DeviceFD struct {
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *DeviceFD) Release() {
+func (fd *DeviceFD) Release(context.Context) {
 	fd.fs.conn.connected = false
 }
 

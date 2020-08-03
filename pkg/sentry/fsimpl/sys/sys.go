@@ -87,9 +87,9 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 }
 
 // Release implements vfs.FilesystemImpl.Release.
-func (fs *filesystem) Release() {
+func (fs *filesystem) Release(ctx context.Context) {
 	fs.Filesystem.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
-	fs.Filesystem.Release()
+	fs.Filesystem.Release(ctx)
 }
 
 // dir implements kernfs.Inode.

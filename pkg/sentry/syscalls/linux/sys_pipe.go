@@ -34,10 +34,10 @@ func pipe2(t *kernel.Task, addr usermem.Addr, flags uint) (uintptr, error) {
 	r, w := pipe.NewConnectedPipe(t, pipe.DefaultPipeSize, usermem.PageSize)
 
 	r.SetFlags(linuxToFlags(flags).Settable())
-	defer r.DecRef()
+	defer r.DecRef(t)
 
 	w.SetFlags(linuxToFlags(flags).Settable())
-	defer w.DecRef()
+	defer w.DecRef(t)
 
 	fds, err := t.NewFDs(0, []*fs.File{r, w}, kernel.FDFlags{
 		CloseOnExec: flags&linux.O_CLOEXEC != 0,
@@ -49,7 +49,7 @@ func pipe2(t *kernel.Task, addr usermem.Addr, flags uint) (uintptr, error) {
 	if _, err := t.CopyOut(addr, fds); err != nil {
 		for _, fd := range fds {
 			if file, _ := t.FDTable().Remove(fd); file != nil {
-				file.DecRef()
+				file.DecRef(t)
 			}
 		}
 		return 0, err

@@ -200,8 +200,8 @@ func (vfs *VirtualFilesystem) MountDisconnected(ctx context.Context, creds *auth
 	if err != nil {
 		return nil, err
 	}
-	defer root.DecRef()
-	defer fs.DecRef()
+	defer root.DecRef(ctx)
+	defer fs.DecRef(ctx)
 	return vfs.NewDisconnectedMount(fs, root, opts)
 }
 
@@ -221,7 +221,7 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 		if vd.dentry.dead {
 			vd.dentry.mu.Unlock()
 			vfs.mountMu.Unlock()
-			vd.DecRef()
+			vd.DecRef(ctx)
 			return syserror.ENOENT
 		}
 		// vd might have been mounted over between vfs.GetDentryAt() and
@@ -243,7 +243,7 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 		// This can't fail since we're holding vfs.mountMu.
 		nextmnt.root.IncRef()
 		vd.dentry.mu.Unlock()
-		vd.DecRef()
+		vd.DecRef(ctx)
 		vd = VirtualDentry{
 			mount:  nextmnt,
 			dentry: nextmnt.root,
@@ -268,7 +268,7 @@ func (vfs *VirtualFilesystem) MountAt(ctx context.Context, creds *auth.Credentia
 	if err != nil {
 		return err
 	}
-	defer mnt.DecRef()
+	defer mnt.DecRef(ctx)
 	if err := vfs.ConnectMountAt(ctx, creds, mnt, target); err != nil {
 		return err
 	}
@@ -293,13 +293,13 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 	if err != nil {
 		return err
 	}
-	defer vd.DecRef()
+	defer vd.DecRef(ctx)
 	if vd.dentry != vd.mount.root {
 		return syserror.EINVAL
 	}
 	vfs.mountMu.Lock()
 	if mntns := MountNamespaceFromContext(ctx); mntns != nil {
-		defer mntns.DecRef()
+		defer mntns.DecRef(ctx)
 		if mntns != vd.mount.ns {
 			vfs.mountMu.Unlock()
 			return syserror.EINVAL
@@ -335,10 +335,10 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 	vfs.mounts.seq.EndWrite()
 	vfs.mountMu.Unlock()
 	for _, vd := range vdsToDecRef {
-		vd.DecRef()
+		vd.DecRef(ctx)
 	}
 	for _, mnt := range mountsToDecRef {
-		mnt.DecRef()
+		mnt.DecRef(ctx)
 	}
 	return nil
 }
@@ -479,7 +479,7 @@ func (mnt *Mount) IncRef() {
 }
 
 // DecRef decrements mnt's reference count.
-func (mnt *Mount) DecRef() {
+func (mnt *Mount) DecRef(ctx context.Context) {
 	refs := atomic.AddInt64(&mnt.refs, -1)
 	if refs&^math.MinInt64 == 0 { // mask out MSB
 		var vd VirtualDentry
@@ -490,10 +490,10 @@ func (mnt *Mount) DecRef() {
 			mnt.vfs.mounts.seq.EndWrite()
 			mnt.vfs.mountMu.Unlock()
 		}
-		mnt.root.DecRef()
-		mnt.fs.DecRef()
+		mnt.root.DecRef(ctx)
+		mnt.fs.DecRef(ctx)
 		if vd.Ok() {
-			vd.DecRef()
+			vd.DecRef(ctx)
 		}
 	}
 }
@@ -506,7 +506,7 @@ func (mntns *MountNamespace) IncRef() {
 }
 
 // DecRef decrements mntns' reference count.
-func (mntns *MountNamespace) DecRef() {
+func (mntns *MountNamespace) DecRef(ctx context.Context) {
 	vfs := mntns.root.fs.VirtualFilesystem()
 	if refs := atomic.AddInt64(&mntns.refs, -1); refs == 0 {
 		vfs.mountMu.Lock()
@@ -517,10 +517,10 @@ func (mntns *MountNamespace) DecRef() {
 		vfs.mounts.seq.EndWrite()
 		vfs.mountMu.Unlock()
 		for _, vd := range vdsToDecRef {
-			vd.DecRef()
+			vd.DecRef(ctx)
 		}
 		for _, mnt := range mountsToDecRef {
-			mnt.DecRef()
+			mnt.DecRef(ctx)
 		}
 	} else if refs < 0 {
 		panic("MountNamespace.DecRef() called without holding a reference")
@@ -534,7 +534,7 @@ func (mntns *MountNamespace) DecRef() {
 // getMountAt is analogous to Linux's fs/namei.c:follow_mount().
 //
 // Preconditions: References are held on mnt and d.
-func (vfs *VirtualFilesystem) getMountAt(mnt *Mount, d *Dentry) *Mount {
+func (vfs *VirtualFilesystem) getMountAt(ctx context.Context, mnt *Mount, d *Dentry) *Mount {
 	// The first mount is special-cased:
 	//
 	// - The caller is assumed to have checked d.isMounted() already. (This
@@ -565,7 +565,7 @@ retryFirst:
 			// Raced with umount.
 			continue
 		}
-		mnt.DecRef()
+		mnt.DecRef(ctx)
 		mnt = next
 		d = next.root
 	}
@@ -578,7 +578,7 @@ retryFirst:
 //
 // Preconditions: References are held on mnt and root. vfsroot is not (mnt,
 // mnt.root).
-func (vfs *VirtualFilesystem) getMountpointAt(mnt *Mount, vfsroot VirtualDentry) VirtualDentry {
+func (vfs *VirtualFilesystem) getMountpointAt(ctx context.Context, mnt *Mount, vfsroot VirtualDentry) VirtualDentry {
 	// The first mount is special-cased:
 	//
 	// - The caller must have already checked mnt against vfsroot.
@@ -602,12 +602,12 @@ retryFirst:
 	if !point.TryIncRef() {
 		// Since Mount holds a reference on Mount.key.point, this can only
 		// happen due to a racing change to Mount.key.
-		parent.DecRef()
+		parent.DecRef(ctx)
 		goto retryFirst
 	}
 	if !vfs.mounts.seq.ReadOk(epoch) {
-		point.DecRef()
-		parent.DecRef()
+		point.DecRef(ctx)
+		parent.DecRef(ctx)
 		goto retryFirst
 	}
 	mnt = parent
@@ -635,16 +635,16 @@ retryFirst:
 		if !point.TryIncRef() {
 			// Since Mount holds a reference on Mount.key.point, this can
 			// only happen due to a racing change to Mount.key.
-			parent.DecRef()
+			parent.DecRef(ctx)
 			goto retryNotFirst
 		}
 		if !vfs.mounts.seq.ReadOk(epoch) {
-			point.DecRef()
-			parent.DecRef()
+			point.DecRef(ctx)
+			parent.DecRef(ctx)
 			goto retryNotFirst
 		}
-		d.DecRef()
-		mnt.DecRef()
+		d.DecRef(ctx)
+		mnt.DecRef(ctx)
 		mnt = parent
 		d = point
 	}

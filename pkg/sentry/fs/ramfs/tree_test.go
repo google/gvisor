@@ -67,7 +67,7 @@ func TestMakeDirectoryTree(t *testing.T) {
 			continue
 		}
 		root := mm.Root()
-		defer mm.DecRef()
+		defer mm.DecRef(ctx)
 
 		for _, p := range test.subdirs {
 			maxTraversals := uint(0)

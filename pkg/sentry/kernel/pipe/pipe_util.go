@@ -33,7 +33,7 @@ import (
 // the old fs architecture.
 
 // Release cleans up the pipe's state.
-func (p *Pipe) Release() {
+func (p *Pipe) Release(context.Context) {
 	p.rClose()
 	p.wClose()
 

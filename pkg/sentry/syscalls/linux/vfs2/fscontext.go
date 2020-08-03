@@ -31,8 +31,8 @@ func Getcwd(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	root := t.FSContext().RootDirectoryVFS2()
 	wd := t.FSContext().WorkingDirectoryVFS2()
 	s, err := t.Kernel().VFS().PathnameForGetcwd(t, root, wd)
-	root.DecRef()
-	wd.DecRef()
+	root.DecRef(t)
+	wd.DecRef(t)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -67,7 +67,7 @@ func Chdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if err != nil {
 		return 0, nil, err
 	}
-	defer tpop.Release()
+	defer tpop.Release(t)
 
 	vd, err := t.Kernel().VFS().GetDentryAt(t, t.Credentials(), &tpop.pop, &vfs.GetDentryOptions{
 		CheckSearchable: true,
@@ -75,8 +75,8 @@ func Chdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if err != nil {
 		return 0, nil, err
 	}
-	t.FSContext().SetWorkingDirectoryVFS2(vd)
-	vd.DecRef()
+	t.FSContext().SetWorkingDirectoryVFS2(t, vd)
+	vd.DecRef(t)
 	return 0, nil, nil
 }
 
@@ -88,7 +88,7 @@ func Fchdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if err != nil {
 		return 0, nil, err
 	}
-	defer tpop.Release()
+	defer tpop.Release(t)
 
 	vd, err := t.Kernel().VFS().GetDentryAt(t, t.Credentials(), &tpop.pop, &vfs.GetDentryOptions{
 		CheckSearchable: true,
@@ -96,8 +96,8 @@ func Fchdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if err != nil {
 		return 0, nil, err
 	}
-	t.FSContext().SetWorkingDirectoryVFS2(vd)
-	vd.DecRef()
+	t.FSContext().SetWorkingDirectoryVFS2(t, vd)
+	vd.DecRef(t)
 	return 0, nil, nil
 }
 
@@ -117,7 +117,7 @@ func Chroot(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if err != nil {
 		return 0, nil, err
 	}
-	defer tpop.Release()
+	defer tpop.Release(t)
 
 	vd, err := t.Kernel().VFS().GetDentryAt(t, t.Credentials(), &tpop.pop, &vfs.GetDentryOptions{
 		CheckSearchable: true,
@@ -125,7 +125,7 @@ func Chroot(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if err != nil {
 		return 0, nil, err
 	}
-	t.FSContext().SetRootDirectoryVFS2(vd)
-	vd.DecRef()
+	t.FSContext().SetRootDirectoryVFS2(t, vd)
+	vd.DecRef(t)
 	return 0, nil, nil
 }

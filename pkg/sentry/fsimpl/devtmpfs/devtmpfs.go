@@ -92,9 +92,9 @@ func NewAccessor(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth
 }
 
 // Release must be called when a is no longer in use.
-func (a *Accessor) Release() {
-	a.root.DecRef()
-	a.mntns.DecRef()
+func (a *Accessor) Release(ctx context.Context) {
+	a.root.DecRef(ctx)
+	a.mntns.DecRef(ctx)
 }
 
 // accessorContext implements context.Context by extending an existing

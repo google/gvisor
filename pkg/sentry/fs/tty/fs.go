@@ -108,4 +108,4 @@ func (superOperations) ResetInodeMappings() {}
 func (superOperations) SaveInodeMapping(*fs.Inode, string) {}
 
 // Destroy implements MountSourceOperations.Destroy.
-func (superOperations) Destroy() {}
+func (superOperations) Destroy(context.Context) {}

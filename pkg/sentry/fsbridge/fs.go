@@ -49,7 +49,7 @@ func (f *fsFile) PathnameWithDeleted(ctx context.Context) string {
 		// global there.
 		return ""
 	}
-	defer root.DecRef()
+	defer root.DecRef(ctx)
 
 	name, _ := f.file.Dirent.FullName(root)
 	return name
@@ -87,8 +87,8 @@ func (f *fsFile) IncRef() {
 }
 
 // DecRef implements File.
-func (f *fsFile) DecRef() {
-	f.file.DecRef()
+func (f *fsFile) DecRef(ctx context.Context) {
+	f.file.DecRef(ctx)
 }
 
 // fsLookup implements Lookup interface using fs.File.
@@ -124,7 +124,7 @@ func (l *fsLookup) OpenPath(ctx context.Context, path string, opts vfs.OpenOptio
 	if err != nil {
 		return nil, err
 	}
-	defer d.DecRef()
+	defer d.DecRef(ctx)
 
 	if !resolveFinal && fs.IsSymlink(d.Inode.StableAttr) {
 		return nil, syserror.ELOOP

@@ -38,11 +38,11 @@ func Eventfd2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		fileFlags |= linux.O_NONBLOCK
 	}
 	semMode := flags&linux.EFD_SEMAPHORE != 0
-	eventfd, err := eventfd.New(vfsObj, initVal, semMode, fileFlags)
+	eventfd, err := eventfd.New(t, vfsObj, initVal, semMode, fileFlags)
 	if err != nil {
 		return 0, nil, err
 	}
-	defer eventfd.DecRef()
+	defer eventfd.DecRef(t)
 
 	fd, err := t.NewFDFromVFS2(0, eventfd, kernel.FDFlags{
 		CloseOnExec: flags&linux.EFD_CLOEXEC != 0,

@@ -431,8 +431,8 @@ func (s *Shm) InodeID() uint64 {
 // DecRef overrides refs.RefCount.DecRef with a destructor.
 //
 // Precondition: Caller must not hold s.mu.
-func (s *Shm) DecRef() {
-	s.DecRefWithDestructor(s.destroy)
+func (s *Shm) DecRef(ctx context.Context) {
+	s.DecRefWithDestructor(ctx, s.destroy)
 }
 
 // Msync implements memmap.MappingIdentity.Msync. Msync is a no-op for shm
@@ -642,7 +642,7 @@ func (s *Shm) Set(ctx context.Context, ds *linux.ShmidDS) error {
 	return nil
 }
 
-func (s *Shm) destroy() {
+func (s *Shm) destroy(context.Context) {
 	s.mfp.MemoryFile().DecRef(s.fr)
 	s.registry.remove(s)
 }
@@ -651,7 +651,7 @@ func (s *Shm) destroy() {
 // destroyed once it has no references. MarkDestroyed may be called multiple
 // times, and is safe to call after a segment has already been destroyed. See
 // shmctl(IPC_RMID).
-func (s *Shm) MarkDestroyed() {
+func (s *Shm) MarkDestroyed(ctx context.Context) {
 	s.registry.dissociateKey(s)
 
 	s.mu.Lock()
@@ -663,7 +663,7 @@ func (s *Shm) MarkDestroyed() {
 		//
 		// N.B. This cannot be the final DecRef, as the caller also
 		// holds a reference.
-		s.DecRef()
+		s.DecRef(ctx)
 		return
 	}
 }

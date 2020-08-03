@@ -83,7 +83,7 @@ func fileOpOn(ctx context.Context, mntns *fs.MountNamespace, root, wd *fs.Dirent
 	}
 
 	err = fn(root, d)
-	d.DecRef()
+	d.DecRef(ctx)
 	return err
 }
 
@@ -105,17 +105,17 @@ func BenchmarkVFS1TmpfsStat(b *testing.B) {
 			if err != nil {
 				b.Fatalf("failed to create mount namespace: %v", err)
 			}
-			defer mntns.DecRef()
+			defer mntns.DecRef(ctx)
 
 			var filePathBuilder strings.Builder
 			filePathBuilder.WriteByte('/')
 
 			// Create nested directories with given depth.
 			root := mntns.Root()
-			defer root.DecRef()
+			defer root.DecRef(ctx)
 			d := root
 			d.IncRef()
-			defer d.DecRef()
+			defer d.DecRef(ctx)
 			for i := depth; i > 0; i-- {
 				name := fmt.Sprintf("%d", i)
 				if err := d.Inode.CreateDirectory(ctx, d, name, fs.FilePermsFromMode(0755)); err != nil {
@@ -125,7 +125,7 @@ func BenchmarkVFS1TmpfsStat(b *testing.B) {
 				if err != nil {
 					b.Fatalf("failed to walk to directory %q: %v", name, err)
 				}
-				d.DecRef()
+				d.DecRef(ctx)
 				d = next
 				filePathBuilder.WriteString(name)
 				filePathBuilder.WriteByte('/')
@@ -136,7 +136,7 @@ func BenchmarkVFS1TmpfsStat(b *testing.B) {
 			if err != nil {
 				b.Fatalf("failed to create file %q: %v", filename, err)
 			}
-			file.DecRef()
+			file.DecRef(ctx)
 			filePathBuilder.WriteString(filename)
 			filePath := filePathBuilder.String()
 
@@ -176,7 +176,7 @@ func BenchmarkVFS2TmpfsStat(b *testing.B) {
 
 			// Create VFS.
 			vfsObj := vfs.VirtualFilesystem{}
-			if err := vfsObj.Init(); err != nil {
+			if err := vfsObj.Init(ctx); err != nil {
 				b.Fatalf("VFS init: %v", err)
 			}
 			vfsObj.MustRegisterFilesystemType("tmpfs", tmpfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
@@ -186,14 +186,14 @@ func BenchmarkVFS2TmpfsStat(b *testing.B) {
 			if err != nil {
 				b.Fatalf("failed to create tmpfs root mount: %v", err)
 			}
-			defer mntns.DecRef()
+			defer mntns.DecRef(ctx)
 
 			var filePathBuilder strings.Builder
 			filePathBuilder.WriteByte('/')
 
 			// Create nested directories with given depth.
 			root := mntns.Root()
-			defer root.DecRef()
+			defer root.DecRef(ctx)
 			vd := root
 			vd.IncRef()
 			for i := depth; i > 0; i-- {
@@ -212,7 +212,7 @@ func BenchmarkVFS2TmpfsStat(b *testing.B) {
 				if err != nil {
 					b.Fatalf("failed to walk to directory %q: %v", name, err)
 				}
-				vd.DecRef()
+				vd.DecRef(ctx)
 				vd = nextVD
 				filePathBuilder.WriteString(name)
 				filePathBuilder.WriteByte('/')
@@ -228,12 +228,12 @@ func BenchmarkVFS2TmpfsStat(b *testing.B) {
 				Flags: linux.O_RDWR | linux.O_CREAT | linux.O_EXCL,
 				Mode:  0644,
 			})
-			vd.DecRef()
+			vd.DecRef(ctx)
 			vd = vfs.VirtualDentry{}
 			if err != nil {
 				b.Fatalf("failed to create file %q: %v", filename, err)
 			}
-			defer fd.DecRef()
+			defer fd.DecRef(ctx)
 			filePathBuilder.WriteString(filename)
 			filePath := filePathBuilder.String()
 
@@ -278,14 +278,14 @@ func BenchmarkVFS1TmpfsMountStat(b *testing.B) {
 			if err != nil {
 				b.Fatalf("failed to create mount namespace: %v", err)
 			}
-			defer mntns.DecRef()
+			defer mntns.DecRef(ctx)
 
 			var filePathBuilder strings.Builder
 			filePathBuilder.WriteByte('/')
 
 			// Create and mount the submount.
 			root := mntns.Root()
-			defer root.DecRef()
+			defer root.DecRef(ctx)
 			if err := root.Inode.CreateDirectory(ctx, root, mountPointName, fs.FilePermsFromMode(0755)); err != nil {
 				b.Fatalf("failed to create mount point: %v", err)
 			}
@@ -293,7 +293,7 @@ func BenchmarkVFS1TmpfsMountStat(b *testing.B) {
 			if err != nil {
 				b.Fatalf("failed to walk to mount point: %v", err)
 			}
-			defer mountPoint.DecRef()
+			defer mountPoint.DecRef(ctx)
 			submountInode, err := tmpfsFS.Mount(ctx, "tmpfs", fs.MountSourceFlags{}, "", nil)
 			if err != nil {
 				b.Fatalf("failed to create tmpfs submount: %v", err)
@@ -309,7 +309,7 @@ func BenchmarkVFS1TmpfsMountStat(b *testing.B) {
 			if err != nil {
 				b.Fatalf("failed to walk to mount root: %v", err)
 			}
-			defer d.DecRef()
+			defer d.DecRef(ctx)
 			for i := depth; i > 0; i-- {
 				name := fmt.Sprintf("%d", i)
 				if err := d.Inode.CreateDirectory(ctx, d, name, fs.FilePermsFromMode(0755)); err != nil {
@@ -319,7 +319,7 @@ func BenchmarkVFS1TmpfsMountStat(b *testing.B) {
 				if err != nil {
 					b.Fatalf("failed to walk to directory %q: %v", name, err)
 				}
-				d.DecRef()
+				d.DecRef(ctx)
 				d = next
 				filePathBuilder.WriteString(name)
 				filePathBuilder.WriteByte('/')
@@ -330,7 +330,7 @@ func BenchmarkVFS1TmpfsMountStat(b *testing.B) {
 			if err != nil {
 				b.Fatalf("failed to create file %q: %v", filename, err)
 			}
-			file.DecRef()
+			file.DecRef(ctx)
 			filePathBuilder.WriteString(filename)
 			filePath := filePathBuilder.String()
 
@@ -370,7 +370,7 @@ func BenchmarkVFS2TmpfsMountStat(b *testing.B) {
 
 			// Create VFS.
 			vfsObj := vfs.VirtualFilesystem{}
-			if err := vfsObj.Init(); err != nil {
+			if err := vfsObj.Init(ctx); err != nil {
 				b.Fatalf("VFS init: %v", err)
 			}
 			vfsObj.MustRegisterFilesystemType("tmpfs", tmpfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
@@ -380,14 +380,14 @@ func BenchmarkVFS2TmpfsMountStat(b *testing.B) {
 			if err != nil {
 				b.Fatalf("failed to create tmpfs root mount: %v", err)
 			}
-			defer mntns.DecRef()
+			defer mntns.DecRef(ctx)
 
 			var filePathBuilder strings.Builder
 			filePathBuilder.WriteByte('/')
 
 			// Create the mount point.
 			root := mntns.Root()
-			defer root.DecRef()
+			defer root.DecRef(ctx)
 			pop := vfs.PathOperation{
 				Root:  root,
 				Start: root,
@@ -403,7 +403,7 @@ func BenchmarkVFS2TmpfsMountStat(b *testing.B) {
 			if err != nil {
 				b.Fatalf("failed to walk to mount point: %v", err)
 			}
-			defer mountPoint.DecRef()
+			defer mountPoint.DecRef(ctx)
 			// Create and mount the submount.
 			if err := vfsObj.MountAt(ctx, creds, "", &pop, "tmpfs", &vfs.MountOptions{}); err != nil {
 				b.Fatalf("failed to mount tmpfs submount: %v", err)
@@ -432,7 +432,7 @@ func BenchmarkVFS2TmpfsMountStat(b *testing.B) {
 				if err != nil {
 					b.Fatalf("failed to walk to directory %q: %v", name, err)
 				}
-				vd.DecRef()
+				vd.DecRef(ctx)
 				vd = nextVD
 				filePathBuilder.WriteString(name)
 				filePathBuilder.WriteByte('/')
@@ -448,11 +448,11 @@ func BenchmarkVFS2TmpfsMountStat(b *testing.B) {
 				Flags: linux.O_RDWR | linux.O_CREAT | linux.O_EXCL,
 				Mode:  0644,
 			})
-			vd.DecRef()
+			vd.DecRef(ctx)
 			if err != nil {
 				b.Fatalf("failed to create file %q: %v", filename, err)
 			}
-			fd.DecRef()
+			fd.DecRef(ctx)
 			filePathBuilder.WriteString(filename)
 			filePath := filePathBuilder.String()
 

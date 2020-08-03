@@ -47,7 +47,7 @@ type nullFD struct {
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *nullFD) Release() {
+func (fd *nullFD) Release(context.Context) {
 	// noop
 }
 

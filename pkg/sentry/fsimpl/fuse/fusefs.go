@@ -191,9 +191,9 @@ func NewFUSEFilesystem(ctx context.Context, devMinor uint32, opts *filesystemOpt
 }
 
 // Release implements vfs.FilesystemImpl.Release.
-func (fs *filesystem) Release() {
+func (fs *filesystem) Release(ctx context.Context) {
 	fs.Filesystem.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
-	fs.Filesystem.Release()
+	fs.Filesystem.Release(ctx)
 }
 
 // inode implements kernfs.Inode.

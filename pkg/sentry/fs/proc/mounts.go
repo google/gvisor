@@ -47,7 +47,7 @@ func forEachMount(t *kernel.Task, fn func(string, *fs.Mount)) {
 		// The task has been destroyed. Nothing to show here.
 		return
 	}
-	defer rootDir.DecRef()
+	defer rootDir.DecRef(t)
 
 	mnt := t.MountNamespace().FindMount(rootDir)
 	if mnt == nil {
@@ -64,7 +64,7 @@ func forEachMount(t *kernel.Task, fn func(string, *fs.Mount)) {
 			continue // No longer valid.
 		}
 		mountPath, desc := mroot.FullName(rootDir)
-		mroot.DecRef()
+		mroot.DecRef(t)
 		if !desc {
 			// MountSources that are not descendants of the chroot jail are ignored.
 			continue
@@ -97,7 +97,7 @@ func (mif *mountInfoFile) ReadSeqFileData(ctx context.Context, handle seqfile.Se
 		if mroot == nil {
 			return // No longer valid.
 		}
-		defer mroot.DecRef()
+		defer mroot.DecRef(ctx)
 
 		// Format:
 		// 36 35 98:0 /mnt1 /mnt2 rw,noatime master:1 - ext3 /dev/root rw,errors=continue
@@ -216,7 +216,7 @@ func (mf *mountsFile) ReadSeqFileData(ctx context.Context, handle seqfile.SeqHan
 		if root == nil {
 			return // No longer valid.
 		}
-		defer root.DecRef()
+		defer root.DecRef(ctx)
 
 		flags := root.Inode.MountSource.Flags
 		opts := "rw"

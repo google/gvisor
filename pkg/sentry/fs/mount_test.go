@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 )
 
@@ -32,13 +33,13 @@ func cacheReallyContains(cache *DirentCache, d *Dirent) bool {
 	return false
 }
 
-func mountPathsAre(root *Dirent, got []*Mount, want ...string) error {
+func mountPathsAre(ctx context.Context, root *Dirent, got []*Mount, want ...string) error {
 	gotPaths := make(map[string]struct{}, len(got))
 	gotStr := make([]string, len(got))
 	for i, g := range got {
 		if groot := g.Root(); groot != nil {
 			name, _ := groot.FullName(root)
-			groot.DecRef()
+			groot.DecRef(ctx)
 			gotStr[i] = name
 			gotPaths[name] = struct{}{}
 		}
@@ -69,7 +70,7 @@ func TestMountSourceOnlyCachedOnce(t *testing.T) {
 		t.Fatalf("NewMountNamespace failed: %v", err)
 	}
 	rootDirent := mm.Root()
-	defer rootDirent.DecRef()
+	defer rootDirent.DecRef(ctx)
 
 	// Get a child of the root which we will mount over.  Note that the
 	// MockInodeOperations causes Walk to always succeed.
@@ -125,7 +126,7 @@ func TestAllMountsUnder(t *testing.T) {
 		t.Fatalf("NewMountNamespace failed: %v", err)
 	}
 	rootDirent := mm.Root()
-	defer rootDirent.DecRef()
+	defer rootDirent.DecRef(ctx)
 
 	// Add mounts at the following paths:
 	paths := []string{
@@ -150,14 +151,14 @@ func TestAllMountsUnder(t *testing.T) {
 		if err := mm.Mount(ctx, d, submountInode); err != nil {
 			t.Fatalf("could not mount at %q: %v", p, err)
 		}
-		d.DecRef()
+		d.DecRef(ctx)
 	}
 
 	// mm root should contain all submounts (and does not include the root mount).
 	rootMnt := mm.FindMount(rootDirent)
 	submounts := mm.AllMountsUnder(rootMnt)
 	allPaths := append(paths, "/")
-	if err := mountPathsAre(rootDirent, submounts, allPaths...); err != nil {
+	if err := mountPathsAre(ctx, rootDirent, submounts, allPaths...); err != nil {
 		t.Error(err)
 	}
 
@@ -181,9 +182,9 @@ func TestAllMountsUnder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not find path %q in mount manager: %v", "/foo", err)
 	}
-	defer d.DecRef()
+	defer d.DecRef(ctx)
 	submounts = mm.AllMountsUnder(mm.FindMount(d))
-	if err := mountPathsAre(rootDirent, submounts, "/foo", "/foo/bar", "/foo/qux", "/foo/bar/baz"); err != nil {
+	if err := mountPathsAre(ctx, rootDirent, submounts, "/foo", "/foo/bar", "/foo/qux", "/foo/bar/baz"); err != nil {
 		t.Error(err)
 	}
 
@@ -193,9 +194,9 @@ func TestAllMountsUnder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not find path %q in mount manager: %v", "/waldo", err)
 	}
-	defer waldo.DecRef()
+	defer waldo.DecRef(ctx)
 	submounts = mm.AllMountsUnder(mm.FindMount(waldo))
-	if err := mountPathsAre(rootDirent, submounts, "/waldo"); err != nil {
+	if err := mountPathsAre(ctx, rootDirent, submounts, "/waldo"); err != nil {
 		t.Error(err)
 	}
 }
@@ -212,7 +213,7 @@ func TestUnmount(t *testing.T) {
 		t.Fatalf("NewMountNamespace failed: %v", err)
 	}
 	rootDirent := mm.Root()
-	defer rootDirent.DecRef()
+	defer rootDirent.DecRef(ctx)
 
 	// Add mounts at the following paths:
 	paths := []string{
@@ -240,7 +241,7 @@ func TestUnmount(t *testing.T) {
 		if err := mm.Mount(ctx, d, submountInode); err != nil {
 			t.Fatalf("could not mount at %q: %v", p, err)
 		}
-		d.DecRef()
+		d.DecRef(ctx)
 	}
 
 	allPaths := make([]string, len(paths)+1)
@@ -259,13 +260,13 @@ func TestUnmount(t *testing.T) {
 		if err := mm.Unmount(ctx, d, false); err != nil {
 			t.Fatalf("could not unmount at %q: %v", p, err)
 		}
-		d.DecRef()
+		d.DecRef(ctx)
 
 		// Remove the path that has been unmounted and the check that the remaining
 		// mounts are still there.
 		allPaths = allPaths[:len(allPaths)-1]
 		submounts := mm.AllMountsUnder(rootMnt)
-		if err := mountPathsAre(rootDirent, submounts, allPaths...); err != nil {
+		if err := mountPathsAre(ctx, rootDirent, submounts, allPaths...); err != nil {
 			t.Error(err)
 		}
 	}

@@ -101,7 +101,7 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 		// If this pipe is being opened as blocking and there's no
 		// writer, we have to wait for a writer to open the other end.
 		if vp.pipe.isNamed && statusFlags&linux.O_NONBLOCK == 0 && !vp.pipe.HasWriters() && !waitFor(&vp.mu, &vp.wWakeup, ctx) {
-			fd.DecRef()
+			fd.DecRef(ctx)
 			return nil, syserror.EINTR
 		}
 
@@ -112,12 +112,12 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 			// Non-blocking, write-only opens fail with ENXIO when the read
 			// side isn't open yet.
 			if statusFlags&linux.O_NONBLOCK != 0 {
-				fd.DecRef()
+				fd.DecRef(ctx)
 				return nil, syserror.ENXIO
 			}
 			// Wait for a reader to open the other end.
 			if !waitFor(&vp.mu, &vp.rWakeup, ctx) {
-				fd.DecRef()
+				fd.DecRef(ctx)
 				return nil, syserror.EINTR
 			}
 		}
@@ -169,7 +169,7 @@ type VFSPipeFD struct {
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *VFSPipeFD) Release() {
+func (fd *VFSPipeFD) Release(context.Context) {
 	var event waiter.EventMask
 	if fd.vfsfd.IsReadable() {
 		fd.pipe.rClose()

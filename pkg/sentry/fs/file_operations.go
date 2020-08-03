@@ -67,7 +67,7 @@ type SpliceOpts struct {
 // - File.Flags():	This value may change during the operation.
 type FileOperations interface {
 	// Release release resources held by FileOperations.
-	Release()
+	Release(ctx context.Context)
 
 	// Waitable defines how this File can be waited on for read and
 	// write readiness.

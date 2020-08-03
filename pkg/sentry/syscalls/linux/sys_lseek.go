@@ -33,7 +33,7 @@ func Lseek(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	var sw fs.SeekWhence
 	switch whence {

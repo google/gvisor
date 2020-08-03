@@ -168,7 +168,7 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 
 	// Construct the positive Dirent.
 	d := fs.NewDirent(ctx, fs.NewInode(ctx, iops, dir.MountSource, sattr), name)
-	defer d.DecRef()
+	defer d.DecRef(ctx)
 
 	// Construct the new file, caching the handles if allowed.
 	h := handles{
@@ -371,7 +371,7 @@ func (i *inodeOperations) Remove(ctx context.Context, dir *fs.Inode, name string
 		// Find out if file being deleted is a socket or pipe that needs to be
 		// removed from endpoint map.
 		if d, err := i.Lookup(ctx, dir, name); err == nil {
-			defer d.DecRef()
+			defer d.DecRef(ctx)
 
 			if fs.IsSocket(d.Inode.StableAttr) || fs.IsPipe(d.Inode.StableAttr) {
 				switch iops := d.Inode.InodeOperations.(type) {
@@ -392,7 +392,7 @@ func (i *inodeOperations) Remove(ctx context.Context, dir *fs.Inode, name string
 		return err
 	}
 	if key != nil {
-		i.session().overrides.remove(*key)
+		i.session().overrides.remove(ctx, *key)
 	}
 	i.touchModificationAndStatusChangeTime(ctx, dir)
 

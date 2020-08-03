@@ -51,7 +51,7 @@ type MountSourceOperations interface {
 	DirentOperations
 
 	// Destroy destroys the MountSource.
-	Destroy()
+	Destroy(ctx context.Context)
 
 	// Below are MountSourceOperations that do not conform to Linux.
 
@@ -165,16 +165,16 @@ func (msrc *MountSource) DecDirentRefs() {
 	}
 }
 
-func (msrc *MountSource) destroy() {
+func (msrc *MountSource) destroy(ctx context.Context) {
 	if c := msrc.DirentRefs(); c != 0 {
 		panic(fmt.Sprintf("MountSource with non-zero direntRefs is being destroyed: %d", c))
 	}
-	msrc.MountSourceOperations.Destroy()
+	msrc.MountSourceOperations.Destroy(ctx)
 }
 
 // DecRef drops a reference on the MountSource.
-func (msrc *MountSource) DecRef() {
-	msrc.DecRefWithDestructor(msrc.destroy)
+func (msrc *MountSource) DecRef(ctx context.Context) {
+	msrc.DecRefWithDestructor(ctx, msrc.destroy)
 }
 
 // FlushDirentRefs drops all references held by the MountSource on Dirents.
@@ -264,7 +264,7 @@ func (*SimpleMountSourceOperations) ResetInodeMappings() {}
 func (*SimpleMountSourceOperations) SaveInodeMapping(*Inode, string) {}
 
 // Destroy implements MountSourceOperations.Destroy.
-func (*SimpleMountSourceOperations) Destroy() {}
+func (*SimpleMountSourceOperations) Destroy(context.Context) {}
 
 // Info defines attributes of a filesystem.
 type Info struct {

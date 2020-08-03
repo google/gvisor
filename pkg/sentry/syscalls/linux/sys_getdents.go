@@ -68,7 +68,7 @@ func getdents(t *kernel.Task, fd int32, addr usermem.Addr, size int, f func(*dir
 	if dir == nil {
 		return 0, syserror.EBADF
 	}
-	defer dir.DecRef()
+	defer dir.DecRef(t)
 
 	w := &usermem.IOReadWriter{
 		Ctx:  t,

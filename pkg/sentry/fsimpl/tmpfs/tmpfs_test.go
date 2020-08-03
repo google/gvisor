@@ -34,7 +34,7 @@ func newTmpfsRoot(ctx context.Context) (*vfs.VirtualFilesystem, vfs.VirtualDentr
 	creds := auth.CredentialsFromContext(ctx)
 
 	vfsObj := &vfs.VirtualFilesystem{}
-	if err := vfsObj.Init(); err != nil {
+	if err := vfsObj.Init(ctx); err != nil {
 		return nil, vfs.VirtualDentry{}, nil, fmt.Errorf("VFS init: %v", err)
 	}
 
@@ -47,8 +47,8 @@ func newTmpfsRoot(ctx context.Context) (*vfs.VirtualFilesystem, vfs.VirtualDentr
 	}
 	root := mntns.Root()
 	return vfsObj, root, func() {
-		root.DecRef()
-		mntns.DecRef()
+		root.DecRef(ctx)
+		mntns.DecRef(ctx)
 	}, nil
 }
 

@@ -50,8 +50,8 @@ func NewSpecialMappable(name string, mfp pgalloc.MemoryFileProvider, fr memmap.F
 }
 
 // DecRef implements refs.RefCounter.DecRef.
-func (m *SpecialMappable) DecRef() {
-	m.AtomicRefCount.DecRefWithDestructor(func() {
+func (m *SpecialMappable) DecRef(ctx context.Context) {
+	m.AtomicRefCount.DecRefWithDestructor(ctx, func(context.Context) {
 		m.mfp.MemoryFile().DecRef(m.fr)
 	})
 }

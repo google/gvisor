@@ -110,7 +110,7 @@ func newFileFromDonatedFD(ctx context.Context, donated int, saveable, isTTY bool
 
 		name := fmt.Sprintf("host:[%d]", inode.StableAttr.InodeID)
 		dirent := fs.NewDirent(ctx, inode, name)
-		defer dirent.DecRef()
+		defer dirent.DecRef(ctx)
 
 		if isTTY {
 			return newTTYFile(ctx, dirent, flags, iops), nil
@@ -169,7 +169,7 @@ func (f *fileOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
 func (f *fileOperations) Readdir(ctx context.Context, file *fs.File, serializer fs.DentrySerializer) (int64, error) {
 	root := fs.RootFromContext(ctx)
 	if root != nil {
-		defer root.DecRef()
+		defer root.DecRef(ctx)
 	}
 	dirCtx := &fs.DirCtx{
 		Serializer: serializer,

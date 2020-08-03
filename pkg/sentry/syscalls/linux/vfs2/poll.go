@@ -73,7 +73,7 @@ func initReadiness(t *kernel.Task, pfd *linux.PollFD, state *pollState, ch chan 
 	}
 
 	if ch == nil {
-		defer file.DecRef()
+		defer file.DecRef(t)
 	} else {
 		state.file = file
 		state.waiter, _ = waiter.NewChannelEntry(ch)
@@ -85,11 +85,11 @@ func initReadiness(t *kernel.Task, pfd *linux.PollFD, state *pollState, ch chan 
 }
 
 // releaseState releases all the pollState in "state".
-func releaseState(state []pollState) {
+func releaseState(t *kernel.Task, state []pollState) {
 	for i := range state {
 		if state[i].file != nil {
 			state[i].file.EventUnregister(&state[i].waiter)
-			state[i].file.DecRef()
+			state[i].file.DecRef(t)
 		}
 	}
 }
@@ -110,7 +110,7 @@ func pollBlock(t *kernel.Task, pfd []linux.PollFD, timeout time.Duration) (time.
 	// result, we stop registering for events but still go through all files
 	// to get their ready masks.
 	state := make([]pollState, len(pfd))
-	defer releaseState(state)
+	defer releaseState(t, state)
 	n := uintptr(0)
 	for i := range pfd {
 		initReadiness(t, &pfd[i], &state[i], ch)
@@ -269,7 +269,7 @@ func doSelect(t *kernel.Task, nfds int, readFDs, writeFDs, exceptFDs usermem.Add
 				if file == nil {
 					return 0, syserror.EBADF
 				}
-				file.DecRef()
+				file.DecRef(t)
 
 				var mask int16
 				if (rV & m) != 0 {

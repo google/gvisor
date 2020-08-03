@@ -142,7 +142,7 @@ type directoryFD struct {
 var _ vfs.FileDescriptionImpl = (*directoryFD)(nil)
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *directoryFD) Release() {
+func (fd *directoryFD) Release(ctx context.Context) {
 	if fd.iter == nil {
 		return
 	}

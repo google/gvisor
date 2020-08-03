@@ -730,17 +730,17 @@ func (t *Task) SyscallRestartBlock() SyscallRestartBlock {
 func (t *Task) IsChrooted() bool {
 	if VFS2Enabled {
 		realRoot := t.mountNamespaceVFS2.Root()
-		defer realRoot.DecRef()
+		defer realRoot.DecRef(t)
 		root := t.fsContext.RootDirectoryVFS2()
-		defer root.DecRef()
+		defer root.DecRef(t)
 		return root != realRoot
 	}
 
 	realRoot := t.tg.mounts.Root()
-	defer realRoot.DecRef()
+	defer realRoot.DecRef(t)
 	root := t.fsContext.RootDirectory()
 	if root != nil {
-		defer root.DecRef()
+		defer root.DecRef(t)
 	}
 	return root != realRoot
 }

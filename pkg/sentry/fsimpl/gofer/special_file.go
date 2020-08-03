@@ -80,11 +80,11 @@ func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, locks *vfs.FileLocks,
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *specialFileFD) Release() {
+func (fd *specialFileFD) Release(ctx context.Context) {
 	if fd.haveQueue {
 		fdnotifier.RemoveFD(fd.handle.fd)
 	}
-	fd.handle.close(context.Background())
+	fd.handle.close(ctx)
 	fs := fd.vfsfd.Mount().Filesystem().Impl().(*filesystem)
 	fs.syncMu.Lock()
 	delete(fs.specialFileFDs, fd)

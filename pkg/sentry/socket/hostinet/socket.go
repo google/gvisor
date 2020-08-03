@@ -100,12 +100,12 @@ func newSocketFile(ctx context.Context, family int, stype linux.SockType, protoc
 		return nil, syserr.FromError(err)
 	}
 	dirent := socket.NewDirent(ctx, socketDevice)
-	defer dirent.DecRef()
+	defer dirent.DecRef(ctx)
 	return fs.NewFile(ctx, dirent, fs.FileFlags{NonBlocking: nonblock, Read: true, Write: true, NonSeekable: true}, s), nil
 }
 
 // Release implements fs.FileOperations.Release.
-func (s *socketOpsCommon) Release() {
+func (s *socketOpsCommon) Release(context.Context) {
 	fdnotifier.RemoveFD(int32(s.fd))
 	syscall.Close(s.fd)
 }
@@ -269,7 +269,7 @@ func (s *socketOpsCommon) Accept(t *kernel.Task, peerRequested bool, flags int, 
 			syscall.Close(fd)
 			return 0, nil, 0, err
 		}
-		defer f.DecRef()
+		defer f.DecRef(t)
 
 		kfd, kerr = t.NewFDFromVFS2(0, f, kernel.FDFlags{
 			CloseOnExec: flags&syscall.SOCK_CLOEXEC != 0,
@@ -281,7 +281,7 @@ func (s *socketOpsCommon) Accept(t *kernel.Task, peerRequested bool, flags int, 
 			syscall.Close(fd)
 			return 0, nil, 0, err
 		}
-		defer f.DecRef()
+		defer f.DecRef(t)
 
 		kfd, kerr = t.NewFDFrom(0, f, kernel.FDFlags{
 			CloseOnExec: flags&syscall.SOCK_CLOEXEC != 0,

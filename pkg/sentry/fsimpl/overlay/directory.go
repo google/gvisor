@@ -46,7 +46,7 @@ func (d *dentry) collectWhiteoutsForRmdirLocked(ctx context.Context) (map[string
 			readdirErr = err
 			return false
 		}
-		defer layerFD.DecRef()
+		defer layerFD.DecRef(ctx)
 
 		// Reuse slice allocated for maybeWhiteouts from a previous layer to
 		// reduce allocations.
@@ -108,7 +108,7 @@ type directoryFD struct {
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *directoryFD) Release() {
+func (fd *directoryFD) Release(ctx context.Context) {
 }
 
 // IterDirents implements vfs.FileDescriptionImpl.IterDirents.
@@ -177,7 +177,7 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 			readdirErr = err
 			return false
 		}
-		defer layerFD.DecRef()
+		defer layerFD.DecRef(ctx)
 
 		// Reuse slice allocated for maybeWhiteouts from a previous layer to
 		// reduce allocations.
@@ -282,6 +282,6 @@ func (fd *directoryFD) Sync(ctx context.Context) error {
 		return err
 	}
 	err = upperFD.Sync(ctx)
-	upperFD.DecRef()
+	upperFD.DecRef(ctx)
 	return err
 }

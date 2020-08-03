@@ -139,7 +139,7 @@ func NewConnectedEndpoint(ctx context.Context, hostFD int, addr string, saveable
 }
 
 // Send implements transport.ConnectedEndpoint.Send.
-func (c *ConnectedEndpoint) Send(data [][]byte, controlMessages transport.ControlMessages, from tcpip.FullAddress) (int64, bool, *syserr.Error) {
+func (c *ConnectedEndpoint) Send(ctx context.Context, data [][]byte, controlMessages transport.ControlMessages, from tcpip.FullAddress) (int64, bool, *syserr.Error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -216,7 +216,7 @@ func (c *ConnectedEndpoint) EventUpdate() {
 }
 
 // Recv implements transport.Receiver.Recv.
-func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights int, peek bool) (int64, int64, transport.ControlMessages, bool, tcpip.FullAddress, bool, *syserr.Error) {
+func (c *ConnectedEndpoint) Recv(ctx context.Context, data [][]byte, creds bool, numRights int, peek bool) (int64, int64, transport.ControlMessages, bool, tcpip.FullAddress, bool, *syserr.Error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -317,8 +317,8 @@ func (c *ConnectedEndpoint) destroyLocked() {
 
 // Release implements transport.ConnectedEndpoint.Release and
 // transport.Receiver.Release.
-func (c *ConnectedEndpoint) Release() {
-	c.ref.DecRefWithDestructor(func() {
+func (c *ConnectedEndpoint) Release(ctx context.Context) {
+	c.ref.DecRefWithDestructor(ctx, func(context.Context) {
 		c.mu.Lock()
 		c.destroyLocked()
 		c.mu.Unlock()
@@ -347,8 +347,8 @@ func (e *SCMConnectedEndpoint) Init() error {
 
 // Release implements transport.ConnectedEndpoint.Release and
 // transport.Receiver.Release.
-func (e *SCMConnectedEndpoint) Release() {
-	e.ref.DecRefWithDestructor(func() {
+func (e *SCMConnectedEndpoint) Release(ctx context.Context) {
+	e.ref.DecRefWithDestructor(ctx, func(context.Context) {
 		e.mu.Lock()
 		if err := syscall.Close(e.fd); err != nil {
 			log.Warningf("Failed to close host fd %d: %v", err)

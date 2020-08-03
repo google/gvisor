@@ -113,7 +113,7 @@ func (fd *GenericDirectoryFD) PWrite(ctx context.Context, src usermem.IOSequence
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *GenericDirectoryFD) Release() {}
+func (fd *GenericDirectoryFD) Release(context.Context) {}
 
 func (fd *GenericDirectoryFD) filesystem() *vfs.Filesystem {
 	return fd.vfsfd.VirtualDentry().Mount().Filesystem()

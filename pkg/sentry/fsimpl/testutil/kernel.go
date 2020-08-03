@@ -127,7 +127,7 @@ func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns 
 		return nil, err
 	}
 	m := mm.NewMemoryManager(k, k, k.SleepForAddressSpaceActivation)
-	m.SetExecutable(fsbridge.NewVFSFile(exe))
+	m.SetExecutable(ctx, fsbridge.NewVFSFile(exe))
 
 	config := &kernel.TaskConfig{
 		Kernel:                  k,

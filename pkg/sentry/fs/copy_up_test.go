@@ -126,7 +126,7 @@ func makeOverlayTestFiles(t *testing.T) []*overlayTestFile {
 		if err != nil {
 			t.Fatalf("failed to create file %q: %v", name, err)
 		}
-		defer f.DecRef()
+		defer f.DecRef(ctx)
 
 		relname, _ := f.Dirent.FullName(lowerRoot)
 
@@ -171,7 +171,7 @@ func makeOverlayTestFiles(t *testing.T) []*overlayTestFile {
 		if err != nil {
 			t.Fatalf("failed to find %q: %v", f.name, err)
 		}
-		defer d.DecRef()
+		defer d.DecRef(ctx)
 
 		f.File, err = d.Inode.GetFile(ctx, d, fs.FileFlags{Read: true})
 		if err != nil {

@@ -356,12 +356,12 @@ func newTestConnection(system *testutil.System, k *kernel.Kernel, maxActiveReque
 	vfsObj := &vfs.VirtualFilesystem{}
 	fuseDev := &DeviceFD{}
 
-	if err := vfsObj.Init(); err != nil {
+	if err := vfsObj.Init(system.Ctx); err != nil {
 		return nil, nil, err
 	}
 
 	vd := vfsObj.NewAnonVirtualDentry("genCountFD")
-	defer vd.DecRef()
+	defer vd.DecRef(system.Ctx)
 	if err := fuseDev.vfsfd.Init(fuseDev, linux.O_RDWR|linux.O_CREAT, vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{}); err != nil {
 		return nil, nil, err
 	}

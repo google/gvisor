@@ -27,8 +27,8 @@ import (
 func TestPipeRW(t *testing.T) {
 	ctx := contexttest.Context(t)
 	r, w := NewConnectedPipe(ctx, 65536, 4096)
-	defer r.DecRef()
-	defer w.DecRef()
+	defer r.DecRef(ctx)
+	defer w.DecRef(ctx)
 
 	msg := []byte("here's some bytes")
 	wantN := int64(len(msg))
@@ -47,8 +47,8 @@ func TestPipeRW(t *testing.T) {
 func TestPipeReadBlock(t *testing.T) {
 	ctx := contexttest.Context(t)
 	r, w := NewConnectedPipe(ctx, 65536, 4096)
-	defer r.DecRef()
-	defer w.DecRef()
+	defer r.DecRef(ctx)
+	defer w.DecRef(ctx)
 
 	n, err := r.Readv(ctx, usermem.BytesIOSequence(make([]byte, 1)))
 	if n != 0 || err != syserror.ErrWouldBlock {
@@ -62,8 +62,8 @@ func TestPipeWriteBlock(t *testing.T) {
 
 	ctx := contexttest.Context(t)
 	r, w := NewConnectedPipe(ctx, capacity, atomicIOBytes)
-	defer r.DecRef()
-	defer w.DecRef()
+	defer r.DecRef(ctx)
+	defer w.DecRef(ctx)
 
 	msg := make([]byte, capacity+1)
 	n, err := w.Writev(ctx, usermem.BytesIOSequence(msg))
@@ -77,8 +77,8 @@ func TestPipeWriteUntilEnd(t *testing.T) {
 
 	ctx := contexttest.Context(t)
 	r, w := NewConnectedPipe(ctx, atomicIOBytes, atomicIOBytes)
-	defer r.DecRef()
-	defer w.DecRef()
+	defer r.DecRef(ctx)
+	defer w.DecRef(ctx)
 
 	msg := []byte("here's some bytes")
 

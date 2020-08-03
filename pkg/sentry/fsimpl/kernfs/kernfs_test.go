@@ -46,7 +46,7 @@ func newTestSystem(t *testing.T, rootFn RootDentryFn) *testutil.System {
 	ctx := contexttest.Context(t)
 	creds := auth.CredentialsFromContext(ctx)
 	v := &vfs.VirtualFilesystem{}
-	if err := v.Init(); err != nil {
+	if err := v.Init(ctx); err != nil {
 		t.Fatalf("VFS init: %v", err)
 	}
 	v.MustRegisterFilesystemType("testfs", &fsType{rootFn: rootFn}, &vfs.RegisterFilesystemTypeOptions{
@@ -163,7 +163,7 @@ func (d *dir) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (*
 	dir := d.fs.newDir(creds, opts.Mode, nil)
 	dirVFSD := dir.VFSDentry()
 	if err := d.OrderedChildren.Insert(name, dirVFSD); err != nil {
-		dir.DecRef()
+		dir.DecRef(ctx)
 		return nil, err
 	}
 	d.IncLinks(1)
@@ -175,7 +175,7 @@ func (d *dir) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (*
 	f := d.fs.newFile(creds, "")
 	fVFSD := f.VFSDentry()
 	if err := d.OrderedChildren.Insert(name, fVFSD); err != nil {
-		f.DecRef()
+		f.DecRef(ctx)
 		return nil, err
 	}
 	return fVFSD, nil
@@ -213,7 +213,7 @@ func TestBasic(t *testing.T) {
 		})
 	})
 	defer sys.Destroy()
-	sys.GetDentryOrDie(sys.PathOpAtRoot("file1")).DecRef()
+	sys.GetDentryOrDie(sys.PathOpAtRoot("file1")).DecRef(sys.Ctx)
 }
 
 func TestMkdirGetDentry(t *testing.T) {
@@ -228,7 +228,7 @@ func TestMkdirGetDentry(t *testing.T) {
 	if err := sys.VFS.MkdirAt(sys.Ctx, sys.Creds, pop, &vfs.MkdirOptions{Mode: 0755}); err != nil {
 		t.Fatalf("MkdirAt for PathOperation %+v failed: %v", pop, err)
 	}
-	sys.GetDentryOrDie(pop).DecRef()
+	sys.GetDentryOrDie(pop).DecRef(sys.Ctx)
 }
 
 func TestReadStaticFile(t *testing.T) {
@@ -246,7 +246,7 @@ func TestReadStaticFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenAt for PathOperation %+v failed: %v", pop, err)
 	}
-	defer fd.DecRef()
+	defer fd.DecRef(sys.Ctx)
 
 	content, err := sys.ReadToEnd(fd)
 	if err != nil {
@@ -273,7 +273,7 @@ func TestCreateNewFileInStaticDir(t *testing.T) {
 	}
 
 	// Close the file. The file should persist.
-	fd.DecRef()
+	fd.DecRef(sys.Ctx)
 
 	fd, err = sys.VFS.OpenAt(sys.Ctx, sys.Creds, pop, &vfs.OpenOptions{
 		Flags: linux.O_RDONLY,
@@ -281,7 +281,7 @@ func TestCreateNewFileInStaticDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenAt(pop:%+v) = %+v failed: %v", pop, fd, err)
 	}
-	fd.DecRef()
+	fd.DecRef(sys.Ctx)
 }
 
 func TestDirFDReadWrite(t *testing.T) {
@@ -297,7 +297,7 @@ func TestDirFDReadWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenAt for PathOperation %+v failed: %v", pop, err)
 	}
-	defer fd.DecRef()
+	defer fd.DecRef(sys.Ctx)
 
 	// Read/Write should fail for directory FDs.
 	if _, err := fd.Read(sys.Ctx, usermem.BytesIOSequence([]byte{}), vfs.ReadOptions{}); err != syserror.EISDIR {

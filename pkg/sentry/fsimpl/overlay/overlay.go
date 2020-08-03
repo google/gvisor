@@ -123,7 +123,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		// filesystem with any number of lower layers.
 	} else {
 		vfsroot := vfs.RootFromContext(ctx)
-		defer vfsroot.DecRef()
+		defer vfsroot.DecRef(ctx)
 		upperPathname, ok := mopts["upperdir"]
 		if ok {
 			delete(mopts, "upperdir")
@@ -147,13 +147,13 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 				ctx.Warningf("overlay.FilesystemType.GetFilesystem: failed to resolve upperdir %q: %v", upperPathname, err)
 				return nil, nil, err
 			}
-			defer upperRoot.DecRef()
+			defer upperRoot.DecRef(ctx)
 			privateUpperRoot, err := clonePrivateMount(vfsObj, upperRoot, false /* forceReadOnly */)
 			if err != nil {
 				ctx.Warningf("overlay.FilesystemType.GetFilesystem: failed to make private bind mount of upperdir %q: %v", upperPathname, err)
 				return nil, nil, err
 			}
-			defer privateUpperRoot.DecRef()
+			defer privateUpperRoot.DecRef(ctx)
 			fsopts.UpperRoot = privateUpperRoot
 		}
 		lowerPathnamesStr, ok := mopts["lowerdir"]
@@ -190,13 +190,13 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 				ctx.Warningf("overlay.FilesystemType.GetFilesystem: failed to resolve lowerdir %q: %v", lowerPathname, err)
 				return nil, nil, err
 			}
-			defer lowerRoot.DecRef()
+			defer lowerRoot.DecRef(ctx)
 			privateLowerRoot, err := clonePrivateMount(vfsObj, lowerRoot, true /* forceReadOnly */)
 			if err != nil {
 				ctx.Warningf("overlay.FilesystemType.GetFilesystem: failed to make private bind mount of lowerdir %q: %v", lowerPathname, err)
 				return nil, nil, err
 			}
-			defer privateLowerRoot.DecRef()
+			defer privateLowerRoot.DecRef(ctx)
 			fsopts.LowerRoots = append(fsopts.LowerRoots, privateLowerRoot)
 		}
 	}
@@ -264,19 +264,19 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		Mask: rootStatMask,
 	})
 	if err != nil {
-		root.destroyLocked()
-		fs.vfsfs.DecRef()
+		root.destroyLocked(ctx)
+		fs.vfsfs.DecRef(ctx)
 		return nil, nil, err
 	}
 	if rootStat.Mask&rootStatMask != rootStatMask {
-		root.destroyLocked()
-		fs.vfsfs.DecRef()
+		root.destroyLocked(ctx)
+		fs.vfsfs.DecRef(ctx)
 		return nil, nil, syserror.EREMOTE
 	}
 	if isWhiteout(&rootStat) {
 		ctx.Warningf("overlay.FilesystemType.GetFilesystem: filesystem root is a whiteout")
-		root.destroyLocked()
-		fs.vfsfs.DecRef()
+		root.destroyLocked(ctx)
+		fs.vfsfs.DecRef(ctx)
 		return nil, nil, syserror.EINVAL
 	}
 	root.mode = uint32(rootStat.Mode)
@@ -319,17 +319,17 @@ func clonePrivateMount(vfsObj *vfs.VirtualFilesystem, vd vfs.VirtualDentry, forc
 }
 
 // Release implements vfs.FilesystemImpl.Release.
-func (fs *filesystem) Release() {
+func (fs *filesystem) Release(ctx context.Context) {
 	vfsObj := fs.vfsfs.VirtualFilesystem()
 	vfsObj.PutAnonBlockDevMinor(fs.dirDevMinor)
 	for _, lowerDevMinor := range fs.lowerDevMinors {
 		vfsObj.PutAnonBlockDevMinor(lowerDevMinor)
 	}
 	if fs.opts.UpperRoot.Ok() {
-		fs.opts.UpperRoot.DecRef()
+		fs.opts.UpperRoot.DecRef(ctx)
 	}
 	for _, lowerRoot := range fs.opts.LowerRoots {
-		lowerRoot.DecRef()
+		lowerRoot.DecRef(ctx)
 	}
 }
 
@@ -452,10 +452,10 @@ func (d *dentry) TryIncRef() bool {
 }
 
 // DecRef implements vfs.DentryImpl.DecRef.
-func (d *dentry) DecRef() {
+func (d *dentry) DecRef(ctx context.Context) {
 	if refs := atomic.AddInt64(&d.refs, -1); refs == 0 {
 		d.fs.renameMu.Lock()
-		d.checkDropLocked()
+		d.checkDropLocked(ctx)
 		d.fs.renameMu.Unlock()
 	} else if refs < 0 {
 		panic("overlay.dentry.DecRef() called without holding a reference")
@@ -466,7 +466,7 @@ func (d *dentry) DecRef() {
 // becomes deleted.
 //
 // Preconditions: d.fs.renameMu must be locked for writing.
-func (d *dentry) checkDropLocked() {
+func (d *dentry) checkDropLocked(ctx context.Context) {
 	// Dentries with a positive reference count must be retained. (The only way
 	// to obtain a reference on a dentry with zero references is via path
 	// resolution, which requires renameMu, so if d.refs is zero then it will
@@ -476,14 +476,14 @@ func (d *dentry) checkDropLocked() {
 		return
 	}
 	// Refs is still zero; destroy it.
-	d.destroyLocked()
+	d.destroyLocked(ctx)
 	return
 }
 
 // destroyLocked destroys the dentry.
 //
 // Preconditions: d.fs.renameMu must be locked for writing. d.refs == 0.
-func (d *dentry) destroyLocked() {
+func (d *dentry) destroyLocked(ctx context.Context) {
 	switch atomic.LoadInt64(&d.refs) {
 	case 0:
 		// Mark the dentry destroyed.
@@ -495,10 +495,10 @@ func (d *dentry) destroyLocked() {
 	}
 
 	if d.upperVD.Ok() {
-		d.upperVD.DecRef()
+		d.upperVD.DecRef(ctx)
 	}
 	for _, lowerVD := range d.lowerVDs {
-		lowerVD.DecRef()
+		lowerVD.DecRef(ctx)
 	}
 
 	if d.parent != nil {
@@ -510,7 +510,7 @@ func (d *dentry) destroyLocked() {
 		// Drop the reference held by d on its parent without recursively
 		// locking d.fs.renameMu.
 		if refs := atomic.AddInt64(&d.parent.refs, -1); refs == 0 {
-			d.parent.checkDropLocked()
+			d.parent.checkDropLocked(ctx)
 		} else if refs < 0 {
 			panic("overlay.dentry.DecRef() called without holding a reference")
 		}
@@ -518,7 +518,7 @@ func (d *dentry) destroyLocked() {
 }
 
 // InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
-func (d *dentry) InotifyWithParent(events uint32, cookie uint32, et vfs.EventType) {
+func (d *dentry) InotifyWithParent(ctx context.Context, events uint32, cookie uint32, et vfs.EventType) {
 	// TODO(gvisor.dev/issue/1479): Implement inotify.
 }
 
@@ -531,7 +531,7 @@ func (d *dentry) Watches() *vfs.Watches {
 // OnZeroWatches implements vfs.DentryImpl.OnZeroWatches.
 //
 // TODO(gvisor.dev/issue/1479): Implement inotify.
-func (d *dentry) OnZeroWatches() {}
+func (d *dentry) OnZeroWatches(context.Context) {}
 
 // iterLayers invokes yield on each layer comprising d, from top to bottom. If
 // any call to yield returns false, iterLayer stops iteration.
