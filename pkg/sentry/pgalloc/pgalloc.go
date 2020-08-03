@@ -409,7 +409,6 @@ func (f *MemoryFile) Allocate(length uint64, kind usage.MemoryKind) (memmap.File
 		f.mappingsMu.Unlock()
 	}
 
-	// Mark selected pages as in use.
 	if f.opts.ManualZeroing {
 		if err := f.forEachMappingSlice(fr, func(bs []byte) {
 			for i := range bs {
@@ -419,6 +418,7 @@ func (f *MemoryFile) Allocate(length uint64, kind usage.MemoryKind) (memmap.File
 			return memmap.FileRange{}, err
 		}
 	}
+	// Mark selected pages as in use.
 	if !f.usage.Add(fr, usageInfo{
 		kind: kind,
 		refs: 1,
