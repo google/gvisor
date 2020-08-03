@@ -325,7 +325,7 @@ func (d *Dirent) SyncAll(ctx context.Context) {
 	for _, w := range d.children {
 		if child := w.Get(); child != nil {
 			child.(*Dirent).SyncAll(ctx)
-			child.DecRef()
+			child.DecRef(ctx)
 		}
 	}
 }
@@ -451,7 +451,7 @@ func (d *Dirent) walk(ctx context.Context, root *Dirent, name string, walkMayUnl
 				// which don't hold a hard reference on their parent (their parent holds a
 				// hard reference on them, and they contain virtually no state). But this is
 				// good house-keeping.
-				child.DecRef()
+				child.DecRef(ctx)
 				return nil, syscall.ENOENT
 			}
 
@@ -468,20 +468,20 @@ func (d *Dirent) walk(ctx context.Context, root *Dirent, name string, walkMayUnl
 			// their pins on the child. Inotify doesn't properly support filesystems that
 			// revalidate dirents (since watches are lost on revalidation), but if we fail
 			// to unpin the watches child will never be GCed.
-			cd.Inode.Watches.Unpin(cd)
+			cd.Inode.Watches.Unpin(ctx, cd)
 
 			// This child needs to be revalidated, fallthrough to unhash it. Make sure
 			// to not leak a reference from Get().
 			//
 			// Note that previous lookups may still have a reference to this stale child;
 			// this can't be helped, but we can ensure that *new* lookups are up-to-date.
-			child.DecRef()
+			child.DecRef(ctx)
 		}
 
 		// Either our weak reference expired or we need to revalidate it. Unhash child first, we're
 		// about to replace it.
 		delete(d.children, name)
-		w.Drop()
+		w.Drop(ctx)
 	}
 
 	// Slow path: load the InodeOperations into memory. Since this is a hot path and the lookup may be
@@ -512,12 +512,12 @@ func (d *Dirent) walk(ctx context.Context, root *Dirent, name string, walkMayUnl
 			// There are active references to the existing child, prefer it to the one we
 			// retrieved from Lookup. Likely the Lookup happened very close to the insertion
 			// of child, so considering one stale over the other is fairly arbitrary.
-			c.DecRef()
+			c.DecRef(ctx)
 
 			// The child that was installed could be negative.
 			if cd.IsNegative() {
 				// If so, don't leak a reference and short circuit.
-				child.DecRef()
+				child.DecRef(ctx)
 				return nil, syscall.ENOENT
 			}
 
@@ -531,7 +531,7 @@ func (d *Dirent) walk(ctx context.Context, root *Dirent, name string, walkMayUnl
 		// we did the Inode.Lookup. Fully drop the weak reference and fallback to using the child
 		// we looked up.
 		delete(d.children, name)
-		w.Drop()
+		w.Drop(ctx)
 	}
 
 	// Give the looked up child a parent. We cannot kick out entries, since we just checked above
@@ -587,7 +587,7 @@ func (d *Dirent) exists(ctx context.Context, root *Dirent, name string) bool {
 		return false
 	}
 	// Child exists.
-	child.DecRef()
+	child.DecRef(ctx)
 	return true
 }
 
@@ -622,7 +622,7 @@ func (d *Dirent) Create(ctx context.Context, root *Dirent, name string, flags Fi
 	}
 	child := file.Dirent
 
-	d.finishCreate(child, name)
+	d.finishCreate(ctx, child, name)
 
 	// Return the reference and the new file. When the last reference to
 	// the file is dropped, file.Dirent may no longer be cached.
@@ -631,7 +631,7 @@ func (d *Dirent) Create(ctx context.Context, root *Dirent, name string, flags Fi
 
 // finishCreate validates the created file, adds it as a child of this dirent,
 // and notifies any watchers.
-func (d *Dirent) finishCreate(child *Dirent, name string) {
+func (d *Dirent) finishCreate(ctx context.Context, child *Dirent, name string) {
 	// Sanity check c, its name must be consistent.
 	if child.name != name {
 		panic(fmt.Sprintf("create from %q to %q returned unexpected name %q", d.name, name, child.name))
@@ -650,14 +650,14 @@ func (d *Dirent) finishCreate(child *Dirent, name string) {
 				panic(fmt.Sprintf("hashed child %q over a positive child", child.name))
 			}
 			// Don't leak a reference.
-			old.DecRef()
+			old.DecRef(ctx)
 
 			// Drop d's reference.
-			old.DecRef()
+			old.DecRef(ctx)
 		}
 
 		// Finally drop the useless weak reference on the floor.
-		w.Drop()
+		w.Drop(ctx)
 	}
 
 	d.Inode.Watches.Notify(name, linux.IN_CREATE, 0)
@@ -686,17 +686,17 @@ func (d *Dirent) genericCreate(ctx context.Context, root *Dirent, name string, c
 				panic(fmt.Sprintf("hashed over a positive child %q", old.(*Dirent).name))
 			}
 			// Don't leak a reference.
-			old.DecRef()
+			old.DecRef(ctx)
 
 			// Drop d's reference.
-			old.DecRef()
+			old.DecRef(ctx)
 		}
 
 		// Unhash the negative Dirent, name needs to exist now.
 		delete(d.children, name)
 
 		// Finally drop the useless weak reference on the floor.
-		w.Drop()
+		w.Drop(ctx)
 	}
 
 	// Execute the create operation.
@@ -756,7 +756,7 @@ func (d *Dirent) Bind(ctx context.Context, root *Dirent, name string, data trans
 		if e != nil {
 			return e
 		}
-		d.finishCreate(childDir, name)
+		d.finishCreate(ctx, childDir, name)
 		return nil
 	})
 	if err == syscall.EEXIST {
@@ -901,7 +901,7 @@ func direntReaddir(ctx context.Context, d *Dirent, it DirIterator, root *Dirent,
 // references to children.
 //
 // Preconditions: d.mu must be held.
-func (d *Dirent) flush() {
+func (d *Dirent) flush(ctx context.Context) {
 	expired := make(map[string]*refs.WeakRef)
 	for n, w := range d.children {
 		// Call flush recursively on each child before removing our
@@ -912,7 +912,7 @@ func (d *Dirent) flush() {
 			if !cd.IsNegative() {
 				// Flush the child.
 				cd.mu.Lock()
-				cd.flush()
+				cd.flush(ctx)
 				cd.mu.Unlock()
 
 				// Allow the file system to drop extra references on child.
@@ -920,13 +920,13 @@ func (d *Dirent) flush() {
 			}
 
 			// Don't leak a reference.
-			child.DecRef()
+			child.DecRef(ctx)
 		}
 		// Check if the child dirent is closed, and mark it as expired if it is.
 		// We must call w.Get() again here, since the child could have been closed
 		// by the calls to flush() and cache.Remove() in the above if-block.
 		if child := w.Get(); child != nil {
-			child.DecRef()
+			child.DecRef(ctx)
 		} else {
 			expired[n] = w
 		}
@@ -935,7 +935,7 @@ func (d *Dirent) flush() {
 	// Remove expired entries.
 	for n, w := range expired {
 		delete(d.children, n)
-		w.Drop()
+		w.Drop(ctx)
 	}
 }
 
@@ -977,7 +977,7 @@ func (d *Dirent) mount(ctx context.Context, inode *Inode) (newChild *Dirent, err
 	if !ok {
 		panic("mount must mount over an existing dirent")
 	}
-	weakRef.Drop()
+	weakRef.Drop(ctx)
 
 	// Note that even though `d` is now hidden, it still holds a reference
 	// to its parent.
@@ -1002,13 +1002,13 @@ func (d *Dirent) unmount(ctx context.Context, replacement *Dirent) error {
 	if !ok {
 		panic("mount must mount over an existing dirent")
 	}
-	weakRef.Drop()
+	weakRef.Drop(ctx)
 
 	// d is not reachable anymore, and hence not mounted anymore.
 	d.mounted = false
 
 	// Drop mount reference.
-	d.DecRef()
+	d.DecRef(ctx)
 	return nil
 }
 
@@ -1029,7 +1029,7 @@ func (d *Dirent) Remove(ctx context.Context, root *Dirent, name string, dirPath 
 		// Child does not exist.
 		return err
 	}
-	defer child.DecRef()
+	defer child.DecRef(ctx)
 
 	// Remove cannot remove directories.
 	if IsDir(child.Inode.StableAttr) {
@@ -1055,7 +1055,7 @@ func (d *Dirent) Remove(ctx context.Context, root *Dirent, name string, dirPath 
 	atomic.StoreInt32(&child.deleted, 1)
 	if w, ok := d.children[name]; ok {
 		delete(d.children, name)
-		w.Drop()
+		w.Drop(ctx)
 	}
 
 	// Allow the file system to drop extra references on child.
@@ -1067,7 +1067,7 @@ func (d *Dirent) Remove(ctx context.Context, root *Dirent, name string, dirPath 
 	// inode may have other links. If this was the last link, the events for the
 	// watch removal will be queued by the inode destructor.
 	child.Inode.Watches.MarkUnlinked()
-	child.Inode.Watches.Unpin(child)
+	child.Inode.Watches.Unpin(ctx, child)
 	d.Inode.Watches.Notify(name, linux.IN_DELETE, 0)
 
 	return nil
@@ -1100,7 +1100,7 @@ func (d *Dirent) RemoveDirectory(ctx context.Context, root *Dirent, name string)
 		// Child does not exist.
 		return err
 	}
-	defer child.DecRef()
+	defer child.DecRef(ctx)
 
 	// RemoveDirectory can only remove directories.
 	if !IsDir(child.Inode.StableAttr) {
@@ -1121,7 +1121,7 @@ func (d *Dirent) RemoveDirectory(ctx context.Context, root *Dirent, name string)
 	atomic.StoreInt32(&child.deleted, 1)
 	if w, ok := d.children[name]; ok {
 		delete(d.children, name)
-		w.Drop()
+		w.Drop(ctx)
 	}
 
 	// Allow the file system to drop extra references on child.
@@ -1130,14 +1130,14 @@ func (d *Dirent) RemoveDirectory(ctx context.Context, root *Dirent, name string)
 	// Finally, let inotify know the child is being unlinked. Drop any extra
 	// refs from inotify to this child dirent.
 	child.Inode.Watches.MarkUnlinked()
-	child.Inode.Watches.Unpin(child)
+	child.Inode.Watches.Unpin(ctx, child)
 	d.Inode.Watches.Notify(name, linux.IN_ISDIR|linux.IN_DELETE, 0)
 
 	return nil
 }
 
 // destroy closes this node and all children.
-func (d *Dirent) destroy() {
+func (d *Dirent) destroy(ctx context.Context) {
 	if d.IsNegative() {
 		// Nothing to tear-down and no parent references to drop, since a negative
 		// Dirent does not take a references on its parent, has no Inode and no children.
@@ -1153,19 +1153,19 @@ func (d *Dirent) destroy() {
 			if c.(*Dirent).IsNegative() {
 				// The parent holds both weak and strong refs in the case of
 				// negative dirents.
-				c.DecRef()
+				c.DecRef(ctx)
 			}
 			// Drop the reference we just acquired in WeakRef.Get.
-			c.DecRef()
+			c.DecRef(ctx)
 		}
-		w.Drop()
+		w.Drop(ctx)
 	}
 	d.children = nil
 
 	allDirents.remove(d)
 
 	// Drop our reference to the Inode.
-	d.Inode.DecRef()
+	d.Inode.DecRef(ctx)
 
 	// Allow the Dirent to be GC'ed after this point, since the Inode may still
 	// be referenced after the Dirent is destroyed (for instance by filesystem
@@ -1175,7 +1175,7 @@ func (d *Dirent) destroy() {
 	// Drop the reference we have on our parent if we took one. renameMu doesn't need to be
 	// held because d can't be reparented without any references to it left.
 	if d.parent != nil {
-		d.parent.DecRef()
+		d.parent.DecRef(ctx)
 	}
 }
 
@@ -1201,14 +1201,14 @@ func (d *Dirent) TryIncRef() bool {
 // DecRef decreases the Dirent's refcount and drops its reference on its mount.
 //
 // DecRef implements RefCounter.DecRef with destructor d.destroy.
-func (d *Dirent) DecRef() {
+func (d *Dirent) DecRef(ctx context.Context) {
 	if d.Inode != nil {
 		// Keep mount around, since DecRef may destroy d.Inode.
 		msrc := d.Inode.MountSource
-		d.DecRefWithDestructor(d.destroy)
+		d.DecRefWithDestructor(ctx, d.destroy)
 		msrc.DecDirentRefs()
 	} else {
-		d.DecRefWithDestructor(d.destroy)
+		d.DecRefWithDestructor(ctx, d.destroy)
 	}
 }
 
@@ -1359,7 +1359,7 @@ func (d *Dirent) MayDelete(ctx context.Context, root *Dirent, name string) error
 	if err != nil {
 		return err
 	}
-	defer victim.DecRef()
+	defer victim.DecRef(ctx)
 
 	return d.mayDelete(ctx, victim)
 }
@@ -1411,7 +1411,7 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 	if err != nil {
 		return err
 	}
-	defer renamed.DecRef()
+	defer renamed.DecRef(ctx)
 
 	// Check that the renamed dirent is deletable.
 	if err := oldParent.mayDelete(ctx, renamed); err != nil {
@@ -1453,13 +1453,13 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 
 		// Check that we can delete replaced.
 		if err := newParent.mayDelete(ctx, replaced); err != nil {
-			replaced.DecRef()
+			replaced.DecRef(ctx)
 			return err
 		}
 
 		// Target should not be an ancestor of source.
 		if oldParent.descendantOf(replaced) {
-			replaced.DecRef()
+			replaced.DecRef(ctx)
 
 			// Note that Linux returns EINVAL if the source is an
 			// ancestor of target, but ENOTEMPTY if the target is
@@ -1470,7 +1470,7 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 
 		// Check that replaced is not a mount point.
 		if replaced.isMountPointLocked() {
-			replaced.DecRef()
+			replaced.DecRef(ctx)
 			return syscall.EBUSY
 		}
 
@@ -1478,11 +1478,11 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 		oldIsDir := IsDir(renamed.Inode.StableAttr)
 		newIsDir := IsDir(replaced.Inode.StableAttr)
 		if !newIsDir && oldIsDir {
-			replaced.DecRef()
+			replaced.DecRef(ctx)
 			return syscall.ENOTDIR
 		}
 		if !oldIsDir && newIsDir {
-			replaced.DecRef()
+			replaced.DecRef(ctx)
 			return syscall.EISDIR
 		}
 
@@ -1493,13 +1493,13 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 		// open across renames is currently broken for multiple
 		// reasons, so we flush all references on the replaced node and
 		// its children.
-		replaced.Inode.Watches.Unpin(replaced)
+		replaced.Inode.Watches.Unpin(ctx, replaced)
 		replaced.mu.Lock()
-		replaced.flush()
+		replaced.flush(ctx)
 		replaced.mu.Unlock()
 
 		// Done with replaced.
-		replaced.DecRef()
+		replaced.DecRef(ctx)
 	}
 
 	if err := renamed.Inode.Rename(ctx, oldParent, renamed, newParent, newName, replaced != nil); err != nil {
@@ -1513,14 +1513,14 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 		// can't destroy oldParent (and try to retake its lock) because
 		// Rename's caller must be holding a reference.
 		newParent.IncRef()
-		oldParent.DecRef()
+		oldParent.DecRef(ctx)
 	}
 	if w, ok := newParent.children[newName]; ok {
-		w.Drop()
+		w.Drop(ctx)
 		delete(newParent.children, newName)
 	}
 	if w, ok := oldParent.children[oldName]; ok {
-		w.Drop()
+		w.Drop(ctx)
 		delete(oldParent.children, oldName)
 	}
 
@@ -1551,7 +1551,7 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 
 	// Same as replaced.flush above.
 	renamed.mu.Lock()
-	renamed.flush()
+	renamed.flush(ctx)
 	renamed.mu.Unlock()
 
 	return nil

@@ -152,7 +152,7 @@ func NewConnectedPipe(ctx context.Context, sizeBytes, atomicIOBytes int64) (*fs.
 	d := fs.NewDirent(ctx, fs.NewInode(ctx, iops, ms, sattr), fmt.Sprintf("pipe:[%d]", ino))
 	// The p.Open calls below will each take a reference on the Dirent. We
 	// must drop the one we already have.
-	defer d.DecRef()
+	defer d.DecRef(ctx)
 	return p.Open(ctx, d, fs.FileFlags{Read: true}), p.Open(ctx, d, fs.FileFlags{Write: true})
 }
 

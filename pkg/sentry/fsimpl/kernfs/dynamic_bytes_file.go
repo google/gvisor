@@ -122,7 +122,7 @@ func (fd *DynamicBytesFD) PWrite(ctx context.Context, src usermem.IOSequence, of
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *DynamicBytesFD) Release() {}
+func (fd *DynamicBytesFD) Release(context.Context) {}
 
 // Stat implements vfs.FileDescriptionImpl.Stat.
 func (fd *DynamicBytesFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {

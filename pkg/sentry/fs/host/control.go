@@ -57,7 +57,7 @@ func (c *scmRights) Clone() transport.RightsControlMessage {
 }
 
 // Release implements transport.RightsControlMessage.Release.
-func (c *scmRights) Release() {
+func (c *scmRights) Release(ctx context.Context) {
 	for _, fd := range c.fds {
 		syscall.Close(fd)
 	}

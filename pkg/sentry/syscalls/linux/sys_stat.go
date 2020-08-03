@@ -58,7 +58,7 @@ func Fstatat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 		if file == nil {
 			return 0, nil, syserror.EBADF
 		}
-		defer file.DecRef()
+		defer file.DecRef(t)
 
 		return 0, nil, fstat(t, file, statAddr)
 	}
@@ -100,7 +100,7 @@ func Fstat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	return 0, nil, fstat(t, file, statAddr)
 }
@@ -158,7 +158,7 @@ func Statx(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		if file == nil {
 			return 0, nil, syserror.EBADF
 		}
-		defer file.DecRef()
+		defer file.DecRef(t)
 		uattr, err := file.UnstableAttr(t)
 		if err != nil {
 			return 0, nil, err
@@ -249,7 +249,7 @@ func Fstatfs(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	return 0, nil, statfsImpl(t, file.Dirent, statfsAddr)
 }

@@ -43,12 +43,12 @@ func getTaskFD(t *kernel.Task, fd int32) (*vfs.FileDescription, kernel.FDFlags) 
 	return file, flags
 }
 
-func taskFDExists(t *kernel.Task, fd int32) bool {
+func taskFDExists(ctx context.Context, t *kernel.Task, fd int32) bool {
 	file, _ := getTaskFD(t, fd)
 	if file == nil {
 		return false
 	}
-	file.DecRef()
+	file.DecRef(ctx)
 	return true
 }
 
@@ -68,7 +68,7 @@ func (i *fdDir) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback, off
 	var fds []int32
 	i.task.WithMuLocked(func(t *kernel.Task) {
 		if fdTable := t.FDTable(); fdTable != nil {
-			fds = fdTable.GetFDs()
+			fds = fdTable.GetFDs(ctx)
 		}
 	})
 
@@ -135,7 +135,7 @@ func (i *fdDirInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, erro
 		return nil, syserror.ENOENT
 	}
 	fd := int32(fdInt)
-	if !taskFDExists(i.task, fd) {
+	if !taskFDExists(ctx, i.task, fd) {
 		return nil, syserror.ENOENT
 	}
 	taskDentry := i.fs.newFDSymlink(i.task, fd, i.fs.NextIno())
@@ -204,9 +204,9 @@ func (s *fdSymlink) Readlink(ctx context.Context) (string, error) {
 	if file == nil {
 		return "", syserror.ENOENT
 	}
-	defer file.DecRef()
+	defer file.DecRef(ctx)
 	root := vfs.RootFromContext(ctx)
-	defer root.DecRef()
+	defer root.DecRef(ctx)
 	return s.task.Kernel().VFS().PathnameWithDeleted(ctx, root, file.VirtualDentry())
 }
 
@@ -215,7 +215,7 @@ func (s *fdSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualDen
 	if file == nil {
 		return vfs.VirtualDentry{}, "", syserror.ENOENT
 	}
-	defer file.DecRef()
+	defer file.DecRef(ctx)
 	vd := file.VirtualDentry()
 	vd.IncRef()
 	return vd, "", nil
@@ -258,7 +258,7 @@ func (i *fdInfoDirInode) Lookup(ctx context.Context, name string) (*vfs.Dentry, 
 		return nil, syserror.ENOENT
 	}
 	fd := int32(fdInt)
-	if !taskFDExists(i.task, fd) {
+	if !taskFDExists(ctx, i.task, fd) {
 		return nil, syserror.ENOENT
 	}
 	data := &fdInfoData{
@@ -297,7 +297,7 @@ func (d *fdInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	if file == nil {
 		return syserror.ENOENT
 	}
-	defer file.DecRef()
+	defer file.DecRef(ctx)
 	// TODO(b/121266871): Include pos, locks, and other data. For now we only
 	// have flags.
 	// See https://www.kernel.org/doc/Documentation/filesystems/proc.txt

@@ -48,7 +48,7 @@ type regularFileFD struct {
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *regularFileFD) Release() {
+func (fd *regularFileFD) Release(context.Context) {
 }
 
 // OnClose implements vfs.FileDescriptionImpl.OnClose.

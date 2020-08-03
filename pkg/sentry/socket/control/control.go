@@ -68,7 +68,7 @@ func NewSCMRights(t *kernel.Task, fds []int32) (SCMRights, error) {
 	for _, fd := range fds {
 		file := t.GetFile(fd)
 		if file == nil {
-			files.Release()
+			files.Release(t)
 			return nil, syserror.EBADF
 		}
 		files = append(files, file)
@@ -100,9 +100,9 @@ func (fs *RightsFiles) Clone() transport.RightsControlMessage {
 }
 
 // Release implements transport.RightsControlMessage.Release.
-func (fs *RightsFiles) Release() {
+func (fs *RightsFiles) Release(ctx context.Context) {
 	for _, f := range *fs {
-		f.DecRef()
+		f.DecRef(ctx)
 	}
 	*fs = nil
 }
@@ -115,7 +115,7 @@ func rightsFDs(t *kernel.Task, rights SCMRights, cloexec bool, max int) ([]int32
 		fd, err := t.NewFDFrom(0, files[0], kernel.FDFlags{
 			CloseOnExec: cloexec,
 		})
-		files[0].DecRef()
+		files[0].DecRef(t)
 		files = files[1:]
 		if err != nil {
 			t.Warningf("Error inserting FD: %v", err)

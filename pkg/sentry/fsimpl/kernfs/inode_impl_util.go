@@ -40,7 +40,7 @@ func (InodeNoopRefCount) IncRef() {
 }
 
 // DecRef implements Inode.DecRef.
-func (InodeNoopRefCount) DecRef() {
+func (InodeNoopRefCount) DecRef(context.Context) {
 }
 
 // TryIncRef implements Inode.TryIncRef.
@@ -49,7 +49,7 @@ func (InodeNoopRefCount) TryIncRef() bool {
 }
 
 // Destroy implements Inode.Destroy.
-func (InodeNoopRefCount) Destroy() {
+func (InodeNoopRefCount) Destroy(context.Context) {
 }
 
 // InodeDirectoryNoNewChildren partially implements the Inode interface.
@@ -366,12 +366,12 @@ func (o *OrderedChildren) Init(opts OrderedChildrenOptions) {
 }
 
 // DecRef implements Inode.DecRef.
-func (o *OrderedChildren) DecRef() {
-	o.AtomicRefCount.DecRefWithDestructor(o.Destroy)
+func (o *OrderedChildren) DecRef(ctx context.Context) {
+	o.AtomicRefCount.DecRefWithDestructor(ctx, o.Destroy)
 }
 
 // Destroy cleans up resources referenced by this OrderedChildren.
-func (o *OrderedChildren) Destroy() {
+func (o *OrderedChildren) Destroy(context.Context) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.order.Reset()

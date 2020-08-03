@@ -211,7 +211,7 @@ func (e *connectionedEndpoint) Listening() bool {
 // The socket will be a fresh state after a call to close and may be reused.
 // That is, close may be used to "unbind" or "disconnect" the socket in error
 // paths.
-func (e *connectionedEndpoint) Close() {
+func (e *connectionedEndpoint) Close(ctx context.Context) {
 	e.Lock()
 	var c ConnectedEndpoint
 	var r Receiver
@@ -233,7 +233,7 @@ func (e *connectionedEndpoint) Close() {
 	case e.Listening():
 		close(e.acceptedChan)
 		for n := range e.acceptedChan {
-			n.Close()
+			n.Close(ctx)
 		}
 		e.acceptedChan = nil
 		e.path = ""
@@ -241,11 +241,11 @@ func (e *connectionedEndpoint) Close() {
 	e.Unlock()
 	if c != nil {
 		c.CloseNotify()
-		c.Release()
+		c.Release(ctx)
 	}
 	if r != nil {
 		r.CloseNotify()
-		r.Release()
+		r.Release(ctx)
 	}
 }
 
@@ -340,7 +340,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		return nil
 	default:
 		// Busy; return ECONNREFUSED per spec.
-		ne.Close()
+		ne.Close(ctx)
 		e.Unlock()
 		ce.Unlock()
 		return syserr.ErrConnectionRefused

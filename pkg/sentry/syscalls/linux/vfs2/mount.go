@@ -108,7 +108,7 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if err != nil {
 		return 0, nil, err
 	}
-	defer target.Release()
+	defer target.Release(t)
 
 	return 0, nil, t.Kernel().VFS().MountAt(t, creds, source, &target.pop, fsType, &opts)
 }
@@ -140,7 +140,7 @@ func Umount2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if err != nil {
 		return 0, nil, err
 	}
-	defer tpop.Release()
+	defer tpop.Release(t)
 
 	opts := vfs.UmountOptions{
 		Flags: uint32(flags),

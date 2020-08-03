@@ -47,7 +47,7 @@ func (vfs *VirtualFilesystem) PathnameWithDeleted(ctx context.Context, vfsroot, 
 	haveRef := false
 	defer func() {
 		if haveRef {
-			vd.DecRef()
+			vd.DecRef(ctx)
 		}
 	}()
 
@@ -64,12 +64,12 @@ loop:
 				// of FilesystemImpl.PrependPath() may return nil instead.
 				break loop
 			}
-			nextVD := vfs.getMountpointAt(vd.mount, vfsroot)
+			nextVD := vfs.getMountpointAt(ctx, vd.mount, vfsroot)
 			if !nextVD.Ok() {
 				break loop
 			}
 			if haveRef {
-				vd.DecRef()
+				vd.DecRef(ctx)
 			}
 			vd = nextVD
 			haveRef = true
@@ -101,7 +101,7 @@ func (vfs *VirtualFilesystem) PathnameReachable(ctx context.Context, vfsroot, vd
 	haveRef := false
 	defer func() {
 		if haveRef {
-			vd.DecRef()
+			vd.DecRef(ctx)
 		}
 	}()
 loop:
@@ -112,12 +112,12 @@ loop:
 			if vd.mount == vfsroot.mount && vd.mount.root == vfsroot.dentry {
 				break loop
 			}
-			nextVD := vfs.getMountpointAt(vd.mount, vfsroot)
+			nextVD := vfs.getMountpointAt(ctx, vd.mount, vfsroot)
 			if !nextVD.Ok() {
 				return "", nil
 			}
 			if haveRef {
-				vd.DecRef()
+				vd.DecRef(ctx)
 			}
 			vd = nextVD
 			haveRef = true
@@ -145,7 +145,7 @@ func (vfs *VirtualFilesystem) PathnameForGetcwd(ctx context.Context, vfsroot, vd
 	haveRef := false
 	defer func() {
 		if haveRef {
-			vd.DecRef()
+			vd.DecRef(ctx)
 		}
 	}()
 	unreachable := false
@@ -157,13 +157,13 @@ loop:
 			if vd.mount == vfsroot.mount && vd.mount.root == vfsroot.dentry {
 				break loop
 			}
-			nextVD := vfs.getMountpointAt(vd.mount, vfsroot)
+			nextVD := vfs.getMountpointAt(ctx, vd.mount, vfsroot)
 			if !nextVD.Ok() {
 				unreachable = true
 				break loop
 			}
 			if haveRef {
-				vd.DecRef()
+				vd.DecRef(ctx)
 			}
 			vd = nextVD
 			haveRef = true

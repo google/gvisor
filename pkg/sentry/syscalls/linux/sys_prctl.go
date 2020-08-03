@@ -128,7 +128,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			if file == nil {
 				return 0, nil, syserror.EBADF
 			}
-			defer file.DecRef()
+			defer file.DecRef(t)
 
 			// They trying to set exe to a non-file?
 			if !fs.IsFile(file.Dirent.Inode.StableAttr) {
@@ -136,7 +136,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			}
 
 			// Set the underlying executable.
-			t.MemoryManager().SetExecutable(fsbridge.NewFSFile(file))
+			t.MemoryManager().SetExecutable(t, fsbridge.NewFSFile(file))
 
 		case linux.PR_SET_MM_AUXV,
 			linux.PR_SET_MM_START_CODE,

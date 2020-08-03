@@ -47,7 +47,8 @@ type handles struct {
 
 // DecRef drops a reference on handles.
 func (h *handles) DecRef() {
-	h.DecRefWithDestructor(func() {
+	ctx := context.Background()
+	h.DecRefWithDestructor(ctx, func(context.Context) {
 		if h.Host != nil {
 			if h.isHostBorrowed {
 				h.Host.Release()
@@ -57,7 +58,7 @@ func (h *handles) DecRef() {
 				}
 			}
 		}
-		if err := h.File.close(context.Background()); err != nil {
+		if err := h.File.close(ctx); err != nil {
 			log.Warningf("error closing p9 file: %v", err)
 		}
 	})

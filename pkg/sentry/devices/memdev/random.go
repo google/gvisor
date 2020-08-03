@@ -56,7 +56,7 @@ type randomFD struct {
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *randomFD) Release() {
+func (fd *randomFD) Release(context.Context) {
 	// noop
 }
 

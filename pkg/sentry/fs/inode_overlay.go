@@ -85,7 +85,7 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 				upperInode = child.Inode
 				upperInode.IncRef()
 			}
-			child.DecRef()
+			child.DecRef(ctx)
 		}
 
 		// Are we done?
@@ -108,7 +108,7 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 			entry, err := newOverlayEntry(ctx, upperInode, nil, false)
 			if err != nil {
 				// Don't leak resources.
-				upperInode.DecRef()
+				upperInode.DecRef(ctx)
 				parent.copyMu.RUnlock()
 				return nil, false, err
 			}
@@ -129,7 +129,7 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 		if err != nil && err != syserror.ENOENT {
 			// Don't leak resources.
 			if upperInode != nil {
-				upperInode.DecRef()
+				upperInode.DecRef(ctx)
 			}
 			parent.copyMu.RUnlock()
 			return nil, false, err
@@ -152,7 +152,7 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 					}
 				}
 			}
-			child.DecRef()
+			child.DecRef(ctx)
 		}
 	}
 
@@ -183,7 +183,7 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 		// unnecessary because we don't need to copy-up and we will always
 		// operate (e.g. read/write) on the upper Inode.
 		if !IsDir(upperInode.StableAttr) {
-			lowerInode.DecRef()
+			lowerInode.DecRef(ctx)
 			lowerInode = nil
 		}
 	}
@@ -194,10 +194,10 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 		// Well, not quite, we failed at the last moment, how depressing.
 		// Be sure not to leak resources.
 		if upperInode != nil {
-			upperInode.DecRef()
+			upperInode.DecRef(ctx)
 		}
 		if lowerInode != nil {
-			lowerInode.DecRef()
+			lowerInode.DecRef(ctx)
 		}
 		parent.copyMu.RUnlock()
 		return nil, false, err
@@ -248,7 +248,7 @@ func overlayCreate(ctx context.Context, o *overlayEntry, parent *Dirent, name st
 	// user) will clobber the real path for the underlying Inode.
 	upperFile.Dirent.Inode.IncRef()
 	upperDirent := NewTransientDirent(upperFile.Dirent.Inode)
-	upperFile.Dirent.DecRef()
+	upperFile.Dirent.DecRef(ctx)
 	upperFile.Dirent = upperDirent
 
 	// Create the overlay inode and dirent.  We need this to construct the
@@ -259,7 +259,7 @@ func overlayCreate(ctx context.Context, o *overlayEntry, parent *Dirent, name st
 	// The overlay file created below with NewFile will take a reference on
 	// the overlayDirent, and it should be the only thing holding a
 	// reference at the time of creation, so we must drop this reference.
-	defer overlayDirent.DecRef()
+	defer overlayDirent.DecRef(ctx)
 
 	// Create a new overlay file that wraps the upper file.
 	flags.Pread = upperFile.Flags().Pread
@@ -399,7 +399,7 @@ func overlayRename(ctx context.Context, o *overlayEntry, oldParent *Dirent, rena
 			if !replaced.IsNegative() && IsDir(replaced.Inode.StableAttr) {
 				children, err := readdirOne(ctx, replaced)
 				if err != nil {
-					replaced.DecRef()
+					replaced.DecRef(ctx)
 					return err
 				}
 
@@ -407,12 +407,12 @@ func overlayRename(ctx context.Context, o *overlayEntry, oldParent *Dirent, rena
 				// included among the returned children, so we don't
 				// need to bother checking for them.
 				if len(children) > 0 {
-					replaced.DecRef()
+					replaced.DecRef(ctx)
 					return syserror.ENOTEMPTY
 				}
 			}
 
-			replaced.DecRef()
+			replaced.DecRef(ctx)
 		}
 	}
 
@@ -455,12 +455,12 @@ func overlayBind(ctx context.Context, o *overlayEntry, parent *Dirent, name stri
 	// Grab the inode and drop the dirent, we don't need it.
 	inode := d.Inode
 	inode.IncRef()
-	d.DecRef()
+	d.DecRef(ctx)
 
 	// Create a new overlay entry and dirent for the socket.
 	entry, err := newOverlayEntry(ctx, inode, nil, false)
 	if err != nil {
-		inode.DecRef()
+		inode.DecRef(ctx)
 		return nil, err
 	}
 	// Use the parent's MountSource, since that corresponds to the overlay,
@@ -672,7 +672,7 @@ func overlayGetlink(ctx context.Context, o *overlayEntry) (*Dirent, error) {
 		// ground and claim that jumping around the filesystem like this
 		// is not supported.
 		name, _ := dirent.FullName(nil)
-		dirent.DecRef()
+		dirent.DecRef(ctx)
 
 		// Claim that the path is not accessible.
 		err = syserror.EACCES

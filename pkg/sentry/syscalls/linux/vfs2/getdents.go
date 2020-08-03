@@ -44,7 +44,7 @@ func getdents(t *kernel.Task, args arch.SyscallArguments, isGetdents64 bool) (ui
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	cb := getGetdentsCallback(t, addr, size, isGetdents64)
 	err := file.IterDirents(t, cb)

@@ -61,7 +61,7 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	}
 	defer func() {
 		if opts.MappingIdentity != nil {
-			opts.MappingIdentity.DecRef()
+			opts.MappingIdentity.DecRef(t)
 		}
 	}()
 
@@ -71,7 +71,7 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		if file == nil {
 			return 0, nil, syserror.EBADF
 		}
-		defer file.DecRef()
+		defer file.DecRef(t)
 
 		// mmap unconditionally requires that the FD is readable.
 		if !file.IsReadable() {

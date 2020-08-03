@@ -15,6 +15,7 @@
 package pipe
 
 import (
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -29,7 +30,7 @@ type Writer struct {
 // Release implements fs.FileOperations.Release.
 //
 // This overrides ReaderWriter.Release.
-func (w *Writer) Release() {
+func (w *Writer) Release(context.Context) {
 	w.Pipe.wClose()
 
 	// Wake up readers.

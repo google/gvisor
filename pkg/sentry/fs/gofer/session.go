@@ -89,10 +89,10 @@ func (e *overrideMaps) addPipe(key device.MultiDeviceKey, d *fs.Dirent, inode *f
 // remove deletes the key from the maps.
 //
 // Precondition: maps must have been locked with 'lock'.
-func (e *overrideMaps) remove(key device.MultiDeviceKey) {
+func (e *overrideMaps) remove(ctx context.Context, key device.MultiDeviceKey) {
 	endpoint := e.keyMap[key]
 	delete(e.keyMap, key)
-	endpoint.dirent.DecRef()
+	endpoint.dirent.DecRef(ctx)
 }
 
 // lock blocks other addition and removal operations from happening while
@@ -197,7 +197,7 @@ type session struct {
 }
 
 // Destroy tears down the session.
-func (s *session) Destroy() {
+func (s *session) Destroy(ctx context.Context) {
 	s.client.Close()
 }
 
@@ -329,7 +329,7 @@ func Root(ctx context.Context, dev string, filesystem fs.Filesystem, superBlockF
 	s.client, err = p9.NewClient(conn, s.msize, s.version)
 	if err != nil {
 		// Drop our reference on the session, it needs to be torn down.
-		s.DecRef()
+		s.DecRef(ctx)
 		return nil, err
 	}
 
@@ -340,7 +340,7 @@ func Root(ctx context.Context, dev string, filesystem fs.Filesystem, superBlockF
 	ctx.UninterruptibleSleepFinish(false)
 	if err != nil {
 		// Same as above.
-		s.DecRef()
+		s.DecRef(ctx)
 		return nil, err
 	}
 
@@ -348,7 +348,7 @@ func Root(ctx context.Context, dev string, filesystem fs.Filesystem, superBlockF
 	if err != nil {
 		s.attach.close(ctx)
 		// Same as above, but after we execute the Close request.
-		s.DecRef()
+		s.DecRef(ctx)
 		return nil, err
 	}
 
@@ -393,13 +393,13 @@ func (s *session) fillKeyMap(ctx context.Context) error {
 
 // fillPathMap populates paths for overrides from dirents in direntMap
 // before save.
-func (s *session) fillPathMap() error {
+func (s *session) fillPathMap(ctx context.Context) error {
 	unlock := s.overrides.lock()
 	defer unlock()
 
 	for _, endpoint := range s.overrides.keyMap {
 		mountRoot := endpoint.dirent.MountRoot()
-		defer mountRoot.DecRef()
+		defer mountRoot.DecRef(ctx)
 		dirPath, _ := endpoint.dirent.FullName(mountRoot)
 		if dirPath == "" {
 			return fmt.Errorf("error getting path from dirent")

@@ -122,7 +122,7 @@ type directoryFD struct {
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *directoryFD) Release() {
+func (fd *directoryFD) Release(context.Context) {
 }
 
 // IterDirents implements vfs.FileDescriptionImpl.IterDirents.
@@ -139,7 +139,7 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 		fd.dirents = ds
 	}
 
-	d.InotifyWithParent(linux.IN_ACCESS, 0, vfs.PathEvent)
+	d.InotifyWithParent(ctx, linux.IN_ACCESS, 0, vfs.PathEvent)
 	if d.cachedMetadataAuthoritative() {
 		d.touchAtime(fd.vfsfd.Mount())
 	}

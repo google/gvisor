@@ -60,7 +60,7 @@ func (mi *masterInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vf
 	}
 	fd.LockFD.Init(&mi.locks)
 	if err := fd.vfsfd.Init(fd, opts.Flags, rp.Mount(), vfsd, &vfs.FileDescriptionOptions{}); err != nil {
-		mi.DecRef()
+		mi.DecRef(ctx)
 		return nil, err
 	}
 	return &fd.vfsfd, nil
@@ -98,9 +98,9 @@ type masterFileDescription struct {
 var _ vfs.FileDescriptionImpl = (*masterFileDescription)(nil)
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (mfd *masterFileDescription) Release() {
+func (mfd *masterFileDescription) Release(ctx context.Context) {
 	mfd.inode.root.masterClose(mfd.t)
-	mfd.inode.DecRef()
+	mfd.inode.DecRef(ctx)
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.

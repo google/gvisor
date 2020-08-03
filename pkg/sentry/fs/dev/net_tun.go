@@ -80,8 +80,8 @@ type netTunFileOperations struct {
 var _ fs.FileOperations = (*netTunFileOperations)(nil)
 
 // Release implements fs.FileOperations.Release.
-func (fops *netTunFileOperations) Release() {
-	fops.device.Release()
+func (fops *netTunFileOperations) Release(ctx context.Context) {
+	fops.device.Release(ctx)
 }
 
 // Ioctl implements fs.FileOperations.Ioctl.

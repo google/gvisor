@@ -47,9 +47,9 @@ var _ vfs.FileDescriptionImpl = (*TimerFileDescription)(nil)
 var _ ktime.TimerListener = (*TimerFileDescription)(nil)
 
 // New returns a new timer fd.
-func New(vfsObj *vfs.VirtualFilesystem, clock ktime.Clock, flags uint32) (*vfs.FileDescription, error) {
+func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, clock ktime.Clock, flags uint32) (*vfs.FileDescription, error) {
 	vd := vfsObj.NewAnonVirtualDentry("[timerfd]")
-	defer vd.DecRef()
+	defer vd.DecRef(ctx)
 	tfd := &TimerFileDescription{}
 	tfd.timer = ktime.NewTimer(clock, tfd)
 	if err := tfd.vfsfd.Init(tfd, flags, vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{
@@ -129,7 +129,7 @@ func (tfd *TimerFileDescription) ResumeTimer() {
 }
 
 // Release implements FileDescriptionImpl.Release()
-func (tfd *TimerFileDescription) Release() {
+func (tfd *TimerFileDescription) Release(context.Context) {
 	tfd.timer.Destroy()
 }
 

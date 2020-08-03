@@ -32,7 +32,7 @@ func Flock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		// flock(2): EBADF fd is not an open file descriptor.
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	nonblocking := operation&linux.LOCK_NB != 0
 	operation &^= linux.LOCK_NB

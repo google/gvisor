@@ -115,9 +115,9 @@ func (o *overlayMountSourceOperations) SaveInodeMapping(inode *Inode, path strin
 }
 
 // Destroy drops references on the upper and lower MountSource.
-func (o *overlayMountSourceOperations) Destroy() {
-	o.upper.DecRef()
-	o.lower.DecRef()
+func (o *overlayMountSourceOperations) Destroy(ctx context.Context) {
+	o.upper.DecRef(ctx)
+	o.lower.DecRef(ctx)
 }
 
 // type overlayFilesystem is the filesystem for overlay mounts.

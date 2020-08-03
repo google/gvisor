@@ -26,7 +26,8 @@ import (
 // beforeSave is invoked by stateify.
 func (s *session) beforeSave() {
 	if s.overrides != nil {
-		if err := s.fillPathMap(); err != nil {
+		ctx := &dummyClockContext{context.Background()}
+		if err := s.fillPathMap(ctx); err != nil {
 			panic("failed to save paths to override map before saving" + err.Error())
 		}
 	}

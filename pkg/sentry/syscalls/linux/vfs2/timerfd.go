@@ -50,11 +50,11 @@ func TimerfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 		return 0, nil, syserror.EINVAL
 	}
 	vfsObj := t.Kernel().VFS()
-	file, err := timerfd.New(vfsObj, clock, fileFlags)
+	file, err := timerfd.New(t, vfsObj, clock, fileFlags)
 	if err != nil {
 		return 0, nil, err
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 	fd, err := t.NewFDFromVFS2(0, file, kernel.FDFlags{
 		CloseOnExec: flags&linux.TFD_CLOEXEC != 0,
 	})
@@ -79,7 +79,7 @@ func TimerfdSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	tfd, ok := file.Impl().(*timerfd.TimerFileDescription)
 	if !ok {
@@ -113,7 +113,7 @@ func TimerfdGettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	tfd, ok := file.Impl().(*timerfd.TimerFileDescription)
 	if !ok {

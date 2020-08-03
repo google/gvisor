@@ -203,6 +203,6 @@ func (t *Task) traceExecEvent(tc *TaskContext) {
 		trace.Logf(t.traceContext, traceCategory, "exec: << unknown >>")
 		return
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 	trace.Logf(t.traceContext, traceCategory, "exec: %s", file.PathnameWithDeleted(t))
 }

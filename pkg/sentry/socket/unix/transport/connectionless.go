@@ -54,10 +54,10 @@ func (e *connectionlessEndpoint) isBound() bool {
 
 // Close puts the endpoint in a closed state and frees all resources associated
 // with it.
-func (e *connectionlessEndpoint) Close() {
+func (e *connectionlessEndpoint) Close(ctx context.Context) {
 	e.Lock()
 	if e.connected != nil {
-		e.connected.Release()
+		e.connected.Release(ctx)
 		e.connected = nil
 	}
 
@@ -71,7 +71,7 @@ func (e *connectionlessEndpoint) Close() {
 	e.Unlock()
 
 	r.CloseNotify()
-	r.Release()
+	r.Release(ctx)
 }
 
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
@@ -108,10 +108,10 @@ func (e *connectionlessEndpoint) SendMsg(ctx context.Context, data [][]byte, c C
 	if err != nil {
 		return 0, syserr.ErrInvalidEndpointState
 	}
-	defer connected.Release()
+	defer connected.Release(ctx)
 
 	e.Lock()
-	n, notify, err := connected.Send(data, c, tcpip.FullAddress{Addr: tcpip.Address(e.path)})
+	n, notify, err := connected.Send(ctx, data, c, tcpip.FullAddress{Addr: tcpip.Address(e.path)})
 	e.Unlock()
 
 	if notify {
@@ -135,7 +135,7 @@ func (e *connectionlessEndpoint) Connect(ctx context.Context, server BoundEndpoi
 
 	e.Lock()
 	if e.connected != nil {
-		e.connected.Release()
+		e.connected.Release(ctx)
 	}
 	e.connected = connected
 	e.Unlock()

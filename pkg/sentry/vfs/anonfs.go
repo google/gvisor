@@ -82,7 +82,7 @@ type anonDentry struct {
 }
 
 // Release implements FilesystemImpl.Release.
-func (fs *anonFilesystem) Release() {
+func (fs *anonFilesystem) Release(ctx context.Context) {
 }
 
 // Sync implements FilesystemImpl.Sync.
@@ -294,7 +294,7 @@ func (d *anonDentry) TryIncRef() bool {
 }
 
 // DecRef implements DentryImpl.DecRef.
-func (d *anonDentry) DecRef() {
+func (d *anonDentry) DecRef(ctx context.Context) {
 	// no-op
 }
 
@@ -303,7 +303,7 @@ func (d *anonDentry) DecRef() {
 // Although Linux technically supports inotify on pseudo filesystems (inotify
 // is implemented at the vfs layer), it is not particularly useful. It is left
 // unimplemented until someone actually needs it.
-func (d *anonDentry) InotifyWithParent(events, cookie uint32, et EventType) {}
+func (d *anonDentry) InotifyWithParent(ctx context.Context, events, cookie uint32, et EventType) {}
 
 // Watches implements DentryImpl.Watches.
 func (d *anonDentry) Watches() *Watches {
@@ -311,4 +311,4 @@ func (d *anonDentry) Watches() *Watches {
 }
 
 // OnZeroWatches implements Dentry.OnZeroWatches.
-func (d *anonDentry) OnZeroWatches() {}
+func (d *anonDentry) OnZeroWatches(context.Context) {}

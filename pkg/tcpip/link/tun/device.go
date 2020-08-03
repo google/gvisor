@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -64,14 +65,14 @@ func (d *Device) beforeSave() {
 }
 
 // Release implements fs.FileOperations.Release.
-func (d *Device) Release() {
+func (d *Device) Release(ctx context.Context) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	// Decrease refcount if there is an endpoint associated with this file.
 	if d.endpoint != nil {
 		d.endpoint.RemoveNotify(d.notifyHandle)
-		d.endpoint.DecRef()
+		d.endpoint.DecRef(ctx)
 		d.endpoint = nil
 	}
 }
@@ -341,8 +342,8 @@ type tunEndpoint struct {
 }
 
 // DecRef decrements refcount of e, removes NIC if refcount goes to 0.
-func (e *tunEndpoint) DecRef() {
-	e.DecRefWithDestructor(func() {
+func (e *tunEndpoint) DecRef(ctx context.Context) {
+	e.DecRefWithDestructor(ctx, func(context.Context) {
 		e.stack.RemoveNIC(e.nicID)
 	})
 }

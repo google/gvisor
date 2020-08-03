@@ -113,12 +113,12 @@ func (t *TTYFileOperations) Write(ctx context.Context, file *fs.File, src userme
 }
 
 // Release implements fs.FileOperations.Release.
-func (t *TTYFileOperations) Release() {
+func (t *TTYFileOperations) Release(ctx context.Context) {
 	t.mu.Lock()
 	t.fgProcessGroup = nil
 	t.mu.Unlock()
 
-	t.fileOperations.Release()
+	t.fileOperations.Release(ctx)
 }
 
 // Ioctl implements fs.FileOperations.Ioctl.
