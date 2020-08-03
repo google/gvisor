@@ -8,9 +8,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
-      if: github.repository == "google/gvisor"
+      if: github.repository == 'google/gvisor'
     - run: make run TARGETS="//tools/issue_reviver"
-      if: github.repository == "google/gvisor"
+      if: github.repository == 'google/gvisor'
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GITHUB_REPOSITORY: ${{ github.repository }}
