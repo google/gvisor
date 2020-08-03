@@ -208,7 +208,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.F_SETLK, linux.F_SETLKW:
 		return 0, nil, posixLock(t, args, file, cmd)
 	default:
-		// TODO(gvisor.dev/issue/2920): Everything else is not yet supported.
+		// Everything else is not yet supported.
 		return 0, nil, syserror.EINVAL
 	}
 }
