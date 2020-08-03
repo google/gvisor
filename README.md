@@ -58,7 +58,7 @@ Make sure the following dependencies are installed:
 
 Build and install the `runsc` binary:
 
-```
+```sh
 make runsc
 sudo cp ./bazel-bin/runsc/linux_amd64_pure_stripped/runsc /usr/local/bin
 ```
@@ -67,14 +67,14 @@ sudo cp ./bazel-bin/runsc/linux_amd64_pure_stripped/runsc /usr/local/bin
 
 To run standard test suites, you can use:
 
-```
+```sh
 make unit-tests
 make tests
 ```
 
 To run specific tests, you can specify the target:
 
-```
+```sh
 make test TARGETS="//runsc:version_test"
 ```
 
@@ -84,12 +84,19 @@ This project uses [bazel][bazel] to build and manage dependencies. A synthetic
 `go` branch is maintained that is compatible with standard `go` tooling for
 convenience.
 
-For example, to build `runsc` directly from this branch:
+For example, to build and install `runsc` directly from this branch:
 
-```
+```sh
 echo "module runsc" > go.mod
 GO111MODULE=on go get gvisor.dev/gvisor/runsc@go
-CGO_ENABLED=0 GO111MODULE=on go install gvisor.dev/gvisor/runsc
+CGO_ENABLED=0 GO111MODULE=on sudo -E go build -o /usr/local/bin/runsc gvisor.dev/gvisor/runsc
+```
+
+Subsequently, you can build and install the shim binaries for `containerd`:
+
+```sh
+GO111MODULE=on sudo -E go build -o /usr/local/bin/gvisor-containerd-shim gvisor.dev/gvisor/shim/v1
+GO111MODULE=on sudo -E go build -o /usr/local/bin/containerd-shim-runsc-v1 gvisor.dev/gvisor/shim/v2
 ```
 
 Note that this branch is supported in a best effort capacity, and direct
