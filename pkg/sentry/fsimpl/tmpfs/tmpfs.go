@@ -185,7 +185,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	case linux.S_IFDIR:
 		root = &fs.newDirectory(rootKUID, rootKGID, rootMode).dentry
 	default:
-		fs.vfsfs.DecRef()
+		fs.vfsfs.DecRef(ctx)
 		return nil, nil, fmt.Errorf("invalid tmpfs root file type: %#o", rootFileType)
 	}
 	return &fs.vfsfs, &root.vfsd, nil
@@ -197,7 +197,7 @@ func NewFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *au
 }
 
 // Release implements vfs.FilesystemImpl.Release.
-func (fs *filesystem) Release() {
+func (fs *filesystem) Release(ctx context.Context) {
 	fs.vfsfs.VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
 }
 
@@ -249,12 +249,12 @@ func (d *dentry) TryIncRef() bool {
 }
 
 // DecRef implements vfs.DentryImpl.DecRef.
-func (d *dentry) DecRef() {
-	d.inode.decRef()
+func (d *dentry) DecRef(ctx context.Context) {
+	d.inode.decRef(ctx)
 }
 
 // InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
-func (d *dentry) InotifyWithParent(events, cookie uint32, et vfs.EventType) {
+func (d *dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, et vfs.EventType) {
 	if d.inode.isDir() {
 		events |= linux.IN_ISDIR
 	}
@@ -266,9 +266,9 @@ func (d *dentry) InotifyWithParent(events, cookie uint32, et vfs.EventType) {
 	d.inode.fs.mu.RLock()
 	// The ordering below is important, Linux always notifies the parent first.
 	if d.parent != nil {
-		d.parent.inode.watches.Notify(d.name, events, cookie, et, deleted)
+		d.parent.inode.watches.Notify(ctx, d.name, events, cookie, et, deleted)
 	}
-	d.inode.watches.Notify("", events, cookie, et, deleted)
+	d.inode.watches.Notify(ctx, "", events, cookie, et, deleted)
 	d.inode.fs.mu.RUnlock()
 }
 
@@ -278,7 +278,7 @@ func (d *dentry) Watches() *vfs.Watches {
 }
 
 // OnZeroWatches implements vfs.Dentry.OnZeroWatches.
-func (d *dentry) OnZeroWatches() {}
+func (d *dentry) OnZeroWatches(context.Context) {}
 
 // inode represents a filesystem object.
 type inode struct {
@@ -359,12 +359,12 @@ func (i *inode) incLinksLocked() {
 // remove a reference on i as well.
 //
 // Preconditions: filesystem.mu must be locked for writing. i.nlink != 0.
-func (i *inode) decLinksLocked() {
+func (i *inode) decLinksLocked(ctx context.Context) {
 	if i.nlink == 0 {
 		panic("tmpfs.inode.decLinksLocked() called with no existing links")
 	}
 	if atomic.AddUint32(&i.nlink, ^uint32(0)) == 0 {
-		i.decRef()
+		i.decRef(ctx)
 	}
 }
 
@@ -386,9 +386,9 @@ func (i *inode) tryIncRef() bool {
 	}
 }
 
-func (i *inode) decRef() {
+func (i *inode) decRef(ctx context.Context) {
 	if refs := atomic.AddInt64(&i.refs, -1); refs == 0 {
-		i.watches.HandleDeletion()
+		i.watches.HandleDeletion(ctx)
 		if regFile, ok := i.impl.(*regularFile); ok {
 			// Release memory used by regFile to store data. Since regFile is
 			// no longer usable, we don't need to grab any locks or update any
@@ -701,7 +701,7 @@ func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions)
 	}
 
 	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
-		d.InotifyWithParent(ev, 0, vfs.InodeEvent)
+		d.InotifyWithParent(ctx, ev, 0, vfs.InodeEvent)
 	}
 	return nil
 }
@@ -724,7 +724,7 @@ func (fd *fileDescription) Setxattr(ctx context.Context, opts vfs.SetxattrOption
 	}
 
 	// Generate inotify events.
-	d.InotifyWithParent(linux.IN_ATTRIB, 0, vfs.InodeEvent)
+	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	return nil
 }
 
@@ -736,13 +736,13 @@ func (fd *fileDescription) Removexattr(ctx context.Context, name string) error {
 	}
 
 	// Generate inotify events.
-	d.InotifyWithParent(linux.IN_ATTRIB, 0, vfs.InodeEvent)
+	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	return nil
 }
 
 // NewMemfd creates a new tmpfs regular file and file description that can back
 // an anonymous fd created by memfd_create.
-func NewMemfd(mount *vfs.Mount, creds *auth.Credentials, allowSeals bool, name string) (*vfs.FileDescription, error) {
+func NewMemfd(ctx context.Context, creds *auth.Credentials, mount *vfs.Mount, allowSeals bool, name string) (*vfs.FileDescription, error) {
 	fs, ok := mount.Filesystem().Impl().(*filesystem)
 	if !ok {
 		panic("NewMemfd() called with non-tmpfs mount")
@@ -757,7 +757,7 @@ func NewMemfd(mount *vfs.Mount, creds *auth.Credentials, allowSeals bool, name s
 	}
 
 	d := fs.newDentry(inode)
-	defer d.DecRef()
+	defer d.DecRef(ctx)
 	d.name = name
 
 	// Per Linux, mm/shmem.c:__shmem_file_setup(), memfd files are set up with

@@ -212,7 +212,7 @@ func (n *netUnixData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 			continue
 		}
 		if family, _, _ := s.Impl().(socket.SocketVFS2).Type(); family != linux.AF_UNIX {
-			s.DecRef()
+			s.DecRef(ctx)
 			// Not a unix socket.
 			continue
 		}
@@ -281,7 +281,7 @@ func (n *netUnixData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		}
 		fmt.Fprintf(buf, "\n")
 
-		s.DecRef()
+		s.DecRef(ctx)
 	}
 	return nil
 }
@@ -359,7 +359,7 @@ func commonGenerateTCP(ctx context.Context, buf *bytes.Buffer, k *kernel.Kernel,
 			panic(fmt.Sprintf("Found non-socket file in socket table: %+v", s))
 		}
 		if fa, stype, _ := sops.Type(); !(family == fa && stype == linux.SOCK_STREAM) {
-			s.DecRef()
+			s.DecRef(ctx)
 			// Not tcp4 sockets.
 			continue
 		}
@@ -455,7 +455,7 @@ func commonGenerateTCP(ctx context.Context, buf *bytes.Buffer, k *kernel.Kernel,
 
 		fmt.Fprintf(buf, "\n")
 
-		s.DecRef()
+		s.DecRef(ctx)
 	}
 
 	return nil
@@ -524,7 +524,7 @@ func (d *netUDPData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 			panic(fmt.Sprintf("Found non-socket file in socket table: %+v", s))
 		}
 		if family, stype, _ := sops.Type(); family != linux.AF_INET || stype != linux.SOCK_DGRAM {
-			s.DecRef()
+			s.DecRef(ctx)
 			// Not udp4 socket.
 			continue
 		}
@@ -600,7 +600,7 @@ func (d *netUDPData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 		fmt.Fprintf(buf, "\n")
 
-		s.DecRef()
+		s.DecRef(ctx)
 	}
 	return nil
 }

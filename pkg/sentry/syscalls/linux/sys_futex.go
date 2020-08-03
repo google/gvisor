@@ -73,7 +73,7 @@ func futexWaitAbsolute(t *kernel.Task, clockRealtime bool, ts linux.Timespec, fo
 		err = t.BlockWithDeadline(w.C, true, ktime.FromTimespec(ts))
 	}
 
-	t.Futex().WaitComplete(w)
+	t.Futex().WaitComplete(w, t)
 	return 0, syserror.ConvertIntr(err, kernel.ERESTARTSYS)
 }
 
@@ -95,7 +95,7 @@ func futexWaitDuration(t *kernel.Task, duration time.Duration, forever bool, add
 	}
 
 	remaining, err := t.BlockWithTimeout(w.C, !forever, duration)
-	t.Futex().WaitComplete(w)
+	t.Futex().WaitComplete(w, t)
 	if err == nil {
 		return 0, nil
 	}
@@ -148,7 +148,7 @@ func futexLockPI(t *kernel.Task, ts linux.Timespec, forever bool, addr usermem.A
 		timer.Destroy()
 	}
 
-	t.Futex().WaitComplete(w)
+	t.Futex().WaitComplete(w, t)
 	return syserror.ConvertIntr(err, kernel.ERESTARTSYS)
 }
 

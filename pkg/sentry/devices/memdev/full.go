@@ -46,7 +46,7 @@ type fullFD struct {
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *fullFD) Release() {
+func (fd *fullFD) Release(context.Context) {
 	// noop
 }
 

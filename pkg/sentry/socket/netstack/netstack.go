@@ -330,7 +330,7 @@ func New(t *kernel.Task, family int, skType linux.SockType, protocol int, queue 
 	}
 
 	dirent := socket.NewDirent(t, netstackDevice)
-	defer dirent.DecRef()
+	defer dirent.DecRef(t)
 	return fs.NewFile(t, dirent, fs.FileFlags{Read: true, Write: true, NonSeekable: true}, &SocketOperations{
 		socketOpsCommon: socketOpsCommon{
 			Queue:    queue,
@@ -479,7 +479,7 @@ func (s *socketOpsCommon) fetchReadView() *syserr.Error {
 }
 
 // Release implements fs.FileOperations.Release.
-func (s *socketOpsCommon) Release() {
+func (s *socketOpsCommon) Release(context.Context) {
 	s.Endpoint.Close()
 }
 
@@ -854,7 +854,7 @@ func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 	if err != nil {
 		return 0, nil, 0, err
 	}
-	defer ns.DecRef()
+	defer ns.DecRef(t)
 
 	if flags&linux.SOCK_NONBLOCK != 0 {
 		flags := ns.Flags()

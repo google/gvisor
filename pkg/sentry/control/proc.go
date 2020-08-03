@@ -139,7 +139,6 @@ func ExecAsync(proc *Proc, args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadID
 func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadID, *host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
 	// Import file descriptors.
 	fdTable := proc.Kernel.NewFDTable()
-	defer fdTable.DecRef()
 
 	creds := auth.NewUserCredentials(
 		args.KUID,
@@ -177,6 +176,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		initArgs.MountNamespaceVFS2.IncRef()
 	}
 	ctx := initArgs.NewContext(proc.Kernel)
+	defer fdTable.DecRef(ctx)
 
 	if kernel.VFS2Enabled {
 		// Get the full path to the filename from the PATH env variable.

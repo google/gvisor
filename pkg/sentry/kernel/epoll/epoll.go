@@ -76,8 +76,8 @@ type pollEntry struct {
 // WeakRefGone implements refs.WeakRefUser.WeakRefGone.
 // weakReferenceGone is called when the file in the weak reference is destroyed.
 // The poll entry is removed in response to this.
-func (p *pollEntry) WeakRefGone() {
-	p.epoll.RemoveEntry(p.id)
+func (p *pollEntry) WeakRefGone(ctx context.Context) {
+	p.epoll.RemoveEntry(ctx, p.id)
 }
 
 // EventPoll holds all the state associated with an event poll object, that is,
@@ -144,14 +144,14 @@ func NewEventPoll(ctx context.Context) *fs.File {
 	// name matches fs/eventpoll.c:epoll_create1.
 	dirent := fs.NewDirent(ctx, anon.NewInode(ctx), fmt.Sprintf("anon_inode:[eventpoll]"))
 	// Release the initial dirent reference after NewFile takes a reference.
-	defer dirent.DecRef()
+	defer dirent.DecRef(ctx)
 	return fs.NewFile(ctx, dirent, fs.FileFlags{}, &EventPoll{
 		files: make(map[FileIdentifier]*pollEntry),
 	})
 }
 
 // Release implements fs.FileOperations.Release.
-func (e *EventPoll) Release() {
+func (e *EventPoll) Release(ctx context.Context) {
 	// We need to take the lock now because files may be attempting to
 	// remove entries in parallel if they get destroyed.
 	e.mu.Lock()
@@ -160,7 +160,7 @@ func (e *EventPoll) Release() {
 	// Go through all entries and clean up.
 	for _, entry := range e.files {
 		entry.id.File.EventUnregister(&entry.waiter)
-		entry.file.Drop()
+		entry.file.Drop(ctx)
 	}
 	e.files = nil
 }
@@ -423,7 +423,7 @@ func (e *EventPoll) UpdateEntry(id FileIdentifier, flags EntryFlags, mask waiter
 }
 
 // RemoveEntry a files from the collection of observed files.
-func (e *EventPoll) RemoveEntry(id FileIdentifier) error {
+func (e *EventPoll) RemoveEntry(ctx context.Context, id FileIdentifier) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -445,7 +445,7 @@ func (e *EventPoll) RemoveEntry(id FileIdentifier) error {
 
 	// Remove file from map, and drop weak reference.
 	delete(e.files, id)
-	entry.file.Drop()
+	entry.file.Drop(ctx)
 
 	return nil
 }

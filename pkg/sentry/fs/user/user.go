@@ -62,7 +62,7 @@ func getExecUserHome(ctx context.Context, rootMns *fs.MountNamespace, uid auth.K
 		// doesn't exist we will return the default home directory.
 		return defaultHome, nil
 	}
-	defer dirent.DecRef()
+	defer dirent.DecRef(ctx)
 
 	// Check read permissions on the file.
 	if err := dirent.Inode.CheckPermission(ctx, fs.PermMask{Read: true}); err != nil {
@@ -81,7 +81,7 @@ func getExecUserHome(ctx context.Context, rootMns *fs.MountNamespace, uid auth.K
 	if err != nil {
 		return "", err
 	}
-	defer f.DecRef()
+	defer f.DecRef(ctx)
 
 	r := &fileReader{
 		Ctx:  ctx,
@@ -105,7 +105,7 @@ func getExecUserHomeVFS2(ctx context.Context, mns *vfs.MountNamespace, uid auth.
 	const defaultHome = "/"
 
 	root := mns.Root()
-	defer root.DecRef()
+	defer root.DecRef(ctx)
 
 	creds := auth.CredentialsFromContext(ctx)
 
@@ -123,7 +123,7 @@ func getExecUserHomeVFS2(ctx context.Context, mns *vfs.MountNamespace, uid auth.
 	if err != nil {
 		return defaultHome, nil
 	}
-	defer fd.DecRef()
+	defer fd.DecRef(ctx)
 
 	r := &fileReaderVFS2{
 		ctx: ctx,

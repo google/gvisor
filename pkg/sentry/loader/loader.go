@@ -154,7 +154,7 @@ func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, arch.Context
 				return loadedELF{}, nil, nil, nil, err
 			}
 			// Ensure file is release in case the code loops or errors out.
-			defer args.File.DecRef()
+			defer args.File.DecRef(ctx)
 		} else {
 			if err := checkIsRegularFile(ctx, args.File, args.Filename); err != nil {
 				return loadedELF{}, nil, nil, nil, err
@@ -223,7 +223,7 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 	if err != nil {
 		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("failed to load %s: %v", args.Filename, err), syserr.FromError(err).ToLinux())
 	}
-	defer file.DecRef()
+	defer file.DecRef(ctx)
 
 	// Load the VDSO.
 	vdsoAddr, err := loadVDSO(ctx, args.MemoryManager, vdso, loaded)
@@ -292,7 +292,7 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 	m.SetEnvvStart(sl.EnvvStart)
 	m.SetEnvvEnd(sl.EnvvEnd)
 	m.SetAuxv(auxv)
-	m.SetExecutable(file)
+	m.SetExecutable(ctx, file)
 
 	symbolValue, err := getSymbolValueFromVDSO("rt_sigreturn")
 	if err != nil {

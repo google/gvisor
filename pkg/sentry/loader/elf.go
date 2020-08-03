@@ -281,7 +281,7 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, phdr 
 		}
 		defer func() {
 			if mopts.MappingIdentity != nil {
-				mopts.MappingIdentity.DecRef()
+				mopts.MappingIdentity.DecRef(ctx)
 			}
 		}()
 		if err := f.ConfigureMMap(ctx, &mopts); err != nil {
@@ -663,7 +663,7 @@ func loadELF(ctx context.Context, args LoadArgs) (loadedELF, arch.Context, error
 			ctx.Infof("Error opening interpreter %s: %v", bin.interpreter, err)
 			return loadedELF{}, nil, err
 		}
-		defer intFile.DecRef()
+		defer intFile.DecRef(ctx)
 
 		interp, err = loadInterpreterELF(ctx, args.MemoryManager, intFile, bin)
 		if err != nil {

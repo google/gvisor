@@ -116,17 +116,17 @@ func (fs *Filesystem) deferDecRef(d *vfs.Dentry) {
 
 // processDeferredDecRefs calls vfs.Dentry.DecRef on all dentries in the
 // droppedDentries list. See comment on Filesystem.mu.
-func (fs *Filesystem) processDeferredDecRefs() {
+func (fs *Filesystem) processDeferredDecRefs(ctx context.Context) {
 	fs.mu.Lock()
-	fs.processDeferredDecRefsLocked()
+	fs.processDeferredDecRefsLocked(ctx)
 	fs.mu.Unlock()
 }
 
 // Precondition: fs.mu must be held for writing.
-func (fs *Filesystem) processDeferredDecRefsLocked() {
+func (fs *Filesystem) processDeferredDecRefsLocked(ctx context.Context) {
 	fs.droppedDentriesMu.Lock()
 	for _, d := range fs.droppedDentries {
-		d.DecRef()
+		d.DecRef(ctx)
 	}
 	fs.droppedDentries = fs.droppedDentries[:0] // Keep slice memory for reuse.
 	fs.droppedDentriesMu.Unlock()
@@ -212,16 +212,16 @@ func (d *Dentry) isSymlink() bool {
 }
 
 // DecRef implements vfs.DentryImpl.DecRef.
-func (d *Dentry) DecRef() {
-	d.AtomicRefCount.DecRefWithDestructor(d.destroy)
+func (d *Dentry) DecRef(ctx context.Context) {
+	d.AtomicRefCount.DecRefWithDestructor(ctx, d.destroy)
 }
 
 // Precondition: Dentry must be removed from VFS' dentry cache.
-func (d *Dentry) destroy() {
-	d.inode.DecRef() // IncRef from Init.
+func (d *Dentry) destroy(ctx context.Context) {
+	d.inode.DecRef(ctx) // IncRef from Init.
 	d.inode = nil
 	if d.parent != nil {
-		d.parent.DecRef() // IncRef from Dentry.InsertChild.
+		d.parent.DecRef(ctx) // IncRef from Dentry.InsertChild.
 	}
 }
 
@@ -230,7 +230,7 @@ func (d *Dentry) destroy() {
 // Although Linux technically supports inotify on pseudo filesystems (inotify
 // is implemented at the vfs layer), it is not particularly useful. It is left
 // unimplemented until someone actually needs it.
-func (d *Dentry) InotifyWithParent(events, cookie uint32, et vfs.EventType) {}
+func (d *Dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, et vfs.EventType) {}
 
 // Watches implements vfs.DentryImpl.Watches.
 func (d *Dentry) Watches() *vfs.Watches {
@@ -238,7 +238,7 @@ func (d *Dentry) Watches() *vfs.Watches {
 }
 
 // OnZeroWatches implements vfs.Dentry.OnZeroWatches.
-func (d *Dentry) OnZeroWatches() {}
+func (d *Dentry) OnZeroWatches(context.Context) {}
 
 // InsertChild inserts child into the vfs dentry cache with the given name under
 // this dentry. This does not update the directory inode, so calling this on
@@ -326,12 +326,12 @@ type Inode interface {
 
 type inodeRefs interface {
 	IncRef()
-	DecRef()
+	DecRef(ctx context.Context)
 	TryIncRef() bool
 	// Destroy is called when the inode reaches zero references. Destroy release
 	// all resources (references) on objects referenced by the inode, including
 	// any child dentries.
-	Destroy()
+	Destroy(ctx context.Context)
 }
 
 type inodeMetadata interface {

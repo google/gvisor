@@ -37,11 +37,11 @@ func EpollCreate1(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 		return 0, nil, syserror.EINVAL
 	}
 
-	file, err := t.Kernel().VFS().NewEpollInstanceFD()
+	file, err := t.Kernel().VFS().NewEpollInstanceFD(t)
 	if err != nil {
 		return 0, nil, err
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	fd, err := t.NewFDFromVFS2(0, file, kernel.FDFlags{
 		CloseOnExec: flags&linux.EPOLL_CLOEXEC != 0,
@@ -62,11 +62,11 @@ func EpollCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 		return 0, nil, syserror.EINVAL
 	}
 
-	file, err := t.Kernel().VFS().NewEpollInstanceFD()
+	file, err := t.Kernel().VFS().NewEpollInstanceFD(t)
 	if err != nil {
 		return 0, nil, err
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 
 	fd, err := t.NewFDFromVFS2(0, file, kernel.FDFlags{})
 	if err != nil {
@@ -86,7 +86,7 @@ func EpollCtl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if epfile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer epfile.DecRef()
+	defer epfile.DecRef(t)
 	ep, ok := epfile.Impl().(*vfs.EpollInstance)
 	if !ok {
 		return 0, nil, syserror.EINVAL
@@ -95,7 +95,7 @@ func EpollCtl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer file.DecRef()
+	defer file.DecRef(t)
 	if epfile == file {
 		return 0, nil, syserror.EINVAL
 	}
@@ -135,7 +135,7 @@ func EpollWait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	if epfile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer epfile.DecRef()
+	defer epfile.DecRef(t)
 	ep, ok := epfile.Impl().(*vfs.EpollInstance)
 	if !ok {
 		return 0, nil, syserror.EINVAL

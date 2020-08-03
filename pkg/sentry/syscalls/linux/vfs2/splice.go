@@ -53,12 +53,12 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if inFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer inFile.DecRef()
+	defer inFile.DecRef(t)
 	outFile := t.GetFileVFS2(outFD)
 	if outFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer outFile.DecRef()
+	defer outFile.DecRef(t)
 
 	// Check that both files support the required directionality.
 	if !inFile.IsReadable() || !outFile.IsWritable() {
@@ -175,7 +175,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	// On Linux, inotify behavior is not very consistent with splice(2). We try
 	// our best to emulate Linux for very basic calls to splice, where for some
 	// reason, events are generated for output files, but not input files.
-	outFile.Dentry().InotifyWithParent(linux.IN_MODIFY, 0, vfs.PathEvent)
+	outFile.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
 	return uintptr(n), nil, nil
 }
 
@@ -203,12 +203,12 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	if inFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer inFile.DecRef()
+	defer inFile.DecRef(t)
 	outFile := t.GetFileVFS2(outFD)
 	if outFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer outFile.DecRef()
+	defer outFile.DecRef(t)
 
 	// Check that both files support the required directionality.
 	if !inFile.IsReadable() || !outFile.IsWritable() {
@@ -251,7 +251,7 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	if n == 0 {
 		return 0, nil, err
 	}
-	outFile.Dentry().InotifyWithParent(linux.IN_MODIFY, 0, vfs.PathEvent)
+	outFile.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
 	return uintptr(n), nil, nil
 }
 
@@ -266,7 +266,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if inFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer inFile.DecRef()
+	defer inFile.DecRef(t)
 	if !inFile.IsReadable() {
 		return 0, nil, syserror.EBADF
 	}
@@ -275,7 +275,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if outFile == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer outFile.DecRef()
+	defer outFile.DecRef(t)
 	if !outFile.IsWritable() {
 		return 0, nil, syserror.EBADF
 	}
@@ -419,8 +419,8 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		return 0, nil, err
 	}
 
-	inFile.Dentry().InotifyWithParent(linux.IN_ACCESS, 0, vfs.PathEvent)
-	outFile.Dentry().InotifyWithParent(linux.IN_MODIFY, 0, vfs.PathEvent)
+	inFile.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
+	outFile.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
 	return uintptr(n), nil, nil
 }
 

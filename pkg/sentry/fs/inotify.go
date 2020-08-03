@@ -80,7 +80,7 @@ func NewInotify(ctx context.Context) *Inotify {
 
 // Release implements FileOperations.Release. Release removes all watches and
 // frees all resources for an inotify instance.
-func (i *Inotify) Release() {
+func (i *Inotify) Release(ctx context.Context) {
 	// We need to hold i.mu to avoid a race with concurrent calls to
 	// Inotify.targetDestroyed from Watches. There's no risk of Watches
 	// accessing this Inotify after the destructor ends, because we remove all
@@ -93,7 +93,7 @@ func (i *Inotify) Release() {
 		// the owner's destructor.
 		w.target.Watches.Remove(w.ID())
 		// Don't leak any references to the target, held by pins in the watch.
-		w.destroy()
+		w.destroy(ctx)
 	}
 }
 
@@ -321,7 +321,7 @@ func (i *Inotify) AddWatch(target *Dirent, mask uint32) int32 {
 //
 // RmWatch looks up an inotify watch for the given 'wd' and configures the
 // target dirent to stop sending events to this inotify instance.
-func (i *Inotify) RmWatch(wd int32) error {
+func (i *Inotify) RmWatch(ctx context.Context, wd int32) error {
 	i.mu.Lock()
 
 	// Find the watch we were asked to removed.
@@ -346,7 +346,7 @@ func (i *Inotify) RmWatch(wd int32) error {
 	i.queueEvent(newEvent(watch.wd, "", linux.IN_IGNORED, 0))
 
 	// Remove all pins.
-	watch.destroy()
+	watch.destroy(ctx)
 
 	return nil
 }

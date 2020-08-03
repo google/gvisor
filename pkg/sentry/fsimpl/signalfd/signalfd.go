@@ -54,7 +54,7 @@ var _ vfs.FileDescriptionImpl = (*SignalFileDescription)(nil)
 // New creates a new signal fd.
 func New(vfsObj *vfs.VirtualFilesystem, target *kernel.Task, mask linux.SignalSet, flags uint32) (*vfs.FileDescription, error) {
 	vd := vfsObj.NewAnonVirtualDentry("[signalfd]")
-	defer vd.DecRef()
+	defer vd.DecRef(target)
 	sfd := &SignalFileDescription{
 		target: target,
 		mask:   mask,
@@ -133,4 +133,4 @@ func (sfd *SignalFileDescription) EventUnregister(entry *waiter.Entry) {
 }
 
 // Release implements FileDescriptionImpl.Release()
-func (sfd *SignalFileDescription) Release() {}
+func (sfd *SignalFileDescription) Release(context.Context) {}

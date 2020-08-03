@@ -237,7 +237,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 
 	var fdTable *FDTable
 	if opts.NewFiles {
-		fdTable = t.fdTable.Fork()
+		fdTable = t.fdTable.Fork(t)
 	} else {
 		fdTable = t.fdTable
 		fdTable.IncRef()
@@ -294,7 +294,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	nt, err := t.tg.pidns.owner.NewTask(cfg)
 	if err != nil {
 		if opts.NewThreadGroup {
-			tg.release()
+			tg.release(t)
 		}
 		return 0, nil, err
 	}
@@ -510,7 +510,7 @@ func (t *Task) Unshare(opts *SharingOptions) error {
 	var oldFDTable *FDTable
 	if opts.NewFiles {
 		oldFDTable = t.fdTable
-		t.fdTable = oldFDTable.Fork()
+		t.fdTable = oldFDTable.Fork(t)
 	}
 	var oldFSContext *FSContext
 	if opts.NewFSContext {
@@ -519,10 +519,10 @@ func (t *Task) Unshare(opts *SharingOptions) error {
 	}
 	t.mu.Unlock()
 	if oldFDTable != nil {
-		oldFDTable.DecRef()
+		oldFDTable.DecRef(t)
 	}
 	if oldFSContext != nil {
-		oldFSContext.DecRef()
+		oldFSContext.DecRef(t)
 	}
 	return nil
 }

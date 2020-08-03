@@ -100,7 +100,7 @@ func NewInotifyFD(ctx context.Context, vfsObj *VirtualFilesystem, flags uint32) 
 
 	id := uniqueid.GlobalFromContext(ctx)
 	vd := vfsObj.NewAnonVirtualDentry(fmt.Sprintf("[inotifyfd:%d]", id))
-	defer vd.DecRef()
+	defer vd.DecRef(ctx)
 	fd := &Inotify{
 		id:      id,
 		scratch: make([]byte, inotifyEventBaseSize),
@@ -118,7 +118,7 @@ func NewInotifyFD(ctx context.Context, vfsObj *VirtualFilesystem, flags uint32) 
 
 // Release implements FileDescriptionImpl.Release. Release removes all
 // watches and frees all resources for an inotify instance.
-func (i *Inotify) Release() {
+func (i *Inotify) Release(ctx context.Context) {
 	var ds []*Dentry
 
 	// We need to hold i.mu to avoid a race with concurrent calls to
@@ -144,7 +144,7 @@ func (i *Inotify) Release() {
 	i.mu.Unlock()
 
 	for _, d := range ds {
-		d.OnZeroWatches()
+		d.OnZeroWatches(ctx)
 	}
 }
 
@@ -350,7 +350,7 @@ func (i *Inotify) AddWatch(target *Dentry, mask uint32) (int32, error) {
 
 // RmWatch looks up an inotify watch for the given 'wd' and configures the
 // target to stop sending events to this inotify instance.
-func (i *Inotify) RmWatch(wd int32) error {
+func (i *Inotify) RmWatch(ctx context.Context, wd int32) error {
 	i.mu.Lock()
 
 	// Find the watch we were asked to removed.
@@ -374,7 +374,7 @@ func (i *Inotify) RmWatch(wd int32) error {
 	i.mu.Unlock()
 
 	if remaining == 0 {
-		w.target.OnZeroWatches()
+		w.target.OnZeroWatches(ctx)
 	}
 
 	// Generate the event for the removal.
@@ -462,7 +462,7 @@ func (w *Watches) Remove(id uint64) {
 // Notify queues a new event with watches in this set. Watches with
 // IN_EXCL_UNLINK are skipped if the event is coming from a child that has been
 // unlinked.
-func (w *Watches) Notify(name string, events, cookie uint32, et EventType, unlinked bool) {
+func (w *Watches) Notify(ctx context.Context, name string, events, cookie uint32, et EventType, unlinked bool) {
 	var hasExpired bool
 	w.mu.RLock()
 	for _, watch := range w.ws {
@@ -476,13 +476,13 @@ func (w *Watches) Notify(name string, events, cookie uint32, et EventType, unlin
 	w.mu.RUnlock()
 
 	if hasExpired {
-		w.cleanupExpiredWatches()
+		w.cleanupExpiredWatches(ctx)
 	}
 }
 
 // This function is relatively expensive and should only be called where there
 // are expired watches.
-func (w *Watches) cleanupExpiredWatches() {
+func (w *Watches) cleanupExpiredWatches(ctx context.Context) {
 	// Because of lock ordering, we cannot acquire Inotify.mu for each watch
 	// owner while holding w.mu. As a result, store expired watches locally
 	// before removing.
@@ -495,15 +495,15 @@ func (w *Watches) cleanupExpiredWatches() {
 	}
 	w.mu.RUnlock()
 	for _, watch := range toRemove {
-		watch.owner.RmWatch(watch.wd)
+		watch.owner.RmWatch(ctx, watch.wd)
 	}
 }
 
 // HandleDeletion is called when the watch target is destroyed. Clear the
 // watch set, detach watches from the inotify instances they belong to, and
 // generate the appropriate events.
-func (w *Watches) HandleDeletion() {
-	w.Notify("", linux.IN_DELETE_SELF, 0, InodeEvent, true /* unlinked */)
+func (w *Watches) HandleDeletion(ctx context.Context) {
+	w.Notify(ctx, "", linux.IN_DELETE_SELF, 0, InodeEvent, true /* unlinked */)
 
 	// As in Watches.Notify, we can't hold w.mu while acquiring Inotify.mu for
 	// the owner of each watch being deleted. Instead, atomically store the
@@ -744,12 +744,12 @@ func InotifyEventFromStatMask(mask uint32) uint32 {
 // InotifyRemoveChild sends the appriopriate notifications to the watch sets of
 // the child being removed and its parent. Note that unlike most pairs of
 // parent/child notifications, the child is notified first in this case.
-func InotifyRemoveChild(self, parent *Watches, name string) {
+func InotifyRemoveChild(ctx context.Context, self, parent *Watches, name string) {
 	if self != nil {
-		self.Notify("", linux.IN_ATTRIB, 0, InodeEvent, true /* unlinked */)
+		self.Notify(ctx, "", linux.IN_ATTRIB, 0, InodeEvent, true /* unlinked */)
 	}
 	if parent != nil {
-		parent.Notify(name, linux.IN_DELETE, 0, InodeEvent, true /* unlinked */)
+		parent.Notify(ctx, name, linux.IN_DELETE, 0, InodeEvent, true /* unlinked */)
 	}
 }
 
@@ -762,13 +762,13 @@ func InotifyRename(ctx context.Context, renamed, oldParent, newParent *Watches, 
 	}
 	cookie := uniqueid.InotifyCookie(ctx)
 	if oldParent != nil {
-		oldParent.Notify(oldName, dirEv|linux.IN_MOVED_FROM, cookie, InodeEvent, false /* unlinked */)
+		oldParent.Notify(ctx, oldName, dirEv|linux.IN_MOVED_FROM, cookie, InodeEvent, false /* unlinked */)
 	}
 	if newParent != nil {
-		newParent.Notify(newName, dirEv|linux.IN_MOVED_TO, cookie, InodeEvent, false /* unlinked */)
+		newParent.Notify(ctx, newName, dirEv|linux.IN_MOVED_TO, cookie, InodeEvent, false /* unlinked */)
 	}
 	// Somewhat surprisingly, self move events do not have a cookie.
 	if renamed != nil {
-		renamed.Notify("", linux.IN_MOVE_SELF, 0, InodeEvent, false /* unlinked */)
+		renamed.Notify(ctx, "", linux.IN_MOVE_SELF, 0, InodeEvent, false /* unlinked */)
 	}
 }

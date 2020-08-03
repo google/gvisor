@@ -19,6 +19,7 @@ package futex
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -66,9 +67,9 @@ type Key struct {
 	Offset uint64
 }
 
-func (k *Key) release() {
+func (k *Key) release(t Target) {
 	if k.MappingIdentity != nil {
-		k.MappingIdentity.DecRef()
+		k.MappingIdentity.DecRef(t)
 	}
 	k.Mappable = nil
 	k.MappingIdentity = nil
@@ -94,6 +95,8 @@ func (k *Key) matches(k2 *Key) bool {
 
 // Target abstracts memory accesses and keys.
 type Target interface {
+	context.Context
+
 	// SwapUint32 gives access to usermem.IO.SwapUint32.
 	SwapUint32(addr usermem.Addr, new uint32) (uint32, error)
 
@@ -296,7 +299,7 @@ func (b *bucket) wakeWaiterLocked(w *Waiter) {
 // bucket "to".
 //
 // Preconditions: b and to must be locked.
-func (b *bucket) requeueLocked(to *bucket, key, nkey *Key, n int) int {
+func (b *bucket) requeueLocked(t Target, to *bucket, key, nkey *Key, n int) int {
 	done := 0
 	for w := b.waiters.Front(); done < n && w != nil; {
 		if !w.key.matches(key) {
@@ -308,7 +311,7 @@ func (b *bucket) requeueLocked(to *bucket, key, nkey *Key, n int) int {
 		requeued := w
 		w = w.Next() // Next iteration.
 		b.waiters.Remove(requeued)
-		requeued.key.release()
+		requeued.key.release(t)
 		requeued.key = nkey.clone()
 		to.waiters.PushBack(requeued)
 		requeued.bucket.Store(to)
@@ -456,7 +459,7 @@ func (m *Manager) Wake(t Target, addr usermem.Addr, private bool, bitmask uint32
 	r := b.wakeLocked(&k, bitmask, n)
 
 	b.mu.Unlock()
-	k.release()
+	k.release(t)
 	return r, nil
 }
 
@@ -465,12 +468,12 @@ func (m *Manager) doRequeue(t Target, addr, naddr usermem.Addr, private bool, ch
 	if err != nil {
 		return 0, err
 	}
-	defer k1.release()
+	defer k1.release(t)
 	k2, err := getKey(t, naddr, private)
 	if err != nil {
 		return 0, err
 	}
-	defer k2.release()
+	defer k2.release(t)
 
 	b1, b2 := m.lockBuckets(&k1, &k2)
 	defer b1.mu.Unlock()
@@ -488,7 +491,7 @@ func (m *Manager) doRequeue(t Target, addr, naddr usermem.Addr, private bool, ch
 	done := b1.wakeLocked(&k1, ^uint32(0), nwake)
 
 	// Requeue the number required.
-	b1.requeueLocked(b2, &k1, &k2, nreq)
+	b1.requeueLocked(t, b2, &k1, &k2, nreq)
 
 	return done, nil
 }
@@ -515,12 +518,12 @@ func (m *Manager) WakeOp(t Target, addr1, addr2 usermem.Addr, private bool, nwak
 	if err != nil {
 		return 0, err
 	}
-	defer k1.release()
+	defer k1.release(t)
 	k2, err := getKey(t, addr2, private)
 	if err != nil {
 		return 0, err
 	}
-	defer k2.release()
+	defer k2.release(t)
 
 	b1, b2 := m.lockBuckets(&k1, &k2)
 	defer b1.mu.Unlock()
@@ -571,7 +574,7 @@ func (m *Manager) WaitPrepare(w *Waiter, t Target, addr usermem.Addr, private bo
 	// Perform our atomic check.
 	if err := check(t, addr, val); err != nil {
 		b.mu.Unlock()
-		w.key.release()
+		w.key.release(t)
 		return err
 	}
 
@@ -585,7 +588,7 @@ func (m *Manager) WaitPrepare(w *Waiter, t Target, addr usermem.Addr, private bo
 
 // WaitComplete must be called when a Waiter previously added by WaitPrepare is
 // no longer eligible to be woken.
-func (m *Manager) WaitComplete(w *Waiter) {
+func (m *Manager) WaitComplete(w *Waiter, t Target) {
 	// Remove w from the bucket it's in.
 	for {
 		b := w.bucket.Load()
@@ -617,7 +620,7 @@ func (m *Manager) WaitComplete(w *Waiter) {
 	}
 
 	// Release references held by the waiter.
-	w.key.release()
+	w.key.release(t)
 }
 
 // LockPI attempts to lock the futex following the Priority-inheritance futex
@@ -648,13 +651,13 @@ func (m *Manager) LockPI(w *Waiter, t Target, addr usermem.Addr, tid uint32, pri
 
 	success, err := m.lockPILocked(w, t, addr, tid, b, try)
 	if err != nil {
-		w.key.release()
+		w.key.release(t)
 		b.mu.Unlock()
 		return false, err
 	}
 	if success || try {
 		// Release waiter if it's not going to be a wait.
-		w.key.release()
+		w.key.release(t)
 	}
 	b.mu.Unlock()
 	return success, nil
@@ -730,7 +733,7 @@ func (m *Manager) UnlockPI(t Target, addr usermem.Addr, tid uint32, private bool
 
 	err = m.unlockPILocked(t, addr, tid, b, &k)
 
-	k.release()
+	k.release(t)
 	b.mu.Unlock()
 	return err
 }

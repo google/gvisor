@@ -194,7 +194,7 @@ func newSocket(ctx context.Context, orgfd int, saveable bool) (*fs.File, error) 
 }
 
 // Send implements transport.ConnectedEndpoint.Send.
-func (c *ConnectedEndpoint) Send(data [][]byte, controlMessages transport.ControlMessages, from tcpip.FullAddress) (int64, bool, *syserr.Error) {
+func (c *ConnectedEndpoint) Send(ctx context.Context, data [][]byte, controlMessages transport.ControlMessages, from tcpip.FullAddress) (int64, bool, *syserr.Error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -271,7 +271,7 @@ func (c *ConnectedEndpoint) EventUpdate() {
 }
 
 // Recv implements transport.Receiver.Recv.
-func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights int, peek bool) (int64, int64, transport.ControlMessages, bool, tcpip.FullAddress, bool, *syserr.Error) {
+func (c *ConnectedEndpoint) Recv(ctx context.Context, data [][]byte, creds bool, numRights int, peek bool) (int64, int64, transport.ControlMessages, bool, tcpip.FullAddress, bool, *syserr.Error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -318,7 +318,7 @@ func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights int, peek 
 }
 
 // close releases all resources related to the endpoint.
-func (c *ConnectedEndpoint) close() {
+func (c *ConnectedEndpoint) close(context.Context) {
 	fdnotifier.RemoveFD(int32(c.file.FD()))
 	c.file.Close()
 	c.file = nil
@@ -374,8 +374,8 @@ func (c *ConnectedEndpoint) RecvMaxQueueSize() int64 {
 }
 
 // Release implements transport.ConnectedEndpoint.Release and transport.Receiver.Release.
-func (c *ConnectedEndpoint) Release() {
-	c.ref.DecRefWithDestructor(c.close)
+func (c *ConnectedEndpoint) Release(ctx context.Context) {
+	c.ref.DecRefWithDestructor(ctx, c.close)
 }
 
 // CloseUnread implements transport.ConnectedEndpoint.CloseUnread.

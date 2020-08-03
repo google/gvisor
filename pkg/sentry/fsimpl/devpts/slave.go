@@ -56,7 +56,7 @@ func (si *slaveInode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs
 	}
 	fd.LockFD.Init(&si.locks)
 	if err := fd.vfsfd.Init(fd, opts.Flags, rp.Mount(), vfsd, &vfs.FileDescriptionOptions{}); err != nil {
-		si.DecRef()
+		si.DecRef(ctx)
 		return nil, err
 	}
 	return &fd.vfsfd, nil
@@ -103,8 +103,8 @@ type slaveFileDescription struct {
 var _ vfs.FileDescriptionImpl = (*slaveFileDescription)(nil)
 
 // Release implements fs.FileOperations.Release.
-func (sfd *slaveFileDescription) Release() {
-	sfd.inode.DecRef()
+func (sfd *slaveFileDescription) Release(ctx context.Context) {
+	sfd.inode.DecRef(ctx)
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.

@@ -308,7 +308,7 @@ func (tg *ThreadGroup) Limits() *limits.LimitSet {
 }
 
 // release releases the thread group's resources.
-func (tg *ThreadGroup) release() {
+func (tg *ThreadGroup) release(t *Task) {
 	// Timers must be destroyed without holding the TaskSet or signal mutexes
 	// since timers send signals with Timer.mu locked.
 	tg.itimerRealTimer.Destroy()
@@ -325,7 +325,7 @@ func (tg *ThreadGroup) release() {
 		it.DestroyTimer()
 	}
 	if tg.mounts != nil {
-		tg.mounts.DecRef()
+		tg.mounts.DecRef(t)
 	}
 }
 

@@ -42,7 +42,7 @@ func getTaskPathOperation(t *kernel.Task, dirfd int32, path fspath.Path, shouldA
 	haveStartRef := false
 	if !path.Absolute {
 		if !path.HasComponents() && !bool(shouldAllowEmptyPath) {
-			root.DecRef()
+			root.DecRef(t)
 			return taskPathOperation{}, syserror.ENOENT
 		}
 		if dirfd == linux.AT_FDCWD {
@@ -51,13 +51,13 @@ func getTaskPathOperation(t *kernel.Task, dirfd int32, path fspath.Path, shouldA
 		} else {
 			dirfile := t.GetFileVFS2(dirfd)
 			if dirfile == nil {
-				root.DecRef()
+				root.DecRef(t)
 				return taskPathOperation{}, syserror.EBADF
 			}
 			start = dirfile.VirtualDentry()
 			start.IncRef()
 			haveStartRef = true
-			dirfile.DecRef()
+			dirfile.DecRef(t)
 		}
 	}
 	return taskPathOperation{
@@ -71,10 +71,10 @@ func getTaskPathOperation(t *kernel.Task, dirfd int32, path fspath.Path, shouldA
 	}, nil
 }
 
-func (tpop *taskPathOperation) Release() {
-	tpop.pop.Root.DecRef()
+func (tpop *taskPathOperation) Release(t *kernel.Task) {
+	tpop.pop.Root.DecRef(t)
 	if tpop.haveStartRef {
-		tpop.pop.Start.DecRef()
+		tpop.pop.Start.DecRef(t)
 		tpop.haveStartRef = false
 	}
 }

@@ -56,11 +56,11 @@ func walkDescriptors(t *kernel.Task, p string, toInode func(*fs.File, kernel.FDF
 // readDescriptors reads fds in the task starting at offset, and calls the
 // toDentAttr callback for each to get a DentAttr, which it then emits. This is
 // a helper for implementing fs.InodeOperations.Readdir.
-func readDescriptors(t *kernel.Task, c *fs.DirCtx, offset int64, toDentAttr func(int) fs.DentAttr) (int64, error) {
+func readDescriptors(ctx context.Context, t *kernel.Task, c *fs.DirCtx, offset int64, toDentAttr func(int) fs.DentAttr) (int64, error) {
 	var fds []int32
 	t.WithMuLocked(func(t *kernel.Task) {
 		if fdTable := t.FDTable(); fdTable != nil {
-			fds = fdTable.GetFDs()
+			fds = fdTable.GetFDs(ctx)
 		}
 	})
 
@@ -116,7 +116,7 @@ func (f *fd) GetFile(context.Context, *fs.Dirent, fs.FileFlags) (*fs.File, error
 func (f *fd) Readlink(ctx context.Context, _ *fs.Inode) (string, error) {
 	root := fs.RootFromContext(ctx)
 	if root != nil {
-		defer root.DecRef()
+		defer root.DecRef(ctx)
 	}
 	n, _ := f.file.Dirent.FullName(root)
 	return n, nil
@@ -135,13 +135,7 @@ func (f *fd) Truncate(context.Context, *fs.Inode, int64) error {
 
 func (f *fd) Release(ctx context.Context) {
 	f.Symlink.Release(ctx)
-	f.file.DecRef()
-}
-
-// Close releases the reference on the file.
-func (f *fd) Close() error {
-	f.file.DecRef()
-	return nil
+	f.file.DecRef(ctx)
 }
 
 // fdDir is an InodeOperations for /proc/TID/fd.
@@ -227,7 +221,7 @@ func (f *fdDirFile) Readdir(ctx context.Context, file *fs.File, ser fs.DentrySer
 	if f.isInfoFile {
 		typ = fs.Symlink
 	}
-	return readDescriptors(f.t, dirCtx, file.Offset(), func(fd int) fs.DentAttr {
+	return readDescriptors(ctx, f.t, dirCtx, file.Offset(), func(fd int) fs.DentAttr {
 		return fs.GenericDentAttr(typ, device.ProcDevice)
 	})
 }
@@ -261,7 +255,7 @@ func (fdid *fdInfoDir) Lookup(ctx context.Context, dir *fs.Inode, p string) (*fs
 		// locks, and other data.  For now we only have flags.
 		// See https://www.kernel.org/doc/Documentation/filesystems/proc.txt
 		flags := file.Flags().ToLinux() | fdFlags.ToLinuxFileFlags()
-		file.DecRef()
+		file.DecRef(ctx)
 		contents := []byte(fmt.Sprintf("flags:\t0%o\n", flags))
 		return newStaticProcInode(ctx, dir.MountSource, contents)
 	})

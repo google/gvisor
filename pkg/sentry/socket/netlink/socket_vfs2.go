@@ -57,14 +57,14 @@ func NewVFS2(t *kernel.Task, skType linux.SockType, protocol Protocol) (*SocketV
 	// Bind the endpoint for good measure so we can connect to it. The
 	// bound address will never be exposed.
 	if err := ep.Bind(tcpip.FullAddress{Addr: "dummy"}, nil); err != nil {
-		ep.Close()
+		ep.Close(t)
 		return nil, err
 	}
 
 	// Create a connection from which the kernel can write messages.
 	connection, err := ep.(transport.BoundEndpoint).UnidirectionalConnect(t)
 	if err != nil {
-		ep.Close()
+		ep.Close(t)
 		return nil, err
 	}
 

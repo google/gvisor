@@ -49,7 +49,7 @@ func FGetXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	if f == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer f.DecRef()
+	defer f.DecRef(t)
 
 	n, err := getXattr(t, f.Dirent, nameAddr, valueAddr, size)
 	if err != nil {
@@ -153,7 +153,7 @@ func FSetXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	if f == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer f.DecRef()
+	defer f.DecRef(t)
 
 	return 0, nil, setXattr(t, f.Dirent, nameAddr, valueAddr, uint64(size), flags)
 }
@@ -270,7 +270,7 @@ func FListXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	if f == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer f.DecRef()
+	defer f.DecRef(t)
 
 	n, err := listXattr(t, f.Dirent, listAddr, size)
 	if err != nil {
@@ -384,7 +384,7 @@ func FRemoveXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	if f == nil {
 		return 0, nil, syserror.EBADF
 	}
-	defer f.DecRef()
+	defer f.DecRef(t)
 
 	return 0, nil, removeXattr(t, f.Dirent, nameAddr)
 }

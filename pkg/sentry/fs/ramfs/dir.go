@@ -219,7 +219,7 @@ func (d *Dir) Remove(ctx context.Context, _ *fs.Inode, name string) error {
 	}
 
 	// Remove our reference on the inode.
-	inode.DecRef()
+	inode.DecRef(ctx)
 	return nil
 }
 
@@ -250,7 +250,7 @@ func (d *Dir) RemoveDirectory(ctx context.Context, _ *fs.Inode, name string) err
 	}
 
 	// Remove our reference on the inode.
-	inode.DecRef()
+	inode.DecRef(ctx)
 
 	return nil
 }
@@ -326,7 +326,7 @@ func (d *Dir) Create(ctx context.Context, dir *fs.Inode, name string, flags fs.F
 
 	// Create the Dirent and corresponding file.
 	created := fs.NewDirent(ctx, inode, name)
-	defer created.DecRef()
+	defer created.DecRef(ctx)
 	return created.Inode.GetFile(ctx, created, flags)
 }
 
@@ -412,11 +412,11 @@ func (*Dir) Rename(ctx context.Context, inode *fs.Inode, oldParent *fs.Inode, ol
 }
 
 // Release implements fs.InodeOperation.Release.
-func (d *Dir) Release(_ context.Context) {
+func (d *Dir) Release(ctx context.Context) {
 	// Drop references on all children.
 	d.mu.Lock()
 	for _, i := range d.children {
-		i.DecRef()
+		i.DecRef(ctx)
 	}
 	d.mu.Unlock()
 }
@@ -456,7 +456,7 @@ func (dfo *dirFileOperations) IterateDir(ctx context.Context, d *fs.Dirent, dirC
 func (dfo *dirFileOperations) Readdir(ctx context.Context, file *fs.File, serializer fs.DentrySerializer) (int64, error) {
 	root := fs.RootFromContext(ctx)
 	if root != nil {
-		defer root.DecRef()
+		defer root.DecRef(ctx)
 	}
 	dirCtx := &fs.DirCtx{
 		Serializer: serializer,
@@ -473,13 +473,13 @@ func hasChildren(ctx context.Context, inode *fs.Inode) (bool, error) {
 	// dropped when that dirent is destroyed.
 	inode.IncRef()
 	d := fs.NewTransientDirent(inode)
-	defer d.DecRef()
+	defer d.DecRef(ctx)
 
 	file, err := inode.GetFile(ctx, d, fs.FileFlags{Read: true})
 	if err != nil {
 		return false, err
 	}
-	defer file.DecRef()
+	defer file.DecRef(ctx)
 
 	ser := &fs.CollectEntriesSerializer{}
 	if err := file.Readdir(ctx, ser); err != nil {
@@ -530,7 +530,7 @@ func Rename(ctx context.Context, oldParent fs.InodeOperations, oldName string, n
 		if err != nil {
 			return err
 		}
-		inode.DecRef()
+		inode.DecRef(ctx)
 	}
 
 	// Be careful, we may have already grabbed this mutex above.

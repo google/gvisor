@@ -75,7 +75,7 @@ func newMasterInode(ctx context.Context, d *dirInodeOperations, owner fs.FileOwn
 }
 
 // Release implements fs.InodeOperations.Release.
-func (mi *masterInodeOperations) Release(ctx context.Context) {
+func (mi *masterInodeOperations) Release(context.Context) {
 }
 
 // Truncate implements fs.InodeOperations.Truncate.
@@ -120,9 +120,9 @@ type masterFileOperations struct {
 var _ fs.FileOperations = (*masterFileOperations)(nil)
 
 // Release implements fs.FileOperations.Release.
-func (mf *masterFileOperations) Release() {
-	mf.d.masterClose(mf.t)
-	mf.t.DecRef()
+func (mf *masterFileOperations) Release(ctx context.Context) {
+	mf.d.masterClose(ctx, mf.t)
+	mf.t.DecRef(ctx)
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.

@@ -55,7 +55,7 @@ type ttyFD struct {
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *ttyFD) Release() {}
+func (fd *ttyFD) Release(context.Context) {}
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *ttyFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {

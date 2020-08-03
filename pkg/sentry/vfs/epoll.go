@@ -93,9 +93,9 @@ type epollInterest struct {
 
 // NewEpollInstanceFD returns a FileDescription representing a new epoll
 // instance. A reference is taken on the returned FileDescription.
-func (vfs *VirtualFilesystem) NewEpollInstanceFD() (*FileDescription, error) {
+func (vfs *VirtualFilesystem) NewEpollInstanceFD(ctx context.Context) (*FileDescription, error) {
 	vd := vfs.NewAnonVirtualDentry("[eventpoll]")
-	defer vd.DecRef()
+	defer vd.DecRef(ctx)
 	ep := &EpollInstance{
 		interest: make(map[epollInterestKey]*epollInterest),
 	}
@@ -110,7 +110,7 @@ func (vfs *VirtualFilesystem) NewEpollInstanceFD() (*FileDescription, error) {
 }
 
 // Release implements FileDescriptionImpl.Release.
-func (ep *EpollInstance) Release() {
+func (ep *EpollInstance) Release(ctx context.Context) {
 	// Unregister all polled fds.
 	ep.interestMu.Lock()
 	defer ep.interestMu.Unlock()

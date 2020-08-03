@@ -100,12 +100,12 @@ func (fs *Filesystem) TryIncRef() bool {
 }
 
 // DecRef decrements fs' reference count.
-func (fs *Filesystem) DecRef() {
+func (fs *Filesystem) DecRef(ctx context.Context) {
 	if refs := atomic.AddInt64(&fs.refs, -1); refs == 0 {
 		fs.vfs.filesystemsMu.Lock()
 		delete(fs.vfs.filesystems, fs)
 		fs.vfs.filesystemsMu.Unlock()
-		fs.impl.Release()
+		fs.impl.Release(ctx)
 	} else if refs < 0 {
 		panic("Filesystem.decRef() called without holding a reference")
 	}
@@ -149,7 +149,7 @@ func (fs *Filesystem) DecRef() {
 type FilesystemImpl interface {
 	// Release is called when the associated Filesystem reaches zero
 	// references.
-	Release()
+	Release(ctx context.Context)
 
 	// Sync "causes all pending modifications to filesystem metadata and cached
 	// file data to be written to the underlying [filesystem]", as by syncfs(2).

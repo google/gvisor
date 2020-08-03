@@ -117,7 +117,7 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 	resolveFinal := flags&linux.AT_SYMLINK_NOFOLLOW == 0
 
 	root := t.FSContext().RootDirectory()
-	defer root.DecRef()
+	defer root.DecRef(t)
 
 	var wd *fs.Dirent
 	var executable fsbridge.File
@@ -133,7 +133,7 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 		if f == nil {
 			return 0, nil, syserror.EBADF
 		}
-		defer f.DecRef()
+		defer f.DecRef(t)
 		closeOnExec = fdFlags.CloseOnExec
 
 		if atEmptyPath && len(pathname) == 0 {
@@ -155,7 +155,7 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 		}
 	}
 	if wd != nil {
-		defer wd.DecRef()
+		defer wd.DecRef(t)
 	}
 
 	// Load the new TaskContext.

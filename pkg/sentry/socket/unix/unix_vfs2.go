@@ -136,7 +136,7 @@ func (s *SocketVFS2) Accept(t *kernel.Task, peerRequested bool, flags int, block
 	if err != nil {
 		return 0, nil, 0, err
 	}
-	defer ns.DecRef()
+	defer ns.DecRef(t)
 
 	if flags&linux.SOCK_NONBLOCK != 0 {
 		ns.SetStatusFlags(t, t.Credentials(), linux.SOCK_NONBLOCK)
@@ -183,19 +183,19 @@ func (s *SocketVFS2) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 			if t.IsNetworkNamespaced() {
 				return syserr.ErrInvalidEndpointState
 			}
-			if err := t.AbstractSockets().Bind(p[1:], bep, s); err != nil {
+			if err := t.AbstractSockets().Bind(t, p[1:], bep, s); err != nil {
 				// syserr.ErrPortInUse corresponds to EADDRINUSE.
 				return syserr.ErrPortInUse
 			}
 		} else {
 			path := fspath.Parse(p)
 			root := t.FSContext().RootDirectoryVFS2()
-			defer root.DecRef()
+			defer root.DecRef(t)
 			start := root
 			relPath := !path.Absolute
 			if relPath {
 				start = t.FSContext().WorkingDirectoryVFS2()
-				defer start.DecRef()
+				defer start.DecRef(t)
 			}
 			pop := vfs.PathOperation{
 				Root:  root,
@@ -333,7 +333,7 @@ func (*providerVFS2) Socket(t *kernel.Task, stype linux.SockType, protocol int) 
 
 	f, err := NewSockfsFile(t, ep, stype)
 	if err != nil {
-		ep.Close()
+		ep.Close(t)
 		return nil, err
 	}
 	return f, nil
@@ -357,14 +357,14 @@ func (*providerVFS2) Pair(t *kernel.Task, stype linux.SockType, protocol int) (*
 	ep1, ep2 := transport.NewPair(t, stype, t.Kernel())
 	s1, err := NewSockfsFile(t, ep1, stype)
 	if err != nil {
-		ep1.Close()
-		ep2.Close()
+		ep1.Close(t)
+		ep2.Close(t)
 		return nil, nil, err
 	}
 	s2, err := NewSockfsFile(t, ep2, stype)
 	if err != nil {
-		s1.DecRef()
-		ep2.Close()
+		s1.DecRef(t)
+		ep2.Close(t)
 		return nil, nil, err
 	}
 

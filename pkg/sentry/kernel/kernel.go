@@ -376,7 +376,8 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.netlinkPorts = port.New()
 
 	if VFS2Enabled {
-		if err := k.vfs.Init(); err != nil {
+		ctx := k.SupervisorContext()
+		if err := k.vfs.Init(ctx); err != nil {
 			return fmt.Errorf("failed to initialize VFS: %v", err)
 		}
 
@@ -384,19 +385,19 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 		if err != nil {
 			return fmt.Errorf("failed to create pipefs filesystem: %v", err)
 		}
-		defer pipeFilesystem.DecRef()
+		defer pipeFilesystem.DecRef(ctx)
 		pipeMount, err := k.vfs.NewDisconnectedMount(pipeFilesystem, nil, &vfs.MountOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to create pipefs mount: %v", err)
 		}
 		k.pipeMount = pipeMount
 
-		tmpfsFilesystem, tmpfsRoot, err := tmpfs.NewFilesystem(k.SupervisorContext(), &k.vfs, auth.NewRootCredentials(k.rootUserNamespace))
+		tmpfsFilesystem, tmpfsRoot, err := tmpfs.NewFilesystem(ctx, &k.vfs, auth.NewRootCredentials(k.rootUserNamespace))
 		if err != nil {
 			return fmt.Errorf("failed to create tmpfs filesystem: %v", err)
 		}
-		defer tmpfsFilesystem.DecRef()
-		defer tmpfsRoot.DecRef()
+		defer tmpfsFilesystem.DecRef(ctx)
+		defer tmpfsRoot.DecRef(ctx)
 		shmMount, err := k.vfs.NewDisconnectedMount(tmpfsFilesystem, tmpfsRoot, &vfs.MountOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to create tmpfs mount: %v", err)
@@ -407,7 +408,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 		if err != nil {
 			return fmt.Errorf("failed to create sockfs filesystem: %v", err)
 		}
-		defer socketFilesystem.DecRef()
+		defer socketFilesystem.DecRef(ctx)
 		socketMount, err := k.vfs.NewDisconnectedMount(socketFilesystem, nil, &vfs.MountOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to create sockfs mount: %v", err)
@@ -430,8 +431,8 @@ func (k *Kernel) SaveTo(w wire.Writer) error {
 	defer k.extMu.Unlock()
 
 	// Stop time.
-	k.pauseTimeLocked()
-	defer k.resumeTimeLocked()
+	k.pauseTimeLocked(ctx)
+	defer k.resumeTimeLocked(ctx)
 
 	// Evict all evictable MemoryFile allocations.
 	k.mf.StartEvictions()
@@ -447,12 +448,12 @@ func (k *Kernel) SaveTo(w wire.Writer) error {
 	// Remove all epoll waiter objects from underlying wait queues.
 	// NOTE: for programs to resume execution in future snapshot scenarios,
 	// we will need to re-establish these waiter objects after saving.
-	k.tasks.unregisterEpollWaiters()
+	k.tasks.unregisterEpollWaiters(ctx)
 
 	// Clear the dirent cache before saving because Dirents must be Loaded in a
 	// particular order (parents before children), and Loading dirents from a cache
 	// breaks that order.
-	if err := k.flushMountSourceRefs(); err != nil {
+	if err := k.flushMountSourceRefs(ctx); err != nil {
 		return err
 	}
 
@@ -505,7 +506,7 @@ func (k *Kernel) SaveTo(w wire.Writer) error {
 
 // flushMountSourceRefs flushes the MountSources for all mounted filesystems
 // and open FDs.
-func (k *Kernel) flushMountSourceRefs() error {
+func (k *Kernel) flushMountSourceRefs(ctx context.Context) error {
 	// Flush all mount sources for currently mounted filesystems in each task.
 	flushed := make(map[*fs.MountNamespace]struct{})
 	k.tasks.mu.RLock()
@@ -521,7 +522,7 @@ func (k *Kernel) flushMountSourceRefs() error {
 
 	// There may be some open FDs whose filesystems have been unmounted. We
 	// must flush those as well.
-	return k.tasks.forEachFDPaused(func(file *fs.File, _ *vfs.FileDescription) error {
+	return k.tasks.forEachFDPaused(ctx, func(file *fs.File, _ *vfs.FileDescription) error {
 		file.Dirent.Inode.MountSource.FlushDirentRefs()
 		return nil
 	})
@@ -531,7 +532,7 @@ func (k *Kernel) flushMountSourceRefs() error {
 // each task.
 //
 // Precondition: Must be called with the kernel paused.
-func (ts *TaskSet) forEachFDPaused(f func(*fs.File, *vfs.FileDescription) error) (err error) {
+func (ts *TaskSet) forEachFDPaused(ctx context.Context, f func(*fs.File, *vfs.FileDescription) error) (err error) {
 	// TODO(gvisor.dev/issue/1663): Add save support for VFS2.
 	if VFS2Enabled {
 		return nil
@@ -544,7 +545,7 @@ func (ts *TaskSet) forEachFDPaused(f func(*fs.File, *vfs.FileDescription) error)
 		if t.fdTable == nil {
 			continue
 		}
-		t.fdTable.forEach(func(_ int32, file *fs.File, fileVFS2 *vfs.FileDescription, _ FDFlags) {
+		t.fdTable.forEach(ctx, func(_ int32, file *fs.File, fileVFS2 *vfs.FileDescription, _ FDFlags) {
 			if lastErr := f(file, fileVFS2); lastErr != nil && err == nil {
 				err = lastErr
 			}
@@ -555,7 +556,7 @@ func (ts *TaskSet) forEachFDPaused(f func(*fs.File, *vfs.FileDescription) error)
 
 func (ts *TaskSet) flushWritesToFiles(ctx context.Context) error {
 	// TODO(gvisor.dev/issue/1663): Add save support for VFS2.
-	return ts.forEachFDPaused(func(file *fs.File, _ *vfs.FileDescription) error {
+	return ts.forEachFDPaused(ctx, func(file *fs.File, _ *vfs.FileDescription) error {
 		if flags := file.Flags(); !flags.Write {
 			return nil
 		}
@@ -602,7 +603,7 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 	return nil
 }
 
-func (ts *TaskSet) unregisterEpollWaiters() {
+func (ts *TaskSet) unregisterEpollWaiters(ctx context.Context) {
 	// TODO(gvisor.dev/issue/1663): Add save support for VFS2.
 	if VFS2Enabled {
 		return
@@ -623,7 +624,7 @@ func (ts *TaskSet) unregisterEpollWaiters() {
 		if _, ok := processed[t.fdTable]; ok {
 			continue
 		}
-		t.fdTable.forEach(func(_ int32, file *fs.File, _ *vfs.FileDescription, _ FDFlags) {
+		t.fdTable.forEach(ctx, func(_ int32, file *fs.File, _ *vfs.FileDescription, _ FDFlags) {
 			if e, ok := file.FileOperations.(*epoll.EventPoll); ok {
 				e.UnregisterEpollWaiters()
 			}
@@ -900,7 +901,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		root := args.MountNamespaceVFS2.Root()
 		// The call to newFSContext below will take a reference on root, so we
 		// don't need to hold this one.
-		defer root.DecRef()
+		defer root.DecRef(ctx)
 
 		// Grab the working directory.
 		wd := root // Default.
@@ -918,7 +919,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 			if err != nil {
 				return nil, 0, fmt.Errorf("failed to find initial working directory %q: %v", args.WorkingDirectory, err)
 			}
-			defer wd.DecRef()
+			defer wd.DecRef(ctx)
 		}
 		opener = fsbridge.NewVFSLookup(mntnsVFS2, root, wd)
 		fsContext = NewFSContextVFS2(root, wd, args.Umask)
@@ -933,7 +934,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		root := mntns.Root()
 		// The call to newFSContext below will take a reference on root, so we
 		// don't need to hold this one.
-		defer root.DecRef()
+		defer root.DecRef(ctx)
 
 		// Grab the working directory.
 		remainingTraversals := args.MaxSymlinkTraversals
@@ -944,7 +945,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 			if err != nil {
 				return nil, 0, fmt.Errorf("failed to find initial working directory %q: %v", args.WorkingDirectory, err)
 			}
-			defer wd.DecRef()
+			defer wd.DecRef(ctx)
 		}
 		opener = fsbridge.NewFSLookup(mntns, root, wd)
 		fsContext = newFSContext(root, wd, args.Umask)
@@ -1054,7 +1055,7 @@ func (k *Kernel) Start() error {
 	// If k was created by LoadKernelFrom, timers were stopped during
 	// Kernel.SaveTo and need to be resumed. If k was created by NewKernel,
 	// this is a no-op.
-	k.resumeTimeLocked()
+	k.resumeTimeLocked(k.SupervisorContext())
 	// Start task goroutines.
 	k.tasks.mu.RLock()
 	defer k.tasks.mu.RUnlock()
@@ -1068,7 +1069,7 @@ func (k *Kernel) Start() error {
 //
 // Preconditions: Any task goroutines running in k must be stopped. k.extMu
 // must be locked.
-func (k *Kernel) pauseTimeLocked() {
+func (k *Kernel) pauseTimeLocked(ctx context.Context) {
 	// k.cpuClockTicker may be nil since Kernel.SaveTo() may be called before
 	// Kernel.Start().
 	if k.cpuClockTicker != nil {
@@ -1090,7 +1091,7 @@ func (k *Kernel) pauseTimeLocked() {
 		// This means we'll iterate FDTables shared by multiple tasks repeatedly,
 		// but ktime.Timer.Pause is idempotent so this is harmless.
 		if t.fdTable != nil {
-			t.fdTable.forEach(func(_ int32, file *fs.File, fd *vfs.FileDescription, _ FDFlags) {
+			t.fdTable.forEach(ctx, func(_ int32, file *fs.File, fd *vfs.FileDescription, _ FDFlags) {
 				if VFS2Enabled {
 					if tfd, ok := fd.Impl().(*timerfd.TimerFileDescription); ok {
 						tfd.PauseTimer()
@@ -1112,7 +1113,7 @@ func (k *Kernel) pauseTimeLocked() {
 //
 // Preconditions: Any task goroutines running in k must be stopped. k.extMu
 // must be locked.
-func (k *Kernel) resumeTimeLocked() {
+func (k *Kernel) resumeTimeLocked(ctx context.Context) {
 	if k.cpuClockTicker != nil {
 		k.cpuClockTicker.Resume()
 	}
@@ -1126,7 +1127,7 @@ func (k *Kernel) resumeTimeLocked() {
 			}
 		}
 		if t.fdTable != nil {
-			t.fdTable.forEach(func(_ int32, file *fs.File, fd *vfs.FileDescription, _ FDFlags) {
+			t.fdTable.forEach(ctx, func(_ int32, file *fs.File, fd *vfs.FileDescription, _ FDFlags) {
 				if VFS2Enabled {
 					if tfd, ok := fd.Impl().(*timerfd.TimerFileDescription); ok {
 						tfd.ResumeTimer()
@@ -1511,7 +1512,7 @@ type SocketEntry struct {
 }
 
 // WeakRefGone implements refs.WeakRefUser.WeakRefGone.
-func (s *SocketEntry) WeakRefGone() {
+func (s *SocketEntry) WeakRefGone(context.Context) {
 	s.k.extMu.Lock()
 	s.k.sockets.Remove(s)
 	s.k.extMu.Unlock()
@@ -1600,7 +1601,7 @@ func (ctx supervisorContext) Value(key interface{}) interface{} {
 			return vfs.VirtualDentry{}
 		}
 		mntns := ctx.k.GlobalInit().Leader().MountNamespaceVFS2()
-		defer mntns.DecRef()
+		defer mntns.DecRef(ctx)
 		// Root() takes a reference on the root dirent for us.
 		return mntns.Root()
 	case vfs.CtxMountNamespace:

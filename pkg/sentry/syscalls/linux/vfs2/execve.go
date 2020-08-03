@@ -71,7 +71,7 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr user
 	}
 
 	root := t.FSContext().RootDirectoryVFS2()
-	defer root.DecRef()
+	defer root.DecRef(t)
 	var executable fsbridge.File
 	closeOnExec := false
 	if path := fspath.Parse(pathname); dirfd != linux.AT_FDCWD && !path.Absolute {
@@ -90,7 +90,7 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr user
 		}
 		start := dirfile.VirtualDentry()
 		start.IncRef()
-		dirfile.DecRef()
+		dirfile.DecRef(t)
 		closeOnExec = dirfileFlags.CloseOnExec
 		file, err := t.Kernel().VFS().OpenAt(t, t.Credentials(), &vfs.PathOperation{
 			Root:               root,
@@ -101,19 +101,19 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr user
 			Flags:    linux.O_RDONLY,
 			FileExec: true,
 		})
-		start.DecRef()
+		start.DecRef(t)
 		if err != nil {
 			return 0, nil, err
 		}
-		defer file.DecRef()
+		defer file.DecRef(t)
 		executable = fsbridge.NewVFSFile(file)
 	}
 
 	// Load the new TaskContext.
 	mntns := t.MountNamespaceVFS2() // FIXME(jamieliu): useless refcount change
-	defer mntns.DecRef()
+	defer mntns.DecRef(t)
 	wd := t.FSContext().WorkingDirectoryVFS2()
-	defer wd.DecRef()
+	defer wd.DecRef(t)
 	remainingTraversals := uint(linux.MaxSymlinkTraversals)
 	loadArgs := loader.LoadArgs{
 		Opener:              fsbridge.NewVFSLookup(mntns, root, wd),

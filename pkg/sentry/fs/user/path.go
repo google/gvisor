@@ -82,7 +82,7 @@ func resolve(ctx context.Context, mns *fs.MountNamespace, paths []string, name s
 		// Caller has no root. Don't bother traversing anything.
 		return "", syserror.ENOENT
 	}
-	defer root.DecRef()
+	defer root.DecRef(ctx)
 	for _, p := range paths {
 		if !path.IsAbs(p) {
 			// Relative paths aren't safe, no one should be using them.
@@ -100,7 +100,7 @@ func resolve(ctx context.Context, mns *fs.MountNamespace, paths []string, name s
 		if err != nil {
 			return "", err
 		}
-		defer d.DecRef()
+		defer d.DecRef(ctx)
 
 		// Check that it is a regular file.
 		if !fs.IsRegular(d.Inode.StableAttr) {
@@ -121,7 +121,7 @@ func resolve(ctx context.Context, mns *fs.MountNamespace, paths []string, name s
 
 func resolveVFS2(ctx context.Context, creds *auth.Credentials, mns *vfs.MountNamespace, paths []string, name string) (string, error) {
 	root := mns.Root()
-	defer root.DecRef()
+	defer root.DecRef(ctx)
 	for _, p := range paths {
 		if !path.IsAbs(p) {
 			// Relative paths aren't safe, no one should be using them.
@@ -148,7 +148,7 @@ func resolveVFS2(ctx context.Context, creds *auth.Credentials, mns *vfs.MountNam
 		if err != nil {
 			return "", err
 		}
-		dentry.DecRef()
+		dentry.DecRef(ctx)
 
 		return binPath, nil
 	}

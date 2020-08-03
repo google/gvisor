@@ -238,7 +238,7 @@ type MappingIdentity interface {
 	IncRef()
 
 	// DecRef decrements the MappingIdentity's reference count.
-	DecRef()
+	DecRef(ctx context.Context)
 
 	// MappedName returns the application-visible name shown in
 	// /proc/[pid]/maps.

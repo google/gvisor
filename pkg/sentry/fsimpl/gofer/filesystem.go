@@ -55,7 +55,7 @@ func (fs *filesystem) Sync(ctx context.Context) error {
 	// Sync regular files.
 	for _, d := range ds {
 		err := d.syncSharedHandle(ctx)
-		d.DecRef()
+		d.DecRef(ctx)
 		if err != nil && retErr == nil {
 			retErr = err
 		}
@@ -65,7 +65,7 @@ func (fs *filesystem) Sync(ctx context.Context) error {
 	// handles (so they won't be synced by the above).
 	for _, sffd := range sffds {
 		err := sffd.Sync(ctx)
-		sffd.vfsfd.DecRef()
+		sffd.vfsfd.DecRef(ctx)
 		if err != nil && retErr == nil {
 			retErr = err
 		}
@@ -133,7 +133,7 @@ afterSymlink:
 		return d, nil
 	}
 	if name == ".." {
-		if isRoot, err := rp.CheckRoot(&d.vfsd); err != nil {
+		if isRoot, err := rp.CheckRoot(ctx, &d.vfsd); err != nil {
 			return nil, err
 		} else if isRoot || d.parent == nil {
 			rp.Advance()
@@ -146,7 +146,7 @@ afterSymlink:
 		//
 		// Call rp.CheckMount() before updating d.parent's metadata, since if
 		// we traverse to another mount then d.parent's metadata is irrelevant.
-		if err := rp.CheckMount(&d.parent.vfsd); err != nil {
+		if err := rp.CheckMount(ctx, &d.parent.vfsd); err != nil {
 			return nil, err
 		}
 		if d != d.parent && !d.cachedMetadataAuthoritative() {
@@ -164,7 +164,7 @@ afterSymlink:
 	if child == nil {
 		return nil, syserror.ENOENT
 	}
-	if err := rp.CheckMount(&child.vfsd); err != nil {
+	if err := rp.CheckMount(ctx, &child.vfsd); err != nil {
 		return nil, err
 	}
 	if child.isSymlink() && mayFollowSymlinks && rp.ShouldFollowSymlink() {
@@ -239,7 +239,7 @@ func (fs *filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.Vir
 		// has 0 references, drop it). Wait to update parent.children until we
 		// know what to replace the existing dentry with (i.e. one of the
 		// returns below), to avoid a redundant map access.
-		vfsObj.InvalidateDentry(&child.vfsd)
+		vfsObj.InvalidateDentry(ctx, &child.vfsd)
 		if child.isSynthetic() {
 			// Normally we don't mark invalidated dentries as deleted since
 			// they may still exist (but at a different path), and also for
@@ -332,7 +332,7 @@ func (fs *filesystem) resolveLocked(ctx context.Context, rp *vfs.ResolvingPath, 
 func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir bool, createInRemoteDir func(parent *dentry, name string) error, createInSyntheticDir func(parent *dentry, name string) error) error {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckCaching(&ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 	start := rp.Start().Impl().(*dentry)
 	if !start.cachedMetadataAuthoritative() {
 		// Get updated metadata for start as required by
@@ -384,7 +384,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 		if dir {
 			ev |= linux.IN_ISDIR
 		}
-		parent.watches.Notify(name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
+		parent.watches.Notify(ctx, name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
 		return nil
 	}
 	if fs.opts.interop == InteropModeShared {
@@ -405,7 +405,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 		if dir {
 			ev |= linux.IN_ISDIR
 		}
-		parent.watches.Notify(name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
+		parent.watches.Notify(ctx, name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
 		return nil
 	}
 	if child := parent.children[name]; child != nil {
@@ -426,7 +426,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	if dir {
 		ev |= linux.IN_ISDIR
 	}
-	parent.watches.Notify(name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
+	parent.watches.Notify(ctx, name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
 	return nil
 }
 
@@ -434,7 +434,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir bool) error {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckCaching(&ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 	start := rp.Start().Impl().(*dentry)
 	if !start.cachedMetadataAuthoritative() {
 		// Get updated metadata for start as required by
@@ -470,7 +470,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 	}
 	vfsObj := rp.VirtualFilesystem()
 	mntns := vfs.MountNamespaceFromContext(ctx)
-	defer mntns.DecRef()
+	defer mntns.DecRef(ctx)
 	parent.dirMu.Lock()
 	defer parent.dirMu.Unlock()
 
@@ -600,17 +600,17 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 
 	// Generate inotify events for rmdir or unlink.
 	if dir {
-		parent.watches.Notify(name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
+		parent.watches.Notify(ctx, name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
 	} else {
 		var cw *vfs.Watches
 		if child != nil {
 			cw = &child.watches
 		}
-		vfs.InotifyRemoveChild(cw, &parent.watches, name)
+		vfs.InotifyRemoveChild(ctx, cw, &parent.watches, name)
 	}
 
 	if child != nil {
-		vfsObj.CommitDeleteDentry(&child.vfsd)
+		vfsObj.CommitDeleteDentry(ctx, &child.vfsd)
 		child.setDeleted()
 		if child.isSynthetic() {
 			parent.syntheticChildren--
@@ -637,7 +637,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 // but dentry slices are allocated lazily, and it's much easier to say "defer
 // fs.renameMuRUnlockAndCheckCaching(&ds)" than "defer func() {
 // fs.renameMuRUnlockAndCheckCaching(ds) }()" to work around this.
-func (fs *filesystem) renameMuRUnlockAndCheckCaching(ds **[]*dentry) {
+func (fs *filesystem) renameMuRUnlockAndCheckCaching(ctx context.Context, ds **[]*dentry) {
 	fs.renameMu.RUnlock()
 	if *ds == nil {
 		return
@@ -645,20 +645,20 @@ func (fs *filesystem) renameMuRUnlockAndCheckCaching(ds **[]*dentry) {
 	if len(**ds) != 0 {
 		fs.renameMu.Lock()
 		for _, d := range **ds {
-			d.checkCachingLocked()
+			d.checkCachingLocked(ctx)
 		}
 		fs.renameMu.Unlock()
 	}
 	putDentrySlice(*ds)
 }
 
-func (fs *filesystem) renameMuUnlockAndCheckCaching(ds **[]*dentry) {
+func (fs *filesystem) renameMuUnlockAndCheckCaching(ctx context.Context, ds **[]*dentry) {
 	if *ds == nil {
 		fs.renameMu.Unlock()
 		return
 	}
 	for _, d := range **ds {
-		d.checkCachingLocked()
+		d.checkCachingLocked(ctx)
 	}
 	fs.renameMu.Unlock()
 	putDentrySlice(*ds)
@@ -668,7 +668,7 @@ func (fs *filesystem) renameMuUnlockAndCheckCaching(ds **[]*dentry) {
 func (fs *filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds *auth.Credentials, ats vfs.AccessTypes) error {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckCaching(&ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
 		return err
@@ -680,7 +680,7 @@ func (fs *filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds
 func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetDentryOptions) (*vfs.Dentry, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckCaching(&ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
 		return nil, err
@@ -701,7 +701,7 @@ func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 func (fs *filesystem) GetParentDentryAt(ctx context.Context, rp *vfs.ResolvingPath) (*vfs.Dentry, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckCaching(&ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 	start := rp.Start().Impl().(*dentry)
 	if !start.cachedMetadataAuthoritative() {
 		// Get updated metadata for start as required by
@@ -812,7 +812,7 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckCaching(&ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 
 	start := rp.Start().Impl().(*dentry)
 	if !start.cachedMetadataAuthoritative() {
@@ -1126,7 +1126,7 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 		}
 		childVFSFD = &fd.vfsfd
 	}
-	d.watches.Notify(name, linux.IN_CREATE, 0, vfs.PathEvent, false /* unlinked */)
+	d.watches.Notify(ctx, name, linux.IN_CREATE, 0, vfs.PathEvent, false /* unlinked */)
 	return childVFSFD, nil
 }
 
@@ -1134,7 +1134,7 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 func (fs *filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (string, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckCaching(&ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
 		return "", err
@@ -1154,7 +1154,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 
 	var ds *[]*dentry
 	fs.renameMu.Lock()
-	defer fs.renameMuUnlockAndCheckCaching(&ds)
+	defer fs.renameMuUnlockAndCheckCaching(ctx, &ds)
 	newParent, err := fs.walkParentDirLocked(ctx, rp, rp.Start().Impl().(*dentry), &ds)
 	if err != nil {
 		return err
@@ -1244,7 +1244,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		return nil
 	}
 	mntns := vfs.MountNamespaceFromContext(ctx)
-	defer mntns.DecRef()
+	defer mntns.DecRef(ctx)
 	if err := vfsObj.PrepareRenameDentry(mntns, &renamed.vfsd, replacedVFSD); err != nil {
 		return err
 	}
@@ -1269,7 +1269,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 
 	// Update the dentry tree.
-	vfsObj.CommitRenameReplaceDentry(&renamed.vfsd, replacedVFSD)
+	vfsObj.CommitRenameReplaceDentry(ctx, &renamed.vfsd, replacedVFSD)
 	if replaced != nil {
 		replaced.setDeleted()
 		if replaced.isSynthetic() {
@@ -1331,17 +1331,17 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 	fs.renameMu.RLock()
 	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
-		fs.renameMuRUnlockAndCheckCaching(&ds)
+		fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 		return err
 	}
 	if err := d.setStat(ctx, rp.Credentials(), &opts, rp.Mount()); err != nil {
-		fs.renameMuRUnlockAndCheckCaching(&ds)
+		fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 		return err
 	}
-	fs.renameMuRUnlockAndCheckCaching(&ds)
+	fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 
 	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
-		d.InotifyWithParent(ev, 0, vfs.InodeEvent)
+		d.InotifyWithParent(ctx, ev, 0, vfs.InodeEvent)
 	}
 	return nil
 }
@@ -1350,7 +1350,7 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.StatOptions) (linux.Statx, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckCaching(&ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
 		return linux.Statx{}, err
@@ -1367,7 +1367,7 @@ func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linux.Statfs, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckCaching(&ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
 		return linux.Statfs{}, err
@@ -1417,7 +1417,7 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.BoundEndpointOptions) (transport.BoundEndpoint, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckCaching(&ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
 		return nil, err
@@ -1443,7 +1443,7 @@ func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 func (fs *filesystem) ListxattrAt(ctx context.Context, rp *vfs.ResolvingPath, size uint64) ([]string, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckCaching(&ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
 		return nil, err
@@ -1455,7 +1455,7 @@ func (fs *filesystem) ListxattrAt(ctx context.Context, rp *vfs.ResolvingPath, si
 func (fs *filesystem) GetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetxattrOptions) (string, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckCaching(&ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
 		return "", err
@@ -1469,16 +1469,16 @@ func (fs *filesystem) SetxattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 	fs.renameMu.RLock()
 	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
-		fs.renameMuRUnlockAndCheckCaching(&ds)
+		fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 		return err
 	}
 	if err := d.setxattr(ctx, rp.Credentials(), &opts); err != nil {
-		fs.renameMuRUnlockAndCheckCaching(&ds)
+		fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 		return err
 	}
-	fs.renameMuRUnlockAndCheckCaching(&ds)
+	fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 
-	d.InotifyWithParent(linux.IN_ATTRIB, 0, vfs.InodeEvent)
+	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	return nil
 }
 
@@ -1488,16 +1488,16 @@ func (fs *filesystem) RemovexattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 	fs.renameMu.RLock()
 	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
-		fs.renameMuRUnlockAndCheckCaching(&ds)
+		fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 		return err
 	}
 	if err := d.removexattr(ctx, rp.Credentials(), name); err != nil {
-		fs.renameMuRUnlockAndCheckCaching(&ds)
+		fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 		return err
 	}
-	fs.renameMuRUnlockAndCheckCaching(&ds)
+	fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 
-	d.InotifyWithParent(linux.IN_ATTRIB, 0, vfs.InodeEvent)
+	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	return nil
 }
 

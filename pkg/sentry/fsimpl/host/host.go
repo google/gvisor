@@ -117,7 +117,7 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 	d.Init(i)
 
 	// i.open will take a reference on d.
-	defer d.DecRef()
+	defer d.DecRef(ctx)
 
 	// For simplicity, fileDescription.offset is set to 0. Technically, we
 	// should only set to 0 on files that are not seekable (sockets, pipes,
@@ -168,9 +168,9 @@ type filesystem struct {
 	devMinor uint32
 }
 
-func (fs *filesystem) Release() {
+func (fs *filesystem) Release(ctx context.Context) {
 	fs.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
-	fs.Filesystem.Release()
+	fs.Filesystem.Release(ctx)
 }
 
 func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDentry, b *fspath.Builder) error {
@@ -431,12 +431,12 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 }
 
 // DecRef implements kernfs.Inode.
-func (i *inode) DecRef() {
-	i.AtomicRefCount.DecRefWithDestructor(i.Destroy)
+func (i *inode) DecRef(ctx context.Context) {
+	i.AtomicRefCount.DecRefWithDestructor(ctx, i.Destroy)
 }
 
 // Destroy implements kernfs.Inode.
-func (i *inode) Destroy() {
+func (i *inode) Destroy(context.Context) {
 	if i.wouldBlock {
 		fdnotifier.RemoveFD(int32(i.hostFD))
 	}
@@ -542,7 +542,7 @@ func (f *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linux
 }
 
 // Release implements vfs.FileDescriptionImpl.
-func (f *fileDescription) Release() {
+func (f *fileDescription) Release(context.Context) {
 	// noop
 }
 

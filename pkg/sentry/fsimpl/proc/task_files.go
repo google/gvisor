@@ -677,7 +677,7 @@ func (s *exeSymlink) Readlink(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer exec.DecRef()
+	defer exec.DecRef(ctx)
 
 	return exec.PathnameWithDeleted(ctx), nil
 }
@@ -692,7 +692,7 @@ func (s *exeSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDent
 	if err != nil {
 		return vfs.VirtualDentry{}, "", err
 	}
-	defer exec.DecRef()
+	defer exec.DecRef(ctx)
 
 	vd := exec.(*fsbridge.VFSFile).FileDescription().VirtualDentry()
 	vd.IncRef()
@@ -748,7 +748,7 @@ func (i *mountInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		// Root has been destroyed. Don't try to read mounts.
 		return nil
 	}
-	defer rootDir.DecRef()
+	defer rootDir.DecRef(ctx)
 	i.task.Kernel().VFS().GenerateProcMountInfo(ctx, rootDir, buf)
 	return nil
 }
@@ -779,7 +779,7 @@ func (i *mountsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		// Root has been destroyed. Don't try to read mounts.
 		return nil
 	}
-	defer rootDir.DecRef()
+	defer rootDir.DecRef(ctx)
 	i.task.Kernel().VFS().GenerateProcMounts(ctx, rootDir, buf)
 	return nil
 }
@@ -825,7 +825,7 @@ func (s *namespaceSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.Vir
 	dentry.Init(&namespaceInode{})
 	vd := vfs.MakeVirtualDentry(mnt, dentry.VFSDentry())
 	vd.IncRef()
-	dentry.DecRef()
+	dentry.DecRef(ctx)
 	return vd, "", nil
 }
 
@@ -887,8 +887,8 @@ func (fd *namespaceFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) err
 }
 
 // Release implements FileDescriptionImpl.
-func (fd *namespaceFD) Release() {
-	fd.inode.DecRef()
+func (fd *namespaceFD) Release(ctx context.Context) {
+	fd.inode.DecRef(ctx)
 }
 
 // LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
