@@ -21,4 +21,4 @@ import (
 )
 
 // See waiter_noasm_unsafe.go for a description of waiterUnlock.
-func waiterUnlock(g unsafe.Pointer, wg *unsafe.Pointer) bool
+func waiterUnlock(ptr unsafe.Pointer, wg *unsafe.Pointer) bool
