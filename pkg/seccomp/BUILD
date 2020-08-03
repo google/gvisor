@@ -5,7 +5,9 @@ package(licenses = ["notice"])
 go_binary(
     name = "victim",
     testonly = 1,
-    srcs = ["seccomp_test_victim.go"],
+    srcs = ["seccomp_test_victim.go",
+            "seccomp_test_victim_amd64.go",
+            "seccomp_test_victim_arm64.go",],
     deps = [":seccomp"],
 )
 
