@@ -60,6 +60,7 @@ type SaveOpts struct {
 func (opts SaveOpts) Save(k *kernel.Kernel, w *watchdog.Watchdog) error {
 	log.Infof("Sandbox save started, pausing all tasks.")
 	k.Pause()
+	k.ReceiveTaskStates()
 	defer k.Unpause()
 	defer log.Infof("Tasks resumed after save.")
 

@@ -260,7 +260,7 @@ func (app *runApp) execute(t *Task) taskRunState {
 
 	region := trace.StartRegion(t.traceContext, runRegion)
 	t.accountTaskGoroutineEnter(TaskGoroutineRunningApp)
-	info, at, err := t.p.Switch(t.MemoryManager().AddressSpace(), t.Arch(), t.rseqCPU)
+	info, at, err := t.p.Switch(t, t.MemoryManager(), t.Arch(), t.rseqCPU)
 	t.accountTaskGoroutineLeave(TaskGoroutineRunningApp)
 	region.End()
 

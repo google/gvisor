@@ -255,10 +255,11 @@ func (t *Task) deliverSignalToHandler(info *arch.SignalInfo, act arch.SignalAct)
 		}
 	}
 
+	mm := t.MemoryManager()
 	// Set up the signal handler. If we have a saved signal mask, the signal
 	// handler should run with the current mask, but sigreturn should restore
 	// the saved one.
-	st := &arch.Stack{t.Arch(), t.MemoryManager(), sp}
+	st := &arch.Stack{t.Arch(), mm, sp}
 	mask := t.signalMask
 	if t.haveSavedSignalMask {
 		mask = t.savedSignalMask
@@ -273,12 +274,13 @@ func (t *Task) deliverSignalToHandler(info *arch.SignalInfo, act arch.SignalAct)
 	// Please see the linux code as reference:
 	// linux/arch/arm64/kernel/signal.c:setup_return()
 	if act.Flags&linux.SA_RESTORER == 0 {
-		act.Restorer = t.MemoryManager().VDSOSigReturn()
+		act.Restorer = mm.VDSOSigReturn()
 	}
 
 	if err := t.Arch().SignalSetup(st, &act, info, &alt, mask); err != nil {
 		return err
 	}
+	t.p.FloatingPointStateChanged()
 	t.haveSavedSignalMask = false
 
 	// Add our signal mask.
@@ -310,6 +312,7 @@ func (t *Task) SignalReturn(rt bool) (*SyscallControl, error) {
 
 	// Restore our signal mask. SIGKILL and SIGSTOP should not be blocked.
 	t.SetSignalMask(sigset &^ UnblockableSignals)
+	t.p.FloatingPointStateChanged()
 
 	return ctrlResume, nil
 }
@@ -636,6 +639,7 @@ func (t *Task) SetSavedSignalMask(mask linux.SignalSet) {
 
 // SignalStack returns the task-private signal stack.
 func (t *Task) SignalStack() arch.SignalStack {
+	t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch())
 	alt := t.signalStack
 	if t.onSignalStack(alt) {
 		alt.Flags |= arch.SignalStackFlagOnStack
@@ -1050,6 +1054,8 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 
 	// Are there signals pending?
 	if info := t.dequeueSignalLocked(t.signalMask); info != nil {
+		t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch())
+
 		if linux.SignalSetOf(linux.Signal(info.Signo))&StopSignals != 0 {
 			// Indicate that we've dequeued a stop signal before unlocking the
 			// signal mutex; initiateGroupStop will check for races with
