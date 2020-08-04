@@ -56,7 +56,6 @@ func (r *Redis) Report(b *testing.B, output string) {
 func (r *Redis) parseOperation(data string) (float64, error) {
 	re := regexp.MustCompile(fmt.Sprintf(`"%s( .*)?","(\d*\.\d*)"`, r.Operation))
 	match := re.FindStringSubmatch(data)
-	// If no match, simply don't add it to the result map.
 	if len(match) < 3 {
 		return 0.0, fmt.Errorf("could not find %s in %s", r.Operation, data)
 	}

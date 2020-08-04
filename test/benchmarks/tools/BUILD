@@ -10,6 +10,7 @@ go_library(
         "hey.go",
         "iperf.go",
         "redis.go",
+        "sysbench.go",
         "tools.go",
     ],
     visibility = ["//:sandbox"],
@@ -24,6 +25,7 @@ go_test(
         "hey_test.go",
         "iperf_test.go",
         "redis_test.go",
+        "sysbench_test.go",
     ],
     library = ":tools",
 )

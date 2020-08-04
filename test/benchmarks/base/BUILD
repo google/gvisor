@@ -3,17 +3,17 @@ load("//tools:defs.bzl", "go_library", "go_test")
 package(licenses = ["notice"])
 
 go_library(
-    name = "database",
+    name = "base",
     testonly = 1,
-    srcs = ["database.go"],
+    srcs = ["base.go"],
     deps = ["//test/benchmarks/harness"],
 )
 
 go_test(
-    name = "database_test",
-    size = "enormous",
-    srcs = ["redis_test.go"],
-    library = ":database",
+    name = "base_test",
+    size = "small",
+    srcs = ["sysbench_test.go"],
+    library = ":base",
     tags = [
         # Requires docker and runsc to be configured before test runs.
         "manual",
@@ -21,7 +21,6 @@ go_test(
     ],
     deps = [
         "//pkg/test/dockerutil",
-        "//test/benchmarks/harness",
         "//test/benchmarks/tools",
     ],
 )
