@@ -30,6 +30,7 @@ import (
 
 // Name is the default filesystem name.
 const Name = "sysfs"
+const defaultSysDirMode = linux.FileMode(0755)
 
 // FilesystemType implements vfs.FilesystemType.
 type FilesystemType struct{}
@@ -57,9 +58,6 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		devMinor: devMinor,
 	}
 	fs.VFSFilesystem().Init(vfsObj, &fsType, fs)
-	k := kernel.KernelFromContext(ctx)
-	maxCPUCores := k.ApplicationCores()
-	defaultSysDirMode := linux.FileMode(0755)
 
 	root := fs.newDir(creds, defaultSysDirMode, map[string]*kernfs.Dentry{
 		"block": fs.newDir(creds, defaultSysDirMode, nil),
@@ -70,11 +68,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		"dev": fs.newDir(creds, defaultSysDirMode, nil),
 		"devices": fs.newDir(creds, defaultSysDirMode, map[string]*kernfs.Dentry{
 			"system": fs.newDir(creds, defaultSysDirMode, map[string]*kernfs.Dentry{
-				"cpu": fs.newDir(creds, defaultSysDirMode, map[string]*kernfs.Dentry{
-					"online":   fs.newCPUFile(creds, maxCPUCores, linux.FileMode(0444)),
-					"possible": fs.newCPUFile(creds, maxCPUCores, linux.FileMode(0444)),
-					"present":  fs.newCPUFile(creds, maxCPUCores, linux.FileMode(0444)),
-				}),
+				"cpu": cpuDir(ctx, fs, creds),
 			}),
 		}),
 		"firmware": fs.newDir(creds, defaultSysDirMode, nil),
@@ -84,6 +78,20 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		"power":    fs.newDir(creds, defaultSysDirMode, nil),
 	})
 	return fs.VFSFilesystem(), root.VFSDentry(), nil
+}
+
+func cpuDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) *kernfs.Dentry {
+	k := kernel.KernelFromContext(ctx)
+	maxCPUCores := k.ApplicationCores()
+	children := map[string]*kernfs.Dentry{
+		"online":   fs.newCPUFile(creds, maxCPUCores, linux.FileMode(0444)),
+		"possible": fs.newCPUFile(creds, maxCPUCores, linux.FileMode(0444)),
+		"present":  fs.newCPUFile(creds, maxCPUCores, linux.FileMode(0444)),
+	}
+	for i := uint(0); i < maxCPUCores; i++ {
+		children[fmt.Sprintf("cpu%d", i)] = fs.newDir(creds, linux.FileMode(0555), nil)
+	}
+	return fs.newDir(creds, defaultSysDirMode, children)
 }
 
 // Release implements vfs.FilesystemImpl.Release.
