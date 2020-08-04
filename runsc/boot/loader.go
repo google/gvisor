@@ -16,12 +16,12 @@
 package boot
 
 import (
+	"errors"
 	"fmt"
 	mrand "math/rand"
 	"os"
 	"runtime"
 	"sync/atomic"
-	"syscall"
 	gtime "time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -187,7 +187,7 @@ type Args struct {
 }
 
 // make sure stdioFDs are always the same on initial start and on restore
-const startingStdioFD = 64
+const startingStdioFD = 256
 
 // New initializes a new kernel loader configured by spec.
 // New also handles setting up a kernel for restoring a container.
@@ -360,15 +360,20 @@ func New(args Args) (*Loader, error) {
 	var stdioFDs []int
 	newfd := startingStdioFD
 	for _, fd := range args.StdioFDs {
-		err := syscall.Dup3(fd, newfd, syscall.O_CLOEXEC)
+		// Check that newfd is unused to avoid clobbering over it.
+		if _, err := unix.FcntlInt(uintptr(newfd), unix.F_GETFD, 0); !errors.Is(err, unix.EBADF) {
+			if err != nil {
+				return nil, fmt.Errorf("error checking for FD (%d) conflict: %w", newfd, err)
+			}
+			return nil, fmt.Errorf("unable to remap stdios, FD %d is already in use", newfd)
+		}
+
+		err := unix.Dup3(fd, newfd, unix.O_CLOEXEC)
 		if err != nil {
 			return nil, fmt.Errorf("dup3 of stdioFDs failed: %v", err)
 		}
 		stdioFDs = append(stdioFDs, newfd)
-		err = syscall.Close(fd)
-		if err != nil {
-			return nil, fmt.Errorf("close original stdioFDs failed: %v", err)
-		}
+		_ = unix.Close(fd)
 		newfd++
 	}
 
@@ -458,6 +463,11 @@ func (l *Loader) Destroy() {
 		l.stopSignalForwarding()
 	}
 	l.watchdog.Stop()
+
+	for i, fd := range l.root.stdioFDs {
+		_ = unix.Close(fd)
+		l.root.stdioFDs[i] = -1
+	}
 }
 
 func createPlatform(conf *Config, deviceFile *os.File) (platform.Platform, error) {
@@ -591,11 +601,9 @@ func (l *Loader) run() error {
 	// during restore, we can release l.stdioFDs now. VFS2 takes ownership of the
 	// passed FDs, so only close for VFS1.
 	if !kernel.VFS2Enabled {
-		for _, fd := range l.root.stdioFDs {
-			err := syscall.Close(fd)
-			if err != nil {
-				return fmt.Errorf("close dup()ed stdioFDs: %v", err)
-			}
+		for i, fd := range l.root.stdioFDs {
+			_ = unix.Close(fd)
+			l.root.stdioFDs[i] = -1
 		}
 	}
 
@@ -686,7 +694,7 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *Config, cid string, file
 
 	// Can't take ownership away from os.File. dup them to get a new FDs.
 	for _, f := range files[3:] {
-		fd, err := syscall.Dup(int(f.Fd()))
+		fd, err := unix.Dup(int(f.Fd()))
 		if err != nil {
 			return fmt.Errorf("failed to dup file: %v", err)
 		}
