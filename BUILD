@@ -30,7 +30,7 @@ doc(
     permalink = "/community/governance/",
     subcategory = "Community",
     visibility = ["//website:__pkg__"],
-    weight = "91",
+    weight = "20",
 )
 
 doc(
