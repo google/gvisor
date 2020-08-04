@@ -122,6 +122,10 @@ func Boot() (*kernel.Kernel, error) {
 // CreateTask creates a new bare bones task for tests.
 func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns *vfs.MountNamespace, root, cwd vfs.VirtualDentry) (*kernel.Task, error) {
 	k := kernel.KernelFromContext(ctx)
+	if k == nil {
+		return nil, fmt.Errorf("cannot find kernel from context")
+	}
+
 	exe, err := newFakeExecutable(ctx, k.VFS(), auth.CredentialsFromContext(ctx), root)
 	if err != nil {
 		return nil, err
