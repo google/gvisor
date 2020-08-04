@@ -42,7 +42,12 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 		Map32Bit: opts.Map32Bit,
 	})
 	if err != nil {
-		return vmaIterator{}, usermem.AddrRange{}, err
+		// Can't force without opts.Unmap and opts.Fixed.
+		if opts.Force && opts.Unmap && opts.Fixed {
+			addr = opts.Addr
+		} else {
+			return vmaIterator{}, usermem.AddrRange{}, err
+		}
 	}
 	ar, _ := addr.ToRange(opts.Length)
 

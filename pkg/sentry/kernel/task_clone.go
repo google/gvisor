@@ -161,6 +161,10 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		return 0, nil, syserror.EINVAL
 	}
 
+	// Pull task registers and FPU state, a cloned task will inherit the
+	// state of the current task.
+	t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch())
+
 	// "If CLONE_NEWUSER is specified along with other CLONE_NEW* flags in a
 	// single clone(2) or unshare(2) call, the user namespace is guaranteed to
 	// be created first, giving the child (clone(2)) or caller (unshare(2))

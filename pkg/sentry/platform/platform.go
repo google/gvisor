@@ -22,6 +22,7 @@ import (
 	"os"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -114,6 +115,17 @@ func (NoCPUPreemptionDetection) PreemptAllCPUs() error {
 	panic("This platform does not support CPU preemption detection")
 }
 
+// MemoryManager represents an abstraction above the platform address space
+// which manages memory mappings and their contents.
+type MemoryManager interface {
+	//usermem.IO provides access to the contents of a virtual memory space.
+	usermem.IO
+	// MMap establishes a memory mapping.
+	MMap(ctx context.Context, opts memmap.MMapOpts) (usermem.Addr, error)
+	// AddressSpace returns the AddressSpace bound to mm.
+	AddressSpace() AddressSpace
+}
+
 // Context represents the execution context for a single thread.
 type Context interface {
 	// Switch resumes execution of the thread specified by the arch.Context
@@ -143,7 +155,30 @@ type Context interface {
 	// concurrent call to Switch().
 	//
 	// - ErrContextCPUPreempted: See the definition of that error for details.
-	Switch(as AddressSpace, ac arch.Context, cpu int32) (*arch.SignalInfo, usermem.AccessType, error)
+	Switch(ctx context.Context, mm MemoryManager, ac arch.Context, cpu int32) (*arch.SignalInfo, usermem.AccessType, error)
+
+	// PullFullState() pulls a full state of the application thread.
+	//
+	// A platform can support lazy loading/restoring of a thread state
+	// which includes registers and a floating point state.
+	//
+	// For example, when the Sentry handles a system call, it may have only
+	// syscall arguments without other registers and a floating point
+	// state. And in this case, if the Sentry will need to construct a
+	// signal frame to call a signal handler, it will need to call
+	// PullFullState() to load all registers and FPU state.
+	//
+	// Preconditions: The caller must be running on the task goroutine.
+	PullFullState(as AddressSpace, ac arch.Context)
+
+	// FloatingPointStateChanged forces restoring a full state of the application thread.
+	//
+	// A platform can support lazy loading/restoring of a thread state.
+	// This means that if the Sentry has not changed a thread state,
+	// the platform may not restore it.
+	//
+	// Preconditions: The caller must be running on the task goroutine.
+	FloatingPointStateChanged()
 
 	// Interrupt interrupts a concurrent call to Switch(), causing it to return
 	// ErrContextInterrupt.
@@ -217,6 +252,13 @@ type AddressSpace interface {
 	// Release releases this address space. After releasing, a new AddressSpace
 	// must be acquired via platform.NewAddressSpace().
 	Release()
+
+	// PreFork() is called before creating a copy of AddressSpace. This
+	// guarantees that this address space will be in a consistent state.
+	PreFork()
+
+	// PostFork() is called after creating a copy of AddressSpace.
+	PostFork()
 
 	// AddressSpaceIO methods are supported iff the associated platform's
 	// Platform.SupportsAddressSpaceIO() == true. AddressSpaces for which this

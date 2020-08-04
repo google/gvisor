@@ -205,6 +205,22 @@ func (ts *TaskSet) BeginExternalStop() {
 	}
 }
 
+// PullFullState receives full states for all tasks.
+func (ts *TaskSet) PullFullState() {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if ts.Root == nil {
+		return
+	}
+	for t := range ts.Root.tids {
+		t.Activate()
+		if mm := t.MemoryManager(); mm != nil {
+			t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch())
+		}
+		t.Deactivate()
+	}
+}
+
 // EndExternalStop indicates the end of an external stop started by a previous
 // call to TaskSet.BeginExternalStop. EndExternalStop does not wait for task
 // goroutines to resume.

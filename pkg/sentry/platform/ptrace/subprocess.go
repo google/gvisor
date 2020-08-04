@@ -662,3 +662,9 @@ func (s *subprocess) Unmap(addr usermem.Addr, length uint64) {
 		panic(fmt.Sprintf("munmap(%x, %x)) failed: %v", addr, length, err))
 	}
 }
+
+// PreFork implements platform.AddressSpace.PreFork.
+func (s *subprocess) PreFork() {}
+
+// PostFork implements platform.AddressSpace.PostFork.
+func (s *subprocess) PostFork() {}
