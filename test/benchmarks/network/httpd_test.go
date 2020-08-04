@@ -68,13 +68,13 @@ func BenchmarkHttpdConcurrency(b *testing.B) {
 // BenchmarkHttpdDocSize iterates over different sized payloads, testing how
 // well the runtime handles sending different payload sizes.
 func BenchmarkHttpdDocSize(b *testing.B) {
-	benchmarkHttpDocSize(b, false /* reverse */)
+	benchmarkHttpdDocSize(b, false /* reverse */)
 }
 
 // BenchmarkReverseHttpdDocSize iterates over different sized payloads, testing
 // how well the runtime handles receiving different payload sizes.
 func BenchmarkReverseHttpdDocSize(b *testing.B) {
-	benchmarkHttpDocSize(b, true /* reverse */)
+	benchmarkHttpdDocSize(b, true /* reverse */)
 }
 
 func benchmarkHttpdDocSize(b *testing.B, reverse bool) {
