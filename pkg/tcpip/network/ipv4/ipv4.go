@@ -52,27 +52,25 @@ const (
 )
 
 type endpoint struct {
-	nicID         tcpip.NICID
-	id            stack.NetworkEndpointID
-	prefixLen     int
-	linkEP        stack.LinkEndpoint
-	dispatcher    stack.TransportDispatcher
-	fragmentation *fragmentation.Fragmentation
-	protocol      *protocol
-	stack         *stack.Stack
+	nicID      tcpip.NICID
+	id         stack.NetworkEndpointID
+	prefixLen  int
+	linkEP     stack.LinkEndpoint
+	dispatcher stack.TransportDispatcher
+	protocol   *protocol
+	stack      *stack.Stack
 }
 
 // NewEndpoint creates a new ipv4 endpoint.
 func (p *protocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint, st *stack.Stack) (stack.NetworkEndpoint, *tcpip.Error) {
 	e := &endpoint{
-		nicID:         nicID,
-		id:            stack.NetworkEndpointID{LocalAddress: addrWithPrefix.Address},
-		prefixLen:     addrWithPrefix.PrefixLen,
-		linkEP:        linkEP,
-		dispatcher:    dispatcher,
-		fragmentation: fragmentation.NewFragmentation(fragmentblockSize, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, fragmentation.DefaultReassembleTimeout),
-		protocol:      p,
-		stack:         st,
+		nicID:      nicID,
+		id:         stack.NetworkEndpointID{LocalAddress: addrWithPrefix.Address},
+		prefixLen:  addrWithPrefix.PrefixLen,
+		linkEP:     linkEP,
+		dispatcher: dispatcher,
+		protocol:   p,
+		stack:      st,
 	}
 
 	return e, nil
@@ -442,7 +440,9 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 		}
 		var ready bool
 		var err error
-		pkt.Data, ready, err = e.fragmentation.Process(
+		pkt.Data, ready, err = e.protocol.fragmentation.Process(
+			// As per RFC 791 section 2.3, the identification value is unique
+			// for a source-destination pair and protocol.
 			fragmentation.FragmentID{
 				Source:      h.SourceAddress(),
 				Destination: h.DestinationAddress(),
@@ -484,6 +484,8 @@ type protocol struct {
 	// uint8 portion of it is meaningful and it must be accessed
 	// atomically.
 	defaultTTL uint32
+
+	fragmentation *fragmentation.Fragmentation
 }
 
 // Number returns the ipv4 protocol number.
@@ -605,5 +607,10 @@ func NewProtocol() stack.NetworkProtocol {
 	}
 	hashIV := r[buckets]
 
-	return &protocol{ids: ids, hashIV: hashIV, defaultTTL: DefaultTTL}
+	return &protocol{
+		ids:           ids,
+		hashIV:        hashIV,
+		defaultTTL:    DefaultTTL,
+		fragmentation: fragmentation.NewFragmentation(fragmentblockSize, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, fragmentation.DefaultReassembleTimeout),
+	}
 }
