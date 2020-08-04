@@ -58,7 +58,31 @@ func (x *dentryEntry) StateLoad(m state.Source) {
 	m.Load(1, &x.prev)
 }
 
+func (x *inodeRefs) StateTypeName() string {
+	return "pkg/sentry/fsimpl/tmpfs.inodeRefs"
+}
+
+func (x *inodeRefs) StateFields() []string {
+	return []string{
+		"refCount",
+	}
+}
+
+func (x *inodeRefs) beforeSave() {}
+
+func (x *inodeRefs) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.refCount)
+}
+
+func (x *inodeRefs) afterLoad() {}
+
+func (x *inodeRefs) StateLoad(m state.Source) {
+	m.Load(0, &x.refCount)
+}
+
 func init() {
 	state.Register((*dentryList)(nil))
 	state.Register((*dentryEntry)(nil))
+	state.Register((*inodeRefs)(nil))
 }
