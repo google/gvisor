@@ -51,7 +51,6 @@ type endpoint struct {
 	linkEP        stack.LinkEndpoint
 	linkAddrCache stack.LinkAddressCache
 	dispatcher    stack.TransportDispatcher
-	fragmentation *fragmentation.Fragmentation
 	protocol      *protocol
 }
 
@@ -342,7 +341,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt *stack.PacketBuffer) {
 			var ready bool
 			// Note that pkt doesn't have its transport header set after reassembly,
 			// and won't until DeliverNetworkPacket sets it.
-			pkt.Data, ready, err = e.fragmentation.Process(
+			pkt.Data, ready, err = e.protocol.fragmentation.Process(
 				// IPv6 ignores the Protocol field since the ID only needs to be unique
 				// across source-destination pairs, as per RFC 8200 section 4.5.
 				fragmentation.FragmentID{
@@ -445,7 +444,8 @@ type protocol struct {
 	// defaultTTL is the current default TTL for the protocol. Only the
 	// uint8 portion of it is meaningful and it must be accessed
 	// atomically.
-	defaultTTL uint32
+	defaultTTL    uint32
+	fragmentation *fragmentation.Fragmentation
 }
 
 // Number returns the ipv6 protocol number.
@@ -478,7 +478,6 @@ func (p *protocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWi
 		linkEP:        linkEP,
 		linkAddrCache: linkAddrCache,
 		dispatcher:    dispatcher,
-		fragmentation: fragmentation.NewFragmentation(header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, fragmentation.DefaultReassembleTimeout),
 		protocol:      p,
 	}, nil
 }
@@ -606,5 +605,8 @@ func calculateMTU(mtu uint32) uint32 {
 
 // NewProtocol returns an IPv6 network protocol.
 func NewProtocol() stack.NetworkProtocol {
-	return &protocol{defaultTTL: DefaultTTL}
+	return &protocol{
+		defaultTTL:    DefaultTTL,
+		fragmentation: fragmentation.NewFragmentation(header.IPv6FragmentExtHdrFragmentOffsetBytesPerUnit, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, fragmentation.DefaultReassembleTimeout),
+	}
 }
