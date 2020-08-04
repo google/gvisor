@@ -1,11 +1,10 @@
-# gVisor Containerd shims
+# Shim Overview
 
-There are various shims supported for differt versions of
-[containerd][containerd].
+Integration with containerd is done via a [shim][shims]. There are various shims
+supported for different versions of [containerd][containerd].
 
--   [Configure gvisor-containerd-shim (shim v1) (containerd &le; 1.2)](v1/configure-gvisor-containerd-shim.md)
--   [Runtime Handler/RuntimeClass Quick Start (containerd >= 1.2)](v2/runtime-handler-quickstart.md)
--   [Runtime Handler/RuntimeClass Quick Start (shim v2) (containerd >= 1.2)](v2/runtime-handler-shim-v2-quickstart.md)
--   [Configure containerd-shim-runsc-v1 (shim v2) (containerd >= 1.3)](v2/configure-containerd-shim-runsc-v1.md)
+-   [Containerd 1.2+ (shim v2)](https://gvisor.dev/docs/user_guide/containerd/quick_start/)
+-   [Containerd 1.1 (shim v1)](https://gvisor.dev/docs/user_guide/containerd/containerd_11/)
 
 [containerd]: https://github.com/containerd/containerd
+[shims]: https://iximiuz.com/en/posts/implementing-container-runtime-shim/
