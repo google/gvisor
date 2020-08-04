@@ -24,6 +24,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/log",
         "//pkg/procid",
         "//pkg/safecopy",

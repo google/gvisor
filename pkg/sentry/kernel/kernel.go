@@ -1263,6 +1263,13 @@ func (k *Kernel) Pause() {
 	k.tasks.aioGoroutines.Wait()
 }
 
+// ReceiveTaskStates receives full states for all tasks.
+func (k *Kernel) ReceiveTaskStates() {
+	k.extMu.Lock()
+	k.tasks.PullFullState()
+	k.extMu.Unlock()
+}
+
 // Unpause ends the effect of a previous call to Pause. If Unpause is called
 // without a matching preceding call to Pause, Unpause may panic.
 func (k *Kernel) Unpause() {

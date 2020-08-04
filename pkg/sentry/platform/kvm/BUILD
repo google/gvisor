@@ -41,6 +41,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
+        "//pkg/context",
         "//pkg/cpuid",
         "//pkg/log",
         "//pkg/procid",
