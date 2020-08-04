@@ -248,3 +248,9 @@ func (as *addressSpace) Release() {
 	// Drop all cached machine references.
 	as.machine.dropPageTables(as.pageTables)
 }
+
+// PreFork implements platform.AddressSpace.PreFork.
+func (as *addressSpace) PreFork() {}
+
+// PostFork implements platform.AddressSpace.PostFork.
+func (as *addressSpace) PostFork() {}

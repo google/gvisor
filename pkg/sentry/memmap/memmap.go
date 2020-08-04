@@ -360,6 +360,13 @@ type MMapOpts struct {
 	//
 	// TODO(jamieliu): Replace entirely with MappingIdentity?
 	Hint string
+
+	// Force means to skip validation checks of Addr and Length. It can be
+	// used to create special mappings below mm.layout.MinAddr and
+	// mm.layout.MaxAddr. It has to be used with caution.
+	//
+	// If Force is true, Unmap and Fixed must be true.
+	Force bool
 }
 
 // File represents a host file that may be mapped into an platform.AddressSpace.
