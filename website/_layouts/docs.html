@@ -14,30 +14,25 @@ categories:
         {% for category in layout.categories %}
           <h3>{{ category }}</h3>
           <ul class="sidebar-nav">
-          {% assign sorted_pages = site.pages | where: 'layout', 'docs' | where: 'category', category | sort: 'weight' | sort: 'subcategory' %}
-          {% assign subcategory = nil %}
-          {% for p in sorted_pages %}
-            {% if p.subcategory != subcategory %}
-              {% if subcategory != nil %}
-                  </ul>
-                </li>
-              {% endif %}
-              {% assign subcategory = p.subcategory %}
-              {% if subcategory != nil %}
-                {% assign ac = "aria-controls" %}
-                {% assign cid = p.category | remove: " " | downcase %}
-                {% assign sid = p.subcategory | remove: " " | downcase %}
-                <li>
-                  <a class="sidebar-nav-heading" data-toggle="collapse" href="#{{ cid }}-{{ sid }}" aria-expanded="false" {{ ac }}="{{ cid }}-{{ sid }}">{{ subcategory }}<span class="caret"></span></a>
-                  <ul class="collapse sidebar-nav sidebar-submenu" id="{{ cid }}-{{ sid }}">
-              {% endif %}
+          {% assign subcats = site.pages | where: 'layout', 'docs' | where: 'category', category | group_by: 'subcategory' | sort: 'name', 'first' %}
+          {% for subcategory in subcats %}
+            {% assign sorted_pages = subcategory.items | sort: 'weight', 'last' %}
+            {% if subcategory.name != "" %}
+              {% assign ac = "aria-controls" %}
+              {% assign cid = category | remove: " " | downcase %}
+              {% assign sid = subcategory.name | remove: " " | downcase %}
+              <li>
+                <a class="sidebar-nav-heading" data-toggle="collapse" href="#{{ cid }}-{{ sid }}" aria-expanded="false" {{ ac }}="{{ cid }}-{{ sid }}">{{ subcategory.name }}<span class="caret"></span></a>
+                <ul class="collapse sidebar-nav sidebar-submenu" id="{{ cid }}-{{ sid }}">
             {% endif %}
-            <li><a href="{{ p.url }}">{{ p.title }}</a></li>
-          {% endfor %}
-          {% if subcategory != nil %}
-                </ul>
+            {% for p in sorted_pages %}
+              <li><a href="{{ p.url }}">{{ p.title }}</a></li>
+            {% endfor %}
+            {% if subcategory.name != "" %}
               </li>
-          {% endif %}
+            </ul>
+            {% endif %}
+          {% endfor %}
           </ul>
         {% endfor %}
       </nav>
