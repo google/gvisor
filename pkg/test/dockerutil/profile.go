@@ -49,17 +49,16 @@ type Profile interface {
 // should have --profile set as an option in /etc/docker/daemon.json in
 // order for profiling to work with Pprof.
 type Pprof struct {
-	BasePath         string // path to put profiles
-	BlockProfile     bool
-	CPUProfile       bool
-	GoRoutineProfile bool
-	HeapProfile      bool
-	MutexProfile     bool
-	Duration         time.Duration // duration to run profiler e.g. '10s' or '1m'.
-	shouldRun        bool
-	cmd              *exec.Cmd
-	stdout           io.ReadCloser
-	stderr           io.ReadCloser
+	BasePath     string // path to put profiles
+	BlockProfile bool
+	CPUProfile   bool
+	HeapProfile  bool
+	MutexProfile bool
+	Duration     time.Duration // duration to run profiler e.g. '10s' or '1m'.
+	shouldRun    bool
+	cmd          *exec.Cmd
+	stdout       io.ReadCloser
+	stderr       io.ReadCloser
 }
 
 // MakePprofFromFlags makes a Pprof profile from flags.
@@ -68,13 +67,12 @@ func MakePprofFromFlags(c *Container) *Pprof {
 		return nil
 	}
 	return &Pprof{
-		BasePath:         filepath.Join(*pprofBaseDir, c.runtime, c.Name),
-		BlockProfile:     *pprofBlock,
-		CPUProfile:       *pprofCPU,
-		GoRoutineProfile: *pprofGo,
-		HeapProfile:      *pprofHeap,
-		MutexProfile:     *pprofMutex,
-		Duration:         *duration,
+		BasePath:     filepath.Join(*pprofBaseDir, c.runtime, c.Name),
+		BlockProfile: *pprofBlock,
+		CPUProfile:   *pprofCPU,
+		HeapProfile:  *pprofHeap,
+		MutexProfile: *pprofMutex,
+		Duration:     *duration,
 	}
 }
 
@@ -137,9 +135,6 @@ func (p *Pprof) makeProfileArgs(c *Container) []string {
 	}
 	if p.CPUProfile {
 		ret = append(ret, fmt.Sprintf("--profile-cpu=%s", filepath.Join(p.BasePath, "cpu.pprof")))
-	}
-	if p.GoRoutineProfile {
-		ret = append(ret, fmt.Sprintf("--profile-goroutine=%s", filepath.Join(p.BasePath, "go.pprof")))
 	}
 	if p.HeapProfile {
 		ret = append(ret, fmt.Sprintf("--profile-heap=%s", filepath.Join(p.BasePath, "heap.pprof")))

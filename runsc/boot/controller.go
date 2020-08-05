@@ -101,14 +101,13 @@ const (
 
 // Profiling related commands (see pprof.go for more details).
 const (
-	StartCPUProfile  = "Profile.StartCPUProfile"
-	StopCPUProfile   = "Profile.StopCPUProfile"
-	HeapProfile      = "Profile.HeapProfile"
-	GoroutineProfile = "Profile.GoroutineProfile"
-	BlockProfile     = "Profile.BlockProfile"
-	MutexProfile     = "Profile.MutexProfile"
-	StartTrace       = "Profile.StartTrace"
-	StopTrace        = "Profile.StopTrace"
+	StartCPUProfile = "Profile.StartCPUProfile"
+	StopCPUProfile  = "Profile.StopCPUProfile"
+	HeapProfile     = "Profile.HeapProfile"
+	BlockProfile    = "Profile.BlockProfile"
+	MutexProfile    = "Profile.MutexProfile"
+	StartTrace      = "Profile.StartTrace"
+	StopTrace       = "Profile.StopTrace"
 )
 
 // Logging related commands (see logging.go for more details).
@@ -129,42 +128,52 @@ type controller struct {
 
 	// manager holds the containerManager methods.
 	manager *containerManager
+
+	// pprop holds the profile instance if enabled. It may be nil.
+	pprof *control.Profile
 }
 
 // newController creates a new controller. The caller must call
 // controller.srv.StartServing() to start the controller.
 func newController(fd int, l *Loader) (*controller, error) {
-	srv, err := server.CreateFromFD(fd)
+	ctrl := &controller{}
+	var err error
+	ctrl.srv, err = server.CreateFromFD(fd)
 	if err != nil {
 		return nil, err
 	}
 
-	manager := &containerManager{
+	ctrl.manager = &containerManager{
 		startChan:       make(chan struct{}),
 		startResultChan: make(chan error),
 		l:               l,
 	}
-	srv.Register(manager)
+	ctrl.srv.Register(ctrl.manager)
 
 	if eps, ok := l.k.RootNetworkNamespace().Stack().(*netstack.Stack); ok {
 		net := &Network{
 			Stack: eps.Stack,
 		}
-		srv.Register(net)
+		ctrl.srv.Register(net)
 	}
 
-	srv.Register(&debug{})
-	srv.Register(&control.Logging{})
+	ctrl.srv.Register(&debug{})
+	ctrl.srv.Register(&control.Logging{})
+
 	if l.root.conf.ProfileEnable {
-		srv.Register(&control.Profile{
-			Kernel: l.k,
-		})
+		ctrl.pprof = &control.Profile{Kernel: l.k}
+		ctrl.srv.Register(ctrl.pprof)
 	}
 
-	return &controller{
-		srv:     srv,
-		manager: manager,
-	}, nil
+	return ctrl, nil
+}
+
+func (c *controller) stop() {
+	if c.pprof != nil {
+		// These are noop if there is nothing being profiled.
+		_ = c.pprof.StopCPUProfile(nil, nil)
+		_ = c.pprof.StopTrace(nil, nil)
+	}
 }
 
 // containerManager manages sandbox containers.
