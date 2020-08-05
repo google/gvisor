@@ -521,7 +521,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			synOpts := header.TCPSynOptions{
 				WS:    -1,
 				TS:    opts.TS,
-				TSVal: tcpTimeStamp(timeStampOffset()),
+				TSVal: tcpTimeStamp(time.Now(), timeStampOffset()),
 				TSEcr: opts.TSVal,
 				MSS:   mssForRoute(&s.route),
 			}
