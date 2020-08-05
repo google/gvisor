@@ -50,7 +50,7 @@ func (l *stringList) Set(value string) error {
 }
 
 var (
-	dutPlatform     = flag.String("dut_platform", "", "either \"linux\" or \"netstack\"")
+	native          = flag.Bool("native", false, "whether the test should be run natively")
 	testbenchBinary = flag.String("testbench_binary", "", "path to the testbench binary")
 	tshark          = flag.Bool("tshark", false, "use more verbose tshark in logs instead of tcpdump")
 	extraTestArgs   = stringList{}
@@ -84,16 +84,8 @@ func (l logger) Logf(format string, args ...interface{}) {
 func TestOne(t *testing.T) {
 	flag.Var(&extraTestArgs, "extra_test_arg", "extra arguments to pass to the testbench")
 	flag.Parse()
-	if *dutPlatform != "linux" && *dutPlatform != "netstack" {
-		t.Fatal("--dut_platform should be either linux or netstack")
-	}
 	if *testbenchBinary == "" {
 		t.Fatal("--testbench_binary is missing")
-	}
-	if *dutPlatform == "netstack" {
-		if _, err := dockerutil.RuntimePath(); err != nil {
-			t.Fatal("--runtime is missing or invalid with --dut_platform=netstack:", err)
-		}
 	}
 	dockerutil.EnsureSupportedDockerVersion()
 	ctx := context.Background()
@@ -140,9 +132,11 @@ func TestOne(t *testing.T) {
 	const testOutputDir = "/tmp/testoutput"
 
 	// Create the Docker container for the DUT.
-	dut := dockerutil.MakeContainer(ctx, logger("dut"))
-	if *dutPlatform == "linux" {
+	var dut *dockerutil.Container
+	if *native {
 		dut = dockerutil.MakeNativeContainer(ctx, logger("dut"))
+	} else {
+		dut = dockerutil.MakeContainer(ctx, logger("dut"))
 	}
 
 	runOpts := dockerutil.RunOpts{
@@ -307,7 +301,7 @@ func TestOne(t *testing.T) {
 		"--remote_mac", remoteMAC.String(),
 		"--remote_interface_id", fmt.Sprintf("%d", dutDeviceInfo.ID),
 		"--device", testNetDev,
-		"--dut_type", *dutPlatform,
+		fmt.Sprintf("--native=%t", *native),
 	)
 	testbenchLogs, err := testbench.Exec(ctx, dockerutil.ExecOpts{}, testArgs...)
 	if (err != nil) != *expectFailure {

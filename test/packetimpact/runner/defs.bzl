@@ -61,12 +61,12 @@ PACKETIMPACT_TAGS = [
     "packetimpact",
 ]
 
-def packetimpact_linux_test(
+def packetimpact_native_test(
         name,
         testbench_binary,
         expect_failure = False,
         **kwargs):
-    """Add a packetimpact test on linux.
+    """Add a native packetimpact test.
 
     Args:
         name: name of the test
@@ -76,9 +76,9 @@ def packetimpact_linux_test(
     """
     expect_failure_flag = ["--expect_failure"] if expect_failure else []
     _packetimpact_test(
-        name = name + "_linux_test",
+        name = name + "_native_test",
         testbench_binary = testbench_binary,
-        flags = ["--dut_platform", "linux"] + expect_failure_flag,
+        flags = ["--native"] + expect_failure_flag,
         tags = PACKETIMPACT_TAGS,
         **kwargs
     )
@@ -102,21 +102,21 @@ def packetimpact_netstack_test(
     _packetimpact_test(
         name = name + "_netstack_test",
         testbench_binary = testbench_binary,
-        # This is the default runtime unless
-        # "--test_arg=--runtime=OTHER_RUNTIME" is used to override the value.
-        flags = ["--dut_platform", "netstack", "--runtime=runsc-d"] + expect_failure_flag,
+        # Note that a distinct runtime must be provided in the form
+        # --test_arg=--runtime=other when invoking bazel.
+        flags = expect_failure_flag,
         tags = PACKETIMPACT_TAGS,
         **kwargs
     )
 
-def packetimpact_go_test(name, size = "small", pure = True, expect_linux_failure = False, expect_netstack_failure = False, **kwargs):
+def packetimpact_go_test(name, size = "small", pure = True, expect_native_failure = False, expect_netstack_failure = False, **kwargs):
     """Add packetimpact tests written in go.
 
     Args:
         name: name of the test
         size: size of the test
         pure: make a static go binary
-        expect_linux_failure: the test must fail for Linux
+        expect_native_failure: the test must fail natively
         expect_netstack_failure: the test must fail for Netstack
         **kwargs: all the other args, forwarded to go_test
     """
@@ -131,9 +131,9 @@ def packetimpact_go_test(name, size = "small", pure = True, expect_linux_failure
         ],
         **kwargs
     )
-    packetimpact_linux_test(
+    packetimpact_native_test(
         name = name,
-        expect_failure = expect_linux_failure,
+        expect_failure = expect_native_failure,
         testbench_binary = testbench_binary,
     )
     packetimpact_netstack_test(
