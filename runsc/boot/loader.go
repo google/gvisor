@@ -1008,6 +1008,9 @@ func (l *Loader) WaitExit() kernel.ExitStatus {
 	// Wait for container.
 	l.k.WaitExited()
 
+	// Cleanup
+	l.ctrl.stop()
+
 	return l.k.GlobalInit().ExitStatus()
 }
 
