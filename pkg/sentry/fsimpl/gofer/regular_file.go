@@ -184,6 +184,7 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 
 	d.metadataMu.Lock()
 	defer d.metadataMu.Unlock()
+
 	// Set offset to file size if the fd was opened with O_APPEND.
 	if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 {
 		// Holding d.metadataMu is sufficient for reading d.size.
@@ -194,70 +195,79 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		return 0, offset, err
 	}
 	src = src.TakeFirst64(limit)
-	n, err := fd.pwriteLocked(ctx, src, offset, opts)
-	return n, offset + n, err
-}
 
-// Preconditions: fd.dentry().metatdataMu must be locked.
-func (fd *regularFileFD) pwriteLocked(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
-	d := fd.dentry()
 	if d.fs.opts.interop != InteropModeShared {
 		// Compare Linux's mm/filemap.c:__generic_file_write_iter() =>
 		// file_update_time(). This is d.touchCMtime(), but without locking
 		// d.metadataMu (recursively).
 		d.touchCMtimeLocked()
 	}
-	if fd.vfsfd.StatusFlags()&linux.O_DIRECT != 0 {
-		// Write dirty cached pages that will be touched by the write back to
-		// the remote file.
-		if err := d.writeback(ctx, offset, src.NumBytes()); err != nil {
-			return 0, err
-		}
-		// Remove touched pages from the cache.
-		pgstart := usermem.PageRoundDown(uint64(offset))
-		pgend, ok := usermem.PageRoundUp(uint64(offset + src.NumBytes()))
-		if !ok {
-			return 0, syserror.EINVAL
-		}
-		mr := memmap.MappableRange{pgstart, pgend}
-		var freed []memmap.FileRange
-		d.dataMu.Lock()
-		cseg := d.cache.LowerBoundSegment(mr.Start)
-		for cseg.Ok() && cseg.Start() < mr.End {
-			cseg = d.cache.Isolate(cseg, mr)
-			freed = append(freed, memmap.FileRange{cseg.Value(), cseg.Value() + cseg.Range().Length()})
-			cseg = d.cache.Remove(cseg).NextSegment()
-		}
-		d.dataMu.Unlock()
-		// Invalidate mappings of removed pages.
-		d.mapsMu.Lock()
-		d.mappings.Invalidate(mr, memmap.InvalidateOpts{})
-		d.mapsMu.Unlock()
-		// Finally free pages removed from the cache.
-		mf := d.fs.mfp.MemoryFile()
-		for _, freedFR := range freed {
-			mf.DecRef(freedFR)
-		}
-	}
+
 	rw := getDentryReadWriter(ctx, d, offset)
+	defer putDentryReadWriter(rw)
+
 	if fd.vfsfd.StatusFlags()&linux.O_DIRECT != 0 {
+		if err := fd.writeCache(ctx, d, offset, src); err != nil {
+			return 0, offset, err
+		}
+
 		// Require the write to go to the remote file.
 		rw.direct = true
 	}
+
 	n, err := src.CopyInTo(ctx, rw)
-	putDentryReadWriter(rw)
-	if n != 0 && fd.vfsfd.StatusFlags()&(linux.O_DSYNC|linux.O_SYNC) != 0 {
-		// Write dirty cached pages touched by the write back to the remote
-		// file.
+	if err != nil {
+		return n, offset, err
+	}
+	if n > 0 && fd.vfsfd.StatusFlags()&(linux.O_DSYNC|linux.O_SYNC) != 0 {
+		// Write dirty cached pages touched by the write back to the remote file.
 		if err := d.writeback(ctx, offset, src.NumBytes()); err != nil {
-			return 0, err
+			return n, offset, err
 		}
 		// Request the remote filesystem to sync the remote file.
-		if err := d.handle.file.fsync(ctx); err != nil {
-			return 0, err
+		if err := d.handle.sync(ctx); err != nil {
+			return n, offset, err
 		}
 	}
-	return n, err
+	return n, offset + n, nil
+}
+
+func (fd *regularFileFD) writeCache(ctx context.Context, d *dentry, offset int64, src usermem.IOSequence) error {
+	// Write dirty cached pages that will be touched by the write back to
+	// the remote file.
+	if err := d.writeback(ctx, offset, src.NumBytes()); err != nil {
+		return err
+	}
+
+	// Remove touched pages from the cache.
+	pgstart := usermem.PageRoundDown(uint64(offset))
+	pgend, ok := usermem.PageRoundUp(uint64(offset + src.NumBytes()))
+	if !ok {
+		return syserror.EINVAL
+	}
+	mr := memmap.MappableRange{pgstart, pgend}
+	var freed []memmap.FileRange
+
+	d.dataMu.Lock()
+	cseg := d.cache.LowerBoundSegment(mr.Start)
+	for cseg.Ok() && cseg.Start() < mr.End {
+		cseg = d.cache.Isolate(cseg, mr)
+		freed = append(freed, memmap.FileRange{cseg.Value(), cseg.Value() + cseg.Range().Length()})
+		cseg = d.cache.Remove(cseg).NextSegment()
+	}
+	d.dataMu.Unlock()
+
+	// Invalidate mappings of removed pages.
+	d.mapsMu.Lock()
+	d.mappings.Invalidate(mr, memmap.InvalidateOpts{})
+	d.mapsMu.Unlock()
+
+	// Finally free pages removed from the cache.
+	mf := d.fs.mfp.MemoryFile()
+	for _, freedFR := range freed {
+		mf.DecRef(freedFR)
+	}
+	return nil
 }
 
 // Write implements vfs.FileDescriptionImpl.Write.
