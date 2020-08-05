@@ -1985,8 +1985,8 @@ func generateRandInt64() int64 {
 
 // FindNetworkEndpoint returns the network endpoint for the given address.
 func (s *Stack) FindNetworkEndpoint(netProto tcpip.NetworkProtocolNumber, address tcpip.Address) (NetworkEndpoint, *tcpip.Error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	for _, nic := range s.nics {
 		id := NetworkEndpointID{address}
@@ -2005,8 +2005,8 @@ func (s *Stack) FindNetworkEndpoint(netProto tcpip.NetworkProtocolNumber, addres
 
 // FindNICNameFromID returns the name of the nic for the given NICID.
 func (s *Stack) FindNICNameFromID(id tcpip.NICID) string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	nic, ok := s.nics[id]
 	if !ok {
