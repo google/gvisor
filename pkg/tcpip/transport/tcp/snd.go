@@ -191,6 +191,10 @@ type sender struct {
 
 	// cc is the congestion control algorithm in use for this sender.
 	cc congestionControl
+
+	// rc has the fields needed for implementing RACK loss detection
+	// algorithm.
+	rc rackControl
 }
 
 // rtt is a synchronization wrapper used to appease stateify. See the comment
@@ -1272,21 +1276,21 @@ func (s *sender) checkDuplicateAck(seg *segment) (rtx bool) {
 
 // handleRcvdSegment is called when a segment is received; it is responsible for
 // updating the send-related state.
-func (s *sender) handleRcvdSegment(seg *segment) {
+func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	// Check if we can extract an RTT measurement from this ack.
-	if !seg.parsedOptions.TS && s.rttMeasureSeqNum.LessThan(seg.ackNumber) {
+	if !rcvdSeg.parsedOptions.TS && s.rttMeasureSeqNum.LessThan(rcvdSeg.ackNumber) {
 		s.updateRTO(time.Now().Sub(s.rttMeasureTime))
 		s.rttMeasureSeqNum = s.sndNxt
 	}
 
 	// Update Timestamp if required. See RFC7323, section-4.3.
-	if s.ep.sendTSOk && seg.parsedOptions.TS {
-		s.ep.updateRecentTimestamp(seg.parsedOptions.TSVal, s.maxSentAck, seg.sequenceNumber)
+	if s.ep.sendTSOk && rcvdSeg.parsedOptions.TS {
+		s.ep.updateRecentTimestamp(rcvdSeg.parsedOptions.TSVal, s.maxSentAck, rcvdSeg.sequenceNumber)
 	}
 
 	// Insert SACKBlock information into our scoreboard.
 	if s.ep.sackPermitted {
-		for _, sb := range seg.parsedOptions.SACKBlocks {
+		for _, sb := range rcvdSeg.parsedOptions.SACKBlocks {
 			// Only insert the SACK block if the following holds
 			// true:
 			//  * SACK block acks data after the ack number in the
@@ -1299,27 +1303,27 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 			// NOTE: This check specifically excludes DSACK blocks
 			// which have start/end before sndUna and are used to
 			// indicate spurious retransmissions.
-			if seg.ackNumber.LessThan(sb.Start) && s.sndUna.LessThan(sb.Start) && sb.End.LessThanEq(s.sndNxt) && !s.ep.scoreboard.IsSACKED(sb) {
+			if rcvdSeg.ackNumber.LessThan(sb.Start) && s.sndUna.LessThan(sb.Start) && sb.End.LessThanEq(s.sndNxt) && !s.ep.scoreboard.IsSACKED(sb) {
 				s.ep.scoreboard.Insert(sb)
-				seg.hasNewSACKInfo = true
+				rcvdSeg.hasNewSACKInfo = true
 			}
 		}
 		s.SetPipe()
 	}
 
 	// Count the duplicates and do the fast retransmit if needed.
-	rtx := s.checkDuplicateAck(seg)
+	rtx := s.checkDuplicateAck(rcvdSeg)
 
 	// Stash away the current window size.
-	s.sndWnd = seg.window
+	s.sndWnd = rcvdSeg.window
 
-	ack := seg.ackNumber
+	ack := rcvdSeg.ackNumber
 
 	// Disable zero window probing if remote advertizes a non-zero receive
 	// window. This can be with an ACK to the zero window probe (where the
 	// acknumber refers to the already acknowledged byte) OR to any previously
 	// unacknowledged segment.
-	if s.zeroWindowProbing && seg.window > 0 &&
+	if s.zeroWindowProbing && rcvdSeg.window > 0 &&
 		(ack == s.sndUna || (ack-1).InRange(s.sndUna, s.sndNxt)) {
 		s.disableZeroWindowProbing()
 	}
@@ -1344,10 +1348,10 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 		//    averaged RTT measurement only if the segment acknowledges
 		//    some new data, i.e., only if it advances the left edge of
 		//    the send window.
-		if s.ep.sendTSOk && seg.parsedOptions.TSEcr != 0 {
+		if s.ep.sendTSOk && rcvdSeg.parsedOptions.TSEcr != 0 {
 			// TSVal/Ecr values sent by Netstack are at a millisecond
 			// granularity.
-			elapsed := time.Duration(s.ep.timestamp()-seg.parsedOptions.TSEcr) * time.Millisecond
+			elapsed := time.Duration(s.ep.timestamp()-rcvdSeg.parsedOptions.TSEcr) * time.Millisecond
 			s.updateRTO(elapsed)
 		}
 
@@ -1361,6 +1365,9 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 
 		ackLeft := acked
 		originalOutstanding := s.outstanding
+		s.rtt.Lock()
+		srtt := s.rtt.srtt
+		s.rtt.Unlock()
 		for ackLeft > 0 {
 			// We use logicalLen here because we can have FIN
 			// segments (which are always at the end of list) that
@@ -1378,6 +1385,11 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 
 			if s.writeNext == seg {
 				s.writeNext = seg.Next()
+			}
+
+			// Update the RACK fields if SACK is enabled.
+			if s.ep.sackPermitted {
+				s.rc.Update(seg, rcvdSeg, srtt, s.ep.tsOffset)
 			}
 
 			s.writeList.Remove(seg)
@@ -1435,7 +1447,7 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 	// that the window opened up, or the congestion window was inflated due
 	// to a duplicate ack during fast recovery. This will also re-enable
 	// the retransmit timer if needed.
-	if !s.ep.sackPermitted || s.fr.active || s.dupAckCount == 0 || seg.hasNewSACKInfo {
+	if !s.ep.sackPermitted || s.fr.active || s.dupAckCount == 0 || rcvdSeg.hasNewSACKInfo {
 		s.sendData()
 	}
 }
