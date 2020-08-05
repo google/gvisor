@@ -347,6 +347,11 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 			} else {
 				spliceN, err = inFile.Read(t, outPipeFD.IOSequence(count), vfs.ReadOptions{})
 			}
+			if spliceN == 0 && err == io.EOF {
+				// We reached the end of the file. Eat the error and exit the loop.
+				err = nil
+				break
+			}
 			n += spliceN
 			if err == syserror.ErrWouldBlock && !nonBlock {
 				err = dw.waitForBoth(t)
@@ -367,8 +372,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 				readN, err = inFile.Read(t, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
 			}
 			if readN == 0 && err == io.EOF {
-				// We reached the end of the file. Eat the
-				// error and exit the loop.
+				// We reached the end of the file. Eat the error and exit the loop.
 				err = nil
 				break
 			}
