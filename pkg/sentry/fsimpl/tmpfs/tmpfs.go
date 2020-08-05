@@ -558,6 +558,8 @@ func (i *inode) direntType() uint8 {
 		return linux.DT_LNK
 	case *socketFile:
 		return linux.DT_SOCK
+	case *namedPipe:
+		return linux.DT_FIFO
 	case *deviceFile:
 		switch impl.kind {
 		case vfs.BlockDevice:
