@@ -100,8 +100,11 @@ PosixError FuseTest::ConsumeFuseInit() {
       .error = 0,
       .unique = 2,
   };
-  // Returns an empty init out payload since this is just a test.
-  struct fuse_init_out out_payload;
+  // Returns a fake fuse_init_out with 7.0 version to avoid ECONNREFUSED
+  // error in the initialization of FUSE connection.
+  struct fuse_init_out out_payload = {
+      .major = 7,
+  };
   iov_out[0].iov_len = sizeof(out_header);
   iov_out[0].iov_base = &out_header;
   iov_out[1].iov_len = sizeof(out_payload);
