@@ -466,11 +466,18 @@ func (i *Inode) CheckCapability(ctx context.Context, cp linux.Capability) bool {
 	return creds.HasCapability(cp)
 }
 
-func (i *Inode) lockAppendMu(appendMode bool) func() {
+func (i *Inode) lockAppendMu(appendMode bool) {
 	if appendMode {
 		i.appendMu.Lock()
-		return i.appendMu.Unlock
+		return
 	}
 	i.appendMu.RLock()
-	return i.appendMu.RUnlock
+}
+
+func (i *Inode) unlockAppendMu(appendMode bool) {
+	if appendMode {
+		i.appendMu.Unlock()
+		return
+	}
+	i.appendMu.RUnlock()
 }

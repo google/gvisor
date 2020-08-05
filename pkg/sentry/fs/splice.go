@@ -96,8 +96,8 @@ func Splice(ctx context.Context, dst *File, src *File, opts SpliceOpts) (int64, 
 
 	var err error
 	if dstAppend {
-		unlock := dst.Dirent.Inode.lockAppendMu(dst.Flags().Append)
-		defer unlock()
+		dst.Dirent.Inode.lockAppendMu(dst.Flags().Append)
+		defer dst.Dirent.Inode.unlockAppendMu(dst.Flags().Append)
 
 		// Figure out the appropriate offset to use.
 		err = dst.offsetForAppend(ctx, &opts.DstStart)
