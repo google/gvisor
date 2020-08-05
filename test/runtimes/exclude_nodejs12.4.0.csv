@@ -16,8 +16,11 @@ parallel/test-http-writable-true-after-close.js,,Flaky - Mismatched <anonymous> 
 parallel/test-os.js,b/63997097,
 parallel/test-process-uid-gid.js,,
 parallel/test-tls-cli-min-version-1.0.js,,Flaky - EADDRINUSE
+parallel/test-tls-cli-min-version-1.1.js,,Flaky - EADDRINUSE
+parallel/test-tls-cli-min-version-1.2.js,,Flaky - EADDRINUSE
 parallel/test-tls-cli-min-version-1.3.js,,Flaky - EADDRINUSE
-parallel/test-tls-cli-max-version-1.2,,Flaky - EADDRINUSE
+parallel/test-tls-cli-max-version-1.2.js,,Flaky - EADDRINUSE
+parallel/test-tls-cli-max-version-1.3.js,,Flaky - EADDRINUSE
 parallel/test-tls-min-max-version.js,,Flaky - EADDRINUSE
 pseudo-tty/test-assert-colors.js,b/162801321,
 pseudo-tty/test-assert-no-color.js,b/162801321,
