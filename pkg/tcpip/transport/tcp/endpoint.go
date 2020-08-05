@@ -2692,15 +2692,14 @@ func (e *endpoint) maybeEnableTimestamp(synOpts *header.TCPSynOptions) {
 // timestamp returns the timestamp value to be used in the TSVal field of the
 // timestamp option for outgoing TCP segments for a given endpoint.
 func (e *endpoint) timestamp() uint32 {
-	return tcpTimeStamp(e.tsOffset)
+	return tcpTimeStamp(time.Now(), e.tsOffset)
 }
 
 // tcpTimeStamp returns a timestamp offset by the provided offset. This is
 // not inlined above as it's used when SYN cookies are in use and endpoint
 // is not created at the time when the SYN cookie is sent.
-func tcpTimeStamp(offset uint32) uint32 {
-	now := time.Now()
-	return uint32(now.Unix()*1000+int64(now.Nanosecond()/1e6)) + offset
+func tcpTimeStamp(curTime time.Time, offset uint32) uint32 {
+	return uint32(curTime.Unix()*1000+int64(curTime.Nanosecond()/1e6)) + offset
 }
 
 // timeStampOffset returns a randomized timestamp offset to be used when sending
@@ -2842,6 +2841,14 @@ func (e *endpoint) completeState() stack.TCPEndpointState {
 			WC:                      cubic.wC,
 			WEst:                    cubic.wEst,
 		}
+	}
+
+	rc := e.snd.rc
+	s.Sender.RACKState = stack.TCPRACKState{
+		XmitTime:    rc.xmitTime,
+		EndSequence: rc.endSequence,
+		FACK:        rc.fack,
+		RTT:         rc.rtt,
 	}
 	return s
 }

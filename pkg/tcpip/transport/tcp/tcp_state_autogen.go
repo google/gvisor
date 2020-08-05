@@ -392,6 +392,39 @@ func (x *keepalive) StateLoad(m state.Source) {
 	m.Load(4, &x.unacked)
 }
 
+func (x *rackControl) StateTypeName() string {
+	return "pkg/tcpip/transport/tcp.rackControl"
+}
+
+func (x *rackControl) StateFields() []string {
+	return []string{
+		"xmitTime",
+		"endSequence",
+		"fack",
+		"rtt",
+	}
+}
+
+func (x *rackControl) beforeSave() {}
+
+func (x *rackControl) StateSave(m state.Sink) {
+	x.beforeSave()
+	var xmitTime unixTime = x.saveXmitTime()
+	m.SaveValue(0, xmitTime)
+	m.Save(1, &x.endSequence)
+	m.Save(2, &x.fack)
+	m.Save(3, &x.rtt)
+}
+
+func (x *rackControl) afterLoad() {}
+
+func (x *rackControl) StateLoad(m state.Source) {
+	m.Load(1, &x.endSequence)
+	m.Load(2, &x.fack)
+	m.Load(3, &x.rtt)
+	m.LoadValue(0, new(unixTime), func(y interface{}) { x.loadXmitTime(y.(unixTime)) })
+}
+
 func (x *receiver) StateTypeName() string {
 	return "pkg/tcpip/transport/tcp.receiver"
 }
@@ -630,6 +663,7 @@ func (x *sender) StateFields() []string {
 		"maxSentAck",
 		"state",
 		"cc",
+		"rc",
 	}
 }
 
@@ -668,6 +702,7 @@ func (x *sender) StateSave(m state.Sink) {
 	m.Save(25, &x.maxSentAck)
 	m.Save(26, &x.state)
 	m.Save(27, &x.cc)
+	m.Save(28, &x.rc)
 }
 
 func (x *sender) StateLoad(m state.Source) {
@@ -696,6 +731,7 @@ func (x *sender) StateLoad(m state.Source) {
 	m.Load(25, &x.maxSentAck)
 	m.Load(26, &x.state)
 	m.Load(27, &x.cc)
+	m.Load(28, &x.rc)
 	m.LoadValue(1, new(unixTime), func(y interface{}) { x.loadLastSendTime(y.(unixTime)) })
 	m.LoadValue(12, new(unixTime), func(y interface{}) { x.loadRttMeasureTime(y.(unixTime)) })
 	m.LoadValue(13, new(unixTime), func(y interface{}) { x.loadFirstRetransmittedSegXmitTime(y.(unixTime)) })
@@ -906,6 +942,7 @@ func init() {
 	state.Register((*EndpointInfo)(nil))
 	state.Register((*endpoint)(nil))
 	state.Register((*keepalive)(nil))
+	state.Register((*rackControl)(nil))
 	state.Register((*receiver)(nil))
 	state.Register((*renoState)(nil))
 	state.Register((*SACKScoreboard)(nil))
