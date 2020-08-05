@@ -215,8 +215,6 @@ type AtomicRefCount struct {
 // LeakMode configures the leak checker.
 type LeakMode uint32
 
-// TODO(gvisor.dev/issue/1624): Simplify down to two modes once vfs1 ref
-// counting is gone.
 const (
 	// UninitializedLeakChecking indicates that the leak checker has not yet been initialized.
 	UninitializedLeakChecking LeakMode = iota
@@ -244,11 +242,6 @@ var leakMode uint32
 // SetLeakMode configures the reference leak checker.
 func SetLeakMode(mode LeakMode) {
 	atomic.StoreUint32(&leakMode, uint32(mode))
-}
-
-// GetLeakMode returns the current leak mode.
-func GetLeakMode() LeakMode {
-	return LeakMode(atomic.LoadUint32(&leakMode))
 }
 
 const maxStackFrames = 40
