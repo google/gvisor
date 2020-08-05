@@ -49,6 +49,9 @@ type ProfileOpts struct {
 // - dump out the stack trace of current go routines.
 //   sentryctl -pid <pid> pprof-goroutine
 type Profile struct {
+	// Kernel is the kernel under profile. It's immutable.
+	Kernel *kernel.Kernel
+
 	// mu protects the fields below.
 	mu sync.Mutex
 
@@ -57,9 +60,6 @@ type Profile struct {
 
 	// traceFile is the current execution trace output file.
 	traceFile *fd.FD
-
-	// Kernel is the kernel under profile.
-	Kernel *kernel.Kernel
 }
 
 // StartCPUProfile is an RPC stub which starts recording the CPU profile in a
