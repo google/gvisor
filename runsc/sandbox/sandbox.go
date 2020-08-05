@@ -1012,26 +1012,6 @@ func (s *Sandbox) StopCPUProfile() error {
 	return nil
 }
 
-// GoroutineProfile writes a goroutine profile to the given file.
-func (s *Sandbox) GoroutineProfile(f *os.File) error {
-	log.Debugf("Goroutine profile %q", s.ID)
-	conn, err := s.sandboxConnect()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	opts := control.ProfileOpts{
-		FilePayload: urpc.FilePayload{
-			Files: []*os.File{f},
-		},
-	}
-	if err := conn.Call(boot.GoroutineProfile, &opts, nil); err != nil {
-		return fmt.Errorf("getting sandbox %q goroutine profile: %v", s.ID, err)
-	}
-	return nil
-}
-
 // BlockProfile writes a block profile to the given file.
 func (s *Sandbox) BlockProfile(f *os.File) error {
 	log.Debugf("Block profile %q", s.ID)
