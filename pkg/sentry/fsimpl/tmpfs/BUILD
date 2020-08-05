@@ -26,17 +26,6 @@ go_template_instance(
     },
 )
 
-go_template_instance(
-    name = "inode_refs",
-    out = "inode_refs.go",
-    package = "tmpfs",
-    prefix = "inode",
-    template = "//pkg/refs_vfs2:refs_template",
-    types = {
-        "T": "inode",
-    },
-)
-
 go_library(
     name = "tmpfs",
     srcs = [
@@ -45,7 +34,6 @@ go_library(
         "directory.go",
         "filesystem.go",
         "fstree.go",
-        "inode_refs.go",
         "named_pipe.go",
         "regular_file.go",
         "socket_file.go",
@@ -59,7 +47,6 @@ go_library(
         "//pkg/context",
         "//pkg/fspath",
         "//pkg/log",
-        "//pkg/refs",
         "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/fs",
