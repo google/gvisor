@@ -185,7 +185,6 @@ swgso-tests: load-basic-images
 	@$(call submake,install-test-runtime RUNTIME="swgso" ARGS="--software-gso=true --gso=false")
 	@$(call submake,test-runtime RUNTIME="swgso" TARGETS="$(INTEGRATION_TARGETS)")
 .PHONY: swgso-tests
-
 hostnet-tests: load-basic-images
 	@$(call submake,install-test-runtime RUNTIME="hostnet" ARGS="--network=host")
 	@$(call submake,test-runtime RUNTIME="hostnet" OPTIONS="--test_arg=-checkpoint=false" TARGETS="$(INTEGRATION_TARGETS)")
@@ -211,8 +210,9 @@ packetdrill-tests: load-packetdrill
 .PHONY: packetdrill-tests
 
 packetimpact-tests: load-packetimpact
+	@sudo modprobe iptable_filter ip6table_filter
 	@$(call submake,install-test-runtime RUNTIME="packetimpact")
-	@$(call submake,test-runtime RUNTIME="packetimpact" TARGETS="$(shell $(MAKE) query TARGETS='attr(tags, packetimpact, tests(//...))')")
+	@$(call submake,test-runtime OPTIONS="--jobs=HOST_CPUS*3 --local_test_jobs=HOST_CPUS*3" RUNTIME="packetimpact" TARGETS="$(shell $(MAKE) query TARGETS='attr(tags, packetimpact, tests(//...))')")
 .PHONY: packetimpact-tests
 
 root-tests: load-basic-images

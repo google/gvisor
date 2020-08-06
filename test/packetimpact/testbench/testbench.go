@@ -27,8 +27,8 @@ import (
 )
 
 var (
-	// DUTType is the type of device under test.
-	DUTType = ""
+	// Native indicates that the test is being run natively.
+	Native = false
 	// Device is the local device on the test network.
 	Device = ""
 
@@ -81,7 +81,7 @@ func RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&RemoteIPv6, "remote_ipv6", RemoteIPv6, "remote IPv6 address for test packets")
 	fs.StringVar(&RemoteMAC, "remote_mac", RemoteMAC, "remote mac address for test packets")
 	fs.StringVar(&Device, "device", Device, "local device for test packets")
-	fs.StringVar(&DUTType, "dut_type", DUTType, "type of device under test")
+	fs.BoolVar(&Native, "native", Native, "whether the test is running natively")
 	fs.Uint64Var(&RemoteInterfaceID, "remote_interface_id", RemoteInterfaceID, "remote interface ID for test packets")
 }
 
