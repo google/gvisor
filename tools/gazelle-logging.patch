@@ -1,0 +1,31 @@
+diff --git a/language/go/resolve.go b/language/go/resolve.go
+index c18c930..bffe32e 100644
+--- a/language/go/resolve.go
++++ b/language/go/resolve.go
+@@ -19,7 +19,6 @@ import (
+ 	"errors"
+ 	"fmt"
+ 	"go/build"
+-	"log"
+ 	"path"
+ 	"regexp"
+ 	"strings"
+@@ -74,7 +73,7 @@ func (gl *goLang) Resolve(c *config.Config, ix *resolve.RuleIndex, rc *repo.Remo
+ 	if r.Kind() == "go_proto_library" {
+ 		resolve = resolveProto
+ 	}
+-	deps, errs := imports.Map(func(imp string) (string, error) {
++	deps, _ := imports.Map(func(imp string) (string, error) {
+ 		l, err := resolve(c, ix, rc, imp, from)
+ 		if err == skipImportError {
+ 			return "", nil
+@@ -89,9 +88,6 @@ func (gl *goLang) Resolve(c *config.Config, ix *resolve.RuleIndex, rc *repo.Remo
+ 		l = l.Rel(from.Repo, from.Pkg)
+ 		return l.String(), nil
+ 	})
+-	for _, err := range errs {
+-		log.Print(err)
+-	}
+ 	if !deps.IsEmpty() {
+ 		if r.Kind() == "go_proto_library" {
+ 			// protos may import the same library multiple times by different names,

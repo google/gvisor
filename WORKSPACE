@@ -35,7 +35,17 @@ http_archive(
 
 http_archive(
     name = "bazel_gazelle",
+    patch_args = ["-p1"],
     sha256 = "d8c45ee70ec39a57e7a05e5027c32b1576cc7f16d9dd37135b0eddde45cf1b10",
+    patches = [
+        # This patch improves logging. It can be dropped and replaced with a
+        # "quiet = True" on affect go_repositories below in the future, if the
+        # relevant pull request [1] is accepted. At that time, the patch file
+        # itself should also be deleted.
+        #
+        # [1] https://github.com/bazelbuild/bazel-gazelle/pull/859
+        "//tools:gazelle-logging.patch",
+    ],
     urls = [
         "https://storage.googleapis.com/bazel-mirror/github.com/bazelbuild/bazel-gazelle/releases/download/v0.20.0/bazel-gazelle-v0.20.0.tar.gz",
         "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.20.0/bazel-gazelle-v0.20.0.tar.gz",
