@@ -160,8 +160,8 @@ func (fd *tunFD) EventUnregister(e *waiter.Entry) {
 	fd.device.EventUnregister(e)
 }
 
-// isNetTunSupported returns whether /dev/net/tun device is supported for s.
-func isNetTunSupported(s inet.Stack) bool {
+// IsNetTunSupported returns whether /dev/net/tun device is supported for s.
+func IsNetTunSupported(s inet.Stack) bool {
 	_, ok := s.(*netstack.Stack)
 	return ok
 }
