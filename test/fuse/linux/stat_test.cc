@@ -36,8 +36,12 @@ namespace {
 class StatTest : public FuseTest {
  public:
   bool CompareRequest(void* expected_mem, size_t expected_len, void* real_mem,
-                      size_t real_len) override {
-    if (expected_len != real_len) return false;
+                      size_t real_len) {
+    if (expected_len != real_len){
+      std::cerr << "expect header len " << expected_len << " but got "
+                << real_len << std::endl;
+      return false;
+    };
     struct fuse_in_header* real_header =
         reinterpret_cast<fuse_in_header*>(real_mem);
 
@@ -60,22 +64,6 @@ class StatTest : public FuseTest {
 TEST_F(StatTest, StatNormal) {
   struct iovec iov_in[2];
   struct iovec iov_out[2];
-
-  struct fuse_in_header in_header = {
-      .len = sizeof(struct fuse_in_header) + sizeof(struct fuse_getattr_in),
-      .opcode = FUSE_GETATTR,
-      .unique = 4,
-      .nodeid = 1,
-      .uid = 0,
-      .gid = 0,
-      .pid = 4,
-      .padding = 0,
-  };
-  struct fuse_getattr_in in_payload = {0};
-  iov_in[0].iov_len = sizeof(in_header);
-  iov_in[0].iov_base = &in_header;
-  iov_in[1].iov_len = sizeof(in_payload);
-  iov_in[1].iov_base = &in_payload;
 
   mode_t expected_mode = S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
   struct timespec atime = {.tv_sec = 1595436289, .tv_nsec = 134150844};
@@ -112,7 +100,7 @@ TEST_F(StatTest, StatNormal) {
   iov_out[1].iov_len = sizeof(out_payload);
   iov_out[1].iov_base = &out_payload;
 
-  SetExpected(iov_in, 2, iov_out, 2);
+  SetServerResponse(FUSE_GETATTR, iov_out, 2);
 
   struct stat stat_buf;
   EXPECT_THAT(stat(kMountPoint, &stat_buf), SyscallSucceeds());
@@ -132,7 +120,26 @@ TEST_F(StatTest, StatNormal) {
       .st_ctim = ctime,
   };
   EXPECT_TRUE(StatsAreEqual(stat_buf, expected_stat));
-  WaitCompleted();
+
+  // Check if the request sent is what we wanted.
+  struct fuse_in_header expected_header = {
+      .len = sizeof(struct fuse_in_header) + sizeof(struct fuse_getattr_in),
+      .opcode = FUSE_GETATTR,
+      .unique = 4,
+      .nodeid = 1,
+      .uid = 0,
+      .gid = 0,
+      .pid = 4,
+      .padding = 0,
+  };
+  struct fuse_getattr_in expected_payload = {0};
+
+  struct fuse_in_header actual_header;
+  struct fuse_getattr_in actual_payload;
+  SET_IOVEC_WITH_HEADER_PAYLOAD(iov_in, actual_header, actual_payload);
+
+  GetServerActualRequest(iov_in, 2);
+  EXPECT_TRUE(CompareRequest(&expected_header, expected_header.len, &actual_header, actual_header.len));
 }
 
 TEST_F(StatTest, StatNotFound) {
@@ -158,11 +165,10 @@ TEST_F(StatTest, StatNotFound) {
   iov_out[0].iov_len = sizeof(out_header);
   iov_out[0].iov_base = &out_header;
 
-  SetExpected(iov_in, 2, iov_out, 1);
+  SetServerResponse(FUSE_GETATTR, iov_out, 1);
 
   struct stat stat_buf;
   EXPECT_THAT(stat(kMountPoint, &stat_buf), SyscallFailsWithErrno(ENOENT));
-  WaitCompleted();
 }
 
 }  // namespace

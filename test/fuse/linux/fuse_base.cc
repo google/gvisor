@@ -215,7 +215,9 @@ PosixError FuseTest::ServerConsumeFuseInit() {
       .unique = 2,  // The first FUSE request has unique = 2.
   };
   // Returns an empty init out payload since this is just a test.
-  struct fuse_init_out out_payload;
+  struct fuse_init_out out_payload = {
+    .major = 7,
+  };
   SET_IOVEC_WITH_HEADER_PAYLOAD(iov_out, out_header, out_payload);
 
   RETURN_ERROR_IF_SYSCALL_FAIL(RetryEINTR(writev)(dev_fd_, iov_out, 2));
