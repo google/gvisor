@@ -55,9 +55,13 @@ _runtime_test = rule(
         ),
         "_runner": attr.label(
             default = "//test/runtimes/runner:runner",
+            executable = True,
+            cfg = "target",
         ),
         "_proctor": attr.label(
             default = "//test/runtimes/proctor:proctor",
+            executable = True,
+            cfg = "target",
         ),
     },
     test = True,

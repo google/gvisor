@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "pkg_tar")
+load("//tools:defs.bzl", "bzl_library", "pkg_tar")
 load("//website:defs.bzl", "doc", "docs")
 
 package(licenses = ["notice"])
@@ -179,4 +179,10 @@ genrule(
           "tar -C $$T -czf $@ . && " +
           "rm -rf $$T",
     tools = ["//website/cmd/syscalldocs"],
+)
+
+bzl_library(
+    name = "defs_bzl",
+    srcs = ["defs.bzl"],
+    visibility = ["//visibility:private"],
 )
