@@ -96,6 +96,16 @@ void FuseTest::GetServerActualRequest(struct iovec* iov_in, int iov_in_cnt) {
   WaitServerComplete();
 }
 
+// Sends the `kSkipRequest` command to the FUSE server, which would skip 
+// current stored request data.
+void FuseTest::SkipServerActualRequest() {
+  FuseTestCmd cmd = kSkipRequest;
+  EXPECT_THAT(RetryEINTR(write)(sock_[0], &cmd, sizeof(cmd)),
+              SyscallSucceedsWithValue(sizeof(cmd)));
+
+  WaitServerComplete();
+}
+
 // Sends the `kGetTotalReceivedBytes` command to the FUSE server, reads from
 // the socket, and returns.
 uint32_t FuseTest::GetServerTotalReceivedBytes() {
@@ -242,6 +252,9 @@ void FuseTest::ServerHandleCommand() {
     case kGetRequest:
       ServerSendReceivedRequest();
       break;
+    case kSkipRequest:
+      ServerSkipReceivedRequest();
+      break;
     case kGetTotalReceivedBytes:
       ServerSendTotalReceivedBytes();
       break;
@@ -278,6 +291,15 @@ void FuseTest::ServerSendReceivedRequest() {
       RetryEINTR(write)(sock_[1], requests_.DataAtOffset(mem_block.offset),
                         mem_block.len),
       SyscallSucceedsWithValue(mem_block.len));
+}
+
+// Skip the request pointed by current cursor.
+void FuseTest::ServerSkipReceivedRequest() {
+  if (requests_.End()) {
+    FAIL() << "No more received request.";
+    return;
+  }
+  requests_.Next();
 }
 
 // Checks if there is any error during test and sends to the socket. 0 is

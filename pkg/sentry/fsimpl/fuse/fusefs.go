@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -70,6 +71,29 @@ type filesystem struct {
 	// opts is the options the fusefs is initialized with.
 	opts *filesystemOptions
 }
+
+// fileDescription implements vfs.FileDescriptionImpl for fuse.
+type fileDescription struct {
+	vfsfd vfs.FileDescription
+	vfs.FileDescriptionDefaultImpl
+	vfs.DentryMetadataFileDescriptionImpl
+	vfs.NoLockFD
+
+	// the file handle used in userspace.
+	Fh uint64
+
+	// Nonseekable is indicate cannot perform seek on a file.
+	Nonseekable bool
+
+	// DirectIO suggest fuse to use direct io operation.
+	DirectIO bool
+
+	// OpenFlag is the flag returned by open.
+	OpenFlag uint32
+}
+
+// Release implements vfs.FileDescriptionImpl.Release.
+func (fd *fileDescription) Release(ctx context.Context) {}
 
 // Name implements vfs.FilesystemType.Name.
 func (FilesystemType) Name() string {
@@ -210,10 +234,25 @@ type inode struct {
 
 	// the owning filesystem. fs is immutable.
 	fs *filesystem
+
+	// size of the file.
+	size uint64
+
+	// attributeVersion is the version of inode's attributes.
+	attributeVersion uint64
+
+	// attributeTime is the remaining vaild time of attributes.
+	attributeTime uint64
+
+	// version of the inode.
+	version uint64
+
+	// imutex serializes changes to a inode.
+	imutex sync.Mutex
 }
 
 // NewNode implements kernfs.Inode.NewNode.
-func (i *Inode) NewNode(ctx context.Context, name string, opts vfs.MknodOptions) (*vfs.Dentry, error) {
+func (i *inode) NewNode(ctx context.Context, name string, opts vfs.MknodOptions) (*vfs.Dentry, error) {
 	kernelTask := kernel.TaskFromContext(ctx)
 	if kernelTask == nil {
 		log.Warningf("fusefs.Inode.NewNode: couldn't get kernel task from context", i.NodeID)
@@ -236,7 +275,7 @@ func (i *Inode) NewNode(ctx context.Context, name string, opts vfs.MknodOptions)
 
 // newEntry call FUSE server for entry creation and allocate corresponding entry according to response.
 // Shared by FUSE_MKNOD, FUSE_MKDIR, FUSE_SYMLINK and FUSE_LINK.
-func (i *Inode) newEntry(kernelTask *kernel.Task, req *Request, name string, fileType linux.FileMode) (*vfs.Dentry, error) {
+func (i *inode) newEntry(kernelTask *kernel.Task, req *Request, name string, fileType linux.FileMode) (*vfs.Dentry, error) {
 	res, err := i.fs.conn.Call(kernelTask, req)
 	if err != nil {
 		return nil, err
@@ -257,7 +296,7 @@ func (i *Inode) newEntry(kernelTask *kernel.Task, req *Request, name string, fil
 }
 
 func (fs *filesystem) newRootInode(creds *auth.Credentials, mode linux.FileMode) *kernfs.Dentry {
-	i := &Inode{fs: fs}
+	i := &inode{fs: fs}
 	i.InodeAttrs.Init(creds, linux.UNNAMED_MAJOR, fs.devMinor, 1, linux.ModeDirectory|0755)
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	i.dentry.Init(i)
@@ -267,7 +306,7 @@ func (fs *filesystem) newRootInode(creds *auth.Credentials, mode linux.FileMode)
 }
 
 func (fs *filesystem) newInode(nodeID uint64, generation uint64, attr linux.FUSEAttr) *kernfs.Dentry {
-	i := &Inode{fs: fs, NodeID: nodeID}
+	i := &inode{fs: fs, NodeID: nodeID}
 	creds := auth.Credentials{EffectiveKGID: auth.KGID(attr.UID), EffectiveKUID: auth.KUID(attr.UID)}
 	i.InodeAttrs.Init(&creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.FileMode(attr.Mode))
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
@@ -278,11 +317,80 @@ func (fs *filesystem) newInode(nodeID uint64, generation uint64, attr linux.FUSE
 
 // Open implements kernfs.Inode.Open.
 func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), vfsd, &i.OrderedChildren, &i.locks, &opts)
-	if err != nil {
+	isDir := i.InodeAttrs.Mode().IsDir()
+	if !isDir && opts.Mode.IsDir() {
+		return nil, syserror.ENOTDIR
+	}
+	if opts.Flags&linux.O_LARGEFILE == 0 && i.size > linux.MAX_NON_LFS {
+		return nil, syserror.EOVERFLOW
+	}
+
+	fd := fileDescription{}
+	// Only send open request when FUSE server support open or is opening a directory.
+	if !i.fs.conn.noOpen || isDir {
+		kernelTask := kernel.TaskFromContext(ctx)
+		if kernelTask == nil {
+			log.Warningf("fusefs.Inode.Open: couldn't get kernel task from context")
+			return nil, syserror.EINVAL
+		}
+
+		var opcode linux.FUSEOpcode
+		if isDir {
+			opcode = linux.FUSE_OPENDIR
+		} else {
+			opcode = linux.FUSE_OPEN
+		}
+		in := linux.FUSEOpenIn{Flags: opts.Flags & ^uint32(linux.O_CREAT|linux.O_EXCL|linux.O_NOCTTY)}
+		if !i.fs.conn.atomicOTrunc {
+			in.Flags &= ^uint32(linux.O_TRUNC)
+		}
+		req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.NodeID, opcode, &in)
+		if err != nil {
+			return nil, err
+		}
+
+		res, err := i.fs.conn.Call(kernelTask, req)
+		if err != nil {
+			return nil, err
+		}
+		if err := res.Error(); err == syserror.ENOSYS && !isDir {
+			i.fs.conn.noOpen = true
+		} else if err != nil {
+			return nil, err
+		}
+		out := linux.FUSEOpenOut{}
+		if err := res.UnmarshalPayload(&out); err != nil {
+			return nil, err
+		}
+		fd.OpenFlag = out.OpenFlag
+		fd.Fh = out.Fh
+	}
+
+	if isDir {
+		fd.OpenFlag &= ^uint32(linux.FOPEN_DIRECT_IO)
+	}
+
+	// TODO(gvisor.dev/issue/3234): invalidate mmap after implemented it for FUSE Inode
+	fd.DirectIO = fd.OpenFlag&linux.FOPEN_DIRECT_IO != 0
+	fdOptions := &vfs.FileDescriptionOptions{}
+	if fd.OpenFlag&linux.FOPEN_NONSEEKABLE != 0 {
+		fdOptions.DenyPRead = true
+		fdOptions.DenyPWrite = true
+		fd.Nonseekable = true
+	}
+	if i.fs.conn.atomicOTrunc && opts.Flags&linux.O_TRUNC != 0 {
+		i.fs.conn.lock.Lock()
+		i.fs.conn.attributeVersion++
+		i.attributeVersion = i.fs.conn.attributeVersion
+		i.size = 0
+		i.fs.conn.lock.Unlock()
+		i.attributeTime = 0
+	}
+
+	if err := fd.vfsfd.Init(&fd, opts.Flags, rp.Mount(), vfsd, fdOptions); err != nil {
 		return nil, err
 	}
-	return fd.VFSFileDescription(), nil
+	return &fd.vfsfd, nil
 }
 
 // fromFUSEAttr masks attributes from linux.FUSEAttr to linux.Statx. The

@@ -36,6 +36,7 @@ enum FuseTestCmd {
   kSetResponse = 0,
   kGetSuccess,
   kGetRequest,
+  kSkipRequest,
   kGetTotalReceivedBytes,
   kGetTotalSentBytes,
 };
@@ -116,6 +117,10 @@ class FuseTest : public ::testing::Test {
   // data from server.
   void GetServerActualRequest(struct iovec* iov_in, int iov_in_cnt);
 
+  // Called by the testing thread to ask the FUSE server to skip stored
+  // request data.
+  void SkipServerActualRequest();
+
   // Called by the testing thread to ask the FUSE server for its total received
   // bytes from /dev/fuse.
   uint32_t GetServerTotalReceivedBytes();
@@ -154,6 +159,10 @@ class FuseTest : public ::testing::Test {
   // Handles `kGetRequest` command. Sends the next received request pointed by
   // the cursor.
   void ServerSendReceivedRequest();
+
+  // The FUSE server side's corresponding code of `SkipServerActualRequest()`.
+  // Handles `kSkipRequest` command. Skip the request pointed by current cursor.
+  void ServerSkipReceivedRequest();
 
   // The FUSE server side's corresponding code of `EnsureServerSuccess()`.
   // Handles `kGetSuccess` command. Sends the overall success status counted by

@@ -90,6 +90,12 @@ type connection struct {
 	// - FUSE_ASYNC_DIO
 	// - FUSE_POSIX_ACL: affects defaultPermissions, posixACL, xattr handler
 
+	// lock protect access to struct memebers.
+	lock sync.Mutex
+
+	// attributeVersion is the version of connection's attributes.
+	attributeVersion uint64
+
 	// initialized after receiving FUSE_INIT reply.
 	// Until it's set, suspend sending FUSE requests.
 	// Use SetInitialized() and IsInitialized() for atomic access.
@@ -189,6 +195,45 @@ type connection struct {
 	// dontMask if filestestem does not apply umask to creation modes.
 	// Negotiated in INIT.
 	dontMask bool
+
+	// noFLock if BSD file locking primitives not implemented.
+	// Negotiated and only set in INIT.
+	noFLock bool
+
+	// autoInvalData if filesystem uses enhanced/automatic page cache invalidation.
+	// Negotiated and only set in INIT.
+	autoInvalData bool
+
+	// explicitInvalData if filesystem is in charge of page cache invalidation.
+	// Negotiated and only set in INIT.
+	explicitInvalData bool
+
+	// doReaddirplus if the filesystem supports readdirplus.
+	// Negotiated and only set in INIT.
+	doReaddirplus bool
+
+	// readdirplusAuto if the filesystem wants adaptive readdirplus.
+	// Negotiated and only set in INIT.
+	readdirplusAuto bool
+
+	// asyncDio if the filesystem supports asynchronous direct-IO submission.
+	// Negotiated and only set in INIT.
+	asyncDio bool
+
+	// TODO(OPENPREBASE): Remove this or add this.
+	atomicOTrunc bool
+
+	// posixACL if the filesystem supports posix ACL.
+	// Negotiated and only set in INIT.
+	posixACL bool
+
+	// defaultPermissions if the filesystem needs to check permissions based on the file mode.
+	// Negotiated in INIT.
+	defaultPermissions bool
+
+	// noOpen if FUSE server doesn't support open operation.
+	// This flag only influence performance, not correctness of the program.
+	noOpen bool
 }
 
 // newFUSEConnection creates a FUSE connection to fd.
@@ -243,7 +288,7 @@ type Marshallable interface {
 }
 
 // NewRequest creates a new request that can be sent to the FUSE server.
-func (conn *Connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint64, opcode linux.FUSEOpcode, payload Marshallable) (*Request, error) {
+func (conn *connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint64, opcode linux.FUSEOpcode, payload Marshallable) (*Request, error) {
 	conn.fd.mu.Lock()
 	defer conn.fd.mu.Unlock()
 	conn.fd.nextOpID += linux.FUSEOpID(reqIDStep)
