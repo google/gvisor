@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "rbe_platform", "rbe_toolchain")
+load("//tools:defs.bzl", "bzl_library", "rbe_platform", "rbe_toolchain")
 
 package(licenses = ["notice"])
 
@@ -85,4 +85,22 @@ rbe_toolchain(
     target_compatible_with = [],
     toolchain = "@bazel_toolchains_bazel3//configs/ubuntu16_04_clang/11.0.0/bazel_3.1.0/cc:cc-compiler-k8",
     toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+bzl_library(
+    name = "platforms_bzl",
+    srcs = ["platforms.bzl"],
+    visibility = ["//visibility:private"],
+)
+
+bzl_library(
+    name = "tags_bzl",
+    srcs = ["tags.bzl"],
+    visibility = ["//visibility:private"],
+)
+
+bzl_library(
+    name = "defs_bzl",
+    srcs = ["defs.bzl"],
+    visibility = ["//visibility:private"],
 )

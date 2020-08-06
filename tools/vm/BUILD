@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "cc_binary", "gtest")
+load("//tools:defs.bzl", "bzl_library", "cc_binary", "gtest")
 load("//tools/vm:defs.bzl", "vm_image", "vm_test")
 
 package(
@@ -54,4 +54,10 @@ vm_test(
     name = "vm_test",
     shard_count = 2,
     targets = [":test"],
+)
+
+bzl_library(
+    name = "defs_bzl",
+    srcs = ["defs.bzl"],
+    visibility = ["//visibility:private"],
 )

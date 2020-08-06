@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "bzl_library", "go_library")
 
 package(licenses = ["notice"])
 
@@ -46,4 +46,10 @@ go_library(
         "@org_golang_x_tools//go/analysis/passes/unusedresult:go_tool_library",
         "@org_golang_x_tools//go/gcexportdata:go_tool_library",
     ],
+)
+
+bzl_library(
+    name = "defs_bzl",
+    srcs = ["defs.bzl"],
+    visibility = ["//visibility:private"],
 )

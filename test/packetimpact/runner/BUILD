@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_test")
+load("//tools:defs.bzl", "bzl_library", "go_test")
 
 package(
     default_visibility = ["//test/packetimpact:__subpackages__"],
@@ -18,4 +18,10 @@ go_test(
         "//test/packetimpact/netdevs",
         "@com_github_docker_docker//api/types/mount:go_default_library",
     ],
+)
+
+bzl_library(
+    name = "defs_bzl",
+    srcs = ["defs.bzl"],
+    visibility = ["//visibility:private"],
 )
