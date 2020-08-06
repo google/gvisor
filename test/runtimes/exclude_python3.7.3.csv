@@ -1,28 +1,20 @@
 test name,bug id,comment
-test_asynchat,b/76031995,SO_REUSEADDR
 test_asyncio,,Fails on Docker.
-test_asyncore,b/76031995,SO_REUSEADDR
-test_epoll,,
-test_fcntl,,fcntl invalid argument -- artificial test to make sure something works in 64 bit mode.
-test_ftplib,,Fails in Docker
-test_httplib,b/76031995,SO_REUSEADDR
-test_imaplib,,
-test_logging,,
+test_asyncore,b/162973328,
+test_epoll,b/162983393,
+test_fcntl,b/162978767,fcntl invalid argument -- artificial test to make sure something works in 64 bit mode.
+test_imaplib,b/162979661,
+test_logging,b/162980079,
 test_multiprocessing_fork,,Flaky. Sometimes times out.
 test_multiprocessing_forkserver,,Flaky. Sometimes times out.
 test_multiprocessing_main_handling,,Flaky. Sometimes times out.
 test_multiprocessing_spawn,,Flaky. Sometimes times out.
-test_nntplib,b/76031995,tests should not set SO_REUSEADDR
-test_poplib,,Fails on Docker
 test_posix,b/76174079,posix.sched_get_priority_min not implemented + posix.sched_rr_get_interval not permitted
-test_pty,b/76157709,out of pty devices
-test_readline,b/76157709,out of pty devices
+test_pty,b/162979921,
+test_readline,b/162980389,TestReadline hangs forever
 test_resource,b/76174079,
 test_selectors,b/76116849,OSError not raised with epoll
-test_smtplib,b/76031995,SO_REUSEADDR and unclosed sockets
+test_smtplib,b/162980434,unclosed sockets
 test_signal,,Flaky - signal: alarm clock
 test_socket,b/75983380,
-test_ssl,b/76031995,SO_REUSEADDR
-test_subprocess,,
-test_support,b/76031995,SO_REUSEADDR
-test_telnetlib,b/76031995,SO_REUSEADDR
+test_subprocess,b/162980831,
