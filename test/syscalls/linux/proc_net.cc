@@ -477,6 +477,44 @@ TEST(ProcNetSnmp, CheckSnmp) {
   EXPECT_EQ(value_count, 1);
 }
 
+TEST(ProcSysNetIpv4Recovery, Exists) {
+  EXPECT_THAT(open("/proc/sys/net/ipv4/tcp_recovery", O_RDONLY),
+              SyscallSucceeds());
+}
+
+TEST(ProcSysNetIpv4Recovery, CanReadAndWrite) {
+  // TODO(b/162988252): Enable save/restore for this test after the bug is
+  // fixed.
+  DisableSave ds;
+
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_DAC_OVERRIDE))));
+
+  auto const fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open("/proc/sys/net/ipv4/tcp_recovery", O_RDWR));
+
+  char buf[10] = {'\0'};
+  char to_write = '2';
+
+  // Check initial value is set to 1.
+  EXPECT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(to_write) + 1));
+  EXPECT_EQ(strcmp(buf, "1\n"), 0);
+
+  // Set tcp_recovery to one of the allowed constants.
+  EXPECT_THAT(PwriteFd(fd.get(), &to_write, sizeof(to_write), 0),
+              SyscallSucceedsWithValue(sizeof(to_write)));
+  EXPECT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(to_write) + 1));
+  EXPECT_EQ(strcmp(buf, "2\n"), 0);
+
+  // Set tcp_recovery to any random value.
+  char kMessage[] = "100";
+  EXPECT_THAT(PwriteFd(fd.get(), kMessage, strlen(kMessage), 0),
+              SyscallSucceedsWithValue(strlen(kMessage)));
+  EXPECT_THAT(PreadFd(fd.get(), buf, sizeof(kMessage), 0),
+              SyscallSucceedsWithValue(sizeof(kMessage)));
+  EXPECT_EQ(strcmp(buf, "100\n"), 0);
+}
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor

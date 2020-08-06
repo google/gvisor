@@ -272,6 +272,96 @@ func (f *tcpSackFile) Write(ctx context.Context, _ *fs.File, src usermem.IOSeque
 	return n, f.tcpSack.stack.SetTCPSACKEnabled(*f.tcpSack.enabled)
 }
 
+// +stateify savable
+type tcpRecovery struct {
+	fsutil.SimpleFileInode
+
+	stack    inet.Stack `state:"wait"`
+	recovery inet.TCPLossRecovery
+}
+
+func newTCPRecoveryInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack) *fs.Inode {
+	ts := &tcpRecovery{
+		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0644), linux.PROC_SUPER_MAGIC),
+		stack:           s,
+	}
+	sattr := fs.StableAttr{
+		DeviceID:  device.ProcDevice.DeviceID(),
+		InodeID:   device.ProcDevice.NextIno(),
+		BlockSize: usermem.PageSize,
+		Type:      fs.SpecialFile,
+	}
+	return fs.NewInode(ctx, ts, msrc, sattr)
+}
+
+// Truncate implements fs.InodeOperations.Truncate.
+func (*tcpRecovery) Truncate(context.Context, *fs.Inode, int64) error {
+	return nil
+}
+
+// GetFile implements fs.InodeOperations.GetFile.
+func (r *tcpRecovery) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	flags.Pread = true
+	flags.Pwrite = true
+	return fs.NewFile(ctx, dirent, flags, &tcpRecoveryFile{
+		tcpRecovery: r,
+		stack:       r.stack,
+	}), nil
+}
+
+// +stateify savable
+type tcpRecoveryFile struct {
+	fsutil.FileGenericSeek          `state:"nosave"`
+	fsutil.FileNoIoctl              `state:"nosave"`
+	fsutil.FileNoMMap               `state:"nosave"`
+	fsutil.FileNoSplice             `state:"nosave"`
+	fsutil.FileNoopRelease          `state:"nosave"`
+	fsutil.FileNoopFlush            `state:"nosave"`
+	fsutil.FileNoopFsync            `state:"nosave"`
+	fsutil.FileNotDirReaddir        `state:"nosave"`
+	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
+	waiter.AlwaysReady              `state:"nosave"`
+
+	tcpRecovery *tcpRecovery
+
+	stack inet.Stack `state:"wait"`
+}
+
+// Read implements fs.FileOperations.Read.
+func (f *tcpRecoveryFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
+	if offset != 0 {
+		return 0, io.EOF
+	}
+
+	recovery, err := f.stack.TCPRecovery()
+	if err != nil {
+		return 0, err
+	}
+	f.tcpRecovery.recovery = recovery
+	s := fmt.Sprintf("%d\n", f.tcpRecovery.recovery)
+	n, err := dst.CopyOut(ctx, []byte(s))
+	return int64(n), err
+}
+
+// Write implements fs.FileOperations.Write.
+func (f *tcpRecoveryFile) Write(ctx context.Context, _ *fs.File, src usermem.IOSequence, offset int64) (int64, error) {
+	if src.NumBytes() == 0 {
+		return 0, nil
+	}
+	src = src.TakeFirst(usermem.PageSize - 1)
+
+	var v int32
+	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
+	if err != nil {
+		return 0, err
+	}
+	f.tcpRecovery.recovery = inet.TCPLossRecovery(v)
+	if err := f.tcpRecovery.stack.SetTCPRecovery(f.tcpRecovery.recovery); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func (p *proc) newSysNetCore(ctx context.Context, msrc *fs.MountSource, s inet.Stack) *fs.Inode {
 	// The following files are simple stubs until they are implemented in
 	// netstack, most of these files are configuration related. We use the
@@ -349,6 +439,11 @@ func (p *proc) newSysNetIPv4Dir(ctx context.Context, msrc *fs.MountSource, s ine
 	// Add tcp_wmem.
 	if _, err := s.TCPSendBufferSize(); err == nil {
 		contents["tcp_wmem"] = newTCPMemInode(ctx, msrc, s, tcpWMem)
+	}
+
+	// Add tcp_recovery.
+	if _, err := s.TCPRecovery(); err == nil {
+		contents["tcp_recovery"] = newTCPRecoveryInode(ctx, msrc, s)
 	}
 
 	d := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))

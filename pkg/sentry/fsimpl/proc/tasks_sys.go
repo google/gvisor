@@ -55,7 +55,8 @@ func (fs *filesystem) newSysNetDir(root *auth.Credentials, k *kernel.Kernel) *ke
 	if stack := k.RootNetworkNamespace().Stack(); stack != nil {
 		contents = map[string]*kernfs.Dentry{
 			"ipv4": kernfs.NewStaticDir(root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), 0555, map[string]*kernfs.Dentry{
-				"tcp_sack": fs.newDentry(root, fs.NextIno(), 0644, &tcpSackData{stack: stack}),
+				"tcp_recovery": fs.newDentry(root, fs.NextIno(), 0644, &tcpRecoveryData{stack: stack}),
+				"tcp_sack":     fs.newDentry(root, fs.NextIno(), 0644, &tcpSackData{stack: stack}),
 
 				// The following files are simple stubs until they are implemented in
 				// netstack, most of these files are configuration related. We use the
@@ -206,4 +207,50 @@ func (d *tcpSackData) Write(ctx context.Context, src usermem.IOSequence, offset 
 	}
 	*d.enabled = v != 0
 	return n, d.stack.SetTCPSACKEnabled(*d.enabled)
+}
+
+// tcpRecoveryData implements vfs.WritableDynamicBytesSource for
+// /proc/sys/net/ipv4/tcp_recovery.
+//
+// +stateify savable
+type tcpRecoveryData struct {
+	kernfs.DynamicBytesFile
+
+	stack inet.Stack `state:"wait"`
+}
+
+var _ vfs.WritableDynamicBytesSource = (*tcpRecoveryData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.
+func (d *tcpRecoveryData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	recovery, err := d.stack.TCPRecovery()
+	if err != nil {
+		return err
+	}
+
+	buf.WriteString(fmt.Sprintf("%d\n", recovery))
+	return nil
+}
+
+func (d *tcpRecoveryData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+	if offset != 0 {
+		// No need to handle partial writes thus far.
+		return 0, syserror.EINVAL
+	}
+	if src.NumBytes() == 0 {
+		return 0, nil
+	}
+
+	// Limit the amount of memory allocated.
+	src = src.TakeFirst(usermem.PageSize - 1)
+
+	var v int32
+	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
+	if err != nil {
+		return 0, err
+	}
+	if err := d.stack.SetTCPRecovery(inet.TCPLossRecovery(v)); err != nil {
+		return 0, err
+	}
+	return n, nil
 }

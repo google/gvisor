@@ -53,6 +53,7 @@ type Stack struct {
 	interfaceAddrs map[int32][]inet.InterfaceAddr
 	routes         []inet.Route
 	supportsIPv6   bool
+	tcpRecovery    inet.TCPLossRecovery
 	tcpRecvBufSize inet.TCPBufferSize
 	tcpSendBufSize inet.TCPBufferSize
 	tcpSACKEnabled bool
@@ -347,6 +348,16 @@ func (s *Stack) TCPSACKEnabled() (bool, error) {
 
 // SetTCPSACKEnabled implements inet.Stack.SetTCPSACKEnabled.
 func (s *Stack) SetTCPSACKEnabled(enabled bool) error {
+	return syserror.EACCES
+}
+
+// TCPRecovery implements inet.Stack.TCPRecovery.
+func (s *Stack) TCPRecovery() (inet.TCPLossRecovery, error) {
+	return s.tcpRecovery, nil
+}
+
+// SetTCPRecovery implements inet.Stack.SetTCPRecovery.
+func (s *Stack) SetTCPRecovery(recovery inet.TCPLossRecovery) error {
 	return syserror.EACCES
 }
 
