@@ -248,29 +248,7 @@ func (i *inode) NewNode(ctx context.Context, name string, opts vfs.MknodOptions)
 	if err != nil {
 		return nil, err
 	}
-	return i.newEntry(kernelTask, req, name, opts.Mode.FileType())
-}
-
-// newEntry call FUSE server for entry creation and allocate corresponding entry according to response.
-// Shared by FUSE_MKNOD, FUSE_MKDIR, FUSE_SYMLINK and FUSE_LINK.
-func (i *inode) newEntry(kernelTask *kernel.Task, req *Request, name string, fileType linux.FileMode) (*vfs.Dentry, error) {
-	res, err := i.fs.conn.Call(kernelTask, req)
-	if err != nil {
-		return nil, err
-	}
-	if err := res.Error(); err != nil {
-		return nil, err
-	}
-	out := linux.FUSEEntryOut{}
-	if err := res.UnmarshalPayload(&out); err != nil {
-		return nil, err
-	}
-	if out.NodeID == 0 || out.NodeID == linux.FUSE_ROOT_ID || (out.Attr.Mode&linux.S_IFMT)^uint32(fileType) != 0 {
-		return nil, syserror.EIO
-	}
-	child := i.fs.newInode(out.NodeID, out.Generation, out.Attr)
-	i.dentry.InsertChildLocked(name, child)
-	return child.VFSDentry(), nil
+	return i.newEntry(kernelTask, req, name, opts.Mode.FileType(), false)
 }
 
 func (fs *filesystem) newRootInode(creds *auth.Credentials, mode linux.FileMode) *kernfs.Dentry {
@@ -306,9 +284,9 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 	var fd *fileDescription
 	var fdImpl vfs.FileDescriptionImpl
 	if isDir {
-		dirFd := &dirFileFD{}
-		fd = &(dirFd.fileDescription)
-		fdImpl = dirFd
+		directoryFD := &directoryFD{}
+		fd = &(directoryFD.fileDescription)
+		fdImpl = directoryFD
 	} else {
 		regularFd := &regularFileFD{}
 		fd = &(regularFd.fileDescription)
@@ -454,7 +432,34 @@ func (i *inode) Lookup(ctx context.Context, name string) (*vfs.Dentry, error) {
 		return nil, err
 	}
 
-	res, err := fusefs.conn.Call(task, req)
+	return i.newEntry(task, req, name, 0, true)
+}
+
+// NewDir implements kernfs.Inode.NewDir.
+func (i *inode) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (*vfs.Dentry, error) {
+	kernelTask := kernel.TaskFromContext(ctx)
+	if kernelTask == nil {
+		log.Warningf("fusefs.Inode.NewDir: couldn't get kernel task from context", i.NodeID)
+		return nil, syserror.EINVAL
+	}
+	in := linux.FUSEMkdirReq{
+		MkdirIn: linux.FUSEMkdirIn{
+			Mode:  uint32(opts.Mode),
+			Umask: uint32(kernelTask.FSContext().Umask()),
+		},
+		Name: name,
+	}
+	req, err := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.NodeID, linux.FUSE_MKDIR, &in)
+	if err != nil {
+		return nil, err
+	}
+	return i.newEntry(kernelTask, req, name, linux.S_IFDIR, false)
+}
+
+// newEntry call FUSE server for entry creation and allocate corresponding entry according to response.
+// Shared by FUSE_MKNOD, FUSE_MKDIR, FUSE_SYMLINK and FUSE_LINK.
+func (i *inode) newEntry(kernelTask *kernel.Task, req *Request, name string, fileType linux.FileMode, isLookup bool) (*vfs.Dentry, error) {
+	res, err := i.fs.conn.Call(kernelTask, req)
 	if err != nil {
 		return nil, err
 	}
@@ -467,11 +472,15 @@ func (i *inode) Lookup(ctx context.Context, name string) (*vfs.Dentry, error) {
 		return nil, err
 	}
 
-	child := fusefs.newInode(out.NodeID, out.Generation, out.Attr)
+	if !isLookup && ((out.Attr.Mode&linux.S_IFMT)^uint32(fileType) != 0 || out.NodeID == 0 || out.NodeID == linux.FUSE_ROOT_ID) {
+		return nil, syserror.EIO
+	}
+
+	child := i.fs.newInode(out.NodeID, out.Generation, out.Attr)
 	i.dentry.InsertChildLocked(name, child)
 	return child.VFSDentry(), nil
 }
-
+  
 // IterDirents implements Inode.IterDirents.
 func (i *inode) IterDirents(ctx context.Context, callback vfs.IterDirentsCallback, offset, relOffset int64) (int64, error) {
 	return offset, nil
