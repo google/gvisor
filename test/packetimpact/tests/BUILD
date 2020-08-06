@@ -40,8 +40,6 @@ packetimpact_go_test(
 packetimpact_go_test(
     name = "udp_recv_mcast_bcast",
     srcs = ["udp_recv_mcast_bcast_test.go"],
-    # TODO(b/152813495): Fix netstack then remove the line below.
-    expect_netstack_failure = True,
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/header",
