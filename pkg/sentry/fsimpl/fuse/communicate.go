@@ -134,8 +134,9 @@ type futureResponse struct {
 // newFutureResponse creates a future response to a FUSE request.
 func newFutureResponse(opcode linux.FUSEOpcode, options *requestOptions) *futureResponse {
 	return &futureResponse{
-		opcode:  opcode,
-		ch:      make(chan struct{}),
+		opcode: opcode,
+		ch:     make(chan struct{}),
+
 		options: options,
 	}
 }

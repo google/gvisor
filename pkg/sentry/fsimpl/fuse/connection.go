@@ -169,7 +169,6 @@ func newFUSEConnection(_ context.Context, fd *vfs.FileDescription, maxInFlightRe
 	// Mark the device as ready so it can be used. /dev/fuse can only be used if the FD was used to
 	// mount a FUSE filesystem.
 	fuseFD := fd.Impl().(*DeviceFD)
-	fuseFD.mounted = true
 
 	// Create the writeBuf for the header to be stored in.
 	hdrLen := uint32((*linux.FUSEHeaderOut)(nil).SizeBytes())
@@ -261,6 +260,16 @@ func (conn *connection) callFuture(t *kernel.Task, r *Request) (*futureResponse,
 
 // callFutureLocked makes a request to the server and returns a future response.
 func (conn *connection) callFutureLocked(t *kernel.Task, r *Request) (*futureResponse, error) {
+	// Check connected again holding conn.mu.
+	conn.mu.Lock()
+	if !conn.connected {
+		conn.mu.Unlock()
+		// we checked connected before,
+		// this must be aborted connection.
+		return nil, syserror.ECONNABORTED
+	}
+	conn.mu.Unlock()
+
 	conn.fd.queue.PushBack(r)
 	conn.fd.numActiveRequests++
 	fut := newFutureResponse(r.hdr.Opcode, r.options)

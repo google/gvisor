@@ -56,9 +56,6 @@ type DeviceFD struct {
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 
-	// mounted specifies whether a FUSE filesystem was mounted using the DeviceFD.
-	mounted bool
-
 	// nextOpID is used to create new requests.
 	nextOpID linux.FUSEOpID
 
@@ -100,13 +97,15 @@ type DeviceFD struct {
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *DeviceFD) Release(context.Context) {
-	fd.fs.conn.connected = false
+	if fd.fs != nil {
+		fd.fs.conn.connected = false
+	}
 }
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *DeviceFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
-	if !fd.mounted {
+	if fd.fs == nil {
 		return 0, syserror.EPERM
 	}
 
@@ -116,8 +115,14 @@ func (fd *DeviceFD) PRead(ctx context.Context, dst usermem.IOSequence, offset in
 // Read implements vfs.FileDescriptionImpl.Read.
 func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
-	if !fd.mounted {
+	if fd.fs == nil {
 		return 0, syserror.EPERM
+	}
+
+	// Return ENODEV if the filesystem is umounted.
+	if fd.fs.umounted {
+		// TODO(gvisor.dev/issue/3525): return ECONNABORTED if aborted via fuse control fs.
+		return 0, syserror.ENODEV
 	}
 
 	// We require that any Read done on this filesystem have a sane minimum
@@ -162,7 +167,7 @@ func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts
 			}
 
 			// Return the error to the calling task.
-			if err := fd.sendError(ctx, errno, req); err != nil {
+			if err := fd.sendError(ctx, errno, req.hdr.Unique); err != nil {
 				return 0, err
 			}
 
@@ -194,7 +199,7 @@ func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (fd *DeviceFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
 	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
-	if !fd.mounted {
+	if fd.fs == nil {
 		return 0, syserror.EPERM
 	}
 
@@ -211,8 +216,13 @@ func (fd *DeviceFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 // writeLocked implements writing to the fuse device while locked with DeviceFD.mu.
 func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
-	if !fd.mounted {
+	if fd.fs == nil {
 		return 0, syserror.EPERM
+	}
+
+	// Return ENODEV if the filesystem is umounted.
+	if fd.fs.umounted {
+		return 0, syserror.ENODEV
 	}
 
 	var cn, n int64
@@ -276,7 +286,8 @@ func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opt
 
 			fut, ok := fd.completions[hdr.Unique]
 			if !ok {
-				// Server sent us a response for a request we never sent?
+				// Server sent us a response for a request we never sent,
+				// or for which we already received a reply (e.g. aborted), an unlikely event.
 				return 0, syserror.EINVAL
 			}
 
@@ -308,7 +319,14 @@ func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opt
 // Readiness implements vfs.FileDescriptionImpl.Readiness.
 func (fd *DeviceFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 	var ready waiter.EventMask
-	ready |= waiter.EventOut // FD is always writable
+
+	if fd.fs.umounted {
+		ready |= waiter.EventErr
+		return ready & mask
+	}
+
+	// FD is always writable
+	ready |= waiter.EventOut
 	if !fd.queue.Empty() {
 		// Have reqs available, FD is readable.
 		ready |= waiter.EventIn
@@ -330,7 +348,7 @@ func (fd *DeviceFD) EventUnregister(e *waiter.Entry) {
 // Seek implements vfs.FileDescriptionImpl.Seek.
 func (fd *DeviceFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
 	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
-	if !fd.mounted {
+	if fd.fs == nil {
 		return 0, syserror.EPERM
 	}
 
@@ -356,29 +374,27 @@ func (fd *DeviceFD) sendResponse(ctx context.Context, fut *futureResponse) error
 	return nil
 }
 
-// sendError sends an error response to the waiting task (if any).
-func (fd *DeviceFD) sendError(ctx context.Context, errno int32, req *Request) error {
+// sendError sends an error response to the waiting task (if any) by calling sendResponse().
+func (fd *DeviceFD) sendError(ctx context.Context, errno int32, unique linux.FUSEOpID) error {
 	// Return the error to the calling task.
 	outHdrLen := uint32((*linux.FUSEHeaderOut)(nil).SizeBytes())
 	respHdr := linux.FUSEHeaderOut{
 		Len:    outHdrLen,
 		Error:  errno,
-		Unique: req.hdr.Unique,
+		Unique: unique,
 	}
 
 	fut, ok := fd.completions[respHdr.Unique]
 	if !ok {
-		// Server sent us a response for a request we never sent?
+		// A response for a request we never sent,
+		// or for which we already received a reply (e.g. aborted).
 		return syserror.EINVAL
 	}
 	delete(fd.completions, respHdr.Unique)
 
 	fut.hdr = &respHdr
-	if err := fd.sendResponse(ctx, fut); err != nil {
-		return err
-	}
 
-	return nil
+	return fd.sendResponse(ctx, fut)
 }
 
 // asyncCallBack executes pre-defined callback function for async requests.
