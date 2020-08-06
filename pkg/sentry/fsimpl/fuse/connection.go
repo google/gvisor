@@ -131,6 +131,10 @@ type connection struct {
 	// Protected by asyncMu.
 	asyncNumMax uint16
 
+	// asyncBlockedQueue has the async requests blocked.
+	// Protected by asyncMu.
+	asyncBlockedQueue WaiterQueue
+
 	// maxRead is the maximum size of a read buffer in in bytes.
 	// Initialized from a fuse fs parameter.
 	maxRead uint32
@@ -240,6 +244,32 @@ func (conn *connection) Call(t *kernel.Task, r *Request) (*Response, error) {
 		return nil, syserror.ECONNREFUSED
 	}
 
+	if r.async {
+		conn.asyncMu.Lock()
+		if conn.asyncNum >= conn.asyncNumMax {
+			conn.asyncMu.Unlock()
+
+			e, ch := newWaiterEntry()
+
+			for {
+				conn.asyncMu.Lock()
+				if conn.asyncNum < conn.asyncNumMax {
+					break
+				}
+				conn.asyncMu.Unlock()
+
+				conn.asyncBlockedQueue.enqueue(&e)
+				// Wait for a notification that we should retry.
+				if err := t.Block(ch); err != nil {
+					break
+				}
+			}
+
+		}
+		conn.asyncNum++
+		conn.asyncMu.Unlock()
+	}
+
 	fut, err := conn.callFuture(t, r)
 	if err != nil {
 		return nil, err
@@ -300,4 +330,12 @@ func (conn *connection) callFutureLocked(t *kernel.Task, r *Request) (*futureRes
 	conn.fd.waitQueue.Notify(waiter.EventIn)
 
 	return fut, nil
+}
+
+// unblock the blocked async requester until reaching the max number.
+// Caller must hold conn.asyncLock.
+func (conn *connection) asyncBlockedReleaseLocked() {
+	for potentialRelease := conn.asyncNumMax - conn.asyncNum; !conn.asyncBlockedQueue.empty() && potentialRelease > 0; potentialRelease-- {
+		conn.asyncBlockedQueue.dequeue()
+	}
 }

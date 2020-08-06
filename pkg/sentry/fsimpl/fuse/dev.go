@@ -393,6 +393,14 @@ func (fd *DeviceFD) sendResponse(ctx context.Context, fut *futureResponse) error
 	// Signal the task waiting on a response if any.
 	defer close(fut.ch)
 
+	// Bookkeeping for async requests.
+	if fut.async {
+		fd.fs.conn.asyncMu.Lock()
+		fd.fs.conn.asyncNum--
+		fd.fs.conn.asyncBlockedReleaseLocked()
+		fd.fs.conn.asyncMu.Unlock()
+	}
+
 	// Signal that the queue is no longer full.
 	select {
 	case fd.fullQueueCh <- struct{}{}:

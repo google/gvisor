@@ -26,6 +26,18 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "waiter_list",
+    out = "waiter_list.go",
+    package = "fuse",
+    prefix = "waiter",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*WaiterEntry",
+        "Linker": "*WaiterEntry",
+    },
+)
+
 go_library(
     name = "fuse",
     srcs = [
@@ -41,6 +53,8 @@ go_library(
         "regular_file.go",
         "request_list.go",
         "request_response.go",
+        "waiter_list.go",
+        "waiter_queue.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [

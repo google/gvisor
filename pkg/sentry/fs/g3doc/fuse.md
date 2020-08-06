@@ -105,6 +105,9 @@ ops can be implemented in parallel.
         -   Write the request in binary
     -   If FUSE device is full
         -   Kernel task blocked until available
+    -   If the request is async and the number of ongoing async
+        requests has reached a negotiated maximum value
+        -   Kernel task blocked until one ongoing async request resolves
 -   Sentry notifies the readers of fuse device that it's ready for read
 -   FUSE daemon reads the request and processes it
 -   Sentry waits until a reply is written to the FUSE device
@@ -124,7 +127,7 @@ ops can be implemented in parallel.
 
 `fd.queue`
 
--   a queue of requests that haven’t been read by the FUSE daemon yet.
+-   a queue of requests that have not been read by the FUSE daemon yet.
 
 `fd.completions`
 
@@ -140,6 +143,11 @@ ops can be implemented in parallel.
 
 -   a channel that the kernel task will be blocked on when the fd is not
     available.
+
+`connection.asyncBlockedQueue`
+
+-   a queue of async requests that are blocked since the current number of
+    async requests reachs a negotiated maximum.
 
 # Appendix
 
