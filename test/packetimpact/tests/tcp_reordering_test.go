@@ -54,13 +54,13 @@ func TestReorderingWindow(t *testing.T) {
 	acceptFd, _ := dut.Accept(t, listenFd)
 	defer dut.Close(t, acceptFd)
 
-	if tb.DUTType == "linux" {
+	if tb.Native {
 		// Linux has changed its handling of reordering, force the old behavior.
 		dut.SetSockOpt(t, acceptFd, unix.IPPROTO_TCP, unix.TCP_CONGESTION, []byte("reno"))
 	}
 
 	pls := dut.GetSockOptInt(t, acceptFd, unix.IPPROTO_TCP, unix.TCP_MAXSEG)
-	if tb.DUTType == "netstack" {
+	if !tb.Native {
 		// netstack does not impliment TCP_MAXSEG correctly. Fake it
 		// here. Netstack uses the max SACK size which is 32. The MSS
 		// option is 8 bytes, making the total 36 bytes.
@@ -141,7 +141,7 @@ func TestReorderingWindow(t *testing.T) {
 		}
 	}
 
-	if tb.DUTType == "netstack" {
+	if !tb.Native {
 		// The window should now be halved, so we should receive any
 		// more, even if we send them.
 		dut.Send(t, acceptFd, payload, 0)
