@@ -217,6 +217,11 @@ func (n *NIC) disableLocked() *tcpip.Error {
 	}
 
 	if _, ok := n.stack.networkProtocols[header.IPv4ProtocolNumber]; ok {
+		// The NIC may have already left the multicast group.
+		if err := n.leaveGroupLocked(header.IPv4AllSystems, false /* force */); err != nil && err != tcpip.ErrBadLocalAddress {
+			return err
+		}
+
 		// The address may have already been removed.
 		if err := n.removePermanentAddressLocked(ipv4BroadcastAddr.AddressWithPrefix.Address); err != nil && err != tcpip.ErrBadLocalAddress {
 			return err
@@ -253,6 +258,13 @@ func (n *NIC) enable() *tcpip.Error {
 	// Create an endpoint to receive broadcast packets on this interface.
 	if _, ok := n.stack.networkProtocols[header.IPv4ProtocolNumber]; ok {
 		if _, err := n.addAddressLocked(ipv4BroadcastAddr, NeverPrimaryEndpoint, permanent, static, false /* deprecated */); err != nil {
+			return err
+		}
+
+		// As per RFC 1122 section 3.3.7, all hosts should join the all-hosts
+		// multicast group. Note, the IANA calls the all-hosts multicast group the
+		// all-systems multicast group.
+		if err := n.joinGroupLocked(header.IPv4ProtocolNumber, header.IPv4AllSystems); err != nil {
 			return err
 		}
 	}

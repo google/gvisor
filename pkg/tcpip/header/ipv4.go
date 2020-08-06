@@ -101,6 +101,11 @@ const (
 	// IPv4Version is the version of the ipv4 protocol.
 	IPv4Version = 4
 
+	// IPv4AllSystems is the all systems IPv4 multicast address as per
+	// IANA's IPv4 Multicast Address Space Registry. See
+	// https://www.iana.org/assignments/multicast-addresses/multicast-addresses.xhtml.
+	IPv4AllSystems tcpip.Address = "\xe0\x00\x00\x01"
+
 	// IPv4Broadcast is the broadcast address of the IPv4 procotol.
 	IPv4Broadcast tcpip.Address = "\xff\xff\xff\xff"
 
