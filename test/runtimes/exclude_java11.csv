@@ -18,8 +18,16 @@ java/lang/ClassLoader/nativeLibrary/NativeLibraryTest.java,,Fails in Docker
 java/lang/module/ModuleDescriptorTest.java,,
 java/lang/String/nativeEncoding/StringPlatformChars.java,,
 java/net/CookieHandler/B6791927.java,,java.lang.RuntimeException: Expiration date shouldn't be 0
+java/net/ipv6tests/TcpTest.java,,java.net.ConnectException: Connection timed out (Connection timed out)
+java/net/ipv6tests/UdpTest.java,,Times out
+java/net/Inet6Address/B6558853.java,,Times out
+java/net/InetAddress/CheckJNI.java,,java.net.ConnectException: Connection timed out (Connection timed out)
 java/net/InterfaceAddress/NetworkPrefixLength.java,b/78507103,
+java/net/MulticastSocket/B6425815.java,,java.net.SocketException: Protocol not available (Error getting socket option)
+java/net/MulticastSocket/B6427403.java,,java.net.SocketException: Protocol not available
 java/net/MulticastSocket/MulticastTTL.java,,
+java/net/MulticastSocket/NetworkInterfaceEmptyGetInetAddressesTest.java,,java.net.SocketException: Protocol not available (Error getting socket option)
+java/net/MulticastSocket/NoLoopbackPackets.java,,java.net.SocketException: Protocol not available
 java/net/MulticastSocket/Promiscuous.java,,
 java/net/MulticastSocket/SetLoopbackMode.java,,
 java/net/MulticastSocket/SetTTLAndGetTTL.java,,
@@ -27,6 +35,7 @@ java/net/MulticastSocket/Test.java,,
 java/net/MulticastSocket/TestDefaults.java,,
 java/net/MulticastSocket/TimeToLive.java,,
 java/net/NetworkInterface/NetworkInterfaceStreamTest.java,,
+java/net/Socket/LinkLocal.java,,java.net.SocketTimeoutException: Receive timed out
 java/net/Socket/SetSoLinger.java,b/78527327,SO_LINGER is not yet supported
 java/net/Socket/UrgentDataTest.java,b/111515323,
 java/net/SocketOption/OptionsTest.java,,Fails in Docker
@@ -167,6 +176,10 @@ sun/management/jmxremote/bootstrap/RmiSslBootstrapTest.sh,,
 sun/management/jmxremote/startstop/JMXStartStopTest.java,,
 sun/management/jmxremote/startstop/JMXStatusPerfCountersTest.java,,
 sun/management/jmxremote/startstop/JMXStatusTest.java,,
+sun/management/jdp/JdpDefaultsTest.java,,
+sun/management/jdp/JdpJmxRemoteDynamicPortTest.java,,
+sun/management/jdp/JdpOffTest.java,,
+sun/management/jdp/JdpSpecificAddressTest.java,,
 sun/text/resources/LocaleDataTest.java,,
 sun/tools/jcmd/TestJcmdSanity.java,,
 sun/tools/jhsdb/AlternateHashingTest.java,,
