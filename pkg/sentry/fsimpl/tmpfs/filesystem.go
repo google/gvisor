@@ -566,7 +566,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	if replaced != nil {
 		newParentDir.removeChildLocked(replaced)
 		if replaced.inode.isDir() {
-			newParentDir.inode.decLinksLocked(ctx) // from replaced's ".."
+			// Remove links for replaced/. and replaced/..
+			replaced.inode.decLinksLocked(ctx)
+			newParentDir.inode.decLinksLocked(ctx)
 		}
 		replaced.inode.decLinksLocked(ctx)
 	}
