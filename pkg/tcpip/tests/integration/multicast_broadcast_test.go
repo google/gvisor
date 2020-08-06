@@ -31,7 +31,9 @@ import (
 
 const defaultMTU = 1280
 
-func TestIncomingSubnetBroadcast(t *testing.T) {
+// TestIncomingMulticastAndBroadcast tests receiving a packet destined to some
+// multicast or broadcast address.
+func TestIncomingMulticastAndBroadcast(t *testing.T) {
 	const (
 		nicID      = 1
 		remotePort = 5555
@@ -177,6 +179,24 @@ func TestIncomingSubnetBroadcast(t *testing.T) {
 			name:     "IPv4 broadcast binding to wildcard",
 			dstAddr:  ipv4SubnetBcast,
 			expectRx: true,
+		},
+
+		{
+			name:     "IPv4 all-systems multicast binding to all-systems multicast",
+			bindAddr: header.IPv4AllSystems,
+			dstAddr:  header.IPv4AllSystems,
+			expectRx: true,
+		},
+		{
+			name:     "IPv4 all-systems multicast binding to wildcard",
+			dstAddr:  header.IPv4AllSystems,
+			expectRx: true,
+		},
+		{
+			name:     "IPv4 all-systems multicast binding to unicast",
+			bindAddr: ipv4Addr.Address,
+			dstAddr:  header.IPv4AllSystems,
+			expectRx: false,
 		},
 
 		// IPv6 has no notion of a broadcast.

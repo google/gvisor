@@ -1689,13 +1689,7 @@ func containsV6Addr(list []tcpip.ProtocolAddress, item tcpip.AddressWithPrefix) 
 		AddressWithPrefix: item,
 	}
 
-	for _, i := range list {
-		if i == protocolAddress {
-			return true
-		}
-	}
-
-	return false
+	return containsAddr(list, protocolAddress)
 }
 
 // TestNoAutoGenAddr tests that SLAAC is not performed when configured not to.
