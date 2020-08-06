@@ -56,6 +56,12 @@ type Stack interface {
 	// settings.
 	SetTCPSACKEnabled(enabled bool) error
 
+	// TCPRecovery returns the TCP loss detection algorithm.
+	TCPRecovery() (TCPLossRecovery, error)
+
+	// SetTCPRecovery attempts to change TCP loss detection algorithm.
+	SetTCPRecovery(recovery TCPLossRecovery) error
+
 	// Statistics reports stack statistics.
 	Statistics(stat interface{}, arg string) error
 
@@ -189,3 +195,14 @@ type StatSNMPUDP [8]uint64
 
 // StatSNMPUDPLite describes UdpLite line of /proc/net/snmp.
 type StatSNMPUDPLite [8]uint64
+
+// TCPLossRecovery indicates TCP loss detection and recovery methods to use.
+type TCPLossRecovery int32
+
+// Loss recovery constants from include/net/tcp.h which are used to set
+// /proc/sys/net/ipv4/tcp_recovery.
+const (
+	TCP_RACK_LOSS_DETECTION TCPLossRecovery = 1 << iota
+	TCP_RACK_STATIC_REO_WND
+	TCP_RACK_NO_DUPTHRESH
+)

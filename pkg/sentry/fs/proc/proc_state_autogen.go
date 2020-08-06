@@ -821,6 +821,61 @@ func (x *tcpSackFile) StateLoad(m state.Source) {
 	m.LoadWait(1, &x.stack)
 }
 
+func (x *tcpRecovery) StateTypeName() string {
+	return "pkg/sentry/fs/proc.tcpRecovery"
+}
+
+func (x *tcpRecovery) StateFields() []string {
+	return []string{
+		"SimpleFileInode",
+		"stack",
+		"recovery",
+	}
+}
+
+func (x *tcpRecovery) beforeSave() {}
+
+func (x *tcpRecovery) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.SimpleFileInode)
+	m.Save(1, &x.stack)
+	m.Save(2, &x.recovery)
+}
+
+func (x *tcpRecovery) afterLoad() {}
+
+func (x *tcpRecovery) StateLoad(m state.Source) {
+	m.Load(0, &x.SimpleFileInode)
+	m.LoadWait(1, &x.stack)
+	m.Load(2, &x.recovery)
+}
+
+func (x *tcpRecoveryFile) StateTypeName() string {
+	return "pkg/sentry/fs/proc.tcpRecoveryFile"
+}
+
+func (x *tcpRecoveryFile) StateFields() []string {
+	return []string{
+		"tcpRecovery",
+		"stack",
+	}
+}
+
+func (x *tcpRecoveryFile) beforeSave() {}
+
+func (x *tcpRecoveryFile) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.tcpRecovery)
+	m.Save(1, &x.stack)
+}
+
+func (x *tcpRecoveryFile) afterLoad() {}
+
+func (x *tcpRecoveryFile) StateLoad(m state.Source) {
+	m.Load(0, &x.tcpRecovery)
+	m.LoadWait(1, &x.stack)
+}
+
 func (x *taskDir) StateTypeName() string {
 	return "pkg/sentry/fs/proc.taskDir"
 }
@@ -1410,6 +1465,8 @@ func init() {
 	state.Register((*tcpMemFile)(nil))
 	state.Register((*tcpSack)(nil))
 	state.Register((*tcpSackFile)(nil))
+	state.Register((*tcpRecovery)(nil))
+	state.Register((*tcpRecoveryFile)(nil))
 	state.Register((*taskDir)(nil))
 	state.Register((*subtasks)(nil))
 	state.Register((*subtasksFile)(nil))

@@ -1173,6 +1173,32 @@ func (x *tcpSackData) StateLoad(m state.Source) {
 	m.Load(2, &x.enabled)
 }
 
+func (x *tcpRecoveryData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.tcpRecoveryData"
+}
+
+func (x *tcpRecoveryData) StateFields() []string {
+	return []string{
+		"DynamicBytesFile",
+		"stack",
+	}
+}
+
+func (x *tcpRecoveryData) beforeSave() {}
+
+func (x *tcpRecoveryData) StateSave(m state.Sink) {
+	x.beforeSave()
+	m.Save(0, &x.DynamicBytesFile)
+	m.Save(1, &x.stack)
+}
+
+func (x *tcpRecoveryData) afterLoad() {}
+
+func (x *tcpRecoveryData) StateLoad(m state.Source) {
+	m.Load(0, &x.DynamicBytesFile)
+	m.LoadWait(1, &x.stack)
+}
+
 func init() {
 	state.Register((*FilesystemType)(nil))
 	state.Register((*subtasksInode)(nil))
@@ -1215,4 +1241,5 @@ func init() {
 	state.Register((*mmapMinAddrData)(nil))
 	state.Register((*hostnameData)(nil))
 	state.Register((*tcpSackData)(nil))
+	state.Register((*tcpRecoveryData)(nil))
 }
