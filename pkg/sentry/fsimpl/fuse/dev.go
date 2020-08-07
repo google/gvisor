@@ -339,22 +339,20 @@ func (fd *DeviceFD) Seek(ctx context.Context, offset int64, whence int32) (int64
 
 // sendResponse sends a response to the waiting task (if any).
 func (fd *DeviceFD) sendResponse(ctx context.Context, fut *futureResponse) error {
-	// See if the running task need to perform some action before returning.
-	// Since we just finished writing the future, we can be sure that
-	// getResponse generates a populated response.
-	if err := fd.noReceiverAction(ctx, fut.getResponse()); err != nil {
-		return err
-	}
+	// Signal the task waiting on a response if any.
+	defer close(fut.ch)
 
 	// Signal that the queue is no longer full.
 	select {
 	case fd.fullQueueCh <- struct{}{}:
 	default:
 	}
-	fd.numActiveRequests -= 1
+	fd.numActiveRequests--
 
-	// Signal the task waiting on a response.
-	close(fut.ch)
+	if fut.options.async {
+		return fd.asyncCallBack(ctx, fut.getResponse())
+	}
+
 	return nil
 }
 
@@ -383,10 +381,9 @@ func (fd *DeviceFD) sendError(ctx context.Context, errno int32, req *Request) er
 	return nil
 }
 
-// noReceiverAction has the calling kernel.Task do some action if its known that no
-// receiver is going to be waiting on the future channel. This is to be used by:
-// FUSE_INIT.
-func (fd *DeviceFD) noReceiverAction(ctx context.Context, r *Response) error {
+// asyncCallBack executes pre-defined callback function for async requests.
+// Currently used by: FUSE_INIT.
+func (fd *DeviceFD) asyncCallBack(ctx context.Context, r *Response) error {
 	if r.opcode == linux.FUSE_INIT {
 		creds := auth.CredentialsFromContext(ctx)
 		rootUserNs := kernel.KernelFromContext(ctx).RootUserNamespace()

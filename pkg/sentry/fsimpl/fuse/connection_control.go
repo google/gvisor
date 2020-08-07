@@ -82,7 +82,8 @@ func (conn *connection) InitSend(creds *auth.Credentials, pid uint32) error {
 		Flags:        fuseDefaultInitFlags,
 	}
 
-	req, err := conn.NewRequest(creds, pid, 0, linux.FUSE_INIT, &in)
+	options := &requestOptions{async: true}
+	req, err := conn.NewRequest(creds, pid, 0, linux.FUSE_INIT, &in, options)
 	if err != nil {
 		return err
 	}

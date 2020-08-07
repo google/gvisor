@@ -225,7 +225,7 @@ func fuseClientRun(t *testing.T, s *testutil.System, k *kernel.Kernel, conn *con
 		data: rand.Uint32(),
 	}
 
-	req, err := conn.NewRequest(creds, pid, inode, echoTestOpcode, testObj)
+	req, err := conn.NewRequest(creds, pid, inode, echoTestOpcode, testObj, &requestOptions{})
 	if err != nil {
 		t.Fatalf("NewRequest creation failed: %v", err)
 	}

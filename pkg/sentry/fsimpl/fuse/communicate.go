@@ -28,6 +28,15 @@ import (
 // Used to increment the unique ID for each FUSE request.
 var reqIDStep uint64 = 2
 
+// requestOptions contains options and bookkeeping data for one request.
+type requestOptions struct {
+	// if this request is async.
+	async bool
+
+	// if this request does not expect a reply.
+	noReply bool
+}
+
 // Request represents a FUSE operation request that
 // hasn't been sent to the server yet.
 //
@@ -38,10 +47,12 @@ type Request struct {
 	id   linux.FUSEOpID
 	hdr  *linux.FUSEHeaderIn
 	data []byte
+
+	options *requestOptions
 }
 
 // NewRequest creates a new request that can be sent to the FUSE server.
-func (conn *connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint64, opcode linux.FUSEOpcode, payload marshal.Marshallable) (*Request, error) {
+func (conn *connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint64, opcode linux.FUSEOpcode, payload marshal.Marshallable, options *requestOptions) (*Request, error) {
 	conn.fd.mu.Lock()
 	defer conn.fd.mu.Unlock()
 	conn.fd.nextOpID += linux.FUSEOpID(reqIDStep)
@@ -62,9 +73,10 @@ func (conn *connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint
 	payload.MarshalUnsafe(buf[hdrLen:])
 
 	return &Request{
-		id:   hdr.Unique,
-		hdr:  &hdr,
-		data: buf,
+		id:      hdr.Unique,
+		hdr:     &hdr,
+		data:    buf,
+		options: options,
 	}, nil
 }
 
@@ -76,6 +88,8 @@ type Response struct {
 	opcode linux.FUSEOpcode
 	hdr    linux.FUSEHeaderOut
 	data   []byte
+
+	options *requestOptions
 }
 
 // Error returns the error of the FUSE call.
@@ -113,13 +127,16 @@ type futureResponse struct {
 	ch     chan struct{}
 	hdr    *linux.FUSEHeaderOut
 	data   []byte
+
+	options *requestOptions
 }
 
 // newFutureResponse creates a future response to a FUSE request.
-func newFutureResponse(opcode linux.FUSEOpcode) *futureResponse {
+func newFutureResponse(opcode linux.FUSEOpcode, options *requestOptions) *futureResponse {
 	return &futureResponse{
-		opcode: opcode,
-		ch:     make(chan struct{}),
+		opcode:  opcode,
+		ch:      make(chan struct{}),
+		options: options,
 	}
 }
 
@@ -127,7 +144,7 @@ func newFutureResponse(opcode linux.FUSEOpcode) *futureResponse {
 // then returns a resolved response.
 func (f *futureResponse) resolve(t *kernel.Task) (*Response, error) {
 	// Return directly for async requests.
-	if t == nil {
+	if f.options.async {
 		return nil, nil
 	}
 
@@ -141,8 +158,9 @@ func (f *futureResponse) resolve(t *kernel.Task) (*Response, error) {
 // getResponse creates a Response from the data the futureResponse has.
 func (f *futureResponse) getResponse() *Response {
 	return &Response{
-		opcode: f.opcode,
-		hdr:    *f.hdr,
-		data:   f.data,
+		opcode:  f.opcode,
+		hdr:     *f.hdr,
+		data:    f.data,
+		options: f.options,
 	}
 }
