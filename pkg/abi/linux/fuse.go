@@ -14,11 +14,16 @@
 
 package linux
 
+import "gvisor.dev/gvisor/tools/go_marshal/marshal"
+
 // +marshal
 type FUSEOpcode uint32
 
 // +marshal
 type FUSEOpID uint64
+
+// FUSE_ROOT_ID is the id of root inode.
+const FUSE_ROOT_ID = 1
 
 // Opcodes for FUSE operations. Analogous to the opcodes in include/linux/fuse.h.
 const (
@@ -245,4 +250,77 @@ type FUSEInitOut struct {
 	MapAlignment uint16
 
 	_ [8]uint32
+}
+
+// FUSEAttr is the struct include inode attributes.
+//
+// +marshal
+type FUSEAttr struct {
+	Ino       uint64
+	Size      uint64
+	Blocks    uint64
+	Atime     uint64
+	Mtime     uint64
+	Ctime     uint64
+	AtimeNsec uint32
+	MtimeNsec uint32
+	CtimeNsec uint32
+	Mode      uint32
+	Nlink     uint32
+	UID       uint32
+	GID       uint32
+	Rdev      uint32
+	BlkSize   uint32
+	Padding   uint32
+}
+
+// FUSEEntryOut is the reply sent by the daemon to the kernel
+// for FUSE_MKNOD, FUSE_MKDIR, FUSE_SYMLINK, FUSE_LINK and
+// inode.Lookup.
+//
+// +marshal
+type FUSEEntryOut struct {
+	// NodeID is the ID for current inode.
+	NodeID uint64
+
+	// Generation is the generation number of inode.
+	// Used to identify an inode that have different ID at different time.
+	Generation uint64
+
+	// EntryValid indicates timeout for an entry.
+	EntryValid uint64
+
+	// AttrValid indicates timeout for an entry's attributes.
+	AttrValid uint64
+
+	// EntryValidNsec indicates timeout for an entry in nanosecond.
+	EntryValidNSec uint32
+
+	// AttrValidNsec indicates timeout for an entry's attributes in nanosecond.
+	AttrValidNSec uint32
+
+	// Attr contains the attributes of an entry.
+	Attr FUSEAttr
+}
+
+// FUSELookupIn is the request sent by the kernel to the daemon
+// to look up a file name.
+//
+// Dynamically-sized objects cannot be marshalled.
+type FUSELookupIn struct {
+	marshal.StubMarshallable
+
+	// Name is a file name to be looked up.
+	Name string
+}
+
+// MarshalUnsafe serializes r.name to the dst buffer.
+func (r *FUSELookupIn) MarshalUnsafe(buf []byte) {
+	copy(buf, []byte(r.Name))
+}
+
+// SizeBytes is the size of the memory representation of FUSELookupIn.
+// 1 extra byte for null-terminated string
+func (r *FUSELookupIn) SizeBytes() int {
+	return len(r.Name) + 1
 }
