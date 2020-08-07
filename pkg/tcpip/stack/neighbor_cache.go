@@ -115,17 +115,15 @@ func (n *neighborCache) getOrCreateEntry(remoteAddr, localAddr tcpip.Address, li
 // channel is returned for the top level caller to block. Channel is closed
 // once address resolution is complete (success or not).
 func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, linkRes LinkAddressResolver, w *sleep.Waker) (NeighborEntry, <-chan struct{}, *tcpip.Error) {
-	if linkRes != nil {
-		if linkAddr, ok := linkRes.ResolveStaticAddress(remoteAddr); ok {
-			e := NeighborEntry{
-				Addr:      remoteAddr,
-				LocalAddr: localAddr,
-				LinkAddr:  linkAddr,
-				State:     Static,
-				UpdatedAt: time.Now(),
-			}
-			return e, nil, nil
+	if linkAddr, ok := linkRes.ResolveStaticAddress(remoteAddr); ok {
+		e := NeighborEntry{
+			Addr:      remoteAddr,
+			LocalAddr: localAddr,
+			LinkAddr:  linkAddr,
+			State:     Static,
+			UpdatedAt: time.Now(),
 		}
+		return e, nil, nil
 	}
 
 	entry := n.getOrCreateEntry(remoteAddr, localAddr, linkRes)
@@ -289,8 +287,8 @@ func (n *neighborCache) setConfig(config NUDConfigurations) {
 // HandleProbe implements NUDHandler.HandleProbe by following the logic defined
 // in RFC 4861 section 7.2.3. Validation of the probe is expected to be handled
 // by the caller.
-func (n *neighborCache) HandleProbe(remoteAddr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, remoteLinkAddr tcpip.LinkAddress) {
-	entry := n.getOrCreateEntry(remoteAddr, localAddr, nil)
+func (n *neighborCache) HandleProbe(remoteAddr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, remoteLinkAddr tcpip.LinkAddress, linkRes LinkAddressResolver) {
+	entry := n.getOrCreateEntry(remoteAddr, localAddr, linkRes)
 	entry.mu.Lock()
 	entry.handleProbeLocked(remoteLinkAddr)
 	entry.mu.Unlock()
