@@ -15,6 +15,7 @@ parallel/test-fs-write-stream.js,,Flaky
 parallel/test-fs-write-stream-throw-type-error.js,b/110226209,
 parallel/test-http-writable-true-after-close.js,,Flaky - Mismatched <anonymous> function calls. Expected exactly 1 actual 2
 parallel/test-os.js,b/63997097,
+parallel/test-net-server-listen-options.js,,Flaky - EADDRINUSE
 parallel/test-process-uid-gid.js,,
 parallel/test-tls-cli-min-version-1.0.js,,Flaky - EADDRINUSE
 parallel/test-tls-cli-min-version-1.1.js,,Flaky - EADDRINUSE
@@ -45,6 +46,7 @@ pseudo-tty/test-tty-stdout-resize.js,b/162801321,
 pseudo-tty/test-tty-stream-constructors.js,b/162801321,
 pseudo-tty/test-tty-window-size.js,b/162801321,
 pseudo-tty/test-tty-wrap.js,b/162801321,
+pummel/test-heapdump-http2.js,,Flaky
 pummel/test-net-pingpong.js,,
 pummel/test-vm-memleak.js,b/162799436,
 sequential/test-child-process-pass-fd.js,b/63926391,Flaky
