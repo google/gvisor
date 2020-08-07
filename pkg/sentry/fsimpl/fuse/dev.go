@@ -15,6 +15,7 @@
 package fuse
 
 import (
+	"sync/atomic"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -392,6 +393,9 @@ func (fd *DeviceFD) Seek(ctx context.Context, offset int64, whence int32) (int64
 func (fd *DeviceFD) sendResponse(ctx context.Context, fut *futureResponse) error {
 	// Signal the task waiting on a response if any.
 	defer close(fut.ch)
+
+	// We received one response, decrement the number of waiting requests.
+	atomic.AddUint32(&fd.fs.conn.numWaiting, ^uint32(0))
 
 	// Signal that the queue is no longer full.
 	select {

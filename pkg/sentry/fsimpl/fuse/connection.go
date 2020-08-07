@@ -16,6 +16,7 @@ package fuse
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -225,6 +226,21 @@ func (conn *connection) CallAsync(t *kernel.Task, r *Request) error {
 // The forget request does not have a reply,
 // as documented in include/uapi/linux/fuse.h:FUSE_FORGET.
 func (conn *connection) Call(t *kernel.Task, r *Request) (*Response, error) {
+	// We have one more request to be sent to the FUSE device,
+	// increment the number of waiting requests.
+	atomic.AddUint32(&conn.numWaiting, 1)
+
+	defer func(r *Request) {
+		// No need to wait for a request with no response
+		// or not sent out due to error.
+		if r.err || r.noReply {
+			atomic.AddUint32(&conn.numWaiting, ^uint32(0))
+		}
+	}(r)
+
+	// Any early return from this point means error.
+	r.err = true
+
 	// Block requests sent before connection is initalized.
 	if !conn.Initialized() && r.hdr.Opcode != linux.FUSE_INIT {
 		if err := t.Block(conn.initializedChan); err != nil {
@@ -244,6 +260,9 @@ func (conn *connection) Call(t *kernel.Task, r *Request) (*Response, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Request successfully sent to FUSE device.
+	r.err = false
 
 	return fut.resolve(t)
 }

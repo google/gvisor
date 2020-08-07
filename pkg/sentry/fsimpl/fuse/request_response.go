@@ -101,6 +101,10 @@ type Request struct {
 	// If we don't care its response.
 	// Manually set by the caller.
 	noReply bool
+
+	// if this request encountered error before being written to FUSE device
+	// (i.e. sent to user namespace).
+	err bool
 }
 
 // NewRequest creates a new request that can be sent to the FUSE server.
