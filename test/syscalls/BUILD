@@ -1023,6 +1023,7 @@ syscall_test(
 syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:truncate_test",
+    vfs2 = "True",
 )
 
 syscall_test(

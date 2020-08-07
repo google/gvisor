@@ -85,5 +85,6 @@ go_test(
     deps = [
         "//pkg/p9",
         "//pkg/sentry/contexttest",
+        "//pkg/sentry/pgalloc",
     ],
 )
