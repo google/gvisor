@@ -1777,15 +1777,8 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 			// Same as effectively disabling TCPLinger timeout.
 			v = 0
 		}
-		var stkTCPLingerTimeout tcpip.TCPLingerTimeoutOption
-		if err := e.stack.TransportProtocolOption(header.TCPProtocolNumber, &stkTCPLingerTimeout); err != nil {
-			// We were unable to retrieve a stack config, just use
-			// the DefaultTCPLingerTimeout.
-			if v > tcpip.TCPLingerTimeoutOption(DefaultTCPLingerTimeout) {
-				stkTCPLingerTimeout = tcpip.TCPLingerTimeoutOption(DefaultTCPLingerTimeout)
-			}
-		}
-		// Cap it to the stack wide TCPLinger timeout.
+		// Cap it to MaxTCPLingerTimeout.
+		stkTCPLingerTimeout := tcpip.TCPLingerTimeoutOption(MaxTCPLingerTimeout)
 		if v > stkTCPLingerTimeout {
 			v = stkTCPLingerTimeout
 		}
