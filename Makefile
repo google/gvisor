@@ -122,7 +122,7 @@ smoke-tests: ## Runs a simple smoke test after build runsc.
 .PHONY: smoke-tests
 
 unit-tests: ## Local package unit tests in pkg/..., runsc/, tools/.., etc.
-	@$(call submake,test TARGETS="pkg/... runsc/... tools/... benchmarks/... benchmarks/runner:runner_test")
+	@$(call submake,test TARGETS="pkg/... runsc/... tools/...")
 
 tests: ## Runs all unit tests and syscall tests.
 tests: unit-tests
