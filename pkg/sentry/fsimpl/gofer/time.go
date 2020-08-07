@@ -47,6 +47,7 @@ func (d *dentry) touchAtime(mnt *vfs.Mount) {
 	now := d.fs.clock.Now().Nanoseconds()
 	d.metadataMu.Lock()
 	atomic.StoreInt64(&d.atime, now)
+	atomic.StoreUint32(&d.atimeDirty, 1)
 	d.metadataMu.Unlock()
 	mnt.EndWrite()
 }
@@ -67,6 +68,7 @@ func (d *dentry) touchCMtime() {
 	d.metadataMu.Lock()
 	atomic.StoreInt64(&d.mtime, now)
 	atomic.StoreInt64(&d.ctime, now)
+	atomic.StoreUint32(&d.mtimeDirty, 1)
 	d.metadataMu.Unlock()
 }
 
@@ -76,4 +78,5 @@ func (d *dentry) touchCMtimeLocked() {
 	now := d.fs.clock.Now().Nanoseconds()
 	atomic.StoreInt64(&d.mtime, now)
 	atomic.StoreInt64(&d.ctime, now)
+	atomic.StoreUint32(&d.mtimeDirty, 1)
 }
