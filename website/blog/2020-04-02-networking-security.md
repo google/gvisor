@@ -108,7 +108,7 @@ re-architecting the TCP implementation to use fewer goroutines. Performance
 today is good enough for most applications and we are making steady
 improvements. For example, since May of 2019, we have improved the Netstack
 runsc
-[iperf3 download benchmark](https://github.com/google/gvisor/blob/master/benchmarks/suites/network.py)
+[iperf3 download benchmark](https://github.com/google/gvisor/tree/master/test/benchmarks/network)
 score by roughly 15% and upload score by around 10,000X. Current numbers are
 about 17 Gbps download and about 8 Gbps upload versus about 42 Gbps and 43 Gbps
 for native (Linux) respectively.

@@ -113,26 +113,6 @@ rules_proto_dependencies()
 
 rules_proto_toolchains()
 
-# Load python dependencies.
-git_repository(
-    name = "rules_python",
-    commit = "abc4869e02fe9b3866942e89f07b7341f830e805",
-    remote = "https://github.com/bazelbuild/rules_python.git",
-    shallow_since = "1583341286 -0500",
-)
-
-load("@rules_python//python:pip.bzl", "pip_import")
-
-pip_import(
-    name = "pydeps",
-    python_interpreter = "python3",
-    requirements = "//benchmarks:requirements.txt",
-)
-
-load("@pydeps//:requirements.bzl", "pip_install")
-
-pip_install()
-
 # Load bazel_toolchain to support Remote Build Execution.
 # See releases at https://releases.bazel.build/bazel-toolchains.html
 http_archive(
