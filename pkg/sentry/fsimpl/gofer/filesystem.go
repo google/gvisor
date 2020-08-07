@@ -15,6 +15,7 @@
 package gofer
 
 import (
+	"math"
 	"sync"
 	"sync/atomic"
 
@@ -724,8 +725,29 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		if rp.Mount() != vd.Mount() {
 			return syserror.EXDEV
 		}
-		// 9P2000.L supports hard links, but we don't.
-		return syserror.EPERM
+		d := vd.Dentry().Impl().(*dentry)
+		if d.isDir() {
+			return syserror.EPERM
+		}
+		gid := auth.KGID(atomic.LoadUint32(&d.gid))
+		uid := auth.KUID(atomic.LoadUint32(&d.uid))
+		mode := linux.FileMode(atomic.LoadUint32(&d.mode))
+		if err := vfs.MayLink(rp.Credentials(), mode, uid, gid); err != nil {
+			return err
+		}
+		if d.nlink == 0 {
+			return syserror.ENOENT
+		}
+		if d.nlink == math.MaxUint32 {
+			return syserror.EMLINK
+		}
+		if err := parent.file.link(ctx, d.file, childName); err != nil {
+			return err
+		}
+
+		// Success!
+		atomic.AddUint32(&d.nlink, 1)
+		return nil
 	}, nil)
 }
 
