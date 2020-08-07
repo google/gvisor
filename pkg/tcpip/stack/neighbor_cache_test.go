@@ -335,32 +335,6 @@ func TestNeighborCacheEntry(t *testing.T) {
 	}
 }
 
-// TestNeighborCacheEntryNoLinkAddress verifies calling entry() without a
-// LinkAddressResolver returns ErrNoLinkAddress.
-func TestNeighborCacheEntryNoLinkAddress(t *testing.T) {
-	nudDisp := testNUDDispatcher{}
-	c := DefaultNUDConfigurations()
-	clock := newFakeClock()
-	neigh := newTestNeighborCache(&nudDisp, c, clock)
-	store := newTestEntryStore()
-
-	entry, ok := store.entry(0)
-	if !ok {
-		t.Fatalf("store.entry(0) not found")
-	}
-	_, _, err := neigh.entry(entry.Addr, entry.LocalAddr, nil, nil)
-	if err != tcpip.ErrNoLinkAddress {
-		t.Errorf("got neigh.entry(%s, %s, nil, nil) = %v, want = %s", entry.Addr, entry.LocalAddr, err, tcpip.ErrNoLinkAddress)
-	}
-
-	// No events should have been dispatched.
-	nudDisp.mu.Lock()
-	defer nudDisp.mu.Unlock()
-	if diff := cmp.Diff(nudDisp.events, []testEntryEventInfo(nil)); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
-	}
-}
-
 func TestNeighborCacheRemoveEntry(t *testing.T) {
 	config := DefaultNUDConfigurations()
 
@@ -1048,9 +1022,9 @@ func TestNeighborCacheAddStaticEntryThenOverflow(t *testing.T) {
 		t.Fatalf("c.store.entry(0) not found")
 	}
 	c.neigh.addStaticEntry(entry.Addr, entry.LinkAddr)
-	e, _, err := c.neigh.entry(entry.Addr, "", nil, nil)
+	e, _, err := c.neigh.entry(entry.Addr, "", c.linkRes, nil)
 	if err != nil {
-		t.Errorf("unexpected error from c.neigh.entry(%s, \"\", nil nil): %s", entry.Addr, err)
+		t.Errorf("unexpected error from c.neigh.entry(%s, \"\", _, nil): %s", entry.Addr, err)
 	}
 	want := NeighborEntry{
 		Addr:      entry.Addr,
@@ -1059,7 +1033,7 @@ func TestNeighborCacheAddStaticEntryThenOverflow(t *testing.T) {
 		State:     Static,
 	}
 	if diff := cmp.Diff(e, want, entryDiffOpts()...); diff != "" {
-		t.Errorf("c.neigh.entry(%s, \"\", nil, nil) mismatch (-got, +want):\n%s", entry.Addr, diff)
+		t.Errorf("c.neigh.entry(%s, \"\", _, nil) mismatch (-got, +want):\n%s", entry.Addr, diff)
 	}
 
 	wantEvents := []testEntryEventInfo{
