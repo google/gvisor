@@ -467,6 +467,24 @@ func TestHostOverlayfsRewindDir(t *testing.T) {
 	}
 }
 
+// Basic test for linkat(2). Syscall tests requires CAP_DAC_READ_SEARCH and it
+// cannot use tricks like userns as root. For this reason, run a basic link test
+// to ensure some coverage.
+func TestLink(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	if got, err := d.Run(ctx, dockerutil.RunOpts{
+		Image:   "basic/linktest",
+		WorkDir: "/root",
+	}, "./link_test"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	} else if got != "" {
+		t.Errorf("test failed:\n%s", got)
+	}
+}
+
 func TestMain(m *testing.M) {
 	dockerutil.EnsureSupportedDockerVersion()
 	flag.Parse()
