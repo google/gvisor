@@ -18,10 +18,11 @@ go_template_instance(
 go_library(
     name = "fuse",
     srcs = [
+        "communicate.go",
         "connection.go",
+        "connection_control.go",
         "dev.go",
         "fusefs.go",
-        "init.go",
         "register.go",
         "request_list.go",
     ],
