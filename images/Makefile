@@ -59,9 +59,9 @@ local_image = $(LOCAL_IMAGE_PREFIX)/$(subst _,/,$(1))
 # we need to explicitly repull the base layer in order to ensure that the
 # architecture is correct. Note that we use the term "rebuild" here to avoid
 # conflicting with the bazel "build" terminology, which is used elsewhere.
+rebuild-%: FROM=$(shell grep FROM $(call path,$*)/Dockerfile } cut -d' ' -f2)
 rebuild-%: register-cross
-	FROM=$(shell grep FROM $(call path,$*)/Dockerfile | cut -d' ' -f2-) && \
-		docker pull $(DOCKER_PLATFORM_ARGS) $$FROM
+	$(foreach IMAGE,$(FROM),docker $(DOCKER_PLATFORM_ARGS) $(IMAGE); &&) true
 	T=$$(mktemp -d) && cp -a $(call path,$*)/* $$T && \
 		docker build $(DOCKER_PLATFORM_ARGS) -t $(call remote_image,$*) $$T && \
 		rm -rf $$T
