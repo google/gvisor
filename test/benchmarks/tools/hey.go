@@ -25,7 +25,7 @@ import (
 
 // Hey is for the client application 'hey'.
 type Hey struct {
-	Requests    int
+	Requests    int // Note: requests cannot be less than concurrency.
 	Concurrency int
 	Doc         string
 }

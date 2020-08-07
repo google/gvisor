@@ -58,12 +58,6 @@ type Container struct {
 	// a handle to restart the profile. Generally, tests/benchmarks using
 	// profiles need to run as root.
 	profiles []Profile
-
-	// Stores streams attached to the container. Used by WaitForOutputSubmatch.
-	streams types.HijackedResponse
-
-	// stores previously read data from the attached streams.
-	streamBuf bytes.Buffer
 }
 
 // RunOpts are options for running a container.
@@ -175,11 +169,25 @@ func (c *Container) SpawnProcess(ctx context.Context, r RunOpts, args ...string)
 		return Process{}, err
 	}
 
+	// Open a connection to the container for parsing logs and for TTY.
+	stream, err := c.client.ContainerAttach(ctx, c.id,
+		types.ContainerAttachOptions{
+			Stream: true,
+			Stdin:  true,
+			Stdout: true,
+			Stderr: true,
+		})
+	if err != nil {
+		return Process{}, fmt.Errorf("connect failed container id %s: %v", c.id, err)
+	}
+
+	c.cleanups = append(c.cleanups, func() { stream.Close() })
+
 	if err := c.Start(ctx); err != nil {
 		return Process{}, err
 	}
 
-	return Process{container: c, conn: c.streams}, nil
+	return Process{container: c, conn: stream}, nil
 }
 
 // Run is analogous to 'docker run'.
@@ -273,23 +281,6 @@ func (c *Container) hostConfig(r RunOpts) *container.HostConfig {
 
 // Start is analogous to 'docker start'.
 func (c *Container) Start(ctx context.Context) error {
-
-	// Open a connection to the container for parsing logs and for TTY.
-	streams, err := c.client.ContainerAttach(ctx, c.id,
-		types.ContainerAttachOptions{
-			Stream: true,
-			Stdin:  true,
-			Stdout: true,
-			Stderr: true,
-		})
-	if err != nil {
-		return fmt.Errorf("failed to connect to container: %v", err)
-	}
-
-	c.streams = streams
-	c.cleanups = append(c.cleanups, func() {
-		c.streams.Close()
-	})
 	if err := c.client.ContainerStart(ctx, c.id, types.ContainerStartOptions{}); err != nil {
 		return fmt.Errorf("ContainerStart failed: %v", err)
 	}
@@ -485,34 +476,19 @@ func (c *Container) WaitForOutput(ctx context.Context, pattern string, timeout t
 // WaitForOutputSubmatch searches container logs for the given
 // pattern or times out. It returns any regexp submatches as well.
 func (c *Container) WaitForOutputSubmatch(ctx context.Context, pattern string, timeout time.Duration) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	re := regexp.MustCompile(pattern)
-	if matches := re.FindStringSubmatch(c.streamBuf.String()); matches != nil {
-		return matches, nil
-	}
-
-	for exp := time.Now().Add(timeout); time.Now().Before(exp); {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-
-		c.streams.Conn.SetDeadline(time.Now().Add(50 * time.Millisecond))
-		_, err := stdcopy.StdCopy(&c.streamBuf, &c.streamBuf, c.streams.Reader)
-
+	for {
+		logs, err := c.Logs(ctx)
 		if err != nil {
-			// check that it wasn't a timeout
-			if nerr, ok := err.(net.Error); !ok || !nerr.Timeout() {
-				return nil, err
-			}
+			return nil, fmt.Errorf("failed to get logs: %v logs: %s", err, logs)
 		}
-
-		if matches := re.FindStringSubmatch(c.streamBuf.String()); matches != nil {
+		if matches := re.FindStringSubmatch(logs); matches != nil {
 			return matches, nil
 		}
+		time.Sleep(50 * time.Millisecond)
 	}
-
-	return nil, fmt.Errorf("timeout waiting for output %q: out: %s", re.String(), c.streamBuf.String())
 }
 
 // Kill kills the container.
@@ -537,8 +513,18 @@ func (c *Container) CleanUp(ctx context.Context) {
 	for _, profile := range c.profiles {
 		profile.OnCleanUp(c)
 	}
+
 	// Forget profiles.
 	c.profiles = nil
+
+	// Execute all cleanups. We execute cleanups here to close any
+	// open connections to the container before closing. Open connections
+	// can cause Kill and Remove to hang.
+	for _, c := range c.cleanups {
+		c()
+	}
+	c.cleanups = nil
+
 	// Kill the container.
 	if err := c.Kill(ctx); err != nil && !strings.Contains(err.Error(), "is not running") {
 		// Just log; can't do anything here.
@@ -550,9 +536,4 @@ func (c *Container) CleanUp(ctx context.Context) {
 	}
 	// Forget all mounts.
 	c.mounts = nil
-	// Execute all cleanups.
-	for _, c := range c.cleanups {
-		c()
-	}
-	c.cleanups = nil
 }

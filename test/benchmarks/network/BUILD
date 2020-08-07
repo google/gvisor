@@ -17,6 +17,7 @@ go_test(
         "iperf_test.go",
         "nginx_test.go",
         "node_test.go",
+        "ruby_test.go",
     ],
     library = ":network",
     tags = [
