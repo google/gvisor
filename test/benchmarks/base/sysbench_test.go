@@ -64,7 +64,7 @@ func BenchmarkSysbench(b *testing.B) {
 		},
 	}
 
-	machine, err := h.GetMachine()
+	machine, err := testHarness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
 	}

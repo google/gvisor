@@ -23,23 +23,25 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
+//TODO(gvisor.dev/issue/3535): move to own package or move methods to harness struct.
+
 // WaitUntilServing grabs a container from `machine` and waits for a server at
 // IP:port.
 func WaitUntilServing(ctx context.Context, machine Machine, server net.IP, port int) error {
-	var logger testutil.DefaultLogger = "netcat"
+	var logger testutil.DefaultLogger = "util"
 	netcat := machine.GetNativeContainer(ctx, logger)
 	defer netcat.CleanUp(ctx)
 
-	cmd := fmt.Sprintf("while ! nc -zv %s %d; do true; done", server, port)
+	cmd := fmt.Sprintf("while ! wget -q --spider http://%s:%d; do true; done", server, port)
 	_, err := netcat.Run(ctx, dockerutil.RunOpts{
-		Image: "packetdrill",
+		Image: "benchmarks/util",
 	}, "sh", "-c", cmd)
 	return err
 }
 
 // DropCaches drops caches on the provided machine. Requires root.
 func DropCaches(machine Machine) error {
-	if out, err := machine.RunCommand("/bin/sh", "-c", "sync | sysctl vm.drop_caches=3"); err != nil {
+	if out, err := machine.RunCommand("/bin/sh", "-c", "sync && sysctl vm.drop_caches=3"); err != nil {
 		return fmt.Errorf("failed to drop caches: %v logs: %s", err, out)
 	}
 	return nil

@@ -25,7 +25,7 @@ import (
 
 // BenchmarkNginxConcurrency iterates the concurrency argument and tests
 // how well the runtime under test handles requests in parallel.
-// TODO(zkoopmans): Update with different doc sizes like Httpd.
+// TODO(gvisor.dev/issue/3536): Update with different doc sizes like Httpd.
 func BenchmarkNginxConcurrency(b *testing.B) {
 	// Grab a machine for the client and server.
 	clientMachine, err := h.GetMachine()

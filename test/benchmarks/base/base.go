@@ -22,10 +22,10 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 )
 
-var h harness.Harness
+var testHarness harness.Harness
 
 // TestMain is the main method for package network.
 func TestMain(m *testing.M) {
-	h.Init()
+	testHarness.Init()
 	os.Exit(m.Run())
 }
