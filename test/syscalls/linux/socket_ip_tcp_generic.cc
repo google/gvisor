@@ -34,6 +34,9 @@
 namespace gvisor {
 namespace testing {
 
+using ::testing::AnyOf;
+using ::testing::Eq;
+
 TEST_P(TCPSocketPairTest, TcpInfoSucceeds) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
@@ -800,6 +803,9 @@ TEST_P(TCPSocketPairTest, SetCongestionControlFailsForUnsupported) {
 
 // Linux and Netstack both default to a 60s TCP_LINGER2 timeout.
 constexpr int kDefaultTCPLingerTimeout = 60;
+// On Linux, the maximum linger2 timeout was changed from 60sec to 120sec.
+constexpr int kMaxTCPLingerTimeout = 120;
+constexpr int kOldMaxTCPLingerTimeout = 60;
 
 TEST_P(TCPSocketPairTest, TCPLingerTimeoutDefault) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
@@ -827,12 +833,12 @@ TEST_P(TCPSocketPairTest, SetTCPLingerTimeoutZeroOrLess) {
               SyscallSucceedsWithValue(0));
 }
 
-TEST_P(TCPSocketPairTest, SetTCPLingerTimeoutAboveDefault) {
+TEST_P(TCPSocketPairTest, SetTCPLingerTimeoutAboveMax) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   // Values above the net.ipv4.tcp_fin_timeout are capped to tcp_fin_timeout
   // on linux (defaults to 60 seconds on linux).
-  constexpr int kAboveDefault = kDefaultTCPLingerTimeout + 1;
+  constexpr int kAboveDefault = kMaxTCPLingerTimeout + 1;
   EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2,
                          &kAboveDefault, sizeof(kAboveDefault)),
               SyscallSucceedsWithValue(0));
@@ -843,7 +849,12 @@ TEST_P(TCPSocketPairTest, SetTCPLingerTimeoutAboveDefault) {
       getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2, &get, &get_len),
       SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
-  EXPECT_EQ(get, kDefaultTCPLingerTimeout);
+  if (IsRunningOnGvisor()) {
+    EXPECT_EQ(get, kMaxTCPLingerTimeout);
+  } else {
+    EXPECT_THAT(get,
+                AnyOf(Eq(kMaxTCPLingerTimeout), Eq(kOldMaxTCPLingerTimeout)));
+  }
 }
 
 TEST_P(TCPSocketPairTest, SetTCPLingerTimeout) {

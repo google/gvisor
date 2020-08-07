@@ -6112,7 +6112,7 @@ func TestTCPLingerTimeout(t *testing.T) {
 		{"InRangeLingerTimeout", 10 * time.Second, 10 * time.Second},
 		// Values > stack's TCPLingerTimeout are capped to the stack's
 		// value. Defaults to tcp.DefaultTCPLingerTimeout(60 seconds)
-		{"AboveMaxLingerTimeout", 65 * time.Second, 60 * time.Second},
+		{"AboveMaxLingerTimeout", 125 * time.Second, 120 * time.Second},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -62,6 +62,10 @@ const (
 	// FIN_WAIT_2 state before being marked closed.
 	DefaultTCPLingerTimeout = 60 * time.Second
 
+	// MaxTCPLingerTimeout is the maximum amount of time that sockets
+	// linger in FIN_WAIT_2 state before being marked closed.
+	MaxTCPLingerTimeout = 120 * time.Second
+
 	// DefaultTCPTimeWaitTimeout is the amount of time that sockets linger
 	// in TIME_WAIT state before being marked closed.
 	DefaultTCPTimeWaitTimeout = 60 * time.Second
