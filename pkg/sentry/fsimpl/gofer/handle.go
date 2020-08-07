@@ -63,6 +63,10 @@ func openHandle(ctx context.Context, file p9file, read, write, trunc bool) (hand
 	}, nil
 }
 
+func (h *handle) isOpen() bool {
+	return !h.file.isNil()
+}
+
 func (h *handle) close(ctx context.Context) {
 	h.file.close(ctx)
 	h.file = p9file{}
@@ -123,19 +127,4 @@ func (h *handle) writeFromBlocksAt(ctx context.Context, srcs safemem.BlockSeq, o
 		return uint64(n), err
 	}
 	return cp, cperr
-}
-
-func (h *handle) sync(ctx context.Context) error {
-	// Handle most common case first.
-	if h.fd >= 0 {
-		ctx.UninterruptibleSleepStart(false)
-		err := syscall.Fsync(int(h.fd))
-		ctx.UninterruptibleSleepFinish(false)
-		return err
-	}
-	if h.file.isNil() {
-		// File hasn't been touched, there is nothing to sync.
-		return nil
-	}
-	return h.file.fsync(ctx)
 }

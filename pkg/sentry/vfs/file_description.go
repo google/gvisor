@@ -356,6 +356,8 @@ type FileDescriptionImpl interface {
 
 	// Allocate grows the file to offset + length bytes.
 	// Only mode == 0 is supported currently.
+	//
+	// Preconditions: The FileDescription was opened for writing.
 	Allocate(ctx context.Context, mode, offset, length uint64) error
 
 	// waiter.Waitable methods may be used to poll for I/O events.
@@ -565,6 +567,9 @@ func (fd *FileDescription) StatFS(ctx context.Context) (linux.Statfs, error) {
 
 // Allocate grows file represented by FileDescription to offset + length bytes.
 func (fd *FileDescription) Allocate(ctx context.Context, mode, offset, length uint64) error {
+	if !fd.IsWritable() {
+		return syserror.EBADF
+	}
 	return fd.impl.Allocate(ctx, mode, offset, length)
 }
 

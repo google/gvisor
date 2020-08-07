@@ -55,7 +55,7 @@ func (fs *filesystem) Sync(ctx context.Context) error {
 
 	// Sync regular files.
 	for _, d := range ds {
-		err := d.syncSharedHandle(ctx)
+		err := d.syncCachedFile(ctx)
 		d.DecRef(ctx)
 		if err != nil && retErr == nil {
 			retErr = err
@@ -1107,12 +1107,18 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 	useRegularFileFD := child.fileType() == linux.S_IFREG && !d.fs.opts.regularFilesUseSpecialFileFD
 	if useRegularFileFD {
 		child.handleMu.Lock()
-		child.handle.file = openFile
-		if fdobj != nil {
-			child.handle.fd = int32(fdobj.Release())
+		if vfs.MayReadFileWithOpenFlags(opts.Flags) {
+			child.readFile = openFile
+			if fdobj != nil {
+				child.hostFD = int32(fdobj.Release())
+			}
+		} else if fdobj != nil {
+			// Can't use fdobj if it's not readable.
+			fdobj.Close()
 		}
-		child.handleReadable = vfs.MayReadFileWithOpenFlags(opts.Flags)
-		child.handleWritable = vfs.MayWriteFileWithOpenFlags(opts.Flags)
+		if vfs.MayWriteFileWithOpenFlags(opts.Flags) {
+			child.writeFile = openFile
+		}
 		child.handleMu.Unlock()
 	}
 	// Insert the dentry into the tree.
