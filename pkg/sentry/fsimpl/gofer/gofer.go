@@ -558,8 +558,6 @@ type dentry struct {
 	// filesystem.renameMu.
 	name string
 
-	// We don't support hard links, so each dentry maps 1:1 to an inode.
-
 	// file is the unopened p9.File that backs this dentry. file is immutable.
 	//
 	// If file.isNil(), this dentry represents a synthetic file, i.e. a file
