@@ -1693,7 +1693,7 @@ TEST(Inotify, Fallocate) {
       InotifyAddWatch(inotify_fd.get(), file.path(), IN_ALL_EVENTS));
 
   // Do an arbitrary modification with fallocate.
-  ASSERT_THAT(fallocate(fd.get(), 0, 0, 123), SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(fallocate)(fd.get(), 0, 0, 123), SyscallSucceeds());
   std::vector<Event> events =
       ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
   EXPECT_THAT(events, Are({Event(IN_MODIFY, wd)}));
