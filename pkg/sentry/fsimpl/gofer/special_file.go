@@ -17,6 +17,7 @@ package gofer
 import (
 	"sync"
 	"sync/atomic"
+	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -279,5 +280,13 @@ func (fd *specialFileFD) Seek(ctx context.Context, offset int64, whence int32) (
 
 // Sync implements vfs.FileDescriptionImpl.Sync.
 func (fd *specialFileFD) Sync(ctx context.Context) error {
-	return fd.dentry().syncSharedHandle(ctx)
+	// If we have a host FD, fsyncing it is likely to be faster than an fsync
+	// RPC.
+	if fd.handle.fd >= 0 {
+		ctx.UninterruptibleSleepStart(false)
+		err := syscall.Fsync(int(fd.handle.fd))
+		ctx.UninterruptibleSleepFinish(false)
+		return err
+	}
+	return fd.handle.file.fsync(ctx)
 }
