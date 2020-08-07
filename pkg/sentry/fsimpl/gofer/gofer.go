@@ -1264,8 +1264,11 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 		}
 	}
 	// Discard cached data.
-	d.cache.DropAll(mf)
-	d.dirty.RemoveAll()
+	if !d.cache.IsEmpty() {
+		mf.MarkAllUnevictable(d)
+		d.cache.DropAll(mf)
+		d.dirty.RemoveAll()
+	}
 	d.dataMu.Unlock()
 	// Clunk open fids and close open host FDs.
 	if !d.readFile.isNil() {
