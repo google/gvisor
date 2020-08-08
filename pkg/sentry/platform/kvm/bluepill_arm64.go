@@ -49,7 +49,7 @@ func bluepillArchEnter(context *arch.SignalContext64) (c *vCPU) {
 	regs.Sp = context.Sp
 	regs.Pc = context.Pc
 	regs.Pstate = context.Pstate
-	regs.Pstate &^= uint64(ring0.KernelFlagsClear)
+	regs.Pstate &^= uint64(ring0.PsrFlagsClear)
 	regs.Pstate |= ring0.KernelFlagsSet
 	return
 }
@@ -63,7 +63,7 @@ func bluepillArchExit(c *vCPU, context *arch.SignalContext64) {
 	context.Sp = regs.Sp
 	context.Pc = regs.Pc
 	context.Pstate = regs.Pstate
-	context.Pstate &^= uint64(ring0.UserFlagsClear)
+	context.Pstate &^= uint64(ring0.PsrFlagsClear)
 	context.Pstate |= ring0.UserFlagsSet
 
 	lazyVfp := c.GetLazyVFP()
