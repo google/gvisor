@@ -171,14 +171,20 @@ type Context interface {
 	// Preconditions: The caller must be running on the task goroutine.
 	PullFullState(as AddressSpace, ac arch.Context)
 
-	// FloatingPointStateChanged forces restoring a full state of the application thread.
+	// FullStateChanged() indicates that a thread state has been changed by
+	// the Sentry. This happens in case of the rt_sigreturn, execve, etc.
 	//
-	// A platform can support lazy loading/restoring of a thread state.
-	// This means that if the Sentry has not changed a thread state,
+	// First, it indicates that the Sentry has the full state of the thread
+	// and PullFullState() has to do nothing if it is called after
+	// FullStateChanged().
+	//
+	// Second, it forces restoring the full state of the application
+	// thread. A platform can support lazy loading/restoring of a thread
+	// state. This means that if the Sentry has not changed a thread state,
 	// the platform may not restore it.
 	//
 	// Preconditions: The caller must be running on the task goroutine.
-	FloatingPointStateChanged()
+	FullStateChanged()
 
 	// Interrupt interrupts a concurrent call to Switch(), causing it to return
 	// ErrContextInterrupt.
