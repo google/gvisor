@@ -1158,7 +1158,8 @@ func (d *dentry) OnZeroWatches(ctx context.Context) {
 // operation. One of the calls may destroy the dentry, so subsequent calls will
 // do nothing.
 //
-// Preconditions: d.fs.renameMu must be locked for writing.
+// Preconditions: d.fs.renameMu must be locked for writing; it may be
+// temporarily unlocked.
 func (d *dentry) checkCachingLocked(ctx context.Context) {
 	// Dentries with a non-zero reference count must be retained. (The only way
 	// to obtain a reference on a dentry with zero references is via path
@@ -1238,11 +1239,13 @@ func (d *dentry) checkCachingLocked(ctx context.Context) {
 	}
 }
 
-// destroyLocked destroys the dentry. It may flushes dirty pages from cache,
-// close p9 file and remove reference on parent dentry.
+// destroyLocked destroys the dentry.
 //
-// Preconditions: d.fs.renameMu must be locked for writing. d.refs == 0. d is
-// not a child dentry.
+// Preconditions:
+// * d.fs.renameMu must be locked for writing; it may be temporarily unlocked.
+// * d.refs == 0.
+// * d.parent.children[d.name] != d, i.e. d is not reachable by path traversal
+//   from its former parent dentry.
 func (d *dentry) destroyLocked(ctx context.Context) {
 	switch atomic.LoadInt64(&d.refs) {
 	case 0:
@@ -1253,6 +1256,10 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	default:
 		panic("dentry.destroyLocked() called with references on the dentry")
 	}
+
+	// Allow the following to proceed without renameMu locked to improve
+	// scalability.
+	d.fs.renameMu.Unlock()
 
 	mf := d.fs.mfp.MemoryFile()
 	d.handleMu.Lock()
@@ -1315,6 +1322,9 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 		delete(d.fs.syncableDentries, d)
 		d.fs.syncMu.Unlock()
 	}
+
+	d.fs.renameMu.Lock()
+
 	// Drop the reference held by d on its parent without recursively locking
 	// d.fs.renameMu.
 	if d.parent != nil {
