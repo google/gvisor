@@ -52,6 +52,8 @@ func TestDestroyIdempotent(t *testing.T) {
 	}
 	parent.cacheNewChildLocked(child, "child")
 
+	fs.renameMu.Lock()
+	defer fs.renameMu.Unlock()
 	child.checkCachingLocked(ctx)
 	if got := atomic.LoadInt64(&child.refs); got != -1 {
 		t.Fatalf("child.refs=%d, want: -1", got)
