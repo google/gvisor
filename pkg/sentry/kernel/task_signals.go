@@ -280,7 +280,7 @@ func (t *Task) deliverSignalToHandler(info *arch.SignalInfo, act arch.SignalAct)
 	if err := t.Arch().SignalSetup(st, &act, info, &alt, mask); err != nil {
 		return err
 	}
-	t.p.FloatingPointStateChanged()
+	t.p.FullStateChanged()
 	t.haveSavedSignalMask = false
 
 	// Add our signal mask.
@@ -312,7 +312,7 @@ func (t *Task) SignalReturn(rt bool) (*SyscallControl, error) {
 
 	// Restore our signal mask. SIGKILL and SIGSTOP should not be blocked.
 	t.SetSignalMask(sigset &^ UnblockableSignals)
-	t.p.FloatingPointStateChanged()
+	t.p.FullStateChanged()
 
 	return ctrlResume, nil
 }
