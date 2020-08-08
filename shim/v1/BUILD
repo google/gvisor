@@ -1,5 +1,4 @@
 load("//tools:defs.bzl", "go_binary")
-load("//website:defs.bzl", "doc")
 
 package(licenses = ["notice"])
 
@@ -28,14 +27,4 @@ go_binary(
         "@com_github_gogo_protobuf//types:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
-)
-
-doc(
-    name = "doc",
-    src = "README.md",
-    category = "User Guide",
-    permalink = "/docs/user_guide/gvisor-containerd-shim/",
-    subcategory = "Advanced",
-    visibility = ["//website:__pkg__"],
-    weight = "93",
 )
