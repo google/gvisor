@@ -4,10 +4,9 @@ import (
 	"fmt"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"io"
 	"reflect"
-
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Useful bits.
@@ -20,30 +19,31 @@ const (
 	_PMD_PGT_SIZE = 0x4000
 	_PTE_PGT_BASE = 0x7000
 	_PTE_PGT_SIZE = 0x1000
-
-	_PSR_D_BIT = 0x00000200
-	_PSR_A_BIT = 0x00000100
-	_PSR_I_BIT = 0x00000080
-	_PSR_F_BIT = 0x00000040
 )
 
 const (
-	// PSR bits
-	PSR_MODE_EL0t = 0x00000000
-	PSR_MODE_EL1t = 0x00000004
-	PSR_MODE_EL1h = 0x00000005
-	PSR_MODE_MASK = 0x0000000f
+	// DAIF bits:debug, sError, IRQ, FIQ.
+	_PSR_D_BIT      = 0x00000200
+	_PSR_A_BIT      = 0x00000100
+	_PSR_I_BIT      = 0x00000080
+	_PSR_F_BIT      = 0x00000040
+	_PSR_DAIF_SHIFT = 6
+	_PSR_DAIF_MASK  = 0xf << _PSR_DAIF_SHIFT
+
+	// PSR bits.
+	_PSR_MODE_EL0t = 0x00000000
+	_PSR_MODE_EL1t = 0x00000004
+	_PSR_MODE_EL1h = 0x00000005
+	_PSR_MODE_MASK = 0x0000000f
+
+	PsrFlagsClear = _PSR_MODE_MASK | _PSR_DAIF_MASK
+	PsrModeMask   = _PSR_MODE_MASK
 
 	// KernelFlagsSet should always be set in the kernel.
-	KernelFlagsSet = PSR_MODE_EL1h
+	KernelFlagsSet = _PSR_MODE_EL1h | _PSR_D_BIT | _PSR_A_BIT | _PSR_I_BIT | _PSR_F_BIT
 
 	// UserFlagsSet are always set in userspace.
-	UserFlagsSet = PSR_MODE_EL0t
-
-	KernelFlagsClear = PSR_MODE_MASK
-	UserFlagsClear   = PSR_MODE_MASK
-
-	PsrDefaultSet = _PSR_D_BIT | _PSR_A_BIT | _PSR_I_BIT | _PSR_F_BIT
+	UserFlagsSet = _PSR_MODE_EL0t
 )
 
 // Vector is an exception vector.
