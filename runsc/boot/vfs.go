@@ -400,21 +400,28 @@ func (c *containerMounter) mountTmpVFS2(ctx context.Context, conf *Config, creds
 		Path:  fspath.Parse("/tmp"),
 	}
 	// TODO(gvisor.dev/issue/2782): Use O_PATH when available.
-	statx, err := c.k.VFS().StatAt(ctx, creds, &pop, &vfs.StatOptions{})
+	fd, err := c.k.VFS().OpenAt(ctx, creds, &pop, &vfs.OpenOptions{Flags: linux.O_RDONLY | linux.O_DIRECTORY})
 	switch err {
 	case nil:
-		// Found '/tmp' in filesystem, check if it's empty.
-		if linux.FileMode(statx.Mode).FileType() != linux.ModeDirectory {
-			// Not a dir?! Leave it be.
+		defer fd.DecRef(ctx)
+
+		err := fd.IterDirents(ctx, vfs.IterDirentsCallbackFunc(func(dirent vfs.Dirent) error {
+			if dirent.Name != "." && dirent.Name != ".." {
+				return syserror.ENOTEMPTY
+			}
 			return nil
-		}
-		if statx.Nlink > 2 {
+		}))
+		switch err {
+		case nil:
+			log.Infof(`Mounting internal tmpfs on top of empty "/tmp"`)
+		case syserror.ENOTEMPTY:
 			// If more than "." and ".." is found, skip internal tmpfs to prevent
 			// hiding existing files.
 			log.Infof(`Skipping internal tmpfs mount for "/tmp" because it's not empty`)
 			return nil
+		default:
+			return err
 		}
-		log.Infof(`Mounting internal tmpfs on top of empty "/tmp"`)
 		fallthrough
 
 	case syserror.ENOENT:
@@ -429,8 +436,12 @@ func (c *containerMounter) mountTmpVFS2(ctx context.Context, conf *Config, creds
 		}
 		return c.mountSubmountVFS2(ctx, conf, mns, creds, &mountAndFD{Mount: tmpMount})
 
+	case syserror.ENOTDIR:
+		// Not a dir?! Let it be.
+		return nil
+
 	default:
-		return fmt.Errorf(`stating "/tmp" inside container: %w`, err)
+		return fmt.Errorf(`opening "/tmp" inside container: %w`, err)
 	}
 }
 
