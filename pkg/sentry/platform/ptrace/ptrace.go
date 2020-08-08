@@ -182,8 +182,8 @@ func (c *context) Interrupt() {
 // Release implements platform.Context.Release().
 func (c *context) Release() {}
 
-// FloatingPointStateChanged implements platform.Context.FloatingPointStateChanged.
-func (c *context) FloatingPointStateChanged() {}
+// FullStateChanged implements platform.Context.FullStateChanged.
+func (c *context) FullStateChanged() {}
 
 // PullFullState implements platform.Context.PullFullState.
 func (c *context) PullFullState(as platform.AddressSpace, ac arch.Context) {}
