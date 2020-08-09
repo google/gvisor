@@ -389,6 +389,26 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 			received.Invalid.Increment()
 			return
 		}
+
+		remoteLinkAddr := r.RemoteLinkAddress
+
+		// As per RFC 4291 section 2.7, multicast addresses must not be used as
+		// source addresses in IPv6 packets.
+		localAddr := r.LocalAddress
+		if header.IsV6MulticastAddress(r.LocalAddress) {
+			localAddr = ""
+		}
+
+		r, err := r.Stack().FindRoute(e.NICID(), localAddr, r.RemoteAddress, ProtocolNumber, false /* multicastLoop */)
+		if err != nil {
+			// If we cannot find a route to the destination, silently drop the packet.
+			return
+		}
+		defer r.Release()
+
+		// Use the link address from the source of the original packet.
+		r.ResolveWith(remoteLinkAddr)
+
 		pkt.Data.TrimFront(header.ICMPv6EchoMinimumSize)
 		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv6EchoMinimumSize)
 		packet := header.ICMPv6(hdr.Prepend(header.ICMPv6EchoMinimumSize))

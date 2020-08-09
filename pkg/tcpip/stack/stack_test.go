@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"net"
 	"sort"
 	"strings"
 	"testing"
@@ -34,6 +35,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
+	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -3692,5 +3694,51 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 				t.Errorf("route mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestResolveWith(t *testing.T) {
+	const (
+		unspecifiedNICID = 0
+		nicID            = 1
+	)
+
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv4.NewProtocol(), arp.NewProtocol()},
+	})
+	ep := channel.New(0, defaultMTU, "")
+	ep.LinkEPCapabilities |= stack.CapabilityResolutionRequired
+	if err := s.CreateNIC(nicID, ep); err != nil {
+		t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+	}
+	addr := tcpip.ProtocolAddress{
+		Protocol: header.IPv4ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   tcpip.Address(net.ParseIP("192.168.1.58").To4()),
+			PrefixLen: 24,
+		},
+	}
+	if err := s.AddProtocolAddress(nicID, addr); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v): %s", nicID, addr, err)
+	}
+
+	s.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: nicID}})
+
+	remoteAddr := tcpip.Address(net.ParseIP("192.168.1.59").To4())
+	r, err := s.FindRoute(unspecifiedNICID, "" /* localAddr */, remoteAddr, header.IPv4ProtocolNumber, false /* multicastLoop */)
+	if err != nil {
+		t.Fatalf("FindRoute(%d, '', %s, %d): %s", unspecifiedNICID, remoteAddr, header.IPv4ProtocolNumber, err)
+	}
+	defer r.Release()
+
+	// Should initially require resolution.
+	if !r.IsResolutionRequired() {
+		t.Fatal("got r.IsResolutionRequired() = false, want = true")
+	}
+
+	// Manually resolving the route should no longer require resolution.
+	r.ResolveWith("\x01")
+	if r.IsResolutionRequired() {
+		t.Fatal("got r.IsResolutionRequired() = true, want = false")
 	}
 }

@@ -121,6 +121,7 @@ go_test(
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/link/loopback",
+        "//pkg/tcpip/network/arp",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",
         "//pkg/tcpip/ports",
