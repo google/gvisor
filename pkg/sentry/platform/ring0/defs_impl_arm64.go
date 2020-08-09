@@ -1,13 +1,13 @@
 package ring0
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
-
 	"fmt"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
 	"io"
 	"reflect"
+
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Useful bits.
