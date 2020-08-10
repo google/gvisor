@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
@@ -1010,6 +1011,8 @@ func (l *Loader) WaitExit() kernel.ExitStatus {
 
 	// Cleanup
 	l.ctrl.stop()
+
+	refs.OnExit()
 
 	return l.k.GlobalInit().ExitStatus()
 }
