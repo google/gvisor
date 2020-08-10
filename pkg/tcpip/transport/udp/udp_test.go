@@ -1309,6 +1309,105 @@ func TestReadIncrementsPacketsReceived(t *testing.T) {
 	}
 }
 
+func TestReadIPPacketInfo(t *testing.T) {
+	tests := []struct {
+		name              string
+		proto             tcpip.NetworkProtocolNumber
+		flow              testFlow
+		expectedLocalAddr tcpip.Address
+		expectedDestAddr  tcpip.Address
+	}{
+		{
+			name:              "IPv4 unicast",
+			proto:             header.IPv4ProtocolNumber,
+			flow:              unicastV4,
+			expectedLocalAddr: stackAddr,
+			expectedDestAddr:  stackAddr,
+		},
+		{
+			name:  "IPv4 multicast",
+			proto: header.IPv4ProtocolNumber,
+			flow:  multicastV4,
+			// This should actually be a unicast address assigned to the interface.
+			//
+			// TODO(gvisor.dev/issue/3556): This check is validating incorrect
+			// behaviour. We still include the test so that once the bug is
+			// resolved, this test will start to fail and the individual tasked
+			// with fixing this bug knows to also fix this test :).
+			expectedLocalAddr: multicastAddr,
+			expectedDestAddr:  multicastAddr,
+		},
+		{
+			name:  "IPv4 broadcast",
+			proto: header.IPv4ProtocolNumber,
+			flow:  broadcast,
+			// This should actually be a unicast address assigned to the interface.
+			//
+			// TODO(gvisor.dev/issue/3556): This check is validating incorrect
+			// behaviour. We still include the test so that once the bug is
+			// resolved, this test will start to fail and the individual tasked
+			// with fixing this bug knows to also fix this test :).
+			expectedLocalAddr: broadcastAddr,
+			expectedDestAddr:  broadcastAddr,
+		},
+		{
+			name:              "IPv6 unicast",
+			proto:             header.IPv6ProtocolNumber,
+			flow:              unicastV6,
+			expectedLocalAddr: stackV6Addr,
+			expectedDestAddr:  stackV6Addr,
+		},
+		{
+			name:  "IPv6 multicast",
+			proto: header.IPv6ProtocolNumber,
+			flow:  multicastV6,
+			// This should actually be a unicast address assigned to the interface.
+			//
+			// TODO(gvisor.dev/issue/3556): This check is validating incorrect
+			// behaviour. We still include the test so that once the bug is
+			// resolved, this test will start to fail and the individual tasked
+			// with fixing this bug knows to also fix this test :).
+			expectedLocalAddr: multicastV6Addr,
+			expectedDestAddr:  multicastV6Addr,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := newDualTestContext(t, defaultMTU)
+			defer c.cleanup()
+
+			c.createEndpoint(test.proto)
+
+			bindAddr := tcpip.FullAddress{Port: stackPort}
+			if err := c.ep.Bind(bindAddr); err != nil {
+				t.Fatalf("Bind(%+v): %s", bindAddr, err)
+			}
+
+			if test.flow.isMulticast() {
+				ifoptSet := tcpip.AddMembershipOption{NIC: 1, MulticastAddr: test.flow.getMcastAddr()}
+				if err := c.ep.SetSockOpt(ifoptSet); err != nil {
+					c.t.Fatalf("SetSockOpt(%+v): %s:", ifoptSet, err)
+				}
+			}
+
+			if err := c.ep.SetSockOptBool(tcpip.ReceiveIPPacketInfoOption, true); err != nil {
+				t.Fatalf("c.ep.SetSockOptBool(tcpip.ReceiveIPPacketInfoOption, true): %s", err)
+			}
+
+			testRead(c, test.flow, checker.ReceiveIPPacketInfo(tcpip.IPPacketInfo{
+				NIC:             1,
+				LocalAddr:       test.expectedLocalAddr,
+				DestinationAddr: test.expectedDestAddr,
+			}))
+
+			if got := c.s.Stats().UDP.PacketsReceived.Value(); got != 1 {
+				t.Fatalf("Read did not increment PacketsReceived: got = %d, want = 1", got)
+			}
+		})
+	}
+}
+
 func TestWriteIncrementsPacketsSent(t *testing.T) {
 	c := newDualTestContext(t, defaultMTU)
 	defer c.cleanup()

@@ -968,7 +968,7 @@ type IPPacketInfo struct {
 	// LocalAddr is the local address.
 	LocalAddr Address
 
-	// DestinationAddr is the destination address.
+	// DestinationAddr is the destination address found in the IP header.
 	DestinationAddr Address
 }
 
