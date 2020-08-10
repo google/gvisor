@@ -22,6 +22,7 @@ install_runsc_for_test docker
 test_runsc //test/image:image_test //test/e2e:integration_test
 
 install_runsc_for_test docker --vfs2
+# Sync with //Makefile.
 IMAGE_FILTER="Hello|Httpd|Ruby|Stdio"
-INTEGRATION_FILTER="LifeCycle|Pause|Connect|JobControl|Overlay|Exec|DirCreation/root|Link"
+INTEGRATION_FILTER="LifeCycle|Pause|Connect|JobControl|Overlay|Exec|DirCreation|Link"
 test_runsc //test/e2e:integration_test //test/image:image_test --test_filter="${IMAGE_FILTER}|${INTEGRATION_FILTER}"
