@@ -1444,13 +1444,16 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 	switch r.NetProto {
 	case header.IPv4ProtocolNumber:
 		packet.tos, _ = header.IPv4(pkt.NetworkHeader).TOS()
-		packet.packetInfo.LocalAddr = r.LocalAddress
-		packet.packetInfo.DestinationAddr = r.RemoteAddress
-		packet.packetInfo.NIC = r.NICID()
 	case header.IPv6ProtocolNumber:
 		packet.tos, _ = header.IPv6(pkt.NetworkHeader).TOS()
 	}
 
+	// TODO(gvisor.dev/issue/3556): r.LocalAddress may be a multicast or broadcast
+	// address. packetInfo.LocalAddr should hold a unicast address that can be
+	// used to respond to the incoming packet.
+	packet.packetInfo.LocalAddr = r.LocalAddress
+	packet.packetInfo.DestinationAddr = r.LocalAddress
+	packet.packetInfo.NIC = r.NICID()
 	packet.timestamp = e.stack.Clock().NowNanoseconds()
 
 	e.rcvMu.Unlock()
