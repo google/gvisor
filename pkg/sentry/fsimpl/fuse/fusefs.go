@@ -308,7 +308,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentr
 	if isDir {
 		dirFd := &dirFileFD{}
 		fd = &(dirFd.fileDescription)
-		fdImpl = fd
+		fdImpl = dirFd
 	} else {
 		regularFd := &regularFileFD{}
 		fd = &(regularFd.fileDescription)
