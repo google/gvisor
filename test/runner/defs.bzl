@@ -132,7 +132,7 @@ def syscall_test(
         add_overlay = False,
         add_uds_tree = False,
         add_hostinet = False,
-        vfs2 = False,
+        vfs2 = True,
         fuse = False,
         tags = None):
     """syscall_test is a macro that will create targets for all platforms.
