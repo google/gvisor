@@ -475,3 +475,13 @@ func (r *AtomicRefCount) DecRefWithDestructor(ctx context.Context, destroy func(
 func (r *AtomicRefCount) DecRef(ctx context.Context) {
 	r.DecRefWithDestructor(ctx, nil)
 }
+
+// OnExit is called on sandbox exit. It runs GC to enqueue refcount finalizers,
+// which check for reference leaks. There is no way to guarantee that every
+// finalizer will run before exiting, but this at least ensures that they will
+// be discovered/enqueued by GC.
+func OnExit() {
+	if LeakMode(atomic.LoadUint32(&leakMode)) != NoLeakChecking {
+		runtime.GC()
+	}
+}
