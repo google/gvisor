@@ -14,6 +14,7 @@ go_test(
     size = "large",
     srcs = ["tensorflow_test.go"],
     library = ":ml",
+    visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",
         "//test/benchmarks/harness",

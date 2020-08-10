@@ -25,6 +25,7 @@ go_test(
         "manual",
         "local",
     ],
+    visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",
         "//pkg/test/testutil",

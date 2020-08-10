@@ -14,6 +14,7 @@ go_test(
     size = "large",
     srcs = ["ffmpeg_test.go"],
     library = ":media",
+    visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",
         "//test/benchmarks/harness",

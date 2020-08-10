@@ -19,6 +19,7 @@ go_test(
         "manual",
         "local",
     ],
+    visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",
         "//test/benchmarks/harness",

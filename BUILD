@@ -57,6 +57,12 @@ build_test(
         "//test/e2e:integration_test",
         "//test/image:image_test",
         "//test/root:root_test",
+        "//test/benchmarks/base:base_test",
+        "//test/benchmarks/database:database_test",
+        "//test/benchmarks/fs:fs_test",
+        "//test/benchmarks/media:media_test",
+        "//test/benchmarks/ml:ml_test",
+        "//test/benchmarks/network:network_test",
     ],
 )
 
