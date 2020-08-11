@@ -31,3 +31,9 @@ syscall_test(
     vfs2 = "True",
     fuse = "True",
 )
+
+syscall_test(
+    test = "//test/fuse/linux:rmdir_test",
+    vfs2 = "True",
+    fuse = "True",
+)
