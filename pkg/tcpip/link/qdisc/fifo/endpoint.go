@@ -199,7 +199,7 @@ func (e *endpoint) WritePackets(_ *stack.Route, _ *stack.GSO, pkts stack.PacketB
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
 func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
-	// TODO(gvisor.dev/issue/3267/): Queue these packets as well once
+	// TODO(gvisor.dev/issue/3267): Queue these packets as well once
 	// WriteRawPacket takes PacketBuffer instead of VectorisedView.
 	return e.lower.WriteRawPacket(vv)
 }
