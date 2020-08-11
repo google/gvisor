@@ -12,23 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fuse_base.h"
+#include "test/fuse/linux/fuse_base.h"
 
 #include <fcntl.h>
 #include <linux/fuse.h>
-#include <stdio.h>
 #include <string.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/uio.h>
 #include <unistd.h>
 
 #include <iostream>
 
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "absl/strings/str_format.h"
+#include "gtest/gtest.h"
 #include "test/util/posix_error.h"
+#include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -78,13 +78,14 @@ void FuseTest::MountFuse() {
   EXPECT_THAT(dev_fd_ = open("/dev/fuse", O_RDWR), SyscallSucceeds());
 
   std::string mount_opts = absl::StrFormat("fd=%d,%s", dev_fd_, kMountOpts);
-  EXPECT_THAT(mount("fuse", kMountPoint, "fuse", MS_NODEV | MS_NOSUID,
-                    mount_opts.c_str()),
+  mount_point_ = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  EXPECT_THAT(mount("fuse", mount_point_.path().c_str(), "fuse",
+                    MS_NODEV | MS_NOSUID, mount_opts.c_str()),
               SyscallSucceedsWithValue(0));
 }
 
 void FuseTest::UnmountFuse() {
-  EXPECT_THAT(umount(kMountPoint), SyscallSucceeds());
+  EXPECT_THAT(umount(mount_point_.path().c_str()), SyscallSucceeds());
   // TODO(gvisor.dev/issue/3330): ensure the process is terminated successfully.
 }
 

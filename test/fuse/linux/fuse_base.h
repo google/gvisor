@@ -20,14 +20,13 @@
 
 #include <vector>
 
-#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/posix_error.h"
+#include "test/util/temp_path.h"
 
 namespace gvisor {
 namespace testing {
 
-constexpr char kMountPoint[] = "/mnt";
 constexpr char kMountOpts[] = "rootmode=755,user_id=0,group_id=0";
 
 class FuseTest : public ::testing::Test {
@@ -54,6 +53,9 @@ class FuseTest : public ::testing::Test {
   // WaitCompleted waits for FUSE server to complete its processing. It
   // complains if the FUSE server responds failure during tests.
   void WaitCompleted();
+
+ protected:
+  TempPath mount_point_;
 
  private:
   void MountFuse();
