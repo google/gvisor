@@ -298,7 +298,7 @@ type NetworkProtocol interface {
 	ParseAddresses(v buffer.View) (src, dst tcpip.Address)
 
 	// NewEndpoint creates a new endpoint of this protocol.
-	NewEndpoint(nicID tcpip.NICID, linkAddrCache LinkAddressCache, nud NUDHandler, dispatcher TransportDispatcher, sender LinkEndpoint, st *Stack) NetworkEndpoint
+	NewEndpoint(nicID tcpip.NICID, nud NUDHandler, dispatcher TransportDispatcher, sender LinkEndpoint, st *Stack) NetworkEndpoint
 
 	// SetOption allows enabling/disabling protocol specific features.
 	// SetOption returns an error if the option is not supported or the
@@ -494,10 +494,6 @@ type LinkAddressResolver interface {
 
 // A LinkAddressCache caches link addresses.
 type LinkAddressCache interface {
-	// CheckLocalAddress determines if the given local address exists, and if it
-	// does not exist.
-	CheckLocalAddress(nicID tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.NICID
-
 	// AddLinkAddress adds a link address to the cache.
 	AddLinkAddress(nicID tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress)
 

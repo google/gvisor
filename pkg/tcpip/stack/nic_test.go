@@ -192,7 +192,7 @@ func (*testIPv6Protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) 
 }
 
 // NewEndpoint implements NetworkProtocol.NewEndpoint.
-func (p *testIPv6Protocol) NewEndpoint(nicID tcpip.NICID, _ LinkAddressCache, _ NUDHandler, _ TransportDispatcher, linkEP LinkEndpoint, _ *Stack) NetworkEndpoint {
+func (p *testIPv6Protocol) NewEndpoint(nicID tcpip.NICID, _ NUDHandler, _ TransportDispatcher, linkEP LinkEndpoint, _ *Stack) NetworkEndpoint {
 	return &testIPv6Endpoint{
 		nicID:    nicID,
 		linkEP:   linkEP,

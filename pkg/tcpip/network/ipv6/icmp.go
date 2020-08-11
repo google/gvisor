@@ -272,10 +272,8 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		} else if unspecifiedSource {
 			received.Invalid.Increment()
 			return
-		} else if e.nud != nil {
-			e.nud.HandleProbe(r.RemoteAddress, r.LocalAddress, header.IPv6ProtocolNumber, sourceLinkAddr, e.protocol)
 		} else {
-			e.linkAddrCache.AddLinkAddress(e.nicID, r.RemoteAddress, sourceLinkAddr)
+			e.nud.HandleProbe(r.RemoteAddress, r.LocalAddress, header.IPv6ProtocolNumber, sourceLinkAddr, e.protocol)
 		}
 
 		// ICMPv6 Neighbor Solicit messages are always sent to
@@ -394,11 +392,6 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 		// If the NA message has the target link layer option, update the link
 		// address cache with the link address for the target of the message.
 		if len(targetLinkAddr) != 0 {
-			if e.nud == nil {
-				e.linkAddrCache.AddLinkAddress(e.nicID, targetAddr, targetLinkAddr)
-				return
-			}
-
 			e.nud.HandleConfirmation(targetAddr, targetLinkAddr, stack.ReachabilityConfirmationFlags{
 				Solicited: na.SolicitedFlag(),
 				Override:  na.OverrideFlag(),
@@ -510,11 +503,9 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 				return
 			}
 
-			if e.nud != nil {
-				// A RS with a specified source IP address modifies the NUD state
-				// machine in the same way a reachability probe would.
-				e.nud.HandleProbe(r.RemoteAddress, r.LocalAddress, header.IPv6ProtocolNumber, sourceLinkAddr, e.protocol)
-			}
+			// A RS with a specified source IP address modifies the NUD state machine
+			// in the same way a reachability probe would.
+			e.nud.HandleProbe(r.RemoteAddress, r.LocalAddress, header.IPv6ProtocolNumber, sourceLinkAddr, e.protocol)
 		}
 
 	case header.ICMPv6RouterAdvert:
@@ -562,7 +553,7 @@ func (e *endpoint) handleICMP(r *stack.Route, pkt *stack.PacketBuffer, hasFragme
 
 		// If the RA has the source link layer option, update the link address
 		// cache with the link address for the advertised router.
-		if len(sourceLinkAddr) != 0 && e.nud != nil {
+		if len(sourceLinkAddr) != 0 {
 			e.nud.HandleProbe(routerAddr, r.LocalAddress, header.IPv6ProtocolNumber, sourceLinkAddr, e.protocol)
 		}
 

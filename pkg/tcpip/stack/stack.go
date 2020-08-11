@@ -39,13 +39,6 @@ import (
 )
 
 const (
-	// ageLimit is set to the same cache stale time used in Linux.
-	ageLimit = 1 * time.Minute
-	// resolutionTimeout is set to the same ARP timeout used in Linux.
-	resolutionTimeout = 1 * time.Second
-	// resolutionAttempts is set to the same ARP retries used in Linux.
-	resolutionAttempts = 3
-
 	// DefaultTOS is the default type of service value for network endpoints.
 	DefaultTOS = 0
 )
@@ -413,8 +406,6 @@ type Stack struct {
 
 	stats tcpip.Stats
 
-	linkAddrCache *linkAddrCache
-
 	mu               sync.RWMutex
 	nics             map[tcpip.NICID]*NIC
 	forwarding       bool
@@ -460,10 +451,6 @@ type Stack struct {
 
 	// nudConfigs is the default NUD configurations used by interfaces.
 	nudConfigs NUDConfigurations
-
-	// useNeighborCache indicates whether ARP and NDP packets should be handled
-	// by the NIC's neighborCache instead of linkAddrCache.
-	useNeighborCache bool
 
 	// autoGenIPv6LinkLocal determines whether or not the stack will attempt
 	// to auto-generate an IPv6 link-local address for newly enabled non-loopback
@@ -544,13 +531,6 @@ type Options struct {
 
 	// NUDConfigs is the default NUD configurations used by interfaces.
 	NUDConfigs NUDConfigurations
-
-	// UseNeighborCache indicates whether ARP and NDP packets should be handled
-	// by the Neighbor Unreachability Detection (NUD) state machine. This flag
-	// also enables the APIs for inspecting and modifying the neighbor table via
-	// NUDDispatcher and the following Stack methods: Neighbors, RemoveNeighbor,
-	// and ClearNeighbors.
-	UseNeighborCache bool
 
 	// AutoGenIPv6LinkLocal determines whether or not the stack will attempt to
 	// auto-generate an IPv6 link-local address for newly enabled non-loopback
@@ -716,7 +696,6 @@ func New(opts Options) *Stack {
 		linkAddrResolvers:    make(map[tcpip.NetworkProtocolNumber]LinkAddressResolver),
 		nics:                 make(map[tcpip.NICID]*NIC),
 		cleanupEndpoints:     make(map[TransportEndpoint]struct{}),
-		linkAddrCache:        newLinkAddrCache(ageLimit, resolutionTimeout, resolutionAttempts),
 		PortManager:          ports.NewPortManager(),
 		clock:                clock,
 		stats:                opts.Stats.FillIn(),
@@ -726,7 +705,6 @@ func New(opts Options) *Stack {
 		seed:                 generateRandUint32(),
 		ndpConfigs:           opts.NDPConfigs,
 		nudConfigs:           opts.NUDConfigs,
-		useNeighborCache:     opts.UseNeighborCache,
 		autoGenIPv6LinkLocal: opts.AutoGenIPv6LinkLocal,
 		uniqueIDGenerator:    opts.UniqueID,
 		ndpDisp:              opts.NDPDisp,
@@ -1405,29 +1383,6 @@ func (s *Stack) SetSpoofing(nicID tcpip.NICID, enable bool) *tcpip.Error {
 	return nil
 }
 
-// AddLinkAddress adds a link address to the stack link cache.
-func (s *Stack) AddLinkAddress(nicID tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
-	fullAddr := tcpip.FullAddress{NIC: nicID, Addr: addr}
-	s.linkAddrCache.add(fullAddr, linkAddr)
-	// TODO: provide a way for a transport endpoint to receive a signal
-	// that AddLinkAddress for a particular address has been called.
-}
-
-// GetLinkAddress implements LinkAddressCache.GetLinkAddress.
-func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, waker *sleep.Waker) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
-	s.mu.RLock()
-	nic := s.nics[nicID]
-	if nic == nil {
-		s.mu.RUnlock()
-		return "", nil, tcpip.ErrUnknownNICID
-	}
-	s.mu.RUnlock()
-
-	fullAddr := tcpip.FullAddress{NIC: nicID, Addr: addr}
-	linkRes := s.linkAddrResolvers[protocol]
-	return s.linkAddrCache.get(fullAddr, linkRes, localAddr, nic.linkEP, waker)
-}
-
 // Neighbors returns all IP to MAC address associations.
 func (s *Stack) Neighbors(nicID tcpip.NICID) ([]NeighborEntry, *tcpip.Error) {
 	s.mu.RLock()
@@ -1444,24 +1399,14 @@ func (s *Stack) Neighbors(nicID tcpip.NICID) ([]NeighborEntry, *tcpip.Error) {
 // RemoveWaker removes a waker that has been added when link resolution for
 // addr was requested.
 func (s *Stack) RemoveWaker(nicID tcpip.NICID, addr tcpip.Address, waker *sleep.Waker) {
-	if s.useNeighborCache {
-		s.mu.RLock()
-		nic, ok := s.nics[nicID]
-		s.mu.RUnlock()
-
-		if ok {
-			nic.removeWaker(addr, waker)
-		}
-		return
-	}
-
 	s.mu.RLock()
-	defer s.mu.RUnlock()
+	nic, ok := s.nics[nicID]
+	s.mu.RUnlock()
 
-	if nic := s.nics[nicID]; nic == nil {
-		fullAddr := tcpip.FullAddress{NIC: nicID, Addr: addr}
-		s.linkAddrCache.removeWaker(fullAddr, waker)
+	if ok {
+		nic.removeWaker(addr, waker)
 	}
+	return
 }
 
 // AddStaticNeighbor statically associates an IP address to a MAC address.

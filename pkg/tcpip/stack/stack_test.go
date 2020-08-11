@@ -197,7 +197,7 @@ func (*fakeNetworkProtocol) ParseAddresses(v buffer.View) (src, dst tcpip.Addres
 	return tcpip.Address(v[srcAddrOffset : srcAddrOffset+1]), tcpip.Address(v[dstAddrOffset : dstAddrOffset+1])
 }
 
-func (f *fakeNetworkProtocol) NewEndpoint(nicID tcpip.NICID, _ stack.LinkAddressCache, _ stack.NUDHandler, dispatcher stack.TransportDispatcher, ep stack.LinkEndpoint, _ *stack.Stack) stack.NetworkEndpoint {
+func (f *fakeNetworkProtocol) NewEndpoint(nicID tcpip.NICID, _ stack.NUDHandler, dispatcher stack.TransportDispatcher, ep stack.LinkEndpoint, _ *stack.Stack) stack.NetworkEndpoint {
 	return &fakeNetworkEndpoint{
 		nicID:      nicID,
 		proto:      f,
@@ -2864,7 +2864,7 @@ func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
 				Gateway:     llAddr3,
 				NIC:         nicID,
 			}})
-			s.AddLinkAddress(nicID, llAddr3, linkAddr3)
+			s.AddStaticNeighbor(nicID, llAddr3, linkAddr3)
 
 			if test.slaacPrefixForTempAddrBeforeNICAddrAdd != (tcpip.AddressWithPrefix{}) {
 				e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr3, 0, test.slaacPrefixForTempAddrBeforeNICAddrAdd, true, true, lifetimeSeconds, lifetimeSeconds))

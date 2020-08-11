@@ -17,7 +17,6 @@ package arp_test
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"testing"
 	"time"
 
@@ -162,7 +161,7 @@ type testContext struct {
 	nudDisp *arpDispatcher
 }
 
-func newTestContext(t *testing.T, useNeighborCache bool) *testContext {
+func newTestContext(t *testing.T) *testContext {
 	c := stack.DefaultNUDConfigurations()
 	// Transition from Reachable to Stale almost immediately to test if receiving
 	// probes refreshes positive reachability.
@@ -180,7 +179,6 @@ func newTestContext(t *testing.T, useNeighborCache bool) *testContext {
 		TransportProtocols: []stack.TransportProtocol{icmp.NewProtocol4()},
 		NUDConfigs:         c,
 		NUDDisp:            &d,
-		UseNeighborCache:   useNeighborCache,
 	})
 
 	ep := channel.New(defaultChannelSize, defaultMTU, stackLinkAddr)
@@ -197,15 +195,6 @@ func newTestContext(t *testing.T, useNeighborCache bool) *testContext {
 
 	if err := s.AddAddress(nicID, ipv4.ProtocolNumber, stackAddr); err != nil {
 		t.Fatalf("AddAddress for ipv4 failed: %v", err)
-	}
-	if !useNeighborCache {
-		// The remote address needs to be assigned to the NIC so we can receive and
-		// verify outgoing ARP packets. The neighbor cache isn't concerned with
-		// this; the tests that use linkAddrCache expect the ARP responses to be
-		// received by the same NIC.
-		if err := s.AddAddress(nicID, ipv4.ProtocolNumber, remoteAddr); err != nil {
-			t.Fatalf("AddAddress for ipv4 failed: %v", err)
-		}
 	}
 	if err := s.AddAddress(nicID, arp.ProtocolNumber, arp.ProtocolAddress); err != nil {
 		t.Fatalf("AddAddress for arp failed: %v", err)
@@ -228,65 +217,7 @@ func (c *testContext) cleanup() {
 }
 
 func TestDirectRequest(t *testing.T) {
-	c := newTestContext(t, false /* useNeighborCache */)
-	defer c.cleanup()
-
-	const senderMAC = "\x01\x02\x03\x04\x05\x06"
-	const senderIPv4 = "\x0a\x00\x00\x02"
-
-	v := make(buffer.View, header.ARPSize)
-	h := header.ARP(v)
-	h.SetIPv4OverEthernet()
-	h.SetOp(header.ARPRequest)
-	copy(h.HardwareAddressSender(), senderMAC)
-	copy(h.ProtocolAddressSender(), senderIPv4)
-
-	inject := func(addr tcpip.Address) {
-		copy(h.ProtocolAddressTarget(), addr)
-		c.linkEP.InjectInbound(arp.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: v.ToVectorisedView(),
-		}))
-	}
-
-	for i, address := range []tcpip.Address{stackAddr, remoteAddr} {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			inject(address)
-			pi, _ := c.linkEP.ReadContext(context.Background())
-			if pi.Proto != arp.ProtocolNumber {
-				t.Fatalf("expected ARP response, got network protocol number %d", pi.Proto)
-			}
-			rep := header.ARP(pi.Pkt.NetworkHeader().View())
-			if !rep.IsValid() {
-				t.Fatalf("invalid ARP response: len = %d; response = %x", len(rep), rep)
-			}
-			if got, want := tcpip.LinkAddress(rep.HardwareAddressSender()), stackLinkAddr; got != want {
-				t.Errorf("got HardwareAddressSender = %s, want = %s", got, want)
-			}
-			if got, want := tcpip.Address(rep.ProtocolAddressSender()), tcpip.Address(h.ProtocolAddressTarget()); got != want {
-				t.Errorf("got ProtocolAddressSender = %s, want = %s", got, want)
-			}
-			if got, want := tcpip.LinkAddress(rep.HardwareAddressTarget()), tcpip.LinkAddress(h.HardwareAddressSender()); got != want {
-				t.Errorf("got HardwareAddressTarget = %s, want = %s", got, want)
-			}
-			if got, want := tcpip.Address(rep.ProtocolAddressTarget()), tcpip.Address(h.ProtocolAddressSender()); got != want {
-				t.Errorf("got ProtocolAddressTarget = %s, want = %s", got, want)
-			}
-		})
-	}
-
-	inject(unknownAddr)
-	// Sleep tests are gross, but this will only potentially flake
-	// if there's a bug. If there is no bug this will reliably
-	// succeed.
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-	if pkt, ok := c.linkEP.ReadContext(ctx); ok {
-		t.Errorf("stackAddrBad: unexpected packet sent, Proto=%v", pkt.Proto)
-	}
-}
-
-func TestDirectRequestWithNeighborCache(t *testing.T) {
-	c := newTestContext(t, true /* useNeighborCache */)
+	c := newTestContext(t)
 	defer c.cleanup()
 
 	tests := []struct {
@@ -329,9 +260,9 @@ func TestDirectRequestWithNeighborCache(t *testing.T) {
 			copy(h.HardwareAddressSender(), test.senderLinkAddr)
 			copy(h.ProtocolAddressSender(), test.senderAddr)
 			copy(h.ProtocolAddressTarget(), test.targetAddr)
-			c.linkEP.InjectInbound(arp.ProtocolNumber, &stack.PacketBuffer{
+			c.linkEP.InjectInbound(arp.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: v.ToVectorisedView(),
-			})
+			}))
 
 			if !test.isValid {
 				// No packets should be sent after receiving an invalid ARP request.

@@ -137,7 +137,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 	nic.mu.ndp.initializeTempAddrState()
 
 	// Check for Neighbor Unreachability Detection support.
-	if ep.Capabilities()&CapabilityResolutionRequired != 0 && len(stack.linkAddrResolvers) != 0 && stack.useNeighborCache {
+	if ep.Capabilities()&CapabilityResolutionRequired != 0 && len(stack.linkAddrResolvers) != 0 {
 		rng := rand.New(rand.NewSource(stack.clock.NowNanoseconds()))
 		nic.neigh = &neighborCache{
 			nic:   nic,
@@ -153,7 +153,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 	for _, netProto := range stack.networkProtocols {
 		netNum := netProto.Number()
 		nic.mu.packetEPs[netNum] = nil
-		nic.networkEndpoints[netNum] = netProto.NewEndpoint(id, stack, nic.neigh, nic, ep, stack)
+		nic.networkEndpoints[netNum] = netProto.NewEndpoint(id, nic.neigh, nic, ep, stack)
 	}
 
 	nic.linkEP.Attach(nic)
@@ -824,18 +824,8 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 		return nil, tcpip.ErrUnknownProtocol
 	}
 
-	var nud NUDHandler
-	if n.neigh != nil {
-		// An interface value that holds a nil concrete value is itself non-nil.
-		// For this reason, n.neigh cannot be passed directly to NewEndpoint so
-		// NetworkEndpoints don't confuse it for non-nil.
-		//
-		// See https://golang.org/doc/faq#nil_error for more information.
-		nud = n.neigh
-	}
-
 	// Create the new network endpoint.
-	ep := netProto.NewEndpoint(n.id, n.stack, nud, n, n.linkEP, n.stack)
+	ep := netProto.NewEndpoint(n.id, n.neigh, n, n.linkEP, n.stack)
 
 	isIPv6Unicast := protocolAddress.Protocol == header.IPv6ProtocolNumber && header.IsV6UnicastAddress(protocolAddress.AddressWithPrefix.Address)
 
@@ -861,7 +851,6 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 	// Set up resolver if link address resolution exists for this protocol.
 	if n.linkEP.Capabilities()&CapabilityResolutionRequired != 0 {
 		if linkRes, ok := n.stack.linkAddrResolvers[protocolAddress.Protocol]; ok {
-			ref.linkCache = n.stack
 			ref.linkRes = linkRes
 		}
 	}
@@ -1717,10 +1706,6 @@ type referencedNetworkEndpoint struct {
 	addr     tcpip.AddressWithPrefix
 	nic      *NIC
 	protocol tcpip.NetworkProtocolNumber
-
-	// linkCache is set if link address resolution is enabled for this
-	// protocol. Set to nil otherwise.
-	linkCache LinkAddressCache
 
 	// linkRes is set if link address resolution is enabled for this protocol.
 	// Set to nil otherwise.

@@ -4,18 +4,6 @@ load("//tools/go_generics:defs.bzl", "go_template_instance")
 package(licenses = ["notice"])
 
 go_template_instance(
-    name = "linkaddrentry_list",
-    out = "linkaddrentry_list.go",
-    package = "stack",
-    prefix = "linkAddrEntry",
-    template = "//pkg/ilist:generic_list",
-    types = {
-        "Element": "*linkAddrEntry",
-        "Linker": "*linkAddrEntry",
-    },
-)
-
-go_template_instance(
     name = "neighbor_entry_list",
     out = "neighbor_entry_list.go",
     package = "stack",
@@ -63,8 +51,6 @@ go_library(
         "iptables_state.go",
         "iptables_targets.go",
         "iptables_types.go",
-        "linkaddrcache.go",
-        "linkaddrentry_list.go",
         "ndp.go",
         "neighbor_cache.go",
         "neighbor_entry.go",
@@ -140,7 +126,6 @@ go_test(
     srcs = [
         "fake_time_test.go",
         "forwarder_test.go",
-        "linkaddrcache_test.go",
         "neighbor_cache_test.go",
         "neighbor_entry_test.go",
         "nic_test.go",
@@ -149,7 +134,6 @@ go_test(
     library = ":stack",
     deps = [
         "//pkg/sleep",
-        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
