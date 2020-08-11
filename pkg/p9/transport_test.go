@@ -182,6 +182,8 @@ func TestSendClosed(t *testing.T) {
 }
 
 func BenchmarkSendRecv(b *testing.B) {
+	b.ReportAllocs()
+
 	server, client, err := unet.SocketPair(false)
 	if err != nil {
 		b.Fatalf("socketpair got err %v expected nil", err)
