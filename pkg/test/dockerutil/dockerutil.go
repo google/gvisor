@@ -88,44 +88,74 @@ func EnsureSupportedDockerVersion() {
 
 // RuntimePath returns the binary path for the current runtime.
 func RuntimePath() (string, error) {
+	rs, err := runtimeMap()
+	if err != nil {
+		return "", err
+	}
+
+	p, ok := rs["path"].(string)
+	if !ok {
+		// The runtime does not declare a path.
+		return "", fmt.Errorf("runtime does not declare a path: %v", rs)
+	}
+	return p, nil
+}
+
+// UsingVFS2 returns true if the 'runtime' has the vfs2 flag set.
+// TODO(gvisor.dev/issue/1624): Remove.
+func UsingVFS2() (bool, error) {
+	rMap, err := runtimeMap()
+	if err != nil {
+		return false, err
+	}
+
+	list, ok := rMap["runtimeArgs"].([]interface{})
+	if !ok {
+		return false, fmt.Errorf("unexpected format: %v", rMap)
+	}
+
+	for _, element := range list {
+		if element == "--vfs2" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func runtimeMap() (map[string]interface{}, error) {
 	// Read the configuration data; the file must exist.
 	configBytes, err := ioutil.ReadFile(*config)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// Unmarshal the configuration.
 	c := make(map[string]interface{})
 	if err := json.Unmarshal(configBytes, &c); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// Decode the expected configuration.
 	r, ok := c["runtimes"]
 	if !ok {
-		return "", fmt.Errorf("no runtimes declared: %v", c)
+		return nil, fmt.Errorf("no runtimes declared: %v", c)
 	}
 	rs, ok := r.(map[string]interface{})
 	if !ok {
 		// The runtimes are not a map.
-		return "", fmt.Errorf("unexpected format: %v", c)
+		return nil, fmt.Errorf("unexpected format: %v", rs)
 	}
 	r, ok = rs[*runtime]
 	if !ok {
 		// The expected runtime is not declared.
-		return "", fmt.Errorf("runtime %q not found: %v", *runtime, c)
+		return nil, fmt.Errorf("runtime %q not found: %v", *runtime, rs)
 	}
 	rs, ok = r.(map[string]interface{})
 	if !ok {
 		// The runtime is not a map.
-		return "", fmt.Errorf("unexpected format: %v", c)
+		return nil, fmt.Errorf("unexpected format: %v", r)
 	}
-	p, ok := rs["path"].(string)
-	if !ok {
-		// The runtime does not declare a path.
-		return "", fmt.Errorf("unexpected format: %v", c)
-	}
-	return p, nil
+	return rs, nil
 }
 
 // Save exports a container image to the given Writer.
