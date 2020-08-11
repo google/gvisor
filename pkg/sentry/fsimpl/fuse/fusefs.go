@@ -426,6 +426,33 @@ func (i *inode) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) 
 	return i.newEntry(ctx, name, linux.S_IFDIR, linux.FUSE_MKDIR, &in)
 }
 
+// RmDir implements kernfs.Inode.RmDir.
+func (i *inode) RmDir(ctx context.Context, name string, child *vfs.Dentry) error {
+	fusefs := i.fs
+	task, creds := kernel.TaskFromContext(ctx), auth.CredentialsFromContext(ctx)
+
+	in := linux.FUSERmDirIn{Name: name}
+	req, err := fusefs.conn.NewRequest(creds, uint32(task.ThreadID()), i.NodeID, linux.FUSE_RMDIR, &in)
+	if err != nil {
+		return err
+	}
+
+	res, err := i.fs.conn.Call(task, req)
+	if err != nil {
+		return err
+	}
+	if err := res.Error(); err != nil {
+		return err
+	}
+
+	// TODO(Before merging): When creating new nodes, should we add nodes to the ordered children?
+	// If so we'll probably need to call this. We will also need to add them with the writable flag when
+	// appropriate.
+	// return i.OrderedChildren.RmDir(ctx, name, child)
+
+	return nil
+}
+
 // newEntry calls FUSE server for entry creation and allocates corresponding entry according to response.
 // Shared by FUSE_MKNOD, FUSE_MKDIR, FUSE_SYMLINK, FUSE_LINK and FUSE_LOOKUP.
 func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMode, opcode linux.FUSEOpcode, payload marshal.Marshallable) (*vfs.Dentry, error) {
