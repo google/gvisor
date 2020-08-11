@@ -166,15 +166,11 @@ do-tests: runsc
 simple-tests: unit-tests # Compatibility target.
 .PHONY: simple-tests
 
-# Keep these in sync with //scripts/docker_tests.sh.
-IMAGE_FILTER := HelloWorld\|Httpd\|Ruby\|Stdio
-INTEGRATION_FILTER := Life\|Pause\|Connect\|JobControl\|Overlay\|Exec\|DirCreation\|Link
-
 docker-tests: load-basic-images
 	@$(call submake,install-test-runtime RUNTIME="vfs1")
 	@$(call submake,test-runtime RUNTIME="vfs1" TARGETS="$(INTEGRATION_TARGETS)")
 	@$(call submake,install-test-runtime RUNTIME="vfs2" ARGS="--vfs2")
-	@$(call submake,test-runtime RUNTIME="vfs2" OPTIONS="--test_filter=$(IMAGE_FILTER)\|$(INTEGRATION_FILTER)" TARGETS="$(INTEGRATION_TARGETS)")
+	@$(call submake,test-runtime RUNTIME="vfs2" TARGETS="$(INTEGRATION_TARGETS)")
 .PHONY: docker-tests
 
 overlay-tests: load-basic-images
