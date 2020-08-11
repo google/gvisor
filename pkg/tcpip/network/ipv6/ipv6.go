@@ -117,6 +117,7 @@ func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadS
 func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, pkt *stack.PacketBuffer) *tcpip.Error {
 	ip := e.addIPHeader(r, &pkt.Header, pkt.Data.Size(), params)
 	pkt.NetworkHeader = buffer.View(ip)
+	pkt.NetworkProtocolNumber = header.IPv6ProtocolNumber
 
 	if r.Loop&stack.PacketLoop != 0 {
 		// The inbound path expects the network header to still be in
@@ -152,6 +153,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 	for pb := pkts.Front(); pb != nil; pb = pb.Next() {
 		ip := e.addIPHeader(r, &pb.Header, pb.Data.Size(), params)
 		pb.NetworkHeader = buffer.View(ip)
+		pb.NetworkProtocolNumber = header.IPv6ProtocolNumber
 	}
 
 	n, err := e.linkEP.WritePackets(r, gso, pkts, ProtocolNumber)
@@ -586,6 +588,7 @@ traverseExtensions:
 	}
 	ipHdr = header.IPv6(hdr)
 
+	pkt.NetworkProtocolNumber = header.IPv6ProtocolNumber
 	pkt.NetworkHeader = hdr
 	pkt.Data.TrimFront(len(hdr))
 	pkt.Data.CapLength(int(ipHdr.PayloadLength()))
