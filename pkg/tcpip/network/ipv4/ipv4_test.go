@@ -150,6 +150,9 @@ func compareFragments(t *testing.T, packets []*stack.PacketBuffer, sourcePacketI
 		if got, want := packet.Header.AvailableLength(), sourcePacketInfo.Header.AvailableLength()-header.IPv4MinimumSize; got != want {
 			t.Errorf("fragment #%d should have the same available space for prepending as source: got %d, want %d", i, got, want)
 		}
+		if got, want := packet.NetworkProtocolNumber, sourcePacketInfo.NetworkProtocolNumber; got != want {
+			t.Errorf("fragment #%d has wrong network protocol number: got %d, want %d", i, got, want)
+		}
 		if i < len(packets)-1 {
 			sourceCopy.SetFlagsFragmentOffset(sourceCopy.Flags()|header.IPv4FlagMoreFragments, offset)
 		} else {
@@ -285,7 +288,8 @@ func TestFragmentation(t *testing.T) {
 			source := &stack.PacketBuffer{
 				Header: hdr,
 				// Save the source payload because WritePacket will modify it.
-				Data: payload.Clone(nil),
+				Data:                  payload.Clone(nil),
+				NetworkProtocolNumber: header.IPv4ProtocolNumber,
 			}
 			c := buildContext(t, nil, ft.mtu)
 			err := c.Route.WritePacket(ft.gso, stack.NetworkHeaderParams{

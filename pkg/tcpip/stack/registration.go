@@ -249,8 +249,8 @@ type NetworkEndpoint interface {
 	MaxHeaderLength() uint16
 
 	// WritePacket writes a packet to the given destination address and
-	// protocol. It takes ownership of pkt. pkt.TransportHeader must have already
-	// been set.
+	// protocol. It takes ownership of pkt. pkt.TransportHeader must have
+	// already been set.
 	WritePacket(r *Route, gso *GSO, params NetworkHeaderParams, pkt *PacketBuffer) *tcpip.Error
 
 	// WritePackets writes packets to the given destination address and
