@@ -62,6 +62,11 @@ type PacketBuffer struct {
 	NetworkHeader   buffer.View
 	TransportHeader buffer.View
 
+	// NetworkProtocol is only valid when NetworkHeader is set.
+	// TODO(gvisor.dev/issue/3574): Remove the separately passed protocol
+	// numbers in registration APIs that take a PacketBuffer.
+	NetworkProtocolNumber tcpip.NetworkProtocolNumber
+
 	// Hash is the transport layer hash of this packet. A value of zero
 	// indicates no valid hash has been set.
 	Hash uint32
@@ -72,9 +77,8 @@ type PacketBuffer struct {
 
 	// The following fields are only set by the qdisc layer when the packet
 	// is added to a queue.
-	EgressRoute           *Route
-	GSOOptions            *GSO
-	NetworkProtocolNumber tcpip.NetworkProtocolNumber
+	EgressRoute *Route
+	GSOOptions  *GSO
 
 	// NatDone indicates if the packet has been manipulated as per NAT
 	// iptables rule.

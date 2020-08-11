@@ -173,9 +173,10 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int,
 			newPayload := pkt.Data.Clone(nil)
 			newPayload.CapLength(innerMTU)
 			if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, &stack.PacketBuffer{
-				Header:        pkt.Header,
-				Data:          newPayload,
-				NetworkHeader: buffer.View(h),
+				Header:                pkt.Header,
+				Data:                  newPayload,
+				NetworkHeader:         buffer.View(h),
+				NetworkProtocolNumber: header.IPv4ProtocolNumber,
 			}); err != nil {
 				return err
 			}
@@ -192,9 +193,10 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int,
 			newPayloadLength := outerMTU - pkt.Header.UsedLength()
 			newPayload.CapLength(newPayloadLength)
 			if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, &stack.PacketBuffer{
-				Header:        pkt.Header,
-				Data:          newPayload,
-				NetworkHeader: buffer.View(h),
+				Header:                pkt.Header,
+				Data:                  newPayload,
+				NetworkHeader:         buffer.View(h),
+				NetworkProtocolNumber: header.IPv4ProtocolNumber,
 			}); err != nil {
 				return err
 			}
@@ -206,9 +208,10 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int,
 			startOfHdr.TrimBack(pkt.Header.UsedLength() - outerMTU)
 			emptyVV := buffer.NewVectorisedView(0, []buffer.View{})
 			if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, &stack.PacketBuffer{
-				Header:        startOfHdr,
-				Data:          emptyVV,
-				NetworkHeader: buffer.View(h),
+				Header:                startOfHdr,
+				Data:                  emptyVV,
+				NetworkHeader:         buffer.View(h),
+				NetworkProtocolNumber: header.IPv4ProtocolNumber,
 			}); err != nil {
 				return err
 			}
@@ -249,10 +252,11 @@ func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadS
 func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, pkt *stack.PacketBuffer) *tcpip.Error {
 	ip := e.addIPHeader(r, &pkt.Header, pkt.Data.Size(), params)
 	pkt.NetworkHeader = buffer.View(ip)
+	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
 
-	nicName := e.stack.FindNICNameFromID(e.NICID())
 	// iptables filtering. All packets that reach here are locally
 	// generated.
+	nicName := e.stack.FindNICNameFromID(e.NICID())
 	ipt := e.stack.IPTables()
 	if ok := ipt.Check(stack.Output, pkt, gso, r, "", nicName); !ok {
 		// iptables is telling us to drop the packet.
@@ -304,6 +308,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 	for pkt := pkts.Front(); pkt != nil; {
 		ip := e.addIPHeader(r, &pkt.Header, pkt.Data.Size(), params)
 		pkt.NetworkHeader = buffer.View(ip)
+		pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
 		pkt = pkt.Next()
 	}
 
@@ -570,6 +575,7 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNu
 		parseTransportHeader = false
 	}
 
+	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
 	pkt.NetworkHeader = hdr
 	pkt.Data.TrimFront(len(hdr))
 	pkt.Data.CapLength(int(ipHdr.TotalLength()) - len(hdr))
