@@ -560,3 +560,29 @@ func (r *FUSEMkdirReq) MarshalUnsafe(buf []byte) {
 func (r *FUSEMkdirReq) SizeBytes() int {
 	return r.MkdirIn.SizeBytes() + len(r.Name) + 1
 }
+
+// FUSERmDirIn is the request sent by the kernel to the daemon
+// when trying to remove a directory.
+//
+// Dynamically-sized objects cannot be marshalled.
+type FUSERmDirIn struct {
+	marshal.StubMarshallable
+
+	// Name is a directory name to be looked up.
+	Name string
+}
+
+// MarshalUnsafe serializes r.name to the dst buffer.
+func (r *FUSERmDirIn) MarshalUnsafe(buf []byte) {
+	copy(buf, r.Name)
+}
+
+// SizeBytes is the size of the memory representation of FUSERmDirIn.
+func (r *FUSERmDirIn) SizeBytes() int {
+	return len(r.Name) + 1
+}
+
+// UnmarshalUnsafe deserializes r.name from the src buffer.
+func (r *FUSERmDirIn) UnmarshalUnsafe(src []byte) {
+	r.Name = string(src)
+}
